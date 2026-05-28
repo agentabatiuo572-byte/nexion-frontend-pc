@@ -46,6 +46,7 @@ const productDialogVisible = ref(false)
 const productSaving = ref(false)
 const productFormRef = ref<FormInstance>()
 const lastProductAction = ref('')
+const lastPaymentAction = ref('')
 const productTypeOptions = ['NEXION_BOX', 'NEXION_RACK', 'MOBILE', 'CLOUD_SHARE', 'GENESIS']
 const productStatusOptions = ['ON_SALE', 'OFF_SALE', 'SOLD_OUT', 'ARCHIVED']
 const productForm = reactive({
@@ -72,7 +73,9 @@ const productRules: FormRules = {
 }
 
 function valueOf(record: AnyRecord | null, key: string) {
-  const value = record?.[key]
+  const value = key.split('.').reduce<unknown>((current, part) => {
+    return current && typeof current === 'object' ? (current as AnyRecord)[part] : undefined
+  }, record || undefined)
   return value == null || value === '' ? '-' : String(value)
 }
 
@@ -258,6 +261,7 @@ async function runPaymentAction(action: 'expire' | 'reconcileDue' | 'reconcileOn
         ? await reconcileDuePayments(opsLimit.value)
         : await reconcilePayment(paymentNo as string)
     ElMessage.success(`操作完成: ${JSON.stringify(result)}`)
+    lastPaymentAction.value = `支付运营操作完成: ${JSON.stringify(result)}，${new Date().toLocaleString()}`
     await loadPayments()
     await loadStats()
   } finally {
@@ -302,25 +306,25 @@ onMounted(loadData)
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>订单数</span><el-icon color="#409eff" :size="24"><Tickets /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'orders') }}</div>
+          <div class="value">{{ valueOf(stats, 'orders.total') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>支付数</span><el-icon color="#67c23a" :size="24"><CreditCard /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'payments') }}</div>
+          <div class="value">{{ valueOf(stats, 'payments.total') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>Trade-in</span><el-icon color="#e6a23c" :size="24"><Refresh /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'tradeins') }}</div>
+          <div class="value">{{ valueOf(stats, 'tradeins.total') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>Genesis</span><el-icon color="#f56c6c" :size="24"><Star /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'genesisOrders') }}</div>
+          <div class="value">{{ valueOf(stats, 'genesis.orders.total') }}</div>
         </el-card>
       </el-col>
     </el-row>
@@ -417,6 +421,7 @@ onMounted(loadData)
               <el-button type="primary" :loading="actionLoading" @click="runPaymentAction('reconcileDue')">对账到期</el-button>
             </div>
           </div>
+          <el-alert v-if="lastPaymentAction" :title="lastPaymentAction" type="success" show-icon :closable="false" class="operation-alert" />
           <el-form :inline="true" :model="paymentQuery" class="filter-form">
             <el-form-item label="用户ID"><el-input v-model="paymentQuery.userId" clearable /></el-form-item>
             <el-form-item label="订单号"><el-input v-model="paymentQuery.orderNo" clearable /></el-form-item>

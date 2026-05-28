@@ -89,3 +89,16 @@ $env:NEXION_ADMIN_PASSWORD='<local-admin-password>'
 ```
 
 覆盖范围：商品 SKU、Genesis 系列、设备生命周期规则、系统配置、多语言、内容页、帮助文章、OpenAPI app 配额同值更新。
+
+## 高风险运营 smoke
+
+脚本会注册隔离测试用户，并验证资金、合规、支付、OpenAPI 与 Compute 运维接口。该脚本会创建测试 KYC、Proof、人工充值、小额提现失败/成功记录、OpenAPI 测试 app，并执行支付/任务维护入口。
+
+```powershell
+$env:NEXION_API_BASE='http://127.0.0.1:8090/api'
+$env:NEXION_ADMIN_USERNAME='superadmin'
+$env:NEXION_ADMIN_PASSWORD='<local-admin-password>'
+& 'D:\software\nodejs\npm.cmd' run smoke:ops
+```
+
+覆盖范围：KYC submit/approve、Proof create/verify/reject/archive、黑名单 upsert/release、人工充值、提现 mark failed/succeeded、OpenAPI quota/disable/enable/webhook publish、支付 expire/reconcile/anomalies、Compute timeout/retry/dispatch 可用设备。

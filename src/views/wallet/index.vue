@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   getDepositDead,
   getDepositPending,
@@ -35,6 +35,7 @@ const pendingWithdrawals = ref<AnyRecord[]>([])
 const deadWithdrawals = ref<AnyRecord[]>([])
 const detailVisible = ref(false)
 const detailRecord = ref<AnyRecord | null>(null)
+const lastWalletAction = ref('')
 
 const walletUserId = ref('')
 const ledgerQuery = reactive({ current: 1, size: 10, userId: '', bizNo: '', asset: '', direction: '', status: '' })
@@ -42,6 +43,7 @@ const depositQuery = reactive({ status: 'records', asset: '', chainTxHash: '', l
 const withdrawalLimit = ref(20)
 
 const manualDepositVisible = ref(false)
+const manualDepositFormRef = ref<FormInstance>()
 const manualDepositForm = reactive({
   userId: undefined as number | undefined,
   chain: 'TRON',
@@ -51,17 +53,32 @@ const manualDepositForm = reactive({
   confirmations: 1,
   reason: ''
 })
+const manualDepositRules: FormRules = {
+  userId: [{ required: true, message: '请填写用户ID', trigger: 'blur' }],
+  chain: [{ required: true, message: '请填写链', trigger: 'blur' }],
+  chainTxHash: [{ required: true, message: '请填写链上交易哈希', trigger: 'blur' }],
+  asset: [{ required: true, message: '请填写资产', trigger: 'blur' }],
+  amount: [{ required: true, message: '请填写金额', trigger: 'blur' }],
+  reason: [{ required: true, message: '请填写操作原因', trigger: 'blur' }]
+}
 
 const withdrawalDialogVisible = ref(false)
+const withdrawalFormRef = ref<FormInstance>()
 const withdrawalForm = reactive({
   withdrawalNo: '',
   mode: 'success' as 'success' | 'failed',
   chainTxHash: '',
   reason: ''
 })
+const withdrawalRules: FormRules = {
+  withdrawalNo: [{ required: true, message: '提现单号缺失', trigger: 'blur' }],
+  reason: [{ required: true, message: '请填写操作原因', trigger: 'blur' }]
+}
 
 function valueOf(record: AnyRecord | null, key: string) {
-  const value = record?.[key]
+  const value = key.split('.').reduce<unknown>((current, part) => {
+    return current && typeof current === 'object' ? (current as AnyRecord)[part] : undefined
+  }, record || undefined)
   return value == null || value === '' ? '-' : String(value)
 }
 
@@ -137,14 +154,25 @@ async function loadData() {
 }
 
 async function submitManualDeposit() {
-  if (!manualDepositForm.userId || !manualDepositForm.chainTxHash || !manualDepositForm.amount || !manualDepositForm.reason) {
-    ElMessage.warning('请补全用户、交易哈希、金额和原因')
+  try {
+    await manualDepositFormRef.value?.validate()
+  } catch {
     return
   }
+  if (!manualDepositForm.userId || !manualDepositForm.chainTxHash || Number(manualDepositForm.amount) < 0.000001 || !manualDepositForm.reason) {
+    ElMessage.warning('请补全用户、交易哈希、金额和原因，金额至少 0.000001')
+    return
+  }
+  await ElMessageBox.confirm(
+    `确认给用户 ${manualDepositForm.userId} 人工入账 ${manualDepositForm.amount} ${manualDepositForm.asset}?`,
+    '人工充值入账',
+    { type: 'warning' }
+  )
   actionLoading.value = true
   try {
-    await manualDeposit(manualDepositForm)
+    const result = await manualDeposit(manualDepositForm)
     ElMessage.success('人工充值已提交')
+    lastWalletAction.value = `人工充值已提交: ${result.depositNo || manualDepositForm.chainTxHash}，${manualDepositForm.amount} ${manualDepositForm.asset}，${new Date().toLocaleString()}`
     manualDepositVisible.value = false
     await loadDeposits()
     await loadOverview()
@@ -165,6 +193,7 @@ async function runDepositRetry(row: AnyRecord) {
   try {
     await retryDeposit(depositNo, value)
     ElMessage.success('充值已重试')
+    lastWalletAction.value = `充值重试已提交: ${depositNo}，${new Date().toLocaleString()}`
     await loadDeposits()
   } finally {
     actionLoading.value = false
@@ -177,6 +206,7 @@ async function publishBroadcast() {
   try {
     const result = await publishWithdrawalBroadcast(withdrawalLimit.value)
     ElMessage.success(`已提交广播: ${JSON.stringify(result)}`)
+    lastWalletAction.value = `提现广播已提交: ${JSON.stringify(result)}，${new Date().toLocaleString()}`
     await loadWithdrawals()
     await loadOverview()
   } finally {
@@ -196,6 +226,7 @@ async function runWithdrawalRetry(row: AnyRecord) {
   try {
     await retryWithdrawalBroadcast(withdrawalNo, value)
     ElMessage.success('提现广播已重试')
+    lastWalletAction.value = `提现广播重试已提交: ${withdrawalNo}，${new Date().toLocaleString()}`
     await loadWithdrawals()
   } finally {
     actionLoading.value = false
@@ -213,10 +244,24 @@ function openWithdrawalManual(row: AnyRecord, mode: 'success' | 'failed') {
 }
 
 async function submitWithdrawalManual() {
+  try {
+    await withdrawalFormRef.value?.validate()
+  } catch {
+    return
+  }
   if (!withdrawalForm.withdrawalNo || !withdrawalForm.reason) {
     ElMessage.warning('提现单号和原因必填')
     return
   }
+  if (withdrawalForm.mode === 'success' && !withdrawalForm.chainTxHash) {
+    ElMessage.warning('标记成功必须填写链上哈希')
+    return
+  }
+  await ElMessageBox.confirm(
+    `确认将提现 ${withdrawalForm.withdrawalNo} 标记为${withdrawalForm.mode === 'success' ? '成功' : '失败'}?`,
+    '提现人工处理',
+    { type: 'warning' }
+  )
   actionLoading.value = true
   try {
     if (withdrawalForm.mode === 'success') {
@@ -228,6 +273,7 @@ async function submitWithdrawalManual() {
       await markWithdrawalFailed(withdrawalForm.withdrawalNo, { reason: withdrawalForm.reason })
     }
     ElMessage.success('人工处理已提交')
+    lastWalletAction.value = `提现人工处理已提交: ${withdrawalForm.withdrawalNo} -> ${withdrawalForm.mode}，${new Date().toLocaleString()}`
     withdrawalDialogVisible.value = false
     await loadWithdrawals()
     await loadOverview()
@@ -260,14 +306,14 @@ onMounted(loadData)
     <el-row :gutter="16" class="app-card">
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
-          <div class="table-toolbar"><span>钱包数</span><el-icon color="#409eff" :size="24"><Wallet /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'wallets') }}</div>
+          <div class="table-toolbar"><span>充值数</span><el-icon color="#409eff" :size="24"><Wallet /></el-icon></div>
+          <div class="value">{{ valueOf(stats, 'deposits.total') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>流水数</span><el-icon color="#67c23a" :size="24"><Tickets /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'ledgers') }}</div>
+          <div class="value">{{ valueOf(stats, 'ledger.total') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
@@ -289,6 +335,7 @@ onMounted(loadData)
         <span>钱包运营</span>
         <el-button :icon="'Refresh'" @click="loadData">刷新</el-button>
       </div>
+      <el-alert v-if="lastWalletAction" :title="lastWalletAction" type="success" show-icon :closable="false" class="operation-alert" />
       <el-tabs v-model="activeTab">
         <el-tab-pane label="概览" name="overview">
           <el-form :inline="true" class="filter-form">
@@ -366,7 +413,7 @@ onMounted(loadData)
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="showDetail(row)">详情</el-button>
-                <el-button link type="warning" :disabled="actionLoading" @click="runDepositRetry(row)">重试</el-button>
+                <el-button link type="warning" :disabled="actionLoading || row.status === 'SUCCESS'" @click="runDepositRetry(row)">重试</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -425,14 +472,14 @@ onMounted(loadData)
     </el-card>
 
     <el-dialog v-model="manualDepositVisible" title="人工充值入账" width="620px">
-      <el-form :model="manualDepositForm" label-width="108px">
-        <el-form-item label="用户ID"><el-input-number v-model="manualDepositForm.userId" :min="1" style="width: 100%" /></el-form-item>
-        <el-form-item label="链"><el-input v-model="manualDepositForm.chain" /></el-form-item>
-        <el-form-item label="交易哈希"><el-input v-model="manualDepositForm.chainTxHash" /></el-form-item>
-        <el-form-item label="资产"><el-input v-model="manualDepositForm.asset" /></el-form-item>
-        <el-form-item label="金额"><el-input-number v-model="manualDepositForm.amount" :min="0" :precision="6" style="width: 100%" /></el-form-item>
+      <el-form ref="manualDepositFormRef" :model="manualDepositForm" :rules="manualDepositRules" label-width="108px">
+        <el-form-item label="用户ID" prop="userId"><el-input-number v-model="manualDepositForm.userId" :min="1" style="width: 100%" /></el-form-item>
+        <el-form-item label="链" prop="chain"><el-input v-model="manualDepositForm.chain" /></el-form-item>
+        <el-form-item label="交易哈希" prop="chainTxHash"><el-input v-model="manualDepositForm.chainTxHash" /></el-form-item>
+        <el-form-item label="资产" prop="asset"><el-input v-model="manualDepositForm.asset" /></el-form-item>
+        <el-form-item label="金额" prop="amount"><el-input-number v-model="manualDepositForm.amount" :min="0.000001" :precision="6" style="width: 100%" /></el-form-item>
         <el-form-item label="确认数"><el-input-number v-model="manualDepositForm.confirmations" :min="0" style="width: 100%" /></el-form-item>
-        <el-form-item label="原因"><el-input v-model="manualDepositForm.reason" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="原因" prop="reason"><el-input v-model="manualDepositForm.reason" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="manualDepositVisible = false">取消</el-button>
@@ -441,10 +488,10 @@ onMounted(loadData)
     </el-dialog>
 
     <el-dialog v-model="withdrawalDialogVisible" :title="withdrawalForm.mode === 'success' ? '标记提现成功' : '标记提现失败'" width="620px">
-      <el-form :model="withdrawalForm" label-width="108px">
-        <el-form-item label="提现单号"><el-input v-model="withdrawalForm.withdrawalNo" disabled /></el-form-item>
+      <el-form ref="withdrawalFormRef" :model="withdrawalForm" :rules="withdrawalRules" label-width="108px">
+        <el-form-item label="提现单号" prop="withdrawalNo"><el-input v-model="withdrawalForm.withdrawalNo" disabled /></el-form-item>
         <el-form-item v-if="withdrawalForm.mode === 'success'" label="链上哈希"><el-input v-model="withdrawalForm.chainTxHash" /></el-form-item>
-        <el-form-item label="原因"><el-input v-model="withdrawalForm.reason" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="原因" prop="reason"><el-input v-model="withdrawalForm.reason" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="withdrawalDialogVisible = false">取消</el-button>

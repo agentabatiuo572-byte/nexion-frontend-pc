@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   disableOpenApiApp,
   enableOpenApiApp,
@@ -26,21 +26,31 @@ const callAudits = ref<AnyRecord[]>([])
 const deliveries = ref<AnyRecord[]>([])
 const detailVisible = ref(false)
 const detailRecord = ref<AnyRecord | null>(null)
+const lastOpenApiAction = ref('')
 
 const appQuery = reactive({ status: '', appKey: '', ownerUserId: '', limit: 20 })
 const auditQuery = reactive({ appId: '', appKey: '', apiPath: '', responseCode: '', limit: 20 })
 const deliveryQuery = reactive({ status: '', appId: '', eventType: '', limit: 20 })
 
 const quotaDialogVisible = ref(false)
+const quotaFormRef = ref<FormInstance>()
 const quotaForm = reactive({
   appId: undefined as Id | undefined,
   qpsLimit: 10,
   dailyLimit: 10000,
   remark: ''
 })
+const quotaRules: FormRules = {
+  appId: [{ required: true, message: 'AppID 缺失', trigger: 'blur' }],
+  qpsLimit: [{ required: true, message: '请填写 QPS', trigger: 'blur' }],
+  dailyLimit: [{ required: true, message: '请填写 Daily', trigger: 'blur' }],
+  remark: [{ required: true, message: '请填写调整说明', trigger: 'blur' }]
+}
 
 function valueOf(record: AnyRecord | null, key: string) {
-  const value = record?.[key]
+  const value = key.split('.').reduce<unknown>((current, part) => {
+    return current && typeof current === 'object' ? (current as AnyRecord)[part] : undefined
+  }, record || undefined)
   return value == null || value === '' ? '-' : String(value)
 }
 
@@ -64,18 +74,26 @@ function openQuota(row: AnyRecord) {
 }
 
 async function saveQuota() {
-  if (!quotaForm.appId || !quotaForm.remark) {
-    ElMessage.warning('请填写 appId 和调整说明')
+  try {
+    await quotaFormRef.value?.validate()
+  } catch {
     return
   }
+  const appId = quotaForm.appId
+  if (!appId) {
+    ElMessage.warning('AppID 缺失')
+    return
+  }
+  await ElMessageBox.confirm(`确认调整 OpenAPI App ${appId} 配额?`, '调整 App 配额', { type: 'warning' })
   actionLoading.value = true
   try {
-    await updateOpenApiAppQuotas(quotaForm.appId, {
+    await updateOpenApiAppQuotas(appId, {
       qpsLimit: quotaForm.qpsLimit,
       dailyLimit: quotaForm.dailyLimit,
       remark: quotaForm.remark
     })
     ElMessage.success('配额已更新')
+    lastOpenApiAction.value = `App 配额已更新: appId=${appId}, qps=${quotaForm.qpsLimit}, daily=${quotaForm.dailyLimit}，${new Date().toLocaleString()}`
     quotaDialogVisible.value = false
     await loadApps()
   } finally {
@@ -92,6 +110,7 @@ async function switchApp(row: AnyRecord, enabled: boolean) {
     if (enabled) await enableOpenApiApp(appId)
     else await disableOpenApiApp(appId)
     ElMessage.success('状态已更新')
+    lastOpenApiAction.value = `App 状态已更新: appId=${appId} -> ${enabled ? 'ACTIVE' : 'DISABLED'}，${new Date().toLocaleString()}`
     await loadApps()
   } finally {
     actionLoading.value = false
@@ -104,6 +123,7 @@ async function publishDeliveries() {
   try {
     const result = await publishWebhookDeliveries(Number(deliveryQuery.limit || 20))
     ElMessage.success(`发布完成: ${JSON.stringify(result)}`)
+    lastOpenApiAction.value = `Webhook 投递发布完成: ${JSON.stringify(result)}，${new Date().toLocaleString()}`
     await loadDeliveries()
     await loadSummary()
   } finally {
@@ -162,13 +182,13 @@ onMounted(loadData)
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>Apps</span><el-icon color="#409eff" :size="24"><Key /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'apps') }}</div>
+          <div class="value">{{ valueOf(stats, 'apps.total') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>Calls</span><el-icon color="#67c23a" :size="24"><Connection /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'calls') }}</div>
+          <div class="value">{{ valueOf(stats, 'calls.total') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
@@ -190,6 +210,7 @@ onMounted(loadData)
         <span>OpenAPI 运营</span>
         <el-button :icon="'Refresh'" @click="loadData">刷新</el-button>
       </div>
+      <el-alert v-if="lastOpenApiAction" :title="lastOpenApiAction" type="success" show-icon :closable="false" class="operation-alert" />
       <el-tabs v-model="activeTab">
         <el-tab-pane label="应用" name="apps">
           <el-form :inline="true" :model="appQuery" class="filter-form">
@@ -210,8 +231,8 @@ onMounted(loadData)
             <el-table-column label="操作" width="240" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="showDetail(row)">详情</el-button>
-                <el-button link type="success" @click="switchApp(row, true)">启用</el-button>
-                <el-button link type="danger" @click="switchApp(row, false)">停用</el-button>
+                <el-button link type="success" :disabled="row.status === 'ACTIVE' || actionLoading" @click="switchApp(row, true)">启用</el-button>
+                <el-button link type="danger" :disabled="row.status === 'DISABLED' || actionLoading" @click="switchApp(row, false)">停用</el-button>
                 <el-button link type="warning" @click="openQuota(row)">配额</el-button>
               </template>
             </el-table-column>
@@ -232,7 +253,7 @@ onMounted(loadData)
             <el-table-column prop="appKey" label="AppKey" min-width="180" />
             <el-table-column prop="apiPath" label="API Path" min-width="220" />
             <el-table-column prop="responseCode" label="状态码" width="100" />
-            <el-table-column prop="latencyMs" label="耗时 ms" width="100" />
+            <el-table-column prop="costMs" label="耗时 ms" width="100" />
             <el-table-column prop="createdAt" label="创建时间" min-width="170" />
             <el-table-column label="操作" width="90" fixed="right">
               <template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">详情</el-button></template>
@@ -269,11 +290,11 @@ onMounted(loadData)
     </el-card>
 
     <el-dialog v-model="quotaDialogVisible" title="调整 App 配额" width="560px">
-      <el-form :model="quotaForm" label-width="110px">
-        <el-form-item label="AppID"><el-input v-model="quotaForm.appId" disabled /></el-form-item>
-        <el-form-item label="QPS"><el-input-number v-model="quotaForm.qpsLimit" :min="1" :max="1000" style="width: 100%" /></el-form-item>
-        <el-form-item label="Daily"><el-input-number v-model="quotaForm.dailyLimit" :min="1" :max="10000000" style="width: 100%" /></el-form-item>
-        <el-form-item label="说明"><el-input v-model="quotaForm.remark" type="textarea" :rows="3" /></el-form-item>
+      <el-form ref="quotaFormRef" :model="quotaForm" :rules="quotaRules" label-width="110px">
+        <el-form-item label="AppID" prop="appId"><el-input v-model="quotaForm.appId" disabled /></el-form-item>
+        <el-form-item label="QPS" prop="qpsLimit"><el-input-number v-model="quotaForm.qpsLimit" :min="1" :max="1000" style="width: 100%" /></el-form-item>
+        <el-form-item label="Daily" prop="dailyLimit"><el-input-number v-model="quotaForm.dailyLimit" :min="1" :max="10000000" style="width: 100%" /></el-form-item>
+        <el-form-item label="说明" prop="remark"><el-input v-model="quotaForm.remark" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="quotaDialogVisible = false">取消</el-button>

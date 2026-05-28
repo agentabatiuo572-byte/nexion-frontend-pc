@@ -37,6 +37,7 @@ const receiptTotal = ref(0)
 const nodeMap = ref<AnyRecord | null>(null)
 const detailVisible = ref(false)
 const detailRecord = ref<AnyRecord | null>(null)
+const lastComputeAction = ref('')
 
 const deviceQuery = reactive({ current: 1, size: 10, userId: '', sourceOrderNo: '', status: '' })
 const lifecycleQuery = reactive({ status: '' })
@@ -70,6 +71,7 @@ const lifecycleRulesFormRules: FormRules = {
 
 const taskDialogVisible = ref(false)
 const taskSaving = ref(false)
+const taskFormRef = ref<FormInstance>()
 const taskForm = reactive({
   userId: undefined as number | undefined,
   preferredDeviceId: undefined as number | undefined,
@@ -78,6 +80,10 @@ const taskForm = reactive({
   maxAttempts: 3,
   leaseSeconds: 300
 })
+const taskRules: FormRules = {
+  taskType: [{ required: true, message: '请填写任务类型', trigger: 'blur' }],
+  clientName: [{ required: true, message: '请填写客户端名称', trigger: 'blur' }]
+}
 
 function pageIndex(query: { current: number; size: number }, index: number) {
   return (query.current - 1) * query.size + index + 1
@@ -200,13 +206,19 @@ async function changeLifecycleStatus(row: DeviceLifecycleRule, status: number) {
 }
 
 async function saveTask() {
-  if (!taskForm.taskType || !taskForm.clientName) {
-    ElMessage.warning('请填写任务类型和客户端名称')
+  try {
+    await taskFormRef.value?.validate()
+  } catch {
     return
   }
+  await ElMessageBox.confirm(
+    `确认派发 ${taskForm.taskType} 任务?${taskForm.preferredDeviceId ? ` 设备 ${taskForm.preferredDeviceId}` : ''}`,
+    '派发计算任务',
+    { type: 'warning' }
+  )
   taskSaving.value = true
   try {
-    await dispatchComputeTask({
+    const result = await dispatchComputeTask({
       userId: taskForm.userId,
       preferredDeviceId: taskForm.preferredDeviceId,
       taskType: taskForm.taskType,
@@ -215,6 +227,7 @@ async function saveTask() {
       leaseSeconds: taskForm.leaseSeconds
     })
     ElMessage.success('任务已派发')
+    lastComputeAction.value = `任务已派发: ${result.taskNo || taskForm.taskType}，${new Date().toLocaleString()}`
     taskDialogVisible.value = false
     await loadTasks()
   } finally {
@@ -232,6 +245,7 @@ async function runDeviceAction(id: Id | undefined, action: 'activate' | 'deactiv
     if (action === 'deactivate') await deactivateDevice(id)
     if (action === 'schedule') await scheduleDeviceDeactivation(id)
     ElMessage.success('设备状态已提交')
+    lastComputeAction.value = `设备操作已提交: ${actionName} deviceId=${id}，${new Date().toLocaleString()}`
     await loadDevices()
   } finally {
     actionLoading.value = false
@@ -247,6 +261,7 @@ async function runMaintenance(action: 'timeouts' | 'retries') {
       ? await processComputeTaskTimeouts(maintenanceLimit.value)
       : await retryDueComputeTasks(maintenanceLimit.value)
     ElMessage.success(`操作完成: ${JSON.stringify(result)}`)
+    lastComputeAction.value = `任务维护完成: ${JSON.stringify(result)}，${new Date().toLocaleString()}`
     await loadTasks()
   } finally {
     actionLoading.value = false
@@ -359,6 +374,7 @@ onMounted(loadData)
         <span>设备算力</span>
         <el-button :icon="'Refresh'" @click="loadData">刷新</el-button>
       </div>
+      <el-alert v-if="lastComputeAction" :title="lastComputeAction" type="success" show-icon :closable="false" class="operation-alert" />
 
       <el-tabs v-model="activeTab">
         <el-tab-pane label="设备实例" name="devices">
@@ -462,7 +478,7 @@ onMounted(loadData)
             <el-table-column prop="userDeviceId" label="设备ID" width="100" />
             <el-table-column prop="taskType" label="类型" width="130" />
             <el-table-column prop="status" label="状态" width="110" />
-            <el-table-column prop="attempts" label="尝试" width="80" />
+            <el-table-column prop="attemptCount" label="尝试" width="80" />
             <el-table-column prop="maxAttempts" label="上限" width="80" />
             <el-table-column prop="leasedBy" label="租约方" min-width="130" />
             <el-table-column prop="nextRetryAt" label="下次重试" min-width="170" />
@@ -548,11 +564,11 @@ onMounted(loadData)
     </el-dialog>
 
     <el-dialog v-model="taskDialogVisible" title="派发计算任务" width="620px">
-      <el-form :model="taskForm" label-width="118px">
+      <el-form ref="taskFormRef" :model="taskForm" :rules="taskRules" label-width="118px">
         <el-form-item label="用户ID"><el-input-number v-model="taskForm.userId" :min="1" style="width: 100%" /></el-form-item>
         <el-form-item label="优先设备ID"><el-input-number v-model="taskForm.preferredDeviceId" :min="1" style="width: 100%" /></el-form-item>
-        <el-form-item label="任务类型"><el-input v-model="taskForm.taskType" /></el-form-item>
-        <el-form-item label="客户端"><el-input v-model="taskForm.clientName" /></el-form-item>
+        <el-form-item label="任务类型" prop="taskType"><el-input v-model="taskForm.taskType" /></el-form-item>
+        <el-form-item label="客户端" prop="clientName"><el-input v-model="taskForm.clientName" /></el-form-item>
         <el-form-item label="最大尝试"><el-input-number v-model="taskForm.maxAttempts" :min="1" :max="20" style="width: 100%" /></el-form-item>
         <el-form-item label="租约秒"><el-input-number v-model="taskForm.leaseSeconds" :min="1" :max="86400" style="width: 100%" /></el-form-item>
       </el-form>

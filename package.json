@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc --noEmit && vite build",
     "smoke:write": "node scripts/pc-admin-write-smoke.mjs",
+    "smoke:ops": "node scripts/pc-admin-ops-smoke.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

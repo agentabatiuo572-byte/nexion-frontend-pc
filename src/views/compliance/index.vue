@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   approveKycProfile,
   approveRiskDecision,
@@ -39,6 +39,7 @@ const blacklists = ref<AnyRecord[]>([])
 const proofAssets = ref<AnyRecord[]>([])
 const detailVisible = ref(false)
 const detailRecord = ref<AnyRecord | null>(null)
+const lastComplianceAction = ref('')
 
 const kycQuery = reactive({ userId: '', status: '', limit: 20 })
 const riskQuery = reactive({ userId: '', bizType: '', decision: '', reason: '', limit: 20 })
@@ -47,6 +48,7 @@ const blacklistQuery = reactive({ status: '', limit: 20 })
 const proofQuery = reactive({ userId: '', proofType: '', status: '', limit: 20 })
 
 const kycSubmitVisible = ref(false)
+const kycSubmitFormRef = ref<FormInstance>()
 const kycSubmitForm = reactive({
   userId: undefined as number | undefined,
   kycNo: '',
@@ -56,8 +58,15 @@ const kycSubmitForm = reactive({
   documentLast4: '',
   documentObjectKey: ''
 })
+const kycSubmitRules: FormRules = {
+  userId: [{ required: true, message: '请填写用户ID', trigger: 'blur' }],
+  country: [{ required: true, message: '请填写国家', trigger: 'blur' }],
+  documentType: [{ required: true, message: '请填写证件类型', trigger: 'blur' }],
+  documentObjectKey: [{ required: true, message: '请填写文档对象键', trigger: 'blur' }]
+}
 
 const reviewDialogVisible = ref(false)
+const reviewFormRef = ref<FormInstance>()
 const reviewForm = reactive({
   targetType: 'KYC' as 'KYC' | 'RISK' | 'PROOF',
   action: 'approve',
@@ -67,8 +76,13 @@ const reviewForm = reactive({
   reason: '',
   expiresAt: ''
 })
+const reviewRules: FormRules = {
+  reviewer: [{ required: true, message: '请填写 reviewer', trigger: 'blur' }],
+  reason: [{ required: true, message: '请填写操作原因', trigger: 'blur' }]
+}
 
 const blacklistDialogVisible = ref(false)
+const blacklistFormRef = ref<FormInstance>()
 const blacklistForm = reactive({
   userId: undefined as number | undefined,
   reason: '',
@@ -77,8 +91,16 @@ const blacklistForm = reactive({
   operator: 'ops-risk',
   expiresAt: ''
 })
+const blacklistRules: FormRules = {
+  userId: [{ required: true, message: '请填写用户ID', trigger: 'blur' }],
+  riskLevel: [{ required: true, message: '请填写风险等级', trigger: 'blur' }],
+  source: [{ required: true, message: '请填写来源', trigger: 'blur' }],
+  operator: [{ required: true, message: '请填写操作人', trigger: 'blur' }],
+  reason: [{ required: true, message: '请填写原因', trigger: 'blur' }]
+}
 
 const proofDialogVisible = ref(false)
+const proofFormRef = ref<FormInstance>()
 const proofForm = reactive({
   userId: undefined as number | undefined,
   proofNo: '',
@@ -94,9 +116,16 @@ const proofForm = reactive({
   submittedBy: 'ops',
   metadataJson: ''
 })
+const proofRules: FormRules = {
+  userId: [{ required: true, message: '请填写用户ID', trigger: 'blur' }],
+  proofType: [{ required: true, message: '请填写 Proof 类型', trigger: 'blur' }],
+  objectKey: [{ required: true, message: '请填写对象键', trigger: 'blur' }]
+}
 
 function valueOf(record: AnyRecord | null, key: string) {
-  const value = record?.[key]
+  const value = key.split('.').reduce<unknown>((current, part) => {
+    return current && typeof current === 'object' ? (current as AnyRecord)[part] : undefined
+  }, record || undefined)
   return value == null || value === '' ? '-' : String(value)
 }
 
@@ -149,10 +178,16 @@ function openProofReview(row: AnyRecord, action: 'verify' | 'reject') {
 }
 
 async function submitReview() {
-  if (!reviewForm.reason || !reviewForm.reviewer) {
-    ElMessage.warning('请填写 reviewer 和 reason')
+  try {
+    await reviewFormRef.value?.validate()
+  } catch {
     return
   }
+  await ElMessageBox.confirm(
+    `确认提交 ${reviewForm.targetType} ${reviewForm.action} 操作?`,
+    '合规审核操作',
+    { type: reviewForm.action === 'approve' || reviewForm.action === 'verify' ? 'warning' : 'error' }
+  )
   actionLoading.value = true
   try {
     if (reviewForm.targetType === 'KYC' && reviewForm.userId) {
@@ -175,6 +210,7 @@ async function submitReview() {
       await loadProof()
     }
     ElMessage.success('审核操作已提交')
+    lastComplianceAction.value = `审核操作已提交: ${reviewForm.targetType} ${reviewForm.action} ${reviewForm.targetNo || reviewForm.userId}，${new Date().toLocaleString()}`
     reviewDialogVisible.value = false
     await loadStats()
   } finally {
@@ -183,14 +219,16 @@ async function submitReview() {
 }
 
 async function submitKyc() {
-  if (!kycSubmitForm.userId || !kycSubmitForm.country || !kycSubmitForm.documentType || !kycSubmitForm.documentObjectKey) {
-    ElMessage.warning('请补全用户、国家、证件类型和对象键')
+  try {
+    await kycSubmitFormRef.value?.validate()
+  } catch {
     return
   }
   actionLoading.value = true
   try {
     await submitKycProfile(kycSubmitForm)
     ElMessage.success('KYC 已提交')
+    lastComplianceAction.value = `KYC 已提交: userId=${kycSubmitForm.userId}，${new Date().toLocaleString()}`
     kycSubmitVisible.value = false
     await loadKyc()
   } finally {
@@ -204,6 +242,7 @@ async function runExpireApproved() {
   try {
     const result = await expireApprovedKycProfiles(50, 'ops-kyc-expiry')
     ElMessage.success(`维护完成: ${JSON.stringify(result)}`)
+    lastComplianceAction.value = `KYC 过期维护完成: ${JSON.stringify(result)}，${new Date().toLocaleString()}`
     await loadKyc()
   } finally {
     actionLoading.value = false
@@ -211,14 +250,17 @@ async function runExpireApproved() {
 }
 
 async function submitBlacklist() {
-  if (!blacklistForm.userId || !blacklistForm.reason || !blacklistForm.operator) {
-    ElMessage.warning('请补全用户、原因和操作人')
+  try {
+    await blacklistFormRef.value?.validate()
+  } catch {
     return
   }
+  await ElMessageBox.confirm(`确认新增/激活黑名单用户 ${blacklistForm.userId}?`, '黑名单操作', { type: 'error' })
   actionLoading.value = true
   try {
     await upsertRiskBlacklist({ ...blacklistForm, expiresAt: blacklistForm.expiresAt || undefined })
     ElMessage.success('黑名单已保存')
+    lastComplianceAction.value = `黑名单已保存: userId=${blacklistForm.userId}，${new Date().toLocaleString()}`
     blacklistDialogVisible.value = false
     await loadBlacklists()
   } finally {
@@ -238,6 +280,7 @@ async function runReleaseBlacklist(row: AnyRecord) {
   try {
     await releaseRiskBlacklist(String(userId), { operator: 'ops-risk', reason: value })
     ElMessage.success('黑名单已释放')
+    lastComplianceAction.value = `黑名单已释放: userId=${userId}，${new Date().toLocaleString()}`
     await loadBlacklists()
   } finally {
     actionLoading.value = false
@@ -245,14 +288,24 @@ async function runReleaseBlacklist(row: AnyRecord) {
 }
 
 async function submitProof() {
-  if (!proofForm.userId || !proofForm.proofType || !proofForm.objectKey) {
-    ElMessage.warning('请补全用户、Proof 类型和对象键')
+  try {
+    await proofFormRef.value?.validate()
+  } catch {
     return
+  }
+  if (proofForm.metadataJson) {
+    try {
+      JSON.parse(proofForm.metadataJson)
+    } catch {
+      ElMessage.warning('Metadata JSON 不是合法 JSON')
+      return
+    }
   }
   actionLoading.value = true
   try {
     await createProofAsset(proofForm)
     ElMessage.success('Proof 资产已创建')
+    lastComplianceAction.value = `Proof 资产已创建: ${proofForm.proofNo || proofForm.objectKey}，${new Date().toLocaleString()}`
     proofDialogVisible.value = false
     await loadProof()
   } finally {
@@ -268,6 +321,7 @@ async function runArchiveProof(row: AnyRecord) {
   try {
     await archiveProofAsset(proofNo)
     ElMessage.success('Proof 已归档')
+    lastComplianceAction.value = `Proof 已归档: ${proofNo}，${new Date().toLocaleString()}`
     await loadProof()
   } finally {
     actionLoading.value = false
@@ -335,13 +389,13 @@ onMounted(loadData)
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>KYC</span><el-icon color="#409eff" :size="24"><Checked /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'kycProfiles') }}</div>
+          <div class="value">{{ valueOf(stats, 'kyc.total') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>待复核</span><el-icon color="#e6a23c" :size="24"><Warning /></el-icon></div>
-          <div class="value">{{ valueOf(stats, 'manualReviews') }}</div>
+          <div class="value">{{ valueOf(stats, 'risk.reviewQueue') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
@@ -353,7 +407,7 @@ onMounted(loadData)
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar"><span>风险决策</span><el-icon color="#67c23a" :size="24"><DataAnalysis /></el-icon></div>
-          <div class="value">{{ valueOf(riskSummary, 'total') }}</div>
+          <div class="value">{{ valueOf(riskSummary, 'totalDecisions') }}</div>
         </el-card>
       </el-col>
     </el-row>
@@ -363,6 +417,7 @@ onMounted(loadData)
         <span>合规风控</span>
         <el-button :icon="'Refresh'" @click="loadData">刷新</el-button>
       </div>
+      <el-alert v-if="lastComplianceAction" :title="lastComplianceAction" type="success" show-icon :closable="false" class="operation-alert" />
 
       <el-tabs v-model="activeTab">
         <el-tab-pane label="KYC" name="kyc">
@@ -514,14 +569,14 @@ onMounted(loadData)
     </el-card>
 
     <el-dialog v-model="kycSubmitVisible" title="提交 KYC Profile" width="660px">
-      <el-form :model="kycSubmitForm" label-width="128px">
-        <el-form-item label="用户ID"><el-input-number v-model="kycSubmitForm.userId" :min="1" style="width: 100%" /></el-form-item>
+      <el-form ref="kycSubmitFormRef" :model="kycSubmitForm" :rules="kycSubmitRules" label-width="128px">
+        <el-form-item label="用户ID" prop="userId"><el-input-number v-model="kycSubmitForm.userId" :min="1" style="width: 100%" /></el-form-item>
         <el-form-item label="KYC 编号"><el-input v-model="kycSubmitForm.kycNo" /></el-form-item>
-        <el-form-item label="国家"><el-input v-model="kycSubmitForm.country" /></el-form-item>
+        <el-form-item label="国家" prop="country"><el-input v-model="kycSubmitForm.country" /></el-form-item>
         <el-form-item label="申请人"><el-input v-model="kycSubmitForm.applicantName" /></el-form-item>
-        <el-form-item label="证件类型"><el-input v-model="kycSubmitForm.documentType" /></el-form-item>
+        <el-form-item label="证件类型" prop="documentType"><el-input v-model="kycSubmitForm.documentType" /></el-form-item>
         <el-form-item label="证件 Last4"><el-input v-model="kycSubmitForm.documentLast4" /></el-form-item>
-        <el-form-item label="文档对象键"><el-input v-model="kycSubmitForm.documentObjectKey" /></el-form-item>
+        <el-form-item label="文档对象键" prop="documentObjectKey"><el-input v-model="kycSubmitForm.documentObjectKey" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="kycSubmitVisible = false">取消</el-button>
@@ -530,14 +585,14 @@ onMounted(loadData)
     </el-dialog>
 
     <el-dialog v-model="reviewDialogVisible" title="审核操作" width="620px">
-      <el-form :model="reviewForm" label-width="110px">
+      <el-form ref="reviewFormRef" :model="reviewForm" :rules="reviewRules" label-width="110px">
         <el-form-item label="对象"><el-input :model-value="reviewForm.targetNo || reviewForm.userId" disabled /></el-form-item>
         <el-form-item label="操作"><el-input v-model="reviewForm.action" disabled /></el-form-item>
-        <el-form-item label="Reviewer"><el-input v-model="reviewForm.reviewer" /></el-form-item>
+        <el-form-item label="Reviewer" prop="reviewer"><el-input v-model="reviewForm.reviewer" /></el-form-item>
         <el-form-item v-if="reviewForm.targetType === 'KYC' && reviewForm.action === 'approve'" label="过期时间">
           <el-date-picker v-model="reviewForm.expiresAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="原因"><el-input v-model="reviewForm.reason" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="原因" prop="reason"><el-input v-model="reviewForm.reason" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="reviewDialogVisible = false">取消</el-button>
@@ -546,13 +601,13 @@ onMounted(loadData)
     </el-dialog>
 
     <el-dialog v-model="blacklistDialogVisible" title="新增/激活黑名单" width="620px">
-      <el-form :model="blacklistForm" label-width="110px">
-        <el-form-item label="用户ID"><el-input-number v-model="blacklistForm.userId" :min="1" style="width: 100%" /></el-form-item>
-        <el-form-item label="风险等级"><el-input v-model="blacklistForm.riskLevel" /></el-form-item>
-        <el-form-item label="来源"><el-input v-model="blacklistForm.source" /></el-form-item>
-        <el-form-item label="操作人"><el-input v-model="blacklistForm.operator" /></el-form-item>
+      <el-form ref="blacklistFormRef" :model="blacklistForm" :rules="blacklistRules" label-width="110px">
+        <el-form-item label="用户ID" prop="userId"><el-input-number v-model="blacklistForm.userId" :min="1" style="width: 100%" /></el-form-item>
+        <el-form-item label="风险等级" prop="riskLevel"><el-input v-model="blacklistForm.riskLevel" /></el-form-item>
+        <el-form-item label="来源" prop="source"><el-input v-model="blacklistForm.source" /></el-form-item>
+        <el-form-item label="操作人" prop="operator"><el-input v-model="blacklistForm.operator" /></el-form-item>
         <el-form-item label="过期时间"><el-date-picker v-model="blacklistForm.expiresAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" /></el-form-item>
-        <el-form-item label="原因"><el-input v-model="blacklistForm.reason" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="原因" prop="reason"><el-input v-model="blacklistForm.reason" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="blacklistDialogVisible = false">取消</el-button>
@@ -561,11 +616,11 @@ onMounted(loadData)
     </el-dialog>
 
     <el-dialog v-model="proofDialogVisible" title="新增 Proof 资产" width="680px">
-      <el-form :model="proofForm" label-width="128px">
-        <el-form-item label="用户ID"><el-input-number v-model="proofForm.userId" :min="1" style="width: 100%" /></el-form-item>
+      <el-form ref="proofFormRef" :model="proofForm" :rules="proofRules" label-width="128px">
+        <el-form-item label="用户ID" prop="userId"><el-input-number v-model="proofForm.userId" :min="1" style="width: 100%" /></el-form-item>
         <el-form-item label="Proof 编号"><el-input v-model="proofForm.proofNo" /></el-form-item>
-        <el-form-item label="Proof 类型"><el-input v-model="proofForm.proofType" /></el-form-item>
-        <el-form-item label="对象键"><el-input v-model="proofForm.objectKey" /></el-form-item>
+        <el-form-item label="Proof 类型" prop="proofType"><el-input v-model="proofForm.proofType" /></el-form-item>
+        <el-form-item label="对象键" prop="objectKey"><el-input v-model="proofForm.objectKey" /></el-form-item>
         <el-form-item label="状态"><el-input v-model="proofForm.status" /></el-form-item>
         <el-form-item label="文件名"><el-input v-model="proofForm.fileName" /></el-form-item>
         <el-form-item label="Content-Type"><el-input v-model="proofForm.contentType" /></el-form-item>
