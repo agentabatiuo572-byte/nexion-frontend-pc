@@ -146,6 +146,55 @@ export interface SupportTicketQuery extends PageParam {
   assignedAdminId?: Id | ''
 }
 
+export interface MonthlyChallenge {
+  id?: Id
+  challengeId?: Id
+  challengeCode?: string
+  challengeName?: string
+  description?: string
+  theme?: string
+  monthsFrom?: number
+  monthsTo?: number
+  targetType?: string
+  targetValue?: number
+  progressValue?: number
+  progressPercent?: number
+  rewardType?: string
+  rewardAmount?: string | number
+  rewardName?: string
+  badgeAchievementCode?: string
+  sortOrder?: number
+  status?: number | string
+  claimedAt?: string
+  createdAt?: string
+  updatedAt?: string
+  [key: string]: unknown
+}
+
+export interface EventQuest {
+  id?: Id
+  questId?: Id
+  questCode?: string
+  questName?: string
+  description?: string
+  startsAt?: string
+  endsAt?: string
+  targetType?: string
+  targetValue?: number
+  progressValue?: number
+  progressPercent?: number
+  rewardType?: string
+  rewardAmount?: string | number
+  rewardName?: string
+  badgeAchievementCode?: string
+  sortOrder?: number
+  status?: number | string
+  claimedAt?: string
+  createdAt?: string
+  updatedAt?: string
+  [key: string]: unknown
+}
+
 export interface LimitQuery {
   limit?: number
   [key: string]: unknown
@@ -268,6 +317,56 @@ export function getBffOpsDashboard(days = 7, config?: NexionRequestConfig) {
 
 export function getMissionOpsOverview(config?: NexionRequestConfig) {
   return http<AnyRecord>({ url: '/missions/ops/overview', method: 'get', ...config })
+}
+
+export function getMonthlyChallenges(params?: PageParam & { status?: string | number }, config?: NexionRequestConfig) {
+  return http<CommonPage<MonthlyChallenge>>({
+    url: '/missions/ops/monthly-challenges',
+    method: 'get',
+    params: pageParams(params),
+    ...config
+  })
+}
+
+export function createMonthlyChallenge(data: MonthlyChallenge) {
+  return http<MonthlyChallenge>({ url: '/missions/ops/monthly-challenges', method: 'post', data })
+}
+
+export function updateMonthlyChallenge(id: Id, data: MonthlyChallenge) {
+  return http<MonthlyChallenge>({ url: `/missions/ops/monthly-challenges/${id}`, method: 'patch', data })
+}
+
+export function updateMonthlyChallengeProgress(challengeCode: string, userId: Id, progressValue: number) {
+  return http<MonthlyChallenge>({
+    url: `/missions/ops/monthly-challenges/${challengeCode}/users/${userId}/progress`,
+    method: 'patch',
+    data: { progressValue }
+  })
+}
+
+export function getEventQuests(params?: PageParam & { status?: string | number }, config?: NexionRequestConfig) {
+  return http<CommonPage<EventQuest>>({
+    url: '/missions/ops/event-quests',
+    method: 'get',
+    params: pageParams(params),
+    ...config
+  })
+}
+
+export function createEventQuest(data: EventQuest) {
+  return http<EventQuest>({ url: '/missions/ops/event-quests', method: 'post', data })
+}
+
+export function updateEventQuest(id: Id, data: EventQuest) {
+  return http<EventQuest>({ url: `/missions/ops/event-quests/${id}`, method: 'patch', data })
+}
+
+export function updateEventQuestProgress(questCode: string, userId: Id, progressValue: number) {
+  return http<EventQuest>({
+    url: `/missions/ops/event-quests/${questCode}/users/${userId}/progress`,
+    method: 'patch',
+    data: { progressValue }
+  })
 }
 
 export function getMissionConsumerSummary(params?: { consumerGroup?: string }, config?: NexionRequestConfig) {

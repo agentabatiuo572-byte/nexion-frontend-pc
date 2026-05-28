@@ -127,6 +127,8 @@ export const constantRoutes: RouteRecordRaw[] = [
     meta: { title: '任务运营', icon: 'Flag' },
     children: [
       { path: 'overview', name: 'missionOverview', component: () => import('@/views/mission/index.vue'), props: { defaultTab: 'overview' }, meta: { title: '任务概览', icon: 'DataBoard' } },
+      { path: 'monthly-challenges', name: 'missionMonthlyChallenges', component: () => import('@/views/mission/index.vue'), props: { defaultTab: 'monthly' }, meta: { title: '月度挑战', icon: 'Calendar' } },
+      { path: 'event-quests', name: 'missionEventQuests', component: () => import('@/views/mission/index.vue'), props: { defaultTab: 'events' }, meta: { title: '活动任务', icon: 'Flag' } },
       { path: 'consumer', name: 'missionConsumer', component: () => import('@/views/mission/index.vue'), props: { defaultTab: 'consumer' }, meta: { title: '消费事件', icon: 'Connection' } }
     ]
   },
