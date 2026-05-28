@@ -224,6 +224,70 @@ export function getBffOpsDashboard(days = 7, config?: NexionRequestConfig) {
   return http<AnyRecord>({ url: '/bff/ops/dashboard', method: 'get', params: { days }, ...config })
 }
 
+export function getMissionOpsOverview(config?: NexionRequestConfig) {
+  return http<AnyRecord>({ url: '/missions/ops/overview', method: 'get', ...config })
+}
+
+export function getMissionConsumerSummary(params?: { consumerGroup?: string }, config?: NexionRequestConfig) {
+  return http<AnyRecord[]>({ url: '/missions/outbox/consumer/summary', method: 'get', params, ...config })
+}
+
+export function getMissionConsumerDead(params?: { consumerGroup?: string; limit?: number }, config?: NexionRequestConfig) {
+  return http<AnyRecord[]>({ url: '/missions/outbox/consumer/dead', method: 'get', params, ...config })
+}
+
+export function getMissionConsumerEvent(eventId: string, params?: { consumerGroup?: string }, config?: NexionRequestConfig) {
+  return http<AnyRecord | null>({ url: `/missions/outbox/consumer/events/${eventId}`, method: 'get', params, ...config })
+}
+
+export function getMissionConsumerAggregate(
+  aggregateType: string,
+  aggregateId: string,
+  params?: { limit?: number },
+  config?: NexionRequestConfig
+) {
+  return http<AnyRecord[]>({
+    url: `/missions/outbox/consumer/aggregates/${aggregateType}/${aggregateId}`,
+    method: 'get',
+    params,
+    ...config
+  })
+}
+
+export function getNotificationOpsOverview(config?: NexionRequestConfig) {
+  return http<AnyRecord>({ url: '/notifications/ops/overview', method: 'get', ...config })
+}
+
+export function pushPendingNotifications(limit = 20) {
+  return http<AnyRecord>({ url: '/notifications/ops/push-pending', method: 'post', params: { limit } })
+}
+
+export function getNotificationConsumerSummary(params?: { consumerGroup?: string }, config?: NexionRequestConfig) {
+  return http<AnyRecord[]>({ url: '/notifications/outbox/consumer/summary', method: 'get', params, ...config })
+}
+
+export function getNotificationConsumerDead(params?: { consumerGroup?: string; limit?: number }, config?: NexionRequestConfig) {
+  return http<AnyRecord[]>({ url: '/notifications/outbox/consumer/dead', method: 'get', params, ...config })
+}
+
+export function getNotificationConsumerEvent(eventId: string, params?: { consumerGroup?: string }, config?: NexionRequestConfig) {
+  return http<AnyRecord | null>({ url: `/notifications/outbox/consumer/events/${eventId}`, method: 'get', params, ...config })
+}
+
+export function getNotificationConsumerAggregate(
+  aggregateType: string,
+  aggregateId: string,
+  params?: { limit?: number },
+  config?: NexionRequestConfig
+) {
+  return http<AnyRecord[]>({
+    url: `/notifications/outbox/consumer/aggregates/${aggregateType}/${aggregateId}`,
+    method: 'get',
+    params,
+    ...config
+  })
+}
+
 export function getCommerceOpsStats(days = 7, config?: NexionRequestConfig) {
   return http<AnyRecord>({ url: '/commerce/ops/stats', method: 'get', params: { days }, ...config })
 }

@@ -8,6 +8,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "smoke:write": "node scripts/pc-admin-write-smoke.mjs",
     "smoke:ops": "node scripts/pc-admin-ops-smoke.mjs",
+    "smoke:ops:mn": "node scripts/pc-admin-mission-notification-smoke.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

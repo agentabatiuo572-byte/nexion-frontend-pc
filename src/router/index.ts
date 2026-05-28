@@ -120,6 +120,27 @@ export const constantRoutes: RouteRecordRaw[] = [
     ]
   },
   {
+    path: '/mission',
+    component: Layout,
+    redirect: '/mission/overview',
+    meta: { title: '任务运营', icon: 'Flag' },
+    children: [
+      { path: 'overview', name: 'missionOverview', component: () => import('@/views/mission/index.vue'), props: { defaultTab: 'overview' }, meta: { title: '任务概览', icon: 'DataBoard' } },
+      { path: 'consumer', name: 'missionConsumer', component: () => import('@/views/mission/index.vue'), props: { defaultTab: 'consumer' }, meta: { title: '消费事件', icon: 'Connection' } }
+    ]
+  },
+  {
+    path: '/notification',
+    component: Layout,
+    redirect: '/notification/overview',
+    meta: { title: '通知触达', icon: 'Bell' },
+    children: [
+      { path: 'overview', name: 'notificationOverview', component: () => import('@/views/notification/index.vue'), props: { defaultTab: 'overview' }, meta: { title: '通知概览', icon: 'DataBoard' } },
+      { path: 'push', name: 'notificationPush', component: () => import('@/views/notification/index.vue'), props: { defaultTab: 'push' }, meta: { title: '待推送处理', icon: 'Position' } },
+      { path: 'consumer', name: 'notificationConsumer', component: () => import('@/views/notification/index.vue'), props: { defaultTab: 'consumer' }, meta: { title: '消费事件', icon: 'Connection' } }
+    ]
+  },
+  {
     path: '/audit',
     component: Layout,
     redirect: '/audit/logs',
