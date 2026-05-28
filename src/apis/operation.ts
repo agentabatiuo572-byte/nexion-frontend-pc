@@ -104,6 +104,48 @@ export interface ConfigItem {
   [key: string]: unknown
 }
 
+export interface SupportTicketMessage {
+  id?: Id
+  ticketNo?: string
+  senderId?: Id
+  senderType?: string
+  senderName?: string
+  content?: string
+  createdAt?: string
+  attachments?: AnyRecord[]
+  [key: string]: unknown
+}
+
+export interface SupportTicket {
+  id?: Id
+  ticketNo?: string
+  userId?: Id
+  category?: string
+  priority?: string
+  status?: string
+  title?: string
+  lastMessage?: string
+  assignedAdminId?: Id
+  assignedAdminName?: string
+  userUnreadCount?: number
+  opsUnreadCount?: number
+  messageCount?: number
+  lastMessageAt?: string
+  closedAt?: string
+  createdAt?: string
+  updatedAt?: string
+  messages?: SupportTicketMessage[]
+  [key: string]: unknown
+}
+
+export interface SupportTicketQuery extends PageParam {
+  status?: string
+  category?: string
+  priority?: string
+  userId?: Id | ''
+  assignedAdminId?: Id | ''
+}
+
 export interface LimitQuery {
   limit?: number
   [key: string]: unknown
@@ -514,6 +556,27 @@ export function markWithdrawalFailed(withdrawalNo: string, data: { reason: strin
 
 export function getSystemOpsDashboard(days = 7, config?: NexionRequestConfig) {
   return http<AnyRecord>({ url: '/system/ops/dashboard', method: 'get', params: { days }, ...config })
+}
+
+export function getSupportTickets(params: SupportTicketQuery, config?: NexionRequestConfig) {
+  return http<CommonPage<SupportTicket>>({
+    url: '/system/support/ops/tickets',
+    method: 'get',
+    params: pageParams(params),
+    ...config
+  })
+}
+
+export function getSupportTicket(ticketNo: string, config?: NexionRequestConfig) {
+  return http<SupportTicket>({ url: `/system/support/ops/tickets/${ticketNo}`, method: 'get', ...config })
+}
+
+export function replySupportTicket(ticketNo: string, content: string) {
+  return http<SupportTicket>({ url: `/system/support/ops/tickets/${ticketNo}/messages`, method: 'post', data: { content } })
+}
+
+export function updateSupportTicket(ticketNo: string, data: Partial<SupportTicket>) {
+  return http<SupportTicket>({ url: `/system/support/ops/tickets/${ticketNo}`, method: 'patch', data })
 }
 
 export function getI18nMessages(params?: LimitQuery, config?: NexionRequestConfig) {

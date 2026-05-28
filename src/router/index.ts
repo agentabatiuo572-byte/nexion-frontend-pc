@@ -105,7 +105,8 @@ export const constantRoutes: RouteRecordRaw[] = [
       { path: 'public-config', name: 'systemPublicConfig', component: () => import('@/views/system/index.vue'), props: { defaultTab: 'public' }, meta: { title: '公共配置', icon: 'View' } },
       { path: 'i18n', name: 'systemI18n', component: () => import('@/views/system/index.vue'), props: { defaultTab: 'i18n' }, meta: { title: '多语言', icon: 'ChatLineSquare' } },
       { path: 'content', name: 'systemContent', component: () => import('@/views/system/index.vue'), props: { defaultTab: 'content' }, meta: { title: '内容页', icon: 'Document' } },
-      { path: 'help', name: 'systemHelp', component: () => import('@/views/system/index.vue'), props: { defaultTab: 'help' }, meta: { title: '帮助中心', icon: 'QuestionFilled' } }
+      { path: 'help', name: 'systemHelp', component: () => import('@/views/system/index.vue'), props: { defaultTab: 'help' }, meta: { title: '帮助中心', icon: 'QuestionFilled' } },
+      { path: 'support-tickets', name: 'systemSupportTickets', component: () => import('@/views/support/index.vue'), meta: { title: '客服工单', icon: 'Service' } }
     ]
   },
   {
