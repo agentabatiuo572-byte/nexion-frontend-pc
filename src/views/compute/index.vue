@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   activateDevice,
   createDeviceLifecycleRule,
@@ -47,6 +47,8 @@ const maintenanceLimit = ref(20)
 
 const lifecycleDialogVisible = ref(false)
 const lifecycleSaving = ref(false)
+const lifecycleFormRef = ref<FormInstance>()
+const lastLifecycleAction = ref('')
 const lifecycleForm = reactive({
   id: undefined as Id | undefined,
   scopeType: 'DEFAULT',
@@ -56,9 +58,15 @@ const lifecycleForm = reactive({
   monthlyDecayRate: 0,
   floorEfficiency: 0.22,
   exempt: 0,
-  status: 1,
+  status: 0,
   sortOrder: 100
 })
+const lifecycleRulesFormRules: FormRules = {
+  scopeType: [{ required: true, message: '请选择范围', trigger: 'change' }],
+  startMonth: [{ required: true, message: '请填写起始月', trigger: 'blur' }],
+  monthlyDecayRate: [{ required: true, message: '请填写月衰减', trigger: 'blur' }],
+  floorEfficiency: [{ required: true, message: '请填写效率下限', trigger: 'blur' }]
+}
 
 const taskDialogVisible = ref(false)
 const taskSaving = ref(false)
@@ -95,7 +103,7 @@ function resetLifecycleForm() {
     monthlyDecayRate: 0,
     floorEfficiency: 0.22,
     exempt: 0,
-    status: 1,
+    status: 0,
     sortOrder: 100
   })
 }
@@ -119,9 +127,33 @@ function openLifecycleDialog(row?: DeviceLifecycleRule) {
   lifecycleDialogVisible.value = true
 }
 
+async function validateLifecycleForm() {
+  try {
+    await lifecycleFormRef.value?.validate()
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function saveLifecycleRule() {
-  if (!lifecycleForm.scopeType) {
-    ElMessage.warning('请选择规则范围')
+  if (!(await validateLifecycleForm())) {
+    return
+  }
+  if (lifecycleForm.scopeType !== 'DEFAULT' && !lifecycleForm.scopeValue) {
+    ElMessage.warning('非默认规则需要填写范围值')
+    return
+  }
+  if (lifecycleForm.endMonth != null && lifecycleForm.endMonth < lifecycleForm.startMonth) {
+    ElMessage.warning('结束月不能小于起始月')
+    return
+  }
+  if (Number(lifecycleForm.monthlyDecayRate) < 0 || Number(lifecycleForm.monthlyDecayRate) > 1) {
+    ElMessage.warning('月衰减必须在 0 到 1 之间')
+    return
+  }
+  if (Number(lifecycleForm.floorEfficiency) < 0 || Number(lifecycleForm.floorEfficiency) > 1) {
+    ElMessage.warning('效率下限必须在 0 到 1 之间')
     return
   }
   lifecycleSaving.value = true
@@ -140,11 +172,27 @@ async function saveLifecycleRule() {
     if (lifecycleForm.id) {
       await updateDeviceLifecycleRule(lifecycleForm.id, payload)
       ElMessage.success('生命周期规则已更新')
+      lastLifecycleAction.value = `已更新生命周期规则 ${lifecycleForm.id}，状态 ${lifecycleForm.status}，${new Date().toLocaleString()}`
     } else {
-      await createDeviceLifecycleRule(payload)
+      const created = await createDeviceLifecycleRule(payload)
       ElMessage.success('生命周期规则已创建')
+      lastLifecycleAction.value = `已创建生命周期规则 ${created.id}，状态 ${created.status}，${new Date().toLocaleString()}`
     }
     lifecycleDialogVisible.value = false
+    await loadLifecycleRules()
+  } finally {
+    lifecycleSaving.value = false
+  }
+}
+
+async function changeLifecycleStatus(row: DeviceLifecycleRule, status: number) {
+  if (!row.id) return
+  await ElMessageBox.confirm(`确认将生命周期规则 ${row.id} 状态改为 ${status === 1 ? '启用' : '停用'}?`, '生命周期规则状态变更', { type: 'warning' })
+  lifecycleSaving.value = true
+  try {
+    await updateDeviceLifecycleRule(row.id, { status })
+    ElMessage.success('生命周期规则状态已更新')
+    lastLifecycleAction.value = `已将生命周期规则 ${row.id} 状态改为 ${status}，${new Date().toLocaleString()}`
     await loadLifecycleRules()
   } finally {
     lifecycleSaving.value = false
@@ -364,6 +412,7 @@ onMounted(loadData)
             </el-form-item>
             <el-form-item><el-button type="primary" @click="loadData">查询</el-button></el-form-item>
           </el-form>
+          <el-alert v-if="lastLifecycleAction" :title="lastLifecycleAction" type="success" show-icon :closable="false" class="operation-alert" />
           <el-table v-loading="loading" :data="lifecycleRules" border>
             <el-table-column prop="scopeType" label="范围" width="140" />
             <el-table-column prop="scopeValue" label="范围值" min-width="150" />
@@ -373,9 +422,15 @@ onMounted(loadData)
             <el-table-column prop="floorEfficiency" label="效率下限" width="120" />
             <el-table-column prop="exempt" label="豁免" width="90" />
             <el-table-column prop="sortOrder" label="排序" width="90" />
-            <el-table-column prop="status" label="状态" width="90" />
-            <el-table-column label="操作" width="100" fixed="right">
-              <template #default="{ row }"><el-button link type="primary" @click="openLifecycleDialog(row)">编辑</el-button></template>
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }"><el-tag :type="Number(row.status) === 1 ? 'success' : 'info'">{{ row.status }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="操作" width="170" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openLifecycleDialog(row)">编辑</el-button>
+                <el-button v-if="Number(row.status) !== 1" link type="success" :disabled="lifecycleSaving" @click="changeLifecycleStatus(row, 1)">启用</el-button>
+                <el-button v-else link type="warning" :disabled="lifecycleSaving" @click="changeLifecycleStatus(row, 0)">停用</el-button>
+              </template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
@@ -464,10 +519,10 @@ onMounted(loadData)
     </el-card>
 
     <el-dialog v-model="lifecycleDialogVisible" :title="lifecycleForm.id ? '编辑生命周期规则' : '新增生命周期规则'" width="720px">
-      <el-form :model="lifecycleForm" label-width="118px">
+      <el-form ref="lifecycleFormRef" :model="lifecycleForm" :rules="lifecycleRulesFormRules" label-width="118px">
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="范围">
+            <el-form-item label="范围" prop="scopeType">
               <el-select v-model="lifecycleForm.scopeType" style="width: 100%">
                 <el-option label="DEFAULT" value="DEFAULT" />
                 <el-option label="PRODUCT_TYPE" value="PRODUCT_TYPE" />
@@ -477,10 +532,10 @@ onMounted(loadData)
             </el-form-item>
           </el-col>
           <el-col :span="12"><el-form-item label="范围值"><el-input v-model="lifecycleForm.scopeValue" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="起始月"><el-input-number v-model="lifecycleForm.startMonth" :min="0" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="起始月" prop="startMonth"><el-input-number v-model="lifecycleForm.startMonth" :min="0" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="结束月"><el-input-number v-model="lifecycleForm.endMonth" :min="0" style="width: 100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="月衰减"><el-input-number v-model="lifecycleForm.monthlyDecayRate" :min="0" :max="1" :precision="4" style="width: 100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="效率下限"><el-input-number v-model="lifecycleForm.floorEfficiency" :min="0" :max="1" :precision="4" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="月衰减" prop="monthlyDecayRate"><el-input-number v-model="lifecycleForm.monthlyDecayRate" :min="0" :max="1" :precision="4" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="效率下限" prop="floorEfficiency"><el-input-number v-model="lifecycleForm.floorEfficiency" :min="0" :max="1" :precision="4" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="豁免"><el-switch v-model="lifecycleForm.exempt" :active-value="1" :inactive-value="0" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="状态"><el-switch v-model="lifecycleForm.status" :active-value="1" :inactive-value="0" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="排序"><el-input-number v-model="lifecycleForm.sortOrder" style="width: 100%" /></el-form-item></el-col>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   createContentPage,
   createHelpArticle,
@@ -46,6 +46,8 @@ const helpQuery = reactive({ query: '', status: '', limit: 50 })
 
 const configDialogVisible = ref(false)
 const configSaving = ref(false)
+const configFormRef = ref<FormInstance>()
+const lastConfigAction = ref('')
 const configForm = reactive({
   id: undefined as Id | undefined,
   configKey: '',
@@ -54,8 +56,14 @@ const configForm = reactive({
   configGroup: '',
   visibility: 'ADMIN',
   remark: '',
-  status: 1
+  status: 0
 })
+const configRules: FormRules = {
+  configKey: [{ required: true, message: '请填写配置键', trigger: 'blur' }],
+  configValue: [{ required: true, message: '请填写配置值', trigger: 'blur' }],
+  valueType: [{ required: true, message: '请选择类型', trigger: 'change' }],
+  visibility: [{ required: true, message: '请选择可见性', trigger: 'change' }]
+}
 
 const i18nDialogVisible = ref(false)
 const i18nSaving = ref(false)
@@ -105,7 +113,7 @@ function resetConfigForm() {
     configGroup: '',
     visibility: 'ADMIN',
     remark: '',
-    status: 1
+    status: 0
   })
 }
 
@@ -130,9 +138,21 @@ function validateJsonValue(valueType: string, value: string) {
   if (valueType === 'JSON' && value) JSON.parse(value)
 }
 
+async function validateConfigForm() {
+  try {
+    await configFormRef.value?.validate()
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function saveConfig() {
-  if (!configForm.configKey && !configForm.id) {
-    ElMessage.warning('请填写配置键')
+  if (!(await validateConfigForm())) {
+    return
+  }
+  if (!configForm.configValue) {
+    ElMessage.warning('请填写配置值')
     return
   }
   try {
@@ -154,11 +174,27 @@ async function saveConfig() {
     if (configForm.id) {
       await updateSystemConfig(configForm.id, payload)
       ElMessage.success('配置已更新')
+      lastConfigAction.value = `已更新配置 ${configForm.configKey}，状态 ${configForm.status}，${new Date().toLocaleString()}`
     } else {
       await createSystemConfig({ ...payload, configKey: configForm.configKey })
       ElMessage.success('配置已创建')
+      lastConfigAction.value = `已创建配置 ${configForm.configKey}，状态 ${configForm.status}，${new Date().toLocaleString()}`
     }
     configDialogVisible.value = false
+    await loadConfigs()
+  } finally {
+    configSaving.value = false
+  }
+}
+
+async function changeConfigStatus(row: ConfigItem, status: number) {
+  if (!row.id) return
+  await ElMessageBox.confirm(`确认将配置 ${row.configKey} 状态改为 ${status === 1 ? '启用' : '停用'}?`, '配置状态变更', { type: 'warning' })
+  configSaving.value = true
+  try {
+    await updateSystemConfig(row.id, { status })
+    ElMessage.success('配置状态已更新')
+    lastConfigAction.value = `已将配置 ${row.configKey} 状态改为 ${status}，${new Date().toLocaleString()}`
     await loadConfigs()
   } finally {
     configSaving.value = false
@@ -352,6 +388,7 @@ onMounted(loadData)
             <el-form-item label="条数"><el-input-number v-model="configQuery.limit" :min="1" :max="200" /></el-form-item>
             <el-form-item><el-button type="primary" @click="loadData">查询</el-button></el-form-item>
           </el-form>
+          <el-alert v-if="lastConfigAction" :title="lastConfigAction" type="success" show-icon :closable="false" class="operation-alert" />
           <el-table v-loading="loading" :data="systemConfigs" border>
             <el-table-column prop="configKey" label="配置键" min-width="220" />
             <el-table-column prop="configGroup" label="分组" width="120" />
@@ -360,8 +397,12 @@ onMounted(loadData)
             <el-table-column prop="configValue" label="配置值" min-width="260" show-overflow-tooltip />
             <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="statusTag(row.status)">{{ row.status }}</el-tag></template></el-table-column>
             <el-table-column prop="remark" label="备注" min-width="160" />
-            <el-table-column label="操作" width="100" fixed="right">
-              <template #default="{ row }"><el-button link type="primary" @click="openConfigDialog(row)">编辑</el-button></template>
+            <el-table-column label="操作" width="170" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openConfigDialog(row)">编辑</el-button>
+                <el-button v-if="Number(row.status) !== 1" link type="success" :disabled="configSaving" @click="changeConfigStatus(row, 1)">启用</el-button>
+                <el-button v-else link type="warning" :disabled="configSaving" @click="changeConfigStatus(row, 0)">停用</el-button>
+              </template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
@@ -468,12 +509,12 @@ onMounted(loadData)
     </el-card>
 
     <el-dialog v-model="configDialogVisible" :title="configForm.id ? '编辑配置' : '新增配置'" width="720px">
-      <el-form :model="configForm" label-width="106px">
+      <el-form ref="configFormRef" :model="configForm" :rules="configRules" label-width="106px">
         <el-row :gutter="16">
-          <el-col :span="12"><el-form-item label="配置键"><el-input v-model="configForm.configKey" :disabled="!!configForm.id" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="配置键" prop="configKey"><el-input v-model="configForm.configKey" :disabled="!!configForm.id" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="分组"><el-input v-model="configForm.configGroup" /></el-form-item></el-col>
           <el-col :span="12">
-            <el-form-item label="类型">
+            <el-form-item label="类型" prop="valueType">
               <el-select v-model="configForm.valueType" style="width: 100%">
                 <el-option label="STRING" value="STRING" />
                 <el-option label="NUMBER" value="NUMBER" />
@@ -483,7 +524,7 @@ onMounted(loadData)
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="可见性">
+            <el-form-item label="可见性" prop="visibility">
               <el-select v-model="configForm.visibility" style="width: 100%">
                 <el-option label="ADMIN" value="ADMIN" />
                 <el-option label="PUBLIC" value="PUBLIC" />
@@ -491,7 +532,7 @@ onMounted(loadData)
             </el-form-item>
           </el-col>
           <el-col :span="12"><el-form-item label="状态"><el-switch v-model="configForm.status" :active-value="1" :inactive-value="0" /></el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="配置值"><el-input v-model="configForm.configValue" type="textarea" :rows="5" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="配置值" prop="configValue"><el-input v-model="configForm.configValue" type="textarea" :rows="5" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="备注"><el-input v-model="configForm.remark" /></el-form-item></el-col>
         </el-row>
       </el-form>

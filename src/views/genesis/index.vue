@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   createGenesisSeries,
   getFeatureConfig,
@@ -34,19 +34,29 @@ const holdingQuery = reactive({ current: 1, size: 10, userId: '', seriesCode: ''
 
 const seriesDialogVisible = ref(false)
 const seriesSaving = ref(false)
+const seriesFormRef = ref<FormInstance>()
+const lastSeriesAction = ref('')
+const seriesStatusOptions = ['ACTIVE', 'INACTIVE', 'SOLD_OUT', 'ARCHIVED']
 const seriesForm = reactive({
   id: undefined as Id | undefined,
   seriesCode: '',
   name: '',
   totalSupply: 1,
   priceUsdt: 0,
-  status: 'ACTIVE',
+  status: 'INACTIVE',
   saleStartAt: '',
   saleEndAt: '',
   royaltyBps: 0,
   coverUrl: '',
   metadataJson: ''
 })
+const seriesRules: FormRules = {
+  seriesCode: [{ required: true, message: '请填写系列编码', trigger: 'blur' }],
+  name: [{ required: true, message: '请填写系列名称', trigger: 'blur' }],
+  totalSupply: [{ required: true, message: '请填写发行总量', trigger: 'blur' }],
+  priceUsdt: [{ required: true, message: '请填写发行价格', trigger: 'blur' }],
+  status: [{ required: true, message: '请选择状态', trigger: 'change' }]
+}
 
 function pageIndex(query: { current: number; size: number }, index: number) {
   return (query.current - 1) * query.size + index + 1
@@ -69,7 +79,7 @@ function resetSeriesForm() {
     name: '',
     totalSupply: 1,
     priceUsdt: 0,
-    status: 'ACTIVE',
+    status: 'INACTIVE',
     saleStartAt: '',
     saleEndAt: '',
     royaltyBps: 0,
@@ -98,10 +108,34 @@ function openSeriesDialog(row?: GenesisSeries) {
   seriesDialogVisible.value = true
 }
 
+async function validateSeriesForm() {
+  try {
+    await seriesFormRef.value?.validate()
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function saveSeries() {
-  if (!seriesForm.name || (!seriesForm.id && !seriesForm.seriesCode)) {
-    ElMessage.warning('请补全系列编码和名称')
+  if (!(await validateSeriesForm())) {
     return
+  }
+  if (Number(seriesForm.totalSupply) < 1) {
+    ElMessage.warning('发行总量必须大于 0')
+    return
+  }
+  if (Number(seriesForm.priceUsdt) <= 0) {
+    ElMessage.warning('发行价格必须大于 0')
+    return
+  }
+  if (seriesForm.metadataJson) {
+    try {
+      JSON.parse(seriesForm.metadataJson)
+    } catch {
+      ElMessage.warning('元数据 JSON 格式不合法')
+      return
+    }
   }
   seriesSaving.value = true
   try {
@@ -121,11 +155,28 @@ async function saveSeries() {
       const { seriesCode: _seriesCode, ...updatePayload } = payload
       await updateGenesisSeries(seriesForm.id, updatePayload)
       ElMessage.success('Genesis 系列已更新')
+      lastSeriesAction.value = `已更新系列 ${seriesForm.seriesCode}，状态 ${seriesForm.status}，${new Date().toLocaleString()}`
     } else {
       await createGenesisSeries(payload)
       ElMessage.success('Genesis 系列已创建')
+      lastSeriesAction.value = `已创建系列 ${seriesForm.seriesCode}，默认状态 ${seriesForm.status}，${new Date().toLocaleString()}`
     }
     seriesDialogVisible.value = false
+    await loadSeries()
+    await loadOverview()
+  } finally {
+    seriesSaving.value = false
+  }
+}
+
+async function changeSeriesStatus(row: GenesisSeries, status: string) {
+  if (!row.id) return
+  await ElMessageBox.confirm(`确认将 Genesis 系列 ${row.seriesCode} 状态改为 ${status}?`, 'Genesis 系列状态变更', { type: 'warning' })
+  seriesSaving.value = true
+  try {
+    await updateGenesisSeries(row.id, { status })
+    ElMessage.success('Genesis 系列状态已更新')
+    lastSeriesAction.value = `已将系列 ${row.seriesCode} 状态改为 ${status}，${new Date().toLocaleString()}`
     await loadSeries()
     await loadOverview()
   } finally {
@@ -236,9 +287,14 @@ onMounted(loadData)
             <el-button type="primary" :icon="'Plus'" @click="openSeriesDialog()">新增系列</el-button>
           </div>
           <el-form :inline="true" :model="seriesQuery" class="filter-form">
-            <el-form-item label="状态"><el-input v-model="seriesQuery.status" clearable /></el-form-item>
+            <el-form-item label="状态">
+              <el-select v-model="seriesQuery.status" clearable style="width: 150px">
+                <el-option v-for="status in seriesStatusOptions" :key="status" :label="status" :value="status" />
+              </el-select>
+            </el-form-item>
             <el-form-item><el-button type="primary" @click="seriesQuery.current = 1; loadData()">查询</el-button></el-form-item>
           </el-form>
+          <el-alert v-if="lastSeriesAction" :title="lastSeriesAction" type="success" show-icon :closable="false" class="operation-alert" />
           <el-table v-loading="loading" :data="series" border>
             <el-table-column type="index" :index="(index: number) => pageIndex(seriesQuery, index)" label="编号" width="80" />
             <el-table-column prop="seriesCode" label="系列编码" min-width="150" />
@@ -247,11 +303,17 @@ onMounted(loadData)
             <el-table-column prop="totalSupply" label="总量" width="100" />
             <el-table-column prop="soldSupply" label="已售" width="100" />
             <el-table-column prop="royaltyBps" label="版税 BPS" width="120" />
-            <el-table-column prop="status" label="状态" width="110" />
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }"><el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'">{{ row.status }}</el-tag></template>
+            </el-table-column>
             <el-table-column prop="saleStartAt" label="开始时间" min-width="170" />
             <el-table-column prop="saleEndAt" label="结束时间" min-width="170" />
-            <el-table-column label="操作" width="110" fixed="right">
-              <template #default="{ row }"><el-button link type="primary" @click="openSeriesDialog(row)">编辑</el-button></template>
+            <el-table-column label="操作" width="190" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openSeriesDialog(row)">编辑</el-button>
+                <el-button v-if="row.status !== 'ACTIVE'" link type="success" :disabled="seriesSaving" @click="changeSeriesStatus(row, 'ACTIVE')">启用</el-button>
+                <el-button v-else link type="warning" :disabled="seriesSaving" @click="changeSeriesStatus(row, 'INACTIVE')">停用</el-button>
+              </template>
             </el-table-column>
           </el-table>
           <div class="pagination-wrap">
@@ -316,14 +378,20 @@ onMounted(loadData)
     </el-card>
 
     <el-dialog v-model="seriesDialogVisible" :title="seriesForm.id ? '编辑 Genesis 系列' : '新增 Genesis 系列'" width="760px">
-      <el-form :model="seriesForm" label-width="118px">
+      <el-form ref="seriesFormRef" :model="seriesForm" :rules="seriesRules" label-width="118px">
         <el-row :gutter="16">
-          <el-col :span="12"><el-form-item label="系列编码"><el-input v-model="seriesForm.seriesCode" :disabled="!!seriesForm.id" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="名称"><el-input v-model="seriesForm.name" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="总量"><el-input-number v-model="seriesForm.totalSupply" :min="1" style="width: 100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="价格 USDT"><el-input-number v-model="seriesForm.priceUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="系列编码" prop="seriesCode"><el-input v-model="seriesForm.seriesCode" :disabled="!!seriesForm.id" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="名称" prop="name"><el-input v-model="seriesForm.name" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="总量" prop="totalSupply"><el-input-number v-model="seriesForm.totalSupply" :min="1" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="价格 USDT" prop="priceUsdt"><el-input-number v-model="seriesForm.priceUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="版税 BPS"><el-input-number v-model="seriesForm.royaltyBps" :min="0" style="width: 100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="状态"><el-input v-model="seriesForm.status" /></el-form-item></el-col>
+          <el-col :span="12">
+            <el-form-item label="状态" prop="status">
+              <el-select v-model="seriesForm.status" style="width: 100%">
+                <el-option v-for="status in seriesStatusOptions" :key="status" :label="status" :value="status" />
+              </el-select>
+            </el-form-item>
+          </el-col>
           <el-col :span="12"><el-form-item label="开始时间"><el-date-picker v-model="seriesForm.saleStartAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="结束时间"><el-date-picker v-model="seriesForm.saleEndAt" type="datetime" value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="封面 URL"><el-input v-model="seriesForm.coverUrl" /></el-form-item></el-col>

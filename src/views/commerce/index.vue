@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   createProduct,
   expirePendingPayments,
@@ -44,13 +44,17 @@ const opsLimit = ref(20)
 
 const productDialogVisible = ref(false)
 const productSaving = ref(false)
+const productFormRef = ref<FormInstance>()
+const lastProductAction = ref('')
+const productTypeOptions = ['NEXION_BOX', 'NEXION_RACK', 'MOBILE', 'CLOUD_SHARE', 'GENESIS']
+const productStatusOptions = ['ON_SALE', 'OFF_SALE', 'SOLD_OUT', 'ARCHIVED']
 const productForm = reactive({
   id: undefined as Id | undefined,
   productNo: '',
   name: '',
-  productType: 'DEVICE',
+  productType: 'NEXION_BOX',
   tier: '',
-  status: 'ACTIVE',
+  status: 'OFF_SALE',
   priceUsdt: 0,
   hashrate: 0,
   estimatedDailyUsdt: 0,
@@ -58,6 +62,14 @@ const productForm = reactive({
   stock: 0,
   coverUrl: ''
 })
+const productRules: FormRules = {
+  productNo: [{ required: true, message: '请填写 SKU 编号', trigger: 'blur' }],
+  name: [{ required: true, message: '请填写商品名称', trigger: 'blur' }],
+  productType: [{ required: true, message: '请选择商品类型', trigger: 'change' }],
+  status: [{ required: true, message: '请选择状态', trigger: 'change' }],
+  priceUsdt: [{ required: true, message: '请填写价格', trigger: 'blur' }],
+  stock: [{ required: true, message: '请填写库存', trigger: 'blur' }]
+}
 
 function valueOf(record: AnyRecord | null, key: string) {
   const value = record?.[key]
@@ -79,9 +91,9 @@ function resetProductForm() {
     id: undefined,
     productNo: '',
     name: '',
-    productType: 'DEVICE',
+    productType: 'NEXION_BOX',
     tier: '',
-    status: 'ACTIVE',
+    status: 'OFF_SALE',
     priceUsdt: 0,
     hashrate: 0,
     estimatedDailyUsdt: 0,
@@ -98,9 +110,9 @@ function openProductDialog(row?: Product) {
       id: row.id,
       productNo: row.productNo || '',
       name: row.name || '',
-      productType: row.productType || 'DEVICE',
+      productType: row.productType || 'NEXION_BOX',
       tier: row.tier || '',
-      status: row.status || 'ACTIVE',
+      status: row.status || 'OFF_SALE',
       priceUsdt: Number(row.priceUsdt ?? 0),
       hashrate: Number(row.hashrate ?? 0),
       estimatedDailyUsdt: Number(row.estimatedDailyUsdt ?? 0),
@@ -110,6 +122,15 @@ function openProductDialog(row?: Product) {
     })
   }
   productDialogVisible.value = true
+}
+
+async function validateProductForm() {
+  try {
+    await productFormRef.value?.validate()
+    return true
+  } catch {
+    return false
+  }
 }
 
 function productPayload() {
@@ -129,12 +150,15 @@ function productPayload() {
 }
 
 async function saveProduct() {
-  if (!productForm.name || !productForm.productType || !productForm.status) {
-    ElMessage.warning('请补全商品名称、类型和状态')
+  if (!(await validateProductForm())) {
     return
   }
-  if (!productForm.id && !productForm.productNo) {
-    ElMessage.warning('请填写 SKU 编号')
+  if (Number(productForm.priceUsdt) <= 0) {
+    ElMessage.warning('价格必须大于 0')
+    return
+  }
+  if (Number(productForm.stock) < 0) {
+    ElMessage.warning('库存不能为负数')
     return
   }
   productSaving.value = true
@@ -143,14 +167,30 @@ async function saveProduct() {
       const { productNo: _productNo, ...payload } = productPayload()
       await updateProduct(productForm.id, payload)
       ElMessage.success('SKU 已更新')
+      lastProductAction.value = `已更新 SKU ${productForm.productNo}，状态 ${productForm.status}，${new Date().toLocaleString()}`
     } else {
       await createProduct(productPayload())
       ElMessage.success('SKU 已创建')
+      lastProductAction.value = `已创建 SKU ${productForm.productNo}，默认状态 ${productForm.status}，${new Date().toLocaleString()}`
     }
     productDialogVisible.value = false
     await loadProducts()
   } finally {
     productSaving.value = false
+  }
+}
+
+async function changeProductStatus(row: Product, status: string) {
+  if (!row.id) return
+  await ElMessageBox.confirm(`确认将 SKU ${row.productNo} 状态改为 ${status}?`, 'SKU 状态变更', { type: 'warning' })
+  actionLoading.value = true
+  try {
+    await updateProduct(row.id, { status })
+    ElMessage.success('SKU 状态已更新')
+    lastProductAction.value = `已将 SKU ${row.productNo} 状态改为 ${status}，${new Date().toLocaleString()}`
+    await loadProducts()
+  } finally {
+    actionLoading.value = false
   }
 }
 
@@ -302,8 +342,7 @@ onMounted(loadData)
             <el-form-item label="类型"><el-input v-model="productQuery.productType" clearable /></el-form-item>
             <el-form-item label="状态">
               <el-select v-model="productQuery.status" clearable style="width: 140px">
-                <el-option label="ACTIVE" value="ACTIVE" />
-                <el-option label="INACTIVE" value="INACTIVE" />
+                <el-option v-for="status in productStatusOptions" :key="status" :label="status" :value="status" />
               </el-select>
             </el-form-item>
             <el-form-item>
@@ -311,6 +350,7 @@ onMounted(loadData)
               <el-button @click="resetProducts">重置</el-button>
             </el-form-item>
           </el-form>
+          <el-alert v-if="lastProductAction" :title="lastProductAction" type="success" show-icon :closable="false" class="operation-alert" />
           <el-table v-loading="loading" :data="products" border>
             <el-table-column type="index" :index="(index: number) => pageIndex(productQuery, index)" label="编号" width="80" />
             <el-table-column prop="productNo" label="SKU" min-width="150" />
@@ -321,9 +361,15 @@ onMounted(loadData)
             <el-table-column prop="estimatedDailyUsdt" label="日收益 USDT" width="140" />
             <el-table-column prop="dailyNex" label="日收益 NEX" width="130" />
             <el-table-column prop="stock" label="库存" width="90" />
-            <el-table-column prop="status" label="状态" width="110" />
-            <el-table-column label="操作" width="110" fixed="right">
-              <template #default="{ row }"><el-button link type="primary" @click="openProductDialog(row)">编辑</el-button></template>
+            <el-table-column label="状态" width="120">
+              <template #default="{ row }"><el-tag :type="row.status === 'ON_SALE' ? 'success' : 'info'">{{ row.status }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="操作" width="190" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openProductDialog(row)">编辑</el-button>
+                <el-button v-if="row.status !== 'ON_SALE'" link type="success" :disabled="actionLoading" @click="changeProductStatus(row, 'ON_SALE')">上架</el-button>
+                <el-button v-else link type="warning" :disabled="actionLoading" @click="changeProductStatus(row, 'OFF_SALE')">下架</el-button>
+              </template>
             </el-table-column>
           </el-table>
           <div class="pagination-wrap">
@@ -445,22 +491,27 @@ onMounted(loadData)
     </el-card>
 
     <el-dialog v-model="productDialogVisible" :title="productForm.id ? '编辑 SKU' : '新增 SKU'" width="720px">
-      <el-form :model="productForm" label-width="118px">
+      <el-form ref="productFormRef" :model="productForm" :rules="productRules" label-width="118px">
         <el-row :gutter="16">
-          <el-col :span="12"><el-form-item label="SKU 编号"><el-input v-model="productForm.productNo" :disabled="!!productForm.id" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="商品名称"><el-input v-model="productForm.name" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="商品类型"><el-input v-model="productForm.productType" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="档位"><el-input v-model="productForm.tier" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="SKU 编号" prop="productNo"><el-input v-model="productForm.productNo" :disabled="!!productForm.id" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="商品名称" prop="name"><el-input v-model="productForm.name" /></el-form-item></el-col>
           <el-col :span="12">
-            <el-form-item label="状态">
-              <el-select v-model="productForm.status" style="width: 100%">
-                <el-option label="ACTIVE" value="ACTIVE" />
-                <el-option label="INACTIVE" value="INACTIVE" />
+            <el-form-item label="商品类型" prop="productType">
+              <el-select v-model="productForm.productType" allow-create filterable style="width: 100%">
+                <el-option v-for="type in productTypeOptions" :key="type" :label="type" :value="type" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12"><el-form-item label="库存"><el-input-number v-model="productForm.stock" :min="0" style="width: 100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="价格 USDT"><el-input-number v-model="productForm.priceUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="档位"><el-input v-model="productForm.tier" /></el-form-item></el-col>
+          <el-col :span="12">
+            <el-form-item label="状态" prop="status">
+              <el-select v-model="productForm.status" style="width: 100%">
+                <el-option v-for="status in productStatusOptions" :key="status" :label="status" :value="status" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12"><el-form-item label="库存" prop="stock"><el-input-number v-model="productForm.stock" :min="0" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="价格 USDT" prop="priceUsdt"><el-input-number v-model="productForm.priceUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="算力"><el-input-number v-model="productForm.hashrate" :min="0" :precision="6" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="日收益 USDT"><el-input-number v-model="productForm.estimatedDailyUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="日收益 NEX"><el-input-number v-model="productForm.dailyNex" :min="0" :precision="6" style="width: 100%" /></el-form-item></el-col>
