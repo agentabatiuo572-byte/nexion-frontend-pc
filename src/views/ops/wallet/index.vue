@@ -13,6 +13,9 @@ import {
   publishWithdrawalBroadcast
 } from '@/apis/operation'
 import type { AnyRecord } from '@/types/common'
+import { formatTableDateTime } from '@/utils/date'
+import { localeText as lt, enumTableFormatter } from '@/utils/i18n'
+import UserSelect from '@/components/UserSelect.vue'
 
 const loading = ref(false)
 const actionLoading = ref(false)
@@ -28,6 +31,8 @@ const activeDepositStatus = ref('records')
 const ledgerQuery = reactive({ current: 1, size: 10, userId: '', bizNo: '', asset: '', direction: '', status: '' })
 const depositQuery = reactive({ asset: '', chainTxHash: '', limit: 20 })
 const withdrawalLimit = ref(20)
+const assetOptions = ['USDT', 'NEX']
+const ledgerStatusOptions = ['SUCCESS', 'PENDING', 'FAILED', 'CANCELLED']
 
 function valueOf(record: AnyRecord | null, key: string) {
   const value = record?.[key]
@@ -76,7 +81,8 @@ async function publishBroadcast() {
   actionLoading.value = true
   try {
     const result = await publishWithdrawalBroadcast(withdrawalLimit.value)
-    ElMessage.success(`已提交广播: ${JSON.stringify(result)}`)
+    const count = result?.published ?? result?.count ?? result?.total ?? '-'
+    ElMessage.success(`${lt('提现广播已提交', 'Withdrawal broadcast submitted')}: ${count} ${lt('条', 'items')}`)
     await loadData()
   } finally {
     actionLoading.value = false
@@ -101,60 +107,68 @@ onMounted(loadData)
     <el-row :gutter="16" class="app-card">
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
-          <div class="table-toolbar"><span>钱包数</span><el-icon color="#409eff" :size="24"><Wallet /></el-icon></div>
+          <div class="table-toolbar"><span>{{ lt('钱包数', 'Wallets') }}</span><el-icon color="#409eff" :size="24"><Wallet /></el-icon></div>
           <div class="value">{{ valueOf(stats, 'wallets') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
-          <div class="table-toolbar"><span>流水数</span><el-icon color="#67c23a" :size="24"><Tickets /></el-icon></div>
+          <div class="table-toolbar"><span>{{ lt('流水数', 'Ledger Entries') }}</span><el-icon color="#67c23a" :size="24"><Tickets /></el-icon></div>
           <div class="value">{{ valueOf(stats, 'ledgers') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
-          <div class="table-toolbar"><span>待广播</span><el-icon color="#e6a23c" :size="24"><Upload /></el-icon></div>
+          <div class="table-toolbar"><span>{{ lt('待广播', 'Pending Broadcast') }}</span><el-icon color="#e6a23c" :size="24"><Upload /></el-icon></div>
           <div class="value">{{ valueOf(broadcastSummary, 'pending') }}</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <el-card shadow="never" class="stat-card">
-          <div class="table-toolbar"><span>广播死信</span><el-icon color="#f56c6c" :size="24"><Warning /></el-icon></div>
+          <div class="table-toolbar"><span>{{ lt('广播死信', 'Broadcast DLQ') }}</span><el-icon color="#f56c6c" :size="24"><Warning /></el-icon></div>
           <div class="value">{{ valueOf(broadcastSummary, 'dead') }}</div>
         </el-card>
       </el-col>
     </el-row>
 
     <el-card class="app-card" shadow="never">
-      <template #header>钱包流水</template>
+      <template #header>{{ lt('钱包流水', 'Wallet Ledger') }}</template>
       <el-form :inline="true" :model="ledgerQuery" class="filter-form">
-        <el-form-item label="用户ID"><el-input v-model="ledgerQuery.userId" clearable /></el-form-item>
-        <el-form-item label="业务号"><el-input v-model="ledgerQuery.bizNo" clearable /></el-form-item>
-        <el-form-item label="资产"><el-input v-model="ledgerQuery.asset" clearable /></el-form-item>
-        <el-form-item label="方向">
+        <el-form-item :label="lt('用户', 'User')"><UserSelect v-model="ledgerQuery.userId" /></el-form-item>
+        <el-form-item :label="lt('业务号', 'Biz No.')"><el-input v-model="ledgerQuery.bizNo" clearable /></el-form-item>
+        <el-form-item :label="lt('资产', 'Asset')">
+          <el-select v-model="ledgerQuery.asset" clearable style="width: 120px">
+            <el-option v-for="asset in assetOptions" :key="asset" :label="asset" :value="asset" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="lt('方向', 'Direction')">
           <el-select v-model="ledgerQuery.direction" clearable style="width: 130px">
             <el-option label="CREDIT" value="CREDIT" />
             <el-option label="DEBIT" value="DEBIT" />
           </el-select>
         </el-form-item>
-        <el-form-item label="状态"><el-input v-model="ledgerQuery.status" clearable /></el-form-item>
+        <el-form-item :label="lt('状态', 'Status')">
+          <el-select v-model="ledgerQuery.status" clearable style="width: 130px">
+            <el-option v-for="status in ledgerStatusOptions" :key="status" :label="status" :value="status" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="ledgerQuery.current = 1; loadData()">查询</el-button>
-          <el-button @click="resetLedgerQuery">重置</el-button>
+          <el-button type="primary" @click="ledgerQuery.current = 1; loadData()">{{ lt('查询', 'Search') }}</el-button>
+          <el-button @click="resetLedgerQuery">{{ lt('重置', 'Reset') }}</el-button>
         </el-form-item>
       </el-form>
       <el-table v-loading="loading" :data="ledgers" border>
-        <el-table-column type="index" :index="ledgerIndex" label="编号" width="80" />
-        <el-table-column prop="userId" label="用户ID" width="100" />
-        <el-table-column prop="bizNo" label="业务号" min-width="170" />
-        <el-table-column prop="bizType" label="业务类型" width="130" />
-        <el-table-column prop="asset" label="资产" width="90" />
-        <el-table-column prop="direction" label="方向" width="100" />
-        <el-table-column prop="amount" label="金额" width="130" />
-        <el-table-column prop="balanceAfter" label="变动后余额" width="140" />
-        <el-table-column prop="status" label="状态" width="110" />
-        <el-table-column prop="remark" label="备注" min-width="180" />
-        <el-table-column prop="createdAt" label="创建时间" min-width="170" />
+        <el-table-column type="index" :index="ledgerIndex" :label="lt('编号', 'No.')" width="80" />
+        <el-table-column prop="userId" :label="lt('用户ID', 'User ID')" width="100" />
+        <el-table-column prop="bizNo" :label="lt('业务号', 'Biz No.')" min-width="170" />
+        <el-table-column prop="bizType" :label="lt('业务类型', 'Biz Type')" width="130" />
+        <el-table-column prop="asset" :label="lt('资产', 'Asset')" width="90" />
+        <el-table-column prop="direction" :label="lt('方向', 'Direction')" width="100" :formatter="enumTableFormatter" />
+        <el-table-column prop="amount" :label="lt('金额', 'Amount')" width="130" />
+        <el-table-column prop="balanceAfter" :label="lt('变动后余额', 'Balance After')" width="140" />
+        <el-table-column prop="status" :label="lt('状态', 'Status')" width="110" :formatter="enumTableFormatter" />
+        <el-table-column prop="remark" :label="lt('备注', 'Remark')" min-width="180" />
+        <el-table-column prop="createdAt" :label="lt('创建时间', 'Created At')" min-width="170" :formatter="formatTableDateTime" />
       </el-table>
       <div class="pagination-wrap">
         <el-pagination
@@ -170,69 +184,73 @@ onMounted(loadData)
 
     <el-card class="app-card" shadow="never">
       <div class="table-toolbar">
-        <span>提现广播队列</span>
+        <span>{{ lt('提现广播队列', 'Withdrawal Broadcast Queue') }}</span>
         <div>
           <el-input-number v-model="withdrawalLimit" :min="1" :max="200" style="width: 120px; margin-right: 10px" />
-          <el-button :icon="'Refresh'" @click="loadData">刷新</el-button>
-          <el-button type="primary" :loading="actionLoading" :icon="'Upload'" @click="publishBroadcast">发布广播</el-button>
+          <el-button :icon="'Refresh'" @click="loadData">{{ lt('刷新', 'Refresh') }}</el-button>
+          <el-button type="primary" :loading="actionLoading" :icon="'Upload'" @click="publishBroadcast">{{ lt('发布广播', 'Publish Broadcast') }}</el-button>
         </div>
       </div>
       <el-tabs>
-        <el-tab-pane label="待广播">
+        <el-tab-pane :label="lt('待广播', 'Pending Broadcast')">
           <el-table v-loading="loading" :data="withdrawals" border>
-            <el-table-column prop="withdrawalNo" label="提现单号" min-width="170" />
-            <el-table-column prop="userId" label="用户ID" width="100" />
-            <el-table-column prop="asset" label="资产" width="90" />
-            <el-table-column prop="amount" label="金额" width="120" />
-            <el-table-column prop="fee" label="手续费" width="110" />
-            <el-table-column prop="status" label="状态" width="110" />
-            <el-table-column prop="chainBroadcastAttempts" label="尝试次数" width="110" />
-            <el-table-column prop="nextBroadcastAt" label="下次广播" min-width="170" />
-            <el-table-column prop="targetAddress" label="目标地址" min-width="220" />
+            <el-table-column prop="withdrawalNo" :label="lt('提现单号', 'Withdrawal No.')" min-width="170" />
+            <el-table-column prop="userId" :label="lt('用户ID', 'User ID')" width="100" />
+            <el-table-column prop="asset" :label="lt('资产', 'Asset')" width="90" />
+            <el-table-column prop="amount" :label="lt('金额', 'Amount')" width="120" />
+            <el-table-column prop="fee" :label="lt('手续费', 'Fee')" width="110" />
+            <el-table-column prop="status" :label="lt('状态', 'Status')" width="110" :formatter="enumTableFormatter" />
+            <el-table-column prop="chainBroadcastAttempts" :label="lt('尝试次数', 'Attempts')" width="110" />
+            <el-table-column prop="nextBroadcastAt" :label="lt('下次广播', 'Next Broadcast')" min-width="170" :formatter="formatTableDateTime" />
+            <el-table-column prop="targetAddress" :label="lt('目标地址', 'Target Address')" min-width="220" />
           </el-table>
         </el-tab-pane>
-        <el-tab-pane label="死信">
+        <el-tab-pane :label="lt('死信', 'DLQ')">
           <el-table v-loading="loading" :data="deadWithdrawals" border>
-            <el-table-column prop="withdrawalNo" label="提现单号" min-width="170" />
-            <el-table-column prop="userId" label="用户ID" width="100" />
-            <el-table-column prop="asset" label="资产" width="90" />
-            <el-table-column prop="amount" label="金额" width="120" />
-            <el-table-column prop="status" label="状态" width="110" />
-            <el-table-column prop="lastBroadcastError" label="广播错误" min-width="240" />
-            <el-table-column prop="broadcastDeadAt" label="死信时间" min-width="170" />
+            <el-table-column prop="withdrawalNo" :label="lt('提现单号', 'Withdrawal No.')" min-width="170" />
+            <el-table-column prop="userId" :label="lt('用户ID', 'User ID')" width="100" />
+            <el-table-column prop="asset" :label="lt('资产', 'Asset')" width="90" />
+            <el-table-column prop="amount" :label="lt('金额', 'Amount')" width="120" />
+            <el-table-column prop="status" :label="lt('状态', 'Status')" width="110" :formatter="enumTableFormatter" />
+            <el-table-column prop="lastBroadcastError" :label="lt('广播错误', 'Broadcast Error')" min-width="240" />
+            <el-table-column prop="broadcastDeadAt" :label="lt('死信时间', 'DLQ At')" min-width="170" :formatter="formatTableDateTime" />
           </el-table>
         </el-tab-pane>
       </el-tabs>
     </el-card>
 
     <el-card shadow="never">
-      <template #header>充值记录</template>
+      <template #header>{{ lt('充值记录', 'Deposit Records') }}</template>
       <el-form :inline="true" :model="depositQuery" class="filter-form">
-        <el-form-item label="状态">
+        <el-form-item :label="lt('状态', 'Status')">
           <el-radio-group v-model="activeDepositStatus" @change="loadData">
-            <el-radio-button label="records">全部</el-radio-button>
-            <el-radio-button label="pending">待入账</el-radio-button>
-            <el-radio-button label="dead">死信</el-radio-button>
+            <el-radio-button label="records">{{ lt('全部', 'All') }}</el-radio-button>
+            <el-radio-button label="pending">{{ lt('待入账', 'Pending Credit') }}</el-radio-button>
+            <el-radio-button label="dead">{{ lt('死信', 'DLQ') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="资产"><el-input v-model="depositQuery.asset" clearable :disabled="activeDepositStatus !== 'records'" /></el-form-item>
-        <el-form-item label="交易哈希"><el-input v-model="depositQuery.chainTxHash" clearable :disabled="activeDepositStatus !== 'records'" /></el-form-item>
-        <el-form-item label="条数"><el-input-number v-model="depositQuery.limit" :min="1" :max="200" /></el-form-item>
+        <el-form-item :label="lt('资产', 'Asset')">
+          <el-select v-model="depositQuery.asset" clearable :disabled="activeDepositStatus !== 'records'" style="width: 120px">
+            <el-option v-for="asset in assetOptions" :key="asset" :label="asset" :value="asset" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="lt('交易哈希', 'Tx Hash')"><el-input v-model="depositQuery.chainTxHash" clearable :disabled="activeDepositStatus !== 'records'" /></el-form-item>
+        <el-form-item :label="lt('条数', 'Limit')"><el-input-number v-model="depositQuery.limit" :min="1" :max="200" /></el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="loadData">查询</el-button>
-          <el-button @click="resetDepositQuery">重置</el-button>
+          <el-button type="primary" @click="loadData">{{ lt('查询', 'Search') }}</el-button>
+          <el-button @click="resetDepositQuery">{{ lt('重置', 'Reset') }}</el-button>
         </el-form-item>
       </el-form>
       <el-table v-loading="loading" :data="deposits" border>
-        <el-table-column prop="depositNo" label="充值单号" min-width="170" />
-        <el-table-column prop="userId" label="用户ID" width="100" />
-        <el-table-column prop="chain" label="链" width="110" />
-        <el-table-column prop="asset" label="资产" width="90" />
-        <el-table-column prop="amount" label="金额" width="130" />
-        <el-table-column prop="confirmations" label="确认数" width="100" />
-        <el-table-column prop="status" label="状态" width="110" />
-        <el-table-column prop="chainTxHash" label="交易哈希" min-width="220" />
-        <el-table-column prop="creditedAt" label="入账时间" min-width="170" />
+        <el-table-column prop="depositNo" :label="lt('充值单号', 'Deposit No.')" min-width="170" />
+        <el-table-column prop="userId" :label="lt('用户ID', 'User ID')" width="100" />
+        <el-table-column prop="chain" :label="lt('链', 'Chain')" width="110" />
+        <el-table-column prop="asset" :label="lt('资产', 'Asset')" width="90" />
+        <el-table-column prop="amount" :label="lt('金额', 'Amount')" width="130" />
+        <el-table-column prop="confirmations" :label="lt('确认数', 'Confirmations')" width="100" />
+        <el-table-column prop="status" :label="lt('状态', 'Status')" width="110" :formatter="enumTableFormatter" />
+        <el-table-column prop="chainTxHash" :label="lt('交易哈希', 'Tx Hash')" min-width="220" />
+        <el-table-column prop="creditedAt" :label="lt('入账时间', 'Credited At')" min-width="170" :formatter="formatTableDateTime" />
       </el-table>
     </el-card>
   </div>

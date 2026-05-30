@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { localeText as lt } from '@/utils/i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getAdminPage, getPermissionPage, getRolePage } from '@/apis/auth'
 import { getBffOpsDashboard, getDeviceFleetConfig, getGenesisSeries, getProducts } from '@/apis/operation'
@@ -9,12 +10,12 @@ const dashboard = ref<AnyRecord | null>(null)
 const upstreamIcons = ['ShoppingCart', 'Wallet', 'Checked', 'Connection', 'Flag', 'Bell', 'DataLine', 'Setting']
 const upstreamColors = ['#409eff', '#67c23a', '#e6a23c', '#626aef', '#f56c6c', '#14b8a6', '#909399', '#8b5cf6']
 const stats = reactive([
-  { title: '管理员', value: '0', icon: 'User', color: '#409eff' },
-  { title: '角色', value: '0', icon: 'UserFilled', color: '#67c23a' },
-  { title: 'API 权限', value: '0', icon: 'Key', color: '#e6a23c' },
-  { title: '商品 SKU', value: '0', icon: 'Goods', color: '#f56c6c' },
-  { title: 'Genesis 系列', value: '0', icon: 'CollectionTag', color: '#626aef' },
-  { title: '激活槽位', value: '0', icon: 'Grid', color: '#909399' }
+  { titleZh: '管理员', titleEn: 'Admins', value: '0', icon: 'User', color: '#409eff' },
+  { titleZh: '角色', titleEn: 'Roles', value: '0', icon: 'UserFilled', color: '#67c23a' },
+  { titleZh: 'API 权限', titleEn: 'API Permissions', value: '0', icon: 'Key', color: '#e6a23c' },
+  { titleZh: '商品 SKU', titleEn: 'Product SKU', value: '0', icon: 'Goods', color: '#f56c6c' },
+  { titleZh: 'Genesis 系列', titleEn: 'Genesis Series', value: '0', icon: 'CollectionTag', color: '#626aef' },
+  { titleZh: '激活槽位', titleEn: 'Active Slots', value: '0', icon: 'Grid', color: '#909399' }
 ])
 
 function sectionValue(section: unknown, key: string) {
@@ -76,10 +77,10 @@ onMounted(loadData)
 <template>
   <div>
     <el-row :gutter="20">
-      <el-col v-for="item in stats" :key="item.title" :xs="24" :sm="12" :md="8" :lg="4">
+      <el-col v-for="item in stats" :key="item.titleZh" :xs="24" :sm="12" :md="8" :lg="4">
         <el-card shadow="hover" class="stat-card">
           <div class="table-toolbar">
-            <span>{{ item.title }}</span>
+            <span>{{ lt(item.titleZh, item.titleEn) }}</span>
             <el-icon :color="item.color" :size="24"><component :is="item.icon" /></el-icon>
           </div>
           <div class="value">{{ item.value }}</div>
@@ -89,13 +90,13 @@ onMounted(loadData)
 
     <section class="ops-panel app-card">
       <div class="table-toolbar">
-        <span>运营基线</span>
-        <el-button :icon="'Refresh'" @click="loadData">刷新</el-button>
+        <span>{{ lt('运营基线', 'Ops Baseline') }}</span>
+        <el-button :icon="'Refresh'" @click="loadData">{{ lt('刷新', 'Refresh') }}</el-button>
       </div>
       <el-descriptions :column="3" border class="app-card">
-        <el-descriptions-item label="后端网关">{{ baseServerUrl }}</el-descriptions-item>
-        <el-descriptions-item label="统计周期">{{ sectionValue(dashboard, 'days') }} 天</el-descriptions-item>
-        <el-descriptions-item label="生成时间">{{ sectionValue(dashboard, 'generatedAt') }}</el-descriptions-item>
+        <el-descriptions-item :label="lt('后端网关', 'Backend Gateway')">{{ baseServerUrl }}</el-descriptions-item>
+        <el-descriptions-item :label="lt('统计周期', 'Stats Window')">{{ sectionValue(dashboard, 'days') }} {{ lt('天', 'days') }}</el-descriptions-item>
+        <el-descriptions-item :label="lt('生成时间', 'Generated At')">{{ sectionValue(dashboard, 'generatedAt') }}</el-descriptions-item>
       </el-descriptions>
       <el-row :gutter="16">
         <el-col v-for="item in upstreamCards" :key="item.key" :xs="24" :sm="12" :md="6">

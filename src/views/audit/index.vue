@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { localeText as lt } from '@/utils/i18n'
 import { onMounted, reactive, ref, watch } from 'vue'
 import {
   getAuditLogs,
@@ -9,6 +10,9 @@ import {
   getAuditTrace
 } from '@/apis/operation'
 import type { AnyRecord } from '@/types/common'
+import { formatTableDateTime } from '@/utils/date'
+import UserSelect from '@/components/UserSelect.vue'
+import ObjectDetails from '@/components/ObjectDetails.vue'
 
 const props = withDefaults(defineProps<{ defaultTab?: string }>(), { defaultTab: 'logs' })
 
@@ -96,71 +100,71 @@ onMounted(loadData)
   <div>
     <el-card shadow="never">
       <div class="table-toolbar">
-        <span>审计日志</span>
-        <el-button :icon="'Refresh'" @click="loadData">刷新</el-button>
+        <span>{{ lt('审计日志', 'Audit Logs') }}</span>
+        <el-button :icon="'Refresh'" @click="loadData">{{ lt('刷新', 'Refresh') }}</el-button>
       </div>
 
       <el-tabs v-model="activeTab">
-        <el-tab-pane label="日志查询" name="logs">
+        <el-tab-pane :label="lt('日志查询', 'Log Search')" name="logs">
           <el-form :inline="true" :model="logQuery" class="filter-form">
             <el-form-item label="Trace"><el-input v-model="logQuery.traceId" clearable /></el-form-item>
-            <el-form-item label="服务"><el-input v-model="logQuery.serviceName" clearable /></el-form-item>
+            <el-form-item :label="lt('服务', 'Service')"><el-input v-model="logQuery.serviceName" clearable /></el-form-item>
             <el-form-item label="Action"><el-input v-model="logQuery.action" clearable /></el-form-item>
-            <el-form-item label="业务号"><el-input v-model="logQuery.bizNo" clearable /></el-form-item>
-            <el-form-item label="用户ID"><el-input v-model="logQuery.userId" clearable /></el-form-item>
-            <el-form-item label="风险"><el-input v-model="logQuery.riskLevel" clearable /></el-form-item>
-            <el-form-item label="条数"><el-input-number v-model="logQuery.limit" :min="1" :max="200" /></el-form-item>
-            <el-form-item><el-button type="primary" @click="loadData">查询</el-button></el-form-item>
+            <el-form-item :label="lt('业务号', 'Biz No.')"><el-input v-model="logQuery.bizNo" clearable /></el-form-item>
+            <el-form-item :label="lt('用户', 'User')"><UserSelect v-model="logQuery.userId" /></el-form-item>
+            <el-form-item :label="lt('风险', 'Risk')"><el-input v-model="logQuery.riskLevel" clearable /></el-form-item>
+            <el-form-item :label="lt('条数', 'Limit')"><el-input-number v-model="logQuery.limit" :min="1" :max="200" /></el-form-item>
+            <el-form-item><el-button type="primary" @click="loadData">{{ lt('查询', 'Search') }}</el-button></el-form-item>
           </el-form>
           <el-table v-loading="loading" :data="logs" border>
             <el-table-column prop="traceId" label="Trace" min-width="180" />
-            <el-table-column prop="serviceName" label="服务" min-width="160" />
+            <el-table-column prop="serviceName" :label="lt('服务', 'Service')" min-width="160" />
             <el-table-column prop="action" label="Action" min-width="180" />
-            <el-table-column prop="resourceType" label="资源" width="130" />
-            <el-table-column prop="bizNo" label="业务号" min-width="170" />
-            <el-table-column prop="userId" label="用户ID" width="100" />
-            <el-table-column prop="actorId" label="操作者" width="100" />
-            <el-table-column prop="result" label="结果" width="100" />
-            <el-table-column prop="riskLevel" label="风险" width="100" />
-            <el-table-column prop="createdAt" label="时间" min-width="170" />
-            <el-table-column label="操作" width="90" fixed="right">
-              <template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">详情</el-button></template>
+            <el-table-column prop="resourceType" :label="lt('资源', 'Resource')" width="130" />
+            <el-table-column prop="bizNo" :label="lt('业务号', 'Biz No.')" min-width="170" />
+            <el-table-column prop="userId" :label="lt('用户ID', 'User ID')" width="100" />
+            <el-table-column prop="actorId" :label="lt('操作者', 'Actor')" width="100" />
+            <el-table-column prop="result" :label="lt('结果', 'Result')" width="100" />
+            <el-table-column prop="riskLevel" :label="lt('风险', 'Risk')" width="100" />
+            <el-table-column prop="createdAt" :label="lt('时间', 'Time')" min-width="170" :formatter="formatTableDateTime" />
+            <el-table-column :label="lt('操作', 'Actions')" width="90" fixed="right">
+              <template #default="{ row }"><el-button link type="primary" @click="showDetail(row)">{{ lt('详情', 'Details') }}</el-button></template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane label="统计" name="stats">
+        <el-tab-pane :label="lt('统计', 'Stats')" name="stats">
           <el-form :inline="true" :model="statsQuery" class="filter-form">
-            <el-form-item label="天数"><el-input-number v-model="statsQuery.days" :min="1" :max="90" /></el-form-item>
-            <el-form-item label="服务"><el-input v-model="statsQuery.serviceName" clearable /></el-form-item>
+            <el-form-item :label="lt('天数', 'Days')"><el-input-number v-model="statsQuery.days" :min="1" :max="90" /></el-form-item>
+            <el-form-item :label="lt('服务', 'Service')"><el-input v-model="statsQuery.serviceName" clearable /></el-form-item>
             <el-form-item label="Action"><el-input v-model="statsQuery.action" clearable /></el-form-item>
-            <el-form-item label="风险"><el-input v-model="statsQuery.riskLevel" clearable /></el-form-item>
-            <el-form-item label="结果"><el-input v-model="statsQuery.result" clearable /></el-form-item>
+            <el-form-item :label="lt('风险', 'Risk')"><el-input v-model="statsQuery.riskLevel" clearable /></el-form-item>
+            <el-form-item :label="lt('结果', 'Result')"><el-input v-model="statsQuery.result" clearable /></el-form-item>
             <el-form-item label="Top"><el-input-number v-model="statsQuery.limit" :min="1" :max="50" /></el-form-item>
-            <el-form-item><el-button type="primary" @click="loadData">查询</el-button></el-form-item>
+            <el-form-item><el-button type="primary" @click="loadData">{{ lt('查询', 'Search') }}</el-button></el-form-item>
           </el-form>
           <el-row :gutter="16" class="app-card">
             <el-col :xs="24" :sm="12" :md="6">
               <el-card shadow="never" class="stat-card">
-                <div class="table-toolbar"><span>总量</span><el-icon color="#409eff" :size="24"><DataLine /></el-icon></div>
+                <div class="table-toolbar"><span>{{ lt('总量', 'Total') }}</span><el-icon color="#409eff" :size="24"><DataLine /></el-icon></div>
                 <div class="value">{{ valueOf(summary, 'total') }}</div>
               </el-card>
             </el-col>
             <el-col :xs="24" :sm="12" :md="6">
               <el-card shadow="never" class="stat-card">
-                <div class="table-toolbar"><span>成功</span><el-icon color="#67c23a" :size="24"><CircleCheck /></el-icon></div>
+                <div class="table-toolbar"><span>{{ lt('成功', 'Success') }}</span><el-icon color="#67c23a" :size="24"><CircleCheck /></el-icon></div>
                 <div class="value">{{ valueOf(summary, 'success') }}</div>
               </el-card>
             </el-col>
             <el-col :xs="24" :sm="12" :md="6">
               <el-card shadow="never" class="stat-card">
-                <div class="table-toolbar"><span>失败</span><el-icon color="#f56c6c" :size="24"><CircleClose /></el-icon></div>
+                <div class="table-toolbar"><span>{{ lt('失败', 'Failed') }}</span><el-icon color="#f56c6c" :size="24"><CircleClose /></el-icon></div>
                 <div class="value">{{ valueOf(summary, 'failed') }}</div>
               </el-card>
             </el-col>
             <el-col :xs="24" :sm="12" :md="6">
               <el-card shadow="never" class="stat-card">
-                <div class="table-toolbar"><span>高风险</span><el-icon color="#e6a23c" :size="24"><Warning /></el-icon></div>
+                <div class="table-toolbar"><span>{{ lt('高风险', 'High Risk') }}</span><el-icon color="#e6a23c" :size="24"><Warning /></el-icon></div>
                 <div class="value">{{ valueOf(summary, 'highRisk') }}</div>
               </el-card>
             </el-col>
@@ -169,19 +173,19 @@ onMounted(loadData)
             <el-col :xs="24" :md="8">
               <el-table v-loading="loading" :data="actions" border>
                 <el-table-column prop="name" label="Action" />
-                <el-table-column prop="count" label="次数" width="100" />
+                <el-table-column prop="count" :label="lt('次数', 'Count')" width="100" />
               </el-table>
             </el-col>
             <el-col :xs="24" :md="8">
               <el-table v-loading="loading" :data="services" border>
-                <el-table-column prop="name" label="服务" />
-                <el-table-column prop="count" label="次数" width="100" />
+                <el-table-column prop="name" :label="lt('服务', 'Service')" />
+                <el-table-column prop="count" :label="lt('次数', 'Count')" width="100" />
               </el-table>
             </el-col>
             <el-col :xs="24" :md="8">
               <el-table v-loading="loading" :data="users" border>
-                <el-table-column prop="name" label="用户" />
-                <el-table-column prop="count" label="次数" width="100" />
+                <el-table-column prop="name" :label="lt('用户', 'User')" />
+                <el-table-column prop="count" :label="lt('次数', 'Count')" width="100" />
               </el-table>
             </el-col>
           </el-row>
@@ -189,8 +193,8 @@ onMounted(loadData)
       </el-tabs>
     </el-card>
 
-    <el-dialog v-model="detailVisible" title="详情" width="760px">
-      <pre class="json-preview">{{ JSON.stringify(detailRecord, null, 2) }}</pre>
+    <el-dialog v-model="detailVisible" :title="lt('详情', 'Details')" width="760px">
+      <ObjectDetails :data="detailRecord" />
     </el-dialog>
   </div>
 </template>

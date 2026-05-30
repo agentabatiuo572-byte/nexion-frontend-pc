@@ -16,6 +16,10 @@ import {
   type UserDevice
 } from '@/apis/operation'
 import type { Id } from '@/types/common'
+import { formatTableDateTime } from '@/utils/date'
+import { localeText as lt, enumLabel, enumOptions, enumTableFormatter } from '@/utils/i18n'
+import ObjectImageUpload from '@/components/ObjectImageUpload.vue'
+import UserSelect from '@/components/UserSelect.vue'
 
 const loading = ref(false)
 const products = ref<Product[]>([])
@@ -27,6 +31,9 @@ const lifecycleRules = ref<DeviceLifecycleRule[]>([])
 
 const productQuery = reactive({ current: 1, size: 10, keyword: '', productType: '', status: '' })
 const deviceQuery = reactive({ current: 1, size: 10, userId: '', sourceOrderNo: '', status: '' })
+const productStatusOptions = ['ACTIVE', 'INACTIVE']
+const productTypeOptions = ['DEVICE', 'GENESIS', 'ACCESSORY']
+const deviceStatusOptions = ['ONLINE', 'BUSY', 'INACTIVE', 'OFFLINE']
 
 const productDialogVisible = ref(false)
 const productSaving = ref(false)
@@ -114,11 +121,11 @@ function productPayload() {
 
 async function saveProduct() {
   if (!productForm.name || !productForm.productType || !productForm.status) {
-    ElMessage.warning('请补全商品名称、类型和状态')
+    ElMessage.warning(lt('请补全商品名称、类型和状态', 'Please complete product name, type, and status'))
     return
   }
   if (!productForm.id && !productForm.productNo) {
-    ElMessage.warning('请填写商品编号')
+    ElMessage.warning(lt('请填写商品编号', 'Please enter product no.'))
     return
   }
   productSaving.value = true
@@ -126,10 +133,10 @@ async function saveProduct() {
     if (productForm.id) {
       const { productNo: _productNo, ...payload } = productPayload()
       await updateProduct(productForm.id, payload)
-      ElMessage.success('SKU 已更新')
+      ElMessage.success(lt('SKU 已更新', 'SKU updated'))
     } else {
       await createProduct(productPayload())
-      ElMessage.success('SKU 已创建')
+      ElMessage.success(lt('SKU 已创建', 'SKU created'))
     }
     productDialogVisible.value = false
     await loadData()
@@ -143,7 +150,7 @@ async function runDeviceAction(id: Id | undefined, action: 'activate' | 'deactiv
   if (action === 'activate') await activateDevice(id)
   if (action === 'deactivate') await deactivateDevice(id)
   if (action === 'schedule') await scheduleDeviceDeactivation(id)
-  ElMessage.success('设备状态已提交')
+  ElMessage.success(lt('设备状态已提交', 'Device status submitted'))
   await loadData()
 }
 
@@ -186,7 +193,7 @@ onMounted(loadData)
       <el-col :xs="24" :sm="12" :md="8">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar">
-            <span>最大激活槽位</span>
+            <span>{{ lt('最大激活槽位', 'Max Active Slots') }}</span>
             <el-icon color="#409eff" :size="24"><Grid /></el-icon>
           </div>
           <div class="value">{{ maxActiveSlots ?? '-' }}</div>
@@ -195,7 +202,7 @@ onMounted(loadData)
       <el-col :xs="24" :sm="12" :md="8">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar">
-            <span>生命周期规则</span>
+            <span>{{ lt('生命周期规则', 'Lifecycle Rules') }}</span>
             <el-icon color="#67c23a" :size="24"><Timer /></el-icon>
           </div>
           <div class="value">{{ lifecycleRules.length }}</div>
@@ -204,7 +211,7 @@ onMounted(loadData)
       <el-col :xs="24" :sm="12" :md="8">
         <el-card shadow="never" class="stat-card">
           <div class="table-toolbar">
-            <span>设备实例</span>
+            <span>{{ lt('设备实例', 'Device Instances') }}</span>
             <el-icon color="#e6a23c" :size="24"><Cpu /></el-icon>
           </div>
           <div class="value">{{ deviceTotal }}</div>
@@ -214,40 +221,45 @@ onMounted(loadData)
 
     <el-card class="app-card" shadow="never">
       <div class="table-toolbar">
-        <span>商品 SKU</span>
+        <span>{{ lt('商品 SKU', 'Product SKU') }}</span>
         <div>
-          <el-button :icon="'Refresh'" @click="loadData">刷新</el-button>
-          <el-button type="primary" :icon="'Plus'" @click="openProductDialog()">新增 SKU</el-button>
+          <el-button :icon="'Refresh'" @click="loadData">{{ lt('刷新', 'Refresh') }}</el-button>
+          <el-button type="primary" :icon="'Plus'" @click="openProductDialog()">{{ lt('新增 SKU', 'New SKU') }}</el-button>
         </div>
       </div>
       <el-form :inline="true" :model="productQuery" class="filter-form">
-        <el-form-item label="关键词"><el-input v-model="productQuery.keyword" clearable /></el-form-item>
-        <el-form-item label="类型"><el-input v-model="productQuery.productType" clearable /></el-form-item>
-        <el-form-item label="状态">
+        <el-form-item :label="lt('关键词', 'Keyword')"><el-input v-model="productQuery.keyword" clearable /></el-form-item>
+        <el-form-item :label="lt('类型', 'Type')">
+          <el-select v-model="productQuery.productType" clearable style="width: 140px">
+            <el-option v-for="type in enumOptions(productTypeOptions)" :key="type.value" :label="type.label" :value="type.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="lt('状态', 'Status')">
           <el-select v-model="productQuery.status" clearable style="width: 140px">
-            <el-option label="ACTIVE" value="ACTIVE" />
-            <el-option label="INACTIVE" value="INACTIVE" />
+            <el-option v-for="status in enumOptions(productStatusOptions)" :key="status.value" :label="status.label" :value="status.value" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="productQuery.current = 1; loadData()">查询</el-button>
-          <el-button @click="resetProductQuery">重置</el-button>
+          <el-button type="primary" @click="productQuery.current = 1; loadData()">{{ lt('查询', 'Search') }}</el-button>
+          <el-button @click="resetProductQuery">{{ lt('重置', 'Reset') }}</el-button>
         </el-form-item>
       </el-form>
       <el-table v-loading="loading" :data="products" border>
-        <el-table-column type="index" :index="productIndex" label="编号" width="80" />
+        <el-table-column type="index" :index="productIndex" :label="lt('编号', 'No.')" width="80" />
         <el-table-column prop="productNo" label="SKU" min-width="150" />
-        <el-table-column prop="name" label="名称" min-width="160" />
-        <el-table-column prop="productType" label="类型" width="130" />
-        <el-table-column prop="tier" label="档位" width="110" />
-        <el-table-column prop="priceUsdt" label="价格 USDT" width="130" />
-        <el-table-column prop="estimatedDailyUsdt" label="日收益 USDT" width="140" />
-        <el-table-column prop="dailyNex" label="日收益 NEX" width="130" />
-        <el-table-column prop="stock" label="库存" width="90" />
-        <el-table-column prop="status" label="状态" width="110" />
-        <el-table-column label="操作" width="110" fixed="right">
+        <el-table-column prop="name" :label="lt('名称', 'Name')" min-width="160" />
+        <el-table-column prop="productType" :label="lt('类型', 'Type')" width="130" :formatter="enumTableFormatter" />
+        <el-table-column prop="tier" :label="lt('档位', 'Tier')" width="110" />
+        <el-table-column prop="priceUsdt" :label="lt('价格 USDT', 'Price USDT')" width="130" />
+        <el-table-column prop="estimatedDailyUsdt" :label="lt('日收益 USDT', 'Daily USDT')" width="140" />
+        <el-table-column prop="dailyNex" :label="lt('日收益 NEX', 'Daily NEX')" width="130" />
+        <el-table-column prop="stock" :label="lt('库存', 'Stock')" width="90" />
+        <el-table-column :label="lt('状态', 'Status')" width="110">
+          <template #default="{ row }"><el-tag :type="row.status === 'ACTIVE' ? 'success' : 'info'">{{ enumLabel(row.status) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column :label="lt('操作', 'Actions')" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" :icon="'Edit'" @click="openProductDialog(row)">编辑</el-button>
+            <el-button link type="primary" :icon="'Edit'" @click="openProductDialog(row)">{{ lt('编辑', 'Edit') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -264,57 +276,54 @@ onMounted(loadData)
     </el-card>
 
     <el-card class="app-card" shadow="never">
-      <template #header>用户设备实例</template>
+      <template #header>{{ lt('用户设备实例', 'User Device Instances') }}</template>
       <el-form :inline="true" :model="deviceQuery" class="filter-form">
-        <el-form-item label="用户ID"><el-input v-model="deviceQuery.userId" clearable /></el-form-item>
-        <el-form-item label="来源订单"><el-input v-model="deviceQuery.sourceOrderNo" clearable /></el-form-item>
-        <el-form-item label="状态">
+        <el-form-item :label="lt('用户', 'User')"><UserSelect v-model="deviceQuery.userId" /></el-form-item>
+        <el-form-item :label="lt('来源订单', 'Source Order')"><el-input v-model="deviceQuery.sourceOrderNo" clearable /></el-form-item>
+        <el-form-item :label="lt('状态', 'Status')">
           <el-select v-model="deviceQuery.status" clearable style="width: 150px">
-            <el-option label="ONLINE" value="ONLINE" />
-            <el-option label="BUSY" value="BUSY" />
-            <el-option label="INACTIVE" value="INACTIVE" />
-            <el-option label="OFFLINE" value="OFFLINE" />
+            <el-option v-for="status in enumOptions(deviceStatusOptions)" :key="status.value" :label="status.label" :value="status.value" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="deviceQuery.current = 1; loadData()">查询</el-button>
-          <el-button @click="resetDeviceQuery">重置</el-button>
+          <el-button type="primary" @click="deviceQuery.current = 1; loadData()">{{ lt('查询', 'Search') }}</el-button>
+          <el-button @click="resetDeviceQuery">{{ lt('重置', 'Reset') }}</el-button>
         </el-form-item>
       </el-form>
       <el-table v-loading="loading" :data="devices" border>
-        <el-table-column type="index" :index="deviceIndex" label="编号" width="80" />
-        <el-table-column prop="userId" label="用户ID" width="100" />
-        <el-table-column prop="instanceNo" label="实例编号" min-width="170" />
-        <el-table-column prop="name" label="名称" min-width="150" />
-        <el-table-column prop="productTier" label="档位" width="90" />
-        <el-table-column prop="deviceType" label="类型" width="120" />
-        <el-table-column prop="status" label="状态" width="110" />
-        <el-table-column label="待停用" width="90">
+        <el-table-column type="index" :index="deviceIndex" :label="lt('编号', 'No.')" width="80" />
+        <el-table-column prop="userId" :label="lt('用户ID', 'User ID')" width="100" />
+        <el-table-column prop="instanceNo" :label="lt('实例编号', 'Instance No.')" min-width="170" />
+        <el-table-column prop="name" :label="lt('名称', 'Name')" min-width="150" />
+        <el-table-column prop="productTier" :label="lt('档位', 'Tier')" width="90" />
+        <el-table-column prop="deviceType" :label="lt('类型', 'Type')" width="120" :formatter="enumTableFormatter" />
+        <el-table-column prop="status" :label="lt('状态', 'Status')" width="110" :formatter="enumTableFormatter" />
+        <el-table-column :label="lt('待停用', 'Pending Stop')" width="90">
           <template #default="{ row }">
             <el-tag :type="row.pendingDeactivate ? 'warning' : 'info'" effect="plain">
-              {{ row.pendingDeactivate ? '是' : '否' }}
+              {{ row.pendingDeactivate ? lt('是', 'Yes') : lt('否', 'No') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="monthsOwned" label="持有月" width="90" />
-        <el-table-column label="当前效率" width="110">
+        <el-table-column prop="monthsOwned" :label="lt('持有月', 'Months Owned')" width="90" />
+        <el-table-column :label="lt('当前效率', 'Current Efficiency')" width="110">
           <template #default="{ row }">{{ percent(row.currentEfficiency) }}</template>
         </el-table-column>
-        <el-table-column prop="effectiveDailyUsdt" label="有效 USDT/日" width="140" />
-        <el-table-column prop="effectiveDailyNex" label="有效 NEX/日" width="140" />
-        <el-table-column prop="sourceOrderNo" label="来源订单" min-width="160" />
-        <el-table-column prop="purchasedAt" label="购买时间" min-width="170" />
-        <el-table-column prop="activatedAt" label="激活时间" min-width="170" />
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column prop="effectiveDailyUsdt" :label="lt('有效 USDT/日', 'Effective USDT/Day')" width="140" />
+        <el-table-column prop="effectiveDailyNex" :label="lt('有效 NEX/日', 'Effective NEX/Day')" width="140" />
+        <el-table-column prop="sourceOrderNo" :label="lt('来源订单', 'Source Order')" min-width="160" />
+        <el-table-column prop="purchasedAt" :label="lt('购买时间', 'Purchased At')" min-width="170" :formatter="formatTableDateTime" />
+        <el-table-column prop="activatedAt" :label="lt('激活时间', 'Activated At')" min-width="170" :formatter="formatTableDateTime" />
+        <el-table-column :label="lt('操作', 'Actions')" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="success" :disabled="row.status !== 'INACTIVE'" @click="runDeviceAction(row.id, 'activate')">
-              激活
+              {{ lt('激活', 'Activate') }}
             </el-button>
             <el-button link type="warning" :disabled="row.status === 'INACTIVE'" @click="runDeviceAction(row.id, 'schedule')">
-              排队停用
+              {{ lt('排队停用', 'Schedule Stop') }}
             </el-button>
             <el-button link type="danger" :disabled="row.status === 'INACTIVE'" @click="runDeviceAction(row.id, 'deactivate')">
-              停用
+              {{ lt('停用', 'Deactivate') }}
             </el-button>
           </template>
         </el-table-column>
@@ -331,52 +340,62 @@ onMounted(loadData)
       </div>
     </el-card>
 
-    <el-dialog v-model="productDialogVisible" :title="productForm.id ? '编辑 SKU' : '新增 SKU'" width="720px">
+    <el-dialog v-model="productDialogVisible" :title="productForm.id ? lt('编辑 SKU', 'Edit SKU') : lt('新增 SKU', 'New SKU')" width="720px">
       <el-form :model="productForm" label-width="118px">
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="商品编号"><el-input v-model="productForm.productNo" :disabled="!!productForm.id" /></el-form-item>
+            <el-form-item :label="lt('商品编号', 'Product No.')"><el-input v-model="productForm.productNo" :disabled="!!productForm.id" /></el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="商品名称"><el-input v-model="productForm.name" /></el-form-item>
+            <el-form-item :label="lt('商品名称', 'Product Name')"><el-input v-model="productForm.name" /></el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="商品类型"><el-input v-model="productForm.productType" /></el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="档位"><el-input v-model="productForm.tier" /></el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="状态">
-              <el-select v-model="productForm.status" style="width: 100%">
-                <el-option label="ACTIVE" value="ACTIVE" />
-                <el-option label="INACTIVE" value="INACTIVE" />
+            <el-form-item :label="lt('商品类型', 'Product Type')">
+              <el-select v-model="productForm.productType" style="width: 100%">
+                <el-option v-for="type in enumOptions(productTypeOptions)" :key="type.value" :label="type.label" :value="type.value" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="库存"><el-input-number v-model="productForm.stock" :min="0" style="width: 100%" /></el-form-item>
+            <el-form-item :label="lt('档位', 'Tier')"><el-input v-model="productForm.tier" /></el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="价格 USDT"><el-input-number v-model="productForm.priceUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item>
+            <el-form-item :label="lt('状态', 'Status')">
+              <el-select v-model="productForm.status" style="width: 100%">
+                <el-option v-for="status in enumOptions(productStatusOptions)" :key="status.value" :label="status.label" :value="status.value" />
+              </el-select>
+            </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="算力"><el-input-number v-model="productForm.hashrate" :min="0" :precision="6" style="width: 100%" /></el-form-item>
+            <el-form-item :label="lt('库存', 'Stock')"><el-input-number v-model="productForm.stock" :min="0" style="width: 100%" /></el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="日收益 USDT"><el-input-number v-model="productForm.estimatedDailyUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item>
+            <el-form-item :label="lt('价格 USDT', 'Price USDT')"><el-input-number v-model="productForm.priceUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="日收益 NEX"><el-input-number v-model="productForm.dailyNex" :min="0" :precision="6" style="width: 100%" /></el-form-item>
+            <el-form-item :label="lt('算力', 'Hashrate')"><el-input-number v-model="productForm.hashrate" :min="0" :precision="6" style="width: 100%" /></el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="lt('日收益 USDT', 'Daily USDT')"><el-input-number v-model="productForm.estimatedDailyUsdt" :min="0" :precision="6" style="width: 100%" /></el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item :label="lt('日收益 NEX', 'Daily NEX')"><el-input-number v-model="productForm.dailyNex" :min="0" :precision="6" style="width: 100%" /></el-form-item>
           </el-col>
           <el-col :span="24">
-            <el-form-item label="封面 URL"><el-input v-model="productForm.coverUrl" /></el-form-item>
+            <el-form-item :label="lt('商品封面', 'Product Cover')">
+              <ObjectImageUpload
+                v-model="productForm.coverUrl"
+                media-type="COVER"
+                empty-:title="lt('上传商品封面', 'Upload Product Cover')"
+                :empty-description="lt('拖拽或点击上传商品封面，支持 PNG/JPG/WebP', 'Drag or click to upload product cover, PNG/JPG/WebP supported')"
+              />
+            </el-form-item>
           </el-col>
         </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="productDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="productSaving" @click="saveProduct">保存</el-button>
+        <el-button @click="productDialogVisible = false">{{ lt('取消', 'Cancel') }}</el-button>
+        <el-button type="primary" :loading="productSaving" @click="saveProduct">{{ lt('保存', 'Save') }}</el-button>
       </template>
     </el-dialog>
   </div>

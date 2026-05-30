@@ -35,6 +35,15 @@ export const constantRoutes: RouteRecordRaw[] = [
     ]
   },
   {
+    path: '/users',
+    component: Layout,
+    redirect: '/users/list',
+    meta: { title: '用户运营', icon: 'User' },
+    children: [
+      { path: 'list', name: 'usersList', component: () => import('@/views/users/index.vue'), meta: { title: '用户管理', icon: 'UserFilled' } }
+    ]
+  },
+  {
     path: '/commerce',
     component: Layout,
     redirect: '/commerce/products',
@@ -194,6 +203,10 @@ router.beforeEach(async (to) => {
       authStore.logout()
       return { path: '/login', query: { redirect: to.fullPath } }
     }
+  }
+  const allowedPaths = new Set(authStore.admin?.menuPaths || [])
+  if (authStore.admin?.superAdmin !== 1 && !allowedPaths.has(to.path)) {
+    return '/home'
   }
   return true
 })

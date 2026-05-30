@@ -13,6 +13,14 @@ export function getMyRank() {
   return http<AnyRecord>({ url: '/team/ranks/mine', method: 'get' })
 }
 
+export function getUserRank(userId: Id) {
+  return http<AnyRecord>({ url: `/team/ranks/users/${userId}`, method: 'get' })
+}
+
+export function searchTeamUsers(keyword: string, config?: NexionRequestConfig) {
+  return http<AnyRecord[]>({ url: '/team/ranks/users/search', method: 'get', params: { keyword, limit: 10 }, ...config })
+}
+
 export function evaluateRank(data: AnyRecord) {
   return http<AnyRecord>({ url: '/team/ranks/evaluate', method: 'post', data })
 }

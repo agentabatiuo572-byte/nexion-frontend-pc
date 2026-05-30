@@ -14,9 +14,18 @@ export interface Product {
   dailyNex?: string | number
   stock?: number
   coverUrl?: string
+  detailImageUrls?: string
   createdAt?: string
   updatedAt?: string
   [key: string]: unknown
+}
+
+export interface ProductMediaUploadResponse {
+  bucket?: string
+  objectKey: string
+  downloadUrl?: string
+  contentType?: string
+  sizeBytes?: number
 }
 
 export interface ProductQuery extends PageParam {
@@ -220,6 +229,29 @@ export function createProduct(data: Product) {
 
 export function updateProduct(id: Id, data: Product) {
   return http<Product>({ url: `/commerce/products/${id}`, method: 'patch', data })
+}
+
+export type ProductMediaType = 'COVER' | 'DETAIL' | 'GENESIS_COVER' | 'USER_AVATAR'
+
+export function uploadProductMedia(mediaType: ProductMediaType, file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return http<ProductMediaUploadResponse>({
+    url: '/commerce/product-media',
+    method: 'post',
+    params: { mediaType },
+    data: formData,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+export function getProductMediaPreviewUrl(objectKey: string, config?: NexionRequestConfig) {
+  return http<ProductMediaUploadResponse>({
+    url: '/commerce/product-media/preview-url',
+    method: 'get',
+    params: { objectKey },
+    ...config
+  })
 }
 
 export function getGenesisSeries(params?: { status?: string; current?: number; size?: number }, config?: NexionRequestConfig) {

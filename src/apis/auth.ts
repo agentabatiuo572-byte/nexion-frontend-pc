@@ -16,6 +16,7 @@ export interface AdminProfile extends Omit<Admin, 'password'> {
   roleIds?: Id[]
   authorities?: string[]
   menuPaths?: string[]
+  menus?: Menu[]
 }
 
 export interface AdminLoginResult {
@@ -61,12 +62,44 @@ export interface Menu {
   id?: Id
   menuCode?: string
   menuName?: string
+  menuNameZh?: string
+  menuNameEn?: string
   parentId?: Id | null
   routePath?: string
   icon?: string
   sortOrder?: number
   remark?: string
   status?: number
+}
+
+export interface CEndUser {
+  id?: Id
+  countryCode?: string
+  phone?: string
+  phoneMasked?: string
+  nickname?: string
+  avatarUrl?: string
+  referralCode?: string
+  sponsorUserId?: Id
+  sponsorCode?: string
+  kycStatus?: string
+  userLevel?: string
+  vRank?: string
+  status?: string
+  language?: string
+  region?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface UserSearchItem {
+  userId: Id
+  nickname?: string
+  phoneMasked?: string
+  referralCode?: string
+  userLevel?: string
+  vRank?: string
+  status?: string
 }
 
 export interface MenuQuery {
@@ -163,4 +196,24 @@ export function updatePermission(id: Id, data: Permission) {
 
 export function deletePermission(id: Id) {
   return http<void>({ url: `/auth/access-control/permissions/${id}`, method: 'delete' })
+}
+
+export function getUserPage(params: PageParam) {
+  return http<CommonPage<CEndUser>>({ url: '/auth/users/page', method: 'get', params })
+}
+
+export function searchUsers(keyword: string, config?: { silentError?: boolean }) {
+  return http<UserSearchItem[]>({ url: '/auth/users/search', method: 'get', params: { keyword, limit: 10 }, ...config })
+}
+
+export function getUserDetail(id: Id) {
+  return http<CEndUser>({ url: `/auth/users/${id}`, method: 'get' })
+}
+
+export function updateUser(id: Id, data: Pick<CEndUser, 'nickname' | 'avatarUrl' | 'language' | 'region'>) {
+  return http<CEndUser>({ url: `/auth/users/${id}`, method: 'patch', data })
+}
+
+export function updateUserStatus(id: Id, status: string) {
+  return http<CEndUser>({ url: `/auth/users/${id}/status`, method: 'patch', data: { status } })
 }

@@ -6,6 +6,8 @@ import { useAppStore } from '@/store/app'
 import { useAuthStore } from '@/store/auth'
 import { constantRoutes } from '@/router'
 import { changeCurrentAdminPassword, updateCurrentAdminProfile } from '@/apis/auth'
+import type { Menu } from '@/apis/auth'
+import { t } from '@/utils/i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,6 +19,13 @@ const passwordVisible = ref(false)
 const currentUser = computed(() => authStore.admin || { username: '', nickname: '管理员', phone: '', email: '' })
 const profileForm = reactive({ username: '', nickname: '', phone: '', email: '' })
 const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const locale = computed(() => appStore.locale)
+
+interface MenuNode extends Menu {
+  title: string
+  fullPath: string
+  children: MenuNode[]
+}
 
 function fullRoutePath(parentPath: string, childPath: string) {
   if (childPath.startsWith('/')) return childPath
@@ -25,18 +34,91 @@ function fullRoutePath(parentPath: string, childPath: string) {
 }
 
 const menuRoutes = computed(() => {
+  const backendMenus = authStore.admin?.menus || []
+  if (backendMenus.length > 0) {
+    return buildBackendMenuTree(backendMenus)
+  }
+  return buildStaticMenuTree()
+})
+const menuTitleMap = computed(() => {
+  const map = new Map<string, string>()
+  const visit = (nodes: MenuNode[]) => {
+    nodes.forEach((item) => {
+      map.set(item.fullPath, item.title)
+      if (item.children?.length) visit(item.children)
+    })
+  }
+  const backendMenus = authStore.admin?.menus || []
+  if (backendMenus.length > 0) visit(buildBackendMenuTree(backendMenus))
+  return map
+})
+const defaultActive = computed(() => route.path)
+const currentRouteTitle = computed(() => menuTitleMap.value.get(route.path) || String(route.meta.title || ''))
+const userInitial = computed(() => (currentUser.value.nickname || currentUser.value.username || 'A').slice(0, 1).toUpperCase())
+
+function localizedMenuName(menu: Menu) {
+  if (locale.value.toLowerCase().startsWith('en')) {
+    return menu.menuNameEn || menu.menuName || menu.menuNameZh || menu.menuCode || ''
+  }
+  return menu.menuNameZh || menu.menuName || menu.menuNameEn || menu.menuCode || ''
+}
+
+function buildBackendMenuTree(menus: Menu[]) {
+  const activeMenus = menus
+    .filter((item) => item.status !== 0 && item.routePath)
+    .map<MenuNode>((item) => ({
+      ...item,
+      title: localizedMenuName(item),
+      fullPath: item.routePath || '',
+      children: []
+    }))
+    .sort((a, b) => (Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) || (Number(a.id || 0) - Number(b.id || 0)))
+  const map = new Map<string, MenuNode>()
+  activeMenus.forEach((item) => {
+    if (item.id != null) map.set(String(item.id), item)
+  })
+  const roots: MenuNode[] = []
+  activeMenus.forEach((item) => {
+    const parent = item.parentId != null ? map.get(String(item.parentId)) : undefined
+    if (parent) {
+      parent.children.push(item)
+    } else {
+      roots.push(item)
+    }
+  })
+  return roots
+}
+
+function buildStaticMenuTree() {
   const menuPathSet = new Set(authStore.admin?.menuPaths || [])
   const isSuperAdmin = authStore.admin?.superAdmin === 1
   return constantRoutes
     .filter((item) => item.children && item.path !== '/:pathMatch(.*)*' && item.path !== '/login')
-    .map((item) => {
-      const children = (item.children || []).filter((child) => isSuperAdmin || menuPathSet.has(fullRoutePath(item.path, child.path)))
-      return { ...item, children }
+    .map<MenuNode | null>((item) => {
+      const children = (item.children || [])
+        .filter((child) => isSuperAdmin || menuPathSet.has(fullRoutePath(item.path, child.path)))
+        .map<MenuNode>((child) => ({
+          menuCode: String(child.name || child.path),
+          menuName: String(child.meta?.title || child.name || child.path),
+          routePath: fullRoutePath(item.path, child.path),
+          icon: String(child.meta?.icon || 'Document'),
+          title: String(child.meta?.title || child.name || child.path),
+          fullPath: fullRoutePath(item.path, child.path),
+          children: []
+        }))
+      if (children.length === 0) return null
+      return {
+        menuCode: String(item.name || item.path),
+        menuName: String(item.meta?.title || item.name || item.path),
+        routePath: item.path,
+        icon: String(item.meta?.icon || children[0]?.icon || 'Menu'),
+        title: String(item.meta?.title || item.name || item.path),
+        fullPath: item.path,
+        children
+      }
     })
-    .filter((item) => item.children.length > 0)
-})
-const defaultActive = computed(() => route.path)
-const userInitial = computed(() => (currentUser.value.nickname || currentUser.value.username || 'A').slice(0, 1).toUpperCase())
+    .filter((item): item is MenuNode => item !== null)
+}
 
 function openMenu(path: string) {
   router.push(path)
@@ -55,7 +137,7 @@ async function submitProfile() {
   })
   authStore.setAdmin(admin)
   profileVisible.value = false
-  ElMessage.success('个人资料已更新')
+  ElMessage.success(t('message.profileUpdated'))
 }
 
 function openPassword() {
@@ -65,11 +147,11 @@ function openPassword() {
 
 async function submitPassword() {
   if (!passwordForm.oldPassword || !passwordForm.newPassword) {
-    ElMessage.warning('请输入原密码和新密码')
+    ElMessage.warning(t('message.passwordRequired'))
     return
   }
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    ElMessage.warning('两次输入的新密码不一致')
+    ElMessage.warning(t('message.passwordMismatch'))
     return
   }
   await changeCurrentAdminPassword({
@@ -77,14 +159,18 @@ async function submitPassword() {
     newPassword: passwordForm.newPassword
   })
   passwordVisible.value = false
-  ElMessage.success('密码已更新')
+  ElMessage.success(t('message.passwordUpdated'))
 }
 
 async function logout() {
-  await ElMessageBox.confirm('确认退出当前账号?', '退出登录', { type: 'warning' })
+  await ElMessageBox.confirm(t('confirm.logout'), t('title.logout'), { type: 'warning' })
   authStore.logout()
-  ElMessage.success('已退出登录')
+  ElMessage.success(t('message.logoutSuccess'))
   router.replace('/login')
+}
+
+function changeLocale(value: string) {
+  appStore.setLocale(value)
 }
 
 function handleUserCommand(command: string) {
@@ -108,7 +194,7 @@ onMounted(() => {
         <div class="brand-logo">N</div>
         <div v-if="!appStore.sidebarCollapsed" class="brand-text">
           <strong>Nexion</strong>
-          <span>后台管理系统</span>
+          <span>{{ t('app.name') }}</span>
         </div>
       </div>
 
@@ -122,29 +208,37 @@ onMounted(() => {
         unique-opened
         :collapse="appStore.sidebarCollapsed"
       >
-        <template v-for="menu in menuRoutes" :key="menu.path">
-          <el-sub-menu v-if="menu.children && menu.children.length > 1" :index="menu.path">
+        <template v-for="menu in menuRoutes" :key="menu.fullPath">
+          <el-sub-menu v-if="menu.children.length > 1 || (menu.children.length > 0 && menu.fullPath !== '/')" :index="menu.fullPath">
             <template #title>
-              <el-icon><component :is="menu.meta?.icon || 'Menu'" /></el-icon>
-              <span>{{ menu.meta?.title }}</span>
+              <el-icon><component :is="menu.icon || 'Menu'" /></el-icon>
+              <span>{{ menu.title }}</span>
             </template>
             <el-menu-item
               v-for="child in menu.children"
-              :key="`${menu.path}/${child.path}`"
-              :index="`${menu.path}/${child.path}`"
-              @click="openMenu(`${menu.path}/${child.path}`)"
+              :key="child.fullPath"
+              :index="child.fullPath"
+              @click="openMenu(child.fullPath)"
             >
-              <el-icon><component :is="child.meta?.icon || 'Document'" /></el-icon>
-              <span>{{ child.meta?.title }}</span>
+              <el-icon><component :is="child.icon || 'Document'" /></el-icon>
+              <span>{{ child.title }}</span>
             </el-menu-item>
           </el-sub-menu>
           <el-menu-item
-            v-else-if="menu.children?.[0]"
-            :index="`/${menu.children[0].path}`"
-            @click="openMenu(`/${menu.children[0].path}`)"
+            v-else-if="menu.fullPath && menu.children.length === 0"
+            :index="menu.fullPath"
+            @click="openMenu(menu.fullPath)"
           >
-            <el-icon><component :is="menu.children[0].meta?.icon || 'HomeFilled'" /></el-icon>
-            <span>{{ menu.children[0].meta?.title }}</span>
+            <el-icon><component :is="menu.icon || 'HomeFilled'" /></el-icon>
+            <span>{{ menu.title }}</span>
+          </el-menu-item>
+          <el-menu-item
+            v-else-if="menu.children?.[0]"
+            :index="menu.children[0].fullPath"
+            @click="openMenu(menu.children[0].fullPath)"
+          >
+            <el-icon><component :is="menu.children[0].icon || 'HomeFilled'" /></el-icon>
+            <span>{{ menu.children[0].title }}</span>
           </el-menu-item>
         </template>
       </el-menu>
@@ -158,10 +252,19 @@ onMounted(() => {
           </el-button>
           <el-breadcrumb separator="/">
             <el-breadcrumb-item>Nexion</el-breadcrumb-item>
-            <el-breadcrumb-item>{{ route.meta.title }}</el-breadcrumb-item>
+            <el-breadcrumb-item>{{ currentRouteTitle }}</el-breadcrumb-item>
           </el-breadcrumb>
         </div>
         <div class="header-right">
+          <el-segmented
+            :model-value="locale"
+            :options="[
+              { label: t('common.zh'), value: 'zh-CN' },
+              { label: t('common.en'), value: 'en-US' }
+            ]"
+            size="small"
+            @update:model-value="(value: string | number) => changeLocale(String(value))"
+          />
           <el-dropdown trigger="click" @command="handleUserCommand">
             <button class="user-menu" type="button">
               <span class="user-meta">
@@ -175,15 +278,15 @@ onMounted(() => {
               <el-dropdown-menu>
                 <el-dropdown-item command="profile">
                   <el-icon><User /></el-icon>
-                  个人资料
+                  {{ t('common.profile') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="password">
                   <el-icon><Lock /></el-icon>
-                  修改密码
+                  {{ t('common.password') }}
                 </el-dropdown-item>
                 <el-dropdown-item divided command="logout">
                   <el-icon><SwitchButton /></el-icon>
-                  退出登录
+                  {{ t('common.logout') }}
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -192,7 +295,7 @@ onMounted(() => {
       </el-header>
 
       <div class="tags-view">
-        <el-tag closable effect="plain">{{ route.meta.title }}</el-tag>
+        <el-tag closable effect="plain">{{ currentRouteTitle }}</el-tag>
       </div>
 
       <el-main class="layout-main">
@@ -200,28 +303,28 @@ onMounted(() => {
       </el-main>
     </el-container>
 
-    <el-dialog v-model="profileVisible" title="个人资料" width="520px">
+    <el-dialog v-model="profileVisible" :title="t('common.profile')" width="520px">
       <el-form :model="profileForm" label-width="88px">
-        <el-form-item label="用户名"><el-input v-model="profileForm.username" disabled /></el-form-item>
-        <el-form-item label="昵称"><el-input v-model="profileForm.nickname" /></el-form-item>
-        <el-form-item label="手机号"><el-input v-model="profileForm.phone" /></el-form-item>
-        <el-form-item label="邮箱"><el-input v-model="profileForm.email" /></el-form-item>
+        <el-form-item :label="t('common.username')"><el-input v-model="profileForm.username" disabled /></el-form-item>
+        <el-form-item :label="t('common.nickname')"><el-input v-model="profileForm.nickname" /></el-form-item>
+        <el-form-item :label="t('common.phone')"><el-input v-model="profileForm.phone" /></el-form-item>
+        <el-form-item :label="t('common.email')"><el-input v-model="profileForm.email" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="profileVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitProfile">保存</el-button>
+        <el-button @click="profileVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="submitProfile">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="passwordVisible" title="修改密码" width="520px">
+    <el-dialog v-model="passwordVisible" :title="t('common.password')" width="520px">
       <el-form :model="passwordForm" label-width="96px">
-        <el-form-item label="原密码"><el-input v-model="passwordForm.oldPassword" type="password" show-password /></el-form-item>
-        <el-form-item label="新密码"><el-input v-model="passwordForm.newPassword" type="password" show-password /></el-form-item>
-        <el-form-item label="确认密码"><el-input v-model="passwordForm.confirmPassword" type="password" show-password /></el-form-item>
+        <el-form-item :label="t('common.oldPassword')"><el-input v-model="passwordForm.oldPassword" type="password" show-password /></el-form-item>
+        <el-form-item :label="t('common.newPassword')"><el-input v-model="passwordForm.newPassword" type="password" show-password /></el-form-item>
+        <el-form-item :label="t('common.confirmPassword')"><el-input v-model="passwordForm.confirmPassword" type="password" show-password /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="passwordVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitPassword">确认修改</el-button>
+        <el-button @click="passwordVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="submitPassword">{{ t('common.confirmChange') }}</el-button>
       </template>
     </el-dialog>
   </el-container>

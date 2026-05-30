@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { localeText as lt } from '@/utils/i18n'
 import { reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
@@ -12,13 +13,13 @@ const form = reactive({ username: 'superadmin', password: '' })
 
 async function submitLogin() {
   if (!form.username || !form.password) {
-    ElMessage.warning('请输入用户名和密码')
+    ElMessage.warning(lt('请输入用户名和密码', 'Please enter username and password'))
     return
   }
   loading.value = true
   try {
     await authStore.login(form.username, form.password)
-    ElMessage.success('登录成功')
+    ElMessage.success(lt('登录成功', 'Login successful'))
     router.replace((route.query.redirect as string) || '/home')
   } finally {
     loading.value = false
@@ -33,17 +34,17 @@ async function submitLogin() {
         <div class="login-logo">N</div>
         <div>
           <h1>Nexion</h1>
-          <p>PC 管理端</p>
+          <p>{{ lt('PC 管理端', 'PC Admin') }}</p>
         </div>
       </div>
       <el-form :model="form" label-position="top" @keyup.enter="submitLogin">
-        <el-form-item label="用户名">
+        <el-form-item :label="lt('用户名', 'Username')">
           <el-input v-model="form.username" size="large" autocomplete="username" />
         </el-form-item>
-        <el-form-item label="密码">
+        <el-form-item :label="lt('密码', 'Password')">
           <el-input v-model="form.password" size="large" type="password" show-password autocomplete="current-password" />
         </el-form-item>
-        <el-button type="primary" size="large" class="login-button" :loading="loading" @click="submitLogin">登录</el-button>
+        <el-button type="primary" size="large" class="login-button" :loading="loading" @click="submitLogin">{{ lt('登录', 'Log In') }}</el-button>
       </el-form>
     </section>
   </div>

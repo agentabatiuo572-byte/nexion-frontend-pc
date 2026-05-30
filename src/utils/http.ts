@@ -18,6 +18,7 @@ service.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  config.headers['Accept-Language'] = localStorage.getItem('nexion_admin_locale') || 'zh-CN'
   return config
 })
 
