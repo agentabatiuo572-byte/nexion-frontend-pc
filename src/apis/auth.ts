@@ -88,6 +88,8 @@ export interface CEndUser {
   status?: string
   language?: string
   region?: string
+  bio?: string
+  timezone?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -210,7 +212,7 @@ export function getUserDetail(id: Id) {
   return http<CEndUser>({ url: `/auth/users/${id}`, method: 'get' })
 }
 
-export function updateUser(id: Id, data: Pick<CEndUser, 'nickname' | 'avatarUrl' | 'language' | 'region'>) {
+export function updateUser(id: Id, data: Pick<CEndUser, 'nickname' | 'avatarUrl' | 'language' | 'region' | 'bio' | 'timezone'>) {
   return http<CEndUser>({ url: `/auth/users/${id}`, method: 'patch', data })
 }
 

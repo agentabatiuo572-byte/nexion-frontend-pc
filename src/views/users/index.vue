@@ -22,6 +22,15 @@ const languages = [
   { label: 'English', value: 'en-US' },
   { label: '中文', value: 'zh-CN' }
 ]
+const timezones = [
+  'Asia/Singapore (UTC+8)',
+  'Asia/Tokyo (UTC+9)',
+  'Asia/Hong_Kong (UTC+8)',
+  'Europe/Berlin (UTC+1)',
+  'Europe/London (UTC+0)',
+  'Asia/Dubai (UTC+4)',
+  'America/New_York (UTC-5)'
+]
 
 const loading = ref(false)
 const saving = ref(false)
@@ -47,7 +56,9 @@ const form = reactive({
   nickname: '',
   avatarUrl: '',
   language: '',
-  region: ''
+  region: '',
+  bio: '',
+  timezone: ''
 })
 
 function rowIndex(index: number) {
@@ -138,7 +149,9 @@ async function openEdit(row: CEndUser) {
     nickname: detail.nickname || '',
     avatarUrl: detail.avatarUrl || '',
     language: detail.language || 'en-US',
-    region: detail.region || ''
+    region: detail.region || '',
+    bio: detail.bio || '',
+    timezone: detail.timezone || ''
   })
   editVisible.value = true
 }
@@ -155,7 +168,9 @@ async function submitEdit() {
       nickname: form.nickname,
       avatarUrl: form.avatarUrl,
       language: form.language,
-      region: form.region
+      region: form.region,
+      bio: form.bio,
+      timezone: form.timezone
     })
     ElMessage.success(lt('保存成功', 'Saved'))
     editVisible.value = false
@@ -304,6 +319,7 @@ onMounted(loadList)
           <el-descriptions-item :label="lt('昵称', 'Nickname')">{{ selected.nickname || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="lt('国家区号', 'Country Code')">{{ selected.countryCode || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="lt('手机号', 'Phone')">{{ selected.phone || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="lt('简介', 'Bio')" :span="2">{{ selected.bio || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="lt('头像', 'Avatar')" :span="2">
             <div v-if="selected.avatarUrl && avatarPreview(selected.avatarUrl)" class="avatar-preview-wrap">
               <el-image class="avatar-preview" :src="avatarPreview(selected.avatarUrl)" fit="cover" :preview-src-list="[avatarPreview(selected.avatarUrl)]" preview-teleported />
@@ -316,6 +332,7 @@ onMounted(loadList)
           <el-descriptions-item :label="lt('状态', 'Status')"><el-tag :type="statusTag(selected.status)">{{ enumLabel(selected.status) }}</el-tag></el-descriptions-item>
           <el-descriptions-item :label="lt('语言', 'Language')">{{ selected.language || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="lt('地区', 'Region')">{{ selected.region || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="lt('时区', 'Timezone')">{{ selected.timezone || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="lt('KYC 状态', 'KYC Status')">{{ enumLabel(selected.kycStatus) }}</el-descriptions-item>
         </el-descriptions>
 
@@ -355,6 +372,12 @@ onMounted(loadList)
           </el-select>
         </el-form-item>
         <el-form-item :label="lt('地区', 'Region')"><el-input v-model="form.region" maxlength="32" /></el-form-item>
+        <el-form-item :label="lt('时区', 'Timezone')">
+          <el-select v-model="form.timezone" clearable filterable allow-create style="width: 100%">
+            <el-option v-for="item in timezones" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="lt('简介', 'Bio')"><el-input v-model="form.bio" type="textarea" maxlength="512" show-word-limit :rows="4" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editVisible = false">{{ lt('取消', 'Cancel') }}</el-button>
