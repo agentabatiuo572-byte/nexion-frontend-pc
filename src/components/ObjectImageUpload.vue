@@ -30,11 +30,28 @@ function isPresetAvatar(objectKey?: string) {
   return !!objectKey && objectKey.startsWith('mech:')
 }
 
+function isAbsoluteUrl(value?: string) {
+  return !!value && /^https?:\/\//i.test(value)
+}
+
+function isAllowedMediaObjectKey(objectKey?: string) {
+  return !!objectKey && (
+    objectKey.startsWith('auth/users/avatar/')
+    || objectKey.startsWith('commerce/products/')
+    || objectKey.startsWith('commerce/genesis/')
+  )
+}
+
 async function loadPreview(objectKey: string) {
   if (!objectKey || previewUrls[objectKey]) return
   if (isPresetAvatar(objectKey)) return
+  if (isAbsoluteUrl(objectKey)) {
+    previewUrls[objectKey] = objectKey
+    return
+  }
+  if (!isAllowedMediaObjectKey(objectKey)) return
   try {
-    const response = await getProductMediaPreviewUrl(objectKey)
+    const response = await getProductMediaPreviewUrl(objectKey, { silentError: true })
     if (response.downloadUrl) {
       previewUrls[objectKey] = response.downloadUrl
     }
@@ -66,6 +83,11 @@ async function uploadImage(options: UploadRequestOptions) {
 
 async function openImage() {
   if (!props.modelValue || isPresetAvatar(props.modelValue)) return
+  if (isAbsoluteUrl(props.modelValue)) {
+    window.open(props.modelValue, '_blank', 'noopener,noreferrer')
+    return
+  }
+  if (!isAllowedMediaObjectKey(props.modelValue)) return
   await loadPreview(props.modelValue)
   const url = previewUrls[props.modelValue]
   if (url) {

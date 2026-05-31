@@ -80,6 +80,14 @@ function isPresetAvatar(value?: string) {
   return !!value && value.startsWith('mech:')
 }
 
+function isAllowedMediaObjectKey(value?: string) {
+  return !!value && (
+    value.startsWith('auth/users/avatar/')
+    || value.startsWith('commerce/products/')
+    || value.startsWith('commerce/genesis/')
+  )
+}
+
 async function loadAvatarPreview(avatarUrl?: string) {
   if (!avatarUrl || avatarPreviewUrls[avatarUrl]) return
   if (isPresetAvatar(avatarUrl)) return
@@ -87,8 +95,9 @@ async function loadAvatarPreview(avatarUrl?: string) {
     avatarPreviewUrls[avatarUrl] = avatarUrl
     return
   }
+  if (!isAllowedMediaObjectKey(avatarUrl)) return
   try {
-    const response = await getProductMediaPreviewUrl(avatarUrl)
+    const response = await getProductMediaPreviewUrl(avatarUrl, { silentError: true })
     if (response.downloadUrl) {
       avatarPreviewUrls[avatarUrl] = response.downloadUrl
     }
@@ -99,6 +108,7 @@ async function loadAvatarPreview(avatarUrl?: string) {
 
 function avatarPreview(avatarUrl?: string) {
   if (!avatarUrl || isPresetAvatar(avatarUrl)) return ''
+  if (!isAbsoluteUrl(avatarUrl) && !isAllowedMediaObjectKey(avatarUrl)) return ''
   return avatarPreviewUrls[avatarUrl] || ''
 }
 
