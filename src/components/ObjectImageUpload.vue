@@ -26,8 +26,13 @@ function imageName(objectKey: string) {
   return objectKey.split('/').pop() || objectKey
 }
 
+function isPresetAvatar(objectKey?: string) {
+  return !!objectKey && objectKey.startsWith('mech:')
+}
+
 async function loadPreview(objectKey: string) {
   if (!objectKey || previewUrls[objectKey]) return
+  if (isPresetAvatar(objectKey)) return
   try {
     const response = await getProductMediaPreviewUrl(objectKey)
     if (response.downloadUrl) {
@@ -60,7 +65,7 @@ async function uploadImage(options: UploadRequestOptions) {
 }
 
 async function openImage() {
-  if (!props.modelValue) return
+  if (!props.modelValue || isPresetAvatar(props.modelValue)) return
   await loadPreview(props.modelValue)
   const url = previewUrls[props.modelValue]
   if (url) {

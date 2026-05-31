@@ -76,8 +76,13 @@ function isAbsoluteUrl(value?: string) {
   return !!value && /^https?:\/\//i.test(value)
 }
 
+function isPresetAvatar(value?: string) {
+  return !!value && value.startsWith('mech:')
+}
+
 async function loadAvatarPreview(avatarUrl?: string) {
   if (!avatarUrl || avatarPreviewUrls[avatarUrl]) return
+  if (isPresetAvatar(avatarUrl)) return
   if (isAbsoluteUrl(avatarUrl)) {
     avatarPreviewUrls[avatarUrl] = avatarUrl
     return
@@ -93,7 +98,7 @@ async function loadAvatarPreview(avatarUrl?: string) {
 }
 
 function avatarPreview(avatarUrl?: string) {
-  if (!avatarUrl) return ''
+  if (!avatarUrl || isPresetAvatar(avatarUrl)) return ''
   return avatarPreviewUrls[avatarUrl] || ''
 }
 
