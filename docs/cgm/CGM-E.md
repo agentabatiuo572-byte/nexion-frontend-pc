@@ -1,0 +1,32 @@
+# CGM-E · 设备与商城(字段级控制矩阵)
+
+> 自动生成于 Batch 0 全运营面 inventory。完整 serverCanonical/source/querySurface 见 `cgm.manifest.json`。coverage 默认 gap,per-batch 回源后升级 built/spec_only。
+
+本域 24 行。
+
+| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+|---|---|---|---|---|---|---|---|---|
+| CGM-E-001 | per-user | function-action | useApp.addDevice / activateDevice / deactivateD… | platform_integrity,payout_pacing,conver… | 查/调用户活跃槽位与库存;运营改 MAX_DEVICES 上限(_config README 标:改常量薅多设备 yield,client… | Y | 读 TBD·建议 GET /api/devices · 写 POST /api/devices/d… | gap |
+| CGM-E-002 | per-user | function-action | useApp.recycleDevice (salvage credit, removes d… | fund_safety,platform_integrity,conversi… | 查/审回收记录;运营可调 salvage 参数影响回收额(见 tradein-config 行)。回收须 bill+receipt 复合写 | Y | 写 POST /api/devices/recycle(头注,TBD candidate,not … | gap |
+| CGM-E-003 | per-user | function-action | useApp.replaceDevice (Path-A atomic trade-in: r… | fund_safety,platform_integrity,conversi… | 查/审 trade-in 交易;调 salvage 参数(tradein-config);手动处理失败回滚。须 bill+receipt … | Y | 写 POST /api/devices/replace(头注,TBD candidate,not … | gap |
+| CGM-E-004 | per-user | data-CRUD | useApp.user.cumulativeDepositUsdt + recordDepos… | fund_safety,conversion,platform_integri… | 查累计入金;运营核对该值与真实入金一致(防被 earnings 等污染);异常时由 server canonical 对账 | Y | 读 GET /api/users/me(头注,TBD candidate) · 写 PSP-web… | gap |
+| CGM-E-005 | per-user | data-CRUD | useCart.items[] + BUNDLE_DISCOUNT_TIERS (2→5% /… | conversion | 运营调 BUNDLE_DISCOUNT_TIERS 阶梯(minItems/pct);查用户购物车构成。折扣率改动属促销运营 | Y | TBD·建议 GET /api/config/bundle-discount 读 + PUT /a… | gap |
+| CGM-E-006 | per-user | function-action | useFreeTrial 状态机 {status/startedAt/activeEndsAt… | conversion,fund_safety,platform_integri… | 查/审用户试用状态;接真后台后全部动作改为 server endpoint(start/redeem-early/cancel/exten… | Y | 读 GET /api/trial/state SSE/WS + GET /api/trial/el… | gap |
+| CGM-E-007 | per-user | data-CRUD | useFreeTrial.{status,finishedAt} 持久化 (localStor… | platform_integrity,fund_safety | 接真后台:trial state 100% server canonical,GET /api/trial/eligibility 单源,… | Y | 读 GET /api/trial/eligibility(_config README,单源) ·… | gap |
+| CGM-E-008 | per-user | function-action | useOrders.createOrder / advanceOrder / markActi… | fund_safety,platform_integrity,conversi… | 接真后台后:删 tickOrders(server push 状态);createOrder→POST checkout;advance/… | Y | 读 /api/orders/stream SSE 或 POST webhook(头注) · 写 T… | gap |
+| CGM-E-009 | per-user | data-CRUD | useOrders.orders[] (Order: id/productId/quantit… | fund_safety,conversion,platform_integri… | 查订单、人工推进状态(provisioning→activated)、标记 activated 绑定 deviceId、取消并发起退款(代… | Y | 读 GET /api/orders/:id(头注) · 读流 /api/orders/stream… | gap |
+| CGM-E-010 | per-user | data-CRUD | useReceipts.receipts[] (Proof-of-Compute) + add… | content_compliance,platform_integrity,f… | 查收据;运营核对 fee 费率(任务 3.3%、KYC 0)与 netPaid;接真后台后收据须 server-signed(server… | Y | 读 TBD·建议 GET /api/me/receipts(前端 PRD §6.9) · 写 由 … | gap |
+| CGM-E-011 | per-user | function-action | useTradeinSheet (choice/tradein/replace/block 状… | conversion,platform_integrity | 无后端数据;纯 ephemeral UI 状态机。运营无需直接 CRUD,仅作交互编排参考 | · | TBD·纯前端 UI 状态,无端点 | gap |
+| CGM-E-012 | platform | function-action | annualRoiPct() / derivePromoUpgrade() (派生 ROI% … | conversion,platform_integrity | 无独立写;随 DEVICE_SPECS/PRODUCTS 调价自动重算。运营负责审产品数字「可信诱人」不自曝(回本期/ROI 不得相互矛盾) | Y | TBD·随 GET /api/products/specs 派生,无独立端点 | gap |
+| CGM-E-013 | platform | param-config | DEFAULT_TRADEIN_CONFIG.eligibility (per-DeviceK… | conversion,platform_integrity,network_g… | 调每档 eligibility 规则与阈值(v-rank level、cumulative-deposit amount、own-kind… | Y | 读 GET /api/config/tradein(头注,TBD candidate) · 写 P… | gap |
+| CGM-E-014 | platform | param-config | DEFAULT_TRADEIN_CONFIG.promo (enabled/cooldownH… | conversion,platform_integrity | 开关 promo、调冷却/延迟/单会话上限、改可展示 routes(须对齐实际挂载点)、调 minDeviceAgeDays;设 inve… | Y | 读 GET /api/config/tradein(头注,TBD candidate) · 写 P… | gap |
+| CGM-E-015 | platform | param-config | DEFAULT_TRADEIN_CONFIG.salvage (rate 0.30 / mon… | fund_safety,conversion,phase_12mo | 调 rate/monthlyDecay/floor;调 minHoldingMonths(promo 窗可降低);开关 salvage.e… | Y | 读 GET /api/config/tradein(头注 + _config README,TBD… | gap |
+| CGM-E-016 | platform | param-config | DEFAULT_TRIAL_CONFIG.{discountRate 0.15/discoun… | fund_safety,conversion,payout_pacing | 调 discountRate/discountCapUSD/trialOffsetCapUSD/trialPriceUSD;开关 auto… | Y | 读 GET /api/admin/trial/config(头注 §9.11a.1) · 扣款 P… | gap |
+| CGM-E-017 | platform | param-config | DEFAULT_TRIAL_CONFIG.{shadowDailyUSD 38.52/shad… | conversion,payout_pacing,fund_safety | 调 shadowDailyUSD/shadowDailyNEX 影响试用展示收益与转化抵扣额;须与 S1 baseRate 一致 | Y | 读 GET /api/admin/trial/config(头注 §9.11a.1) · 写 PU… | gap |
+| CGM-E-018 | platform | param-config | DEFAULT_TRIAL_CONFIG.{trialDays 3/graceDays 7/e… | conversion,fund_safety,platform_integri… | 调 trialDays/graceDays/extensionDays/cooldownDays/highQualityThreshold… | Y | 读 GET /api/admin/trial/config + SSE /api/trial/st… | gap |
+| CGM-E-019 | platform | param-config | DEFAULT_TRIAL_CONFIG.autoPush* (autoPushEnabled… | conversion,platform_integrity | 开关 autoPushEnabled、调 delayMs/cooldownHours/maxPerSession 控制弹窗骚扰程度 | Y | 读 SSE /api/trial/state + GET /api/admin/trial/con… | gap |
+| CGM-E-020 | platform | param-config | DEGRADATION_PER_MONTH (early −4% / middle −6% /… | payout_pacing,phase_12mo,conversion | 运营调三段衰减率与 floor(直接驱动用户收益曲线,12 月回本节奏校准);client 不可自调效率 | Y | 读 GET /api/config/lifecycle(头注 + _config README,T… | gap |
+| CGM-E-021 | platform | param-config | DEVICE_PRICE_USDT (phone 0 / s1 1299 / pro 2399… | conversion,fund_safety,platform_integri… | 调每档零售价;须与 PRODUCTS.price 对齐(代码注释记录过 pro 档 2639 stale→2399 修复,曾导致 trad… | Y | 读 GET /api/store/catalog(头注,TBD candidate,not in … | gap |
+| CGM-E-022 | platform | param-config | DEVICE_SPECS (gpu/vramTotal/basePower/baseRate/… | payout_pacing,conversion,platform_integ… | 调 baseRate/baseRateNEX(直接驱动用户日收益)、改 gpu/vram/hashRate 规格、改 location(S… | Y | 读 GET /api/products/specs(_config README) · 写 TBD… | gap |
+| CGM-E-023 | platform | data-CRUD | PRODUCTS[] (catalog: id/name/tier/price/dailyEa… | conversion,phase_12mo,platform_integrity | 新增/下架 SKU、调价(price)、调 dailyEarn/dailyEarnNEX、改 stock/sol… | Y | 读 GET /api/products/specs(_config README) · 读 GET… | gap |
+| CGM-E-024 | platform | param-config | useReceipts 收据 fee 费率 (task 3.3% / KYC 0) + KYC… | fund_safety,content_compliance,platform… | 运营调任务结算费率;改 KYC 合规框架展示清单;接真后台后费率从 server 配置读取 | Y | 读 TBD·建议 GET /api/config/fees(费率表) · 收据由 server 签发 | gap |

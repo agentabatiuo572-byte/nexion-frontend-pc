@@ -1,0 +1,70 @@
+/* ============================================================================
+   域 B 总览驾驶舱 — B2/B3/B4/B5 共享页面 chrome(端口自设计稿 b-chrome.css)。
+   作用域 .bpage,与 globals .dkpage 共享组件类(.card/.btn/.dot/.muted/.alertbar…)组合。
+   token 走 globals bare-token 别名(--brand/--ink-3/--surface…→ --v5-*),双主题安全。
+   去除设计稿的 B1-B5 分段导航(.b-nav)与 server-canonical pill(.b-live)——
+   导航由 console 外壳承载,实时状态由全局顶栏 SyncChip 承载,避免重复。
+   各页另在 co-located <route>.css 写自己的 signature 图表布局。
+   ============================================================================ */
+
+/* 自适应锚:以内容区真实宽为查询基准(container query),免疫固定侧栏宽度。 */
+/* 宽度上限由全局 .content-shell 统一(globals.css);本页只设容器查询锚 + 底距。 */
+.dkpage.bpage { padding-bottom: 40px; container: bpage / inline-size; }
+
+/* ---- 页头 ---- */
+.bpage .b-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.bpage .b-pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px;
+  border-radius: 999px; border: 1px solid var(--brand-border); background: var(--brand-soft);
+  font-size: 12.5px; font-weight: 600; color: var(--brand); white-space: nowrap; }
+.bpage .b-tag { font-family: var(--font-jet-mono), monospace; font-size: 11px; color: var(--ink-3);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+
+.bpage .b-titlerow { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
+.bpage .b-titlemain { flex: 1; min-width: 280px; }
+.bpage .b-title { font-size: 25px; font-weight: 600; letter-spacing: -.01em; margin: 6px 0 8px; color: var(--ink); }
+.bpage .b-desc { font-size: 13.5px; line-height: 1.6; color: var(--ink-3); max-width: 920px; margin: 0; }
+.bpage .b-desc b { color: var(--ink-2); font-weight: 600; }
+
+.bpage .b-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
+  border: 1px solid var(--brand-border); background: var(--brand-soft); color: var(--brand);
+  font-size: 13px; font-weight: 600; white-space: nowrap; transition: background .15s, color .15s; }
+.bpage .b-cta:hover { background: var(--brand); color: var(--v5-on-brand); }
+
+/* ---- 卡片标题行 ---- */
+.bpage .ttl-row { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
+.bpage .ttl-row .ic { display: grid; place-items: center; flex-shrink: 0; color: var(--ink-3); }
+.bpage .ttl-row .h { font-size: 14px; font-weight: 600; white-space: nowrap; color: var(--ink); }
+.bpage .ttl-row .sub { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.bpage .ttl-row .r { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.bpage .help { width: 14px; height: 14px; border-radius: 50%; display: inline-grid; place-items: center;
+  font-size: 9px; font-weight: 700; background: var(--surface-3); color: var(--ink-4);
+  border: 1px solid var(--border); cursor: help; vertical-align: middle; flex-shrink: 0; }
+
+/* ---- 通用环图(conic ring) ---- */
+.bpage .donut { position: relative; border-radius: 50%; flex-shrink: 0; }
+.bpage .donut .hole { position: absolute; inset: 26%; border-radius: 50%; background: var(--surface);
+  display: grid; place-items: center; text-align: center; }
+.bpage .donut .hole .big { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.bpage .donut .hole .sm { font-size: 10px; color: var(--ink-4); }
+.bpage .legend { display: flex; flex-direction: column; gap: 2px; }
+.bpage .legend .lg { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 12.5px; }
+.bpage .legend .lg .d { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+.bpage .legend .lg .nm { color: var(--ink-2); flex: 1; white-space: nowrap; }
+.bpage .legend .lg .pc { font-family: var(--font-jet-mono), monospace; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+/* ---- 通用竖向柱图 ---- */
+.bpage .bars { display: flex; align-items: flex-end; gap: 10px; }
+.bpage .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+.bpage .bar-col .v { font-family: var(--font-jet-mono), monospace; font-size: 12px; font-weight: 600; color: var(--ink-2);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bpage .bar-track { width: 100%; max-width: 46px; display: flex; align-items: flex-end; justify-content: center; }
+.bpage .bar { width: 100%; border-radius: 6px 6px 3px 3px; min-height: 3px; }
+.bpage .bar-col .lbl { font-family: var(--font-jet-mono), monospace; font-size: 11px; color: var(--ink-4); white-space: nowrap; }
+
+/* ---- 图表 x 轴行 ---- */
+.bpage .cohort-axis { display: flex; justify-content: space-between; font-family: var(--font-jet-mono), monospace;
+  font-size: 11px; color: var(--ink-4); margin-top: 8px; }
+
+/* ---- 页脚洞察行 ---- */
+.bpage .b-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
+.bpage .b-foot b { color: var(--ink-3); font-weight: 600; }

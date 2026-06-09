@@ -1,0 +1,1050 @@
+{
+  "version": 1,
+  "note": "运营动作完整性 — 机读清单(OPS-ACTIONS-MATRIX 的机读版)。status: built(真写持久store,门反查storeAction真落地) / pending(死控件待补,放行但计欠账) / missing(完全缺失待补) / readonly(合理只读,须带reason)。门 scripts/ops-actions-audit.mjs 驱动:防新增死控件(deadControlBaseline 只减不增)+ 防built退化(storeAction必须真在store且被view调用)。补一个动作:status→built + 填storeAction + 降baseline。",
+  "deadControlBaseline": {
+    "a-view.tsx": 1,
+    "c-view.tsx": 2,
+    "d-view.tsx": 0,
+    "e-view.tsx": 2,
+    "f-view.tsx": 3,
+    "g-view.tsx": 1,
+    "h-view.tsx": 0,
+    "i-view.tsx": 0,
+    "j-view.tsx": 1,
+    "k-view.tsx": 1,
+    "l-view.tsx": 0
+  },
+  "rows": [
+    {
+      "id": "OPS-A-01",
+      "domain": "A",
+      "object": "运营账号",
+      "action": "新增账号",
+      "status": "built",
+      "view": "a-view.tsx",
+      "storeAction": "addAccount",
+      "storeFile": "platform-config-store",
+      "batch": "done"
+    },
+    {
+      "id": "OPS-A-02",
+      "domain": "A",
+      "object": "运营账号",
+      "action": "停用/启用账号",
+      "status": "built",
+      "view": "a-view.tsx",
+      "batch": "P0",
+      "storeAction": "updateAccount"
+    },
+    {
+      "id": "OPS-A-03",
+      "domain": "A",
+      "object": "运营账号",
+      "action": "改角色",
+      "status": "built",
+      "view": "a-view.tsx",
+      "batch": "P0",
+      "storeAction": "updateAccount"
+    },
+    {
+      "id": "OPS-A-04",
+      "domain": "A",
+      "object": "运营账号",
+      "action": "重置2FA",
+      "status": "built",
+      "view": "a-view.tsx",
+      "batch": "P1",
+      "storeAction": "updateAccount"
+    },
+    {
+      "id": "OPS-A-05",
+      "domain": "A",
+      "object": "RBAC权限矩阵",
+      "action": "查看角色清单",
+      "status": "readonly",
+      "view": "a-view.tsx:137",
+      "reason": "角色权限清单展示,编辑另计"
+    },
+    {
+      "id": "OPS-A-06",
+      "domain": "A",
+      "object": "RBAC权限矩阵",
+      "action": "编辑权限映射",
+      "status": "built",
+      "view": "a-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-A-07",
+      "domain": "A",
+      "object": "系统参数",
+      "action": "调整(维护模式/限流/超时)",
+      "status": "built",
+      "view": "a-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-A-08",
+      "domain": "A",
+      "object": "埋点事件",
+      "action": "新增事件",
+      "status": "built",
+      "view": "a-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-A-09",
+      "domain": "A",
+      "object": "埋点事件",
+      "action": "灰度/全量/停用",
+      "status": "built",
+      "view": "a-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-A-10",
+      "domain": "A",
+      "object": "审计日志",
+      "action": "查看",
+      "status": "readonly",
+      "view": "a-view.tsx:125",
+      "reason": "审计 append-only 只读"
+    },
+    {
+      "id": "OPS-A-11",
+      "domain": "A",
+      "object": "审计复核队列(A2)",
+      "action": "复核裁决(放行/驳回)",
+      "status": "built",
+      "view": "a-view.tsx",
+      "batch": "done",
+      "storeAction": "setParam",
+      "note": "Maker-Checker 第二人对待复核项放行/驳回,写 A.audit.<id>.verdict=approved/rejected + A2 审计;本轮补登记(原 inventory 盲区,曾 onClick 直接 setToast 绕双签)"
+    },
+    {
+      "id": "OPS-B-01",
+      "domain": "B",
+      "object": "双账本/储备水位/漏斗/节奏/风险雷达",
+      "action": "看板展示",
+      "status": "readonly",
+      "view": "overview/*",
+      "reason": "驾驶舱聚合口径,实际操作跨域委托 F/H/J"
+    },
+    {
+      "id": "OPS-B-02",
+      "domain": "B",
+      "object": "兑付红线阈值",
+      "action": "调阈值(85%/挤兑15%)",
+      "status": "built",
+      "view": "overview/dual-ledger",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-B-03",
+      "domain": "B",
+      "object": "Kill-Switch",
+      "action": "驾驶舱一键触发入口",
+      "status": "built",
+      "view": "overview/*",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-B-04",
+      "domain": "B",
+      "object": "P0告警",
+      "action": "标记已处置",
+      "status": "built",
+      "view": "overview/*",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-C-01",
+      "domain": "C",
+      "object": "用户账户(360HUB)",
+      "action": "冻结/解冻",
+      "status": "built",
+      "view": "users/search/[id]/page.tsx",
+      "storeAction": "setFrozen",
+      "storeFile": "user-ops-store",
+      "batch": "done"
+    },
+    {
+      "id": "OPS-C-02",
+      "domain": "C",
+      "object": "per-user设备(360HUB)",
+      "action": "上线/下线/换机/回收",
+      "status": "built",
+      "view": "components/hub/devices-section.tsx",
+      "storeAction": "deviceToggle",
+      "storeFile": "user-ops-store",
+      "batch": "done"
+    },
+    {
+      "id": "OPS-C-03",
+      "domain": "C",
+      "object": "用户资产(360HUB)",
+      "action": "补发/调整收益台账",
+      "status": "built",
+      "view": "components/hub/earnings-section.tsx",
+      "storeAction": "earningAppend",
+      "storeFile": "user-ops-store",
+      "batch": "done"
+    },
+    {
+      "id": "OPS-C-04",
+      "domain": "C",
+      "object": "会话/2FA(360HUB)",
+      "action": "吊销会话/重置2FA",
+      "status": "built",
+      "view": "components/hub/account-section.tsx",
+      "storeAction": "revokeSession",
+      "storeFile": "user-ops-store",
+      "batch": "done"
+    },
+    {
+      "id": "OPS-C-05",
+      "domain": "C",
+      "object": "用户账户(列表页快捷)",
+      "action": "冻结/解冻/限制",
+      "status": "built",
+      "view": "c-view.tsx",
+      "batch": "P0",
+      "fixHint": "与360HUB割裂:列表快捷按钮接 user-ops-store 或改为跳HUB",
+      "storeAction": "setFrozen"
+    },
+    {
+      "id": "OPS-C-06",
+      "domain": "C",
+      "object": "用户账户(列表页)",
+      "action": "重置密码/impersonate",
+      "status": "built",
+      "view": "c-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-C-07",
+      "domain": "C",
+      "object": "KYC复审",
+      "action": "通过",
+      "status": "built",
+      "view": "c-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-C-08",
+      "domain": "C",
+      "object": "KYC复审",
+      "action": "驳回/补件",
+      "status": "built",
+      "view": "c-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-C-09",
+      "domain": "C",
+      "object": "资产调整审批(列表)",
+      "action": "通过/驳回",
+      "status": "built",
+      "view": "c-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-C-10",
+      "domain": "C",
+      "object": "安全会话",
+      "action": "强制登出",
+      "status": "built",
+      "view": "c-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-C-11",
+      "domain": "C",
+      "object": "进行中 impersonate 会话",
+      "action": "终止会话",
+      "status": "built",
+      "view": "c-view.tsx",
+      "batch": "done",
+      "storeAction": "setParam",
+      "note": "提前终止只读代入会话,写 C.impersonate.<id>.ended=true + A2 审计;本轮补登记(OPS-C-06 仅覆盖发起,曾 onClick 直接 setToast 绕双签)"
+    },
+    {
+      "id": "OPS-D-01",
+      "domain": "D",
+      "object": "提现申请",
+      "action": "放行",
+      "status": "built",
+      "view": "d-view.tsx",
+      "storeAction": "setParam",
+      "batch": "P0"
+    },
+    {
+      "id": "OPS-D-02",
+      "domain": "D",
+      "object": "提现申请",
+      "action": "冻结",
+      "status": "built",
+      "view": "d-view.tsx",
+      "storeAction": "setParam",
+      "batch": "P0"
+    },
+    {
+      "id": "OPS-D-03",
+      "domain": "D",
+      "object": "提现申请",
+      "action": "查看详情",
+      "status": "readonly",
+      "view": "d-view.tsx:132",
+      "reason": "详情展示"
+    },
+    {
+      "id": "OPS-D-04",
+      "domain": "D",
+      "object": "充值对账",
+      "action": "核销差异/挂账",
+      "status": "built",
+      "view": "d-view.tsx",
+      "storeAction": "setParam",
+      "batch": "P0"
+    },
+    {
+      "id": "OPS-D-05",
+      "domain": "D",
+      "object": "账本",
+      "action": "红冲/人工调整",
+      "status": "built",
+      "view": "d-view.tsx",
+      "storeAction": "setParam",
+      "batch": "P0"
+    },
+    {
+      "id": "OPS-D-06",
+      "domain": "D",
+      "object": "账本",
+      "action": "导出凭证",
+      "status": "built",
+      "view": "d-view.tsx",
+      "batch": "P2",
+      "storeAction": "logAudit"
+    },
+    {
+      "id": "OPS-D-07",
+      "domain": "D",
+      "object": "提现参数",
+      "action": "调日限/冷却/费率",
+      "status": "built",
+      "view": "d-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-D-08",
+      "domain": "D",
+      "object": "PSP通道",
+      "action": "启停/调规则",
+      "status": "built",
+      "view": "d-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-D-09",
+      "domain": "D",
+      "object": "储备水位",
+      "action": "看板",
+      "status": "readonly",
+      "view": "d-view.tsx:188",
+      "reason": "server-canonical 只读,跌破由 J1 自动熔断"
+    },
+    {
+      "id": "OPS-E-01",
+      "domain": "E",
+      "object": "商品SKU",
+      "action": "查看列表/详情",
+      "status": "readonly",
+      "view": "e-view.tsx",
+      "reason": "展示读 static mock(SKUS),只读;改价/上下架/增删才是写动作欠账"
+    },
+    {
+      "id": "OPS-E-02",
+      "domain": "E",
+      "object": "商品SKU",
+      "action": "改价",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "storeAction": "updateSku"
+    },
+    {
+      "id": "OPS-E-03",
+      "domain": "E",
+      "object": "商品SKU",
+      "action": "上架/下架",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "note": "registry e.ts 声明 rowActions 上架/下架但 e-view 自定义表格未渲染",
+      "storeAction": "setSkuStatus"
+    },
+    {
+      "id": "OPS-E-04",
+      "domain": "E",
+      "object": "商品SKU",
+      "action": "编辑信息(名/规格/baseRate)",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "storeAction": "updateSku"
+    },
+    {
+      "id": "OPS-E-05",
+      "domain": "E",
+      "object": "商品SKU",
+      "action": "库存调整",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "storeAction": "updateSku"
+    },
+    {
+      "id": "OPS-E-06",
+      "domain": "E",
+      "object": "商品SKU",
+      "action": "新增SKU",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "note": "表单完整但 onConfirm 只 toast 不入库",
+      "storeAction": "addSku"
+    },
+    {
+      "id": "OPS-E-07",
+      "domain": "E",
+      "object": "商品SKU",
+      "action": "删除SKU",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "storeAction": "removeSku"
+    },
+    {
+      "id": "OPS-E-08",
+      "domain": "E",
+      "object": "代际发布门(E2)",
+      "action": "放行新代/灰度比例",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "storeAction": "updateSku"
+    },
+    {
+      "id": "OPS-E-09",
+      "domain": "E",
+      "object": "收益引擎baseRate(E3)",
+      "action": "调日产出",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "storeAction": "updateSku"
+    },
+    {
+      "id": "OPS-E-10",
+      "domain": "E",
+      "object": "任务(E3)",
+      "action": "新增/编辑/删除",
+      "status": "built",
+      "view": "e-view.tsx",
+      "storeAction": "addTask",
+      "storeFile": "platform-config-store",
+      "batch": "done"
+    },
+    {
+      "id": "OPS-E-11",
+      "domain": "E",
+      "object": "Trade-in配置(E5)",
+      "action": "调折抵率/minHolding",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-E-12",
+      "domain": "E",
+      "object": "订单(E6)",
+      "action": "退款/重试分配",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-E-13",
+      "domain": "E",
+      "object": "订单(E6)",
+      "action": "取消/补建终态",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-E-14",
+      "domain": "E",
+      "object": "设备运维(E7)",
+      "action": "批量pause/强制下线",
+      "status": "built",
+      "view": "e-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-01",
+      "domain": "F",
+      "object": "V-Rank等级",
+      "action": "改门槛/权益",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-02",
+      "domain": "F",
+      "object": "网络版税费率",
+      "action": "调L1-L7费率",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-03",
+      "domain": "F",
+      "object": "网络版税",
+      "action": "Rate-Tier升档规则",
+      "status": "readonly",
+      "view": "f-view.tsx",
+      "batch": "P2",
+      "reason": "Q11 裁定 Rate-Tier 费率升档已废,改 Partner Status 权益制(权益非费率),无费率档写动作"
+    },
+    {
+      "id": "OPS-F-04",
+      "domain": "F",
+      "object": "网络版税",
+      "action": "调佣金冷却期",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-05",
+      "domain": "F",
+      "object": "平衡匹配(双轨)",
+      "action": "调两轨门槛",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-06",
+      "domain": "F",
+      "object": "领导奖池",
+      "action": "调入池比例/权重",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-07",
+      "domain": "F",
+      "object": "硬件配额",
+      "action": "调额度/回收",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-08",
+      "domain": "F",
+      "object": "区域大使",
+      "action": "批准/驳回申请",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-09",
+      "domain": "F",
+      "object": "排行榜",
+      "action": "取消资格(反欺诈)",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-F-10",
+      "domain": "F",
+      "object": "佣金事件",
+      "action": "冻结/解锁/驳回",
+      "status": "built",
+      "view": "f-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-01",
+      "domain": "G",
+      "object": "Staking质押池",
+      "action": "调APY",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-02",
+      "domain": "G",
+      "object": "Staking质押池",
+      "action": "单档kill/恢复",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P1",
+      "note": "toggle改本地态但仅toast,未persist",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-03",
+      "domain": "G",
+      "object": "USDT↔NEX兑换",
+      "action": "调单笔/日/月限额",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-04",
+      "domain": "G",
+      "object": "USDT↔NEX兑换",
+      "action": "调费率/滑点",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-05",
+      "domain": "G",
+      "object": "NEX行情引擎",
+      "action": "调做市参数/oracle",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-06",
+      "domain": "G",
+      "object": "NEX行情引擎",
+      "action": "紧急pause",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-07",
+      "domain": "G",
+      "object": "Genesis节点",
+      "action": "调供给/单价/分红/版税",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-08",
+      "domain": "G",
+      "object": "Genesis二级市场",
+      "action": "市场pause",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-09",
+      "domain": "G",
+      "object": "Premium订阅",
+      "action": "调月价/权益",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-G-10",
+      "domain": "G",
+      "object": "复投激励",
+      "action": "调APY/积分倍率/培育奖",
+      "status": "built",
+      "view": "g-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-H-01",
+      "domain": "H",
+      "object": "Phase调度器",
+      "action": "调dial(月粒度)",
+      "status": "built",
+      "view": "h-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-H-02",
+      "domain": "H",
+      "object": "Phase调度器",
+      "action": "手动pin/cohort override",
+      "status": "built",
+      "view": "h-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-H-03",
+      "domain": "H",
+      "object": "试用引擎",
+      "action": "调TrialConfig参数",
+      "status": "built",
+      "view": "h-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-H-04",
+      "domain": "H",
+      "object": "试用引擎",
+      "action": "强制取消/触发扣款",
+      "status": "built",
+      "view": "h-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-H-05",
+      "domain": "H",
+      "object": "Quest任务",
+      "action": "调奖励/启停层",
+      "status": "built",
+      "view": "h-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-H-06",
+      "domain": "H",
+      "object": "活动中心",
+      "action": "上线/下线/暂停/改奖励",
+      "status": "built",
+      "view": "h-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-H-07",
+      "domain": "H",
+      "object": "活动中心",
+      "action": "改转盘奖池",
+      "status": "built",
+      "view": "h-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-H-08",
+      "domain": "H",
+      "object": "签到积分",
+      "action": "调规则/Lucky概率/里程碑",
+      "status": "built",
+      "view": "h-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-I-01",
+      "domain": "I",
+      "object": "转化文案A/B(I1)",
+      "action": "设为胜出/停止实验",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-I-02",
+      "domain": "I",
+      "object": "Nova推送(I2)",
+      "action": "编辑通道 + kill 启停",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P2",
+      "note": "OpsNova store(novas)真编辑 + kill,persist + append-only 审计(2026-06-05 升级:setParam→CRUD)",
+      "storeAction": "updateNova"
+    },
+    {
+      "id": "OPS-I-02b",
+      "domain": "I",
+      "object": "Nova推送(I2)",
+      "action": "新增通道",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P2",
+      "note": "新增 Nova 通道 → addNova 真写 novas + persist + 审计",
+      "storeAction": "addNova"
+    },
+    {
+      "id": "OPS-I-02c",
+      "domain": "I",
+      "object": "Nova推送(I2)",
+      "action": "删除通道",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P2",
+      "note": "删除 Nova 通道(confirm 二次确认)→ removeNova 真写 + 审计",
+      "storeAction": "removeNova"
+    },
+    {
+      "id": "OPS-I-03",
+      "domain": "I",
+      "object": "通知Campaign(I3)",
+      "action": "新建/发送/停发",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-I-04",
+      "domain": "I",
+      "object": "信任中心(I4)",
+      "action": "新增/编辑/发布/下架",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P1",
+      "note": "财务数字/储备证明高敏合规内容",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-I-05",
+      "domain": "I",
+      "object": "风险披露(I5)",
+      "action": "发布新版/归档",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P1",
+      "note": "合规披露版本激活",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-I-06",
+      "domain": "I",
+      "object": "i18n文案(I6)",
+      "action": "补全/发布",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-I-07",
+      "domain": "I",
+      "object": "教程中心(I7)",
+      "action": "新建/发布/下架",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-I-08",
+      "domain": "I",
+      "object": "教程中心(I7)",
+      "action": "调课程奖励参数",
+      "status": "built",
+      "view": "i-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-J-01",
+      "domain": "J",
+      "object": "Kill-Switch 7闸",
+      "action": "熔断/恢复(双签)",
+      "status": "built",
+      "view": "j-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-J-02",
+      "domain": "J",
+      "object": "地域屏蔽",
+      "action": "屏蔽/解除国家",
+      "status": "built",
+      "view": "j-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-J-03",
+      "domain": "J",
+      "object": "篡改防御",
+      "action": "确认拦截/误报/封禁",
+      "status": "built",
+      "view": "j-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-J-04",
+      "domain": "J",
+      "object": "应急SOP",
+      "action": "启动演练/标记完成",
+      "status": "built",
+      "view": "j-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-J-05",
+      "domain": "J",
+      "object": "应急SOP",
+      "action": "查看历史执行",
+      "status": "readonly",
+      "view": "j-view.tsx",
+      "batch": "P2",
+      "reason": "SOP 历史执行记录为只读审计展示,无写动作(演练/完成的写动作见 J-04)"
+    },
+    {
+      "id": "OPS-K-01",
+      "domain": "K",
+      "object": "多账户关联簇",
+      "action": "确认/解除/封禁全簇",
+      "status": "built",
+      "view": "k-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-K-02",
+      "domain": "K",
+      "object": "套利&刷量事件",
+      "action": "确认违规/误报/冻结",
+      "status": "built",
+      "view": "k-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-K-03",
+      "domain": "K",
+      "object": "提现风控规则",
+      "action": "新建/调阈值",
+      "status": "built",
+      "view": "k-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-K-04",
+      "domain": "K",
+      "object": "风险评分模型",
+      "action": "调权重(触发全平台重算)",
+      "status": "built",
+      "view": "k-view.tsx",
+      "batch": "P1",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-K-05",
+      "domain": "K",
+      "object": "大额KYC复审",
+      "action": "通过",
+      "status": "built",
+      "view": "k-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-K-06",
+      "domain": "K",
+      "object": "大额KYC复审",
+      "action": "驳回/补件",
+      "status": "built",
+      "view": "k-view.tsx",
+      "batch": "P0",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-K-07",
+      "domain": "K",
+      "object": "大额KYC复审",
+      "action": "升级增强KYC",
+      "status": "built",
+      "view": "k-view.tsx",
+      "batch": "done",
+      "storeAction": "setParam",
+      "note": "升级为增强 KYC(K5)流程,写 K.kyc.<id>.escalated=true + A2 审计;本轮补登记(K-05/06 仅通过/驳回补件,曾 onClick 直接 setToast 绕双签)"
+    },
+    {
+      "id": "OPS-L-01",
+      "domain": "L",
+      "object": "KPI/漏斗/财务/运营看板(L1-L4)",
+      "action": "指标展示",
+      "status": "readonly",
+      "view": "l-view.tsx:70",
+      "reason": "纯分析看板,server单向推送聚合"
+    },
+    {
+      "id": "OPS-L-02",
+      "domain": "L",
+      "object": "监管报告(L5)",
+      "action": "生成/下载/重跑",
+      "status": "built",
+      "view": "l-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    },
+    {
+      "id": "OPS-L-03",
+      "domain": "L",
+      "object": "监管报告(L5)",
+      "action": "调报送排程/新增模板",
+      "status": "built",
+      "view": "l-view.tsx",
+      "batch": "P2",
+      "storeAction": "setParam"
+    }
+  ]
+}

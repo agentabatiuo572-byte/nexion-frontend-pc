@@ -1,0 +1,40 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+.env
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# playwright / browser self-check artifacts
+/.playwright-mcp/
+*.png
+
+# scratch / exploration / temp (非产品代码,勿托管)
+/_overview-variants/
+/.tmp-design2/
+/.claude/
+
+# nested node_modules(上面 /node_modules 仅锚仓库根,补未锚版本捕获嵌套)
+node_modules/
