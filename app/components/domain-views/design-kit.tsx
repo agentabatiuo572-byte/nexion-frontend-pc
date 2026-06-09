@@ -196,11 +196,10 @@ export function MakerCheckerModal({ action, detail, amplifies, edit, onClose, on
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState("");
   const isSuper = useIsSuperadmin();
-  const actionText = typeof action === "string" ? action : "";
-  // 配置型调整:显式 edit,或动作文案含"调整/调价/阈值/参数/费率/权重/门槛/上限/倍率/比例"→ 提供目标新值编辑控件
-  const isAdjust = /调整|调价|阈值|参数|配置|费率|权重|规则|门槛|上限|cap|比例|倍率|供给/i.test(actionText);
-  const spec: EditSpec | null = edit ?? (isAdjust ? {} : null);
-  const kind = spec ? (spec.kind ?? (/维护|启停|开关|通道|市场|启用|停用|pause|kill/i.test(actionText) ? "select" : "text")) : "text";
+  // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
+  // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
+  const spec: EditSpec | null = edit ?? null;
+  const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
   const canConfirm = (isSuper || reason.trim().length > 0) && (!spec || newVal.trim().length > 0);
   return (

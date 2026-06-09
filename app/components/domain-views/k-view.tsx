@@ -6,7 +6,7 @@
  * 路由 l2.id 折叠:各 l2.id 映射到自身 Tab。default = K2(套利&刷量)。
  */
 import { useState } from "react";
-import { Icon, Card, CardH, CodeTag, Badge, Btn, Meter, MakerCheckerModal, useToast } from "./design-kit";
+import { Icon, Card, CardH, CodeTag, Badge, Btn, Meter, MakerCheckerModal, useToast, type EditSpec } from "./design-kit";
 import { AutoGloss, Gloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { CLUSTERS } from "@/lib/mock/admin/design-data";
@@ -63,7 +63,7 @@ const K_CREATE: Record<string, { label: string; detail: string; writeKind?: "rul
 
 type ClusterRow = (typeof CLUSTERS)[number];
 // write:真写落点(读复核理由 + 配置型调整的目标新值后调 setParam),缺省时退化为留痕 toast(非处置类动作,如「新建规则」)。
-type Mc = { action: string; detail: string; amplifies?: boolean; write?: (reason: string, newVal?: string) => void };
+type Mc = { action: string; detail: string; amplifies?: boolean; edit?: EditSpec; write?: (reason: string, newVal?: string) => void };
 
 // 处置态 → 徽标文案 / 色调(K1 关联簇 · K2 套利事件 · K5 KYC 复审)。
 const CLUSTER_DISPOSITION: Record<string, { label: string; tone: string }> = {
@@ -100,7 +100,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
 
   return (
     <div className="dkpage">
-      <DomainHeader {...meta} right={K_CREATE[tab] ? <Btn variant="primary" onClick={() => setMc({ action: K_CREATE[tab]!.label, detail: K_CREATE[tab]!.detail, amplifies: K_CREATE[tab]!.writeKind === "rule", write: K_CREATE[tab]!.writeKind === "rule" ? (reason, newVal) => { if (!newVal) return; setParam(`K.rule.new.${newVal}`, "启用", { action: `新建提现风控规则 ${newVal}`, reason }); setToast(`已新建提现风控规则「${newVal}」`); } : undefined })}><Icon name="plus" size={15} /> {K_CREATE[tab]!.label}</Btn> : undefined} />
+      <DomainHeader {...meta} right={K_CREATE[tab] ? <Btn variant="primary" onClick={() => setMc({ action: K_CREATE[tab]!.label, detail: K_CREATE[tab]!.detail, amplifies: K_CREATE[tab]!.writeKind === "rule", edit: K_CREATE[tab]!.writeKind === "rule" ? { kind: "text" } : undefined, write: K_CREATE[tab]!.writeKind === "rule" ? (reason, newVal) => { if (!newVal) return; setParam(`K.rule.new.${newVal}`, "启用", { action: `新建提现风控规则 ${newVal}`, reason }); setToast(`已新建提现风控规则「${newVal}」`); } : undefined })}><Icon name="plus" size={15} /> {K_CREATE[tab]!.label}</Btn> : undefined} />
 
       <div className="grid g-4" style={{ marginBottom: 16 }}>
         <Card style={{ padding: "15px 16px" }}><div className="muted tiny">高风险账户(≥70)</div><div style={{ fontSize: 24, fontWeight: 600, color: "var(--danger)" }} className="tnum">342</div><div className="muted tiny">K4 评分</div></Card>
@@ -135,7 +135,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
             {WD_RULES.map(([rk, n, d, t]) => { const cur = pget(`K.rule.${rk}`); const eff = cur ?? d; return (
               <div key={rk} className="tint" style={{ marginBottom: 8 }}>
                 <div className="row"><b style={{ fontSize: 13 }}>{n}</b><div className="spacer" /><Badge tone={cur ? "info" : t}>{cur ? "已调整" : "启用"}</Badge>
-                  <span style={{ marginLeft: 8 }}><Btn sm onClick={() => setMc({ action: `调整提现风控规则:${n}`, detail: `当前「${eff}」· 调整阈值/速率后对新提现生效 · 放宽方向放大资金流出,须先核验 B1 覆盖率 · 写入 admin.withdraw_rule_adjusted`, amplifies: true, write: (reason, newVal) => { if (!newVal) return; setParam(`K.rule.${rk}`, newVal, { action: `调整提现风控规则 ${n}`, reason }); setToast(`提现风控规则「${n}」已更新阈值`); } })}>调整</Btn></span>
+                  <span style={{ marginLeft: 8 }}><Btn sm onClick={() => setMc({ action: `调整提现风控规则:${n}`, detail: `当前「${eff}」· 调整阈值/速率后对新提现生效 · 放宽方向放大资金流出,须先核验 B1 覆盖率 · 写入 admin.withdraw_rule_adjusted`, amplifies: true, edit: { kind: "text", current: eff }, write: (reason, newVal) => { if (!newVal) return; setParam(`K.rule.${rk}`, newVal, { action: `调整提现风控规则 ${n}`, reason }); setToast(`提现风控规则「${n}」已更新阈值`); } })}>调整</Btn></span>
                 </div>
                 <div className="muted tiny" style={{ marginTop: 3 }}>{eff}{cur ? <span className="t-mut"> · 原 {d}</span> : null}</div>
               </div>
@@ -157,7 +157,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
             <div>
               <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10, color: "var(--ink)" }}>评分因子权重</div>
               {SCORE_FACTORS.map(([dk, n, w]) => { const cur = pget(`K.score.weight.${dk}`); const eff = cur != null ? Number(cur) : w; const effPct = Number.isFinite(eff) ? eff : w; return (
-                <div key={dk} style={{ marginBottom: 11 }}><div className="row tiny" style={{ marginBottom: 4 }}><span>{n}</span><div className="spacer" /><span className="mono">{effPct}%{cur != null ? <span className="t-mut"> · 原 {w}%</span> : null}</span><Btn sm onClick={() => setMc({ action: `调整风险评分权重:${n}`, detail: `当前权重 ${effPct}% · 调整后立即重算全平台风险分(K4 唯一权威源,联动用户画像 / 提现审核 / 风险雷达)· 写入 admin.risk_weight_adjusted`, amplifies: true, write: (reason, newVal) => { if (!newVal) return; setParam(`K.score.weight.${dk}`, newVal, { action: `调整风险评分权重 ${n}`, reason }); setToast(`风险评分权重「${n}」已更新 → 触发全平台重算`); } })}>调整权重</Btn></div><Meter pct={effPct} color="var(--brand)" /></div>
+                <div key={dk} style={{ marginBottom: 11 }}><div className="row tiny" style={{ marginBottom: 4 }}><span>{n}</span><div className="spacer" /><span className="mono">{effPct}%{cur != null ? <span className="t-mut"> · 原 {w}%</span> : null}</span><Btn sm onClick={() => setMc({ action: `调整风险评分权重:${n}`, detail: `当前权重 ${effPct}% · 调整后立即重算全平台风险分(K4 唯一权威源,联动用户画像 / 提现审核 / 风险雷达)· 写入 admin.risk_weight_adjusted`, amplifies: true, edit: { kind: "number", current: String(effPct), unit: "%" }, write: (reason, newVal) => { if (!newVal) return; setParam(`K.score.weight.${dk}`, newVal, { action: `调整风险评分权重 ${n}`, reason }); setToast(`风险评分权重「${n}」已更新 → 触发全平台重算`); } })}>调整权重</Btn></div><Meter pct={effPct} color="var(--brand)" /></div>
               ); })}
             </div>
             <div>
@@ -220,7 +220,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
         </Card>
       )}
 
-      {mc && <MakerCheckerModal action={mc.action} detail={mc.detail} amplifies={mc.amplifies} onClose={() => setMc(null)} onConfirm={(reason, newValue) => onMcConfirm(reason, newValue)} />}
+      {mc && <MakerCheckerModal action={mc.action} detail={mc.detail} amplifies={mc.amplifies} edit={mc.edit} onClose={() => setMc(null)} onConfirm={(reason, newValue) => onMcConfirm(reason, newValue)} />}
       {toastNode}
     </div>
   );

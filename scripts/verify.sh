@@ -35,8 +35,8 @@ while IFS='|' read -r path id status; do
   if [ "$status" = "scaffold" ]; then check_html "$path" "规格就绪"; fi
 done < <(node "$HERE/nav-routes.mjs" | tr -d '\r')
 nav_count=$(node "$HERE/nav-routes.mjs" | grep -c '|')
-if [ "$nav_count" -ne 70 ]; then
-  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 70)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
+if [ "$nav_count" -ne 67 ]; then
+  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 67)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
 else
   echo "  nav-routes: $nav_count 条路由"
 fi
@@ -94,7 +94,7 @@ echo "== [4/4] 体验回归(运营者 / PM 视角 · 自动可检信号) =="
 check_html "/" "模块"                                  # 域卡信息气味(域·N 模块)
 check_html "/finance/recon" "充值对账"                  # D1 设计稿视图:充值对账标题在 SSR 渲染
 check_html "/finance/recon" "资金与财务"                # D 域视图页头(子页统一布局信号)
-check_html "/overview/dual-ledger" "警戒"               # B1 覆盖率状态信号(运营者一眼可读)
+check_html "/overview/dual-ledger" "健康"               # B1 覆盖率状态信号(运营者一眼可读;m7 基准 118.1%≥健康线110 → zoneLabel「健康」)
 check_html "/finance/withdrawals" "review"              # D2 设计稿视图:提现状态在 SSR 表渲染
 check_html "/finance/withdrawals" "WD-9F3A21"
 # 镜头 C 顶级 PM:决策颗粒度 / 全局态势 / 红线 / 审计可信不退化

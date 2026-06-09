@@ -2843,7 +2843,7 @@
       "controlType": "data-CRUD",
       "frontendField": "NetworkMember[] (id/name/avatar/vRank/layer 1-7/binary left|right/isSpillover/joinedAt/monthVolumeUSD/totalVolumeUSD/status/sponsorId/city)",
       "frontendSource": "lib/v3/network.ts:NetworkMember + useNetwork.members (L20-53) + lib/v3/network-seed.ts:NETWORK_SEED",
-      "frontendAnchor": "前端PRD v3.7 §8.4 (双轨/网络成员) · 运营后台 F /network/leaderboard",
+      "frontendAnchor": "前端PRD v3.7 §8.4 (双轨/网络成员) · 运营后台 F /network/leadership-pool(排行榜并入 F4)",
       "serverCanonical": "network-seed.ts 为 demo 种子(50 人);真后台网络拓扑/成员业绩 server 权威,client 仅渲染快照。",
       "endpoint": "GET /api/me/network (读·用户下线树) · GET /api/admin/network/members?uid=&layer=&cursor= (读) — TBD",
       "querySurface": "运营查单用户网络成员:按 layer(1-7 unilevel 深度)/binary 轨道分布、各成员月业绩/累计业绩/在线状态(active/idle/offline)/是否系统空降 isSpillover/直推关系 sponsorId/城市",

@@ -105,7 +105,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
   type Psp = (typeof PSPS)[number];
   const pspOn = (p: Psp): boolean => { const v = pget(`D.psp.${p.name}.on`); return v === undefined ? p.on : v === "true"; };
   const pspRule = (p: Psp): string => pget(`D.psp.${p.name}.rule`) ?? p.binRule;
-  const [pspMc, setPspMc] = useState<{ name: string; kind: "toggle" | "rule"; nextOn?: boolean; action: string; detail: string } | null>(null);
+  const [pspMc, setPspMc] = useState<{ name: string; kind: "toggle" | "rule"; nextOn?: boolean; cur?: string; action: string; detail: string } | null>(null);
   const [reconMc, setReconMc] = useState<{ id: string } | null>(null);
   const [billMc, setBillMc] = useState<{ id: string } | null>(null);
 
@@ -200,7 +200,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
                 <td><CodeTag tone={p.method === "usdt" ? "cyan" : "electric"}>{p.method}</CodeTag></td>
                 <td className="tiny">{pspRule(p)}</td><td className="tiny t-mut">{p.route}</td>
                 <td><span className="row" style={{ gap: 8 }}><Toggle on={on} onClick={() => setPspMc({ name: p.name, kind: "toggle", nextOn: !on, action: `PSP 通道${on ? "停用" : "启用"}:${p.name}`, detail: `${on ? "停用" : "启用"} H5 充值入金通道(/me/wallet/cards · /topup)· 影响入金成功率` })} /><Badge tone={on ? "ok" : "neutral"}>{on ? "启用" : "停用"}</Badge></span></td>
-                <td><Btn sm onClick={() => setPspMc({ name: p.name, kind: "rule", action: `PSP 通道规则调整:${p.name}`, detail: `当前 BIN 规则 ${pspRule(p)} · 调整 BIN 风险规则 / 路由 / 单笔限额 · 影响 H5 充值入金成功率与风控` })}>调整</Btn></td></tr>
+                <td><Btn sm onClick={() => setPspMc({ name: p.name, kind: "rule", cur: pspRule(p), action: `PSP 通道规则调整:${p.name}`, detail: `当前 BIN 规则 ${pspRule(p)} · 调整 BIN 风险规则 / 路由 / 单笔限额 · 影响 H5 充值入金成功率与风控` })}>调整</Btn></td></tr>
             ); })}</tbody>
           </table></div>
           <div className="tint warn tiny" style={{ marginTop: 10 }}><AutoGloss>停用某 PSP → 关闭 H5 端对应入金方式(/me/wallet/cards · /topup);高风险 BIN 自动转人工复核。通道启停 / 规则调整走 Maker-Checker。</AutoGloss></div>
@@ -271,10 +271,10 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
               <td><Btn sm onClick={() => setParamMc(p)}>调整</Btn></td></tr>
           ))}</tbody>
         </table>
-        {paramMc && <MakerCheckerModal action={`提现参数调整:${paramMc.name}`} detail={`${paramMc.name} 当前 ${effParam(paramMc)} · 提交后双人复核生效`} amplifies onClose={() => setParamMc(null)} onConfirm={(reason, newVal) => { if (newVal) setParam(`D.${paramMc.key}`, newVal, { action: "提现参数调整 " + paramMc.name, reason }); setToast("参数 " + paramMc.name + " 已更新为 " + newVal); setParamMc(null); }} />}
+        {paramMc && <MakerCheckerModal action={`提现参数调整:${paramMc.name}`} detail={`${paramMc.name} 当前 ${effParam(paramMc)} · 提交后双人复核生效`} amplifies edit={{ kind: "text", current: effParam(paramMc) }} onClose={() => setParamMc(null)} onConfirm={(reason, newVal) => { if (newVal) setParam(`D.${paramMc.key}`, newVal, { action: "提现参数调整 " + paramMc.name, reason }); setToast("参数 " + paramMc.name + " 已更新为 " + newVal); setParamMc(null); }} />}
       </Card>}
 
-      {pspMc && <MakerCheckerModal action={pspMc.action} detail={pspMc.detail} onClose={() => setPspMc(null)} onConfirm={(reason, newVal) => {
+      {pspMc && <MakerCheckerModal action={pspMc.action} detail={pspMc.detail} edit={pspMc.kind === "rule" ? { kind: "text", current: pspMc.cur } : undefined} onClose={() => setPspMc(null)} onConfirm={(reason, newVal) => {
         if (pspMc.kind === "toggle") {
           setParam(`D.psp.${pspMc.name}.on`, pspMc.nextOn ? "true" : "false", { action: pspMc.action, reason });
           setToast(`${pspMc.name} 入金通道已${pspMc.nextOn ? "启用" : "停用"}`);

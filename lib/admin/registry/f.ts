@@ -1,4 +1,4 @@
-/** 域 F 分销与团队 — 注册表。V-Rank 等级 / 网络版税 / 平衡匹配结算 / 领导奖池 / 佣金审计 / 硬件配额 / 区域大使 / 排行榜反欺诈。accent=--admin-domain-f。 */
+/** 域 F 分销与团队 — 注册表(导航已收编为 F1–F5)。F1 V-Rank 等级 / F2 网络版税 / F3 平衡匹配结算 / F4 池·配额·大使·榜(聚合领导奖池+硬件配额+区域大使+排行榜反欺诈)/ F5 佣金事件审计。accent=--admin-domain-f。 */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
 export const DOMAIN_F: ModuleEntry[] = [
@@ -31,7 +31,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           fields: [
             { label: "网络版税层级", value: "随 V 级开放 L1–L7", range: "L1–L7", effect: "联动 F2 费率层" },
             { label: "领导奖池资格", value: "V6 起候选", range: "V4–V8 起", effect: "联动 F4 分配" },
-            { label: "硬件配额额度", value: "随 V 级递增", range: "额度可配", effect: "联动 F6 配额池" },
+            { label: "硬件配额额度", value: "随 V 级递增", range: "额度可配", effect: "联动 F4 配额区" },
             { label: "可见性 gating", value: "按等级渐进展示", range: "开 / 关", effect: "前端等级可见范围" },
           ],
         },
@@ -49,7 +49,7 @@ export const DOMAIN_F: ModuleEntry[] = [
       impact: [
         "上调晋升门槛 → 高阶用户占比下降,网络版税与领导奖池支出收缩",
         "放宽保级宽限 → 等级稳定性上升,但权益支出口径随之增加",
-        "等级权益联动 F2 费率层 / F4 奖池 / F6 配额,任一调整需同步评估下游成本",
+        "等级权益联动 F2 费率层 / F4 池·配额·大使·榜,任一调整需同步评估下游成本",
       ],
     },
   },
@@ -96,7 +96,7 @@ export const DOMAIN_F: ModuleEntry[] = [
       ],
       approval: "Direct Royalty 为产品锁定值不开放调整;权益层 / 冷却天数变更需 财务 + 风控 双签,写入 A2 审计。",
       impact: [
-        "缩短佣金冷却 → 解锁加速,短期套利与异常增长风险上升,联动 F8 反欺诈监控",
+        "缩短佣金冷却 → 解锁加速,短期套利与异常增长风险上升,联动 F4 反欺诈监控",
         "调整 Partner Status 权益层 → 影响顶层用户配额与领导奖池占比,需同步 F4 评估",
         "版税计提口径变动 → 直接影响 D4 commission bill 计提与 B5 头部集中度",
       ],
@@ -153,7 +153,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/leadership-pool",
-    summary: "领导奖池。按平台版税收入计提固定比例入池,在达标领导层间按权重分配,周期结算。奖池比例 / 分配权重改动需 财务 + 风控 双签。",
+    summary: "池 / 配额 / 大使 / 榜 聚合操盘台 — 领导奖池(按周 GMV 计提入池、按 V_VOTES 权重分配)、硬件配额(按 V 级分配可购额度与回收)、区域大使审批(资质双人复核)、排行榜与反欺诈(K2/K1 联动取消资格)。奖池比例 / 权重 / 配额 / 大使授予 / 取消资格等改动均经 Maker-Checker 双签写入 A2 审计;放大资金流出项前置 B1 覆盖率核验。",
     content: {
       kind: "config",
       metrics: [
@@ -191,12 +191,22 @@ export const DOMAIN_F: ModuleEntry[] = [
             { label: "未达标余额", value: "结转下期", range: "结转 / 清零", effect: "清零 → 奖池不累积" },
           ],
         },
+        {
+          title: "硬件配额 / 区域大使 / 排行榜(聚合)",
+          note: "F4 同台承载硬件配额池、区域大使审批与排行榜反欺诈三块运营动作;详见页内对应子区。",
+          fields: [
+            { label: "硬件配额", value: "按 V 级阶梯分配 + 回收", range: "额度可配", effect: "销售前置门 · 联动 E 域库存" },
+            { label: "区域大使审批", value: "V5+ · 4 类预算桶", range: "双人复核", effect: "授予 / 驳回写 A2" },
+            { label: "排行榜 · 反欺诈", value: "Podium + K2/K1 命中", range: "取消资格可配", effect: "刷榜取消资格写 A2" },
+          ],
+        },
       ],
-      approval: "奖池比例 / 分配权重 / 单人封顶变更需 财务 + 风控 双签;分配名单按 F1 等级日切快照,改动写入 A2 审计。",
+      approval: "奖池比例 / 分配权重 / 单人封顶 / 配额额度 / 大使授予 / 取消资格变更需 财务 + 风控 双签(放大流出项前置 B1 覆盖率核验);分配名单按 F1 等级日切快照,改动写入 A2 审计。",
       impact: [
         "上调入池比例 → 奖池规模放大,平台版税净留存下降",
         "放宽资格门槛 → 分配人数上升,人均份额摊薄,需评估激励效果",
         "单人封顶与团队贡献权重联动 B5 头部集中度,防止奖池过度集中",
+        "硬件配额上调 → 采购上限放大,联动 E 域库存与履约;大使授予 / 榜单奖池为放大流出,受 B1 约束",
       ],
     },
   },
@@ -241,151 +251,6 @@ export const DOMAIN_F: ModuleEntry[] = [
         { label: "驳回" },
       ],
       note: "佣金事件 append-only,server 端权威;冷却中事件不可解锁 / 提现。命中风控规则的事件自动冻结,解冻需 风控 复核 + A2 留痕。",
-    },
-  },
-  {
-    path: "/network/quota",
-    summary: "硬件配额池。按 V-Rank 等级分配可购 / 可激励硬件额度,设回收规则。配额额度 / 回收策略改动需 增长运营 + 财务 双签。",
-    content: {
-      kind: "config",
-      metrics: [
-        { label: "总配额池", value: "12,000", sub: "台 · 本季", accent: "var(--admin-domain-f)", hint: "本季度硬件配额总额度。" },
-        { label: "已分配", value: "8,640", sub: "占 72%", accent: "var(--admin-domain-f)", hint: "已下放至各等级的额度。" },
-        { label: "已回收", value: "1,204", sub: "过期 / 未用", accent: "var(--v5-warning)", hint: "因过期或未使用回收入池的额度。" },
-        { label: "剩余可用", value: "2,156", sub: "待分配", accent: "var(--v5-success)" },
-      ],
-      groups: [
-        {
-          title: "配额额度",
-          note: "按 V-Rank 等级阶梯分配;额度随等级递增。",
-          fields: [
-            { label: "V1–V3 额度", value: "5 台 / 季", range: "额度可配", effect: "基础采购权益" },
-            { label: "V4–V6 额度", value: "20 台 / 季", range: "额度可配", effect: "进阶采购权益" },
-            { label: "V7–V9 额度", value: "60 台 / 季", range: "额度可配", effect: "骨干采购权益" },
-            { label: "V10–V12 额度", value: "150 台 / 季", range: "额度可配", effect: "顶阶采购权益" },
-          ],
-        },
-        {
-          title: "分配规则",
-          note: "额度按季度下放;来源为总配额池,联动 F1 等级判定。",
-          fields: [
-            { label: "分配周期", value: "按季下放", range: "季 / 月", effect: "额度刷新节奏" },
-            { label: "等级判定来源", value: "F1 V-Rank", range: "口径固定", effect: "随等级日切快照" },
-            { label: "超额申请", value: "需审批", range: "开 / 关", effect: "超额写入 A2 审计" },
-          ],
-        },
-        {
-          title: "回收",
-          note: "未使用额度按规则回收入池,避免额度沉淀。",
-          fields: [
-            { label: "过期回收", value: "季末未用全回收", range: "开 / 关", effect: "防止额度沉淀" },
-            { label: "降级回收", value: "降级超额部分回收", range: "开 / 关", effect: "联动 F1 降级" },
-            { label: "回收去向", value: "回总配额池", range: "口径固定", effect: "可再分配" },
-          ],
-        },
-      ],
-      approval: "配额额度 / 分配周期 / 回收策略变更需 增长运营 + 财务 双签;超额申请与回收动作写入 A2 审计。",
-      impact: [
-        "上调各等级配额 → 硬件采购上限放大,联动 E 域库存与履约评估",
-        "关闭过期回收 → 额度沉淀,总池可分配量下降",
-        "降级回收联动 F1 等级判定,等级回落即触发超额部分回收",
-      ],
-    },
-  },
-  {
-    path: "/network/ambassador",
-    summary: "区域大使申请审批台。按地区受理大使资质申请,审核资质材料与团队规模,通过后授予区域权益。审批为双人复核,授予 / 驳回写入 A2 审计。",
-    content: {
-      kind: "list",
-      metrics: [
-        { label: "待审批", value: "9", sub: "本周提交", accent: "var(--v5-warning)", hint: "等待复核的大使申请数。" },
-        { label: "在任大使", value: "63", sub: "覆盖 28 区域", accent: "var(--admin-domain-f)", hint: "当前在任的区域大使总数。" },
-        { label: "本月通过", value: "14", sub: "已授予", accent: "var(--v5-success)", delta: { dir: "up", text: "环比 +2", good: true } },
-        { label: "本月驳回", value: "5", sub: "资质不足", accent: "var(--v5-ink-3)" },
-      ],
-      search: "搜索申请人 / 地区",
-      filterKey: "state",
-      filters: ["全部", "待审批", "已通过", "已驳回", "已撤销"],
-      columns: [
-        { key: "appid", header: "申请号", mono: true },
-        { key: "name", header: "申请人" },
-        { key: "region", header: "地区" },
-        { key: "vrank", header: "V 级" },
-        { key: "team", header: "团队规模", mono: true, align: "right" },
-        { key: "qual", header: "资质" },
-        { key: "state", header: "审批", status: true },
-      ],
-      rows: [
-        { appid: "AMB-2606-031", name: "陈*辉", region: "东南亚 · 越南", vrank: "V7", team: "1,420", qual: "材料齐备", state: "待审批" },
-        { appid: "AMB-2606-030", name: "Putra W.", region: "东南亚 · 印尼", vrank: "V6", team: "880", qual: "材料齐备", state: "待审批" },
-        { appid: "AMB-2606-028", name: "Lopez M.", region: "拉美 · 墨西哥", vrank: "V8", team: "2,160", qual: "材料齐备", state: "已通过" },
-        { appid: "AMB-2606-026", name: "Okafor N.", region: "西非 · 尼日利亚", vrank: "V7", team: "1,540", qual: "材料齐备", state: "已通过" },
-        { appid: "AMB-2606-024", name: "Kumar R.", region: "南亚 · 印度", vrank: "V5", team: "420", qual: "团队规模不足", state: "已驳回" },
-        { appid: "AMB-2606-022", name: "Sari D.", region: "东南亚 · 马来", vrank: "V6", team: "760", qual: "材料补充中", state: "待审批" },
-        { appid: "AMB-2606-019", name: "Costa F.", region: "拉美 · 巴西", vrank: "V9", team: "3,080", qual: "材料齐备", state: "已通过" },
-        { appid: "AMB-2606-015", name: "Yusuf A.", region: "中东 · 阿联酋", vrank: "V8", team: "1,990", qual: "资质存疑", state: "已撤销" },
-      ],
-      detail: true,
-      rowActions: [
-        { label: "批准", tone: "primary", whenStatus: "待审批" },
-        { label: "驳回", tone: "danger", whenStatus: "待审批" },
-        { label: "要求补充资质", whenStatus: "待审批" },
-      ],
-      note: "大使资质审核含 V 级 / 团队规模 / 材料合规三项;授予与驳回为双人复核,结果写入 A2 审计。授予后区域权益与 F4 奖池资格联动。",
-    },
-  },
-  {
-    path: "/network/leaderboard",
-    summary: "排行榜与反欺诈监控。展示团队 / 业绩排行,叠加异常增长与刷量检测;命中项产出套利嫌疑风险信号,取消资格执行联动 K2 / K1。",
-    content: {
-      kind: "dashboard",
-      metrics: [
-        { label: "上榜用户", value: "200", sub: "本期榜单", accent: "var(--admin-domain-f)", hint: "进入本期排行榜的用户数。" },
-        { label: "异常增长命中", value: "11", sub: "待复核", accent: "var(--v5-warning)", hint: "团队增长曲线异常、待人工复核的账号。" },
-        { label: "刷量命中", value: "4", sub: "K2 信号", accent: "var(--v5-danger)", hint: "命中刷量检测、已产出风控信号的账号。" },
-        { label: "已取消资格", value: "3", sub: "本期执行", accent: "var(--v5-ink-3)", hint: "经复核取消上榜资格的账号。" },
-      ],
-      charts: [
-        {
-          type: "bars",
-          title: "团队业绩 Top 8",
-          sub: "本期 · 千 USDT",
-          color: "var(--admin-domain-f)",
-          data: [328, 296, 271, 244, 218, 190, 173, 152],
-          labels: ["#1", "#2", "#3", "#4", "#5", "#6", "#7", "#8"],
-          unit: "K",
-        },
-        {
-          type: "area",
-          title: "异常增长监控",
-          sub: "近 14 日命中数 · 红线=告警阈值",
-          color: "var(--v5-warning)",
-          data: [2, 1, 3, 2, 4, 3, 5, 4, 6, 5, 8, 7, 9, 11],
-          refLine: 8,
-        },
-        {
-          type: "donut",
-          title: "反欺诈命中构成",
-          sub: "本期 · 按检测维度",
-          unit: "",
-          segments: [
-            { label: "异常增长", value: 11, color: "var(--v5-warning)" },
-            { label: "刷量(K2)", value: 4, color: "var(--v5-danger)" },
-            { label: "去重指纹(K1)", value: 6, color: "var(--admin-domain-f)" },
-            { label: "正常上榜", value: 179, color: "var(--v5-ink-4)" },
-          ],
-        },
-        {
-          type: "bars",
-          title: "近 7 日取消资格执行",
-          sub: "经复核执行数",
-          color: "var(--v5-danger)",
-          data: [0, 1, 0, 2, 1, 0, 3],
-          labels: ["一", "二", "三", "四", "五", "六", "日"],
-        },
-      ],
-      controlLink: { label: "反刷量检测", href: "/risk/abuse" },
-      note: "排行榜为只读展示;反欺诈命中由 K2 检测产出 risk.arbitrage_suspected 信号,去重复用 K1 引擎。取消上榜资格为双人复核执行,结果写入 A2 审计。",
     },
   },
 ];

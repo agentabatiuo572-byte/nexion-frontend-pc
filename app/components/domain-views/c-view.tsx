@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Icon, Card, CardH, CodeTag, Chip, Badge, Btn, Drawer, KV, MakerCheckerModal, Modal, useToast } from "./design-kit";
+import { Icon, Card, CardH, CodeTag, Chip, Badge, Btn, Drawer, KV, MakerCheckerModal, Modal, useToast, type EditSpec } from "./design-kit";
 import { useIsSuperadmin } from "@/lib/store/use-admin-role";
 import { AutoGloss, Gloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -62,6 +62,8 @@ type Mc = {
   adjust?: AdjustRow;        // C-09 资产调整审批行(通过/驳回)
   adjustResult?: AdjustResult;
   impId?: string;            // C-06 进行中 impersonate 会话 id(终止用)
+  key?: string;              // C-12 注册风控参数 key(regrisk 真写 C.regrisk.<key>)
+  edit?: EditSpec;           // 配置型调整的目标新值编辑规格(显式 → MakerCheckerModal 出框;纯动作不传)
 } | null;
 
 export function CDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -351,8 +353,8 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
             <thead><tr><th>参数</th><th>当前值</th><th>范围</th><th /></tr></thead>
             <tbody>{REGRISK.map((p) => (
               <tr key={p.key}><td className="tiny">{p.name}</td>
-                <td className="t-strong">{p.val}</td><td className="t-mut tiny mono">{p.range}</td>
-                <td><Btn sm onClick={() => setMc({ type: "regrisk", name: p.name })}>调整</Btn></td></tr>
+                <td className="t-strong">{pget(`C.regrisk.${p.key}`) ?? p.val}</td><td className="t-mut tiny mono">{p.range}</td>
+                <td><Btn sm onClick={() => setMc({ type: "regrisk", name: p.name, key: p.key, edit: { kind: "text", current: pget(`C.regrisk.${p.key}`) ?? p.val } })}>调整</Btn></td></tr>
             ))}</tbody>
           </table></div>
         </Card>
@@ -391,9 +393,10 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
       {mc && <MakerCheckerModal
         action={mcAction[mc.type]}
         detail={mcDetail[mc.type]}
+        edit={mc.edit}
         amplifies={mc.type === "impEnd"}
         onClose={() => setMc(null)}
-        onConfirm={(reason) => {
+        onConfirm={(reason, newValue) => {
           if (mc.type === "freeze") return freeze();
           if (mc.type === "restrict") return restrictWithdraw(reason);
           if (mc.type === "kyc" && mc.id && mc.kycResult) return kycVerdict(mc.id, mc.kycResult, reason);
@@ -402,7 +405,8 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
           if (mc.type === "impEnd" && mc.impId) return endImpersonate(mc.impId, reason); // C-06 终止 impersonate 会话 → setParam + logAudit
           if (mc.type === "adjust" && mc.adjust && mc.adjustResult) return adjustVerdict(mc.adjust, mc.adjustResult, reason); // C-09 审批
           if (mc.type === "forceout" && mc.id) { setParam(`C.session.${mc.id}.forcedOut`, "true", { action: "强制登出会话 " + mc.id, reason }); setToast("已强制登出 " + mc.id); return setMc(null); } // C-10 高敏走双签
-          setToast("已提交复核"); // 2FA / regrisk(P1,本次未接真写)
+          if (mc.type === "regrisk" && mc.key) { if (!newValue) return; setParam(`C.regrisk.${mc.key}`, newValue, { action: "注册风控参数调整 " + (mc.name ?? mc.key), reason }); setToast("注册风控参数「" + (mc.name ?? "") + "」已更新为 " + newValue); return setMc(null); }
+          setToast("已提交复核"); // 2FA(P1,本次未接真写)
           setMc(null);
         }} />}
       {impUser && <ImpersonateMirror user={impUser} onExit={() => setImpUser(null)} />}

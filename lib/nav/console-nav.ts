@@ -153,11 +153,8 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "F1", name: "V-Rank 晋升", path: "/network/v-rank", prdAnchor: "F1", batch: "V2", status: "flagship" },
       { id: "F2", name: "网络版税费率", path: "/network/royalty", prdAnchor: "F2", batch: "V2", status: "flagship" },
       { id: "F3", name: "双轨结算引擎", path: "/network/binary", prdAnchor: "F3", batch: "V2", status: "flagship" },
-      { id: "F4", name: "领导奖池", path: "/network/leadership-pool", prdAnchor: "F4", batch: "V2", status: "flagship" },
+      { id: "F4", name: "池 / 配额 / 大使 / 榜", path: "/network/leadership-pool", prdAnchor: "F4", batch: "V2", status: "flagship" },
       { id: "F5", name: "佣金事件审计", path: "/network/commissions", prdAnchor: "F5", batch: "V2", status: "flagship" },
-      { id: "F6", name: "硬件配额", path: "/network/quota", prdAnchor: "F6", batch: "V2", status: "flagship" },
-      { id: "F7", name: "区域大使审批", path: "/network/ambassador", prdAnchor: "F7", batch: "V2", status: "flagship" },
-      { id: "F8", name: "排行榜 & 反欺诈", path: "/network/leaderboard", prdAnchor: "F8", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -287,4 +284,4 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 12
-export const L2_COUNT = ALL_L2.length; // 69
+export const L2_COUNT = ALL_L2.length; // 67(F 域 8→5,F6/F7/F8 并入 F4)

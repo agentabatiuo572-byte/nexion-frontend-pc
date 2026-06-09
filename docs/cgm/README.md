@@ -5,7 +5,7 @@
 | 层 | 文档 | 粒度 |
 |---|---|---|
 | 路由级 | `FRONTEND-LEVER-MAP.md` | 前端路由 ↔ 后台域 |
-| 模块级 | `CONTROL-MAP.md` | 69 模块 ↔ 控制 archetype |
+| 模块级 | `CONTROL-MAP.md` | 67 模块 ↔ 控制 archetype |
 | **字段级** | **`cgm/CGM-{domain}.md` + `cgm/cgm.manifest.json`** | **每个运营数据字段 / 功能 ↔ query + 增删改查** |
 
 ## 判定标准(纳入 CGM 的门槛)
