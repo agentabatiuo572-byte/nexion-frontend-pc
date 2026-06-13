@@ -1,0 +1,3 @@
+$ C:\Program Files\nodejs\node.exe scripts/ledger-validate.mjs
+
+ledger validation PASS: 38 entries

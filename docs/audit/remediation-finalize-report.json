@@ -1,0 +1,402 @@
+{
+  "generatedAt": "2026-06-13T09:02:37.312Z",
+  "mode": "apply-after-owner-confirmation",
+  "status": "passed",
+  "prdMutationAllowed": true,
+  "prdFilesChanged": true,
+  "stepsPassed": 7,
+  "stepsFailed": 0,
+  "steps": [
+    {
+      "id": "prd-apply-check",
+      "title": "PRD sync patch apply-check",
+      "status": "passed",
+      "exitCode": 0,
+      "command": "C:\\Program Files\\nodejs\\node.exe scripts/prd-sync-l5-draft.mjs --patch-file=docs/remediation/PRD-SYNC-PREVIEW-2026-06-13.patch --apply-check --json",
+      "evidence": "docs/audit/remediation-finalize-prd-apply-check.log",
+      "summary": "operations=23; planned=23; alreadyPresent=0; missingAnchors=0; applyCheck=passed",
+      "parsedJson": {
+        "mode": "dry-run",
+        "targetRoot": "D:\\WORKS\\PLAN\\PRD",
+        "operations": 23,
+        "planned": 23,
+        "alreadyPresent": 0,
+        "missingAnchors": 0,
+        "patchFile": "D:\\WORKS\\PLAN\\Nexion-admin-prototype\\docs\\remediation\\PRD-SYNC-PREVIEW-2026-06-13.patch",
+        "patchBytes": 20165,
+        "applyCheck": "passed",
+        "results": [
+          {
+            "id": "product.route.uniappCoverage",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.kyc.topupLoop",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.topupWriteRules",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.withdrawClosure",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.team.financeControls",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.exchangeConfirmation",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.repurchaseConfirmation",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.stakingConfirmation",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.params.canonUnderBackendParams",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.rules.canonLock",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.heading.15_1",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.heading.15_2",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.heading.15_3",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.heading.15_4",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.acceptance",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.modal.businessContract",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.list.baseline",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.support.surface",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.params.ownerLink",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.prd.governance",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsV4.support.surface",
+            "file": "opsV4",
+            "status": "planned"
+          },
+          {
+            "id": "opsV4.prd.governance",
+            "file": "opsV4",
+            "status": "planned"
+          },
+          {
+            "id": "opsConfirm.modal.businessContract",
+            "file": "opsConfirm",
+            "status": "planned"
+          }
+        ]
+      }
+    },
+    {
+      "id": "prd-apply",
+      "title": "Apply canonical PRD sync after owner confirmation",
+      "status": "passed",
+      "exitCode": 0,
+      "command": "C:\\Program Files\\nodejs\\node.exe scripts/prd-sync-l5-draft.mjs --apply --owner-confirmed --json",
+      "evidence": "docs/audit/remediation-finalize-prd-apply.log",
+      "summary": "\"status\": \"planned\"",
+      "parsedJson": {
+        "mode": "apply",
+        "targetRoot": "D:\\WORKS\\PLAN\\PRD",
+        "operations": 23,
+        "planned": 23,
+        "alreadyPresent": 0,
+        "missingAnchors": 0,
+        "patchFile": null,
+        "patchBytes": 0,
+        "applyCheck": null,
+        "results": [
+          {
+            "id": "product.route.uniappCoverage",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.kyc.topupLoop",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.topupWriteRules",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.withdrawClosure",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.team.financeControls",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.exchangeConfirmation",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.repurchaseConfirmation",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.wallet.stakingConfirmation",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.params.canonUnderBackendParams",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.rules.canonLock",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.heading.15_1",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.heading.15_2",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.heading.15_3",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.heading.15_4",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "product.i18n.acceptance",
+            "file": "product",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.modal.businessContract",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.list.baseline",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.support.surface",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.params.ownerLink",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsDev.prd.governance",
+            "file": "opsDev",
+            "status": "planned"
+          },
+          {
+            "id": "opsV4.support.surface",
+            "file": "opsV4",
+            "status": "planned"
+          },
+          {
+            "id": "opsV4.prd.governance",
+            "file": "opsV4",
+            "status": "planned"
+          },
+          {
+            "id": "opsConfirm.modal.businessContract",
+            "file": "opsConfirm",
+            "status": "planned"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mark-prd-sync-applied",
+      "title": "Mark remediation docs after owner-confirmed PRD sync",
+      "status": "passed",
+      "exitCode": 0,
+      "command": "internal",
+      "evidence": null,
+      "summary": "canonical PRD sync status set to applied-with-owner-confirmation",
+      "parsedJson": null
+    },
+    {
+      "id": "l5-final-sweep",
+      "title": "Run L5 final sweep with verifiers",
+      "status": "passed",
+      "exitCode": 0,
+      "command": "C:\\Program Files\\nodejs\\node.exe scripts/l5-final-sweep.mjs --run-verifiers",
+      "evidence": "docs/audit/remediation-finalize-l5-final-sweep.log",
+      "summary": "status=passed; checks=12/12",
+      "parsedJson": {
+        "status": "passed",
+        "checksPassed": 12,
+        "checksFailed": 0,
+        "routeCounts": {
+          "admin": 66,
+          "next": 80,
+          "uniapp": 81
+        },
+        "report": "docs/audit/l5-final-sweep-report.md"
+      }
+    },
+    {
+      "id": "refresh-final-packet",
+      "title": "Refresh final acceptance packet L5 timestamp",
+      "status": "passed",
+      "exitCode": 0,
+      "command": "internal",
+      "evidence": null,
+      "summary": "Generated at: 2026-06-13T08:57:10.213Z",
+      "parsedJson": null
+    },
+    {
+      "id": "owner-review-readiness",
+      "title": "Run owner review readiness gate",
+      "status": "passed",
+      "exitCode": 0,
+      "command": "npm.cmd run verify:owner-review",
+      "evidence": "docs/audit/remediation-finalize-owner-review-readiness.log",
+      "summary": "status=passed; checks=8/8",
+      "parsedJson": {
+        "status": "passed",
+        "checksPassed": 8,
+        "checksFailed": 0,
+        "report": "docs/audit/owner-review-readiness-report.md"
+      }
+    },
+    {
+      "id": "completion-status",
+      "title": "Run overall remediation completion status gate",
+      "status": "passed",
+      "exitCode": 0,
+      "command": "npm.cmd run remediation:status",
+      "evidence": "docs/audit/remediation-finalize-completion-status.log",
+      "summary": "status=pending-owner-gates",
+      "parsedJson": {
+        "status": "pending-owner-gates",
+        "remainingGates": [
+          "Owner product acceptance requires explicit owner confirmation after review."
+        ],
+        "report": "docs/audit/remediation-completion-status-report.md"
+      }
+    }
+  ],
+  "prdStats": [
+    {
+      "name": "Nexion_产品功能架构设计文档_v3.7.md",
+      "before": {
+        "lastWriteTime": "2026-06-08T03:57:54.096Z",
+        "size": 304152
+      },
+      "after": {
+        "lastWriteTime": "2026-06-13T08:57:10.099Z",
+        "size": 308072
+      }
+    },
+    {
+      "name": "Nexion_运营控制后台PRD_v4.md",
+      "before": {
+        "lastWriteTime": "2026-06-12T06:32:43.217Z",
+        "size": 332884
+      },
+      "after": {
+        "lastWriteTime": "2026-06-13T08:57:10.105Z",
+        "size": 334980
+      }
+    },
+    {
+      "name": "Nexion_运营控制后台_开发落地规格.md",
+      "before": {
+        "lastWriteTime": "2026-06-12T02:13:13.061Z",
+        "size": 126185
+      },
+      "after": {
+        "lastWriteTime": "2026-06-13T08:57:10.102Z",
+        "size": 128637
+      }
+    },
+    {
+      "name": "Nexion_运营后台_交互与确认机制改写SPEC.md",
+      "before": {
+        "lastWriteTime": "2026-06-12T02:21:29.504Z",
+        "size": 18019
+      },
+      "after": {
+        "lastWriteTime": "2026-06-13T08:57:10.110Z",
+        "size": 18511
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+- button "Back to store" [ref=e1]
+- button "Add NexionBox S1" [ref=e2]
+- button "Add NexionBox Pro" [ref=e3]
+- button "Add NexionBox Pro v2" [ref=e4]

@@ -1,0 +1,4 @@
+- button "Telegram" [ref=e1]
+- button "Discord" [ref=e2]
+- button "Open a ticket" [ref=e3]
+- button "Email" [ref=e4]

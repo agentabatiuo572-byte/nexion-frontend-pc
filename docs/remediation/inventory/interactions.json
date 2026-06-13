@@ -1,0 +1,3916 @@
+{
+  "generatedAt": "2026-06-12T16:24:50.787Z",
+  "description": "Static route-level interaction counts. Runtime crawl must reconcile actual interactive elements against this baseline.",
+  "rows": [
+    {
+      "side": "admin",
+      "route": "/platform/rbac",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/platform/audit",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/platform/config",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/platform/events",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/platform/params-registry",
+      "file": "app/(console)/platform/params-registry/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 7,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 1
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/overview/dual-ledger",
+      "file": "app/(console)/overview/dual-ledger/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 4,
+        "links": 6,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 7
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/overview/liquidity",
+      "file": "app/(console)/overview/liquidity/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/overview/funnel",
+      "file": "app/(console)/overview/funnel/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/overview/rhythm",
+      "file": "app/(console)/overview/rhythm/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/overview/risk-radar",
+      "file": "app/(console)/overview/risk-radar/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 12,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/users/search",
+      "file": "app/(console)/users/search/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/users/actions",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/users/assets",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/users/kyc",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/users/security",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/users/reg-risk",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance/recon",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance/withdrawals",
+      "file": "app/(console)/finance/withdrawals/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance/pool",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance/ledger",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance/params",
+      "file": "app/(console)/finance/params/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/devices/pricing",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/devices/tasks",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/devices/trade-in",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/devices/orders",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/devices/ops",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/network/v-rank",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/network/royalty",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/network/binary",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/network/leadership-pool",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/network/commissions",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance-products/staking",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance-products/exchange",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance-products/market",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance-products/genesis",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance-products/premium",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance-products/nex-v2",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/finance-products/repurchase",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/growth/phase",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/growth/trial",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/growth/quest",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/growth/events",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/growth/daily",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/growth/milestones",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/content/copy-ab",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/content/nova",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/content/notifications",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/content/trust",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/content/disclosure",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/content/i18n",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/content/learn",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/content/support",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/emergency/kill-switch",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/emergency/geo-block",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/emergency/tamper",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/emergency/sop",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/risk/multi-account",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/risk/abuse",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/risk/withdrawal-rules",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/risk/scoring",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/risk/kyc-review",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/analytics/kpi",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/analytics/funnel-cohort",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/analytics/financial",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/analytics/operations",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/analytics/export",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "lib/nav/console-nav.ts",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/",
+      "file": "app/(console)/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 11,
+        "inputs": 0,
+        "toggles": 5,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/[domain]/[module]",
+      "file": "app/(console)/[domain]/[module]/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "admin",
+      "route": "/users/search/[id]",
+      "file": "app/(console)/users/search/[id]/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 5,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/",
+      "file": "app/(main)/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/daily",
+      "file": "app/(main)/daily/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 3,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 3,
+        "toastSignals": 11
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/developer",
+      "file": "app/(main)/developer/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 3,
+        "links": 0,
+        "inputs": 3,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/earn",
+      "file": "app/(main)/earn/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/events",
+      "file": "app/(main)/events/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 5,
+        "links": 6,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 6
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/genesis",
+      "file": "app/(main)/genesis/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 8,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/genesis/holder",
+      "file": "app/(main)/genesis/holder/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 8,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/genesis/how-it-works",
+      "file": "app/(main)/genesis/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/genesis/marketplace",
+      "file": "app/(main)/genesis/marketplace/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 16,
+        "buttons": 8,
+        "links": 2,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 27,
+        "disabledSignals": 0,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/globe",
+      "file": "app/(main)/globe/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 2,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/learn",
+      "file": "app/(main)/learn/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 9,
+        "buttons": 5,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/login",
+      "file": "app/login/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 10,
+        "buttons": 11,
+        "links": 4,
+        "inputs": 3,
+        "toggles": 4,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/market",
+      "file": "app/(main)/market/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 6,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me",
+      "file": "app/(main)/me/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 4,
+        "links": 52,
+        "inputs": 0,
+        "toggles": 4,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/achievements",
+      "file": "app/(main)/me/achievements/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 1,
+        "disabledSignals": 1,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/devices",
+      "file": "app/(main)/me/devices/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 6,
+        "tablesOrLists": 0,
+        "disabledSignals": 3,
+        "toastSignals": 6
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/goals",
+      "file": "app/(main)/me/goals/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 4,
+        "links": 2,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/help",
+      "file": "app/(main)/me/help/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 5,
+        "links": 2,
+        "inputs": 2,
+        "toggles": 1,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/language",
+      "file": "app/(main)/me/language/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/notifications",
+      "file": "app/(main)/me/notifications/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 4,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/preferences",
+      "file": "app/(main)/me/preferences/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 15,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/profile",
+      "file": "app/(main)/me/profile/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 2,
+        "inputs": 4,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/proof",
+      "file": "app/(main)/me/proof/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 10,
+        "buttons": 4,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/receipts",
+      "file": "app/(main)/me/receipts/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 3,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/replay-tour",
+      "file": "app/(main)/me/replay-tour/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 14,
+        "buttons": 7,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 4,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 18
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/risk-disclosure",
+      "file": "app/(main)/me/risk-disclosure/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 2,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/security",
+      "file": "app/(main)/me/security/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 6,
+        "buttons": 3,
+        "links": 1,
+        "inputs": 3,
+        "toggles": 5,
+        "tablesOrLists": 21,
+        "disabledSignals": 0,
+        "toastSignals": 7
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/security/kyc-express",
+      "file": "app/(main)/me/security/kyc-express/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/support",
+      "file": "app/(main)/me/support/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 4
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/support/tickets",
+      "file": "app/(main)/me/support/tickets/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 10,
+        "buttons": 9,
+        "links": 0,
+        "inputs": 3,
+        "toggles": 1,
+        "tablesOrLists": 2,
+        "disabledSignals": 1,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/trial",
+      "file": "app/(main)/me/trial/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 6,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 15
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet",
+      "file": "app/(main)/me/wallet/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 11,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 13,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/bills",
+      "file": "app/(main)/me/wallet/bills/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/cards",
+      "file": "app/(main)/me/wallet/cards/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/cards/new",
+      "file": "app/(main)/me/wallet/cards/new/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 5,
+        "toggles": 2,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/exchange",
+      "file": "app/(main)/me/wallet/exchange/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 4,
+        "links": 3,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 1,
+        "toastSignals": 7
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/exchange/how-it-works",
+      "file": "app/(main)/me/wallet/exchange/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/nex",
+      "file": "app/(main)/me/wallet/nex/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 15,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/nex-v2-lock",
+      "file": "app/(main)/me/wallet/nex-v2-lock/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 0,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/premium",
+      "file": "app/(main)/me/wallet/premium/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/repurchase",
+      "file": "app/(main)/me/wallet/repurchase/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 2,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/repurchase/how-it-works",
+      "file": "app/(main)/me/wallet/repurchase/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/topup",
+      "file": "app/(main)/me/wallet/topup/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 11,
+        "buttons": 11,
+        "links": 2,
+        "inputs": 7,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 1,
+        "toastSignals": 1
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/withdraw",
+      "file": "app/(main)/me/wallet/withdraw/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 6,
+        "links": 6,
+        "inputs": 2,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wallet/withdraw/tracking",
+      "file": "app/(main)/me/wallet/withdraw/tracking/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/me/wrapped",
+      "file": "app/(main)/me/wrapped/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 8,
+        "buttons": 5,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/missions",
+      "file": "app/(main)/missions/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 6,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/onboarding/connect",
+      "file": "app/onboarding/connect/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/onboarding/estimator",
+      "file": "app/onboarding/estimator/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/onboarding/intro",
+      "file": "app/onboarding/intro/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/ref/[code]",
+      "file": "app/ref/[code]/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 10,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/register",
+      "file": "app/register/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 7,
+        "buttons": 8,
+        "links": 4,
+        "inputs": 3,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/search",
+      "file": "app/(main)/search/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/staking",
+      "file": "app/(main)/staking/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 3,
+        "links": 2,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 11
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/staking/how-it-works",
+      "file": "app/(main)/staking/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/store",
+      "file": "app/(main)/store/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 6,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/store/[productId]",
+      "file": "app/(main)/store/[productId]/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 1,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/store/bundle",
+      "file": "app/(main)/store/bundle/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 4,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/store/checkout",
+      "file": "app/(main)/store/checkout/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 11,
+        "buttons": 11,
+        "links": 10,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 1,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/store/orders",
+      "file": "app/(main)/store/orders/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/store/orders/[id]",
+      "file": "app/(main)/store/orders/[id]/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team",
+      "file": "app/(main)/team/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 24,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/agent",
+      "file": "app/(main)/team/agent/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 2,
+        "inputs": 3,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 4,
+        "toastSignals": 4
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/binary",
+      "file": "app/(main)/team/binary/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 6,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/binary/how-it-works",
+      "file": "app/(main)/team/binary/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/commissions",
+      "file": "app/(main)/team/commissions/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 2,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/commissions/how-it-works",
+      "file": "app/(main)/team/commissions/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/leaderboard",
+      "file": "app/(main)/team/leaderboard/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/leadership-pool",
+      "file": "app/(main)/team/leadership-pool/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/leadership-pool/how-it-works",
+      "file": "app/(main)/team/leadership-pool/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/network",
+      "file": "app/(main)/team/network/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/quota",
+      "file": "app/(main)/team/quota/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 6,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/rank",
+      "file": "app/(main)/team/rank/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/rank/how-it-works",
+      "file": "app/(main)/team/rank/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/tree",
+      "file": "app/(main)/team/tree/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 5,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/unilevel",
+      "file": "app/(main)/team/unilevel/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 1,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/team/unilevel/how-it-works",
+      "file": "app/(main)/team/unilevel/how-it-works/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/trust",
+      "file": "app/(main)/trust/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 3,
+        "links": 8,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/trust/nex",
+      "file": "app/(main)/trust/nex/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 4,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "nextReference",
+      "route": "/tx/[hash]",
+      "file": "app/(main)/tx/[hash]/page.tsx",
+      "routeSource": "app/page.tsx",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 2,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/index/index",
+      "file": "src/pages/index/index.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/onboarding/intro",
+      "file": "src/pages/onboarding/intro.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/onboarding/estimator",
+      "file": "src/pages/onboarding/estimator.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/onboarding/connect",
+      "file": "src/pages/onboarding/connect.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/onboarding/terms",
+      "file": "src/pages/onboarding/terms.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/register/register",
+      "file": "src/pages/register/register.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 10,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 6,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/login/login",
+      "file": "src/pages/login/login.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 12,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 5,
+        "toggles": 7,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/store/store",
+      "file": "src/pages/store/store.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/store/detail",
+      "file": "src/pages/store/detail.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 8,
+        "buttons": 4,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 3,
+        "tablesOrLists": 9,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/store/checkout",
+      "file": "src/pages/store/checkout.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 15,
+        "buttons": 8,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/store/orders",
+      "file": "src/pages/store/orders.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 6,
+        "buttons": 3,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 5,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/store/order-detail",
+      "file": "src/pages/store/order-detail.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 4,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/store/bundle",
+      "file": "src/pages/store/bundle.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 6,
+        "buttons": 4,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 4
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/earn/earn",
+      "file": "src/pages/earn/earn.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/me",
+      "file": "src/pages/me/me.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet",
+      "file": "src/pages/me/wallet.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 17,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-topup",
+      "file": "src/pages/me/wallet-topup.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 9,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-withdraw",
+      "file": "src/pages/me/wallet-withdraw.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 8,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 2,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/devices",
+      "file": "src/pages/me/devices.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 2,
+        "tablesOrLists": 3,
+        "disabledSignals": 1,
+        "toastSignals": 10
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/profile",
+      "file": "src/pages/me/profile.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 5,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 4
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/security",
+      "file": "src/pages/me/security.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 8,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 3,
+        "toggles": 8,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 7
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/kyc",
+      "file": "src/pages/me/kyc.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/goals",
+      "file": "src/pages/me/goals.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 3,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-bills",
+      "file": "src/pages/me/wallet-bills.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-exchange",
+      "file": "src/pages/me/wallet-exchange.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 7
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-nex",
+      "file": "src/pages/me/wallet-nex.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 6,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-cards",
+      "file": "src/pages/me/wallet-cards.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-cards-new",
+      "file": "src/pages/me/wallet-cards-new.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 6,
+        "toggles": 13,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/receipts",
+      "file": "src/pages/me/receipts.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 4
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/proof",
+      "file": "src/pages/me/proof.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 4,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 4
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wrapped",
+      "file": "src/pages/me/wrapped.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 8,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/market/market",
+      "file": "src/pages/market/market.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 6,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 3,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/team",
+      "file": "src/pages/team/team.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 12,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/commissions",
+      "file": "src/pages/team/commissions.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 6,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 5,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/binary",
+      "file": "src/pages/team/binary.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/agent",
+      "file": "src/pages/team/agent.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 7,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 3,
+        "toastSignals": 11
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/rank",
+      "file": "src/pages/team/rank.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/rank-how",
+      "file": "src/pages/team/rank-how.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 5,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/leaderboard",
+      "file": "src/pages/team/leaderboard.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/leadership-pool",
+      "file": "src/pages/team/leadership-pool.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/leadership-pool-how",
+      "file": "src/pages/team/leadership-pool-how.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/network",
+      "file": "src/pages/team/network.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/quota",
+      "file": "src/pages/team/quota.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/tree",
+      "file": "src/pages/team/tree.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 5,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/unilevel",
+      "file": "src/pages/team/unilevel.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/unilevel-how",
+      "file": "src/pages/team/unilevel-how.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/binary-how",
+      "file": "src/pages/team/binary-how.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/team/commissions-how",
+      "file": "src/pages/team/commissions-how.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/genesis/genesis",
+      "file": "src/pages/genesis/genesis.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 2,
+        "links": 0,
+        "inputs": 2,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/genesis/holder",
+      "file": "src/pages/genesis/holder.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/genesis/marketplace",
+      "file": "src/pages/genesis/marketplace.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 9,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 10,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/genesis/how-it-works",
+      "file": "src/pages/genesis/how-it-works.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/staking/staking",
+      "file": "src/pages/staking/staking.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 2,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 10
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/staking/how-it-works",
+      "file": "src/pages/staking/how-it-works.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/daily/daily",
+      "file": "src/pages/daily/daily.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 11
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/missions/missions",
+      "file": "src/pages/missions/missions.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/events/events",
+      "file": "src/pages/events/events.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 8
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/learn/learn",
+      "file": "src/pages/learn/learn.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/globe/globe",
+      "file": "src/pages/globe/globe.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/developer/developer",
+      "file": "src/pages/developer/developer.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 6,
+        "toggles": 0,
+        "tablesOrLists": 7,
+        "disabledSignals": 0,
+        "toastSignals": 6
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/search/search",
+      "file": "src/pages/search/search.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 2,
+        "toggles": 0,
+        "tablesOrLists": 4,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/achievements",
+      "file": "src/pages/me/achievements.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/help",
+      "file": "src/pages/me/help.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 6,
+        "buttons": 2,
+        "links": 0,
+        "inputs": 2,
+        "toggles": 3,
+        "tablesOrLists": 3,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/support",
+      "file": "src/pages/me/support.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/support-tickets",
+      "file": "src/pages/me/support-tickets.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 8,
+        "buttons": 8,
+        "links": 0,
+        "inputs": 3,
+        "toggles": 1,
+        "tablesOrLists": 5,
+        "disabledSignals": 0,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/language",
+      "file": "src/pages/me/language.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 1,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/notifications",
+      "file": "src/pages/me/notifications.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/preferences",
+      "file": "src/pages/me/preferences.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 15,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/replay-tour",
+      "file": "src/pages/me/replay-tour.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 4,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 10
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/risk-disclosure",
+      "file": "src/pages/me/risk-disclosure.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 6,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 2
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/trial",
+      "file": "src/pages/me/trial.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 5,
+        "buttons": 1,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 15
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-premium",
+      "file": "src/pages/me/wallet-premium.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-nex-v2-lock",
+      "file": "src/pages/me/wallet-nex-v2-lock.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 3
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-repurchase",
+      "file": "src/pages/me/wallet-repurchase.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 1,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 5
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-repurchase-how",
+      "file": "src/pages/me/wallet-repurchase-how.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-exchange-how",
+      "file": "src/pages/me/wallet-exchange-how.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 1,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/me/wallet-withdraw-tracking",
+      "file": "src/pages/me/wallet-withdraw-tracking.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 2,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/trust/trust",
+      "file": "src/pages/trust/trust.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 0,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 11,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/trust/nex",
+      "file": "src/pages/trust/nex.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 2,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 1,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/ref/code",
+      "file": "src/pages/ref/code.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 4,
+        "buttons": 0,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 2,
+        "disabledSignals": 0,
+        "toastSignals": 0
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    },
+    {
+      "side": "uniapp",
+      "route": "/pages/tx/hash",
+      "file": "src/pages/tx/hash.vue",
+      "routeSource": "src/pages.json",
+      "counts": {
+        "clickHandlers": 3,
+        "buttons": 3,
+        "links": 0,
+        "inputs": 0,
+        "toggles": 0,
+        "tablesOrLists": 0,
+        "disabledSignals": 0,
+        "toastSignals": 4
+      },
+      "auditStatus": "static-count-only-runtime-pending"
+    }
+  ]
+}

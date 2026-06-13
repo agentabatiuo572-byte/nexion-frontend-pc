@@ -1,0 +1,12 @@
+$ npm.cmd run verify:owner-review
+
+
+> nexion-admin-prototype@0.1.0 verify:owner-review
+> node scripts/owner-review-readiness.mjs
+
+{
+  "status": "passed",
+  "checksPassed": 8,
+  "checksFailed": 0,
+  "report": "docs/audit/owner-review-readiness-report.md"
+}

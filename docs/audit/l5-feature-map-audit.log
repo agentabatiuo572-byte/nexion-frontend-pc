@@ -1,0 +1,10 @@
+$ C:\Program Files\nodejs\node.exe scripts/remediation-feature-map-audit.mjs
+
+Feature mapping audit complete
+{
+  "mappings": 18,
+  "gaps": 0,
+  "missingFrontendRefs": 0,
+  "missingAdminRefs": 0,
+  "ledgerEntries": 38
+}

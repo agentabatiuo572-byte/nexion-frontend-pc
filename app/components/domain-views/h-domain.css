@@ -1,0 +1,147 @@
+/* ============================================================
+   H 域(增长与节奏)内容页设计类 — design_handoff_h_domain port
+   全部 scope 在 .hdom(挂在 h-view 根 .dkpage.hdom);token 复用 globals 别名。
+   H 域主题 = var(--admin-domain-h)(brand-2 橙;设计稿 #FF6B35 全换 token,soft 用 color-mix)。
+   设计稿项目规则:除按钮外卡片/badge/chip 无边框 → 直接写无边框终值。
+   响应式按内容区真实宽走 container query(.hdom 为容器锚)。
+   ============================================================ */
+
+.hdom {
+  container: hdom / inline-size;
+  --h-ac: var(--admin-domain-h);
+  --h-ac-soft: color-mix(in srgb, var(--admin-domain-h) 14%, transparent);
+  --h-ac-strong: color-mix(in srgb, var(--admin-domain-h) 38%, transparent);
+}
+
+/* ===== 共享 chrome ===== */
+.hdom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+@container hdom (max-width: 980px) { .hdom .f-stats { grid-template-columns: repeat(2, 1fr); } }
+.hdom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
+.hdom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.hdom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.hdom .f-stat .sub { font-size: 12px; color: var(--ink-4); margin-top: 3px; }
+.hdom .f-stat.warn .v { color: var(--warning); }
+.hdom .f-stat.ok .v { color: var(--success); }
+.hdom .f-stat.cyan .v { color: var(--h-ac); }
+.hdom .f-stat.danger .v { color: var(--danger); }
+
+.hdom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
+  border: 1px solid var(--h-ac-strong); background: var(--h-ac-soft); color: var(--h-ac);
+  font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: inherit; }
+.hdom .f-cta:hover { background: var(--h-ac); color: var(--v5-on-brand-2); }
+.hdom .f-ro { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.hdom .f-ro .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
+.hdom .f-live { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
+  background: var(--success-soft); color: var(--success); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.hdom .f-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.hdom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
+.hdom .f-foot b { color: var(--ink-3); font-weight: 600; }
+
+.hdom .l-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+.hdom .l-card .l-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.hdom .l-card .l-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.hdom .l-card .l-h .sub { font-size: 12px; color: var(--ink-4); }
+.hdom .l-card .l-h .r { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hdom .l-card .l-b { padding: 16px 20px 20px; }
+
+.hdom .hcode { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
+  background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
+.hdom .hcode.electric { background: var(--h-ac-soft); color: var(--h-ac); }
+.hdom .hcode.lock { background: var(--surface-3); color: var(--ink-3); }
+.hdom .hcode.danger { background: var(--danger-soft); color: var(--danger); }
+
+.hdom .chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.hdom .chips .lb { font-size: 12px; color: var(--ink-4); margin-right: 2px; white-space: nowrap; }
+.hdom .chip { padding: 5px 11px; border-radius: 999px; background: var(--surface-2); color: var(--ink-3);
+  font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: none; font-family: inherit; transition: background .12s, color .12s; }
+.hdom .chip:hover { background: var(--surface-3); color: var(--ink); }
+.hdom .chip.sel { background: var(--h-ac); color: var(--v5-on-brand-2); font-weight: 600; }
+
+.hdom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
+  font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
+.hdom .l-btn:hover { background: var(--surface-3); color: var(--ink); }
+.hdom .l-btn.primary { background: var(--h-ac); border-color: var(--h-ac); color: var(--v5-on-brand-2); font-weight: 600; }
+.hdom .l-btn.primary:hover { filter: brightness(1.07); }
+.hdom .l-btn.mc { color: var(--warning); border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 8%, transparent); font-weight: 600; }
+.hdom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); }
+.hdom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+
+.hdom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.hdom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
+  letter-spacing: .06em; text-transform: uppercase; text-align: left; padding: 10px 12px;
+  background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
+.hdom .l-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
+.hdom .l-tbl tr:last-child td { border-bottom: none; }
+.hdom .l-tbl tr.click { cursor: pointer; }
+.hdom .l-tbl tr.click:hover td { background: var(--surface-2); }
+.hdom .l-tbl .num, .hdom .l-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.hdom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
+
+.hdom .bdg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 5px;
+  font-size: 11.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; white-space: nowrap; }
+.hdom .bdg.ok { background: var(--success-soft); color: var(--success); }
+.hdom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
+.hdom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
+.hdom .bdg.dim { background: var(--surface-3); color: var(--ink-3); }
+.hdom .bdg.cyan { background: var(--h-ac-soft); color: var(--h-ac); }
+
+.hdom .htint { padding: 11px 14px; border-radius: 9px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--ink-3); }
+.hdom .htint b { color: var(--ink-2); font-weight: 600; }
+.hdom .htint.cyan { background: var(--h-ac-soft); color: var(--ink-2); }
+.hdom .htint.cyan b { color: var(--h-ac); }
+.hdom .htint.warn { background: var(--warning-soft); color: var(--ink-2); }
+.hdom .htint.warn b { color: var(--warning); }
+.hdom .htint.ok { background: var(--success-soft); color: var(--ink-2); }
+.hdom .htint.ok b { color: var(--success); }
+.hdom .htint.danger { background: var(--danger-soft); color: var(--ink-2); }
+.hdom .htint.danger b { color: var(--danger); }
+
+.hdom .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@container hdom (max-width: 1100px) { .hdom .two-col { grid-template-columns: 1fr; } }
+.hdom .two-col .l-card { margin-bottom: 0; display: flex; flex-direction: column; }
+.hdom .two-col .l-card .l-b { flex: 1; }
+
+/* p-row 通用参数行(H1 切换控制 / H2 19 参数 / H5 签到规则 / H6 5 档) */
+.hdom .p-row { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+.hdom .p-row:last-child { border-bottom: none; }
+.hdom .p-row .k { flex: 1; color: var(--ink-2); min-width: 0; }
+.hdom .p-row .k small { display: block; font-size: 11.5px; color: var(--ink-4); margin-top: 1px; line-height: 1.5; }
+.hdom .p-row .v { font-family: var(--mono); font-weight: 700; white-space: nowrap; color: var(--ink); font-size: 13px; }
+
+/* ============================ H1 12 月 × 10 dial 矩阵 ============================ */
+.hdom .dial-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.hdom .dial-tbl th { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--ink-4); padding: 8px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; text-align: center; }
+.hdom .dial-tbl th:first-child { text-align: left; padding-left: 12px; }
+.hdom .dial-tbl td { padding: 7px 6px; border-bottom: 1px solid var(--border); text-align: center; font-family: var(--mono); color: var(--ink-2); cursor: pointer; transition: background .12s; }
+.hdom .dial-tbl td:first-child { text-align: left; padding-left: 12px; font-weight: 700; color: var(--ink); cursor: default; }
+.hdom .dial-tbl tr.cur td { background: var(--h-ac-soft); }
+.hdom .dial-tbl td:hover:not(:first-child) { background: var(--surface-3); }
+.hdom .dial-tbl .chg { color: var(--warning); font-weight: 700; }
+
+/* ============================ 状态机 strip(H2 / H3 / H4)============================ */
+.hdom .sm-strip { display: flex; align-items: center; flex-wrap: wrap; padding: 4px 0 0; row-gap: 6px; }
+.hdom .sm-strip .st { font-family: var(--mono); font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 6px; background: var(--surface-3); color: var(--ink-3); white-space: nowrap; }
+.hdom .sm-strip .st.ok { background: var(--success-soft); color: var(--success); }
+.hdom .sm-strip .st.warn { background: var(--warning-soft); color: var(--warning); }
+.hdom .sm-strip .st.bad { background: var(--danger-soft); color: var(--danger); }
+.hdom .sm-strip .ar { padding: 0 7px; color: var(--ink-4); font-size: 11px; font-family: var(--mono); }
+
+/* ============================ H3 周倍率曲线 6 档 ============================ */
+.hdom .mult-track { display: flex; gap: 4px; }
+.hdom .mult-track .seg { flex: 1; border-radius: 7px; padding: 8px 6px; background: var(--surface-2); text-align: center; }
+.hdom .mult-track .seg.cur { background: var(--h-ac-soft); }
+.hdom .mult-track .seg .m { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.hdom .mult-track .seg .vv { font-family: var(--mono); font-size: 13.5px; font-weight: 700; margin-top: 2px; color: var(--ink); }
+
+/* ============================ H4 转盘行 ============================ */
+.hdom .wheel-row { display: grid; grid-template-columns: 90px 1fr 70px 90px auto; gap: 10px; align-items: center; padding: 7px 2px; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+.hdom .wheel-row:last-child { border-bottom: none; }
+
+/* ============================ H5 连胜分布柱图 ============================ */
+.hdom .dist { display: flex; align-items: flex-end; gap: 8px; height: 90px; margin: 8px 0 2px; }
+.hdom .dist .b { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; height: 100%; }
+.hdom .dist .b i { width: 100%; border-radius: 5px 5px 0 0; background: var(--h-ac); opacity: .8; min-height: 3px; }
+.hdom .dist .b .lb { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
+.hdom .dist .b .ct { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }

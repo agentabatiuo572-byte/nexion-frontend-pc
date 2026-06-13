@@ -1,0 +1,506 @@
+/* ============================================================
+   J 域(紧急与合规控制)内容页设计类 — design_handoff_j_domain port
+   全部 scope 在 .jdom(挂在 j-view 根 .dkpage.jdom);token 复用 globals 别名
+   (--danger/--warning/--success/--brand/--cyan/--brand-2 及 -soft/-border、
+   --surface/-2/-3、--ink/-2/-3/-4、--border/-strong、--mono、--r-card)。
+   设计稿项目规则:除按钮外,卡片/badge/chip 一律无边框线 → 此处直接写无边框终值。
+   响应式按内容区真实宽走 container query(.jdom 为容器锚),不用 viewport media query。
+   ============================================================ */
+
+.jdom { container: jdom / inline-size; }
+
+/* ===== 共享 chrome(j-chrome 真值 · J 域 danger 主题) ===== */
+.jdom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+@container jdom (max-width: 980px) { .jdom .f-stats { grid-template-columns: repeat(2, 1fr); } }
+.jdom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
+.jdom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.jdom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.jdom .f-stat .sub { font-size: 11.5px; color: var(--ink-4); margin-top: 3px; }
+.jdom .f-stat.warn .v { color: var(--warning); }
+.jdom .f-stat.ok .v { color: var(--success); }
+.jdom .f-stat.cyan .v { color: var(--cyan); }
+.jdom .f-stat.danger .v { color: var(--danger); }
+
+.jdom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
+  border: 1px solid var(--danger-border); background: var(--danger-soft); color: var(--danger);
+  font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.jdom .f-cta:hover { background: var(--danger); color: #fff; }
+.jdom .f-cta.neutral { border-color: var(--border-strong); background: var(--surface-2); color: var(--ink-2); }
+.jdom .f-cta.neutral:hover { background: var(--surface-3); color: var(--ink); }
+
+.jdom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
+.jdom .f-foot b { color: var(--ink-3); font-weight: 600; }
+
+/* segmented(J3 趋势窗口 / J4 场景过滤 · danger 实底选中) */
+.jdom .seg { display: inline-flex; padding: 3px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); gap: 2px; }
+.jdom .seg button { padding: 5px 12px; border-radius: 7px; border: none; background: transparent; color: var(--ink-3);
+  font-size: 11.5px; font-family: inherit; cursor: pointer; font-weight: 500; }
+.jdom .seg button.on { background: var(--danger); color: #fff; font-weight: 600; }
+.jdom .seg button:not(.on):hover { background: var(--surface-3); color: var(--ink); }
+
+/* ============================ J1 ============================ */
+/* 7 闸 status cards(mini cockpit;7 闸 = 前端 6 + withdraw) */
+.jdom .gates-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; margin-bottom: 16px; }
+@container jdom (max-width: 1280px) { .jdom .gates-strip { grid-template-columns: repeat(4, 1fr); } }
+@container jdom (max-width: 720px) { .jdom .gates-strip { grid-template-columns: repeat(2, 1fr); } }
+.jdom .gate-card { background: var(--surface); border-radius: 11px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 8px; position: relative; }
+.jdom .gate-card.killed { background: linear-gradient(180deg, var(--danger-soft) 0%, var(--surface) 100%); }
+.jdom .gate-card .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.jdom .gate-card .key { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--ink); letter-spacing: .02em; }
+.jdom .gate-card .led { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 16%, transparent), 0 0 10px color-mix(in srgb, var(--success) 40%, transparent); }
+.jdom .gate-card.killed .led { background: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 16%, transparent), 0 0 10px color-mix(in srgb, var(--danger) 40%, transparent);
+  animation: jdomKillPulse 1.8s ease-in-out infinite; }
+@keyframes jdomKillPulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.jdom .gate-card .cap { font-size: 11.5px; color: var(--ink-3); line-height: 1.4; }
+.jdom .gate-card .cap b { color: var(--ink-2); font-weight: 600; }
+.jdom .gate-card .ft { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.jdom .gate-card .ft .impact { font-family: var(--mono); font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 5px; letter-spacing: .04em; }
+.jdom .gate-card .ft .impact.immediate { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.jdom .gate-card .ft .impact.delayed { background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
+.jdom .gate-card .ft .impact.none { background: var(--surface-3); color: var(--ink-3); }
+.jdom .gate-card .ft .ts { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); margin-left: auto; }
+
+/* 矩阵主表(9 列) */
+.jdom .matrix-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+.jdom .matrix-tblwrap { overflow-x: auto; }
+.jdom .matrix-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.jdom .matrix-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .matrix-h .sub { font-size: 11.5px; color: var(--ink-4); }
+.jdom .matrix-h .r { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.jdom .matrix-tbl { display: grid; grid-template-columns: 110px minmax(220px, 1fr) 100px 110px 110px 110px 110px 90px 220px;
+  min-width: 1100px; font-size: 12.5px; }
+.jdom .matrix-tbl .hd, .jdom .matrix-tbl .rw { display: contents; }
+.jdom .matrix-tbl .c { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; min-width: 0; }
+.jdom .matrix-tbl .hd .c { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--ink-4);
+  letter-spacing: .06em; text-transform: uppercase; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); }
+.jdom .matrix-tbl .rw:last-child .c { border-bottom: none; }
+.jdom .matrix-tbl .key { font-family: var(--mono); font-weight: 600; color: var(--ink); font-size: 12.5px; }
+.jdom .matrix-tbl .cap { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; justify-content: center; }
+.jdom .matrix-tbl .cap .nm { font-weight: 600; color: var(--ink); line-height: 1.4; }
+.jdom .matrix-tbl .cap .desc { font-size: 11px; color: var(--ink-4); line-height: 1.45; }
+.jdom .badge-st { padding: 3px 9px; border-radius: 5px; font-size: 10.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; }
+.jdom .badge-st.live { background: var(--success-soft); color: var(--success); }
+.jdom .badge-st.killed { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.jdom .badge-impact { padding: 2px 7px; border-radius: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 600; }
+.jdom .badge-impact.immediate { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+.jdom .badge-impact.delayed { background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
+.jdom .badge-impact.none { background: var(--surface-3); color: var(--ink-3); }
+.jdom .badge-proposal { padding: 2px 7px; border-radius: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 500; }
+.jdom .badge-proposal.idle { background: var(--surface-3); color: var(--ink-3); }
+.jdom .badge-proposal.pending { background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
+.jdom .badge-proposal.approved { background: var(--success-soft); color: var(--success); }
+.jdom .badge-emergency { padding: 2px 6px; border-radius: 5px; font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.jdom .matrix-tbl .mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.jdom .matrix-tbl .mono.ink { color: var(--ink-2); }
+.jdom .matrix-tbl .acts { display: flex; gap: 5px; justify-content: flex-end; flex-wrap: wrap; }
+.jdom .matrix-tbl .acts button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.jdom .matrix-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); }
+.jdom .matrix-tbl .acts button.kill { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent); font-weight: 600; }
+.jdom .matrix-tbl .acts button.kill:hover { background: var(--danger); color: #fff; }
+.jdom .matrix-tbl .acts button.resume { color: var(--success); border-color: color-mix(in srgb, var(--success) 32%, transparent);
+  background: var(--success-soft); font-weight: 600; }
+.jdom .matrix-tbl .acts button.resume:hover { background: var(--success); color: #0A0A0A; }
+.jdom .matrix-tbl .acts button.emer { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 32%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, transparent); }
+.jdom .matrix-tbl .acts button.emer:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); }
+
+/* 应急快速通道 + B1 备付金检查 双卡 */
+.jdom .j1-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@container jdom (max-width: 1100px) { .jdom .j1-side { grid-template-columns: 1fr; } }
+.jdom .side-card { background: var(--surface); border-radius: var(--r-card); padding: 18px 22px 20px; }
+.jdom .side-card .h { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.jdom .side-card .h .ic { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex-shrink: 0; }
+.jdom .side-card .h .ic.emer { background: var(--danger-soft); color: var(--danger); }
+.jdom .side-card .h .ic.b1 { background: var(--brand-soft); color: var(--brand); }
+.jdom .side-card .h .t { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .side-card .h .s { font-size: 11px; color: var(--ink-4); margin-top: 2px; }
+.jdom .side-card .h .tag { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+  border-radius: 5px; padding: 2px 7px; }
+.jdom .emer-row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px dashed var(--border); gap: 12px; }
+.jdom .emer-row:last-of-type { border-bottom: none; }
+.jdom .emer-row .l { flex: 1; min-width: 0; }
+.jdom .emer-row .l .k { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.jdom .emer-row .l .d { font-size: 11px; color: var(--ink-4); margin-top: 2px; line-height: 1.45; }
+.jdom .emer-row .v { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.jdom .emer-row .v .u { font-size: 10.5px; color: var(--ink-3); margin-left: 2px; font-weight: 500; }
+.jdom .emer-row .adj { padding: 5px 11px; border-radius: 7px; font-size: 11.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--warning-border); background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); font-family: inherit; }
+.jdom .emer-row .adj:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); }
+/* recoverGate 只读引用 chip(跟随 B1 红线单源,J 域不持有) */
+.jdom .emer-row .gate-ref { padding: 5px 11px; border-radius: 7px; font-size: 10.5px; font-weight: 600; white-space: nowrap;
+  background: var(--brand-soft); color: var(--brand); cursor: help; }
+.jdom .emer-launch { margin-top: 14px; padding: 14px; border-radius: 10px; background: var(--danger-soft);
+  display: flex; align-items: center; gap: 14px; }
+.jdom .emer-launch .txt { flex: 1; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+.jdom .emer-launch .txt b { color: var(--danger); font-weight: 600; }
+.jdom .emer-launch button { padding: 9px 18px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--danger); background: var(--danger); color: #fff; white-space: nowrap; font-family: inherit; }
+.jdom .emer-launch button:hover { background: #c9542a; }
+
+/* B1 备付金检查 */
+.jdom .b1cov-hero { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.jdom .b1cov-hero .item { background: var(--surface-2); border-radius: 9px; padding: 12px 14px; }
+.jdom .b1cov-hero .item .k { font-size: 10.5px; font-family: var(--mono); color: var(--ink-4); letter-spacing: .04em; text-transform: uppercase; }
+.jdom .b1cov-hero .item .v { font-family: var(--mono); font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.jdom .b1cov-hero .item.ok .v { color: var(--success); }
+.jdom .b1cov-hero .item.warn .v { color: var(--warning); }
+.jdom .b1cov-hero .item .sub { font-size: 10.5px; color: var(--ink-4); margin-top: 4px; font-family: var(--mono); }
+.jdom .b1cov-bar { position: relative; height: 10px; border-radius: 999px; margin: 26px 0 12px; }
+.jdom .b1cov-bar .needle { position: absolute; top: -5px; bottom: -5px; width: 3px; border-radius: 2px;
+  background: var(--success); box-shadow: 0 0 0 3px var(--surface); }
+.jdom .b1cov-bar .needle .nlb { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 10px; font-weight: 700; color: var(--success); white-space: nowrap; }
+.jdom .b1cov-bar .bnd { position: absolute; top: -3px; bottom: -3px; width: 1.5px; background: var(--surface); }
+.jdom .b1cov-legend { display: flex; gap: 16px; font-size: 11px; color: var(--ink-3); align-items: center; flex-wrap: wrap; }
+.jdom .b1cov-legend .it { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.jdom .b1cov-legend .it .d { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+.jdom .b1cov-legend .it .d.red { background: color-mix(in srgb, var(--danger) 60%, transparent); }
+.jdom .b1cov-legend .it .d.yellow { background: color-mix(in srgb, var(--warning) 60%, transparent); }
+.jdom .b1cov-legend .it .d.green { background: color-mix(in srgb, var(--success) 60%, transparent); }
+.jdom .b1cov-detail { margin-top: 14px; padding: 12px 14px; background: var(--success-soft); border-radius: 9px;
+  font-size: 12px; color: var(--ink-2); line-height: 1.5; display: flex; align-items: flex-start; gap: 8px; }
+.jdom .b1cov-detail .ic { color: var(--success); flex-shrink: 0; margin-top: 1px; }
+.jdom .b1cov-detail b { color: var(--success); font-weight: 600; }
+
+/* 自动触发规则 */
+.jdom .rules-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+.jdom .rules-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.jdom .rules-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .rules-h .sub { font-size: 11.5px; color: var(--ink-4); }
+.jdom .rules-h .r { margin-left: auto; }
+.jdom .rules-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); }
+@container jdom (max-width: 980px) { .jdom .rules-grid { grid-template-columns: 1fr 1fr; } }
+@container jdom (max-width: 580px) { .jdom .rules-grid { grid-template-columns: 1fr; } }
+.jdom .rule { background: var(--surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.jdom .rule .top { display: flex; align-items: flex-start; gap: 10px; }
+.jdom .rule .top .ic { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; flex-shrink: 0;
+  background: var(--warning-soft); color: var(--warning); }
+.jdom .rule .top .t { flex: 1; }
+.jdom .rule .top .nm { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.jdom .rule .top .key { font-family: var(--mono); font-size: 10px; color: var(--ink-4); margin-top: 2px; }
+.jdom .rule .cond { font-size: 11px; color: var(--ink-3); line-height: 1.5; padding: 8px 10px; background: var(--surface-2);
+  border-radius: 7px; font-family: var(--mono); }
+.jdom .rule .cond b { color: var(--warning); font-weight: 600; }
+.jdom .rule .row { display: flex; align-items: center; gap: 6px; margin-top: auto; }
+.jdom .rule .row .key { font-size: 11px; color: var(--ink-4); }
+.jdom .rule .row .val { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); font-weight: 600; margin-left: auto; }
+.jdom .rule .row button { padding: 4px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--ink-3); font-size: 10.5px; cursor: pointer; font-family: inherit; }
+.jdom .rule .row button:hover { background: var(--surface-3); color: var(--ink); }
+
+/* ============================ J2 ============================ */
+.jdom .geo-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; margin-bottom: 16px; }
+@container jdom (max-width: 1100px) { .jdom .geo-grid { grid-template-columns: 1fr; } }
+.jdom .geo-card { background: var(--surface); border-radius: var(--r-card); overflow: hidden; }
+.jdom .geo-h { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.jdom .geo-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .geo-h .sub { font-size: 11.5px; color: var(--ink-4); }
+.jdom .geo-h .r { margin-left: auto; display: flex; gap: 10px; align-items: center; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.jdom .geo-h .r .cnt { font-weight: 700; }
+.jdom .geo-h .r .cnt.danger { color: var(--danger); }
+.jdom .geo-h .r .cnt.warn { color: var(--warning); }
+.jdom .country-list { padding: 12px 18px; display: flex; flex-wrap: wrap; gap: 6px; min-height: 60px; align-content: flex-start; }
+.jdom .country-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 7px; font-size: 11.5px;
+  font-family: var(--mono); cursor: pointer; transition: background .12s; border: none; }
+.jdom .country-chip.banned { background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); }
+.jdom .country-chip.banned:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
+.jdom .country-chip.limited { background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
+.jdom .country-chip.limited:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); }
+.jdom .country-chip .cc { font-weight: 700; letter-spacing: .04em; }
+.jdom .country-chip .x { opacity: .5; font-size: 12px; line-height: 1; }
+.jdom .country-chip:hover .x { opacity: 1; }
+.jdom .geo-foot { padding: 11px 18px; border-top: 1px dashed var(--border); background: var(--surface-2);
+  display: flex; gap: 10px; align-items: center; font-size: 11.5px; color: var(--ink-3); flex-wrap: wrap; }
+.jdom .geo-foot b { color: var(--ink-2); font-weight: 600; }
+.jdom .geo-foot button { padding: 6px 12px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--danger-border); background: var(--danger-soft); color: var(--danger); margin-left: auto; font-family: inherit; }
+.jdom .geo-foot button:hover { background: var(--danger); color: #fff; }
+.jdom .geo-foot button.warn { border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
+.jdom .geo-foot button.warn:hover { background: var(--warning); color: #0A0A0A; }
+
+/* per-endpoint 派生表 */
+.jdom .deriv-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+.jdom .deriv-tblwrap { overflow-x: auto; }
+.jdom .deriv-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.jdom .deriv-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .deriv-h .sub { font-size: 11.5px; color: var(--ink-4); }
+.jdom .deriv-h .r { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.jdom .deriv-tbl { display: grid; grid-template-columns: 200px minmax(220px, 1fr) minmax(260px, 1.4fr) 130px 120px 180px; min-width: 1080px; font-size: 12.5px; }
+.jdom .deriv-tbl .hd, .jdom .deriv-tbl .rw { display: contents; }
+.jdom .deriv-tbl .c { padding: 11px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; min-width: 0; }
+.jdom .deriv-tbl .hd .c { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--ink-4);
+  letter-spacing: .06em; text-transform: uppercase; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); }
+.jdom .deriv-tbl .rw:last-child .c { border-bottom: none; }
+.jdom .deriv-tbl .endpoint { font-family: var(--mono); font-weight: 600; color: var(--brand); font-size: 12.5px; }
+.jdom .deriv-tbl .domain { font-family: var(--mono); font-size: 11px; color: var(--ink-3); padding: 2px 7px; background: var(--surface-3); border-radius: 5px; }
+.jdom .deriv-tbl .geo-set { display: flex; flex-wrap: wrap; gap: 4px; }
+.jdom .deriv-tbl .geo-set .cc { font-family: var(--mono); font-size: 10.5px; padding: 2px 6px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); border-radius: 4px; font-weight: 600; }
+.jdom .deriv-tbl .geo-set .more { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); padding: 2px 6px; }
+.jdom .deriv-tbl .geo-set .inherit { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); padding: 2px 6px;
+  border: 1px dashed var(--border-strong); border-radius: 4px; }
+.jdom .deriv-tbl .src { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 5px; font-size: 10.5px; font-weight: 600; font-family: var(--mono); }
+.jdom .deriv-tbl .src.explicit { background: var(--brand-soft); color: var(--brand); }
+.jdom .deriv-tbl .src.derived { background: var(--cyan-soft); color: var(--cyan); }
+.jdom .deriv-tbl .src.pending { background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
+.jdom .deriv-tbl .hits { font-family: var(--mono); font-weight: 600; color: var(--ink-2); }
+.jdom .deriv-tbl .hits.zero { color: var(--ink-4); }
+.jdom .deriv-tbl .acts { display: flex; gap: 5px; justify-content: flex-end; }
+.jdom .deriv-tbl .acts button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.jdom .deriv-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); }
+
+/* Top 拦截 bar + 边缘 IP 判定 */
+.jdom .hits-card { background: var(--surface); border-radius: var(--r-card); padding: 16px 20px 20px; }
+.jdom .hits-h { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.jdom .hits-h .t { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .hits-h .s { font-size: 11.5px; color: var(--ink-4); }
+.jdom .hits-h .r { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.jdom .hit-row { display: grid; grid-template-columns: 100px 1fr 90px; gap: 12px; align-items: center; padding: 7px 0; }
+.jdom .hit-row .cc { font-family: var(--mono); font-size: 12px; color: var(--ink-2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jdom .hit-row .cc .nm { color: var(--ink-3); font-weight: 400; margin-left: 6px; }
+.jdom .hit-row .bar { height: 8px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+.jdom .hit-row .bar .f { height: 100%; background: linear-gradient(90deg, var(--danger), #FF8A5E); border-radius: 999px; }
+.jdom .hit-row .ct { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--danger); text-align: right; font-variant-numeric: tabular-nums; }
+.jdom .edge-card { background: var(--surface); border-radius: var(--r-card); }
+.jdom .edge-h { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.jdom .edge-h .ic { width: 28px; height: 28px; border-radius: 7px; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; }
+.jdom .edge-h .t { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.jdom .edge-h .s { font-size: 11px; color: var(--ink-4); }
+.jdom .edge-body { padding: 14px 18px; }
+.jdom .edge-kv { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border); gap: 12px; }
+.jdom .edge-kv:last-of-type { border-bottom: none; }
+.jdom .edge-kv .k { font-size: 11.5px; color: var(--ink-3); flex: 1; }
+.jdom .edge-kv .v { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink); }
+.jdom .edge-kv .v.ok { color: var(--success); }
+.jdom .edge-kv .v.warn { color: var(--warning); }
+.jdom .edge-kv .v button { padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--ink-3); font-size: 10.5px; cursor: pointer; font-family: inherit; }
+.jdom .edge-kv .v button:hover { background: var(--surface-3); color: var(--ink); }
+.jdom .edge-note { margin-top: 14px; padding: 11px 12px; background: var(--brand-soft); border-radius: 9px;
+  font-size: 11.5px; color: var(--ink-2); line-height: 1.5; display: flex; align-items: flex-start; gap: 8px; }
+.jdom .edge-note .ic { color: var(--brand); flex-shrink: 0; margin-top: 1px; }
+.jdom .edge-note b { color: var(--brand); font-weight: 600; }
+
+/* 应急封锁 strip */
+.jdom .emer-strip { padding: 14px 18px; background: linear-gradient(135deg, var(--danger-soft) 0%, var(--surface) 100%);
+  border-radius: var(--r-card); margin-bottom: 16px; display: flex; align-items: center; gap: 14px; }
+.jdom .emer-strip .ic { width: 36px; height: 36px; border-radius: 9px; background: var(--danger-soft); color: var(--danger);
+  display: grid; place-items: center; flex-shrink: 0; }
+.jdom .emer-strip .txt { flex: 1; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+.jdom .emer-strip .txt b { color: var(--danger); font-weight: 600; }
+.jdom .emer-strip button { padding: 9px 18px; border-radius: 9px; font-size: 13px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--danger); background: var(--danger); color: #fff; white-space: nowrap; font-family: inherit; }
+.jdom .emer-strip button:hover { background: #c9542a; }
+
+/* ============================ J3 ============================ */
+.jdom .trend-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; padding: 18px 22px 20px; }
+.jdom .trend-h { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.jdom .trend-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .trend-h .sub { font-size: 11.5px; color: var(--ink-4); }
+.jdom .trend-h .r { margin-left: auto; }
+.jdom .trend-chart { position: relative; height: 220px; padding: 10px 0 28px 38px; }
+.jdom .trend-chart svg { width: 100%; height: 100%; overflow: visible; display: block; }
+.jdom .trend-y { position: absolute; top: 10px; left: 0; bottom: 28px; width: 36px; display: flex; flex-direction: column; justify-content: space-between;
+  font-family: var(--mono); font-size: 10px; color: var(--ink-4); text-align: right; padding-right: 6px; }
+.jdom .trend-x { position: absolute; bottom: 0; left: 38px; right: 0; display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 10px; color: var(--ink-4); }
+.jdom .trend-grid-line { stroke: var(--border); stroke-dasharray: 3 5; stroke-width: 1; opacity: .5; }
+.jdom .trend-line { fill: none; stroke: var(--danger); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.jdom .trend-area { opacity: .35; }
+/* 峰值标记走 HTML overlay(SVG preserveAspectRatio=none 下圆点/文字会变形,设计稿同款方案) */
+.jdom .trend-overlay { position: absolute; top: 10px; left: 38px; right: 0; bottom: 28px; pointer-events: none; }
+.jdom .trend-marker { position: absolute; transform: translate(-50%, -50%); }
+.jdom .trend-marker .mdot { width: 9px; height: 9px; border-radius: 50%; background: var(--danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 18%, transparent); }
+.jdom .trend-marker .mlabel { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--danger); white-space: nowrap; }
+
+.jdom .path-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; padding: 16px 22px 20px; }
+.jdom .path-h { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.jdom .path-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .path-h .sub { font-size: 11.5px; color: var(--ink-4); }
+.jdom .path-h .r { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.jdom .path-stack { display: flex; height: 26px; border-radius: 7px; overflow: hidden; margin-bottom: 14px; }
+.jdom .path-stack .pseg { display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 11px; color: #fff;
+  font-weight: 600; cursor: default; transition: filter .12s; min-width: 0; overflow: hidden; white-space: nowrap; }
+.jdom .path-stack .pseg:hover { filter: brightness(1.18); }
+.jdom .path-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 24px; font-size: 12px; }
+@container jdom (max-width: 760px) { .jdom .path-list { grid-template-columns: 1fr; } }
+.jdom .path-it { display: grid; grid-template-columns: 16px 1fr 60px 70px; gap: 10px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--border); }
+.jdom .path-it .psw { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.jdom .path-it .nm { color: var(--ink-2); font-size: 12px; }
+.jdom .path-it .nm .desc { color: var(--ink-4); font-size: 10.5px; margin-top: 1px; line-height: 1.3; }
+.jdom .path-it .cnt { font-family: var(--mono); font-weight: 700; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+.jdom .path-it .acct { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); text-align: right; }
+
+.jdom .accts-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+.jdom .accts-tblwrap { overflow-x: auto; }
+.jdom .accts-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.jdom .accts-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .accts-h .sub { font-size: 11.5px; color: var(--ink-4); }
+.jdom .accts-h .r { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.jdom .accts-tbl { display: grid; grid-template-columns: 110px 90px 110px minmax(220px, 1fr) 130px 100px 180px; min-width: 1020px; font-size: 12.5px; }
+.jdom .accts-tbl .hd, .jdom .accts-tbl .rw { display: contents; }
+.jdom .accts-tbl .c { padding: 11px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; min-width: 0; }
+.jdom .accts-tbl .hd .c { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--ink-4);
+  letter-spacing: .06em; text-transform: uppercase; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); }
+.jdom .accts-tbl .rw:last-child .c { border-bottom: none; }
+.jdom .accts-tbl .uid { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+.jdom .accts-tbl .cnt { font-family: var(--mono); font-weight: 700; color: var(--danger); font-variant-numeric: tabular-nums; font-size: 13.5px; }
+.jdom .accts-tbl .last { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+.jdom .accts-tbl .paths { display: flex; flex-wrap: wrap; gap: 4px; }
+.jdom .accts-tbl .paths .p { font-family: var(--mono); font-size: 10px; padding: 2px 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); font-weight: 600; }
+.jdom .badge-k4 { padding: 2px 8px; border-radius: 5px; font-family: var(--mono); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.jdom .badge-k4.high { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.jdom .badge-k4.mid { background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
+.jdom .badge-k4.low { background: var(--success-soft); color: var(--success); }
+.jdom .badge-cluster { padding: 2px 7px; border-radius: 5px; font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+  background: var(--brand-2-soft); color: var(--brand-2); }
+.jdom .accts-tbl .acts { display: flex; gap: 5px; justify-content: flex-end; }
+.jdom .accts-tbl .acts a { padding: 5px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.jdom .accts-tbl .acts a:hover { background: var(--surface-3); color: var(--ink); }
+.jdom .accts-tbl .acts a.k1 { color: var(--brand-2); border-color: var(--brand-2-border); background: var(--brand-2-soft); font-weight: 600; }
+.jdom .accts-tbl .acts a.c2 { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); font-weight: 600; }
+.jdom .accts-tbl .acts a.off { opacity: .35; cursor: not-allowed; pointer-events: none; }
+
+.jdom .feed-strip { background: linear-gradient(135deg, var(--brand-soft) 0%, var(--surface) 100%);
+  border-radius: var(--r-card); margin-bottom: 16px; padding: 14px 18px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.jdom .feed-strip .it { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); }
+.jdom .feed-strip .it .led { width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent); }
+.jdom .feed-strip .it .led.warn { background: var(--warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent); }
+.jdom .feed-strip .it b { font-family: var(--mono); color: var(--brand); font-weight: 600; }
+.jdom .feed-strip .sep { color: var(--ink-4); }
+
+/* 只读 banner:设计稿底色 rgba(155,137,224,.10) = 紫系(--cyan 族),与 icon/强调字 var(--cyan) 同族 */
+.jdom .ro-banner { background: color-mix(in srgb, #9B89E0 10%, transparent); border-radius: 9px; padding: 11px 14px; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); line-height: 1.5; }
+.jdom .ro-banner .ic { color: var(--cyan); flex-shrink: 0; }
+.jdom .ro-banner b { color: var(--cyan); font-weight: 600; }
+
+/* ============================ J4 ============================ */
+.jdom .pb-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+.jdom .pb-bar .seg { background: var(--surface); }
+.jdom .pb-bar .seg button { padding: 6px 14px; font-size: 12px; }
+.jdom .pb-bar .stats { display: flex; gap: 14px; font-size: 11.5px; color: var(--ink-3); margin-left: auto; align-items: center; }
+.jdom .pb-bar .stats b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+
+.jdom .pb-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
+@container jdom (max-width: 1100px) { .jdom .pb-grid { grid-template-columns: 1fr; } }
+.jdom .pb-card { background: var(--surface); border-radius: var(--r-card); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.jdom .pb-card.emer { background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 4%, transparent) 0%, var(--surface) 22%); }
+.jdom .pb-top { display: flex; align-items: flex-start; gap: 10px; }
+.jdom .pb-code { font-family: var(--mono); font-size: 11px; color: var(--ink-4); padding: 3px 8px; border-radius: 5px;
+  background: var(--surface-3); font-weight: 600; }
+.jdom .pb-top .nm { font-size: 15px; font-weight: 600; color: var(--ink); margin-top: 2px; letter-spacing: -.01em; }
+.jdom .pb-top .scene { font-size: 11.5px; color: var(--ink-3); margin-top: 4px; line-height: 1.5; }
+.jdom .pb-top .scene b { color: var(--ink-2); font-weight: 600; }
+.jdom .pb-top .r { margin-left: auto; display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
+.jdom .pb-top .emer-tag { font-family: var(--mono); font-size: 10px; padding: 2px 8px; border-radius: 5px; letter-spacing: .04em; font-weight: 700;
+  background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.jdom .pb-top .state { font-family: var(--mono); font-size: 10.5px; padding: 2px 8px; border-radius: 5px; font-weight: 600; }
+.jdom .pb-top .state.active { background: var(--success-soft); color: var(--success); }
+.jdom .pb-top .state.todo { background: color-mix(in srgb, var(--warning) 10%, transparent); color: var(--warning); }
+
+/* actionSequence timeline(域 badge 颜色编码) */
+.jdom .pb-seq { display: flex; gap: 0; position: relative; padding: 6px 0 8px; }
+.jdom .pb-seq::before { content: ''; position: absolute; left: 12px; right: 12px; top: 21px; height: 2px;
+  background: linear-gradient(90deg, var(--danger) 0%, var(--warning) 50%, var(--brand) 100%); opacity: .25; z-index: 0; }
+.jdom .pb-seq .step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; z-index: 1; min-width: 0; }
+.jdom .pb-seq .step .dom { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; flex-shrink: 0; border: 2px solid; box-shadow: 0 0 0 4px var(--surface); background: var(--surface); }
+.jdom .pb-seq .step.dj .dom { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+  background: linear-gradient(color-mix(in srgb, var(--danger) 14%, transparent), color-mix(in srgb, var(--danger) 14%, transparent)), var(--surface); }
+.jdom .pb-seq .step.dd .dom { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 32%, transparent);
+  background: linear-gradient(color-mix(in srgb, var(--warning) 14%, transparent), color-mix(in srgb, var(--warning) 14%, transparent)), var(--surface); }
+.jdom .pb-seq .step.di5 .dom { color: var(--brand); border-color: var(--brand-border);
+  background: linear-gradient(var(--brand-soft), var(--brand-soft)), var(--surface); }
+.jdom .pb-seq .step.di .dom { color: var(--cyan); border-color: var(--cyan-border);
+  background: linear-gradient(var(--cyan-soft), var(--cyan-soft)), var(--surface); }
+.jdom .pb-seq .step.dc .dom { color: var(--brand-2); border-color: var(--brand-2-border);
+  background: linear-gradient(var(--brand-2-soft), var(--brand-2-soft)), var(--surface); }
+.jdom .pb-seq .step.db .dom { color: var(--success); border-color: color-mix(in srgb, var(--success) 32%, transparent);
+  background: linear-gradient(var(--success-soft), var(--success-soft)), var(--surface); }
+.jdom .pb-seq .step .ax { font-size: 10.5px; color: var(--ink-2); text-align: center; line-height: 1.35; padding: 0 4px; min-height: 28px; margin-top: 2px; }
+.jdom .pb-seq .step .ax b { color: var(--ink); font-weight: 600; }
+.jdom .pb-seq .step .approve { font-family: var(--mono); font-size: 9px; color: var(--ink-4); letter-spacing: .04em; }
+.jdom .pb-seq .step .approve.req { color: var(--danger); font-weight: 600; }
+.jdom .pb-seq .step .approve.ref { color: var(--cyan); }
+
+.jdom .pb-ft { display: flex; align-items: center; padding-top: 10px; border-top: 1px dashed var(--border); gap: 14px; flex-wrap: wrap; }
+.jdom .pb-ft .meta { display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--ink-3); flex: 1; flex-wrap: wrap; }
+.jdom .pb-ft .meta .it { display: flex; align-items: center; gap: 5px; }
+.jdom .pb-ft .meta .it .k { color: var(--ink-4); }
+.jdom .pb-ft .meta .it .v { font-family: var(--mono); color: var(--ink-2); font-weight: 600; }
+.jdom .pb-ft .meta .it .v.warn { color: var(--warning); }
+.jdom .pb-ft .acts { display: flex; gap: 6px; }
+.jdom .pb-ft .acts button { padding: 6px 12px; border-radius: 7px; border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.jdom .pb-ft .acts button:hover { background: var(--surface-3); color: var(--ink); }
+.jdom .pb-ft .acts button.edit { color: var(--ink-3); }
+.jdom .pb-ft .acts button.drill { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 32%, transparent);
+  background: color-mix(in srgb, var(--warning) 10%, transparent); font-weight: 600; }
+.jdom .pb-ft .acts button.drill:hover { background: color-mix(in srgb, var(--warning) 22%, transparent); }
+.jdom .pb-ft .acts button.exec { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); font-weight: 600; }
+.jdom .pb-ft .acts button.exec:hover { background: var(--danger); color: #fff; }
+.jdom .pb-ft .acts button.exec.emer { background: var(--danger); color: #fff; border-color: var(--danger); }
+.jdom .pb-ft .acts button.exec.emer:hover { background: #c9542a; }
+
+/* SLA / 执行框架 双卡 */
+.jdom .top-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@container jdom (max-width: 1100px) { .jdom .top-side { grid-template-columns: 1fr; } }
+.jdom .sla-card { background: var(--surface); border-radius: var(--r-card); padding: 16px 20px 18px; }
+.jdom .sla-card .h { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.jdom .sla-card .h .ic { width: 30px; height: 30px; border-radius: 7px; background: var(--danger-soft); color: var(--danger); display: grid; place-items: center; }
+.jdom .sla-card .h .ic.b { background: var(--brand-soft); color: var(--brand); }
+.jdom .sla-card .h .t { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.jdom .sla-card .h .s { font-size: 11px; color: var(--ink-4); margin-top: 2px; }
+.jdom .sla-kv { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border); gap: 10px; }
+.jdom .sla-kv:last-child { border-bottom: none; }
+.jdom .sla-kv .k { font-size: 11.5px; color: var(--ink-3); flex: 1; }
+.jdom .sla-kv .v { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.jdom .sla-kv .v.danger { color: var(--danger); }
+.jdom .sla-kv .v.warn { color: var(--warning); }
+.jdom .sla-kv .v.ok { color: var(--success); }
+
+/* 执行追溯历史表 */
+.jdom .exec-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+.jdom .exec-tblwrap { overflow-x: auto; }
+.jdom .exec-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.jdom .exec-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.jdom .exec-h .sub { font-size: 11.5px; color: var(--ink-4); }
+.jdom .exec-h .r { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.jdom .exec-tbl { display: grid; grid-template-columns: 120px minmax(200px, 1fr) 130px 110px 140px minmax(220px, 1fr) 130px; min-width: 1120px; font-size: 12.5px; }
+.jdom .exec-tbl .hd, .jdom .exec-tbl .rw { display: contents; }
+.jdom .exec-tbl .c { padding: 11px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; min-width: 0; }
+.jdom .exec-tbl .hd .c { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--ink-4);
+  letter-spacing: .06em; text-transform: uppercase; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); }
+.jdom .exec-tbl .rw:last-child .c { border-bottom: none; }
+.jdom .exec-tbl .ts { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+.jdom .exec-tbl .pb { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; justify-content: center; }
+.jdom .exec-tbl .pb .code { font-family: var(--mono); font-size: 10.5px; color: var(--ink-4); }
+.jdom .exec-tbl .pb .nm { font-weight: 600; color: var(--ink); font-size: 12.5px; }
+.jdom .exec-tbl .trig { font-size: 11.5px; color: var(--ink-2); line-height: 1.45; }
+.jdom .exec-tbl .mode { font-family: var(--mono); font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; letter-spacing: .04em; }
+.jdom .exec-tbl .mode.regular { background: var(--surface-3); color: var(--ink-3); }
+.jdom .exec-tbl .mode.emergency { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.jdom .exec-tbl .steps { display: flex; gap: 3px; }
+.jdom .exec-tbl .steps .sdot { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid; }
+.jdom .exec-tbl .steps .sdot.done { background: var(--success); border-color: var(--success); }
+.jdom .exec-tbl .steps .sdot.fail { background: var(--danger); border-color: var(--danger); }
+.jdom .exec-tbl .steps .sdot.skip { background: transparent; border-color: var(--ink-4); }
+.jdom .exec-tbl .confirm-pair { display: flex; flex-direction: column; gap: 2px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); line-height: 1.35; justify-content: center; }
+.jdom .exec-tbl .confirm-pair .role { color: var(--ink-4); font-size: 9.5px; letter-spacing: .04em; }
+.jdom .exec-tbl .acts { display: flex; gap: 5px; justify-content: flex-end; }
+.jdom .exec-tbl .acts button { padding: 5px 9px; border-radius: 6px; border: 1px solid var(--border-strong);
+  background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.jdom .exec-tbl .acts button:hover { background: var(--surface-3); color: var(--ink); }

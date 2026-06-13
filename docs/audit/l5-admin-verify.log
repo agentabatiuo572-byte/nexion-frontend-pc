@@ -1,0 +1,1018 @@
+$ npm.cmd run verify
+
+
+> nexion-admin-prototype@0.1.0 verify
+> bash scripts/verify.sh all
+
+== [1/4] tsc ==
+  tsc 0 errors
+== [2/4] nav routes (HTTP 200 + scaffold needle) ==
+  nav-routes: 66 条路由
+== [3/4] landing + flagship needles ==
+== [4/4] 体验回归(运营者 / PM 视角 · 自动可检信号) ==
+  注:运营者/PM/交互设计师 的定性维度由审计 panel(docs/REVIEW-RUBRIC.md 镜头 B/C/D)覆盖,此处仅守信号退化。
+== [+] CGM 字段级覆盖 gate(CGM_BATCH=B9) ==
+CGM coverage gate @ B9: 范围内 185 行 / 全量 185 行,未覆盖 0
+  ✓ batch≤B9 全部 built/waived(已实现或显式豁免) · 中性语言 0 违例
+== [+] 交互完整性自查 gate(死控件/页头错配/详情链全局/persist水合/版本漂移/凭据反模式)==
+交互完整性自查:扫描完成,发现 0 项(HIGH 0)
+✓ 交互完整性 PASS — 无 HIGH 残留
+== [+] 动作完整性 gate(防新增死控件 + built 不退化 + 欠账量化;OPS_BATCH 收紧批次)==
+动作完整性门:清单 146 行 — ✅built 135 / 🟠pending 0 / ❌missing 0 / ⚪readonly 11
+  欠账 0(待补):
+  死控件 baseline 总计 5(锁死回归:只减不增)
+✓ 动作完整性 PASS — 无新增死控件 · built 行均真落地 · readonly 均有据
+== [+] 旧确认机制残留 gate ==
+✓ 旧确认机制残留 0
+== [+] 业务弹窗契约 gate(角色/权限/内容/设备必须有业务控件)==
+{
+  "status": "passed",
+  "checkedRequired": 7,
+  "checkedForbidden": 9
+}
+== [+] 列表能力 gate(分页原语 + finance RT-014 接线 + 豁免注记)==
+{
+  "status": "passed",
+  "checkedRequired": 8,
+  "runtimeStrict": false,
+  "unexemptedP1": 0,
+  "failures": []
+}
+== [+] 全域列表能力 runtime gate(66 路由表格分页/明确小表例外)==
+{
+  "status": "passed",
+  "adminRoutesSeen": 66,
+  "tableRoutes": 38,
+  "blockerCount": 0,
+  "warningCount": 0,
+  "invalidExemptionCount": 0,
+  "findings": [],
+  "warnings": [],
+  "invalidExemptions": []
+}
+== [+] 支持后台 gate(FM-018 /content/support + ticket 字段镜像)==
+admin-support-surface-audit passed
+== [+] UniApp 全路由迁移 gate(Next 映射/pages/runtime/action sample)==
+{
+  "status": "passed",
+  "nextRoutes": 80,
+  "uniPages": 81,
+  "mappedRoutes": 80,
+  "extraUniRoutes": [
+    "/#/pages/onboarding/terms"
+  ],
+  "expectedExtraUniRoutes": [
+    "/#/pages/onboarding/terms"
+  ],
+  "missingUniVueFiles": 0,
+  "runtimeRows": 82,
+  "runtimeCaptured": 82,
+  "actionRows": 86,
+  "blockingActionSamples": 0,
+  "findings": []
+}
+== [+] UniApp persona walkthrough gate(提现/兑换回购/team finance 导航)==
+{
+  "status": "passed",
+  "baseUrl": "http://localhost:5173",
+  "session": "nexion-uni-persona-walkthrough-proof-1781341069950-28044",
+  "outFile": "docs/audit/shards/uniapp-persona-walkthrough-proof.ndjson",
+  "results": [
+    {
+      "id": "FT-013",
+      "name": "withdraw-form-after-kyc",
+      "status": "passed",
+      "evidence": {
+        "href": "http://localhost:5173/#/pages/me/wallet-withdraw-tracking",
+        "pointsAfter": 95,
+        "billRef": "WD-20260613-2926",
+        "trackingHasAddress": true
+      },
+      "startedAt": "2026-06-13T08:58:53.776Z",
+      "finishedAt": "2026-06-13T08:58:58.061Z"
+    },
+    {
+      "id": "FT-014A",
+      "name": "exchange-nex-to-usdt-confirm-modal",
+      "status": "passed",
+      "evidence": {
+        "href": "http://localhost:5173/#/pages/me/wallet-exchange",
+        "modalText": "Confirm Exchange\nNEX 10 → USDT 0.8635\n取消\nConfirm Exchange",
+        "swapId": "SW-4IVWF",
+        "toAmount": 0.8635,
+        "v3TodayUsed": 0.8635,
+        "billCount": 2
+      },
+      "startedAt": "2026-06-13T08:58:58.061Z",
+      "finishedAt": "2026-06-13T08:59:05.728Z"
+    },
+    {
+      "id": "FT-014B",
+      "name": "repurchase-writes-points-staking-bill",
+      "status": "passed",
+      "evidence": {
+        "href": "http://localhost:5173/#/pages/me/wallet-repurchase",
+        "pointsBefore": 95,
+        "pointsAfter": 195,
+        "positionId": "stk-1781341148017",
+        "billRef": "REINVEST-MQC4IYK1"
+      },
+      "startedAt": "2026-06-13T08:59:05.728Z",
+      "finishedAt": "2026-06-13T08:59:09.878Z"
+    },
+    {
+      "id": "FT-015A",
+      "name": "team-hub-to-commissions",
+      "status": "passed",
+      "evidence": {
+        "href": "http://localhost:5173/#/pages/team/commissions",
+        "needles": [
+          "Commissions",
+          "Withdrawable",
+          "Network royalty"
+        ]
+      },
+      "startedAt": "2026-06-13T08:59:09.878Z",
+      "finishedAt": "2026-06-13T08:59:13.710Z"
+    },
+    {
+      "id": "FT-015B",
+      "name": "team-hub-to-rank",
+      "status": "passed",
+      "evidence": {
+        "href": "http://localhost:5173/#/pages/team/rank",
+        "needles": [
+          "V Rank",
+          "Current rank",
+          "V3 Captain"
+        ]
+      },
+      "startedAt": "2026-06-13T08:59:13.710Z",
+      "finishedAt": "2026-06-13T08:59:17.522Z"
+    },
+    {
+      "id": "FT-015C",
+      "name": "team-hub-to-binary",
+      "status": "passed",
+      "evidence": {
+        "href": "http://localhost:5173/#/pages/team/binary",
+        "needles": [
+          "Balance Match",
+          "Track A",
+          "Track B"
+        ]
+      },
+      "startedAt": "2026-06-13T08:59:17.522Z",
+      "finishedAt": "2026-06-13T08:59:21.325Z"
+    },
+    {
+      "id": "FT-015D",
+      "name": "team-hub-to-leadership-pool",
+      "status": "passed",
+      "evidence": {
+        "href": "http://localhost:5173/#/pages/team/leadership-pool",
+        "needles": [
+          "Global Leadership Pool",
+          "Week pool",
+          "Vote weights"
+        ]
+      },
+      "startedAt": "2026-06-13T08:59:21.325Z",
+      "finishedAt": "2026-06-13T08:59:25.148Z"
+    }
+  ]
+}
+== [+] Feature-mapping walkthrough gate(FM-004/005/008/013/016)==
+{
+  "status": "passed",
+  "adminBaseUrl": "http://localhost:3002",
+  "uniBaseUrl": "http://localhost:5173",
+  "session": "nexion-feature-map-walkthrough-1781341166074-21752",
+  "outFile": "docs/audit/shards/feature-mapping-walkthrough-proof.ndjson",
+  "results": [
+    {
+      "id": "FM-004",
+      "name": "top-up-channel-and-kyc-express-status",
+      "status": "passed",
+      "evidence": {
+        "regularChannel": {
+          "href": "http://localhost:5173/#/pages/me/wallet-topup",
+          "hasAwaiting": true,
+          "addressVisible": true
+        },
+        "kycSelectHasBanner": true,
+        "awaiting": {
+          "href": "http://localhost:5173/#/pages/me/wallet-topup?kyc=1",
+          "hasExactAmount": true
+        },
+        "complianceCheckId": "KYC-2026-A78235",
+        "kycBillRef": "KYC-KYC-2026-A78235"
+      },
+      "startedAt": "2026-06-13T09:00:29.304Z",
+      "finishedAt": "2026-06-13T09:00:43.349Z"
+    },
+    {
+      "id": "FM-005-FRONT",
+      "name": "staking-user-opens-position",
+      "status": "passed",
+      "evidence": {
+        "before": {
+          "href": "http://localhost:5173/#/pages/staking/staking",
+          "body": "New here? Learn how staking works\nYour total staked\nearning\n$\n500.00\n+$0.48 today · 1 active\nAccrued\n$14.38\nAverage APY\n35.0%\nStake plans\n30D\n12%\nAPY\nShort lock · safe entry\nMin $100 · 5% early-withdraw penalty\n90D\n35%\nAPY\nBalanced · most chosen\nMin $500 · 15% early-withdraw penalty\n180D\n80%\nAPY\nMost popular\nPre-listing window\nMin $1,000 · 30% early-withdraw penalty\n365D\n180%\nAPY\nHighest yield\nFounder yield · airdrop ×2\nMin $5,000 · 50% early-withdraw penalty\nCompound calculator\n80% · 180d\n$\n30d\n90d\n180d\n365d\nAfter 365 days\n1 cycle payout\n$1395\n+$395\n2× re-stake (1 year)\n$1945\n+$945\n+$550 from compounding · re-stake 2× at maturity\nCompound assumes re-stake on each maturity at current APY. Real APY may vary cycle-to-cycle.\nPositions1\n$500\n90d · 35% APY\nDays in\n30 / 90\nAccrued\n+$14.38\nRemaining\n60d\nEarly withdraw\nTrack\n⚠️ APY is variable. Yields are denominated in USDT and credited to your wallet on unlock.",
+          "positionsBefore": 0,
+          "billCountBefore": 0
+        },
+        "sheetHasProjection": true,
+        "positionId": "stk-1781341249934",
+        "billRef": "STAKE-OPEN-MQC4L572",
+        "positionCount": 2
+      },
+      "startedAt": "2026-06-13T09:00:43.349Z",
+      "finishedAt": "2026-06-13T09:00:50.708Z"
+    },
+    {
+      "id": "FM-008",
+      "name": "unilevel-filter-and-how-route",
+      "status": "passed",
+      "evidence": {
+        "allRows": 50,
+        "directRows": 8,
+        "extendedRows": 42,
+        "howHref": "http://localhost:5173/#/pages/team/unilevel-how"
+      },
+      "startedAt": "2026-06-13T09:00:50.708Z",
+      "finishedAt": "2026-06-13T09:00:56.973Z"
+    },
+    {
+      "id": "FM-013",
+      "name": "language-switch-changes-copy-across-routes",
+      "status": "passed",
+      "evidence": {
+        "locale": {
+          "code": "zh",
+          "userSet": true
+        },
+        "routesChecked": [
+          "http://localhost:5173/#/pages/me/wallet-topup",
+          "http://localhost:5173/#/pages/staking/staking",
+          "http://localhost:5173/#/pages/team/unilevel"
+        ],
+        "copyNeedles": [
+          "充值入金/充值",
+          "质押方案",
+          "直推"
+        ]
+      },
+      "startedAt": "2026-06-13T09:00:56.973Z",
+      "finishedAt": "2026-06-13T09:01:05.371Z"
+    },
+    {
+      "id": "FM-005-ADMIN",
+      "name": "admin-staking-config-writes-param-and-audit",
+      "status": "passed",
+      "evidence": {
+        "initialHref": "http://localhost:3002/finance-products/staking",
+        "modalHasBusinessControls": true,
+        "persistedKey": "G.staking.apy.usdt30d",
+        "auditId": "AU-0-1",
+        "reopenedHref": "http://localhost:3002/finance-products/staking"
+      },
+      "startedAt": "2026-06-13T09:01:08.509Z",
+      "finishedAt": "2026-06-13T09:01:14.331Z"
+    },
+    {
+      "id": "FM-016-FRONT",
+      "name": "frontend-staking-module-visible-and-actionable",
+      "status": "passed",
+      "evidence": {
+        "href": "http://localhost:5173/#/pages/staking/staking",
+        "moduleRow": "nx-staking-vault-row-30",
+        "actionSheetVisible": true,
+        "sheetHasBusinessAction": true
+      },
+      "startedAt": "2026-06-13T09:01:14.331Z",
+      "finishedAt": "2026-06-13T09:01:16.476Z"
+    },
+    {
+      "id": "FM-016",
+      "name": "params-registry-to-owner-module-switch",
+      "status": "passed",
+      "evidence": {
+        "registry": {
+          "href": "http://localhost:3002/platform/params-registry",
+          "linkCount": 6,
+          "registryLength": 24031
+        },
+        "ownerHref": "http://localhost:3002/finance-products/staking",
+        "modalHasBusinessImpact": true,
+        "persistedKey": "G.staking.enabled.usdt30d",
+        "auditId": "AU-1-1",
+        "reopenedHref": "http://localhost:3002/finance-products/staking"
+      },
+      "startedAt": "2026-06-13T09:01:16.476Z",
+      "finishedAt": "2026-06-13T09:01:24.485Z"
+    }
+  ]
+}
+== [+] SKU 字段镜像 gate(后台 OpsSku ⊇ 前端 Product;防前端加字段后台漏)==
+✓ E1 字段镜像 gate:OpsSku(33)⊇ Product(25+AI 6) · OpsReview(7)⊇ Review(7) — 0 缺口
+== [+] Canon 数字口径 gate(staking/genesis/device/product 三端同源)==
+{
+  "status": "passed",
+  "canonVersion": "2026-06-13-l5-canon",
+  "checkCount": 86,
+  "failureCount": 0,
+  "failures": [],
+  "checks": [
+    {
+      "id": "staking.next.apy.30",
+      "status": "passed",
+      "details": "0.12 expected 0.12",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.uni.apy.30",
+      "status": "passed",
+      "details": "0.12 expected 0.12",
+      "evidence": [
+        "../Nexion-uniapp/src/store/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.admin.apy.30",
+      "status": "passed",
+      "details": "0.12 expected 0.12",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "staking.next.apy.90",
+      "status": "passed",
+      "details": "0.35 expected 0.35",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.uni.apy.90",
+      "status": "passed",
+      "details": "0.35 expected 0.35",
+      "evidence": [
+        "../Nexion-uniapp/src/store/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.admin.apy.90",
+      "status": "passed",
+      "details": "0.35 expected 0.35",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "staking.next.apy.180",
+      "status": "passed",
+      "details": "0.8 expected 0.8",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.uni.apy.180",
+      "status": "passed",
+      "details": "0.8 expected 0.8",
+      "evidence": [
+        "../Nexion-uniapp/src/store/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.admin.apy.180",
+      "status": "passed",
+      "details": "0.8 expected 0.8",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "staking.next.apy.365",
+      "status": "passed",
+      "details": "1.8 expected 1.8",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.uni.apy.365",
+      "status": "passed",
+      "details": "1.8 expected 1.8",
+      "evidence": [
+        "../Nexion-uniapp/src/store/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.admin.apy.365",
+      "status": "passed",
+      "details": "1.8 expected 1.8",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "staking.next.penalty.30",
+      "status": "passed",
+      "details": "0.05 expected 0.05",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.uni.penalty.30",
+      "status": "passed",
+      "details": "0.05 expected 0.05",
+      "evidence": [
+        "../Nexion-uniapp/src/store/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.admin.penalty.30",
+      "status": "passed",
+      "details": "0.05 expected 0.05",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "staking.next.penalty.90",
+      "status": "passed",
+      "details": "0.15 expected 0.15",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.uni.penalty.90",
+      "status": "passed",
+      "details": "0.15 expected 0.15",
+      "evidence": [
+        "../Nexion-uniapp/src/store/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.admin.penalty.90",
+      "status": "passed",
+      "details": "0.15 expected 0.15",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "staking.next.penalty.180",
+      "status": "passed",
+      "details": "0.3 expected 0.3",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.uni.penalty.180",
+      "status": "passed",
+      "details": "0.3 expected 0.3",
+      "evidence": [
+        "../Nexion-uniapp/src/store/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.admin.penalty.180",
+      "status": "passed",
+      "details": "0.3 expected 0.3",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "staking.next.penalty.365",
+      "status": "passed",
+      "details": "0.5 expected 0.5",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.uni.penalty.365",
+      "status": "passed",
+      "details": "0.5 expected 0.5",
+      "evidence": [
+        "../Nexion-uniapp/src/store/staking.ts"
+      ]
+    },
+    {
+      "id": "staking.admin.penalty.365",
+      "status": "passed",
+      "details": "0.5 expected 0.5",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "genesis.next.totalSlots",
+      "status": "passed",
+      "details": "1000 expected 1000",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/genesis.ts"
+      ]
+    },
+    {
+      "id": "genesis.next.royaltyRate",
+      "status": "passed",
+      "details": "0.025 expected 0.025",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/genesis.ts"
+      ]
+    },
+    {
+      "id": "genesis.next.unitPrice",
+      "status": "passed",
+      "details": "9999 expected 9999",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/genesis.ts"
+      ]
+    },
+    {
+      "id": "genesis.next.seedSoldSlots",
+      "status": "passed",
+      "details": "847 expected 847",
+      "evidence": [
+        "../Nexion-prototype/lib/v3/genesis.ts"
+      ]
+    },
+    {
+      "id": "genesis.uni.totalSlots",
+      "status": "passed",
+      "details": "1000 expected 1000",
+      "evidence": [
+        "../Nexion-uniapp/src/store/genesis.ts"
+      ]
+    },
+    {
+      "id": "genesis.uni.royaltyRate",
+      "status": "passed",
+      "details": "0.025 expected 0.025",
+      "evidence": [
+        "../Nexion-uniapp/src/store/genesis.ts"
+      ]
+    },
+    {
+      "id": "genesis.uni.unitPrice",
+      "status": "passed",
+      "details": "9999 expected 9999",
+      "evidence": [
+        "../Nexion-uniapp/src/store/genesis.ts"
+      ]
+    },
+    {
+      "id": "genesis.uni.seedSoldSlots",
+      "status": "passed",
+      "details": "847 expected 847",
+      "evidence": [
+        "../Nexion-uniapp/src/store/genesis.ts"
+      ]
+    },
+    {
+      "id": "genesis.admin.totalSlots",
+      "status": "passed",
+      "details": "1000 expected 1000",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "genesis.admin.unitPrice",
+      "status": "passed",
+      "details": "9999 expected 9999",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "genesis.admin.royaltyRate",
+      "status": "passed",
+      "details": "0.025 expected 0.025",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "genesis.admin.dividendShareRate",
+      "status": "passed",
+      "details": "0.001 expected 0.001",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "genesis.admin.perSlotDisplay",
+      "status": "passed",
+      "details": "24 expected 24",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "genesis.admin.floorPerNode",
+      "status": "passed",
+      "details": "10 expected 10",
+      "evidence": [
+        "app/components/domain-views/g-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.next.early",
+      "status": "passed",
+      "details": "-0.04 expected -0.04",
+      "evidence": [
+        "../Nexion-prototype/lib/store/device-lifecycle.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.uni.early",
+      "status": "passed",
+      "details": "-0.04 expected -0.04",
+      "evidence": [
+        "../Nexion-uniapp/src/store/device-lifecycle.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.next.middle",
+      "status": "passed",
+      "details": "-0.06 expected -0.06",
+      "evidence": [
+        "../Nexion-prototype/lib/store/device-lifecycle.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.uni.middle",
+      "status": "passed",
+      "details": "-0.06 expected -0.06",
+      "evidence": [
+        "../Nexion-uniapp/src/store/device-lifecycle.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.next.late",
+      "status": "passed",
+      "details": "-0.237 expected -0.237",
+      "evidence": [
+        "../Nexion-prototype/lib/store/device-lifecycle.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.uni.late",
+      "status": "passed",
+      "details": "-0.237 expected -0.237",
+      "evidence": [
+        "../Nexion-uniapp/src/store/device-lifecycle.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.next.minEfficiency",
+      "status": "passed",
+      "details": "0.22 expected 0.22",
+      "evidence": [
+        "../Nexion-prototype/lib/store/device-lifecycle.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.uni.minEfficiency",
+      "status": "passed",
+      "details": "0.22 expected 0.22",
+      "evidence": [
+        "../Nexion-uniapp/src/store/device-lifecycle.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.admin.minEfficiency",
+      "status": "passed",
+      "details": "0.22 expected 0.22",
+      "evidence": [
+        "app/components/domain-views/e-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.admin.degradeEarly",
+      "status": "passed",
+      "details": "-0.04 expected -0.04",
+      "evidence": [
+        "app/components/domain-views/e-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.admin.degradeMiddle",
+      "status": "passed",
+      "details": "-0.06 expected -0.06",
+      "evidence": [
+        "app/components/domain-views/e-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "lifecycle.admin.degradeLate",
+      "status": "passed",
+      "details": "-0.237 expected -0.237",
+      "evidence": [
+        "app/components/domain-views/e-tabs/data.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-s1.price",
+      "status": "passed",
+      "details": "1299 expected 1299",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-s1.dailyEarn",
+      "status": "passed",
+      "details": "38.5 expected 38.5",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-s1.dailyEarnNEX",
+      "status": "passed",
+      "details": "65 expected 65",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-pro.price",
+      "status": "passed",
+      "details": "2399 expected 2399",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-pro.dailyEarn",
+      "status": "passed",
+      "details": "76 expected 76",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-pro.dailyEarnNEX",
+      "status": "passed",
+      "details": "215 expected 215",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-pro-v2.price",
+      "status": "passed",
+      "details": "2639 expected 2639",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-pro-v2.dailyEarn",
+      "status": "passed",
+      "details": "96 expected 96",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarbox-pro-v2.dailyEarnNEX",
+      "status": "passed",
+      "details": "280 expected 280",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarrack-p1.price",
+      "status": "passed",
+      "details": "8999 expected 8999",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarrack-p1.dailyEarn",
+      "status": "passed",
+      "details": "142.6 expected 142.6",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarrack-p1.dailyEarnNEX",
+      "status": "passed",
+      "details": "950 expected 950",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarrack-p2.price",
+      "status": "passed",
+      "details": "14999 expected 14999",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarrack-p2.dailyEarn",
+      "status": "passed",
+      "details": "248 expected 248",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.stellarrack-p2.dailyEarnNEX",
+      "status": "passed",
+      "details": "1820 expected 1820",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.cloud-share.price",
+      "status": "passed",
+      "details": "199 expected 199",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.cloud-share.dailyEarn",
+      "status": "passed",
+      "details": "0.073 expected 0.073",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.next.cloud-share.dailyEarnNEX",
+      "status": "passed",
+      "details": "30 expected 30",
+      "evidence": [
+        "../Nexion-prototype/lib/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-s1.price",
+      "status": "passed",
+      "details": "1299 expected 1299",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-s1.dailyEarn",
+      "status": "passed",
+      "details": "38.5 expected 38.5",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-s1.dailyEarnNEX",
+      "status": "passed",
+      "details": "65 expected 65",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-pro.price",
+      "status": "passed",
+      "details": "2399 expected 2399",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-pro.dailyEarn",
+      "status": "passed",
+      "details": "76 expected 76",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-pro.dailyEarnNEX",
+      "status": "passed",
+      "details": "215 expected 215",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-pro-v2.price",
+      "status": "passed",
+      "details": "2639 expected 2639",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-pro-v2.dailyEarn",
+      "status": "passed",
+      "details": "96 expected 96",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarbox-pro-v2.dailyEarnNEX",
+      "status": "passed",
+      "details": "280 expected 280",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarrack-p1.price",
+      "status": "passed",
+      "details": "8999 expected 8999",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarrack-p1.dailyEarn",
+      "status": "passed",
+      "details": "142.6 expected 142.6",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarrack-p1.dailyEarnNEX",
+      "status": "passed",
+      "details": "950 expected 950",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarrack-p2.price",
+      "status": "passed",
+      "details": "14999 expected 14999",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarrack-p2.dailyEarn",
+      "status": "passed",
+      "details": "248 expected 248",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.stellarrack-p2.dailyEarnNEX",
+      "status": "passed",
+      "details": "1820 expected 1820",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.cloud-share.price",
+      "status": "passed",
+      "details": "199 expected 199",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.cloud-share.dailyEarn",
+      "status": "passed",
+      "details": "0.073 expected 0.073",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    },
+    {
+      "id": "product.uni.cloud-share.dailyEarnNEX",
+      "status": "passed",
+      "details": "30 expected 30",
+      "evidence": [
+        "../Nexion-uniapp/src/mock/products.ts"
+      ]
+    }
+  ]
+}
+----------------------------------------
+✓ verify PASS — 148 checks, 0 failed

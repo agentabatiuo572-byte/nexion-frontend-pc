@@ -1,9 +1,0 @@
-node_modules/
-.npm-cache/
-dist/
-artifacts/
-.env
-.env.local
-*.log
-.idea/
-.vscode/

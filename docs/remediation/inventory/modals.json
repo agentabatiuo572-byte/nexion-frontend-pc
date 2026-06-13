@@ -1,0 +1,468 @@
+{
+  "generatedAt": "2026-06-12T16:24:50.787Z",
+  "description": "Static modal denominator. L1 runtime audit must open every trigger and record the five-tuple.",
+  "patterns": [
+    "OperationConfirmModal",
+    "KConfirmModal",
+    "ViewParamModal",
+    "ConfirmDialog",
+    "Modal",
+    "Drawer",
+    "Sheet",
+    "Dialog",
+    "setActionConfirm",
+    "setCf",
+    "setModal",
+    "setConfirm",
+    "confirmReq"
+  ],
+  "count": 41,
+  "rows": [
+    {
+      "id": "modal-0001",
+      "file": "app/(console)/overview/dual-ledger/page.tsx",
+      "counts": {
+        "OperationConfirmModal": 2,
+        "setActionConfirm": 7
+      },
+      "clickHandlers": 4,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0002",
+      "file": "app/components/domain-views/a-tabs/a1-accounts.tsx",
+      "counts": {
+        "Drawer": 8
+      },
+      "clickHandlers": 18,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0003",
+      "file": "app/components/domain-views/a-tabs/a2-audit.tsx",
+      "counts": {
+        "Drawer": 13
+      },
+      "clickHandlers": 17,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0004",
+      "file": "app/components/domain-views/a-tabs/a4-events.tsx",
+      "counts": {
+        "Drawer": 7
+      },
+      "clickHandlers": 7,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0005",
+      "file": "app/components/domain-views/a-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "KConfirmModal": 3,
+        "setActionConfirm": 4,
+        "setCf": 3
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0006",
+      "file": "app/components/domain-views/c-tabs/c2-actions.tsx",
+      "counts": {
+        "Drawer": 8
+      },
+      "clickHandlers": 11,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0007",
+      "file": "app/components/domain-views/c-tabs/c3-adjust.tsx",
+      "counts": {
+        "Drawer": 3
+      },
+      "clickHandlers": 11,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0008",
+      "file": "app/components/domain-views/c-tabs/c5-security.tsx",
+      "counts": {
+        "Drawer": 7
+      },
+      "clickHandlers": 12,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0009",
+      "file": "app/components/domain-views/c-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "KConfirmModal": 3,
+        "setActionConfirm": 4,
+        "setCf": 3
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0010",
+      "file": "app/components/domain-views/d-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "KConfirmModal": 3,
+        "setActionConfirm": 4,
+        "setCf": 3
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0011",
+      "file": "app/components/domain-views/design-kit.tsx",
+      "counts": {
+        "OperationConfirmModal": 2,
+        "Modal": 5,
+        "Drawer": 3
+      },
+      "clickHandlers": 14,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0012",
+      "file": "app/components/domain-views/e-tabs/types.ts",
+      "counts": {
+        "OperationConfirmModal": 2
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0013",
+      "file": "app/components/domain-views/e-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "Drawer": 9,
+        "setActionConfirm": 10
+      },
+      "clickHandlers": 18,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0014",
+      "file": "app/components/domain-views/f-tabs/types.ts",
+      "counts": {
+        "OperationConfirmModal": 2
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0015",
+      "file": "app/components/domain-views/f-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 5,
+        "setActionConfirm": 4
+      },
+      "clickHandlers": 1,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0016",
+      "file": "app/components/domain-views/g-tabs/data.ts",
+      "counts": {
+        "Drawer": 1
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0017",
+      "file": "app/components/domain-views/g-tabs/g1-staking.tsx",
+      "counts": {
+        "Drawer": 3
+      },
+      "clickHandlers": 10,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0018",
+      "file": "app/components/domain-views/g-tabs/g2-exchange.tsx",
+      "counts": {
+        "Drawer": 5
+      },
+      "clickHandlers": 8,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0019",
+      "file": "app/components/domain-views/g-tabs/g4-genesis.tsx",
+      "counts": {
+        "Drawer": 3
+      },
+      "clickHandlers": 9,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0020",
+      "file": "app/components/domain-views/g-tabs/types.ts",
+      "counts": {
+        "Drawer": 1
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0021",
+      "file": "app/components/domain-views/g-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "KConfirmModal": 3,
+        "Drawer": 1,
+        "setActionConfirm": 4,
+        "setCf": 3
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0022",
+      "file": "app/components/domain-views/h-tabs/h3-quest-events.tsx",
+      "counts": {
+        "KConfirmModal": 3
+      },
+      "clickHandlers": 15,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0023",
+      "file": "app/components/domain-views/h-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "KConfirmModal": 3,
+        "Drawer": 1,
+        "setActionConfirm": 4,
+        "setCf": 3
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0024",
+      "file": "app/components/domain-views/i-tabs/i2-nova.tsx",
+      "counts": {
+        "Drawer": 5
+      },
+      "clickHandlers": 11,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0025",
+      "file": "app/components/domain-views/i-tabs/i3-campaign.tsx",
+      "counts": {
+        "Drawer": 9
+      },
+      "clickHandlers": 11,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0026",
+      "file": "app/components/domain-views/i-tabs/i4-trust.tsx",
+      "counts": {
+        "Drawer": 10
+      },
+      "clickHandlers": 13,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0027",
+      "file": "app/components/domain-views/i-tabs/i6-i18n.tsx",
+      "counts": {
+        "Drawer": 5
+      },
+      "clickHandlers": 14,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0028",
+      "file": "app/components/domain-views/i-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "KConfirmModal": 3,
+        "setActionConfirm": 4,
+        "setCf": 3
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0029",
+      "file": "app/components/domain-views/j-tabs/j4-sop.tsx",
+      "counts": {
+        "OperationConfirmModal": 1
+      },
+      "clickHandlers": 7,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0030",
+      "file": "app/components/domain-views/j-tabs/types.ts",
+      "counts": {
+        "OperationConfirmModal": 1
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0031",
+      "file": "app/components/domain-views/j-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "setActionConfirm": 4
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0032",
+      "file": "app/components/domain-views/k-tabs/confirm-modal.tsx",
+      "counts": {
+        "OperationConfirmModal": 1,
+        "KConfirmModal": 1,
+        "Modal": 3
+      },
+      "clickHandlers": 2,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0033",
+      "file": "app/components/domain-views/k-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 3,
+        "KConfirmModal": 3,
+        "setActionConfirm": 4,
+        "setCf": 3
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0034",
+      "file": "app/components/domain-views/l-tabs/l1-kpi.tsx",
+      "counts": {
+        "ViewParamModal": 2
+      },
+      "clickHandlers": 10,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0035",
+      "file": "app/components/domain-views/l-tabs/l4-ops.tsx",
+      "counts": {
+        "ViewParamModal": 2
+      },
+      "clickHandlers": 8,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0036",
+      "file": "app/components/domain-views/l-tabs/view-param-modal.tsx",
+      "counts": {
+        "OperationConfirmModal": 1,
+        "ViewParamModal": 1,
+        "Modal": 3
+      },
+      "clickHandlers": 2,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0037",
+      "file": "app/components/domain-views/l-view.tsx",
+      "counts": {
+        "OperationConfirmModal": 2,
+        "ViewParamModal": 1,
+        "setActionConfirm": 4
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0038",
+      "file": "app/components/kit/confirm-dialog.tsx",
+      "counts": {
+        "ConfirmDialog": 2
+      },
+      "clickHandlers": 4,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0039",
+      "file": "app/components/shell/notification-bell.tsx",
+      "counts": {
+        "Drawer": 1
+      },
+      "clickHandlers": 6,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0040",
+      "file": "app/layout.tsx",
+      "counts": {
+        "ConfirmDialog": 2
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    },
+    {
+      "id": "modal-0041",
+      "file": "lib/store/ui.ts",
+      "counts": {
+        "ConfirmDialog": 1
+      },
+      "clickHandlers": 0,
+      "operationSemantics": "unknown-until-L1-runtime-five-tuple",
+      "needsModalSpec": true
+    }
+  ]
+}

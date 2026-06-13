@@ -1,0 +1,2 @@
+- button "Claim discount" [ref=e2]
+- button "Claim +120 NEX" [ref=e1]

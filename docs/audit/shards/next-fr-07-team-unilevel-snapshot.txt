@@ -1,0 +1,6 @@
+- link "版税计划玩法" [ref=e3]
+- button "全部朋友 · 50" [ref=e4]
+- button "直推 · 8" [ref=e5]
+- button "扩展 · 42" [ref=e6]
+- button "Back" [ref=e1]
+- button "通知" [ref=e2]

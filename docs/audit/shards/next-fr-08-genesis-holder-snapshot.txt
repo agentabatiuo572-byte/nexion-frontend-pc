@@ -1,0 +1,6 @@
+- link "你还没有 Genesis 节点 Genesis 节点永久分享平台 0.1% 成交额。1,000 张限量,剩 153 张。" [ref=e3]
+- link "购买更多节点 $10.0K" [ref=e4]
+- link "二级市场出售 floor $25K" [ref=e5]
+- button "领取待派发 $0.00" [ref=e6]
+- button "Back" [ref=e1]
+- button "通知" [ref=e2]

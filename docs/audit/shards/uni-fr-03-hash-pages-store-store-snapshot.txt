@@ -1,0 +1,7 @@
+- button "Best Seller S1 Legacy · Gen 1 NexionBox S1 4.8 · 2,847 reviews · 4,821 sold 642× vs phone 4× RTX 4090 96GB VRAM Singapore DC YOU EARN $38.50/day +65 NEX/d Pays back in 34d Year 1 net +$12,754 Image · 320/min LLM · 12.4k tok/s Video · 18s/min Only 47 units left this week PRICE $ 1,299 ~1082% annual · payback ~34d Buy now" [ref=e1]
+- button "Trending Pro Legacy · Gen 1 NexionBox Pro 4.9 · 1,124 reviews · 1,842 sold 1,267× vs phone 8× RTX 4090 192GB VRAM Singapore DC YOU EARN $76.00/day +215 NEX/d Pays back in 32d Year 1 net +$25,341 Image · 720/min LLM · 38.0k tok/s Video · 12s/min Only 23 units left this week PRICE $ 2,399 ~1156% annual · payback ~32d Buy now" [ref=e2]
+- button "Flagship Rack P1 Legacy · Gen 1 NexionRack P1 4.9 · 154 reviews · 287 sold 2,377× vs phone 8× NVIDIA A100 640GB VRAM Singapore DC YOU EARN $142.60/day +950 NEX/d Pays back in 63d Year 1 net +$43,050 Image · 1800/min LLM · 128.0k tok/s Video · 60s/min Only 8 units left this week PRICE $ 8,999 ~578% annual · payback ~63d Buy now" [ref=e3]
+- button "Low Barrier Cloud · Distributed Cloud Share 4.6 · 3,812 reviews · 12,483 sold 1× vs phone Distributed — Singapore DC ANNUAL YIELD 8–15% +30 NEX/d Low as $199 Instant activation FROM $ 199 one-time purchase Buy now" [ref=e4]
+- button "Notify me when live" [ref=e6]
+- button "Notify me when live" [ref=e7]
+- button "Orders" [ref=e5]

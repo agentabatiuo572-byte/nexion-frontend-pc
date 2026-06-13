@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-06-13T09:17:24.747Z",
+  "status": "complete-ready",
+  "gates": [
+    {
+      "id": "l5-final-sweep",
+      "status": "passed",
+      "details": "checks=12/12"
+    },
+    {
+      "id": "owner-review-readiness",
+      "status": "passed",
+      "details": "checks=8/8"
+    },
+    {
+      "id": "owner-review-live-readiness",
+      "status": "passed",
+      "details": "checks=9/9"
+    },
+    {
+      "id": "canonical-prd-sync",
+      "status": "applied-with-owner-confirmation",
+      "details": "planned=0; alreadyPresent=23; missingAnchors=0; applyCheck=not-needed"
+    },
+    {
+      "id": "owner-product-acceptance",
+      "status": "accepted-by-owner",
+      "details": "docs/audit/owner-product-acceptance.json"
+    }
+  ],
+  "remainingGates": []
+}

@@ -1,0 +1,24 @@
+- button "重新生成" [ref=e9]
+- textbox "你希望大家怎么称呼你?" [ref=e4]: Alex T.
+- textbox "告诉社区你在构建什么…" [ref=e5]: Running an AI-friendly node from my phone. Always up for swapping notes on yield strategies.
+- combobox [expanded=false, ref=e6]: Singapore
+  - option "Singapore" [selected, ref=e10]
+  - option "Hong Kong" [ref=e11]
+  - option "Tokyo, JP" [ref=e12]
+  - option "Seoul, KR" [ref=e13]
+  - option "Berlin, DE" [ref=e14]
+  - option "London, UK" [ref=e15]
+  - option "Dubai, AE" [ref=e16]
+  - option "New York, US" [ref=e17]
+- combobox [expanded=false, ref=e7]: Asia/Singapore (UTC+8)
+  - option "Asia/Singapore (UTC+8)" [selected, ref=e18]
+  - option "Asia/Tokyo (UTC+9)" [ref=e19]
+  - option "Asia/Hong_Kong (UTC+8)" [ref=e20]
+  - option "Europe/Berlin (UTC+1)" [ref=e21]
+  - option "Europe/London (UTC+0)" [ref=e22]
+  - option "Asia/Dubai (UTC+4)" [ref=e23]
+  - option "America/New_York (UTC-5)" [ref=e24]
+- link "钱包地址 尚未绑定 绑定钱包" [ref=e3]
+- button "保存修改" [disabled, ref=e8]
+- button "Back" [ref=e1]
+- button "通知" [ref=e2]

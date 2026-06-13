@@ -1,0 +1,175 @@
+{
+  "generatedAt": "2026-06-13T08:52:24.519Z",
+  "status": "passed",
+  "checksPassed": 9,
+  "checksFailed": 0,
+  "checks": [
+    {
+      "id": "OR-01",
+      "title": "Acceptance evidence files exist",
+      "status": "passed",
+      "details": "22 files present",
+      "evidence": [
+        "docs/remediation/FINAL-ACCEPTANCE-PACKET-2026-06-13.md",
+        "docs/remediation/OWNER-REVIEW-RUNBOOK-2026-06-13.md",
+        "docs/remediation/MASTER-PLAN.md",
+        "docs/remediation/PRD-SYNC-DRY-RUN-2026-06-13.md",
+        "docs/remediation/PRD-SYNC-DRAFT-2026-06-13.md",
+        "docs/remediation/PRD-SYNC-ANCHOR-AUDIT-2026-06-13.md",
+        "docs/remediation/PRD-SYNC-CANDIDATES-2026-06-13.md",
+        "docs/remediation/PRD-SYNC-PREVIEW-2026-06-13.patch",
+        "docs/audit/l5-final-sweep-report.json",
+        "docs/audit/l5-final-sweep-report.md",
+        "docs/audit/task-walkthrough-matrix.md",
+        "docs/audit/feature-mapping-walkthrough-runtime-evidence.md",
+        "docs/audit/admin-modal-contract-runtime-evidence.md",
+        "docs/audit/admin-rbac-device-modal-runtime-evidence.md",
+        "docs/audit/admin-content-business-modal-runtime-evidence.md",
+        "docs/audit/admin-global-list-capability-runtime-evidence.md",
+        "docs/audit/uniapp-full-route-batch-audit-evidence.md",
+        "docs/audit/uniapp-persona-walkthrough-runtime-evidence.md",
+        "scripts/prd-sync-l5-draft.mjs",
+        "scripts/remediation-finalize-after-owner-confirmed.mjs",
+        "scripts/remediation-completion-status.mjs",
+        "package.json"
+      ]
+    },
+    {
+      "id": "OR-02",
+      "title": "L5 report is passed and complete",
+      "status": "passed",
+      "details": "status=passed; checks=12/12; generatedAt=2026-06-13T08:46:40.958Z",
+      "evidence": [
+        "docs/audit/l5-final-sweep-report.json",
+        "docs/audit/l5-final-sweep-report.md"
+      ]
+    },
+    {
+      "id": "OR-03",
+      "title": "L5 route and blocker counters match closure target",
+      "status": "passed",
+      "details": "admin=66; next=80; uniapp=81",
+      "evidence": [
+        "docs/audit/l5-final-sweep-report.json"
+      ]
+    },
+    {
+      "id": "OR-04",
+      "title": "Final acceptance packet references latest L5 timestamp",
+      "status": "passed",
+      "details": "packet=2026-06-13T08:46:40.958Z; l5=2026-06-13T08:46:40.958Z",
+      "evidence": [
+        "docs/remediation/FINAL-ACCEPTANCE-PACKET-2026-06-13.md",
+        "docs/audit/l5-final-sweep-report.json"
+      ]
+    },
+    {
+      "id": "OR-05",
+      "title": "PRD sync dry-run and apply-check pass",
+      "status": "passed",
+      "details": "status=passed; operations=23; planned=23; alreadyPresent=0; missingAnchors=0; applyCheck=passed; patchBytes=20165",
+      "evidence": [
+        "scripts/prd-sync-l5-draft.mjs",
+        "docs/remediation/PRD-SYNC-PREVIEW-2026-06-13.patch",
+        "docs/remediation/PRD-SYNC-DRY-RUN-2026-06-13.md"
+      ]
+    },
+    {
+      "id": "OR-06",
+      "title": "Acceptance docs expose current PRD safety gate and owner decision gate",
+      "status": "passed",
+      "details": "missingApplyCheckRefs=0; missingPrdSyncStateRefs=0; missingOwnerReviewGateRefs=0",
+      "evidence": [
+        "docs/remediation/FINAL-ACCEPTANCE-PACKET-2026-06-13.md",
+        "docs/remediation/OWNER-REVIEW-RUNBOOK-2026-06-13.md",
+        "docs/remediation/MASTER-PLAN.md",
+        "docs/remediation/PRD-SYNC-DRY-RUN-2026-06-13.md"
+      ]
+    },
+    {
+      "id": "OR-08",
+      "title": "Guarded finalizer/status commands are wired and preserve owner confirmation gates",
+      "status": "passed",
+      "details": "preflight=node scripts/remediation-finalize-after-owner-confirmed.mjs; live=node scripts/remediation-finalize-after-owner-confirmed.mjs --with-live; status=node scripts/remediation-completion-status.mjs; strict=node scripts/remediation-completion-status.mjs --strict; hasPrdOwnerGuard=true; hasAcceptanceOwnerGuard=true",
+      "evidence": [
+        "package.json",
+        "scripts/remediation-finalize-after-owner-confirmed.mjs",
+        "scripts/remediation-completion-status.mjs"
+      ]
+    },
+    {
+      "id": "OR-09",
+      "title": "Acceptance docs have no conflict markers or trailing whitespace",
+      "status": "passed",
+      "details": "conflictMarkers=0; trailingWhitespace=0",
+      "evidence": [
+        "docs/remediation/FINAL-ACCEPTANCE-PACKET-2026-06-13.md",
+        "docs/remediation/OWNER-REVIEW-RUNBOOK-2026-06-13.md",
+        "docs/remediation/MASTER-PLAN.md",
+        "docs/remediation/PRD-SYNC-DRY-RUN-2026-06-13.md"
+      ]
+    },
+    {
+      "id": "OR-10",
+      "title": "Live owner review URLs respond",
+      "status": "passed",
+      "details": "admin-root:200; admin-rbac:200; next-reference-root:200; uniapp-root:200; uniapp-checkout-shell:200",
+      "evidence": [
+        "http://localhost:3002",
+        "http://localhost:3002/platform/rbac",
+        "http://localhost:3001",
+        "http://localhost:5173",
+        "http://localhost:5173/#/pages/store/checkout?product=stellarbox-s1"
+      ]
+    }
+  ],
+  "prdSync": {
+    "status": "passed",
+    "exitCode": 0,
+    "summary": {
+      "operations": 23,
+      "planned": 23,
+      "alreadyPresent": 0,
+      "missingAnchors": 0,
+      "applyCheck": "passed",
+      "patchBytes": 20165
+    }
+  },
+  "liveTargets": [
+    {
+      "id": "admin-root",
+      "url": "http://localhost:3002",
+      "status": 200,
+      "ok": true,
+      "bytes": 127780
+    },
+    {
+      "id": "admin-rbac",
+      "url": "http://localhost:3002/platform/rbac",
+      "status": 200,
+      "ok": true,
+      "bytes": 75828
+    },
+    {
+      "id": "next-reference-root",
+      "url": "http://localhost:3001",
+      "status": 200,
+      "ok": true,
+      "bytes": 110176
+    },
+    {
+      "id": "uniapp-root",
+      "url": "http://localhost:5173",
+      "status": 200,
+      "ok": true,
+      "bytes": 1741
+    },
+    {
+      "id": "uniapp-checkout-shell",
+      "url": "http://localhost:5173/#/pages/store/checkout?product=stellarbox-s1",
+      "status": 200,
+      "ok": true,
+      "bytes": 1741
+    }
+  ]
+}

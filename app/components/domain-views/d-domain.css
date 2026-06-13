@@ -1,0 +1,178 @@
+/* ============================================================
+   D 域(资金管理)内容页设计类 — design_handoff_d_domain port
+   全部 scope 在 .ddom(挂在 d-view 根 .dkpage.ddom);token 复用 globals 别名。
+   D 域主题 = --success(绿,资金调性;d-chrome 与 k/l-chrome 同构仅换主题色)。
+   设计稿项目规则:除按钮外卡片/badge/chip 无边框 → 直接写无边框终值。
+   响应式按内容区真实宽走 container query(.ddom 为容器锚)。
+   ============================================================ */
+
+.ddom { container: ddom / inline-size; }
+
+/* ===== 共享 chrome(d-chrome 真值) ===== */
+.ddom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+@container ddom (max-width: 980px) { .ddom .f-stats { grid-template-columns: repeat(2, 1fr); } }
+.ddom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
+.ddom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.ddom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.ddom .f-stat .sub { font-size: 12px; color: var(--ink-4); margin-top: 3px; }
+.ddom .f-stat.warn .v { color: var(--warning); }
+.ddom .f-stat.ok .v { color: var(--success); }
+.ddom .f-stat.cyan .v { color: var(--cyan); }
+.ddom .f-stat.danger .v { color: var(--danger); }
+
+.ddom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
+  border: 1px solid var(--success-border); background: var(--success-soft); color: var(--success);
+  font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: inherit; }
+.ddom .f-cta:hover { background: var(--success); color: #0A0A0A; }
+.ddom .f-ro { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ddom .f-ro .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
+.ddom .f-live { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
+  background: var(--success-soft); color: var(--success); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ddom .f-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+.ddom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
+.ddom .f-foot b { color: var(--ink-3); font-weight: 600; }
+
+.ddom .l-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+.ddom .l-card .l-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.ddom .l-card .l-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.ddom .l-card .l-h .sub { font-size: 12px; color: var(--ink-4); }
+.ddom .l-card .l-h .r { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ddom .l-card .l-b { padding: 16px 20px 20px; }
+
+.ddom .dcode { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
+  background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
+.ddom .dcode.electric { background: var(--success-soft); color: var(--success); }
+
+.ddom .chips { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ddom .chip { padding: 5px 11px; border-radius: 999px; background: var(--surface-2); color: var(--ink-3);
+  font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: none; font-family: inherit; transition: background .12s, color .12s; }
+.ddom .chip:hover { background: var(--surface-3); color: var(--ink); }
+.ddom .chip.sel { background: var(--success); color: #0A0A0A; font-weight: 600; }
+
+.ddom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
+  font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
+.ddom .l-btn:hover { background: var(--surface-3); color: var(--ink); }
+.ddom .l-btn.primary { background: var(--success); border-color: var(--success); color: #0A0A0A; font-weight: 600; }
+.ddom .l-btn.primary:hover { filter: brightness(1.07); }
+.ddom .l-btn.mc { color: var(--success); border-color: var(--success-border); background: color-mix(in srgb, var(--success) 8%, transparent); font-weight: 600; }
+.ddom .l-btn.mc:hover { background: color-mix(in srgb, var(--success) 18%, transparent); }
+.ddom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+
+.ddom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ddom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
+  letter-spacing: .06em; text-transform: uppercase; text-align: left; padding: 10px 12px;
+  background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
+.ddom .l-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
+.ddom .l-tbl tr:last-child td { border-bottom: none; }
+.ddom .l-tbl tr.click { cursor: pointer; }
+.ddom .l-tbl tr.click:hover td { background: var(--surface-2); }
+.ddom .l-tbl .num, .ddom .l-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.ddom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
+
+.ddom .bdg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 5px;
+  font-size: 11.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; white-space: nowrap; }
+.ddom .bdg.ok { background: var(--success-soft); color: var(--success); }
+.ddom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
+.ddom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
+.ddom .bdg.dim { background: var(--surface-3); color: var(--ink-3); }
+.ddom .bdg.cyan { background: var(--cyan-soft); color: var(--cyan); }
+.ddom .bdg.electric { background: var(--success-soft); color: var(--success); }
+.ddom .bdg.brand { background: var(--brand-soft, color-mix(in srgb, var(--brand) 14%, transparent)); color: var(--brand); }
+
+.ddom .dtint { padding: 11px 14px; border-radius: 9px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--ink-3); }
+.ddom .dtint b { color: var(--ink-2); font-weight: 600; }
+.ddom .dtint.warn { background: var(--warning-soft); color: var(--ink-2); }
+.ddom .dtint.warn b { color: var(--warning); }
+.ddom .dtint.ok { background: var(--success-soft); color: var(--ink-2); }
+.ddom .dtint.ok b { color: var(--success); }
+.ddom .dtint.row-tint { display: flex; align-items: center; gap: 10px; }
+
+.ddom .two-col { display: grid; grid-template-columns: 1fr 1.25fr; gap: 16px; margin-bottom: 16px; }
+@container ddom (max-width: 1100px) { .ddom .two-col { grid-template-columns: 1fr; } }
+.ddom .two-col .l-card { margin-bottom: 0; display: flex; flex-direction: column; }
+.ddom .two-col .l-card .l-b { flex: 1; }
+.ddom .two-col.r11 { grid-template-columns: 1fr 1fr; }
+.ddom .two-col.r12 { grid-template-columns: 1.2fr 1fr; }
+.ddom .two-col.r135 { grid-template-columns: 1.35fr 1fr; }
+@container ddom (max-width: 1100px) { .ddom .two-col.r11, .ddom .two-col.r12, .ddom .two-col.r135 { grid-template-columns: 1fr; } }
+
+/* ============================ D1 ============================ */
+.ddom .ch-row { display: grid; grid-template-columns: 170px 1fr auto auto auto; gap: 14px; align-items: center; padding: 11px 2px; border-bottom: 1px dashed var(--border); }
+.ddom .ch-row:last-of-type { border-bottom: none; }
+.ddom .ch-row .nm { font-size: 13px; font-weight: 600; color: var(--ink-2); display: flex; align-items: center; gap: 8px; font-family: var(--mono); }
+.ddom .ch-row .meta { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.ddom .ch-row .v { font-family: var(--mono); font-size: 13px; font-weight: 700; white-space: nowrap; color: var(--ink); }
+@container ddom (max-width: 980px) { .ddom .ch-row { grid-template-columns: 1fr auto; row-gap: 6px; } .ddom .ch-row .meta { display: none; } }
+.ddom .card-params { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+@container ddom (max-width: 1100px) { .ddom .card-params { grid-template-columns: 1fr; } }
+
+.ddom .heat { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.ddom .heat .h-row { display: grid; grid-template-columns: 150px 1fr 86px auto; gap: 12px; align-items: center; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+.ddom .heat .h-row.hot { background: var(--danger-soft); }
+.ddom .heat .bar { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.ddom .heat .bar i { display: block; height: 100%; border-radius: 999px; }
+
+.ddom .cb-row { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px dashed var(--border); }
+.ddom .cb-row:last-of-type { border-bottom: none; }
+
+/* ============================ D2 ============================ */
+.ddom .sm-flow { display: flex; align-items: center; flex-wrap: wrap; padding: 4px 0 0; row-gap: 8px; }
+.ddom .sm-flow .st { font-family: var(--mono); font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 6px; background: var(--surface-3); color: var(--ink-3); white-space: nowrap; }
+.ddom .sm-flow .st.ok { background: var(--success-soft); color: var(--success); }
+.ddom .sm-flow .st.warn { background: var(--warning-soft); color: var(--warning); }
+.ddom .sm-flow .st.bad { background: var(--danger-soft); color: var(--danger); }
+.ddom .sm-flow .ar { padding: 0 7px; color: var(--ink-4); font-size: 11px; font-family: var(--mono); white-space: nowrap; }
+
+.ddom .dt-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+@container ddom (max-width: 1100px) { .ddom .dt-split { grid-template-columns: 1fr; } }
+.ddom .dt-split > div:first-child { padding: 16px 20px; border-right: 1px solid var(--border); }
+@container ddom (max-width: 1100px) { .ddom .dt-split > div:first-child { border-right: none; border-bottom: 1px solid var(--border); } }
+.ddom .dt-split > div:last-child { padding: 16px 20px; }
+.ddom .kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+.ddom .kv:last-child { border-bottom: none; }
+.ddom .kv .k { color: var(--ink-4); }
+.ddom .kv .v { color: var(--ink-2); font-weight: 600; text-align: right; }
+.ddom .batch-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; border-radius: 10px; background: var(--surface-2); margin-top: 12px; }
+
+/* ============================ D3 ============================ */
+.ddom .res-row { display: flex; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px dashed var(--border); }
+.ddom .res-row:last-of-type { border-bottom: none; }
+.ddom .res-row .nm { flex: 1; font-size: 13px; color: var(--ink-2); }
+.ddom .res-row .nm small { display: block; font-size: 11.5px; color: var(--ink-4); margin-top: 2px; }
+.ddom .res-row .v { font-family: var(--mono); font-size: 14px; font-weight: 700; white-space: nowrap; color: var(--ink); }
+.ddom .liab-row { display: grid; grid-template-columns: 175px 1fr auto; gap: 12px; align-items: center; padding: 6px 0; }
+.ddom .liab-row .nm { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.ddom .liab-row .nm i { width: 8px; height: 8px; border-radius: 2.5px; flex-shrink: 0; }
+.ddom .liab-row .track { height: 9px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.ddom .liab-row .track i { display: block; height: 100%; border-radius: 999px; }
+.ddom .liab-row .amt { font-family: var(--mono); font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.ddom svg text { font-family: var(--mono); }
+
+/* ============================ D4 ============================ */
+.ddom .rb-row { display: grid; grid-template-columns: 88px 1fr auto auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+.ddom .rb-row:last-of-type { border-bottom: none; }
+.ddom .rb-row.break { background: var(--danger-soft); border-radius: 8px; padding-left: 8px; padding-right: 8px; }
+.ddom .lookup { display: flex; gap: 8px; width: 250px; }
+.ddom .lookup input { flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 8px;
+  padding: 8px 12px; color: var(--ink); font-family: var(--mono); font-size: 13px; outline: none; }
+.ddom .lookup input:focus { border-color: var(--success); }
+.ddom .sum-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+@container ddom (max-width: 980px) { .ddom .sum-grid { grid-template-columns: repeat(2, 1fr); } }
+.ddom .sum-grid .s { background: var(--surface-2); border-radius: 8px; padding: 9px 11px; }
+.ddom .sum-grid .s .k { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.ddom .sum-grid .s .v { font-family: var(--mono); font-size: 13.5px; font-weight: 700; margin-top: 2px; }
+
+/* ============================ D5 ============================ */
+.ddom .p-row { display: flex; align-items: center; gap: 14px; padding: 13px 2px; border-bottom: 1px dashed var(--border); }
+.ddom .p-row:last-of-type { border-bottom: none; }
+.ddom .p-row .txt { flex: 1; min-width: 0; }
+.ddom .p-row .k { font-size: 13.5px; font-weight: 600; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.ddom .p-row .s { font-size: 12px; color: var(--ink-4); margin-top: 3px; line-height: 1.5; }
+.ddom .p-row .v { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+.ddom .ph-track { display: flex; gap: 4px; margin: 6px 0 12px; }
+.ddom .ph-track .seg { flex: 1; border-radius: 7px; padding: 9px 10px; background: var(--surface-2); }
+.ddom .ph-track .seg.cur { background: var(--success-soft); }
+.ddom .ph-track .seg .m { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.ddom .ph-track .seg .vv { font-family: var(--mono); font-size: 13px; font-weight: 700; margin-top: 3px; color: var(--ink); }
