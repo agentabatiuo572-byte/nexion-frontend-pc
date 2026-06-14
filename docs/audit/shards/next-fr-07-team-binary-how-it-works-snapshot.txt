@@ -1,0 +1,4 @@
+- heading "你同时发展两条轨道,两条都成长,你就能拿奖励。" [level=2, ref=e4]
+- link "明白了 · 查看我的双轨" [ref=e3]
+- button "Back" [ref=e1]
+- button "通知" [ref=e2]

@@ -1,10 +1,14 @@
-/** 域 K 风控与反作弊 — 注册表。accent=--admin-domain-k(高危/拦截类用语义 danger/warning)。 */
+/**
+ * 域 K 风控与反作弊 — 注册表。accent=--admin-domain-k(高危/拦截类用语义 danger/warning)。
+ * ⚠️ K ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = k-view.tsx + k-tabs/),仅 summary 经 DomainHeader 渲染。
+ * 改 K 域数据/动作请改 k-tabs/data.ts 与 lib/mock/admin/design-data.ts(K_RISK),勿在此处改 content。
+ */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
 export const DOMAIN_K: ModuleEntry[] = [
   {
     path: "/risk/multi-account",
-    summary: "反多账户引擎(K1)。设备指纹 + IP + 资金往来 + 行为聚成关联簇;簇内自动放行/限制/冻结需 Maker-Checker 双签并写入 A2 审计。",
+    summary: "反多账户引擎(K1)。IP / 设备指纹 / 支付工具三层去重聚成关联簇(强度≥0.7 标红建议冻结);批量冻结 / 解除误判 / 判正常均 操作确认,冻结台账落 C2;IP 白名单权威归 K1。",
     content: {
       kind: "list",
       metrics: [
@@ -41,23 +45,23 @@ export const DOMAIN_K: ModuleEntry[] = [
         { label: "解除关联" },
         { label: "封禁全簇", tone: "danger" },
       ],
-      note: "关联簇由 K4 评分与设备指纹引擎实时聚合;簇级处置(冻结 / 限制提现 / 放行)需 Maker-Checker 双签 + A2 留痕,发起人不可自审。家庭共享、同公司网络等正常场景经申诉可标记白名单。",
+      note: "关联簇由 K4 评分与设备指纹引擎实时聚合;簇级处置(冻结 / 限制提现 / 放行)需 操作确认 + A2 留痕,操作理由必填。家庭共享、同公司网络等正常场景经申诉可标记白名单。",
     },
   },
   {
     path: "/risk/abuse",
-    summary: "套利 & 刷量检测(K2)。识别试用套利、收益刷量、对敲返佣、设备空转等异常获利模式;命中后联动 K3 提现规则与 C 域账户处置。",
+    summary: "套利 & 刷量检测(K2)。闭环分级判定(≥2 层预警转人工 / 3 层全中判闭环):试用循环 / 换新套利(门槛归 E3 只读)/ 新人礼刷取 / 排行榜刷榜(处置归 F8);K2 只标记 + 产信号,批量冻结复用 K1 操作链。",
     content: {
       kind: "list",
       metrics: [
-        { label: "今日命中", value: "14", sub: "待复核 5", accent: "var(--admin-domain-k)", hint: "今日检测模型命中的疑似套利 / 刷量事件数。" },
+        { label: "今日命中", value: "14", sub: "待确认 5", accent: "var(--admin-domain-k)", hint: "今日检测模型命中的疑似套利 / 刷量事件数。" },
         { label: "高危事件", value: "6", sub: "置信度≥0.85", accent: "var(--v5-danger)", hint: "高置信、建议直接拦截的套利事件。" },
         { label: "拦截金额", value: "$3,180", sub: "近 7 日", accent: "var(--v5-success)", hint: "近 7 日因命中而暂缓 / 冻结的疑似套利资金。" },
         { label: "误报率", value: "4.2%", sub: "申诉转正常", accent: "var(--v5-ink-3)" },
       ],
       search: "搜索账户 / 事件类型",
       filterKey: "state",
-      filters: ["全部", "拦截", "待复核", "观察", "已通过"],
+      filters: ["全部", "拦截", "待确认", "观察", "已通过"],
       columns: [
         { key: "evt", header: "事件号", mono: true },
         { key: "type", header: "类型" },
@@ -71,30 +75,30 @@ export const DOMAIN_K: ModuleEntry[] = [
         { evt: "AB-2606-204", type: "试用套利", account: "U-88421", feature: "批量领试用后集中提取抵扣", amount: "$640", conf: "0.93", state: "拦截" },
         { evt: "AB-2606-198", type: "对敲返佣", account: "U-77310", feature: "关联账户互购刷返佣层级", amount: "$1,120", conf: "0.88", state: "拦截" },
         { evt: "AB-2606-191", type: "收益刷量", account: "U-90233", feature: "设备产出曲线异常陡增", amount: "$420", conf: "0.86", state: "拦截" },
-        { evt: "AB-2606-187", type: "提现套现", account: "U-66155", feature: "充值后即满额提现、零持有", amount: "$2,000", conf: "0.79", state: "待复核" },
-        { evt: "AB-2606-182", type: "设备空转", account: "U-81044", feature: "无登录但持续产出 30d", amount: "$310", conf: "0.74", state: "待复核" },
+        { evt: "AB-2606-187", type: "提现套现", account: "U-66155", feature: "充值后即满额提现、零持有", amount: "$2,000", conf: "0.79", state: "待确认" },
+        { evt: "AB-2606-182", type: "设备空转", account: "U-81044", feature: "无登录但持续产出 30d", amount: "$310", conf: "0.74", state: "待确认" },
         { evt: "AB-2606-176", type: "推荐刷量", account: "U-72980", feature: "短时绑定大量空壳下线", amount: "$0", conf: "0.69", state: "观察" },
         { evt: "AB-2606-170", type: "试用套利", account: "U-69500", feature: "多设备同人脸试用", amount: "$180", conf: "0.61", state: "观察" },
         { evt: "AB-2606-161", type: "收益刷量", account: "U-58233", feature: "波动在正常区间(申诉通过)", amount: "$95", conf: "0.34", state: "已通过" },
       ],
       detail: true,
       rowActions: [
-        { label: "确认违规", tone: "danger", whenStatus: "待复核" },
-        { label: "标记误报", whenStatus: "待复核" },
+        { label: "确认违规", tone: "danger", whenStatus: "待确认" },
+        { label: "标记误报", whenStatus: "待确认" },
         { label: "冻结账户", tone: "danger" },
       ],
-      note: "检测特征由 A4 事件流 + 设备指纹实时计算;置信度≥0.85 自动进入拦截队列、暂缓相关提现,其余进入人工复核。拦截 / 解除均写入 A2,误报经申诉回滚并回灌模型训练样本。",
+      note: "检测特征由 A4 事件流 + 设备指纹实时计算;置信度≥0.85 自动进入拦截队列、暂缓相关提现,其余进入人工确认。拦截 / 解除均写入 A2,误报经申诉回滚并回灌模型训练样本。",
     },
   },
   {
     path: "/risk/withdrawal-rules",
-    summary: "提现风控规则引擎(K3)。阈值 / 速率 / 黑名单 / 行为规则命中后触发放行、人工复核、暂缓或拒绝;直接联动 D 域提现复核台与 K4 评分。",
+    summary: "提现风控规则引擎(K3)。金额 / 速度 / 新账户 / 地址信誉四维规则 → pass/delay/freeze/manual 路由,结论 D2 照单消费且优先级高于小额快速通道;规则 CRUD 与启停操作确认,archived 终态(激活返 409),pass 不产事件。",
     content: {
       kind: "config",
       metrics: [
         { label: "生效规则", value: "23", sub: "开 21 / 关 2", accent: "var(--admin-domain-k)", hint: "当前已启用的提现风控规则条数。" },
         { label: "今日触发", value: "61", sub: "拦截 14", accent: "var(--v5-warning)", hint: "今日命中任一规则的提现单数,其中触发拦截 / 暂缓的数量。" },
-        { label: "高危拦截", value: "14", sub: "转人工复核", accent: "var(--v5-danger)" },
+        { label: "高危拦截", value: "14", sub: "转人工确认", accent: "var(--v5-danger)" },
         { label: "黑名单地址", value: "38", sub: "链上 + 内部", accent: "var(--v5-ink-3)" },
       ],
       groups: [
@@ -102,9 +106,9 @@ export const DOMAIN_K: ModuleEntry[] = [
           title: "阈值规则",
           note: "命中即触发对应动作,可叠加;金额以 USDT 计。",
           fields: [
-            { label: "单笔大额阈值", value: "$1,000", range: "$500–$10,000", effect: "超过 → 转人工复核" },
-            { label: "单日累计上限", value: "$5,000", range: "$1,000–$50,000", effect: "超过 → 暂缓至次日 + 复核" },
-            { label: "高危评分阈值", value: "≥70 分", range: "50–90", effect: "命中 → 暂缓并要求二次确认(联动 K4)" },
+            { label: "单笔大额阈值", value: "$1,000", range: "$500–$10,000", effect: "超过 → 转人工确认" },
+            { label: "单日累计上限", value: "$5,000", range: "$1,000–$50,000", effect: "超过 → 暂缓至次日 + 确认" },
+            { label: "高危评分阈值", value: "≥70 分", range: "50–90", effect: "命中 → 暂缓并进入操作确认(联动 K4)" },
             { label: "新账户提现门槛", value: "持有≥7 天", range: "0–30 天", effect: "未达 → 拒绝,防试用套现" },
           ],
         },
@@ -112,7 +116,7 @@ export const DOMAIN_K: ModuleEntry[] = [
           title: "速率规则",
           note: "防短时高频套现与脚本批量提现。",
           fields: [
-            { label: "提现频率", value: "≤3 次 / 24h", range: "1–10 次", effect: "超频 → 暂缓 + 复核" },
+            { label: "提现频率", value: "≤3 次 / 24h", range: "1–10 次", effect: "超频 → 暂缓 + 确认" },
             { label: "提现间隔", value: "≥30 min", range: "5–120 min", effect: "过密 → 进入观察队列" },
             { label: "充提比下限", value: "持有≥30%", range: "0–80%", effect: "充值后即提 → 拦截(联动 K2)" },
           ],
@@ -127,17 +131,17 @@ export const DOMAIN_K: ModuleEntry[] = [
           ],
         },
       ],
-      approval: "规则阈值 / 开关变更需 风控主管 + 审计 双签;阈值放宽(上调上限 / 下调评分门槛)即时影响放行口径,变更前后值写入 A2 审计。",
+      confirmPolicy: "规则阈值 / 开关变更需风控 lead / 超管执行操作确认;阈值放宽(上调上限 / 下调评分门槛)即时影响放行口径,变更前后值写入 A2 审计。",
       impact: [
         "上调单笔 / 单日上限 → 放行更快但资金外流风险上升,联动 D 域净流出监控",
-        "下调高危评分阈值 → 更多提现进入人工复核,D 域积压与处理时延增加",
+        "下调高危评分阈值 → 更多提现进入人工确认,D 域积压与处理时延增加",
         "关闭关联簇连带 → K1 高危簇成员可独立提现,套利绕过风险上升",
       ],
     },
   },
   {
     path: "/risk/scoring",
-    summary: "风险评分模型(K4)。多维度加权得出 0–100 风险分(≥70 高危),为 K1 关联簇、K3 提现规则、C 域账户处置提供统一风险口径。",
+    summary: "风险评分模型(K4)。六维权重(和=1 双端校验)合成 0–100 分,低<40/中 40–69/高≥70,≥85 自动建议转人工;全平台唯一评分源(D2/C1/B5 只引用不重算),每分可解释;权重/分档变更 = 平台管理员执行门槛。",
     content: {
       kind: "config",
       metrics: [
@@ -165,11 +169,11 @@ export const DOMAIN_K: ModuleEntry[] = [
           fields: [
             { label: "低危 0–39", value: "正常放行", range: "0–50", effect: "无额外限制" },
             { label: "中危 40–69", value: "加验 / 限额", range: "40–70", effect: "提现需二次验证、单日限额收紧" },
-            { label: "高危 70–100", value: "暂缓 + 人工复核", range: "60–90", effect: "命中 → 提现暂缓,进入 D 域复核(联动 K3)" },
+            { label: "高危 70–100", value: "暂缓 + 人工确认", range: "60–90", effect: "命中 → 提现暂缓,进入 D 域确认(联动 K3)" },
           ],
         },
       ],
-      approval: "维度权重 / 分段阈值调整需 风控主管 + 审计 双签;阈值下调(放宽高危判定)与权重重分配会改变全平台风险口径,变更写入 A2 并触发一次全量重算。",
+      confirmPolicy: "维度权重 / 分段阈值调整需平台管理员执行操作确认;阈值下调(放宽高危判定)与权重重分配会改变全平台风险口径,变更写入 A2 并触发一次全量重算。",
       impact: [
         "上调高危分段下限(如 70→80)→ 高危账户减少、放行变松,套现与套利漏过风险上升",
         "提高资金行为权重 → 即充即提类账户评分上升,K3 暂缓量增加",
@@ -179,7 +183,7 @@ export const DOMAIN_K: ModuleEntry[] = [
   },
   {
     path: "/risk/kyc-review",
-    summary: "大额 KYC 复审 & 告警(K5)。大额提现 / 充值与高危账户触发人工 KYC 复审;通过后放行,驳回则联动 K3 拦截与 C 域处置。",
+    summary: "大额 KYC 复审 & 告警(K5)。大额提现 ≥$1,000 / 累计 $100 lifetime / 大额兑换(阈值归 G2)/ K4 分 ≥85 触发增强复审,复审期提现单 D2 冻结;裁决操作确认回写 C4(K5 不持 KYC 状态),SLA 7 工作日超时自动告警。",
     content: {
       kind: "list",
       metrics: [
@@ -216,7 +220,7 @@ export const DOMAIN_K: ModuleEntry[] = [
         { label: "驳回", tone: "danger", whenStatus: "待复审" },
         { label: "要求补件", whenStatus: "待复审" },
       ],
-      note: "大额阈值与触发条件由 K3 提现规则给定;复审结论(通过 / 驳回 / 补件)需经办 + 复核双签并写入 A2,驳回联动 K3 暂缓提现与 C 域账户限制。补件超时自动转催办告警。",
+      note: "大额阈值与触发条件由 K3 提现规则给定;复审结论(通过 / 驳回 / 补件)需经办 + 确认并写入 A2,驳回联动 K3 暂缓提现与 C 域账户限制。补件超时自动转催办告警。",
     },
   },
 ];

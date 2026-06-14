@@ -3,7 +3,7 @@
 /**
  * 360 HUB · 账户·安全·合规卡 — C1·deepening。
  * 覆盖:auth 生命周期 / KYC / 风险披露 / 改密·2FA·会话吊销 / 档案(昵称·地区·时区·语言)/ 领导池分红历史。
- * 高敏(改密/吊销会话/重置2FA)= confirm→MC 双签。CGM: A-002/K-001..005/I-001..002/C-009。
+ * 高敏(改密/吊销会话/重置2FA)= confirm→操作确认。CGM: A-002/K-001..005/I-001..002/C-009。
  */
 import Link from "next/link";
 import { UserCog, ArrowUpRight, ShieldCheck, KeyRound, Smartphone } from "lucide-react";
@@ -33,25 +33,25 @@ export function AccountSection({ user }: { user: AdminUser }) {
     const yes = await confirm({ title, message, confirmLabel: ok, danger });
     if (yes) {
       opsLog(user.id, action, detail, tone);
-      toast.success(ok, `${user.id} · 已提交复核(MC 双签)`);
+      toast.success(ok, `${user.id} · 已确认生效(操作确认)`);
     }
   }
   async function doResetTwoFactor() {
-    const yes = await confirm({ title: "重置两步验证?", message: `清除 ${user.nickname} 的 2FA 绑定,用户需重新设置。需第二角色复核 + 审计。`, confirmLabel: "确认重置", danger: true });
+    const yes = await confirm({ title: "重置两步验证?", message: `清除 ${user.nickname} 的 2FA 绑定,用户需重新设置。需填写操作理由并写入审计。`, confirmLabel: "确认重置", danger: true });
     if (yes) {
       resetTwoFactor(user.id);
       toast.success("2FA 已重置", `${user.id} · ${user.nickname}`);
     }
   }
   async function doRevoke(sid: string, device: string, loc: string) {
-    const yes = await confirm({ title: "吊销该会话?", message: `使「${device} · ${loc}」登录立即失效。需第二角色复核 + 审计。`, confirmLabel: "吊销会话" });
+    const yes = await confirm({ title: "吊销该会话?", message: `使「${device} · ${loc}」登录立即失效。需填写操作理由并写入审计。`, confirmLabel: "吊销会话" });
     if (yes) {
       revokeSession(user.id, sid, `${device} · ${loc}`);
       toast.success("会话已吊销", `${user.id} · ${device}`);
     }
   }
   return (
-    <HubCard icon={<UserCog size={15} style={{ color: "var(--admin-domain-a)" }} />} title="账户·安全·合规卡" tag="C1·deepening · A/K/I · 高敏 MC">
+    <HubCard icon={<UserCog size={15} style={{ color: "var(--admin-domain-a)" }} />} title="账户·安全·合规卡" tag="C1·deepening · A/K/I · 高敏 操作确认">
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <HubMetric label="账户状态" value={a.onboardingDone ? "已激活" : "引导中"} accent={a.onboardingDone ? "var(--v5-success)" : "var(--v5-warning)"} />
         <HubMetric label="两步验证" value={twoFactorOn ? "已开启" : twoFactorReset ? "待重设" : "未开启"} accent={twoFactorOn ? "var(--v5-success)" : twoFactorReset ? "var(--v5-warning)" : "var(--v5-ink-4)"} />
@@ -118,12 +118,12 @@ export function AccountSection({ user }: { user: AdminUser }) {
       <div className="mt-3 flex flex-wrap gap-2">
         <ActBtn icon={<KeyRound size={13} />} label="强制改密" onClick={() => act("强制改密?", `要求 ${user.nickname} 下次登录重置密码。`, "确认改密", "强制改密", "下次登录强制重置密码", "warning", true)} />
         <ActBtn icon={<ShieldCheck size={13} />} label="重置 2FA" onClick={doResetTwoFactor} />
-        <ActBtn label="重发 KYC 复核" onClick={() => act("重新发起 KYC 复核?", `将 ${user.nickname} 的 KYC 重新置为待复核。`, "确认", "重发 KYC 复核", "KYC 置为待复核", "neutral")} />
+        <ActBtn label="重发 KYC 确认" onClick={() => act("重新发起 KYC 确认?", `将 ${user.nickname} 的 KYC 重新置为待确认。`, "确认", "重发 KYC 确认", "KYC 置为待确认", "neutral")} />
       </div>
       <p className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
-        <Link href="/risk/kyc-review" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-k)" }}>K5 KYC 复核<ArrowUpRight size={11} /></Link>
+        <Link href="/risk/kyc-review" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-k)" }}>K5 KYC 确认<ArrowUpRight size={11} /></Link>
         <Link href="/platform/audit" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-a)" }}>A2 审计<ArrowUpRight size={11} /></Link>
-        <AutoGloss>安全/合规动作均 MC 双签 + 审计留痕。</AutoGloss>
+        <AutoGloss>安全/合规动作均 操作确认 + 审计留痕。</AutoGloss>
       </p>
     </HubCard>
   );

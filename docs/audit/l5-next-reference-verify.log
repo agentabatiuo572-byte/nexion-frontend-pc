@@ -1,0 +1,275 @@
+$ bash scripts/verify.sh all
+
+[0;36m=== Nexion Verification — [1;33mall[0;36m ===[0m
+
+[0;36m[1] TypeScript compile (project-wide)[0m
+  [0;32mPASS[0m  No TypeScript errors
+
+[0;36m[1.5] Promo-ladder source guard[0m
+  [0;32mPASS[0m  No hardcoded phone→S1 ladder values in conversion surfaces
+
+[0;36m[1.6] Reference dead-anchor guard[0m
+  [0;32mPASS[0m  No href="#" / href='#' anchors in app/lib
+
+[0;36m[1.7] Internal phase-label leak guard[0m
+  [0;32mPASS[0m  No internal P1-P6 launch-stage labels in visible phase copy
+
+[0;36m[1.8] i18n mirror guard[0m
+  [0;32mPASS[0m  i18n mirror PASS: 3542 keys
+
+[1;34m[Module: home][0m
+  [0;32mPASS[0m  Home page [0;36m[200][0m
+  [0;32mPASS[0m  Search page [0;36m[200][0m
+  [0;32mPASS[0m  'Search Nexion' present at /search
+  [0;32mPASS[0m  Mission Center [0;36m[200][0m
+  [0;32mPASS[0m  'ALL MISSIONS' present at /missions
+  [0;32mPASS[0m  'ALL MISSIONS' present at /missions
+  [0;32mPASS[0m  'THIS MONTH' present at /missions
+  [0;32mPASS[0m  'Foundation Builder' present at /missions
+  [0;32mPASS[0m  'Nexion' present at /
+  [0;32mPASS[0m  'My fleet' present at /
+  [0;32mPASS[0m  'On Nexion grid' present at /
+  [0;32mPASS[0m  'Earnings' present at /
+  [0;32mPASS[0m  'Earnings ledger' present at /
+  [0;32mPASS[0m  'Network pulse' present at /
+  [0;32mPASS[0m  'Do the math' present at /
+  [0;32mPASS[0m  'Your rank' present at /
+  [0;32mPASS[0m  'Leadership pool' present at /
+  [0;32mPASS[0m  'Live network earnings' present at /
+  [0;32mPASS[0m  'Independently audited' present at /
+  [0;32mPASS[0m  'Live platform activity' present at /
+
+[1;34m[Module: earn][0m
+  [0;32mPASS[0m  Earn page [0;36m[200][0m
+  [0;32mPASS[0m  'Your phone' present at /earn
+  [0;32mPASS[0m  'Est. this hour' present at /earn
+  [0;32mPASS[0m  'Current Task' present at /earn
+  [0;32mPASS[0m  'Task Center' present at /earn
+  [0;32mPASS[0m  'Earnings Overview' present at /earn
+  [0;32mPASS[0m  'Market Overview' present at /earn
+  [0;32mPASS[0m  'AI Workload Price Index' present at /earn
+  [0;32mPASS[0m  'Premium tasks above your tier' present at /earn
+
+[1;34m[Module: store][0m
+  [0;32mPASS[0m  Store list [0;36m[200][0m
+  [0;32mPASS[0m  NexionBox S1 detail [0;36m[200][0m
+  [0;32mPASS[0m  NexionBox Pro detail [0;36m[200][0m
+  [0;32mPASS[0m  NexionRack P1 detail [0;36m[200][0m
+  [0;32mPASS[0m  NexionBox Pro v2 detail [0;36m[200][0m
+  [0;32mPASS[0m  NexionRack P2 detail [0;36m[200][0m
+  [0;32mPASS[0m  Cloud Share detail [0;36m[200][0m
+  [0;32mPASS[0m  Bundle page [0;36m[200][0m
+  [0;32mPASS[0m  'Bundle' present at /store/bundle
+  [0;32mPASS[0m  'Personal AI inference' present at /store/stellarbox-s1
+  [0;32mPASS[0m  'RTX 4090' present at /store/stellarbox-s1
+  [0;32mPASS[0m  Checkout page [0;36m[200][0m
+  [0;32mPASS[0m  'NexionBox S1' present at /store
+  [0;32mPASS[0m  'NexionBox Pro' present at /store
+  [0;32mPASS[0m  'NexionRack P1' present at /store
+  [0;32mPASS[0m  'Cloud Share' present at /store
+  [0;32mPASS[0m  'Estimated returns' present at /store/stellarbox-s1
+  [0;32mPASS[0m  'Buy now' present at /store/stellarbox-s1
+  [0;32mPASS[0m  'AI performance' present at /store/stellarbox-s1
+
+[1;34m[Module: me][0m
+  [0;32mPASS[0m  Me page [0;36m[200][0m
+  [0;32mPASS[0m  Wallet page [0;36m[200][0m
+  [0;32mPASS[0m  Withdraw page [0;36m[200][0m
+  [0;32mPASS[0m  Topup page [0;36m[200][0m
+  [0;32mPASS[0m  Topup KYC page [0;36m[200][0m
+  [0;32mPASS[0m  Exchange page [0;36m[200][0m
+  [0;32mPASS[0m  Exchange how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Bills page [0;36m[200][0m
+  [0;32mPASS[0m  NEX wallet [0;36m[200][0m
+  [0;32mPASS[0m  Premium page [0;36m[200][0m
+  [0;32mPASS[0m  'Premium' present at /me/wallet/premium
+  [0;32mPASS[0m  NEX v2 lock page [0;36m[200][0m
+  [0;32mPASS[0m  'Founders Vault' present at /me/wallet/nex-v2-lock
+  [0;32mPASS[0m  Risk disclosure page [0;36m[200][0m
+  [0;32mPASS[0m  'REQUIRED READING' present at /me/risk-disclosure
+  [0;32mPASS[0m  Goals page [0;36m[200][0m
+  [0;32mPASS[0m  'TARGET TRACKER' present at /me/goals
+  [0;32mPASS[0m  Wrapped page [0;36m[200][0m
+  [0;32mPASS[0m  'WRAPPED' present at /me/wrapped
+  [0;32mPASS[0m  Preferences page [0;36m[200][0m
+  [0;32mPASS[0m  'Preferences' present at /me/preferences
+  [0;32mPASS[0m  'POSITION BREAKDOWN' present at /me/wallet/nex
+  [0;32mPASS[0m  'PROFIT &amp; LOSS' present at /me/wallet/nex
+  [0;32mPASS[0m  'USE YOUR NEX' present at /me/wallet/nex
+  [0;32mPASS[0m  KYC-Express info [0;36m[200][0m
+  [0;32mPASS[0m  'KYC-Express' present at /me/security/kyc-express
+  [0;32mPASS[0m  'WHEN IT TRIGGERS' present at /me/security/kyc-express
+  [0;32mPASS[0m  'Sumsub' present at /me/security/kyc-express
+  [0;32mPASS[0m  'WHAT YOU UNLOCK' present at /me/security/kyc-express
+  [0;32mPASS[0m  Support tickets [0;36m[200][0m
+  [0;32mPASS[0m  'Median first response' present at /me/support/tickets
+  [0;32mPASS[0m  'TK-1024' present at /me/support/tickets
+  [0;32mPASS[0m  'Withdrawal pending' present at /me/support/tickets
+  [0;32mPASS[0m  'Compliance check required' present at /me/wallet/withdraw
+  [0;32mPASS[0m  'KYC-Express' present at /me/wallet/topup?kyc=1
+  [0;32mPASS[0m  Language page [0;36m[200][0m
+  [0;32mPASS[0m  Receipts page [0;36m[200][0m
+  [0;32mPASS[0m  'Proof' present at /me/receipts
+  [0;32mPASS[0m  'USDT' present at /me/wallet
+  [0;32mPASS[0m  'NEX' present at /me/wallet
+  [0;32mPASS[0m  'TRC20' present at /me/wallet/withdraw
+  [0;32mPASS[0m  'Min: $20' present at /me/wallet/withdraw
+  [0;32mPASS[0m  'Recommended' present at /me/language
+  [0;32mPASS[0m  'Major markets' present at /me/language
+  [0;32mPASS[0m  'RTL' present at /me/language
+  [0;32mPASS[0m  'Exchange' present at /me/wallet/exchange
+  [0;32mPASS[0m  'NEX' present at /me/wallet/exchange
+  [0;32mPASS[0m  'NEX' present at /me/wallet/exchange/how-it-works
+  [0;32mPASS[0m  'Running balance' present at /me/wallet/bills
+  [0;32mPASS[0m  Profile page [0;36m[200][0m
+  [0;32mPASS[0m  Security page [0;36m[200][0m
+  [0;32mPASS[0m  Help center [0;36m[200][0m
+  [0;32mPASS[0m  Support page [0;36m[200][0m
+  [0;32mPASS[0m  Replay tour [0;36m[200][0m
+  [0;32mPASS[0m  Notifications page [0;36m[200][0m
+  [0;32mPASS[0m  Achievements page [0;36m[200][0m
+  [0;32mPASS[0m  Proof page [0;36m[200][0m
+  [0;32mPASS[0m  'Display name' present at /me/profile
+  [0;32mPASS[0m  'Two-factor' present at /me/security
+  [0;32mPASS[0m  'NexionBot' present at /me/help
+  [0;32mPASS[0m  'Telegram' present at /me/support
+  [0;32mPASS[0m  'Re-watch' present at /me/replay-tour
+  [0;32mPASS[0m  'First Contribution' present at /me/achievements
+  [0;32mPASS[0m  'Total earned' present at /me/proof
+  [0;32mPASS[0m  'CARD STYLE' present at /me/proof
+  [0;32mPASS[0m  'REFERRAL CODE' present at /me/proof
+  [0;32mPASS[0m  'ACHIEVEMENTS' present at /me/proof
+  [0;32mPASS[0m  'Quick share' present at /me/proof
+
+[1;34m[Module: team][0m
+  [0;32mPASS[0m  Team hub [0;36m[200][0m
+  [0;32mPASS[0m  V rank page [0;36m[200][0m
+  [0;32mPASS[0m  Rank how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Unilevel page [0;36m[200][0m
+  [0;32mPASS[0m  Unilevel how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Binary page [0;36m[200][0m
+  [0;32mPASS[0m  Binary how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Leadership pool [0;36m[200][0m
+  [0;32mPASS[0m  Pool how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Commissions [0;36m[200][0m
+  [0;32mPASS[0m  Commissions how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Repurchase [0;36m[200][0m
+  [0;32mPASS[0m  Repurchase how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Network orbit [0;36m[200][0m
+  [0;32mPASS[0m  Genealogy tree [0;36m[200][0m
+  [0;32mPASS[0m  Trust Center [0;36m[200][0m
+  [0;32mPASS[0m  NEX token how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Genesis Node [0;36m[200][0m
+  [0;32mPASS[0m  Genesis how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  Genesis market [0;36m[200][0m
+  [0;32mPASS[0m  Genesis holder [0;36m[200][0m
+  [0;32mPASS[0m  'LIVE DIVIDEND FEED' present at /genesis/holder
+  [0;32mPASS[0m  'HOLDER PERKS' present at /genesis/holder
+  [0;32mPASS[0m  Hardware quota [0;36m[200][0m
+  [0;32mPASS[0m  Ambassador [0;36m[200][0m
+  [0;32mPASS[0m  Leaderboard [0;36m[200][0m
+  [0;32mPASS[0m  'friend who signs up' present at /team
+  [0;32mPASS[0m  'Your rank' present at /team
+  [0;32mPASS[0m  'NEXION-' present at /team
+  [0;32mPASS[0m  'Top Inviters' present at /team
+  [0;32mPASS[0m  'PRIZE POOL' present at /team/leaderboard
+  [0;32mPASS[0m  'V0' present at /team/rank
+  [0;32mPASS[0m  'Singularity' present at /team/rank
+  [0;32mPASS[0m  'RANK PROGRESSION' present at /team/rank/how-it-works
+  [0;32mPASS[0m  'Track A' present at /team/binary
+  [0;32mPASS[0m  'Dual-Track' present at /team/binary/how-it-works
+  [0;32mPASS[0m  'How it works' present at /team/binary/how-it-works
+  [0;32mPASS[0m  'Week pool' present at /team/leadership-pool
+  [0;32mPASS[0m  'Network royalty' present at /team/commissions
+  [0;32mPASS[0m  'Balance Match' present at /team/commissions
+  [0;32mPASS[0m  'Direct' present at /team/unilevel
+  [0;32mPASS[0m  'ROYALTY PROGRAM' present at /team/unilevel/how-it-works
+  [0;32mPASS[0m  '6 COMMISSION' present at /team/commissions/how-it-works
+  [0;32mPASS[0m  'PLATFORM TOKEN' present at /trust/nex
+  [0;32mPASS[0m  'Leadership team' present at /trust
+  [0;32mPASS[0m  'Q3 2026 financials' present at /trust
+  [0;32mPASS[0m  'GLOBAL LEADERSHIP POOL' present at /team/leadership-pool/how-it-works
+  [0;32mPASS[0m  'RE-INVEST BOOST' present at /me/wallet/repurchase/how-it-works
+  [0;32mPASS[0m  'GENESIS NODES' present at /genesis/how-it-works
+  [0;32mPASS[0m  'Re-invest' present at /me/wallet/repurchase
+
+[1;34m[Module: onboarding][0m
+  [0;32mPASS[0m  Onboarding intro [0;36m[200][0m
+  [0;32mPASS[0m  Onboarding estimator [0;36m[200][0m
+  [0;32mPASS[0m  Onboarding connect [0;36m[200][0m
+  [0;32mPASS[0m  Login page [0;36m[200][0m
+  [0;32mPASS[0m  Register page [0;36m[200][0m
+  [0;32mPASS[0m  'Compute flows' present at /onboarding/intro
+  [0;32mPASS[0m  'Get started' present at /onboarding/intro
+  [0;32mPASS[0m  'Reading your NPU' present at /onboarding/estimator
+  [0;32mPASS[0m  'Calibrate your phone' present at /onboarding/connect
+  [0;32mPASS[0m  'Sign in' present at /login
+  [0;32mPASS[0m  'Or continue with' present at /login
+  [0;32mPASS[0m  'Create account' present at /register
+  [0;32mPASS[0m  'Welcome Bonus' present at /register
+
+[1;34m[Module: staking][0m
+  [0;32mPASS[0m  Staking page [0;36m[200][0m
+  [0;32mPASS[0m  Staking how-it-works [0;36m[200][0m
+  [0;32mPASS[0m  'APY' present at /staking
+  [0;32mPASS[0m  'Stake plans' present at /staking
+  [0;32mPASS[0m  'Your total staked' present at /staking
+  [0;32mPASS[0m  'Founder yield' present at /staking
+  [0;32mPASS[0m  'Compound calculator' present at /staking
+  [0;32mPASS[0m  Tx explorer [0;36m[200][0m
+  [0;32mPASS[0m  'CONFIRMED ON-CHAIN' present at /tx/0xabc123def456789012345678901234567890abcdef0123456789abcdef012345
+  [0;32mPASS[0m  'APY' present at /staking/how-it-works
+
+[1;34m[Module: developer][0m
+  [0;32mPASS[0m  Developer hub [0;36m[200][0m
+  [0;32mPASS[0m  'Compute Management' present at /developer
+  [0;32mPASS[0m  'Webhook' present at /developer
+  [0;32mPASS[0m  'Enterprise' present at /developer
+
+[1;34m[Module: globe][0m
+  [0;32mPASS[0m  Globe page [0;36m[200][0m
+  [0;32mPASS[0m  'Active nodes' present at /globe
+
+[1;34m[Module: orders][0m
+  [0;32mPASS[0m  Orders list [0;36m[200][0m
+  [0;32mPASS[0m  'Orders' present at /store/orders
+
+[1;34m[Module: market][0m
+  [0;32mPASS[0m  Market page [0;36m[200][0m
+  [0;32mPASS[0m  'NEX / USDT' present at /market
+  [0;32mPASS[0m  'LISTED ON' present at /market
+  [0;32mPASS[0m  'Watchlist' present at /market
+  [0;32mPASS[0m  'Bittensor' present at /market
+  [0;32mPASS[0m  'Akash' present at /market
+
+[1;34m[Module: daily][0m
+  [0;32mPASS[0m  Daily page [0;36m[200][0m
+  [0;32mPASS[0m  'Active streak' present at /daily
+  [0;32mPASS[0m  'Active streak' present at /daily
+  [0;32mPASS[0m  'MILESTONES' present at /daily
+  [0;32mPASS[0m  'STREAK SAVER' present at /daily
+  [0;32mPASS[0m  'TOP STREAKERS' present at /daily
+  [0;32mPASS[0m  'Day 30' present at /daily
+
+[1;34m[Module: events][0m
+  [0;32mPASS[0m  Events page [0;36m[200][0m
+  [0;32mPASS[0m  'Events' present at /events
+  [0;32mPASS[0m  'FEATURED' present at /events
+  [0;32mPASS[0m  'Flash Upgrade' present at /events
+  [0;32mPASS[0m  'Refer 5' present at /events
+  [0;32mPASS[0m  'Spring Lucky Spin' present at /events
+  [0;32mPASS[0m  'Regional PK' present at /events
+
+[1;34m[Module: learn][0m
+  [0;32mPASS[0m  Learn page [0;36m[200][0m
+  [0;32mPASS[0m  'Learn' present at /learn
+  [0;32mPASS[0m  'FEATURED LESSON' present at /learn
+  [0;32mPASS[0m  'YOUR LEARNING' present at /learn
+  [0;32mPASS[0m  'What is Nexion' present at /learn
+  [0;32mPASS[0m  'Balance Match' present at /learn
+  [0;32mPASS[0m  'Genesis Node deep-dive' present at /learn
+
+[0;36m[+] 交互/合规自查门(0-meta / MLM 显示文案)[0m
+  [0;32mPASS[0m  用户端文案无 meta/MLM 泄漏
+
+[0;36m=== Result: [0;32m230 passed[0;36m, [0;31m0 failed[0;36m ===[0m

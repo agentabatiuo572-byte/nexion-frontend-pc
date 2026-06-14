@@ -1,0 +1,5 @@
+- link [ref=e1]
+- button "上一张" [ref=e4]
+- button "Next" [ref=e5]
+- button [ref=e2]
+- button [ref=e3]

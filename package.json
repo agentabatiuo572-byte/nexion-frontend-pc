@@ -6,7 +6,13 @@
     "dev": "next dev -p 3002",
     "build": "next build",
     "start": "next start -p 3002",
-    "verify": "bash scripts/verify.sh all"
+    "verify": "bash scripts/verify.sh all",
+    "verify:owner-review": "node scripts/owner-review-readiness.mjs",
+    "verify:owner-review:live": "node scripts/owner-review-readiness.mjs --check-live",
+    "remediation:preflight": "node scripts/remediation-finalize-after-owner-confirmed.mjs",
+    "remediation:preflight:live": "node scripts/remediation-finalize-after-owner-confirmed.mjs --with-live",
+    "remediation:status": "node scripts/remediation-completion-status.mjs",
+    "remediation:status:strict": "node scripts/remediation-completion-status.mjs --strict"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",

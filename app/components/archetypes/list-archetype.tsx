@@ -2,7 +2,7 @@
 
 /**
  * ListArchetype — 表格型模块通用页(审计/对账/订单/KYC/佣金/风控命中/CMS 列表…)。
- * KPI 带 + FilterBar(搜索+chip)+ DataTable(状态 pill 着色)+ 可选行详情抽屉 + Maker-Checker 脚注。
+ * KPI 带 + FilterBar(搜索+chip)+ DataTable(状态 pill 着色)+ 可选行详情抽屉 + 操作确认 脚注。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, X, Check, Lock, ShieldCheck, Plus } from "lucide-react";
@@ -12,10 +12,11 @@ import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
 import { useIsSuperadmin } from "@/lib/store/use-admin-role";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { ListSpec } from "@/lib/admin/module-content";
+import { DataListPager, PaginationExemption, useDataListPager } from "@/app/components/domain-views/design-kit";
 
 function statusTone(v: string): string {
   if (/通过|正常|已放行|达标|启用|在售|成功|健康|完成|已结|生效|上线|有效|解锁|已退款|上架|在架|促销/.test(v)) return "var(--v5-success)";
-  if (/待|审核中|复核|延迟|冷却|预警|警戒|处理中|排队|草稿|灰度|观察|限制/.test(v)) return "var(--v5-warning)";
+  if (/待|审核中|确认|延迟|冷却|预警|警戒|处理中|排队|草稿|灰度|观察|限制/.test(v)) return "var(--v5-warning)";
   if (/冻结|拒绝|高危|失败|超限|异常|跌破|封禁|风险|拦截|下架|逾期|暂停/.test(v)) return "var(--v5-danger)";
   return "var(--v5-ink-3)";
 }
@@ -39,9 +40,9 @@ export function ListArchetype({ spec, accent }: { spec: ListSpec; accent: string
     return () => document.removeEventListener("keydown", onKey);
   }, [detail]);
 
-  // 抽屉双签:若该行处于待处理态,给出 Maker-Checker 操作
+  // 抽屉操作确认:若该行处于待处理态,给出 操作确认 操作
   const statusCol = spec.columns.find((c) => c.status);
-  const detailPending = !!(detail && statusCol && /待|审核中|复核|研判|审批|挂起/.test(detail[statusCol.key] ?? ""));
+  const detailPending = !!(detail && statusCol && /待|审核中|确认|研判|确认|挂起/.test(detail[statusCol.key] ?? ""));
 
   // 主操作(新增)创建抽屉
   const [creating, setCreating] = useState(false);
@@ -69,6 +70,8 @@ export function ListArchetype({ spec, accent }: { spec: ListSpec; accent: string
     }
     return rows;
   }, [spec, q, chip, filters]);
+  const paginationExempt = spec.paginationExempt;
+  const pager = useDataListPager(filtered, { resetKey: `${q}|${chip}` });
 
   const columns: Column<Record<string, string>>[] = spec.columns.map((c) => ({
     key: c.key,
@@ -121,11 +124,24 @@ export function ListArchetype({ spec, accent }: { spec: ListSpec; accent: string
 
       <DataTable
         columns={columns}
-        rows={filtered}
+        rows={paginationExempt ? filtered : pager.pageRows}
         getRowId={(r) => r[spec.rowIdKey ?? spec.columns[0].key]}
         onRowClick={spec.detail ? (r) => { setCreating(false); setDetail(r); } : undefined}
         empty="无匹配记录"
       />
+      {paginationExempt ? (
+        <PaginationExemption label={paginationExempt.label ?? "后台列表"} maxRows={paginationExempt.maxRows} reason={paginationExempt.reason} />
+      ) : (
+        <DataListPager
+          label={spec.search ?? "后台列表"}
+          page={pager.page}
+          pageSize={pager.pageSize}
+          total={pager.total}
+          rawTotal={spec.rows.length}
+          onPageChange={pager.setPage}
+          onPageSizeChange={pager.setPageSize}
+        />
+      )}
 
       {spec.note && <p className="mt-2.5 text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>{spec.note}</AutoGloss></p>}
 
@@ -155,7 +171,7 @@ export function ListArchetype({ spec, accent }: { spec: ListSpec; accent: string
                 </div>
               ))}
             </div>
-            {/* 行级操作 footer:声明的 rowActions(状态门控)/ 待办默认双签 / 终态 */}
+            {/* 行级操作 footer:声明的 rowActions(状态门控)/ 待办默认操作确认 / 终态 */}
             {(() => {
               const acts = (spec.rowActions ?? []).filter(
                 (a) => !a.whenStatus || (statusCol ? (detail[statusCol.key] ?? "").includes(a.whenStatus) : true),
@@ -172,18 +188,18 @@ export function ListArchetype({ spec, accent }: { spec: ListSpec; accent: string
                 <div className="px-5 py-4" style={{ borderTop: "1px solid var(--v5-border)", background: "var(--v5-surface-2)" }}>
                   {actedLabel ? (
                     <span className="inline-flex items-center gap-1.5 text-[13px]" style={{ color: "var(--v5-success)", fontWeight: 500 }}>
-                      <Check size={15} aria-hidden /> 已{actedLabel} · {isSuper ? "即时生效" : "提交复核"} · 留痕 A2(演示)
+                      <Check size={15} aria-hidden /> 已{actedLabel} · {isSuper ? "即时生效" : "提交确认"} · 留痕 A2(演示)
                     </span>
                   ) : (
                     <>
                       <p className="mb-2.5 inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>
                         {isSuper ? <ShieldCheck size={12} style={{ color: "var(--v5-brand)" }} aria-hidden /> : <Lock size={12} aria-hidden />}
-                        {isSuper ? "总管理员 · 免双签,操作即时生效并留痕 A2" : "操作需 Maker-Checker 双签 · 发起人不可自审 · 留痕 A2"}
+                        {isSuper ? "总管理员 · 仍需操作确认,操作即时生效并留痕 A2" : "操作需 操作确认 · 操作理由必填 · 留痕 A2"}
                       </p>
                       <div className="flex flex-wrap gap-2.5">
                         {showDefault ? (
                           <>
-                            <button type="button" onClick={() => setActedLabel(isSuper ? "通过" : "复核通过")} className="min-w-[88px] flex-1 rounded-[9px] py-2 text-[13px] font-medium transition-opacity hover:opacity-90" style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}>{isSuper ? "通过" : "复核通过"}</button>
+                            <button type="button" onClick={() => setActedLabel(isSuper ? "通过" : "确认通过")} className="min-w-[88px] flex-1 rounded-[9px] py-2 text-[13px] font-medium transition-opacity hover:opacity-90" style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}>{isSuper ? "通过" : "确认通过"}</button>
                             <button type="button" onClick={() => setActedLabel("驳回")} className="min-w-[88px] flex-1 rounded-[9px] py-2 text-[13px] font-medium transition-colors hover:opacity-90" style={{ background: "var(--v5-danger-soft)", color: "var(--v5-danger)", border: "1px solid color-mix(in srgb, var(--v5-danger) 40%, transparent)" }}>驳回</button>
                           </>
                         ) : (
@@ -247,16 +263,16 @@ export function ListArchetype({ spec, accent }: { spec: ListSpec; accent: string
             <div className="px-5 py-4" style={{ borderTop: "1px solid var(--v5-border)", background: "var(--v5-surface-2)" }}>
               {created ? (
                 <span className="inline-flex items-center gap-1.5 text-[13px]" style={{ color: "var(--v5-success)", fontWeight: 500 }}>
-                  <Check size={15} aria-hidden /> 已创建 · {isSuper ? "即时生效并留痕 A2" : "提交 A2 待复核"}(演示)
+                  <Check size={15} aria-hidden /> 已创建 · {isSuper ? "即时生效并留痕 A2" : "提交 A2 待确认"}(演示)
                 </span>
               ) : (
                 <>
                   <p className="mb-2.5 inline-flex items-center gap-1.5 text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>
                     {isSuper ? <ShieldCheck size={12} style={{ color: "var(--v5-brand)" }} aria-hidden /> : <Lock size={12} aria-hidden />}
-                    {isSuper ? "总管理员 · 免双签,创建即时生效" : "创建需 Maker-Checker 双签 · 留痕 A2"}
+                    {isSuper ? "总管理员 · 仍需操作确认,创建即时生效" : "创建需 操作确认 · 留痕 A2"}
                   </p>
                   <button type="button" onClick={() => setCreated(true)} className="w-full rounded-[9px] py-2.5 text-[13px] font-medium transition-opacity hover:opacity-90" style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}>
-                    {isSuper ? "创建" : "提交创建(待复核)"}
+                    {isSuper ? "创建" : "提交创建(待确认)"}
                   </button>
                 </>
               )}

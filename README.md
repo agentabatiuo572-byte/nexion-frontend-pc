@@ -87,7 +87,7 @@ scripts/                    # verify.sh 回测 + nav-routes.mjs 路由生成
 | **dashboard** | 只读分析 + `controlLink` 跳关联 config |
 | **旗舰** | B1 双账本 / C1 用户检索 / D2 提现队列 / D5 提现参数（bespoke 完整控制） |
 
-**权限模型**：总管理员全权限 + 全面免双签；其余角色走 **Maker-Checker 双签**（发起人不可自审，A2 全程留痕）。
+**权限模型**：总管理员全权限 + 全面仍需操作确认；其余角色走 **操作确认**（操作理由必填，A2 全程留痕）。
 
 12 域 / 69 模块的逐项控制核对见 [`docs/CONTROL-MAP.md`](docs/CONTROL-MAP.md)。
 

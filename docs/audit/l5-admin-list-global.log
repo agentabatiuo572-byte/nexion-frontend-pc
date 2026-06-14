@@ -1,0 +1,13 @@
+$ C:\Program Files\nodejs\node.exe scripts/admin-list-capability-global-audit.mjs
+
+{
+  "status": "passed",
+  "adminRoutesSeen": 66,
+  "tableRoutes": 38,
+  "blockerCount": 0,
+  "warningCount": 0,
+  "invalidExemptionCount": 0,
+  "findings": [],
+  "warnings": [],
+  "invalidExemptions": []
+}

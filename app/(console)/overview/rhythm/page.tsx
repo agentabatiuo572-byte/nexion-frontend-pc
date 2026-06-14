@@ -16,19 +16,22 @@ import { useId } from "react";
 import { Activity, BarChart3, PieChart, TrendingUp } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import { LEDGER } from "@/lib/mock/admin/ledger";
+import { PHASES as PHASE_NODES } from "@/lib/mock/admin/command-center";
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-// ---- 12 月节奏阶段(强度指数 + 状态)。当前 P3 扩张期,阶段进度 58%。 ----
+// ---- 12 月节奏阶段。阶段名单一源 = command-center.PHASES(曾本地另写「渗透/成熟」与权威「激活/深化」分叉,
+// 2026-06-10 收敛);强度指数/进度态为本节奏页专属演示维度。当前 P3 扩张期,阶段进度 58%。 ----
 type PhaseState = "done" | "cur" | "next";
-const PHASES: { p: string; nm: string; intensity: number; state: PhaseState }[] = [
-  { p: "P1", nm: "拉新启动", intensity: 55, state: "done" },
-  { p: "P2", nm: "渗透", intensity: 78, state: "done" },
-  { p: "P3", nm: "扩张", intensity: 92, state: "cur" },
-  { p: "P4", nm: "成熟", intensity: 70, state: "next" },
-  { p: "P5", nm: "收紧", intensity: 40, state: "next" },
-  { p: "P6", nm: "软退场", intensity: 18, state: "next" },
+const PHASE_META: { intensity: number; state: PhaseState }[] = [
+  { intensity: 55, state: "done" },
+  { intensity: 78, state: "done" },
+  { intensity: 92, state: "cur" },
+  { intensity: 70, state: "next" },
+  { intensity: 40, state: "next" },
+  { intensity: 18, state: "next" },
 ];
+const PHASES = PHASE_NODES.map((n, i) => ({ p: n.code, nm: n.name, ...PHASE_META[i] }));
 const CUR_IDX = 2; // P3
 const CUR_PROG = 0.58; // 本阶段已进行 58%
 const MAX_I = Math.max(...PHASES.map((p) => p.intensity));

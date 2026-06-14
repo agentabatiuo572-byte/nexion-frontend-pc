@@ -43,7 +43,7 @@ export const RATETIER: { nm: string; req: string; rate: string; dist: string; cl
   { nm: "Premium", req: "$50,000+ 网络 GMV", rate: "12%", dist: "11%", cls: "t-2" },
   { nm: "Diamond", req: "$500,000+ 网络 GMV", rate: "15%", dist: "3%", cls: "t-3" },
 ];
-// 8 参数卡:amp = 逻辑放大(MC amplifies);vamp = 卡面 ⚡ 视觉(仅 promo/peer 显示,对齐设计稿)。
+// 8 参数卡:amp = 逻辑放大(操作确认 amplifies);vamp = 卡面 ⚡ 视觉(仅 promo/peer 显示,对齐设计稿)。
 export const F2_PARAMS: {
   id: string; name: string; key: string; def: string; vcls: string; sub: string; amp: boolean; vamp: boolean; unit?: string;
 }[] = [

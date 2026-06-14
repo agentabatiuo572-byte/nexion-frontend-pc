@@ -31,12 +31,12 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                   <span className={`lchip${u.direct ? "" : " ext"}`}>{u.l}</span>
                   <div className="rate-bar"><div className={`f${u.direct ? "" : " ext"}`} style={{ width: `${w}%` }}><span className="pct">{eff}</span></div></div>
                   <button className="nex-val" title="点击调整 NEX 奖励/$1" style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
-                    onClick={() => ctx.openMc({
+                    onClick={() => ctx.openActionConfirm({
                       name: `网络版税 ${u.l} NEX 奖励调整`, amplify: true, op: "param", paramKey: `F.unilevel.nex.${u.l}`,
                       edit: { kind: "text", current: nv }, detail: `${u.l} NEX 奖励/$1 当前 ${nv} · NEX 派发为资金流出,受 B1 覆盖率约束`,
                     })}>{nv}<small>NEX/$1</small></button>
                   <div style={{ fontSize: 11.5, fontWeight: u.direct ? 600 : 400, color: u.direct ? "var(--brand)" : "var(--ink-4)" }}>{u.ui}</div>
-                  <button className="fbtn primary amp" onClick={() => ctx.openMc({
+                  <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
                     name: `网络版税 ${u.l} 费率调整`, amplify: true, op: "param", paramKey: `F.unilevel.${u.l}`,
                     edit: { kind: "text", current: eff, unit: "%" },
                     detail: `${u.l} 当前 USDT ${eff} · NEX ${nv}/$1 · 改后对下一笔结算生效,不回溯已计提`,
@@ -75,7 +75,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
               <div className="pk">{p.name}<span className="tag">{p.key}</span></div>
               <div className={`pv${p.vcls ? " " + p.vcls : ""}`}>{eff}</div>
               <div className="psub">{p.sub}</div>
-              <button className={`fbtn primary${p.vamp ? " amp" : ""}`} onClick={() => ctx.openMc({
+              <button className={`fbtn primary${p.vamp ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
                 name: `${p.name}调整`, amplify: p.amp, op: "param", paramKey: p.key,
                 edit: { kind: "text", current: eff, unit: p.unit },
                 detail: `${p.name} 当前 ${eff}` + (p.amp ? " · 此项为放大资金流出动作,须核验 B1 覆盖率。" : " · 改后对下一笔结算生效。"),
@@ -87,7 +87,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
 
       <div className="guard">
         <span className="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg></span>
-        <div><b>合并出口护栏 §1.8</b> · 用户侧总版税 = <span className="mono">Direct Royalty(8–15%) + Network L1(10%)</span> 叠加最大 <b>25%</b>。上调任一费率前 server 会先核验 <b>B1 兑付覆盖率</b>(单源 LEDGER 实时派生)。所有调整经 <b>Maker-Checker 双人复核</b>后写入 A2 append-only 审计,改后对下一笔结算生效,不回溯已计提。</div>
+        <div><b>合并出口护栏 §1.8</b> · 用户侧总版税 = <span className="mono">Direct Royalty(8–15%) + Network L1(10%)</span> 叠加最大 <b>25%</b>。上调任一费率前 server 会先核验 <b>B1 兑付覆盖率</b>(单源 LEDGER 实时派生)。所有调整经 <b>操作确认</b>后写入 A2 append-only 审计,改后对下一笔结算生效,不回溯已计提。</div>
       </div>
 
       <p className="f-foot">L1 直推 10% 是承载招募奖励的「钩子层」;L4–L7 微薄费率主要做关系网保持。<b>peer 平级奖</b> 与 <b>promo 周倍率</b> 是仅有的两个会显著放大佣金流出的杠杆;两者同步上调时必须先核验 B1 覆盖率。</p>

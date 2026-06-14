@@ -5,6 +5,7 @@
  */
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { LEDGER } from "@/lib/mock/admin/ledger";
+import { KPIS as CORE_KPIS, MATURITY, kpiState } from "@/lib/mock/admin/design-data";
 
 // ── 12 月运营节奏(集中定义,topbar 与首页共用)──
 export interface PhaseNode {
@@ -55,15 +56,9 @@ export interface MaturityDay {
   interest: number;
   genesis: number;
 }
-export const MATURITY_7D: MaturityDay[] = [
-  { d: "06/02", withdraw: 62_000, interest: 18_000, genesis: 9_000 },
-  { d: "06/03", withdraw: 48_000, interest: 18_000, genesis: 9_000 },
-  { d: "06/04", withdraw: 71_000, interest: 22_000, genesis: 9_000 },
-  { d: "06/05", withdraw: 55_000, interest: 18_000, genesis: 9_000 },
-  { d: "06/06", withdraw: 88_000, interest: 26_000, genesis: 9_000 },
-  { d: "06/07", withdraw: 40_000, interest: 16_000, genesis: 9_000 },
-  { d: "06/08", withdraw: 52_000, interest: 19_000, genesis: 9_000 },
-];
+// 到期预测单一源 = design-data.MATURITY(D3 maturity-forecast 口径;B2 卡与 L3 报表同数)。
+// 曾另立一套 7 日值($416K 级)与 L3($3.92M 级)7× 分叉 —— 2026-06-10 收敛为派生。
+export const MATURITY_7D: MaturityDay[] = MATURITY.map((m) => ({ d: m.d, withdraw: m.withdraw, interest: m.interest, genesis: m.genesis }));
 
 // ── 转化漏斗(today)── prevCount = 昨日同级,用于环比 delta
 export interface FunnelStage {
@@ -90,16 +85,27 @@ export interface Kpi {
   series: number[]; // 近 8 日
   hint: string; // 口径说明(消黑话)
 }
-export const KPIS: Kpi[] = [
-  { key: "day0", label: "Day-0 接入率", value: "87%", target: "≥85%", pass: true, series: [82, 83, 85, 84, 86, 87, 87, 87], hint: "新用户设备首次产出 ≤90s 的占比(接入顺畅度)。近 8 日。" },
-  { key: "day7", label: "Day-7 留存", value: "58%", target: "≥60%", pass: false, series: [63, 62, 61, 60, 59, 59, 58, 58], hint: "注册满 7 天仍活跃的留存率。近 8 日。" },
-  { key: "l2l3", label: "L2→L3 首购转化", value: "18.0%", target: "≥16%", pass: true, series: [15, 15.5, 16, 16.8, 17.2, 17.6, 18, 18], hint: "已激活用户(L2)中完成首次购机(L3)的比例。近 8 日。" },
-  { key: "l3l4", label: "L3→L4 复购率", value: "35%", target: "≥30%", pass: true, series: [29, 30, 31, 32, 33, 34, 35, 35], hint: "已购机用户(L3)中再次购机(L4)的比例。近 8 日。" },
-  { key: "l4l5", label: "L4→L5 推广率", value: "22%", target: "≥25%", pass: false, series: [26, 25, 24, 24, 23, 23, 22, 22], hint: "复购用户(L4)中发展下线(L5)的比例。近 8 日。" },
-  { key: "nova", label: "Nova 推送 CTR", value: "31%", target: "≥28%", pass: true, series: [27, 28, 29, 30, 30, 31, 31, 31], hint: "Nova(站内 AI 助手)推送的点击率。近 8 日。" },
-  { key: "tvl", label: "Staking TVL", value: "$1.64M", target: "≥$1.5M", pass: true, series: [1.42, 1.48, 1.51, 1.55, 1.58, 1.6, 1.63, 1.64], hint: "Staking 锁仓总价值(TVL)。近 8 日,单位 $M。" },
-  { key: "genesis", label: "Genesis 售罄", value: "84%", target: "≥80%", pass: true, series: [70, 73, 76, 78, 80, 82, 83, 84], hint: "Genesis 节点累计售罄比例。近 8 日。" },
-];
+// 八项 KPI 单一源派生(design-data.KPIS:编号/数值/目标/序列/状态判定),此处仅做驾驶舱白话 hint 适配。
+// 曾另立一套数值(87%/18%/Staking TVL 等)与 L1 看板全面分叉 —— 2026-06-10 收敛,绝不回退为独立 mock。
+const KPI_HINTS: Record<number, string> = {
+  1: "新用户注册后 90 秒内收到首笔算力收益的占比(接入顺畅度)。",
+  2: "注册满 7 天仍打开 app 的留存率。",
+  3: "新注册用户中主动浏览商城的比例。",
+  4: "逛过商城的用户中完成付款的比例(健康带 5–10%)。",
+  5: "设备持有者中发出过邀请的比例(推广率,非收入口径)。",
+  6: "Nova 推送的点击率(点开次数 ÷ 发送次数)。",
+  7: "直推用户中首单触发了团队佣金的比例。",
+  8: "1,000 台创世节点全部售出所用天数(越小越好)。",
+};
+export const KPIS: Kpi[] = CORE_KPIS.map((k) => ({
+  key: `k${k.n}`,
+  label: `#${k.n} ${k.name}`,
+  value: `${k.value}${k.unit}`,
+  target: "band" in k && k.dir === "band" ? `${k.band[0]}–${k.band[1]}${k.unit}` : `${k.dir === "lte" ? "≤" : "≥"}${k.target}${k.unit}`,
+  pass: kpiState(k) === "g",
+  series: [...k.spark],
+  hint: KPI_HINTS[k.n],
+}));
 
 // ── 风险雷达 / 告警 ──
 export type AlertLevel = "high" | "mid" | "low";
@@ -111,22 +117,22 @@ export interface AlertItem {
 }
 export const ALERTS: AlertItem[] = [
   { id: "al-cov", level: "low", text: `出金压力比 ${(LEDGER.pressureRatio * 100).toFixed(0)}% · 远低 70% 红线 · 覆盖率 ${LEDGER.coverageRatio.toFixed(1)}% 绿区(扩张健康)`, href: "/overview/dual-ledger" },
-  { id: "al-multi", level: "high", text: "WD-2606-0148 命中多账户关联 · 待合规核查", href: "/finance/withdrawals" },
-  { id: "al-newbig", level: "mid", text: "新账户大额提现 ×3 待复核", href: "/finance/withdrawals" },
+  { id: "al-multi", level: "high", text: "WD-90408 关联多账户簇 CL-318(K1)· WR-02 已延迟观察", href: "/finance/withdrawals" }, // 对齐 D2 队列单源(旧 WD-2606 体系已删)
+  { id: "al-newbig", level: "mid", text: "K5 复审 hold 提现单 ×3 · 复审未过不可放行", href: "/finance/withdrawals" },
   { id: "al-kill", level: "low", text: "Kill-Switch 7/7 在线 · 全闸正常营业", href: "/emergency/kill-switch" },
 ];
 
-// ── 跨域待办(Maker-Checker 待我处理)。提现项数量由队列 store 实时算,这里给其余域。──
-export interface PendingApproval {
+// ── 跨域待办(操作确认 高敏操作动态)。提现项数量由队列 store 实时算,这里给其余域。──
+export interface PendingOperation {
   id: string;
   label: string;
   detail: string;
   href: string;
   requiredRole: AdminRole;
 }
-export const PENDING_APPROVALS: PendingApproval[] = [
-  { id: "pa-bigout", label: "大额放行待风控复核", detail: "2 单 · 合计 $52.3K", href: "/finance/withdrawals", requiredRole: "risk" },
-  { id: "pa-param", label: "提现参数变更待复核", detail: "日限上调申请 · 财务发起", href: "/finance/params", requiredRole: "finance" },
+export const PENDING_OPERATIONS: PendingOperation[] = [
+  { id: "pa-bigout", label: "大额放行待风控确认", detail: "2 单 · 合计 $9.3K", href: "/finance/withdrawals", requiredRole: "risk" }, // = D2 样本窗大额待确认 WD-90412($8.2K)+ WD-90391($1.1K)
+  { id: "pa-param", label: "提现参数变更待确认", detail: "日限上调申请 · 财务发起", href: "/finance/params", requiredRole: "finance" },
   { id: "pa-genesis", label: "Genesis 下架待解除", detail: "需覆盖率核验通过", href: "/emergency/kill-switch", requiredRole: "risk" },
 ];
 
@@ -135,13 +141,13 @@ export const DOMAIN_PULSE: Record<string, string> = {
   A: "操作员 12 · 今日审计 86",
   B: `覆盖率 ${LEDGER.coverageRatio.toFixed(1)}% · ${LEDGER.coverageRatio >= LEDGER.healthyPct ? "健康" : LEDGER.coverageRatio >= LEDGER.redlinePct ? "警戒" : "危急"}`,
   C: "活跃用户 28.4K · 高风险 2",
-  D: "待审提现 9 · 积压 $89.4K",
+  D: "待确认提现 23 · 冻结 5 · 覆盖率核验在位", // 对齐 D2 真渲染面(样本窗 4 + 存量 19;冻结 $12.4K)
   E: "在售 SKU 6 · 库存正常",
   F: "佣金待结 $18.2K",
-  G: "Staking TVL $1.64M · APY 正常",
+  G: "在锁 $1.50M · Genesis 847/1,000 · 五闸在线", // 对齐 G 域真渲染面(科目 #2/#8 口径;旧 TVL $11.82M 为发明已收敛)
   H: "P3 扩张期 · 第 7/12 月",
-  I: "推送 CTR 31% · 文案 A/B 2 组",
-  J: "Kill 7/7 在线 · Geo 屏蔽 2 国(制裁名单)",
-  K: "风险命中 14 · 待复核 5",
-  L: "8 KPI · 达标 6 / 未达 2",
+  I: "推送 CTR 27.3% · 文案 A/B 2 组", // 对齐 KPIS #6(单源)
+  J: "Kill 7/7 在线 · Geo 屏蔽 3 国(制裁名单)", // 对齐 GEOBLOCK 三态(KP/IR/SY)
+  K: "高风险簇 9 · KYC 复审 14(1 超时)", // 对齐 K1 高风险簇 / K5 待复审口径(K_RISK + k-tabs 样本窗)
+  L: "8 KPI · 达标 6 / 未达 2", // 静态回落值;首页实际由 page.tsx 按 KPIS 动态派生覆盖
 };

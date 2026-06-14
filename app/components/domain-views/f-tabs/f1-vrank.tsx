@@ -42,7 +42,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                   <div className="ct">{r.pop.toLocaleString()}</div>
                 </div>
                 <div className="lact">
-                  <button className="fbtn primary" onClick={() => ctx.openMc({
+                  <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
                     name: `V-Rank ${r.v} 门槛调整`, amplify: hasNex, op: "param", paramKey: `F.vrank.${r.v}`,
                     edit: { kind: "text", current: eff },
                     detail: `${r.v} 晋升门槛 · 当前 ${eff} · server 晋升判定改后对下一轮评估生效,不回溯已晋升用户。${hasNex ? "该阶含培育奖 NEX 派发,放大资金流出,受 B1 覆盖率约束。" : ""}`,

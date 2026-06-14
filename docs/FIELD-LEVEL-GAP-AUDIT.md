@@ -28,7 +28,7 @@
 | **E3 设备 baseRate** | E3 tab 无 baseRate 面板(只能绕 E1) | 各档日产 USDT/NEX 调参、任务奖励倍率 questBonus、滚存/封顶 | — | **P0** |
 | **E3 任务池** | OpsTask 5 字段,真接 store ✅ | 奖励**区间** min–max(被压成单值)、时长窗、逐模型 VRAM 门控、锁定任务潜在收益、sat 无输入 | 单价单值 vs 前端区间随机 | **P0** |
 | **G1 Staking** | g-view 硬编码 3 档,单档 kill✅ | 罚金/最小额/锁期/池容量**只读或无控件** | **APY 三套打架**:后台 8/12/18% vs 前端 `STAKING_APY` 12/35/80/180%(已抽验) | **P0** |
-| **G2 兑换** | 单/日/月 cap、手续费可调 | 平台日限、KYC 触发线、滑点/冷却/复核线 无控件 | 用户日限后台 $25K vs 前端 `USER_DAILY_CAP` $50;手续费 0.3% vs 前端 Free | **P0** |
+| **G2 兑换** | 单/日/月 cap、手续费可调 | 平台日限、KYC 触发线、滑点/冷却/确认线 无控件 | 用户日限后台 $25K vs 前端 `USER_DAILY_CAP` $50;手续费 0.3% vs 前端 Free | **P0** |
 | **G4 Genesis** | 单价/分红率/供给可调、二级 pause✅ | 收入归集比例、平台日交易量模型(分红可信度根)、挂单区间、最短持有 无控件 | **版税后台 5% vs 前端 `GENESIS_ROYALTY_RATE` 2.5%(已抽验)**;已售 812 vs 847;供给 1000 vs registry 2100 | **P0** |
 | **G3 行情** | 现价只读、pump/波动/oracle 可调、pause✅ | 价格不可设(前端自跑,设计如此) | NEX 价 $0.0428 vs registry $1.286 vs 前端动态 | P1 |
 | **G5 Premium/NEXv2/复投** | Premium 价/复投 3 参可调 | Premium 首月折扣/权益矩阵、NEX v2 全只读、复投门槛/预算 无控件 | 复投 APY 后台 15% vs 前端 35%;NEX v2 250% 只读 | P1(局部 P0) |
@@ -66,7 +66,7 @@
   - ⏳ **F 域后续**:区域大使 4 类报销桶(场地/KOL/物料/SDK)· F2 Rate Tier 4 档可调 · F4 配额/榜单多实体拆单值(Pro/Rack 库存、4 周期奖池)。
 - **批次 3-4(P1/P2)**:E3 设备 baseRate 面板 + questBonus · H5 streak 里程碑 + lucky 概率 · H4 活动按实例粒度 · H6 achievements 6 徽章 · G3/G5 等。
 
-## Audit(2026-06-05 · 3-agent 并行 + 回源复核)
+## Audit(2026-06-05 · 3-agent 并行 + 回源确认)
 
 全会话改动审计结论:**P0 = 0**(零自曝/零死控件/零回归破坏;字段镜像 OpsSku33⊇Product25+AI6 · OpsReview7⊇Review7 0 缺口;数值逐项对齐前端真值)。
 

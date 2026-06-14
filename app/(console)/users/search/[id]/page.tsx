@@ -6,7 +6,7 @@
  */
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Snowflake, LogOut, UserCog, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Snowflake, LogOut, UserCog, KeyRound, ShieldAlert } from "lucide-react";
 import { findUser, type UserKyc } from "@/lib/mock/admin/users";
 import { fmtUsd, fmtNum } from "@/lib/format";
 import { confirm, toast } from "@/lib/store/ui";
@@ -25,6 +25,8 @@ import { AccountSection } from "@/app/components/hub/account-section";
 import { CommerceSection } from "@/app/components/hub/commerce-section";
 import { NotificationSection } from "@/app/components/hub/notification-section";
 import { useUserOps, useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
+import { C4_LEDGER } from "@/app/components/domain-views/c-tabs/data";
 import type { AuditEntry } from "@/app/components/kit/audit-timeline";
 
 const KYC_TONE: Record<UserKyc, PillTone> = { 已认证: "success", 复审中: "warning", 待认证: "neutral" };
@@ -63,6 +65,18 @@ export default function UserDetailPage() {
   const frozen = hydrated ? (storeFrozen ?? false) : false;
   const setFrozen = useUserOps((s) => s.setFrozen);
   const opsLog = useUserOps((s) => s.log);
+  // 余额 = 种子 + 运营调整累计(C3 earningAppend 同 store;收益台账卡已叠加,主卡同源防双口径)。
+  const storeBalAdj = useUserOps((s) => s.users[params.id]?.balanceAdjustUsd);
+  const storeNexAdj = useUserOps((s) => s.users[params.id]?.balanceAdjustNex);
+  const balAdjUsd = hydrated ? (storeBalAdj ?? 0) : 0;
+  const balAdjNex = hydrated ? (storeNexAdj ?? 0) : 0;
+  // KYC 展示同源 C4 唯一真相源(audit P1 修):实时裁决(C.kyc.<id>.st,C4 人工/K5 回写)>
+  // C4 台账种子(usr_77D4 复审中等)> findUser 基础映射(不再自存一份口径)。
+  const pcParams = usePlatformConfig((s) => s.params);
+  const c4Live = hydrated ? (pcParams?.[`C.kyc.${params.id}.st`] as string | undefined) : undefined;
+  const c4Seed = C4_LEDGER.find((r) => r.id === params.id)?.st;
+  const KYC_ST_LABEL: Record<string, UserKyc> = { verified: "已认证", review: "复审中", none: "待认证" };
+  const kycLive: UserKyc = (c4Live && KYC_ST_LABEL[c4Live]) || (c4Seed && KYC_ST_LABEL[c4Seed]) || user?.kyc || "待认证";
 
   if (!user) {
     return (
@@ -79,7 +93,7 @@ export default function UserDetailPage() {
     const next = !frozen;
     const yes = await confirm({
       title: next ? "冻结账户?" : "解冻账户?",
-      message: next ? `冻结 ${user!.nickname} 的提现与交易,转合规核查。需第二角色复核 + 审计留痕。` : `恢复 ${user!.nickname} 的提现与交易能力。`,
+      message: next ? `冻结 ${user!.nickname} 的提现与交易,转合规核查。需填写操作理由 + 审计留痕。` : `恢复 ${user!.nickname} 的提现与交易能力。`,
       confirmLabel: next ? "确认冻结" : "确认解冻",
       danger: next,
     });
@@ -102,7 +116,7 @@ export default function UserDetailPage() {
 
   // KPI 卡点击 = 滚动到本页该用户对应的 360 卡(显示「该用户」明细),不跳全局看板。
   const kpis = [
-    { label: "可提余额", value: fmtUsd(user.balanceUsd), accent: "var(--admin-domain-d)", anchor: "hub-deposit" },
+    { label: "可提余额", value: fmtUsd(user.balanceUsd + balAdjUsd), accent: "var(--admin-domain-d)", anchor: "hub-deposit" },
     { label: "累计充值", value: fmtUsd(user.depositedUsd), accent: "var(--admin-domain-c)", anchor: "hub-deposit" },
     { label: "累计提现", value: fmtUsd(user.withdrawnUsd), accent: "var(--v5-warning)", anchor: "hub-withdrawal" },
     { label: "团队规模", value: `${fmtNum(user.teamSize)} 人`, accent: "var(--admin-domain-f)", anchor: "hub-referral" },
@@ -127,7 +141,7 @@ export default function UserDetailPage() {
           </div>
           <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>{user.email} · 注册 {user.registeredAt}({user.regPhase})</p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusPill label={`KYC ${user.kyc}`} tone={KYC_TONE[user.kyc]} size="sm" dot={false} />
+            <StatusPill label={`KYC ${kycLive}`} tone={KYC_TONE[kycLive]} size="sm" dot={false} />
             <StatusPill label={`风险 ${user.riskScore}`} tone={user.riskScore >= 70 ? "danger" : user.riskScore >= 40 ? "warning" : "success"} size="sm" />
             <span className="font-mono-tabular rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-3)" }}>分层 {user.lifecycle} · {user.vRank}</span>
             {user.flags.map((f) => (
@@ -139,7 +153,7 @@ export default function UserDetailPage() {
 
       {frozen && (
         <div className="mt-3 flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 12%, transparent)", color: "var(--v5-danger)", border: "1px solid color-mix(in srgb, var(--v5-danger) 30%, transparent)" }}>
-          <Snowflake size={14} /> 账户已冻结 — 提现与交易已停用,待第二角色复核解冻。
+          <Snowflake size={14} /> 账户已冻结 — 提现与交易已停用,待操作确认解冻。
         </div>
       )}
 
@@ -164,15 +178,15 @@ export default function UserDetailPage() {
                 <p className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>/ 100 · ≥70 高危</p>
               </div>
               <div className="flex-1">
-                <Row label="KYC 状态"><StatusPill label={user.kyc} tone={KYC_TONE[user.kyc]} size="sm" dot={false} /></Row>
+                <Row label="KYC 状态"><StatusPill label={kycLive} tone={KYC_TONE[kycLive]} size="sm" dot={false} /></Row>
                 <Row label="风险标记">{user.flags.length ? user.flags.join(" · ") : "无"}</Row>
               </div>
             </div>
           </Section>
 
           <Section title="资产 & 账户" tag="C3 余额资产 · 双币 USDT/NEX">
-            <Row label="可提余额 · USDT"><span className="font-mono-tabular">{fmtUsd(user.balanceUsd)}</span></Row>
-            <Row label="NEX 余额"><span className="font-mono-tabular">{(user.nexBalance ?? Math.round(user.balanceUsd * 1.6 + user.depositedUsd * 0.4)).toLocaleString()} NEX</span></Row>
+            <Row label="可提余额 · USDT"><span className="font-mono-tabular">{fmtUsd(user.balanceUsd + balAdjUsd)}</span></Row>
+            <Row label="NEX 余额"><span className="font-mono-tabular">{((user.nexBalance ?? Math.round(user.balanceUsd * 1.6 + user.depositedUsd * 0.4)) + balAdjNex).toLocaleString()} NEX</span></Row>
             <Row label="累计充值"><span className="font-mono-tabular">{fmtUsd(user.depositedUsd)}</span></Row>
             <Row label="累计提现"><span className="font-mono-tabular">{fmtUsd(user.withdrawnUsd)}</span></Row>
             <Row label="净沉淀"><span className="font-mono-tabular" style={{ color: user.depositedUsd - user.withdrawnUsd >= 0 ? "var(--v5-success)" : "var(--v5-danger)" }}>{fmtUsd(user.depositedUsd - user.withdrawnUsd)}</span></Row>
@@ -181,7 +195,7 @@ export default function UserDetailPage() {
 
         {/* 右:账户操作 + 会话 */}
         <div className="flex flex-col gap-4">
-          <Section title="账户操作" tag="C2 · 需 Maker-Checker 双审批">
+          <Section title="账户操作" tag="C2 · 需 操作确认">
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={doFreeze}
                 className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]" style={{ border: "1px solid var(--v5-border)", color: frozen ? "var(--v5-success)" : "var(--v5-ink-2)" }}>
@@ -195,9 +209,13 @@ export default function UserDetailPage() {
                 className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
                 <UserCog size={14} style={{ color: "var(--v5-tech-cyan)" }} /> impersonate
               </button>
+              <button type="button" onClick={() => act("重置该用户密码?", `失效 ${user.nickname} 的当前密码并发送一次性重置链接 · 同步踢线全部会话 · 操作确认留痕。`, "确认重置", "重置密码", "失效当前密码 + 发送一次性重置链接 + 全部会话踢线 · 审计留痕", "warning")}
+                className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
+                <KeyRound size={14} style={{ color: "var(--v5-warning)" }} /> 重置密码
+              </button>
             </div>
             <p className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
-              <ShieldAlert size={12} /> 高敏动作均需第二角色复核,全程写入审计。
+              <ShieldAlert size={12} /> 高敏动作均需操作确认,全程写入审计。
             </p>
           </Section>
 

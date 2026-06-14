@@ -26,7 +26,7 @@
 | `opsPurpose` | 枚举≥1:`fund_safety` / `payout_pacing` / `conversion` / `risk` / `network_growth` / `phase_12mo` / `content_compliance` / `platform_integrity` |
 | `querySurface` | 运营要**看到**什么(值 / 聚合 / 趋势 / 下钻) |
 | `crudActions` | 运营要**改**什么 + 目标态(`view`/`adjust`/`freeze`/`credit`/`debit`/`add`/`edit`/`delete`/`approve`/`toggle`/`export`/`reverse`…) |
-| `makerChecker` | bool;**资金 / 资产 / 收益 / 规则参数 / kill-switch 一律 true** |
+| `operationConfirm` | bool;**资金 / 资产 / 收益 / 规则参数 / kill-switch 一律 true** |
 | `serverCanonical` | server 权威约束一句话(抄前端 store 头注的 `PRODUCTION:` 行) |
 | `endpoint` | 读端 + 写端 `<VERB> /api/...`(取自 store 注 / `Nexion-prototype/lib/v3/_config/README.md`);无则 `TBD·建议<path>` |
 | `adminTarget` | `registry:<path>`(archetype 条目)/ `page:<route>`(旗舰)/ `hub:<section>`(360 区块) |
@@ -34,7 +34,7 @@
 | `batch` | `B0..` 排期 |
 
 ## 不变量(硬规则,对齐 nexion-admin-prd SKILL)
-1. **高敏写**(资金/资产/收益/规则/kill-switch)= `makerChecker:true` + 发起人不可自审 + server-canonical + Idempotency-Key + append-only(红冲不真删)。
+1. **高敏写**(资金/资产/收益/规则/kill-switch)= `operationConfirm:true` + 操作理由必填 + server-canonical + Idempotency-Key + append-only(红冲不真删)。
 2. **endpoint 必填**(真或 `TBD·建议`):每控制对应一个真后端端点,mock 结构 backend-replaceable。
 3. **可追溯**:每行有 `frontendSource`;`frontendAnchor=none` 须注「派生自代码」。
 4. **中性运营语言**:`querySurface`/`crudActions` 禁庞氏/割韭菜/scam;per-user 资产/收益 CRUD 正当性 = 补发/调整/红冲/对账差异处置。

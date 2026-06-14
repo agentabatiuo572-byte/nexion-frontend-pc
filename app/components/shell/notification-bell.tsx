@@ -2,13 +2,13 @@
 
 /**
  * 顶栏消息入口(设计稿 admin-shell 的 bell → Drawer 侧滑抽屉,非下拉)。
- * 右侧滑入、整高;标题「告警 & 待办」,两段:风险雷达告警(B5)+ Maker-Checker 待复核(A2);
- * 底部 CTA「前往 A2 审计中心」。数据取 canonical ALERTS + PENDING_APPROVALS。
+ * 右侧滑入、整高;标题「告警 & 待办」,两段:风险雷达告警(B5)+ 操作确认 待确认(A2);
+ * 底部 CTA「前往 A2 审计中心」。数据取 canonical ALERTS + PENDING_OPERATIONS。
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Bell, X, AlertTriangle, ChevronRight } from "lucide-react";
-import { ALERTS, PENDING_APPROVALS, type AlertLevel } from "@/lib/mock/admin/command-center";
+import { ALERTS, PENDING_OPERATIONS, type AlertLevel } from "@/lib/mock/admin/command-center";
 import { RoleBadge } from "@/app/components/kit/role-badge";
 
 const LEVEL: Record<AlertLevel, { color: string; label: string }> = {
@@ -86,7 +86,7 @@ function NotificationDrawer({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: "1px solid var(--v5-border)" }}>
           <div className="min-w-0">
             <p className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}>告警 &amp; 待办</p>
-            <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{ALERTS.length} 条告警 · {PENDING_APPROVALS.length} 项待复核</p>
+            <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{ALERTS.length} 条告警 · {PENDING_OPERATIONS.length} 项待确认</p>
           </div>
           <button
             type="button"
@@ -128,10 +128,10 @@ function NotificationDrawer({ onClose }: { onClose: () => void }) {
             })}
           </div>
 
-          {/* Maker-Checker 待复核 A2 */}
-          <p className="mb-2.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>Maker-Checker 待复核 · A2</p>
+          {/* 操作确认 待确认 A2 */}
+          <p className="mb-2.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>操作确认 待确认 · A2</p>
           <div className="flex flex-col gap-2">
-            {PENDING_APPROVALS.map((a) => (
+            {PENDING_OPERATIONS.map((a) => (
               <Link
                 key={a.id}
                 href={a.href}

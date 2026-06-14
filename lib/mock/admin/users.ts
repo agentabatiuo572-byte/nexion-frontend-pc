@@ -131,7 +131,8 @@ function fromDesignUser(d: (typeof DESIGN_USERS)[number]): AdminUser {
   const handle = d.name.toLowerCase().replace(/[^a-z]/g, "").slice(0, 6) || "user";
   return {
     id: d.id, nickname: d.name, email: `${handle}***@mail.com`, registeredAt: d.joined,
-    kyc: d.kyc === "verified" ? "已认证" : "复审中", riskScore: d.risk,
+    // pending = 未验证 → 「待认证」(C4 三态口径;「复审中」专指 K5 工单在审,页面层再按 C4 权威实时覆盖)。
+    kyc: d.kyc === "verified" ? "已认证" : "待认证", riskScore: d.risk,
     balanceUsd: d.balance, nexBalance: d.nex, depositedUsd: deposited, withdrawnUsd: withdrawn,
     teamSize: 2 + Math.floor(r() * 40), deviceCount: d.devices, lifecycle: d.lc, vRank: d.vrank,
     regPhase: "P" + (1 + Math.floor(r() * 6)), flags: d.frozen ? ["已冻结"] : d.risk >= 70 ? ["高风险"] : [],

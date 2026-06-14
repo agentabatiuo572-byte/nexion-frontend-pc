@@ -4,7 +4,7 @@
 
 本域 24 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
 | CGM-E-001 | per-user | function-action | useApp.addDevice / activateDevice / deactivateD… | platform_integrity,payout_pacing,conver… | 查/调用户活跃槽位与库存;运营改 MAX_DEVICES 上限(_config README 标:改常量薅多设备 yield,client… | Y | 读 TBD·建议 GET /api/devices · 写 POST /api/devices/d… | gap |
 | CGM-E-002 | per-user | function-action | useApp.recycleDevice (salvage credit, removes d… | fund_safety,platform_integrity,conversi… | 查/审回收记录;运营可调 salvage 参数影响回收额(见 tradein-config 行)。回收须 bill+receipt 复合写 | Y | 写 POST /api/devices/recycle(头注,TBD candidate,not … | gap |

@@ -8,7 +8,7 @@
  *        (异常账户命中规则 bars / 告警严重度 donut / 近 7 日告警量 mini-bars)
  * 顶部域标/标题由共享 BPageHeader 承载;布局端口设计稿(risk-radar.css · .radarpage 作用域)。
  * 数据 mock(确定性),与注册表 lib/admin/registry/b.ts 的 /overview/risk-radar 口径一致。
- * 只读看板:无写动作(熔断切换在 J1 · 经 Maker-Checker 双签);CTA 深链 Kill-Switch 矩阵。
+ * 只读看板:无写动作(熔断切换在 J1 · 经 操作确认);CTA 深链 Kill-Switch 矩阵。
  */
 import "../b-domain.css";
 import "./risk-radar.css";
@@ -23,7 +23,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
-import { KILLSWITCH } from "@/lib/mock/admin/design-data";
+import { KILLSWITCH, RISK } from "@/lib/mock/admin/design-data";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { LEDGER } from "@/lib/mock/admin/ledger";
@@ -32,7 +32,7 @@ import { LEDGER } from "@/lib/mock/admin/ledger";
 
 // Kill-Switch 闸门 — 单一源:闸集/标识取自 J1 权威 KILLSWITCH;在线态以 platform-config-store
 // (J.killswitch.<key>)为准、缺省回落 KILLSWITCH.on —— 与 J1 矩阵恒一致(operator 在 J1 熔断后,
-// 本只读雷达即时同步)。7 闸:资金/兑付 5 + 获客/收入 2;此处只读,熔断/恢复在 J1 双签。
+// 本只读雷达即时同步)。7 闸:资金/兑付 5 + 获客/收入 2;此处只读,熔断/恢复在 J1 操作确认。
 const GATE_NAMES: Record<string, string> = {
   withdraw: "提现闸", exchange: "兑换闸", staking: "算力质押闸",
   nexv2: "NEX v2 Lock", genesis: "Genesis 闸", trial: "试用闸", premium: "Premium 订阅",
@@ -41,7 +41,7 @@ const GATE_NAMES: Record<string, string> = {
 // 未处理告警 feed — 每条深链至告警来源域(点击钻取处置)。
 const FEED: { sev: "p0" | "p1" | "p2"; t: string; m: string; href: string }[] = [
   { sev: "p2", t: `出金压力比 ${(LEDGER.pressureRatio * 100).toFixed(0)}% 远低 70% 红线 · 覆盖率 ${LEDGER.coverageRatio.toFixed(1)}% 绿区`, m: "B1 双账本 · 4m 前", href: "/overview/dual-ledger" },
-  { sev: "p1", t: "K2 检出异常提现簇 +9 命中", m: "K2 套利检测 · 12m 前", href: "/risk/abuse" },
+  { sev: "p1", t: "K2 闭环判定 4 起(本月) · 预警转人工 17", m: "K2 套利检测 · 12m 前", href: "/risk/abuse" },
   { sev: "p2", t: "24h 资金净流入 +33% · 扩张健康", m: "D3 资金池 · 26m 前", href: "/finance/pool" },
   { sev: "p2", t: "提现队列积压 142 单 · $430K", m: "D2 提现队列 · 41m 前", href: "/finance/withdrawals" },
   { sev: "p2", t: "提现队列占储备 6.8% · 远低 15% 预警线", m: "B5 雷达 · 1h 前", href: "/overview/liquidity" },
@@ -155,7 +155,7 @@ export default function RiskRadarPage() {
               {GATES_TRIPPED === 0
                 ? `${GATES.length} 闸全绿待命`
                 : `${GATES.length} 闸 · ${GATES_TRIPPED} 已熔断(详见 J1)`}
-              {" "}· 熔断 / 恢复需 J 域 风控主管 + 总管理员 双签
+              {" "}· 熔断 / 恢复需 J 域 风控主管 + 总管理员 操作确认
             </div>
           </section>
 
@@ -285,6 +285,15 @@ export default function RiskRadarPage() {
                 <span key={i}>W{i + 1}</span>
               ))}
             </div>
+            {/* 挤兑比率副灯 — 储备生存度量,与出金压力比 e(t)(流量健康)两层防线;红线 40% = J1 R1 自动熔断引用线 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)", fontSize: 11.5 }}>
+              <span style={{ color: "var(--ink-3)" }}>
+                挤兑比率(24h 提现申请 ÷ 储备){" "}
+                <span className="help" data-tip="储备生存度量,与出金压力比(流量健康,早期警戒)互补分层。黄 20% 预警 · 红 40% 为 J1 提现闸自动熔断引用线(R1,J1 引用不另持)。">?</span>
+              </span>
+              <span style={{ marginLeft: "auto", fontFamily: "var(--font-jet-mono), monospace", fontWeight: 600, color: "var(--success)" }}>{RISK.bankRunRatio}%</span>
+              <span style={{ color: "var(--ink-4)" }}>黄 20% · 红 40%(J1 R1 引用)</span>
+            </div>
           </section>
 
           {/* 底部三联 */}
@@ -374,7 +383,7 @@ export default function RiskRadarPage() {
 
       <p className="b-foot">
         出金压力比 <b>32%</b>,远低 70% 红线、扩张健康;异常账户 +9 主要来自多开与自循环刷返。
-        <b>{GATES_TRIPPED === 0 ? `Kill-Switch ${GATES.length} 闸全绿(0 / ${GATES.length} 熔断)` : `Kill-Switch ${GATES_TRIPPED} / ${GATES.length} 闸已熔断`}</b>,P0 告警为覆盖率逼近健康线下方预警。熔断触发需 J 域 Maker-Checker 双签 + 全站广播。
+        <b>{GATES_TRIPPED === 0 ? `Kill-Switch ${GATES.length} 闸全绿(0 / ${GATES.length} 熔断)` : `Kill-Switch ${GATES_TRIPPED} / ${GATES.length} 闸已熔断`}</b>,P0 告警为覆盖率逼近健康线下方预警。熔断触发需 J 域 操作确认 + 全站广播。
       </p>
     </div>
   );

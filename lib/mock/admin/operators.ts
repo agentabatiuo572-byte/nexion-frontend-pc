@@ -1,4 +1,4 @@
-/** 运营人员身份(Maker/Checker 演示用)。 */
+/** 运营人员身份(操作员 / 执行门槛 演示用)。 */
 import type { AdminRole } from "@/lib/nav/console-nav";
 
 export interface Operator {

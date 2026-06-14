@@ -3,7 +3,7 @@
 /**
  * 360 HUB · 投入卡(deposit 只读下钻)— C1·deepening。
  * 全部只读引用既有权威:累计/余额来自 C1 聚合(AdminUser)、逐笔来自 D4 账本、曲线来自 wallet.topup_confirmed 事件。
- * 本卡无写动作;一切处置跳转 D1(/finance/recon)/ C3(/users/assets)既有面(MC 双签)。
+ * 本卡无写动作;一切处置跳转 D1(/finance/recon)/ C3(/users/assets)既有面(操作确认)。
  * PRD: Nexion_运营控制后台PRD_v1.md §C1·deepening。CGM: CGM-D-011/017/003/020 + CGM-C usdtBalance。
  */
 import Link from "next/link";
@@ -110,7 +110,7 @@ export function DepositSection({ user }: { user: AdminUser }) {
                 <span style={{ color: "var(--v5-ink-3)" }}>{a.tsLabel} · {a.kind} · 工单 {a.ticket}</span>
                 <span className="flex items-center gap-2">
                   <span className="font-mono-tabular" style={{ color: a.deltaUsd >= 0 ? "var(--v5-success)" : "var(--v5-danger)" }}>{a.deltaUsd >= 0 ? "+" : ""}{fmtUsd(a.deltaUsd)}</span>
-                  <span style={{ color: "var(--v5-ink-4)" }}>{a.maker}→{a.checker}</span>
+                  <span style={{ color: "var(--v5-ink-4)" }}>{a.operator}→{a.roleGate}</span>
                 </span>
               </li>
             ))}
@@ -123,7 +123,7 @@ export function DepositSection({ user }: { user: AdminUser }) {
           <Link href="/users/assets" prefetch={false} className="inline-flex items-center gap-1 rounded-[9px] px-3 py-1.5 text-[12px] transition-colors hover:bg-[var(--v5-surface-2)]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
             纯余额补记 <ArrowUpRight size={13} style={{ color: "var(--admin-domain-c)" }} />
           </Link>
-          <span className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>处置在 D1/C3 既有面执行 · MC 双签 + 发起人不可自审 + append-only</AutoGloss></span>
+          <span className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>处置在 D1/C3 既有面执行 · 操作确认 + 操作理由必填 + append-only</AutoGloss></span>
         </div>
       </div>
     </div>

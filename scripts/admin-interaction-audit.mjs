@@ -6,7 +6,7 @@
 //   E persist 不显:读 admin persist store 的组件缺水合门(useOpsHydrated/mounted)
 //   F 版本漂移:前端 PRD 文件名 / 内部版本表 / prd-guard 路径 三者版本号不一致
 //   G 凭据反模式:运营后台出现明文密码输入(应走邀请 / SSO / 临时密码强制改)
-//   H 绕 Maker-Checker:高敏处置(放行/驳回/封禁/冻结/终止/升级/kill/红冲…)的 onClick 直接 setParam 或仅高敏 setToast 而未经 setMc 双签(C-10 强制登出 + 本轮 a/c/k-view 放行驳回/终止/升级 教训)
+//   H 绕 操作确认:高敏处置(放行/驳回/封禁/冻结/终止/升级/kill/红冲…)的 onClick 直接 setParam 或仅高敏 setToast 而未经 setActionConfirm 操作确认(C-10 强制登出 + 本轮 a/c/k-view 放行驳回/终止/升级 教训)
 // 用法:node scripts/admin-interaction-audit.mjs   (verify.sh 末段调用)
 import fs from "fs";
 import path from "path";
@@ -28,6 +28,12 @@ function walk(dir, re, acc = []) {
 const findings = [];
 const add = (cls, sev, file, msg) => findings.push({ cls, sev, file: path.relative(ROOT, file), msg });
 const rel = (f) => path.relative(ROOT, f);
+function canonicalPathKey(p) {
+  let value = path.normalize(p).replace(/\\/g, "/").toLowerCase();
+  const wsl = value.match(/^\/mnt\/([a-z])\/(.+)$/);
+  if (wsl) value = `${wsl[1]}:/${wsl[2]}`;
+  return value;
+}
 
 // ───────────── A 死控件:hub 卡有动作按钮却没接真状态 store ─────────────
 for (const f of walk(path.join(ROOT, "app/components/hub"), /\.tsx$/)) {
@@ -93,10 +99,15 @@ for (const f of walk(path.join(ROOT, "app"), /\.tsx$/)) {
 
 // ───────────── F 前端 PRD 版本号三处一致 ─────────────
 (() => {
-  const prdFiles = fs.readdirSync(PLAN).filter((n) => /^Nexion_产品功能架构设计文档_v[\d.]+\.md$/.test(n));
-  if (prdFiles.length !== 1) { add("F", "MEDIUM", path.join(PLAN, "(prd)"), `前端 PRD 文件应唯一,实测 ${prdFiles.length} 个:${prdFiles.join(", ")}`); return; }
+  const prdDir = path.join(PLAN, "PRD");
+  const prdFiles = fs.readdirSync(prdDir).filter((n) => /^Nexion_产品功能架构设计文档_v[\d.]+\.md$/.test(n));
+  if (prdFiles.length !== 1) { add("F", "MEDIUM", prdDir, `前端 PRD 文件应唯一,实测 ${prdFiles.length} 个:${prdFiles.join(", ")}`); return; }
   const fileVer = prdFiles[0].match(/_v([\d.]+)\.md$/)[1];
   const guard = read(path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"));
+  const expectedPrd = path.join(prdDir, prdFiles[0]);
+  const guardPath = (guard.match(/const PRD = normalize\(['"]([^'"]+)['"]\)/) || [])[1];
+  if (!guardPath) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), "prd-guard 未声明 canonical PRD 路径");
+  else if (canonicalPathKey(guardPath) !== canonicalPathKey(expectedPrd)) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), `prd-guard 守护路径 ${guardPath} ≠ canonical PRD ${expectedPrd}`);
   const guardVer = (guard.match(/产品功能架构设计文档_v([\d.]+)\.md/) || [])[1];
   if (guardVer && guardVer !== fileVer) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), `prd-guard 守护版本 v${guardVer} ≠ 实际 PRD 文件 v${fileVer}`);
 })();
@@ -115,9 +126,9 @@ for (const dir of ["app/components/domain-views", "app/components/hub", "app/(co
   }
 }
 
-// ───────────── H 高敏动作绕过 Maker-Checker ─────────────
-// 正确模式:高敏处置 onClick={() => setMc({ …, onApply/write:(reason)=>setParam(…) })} → MakerCheckerModal 双签 → 回调真写。
-// 绕过模式(FAIL):onClick 块内直接 setParam( 或仅做高敏 setToast(,而不经 setMc( → 单人即时生效 / 假装完成
+// ───────────── H 高敏动作绕过 操作确认 ─────────────
+// 正确模式:高敏处置 onClick={() => setActionConfirm({ …, onApply/write:(reason)=>setParam(…) })} → OperationConfirmModal 操作确认 → 回调真写。
+// 绕过模式(FAIL):onClick 块内直接 setParam( 或仅做高敏 setToast(,而不经 setActionConfirm( → 单人即时生效 / 假装完成
 //   (C-10 强制登出直接 setParam + 本轮 a-view 放行驳回 / c-view 终止 impersonate / k-view 升级 KYC 仅 setToast 教训)。
 const HISENS_VERB = /(放行|驳回|批准|核准|封禁|解封|冻结|解冻|终止|升级|降级|关停|关闭|kill|强制|没收|清退|红冲|核销|罚没|改派|调整余额)/;
 // 配平括号提取某 JSX 属性的完整 {…} 块(容忍内部嵌套 / 模板字符串的平衡 {})。
@@ -134,14 +145,14 @@ for (const f of walk(path.join(ROOT, "app/components/domain-views"), /-view\.tsx
   const s = read(f);
   if (s.includes("audit-ok:mc")) continue;
   for (const blk of extractAttrBlocks(s, "onClick")) {
-    if (/setMc\(/.test(blk)) continue;          // 走 MC = 正确(setParam/toast 在 setMc 的 onApply/write 回调里)
-    if (/setParam\(/.test(blk)) {               // onClick 直接 setParam 未经 setMc = 绕双签(C-10 教训)
-      add("H", "HIGH", f, "onClick 直接 setParam 未经 setMc → 高敏写绕过 Maker-Checker 双签(C-10 教训)。改 onClick={() => setMc({ …, onApply/write:(reason)=>setParam(…) })};低敏确属即时生效则标 // audit-ok:mc");
+    if (/setActionConfirm\(/.test(blk)) continue;          // 走 操作确认 = 正确(setParam/toast 在 setActionConfirm 的 onApply/write 回调里)
+    if (/setParam\(/.test(blk)) {               // onClick 直接 setParam 未经 setActionConfirm = 绕操作确认(C-10 教训)
+      add("H", "HIGH", f, "onClick 直接 setParam 未经 setActionConfirm → 高敏写绕过 操作确认(C-10 教训)。改 onClick={() => setActionConfirm({ …, onApply/write:(reason)=>setParam(…) })};低敏确属即时生效则标 // audit-ok:mc");
       continue;
     }
-    const toastM = blk.match(/setToast\(\s*[`"']([^`"']*)/);  // 仅高敏处置 toast 而无 setMc = 绕MC + 死控件
+    const toastM = blk.match(/setToast\(\s*[`"']([^`"']*)/);  // 仅高敏处置 toast 而无 setActionConfirm = 绕操作确认 + 死控件
     if (toastM && HISENS_VERB.test(toastM[1])) {
-      add("H", "HIGH", f, `高敏处置仅 setToast("${toastM[1].slice(0, 16)}…")未经 setMc → 绕双签且未真写状态(死控件)。改走 setMc 双签 + 回调 setParam,或标 // audit-ok:mc`);
+      add("H", "HIGH", f, `高敏处置仅 setToast("${toastM[1].slice(0, 16)}…")未经 setActionConfirm → 绕操作确认且未真写状态(死控件)。改走 setActionConfirm 操作确认 + 回调 setParam,或标 // audit-ok:mc`);
     }
   }
 }
@@ -158,7 +169,7 @@ for (const f of walk(path.join(ROOT, "app/components/domain-views"), /-view\.tsx
 // ───────────── 报告 ─────────────
 const high = findings.filter((f) => f.sev === "HIGH");
 console.log(`交互完整性自查:扫描完成,发现 ${findings.length} 项(HIGH ${high.length})`);
-const CLS = { A: "死控件", B: "页头动作错配", C: "详情页链全局", E: "persist 水合门", F: "版本漂移", G: "凭据反模式", H: "绕 Maker-Checker", I: "操作列对齐规则" };
+const CLS = { A: "死控件", B: "页头动作错配", C: "详情页链全局", E: "persist 水合门", F: "版本漂移", G: "凭据反模式", H: "绕 操作确认", I: "操作列对齐规则" };
 for (const f of findings) console.log(`  ${f.sev === "HIGH" ? "✗" : "·"} [${f.cls} ${CLS[f.cls]}] ${f.file}\n      ${f.msg}`);
 if (high.length) { console.log(`\n✗ 交互完整性 FAIL — ${high.length} 项 HIGH 需修复(修后或显式 // audit-ok:* 豁免)`); process.exit(1); }
 console.log("✓ 交互完整性 PASS — 无 HIGH 残留");

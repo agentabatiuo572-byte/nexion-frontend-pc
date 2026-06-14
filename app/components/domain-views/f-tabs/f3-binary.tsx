@@ -76,7 +76,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">两轨结算门槛</span><span className="v">{thEff}</span></div>
           <div className="ckv"><span className="k">沉淀池(未达门槛)</span><span className="v">$1.2M</span></div>
           <div className="ckv"><span className="k">沉淀处置</span><span className="v" style={{ color: "var(--ink-3)" }}>月底归零</span></div>
-          <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openMc({ name: "两轨结算门槛调整", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `两轨结算最低门槛 · 当前 ${thEff} · 改后对下一周期结算生效,不影响本期已计提。` })}>调整门槛</button></div>
+          <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ name: "两轨结算门槛调整", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `两轨结算最低门槛 · 当前 ${thEff} · 改后对下一周期结算生效,不影响本期已计提。` })}>调整门槛</button></div>
         </div>
 
         <div className="cfg-card">
@@ -85,7 +85,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">当前比例</span><span className="v" style={{ color: "var(--brand)" }}>{rateEff}</span></div>
           <div className="ckv"><span className="k">今日匹配总额</span><span className="v">$10,490</span></div>
           <div className="ckv"><span className="k">月累计匹配</span><span className="v">$214,800</span></div>
-          <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openMc({ name: "平衡匹配比例调整", amplify: true, op: "param", paramKey: "F.binary.matchRate", edit: { kind: "text", current: rateEff, unit: "%" }, detail: `min(A,B) × 该比例日结算 · 当前 ${rateEff} · 放大佣金流出,受 B1 覆盖率约束。` })}>调整比例</button></div>
+          <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({ name: "平衡匹配比例调整", amplify: true, op: "param", paramKey: "F.binary.matchRate", edit: { kind: "text", current: rateEff, unit: "%" }, detail: `min(A,B) × 该比例日结算 · 当前 ${rateEff} · 放大佣金流出,受 B1 覆盖率约束。` })}>调整比例</button></div>
         </div>
 
         <div className="cfg-card">
@@ -95,13 +95,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">近 7d 自动分配</span><span className="v">1,284 成员</span></div>
           <div className="ckv"><span className="k">gvResetCron</span><span className="v" style={{ fontSize: 11 }}>{resetEff}</span></div>
           <div className="cfg-foot">
-            <button className="fbtn" onClick={() => ctx.openMc({ name: "自动安置策略调整", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "自动安置开关 · 关闭后新成员需手动安置(运营压力↑)。" })}>分配策略</button>
-            <button className="fbtn" onClick={() => ctx.openMc({ name: "GV 归零口径调整", op: "param", paramKey: "F.binary.gvResetCron", edit: { kind: "text", current: resetEff }, detail: "GV 月度归零 cron · 改为「保留」会拉大利息负债(科目 #3)与佣金应付,须严格 Maker-Checker。" })}>归零口径</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "自动安置策略调整", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "自动安置开关 · 关闭后新成员需手动安置(运营压力↑)。" })}>分配策略</button>
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "GV 归零口径调整", op: "param", paramKey: "F.binary.gvResetCron", edit: { kind: "text", current: resetEff }, detail: "GV 月度归零 cron · 改为「保留」会拉大利息负债(科目 #3)与佣金应付,须严格 操作确认。" })}>归零口径</button>
           </div>
         </div>
       </div>
 
-      <p className="f-foot">阻塞用户(单轨 &lt; $1k)占比 25%,是双轨制设计意图 — <b>逼用户两侧均衡发展</b>,而不只是单边狂铺。沉淀池月底归零是 B 端杠杆,但口径若改为「保留」则会拉大利息负债(科目 #3)与佣金应付,须严格 Maker-Checker。</p>
+      <p className="f-foot">阻塞用户(单轨 &lt; $1k)占比 25%,是双轨制设计意图 — <b>逼用户两侧均衡发展</b>,而不只是单边狂铺。沉淀池月底归零是 B 端杠杆,但口径若改为「保留」则会拉大利息负债(科目 #3)与佣金应付,须严格 操作确认。</p>
     </>
   );
 }

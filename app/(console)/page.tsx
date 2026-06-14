@@ -4,7 +4,7 @@
  * 运营指挥台(首页 /)。按 Claude Design「Nexion 运营控制后台」稿优点重构:
  * ① 页头(口径副标 + 对账导出)→ 破线条件 alertbar(仅建议)
  * ② 资金兑付安全 B1·B2·B5:CoverageHero(横向分区条 + 三账本)+ RiskRadar;FundPool 堆叠条 + 覆盖率趋势
- * ③ 实时运营脉搏 → ④ 待处理(Maker-Checker)→ ⑤ 转化漏斗 → ⑥ 八项 KPI → ⑦ 域速览
+ * ③ 实时运营脉搏 → ④ 待处理(操作确认)→ ⑤ 转化漏斗 → ⑥ 八项 KPI → ⑦ 域速览
  * 数字取 canonical LEDGER + 实时提现队列;其余 command-center mock。按角色过滤。侧栏沿用原风格。
  */
 import Link from "next/link";
@@ -13,16 +13,15 @@ import { AlertTriangle, Download } from "lucide-react";
 import type { NavDomain, AdminRole } from "@/lib/nav/console-nav";
 import { CONSOLE_NAV, visibleDomains, canSee, L2_COUNT } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { useWithdrawalQueue } from "@/lib/store/withdrawal-queue";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { LEDGER } from "@/lib/mock/admin/ledger";
-import { KILLSWITCH } from "@/lib/mock/admin/design-data";
+import { KILLSWITCH, RISK, WITHDRAWALS, D_FUND } from "@/lib/mock/admin/design-data";
 import {
   FUNNEL,
   KPIS,
   CURRENT_PHASE,
-  PENDING_APPROVALS,
+  PENDING_OPERATIONS,
   DOMAIN_PULSE,
   type AlertItem,
 } from "@/lib/mock/admin/command-center";
@@ -35,14 +34,14 @@ import { CoverageHero } from "@/app/components/dashboard/coverage-hero";
 import { ExposureCard } from "@/app/components/dashboard/exposure-card";
 import { FundPool } from "@/app/components/dashboard/fund-pool";
 import { RiskRadar, type KillGate } from "@/app/components/dashboard/risk-radar";
-import { ApprovalInbox, type ApprovalInboxItem } from "@/app/components/dashboard/approval-inbox";
+import { SensitiveOperationFeed, type SensitiveOperationItem } from "@/app/components/dashboard/sensitive-operation-feed";
 import { FunnelBars } from "@/app/components/dashboard/funnel-bars";
 import { PhaseCard } from "@/app/components/dashboard/phase-card";
 import { KpiWall } from "@/app/components/dashboard/kpi-wall";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-const FLAGGED_ACCOUNTS = 14; // K 域当前风险命中(对齐 DOMAIN_PULSE.K)
+const FLAGGED_ACCOUNTS = RISK.flaggedAccounts; // 异常账户 = K1 入簇账户总数(单源,K1 视图 sub 同数;曾本地写死 14 与旧口径分叉)
 
 function DomainTile({ domain, pulse }: { domain: NavDomain; pulse: string }) {
   const Icon = domain.icon;
@@ -82,11 +81,16 @@ export default function CommandCenter() {
   useEffect(() => setMounted(true), []);
   const role = useAdminAuth((s) => (mounted ? s.role : "superadmin"));
   const operator = useAdminAuth((s) => (mounted ? s.operator : "总管理员"));
-  const requests = useWithdrawalQueue((s) => s.requests);
 
   // Kill 闸状态 — 单一源:store(J.killswitch.<key>)为准、缺省回落 KILLSWITCH.on(与 J1 / B5 恒一致,7 闸)。
   const killParams = usePlatformConfig((s) => s.params);
   const opsHydrated = useOpsHydrated();
+
+  // 提现队列 — 单一源:design-data.WITHDRAWALS(D2 渲染面同表)+ store 实时态覆盖(D.withdraw.<id>.st);
+  // 旧 withdrawal-queue store(WD-2606 体系)已随 D 域 port 收敛删除,防三套提现单分叉。
+  const wdEffSt = (id: string, seed: string) =>
+    opsHydrated ? ((killParams?.[`D.withdraw.${id}.st`] as string | undefined) ?? seed) : seed;
+  const wdOpen = WITHDRAWALS.filter((w) => wdEffSt(w.id, w.st) === "review-pending");
   const KILL_GATES: KillGate[] = KILLSWITCH.map((k) => {
     const ov = opsHydrated ? (killParams?.[`J.killswitch.${k.key}`] as string | undefined) : undefined;
     return { key: k.key, on: ov ? ov === "on" : k.on };
@@ -97,21 +101,21 @@ export default function CommandCenter() {
   // ── 生命体征 / 实时派生 ──
   const cov = LEDGER.coverageRatio;
   const zoneLabel = cov < LEDGER.redlinePct ? "跌破红线" : cov < LEDGER.healthyPct ? "警戒" : "健康";
-  const open = requests.filter((r) => r.state === "pending" || r.state === "in_review");
-  const inReview = requests.filter((r) => r.state === "in_review").length;
-  const backlogUsd = open.reduce((s, r) => s + r.amountUsd, 0);
-  const bankRunRatio = round2((LEDGER.queueBacklogUsd / LEDGER.reserveUsd) * 100); // 挤兑比率口径=待提现负债/储备,对齐 FundPool 的 $430K
+  const inReview = D_FUND.wdPendingBase + wdOpen.length; // 待人工 = 存量 19 + 样本窗实时(D2 stat 同口径)
+  const backlogUsd = D_FUND.wdBacklogBaseUsd + wdOpen.reduce((s, r) => s + r.amount, 0);
+  // 队列积压比率 = 待提现负债存量 ÷ 储备(B5 雷达「挤兑比率」为 24h 申请流量口径 7.9%,两者口径不同,RiskRadar 内已分别标注)
+  const bankRunRatio = round2((LEDGER.queueBacklogUsd / LEDGER.reserveUsd) * 100);
   const outflowChg = Math.round(((Math.abs(LEDGER.netFlow24hUsd) - Math.abs(LEDGER.prev.netFlow24hUsd)) / Math.abs(LEDGER.prev.netFlow24hUsd)) * 100);
   const riskChg = LEDGER.avgRiskScore - LEDGER.prev.avgRiskScore;
 
-  // ── 待我处理(按角色过滤)──
-  const approvalItems: ApprovalInboxItem[] = [
-    { id: "pa-wd", label: "提现复核队列", detail: `${inReview} 单在审 · 积压 ${fmtUsdCompact(backlogUsd)}`, href: "/finance/withdrawals", role: "finance" as AdminRole },
-    ...PENDING_APPROVALS.map((p) => ({ id: p.id, label: p.label, detail: p.detail, href: p.href, role: p.requiredRole })),
+  // ── 高敏操作动态(按角色过滤)──
+  const sensitiveOperationItems: SensitiveOperationItem[] = [
+    { id: "pa-wd", label: "提现确认队列", detail: `${inReview} 单在审 · 积压 ${fmtUsdCompact(backlogUsd)}`, href: "/finance/withdrawals", role: "finance" as AdminRole },
+    ...PENDING_OPERATIONS.map((p) => ({ id: p.id, label: p.label, detail: p.detail, href: p.href, role: p.requiredRole })),
   ].filter((it) => canSee(role, [it.role]));
 
   // ── 实时告警(喂给 RiskRadar)──
-  const newAccountBig = open.filter((r) => r.kyc !== "已认证" && r.amountUsd >= 5000).length;
+  const k5HoldCnt = WITHDRAWALS.filter((w) => w.holdK5 && ["review-pending", "frozen", "delayed"].includes(wdEffSt(w.id, w.st))).length;
   const covLevel: AlertItem["level"] = cov < LEDGER.healthyPct ? "high" : "low";
   const covText =
     cov < LEDGER.redlinePct
@@ -125,18 +129,18 @@ export default function CommandCenter() {
   const killText =
     killTripped === 0
       ? `Kill-Switch ${killOnline}/${KILL_GATES.length} 在线 · 功能闸全部正常`
-      : `Kill-Switch ${killOnline}/${KILL_GATES.length} 在线 · ${killTripped} 熔断待复核`;
+      : `Kill-Switch ${killOnline}/${KILL_GATES.length} 在线 · ${killTripped} 熔断待确认`;
   const liveAlerts: AlertItem[] = [
     { id: "al-cov", level: covLevel, text: covText, href: "/overview/dual-ledger" },
-    { id: "al-multi", level: "high", text: "WD-2606-0148 命中多账户关联 · 待合规核查", href: "/finance/withdrawals" },
-    ...(newAccountBig > 0 ? [{ id: "al-newbig", level: "mid" as AlertItem["level"], text: `新账户大额提现 ×${newAccountBig} 待复核`, href: "/finance/withdrawals" }] : []),
+    { id: "al-multi", level: "high", text: "WD-90408 关联多账户簇 CL-318(K1)· WR-02 已延迟观察", href: "/finance/withdrawals" },
+    ...(k5HoldCnt > 0 ? [{ id: "al-k5hold", level: "mid" as AlertItem["level"], text: `K5 复审 hold 提现单 ×${k5HoldCnt} · 复审未过不可放行`, href: "/finance/withdrawals" }] : []),
     { id: "al-kill", level: killTripped === 0 ? "low" : "mid", text: killText, href: "/emergency/kill-switch" },
   ];
 
   const passedKpi = KPIS.filter((k) => k.pass).length;
   function pulseFor(code: string): string {
     if (code === "B") return `覆盖率 ${fmtPct(cov)} · ${zoneLabel}`;
-    if (code === "D") return `待审提现 ${open.length} · 积压 ${fmtUsdCompact(backlogUsd)}`;
+    if (code === "D") return `待确认提现 ${inReview} · 积压 ${fmtUsdCompact(backlogUsd)}`;
     if (code === "J") return `Kill ${killOnline}/${KILL_GATES.length} 在线${killTripped ? ` · ${killTripped} 熔断` : ""} · Geo 屏蔽 3 国`;
     if (code === "L") return `8 KPI · 达标 ${passedKpi} / 未达 ${KPIS.length - passedKpi}`;
     return DOMAIN_PULSE[code] ?? "";
@@ -236,16 +240,16 @@ export default function CommandCenter() {
           <KpiStatCard label="24h 净流入" value={fmtUsdCompact(LEDGER.netFlow24hUsd)} accent="var(--v5-success)" sublabel="较上窗口" hint="近 24 小时资金净流入额(扩张期毛流入 ≫ payout,储备累积)。" delta={{ dir: "up", text: `流入 +${outflowChg}%`, good: true }} />
         </Link>
         <Link href="/finance/withdrawals" prefetch={false} className="block transition-transform hover:-translate-y-0.5">
-          <KpiStatCard label="提现积压" value={`${fmtNum(open.length)} 单`} accent="var(--admin-domain-k)" sublabel={fmtUsdCompact(backlogUsd)} hint="进入复核、尚未放行的提现单数与金额。" />
+          <KpiStatCard label="提现积压" value={`${fmtNum(inReview)} 单`} accent="var(--admin-domain-k)" sublabel={fmtUsdCompact(backlogUsd)} hint="进入确认、尚未放行的提现单数与金额(存量 + 样本窗实时)。" />
         </Link>
         <Link href="/risk/scoring" prefetch={false} className="block transition-transform hover:-translate-y-0.5">
           <KpiStatCard label="风险评分均值" value={`${LEDGER.avgRiskScore}`} accent="var(--admin-domain-k)" sublabel="/ 100 · ≥70 高危" hint="在审提现的风险评分均值。" delta={{ dir: riskChg > 0 ? "up" : "down", text: `${riskChg > 0 ? "+" : ""}${riskChg}`, good: riskChg <= 0 }} />
         </Link>
       </div>
 
-      {/* ④ 待处理 · Maker-Checker */}
-      <SecLabel title="待处理 · Maker-Checker" modules="跨域审批 · 按角色" />
-      <ApprovalInbox items={approvalItems} />
+      {/* ④ 待处理 · 操作确认 */}
+      <SecLabel title="待处理 · 操作确认" modules="跨域确认 · 按角色" />
+      <SensitiveOperationFeed items={sensitiveOperationItems} />
 
       {/* ⑤ 转化与运营节奏 */}
       <SecLabel title="转化与运营节奏" modules="B3 · B4 · A4 派生" />

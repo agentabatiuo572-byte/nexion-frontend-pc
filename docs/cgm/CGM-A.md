@@ -4,7 +4,7 @@
 
 本域 26 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
 | CGM-A-001 | per-user | data-CRUD | Notification (items[]: id/kind/priority/title/b… | platform_integrity,content_compliance | 运营按用户检索通知历史;对错误投放的单条通知执行撤回/删除;对合规通知补发 | · | 读 GET /api/notifications?cursor=&limit=&priority=… | gap |
 | CGM-A-002 | per-user | function-action | useAuth.onboardingComplete / completeOnboarding… | platform_integrity,conversion,risk | 运营核查注册/登录记录;争议时手动标记 onboardingComplete 或强制登出;封号(置 isAuthenticated=fal… | Y | 写 POST /api/auth/{signup/signin/signout} + POST /… | gap |

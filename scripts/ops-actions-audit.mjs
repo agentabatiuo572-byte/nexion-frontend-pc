@@ -19,10 +19,10 @@ const VIEWS_DIR = path.join(ROOT, "app/components/domain-views");
 const BATCH_ORDER = ["P0", "P1", "P2"];
 const curBatch = process.env.OPS_BATCH || "";
 
-// 死控件信号(与 manifest.deadControlBaseline 同口径):MakerChecker stub(onConfirm 只「提交复核」toast)/ setActedLabel / onClick 直接 toast。
-// 注:不计 setMc 数 —— setMc 只是「打开复核弹窗」的通用机制,真写与否取决于 onConfirm(接 setParam/updateAccount/setFrozen=真动作)。
-//    「提交复核」是 stub 兜底的强特征,作「防新增 MC-stub」哨兵;补齐进度以 manifest built 行为准(双重保险)。
-const DEAD_SIGNALS = [/setToast\([^)]*(?:提交复核|已提交复核)/g, /setActedLabel\(/g, /onClick=\{\(\)\s*=>\s*\{?\s*setToast\(/g];
+// 死控件信号(与 manifest.deadControlBaseline 同口径):OperationConfirm stub(onConfirm 只「提交确认」toast)/ setActedLabel / onClick 直接 toast。
+// 注:不计 setActionConfirm 数 —— setActionConfirm 只是「打开确认弹窗」的通用机制,真写与否取决于 onConfirm(接 setParam/updateAccount/setFrozen=真动作)。
+//    「提交确认」是 stub 兜底的强特征,作「防新增 confirm-stub」哨兵;补齐进度以 manifest built 行为准(双重保险)。
+const DEAD_SIGNALS = [/setToast\([^)]*(?:提交确认|已确认生效)/g, /setActedLabel\(/g, /onClick=\{\(\)\s*=>\s*\{?\s*setToast\(/g];
 const countDead = (src) => DEAD_SIGNALS.reduce((n, re) => n + (src.match(re) || []).length, 0);
 
 // 收集 app/ 下所有 tsx 拼接 — 校验 built 的 storeAction 是否被任意 view 调用(不绑定单一文件,
@@ -45,7 +45,7 @@ for (const f of fs.readdirSync(VIEWS_DIR).filter((x) => /-view\.tsx$/.test(x)).s
   const actual = countDead(read(path.join(VIEWS_DIR, f)));
   const base = baseline[f];
   if (base === undefined) { warnings.push(`${f} 不在 deadControlBaseline(当前死控件特征=${actual})— 建议补一行哨兵`); continue; }
-  // 软哨兵:死控件特征计数受文案措辞影响(如「提交复核」字面量),不作硬 FAIL,仅提示。
+  // 软哨兵:死控件特征计数受文案措辞影响(如「提交确认」字面量),不作硬 FAIL,仅提示。
   // 硬保证靠下方:built 行 storeAction 真落地 + readonly 有据 + 批次收紧。
   if (actual > base) warnings.push(`${f}: 死控件特征 ${actual} > 基线 ${base}(+${actual - base})— 软提示(措辞会影响计数);确认是否有未登记 manifest 的新 stub`);
   else if (actual < base) { warnings.push(`${f}: 死控件 ${actual} < 基线 ${base}(已补 ${base - actual})— 可把 baseline 降到 ${actual}`); baselineDrift++; }

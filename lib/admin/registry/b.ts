@@ -280,7 +280,7 @@ export const DOMAIN_B: ModuleEntry[] = [
           value: "37",
           sub: "命中风控规则",
           accent: "var(--v5-warning)",
-          hint: "命中多开 / 自循环刷返 / 异常提现规则的账户数,待 G2 风控复核。",
+          hint: "命中多开 / 自循环刷返 / 异常提现规则的账户数,待 G2 风控确认。",
           delta: { dir: "up", text: "+9", good: false },
         },
         {
@@ -338,7 +338,7 @@ export const DOMAIN_B: ModuleEntry[] = [
         },
       ],
       controlLink: { label: "Kill-Switch 矩阵", href: "/emergency/kill-switch" },
-      note: "出金压力比 32%(模型口径)远低 70% 红线、扩张健康;异常账户 +9 主要来自多开与自循环刷返。Kill-Switch 7 闸全部在线(0 / 7 熔断,正常营业)。熔断触发需 J 域 Maker-Checker 双签 + 全站广播。",
+      note: "出金压力比 32%(模型口径)远低 70% 红线、扩张健康;异常账户 +9 主要来自多开与自循环刷返。Kill-Switch 7 闸全部在线(0 / 7 熔断,正常营业)。熔断触发需 J 域 操作确认 + 全站广播。",
     },
   },
 ];

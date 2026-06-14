@@ -4,7 +4,7 @@
 
 本域 9 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
 | CGM-I-001 | per-user | param-config | useLocale.code / setLocale / userSet | content_compliance,platform_integrity | 运营按区域配置默认语言与可用 locale 集合;核查 i18n 内容覆盖度(en/zh ~770 keys 镜像) | · | 读+写(用户) TBD·建议 GET/PUT /api/me/locale;目录 GET /api… | gap |
 | CGM-I-002 | per-user | data-CRUD | useProfile.displayName / bio / region / timezon… | platform_integrity,content_compliance,r… | 运营审核并强制修改/清空违规昵称或简介;封禁不当头像;按地区合规标记账户;核对 region 与实际管辖 | · | 读+写 TBD·建议 GET/PUT /api/me/profile;审核 POST /api/a… | gap |

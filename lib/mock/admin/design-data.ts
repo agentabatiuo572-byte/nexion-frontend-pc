@@ -19,6 +19,7 @@ export const ROLES: Record<string, { id: string; name: string; short: string; av
   audit: { id: "audit", name: "只读审计", short: "审计", av: "审", color: "#5F6A7E" },
 };
 
+// 八项 KPI 唯一权威源(口径 §2.4.6 / 目标 §18.2)。首页 KpiWall(command-center 派生)与 L1 看板均由本表派生,绝不另立数值。
 export const KPIS = [
   { n: 1, name: "Day 0 自动接入率", value: 96.4, target: 95, unit: "%", dir: "gte", cohort: "注册→90s 内首笔 receipt", vis: "V1", spark: [94, 95, 93, 96, 95, 96, 96.4] },
   { n: 2, name: "Day 7 留存", value: 58.2, target: 60, unit: "%", dir: "gte", cohort: "7 天后仍开过 app", vis: "V1", spark: [61, 60, 59, 58, 57, 59, 58.2] },
@@ -29,6 +30,21 @@ export const KPIS = [
   { n: 7, name: "团队佣金触发率", value: 76.0, target: 80, unit: "%", dir: "gte", cohort: "L1 直推被推荐人首单", vis: "V2", spark: [72, 73, 74, 75, 76, 75, 76] },
   { n: 8, name: "Genesis 售罄速度", value: 11, target: 14, unit: "天", dir: "lte", cohort: "售罄 1,000 张", vis: "V2", spark: [16, 15, 14, 13, 12, 12, 11] },
 ] as const;
+
+/** KPI 状态灯三态(g 达标 / y 预警:距目标 −offset% 区间内,band 型带内但低于 target 也记预警 / r 未达)。
+ * 首页与 L1 共用本判定(首页 pass = g),offset 默认 10(L1 视图参数可调)。 */
+export function kpiState(k: (typeof KPIS)[number], ylOffset = 10): "g" | "y" | "r" {
+  const band = "band" in k ? k.band : undefined;
+  if (band && k.dir === "band") {
+    if (k.value < band[0] * (1 - ylOffset / 100)) return "r";
+    if (k.value < band[0] || k.value > band[1]) return "y";
+    return k.value < k.target ? "y" : "g"; // 带内但低于 target = 带内偏低段,记预警
+  }
+  const pass = k.dir === "gte" ? k.value >= k.target : k.value <= k.target;
+  if (pass) return "g";
+  const near = k.dir === "gte" ? k.value >= k.target * (1 - ylOffset / 100) : k.value <= k.target * (1 + ylOffset / 100);
+  return near ? "y" : "r";
+}
 
 // 兑付/储备口径单一权威源 = LEDGER(指挥台 B1 同源);此处仅换算导出名,值不另立一套。
 const _r1 = (n: number) => Math.round(n * 10) / 10;
@@ -42,7 +58,7 @@ export const TREASURY = {
   deltaPct: _r1(LEDGER.coverageSeries[LEDGER.coverageSeries.length - 1] - LEDGER.coverageSeries[0]),
   netExposure: LEDGER.reserveUsd - LEDGER.liabilitiesUsd, // 储备−应付;现为正=盈余(118% 覆盖·绿区,m7 扩张)
   exposureSeries: LEDGER.coverageSeries.map((c) => Math.round(LEDGER.liabilitiesUsd * (c / 100 - 1))),
-  injectedCumulative: 12_400_000,
+  injectedCumulative: 300_000, // 手动注入登记累计(D3 储备明细行同源;旧 12.4M 超储备总额 6.34M,不自洽已修)
 };
 
 // 8 类负债 = LEDGER.accounts(单源);色用 --admin-cat-* token(不硬编码 hex)。
@@ -53,31 +69,44 @@ export const LIABILITIES = LEDGER.accounts.map((a, i) => ({
   color: `var(${a.catVar})`,
 }));
 
+// 到期负债预测(未来 7 天,今天=06-11 起含当日;D3 权威源,B2 卡 / L3 报表同数)。
+// 量级与 LEDGER 闭合:7 日提现解锁 $348K ≪ 科目#1 可提 $1.18M;7 日利息 $78K < 科目#3 存量 $312K;
+// Genesis 日分红 ≈ $20.3K/日 = 已售 847 节点 × $24/节点/日(基数口径:平台日交易量 $24.2M × 0.1% ÷ 1,000 slot;
+//   G4 权威调和:科目#4 $268K 按保底口径预提(节点价 × 0.1% = $10/节点/日 × ~31 日),基数口径高出保底的部分
+//   从当期交易抽成直接派发不占预提 —— $24/节点/日为产品权威档(14 月回本),与 G4 派发监控同源)。
+// (旧值 7 日到期 $4.0M 超科目存量数倍且日期落在过去,2026-06-10 D 域 port 修正;genesis 列 2026-06-11 G 域 port 对齐 $24 档。)
 export const MATURITY = [
-  { d: "06-02", withdraw: 420000, interest: 88000, genesis: 39000 },
-  { d: "06-03", withdraw: 380000, interest: 91000, genesis: 39000 },
-  { d: "06-04", withdraw: 510000, interest: 86000, genesis: 40000 },
-  { d: "06-05", withdraw: 340000, interest: 90000, genesis: 40000 },
-  { d: "06-06", withdraw: 610000, interest: 84000, genesis: 41000 },
-  { d: "06-07", withdraw: 290000, interest: 93000, genesis: 41000 },
-  { d: "06-08", withdraw: 470000, interest: 89000, genesis: 42000 },
+  { d: "06-11", withdraw: 52000, interest: 11000, genesis: 20300 },
+  { d: "06-12", withdraw: 47000, interest: 12000, genesis: 20300 },
+  { d: "06-13", withdraw: 63000, interest: 10000, genesis: 20400 },
+  { d: "06-14", withdraw: 41000, interest: 13000, genesis: 20400 },
+  { d: "06-15", withdraw: 58000, interest: 9000, genesis: 20500 },
+  { d: "06-16", withdraw: 38000, interest: 12000, genesis: 20500 },
+  { d: "06-17", withdraw: 49000, interest: 11000, genesis: 20600 },
 ];
+// 7 日到期聚合 + 储备可覆盖天数(单源派生;L3 报表 / D3 仪表盘共用,勿另算)。
+export const MAT_7D = MATURITY.reduce(
+  (s, m) => ({ withdraw: s.withdraw + m.withdraw, interest: s.interest + m.interest, genesis: s.genesis + m.genesis }),
+  { withdraw: 0, interest: 0, genesis: 0 },
+);
+export const RESERVE_COVER_DAYS = Math.round(LEDGER.reserveUsd / ((MAT_7D.withdraw + MAT_7D.interest + MAT_7D.genesis) / 7));
 
 export const FUNNEL = [
   { stage: "注册", ev: "auth.register_completed", users: 128400, cvr: null as number | null, lc: "L1", color: "#9EDC1D", target: undefined as string | undefined },
   { stage: "绑卡 $1 KYC", ev: "kyc.express_verified", users: 97300, cvr: 75.8, lc: "L2", color: "#B6E84A", target: undefined },
   { stage: "首购", ev: "checkout.completed", users: 33180, cvr: 34.1, lc: "L3→L4", target: ">30%", color: "#9B89E0" },
-  { stage: "复投", ev: "wallet.reinvest", users: 8920, cvr: 26.9, lc: "L5", color: "#B6A4FF", target: undefined },
+  { stage: "复投", ev: "checkout.completed ×2", users: 8920, cvr: 26.9, lc: "L5", color: "#B6A4FF", target: undefined }, // V1 降级口径(wallet.reinvest 未注册,V3 后切双口径;与 B3/L2 一致)
   { stage: "提现", ev: "withdraw.submitted", users: 21640, cvr: 65.2, lc: "L5", color: "#29D27F", target: undefined },
 ];
 
+// Phase 现状单一源对齐 command-center.CURRENT_PHASE(P3 扩张期 · 月 7;曾写「月 6 · 拉新加速期」分叉,2026-06-10 收敛)。
 export const PHASE = {
   current: "P3",
-  month: 6,
-  label: "月 6 · 拉新加速期",
+  month: 7,
+  label: "月 7 · 扩张期",
   dials: [
     { key: "withdrawCooldownDays", name: "提现冷却(天)", val: 30, unit: "d", trend: "↑" },
-    { key: "withdrawDailyCapUSD", name: "提现日限", val: "$2,000", trend: "—" },
+    { key: "complianceHoldEnabled", name: "增强合规审查", val: "未激活(P5 起)", trend: "—" }, // 提现日限非 Phase dial(D5 owns 次数制,PRD §6 D5),旧 withdrawDailyCapUSD 行已纠正
     { key: "withdrawPointsRatio", name: "提现积分门槛 /$100", val: "10", trend: "↑" },
     { key: "binaryDailyCapUSD", name: "双轨日封顶", val: "$2,000", trend: "—" },
     { key: "stakingApyBoost", name: "Staking APY 加成", val: "1.0×", trend: "—" },
@@ -90,41 +119,165 @@ export const PHASE = {
   timeline: ["P1", "P2", "P3", "P4", "P5", "P6"],
 };
 
+// 全平台总注册用户(C 域用户台账 / B3 累计漏斗 / K4 分布共用同一数;改这里 = 三处同步)。
+export const REGISTERED_USERS = 128_400;
+
+// ── K 域核心口径(design_handoff_k_domain port · 跨页消费:首页 DOMAIN_PULSE / 雷达 / K1-K5 视图)──
+// 簇统计 = base(列表样本窗以外的存量)+ k-tabs 样本实时态;K4 分布以 REGISTERED_USERS 闭合求和。
+export const K_RISK = {
+  clusterBase: 44, // 监控中簇存量(不含 k1 样本窗 5 簇中的活跃 3 簇 → 合计 47)
+  highBase: 7, // 高风险簇(强度≥0.7)存量 → 样本 CL-318(0.88)+CL-322(0.74)计入后 9
+  frozenBase: 11, // 已冻结簇存量 → 样本 CL-301 计入后 12
+  frozenAccountsBase: 80, // 已冻结账户存量 → +CL-301 6 账户 = 86
+  giftBlockedUsd: 2_140, // 新人礼拦截金额(本月,K1/K2 同源)
+  giftBlockedCnt: 428, // 新人礼拦截笔数(×200 NEX = 85,600 NEX)
+  loopConfirmed: 4, // K2 闭环判定(3 层全中,本月;RISK.alerts K2 行同源)
+  loopWarn: 17, // K2 预警转人工(≥2 层,30 天滑动窗)
+  boardSignals: 3, // K2 刷榜信号(本期,处置归 F8)
+  scoreMid: 9_502, // K4 中风险 40–69
+  scoreHigh: 1_790, // K4 高风险 ≥70(低风险 = REGISTERED_USERS − mid − high = 117,108)
+  overrideActive: 23, // K4 人工覆盖中
+  reviewOpenBase: 10, // K5 待复审存量(样本窗 4 单计入后 14)
+  reviewOverdue: 1, // K5 超时工单
+  reviewDecidedMonth: 86, // K5 本月已裁决(通过 71 / 驳回 15)
+  reviewDecidedPass: 71,
+  reviewFrozenUsd: 31_200, // K5 复审期冻结金额(对应提现单在 D2 冻结中)
+};
+
 export const RISK = {
+  // 挤兑比率 = 24h 提现申请额 ÷ 真实储备(B5 储备生存度量;黄线 20 / 红线 40=J1 R1 自动熔断引用线)。
+  // 与 LEDGER.pressureRatio(出金压力比 e(t),流量健康,红线 0.7)两层防线,术语不混用。
   bankRunRatio: 7.9,
+  // 异常账户口径 = K1 入簇账户总数(进入任一多账户关联簇的账户数;K4 高风险数是另一口径,见 K_RISK.scoreHigh)。
   flaggedAccounts: 342,
   // kill 闸状态单一源 = KILLSWITCH(本文件 export);此处不再镜像(曾 stale 漏 withdraw,易成陷阱)。
   alerts: [
     { sev: "warn", t: "Day7 留存 58.2% < 60% 目标", src: "B3 漏斗", age: "14m" },
     { sev: "info", t: "团队佣金触发率 76% < 80%", src: "F5 佣金审计", age: "1h" },
-    { sev: "warn", t: "K2 检出 12 个 trade-in 套利簇", src: "K2 套利检测", age: "2h" },
+    { sev: "warn", t: `K2 闭环判定 ${K_RISK.loopConfirmed} 起(本月) · 预警转人工 ${K_RISK.loopWarn}`, src: "K2 套利检测", age: "2h" },
   ],
 };
 
-export const WITHDRAWALS = [
-  { id: "WD-9F3A21", user: "usr_84F2", amount: 4200, status: "review", risk: 72, route: "转人工", kyc: "verified", age: "8m", chain: "TRC20", addr: "TJ9k...4aF2", cooldown: "已解锁" },
-  { id: "WD-9F3A18", user: "usr_19C7", amount: 980, status: "auto", risk: 18, route: "自动放行", kyc: "verified", age: "12m", chain: "TRC20", addr: "TQa3...9dE1", cooldown: "已解锁" },
-  { id: "WD-9F3A0E", user: "usr_55B1", amount: 12500, status: "frozen", risk: 91, route: "freeze", kyc: "pending", age: "21m", chain: "ERC20", addr: "0x7a...c4b8", cooldown: "冷却中 2d" },
-  { id: "WD-9F39FC", user: "usr_02A9", amount: 2300, status: "delay", risk: 54, route: "delay 24h", kyc: "verified", age: "33m", chain: "TRC20", addr: "TKm2...8xQ4", cooldown: "已解锁" },
-  { id: "WD-9F39E0", user: "usr_77D4", amount: 760, status: "auto", risk: 11, route: "自动放行", kyc: "verified", age: "40m", chain: "TRC20", addr: "TBn8...1pL9", cooldown: "已解锁" },
-  { id: "WD-9F39C2", user: "usr_31E8", amount: 8800, status: "review", risk: 68, route: "转人工", kyc: "verified", age: "55m", chain: "ERC20", addr: "0x2f...9a01", cooldown: "已解锁" },
-  { id: "WD-9F3990", user: "usr_90F0", amount: 340, status: "processing", risk: 9, route: "处理中", kyc: "verified", age: "1h", chain: "TRC20", addr: "TVc4...6rT2", cooldown: "已解锁" },
+// ── 提现队列(D2 渲染面 · 全平台提现单唯一源,design_handoff_d_domain port 2026-06-10)──
+// 单一时间线:单号/命中规则/时刻与 K3_HITS(k-tabs)逐条对齐;K5 工单(KR-7741/7702/7738/7729)引用同单同人;
+// risk = K4 同分单源(USERS.risk 权威;USERS 外 uid 在本表定义,K 域 userRisk 回落本表);riskDims 贡献闭合求和 = risk。
+// n24 = 24h 内提交第几笔(含被拒/退回的提交;D5 日限 1 次/日限的是「在途成功单」,被拒后重复提交正是 WR-02 速度信号)。
+// st 为种子态,实时态 = pget("D.withdraw.<id>.st");三套旧源(WD-9F3A* / WD-2606-*)已收敛于此。
+export type WithdrawalRow = {
+  id: string; user: string; amount: number; chain: string; addr: string;
+  risk: number; kyc: string; pts: boolean; n24: number; rules: string;
+  st: "review-pending" | "delayed" | "frozen" | "review-passed" | "rejected" | "refunded";
+  age: string;
+  /** 在审的 K5 复审工单号 —— 复审未过禁放行(PRD D2⑦:复审未过维持待确认/延迟)。 */
+  holdK5?: string;
+  info: [k: string, v: string][];
+  riskDims: [name: string, pt: number][];
+  hist: string;
+};
+export const WITHDRAWALS: WithdrawalRow[] = [
+  {
+    id: "WD-90412", user: "usr_31E8", amount: 8200, chain: "TRC20", addr: "TR7N…f2", risk: 68,
+    kyc: "已通过(复审中 K5)", pts: true, n24: 1, rules: "WR-01 大额→转人工", st: "review-pending", age: "24h", holdK5: "KR-7741",
+    info: [["用户分层", "L5 · V8 · 设备 6 台"], ["注册", "2025-12-11 · 181 天"], ["推荐位", "NX-3188 主链"], ["冷却", "已到期(30d)"], ["可提余额", "$51,200"], ["KYC 复审(K5)", "KR-7741 进行中 · 剩 6 天"], ["本单放行水位影响", "储备 −$8,200 · 负债科目 #6 同步核减(覆盖率几乎不变)"]],
+    riskDims: [["提现速度", 34], ["异常行为", 22], ["账户年龄", 6], ["多账户", 6]],
+    hist: "41 笔历史 · 全部正常到账 · 24h 内第 1 笔 · 历史月均提现 $6.8K",
+  },
+  {
+    id: "WD-90408", user: "usr_8807", amount: 240, chain: "ERC20", addr: "0x8a…4f", risk: 83,
+    kyc: "待复审", pts: true, n24: 4, rules: "WR-02 提速超限→延迟", st: "delayed", age: "1h",
+    info: [["用户分层", "L3 · V1 · 设备 1 台"], ["注册", "2026-05-12 · 29 天"], ["推荐位", "NX-8821(簇 CL-318)"], ["冷却", "已到期(30d)"], ["可提余额", "$340"], ["关联簇", "CL-318 · 已标可疑(K1)"]],
+    riskDims: [["多账户", 38], ["套利信号", 24], ["实名状态", 12], ["提现速度", 9]],
+    hist: "3 笔历史 · 24h 内第 4 次提交(前 3 笔已拒绝退回)· 全部小额快进快出",
+  },
+  {
+    id: "WD-90402", user: "usr_9F31", amount: 310, chain: "TRC20", addr: "TQ2k…91", risk: 46,
+    kyc: "快速实名", pts: true, n24: 1, rules: "WR-03 新账户→延迟", st: "delayed", age: "1h",
+    info: [["用户分层", "L1 · V0"], ["注册", "2026-06-05 · 5 天(新)"], ["冷却", "首笔 · 不适用"], ["可提余额", "$340"], ["新账户保护期", "7 天线未过(第 5 天)"]],
+    riskDims: [["账户年龄", 28], ["提现速度", 8], ["多账户", 10]],
+    hist: "首笔提现 · 注册第 5 天踩 WR-03 新账户线(< 7 天)→ 自动延迟,到期回队列",
+  },
+  {
+    id: "WD-90396", user: "usr_2231", amount: 1950, chain: "BTC", addr: "bc1q…7e", risk: 35,
+    kyc: "已通过(复审超时 K5)", pts: true, n24: 1, rules: "WR-04 低信誉地址→冻结", st: "frozen", age: "21d", holdK5: "KR-7702",
+    info: [["用户分层", "L4 · V3"], ["注册", "2025-11-20 · 203 天"], ["冻结原因", "目标地址命中链上黑名单(WR-04)"], ["评分备注", "88 → 35 人工覆盖(代理商收款,K4 台账)"], ["KYC 复审(K5)", "KR-7702 已超时 · 升级风控主管"]],
+    riskDims: [["地址信誉", 27], ["提现速度", 8]],
+    hist: "18 笔历史 · 16 正常 · 本单地址首次使用即命中黑名单(5/20 触发,与 K5 工单同刻)",
+  },
+  {
+    id: "WD-90391", user: "usr_84F2", amount: 1120, chain: "TRC20", addr: "TY8w…c3", risk: 72,
+    kyc: "已通过(兑换复审中 K5)", pts: true, n24: 5, rules: "WR-01 + WR-02(主路由转人工)", st: "review-pending", age: "3h",
+    info: [["用户分层", "L4 · V3"], ["注册", "2026-03-12 · 89 天"], ["冷却", "已到期"], ["可提余额", "$8,420"], ["24h 提交", "$9,400(5 次,前 4 笔已延迟/拒绝)"], ["KYC 复审(K5)", "KR-7729 大额兑换触发 · 今日"]],
+    riskDims: [["提现速度", 34], ["异常行为", 32], ["账户年龄", 6]],
+    hist: "24h 内第 5 次提交、夜间集中——典型化整为零特征;按最严合成走 WR-01 转人工",
+  },
+  {
+    id: "WD-90388", user: "usr_8812", amount: 95, chain: "TRC20", addr: "TM4u…b7", risk: 44,
+    kyc: "已通过", pts: true, n24: 4, rules: "WR-02 提速超限→延迟", st: "delayed", age: "2h",
+    info: [["用户分层", "L2 · V0"], ["注册", "2026-05-17 · 24 天"], ["冷却", "已到期"], ["可提余额", "$210"], ["提交节奏", "24h 第 4 次提交(前 3 笔被拒)"]],
+    riskDims: [["提现速度", 30], ["异常行为", 8], ["账户年龄", 6]],
+    hist: "小额高频试探 · 与 usr_8807 同模式不同簇 · WR-02 自动延迟观察",
+  },
+  {
+    id: "WD-90385", user: "usr_19C7", amount: 420, chain: "TRC20", addr: "TN3p…a8", risk: 18,
+    kyc: "已通过", pts: true, n24: 1, rules: "—", st: "review-pending", age: "12m",
+    info: [["用户分层", "L5 · V6"], ["注册", "2026-01-28 · 134 天"], ["冷却", "已到期"], ["可提余额", "$24,100"]],
+    riskDims: [["提现速度", 6], ["账户年龄", 2], ["异常行为", 10]],
+    hist: "29 笔历史全部正常 · 小额低风险未命中任何规则 · 符合快速通道",
+  },
+  {
+    id: "WD-90376", user: "usr_77D4", amount: 248, chain: "TRC20", addr: "TBn8…1p", risk: 11,
+    kyc: "快速实名(升级复审中 K5)", pts: false, n24: 1, rules: "—", st: "review-pending", age: "2d", holdK5: "KR-7738",
+    info: [["用户分层", "L2 · V0"], ["注册", "2026-05-30 · 11 天"], ["冷却", "首笔 · 不适用"], ["积分", "不足:5 / 25(每 $100 要 10 分)"], ["可提余额", "$310(本单 $248 = 80% 上限内)"], ["KYC 复审(K5)", "KR-7738 累计过线 · 剩 2 天"]],
+    riskDims: [["账户年龄", 6], ["提现速度", 2], ["异常行为", 3]],
+    hist: "首笔提现 · 提交时积分足额预扣,6/08 K1 拦截新人礼回收 −20 分 → 门槛不足挂起;非风控命中,等积分补足或人工裁定",
+  },
 ];
 
-export const APPROVALS = [
-  { id: "MC-2041", action: "提现批量放行", obj: "WD queue · 14 笔", maker: "finance·李", domain: "D2", risk: "高", amount: "$38,400", ts: "2m", reason: "SLA 临近,批量复核", covCheck: false },
-  { id: "MC-2039", action: "提现参数:日限上调", obj: "withdrawDailyCapUSD $2,000→$2,500", maker: "growth·王", domain: "D5", risk: "高·放大流出", amount: "—", ts: "18m", reason: "P3 拉新期提升体验", covCheck: true },
-  { id: "MC-2037", action: "余额调整", obj: "usr_84F2 +$1,200 NEX", maker: "support·张", domain: "C3", risk: "中", amount: "$1,200", ts: "34m", reason: "客诉补偿(工单 #88213)", covCheck: false },
-  { id: "MC-2034", action: "Kill-Switch 解除", obj: "nexv2 disable→enable", maker: "risk·陈", domain: "J1", risk: "高·放大流出", amount: "—", ts: "1h", reason: "监管核查完毕,恢复 NEX v2", covCheck: true },
+export const SENSITIVE_OPERATIONS = [
+  { id: "操作确认-2041", action: "提现批量放行", obj: "WD queue · 14 笔", operator: "finance·李", domain: "D2", risk: "高", amount: "$38,400", ts: "2m", reason: "SLA 临近,批量确认", covCheck: false },
+  { id: "操作确认-2039", action: "提现参数:日限上调", obj: "dailyLimitCount 1→2 次/日", operator: "growth·王", domain: "D5", risk: "高·放大流出", amount: "—", ts: "18m", reason: "P3 拉新期提升体验", covCheck: true },
+  // 与 C3 队列 ADJ-7741 / AUDIT 13:40(admin.balance_adjusted 发起层留痕)同一事件,单一叙事(币种 USDT 对齐 amount)。
+  { id: "操作确认-2037", action: "余额调整", obj: "ADJ-7741 · usr_84F2 +$1,200 USDT", operator: "support·张", domain: "C3", risk: "中", amount: "$1,200", ts: "34m", reason: "客诉补偿(工单 #88213)", covCheck: false },
+  { id: "操作确认-2034", action: "Kill-Switch 解除", obj: "nexv2 disable→enable", operator: "risk·陈", domain: "J1", risk: "高·放大流出", amount: "—", ts: "1h", reason: "监管核查完毕,恢复 NEX v2", covCheck: true },
 ];
 
-export const TOPUPS = [
-  { id: "TP-77120", user: "usr_22A1", amount: 500, psp: "MoonPay", method: "card", status: "confirmed", bin: "低风险", fee: 14.5 },
-  { id: "TP-77119", user: "usr_61C2", amount: 1299, psp: "Banxa", method: "card", status: "confirmed", bin: "低风险", fee: 32.1 },
-  { id: "TP-77118", user: "usr_09F4", amount: 200, psp: "OnChain", method: "usdt", status: "pending", bin: "—", fee: 0 },
-  { id: "TP-77117", user: "usr_43B8", amount: 3499, psp: "MoonPay", method: "card", status: "review", bin: "高风险 BIN", fee: 96.2 },
-  { id: "TP-77116", user: "usr_88E0", amount: 99, psp: "Banxa", method: "card", status: "confirmed", bin: "低风险", fee: 3.4 },
+// ── 充值流水(D1 渲染面;渠道枚举 = 前端 §9.2 五渠道,Card 由主 PSP Checkout.com 处理 · 备 Stripe)──
+// 含费自洽:Card 3.5%(500→517.5 / 1299→1344 / 1200→1242 / 800→828);3DS ≥$50 强验(77121 $1,200 验证中)。
+// (旧 MoonPay/Banxa/OnChain 为早期发明,与前端 topup 页「Card processed by Checkout.com」及 PRD D1 不符,已收敛。)
+export type TopupRow = {
+  id: string; user: string; channel: string; amount: number; recvLabel: string;
+  proof: string; st: "pending" | "confirmed" | "abnormal"; stLabel: string; t: string;
+};
+export const TOPUPS: TopupRow[] = [
+  { id: "TP-77118", user: "usr_09F4", channel: "USDT-TRC20", amount: 200, recvLabel: "200 USDT", proof: "tx 0x8a4f…", st: "pending", stLabel: "待链上确认 12/19", t: "14:08" },
+  { id: "TP-77121", user: "usr_43B8", channel: "Card", amount: 1200, recvLabel: "$1,242 含费", proof: "3DS 验证中", st: "pending", stLabel: "银行验证中", t: "14:21" },
+  { id: "TP-77120", user: "usr_22A1", channel: "Card", amount: 500, recvLabel: "$517.5 含费", proof: "psp ch_88a2…", st: "confirmed", stLabel: "已入账 · 已计终身入金", t: "13:55" },
+  { id: "TP-77119", user: "usr_61C2", channel: "Card", amount: 1299, recvLabel: "$1,344 含费", proof: "psp ch_87f1…", st: "confirmed", stLabel: "已入账", t: "13:40" },
+  { id: "TP-77116", user: "usr_88E0", channel: "USDT-TRC20", amount: 99, recvLabel: "99 USDT", proof: "tx 0x77be…", st: "confirmed", stLabel: "已入账", t: "12:18" },
+  { id: "TP-77113", user: "usr_19C7", channel: "ETH", amount: 2400, recvLabel: "0.92 ETH", proof: "tx 0x2208…", st: "confirmed", stLabel: "已入账", t: "11:02" },
+  { id: "TP-77117", user: "usr_43B8", channel: "Card", amount: 3499, recvLabel: "—", proof: "高风险卡段", st: "abnormal", stLabel: "银行拒绝 · 待人工", t: "13:21" },
+  { id: "TP-77102", user: "usr_55B1", channel: "Card", amount: 800, recvLabel: "$828 含费", proof: "拒付 4837", st: "abnormal", stLabel: "已发生拒付 → 处置区", t: "昨天" },
+  { id: "TP-77095", user: "usr_77D4", channel: "USDT-TRC20", amount: 420, recvLabel: "420 USDT", proof: "tx 0x9912…", st: "abnormal", stLabel: "超时未入账 · 对账差异", t: "昨天" },
 ];
+
+// ── D 域聚合口径(D1-D5 stat 与首页/操作确认中心共用;base+样本窗模式,base 已逐条过筛)──
+export const D_FUND = {
+  feeBufferUsd: 96_400, // 风控备付金(Card 3.5% 累计,非利润口径)
+  binLockedBase: 1, // BIN 锁卡存量(样本窗 3 条锁定计入后 = 4)
+  payoutTodayUsd: 48_600, // 今日已放行(186 笔 · 平均 6.2h 到账)
+  payoutTodayCnt: 186,
+  payoutAvgHours: 6.2,
+  applyTodayCnt: 212, // 今日提现申请笔数(D5 stat)
+  wdPendingBase: 19, // 待人工存量(样本窗 review-pending 4 单计入后 = 23)
+  wdLargeBase: 2, // 其中大额存量(样本窗大额待确认 90412/90391 计入后 = 4)
+  wdBacklogBaseUsd: 31_000, // 在审积压金额存量(样本窗 review-pending 4 单 $9,988 计入后 ≈ $41.0K)
+  wdFrozenBase: 4, // 冻结存量(样本窗 WD-90396 计入后 = 5)
+  wdFrozenBaseUsd: 10_450, // 冻结金额存量(+$1,950 = $12.4K)
+  billsTodayCnt: 38_412, // 今日落账笔数(8 类合计,D4 stat;adjustment = C3 人工调整专类)
+  billBreakCnt: 2, // 账实不符告警户数(D4 断点)
+  ledgerMatchPct: 99.998, // 账实相符率
+  billRetentionMonths: 13, // 账单保留期(完整 12 月周期 + 1 月缓冲)
+};
 
 export const USERS = [
   { id: "usr_84F2", name: "Marcus Lee", lc: "L4", vrank: "V3", devices: 2, kyc: "verified", risk: 72, balance: 8420, nex: 12400, ref: "NX-8821", frozen: false, joined: "2026-03-12" },
@@ -136,31 +289,34 @@ export const USERS = [
   { id: "usr_90F0", name: "Sara Lindqvist", lc: "L3", vrank: "V1", devices: 1, kyc: "verified", risk: 9, balance: 890, nex: 1320, ref: "NX-9001", frozen: false, joined: "2026-05-22" },
 ];
 
-export const CLUSTERS = [
-  { id: "CL-318", type: "trade-in 套利", accounts: 12, signal: "minHoldingMonths 规避", score: 88, status: "待处置" },
-  { id: "CL-291", type: "trial 循环养号", accounts: 8, signal: "同设备指纹 ×8", score: 81, status: "监控中" },
-  { id: "CL-277", type: "welcome gift 刷量", accounts: 23, signal: "同 IP 段 + 支付工具", score: 76, status: "已冻结" },
-  { id: "CL-260", type: "刷榜", accounts: 6, signal: "邀请图谱环路", score: 64, status: "监控中" },
-];
+// (旧 CLUSTERS 四行简表已随 K 域设计稿 port 移除 —— 簇明细唯一渲染面在 k-tabs/data.ts K1_CLUSTERS,
+//  跨页只消费 K_RISK 聚合口径,避免簇数据双源。)
 
+// Kill-Switch 7 闸(前端 §9.11d.1 的 6 + 后台应急新增 withdraw;主人 2026-06-05 拍板)。
+// PRD §15.2 完整字段:coverageImpactCategory(资金语义)/ coveragePrecheckRequired(恢复前置 B1)/
+// proposalStatus / operator / role_gate(操作确认角色)。B5 雷达与首页从本表 + store(J.killswitch.<key>)派生,单一源。
 export const KILLSWITCH = [
-  { key: "withdraw", name: "提现", on: true, domain: "D2", desc: "全平台提现流出(应急一键冻结;后台应急新增闸,前端 §9.11d.1 之外)", lastChange: "—", amplifies: true },
-  { key: "staking", name: "Staking 锁仓", on: true, domain: "G1", desc: "USDT + NEX 池锁仓产品", lastChange: "—", amplifies: true },
-  { key: "genesis", name: "Genesis 经济", on: true, domain: "G4", desc: "创世节点一二级市场 + 分红", lastChange: "—", amplifies: true },
-  { key: "exchange", name: "NEX 兑换", on: true, domain: "G2", desc: "NEX↔USDT 三阈值兑换", lastChange: "—", amplifies: true },
-  { key: "trial", name: "免费试用", on: true, domain: "H2", desc: "试用配置 · 免费试用引擎", lastChange: "—", amplifies: false },
-  { key: "nexv2", name: "NEX v2 Vault", on: true, domain: "G6", desc: "250% APY · 24 月锁仓(P6/m11 上线)", lastChange: "—", amplifies: true },
-  { key: "premium", name: "Premium 订阅", on: true, domain: "G5", desc: "$99 月度订阅", lastChange: "—", amplifies: false },
+  { key: "withdraw", name: "提现", on: true, domain: "D2", cap: "D2 全平台提现流出", desc: "熔断 → 全部提现暂停 · 在途请求冻结待恢复", lastChange: "2d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
+  { key: "staking", name: "Staking 锁仓", on: true, domain: "G1", cap: "G1 Staking 池整体", desc: "熔断 → 新增质押停止 · 存量产出按 R-A 衰减续算", lastChange: "5d 前 · ops@nexion / sec@nexion", amplifies: true, coverageImpactCategory: "delayed", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
+  { key: "genesis", name: "Genesis 经济", on: true, domain: "G4", cap: "G4 Genesis 一二级 + 分红", desc: "熔断 → (a)分红派发暂停 · (b)一二级流转冻结", lastChange: "12d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
+  { key: "exchange", name: "NEX 兑换", on: true, domain: "G2", cap: "G2 NEX↔USDT swap", desc: "熔断 → NEX→USDT 即时流出停 · 联动 G2 价格快照", lastChange: "3d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
+  { key: "trial", name: "免费试用", on: true, domain: "H2", cap: "H2 free-trial entry", desc: "熔断 → 新试用领取关闭 · shadow earning 不入余额", lastChange: "21d 前 · ops@nexion / super@nexion", amplifies: false, coverageImpactCategory: "none", coveragePrecheckRequired: false, proposalStatus: "idle", operator: "ops", roleGate: "super" },
+  { key: "nexv2", name: "NEX v2 Vault", on: true, domain: "G6", cap: "G6 NEX v2 Founders Vault", desc: "熔断 → NEX v2 锁仓新开停止 · 时滞流出", lastChange: "9d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "delayed", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
+  { key: "premium", name: "Premium 订阅", on: true, domain: "G5", cap: "G5 Premium 订阅", desc: "熔断 → Premium 订阅购买 / 续费关闭", lastChange: "18d 前 · ops@nexion / super@nexion", amplifies: false, coverageImpactCategory: "none", coveragePrecheckRequired: false, proposalStatus: "idle", operator: "ops", roleGate: "super" },
 ];
 
+// Geo-block 三态名单(PRD §15.3):blocked 黑名单(全功能封禁)/ limited 受限只读(可登录浏览,禁新增资金操作)。
+// activeCountries = status==="blocked" 集合;allowed 国家不入表。仅 J2 消费;变更经 风控 操作员 · 执行门槛:合规审计 (财务不参与)。
 export const GEOBLOCK = [
-  { cc: "US", name: "United States", blocked: false, scope: "—", reason: "—" },
-  { cc: "CN", name: "China", blocked: false, scope: "—", reason: "—(越南本土运营·基准空;监管点名才封)" },
-  { cc: "KP", name: "North Korea", blocked: true, scope: "全 endpoint", reason: "制裁名单" },
-  { cc: "IR", name: "Iran", blocked: true, scope: "全 endpoint", reason: "制裁名单" },
-  { cc: "IN", name: "India", blocked: false, scope: "withdraw 限频", reason: "KYC 加强" },
-  { cc: "BR", name: "Brazil", blocked: false, scope: "—", reason: "—" },
-];
+  { cc: "KP", name: "朝鲜", status: "blocked", reason: "OFAC 制裁名单" },
+  { cc: "IR", name: "伊朗", status: "blocked", reason: "OFAC + FATF 制裁名单" },
+  { cc: "SY", name: "叙利亚", status: "blocked", reason: "OFAC 制裁名单" },
+  { cc: "CN", name: "中国大陆", status: "limited", reason: "金融监管 · 证券类风险" },
+  { cc: "US", name: "美国", status: "limited", reason: "SEC 合规未取得" },
+  { cc: "RU", name: "俄罗斯", status: "limited", reason: "OFAC 金融制裁" },
+  { cc: "CU", name: "古巴", status: "limited", reason: "OFAC 制裁名单" },
+  { cc: "MM", name: "缅甸", status: "limited", reason: "FATF 高风险地区" },
+] as const;
 
 // SKU 目录 — 前端 Product(Nexion-prototype/lib/mock/products.ts)6 款的完整镜像。
 // 数值逐字段对齐前端商品卡(S1 日产 $14.20 + 24 NEX · 可信档年化~400% / 库存 47 / 评分 4.8 …);baseRate 已拆 dailyEarn + dailyEarnNEX(双币真源),
@@ -282,7 +438,7 @@ export const AUDIT = [
 export const REVENUE = { gmv: 4_280_000, commission: 1_140_000, token: 980_000, marketFee: 312_000 };
 
 export const DATA = {
-  ROLES, KPIS, TREASURY, LIABILITIES, MATURITY, FUNNEL, PHASE, RISK,
-  WITHDRAWALS, APPROVALS, TOPUPS, USERS, CLUSTERS, KILLSWITCH, GEOBLOCK,
+  ROLES, KPIS, TREASURY, LIABILITIES, MATURITY, FUNNEL, PHASE, RISK, K_RISK,
+  WITHDRAWALS, SENSITIVE_OPERATIONS, TOPUPS, USERS, KILLSWITCH, GEOBLOCK,
   SKUS, NOVA, AUDIT, REVENUE, fmtUsd, fmtM, fmtK,
 };

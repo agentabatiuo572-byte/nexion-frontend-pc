@@ -1,7 +1,7 @@
 /**
  * 360 HUB · per-user 多实体明细 mock(确定性,SSR/CSR 一致:纯由 userId 派生,无 Date.now/Math.random)。
  * backend-replaceable — 每生成器对应一个真后端读端点(见各注),admin 单用户聚合 GET /api/admin/users/:userId/*。
- * 写动作(设备 CRUD / 收益台账调整)= server-canonical action 端点 + Maker-Checker + append-only;前端只乐观 UI。
+ * 写动作(设备 CRUD / 收益台账调整)= server-canonical action 端点 + 操作确认 + append-only;前端只乐观 UI。
  */
 
 // FNV-1a seeded PRNG
@@ -54,7 +54,7 @@ export function getUserReferral(userId: string, teamSize: number): UserReferral 
   return { directRefs, teamSize, sponsor: rnd() < 0.85 ? { id: "U-" + Math.floor(10000 + rnd() * 89999), name: NAMES[Math.floor(rnd() * NAMES.length)] } : null, vDist, spilloverCount: Math.floor(rnd() * Math.max(1, teamSize / 3)), directList };
 }
 
-// ───── 设备(读 GET /api/admin/users/:userId/devices · 写=设备 action 端点 MC)─────
+// ───── 设备(读 GET /api/admin/users/:userId/devices · 写=设备 action 端点 操作确认)─────
 export type DeviceKind = "phone" | "stellarbox-s1" | "stellarbox-pro" | "stellarrack-p1" | "cloud-share";
 export interface UserDeviceRow { id: string; kind: DeviceKind; name: string; online: boolean; activatedAt: string; todayEarningsUsd: number; generation: number; gpuUsage: number; ageMonths: number; }
 const DEVS: { kind: DeviceKind; name: string; rate: number }[] = [
@@ -76,7 +76,7 @@ export function getUserDevices(userId: string, deviceCount: number): UserDeviceR
   return rows;
 }
 
-// ───── 收益(读 SSE /api/me/earnings + GET /api/admin/users/:userId/commission · 写=台账 action MC append-only)─────
+// ───── 收益(读 SSE /api/me/earnings + GET /api/admin/users/:userId/commission · 写=台账 action 操作确认 append-only)─────
 export type CommissionKind = "unilevel" | "binary" | "peer" | "cultivation" | "leadership" | "genesis";
 export type CommissionStatus = "cooling" | "unlocked" | "withdrawn";
 export interface CommissionRow { id: string; kind: CommissionKind; amountUsd: number; amountNex: number; status: CommissionStatus; tsLabel: string; layer?: number; }

@@ -1,0 +1,3 @@
+- link "发起新的提现 →" [ref=e3]
+- link "Search" [ref=e1]
+- button "Notifications (2 unread)" [ref=e2]

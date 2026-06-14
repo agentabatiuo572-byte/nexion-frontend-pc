@@ -2,7 +2,7 @@
 
 /**
  * 360 HUB · 等级卡(V 级 & 晋升进度)— C1·deepening。
- * 读:v3/v-rank(selfBuyUSD/directRefs/teamVolumeUSD/晋升进度)。升降级 = server 规则权威(client preview),手动调整在 F 域 MC。
+ * 读:v3/v-rank(selfBuyUSD/directRefs/teamVolumeUSD/晋升进度)。升降级 = server 规则权威(client preview),手动调整在 F 域 操作确认。
  * CGM: CGM-C/F v-rank.* 。
  */
 import Link from "next/link";
@@ -33,7 +33,7 @@ export function VRankSection({ user }: { user: AdminUser }) {
       <p className="mt-2 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
         <AutoGloss>V 级晋升由 server 规则判定(client 仅 preview,可能 100% 仍 reject)· 手动升降级 + 领导池权重调整在</AutoGloss>
         <Link href="/network/v-rank" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-f)" }}> F V级<ArrowUpRight size={11} /></Link>
-        <AutoGloss>· MC 双签。</AutoGloss>
+        <AutoGloss>· 操作确认。</AutoGloss>
       </p>
     </HubCard>
   );

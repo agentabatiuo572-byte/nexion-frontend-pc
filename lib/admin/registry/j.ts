@@ -1,13 +1,15 @@
 /** 域 J 紧急与合规控制 — 注册表。accent=--admin-domain-j(红/danger)。
  * Kill-Switch 矩阵 / Geo-block / 篡改防御监控 / 监管点名应急 SOP。
- * 闸门状态与处置均 server-canonical;kill 即时生效但需双签复核留痕(A2)。内容 mock,结构 backend-replaceable。 */
+ * 闸门状态与处置均 server-canonical;kill 即时生效并需操作确认留痕(A2)。内容 mock,结构 backend-replaceable。
+ * ⚠️ J 在 PORTED_DOMAINS,真渲染面 = j-view.tsx(j-tabs/*);本文件仅 summary 经 DomainHeader 渲染,
+ * content 为 archetype 死代码(陈旧口径勿采信:J3 处置/SOP 步骤勾选已被设计稿 port 取代),改业务以 j-tabs 为准。 */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
 export const DOMAIN_J: ModuleEntry[] = [
   {
     path: "/emergency/kill-switch",
     summary:
-      "7 大业务闸门紧急熔断矩阵。当前 7/7 在线(全闸正常营业)。熔断即时全站生效,但发起需 风控主管 + 总管理员 双签并写入 A2 审计;恢复同样双签。",
+      "7 大业务闸门紧急熔断矩阵(前端 6 闸 + 后台应急新增提现闸)。熔断即时全站生效、客户端绕不过;发起与恢复均需操作确认写入 A2,恢复「会往外付钱」的闸前置 B1 备付金核验。",
     content: {
       kind: "config",
       metrics: [
@@ -38,17 +40,16 @@ export const DOMAIN_J: ModuleEntry[] = [
         },
         {
           title: "熔断触发与生效",
-          note: "熔断为即时动作,不走灰度;恢复需二次双签确认业务已具备恢复条件。",
+          note: "熔断为即时动作,不走灰度;恢复需操作确认说明业务已具备恢复条件。",
           fields: [
             { label: "生效方式", value: "即时全站", range: "即时 / —", effect: "签核通过瞬间下发至所有边缘节点" },
             { label: "自动触发", value: "启用 · 4 规则", range: "开 / 关", effect: "命中提现激增/对账缺口/篡改告警/监管指令自动熔断" },
             { label: "在途请求处置", value: "冻结待恢复", range: "冻结 / 退回", effect: "熔断时锁定在途资金请求,恢复后重新排队" },
-            { label: "恢复确认", value: "双签 + 复核", range: "双签固定", effect: "恢复需确认根因已消除,留痕 A2" },
+            { label: "恢复确认", value: "操作确认", range: "操作确认固定", effect: "恢复需说明根因已消除,留痕 A2" },
           ],
         },
       ],
-      approval:
-        "熔断 / 恢复任一闸门均需 风控主管(Maker)+ 总管理员(Checker)双签,发起人不可自审;熔断即时生效,操作全程写入 A2 不可篡改审计。自动触发熔断免预签,但须值班人 30 分钟内补签确认。",
+      confirmPolicy:         "熔断 / 恢复任一闸门均需按执行门槛操作确认,操作理由必填;熔断即时生效,操作全程写入 A2 不可篡改审计。自动触发熔断无需预先确认,但须值班人 30 分钟内补填理由。",
       impact: [
         "提现 / 兑换闸熔断 → D 域资金对账实时标记暂停区间,客服侧同步话术",
         "Genesis 闸熔断 → G4 二级市场挂单冻结,价格快照定格,防止恐慌踩踏",
@@ -60,7 +61,7 @@ export const DOMAIN_J: ModuleEntry[] = [
   {
     path: "/emergency/geo-block",
     summary:
-      "按司法辖区的地域准入控制。当前屏蔽 3 个高合规风险地区,新用户注册 / KYC / 资金类操作按 IP + KYC 国籍双重判定。名单变更需 风控 + 合规审计 双签。",
+      "按国家 / 地区的准入控制:黑名单(全功能封禁)+ 受限名单(只读)两档,封锁按访问 IP 在服务器入口判定(与「风险提示书」的 IP+国籍判定是两套独立机制)。名单变更需风控 lead / 超管执行操作确认,财务不参与。",
     content: {
       kind: "config",
       metrics: [
@@ -94,12 +95,11 @@ export const DOMAIN_J: ModuleEntry[] = [
           fields: [
             { label: "判定优先级", value: "KYC 国籍优先", range: "固定", effect: "已 KYC 用户以国籍为准,未 KYC 以 IP 为准" },
             { label: "VPN / 代理", value: "从严拦截", range: "从严 / 放行", effect: "高风险代理出口段位等同黑名单处置" },
-            { label: "误判申诉", value: "人工复核", range: "开 / 关", effect: "用户可提交 KYC 佐证转 C 域工单复核" },
+            { label: "误判申诉", value: "人工确认", range: "开 / 关", effect: "用户可提交 KYC 佐证转 C 域工单确认" },
           ],
         },
       ],
-      approval:
-        "黑/灰名单地区增删与升降级需 风控(Maker)+ 合规审计(Checker)双签;名单变更即时生效并写入 A2 审计,同步触发受影响存量账户的状态重算。",
+      confirmPolicy:         "黑/灰名单地区增删与升降级需 风控(操作员)+ 合规审计(执行门槛)操作确认;名单变更即时生效并写入 A2 审计,同步触发受影响存量账户的状态重算。",
       impact: [
         "新增封禁地区 → 该辖区存量账户即时转只读、停止产出,资金进入合规冻结待处置",
         "受限地区升级封禁 → 联动 J1 资金闸对该辖区做定向冻结,客服侧准备退出话术",
@@ -110,7 +110,7 @@ export const DOMAIN_J: ModuleEntry[] = [
   {
     path: "/emergency/tamper",
     summary:
-      "篡改防御监控流水。前端为展示层,余额 / 产出 / 节点权属 / 价格等关键值以 server-canonical 为唯一权威;客户端上报与服务端基线不一致即生成告警并自动处置。",
+      "篡改防御监控(纯只读可观测面)。余额 / 产出 / 节点权属 / 价格等关键值以 server-canonical 为唯一权威,客户端篡改尝试被服务器当场驳回并计数;高频篡改账户信号喂 K4 风险评分,实际处置到 C2 / K1 完成。",
     content: {
       kind: "list",
       metrics: [
@@ -133,7 +133,7 @@ export const DOMAIN_J: ModuleEntry[] = [
       rows: [
         { ts: "14:18:32", type: "余额篡改", obj: "U-88421", client: "$12,400.00", server: "$1,240.00", disp: "已拦截" },
         { ts: "13:52:07", type: "产出伪造", obj: "U-77310 / NB-0091", client: "+$240/日", server: "+$24/日", disp: "已拦截" },
-        { ts: "13:11:45", type: "请求重放", obj: "WD-2606-0188", client: "重复提交 ×3", server: "幂等去重", disp: "已拦截" },
+        { ts: "13:11:45", type: "请求重放", obj: "WD-90388", client: "重复提交 ×3", server: "幂等去重", disp: "已拦截" },
         { ts: "12:40:19", type: "价格越权", obj: "NEX/USDT", client: "0.50", server: "0.0312", disp: "已拦截" },
         { ts: "11:58:33", type: "权属冒用", obj: "U-90233 / GEN-0420", client: "claim node", server: "非持有人", disp: "待研判" },
         { ts: "11:02:50", type: "余额篡改", obj: "U-66104", client: "$8,800.00", server: "$880.00", disp: "已拦截" },
@@ -146,13 +146,13 @@ export const DOMAIN_J: ModuleEntry[] = [
         { label: "标记误报", whenStatus: "待研判" },
         { label: "封禁账户", tone: "danger" },
       ],
-      note: "所有关键值以 server-canonical 基线为准,客户端上报仅作展示;不一致一律以服务端为权威并记 A2 审计。「待研判」项点开可标记升级 J1 冻结或转 K 域风控建档。处置(确认拦截 / 误报 / 封禁)需 Maker-Checker 双签并写入 A2。",
+      note: "所有关键值以 server-canonical 基线为准,客户端上报仅作展示;不一致一律以服务端为权威并记 A2 审计。「待研判」项点开可标记升级 J1 冻结或转 K 域风控建档。处置(确认拦截 / 误报 / 封禁)需 操作确认并写入 A2。",
     },
   },
   {
     path: "/emergency/sop",
     summary:
-      "监管点名 / 突发事件应急 SOP 剧本库。每个剧本绑定触发场景、标准步骤、责任人与 SLA;演练与实战执行均按步骤勾选并留痕,确保合规响应可审计、可回溯。",
+      "监管点名 / 突发事件应急 SOP 剧本库。每个剧本由跨域原子动作序列编排(熔断 / 封锁 / 披露 / 冻结 / 限流 / 通知),每步落各域确认门;支持沙箱演练与实战执行,全程留痕、可审计可回溯。",
     content: {
       kind: "list",
       metrics: [

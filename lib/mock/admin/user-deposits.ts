@@ -22,8 +22,8 @@ export interface DepositAdjustment {
   deltaUsd: number; // 带符号;拒付冲正为负
   kind: DepositAdjKind;
   ticket: string;
-  maker: string;
-  checker: string;
+  operator: string;
+  roleGate: string;
 }
 export interface UserDeposits {
   topups: TopupBill[];
@@ -92,8 +92,8 @@ export function getUserDeposits(userId: string, depositedUsd: number): UserDepos
       deltaUsd: sign * Math.round(50 + rnd() * 900),
       kind,
       ticket: "WO-" + Math.floor(1000 + rnd() * 9000),
-      maker: MAKERS[Math.floor(rnd() * MAKERS.length)],
-      checker: CHECKERS[Math.floor(rnd() * CHECKERS.length)],
+      operator: MAKERS[Math.floor(rnd() * MAKERS.length)],
+      roleGate: CHECKERS[Math.floor(rnd() * CHECKERS.length)],
     });
   }
 

@@ -7,7 +7,7 @@
  *   BAND2 运营决策卡(B-02/B-03)+ 风险雷达卡(B-05)
  *   BAND3 应付负债结构(8 科目 · 下钻 B2)
  * 顶部域标保留本项目外壳风格;其下布局端口设计稿(dual-ledger.css · .dlpage 作用域)。
- * 决策动作保留真实接线:阈值/熔断/告警处置经 Maker-Checker 双签,写 platform-config-store(persist + 审计)。
+ * 决策动作保留真实接线:阈值/熔断/告警处置经操作确认,写 platform-config-store(persist + 审计)。
  * 数据 mock(确定性,lib/mock/admin/ledger);内部真实视角:储备 vs 应付负债。
  */
 import "./dual-ledger.css";
@@ -28,7 +28,7 @@ import {
 import { LEDGER } from "@/lib/mock/admin/ledger";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
 import { Sparkline } from "@/app/components/kit/kpi-stat-card";
-import { MakerCheckerModal, useToast } from "@/app/components/domain-views/design-kit";
+import { OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 
@@ -43,7 +43,7 @@ const KEY_ALERT_ACK = `B.alert.${ALERT_ID}.ack`;
 const RUN_RISK_DEFAULT = 15; // 挤兑压力红线默认(%)
 const SCALE_MAX = 120; // 仪表标尺上限
 
-// 驾驶舱决策动作(高敏,均走 Maker-Checker 双签)。
+  // 驾驶舱决策动作(高敏,均走操作确认)。
 type Mc = { kind: "redline" } | { kind: "runRisk" } | { kind: "kill" } | { kind: "ack" };
 
 export default function DualLedgerPage() {
@@ -69,7 +69,7 @@ export default function DualLedgerPage() {
   const hydrated = useOpsHydrated();
   const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
   const [toastNode, setToast] = useToast();
-  const [mc, setMc] = useState<Mc | null>(null);
+  const [mc, setActionConfirm] = useState<Mc | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
 
   // 派生:阈值以 store 为准,缺省回落 mock / 默认(刷新后仍反映 + 即时变)。
@@ -169,7 +169,7 @@ export default function DualLedgerPage() {
       setParam(KEY_ALERT_ACK, "true", { action: "标记兑付红线告警已处置", reason });
       setToast("告警已标记处置(A2 留痕)");
     }
-    setMc(null);
+    setActionConfirm(null);
   };
 
   return (
@@ -277,9 +277,9 @@ export default function DualLedgerPage() {
                 ) : (
                   <>
                     <Link href="/finance/withdrawals" prefetch={false} className="btn primary">
-                      去复核提现 <ArrowRight size={15} />
+                      去确认提现 <ArrowRight size={15} />
                     </Link>
-                    <button type="button" className="btn" onClick={() => setMc({ kind: "ack" })}>
+                    <button type="button" className="btn" onClick={() => setActionConfirm({ kind: "ack" })}>
                       <CheckCircle2 size={15} /> 标记已处置
                     </button>
                   </>
@@ -341,7 +341,7 @@ export default function DualLedgerPage() {
         <section className="card">
           <div className="ttl-row">
             <span className="ttl-ic"><SlidersHorizontal size={17} /></span>
-            <span className="h">运营决策 · 双签生效</span>
+            <span className="h">运营决策 · 确认后生效</span>
             <div className="r"><span className="b1-tag">B-02 / B-03</span></div>
           </div>
 
@@ -351,8 +351,8 @@ export default function DualLedgerPage() {
               <button
                 type="button"
                 className="thr"
-                onClick={() => setMc({ kind: "redline" })}
-                title="兑付覆盖率红线:储备覆盖率跌破此线即收紧 / 停止放大流出。点击调整(双签生效)"
+                onClick={() => setActionConfirm({ kind: "redline" })}
+                title="兑付覆盖率红线:储备覆盖率跌破此线即收紧 / 停止放大流出。点击调整,确认后生效"
               >
                 <span className="ic"><SlidersHorizontal size={14} /></span>
                 <span className="nm">兑付覆盖率红线</span><span className="vl">{fmtPct(effRedline, 0)}</span>
@@ -360,8 +360,8 @@ export default function DualLedgerPage() {
               <button
                 type="button"
                 className="thr"
-                onClick={() => setMc({ kind: "runRisk" })}
-                title="挤兑压力红线:24h 净流出 / 储备比率超此线即触发挤兑预警。点击调整(双签生效)"
+                onClick={() => setActionConfirm({ kind: "runRisk" })}
+                title="挤兑压力红线:24h 净流出 / 储备比率超此线即触发挤兑预警。点击调整,确认后生效"
               >
                 <span className="ic"><SlidersHorizontal size={14} /></span>
                 <span className="nm">挤兑压力红线</span><span className="vl">{fmtPct(effRunRisk, 0)}</span>
@@ -377,7 +377,7 @@ export default function DualLedgerPage() {
                   <span className="dot red" /> 全局熔断已生效 · 放大流出停摆
                 </span>
               ) : (
-                <button type="button" className="btn danger" onClick={() => setMc({ kind: "kill" })}>
+                <button type="button" className="btn danger" onClick={() => setActionConfirm({ kind: "kill" })}>
                   <Power size={15} /> 触发全局熔断
                 </button>
               )}
@@ -386,7 +386,7 @@ export default function DualLedgerPage() {
               </Link>
             </div>
             <div className="muted tiny" style={{ marginTop: 11 }}>
-              熔断与阈值调整均为放大资金安全级动作,经 <b style={{ color: "var(--ink-2)", fontWeight: 600 }}>Maker-Checker 双人复核</b> 后生效。
+              熔断与阈值调整均为放大资金安全级动作,须填写操作理由并写入 A2 审计后生效。
             </div>
           </div>
 
@@ -431,7 +431,7 @@ export default function DualLedgerPage() {
           <div className="alertbar" style={{ marginTop: 14 }}>
             <span className="ico" style={{ color: "var(--warning)" }}><AlertTriangle size={16} /></span>
             <div style={{ fontSize: "12.5px" }}>
-              净流出放大 + 覆盖率下行 → 雷达多维同步偏紧,建议联动复核大额提现与分红节奏。
+              净流出放大 + 覆盖率下行 → 雷达多维同步偏紧,建议联动确认大额提现与分红节奏。
             </div>
           </div>
         </section>
@@ -488,7 +488,7 @@ export default function DualLedgerPage() {
       </section>
 
       {mc && (
-        <MakerCheckerModal
+        <OperationConfirmModal
           action={
             mc.kind === "redline"
               ? "调整兑付覆盖率红线阈值"
@@ -515,7 +515,7 @@ export default function DualLedgerPage() {
                 ? { kind: "number", current: fmtPct(effRunRisk, 0), unit: "%" }
                 : undefined
           }
-          onClose={() => setMc(null)}
+          onClose={() => setActionConfirm(null)}
           onConfirm={onMcConfirm}
         />
       )}

@@ -31,10 +31,11 @@ export interface ListSpec {
   columns: Col[];
   rows: Record<string, string>[];
   rowIdKey?: string; // 行唯一键列(默认 columns[0].key;非唯一首列时显式指定避免重复 React key)
+  paginationExempt?: { label?: string; reason: string; maxRows: number }; // <=5 行静态配置表可显式豁免分页,必须写原因/最大行数
   detail?: boolean; // 行可点开右侧抽屉看全字段
   primaryAction?: { label: string; fields?: string[] }; // 主操作入口(如"新增 SKU"):右上按钮 → 创建抽屉(表单字段)
   rowActions?: { label: string; tone?: "primary" | "danger"; whenStatus?: string }[]; // 行级操作(详情抽屉内):冻结/停用/下发/补件…whenStatus 按状态门控
-  note?: string; // Maker-Checker / 口径脚注
+  note?: string; // 操作确认 / 口径脚注
 }
 
 export interface ConfigField {
@@ -47,7 +48,7 @@ export interface ConfigSpec {
   kind: "config";
   metrics?: Metric[];
   groups: { title: string; note?: string; fields: ConfigField[] }[];
-  approval: string; // Maker-Checker 说明
+  confirmPolicy: string; // 操作确认 说明
   impact?: string[]; // 下游联动
 }
 

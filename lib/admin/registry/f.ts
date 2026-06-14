@@ -4,7 +4,7 @@ import type { ModuleEntry } from "@/lib/admin/module-content";
 export const DOMAIN_F: ModuleEntry[] = [
   {
     path: "/network/v-rank",
-    summary: "V-Rank 等级体系 V0–V12 晋升门槛与权益。等级判定 server 端权威;门槛 / 权益改动需 增长运营 + 风控 双签并写入 A2 审计。",
+    summary: "V-Rank 等级体系 V0–V12 晋升门槛与权益。等级判定 server 端权威;门槛 / 权益改动需 增长运营 + 风控 操作确认并写入 A2 审计。",
     content: {
       kind: "config",
       metrics: [
@@ -45,7 +45,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           ],
         },
       ],
-      approval: "门槛 / 权益 / 保级规则变更需 增长运营 + 风控 双签;改动写入 A2 审计,下一结算周期生效。",
+      confirmPolicy: "门槛 / 权益 / 保级规则变更需 增长运营 + 风控 操作确认;改动写入 A2 审计,下一结算周期生效。",
       impact: [
         "上调晋升门槛 → 高阶用户占比下降,网络版税与领导奖池支出收缩",
         "放宽保级宽限 → 等级稳定性上升,但权益支出口径随之增加",
@@ -55,7 +55,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/royalty",
-    summary: "网络版税费率体系。Direct Royalty 固定 10%(不可调);Rate-Tier 作为 Partner Status 权益层(L1–L7),佣金计提受 30 天冷却约束。费率改动需 财务 + 风控 双签。",
+    summary: "网络版税费率体系。Direct Royalty 固定 10%(不可调);Rate-Tier 作为 Partner Status 权益层(L1–L7),佣金计提受 30 天冷却约束。费率改动需 财务 + 风控 操作确认。",
     content: {
       kind: "config",
       metrics: [
@@ -90,11 +90,11 @@ export const DOMAIN_F: ModuleEntry[] = [
           fields: [
             { label: "冷却天数", value: "30 天", range: "7–60 天", effect: "下调 → 解锁加快,套利风险上升" },
             { label: "冷却起算", value: "计提次日 0 点", range: "口径固定", effect: "按结算日切起算" },
-            { label: "提前解锁", value: "不开放", range: "开 / 关", effect: "需 风控 单独审批" },
+            { label: "提前解锁", value: "不开放", range: "开 / 关", effect: "需 风控 单独确认" },
           ],
         },
       ],
-      approval: "Direct Royalty 为产品锁定值不开放调整;权益层 / 冷却天数变更需 财务 + 风控 双签,写入 A2 审计。",
+      confirmPolicy: "Direct Royalty 为产品锁定值不开放调整;权益层 / 冷却天数变更需 财务 + 风控 操作确认,写入 A2 审计。",
       impact: [
         "缩短佣金冷却 → 解锁加速,短期套利与异常增长风险上升,联动 F4 反欺诈监控",
         "调整 Partner Status 权益层 → 影响顶层用户配额与领导奖池占比,需同步 F4 评估",
@@ -104,7 +104,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/binary",
-    summary: "平衡匹配结算引擎。按 Track A / Track B 两路业绩取较小侧匹配计酬,auto-placement 自动归位,设日封顶。封顶与匹配比例改动需 财务 + 风控 双签。",
+    summary: "平衡匹配结算引擎。按 Track A / Track B 两路业绩取较小侧匹配计酬,auto-placement 自动归位,设日封顶。封顶与匹配比例改动需 财务 + 风控 操作确认。",
     content: {
       kind: "config",
       metrics: [
@@ -130,7 +130,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           fields: [
             { label: "归位策略", value: "弱侧优先", range: "弱侧 / 轮替", effect: "维持双轨平衡" },
             { label: "归位时点", value: "绑定即归位", range: "口径固定", effect: "联动 F5 推荐绑定事件" },
-            { label: "手动改位", value: "需审批", range: "开 / 关", effect: "改位写入 A2 审计" },
+            { label: "手动改位", value: "需确认", range: "开 / 关", effect: "改位写入 A2 审计" },
           ],
         },
         {
@@ -143,17 +143,17 @@ export const DOMAIN_F: ModuleEntry[] = [
           ],
         },
       ],
-      approval: "匹配比例 / 封顶 / auto-placement 策略变更需 财务 + 风控 双签;封顶分段与 H1 阶段拨盘联动,改动写入 A2 审计。",
+      confirmPolicy: "匹配比例 / 封顶 / auto-placement 策略变更需 财务 + 风控 操作确认;封顶分段与 H1 阶段拨盘联动,改动写入 A2 审计。",
       impact: [
         "上调匹配比例或封顶 → 结算支出与资金敞口同步放大,需同步 D4 计提评估",
         "放宽超额结转 → 单用户累积敞口上升,联动 B5 头部集中度监控",
-        "auto-placement 改位需审批留痕,防止人为操纵双侧业绩均衡",
+        "auto-placement 改位需确认留痕,防止人为操纵双侧业绩均衡",
       ],
     },
   },
   {
     path: "/network/leadership-pool",
-    summary: "池 / 配额 / 大使 / 榜 聚合操盘台 — 领导奖池(按周 GMV 计提入池、按 V_VOTES 权重分配)、硬件配额(按 V 级分配可购额度与回收)、区域大使审批(资质双人复核)、排行榜与反欺诈(K2/K1 联动取消资格)。奖池比例 / 权重 / 配额 / 大使授予 / 取消资格等改动均经 Maker-Checker 双签写入 A2 审计;放大资金流出项前置 B1 覆盖率核验。",
+    summary: "池 / 配额 / 大使 / 榜 聚合操盘台 — 领导奖池(按周 GMV 计提入池、按 V_VOTES 权重分配)、硬件配额(按 V 级分配可购额度与回收)、区域大使确认(资质操作确认)、排行榜与反欺诈(K2/K1 联动取消资格)。奖池比例 / 权重 / 配额 / 大使授予 / 取消资格等改动均经 操作确认写入 A2 审计;放大资金流出项前置 B1 覆盖率核验。",
     content: {
       kind: "config",
       metrics: [
@@ -193,15 +193,15 @@ export const DOMAIN_F: ModuleEntry[] = [
         },
         {
           title: "硬件配额 / 区域大使 / 排行榜(聚合)",
-          note: "F4 同台承载硬件配额池、区域大使审批与排行榜反欺诈三块运营动作;详见页内对应子区。",
+          note: "F4 同台承载硬件配额池、区域大使确认与排行榜反欺诈三块运营动作;详见页内对应子区。",
           fields: [
             { label: "硬件配额", value: "按 V 级阶梯分配 + 回收", range: "额度可配", effect: "销售前置门 · 联动 E 域库存" },
-            { label: "区域大使审批", value: "V5+ · 4 类预算桶", range: "双人复核", effect: "授予 / 驳回写 A2" },
+            { label: "区域大使确认", value: "V5+ · 4 类预算桶", range: "操作确认", effect: "授予 / 驳回写 A2" },
             { label: "排行榜 · 反欺诈", value: "Podium + K2/K1 命中", range: "取消资格可配", effect: "刷榜取消资格写 A2" },
           ],
         },
       ],
-      approval: "奖池比例 / 分配权重 / 单人封顶 / 配额额度 / 大使授予 / 取消资格变更需 财务 + 风控 双签(放大流出项前置 B1 覆盖率核验);分配名单按 F1 等级日切快照,改动写入 A2 审计。",
+      confirmPolicy: "奖池比例 / 分配权重 / 单人封顶 / 配额额度 / 大使授予 / 取消资格变更需 财务 + 风控 操作确认(放大流出项前置 B1 覆盖率核验);分配名单按 F1 等级日切快照,改动写入 A2 审计。",
       impact: [
         "上调入池比例 → 奖池规模放大,平台版税净留存下降",
         "放宽资格门槛 → 分配人数上升,人均份额摊薄,需评估激励效果",
@@ -219,7 +219,7 @@ export const DOMAIN_F: ModuleEntry[] = [
         { label: "今日佣金事件", value: "3,142", sub: "全 kind", accent: "var(--admin-domain-f)", hint: "今日写入的佣金计提事件总数。" },
         { label: "冷却中", value: "1,886", sub: "30 天未解锁", accent: "var(--v5-warning)", hint: "处于冷却期、尚未解锁的事件数。" },
         { label: "今日计提额", value: "$412K", sub: "USDT + NEX", accent: "var(--admin-domain-f)" },
-        { label: "异常拦截", value: "7", sub: "待风控复核", accent: "var(--v5-danger)", hint: "命中风控规则被冻结的事件。" },
+        { label: "异常拦截", value: "7", sub: "待风控确认", accent: "var(--v5-danger)", hint: "命中风控规则被冻结的事件。" },
       ],
       search: "搜索用户 / 事件号",
       filterKey: "kind",
@@ -250,7 +250,7 @@ export const DOMAIN_F: ModuleEntry[] = [
         { label: "解锁" },
         { label: "驳回" },
       ],
-      note: "佣金事件 append-only,server 端权威;冷却中事件不可解锁 / 提现。命中风控规则的事件自动冻结,解冻需 风控 复核 + A2 留痕。",
+      note: "佣金事件 append-only,server 端权威;冷却中事件不可解锁 / 提现。命中风控规则的事件自动冻结,解冻需 风控 确认 + A2 留痕。",
     },
   },
 ];

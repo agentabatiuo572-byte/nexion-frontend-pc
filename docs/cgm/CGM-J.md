@@ -4,7 +4,7 @@
 
 本域 3 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
 | CGM-J-001 | platform | function-action | useLuckySpin.realPrizeSoldOut / coverageDegrade… | fund_safety,payout_pacing,platform_inte… | 运营手动开/关真实奖(kill-switch)、触发覆盖率红线降级 | Y | 写 POST /api/admin/lucky-spin/{pause-real/degrade}… | gap |
 | CGM-J-002 | platform | function-action | useUI.confirm / toast (global confirm-dialog + … | fund_safety,content_compliance,platform… | 合规运营核查/编辑确认弹窗披露文案与按钮措辞(确保扣款/锁仓类有明确 danger 披露);统一 cancel 弱化权重 | Y | 读+写(披露文案) TBD·建议 GET/PUT /api/admin/cms/confirm-d… | gap |

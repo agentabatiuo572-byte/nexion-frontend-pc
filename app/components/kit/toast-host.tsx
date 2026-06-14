@@ -1,6 +1,6 @@
 "use client";
 
-/** ToastHost — 右上角 toast 堆栈,在 root layout 挂载一次。用 toast.* 触发。 */
+/** ToastHost — 顶部居中 toast 堆栈,在 root layout 挂载一次。用 toast.* 触发。 */
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Info, AlertTriangle, XCircle, X } from "lucide-react";
 import type { ToastKind } from "@/lib/store/ui";
@@ -19,8 +19,12 @@ export function ToastHost() {
 
   return (
     <div
-      className="pointer-events-none fixed right-5 top-5 flex w-[340px] flex-col gap-2"
-      style={{ zIndex: "var(--admin-z-toast)" }}
+      className="pointer-events-none fixed left-1/2 flex -translate-x-1/2 flex-col gap-2"
+      style={{
+        zIndex: "var(--admin-z-toast)",
+        top: "calc(var(--admin-topbar-h) + 32px)",
+        width: "min(420px, calc(100vw - 40px))",
+      }}
     >
       <AnimatePresence initial={false}>
         {toasts.map((t) => {
@@ -30,9 +34,9 @@ export function ToastHost() {
             <motion.div
               key={t.id}
               layout
-              initial={{ opacity: 0, x: 24, scale: 0.98 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 24, scale: 0.98 }}
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
               transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
               className="pointer-events-auto flex items-start gap-2.5 rounded-[12px] p-3"
               style={{

@@ -4,9 +4,9 @@
 
 本域 32 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
-| CGM-G-001 | per-user | function-action | NexV2LockPage lock action (matureValue = amount… | fund_safety,payout_pacing,conversion,ri… | 运营查锁仓申请;审核/驳回;到期出金审批;phase 门控开关 | Y | 写 POST /api/nex-v2-lock (TBD·建议) (抄 _config READM… | gap |
+| CGM-G-001 | per-user | function-action | NexV2LockPage lock action (matureValue = amount… | fund_safety,payout_pacing,conversion,ri… | 运营查锁仓申请;审核/驳回;到期出金确认;phase 门控开关 | Y | 写 POST /api/nex-v2-lock (TBD·建议) (抄 _config READM… | gap |
 | CGM-G-002 | per-user | function-action | PremiumPage subscribe action (firstMonthPrice =… | conversion,fund_safety | 运营查订阅转化;调价/折扣;续费/取消(later sprint);phase 门控 | Y | 写 POST /api/premium/subscribe (TBD·建议) (抄 _config… | gap |
 | CGM-G-003 | per-user | function-action | RepurchasePage.handleRepurchase (debitBalance +… | conversion,fund_safety,payout_pacing | 运营查复投转化漏斗(失败提现导流);核对四笔非原子写一致性;争议时回滚整组(余额/积分/质押/账单) | Y | 写 POST /api/wallet/reinvest (抄 repurchase/page.ts… | gap |
 | CGM-G-004 | per-user | data-CRUD | useExchange.history[] (SwapEvent: fromSym/toSym… | fund_safety,platform_integrity,risk | 运营查兑换历史对账;异常套利单标记/冻结;争议成交回滚 | Y | 读 GET /api/swaps (TBD·建议) · 写 POST /api/swap (抄 e… | gap |
@@ -16,11 +16,11 @@
 | CGM-G-008 | per-user | data-CRUD | useGenesis.myListings[] (MyListing: tokenId/ask… | fund_safety,platform_integrity,risk | 运营查/下架违规挂单(cancel);成交对账(fulfillSale 收益由 caller 入账);争议撤单;监控二级地板价 | Y | 读 GET /api/genesis/listings (TBD·建议) · 写 POST /ap… | gap |
 | CGM-G-009 | per-user | data-CRUD | useGenesis.ownedTokenIds[] / myOwned | fund_safety,platform_integrity,risk | 运营查节点持仓;争议/退款时调整持有(回收 tokenId);冻结可疑持有 | Y | 读 GET /api/genesis/state (抄 _config README L34) | gap |
 | CGM-G-010 | per-user | function-action | useGenesis.purchase(n, tokenIds?) | conversion,fund_safety,risk | 运营查认购流水、对账资金;监管点名时 POST /api/admin/genesis/pause 暂停发售;调发售参数 | Y | 写 POST /api/genesis/purchase (TBD·建议) · POST /api… | gap |
-| CGM-G-011 | per-user | function-action | useStaking.claim(id) | payout_pacing,fund_safety | 运营查领取流水;手动批准/驳回到期出金;争议利息复核与改派 | Y | 写 POST /api/stakes/:id/claim (抄 staking.ts 头注) | gap |
-| CGM-G-012 | per-user | function-action | useStaking.earlyWithdraw(id) | fund_safety,payout_pacing,risk | 运营查早赎记录、核对罚金计算;争议时手动调整退款/减免罚金(需复核);批量风险时暂停早赎通道 | Y | 写 POST /api/stakes/:id/early-withdraw (抄 staking.… | gap |
+| CGM-G-011 | per-user | function-action | useStaking.claim(id) | payout_pacing,fund_safety | 运营查领取流水;手动批准/驳回到期出金;争议利息确认与改派 | Y | 写 POST /api/stakes/:id/claim (抄 staking.ts 头注) | gap |
+| CGM-G-012 | per-user | function-action | useStaking.earlyWithdraw(id) | fund_safety,payout_pacing,risk | 运营查早赎记录、核对罚金计算;争议时手动调整退款/减免罚金(需确认);批量风险时暂停早赎通道 | Y | 写 POST /api/stakes/:id/early-withdraw (抄 staking.… | gap |
 | CGM-G-013 | per-user | data-CRUD | useStaking.positions[] | fund_safety,payout_pacing,risk | 运营查仓与状态;手动改单状态(冻结可疑仓、强制 matured、争议单回滚到 active);read-only 净额校验,改本金/APY… | Y | 读 GET /api/stakes (TBD·建议) · 写 POST /api/stakes/:… | gap |
 | CGM-G-014 | per-user | function-action | useStaking.stake(amount, termDays) | fund_safety,conversion,payout_pacing | 运营可对单笔 stake 审核/驳回;开/关某档位申购(配合 per-pool enabled);异常单撤单 | Y | TBD·建议 POST /api/stakes (open) | gap |
-| CGM-G-015 | per-user | function-action | WithdrawPage.handleSubmit (points.spend + submi… | fund_safety,payout_pacing,risk,platform… | 运营审批/驳回提现;核对扣积分+锁定USDT+建队列+写bill 一致性;争议回滚;调风控 | Y | 写 POST /api/withdrawals (抄 withdraw/page.tsx 注) | gap |
+| CGM-G-015 | per-user | function-action | WithdrawPage.handleSubmit (points.spend + submi… | fund_safety,payout_pacing,risk,platform… | 运营确认/驳回提现;核对扣积分+锁定USDT+建队列+写bill 一致性;争议回滚;调风控 | Y | 写 POST /api/withdrawals (抄 withdraw/page.tsx 注) | gap |
 | CGM-G-016 | platform | param-config | exchange minFrom (usdt2nex=1 / nex2usdt=10) + f… | conversion,fund_safety | 调最小兑换额、开启/调整兑换费率(目前0) | Y | 读 GET /api/config/exchange/caps (含 min/fee) (TBD·… | gap |
 | CGM-G-017 | platform | param-config | GENESIS_ROYALTY_RATE=0.025 | fund_safety,payout_pacing,network_growth | 调版税率;金库分成策略调整 | Y | 读 GET /api/genesis/state (含 royalty) (TBD·建议) | gap |
 | CGM-G-018 | platform | param-config | MIN_WITHDRAWAL_USD=20 / fee=2% (clamp $1~$20) /… | fund_safety,payout_pacing,risk,content_… | 监管/风控调提现阈值(日常操作):最低额、费率公式、日额度上限 | Y | 读 GET /api/config/wallet/withdraw-limits (抄 _conf… | gap |

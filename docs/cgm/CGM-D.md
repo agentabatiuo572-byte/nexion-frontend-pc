@@ -4,7 +4,7 @@
 
 本域 22 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
 | CGM-D-001 | per-user | function-action | advanceWithdrawal | payout_pacing,fund_safety,platform_inte… | 运营经服务端推进/冻结/驳回/退款状态(目标态=终态 confirmed 或异常态);生产客户端永不改状态,仅反映服务端。 | Y | 读 GET /api/withdrawals/:id 或 webhook/SSE (per PRD… | gap |
 | CGM-D-002 | per-user | data-CRUD | bills[] (Bill: id/type/amount/symbol/status/ts/… | fund_safety,platform_integrity,payout_p… | 运营只读流水 + 服务端补记调整/冲正分录(目标态=对账平);客户端只排序+展示,不重算 balanceAfter。 | Y | 读 GET /api/bills?range=30d;写 POST /api/bills(serv… | gap |
@@ -19,7 +19,7 @@
 | CGM-D-011 | per-user | function-action | recordDeposit | fund_safety,platform_integrity | 运营触发补记/冲正充值(差错处理),目标态=对账后正确余额+累计;严禁把收益/salvage/KYC/quest 走此动作。 | Y | 读 GET /api/users/me (TBD·candidate);写 PSP-webhook… | gap |
 | CGM-D-012 | per-user | function-action | recycleDevice | fund_safety,conversion,risk | 运营代发回收(目标态=移除设备 + 记 recycle credit 账单 pending trade-in);salvage 不得错记入… | Y | 写 POST /api/devices/recycle (TBD·candidate, not i… | gap |
 | CGM-D-013 | per-user | function-action | replaceDevice | fund_safety,conversion,platform_integri… | 运营代发显式换机(目标态=旧换新+净额扣款+tradein 账单);salvage 仅抵扣不入余额;失败回滚重插旧设备。 | Y | 写 POST /api/devices/replace (TBD·candidate, not i… | gap |
-| CGM-D-014 | per-user | function-action | submitWithdrawal | fund_safety,payout_pacing,risk | 运营审核/批准/驳回提现(maker-checker 双签);目标态=放行→processing/sent 或驳回退款。服务端原子事务:扣… | Y | 写 POST /api/withdrawals;读状态 GET /api/withdrawals/… | gap |
+| CGM-D-014 | per-user | function-action | submitWithdrawal | fund_safety,payout_pacing,risk | 运营审核/批准/驳回提现(reason-confirm 操作确认);目标态=放行→processing/sent 或驳回退款。服务端原子事务:扣… | Y | 写 POST /api/withdrawals;读状态 GET /api/withdrawals/… | gap |
 | CGM-D-015 | per-user | function-action | tick (收益/状态模拟主循环) | payout_pacing,fund_safety,platform_inte… | 运营不直接触发(SimulationProvider 驱动);生产由服务端调度器跑,客户端只订阅渲染。收据必须服务端签名。 | Y | 读 SSE/WebSocket /api/me/earnings/stream + /api/pl… | gap |
 | CGM-D-016 | per-user | function-action | useBills.add | fund_safety,platform_integrity | 运营经服务端 POST /api/bills 写账单(目标态=新增 canonical 账单);客户端 add 仅 mock。 | Y | 写 POST /api/bills(server 返回 id) | gap |
 | CGM-D-017 | per-user | data-CRUD | user.cumulativeDepositUsdt | fund_safety,risk,conversion | 运营只读 + 与服务端 canonical 值对账纠偏(客户端 +x.toFixed(2) 累加会丢亚分);目标态=server cano… | Y | 读 GET /api/users/me.cumulativeDepositUsdt (TBD·ca… | gap |

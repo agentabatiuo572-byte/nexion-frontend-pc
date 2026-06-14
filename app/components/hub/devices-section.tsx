@@ -2,7 +2,7 @@
 
 /**
  * 360 HUB · 设备卡(单用户算力设备 CRUD)— C1·deepening。
- * 真交互层:下线/上线/换机/回收 经 confirm(Maker-Checker 复核)后**真实改 useUserOps state** → 行状态/在线数/今日产出立即更新 + 写审计流。
+ * 真交互层:下线/上线/换机/回收 经 confirm(操作确认 确认)后**真实改 useUserOps state** → 行状态/在线数/今日产出立即更新 + 写审计流。
  * 真后台:每动作对应 server-canonical 端点(POST /api/admin/devices/{id}/{deactivate|activate|replace|recycle},Idempotency-Key)。salvage 不入余额。
  * CGM: CGM-C devices[].* / CGM-E activate/deactivate/replace/recycle。
  */
@@ -40,7 +40,7 @@ export function DevicesSection({ user }: { user: AdminUser }) {
     const goOnline = !d.online;
     const ok = await confirm({
       title: goOnline ? "上线设备?" : "下线设备?",
-      message: `${goOnline ? "恢复" : "停止"}「${d.name} ${d.id}」算力产出 · 第二角色复核后 server 原子执行 + 审计留痕。`,
+      message: `${goOnline ? "恢复" : "停止"}「${d.name} ${d.id}」算力产出 · 操作确认后 server 原子执行 + 审计留痕。`,
       confirmLabel: goOnline ? "确认上线" : "确认下线",
       danger: !goOnline,
     });
@@ -50,14 +50,14 @@ export function DevicesSection({ user }: { user: AdminUser }) {
     }
   }
   async function doRecycle(d: OpsDevice) {
-    const ok = await confirm({ title: "回收设备?", message: `回收「${d.name} ${d.id}」:停止产出并退出车队,salvage 残值不入余额。需第二角色复核 + 审计。`, confirmLabel: "确认回收", danger: true });
+    const ok = await confirm({ title: "回收设备?", message: `回收「${d.name} ${d.id}」:停止产出并退出车队,salvage 残值不入余额。需填写操作理由并写入审计。`, confirmLabel: "确认回收", danger: true });
     if (ok) {
       deviceRecycle(user.id, d.id);
       toast.success("设备已回收", `${user.id} · ${d.id}`);
     }
   }
   async function doSwap(d: OpsDevice) {
-    const ok = await confirm({ title: "换机?", message: `为「${d.name} ${d.id}」更换新代际硬件(G${d.generation} → G${d.generation + 1})。需第二角色复核 + 审计。`, confirmLabel: "确认换机" });
+    const ok = await confirm({ title: "换机?", message: `为「${d.name} ${d.id}」更换新代际硬件(G${d.generation} → G${d.generation + 1})。需填写操作理由并写入审计。`, confirmLabel: "确认换机" });
     if (ok) {
       deviceSwap(user.id, d.id);
       toast.success("已换机", `${user.id} · ${d.id} → G${d.generation + 1}`);
@@ -65,7 +65,7 @@ export function DevicesSection({ user }: { user: AdminUser }) {
   }
 
   return (
-    <HubCard icon={<Cpu size={15} style={{ color: "var(--admin-domain-e)" }} />} title="设备卡 · 单用户算力设备 CRUD" tag="C1·deepening · 真状态写 · MC 双签">
+    <HubCard icon={<Cpu size={15} style={{ color: "var(--admin-domain-e)" }} />} title="设备卡 · 单用户算力设备 CRUD" tag="C1·deepening · 真状态写 · 操作确认">
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <HubMetric label="设备总数" value={`${active.length}`} accent="var(--admin-domain-e)" />
         <HubMetric label="在线" sub={`/ ${active.length} 台`} value={`${online}`} accent={online > 0 ? "var(--v5-success)" : "var(--v5-ink-4)"} />
@@ -112,8 +112,8 @@ export function DevicesSection({ user }: { user: AdminUser }) {
       </div>
 
       <p className="mt-2 flex flex-wrap items-center gap-1 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
-        <ShieldAlert size={12} /> <AutoGloss>下线/上线/换机/回收 = server-canonical action 端点 + Maker-Checker 双签 + 审计;批量调度/衰减曲线见</AutoGloss>
-        <Link href="/devices/ops" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}>E7 设备处置<ArrowUpRight size={11} /></Link>。
+        <ShieldAlert size={12} /> <AutoGloss>下线/上线/换机/回收 = server-canonical action 端点 + 操作确认 + 审计;批量调度/衰减曲线见</AutoGloss>
+        <Link href="/devices/ops" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}>E5 设备处置<ArrowUpRight size={11} /></Link>。
       </p>
     </HubCard>
   );

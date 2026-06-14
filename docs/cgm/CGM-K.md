@@ -4,7 +4,7 @@
 
 本域 5 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
 | CGM-K-001 | per-user | data-CRUD | profileKycVerifiedChip / profileKycPendingChip … | content_compliance,fund_safety,risk | 合规运营推进/拒绝 KYC 审核、切换状态 Pending→Verified、触发重新验证;状态变更驱动出金/质押放行 | Y | 读 GET /api/me/kyc-status;写 POST /api/admin/users/… | gap |
 | CGM-K-002 | per-user | function-action | useRiskDisclosure.accepted (acknowledgment gate) | fund_safety,content_compliance,platform… | 合规运营核查确认记录;争议时回看 timestamped acknowledgment;监管要求时强制用户重新确认(reset accep… | Y | 读+写 TBD·建议 GET /api/me/risk-acknowledgment + POST… | gap |

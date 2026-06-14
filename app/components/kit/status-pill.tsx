@@ -1,6 +1,6 @@
 /**
  * StatusPill — 通用状态徽标(标签 + 语义色调 + 软底)。
- * 用于脚手架状态、D2 提现状态机、E1 审批态等。tone 决定取色 token。
+ * 用于脚手架状态、D2 提现状态机、E1 确认态等。tone 决定取色 token。
  */
 export type PillTone = "neutral" | "brand" | "success" | "warning" | "danger" | "info" | "purple";
 

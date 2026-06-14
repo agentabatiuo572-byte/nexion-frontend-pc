@@ -64,7 +64,7 @@ export interface OpsSku {
   unlock: string;               // 解锁 Phase(= 前端 unlocksAtPhase)P1-P6
   // ── 后台运营态(后台特有,非前端展示)──
   tag: string;                  // 后台分类 tone(popular / limited / pro / legacy / "")
-  status: string;               // on(在售)/ off(下架)/ pending(待上架复核)
+  status: string;               // on(在售)/ off(下架)/ pending(待上架确认)
 }
 
 // 运营账号 · 凭据下发方式:邀请链接(操作员自设密码,管理员永不知晓)/ SSO 企业单点 / 临时密码强制首登改。
@@ -110,7 +110,7 @@ export interface OpsAuditEntry {
   target?: string;  // 作用对象 / 参数 key
   before?: string;  // 旧值(参数类动作)
   after?: string;   // 新值
-  reason?: string;  // Maker-Checker 复核理由
+  reason?: string;  // 操作确认 确认理由
 }
 
 interface PlatformConfigStore {

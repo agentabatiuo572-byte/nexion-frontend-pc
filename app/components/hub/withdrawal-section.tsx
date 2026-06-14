@@ -2,7 +2,7 @@
 
 /**
  * 360 HUB · 提现卡(单用户提现明细)— C1·deepening。
- * 读:Withdrawal(per-user)。处置(放行/冻结/驳回/退款)跳 D2 提现审核队列(MC 双签 + server 原子事务)。
+ * 读:Withdrawal(per-user)。处置(放行/冻结/驳回/退款)跳 D2 提现审核队列(操作确认 + server 原子事务)。
  * CGM: CGM-D submitWithdrawal/advanceWithdrawal/latestWithdrawal。
  */
 import Link from "next/link";
@@ -15,12 +15,12 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { HubCard, HubMetric } from "./hub-kit";
 
 const WD_TONE: Record<WithdrawStatus, PillTone> = { submitted: "neutral", review: "warning", processing: "warning", sent: "success", confirmed: "success", rejected: "danger" };
-const WD_LABEL: Record<WithdrawStatus, string> = { submitted: "已提交", review: "复核中", processing: "处理中", sent: "已发送", confirmed: "已确认", rejected: "已驳回" };
+const WD_LABEL: Record<WithdrawStatus, string> = { submitted: "已提交", review: "确认中", processing: "处理中", sent: "已发送", confirmed: "已确认", rejected: "已驳回" };
 
 export function WithdrawalSection({ user }: { user: AdminUser }) {
   const w = getUserWithdrawals(user.id, user.withdrawnUsd);
   return (
-    <HubCard icon={<Banknote size={15} style={{ color: "var(--v5-warning)" }} />} title="提现卡 · 单用户提现明细" tag="C1·deepening · D2 队列 · 处置在 D2 MC">
+    <HubCard icon={<Banknote size={15} style={{ color: "var(--v5-warning)" }} />} title="提现卡 · 单用户提现明细" tag="C1·deepening · D2 队列 · 处置在 D2 操作确认">
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <HubMetric label="累计提现" value={fmtUsd(user.withdrawnUsd)} accent="var(--v5-warning)" />
         <HubMetric label="提现笔数" value={`${w.items.length}`} />
@@ -61,7 +61,7 @@ export function WithdrawalSection({ user }: { user: AdminUser }) {
       <p className="mt-2 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
         <AutoGloss>放行/冻结/延迟/驳回/退款在</AutoGloss>
         <Link href="/finance/withdrawals" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--v5-warning)" }}> <AutoGloss>D2 提现审核队列</AutoGloss><ArrowUpRight size={11} /></Link>
-        <AutoGloss>执行 · MC 双签 + server 原子事务(扣余额+置态同事务)+ 红线核验。</AutoGloss>
+        <AutoGloss>执行 · 操作确认 + server 原子事务(扣余额+置态同事务)+ 红线核验。</AutoGloss>
       </p>
     </HubCard>
   );

@@ -3,7 +3,7 @@
 /**
  * 360 HUB · 订单·商城·收据·试用卡 — C1·deepening。
  * 覆盖:useOrders 订单 CRUD / useReceipts Proof-of-Compute / useFreeTrial 状态机 / useCart 购物车 / cumulativeDeposit。
- * 处置(取消订单/退款/补发收据/重置试用)= confirm→MC。CGM: E-005..011。
+ * 处置(取消订单/退款/补发收据/重置试用)= confirm→操作确认。CGM: E-005..011。
  */
 import Link from "next/link";
 import { ShoppingBag, ArrowUpRight } from "lucide-react";
@@ -28,14 +28,14 @@ export function CommerceSection({ user }: { user: AdminUser }) {
   const cancelOrderStore = useUserOps((s) => s.cancelOrder);
   const cancelled = hydrated ? (storeCancelled ?? []) : [];
   async function doCancelOrder(o: { id: string; product: string }) {
-    const yes = await confirm({ title: "取消该订单?", message: `取消 ${o.id}(${o.product})· 若已支付转退款流程 · 需第二角色复核 + 审计留痕。`, confirmLabel: "取消订单", danger: true });
+    const yes = await confirm({ title: "取消该订单?", message: `取消 ${o.id}(${o.product})· 若已支付转退款流程 · 需填写操作理由 + 审计留痕。`, confirmLabel: "取消订单", danger: true });
     if (yes) {
       cancelOrderStore(user.id, o.id, `${o.id} · ${o.product}`);
       toast.success("订单已取消", `${user.id} · ${o.id}`);
     }
   }
   return (
-    <HubCard icon={<ShoppingBag size={15} style={{ color: "var(--admin-domain-e)" }} />} title="订单·商城·收据·试用卡" tag="C1·deepening · E 商城 · 处置 MC">
+    <HubCard icon={<ShoppingBag size={15} style={{ color: "var(--admin-domain-e)" }} />} title="订单·商城·收据·试用卡" tag="C1·deepening · E 商城 · 处置 操作确认">
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <HubMetric label="历史订单" value={`${c.orders.length}`} accent="var(--admin-domain-e)" />
         <HubMetric label="收据" sub="Proof-of-Compute" value={`${c.receipts.length}`} />
@@ -84,9 +84,9 @@ export function CommerceSection({ user }: { user: AdminUser }) {
       </ul>
 
       <p className="mt-2.5 flex flex-wrap items-center gap-2 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
-        <Link href="/devices/orders" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}>E6 订单管理<ArrowUpRight size={11} /></Link>
-        <Link href="/devices/trade-in" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}><AutoGloss>E5 trade-in</AutoGloss><ArrowUpRight size={11} /></Link>
-        <AutoGloss>取消/退款/补发收据/重置试用在 E 域 · MC 双签。</AutoGloss>
+        <Link href="/devices/orders" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}>E4 订单管理<ArrowUpRight size={11} /></Link>
+        <Link href="/devices/trade-in" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}><AutoGloss>E3 trade-in</AutoGloss><ArrowUpRight size={11} /></Link>
+        <AutoGloss>取消/退款/补发收据/重置试用在 E 域 · 操作确认。</AutoGloss>
       </p>
     </HubCard>
   );

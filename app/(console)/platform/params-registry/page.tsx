@@ -1,7 +1,7 @@
 /**
  * A5 平台参数寄存器(Platform Parameter Registry · 旗舰)。
  * 把全平台业务常量(回源前端真值)按 12 域归集成单一字段级目录:
- * 每个参数 = 真值 + 控制类型 + 运营杠杆 + Maker-Checker + 端点 + 前端出处 + 跳转该域 config 模块编辑。
+ * 每个参数 = 真值 + 控制类型 + 运营杠杆 + 操作确认 + 端点 + 前端出处 + 跳转该域 config 模块编辑。
  * 数据 = 直接读 docs/cgm/cgm.manifest.json 的 platform 行(CGM 单一真源,永同步)。
  * 这是「平台版 360 HUB」:平台运营面的最细颗粒度控制索引。server component · 只读 + 跳转。
  */
@@ -20,7 +20,7 @@ interface CgmRow {
   opsPurpose?: string | string[];
   querySurface?: string;
   crudActions?: string;
-  makerChecker?: boolean;
+  operationConfirm?: boolean;
   serverCanonical?: string;
   endpoint?: string;
   adminTarget?: string;
@@ -71,8 +71,8 @@ function ownerFor(r: CgmRow): { path: string; label: string } {
     [/market|klin|pump|nexpriceusdt|volume24/, "/finance-products/market", "G3 行情控制"],
     [/premium|nex.?v2|repurchase|复投|lock_months/, "/finance-products/repurchase", "G7 金融附加"],
     [/device_price|device_specs|baserate|products\[|catalog|max_devices/, "/devices/pricing", "E1 商品定价"],
-    [/degradation|salvage|decay|efficiency|lifecycle/, "/devices/lifecycle", "E4 衰减/残值"],
-    [/trade.?in|tradein|upgrade_ladder/, "/devices/trade-in", "E5 trade-in 配置"],
+    [/degradation|salvage|decay|efficiency|lifecycle/, "/devices/trade-in", "E3 衰减/残值(并入生命周期)"],
+    [/trade.?in|tradein|upgrade_ladder/, "/devices/trade-in", "E3 trade-in 配置"],
     [/trial|shadow|discount|autopush|autocharge/, "/growth/trial", "H2 Trial 引擎"],
     [/phase|10-dial|getphasereward|monthly_locked|inviteBonusMultiplier/, "/growth/phase", "H1 Phase 调度"],
     [/quest|tier[12]|streak|weekly_bonus|spin_prizes|lucky/, "/growth/quest", "H3 任务引擎"],
@@ -111,7 +111,7 @@ function opsList(p: CgmRow["opsPurpose"]): string[] {
 
 export default function PlatformParamsRegistryPage() {
   const domains = Object.keys(DOMAIN_META).filter((d) => rows.some((r) => r.domain === d));
-  const mcCount = rows.filter((r) => r.makerChecker).length;
+  const mcCount = rows.filter((r) => r.operationConfirm).length;
 
   return (
     <div className="mx-auto w-full max-w-[1180px]">
@@ -120,13 +120,13 @@ export default function PlatformParamsRegistryPage() {
         <h1 className="font-display mt-1 text-[24px]" style={{ color: "var(--v5-ink)" }}>平台参数寄存器</h1>
         <p className="mt-1.5 max-w-[760px] text-[12.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>
           全平台业务常量字段级目录 —— 每个参数为<strong style={{ color: "var(--v5-ink-2)" }}>回源真值</strong>(取自前端代码常量,非示意值),
-          标注控制类型 / 运营杠杆 / Maker-Checker / server-canonical / 端点 / 前端出处,并跳转该域 config 模块编辑。
+          标注控制类型 / 运营杠杆 / 操作确认 / server-canonical / 端点 / 前端出处,并跳转该域 config 模块编辑。
           这是平台运营面的最细颗粒度控制索引(数据源:全平台参数单一真源,永同步)。
         </p>
         <div className="mt-3 flex flex-wrap gap-2.5">
           <Stat label="平台参数" value={`${rows.length}`} accent="var(--admin-domain-a)" />
           <Stat label="覆盖域" value={`${domains.length}`} />
-          <Stat label="高敏(MC 双签)" value={`${mcCount}`} accent="var(--v5-warning)" />
+          <Stat label="高敏(操作确认)" value={`${mcCount}`} accent="var(--v5-warning)" />
           <Stat label="server-canonical" value="服务端权威" sub="客户端仅 UI cache" />
         </div>
       </header>
@@ -159,9 +159,9 @@ export default function PlatformParamsRegistryPage() {
                             {opsList(r.opsPurpose).map((o) => (
                               <span key={o} className="rounded-full px-1.5 py-0.5 text-[10px]" style={{ background: "color-mix(in srgb, " + meta.accent + " 12%, transparent)", color: meta.accent }}>{OPS_LABEL[o] || o}</span>
                             ))}
-                            {r.makerChecker && (
+                            {r.operationConfirm && (
                               <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]" style={{ background: "color-mix(in srgb, var(--v5-warning) 14%, transparent)", color: "var(--v5-warning)" }}>
-                                <ShieldCheck size={10} /> MC 双签
+                                <ShieldCheck size={10} /> 操作确认
                               </span>
                             )}
                           </div>
@@ -183,7 +183,7 @@ export default function PlatformParamsRegistryPage() {
       </div>
 
       <p className="mt-4 text-[11px] leading-relaxed" style={{ color: "var(--v5-ink-4)" }}>
-        资金 / 资产 / 收益 / 规则 / kill-switch 类参数变更一律 Maker-Checker 双签 + 发起人不可自审 + server-canonical 服务端权威 + 审计留痕;
+        资金 / 资产 / 收益 / 规则 / kill-switch 类参数变更一律 操作确认 + 操作理由必填 + server-canonical 服务端权威 + 审计留痕;
         本页为只读索引,实际改值在各域 config 模块内执行。
       </p>
     </div>

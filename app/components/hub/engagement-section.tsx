@@ -2,7 +2,7 @@
 
 /**
  * 360 HUB · 互动卡(单用户任务/签到/抽奖/里程碑)— C1·deepening。
- * 读:quest/weekly-quest/lucky-spin/milestones/stella(per-user)。处置(补发奖励/重置/概率配置)跳 H 域 MC。
+ * 读:quest/weekly-quest/lucky-spin/milestones/stella(per-user)。处置(补发奖励/重置/概率配置)跳 H 域 操作确认。
  * CGM: CGM-H quest/checkin/lucky-spin/milestone per-user 行。
  */
 import Link from "next/link";
@@ -15,7 +15,7 @@ import { HubCard, HubMetric } from "./hub-kit";
 export function EngagementSection({ user }: { user: AdminUser }) {
   const g = getUserEngagement(user.id, user.teamSize, user.depositedUsd);
   return (
-    <HubCard icon={<Gift size={15} style={{ color: "var(--admin-domain-h)" }} />} title="互动卡 · 任务 / 签到 / 抽奖 / 里程碑" tag="C1·deepening · H 增长 · 处置在 H MC">
+    <HubCard icon={<Gift size={15} style={{ color: "var(--admin-domain-h)" }} />} title="互动卡 · 任务 / 签到 / 抽奖 / 里程碑" tag="C1·deepening · H 增长 · 处置在 H 操作确认">
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <HubMetric label="连续签到" sub="天" value={`${g.checkinStreak}`} accent="var(--admin-domain-h)" />
         <HubMetric label="进行任务" value={`${g.quests.filter((q) => !q.done).length}`} />
@@ -51,7 +51,7 @@ export function EngagementSection({ user }: { user: AdminUser }) {
       <p className="mt-2.5 flex flex-wrap items-center gap-2 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
         <Link href="/growth/quest" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-h)" }}>H3 Quest<ArrowUpRight size={11} /></Link>
         <Link href="/growth/daily" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-h)" }}>H5 签到<ArrowUpRight size={11} /></Link>
-        <AutoGloss>补发奖励/重置进度/概率配置在 H 域 · MC 双签 · 概率 server-canonical。</AutoGloss>
+        <AutoGloss>补发奖励/重置进度/概率配置在 H 域 · 操作确认 · 概率 server-canonical。</AutoGloss>
       </p>
     </HubCard>
   );

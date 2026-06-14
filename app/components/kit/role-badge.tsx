@@ -1,6 +1,6 @@
 /**
  * RoleBadge — 运营角色徽标(中文标签 + 角色色点 + 软底)。
- * 用于 TopBar、ApprovalCard(Maker/Checker 身份)、AuditTimeline。
+ * 用于 TopBar、OperationConfirmCard(操作员 / 执行门槛 身份)、AuditTimeline。
  */
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { ROLE_LABEL } from "@/lib/nav/console-nav";

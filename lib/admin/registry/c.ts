@@ -1,16 +1,25 @@
-/** 域 C 用户与账户 — 注册表。accent=--admin-domain-c。C1 检索 & 画像为旗舰单独成页,此处补 C2–C6。 */
+/**
+ * 域 C 用户与账户 — 注册表。accent=--admin-domain-c。
+ * ⚠️ C ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = c-view.tsx + c-tabs/),
+ * 仅 summary 经 DomainHeader 渲染(design_handoff_c_domain f-desc 压缩版,2026-06-11)。
+ */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
 export const DOMAIN_C: ModuleEntry[] = [
   {
+    path: "/users/search",
+    summary: "C 域入口与用户检索面(C1):多维检索定位用户,一屏看完分层 / 实名 / 设备 / 风险分 / 余额 / 状态;检索结果只读引用各域 server 权威数据、不重算,处置去对应权威页(冻结 C2 / 资产 C3 / 实名 C4 / 安全 C5)。生命周期 L0–L5 与 V-Rank V0–V12 仅运营可见,用户端永不可见。",
+    content: { kind: "dashboard" },
+  },
+  {
     path: "/users/actions",
-    summary: "账户操作台(C2):对账户执行 冻结 / 解冻 / 限制 / 重置密码 / impersonate 只读。行级操作按账户当前态门控;高敏操作需 Maker-Checker 双签、发起人不可自审,全程写入 A2 审计。",
+    summary: "单用户账户的处置入口(C2):冻结 / 解冻、强制登出、模拟登录排障、信任/禁入名单。冻结台账的权威落在本页(K1 批量冻结的落点也在这),冻结操作确认生效后服务器原子联动:在途提现转冻结(D2)+ 全部会话踢线(C5);模拟登录三道锁 = 授权确认、全程只读(写接口 403)、≤30 分钟自动断,全程留痕。",
     content: {
       kind: "list",
       metrics: [
         { label: "今日操作", value: "37", sub: "全部类型", accent: "var(--admin-domain-c)", hint: "今日对账户执行的操作条数。" },
         { label: "当前冻结", value: "9", sub: "资金 / 提现冻结", accent: "var(--v5-danger)", hint: "处于冻结态、暂停出入金的账户数。" },
-        { label: "待复核", value: "4", sub: "Maker-Checker", accent: "var(--v5-warning)", hint: "等待第二人签核的高敏操作。" },
+        { label: "待确认", value: "4", sub: "操作确认", accent: "var(--v5-warning)", hint: "等待确认理由签核的高敏操作。" },
         { label: "impersonate", value: "6", sub: "今日 · 只读", accent: "var(--v5-ink-3)", hint: "客服只读代入会话次数,全程录屏留痕。" },
       ],
       search: "搜索用户 ID / 昵称",
@@ -43,19 +52,19 @@ export const DOMAIN_C: ModuleEntry[] = [
         { label: "重置密码" },
         { label: "impersonate 只读" },
       ],
-      note: "冻结 / 解冻 / 限制为高敏操作,需 Maker-Checker 双签且发起人不可自审(总管理员免双签);impersonate 仅限只读、全程录屏并写入 A2 审计,不可代用户出入金。行级操作按账户当前态门控。",
+      note: "冻结 / 解冻 / 限制为高敏操作,需 操作确认且操作理由必填(总管理员仍需操作确认);impersonate 仅限只读、全程录屏并写入 A2 审计,不可代用户出入金。行级操作按账户当前态门控。",
     },
   },
   {
     path: "/users/assets",
-    summary: "余额 & 资产调整申请台账(C3):用户 / 币种 / 金额 / 原因 / 双签状态。任何调账经财务发起 → 风控复核,server 端入账并写 A2;发起人不可自审。",
+    summary: "客服补偿与系统纠错的手工调整面(C3):USDT / NEX / 积分 × 增减,每笔操作确认 + 原因凭证必填;USDT/NEX 与账本(D4)同一事务记「人工调整」账单,积分改字段 + 审计不落账;加钱方向确认放行瞬间实时过备付金覆盖率红线,低于红线转挂起(7 天有效);单笔超 $500 自动升级确认层。",
     content: {
       kind: "list",
       metrics: [
         { label: "今日申请", value: "14", sub: "调账工单", accent: "var(--admin-domain-c)", hint: "今日提交的余额 / 资产调整工单。" },
-        { label: "待复核", value: "5", sub: "Maker-Checker", accent: "var(--v5-warning)", hint: "已发起、等待第二人签核的调账。" },
+        { label: "待确认", value: "5", sub: "操作确认", accent: "var(--v5-warning)", hint: "已发起、等待确认理由签核的调账。" },
         { label: "今日净调整", value: "+$312", sub: "USDT 口径", accent: "var(--v5-ink-3)", hint: "今日已入账调整的净额(借贷轧差)。" },
-        { label: "大额待审", value: "2", sub: "≥ $500", accent: "var(--v5-danger)", hint: "超过大额阈值、需总管理员加签的调账。" },
+        { label: "大额待确认", value: "2", sub: "≥ $500", accent: "var(--v5-danger)", hint: "超过大额阈值、需总管理员加签的调账。" },
       ],
       search: "搜索用户 ID / 工单号",
       filterKey: "ccy",
@@ -66,15 +75,15 @@ export const DOMAIN_C: ModuleEntry[] = [
         { key: "ccy", header: "币种" },
         { key: "amount", header: "金额", mono: true, align: "right" },
         { key: "reason", header: "原因" },
-        { key: "state", header: "双签", status: true },
+        { key: "state", header: "操作确认", status: true },
       ],
       rows: [
-        { ticket: "ADJ-2606-0142", uid: "U-77310", ccy: "USDT", amount: "+$120.00", reason: "充值漏账补记", state: "待复核" },
+        { ticket: "ADJ-2606-0142", uid: "U-77310", ccy: "USDT", amount: "+$120.00", reason: "充值漏账补记", state: "待确认" },
         { ticket: "ADJ-2606-0141", uid: "U-65120", ccy: "USDT", amount: "−$58.00", reason: "重复入账冲正", state: "已通过" },
-        { ticket: "ADJ-2606-0140", uid: "U-88421", ccy: "NEX", amount: "+320 NEX", reason: "产出结算误差补发", state: "待复核" },
-        { ticket: "ADJ-2606-0139", uid: "U-90233", ccy: "USDT", amount: "+$520.00", reason: "兑付差额补偿 · 大额", state: "待复核" },
+        { ticket: "ADJ-2606-0140", uid: "U-88421", ccy: "NEX", amount: "+320 NEX", reason: "产出结算误差补发", state: "待确认" },
+        { ticket: "ADJ-2606-0139", uid: "U-90233", ccy: "USDT", amount: "+$520.00", reason: "兑付差额补偿 · 大额", state: "待确认" },
         { ticket: "ADJ-2606-0138", uid: "U-58642", ccy: "积分", amount: "+1,500", reason: "任务积分发放修正", state: "已通过" },
-        { ticket: "ADJ-2606-0137", uid: "U-81905", ccy: "USDT", amount: "−$640.00", reason: "违规返利追回 · 大额", state: "待复核" },
+        { ticket: "ADJ-2606-0137", uid: "U-81905", ccy: "USDT", amount: "−$640.00", reason: "违规返利追回 · 大额", state: "待确认" },
         { ticket: "ADJ-2606-0136", uid: "U-72488", ccy: "NEX", amount: "−45 NEX", reason: "误发回收 · 已知会用户", state: "已拒绝" },
         { ticket: "ADJ-2606-0135", uid: "U-93077", ccy: "USDT", amount: "+$36.00", reason: "客诉核实补偿", state: "已通过" },
       ],
@@ -83,12 +92,12 @@ export const DOMAIN_C: ModuleEntry[] = [
         { label: "通过", tone: "primary" },
         { label: "驳回", tone: "danger" },
       ],
-      note: "调账经财务发起、风控复核双签,发起人不可自审;≥ $500 大额需总管理员加签。每笔均生成 debit/credit 凭证并写入 A2,可逆操作须附冲正工单号。",
+      note: "调账经财务发起、风控确认,操作理由必填;≥ $500 大额需总管理员加签。每笔均生成 debit/credit 凭证并写入 A2,可逆操作须附冲正工单号。",
     },
   },
   {
     path: "/users/kyc",
-    summary: "KYC 合规台账(C4):KYC 等级 / 状态 / $1 验证 / 复审。等级决定提现与兑换额度;升降级与人工复审写入 A2,敏感复核需双签。",
+    summary: "全平台实名状态的唯一权威台账(C4):$1 钱包配对验证(进用户余额,实际免费);提现门槛(D2)/ 兑换门槛(G2)/ 大额复审(K5)统一从这里读真值、不各存一份。人工标记 / 撤销实名 = 合规高敏操作确认;触发复审只发 K5 工单、裁决由 K5 回写;触发阈值只读(累计线归 K5、兑换额度归 G2)。",
     content: {
       kind: "list",
       metrics: [
@@ -111,12 +120,12 @@ export const DOMAIN_C: ModuleEntry[] = [
       rows: [
         { uid: "U-88421", level: "高级", verify: "已通过", region: "SEA", submitted: "06-01 10:22", state: "通过" },
         { uid: "U-90233", level: "基础", verify: "已通过", region: "LATAM", submitted: "06-02 09:14", state: "通过" },
-        { uid: "U-77310", level: "基础", verify: "处理中", region: "SEA", submitted: "06-02 11:03", state: "待复核" },
-        { uid: "U-65120", level: "高级", verify: "已通过", region: "EU", submitted: "05-30 16:48", state: "待复核" },
+        { uid: "U-77310", level: "基础", verify: "处理中", region: "SEA", submitted: "06-02 11:03", state: "待确认" },
+        { uid: "U-65120", level: "高级", verify: "已通过", region: "EU", submitted: "05-30 16:48", state: "待确认" },
         { uid: "U-81905", level: "未验证", verify: "未发起", region: "—", submitted: "06-02 08:31", state: "高危" },
         { uid: "U-72488", level: "基础", verify: "已通过", region: "SEA", submitted: "05-29 14:20", state: "通过" },
         { uid: "U-58642", level: "高级", verify: "已通过", region: "MENA", submitted: "05-31 12:05", state: "通过" },
-        { uid: "U-93077", level: "基础", verify: "已通过", region: "LATAM", submitted: "06-01 19:40", state: "待复核" },
+        { uid: "U-93077", level: "基础", verify: "已通过", region: "LATAM", submitted: "06-01 19:40", state: "待确认" },
       ],
       detail: true,
       rowActions: [
@@ -124,12 +133,12 @@ export const DOMAIN_C: ModuleEntry[] = [
         { label: "驳回", tone: "danger" },
         { label: "要求补件" },
       ],
-      note: "KYC 等级决定 D 域提现 / G 域兑换额度上限;$1 验证为小额回流确权,不构成出入金。升降级与驳回写入 A2;命中制裁 / 高危名单的裁定需风控双签,发起人不可自审。",
+      note: "KYC 等级决定 D 域提现 / G 域兑换额度上限;$1 验证为小额回流确权,不构成出入金。升降级与驳回写入 A2;命中制裁 / 高危名单的裁定需风控操作确认,操作理由必填。",
     },
   },
   {
     path: "/users/security",
-    summary: "安全 & 会话(C5):登录 / 设备 / 会话 / 异常。聚合近期登录与活跃会话,异常事件联动 C6 风控与 K 域标记;踢出会话 / 强制改密写入 A2。",
+    summary: "单用户账户安全处置面(C5):2FA / 登录会话 / 密码重置 / 锁定解除。核心是防社工夺号:关 2FA 与重置密码 = 操作确认 + 实名二验前置,密码只存哈希谁也看不到明文;锁定两档解锁路径(15 分钟短锁二验即时、24 小时长锁操作确认);解锁处置权统一在本页,「何时锁」的阈值在 C6 配。",
     content: {
       kind: "list",
       metrics: [
@@ -156,7 +165,7 @@ export const DOMAIN_C: ModuleEntry[] = [
         { ts: "12:55:46", uid: "U-77310", type: "改密", device: "Web · 172.16.x", geo: "马来西亚", state: "正常" },
         { ts: "12:18:07", uid: "U-65120", type: "异常", device: "Web · 45.83.x · VPN", geo: "未知", state: "高危" },
         { ts: "11:42:33", uid: "U-72488", type: "登录", device: "Android · 202.5.x", geo: "印尼", state: "正常" },
-        { ts: "11:05:50", uid: "U-58642", type: "新设备", device: "iOS 17 · 91.72.x", geo: "阿联酋", state: "待复核" },
+        { ts: "11:05:50", uid: "U-58642", type: "新设备", device: "iOS 17 · 91.72.x", geo: "阿联酋", state: "待确认" },
         { ts: "10:22:19", uid: "U-93077", type: "异常", device: "Web · 103.21.x · 代理", geo: "可疑", state: "高危" },
       ],
       detail: true,
@@ -164,12 +173,12 @@ export const DOMAIN_C: ModuleEntry[] = [
         { label: "强制下线", tone: "danger" },
         { label: "锁定账户", tone: "danger" },
       ],
-      note: "异常判定由 C6 规则与 K 域标记联动产出;踢出会话 / 强制改密 / 解绑设备写入 A2 留痕。批量处置(同设备多账户)按高敏操作走双签,发起人不可自审。",
+      note: "异常判定由 C6 规则与 K 域标记联动产出;踢出会话 / 强制改密 / 解绑设备写入 A2 留痕。批量处置(同设备多账户)按高敏操作走操作确认,操作理由必填。",
     },
   },
   {
     path: "/users/reg-risk",
-    summary: "注册 / 登录风控看板(C6):注册风险分布 / 拦截率 / 多账户命中。规则与名单产出的命中信号下发至 C2 / C5 处置,口径为 server 端事件流派生。",
+    summary: "注册登录入口的防撞库 / 防短信轰炸参数面(C6):OTP 有效期与频次、连错锁定两档阈值、CAPTCHA 开关(关闭须填恢复时限,到点自动恢复)。与 K1 分工:这里管「单个手机号试得太频」,同 IP / 同设备 / 同卡去重线归 K1,本页提交那三个参数被服务器 422 退回;解锁不在这页(去 C5),增长角色只读。",
     content: {
       kind: "dashboard",
       metrics: [
@@ -209,7 +218,7 @@ export const DOMAIN_C: ModuleEntry[] = [
         },
       ],
       controlLink: { label: "反多账户规则", href: "/risk/multi-account" },
-      note: "风险评分与命中信号为 server 端事件流派生,前端仅展示;命中结果下发至 C2 处置与 C5 会话判定。规则阈值调整属 A 域配置,需双签生效。",
+      note: "风险评分与命中信号为 server 端事件流派生,前端仅展示;命中结果下发至 C2 处置与 C5 会话判定。规则阈值调整属 A 域配置,需操作确认生效。",
     },
   },
 ];

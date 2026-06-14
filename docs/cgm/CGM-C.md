@@ -4,7 +4,7 @@
 
 本域 28 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
 | CGM-C-001 | per-user | function-action | activateDevice | platform_integrity,payout_pacing | 运营代用户激活(目标态=activatedAt 设为时间戳);受槽位上限(含 trial 预留)硬约束。 | Y | 写 TBD·建议 POST /api/devices/:id/activate | gap |
 | CGM-C-002 | per-user | function-action | addDevice | conversion,platform_integrity | 运营代发/补发设备入库存(目标态=新增 inactive 设备),后接 debit+purchase 账单;槽位上限只对 active 生… | Y | 写 POST /api/store/checkout (TBD·candidate, not in… | gap |
@@ -23,7 +23,7 @@
 | CGM-C-015 | per-user | data-CRUD | user.nexBalance | fund_safety,platform_integrity | 运营只读;调整经服务端代币账本补记调整分录,目标态=对账后正确余额,不直接客户端 set。 | Y | 读 GET /api/users/me (TBD·candidate, not in PRD §9… | gap |
 | CGM-C-016 | per-user | data-CRUD | user.usdtBalance | fund_safety,platform_integrity | 运营一般只读;争议/差错冲正时通过补记一条调整账单(bill)间接修正余额至目标值,余额由账本服务端推导,不直接 set。 | Y | 读 GET /api/users/me (TBD·candidate, not in PRD §9… | gap |
 | CGM-C-017 | per-user | data-CRUD | useVRank: myRank / selfBuyUSD / directRefs / te… | network_growth,risk,platform_integrity | 运营核对/必要时人工调整单用户晋升进度数据(目标态:server 重算为准;C2/C3 调账或 K 域反欺诈可冻结异常晋升) | Y | GET /api/me/v-rank (读·用户当前阶+进度) · 重算由 server 触发 —… | gap |
-| CGM-C-018 | per-user | function-action | useVRank.setMyRank(v) / setProgress(p) | risk,platform_integrity,network_growth | 运营手动升/降单用户 V 阶(目标态:仅 server 写,双签+A2;客户端不得越权) | Y | 无直接前端端点;运营侧 PUT /api/admin/users/:uid/v-rank (写·M… | gap |
+| CGM-C-018 | per-user | function-action | useVRank.setMyRank(v) / setProgress(p) | risk,platform_integrity,network_growth | 运营手动升/降单用户 V 阶(目标态:仅 server 写,操作确认 + A2;客户端不得越权) | Y | 无直接前端端点;运营侧 PUT /api/admin/users/:uid/v-rank (写·M… | gap |
 | CGM-C-019 | platform | param-config | currentWeekPoolUSDT (487321 ≈ 周交易$9.7M×5%) — 领导… | payout_pacing,fund_safety,phase_12mo | 运营调入池比例(目标态:升比例=池放大+平台净留存下降;改动 server 校验) | Y | GET /api/pool/state (读·本期池额) · PUT /api/admin/net… | gap |
 | CGM-C-020 | platform | param-config | DEVICE_PRICE_USDT (设备零售价: s1=1299 / pro=2399 / … | conversion,fund_safety,platform_integri… | 运营调整设备售价(目标态=核定价);生产从 catalog 端点 fetch,admin 调价不需客户端 redeploy。 | Y | 读 GET /api/store/catalog / GET /api/products/spec… | gap |
 | CGM-C-021 | platform | param-config | directBonus 各阶 (V0:0.05 / V1+:0.10) — L1 直推奖比例 | payout_pacing,fund_safety | Direct Royalty 不可调;仅 V 阶解锁逻辑变更(目标态:产品锁定值仅查阅) | Y | GET /api/config/v-ranks (读·directBonus 随阶) · Dire… | gap |

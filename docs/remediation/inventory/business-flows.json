@@ -1,0 +1,223 @@
+{
+  "generatedAt": "2026-06-12T16:24:50.787Z",
+  "description": "Seed business flows. L1 source B expands each row into task scripts and runtime evidence.",
+  "rows": [
+    {
+      "id": "FRONT-001",
+      "side": "uniapp",
+      "title": "新用户注册到首台设备激活",
+      "routes": [
+        "#/pages/onboarding/intro",
+        "#/pages/register/register",
+        "#/pages/onboarding/connect",
+        "#/pages/index/index"
+      ],
+      "persona": "end-user",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "FRONT-002",
+      "side": "uniapp",
+      "title": "商城选品到 checkout 支付完成再到订单详情",
+      "routes": [
+        "#/pages/store/store",
+        "#/pages/store/detail",
+        "#/pages/store/checkout",
+        "#/pages/store/order-detail"
+      ],
+      "persona": "end-user",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "FRONT-003",
+      "side": "uniapp",
+      "title": "钱包充值常规链路",
+      "routes": [
+        "#/pages/me/wallet",
+        "#/pages/me/wallet-topup"
+      ],
+      "persona": "end-user",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "FRONT-004",
+      "side": "uniapp",
+      "title": "KYC Express 到提现申请与 tracking",
+      "routes": [
+        "#/pages/me/kyc",
+        "#/pages/me/wallet-withdraw",
+        "#/pages/me/wallet-withdraw-tracking"
+      ],
+      "persona": "end-user",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "FRONT-005",
+      "side": "uniapp",
+      "title": "staking 档位选择、确认、收益展示",
+      "routes": [
+        "#/pages/staking/staking",
+        "#/pages/staking/how-it-works"
+      ],
+      "persona": "end-user",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "FRONT-006",
+      "side": "uniapp",
+      "title": "Genesis 购买、holder 权益、marketplace",
+      "routes": [
+        "#/pages/genesis/genesis",
+        "#/pages/genesis/holder",
+        "#/pages/genesis/marketplace"
+      ],
+      "persona": "end-user",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "FRONT-007",
+      "side": "uniapp",
+      "title": "团队佣金、双轨、等级说明闭环",
+      "routes": [
+        "#/pages/team/team",
+        "#/pages/team/commissions",
+        "#/pages/team/binary",
+        "#/pages/team/rank"
+      ],
+      "persona": "end-user",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "FRONT-008",
+      "side": "uniapp",
+      "title": "客服工单创建、查看、状态反馈",
+      "routes": [
+        "#/pages/me/support",
+        "#/pages/me/support-tickets"
+      ],
+      "persona": "end-user",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "ADMIN-001",
+      "side": "admin",
+      "title": "补全一条 i18n 文案并保存",
+      "routes": [
+        "/content/i18n"
+      ],
+      "persona": "operator+superadmin",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "ADMIN-002",
+      "side": "admin",
+      "title": "调整 SKU 价格、库存或上下架状态",
+      "routes": [
+        "/devices/pricing"
+      ],
+      "persona": "operator+superadmin",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "ADMIN-003",
+      "side": "admin",
+      "title": "审核提现单：通过、驳回并留原因",
+      "routes": [
+        "/finance/withdrawals"
+      ],
+      "persona": "operator+superadmin",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "ADMIN-004",
+      "side": "admin",
+      "title": "调整提现参数并写入审计",
+      "routes": [
+        "/finance/params"
+      ],
+      "persona": "operator+superadmin",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "ADMIN-005",
+      "side": "admin",
+      "title": "处置风险用户：冻结、解冻、升级 KYC",
+      "routes": [
+        "/risk/scoring",
+        "/users/search/[id]"
+      ],
+      "persona": "operator+superadmin",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "ADMIN-006",
+      "side": "admin",
+      "title": "调整 staking/Genesis/NEX 经济参数",
+      "routes": [
+        "/finance-products/staking"
+      ],
+      "persona": "operator+superadmin",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "ADMIN-007",
+      "side": "admin",
+      "title": "配置活动/任务并验证前端存在对应位",
+      "routes": [
+        "/growth/rhythm"
+      ],
+      "persona": "operator+superadmin",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "ADMIN-008",
+      "side": "admin",
+      "title": "发起紧急开关/地理封锁/篡改处置",
+      "routes": [
+        "/emergency/killswitch",
+        "/emergency/geoblock",
+        "/emergency/tamper"
+      ],
+      "persona": "operator+superadmin",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "CROSS-001",
+      "side": "cross",
+      "title": "前端可配置功能点随机抽样反查后台入口",
+      "routes": [
+        "inventory/feature-mapping.json"
+      ],
+      "persona": "auditor",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    },
+    {
+      "id": "CROSS-002",
+      "side": "cross",
+      "title": "后台管理项随机抽样反查前端业务位",
+      "routes": [
+        "inventory/feature-mapping.json"
+      ],
+      "persona": "auditor",
+      "expectedOutcome": "task-completes-with-persisted-state-or-explicit-readonly-reason",
+      "status": "seed-needs-runtime-walkthrough"
+    }
+  ]
+}

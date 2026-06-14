@@ -55,7 +55,7 @@ export function DomainHeader({
         <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>{l2Name}</h1>
         {summary && <p className="mt-1.5 max-w-[760px] text-[13px]" style={{ color: "var(--v5-ink-2)" }}><AutoGloss>{summary}</AutoGloss></p>}
       </div>
-      {right && <div className="flex items-center gap-2 pt-1">{right}</div>}
+      {right && <div className="flex items-center gap-2 self-end">{right}</div>}
     </header>
   );
 }

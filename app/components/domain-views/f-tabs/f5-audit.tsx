@@ -1,8 +1,8 @@
 "use client";
 
-/** F5 · 佣金事件审计 —— 6 类佣金拆分卡(可点过滤)+ 流水表(冷却 bar 三态 · Maker-Checker 处置)+ 右栏状态分布 / A2 审计 feed / 处置口径。 */
+/** F5 · 佣金事件审计 —— 6 类佣金拆分卡(可点过滤)+ 流水表(冷却 bar 三态 · 操作确认 处置)+ 右栏状态分布 / A2 审计 feed / 处置口径。 */
 import { useState } from "react";
-import { Badge } from "../design-kit";
+import { Badge, PaginationExemptionList } from "../design-kit";
 import { fmtM } from "@/lib/mock/admin/design-data";
 import { LEDGER } from "@/lib/mock/admin/ledger";
 import { COMMISSIONS, F5_KINDS, F5_FILTERS, F5_STATUS_DIST, F5_FEED } from "./data";
@@ -38,7 +38,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       unfreeze: { name: `佣金解冻 ${c.id}`, amp: true, fv: "unlocked", detail: `解冻 ${c.id} · ${amt} · 恢复其冷却 / 解锁链路 · 放大资金流出。` },
       reject: { name: `佣金驳回 ${c.id}`, amp: false, fv: "rejected", detail: `驳回异常佣金 ${c.id} · 红冲该笔计提(联动 D4)· 不可逆 · 写 A2 审计。` },
     }[kind];
-    ctx.openMc({ name: map.name, amplify: map.amp, op: "dispose", paramKey: `F.commission.${c.id}.status`, fixedVal: map.fv, status: map.fv, detail: map.detail });
+    ctx.openActionConfirm({ name: map.name, amplify: map.amp, op: "dispose", paramKey: `F.commission.${c.id}.status`, fixedVal: map.fv, status: map.fv, detail: map.detail });
   };
 
   const rows = COMMISSIONS.filter((c) => (curKind === "all" || c.kind === curKind) && matchState(effState(c), curState));
@@ -141,6 +141,16 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
       </div>
 
       <p className="f-foot">network / binary 两类构成 64% 佣金体量,是主航道;leadership / cultivation 是「头部虹吸」杠杆,处置敏感度最高。<b>异常回退</b>(红冲)与 K2 套利检测同步联动,命中后须当日内驳回或冻结,过期 24h 自动进入仲裁池。</p>
+      <PaginationExemptionList
+        items={[
+          {
+            label: "佣金流水",
+            kind: "sample-ledger",
+            maxRows: 12,
+            reason: "最近 24h 演示样本限定十二条,按类型和状态 chip 过滤后处置",
+          },
+        ]}
+      />
     </>
   );
 }

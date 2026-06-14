@@ -1,0 +1,143 @@
+/* ============================================================
+   G 域(金融产品)内容页设计类 — design_handoff_g_domain port
+   全部 scope 在 .gdom(挂在 g-view 根 .dkpage.gdom);token 复用 globals 别名。
+   G 域主题 = --admin-domain-g(金,金融产品调性;g-chrome 与 d/k/l-chrome 同构仅换主题色)。
+   设计稿项目规则:除按钮外卡片/badge/chip 无边框 → 直接写无边框终值。
+   ============================================================ */
+
+.gdom { container: gdom / inline-size; }
+
+/* ===== 共享 chrome(g-chrome 真值) ===== */
+.gdom .f-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+@container gdom (max-width: 980px) { .gdom .f-stats { grid-template-columns: repeat(2, 1fr); } }
+.gdom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
+.gdom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
+.gdom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.gdom .f-stat .sub { font-size: 12px; color: var(--ink-4); margin-top: 3px; }
+.gdom .f-stat.warn .v { color: var(--warning); }
+.gdom .f-stat.ok .v { color: var(--success); }
+.gdom .f-stat.cyan .v { color: var(--cyan); }
+.gdom .f-stat.danger .v { color: var(--danger); }
+
+.gdom .f-ro { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.gdom .f-ro .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
+.gdom .f-live { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--admin-domain-g) 14%, transparent); color: var(--admin-domain-g); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.gdom .f-live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--admin-domain-g); }
+.gdom .f-foot { margin-top: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ink-4); }
+.gdom .f-foot b { color: var(--ink-3); font-weight: 600; }
+
+.gdom .l-card { background: var(--surface); border-radius: var(--r-card); margin-bottom: 16px; overflow: hidden; }
+.gdom .l-card .l-h { display: flex; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.gdom .l-card .l-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.gdom .l-card .l-h .sub { font-size: 12px; color: var(--ink-4); }
+.gdom .l-card .l-h .r { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gdom .l-card .l-b { padding: 16px 20px 20px; }
+
+.gdom .gcode { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3);
+  background: var(--surface-3); border-radius: 5px; padding: 2px 7px; white-space: nowrap; }
+.gdom .gcode.electric { background: color-mix(in srgb, var(--admin-domain-g) 14%, transparent); color: var(--admin-domain-g); }
+
+.gdom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
+  font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
+.gdom .l-btn:hover { background: var(--surface-3); color: var(--ink); }
+.gdom .l-btn.mc { color: var(--admin-domain-g); border-color: color-mix(in srgb, var(--admin-domain-g) 38%, transparent); background: color-mix(in srgb, var(--admin-domain-g) 8%, transparent); font-weight: 600; }
+.gdom .l-btn.mc:hover { background: color-mix(in srgb, var(--admin-domain-g) 18%, transparent); }
+.gdom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+
+.gdom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.gdom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
+  letter-spacing: .06em; text-transform: uppercase; text-align: left; padding: 10px 12px;
+  background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
+.gdom .l-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
+.gdom .l-tbl tr:last-child td { border-bottom: none; }
+.gdom .l-tbl tr.click { cursor: pointer; }
+.gdom .l-tbl tr.click:hover td { background: var(--surface-2); }
+.gdom .l-tbl .num, .gdom .l-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.gdom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
+
+.gdom .bdg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 5px;
+  font-size: 11.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; white-space: nowrap; }
+.gdom .bdg.ok { background: var(--success-soft); color: var(--success); }
+.gdom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
+.gdom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
+.gdom .bdg.dim { background: var(--surface-3); color: var(--ink-3); }
+
+.gdom .gtint { padding: 11px 14px; border-radius: 9px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--ink-3); }
+.gdom .gtint b { color: var(--ink-2); font-weight: 600; }
+.gdom .gtint .mono { font-family: var(--mono); font-size: 11.5px; }
+
+.gdom .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@container gdom (max-width: 1100px) { .gdom .two-col { grid-template-columns: 1fr; } }
+.gdom .two-col .l-card { margin-bottom: 0; }
+.gdom .two-col.r11 { grid-template-columns: 1fr 1fr; }
+.gdom .two-col.r13 { grid-template-columns: 1.3fr 1fr; }
+@container gdom (max-width: 1100px) { .gdom .two-col.r11, .gdom .two-col.r13 { grid-template-columns: 1fr; } }
+
+.gdom .more { color: var(--admin-domain-g); font-size: 10px; }
+
+/* ===== 状态机条(G1/G4/G5 共用) ===== */
+.gdom .sm-strip { display: flex; align-items: center; flex-wrap: wrap; padding: 4px 0 0; row-gap: 6px; }
+.gdom .sm-strip .st { font-family: var(--mono); font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 6px; background: var(--surface-3); color: var(--ink-3); white-space: nowrap; }
+.gdom .sm-strip .st.ok { background: var(--success-soft); color: var(--success); }
+.gdom .sm-strip .st.warn { background: var(--warning-soft); color: var(--warning); }
+.gdom .sm-strip .st.bad { background: var(--danger-soft); color: var(--danger); }
+.gdom .sm-strip .ar { padding: 0 7px; color: var(--ink-4); font-size: 11px; font-family: var(--mono); white-space: nowrap; }
+
+/* ============================ G1 ============================ */
+.gdom .pos-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@container gdom (max-width: 900px) { .gdom .pos-grid { grid-template-columns: repeat(2, 1fr); } }
+.gdom .pos-grid .p { background: var(--surface-2); border-radius: 9px; padding: 11px 13px; }
+.gdom .pos-grid .p.click { cursor: pointer; transition: background .12s; }
+.gdom .pos-grid .p.click:hover { background: var(--surface-3); }
+.gdom .pos-grid .p .k { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
+.gdom .pos-grid .p .v { font-family: var(--mono); font-size: 17px; font-weight: 700; margin-top: 4px; color: var(--ink); }
+
+/* ============================ G2 ============================ */
+.gdom .cap-row { display: flex; align-items: center; gap: 14px; padding: 13px 2px; border-bottom: 1px dashed var(--border); }
+.gdom .cap-row:last-of-type { border-bottom: none; }
+.gdom .cap-row .txt { flex: 1; }
+.gdom .cap-row .k { font-size: 13px; font-weight: 600; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.gdom .cap-row .s { font-size: 11.5px; color: var(--ink-4); margin-top: 2px; line-height: 1.5; }
+.gdom .cap-row .v { font-family: var(--mono); font-size: 15px; font-weight: 700; white-space: nowrap; color: var(--ink); }
+.gdom .meter { height: 10px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-top: 6px; }
+.gdom .meter i { display: block; height: 100%; border-radius: 999px; }
+.gdom .gate-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.gdom .gate-tiles .t { background: var(--surface-2); border-radius: 9px; padding: 12px 14px; }
+.gdom .gate-tiles .t.click { cursor: pointer; transition: background .12s; }
+.gdom .gate-tiles .t.click:hover { background: var(--surface-3); }
+.gdom .gate-tiles .t .k { font-size: 11.5px; color: var(--ink-4); }
+.gdom .gate-tiles .t .v { font-family: var(--mono); font-size: 18px; font-weight: 700; margin-top: 4px; color: var(--ink); }
+.gdom .q-row { display: flex; align-items: center; gap: 12px; padding: 9px 2px; border-bottom: 1px dashed var(--border); }
+.gdom .q-row:last-of-type { border-bottom: none; }
+.gdom .q-row.click { cursor: pointer; }
+.gdom .kv2 { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+.gdom .kv2:last-of-type { border-bottom: none; }
+.gdom .kv2 .k { color: var(--ink-4); }
+.gdom .kv2 .v { color: var(--ink-2); font-weight: 600; text-align: right; }
+
+/* ============================ G3 ============================ */
+.gdom .p-row { display: flex; align-items: center; gap: 14px; padding: 12px 2px; border-bottom: 1px dashed var(--border); }
+.gdom .p-row:last-of-type { border-bottom: none; }
+.gdom .p-row .txt { flex: 1; }
+.gdom .p-row .k { font-size: 13px; font-weight: 600; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.gdom .p-row .s { font-size: 11.5px; color: var(--ink-4); margin-top: 2px; line-height: 1.5; }
+.gdom .p-row .v { font-family: var(--mono); font-size: 14px; font-weight: 700; white-space: nowrap; color: var(--ink); }
+.gdom .price-hero { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+.gdom .price-hero .big { font-family: var(--mono); font-size: 34px; font-weight: 700; color: var(--ink); }
+.gdom .price-hero .chg { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--success); }
+.gdom svg text { font-family: var(--mono); }
+
+/* ============================ G4 ============================ */
+.gdom .sold { height: 12px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin: 6px 0; }
+.gdom .sold i { display: block; height: 100%; border-radius: 999px; background: var(--admin-domain-g); }
+.gdom .mk-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@container gdom (max-width: 900px) { .gdom .mk-tiles { grid-template-columns: repeat(2, 1fr); } }
+.gdom .mk-tiles .t { background: var(--surface-2); border-radius: 9px; padding: 11px 13px; }
+.gdom .mk-tiles .t .k { font-size: 11px; color: var(--ink-4); }
+.gdom .mk-tiles .t .v { font-family: var(--mono); font-size: 16px; font-weight: 700; margin-top: 3px; color: var(--ink); }
+
+/* ============================ G5 / G6 / G7 ============================ */
+.gdom .gate { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 5px; background: var(--surface-3); color: var(--ink-3); }

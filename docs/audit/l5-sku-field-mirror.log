@@ -1,0 +1,3 @@
+$ C:\Program Files\nodejs\node.exe scripts/sku-field-mirror.mjs
+
+✓ E1 字段镜像 gate:OpsSku(33)⊇ Product(25+AI 6) · OpsReview(7)⊇ Review(7) — 0 缺口

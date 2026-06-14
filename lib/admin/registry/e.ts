@@ -4,14 +4,14 @@
  *  - 衰减模型 -4% / -6% / -10% 月分段 + MIN_EFFICIENCY(P3 档 month12 ≈ 22% 效能)。
  *  - TradeInConfig:minHoldingMonths / salvage(月12 归零约束),salvage 不入余额。
  *  - Order 状态机:placed → paid → provisioning → activated + 失败态;退款核减 cumulativeDepositUsdt。
- *  baseRate / 衰减 / 任务奖励均 server-canonical;本后台改参数走 Maker-Checker 双签 + A2 审计。 */
+ *  baseRate / 衰减 / 任务奖励均 server-canonical;本后台改参数走 操作确认 + A2 审计。 */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
 export const DOMAIN_E: ModuleEntry[] = [
   {
     path: "/devices/pricing",
     summary:
-      "NexionBox 商品目录与定价中枢(E1)— SKU 目录(售价 / 日产 / 库存 / 上下架 / 促销)+ 新增 SKU。价格与 baseRate 为 server 权威,新增 SKU / 改价 / 上下架均需 增长运营 + 财务 双签并写入 A2 审计,联动 E6 订单与 E3 收益引擎。",
+      "NexionBox 商品目录与定价中枢(E1)— SKU 目录(售价 / 日产 / 库存 / 上下架 / 促销)+ 新增 SKU。价格与 baseRate 为 server 权威,新增 SKU / 改价 / 上下架均需 增长运营 + 财务 操作确认并写入 A2 审计,联动 E4 订单与 E2 收益引擎。",
     content: {
       kind: "list",
       metrics: [
@@ -47,65 +47,13 @@ export const DOMAIN_E: ModuleEntry[] = [
         { label: "改价" },
         { label: "新建促销" },
       ],
-      note: "Pro Gen-1 权威价 $2,399(非 $2,639);Standard 早购促销 9 折剩 3 天。新增 SKU / 改价 / 上下架 / 新建促销需 增长运营 发起 + 财务 复核双签(总管理员免双签),写入 A2;Gen-2 上架受 E2 代际发布门约束。改价即时改写 E6 下单金额与 E3 日产计提。",
-    },
-  },
-  {
-    path: "/devices/generation",
-    summary:
-      "代际发布门(E2)— S1/S2 代际开关、发布节奏与旧代停售控制。代际门受 H1 Phase 10-dial 联动,新代发布 / 旧代停售需 增长运营 + 总管理员 双签,联动 E1 上架与 E4 衰减曲线归属。",
-    content: {
-      kind: "config",
-      metrics: [
-        { label: "当前主推代际", value: "Gen-1 (S1)", sub: "3 个在售 SKU", accent: "var(--admin-domain-e)", hint: "当前面向新用户主推的设备代际。" },
-        { label: "Gen-2 状态", value: "预热", sub: "门未放行", accent: "var(--v5-warning)", hint: "Gen-2(S2)发布门当前关闭,Pro v2 不可购。" },
-        { label: "在网代际", value: "1", sub: "Gen-1 全量", accent: "var(--admin-domain-e)", hint: "当前在网运行的设备代际数。" },
-        { label: "旧代停售", value: "0", sub: "暂无", accent: "var(--v5-success)", hint: "已停售但仍在网计酬的旧代 SKU 数。" },
-      ],
-      groups: [
-        {
-          title: "代际开关",
-          note: "代际门由 H1 Phase 10-dial 派发;放行后该代 SKU 方可在 E1 上架并对用户可见。",
-          fields: [
-            { label: "Gen-1 (S1) 发布门", value: "开 · 全量", range: "开 / 关", effect: "关 → Gen-1 全部 SKU 停售(在网继续计酬)" },
-            { label: "Gen-2 (S2) 发布门", value: "关 · 预热中", range: "开 / 关", effect: "开 → Pro v2 等 Gen-2 SKU 解锁购买入口" },
-            { label: "Gen-2 灰度比例", value: "0%", range: "0–100%", effect: "按比例对部分用户开放 Gen-2 购买" },
-            { label: "代际并存上限", value: "2 代", range: "1–3 代", effect: "同时在售代际数,防 SKU 矩阵过载" },
-          ],
-        },
-        {
-          title: "发布节奏",
-          note: "节奏与 12 月运营阶段对齐;发布过快会稀释存量设备稀缺感与复投意愿。",
-          fields: [
-            { label: "Gen-2 计划发布", value: "第 9 月 · P4 平台期", range: "第 6–12 月", effect: "与 Phase 切换对齐,平台期引入新代拉复购" },
-            { label: "代际间隔下限", value: "≥ 6 月", range: "3–12 月", effect: "两代发布最小间隔,保护前代回本预期" },
-            { label: "预热曝光", value: "提前 30 天", range: "0–60 天", effect: "新代上架前的商城预告窗口" },
-            { label: "老用户优先购", value: "开 · 提前 7 天", range: "开 / 关", effect: "存量持机用户先于新用户购 Gen-2" },
-          ],
-        },
-        {
-          title: "旧代停售",
-          note: "停售仅关闭购买入口,在网旧代设备继续按 E4 衰减曲线计酬至生命周期结束。",
-          fields: [
-            { label: "停售触发方式", value: "手动 · 双签", range: "手动 / 跟随新代", effect: "跟随新代 → Gen-2 放行即自动停 Gen-1 同档" },
-            { label: "停售缓冲期", value: "14 天", range: "0–30 天", effect: "公告到正式下架的过渡窗,期内仍可购" },
-            { label: "停售后计酬", value: "维持原 baseRate", range: "维持 / 衰减", effect: "停售不改在网设备产出,仅断新购" },
-            { label: "MissedIncome 话术", value: "开 · 与 S1 baseline 对比", range: "开 / 关", effect: "对未升级用户展示与新代日产差额(§6.6)" },
-          ],
-        },
-      ],
-      approval: "代际发布门开关 / 灰度比例 / 旧代停售均需 增长运营 发起 + 总管理员 复核双签;受 H1 Phase 10-dial 约束,改动写入 A2 审计。",
-      impact: [
-        "放行 Gen-2 发布门 → E1 中 Pro v2 等 Gen-2 SKU 解除待发布,可上架购买",
-        "停售旧代 → E1 对应 SKU 入口关闭,但 E4 在网设备继续计酬至到期",
-        "代际节奏过快 → 前代回本预期被稀释,复投与 trade-in 升级钩子失真",
-      ],
+      note: "Pro Gen-1 权威价 $2,399(非 $2,639);Standard 早购促销 9 折剩 3 天。新增 SKU / 改价 / 上下架 / 新建促销需 增长运营 发起 + 财务 确认(总管理员仍需操作确认),写入 A2;Gen-2 上架受 E1 代际门约束。改价即时改写 E4 下单金额与 E2 日产计提。",
     },
   },
   {
     path: "/devices/tasks",
     summary:
-      "收益与任务引擎(E3)— 设备日产 baseRate、NEX 配比与每日任务奖励的 server-canonical 参数中枢。改费率即时影响全网在网设备次日计酬,需 增长运营 + 财务 双签,联动 B 域应付负债与 D 域提现压力。",
+      "收益与任务引擎(E2)— 设备日产 baseRate、NEX 配比与每日任务奖励的 server-canonical 参数中枢。改费率即时影响全网在网设备次日计酬,需 增长运营 + 财务 操作确认,联动 B 域应付负债与 D 域提现压力。",
     content: {
       kind: "config",
       metrics: [
@@ -141,12 +89,12 @@ export const DOMAIN_E: ModuleEntry[] = [
           fields: [
             { label: "计酬日切", value: "UTC 00:00", range: "UTC 固定", effect: "全网统一日切,跨域结算基准一致" },
             { label: "USDT / NEX 入账", value: "claim 后入可提余额", range: "自动 / claim", effect: "未 claim 计应付,claim 后转 D 域可提" },
-            { label: "衰减联动", value: "按 E4 月段衰减", range: "联动 E4", effect: "在网产出 = baseRate × 当月效能系数(E4)" },
+            { label: "衰减联动", value: "按 E3 月段衰减", range: "联动 E3", effect: "在网产出 = baseRate × 当月效能系数(E3)" },
             { label: "封顶日产", value: "单设备 ≤ baseRate × 1.5", range: "1.0–2.0×", effect: "含加成的单设备日产上限,防异常刷返" },
           ],
         },
       ],
-      approval: "baseRate / baseRateNEX / 任务奖励倍率改动需 增长运营 发起 + 财务 复核双签;封顶与滚存规则额外知会风控,改动写入 A2 审计。",
+      confirmPolicy: "baseRate / baseRateNEX / 任务奖励倍率改动需 增长运营 发起 + 财务 确认;封顶与滚存规则额外知会风控,改动写入 A2 审计。",
       impact: [
         "上调 baseRate / 奖励倍率 → B 域应付负债与日产承诺即时抬升,挤兑压力上行",
         "改 NEX 配比 → G3 行情供给与 G6 NEX v2 兑付负债联动变化",
@@ -155,64 +103,9 @@ export const DOMAIN_E: ModuleEntry[] = [
     },
   },
   {
-    path: "/devices/lifecycle",
-    summary:
-      "设备生命周期(E4)— 在役规模、代际分布、衰减效能曲线与到期分布的统一面板。衰减模型 -4% / -6% / -10% 月分段 + 最低效能下限 为 server 权威,L4 报表只读引用此处口径。",
-    content: {
-      kind: "dashboard",
-      metrics: [
-        { label: "在役设备", value: "8,640", sub: "计酬中", accent: "var(--admin-domain-e)", hint: "当前在网且正常计提产出的设备总数。", delta: { dir: "up", text: "+312 / 30 日", good: true } },
-        { label: "平均效能", value: "71.4%", sub: "加权剩余", accent: "var(--v5-warning)", hint: "全网在役设备按月段衰减后的加权剩余效能(相对初始 baseRate)。", delta: { dir: "down", text: "-2.1pt / 月", good: false } },
-        { label: "本月到期", value: "186", sub: "触底 MIN", accent: "var(--v5-warning)", hint: "本月衰减触及 MIN_EFFICIENCY 下限的设备数,转 trade-in 升级钩子。", delta: { dir: "up", text: "+44", good: false } },
-        { label: "已退役", value: "523", sub: "累计", accent: "var(--v5-ink-3)", hint: "已到生命周期末停止计酬的设备累计;部分经 E5 trade-in 折抵新机。" },
-      ],
-      charts: [
-        {
-          type: "area",
-          title: "P3 档衰减效能曲线",
-          sub: "month1–12 · MIN_EFFICIENCY 22%",
-          color: "var(--admin-domain-e)",
-          data: [100, 96, 92, 86, 80, 72, 64, 54, 44, 34, 26, 22],
-          refLine: 22,
-          unit: "%",
-        },
-        {
-          type: "donut",
-          title: "在役设备代际分布",
-          sub: "8,640 台 · 按代际",
-          unit: "台",
-          segments: [
-            { label: "Gen-1 Standard", value: 4490, color: "var(--admin-cat-1)" },
-            { label: "Gen-1 Pro", value: 2210, color: "var(--admin-cat-6)" },
-            { label: "Gen-1 Lite", value: 1680, color: "var(--admin-cat-3)" },
-            { label: "Gen-2 Pro v2(灰度)", value: 260, color: "var(--admin-cat-5)" },
-          ],
-        },
-        {
-          type: "bars",
-          title: "在役设备效能分布",
-          sub: "按剩余效能区间 · 台数",
-          color: "var(--admin-domain-e)",
-          data: [2380, 2620, 1840, 1080, 720],
-          labels: ["90–100%", "70–90%", "50–70%", "30–50%", "≤30%"],
-        },
-        {
-          type: "bars",
-          title: "未来 6 月到期预测",
-          sub: "触底 MIN_EFFICIENCY 设备数",
-          color: "var(--v5-warning)",
-          data: [186, 224, 268, 310, 352, 401],
-          labels: ["M+1", "M+2", "M+3", "M+4", "M+5", "M+6"],
-        },
-      ],
-      controlLink: { label: "调代际/任务参数", href: "/devices/generation" },
-      note: "平均效能 71.4% 按月下行约 2.1pt;P3 档 month12 触底 22%(MIN_EFFICIENCY)。≤30% 效能区间 720 台为 trade-in 升级核心目标,未来 6 月到期量逐月攀升(M+6 达 401 台)需提前备货 Gen-2。衰减曲线为 server 权威,E3 计酬与 L4 报表均引用此口径。",
-    },
-  },
-  {
     path: "/devices/trade-in",
     summary:
-      "Trade-in 配置(E5)— 旧机折抵率、最短持有期与残值规则。受全局/独立 geo_block 派生约束(Ch17 核验);salvage 不入余额,折抵原子化,改规则需 增长运营 + 财务 双签,联动 E1 抵扣叠加与 E4 退役流转。",
+      "生命周期 & Trade-in(E3)— 旧机折抵率、最短持有期与残值规则。受全局/独立 geo_block 派生约束(Ch17 核验);salvage 不入余额,折抵原子化,改规则需 增长运营 + 财务 操作确认,联动 E1 抵扣叠加与 E3 退役流转。",
     content: {
       kind: "config",
       metrics: [
@@ -248,23 +141,23 @@ export const DOMAIN_E: ModuleEntry[] = [
           fields: [
             { label: "升级钩子触发", value: "效能 ≤ 40% 时推送", range: "30%–60%", effect: "对低效能设备弹 trade-in 升级引导" },
             { label: "促销叠加", value: "可叠加 E1 早购促销", range: "可 / 不可", effect: "折抵 + 早购立减叠加,自动扣款全价无叠加" },
-            { label: "旧机流转", value: "折抵即退役(E4)", range: "固定", effect: "折抵成功 → 旧机在 E4 置退役,停止计酬" },
+            { label: "旧机流转", value: "折抵即退役(E3)", range: "固定", effect: "折抵成功 → 旧机在 E3 置退役,停止计酬" },
             { label: "折抵原子性", value: "折抵 + 下单单事务", range: "固定", effect: "新机下单与旧机退役原子提交,失败整体回滚" },
           ],
         },
       ],
-      approval: "折抵率 / minHoldingMonths / salvage 规则改动需 增长运营 发起 + 财务 复核双签;灰度比例联动 A1,启用前须 Ch17 核验前端对应 endpoint 已实装 geo_block,改动写入 A2 审计。",
+      confirmPolicy: "折抵率 / minHoldingMonths / salvage 规则改动需 增长运营 发起 + 财务 确认;灰度比例联动 A1,启用前须 Ch17 核验前端对应 endpoint 已实装 geo_block,改动写入 A2 审计。",
       impact: [
-        "上调折抵率 → E1 新机净收款下降,但提升 E4 到期设备升级渗透与复投",
+        "上调折抵率 → E1 新机净收款下降,但提升 E3 到期设备升级渗透与复投",
         "缩短 minHoldingMonths → 套利风险上升,K2 风控告警阈值需同步收紧",
-        "折抵成功 → E4 旧机原子退役停酬 + cumulativeDepositUsdt 按新机净付计入",
+        "折抵成功 → E3 旧机原子退役停酬 + cumulativeDepositUsdt 按新机净付计入",
       ],
     },
   },
   {
     path: "/devices/orders",
     summary:
-      "购机订单状态机(E6)— 用户 / SKU / 金额 / 支付方式 / 状态流转的全量订单台。状态机 placed → paid → provisioning → activated + 失败态;退款核减累计入金,资金侧走 D1/D4,异常订单点开可查全字段。",
+      "购机订单状态机(E4)— 用户 / SKU / 金额 / 支付方式 / 状态流转的全量订单台。状态机 placed → paid → provisioning → activated + 失败态;退款核减累计入金,资金侧走 D1/D4,异常订单点开可查全字段。",
     content: {
       kind: "list",
       metrics: [
@@ -307,7 +200,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   {
     path: "/devices/ops",
     summary:
-      "设备运维(E7)— 在网设备健康度、算力波动、告警与工单台。监控设备产出异常(掉线 / 算力骤降 / 计酬偏差),告警分级处置;干预性运维(强制下线 / 补偿计酬)需双签并写入 A2 审计。",
+      "设备运维(E5)— 在网设备健康度、算力波动、告警与工单台。监控设备产出异常(掉线 / 算力骤降 / 计酬偏差),告警分级处置;干预性运维(强制下线 / 补偿计酬)需操作确认并写入 A2 审计。",
     content: {
       kind: "list",
       metrics: [
@@ -344,7 +237,7 @@ export const DOMAIN_E: ModuleEntry[] = [
         { label: "补偿计酬" },
         { label: "派工单" },
       ],
-      note: "算力波动以 baseRate × E4 当月效能为基准比对;日产偏差超阈值或心跳超时即升级告警。强制下线 / 补偿计酬 / 批量计酬修正为干预性操作,需 风控 + 增长运营 双签并写入 A2 审计;监控数据 server 权威,本台只读展示 + 工单流转。",
+      note: "算力波动以 baseRate × E3 当月效能为基准比对;日产偏差超阈值或心跳超时即升级告警。强制下线 / 补偿计酬 / 批量计酬修正为干预性操作,需 风控 + 增长运营 操作确认并写入 A2 审计;监控数据 server 权威,本台只读展示 + 工单流转。",
     },
   },
 ];

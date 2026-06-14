@@ -79,6 +79,7 @@ export function DataTable<T>({
               return (
                 <th
                   key={c.key}
+                  aria-sort={sortable ? (activeSort ? (sortDir === "asc" ? "ascending" : "descending") : "none") : undefined}
                   className="px-4 py-2.5 text-[11.5px] font-medium"
                   style={{
                     color: "var(--v5-ink-3)",

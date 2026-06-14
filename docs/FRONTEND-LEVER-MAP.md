@@ -7,53 +7,53 @@
 ## 资金与钱包(/me/wallet · /staking · /genesis)
 | H5 前端杠杆(用户页) | 用户能做什么 | 后台控制(admin 路由 · 模块) | 控制动作 | 状态 |
 |---|---|---|---|---|
-| /me/wallet/withdraw(+tracking) | 发起提现 | /finance/withdrawals(D2)+ /finance/params(D5) | 受理/放行/延迟/冻结(MC,红线核验)+ 日限/费率/冷却 调整 | ✅ |
+| /me/wallet/withdraw(+tracking) | 发起提现 | /finance/withdrawals(D2)+ /finance/params(D5) | 受理/放行/延迟/冻结(操作确认,红线核验)+ 日限/费率/冷却 调整 | ✅ |
 | /me/wallet/topup | 充值入金 | /finance/recon(D1) | 逐笔对账/核销/挂账 + (充值通道开关见 A3 特性开关) | ✅ |
-| /me/wallet/cards(+/new) | 绑定支付方式 | /finance/recon(D1)支付渠道/PSP 配置 | PSP 通道启停(Toggle)+ BIN 风险规则/路由/限额 调整(MC) | ✅(2026-06-03 已补) |
-| /me/wallet/exchange | NEX↔USDT 兑换 | /finance-products/exchange(G2) | 单笔/日/月 cap 调整(MC·放大流出)+ 超阈值 gate | ✅ |
-| /me/wallet/nex · /market | NEX 行情/持有 | /finance-products/market(G3) | 做市参数调整 + 紧急 pause(MC) | ✅ |
+| /me/wallet/cards(+/new) | 绑定支付方式 | /finance/recon(D1)支付渠道/PSP 配置 | PSP 通道启停(Toggle)+ BIN 风险规则/路由/限额 调整(操作确认) | ✅(2026-06-03 已补) |
+| /me/wallet/exchange | NEX↔USDT 兑换 | /finance-products/exchange(G2) | 单笔/日/月 cap 调整(操作确认·放大流出)+ 超阈值 gate | ✅ |
+| /me/wallet/nex · /market | NEX 行情/持有 | /finance-products/market(G3) | 做市参数调整 + 紧急 pause(操作确认) | ✅ |
 | /me/wallet/nex-v2-lock | NEX v2 锁仓 | /finance-products/nex-v2(G6)+ /emergency/kill-switch(J1) | 锁期/APY 配置 + kill 开关(已熔断) | ✅ |
 | /me/wallet/premium | Premium 订阅 | /finance-products/premium(G5) | 档位/权益/kill 调整 | ✅ |
 | /me/wallet/repurchase | 复投 | /finance-products/repurchase(G7) | 奖励率/门槛调整 | ✅ |
 | /me/wallet/bills | 账单流水 | /finance/ledger(D4) | 账本/6 类 bill 审计 + 冲正联动 | ✅ |
-| /me/wallet(余额) | 余额/资产 | /users/assets(C3) | 余额调整(MC) | ✅ |
-| /staking(+how-it-works) | 质押 | /finance-products/staking(G1) | 各档 APY/罚金/单档 kill(MC·放大利息负债) | ✅ |
-| /genesis(+marketplace/holder) | 创世节点一二级 + 分红 | /finance-products/genesis(G4) | 供给/分红率/二级版税/紧急 pause(MC) | ✅ |
+| /me/wallet(余额) | 余额/资产 | /users/assets(C3) | 余额调整(操作确认) | ✅ |
+| /staking(+how-it-works) | 质押 | /finance-products/staking(G1) | 各档 APY/罚金/单档 kill(操作确认·放大利息负债) | ✅ |
+| /genesis(+marketplace/holder) | 创世节点一二级 + 分红 | /finance-products/genesis(G4) | 供给/分红率/二级版税/紧急 pause(操作确认) | ✅ |
 
 ## 设备与商城 / 收益(/store · /earn · /me/devices)
 | H5 前端杠杆 | 用户能做什么 | 后台控制 | 控制动作 | 状态 |
 |---|---|---|---|---|
 | /store(+/[productId]/bundle/checkout) | 浏览/购买设备 | /devices/pricing(E1) | 新增 SKU(拖拽+1:1)+ 定价/上下架 + 代际发布门 · **字段级✅**(OpsSku 镜像前端 Product 26 字段,2026-06-04) | ✅ |
-| /store/orders(+/[id]) | 订单状态 | /devices/orders(E6) | 状态机 + 退款/重试开通/取消(MC) | ✅ |
-| /me/devices | 我的设备/算力 | /devices/lifecycle(E4)+ /devices/ops(E7) | 衰减/到期 + 强制下线/补偿/派工 | ✅ |
-| /earn | 算力任务赚收益 | /devices/tasks(E3) | 6 类任务定价 + 队列饱和度调度(MC) | ✅ |
+| /store/orders(+/[id]) | 订单状态 | /devices/orders(E4) | 状态机 + 退款/取消/补建终态(操作确认) | ✅ |
+| /me/devices | 我的设备/算力 | /devices/trade-in(E3 含生命周期)+ /devices/ops(E5) | 衰减/到期 + DC pause/恢复 | ✅ |
+| /earn | 算力任务赚收益 | /devices/tasks(E2) | 6 类任务定价 + 队列饱和度调度(操作确认) | ✅ |
 
 ## 分销与团队(/team/**)
 | H5 前端杠杆 | 用户能做什么 | 后台控制 | 控制动作 | 状态 |
 |---|---|---|---|---|
-| /team/unilevel | 网络版税 | /network/royalty(F2) | L1-L7 费率调整 + 合并出口护栏(MC) | ✅ |
+| /team/unilevel | 网络版税 | /network/royalty(F2) | L1-L7 费率调整 + 合并出口护栏(操作确认) | ✅ |
 | /team/binary | 双轨 | /network/binary(F3) | 平衡匹配/封顶/门槛/自动分配 | ✅ |
-| /team/rank | V-Rank | /network/v-rank(F1) | 门槛调整 + 实物发货队列(MC·培育奖 NEX) | ✅ |
-| /team/commissions | 佣金 | /network/commissions(F5) | 冻结/解锁/撤销/补发(MC) | ✅ |
-| /team/leadership-pool · /quota · /agent · /leaderboard | 领导池/配额/大使/榜 | /network/leadership-pool·quota·ambassador·leaderboard(F4) | 池比例/配额/大使审批/取消资格(MC) | ✅ |
+| /team/rank | V-Rank | /network/v-rank(F1) | 门槛调整 + 实物发货队列(操作确认·培育奖 NEX) | ✅ |
+| /team/commissions | 佣金 | /network/commissions(F5) | 冻结/解锁/撤销/补发(操作确认) | ✅ |
+| /team/leadership-pool · /quota · /agent · /leaderboard | 领导池/配额/大使/榜 | /network/leadership-pool·quota·ambassador·leaderboard(F4) | 池比例/配额/大使确认/取消资格(操作确认) | ✅ |
 
 ## 增长与活动(/missions · /daily · /events · /me/trial)
 | H5 前端杠杆 | 用户能做什么 | 后台控制 | 控制动作 | 状态 |
 |---|---|---|---|---|
-| /me/trial | 免费试用 | /growth/trial(H2) | 名额/抵扣上限/时长 调整(MC) | ✅ |
-| /missions | 任务 | /growth/quest(H3) | 奖励/启停任务(MC) | ✅ |
-| /daily | 签到积分 | /growth/daily(H5) | 签到/兑换比率 调整(MC) | ✅ |
-| /events | 活动 | /growth/events(H4) | 新增活动 + 上线/下线/暂停(MC) | ✅ |
-| /me/achievements · /me/goals | 成就/里程碑 | /growth/milestones(H6) | 阈值/NEX 奖励 + 启停(MC) | ✅ |
+| /me/trial | 免费试用 | /growth/trial(H2) | 名额/抵扣上限/时长 调整(操作确认) | ✅ |
+| /missions | 任务 | /growth/quest(H3) | 奖励/启停任务(操作确认) | ✅ |
+| /daily | 签到积分 | /growth/daily(H5) | 签到/兑换比率 调整(操作确认) | ✅ |
+| /events | 活动 | /growth/events(H4) | 新增活动 + 上线/下线/暂停(操作确认) | ✅ |
+| /me/achievements · /me/goals | 成就/里程碑 | /growth/milestones(H6) | 阈值/NEX 奖励 + 启停(操作确认) | ✅ |
 | (全局 12 月节奏) | — | /growth/phase(H1) | 10 dial 调度 | ✅ |
 
 ## 内容/合规/通知(/trust · /learn · /me/notifications · /me/risk-disclosure · /me/language)
 | H5 前端杠杆 | 用户能做什么 | 后台控制 | 控制动作 | 状态 |
 |---|---|---|---|---|
 | /me/notifications | 收推送/通知 | /content/nova(I2)+ /content/notifications(I3) | Nova 渠道开关 + Campaign 新建/发送/停发 | ✅ |
-| /trust(+/nex) | 信任中心 | /content/trust(I4) | 条目发布/下架/新增(MC) | ✅ |
-| /me/risk-disclosure | 风险披露 | /content/disclosure(I5) | 发布新版/归档(MC) | ✅ |
-| /learn | 教程 | /content/learn(I7) | 新建/发布/下架(MC) | ✅ |
+| /trust(+/nex) | 信任中心 | /content/trust(I4) | 条目发布/下架/新增(操作确认) | ✅ |
+| /me/risk-disclosure | 风险披露 | /content/disclosure(I5) | 发布新版/归档(操作确认) | ✅ |
+| /learn | 教程 | /content/learn(I7) | 新建/发布/下架(操作确认) | ✅ |
 | /me/language | 多语言 | /content/i18n(I6) | 补全/发布 | ✅ |
 | (文案 A/B) | — | /content/copy-ab(I1) | 设为胜出/停止实验 | ✅ |
 
@@ -76,11 +76,11 @@
 | 数据 BI/报表/导出 | L1-L5(/analytics/*) | ✅ |
 
 ## 核对结论
-- H5 ~70 个用户页/杠杆,**绝大多数都已映射到 admin 控制面且可操作**(MC 角色感知)。
+- H5 ~70 个用户页/杠杆,**绝大多数都已映射到 admin 控制面且可操作**(操作确认 角色感知)。
 - **缺口处置:**
-  1. ✅ **支付渠道 / PSP 配置**(已补 2026-06-03):D1 充值对账中心新增「支付渠道/PSP 配置」—— MoonPay/Banxa/OnChain 三通道,启停 Toggle + BIN 风险规则/路由/限额 调整 → Maker-Checker。对应 H5 /me/wallet/cards · /topup 入金通道。
+  1. ✅ **支付渠道 / PSP 配置**(2026-06-03 初补;2026-06-10 随 D 域设计稿 port 收敛口径):D1 充值对账中心「充值渠道与费率」—— 五渠道(USDT-TRC20/ERC20/BTC/ETH/Card)启停 + 费率/最小充值额 per-channel + 主备 PSP(Checkout.com/Stripe)切换 + 卡风控三参数,全部 操作确认。旧 MoonPay/Banxa/OnChain 三通道为早期发明,已按前端 topup 页与 PRD D1③ 收敛。对应 H5 /me/wallet/cards · /topup 入金通道。
   2. (轻)/developer 开发者中心 — 偏内部技术页,无对应资金/运营杠杆,无需 admin 控制。
-- **最终:H5 全部资金/收益/分销/增长/内容/账户类用户杠杆 → admin 控制面 100% 覆盖且可操作(MC 角色感知)。**
+- **最终:H5 全部资金/收益/分销/增长/内容/账户类用户杠杆 → admin 控制面 100% 覆盖且可操作(操作确认 角色感知)。**
 
 ## 字段级覆盖维度(2026-06-04 新增 · 重要)
 

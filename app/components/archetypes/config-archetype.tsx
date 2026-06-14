@@ -3,7 +3,7 @@
 /**
  * ConfigArchetype — 配置/规则/参数型模块的**真实可编辑配置页**(非只读展示)。
  * 每个参数 = 受控输入(可改值)+ 范围/影响提示;脏检测 + 重置 + 应用变更(变更预览)。
- * 角色感知:总管理员免双签即时生效;其余角色提交 Maker-Checker 复核。
+ * 角色感知:总管理员仍需操作确认即时生效;其余角色提交 操作确认 确认。
  */
 import { useMemo, useState } from "react";
 import { Lock, Check, ShieldAlert, ShieldCheck, RotateCcw } from "lucide-react";
@@ -105,15 +105,15 @@ export function ConfigArchetype({ spec, accent }: { spec: ConfigSpec; accent: st
         </div>
       )}
 
-      {/* 变更发起栏:可编辑 + 脏检测 + 重置 + 应用(角色感知双签) */}
+      {/* 变更发起栏:可编辑 + 脏检测 + 重置 + 应用(角色感知操作确认) */}
       <div className="mt-4 flex flex-wrap items-center gap-3 rounded-[14px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)", borderLeft: `3px solid ${isSuper ? "var(--v5-brand)" : "var(--v5-tech-cyan)"}` }}>
         {isSuper ? <ShieldCheck size={15} style={{ color: "var(--v5-brand)" }} aria-hidden /> : <Lock size={15} style={{ color: "var(--v5-tech-cyan)" }} aria-hidden />}
         <span className="text-[12.5px]" style={{ color: "var(--v5-ink-2)" }}>
           {changed.length > 0
-            ? `${changed.length} 项待${isSuper ? "应用" : "提交复核"}${changed.length > 0 ? ` · ${changed.map((c) => c.label).slice(0, 2).join("、")}${changed.length > 2 ? " 等" : ""}` : ""}`
+            ? `${changed.length} 项待${isSuper ? "应用" : "提交确认"}${changed.length > 0 ? ` · ${changed.map((c) => c.label).slice(0, 2).join("、")}${changed.length > 2 ? " 等" : ""}` : ""}`
             : isSuper
-              ? "总管理员 · 拥有全部权限 · 免双签,改值后即时生效"
-              : spec.approval}
+              ? "总管理员 · 拥有全部权限 · 仍需操作确认,改值后即时生效"
+              : spec.confirmPolicy}
         </span>
         <div className="ml-auto flex items-center gap-2.5">
           <button
@@ -127,7 +127,7 @@ export function ConfigArchetype({ spec, accent }: { spec: ConfigSpec; accent: st
           </button>
           {applied ? (
             <span className="inline-flex items-center gap-1.5 text-[12.5px]" style={{ color: "var(--v5-success)", fontWeight: 500 }}>
-              <Check size={14} aria-hidden /> {isSuper ? "已应用 · 即时生效" : "已提交 · 待复核"}(演示)
+              <Check size={14} aria-hidden /> {isSuper ? "已应用 · 即时生效" : "已提交 · 待确认"}(演示)
             </span>
           ) : (
             <button
@@ -137,7 +137,7 @@ export function ConfigArchetype({ spec, accent }: { spec: ConfigSpec; accent: st
               className="inline-flex items-center gap-1.5 rounded-[9px] px-4 py-2 text-[13px] font-medium transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
             >
-              {isSuper ? "应用变更" : "发起变更(双签)"}{changed.length > 0 ? `(${changed.length})` : ""}
+              {isSuper ? "应用变更" : "发起变更(操作确认)"}{changed.length > 0 ? `(${changed.length})` : ""}
             </button>
           )}
         </div>

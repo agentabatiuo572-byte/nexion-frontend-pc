@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Nexion remediation ledger entry",
+  "type": "object",
+  "required": [
+    "id",
+    "side",
+    "route",
+    "title",
+    "category",
+    "severity",
+    "repro",
+    "expected",
+    "actual",
+    "evidence",
+    "dedup_key",
+    "cluster",
+    "status",
+    "sentinel",
+    "found_by"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "side": {
+      "enum": [
+        "frontend",
+        "admin",
+        "cross",
+        "uniapp"
+      ]
+    },
+    "route": {
+      "type": [
+        "string",
+        "array",
+        "null"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "dead-control",
+        "fake-write",
+        "modal-blocked",
+        "flow-break",
+        "task-fail",
+        "spec-gap",
+        "port-drift",
+        "list-capability",
+        "layout",
+        "copy",
+        "i18n",
+        "console-error",
+        "data-canon",
+        "meta-leak"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "P0",
+        "P1",
+        "P2",
+        "P3"
+      ]
+    },
+    "repro": {
+      "type": "string"
+    },
+    "expected": {
+      "type": "string"
+    },
+    "actual": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array"
+    },
+    "dedup_key": {
+      "type": "string"
+    },
+    "cluster": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "open",
+        "specd",
+        "fixed",
+        "verified",
+        "closed",
+        "fix-in-port"
+      ]
+    },
+    "fix_pr": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sentinel": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "found_by": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,7 @@
+- link "路径" [ref=e3]
+- textbox "YYYY-MM-DD" [disabled, ref=e4]
+- textbox "例如:东京 · 六本木 Hills" [disabled, ref=e5]
+- textbox [disabled, ref=e6]: 3000
+- button "Locked · V5 required" [disabled, ref=e7]
+- button "Back" [ref=e1]
+- button "通知" [ref=e2]

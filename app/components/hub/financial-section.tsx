@@ -2,7 +2,7 @@
 
 /**
  * 360 HUB · 财务持仓卡(单用户 staking/Genesis/兑换)— C1·deepening。
- * 读:v3/staking + genesis + exchange(per-user)。处置(强制赎回/冻结/分红调整)跳 G 域 MC。
+ * 读:v3/staking + genesis + exchange(per-user)。处置(强制赎回/冻结/分红调整)跳 G 域 操作确认。
  * CGM: CGM-G staking/genesis/exchange per-user 持仓行。
  */
 import Link from "next/link";
@@ -22,7 +22,7 @@ export function FinancialSection({ user }: { user: AdminUser }) {
   const f = getUserFinancial(user.id, vNum, user.balanceUsd);
   const empty = f.staking.length === 0 && f.genesis.length === 0 && f.exchange.length === 0;
   return (
-    <HubCard icon={<Landmark size={15} style={{ color: "var(--admin-domain-g)" }} />} title="财务持仓卡 · staking / Genesis / 兑换" tag="C1·deepening · v3 financial · 处置在 G MC">
+    <HubCard icon={<Landmark size={15} style={{ color: "var(--admin-domain-g)" }} />} title="财务持仓卡 · staking / Genesis / 兑换" tag="C1·deepening · v3 financial · 处置在 G 操作确认">
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <HubMetric label="质押本金" sub="NEX" value={f.stakedNexTotal.toLocaleString()} accent="var(--admin-domain-g)" />
         <HubMetric label="质押仓位" value={`${f.staking.length}`} />
@@ -76,7 +76,7 @@ export function FinancialSection({ user }: { user: AdminUser }) {
       <p className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
         <Link href="/finance-products/staking" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-g)" }}>G1 Staking<ArrowUpRight size={11} /></Link>
         <Link href="/finance-products/genesis" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-g)" }}>G4 Genesis<ArrowUpRight size={11} /></Link>
-        <AutoGloss>强制赎回/冻结/分红调整在 G 域 · MC 双签。</AutoGloss>
+        <AutoGloss>强制赎回/冻结/分红调整在 G 域 · 操作确认。</AutoGloss>
       </p>
     </HubCard>
   );

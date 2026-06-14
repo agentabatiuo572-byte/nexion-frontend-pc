@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:12 域 × 69 个 L2 子模块。
+ * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 70 个 L2 入口(E 域 7→5、F 域 8→5 收编后;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5)。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -22,6 +22,7 @@ import {
   Siren,
   Radar,
   BarChart3,
+  Headset,
 } from "lucide-react";
 
 export type AdminRole =
@@ -74,7 +75,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: [], // 仅 superadmin
     l2: [
       { id: "A1", name: "运营账号 & RBAC", path: "/platform/rbac", prdAnchor: "A1", batch: "V1", status: "flagship" },
-      { id: "A2", name: "审计 & Maker-Checker", path: "/platform/audit", prdAnchor: "A2", batch: "V1", status: "flagship" },
+      { id: "A2", name: "审计 & 操作确认", path: "/platform/audit", prdAnchor: "A2", batch: "V1", status: "flagship" },
       { id: "A3", name: "系统配置", path: "/platform/config", prdAnchor: "A3", batch: "V1", status: "flagship" },
       { id: "A4", name: "埋点事件体系", path: "/platform/events", prdAnchor: "A4", batch: "V1", status: "flagship" },
       { id: "A5", name: "平台参数寄存器", path: "/platform/params-registry", prdAnchor: "A5", batch: "V1", status: "flagship" },
@@ -132,14 +133,14 @@ export const CONSOLE_NAV: NavDomain[] = [
     icon: Server,
     accentVar: "--admin-domain-e",
     roles: ["growth", "support"],
+    // 设计稿收编 E1-E7 → 5 子模块并全系统统一连续编号 E1-E5:代际发布门(原 E2)并入 E1、
+    // 设备生命周期(原 E4)并入 E5→现 E3。同 F 域 F1-F8→F1-F5。nav id == prdAnchor == PRD §10 章节(PRD 已同步重编号)。
     l2: [
-      { id: "E1", name: "商品目录 & 定价", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
-      { id: "E2", name: "代际发布门", path: "/devices/generation", prdAnchor: "E2", batch: "V2", status: "flagship" },
-      { id: "E3", name: "收益 & 任务引擎", path: "/devices/tasks", prdAnchor: "E3", batch: "V2", status: "flagship" },
-      { id: "E4", name: "设备生命周期", path: "/devices/lifecycle", prdAnchor: "E4", batch: "V2", status: "flagship" },
-      { id: "E5", name: "Trade-in 配置", path: "/devices/trade-in", prdAnchor: "E5", batch: "V2", status: "flagship" },
-      { id: "E6", name: "订单状态机", path: "/devices/orders", prdAnchor: "E6", batch: "V2", status: "flagship" },
-      { id: "E7", name: "设备运维", path: "/devices/ops", prdAnchor: "E7", batch: "V2", status: "flagship" },
+      { id: "E1", name: "商品目录 & 代际门", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
+      { id: "E2", name: "收益 & 任务引擎", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
+      { id: "E3", name: "生命周期 & Trade-in", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
+      { id: "E4", name: "订单状态机", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
+      { id: "E5", name: "设备运维", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -196,7 +197,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "content",
     icon: Megaphone,
     accentVar: "--admin-domain-i",
-    roles: ["content"],
+    roles: ["content", "support"],
     l2: [
       { id: "I1", name: "转化文案 A/B", path: "/content/copy-ab", prdAnchor: "I1", batch: "V4", status: "flagship" },
       { id: "I2", name: "Nova 推送运营", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
@@ -250,6 +251,22 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "L5", name: "导出 & 监管报告", path: "/analytics/export", prdAnchor: "L5", batch: "V4", status: "flagship" },
     ],
   },
+  {
+    code: "M",
+    name: "客服中心",
+    slug: "service",
+    icon: Headset,
+    accentVar: "--admin-domain-m",
+    roles: ["support", "risk"],
+    // 客服中心 = 抽 I8(工单)+ I9(即时会话)重组的独立域;真写键沿用 I.support.*/I.session.* 保 persist 兼容。
+    l2: [
+      { id: "M1", name: "客服总览", path: "/service/overview", prdAnchor: "M1", batch: "V4", status: "flagship" },
+      { id: "M2", name: "工单台", path: "/service/tickets", prdAnchor: "M2", batch: "V4", status: "flagship" },
+      { id: "M3", name: "即时会话台", path: "/service/sessions", prdAnchor: "M3", batch: "V4", status: "flagship" },
+      { id: "M4", name: "知识库与 SLA", path: "/service/kb-sla", prdAnchor: "M4", batch: "V4", status: "flagship" },
+      { id: "M5", name: "话术与模板配置", path: "/service/scripts", prdAnchor: "M5", batch: "V4", status: "flagship" },
+    ],
+  },
 ];
 
 /** 扁平化的全部 L2(verify 路由清单 / 全局检索用)。 */
@@ -283,5 +300,5 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
   return CONSOLE_NAV.filter((d) => canSee(role, d.roles));
 }
 
-export const DOMAIN_COUNT = CONSOLE_NAV.length; // 12
-export const L2_COUNT = ALL_L2.length; // 67(F 域 8→5,F6/F7/F8 并入 F4)
+export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
+export const L2_COUNT = ALL_L2.length; // 70(F 域 8→5;E 域 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5)

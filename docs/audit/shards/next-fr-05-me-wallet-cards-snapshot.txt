@@ -1,0 +1,3 @@
+- link "添加新卡" [ref=e3]
+- button "Back" [ref=e1]
+- button "通知" [ref=e2]

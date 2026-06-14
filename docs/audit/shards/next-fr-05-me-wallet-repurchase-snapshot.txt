@@ -1,0 +1,9 @@
+- link "新手?了解复投玩法" [ref=e3]
+- textbox [ref=e5]: 200
+- button "$100" [ref=e6]
+- button "$200" [ref=e7]
+- button "$500" [ref=e8]
+- button "$1000" [ref=e9]
+- button "复投 $200.00" [ref=e4]
+- button "Back" [ref=e1]
+- button "通知" [ref=e2]

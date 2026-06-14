@@ -7,7 +7,7 @@
 
 ## 0. 一句话结论
 
-后台的**展示/看板层是真的**(全路由 SSR 渲染、数据齐、四镜头审过),但**运营动作层**(增 / 改 / 上下架 / 状态切换 / 参数配 / 审批)**约 90% 是 `setMc → MakerCheckerModal → onConfirm 只 setToast("已提交复核")` 的死控件** —— 点了不写任何 store、刷新即丢。
+后台的**展示/看板层是真的**(全路由 SSR 渲染、数据齐、四镜头审过),但**运营动作层**(增 / 改 / 上下架 / 状态切换 / 参数配 / 确认)**约 90% 是 `setActionConfirm → OperationConfirmModal → onConfirm 只 setToast("已确认生效")` 的死控件** —— 点了不写任何 store、刷新即丢。
 全后台 registry 声明约 **671 个动作**,真正接了持久 store(真 CRUD)的仅约 **20 个**,其中 **11 个集中在 C 域 360 HUB**(`users/search/[id]`),其余真动作只有:A 账号创建、E3 任务 CRUD、C 冻结、I2 Nova 启停。
 
 > 注:本项目是 mock 原型,"死控件→toast"在原型语境曾被当作可接受的"演示外壳"。但项目已由 **E3 任务引擎 + C 域 360 HUB** 树立了"真交互"样板(真写持久 store + 即时反映 + 审计,backend-replaceable)。以该样板为准,死控件 = 未达项目自身标准 = 真欠账。
@@ -20,7 +20,7 @@
 | B 总览驾驶舱 | 5 看板 | 0 | 3 | 3 | 5 | 0(dashboard) | **3** | ⚪ 多数合理只读 |
 | C 用户与账户 | 9 | **11(360 HUB)** | 16(列表页) | 0 | 2 | 37 | **5** | 🔴 HUB真/列表假**割裂** |
 | D 资金与财务 | 6 | 1–2 | ~13 | 3–5 | 1 | 23 | **7** | 全死控件 |
-| E 设备与商城 | 8 | 4(任务) | ~9 | 3(上下架/…) | — | 80 | **9** | E3真,E1/E2/E5/E6/E7死 |
+| E 设备与商城 | 8 | **全(SKU/任务/评价 CRUD + 订单/设备/运维 setParam)** | 0 | 0 | 9 | 80 | **0** | ✅ E1–E5 设计稿 port 全真落地 |
 | F 分销与团队 | 7 | **0** | ~14 | 2 | — | 95 | **16** | 全死控件 |
 | G 金融产品 | 7 | **0** | ~13 | 2 | — | 100 | **17(+1熔断)** | 全死控件 |
 | H 增长节奏 | 6 | **0** | 13 | 3 | — | 81 | **5–16** | 全死控件(apply只改useState) |
@@ -41,7 +41,7 @@
 
 > **✅ 已全部补齐(截至 2026-06-05)**:下列 P0/P1/P2 欠账动作均已接真写 store + 审计(manifest built 93 / 欠账 0),含 I2 Nova 完整 CRUD。本节保留作**补齐前欠账台账 + 优先级方法论**参考。
 
-> 判据:运营为保证业务正常运转**是否必须真操作它**?是 → 该真写。高敏(资金/资产/规则/kill-switch)一律 Maker-Checker 真双签 + server-canonical + 审计。
+> 判据:运营为保证业务正常运转**是否必须真操作它**?是 → 该真写。高敏(资金/资产/规则/kill-switch)一律 操作确认 真写确认 + server-canonical + 审计。
 
 ### P0 高敏即时动作(资金/风控/合规/止血) — 最先补
 | 域 | 对象 | 欠账动作 | 现状 | 证据 |
@@ -50,7 +50,7 @@
 | D | 账本 | 红冲 / 对账核销 | ❌缺失 | `d.ts:41` 声明,view 无按钮 |
 | K | 多账户簇 | 确认/解除/封禁全簇 | 🟠死控件 | `k-view.tsx:174-176` |
 | K | KYC 复审 | 通过 / **驳回 / 补件** | 🟠死控件+❌缺失 | `k-view.tsx:149`;`k.ts:214` 驳回/补件缺渲染 |
-| J | Kill-Switch 7闸 | 熔断 / 恢复(双签) | 🟠死控件 | `j-view.tsx:90` |
+| J | Kill-Switch 7闸 | 熔断 / 恢复(操作确认) | 🟠死控件 | `j-view.tsx:90` |
 | J | 篡改防御 | 确认拦截 / 封禁 | 🟠死控件 | `j-view.tsx:121-123` |
 | C | 账户(列表) | 冻结/解冻/限制(与HUB割裂) | 🟠死控件 | `c-view.tsx:39-44` |
 | A | 运营账号 | 停用账号 / 改角色 / 重置2FA | 🟠死控件 | `a-view.tsx:154-156` |
@@ -58,8 +58,8 @@
 ### P1 业务参数与发布(决定业务运转) — 次之
 | 域 | 对象 | 欠账动作 | 现状 |
 |---|---|---|---|
-| E | 商品SKU | **改价 / 上架 / 下架 / 编辑 / 删除**(主人点名) | 🟠死控件+❌缺失 `e-view.tsx:133`,上下架/删除缺 |
-| E | baseRate / 代际门(E2) / trade-in(E5) | 调产出 / 放行新代 / 调折抵 | 🟠死控件 |
+| E | 商品SKU | 改价 / 上架 / 下架 / 编辑 / 删除 | ✅ 已落地 · 真 store `addSku/updateSku/setSkuStatus/removeSku` + logAudit(设计稿 port) |
+| E | 任务单价 / 代际门(E1) / 衰减·trade-in(E3) / 订单(E4) / 运维(E5) | 改单价 / 放行新代 / 调衰减·折抵 / 退款·补建终态 / DC pause | ✅ 已落地 · `updateTask` + `setParam`(E.gen/E.device/E.tradein/E.order/E.ops)+ 操作确认 |
 | F | 网络版税 / V级 / 奖池 / 配额 | 改费率 / 改阈值 / 改比例 | 🟠死控件(16项全死) |
 | G | staking / 兑换 / Genesis / 复投 | 调APY / 汇率费率限额 / 分红 / 紧急pause | 🟠死控件(17项全死) |
 | H | phase拨盘 / 试用引擎 / 活动 | 调dial / 改试用参数 / 上下线活动 | 🟠死控件(写useState不持久) |
@@ -72,7 +72,7 @@
 | I | 文案AB/Campaign/信任中心/披露/i18n/教程 | 设为胜出 / 投递 / 发布上下架 | 🟠死控件(18项,I 域核心欠账区) |
 | H | 签到/抽奖/里程碑 | 调规则 / Lucky概率 / 阈值 | 🟠死控件 |
 | L | 报表 | 生成 / 导出 / 重跑 / 排程 / 模板 | 🟠死控件+❌缺失 `l-view.tsx:130` |
-| F | 大使 / 排行榜 | 审批 / 取消资格 | 🟠死控件 |
+| F | 大使 / 排行榜 | 确认 / 取消资格 | 🟠死控件 |
 
 ## 4. 各域明细索引
 
@@ -89,7 +89,7 @@
 
 **防再漏机制(待建,见方案 Part B):**
 - ① 本台账(对象×标准动作 正向清单)= "查该有的在不在"。
-- ② interaction-audit A 类死控件门从 `hub/*` 扩到 `domain-views/*`:检测「MakerChecker onConfirm 只 toast 不写 store」→ FAIL。
+- ② interaction-audit A 类死控件门从 `hub/*` 扩到 `domain-views/*`:检测「OperationConfirm onConfirm 只 toast 不写 store」→ FAIL。
 - ③ CGM `built` 升级:声明的写动作须真有 store handler 且被目标视图调用。
 - ④ registry 声明↔渲染对齐门:声明的 rowAction 必须真渲染成带 handler 的按钮。
 
@@ -103,8 +103,8 @@
 每补一个欠账动作,5 步(以「E 改价」为例):
 1. **选行**:manifest 找 `status=pending/missing` 行(OPS-E-02 改价),定 storeAction 名(`updateSku`)。
 2. **store**:`platform-config-store`(平台级)/`user-ops-store`(per-user)加真写 action — 对象 CRUD 仿 `addTask/updateTask/removeTask`;**纯调参数直接用现成 `setParam(key,value,{action,reason})`**(已含审计)。
-3. **view**:死控件 `setMc(...)` 的 `MakerCheckerModal onConfirm={(reason,newVal)=>...}` 接到 store action(用 reason/newVal),状态即时反映;读侧加水合门 `useOpsHydrated()`。
-4. **manifest**:该 row `status→built` + 填 `storeAction`;`deadControlBaseline[view]` 减去消灭的 setMc 数(只减不增)。
+3. **view**:死控件 `setActionConfirm(...)` 的 `OperationConfirmModal onConfirm={(reason,newVal)=>...}` 接到 store action(用 reason/newVal),状态即时反映;读侧加水合门 `useOpsHydrated()`。
+4. **manifest**:该 row `status→built` + 填 `storeAction`;`deadControlBaseline[view]` 减去消灭的 setActionConfirm 数(只减不增)。
 5. **回测**:`node scripts/ops-actions-audit.mjs`(PASS) + `npx tsc --noEmit` + `bash scripts/verify.sh all`;补完一批可 `OPS_BATCH=P0 …` 验该批清零。
 
-门自动:挡新增 setMc 死控件(baseline 超标)、挡 built 退化(storeAction 消失)、量化剩余欠账。
+门自动:挡新增 setActionConfirm 死控件(baseline 超标)、挡 built 退化(storeAction 消失)、量化剩余欠账。

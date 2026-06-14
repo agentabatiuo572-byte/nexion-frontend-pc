@@ -4,7 +4,7 @@
 
 本域 14 行。
 
-| id | scope | type | frontendField | opsPurpose | crudActions | MC | endpoint | cov |
+| id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
 | CGM-H-001 | per-user | data-CRUD | useAchievements.records (id/unlockedAt/claimed)… | conversion,fund_safety,platform_integri… | 运营处理重复领奖申诉、撤销异常 USDT/NEX 奖励、补发漏解锁成就 | Y | 读 TBD·建议 GET /api/achievements · 写 POST /api/achi… | gap |
 | CGM-H-002 | per-user | data-CRUD | useDailyPowerUp.{claimed,claimedAt} + claim/has… | conversion,network_growth | 运营处理重复激活申诉、撤销异常激活、补发 | Y | 读 TBD·建议 GET /api/powerups/state · 写 POST /api/po… | gap |

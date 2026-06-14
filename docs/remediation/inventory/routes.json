@@ -1,0 +1,1472 @@
+{
+  "generatedAt": "2026-06-12T16:24:50.787Z",
+  "description": "M0 route denominator. Re-run scripts/remediation-m0.mjs after route changes.",
+  "counts": {
+    "adminPages": 12,
+    "adminNavRoutes": 66,
+    "nextReferencePages": 80,
+    "uniappPages": 81
+  },
+  "admin": {
+    "pages": [
+      {
+        "route": "/",
+        "file": "app/(console)/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/[domain]/[module]",
+        "file": "app/(console)/[domain]/[module]/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "dynamic"
+      },
+      {
+        "route": "/finance/params",
+        "file": "app/(console)/finance/params/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/finance/withdrawals",
+        "file": "app/(console)/finance/withdrawals/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/overview/dual-ledger",
+        "file": "app/(console)/overview/dual-ledger/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/overview/funnel",
+        "file": "app/(console)/overview/funnel/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/overview/liquidity",
+        "file": "app/(console)/overview/liquidity/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/overview/rhythm",
+        "file": "app/(console)/overview/rhythm/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/overview/risk-radar",
+        "file": "app/(console)/overview/risk-radar/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/platform/params-registry",
+        "file": "app/(console)/platform/params-registry/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/users/search",
+        "file": "app/(console)/users/search/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "static"
+      },
+      {
+        "route": "/users/search/[id]",
+        "file": "app/(console)/users/search/[id]/page.tsx",
+        "source": "app/page.tsx",
+        "routeKind": "dynamic"
+      }
+    ],
+    "navRoutes": [
+      {
+        "route": "/platform/rbac",
+        "id": "A1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/platform/audit",
+        "id": "A2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/platform/config",
+        "id": "A3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/platform/events",
+        "id": "A4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/platform/params-registry",
+        "id": "A5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/overview/dual-ledger",
+        "id": "B1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/overview/liquidity",
+        "id": "B2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/overview/funnel",
+        "id": "B3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/overview/rhythm",
+        "id": "B4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/overview/risk-radar",
+        "id": "B5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/users/search",
+        "id": "C1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/users/actions",
+        "id": "C2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/users/assets",
+        "id": "C3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/users/kyc",
+        "id": "C4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/users/security",
+        "id": "C5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/users/reg-risk",
+        "id": "C6",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance/recon",
+        "id": "D1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance/withdrawals",
+        "id": "D2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance/pool",
+        "id": "D3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance/ledger",
+        "id": "D4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance/params",
+        "id": "D5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/devices/pricing",
+        "id": "E1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/devices/tasks",
+        "id": "E2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/devices/trade-in",
+        "id": "E3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/devices/orders",
+        "id": "E4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/devices/ops",
+        "id": "E5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/network/v-rank",
+        "id": "F1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/network/royalty",
+        "id": "F2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/network/binary",
+        "id": "F3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/network/leadership-pool",
+        "id": "F4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/network/commissions",
+        "id": "F5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance-products/staking",
+        "id": "G1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance-products/exchange",
+        "id": "G2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance-products/market",
+        "id": "G3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance-products/genesis",
+        "id": "G4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance-products/premium",
+        "id": "G5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance-products/nex-v2",
+        "id": "G6",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/finance-products/repurchase",
+        "id": "G7",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/growth/phase",
+        "id": "H1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/growth/trial",
+        "id": "H2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/growth/quest",
+        "id": "H3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/growth/events",
+        "id": "H4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/growth/daily",
+        "id": "H5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/growth/milestones",
+        "id": "H6",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/content/copy-ab",
+        "id": "I1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/content/nova",
+        "id": "I2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/content/notifications",
+        "id": "I3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/content/trust",
+        "id": "I4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/content/disclosure",
+        "id": "I5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/content/i18n",
+        "id": "I6",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/content/learn",
+        "id": "I7",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/content/support",
+        "id": "I8",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/emergency/kill-switch",
+        "id": "J1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/emergency/geo-block",
+        "id": "J2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/emergency/tamper",
+        "id": "J3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/emergency/sop",
+        "id": "J4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/risk/multi-account",
+        "id": "K1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/risk/abuse",
+        "id": "K2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/risk/withdrawal-rules",
+        "id": "K3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/risk/scoring",
+        "id": "K4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/risk/kyc-review",
+        "id": "K5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/analytics/kpi",
+        "id": "L1",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/analytics/funnel-cohort",
+        "id": "L2",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/analytics/financial",
+        "id": "L3",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/analytics/operations",
+        "id": "L4",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      },
+      {
+        "route": "/analytics/export",
+        "id": "L5",
+        "status": "flagship",
+        "source": "lib/nav/console-nav.ts"
+      }
+    ],
+    "crossCheck": {
+      "pageCount": 12,
+      "navRouteCount": 66,
+      "dynamicPages": [
+        "/[domain]/[module]",
+        "/users/search/[id]"
+      ],
+      "sourceRoot": "app"
+    }
+  },
+  "nextReference": {
+    "pages": [
+      {
+        "route": "/",
+        "file": "app/(main)/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/daily",
+        "file": "app/(main)/daily/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/developer",
+        "file": "app/(main)/developer/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/earn",
+        "file": "app/(main)/earn/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/events",
+        "file": "app/(main)/events/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/genesis",
+        "file": "app/(main)/genesis/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/genesis/holder",
+        "file": "app/(main)/genesis/holder/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/genesis/how-it-works",
+        "file": "app/(main)/genesis/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/genesis/marketplace",
+        "file": "app/(main)/genesis/marketplace/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/globe",
+        "file": "app/(main)/globe/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/learn",
+        "file": "app/(main)/learn/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/login",
+        "file": "app/login/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/market",
+        "file": "app/(main)/market/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me",
+        "file": "app/(main)/me/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/achievements",
+        "file": "app/(main)/me/achievements/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/devices",
+        "file": "app/(main)/me/devices/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/goals",
+        "file": "app/(main)/me/goals/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/help",
+        "file": "app/(main)/me/help/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/language",
+        "file": "app/(main)/me/language/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/notifications",
+        "file": "app/(main)/me/notifications/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/preferences",
+        "file": "app/(main)/me/preferences/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/profile",
+        "file": "app/(main)/me/profile/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/proof",
+        "file": "app/(main)/me/proof/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/receipts",
+        "file": "app/(main)/me/receipts/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/replay-tour",
+        "file": "app/(main)/me/replay-tour/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/risk-disclosure",
+        "file": "app/(main)/me/risk-disclosure/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/security",
+        "file": "app/(main)/me/security/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/security/kyc-express",
+        "file": "app/(main)/me/security/kyc-express/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/support",
+        "file": "app/(main)/me/support/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/support/tickets",
+        "file": "app/(main)/me/support/tickets/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/trial",
+        "file": "app/(main)/me/trial/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet",
+        "file": "app/(main)/me/wallet/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/bills",
+        "file": "app/(main)/me/wallet/bills/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/cards",
+        "file": "app/(main)/me/wallet/cards/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/cards/new",
+        "file": "app/(main)/me/wallet/cards/new/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/exchange",
+        "file": "app/(main)/me/wallet/exchange/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/exchange/how-it-works",
+        "file": "app/(main)/me/wallet/exchange/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/nex",
+        "file": "app/(main)/me/wallet/nex/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/nex-v2-lock",
+        "file": "app/(main)/me/wallet/nex-v2-lock/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/premium",
+        "file": "app/(main)/me/wallet/premium/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/repurchase",
+        "file": "app/(main)/me/wallet/repurchase/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/repurchase/how-it-works",
+        "file": "app/(main)/me/wallet/repurchase/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/topup",
+        "file": "app/(main)/me/wallet/topup/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/withdraw",
+        "file": "app/(main)/me/wallet/withdraw/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wallet/withdraw/tracking",
+        "file": "app/(main)/me/wallet/withdraw/tracking/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/me/wrapped",
+        "file": "app/(main)/me/wrapped/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/missions",
+        "file": "app/(main)/missions/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/onboarding/connect",
+        "file": "app/onboarding/connect/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/onboarding/estimator",
+        "file": "app/onboarding/estimator/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/onboarding/intro",
+        "file": "app/onboarding/intro/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/ref/[code]",
+        "file": "app/ref/[code]/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/register",
+        "file": "app/register/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/search",
+        "file": "app/(main)/search/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/staking",
+        "file": "app/(main)/staking/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/staking/how-it-works",
+        "file": "app/(main)/staking/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/store",
+        "file": "app/(main)/store/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/store/[productId]",
+        "file": "app/(main)/store/[productId]/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/store/bundle",
+        "file": "app/(main)/store/bundle/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/store/checkout",
+        "file": "app/(main)/store/checkout/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/store/orders",
+        "file": "app/(main)/store/orders/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/store/orders/[id]",
+        "file": "app/(main)/store/orders/[id]/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team",
+        "file": "app/(main)/team/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/agent",
+        "file": "app/(main)/team/agent/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/binary",
+        "file": "app/(main)/team/binary/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/binary/how-it-works",
+        "file": "app/(main)/team/binary/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/commissions",
+        "file": "app/(main)/team/commissions/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/commissions/how-it-works",
+        "file": "app/(main)/team/commissions/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/leaderboard",
+        "file": "app/(main)/team/leaderboard/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/leadership-pool",
+        "file": "app/(main)/team/leadership-pool/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/leadership-pool/how-it-works",
+        "file": "app/(main)/team/leadership-pool/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/network",
+        "file": "app/(main)/team/network/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/quota",
+        "file": "app/(main)/team/quota/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/rank",
+        "file": "app/(main)/team/rank/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/rank/how-it-works",
+        "file": "app/(main)/team/rank/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/tree",
+        "file": "app/(main)/team/tree/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/unilevel",
+        "file": "app/(main)/team/unilevel/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/team/unilevel/how-it-works",
+        "file": "app/(main)/team/unilevel/how-it-works/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/trust",
+        "file": "app/(main)/trust/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/trust/nex",
+        "file": "app/(main)/trust/nex/page.tsx",
+        "source": "app/page.tsx"
+      },
+      {
+        "route": "/tx/[hash]",
+        "file": "app/(main)/tx/[hash]/page.tsx",
+        "source": "app/page.tsx"
+      }
+    ]
+  },
+  "uniapp": {
+    "pages": [
+      {
+        "route": "/pages/index/index",
+        "h5Url": "/#/pages/index/index",
+        "file": "src/pages/index/index.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/onboarding/intro",
+        "h5Url": "/#/pages/onboarding/intro",
+        "file": "src/pages/onboarding/intro.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/onboarding/estimator",
+        "h5Url": "/#/pages/onboarding/estimator",
+        "file": "src/pages/onboarding/estimator.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/onboarding/connect",
+        "h5Url": "/#/pages/onboarding/connect",
+        "file": "src/pages/onboarding/connect.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/onboarding/terms",
+        "h5Url": "/#/pages/onboarding/terms",
+        "file": "src/pages/onboarding/terms.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/register/register",
+        "h5Url": "/#/pages/register/register",
+        "file": "src/pages/register/register.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/login/login",
+        "h5Url": "/#/pages/login/login",
+        "file": "src/pages/login/login.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/store/store",
+        "h5Url": "/#/pages/store/store",
+        "file": "src/pages/store/store.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/store/detail",
+        "h5Url": "/#/pages/store/detail",
+        "file": "src/pages/store/detail.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/store/checkout",
+        "h5Url": "/#/pages/store/checkout",
+        "file": "src/pages/store/checkout.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/store/orders",
+        "h5Url": "/#/pages/store/orders",
+        "file": "src/pages/store/orders.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/store/order-detail",
+        "h5Url": "/#/pages/store/order-detail",
+        "file": "src/pages/store/order-detail.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/store/bundle",
+        "h5Url": "/#/pages/store/bundle",
+        "file": "src/pages/store/bundle.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/earn/earn",
+        "h5Url": "/#/pages/earn/earn",
+        "file": "src/pages/earn/earn.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/me",
+        "h5Url": "/#/pages/me/me",
+        "file": "src/pages/me/me.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet",
+        "h5Url": "/#/pages/me/wallet",
+        "file": "src/pages/me/wallet.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-topup",
+        "h5Url": "/#/pages/me/wallet-topup",
+        "file": "src/pages/me/wallet-topup.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-withdraw",
+        "h5Url": "/#/pages/me/wallet-withdraw",
+        "file": "src/pages/me/wallet-withdraw.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/devices",
+        "h5Url": "/#/pages/me/devices",
+        "file": "src/pages/me/devices.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/profile",
+        "h5Url": "/#/pages/me/profile",
+        "file": "src/pages/me/profile.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/security",
+        "h5Url": "/#/pages/me/security",
+        "file": "src/pages/me/security.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/kyc",
+        "h5Url": "/#/pages/me/kyc",
+        "file": "src/pages/me/kyc.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/goals",
+        "h5Url": "/#/pages/me/goals",
+        "file": "src/pages/me/goals.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-bills",
+        "h5Url": "/#/pages/me/wallet-bills",
+        "file": "src/pages/me/wallet-bills.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-exchange",
+        "h5Url": "/#/pages/me/wallet-exchange",
+        "file": "src/pages/me/wallet-exchange.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-nex",
+        "h5Url": "/#/pages/me/wallet-nex",
+        "file": "src/pages/me/wallet-nex.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-cards",
+        "h5Url": "/#/pages/me/wallet-cards",
+        "file": "src/pages/me/wallet-cards.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-cards-new",
+        "h5Url": "/#/pages/me/wallet-cards-new",
+        "file": "src/pages/me/wallet-cards-new.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/receipts",
+        "h5Url": "/#/pages/me/receipts",
+        "file": "src/pages/me/receipts.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/proof",
+        "h5Url": "/#/pages/me/proof",
+        "file": "src/pages/me/proof.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wrapped",
+        "h5Url": "/#/pages/me/wrapped",
+        "file": "src/pages/me/wrapped.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/market/market",
+        "h5Url": "/#/pages/market/market",
+        "file": "src/pages/market/market.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/team",
+        "h5Url": "/#/pages/team/team",
+        "file": "src/pages/team/team.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/commissions",
+        "h5Url": "/#/pages/team/commissions",
+        "file": "src/pages/team/commissions.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/binary",
+        "h5Url": "/#/pages/team/binary",
+        "file": "src/pages/team/binary.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/agent",
+        "h5Url": "/#/pages/team/agent",
+        "file": "src/pages/team/agent.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/rank",
+        "h5Url": "/#/pages/team/rank",
+        "file": "src/pages/team/rank.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/rank-how",
+        "h5Url": "/#/pages/team/rank-how",
+        "file": "src/pages/team/rank-how.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/leaderboard",
+        "h5Url": "/#/pages/team/leaderboard",
+        "file": "src/pages/team/leaderboard.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/leadership-pool",
+        "h5Url": "/#/pages/team/leadership-pool",
+        "file": "src/pages/team/leadership-pool.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/leadership-pool-how",
+        "h5Url": "/#/pages/team/leadership-pool-how",
+        "file": "src/pages/team/leadership-pool-how.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/network",
+        "h5Url": "/#/pages/team/network",
+        "file": "src/pages/team/network.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/quota",
+        "h5Url": "/#/pages/team/quota",
+        "file": "src/pages/team/quota.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/tree",
+        "h5Url": "/#/pages/team/tree",
+        "file": "src/pages/team/tree.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/unilevel",
+        "h5Url": "/#/pages/team/unilevel",
+        "file": "src/pages/team/unilevel.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/unilevel-how",
+        "h5Url": "/#/pages/team/unilevel-how",
+        "file": "src/pages/team/unilevel-how.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/binary-how",
+        "h5Url": "/#/pages/team/binary-how",
+        "file": "src/pages/team/binary-how.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/team/commissions-how",
+        "h5Url": "/#/pages/team/commissions-how",
+        "file": "src/pages/team/commissions-how.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/genesis/genesis",
+        "h5Url": "/#/pages/genesis/genesis",
+        "file": "src/pages/genesis/genesis.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/genesis/holder",
+        "h5Url": "/#/pages/genesis/holder",
+        "file": "src/pages/genesis/holder.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/genesis/marketplace",
+        "h5Url": "/#/pages/genesis/marketplace",
+        "file": "src/pages/genesis/marketplace.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/genesis/how-it-works",
+        "h5Url": "/#/pages/genesis/how-it-works",
+        "file": "src/pages/genesis/how-it-works.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/staking/staking",
+        "h5Url": "/#/pages/staking/staking",
+        "file": "src/pages/staking/staking.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/staking/how-it-works",
+        "h5Url": "/#/pages/staking/how-it-works",
+        "file": "src/pages/staking/how-it-works.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/daily/daily",
+        "h5Url": "/#/pages/daily/daily",
+        "file": "src/pages/daily/daily.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/missions/missions",
+        "h5Url": "/#/pages/missions/missions",
+        "file": "src/pages/missions/missions.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/events/events",
+        "h5Url": "/#/pages/events/events",
+        "file": "src/pages/events/events.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/learn/learn",
+        "h5Url": "/#/pages/learn/learn",
+        "file": "src/pages/learn/learn.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/globe/globe",
+        "h5Url": "/#/pages/globe/globe",
+        "file": "src/pages/globe/globe.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/developer/developer",
+        "h5Url": "/#/pages/developer/developer",
+        "file": "src/pages/developer/developer.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/search/search",
+        "h5Url": "/#/pages/search/search",
+        "file": "src/pages/search/search.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/achievements",
+        "h5Url": "/#/pages/me/achievements",
+        "file": "src/pages/me/achievements.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/help",
+        "h5Url": "/#/pages/me/help",
+        "file": "src/pages/me/help.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/support",
+        "h5Url": "/#/pages/me/support",
+        "file": "src/pages/me/support.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/support-tickets",
+        "h5Url": "/#/pages/me/support-tickets",
+        "file": "src/pages/me/support-tickets.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/language",
+        "h5Url": "/#/pages/me/language",
+        "file": "src/pages/me/language.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/notifications",
+        "h5Url": "/#/pages/me/notifications",
+        "file": "src/pages/me/notifications.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/preferences",
+        "h5Url": "/#/pages/me/preferences",
+        "file": "src/pages/me/preferences.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/replay-tour",
+        "h5Url": "/#/pages/me/replay-tour",
+        "file": "src/pages/me/replay-tour.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/risk-disclosure",
+        "h5Url": "/#/pages/me/risk-disclosure",
+        "file": "src/pages/me/risk-disclosure.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/trial",
+        "h5Url": "/#/pages/me/trial",
+        "file": "src/pages/me/trial.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-premium",
+        "h5Url": "/#/pages/me/wallet-premium",
+        "file": "src/pages/me/wallet-premium.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-nex-v2-lock",
+        "h5Url": "/#/pages/me/wallet-nex-v2-lock",
+        "file": "src/pages/me/wallet-nex-v2-lock.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-repurchase",
+        "h5Url": "/#/pages/me/wallet-repurchase",
+        "file": "src/pages/me/wallet-repurchase.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-repurchase-how",
+        "h5Url": "/#/pages/me/wallet-repurchase-how",
+        "file": "src/pages/me/wallet-repurchase-how.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-exchange-how",
+        "h5Url": "/#/pages/me/wallet-exchange-how",
+        "file": "src/pages/me/wallet-exchange-how.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/me/wallet-withdraw-tracking",
+        "h5Url": "/#/pages/me/wallet-withdraw-tracking",
+        "file": "src/pages/me/wallet-withdraw-tracking.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/trust/trust",
+        "h5Url": "/#/pages/trust/trust",
+        "file": "src/pages/trust/trust.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/trust/nex",
+        "h5Url": "/#/pages/trust/nex",
+        "file": "src/pages/trust/nex.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/ref/code",
+        "h5Url": "/#/pages/ref/code",
+        "file": "src/pages/ref/code.vue",
+        "source": "src/pages.json",
+        "exists": true
+      },
+      {
+        "route": "/pages/tx/hash",
+        "h5Url": "/#/pages/tx/hash",
+        "file": "src/pages/tx/hash.vue",
+        "source": "src/pages.json",
+        "exists": true
+      }
+    ],
+    "crossCheck": {
+      "pageCount": 81,
+      "missingVueFiles": []
+    }
+  }
+}
