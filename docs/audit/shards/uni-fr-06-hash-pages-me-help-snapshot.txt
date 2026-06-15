@@ -1,4 +1,0 @@
-- button "Contact support" [ref=e1]
-- textbox [ref=e4]
-- textbox [ref=e3]
-- button "Open ticket" [ref=e2]

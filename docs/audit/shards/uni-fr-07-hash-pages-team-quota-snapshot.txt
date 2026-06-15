@@ -1,2 +1,0 @@
-- button "Buy NexionBox Pro" [ref=e1]
-- button "Invite to unlock" [ref=e2]

@@ -1,2 +1,0 @@
-- button "View marketplace" [ref=e1]
-- button "View on OpenSea · floor" [ref=e2]

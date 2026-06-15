@@ -1,6 +1,0 @@
-- group "You" [ref=e1] clickable [cursor:pointer]
-- group [ref=e2] clickable [cursor:pointer]
-- group [ref=e3] clickable [cursor:pointer]
-- group [ref=e4] clickable [cursor:pointer]
-- group [ref=e5] clickable [cursor:pointer]
-- group [ref=e6] clickable [cursor:pointer]

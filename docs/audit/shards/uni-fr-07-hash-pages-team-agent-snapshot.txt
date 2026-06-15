@@ -1,7 +1,0 @@
-- button "Offline event venue" [ref=e1]
-- button "KOL campaign match" [ref=e2]
-- button "Print materials" [ref=e3]
-- button "SDK / dev support" [ref=e4]
-- textbox [disabled, ref=e5]
-- textbox [disabled, ref=e6]
-- spinbutton [disabled, ref=e7]: 3000

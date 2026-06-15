@@ -1,2 +1,0 @@
-- spinbutton [ref=e2]
-- textbox [ref=e1]

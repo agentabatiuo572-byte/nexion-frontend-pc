@@ -1,6 +1,0 @@
-- button "Telegram @nexion_official · 全天候社群" [ref=e3]
-- button "Discord discord.gg/nexion · #ask-an-engineer" [ref=e4]
-- link "提交工单 账户 / KYC / 大额提现走工单" [ref=e5]
-- button "邮件 support@nexion.ai · 24 小时内回复" [ref=e6]
-- button "Back" [ref=e1]
-- button "通知" [ref=e2]

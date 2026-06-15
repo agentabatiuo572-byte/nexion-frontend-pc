@@ -1,6 +1,0 @@
-- button "Back to store" [ref=e1]
-- button "USDT (TRC20) Lowest fee · 5 min" [ref=e2]
-- button "USDT (ERC20) 15 min" [ref=e3]
-- button "Bitcoin 30 min" [ref=e4]
-- button "Card Instant · +3.5% fee" [ref=e5]
-- button "Continue" [ref=e6]

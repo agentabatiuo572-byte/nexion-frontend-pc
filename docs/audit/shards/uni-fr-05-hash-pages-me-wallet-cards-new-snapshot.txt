@@ -1,6 +1,0 @@
-- textbox [ref=e3]
-- textbox [ref=e4]
-- textbox [ref=e5]
-- textbox [ref=e6]
-- switch "Set as default payment card" [checked=true, ref=e1]
-- button "Fill in all fields" [ref=e2]

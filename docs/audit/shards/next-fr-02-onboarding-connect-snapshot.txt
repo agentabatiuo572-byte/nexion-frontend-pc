@@ -1,3 +1,0 @@
-- heading "校准你的手机算力" [level=1, ref=e1]
-- button "开始校准" [ref=e2]
-- button "ZH" [expanded=false, ref=e3]

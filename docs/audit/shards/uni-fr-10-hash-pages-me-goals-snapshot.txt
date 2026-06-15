@@ -1,2 +1,0 @@
-- spinbutton [ref=e2]: 1000
-- button "Save goal" [ref=e1]

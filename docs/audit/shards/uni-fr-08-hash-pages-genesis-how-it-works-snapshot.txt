@@ -1,2 +1,0 @@
-- button "Got it · go to pre-sale" [ref=e1]
-- button "Browse secondary market" [ref=e2]

@@ -1,5 +1,0 @@
-- textbox [ref=e4]: Alex T.
-- textbox [ref=e5]: Running an AI-friendly node from my phone. Always up for swapping notes on yield strategies.
-- generic "取消完成SingaporeHong KongTokyo, JPSeoul, KRBerlin, DELondon, UKDubai, AENew York, USSingapore" [ref=e1] clickable [cursor:pointer]
-- generic "取消完成Asia/Singapore (UTC+8)Asia/Tokyo (UTC+9)Asia/Hong_Kong (UTC+8)Europe/Berlin (UTC+1)Europe/London" [ref=e2] clickable [cursor:pointer]
-- button "Save Changes" [ref=e3]

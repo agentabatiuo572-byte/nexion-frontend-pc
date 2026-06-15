@@ -1,4 +1,0 @@
-- button "直推 直推朋友 8 人在贡献 · 直接版税约 $185.00/月" [ref=e3]
-- button "扩展 扩展网络 42 成员 · 网络收益奖金约 $182.94/月" [ref=e4]
-- button "Back" [ref=e1]
-- button "通知" [ref=e2]

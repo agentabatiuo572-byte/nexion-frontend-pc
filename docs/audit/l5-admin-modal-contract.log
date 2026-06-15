@@ -1,7 +1,0 @@
-$ C:\Program Files\nodejs\node.exe scripts/admin-modal-contract-audit.mjs
-
-{
-  "status": "passed",
-  "checkedRequired": 7,
-  "checkedForbidden": 9
-}

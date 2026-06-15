@@ -1,2 +1,0 @@
-- button "Back to store" [ref=e1]
-- button "NexionBox S1 ORD-AUDIT-0001" [ref=e2]

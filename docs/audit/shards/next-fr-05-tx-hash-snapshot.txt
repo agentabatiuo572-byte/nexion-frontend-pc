@@ -1,5 +1,0 @@
-- button "复制 hash" [ref=e3]
-- link "Etherscan" [ref=e4]
-- link "TRONScan" [ref=e5]
-- button "Back" [ref=e1]
-- button "通知" [ref=e2]

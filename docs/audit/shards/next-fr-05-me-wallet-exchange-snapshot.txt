@@ -1,8 +1,0 @@
-- link "新手?了解兑换玩法" [ref=e3]
-- button "重试" [ref=e4]
-- textbox "0" [ref=e6]
-- button "NEX 1,240 · MAX" [ref=e7]
-- button "翻转" [ref=e5]
-- button "确认兑换" [disabled, ref=e8]
-- button "Back" [ref=e1]
-- button "通知" [ref=e2]

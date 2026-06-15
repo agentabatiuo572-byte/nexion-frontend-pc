@@ -1,8 +1,0 @@
-- textbox "1234 5678 9012 3456" [ref=e4]
-- textbox "MM/YY" [ref=e5]
-- textbox "123" [ref=e6]
-- textbox "持卡人姓名(拼音)" [ref=e7]
-- checkbox "设为默认支付卡" [checked=true, ref=e8]
-- button "填写完整信息" [disabled, ref=e3]
-- button "Back" [ref=e1]
-- button "通知" [ref=e2]

@@ -1,8 +1,0 @@
-- button "Back to store" [ref=e1]
-- button "Decrease quantity" [ref=e2]
-- button "Increase quantity" [ref=e3]
-- button "Where is the device physically?" [ref=e4]
-- button "Can I withdraw earnings anytime?" [ref=e5]
-- button "What if AI demand drops?" [ref=e6]
-- button "Is there a refund window?" [ref=e7]
-- button "Buy now" [ref=e8]

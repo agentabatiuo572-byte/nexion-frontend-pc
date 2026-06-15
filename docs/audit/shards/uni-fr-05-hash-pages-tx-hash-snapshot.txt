@@ -1,3 +1,0 @@
-- button "Copy hash" [ref=e3]
-- button "Copy hash for Etherscan" [ref=e1]
-- button "Copy hash for TRONScan" [ref=e2]

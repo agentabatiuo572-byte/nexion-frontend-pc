@@ -1,7 +1,0 @@
-- button "Earnings projections are forecasts, not promises" [ref=e1]
-- button "Hardware depreciates — efficiency falls over time" [ref=e2]
-- button "Token (NEX) market risk" [ref=e3]
-- button "Withdrawal windows + compliance review" [ref=e4]
-- button "Staking lock-ups are irreversible" [ref=e5]
-- button "Network economics + referral compensation" [ref=e6]
-- button "Custody, KYC, and regulatory jurisdiction" [ref=e7]

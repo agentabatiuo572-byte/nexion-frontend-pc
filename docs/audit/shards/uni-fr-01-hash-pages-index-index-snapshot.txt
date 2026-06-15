@@ -1,3 +1,0 @@
-- generic "4查看 NexionBox S1 ROI转化+100 NEX" [ref=e1] clickable [cursor:pointer]
-- generic "5设置个人资料身份+80 NEX" [ref=e2] clickable [cursor:pointer]
-- generic "6邀请好友社交+200 NEX+$1" [ref=e3] clickable [cursor:pointer]

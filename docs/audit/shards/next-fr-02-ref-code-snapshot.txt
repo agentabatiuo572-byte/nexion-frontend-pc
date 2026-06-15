@@ -1,6 +1,0 @@
-- link "领取我的 $5 + 200 NEX" [ref=e2]
-- link "登录" [ref=e3]
-- link "条款" [ref=e4]
-- link "隐私" [ref=e5]
-- link "信任中心" [ref=e6]
-- button "ZH" [expanded=false, ref=e1]
