@@ -47,8 +47,8 @@ while IFS='|' read -r path id status; do
   if [ "$status" = "scaffold" ]; then check_html "$path" "规格就绪"; fi
 done < <("$NODE_BIN" "$HERE/nav-routes.mjs" | tr -d '\r')
 nav_count=$("$NODE_BIN" "$HERE/nav-routes.mjs" | grep -c '|')
-if [ "$nav_count" -ne 67 ]; then
-  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 67)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
+if [ "$nav_count" -ne 68 ]; then
+  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 68)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
 else
   echo "  nav-routes: $nav_count 条路由"
 fi
@@ -62,7 +62,6 @@ check_html "/" "兑付覆盖率"
 check_html "/" "高敏操作动态"
 check_html "/" "风险雷达"
 check_html "/" "转化漏斗"
-check_html "/" "扩张期"
 check_html "/" "KPI 验收墙"
 # B1 双账本驾驶舱(旗舰)
 check_html "/overview/dual-ledger" "双账本总览"
@@ -143,14 +142,18 @@ check_html "/content/i18n" "命名空间矩阵"                    # I6 词条�
 check_html "/content/i18n" "完整性扫描"                      # I6 镜像 gate
 check_html "/content/i18n" "教程中心"                        # I7 课程
 check_html "/content/i18n" "涨奖励过 B1 红线"                # I7 唯一 amplifies(B1 红线核验,SSR 卡头副标)
-check_html "/content/support" "Help/FAQ 内容管理"             # I8 Help 内容池
-check_html "/content/support" "Ticket 分类与 SLA"             # I8 分类 SLA 管理
-check_html "/content/support" "工单详情与处理"                # I8 工单回复/关闭真动作面
-check_html "/content/support" "回复并转待用户"                # I8 业务动作控件在位
-check_html "/content/conversation-center" "会话类别"          # I9 类别配置(advisor/support/ai)
-check_html "/content/conversation-center" "顾问主动话术"      # I9 AutoPushPolicy + 话术库
-check_html "/content/conversation-center" "坐席对话台"        # I9 坐席会话 list
-check_html "/content/conversation-center" "发送回复"          # I9 坐席回复真动作控件在位
+# 域 M 客服中心(I8 工单 + I9 即时会话 迁出域 I 重组;真写键沿用 I.support.*/I.session.*)
+check_html "/service/overview" "SLA 监控"                     # M1 客服总览 · SLA 监控
+check_html "/service/overview" "坐席负载"                     # M1 坐席负载概览(派生,非真 presence)
+check_html "/service/tickets" "工单详情与处理"                # M2 工单坐席台 desk
+check_html "/service/tickets" "升级为即时会话"                # M2 工单→即时会话互转(新)
+check_html "/service/sessions" "主动发起会话"                 # M3 顾问主动发起会话(新)
+check_html "/service/sessions" "转工单"                       # M3 即时会话→工单互转(新)
+check_html "/service/sessions" "转入待处理"                   # M3 跨坐席转交 → 转入待处理筛选档(新)
+check_html "/service/kb-sla" "Help/FAQ 内容管理"              # M4 FAQ 内容池
+check_html "/service/kb-sla" "Ticket 分类与 SLA"             # M4 分类 SLA 矩阵
+check_html "/service/scripts" "顾问主动话术"                  # M5 AutoPushPolicy + 话术库
+check_html "/service/scripts" "受众"                          # M5 受众圈定(新)
 # A5 平台参数寄存器(平台运营面字段级控制索引 · 88 平台参数回源真值)
 check_html "/platform/params-registry" "平台参数寄存器"
 check_html "/platform/params-registry" "回源真值"
@@ -201,12 +204,12 @@ check_html "/finance-products/staking" "Position 状态机与监控"  # G1 设�
 check_html "/finance-products/staking" "保序校验"               # G1 三道硬门(B1 红线 + 跨档保序)在位
 check_html "/finance-products/exchange" "三道额度线"            # G2 设计稿 port:caps 配置面在位
 check_html "/finance-products/exchange" "拦截命中与队列"        # G2 三类拦截 + 次日队列在位
-check_html "/finance-products/market" "行情走势"                # G3 设计稿 port:kline + 引擎参数在位
+check_html "/finance-products/market" "行情走势"                # G3:kline 在位
+check_html "/finance-products/market" "周曲线关键帧"            # G3 升级:周曲线排程器矩阵在位
+check_html "/finance-products/market" "自动按日推进"            # G3 升级:排程控制(schedule/pin/loop)在位
 check_html "/finance-products/genesis" "分红派发监控"           # G4 设计稿 port:双口径派发卡在位
 check_html "/finance-products/genesis" "节点持有台账"           # G4 ownership 台账在位
-check_html "/finance-products/premium" "订阅状态机与监控"       # G5 segmented premium 段在位
-check_html "/finance-products/nex-v2" "NEX v2 Founders Vault 配置"  # G6 段(l2Id 预选)在位
-check_html "/finance-products/repurchase" "复投激励配置"        # G7 段(l2Id 预选)在位
+check_html "/finance-products/repurchase" "复投激励配置"        # G7 复投独立页(Premium/NEX v2 已下线)在位
 echo "  注:运营者/PM/交互设计师 的定性维度由审计 panel(docs/REVIEW-RUBRIC.md 镜头 B/C/D)覆盖,此处仅守信号退化。"
 
 echo "== [+] CGM 字段级覆盖 gate(CGM_BATCH=${CGM_BATCH:-B9}) =="
@@ -254,18 +257,18 @@ else
   fail=$((fail+1)); fails="$fails\n  [admin-list-capability] 分页原语/finance 接线/豁免注记退化"
 fi
 
-echo "== [+] 全域列表能力 runtime gate(66 路由表格分页/明确小表例外)=="
+echo "== [+] 全域列表能力 runtime gate(64 路由表格分页/明确小表例外)=="
 if (cd "$ROOT" && "$NODE_BIN" scripts/admin-list-capability-global-audit.mjs); then
   pass=$((pass+1))
 else
   fail=$((fail+1)); fails="$fails\n  [admin-list-capability-global] runtime 表格分页/明确小表例外退化"
 fi
 
-echo "== [+] 支持后台 gate(FM-018 /content/support + ticket 字段镜像)=="
+echo "== [+] 客服中心 gate(域 M /service/* + ticket 字段镜像)=="
 if (cd "$ROOT" && "$NODE_BIN" scripts/admin-support-surface-audit.mjs); then
   pass=$((pass+1))
 else
-  fail=$((fail+1)); fails="$fails\n  [admin-support-surface] /content/support 路由/业务控件/字段镜像退化"
+  fail=$((fail+1)); fails="$fails\n  [admin-support-surface] 域 M /service/* 路由/业务控件/字段镜像退化"
 fi
 
 echo "== [+] UniApp 全路由迁移 gate(Next 映射/pages/runtime/action sample)=="

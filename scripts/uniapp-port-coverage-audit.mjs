@@ -21,6 +21,13 @@ const EXPECTED_EXTRA_UNI_ROUTES = new Set([
   "/#/pages/support/messages",
   "/#/pages/support/chat",
 ]);
+// Next(H5 旧原型)仍保留、但已从 uniapp 主面故意下线的功能路由(产品决策删除,非未迁移)。
+// 2026-06-15:Premium 订阅 + NEX v2 Founders 锁仓整模块下线(前端 uniapp + 后台 G5/G6 + PRD 同步);
+// H5 原型为冻结 legacy 不回改,故在端口覆盖审计登记为「故意移除」,不计未迁移缺口。
+const REMOVED_NEXT_ROUTES = new Set([
+  "/me/wallet/premium",
+  "/me/wallet/nex-v2-lock",
+]);
 
 function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -126,6 +133,7 @@ const uniRouteSet = new Set(uniPages.map((page) => page.h5Url));
 
 const mapping = [];
 for (const route of nextRoutes) {
+  if (REMOVED_NEXT_ROUTES.has(route)) continue; // 故意从 uniapp 下线的功能(产品删除),H5 legacy 保留
   const candidates = nextRouteCandidates(route);
   const uniRoute = candidates.find((candidate) => uniRouteSet.has(candidate));
   if (!uniRoute) findings.push({ issue: "missing-uni-route-for-next-route", route, candidates });
@@ -182,6 +190,7 @@ const result = {
   mappedRoutes: mapping.length,
   extraUniRoutes,
   expectedExtraUniRoutes: Array.from(EXPECTED_EXTRA_UNI_ROUTES).sort(),
+  removedNextRoutes: Array.from(REMOVED_NEXT_ROUTES).sort(),
   missingUniVueFiles: uniPages.filter((page) => !page.exists).length,
   runtimeRows: runtimeRows.length,
   runtimeCaptured: runtimeRows.filter((row) => row.status === "captured").length,

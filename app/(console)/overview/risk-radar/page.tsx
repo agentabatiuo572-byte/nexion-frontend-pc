@@ -32,10 +32,10 @@ import { LEDGER } from "@/lib/mock/admin/ledger";
 
 // Kill-Switch 闸门 — 单一源:闸集/标识取自 J1 权威 KILLSWITCH;在线态以 platform-config-store
 // (J.killswitch.<key>)为准、缺省回落 KILLSWITCH.on —— 与 J1 矩阵恒一致(operator 在 J1 熔断后,
-// 本只读雷达即时同步)。7 闸:资金/兑付 5 + 获客/收入 2;此处只读,熔断/恢复在 J1 操作确认。
+// 本只读雷达即时同步)。5 闸:资金/兑付 4 + 获客/收入 1;此处只读,熔断/恢复在 J1 操作确认。
 const GATE_NAMES: Record<string, string> = {
   withdraw: "提现闸", exchange: "兑换闸", staking: "算力质押闸",
-  nexv2: "NEX v2 Lock", genesis: "Genesis 闸", trial: "试用闸", premium: "Premium 订阅",
+  genesis: "Genesis 闸", trial: "试用闸",
 };
 
 // 未处理告警 feed — 每条深链至告警来源域(点击钻取处置)。

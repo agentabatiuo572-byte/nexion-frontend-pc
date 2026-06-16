@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * H1 Phase 调度器 — 12 月 × 10 旋钮节奏的逐值权威面(SPEC §4 H1)。
+ * H1 Phase 调度器 — 12 月 × 8 旋钮节奏的逐值权威面(SPEC §4 H1)。
  *
  * 5 段(严格按设计稿 DOM 顺序):
  *  (a) 顶部 4 张 f-stat KPI(本组件自渲染 H1_STATS · 与 H2/H3/H5 一致;沙盒预览按钮放此段右上);
- *  (b) 12 月 × 10 旋钮 dial 矩阵(.dial-tbl):
+ *  (b) 12 月 × 8 旋钮 dial 矩阵(.dial-tbl):
  *      - 当前月(H1_STATS.currentMonth = 7)整行 .cur 高亮;
  *      - 单元格 cur = pget(`H1.dial.<key>.m<N>`) ?? DIAL_MATRIX[N-1][col];
  *      - 与上月不同值 chg 黄色高亮(参考上月也走 pget 单源,改值会真实流动);
@@ -22,7 +22,7 @@
  *  H1.ctl.{schedule,pin,override} · H1.override.<id>.disabled
  *
  * amplifies 触发(过 B1 100% 红线):
- *  - 矩阵格 + LOOSEN_DIR 命中(points/cooldown/binaryCap)+ 方向符合(数值类比较)。
+ *  - 矩阵格 + LOOSEN_DIR 命中(nexGate/cooldown/binaryCap)+ 方向符合(数值类比较)。
  *
  * 与 D5(/funds/withdraw-params)+ F3 + G5/G6 同源:
  *  - 旧 h-view 沿用 H.phase.dial.<key>,D5 pget 同键(d5-params.tsx line 21);
@@ -177,7 +177,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       action: "沙盒预览(只读 · 不写库)",
       detail: (
         <>
-          选一组旋钮改动,推演下游影响:提现冷却 / 积分面(D5)、双轨封顶(F3)、Premium/NEXv2 开闸(G5/G6)、
+          选一组旋钮改动,推演下游影响:提现冷却 / NEX 闸(D5)、双轨封顶(F3)、
           受影响用户规模、资金流出方向变化。示例:<b>月 7 复投加成 1→2</b> → 预估复投率 +4pt、周流出 +$180K、命中 31,200 人。
           <b>预览结果可一键转为正式提案进操作确认</b>;本步骤不写真配置,仅展示推演。
         </>
@@ -219,10 +219,10 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         <button className="f-cta" onClick={openSandbox}>沙盒预览(只读)</button>
       </div>
 
-      {/* (b) 12 月 × 10 旋钮 dial 矩阵 */}
+      {/* (b) 12 月 × 8 旋钮 dial 矩阵 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">逐月旋钮矩阵(12 月 × 10 项 · 逐值权威)</span>
+          <span className="ttl">逐月旋钮矩阵(12 月 × 8 项 · 逐值权威)</span>
           <span className="sub">· 点任意单元格发起改值(操作确认)· 当前月高亮 · 黄色 = 与上月不同</span>
           <div className="r">
             <span className="bdg ok">约 60 秒内全网生效</span>
@@ -390,7 +390,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       <PaginationExemptionList
         items={[
           {
-            label: "逐月旋钮矩阵(12 月 × 10 项 · 逐值权威)",
+            label: "逐月旋钮矩阵(12 月 × 8 项 · 逐值权威)",
             kind: "fixed-matrix",
             maxRows: 12,
             reason: "12 个月节奏矩阵必须同屏对比当前月和前后月,翻页会破坏横向校验",

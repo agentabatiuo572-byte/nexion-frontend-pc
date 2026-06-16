@@ -2,7 +2,7 @@
  * 域 I 内容与合规 CMS — 注册表。accent=--admin-domain-i。
  * ⚠️ I ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = i-view.tsx + i-tabs/),
  * 仅 summary 经 DomainHeader 渲染(design_handoff_i_domain f-desc 压缩版,2026-06-11)。
- * 6 页覆盖 8 子模块:I1 / I2 / I3 / I4+I5(合并) / I6+I7(合并) / I8 support。
+ * 5 页覆盖 7 子模块:I1 / I2 / I3 / I4+I5(合并) / I6+I7(合并)。客服 I8/I9 已迁出至域 M 客服中心。
  */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
@@ -44,11 +44,6 @@ export const DOMAIN_I: ModuleEntry[] = [
     // I7 渲染面已与 I6 合并到 i6-i18n.tsx(IDomainView FOLD["I7"]="I6"),本路由仅作 PRD 锚点占位。
     path: "/content/learn",
     summary: "教程中心(I7)已与 i18n 文案管理(I6)合并到一页(/content/i18n);15 课 × 5 分类 + 推荐位 + 完成发 NEX,涨课程奖励是放大代币流出,提交即过 B1 备付金红线。本路由保留作 PRD 锚点,真渲染面同 /content/i18n。",
-    content: placeholder,
-  },
-  {
-    path: "/content/support",
-    summary: "客服支持 CMS(I8):Help/FAQ 内容池 + ticket 分类与 SLA + 工单列表与运营回复。字段镜像 UniApp support ticket mock(id/category/subject/status/priority/lastReplyAt/messages/owner);回复、分配、改状态、关闭/重开都是真写 platform-config 并留 A2 审计。真正资金放行、账户安全、设备换货分别升级回 D2/C5/E5,本页只做客服解释与工单流转。",
     content: placeholder,
   },
 ];

@@ -8,7 +8,7 @@ import { findModuleEntry } from "@/lib/admin/registry";
 import type { DomainViewMeta } from "./domain-header";
 
 export const PORTED_DOMAINS = new Set<string>([
-  "A", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L",
+  "A", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
 ]);
 
 /** 按路由构建域视图页头 meta(供显式旗舰路由复用;catch-all 直接用 match 内联)。server 安全。 */

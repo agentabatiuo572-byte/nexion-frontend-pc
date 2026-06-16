@@ -20,7 +20,7 @@ export const DOMAIN_HOME: Record<string, string> = {
 };
 
 /* ---------------- Icons(设计稿线性字形,name-based) ---------------- */
-type IconName =
+export type IconName =
   | "gauge" | "shield" | "users" | "wallet" | "radar" | "rhythm" | "box" | "tree"
   | "coin" | "doc" | "power" | "chart" | "search" | "bell" | "menu" | "chevron"
   | "check" | "x" | "alert" | "download" | "plus" | "filter" | "eye" | "lock"
@@ -369,28 +369,115 @@ export function Drawer({ title, sub, onClose, children, footer }: { title: React
   );
 }
 
-/* ───────── 共享消息线程(M 客服中心工单/会话坐席台复用;归一 author/sender · body/text 字段差) ───────── */
+/* ───────── 共享消息线程(M 客服中心工单/会话坐席台 + dock 复用) ─────────
+   helpdesk 富气泡:头像 + 角色标签(客服/顾问/客户) + 名字 + VIP + 时间 + script + 气泡 + 可选 CTA。
+   归一 author/sender · body/text 字段差;rich 字段全可选,只传 {ts,fromAgent,body} 也能渲染。 */
+export interface ThreadCta {
+  kind: "product" | "link";
+  title?: string;
+  subtitle?: string;
+  price?: string;
+  priceNote?: string;
+  badge?: string;
+  icon?: IconName;
+  label?: string;
+  onClick?: () => void;
+}
 export interface ThreadMessage {
   ts: number;
   fromAgent: boolean; // 工单 author==="agent" / 会话 sender==="agent"
   agentName?: string;
   body: string; // 工单 body / 会话 text
-  ctaHref?: string; // 仅会话(顾问主动 CTA);工单无
+  ctaHref?: string; // legacy 简单 CTA(保留兼容)
+  // ---- rich(可选)----
+  system?: boolean; // 系统消息(居中 pill)
+  role?: "support" | "advisor" | "user"; // 角色标签 + 配色
+  senderName?: string; // 显示名(覆盖 agentName / "User")
+  vlevel?: string; // 用户 VIP chip
+  scriptTag?: string; // 话术标记
+  cta?: ThreadCta; // 富 CTA(产品卡 / 链接)
 }
-export function MessageThread({ messages, relWhen, accentVar = "--m-ac" }: { messages: ThreadMessage[]; relWhen: (ts: number) => string; accentVar?: string }) {
+
+// 真人头像(对齐设计稿 Avatar):按名字猜性别 → randomuser.me;name-hash 取固定编号;加载失败露首字母。
+const MT_FEMALE = /Mia|Sarah|Marina|Linda|Lisa|Emma|Olivia|Anna|Lily|Yuki|Naoko|Hina|Aria|Sofia|Chloe|Grace|Mei|Aisha|晨曦|雨琦|心月|樱桃|琴|梦|妮|婷|玲|霖|媛|莲/i;
+export function photoUrl(name?: string): string {
+  const n = name ?? "";
+  let h = 0;
+  for (let i = 0; i < n.length; i += 1) h = (h * 31 + n.charCodeAt(i)) >>> 0;
+  return `https://randomuser.me/api/portraits/${MT_FEMALE.test(n) ? "women" : "men"}/${h % 90}.jpg`;
+}
+// accentVar/role/senderName/vlevel/scriptTag 仍在 props 类型中(兼容旧调用),Telegram 样式不再每条显头像/名字/角色,故不读。
+// resetKey(会话 id)变 → 本次渲染不 pop(切会话时历史消息不飞入);同 key 下新增的消息(index ≥ 上次长度)才 msg-pop 飞入。
+// agentName 传入 → 顶部右侧显「接待{handlerRole} · {agentName}」(Telegram 式不每条显名字时,坐席身份在此一处呈现;handlerRole 区分顾问/客服,缺省客服)。
+export function MessageThread({ messages, relWhen, resetKey, agentName, agentAvatar, handlerRole = "客服" }: { messages: ThreadMessage[]; relWhen: (ts: number) => string; accentVar?: string; resetKey?: string; agentName?: string; agentAvatar?: ReactNode; handlerRole?: string }) {
+  const prevLenRef = useRef(messages.length);
+  const prevKeyRef = useRef(resetKey);
+  let freshFrom = prevLenRef.current;
+  if (prevKeyRef.current !== resetKey) freshFrom = messages.length;
+  useEffect(() => {
+    prevLenRef.current = messages.length;
+    prevKeyRef.current = resetKey;
+  });
   return (
     <>
+      {agentName && (
+        <div className="msg-handler">
+          {agentAvatar ?? <Icon name="users" size={12} />}
+          接待{handlerRole} · {agentName}
+        </div>
+      )}
       {messages.map((m, i) => {
-        const isAgent = m.fromAgent;
-        return (
-          <div key={`${m.ts}-${i}`} style={{ padding: "11px 12px", borderRadius: 10, background: isAgent ? `var(${accentVar}-soft)` : "var(--surface-2)", color: "var(--ink-2)" }}>
-            <div className="mono" style={{ fontSize: 11, color: isAgent ? `var(${accentVar})` : "var(--ink-4)", marginBottom: 5 }}>
-              {isAgent ? m.agentName ?? "Agent" : "User"} · {relWhen(m.ts)}
+        if (m.system) {
+          return (
+            <div key={`${m.ts}-${i}`} className="msg-sys">
+              {m.body} · <span className="mono">{relWhen(m.ts)}</span>
             </div>
-            <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>{m.body}</div>
-            {m.ctaHref && m.ctaHref !== "—" && (
-              <div className="mono" style={{ fontSize: 11, color: `var(${accentVar})`, marginTop: 5 }}>CTA → {m.ctaHref}</div>
-            )}
+          );
+        }
+        const isAgent = m.fromAgent;
+        const prev = messages[i - 1];
+        const grouped = !!prev && !prev.system && prev.fromAgent === isAgent;
+        return (
+          <div
+            key={`${m.ts}-${i}`}
+            className={`msg-in msg-tg ${isAgent ? "from-right" : "from-left"}${grouped ? " grouped" : ""}${i >= freshFrom ? " msg-pop" : ""}`}
+          >
+            <div className="msg-col">
+              <div className={`msg-bubble ${isAgent ? "agent" : "user"}`}>
+                <span className="msg-text">{m.body}</span>
+                <span className="msg-time">{relWhen(m.ts)}</span>
+              </div>
+              {m.cta?.kind === "product" && (
+                <button type="button" className="cta-card" onClick={m.cta.onClick}>
+                  <span className="cta-thumb">
+                    <Icon name={m.cta.icon ?? "box"} size={26} />
+                  </span>
+                  <span className="cta-info">
+                    {m.cta.badge && <span className="cta-badge">{m.cta.badge}</span>}
+                    <span className="cta-title">{m.cta.title}</span>
+                    <span className="cta-sub">{m.cta.subtitle}</span>
+                    {m.cta.price && (
+                      <span className="cta-price">
+                        <span className="p">{m.cta.price}</span>
+                        {m.cta.priceNote && <span className="pn">{m.cta.priceNote}</span>}
+                      </span>
+                    )}
+                  </span>
+                  <span className="cta-arrow">
+                    <Icon name="arrow" size={16} />
+                  </span>
+                </button>
+              )}
+              {m.cta?.kind === "link" && (
+                <button type="button" className="chip" style={{ marginTop: 6, cursor: "pointer", color: "var(--m-hd-2)", background: "var(--m-hd-soft)", borderColor: "var(--m-hd-border)" }} onClick={m.cta.onClick}>
+                  <Icon name="arrow" size={12} />
+                  {m.cta.label}
+                </button>
+              )}
+              {!m.cta && m.ctaHref && m.ctaHref !== "—" && (
+                <span className="msg-script" style={{ marginTop: 6 }}>CTA → {m.ctaHref}</span>
+              )}
+            </div>
           </div>
         );
       })}

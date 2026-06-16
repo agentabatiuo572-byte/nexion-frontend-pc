@@ -14,17 +14,30 @@ export function SidebarGroup({
   domain,
   collapsed,
   isOpen,
+  badges,
   onToggle,
 }: {
   domain: NavDomain;
   collapsed: boolean;
   isOpen: boolean;
+  badges?: Record<string, number>;
   onToggle: () => void;
 }) {
   const pathname = usePathname();
   const Icon = domain.icon;
   const accent = `var(${domain.accentVar})`;
   const groupActive = domain.l2.some((l2) => l2.path === pathname);
+  const groupBadge = badges ? domain.l2.reduce((sum, l2) => sum + (badges[l2.path] ?? 0), 0) : 0;
+  // 待处理计数徽标(实心域签名色 + on-bg 文字,镜像 cv-unread 风格)。
+  const navBadge = (n: number) => (
+    <span
+      className="font-mono-tabular shrink-0"
+      style={{ minWidth: 16, height: 16, display: "inline-grid", placeItems: "center", padding: "0 4px", borderRadius: 999, background: accent, color: "var(--v5-bg)", fontSize: 9.5, lineHeight: 1, fontWeight: 600 }}
+      aria-label={`${n} 条待处理`}
+    >
+      {n > 99 ? "99+" : n}
+    </span>
+  );
 
   if (collapsed) {
     return (
@@ -33,12 +46,19 @@ export function SidebarGroup({
         onClick={onToggle}
         title={`${domain.code} ${domain.name}`}
         aria-label={`${domain.code} ${domain.name}`}
-        className="mx-auto flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors"
+        className="relative mx-auto flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors"
         style={{
           background: groupActive ? "var(--v5-surface-2)" : "transparent",
         }}
       >
         <Icon size={18} style={{ color: groupActive ? accent : "var(--v5-ink-3)" }} />
+        {groupBadge > 0 && (
+          <span
+            className="absolute"
+            style={{ top: 6, right: 6, minWidth: 6, height: 6, borderRadius: 999, background: accent }}
+            aria-label={`${groupBadge} 条待处理`}
+          />
+        )}
       </button>
     );
   }
@@ -56,6 +76,7 @@ export function SidebarGroup({
         <span className="flex-1 text-left text-[13px]" style={{ color: "var(--v5-ink-2)" }}>
           {domain.name}
         </span>
+        {!isOpen && groupBadge > 0 && navBadge(groupBadge)}
         <span
           className="font-mono-tabular text-[10px]"
           style={{ color: "var(--v5-ink-4)" }}
@@ -115,6 +136,7 @@ export function SidebarGroup({
                       aria-hidden
                     />
                     <span className="flex-1 truncate">{l2.name}</span>
+                    {(badges?.[l2.path] ?? 0) > 0 && navBadge(badges?.[l2.path] ?? 0)}
                     <span
                       className="font-mono-tabular text-[9px] uppercase tracking-wide"
                       style={{ color: "var(--v5-ink-4)" }}

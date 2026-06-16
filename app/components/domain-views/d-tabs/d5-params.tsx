@@ -3,7 +3,7 @@
 /**
  * D5 提现参数配置 — 提现摩擦的运营杠杆生效面,两类分清(§3.14 防双源):
  *  - D5 owns 三参数(日限次数 / 余额上限 / 网络费):操作确认 + 放松方向 B1 覆盖率红线核验(amplifies);
- *  - 节奏派发三项(冷却 / 积分 / 增强合规审查):权威归 H1(/growth/phase),本页只读 + 跳转,
+ *  - 节奏派发三项(冷却 / NEX 闸 / 增强合规审查):权威归 H1(/growth/phase),本页只读 + 跳转,
  *    接口层拒收(PUT 携带返 422 PHASE_PARAM_READONLY)。
  * 当前 = P3 · 月 7(PHASE 单源);月 8=35d 为 12 月节奏表权威目标值。
  */
@@ -19,7 +19,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
   // H1 派发现值同源镜像(与 h-view 同键 H.phase.dial.<key>;H1 改 dial 本页实时跟,不缓存为权威)
   const h1 = (key: string, seed: string) => pget(`H.phase.dial.${key}`) ?? seed;
   const cooldownV = h1(PHASE_RO.cooldown.h1Key, PHASE_RO.cooldown.seed);
-  const pointsV = h1(PHASE_RO.points.h1Key, PHASE_RO.points.seed);
+  const nexGateV = h1(PHASE_RO.nexGate.h1Key, PHASE_RO.nexGate.seed);
   const holdV = h1(PHASE_RO.hold.h1Key, PHASE_RO.hold.seed);
   const holdShort = holdV.includes("未激活") || holdV === "false" ? "未激活" : holdV;
 
@@ -28,7 +28,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <div className="f-stats">
         <div className="f-stat"><div className="k">今日提现申请</div><div className="v">{D_FUND.applyTodayCnt} 笔</div><div className="sub">${(D_FUND.payoutTodayUsd / 1000).toFixed(1)}K 已放行 · 队列在提现审核</div></div>
         <div className="f-stat ok"><div className="k">覆盖率(B1 · 放松前自动核验)</div><div className="v">{cov}%</div><div className="sub">红线 {LEDGER.redlinePct} · 低于红线拒绝放松</div></div>
-        <div className="f-stat cyan"><div className="k">当前冷却 / 积分(H1 派发)</div><div className="v">{/^\d+$/.test(cooldownV) ? `${cooldownV}d` : cooldownV} · {/^\d+$/.test(pointsV) ? `${pointsV} 分` : pointsV}</div><div className="sub">月 8 → 35d · 月 9 → 45d + 20 分</div></div>
+        <div className="f-stat cyan"><div className="k">当前冷却 / NEX 闸(H1 派发)</div><div className="v">{/^\d+$/.test(cooldownV) ? `${cooldownV}d` : cooldownV} · {/^\d+$/.test(nexGateV) ? `${nexGateV} NEX` : nexGateV}</div><div className="sub">月 8 → 35d · 月 9 → 45d + 20 NEX</div></div>
         <div className="f-stat warn"><div className="k">增强合规审查</div><div className="v">{holdShort}</div><div className="sub">月 8(P5 带)起自动开 · H1 派发</div></div>
       </div>
 
@@ -85,11 +85,11 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
               ))}
             </div>
             <div className="p-row">
-              <div className="txt"><div className="k">{PHASE_RO.points.name} <span className="bdg dim">🔒 H1 派发</span></div><div className="s">{PHASE_RO.points.sub}</div></div>
-              <span className="v">{PHASE_RO.points.fmt(pointsV)}</span>
+              <div className="txt"><div className="k">{PHASE_RO.nexGate.name} <span className="bdg dim">🔒 H1 派发</span></div><div className="s">{PHASE_RO.nexGate.sub}</div></div>
+              <span className="v">{PHASE_RO.nexGate.fmt(nexGateV)}</span>
             </div>
             <div className="ph-track">
-              {PHASE_RO.points.segs.map(([m, v, on]) => (
+              {PHASE_RO.nexGate.segs.map(([m, v, on]) => (
                 <div className={`seg${on ? " cur" : ""}`} key={m}><div className="m">{m}</div><div className="vv">{v}</div></div>
               ))}
             </div>
@@ -97,13 +97,13 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
               <div className="txt"><div className="k">{PHASE_RO.hold.name} <span className="bdg dim">🔒 H1 派发</span></div><div className="s">{PHASE_RO.hold.sub}</div></div>
               <span className="v">{PHASE_RO.hold.fmt(holdV)}</span>
             </div>
-            <div className="dtint" style={{ marginTop: 10 }}><b>为什么这里改不了</b> · 这三项是 12 月节奏的派发参数,提现队列(D2)按它们判「冷却到没到、积分够不够、要不要进增强审查」。如果这页也能改,就成了两套来源打架——所以服务器在接口层直接拒收这三个字段(422 退回并指向 H1),调整一律去 H1 走操作确认,变更记录也由 H1 留(phase.dial_changed)。</div>
+            <div className="dtint" style={{ marginTop: 10 }}><b>为什么这里改不了</b> · 这三项是 12 月节奏的派发参数,提现队列(D2)按它们判「冷却到没到、NEX 够不够、要不要进增强审查」。如果这页也能改,就成了两套来源打架——所以服务器在接口层直接拒收这三个字段(422 退回并指向 H1),调整一律去 H1 走操作确认,变更记录也由 H1 留(phase.dial_changed)。</div>
             <div className="dtint warn" style={{ marginTop: 10 }}><b>月 8 = 35 天的注</b> · 35 天是 12 月节奏表的权威目标值,用户端目前的简化实现里还没有这个中间档,要前端补——上线前以 35d 为准核对。当前 {PHASE.current} · 月 {PHASE.month},距月 8 拐点还有 1 个月。</div>
           </div>
         </section>
       </div>
 
-      <p className="f-foot"><b>「提现摩擦 = 节奏参数(H1)+ 固定参数(本页)」</b>就是这页的全部分工。本页三个参数(日限次数/余额上限/网络费)改动产 <b>admin.withdraw_limit_changed</b> 审计,喂财务报表(L3);提现限额变化也会间接影响挤兑阈值,雷达(B5)在高摩擦阶段联动关注。节奏三项(冷却/积分/合规审查)的变更事件由 H1 产生(phase.dial_changed),本页只在拐点同步展示新派发值——月 8、月 9 两个拐点前运营要心里有数:展示值变了不是这页有人动了手,是节奏到点了。</p>
+      <p className="f-foot"><b>「提现摩擦 = 节奏参数(H1)+ 固定参数(本页)」</b>就是这页的全部分工。本页三个参数(日限次数/余额上限/网络费)改动产 <b>admin.withdraw_limit_changed</b> 审计,喂财务报表(L3);提现限额变化也会间接影响挤兑阈值,雷达(B5)在高摩擦阶段联动关注。节奏三项(冷却/NEX 闸/合规审查)的变更事件由 H1 产生(phase.dial_changed),本页只在拐点同步展示新派发值——月 8、月 9 两个拐点前运营要心里有数:展示值变了不是这页有人动了手,是节奏到点了。</p>
     </>
   );
 }

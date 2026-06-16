@@ -15,6 +15,7 @@ import { DOMAIN_I } from "./i";
 import { DOMAIN_J } from "./j";
 import { DOMAIN_K } from "./k";
 import { DOMAIN_L } from "./l";
+import { DOMAIN_M } from "./m";
 
 const ALL: ModuleEntry[] = [
   ...DOMAIN_A,
@@ -29,6 +30,7 @@ const ALL: ModuleEntry[] = [
   ...DOMAIN_J,
   ...DOMAIN_K,
   ...DOMAIN_L,
+  ...DOMAIN_M,
 ];
 
 const BY_PATH = new Map<string, ModuleEntry>(ALL.map((e) => [e.path.replace(/\/+$/, ""), e]));

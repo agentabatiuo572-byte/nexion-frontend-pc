@@ -126,7 +126,7 @@ export const IMPERSONATIONS = [
 // 待确认队列:沿用旧 ADJ id + C.adjust.<id>.status 真写键(已 persist 裁决继续生效)。
 // ADJ-7741 +$1,200 > $500 → 超额升级演示位(执行门槛 = 财务主管/超管)。
 export type AdjustRow = {
-  id: string; userId: string; obj: "USDT" | "NEX" | "积分"; delta: number; kind: string;
+  id: string; userId: string; obj: "USDT" | "NEX"; delta: number; kind: string;
   operator: string; reason: string; ts: string; escalated: boolean; credit: boolean;
 };
 export const ADJUST_QUEUE: AdjustRow[] = [
@@ -146,20 +146,18 @@ export const SUSPENDED_ADJ = {
 
 // 调整历史(已落账;最新一笔 = 今天,与 D4 BILLS BL-99823 同号互链 —— adjustment 账单类双事件演示)。
 export const ADJUST_HIST: {
-  id: string; userId: string; obj: "USDT" | "NEX" | "积分"; deltaLabel: string; credit: boolean;
+  id: string; userId: string; obj: "USDT" | "NEX"; deltaLabel: string; credit: boolean;
   reason: string; chain: string; escalated: boolean; sink: string; sinkBill: boolean; t: string;
 }[] = [
   { id: "ADJ-1183", userId: "usr_2231", obj: "USDT", deltaLabel: "+$120", credit: true, reason: "客服补偿 · 工单 T-8812", chain: "cs_amy → fin_j ✓", escalated: false, sink: "账单 BL-99823", sinkBill: true, t: "今天 14:30" },
   { id: "ADJ-1179", userId: "usr_90F0", obj: "USDT", deltaLabel: "−$35", credit: false, reason: "系统纠错 · 重复入账冲回", chain: "fin_j → finlead_q ✓", escalated: false, sink: "账单 BL-99741", sinkBill: true, t: "5/26" },
-  { id: "ADJ-1177", userId: "usr_77D4", obj: "积分", deltaLabel: "+200 分", credit: true, reason: "活动补发 · 签到漏记", chain: "growth_m → lead ✓", escalated: false, sink: "审计 #A-22841", sinkBill: false, t: "5/24" },
   { id: "ADJ-1175", userId: "usr_31E8", obj: "NEX", deltaLabel: "+1,200", credit: true, reason: "争议退回 · 兑换故障", chain: "cs_amy → finlead_q ✓", escalated: true, sink: "账单 BL-99702", sinkBill: true, t: "5/22" },
 ];
 
 export const C3_STATS = {
   monthCnt: 47,
-  monthSum: "$3,820 + 12,400 NEX + 2,100 分",
+  monthSum: "$3,820 + 12,400 NEX",
   capUsd: 500,     // 单笔超此值自动升级确认层
-  capPoints: 1_000, // 积分单笔上限
 };
 
 /* ============ C4 KYC 合规台账 ============ */

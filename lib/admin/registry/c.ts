@@ -57,7 +57,7 @@ export const DOMAIN_C: ModuleEntry[] = [
   },
   {
     path: "/users/assets",
-    summary: "客服补偿与系统纠错的手工调整面(C3):USDT / NEX / 积分 × 增减,每笔操作确认 + 原因凭证必填;USDT/NEX 与账本(D4)同一事务记「人工调整」账单,积分改字段 + 审计不落账;加钱方向确认放行瞬间实时过备付金覆盖率红线,低于红线转挂起(7 天有效);单笔超 $500 自动升级确认层。",
+    summary: "客服补偿与系统纠错的手工调整面(C3):USDT / NEX × 增减,每笔操作确认 + 原因凭证必填;USDT/NEX 与账本(D4)同一事务记「人工调整」账单;加钱方向确认放行瞬间实时过备付金覆盖率红线,低于红线转挂起(7 天有效);单笔超 $500 自动升级确认层。",
     content: {
       kind: "list",
       metrics: [
@@ -68,7 +68,7 @@ export const DOMAIN_C: ModuleEntry[] = [
       ],
       search: "搜索用户 ID / 工单号",
       filterKey: "ccy",
-      filters: ["全部", "USDT", "NEX", "积分"],
+      filters: ["全部", "USDT", "NEX"],
       columns: [
         { key: "ticket", header: "工单", mono: true },
         { key: "uid", header: "用户", mono: true },
@@ -82,7 +82,6 @@ export const DOMAIN_C: ModuleEntry[] = [
         { ticket: "ADJ-2606-0141", uid: "U-65120", ccy: "USDT", amount: "−$58.00", reason: "重复入账冲正", state: "已通过" },
         { ticket: "ADJ-2606-0140", uid: "U-88421", ccy: "NEX", amount: "+320 NEX", reason: "产出结算误差补发", state: "待确认" },
         { ticket: "ADJ-2606-0139", uid: "U-90233", ccy: "USDT", amount: "+$520.00", reason: "兑付差额补偿 · 大额", state: "待确认" },
-        { ticket: "ADJ-2606-0138", uid: "U-58642", ccy: "积分", amount: "+1,500", reason: "任务积分发放修正", state: "已通过" },
         { ticket: "ADJ-2606-0137", uid: "U-81905", ccy: "USDT", amount: "−$640.00", reason: "违规返利追回 · 大额", state: "待确认" },
         { ticket: "ADJ-2606-0136", uid: "U-72488", ccy: "NEX", amount: "−45 NEX", reason: "误发回收 · 已知会用户", state: "已拒绝" },
         { ticket: "ADJ-2606-0135", uid: "U-93077", ccy: "USDT", amount: "+$36.00", reason: "客诉核实补偿", state: "已通过" },

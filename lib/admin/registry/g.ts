@@ -2,7 +2,7 @@
  * 域 G 金融产品 — 注册表。accent=--admin-domain-g。
  * ⚠️ G ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = g-view.tsx + g-tabs/),仅 summary 经 DomainHeader 渲染。
  * 改 G 域数据/动作请改 g-tabs/data.ts 与 lib/mock/admin/design-data.ts(MATURITY/GEOBLOCK/KILLSWITCH),勿在此处改 content。
- * nav G5/G6/G7 三路由折叠进同一合并页(segmented 三子段,按 l2Id 预选)。
+ * Premium(旧 G5)/ NEX v2 Founders(旧 G6)已于 2026-06-15 下线;G7 复投激励独立成页。
  */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
@@ -34,21 +34,9 @@ export const DOMAIN_G: ModuleEntry[] = [
     content: placeholder("死代码:G4 真渲染面在 g-tabs/g4-genesis.tsx。"),
   },
   {
-    path: "/finance-products/premium",
-    summary:
-      "Premium 订阅(G5)。$99/月 · 首月 5 折 · +2% NEX 收益权益;解锁阶段 premiumSubAvailable 归 H1 派发只读(月 7+,当前月 7 已解锁);升权益过 B1 红线;熔断 = J1 premium 闸同键;订阅台账 server 单源,7 天退款窗服务端判定。",
-    content: placeholder("死代码:G5 真渲染面在 g-tabs/g5-products.tsx(premium 段)。"),
-  },
-  {
-    path: "/finance-products/nex-v2",
-    summary:
-      "NEX v2 Founders Vault(G6)。250% APY · 24 月锁 · min 1,000 NEX · 到期 ×6 一次性兑付;开锁即按到期应付额一次性全额登账科目 #5(区别 USDT staking 线性计提),NEX 计价按 G3 现价折算;gate nexV2LockAvailable 归 H1(月 11+,当前 Founders 邀请制预售);升 APY 过 B1 红线 + 附风控意见;熔断 = J1 nexv2 闸同键。",
-    content: placeholder("死代码:G6 真渲染面在 g-tabs/g5-products.tsx(nexv2 段)。"),
-  },
-  {
     path: "/finance-products/repurchase",
     summary:
-      "复投激励(G7)。35% APY · 90 天锁 · +50 积分/$100 · 培育 ×1.5 · Genesis 抽奖券联动 G4;复投 = 扣余额 + 给积分 + 锁仓服务端单事务原子;限时倍率 reinvestMultiplier 归 H1 派发生效面(月 5–6 窗口已过 = 1×);升 APY/倍率/降罚款过 B1 红线;在锁本金归科目 #2;wallet.reinvest 双写灰度切口径。",
-    content: placeholder("死代码:G7 真渲染面在 g-tabs/g5-products.tsx(repurchase 段)。"),
+      "复投激励(G7)。35% APY · 90 天锁 · 培育 ×1.5 · Genesis 抽奖券联动 G4;复投 = 扣余额 + 锁仓服务端单事务原子;限时倍率 reinvestMultiplier 归 H1 派发生效面(月 5–6 窗口已过 = 1×);升 APY/倍率/降罚款过 B1 红线;在锁本金归科目 #2;wallet.reinvest 双写灰度切口径。",
+    content: placeholder("死代码:G7 真渲染面在 g-tabs/g7-repurchase.tsx。"),
   },
 ];

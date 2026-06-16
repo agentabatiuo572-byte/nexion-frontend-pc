@@ -36,8 +36,8 @@ export const WITHDRAW_PARAMS: WithdrawParam[] = [
     hint: "两次提现之间的冷却天数。缩短 = 加速流出。随 Phase 联动。",
   },
   {
-    key: "pointsThreshold", label: "提现积分门槛", value: 100, unit: "分", min: 0, max: 1000, step: 50,
+    key: "nexGateThreshold", label: "提现 NEX 闸", value: 10, unit: "NEX/$100", min: 0, max: 100, step: 5,
     timing: "实时", anchor: "§9.3.2", amplifyDir: "down",
-    hint: "发起提现所需的最低积分。调低 = 更多用户可提(放大流出)。",
+    hint: "发起提现要燃烧的 NEX / $100。调低 = 摩擦减小、更多用户可提(放大流出)。",
   },
 ];

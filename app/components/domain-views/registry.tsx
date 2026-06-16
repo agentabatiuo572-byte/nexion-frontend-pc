@@ -17,6 +17,7 @@ import { IDomainView } from "./i-view";
 import { JDomainView } from "./j-view";
 import { KDomainView } from "./k-view";
 import { LDomainView } from "./l-view";
+import { MDomainView } from "./m-view";
 
 const VIEWS: Record<string, ComponentType<{ meta: DomainViewMeta }>> = {
   A: ADomainView,
@@ -30,6 +31,7 @@ const VIEWS: Record<string, ComponentType<{ meta: DomainViewMeta }>> = {
   J: JDomainView,
   K: KDomainView,
   L: LDomainView,
+  M: MDomainView,
 };
 
 export function DomainViewSwitch({ code, meta }: { code: string; meta: DomainViewMeta }) {

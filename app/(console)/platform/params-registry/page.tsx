@@ -69,7 +69,7 @@ function ownerFor(r: CgmRow): { path: string; label: string } {
     [/exchange|兑换|nexprice|usdt.?per|jitterrate/, "/finance-products/exchange", "G2 兑换风控"],
     [/genesis|royalty|节点|slot/, "/finance-products/genesis", "G4 Genesis 配置"],
     [/market|klin|pump|nexpriceusdt|volume24/, "/finance-products/market", "G3 行情控制"],
-    [/premium|nex.?v2|repurchase|复投|lock_months/, "/finance-products/repurchase", "G7 金融附加"],
+    [/repurchase|复投|lock_months/, "/finance-products/repurchase", "G7 复投激励"],
     [/device_price|device_specs|baserate|products\[|catalog|max_devices/, "/devices/pricing", "E1 商品定价"],
     [/degradation|salvage|decay|efficiency|lifecycle/, "/devices/trade-in", "E3 衰减/残值(并入生命周期)"],
     [/trade.?in|tradein|upgrade_ladder/, "/devices/trade-in", "E3 trade-in 配置"],

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * J1 · Kill-Switch 矩阵 — 7 闸 status grid + 矩阵主表 + 应急快速通道 + B1 备付金前置核验 + 自动触发规则。
- * 闸集 = 前端 §9.11d.1 的 6 闸 + 后台应急新增 withdraw(7 闸,与 B5 雷达 / 首页单源)。
+ * J1 · Kill-Switch 矩阵 — 5 闸 status grid + 矩阵主表 + 应急快速通道 + B1 备付金前置核验 + 自动触发规则。
+ * 闸集 = 前端 §9.11d.1 的 4 闸 + 后台应急新增 withdraw(5 闸,与 B5 雷达 / 首页单源;Premium/NEX v2 已下线)。
  * B1 数值全部从 LEDGER 单源派生(TREASURY);recoverGate = B1.redLine,不另立数值。
  */
 import { CodeTag } from "../design-kit";
@@ -122,7 +122,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <div className="f-stat cyan"><div className="k">B1 覆盖率</div><div className="v">{COV}%</div><div className="sub">redLine {RED}% · 距 +{(COV - RED).toFixed(0)}pt</div></div>
       </div>
 
-      {/* 7 闸 status cards */}
+      {/* 5 闸 status cards */}
       <div className="gates-strip">
         {KILLSWITCH.map((g) => { const on = effOn(g); return (
           <div key={g.key} className={"gate-card" + (on ? "" : " killed")}>

@@ -4,21 +4,22 @@
  * 顶栏 — 面包屑 + 服务端权威状态徽标 + UTC 时钟 + 角色切换器(演示 RBAC)。
  * 切角色会即时改变侧栏可见域(superadmin 见全 12 域,其余按 §3.3 权限)。
  */
-import { useState } from "react";
-import { Check, ChevronDown, LogOut, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Check, ChevronDown, Headset, LogOut, Search } from "lucide-react";
 import type { AdminRole } from "@/lib/nav/console-nav";
-import { ROLE_LABEL } from "@/lib/nav/console-nav";
+import { ROLE_LABEL, canSee } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
 import { SyncChip } from "./sync-chip";
 import { UtcClock } from "./utc-clock";
 import { RoleBadge } from "@/app/components/kit/role-badge";
-import { CURRENT_PHASE, PHASES } from "@/lib/mock/admin/command-center";
-import { PhaseStrip } from "@/app/components/dashboard/phase-strip";
 import Link from "next/link";
 import { LEDGER } from "@/lib/mock/admin/ledger";
 import { fmtPct } from "@/lib/format";
 import { NotificationBell } from "./notification-bell";
+import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
+import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { SESSION_CONVOS } from "@/app/components/domain-views/m-tabs/data";
 
 const ROLES: AdminRole[] = [
   "superadmin",
@@ -116,52 +117,6 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
   );
 }
 
-// 当前 12 月运营阶段:顶栏按钮 + 点击下拉(时间线 + 重心)。与首页/H1 同源 CURRENT_PHASE。
-function PhaseMenu() {
-  const [open, setOpen] = useState(false);
-  const p = CURRENT_PHASE;
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        title={`第 ${p.month}/${p.total} 月 · ${p.focus}`}
-        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-opacity hover:opacity-90"
-        style={{
-          background: "color-mix(in srgb, var(--v5-brand-2) 14%, transparent)",
-          color: "var(--v5-ink-2)",
-          border: "1px solid color-mix(in srgb, var(--v5-brand-2) 28%, transparent)",
-        }}
-      >
-        <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--v5-brand-2)" }} />
-        {p.code} · {p.name} · {p.month}/{p.total} 月
-        <ChevronDown size={12} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
-      </button>
-      {open && (
-        <>
-          <button
-            type="button"
-            aria-label="关闭节奏面板"
-            className="fixed inset-0 cursor-default"
-            style={{ zIndex: "var(--admin-z-topbar)" }}
-            onClick={() => setOpen(false)}
-          />
-          <div
-            className="absolute right-0 top-full mt-2 w-[440px]"
-            style={{ zIndex: "calc(var(--admin-z-topbar) + 1)" }}
-            onClick={() => setOpen(false)}
-          >
-            <PhaseStrip phases={PHASES} current={p} />
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 // 常驻兑付覆盖率(设计稿 topbar coverage pill)— 任何页都可见的平台健康度,点击进双账本。
 function CoveragePill() {
   const cov = LEDGER.coverageRatio;
@@ -204,6 +159,49 @@ function SearchBox() {
   );
 }
 
+// 客服中心快捷入口 — 坐席切到别的页面时仍能看到「有客户在等回复」并一键回即时会话台(Q2 续聊提醒)。
+// 待回复数与 M1 客服总览同源派生自 I.session.convos(open 且末条为用户发言),无第二份 mock。
+function SupportInboxPill() {
+  const params = usePlatformConfig((s) => s.params);
+  const hydrated = useOpsHydrated();
+  const pending = useMemo(() => {
+    let list: Array<{ status: string; messages: Array<{ sender: string }> }> = SESSION_CONVOS;
+    const raw = hydrated ? (params?.["I.session.convos"] as string | undefined) : undefined;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) list = parsed;
+      } catch {
+        /* 解析失败回退种子 */
+      }
+    }
+    return list.filter((c) => c.status === "open" && c.messages[c.messages.length - 1]?.sender === "user").length;
+  }, [params, hydrated]);
+  return (
+    <Link
+      href="/service/sessions"
+      prefetch={false}
+      title="客服中心 · 待坐席回复的即时会话"
+      className="relative inline-flex items-center gap-1.5 rounded-[9px] px-2.5 py-1.5 text-[12px] transition-opacity hover:opacity-90"
+      style={{
+        background: "color-mix(in srgb, var(--admin-domain-m) 12%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--admin-domain-m) 32%, transparent)",
+      }}
+    >
+      <Headset size={14} style={{ color: "var(--admin-domain-m)" }} aria-hidden />
+      <span className="hidden md:inline" style={{ color: "var(--v5-ink-3)" }}>客服</span>
+      {pending > 0 && (
+        <span
+          className="font-mono-tabular inline-flex items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold"
+          style={{ minWidth: 16, height: 16, background: "var(--admin-domain-m)", color: "#0A0A0A" }}
+        >
+          {pending}
+        </span>
+      )}
+    </Link>
+  );
+}
+
 export function TopBar({ role, operator }: { role: AdminRole; operator: string }) {
   return (
     <header
@@ -221,11 +219,10 @@ export function TopBar({ role, operator }: { role: AdminRole; operator: string }
       <div className="flex items-center gap-3">
         <CoveragePill />
         <span className="hidden h-4 w-px sm:block" style={{ background: "var(--v5-border)" }} />
-        <PhaseMenu />
-        <span className="hidden h-4 w-px md:block" style={{ background: "var(--v5-border)" }} />
         <span className="hidden md:block"><SyncChip /></span>
         <span className="hidden lg:block"><UtcClock /></span>
         <span className="h-4 w-px" style={{ background: "var(--v5-border)" }} />
+        {canSee(role, ["support", "risk"]) && <SupportInboxPill />}
         <NotificationBell />
         <RoleSwitcher role={role} operator={operator} />
       </div>

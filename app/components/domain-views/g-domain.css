@@ -58,6 +58,17 @@
 .gdom .l-tbl .num, .gdom .l-tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .gdom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
 
+/* ===== G3 行情周曲线排程器矩阵(port 自 h-domain .dial-tbl,换 .gdom 金色调性) ===== */
+.gdom .dial-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.gdom .dial-tbl th { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--ink-4); padding: 8px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; text-align: center; }
+.gdom .dial-tbl th:first-child { text-align: left; padding-left: 12px; }
+.gdom .dial-tbl td { padding: 7px 6px; border-bottom: 1px solid var(--border); text-align: center; font-family: var(--mono); color: var(--ink-2); cursor: pointer; transition: background .12s; }
+.gdom .dial-tbl td:first-child { text-align: left; padding-left: 12px; font-weight: 700; color: var(--ink); cursor: default; }
+.gdom .dial-tbl tr.cur td { background: color-mix(in srgb, var(--admin-domain-g) 14%, transparent); }
+.gdom .dial-tbl td:hover:not(:first-child) { background: var(--surface-3); }
+.gdom .dial-tbl .chg { color: var(--warning); font-weight: 700; }
+.gdom .dial-tbl .peak { color: var(--admin-domain-g); font-weight: 700; }
+
 .gdom .bdg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 5px;
   font-size: 11.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; white-space: nowrap; }
 .gdom .bdg.ok { background: var(--success-soft); color: var(--success); }

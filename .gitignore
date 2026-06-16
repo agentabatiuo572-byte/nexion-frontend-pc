@@ -38,3 +38,6 @@ next-env.d.ts
 
 # nested node_modules(上面 /node_modules 仅锚仓库根,补未锚版本捕获嵌套)
 node_modules/
+
+# 备份回收站(勿托管)
+/.trash/

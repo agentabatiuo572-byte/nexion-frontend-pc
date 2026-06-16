@@ -205,6 +205,6 @@ export const OWN_PARAMS: { key: string; name: string; cur: string; sub: string; 
 // H1 调 dial 后本页/stat 实时跟(曾硬编码快照,「同 X 展示必同源」audit 修正)。
 export const PHASE_RO = {
   cooldown: { name: "冷却天数", h1Key: "withdrawCooldownDays", seed: "30", fmt: (v: string) => (/^\d+$/.test(v) ? `${v}d(当前)` : `${v}(当前)`), sub: "两次提现之间的间隔 · 随运营月份阶梯上调", segs: [["月 1–7", "30 天", true], ["月 8", "35 天", false], ["月 9+", "45 天", false]] as [string, string, boolean][] },
-  points: { name: "积分门槛", h1Key: "withdrawPointsRatio", seed: "10", fmt: (v: string) => (/^\d+$/.test(v) ? `${v} 分(当前)` : `${v}(当前)`), sub: "每提 $100 要消耗的积分", segs: [["月 1–8", "10 分 / $100", true], ["月 9–12", "20 分 / $100", false]] as [string, string, boolean][] },
+  nexGate: { name: "NEX 闸", h1Key: "nexGate", seed: "10", fmt: (v: string) => (/^\d+$/.test(v) ? `${v} NEX(当前)` : `${v}(当前)`), sub: "每提 $100 要燃烧的 NEX", segs: [["月 1–8", "10 NEX / $100", true], ["月 9–12", "20 NEX / $100", false]] as [string, string, boolean][] },
   hold: { name: "增强合规审查", h1Key: "complianceHoldEnabled", seed: "未激活(P5 起)", fmt: (v: string) => v, sub: "激活后大额提现进延长审查 · 月 8(P5 带)起整带开启,无月内拐点" },
 };

@@ -9,11 +9,11 @@ export const DOMAIN_J: ModuleEntry[] = [
   {
     path: "/emergency/kill-switch",
     summary:
-      "7 大业务闸门紧急熔断矩阵(前端 6 闸 + 后台应急新增提现闸)。熔断即时全站生效、客户端绕不过;发起与恢复均需操作确认写入 A2,恢复「会往外付钱」的闸前置 B1 备付金核验。",
+      "5 大业务闸门紧急熔断矩阵(前端 4 闸 + 后台应急新增提现闸;Premium/NEX v2 已下线)。熔断即时全站生效、客户端绕不过;发起与恢复均需操作确认写入 A2,恢复「会往外付钱」的闸前置 B1 备付金核验。",
     content: {
       kind: "config",
       metrics: [
-        { label: "闸门状态", value: "0 / 7", sub: "已熔断 / 总数", accent: "var(--v5-success)", hint: "当前处于熔断态的业务闸门数;7 闸全部在线(正常营业)。" },
+        { label: "闸门状态", value: "0 / 5", sub: "已熔断 / 总数", accent: "var(--v5-success)", hint: "当前处于熔断态的业务闸门数;5 闸全部在线(正常营业)。" },
         { label: "全局总闸", value: "正常", sub: "未触发", accent: "var(--v5-success)", hint: "一键停摆全部资金类业务的最高级开关。" },
         { label: "自动触发阈值", value: "已布防", sub: "4 条规则", accent: "var(--admin-domain-j)", hint: "命中即自动熔断对应闸门并告警值班的风控规则。" },
         { label: "最近演练", value: "5 天前", sub: "exchange 闸", accent: "var(--v5-ink-3)", hint: "上一次熔断演练时间;演练同样留痕 A2。" },
@@ -26,7 +26,6 @@ export const DOMAIN_J: ModuleEntry[] = [
             { label: "提现闸 (withdraw)", value: "开启 · 正常", range: "开启 / 熔断", effect: "熔断 → 全部提现暂停,在途请求冻结;恢复前置 B1 覆盖率核验" },
             { label: "兑换闸 (exchange)", value: "开启 · 正常", range: "开启 / 熔断", effect: "熔断 → NEX↔USDT 兑换停摆,联动 G2 价格;恢复前置 B1" },
             { label: "算力质押闸 (staking)", value: "开启 · 正常", range: "开启 / 熔断", effect: "熔断 → 新增质押停止,存量产出按 R-A 衰减续算;恢复增未来兑付负债前置 B1" },
-            { label: "NEX v2 Lock 闸 (nexv2)", value: "开启 · P6/m11 上线", range: "开启 / 熔断", effect: "熔断 → NEX v2 锁仓新开停止;恢复增未来兑付负债前置 B1" },
             { label: "Genesis 闸 (genesis)", value: "开启 · 正常", range: "开启 / 熔断", effect: "熔断 → 节点挂单/成交冻结,联动 G4;恢复前置 B1" },
           ],
         },
@@ -35,7 +34,6 @@ export const DOMAIN_J: ModuleEntry[] = [
           note: "影响拉新与订阅收入;熔断停用对应入口但不直接放大资金流出,恢复不挂 B1。",
           fields: [
             { label: "试用闸 (trial)", value: "开启 · 正常", range: "开启 / 熔断", effect: "熔断 → 免费试用领取关闭,联动 H 域名额" },
-            { label: "Premium 订阅闸 (premium)", value: "开启 · 正常", range: "开启 / 熔断", effect: "熔断 → Premium 订阅购买 / 续费关闭" },
           ],
         },
         {
@@ -53,8 +51,8 @@ export const DOMAIN_J: ModuleEntry[] = [
       impact: [
         "提现 / 兑换闸熔断 → D 域资金对账实时标记暂停区间,客服侧同步话术",
         "Genesis 闸熔断 → G4 二级市场挂单冻结,价格快照定格,防止恐慌踩踏",
-        "staking / nexv2 闸熔断 → F 域佣金与 R-A 产出结算暂挂,恢复后按暂停时长补算",
-        "全局总闸触发 → 等价于全部 7 闸熔断 + 维护模式,用于监管强制停业或重大风险事件",
+        "staking 闸熔断 → F 域佣金与 R-A 产出结算暂挂,恢复后按暂停时长补算",
+        "全局总闸触发 → 等价于全部 5 闸熔断 + 维护模式,用于监管强制停业或重大风险事件",
       ],
     },
   },

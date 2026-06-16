@@ -355,7 +355,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
         <>
           <b>{name}</b> · 当前 {cur} · 护栏到顶的行为:真实奖档自动关闭、概率并入安慰档,
           次日(UTC)重置。{key === "budget"
-            ? "日派彩预算 = 24h 真实流出累计阈值,到顶当日只发 NEX/积分/券。"
+            ? "日派彩预算 = 24h 真实流出累计阈值,到顶当日只发 NEX/券。"
             : "单奖日库存 = 每档限量,某档抽完后该档自动关闭并入安慰档。"}
           操作确认留痕。
         </>
@@ -379,7 +379,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
       detail: (
         <>
           <b>当前 {cur}</b> · {turnOff
-            ? "关闭后转盘只发 NEX/积分/券,所有真实奖档(现金 $1/$20/$500、券)立即停发;监管点名「抽奖涉赌」场景的应急止血开关,联动应急矩阵(J1)。"
+            ? "关闭后转盘只发 NEX/券,所有真实奖档(现金 $1/$20/$500、券)立即停发;监管点名「抽奖涉赌」场景的应急止血开关,联动应急矩阵(J1)。"
             : "恢复后真实奖档按原概率开放,B1 覆盖率与 budget/cap 护栏照常生效。"}
           {" "}本动作普通确认但<b>必填原因</b>,1 秒内写日志、5 秒内全网生效。
         </>
@@ -387,7 +387,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
       reason: true,
       okLabel: turnOff ? "确认急停" : "确认恢复",
       chips: turnOff
-        ? [["真钱档全部停发", "ready"], ["NEX / 积分 / 券正常", "done"]]
+        ? [["真钱档全部停发", "ready"], ["NEX / 券正常", "done"]]
         : [["真钱档按原概率恢复", "ready"], ["B1 + budget/cap 护栏照常", "done"]],
       run: (reason) => {
         setParam("H4.guard.kill", turnOff ? "关" : "开", {
@@ -894,7 +894,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
               改奖池签名(H4.wheel)触发 server 重算 weight 和 / 档位 / 真实奖过 B1。
             </div>
             <div className="htint ok" style={{ marginTop: 8, fontSize: 12 }}>
-              <b>第四道护栏(自动)</b> · 抽奖前查覆盖率,跌破 100% 真钱档暂停、只发 NEX/积分/券,
+              <b>第四道护栏(自动)</b> · 抽奖前查覆盖率,跌破 100% 真钱档暂停、只发 NEX/券,
               回升自动恢复。中奖由平台裁决,概率表不外泄;每人每 UTC 日 1 次,超了拒(eventId × userId × spinDate 409)。
               Genesis 节点不进转盘。
             </div>

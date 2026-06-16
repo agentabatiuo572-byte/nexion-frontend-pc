@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 70 个 L2 入口(E 域 7→5、F 域 8→5 收编后;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5)。
+ * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 68 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5)。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -170,8 +170,6 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "G2", name: "兑换风控", path: "/finance-products/exchange", prdAnchor: "G2", batch: "V3", status: "flagship" },
       { id: "G3", name: "NEX 行情引擎", path: "/finance-products/market", prdAnchor: "G3", batch: "V3", status: "flagship" },
       { id: "G4", name: "Genesis 经济", path: "/finance-products/genesis", prdAnchor: "G4", batch: "V3", status: "flagship" },
-      { id: "G5", name: "Premium 订阅", path: "/finance-products/premium", prdAnchor: "G5", batch: "V3", status: "flagship" },
-      { id: "G6", name: "NEX v2 Founders Vault", path: "/finance-products/nex-v2", prdAnchor: "G6", batch: "V3", status: "flagship" },
       { id: "G7", name: "复投激励", path: "/finance-products/repurchase", prdAnchor: "G7", batch: "V3", status: "flagship" },
     ],
   },
@@ -187,7 +185,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "H2", name: "免费试用引擎", path: "/growth/trial", prdAnchor: "H2", batch: "V1", status: "flagship" },
       { id: "H3", name: "Quest 引擎", path: "/growth/quest", prdAnchor: "H3", batch: "V3", status: "flagship" },
       { id: "H4", name: "活动中心 CMS", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
-      { id: "H5", name: "签到 & 积分", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
+      { id: "H5", name: "签到 & NEX", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
       { id: "H6", name: "里程碑庆祝", path: "/growth/milestones", prdAnchor: "H6", batch: "V3", status: "flagship" },
     ],
   },
@@ -301,4 +299,4 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
-export const L2_COUNT = ALL_L2.length; // 70(F 域 8→5;E 域 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5)
+export const L2_COUNT = ALL_L2.length; // 68(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5)

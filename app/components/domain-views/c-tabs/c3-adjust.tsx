@@ -2,9 +2,8 @@
 
 /**
  * C3 余额 & 资产调整 — design_handoff_c_domain port。
- * 客服补偿/系统纠错的手工调整面:USDT/NEX/积分 × 增减,每笔操作确认 + 原因凭证必填。
+ * 客服补偿/系统纠错的手工调整面:USDT/NEX × 增减,每笔操作确认 + 原因凭证必填。
  *  - USDT/NEX 真写 useUserOps.earningAppend(与 /users/search/[id] 360 页同源)+ logAudit(admin.balance_adjusted);
- *  - 积分改字段 + 审计不落账本(C.points.<uid>;A5 参数寄存器可回源,历史以 A2 审计为准);
  *  - 待确认队列 / 挂起放行 = 同语义写路径:裁决回写 C.adjust.<id>.status **且通过时 earningAppend 真落账**
  *    (审计 P1 修:只写状态不动钱 = 假放行);NEX 超额按 G3 行情 NEX_MARKET.price 折算等值 $ 判定;
  *  - 覆盖率/红线 = LEDGER 单源(加钱方向 amplifies,确认放行实时再验,禁止写死);
@@ -21,14 +20,14 @@ import type { CCtx } from "./types";
 
 type HistRow = (typeof ADJUST_HIST)[number];
 
-const OBJS = ["USDT", "NEX", "积分"] as const;
+const OBJS = ["USDT", "NEX"] as const;
 const REASON_CODES = ["客服补偿", "系统纠错", "活动补发", "争议退回"] as const;
-const HIST_FILTERS = ["全部", "USDT", "NEX", "积分"] as const;
+const HIST_FILTERS = ["全部", "USDT", "NEX"] as const;
 
 const fmtDelta = (r: AdjustRow) => {
   const n = Math.abs(r.delta).toLocaleString("en-US");
   const sign = r.delta >= 0 ? "+" : "−";
-  return r.obj === "USDT" ? `${sign}$${n}` : r.obj === "NEX" ? `${sign}${n} NEX` : `${sign}${n} 分`;
+  return r.obj === "USDT" ? `${sign}$${n}` : `${sign}${n} NEX`;
 };
 
 export function C3Adjust({ ctx }: { ctx: CCtx }) {
@@ -50,17 +49,16 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const suspSt = pget(`C.adjust.${SUSPENDED_ADJ.id}.status`);
   const histRows = histFilter === "全部" ? ADJUST_HIST : ADJUST_HIST.filter((h) => h.obj === histFilter);
 
-  /* 发起调整(操作确认;USDT/NEX 真写资产台账 + 审计,积分改字段不落账本) */
+  /* 发起调整(操作确认;USDT/NEX 真写资产台账 + 审计) */
   const submitAdj = () => {
     const u = acct.trim() || "usr_2231";
     // 输入守卫(audit P1 修):金额必须正数(方向由「方向」chip 表达,负数输入会让红冲语义反转);
-    // 积分单笔硬上限;NEX 超额按 G3 行情折算等值 $(server 放行时以实时行情再判)。
+    // NEX 超额按 G3 行情折算等值 $(server 放行时以实时行情再判)。
     const amt = Math.abs(parseFloat(amtStr) || 0);
     if (amt <= 0) { toast("金额须为正数 · 未提交"); return; }
-    if (obj === "积分" && amt > C3_STATS.capPoints) { toast(`积分单笔上限 ${C3_STATS.capPoints.toLocaleString("en-US")} 分 · 未提交`); return; }
     const usdEq = obj === "NEX" ? amt * NEX_MARKET.price : amt;
-    const over = obj !== "积分" && usdEq > C3_STATS.capUsd;
-    const credit = dir === "增加" && obj !== "积分";
+    const over = usdEq > C3_STATS.capUsd;
+    const credit = dir === "增加";
     openActionConfirm({
       action: `资产调整 · ${u} · ${dir === "增加" ? "+" : "−"}${amt} ${obj}`,
       detail: (
@@ -69,20 +67,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           {credit
             ? <><b>加钱方向</b>:确认放行那一刻服务器实时核验覆盖率(当前 {cov}% &gt; 红线 {LEDGER.redlinePct},可过);低于红线会被拒并转挂起(7 天有效)。</>
             : "扣减方向不受红线约束。"}
-          {obj === "积分"
-            ? `积分调整改 points 字段 + 留审计,不落账本;上限 ${C3_STATS.capPoints.toLocaleString("en-US")} 分/笔。`
-            : "放行即与账本(D4)同一事务记一条「人工调整」账单。"}
+          放行即与账本(D4)同一事务记一条「人工调整」账单。
           凭证号写在原因里(工单号/截图引用),带防重号。
         </>
       ),
       amplifies: credit,
       run: (reason) => {
-        if (obj === "USDT" || obj === "NEX") {
-          earningAppend(u, dir === "增加" ? "补发" : "红冲", dir === "增加" ? amt : -amt, `${kind} · C3 调整`, obj === "NEX" ? "NEX" : "USDT");
-          logAudit({ actor: "总管理员", action: `资产调整 ${obj} ${dir === "增加" ? "+" : "−"}${amt} · admin.balance_adjusted + admin.bill_adjusted(账单号关联)`, target: u, reason });
-        } else {
-          setParam(`C.points.${u}`, `${dir === "增加" ? "+" : "-"}${amt}`, { action: `积分调整 ${u}(改字段+审计,不落账本)`, reason });
-        }
+        earningAppend(u, dir === "增加" ? "补发" : "红冲", dir === "增加" ? amt : -amt, `${kind} · C3 调整`, obj === "NEX" ? "NEX" : "USDT");
+        logAudit({ actor: "总管理员", action: `资产调整 ${obj} ${dir === "增加" ? "+" : "−"}${amt} · admin.balance_adjusted + admin.bill_adjusted(账单号关联)`, target: u, reason });
         toast(`已确认放行 · ${over ? "升级确认层" : "基础路径"} · 凭证留痕`);
       },
     });
@@ -100,13 +92,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       // 通过 = 真放行:写余额台账(360 页同源)+ 双事件留痕(audit P1 修:只写状态 = 假放行)。
       // 按钮只在未裁决时渲染,status 写入后入口消失 → 单次放行,无双击重复入账面。
       if (ok) {
-        if (r.obj === "积分") {
-          // 积分不落账本:改字段 + 审计(与 submitAdj 同分路;防未来积分种子行误按 USDT 落账)。
-          setParam(`C.points.${r.userId}`, `${r.delta >= 0 ? "+" : "-"}${Math.abs(r.delta)}`, { action: `积分调整放行 ${r.id}(改字段+审计,不落账本)`, reason });
-        } else {
-          earningAppend(r.userId, r.delta >= 0 ? "补发" : "红冲", r.delta, `${r.kind} · ${r.id} 确认放行`, r.obj === "NEX" ? "NEX" : "USDT");
-          logAudit({ actor: "总管理员", action: `资产调整放行 ${r.id} ${fmtDelta(r)} · admin.balance_adjusted + admin.bill_adjusted(账单号关联)`, target: r.userId, reason });
-        }
+        earningAppend(r.userId, r.delta >= 0 ? "补发" : "红冲", r.delta, `${r.kind} · ${r.id} 确认放行`, r.obj === "NEX" ? "NEX" : "USDT");
+        logAudit({ actor: "总管理员", action: `资产调整放行 ${r.id} ${fmtDelta(r)} · admin.balance_adjusted + admin.bill_adjusted(账单号关联)`, target: r.userId, reason });
       }
       toast(ok ? `${r.id} 已通过 · ${r.userId} · 余额与账单同事务落账` : `${r.id} 已驳回 · ${r.userId} · 已写审计`);
     },
@@ -157,7 +144,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             <div className="esc-note" style={{ marginTop: 12 }}>
               <div className="b"><b>≤ ${C3_STATS.capUsd}</b> · 基础路径<br />执行门槛:财务</div>
               <div className="b"><b>&gt; ${C3_STATS.capUsd}</b> · 自动升级<br />执行门槛:财务主管 / 超管</div>
-              <div className="b"><b>积分上限</b> · {C3_STATS.capPoints.toLocaleString("en-US")} 分/笔<br />积分影响提现门槛,同样操作确认</div>
+              <div className="b"><b>加钱方向</b> · 过备付金覆盖率红线<br />低于红线转挂起,同样操作确认</div>
             </div>
           </div>
         </section>
@@ -207,7 +194,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
               )}
             </div>
             <div className="ctint" style={{ marginTop: 12 }}><b>挂起的三条规则</b> · ① 挂起最多 7 天,超期自动失效并通知发起人;② 操作员可取消(取消动作留痕即可);③ 覆盖率恢复后<b>不会自动放行</b>——要执行门槛重新点放行,放行那一刻服务器再实时验一次覆盖率。</div>
-            <div className="ctint warn" style={{ marginTop: 10 }}><b>账本怎么记</b> · USDT/NEX 调整在账本(D4)记一条「人工调整」类账单(不混进「退款」——退款专指提现失败退回,混了会污染储备/负债口径);积分是独立体系,改 points 字段 + 留审计,不落账单。发起记录和账本记录各记一条、用账单号互相关联,报表按账单号去重不会重复算。</div>
+            <div className="ctint warn" style={{ marginTop: 10 }}><b>账本怎么记</b> · USDT/NEX 调整在账本(D4)记一条「人工调整」类账单(不混进「退款」——退款专指提现失败退回,混了会污染储备/负债口径)。发起记录和账本记录各记一条、用账单号互相关联,报表按账单号去重不会重复算。</div>
           </div>
         </section>
       </div>
@@ -262,7 +249,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">调整历史</span>
-          <span className="sub">· 每笔可追溯到账本账单号(USDT/NEX)或审计记录(积分)</span>
+          <span className="sub">· 每笔可追溯到账本账单号(USDT/NEX)</span>
           <div className="r">
             <div className="chips">
               {HIST_FILTERS.map((f) => (
@@ -292,7 +279,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>这页是纠错和补偿的入口,不是绕门槛的后门</b>——不能用调整帮用户跳过提现门槛、实名或阶段限制;超额自动升级 + 全程留痕就是防内部滥用的。调整放行后:USDT/NEX 进账本(D4)→ 进资金池负债聚合(D3)→ 影响覆盖率(B1);积分变了,提现队列(D2)下次校验时由服务器读最新积分判「够不够」。发起层和记账层两条审计事件用账单号关联,财务报表(L3)按号去重。所有写入带防重号,网络重试不会重复入账。</p>
+      <p className="f-foot"><b>这页是纠错和补偿的入口,不是绕门槛的后门</b>——不能用调整帮用户跳过提现门槛、实名或阶段限制;超额自动升级 + 全程留痕就是防内部滥用的。调整放行后:USDT/NEX 进账本(D4)→ 进资金池负债聚合(D3)→ 影响覆盖率(B1)。发起层和记账层两条审计事件用账单号关联,财务报表(L3)按号去重。所有写入带防重号,网络重试不会重复入账。</p>
       <PaginationExemptionList
         items={[
           {
@@ -336,9 +323,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             ))}
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 4px" }}>账本关联</div>
             <div className="kv"><span className="k">落点</span><span className="v" style={{ color: "var(--c-ac)" }}>{hist.sink}</span></div>
-            <div className="kv"><span className="k">账单类型</span><span className="v">{hist.obj === "积分" ? "不落账 · 改字段+审计" : "人工调整(adjustment)"}</span></div>
+            <div className="kv"><span className="k">账单类型</span><span className="v">人工调整(adjustment)</span></div>
             <div className="kv"><span className="k">幂等号</span><span className="v mono">IDEM-{hist.id}</span></div>
-            <div className="kv"><span className="k">事件</span><span className="v">admin.balance_adjusted + {hist.obj === "积分" ? "(无账单)" : "admin.bill_adjusted"}</span></div>
+            <div className="kv"><span className="k">事件</span><span className="v">admin.balance_adjusted + admin.bill_adjusted</span></div>
             <div className="ctint cyan" style={{ marginTop: 14 }}><b>双事件按账单号关联</b>：发起层(C3)与记账层(D4)各记一条，财务报表按号去重；整条链不可篡改。</div>
           </Drawer>
         );

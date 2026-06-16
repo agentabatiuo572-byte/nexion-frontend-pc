@@ -107,7 +107,7 @@ export const PHASE = {
   dials: [
     { key: "withdrawCooldownDays", name: "提现冷却(天)", val: 30, unit: "d", trend: "↑" },
     { key: "complianceHoldEnabled", name: "增强合规审查", val: "未激活(P5 起)", trend: "—" }, // 提现日限非 Phase dial(D5 owns 次数制,PRD §6 D5),旧 withdrawDailyCapUSD 行已纠正
-    { key: "withdrawPointsRatio", name: "提现积分门槛 /$100", val: "10", trend: "↑" },
+    { key: "withdrawNexGate", name: "提现 NEX 闸 /$100", val: "10", trend: "↑" },
     { key: "binaryDailyCapUSD", name: "双轨日封顶", val: "$2,000", trend: "—" },
     { key: "stakingApyBoost", name: "Staking APY 加成", val: "1.0×", trend: "—" },
     { key: "novaCadenceMult", name: "Nova 节奏乘数", val: "1.2×", trend: "↑" },
@@ -227,9 +227,9 @@ export const WITHDRAWALS: WithdrawalRow[] = [
   {
     id: "WD-90376", user: "usr_77D4", amount: 248, chain: "TRC20", addr: "TBn8…1p", risk: 11,
     kyc: "快速实名(升级复审中 K5)", pts: false, n24: 1, rules: "—", st: "review-pending", age: "2d", holdK5: "KR-7738",
-    info: [["用户分层", "L2 · V0"], ["注册", "2026-05-30 · 11 天"], ["冷却", "首笔 · 不适用"], ["积分", "不足:5 / 25(每 $100 要 10 分)"], ["可提余额", "$310(本单 $248 = 80% 上限内)"], ["KYC 复审(K5)", "KR-7738 累计过线 · 剩 2 天"]],
+    info: [["用户分层", "L2 · V0"], ["注册", "2026-05-30 · 11 天"], ["冷却", "首笔 · 不适用"], ["NEX 闸", "不足:5 / 25(每 $100 要 10 NEX)"], ["可提余额", "$310(本单 $248 = 80% 上限内)"], ["KYC 复审(K5)", "KR-7738 累计过线 · 剩 2 天"]],
     riskDims: [["账户年龄", 6], ["提现速度", 2], ["异常行为", 3]],
-    hist: "首笔提现 · 提交时积分足额预扣,6/08 K1 拦截新人礼回收 −20 分 → 门槛不足挂起;非风控命中,等积分补足或人工裁定",
+    hist: "首笔提现 · 提交时 NEX 足额预扣,6/08 K1 拦截新人礼回收 −20 NEX → 门槛不足挂起;非风控命中,等 NEX 补足或人工裁定",
   },
 ];
 
@@ -301,8 +301,6 @@ export const KILLSWITCH = [
   { key: "genesis", name: "Genesis 经济", on: true, domain: "G4", cap: "G4 Genesis 一二级 + 分红", desc: "熔断 → (a)分红派发暂停 · (b)一二级流转冻结", lastChange: "12d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
   { key: "exchange", name: "NEX 兑换", on: true, domain: "G2", cap: "G2 NEX↔USDT swap", desc: "熔断 → NEX→USDT 即时流出停 · 联动 G2 价格快照", lastChange: "3d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
   { key: "trial", name: "免费试用", on: true, domain: "H2", cap: "H2 free-trial entry", desc: "熔断 → 新试用领取关闭 · shadow earning 不入余额", lastChange: "21d 前 · ops@nexion / super@nexion", amplifies: false, coverageImpactCategory: "none", coveragePrecheckRequired: false, proposalStatus: "idle", operator: "ops", roleGate: "super" },
-  { key: "nexv2", name: "NEX v2 Vault", on: true, domain: "G6", cap: "G6 NEX v2 Founders Vault", desc: "熔断 → NEX v2 锁仓新开停止 · 时滞流出", lastChange: "9d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "delayed", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
-  { key: "premium", name: "Premium 订阅", on: true, domain: "G5", cap: "G5 Premium 订阅", desc: "熔断 → Premium 订阅购买 / 续费关闭", lastChange: "18d 前 · ops@nexion / super@nexion", amplifies: false, coverageImpactCategory: "none", coveragePrecheckRequired: false, proposalStatus: "idle", operator: "ops", roleGate: "super" },
 ];
 
 // Geo-block 三态名单(PRD §15.3):blocked 黑名单(全功能封禁)/ limited 受限只读(可登录浏览,禁新增资金操作)。
@@ -387,11 +385,11 @@ export const SKUS = [
     name: "Cloud Share", id: "cloud-share", tier: "Share",
     tagline: "No hardware needed — buy a slice of the network.", badge: "Low Barrier",
     gpu: "Distributed", vram: "—", hashRate: "", power: "", datacenter: "全球分布式",
-    price: 199,
-    dailyEarn: 0.073, dailyEarnNEX: 30, shareYieldMin: 8, shareYieldMax: 15, baseRate: "8–15% 年化 · 30 NEX",
+    price: 19.9,
+    dailyEarn: 0.0073, dailyEarnNEX: 3, shareYieldMin: 8, shareYieldMax: 15, baseRate: "8–15% 年化 · 3 NEX",
     sold: 12483, stock: "∞", rating: 4.6, reviews: 3812,
     aiUnlocks: "Fractional access to network's IG + EM + SP pools",
-    features: ["Instant activation", "Buy as little as $199", "Fixed-income style returns", "Redeem any time after 30 days"],
+    features: ["Instant activation", "Buy as little as $19.9", "Fixed-income style returns", "Redeem any time after 30 days"],
     generation: 1, lifecycle: "active", supersededBy: "", tradeinDiscount: 0, unlock: "P1",
     tag: "", status: "on",
   },
@@ -409,7 +407,7 @@ export const REVIEWS = [
   { id: "rv-007", productId: "stellarrack-p1", author: "Marcus · US", rating: 5, date: "1 week ago", content: "Datacenter-grade A100s. Dedicated tier-3 slot, zero downtime so far.", status: "published" },
   { id: "rv-008", productId: "stellarrack-p1", author: "Priya · IN", rating: 4, date: "3 weeks ago", content: "Serious capital, but the daily numbers hold up. VIP support actually answers.", status: "published" },
   { id: "rv-009", productId: "stellarrack-p2", author: "Chen · HK", rating: 5, date: "4 days ago", content: "H100 tier, top of the line. Locked in the final upgrade window — no regrets.", status: "published" },
-  { id: "rv-010", productId: "cloud-share", author: "Ana · MX", rating: 5, date: "1 week ago", content: "No hardware, started at $199. Fixed-income style returns, redeemed after 30 days fine.", status: "published" },
+  { id: "rv-010", productId: "cloud-share", author: "Ana · MX", rating: 5, date: "1 week ago", content: "No hardware, started at $19.9. Fixed-income style returns, redeemed after 30 days fine.", status: "published" },
   { id: "rv-011", productId: "cloud-share", author: "Sam · UK", rating: 4, date: "2 weeks ago", content: "Lowest barrier to get in. Smaller yields but completely hands-off.", status: "published" },
 ];
 

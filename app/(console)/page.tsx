@@ -20,7 +20,6 @@ import { KILLSWITCH, RISK, WITHDRAWALS, D_FUND } from "@/lib/mock/admin/design-d
 import {
   FUNNEL,
   KPIS,
-  CURRENT_PHASE,
   PENDING_OPERATIONS,
   DOMAIN_PULSE,
   type AlertItem,
@@ -36,7 +35,6 @@ import { FundPool } from "@/app/components/dashboard/fund-pool";
 import { RiskRadar, type KillGate } from "@/app/components/dashboard/risk-radar";
 import { SensitiveOperationFeed, type SensitiveOperationItem } from "@/app/components/dashboard/sensitive-operation-feed";
 import { FunnelBars } from "@/app/components/dashboard/funnel-bars";
-import { PhaseCard } from "@/app/components/dashboard/phase-card";
 import { KpiWall } from "@/app/components/dashboard/kpi-wall";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -183,13 +181,6 @@ export default function CommandCenter() {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
-          <span
-            className="inline-flex items-center gap-2 rounded-[9px] px-3 py-2 text-[12.5px]"
-            style={{ background: "var(--v5-brand-soft)", border: "1px solid var(--v5-brand-border)", color: "var(--v5-brand)" }}
-          >
-            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-brand)" }} />
-            {CURRENT_PHASE.code} · {CURRENT_PHASE.name} · 第 {CURRENT_PHASE.month}/{CURRENT_PHASE.total} 月
-          </span>
           <button
             type="button"
             onClick={exportSnapshot}
@@ -251,14 +242,9 @@ export default function CommandCenter() {
       <SecLabel title="待处理 · 操作确认" modules="跨域确认 · 按角色" />
       <SensitiveOperationFeed items={sensitiveOperationItems} />
 
-      {/* ⑤ 转化与运营节奏 */}
-      <SecLabel title="转化与运营节奏" modules="B3 · B4 · A4 派生" />
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <FunnelBars stages={FUNNEL} />
-        </div>
-        <PhaseCard />
-      </div>
+      {/* ⑤ 转化漏斗 */}
+      <SecLabel title="转化漏斗" modules="B3 · A4 派生" />
+      <FunnelBars stages={FUNNEL} />
 
       {/* ⑥ 八项 KPI 验收墙 */}
       <div className="mt-7">

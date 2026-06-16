@@ -65,6 +65,7 @@ interface OpsStore {
   log: (userId: string, action: string, detail: string, tone: AuditTone) => void;
   deviceToggle: (userId: string, deviceId: string) => void;
   deviceRecycle: (userId: string, deviceId: string) => void;
+  deviceRestore: (userId: string, deviceId: string) => void;
   deviceSwap: (userId: string, deviceId: string) => void;
   earningAppend: (userId: string, kind: "补发" | "调整" | "红冲", delta: number, memo: string, ccy?: "USDT" | "NEX") => void;
   setFrozen: (userId: string, frozen: boolean) => void;
@@ -121,6 +122,16 @@ export const useUserOps = create<OpsStore>()(
             if (!dev) return u;
             const devices = u.devices.map((d) => (d.id === deviceId ? { ...d, online: false, recycled: true, todayEarningsUsd: 0 } : d));
             return withAudit({ ...u, devices }, "设备回收", `${dev.name} ${deviceId} · salvage 不入余额`, "danger");
+          }),
+        ),
+
+      deviceRestore: (userId, deviceId) =>
+        set((s) =>
+          patch(s, userId, (u) => {
+            const dev = u.devices.find((d) => d.id === deviceId);
+            if (!dev || !dev.recycled) return u;
+            const devices = u.devices.map((d) => (d.id === deviceId ? { ...d, recycled: false, online: false, todayEarningsUsd: 0 } : d));
+            return withAudit({ ...u, devices }, "撤销回收", `${dev.name} ${deviceId} · 恢复为离线 · 可再上线`, "success");
           }),
         ),
 

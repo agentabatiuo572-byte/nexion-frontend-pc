@@ -197,7 +197,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1100 }}>
-            <thead><tr><th /><th>提现单</th><th>账户</th><th className="num">金额</th><th>目标地址 · 链</th><th>风险分(K4)</th><th>实名(C4)</th><th>积分</th><th>24h 提交</th><th>命中规则(K3)</th><th>状态</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <thead><tr><th /><th>提现单</th><th>账户</th><th className="num">金额</th><th>目标地址 · 链</th><th>风险分(K4)</th><th>实名(C4)</th><th>NEX</th><th>24h 提交</th><th>命中规则(K3)</th><th>状态</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
             <tbody>
               {pager.pageRows.length === 0 ? (
                 <tr>
@@ -316,7 +316,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>三类参数三个家</b>:大额操作确认线($1,000)是本队列自己的静态参数;风控路由线(金额/速度/新账户/地址信誉)归 K3 规则引擎,这里照单消费——<b>K3 给出延迟/冻结/转人工时,小额快速通道不能盖过它</b>;冷却天数和积分门槛是运营节奏参数,归 H1 派发、在 D5 生效,这里只拿来判「冷却到没到、积分够不够」。「24h 提交」按提交次数计(含被拒/退回的提交)——日限(D5,当前 {pget("D.dailyLimitCount") ?? "1 次 / 日"})限的是在途成功单,反复被拒又反复提交正是 WR-02 的速度信号。月 8 以后(P5+)叠加增强合规审查(H1 派发,这里只读)。放行实时核减资金池储备(D3)→ 影响兑付覆盖率(B1)→ 喂挤兑雷达(B5);大额单触发 KYC 复审(K5),复审没过的维持待确认/延迟。所有写操作带防重号,网络重试不会重复放行或重复退款。</p>
+      <p className="f-foot"><b>三类参数三个家</b>:大额操作确认线($1,000)是本队列自己的静态参数;风控路由线(金额/速度/新账户/地址信誉)归 K3 规则引擎,这里照单消费——<b>K3 给出延迟/冻结/转人工时,小额快速通道不能盖过它</b>;冷却天数和 NEX 闸是运营节奏参数,归 H1 派发、在 D5 生效,这里只拿来判「冷却到没到、NEX 够不够」。「24h 提交」按提交次数计(含被拒/退回的提交)——日限(D5,当前 {pget("D.dailyLimitCount") ?? "1 次 / 日"})限的是在途成功单,反复被拒又反复提交正是 WR-02 的速度信号。月 8 以后(P5+)叠加增强合规审查(H1 派发,这里只读)。放行实时核减资金池储备(D3)→ 影响兑付覆盖率(B1)→ 喂挤兑雷达(B5);大额单触发 KYC 复审(K5),复审没过的维持待确认/延迟。所有写操作带防重号,网络重试不会重复放行或重复退款。</p>
     </>
   );
 }

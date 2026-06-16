@@ -1,7 +1,7 @@
 /**
  * H 域(增长与运营节奏)页面级数据 —— design_handoff_h_domain port。
  * 单源纪律(权威数值零复制,全部 join 或同源派生):
- *  - DIAL_MATRIX 12 月 × 10 旋钮(H1 矩阵权威;设计稿 M[12][10] 原样移植 + DIAL_LABELS/LOOSEN/NEWONLY);
+ *  - DIAL_MATRIX 12 月 × 8 旋钮(H1 矩阵权威;Premium/NEXv2 gate 旋钮随模块下线移除,提现门旋钮 = NEX 闸);
  *  - TRIAL_CONFIG 19 参数(H2;敏感 🔥 操作确认 / 其余增长直改必填原因)+ 4 道前置闸 + 7 态会话 + 4 行 sessions;
  *  - DAY_ONE_TASKS 6 + WEEKLY_T1 9 + WEEKLY_T2 8 + WEEKLY_MULT 6 档 + MONTHLY 5 主题(H3);
  *  - EVENTS_CMS 8 玩法 + WHEEL 8 档 + WHEEL_GUARDS 3 行(H4)+ TRACKABLES 4 行;
@@ -41,51 +41,49 @@ export const H1_STATS = {
   pendingProposals: 2,
 };
 
-/** 10 旋钮 key(列序权威 = 设计稿 DIALS 顺序)。 */
+/** 8 旋钮 key(列序权威 = 设计稿 DIALS 顺序;Premium/NEXv2 gate 旋钮随模块下线移除,提现门旋钮 = NEX 闸)。 */
 export const DIAL_KEYS = [
-  "newUser", "invite", "reinvest", "points", "cooldown",
-  "binaryCap", "premium", "nexv2", "quest", "compliance",
+  "newUser", "invite", "reinvest", "nexGate", "cooldown",
+  "binaryCap", "quest", "compliance",
 ] as const;
 export type DialKey = typeof DIAL_KEYS[number];
 
-/** 10 旋钮 label(设计稿 NAMES 列头)。 */
+/** 8 旋钮 label(设计稿 NAMES 列头)。 */
 export const DIAL_LABELS: Record<DialKey, { name: string; unit: string }> = {
   newUser: { name: "新用户加成¹", unit: "×" },
   invite: { name: "邀请加成¹", unit: "×" },
   reinvest: { name: "复投加成", unit: "×" },
-  points: { name: "提现积分比", unit: "分/$100" },
+  nexGate: { name: "提现 NEX 闸", unit: "NEX/$100" },
   cooldown: { name: "提现冷却", unit: "天" },
   binaryCap: { name: "双轨日封顶", unit: "$" },
-  premium: { name: "Premium 可用", unit: "" },
-  nexv2: { name: "NEXv2 可用", unit: "" },
   quest: { name: "任务加成", unit: "×" },
   compliance: { name: "合规留存", unit: "" },
 };
 
-/** 放松方向(降冷却 / 降积分门 / 升封顶)= 放大流出,过 B1 红线 422。 */
+/** 放松方向(降冷却 / 降 NEX 闸 / 升封顶)= 放大流出,过 B1 红线 422。 */
 export const LOOSEN_DIR: Partial<Record<DialKey, "down" | "up">> = {
-  points: "down",
+  nexGate: "down",
   cooldown: "down",
   binaryCap: "up",
 };
 
-/** 仅新用户(存量锁定基数不回溯);其余 8 项实时全量生效。 */
+/** 仅新用户(存量锁定基数不回溯);其余项实时全量生效。 */
 export const NEW_USER_ONLY: DialKey[] = ["newUser", "invite"];
 
-/** 12 月 × 10 旋钮值矩阵(设计稿 M 原样,行 = 月 1..12,列 = DIAL_KEYS)。 */
+/** 12 月 × 8 旋钮值矩阵(行 = 月 1..12,列 = DIAL_KEYS;nexGate 列 = 每 $100 燃烧 NEX 数,phase 递增)。 */
 export const DIAL_MATRIX: (number | string)[][] = [
-  /* M1 */ [2, 2, 1, 10, 30, 5000, "否", "否", 4, "否"],
-  /* M2 */ [2, 2, 1, 10, 30, 5000, "否", "否", 4, "否"],
-  /* M3 */ [1.5, 1.5, 1, 10, 30, 5000, "否", "否", 1, "否"],
-  /* M4 */ [1.5, 1.5, 1, 10, 30, 5000, "否", "否", 1, "否"],
-  /* M5 */ [1, 1, 2, 10, 30, 5000, "否", "否", 1, "否"],
-  /* M6 */ [1, 1, 2, 10, 30, 5000, "否", "否", 1, "否"],
-  /* M7 */ [1, 1, 1, 10, 30, 2000, "是", "否", 1, "否"],
-  /* M8 */ [1, 1, 1, 10, 35, 2000, "是", "否", 1, "是"],
-  /* M9 */ [1, 1, 1, 20, 45, 2000, "是", "否", 1, "是"],
-  /* M10 */ [1, 1, 1, 20, 45, 2000, "是", "否", 1, "是"],
-  /* M11 */ [1, 1, 1, 20, 45, 2000, "是", "是", 1, "是"],
-  /* M12 */ [1, 1, 1, 20, 45, 2000, "是", "是", 1, "是"],
+  /* M1 */ [2, 2, 1, 10, 30, 5000, 4, "否"],
+  /* M2 */ [2, 2, 1, 10, 30, 5000, 4, "否"],
+  /* M3 */ [1.5, 1.5, 1, 10, 30, 5000, 1, "否"],
+  /* M4 */ [1.5, 1.5, 1, 10, 30, 5000, 1, "否"],
+  /* M5 */ [1, 1, 2, 10, 30, 5000, 1, "否"],
+  /* M6 */ [1, 1, 2, 10, 30, 5000, 1, "否"],
+  /* M7 */ [1, 1, 1, 10, 30, 2000, 1, "否"],
+  /* M8 */ [1, 1, 1, 10, 35, 2000, 1, "是"],
+  /* M9 */ [1, 1, 1, 20, 45, 2000, 1, "是"],
+  /* M10 */ [1, 1, 1, 20, 45, 2000, 1, "是"],
+  /* M11 */ [1, 1, 1, 20, 45, 2000, 1, "是"],
+  /* M12 */ [1, 1, 1, 20, 45, 2000, 1, "是"],
 ];
 
 /** 月 → 阶段映射桶(P3 收紧期持续 3 月,与 design-data.PHASE.month=7 + PHASE.current="P3" 单源一致;
@@ -326,9 +324,9 @@ export const EVENTS_CMS: { id: string; name: string; kind: EventKind; state: Eve
 /** 转盘 8 档(SPEC §0:概率合计 = 100%,EV ≈ $0.78/spin)。real = 真实流出。 */
 export const WHEEL_TIERS = [
   { tier: "安慰奖", reward: "+5 NEX", prob: 38, real: false, kind: "平台内" },
-  { tier: "小积分", reward: "+50 积分", prob: 24, real: false, kind: "平台内" },
+  { tier: "微 NEX", reward: "+10 NEX", prob: 24, real: false, kind: "平台内" },
   { tier: "小 NEX", reward: "+30 NEX", prob: 18, real: false, kind: "平台内" },
-  { tier: "中 NEX", reward: "+150 NEX", prob: 11, real: false, kind: "平台内" },
+  { tier: "中 NEX", reward: "+50 NEX", prob: 11, real: false, kind: "平台内" },
   { tier: "小额现金", reward: "$1", prob: 5, real: true, kind: "真实流出" },
   { tier: "购机抵扣券", reward: "$50 券(只抵购机)", prob: 3, real: false, kind: "转化导向" },
   { tier: "中额现金", reward: "$20", prob: 0.9, real: true, kind: "真实流出" },
@@ -348,7 +346,7 @@ export const WHEEL_EV_USD = computeWheelEv(); // 当前值 = $0.73(随 WHEEL_TIE
 
 /** 转盘 3 护栏 + 自动降级条款。 */
 export const WHEEL_GUARDS = [
-  { key: "budget", label: "日派彩预算", value: "$2,000", note: "到顶当日只发 NEX/积分/券" },
+  { key: "budget", label: "日派彩预算", value: "$2,000", note: "到顶当日只发 NEX/券" },
   { key: "cap", label: "单奖日库存", value: "$500×5 · $20×50 · 券×200", note: "" },
   { key: "kill", label: "真实奖总开关", value: "开", note: "应急一键停发真钱档" },
 ];
@@ -377,8 +375,8 @@ export const H5_STATS = {
 
 /** 签到规则 6 行(基础 / 7 天加奖 / 幸运 15% / 幸运 5% / 断签 / 复活卡)。 */
 export const CHECKIN_RULES = [
-  { key: "baseline", name: "每日基础积分", cur: "+1 分", hot: false },
-  { key: "bonus7", name: "连续 7 天加奖", cur: "+5 分", hot: false },
+  { key: "baseline", name: "每日基础 NEX", cur: "+2 NEX", hot: false },
+  { key: "bonus7", name: "连续 7 天加奖", cur: "+5 NEX", hot: false },
   { key: "p15", name: "幸运 1.5× 概率 🔥", sub: "两档概率合计 ≤ 100%,超了直接拒", cur: "15%", hot: true },
   { key: "p2", name: "幸运 2× 概率 🔥", cur: "5%", hot: true },
   { key: "broken", name: "断签阈值", sub: "超过没签连胜归零(可用复活卡)", cur: "48 小时", hot: false },
@@ -387,8 +385,8 @@ export const CHECKIN_RULES = [
 
 /** 连胜 7 阶里程碑(7 / 30 / 100 阶为标志档)。 */
 export const STREAK_MS = [
-  { id: 0, day: "3 天", reward: "+5 积分", kind: "points" },
-  { id: 1, day: "7 天", reward: "+15 积分", kind: "points" },
+  { id: 0, day: "3 天", reward: "+5 NEX", kind: "nex" },
+  { id: 1, day: "7 天", reward: "+15 NEX", kind: "nex" },
   { id: 2, day: "14 天", reward: "+$1", kind: "usdt" },
   { id: 3, day: "21 天", reward: "+100 NEX", kind: "nex" },
   { id: 4, day: "30 天", reward: "🎰 转盘票 ×1", kind: "spin" },

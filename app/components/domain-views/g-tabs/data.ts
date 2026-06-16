@@ -3,13 +3,13 @@
  * 口径单一源铁律:
  *  - 在锁本金/利息/到期应付 = LEDGER 科目体系(#2 USDT 质押本金 1.64M = G1 USDT 池 1.25M + G7 复投 0.39M;
  *    #3 应付利息 312K;#4 Genesis 分红承诺 268K(保底口径预提);#5 NEX v2 到期应付 0.88M;#8 锁仓其他 0.25M = G1 NEX 池);
- *  - 产品/池熔断 = J1 七闸同键(J.killswitch.staking|exchange|genesis|nexv2|premium),G 域是生效面;
+ *  - 产品/池熔断 = J1 五闸同键(J.killswitch.staking|exchange|genesis 等),G 域是生效面;
  *  - 地域封锁 = GEOBLOCK(J2 权威,KP/IR/SY 制裁名单)只读引用;
  *  - Genesis 日分红 = $24/节点/日 产品权威档(基数 $24.2M × 0.1% ÷ 1,000 slot;保底预提 $10/节点/日 挂科目#4,
  *    超出部分当期交易抽成直接派发);派发流量与 MATURITY.genesis(20.3K/日 = 847 × $24)同源;
  *  - NEX 行情 = NEX_MARKET 单源(G2 兑换 / G7 复投定价引用,前端现状值 $0.171);
  *  - K5 累计实名线 $100:V1 权威在 K5(k-tabs K5_PARAMS cumulativeKycThresholdUsdt),G2 只读 + 真 Link。
- * 真写键沿用旧 g-view 契约(G.staking.* / G.exchange.* / G.genesis.* / G.market.* / G.premium.* / G.repurchase.*),
+ * 真写键沿用旧 g-view 契约(G.staking.* / G.exchange.* / G.genesis.* / G.market.* / G.repurchase.*),
  * 熔断类改写 J.killswitch.<key> 与 J1/首页/B5 真联动。
  */
 import { LEDGER } from "@/lib/mock/admin/ledger";
@@ -25,12 +25,10 @@ export const G_FIN = (() => {
   const usdtPool = stakeUsdtAll - repurchasePrincipal; // 1.25M G1 USDT 池
   const nexPool = acct("lock_other"); // 0.25M G1 NEX 池折算(科目#8)
   const interest = acct("stake_interest"); // 312K(科目#3,线性计提)
-  const nexv2Mature = acct("nexv2"); // 0.88M(科目#5,到期应付一次性登账)
   const genesisAccrual = acct("genesis_div"); // 268K(科目#4,保底口径预提)
   return {
-    usdtPool, nexPool, repurchasePrincipal, interest, nexv2Mature, genesisAccrual,
+    usdtPool, nexPool, repurchasePrincipal, interest, genesisAccrual,
     g1Locked: usdtPool + nexPool, // G1 口径在锁合计(不含复投)$1.50M
-    nexv2Principal: Math.round(nexv2Mature / 6), // ×6 反推本金 ≈ $147K
   };
 })();
 
@@ -114,6 +112,43 @@ export const NEX_KLINE: number[] = (() => {
   return pts;
 })();
 
+/* ============================ G3 行情周曲线排程器 ============================ */
+// 7 天关键帧曲线(行 = D1..D7,列 = CURVE_FIELDS):每日预设 目标价/上行概率/波动,
+// 保存后由 server cron 每日 00:00 UTC 自动推进到下一关键帧并更新全站现价 G.market.price。
+// 写键 G.market.curve.d<N>.<field>(逐日帧)/ G.market.curve.ctl.<schedule|pin|loop>(排程开关)。
+// 向后兼容:G.market.price 仍是全站 NEX 现价单源,推进当日 = 把它更新为当日 targetPrice,下游(G2/G7)零改。
+// PRODUCTION: GET /api/admin/market/curve(拉全曲线) · PUT /api/admin/market/curve/d/:n(改帧,过 B1)
+//   · PUT /api/admin/market/curve/ctl/:key · POST /api/admin/market/curve/advance(cron 每日 currentDay+1 + 置现价)。
+export const CURVE_FIELDS = ["targetPrice", "upProb", "volatility"] as const;
+export type CurveField = typeof CURVE_FIELDS[number];
+export const CURVE_LABELS: Record<CurveField, { name: string; unit: string }> = {
+  targetPrice: { name: "目标价", unit: "$" },
+  upProb: { name: "上行概率", unit: "0–1" },
+  volatility: { name: "波动", unit: "±%" },
+};
+// 放松方向(升目标价 / 升上行概率 = 拉升预期 = 放大流出,过 B1 红线);波动不直接放大流出。
+export const CURVE_LOOSEN_DIR: Partial<Record<CurveField, "up">> = { targetPrice: "up", upProb: "up" };
+// 7 天关键帧值(行 = D1..D7,列序 = CURVE_FIELDS)。
+export const MARKET_CURVE: number[][] = [
+  /* D1 */ [0.171, 0.55, 3],
+  /* D2 */ [0.174, 0.58, 3],
+  /* D3 */ [0.178, 0.60, 4],
+  /* D4 */ [0.181, 0.62, 4],
+  /* D5 */ [0.184, 0.60, 5],
+  /* D6 */ [0.182, 0.55, 4],
+  /* D7 */ [0.179, 0.52, 3],
+];
+export const CURVE_STATE = {
+  currentDay: 3, // 当前生效日(演示态;server cron 每日 00:00 UTC +1)
+  peakPrice: Math.max(...MARKET_CURVE.map((r) => r[0])), // $0.184 = B1 重估的悲观口径(以周峰值价重估 NEX 计价负债)
+};
+// 排程控制 3 类(schedule 自动按日推进 / pin 钉住某日 / loop 跑完循环或停末值)。写键 G.market.curve.ctl.<key>。
+export const CURVE_CONTROLS = [
+  { key: "schedule", name: "自动按日推进", sub: "每日 00:00 UTC server cron 推进到下一关键帧,产 market.curve_advanced 事件", current: "每日 00:00 自动推进" },
+  { key: "pin", name: "钉住某日(pin)", sub: "钉在指定日做演示 / 应急冻结,自动推进暂停", current: "未钉住" },
+  { key: "loop", name: "跑完循环 / 停末值(loop)", sub: "D7 之后回到 D1 循环,或停在末日值", current: "循环" },
+];
+
 /* ============================ G4 Genesis ============================ */
 
 export const GENESIS = {
@@ -141,29 +176,11 @@ export const GENESIS_NODE_DETAIL: Record<string, { buy: string; div: [string, st
   "#0233": { buy: "2026-02 一级 $9,999", div: [["累计 lifetime 分红", "$3,000(125 天 × $24)"], ["日分红", "挂单中仍计 $24 / 日"], ["挂单价", "$12,800(二级)"]], xfer: [["5/28", "usr_84F2 挂二级单 $12,800", "待成交"]] },
 };
 
-/* ============================ G5/G6/G7 ============================ */
-
-// G5 Premium:月 7(当前 PHASE)刚解锁 → 首月演示态(活跃 = 新增 312 − 退款窗取消 14 = 298;MRR 按首月折扣价 $50)
-export const G5_PREMIUM = {
-  price: 99, firstMonthDiscount: 0.5, yieldBonus: 2,
-  active: 298, newMonth: 312, refundWindowCancel: 14,
-  mrr: 298 * 50, // $14.9K(首月全在折扣期)
-  gateLabel: "月 7+ = 开(当前月 7 · 已解锁)",
-};
-
-// G6 NEX v2:gate 月 11+ 未到 → 当前在锁为 Founders 邀请制预售批次(产品合法叙事);
-// 到期应付 = 科目#5 $0.88M 一次性登账,本金 = ÷6 反推 ≈ $147K,position 64。
-export const G6_NEXV2 = {
-  apy: 250, lockMonths: 24, minLock: 1000, multiple: 6,
-  lockedPrincipalUsd: G_FIN.nexv2Principal, // ≈ $147K
-  positions: 64,
-  matureValueUsd: G_FIN.nexv2Mature, // $0.88M(科目#5)
-  gateLabel: "月 11+ 全量开放(当前邀请制预售)",
-};
+/* ============================ G7 复投 ============================ */
 
 // G7 复投:本金 $390K(科目#2 拆分)= 1,840 单 × 均 $212;90 天到期本息 ≈ ×(1+35%×90/365)≈ $424K
 export const G7_REPURCHASE = {
-  apy: 35, lockDays: 90, pointsPer100: 50, cultivation: 1.5, lotteryPerOrder: 1,
+  apy: 35, lockDays: 90, cultivation: 1.5, lotteryPerOrder: 1,
   presets: "$100 / 200 / 500 / 1,000", earlyPenaltyPct: 15,
   ordersMonth: 1840,
   principalUsd: G_FIN.repurchasePrincipal, // $390K

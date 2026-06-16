@@ -76,9 +76,9 @@
       "dailyEarnNEX": 1820
     },
     "cloud-share": {
-      "price": 199,
-      "dailyEarn": 0.073,
-      "dailyEarnNEX": 30
+      "price": 19.9,
+      "dailyEarn": 0.0073,
+      "dailyEarnNEX": 3
     }
   },
   "withdrawal": {

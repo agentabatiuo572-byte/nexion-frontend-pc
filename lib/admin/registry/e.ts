@@ -38,7 +38,7 @@ export const DOMAIN_E: ModuleEntry[] = [
         { sku: "NexionBox Pro v2", gen: "Gen-2", price: "$2,639", rate: "$28.90 + 84 NEX", stock: "38", state: "待发布" },
         { sku: "NexionRack P1", gen: "Gen-1", price: "$8,999", rate: "$98.60 + 650 NEX", stock: "8", state: "上架" },
         { sku: "NexionRack P2", gen: "Gen-2", price: "$14,999", rate: "$164.40 + 1,200 NEX", stock: "4", state: "待发布" },
-        { sku: "Cloud Share", gen: "Gen-1", price: "$199", rate: "8–15% 年化 + 30 NEX", stock: "∞", state: "上架" },
+        { sku: "Cloud Share", gen: "Gen-1", price: "$19.9", rate: "8–15% 年化 + 3 NEX", stock: "∞", state: "上架" },
       ],
       detail: true,
       rowActions: [

@@ -64,6 +64,8 @@ const hits = [];
 for (const file of walk(ROOT)) {
   const rel = path.relative(ROOT, file);
   if (rel === path.join("scripts", "no-double-sign-terms.mjs")) continue;
+  // CLAUDE.md 是内部架构指引(非用户可见文案/脚本/清单/设计变体):其中记述 MC 契约组件名与「双签已全量取消」决议属合法历史说明;本门只扫用户面与代码口径。
+  if (rel === "CLAUDE.md") continue;
   const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
   lines.forEach((line, i) => {
     for (const re of banned) {

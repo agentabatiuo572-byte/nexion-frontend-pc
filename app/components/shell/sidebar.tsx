@@ -11,6 +11,7 @@ import type { AdminRole } from "@/lib/nav/console-nav";
 import { visibleDomains, DOMAIN_COUNT, L2_COUNT } from "@/lib/nav/console-nav";
 import { useAdminUi } from "@/lib/store/admin-ui";
 import { SidebarGroup } from "./sidebar-group";
+import { useNavBadges } from "./use-service-badges";
 
 function LogoMark() {
   return (
@@ -46,6 +47,7 @@ export function Sidebar({
   const setSidebar = useAdminUi((s) => s.setSidebar);
   const toggleSidebar = useAdminUi((s) => s.toggleSidebar);
   const domains = visibleDomains(role);
+  const badges = useNavBadges();
 
   const onCollapsedOpen = (code: string) => {
     setSidebar(false);
@@ -132,6 +134,7 @@ export function Sidebar({
               domain={d}
               collapsed={collapsed}
               isOpen={isOpen}
+              badges={badges}
               onToggle={collapsed ? () => onCollapsedOpen(d.code) : () => toggleGroup(d.code)}
             />
           );

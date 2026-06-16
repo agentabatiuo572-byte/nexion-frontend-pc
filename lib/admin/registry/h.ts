@@ -12,8 +12,8 @@ export const DOMAIN_H: ModuleEntry[] = [
   {
     path: "/growth/phase",
     summary:
-      "12 月运营节奏的唯一操作面,Phase 模型 10 项 dial 的权威源。前端只消费 server 下发的当前 dial 值;改 dial / 手动 pin / cohort override 需 操作确认,放大流出方向(降冷却 / 降积分门 / 升封顶)先核 B1 兑付覆盖率,低于红线 422。下游 D5/F3/E2/G5/G6/H3 只读。",
-    content: placeholder("死代码:H1 真渲染面在 h-tabs/h1-phase.tsx(DIAL_MATRIX 12×10 + LOOSEN_DIR + NEW_USER_ONLY + PHASE_CONTROLS 3 类)。"),
+      "12 月运营节奏的唯一操作面,Phase 模型 8 项 dial 的权威源(Premium/NEXv2 gate 旋钮随模块下线移除,提现积分→NEX 闸)。前端只消费 server 下发的当前 dial 值;改 dial / 手动 pin / cohort override 需 操作确认,放大流出方向(降冷却 / 降 NEX 闸 / 升封顶)先核 B1 兑付覆盖率,低于红线 422。下游 D5/F3/E2/H3 只读。",
+    content: placeholder("死代码:H1 真渲染面在 h-tabs/h1-phase.tsx(DIAL_MATRIX 12×8 + LOOSEN_DIR + NEW_USER_ONLY + PHASE_CONTROLS 3 类)。"),
   },
   {
     path: "/growth/trial",

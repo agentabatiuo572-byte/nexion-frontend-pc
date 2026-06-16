@@ -193,23 +193,15 @@ const seedState = evalJson(`
     pairedAt: now,
   });
   uni.setStorageSync('nexion-risk-disclosure-v1', { accepted: true, acceptedAt: now });
-  uni.setStorageSync('nexion-points-v1', {
-    points: 100,
-    history: [{ ts: now, delta: 92, reason: 'Persona proof seed' }],
-    lastSignedInAt: 0,
-    signInStreak: 0,
-    longestStreak: 0,
-    streakSavers: 1,
-    claimedMilestones: [],
-  });
+  // NEX 闸取代积分门槛:提现页读 app.user.nexBalance(默认 1240,app store 不持久化、reload 回默认),
+  // 1240 NEX 远超 $50 提现所需 5 NEX → 充足,无需 seed NEX。
   return {
     seeded: true,
     pairing: store('nexion-wallet-pairing-v1'),
     risk: store('nexion-risk-disclosure-v1'),
-    points: store('nexion-points-v1'),
   };
 `);
-expect(seedState.points?.points === 100, `seed points not written as 100: ${seedState.points?.points}`);
+expect(seedState.pairing?.walletPaired === true, `seed pairing not written: ${JSON.stringify(seedState.pairing)}`);
 evalJson(`
   location.reload();
   return { reloadedAfterSeed: true };
@@ -232,7 +224,6 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
       ...current(),
       inputValues: Array.from(document.querySelectorAll('input.uni-input-input')).map((input) => input.value),
       activeClass: document.activeElement?.closest('uni-input')?.className || '',
-      points: store('nexion-points-v1'),
     };
   `);
   expect(initial.body.includes("KYC-Express verified"), "withdraw initial KYC state missing");
@@ -240,21 +231,22 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   expect(seeded.inputValues[1] === WITHDRAW_ADDRESS, "withdraw address input value mismatch");
   expect(/nx-withdraw-address-input/.test(seeded.activeClass), "withdraw address input did not receive focus");
   expect(seeded.body.includes("You receive\n$49.00"), "withdraw receive amount did not recalculate to $49.00");
-  expect(seeded.points?.points === 100, `withdraw points storage not seeded as 100: ${seeded.points?.points}`);
-  expect(/100\s*\/\s*5/.test(seeded.body), "withdraw points requirement not shown as 100 / 5");
-  expect(seeded.body.includes("Sufficient"), "withdraw sufficient points message missing");
+  // NEX 销毁闸:默认 nexBalance 1240,$50 提现需燃烧 5 NEX → 显示 "1240 / 5" + Sufficient。
+  expect(seeded.body.includes("Burn NEX"), "withdraw NEX burn gate label missing");
+  expect(/\d[\d,]*\s*\/\s*5\b/.test(seeded.body), `withdraw NEX requirement not shown as <balance> / 5 · gate slice: ${(seeded.body.match(/Burn NEX[\s\S]{0,60}/) || ["<no Burn NEX slice>"])[0]}`);
+  expect(seeded.body.includes("Sufficient"), "withdraw sufficient NEX message missing");
 
   clickSelector(".nx-withdraw-submit-cta");
   const proof = waitForEval("withdraw tracking route", `
-    const points = store('nexion-points-v1');
     const bills = store('nexion-bills-v1');
-    const bill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.amount === -50 && row.status === 'pending');
+    const bill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'USDT' && row.amount === -50 && row.status === 'pending');
+    const nexBill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'NEX' && row.amount === -5);
     const body = bodyText();
     return {
       href: location.href,
       body,
-      points,
       bill,
+      nexBill,
       hasTrackingId: /WD-\\d{8}-\\d{4}/.test(body),
       hasAddress: body.includes(${JSON.stringify(WITHDRAW_ADDRESS)}),
       hasAmount: body.includes('$50.00'),
@@ -265,11 +257,11 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   expect(proof.hasTrackingId, "withdraw tracking id missing");
   expect(proof.hasAddress, "withdraw address missing on tracking page");
   expect(proof.hasAmount, "withdraw amount missing on tracking page");
-  expect(proof.points.points === 95, `withdraw points not deducted to 95: ${proof.points.points}`);
+  expect(proof.nexBill?.ref && /NEX burned/.test(proof.nexBill.memo || ""), `withdraw NEX burn bill (5 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
   expect(proof.bill?.ref && proof.bill.memo.includes("USDT-TRC20"), "withdraw bill missing or incomplete");
   return {
     href: proof.href,
-    pointsAfter: proof.points.points,
+    nexBurned: proof.nexBill.amount,
     billRef: proof.bill.ref,
     trackingHasAddress: proof.hasAddress,
   };
@@ -336,15 +328,13 @@ await step("FT-014A", "exchange-nex-to-usdt-confirm-modal", () => {
   };
 });
 
-await step("FT-014B", "repurchase-writes-points-staking-bill", () => {
+await step("FT-014B", "repurchase-writes-staking-bill", () => {
   open("/#/pages/me/wallet-repurchase");
   const before = evalJson(`
-    const points = store('nexion-points-v1');
     const staking = store('nexion-v3-staking-v1');
     const bills = store('nexion-bills-v1');
     return {
       body: bodyText(),
-      pointsBefore: points.points,
       stakeCountBefore: (staking.positions || []).length,
       billCountBefore: (bills.bills || []).length,
     };
@@ -353,27 +343,23 @@ await step("FT-014B", "repurchase-writes-points-staking-bill", () => {
   clickSelector(".nx-repurchase-submit-cta");
   wait(900);
   const proof = evalJson(`
-    const points = store('nexion-points-v1');
     const staking = store('nexion-v3-staking-v1');
     const bills = store('nexion-bills-v1');
     const position = (staking.positions || []).find((row) => row.amountUSDT === 200 && row.termDays === 90 && row.status === 'active');
-    const bill = (bills.bills || []).find((row) => row.type === 'stake' && row.amount === -200 && row.memo.includes('+100 points'));
+    const bill = (bills.bills || []).find((row) => row.type === 'stake' && row.amount === -200 && /Re-invest/.test(row.memo || ''));
     return {
       href: location.href,
       body: bodyText(),
-      points,
       position,
       bill,
+      stakeCountAfter: (staking.positions || []).length,
     };
   `);
-  expect(proof.points.points === before.pointsBefore + 100, `repurchase points did not increase by 100: ${before.pointsBefore} -> ${proof.points.points}`);
-  expect(!!proof.position, "repurchase staking position missing");
-  expect(!!proof.bill, "repurchase stake bill missing");
-  expect(proof.body.includes(`${proof.points.points} points`), "repurchase updated points not rendered");
+  // 复投积分奖励已下线:re-invest 只锁仓(不再发积分/NEX),断言新增 $200/90d active 锁仓 position + stake 账单。
+  expect(!!proof.position, "repurchase staking position ($200 / 90d / active) missing");
+  expect(!!proof.bill, "repurchase stake bill (Re-invest) missing");
   return {
     href: proof.href,
-    pointsBefore: before.pointsBefore,
-    pointsAfter: proof.points.points,
     positionId: proof.position.id,
     billRef: proof.bill.ref,
   };

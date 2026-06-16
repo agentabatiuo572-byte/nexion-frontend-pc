@@ -2,8 +2,8 @@
 
 /**
  * 360 HUB · 设备卡(单用户算力设备 CRUD)— C1·deepening。
- * 真交互层:下线/上线/换机/回收 经 confirm(操作确认 确认)后**真实改 useUserOps state** → 行状态/在线数/今日产出立即更新 + 写审计流。
- * 真后台:每动作对应 server-canonical 端点(POST /api/admin/devices/{id}/{deactivate|activate|replace|recycle},Idempotency-Key)。salvage 不入余额。
+ * 真交互层:下线/上线/换机/回收/撤销回收 经 confirm(操作确认 确认)后**真实改 useUserOps state** → 行状态/在线数/今日产出立即更新 + 写审计流。
+ * 真后台:每动作对应 server-canonical 端点(POST /api/admin/devices/{id}/{deactivate|activate|replace|recycle|restore},Idempotency-Key)。salvage 不入余额;撤销回收 = 误操作纠偏,恢复为离线。
  * CGM: CGM-C devices[].* / CGM-E activate/deactivate/replace/recycle。
  */
 import { useEffect, useMemo } from "react";
@@ -25,6 +25,7 @@ export function DevicesSection({ user }: { user: AdminUser }) {
   const stored = useUserOps((s) => s.users[user.id]?.devices);
   const deviceToggle = useUserOps((s) => s.deviceToggle);
   const deviceRecycle = useUserOps((s) => s.deviceRecycle);
+  const deviceRestore = useUserOps((s) => s.deviceRestore);
   const deviceSwap = useUserOps((s) => s.deviceSwap);
 
   useEffect(() => {
@@ -54,6 +55,13 @@ export function DevicesSection({ user }: { user: AdminUser }) {
     if (ok) {
       deviceRecycle(user.id, d.id);
       toast.success("设备已回收", `${user.id} · ${d.id}`);
+    }
+  }
+  async function doRestore(d: OpsDevice) {
+    const ok = await confirm({ title: "撤销回收?", message: `撤销回收「${d.name} ${d.id}」:设备恢复为离线状态(可再上线接入车队)。需填写操作理由并写入审计。`, confirmLabel: "确认撤销回收" });
+    if (ok) {
+      deviceRestore(user.id, d.id);
+      toast.success("已撤销回收", `${user.id} · ${d.id} · 恢复为离线`);
     }
   }
   async function doSwap(d: OpsDevice) {
@@ -95,7 +103,7 @@ export function DevicesSection({ user }: { user: AdminUser }) {
                   <td className="font-mono-tabular px-2.5 py-1.5" style={{ color: "var(--v5-ink-4)" }}>G{d.generation} · {d.gpuUsage}%</td>
                   <td className="px-2.5 py-1.5">
                     {d.recycled ? (
-                      <span className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>—</span>
+                      <HubActBtn label="恢复" onClick={() => doRestore(d)} />
                     ) : (
                       <div className="flex flex-wrap gap-1">
                         {d.online ? <HubActBtn label="下线" onClick={() => doToggle(d)} danger /> : <HubActBtn label="上线" onClick={() => doToggle(d)} />}
@@ -112,7 +120,7 @@ export function DevicesSection({ user }: { user: AdminUser }) {
       </div>
 
       <p className="mt-2 flex flex-wrap items-center gap-1 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
-        <ShieldAlert size={12} /> <AutoGloss>下线/上线/换机/回收 = server-canonical action 端点 + 操作确认 + 审计;批量调度/衰减曲线见</AutoGloss>
+        <ShieldAlert size={12} /> <AutoGloss>下线/上线/换机/回收/撤销回收 = server-canonical action 端点 + 操作确认 + 审计;批量调度/衰减曲线见</AutoGloss>
         <Link href="/devices/ops" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}>E5 设备处置<ArrowUpRight size={11} /></Link>。
       </p>
     </HubCard>
