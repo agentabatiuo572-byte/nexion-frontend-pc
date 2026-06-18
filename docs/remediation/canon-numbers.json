@@ -56,8 +56,8 @@
     },
     "stellarbox-pro-v2": {
       "price": 1319,
-      "dailyEarn": 14.5,
-      "dailyEarnNEX": 100
+      "dailyEarn": 14,
+      "dailyEarnNEX": 90
     },
     "stellarrack-p1": {
       "price": 4499,
@@ -72,7 +72,7 @@
     "cloud-share": {
       "price": 19.9,
       "dailyEarn": 0.19,
-      "dailyEarnNEX": 1
+      "dailyEarnNEX": 3
     }
   },
   "withdrawal": {

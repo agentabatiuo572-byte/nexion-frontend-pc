@@ -221,13 +221,14 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
     }),
     {
       name: "nexion-admin-platform-v1",
-      version: 4, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product;v4:SKU 加 purchaseGate(购买门),清旧 SKU 重建带门 seed。
+      version: 5, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product;v4:SKU 加 purchaseGate(购买门),清旧 SKU 重建带门 seed;v5:SKU 日产值对齐公布档(Pro v2 14/90·Cloud 3 NEX),清旧 SKU 重建。
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<PlatformConfigStore>;
         if (version < 2) p.skus = null; // 丢弃旧结构 SKU,避免渲染时 dailyEarn 等新字段缺失
         if (version < 3) p.reviews = null; // 评价改 per-product(无通用"*"),清旧 seed 由 ensureReviews 按新 per-product seed 重建
         if (version < 4) p.skus = null; // SKU 新增 purchaseGate 字段 + Pro/Rack P1 默认门;清旧 seed 由 ensureSkus 按新 seed 重建
+        if (version < 5) p.skus = null; // SKU 日产值对齐公布档(Pro v2 14.5→14 / 100→90 NEX · Cloud 1→3 NEX);清旧 stale seed 重建
         return p as PlatformConfigStore;
       },
     },
