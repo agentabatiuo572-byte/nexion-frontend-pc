@@ -3,7 +3,7 @@
  * server-canonical:展示值优先 pget(key) ?? mock;订单状态走 orderState 派生(取消 > 退款 > 补建终态 > 原始)。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
-import type { OpsSku, OpsTask } from "@/lib/store/admin/platform-config-store";
+import type { OpsSku, OpsTask, PurchaseGate } from "@/lib/store/admin/platform-config-store";
 import type { EOrder } from "./types";
 
 // 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
@@ -82,15 +82,33 @@ export const EMPTY_SKU_FORM = {
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
   generation: "1", lifecycle: "active", supersededBy: "", tradeinDiscount: "", unlock: "P1", tag: "",
+  // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
+  // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
+  // 锁额(quota)与条件门正交,任意门类型下均可设。
+  gateType: "none", gateRankMin: "", gateActiveDirectMin: "", gateTeamVolumeMin: "", gateMode: "all",
+  gateQuotaCap: "", gateQuotaSold: "", gateQuotaPeriod: "month", gateEnforce: "true",
 };
 export type SkuForm = typeof EMPTY_SKU_FORM;
+
+// purchaseGate → 表单门类型:条件门形态由「设了哪几个条件」反推。
+// 单 activeDirect → activeDirect;单 rank → rank;其余(含 teamVolume 或多条件)→ combo;无条件 → none(可能仍有锁额)。
+export function gateToType(g?: PurchaseGate): SkuForm["gateType"] {
+  if (!g) return "none";
+  const hasRank = g.rankMin != null, hasDirect = g.activeDirectMin != null, hasVol = g.teamVolumeMin != null;
+  const n = (hasRank ? 1 : 0) + (hasDirect ? 1 : 0) + (hasVol ? 1 : 0);
+  if (n === 0) return "none";
+  if (n === 1 && hasDirect) return "activeDirect";
+  if (n === 1 && hasRank) return "rank";
+  return "combo";
+}
 
 export const skuNum = (s: string): number => { const n = Number(String(s).replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : 0; };
 export const skuNumU = (s: string): number | undefined => { const t = String(s).trim(); if (!t) return undefined; const n = Number(t.replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : undefined; };
 
-// OpsSku → 表单(编辑回填:数字转 string,features 数组转换行文本)。
+// OpsSku → 表单(编辑回填:数字转 string,features 数组转换行文本,purchaseGate 扁平回填)。
 export function skuToForm(s: OpsSku): SkuForm {
   const str = (v: number | string | undefined): string => (v === undefined || v === null ? "" : String(v));
+  const g = s.purchaseGate;
   return {
     name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "Entry", tagline: s.tagline ?? "", badge: s.badge ?? "",
     gpu: s.gpu ?? "", vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "",
@@ -100,7 +118,61 @@ export function skuToForm(s: OpsSku): SkuForm {
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
     generation: str(s.generation) || "1", lifecycle: s.lifecycle ?? "active", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "P1", tag: s.tag ?? "",
+    gateType: gateToType(g),
+    gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamVolumeMin: str(g?.teamVolumeMin),
+    gateMode: g?.mode === "either" ? "either" : "all",
+    gateQuotaCap: str(g?.quotaCap), gateQuotaSold: str(g?.quotaSold),
+    gateQuotaPeriod: g?.quotaPeriod === "lifetime" ? "lifetime" : "month",
+    gateEnforce: g ? (g.enforce ? "true" : "false") : "true",
   };
+}
+
+// 表单 → purchaseGate(无条件且无锁额 → undefined = 无门)。条件门按 gateType 取相应阈值;锁额正交。
+export function formToGate(f: SkuForm): PurchaseGate | undefined {
+  let rankMin: number | undefined, activeDirectMin: number | undefined, teamVolumeMin: number | undefined;
+  if (f.gateType === "activeDirect") activeDirectMin = skuNumU(f.gateActiveDirectMin);
+  else if (f.gateType === "rank") rankMin = skuNumU(f.gateRankMin);
+  else if (f.gateType === "combo") {
+    rankMin = skuNumU(f.gateRankMin); activeDirectMin = skuNumU(f.gateActiveDirectMin); teamVolumeMin = skuNumU(f.gateTeamVolumeMin);
+  }
+  const cap = skuNumU(f.gateQuotaCap);
+  const hasCond = rankMin != null || activeDirectMin != null || teamVolumeMin != null;
+  const hasQuota = cap != null;
+  if (!hasCond && !hasQuota) return undefined;
+  return {
+    rankMin, activeDirectMin, teamVolumeMin,
+    mode: f.gateMode === "either" ? "either" : "all",
+    quotaCap: cap,
+    quotaSold: hasQuota ? Math.max(0, skuNumU(f.gateQuotaSold) ?? 0) : undefined, // 防御:已售下限 0(校验已拦负数,store 层再兜底)
+    quotaPeriod: hasQuota ? (f.gateQuotaPeriod === "lifetime" ? "lifetime" : "month") : undefined,
+    enforce: f.gateEnforce !== "false",
+  };
+}
+
+// 锁额余量单源(remaining = cap − sold,下限 0)。抽屉派生提示 + E1 卡 chip 共用此函数,
+// 杜绝公式在多处重复(对齐前端 evaluatePurchaseGate 的 remaining 口径)。无 cap = null(不限量)。
+export function gateRemaining(g: PurchaseGate): number | null {
+  return g.quotaCap != null ? Math.max(0, g.quotaCap - (g.quotaSold ?? 0)) : null;
+}
+
+// 购买门表单校验(提交前调;返回错误串 = 拦截,null = 通过)。
+// 注:这是输入完整性/取值范围校验,非「锁死业务值」——阈值/开关本身全运营可调(铁律)。
+export function validateGateForm(f: SkuForm): string | null {
+  if (f.gateType === "activeDirect" && skuNumU(f.gateActiveDirectMin) == null) return "购买门:请填写活跃直推门槛";
+  if (f.gateType === "rank" && skuNumU(f.gateRankMin) == null) return "购买门:请填写最低 V 级";
+  if (f.gateType === "combo" && skuNumU(f.gateRankMin) == null && skuNumU(f.gateActiveDirectMin) == null && skuNumU(f.gateTeamVolumeMin) == null)
+    return "购买门:组合门槛至少填一个条件";
+  const rank = skuNumU(f.gateRankMin);
+  if (rank != null && (rank < 0 || rank > 12)) return "购买门:V 级须在 0-12 之间";
+  const direct = skuNumU(f.gateActiveDirectMin);
+  if (direct != null && direct < 0) return "购买门:活跃直推门槛须为非负数";
+  const vol = skuNumU(f.gateTeamVolumeMin);
+  if (vol != null && vol < 0) return "购买门:团队业绩门槛须为非负数";
+  const cap = skuNumU(f.gateQuotaCap), sold = skuNumU(f.gateQuotaSold);
+  if (cap != null && cap <= 0) return "购买门:锁额上限须为正数(留空=不限量)";
+  if (sold != null && sold < 0) return "购买门:已售数量不能为负数";
+  if (cap != null && sold != null && sold > cap) return "购买门:已售不能超过锁额上限";
+  return null;
 }
 
 // 表单 → OpsSku(提交:string 转结构化双币 + 合成 baseRate 兼容串;上下架 status 沿用既有/新建 pending)。
@@ -123,6 +195,6 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     aiImageGenPerMin: skuNumU(f.aiImageGenPerMin), aiLlmTokensPerSec: skuNumU(f.aiLlmTokensPerSec), aiVideoMinPerHour: skuNumU(f.aiVideoMinPerHour), aiFineTuneMins: skuNumU(f.aiFineTuneMins), aiUnlocks: f.aiUnlocks.trim() || undefined,
     features: features.length ? features : undefined,
     generation: skuNumU(f.generation), lifecycle: f.lifecycle, supersededBy: f.supersededBy.trim() || undefined, tradeinDiscount: skuNumU(f.tradeinDiscount),
-    unlock: f.unlock, tag: f.tag.trim() || existing?.tag || "", status: existing?.status ?? "pending",
+    unlock: f.unlock, purchaseGate: formToGate(f), tag: f.tag.trim() || existing?.tag || "", status: existing?.status ?? "pending",
   };
 }

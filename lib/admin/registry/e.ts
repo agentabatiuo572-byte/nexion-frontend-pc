@@ -23,7 +23,7 @@ export const DOMAIN_E: ModuleEntry[] = [
       search: "搜索机型 / 代际",
       filterKey: "state",
       filters: ["全部", "上架", "促销中", "待发布"],
-      primaryAction: { label: "新增 SKU", fields: ["型号 / 档位 / 标语 / 角标 badge", "售价", "GPU / VRAM / 算力 / 功率 / 数据中心", "日产 USDT / 日产 NEX / Share 年化", "AI 图像·张/min / LLM·tok/s / 视频·s/min / LoRA·min / 解锁池", "累计销量 / 评分 / 评论数 / 库存", "代际 / 生命周期 / 解锁 Phase / 换新折扣 / 特性清单"] },
+      primaryAction: { label: "新增 SKU", fields: ["型号 / 档位 / 标语 / 角标 badge", "售价", "GPU / VRAM / 算力 / 功率 / 数据中心", "日产 USDT / 日产 NEX / Share 年化", "AI 图像·张/min / LLM·tok/s / 视频·s/min / LoRA·min / 解锁池", "累计销量 / 评分 / 评论数 / 库存", "代际 / 生命周期 / 解锁 Phase / 换新折扣 / 特性清单", "购买限制:门类型(无/活跃直推/V级/组合)+ 阈值 / 锁额 cap·已售·周期 / enforce 硬拦截"] },
       columns: [
         { key: "sku", header: "机型" },
         { key: "gen", header: "代际" },

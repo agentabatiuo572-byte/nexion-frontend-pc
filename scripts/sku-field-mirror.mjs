@@ -7,14 +7,17 @@
  * 「动作级」下沉到「字段级」:前端 Product 每加一个展示字段,后台 OpsSku 必须有对应镜像字段,
  * 否则 verify 爆红,逼运营后台同步可控能力。
  *
- * 跨项目读 ../Nexion-prototype/lib/mock/products.ts(相对 admin root)。前端项目不在预期路径时
- * 跳过(非爆红),保证 admin 仓库可独立 verify。
+ * 跨项目读前端真实现面(相对 admin root)。前端项目不在预期路径时跳过(非爆红),保证 admin 仓库可独立 verify。
+ *
+ * 🔴 真实现面 = uniapp(Nexion-uniapp,主人 2026-06-14 拍板:前端唯一实现面;H5 Nexion-prototype 已冻结)。
+ * 哨兵原读 H5 → 漏掉 uniapp 新增的展示字段(如 purchaseGate),门形同虚设;2026-06-18 re-point 到 uniapp。
+ * 评价(Review)uniapp 无独立模型(无 reviews.ts),沿用 H5 reviews.ts 作 Review 形状的 canonical 镜像源。
  */
 import fs from "node:fs";
 import path from "node:path";
 
 const ADMIN_STORE = "lib/store/admin/platform-config-store.ts";
-const FE_PRODUCTS = path.join("..", "Nexion-prototype", "lib", "mock", "products.ts");
+const FE_PRODUCTS = path.join("..", "Nexion-uniapp", "src", "mock", "products.ts");
 
 // 提取一个 TS interface 的顶层字段名(平结构,无嵌套花括号)。
 function extractInterfaceFields(src, ifaceName) {
@@ -39,8 +42,14 @@ const MAP = {
   ai: ["aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", "aiUnlocks"],
   generation: ["generation"], status: ["lifecycle"], supersededBy: ["supersededBy"],
   tradeinDiscount: ["tradeinDiscount"], unlocksAtPhase: ["unlock"],
+  // purchaseGate(per-user 购买门):uniapp Product 展示字段 → OpsSku.purchaseGate 镜像。
+  // FE 源已 re-point 到 uniapp,本条已生效 —— 删 OpsSku.purchaseGate 会爆红(门真守住此字段)。
+  purchaseGate: ["purchaseGate"],
 };
-const IGNORE_FE = new Set(["bestForCategory"]); // 前端内部分类,非展示参数,无需后台镜像
+// 前端 Product 接口里「非展示」字段:无组件消费,字段镜像门只守展示字段,故豁免。
+// monthlyPrice/installMonths 是 uniapp 休眠数据(grep 全 src 仅 products.ts 自身引用,无渲染);
+// 若将来上分期 UI 展示,须移出本集合并在 OpsSku 补镜像字段。
+const IGNORE_FE = new Set(["bestForCategory", "monthlyPrice", "installMonths"]);
 
 const AI_MAP = {
   imageGenPerMin: "aiImageGenPerMin", llmTokensPerSec: "aiLlmTokensPerSec",
@@ -79,6 +88,7 @@ for (const f of aiFields) {
 }
 
 // ── E1 评价 Review 镜像(后台 OpsReview ⊇ 前端 reviews.ts Review)──
+// 评价镜像源:uniapp 无独立 Review 模型(无 reviews.ts),沿用 H5 reviews.ts 作 Review 形状 canonical。
 const FE_REVIEWS = path.join("..", "Nexion-prototype", "lib", "mock", "reviews.ts");
 let reviewFieldCount = 0;
 const opsReviewFields = new Set(extractInterfaceFields(storeSrc, "OpsReview") ?? []);

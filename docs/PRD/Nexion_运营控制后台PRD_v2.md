@@ -56,6 +56,7 @@ SKU 目录管理台,自上而下三区:
 2. **SKU 详情编辑面**:单 SKU 的价格 / baseRate / baseRateNEX / installMonths / stock 编辑表单 + 派生指标实时回显(回本天数 = round(price / baseRate)、首年净利 = baseRate × 365 − price);改价时高亮「影响全站回本 / ROI」红条 + 确认弹窗 + 理由必填提示(E1a-MD2)。
 3. **套餐折扣 ladder 面**:阶梯折扣配置(4 件 12% / 3 件 8% / 2 件 5%,对齐 §9.11c.1 `GET /api/config/cart/bundle-discount` + 前端 `lib/store/cart.ts`),驱动结算购物车多件购买。
 4. **库存告警视图**:`stock < 50` 的 SKU 以橙色 `NN LEFT` 标注(对齐前端 §7.1 库存告警 `<50 时显示 NN LEFT 橙色`),供运营补货 / 控量决策。
+5. **SKU 购买门配置区**(SKU 详情编辑面内,对齐前端 §7.1「购买门」):为单 SKU 配**等级/条件门**(门类型:无 / 单活跃直推 / 单 V 级 / 组合 —— 阈值 `rankMin` / `activeDirectMin` / `teamVolumeMin` + `mode`(全满足 / 任一满足))+ **锁额门**(`quotaCap` / `quotaSold` / `quotaPeriod` + `enforce` 硬拦售罄 / 仅展示)。条件门与锁额门正交,任一可单设;门类型切换实时回显「谁可买 + 余量(`remaining = cap − sold`)」派生预览。SKU 列表行对已配门 SKU 以 chip 标注(条件摘要 + 余量),运营一眼识别限购机型。无购买门的 SKU 自由购买。
 
 **③ 可控参数**
 
@@ -70,6 +71,8 @@ SKU 目录管理台,自上而下三区:
 | `stock`(各 SKU) | 现状值(`lib/store` 库存),`< 50` 触发橙色告警 | ≥ 0 | 实时(影响在售) | §7.1 库存告警 `NN LEFT` / 售罄态 |
 | `status`(代际状态) | **Gen-2(Pro v2 / Rack P2)后台初始 = `coming-soon`,由 E1 代际发布门按 Phase 月龄释放为 `active`(不静态写死)**;S1 / Pro / Rack P1 = `legacy`;Cloud Share = `active`(Gen 1,无发布门) | active / legacy / coming-soon | 实时(影响 LEGACY chip 与列表分组) | §7.1 `LEGACY` chip(i18n `store.legacyBadge`)/ 代际分组 / coming-soon section |
 | 套餐折扣 ladder | **现状值**:4 件 12% / 3 件 8% / 2 件 5%(§9.11c.1) | 各档 0–30% | 仅新购物车结算 | §9.11c.1 cart / 结算购物车多件折扣 |
+| **购买门类型** `purchaseGate`(条件门) | 默认无门;**Pro=单活跃直推**(`activeDirectMin` 5)、**Rack P1=组合**(`rankMin` 3 / `activeDirectMin` 15 / `teamVolumeMin` 20000 / `mode` either);其余 SKU 无门 | 无 / 单活跃直推(`activeDirectMin`)/ 单 V 级(`rankMin` 0–12)/ 组合(任意 + `mode` all\|either)· 各阈值 ≥ 0 | 实时(server-canonical) | §7.1 资格判定与锁定态 / §8.9 解锁进度 / 结账拦截 |
+| **锁额门** `purchaseGate.{quotaCap,quotaSold,quotaPeriod,enforce}` | Pro 1,000 / 977(余 23)· Rack P1 100 / 92(余 8)· `quotaPeriod` month · `enforce` on | `quotaCap` > 0(留空=不限量)· 0 ≤ `quotaSold` ≤ cap · `quotaPeriod` month / lifetime · `enforce` on / off | 实时(server-canonical) | §7.1 余量(`remaining=cap−sold`,收编 stock)/ 售罄态 / 结账拦截(`enforce` on 时) |
 
 > **默认值口径声明**:设备基础定价(price / baseRate / baseRateNEX / 套餐折扣)**12 月节奏表 §6 未覆盖**,上表取前端 §7.1 / §9.11c.1 现状值为参考并标注「现状值」(供开发对照)。**Pro baseRate $76.00 已对原型 `lib/store/index.ts` 核实**;其余 baseRate 现状值开发落地时按前端 `lib/store/index.ts-91` 实际常量回核,发现差异以前端现状为准。**衰减曲线与代际折扣由 12 月节奏表 §6.1/§6.2 权威,分别在 E3 / E1/E3 落地**,E1 不重复定义。
 >
@@ -150,7 +153,8 @@ SKU 目录管理台,自上而下三区:
 **⑤ 接口**
 收敛前端 §9.11c.1 Device specs 种子:
 - `GET /api/admin/products/specs` — 返回全 SKU 规格表 `[{ skuKey, name, generation, status, price, baseRate, baseRateNEX, installMonths, stock, annualROI(派生), paybackDays(派生), year1Net(派生) }]` + 套餐折扣 ladder;**server-canonical**,前端 `GET /api/products/specs`(§9.11c.1 收敛 `lib/store/index.ts-91`)消费同一权威源的只读投影。**`annualROI` / `paybackDays`(= round(price / baseRate))/ `year1Net`(= baseRate × 365 − price)三个派生字段由 server 计算并下发(喂前端 §7.1 conversion chip `Pays back in Nd` / `Year 1 net +$N`),client 不得自算。**
-- `PUT /api/admin/products/specs/:skuKey` — 更新单 SKU 规格(price / baseRate / baseRateNEX / installMonths / stock / status);高敏字段(price / baseRate / status / 折扣)经确认弹窗提交(E1a-MD1 / E1a-MD2,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效,响应回 `{ effectiveAt, lockedInFlightOrders }`(在途锁价说明)。**若请求未携 reason 而包含 `stock: 0`,server 拒绝直接生效,返回 `422` + `{ code: 'stock_zero_treated_as_delist' }`,前端转打开 E1a-MD1(等同下架确认);经 E1a-MD1 携 reason 重新提交后 `stock=0` 生效并同步 `status` 为等效下架态。**
+- `PUT /api/admin/products/specs/:skuKey` — 更新单 SKU 规格(price / baseRate / baseRateNEX / installMonths / stock / status / **`purchaseGate`**);高敏字段(price / baseRate / status / 折扣)经确认弹窗提交(E1a-MD1 / E1a-MD2,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效,响应回 `{ effectiveAt, lockedInFlightOrders }`(在途锁价说明)。**`purchaseGate`(等级门 + 锁额门,可选;`{ rankMin?, activeDirectMin?, teamVolumeMin?, mode, quotaCap?, quotaSold?, quotaPeriod?, enforce }`)随 SKU 规格一并存取**,server 校验阈值非负、`rankMin` 0–12、`0 ≤ quotaSold ≤ quotaCap`(越界 400);新增 / 编辑 SKU 经 SKU 保存确认弹窗提交(理由必填)。
+- 购买门 server-canonical 投影:`GET /api/store/catalog` 下发含 `purchaseGate` 的 SKU 配置,前端只读判定(`evaluatePurchaseGate`,§7.1);**下单 `POST /api/orders` 由 server 二次校验资格与锁额余量,未达成 / 售罄 reject** —— 前端拦截仅为体验前置,资格授权以 server 为准。**若请求未携 reason 而包含 `stock: 0`,server 拒绝直接生效,返回 `422` + `{ code: 'stock_zero_treated_as_delist' }`,前端转打开 E1a-MD1(等同下架确认);经 E1a-MD1 携 reason 重新提交后 `stock=0` 生效并同步 `status` 为等效下架态。**
 - `PUT /api/admin/config/cart/bundle-discount` — 套餐折扣 ladder(对齐 §9.11c.1 `GET /api/config/cart/bundle-discount`;确认弹窗 E1a-MD3,body 携 reason)。
 
 **⑥ 权限 & 审计**
@@ -170,7 +174,8 @@ SKU 目录管理台,自上而下三区:
 - **调价仅影响新单,在途锁价**:已 `placed` 未 `paid` 的订单按下单时价格结算(订单快照价),改价 `effectiveAt` 后仅对新 `placed` 订单生效,避免「支付中价格漂移」。
 - **stock=0 防绕过**:`覆盖 stock` 常规直接生效留痕,但调整后 stock=0 实质等同下架,server 强制转 E1a-MD1 确认弹窗(与「上下架经确认弹窗 + 理由必填」对齐),杜绝以「改库存」名义绕过上下架确认门的路径(接口层实现见 ⑤ PUT 端点 `stock_zero_treated_as_delist`)。
 - **改价为放大转化向须留意但非资金流出红线**:下调价格 / 提高 baseRate / 加大折扣会放大转化与对平台的应付负债(更优回本叙事 → 更多购买与后续收益负债),属须经确认弹窗 + 理由必填留痕的运营杠杆,但**不直接构成即时资金流出**(资金流出红线由 D 域提现 / B1 兑付覆盖率守门,故 E1a-MD1/MD2/MD3 不前置 B1 红线预检);改价动作建议在 B4 节奏态势与 B1 覆盖率约束下评估。
-- **联动**:E1(代际发布门)控制 Gen-2 SKU 的 `status: coming-soon → active` 释放时点;E3 衰减曲线决定 legacy SKU 的终身产出节奏;C1 fleet 卡引用本规格表(§3.14)。
+- **购买门 server-canonical**:`purchaseGate`(等级门 + 锁额门)服务端唯一权威,client 仅 UI 判定缓存;下单 server 二次校验资格 / 余量为准(§9.11d 客户端不可授权外推)。锁额 `remaining = max(0, quotaCap − quotaSold)` 是该 SKU「还剩 N 件」的**单一来源**(收编原 `stock` 展示,消除双口径)。门为运营杠杆而非资金流出红线,改门经 SKU 保存确认弹窗 + 理由留痕即时生效,不前置 B1 预检。
+- **联动**:E1(代际发布门)控制 Gen-2 SKU 的 `status: coming-soon → active` 释放时点;E3 衰减曲线决定 legacy SKU 的终身产出节奏;C1 fleet 卡引用本规格表(§3.14)。**购买门改动即时影响前端 §7.1 锁定 / 售罄态、§8.9 配额解锁进度、结账硬拦截**(同上下架 / 改价的 server-canonical 即时生效口径)。
 
 **⑧ 埋点(事件)**
 对齐 A4(§2.4.5 ②转化 family + ⑥ admin family):

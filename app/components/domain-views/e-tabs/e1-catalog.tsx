@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
 import type { OpsSku, OpsReview } from "@/lib/store/admin/platform-config-store";
 import type { EViewCtx } from "./types";
+import { gateRemaining } from "./data";
 import { EStats } from "./stats";
 
 /* ── 静态设计数据(代际门 timeline · Gen-2 发布时点;真后台由 H1 月龄 + 发布门配置下发)── */
@@ -232,6 +233,17 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   {s.sold != null && <span className="sold">{s.sold.toLocaleString()} 售</span>}
                   {s.reviews != null && <><span>·</span><span>{s.reviews.toLocaleString()} 评价</span></>}
                   <span className={`gate ${open ? "open" : "gated"}`}>{s.unlock} · {open ? "已开放" : "门控"}</span>
+                  {s.purchaseGate && (() => {
+                    const g = s.purchaseGate;
+                    const parts: string[] = [];
+                    if (g.rankMin != null) parts.push(`V≥${g.rankMin}`);
+                    if (g.activeDirectMin != null) parts.push(`${g.activeDirectMin}直推`);
+                    if (g.teamVolumeMin != null) parts.push(`$${Math.round(g.teamVolumeMin / 1000)}K业绩`);
+                    const cond = parts.join(g.mode === "either" ? "/" : "+");
+                    const remaining = gateRemaining(g);
+                    const txt = `购买门${cond ? " " + cond : ""}${remaining != null ? ` · 余${remaining}` : ""}`;
+                    return <Badge tone={g.enforce ? "warn" : "neutral"}>{txt}</Badge>;
+                  })()}
                   <span className="stk">库存 {s.stock}</span>
                 </div>
                 <div className="acts">

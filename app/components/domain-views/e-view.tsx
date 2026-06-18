@@ -22,7 +22,7 @@ import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { SKUS, REVIEWS } from "@/lib/mock/admin/design-data";
 import {
   FOLD, TASKS, ORDERS, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
-  EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, skuNum, stateLabel, ostate,
+  EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
 import type { Mc, EViewCtx, EOrder } from "./e-tabs/types";
 import { E1Catalog } from "./e-tabs/e1-catalog";
@@ -284,7 +284,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {/* SKU 新增 / 编辑 抽屉 */}
       {skuDrawer && <Drawer title={editName ? "编辑 SKU" : "新增 SKU"} sub={<AutoGloss>{editName ? "改价 / 库存 / 日产基准 / 上架 Phase · 改后走操作确认" : "填写商品规格 · 提交后走操作确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditName(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditName(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price} onClick={() => { setActionConfirm({ name: (editName ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editName, hasImg: !!skuImg }); setSkuDrawer(false); }}>{editName ? "保存修改" : "提交确认"}</Btn></>}>
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditName(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price} onClick={() => { const gErr = validateGateForm(form); if (gErr) { setToast(gErr); return; } setActionConfirm({ name: (editName ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editName, hasImg: !!skuImg }); setSkuDrawer(false); }}>{editName ? "保存修改" : "提交确认"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <div className="col" style={{ gap: 5 }}><span className="muted tiny">产品图</span>
             <label className={"sku-drop" + (dragOver ? " drag" : "")} style={skuImg ? { padding: 0, borderStyle: "solid" } : {}}
@@ -385,6 +385,61 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <SkuFld label="被替代为 supersededBy" value={form.supersededBy} onChange={(v) => setForm({ ...form, supersededBy: v })} placeholder="stellarbox-pro-v2(下一代 id)" hint="可空" />
             </>}
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 features · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"Fully managed by Nexion\n99.9% uptime SLA\nFree shipping & installation"} /></label>
+          </SkuFieldGroup>
+
+          <SkuFieldGroup n="⑦" title="购买限制">
+            <label className="col" style={{ gap: 5 }}>
+              <span className="muted tiny">等级门类型 · 谁可购买<span style={{ color: "var(--ink-4)" }}> · 锁额另设(正交)· server 二次校验为权威</span></span>
+              <div className="row wrap" style={{ gap: 6 }}>
+                {[{ k: "none", l: "无等级门" }, { k: "activeDirect", l: "单活跃直推" }, { k: "rank", l: "单 V 级" }, { k: "combo", l: "组合门槛" }].map((t) => (
+                  <Chip key={t.k} tab sel={form.gateType === t.k} onClick={() => { if (form.gateType !== t.k) setForm({ ...form, gateType: t.k, gateRankMin: "", gateActiveDirectMin: "", gateTeamVolumeMin: "" }); }}>{t.l}</Chip>
+                ))}
+              </div>
+            </label>
+            {form.gateType === "activeDirect" && (
+              <SkuFld label="最少活跃直推数" type="number" value={form.gateActiveDirectMin} onChange={(v) => setForm({ ...form, gateActiveDirectMin: v })} placeholder="5" hint="达标方可购买" />
+            )}
+            {form.gateType === "rank" && (
+              <SkuFld label="最低 V 级(0-12)" type="number" value={form.gateRankMin} onChange={(v) => setForm({ ...form, gateRankMin: v })} placeholder="2" hint="用户 V 级 ≥ 此值" />
+            )}
+            {form.gateType === "combo" && (
+              <>
+                <div className="grid g-2" style={{ gap: 12 }}>
+                  <SkuFld label="最低 V 级(可空)" type="number" value={form.gateRankMin} onChange={(v) => setForm({ ...form, gateRankMin: v })} placeholder="2" hint="0-12" />
+                  <SkuFld label="最少活跃直推(可空)" type="number" value={form.gateActiveDirectMin} onChange={(v) => setForm({ ...form, gateActiveDirectMin: v })} placeholder="15" />
+                </div>
+                <SkuFld label="最低团队业绩 USD(可空)" type="number" value={form.gateTeamVolumeMin} onChange={(v) => setForm({ ...form, gateTeamVolumeMin: v })} placeholder="20000" />
+                <label className="col" style={{ gap: 5 }}>
+                  <span className="muted tiny">多条件判定</span>
+                  <div className="row wrap" style={{ gap: 6 }}>
+                    <Chip tab sel={form.gateMode === "all"} onClick={() => setForm({ ...form, gateMode: "all" })}>全部满足(AND)</Chip>
+                    <Chip tab sel={form.gateMode === "either"} onClick={() => setForm({ ...form, gateMode: "either" })}>任一满足(OR)</Chip>
+                  </div>
+                </label>
+              </>
+            )}
+            <SkuFld label="锁额上限 cap" type="number" value={form.gateQuotaCap} onChange={(v) => setForm({ ...form, gateQuotaCap: v })} placeholder="1000" hint="留空=不限量;设值=本期可售上限(余=cap−已售)" />
+            {form.gateQuotaCap.trim() && (
+              <>
+                <div className="grid g-2" style={{ gap: 12 }}>
+                  <SkuFld label="已售 sold" type="number" value={form.gateQuotaSold} onChange={(v) => setForm({ ...form, gateQuotaSold: v })} placeholder="977" hint="server 维护" />
+                  <label className="col" style={{ gap: 5 }}><span className="muted tiny">锁额周期</span><select className="fld" value={form.gateQuotaPeriod} onChange={(e) => setForm({ ...form, gateQuotaPeriod: e.target.value })}><option value="month">本月</option><option value="lifetime">永久</option></select></label>
+                </div>
+                <label className="col" style={{ gap: 5 }}><span className="muted tiny">enforce 执行方式</span><select className="fld" value={form.gateEnforce} onChange={(e) => setForm({ ...form, gateEnforce: e.target.value })}><option value="true">硬拦截(售罄即禁购)</option><option value="false">仅展示(FOMO 不拦)</option></select></label>
+              </>
+            )}
+            {(() => {
+              const g = formToGate(form);
+              if (!g) return <div className="tint tiny">无购买门 · 任何用户可直接购买</div>;
+              const parts: string[] = [];
+              if (g.rankMin != null) parts.push(`V≥${g.rankMin}`);
+              if (g.activeDirectMin != null) parts.push(`≥${g.activeDirectMin} 活跃直推`);
+              if (g.teamVolumeMin != null) parts.push(`团队业绩 ≥$${g.teamVolumeMin.toLocaleString()}`);
+              const condTxt = parts.length ? parts.join(g.mode === "either" ? " 或 " : " 且 ") : "无等级条件";
+              const remaining = gateRemaining(g);
+              const quotaTxt = remaining != null ? ` · 锁额 ${g.quotaCap}(余 ${remaining}${g.enforce ? " · 售罄硬拦" : " · 仅展示"})` : "";
+              return <div className="tint cyan tiny">购买门 · {condTxt}{quotaTxt} · 改后对前端商城 / 详情 / checkout server-canonical 生效</div>;
+            })()}
           </SkuFieldGroup>
 
           {(() => {

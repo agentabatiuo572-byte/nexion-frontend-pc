@@ -17,6 +17,21 @@ export interface OpsTask {
   sat: number;
 }
 
+// 购买门(per-user 购买限制)— 镜像前端 Product.purchaseGate(Nexion-uniapp/src/mock/products.ts)。
+// 运营在「新增/编辑 SKU」抽屉配置;server-canonical:前端只读、server 二次校验为权威。
+// 两个正交维度:① 等级/条件门(rankMin / activeDirectMin / teamVolumeMin + mode);② 锁额门(quotaCap / quotaSold / quotaPeriod)。
+// 任一条件字段省略 = 不校验该项;整个 purchaseGate 为 undefined = 自由购买无门。
+export interface PurchaseGate {
+  rankMin?: number;           // 最低 V 级(0-12);eligible 需 myRank >= rankMin
+  activeDirectMin?: number;   // 最少活跃直推数
+  teamVolumeMin?: number;     // 最低团队业绩 USD
+  mode: "all" | "either";     // 多条件 AND / OR
+  quotaCap?: number;          // 锁额:本期可售上限
+  quotaSold?: number;         // 已售(server 维护;remaining = cap - sold)
+  quotaPeriod?: "month" | "lifetime";
+  enforce: boolean;           // true=硬拦截售罄 / false=仅 FOMO 展示
+}
+
 // 商品 SKU(name 作唯一 id)— 字段为前端 Product 模型(Nexion-prototype/lib/mock/products.ts)的
 // 结构化镜像超集:前端商品卡/详情页展示的每个参数都在此可运营。真后台对接时本结构 1:1 映射 Product。
 // 两个正交的「状态」维度:lifecycle = active/legacy(代际生命周期,驱动前端 Legacy 角标);
@@ -62,6 +77,8 @@ export interface OpsSku {
   supersededBy?: string;        // 被替代为(下一代 product id / name)
   tradeinDiscount?: number;     // 以旧换新折扣 USD
   unlock: string;               // 解锁 Phase(= 前端 unlocksAtPhase)P1-P6
+  // ── 购买门(per-user 购买限制 · 镜像前端 Product.purchaseGate;undefined = 自由购买无门)──
+  purchaseGate?: PurchaseGate;  // 等级/条件门 + 锁额门(运营在 SKU 抽屉「⑦ 购买限制」配置)
   // ── 后台运营态(后台特有,非前端展示)──
   tag: string;                  // 后台分类 tone(popular / limited / pro / legacy / "")
   status: string;               // on(在售)/ off(下架)/ pending(待上架确认)
@@ -204,12 +221,13 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
     }),
     {
       name: "nexion-admin-platform-v1",
-      version: 3, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product,清旧通用("*")seed 重建。
+      version: 4, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product;v4:SKU 加 purchaseGate(购买门),清旧 SKU 重建带门 seed。
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<PlatformConfigStore>;
         if (version < 2) p.skus = null; // 丢弃旧结构 SKU,避免渲染时 dailyEarn 等新字段缺失
         if (version < 3) p.reviews = null; // 评价改 per-product(无通用"*"),清旧 seed 由 ensureReviews 按新 per-product seed 重建
+        if (version < 4) p.skus = null; // SKU 新增 purchaseGate 字段 + Pro/Rack P1 默认门;清旧 seed 由 ensureSkus 按新 seed 重建
         return p as PlatformConfigStore;
       },
     },

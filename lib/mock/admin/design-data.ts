@@ -343,6 +343,8 @@ export const SKUS = [
     aiImageGenPerMin: 720, aiLlmTokensPerSec: 38000, aiVideoMinPerHour: 12, aiFineTuneMins: 20, aiUnlocks: "Flagship compute pool (Fine-tune + 405B inference)",
     features: ["8× RTX 4090 GPUs", "Priority task allocation", "99.9% uptime SLA", "Hardware insurance included"],
     generation: 1, lifecycle: "legacy", supersededBy: "stellarrack-p2", tradeinDiscount: 0, unlock: "P1",
+    // 购买门(镜像前端 shipped):单活跃直推 ≥5 + 硬锁额(余 = 1000−977 = 23,对齐 stock 23)。
+    purchaseGate: { activeDirectMin: 5, mode: "all", quotaCap: 1000, quotaSold: 977, quotaPeriod: "month", enforce: true },
     tag: "legacy", status: "on",
   },
   {
@@ -367,6 +369,8 @@ export const SKUS = [
     aiImageGenPerMin: 1800, aiLlmTokensPerSec: 128000, aiVideoMinPerHour: 60, aiFineTuneMins: 8, aiUnlocks: "Training pool (RLHF / from-scratch 8B)",
     features: ["Enterprise A100 GPUs", "Dedicated tier-3 datacenter slot", "VIP support · 24/7 hotline", "5-year extended warranty"],
     generation: 1, lifecycle: "legacy", supersededBy: "stellarrack-p2", tradeinDiscount: 0, unlock: "P1",
+    // 购买门(镜像前端 shipped):组合 either —— V≥3 或 ≥15 活跃直推 或 ≥$20K 团队业绩 + 硬锁额(余 = 100−92 = 8,对齐 stock 8)。
+    purchaseGate: { rankMin: 3, activeDirectMin: 15, teamVolumeMin: 20000, mode: "either", quotaCap: 100, quotaSold: 92, quotaPeriod: "month", enforce: true },
     tag: "pro", status: "on",
   },
   {
