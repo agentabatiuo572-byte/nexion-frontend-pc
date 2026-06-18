@@ -57,6 +57,15 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const curIdx = Math.max(0, PHASE_ORDER.indexOf(phaseCur));
   const phaseIdx = (p: string): number => PHASE_ORDER.indexOf(p);
 
+  // 代际发布门「是否解锁」单一判定源:H1 月龄(releaseMonth + phaseOffset)+ forceUnlock。
+  // 顶部 Pro v2 状态标 + Gen-2 表 + 倒计时全部读这个函数,杜绝同页口径冲突(早期顶部硬编码"已开放")。
+  const genUnlocked = (g: typeof GEN_RELEASES[number]): boolean => {
+    const offset = parseInt(ctx.pget(`E.gen.${g.id}.phaseOffset`) ?? "0", 10) || 0;
+    return ctx.pget(`E.gen.${g.id}.forceUnlock`) === "true" || PLATFORM_MONTH >= g.releaseMonth + offset;
+  };
+  const proV2 = GEN_RELEASES.find((g) => g.id === "stellarbox-pro-v2");
+  const proV2Label = proV2 ? `Pro v2 ${genUnlocked(proV2) ? "已开放" : "未开放 · COMING-SOON"}` : "";
+
   // 评价筛选(双轴 AND:状态 全部/展示中/已隐藏 × 评分 1-5★)+ 翻页(页大小 RV_PAGE_SIZE,rvCur clamp 防缩页越界)
   const [rvFilter, setRvFilter] = useState<string>("all");
   const [rvRating, setRvRating] = useState(0); // 0 = 全部评分
@@ -118,7 +127,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         <div className="lbl">
           <span className="h">代际发布门 · H1 Phase 联动</span>
           <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>门控随 Phase 推进自动开放 · server-canonical</span>
-          <span className="now"><span className="d" />当前 {phaseCur} · Pro v2 已开放</span>
+          <span className="now"><span className="d" />当前 {phaseCur} · {proV2Label}</span>
         </div>
         <div className="phase-track" style={{ ["--phase-line" as string]: phaseLine } as CSSProperties}>
           {PHASES.map((ph, i) => {
@@ -148,9 +157,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
           </div>
           {GEN_RELEASES.map((g) => {
             const offset = parseInt(ctx.pget(`E.gen.${g.id}.phaseOffset`) ?? "0", 10) || 0;
-            const forced = ctx.pget(`E.gen.${g.id}.forceUnlock`) === "true";
             const eff = g.releaseMonth + offset;
-            const unlocked = forced || PLATFORM_MONTH >= eff;
+            const unlocked = genUnlocked(g); // 与顶部 Pro v2 标同源,消除口径冲突
             const remain = eff - PLATFORM_MONTH;
             const cdCls = unlocked ? "ok" : remain <= 1 ? "warn" : "";
             const cdTxt = unlocked ? "已发布" : remain === 1 ? "下个月 · 1M" : `+ ${remain} M`;
@@ -174,7 +182,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                     <>
                       <button onClick={() => genShift(g, offset, -1)}>提前 1M</button>
                       <button onClick={() => genShift(g, offset, 1)}>延迟 1M</button>
-                      <button className="brand" onClick={() => genForceUnlock(g)}>强制解锁</button>
+                      <button className="brand" disabled={!g.eligibility} title={!g.eligibility ? "需先在 E5 补录 eligibility 后才能解锁" : ""} onClick={() => genForceUnlock(g)}>强制解锁</button>
                     </>
                   )}
                 </div>

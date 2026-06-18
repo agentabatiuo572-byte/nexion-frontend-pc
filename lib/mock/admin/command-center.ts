@@ -119,7 +119,7 @@ export const ALERTS: AlertItem[] = [
   { id: "al-cov", level: "low", text: `出金压力比 ${(LEDGER.pressureRatio * 100).toFixed(0)}% · 远低 70% 红线 · 覆盖率 ${LEDGER.coverageRatio.toFixed(1)}% 绿区(扩张健康)`, href: "/overview/dual-ledger" },
   { id: "al-multi", level: "high", text: "WD-90408 关联多账户簇 CL-318(K1)· WR-02 已延迟观察", href: "/finance/withdrawals" }, // 对齐 D2 队列单源(旧 WD-2606 体系已删)
   { id: "al-newbig", level: "mid", text: "K5 复审 hold 提现单 ×3 · 复审未过不可放行", href: "/finance/withdrawals" },
-  { id: "al-kill", level: "low", text: "Kill-Switch 7/7 在线 · 全闸正常营业", href: "/emergency/kill-switch" },
+  { id: "al-kill", level: "low", text: "Kill-Switch 5/5 在线 · 全闸正常营业", href: "/emergency/kill-switch" },
 ];
 
 // ── 跨域待办(操作确认 高敏操作动态)。提现项数量由队列 store 实时算,这里给其余域。──
@@ -147,7 +147,7 @@ export const DOMAIN_PULSE: Record<string, string> = {
   G: "在锁 $1.50M · Genesis 847/1,000 · 五闸在线", // 对齐 G 域真渲染面(科目 #2/#8 口径;旧 TVL $11.82M 为发明已收敛)
   H: "P3 扩张期 · 第 7/12 月",
   I: "推送 CTR 27.3% · 文案 A/B 2 组", // 对齐 KPIS #6(单源)
-  J: "Kill 7/7 在线 · Geo 屏蔽 3 国(制裁名单)", // 对齐 GEOBLOCK 三态(KP/IR/SY)
+  J: "Kill 5/5 在线 · Geo 屏蔽 3 国(制裁名单)", // 对齐 GEOBLOCK 三态(KP/IR/SY)
   K: "高风险簇 9 · KYC 复审 14(1 超时)", // 对齐 K1 高风险簇 / K5 待复审口径(K_RISK + k-tabs 样本窗)
   L: "8 KPI · 达标 6 / 未达 2", // 静态回落值;首页实际由 page.tsx 按 KPIS 动态派生覆盖
 };

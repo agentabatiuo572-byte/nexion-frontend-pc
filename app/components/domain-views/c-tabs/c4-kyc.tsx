@@ -16,6 +16,7 @@ import { Download } from "lucide-react";
 import { PaginationExemptionList } from "../design-kit";
 import { REGISTERED_USERS } from "@/lib/mock/admin/design-data";
 import { C4_LEDGER, C4_STATS, KYC_NETWORKS, KYC_STATE, type KycRow } from "./data";
+import { K5_TICKETS } from "../k-tabs/data";
 import type { CCtx } from "./types";
 
 type Flt = "all" | KycRow["st"];
@@ -34,6 +35,9 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
   const rows = C4_LEDGER.filter((r) => flt === "all" || liveSt(r) === flt);
   const sel = C4_LEDGER.find((r) => r.id === cur) ?? C4_LEDGER[0];
   const selSt = liveSt(sel);
+  // #35 跨域去重:该用户是否已有未完结 K5 复审工单(种子工单实时裁决 + 手动补触发),防 C4/K5 重复建单。
+  const openK5 = K5_TICKETS.find((t) => t.user === sel.id && !["passed", "rejected"].includes(((pget(`K.kyc.${t.id}.decision`) as string) ?? t.st)));
+  const hasOpenK5 = !!openK5 || pget(`K.kyc.manual.${sel.id}`) !== undefined;
   const verifiedPct = ((C4_STATS.verified / REGISTERED_USERS) * 100).toFixed(1);
   // K5 在审工单数实时跟裁决(种子 14 − 已裁决数,与 K5 页同源同减;audit R2 P2 修:防种子静态分叉)。
   // 只计种子工单(KR-纯数字);手动补触发工单(KR-M-*)不在基数 14 内,其裁决不参与扣减。
@@ -156,7 +160,9 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
             <div className="r">
               {selSt !== "verified" && <button className="l-btn mc" onClick={markVerified}>人工标记已验证</button>}
               {selSt === "verified" && <button className="l-btn mc" onClick={revokeVerified}>撤销实名</button>}
-              {selSt !== "review" && <button className="l-btn" onClick={trigReview}>触发复审</button>}
+              {selSt !== "review" && (hasOpenK5
+                ? <span className="bdg warn" data-proof="c4-open-k5" title={`该用户已有未完结 K5 工单${openK5 ? ` ${openK5.id}` : "(手动补触发)"} · 勿重复触发,去 K5 处置`}>已有 K5 工单 · 勿重复</span>
+                : <button className="l-btn" onClick={trigReview}>触发复审</button>)}
             </div>
           </div>
           <div className="l-b">

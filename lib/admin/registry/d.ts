@@ -38,7 +38,7 @@ export const DOMAIN_D: ModuleEntry[] = [
   {
     path: "/finance/params",
     summary:
-      "提现参数配置(D5)。本页 owns 三个非节奏参数:日限次数(1 次/日)/ 余额上限(80%)/ 网络费(2% min$1 max$20),操作确认 + 放松方向 B1 覆盖率红线核验(<100% 拒绝,422);冷却/NEX 闸/增强合规审查三项为 H1 Phase 派发只读(PUT 携带返 422 PHASE_PARAM_READONLY,跳 H1 调整),防 H1+D5 双源。",
+      "提现参数配置(D5)。本页 owns 三个非节奏参数:日限次数(1 次/日)/ 余额上限(80%)/ NEX 抵扣率($0.40/NEX),操作确认 + 放松方向 B1 覆盖率红线核验(<100% 拒绝,422);冷却/提现惩罚费率/增强合规审查三项为 H1 Phase 派发只读(PUT 携带返 422 PHASE_PARAM_READONLY,跳 H1 调整),防 H1+D5 双源。提现费模型:无 NEX 抵扣按惩罚费率收、烧 NEX 按抵扣率减免至 0。",
     content: placeholder("死代码:D5 真渲染面在 d-tabs/d5-params.tsx。"),
   },
 ];

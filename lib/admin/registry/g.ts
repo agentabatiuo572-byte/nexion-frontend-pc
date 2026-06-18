@@ -2,7 +2,7 @@
  * 域 G 金融产品 — 注册表。accent=--admin-domain-g。
  * ⚠️ G ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = g-view.tsx + g-tabs/),仅 summary 经 DomainHeader 渲染。
  * 改 G 域数据/动作请改 g-tabs/data.ts 与 lib/mock/admin/design-data.ts(MATURITY/GEOBLOCK/KILLSWITCH),勿在此处改 content。
- * Premium(旧 G5)/ NEX v2 Founders(旧 G6)已于 2026-06-15 下线;G7 复投激励独立成页。
+ * Premium(旧 G5)/ NEX v2 Founders(旧 G6)已于 2026-06-15 下线;NEX 质押档(G1 nex30/90/180/365)已于 2026-06-17 下线、仅留 USDT 质押;G7 复投激励独立成页。
  */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
@@ -12,7 +12,7 @@ export const DOMAIN_G: ModuleEntry[] = [
   {
     path: "/finance-products/staking",
     summary:
-      "Staking 池配置(G1)。双产品 4 档(USDT 12/35/80/180% 罚 5/15/30/50;NEX 5/12/20/35%)+ position 状态机监控 + 单档熔断(附处置方案,联动 J1/B5);升 APY/降罚款过 B1 覆盖率红线(422)+ 跨档保序校验双硬门;在锁单按开锁锁定值结算不追溯;在锁本金/应付利息 = 负债科目 #2/#3/#8 同源。",
+      "Staking 池配置(G1)。USDT 4 档(12/35/80/180% 罚 5/15/30/50)+ position 状态机监控 + 单档熔断(附处置方案,联动 J1/B5);升 APY/降罚款过 B1 覆盖率红线(422)+ 跨档保序校验双硬门;在锁单按开锁锁定值结算不追溯;在锁本金/应付利息 = 负债科目 #2/#3 同源(NEX 质押已下线,原 NEX 池 #8 转 legacy)。",
     content: placeholder("死代码:G1 真渲染面在 g-tabs/g1-staking.tsx。"),
   },
   {

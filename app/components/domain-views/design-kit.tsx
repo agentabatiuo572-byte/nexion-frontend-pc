@@ -490,8 +490,17 @@ export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
+export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 export type BusinessFormSpec =
-  | { kind: "role-select"; currentRole: string; currentTier?: "lead" | "member" | string; roles: RoleOption[]; guardHint?: string }
+  | { kind: "role-select"; currentRole: string; currentTier?: "lead" | "member" | string; roles: RoleOption[]; guardHint?: string;
+      /** 可选:传入全域动作 + 各角色授权向量,启用「角色变更权限 diff 预览」(新增/移除/受影响域)。 */
+      actions?: { label: string; domainGroup?: string }[]; grantsByRole?: Record<string, string[]> }
+  | { kind: "identity-verify"; subject: string; channels?: string[]; ticketHint?: string }
+  | { kind: "schema-authoring"; ownerDomains?: string[]; propertyTypes?: string[]; samplingPolicies?: string[]; versionHint?: string }
+  | { kind: "disposition-lifecycle"; subject: string; periods?: string[]; ownerHint?: string }
+  | { kind: "balance-adjust"; subject: string; currencies?: string[]; directions?: string[] }
+  | { kind: "sop-authoring"; scenes?: string[]; owners?: string[]; nameHint?: string }
+  | { kind: "export-wizard"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; keyName?: string; zh?: string; en?: string; placeholders?: string[] }
   | { kind: "copy-edit"; keyName?: string; version?: string; surface?: string; zh?: string; en?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; versionNote?: string }
@@ -659,6 +668,15 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       titleEn: "",
       bodyZh: "",
       bodyEn: "",
+      // #39 quiz 与发奖触发(发布需配齐;草稿可空)
+      quizQuestion: "",
+      quizOptions: "",
+      correctAnswer: "",
+      passScore: "60",
+      retries: "3",
+      completionCond: "通过 quiz",
+      rewardEvent: "quiz.passed",
+      rewardIdem: "course_id + user_id",
     };
   }
   if (spec.kind === "campaign-edit") {
@@ -681,6 +699,35 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       zh: spec.zh ?? "",
       en: spec.en ?? "",
     };
+  }
+  if (spec.kind === "identity-verify") {
+    return { channel: spec.channels?.[0] ?? "视频核实", verifiedAt: "", ticket: "", ack: "false" };
+  }
+  if (spec.kind === "schema-authoring") {
+    return {
+      eventName: "",
+      ownerDomain: spec.ownerDomains?.[0] ?? "A",
+      producer: "server",
+      consumer: "",
+      propName: "",
+      propType: spec.propertyTypes?.[0] ?? "string",
+      isPII: "false",
+      isServerAuthoritative: "true",
+      samplingPolicy: spec.samplingPolicies?.[0] ?? "100%(资金/风控)",
+      version: spec.versionHint ?? "",
+    };
+  }
+  if (spec.kind === "disposition-lifecycle") {
+    return { period: spec.periods?.[0] ?? "7 天", owner: "", reviewAt: "" };
+  }
+  if (spec.kind === "balance-adjust") {
+    return { direction: spec.directions?.[0] ?? "增加", amount: "", currency: spec.currencies?.[0] ?? "USDT", voucher: "" };
+  }
+  if (spec.kind === "sop-authoring") {
+    return { name: "", scene: spec.scenes?.[0] ?? "监管点名", owner: spec.owners?.[0] ?? "风控 lead", sla: "15 分钟", emergencyTrack: "true", actionSeq: "", notifyTemplate: "", rollback: "", drillRequired: "true" };
+  }
+  if (spec.kind === "export-wizard") {
+    return { exportType: spec.exportTypes?.[0] ?? "账单 CSV", timeRange: "", fields: "", piiLevel: spec.piiLevels?.[0] ?? "无 PII", maskPolicy: spec.maskPolicies?.[0] ?? "默认脱敏", recipient: "", ticket: "" };
   }
   return { rollback: "", ack: "false" };
 }
@@ -724,6 +771,14 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isFinite(reward)) missing.push("奖励数值");
     if (spec.rewardMin != null && reward < spec.rewardMin) missing.push(`奖励 ≥ ${spec.rewardMin}`);
     if (spec.rewardMax != null && reward > spec.rewardMax) missing.push(`奖励 ≤ ${spec.rewardMax}`);
+    // #39 发布(非草稿)必须配齐 quiz 与完成条件 + 发奖触发;草稿允许留空
+    if (state.publishState && state.publishState !== "draft") {
+      if (!state.quizQuestion?.trim()) missing.push("Quiz 题目(发布前必填,或存草稿)");
+      if (!state.correctAnswer?.trim()) missing.push("正确答案");
+      if (!state.passScore?.trim()) missing.push("通过分数 / 题数");
+      if (!state.completionCond?.trim()) missing.push("完成条件");
+      if (!state.rewardEvent?.trim()) missing.push("发奖触发事件");
+    }
   } else if (spec.kind === "campaign-edit") {
     ["title", "body", "tier", "audience", "schedule", "budget"].forEach((key) => needs(key, key));
     if (!Number.isFinite(Number(state.budget)) || Number(state.budget) < 0) missing.push("预算数值");
@@ -732,6 +787,29 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "destructive-reason") {
     if ((spec.requireAck ?? true) && state.ack !== "true") missing.push("影响确认");
     if (spec.rollbackRequired) needs("rollback", "回滚方案");
+  } else if (spec.kind === "identity-verify") {
+    needs("channel", "核验渠道");
+    needs("verifiedAt", "核验时间");
+    needs("ticket", "来源工单号");
+    if (state.ack !== "true") missing.push("已核实本人身份确认");
+  } else if (spec.kind === "schema-authoring") {
+    ["eventName", "ownerDomain", "producer", "propName", "propType", "samplingPolicy", "version"].forEach((key) => needs(key, key));
+    if (state.eventName && !/^[a-z0-9]+\.[a-z0-9_]+$/i.test(state.eventName.trim())) missing.push("事件名须为 域.对象_动作");
+    if (state.isPII === "true") missing.push("PII 禁入(隐私明文不可注册)");
+  } else if (spec.kind === "disposition-lifecycle") {
+    needs("period", "期限");
+    needs("owner", "责任人");
+    needs("reviewAt", "复查时间");
+  } else if (spec.kind === "balance-adjust") {
+    needs("direction", "调整方向");
+    needs("currency", "币种");
+    needs("voucher", "关联凭证");
+    const amt = Number(state.amount);
+    if (!Number.isFinite(amt) || amt <= 0) missing.push("调整金额(正数)");
+  } else if (spec.kind === "sop-authoring") {
+    ["name", "scene", "owner", "sla", "actionSeq", "rollback"].forEach((k) => needs(k, k));
+  } else if (spec.kind === "export-wizard") {
+    ["exportType", "timeRange", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
   }
   return missing;
 }
@@ -744,6 +822,11 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "version-authoring") return state.version;
   if (spec.kind === "course-authoring") return state.slug;
   if (spec.kind === "campaign-edit") return state.title;
+  if (spec.kind === "schema-authoring") return state.eventName;
+  if (spec.kind === "disposition-lifecycle") return state.period;
+  if (spec.kind === "balance-adjust") return state.amount;
+  if (spec.kind === "sop-authoring") return state.name;
+  if (spec.kind === "export-wizard") return state.exportType;
   return undefined;
 }
 
@@ -789,6 +872,31 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           当前 <span className="mono">{spec.currentRole}{spec.currentTier === "lead" ? "/lead" : "/member"}</span> → 目标 <span className="mono">{businessNewValue(spec, value)}</span>
           {spec.guardHint ? <> · {spec.guardHint}</> : null}
         </div>
+        {spec.actions && spec.grantsByRole && (() => {
+          const rankOf = (g: string): number => (({ "-": 0, R: 1, M: 2, C: 3 } as Record<string, number>)[g] ?? 0);
+          const cur = spec.grantsByRole?.[spec.currentRole] ?? [];
+          const next = spec.grantsByRole?.[value.role] ?? [];
+          const gained: string[] = [];
+          const lost: string[] = [];
+          const domains = new Set<string>();
+          (spec.actions ?? []).forEach((a, i) => {
+            const c = cur[i] ?? "-";
+            const n = next[i] ?? "-";
+            if (c === n) return;
+            domains.add(a.domainGroup ?? "—");
+            (rankOf(n) > rankOf(c) ? gained : lost).push(`${a.label}:${c}→${n}`);
+          });
+          if (value.role === spec.currentRole) {
+            return <div className="tint tiny" data-proof="role-perm-diff" style={{ marginTop: 8 }}>权限影响预览 · 尚未变更角色,确认按钮保持禁用。</div>;
+          }
+          return (
+            <div className="tint tiny" data-proof="role-perm-diff" style={{ marginTop: 8 }}>
+              <div><b>权限影响预览</b> · 受影响域:<span className="mono">{[...domains].join(" / ") || "无"}</span></div>
+              <div style={{ color: "var(--success)", marginTop: 3 }}>新增/提升 {gained.length} 项{gained.length ? ":" + gained.slice(0, 6).join("; ") + (gained.length > 6 ? "…" : "") : ""}</div>
+              <div style={{ color: "var(--danger)", marginTop: 3 }}>移除/降低 {lost.length} 项{lost.length ? ":" + lost.slice(0, 6).join("; ") + (lost.length > 6 ? "…" : "") : ""}</div>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -868,6 +976,20 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {textArea("bodyZh", "中文正文", "课程正文与完成条件", 4)}
           {textArea("bodyEn", "English body", "Course body and completion criteria", 4)}
         </div>
+        <div data-proof="course-quiz" style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>Quiz 与发奖触发(发布前必填 · 存草稿可空)</div>
+          <div className="grid g-2" style={{ gap: 10 }}>
+            {input("quizQuestion", "Quiz 题目", "本课核心结论是?")}
+            {input("quizOptions", "选项(分号分隔)", "A;B;C;D")}
+            {input("correctAnswer", "正确答案", "如 A")}
+            {input("passScore", "通过分数 / 通过题数", "60")}
+            {input("retries", "重试次数", "3")}
+            {input("completionCond", "完成条件", "通过 quiz")}
+            {select("rewardEvent", "发奖触发事件", ["quiz.passed", "course.completed", "manual.grant"])}
+            {input("rewardIdem", "发奖幂等键", "course_id + user_id")}
+          </div>
+          <div className="tint tiny" style={{ marginTop: 8 }}>单课 NEX 奖励 = 上方「奖励 reward」(过 B1 红线);发奖失败自动重试,耗尽转人工工单。<b>未配齐 quiz / 完成条件时仅可存草稿(publishState=draft)</b>。</div>
+        </div>
       </div>
     );
   }
@@ -904,6 +1026,148 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
           {textArea("en", "English version body", "Fill English disclosure body", 4)}
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "identity-verify") {
+    return (
+      <div className="field" data-business-form="identity-verify">
+        <label>业务表单 · 身份核验(高敏安全动作前置)</label>
+        <div className="tint danger tiny" style={{ marginBottom: 10 }}>
+          目标 <span className="mono">{spec.subject}</span> · 未完成全部核验项前,确认按钮保持禁用。
+        </div>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {select("channel", "核验渠道 channel", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
+          {input("verifiedAt", "核验时间 verified at", "2026-06-18 14:30", "datetime-local")}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {input("ticket", "来源工单号 ticket", spec.ticketHint ?? "如 SEC-20260618-001")}
+        </div>
+        <label className="row" style={{ gap: 8, marginTop: 10, color: "var(--ink-2)", fontSize: 12.5 }}>
+          <input data-proof="identity-ack" type="checkbox" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
+          我已通过上述渠道核实本人身份,确认这不是社工冒名请求
+        </label>
+      </div>
+    );
+  }
+
+  if (spec.kind === "schema-authoring") {
+    return (
+      <div className="field" data-business-form="schema-authoring">
+        <label>业务表单 · 事件 Schema 注册</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("eventName", "事件名 eventName(域.对象_动作)", "device.order_paid")}
+          {select("ownerDomain", "归属域 ownerDomain", spec.ownerDomains ?? ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"])}
+          {select("producer", "生产方 producer", ["server", "client", "server+client"])}
+          {input("consumer", "消费方 consumer", "B3 / L 域 BI / 风控 K")}
+          {input("propName", "属性名 property", "order_id")}
+          {select("propType", "属性类型 type", spec.propertyTypes ?? ["string", "number", "boolean", "enum", "timestamp", "id"])}
+          {select("samplingPolicy", "采样策略 sampling", spec.samplingPolicies ?? ["100%(资金/风控)", "浏览 10%", "会话 25%"])}
+          {input("version", "schema 版本 version", spec.versionHint ?? "v13")}
+        </div>
+        <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
+          <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
+            <input data-proof="schema-server-auth" type="checkbox" checked={value.isServerAuthoritative === "true"} onChange={(e) => set("isServerAuthoritative", e.target.checked ? "true" : "false")} />
+            isServerAuthoritative(资金/状态事件必勾)
+          </label>
+          <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
+            <input data-proof="schema-pii" type="checkbox" checked={value.isPII === "true"} onChange={(e) => set("isPII", e.target.checked ? "true" : "false")} />
+            含 PII(勾选则禁止注册 · 隐私明文禁入)
+          </label>
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "disposition-lifecycle") {
+    return (
+      <div className="field" data-business-form="disposition-lifecycle">
+        <label>业务表单 · 处置生命周期(期限 / 责任人 / 复查)</label>
+        <div className="tint tiny" style={{ marginBottom: 10 }}>目标 <span className="mono">{spec.subject}</span> · 到期进入「待复查」队列,展示剩余复查时间与责任人。</div>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {select("period", "期限 period", spec.periods ?? ["1 天", "7 天", "14 天", "30 天", "45 天"], "lifecycle-period")}
+          {input("reviewAt", "复查时间 review at", "2026-06-25", "date")}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {input("owner", "责任人 owner", spec.ownerHint ?? "如 risk@nexion / 风控-张三")}
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "sop-authoring") {
+    return (
+      <div className="field" data-business-form="sop-authoring">
+        <label>业务表单 · 应急 SOP 剧本编排</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("name", "剧本名称 name", spec.nameHint ?? "如 监管点名快速止血")}
+          {select("scene", "触发场景 scene", spec.scenes ?? ["监管点名", "对账缺口", "挤兑预警", "数据泄露", "制裁名单更新"])}
+          {select("owner", "责任角色 owner", spec.owners ?? ["风控 lead", "合规审计", "超管", "财务 lead"])}
+          {input("sla", "SLA(响应时限)", "15 分钟")}
+          {input("notifyTemplate", "通知模板 notify", "I3 critical · 全体超管")}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {textArea("actionSeq", "动作序列 action sequence(每行一步:域·原子动作·参数)", "J1·熔断提现闸\nJ2·封锁命中辖区 IR / VE\nI5·更新风险披露\nC2·冻结命中账户簇", 4)}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {textArea("rollback", "回滚方案 rollback", "根因消除 + 执行门槛操作确认后逐步恢复;恢复恒走常规轨", 2)}
+        </div>
+        <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
+          <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
+            <input data-proof="sop-emergency" type="checkbox" checked={value.emergencyTrack === "true"} onChange={(e) => set("emergencyTrack", e.target.checked ? "true" : "false")} />
+            应急快速轨(确认理由 SLA 压至分钟级 · 仅止血方向)
+          </label>
+          <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
+            <input data-proof="sop-drill" type="checkbox" checked={value.drillRequired === "true"} onChange={(e) => set("drillRequired", e.target.checked ? "true" : "false")} />
+            发布前要求沙箱演练通过
+          </label>
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "export-wizard") {
+    const detail = value.piiLevel !== "无 PII";
+    const estRows = detail ? "≈ 视范围(明细级,可能超 100 万 → 自动拆分)" : "≈ 数千行(聚合级)";
+    return (
+      <div className="field" data-business-form="export-wizard">
+        <label>业务表单 · 导出任务向导</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {select("exportType", "导出类型", spec.exportTypes ?? ["账单 CSV", "漏斗序列", "财务报表", "运营报表", "监管报告"])}
+          {input("timeRange", "时间范围", "如 2026-W17 ~ W22 / 2026-05")}
+          {input("fields", "字段范围", "如 user_id, amount, ts(留空=全字段)")}
+          {select("piiLevel", "PII 范围", spec.piiLevels ?? ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"])}
+          {select("maskPolicy", "脱敏策略", spec.maskPolicies ?? ["默认脱敏", "字段掩码", "解密(强操作确认)"])}
+          {input("recipient", "接收人 / 用途", "如 合规-王 / 监管报送")}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {input("ticket", "工单依据 ticket", "如 REG-20260618-001")}
+        </div>
+        <div className="tint tiny" data-proof="export-est" style={{ marginTop: 8 }}>
+          预估行数:{estRows} · 超 100 万行自动拆分多任务 · 含 PII({detail ? "是" : "否"})或超限 → 进 <span className="mono">pending_confirm</span>;否则 <span className="mono">generating → ready(24h)→ expired</span>。提交即登记任务并落 admin.report_exported。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "balance-adjust") {
+    const amtN = Number(value.amount);
+    const dir = value.direction ?? "增加";
+    const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency ?? "USDT"}`;
+    return (
+      <div className="field" data-business-form="balance-adjust">
+        <label>业务表单 · 结构化调账(方向 / 金额 / 凭证)</label>
+        <div className="tint tiny" style={{ marginBottom: 10 }}>目标 <span className="mono">{spec.subject}</span> · 金额输入的是「调整额」非「调整后余额」,方向由下拉显式表达,避免增减误填。</div>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {select("direction", "调整方向 direction", spec.directions ?? ["增加", "扣减", "冲正"], "adjust-direction")}
+          {input("amount", "调整金额 amount(正数)", "100", "number")}
+          {select("currency", "币种 currency", spec.currencies ?? ["USDT", "NEX"], "adjust-currency")}
+          {input("voucher", "关联凭证 voucher", "工单号 / 链上 txid / 银行流水号")}
+        </div>
+        <div className="tint tiny" data-proof="adjust-entry-preview" style={{ marginTop: 10 }}>
+          分录预览:<span className="mono" style={{ color: dir === "扣减" ? "var(--danger)" : "var(--success)" }}>{signed}</span> · 方向 {dir} · 凭证 {value.voucher || "(待填)"}
         </div>
       </div>
     );

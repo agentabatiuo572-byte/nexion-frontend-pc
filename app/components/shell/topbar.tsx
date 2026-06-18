@@ -4,7 +4,7 @@
  * 顶栏 — 面包屑 + 服务端权威状态徽标 + UTC 时钟 + 角色切换器(演示 RBAC)。
  * 切角色会即时改变侧栏可见域(superadmin 见全 12 域,其余按 §3.3 权限)。
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, Headset, LogOut, Search } from "lucide-react";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { ROLE_LABEL, canSee } from "@/lib/nav/console-nav";
@@ -20,6 +20,7 @@ import { NotificationBell } from "./notification-bell";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { SESSION_CONVOS } from "@/app/components/domain-views/m-tabs/data";
+import { CommandPalette } from "@/app/components/command-palette";
 
 const ROLES: AdminRole[] = [
   "superadmin",
@@ -135,27 +136,43 @@ function CoveragePill() {
   );
 }
 
-// 全局搜索框(设计稿顶栏签名元素;原型内为占位 demo,真实接 A4 事件流 / userId 检索)
-function SearchBox() {
+// 全局命令面板触发器(设计稿顶栏签名元素)。点击或 ⌘K/Ctrl+K 打开 shadcn(cmdk)命令面板,
+// 跳转到任意运营模块(消费 IA 单源 visibleDomains)。真实可再接 A4 事件流 / userId 检索。
+function SearchBox({ role }: { role: AdminRole }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setOpen((o) => !o);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   return (
-    <div
-      className="hidden items-center gap-2 rounded-[9px] px-3 py-1.5 lg:flex"
-      style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)", width: 240 }}
-    >
-      <Search size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
-      <input
-        placeholder="搜索 userId / 工单 / 交易…"
-        aria-label="全局搜索"
-        className="min-w-0 flex-1 bg-transparent text-[12.5px] outline-none"
-        style={{ color: "var(--v5-ink)" }}
-      />
-      <kbd
-        className="font-mono-tabular rounded-[5px] px-1.5 py-0.5 text-[10px]"
-        style={{ border: "1px solid var(--v5-border-strong)", color: "var(--v5-ink-4)" }}
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="打开全局命令面板"
+        aria-keyshortcuts="Meta+K Control+K"
+        className="hidden items-center gap-2 rounded-[9px] px-3 py-1.5 text-left transition-opacity hover:opacity-90 lg:flex"
+        style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)", width: 240 }}
       >
-        ⌘K
-      </kbd>
-    </div>
+        <Search size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-[12.5px]" style={{ color: "var(--v5-ink-4)" }}>
+          搜索 userId / 工单 / 交易…
+        </span>
+        <kbd
+          className="font-mono-tabular rounded-[5px] px-1.5 py-0.5 text-[10px]"
+          style={{ border: "1px solid var(--v5-border-strong)", color: "var(--v5-ink-4)" }}
+        >
+          ⌘K
+        </kbd>
+      </button>
+      <CommandPalette role={role} open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
@@ -214,7 +231,7 @@ export function TopBar({ role, operator }: { role: AdminRole; operator: string }
     >
       <div className="flex min-w-0 items-center gap-4">
         <Breadcrumb />
-        <SearchBox />
+        <SearchBox role={role} />
       </div>
       <div className="flex items-center gap-3">
         <CoveragePill />

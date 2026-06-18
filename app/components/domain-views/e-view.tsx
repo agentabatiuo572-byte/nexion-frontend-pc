@@ -75,7 +75,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const isCancelled = (id: string): boolean => pget(`E.order.${id}.cancelled`) === "true";
   const terminalOf = (id: string): string | undefined => pget(`E.order.${id}.terminalState`);
   const isDcPaused = (dc: string): boolean => pget(`E.ops.${dc}.paused`) === "true";
-  const orderState = (o: EOrder): string => (isCancelled(o.id) ? "cancelled" : isRefunded(o.id) ? "refunded" : terminalOf(o.id) ?? o.state);
+  const advancedOf = (id: string): string | undefined => pget(`E.order.${id}.advanceState`);
+  const orderState = (o: EOrder): string => (isCancelled(o.id) ? "cancelled" : isRefunded(o.id) ? "refunded" : terminalOf(o.id) ?? advancedOf(o.id) ?? o.state);
   const phaseCur = pget("H.phase.current") ?? "P3";
 
   // ── E3 任务:真增删改查(persist) ──
@@ -116,7 +117,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [dragOver, setDragOver] = useState(false);
   const [editName, setEditName] = useState<string | null>(null);
   const [taskDrawer, setTaskDrawer] = useState(false);
-  const [taskForm, setTaskForm] = useState<{ n: string; price: string; req: string; unit: string; sat: string }>({ n: "", price: "", req: "S1+", unit: "/job", sat: "" });
+  const [taskForm, setTaskForm] = useState<{ n: string; price: string; req: string; unit: string; sat: string; taskClass: string; model: string; minReward: string; maxReward: string; minVRAM: string; killInit: string }>({ n: "", price: "", req: "S1+", unit: "/job", sat: "", taskClass: "llm-inference", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "派发中" });
   const [reviewDrawer, setReviewDrawer] = useState(false);
   const [editReviewId, setEditReviewId] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState({ productId: "", author: "", rating: "5", content: "", date: "刚刚", status: "published" });
@@ -154,14 +155,21 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (ok) { removeReviewStore(r.id); logAudit({ actor: "总管理员", action: "删除评价 " + r.author, target: r.id }); setToast("评价已删除:" + r.author); }
   };
   const toggleReview = (r: OpsReview) => { const ns = r.status === "published" ? "hidden" : "published"; updateReviewStore(r.id, { status: ns }); logAudit({ actor: "总管理员", action: (ns === "hidden" ? "隐藏" : "恢复") + "评价 " + r.author, target: r.id, after: ns }); setToast("评价已" + (ns === "hidden" ? "隐藏" : "恢复")); };
-  const openAddTask = () => { setTaskForm({ n: "", price: "", req: "S1+", unit: "/job", sat: "" }); setTaskDrawer(true); };
+  const openAddTask = () => { setTaskForm({ n: "", price: "", req: "S1+", unit: "/job", sat: "", taskClass: "llm-inference", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "派发中" }); setTaskDrawer(true); };
   const submitTask = () => {
     const price = Number(taskForm.price) || 0;
     if (!taskForm.n.trim() || !price) { setToast("请填写任务名称 + 单价"); return; }
+    // #36 核心配置字段校验:taskClass / 代表模型 / min·maxReward / minVRAM 必填,reward 区间须 min ≤ max
+    if (!taskForm.taskClass.trim() || !taskForm.model.trim() || !taskForm.minVRAM.trim()) { setToast("请补全 taskClass / 代表模型 / minVRAM"); return; }
+    const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
+    if (!Number.isFinite(minR) || !Number.isFinite(maxR) || minR <= 0 || maxR < minR) { setToast("奖励区间非法:需 0 < minReward ≤ maxReward"); return; }
     const sat = Math.max(0, Math.min(100, Number(taskForm.sat) || 0)) / 100;
-    addTaskStore({ id: "TK-" + ++TASK_SEQ, n: taskForm.n.trim(), price, unit: taskForm.unit, req: taskForm.req, sat });
-    logAudit({ actor: "总管理员", action: "新增任务 " + taskForm.n, target: taskForm.n });
-    setToast("已新增任务:" + taskForm.n + " · 待上线(server 校验后对 /earn 任务池可见)");
+    const id = "TK-" + ++TASK_SEQ;
+    addTaskStore({ id, n: taskForm.n.trim(), price, unit: taskForm.unit, req: taskForm.req, sat });
+    // 任务后台权威映射(backend-replaceable):taskClass / 模型 / 奖励区间 / 最低显存 / kill 初始态 持久化到 E.task.<id>.*
+    setParam(`E.task.${id}.config`, JSON.stringify({ taskClass: taskForm.taskClass, model: taskForm.model, minReward: minR, maxReward: maxR, minVRAM: taskForm.minVRAM, kill: taskForm.killInit }), { action: `新增任务配置 ${taskForm.n}(taskClass=${taskForm.taskClass} · kill 初始=${taskForm.killInit})`, reason: "新增任务核心配置" });
+    logAudit({ actor: "总管理员", action: `新增任务 ${taskForm.n} · taskClass=${taskForm.taskClass} · 模型 ${taskForm.model} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill 初始 ${taskForm.killInit}`, target: taskForm.n });
+    setToast("已新增任务:" + taskForm.n + " · taskClass=" + taskForm.taskClass + " · 待上线(server 校验后对 /earn 任务池可见)");
     setTaskDrawer(false);
   };
   const delTask = (t: { id: string; n: string }) => {
@@ -234,12 +242,18 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         // 设计稿:补建终态对所有非终态「始终」可达(含 failed —— 缺失终态 / DC 分配超时正是对账兜底场景)
         const canTerminal = !finalized;
         const idx = ORDER_FLOW.indexOf(o.state) >= 0 ? ORDER_FLOW.indexOf(o.state) : (o.state === "failed" ? 2 : -1);
+        // #21 单订单推进 / 回滚:基于当前 live 态在主路径上的位置派生可达下一态 / 上一态(写 E.order.<id>.advanceState)
+        const flowIdx = ORDER_FLOW.indexOf(eff);
+        const nextState = !finalized && flowIdx >= 0 && flowIdx < ORDER_FLOW.length - 1 ? ORDER_FLOW[flowIdx + 1] : undefined;
+        const prevState = !finalized && flowIdx > 0 ? ORDER_FLOW[flowIdx - 1] : undefined;
         return (
           <Drawer title={o.id} sub={`${o.sku} · ${o.user}`} onClose={() => setSelOrder(null)}
             footer={finalized
               ? <Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelOrder(null)}>关闭</Btn>
               : <>
-                  {o.state === "failed" && <Btn onClick={() => { setToast("已重试 DC 分配 " + o.id); setSelOrder(null); }}>重试分配</Btn>}
+                  {o.state === "failed" && <Btn onClick={() => { setToast("已重试 DC 分配 " + o.id); setSelOrder(null); }}>重试配机</Btn>}
+                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${nextState}`, op: "param-fixed", paramKey: `E.order.${o.id}.advanceState`, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认 + A2 审计` })}>推进下一态</Btn>}
+                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${prevState}`, op: "param-fixed", paramKey: `E.order.${o.id}.advanceState`, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认 + A2 审计` })}>回滚上一态</Btn>}
                   {canCancel && <Btn onClick={() => setActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}(${stateLabel(eff)})· 终止后续分配/扣费,资产/额度回退联动 D4/C3 · 须操作确认 + 审计留痕` })}>取消订单</Btn>}
                   {canTerminal && <Btn onClick={() => setActionConfirm({ name: "补建订单终态 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: [...TERMINAL_STATES] }, detail: `为缺失终态的订单 ${o.id} 手动落定终态(支付失败/过期/退款/开通失败)· 状态机对账兜底 · 须操作确认 + 审计留痕` })}>补建终态</Btn>}
                   {o.state === "failed"
@@ -248,6 +262,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 </>}>
             <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
             <KV k="状态" v={<Badge tone={ostate[eff] ?? "neutral"}>{stateLabel(eff)}</Badge>} />
+            {!finalized && <KV k="可达下一态" v={nextState ? <>{stateLabel(nextState)}{prevState ? ` · 可回滚至 ${stateLabel(prevState)}` : ""}</> : <span style={{ color: "var(--ink-4)" }}>已达主路径末态(active),仅可补建终态 / 退款</span>} />}
             <KV k="DC 分配" v={o.dc} />
             <KV k="用户" v={o.user} />
             <KV k="下单时间" v={o.age + " 前"} />
@@ -395,7 +410,24 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           </div>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">资格门槛(设备要求)</span><div className="row wrap" style={{ gap: 6 }}>{["S1+", "需 NexionBox Pro", "需 NexionRack"].map((r) => <Chip key={r} tab sel={taskForm.req === r} onClick={() => setTaskForm({ ...taskForm, req: r })}>{r}</Chip>)}</div></label>
           <SkuFld label="初始饱和度 %(预估)" type="number" value={taskForm.sat} onChange={(v) => setTaskForm({ ...taskForm, sat: v })} placeholder="50" hint="0-100" />
-          <div className="tint warn tiny"><AutoGloss>单价 / 门槛为高敏字段 · server-canonical;改后对新派单生效 + 前端 /earn 任务池同步,需操作确认留痕。</AutoGloss></div>
+          {/* #36 任务核心配置:taskClass / 代表模型 / 奖励区间 / 最低显存 / kill 初始态 */}
+          <div className="grid g-2" style={{ gap: 12 }}>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">taskClass(权威枚举)</span>
+              <select className="fld" value={taskForm.taskClass} onChange={(e) => setTaskForm({ ...taskForm, taskClass: e.target.value })}>
+                {["llm-inference", "image-gen", "video-render", "fine-tune", "embedding"].map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">代表模型</span><input className="fld" value={taskForm.model} onChange={(e) => setTaskForm({ ...taskForm, model: e.target.value })} placeholder="如 Llama-3.1-405B" /></label>
+          </div>
+          <div className="grid g-2" style={{ gap: 12 }}>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">minReward(USDT)</span><input className="fld" type="number" value={taskForm.minReward} onChange={(e) => setTaskForm({ ...taskForm, minReward: e.target.value })} placeholder="0.80" /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">maxReward(USDT)</span><input className="fld" type="number" value={taskForm.maxReward} onChange={(e) => setTaskForm({ ...taskForm, maxReward: e.target.value })} placeholder="2.40" /></label>
+          </div>
+          <div className="grid g-2" style={{ gap: 12 }}>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">minVRAM(最低显存)</span><input className="fld" value={taskForm.minVRAM} onChange={(e) => setTaskForm({ ...taskForm, minVRAM: e.target.value })} placeholder="如 80GB" /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">kill 初始状态</span><div className="row wrap" style={{ gap: 6 }}>{["派发中", "已 kill", "限流中"].map((k) => <Chip key={k} tab sel={taskForm.killInit === k} onClick={() => setTaskForm({ ...taskForm, killInit: k })}>{k}</Chip>)}</div></label>
+          </div>
+          <div className="tint warn tiny"><AutoGloss>单价 / 门槛 / taskClass 为高敏字段 · server-canonical;taskClass 建立与后台派单引擎的权威映射,改后对新派单生效 + 前端 /earn 任务池同步,需操作确认留痕。</AutoGloss></div>
         </div>
       </Drawer>}
 

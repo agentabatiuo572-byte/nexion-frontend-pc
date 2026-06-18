@@ -158,6 +158,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         currentTier: curTier ? "lead" : "member",
         roles: ROLE_DEFS.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
         guardHint: `有效超管 ${effectiveSupers} 个;降级超管时仍需 ≥2`,
+        // 权限 diff 数据源:全域动作 + 各角色实时授权向量(cellLive 覆盖种子)→ 表单内派生新增/移除/受影响域
+        actions: RBAC_MATRIX.map((m) => ({ label: m.action, domainGroup: m.domainGroup })),
+        grantsByRole: Object.fromEntries(
+          ROLE_DEFS.map((_, ri) => [ROLE_DEFS[ri].key, RBAC_MATRIX.map((m) => cellLive(m, ri))]),
+        ),
       },
       run: (reason, v) => {
         const raw = (v || "").trim();
@@ -198,6 +203,12 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       </>
     ),
     amplifies: false,
+    businessForm: {
+      kind: "identity-verify",
+      subject: `${op.id} · ${op.name}`,
+      channels: ["视频核实", "当面核实", "回拨预留工作号"],
+      ticketHint: "如 SEC-20260618-001",
+    },
     run: (reason) => {
       const now = new Date().toISOString();
       setParam(`A.acct.${op.id}.tfaResetAt`, now, { action: `重置双因子 ${op.id}`, reason });

@@ -285,10 +285,10 @@ export const DOMAIN_B: ModuleEntry[] = [
         },
         {
           label: "Kill-Switch",
-          value: "7 / 7",
-          sub: "在线 · nexv2 核查中",
-          accent: "var(--v5-warning)",
-          hint: "7 道熔断闸(提现 / 兑换 / 质押 / NEX v2 / Genesis / 试用 / Premium)全部在线(正常营业);口径与 J1 矩阵一致。",
+          value: "5 / 5",
+          sub: "5 闸全部在线",
+          accent: "var(--v5-success)",
+          hint: "5 道熔断闸(提现 / 兑换 / 质押 / Genesis / 试用)全部在线(正常营业;Premium / NEX v2 已下线);口径与 J1 矩阵一致。",
         },
         {
           label: "未处理告警",
@@ -338,7 +338,7 @@ export const DOMAIN_B: ModuleEntry[] = [
         },
       ],
       controlLink: { label: "Kill-Switch 矩阵", href: "/emergency/kill-switch" },
-      note: "出金压力比 32%(模型口径)远低 70% 红线、扩张健康;异常账户 +9 主要来自多开与自循环刷返。Kill-Switch 7 闸全部在线(0 / 7 熔断,正常营业)。熔断触发需 J 域 操作确认 + 全站广播。",
+      note: "出金压力比 32%(模型口径)远低 70% 红线、扩张健康;异常账户 +9 主要来自多开与自循环刷返。Kill-Switch 5 闸全部在线(0 / 5 熔断,正常营业)。熔断触发需 J 域 操作确认 + 全站广播。",
     },
   },
 ];

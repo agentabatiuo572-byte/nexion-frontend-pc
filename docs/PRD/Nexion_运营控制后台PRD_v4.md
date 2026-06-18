@@ -808,10 +808,10 @@
 三视图:(a) 课程列表 + (b) 课程详情 + (c) featured / 奖励配置。
 
 1. **(a) 课程列表**:15 课清单(§11.11.3)`[课程 slug / 分类(Basics 🚀 / Earn ⚡ / Team 🧬 / Wealth 💎 / Security 🛡)/ format(Article/Video/Hands-on)/ level(Beginner/Intermediate/Advanced)/ 完成 NEX 奖励 / featured 标记 / 时长 / 状态 / 版本]`。
-2. **(b) 课程详情**:单课 `[标题 + 副标 + emoji(引用 i18n)/ 正文内容 / quiz 题组 / 完成 NEX 奖励额 / 分类 / format / level / 版本 / 操作者(operator)/ 发布理由(reason,引自审计)]`。
+2. **(b) 课程详情**:单课 `[标题 + 副标 + emoji(引用 i18n)/ 正文内容 / quiz 配置(见下)/ 完成 NEX 奖励额 / 分类 / format / level / 版本 / 操作者(operator)/ 发布理由(reason,引自审计)]`。**quiz 与发奖触发配置区**(支撑「完成 quiz → 发放 NEX 奖励」业务闭环):`[quiz 题目与选项(可多题)/ 每题正确答案 / 通过标准(通过分数或通过题数)/ 重试次数 / 完成条件 / 发奖触发事件(quiz.passed / course.completed / manual.grant)/ 单课 NEX 奖励确认(即完成 NEX 奖励额,过 B1 红线)/ 发奖幂等键(course_id + user_id)/ 发奖失败处理(自动重试 N 次后转人工工单)]`。
 3. **(c) featured / 奖励配置**:featured 位课程选择(§11.11.4:目前固定第 1 课「What is Nexion · 5-min crash course」)+ 各课完成 NEX 奖励额配置表。
 
-**状态机**:课程版本 `draft → published → archived`;featured `set ⇄ unset`(单 featured 位)。
+**状态机**:课程版本 `draft → published → archived`;featured `set ⇄ unset`(单 featured 位)。**发布前置:未配齐 quiz(题目/正确答案/通过标准/完成条件)与发奖触发的课程,server 拒绝 `published`(422),仅允许保存为 `draft`**——保证用户端展示的课程都有后台可控的完成判定与发奖依据(防完课奖励/NEX 流出/D 域对账/B1 覆盖率监控失据)。
 
 **③ 可控参数**
 
@@ -820,6 +820,7 @@
 | 课程完成 NEX 奖励额 | **区间 10–50 NEX/课**(§11.11.3 prose 给区间;featured 第 1 课 +20 NEX 同时见 §11.11.2 prose chip + mock `lib/mock/learn.ts` l-001 `rewardNEX:20`) | 运营设定(**放大 NEX 流出,受 B1 约束**) | 实时(对新完成生效) | 课程卡 reward chip + 完成入账(§11.11) |
 | featured 课程 | **现状值**:固定第 1 课(§11.11.4:`featured:true`,目前第 1 课) | 单 featured 位(任一课) | 实时(发布生效) | Featured Lesson Hero(§11.11.2) |
 | 课程内容体(标题/正文/quiz) | **现状值**:15 课静态 mock(§11.11.4:`lib/mock/learn.ts`,本期 progress 硬编码) | 受管内容(i18n 镜像) | 实时(发布生效) | 课程卡 + 课程页(§11.11) |
+| quiz 与发奖触发配置 | **现状值**:前端 §11.11.4「完成 quiz → NEX 奖励」业务规则,后台本期补齐字段 | 题目/选项/正确答案/通过标准(分数或题数)/重试次数/完成条件/发奖触发事件/发奖幂等键 | 发布生效(未配齐仅可存 draft) | `/learn` 课程 quiz 与完成发奖(§11.11.4) |
 | 课程分类 / format / level | **现状值**(§11.11.3:5 分类 × 3 课;Article/Video/Hands-on;Beginner/Intermediate/Advanced) | 受管内容(枚举) | 实时(发布生效) | 课程卡 chip / Tabs(§11.11.2) |
 
 > **默认值口径(数值溯源层级)**:课程内容取前端 §11.11 现状值(标注「现状值」)。**完成 NEX 奖励额的权威口径为区间「10–50 NEX」——出处 §11.11.3 prose(「奖励 10-50 NEX」)+ §11.11.2 page 结构 prose(课程卡 reward chip `+10 ~ +50 NEX`)。featured 第 1 课的「+20 NEX」同时见 §11.11.2 prose(Featured Lesson Hero `🎁 Earn +20 NEX` chip)+ mock(`lib/mock/learn.ts` l-001 `rewardNEX:20`),二者一致。§11.11.3 未对单课钉死精确值,故 I7 以区间表达、单课精确值随真后台配置。** **完成 NEX 奖励为放大 NEX 流出项**——升奖励额受 B1 兑付覆盖率红线前置约束(§1.8 原则一派生约束:全后台任何放大资金流出的参数调整须先核验 B1 覆盖率,§3.14:覆盖率权威归 B1)。注:§11.11.4 现状 Learn-to-Earn 奖励本期仅显示 chip、课程页未实装(href=`#`),I7 为真后台对接后的课程内容 + 奖励派发治理面。
@@ -1619,7 +1620,15 @@ J4 是**纯运营内部应急流程编排**——监管点名/法务事件触发
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
+| 剧本名称 | 文本 | 是 | 不重名 | 空 |
+| 触发场景 | 枚举单选(监管点名 / 对账缺口 / 挤兑预警 / 数据泄露 / 制裁名单更新 …) | 是 | 枚举可扩展(走治理) | 监管点名 |
+| 责任角色 owner | 枚举单选(风控 lead / 合规审计 / 超管 / 财务 lead) | 是 | — | 风控 lead |
+| SLA(响应时限) | 文本 / 数字(分钟) | 是 | 与 J1/J4 应急轨 SLA 同源参考 | 15 分钟 |
+| 应急快速轨 | 复选框(开 = 确认理由 SLA 压至分钟级,仅止血方向) | — | 仅止血序列可开 | 开 |
+| 通知模板 notify | 文本(渠道 + 收件角色,如 I3 critical · 全体超管) | 否 | — | 空 |
 | 动作序列编辑器 | 步骤列表(增删排序;每步选目标域 + 动作 + 参数) | 是 | 每步动作 ∈ 止血方向白名单(kill 熔断/geo 加封锁/披露发布/冻结/通知);含恢复类动作 server 拒绝(422) | 当前序列 |
+| 回滚方案 rollback | 多行文本 | 是 | 根因消除后逐步恢复口径(恢复恒走常规轨) | 空 |
+| 演练要求 | 复选框(发布前要求沙箱演练通过) | — | 勾选则未演练剧本标「待演练」阻断「演练就绪」 | 勾 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **错误态**:422 `RECOVERY_STEP_NOT_ALLOWED`(序列含恢复/解封类步)/ 400 `REASON_REQUIRED` / 409(剧本已被他人编辑,提示刷新)/ 403。
@@ -2178,8 +2187,13 @@ L5 是平台**数据导出与监管报告生成的统一管控面**——账单 
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
+| 导出类型 | 枚举单选(账单 CSV / 漏斗序列 / 财务报表 / 运营报表 / 监管报告) | 是 | — | 账单 CSV |
 | 导出范围 | 时间窗 + cohort/用户范围选择 | 是 | server 校验范围非空(空 422) | 当前筛选 |
 | 字段勾选 | 复选框组(含/不含 PII 字段,逐字段标注脱敏规则) | 是 | 至少一个字段;`decrypted` 不可选 | 全选(默认脱敏) |
+| PII 范围 | 枚举单选(无 PII / 低·脱敏 ID / 高·含手机/地址) | 是 | 高 PII 须执行权 = 财务 lead/超管 | 无 PII |
+| 脱敏策略 | 枚举单选(默认脱敏 / 字段掩码 / 解密·强操作确认) | 是 | 选「解密」转 L5-MD2 强确认 | 默认脱敏 |
+| 接收人 / 用途 | 文本(接收人 + 用途,如 合规-王 / 监管报送) | 是 | — | 空 |
+| 工单依据 | 文本(工单号 / 调证编号,如 REG-编号) | 是 | — | 空 |
 | 分批确认(超限时) | 复选框「我已确认分批方案」 | 超限时必勾 | 仅超管可勾 | 未勾 |
 | reason(导出事由) | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
@@ -2278,14 +2292,14 @@ L5 是平台**数据导出与监管报告生成的统一管控面**——账单 
 | B | Phase 节奏状态(只读) | B4(H1 权威) | server | 8-dial 当月值只读展示,权威归 H1 |
 | C | 用户账户 / 冻结态 / KYC 态 | C1/C2/C4 | server | 账户冻结态权威 C2;KYC 态权威 C4;`cumulativeDepositUsdt` 仅 recordDeposit 写 |
 | D | 提现状态机 | §9.11f | server | submitted→review→processing→sent→confirmed + 失败态(rejected/tx-failed/frozen…) |
-| D | WithdrawConfig(cooldown/NEX 闸) | D5(H1 派发) | server | cooldown 月8=35d/月9=45d、withdrawNexGate 月9=20 NEX(每 $100 燃烧,随 Phase) |
+| D | WithdrawConfig(cooldown/惩罚费率/NEX 抵扣率) | D5(cooldown/惩罚费率=H1 派发;NEX 抵扣率=D5 owns) | server | cooldown 月8=35d/月9=45d、withdrawPenaltyFeeRate P1–P4=20%/P5=25%/P6=30%(随 Phase)、nexFeeOffsetRate $0.40/NEX(D5 可写,可选抵扣手续费) |
 | D | 账本 bill(7 类 BillType) | D4 | server | 含 bonus 类;commission/trial/staking 派发落 bill |
 | E | SKU/Device specs | E1 | server | price/baseRate/baseRateNEX(7 管理对象,V2 补 Pro v2 后 SKU 6→7);**Pro Gen-1 权威定价 $2,399**(原型 stray $2,639 bug,§E1 注);Pro v2 为独立 Gen-2 SKU $2,639 |
 | E | 衰减模型 DecayModel | E3 §6.1 | server | -4/-6/-10%/月 分段 |
 | E | TradeInConfig | E3 §7.5 | server | minHoldingMonths/salvage(月12 归零约束);salvage 不入余额 |
 | E | Order 状态机 | E4 | server | placed→paid→provisioning→activated + 失败态;`cumulativeDepositUsdt` 退款核减 |
 | F | V_RANKS 13 阶 + 晋升判定 | F1 | server | V0–V12 阶梯门槛;可见性 gating §6.3 |
-| F | UNILEVEL_USDT/NEX + Rate Tier | F2 | server | L1-L7 费率;`commission/cooling-days` 默认 30d |
+| F | UNILEVEL_USDT/NEX + Partner Status | F2 | server | L1-L7 费率;`commission/cooling-days` 默认 30d |
 | F | 双轨结算 + binaryDailyCap | F3(cap 归 H1) | server | min(A,B)×10%;日封顶 月1-6=$5000/月7+=$2000 |
 | F | Commission Event(kind 枚举) | F5 §12.5 | server | network/binary/peer/cultivation/leadership/genesis(+leaderboard_prize);layer L1-L7 |
 | G | Staking position 状态机 | G1 §9 | server | pending_lock/active/mature_unclaimed/early_withdrawn/claimed/slashed/refunded |
@@ -2359,7 +2373,7 @@ L5 是平台**数据导出与监管报告生成的统一管控面**——账单 
 | 风险评分 | K4 | B5 雷达 / D2 路由 / 各域风险标注 |
 | KYC 态 / jurisdiction | C4 | D2/G2/K5/I5(disclosure 输入) |
 | 账户冻结态 | C2 | D2(提现)/ K1(批量簇冻结触发)/ J4(应急编排) |
-| Phase 8-dial 派发 | H1 | D5(cooldown/withdrawNexGate)/ F3(binaryCap)/ E1(代际门)/ H3(questBonus) |
+| Phase 8-dial 派发 | H1 | D5(cooldown/withdrawPenaltyFeeRate)/ F3(binaryCap)/ E1(代际门)/ H3(questBonus) |
 | 审计 / 操作确认 | A2 | 全域高敏写复用 |
 | 埋点命名 / 身份 / schema | A4 | 全域事件 ⑧ 段注册 |
 | 设备规格 / 衰减 / trade-in | E1/E3/E3 | C1 fleet 只读引用;K2 只读消费 minHoldingMonths |

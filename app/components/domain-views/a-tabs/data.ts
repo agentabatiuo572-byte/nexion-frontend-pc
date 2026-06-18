@@ -12,7 +12,7 @@
  *  - 执行历史 = OPERATION_HISTORY 4 行(confirmed/rejected/canceled/expired 四终态);
  *  - 机制参数 = MECHANISM_PARAMS 5 行(reason-required / 理由长度 / 保留 13 月 / 9 大类清单 / schema);
  *  - feature flag = FEATURE_FLAGS 5 行(设计稿原 FLAGS,resourceOwner 注明发起资格);
- *  - 7 闸只读 = killSwitchReadonly 派生 design-data.KILLSWITCH(操作面在 J1/J2);
+ *  - 5 闸只读 = killSwitchReadonly 派生 design-data.KILLSWITCH(操作面在 J1/J2);
  *  - NTP / 系统健康 = NTP_SOURCE / SYSTEM_HEALTH 5 项;
  *  - 6 family = EVENT_FAMILIES + family 内事件清单(设计稿 FAMS 原样);
  *  - domain 枚举 22 已注册 + 9 待扩展;
@@ -189,7 +189,7 @@ export const CONFIRM_CATEGORIES = [
   { cat: "大额资金放行", examples: "提现放行/冻结/退款(D2)· 渠道退款(D1)", roleGate: "财务 lead / 超管" },
   { cat: "参数批改", examples: "红黄线(B1)· 提现参数(D5)· OTP/锁定(C6)· Phase dial(H1)· 试用敏感参数(H2)", roleGate: "对应域 lead / 超管(dial 放大方向加风控 lead)" },
   { cat: "风险模型/KYC 裁决", examples: "K4 权重分档(执行门槛升超管)· K5 大额复审", roleGate: "超管 / 风控 lead" },
-  { cat: "熔断闸", examples: "6 功能闸 + 地区屏蔽(J1/J2 管理面)", roleGate: "超管" },
+  { cat: "熔断闸", examples: "5 功能闸 + 地区屏蔽(J1/J2 管理面)", roleGate: "超管" },
   { cat: "账户高敏处置", examples: "冻结/解冻 · impersonate(C2)· KYC 人工标记(C4)· 2FA/密码(C5)", roleGate: "风控 lead / 超管" },
   { cat: "批量簇冻结", examples: "关联账户簇批量冻结(K1)", roleGate: "风控 lead / 超管" },
   { cat: "后台账号治理", examples: "建/停/启/改角色/重置双因子(A1)", roleGate: "超管" },
@@ -219,7 +219,7 @@ export const FEATURE_FLAGS = [
   { key: "ops.maintenanceBanner", name: "维护公告横幅", desc: "全站维护提示横幅总开关", st: "off", scope: "全量", lastChange: "05-15 · 陈锐/赵敏", resourceOwner: "风控/超管(运维)", growthClass: false },
 ];
 
-/** 7 闸只读兼容(操作面在 J1/J2)。状态由 design-data.KILLSWITCH 派生 + geo-block 行(列表非空才算生效)。 */
+/** 5 闸只读兼容(操作面在 J1/J2)。状态由 design-data.KILLSWITCH 派生 + geo-block 行(列表非空才算生效)。 */
 export const killSwitchReadonly = (): { key: string; name: string; st: string; lastChange: string; chain: string }[] => {
   const fns = KILLSWITCH.map((k) => ({
     key: k.key,
@@ -435,5 +435,5 @@ export const _SOURCE_NOTES = {
   ROLES, // design-data.ROLES = 7 角色 token 配色单源
   SENSITIVE_OPERATIONS, // design-data.SENSITIVE_OPERATIONS = 首页高敏操作动态面板的 4 行子集,本表 14 行扩展
   AUDIT, // design-data.AUDIT = 8 行 + A2 域筛维度
-  KILLSWITCH, // design-data.KILLSWITCH = 6 闸 + withdraw 后台应急新增;A3 只读派生 killSwitchReadonly
+  KILLSWITCH, // design-data.KILLSWITCH = 5 闸(前端 4 + withdraw 后台应急新增;Premium/NEXv2 已下线);A3 只读派生 killSwitchReadonly
 };

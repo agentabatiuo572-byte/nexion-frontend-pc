@@ -77,7 +77,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
     "commission.* · admin.rate_changed",
   ],
   G: [
-    "Staking / 兑换 / 行情 / Genesis / Premium / NEXv2 / 复投",
+    "Staking / 兑换 / 行情 / Genesis / 复投",
     "池配置 · 兑换风控 · 行情曲线 · Genesis 盘",
     "APY / penalty / caps · 分红率 · gate Phase",
     "调 APY/分红 · kill 开关 · 操作确认",
@@ -93,7 +93,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
     "调 dial / 发活动 · 操作确认 · 排程",
     "/admin/phase · /admin/trial · /admin/events",
     "增长运营 · dial 改动操作确认",
-    "Phase 权威源 · 派发 D5 / F3 / G5 联动",
+    "Phase 权威源 · 派发 D5 / F3 联动",
     "trial.* · quest.* · admin.dial_changed",
   ],
   I: [
@@ -108,7 +108,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
   ],
   J: [
     "Kill 矩阵 / Geo-block / 篡改防御 / 应急 SOP",
-    "7 闸开关网格 · geo 地图 · 篡改看板 · SOP",
+    "5 闸开关网格 · geo 地图 · 篡改看板 · SOP",
     "kill 开关位 · geo 国家表 · 篡改阈值",
     "切 kill/geo · 强操作确认 · SOP 编排",
     "/admin/kill-switch · /admin/geo · /admin/tamper",

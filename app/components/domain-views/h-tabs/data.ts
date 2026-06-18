@@ -1,7 +1,7 @@
 /**
  * H 域(增长与运营节奏)页面级数据 —— design_handoff_h_domain port。
  * 单源纪律(权威数值零复制,全部 join 或同源派生):
- *  - DIAL_MATRIX 12 月 × 8 旋钮(H1 矩阵权威;Premium/NEXv2 gate 旋钮随模块下线移除,提现门旋钮 = NEX 闸);
+ *  - DIAL_MATRIX 12 月 × 8 旋钮(H1 矩阵权威;Premium/NEXv2 gate 旋钮随模块下线移除,提现门旋钮 = 提现惩罚费率);
  *  - TRIAL_CONFIG 19 参数(H2;敏感 🔥 操作确认 / 其余增长直改必填原因)+ 4 道前置闸 + 7 态会话 + 4 行 sessions;
  *  - DAY_ONE_TASKS 6 + WEEKLY_T1 9 + WEEKLY_T2 8 + WEEKLY_MULT 6 档 + MONTHLY 5 主题(H3);
  *  - EVENTS_CMS 8 玩法 + WHEEL 8 档 + WHEEL_GUARDS 3 行(H4)+ TRACKABLES 4 行;
@@ -41,7 +41,7 @@ export const H1_STATS = {
   pendingProposals: 2,
 };
 
-/** 8 旋钮 key(列序权威 = 设计稿 DIALS 顺序;Premium/NEXv2 gate 旋钮随模块下线移除,提现门旋钮 = NEX 闸)。 */
+/** 8 旋钮 key(列序权威 = 设计稿 DIALS 顺序;Premium/NEXv2 gate 旋钮随模块下线移除,提现门旋钮 = 提现惩罚费率;NEX 质押已下线)。 */
 export const DIAL_KEYS = [
   "newUser", "invite", "reinvest", "nexGate", "cooldown",
   "binaryCap", "quest", "compliance",
@@ -53,14 +53,14 @@ export const DIAL_LABELS: Record<DialKey, { name: string; unit: string }> = {
   newUser: { name: "新用户加成¹", unit: "×" },
   invite: { name: "邀请加成¹", unit: "×" },
   reinvest: { name: "复投加成", unit: "×" },
-  nexGate: { name: "提现 NEX 闸", unit: "NEX/$100" },
+  nexGate: { name: "提现惩罚费率", unit: "%" },
   cooldown: { name: "提现冷却", unit: "天" },
   binaryCap: { name: "双轨日封顶", unit: "$" },
   quest: { name: "任务加成", unit: "×" },
   compliance: { name: "合规留存", unit: "" },
 };
 
-/** 放松方向(降冷却 / 降 NEX 闸 / 升封顶)= 放大流出,过 B1 红线 422。 */
+/** 放松方向(降冷却 / 降惩罚费率 / 升封顶)= 放大流出,过 B1 红线 422。 */
 export const LOOSEN_DIR: Partial<Record<DialKey, "down" | "up">> = {
   nexGate: "down",
   cooldown: "down",
@@ -70,20 +70,20 @@ export const LOOSEN_DIR: Partial<Record<DialKey, "down" | "up">> = {
 /** 仅新用户(存量锁定基数不回溯);其余项实时全量生效。 */
 export const NEW_USER_ONLY: DialKey[] = ["newUser", "invite"];
 
-/** 12 月 × 8 旋钮值矩阵(行 = 月 1..12,列 = DIAL_KEYS;nexGate 列 = 每 $100 燃烧 NEX 数,phase 递增)。 */
+/** 12 月 × 8 旋钮值矩阵(行 = 月 1..12,列 = DIAL_KEYS;nexGate 列 = 无 NEX 抵扣时的提现惩罚费率 %,phase 递增)。 */
 export const DIAL_MATRIX: (number | string)[][] = [
-  /* M1 */ [2, 2, 1, 10, 30, 5000, 4, "否"],
-  /* M2 */ [2, 2, 1, 10, 30, 5000, 4, "否"],
-  /* M3 */ [1.5, 1.5, 1, 10, 30, 5000, 1, "否"],
-  /* M4 */ [1.5, 1.5, 1, 10, 30, 5000, 1, "否"],
-  /* M5 */ [1, 1, 2, 10, 30, 5000, 1, "否"],
-  /* M6 */ [1, 1, 2, 10, 30, 5000, 1, "否"],
-  /* M7 */ [1, 1, 1, 10, 30, 2000, 1, "否"],
-  /* M8 */ [1, 1, 1, 10, 35, 2000, 1, "是"],
-  /* M9 */ [1, 1, 1, 20, 45, 2000, 1, "是"],
-  /* M10 */ [1, 1, 1, 20, 45, 2000, 1, "是"],
-  /* M11 */ [1, 1, 1, 20, 45, 2000, 1, "是"],
-  /* M12 */ [1, 1, 1, 20, 45, 2000, 1, "是"],
+  /* M1 */ [2, 2, 1, 20, 30, 5000, 4, "否"],
+  /* M2 */ [2, 2, 1, 20, 30, 5000, 4, "否"],
+  /* M3 */ [1.5, 1.5, 1, 20, 30, 5000, 1, "否"],
+  /* M4 */ [1.5, 1.5, 1, 20, 30, 5000, 1, "否"],
+  /* M5 */ [1, 1, 2, 20, 30, 5000, 1, "否"],
+  /* M6 */ [1, 1, 2, 20, 30, 5000, 1, "否"],
+  /* M7 */ [1, 1, 1, 20, 30, 2000, 1, "否"],
+  /* M8 */ [1, 1, 1, 20, 35, 2000, 1, "是"],
+  /* M9 */ [1, 1, 1, 25, 45, 2000, 1, "是"],
+  /* M10 */ [1, 1, 1, 25, 45, 2000, 1, "是"],
+  /* M11 */ [1, 1, 1, 30, 45, 2000, 1, "是"],
+  /* M12 */ [1, 1, 1, 30, 45, 2000, 1, "是"],
 ];
 
 /** 月 → 阶段映射桶(P3 收紧期持续 3 月,与 design-data.PHASE.month=7 + PHASE.current="P3" 单源一致;
@@ -251,12 +251,12 @@ export const DAY_ONE_STATES = [
 
 /** 周一档 9 条(优先级派发,从上到下)。 */
 export const WEEKLY_T1 = [
-  { cond: "NEXv2 锁仓", reward: "3,000" },
+  { cond: "USDT 长期质押", reward: "3,000" },
   { cond: "买 Genesis", reward: "2,500" },
   { cond: "加购硬件", reward: "2,000" },
   { cond: "换新升级", reward: "1,800" },
   { cond: "S1→Pro v2", reward: "1,500" },
-  { cond: "订阅会员", reward: "800" },
+  { cond: "购 Cloud Share", reward: "800" },
   { cond: "首购设备", reward: "1,000 + $10" },
   { cond: "充值", reward: "100" },
   { cond: "兑底质押", reward: "250" },
@@ -288,9 +288,9 @@ export const WEEKLY_MULT = [
 export const MONTHLY_MISSIONS = [
   { id: "mc0", theme: "地基建设者", age: "0–2 月", reward: "1,500", goals: "累计赚 200 · 绑卡 · 邀 1 人" },
   { id: "mc1", theme: "网络架构师", age: "2–4 月", reward: "2,500", goals: "累计 1,500 · 直推 3 · 周任务 ×4" },
-  { id: "mc2", theme: "进阶之路", age: "4–6 月", reward: "4,000", goals: "累计 5,000 · 订阅 · 加购" },
+  { id: "mc2", theme: "进阶之路", age: "4–6 月", reward: "4,000", goals: "累计 5,000 · 质押 · 加购" },
   { id: "mc3", theme: "钻石段位", age: "6–9 月", reward: "6,000", goals: "累计 15,000 · V4 · 团队 GV" },
-  { id: "mc4", theme: "创始人之约", age: "9+ 月", reward: "10,000 + 勋章", goals: "累计 40,000 · NEXv2 · Genesis" },
+  { id: "mc4", theme: "创始人之约", age: "9+ 月", reward: "10,000 + 勋章", goals: "累计 40,000 · 长期质押 · Genesis" },
 ];
 
 /** 完成 / 领取监控(服务器台账)。 */
@@ -394,10 +394,10 @@ export const STREAK_MS = [
   { id: 6, day: "100 天", reward: "⭐ 连胜大师徽章", kind: "badge" },
 ];
 
-/** Power-Ups 4 档(连胜增益;下游兑现 F2/G5/G1/G4,V3 接线前仅触点价值)。 */
+/** Power-Ups 4 档(连胜增益;下游兑现 F2/G1/G4,V3 接线前仅触点价值)。 */
 export const POWER_UPS = [
   { id: 0, day: 7, label: "7 天 · 版税加成", sub: "兑现在团队费率(F2)", downstream: "F2" },
-  { id: 1, day: 14, label: "14 天 · 会员 7 天体验", sub: "复用订阅状态机(G5),这页不另立授予逻辑", downstream: "G5" },
+  { id: 1, day: 14, label: "14 天 · 团队版税 +3%", sub: "兑现在团队费率(F2),这页不另立授予逻辑", downstream: "F2" },
   { id: 2, day: 30, label: "30 天 · 下次质押 +2% 年化", sub: "兑现在质押(G1)", downstream: "G1" },
   { id: 3, day: 60, label: "60 天 · Genesis 白名单优先", sub: "兑现在 Genesis(G4)", downstream: "G4" },
 ];

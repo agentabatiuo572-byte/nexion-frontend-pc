@@ -22,13 +22,19 @@ const TPL_ICONS: Record<string, React.ReactNode> = {
 export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
   const newExport = () => ctx.openActionConfirm({
     action: "发起导出任务",
-    detail: <>选择导出类型(账单 CSV / 漏斗序列 / 财务报表 / 运营报表 / 监管报告)、范围(时间窗 / cohort / 用户范围)、字段(含/不含 PII)与脱敏策略。<b>要不要走确认由服务端判定</b>:含敏感数据 <b>或</b> 行数 &gt; 100 万 → 进操作确认(超限走拆分确认);否则直接生成。同样范围 24 小时内重复发起会自动合并,防止重复生成。此处为原型:默认演示「聚合漏斗序列」(无 PII,仍需操作确认)。</>,
-    edit: { kind: "text", current: "漏斗序列 · W17–W22 · 聚合" },
-    run: (reason, newValue) => {
-      const v = newValue || "漏斗序列 · W17–W22 · 聚合";
-      ctx.setParam("L.export.new", v, { action: `发起导出任务「${v}」`, reason });
-      ctx.logAudit({ actor: "总管理员", action: `发起导出任务「${v}」`, target: "admin.report_exported", after: "聚合无 PII · 仍需操作确认", reason });
-      ctx.toast(`导出任务已创建:${v} · 聚合无 PII 仍需操作确认 · 落 admin.report_exported`);
+    detail: <>导出向导:选导出类型 / 时间范围 / 字段范围 / PII 范围 / 脱敏策略 / 接收人 / 工单依据。<b>要不要走确认由服务端判定</b>:含敏感数据 <b>或</b> 行数 &gt; 100 万 → pending_confirm(超限走拆分);否则直接生成。同范围 24 小时内重复发起自动合并防重。</>,
+    businessForm: {
+      kind: "export-wizard",
+      exportTypes: ["账单 CSV", "漏斗序列", "财务报表", "运营报表", "监管报告"],
+      piiLevels: ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"],
+      maskPolicies: ["默认脱敏", "字段掩码", "解密(强操作确认)"],
+    },
+    run: (reason, _v, bv) => {
+      const summary = `${bv?.exportType} · ${bv?.timeRange} · 字段[${bv?.fields || "全字段"}] · ${bv?.piiLevel} · ${bv?.maskPolicy} · 接收 ${bv?.recipient}`;
+      const slug = (bv?.ticket || bv?.exportType || "export").replace(/[^\w一-龥]+/g, "_");
+      ctx.setParam(`L.export.new.${slug}`, JSON.stringify({ type: bv?.exportType, range: bv?.timeRange, fields: bv?.fields, pii: bv?.piiLevel, mask: bv?.maskPolicy, recipient: bv?.recipient, ticket: bv?.ticket }), { action: `发起导出任务「${summary}」`, reason });
+      ctx.logAudit({ actor: "总管理员", action: `发起导出任务「${summary}」`, target: "admin.report_exported", after: `PII=${bv?.piiLevel} · 脱敏=${bv?.maskPolicy} · 工单 ${bv?.ticket}`, reason });
+      ctx.toast(`导出任务已创建:${bv?.exportType} · ${bv?.piiLevel} · 落 admin.report_exported`);
     },
   });
   return (

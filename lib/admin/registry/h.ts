@@ -12,7 +12,7 @@ export const DOMAIN_H: ModuleEntry[] = [
   {
     path: "/growth/phase",
     summary:
-      "12 月运营节奏的唯一操作面,Phase 模型 8 项 dial 的权威源(Premium/NEXv2 gate 旋钮随模块下线移除,提现积分→NEX 闸)。前端只消费 server 下发的当前 dial 值;改 dial / 手动 pin / cohort override 需 操作确认,放大流出方向(降冷却 / 降 NEX 闸 / 升封顶)先核 B1 兑付覆盖率,低于红线 422。下游 D5/F3/E2/H3 只读。",
+      "12 月运营节奏的唯一操作面,Phase 模型 8 项 dial 的权威源(Premium/NEXv2 gate 旋钮随模块下线移除,提现积分→提现惩罚费率;NEX 抵扣率在 D5)。前端只消费 server 下发的当前 dial 值;改 dial / 手动 pin / cohort override 需 操作确认,放大流出方向(降冷却 / 降惩罚费率 / 升封顶)先核 B1 兑付覆盖率,低于红线 422。下游 D5/F3/E2/H3 只读。",
     content: placeholder("死代码:H1 真渲染面在 h-tabs/h1-phase.tsx(DIAL_MATRIX 12×8 + LOOSEN_DIR + NEW_USER_ONLY + PHASE_CONTROLS 3 类)。"),
   },
   {
@@ -36,7 +36,7 @@ export const DOMAIN_H: ModuleEntry[] = [
   {
     path: "/growth/daily",
     summary:
-      "每日签到引擎 · 6 条规则 + Lucky 概率倍率(server-canonical RNG)+ 30 天连胜里程碑 7 阶 + Streak Saver 复活卡 + Streak Power-Ups 4 档跨域增益(F2/G5/G1/G4)。Lucky 两档和 ≤100% 422 + 升概率 / 升奖励 / 升 Power-Up 阈值放大流出过 B1;命中率实测 vs 配置 ±1pt 告警;Day-30 发 spin 票转盘归 H4。",
+      "每日签到引擎 · 6 条规则 + Lucky 概率倍率(server-canonical RNG)+ 30 天连胜里程碑 7 阶 + Streak Saver 复活卡 + Streak Power-Ups 4 档跨域增益(F2/G1/G4)。Lucky 两档和 ≤100% 422 + 升概率 / 升奖励 / 升 Power-Up 阈值放大流出过 B1;命中率实测 vs 配置 ±1pt 告警;Day-30 发 spin 票转盘归 H4。",
     content: placeholder("死代码:H5 真渲染面在 h-tabs/h5-daily-milestones.tsx(签到部分;FOLD 同页含 H6 里程碑)。"),
   },
   {

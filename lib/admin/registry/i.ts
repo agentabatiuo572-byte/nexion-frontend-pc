@@ -26,7 +26,7 @@ export const DOMAIN_I: ModuleEntry[] = [
   },
   {
     path: "/content/trust",
-    summary: "信任中心 CMS + 风险披露版本管理(I4+I5):/trust 6 版块(财务数字 / 团队 / NEX 叙事 / 徽章 / 审计 / 外链)+ 4 法域 × 7 章节披露矩阵 + re-ack 覆盖监控 + 受限动作范围(withdraw 已实装 / staking·nexv2 待接线)。执行门槛两套:I4 财务数字 / NEX 叙事 / 合规声明须合规或超管,其余内容主管;I5 全链 操作员=风控 / 执行门槛=风控 lead 或超管,内容仅草拟。re-ack 不是熔断闸,不占 J1/J2 闸位。",
+    summary: "信任中心 CMS + 风险披露版本管理(I4+I5):/trust 6 版块(财务数字 / 团队 / NEX 叙事 / 徽章 / 审计 / 外链)+ 4 法域 × 7 章节披露矩阵 + re-ack 覆盖监控 + 受限动作范围(withdraw 已实装 / staking 待接线)。执行门槛两套:I4 财务数字 / NEX 叙事 / 合规声明须合规或超管,其余内容主管;I5 全链 操作员=风控 / 执行门槛=风控 lead 或超管,内容仅草拟。re-ack 不是熔断闸,不占 J1/J2 闸位。",
     content: placeholder,
   },
   {

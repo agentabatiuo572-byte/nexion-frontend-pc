@@ -1,6 +1,6 @@
 {
-  "version": "2026-06-13-l5-canon",
-  "description": "Machine-readable business-number canon for L3d/L5 drift gates. Values here are the source of truth for the prototype remediation gates.",
+  "version": "2026-06-17-v2-649-anchor",
+  "description": "Machine-readable business-number canon (SoT). v2: $649 low-barrier anchor re-derivation (越南经济模型 v2). Display-layer values per Operations-related documents/Nexion_越南独立运营_经济模型_v2_649锚.md §2. Operator hidden layer (rho_dev/payout/net-extraction) is NOT here — it stays admin-internal, never bundled to client.",
   "staking": {
     "usdtApy": {
       "30": 0.12,
@@ -19,12 +19,6 @@
       "90": "usdt90d",
       "180": "usdt180d",
       "365": "usdt365d"
-    },
-    "nexApy": {
-      "30": 0.05,
-      "90": 0.12,
-      "180": 0.2,
-      "365": 0.35
     }
   },
   "genesis": {
@@ -51,41 +45,41 @@
   },
   "products": {
     "stellarbox-s1": {
-      "price": 1299,
-      "dailyEarn": 38.5,
-      "dailyEarnNEX": 65
+      "price": 649,
+      "dailyEarn": 7,
+      "dailyEarnNEX": 40
     },
     "stellarbox-pro": {
-      "price": 2399,
-      "dailyEarn": 76,
-      "dailyEarnNEX": 215
+      "price": 1199,
+      "dailyEarn": 13,
+      "dailyEarnNEX": 80
     },
     "stellarbox-pro-v2": {
-      "price": 2639,
-      "dailyEarn": 96,
-      "dailyEarnNEX": 280
+      "price": 1319,
+      "dailyEarn": 14.5,
+      "dailyEarnNEX": 100
     },
     "stellarrack-p1": {
-      "price": 8999,
-      "dailyEarn": 142.6,
-      "dailyEarnNEX": 950
+      "price": 4499,
+      "dailyEarn": 45,
+      "dailyEarnNEX": 300
     },
     "stellarrack-p2": {
-      "price": 14999,
-      "dailyEarn": 248,
-      "dailyEarnNEX": 1820
+      "price": 7499,
+      "dailyEarn": 75,
+      "dailyEarnNEX": 500
     },
     "cloud-share": {
       "price": 19.9,
-      "dailyEarn": 0.0073,
-      "dailyEarnNEX": 3
+      "dailyEarn": 0.19,
+      "dailyEarnNEX": 1
     }
   },
   "withdrawal": {
     "minWithdrawalUSD": 20,
-    "feeRate": 0.02,
-    "feeMinUSD": 1,
-    "feeMaxUSD": 20,
-    "dailyBalanceCapRate": 0.8
+    "dailyBalanceCapRate": 0.8,
+    "penaltyFeeRateByPhase": { "P1": 0.2, "P2": 0.2, "P3": 0.2, "P4": 0.2, "P5": 0.25, "P6": 0.3 },
+    "nexFeeOffsetRateUSDPerNex": 0.4,
+    "_note": "NEX 优惠抵扣模型(2026-06-17 取代旧 2% 固定费 feeRate/feeMin/feeMax):无 NEX 按 penaltyFeeRateByPhase×金额收惩罚费,烧 NEX 按 nexFeeOffsetRate($0.40/NEX,远高于市价)抵扣、烧够全免、无硬拦截。penaltyFeeRateByPhase 同源 uniapp product-phase.withdrawPenaltyFeeRate + admin H1 DIAL_MATRIX(月→phase);nexFeeOffsetRate 同源 admin D5 OWN_PARAMS + uniapp product-phase.nexFeeOffsetRate。"
   }
 }

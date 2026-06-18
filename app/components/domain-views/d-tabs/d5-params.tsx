@@ -2,8 +2,8 @@
 
 /**
  * D5 提现参数配置 — 提现摩擦的运营杠杆生效面,两类分清(§3.14 防双源):
- *  - D5 owns 三参数(日限次数 / 余额上限 / 网络费):操作确认 + 放松方向 B1 覆盖率红线核验(amplifies);
- *  - 节奏派发三项(冷却 / NEX 闸 / 增强合规审查):权威归 H1(/growth/phase),本页只读 + 跳转,
+ *  - D5 owns 三参数(日限次数 / 余额上限 / NEX 抵扣率):操作确认 + 放松方向 B1 覆盖率红线核验(amplifies);
+ *  - 节奏派发三项(冷却 / 提现惩罚费率 / 增强合规审查):权威归 H1(/growth/phase),本页只读 + 跳转,
  *    接口层拒收(PUT 携带返 422 PHASE_PARAM_READONLY)。
  * 当前 = P3 · 月 7(PHASE 单源);月 8=35d 为 12 月节奏表权威目标值。
  */
@@ -28,7 +28,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <div className="f-stats">
         <div className="f-stat"><div className="k">今日提现申请</div><div className="v">{D_FUND.applyTodayCnt} 笔</div><div className="sub">${(D_FUND.payoutTodayUsd / 1000).toFixed(1)}K 已放行 · 队列在提现审核</div></div>
         <div className="f-stat ok"><div className="k">覆盖率(B1 · 放松前自动核验)</div><div className="v">{cov}%</div><div className="sub">红线 {LEDGER.redlinePct} · 低于红线拒绝放松</div></div>
-        <div className="f-stat cyan"><div className="k">当前冷却 / NEX 闸(H1 派发)</div><div className="v">{/^\d+$/.test(cooldownV) ? `${cooldownV}d` : cooldownV} · {/^\d+$/.test(nexGateV) ? `${nexGateV} NEX` : nexGateV}</div><div className="sub">月 8 → 35d · 月 9 → 45d + 20 NEX</div></div>
+        <div className="f-stat cyan"><div className="k">当前冷却 / 惩罚费率(H1 派发)</div><div className="v">{/^\d+$/.test(cooldownV) ? `${cooldownV}d` : cooldownV} · {/^\d+(\.\d+)?$/.test(nexGateV) ? `${nexGateV}%` : nexGateV}</div><div className="sub">月 8 → 35d · 月 9 → 45d + 25%</div></div>
         <div className="f-stat warn"><div className="k">增强合规审查</div><div className="v">{holdShort}</div><div className="sub">月 8(P5 带)起自动开 · H1 派发</div></div>
       </div>
 
@@ -38,7 +38,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           <div className="l-h">
             <span className="ttl">本页可调(操作确认)</span>
             <span className="sub">· 三个非节奏参数 · 放松方向要过覆盖率红线核验</span>
-            <div className="r"><span className="dcode electric">实时生效 · 网络费只对新单</span></div>
+            <div className="r"><span className="dcode electric">实时生效 · NEX 抵扣率改后只对新单</span></div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {OWN_PARAMS.map((p) => {
@@ -55,10 +55,16 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
                   <span className="v">{cur}</span>
                   <button className="l-btn sm mc" onClick={() => openActionConfirm({
                     action: `提现参数调整 · ${p.name}`,
-                    detail: <><b>{p.name}</b> · 当前 {cur} · {p.range}。{loosenNote} 改动产 admin.withdraw_limit_changed 审计,喂财务报表(L3)。</>,
+                    detail: <><b>{p.name}</b> · 当前 {cur} · {p.range}({p.ctrl.min}–{p.ctrl.max} {p.ctrl.unit})。{loosenNote} 改动产 admin.withdraw_limit_changed 审计,喂财务报表(L3)。</>,
                     amplifies: true,
-                    edit: { kind: "text", current: cur },
-                    run: (reason, v) => { if (v) setParam(`D.${p.key}`, v, { action: `提现参数调整 ${p.name}`, reason }); toast(`${p.name} 已更新为 ${v} · 放松方向已过覆盖率核验`); },
+                    edit: { kind: "number", current: String(parseFloat(String(cur).replace(/[^0-9.]/g, "")) || ""), unit: p.ctrl.unit },
+                    run: (reason, v) => {
+                      const n = parseFloat((v || "").trim());
+                      if (Number.isNaN(n) || n < p.ctrl.min || n > p.ctrl.max) { toast(`拒绝:${p.name} 须在 ${p.ctrl.min}–${p.ctrl.max} ${p.ctrl.unit},非法值未写入`); return; }
+                      const formatted = p.ctrl.fmt(n);
+                      setParam(`D.${p.key}`, formatted, { action: `提现参数调整 ${p.name} → ${formatted}`, reason });
+                      toast(`${p.name} 已更新为 ${formatted} · 放松方向已过覆盖率核验`);
+                    },
                   })}>调整</button>
                 </div>
               );
@@ -103,7 +109,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
         </section>
       </div>
 
-      <p className="f-foot"><b>「提现摩擦 = 节奏参数(H1)+ 固定参数(本页)」</b>就是这页的全部分工。本页三个参数(日限次数/余额上限/网络费)改动产 <b>admin.withdraw_limit_changed</b> 审计,喂财务报表(L3);提现限额变化也会间接影响挤兑阈值,雷达(B5)在高摩擦阶段联动关注。节奏三项(冷却/NEX 闸/合规审查)的变更事件由 H1 产生(phase.dial_changed),本页只在拐点同步展示新派发值——月 8、月 9 两个拐点前运营要心里有数:展示值变了不是这页有人动了手,是节奏到点了。</p>
+      <p className="f-foot"><b>「提现摩擦 = 节奏参数(H1)+ 固定参数(本页)」</b>就是这页的全部分工。本页三个参数(日限次数/余额上限/NEX 抵扣率)改动产 <b>admin.withdraw_limit_changed</b> 审计,喂财务报表(L3);提现限额变化也会间接影响挤兑阈值,雷达(B5)在高摩擦阶段联动关注。节奏三项(冷却/提现惩罚费率/合规审查)的变更事件由 H1 产生(phase.dial_changed),本页只在拐点同步展示新派发值——月 8、月 9 两个拐点前运营要心里有数:展示值变了不是这页有人动了手,是节奏到点了。提现费模型:无 NEX 抵扣按惩罚费率收(H1 派发),烧 NEX 按本页抵扣率减免、烧够全免。</p>
     </>
   );
 }

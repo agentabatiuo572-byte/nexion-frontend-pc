@@ -40,7 +40,7 @@ export const UNILEVEL: { l: string; usdt: number; nex: number; ui: string; direc
 export const RATETIER: { nm: string; req: string; rate: string; dist: string; cls: string }[] = [
   { nm: "Standard", req: "$0+ 网络 GMV", rate: "8%", dist: "62%", cls: "t-0" },
   { nm: "Verified", req: "$5,000+ 网络 GMV", rate: "10%", dist: "24%", cls: "t-1" },
-  { nm: "Premium", req: "$50,000+ 网络 GMV", rate: "12%", dist: "11%", cls: "t-2" },
+  { nm: "Elite", req: "$50,000+ 网络 GMV", rate: "12%", dist: "11%", cls: "t-2" },
   { nm: "Diamond", req: "$500,000+ 网络 GMV", rate: "15%", dist: "3%", cls: "t-3" },
 ];
 // 8 参数卡:amp = 逻辑放大(操作确认 amplifies);vamp = 卡面 ⚡ 视觉(仅 promo/peer 显示,对齐设计稿)。

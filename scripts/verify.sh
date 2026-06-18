@@ -322,11 +322,25 @@ else
   fail=$((fail+1)); fails="$fails\n  [sku-field-mirror] 后台 OpsSku 未覆盖前端 Product 字段(跑 node scripts/sku-field-mirror.mjs 看明细)"
 fi
 
-echo "== [+] Canon 数字口径 gate(staking/genesis/device/product 三端同源)=="
+echo "== [+] Canon 数字口径 gate(staking/genesis/device/product + 提现费三端同源 + 旧 2% 费指纹)=="
 if (cd "$ROOT" && "$NODE_BIN" scripts/canon-sentinel.mjs); then
   pass=$((pass+1))
 else
-  fail=$((fail+1)); fails="$fails\n  [canon-sentinel] 核心业务数字跨端漂移(跑 node scripts/canon-sentinel.mjs 看明细)"
+  fail=$((fail+1)); fails="$fails\n  [canon-sentinel] 核心业务数字跨端漂移 / 提现费模型不一致 / 旧 2% 费残留(跑 node scripts/canon-sentinel.mjs 看明细)"
+fi
+
+echo "== [+] Kill-switch 计数一致 gate(防 premium/nexv2 下线后「N 闸」残留漂移)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/kill-switch-count-sentinel.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [kill-switch-count] 功能闸集漂移 / 全仓「N 闸·N功能闸·N/N·中文N闸」计数 ≠ KILLSWITCH 真实闸数(跑 node scripts/kill-switch-count-sentinel.mjs 看明细)"
+fi
+
+echo "== [+] shadcn token 一致性 gate(app/components/ui/* 禁残留 shadcn 默认 token,必重皮 V5)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/check-shadcn-tokens.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [shadcn-tokens] ui 组件残留 shadcn 默认 token 未重皮 V5(跑 node scripts/check-shadcn-tokens.mjs 看明细)"
 fi
 
 echo "----------------------------------------"

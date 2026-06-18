@@ -13,6 +13,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import { LEDGER } from "@/lib/mock/admin/ledger";
+import { USERS } from "@/lib/mock/admin/design-data";
 import { useUserOps } from "@/lib/store/admin/user-ops-store";
 import { NEX_MARKET } from "../g-tabs/data";
 import { ADJUST_QUEUE, SUSPENDED_ADJ, ADJUST_HIST, C3_STATS, type AdjustRow } from "./data";
@@ -44,6 +45,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const [histFilter, setHistFilter] = useState<(typeof HIST_FILTERS)[number]>("全部");
   const [hist, setHist] = useState<HistRow | null>(null);
 
+  // #5 用户定位:输入账户实时命中用户目录,展示 UID/实名/账号状态/风险/注册时间,提交前二次确认目标用户。
+  const resolvedUser = USERS.find((u) => u.id === acct.trim());
+  const KYC_LABEL: Record<string, string> = { verified: "已实名", pending: "实名审核中", none: "未实名" };
+  // #7 冲正:原调整是否已被冲正(反向调整生成,原记录不删,标记 reversed)。
+  const isReversed = (id: string) => pget(`C.adjust.${id}.reversed`) !== undefined;
+
   const pending = ADJUST_QUEUE.filter((r) => !pget(`C.adjust.${r.id}.status`));
   const pendingEsc = pending.filter((r) => r.escalated).length;
   const suspSt = pget(`C.adjust.${SUSPENDED_ADJ.id}.status`);
@@ -51,7 +58,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
 
   /* 发起调整(操作确认;USDT/NEX 真写资产台账 + 审计) */
   const submitAdj = () => {
-    const u = acct.trim() || "usr_2231";
+    const u = acct.trim();
+    // #5 用户定位守卫:目标账户必须命中用户目录,防误调到不存在 / 同名 / 相似 UID 账户。
+    const target = USERS.find((x) => x.id === u);
+    if (!target) { toast(`拒绝:账户「${u || "(空)"}」不在用户目录,未提交(防误调到错误账户)`); return; }
     // 输入守卫(audit P1 修):金额必须正数(方向由「方向」chip 表达,负数输入会让红冲语义反转);
     // NEX 超额按 G3 行情折算等值 $(server 放行时以实时行情再判)。
     const amt = Math.abs(parseFloat(amtStr) || 0);
@@ -63,6 +73,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       action: `资产调整 · ${u} · ${dir === "增加" ? "+" : "−"}${amt} ${obj}`,
       detail: (
         <>
+          <div className="ctint" data-proof="c3-confirm-user" style={{ marginBottom: 10 }}>
+            <b>二次确认目标用户</b> · <span className="mono">{target.id}</span> · {target.name} · {KYC_LABEL[target.kyc] ?? target.kyc} · {target.frozen ? "已冻结" : "账号正常"} · 风险 {target.risk}。请核对 UID 后四位 <span className="mono">{target.id.slice(-4)}</span> 与工单一致再放行。
+          </div>
           {over ? <b>单笔超 ${C3_STATS.capUsd}{obj === "NEX" ? `(按行情 $${NEX_MARKET.price} 折算等值 ≈ $${Math.round(usdEq).toLocaleString("en-US")})` : ""},自动升级:执行门槛 = 财务主管 / 超管。</b> : "基础路径:执行门槛 = 财务。"}
           {credit
             ? <><b>加钱方向</b>:确认放行那一刻服务器实时核验覆盖率(当前 {cov}% &gt; 红线 {LEDGER.redlinePct},可过);低于红线会被拒并转挂起(7 天有效)。</>
@@ -99,6 +112,28 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     },
   });
 
+  /* #7 冲正:对成功调整发起反向调整(原记录保留不删,生成新流水,同走操作确认)。 */
+  const reverseAdj = (h: HistRow) => {
+    const amt = Math.abs(parseFloat(h.deltaLabel.replace(/[^0-9.]/g, "")) || 0);
+    const reverseCredit = !h.credit; // 原加钱 → 冲正为红冲;原扣减 → 冲正为补发
+    openActionConfirm({
+      action: `冲正调整 · ${h.id}`,
+      detail: (
+        <>
+          <b>对成功调整发起反向冲正</b>(原记录保留不删,生成新流水)。原单 <span className="mono">{h.id}</span> · {h.userId} · {h.obj} {h.deltaLabel} · 原操作链 {h.chain}。
+          冲正方向:<b>{reverseCredit ? `补发 +${amt}` : `红冲 −${amt}`} {h.obj}</b>{reverseCredit ? `(加钱方向,放行时核验覆盖率 ${cov}% > 红线 ${LEDGER.redlinePct})` : "(扣减方向,不过红线)"}。冲正同样走操作确认 + 理由,生成新账单与原单按号关联。
+        </>
+      ),
+      amplifies: reverseCredit,
+      run: (reason) => {
+        earningAppend(h.userId, reverseCredit ? "补发" : "红冲", reverseCredit ? amt : -amt, `冲正 ${h.id} · ${h.reason}`, h.obj === "NEX" ? "NEX" : "USDT");
+        setParam(`C.adjust.${h.id}.reversed`, new Date().toISOString(), { action: `冲正调整 ${h.id}(反向 ${reverseCredit ? "+" : "−"}${amt} ${h.obj})· admin.balance_adjusted(reversal)`, reason });
+        logAudit({ actor: "总管理员", action: `冲正调整 ${h.id} · admin.bill_adjusted(reversal · 关联原单)`, target: h.userId, reason });
+        toast(`${h.id} 已冲正 · 生成反向流水 · 原记录保留留痕`);
+      },
+    });
+  };
+
   return (
     <>
       <div className="f-stats">
@@ -117,7 +152,22 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           </div>
           <div className="l-b">
             <div className="adj-form">
-              <div className="row"><label>账户</label><input value={acct} onChange={(e) => setAcct(e.target.value)} style={{ width: 160 }} /></div>
+              <div className="row"><label>账户</label><input value={acct} onChange={(e) => setAcct(e.target.value)} placeholder="输入 UID,如 usr_31E8" style={{ width: 160 }} /></div>
+              <div className="row" style={{ alignItems: "flex-start" }}>
+                <label>目标用户</label>
+                {resolvedUser ? (
+                  <div data-proof="c3-user-card" style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 12, padding: "8px 10px", borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+                    <span className="mono" style={{ fontWeight: 700, color: "var(--ink)" }}>{resolvedUser.id}</span>
+                    <span style={{ color: "var(--ink-2)" }}>{resolvedUser.name}</span>
+                    <span className={`bdg ${resolvedUser.kyc === "verified" ? "ok" : resolvedUser.kyc === "pending" ? "warn" : "bad"}`}>{KYC_LABEL[resolvedUser.kyc] ?? resolvedUser.kyc}</span>
+                    <span className={`bdg ${resolvedUser.frozen ? "bad" : "dim"}`}>{resolvedUser.frozen ? "已冻结" : "正常"}</span>
+                    <span className="bdg dim">风险 {resolvedUser.risk}</span>
+                    <span style={{ color: "var(--ink-4)" }}>注册 {resolvedUser.joined}</span>
+                  </div>
+                ) : (
+                  <span data-proof="c3-user-card" style={{ flex: 1, fontSize: 12, color: "var(--danger)" }}>未命中用户目录 · 提交将被拒(防误调到不存在/同名账户)</span>
+                )}
+              </div>
               <div className="row"><label>对象</label>
                 <div className="chips">
                   {OBJS.map((o) => (
@@ -241,7 +291,19 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           </table>
         </div>
         <div className="l-b" style={{ paddingTop: 14 }}>
-          <div className="ctint cyan"><b>操作理由必填(A2)</b> · 裁决回写 <span className="ccode">{"C.adjust.<id>.status"}</span>,通过项由 D4 双账本记账</div>
+          <div data-proof="c3-state-machine" className="sm-strip" style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", marginBottom: 10, fontSize: 11.5 }}>
+            <span className="bdg dim">草稿</span><span className="ar">→</span>
+            <span className="bdg dim">校验中</span><span className="ar">→</span>
+            <span className="bdg warn">待确认</span><span className="ar">→</span>
+            <span className="bdg ok">执行中</span><span className="ar">→</span>
+            <span className="bdg ok">执行成功</span>
+            <span style={{ margin: "0 4px", color: "var(--ink-4)" }}>|</span>
+            <span className="bdg bad">确认驳回</span>
+            <span className="bdg bad">执行失败</span>
+            <span className="bdg bad">账本写入失败</span>
+            <span className="ar">→</span><span className="bdg dim">已冲正</span>
+          </div>
+          <div className="ctint cyan"><b>调整生命周期(规范参考)</b> · 本原型确认即时落账(同步);上列异步态(校验中 / 执行中 / 账本写入失败)是接真后台时的目标状态机——届时任一环失败不显示「成功」,可重试或冲正。裁决回写 <span className="ccode">{"C.adjust.<id>.status"}</span>,通过项由 D4 双账本记账。<b>操作理由必填(A2)</b>。</div>
         </div>
       </section>
 
@@ -260,7 +322,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 960 }}>
-            <thead><tr><th>调整单</th><th>账户</th><th>对象</th><th className="num">增减</th><th>原因</th><th>操作 / 留痕</th><th>落点</th><th>时间</th></tr></thead>
+            <thead><tr><th>调整单</th><th>账户</th><th>对象</th><th className="num">增减</th><th>原因</th><th>操作 / 留痕</th><th>落点</th><th>时间</th><th style={{ textAlign: "right" }}>冲正</th></tr></thead>
             <tbody>
               {histRows.map((h) => (
                 <tr key={h.id} className="click" onClick={() => setHist(h)}>
@@ -272,6 +334,11 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                   <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{h.chain}{h.escalated ? "(超额)" : ""}</td>
                   <td className="mono" style={{ fontSize: 11.5, color: "var(--c-ac)" }}>{h.sink}</td>
                   <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{h.t}</td>
+                  <td style={{ textAlign: "right" }} onClick={(e) => e.stopPropagation()}>
+                    {isReversed(h.id)
+                      ? <span className="bdg dim" title="已生成反向冲正流水,原记录保留">已冲正</span>
+                      : <button className="l-btn sm mc" onClick={() => reverseAdj(h)}>冲正</button>}
+                  </td>
                 </tr>
               ))}
             </tbody>

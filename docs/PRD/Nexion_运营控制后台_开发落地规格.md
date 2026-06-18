@@ -116,7 +116,7 @@
 | E4 | 订单状态机 | 设备订单全生命周期:列表/状态推进/DC 分配/退款 | E 设备 | V2·Ch10 | §7.4 / §9.11f |
 | E5 | 设备运维 | fleet heartbeat 监控/批量操作/库存激活/强制激活解绑 | E 设备 | V2·Ch10 | §6.1 / §11.1 / §9.11d.2 |
 | F1 | V-Rank 晋升管理 | 13 阶 V 级门槛/server 晋升判定/实物奖发货/培育奖 | F 分销 | V2·Ch11 | §8.2 / §13.2 / 节奏表§6.3 |
-| F2 | 网络版税费率 | L1–L7 费率/Rate Tier/InfluenceScore/佣金冷却 | F 分销 | V2·Ch11 | §8.3 / §13.3 / §9.11c.1 |
+| F2 | 网络版税费率 | L1–L7 费率/Partner Status 权益/InfluenceScore/佣金冷却 | F 分销 | V2·Ch11 | §8.3 / §13.3 / §9.11c.1 |
 | F3 | 双轨结算引擎 | 较小侧匹配比例/两轨门槛/自动分配/月度 GV 归零(日封顶只读) | F 分销 | V2·Ch11 | §8.4 / §13.4.1 / 节奏表§6.4 |
 | F4 | 领导奖池 | 周注入比例/V_VOTES 票数权重/周结算(V3+ 头部分享) | F 分销 | V2·Ch11 | §8.5 |
 | F5 | 佣金事件审计 | 六类佣金统一流水/异常预警/冷却/撤销补发(资金出口审计中枢) | F 分销 | V2·Ch11 | §8.6 |
@@ -217,7 +217,7 @@
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **V_RANKS**(F1 13阶) | v:enum{V0…V12} · 头衔 · 晋升条件{selfBuyUSD?,directRefs?,teamVolumeUSD?,vDownlines?}(AND 复合,各阶组合不一) · unilevelDepth · peerBonus[V](V0–V2=0/V3+=5%) · leadershipVotes · prizeName(全局唯一) · cultivationBonus(NEX) · 可见性解锁 · vRankPermanent=true | SC | §17.1 / Ch11 F1 |
-| **佣金费率**(F2) | UNILEVEL_USDT[L1..L7]=[10%,5%,3%,2%,1%,0.5%,0.5%](和≤25%) · UNILEVEL_NEX[L1..L7]=[50,20,10,5,2.5,1,1] · Rate Tier{Standard 8%/Verified 10%/Premium 12%/Diamond 15%} · InfluenceScore clamp(1.0,5.0) · coolingDays(30,域独立) | SC | §17.1 / Ch11 F2 |
+| **佣金费率**(F2) | UNILEVEL_USDT[L1..L7]=[10%,5%,3%,2%,1%,0.5%,0.5%](和≤25%) · UNILEVEL_NEX[L1..L7]=[50,20,10,5,2.5,1,1] · Partner Status{Standard/Verified/Premium/Diamond,仅门槛+非现金权益,不改费率;直推费率恒取 UNILEVEL_USDT[1] 默认 10%、运营全局可配} · InfluenceScore clamp(1.0,5.0) · coolingDays(30,域独立) | SC | §17.1 / Ch11 F2 |
 | **双轨**(F3) | binaryDailyCap(月1-6=$5000/月7+=$2000,权威 H1) · balanceMatchRate(10%) · binaryTrackMinUsd($1000) · spillover · gvResetCron | SC | §17.1 / Ch11 F3 |
 | **Commission Event**(F5,§12.5) | commissionId · userId · kind:enum{network\|binary\|peer\|cultivation\|leadership\|genesis} · currency:enum{USDT\|NEX} · amount · sourceUserId · layer(L1–L7,仅network) · settledAt:ms-epoch · coolingDaysLeft · status:enum{cooling\|unlocked\|withdrawn\|reversed};**F5 仅审计消费,落 D4 commission bill** | SC | §17.1 / Ch11 F5 |
 | 领导池(F4) | leadershipPoolInjectRate(5%,3–10%) · V_VOTES{V3:1…V12:512} · poolSettleCron(周日23:59 UTC) · poolUnlockVRank(V3+) | SC | Ch11 F4 |
@@ -386,7 +386,7 @@
 | `/api/admin/config/v-ranks` · `/v-ranks` | GET / PUT | 13 阶 V 级配置(门槛保序 Vn≥Vn-1 违反 400) | F1-MD2(高敏) | F1 |
 | `/api/admin/users/:userId/vrank/override` | POST | 手动晋升/回滚 V 级(携 Key;执行=增长 lead/超管) | F1-MD1 | F1 |
 | `/api/admin/team/prize-queue` · `/prize-queue/:id/ship` | GET/POST | 实物奖发货队列 / 标发货(须 kycAddressVerified 否则 409) | F1-MD3(ship) | F1 |
-| `/api/admin/config/commission/rates` | GET / PUT | 佣金费率/Rate Tier/InfluenceScore/promo(高敏+B1 前置) | F2-MD1~MD3(高敏) | F2 |
+| `/api/admin/config/commission/rates` | GET / PUT | 佣金费率/Partner Status 门槛权益/InfluenceScore/promo(高敏+B1 前置) | F2-MD1~MD3(高敏) | F2 |
 | `/api/admin/config/commission/cooling-days` | GET / PUT | 佣金冷却(authorityOwner **TBD**:F2/commission/D5) | F2-MD5(PUT) | F2 |
 | `/api/admin/config/commission/layer/:layer/pause` | POST | 暂停/恢复某层结算 | F2-MD4 | F2 |
 | `/api/admin/config/binary` | GET / PUT | 双轨配置(binaryDailyCapUSD 不可写返 422;高敏+B1 前置) | F3-MD1/MD3(高敏) | F3 |
@@ -678,7 +678,7 @@
 | `vRankPermanent` | true(不降级) | true/false | 实时 | F1 |
 | `UNILEVEL_USDT[L1..L7]` | [10%,5%,3%,2%,1%,0.5%,0.5%] | 各 0–100%,**和 ≤25%** | 仅新结算 | F2 |
 | `UNILEVEL_NEX[L1..L7]`(per $1) | [50,20,10,5,2.5,1,1] NEX | 各 ≥ 0 | 仅新结算 | F2 |
-| Rate Tier 门槛+费率 | Standard $0→8% / Verified $5K→10% / Premium $50K→12% / Diamond $500K→15% | 门槛≥0 保序;费率 0–100% | 仅新评定周期(过去30天活跃) | F2 |
+| Partner Status 门槛+权益 | Standard $0 / Verified $5K / Premium $50K / Diamond $500K(仅门槛+非现金权益,不改费率;直推费率恒取 UNILEVEL_USDT[1] 默认 10%、运营全局可配) | 门槛≥0 保序 | 仅新评定周期(过去30天活跃) | F2 |
 | InfluenceScore clamp | clamp(1.0, 5.0) | 下限≥0;上限≤10 | 仅新结算 | F2 |
 | `commission/cooling-days` | 30d(域独立,≠提现冷却) | 0–90 天 | 见第7章 #5 | F2(待定) |
 | `balanceMatchRate`(双轨匹配) | 10%(min(A,B)×10%) | 0–20% | 仅新结算(日结) | F3 |
@@ -942,7 +942,7 @@
 | Staking APY/罚款/单档 kill | ✅ | ✅(lead,kill 止血) | ✅(lead,参数) | — | — | — | 是(理由必填;APY 调升 B1 预检;单档 disable 归 G1,不入 J1) | G1 |
 | Genesis 经济(单价/分红率/pause/geo) | ✅(分红率仅超管) | ✅(lead,pause/geo) | ✅(lead,其余参数) | — | — | — | 是(理由必填;分红率放大负债前置 B1) | G4 |
 | 佣金事件撤销/补发/暂停 | ✅ | ✅(lead) | ✅(lead,联动 D 退回) | — | — | — | 是(理由必填;补发方向 B1 预检) | F5 |
-| 网络版税费率 / Rate Tier | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(理由必填;调升 B1 预检,应付负债来源) | F2 |
+| 网络版税费率 / Partner Status | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(理由必填;调升 B1 预检,应付负债来源) | F2 |
 | 风险披露版本切换 + 强制 re-ack | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
 | 监管点名应急 SOP 编排执行 | ✅ | ✅(lead) | — | — | — | — | 是(J4-MD3,理由必填+触发事由;逐步经各域弹窗,串联 J1/J2/I5/C2/K1/D2/I3) | J4 |
 | **数据导出/监管报告(含敏感)** | ✅(超限/解密仅超管) | ✅(lead,风控域) | ✅(lead,资金域) | — | — | ✅(全量脱敏) | 是(理由必填;数据出境=敏感,脱敏+审计) | L5 |

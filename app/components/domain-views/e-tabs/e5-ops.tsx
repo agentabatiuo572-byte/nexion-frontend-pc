@@ -1,9 +1,19 @@
 import type { ReactNode } from "react";
-import { CodeTag } from "../design-kit";
+import { CodeTag, Badge } from "../design-kit";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
 
 const FLEET_TOTAL = 41208;
+const MAX_DEVICES = 6;
+// #22 设备库存样本(真后台由 fleet inventory 服务下发;E.device.<id>.state 真写覆盖 seed)
+const FLEET = [
+  { id: "dev-8472A1", user: "usr_19C7", sku: "NexionBox Pro v2", order: "ord-90412", dc: "us-east-2", slot: "3/6", seed: "active" },
+  { id: "dev-5521C9", user: "usr_84F2", sku: "NexionBox S1", order: "ord-90455", dc: "eu-west-1", slot: "1/6", seed: "inventory" },
+  { id: "dev-7793D2", user: "usr_02A9", sku: "NexionBox Pro", order: "ord-90201", dc: "ap-southeast-1", slot: "2/6", seed: "inventory" },
+  { id: "dev-1184B7", user: "usr_31E8", sku: "NexionRack P1", order: "ord-90388", dc: "us-east-2", slot: "5/6", seed: "active" },
+  { id: "dev-3310E4", user: "usr_55B1", sku: "NexionBox S1", order: "ord-89977", dc: "us-east-2", slot: "6/6", seed: "active" },
+];
+const DEV_STATE_LABEL: Record<string, string> = { active: "已激活在网", inventory: "库存待激活", unbound: "已解绑" };
 const ECG_PATH = "M0,30 L80,30 L100,30 L110,12 L120,48 L130,18 L140,30 L220,30 L240,30 L250,10 L260,52 L270,18 L280,30 L360,30 L380,30 L390,12 L400,48 L410,18 L420,30 L500,30 L520,30 L530,10 L540,52 L550,18 L560,30 L640,30 L660,30 L670,12 L680,48 L690,18 L700,30 L800,30";
 
 const DCS = [
@@ -48,6 +58,11 @@ function DcSpark({ data, color }: { data: number[]; color: string }) {
 }
 
 export function E5Ops({ ctx }: { ctx: EViewCtx }) {
+  // #22 设备库存激活闭环:激活 / 取消激活 / 强制激活 / 解绑(E.device.<id>.state 真写,param-fixed)
+  const devState = (id: string, seed: string): string => ctx.pget(`E.device.${id}.state`) ?? seed;
+  const devAct = (id: string, next: string, name: string, detail: string, amplify = false) =>
+    ctx.openActionConfirm({ name: `${name} · ${id}`, op: "param-fixed", paramKey: `E.device.${id}.state`, fixedVal: next, amplify, detail });
+
   const toggle = (dc: typeof DCS[number]) => {
     const paused = ctx.isDcPaused(dc.id);
     ctx.openActionConfirm({
@@ -86,6 +101,58 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           <div className="row"><span>持续异常 &gt; 1h</span><span className="v warn">28</span></div>
           <div className="row"><span>调度延迟 P95</span><span className="v">142ms</span></div>
         </div>
+      </section>
+
+      {/* #22 设备库存 & 激活 */}
+      <section className="feed-card" data-proof="e5-inventory" style={{ marginBottom: 16 }}>
+        <div className="feed-h">
+          <span className="ttl">设备库存 & 激活</span>
+          <span className="sub">激活 / 取消激活 / 强制激活 / 解绑 · 校验订单关系 + 用户槽位 + MAX_DEVICES({MAX_DEVICES})</span>
+          <span className="r"><CodeTag tone="electric">E.device.*</CodeTag></span>
+        </div>
+        <div style={{ overflowX: "auto", padding: "4px 4px 0" }}>
+          <table style={{ width: "100%", minWidth: 880, borderCollapse: "collapse", fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--ink-4)", fontSize: 11.5 }}>
+                <th style={{ padding: "8px 10px" }}>设备</th><th style={{ padding: "8px 10px" }}>用户</th><th style={{ padding: "8px 10px" }}>SKU</th>
+                <th style={{ padding: "8px 10px" }}>关联订单</th><th style={{ padding: "8px 10px" }}>DC</th><th style={{ padding: "8px 10px" }}>用户槽位</th>
+                <th style={{ padding: "8px 10px" }}>状态</th><th style={{ padding: "8px 10px", textAlign: "right" }}>动作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {FLEET.map((d) => {
+                const st = devState(d.id, d.seed);
+                return (
+                  <tr key={d.id} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink)", fontWeight: 600 }}>{d.id}</td>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{d.user}</td>
+                    <td style={{ padding: "9px 10px" }}>{d.sku}</td>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{d.order}</td>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{d.dc}</td>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{d.slot}</td>
+                    <td style={{ padding: "9px 10px" }}><Badge tone={st === "active" ? "ok" : st === "inventory" ? "warn" : "neutral"}>{DEV_STATE_LABEL[st] ?? st}</Badge></td>
+                    <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                      {st === "inventory" && (
+                        <>
+                          <button className="l-btn sm mc" onClick={() => devAct(d.id, "active", "激活设备", `激活 ${d.id}(订单 ${d.order} / 用户 ${d.user} 槽位 ${d.slot})· 校验订单 active + MAX_DEVICES(${MAX_DEVICES})未超 + DC 在线 · 操作确认 + A2`)}>激活</button>{" "}
+                          <button className="l-btn sm mc" onClick={() => devAct(d.id, "active", "强制激活设备", `强制激活 ${d.id} · 绕过订单/槽位校验(异常补救)· 留痕加重 · 操作确认 + A2`, true)}>强制激活</button>
+                        </>
+                      )}
+                      {st === "active" && (
+                        <>
+                          <button className="l-btn sm mc" onClick={() => devAct(d.id, "inventory", "取消激活设备", `取消激活 ${d.id} · 回收为库存待激活,停止派单与计提 · 操作确认`)}>取消激活</button>{" "}
+                          <button className="l-btn sm dgr" onClick={() => devAct(d.id, "unbound", "解绑设备", `解绑 ${d.id} · 与用户 ${d.user} 槽位解除关联(异常设备处置)· 不可逆 · 操作确认 + A2`)}>解绑</button>
+                        </>
+                      )}
+                      {st === "unbound" && <Badge tone="neutral">已解绑</Badge>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="f-foot" style={{ margin: "10px 14px 14px" }}><b>库存激活闭环</b> · 激活校验三关:① 关联订单为 active;② 用户设备数 &lt; MAX_DEVICES({MAX_DEVICES});③ 目标 DC 在线。强制激活绕过 ①②(异常补救,留痕加重)。解绑回退用户槽位、停止结算,资产按 server cron 处理。全部走操作确认 + A2 审计。</p>
       </section>
 
       {/* 3 DC 控制面板 */}

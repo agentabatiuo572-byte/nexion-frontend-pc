@@ -3,7 +3,7 @@
 /**
  * I6 i18n + I7 教程中心(合并页) — design_handoff_i_domain/I6 i18n与教程.html port。
  * 单源:
- *  - 命名空间矩阵 = NAMESPACES(12 显示 + 30+ 省略行)/ 完整性 = INTEGRITY_ISSUES /
+ *  - 命名空间矩阵 = NAMESPACES(11 显示 + 30+ 省略行)/ 完整性 = INTEGRITY_ISSUES /
  *    课程目录 = COURSES / 奖励区间 = TUTORIAL_REWARD_RANGE / 推荐位默认 = TUTORIAL_FEATURED_DEFAULT /
  *    效果监控 = TUTORIAL_METRICS(i-tabs/data 文件头裁定)。
  *  - 状态实时态 = pget(`I.i18n.<ns>.status`)/ pget(`I.tutorial.<id>.status`)/

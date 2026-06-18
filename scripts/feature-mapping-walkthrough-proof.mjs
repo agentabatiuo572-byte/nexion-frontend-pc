@@ -288,8 +288,8 @@ await step("FM-005-FRONT", "staking-user-opens-position", () => {
   const proof = waitForEval("staking position persisted", `
     const staking = store('nexion-v3-staking-v1') || {};
     const bills = store('nexion-bills-v1') || {};
-    const position = (staking.positions || []).find((row) => row.amountUSDT === 100 && row.termDays === 30 && row.status === 'active');
-    const bill = (bills.bills || []).find((row) => row.type === 'stake' && row.amount === -100 && /30d/.test(row.memo || ''));
+    const position = (staking.positions || []).find((row) => row.amountUSDT === 20 && row.termDays === 30 && row.status === 'active');
+    const bill = (bills.bills || []).find((row) => row.type === 'stake' && row.amount === -20 && /30d/.test(row.memo || ''));
     const body = bodyText();
     return {
       href: location.href,
@@ -297,7 +297,7 @@ await step("FM-005-FRONT", "staking-user-opens-position", () => {
       position,
       bill,
       positionCount: (staking.positions || []).length,
-      ok: !!position && !!bill && body.includes('Positions') && /\\$100(\\.00)?/.test(body),
+      ok: !!position && !!bill && body.includes('Positions') && /\\$20(\\.00)?/.test(body),
     };
   `, 9000);
   return {

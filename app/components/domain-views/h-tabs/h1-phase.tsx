@@ -24,7 +24,7 @@
  * amplifies 触发(过 B1 100% 红线):
  *  - 矩阵格 + LOOSEN_DIR 命中(nexGate/cooldown/binaryCap)+ 方向符合(数值类比较)。
  *
- * 与 D5(/funds/withdraw-params)+ F3 + G5/G6 同源:
+ * 与 D5(/funds/withdraw-params)+ F3 同源:
  *  - 旧 h-view 沿用 H.phase.dial.<key>,D5 pget 同键(d5-params.tsx line 21);
  *  - 改 currentMonth 行的格会被 D5/F3 实时跟上(~60s 全网生效)。
  */
@@ -94,11 +94,11 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
               悲观假设的合规预提示,不等同于真实拦截。
             </>
           )}
-          {" "}建议先沙盒预览下游影响(D5 提现 / F3 双轨 / G5/G6 订阅锁仓)。
+          {" "}建议先沙盒预览下游影响(D5 提现 / F3 双轨)。
           {isCurrentMonth && (
             <>
               {" "}<b>当前月格:本月生效值同步刷新</b>,D5 提现页镜像 ~60s 内随之走。
-              (F3/G5/G6 V3 接线前为声明意图,真消费由 D5 单家承担,见 d5-params.tsx pget。)
+              (F3 V3 接线前为声明意图,真消费由 D5 单家承担,见 d5-params.tsx pget。)
             </>
           )}
         </>
@@ -177,7 +177,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       action: "沙盒预览(只读 · 不写库)",
       detail: (
         <>
-          选一组旋钮改动,推演下游影响:提现冷却 / NEX 闸(D5)、双轨封顶(F3)、
+          选一组旋钮改动,推演下游影响:提现冷却 / 提现惩罚费率(D5)、双轨封顶(F3)、
           受影响用户规模、资金流出方向变化。示例:<b>月 7 复投加成 1→2</b> → 预估复投率 +4pt、周流出 +$180K、命中 31,200 人。
           <b>预览结果可一键转为正式提案进操作确认</b>;本步骤不写真配置,仅展示推演。
         </>

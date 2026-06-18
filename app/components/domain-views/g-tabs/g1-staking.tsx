@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * G1 Staking 池配置 — 双产品 4 档(APY/罚款/最小额/停售)+ position 状态机监控 + 单档熔断。
+ * G1 Staking 池配置 — USDT 4 档(APY/罚款/最小额/停售)+ position 状态机监控 + 单档熔断。NEX 质押已下线(2026-06-17),仅留 USDT 锁仓。
  * 三道硬门:升 APY/降罚款过 B1 红线 422 + 跨档保序 422 + 熔断附处置方案;
  * 在锁单按开锁锁定值结算(乐观锁不追溯);整池闸 = J1 staking 闸只读引用(J.killswitch.staking)。
  * 真写键沿用旧契约:G.staking.apy|penalty|min.<tier> / G.staking.<tier>.killed / 新增 G.staking.enabled.<tier>。
@@ -10,7 +10,7 @@ import { useState } from "react";
 import { Drawer, PaginationExemption } from "../design-kit";
 import { LEDGER } from "@/lib/mock/admin/ledger";
 import { fmtM } from "@/lib/mock/admin/design-data";
-import { G_FIN, USDT_TIERS, NEX_TIERS, G1_POS, G1_POS_DETAIL, type PoolTier } from "./data";
+import { G_FIN, USDT_TIERS, G1_POS, G1_POS_DETAIL, type PoolTier } from "./data";
 import type { GCtx } from "./types";
 
 export function G1Staking({ ctx }: { ctx: GCtx }) {
@@ -19,7 +19,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const cov = LEDGER.coverageRatio.toFixed(1);
 
   const stakingGateOn = (pget("J.killswitch.staking") ?? "on") === "on";
-  const killedCnt = [...USDT_TIERS, ...NEX_TIERS].filter((t) => pget(`G.staking.${t.tier}.killed`) === "true").length;
+  const killedCnt = USDT_TIERS.filter((t) => pget(`G.staking.${t.tier}.killed`) === "true").length;
 
   // 三字段独立写(audit 修:旧 adjPool 合并写 G.staking.apy.<tier> 导致 penalty/min 读永远 fallback;
   // 字段级完整性门:可编辑 ⊇ 展示,每个 PRD 参数独立 key)。
@@ -27,7 +27,16 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     const apy = pget(`G.staking.apy.${t.tier}`) ?? `${t.apy}%`;
     openActionConfirm({
       action: `Staking APY 调整 · ${prod} · ${t.term}`,
-      detail: <>当前 APY {apy}。<b>升 APY 是放大流出</b>,提交时服务器先验备付金覆盖率红线(当前 {cov}% &gt; {LEDGER.redlinePct},可过);同时验跨档保序(长期档不能低于短期档,违反 422 提示冲突档)。只对新单生效,在锁单按开锁锁定值结算。</>,
+      detail: <>
+        当前 APY {apy} · 影响产品 <b>{prod} · {t.term}</b> · 影响范围 <b>仅新单</b>(存量在锁单按开锁锁定值结算,不追溯)。
+        <div className="gtint" data-proof="g1-apy-preview" style={{ marginTop: 10 }}>
+          <div><b>调整影响预览</b></div>
+          <div>当前在锁本金:<b>{t.locked}</b> · 在锁 position 参与:{G1_POS.active.toLocaleString("en-US")} 单</div>
+          <div>当前累计应付利息(科目 #3):<b>{fmtM(G_FIN.interest)}</b> · 喂 D3/B2</div>
+          <div>B1 兑付覆盖率:<b>{cov}%</b> · 红线 {LEDGER.redlinePct}%</div>
+          <div>升 APY 新增应付利息 ≈ 新单本金 × ΔAPY × 剩余锁期;<b>升 APY 是放大流出</b>,提交即验覆盖率红线(低于红线 422 拒)+ 跨档保序(长期档 ≥ 短期档,违反 422 提示冲突档)。</div>
+        </div>
+      </>,
       amplifies: true,
       edit: { kind: "text", current: apy },
       run: (reason, v) => { if (v) setParam(`G.staking.apy.${t.tier}`, v, { action: `Staking APY 调整 ${prod} ${t.term}`, reason }); toast(`${prod} ${t.term} APY 已更新为 ${v} · 仅新单生效`); },
@@ -131,7 +140,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">在锁本金合计</div><div className="v">{fmtM(G_FIN.g1Locked)}</div><div className="sub">USDT 池 {fmtM(G_FIN.usdtPool)} + NEX 池折算 {fmtM(G_FIN.nexPool)}(科目 #2/#8)</div></div>
+        <div className="f-stat ok"><div className="k">USDT 在锁本金</div><div className="v">{fmtM(G_FIN.g1Locked)}</div><div className="sub">G1 USDT 池(科目 #2)· NEX 质押已下线</div></div>
         <div className="f-stat"><div className="k">在锁 position 数</div><div className="v">{(G1_POS.active + G1_POS.mature).toLocaleString("en-US")}</div><div className="sub">active {G1_POS.active.toLocaleString("en-US")} · 到期未领 {G1_POS.mature}</div></div>
         <div className="f-stat warn"><div className="k">累计应付利息</div><div className="v">{fmtM(G_FIN.interest)}</div><div className="sub">按已锁天数线性派生 · 科目 #3 喂 D3/B2</div></div>
         <div className="f-stat danger"><div className="k">单档熔断</div><div className="v">{killedCnt}</div><div className="sub">高息 180%/365d 档重点盯 · 整池闸 {stakingGateOn ? "在线(J1)" : "已熔断(J1)"}</div></div>
@@ -148,16 +157,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">NEX 池 · 4 档</span>
-          <span className="sub">· 币种区分文案 · 最小额按 NEX 计</span>
-        </div>
-        {poolTable("NEX", NEX_TIERS, "最小额(NEX)")}
-      </section>
-
-      <section className="l-card">
-        <div className="l-h">
           <span className="ttl">Position 状态机与监控</span>
-          <span className="sub">· 只读 · 状态只能服务器推进,客户端伪造无效 · 单档熔断在双产品 4 档表格行内操作</span>
+          <span className="sub">· 只读 · 状态只能服务器推进,客户端伪造无效 · 单档熔断在 USDT 4 档表格行内操作</span>
         </div>
         <div className="l-b">
           <div className="pos-grid" style={{ marginBottom: 14 }}>

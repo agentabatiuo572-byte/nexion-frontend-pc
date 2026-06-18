@@ -52,6 +52,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   });
   const pager = useDataListPager(rows, { resetKey: filter });
   const cur = WITHDRAWALS.find((w) => w.id === curId)!;
+  // 队列当前范围摘要(消除「默认看到的是全部还是子集」歧义):当前筛选名 + 笔数 + 金额合计。
+  const curFilterLabel = FILTERS.find((f) => f.key === filter)?.label ?? filter;
+  const rangeUsd = rows.reduce((s, w) => s + w.amount, 0);
   const setSt = (id: string, next: string, action: string, reason: string) =>
     setParam(`D.withdraw.${id}.st`, next, { action, reason });
 
@@ -85,16 +88,18 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     chips: [["自动退回余额 · 不留悬空", "done"], ["必须写原因", "ready"]], reason: true, okLabel: "确认拒绝",
     run: (reason) => { setSt(w.id, "rejected", `拒绝提现 ${w.id}`, reason); toast(`${w.id} 已拒绝 · 已退回余额`); },
   });
-  const delay = (w: WithdrawalRow) => openConfirm({
+  const delay = (w: WithdrawalRow) => openActionConfirm({
     action: `延迟处理 · ${w.id}`,
-    detail: "延长持有(默认对齐当期合规审查窗口,1–45d),到期自动回到待确认队列。延迟是收紧动作,单人即时,必须写原因。覆盖率紧张时优先用延迟而不是硬放行。",
-    chips: [["收紧动作 · 即时生效", "ready"], ["到期自动回队列", "done"]], reason: true, okLabel: "确认延迟",
-    run: (reason) => { setSt(w.id, "delayed", `延迟提现 ${w.id}`, reason); toast(`${w.id} 已延迟 · 到期回队列`); },
+    detail: <>延长持有(对齐当期合规审查窗口)。<b>需填期限 / 责任人 / 复查时间</b>,到期进入「待复查」队列(列表展示冻结时长 / 剩余复查时间 / 责任人)。延迟是收紧动作,单人即时,必填原因。覆盖率紧张时优先用延迟而不是硬放行。</>,
+    amplifies: false,
+    businessForm: { kind: "disposition-lifecycle", subject: `${w.id} · 延迟`, periods: ["1 天", "7 天", "14 天", "30 天", "45 天"], ownerHint: "如 risk@nexion" },
+    run: (reason, _v, bv) => { setSt(w.id, "delayed", `延迟提现 ${w.id} · 期限 ${bv?.period} · 责任人 ${bv?.owner} · 复查 ${bv?.reviewAt}`, reason); toast(`${w.id} 已延迟 ${bv?.period} · 责任人 ${bv?.owner} · 到期回队列待复查`); },
   });
   const freeze = (w: WithdrawalRow) => openActionConfirm({
     action: `冻结提现 · ${w.id}`,
-    detail: <><b>{w.user} · ${w.amount.toLocaleString("en-US")}</b> · 冻结用户这笔资金(任何在途状态都可以冻),必须操作确认。冻结事件喂风险雷达(B5)。</>,
-    run: (reason) => { setSt(w.id, "frozen", `冻结提现 ${w.id}`, reason); toast(`${w.id} 已冻结 · 理由留痕`); },
+    detail: <><b>{w.user} · ${w.amount.toLocaleString("en-US")}</b> · 冻结用户这笔资金(任何在途状态都可以冻),必须操作确认。<b>需填期限 / 责任人 / 复查时间</b>,到期进入待复查。冻结事件喂风险雷达(B5)。</>,
+    businessForm: { kind: "disposition-lifecycle", subject: `${w.id} · 冻结`, periods: ["7 天", "14 天", "30 天", "45 天", "长期(需复查)"], ownerHint: "如 risk@nexion" },
+    run: (reason, _v, bv) => { setSt(w.id, "frozen", `冻结提现 ${w.id} · 期限 ${bv?.period} · 责任人 ${bv?.owner} · 复查 ${bv?.reviewAt}`, reason); toast(`${w.id} 已冻结 ${bv?.period} · 责任人 ${bv?.owner} · 留痕`); },
   });
   const unfreeze = (w: WithdrawalRow) => openActionConfirm({
     action: `解冻提现 · ${w.id}`,
@@ -188,7 +193,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">审核队列</span>
-          <span className="sub">· 点行看详情 · 勾选做批量</span>
+          <span className="sub">· 当前范围「{curFilterLabel}」· {rows.length} 笔 · 合计 ${rangeUsd.toLocaleString("en-US")} · 点行看详情 · 勾选做批量</span>
           <div className="r"><div className="chips">
             {FILTERS.map((f) => (
               <button key={f.key} className={`chip${filter === f.key ? " sel" : ""}`} onClick={() => setFilter(f.key)}>{f.label}</button>
@@ -316,7 +321,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>三类参数三个家</b>:大额操作确认线($1,000)是本队列自己的静态参数;风控路由线(金额/速度/新账户/地址信誉)归 K3 规则引擎,这里照单消费——<b>K3 给出延迟/冻结/转人工时,小额快速通道不能盖过它</b>;冷却天数和 NEX 闸是运营节奏参数,归 H1 派发、在 D5 生效,这里只拿来判「冷却到没到、NEX 够不够」。「24h 提交」按提交次数计(含被拒/退回的提交)——日限(D5,当前 {pget("D.dailyLimitCount") ?? "1 次 / 日"})限的是在途成功单,反复被拒又反复提交正是 WR-02 的速度信号。月 8 以后(P5+)叠加增强合规审查(H1 派发,这里只读)。放行实时核减资金池储备(D3)→ 影响兑付覆盖率(B1)→ 喂挤兑雷达(B5);大额单触发 KYC 复审(K5),复审没过的维持待确认/延迟。所有写操作带防重号,网络重试不会重复放行或重复退款。</p>
+      <p className="f-foot"><b>三类参数三个家</b>:大额操作确认线($1,000)是本队列自己的静态参数;风控路由线(金额/速度/新账户/地址信誉)归 K3 规则引擎,这里照单消费——<b>K3 给出延迟/冻结/转人工时,小额快速通道不能盖过它</b>;冷却天数和提现惩罚费率是运营节奏参数,归 H1 派发、在 D5 生效,这里只拿来判「冷却到没到、按惩罚费率扣多少(用户烧 NEX 可抵)」。「24h 提交」按提交次数计(含被拒/退回的提交)——日限(D5,当前 {pget("D.dailyLimitCount") ?? "1 次 / 日"})限的是在途成功单,反复被拒又反复提交正是 WR-02 的速度信号。月 8 以后(P5+)叠加增强合规审查(H1 派发,这里只读)。放行实时核减资金池储备(D3)→ 影响兑付覆盖率(B1)→ 喂挤兑雷达(B5);大额单触发 KYC 复审(K5),复审没过的维持待确认/延迟。所有写操作带防重号,网络重试不会重复放行或重复退款。</p>
     </>
   );
 }

@@ -20,7 +20,7 @@
  *      - 每行尾「调整」操作确认 + amplifies=true(升 PU 阈值 = 放松流出过 B1);
  *      - 真写键 H5.pu.<id>.day(7/14/30/60)+ H5.pu.<id>.note(下游兑现注释);
  *      - .htint warn 「V3 接线前仅触点价值 · 不另立兑付逻辑」尾注;
- *      - 下游 chip F2/G5/G1/G4(.bdg dim)对应 downstream 字段。
+ *      - 下游 chip F2/G1/G4(.bdg dim)对应 downstream 字段。
  *  (f) H6 5 档保序表(.l-card · EARN_MS · .l-tbl):
  *      - 每行尾「调整」操作确认 + amplifies=true(升奖励 / 降门槛过 B1;阈值严格保序违反 422);
  *      - 真写键 H6.<key>.threshold + H6.<key>.nex(key = earn-100/500/1000/5000/10000);
@@ -69,10 +69,9 @@ function parseMoney(s: string): number {
   return m ? parseFloat(m[0]) : NaN;
 }
 
-/** Power-Ups 下游域 bdg 色彩(F2/G5/G1/G4 一律 dim,与设计稿 mute 一致)。 */
+/** Power-Ups 下游域 bdg 色彩(F2/G1/G4 一律 dim,与设计稿 mute 一致)。 */
 const PU_DOWNSTREAM_LABEL: Record<string, string> = {
   F2: "F2 · 团队费率",
-  G5: "G5 · 会员订阅",
   G1: "G1 · 质押",
   G4: "G4 · Genesis",
 };
@@ -414,7 +413,7 @@ export default function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         <div className="l-h">
           <span className="ttl">连胜增益 · Power-Ups(4 档)</span>
           <span className="sub">
-            · 跨域兑现 · 这页只是触发面 · 兑现归下游 F2 / G5 / G1 / G4
+            · 跨域兑现 · 这页只是触发面 · 兑现归下游 F2 / G1 / G4
           </span>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -470,7 +469,7 @@ export default function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 8 }}>
           <div className="htint warn" style={{ fontSize: 12 }}>
-            <b>调参别误判</b> · 下游四个域(F2 / G5 / G1 / G4)的「真实兑现」接线 V3 落地前,
+            <b>调参别误判</b> · 下游三个域(F2 / G1 / G4)的「真实兑现」接线 V3 落地前,
             当前增益只产生跳转引导 + 徽章解锁的<b>触点价值</b>;+5% 费率 / +2% 年化等暂不实际兑付。
             <b>这页只是触发面 · 不另立兑付逻辑</b>,评估留存效果按「触点引导」算,
             别按「增益兑付」算。

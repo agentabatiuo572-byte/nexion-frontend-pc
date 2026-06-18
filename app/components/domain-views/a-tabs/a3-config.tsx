@@ -37,6 +37,9 @@ import type { ACtx } from "./types";
 
 /* ────────────────── helpers ────────────────── */
 
+// feature flag 合法目标态枚举(on / off / 灰度百分比)—— 杜绝自由文本误填(如 "abc")。
+const FLAG_STATUS_OPTIONS = ["on", "off", "灰度 10%", "灰度 20%", "灰度 50%", "灰度 90%"];
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 function formatServerClock(d: Date): string {
@@ -58,7 +61,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
     return () => clearInterval(id);
   }, []);
 
-  /* 7 闸只读派生(killSwitchReadonly 同源 design-data.KILLSWITCH + geo-block 行)。
+  /* 5 闸只读派生(killSwitchReadonly 同源 design-data.KILLSWITCH + geo-block 行)。
    *「生效中」= enabled 或 「空列表 · 无封锁」(geo-block 列表非空才算「生效」,空列表 = 无封锁 = 通) */
   const gates = useMemo(() => killSwitchReadonly(), []);
   const upGates = gates.filter((g) => g.st === "enabled" || g.st.includes("空列表")).length;
@@ -103,13 +106,14 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: cur, unit: "小时" },
+      edit: { kind: "number", current: cur, unit: "小时" },
       run: (reason, v) => {
-        const val = (v || "").trim();
-        if (!val) {
-          toast("拒绝:去重窗口不能为空");
+        const h = parseInt((v || "").trim(), 10);
+        if (Number.isNaN(h) || h < 1 || h > 72) {
+          toast("拒绝:去重窗口须为 1–72 小时的整数,非法值未写入");
           return;
         }
+        const val = `${h} 小时`;
         setParam("A.sys.idempotencyWindow", val, {
           action: `防重号窗口 → ${val} · admin.system_param_changed`,
           reason,
@@ -132,11 +136,11 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: cur, unit: "" },
+      edit: { kind: "select", current: cur, options: FLAG_STATUS_OPTIONS },
       run: (reason, v) => {
         const val = (v || "").trim();
-        if (!val) {
-          toast("拒绝:开关目标态不能为空");
+        if (!FLAG_STATUS_OPTIONS.includes(val)) {
+          toast("拒绝:功能开关目标态须为 on / off / 灰度档,非法值未写入");
           return;
         }
         setParam(`A.flag.${f.key}.status`, val, {
@@ -172,7 +176,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         <div className="f-stat ok">
           <div className="k">熔断闸</div>
           <div className="v">{upGates} / {gates.length} 开</div>
-          <div className="sub">6 功能闸 + 地区屏蔽(空列表)</div>
+          <div className="sub">5 功能闸 + 地区屏蔽(空列表)</div>
         </div>
       </div>
 
@@ -348,7 +352,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="atint">
               <b>分工</b> · 闸状态存这里(单一真值源),驾驶舱风险雷达(B5)的状态灯也读这里;
-              <b>切换操作在 J1(6 功能闸)/ J2(地区屏蔽)</b>,这页早期的切换入口已经退役成只读。
+              <b>切换操作在 J1(5 功能闸)/ J2(地区屏蔽)</b>,这页早期的切换入口已经退役成只读。
               地区屏蔽不是开关而是国家列表:列表非空才算「生效」。<b>注意</b>:
               披露重确认机制不是闸,不在这张表里——它归内容域(I4–I5 页)。
             </div>
@@ -403,7 +407,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
             label: "熔断闸状态存储(d)· 只读兼容视图",
             kind: "reference-catalog",
             maxRows: 8,
-            reason: "七个熔断闸加地区屏蔽为固定目录,只读跳转到 J 域处置",
+            reason: "五个熔断闸加地区屏蔽为固定目录,只读跳转到 J 域处置",
           },
         ]}
       />

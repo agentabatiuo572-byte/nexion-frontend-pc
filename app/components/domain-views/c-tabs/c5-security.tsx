@@ -200,6 +200,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                 action: "人工关闭 2FA(丢设备路径 · 实名二验)",
                 detail: <>用户丢了验证器设备时的唯一恢复通道。<b>前置:用户先过一次实名二验</b>(结果会记进审计);确认通过后服务器关闭 2FA 并作废全部备份码,用户重新走开启流程。操作确认防社工——攻击者最爱借客服关 2FA。带防重号,重复请求不会重复作废。</>,
                 amplifies: false,
+                businessForm: { kind: "identity-verify", subject: `${uid} · 关闭 2FA`, channels: ["视频核实", "当面核实", "回拨预留号码"], ticketHint: "如 KYC-20260618-001" },
                 run: (reason) => {
                   setParam(`C.twofa.${uid}`, "disabled", { action: `人工关闭 2FA ${uid} · admin.2fa_disabled`, reason });
                   resetTwoFactor(uid); // 双源同写:360 HUB(useUserOps.twoFactorReset)同实体同态
@@ -210,6 +211,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                 action: "密码重置(操作确认 + 实名二验)",
                 detail: <><b>看不到也改不了密码明文</b>(只存哈希)。确认通过后:作废当前密码,给用户手机发一次性重置验证码,用户自己设新密码后获得新会话。前置实名二验,带防重号。</>,
                 amplifies: false,
+                businessForm: { kind: "identity-verify", subject: `${uid} · 密码重置`, channels: ["视频核实", "当面核实", "回拨预留号码"], ticketHint: "如 KYC-20260618-001" },
                 run: (reason) => {
                   setParam(`C.user.${uid}.pwReset`, "link-sent", { action: `密码重置 ${uid}(发送重置验证码,后台不持有明文)`, reason });
                   toast("密码已作废 · 重置验证码已发用户 · 留痕");
@@ -252,6 +254,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                         action: `解除 24 小时长锁 · ${l.id}`,
                         detail: "长锁挂着强制重置流程,解锁等于绕过它——操作确认 + 用户先过实名二验(结果入审计)。",
                         amplifies: false,
+                        businessForm: { kind: "identity-verify", subject: `${l.id} · 解除 24h 长锁`, channels: ["视频核实", "当面核实", "回拨预留号码"], ticketHint: "如 SEC-20260618-001" },
                         run: (reason) => {
                           setParam(`C.lock.${l.id}`, "unlocked", { action: `解除 24h 长锁 ${l.id}`, reason });
                           toast(`${l.id} 长锁已解除 · 操作确认 + 二验留痕`);

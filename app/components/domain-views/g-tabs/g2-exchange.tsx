@@ -30,7 +30,17 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     const isQueueMode = c.key === "queueMode";
     openActionConfirm({
       action: `兑换${isQueueMode ? "队列策略" : "额度"}调整 · ${c.name}`,
-      detail: <><b>{c.name}</b> · 当前 {cur} · {c.note}。{c.loosen ? <>放宽是放大 USDT 流出,确认放行时服务器验备付金覆盖率红线(当前 {cov}% &gt; {LEDGER.redlinePct});收紧不受限。</> : isQueueMode ? <>从「排队」改为「拒绝」= 收紧方向(超 cap 用户立即被拒,资金不锁死)。执行门槛:运营主管(`admin.exchange_queue_config_changed`)。</> : "随费率启用生效。"}</>,
+      detail: <>
+        <b>{c.name}</b> · 当前 {cur} · {c.note}。
+        <div className="gtint" data-proof="g2-cap-preview" style={{ marginTop: 10 }}>
+          <div><b>放行 / 排队 / 拒绝影响预览</b></div>
+          <div>当前额度占用:{c.meterPct !== undefined ? `${c.meterPct}%` : "—"} · 今日兑换成交 ${(G2_STATS.todayUsd / 1000).toFixed(1)}K(占日池 {G2_STATS.poolPct}%)</div>
+          <div>次日队列:{queueLive.length} 单在队({G2_STATS.queueDepth} 深度)· 今日拦截 {G2_STATS.gateUser + G2_STATS.gatePlatform} 次(单用户超限 {G2_STATS.gateUser} · 平台超限 {G2_STATS.gatePlatform})</div>
+          <div>调高 cap → 释放排队单加速放行(<b>pass↑</b>、queue↓);调低 → 更多转排队 / 拒绝(<b>queue/reject↑</b>),抑制 USDT 净流出</div>
+          <div>B1 兑付覆盖率:{cov}% · 红线 {LEDGER.redlinePct}%</div>
+        </div>
+        {c.loosen ? <>放宽是放大 USDT 流出,确认放行时服务器验备付金覆盖率红线(低于红线 422 拒);收紧不受限。</> : isQueueMode ? <>从「排队」改为「拒绝」= 收紧方向(超 cap 用户立即被拒,资金不锁死)。执行门槛:运营主管(`admin.exchange_queue_config_changed`)。</> : "随费率启用生效。"}
+      </>,
       amplifies: c.loosen,
       edit: { kind: "text", current: cur },
       run: (reason, v) => { if (v) setParam(`G.exchange.${c.key}`, v, { action: `兑换${isQueueMode ? "队列策略" : "额度"}调整 ${c.name}`, reason }); toast(`${c.name} 已更新为 ${v}`); },

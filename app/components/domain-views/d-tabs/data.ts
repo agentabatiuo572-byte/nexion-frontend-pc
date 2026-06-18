@@ -118,7 +118,7 @@ export const LIAB_META: { desc: string; src: string }[] = [
   { desc: "到期一次性全额登账,不线性计", src: "staking.opened(NEX v2)" },
   { desc: "已提交还没到账的冻结额", src: "withdraw.submitted − confirmed(在途)" },
   { desc: "已计提还在冷却期的佣金", src: "commission.paid − 冷却期满可提" },
-  { desc: "扩展位,按需启用", src: "预留(schema 治理)" },
+  { desc: "legacy 锁仓本息 / 其他(原 NEX 池存量)", src: "NEX 质押下线前在锁存量,转 legacy 沉淀(不再新增)" },
 ];
 
 // 压力测试层(trial shadow 潜在兑换,默认 OFF;只作观察,不进 B1 覆盖率分母)。
@@ -193,10 +193,10 @@ export const BREAKS: [user: string, desc: string, st: string][] = [
 /* ============================ D5 提现参数配置 ============================ */
 
 // D5 owns 三参数(PRD D5③:日限为「次数」非金额;操作确认 + 放松方向 B1 红线核验;实时态 = pget("D.<key>"))。
-export const OWN_PARAMS: { key: string; name: string; cur: string; sub: string; range: string; dir: "loosen-up" | "loosen-down" }[] = [
-  { key: "dailyLimitCount", name: "提现日限(次数)", cur: "1 次 / 日", sub: "每人每天最多提几次 · 上调 = 放松,要过覆盖率核验", range: "范围 1–10 次/日", dir: "loosen-up" },
-  { key: "balanceMaxRatio", name: "余额上限(可提比例)", cur: "80%", sub: "单次最多提余额的多少 · 上调 = 放松", range: "范围 50%–100%", dir: "loosen-up" },
-  { key: "networkFee", name: "网络费", cur: "2% · 最低 $1 / 最高 $20", sub: "提现手续费 · 下调 = 放松;改后只对新单,在途不变", range: "范围 0%–5%,min/max 可配", dir: "loosen-down" },
+export const OWN_PARAMS: { key: string; name: string; cur: string; sub: string; range: string; dir: "loosen-up" | "loosen-down"; ctrl: { unit: string; min: number; max: number; fmt: (n: number) => string } }[] = [
+  { key: "dailyLimitCount", name: "提现日限(次数)", cur: "1 次 / 日", sub: "每人每天最多提几次 · 上调 = 放松,要过覆盖率核验", range: "范围 1–10 次/日", dir: "loosen-up", ctrl: { unit: "次/日", min: 1, max: 10, fmt: (n) => `${n} 次 / 日` } },
+  { key: "balanceMaxRatio", name: "余额上限(可提比例)", cur: "80%", sub: "单次最多提余额的多少 · 上调 = 放松", range: "范围 50%–100%", dir: "loosen-up", ctrl: { unit: "%", min: 50, max: 100, fmt: (n) => `${n}%` } },
+  { key: "nexFeeOffsetRate", name: "NEX 抵扣率", cur: "$0.40 / NEX", sub: "每 1 NEX 抵扣的提现手续费 · 远高于市价(~$0.027)· 上调 = 放大流出(更多减免)", range: "范围 $0.05–$2.00 / NEX", dir: "loosen-up", ctrl: { unit: "$/NEX", min: 0.05, max: 2, fmt: (n) => `$${n.toFixed(2)} / NEX` } },
 ];
 
 // H1 Phase 派发只读三项(权威 H1,/growth/phase;PUT 携带返 422 PHASE_PARAM_READONLY)。
@@ -205,6 +205,6 @@ export const OWN_PARAMS: { key: string; name: string; cur: string; sub: string; 
 // H1 调 dial 后本页/stat 实时跟(曾硬编码快照,「同 X 展示必同源」audit 修正)。
 export const PHASE_RO = {
   cooldown: { name: "冷却天数", h1Key: "withdrawCooldownDays", seed: "30", fmt: (v: string) => (/^\d+$/.test(v) ? `${v}d(当前)` : `${v}(当前)`), sub: "两次提现之间的间隔 · 随运营月份阶梯上调", segs: [["月 1–7", "30 天", true], ["月 8", "35 天", false], ["月 9+", "45 天", false]] as [string, string, boolean][] },
-  nexGate: { name: "NEX 闸", h1Key: "nexGate", seed: "10", fmt: (v: string) => (/^\d+$/.test(v) ? `${v} NEX(当前)` : `${v}(当前)`), sub: "每提 $100 要燃烧的 NEX", segs: [["月 1–8", "10 NEX / $100", true], ["月 9–12", "20 NEX / $100", false]] as [string, string, boolean][] },
+  nexGate: { name: "提现惩罚费率", h1Key: "nexGate", seed: "20", fmt: (v: string) => (/^\d+(\.\d+)?$/.test(v) ? `${v}%(当前)` : `${v}(当前)`), sub: "无 NEX 抵扣时按提现金额收的费率(烧 NEX 可减免至 0)", segs: [["月 1–8", "20%", true], ["月 9–10", "25%", false], ["月 11–12", "30%", false]] as [string, string, boolean][] },
   hold: { name: "增强合规审查", h1Key: "complianceHoldEnabled", seed: "未激活(P5 起)", fmt: (v: string) => v, sub: "激活后大额提现进延长审查 · 月 8(P5 带)起整带开启,无月内拐点" },
 };

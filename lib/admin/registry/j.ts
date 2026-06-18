@@ -31,7 +31,7 @@ export const DOMAIN_J: ModuleEntry[] = [
         },
         {
           title: "获客 / 收入闸",
-          note: "影响拉新与订阅收入;熔断停用对应入口但不直接放大资金流出,恢复不挂 B1。",
+          note: "影响拉新与试用领取;熔断停用对应入口但不直接放大资金流出,恢复不挂 B1。",
           fields: [
             { label: "试用闸 (trial)", value: "开启 · 正常", range: "开启 / 熔断", effect: "熔断 → 免费试用领取关闭,联动 H 域名额" },
           ],

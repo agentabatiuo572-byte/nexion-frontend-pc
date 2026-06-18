@@ -5,7 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SKIP = /(?:^|[\\/])(?:node_modules|\.next|\.git|screenshots|videos|traces)(?:[\\/]|$)/;
+const SKIP = /(?:^|[\\/])(?:node_modules|\.next|\.git|\.trash|screenshots|videos|traces)(?:[\\/]|$)/;
 const EXT = new Set([".ts", ".tsx", ".mjs", ".sh", ".md", ".json", ".html"]);
 const banned = [
   /MakerCheckerModal/,

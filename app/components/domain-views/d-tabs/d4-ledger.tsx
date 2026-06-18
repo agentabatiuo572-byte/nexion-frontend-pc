@@ -26,9 +26,13 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
 
   const adjustBill = (ref: string) => openActionConfirm({
     action: `手动调账 · ${ref}`,
-    detail: <><b>写账本的唯一合法路径</b>:退款 / 冲正 / 断点修复都从这里走。必须写原因并在原因里附关联凭证号;操作确认 + 防重号,产 admin.bill_adjusted 审计事件,喂财务报表(L3)和监管报告(L5)。</>,
-    edit: { kind: "text", current: "—", unit: "USDT" },
-    run: (reason, v) => { if (v) setParam(`D.adjust.${ref}`, v, { action: `手动调账 ${ref} ${v} USDT`, reason }); toast(`${ref} 调账 ${v ?? ""} 已确认生效 · 凭证留痕`); },
+    detail: <><b>写账本的唯一合法路径</b>:退款 / 冲正 / 断点修复都从这里走。<b>结构化录入:方向 / 金额 / 币种 / 关联凭证</b>(金额是调整额非调整后余额);操作确认 + 防重号,产 admin.bill_adjusted 审计事件(附分录),喂财务报表(L3)和监管报告(L5)。</>,
+    businessForm: { kind: "balance-adjust", subject: ref, currencies: ["USDT", "NEX"], directions: ["增加", "扣减", "冲正"] },
+    run: (reason, _v, bv) => {
+      const signed = `${bv?.direction === "扣减" ? "−" : bv?.direction === "冲正" ? "∓" : "+"}${bv?.amount} ${bv?.currency}`;
+      setParam(`D.adjust.${ref}`, signed, { action: `手动调账 ${ref} · ${bv?.direction} ${bv?.amount} ${bv?.currency} · 凭证 ${bv?.voucher} · admin.bill_adjusted`, reason });
+      toast(`${ref} 调账 ${signed} 已确认生效 · 凭证 ${bv?.voucher} 留痕`);
+    },
   });
   const exportBills = () => openConfirm({
     action: "导出账单流水 CSV",
@@ -148,14 +152,20 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
             <span className="sub">· 滚动余额断点 · 核查后要调账走操作确认</span>
           </div>
           <div className="l-b">
-            {BREAKS.map(([user, desc, st]) => (
+            {BREAKS.map(([user, desc, st]) => {
+              // 状态机门:差异须核查到「待调账」才允许调账修复;「核查中」等未定位态只读,防绕过核查直接改账本。
+              const ready = st.includes("待调账");
+              return (
               <div className="cb-row" key={user}>
                 <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{user}</span>
                 <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-3)" }}>{desc}</span>
                 <span className="bdg warn">{adjusted(user) ? "调账确认中" : st}</span>
-                {!adjusted(user) && <button className="l-btn sm mc" onClick={() => adjustBill(user)}>调账修复</button>}
+                {!adjusted(user) && (ready
+                  ? <button className="l-btn sm mc" onClick={() => adjustBill(user)}>调账修复</button>
+                  : <span className="bdg dim" title="差异尚未定位完成,需先核查到「待调账」状态才能调账修复">待核查定位</span>)}
               </div>
-            ))}
+              );
+            })}
             <div className="dtint" style={{ marginTop: 12 }}><b>账实相符怎么核</b> · 三方对齐:① 每个资金事件对应一条账单;② 单用户账单加总 = 当前余额;③ 全平台账单聚合 = 资金池(D3)的储备/负债明细。任何一环对不上就在这里告警,并联动 D3 和水位卡(B2)的对账告警。</div>
             <div className="dtint warn" style={{ marginTop: 10 }}><b>bonus 账单口径</b> · 试用走完「兑换入账」终态才产生 bonus 账单(独立类型);中途取消、失败的影子收益不落账。这一类型已定为独立类(不并进收益类),按类型筛选时单独可查。</div>
           </div>

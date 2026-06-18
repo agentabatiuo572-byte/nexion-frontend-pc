@@ -4,14 +4,15 @@
  * 聚合导出仍需操作确认(confirm + logAudit 落 admin.report_exported 语义);视图参数普通确认批不落 store。
  */
 import type { ReactNode } from "react";
-import type { EditSpec } from "../design-kit";
+import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
 
 export type ActionConfirmReq = {
   action: ReactNode;
   detail: ReactNode;
   amplifies?: boolean;
   edit?: EditSpec;
-  run: (reason: string, newValue?: string) => void;
+  businessForm?: BusinessFormSpec;
+  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void;
 };
 
 export type LCtx = {

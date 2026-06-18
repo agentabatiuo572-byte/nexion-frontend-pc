@@ -193,8 +193,8 @@ const seedState = evalJson(`
     pairedAt: now,
   });
   uni.setStorageSync('nexion-risk-disclosure-v1', { accepted: true, acceptedAt: now });
-  // NEX 闸取代积分门槛:提现页读 app.user.nexBalance(默认 1240,app store 不持久化、reload 回默认),
-  // 1240 NEX 远超 $50 提现所需 5 NEX → 充足,无需 seed NEX。
+  // NEX 抵扣手续费取代旧积分/硬燃烧门槛:提现页读 app.user.nexBalance(默认 1240,app store 不持久化、reload 回默认),
+  // 1240 NEX 远超 $50 提现全抵所需 25 NEX → 手续费全免,无需 seed NEX。
   return {
     seeded: true,
     pairing: store('nexion-wallet-pairing-v1'),
@@ -230,17 +230,17 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   expect(seeded.inputValues[0] === "50", `withdraw amount input value mismatch: ${seeded.inputValues[0]}`);
   expect(seeded.inputValues[1] === WITHDRAW_ADDRESS, "withdraw address input value mismatch");
   expect(/nx-withdraw-address-input/.test(seeded.activeClass), "withdraw address input did not receive focus");
-  expect(seeded.body.includes("You receive\n$49.00"), "withdraw receive amount did not recalculate to $49.00");
-  // NEX 销毁闸:默认 nexBalance 1240,$50 提现需燃烧 5 NEX → 显示 "1240 / 5" + Sufficient。
-  expect(seeded.body.includes("Burn NEX"), "withdraw NEX burn gate label missing");
-  expect(/\d[\d,]*\s*\/\s*5\b/.test(seeded.body), `withdraw NEX requirement not shown as <balance> / 5 · gate slice: ${(seeded.body.match(/Burn NEX[\s\S]{0,60}/) || ["<no Burn NEX slice>"])[0]}`);
-  expect(seeded.body.includes("Sufficient"), "withdraw sufficient NEX message missing");
+  expect(seeded.body.includes("You receive\n$50.00"), "withdraw receive amount did not recalculate to $50.00 (NEX fully offsets fee)");
+  // NEX 抵扣手续费(取代旧硬燃烧闸):默认 nexBalance 1240,$50 提现 grossFee $10、requiredNex 25 → 1240 远超 → 全抵、fee $0、到账 $50。
+  expect(seeded.body.includes("Offset the fee with NEX"), "withdraw NEX fee-offset panel label missing");
+  expect(/\d[\d,]*\s*\/\s*25\b/.test(seeded.body), `withdraw NEX requirement not shown as <balance> / 25 · panel slice: ${(seeded.body.match(/Offset the fee with NEX[\s\S]{0,60}/) || ["<no offset panel slice>"])[0]}`);
+  expect(seeded.body.includes("fully waived"), "withdraw fully-waived message missing");
 
   clickSelector(".nx-withdraw-submit-cta");
   const proof = waitForEval("withdraw tracking route", `
     const bills = store('nexion-bills-v1');
     const bill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'USDT' && row.amount === -50 && row.status === 'pending');
-    const nexBill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'NEX' && row.amount === -5);
+    const nexBill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'NEX' && row.amount === -25);
     const body = bodyText();
     return {
       href: location.href,
@@ -252,12 +252,12 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
       hasAmount: body.includes('$50.00'),
       ok: location.href.includes('/#/pages/me/wallet-withdraw-tracking') && /WD-\\d{8}-\\d{4}/.test(body),
     };
-  `, 10000);
+  `, 15000);
   expect(proof.href.includes("/#/pages/me/wallet-withdraw-tracking"), "withdraw did not route to tracking");
   expect(proof.hasTrackingId, "withdraw tracking id missing");
   expect(proof.hasAddress, "withdraw address missing on tracking page");
   expect(proof.hasAmount, "withdraw amount missing on tracking page");
-  expect(proof.nexBill?.ref && /NEX burned/.test(proof.nexBill.memo || ""), `withdraw NEX burn bill (5 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
+  expect(proof.nexBill?.ref && /NEX burned/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (25 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
   expect(proof.bill?.ref && proof.bill.memo.includes("USDT-TRC20"), "withdraw bill missing or incomplete");
   return {
     href: proof.href,

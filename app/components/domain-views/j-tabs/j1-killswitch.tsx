@@ -5,6 +5,7 @@
  * 闸集 = 前端 §9.11d.1 的 4 闸 + 后台应急新增 withdraw(5 闸,与 B5 雷达 / 首页单源;Premium/NEX v2 已下线)。
  * B1 数值全部从 LEDGER 单源派生(TREASURY);recoverGate = B1.redLine,不另立数值。
  */
+import { useState } from "react";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { KILLSWITCH, TREASURY } from "@/lib/mock/admin/design-data";
@@ -24,6 +25,9 @@ const pct = (v: number) => Math.min(100, Math.max(0, (v / RANGE) * 100));
 
 export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
+  // #28 批量关停选择集:运营勾选要熔断的闸(替代旧的固定「立即出钱」闸硬编码)。
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const toggleSel = (key: string) => setSel((s) => ({ ...s, [key]: !s[key] }));
 
   const effOn = (g: Gate): boolean => { const v = pget(`J.killswitch.${g.key}`); return v ? v === "on" : g.on; };
   const effEmer = (g: Gate): boolean => pget(`J.killswitch.${g.key}.emergency`) === "true";
@@ -70,21 +74,25 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   });
 
   const launchBatch = () => {
-    const targets = KILLSWITCH.filter((g) => g.coverageImpactCategory === "immediate" && effOn(g));
+    // #28:用运营勾选的在线闸作为批量关停目标(替代旧固定「立即出钱」闸);未选任何闸禁止确认。
+    const targets = KILLSWITCH.filter((g) => sel[g.key] && effOn(g));
+    if (!targets.length) { toast("请先在上方闸卡勾选要批量关停的在线功能闸(至少一个)"); return; }
     openActionConfirm({
       action: "应急批量熔断 · 监管点名场景",
       detail: (
-        <>一次性熔断多个功能闸 · 用于<b>监管点名 / 法务事件</b>等重大合规触发 · 工单进 A2 队列最高优先级 · 执行门槛 SLA <b>{slaMins} 分钟</b> · 所有步骤标 emergency=true 高亮审计 · 默认勾选「立即出钱」闸:<b>{targets.map((g) => g.name).join(" / ") || "—(均已熔断)"}</b> · 每闸独立写 A2 事件。</>
+        <>一次性熔断<b>已选 {targets.length} 闸</b> · 用于<b>监管点名 / 法务事件</b>等重大合规触发 · 工单进 A2 队列最高优先级 · 执行门槛 SLA <b>{slaMins} 分钟</b> · 所有步骤标 emergency=true 高亮审计 · <b>已选闸:{targets.map((g) => g.name).join(" / ")}</b> · 资金影响:{targets.map((g) => IMPACT_LABEL[g.coverageImpactCategory]).join(" / ")} · 每闸独立写 A2 事件。</>
       ),
       run: (reason) => {
         targets.forEach((g) => {
           setParam(`J.killswitch.${g.key}`, "off", { action: `应急批量熔断 ${g.key}(emergency=true)`, reason });
           setParam(`J.killswitch.${g.key}.emergency`, "true", { action: `A2 应急标记 ${g.key}`, reason });
         });
+        setSel({});
         toast(`应急批量熔断 · ${targets.length} 闸 · emergency=true`);
       },
     });
   };
+  const selOnCount = KILLSWITCH.filter((g) => sel[g.key] && effOn(g)).length;
 
   const adjEmer = (row: (typeof EMER_SLA)[number]) => {
     const cur = effSla(row);
@@ -126,7 +134,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <div className="gates-strip">
         {KILLSWITCH.map((g) => { const on = effOn(g); return (
           <div key={g.key} className={"gate-card" + (on ? "" : " killed")}>
-            <div className="top"><span className="key">{g.name}</span><span className="led" /></div>
+            <div className="top">
+              {on && <input type="checkbox" data-proof="j1-gate-select" checked={!!sel[g.key]} onChange={() => toggleSel(g.key)} title="勾选纳入批量关停" style={{ marginRight: 6, cursor: "pointer" }} />}
+              <span className="key">{g.name}</span><span className="led" />
+            </div>
             <div className="cap"><b>{g.cap}</b> <span style={{ fontFamily: "var(--mono)", fontSize: 10.5, color: "var(--ink-4)" }}>{g.key}</span></div>
             <div className="ft">
               <span className={"impact " + g.coverageImpactCategory}><AutoGloss>{IMPACT_LABEL[g.coverageImpactCategory]}</AutoGloss></span>
@@ -190,15 +201,15 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             </div>
           ))}
           <div className="emer-launch">
-            <div className="txt"><b>一键批量关停</b> · <AutoGloss>遇监管点名 / 法务事件时,勾选多个业务一次性全部关停 · 全程留下高亮记录备查</AutoGloss></div>
-            <button onClick={launchBatch}>发起应急关停</button>
+            <div className="txt"><b>一键批量关停</b> · <AutoGloss>遇监管点名 / 法务事件时,在上方闸卡勾选多个业务一次性全部关停 · 全程留下高亮记录备查</AutoGloss> · <b data-proof="j1-batch-count">已选 {selOnCount} 闸</b></div>
+            <button onClick={launchBatch} disabled={selOnCount === 0} style={selOnCount === 0 ? { opacity: 0.5, cursor: "not-allowed" } : undefined}>发起应急关停</button>
           </div>
         </section>
 
         <section className="side-card">
           <div className="h">
             <span className="ic b1"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg></span>
-            <div><div className="t"><AutoGloss>恢复业务前 · 备付金检查</AutoGloss></div><div className="s"><AutoGloss>恢复「会往外付钱」的业务(提现 / 兑换 / Genesis / 质押 / NEX v2)前,先看平台备付金够不够</AutoGloss></div></div>
+            <div><div className="t"><AutoGloss>恢复业务前 · 备付金检查</AutoGloss></div><div className="s"><AutoGloss>恢复「会往外付钱」的业务(提现 / 兑换 / Genesis / 质押 / 试用)前,先看平台备付金够不够</AutoGloss></div></div>
             <span className="tag">备付金</span>
           </div>
           <div className="b1cov-hero">
@@ -226,7 +237,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           </div>
           <div className="b1cov-detail">
             <span className="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg></span>
-            <div><b>{covPass ? "目前所有业务都可以安全恢复" : "低于红线 · 放大流出业务禁止恢复"}</b> · <AutoGloss>{`备付金覆盖率 ${COV}%,${covPass ? `高于 ${RED}% 红线,还有 ${(COV - RED).toFixed(0)} 个百分点的缓冲` : `低于 ${RED}% 红线`}。恢复提现 / 兑换 / Genesis / 质押 / NEX v2 任一业务时,系统都会自动记录当时的备付金水位。`}</AutoGloss></div>
+            <div><b>{covPass ? "目前所有业务都可以安全恢复" : "低于红线 · 放大流出业务禁止恢复"}</b> · <AutoGloss>{`备付金覆盖率 ${COV}%,${covPass ? `高于 ${RED}% 红线,还有 ${(COV - RED).toFixed(0)} 个百分点的缓冲` : `低于 ${RED}% 红线`}。恢复提现 / 兑换 / Genesis / 质押 / 试用 任一业务时,系统都会自动记录当时的备付金水位。`}</AutoGloss></div>
           </div>
         </section>
       </div>
@@ -268,7 +279,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>关停立刻全站生效、客户端绕不过</b>:<AutoGloss>开关状态以服务器为准,关停后对应业务的请求会被服务器当场拒绝。任何关停 / 恢复都必须走执行门槛、填写理由并落 A2 审计。恢复「会往外付钱」的业务(提现 / 兑换 / Genesis / 质押 / NEX v2)前要先确认备付金够;不涉及付钱的(试用 / 会员)恢复则不用。每次操作都会留完整审计记录,并同步给风险雷达、风险评分和备付金看板。</AutoGloss></p>
+      <p className="f-foot"><b>关停立刻全站生效、客户端绕不过</b>:<AutoGloss>开关状态以服务器为准,关停后对应业务的请求会被服务器当场拒绝。任何关停 / 恢复都必须走执行门槛、填写理由并落 A2 审计。恢复「会往外付钱」的业务(提现 / 兑换 / Genesis / 质押 / 试用)前要先确认备付金够。每次操作都会留完整审计记录,并同步给风险雷达、风险评分和备付金看板。</AutoGloss></p>
     </div>
   );
 }

@@ -8,7 +8,7 @@
  */
 import { useMemo, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
-import { K_RISK } from "@/lib/mock/admin/design-data";
+import { K_RISK, USERS } from "@/lib/mock/admin/design-data";
 import { K5_PARAMS, K5_TICKETS, K5_ALERTS, TICKET_ST, slaColor, type K5Ticket, type TicketSt } from "./data";
 import type { KCtx } from "./types";
 
@@ -71,15 +71,21 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
   const manualTrigger = () =>
     ctx.openConfirm({
       action: "手动补触发复审",
-      detail: "对没踩到自动线但有可疑迹象的账户,手动拉一单增强复审。只是触发,不改实名状态,所以单人即可;后面的裁决照样操作确认。",
+      detail: "对没踩到自动线但有可疑迹象的账户,手动拉一单增强复审。userId 必须命中已存在账户(服务端校验);只是触发,不改实名状态,所以单人即可;后面的裁决照样操作确认。",
       chips: [["仅触发 · 不改状态", "done"], ["落审计 · 产 risk.kyc_review_triggered", "ready"]],
       reason: true,
-      input: { label: "userId", placeholder: "如 usr_9921" },
+      input: { label: "userId", placeholder: "如 usr_31E8" },
       okLabel: "确认触发",
       run: (reason, uid) => {
-        if (!uid) return;
-        ctx.setParam(`K.kyc.manual.${uid}`, reason, { action: `手动补触发 KYC 复审 ${uid}`, reason });
-        ctx.toast(`已手动触发复审工单(${uid})· 进入队列`);
+        const id = (uid || "").trim();
+        if (!id) return;
+        // 存在性校验:无效/不存在账户(如 bad_user_review)不得创建复审工单,防污染 K5 队列 + C4 状态回写。
+        if (!USERS.some((u) => u.id === id)) {
+          ctx.toast(`拒绝:账户「${id}」不存在于用户目录,未创建复审工单`);
+          return;
+        }
+        ctx.setParam(`K.kyc.manual.${id}`, reason, { action: `手动补触发 KYC 复审 ${id}`, reason });
+        ctx.toast(`已手动触发复审工单(${id})· 进入队列`);
       },
     });
 

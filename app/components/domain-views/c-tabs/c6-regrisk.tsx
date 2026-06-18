@@ -19,6 +19,9 @@ import type { CCtx } from "./types";
 
 type C6Param = (typeof C6_PARAMS)[number];
 
+// CAPTCHA 紧急关闭的恢复时限固定枚举 —— 必选可调度值,杜绝「永不恢复」等不可恢复的安全降级。
+const CAPTCHA_RECOVERY_OPTIONS = ["30 分钟后自动恢复", "1 小时后自动恢复", "2 小时后自动恢复", "4 小时后自动恢复"];
+
 export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const router = useRouter();
   const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
@@ -112,13 +115,14 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
                   <span className="v" style={{ color: "var(--success)" }}>开启</span>
                   <button className="l-btn sm mc" onClick={() => openActionConfirm({
                     action: "紧急关闭人机验证",
-                    detail: <><b>关闭 = 同号验证码超频不再拦,等于开放短信轰炸通道</b>——只用于人机验证服务商故障等系统级紧急维护,不是转化优化手段。<b>必须在目标新值里填恢复时限</b>(如「2h 后自动恢复」),到点自动开回;风控主管确认。</>,
+                    detail: <><b>关闭 = 同号验证码超频不再拦,等于开放短信轰炸通道</b>——只用于人机验证服务商故障等系统级紧急维护,不是转化优化手段。<b>必须从下拉选择恢复时限</b>(固定枚举,不接受「永不恢复」等不可调度值),到点自动开回;风控主管确认。</>,
                     amplifies: false,
-                    edit: { kind: "text", current: "开启", unit: "恢复时限" },
+                    edit: { kind: "select", current: "开启", options: CAPTCHA_RECOVERY_OPTIONS },
                     run: (reason, v) => {
-                      if (!v) { toast("必须填写恢复时限,未执行"); return; }
-                      setParam("C.regrisk.captchaOff", v, { action: "紧急关闭人机验证(限时)", reason });
-                      toast(`人机验证已临时关闭 · ${v} 自动恢复 · 高亮留痕`);
+                      const val = (v || "").trim();
+                      if (!CAPTCHA_RECOVERY_OPTIONS.includes(val)) { toast("必须选择有效恢复时限(剔除永不恢复),未执行"); return; }
+                      setParam("C.regrisk.captchaOff", val, { action: "紧急关闭人机验证(限时)", reason });
+                      toast(`人机验证已临时关闭 · ${val} · 高亮留痕`);
                     },
                   })}>紧急关闭</button>
                 </>

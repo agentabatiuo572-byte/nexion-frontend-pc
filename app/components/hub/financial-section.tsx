@@ -24,7 +24,7 @@ export function FinancialSection({ user }: { user: AdminUser }) {
   return (
     <HubCard icon={<Landmark size={15} style={{ color: "var(--admin-domain-g)" }} />} title="财务持仓卡 · staking / Genesis / 兑换" tag="C1·deepening · v3 financial · 处置在 G 操作确认">
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <HubMetric label="质押本金" sub="NEX" value={f.stakedNexTotal.toLocaleString()} accent="var(--admin-domain-g)" />
+        <HubMetric label="质押本金" sub="USDT" value={fmtUsd(f.stakedUsdTotal)} accent="var(--admin-domain-g)" />
         <HubMetric label="质押仓位" value={`${f.staking.length}`} />
         <HubMetric label="Genesis 节点" value={`${f.genesis.length}`} />
         <HubMetric label="节点日分红" value={fmtUsd(f.genesisDailyTotal)} accent="var(--v5-success)" />
@@ -37,11 +37,11 @@ export function FinancialSection({ user }: { user: AdminUser }) {
           {f.staking.length > 0 && (
             <div className="overflow-hidden rounded-[8px]" style={{ border: "1px solid var(--v5-border)" }}>
               <table className="w-full border-collapse text-[11.5px]">
-                <thead><tr style={{ background: "var(--v5-surface-2)" }}>{["质押池", "本金 NEX", "APY", "解锁", "状态"].map((h, i) => <th key={h} className="px-2.5 py-1.5 font-normal" style={{ color: "var(--v5-ink-4)", textAlign: i === 1 ? "right" : "left" }}><AutoGloss>{h}</AutoGloss></th>)}</tr></thead>
+                <thead><tr style={{ background: "var(--v5-surface-2)" }}>{["质押池", "本金 USDT", "APY", "解锁", "状态"].map((h, i) => <th key={h} className="px-2.5 py-1.5 font-normal" style={{ color: "var(--v5-ink-4)", textAlign: i === 1 ? "right" : "left" }}><AutoGloss>{h}</AutoGloss></th>)}</tr></thead>
                 <tbody>{f.staking.map((s) => (
                   <tr key={s.id} style={{ borderTop: "1px solid var(--v5-border)" }}>
                     <td className="px-2.5 py-1.5" style={{ color: "var(--v5-ink)" }}>{s.pool}</td>
-                    <td className="font-mono-tabular px-2.5 py-1.5 text-right" style={{ color: "var(--v5-ink)" }}>{s.principalNex.toLocaleString()}</td>
+                    <td className="font-mono-tabular px-2.5 py-1.5 text-right" style={{ color: "var(--v5-ink)" }}>{fmtUsd(s.principalUsd)}</td>
                     <td className="font-mono-tabular px-2.5 py-1.5" style={{ color: "var(--v5-ink-3)" }}>{s.apy}%</td>
                     <td className="font-mono-tabular px-2.5 py-1.5" style={{ color: "var(--v5-ink-4)" }}>{s.unlockAt}</td>
                     <td className="px-2.5 py-1.5"><StatusPill label={ST_LABEL[s.status]} tone={ST_TONE[s.status]} size="sm" dot={false} /></td>

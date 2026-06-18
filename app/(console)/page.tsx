@@ -80,7 +80,7 @@ export default function CommandCenter() {
   const role = useAdminAuth((s) => (mounted ? s.role : "superadmin"));
   const operator = useAdminAuth((s) => (mounted ? s.operator : "总管理员"));
 
-  // Kill 闸状态 — 单一源:store(J.killswitch.<key>)为准、缺省回落 KILLSWITCH.on(与 J1 / B5 恒一致,7 闸)。
+  // Kill 闸状态 — 单一源:store(J.killswitch.<key>)为准、缺省回落 KILLSWITCH.on(与 J1 / B5 恒一致,5 闸)。
   const killParams = usePlatformConfig((s) => s.params);
   const opsHydrated = useOpsHydrated();
 

@@ -84,6 +84,27 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
   const probSum = WHEEL_TIERS.reduce((s, t) => s + t.prob, 0);
   const probOk = Math.abs(probSum - 100) < 0.01;
 
+  // #38 任务事件契约与归因:每个首日任务派生 task_key / 服务端完成事件 / 下游业务事件 / B3 漏斗归属 / BI 口径,
+  // 作为「任务配置 ↔ 事件上报 ↔ BI 归因」的共同事实源(Day7/B3 异常时定位问题层)。
+  const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const questContract = (t: (typeof DAY_ONE_TASKS)[number], i: number) => {
+    const blob = `${t.task} ${t.href}`;
+    const buy = /购买|首购|下单|商城|box|store|pricing/i.test(blob);
+    const deposit = /充值|入金|deposit|topup|钱包|wallet/i.test(blob);
+    const b3 = buy || deposit;
+    return {
+      taskKey: `quest.day1.${slugify(t.task) || `t${i}`}`,
+      serverEvent: "quest.task_completed",
+      downstream: buy ? "order.created → order.paid" : deposit ? "wallet.deposited" : "—",
+      b3,
+      retentionOnly: !b3,
+      day7: b3 ? "下单 / 入金 → Day7 留存正相关" : "登录 / 浏览类 → 仅 Day7 留存信号",
+      bi: "fct_quest_events.task_key",
+      sample: 1200 - i * 130,
+      anomaly: Number((i === 2 ? 2.4 : 0.3 + i * 0.1).toFixed(1)),
+    };
+  };
+
   /* ========= 通用 操作确认 opener ========= */
 
   /** 改首日时窗 — A 方案不追溯。 */
@@ -606,6 +627,40 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
           </div>
         </section>
       </div>
+
+      {/* #38 任务事件契约与归因(只读) */}
+      <section className="l-card" data-proof="h3-event-contract">
+        <div className="l-h">
+          <span className="ttl">任务事件契约与归因(只读)</span>
+          <span className="sub">· 每个首日任务的 task_key / 服务端完成事件 / 下游业务事件 / B3 漏斗归属 / BI 口径 —— 异常时分清问题来自配置 / 上报 / 归因 / 真实转化</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 1080 }}>
+            <thead>
+              <tr><th>任务</th><th>task_key</th><th>服务端完成事件</th><th>下游业务事件</th><th>B3 漏斗</th><th>仅留存</th><th>Day7 贡献</th><th>L 域 BI 表.字段</th><th className="num">24h 样本</th><th className="num">异常率</th></tr>
+            </thead>
+            <tbody>
+              {DAY_ONE_TASKS.map((t, i) => { const c = questContract(t, i); return (
+                <tr key={t.task}>
+                  <td style={{ fontWeight: 600, color: "var(--ink)" }}>{t.task}</td>
+                  <td className="mono" style={{ fontSize: 11 }}>{c.taskKey}</td>
+                  <td className="mono" style={{ fontSize: 11 }}>{c.serverEvent}</td>
+                  <td className="mono" style={{ fontSize: 11, color: c.downstream === "—" ? "var(--ink-4)" : undefined }}>{c.downstream}</td>
+                  <td>{c.b3 ? <span className="bdg ok">进 B3</span> : <span className="bdg dim">否</span>}</td>
+                  <td>{c.retentionOnly ? <span className="bdg warn">是</span> : <span className="bdg dim">否</span>}</td>
+                  <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{c.day7}</td>
+                  <td className="mono" style={{ fontSize: 11 }}>{c.bi}</td>
+                  <td className="num mono">{c.sample.toLocaleString()}</td>
+                  <td className="num mono" style={{ color: c.anomaly > 1 ? "var(--warning)" : undefined }}>{c.anomaly}%</td>
+                </tr>
+              ); })}
+            </tbody>
+          </table>
+        </div>
+        <div className="l-b" style={{ paddingTop: 10 }}>
+          <div className="htint" style={{ fontSize: 12 }}><b>契约 = 归因共同事实源</b> · task_key 串起任务配置 → 服务端 <span className="mono">quest.task_completed</span> → 下游业务事件 → B3 漏斗 → L 域 BI;Day7 活跃 / B3 转化异常时,先比对「24h 样本数」与「异常率」定位问题层(配置 / 上报 / 归因 / 真实转化)。Weekly / Monthly 任务沿用同一 task_key 命名空间。</div>
+        </div>
+      </section>
 
       {/* (d)(e) Monthly + Monitor 双列 */}
       <div className="two-col">

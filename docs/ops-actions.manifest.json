@@ -394,7 +394,7 @@
    "id": "OPS-C-13",
    "domain": "C",
    "object": "资产调整(C3 发起 · 双币)",
-   "action": "提交并真写台账(USDT/NEX)+ 积分改字段",
+   "action": "提交并真写台账(USDT/NEX 双币)",
    "status": "built",
    "view": "c-tabs/c3-adjust.tsx",
    "storeAction": "earningAppend",
@@ -551,7 +551,7 @@
    "view": "d-tabs/d5-params.tsx",
    "batch": "P1",
    "storeAction": "setParam",
-   "note": "D.dailyLimitCount/D.balanceMaxRatio/D.networkFee;日限=次数制(旧金额制 withdrawDailyCapUSD 已废);冷却/积分移 OPS-D-14 只读(H1 派发)"
+   "note": "D.dailyLimitCount/D.balanceMaxRatio/D.networkFee;日限=次数制(旧金额制 withdrawDailyCapUSD 已废);冷却/提现惩罚费率移 OPS-D-14 只读(H1 派发)"
   },
   {
    "id": "OPS-D-08",
@@ -622,7 +622,7 @@
    "id": "OPS-D-14",
    "domain": "D",
    "object": "提现参数",
-   "action": "冷却/积分门槛/增强合规审查(展示+跳H1)",
+   "action": "冷却/提现惩罚费率/增强合规审查(展示+跳H1)",
    "status": "readonly",
    "view": "d-tabs/d5-params.tsx",
    "reason": "H1 Phase 派发参数(§3.14 权威归 H1),D5 仅生效面;PUT 携带返 422 PHASE_PARAM_READONLY,真 Link /growth/phase"
@@ -960,34 +960,34 @@
    "id": "OPS-G-08",
    "domain": "G",
    "object": "产品熔断(五闸生效面)",
-   "action": "Genesis市场/swap/premium/nexv2 熔断与恢复(恢复amplifies)",
+   "action": "Genesis市场/swap/staking/trial 熔断与恢复(恢复amplifies)",
    "status": "built",
    "view": "g-tabs/(g2|g4|g5)",
    "batch": "P0",
    "storeAction": "setParam",
-   "note": "写 J.killswitch.<genesis|exchange|premium|nexv2> 与 J1/首页/B5 同键真联动(旧 G.genesis.secondaryPaused 体系已收敛)"
+   "note": "写 J.killswitch.<genesis|exchange|staking|trial> 与 J1/首页/B5 同键真联动(Premium/NEXv2 闸已下线;旧 G.genesis.secondaryPaused 体系已收敛)"
   },
   {
    "id": "OPS-G-09",
    "domain": "G",
-   "object": "Premium订阅",
-   "action": "调月费/首月折扣/NEX收益权益(升权益amplifies)",
-   "status": "built",
-   "view": "g-tabs/g5-products.tsx",
+   "object": "Premium订阅(已下线)",
+   "action": "—(Premium 会员订阅 2026-06-15 下线,无后台动作)",
+   "status": "readonly",
+   "view": "—",
    "batch": "P2",
-   "storeAction": "setParam",
-   "note": "G.premium.price|disc|yield;gate premiumSubAvailable 归 H1 只读(真 Link /growth/phase)"
+   "reason": "Premium 会员订阅产品已取消(不再有会员/订阅/特权);原 view g5-products.tsx 已移除,无可调动作,下线留痕",
+   "note": "下线留痕:原调月费/首月折扣/NEX收益权益动作随产品取消"
   },
   {
    "id": "OPS-G-10",
    "domain": "G",
-   "object": "复投激励/NEXv2",
-   "action": "调APY/积分倍率/培育奖/抽奖券/早赎罚/preset + NEXv2 APY/锁期/最小额",
+   "object": "复投激励(G7)",
+   "action": "调APY/限时倍率(reinvestMultiplier,H1只读)/培育奖/抽奖券/早赎罚/preset",
    "status": "built",
-   "view": "g-tabs/g5-products.tsx",
+   "view": "g-tabs/g7-repurchase.tsx",
    "batch": "P1",
    "storeAction": "setParam",
-   "note": "G.repurchase.* / G.nexv2.*;升APY/倍率/降罚款 amplifies;gate nexV2LockAvailable/reinvestMultiplier 归 H1 只读"
+   "note": "G.repurchase.*;升APY/倍率/降罚款 amplifies;gate reinvestMultiplier 归 H1 只读(Premium/NEXv2 已下线)"
   },
   {
    "id": "OPS-G-11",
@@ -1071,7 +1071,7 @@
   {
    "id": "OPS-H-08",
    "domain": "H",
-   "object": "签到积分",
+   "object": "签到 NEX 奖励",
    "action": "调规则/Lucky概率/里程碑",
    "status": "built",
    "view": "h-view.tsx",
@@ -1236,13 +1236,13 @@
   {
    "id": "OPS-J-01",
    "domain": "J",
-   "object": "Kill-Switch 7闸",
+   "object": "Kill-Switch 5闸",
    "action": "熔断/应急熔断/恢复/应急批量(操作确认)",
    "status": "built",
    "view": "j-view.tsx",
    "batch": "done",
    "storeAction": "setParam",
-   "note": "设计稿 port:7 闸矩阵(6+withdraw);恢复 amplifying 闸 操作确认弹窗 B1 红线护栏(覆盖率<redLine 禁放行);应急轨 A2 emergency 标记(J.killswitch.<key>.emergency)"
+   "note": "设计稿 port:5 闸矩阵(前端 4 + withdraw;Premium/NEXv2 已下线);恢复 amplifying 闸 操作确认弹窗 B1 红线护栏(覆盖率<redLine 禁放行);应急轨 A2 emergency 标记(J.killswitch.<key>.emergency)"
   },
   {
    "id": "OPS-J-02",

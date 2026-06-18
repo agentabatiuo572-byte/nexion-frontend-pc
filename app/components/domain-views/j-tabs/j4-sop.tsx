@@ -24,11 +24,13 @@ export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
   const { setParam, toast, openActionConfirm } = ctx;
   const newPb = () => openActionConfirm({
     action: "新增应急剧本",
-    detail: <><b>创建新剧本</b>:填写名称 / 触发场景 / 动作序列(按 J1/J2/I5/C2/K1/D2/I3 各域原子动作组装)+ 是否应急轨 + 责任人 + SLA · 走 操作确认 · 入库后进剧本库 · 写 admin.emergency_playbook_edited(空序列 → 新 seq)· 原型记入草稿位。</>,
-    edit: { kind: "text", current: "—(输入剧本名称)" },
-    run: (reason, newValue) => {
-      setParam("J.emergency.playbook.draft", newValue ?? "未命名剧本", { action: `新增应急剧本草稿「${newValue ?? "未命名剧本"}」`, reason });
-      toast("新剧本工单已确认生效 · 记入草稿位");
+    detail: <><b>SOP 编排器</b>:配置名称 / 触发场景 / 责任角色 / SLA / 应急轨 / 动作序列(各域原子动作)/ 通知模板 / 回滚方案 / 演练要求 · 走操作确认 · 入库后进剧本库 · 写 admin.emergency_playbook_edited。</>,
+    businessForm: { kind: "sop-authoring", nameHint: "如 监管点名快速止血" },
+    run: (reason, _v, bv) => {
+      const steps = (bv?.actionSeq || "").split("\n").map((s) => s.trim()).filter(Boolean);
+      const slug = (bv?.name || "未命名").replace(/[^\w一-龥]+/g, "_");
+      setParam(`J.emergency.playbook.draft.${slug}`, JSON.stringify({ name: bv?.name, scene: bv?.scene, owner: bv?.owner, sla: bv?.sla, emergency: bv?.emergencyTrack, actions: steps, notify: bv?.notifyTemplate, rollback: bv?.rollback, drill: bv?.drillRequired }), { action: `新增应急剧本「${bv?.name}」(${steps.length} 步 · ${bv?.scene} · 责任 ${bv?.owner} · SLA ${bv?.sla})`, reason });
+      toast(`新剧本「${bv?.name}」已确认生效(${steps.length} 步)· 记入草稿位`);
     },
   });
   return <button className="f-cta" onClick={newPb}>+ 新增剧本</button>;
@@ -52,11 +54,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
 
   const editPb = (p: Playbook) => openActionConfirm({
     action: `编辑应急剧本 · ${p.code} ${p.name}`,
-    detail: <><b>剧本库维护</b>:编辑 {p.name} 的动作序列({p.seq.length} 步)+ 触发场景 + 应急轨开关 + SLA · 编辑本身走<b>风控/超管 操作员 · 执行门槛:超管 </b> · 写入 admin.emergency_playbook_edited(before→after action_sequence,A2 留痕)。</>,
-    edit: { kind: "text", current: `${p.seq.length} 步 · ${p.scene} · SLA ${p.sla}` },
-    run: (reason, newValue) => {
-      setParam(`J.emergency.playbook.${p.code}`, newValue ?? "", { action: `编辑应急剧本 ${p.code}(${p.name})`, reason });
-      toast(`${p.code} 剧本变更已确认生效`);
+    detail: <><b>SOP 编排器 · 剧本库维护</b>:重排 {p.name} 的动作序列(当前 {p.seq.length} 步)/ 触发场景 / 责任角色 / SLA / 应急轨 / 通知模板 / 回滚方案 · 风控/超管执行门槛 · 写 admin.emergency_playbook_edited(before→after action_sequence,A2 留痕)。</>,
+    businessForm: { kind: "sop-authoring", nameHint: p.name, owners: [p.owner, "风控 lead", "合规审计", "超管"] },
+    run: (reason, _v, bv) => {
+      const steps = (bv?.actionSeq || "").split("\n").map((s) => s.trim()).filter(Boolean);
+      setParam(`J.emergency.playbook.${p.code}`, JSON.stringify({ name: bv?.name || p.name, scene: bv?.scene, owner: bv?.owner, sla: bv?.sla, emergency: bv?.emergencyTrack, actions: steps, notify: bv?.notifyTemplate, rollback: bv?.rollback, drill: bv?.drillRequired }), { action: `编辑应急剧本 ${p.code}(${p.name})· ${steps.length} 步`, reason });
+      toast(`${p.code} 剧本变更已确认生效(${steps.length} 步)`);
     },
   });
 

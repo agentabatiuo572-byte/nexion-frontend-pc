@@ -39,8 +39,8 @@
 .jdom .seg button:not(.on):hover { background: var(--surface-3); color: var(--ink); }
 
 /* ============================ J1 ============================ */
-/* 7 闸 status cards(mini cockpit;7 闸 = 前端 6 + withdraw) */
-.jdom .gates-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; margin-bottom: 16px; }
+/* 5 闸 status cards(mini cockpit;5 闸 = 前端 4 + withdraw;Premium/NEXv2 已下线) */
+.jdom .gates-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
 @container jdom (max-width: 1280px) { .jdom .gates-strip { grid-template-columns: repeat(4, 1fr); } }
 @container jdom (max-width: 720px) { .jdom .gates-strip { grid-template-columns: repeat(2, 1fr); } }
 .jdom .gate-card { background: var(--surface); border-radius: 11px; padding: 14px 16px;

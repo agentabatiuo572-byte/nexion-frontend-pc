@@ -100,6 +100,41 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
         <div className="f-stat warn"><div className="k">储备可覆盖到期</div><div className="v">{RESERVE_COVER_DAYS} 天</div><div className="sub">储备 ÷ 日均到期 ${(dailyAvg / 1000).toFixed(1)}K(静态测算)</div></div>
       </div>
 
+      {/* #14 资金水位分级:四级阈值 + 触发条件 + 建议动作 + 通知策略,按储备可覆盖到期天数(单源 RESERVE_COVER_DAYS)派生当前档 */}
+      {(() => {
+        const days = RESERVE_COVER_DAYS;
+        const TIERS = [
+          { key: "正常", color: "var(--success)", min: 30, cond: "可覆盖到期 ≥ 30 天", act: "常规运营,无需联动", notify: "无(并入日报)" },
+          { key: "关注", color: "var(--v5-tech-cyan, #4aa3ff)", min: 15, cond: "可覆盖 15–30 天", act: "加密监控到期曲线 + 净敞口", notify: "财务日报标注" },
+          { key: "预警", color: "var(--warning)", min: 7, cond: "可覆盖 7–15 天", act: "联动 D5 收紧提现节奏 / D2 优先延迟大额", notify: "实时告警 + 值班响应" },
+          { key: "危险", color: "var(--danger)", min: 0, cond: "可覆盖 < 7 天", act: "联动 J1 Kill-Switch 评估熔断提现 + 升级超管", notify: "立即升级超管 + B5 雷达" },
+        ];
+        const curIdx = TIERS.findIndex((t) => days >= t.min);
+        return (
+          <section className="l-card" data-proof="d3-water-tiers" style={{ marginBottom: 16 }}>
+            <div className="l-h">
+              <span className="ttl">资金水位分级</span>
+              <span className="sub">· 四级阈值按储备可覆盖到期天数派生 · 当前 <b style={{ color: TIERS[curIdx]?.color }}>{TIERS[curIdx]?.key}({days} 天)</b></span>
+            </div>
+            <div className="l-b" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              {TIERS.map((t, i) => (
+                <div key={t.key} style={{ padding: "10px 12px", borderRadius: 10, background: "var(--surface-2)", border: `1px solid ${i === curIdx ? t.color : "var(--border)"}`, opacity: i === curIdx ? 1 : 0.82 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 700, color: t.color }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 999, background: t.color, display: "inline-block" }} />{t.key}{i === curIdx ? <span className="bdg dim" style={{ marginLeft: "auto", fontSize: 10 }}>当前</span> : null}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 6 }}>阈值:{t.cond}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4 }}>建议动作:{t.act}</div>
+                  <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 4 }}>通知:{t.notify}</div>
+                </div>
+              ))}
+            </div>
+            <div className="l-b" style={{ paddingTop: 0 }}>
+              <div className="dtint" style={{ marginTop: 4 }}><b>分级与红线的关系</b> · 本分级是「资金流出节奏」预警(储备 ÷ 日均到期),与 B1 兑付覆盖率红线(储备 ÷ 应付负债)互补:覆盖率管「能不能全额兑付」,水位管「按当前流出还能撑几天」。两者任一进危险档都联动收紧。</div>
+            </div>
+          </section>
+        );
+      })()}
+
       <div className="two-col">
         {/* 储备明细 */}
         <section className="l-card">

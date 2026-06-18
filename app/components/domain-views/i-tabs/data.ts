@@ -4,7 +4,7 @@
  *  - Nova 通道沿用 design-data.NOVA 单源(usePlatformConfig.novas 共享 store,旧 i-view 已建);
  *  - I3 CAP 4 档 = SPEC.md §6 权威(critical=∞ 锁死 / high 50 / normal 200 / low 30);
  *  - I4 信任 6 版块 / I5 4 法域 / I5 7 章节 / I7 课程目录:设计稿 HTML 内 var 原样移植,文案逐句保留;
- *  - I6 i18n 命名空间:30+ 中显式列 12(home/marketing/binaryHowItWorks 等),其余以「… 共 30+」省略;
+ *  - I6 i18n 命名空间:30+ 中显式列 11(home/marketing/binaryHowItWorks 等),其余以「… 共 30+」省略;
  *  - I7 amplifies 唯一流出方向:课程完成 NEX 派发(B1 红线核验),其余 I 域动作不碰 B1。
  *  - 客服支持(原 I8)/ 会话中心(原 I9)已迁出到客服中心域 M(m-tabs/),其 SUPPORT/SESSION 数据不再在此。
  * 真写键(I.*):I.copy.<key>.status(I1 文案池发布/下架/回滚)/ I.exp.<id>.status(I1 实验启停/采纳)/
@@ -213,11 +213,10 @@ export const DISCLOSURE_CHAPTERS = [
   { no: "07", zh: "托管、KYC 与监管管辖", en: "Custody, KYC & regulatory jurisdiction" },
 ];
 
-/** I5 受限动作范围(withdraw 已实装 / staking·nexv2 待接线,SPEC §0 现状注)。 */
+/** I5 受限动作范围(withdraw 已实装 / staking 待接线,SPEC §0 现状注)。 */
 export const GATED_ACTIONS = [
   { key: "withdraw", name: "提现", sub: "提交提现前服务器先验披露确认", st: "已实装", tone: "ok" as const },
-  { key: "staking", name: "质押锁仓", sub: "App 侧排期「后续 Sprint」,真后台应当三个都拦", st: "规划集成 · 待接线", tone: "warn" as const },
-  { key: "nexv2", name: "NEX v2 锁仓", sub: "同上,与质押同一套确认存储", st: "规划集成 · 待接线", tone: "warn" as const },
+  { key: "staking", name: "质押锁仓", sub: "App 侧排期「后续 Sprint」,真后台应当一并拦截", st: "规划集成 · 待接线", tone: "warn" as const },
 ];
 
 /* ============ I6 i18n + I7 教程(合并页) ============ */
@@ -237,7 +236,6 @@ export const NAMESPACES: Namespace[] = [
   { ns: "home", keys: 128, coverage: 100, variants: "—", lastChange: "06-09" },
   { ns: "binaryHowItWorks", keys: 30, coverage: 100, variants: "—", lastChange: "05-30" },
   { ns: "exchangeHowItWorks", keys: 35, coverage: 100, variants: "—", lastChange: "06-02" },
-  { ns: "premium", keys: 18, coverage: 100, variants: "—", lastChange: "05-14" },
   { ns: "marketing", keys: 64, coverage: 95, variants: "多版 ×3", lastChange: "06-05" },
   { ns: "milestones", keys: 22, coverage: 100, variants: "多版 ×1", lastChange: "06-09" },
   { ns: "team", keys: 41, coverage: 100, variants: "—", lastChange: "05-30" },

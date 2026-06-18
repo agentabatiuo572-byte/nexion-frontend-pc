@@ -56,8 +56,9 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
           detail={mc.detail}
           amplifies={mc.amplifies}
           edit={mc.edit}
+          businessForm={mc.businessForm}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue) => { mc.run(reason, newValue); setActionConfirm(null); }}
+          onConfirm={(reason, newValue, businessValue) => { mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
         />
       )}
       {toastNode}

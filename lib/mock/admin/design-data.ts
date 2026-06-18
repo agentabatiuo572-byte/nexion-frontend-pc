@@ -107,7 +107,7 @@ export const PHASE = {
   dials: [
     { key: "withdrawCooldownDays", name: "提现冷却(天)", val: 30, unit: "d", trend: "↑" },
     { key: "complianceHoldEnabled", name: "增强合规审查", val: "未激活(P5 起)", trend: "—" }, // 提现日限非 Phase dial(D5 owns 次数制,PRD §6 D5),旧 withdrawDailyCapUSD 行已纠正
-    { key: "withdrawNexGate", name: "提现 NEX 闸 /$100", val: "10", trend: "↑" },
+    { key: "withdrawNexGate", name: "提现惩罚费率", val: "20%", trend: "↑" },
     { key: "binaryDailyCapUSD", name: "双轨日封顶", val: "$2,000", trend: "—" },
     { key: "stakingApyBoost", name: "Staking APY 加成", val: "1.0×", trend: "—" },
     { key: "novaCadenceMult", name: "Nova 节奏乘数", val: "1.2×", trend: "↑" },
@@ -227,9 +227,9 @@ export const WITHDRAWALS: WithdrawalRow[] = [
   {
     id: "WD-90376", user: "usr_77D4", amount: 248, chain: "TRC20", addr: "TBn8…1p", risk: 11,
     kyc: "快速实名(升级复审中 K5)", pts: false, n24: 1, rules: "—", st: "review-pending", age: "2d", holdK5: "KR-7738",
-    info: [["用户分层", "L2 · V0"], ["注册", "2026-05-30 · 11 天"], ["冷却", "首笔 · 不适用"], ["NEX 闸", "不足:5 / 25(每 $100 要 10 NEX)"], ["可提余额", "$310(本单 $248 = 80% 上限内)"], ["KYC 复审(K5)", "KR-7738 累计过线 · 剩 2 天"]],
+    info: [["用户分层", "L2 · V0"], ["注册", "2026-05-30 · 11 天"], ["冷却", "首笔 · 不适用"], ["NEX 抵扣", "持有 5 NEX · 抵 $2,余按惩罚费率 20% 收"], ["可提余额", "$310(本单 $248 = 80% 上限内)"], ["KYC 复审(K5)", "KR-7738 累计过线 · 剩 2 天"]],
     riskDims: [["账户年龄", 6], ["提现速度", 2], ["异常行为", 3]],
-    hist: "首笔提现 · 提交时 NEX 足额预扣,6/08 K1 拦截新人礼回收 −20 NEX → 门槛不足挂起;非风控命中,等 NEX 补足或人工裁定",
+    hist: "首笔提现 · 持有 5 NEX 抵 $2 手续费,余额按 20% 惩罚费率收(无硬门槛);当前因 K5 累计过线复审(KR-7738,剩 2 天)hold,复审通过后可放行",
   },
 ];
 
@@ -238,7 +238,7 @@ export const SENSITIVE_OPERATIONS = [
   { id: "操作确认-2039", action: "提现参数:日限上调", obj: "dailyLimitCount 1→2 次/日", operator: "growth·王", domain: "D5", risk: "高·放大流出", amount: "—", ts: "18m", reason: "P3 拉新期提升体验", covCheck: true },
   // 与 C3 队列 ADJ-7741 / AUDIT 13:40(admin.balance_adjusted 发起层留痕)同一事件,单一叙事(币种 USDT 对齐 amount)。
   { id: "操作确认-2037", action: "余额调整", obj: "ADJ-7741 · usr_84F2 +$1,200 USDT", operator: "support·张", domain: "C3", risk: "中", amount: "$1,200", ts: "34m", reason: "客诉补偿(工单 #88213)", covCheck: false },
-  { id: "操作确认-2034", action: "Kill-Switch 解除", obj: "nexv2 disable→enable", operator: "risk·陈", domain: "J1", risk: "高·放大流出", amount: "—", ts: "1h", reason: "监管核查完毕,恢复 NEX v2", covCheck: true },
+  { id: "操作确认-2034", action: "Kill-Switch 解除", obj: "exchange disable→enable", operator: "risk·陈", domain: "J1", risk: "高·放大流出", amount: "—", ts: "1h", reason: "兑换通道核查完毕,恢复 NEX↔USDT swap", covCheck: true },
 ];
 
 // ── 充值流水(D1 渲染面;渠道枚举 = 前端 §9.2 五渠道,Card 由主 PSP Checkout.com 处理 · 备 Stripe)──
@@ -292,7 +292,7 @@ export const USERS = [
 // (旧 CLUSTERS 四行简表已随 K 域设计稿 port 移除 —— 簇明细唯一渲染面在 k-tabs/data.ts K1_CLUSTERS,
 //  跨页只消费 K_RISK 聚合口径,避免簇数据双源。)
 
-// Kill-Switch 7 闸(前端 §9.11d.1 的 6 + 后台应急新增 withdraw;主人 2026-06-05 拍板)。
+// Kill-Switch 5 闸(前端 §9.11d.1 的 4 + 后台应急新增 withdraw;Premium/NEX v2 已下线,原 6+withdraw=7 收敛到 4+withdraw=5;主人 2026-06-05 拍板)。
 // PRD §15.2 完整字段:coverageImpactCategory(资金语义)/ coveragePrecheckRequired(恢复前置 B1)/
 // proposalStatus / operator / role_gate(操作确认角色)。B5 雷达与首页从本表 + store(J.killswitch.<key>)派生,单一源。
 export const KILLSWITCH = [
@@ -317,7 +317,7 @@ export const GEOBLOCK = [
 ] as const;
 
 // SKU 目录 — 前端 Product(Nexion-prototype/lib/mock/products.ts)6 款的完整镜像。
-// 数值逐字段对齐前端商品卡(S1 日产 $14.20 + 24 NEX · 可信档年化~400% / 库存 47 / 评分 4.8 …);baseRate 已拆 dailyEarn + dailyEarnNEX(双币真源),
+// 数值逐字段对齐前端商品卡(S1 日产 $7 + 40 NEX · v2 $649 锚 / 库存 47 / 评分 4.8 …);baseRate 已拆 dailyEarn + dailyEarnNEX(双币真源),
 // baseRate 仅留派生展示串。在售 4(on)+ 待发布 2(pending:Pro v2=P3 / Rack P2=P5 代际门未放行)= 6,对齐 metrics「4 / 6」。
 // Genesis 属 G4 金融产品(非设备 SKU),已从本目录移除。
 export const SKUS = [
@@ -325,8 +325,8 @@ export const SKUS = [
     name: "NexionBox S1", id: "stellarbox-s1", tier: "Entry",
     tagline: "Personal AI inference box · fully managed", badge: "Best Seller",
     gpu: "4× RTX 4090", vram: "96GB VRAM", hashRate: "1,240 MH/s", power: "1,200W TDP", datacenter: "Singapore DC",
-    price: 1299,
-    dailyEarn: 14.2, dailyEarnNEX: 24, baseRate: "$14.20/d · 24 NEX",
+    price: 649,
+    dailyEarn: 7, dailyEarnNEX: 40, baseRate: "$7/d · 40 NEX",
     sold: 4821, stock: 47, rating: 4.8, reviews: 2847,
     aiImageGenPerMin: 320, aiLlmTokensPerSec: 12400, aiVideoMinPerHour: 18, aiFineTuneMins: 6, aiUnlocks: "LLM 70B inference pool",
     features: ["Fully managed by Nexion", "99.9% uptime SLA", "Real-time remote monitoring", "Free shipping & installation"],
@@ -337,10 +337,10 @@ export const SKUS = [
     name: "NexionBox Pro", id: "stellarbox-pro", tier: "Pro",
     tagline: "Double the GPUs, double the earning power.", badge: "Trending",
     gpu: "8× RTX 4090", vram: "192GB VRAM", hashRate: "2,480 MH/s", power: "2,400W TDP", datacenter: "Singapore DC",
-    price: 2399,
-    dailyEarn: 26.3, dailyEarnNEX: 74, baseRate: "$26.30/d · 74 NEX",
+    price: 1199,
+    dailyEarn: 13, dailyEarnNEX: 80, baseRate: "$13/d · 80 NEX",
     sold: 1842, stock: 23, rating: 4.9, reviews: 1124,
-    aiImageGenPerMin: 720, aiLlmTokensPerSec: 38000, aiVideoMinPerHour: 12, aiFineTuneMins: 20, aiUnlocks: "AI Premium pool (Fine-tune + 405B inference)",
+    aiImageGenPerMin: 720, aiLlmTokensPerSec: 38000, aiVideoMinPerHour: 12, aiFineTuneMins: 20, aiUnlocks: "Flagship compute pool (Fine-tune + 405B inference)",
     features: ["8× RTX 4090 GPUs", "Priority task allocation", "99.9% uptime SLA", "Hardware insurance included"],
     generation: 1, lifecycle: "legacy", supersededBy: "stellarrack-p2", tradeinDiscount: 0, unlock: "P1",
     tag: "legacy", status: "on",
@@ -349,10 +349,10 @@ export const SKUS = [
     name: "NexionBox Pro v2", id: "stellarbox-pro-v2", tier: "Pro",
     tagline: "2.5× S1 throughput — new generation silicon.", badge: "New Gen",
     gpu: "8× RTX 5090", vram: "256GB VRAM", hashRate: "5,120 MH/s", power: "2,200W TDP", datacenter: "Singapore DC",
-    price: 2639,
-    dailyEarn: 28.9, dailyEarnNEX: 84, baseRate: "$28.90/d · 84 NEX",
+    price: 1319,
+    dailyEarn: 14.5, dailyEarnNEX: 100, baseRate: "$14.50/d · 100 NEX",
     sold: 412, stock: 38, rating: 4.9, reviews: 187,
-    aiImageGenPerMin: 1080, aiLlmTokensPerSec: 56000, aiVideoMinPerHour: 24, aiFineTuneMins: 12, aiUnlocks: "AI Premium + multi-tenant 405B",
+    aiImageGenPerMin: 1080, aiLlmTokensPerSec: 56000, aiVideoMinPerHour: 24, aiFineTuneMins: 12, aiUnlocks: "Flagship AI + multi-tenant 405B",
     features: ["8× RTX 5090 — new silicon generation", "2.5× S1 throughput on AI workloads", "Trade-in: $300 off when retiring a legacy NexionBox", "Hardware insurance + 5-year warranty"],
     generation: 2, lifecycle: "active", supersededBy: "", tradeinDiscount: 300, unlock: "P3",
     tag: "popular", status: "pending",
@@ -361,8 +361,8 @@ export const SKUS = [
     name: "NexionRack P1", id: "stellarrack-p1", tier: "Flagship",
     tagline: "Datacenter-grade A100 rack for serious operators.", badge: "Flagship",
     gpu: "8× NVIDIA A100", vram: "640GB VRAM", hashRate: "3,840 MH/s", power: "3,200W TDP", datacenter: "Singapore DC",
-    price: 8999,
-    dailyEarn: 98.6, dailyEarnNEX: 650, baseRate: "$98.60/d · 650 NEX",
+    price: 4499,
+    dailyEarn: 45, dailyEarnNEX: 300, baseRate: "$45/d · 300 NEX",
     sold: 287, stock: 8, rating: 4.9, reviews: 154,
     aiImageGenPerMin: 1800, aiLlmTokensPerSec: 128000, aiVideoMinPerHour: 60, aiFineTuneMins: 8, aiUnlocks: "Training pool (RLHF / from-scratch 8B)",
     features: ["Enterprise A100 GPUs", "Dedicated tier-3 datacenter slot", "VIP support · 24/7 hotline", "5-year extended warranty"],
@@ -373,8 +373,8 @@ export const SKUS = [
     name: "NexionRack P2", id: "stellarrack-p2", tier: "Flagship",
     tagline: "Datacenter H100 rack — final-tier upgrade window.", badge: "New Gen",
     gpu: "8× NVIDIA H100", vram: "1,024GB VRAM", hashRate: "9,600 MH/s", power: "4,000W TDP", datacenter: "Singapore DC",
-    price: 14999,
-    dailyEarn: 164.4, dailyEarnNEX: 1200, baseRate: "$164.40/d · 1,200 NEX",
+    price: 7499,
+    dailyEarn: 75, dailyEarnNEX: 500, baseRate: "$75/d · 500 NEX",
     sold: 64, stock: 4, rating: 5.0, reviews: 41,
     aiImageGenPerMin: 3600, aiLlmTokensPerSec: 256000, aiVideoMinPerHour: 120, aiFineTuneMins: 4, aiUnlocks: "Training pool (RLHF / 70B from-scratch)",
     features: ["8× H100 SXM5 — datacenter-grade Hopper", "Trade-in: $800 off when retiring a legacy Rack", "Dedicated tier-3 DC slot · 24/7 VIP support", "10-year extended warranty + insurance"],
@@ -386,7 +386,7 @@ export const SKUS = [
     tagline: "No hardware needed — buy a slice of the network.", badge: "Low Barrier",
     gpu: "Distributed", vram: "—", hashRate: "", power: "", datacenter: "全球分布式",
     price: 19.9,
-    dailyEarn: 0.0073, dailyEarnNEX: 3, shareYieldMin: 8, shareYieldMax: 15, baseRate: "8–15% 年化 · 3 NEX",
+    dailyEarn: 0.19, dailyEarnNEX: 1, baseRate: "$0.19/d · 1 NEX",
     sold: 12483, stock: "∞", rating: 4.6, reviews: 3812,
     aiUnlocks: "Fractional access to network's IG + EM + SP pools",
     features: ["Instant activation", "Buy as little as $19.9", "Fixed-income style returns", "Redeem any time after 30 days"],
@@ -398,7 +398,7 @@ export const SKUS = [
 // 商品用户评价 seed — 镜像前端 lib/mock/reviews.ts。运营后台 E1 可增删改查。
 export const REVIEWS = [
   // 每条评价关联单个具体设备(productId = 设备 id),无通用("*")。镜像前端 reviews.ts。
-  { id: "rv-001", productId: "stellarbox-s1", author: "Maya · ID", rating: 5, date: "2 days ago", content: "Paid back in 11 months. Withdrew $186 first month no questions.", status: "published" },
+  { id: "rv-001", productId: "stellarbox-s1", author: "Maya · ID", rating: 5, date: "2 days ago", content: "Paid back in about 3 months. Withdrew $186 first month no questions.", status: "published" },
   { id: "rv-002", productId: "stellarbox-s1", author: "Tomás · BR", rating: 5, date: "5 days ago", content: "My first box — simplest passive income I've tried. Daily payout always lands on time.", status: "published" },
   { id: "rv-003", productId: "stellarbox-pro", author: "cypher.eth", rating: 5, date: "1 week ago", content: "Tax-deductible business expense, AI workloads are legitimate. Best ROI in my portfolio.", status: "published" },
   { id: "rv-004", productId: "stellarbox-pro", author: "Wei · SG", rating: 4, date: "2 weeks ago", content: "Doubled my S1's output. Priority task allocation means far fewer idle hours.", status: "published" },
@@ -428,7 +428,7 @@ export const NOVA = [
 export const AUDIT = [
   { ts: "14:32:08", op: "finance·李", role: "财务", action: "admin.treasury_threshold_changed", obj: "redLine 100%→100%", mc: "李→超管·赵", ip: "10.2.x" },
   { ts: "14:18:44", op: "risk·陈", role: "风控", action: "admin.nova_channel_killed", obj: "quest disable", mc: "陈→内容·周", ip: "10.2.x" },
-  { ts: "13:59:01", op: "super·赵", role: "超管", action: "admin.kill_switch_toggled", obj: "nexv2 enable→disable", mc: "风控·陈→赵", ip: "10.1.x" },
+  { ts: "13:59:01", op: "super·赵", role: "超管", action: "admin.kill_switch_toggled", obj: "staking enable→disable", mc: "风控·陈→赵", ip: "10.1.x" },
   { ts: "13:40:22", op: "support·张", role: "客服", action: "admin.balance_adjusted", obj: "usr_84F2 +$1,200", mc: "张→财务·李", ip: "10.4.x" },
   { ts: "13:12:09", op: "audit·孙", role: "审计", action: "admin.user_list_exported", obj: "row_count=3,204", mc: "—", ip: "10.9.x" },
 ];

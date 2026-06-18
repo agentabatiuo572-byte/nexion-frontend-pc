@@ -71,7 +71,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
   const liveJurVersion = (j: Jurisdiction): string =>
     pget(`I.disclosure.${j.code}.version`) ?? j.v;
   // 受限动作范围实时态。
-  const liveGated = (): string => pget("I.gated") ?? "提现 + 质押 + NEXv2 锁仓";
+  const liveGated = (): string => pget("I.gated") ?? "提现 + 质押";
   const disclosureDraft = {
     version: pget("I.disclosure.SFC.draft"),
     jurisdiction: pget("I.disclosure.SFC.draft.jurisdiction"),
@@ -242,7 +242,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       action: <>调整受限动作范围</>,
       detail: (
         <>
-          当前:<b>提现(已实装)+ 质押锁仓、NEX v2 锁仓(待接线)</b>。增删受限动作改变出金/锁仓前的合规闸覆盖面——<b>风控提交,风控 lead / 超管执行</b>。<b>缩小范围等于放松合规拦截</b>,确认时要写清依据。
+          当前:<b>提现(已实装)+ 质押锁仓(待接线)</b>。增删受限动作改变出金/锁仓前的合规闸覆盖面——<b>风控提交,风控 lead / 超管执行</b>。<b>缩小范围等于放松合规拦截</b>,确认时要写清依据。
         </>
       ),
       amplifies: false,

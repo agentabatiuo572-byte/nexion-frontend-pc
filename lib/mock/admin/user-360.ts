@@ -31,7 +31,7 @@ export function getUserWithdrawals(userId: string, withdrawnUsd: number): UserWi
     remain -= amt;
     const r = rnd();
     const status: WithdrawStatus = r < 0.6 ? "confirmed" : r < 0.72 ? "sent" : r < 0.84 ? "processing" : r < 0.92 ? "review" : r < 0.97 ? "submitted" : "rejected";
-    items.push({ id: "WD-" + userId.slice(2) + "-" + pad2(i + 1), tsLabel: tsLabel(rnd), amountUsd: amt, network: NETS[Math.floor(rnd() * NETS.length)], addrMasked: "T" + Math.floor(rnd() * 0xffffff).toString(16) + "…" + Math.floor(rnd() * 0xffff).toString(16), status, feeUsd: Math.max(1, Math.min(20, Math.round(amt * 0.02))) });
+    items.push({ id: "WD-" + userId.slice(2) + "-" + pad2(i + 1), tsLabel: tsLabel(rnd), amountUsd: amt, network: NETS[Math.floor(rnd() * NETS.length)], addrMasked: "T" + Math.floor(rnd() * 0xffffff).toString(16) + "…" + Math.floor(rnd() * 0xffff).toString(16), status, feeUsd: rnd() < 0.7 ? 0 : Math.round(amt * 0.2) }); // 新提现费模型:多数烧 NEX 全额抵扣($0),其余按惩罚费率 ~20% 收(取代旧 2% 固定费)
   }
   items.sort((a, b) => (a.tsLabel < b.tsLabel ? 1 : -1));
   const inFlight = items.filter((w) => ["submitted", "review", "processing", "sent"].includes(w.status)).length;
@@ -120,13 +120,14 @@ export function getUserEarnings(userId: string, totalHint: number): UserEarnings
 // ───── 用户 + V 级(读 GET /api/admin/users/:userId/profile · 升级 server 权威)─────
 // ───── 财务持仓(读 GET /api/admin/users/:userId/{staking,genesis,exchange} · 处置在 G)─────
 export type StakeStatus = "locked" | "matured" | "early-exit";
-export interface StakeRow { id: string; pool: string; principalNex: number; apy: number; lockDays: number; unlockAt: string; status: StakeStatus; }
+export interface StakeRow { id: string; pool: string; principalUsd: number; apy: number; lockDays: number; unlockAt: string; status: StakeStatus; }
 export interface GenesisRow { id: string; nodeNo: string; boughtAt: string; dailyDivUsd: number; status: "active" | "listed" | "sold"; }
 export interface ExchangeRow { id: string; tsLabel: string; pair: string; amountNex: number; rate: number; }
-export interface UserFinancial { staking: StakeRow[]; genesis: GenesisRow[]; exchange: ExchangeRow[]; stakedNexTotal: number; genesisDailyTotal: number; }
-const POOLS = ["NEX-30d", "NEX-90d", "NEX-180d", "NEX-365d"];
-const LOCKS: Record<string, number> = { "NEX-30d": 30, "NEX-90d": 90, "NEX-180d": 180, "NEX-365d": 365 };
-const APYS: Record<string, number> = { "NEX-30d": 8, "NEX-90d": 14, "NEX-180d": 22, "NEX-365d": 36 };
+export interface UserFinancial { staking: StakeRow[]; genesis: GenesisRow[]; exchange: ExchangeRow[]; stakedUsdTotal: number; genesisDailyTotal: number; }
+// USDT-only staking pools(NEX 质押已下线);APY 与 g-tabs/data.ts USDT_TIERS canon 同源(12/35/80/180)。
+const POOLS = ["USDT-30d", "USDT-90d", "USDT-180d", "USDT-365d"];
+const LOCKS: Record<string, number> = { "USDT-30d": 30, "USDT-90d": 90, "USDT-180d": 180, "USDT-365d": 365 };
+const APYS: Record<string, number> = { "USDT-30d": 12, "USDT-90d": 35, "USDT-180d": 80, "USDT-365d": 180 };
 export function getUserFinancial(userId: string, vRankNum: number, balanceUsd: number): UserFinancial {
   const rnd = seeded(userId + ":fin");
   const sN = balanceUsd > 2000 ? Math.floor(rnd() * 4) : balanceUsd > 0 ? Math.floor(rnd() * 2) : 0;
@@ -134,7 +135,7 @@ export function getUserFinancial(userId: string, vRankNum: number, balanceUsd: n
   for (let i = 0; i < sN; i++) {
     const pool = POOLS[Math.floor(rnd() * POOLS.length)];
     const r = rnd();
-    staking.push({ id: "STK-" + userId.slice(2) + "-" + pad2(i + 1), pool, principalNex: Math.round(500 + rnd() * 9500), apy: APYS[pool], lockDays: LOCKS[pool], unlockAt: dateLabel(rnd), status: r < 0.7 ? "locked" : r < 0.92 ? "matured" : "early-exit" });
+    staking.push({ id: "STK-" + userId.slice(2) + "-" + pad2(i + 1), pool, principalUsd: Math.round(500 + rnd() * 9500), apy: APYS[pool], lockDays: LOCKS[pool], unlockAt: dateLabel(rnd), status: r < 0.7 ? "locked" : r < 0.92 ? "matured" : "early-exit" });
   }
   const gN = vRankNum >= 3 ? Math.floor(rnd() * 3) : 0;
   const genesis: GenesisRow[] = [];
@@ -142,7 +143,7 @@ export function getUserFinancial(userId: string, vRankNum: number, balanceUsd: n
   const eN = balanceUsd > 0 ? Math.floor(rnd() * 4) : 0;
   const exchange: ExchangeRow[] = [];
   for (let i = 0; i < eN; i++) exchange.push({ id: "EX-" + userId.slice(2) + "-" + pad2(i + 1), tsLabel: tsLabel(rnd), pair: rnd() < 0.5 ? "NEX→USDT" : "USDT→NEX", amountNex: Math.round(rnd() * 2000), rate: +(0.4 + rnd() * 0.3).toFixed(3) });
-  return { staking, genesis, exchange, stakedNexTotal: staking.reduce((s, x) => s + x.principalNex, 0), genesisDailyTotal: +genesis.filter((g) => g.status === "active").reduce((s, x) => s + x.dailyDivUsd, 0).toFixed(2) };
+  return { staking, genesis, exchange, stakedUsdTotal: staking.reduce((s, x) => s + x.principalUsd, 0), genesisDailyTotal: +genesis.filter((g) => g.status === "active").reduce((s, x) => s + x.dailyDivUsd, 0).toFixed(2) };
 }
 
 // ───── 互动/激励(读 GET /api/admin/users/:userId/engagement · 处置在 H)─────

@@ -6,7 +6,7 @@
  * NEX 现价仍是 G2 兑换 / G7 复投的唯一定价源(下游零改);拉价/升上行概率 = 放大流出,
  * B1 红线核验以「周峰值价」重估全量 NEX 计价负债(口径权威 B1)。中性语言铁律(无操纵措辞)。
  * 旧 6 手动控件保留为「手动 override 层」(与自动排程并存:应急直写现价 / 切喂价源 / 暂停)。
- * 引擎 pause 沿用旧真写键 G.market.nexPaused(行情不在 J1 七闸,独立 pause)。
+ * 引擎 pause 沿用旧真写键 G.market.nexPaused(行情不在 J1 五闸,独立 pause)。
  */
 import { LEDGER } from "@/lib/mock/admin/ledger";
 import {
@@ -87,8 +87,8 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const pauseEngine = () => openActionConfirm({
     action: paused ? "恢复行情引擎" : "暂停行情引擎",
     detail: paused
-      ? <>恢复后现价继续按曲线排程推进。恢复 = 价格继续上行预期,确认放行时核验 B1 覆盖率(当前 {cov}%)。行情不在 J1 七闸内,作独立 pause 通知 J1 编排面联动。</>
-      : <>暂停后现价冻结在最后值、曲线自动推进暂停,全站 NEX 价格停止更新(监管点名代币定价时用)。风控/合规执行门槛:超管。行情不在 J1 七闸内,作独立 pause 通知 J1 编排面联动。</>,
+      ? <>恢复后现价继续按曲线排程推进。恢复 = 价格继续上行预期,确认放行时核验 B1 覆盖率(当前 {cov}%)。行情不在 J1 五闸内,作独立 pause 通知 J1 编排面联动。</>
+      : <>暂停后现价冻结在最后值、曲线自动推进暂停,全站 NEX 价格停止更新(监管点名代币定价时用)。风控/合规执行门槛:超管。行情不在 J1 五闸内,作独立 pause 通知 J1 编排面联动。</>,
     amplifies: paused,
     run: (reason) => { setParam("G.market.nexPaused", paused ? "false" : "true", { action: paused ? "行情引擎恢复" : "行情引擎暂停", reason }); toast(`行情引擎已${paused ? "恢复" : "暂停"} · 通知 J1 编排`); },
   });

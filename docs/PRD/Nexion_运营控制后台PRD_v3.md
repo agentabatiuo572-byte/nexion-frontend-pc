@@ -30,10 +30,10 @@
 ---
 
 #### [G1] Staking 池配置
-**① 目的 & 对齐**: 配置平台两套定期质押产品(USDT 锁仓 + NEX 池)的 4 档期限 APY、提前赎回罚款、最小额、启用态与单档 kill,作为 NEX 代币经济(§1.4 第三支柱)质押利率/利差的核心调节面。对齐前端 **§9.6**(`/staking` 4 档 30/90/180/365 天)+ **§13.3.1**(USDT/NEX 双产品数值)+ **§9.11c.1**(staking pools 统一接口)+ **§9.11d.1**(单档 disable kill)。服务业务目标:在 B1 兑付安全约束内,用高档 APY 沉淀长周期锁仓资金(提升留存与「已收资金」规模),服务 **§18.2 Day7 留存(>60%)** 的资金侧留存路径与 **B1 兑付安全水位**(内部风控口径;§18.2 八项 KPI 闭集无「资金留存 / LTV」项,staking 按前端 §1.4 商业模式四支柱归入第三支柱「NEX 平台代币经济(锁仓/兑换/二级市场)」、未单列独立收入科目,故不以臆造 KPI 锚定)。
+**① 目的 & 对齐**: 配置平台 USDT 锁仓定期质押产品的 4 档期限 APY、提前赎回罚款、最小额、启用态与单档 kill,作为 NEX 代币经济(§1.4 第三支柱)质押利率/利差的核心调节面(质押为 USDT-only 单产品,NEX 不可质押)。对齐前端 **§9.6**(`/staking` 4 档 30/90/180/365 天)+ **§13.3.1**(USDT 锁仓数值)+ **§9.11c.1**(staking pools 统一接口)+ **§9.11d.1**(单档 disable kill)。服务业务目标:在 B1 兑付安全约束内,用高档 APY 沉淀长周期锁仓资金(提升留存与「已收资金」规模),服务 **§18.2 Day7 留存(>60%)** 的资金侧留存路径与 **B1 兑付安全水位**(内部风控口径;§18.2 八项 KPI 闭集无「资金留存 / LTV」项,staking 按前端 §1.4 商业模式四支柱归入第三支柱「NEX 平台代币经济(兑换/二级市场)」、未单列独立收入科目,故不以臆造 KPI 锚定)。
 
 **② 后台界面**:
-- **池配置列表**(双产品分组,每产品 4 档行):`产品(USDT 锁仓 / NEX 池)· 期限(30/90/180/365d)· APY · penalty% · minStake · enabled · 在锁本金合计 · 在锁 position 数 · 累计应付利息(D3 派生)· 单档 kill 状态灯`。
+- **池配置列表**(USDT 锁仓 4 档行):`产品(USDT 锁仓)· 期限(30/90/180/365d)· APY · penalty% · minStake · enabled · 在锁本金合计 · 在锁 position 数 · 累计应付利息(D3 派生)· 单档 kill 状态灯`。
 - **Position 监控视图**(只读,server-canonical):按状态机分组计数 + 可下钻单 position(`userId 脱敏 / 产品 / 期限 / 本金 / APY 锁定值 / 开锁时间 / 到期时间 / 累计应付利息 / 状态`)。
 - **状态机**(V1 §9 数据模型,server-canonical):`pending_lock(提交锁仓待确认)→ active(锁仓计息中)→ mature_unclaimed(到期未领)→ claimed(已领本息)`;旁路:`active → early_withdrawn(提前赎回·扣罚款 forfeit 利息)`、`active/mature_unclaimed → slashed(单档 kill 后处置)`、`pending_lock → refunded(锁仓失败退本金)`。
 - **关键视图**:到期日历(未来 N 天到期本息热力,喂 B2 到期负债预测)+ 单档 kill 影响预览(disable 某档对在锁 position 的处置说明)。
@@ -44,12 +44,10 @@
 |---|---|---|---|---|
 | USDT 锁仓 APY(30/90/180/365d) | **现状值(§9.6 / §13.3.1)**:12% / 35% / 80% / 180% | 各档 0–300%,保序(长期 ≥ 短期) | 仅新 position(在锁按开锁时锁定 APY 到期) | `/staking` plan 卡 APY 大字 + Stake sheet 预测 |
 | USDT 锁仓 penalty(30/90/180/365d) | **现状值(§9.6)**:5% / 15% / 30% / 50% 本金 | 各档 0–100% | 仅新 position | `/staking` plan 卡罚款警告 + early withdraw 提示 |
-| NEX 池 APY(30/90/180/365d) | **现状值(§13.3.1)**:5% / 12% / 20% / 35% | 各档 0–300%,保序 | 仅新 position | `/staking` NEX 产品 APY(币种区分文案) |
-| NEX 池 minStake(30/90/180/365d) | **现状值(§13.3.1)**:1,000 / 5,000 / 10,000 / 20,000 NEX | ≥ 0 | 仅新 position | NEX 池 Stake sheet 最小额校验 |
-| `enabled`(每产品每档) | true | bool | 实时(关闭即停新锁,在锁不受影响,除非走 kill) | plan 卡是否可 Stake |
+| `enabled`(每档) | true | bool | 实时(关闭即停新锁,在锁不受影响,除非走 kill) | plan 卡是否可 Stake |
 | 单档 kill(尤其 180%/365d) | 关 | bool | 实时(熔断停新锁 + 在锁处置走 ⑦) | plan 卡熔断态(对齐 §9.11d.1) |
 
-> **⚠️ USDT-staking APY 多披露面收敛(承接前端 §13.3.1 已记录的 withdraw 页 mismatch 并落实其收敛方案,记入 §3.14 待补)**:**canonical 仅 §9.6 主表**(`12% / 35% / 80% / 180%`,源 `lib/v3/staking.ts`);其余披露面均**误用 `5/12/20/35`(NEX 池数)**——① **§9.6.3 how-it-works** `$100` 示例(`30d/5% · 90d/12% · 180d/20% · 365d/35%`,且美元值 `30d/$4.11` 等按复利/夸大口径,与 simple-interest 不符:`$100×5%×30/365 = $0.41`,差约 10×,$ 值须按 simple-interest 重算);② **§9.3.4 StakeAlternativeCard**(`5%/12%/20%`);③ **withdraw 页**(`0.05/0.12/0.20`)。前端 **§13.3.1已记录 withdraw 页一处 mismatch 及收敛方案**(单一 `GET /api/config/staking/pools` 数据源);本审查另发现 §9.6.3 / §9.3.4 两处同源误用 NEX 池数,**合计 4 披露面**(前端 §13.3.1 称 withdraw 页为「第三套」,本卷按 canonical §9.6 计为含主表共 4 披露面):四面逐条登记统一改读 `GET /api/config/staking/pools`(USDT product),消除 UI/业务 mismatch;§9.6.3 美元示例须按 simple-interest 重算。区分「前端已记录(withdraw 页)」与「本章新增发现(§9.6.3 / §9.3.4)」。
+> **⚠️ USDT-staking APY 多披露面收敛(承接前端 §13.3.1 已记录的 withdraw 页 mismatch 并落实其收敛方案,记入 §3.14 待补)**:**canonical 仅 §9.6 主表**(`12% / 35% / 80% / 180%`,源 `lib/v3/staking.ts`);其余披露面均**误用 `5/12/20/35`**——① **§9.6.3 how-it-works** `$100` 示例(`30d/5% · 90d/12% · 180d/20% · 365d/35%`,且美元值 `30d/$4.11` 等按复利/夸大口径,与 simple-interest 不符:`$100×5%×30/365 = $0.41`,差约 10×,$ 值须按 simple-interest 重算);② **§9.3.4 StakeAlternativeCard**(`5%/12%/20%`);③ **withdraw 页**(`0.05/0.12/0.20`)。前端 **§13.3.1已记录 withdraw 页一处 mismatch 及收敛方案**(单一 `GET /api/config/staking/pools` 数据源);本审查另发现 §9.6.3 / §9.3.4 两处同源误用,**合计 4 披露面**(前端 §13.3.1 称 withdraw 页为「第三套」,本卷按 canonical §9.6 计为含主表共 4 披露面):四面逐条登记统一改读 `GET /api/config/staking/pools`(USDT product),消除 UI/业务 mismatch;§9.6.3 美元示例须按 simple-interest 重算。区分「前端已记录(withdraw 页)」与「本章新增发现(§9.6.3 / §9.3.4)」。
 > **默认值口径**:12 月节奏表 §6 未覆盖 staking APY/penalty,故取前端现状值(标注「现状值」);升 APY / 降 penalty 属放大流出,受 ① B1 红线前置约束。
 
 **④ 操作动作**:
@@ -104,7 +102,7 @@
 - **成功反馈**:弹窗关闭;单档 kill 状态灯变红;toast「已熔断 · 已记审计」;事件 `admin.staking_pool_killed`(携 `Idempotency-Key` 提交);实时告警超管 + 风控 lead;同步 J1 矩阵 + B5 风险雷达。恢复经 A3-MD3(仅超管 + B1 红线预检)。
 
 **⑤ 接口**(收敛 §9.11c.1 / §9.11d.1):
-- `GET /api/config/staking/pools` — 双产品 4 档全表(APY/penalty/minStake/enabled);**server-canonical 配置源**,前端 `/staking`(§9.6 主表)+ §9.6.3 how-it-works 示例 + §9.3.4 StakeAlternativeCard + withdraw 页 stake-alternative 卡**四面统一读此**(消除 USDT-staking 多披露面 mismatch,见 ③ 收敛注)。
+- `GET /api/config/staking/pools` — USDT 锁仓 4 档全表(APY/penalty/minStake/enabled);**server-canonical 配置源**,前端 `/staking`(§9.6 主表)+ §9.6.3 how-it-works 示例 + §9.3.4 StakeAlternativeCard + withdraw 页 stake-alternative 卡**四面统一读此**(消除 USDT-staking 多披露面 mismatch,见 ③ 收敛注)。
 - `GET /api/admin/staking/positions?status=&product=&cursor=` — position 监控(按状态机 / 产品筛,游标分页);返回 server 权威 position 列表 + 累计应付利息(D3 派生)。
 - `PUT /api/admin/staking/pools/:product/:term` — 改单档参数(经确认弹窗 G1-MD1,reason 必填(空值 400 `REASON_REQUIRED`);**升 APY / 降 penalty server 先核 B1 覆盖率,< 红线返 422**;**单档 APY 改动还须通过同产品跨档保序校验(长期档 APY ≥ 相邻短期档),违反返 422 + 提示冲突档位**——保序校验与 B1 红线校验同为提交前 server 硬门,非文档建议)。
 - `POST /api/admin/staking/pool/:id/disable` — 单档 kill(对齐 §9.11d.1;经确认弹窗 G1-MD3,reason + 在锁处置方案必填;携 `Idempotency-Key`)。
@@ -694,6 +692,7 @@
 - **Monthly Challenge 配置面**(§11.13.1 + §12.14 + `lib/mock/monthly-challenge.ts:42-103`):**5 主题 × {`monthsFrom`/`monthsTo` 月龄分段 · `rewardNex` · `badgeId` · 3 AND-gated `subGoals`}**——`foundation_builder`(月龄 0-2 · 1,500 NEX)/ `network_architect`(2-4 · 2,500)/ `premium_pathway`(4-6 · 4,000)/ `diamond_tier`(6-9 · 6,000)/ `founders_quest`(9+ · 10,000 NEX + 勋章);派发器(`dispatchMonthlyChallenge` 按 `joinedAt` 月数)+ 5 主题清单 + 每主题 3 子目标(各带 `key` / `href` / `target`)。L3 架构概览见 §11.13.1。
 - **Phase 现值只读条**:展示当前各 Phase 的 Weekly Tier1 phase reward multiplier 端点摘要(P1 1.0 → P6 1.5,完整六档曲线见 ③)+ `questBonusMultiplier` 现值(由 H1 下发,H3 不可改;前端未实装时取 1×)。
 - **任务完成监控**(只读,server-canonical):按 quest 维度的完成 / claim 计数 + 单 phase 转化漏斗(active claim 率 / grace claim 率 / expired 流失)。
+- **任务事件契约与归因表**(只读,server-canonical):逐任务(Day-One / Weekly / Monthly 共享 `task_key` 命名空间)展示其事件契约,作为「任务配置 ↔ 事件上报 ↔ BI 归因」的**共同事实源**——`[task_key / 服务端完成事件(quest.task_completed)/ 下游业务事件(如 order.created→paid / wallet.deposited,无则「—」)/ 是否进 B3 漏斗(§2.4.7)/ 是否仅留存动作 / Day7 活跃贡献路径(KPI #2)/ L 域 BI 表.字段(如 fct_quest_events.task_key)/ 最近 24h 事件样本数 / 异常率 / 事件延迟]`。**当 Day7 活跃 / B3 转化 / 任务完成率异常时,运营据此比对样本数与异常率,分清问题来自任务配置 / 事件上报 / BI 归因 / 真实业务转化**。事件命名与 schema 归 A4(§2.4),新 task_key 的完成/下游事件须在 A4 registry 注册后方可上报。
 - **状态机**(Day-One Quest,§5.15.1,server-canonical):`active(0-24h·500 NEX)→ grace(24-72h·200 NEX)→ expired(72h+·0·Home 不渲染让位)`;claim 旁路:`active/grace 全 6 任务完成 → claimed(creditNex + unlock badge)`。Weekly 状态机按 `weekKey` 跨周 reset(§11.13.6);Monthly 按 `rollMonthIfStale` 跨月清空(§12.14 `useMonthlyChallenge`)。
 
 **③ 可控参数**:

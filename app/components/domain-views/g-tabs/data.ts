@@ -2,8 +2,9 @@
  * G 域(金融产品)专属 mock — design_handoff_g_domain port(2026-06-11)。
  * 口径单一源铁律:
  *  - 在锁本金/利息/到期应付 = LEDGER 科目体系(#2 USDT 质押本金 1.64M = G1 USDT 池 1.25M + G7 复投 0.39M;
- *    #3 应付利息 312K;#4 Genesis 分红承诺 268K(保底口径预提);#5 NEX v2 到期应付 0.88M;#8 锁仓其他 0.25M = G1 NEX 池);
- *  - 产品/池熔断 = J1 五闸同键(J.killswitch.staking|exchange|genesis 等),G 域是生效面;
+ *    #3 应付利息 312K;#4 Genesis 分红承诺 268K(保底口径预提);#5 NEX v2 到期应付 0.88M;
+ *    #8 其他/legacy 锁仓 0.25M — NEX 质押已下线,存量并入 legacy,不再作 G1 NEX 池框定);
+ *  - 产品/池熔断 = J1 闸同键(J.killswitch.staking[USDT]|exchange|genesis 等),G 域是生效面;
  *  - 地域封锁 = GEOBLOCK(J2 权威,KP/IR/SY 制裁名单)只读引用;
  *  - Genesis 日分红 = $24/节点/日 产品权威档(基数 $24.2M × 0.1% ÷ 1,000 slot;保底预提 $10/节点/日 挂科目#4,
  *    超出部分当期交易抽成直接派发);派发流量与 MATURITY.genesis(20.3K/日 = 847 × $24)同源;
@@ -23,19 +24,18 @@ export const G_FIN = (() => {
   const stakeUsdtAll = acct("stake_principal"); // 1.64M = USDT 池 + 复投
   const repurchasePrincipal = 390_000; // G7 复投在锁本金(90d 锁仓,USDT 计价归科目#2)
   const usdtPool = stakeUsdtAll - repurchasePrincipal; // 1.25M G1 USDT 池
-  const nexPool = acct("lock_other"); // 0.25M G1 NEX 池折算(科目#8)
   const interest = acct("stake_interest"); // 312K(科目#3,线性计提)
   const genesisAccrual = acct("genesis_div"); // 268K(科目#4,保底口径预提)
   return {
-    usdtPool, nexPool, repurchasePrincipal, interest, genesisAccrual,
-    g1Locked: usdtPool + nexPool, // G1 口径在锁合计(不含复投)$1.50M
+    usdtPool, repurchasePrincipal, interest, genesisAccrual,
+    g1Locked: usdtPool, // G1(USDT 质押)在锁合计 $1.25M(NEX 质押已下线;原 NEX 池 #8 转 legacy)
   };
 })();
 
-/* ============================ G1 Staking ============================ */
+/* ===================== G1 Staking(USDT · NEX 质押已下线) ===================== */
 
-// 4 档参数(前端权威源 lib/v3/staking.ts;tier slug 沿用旧 g-view 真写键 G.staking.*.<tier>)。
-// 在锁本金按科目#2/#8 拆分等比分布(USDT 池 $1.25M / NEX 池 $0.25M)。
+// USDT 4 档参数(前端权威源 lib/v3/staking.ts;tier slug 沿用 g-view 真写键 G.staking.*.<tier>)。
+// 在锁本金 = 科目#2 USDT 池 $1.25M(NEX 质押已下线,原 NEX 池 #8 转 legacy/其他)。
 export type PoolTier = { term: string; apy: number; pen: number; min: string; locked: string; tier: string };
 export const USDT_TIERS: PoolTier[] = [
   { term: "30 天", apy: 12, pen: 5, min: "$100", locked: "$0.27M", tier: "usdt30d" },
@@ -43,22 +43,16 @@ export const USDT_TIERS: PoolTier[] = [
   { term: "180 天", apy: 80, pen: 30, min: "$1,000", locked: "$0.35M", tier: "usdt180d" },
   { term: "365 天", apy: 180, pen: 50, min: "$5,000", locked: "$0.20M", tier: "usdt365d" },
 ];
-export const NEX_TIERS: PoolTier[] = [
-  { term: "30 天", apy: 5, pen: 5, min: "1,000", locked: "$0.08M", tier: "nex30d" },
-  { term: "90 天", apy: 12, pen: 15, min: "5,000", locked: "$0.07M", tier: "nex90d" },
-  { term: "180 天", apy: 20, pen: 30, min: "10,000", locked: "$0.06M", tier: "nex180d" },
-  { term: "365 天", apy: 35, pen: 50, min: "20,000", locked: "$0.04M", tier: "nex365d" },
-];
 
 // position 状态计数(base 口径,G1 监控;在锁 3,412 = active 3,180 + 到期未领 232)
 export const G1_POS = { pending: 18, active: 3180, mature: 232, earlyMonth: 41 };
 
 // 状态下钻样例(Drawer;uid 用 USERS 体系)
 export const G1_POS_DETAIL: Record<string, { label: string; note: string; rows: [string, string, string, string, string][] }> = {
-  pending_lock: { label: "待确认(pending_lock)", note: "入账未确认前的锁仓申请。服务器确认后转 active;超时未确认自动 refunded 退本。", rows: [["POS-8841", "usr_31E8", "USDT 90天", "$5,000", "2 小时前"], ["POS-8839", "usr_77D4", "NEX 30天", "2,000 NEX", "5 小时前"]] },
-  active: { label: "计息中(active)", note: "正常计息的在锁本金。应付利息按已锁天数线性派生,进负债账本(D3 科目 #3)。", rows: [["POS-8201", "usr_31E8", "USDT 365天", "$20,000", "剩 290 天"], ["POS-8150", "usr_19C7", "USDT 180天", "$8,000", "剩 120 天"], ["POS-8042", "usr_84F2", "NEX 90天", "5,000 NEX", "剩 40 天"]] },
+  pending_lock: { label: "待确认(pending_lock)", note: "入账未确认前的锁仓申请。服务器确认后转 active;超时未确认自动 refunded 退本。", rows: [["POS-8841", "usr_31E8", "USDT 90天", "$5,000", "2 小时前"]] },
+  active: { label: "计息中(active)", note: "正常计息的在锁本金。应付利息按已锁天数线性派生,进负债账本(D3 科目 #3)。", rows: [["POS-8201", "usr_31E8", "USDT 365天", "$20,000", "剩 290 天"], ["POS-8150", "usr_19C7", "USDT 180天", "$8,000", "剩 120 天"]] },
   mature_unclaimed: { label: "到期未领(mature_unclaimed)", note: "已到期但用户还没领本息。本息挂在负债里直到领取;领取记一条账单(D4)。运营可提醒用户,不代领。", rows: [["POS-7720", "usr_5102", "USDT 90天", "$3,000 + 息 $221", "到期 3 天"], ["POS-7698", "usr_2208", "USDT 30天", "$1,500 + 息 $14", "到期 1 天"]] },
-  early_withdrawn: { label: "提前赎回(early_withdrawn)", note: "本月提前赎回的单子。服务器扣罚金 + forfeit 全部利息,只退本金净额。", rows: [["POS-7401", "usr_8807", "USDT 180天", "本 $2,000 · 罚 30%", "已处置"], ["POS-7388", "usr_9921", "NEX 90天", "本 1,000 · 罚 15%", "已处置"]] },
+  early_withdrawn: { label: "提前赎回(early_withdrawn)", note: "本月提前赎回的单子。服务器扣罚金 + forfeit 全部利息,只退本金净额。", rows: [["POS-7401", "usr_8807", "USDT 180天", "本 $2,000 · 罚 30%", "已处置"]] },
 };
 
 /* ============================ G2 兑换风控 ============================ */

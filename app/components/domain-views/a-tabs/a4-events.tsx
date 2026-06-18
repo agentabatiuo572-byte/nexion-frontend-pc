@@ -148,7 +148,6 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   /* ────────────────── schema registry 注册 ────────────────── */
 
   const registerSchema = () => {
-    const cur = `schema ${liveSchemaVer}`;
     openActionConfirm({
       action: "注册新事件 / 属性(schema registry)",
       detail: (
@@ -159,15 +158,25 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: cur, unit: "" },
-      run: (reason, v) => {
-        const val = (v || "").trim();
-        if (!val) { toast("拒绝:schema 版本不能为空"); return; }
-        setParam("A.event.schemaVer", val, {
-          action: `schema 注册 ${val} · admin.event_schema_registered`,
-          reason,
-        });
-        toast(`schema 已更新为 ${val} · 理由留痕`);
+      businessForm: {
+        kind: "schema-authoring",
+        ownerDomains: REGISTERED_DOMAINS,
+        propertyTypes: ["string", "number", "boolean", "enum", "timestamp", "id"],
+        samplingPolicies: ["100%(资金/风控/转化)", "浏览 10%", "会话 25%"],
+        versionHint: liveSchemaVer,
+      },
+      run: (reason, _v, bv) => {
+        const ev = (bv?.eventName || "").trim();
+        if (!ev) { toast("拒绝:事件名不能为空"); return; }
+        if (bv?.isPII === "true") { toast("拒绝:含 PII 明文的事件禁止注册(A 域三铁律 ② · server 422)"); return; }
+        const ver = (bv?.version || "").trim() || liveSchemaVer;
+        setParam(`A.event.schema.${ev}`, JSON.stringify({
+          owner: bv?.ownerDomain, producer: bv?.producer, consumer: bv?.consumer,
+          property: bv?.propName, propType: bv?.propType,
+          serverAuthoritative: bv?.isServerAuthoritative, sampling: bv?.samplingPolicy, version: ver,
+        }), { action: `schema 注册事件 ${ev}(${bv?.ownerDomain})· admin.event_schema_registered`, reason });
+        setParam("A.event.schemaVer", ver, { action: `schema registry 版本 → ${ver}`, reason });
+        toast(`事件 ${ev} schema 已注册(${ver} · ${bv?.producer})· 理由留痕`);
       },
     });
   };

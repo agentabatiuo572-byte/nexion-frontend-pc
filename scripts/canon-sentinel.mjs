@@ -96,8 +96,7 @@ function extractFieldNumber(block, field) {
 }
 
 function extractAdminTier(src, tier) {
-  const block = extractArrayItemByField(src, "USDT_TIERS", "tier", tier)
-    ?? extractArrayItemByField(src, "NEX_TIERS", "tier", tier);
+  const block = extractArrayItemByField(src, "USDT_TIERS", "tier", tier);
   if (!block) return null;
   return {
     apyPct: extractFieldNumber(block, "apy"),
@@ -225,6 +224,69 @@ if (!nextProducts || !uniProducts) {
       expectNumber(`product.${label}.${id}.dailyEarn`, actual?.dailyEarn ?? null, expected.dailyEarn, [evidence]);
       expectNumber(`product.${label}.${id}.dailyEarnNEX`, actual?.dailyEarnNEX ?? null, expected.dailyEarnNEX, [evidence]);
     }
+  }
+}
+
+// ---- Withdrawal fee model canon (仅活跃面 uniapp + admin;H5 冻结保留旧模型,故排除) ----
+// 新模型:无 NEX → grossFee = 金额 × penaltyFeeRate(按 phase);烧 NEX → nexFeeOffsetRate USD/NEX 抵扣。
+// 单源三方:canon.withdrawal ↔ uniapp product-phase.PHASES ↔ admin H1 DIAL_MATRIX(nexGate 列,月→phase)+ D5 OWN_PARAMS。
+const uniPhase = readIfExists(path.join(UNI_ROOT, "src", "store", "product-phase.ts"));
+const adminH = read(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "data.ts"));
+const adminDdata = read(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "data.ts"));
+const wd = canon.withdrawal || {};
+if (!uniPhase) {
+  failures.push("uniapp product-phase.ts missing; cannot prove withdrawal canon");
+} else if (!wd.penaltyFeeRateByPhase || wd.nexFeeOffsetRateUSDPerNex == null) {
+  failures.push("canon.withdrawal missing penaltyFeeRateByPhase / nexFeeOffsetRateUSDPerNex");
+} else {
+  // uniapp PHASES: 每 phase 的 withdrawPenaltyFeeRate + nexFeeOffsetRate(对象内 id → penalty → offset 顺序)
+  const uniByPhase = {};
+  for (const m of uniPhase.matchAll(/id:\s*"(P\d)"[\s\S]*?withdrawPenaltyFeeRate:\s*([\d.]+)[\s\S]*?nexFeeOffsetRate:\s*([\d.]+)/g)) {
+    uniByPhase[m[1]] = { penalty: numberFrom(m[2]), offset: numberFrom(m[3]) };
+  }
+  // admin PHASE_BUCKETS: 月 → phase(单源,勿硬编码映射)
+  const monthToPhase = {};
+  for (const m of adminH.matchAll(/phase:\s*"(P\d)",\s*months:\s*\[([\d,\s]+)\]/g)) {
+    for (const mo of m[2].split(",").map((s) => parseInt(s.trim(), 10)).filter(Number.isFinite)) monthToPhase[mo] = m[1];
+  }
+  // admin DIAL_MATRIX: 月行 → nexGate 列(DIAL_KEYS 第 4 列 idx 3 = 提现惩罚费率 %)
+  const adminPenaltyByPhase = {};
+  for (const m of adminH.matchAll(/\/\*\s*M(\d+)\s*\*\/\s*\[([^\]]+)\]/g)) {
+    const month = parseInt(m[1], 10);
+    const nexGatePct = numberFrom(m[2].split(",")[3].trim());
+    const phase = monthToPhase[month];
+    if (!phase) continue;
+    if (adminPenaltyByPhase[phase] === undefined) adminPenaltyByPhase[phase] = nexGatePct;
+    else if (adminPenaltyByPhase[phase] !== nexGatePct) adminPenaltyByPhase[phase] = NaN; // phase 内月值不一致 = 漂移
+  }
+  // admin D5 OWN_PARAMS nexFeeOffsetRate 默认值("$0.40 / NEX")
+  const d5 = adminDdata.match(/key:\s*"nexFeeOffsetRate"[\s\S]{0,160}?cur:\s*"\$?([\d.]+)/);
+  const adminOffset = d5 ? numberFrom(d5[1]) : null;
+
+  for (const [phase, expected] of Object.entries(wd.penaltyFeeRateByPhase)) {
+    expectNumber(`withdraw.uni.penalty.${phase}`, uniByPhase[phase]?.penalty ?? null, expected, ["../Nexion-uniapp/src/store/product-phase.ts"]);
+    const pct = adminPenaltyByPhase[phase];
+    expectNumber(`withdraw.admin.penalty.${phase}`, pct === undefined || Number.isNaN(pct) ? null : pct / 100, expected, ["app/components/domain-views/h-tabs/data.ts"]);
+  }
+  for (const [phase, info] of Object.entries(uniByPhase)) {
+    expectNumber(`withdraw.uni.offset.${phase}`, info.offset, wd.nexFeeOffsetRateUSDPerNex, ["../Nexion-uniapp/src/store/product-phase.ts"]);
+  }
+  expectNumber("withdraw.admin.offset", adminOffset, wd.nexFeeOffsetRateUSDPerNex, ["app/components/domain-views/d-tabs/data.ts"]);
+}
+
+// ---- 旧 2% 提现费指纹哨兵:防 max(1,min(20,amt*0.02)) clamp 复发(新模型 = penaltyFeeRate × 金额 − NEX 抵扣)----
+function walkTsCanon(dir, out = []) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) { if (!["node_modules", ".next", ".trash"].includes(e.name)) walkTsCanon(p, out); }
+    else if (/\.(ts|tsx)$/.test(e.name)) out.push(p);
+  }
+  return out;
+}
+const OLD_FEE_FP = /Math\.max\(\s*1\s*,\s*Math\.min\(\s*20\b/; // 旧提现费 clamp $1–$20 签名
+for (const d of ["app", "lib"].map((x) => path.join(ROOT, x)).filter((x) => fs.existsSync(x))) {
+  for (const f of walkTsCanon(d)) {
+    if (OLD_FEE_FP.test(read(f))) failures.push(`withdraw.oldFeeFingerprint: ${path.relative(ROOT, f)} 含旧 2% 提现费 clamp max(1,min(20,…));新模型应 penaltyFeeRate × 金额 − NEX 抵扣`);
   }
 }
 

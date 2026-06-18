@@ -93,8 +93,22 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   };
   const emergencyBlock = () => openActionConfirm({
     action: "应急即时封锁 · 批量加入全局封禁名单",
-    detail: <><b>应急快速通道</b>:监管点名 / OFAC / FATF 链路触发 · 一次性加入多个国家到黑名单 · <b>仅加封锁方向</b>(移除走常规轨)· 执行门槛 SLA 压至 <b>{slaMins} 分钟</b> · A2 标 emergency=true · 联动各功能入口屏蔽范围 + 该辖区资金闸定向冻结(联动 J1)· 实际批量名单由工单表单选择,本处登记应急封锁工单。</>,
-    run: (reason) => { setParam("J.geo.emergency", "launched", { action: "应急即时封锁工单(emergency=true)", reason }); toast("应急封锁工单 · A2 emergency=true"); },
+    detail: <><b>应急快速通道</b>:监管点名 / OFAC / FATF 链路触发。在「目标新值」<b>批量粘贴国家码</b>(ISO2,逗号 / 空格 / 换行分隔,如 <span className="mono">VE, IR, KP</span>)· <b>仅加封锁方向</b>(移除走常规轨)· 执行门槛 SLA 压至 <b>{slaMins} 分钟</b> · A2 标 emergency=true。
+      <div className="geo-foot" data-proof="j2-emergency-preview" style={{ display: "block", marginTop: 10 }}>
+        <div><b>影响预览</b></div>
+        <div>当前黑名单 {banned.length} 国 · 受限 {limited.length} 国 · 命中依据:边缘 IP 判定(<span className="mono">{pget("J.geo.edgeJudgeSource") ?? "服务器边缘 IP 判定"}</span>)</div>
+        <div>影响 endpoint:{GEO_ENDPOINTS.length} 个功能入口(继承全局黑名单)+ 该辖区资金闸定向冻结(联动 J1)· 受影响账户:命中国 IP 段存量账户即时转只读</div>
+      </div>
+    </>,
+    edit: { kind: "text", current: "—(批量 ISO 码,如 VE, IR, KP)" },
+    run: (reason, newValue) => {
+      const codes = (newValue ?? "").toUpperCase().split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+      const valid = codes.filter((c) => ISO_RE.test(c));
+      if (!valid.length) { toast("请粘贴至少一个有效 ISO2 国家码(如 VE, IR, KP),未执行"); return; }
+      valid.forEach((cc) => setParam(`J.geo.${cc}`, "blocked", { action: `应急即时封锁 ${cc}(emergency=true · 全功能封禁)`, reason }));
+      setParam("J.geo.emergency", "launched", { action: `应急即时封锁工单(emergency=true · ${valid.length} 国:${valid.join("/")})`, reason });
+      toast(`应急封锁 ${valid.length} 国(${valid.join("/")})· A2 emergency=true`);
+    },
   });
 
   return (

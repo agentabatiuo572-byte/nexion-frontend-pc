@@ -97,7 +97,7 @@ export const DOMAIN_E: ModuleEntry[] = [
       confirmPolicy: "baseRate / baseRateNEX / 任务奖励倍率改动需 增长运营 发起 + 财务 确认;封顶与滚存规则额外知会风控,改动写入 A2 审计。",
       impact: [
         "上调 baseRate / 奖励倍率 → B 域应付负债与日产承诺即时抬升,挤兑压力上行",
-        "改 NEX 配比 → G3 行情供给与 G6 NEX v2 兑付负债联动变化",
+        "改 NEX 配比 → G3 行情供给与 #5 NEX v2 兑付负债(legacy 存量)联动变化",
         "缩短滚存上限 → 更多未领取产出进 monthly-task-lock 召回,影响用户体感",
       ],
     },

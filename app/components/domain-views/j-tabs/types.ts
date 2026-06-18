@@ -3,14 +3,15 @@
  * shell 只负责渲染 OperationConfirmModal 并回调 run(真写落点仍集中于各视图内的 ctx.setParam)。
  */
 import type { ReactNode } from "react";
-import type { EditSpec } from "../design-kit";
+import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
 
 export type ActionConfirmReq = {
   action: ReactNode;
   detail: ReactNode;
   amplifies?: boolean;
   edit?: EditSpec;
-  run: (reason: string, newValue?: string) => void;
+  businessForm?: BusinessFormSpec;
+  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void;
 };
 
 export type JCtx = {
