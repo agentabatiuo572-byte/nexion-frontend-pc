@@ -713,7 +713,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       propType: spec.propertyTypes?.[0] ?? "string",
       isPII: "false",
       isServerAuthoritative: "true",
-      samplingPolicy: spec.samplingPolicies?.[0] ?? "100%(资金/风控)",
+      samplingPolicy: spec.samplingPolicies?.[0] ?? "100%(资金/风控/转化)",
       version: spec.versionHint ?? "",
     };
   }
@@ -1064,7 +1064,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {input("consumer", "消费方 consumer", "B3 / L 域 BI / 风控 K")}
           {input("propName", "属性名 property", "order_id")}
           {select("propType", "属性类型 type", spec.propertyTypes ?? ["string", "number", "boolean", "enum", "timestamp", "id"])}
-          {select("samplingPolicy", "采样策略 sampling", spec.samplingPolicies ?? ["100%(资金/风控)", "浏览 10%", "会话 25%"])}
+          {select("samplingPolicy", "采样策略 sampling", spec.samplingPolicies ?? ["100%(资金/风控/转化)", "浏览 10%", "会话 25%"])}
           {input("version", "schema 版本 version", spec.versionHint ?? "v13")}
         </div>
         <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
@@ -1129,8 +1129,14 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   }
 
   if (spec.kind === "export-wizard") {
-    const detail = value.piiLevel !== "无 PII";
-    const estRows = detail ? "≈ 视范围(明细级,可能超 100 万 → 自动拆分)" : "≈ 数千行(聚合级)";
+    // 预估为占位估算(真后台以任务实际行数为准):明细级 = 含 PII 或逐条明细类(账单/CSV);聚合级 = 漏斗/报表类。
+    const hasPII = value.piiLevel !== "无 PII";
+    const detail = hasPII || /账单|明细|CSV/.test(value.exportType || "");
+    const estRows = !value.timeRange.trim()
+      ? "填时间范围后按范围估算"
+      : detail
+        ? "明细级 · 行数随时间范围 × 字段数增长(可能超 100 万 → 自动拆分)"
+        : "聚合级 · 数千行量级";
     return (
       <div className="field" data-business-form="export-wizard">
         <label>业务表单 · 导出任务向导</label>
@@ -1146,7 +1152,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {input("ticket", "工单依据 ticket", "如 REG-20260618-001")}
         </div>
         <div className="tint tiny" data-proof="export-est" style={{ marginTop: 8 }}>
-          预估行数:{estRows} · 超 100 万行自动拆分多任务 · 含 PII({detail ? "是" : "否"})或超限 → 进 <span className="mono">pending_confirm</span>;否则 <span className="mono">generating → ready(24h)→ expired</span>。提交即登记任务并落 admin.report_exported。
+          预估行数(占位估算,以服务端任务实际为准):{estRows} · 超 100 万行自动拆分多任务 · 含 PII({hasPII ? "是" : "否"})或超限 → 进 <span className="mono">pending_confirm</span>;否则 <span className="mono">generating → ready(24h)→ expired</span>。提交即登记任务并落 admin.report_exported。
         </div>
       </div>
     );

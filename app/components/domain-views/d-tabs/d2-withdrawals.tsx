@@ -90,16 +90,25 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   });
   const delay = (w: WithdrawalRow) => openActionConfirm({
     action: `延迟处理 · ${w.id}`,
-    detail: <>延长持有(对齐当期合规审查窗口)。<b>需填期限 / 责任人 / 复查时间</b>,到期进入「待复查」队列(列表展示冻结时长 / 剩余复查时间 / 责任人)。延迟是收紧动作,单人即时,必填原因。覆盖率紧张时优先用延迟而不是硬放行。</>,
+    detail: <>延长持有(对齐当期合规审查窗口)。<b>需填期限 / 责任人 / 复查时间</b>,结构化登记后到期转「待复查」。延迟是收紧动作,单人即时,必填原因。覆盖率紧张时优先用延迟而不是硬放行。</>,
     amplifies: false,
     businessForm: { kind: "disposition-lifecycle", subject: `${w.id} · 延迟`, periods: ["1 天", "7 天", "14 天", "30 天", "45 天"], ownerHint: "如 risk@nexion" },
-    run: (reason, _v, bv) => { setSt(w.id, "delayed", `延迟提现 ${w.id} · 期限 ${bv?.period} · 责任人 ${bv?.owner} · 复查 ${bv?.reviewAt}`, reason); toast(`${w.id} 已延迟 ${bv?.period} · 责任人 ${bv?.owner} · 到期回队列待复查`); },
+    run: (reason, _v, bv) => {
+      // 结构化持久化生命周期(backend-replaceable),非仅审计字符串;到期由 server cron 转待复查。
+      setParam(`D.withdraw.${w.id}.lifecycle`, JSON.stringify({ disposition: "delayed", period: bv?.period, owner: bv?.owner, reviewAt: bv?.reviewAt }), { action: `延迟生命周期登记 ${w.id}(期限 ${bv?.period} · 责任人 ${bv?.owner} · 复查 ${bv?.reviewAt})`, reason });
+      setSt(w.id, "delayed", `延迟提现 ${w.id} · 期限 ${bv?.period} · 责任人 ${bv?.owner} · 复查 ${bv?.reviewAt}`, reason);
+      toast(`${w.id} 已延迟 ${bv?.period} · 责任人 ${bv?.owner} · 到期转待复查`);
+    },
   });
   const freeze = (w: WithdrawalRow) => openActionConfirm({
     action: `冻结提现 · ${w.id}`,
     detail: <><b>{w.user} · ${w.amount.toLocaleString("en-US")}</b> · 冻结用户这笔资金(任何在途状态都可以冻),必须操作确认。<b>需填期限 / 责任人 / 复查时间</b>,到期进入待复查。冻结事件喂风险雷达(B5)。</>,
     businessForm: { kind: "disposition-lifecycle", subject: `${w.id} · 冻结`, periods: ["7 天", "14 天", "30 天", "45 天", "长期(需复查)"], ownerHint: "如 risk@nexion" },
-    run: (reason, _v, bv) => { setSt(w.id, "frozen", `冻结提现 ${w.id} · 期限 ${bv?.period} · 责任人 ${bv?.owner} · 复查 ${bv?.reviewAt}`, reason); toast(`${w.id} 已冻结 ${bv?.period} · 责任人 ${bv?.owner} · 留痕`); },
+    run: (reason, _v, bv) => {
+      setParam(`D.withdraw.${w.id}.lifecycle`, JSON.stringify({ disposition: "frozen", period: bv?.period, owner: bv?.owner, reviewAt: bv?.reviewAt }), { action: `冻结生命周期登记 ${w.id}(期限 ${bv?.period} · 责任人 ${bv?.owner} · 复查 ${bv?.reviewAt})`, reason });
+      setSt(w.id, "frozen", `冻结提现 ${w.id} · 期限 ${bv?.period} · 责任人 ${bv?.owner} · 复查 ${bv?.reviewAt}`, reason);
+      toast(`${w.id} 已冻结 ${bv?.period} · 责任人 ${bv?.owner} · 留痕`);
+    },
   });
   const unfreeze = (w: WithdrawalRow) => openActionConfirm({
     action: `解冻提现 · ${w.id}`,

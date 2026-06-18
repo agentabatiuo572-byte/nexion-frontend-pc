@@ -209,11 +209,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       channels: ["视频核实", "当面核实", "回拨预留工作号"],
       ticketHint: "如 SEC-20260618-001",
     },
-    run: (reason) => {
+    run: (reason, _v, bv) => {
       const now = new Date().toISOString();
-      setParam(`A.acct.${op.id}.tfaResetAt`, now, { action: `重置双因子 ${op.id}`, reason });
-      logAudit({ actor: "超管", action: `重置双因子 ${op.id} · admin.operator_2fa_reset`, target: op.id, reason });
-      toast(`${op.id} 双因子重置已执行 · 该账号需重新绑定`);
+      // 身份核验证据落审计(反社工取证):核验渠道/时间/工单号写入 setParam action + logAudit,backend-replaceable。
+      const verify = `核验 ${bv?.channel ?? "—"} · ${bv?.verifiedAt || "—"} · 工单 ${bv?.ticket || "—"}`;
+      setParam(`A.acct.${op.id}.tfaResetAt`, now, { action: `重置双因子 ${op.id}(${verify})`, reason });
+      logAudit({ actor: "超管", action: `重置双因子 ${op.id} · admin.operator_2fa_reset · ${verify}`, target: op.id, reason });
+      toast(`${op.id} 双因子重置已执行 · 核验留痕 · 该账号需重新绑定`);
     },
   });
 
