@@ -122,6 +122,10 @@ function attachSkuMedia(sku: OpsSku, media: SkuMedia): OpsSku {
   };
 }
 
+function skuMediaPreviewSrc(media: NonNullable<SkuMedia>) {
+  return media.previewUrl || media.src;
+}
+
 function readSkuMediaMetadata(kind: SkuMediaKind, src: string) {
   return new Promise<Partial<NonNullable<SkuMedia>>>((resolve, reject) => {
     if (kind === "image") {
@@ -401,17 +405,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       }
       setSkuMedia({
         kind,
-        src,
+        src: asset.previewUrl,
         name: file.name,
-        size: file.size,
+        size: asset.sizeBytes ?? file.size,
         ...metadata,
         assetId: asset.assetId,
         objectKey: asset.objectKey,
         previewUrl: asset.previewUrl,
         contentType: asset.contentType ?? undefined,
       });
-      const metadataHint = kind === "video" && !metadata.duration && !metadata.w && !metadata.h ? " · 未读取到本地预览信息" : "";
-      setToast(`${kind === "video" ? "商品视频" : "商品主图"}已上传${metadataHint}`);
+      setToast(`${kind === "video" ? "商品视频" : "商品主图"}已上传`);
     } catch (error) {
       if (seq === mediaSeq.current) {
         setSkuMedia(null);
@@ -453,9 +456,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       if (seq !== mediaSeq.current) return;
       setSkuMedia({
         ...current,
-        src: nextSrc,
+        src: asset.previewUrl,
         name: nextName,
-        size: nextFile.size,
+        size: asset.sizeBytes ?? nextFile.size,
         w: s,
         h: s,
         assetId: asset.assetId,
@@ -559,8 +562,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <input type="file" accept={SKU_MEDIA_ACCEPT} style={{ display: "none" }} onChange={(e) => { void onPickSkuMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
               {skuMedia
                 ? skuMedia.kind === "video"
-                  ? <video src={skuMedia.src} controls muted playsInline preload="metadata" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block", background: "var(--surface-3)" }} />
-                  : <img src={skuMedia.src} alt="" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block" }} />
+                  ? <video src={skuMediaPreviewSrc(skuMedia)} controls muted playsInline preload="metadata" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block", background: "var(--surface-3)" }} />
+                  : <img src={skuMediaPreviewSrc(skuMedia)} alt="" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block" }} />
                 : <div className="col" style={{ alignItems: "center", gap: 6, padding: "22px 0", color: dragOver ? "var(--brand)" : "var(--ink-3)" }}><Icon name="image" size={26} /><span className="tiny">{dragOver ? "松开即上传" : "点击或拖拽图片/视频到此"}</span><span className="muted tiny">图片 ≤ 10MB · 视频 ≤ 200MB · JPG/PNG/WebP/GIF/MP4/WebM/MOV</span></div>}
             </label>
             {skuMedia && <div className="row" style={{ gap: 8 }}>
