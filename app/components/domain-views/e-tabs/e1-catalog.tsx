@@ -1,24 +1,20 @@
 import { useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
+import type { E1GenerationRelease } from "@/lib/admin/e1-client";
 import type { OpsSku, OpsReview } from "@/lib/store/admin/platform-config-store";
 import type { EViewCtx } from "./types";
 import { gateRemaining } from "./data";
 import { EStats } from "./stats";
 
-/* ── 静态设计数据(代际门 timeline · Gen-2 发布时点;真后台由 H1 月龄 + 发布门配置下发)── */
-const PHASE_ORDER = ["P1", "P2", "P3", "P4", "P5", "P6"];
-const PHASES = [
+/* ── 代际门兜底;真数据由后端 /api/admin/devices/e1/generation-gates 下发 ── */
+const DEFAULT_PHASE_ORDER = ["P1", "P2", "P3", "P4", "P5", "P6"];
+const DEFAULT_PHASES = [
   { p: "P1", meta: "L0+", skus: "Entry · NexionBox S1" },
   { p: "P2", meta: "L1+", skus: "Genesis 节点" },
   { p: "P3", meta: "L2+", skus: "Pro v2 解锁" },
   { p: "P4", meta: "L3+", skus: "Cloud Share 池" },
   { p: "P5", meta: "L4+", skus: "Rack P2 解锁" },
   { p: "P6", meta: "L6+", skus: "Flagship · 顶配" },
-];
-const PLATFORM_MONTH = 4; // 平台月龄 M4(真后台取 H1 月龄)
-const GEN_RELEASES = [
-  { id: "stellarbox-pro-v2", name: "NexionBox Pro v2", releaseMonth: 5, phase: "P3", discount: 300, eligibility: true },
-  { id: "stellarrack-p2", name: "NexionRack P2", releaseMonth: 10, phase: "P5", discount: 800, eligibility: false },
 ];
 
 /* ── 评价筛选 + 翻页(港口增补:设计稿无此控件;真后台 server 分页/筛选参数预留)── */
@@ -44,6 +40,10 @@ const yld = (s: OpsSku): string =>
   s.tier === "Share" && s.shareYieldMin != null
     ? `${s.shareYieldMin}–${s.shareYieldMax}% 年化 · ${(s.dailyEarnNEX ?? 0).toLocaleString()} NEX`
     : `$${(s.dailyEarn ?? 0).toFixed(2)}/d · ${(s.dailyEarnNEX ?? 0).toLocaleString()} NEX`;
+const compactUsd = (value: number): string =>
+  value >= 1_000_000 ? `$${(value / 1_000_000).toFixed(1)}M`
+    : value >= 1_000 ? `$${Math.round(value / 1_000).toLocaleString()}K`
+      : `$${Math.round(value).toLocaleString()}`;
 
 function RackIcon() {
   return (
@@ -54,17 +54,20 @@ function RackIcon() {
 }
 
 export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
-  const { skus, reviews, phaseCur } = ctx;
-  const curIdx = Math.max(0, PHASE_ORDER.indexOf(phaseCur));
-  const phaseIdx = (p: string): number => PHASE_ORDER.indexOf(p);
+  const { skus, reviews } = ctx;
+  const phaseOrder = ctx.e1Gates?.phaseOrder?.length ? ctx.e1Gates.phaseOrder : DEFAULT_PHASE_ORDER;
+  const phases = ctx.e1Gates?.phases?.length ? ctx.e1Gates.phases : DEFAULT_PHASES;
+  const platformMonth = ctx.e1Gates?.platformMonth ?? 0;
+  const phaseCur = ctx.e1Gates?.phaseCurrent ?? ctx.phaseCur;
+  const releases = ctx.e1Gates?.releases ?? [];
+  const curIdx = Math.max(0, phaseOrder.indexOf(phaseCur));
+  const phaseIdx = (p: string): number => phaseOrder.indexOf(p);
 
   // 代际发布门「是否解锁」单一判定源:H1 月龄(releaseMonth + phaseOffset)+ forceUnlock。
   // 顶部 Pro v2 状态标 + Gen-2 表 + 倒计时全部读这个函数,杜绝同页口径冲突(早期顶部硬编码"已开放")。
-  const genUnlocked = (g: typeof GEN_RELEASES[number]): boolean => {
-    const offset = parseInt(ctx.pget(`E.gen.${g.id}.phaseOffset`) ?? "0", 10) || 0;
-    return ctx.pget(`E.gen.${g.id}.forceUnlock`) === "true" || PLATFORM_MONTH >= g.releaseMonth + offset;
-  };
-  const proV2 = GEN_RELEASES.find((g) => g.id === "stellarbox-pro-v2");
+  const genUnlocked = (g: E1GenerationRelease): boolean =>
+    !!g.forceUnlock || platformMonth >= g.releaseMonth + (g.phaseOffset ?? 0);
+  const proV2 = releases.find((g) => g.id === "stellarbox-pro-v2");
   const proV2Label = proV2 ? `Pro v2 ${genUnlocked(proV2) ? "已开放" : "未开放 · COMING-SOON"}` : "";
 
   // 评价筛选(双轴 AND:状态 全部/展示中/已隐藏 × 评分 1-5★)+ 翻页(页大小 RV_PAGE_SIZE,rvCur clamp 防缩页越界)
@@ -87,13 +90,15 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const gated = skus.filter((s) => phaseIdx(s.unlock) > curIdx && phaseIdx(s.unlock) >= 0).length;
   const gen2 = skus.filter((s) => (s.generation ?? 1) >= 2).length;
   const gen2Pct = skus.length ? Math.round((gen2 / skus.length) * 100) : 0;
+  const soldUnits = skus.reduce((sum, s) => sum + (s.sold ?? 0), 0);
+  const catalogGmv = skus.reduce((sum, s) => sum + (s.sold ?? 0) * (s.price ?? 0), 0);
 
   // 代际门连接线渐变:success 到当前节点、brand 当前段、surface-3 锁定段(随 phaseCur 动态)
   const doneEnd = Math.max(0, curIdx * 20 - 2);
   const curEnd = curIdx * 20 + 10;
   const phaseLine = `linear-gradient(90deg, var(--success) 0%, var(--success) ${doneEnd}%, var(--brand) ${doneEnd}%, var(--brand) ${curEnd}%, var(--surface-3) ${curEnd}%)`;
 
-  const genShift = (g: typeof GEN_RELEASES[number], offset: number, delta: number) =>
+  const genShift = (g: E1GenerationRelease, offset: number, delta: number) =>
     ctx.openActionConfirm({
       name: `代际发布 · ${delta < 0 ? "提前" : "延迟"} ${Math.abs(delta)} 个月 · ${g.name}`,
       op: "param", paramKey: `E.gen.${g.id}.phaseOffset`,
@@ -101,14 +106,14 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       detail: `当前计划发布月 ${g.releaseMonth}${offset ? `(偏移 ${offset}M)` : ""} · 调 phaseOffset 改发布门时点 · server-canonical,改后对发布门生效`,
       amplify: false,
     });
-  const genForceUnlock = (g: typeof GEN_RELEASES[number]) => {
+  const genForceUnlock = (g: E1GenerationRelease) => {
     if (!g.eligibility) { ctx.toast(`拒绝 · ${g.name} E5 eligibility 未补录 · server gate 不能解锁`); return; }
     ctx.openActionConfirm({
       name: `强制解锁 · ${g.name}`, op: "param-fixed", paramKey: `E.gen.${g.id}.forceUnlock`, fixedVal: "true", amplify: true,
       detail: `绕过 H1 月龄门 · coming-soon → active · E5 eligibility 已配 · 放大供给须操作确认 + A2 审计`,
     });
   };
-  const genForceLock = (g: typeof GEN_RELEASES[number]) =>
+  const genForceLock = (g: E1GenerationRelease) =>
     ctx.openActionConfirm({
       name: `撤销解锁 · ${g.name}`, op: "param-fixed", paramKey: `E.gen.${g.id}.forceUnlock`, fixedVal: "false", amplify: false,
       detail: `active → coming-soon · 重新纳入月龄门控 · 操作确认 + A2 审计`,
@@ -117,11 +122,13 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "硬件 GMV(月)", v: "$23.8M", sub: "2,847 笔订单" },
+        { k: "SKU GMV(累计)", v: compactUsd(catalogGmv), sub: `${soldUnits.toLocaleString()} 台销量` },
         { k: "在售 SKU", v: onSale, sub: `+ ${pending} pending 待确认`, tone: "ok" },
         { k: "Gen2 SKU 占比", v: `${gen2Pct}%`, sub: "Pro v2 · Rack P2 主力", tone: "cyan" },
         { k: "门控 SKU", v: gated, sub: "解锁需 Phase 推进", tone: "warn" },
       ]} />
+      {ctx.e1Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>E1 数据同步中...</div>}
+      {ctx.e1Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E1 后端同步失败:{ctx.e1Error}</div>}
 
       {/* 1. 代际发布门 timeline */}
       <div className="phase-bar">
@@ -131,7 +138,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
           <span className="now"><span className="d" />当前 {phaseCur} · {proV2Label}</span>
         </div>
         <div className="phase-track" style={{ ["--phase-line" as string]: phaseLine } as CSSProperties}>
-          {PHASES.map((ph, i) => {
+          {phases.map((ph, i) => {
             const st = i < curIdx ? "done" : i === curIdx ? "cur" : "lock";
             return (
               <div key={ph.p} className={`phase ${st}`}>
@@ -149,18 +156,23 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         <div className="genrel-h">
           <span className="ttl">Gen-2 发布时点</span>
           <span className="sub">· releaseMonth 是发布门原子 · 控制 SKU coming-soon → active</span>
-          <span className="r"><CodeTag tone="electric">E.gen.releases</CodeTag><span>平台月龄 M{PLATFORM_MONTH} · {phaseCur}</span></span>
+          <span className="r"><CodeTag tone="electric">E.gen.releases</CodeTag><span>平台月龄 M{platformMonth} · {phaseCur}</span></span>
         </div>
         <div className="genrel-table">
           <div className="hd">
             <div className="c">SKU</div><div className="c">计划发布</div><div className="c">当前状态</div><div className="c">Phase</div>
             <div className="c">距发布</div><div className="c">折扣 USDT</div><div className="c">E5 eligibility 互锁</div><div className="c">动作</div>
           </div>
-          {GEN_RELEASES.map((g) => {
-            const offset = parseInt(ctx.pget(`E.gen.${g.id}.phaseOffset`) ?? "0", 10) || 0;
+          {releases.length === 0 && (
+            <div className="rw">
+              <div className="c" style={{ gridColumn: "1 / -1", color: "var(--ink-3)" }}>暂无代际发布配置</div>
+            </div>
+          )}
+          {releases.map((g) => {
+            const offset = g.phaseOffset ?? 0;
             const eff = g.releaseMonth + offset;
             const unlocked = genUnlocked(g); // 与顶部 Pro v2 标同源,消除口径冲突
-            const remain = eff - PLATFORM_MONTH;
+            const remain = eff - platformMonth;
             const cdCls = unlocked ? "ok" : remain <= 1 ? "warn" : "";
             const cdTxt = unlocked ? "已发布" : remain === 1 ? "下个月 · 1M" : `+ ${remain} M`;
             const relLbl = `月 ${g.releaseMonth}` + (offset ? (offset > 0 ? ` (+${offset})` : ` (${offset})`) : "");

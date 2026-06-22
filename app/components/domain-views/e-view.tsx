@@ -8,18 +8,29 @@
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:CRUD 走 platform-config-store 真接口(addSku/updateSku/setSkuStatus/removeSku、task、review),
- * 配置/处置走 setParam(E.gen.* / E.device.* / E.tradein.* / E.order.* / E.ops.*),全部 logAudit 写 A2。
+ * 真写落点:E1 SKU/评价/代际门走后端 API;E2-E5 暂沿用 platform-config-store / setParam。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { confirm } from "@/lib/store/ui";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { SKUS, REVIEWS } from "@/lib/mock/admin/design-data";
+import {
+  deleteE1Review,
+  deleteE1Sku,
+  fetchE1Catalog,
+  saveE1Review,
+  saveE1Sku,
+  updateE1GenerationGate,
+  updateE1Review,
+  updateE1ReviewStatus,
+  updateE1SkuStatus,
+  type E1GenerationGateData,
+} from "@/lib/admin/e1-client";
 import {
   FOLD, TASKS, ORDERS, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
@@ -69,6 +80,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const setParam = usePlatformConfig((s) => s.setParam);
   const logAudit = usePlatformConfig((s) => s.logAudit);
   const params = usePlatformConfig((s) => s.params);
+  const operator = useAdminAuth((s) => s.operator || s.session?.username || "superadmin");
   const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
   const pE = (k: string): string => pget(k) ?? E_PARAM_DEFAULTS[k] ?? "—";
   const isRefunded = (id: string): boolean => pget(`E.order.${id}.refunded`) === "true";
@@ -77,7 +89,31 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const isDcPaused = (dc: string): boolean => pget(`E.ops.${dc}.paused`) === "true";
   const advancedOf = (id: string): string | undefined => pget(`E.order.${id}.advanceState`);
   const orderState = (o: EOrder): string => (isCancelled(o.id) ? "cancelled" : isRefunded(o.id) ? "refunded" : terminalOf(o.id) ?? advancedOf(o.id) ?? o.state);
-  const phaseCur = pget("H.phase.current") ?? "P3";
+
+  // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
+  const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
+  const [e1Reviews, setE1Reviews] = useState<OpsReview[]>([]);
+  const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(null);
+  const [e1Loading, setE1Loading] = useState(false);
+  const [e1Error, setE1Error] = useState<string | null>(null);
+  const refreshE1 = useCallback(async () => {
+    setE1Loading(true);
+    setE1Error(null);
+    try {
+      const snapshot = await fetchE1Catalog();
+      setE1Skus(snapshot.skus);
+      setE1Reviews(snapshot.reviews);
+      setE1Gates(snapshot.gates);
+    } catch (error) {
+      setE1Error(error instanceof Error ? error.message : "E1_SYNC_FAILED");
+    } finally {
+      setE1Loading(false);
+    }
+  }, []);
+  useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, refreshE1]);
+  const skus = e1Skus;
+  const reviews = e1Reviews;
+  const phaseCur = e1Gates?.phaseCurrent ?? pget("H.phase.current") ?? "P3";
 
   // ── E3 任务:真增删改查(persist) ──
   const seedTasks = useMemo<OpsTask[]>(() => TASKS.map((t, i) => ({ ...t, id: "TK-" + (i + 1) })), []);
@@ -88,27 +124,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const removeTaskStore = usePlatformConfig((s) => s.removeTask);
   useEffect(() => { if (hydrated) ensureTasks(seedTasks); }, [hydrated, seedTasks, ensureTasks]);
   const tasks = hydrated && storeTasks ? storeTasks : seedTasks;
-
-  // ── E1 SKU:真增删改 + 上下架(persist) ──
-  const seedSkus = useMemo<OpsSku[]>(() => SKUS as OpsSku[], []);
-  const ensureSkus = usePlatformConfig((s) => s.ensureSkus);
-  const storeSkus = usePlatformConfig((s) => s.skus);
-  const addSkuStore = usePlatformConfig((s) => s.addSku);
-  const updateSku = usePlatformConfig((s) => s.updateSku);
-  const setSkuStatus = usePlatformConfig((s) => s.setSkuStatus);
-  const removeSkuStore = usePlatformConfig((s) => s.removeSku);
-  useEffect(() => { if (hydrated) ensureSkus(seedSkus); }, [hydrated, seedSkus, ensureSkus]);
-  const skus = hydrated && storeSkus ? storeSkus : seedSkus;
-
-  // ── E1 评价:真增删改查 + 隐藏切换(persist) ──
-  const seedReviews = useMemo<OpsReview[]>(() => REVIEWS as OpsReview[], []);
-  const ensureReviews = usePlatformConfig((s) => s.ensureReviews);
-  const storeReviews = usePlatformConfig((s) => s.reviews);
-  const addReviewStore = usePlatformConfig((s) => s.addReview);
-  const updateReviewStore = usePlatformConfig((s) => s.updateReview);
-  const removeReviewStore = usePlatformConfig((s) => s.removeReview);
-  useEffect(() => { if (hydrated) ensureReviews(seedReviews); }, [hydrated, seedReviews, ensureReviews]);
-  const reviews = hydrated && storeReviews ? storeReviews : seedReviews;
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -143,18 +158,45 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   const openAddReview = () => { const firstSku = skus.find((s) => (s.status || "on") !== "off"); setReviewForm({ productId: firstSku?.id || firstSku?.name || "", author: "", rating: "5", content: "", date: "刚刚", status: "published" }); setEditReviewId(null); setReviewDrawer(true); };
   const openEditReview = (r: OpsReview) => { setReviewForm({ productId: r.productId, author: r.author, rating: String(r.rating), content: r.content, date: r.date, status: r.status }); setEditReviewId(r.id); setReviewDrawer(true); };
-  const submitReview = () => {
+  const submitReview = async () => {
     if (!reviewForm.author.trim() || !reviewForm.content.trim()) { setToast("请填写评价人 + 内容"); return; }
     const r: OpsReview = { id: editReviewId ?? ("rv-" + ++REVIEW_SEQ), productId: reviewForm.productId.trim(), author: reviewForm.author.trim(), rating: Number(reviewForm.rating) || 5, content: reviewForm.content.trim(), date: reviewForm.date.trim() || "刚刚", status: reviewForm.status };
-    if (editReviewId) { updateReviewStore(editReviewId, r); logAudit({ actor: "总管理员", action: "编辑评价 " + r.author, target: r.id }); setToast("评价已更新:" + r.author); }
-    else { addReviewStore(r); logAudit({ actor: "总管理员", action: "新增评价 " + r.author, target: r.id }); setToast("评价已新增:" + r.author); }
-    setReviewDrawer(false); setEditReviewId(null);
+    try {
+      if (editReviewId) {
+        await updateE1Review(r, "编辑评价 " + r.author, operator);
+        setToast("评价已更新:" + r.author);
+      } else {
+        await saveE1Review(r, "新增评价 " + r.author, operator);
+        setToast("评价已新增:" + r.author);
+      }
+      await refreshE1();
+      setReviewDrawer(false); setEditReviewId(null);
+    } catch (error) {
+      setToast("评价保存失败:" + (error instanceof Error ? error.message : "E1_REVIEW_SAVE_FAILED"));
+    }
   };
   const delReview = async (r: OpsReview) => {
     const ok = await confirm({ title: "删除评价?", message: `删除「${r.author}」的评价?需审计留痕。`, confirmLabel: "确认删除", danger: true });
-    if (ok) { removeReviewStore(r.id); logAudit({ actor: "总管理员", action: "删除评价 " + r.author, target: r.id }); setToast("评价已删除:" + r.author); }
+    if (ok) {
+      try {
+        await deleteE1Review(r.id, "删除评价 " + r.author, operator);
+        await refreshE1();
+        setToast("评价已删除:" + r.author);
+      } catch (error) {
+        setToast("评价删除失败:" + (error instanceof Error ? error.message : "E1_REVIEW_DELETE_FAILED"));
+      }
+    }
   };
-  const toggleReview = (r: OpsReview) => { const ns = r.status === "published" ? "hidden" : "published"; updateReviewStore(r.id, { status: ns }); logAudit({ actor: "总管理员", action: (ns === "hidden" ? "隐藏" : "恢复") + "评价 " + r.author, target: r.id, after: ns }); setToast("评价已" + (ns === "hidden" ? "隐藏" : "恢复")); };
+  const toggleReview = async (r: OpsReview) => {
+    const ns = r.status === "published" ? "hidden" : "published";
+    try {
+      await updateE1ReviewStatus(r.id, ns, (ns === "hidden" ? "隐藏" : "恢复") + "评价 " + r.author, operator);
+      await refreshE1();
+      setToast("评价已" + (ns === "hidden" ? "隐藏" : "恢复"));
+    } catch (error) {
+      setToast("评价状态更新失败:" + (error instanceof Error ? error.message : "E1_REVIEW_STATUS_FAILED"));
+    }
+  };
   const openAddTask = () => { setTaskForm({ n: "", price: "", req: "S1+", unit: "/job", sat: "", taskClass: "llm-inference", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "派发中" }); setTaskDrawer(true); };
   const submitTask = () => {
     const price = Number(taskForm.price) || 0;
@@ -212,7 +254,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const ctx: EViewCtx = {
     hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
-    skus, reviews, phaseCur, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
+    skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, openAddTask, delTask,
     orders: ORDERS, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
     isDcPaused,
@@ -512,46 +554,66 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         edit={mc.edit}
         businessForm={mc.businessForm}
         onClose={() => setActionConfirm(null)}
-        onConfirm={(reason, newValue) => {
+        onConfirm={async (reason, newValue) => {
           if (!mc) return;
-          if (mc.op === "sku-save") {
-            const ex = editName ? skus.find((x) => x.name === editName) : undefined;
-            const sku = formToSku(form, ex);
-            if (editName) { updateSku(editName, sku); logAudit({ actor: "总管理员", action: "编辑 SKU " + form.name, target: form.name, reason }); setToast("SKU 已更新:" + form.name); }
-            else { addSkuStore(sku); logAudit({ actor: "总管理员", action: "新增 SKU " + form.name, target: form.name, reason }); setToast("SKU 已新增:" + form.name + " · 待上架"); }
-            setEditName(null);
-          } else if (mc.op === "sku-delete" && mc.target) {
-            removeSkuStore(mc.target);
-            logAudit({ actor: "总管理员", action: "删除 SKU " + mc.target, target: mc.target, reason });
-            setToast("SKU 已删除:" + mc.target);
-          } else if (mc.op === "sku-status" && mc.target) {
-            setSkuStatus(mc.target, mc.status!); logAudit({ actor: "总管理员", action: (mc.status === "off" ? "下架 SKU " : "上架 SKU ") + mc.target, target: mc.target, after: mc.status, reason }); setToast("SKU " + mc.target + (mc.status === "off" ? " 已下架" : " 已上架"));
-          } else if (mc.op === "task-down" && mc.taskId) {
-            removeTaskStore(mc.taskId);
-            logAudit({ actor: "总管理员", action: "下架任务 " + (mc.target ?? mc.taskId), target: mc.taskId, reason });
-            setToast("任务已下架:" + (mc.target ?? mc.taskId));
-          } else if (mc.op === "task-price" && mc.taskId) {
-            const v = Number(newValue);
-            if (Number.isFinite(v) && v > 0) { updateTaskStore(mc.taskId, { price: v }); logAudit({ actor: "总管理员", action: "调整任务单价 " + mc.taskId, target: mc.taskId, after: String(v), reason }); setToast(mc.name + ":已写入 $" + v + " · server-canonical"); }
-            else setToast("请填写有效单价");
-          } else if (mc.op === "param" && mc.paramKey) {
-            const v = (newValue ?? "").trim();
-            setParam(mc.paramKey, v, { action: mc.name, reason }); setToast(mc.name + ":已写入 " + v + " · server-canonical");
-          } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
-            setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason }); setToast(mc.name + " · 已生效 · server-canonical");
-          } else if (mc.op === "order-refund" && mc.orderId) {
-            setParam(`E.order.${mc.orderId}.refunded`, "true", { action: "订单退款 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已退款 · 资产回退已联动 D4 冲正 + C3"); setSelOrder(null);
-          } else if (mc.op === "order-cancel" && mc.orderId) {
-            setParam(`E.order.${mc.orderId}.cancelled`, "true", { action: "取消订单 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已取消 · 后续分配/扣费已终止"); setSelOrder(null);
-          } else if (mc.op === "order-terminal" && mc.orderId) {
-            const v = (newValue ?? "").trim();
-            if (v) { setParam(`E.order.${mc.orderId}.terminalState`, v, { action: "补建订单终态 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已补建终态:" + stateLabel(v)); }
-            setSelOrder(null);
-          } else if (mc.op === "ops-pause" && mc.dc) {
-            const paused = mc.fixedVal === "true";
-            setParam(`E.ops.${mc.dc}.paused`, paused ? "true" : "false", { action: (paused ? "批量 pause 数据中心 " : "恢复数据中心派单 ") + mc.dc, reason }); setToast(mc.dc + (paused ? " 已暂停派单" : " 已恢复派单"));
-          } else { setToast("已确认生效"); }
-          setActionConfirm(null);
+          try {
+            if (mc.op === "sku-save") {
+              const ex = editName ? skus.find((x) => x.name === editName) : undefined;
+              const sku = formToSku(form, ex);
+              await saveE1Sku(sku, editName ? (ex?.id || ex?.name || editName) : undefined, reason, operator);
+              await refreshE1();
+              setToast(editName ? "SKU 已更新:" + form.name : "SKU 已新增:" + form.name + " · 待上架");
+              setEditName(null);
+            } else if (mc.op === "sku-delete" && mc.target) {
+              const sku = skus.find((x) => x.name === mc.target || x.id === mc.target);
+              await deleteE1Sku(sku?.id || mc.target, reason, operator);
+              await refreshE1();
+              setToast("SKU 已删除:" + mc.target);
+            } else if (mc.op === "sku-status" && mc.target) {
+              const sku = skus.find((x) => x.name === mc.target || x.id === mc.target);
+              await updateE1SkuStatus(sku?.id || mc.target, mc.status!, reason, operator);
+              await refreshE1();
+              setToast("SKU " + mc.target + (mc.status === "off" ? " 已下架" : " 已上架"));
+            } else if (mc.op === "task-down" && mc.taskId) {
+              removeTaskStore(mc.taskId);
+              logAudit({ actor: "总管理员", action: "下架任务 " + (mc.target ?? mc.taskId), target: mc.taskId, reason });
+              setToast("任务已下架:" + (mc.target ?? mc.taskId));
+            } else if (mc.op === "task-price" && mc.taskId) {
+              const v = Number(newValue);
+              if (Number.isFinite(v) && v > 0) { updateTaskStore(mc.taskId, { price: v }); logAudit({ actor: "总管理员", action: "调整任务单价 " + mc.taskId, target: mc.taskId, after: String(v), reason }); setToast(mc.name + ":已写入 $" + v + " · server-canonical"); }
+              else setToast("请填写有效单价");
+            } else if (mc.op === "param" && mc.paramKey) {
+              const v = (newValue ?? "").trim();
+              if (mc.paramKey.startsWith("E.gen.")) {
+                setE1Gates(await updateE1GenerationGate(mc.paramKey, v, reason, operator));
+              } else {
+                setParam(mc.paramKey, v, { action: mc.name, reason });
+              }
+              setToast(mc.name + ":已写入 " + v + " · server-canonical");
+            } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
+              if (mc.paramKey.startsWith("E.gen.")) {
+                setE1Gates(await updateE1GenerationGate(mc.paramKey, mc.fixedVal, reason, operator));
+              } else {
+                setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason });
+              }
+              setToast(mc.name + " · 已生效 · server-canonical");
+            } else if (mc.op === "order-refund" && mc.orderId) {
+              setParam(`E.order.${mc.orderId}.refunded`, "true", { action: "订单退款 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已退款 · 资产回退已联动 D4 冲正 + C3"); setSelOrder(null);
+            } else if (mc.op === "order-cancel" && mc.orderId) {
+              setParam(`E.order.${mc.orderId}.cancelled`, "true", { action: "取消订单 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已取消 · 后续分配/扣费已终止"); setSelOrder(null);
+            } else if (mc.op === "order-terminal" && mc.orderId) {
+              const v = (newValue ?? "").trim();
+              if (v) { setParam(`E.order.${mc.orderId}.terminalState`, v, { action: "补建订单终态 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已补建终态:" + stateLabel(v)); }
+              setSelOrder(null);
+            } else if (mc.op === "ops-pause" && mc.dc) {
+              const paused = mc.fixedVal === "true";
+              setParam(`E.ops.${mc.dc}.paused`, paused ? "true" : "false", { action: (paused ? "批量 pause 数据中心 " : "恢复数据中心派单 ") + mc.dc, reason }); setToast(mc.dc + (paused ? " 已暂停派单" : " 已恢复派单"));
+            } else { setToast("已确认生效"); }
+          } catch (error) {
+            setToast((mc.name || "操作") + ":失败 " + (error instanceof Error ? error.message : "E1_ACTION_FAILED"));
+          } finally {
+            setActionConfirm(null);
+          }
         }} />}
       {toastNode}
     </div>

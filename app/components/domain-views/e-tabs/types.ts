@@ -1,4 +1,5 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
+import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
 
 /**
@@ -9,9 +10,9 @@ import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-conf
  * Mc 显式 edit 契约(2026-06 跨域硬化):调参传 edit{kind,current,unit};处置/纯动作不传 edit。
  */
 export type EOp =
-  | "sku-save"        // 新增/编辑 SKU(shell 读 form 状态)→ addSku/updateSku
+  | "sku-save"        // 新增/编辑 SKU(shell 读 form 状态)→ E1 后端 API
   | "sku-delete"      // 删除 SKU(需破坏性理由 + 影响确认)
-  | "sku-status"      // 上/下架(真 store setSkuStatus)
+  | "sku-status"      // 上/下架(真后端 status)
   | "task-down"       // 下架任务(需破坏性理由 + 影响确认)
   | "task-price"      // 任务改单价(真 store updateTask,操作确认 出价格编辑框)
   | "param"           // 自由值调参 → setParam(paramKey, newValue);操作确认 出「目标新值」
@@ -61,14 +62,17 @@ export interface EViewCtx {
   // E1 商品目录 & 代际门
   skus: OpsSku[];
   reviews: OpsReview[];
+  e1Loading: boolean;
+  e1Error: string | null;
+  e1Gates: E1GenerationGateData | null;
   phaseCur: string;                              // 当前 Phase(pget('H.phase.current') ?? 'P3')
+  refreshE1: () => Promise<void>;
   openSku: (name?: string) => void;              // 打开 SKU 抽屉(无 name = 新增)
   delSku: (name: string) => void;
   openAddReview: () => void;
   openEditReview: (r: OpsReview) => void;
   toggleReview: (r: OpsReview) => void;
   delReview: (r: OpsReview) => void;
-  // E.gen.* 发布门(phaseOffset / forceUnlock)直接走 ctx.pget 读,真 setParam config
   // E2 收益 & 任务引擎(改单价走 ctx.openActionConfirm op:"task-price";新增/下架走真 store)
   tasks: OpsTask[];
   openAddTask: () => void;
