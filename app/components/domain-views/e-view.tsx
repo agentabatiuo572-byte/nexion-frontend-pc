@@ -132,15 +132,25 @@ function readSkuMediaMetadata(kind: SkuMediaKind, src: string) {
       return;
     }
     const video = document.createElement("video");
+    let settled = false;
+    const settleVideo = (metadata: Partial<NonNullable<SkuMedia>>) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      video.removeAttribute("src");
+      video.load();
+      resolve(metadata);
+    };
+    const timer = window.setTimeout(() => settleVideo({}), 2500);
     video.preload = "metadata";
     video.muted = true;
     video.playsInline = true;
-    video.onloadedmetadata = () => resolve({
+    video.onloadedmetadata = () => settleVideo({
       w: video.videoWidth || undefined,
       h: video.videoHeight || undefined,
       duration: Number.isFinite(video.duration) ? video.duration : undefined,
     });
-    video.onerror = () => reject(new Error("VIDEO_METADATA_FAILED"));
+    video.onerror = () => settleVideo({});
     video.src = src;
   });
 }
@@ -400,7 +410,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         previewUrl: asset.previewUrl,
         contentType: asset.contentType ?? undefined,
       });
-      setToast(`${kind === "video" ? "商品视频" : "商品主图"}已上传`);
+      const metadataHint = kind === "video" && !metadata.duration && !metadata.w && !metadata.h ? " · 未读取到本地预览信息" : "";
+      setToast(`${kind === "video" ? "商品视频" : "商品主图"}已上传${metadataHint}`);
     } catch (error) {
       if (seq === mediaSeq.current) {
         setSkuMedia(null);
