@@ -70,3 +70,9 @@ export async function uploadAdminMedia(
     idempotencyPrefix: "admin-media-upload",
   });
 }
+
+export async function refreshAdminMediaPreviewUrl(assetId: string) {
+  return mediaRequest<UploadedAsset>(`/uploads/${encodeURIComponent(assetId)}/preview-url`, {
+    method: "GET",
+  });
+}

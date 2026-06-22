@@ -1,4 +1,5 @@
 import type { OpsReview, OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
+import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 
 interface ApiResult<T> {
   code: number;
@@ -308,15 +309,33 @@ function toReviewPayload(review: OpsReview, reason: string, operator: string) {
   };
 }
 
+async function withFreshSkuMediaPreview(sku: OpsSku): Promise<OpsSku> {
+  if (!sku.imageAssetId) {
+    return sku;
+  }
+  try {
+    const asset = await refreshAdminMediaPreviewUrl(sku.imageAssetId);
+    return {
+      ...sku,
+      imageAssetId: asset.assetId || sku.imageAssetId,
+      imageObjectKey: asset.objectKey || sku.imageObjectKey,
+      imagePreviewUrl: asset.previewUrl || sku.imagePreviewUrl,
+    };
+  } catch {
+    return sku;
+  }
+}
+
 export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
   const [skuPage, reviewPage, gates] = await Promise.all([
     e1Request<PageResult<BackendSku>>("/skus?pageNum=1&pageSize=100"),
     e1Request<PageResult<BackendReview>>("/reviews?pageNum=1&pageSize=100"),
     e1Request<E1GenerationGateData>("/generation-gates"),
   ]);
+  const skus = await Promise.all((skuPage.records ?? []).map(fromSku).map(withFreshSkuMediaPreview));
 
   return {
-    skus: (skuPage.records ?? []).map(fromSku),
+    skus,
     reviews: (reviewPage.records ?? []).map(fromReview),
     gates,
   };

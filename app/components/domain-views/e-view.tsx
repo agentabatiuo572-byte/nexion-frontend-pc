@@ -31,7 +31,7 @@ import {
   updateE1SkuStatus,
   type E1GenerationGateData,
 } from "@/lib/admin/e1-client";
-import { uploadAdminMedia } from "@/lib/admin/media-client";
+import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, TASKS, ORDERS, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
@@ -280,11 +280,37 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     return () => URL.revokeObjectURL(src);
   }, [skuMedia?.src]);
 
+  const refreshCurrentSkuMediaPreview = useCallback(async (assetId?: string) => {
+    if (!assetId) return;
+    try {
+      const asset = await refreshAdminMediaPreviewUrl(assetId);
+      setSkuMedia((current) => {
+        if (!current || current.assetId !== assetId) return current;
+        return {
+          ...current,
+          src: asset.previewUrl,
+          previewUrl: asset.previewUrl,
+          objectKey: asset.objectKey || current.objectKey,
+          size: asset.sizeBytes ?? current.size,
+          contentType: asset.contentType ?? current.contentType,
+        };
+      });
+    } catch {
+      setToast("媒体预览链接刷新失败,请重新上传或稍后重试");
+    }
+  }, [setToast]);
+
   // ── 回调(注入 ctx)──
   const openSku = (name?: string) => {
     if (name) {
       const s = skus.find((x) => x.name === name);
-      if (s) { setForm(skuToForm(s)); setEditName(name); resetSkuMedia(skuMediaFromSku(s)); }
+      if (s) {
+        const media = skuMediaFromSku(s);
+        setForm(skuToForm(s));
+        setEditName(name);
+        resetSkuMedia(media);
+        if (media?.assetId) void refreshCurrentSkuMediaPreview(media.assetId);
+      }
       else { setForm(EMPTY_SKU_FORM); setEditName(null); resetSkuMedia(null); }
     } else { setForm(EMPTY_SKU_FORM); setEditName(null); resetSkuMedia(null); }
     setSkuDrawer(true);
@@ -562,8 +588,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <input type="file" accept={SKU_MEDIA_ACCEPT} style={{ display: "none" }} onChange={(e) => { void onPickSkuMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
               {skuMedia
                 ? skuMedia.kind === "video"
-                  ? <video src={skuMediaPreviewSrc(skuMedia)} controls muted playsInline preload="metadata" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block", background: "var(--surface-3)" }} />
-                  : <img src={skuMediaPreviewSrc(skuMedia)} alt="" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block" }} />
+                  ? <video key={skuMediaPreviewSrc(skuMedia)} src={skuMediaPreviewSrc(skuMedia)} controls muted playsInline preload="auto" onError={() => void refreshCurrentSkuMediaPreview(skuMedia.assetId)} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block", background: "var(--surface-3)" }} />
+                  : <img key={skuMediaPreviewSrc(skuMedia)} src={skuMediaPreviewSrc(skuMedia)} alt="" onError={() => void refreshCurrentSkuMediaPreview(skuMedia.assetId)} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block" }} />
                 : <div className="col" style={{ alignItems: "center", gap: 6, padding: "22px 0", color: dragOver ? "var(--brand)" : "var(--ink-3)" }}><Icon name="image" size={26} /><span className="tiny">{dragOver ? "松开即上传" : "点击或拖拽图片/视频到此"}</span><span className="muted tiny">图片 ≤ 10MB · 视频 ≤ 200MB · JPG/PNG/WebP/GIF/MP4/WebM/MOV</span></div>}
             </label>
             {skuMedia && <div className="row" style={{ gap: 8 }}>

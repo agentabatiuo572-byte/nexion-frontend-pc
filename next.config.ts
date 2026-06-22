@@ -15,6 +15,17 @@ const CSP_SCRIPT_SRC = IS_PROD
   ? "script-src 'self' 'unsafe-inline'"
   : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
 
+const MEDIA_PREVIEW_ORIGINS = Array.from(new Set([
+  "http://127.0.0.1:9000",
+  "http://localhost:9000",
+  ...(process.env.NEXION_MEDIA_PREVIEW_ORIGINS || "")
+    .split(/[\s,]+/)
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+]));
+
+const CSP_MEDIA_PREVIEW_SRC = MEDIA_PREVIEW_ORIGINS.join(" ");
+
 const SECURITY_HEADERS = [
   {
     key: "Content-Security-Policy",
@@ -22,7 +33,8 @@ const SECURITY_HEADERS = [
       "default-src 'self'",
       CSP_SCRIPT_SRC,
       "style-src 'self' 'unsafe-inline' https://api.fontshare.com",
-      "img-src 'self' data: blob: https:",
+      `img-src 'self' data: blob: https: ${CSP_MEDIA_PREVIEW_SRC}`,
+      `media-src 'self' data: blob: https: ${CSP_MEDIA_PREVIEW_SRC}`,
       "font-src 'self' data: https://cdn.fontshare.com https://api.fontshare.com",
       "connect-src 'self' https://api.fontshare.com",
       "frame-ancestors 'none'",

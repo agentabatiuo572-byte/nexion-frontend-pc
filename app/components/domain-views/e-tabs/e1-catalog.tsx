@@ -1,6 +1,7 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
 import type { E1GenerationRelease } from "@/lib/admin/e1-client";
+import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import type { OpsSku, OpsReview } from "@/lib/store/admin/platform-config-store";
 import type { EViewCtx } from "./types";
 import { gateRemaining } from "./data";
@@ -52,6 +53,43 @@ function RackIcon() {
       <rect x="3" y="6" width="18" height="12" rx="2" /><path d="M7 10v4M11 10v4M15 10v4M19 10v4" /><circle cx="6" cy="20" r="1" /><circle cx="18" cy="20" r="1" />
     </svg>
   );
+}
+
+function SkuMediaThumb({ sku }: { sku: OpsSku }) {
+  const [src, setSrc] = useState(sku.imagePreviewUrl || "");
+  const [failed, setFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    setSrc(sku.imagePreviewUrl || "");
+    setFailed(false);
+    setRefreshing(false);
+  }, [sku.imageAssetId, sku.imagePreviewUrl]);
+
+  const refreshPreview = async () => {
+    if (!sku.imageAssetId || refreshing) {
+      setFailed(true);
+      return;
+    }
+    setRefreshing(true);
+    try {
+      const asset = await refreshAdminMediaPreviewUrl(sku.imageAssetId);
+      setSrc(asset.previewUrl);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  if (!src || failed) {
+    return <RackIcon />;
+  }
+
+  return isVideoMedia(sku)
+    ? <video key={src} src={src} controls muted playsInline preload="auto" onError={() => void refreshPreview()} />
+    : <img key={src} src={src} alt="" loading="lazy" onError={() => void refreshPreview()} />;
 }
 
 export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
@@ -223,11 +261,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                 {s.badge ? <span className={`badge ${badgeClass(s.tier)}`}>{s.badge}</span> : null}
                 <span className="gen">Gen {s.generation ?? 1}</span>
                 <div className="ph">
-                  {s.imagePreviewUrl
-                    ? isVideoMedia(s)
-                      ? <video src={s.imagePreviewUrl} muted playsInline preload="metadata" />
-                      : <img src={s.imagePreviewUrl} alt="" />
-                    : <RackIcon />}
+                  <SkuMediaThumb sku={s} />
                 </div>
               </div>
               <div className="body">
