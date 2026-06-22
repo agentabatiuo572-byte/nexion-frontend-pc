@@ -33,7 +33,7 @@ export interface McSpec {
   fixedVal?: string;        // param-fixed / 处置固定写入值
   target?: string;          // SKU 名 / 实体名(sku-status / sku-save 等)
   isNew?: boolean;          // sku-save:新增 vs 编辑
-  hasImg?: boolean;         // sku-save:含产品图
+  hasImg?: boolean;         // sku-save:含商品媒体(商品主图或商品视频)
   status?: string;          // sku-status:"on"|"off";ops-pause:"on"|"off"
   taskId?: string;          // task-price:目标任务 id
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单

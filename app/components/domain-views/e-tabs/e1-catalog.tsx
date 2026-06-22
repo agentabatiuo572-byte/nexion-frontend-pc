@@ -44,6 +44,7 @@ const compactUsd = (value: number): string =>
   value >= 1_000_000 ? `$${(value / 1_000_000).toFixed(1)}M`
     : value >= 1_000 ? `$${Math.round(value / 1_000).toLocaleString()}K`
       : `$${Math.round(value).toLocaleString()}`;
+const isVideoMedia = (s: OpsSku): boolean => /\.(mp4|webm|mov)(?:$|\?)/i.test(s.imageObjectKey || s.imagePreviewUrl || "");
 
 function RackIcon() {
   return (
@@ -221,7 +222,13 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
               <div className="img">
                 {s.badge ? <span className={`badge ${badgeClass(s.tier)}`}>{s.badge}</span> : null}
                 <span className="gen">Gen {s.generation ?? 1}</span>
-                <div className="ph"><RackIcon /></div>
+                <div className="ph">
+                  {s.imagePreviewUrl
+                    ? isVideoMedia(s)
+                      ? <video src={s.imagePreviewUrl} muted playsInline preload="metadata" />
+                      : <img src={s.imagePreviewUrl} alt="" />
+                    : <RackIcon />}
+                </div>
               </div>
               <div className="body">
                 <div className="top">

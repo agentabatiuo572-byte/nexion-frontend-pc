@@ -79,6 +79,9 @@ export interface OpsSku {
   unlock: string;               // 解锁 Phase(= 前端 unlocksAtPhase)P1-P6
   // ── 购买门(per-user 购买限制 · 镜像前端 Product.purchaseGate;undefined = 自由购买无门)──
   purchaseGate?: PurchaseGate;  // 等级/条件门 + 锁额门(运营在 SKU 抽屉「⑦ 购买限制」配置)
+  imageAssetId?: string;         // 后台媒体 assetId(商品主图或商品视频)
+  imageObjectKey?: string;       // MinIO object key
+  imagePreviewUrl?: string;      // 临时预览 URL(可由 assetId 刷新)
   // ── 后台运营态(后台特有,非前端展示)──
   tag: string;                  // 后台分类 tone(popular / limited / pro / legacy / "")
   status: string;               // on(在售)/ off(下架)/ pending(待上架确认)

@@ -57,6 +57,9 @@ interface BackendSku {
   tradeinDiscount?: number | string | null;
   unlockPhase?: string | null;
   purchaseGate?: BackendPurchaseGate | null;
+  imageAssetId?: string | null;
+  imageObjectKey?: string | null;
+  imagePreviewUrl?: string | null;
   tag?: string | null;
   status?: string | null;
 }
@@ -228,6 +231,9 @@ function fromSku(sku: BackendSku): OpsSku {
     tradeinDiscount: toOptionalNumber(sku.tradeinDiscount),
     unlock: sku.unlockPhase ?? "P1",
     purchaseGate: fromPurchaseGate(sku.purchaseGate),
+    imageAssetId: sku.imageAssetId ?? undefined,
+    imageObjectKey: sku.imageObjectKey ?? undefined,
+    imagePreviewUrl: sku.imagePreviewUrl ?? undefined,
     tag: sku.tag ?? "",
     status: sku.status ?? "pending",
   };
@@ -267,9 +273,9 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     tradeinDiscount: sku.tradeinDiscount ?? null,
     unlockPhase: sku.unlock || "P1",
     purchaseGate: toPurchaseGate(sku.purchaseGate),
-    imageAssetId: null,
-    imageObjectKey: null,
-    imagePreviewUrl: null,
+    imageAssetId: sku.imageAssetId ?? null,
+    imageObjectKey: sku.imageObjectKey ?? null,
+    imagePreviewUrl: sku.imagePreviewUrl ?? null,
     tag: sku.tag ?? "",
     status: sku.status ?? "pending",
     reason,

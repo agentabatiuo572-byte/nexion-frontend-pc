@@ -11,7 +11,7 @@
  * 真写落点:E1 SKU/评价/代际门走后端 API;E2-E5 暂沿用 platform-config-store / setParam。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -31,6 +31,7 @@ import {
   updateE1SkuStatus,
   type E1GenerationGateData,
 } from "@/lib/admin/e1-client";
+import { uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, TASKS, ORDERS, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
@@ -46,7 +47,121 @@ import "./e-domain.css";
 let TASK_SEQ = 100;   // 客户端新增任务 id 计数(避免 Date.now/Math.random,SSR 安全)
 let REVIEW_SEQ = 100; // 客户端新增评价 id 计数(SSR 安全)
 
-type SkuImg = { src: string; w: number; h: number } | null;
+type SkuMediaKind = "image" | "video";
+type SkuMedia = {
+  kind: SkuMediaKind;
+  src: string;
+  name: string;
+  size: number;
+  w?: number;
+  h?: number;
+  duration?: number;
+  assetId?: string;
+  objectKey?: string;
+  previewUrl?: string;
+  contentType?: string;
+} | null;
+
+const SKU_IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
+const SKU_VIDEO_EXTS = new Set(["mp4", "webm", "mov"]);
+const SKU_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const SKU_MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+const SKU_MEDIA_ACCEPT = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime";
+
+function fileExt(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return ext === name.toLowerCase() ? "" : ext;
+}
+
+function inferSkuMediaKind(file: File): SkuMediaKind | null {
+  const ext = fileExt(file.name);
+  const mime = file.type.toLowerCase();
+  if (SKU_IMAGE_EXTS.has(ext) && (!mime || mime.startsWith("image/"))) return "image";
+  if (SKU_VIDEO_EXTS.has(ext) && (!mime || mime.startsWith("video/"))) return "video";
+  return null;
+}
+
+function mediaKindFromPath(path?: string | null): SkuMediaKind {
+  const ext = fileExt(path ?? "");
+  return SKU_VIDEO_EXTS.has(ext) ? "video" : "image";
+}
+
+function mediaSizeLabel(bytes: number) {
+  if (!bytes) return "未知大小";
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(mb >= 10 ? 0 : 1)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`;
+}
+
+function durationLabel(seconds?: number) {
+  if (!seconds || !Number.isFinite(seconds)) return "";
+  const min = Math.floor(seconds / 60);
+  const sec = Math.round(seconds % 60).toString().padStart(2, "0");
+  return `${min}:${sec}`;
+}
+
+function skuMediaFromSku(sku: OpsSku): SkuMedia {
+  if (!sku.imagePreviewUrl || !sku.imageAssetId || !sku.imageObjectKey) return null;
+  const kind = mediaKindFromPath(sku.imageObjectKey);
+  return {
+    kind,
+    src: sku.imagePreviewUrl,
+    name: sku.imageObjectKey.split("/").pop() || (kind === "video" ? "商品视频" : "商品主图"),
+    size: 0,
+    assetId: sku.imageAssetId,
+    objectKey: sku.imageObjectKey,
+    previewUrl: sku.imagePreviewUrl,
+  };
+}
+
+function attachSkuMedia(sku: OpsSku, media: SkuMedia): OpsSku {
+  return {
+    ...sku,
+    imageAssetId: media?.assetId,
+    imageObjectKey: media?.objectKey,
+    imagePreviewUrl: media?.previewUrl,
+  };
+}
+
+function readSkuMediaMetadata(kind: SkuMediaKind, src: string) {
+  return new Promise<Partial<NonNullable<SkuMedia>>>((resolve, reject) => {
+    if (kind === "image") {
+      const image = new Image();
+      image.onload = () => resolve({ w: image.width, h: image.height });
+      image.onerror = () => reject(new Error("IMAGE_METADATA_FAILED"));
+      image.src = src;
+      return;
+    }
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.onloadedmetadata = () => resolve({
+      w: video.videoWidth || undefined,
+      h: video.videoHeight || undefined,
+      duration: Number.isFinite(video.duration) ? video.duration : undefined,
+    });
+    video.onerror = () => reject(new Error("VIDEO_METADATA_FAILED"));
+    video.src = src;
+  });
+}
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("IMAGE_LOAD_FAILED"));
+    image.src = src;
+  });
+}
+
+function canvasToPngBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("CANVAS_TO_BLOB_FAILED"));
+    }, "image/png");
+  });
+}
 
 // SKU 抽屉分节头(① 24×24 brand-soft 圆贴 + 14.5/600 标题 + 顶部分隔)。
 function SkuFieldGroup({ n, title, children }: { n: string; title: string; children: ReactNode }) {
@@ -128,20 +243,37 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
   const [form, setForm] = useState<SkuForm>(EMPTY_SKU_FORM);
-  const [skuImg, setSkuImg] = useState<SkuImg>(null);
+  const [skuMedia, setSkuMedia] = useState<SkuMedia>(null);
+  const [skuMediaUploading, setSkuMediaUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [editName, setEditName] = useState<string | null>(null);
+  const mediaSeq = useRef(0);
   const [taskDrawer, setTaskDrawer] = useState(false);
   const [taskForm, setTaskForm] = useState<{ n: string; price: string; req: string; unit: string; sat: string; taskClass: string; model: string; minReward: string; maxReward: string; minVRAM: string; killInit: string }>({ n: "", price: "", req: "S1+", unit: "/job", sat: "", taskClass: "llm-inference", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "派发中" });
   const [reviewDrawer, setReviewDrawer] = useState(false);
   const [editReviewId, setEditReviewId] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState({ productId: "", author: "", rating: "5", content: "", date: "刚刚", status: "published" });
 
+  const resetSkuMedia = useCallback((media: SkuMedia = null) => {
+    mediaSeq.current += 1;
+    setSkuMediaUploading(false);
+    setSkuMedia(media);
+  }, []);
+
+  useEffect(() => {
+    const src = skuMedia?.src;
+    if (!src?.startsWith("blob:")) return;
+    return () => URL.revokeObjectURL(src);
+  }, [skuMedia?.src]);
+
   // ── 回调(注入 ctx)──
   const openSku = (name?: string) => {
-    if (name) { const s = skus.find((x) => x.name === name); if (s) { setForm(skuToForm(s)); setEditName(name); } }
-    else { setForm(EMPTY_SKU_FORM); setEditName(null); }
-    setSkuImg(null); setSkuDrawer(true);
+    if (name) {
+      const s = skus.find((x) => x.name === name);
+      if (s) { setForm(skuToForm(s)); setEditName(name); resetSkuMedia(skuMediaFromSku(s)); }
+      else { setForm(EMPTY_SKU_FORM); setEditName(null); resetSkuMedia(null); }
+    } else { setForm(EMPTY_SKU_FORM); setEditName(null); resetSkuMedia(null); }
+    setSkuDrawer(true);
   };
   const delSku = (name: string) => {
     setActionConfirm({
@@ -229,28 +361,109 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     });
   };
 
-  // ── 产品图上传(SKU 抽屉)──
-  const onPickImg = (file?: File) => {
+  // ── 产品媒体上传(SKU 抽屉)──
+  const onPickSkuMedia = async (file?: File) => {
     if (!file) return;
-    if (!file.type.startsWith("image/")) { setToast("请上传图片文件(PNG / JPG)"); return; }
-    if (file.size > 2 * 1024 * 1024) { setToast("图片超过 2MB,请压缩后再传"); return; }
-    const r = new FileReader();
-    r.onload = () => { const im = new Image(); im.onload = () => setSkuImg({ src: r.result as string, w: im.width, h: im.height }); im.src = r.result as string; };
-    r.readAsDataURL(file);
+    const kind = inferSkuMediaKind(file);
+    if (!kind) { setToast("请上传图片或视频文件:JPG / PNG / WebP / GIF / MP4 / WebM / MOV"); return; }
+    const maxBytes = kind === "image" ? SKU_MAX_IMAGE_BYTES : SKU_MAX_VIDEO_BYTES;
+    if (file.size > maxBytes) { setToast(`${kind === "image" ? "图片" : "视频"}超过 ${mediaSizeLabel(maxBytes)},请压缩后再传`); return; }
+
+    const src = URL.createObjectURL(file);
+    const seq = ++mediaSeq.current;
+    setSkuMediaUploading(true);
+    setSkuMedia({ kind, src, name: file.name, size: file.size });
+
+    try {
+      const [metadata, asset] = await Promise.all([
+        readSkuMediaMetadata(kind, src),
+        uploadAdminMedia(file, {
+          domain: "E",
+          usage: kind === "video" ? "sku-video" : "sku-image",
+          entityType: "SKU",
+          entityId: form.id.trim() || form.name.trim() || editName || "draft-sku",
+          operator,
+        }),
+      ]);
+      if (seq !== mediaSeq.current) {
+        URL.revokeObjectURL(src);
+        return;
+      }
+      setSkuMedia({
+        kind,
+        src,
+        name: file.name,
+        size: file.size,
+        ...metadata,
+        assetId: asset.assetId,
+        objectKey: asset.objectKey,
+        previewUrl: asset.previewUrl,
+        contentType: asset.contentType ?? undefined,
+      });
+      setToast(`${kind === "video" ? "商品视频" : "商品主图"}已上传`);
+    } catch (error) {
+      if (seq === mediaSeq.current) {
+        setSkuMedia(null);
+        setToast("媒体上传失败:" + (error instanceof Error ? error.message : "MEDIA_UPLOAD_FAILED"));
+      } else {
+        URL.revokeObjectURL(src);
+      }
+    } finally {
+      if (seq === mediaSeq.current) {
+        setSkuMediaUploading(false);
+      }
+    }
   };
-  const cropSquare = () => {
-    if (!skuImg) return;
-    const im = new Image();
-    im.onload = () => {
-      const s = Math.min(im.width, im.height);
-      const c = document.createElement("canvas"); c.width = c.height = s;
-      const x = (im.width - s) / 2, y = (im.height - s) / 2;
-      c.getContext("2d")!.drawImage(im, x, y, s, s, 0, 0, s, s);
-      setSkuImg({ src: c.toDataURL("image/png"), w: s, h: s }); setToast("已居中裁剪为 1:1");
-    };
-    im.src = skuImg.src;
+  const cropSquare = async () => {
+    const current = skuMedia;
+    if (!current || current.kind !== "image") return;
+    let seq: number | null = null;
+    try {
+      const image = await loadImage(current.src);
+      const s = Math.min(image.width, image.height);
+      const canvas = document.createElement("canvas"); canvas.width = canvas.height = s;
+      const x = (image.width - s) / 2, y = (image.height - s) / 2;
+      canvas.getContext("2d")!.drawImage(image, x, y, s, s, 0, 0, s, s);
+      const nextSrc = canvas.toDataURL("image/png");
+      const blob = await canvasToPngBlob(canvas);
+      const nextName = current.name.replace(/\.[^.]+$/, "") + "-1x1.png";
+      const nextFile = new File([blob], nextName, { type: "image/png" });
+
+      seq = ++mediaSeq.current;
+      setSkuMediaUploading(true);
+      setSkuMedia({ ...current, src: nextSrc, name: nextName, size: nextFile.size, w: s, h: s, assetId: undefined, objectKey: undefined, previewUrl: undefined, contentType: "image/png" });
+      const asset = await uploadAdminMedia(nextFile, {
+        domain: "E",
+        usage: "sku-image",
+        entityType: "SKU",
+        entityId: form.id.trim() || form.name.trim() || editName || "draft-sku",
+        operator,
+      });
+      if (seq !== mediaSeq.current) return;
+      setSkuMedia({
+        ...current,
+        src: nextSrc,
+        name: nextName,
+        size: nextFile.size,
+        w: s,
+        h: s,
+        assetId: asset.assetId,
+        objectKey: asset.objectKey,
+        previewUrl: asset.previewUrl,
+        contentType: asset.contentType ?? "image/png",
+      });
+      setToast("已居中裁剪为 1:1 并重新上传");
+    } catch (error) {
+      if (seq == null || seq === mediaSeq.current) {
+        setToast("裁剪上传失败:" + (error instanceof Error ? error.message : "SKU_MEDIA_CROP_FAILED"));
+      }
+    } finally {
+      if (seq == null || seq === mediaSeq.current) {
+        setSkuMediaUploading(false);
+      }
+    }
   };
-  const isSquare = skuImg && Math.abs(skuImg.w - skuImg.h) <= Math.max(skuImg.w, skuImg.h) * 0.02;
+  const isSquare = !!(skuMedia?.kind === "image" && skuMedia.w && skuMedia.h && Math.abs(skuMedia.w - skuMedia.h) <= Math.max(skuMedia.w, skuMedia.h) * 0.02);
 
   const ctx: EViewCtx = {
     hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
@@ -325,22 +538,30 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       })()}
 
       {/* SKU 新增 / 编辑 抽屉 */}
-      {skuDrawer && <Drawer title={editName ? "编辑 SKU" : "新增 SKU"} sub={<AutoGloss>{editName ? "改价 / 库存 / 日产基准 / 上架 Phase · 改后走操作确认" : "填写商品规格 · 提交后走操作确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditName(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditName(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price} onClick={() => { const gErr = validateGateForm(form); if (gErr) { setToast(gErr); return; } setActionConfirm({ name: (editName ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editName, hasImg: !!skuImg }); setSkuDrawer(false); }}>{editName ? "保存修改" : "提交确认"}</Btn></>}>
+      {skuDrawer && <Drawer title={editName ? "编辑 SKU" : "新增 SKU"} sub={<AutoGloss>{editName ? "改价 / 库存 / 日产基准 / 上架 Phase · 改后走操作确认" : "填写商品规格 · 提交后走操作确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditName(null); resetSkuMedia(null); }}
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditName(null); resetSkuMedia(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price || skuMediaUploading || (!!skuMedia && !skuMedia.assetId)} onClick={() => { if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; } if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; } const gErr = validateGateForm(form); if (gErr) { setToast(gErr); return; } setActionConfirm({ name: (editName ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editName, hasImg: !!skuMedia }); setSkuDrawer(false); }}>{editName ? "保存修改" : "提交确认"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
-          <div className="col" style={{ gap: 5 }}><span className="muted tiny">产品图</span>
-            <label className={"sku-drop" + (dragOver ? " drag" : "")} style={skuImg ? { padding: 0, borderStyle: "solid" } : {}}
+          <div className="col" style={{ gap: 5 }}><span className="muted tiny">产品图 / 视频</span>
+            <label className={"sku-drop" + (dragOver ? " drag" : "")} style={skuMedia ? { padding: 0, borderStyle: "solid" } : {}}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); onPickImg(e.dataTransfer.files[0]); }}>
-              <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => onPickImg(e.target.files?.[0])} />
-              {skuImg
-                ? <img src={skuImg.src} alt="" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block" }} />
-                : <div className="col" style={{ alignItems: "center", gap: 6, padding: "22px 0", color: dragOver ? "var(--brand)" : "var(--ink-3)" }}><Icon name="image" size={26} /><span className="tiny">{dragOver ? "松开即上传" : "点击或拖拽图片到此"}</span><span className="muted tiny">建议 1:1 / ≤ 2MB · PNG、JPG</span></div>}
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); void onPickSkuMedia(e.dataTransfer.files[0]); }}>
+              <input type="file" accept={SKU_MEDIA_ACCEPT} style={{ display: "none" }} onChange={(e) => { void onPickSkuMedia(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+              {skuMedia
+                ? skuMedia.kind === "video"
+                  ? <video src={skuMedia.src} controls muted playsInline preload="metadata" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block", background: "var(--surface-3)" }} />
+                  : <img src={skuMedia.src} alt="" style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 9, display: "block" }} />
+                : <div className="col" style={{ alignItems: "center", gap: 6, padding: "22px 0", color: dragOver ? "var(--brand)" : "var(--ink-3)" }}><Icon name="image" size={26} /><span className="tiny">{dragOver ? "松开即上传" : "点击或拖拽图片/视频到此"}</span><span className="muted tiny">图片 ≤ 10MB · 视频 ≤ 200MB · JPG/PNG/WebP/GIF/MP4/WebM/MOV</span></div>}
             </label>
-            {skuImg && <div className="row" style={{ gap: 8 }}>
-              <span className="muted tiny" style={{ flex: 1 }}>{skuImg.w}×{skuImg.h}px {isSquare ? <span style={{ color: "var(--success)" }}>· 1:1 ✓</span> : <span style={{ color: "var(--warning)" }}>· 非 1:1,建议裁剪</span>}</span>
-              {!isSquare && <Btn sm onClick={cropSquare}>裁剪为 1:1</Btn>}
-              <Btn sm onClick={() => setSkuImg(null)}>移除</Btn>
+            {skuMedia && <div className="row" style={{ gap: 8 }}>
+              <span className="muted tiny" style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {skuMedia.kind === "video" ? "视频" : "图片"} · {skuMedia.name} · {mediaSizeLabel(skuMedia.size)}
+                {skuMedia.w && skuMedia.h ? ` · ${skuMedia.w}×${skuMedia.h}px` : ""}
+                {skuMedia.kind === "video" && skuMedia.duration ? ` · ${durationLabel(skuMedia.duration)}` : ""}
+                {skuMediaUploading ? <span style={{ color: "var(--warning)" }}> · 上传中</span> : skuMedia.assetId ? <span style={{ color: "var(--success)" }}> · 已上传</span> : <span style={{ color: "var(--danger)" }}> · 未上传</span>}
+                {skuMedia.kind === "image" && skuMedia.w && skuMedia.h ? (isSquare ? <span style={{ color: "var(--success)" }}> · 1:1 ✓</span> : <span style={{ color: "var(--warning)" }}> · 非 1:1,建议裁剪</span>) : null}
+              </span>
+              {skuMedia.kind === "image" && skuMedia.w && skuMedia.h && !isSquare && <Btn sm disabled={skuMediaUploading} onClick={() => void cropSquare()}>裁剪为 1:1</Btn>}
+              <Btn sm disabled={skuMediaUploading} onClick={() => resetSkuMedia(null)}>移除</Btn>
             </div>}
           </div>
           <SkuFieldGroup n="①" title="基本信息">
@@ -559,11 +780,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           try {
             if (mc.op === "sku-save") {
               const ex = editName ? skus.find((x) => x.name === editName) : undefined;
-              const sku = formToSku(form, ex);
+              const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
               await saveE1Sku(sku, editName ? (ex?.id || ex?.name || editName) : undefined, reason, operator);
               await refreshE1();
               setToast(editName ? "SKU 已更新:" + form.name : "SKU 已新增:" + form.name + " · 待上架");
               setEditName(null);
+              resetSkuMedia(null);
             } else if (mc.op === "sku-delete" && mc.target) {
               const sku = skus.find((x) => x.name === mc.target || x.id === mc.target);
               await deleteE1Sku(sku?.id || mc.target, reason, operator);
