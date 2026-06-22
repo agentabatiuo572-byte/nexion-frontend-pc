@@ -1,6 +1,6 @@
 "use client";
 
-/** 当前是否总管理员。挂载前/SSR 默认 true(与默认登录一致),避免 hydration 抖动。 */
+/** 当前是否总管理员。挂载前保守返回 true; ConsoleShell 会在登录态水合后再渲染后台内容。 */
 import { useEffect, useState } from "react";
 import { useAdminAuth } from "./admin-auth";
 

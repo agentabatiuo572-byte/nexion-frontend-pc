@@ -1,35 +1,49 @@
 "use client";
 
 /**
- * LoginGate — 原型登录壳(无真鉴权)。退出后出现,选运营身份 + 角色即可重新进入。
- * 仅用于让退出/RBAC 演示闭环;非安全边界。
+ * LoginGate — 后台账号密码登录。
  */
+import type { FormEvent } from "react";
 import { useState } from "react";
-import type { AdminRole } from "@/lib/nav/console-nav";
-import { ROLE_LABEL } from "@/lib/nav/console-nav";
+import { Loader2, LockKeyhole, LogIn, UserRound } from "lucide-react";
+import { loginAdmin } from "@/lib/admin/auth-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-
-const ROLES: AdminRole[] = [
-  "superadmin",
-  "finance",
-  "risk",
-  "growth",
-  "content",
-  "support",
-  "auditor",
-];
 
 export function LoginGate() {
   const signIn = useAdminAuth((s) => s.signIn);
-  const [operator, setOperator] = useState("总管理员");
-  const [role, setRole] = useState<AdminRole>("superadmin");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedUsername = username.trim();
+    if (!normalizedUsername || !password) {
+      setError("请输入账号和密码");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+    try {
+      const result = await loginAdmin(normalizedUsername, password);
+      signIn(result);
+      setPassword("");
+    } catch {
+      setError("账号或密码不正确");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <div
       className="flex h-screen w-screen items-center justify-center p-6"
       style={{ background: "var(--v5-bg)" }}
     >
-      <div
+      <form
+        onSubmit={handleSubmit}
         className="w-full max-w-sm rounded-[var(--admin-radius)] p-7"
         style={{
           background: "var(--v5-surface)",
@@ -47,52 +61,70 @@ export function LoginGate() {
           运营控制台登录
         </h1>
         <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          原型环境 · 选择运营身份与角色进入
+          请输入后台账号和密码
         </p>
 
         <label className="mt-5 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
-          运营账号
+          账号
         </label>
-        <input
-          value={operator}
-          onChange={(e) => setOperator(e.target.value)}
-          className="mt-1.5 w-full rounded-[9px] px-3 py-2 text-[13px] outline-none"
+        <div
+          className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3"
           style={{
             background: "var(--v5-surface-3)",
             border: "1px solid var(--v5-border)",
             color: "var(--v5-ink)",
           }}
-        />
+        >
+          <UserRound size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            aria-label="账号"
+            className="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none"
+            style={{ color: "var(--v5-ink)" }}
+          />
+        </div>
 
         <label className="mt-4 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
-          角色
+          密码
         </label>
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value as AdminRole)}
-          className="mt-1.5 w-full rounded-[9px] px-3 py-2 text-[13px] outline-none"
+        <div
+          className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3"
           style={{
             background: "var(--v5-surface-3)",
             border: "1px solid var(--v5-border)",
             color: "var(--v5-ink)",
           }}
         >
-          {ROLES.map((r) => (
-            <option key={r} value={r}>
-              {ROLE_LABEL[r]}
-            </option>
-          ))}
-        </select>
+          <LockKeyhole size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            aria-label="密码"
+            className="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none"
+            style={{ color: "var(--v5-ink)" }}
+          />
+        </div>
+
+        {error && (
+          <p className="mt-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)", color: "var(--v5-danger)" }}>
+            {error}
+          </p>
+        )}
 
         <button
-          type="button"
-          onClick={() => signIn(operator.trim() || "运营", role)}
-          className="mt-6 w-full rounded-[10px] py-2.5 text-[13.5px] font-medium transition-opacity hover:opacity-90 active:opacity-80"
+          type="submit"
+          disabled={submitting}
+          className="mt-6 flex w-full items-center justify-center gap-2 rounded-[10px] py-2.5 text-[13.5px] font-medium transition-opacity hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
           style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
         >
-          进入控制台
+          {submitting ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <LogIn size={16} aria-hidden />}
+          登录
         </button>
-      </div>
+      </form>
     </div>
   );
 }

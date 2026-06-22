@@ -1,13 +1,12 @@
 "use client";
 
 /**
- * 顶栏 — 面包屑 + 服务端权威状态徽标 + UTC 时钟 + 角色切换器(演示 RBAC)。
- * 切角色会即时改变侧栏可见域(superadmin 见全 12 域,其余按 §3.3 权限)。
+ * 顶栏 — 面包屑 + 服务端权威状态徽标 + UTC 时钟 + 当前登录账号菜单。
  */
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Headset, LogOut, Search } from "lucide-react";
+import { ChevronDown, Headset, LogOut, Search } from "lucide-react";
 import type { AdminRole } from "@/lib/nav/console-nav";
-import { ROLE_LABEL, canSee } from "@/lib/nav/console-nav";
+import { canSee } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
 import { SyncChip } from "./sync-chip";
@@ -22,20 +21,18 @@ import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { SESSION_CONVOS } from "@/app/components/domain-views/m-tabs/data";
 import { CommandPalette } from "@/app/components/command-palette";
 
-const ROLES: AdminRole[] = [
-  "superadmin",
-  "finance",
-  "risk",
-  "growth",
-  "content",
-  "support",
-  "auditor",
-];
-
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
   const [open, setOpen] = useState(false);
-  const setRole = useAdminAuth((s) => s.setRole);
   const signOut = useAdminAuth((s) => s.signOut);
+
+  async function handleSignOut() {
+    setOpen(false);
+    try {
+      await fetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" });
+    } finally {
+      signOut();
+    }
+  }
 
   return (
     <div className="relative">
@@ -76,35 +73,20 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
               className="px-3 py-1.5 text-[10.5px] uppercase tracking-[0.14em]"
               style={{ color: "var(--v5-ink-4)" }}
             >
-              切换角色(演示 RBAC)
+              当前登录账号
             </p>
-            {ROLES.map((r) => {
-              const active = r === role;
-              return (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => {
-                    setRole(r);
-                    setOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]"
-                  style={{ color: "var(--v5-ink-2)" }}
-                >
-                  <span className="flex items-center gap-2">
-                    <RoleBadge role={r} size="sm" />
-                  </span>
-                  {active && <Check size={14} style={{ color: "var(--v5-brand)" }} />}
-                </button>
-              );
-            })}
+            <div className="px-3 py-2">
+              <div className="truncate text-[13px] font-medium" style={{ color: "var(--v5-ink)" }}>
+                {operator}
+              </div>
+              <div className="mt-1">
+                <RoleBadge role={role} size="sm" />
+              </div>
+            </div>
             <div className="my-1 h-px" style={{ background: "var(--v5-border)" }} />
             <button
               type="button"
-              onClick={() => {
-                setOpen(false);
-                signOut();
-              }}
+              onClick={handleSignOut}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]"
               style={{ color: "var(--v5-ink-3)" }}
             >
