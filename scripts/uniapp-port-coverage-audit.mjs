@@ -20,6 +20,10 @@ const EXPECTED_EXTRA_UNI_ROUTES = new Set([
   // 非 Next→uni port,故豁免本 audit 的 extra-route 与 runtime-evidence 检查(端口覆盖范围外)。
   "/#/pages/support/messages",
   "/#/pages/support/chat",
+  // uniapp-first 「我的奖励」(代金券 + 系统奖励聚合,Next 原型无对应;后台对端见 admin C1 奖励卡 + H7)。
+  "/#/pages/me/rewards",
+  // uniapp-first 账号/设备检测的他端踢出阻断屏(Next 原型无对应)。
+  "/#/pages/session/kicked",
 ]);
 // Next(H5 旧原型)仍保留、但已从 uniapp 主面故意下线的功能路由(产品决策删除,非未迁移)。
 // 2026-06-15:Premium 订阅 + NEX v2 Founders 锁仓整模块下线(前端 uniapp + 后台 G5/G6 + PRD 同步);

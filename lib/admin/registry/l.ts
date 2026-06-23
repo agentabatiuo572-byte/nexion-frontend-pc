@@ -17,7 +17,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/kpi",
     summary:
-      "KPI 看板 — 八项验收指标的当期值、达标状态与趋势。全部指标派生自 A4 事件流(服务端权威),为决策层判断北极星健康度的统一口径,与 B 域驾驶舱一致。",
+      "KPI 看板 —— 八项验收指标的当期值、是否达标和趋势。所有指标都来自 A4 事件流(以服务器为准),是决策层判断核心健康度的统一口径,和 B 域驾驶舱一致。",
     content: {
       kind: "dashboard",
       metrics: [
@@ -101,7 +101,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/funnel-cohort",
     summary:
-      "漏斗 / Cohort / 留存 — 用户生命周期 L1 注册 → L5 提现各阶段转化与流失,叠加首购周 cohort 多周留存矩阵。指标派生自 A4 事件流,用于增长运营定位漏斗瓶颈与留存衰减拐点。",
+      "漏斗 / 同期群 / 留存 —— 用户从注册(L1)到提现(L5)每一步的转化与流失,再叠加首次购机那批人的多周留存矩阵。指标来自 A4 事件流,帮增长团队找出漏斗瓶颈和留存下滑的拐点。",
     content: {
       kind: "dashboard",
       metrics: [
@@ -184,7 +184,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/financial",
     summary:
-      "财务报表 — 平台收入、成本、兑付支出与净敞口的周期汇总。储备 / 应付口径与 B1 双账本一致(server 权威),供财务与决策层评估可持续性与挤兑安全边际。",
+      "财务报表 —— 平台收入、成本、兑付支出和净敞口的周期汇总。储备 / 应付口径和 B1 总账一致(以服务器为准),供财务和决策层评估可持续性、以及离挤兑还有多少安全余量。",
     content: {
       kind: "dashboard",
       metrics: [
@@ -270,7 +270,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/operations",
     summary:
-      "运营报表 — 设备在役、任务完成与网络增长的运营侧汇总。数据来自 E 域设备台账、任务引擎与 F 域网络结构,经 A4 事件流聚合,供运营评估履约能力与裂变质量。",
+      "运营报表 —— 在役设备、任务完成和网络增长的运营侧汇总。数据来自 E 域设备台账、任务引擎和 F 域网络结构,经 A4 事件流汇总,供运营评估履约能力和裂变质量。",
     content: {
       kind: "dashboard",
       metrics: [
@@ -353,7 +353,7 @@ export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/export",
     summary:
-      "导出 & 监管报告 — 标准化报表与监管报送的生成、周期与下载管理。报告内容快照自 A4 事件流与结算账本;敏感报告导出需经 A2 审计留痕,生成任务不可篡改。",
+      "导出 & 监管报告 —— 标准报表和监管报送的生成、周期和下载管理。报告内容是从 A4 事件流和结算账本截取的快照;导出敏感报告要经 A2 审计留痕,生成任务不可篡改。",
     content: {
       kind: "list",
       metrics: [

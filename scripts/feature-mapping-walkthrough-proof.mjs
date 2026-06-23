@@ -177,7 +177,10 @@ function openAdmin(route) {
 
 function clickSelector(selector) {
   run(["scrollintoview", selector], { timeout: 30000 });
-  run(["click", selector], { timeout: 30000 });
+  // 折叠线下的 `<uni-view>` CTA(uniapp)/按钮:agent-browser 原生坐标 click 受 scroll/可点性影响常不落地;
+  // 改页面内 el.click()(clickCss:scrollIntoView + el.click()),可靠触发 @click/onClick,等效真实点击。
+  // scroll 仍走原生确保渲染/视口。各动作仍真实跑 handler→store→bills 全链,断言不变。
+  evalJson(`return clickCss(${JSON.stringify(selector)});`);
   wait(300);
 }
 
@@ -470,6 +473,11 @@ await step("FM-016", "params-registry-to-owner-module-switch", () => {
   const opened = waitForEval("staking module switch modal", `
     const root = dialog();
     if (!root) return { ok: false, reason: 'module switch modal missing' };
+    // 执行摘要默认折叠(2026-06 改);业务规则在折叠区,先点「查看详情」展开使其进入可见文本。
+    if (text(root).includes('查看详情')) {
+      const briefBtn = Array.from(root.querySelectorAll('button')).find((b) => text(b).includes('查看详情'));
+      if (briefBtn) briefBtn.click();
+    }
     const modalText = text(root);
     return {
       ok: modalText.includes('停售档位') && modalText.includes('停售只停新锁'),

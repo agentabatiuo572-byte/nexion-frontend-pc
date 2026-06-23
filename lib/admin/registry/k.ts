@@ -8,7 +8,7 @@ import type { ModuleEntry } from "@/lib/admin/module-content";
 export const DOMAIN_K: ModuleEntry[] = [
   {
     path: "/risk/multi-account",
-    summary: "反多账户引擎(K1)。IP / 设备指纹 / 支付工具三层去重聚成关联簇(强度≥0.7 标红建议冻结);批量冻结 / 解除误判 / 判正常均 操作确认,冻结台账落 C2;IP 白名单权威归 K1。",
+    summary: "反多账户引擎(K1)。从 IP、设备指纹、支付工具三层去重,把疑似同一人的账户聚成「关联群」(关联强度 ≥0.7 标红、建议冻结);批量冻结、解除误判、判为正常都要确认,冻结记录落到 C2;IP 白名单以 K1 为准。",
     content: {
       kind: "list",
       metrics: [
@@ -50,7 +50,7 @@ export const DOMAIN_K: ModuleEntry[] = [
   },
   {
     path: "/risk/abuse",
-    summary: "套利 & 刷量检测(K2)。闭环分级判定(≥2 层预警转人工 / 3 层全中判闭环):试用循环 / 换新套利(门槛归 E3 只读)/ 新人礼刷取 / 排行榜刷榜(处置归 F8);K2 只标记 + 产信号,批量冻结复用 K1 操作链。",
+    summary: "套利 & 刷量检测(K2)。按命中层级分级判定(命中 ≥2 层转人工、3 层全中判定为套利闭环):试用循环、换新套利(门槛在 E3、本页只读)、刷新人礼、刷排行榜(处置归 F8)。K2 只负责标记 + 产出信号,真正批量冻结走 K1 那套流程。",
     content: {
       kind: "list",
       metrics: [
@@ -92,7 +92,7 @@ export const DOMAIN_K: ModuleEntry[] = [
   },
   {
     path: "/risk/withdrawal-rules",
-    summary: "提现风控规则引擎(K3)。金额 / 速度 / 新账户 / 地址信誉四维规则 → pass/delay/freeze/manual 路由,结论 D2 照单消费且优先级高于小额快速通道;规则 CRUD 与启停操作确认,archived 终态(激活返 409),pass 不产事件。",
+    summary: "提现风控规则引擎(K3)。从金额、速度、新账户、收款地址信誉四个维度判定,给出放行 / 延迟 / 冻结 / 转人工四种结果;D2 照这个结果执行,而且优先级高于小额快速通道。增删改规则、启停规则都要确认;规则一旦归档就是终态(不能再激活),「放行」结果不另产事件。",
     content: {
       kind: "config",
       metrics: [
@@ -141,7 +141,7 @@ export const DOMAIN_K: ModuleEntry[] = [
   },
   {
     path: "/risk/scoring",
-    summary: "风险评分模型(K4)。六维权重(和=1 双端校验)合成 0–100 分,低<40/中 40–69/高≥70,≥85 自动建议转人工;全平台唯一评分源(D2/C1/B5 只引用不重算),每分可解释;权重/分档变更 = 平台管理员执行门槛。",
+    summary: "风险评分模型(K4)。六个维度按权重(加起来等于 1、两端都校验)合成 0–100 分:低危 <40、中危 40–69、高危 ≥70,≥85 自动建议转人工。这是全平台唯一的评分来源(D2/C1/B5 只引用、不各自重算),每个分都能解释来由;改权重或分档要超级管理员才能执行。",
     content: {
       kind: "config",
       metrics: [
@@ -183,7 +183,7 @@ export const DOMAIN_K: ModuleEntry[] = [
   },
   {
     path: "/risk/kyc-review",
-    summary: "大额 KYC 复审 & 告警(K5)。大额提现 ≥$1,000 / 累计 $100 lifetime / 大额兑换(阈值归 G2)/ K4 分 ≥85 触发增强复审,复审期提现单 D2 冻结;裁决操作确认回写 C4(K5 不持 KYC 状态),SLA 7 工作日超时自动告警。",
+    summary: "大额 KYC 复审 & 告警(K5)。触发加强复审的情形:大额提现 ≥$1,000、累计提现达 $100、大额兑换(阈值在 G2)、K4 风险分 ≥85;复审期间该用户的提现单在 D2 冻结。裁决要确认、并写回 C4(实名状态本身不存在 K5);复审承诺 7 个工作日,超时自动告警。",
     content: {
       kind: "list",
       metrics: [

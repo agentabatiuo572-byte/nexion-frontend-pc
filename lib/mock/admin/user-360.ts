@@ -58,11 +58,12 @@ export function getUserReferral(userId: string, teamSize: number): UserReferral 
 export type DeviceKind = "phone" | "stellarbox-s1" | "stellarbox-pro" | "stellarrack-p1" | "cloud-share";
 export interface UserDeviceRow { id: string; kind: DeviceKind; name: string; online: boolean; activatedAt: string; todayEarningsUsd: number; generation: number; gpuUsage: number; ageMonths: number; }
 const DEVS: { kind: DeviceKind; name: string; rate: number }[] = [
+  // rate = 每设备日产 USDT 基准(驱动 todayEarningsUsd 展示),对齐 canon-numbers.json dailyEarn。
   { kind: "phone", name: "手机 NPU", rate: 0.06 },
-  { kind: "stellarbox-s1", name: "NexionBox S1", rate: 38.5 },
-  { kind: "stellarbox-pro", name: "NexionBox Pro", rate: 76 },
-  { kind: "stellarrack-p1", name: "NexionRack P1", rate: 142.6 },
-  { kind: "cloud-share", name: "Cloud Share", rate: 0.073 },
+  { kind: "stellarbox-s1", name: "NexionBox S1", rate: 7 },
+  { kind: "stellarbox-pro", name: "NexionBox Pro", rate: 13 },
+  { kind: "stellarrack-p1", name: "NexionRack P1", rate: 45 },
+  { kind: "cloud-share", name: "Cloud Share", rate: 0.19 },
 ];
 export function getUserDevices(userId: string, deviceCount: number): UserDeviceRow[] {
   const rnd = seeded(userId + ":dev");
@@ -224,7 +225,7 @@ export interface UserCommerce {
 export function getUserCommerce(userId: string, deviceCount: number, depositedUsd: number): UserCommerce {
   const rnd = seeded(userId + ":comm");
   const prods = ["NexionBox S1", "NexionBox Pro", "NexionRack P1", "Cloud Share", "Phone Node"];
-  const prices = [1299, 2399, 8999, 199, 0];
+  const prices = [649, 1199, 4499, 19.9, 0]; // 对齐 canon-numbers.json 设备售价(Phone Node 免费=0)
   const methods = ["USDT", "余额", "信用卡"];
   const sts: OrderStatus[] = ["activated", "paid", "shipped", "cancelled", "pending"];
   const orders: OrderRow[] = Array.from({ length: Math.max(1, deviceCount) }).map((_, i) => {

@@ -318,6 +318,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 4. **Locked teaser 预览**:按设备 VRAM 档(**phone 8** / S1 96 / Pro 192 / Rack 640 / cloud-share 0)预览「被锁任务 + daily potential」文案,校验升级叙事不失真。
    > **注(phone VRAM 档跨文档差异)**:前端 §6.7 写「phone 12 GB」,但原型 `lib/store/index.ts` 定义 `phone.vramTotal=8`(8 GB)。**以原型代码 8 GB 为准**,本预览段标注 8 GB;前端 §6.7 的 12 GB 与原型 `vramTotal=8` 的矛盾记 V4 跨文档收口。(同理 cloud-share `vramTotal=0`,按原型现状。)
 5. **紧急下架面**:某类任务一键 kill(停止派发该类任务,监管点名某类 AI workload 时用)。
+6. **手机算力档位收益配置**:手机端按校准能力分 5 档(Tier 1–5),每档一行 `[档位 / 名称 / 日产 USDT / 日产 NEX]`,每值单行可调(每档「调 USDT / 调 NEX」两个独立单值输入)。手机日产由设备校准能力档位派生(前端 §6.10 手机算力显示规则),T3 为典型机、锚定营销 $0.06;调高任一档放大资金流出,经 B1 覆盖率护栏 + 确认 + 理由。任务路由门槛(③)的设备要求枚举含「手机+」档(手机即可承接的最低门槛,对齐前端手机接低档任务)。
 
 **③ 可控参数**
 
@@ -332,6 +333,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | `QUEUE_SATURATION` | **现状值**:0.35(**规格参考值 spec reference figure,§9.11c.1;普通业务配置参数,经确认弹窗 + 理由必填热更**) | 0–1 | 实时(影响 teaser 估算) | §6.3 locked teaser `dailyPotential = (86400/avgSec) × QUEUE_SATURATION × avgReward` |
 | `minVRAM`(各类路由门槛,GB) | 现状值(各类按模型显存需求,VG/FT/LL 70B 需 Pro/Rack 级) | ≥ 0 | 实时(仅新路由判定) | §6.3 「Upgrade Unlocks」哪些任务对哪些设备锁定 |
 | 任务类 kill 开关 | 全开(6 类可承接) | per 类布尔 | 实时(kill 立即停派该类) | §6.3 任务可承接性 |
+| 手机算力档位日产(USDT,Tier 1–5) | **现状值**:T1 $0.04 / T2 $0.05 / T3 $0.06 / T4 $0.08 / T5 $0.095 | > 0,档间单调非降 | 实时(对下一结算周期生效) | §6.10 手机算力显示 / 手机卡片日产 |
+| 手机算力档位日产(NEX,Tier 1–5) | **现状值**:T1 6 / T2 8 / T3 10 / T4 13 / T5 16 | > 0,档间单调非降 | 实时(对下一结算周期生效) | §6.10 手机卡片 NEX |
 
 > **默认值口径声明**:任务定价 6 类 min/maxReward **12 月节奏表 §6 未覆盖**,上表取前端 §6.3 现状值为参考并标注「现状值」。`QUEUE_SATURATION=0.35` 为前端 §9.11c.1 **规格参考值(§9.11c.1 普通业务配置参数)**,变更走常规确认弹窗 + 理由必填热更(见 ④);**该值不在 §9.11d.3 A/B 实验值表(仅 chargeFailRate / Unilevel rates multiplier / Sign-in lucky multiplier / PHASES 全表 / NEX 价格曲线 5 项),故不强制经 A3 feature flag 管道**。如 PM 希望将其纳入 A/B 管道,须先在 §9.11d.3 补登并在 A3 注册对应 flag slot 后方可引用。**双币产出的 NEX 侧由 E1 `baseRate` / `baseRateNEX` 决定**(设备日产基准),E2 管任务侧 USDT 定价与路由,不重复定义双币基准。**任务锁定累计的月度损失阈值($40 / $140 / $450)权威归 12 月节奏表 §6.5,由 E3 落地**(设备生命周期 banner 的损失叙事),E2 仅持单任务定价与路由门槛。
 
@@ -343,6 +346,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 调 `QUEUE_SATURATION` | 收益运营(lead) | E2-MD2(理由必填)(影响全站 locked teaser 估算口径;**普通业务配置参数,经常规确认弹窗 + 理由必填热更,不强制经 A3 feature flag 管道**) | `admin.task_pricing_changed`(field=QUEUE_SATURATION / before-after / operator / reason) |
 | 调 `minVRAM` 路由门槛 | 收益运营(lead) | E2-MD3(理由必填)(改变设备↔任务可承接映射,联动升级叙事) | `admin.task_pricing_changed`(任务类 / field=minVRAM / before-after / operator / reason) |
 | 紧急下架某类任务(kill,监管) | 收益运营(lead)/ 超管 | E2-MD4(理由必填)(紧急停派,监管点名某类 AI workload) | `admin.task_pricing_changed`(任务类 / field=enabled / after=false / operator / reason) |
+| 调手机算力档位日产(某档 USDT / NEX) | 收益运营(lead) | 确认弹窗(目标新值 + 理由必填 + **B1 覆盖率护栏**,同 E 域放大类动作) | A2 审计(action=手机算力档位日产调整 · tier / 币种 / before-after / operator / reason) |
 
 > **E2 定价类执行权说明(与 E1 区分 + 双角色执行口径,2026-06 操作确认决议)**:
 > - **执行门槛分级**:E 域「定价类」高敏动作的执行门槛按风险分级——E1 改 SKU 价 / baseRate 影响全站回本叙事,风险更高,执行权就高 = 商品运营(lead)/ 超管;E2 任务单价较低、热更频率高,执行权为对应角色 **lead 层级**(原复核层级商品主管转为执行门槛,member 不可执行)。仅「紧急下架某类任务(kill)」属监管应急,执行权就高 = 收益运营(lead)/ 超管。
@@ -422,6 +426,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 **⑤ 接口**
 - `GET /api/admin/config/task-pricing` — 返回 6 类任务定价表 `[{ taskClass, models[], minReward, maxReward, minVRAM, enabled }]` + `QUEUE_SATURATION`;**server-canonical**,前端 `GET /api/config/task-pricing`(§9.11c.1 收敛 `lib/mock/tasks.ts`)消费只读投影。
 - `PUT /api/admin/config/task-pricing` — 热更任务定价 / QUEUE_SATURATION / minVRAM / kill;经确认弹窗提交(E2-MD1–E2-MD4,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;响应回 `{ effectiveAt }`,仅对新派发任务生效(已派发任务奖励按派发时定价结算)。
+- `GET /api/admin/config/phone-tiers` — 返回手机算力 5 档日产 `[{ tier, baseRateUsdt, baseRateNex }]`;**server-canonical**,前端 `GET /api/config/phone-tiers`(收敛 `mock/phone-tiers.ts`)消费只读投影,与前端 §6.10 同口径。
+- `PUT /api/admin/config/phone-tiers` — 调某档日产(USDT / NEX);经确认弹窗 + 理由(server 校验非空 `REASON_REQUIRED`)+ **B1 覆盖率护栏**(放大资金流出),即时对下一结算周期生效(已计提不回溯)。
 
 **⑥ 权限 & 审计**
 

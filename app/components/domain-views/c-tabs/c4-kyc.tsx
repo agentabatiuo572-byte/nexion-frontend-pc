@@ -30,7 +30,9 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
   // 实名实时态:pget 覆盖种子(C.kyc.<id>.st 与 D2/G2/K5 同键真值)。
   const liveSt = (r: KycRow): KycRow["st"] =>
     (pget(`C.kyc.${r.id}.st`) as KycRow["st"] | undefined) ?? r.st;
-  const networks = pget("C.kyc.networks") ?? KYC_NETWORKS;
+  // 网络白名单改为逐项启停(不再一个文本框手打「TRC20 / ERC20 / BTC / ETH」整串);每网络单独 key。
+  const NET_OPTIONS = KYC_NETWORKS.split("/").map((s) => s.trim()).filter(Boolean);
+  const netOn = (n: string): boolean => (pget(`C.kyc.network.${n}`) ?? "on") === "on";
 
   const rows = C4_LEDGER.filter((r) => flt === "all" || liveSt(r) === flt);
   const sel = C4_LEDGER.find((r) => r.id === cur) ?? C4_LEDGER[0];
@@ -76,17 +78,18 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
     },
   });
 
-  const adjustNetworks = () => openActionConfirm({
-    action: "配对网络白名单调整",
-    detail: `当前 ${networks}。配对地址必须在白名单网络内;关掉某网络后,新配对不能选它,已配对的不受影响。操作确认。`,
-    amplifies: false,
-    edit: { kind: "text", current: networks },
-    run: (reason, v) => {
-      if (!v) return;
-      setParam("C.kyc.networks", v, { action: "配对网络白名单调整", reason });
-      toast(`网络白名单已更新为 ${v} · 理由留痕`);
-    },
-  });
+  const toggleNet = (n: string) => {
+    const on = netOn(n);
+    openActionConfirm({
+      action: `${on ? "停用" : "启用"}配对网络 · ${n}`,
+      detail: `${on ? `停用后新配对不能再选 ${n};已配对地址不受影响。` : `启用 ${n} 作为可选配对网络。`}操作确认 + 理由留痕。`,
+      amplifies: false,
+      run: (reason) => {
+        setParam(`C.kyc.network.${n}`, on ? "off" : "on", { action: `配对网络白名单 · ${on ? "停用" : "启用"} ${n}`, reason });
+        toast(`${n} 已${on ? "停用" : "启用"} · 理由留痕`);
+      },
+    });
+  };
 
   return (
     <>
@@ -107,9 +110,16 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
             <div className="ctint"><b>触发场景(只读)</b> · 首次提现 / 终身累计兑换 ≥ $100 / 用户主动验证——命中任一即要求完成实名</div>
             <div className="ctint"><b>验证费</b> · $1(进用户余额)· 固定值,要改走治理流程</div>
-            <div className="ctint" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ flex: 1 }}><b>配对网络白名单</b> · {networks}</span>
-              <button className="l-btn sm mc" onClick={adjustNetworks}>调整</button>
+            <div className="ctint" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ width: "100%", marginBottom: 4 }}><b>配对网络白名单</b> · 逐项启停(改一个不动其它)</span>
+              {NET_OPTIONS.map((n) => {
+                const on = netOn(n);
+                return (
+                  <button key={n} className="l-btn sm mc" onClick={() => toggleNet(n)} style={{ opacity: on ? 1 : 0.5 }} title={`${on ? "停用" : "启用"} ${n}`}>
+                    {n} · {on ? "启用" : "停用"}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

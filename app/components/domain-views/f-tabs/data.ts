@@ -5,20 +5,22 @@
  */
 
 /* ===== F1 V-Rank 13 阶(门槛/实物奖/培育奖 NEX/在册人数)===== */
-export const VRANK: { v: string; th: string; prize: string; nex: string; pop: number }[] = [
-  { v: "V0", th: "—", prize: "—", nex: "—", pop: 84231 },
-  { v: "V1", th: "自买 $299 · 直推 3", prize: "Pilot 徽章", nex: "500", pop: 12483 },
-  { v: "V2", th: "团队 GV $5k", prize: "操作员勋章", nex: "2,000", pop: 3247 },
-  { v: "V3", th: "团队 GV $20k · 2×V1", prize: "Apple Watch SE", nex: "10,000", pop: 487 },
-  { v: "V4", th: "团队 GV $50k · 3×V2", prize: "iPhone 16 Pro", nex: "50,000", pop: 102 },
-  { v: "V5", th: "团队 GV $150k · 4×V3", prize: "Apple Vision Pro", nex: "200,000", pop: 21 },
-  { v: "V6", th: "团队 GV $500k · 5×V4", prize: "Rolex Submariner", nex: "800,000", pop: 3 },
-  { v: "V7", th: "团队 GV $1M · 6×V5", prize: "Tesla Model Y", nex: "3,200,000", pop: 1 },
-  { v: "V8", th: "团队 GV $3M · 7×V6", prize: "Porsche 911", nex: "10,000,000", pop: 0 },
-  { v: "V9", th: "团队 GV $10M", prize: "Lamborghini Urus", nex: "—", pop: 0 },
-  { v: "V10", th: "团队 GV $30M", prize: "私人飞机包月", nex: "—", pop: 0 },
-  { v: "V11", th: "团队 GV $100M", prize: "加勒比游艇度假", nex: "—", pop: 0 },
-  { v: "V12", th: "团队 GV $500M", prize: "上市公司股权", nex: "—", pop: 0 },
+// 门槛拆成结构化单值字段(原 th 一个字符串塞多值 → 每子值独立,运营各自单独调,不再手打 · 拼接串)。
+// 展示串由 f1-vrank 的 composeTh 合成;每字段单独 pget/setParam key:F.vrank.{v}.{selfBuy|directRefs|teamGv|legCount|legRank}。
+export const VRANK: { v: string; selfBuy?: string; directRefs?: string; teamGv?: string; legCount?: string; legRank?: string; prize: string; nex: string; pop: number }[] = [
+  { v: "V0", prize: "—", nex: "—", pop: 84231 },
+  { v: "V1", selfBuy: "$299", directRefs: "3", prize: "Pilot 徽章", nex: "500", pop: 12483 },
+  { v: "V2", teamGv: "$5k", prize: "操作员勋章", nex: "2,000", pop: 3247 },
+  { v: "V3", teamGv: "$20k", legCount: "2", legRank: "V1", prize: "Apple Watch SE", nex: "10,000", pop: 487 },
+  { v: "V4", teamGv: "$50k", legCount: "3", legRank: "V2", prize: "iPhone 16 Pro", nex: "50,000", pop: 102 },
+  { v: "V5", teamGv: "$150k", legCount: "4", legRank: "V3", prize: "Apple Vision Pro", nex: "200,000", pop: 21 },
+  { v: "V6", teamGv: "$500k", legCount: "5", legRank: "V4", prize: "Rolex Submariner", nex: "800,000", pop: 3 },
+  { v: "V7", teamGv: "$1M", legCount: "6", legRank: "V5", prize: "Tesla Model Y", nex: "3,200,000", pop: 1 },
+  { v: "V8", teamGv: "$3M", legCount: "7", legRank: "V6", prize: "Porsche 911", nex: "10,000,000", pop: 0 },
+  { v: "V9", teamGv: "$10M", prize: "Lamborghini Urus", nex: "—", pop: 0 },
+  { v: "V10", teamGv: "$30M", prize: "私人飞机包月", nex: "—", pop: 0 },
+  { v: "V11", teamGv: "$100M", prize: "加勒比游艇度假", nex: "—", pop: 0 },
+  { v: "V12", teamGv: "$500M", prize: "上市公司股权", nex: "—", pop: 0 },
 ];
 export const F1_FULFILL: { v: string; name: string; ct: number }[] = [
   { v: "V3", name: "Apple Watch SE", ct: 24 },
@@ -47,7 +49,8 @@ export const RATETIER: { nm: string; req: string; rate: string; dist: string; cl
 export const F2_PARAMS: {
   id: string; name: string; key: string; def: string; vcls: string; sub: string; amp: boolean; vamp: boolean; unit?: string;
 }[] = [
-  { id: "clamp", name: "影响分上下限", key: "F.influence.clamp", def: "1.0 – 5.0", vcls: "", sub: "InfluenceScore 上下限;clamp 后参与版税权重计算。", amp: false, vamp: false },
+  { id: "clampMin", name: "影响分下限", key: "F.influence.clampMin", def: "1.0", vcls: "", sub: "InfluenceScore 下限;clamp 后参与版税权重计算。", amp: false, vamp: false },
+  { id: "clampMax", name: "影响分上限", key: "F.influence.clampMax", def: "5.0", vcls: "", sub: "InfluenceScore 上限;clamp 后参与版税权重计算。", amp: false, vamp: false },
   { id: "cool", name: "佣金冷却", key: "F.cooldown", def: "30d", vcls: "", sub: "计提后冷却期;期满才进入可提余额。改后对新计提佣金生效。", amp: false, vamp: false, unit: "天" },
   { id: "promo", name: "promo 周倍率", key: "F.promo.weekMultiplier", def: "1.0×", vcls: "warn", sub: "活动周对网络版税的倍率放大。放大佣金流出,受 B1 覆盖率约束。", amp: true, vamp: true, unit: "×" },
   { id: "min", name: "版税支付阈值", key: "F.royalty.minPayout", def: "$10", vcls: "", sub: "最小可提金额。调高 = 凑不够提不出(提现摩擦)。", amp: false, vamp: false },

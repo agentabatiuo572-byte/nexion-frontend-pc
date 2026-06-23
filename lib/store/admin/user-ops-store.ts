@@ -34,6 +34,7 @@ export interface UserOps {
   revokedSessions: string[];
   notifsAllRead: boolean;
   cancelledOrderIds: string[];
+  claimedVouchers: string[]; // 运营派发 + 用户自领的代金券 id(真后台:GET /api/users/:id/vouchers)
   audit: OpsAuditEntry[];
 }
 
@@ -53,6 +54,7 @@ function emptyOps(): UserOps {
     revokedSessions: [],
     notifsAllRead: false,
     cancelledOrderIds: [],
+    claimedVouchers: [],
     audit: [],
   };
 }
@@ -73,6 +75,7 @@ interface OpsStore {
   resetTwoFactor: (userId: string) => void;
   markNotifsRead: (userId: string) => void;
   cancelOrder: (userId: string, orderId: string, label: string) => void;
+  issueVoucher: (userId: string, voucherId: string, voucherName: string) => void;
 }
 
 function patch(state: OpsStore, userId: string, fn: (u: UserOps) => UserOps): Partial<OpsStore> {
@@ -188,6 +191,9 @@ export const useUserOps = create<OpsStore>()(
 
       cancelOrder: (userId, orderId, label) =>
         set((s) => patch(s, userId, (u) => (u.cancelledOrderIds.includes(orderId) ? u : withAudit({ ...u, cancelledOrderIds: [...u.cancelledOrderIds, orderId] }, "取消订单", label, "danger")))),
+
+      issueVoucher: (userId, voucherId, voucherName) =>
+        set((s) => patch(s, userId, (u) => (u.claimedVouchers.includes(voucherId) ? u : withAudit({ ...u, claimedVouchers: [...u.claimedVouchers, voucherId] }, "派发代金券", voucherName, "success")))),
     }),
     { name: "nexion-admin-ops-v1", storage: createJSONStorage(() => localStorage) },
   ),

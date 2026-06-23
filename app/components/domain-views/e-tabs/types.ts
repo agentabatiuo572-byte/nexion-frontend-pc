@@ -15,6 +15,7 @@ export type EOp =
   | "sku-status"      // 上/下架(真后端 status)
   | "task-down"       // 下架任务(需破坏性理由 + 影响确认)
   | "task-price"      // 任务改单价(真 store updateTask,操作确认 出价格编辑框)
+  | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ updateTask + setParam config
   | "param"           // 自由值调参 → setParam(paramKey, newValue);操作确认 出「目标新值」
   | "param-fixed"     // 固定值写入 → setParam(paramKey, fixedVal)(如 forceUnlock true/false);不出编辑框
   | "order-refund"    // 退款(放大流出)
@@ -76,6 +77,7 @@ export interface EViewCtx {
   // E2 收益 & 任务引擎(改单价走 ctx.openActionConfirm op:"task-price";新增/下架走真 store)
   tasks: OpsTask[];
   openAddTask: () => void;
+  openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   delTask: (t: { id: string; n: string }) => void;
   // E4 订单状态机
   orders: EOrder[];

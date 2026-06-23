@@ -36,10 +36,10 @@ const FOLD: Record<string, string> = {
 
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
   I1: ["版本和实验分组都在服务器 · 用户侧改不了", "进行中实验:3 个"],
-  I2: ["10 通道节奏 server-canonical · 整体停 Nova 才入 J 域", "Nova 点击率 27.4% · 目标 >25% ✓"],
-  I3: ["通知唯一账本在服务器 · App 端只是显示窗口", "critical 通道:永不淘汰"],
-  I4: ["条款和确认状态都在服务器 · client 篡改无效", "SFC 辖区 re-ack 进行中 · 72%"],
-  I6: ["词条 server 单源 · 单语言发布闸不许关", "完整性问题:10 处"],
+  I2: ["10 个通道节奏以服务器为准 · 整体停 Nova 才轮到 J 域", "Nova 点击率 27.4% · 目标 >25% ✓"],
+  I3: ["通知唯一账本在服务器 · App 端只是显示窗口", "紧急通道:永不丢弃"],
+  I4: ["条款和确认状态都在服务器 · 客户端篡改无效", "SFC 辖区重新确认进行中 · 72%"],
+  I6: ["词条以服务器为唯一来源 · 单语言发布闸不许关", "完整性问题:10 处"],
 };
 
 export function IDomainView({ meta }: { meta: DomainViewMeta }) {

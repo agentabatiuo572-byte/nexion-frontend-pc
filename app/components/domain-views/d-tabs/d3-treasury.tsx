@@ -154,14 +154,20 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
               <span className="nm" style={{ fontWeight: 600, color: "var(--ink)" }}>储备合计</span>
               <span className="v" style={{ fontSize: 16, color: "var(--success)" }}>{fmtM(LEDGER.reserveUsd)}</span>
             </div>
-            <div className="dtint" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ flex: 1 }}><b>口径开关</b> · 储备/负债科目的纳入口径按日批生效(UTC 00:00,不追溯历史快照),调整要操作确认。</span>
+            <div className="dtint" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ width: "100%", marginBottom: 4 }}><b>口径开关</b> · 两项各自调(不再一个框塞两值),按日批生效(UTC 00:00,不追溯历史快照),都要操作确认。</span>
               <button className="l-btn sm mc" onClick={() => openActionConfirm({
-                action: "储备 / 负债口径配置",
-                detail: <>科目级开关(某项资产是否计入储备、某科目是否纳入负债)+ 利息计提方式(线性 / 到期一次性,切换时附预测差值给执行门槛)。<b>改口径直接影响覆盖率分子分母,操作确认</b>;按日批生效(UTC 00:00),不追溯历史快照。</>,
-                edit: { kind: "text", current: "全部纳入 · 利息线性计提" },
-                run: (reason, v) => { if (v) setParam("D.scope", v, { action: "储备/负债口径配置", reason }); toast("口径配置已确认生效 · 下一日批生效"); },
-              })}>调整口径</button>
+                action: "科目纳入口径调整",
+                detail: <>哪些资产计入储备、哪些科目纳入负债。<b>改口径直接影响覆盖率分子分母,操作确认</b>;按日批生效(UTC 00:00),不追溯历史快照。</>,
+                edit: { kind: "select", current: "全部纳入", options: ["全部纳入", "部分纳入(按科目)"] },
+                run: (reason, v) => { if (v) setParam("D.scope.accounts", v, { action: "储备/负债科目纳入口径", reason }); toast("科目纳入口径已确认 · 下一日批生效"); },
+              })}>改科目纳入</button>
+              <button className="l-btn sm mc" onClick={() => openActionConfirm({
+                action: "利息计提方式调整",
+                detail: <>质押应付利息按<b>线性计提</b>还是<b>到期一次性</b>。切换影响负债科目口径(附预测差值给执行门槛);按日批生效,不追溯历史快照。</>,
+                edit: { kind: "select", current: "线性计提", options: ["线性计提", "到期一次性"] },
+                run: (reason, v) => { if (v) setParam("D.scope.interest", v, { action: "利息计提方式", reason }); toast("利息计提方式已确认 · 下一日批生效"); },
+              })}>改利息计提方式</button>
             </div>
           </div>
         </section>

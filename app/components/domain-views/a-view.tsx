@@ -28,10 +28,10 @@ import type { ACtx, ConfirmReq, ActionConfirmReq } from "./a-tabs/types";
 const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4" };
 
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  A1: ["权限判定每次请求在服务器执行 · 前端只管藏菜单", "有效超管 3 个 · 满足 ≥2 底线"],
-  A2: ["日志只追加 · 没人能改能删,超管也不行", "高敏动作 14 件 · 应急轨 1 件"],
-  A3: ["时间 / 幂等 / 闸 全部服务器权威 · 改本地无效", "5 闸全开 · 管道健康"],
-  A4: ["资金和 KPI 口径只认服务器发的事件", "管道正常 · 今日 4.2M 事件"],
+  A1: ["每点一个功能,服务器都会重新核对你有没有权限", "当前 3 个超级管理员 · 满足「至少 2 个」"],
+  A2: ["日志只能往里加 · 谁也改不了删不了,超级管理员也不行", "高风险操作 14 件 · 应急通道 1 件"],
+  A3: ["时间、防重复、熔断开关都以服务器为准 · 改本地无效", "5 个熔断开关全开 · 运行正常"],
+  A4: ["资金和 KPI 只认服务器正式发出的事件", "运行正常 · 今日 420 万条事件"],
 };
 
 export function ADomainView({ meta }: { meta: DomainViewMeta }) {

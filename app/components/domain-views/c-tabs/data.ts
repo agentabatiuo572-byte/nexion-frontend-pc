@@ -257,8 +257,10 @@ export const C6_PARAMS: { group: "otp" | "lock" | "captcha"; key: string; name: 
   { group: "otp", key: "otpTtl", name: "有效期", sub: "过期作废,客户端只做格式校验,真值在服务器", cur: "5 分钟", note: "范围 1–15 分钟 · 新发的按新值" },
   { group: "otp", key: "otpCooldown", name: "重发冷却", sub: "防短信轰炸的第一道闸", cur: "60 秒", note: "范围 30–300 秒 · 实时" },
   { group: "otp", key: "otpMax24h", name: "同号 24h 上限", sub: "超过就要先过人机验证才发", cur: "3 次", note: "范围 1–10 次 · 实时,联动人机验证触发" },
-  { group: "lock", key: "lockShort", name: "短锁", sub: "密码或两步验证连错触发 · 锁定期间一切登录和验证码都拒", cur: "5 次 / 15 分钟", note: "次数 3–10 · 时长 5–60 分钟" },
-  { group: "lock", key: "lockLong", name: "长锁", sub: "连错升级 · 触发后强制走密码重置", cur: "10 次 / 24 小时", note: "次数 5–20 · 时长 12–48 小时" },
+  { group: "lock", key: "lockShortCnt", name: "短锁 · 触发次数", sub: "密码或两步验证连错几次触发短锁 · 锁定期间一切登录和验证码都拒", cur: "5 次", note: "范围 3–10 次" },
+  { group: "lock", key: "lockShortMin", name: "短锁 · 锁定时长", sub: "触发短锁后锁定多久", cur: "15 分钟", note: "范围 5–60 分钟" },
+  { group: "lock", key: "lockLongCnt", name: "长锁 · 触发次数", sub: "连错升级到长锁的次数 · 触发后强制走密码重置", cur: "10 次", note: "范围 5–20 次" },
+  { group: "lock", key: "lockLongMin", name: "长锁 · 锁定时长", sub: "触发长锁后锁定多久", cur: "24 小时", note: "范围 12–48 小时" },
   // 注:设计稿 CAPTCHA 卡的「触发阈值」与 OTP 卡「同号 24h 上限」是同一参数(SPEC §6 单一线:
   // 同号 24h 3 次 → 超线触发 CAPTCHA)。设计稿拆两行是自带双源,按「防参数配两套打架」铁律
   // 收敛:唯一写路径 = otpMax24h,CAPTCHA 卡该行改只读镜像(c6 组件渲染)。

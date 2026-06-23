@@ -150,18 +150,25 @@ export type TrialParam = {
 };
 export const TRIAL_CONFIG: TrialParam[] = [
   /* 只影响新开试用(进行中按开始时锁定) */
-  { key: "days", name: "试用天数 / 宽限期 / 延长天数", cur: "3 / 7 / 3 天", hot: false, section: "newonly" },
-  { key: "price", name: "试用机价 🔥", sub: "对应机型 stellarbox-s1(改机型走治理)", cur: "$1,299", hot: true, section: "newonly" },
-  { key: "shadow", name: "每日影子收益", cur: "$38.52 + 65 NEX", hot: false, section: "newonly" },
+  { key: "trialDays", name: "试用天数", cur: "3 天", hot: false, section: "newonly" },
+  { key: "graceDays", name: "宽限期", cur: "7 天", hot: false, section: "newonly" },
+  { key: "extendDays", name: "延长天数", cur: "3 天", hot: false, section: "newonly" },
+  { key: "price", name: "试用机价 🔥", sub: "对应机型 stellarbox-s1(改机型走治理)", cur: "$649", hot: true, section: "newonly" },
+  { key: "shadowUsdt", name: "每日影子收益(USDT)", sub: "S1 基线 = canon dailyEarn", cur: "$7", hot: false, section: "newonly" },
+  { key: "shadowNex", name: "每日影子收益(NEX)", sub: "S1 基线 = canon NEX 日产", cur: "40 NEX", hot: false, section: "newonly" },
   /* 实时生效(每次结算/渲染读最新值) */
   { key: "offsetCap", name: "收益抵扣购机款上限", sub: "抵扣是折扣不是负债;超出部分购后才入余额", cur: "$50", hot: false, section: "live" },
-  { key: "disc", name: "提前购买折扣 / 折扣上限", cur: "15% / $20", hot: false, section: "live" },
+  { key: "discRate", name: "提前购买折扣", cur: "15%", hot: false, section: "live" },
+  { key: "discCap", name: "折扣上限", cur: "$20", hot: false, section: "live" },
   { key: "hq", name: "高质量延长触发线", cur: "$100", hot: false, section: "live" },
   { key: "failRate", name: "扣款失败概率 🔥", sub: "平台内部参数,不外泄到用户界面", cur: "•••(server only)", hot: true, section: "live", serverOnly: true },
   // trialCooldown(2026-06-12 audit R1 改名):原 key="cooldown" 与 H1.dial.cooldown(提现冷却)命名空间冲突,
   // grep 跨域消费时极易串口径(H1 提现冷却挂 B1,H2 再试用冷却不挂)。改 trialCooldown 显式区分。
-  { key: "trialCooldown", name: "再试用冷却 / 本阶段开放", sub: "开放与否随 H1 阶段调度", cur: "30 天 / 开放", hot: false, section: "live" },
-  { key: "push", name: "auto-push(延迟 / 冷却 / 单会话上限)", cur: "1.5s / 24h / 1 次", hot: false, section: "live" },
+  { key: "trialCooldownDays", name: "再试用冷却", sub: "两次试用之间的冷却天数", cur: "30 天", hot: false, section: "live" },
+  { key: "trialOpen", name: "本阶段是否开放再试用", sub: "开放与否随 H1 阶段调度", cur: "开放", hot: false, section: "live" },
+  { key: "pushDelay", name: "auto-push 延迟", cur: "1.5s", hot: false, section: "live" },
+  { key: "pushCooldown", name: "auto-push 冷却", cur: "24h", hot: false, section: "live" },
+  { key: "pushMaxPerSession", name: "auto-push 单会话上限", cur: "1 次", hot: false, section: "live" },
   { key: "autoCharge", name: "期末自动扣款 🔥", sub: "关掉=停止自动扣款,直接影响资金——按敏感项操作确认;生效时机待 PM 确认", cur: "开", hot: true, section: "live" },
 ];
 
@@ -232,14 +239,15 @@ export const H4_STATS = {
   geoBlocked: 2,
 };
 
-/** 6 首日任务(NEX/USDT)。 */
+/** 6 首日任务(NEX/USDT)。id 稳定标识(增删后不漂);status = active(生效中)/ paused(已停用,用户端不展示)/ archived(已归档)。
+ *  运营改后全量列表写 H3.dayOne.tasks(JSON),seed 仅初始;读取走 h3-quest-events effectiveDayOneTasks。 */
 export const DAY_ONE_TASKS = [
-  { task: "绑卡", href: "topup?kyc=1", reward: "50 NEX" },
-  { task: "逛收益页", href: "/earn", reward: "30 NEX" },
-  { task: "逛商城", href: "/store", reward: "50 NEX" },
-  { task: "看回报率", href: "/store/roi", reward: "100 NEX" },
-  { task: "设资料", href: "/me/profile", reward: "80 NEX" },
-  { task: "邀请好友", href: "/team/invite", reward: "200 NEX + $1" },
+  { id: "t0", task: "绑卡", href: "topup?kyc=1", reward: "50 NEX", status: "active", completionType: "event", completionEvent: "kyc.card_bound" },
+  { id: "t1", task: "逛收益页", href: "/earn", reward: "30 NEX", status: "active", completionType: "visit", completionEvent: "" },
+  { id: "t2", task: "逛商城", href: "/store", reward: "50 NEX", status: "active", completionType: "visit", completionEvent: "" },
+  { id: "t3", task: "看回报率", href: "/store/roi", reward: "100 NEX", status: "active", completionType: "visit", completionEvent: "" },
+  { id: "t4", task: "设资料", href: "/me/profile", reward: "80 NEX", status: "active", completionType: "event", completionEvent: "profile.completed" },
+  { id: "t5", task: "邀请好友", href: "/team/invite", reward: "200 NEX + $1", status: "active", completionType: "event", completionEvent: "referral.sent" },
 ];
 
 /** 三相状态机(首日)。 */
@@ -249,29 +257,30 @@ export const DAY_ONE_STATES = [
   { st: "expired", label: "0,首页让位", tone: "dim" },
 ];
 
-/** 周一档 9 条(优先级派发,从上到下)。 */
+/** 周一档 9 条(优先级派发,从上到下)。id 稳定标识;status=active/paused/archived;completionType/Event 完成判定(每周多为行为事件)。
+ *  运营改后全量写 H3.weekly.t1.tasks(JSON);读取走 h3 effectiveWeekly("t1")。 */
 export const WEEKLY_T1 = [
-  { cond: "USDT 长期质押", reward: "3,000" },
-  { cond: "买 Genesis", reward: "2,500" },
-  { cond: "加购硬件", reward: "2,000" },
-  { cond: "换新升级", reward: "1,800" },
-  { cond: "S1→Pro v2", reward: "1,500" },
-  { cond: "购 Cloud Share", reward: "800" },
-  { cond: "首购设备", reward: "1,000 + $10" },
-  { cond: "充值", reward: "100" },
-  { cond: "兑底质押", reward: "250" },
+  { id: "w1-0", cond: "USDT 长期质押", reward: "3,000", status: "active", completionType: "event", completionEvent: "stake.locked" },
+  { id: "w1-1", cond: "买 Genesis", reward: "2,500", status: "active", completionType: "event", completionEvent: "genesis.bought" },
+  { id: "w1-2", cond: "加购硬件", reward: "2,000", status: "active", completionType: "event", completionEvent: "device.bought" },
+  { id: "w1-3", cond: "换新升级", reward: "1,800", status: "active", completionType: "event", completionEvent: "device.tradein" },
+  { id: "w1-4", cond: "S1→Pro v2", reward: "1,500", status: "active", completionType: "event", completionEvent: "device.upgraded" },
+  { id: "w1-5", cond: "购 Cloud Share", reward: "800", status: "active", completionType: "event", completionEvent: "cloudshare.bought" },
+  { id: "w1-6", cond: "首购设备", reward: "1,000 + $10", status: "active", completionType: "event", completionEvent: "device.first_bought" },
+  { id: "w1-7", cond: "充值", reward: "100", status: "active", completionType: "event", completionEvent: "wallet.deposited" },
+  { id: "w1-8", cond: "兑底质押", reward: "250", status: "active", completionType: "event", completionEvent: "stake.small" },
 ];
 
-/** 周二档 8 条(完成池)。 */
+/** 周二档 8 条(完成池)。结构同一档。 */
 export const WEEKLY_T2 = [
-  { cond: "邀请好友", reward: "200 + $2" },
-  { cond: "复投", reward: "120" },
-  { cond: "小额质押", reward: "150" },
-  { cond: "兑换", reward: "80" },
-  { cond: "小充", reward: "100" },
-  { cond: "逛商城", reward: "50" },
-  { cond: "跑单 50 次", reward: "80" },
-  { cond: "看 Genesis", reward: "60" },
+  { id: "w2-0", cond: "邀请好友", reward: "200 + $2", status: "active", completionType: "event", completionEvent: "referral.sent" },
+  { id: "w2-1", cond: "复投", reward: "120", status: "active", completionType: "event", completionEvent: "reinvest.done" },
+  { id: "w2-2", cond: "小额质押", reward: "150", status: "active", completionType: "event", completionEvent: "stake.small" },
+  { id: "w2-3", cond: "兑换", reward: "80", status: "active", completionType: "event", completionEvent: "exchange.done" },
+  { id: "w2-4", cond: "小充", reward: "100", status: "active", completionType: "event", completionEvent: "wallet.deposited" },
+  { id: "w2-5", cond: "逛商城", reward: "50", status: "active", completionType: "visit", completionEvent: "" },
+  { id: "w2-6", cond: "跑单 50 次", reward: "80", status: "active", completionType: "event", completionEvent: "device.jobs_50" },
+  { id: "w2-7", cond: "看 Genesis", reward: "60", status: "active", completionType: "visit", completionEvent: "" },
 ];
 
 /** 6 阶段倍率曲线(P3 = 当前,加成 ×1.1)。 */
@@ -286,12 +295,25 @@ export const WEEKLY_MULT = [
 
 /** 5 主题月度挑战(按账龄派发)。 */
 export const MONTHLY_MISSIONS = [
-  { id: "mc0", theme: "地基建设者", age: "0–2 月", reward: "1,500", goals: "累计赚 200 · 绑卡 · 邀 1 人" },
-  { id: "mc1", theme: "网络架构师", age: "2–4 月", reward: "2,500", goals: "累计 1,500 · 直推 3 · 周任务 ×4" },
-  { id: "mc2", theme: "进阶之路", age: "4–6 月", reward: "4,000", goals: "累计 5,000 · 质押 · 加购" },
-  { id: "mc3", theme: "钻石段位", age: "6–9 月", reward: "6,000", goals: "累计 15,000 · V4 · 团队 GV" },
-  { id: "mc4", theme: "创始人之约", age: "9+ 月", reward: "10,000 + 勋章", goals: "累计 40,000 · 长期质押 · Genesis" },
+  { id: "mc0", theme: "地基建设者", age: "0–2 月", reward: "1,500", goals: "累计赚 200 · 绑卡 · 邀 1 人", status: "active" },
+  { id: "mc1", theme: "网络架构师", age: "2–4 月", reward: "2,500", goals: "累计 1,500 · 直推 3 · 周任务 ×4", status: "active" },
+  { id: "mc2", theme: "进阶之路", age: "4–6 月", reward: "4,000", goals: "累计 5,000 · 质押 · 加购", status: "active" },
+  { id: "mc3", theme: "钻石段位", age: "6–9 月", reward: "6,000", goals: "累计 15,000 · V4 · 团队 GV", status: "active" },
+  { id: "mc4", theme: "创始人之约", age: "9+ 月", reward: "10,000 + 勋章", goals: "累计 40,000 · 长期质押 · Genesis", status: "active" },
 ];
+
+/** 本周转化卡(首页 ConversionBanner 促销 banner · G1 补口)。单实例配置,运营改写 H3.promoBanner.config(JSON)。
+ *  baseReward × multiplier = finalReward(前端 800×1.5=1200);countdown 天/时(前端 4d12h);targetDevice 自动派生或固定;targetDaily $/d;status 上下架。
+ *  注:这张卡是设备 upsell 促销 banner(非任务清单),前端 conversion-banner.vue;文案归 I 域,本配置只管奖励/倍率/倒计时/目标/日产/上下架。 */
+export const PROMO_BANNER = {
+  baseReward: "800",
+  multiplier: "1.5",
+  countdownDays: "4",
+  countdownHours: "12",
+  targetDevice: "自动(用户最高设备)",
+  targetDaily: "7.00",
+  status: "active",
+};
 
 /** 完成 / 领取监控(服务器台账)。 */
 export const TASK_MONITOR = [
@@ -380,7 +402,8 @@ export const CHECKIN_RULES = [
   { key: "p15", name: "幸运 1.5× 概率 🔥", sub: "两档概率合计 ≤ 100%,超了直接拒", cur: "15%", hot: true },
   { key: "p2", name: "幸运 2× 概率 🔥", cur: "5%", hot: true },
   { key: "broken", name: "断签阈值", sub: "超过没签连胜归零(可用复活卡)", cur: "48 小时", hot: false },
-  { key: "saver", name: "复活卡默认持有 / 恢复上限", sub: "恢复到 min(历史最长连胜, 上限)", cur: "1 张 / 30 天", hot: false },
+  { key: "saverHold", name: "复活卡默认持有", cur: "1 张", hot: false },
+  { key: "saverRecoverCap", name: "复活卡恢复上限", sub: "恢复到 min(历史最长连胜, 上限)", cur: "30 天", hot: false },
 ];
 
 /** 连胜 7 阶里程碑(7 / 30 / 100 阶为标志档)。 */

@@ -87,6 +87,37 @@ export interface OpsSku {
   status: string;               // on(在售)/ off(下架)/ pending(待上架确认)
 }
 
+// 代金券(voucher)— 运营配置的领券促销。本结构是前端 VoucherDef
+// (Nexion-uniapp/src/mock/vouchers.ts)的**结构化超集**(满足字段级镜像门:
+// 后台可编辑字段 ⊇ 前端展示字段);真后台对接时 1:1 映射同一资源:
+//   list/get → GET /api/admin/vouchers[/:id](= 前端 GET /api/vouchers 同一资源,运营视角)
+//   add/update/setStatus → POST /api/admin/vouchers · PUT /api/admin/vouchers/:id
+//   remove → DELETE /api/admin/vouchers/:id(下架建议用 PUT status=paused 而非删)
+// 两类:fixed=满减(amountUSD off,满 minPurchaseUSD 可用);percent=折扣
+// (percent% off,封顶 maxDiscountUSD)。applicableSkus 空 = 全设备(领券 CTA
+// 跳商城),单个 = 该 SKU 详情页。claimSurfaces = 关闭弹窗后展示领券 banner 的前端页面。
+export interface OpsVoucher {
+  id: string;                   // 唯一 key(真后台主键)
+  name: string;                 // 代金券名称(运营配)
+  type: "fixed" | "percent";    // 满减 / 折扣
+  amountUSD?: number;           // 满减面值 USD(type=fixed)
+  percent?: number;             // 折扣率 %(type=percent)
+  minPurchaseUSD?: number;      // 满减门槛 USD(0 = 无门槛)
+  maxDiscountUSD?: number;      // 折扣封顶 USD(0/缺省 = 不封顶)
+  applicableSkus: string[];     // 适用 SKU id(空 = 全设备)
+  audience: "new" | "all";      // 受众:新人 / 全部
+  startAt: number;              // 有效期起 ms(0 = 即时生效)
+  endAt: number;                // 有效期止 ms(0 = 长期有效)
+  claimSurfaces: string[];      // 前端领取入口页面(home / store / me / earn 子集)
+  popupEnabled: boolean;        // 是否参与首页弹窗自动弹出
+  // ── 叠加 / 性质策略 ──
+  stackWithTrial: boolean;      // 是否可与试用收益抵扣叠加(默认 false:二选一取最优)
+  stackWithOthers: boolean;     // 是否可与其它优惠(套装折扣等)叠加(默认 false)
+  splittable: boolean;          // 是否可拆分(默认 false:整张一次性用于一笔订单)
+  // 不可提现是代金券固有性质(折扣只抵扣价格、永不入可提现余额),由前端设计保证、非可配开关。
+  status: "active" | "paused";  // active=投放中 / paused=已暂停
+}
+
 // 运营账号 · 凭据下发方式:邀请链接(操作员自设密码,管理员永不知晓)/ SSO 企业单点 / 临时密码强制首登改。
 // 注:管理员后台**永不存/设明文密码**(最小知悉 + 抗抵赖);密码 server 侧仅存 hash。
 // 商品用户评价(镜像前端 Nexion-prototype/lib/mock/reviews.ts 的 Review)。status: published(展示)/ hidden(隐藏)。
@@ -159,6 +190,12 @@ interface PlatformConfigStore {
   ensureAccounts: (seed: OpsAccount[]) => void;
   addAccount: (a: OpsAccount) => void;
   updateAccount: (id: string, patch: Partial<OpsAccount>) => void;
+  vouchers: OpsVoucher[] | null;
+  ensureVouchers: (seed: OpsVoucher[]) => void;
+  addVoucher: (v: OpsVoucher) => void;
+  updateVoucher: (id: string, patch: Partial<OpsVoucher>) => void;
+  setVoucherStatus: (id: string, status: string) => void;
+  removeVoucher: (id: string) => void;
   // ── 地基原语:域级参数统一真写 + 审计(覆盖大量「调参数」类动作:费率 / APY / 阈值 / dial / 限额)──
   // key 命名约定:"<域>.<对象>.<参数>",如 "G.staking.apy.s1" / "D.withdraw.dailyCap" / "F.unilevel.L1"。
   params: Record<string, string | number | boolean>;
@@ -197,6 +234,12 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
       ensureAccounts: (seed) => set((s) => (s.accounts ? s : { accounts: seed })),
       addAccount: (a) => set((s) => ({ accounts: [a, ...(s.accounts ?? [])] })),
       updateAccount: (id, patch) => set((s) => ({ accounts: (s.accounts ?? []).map((a) => (a.id === id ? { ...a, ...patch } : a)) })),
+      vouchers: null,
+      ensureVouchers: (seed) => set((s) => (s.vouchers ? s : { vouchers: seed })),
+      addVoucher: (v) => set((s) => ({ vouchers: [v, ...(s.vouchers ?? [])] })),
+      updateVoucher: (id, patch) => set((s) => ({ vouchers: (s.vouchers ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+      setVoucherStatus: (id, status) => set((s) => ({ vouchers: (s.vouchers ?? []).map((x) => (x.id === id ? { ...x, status: status as OpsVoucher["status"] } : x)) })),
+      removeVoucher: (id) => set((s) => ({ vouchers: (s.vouchers ?? []).filter((x) => x.id !== id) })),
       params: {},
       audit: [],
       setParam: (key, value, meta) =>
@@ -224,7 +267,7 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
     }),
     {
       name: "nexion-admin-platform-v1",
-      version: 5, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product;v4:SKU 加 purchaseGate(购买门),清旧 SKU 重建带门 seed;v5:SKU 日产值对齐公布档(Pro v2 14/90·Cloud 3 NEX),清旧 SKU 重建。
+      version: 6, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product;v4:SKU 加 purchaseGate(购买门),清旧 SKU 重建带门 seed;v5:SKU 日产值对齐公布档(Pro v2 14/90·Cloud 3 NEX),清旧 SKU 重建;v6:新增 OpsVoucher(代金券)。
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<PlatformConfigStore>;
@@ -232,6 +275,7 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
         if (version < 3) p.reviews = null; // 评价改 per-product(无通用"*"),清旧 seed 由 ensureReviews 按新 per-product seed 重建
         if (version < 4) p.skus = null; // SKU 新增 purchaseGate 字段 + Pro/Rack P1 默认门;清旧 seed 由 ensureSkus 按新 seed 重建
         if (version < 5) p.skus = null; // SKU 日产值对齐公布档(Pro v2 14.5→14 / 100→90 NEX · Cloud 1→3 NEX);清旧 stale seed 重建
+        if (version < 6) p.vouchers = null; // 新增代金券字段,由 ensureVouchers 按 seed 重建
         return p as PlatformConfigStore;
       },
     },

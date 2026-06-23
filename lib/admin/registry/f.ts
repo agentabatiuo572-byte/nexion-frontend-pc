@@ -4,7 +4,7 @@ import type { ModuleEntry } from "@/lib/admin/module-content";
 export const DOMAIN_F: ModuleEntry[] = [
   {
     path: "/network/v-rank",
-    summary: "V-Rank 等级体系 V0–V12 晋升门槛与权益。等级判定 server 端权威;门槛 / 权益改动需 增长运营 + 风控 操作确认并写入 A2 审计。",
+    summary: "V-Rank 会员等级体系(V0–V12)的晋升门槛和权益。等级由服务器判定;改门槛或权益要增长运营 + 风控一起确认并记入 A2 审计。",
     content: {
       kind: "config",
       metrics: [
@@ -55,7 +55,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/royalty",
-    summary: "网络版税费率体系。Direct Royalty 固定 10%(不可调);Rate-Tier 作为 Partner Status 权益层(L1–L7),佣金计提受 30 天冷却约束。费率改动需 财务 + 风控 操作确认。",
+    summary: "推荐分销的版税费率体系。直推版税固定 10%(不可调);费率档(L1–L7)是合伙人身份对应的权益层级、不是在 10% 上再加成;佣金算出来后有 30 天冷却期。改费率要财务 + 风控一起确认。",
     content: {
       kind: "config",
       metrics: [
@@ -104,7 +104,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/binary",
-    summary: "平衡匹配结算引擎。按 Track A / Track B 两路业绩取较小侧匹配计酬,auto-placement 自动归位,设日封顶。封顶与匹配比例改动需 财务 + 风控 操作确认。",
+    summary: "平衡匹配结算引擎。把团队分成 A、B 两路,按业绩较小的一路来匹配计酬;新成员自动归位补到弱的一侧,并设每日封顶。改封顶或匹配比例要财务 + 风控一起确认。",
     content: {
       kind: "config",
       metrics: [
@@ -153,7 +153,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/leadership-pool",
-    summary: "池 / 配额 / 大使 / 榜 聚合操盘台 — 领导奖池(按周 GMV 计提入池、按 V_VOTES 权重分配)、硬件配额(按 V 级分配可购额度与回收)、区域大使确认(资质操作确认)、排行榜与反欺诈(K2/K1 联动取消资格)。奖池比例 / 权重 / 配额 / 大使授予 / 取消资格等改动均经 操作确认写入 A2 审计;放大资金流出项前置 B1 覆盖率核验。",
+    summary: "奖池 / 配额 / 大使 / 榜单 的聚合操盘台 —— 领导奖池(按每周交易额提取入池、按票数权重分配)、硬件配额(按会员等级分配可购额度并回收)、区域大使资质确认、排行榜和反作弊(联动 K1/K2 取消刷榜资格)。改奖池比例、权重、配额、授予大使、取消资格等都要确认并记入 A2 审计;会往外多发钱的项要先过 B1 覆盖率核验。",
     content: {
       kind: "config",
       metrics: [
@@ -212,7 +212,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/commissions",
-    summary: "佣金事件审计流水。按 kind 记录每笔佣金计提(network / binary / peer / cultivation / leadership / genesis / leaderboard_prize),含层级 / 金额 / 冷却 / 状态。异常事件冻结需 风控 单签 + A2 留痕。",
+    summary: "佣金事件审计流水。每笔佣金计提都按类型记一条(网络版税、平衡匹配、同级、培育、领导奖池、Genesis 分红、榜单奖金),含层级、金额、冷却、状态。冻结异常事件要风控确认 + A2 留痕。",
     content: {
       kind: "list",
       metrics: [

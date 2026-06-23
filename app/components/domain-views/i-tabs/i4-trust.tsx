@@ -71,7 +71,8 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
   const liveJurVersion = (j: Jurisdiction): string =>
     pget(`I.disclosure.${j.code}.version`) ?? j.v;
   // 受限动作范围实时态。
-  const liveGated = (): string => pget("I.gated") ?? "提现 + 质押";
+  // 受限动作改逐项启停(不再一个文本框手打「提现 + 质押」整串);每动作单独 key。
+  const gateOn = (k: string): boolean => (pget(`I.gated.${k}`) ?? "on") === "on";
   const disclosureDraft = {
     version: pget("I.disclosure.SFC.draft"),
     jurisdiction: pget("I.disclosure.SFC.draft.jurisdiction"),
@@ -237,25 +238,28 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       },
     });
 
-  const adjustGate = () =>
+  const toggleGate = (g: (typeof GATED_ACTIONS)[number]) => {
+    const on = gateOn(g.key);
     openActionConfirm({
-      action: <>调整受限动作范围</>,
+      action: <>{on ? "移出" : "纳入"}受限动作 · {g.name}</>,
       detail: (
         <>
-          当前:<b>提现(已实装)+ 质押锁仓(待接线)</b>。增删受限动作改变出金/锁仓前的合规闸覆盖面——<b>风控提交,风控 lead / 超管执行</b>。<b>缩小范围等于放松合规拦截</b>,确认时要写清依据。
+          {on
+            ? <>把 <b>{g.name}</b> 移出受限范围:确认状态过期时<b>不再拦截</b>该动作。<b>缩小范围等于放松合规拦截</b>,确认时写清依据。</>
+            : <>把 <b>{g.name}</b> 纳入受限范围:确认状态过期时拦截该动作。</>}
+          {" "}风控提交,风控 lead / 超管执行。
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: liveGated() },
-      run: (reason, v) => {
-        if (!v) return;
-        setParam("I.gated", v, {
-          action: "调整受限动作范围 · admin.disclosure_gate_changed",
+      run: (reason) => {
+        setParam(`I.gated.${g.key}`, on ? "off" : "on", {
+          action: `受限动作范围 · ${on ? "移出" : "纳入"} ${g.name} · admin.disclosure_gate_changed`,
           reason,
         });
-        toast(`受限动作范围已更新为 ${v}`);
+        toast(`${g.name} 已${on ? "移出" : "纳入"}受限范围`);
       },
     });
+  };
 
   // 抽屉数据。
   const sec = secKey ? TRUST_SECTIONS.find((s) => s.key === secKey) ?? null : null;
@@ -523,21 +527,22 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">受限动作范围(I5 · d)</span>
-          <span className="sub">· 确认状态过期时,哪些动作会被拦</span>
-          <div className="r">
-            <button className="l-btn sm mc" onClick={adjustGate}>调整范围</button>
-          </div>
+          <span className="sub">· 确认状态过期时,哪些动作会被拦 · 逐项启停(不再手打整串)</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
-          {GATED_ACTIONS.map((g) => (
-            <div className="tr-vrow" key={g.key}>
-              <span className="nm">
-                <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</span>
-                <small style={{ color: "var(--ink-4)" }}>{g.sub}</small>
-              </span>
-              <span className={`bdg ${g.tone}`}>{g.st}</span>
-            </div>
-          ))}
+          {GATED_ACTIONS.map((g) => {
+            const on = gateOn(g.key);
+            return (
+              <div className="tr-vrow" key={g.key}>
+                <span className="nm">
+                  <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</span>
+                  <small style={{ color: "var(--ink-4)" }}>{g.sub}</small>
+                </span>
+                <span className={`bdg ${g.tone}`}>{g.st}</span>
+                <button className="l-btn sm mc" style={{ opacity: on ? 1 : 0.5 }} onClick={() => toggleGate(g)}>{on ? "受限内 · 移出" : "已移出 · 纳入"}</button>
+              </div>
+            );
+          })}
           <div className="itint warn" style={{ marginTop: 10 }}>
             <b>这不是熔断闸</b> · 重确认是「条款重新签字」机制,不是开关熔断——它不占应急熔断矩阵(J1)的闸位,也不进开关存储。监管点名要停业务,走 J 域;要改条款重签,走这页。J 域的应急剧本(J4)里「发布新披露版」就是引用这页的发布动作。
           </div>

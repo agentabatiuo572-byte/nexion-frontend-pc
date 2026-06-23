@@ -83,7 +83,7 @@ export default function LiquidityPage() {
         title="资金池水位"
         desc={
           <>
-            真实储备 vs 8 科目应付负债的实时水位与到期分布。覆盖率为 <b>B5 风险雷达</b>与 <b>J 域 Kill-Switch</b> 的核心入参。
+            真实能拿出来的钱(储备)和该还给用户的钱(8 类应付)之间,实时还差多少、什么时候到期。这里的覆盖率是 <b>B5 风险雷达</b>和 <b>J 域熔断开关</b>的关键依据。
           </>
         }
         ctaLabel="调资金 / 提现参数"

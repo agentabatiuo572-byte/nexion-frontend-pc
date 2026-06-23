@@ -13,7 +13,7 @@ export const DOMAIN_B: ModuleEntry[] = [
   {
     path: "/overview/liquidity",
     summary:
-      "资金池水位 — 真实储备 vs 8 科目应付负债的实时缺口与到期分布。覆盖率为 B5 风险雷达与 J 域 Kill-Switch 的核心入参,口径与 B1 双账本一致(server 权威)。",
+      "资金池水位 —— 真实能拿出来的钱(储备)和该还给用户的钱(8 类应付)之间,实时还差多少、什么时候到期。这里的覆盖率是 B5 风险雷达和 J 域熔断开关的关键依据,口径和 B1 总账一致、以服务器为准。",
     content: {
       kind: "dashboard",
       metrics: [
@@ -101,7 +101,7 @@ export const DOMAIN_B: ModuleEntry[] = [
   {
     path: "/overview/funnel",
     summary:
-      "转化漏斗 — 用户生命周期 L1 注册 → L5 提现各阶段转化与流失,叠加首购周 cohort 留存。指标派生自 A4 事件流(服务端权威),用于增长运营定位漏斗瓶颈。",
+      "转化漏斗 —— 用户从注册(L1)一路走到提现(L5),每一步留住多少、流失多少,再叠加首次购机那批人的逐周留存。数据都来自 A4 事件流(以服务器为准),帮增长团队找出漏斗卡在哪一环。",
     content: {
       kind: "dashboard",
       metrics: [
@@ -183,7 +183,7 @@ export const DOMAIN_B: ModuleEntry[] = [
   {
     path: "/overview/rhythm",
     summary:
-      "节奏状态 — 12 月运营节奏 P1 拉新 → P6 软退场 的当前阶段、阶段进度与关键节奏仪表。供决策层判断扩张 / 收紧时机,与 F 域参数中枢联动。",
+      "节奏状态 —— 12 个月运营节奏(从 P1 拉新到 P6 软收场)现在走到哪个阶段、进度多少,以及几个关键节奏指标。给决策层判断该扩张还是该收紧用,和 F 域的参数中枢联动。",
     content: {
       kind: "dashboard",
       metrics: [
@@ -263,7 +263,7 @@ export const DOMAIN_B: ModuleEntry[] = [
   {
     path: "/overview/risk-radar",
     summary:
-      "风险雷达 — 挤兑压力、异常账户、Kill-Switch 状态与全域告警分布的统一风险面板。红色信号联动 J 域熔断与 D 域提现收紧,数据来自 G/D/J 域实时聚合。",
+      "风险雷达 —— 把挤兑压力、异常账户、熔断开关状态和全平台告警集中成一块风险面板。出现红色信号会联动 J 域熔断和 D 域提现收紧;数据从 G/D/J 各域实时汇总而来。",
     content: {
       kind: "dashboard",
       metrics: [

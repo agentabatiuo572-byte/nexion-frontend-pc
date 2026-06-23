@@ -24,6 +24,7 @@ import { EngagementSection } from "@/app/components/hub/engagement-section";
 import { AccountSection } from "@/app/components/hub/account-section";
 import { CommerceSection } from "@/app/components/hub/commerce-section";
 import { NotificationSection } from "@/app/components/hub/notification-section";
+import { RewardsSection } from "@/app/components/hub/rewards-section";
 import { useUserOps, useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { C4_LEDGER } from "@/app/components/domain-views/c-tabs/data";
@@ -247,6 +248,7 @@ export default function UserDetailPage() {
         <CommerceSection user={user} />
         <AccountSection user={user} />
         <NotificationSection user={user} />
+        <div id="hub-rewards" style={{ scrollMarginTop: 76 }}><RewardsSection user={user} /></div>
       </div>
 
       {/* 审计 */}

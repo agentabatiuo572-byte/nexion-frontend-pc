@@ -60,6 +60,9 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   /* drawers */
   const [famIdx, setFamIdx] = useState<number | null>(null);
   const [batchIdx, setBatchIdx] = useState<number | null>(null);
+  // 扩展工单登记:多字段抽屉(不再一个文本框塞「domain / 事件名」整串)
+  const [naBatch, setNaBatch] = useState(false);
+  const [batchForm, setBatchForm] = useState({ domain: "", event: "", producer: "", consumer: "" });
 
   /* 实时态(pget 覆盖种子) */
   const liveSchemaVer = (pget("A.event.schemaVer") as string | undefined) ?? A4_STATS.schemaVersion;
@@ -184,27 +187,8 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   /* ────────────────── 登记 domain 扩展工单 ────────────────── */
 
   const registerBatch = () => {
-    openActionConfirm({
-      action: "登记 domain 扩展工单",
-      detail: (
-        <>
-          提出域写清楚:要加的 domain 名 / 事件名(过去式) / 谁产谁消;落地前相关事件按 admin 占位 + 临时编号入库。
-          <br />超管执行门槛:超管;注册完成后归档。
-        </>
-      ),
-      amplifies: false,
-      edit: { kind: "text", current: "", unit: "domain / 事件名" },
-      run: (reason, v) => {
-        const val = (v || "").trim();
-        if (!val) { toast("拒绝:domain / 事件名不能为空"); return; }
-        const slug = val.replace(/[^a-z0-9]/gi, "_").slice(0, 30) || `batch_${Date.now()}`;
-        setParam(`A.batch.new.${slug}.status`, "registered", {
-          action: `登记扩展工单 ${val} · admin.domain_extension_registered`,
-          reason,
-        });
-        toast(`扩展工单 ${val} 已提交注册确认`);
-      },
-    });
+    setBatchForm({ domain: "", event: "", producer: "", consumer: "" });
+    setNaBatch(true);
   };
 
   /* ────────────────── 渲染 ────────────────── */
@@ -583,6 +567,66 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
           </Drawer>
         );
       })()}
+
+      {/* ───── 登记 domain 扩展工单 · 多字段抽屉(domain / 事件名 / 产消方 各一格,不再一个框塞)───── */}
+      {naBatch && (
+        <Drawer
+          title="登记 domain 扩展工单"
+          sub="① domain 名 → ② 事件名(过去式) → ③ 生产方 → ④ 消费方 · 提交走超管操作确认"
+          onClose={() => setNaBatch(false)}
+          footer={
+            <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+              <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setNaBatch(false)}>取消</button>
+              <button
+                className="l-btn primary"
+                style={{ flex: 2, justifyContent: "center", opacity: batchForm.domain.trim() && batchForm.event.trim() ? 1 : 0.5 }}
+                disabled={!batchForm.domain.trim() || !batchForm.event.trim()}
+                onClick={() => {
+                  const domain = batchForm.domain.trim(), event = batchForm.event.trim();
+                  const producer = batchForm.producer.trim(), consumer = batchForm.consumer.trim();
+                  if (!domain || !event) { toast("拒绝:domain 名和事件名都要填"); return; }
+                  setNaBatch(false);
+                  openActionConfirm({
+                    action: `登记 domain 扩展工单 · ${domain}`,
+                    detail: (<><b>{domain}</b> · 事件 <span className="acode">{event}</span> · 生产 {producer || "—"} → 消费 {consumer || "—"}。落地前按 admin 占位 + 临时编号入库;超管执行,注册完成后归档。</>),
+                    amplifies: false,
+                    run: (reason) => {
+                      const slug = `${domain}_${event}`.replace(/[^a-z0-9]/gi, "_").slice(0, 40) || `batch_${Date.now()}`;
+                      setParam(`A.batch.new.${slug}.domain`, domain, { action: `登记扩展工单 ${domain} · admin.domain_extension_registered`, reason });
+                      setParam(`A.batch.new.${slug}.event`, event, { action: `扩展工单事件名 ${event}`, reason });
+                      setParam(`A.batch.new.${slug}.producer`, producer, { action: "扩展工单生产方", reason });
+                      setParam(`A.batch.new.${slug}.consumer`, consumer, { action: "扩展工单消费方", reason });
+                      setParam(`A.batch.new.${slug}.status`, "registered", { action: `登记扩展工单 ${domain} 状态`, reason });
+                      toast(`扩展工单 ${domain} / ${event} 已提交注册确认`);
+                    },
+                  });
+                }}
+              >提交登记</button>
+            </div>
+          }
+        >
+          {(() => {
+            const fst = { width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 };
+            return (
+              <div style={{ display: "grid", gap: 12 }}>
+                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>domain 名 *
+                  <input value={batchForm.domain} onChange={(e) => setBatchForm({ ...batchForm, domain: e.target.value })} placeholder="如 referral" style={fst} />
+                </label>
+                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>事件名(过去式)*
+                  <input value={batchForm.event} onChange={(e) => setBatchForm({ ...batchForm, event: e.target.value })} placeholder="如 referral_bound" style={fst} />
+                </label>
+                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>生产方(谁 emit)
+                  <input value={batchForm.producer} onChange={(e) => setBatchForm({ ...batchForm, producer: e.target.value })} placeholder="如 F 域结算服务" style={fst} />
+                </label>
+                <label style={{ fontSize: 12, color: "var(--ink-3)" }}>消费方(谁用)
+                  <input value={batchForm.consumer} onChange={(e) => setBatchForm({ ...batchForm, consumer: e.target.value })} placeholder="如 B3 漏斗 / L2 留存" style={fst} />
+                </label>
+                <div className="atint">提交后走超管操作确认(填理由);注册为占位 + 临时编号,落地后迁回各自 domain。</div>
+              </div>
+            );
+          })()}
+        </Drawer>
+      )}
     </>
   );
 }

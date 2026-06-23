@@ -1,9 +1,9 @@
 import { Fragment, type ReactNode } from "react";
-import { CodeTag } from "../design-kit";
+import { Btn, CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import type { OpsTask } from "@/lib/store/admin/platform-config-store";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
+import { PHONE_TIERS } from "./data";
 
 /* ── 任务图标(按任务名推断 kind;OpsSchema 无 kind 字段)── */
 type Kind = "llm" | "img" | "vid" | "ft" | "em";
@@ -63,14 +63,6 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const { tasks } = ctx;
   const heatNames = tasks.slice(0, 6).map((t) => t.n);
 
-  const adj = (t: OpsTask) =>
-    ctx.openActionConfirm({
-      name: `任务单价调整 · ${t.n}`, op: "task-price", taskId: t.id,
-      edit: { kind: "number", current: `$${t.price.toFixed(2)}`, unit: "USD" },
-      detail: `当前 $${t.price.toFixed(2)}${t.unit} · 改后对新派单 server-canonical 生效,已派工单维持原单价完成`,
-      amplify: false,
-    });
-
   return (
     <>
       <EStats items={[
@@ -79,6 +71,51 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         { k: "全网饱和度", v: "63%", sub: "峰值 78% · 19:00 UTC", tone: "warn" },
         { k: "锁定预览转化", v: "8.4%", sub: "锁定 → 升级 Pro/Rack", tone: "cyan" },
       ]} />
+
+      {/* 手机算力档位收益 —— 手机端按校准能力分 5 档,每档日产 USDT/NEX 运营可调 */}
+      <section className="pane">
+        <div className="pane-h">
+          <span className="ttl">手机算力档位收益 · 5 档</span>
+          <span className="sub">按校准能力分档 · 与前端同口径</span>
+          <span className="r"><CodeTag tone="electric">收益引擎</CodeTag><CodeTag>E.phone.tier*</CodeTag></span>
+        </div>
+        <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          {PHONE_TIERS.map((t) => {
+            const uKey = `E.phone.tier${t.tier}.dailyUsdt`;
+            const nKey = `E.phone.tier${t.tier}.dailyNex`;
+            const u = ctx.pget(uKey) ?? t.dailyUsdt;
+            const n = ctx.pget(nKey) ?? t.dailyNex;
+            return (
+              <div key={t.tier} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 14, alignItems: "center", paddingTop: t.tier === 1 ? 0 : 10, borderTop: t.tier === 1 ? "none" : "1px solid var(--border)" }}>
+                <span style={{ minWidth: 40, height: 26, padding: "0 8px", borderRadius: 7, background: "var(--brand-soft)", color: "var(--brand)", border: "1px solid var(--brand-border)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)" }}>T{t.tier}</span>
+                <div className="col" style={{ gap: 2 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{t.name}</span>
+                  <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{t.note}</span>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>${u}<span style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}> /天</span></div>
+                  <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n} NEX/天</div>
+                </div>
+                <div className="row" style={{ gap: 6 }}>
+                  <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
+                    name: `手机 T${t.tier} 日产 USDT 调整`, op: "param", paramKey: uKey, amplify: true,
+                    edit: { kind: "text", current: u, unit: "USDT/天" },
+                    detail: `手机算力 T${t.tier}(${t.name})· 日产 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已计提。`,
+                  })}>调 USDT</Btn>
+                  <Btn sm onClick={() => ctx.openActionConfirm({
+                    name: `手机 T${t.tier} 日产 NEX 调整`, op: "param", paramKey: nKey, amplify: true,
+                    edit: { kind: "text", current: n, unit: "NEX/天" },
+                    detail: `手机算力 T${t.tier}(${t.name})· 日产 NEX 当前 ${n} · NEX 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
+                  })}>调 NEX</Btn>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="tint cyan tiny" style={{ margin: "0 16px 14px" }}>
+          <AutoGloss>与前端手机算力档位同口径(backend-replaceable · GET /api/config/phone-tiers)· 调高任一档先过 B1 覆盖率护栏 · 经操作确认写 A2 审计 · 对下一结算周期生效,不回溯已计提。T3 为典型机,锚定营销文案的 $0.06/天。</AutoGloss>
+        </div>
+      </section>
 
       <div className="e3-main">
         {/* 左:6 任务卡 */}
@@ -104,7 +141,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                     <span className="pct">{pct}%</span>
                   </div>
                   <div className="acts">
-                    <button className="primary" onClick={() => adj(t)}>改单价</button>
+                    <button className="primary" onClick={() => ctx.openEditTask(t)}>编辑</button>
                     <button onClick={() => ctx.delTask({ id: t.id, n: t.n })}>下架</button>
                   </div>
                 </div>

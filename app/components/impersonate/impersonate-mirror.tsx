@@ -28,8 +28,9 @@ export interface ImpersonateUser {
 }
 
 const SESSION_SECONDS = 30 * 60; // 只读代入会话 ≤ 30min
-const DEVICE_MODELS = ["NexionBox Pro", "NexionBox Standard", "NexionBox Lite", "NexionBox Pro v2", "NexionBox Mini", "NexionBox Standard v2"];
-const DEVICE_RATE = [7.8, 2.85, 0.62, 8.6, 0.3, 3.2];
+// canon SKU(对齐 canon-numbers.json / E1 目录):型号与日产率按 index 一一对应。
+const DEVICE_MODELS = ["NexionBox S1", "NexionBox Pro", "NexionBox Pro v2", "NexionRack P1", "NexionRack P2", "Cloud Share"];
+const DEVICE_RATE = [7, 13, 14, 45, 75, 0.19];
 
 const fmtUsd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 const fmtNex = (n: number) => n.toLocaleString("en-US") + " NEX";
@@ -53,7 +54,14 @@ export function ImpersonateMirror({ user, onExit }: { user: ImpersonateUser; onE
   // 写操作拦截:只读代入下任何用户端写动作都被挡,给出提示
   const blockWrite = () => { setFlash(true); setTimeout(() => setFlash(false), 1600); };
 
-  const todayEarn = useMemo(() => Math.round(user.devices * 14.2 * 100) / 100, [user.devices]);
+  // 今日收益 = 按 index 循环的各设备 canon 日产率求和(对齐 DEVICE_RATE,不再用旧固定 $14.2/台)。
+  const todayEarn = useMemo(
+    () =>
+      Math.round(
+        Array.from({ length: Math.max(user.devices, 1) }, (_, i) => DEVICE_RATE[i % DEVICE_RATE.length]).reduce((a, b) => a + b, 0) * 100,
+      ) / 100,
+    [user.devices],
+  );
   const devices = useMemo(
     () => Array.from({ length: Math.max(user.devices, 1) }, (_, i) => ({
       model: DEVICE_MODELS[i % DEVICE_MODELS.length],

@@ -120,8 +120,8 @@ export default function RiskRadarPage() {
         title="风险雷达"
         desc={
           <>
-            挤兑压力、异常账户、Kill-Switch 状态与全域告警分布的统一风险面板。红色信号联动{" "}
-            <b>J 域熔断</b>与 <b>D 域提现收紧</b>,数据来自 G/D/J 域实时聚合。
+            把挤兑压力、异常账户、熔断开关状态和全平台告警集中成一块风险面板。出现红色信号会联动{" "}
+            <b>J 域熔断</b>和 <b>D 域提现收紧</b>,数据从 G/D/J 各域实时汇总而来。
           </>
         }
         ctaLabel="Kill-Switch 矩阵"

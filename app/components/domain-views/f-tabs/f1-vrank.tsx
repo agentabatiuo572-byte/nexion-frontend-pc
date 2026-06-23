@@ -10,7 +10,38 @@ function popPct(p: number): number { return p <= 0 ? 0 : Math.max(2, (Math.log10
 function pyrPct(p: number): number { return p <= 0 ? 0 : Math.max(3, (Math.log10(Math.max(p, 1)) / LOG_MAX) * 100); }
 function popColor(i: number): string { return i <= 2 ? "var(--cyan)" : i <= 5 ? "var(--brand)" : i <= 7 ? "var(--warning)" : "var(--brand-2)"; }
 
+type VRow = (typeof VRANK)[number];
+type VField = { k: string; label: string; cur: string; kind: "text" | "number" };
+
 export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
+  // 门槛改为每子值单独单值「调整」(不再一个文本框手打「自买 $299 · 直推 3」整串);展示行由各字段合成可读串。
+  const fg = (r: VRow, k: string, dflt: string): string => ctx.pget(`F.vrank.${r.v}.${k}`) ?? dflt;
+  const composeTh = (r: VRow): string => {
+    const p: string[] = [];
+    if (r.selfBuy != null) p.push(`自买 ${fg(r, "selfBuy", r.selfBuy)}`);
+    if (r.teamGv != null) p.push(`团队 GV ${fg(r, "teamGv", r.teamGv)}`);
+    if (r.directRefs != null) p.push(`直推 ${fg(r, "directRefs", r.directRefs)}`);
+    if (r.legCount != null) p.push(`${fg(r, "legCount", r.legCount)}×${fg(r, "legRank", r.legRank ?? "")}`);
+    return p.length ? p.join(" · ") : "—";
+  };
+  const fieldsOf = (r: VRow): VField[] => {
+    const f: VField[] = [];
+    if (r.selfBuy != null) f.push({ k: "selfBuy", label: "自买额", cur: r.selfBuy, kind: "text" });
+    if (r.teamGv != null) f.push({ k: "teamGv", label: "团队GV", cur: r.teamGv, kind: "text" });
+    if (r.directRefs != null) f.push({ k: "directRefs", label: "直推数", cur: r.directRefs, kind: "number" });
+    if (r.legCount != null) f.push({ k: "legCount", label: "腿数", cur: r.legCount, kind: "number" });
+    if (r.legRank != null) f.push({ k: "legRank", label: "腿等级", cur: r.legRank, kind: "text" });
+    return f;
+  };
+  const editField = (r: VRow, f: VField) => {
+    const hasNex = r.nex !== "—";
+    const cur = fg(r, f.k, f.cur);
+    ctx.openActionConfirm({
+      name: `${r.v} 门槛 · ${f.label}调整`, amplify: hasNex, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
+      edit: { kind: f.kind, current: cur },
+      detail: `${r.v} 晋升门槛 · ${f.label} 当前 ${cur} · server 晋升判定改后对下一轮评估生效,不回溯已晋升用户。${hasNex ? "该阶含培育奖 NEX 派发,放大资金流出,受 B1 覆盖率约束。" : ""}`,
+    });
+  };
   return (
     <>
       <div className="f-stats">
@@ -30,11 +61,11 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           {VRANK.map((r, i) => {
             const hasPrize = r.prize !== "—";
             const hasNex = r.nex !== "—";
-            const eff = ctx.pget(`F.vrank.${r.v}`) ?? r.th;
+            const flds = fieldsOf(r);
             return (
               <div key={r.v} className={`lrow${r.pop === 0 ? " empty" : ""}${i === VRANK.length - 1 ? " last" : ""}`}>
                 <div className={`vbadge v-${i}`}>{r.v}</div>
-                <div className="lcell"><div className="l1">{eff}</div><div className="l2">F.vrank.{r.v}</div></div>
+                <div className="lcell"><div className="l1">{composeTh(r)}</div><div className="l2">F.vrank.{r.v}</div></div>
                 <div className="lcell"><div className={`prize${hasPrize ? "" : " none"}`}>{r.prize}</div></div>
                 <div className="lcell"><div className={`nex${hasNex ? "" : " none"}`}>{hasNex ? `${r.nex} NEX` : "—"}</div></div>
                 <div className="pop">
@@ -42,11 +73,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                   <div className="ct">{r.pop.toLocaleString()}</div>
                 </div>
                 <div className="lact">
-                  <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
-                    name: `V-Rank ${r.v} 门槛调整`, amplify: hasNex, op: "param", paramKey: `F.vrank.${r.v}`,
-                    edit: { kind: "text", current: eff },
-                    detail: `${r.v} 晋升门槛 · 当前 ${eff} · server 晋升判定改后对下一轮评估生效,不回溯已晋升用户。${hasNex ? "该阶含培育奖 NEX 派发,放大资金流出,受 B1 覆盖率约束。" : ""}`,
-                  })}>调整门槛</button>
+                  {flds.map((f) => (
+                    <button key={f.k} className="fbtn primary" title={`调整${r.v} ${f.label}`} onClick={() => editField(r, f)}>{f.label}</button>
+                  ))}
                   {hasPrize && <button className="fbtn" onClick={() => ctx.toast(`${r.v} · ${r.prize} 发货队列 已打开`)}>发货队列</button>}
                 </div>
               </div>

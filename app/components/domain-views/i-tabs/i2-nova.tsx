@@ -160,16 +160,18 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  // ── social 概率分布调整(传 edit) ──
-  const adjustDist = () => openActionConfirm({
-    action: <>调整事件概率分布 · social 频道</>,
-    detail: <>当前 <b>提现 30 / 晋升 25 / Genesis 20 / AI 消费 15 / 新增 10</b>。对新派发即时生效;<b>五项合计必须 100%,超了或不足服务器直接拒</b>。这改变的是全体用户刷到的「全网动态」构成,操作确认。</>,
+  // ── social 概率分布:拆成 5 个单值(按序号 key,不再一个文本框手打「30/25/20/15/10」整串)──
+  const distPct = (d: { pct: number }, i: number): number => Number(pget(`I.social.dist.${i}`) ?? d.pct);
+  const editDistCat = (d: { name: string; pct: number }, i: number) => openActionConfirm({
+    action: <>调整 social 概率 · {d.name}</>,
+    detail: <>{d.name} 当前 <b>{distPct(d, i)}%</b> · 5 类合计必须 = 100%,不足或超出服务器直接拒;对新派发即时生效。</>,
     amplifies: false,
-    edit: { kind: "text", current: "30/25/20/15/10", unit: "%" },
+    edit: { kind: "number", current: `${distPct(d, i)}%`, unit: "%" },
     run: (reason, v) => {
-      if (!v) return;
-      setParam("I.social.dist", v, { action: "调整 social 概率分布", reason });
-      toast(`概率分布已确认生效 · 目标 ${v}`);
+      const n = (v ?? "").replace(/[^\d.]/g, "").trim();
+      if (!n) return;
+      setParam(`I.social.dist.${i}`, n, { action: `social 概率分布 · ${d.name} → ${n}%`, reason });
+      toast(`${d.name} 概率已改为 ${n}% · 注意 5 类合计须 = 100%`);
     },
   });
 
@@ -394,26 +396,29 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 6 }}>
             <div className="nv-pb">
-              {SOCIAL_DIST.map((d) => (
-                <i key={d.name} style={{ width: `${d.pct}%`, background: d.color }} />
+              {SOCIAL_DIST.map((d, i) => (
+                <i key={d.name} style={{ width: `${distPct(d, i)}%`, background: d.color }} />
               ))}
             </div>
             <div className="nv-leg" style={{ marginBottom: 10 }}>
-              {SOCIAL_DIST.map((d) => (
+              {SOCIAL_DIST.map((d, i) => (
                 <span key={d.name}>
                   <span className="d" style={{ background: d.color }} />
-                  {d.name} {d.pct}%
+                  {d.name} {distPct(d, i)}%
                 </span>
               ))}
             </div>
 
             <div className="p-row">
               <div className="txt">
-                <div className="k">概率分布</div>
-                <div className="s">对新派发即时生效;合计 ≠ 100% 服务器直接拒</div>
+                <div className="k">概率分布(逐类单独调)</div>
+                <div className="s">5 类合计须 = 100%(当前合计 {SOCIAL_DIST.reduce((s, d, i) => s + distPct(d, i), 0)}%{SOCIAL_DIST.reduce((s, d, i) => s + distPct(d, i), 0) !== 100 ? " · ⚠ 不等于 100,服务器会拒" : ""});对新派发即时生效</div>
               </div>
-              <span className="v">30/25/20/15/10</span>
-              <button className="l-btn sm mc" onClick={adjustDist}>调整</button>
+              <span className="v" style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {SOCIAL_DIST.map((d, i) => (
+                  <button key={d.name} className="l-btn sm mc" onClick={() => editDistCat(d, i)} title={`调整 ${d.name} 概率`}>{d.name} {distPct(d, i)}%</button>
+                ))}
+              </span>
             </div>
 
             {SOCIAL_POOLS.map((p) => (

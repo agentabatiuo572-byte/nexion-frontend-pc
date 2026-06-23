@@ -51,6 +51,7 @@ import {
   WEEKLY_T2,
   WEEKLY_MULT,
   MONTHLY_MISSIONS,
+  PROMO_BANNER,
   TASK_MONITOR,
   EVENTS_CMS,
   EVENT_STATE,
@@ -62,19 +63,123 @@ import {
 } from "./data";
 import type { HCtx } from "./types";
 
+/** 首日任务行(seed + 运营增删改写 H3.dayOne.tasks JSON 的统一形状)。 */
+type DayOneTask = { id: string; task: string; href: string; reward: string; status: string; completionType?: string; completionEvent?: string };
+/** 完成判定方式中文标(visit 访问路径 / event 业务事件 / manual 手动核验)。 */
+const COMP_LABEL: Record<string, string> = { visit: "访问路径", event: "业务事件", manual: "手动核验" };
+/** 每周任务行(t1 一档 / t2 二档共用形状);运营增删改写 H3.weekly.{t1,t2}.tasks JSON。 */
+type WeeklyTask = { id: string; cond: string; reward: string; status: string; completionType?: string; completionEvent?: string };
+/** 月度挑战行;写 H3.monthly.tasks JSON。 */
+type MonthlyTask = { id: string; theme: string; age: string; reward: string; goals: string; status: string };
+const isWeeklyTask = (x: unknown): x is WeeklyTask =>
+  !!x && typeof x === "object" &&
+  typeof (x as WeeklyTask).id === "string" && typeof (x as WeeklyTask).cond === "string" &&
+  typeof (x as WeeklyTask).reward === "string" && typeof (x as WeeklyTask).status === "string";
+const isMonthlyTask = (x: unknown): x is MonthlyTask =>
+  !!x && typeof x === "object" &&
+  typeof (x as MonthlyTask).id === "string" && typeof (x as MonthlyTask).theme === "string" &&
+  typeof (x as MonthlyTask).age === "string" && typeof (x as MonthlyTask).reward === "string" &&
+  typeof (x as MonthlyTask).goals === "string" && typeof (x as MonthlyTask).status === "string";
+/** 本周转化卡(首页促销 banner)单实例配置。写 H3.promoBanner.config JSON。 */
+type PromoBanner = { baseReward: string; multiplier: string; countdownDays: string; countdownHours: string; targetDevice: string; targetDaily: string; status: string };
+const isPromoBanner = (x: unknown): x is PromoBanner => {
+  if (!x || typeof x !== "object") return false;
+  const p = x as PromoBanner;
+  // 全 7 字段必须是 string(缺字段 → 回退 seed,不露 undefinedd/undefined/d),与 isDayOneTask/isWeeklyTask 全字段校验风格一致。
+  const allStr = typeof p.baseReward === "string" && typeof p.multiplier === "string" &&
+    typeof p.countdownDays === "string" && typeof p.countdownHours === "string" &&
+    typeof p.targetDevice === "string" && typeof p.targetDaily === "string" && typeof p.status === "string";
+  if (!allStr) return false;
+  // baseReward / multiplier 必须是有效非负数字(坏值 → 回退 seed,渲染面不露 NaN NEX)。
+  return Number.isFinite(Number(p.baseReward)) && Number(p.baseReward) >= 0 &&
+    Number.isFinite(Number(p.multiplier)) && Number(p.multiplier) >= 0;
+};
+/** 转化卡最终奖励 = 基础 × 倍率(NaN 安全;坏值返回 null,调用方兜底 "—")。渲染面 + toast 共用。 */
+const promoFinalReward = (base: string, mult: string): number | null => {
+  const f = Number(base) * Number(mult);
+  return Number.isFinite(f) ? Math.round(f) : null;
+};
+/** 运行时校验(JSON.parse 的元素逐项核形状,防旧格式/损坏数据 id 缺失致编辑/删除静默失配)。 */
+const isDayOneTask = (x: unknown): x is DayOneTask =>
+  !!x && typeof x === "object" &&
+  typeof (x as DayOneTask).id === "string" && typeof (x as DayOneTask).task === "string" &&
+  typeof (x as DayOneTask).href === "string" && typeof (x as DayOneTask).reward === "string" &&
+  typeof (x as DayOneTask).status === "string" &&
+  (typeof (x as DayOneTask).completionType === "undefined" || typeof (x as DayOneTask).completionType === "string") &&
+  (typeof (x as DayOneTask).completionEvent === "undefined" || typeof (x as DayOneTask).completionEvent === "string");
+
 export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
   const { pget, setParam, toast, openActionConfirm, openConfirm, logAudit } = ctx;
   // segmented section:H3 任务引擎 ↔ H4 活动中心(忠实设计稿 chip 切换;FOLD 在 h-view 路由层完成,叶子页内仍按设计稿 .chip[sel] 分段)。
   const [sec, setSec] = useState<"h3" | "h4">("h3");
 
-  /** 单源:取当前奖励(优先 pget,fallback 设计稿)。 */
-  const dayOneReward = (id: number, seed: string) => pget(`H3.dayOne.${id}.reward`) ?? seed;
+  /** 首日任务列表单源:运营改过(增删改/启停)= H3.dayOne.tasks JSON;否则 seed(已含 id/status)。 */
+  const effectiveDayOneTasks = (): DayOneTask[] => {
+    const raw = pget("H3.dayOne.tasks");
+    if (raw) {
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.every(isDayOneTask)) return arr as DayOneTask[];
+        console.error("[H3] H3.dayOne.tasks 结构不符,回退 seed");
+      } catch (e) {
+        console.error("[H3] H3.dayOne.tasks JSON 损坏,回退 seed", e);
+      }
+    }
+    return DAY_ONE_TASKS.map((t) => ({ ...t }));
+  };
+  const writeDayOneTasks = (next: DayOneTask[], action: string, reason: string) =>
+    setParam("H3.dayOne.tasks", JSON.stringify(next), { action, reason });
   const dayOneWindow = () => pget("H3.dayOne.windowMs") ?? "24h 全额 / 72h 宽限";
-  const weeklyT1 = (idx: number, seed: string) => pget(`H3.weekly.t1.${idx}`) ?? seed;
-  const weeklyT2 = (idx: number, seed: string) => pget(`H3.weekly.t2.${idx}`) ?? seed;
+  /** 每周任务列表单源:运营改过 = H3.weekly.<tier>.tasks JSON;否则 seed。 */
+  const effectiveWeekly = (tier: "t1" | "t2"): WeeklyTask[] => {
+    const raw = pget(`H3.weekly.${tier}.tasks`);
+    if (raw) {
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.every(isWeeklyTask)) return arr as WeeklyTask[];
+        console.error(`[H3] H3.weekly.${tier}.tasks 结构不符,回退 seed`);
+      } catch (e) {
+        console.error(`[H3] H3.weekly.${tier}.tasks JSON 损坏,回退 seed`, e);
+      }
+    }
+    return (tier === "t1" ? WEEKLY_T1 : WEEKLY_T2).map((t) => ({ ...t }));
+  };
+  const writeWeekly = (tier: "t1" | "t2", next: WeeklyTask[], action: string, reason: string) =>
+    setParam(`H3.weekly.${tier}.tasks`, JSON.stringify(next), { action, reason });
   const champBonus = () => pget("H3.weekly.champBonus") ?? "+500 NEX × P3 1.1×";
   const multAt = (p: string, seed: string) => pget(`H3.weekly.mult.${p}`) ?? seed;
-  const monthlyReward = (id: string, seed: string) => pget(`H3.monthly.${id}.reward`) ?? seed;
+  /** 月度挑战列表单源。 */
+  const effectiveMonthly = (): MonthlyTask[] => {
+    const raw = pget("H3.monthly.tasks");
+    if (raw) {
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr) && arr.every(isMonthlyTask)) return arr as MonthlyTask[];
+        console.error("[H3] H3.monthly.tasks 结构不符,回退 seed");
+      } catch (e) {
+        console.error("[H3] H3.monthly.tasks JSON 损坏,回退 seed", e);
+      }
+    }
+    return MONTHLY_MISSIONS.map((m) => ({ ...m }));
+  };
+  const writeMonthly = (next: MonthlyTask[], action: string, reason: string) =>
+    setParam("H3.monthly.tasks", JSON.stringify(next), { action, reason });
+  /** 本周转化卡单实例配置:运营改过 = H3.promoBanner.config JSON;否则 seed。 */
+  const effectivePromoBanner = (): PromoBanner => {
+    const raw = pget("H3.promoBanner.config");
+    if (raw) {
+      try {
+        const obj = JSON.parse(raw);
+        if (isPromoBanner(obj)) return obj as PromoBanner;
+        console.error("[H3] H3.promoBanner.config 结构不符,回退 seed");
+      } catch (e) {
+        console.error("[H3] H3.promoBanner.config JSON 损坏,回退 seed", e);
+      }
+    }
+    return { ...PROMO_BANNER };
+  };
+  const writePromoBanner = (next: PromoBanner, action: string, reason: string) =>
+    setParam("H3.promoBanner.config", JSON.stringify(next), { action, reason });
   const eventStatus = (id: string, seed: EventState): EventState =>
     ((pget(`H4.event.${id}.status`) as EventState) ?? seed);
   const eventReward = (id: string, seed: string) => pget(`H4.event.${id}.reward`) ?? seed;
@@ -84,10 +189,17 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
   const probSum = WHEEL_TIERS.reduce((s, t) => s + t.prob, 0);
   const probOk = Math.abs(probSum - 100) < 0.01;
 
+  // 渲染期一次性计算(各任务表共用同一引用,避免同帧不一致);run 回调内仍实时 effective* 读最新。
+  const dayOneTasksView = effectiveDayOneTasks();
+  const weeklyT1View = effectiveWeekly("t1");
+  const weeklyT2View = effectiveWeekly("t2");
+  const monthlyView = effectiveMonthly();
+  const promoBanner = effectivePromoBanner();
+
   // #38 任务事件契约与归因:每个首日任务派生 task_key / 服务端完成事件 / 下游业务事件 / B3 漏斗归属 / BI 口径,
   // 作为「任务配置 ↔ 事件上报 ↔ BI 归因」的共同事实源(Day7/B3 异常时定位问题层)。
   const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-  const questContract = (t: (typeof DAY_ONE_TASKS)[number], i: number) => {
+  const questContract = (t: DayOneTask, i: number) => {
     const blob = `${t.task} ${t.href}`;
     const buy = /购买|首购|下单|商城|box|store|pricing/i.test(blob);
     const deposit = /充值|入金|deposit|topup|钱包|wallet/i.test(blob);
@@ -110,6 +222,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
   /** 改首日时窗 — A 方案不追溯。 */
   const openWindowMc = () => {
     const cur = dayOneWindow();
+    const hrs = cur.match(/\d+/g) ?? [];
     openActionConfirm({
       action: "改首日任务时窗",
       detail: (
@@ -122,9 +235,14 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
         </>
       ),
       amplifies: true,
-      edit: { kind: "text", current: cur },
-      run: (reason, v) => {
-        if (!v) return;
+      businessForm: {
+        kind: "day-one-window",
+        currentActiveHours: hrs[0] ?? "24",
+        currentGraceHours: hrs[1] ?? "72",
+      },
+      run: (reason, _v, bv) => {
+        if (!bv) return;
+        const v = `${bv.activeHours}h 全额 / ${bv.graceHours}h 宽限`;
         setParam("H3.dayOne.windowMs", v, { action: "改首日任务时窗", reason });
         toast(`· 首日时窗已改为 ${v} · A 方案 · 仅新进窗生效 · 已过 B1 覆盖率核验`);
       },
@@ -134,6 +252,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
   /** 改首日三相奖励(总分 500/200/0)。 */
   const openTriRewardMc = () => {
     const cur = pget("H3.dayOne.triReward") ?? "500 / 200 / 0 NEX";
+    const nums = cur.match(/\d+/g) ?? [];
     openActionConfirm({
       action: "改首日三相奖励",
       detail: (
@@ -144,71 +263,224 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
         </>
       ),
       amplifies: true,
-      edit: { kind: "text", current: cur },
-      run: (reason, v) => {
-        if (!v) return;
+      businessForm: {
+        kind: "day-one-tri-reward",
+        currentActive: nums[0] ?? "500",
+        currentGrace: nums[1] ?? "200",
+        currentExpired: nums[2] ?? "0",
+      },
+      run: (reason, _v, bv) => {
+        if (!bv) return;
+        const v = `${bv.active} / ${bv.grace} / ${bv.expired} NEX`;
         setParam("H3.dayOne.triReward", v, { action: "改首日三相奖励", reason });
         toast(`· 首日三相奖励已改为 ${v} · 已过 B1 覆盖率核验`);
       },
     });
   };
 
-  /** 单首日任务奖励改。 */
-  const openDayOneRewardMc = (id: number, name: string, cur: string) => {
+  /** 首日单任务多字段编辑(名称 / 跳转路径 / 奖励 / 状态)。 */
+  const openDayOneTaskEditMc = (task: DayOneTask) => {
     openActionConfirm({
-      action: `改首日任务奖励 · ${name}`,
+      action: `编辑首日任务 · ${task.task}`,
       detail: (
         <>
-          <b>{name}</b> · 当前 {cur} · 跳转路径决定完成判定(服务器二次确认,谎报无效)。
-          <b>升奖励 = 放大 NEX 流出</b>,提交即过 B1 红线;改动只对新进窗用户生效。
+          <b>{task.task}</b> · 多字段编辑:名称 / 跳转路径 / 奖励 / 状态。
+          跳转路径决定完成判定(服务器二次确认,谎报无效);<b>升奖励 = 放大 NEX 流出</b>,提交即过 B1 红线;改动只对新进窗用户生效。
         </>
       ),
       amplifies: true,
-      edit: { kind: "text", current: cur },
-      run: (reason, v) => {
-        if (!v) return;
-        setParam(`H3.dayOne.${id}.reward`, v, { action: `改首日任务奖励 ${name}`, reason });
-        toast(`· ${name} 奖励已改为 ${v} · 已过 B1 覆盖率核验`);
+      businessForm: {
+        kind: "task-edit",
+        subject: task.task,
+        currentName: task.task,
+        currentPath: task.href,
+        currentReward: task.reward,
+        currentStatus: task.status,
+        currentCompletionType: task.completionType ?? "visit",
+        currentCompletionEvent: task.completionEvent ?? "",
+      },
+      run: (reason, _v /* 未用:task-edit 走 businessForm,不消费 edit 的 newValue */, bv) => {
+        if (!bv) return;
+        const next = effectiveDayOneTasks().map((t) =>
+          t.id === task.id ? { ...t, task: bv.name, href: bv.path, reward: bv.reward, status: bv.status, completionType: bv.completionType, completionEvent: bv.completionEvent } : t,
+        );
+        writeDayOneTasks(next, `编辑首日任务 ${task.task}`, reason);
+        toast(`· 首日任务「${bv.name}」已更新 · 已过 B1 覆盖率核验`);
       },
     });
   };
 
-  /** 周一档单条改。 */
-  const openWeeklyT1Mc = (idx: number, cond: string, cur: string) => {
+  /** 新增首日任务(多字段表单)。 */
+  const openAddDayOneTask = () => {
     openActionConfirm({
-      action: `改周一档奖励 · ${cond}`,
+      action: "新增首日任务",
       detail: (
         <>
-          <b>{cond}</b> · 当前 {cur} NEX · 一档按从上到下优先级命中第一条派发。
-          <b>升奖励 = 放大 NEX 流出</b>,过 B1 红线;同周锁定、下周生效。
+          新增一条首日新人任务:名称 / 跳转路径 / 奖励 / 状态。<b>新增即放大 NEX 流出</b>,提交即过 B1 红线;
+          <b>接真后台前,新任务需有对应前端页面 + 完成判定才会派发</b>。
         </>
       ),
       amplifies: true,
-      edit: { kind: "text", current: cur },
-      run: (reason, v) => {
-        if (!v) return;
-        setParam(`H3.weekly.t1.${idx}`, v, { action: `改周一档 ${cond}`, reason });
-        toast(`· 周一档 ${cond} 已改为 ${v} · 下周生效`);
+      businessForm: {
+        kind: "task-edit",
+        subject: "新任务",
+        currentName: "",
+        currentPath: "",
+        currentReward: "",
+        currentStatus: "active",
+        currentCompletionType: "visit",
+        currentCompletionEvent: "",
+      },
+      run: (reason, _v /* 未用:task-edit 走 businessForm */, bv) => {
+        if (!bv) return;
+        const newTask: DayOneTask = { id: `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, task: bv.name, href: bv.path, reward: bv.reward, status: bv.status, completionType: bv.completionType, completionEvent: bv.completionEvent };
+        writeDayOneTasks([...effectiveDayOneTasks(), newTask], `新增首日任务 ${bv.name}`, reason);
+        toast(`· 首日任务「${bv.name}」已新增 · 已过 B1 覆盖率核验`);
       },
     });
   };
 
-  /** 周二档单条改。 */
-  const openWeeklyT2Mc = (idx: number, cond: string, cur: string) => {
+  /** 启用 / 停用首日任务(处置类 · 不挂 amplifies)。 */
+  const openToggleDayOneTask = (task: DayOneTask) => {
+    const next = task.status === "active" ? "paused" : "active";
+    const labelNow = next === "active" ? "启用" : "停用";
     openActionConfirm({
-      action: `改周二档奖励 · ${cond}`,
+      action: `${labelNow}首日任务 · ${task.task}`,
       detail: (
         <>
-          <b>{cond}</b> · 当前 {cur} NEX · 二档是完成池(每条独立派发)。
+          <b>{task.task}</b> · 当前 {task.status === "active" ? "生效中" : "已停用"} · {labelNow}动作:
+          {next === "paused" ? "停用后用户端不再展示此任务,已派发不回收;生效即时。" : "启用后用户端恢复展示。"}
+          {" "}操作确认留痕。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        const list = effectiveDayOneTasks().map((t) => (t.id === task.id ? { ...t, status: next } : t));
+        writeDayOneTasks(list, `${labelNow}首日任务 ${task.task}`, reason);
+        logAudit({ actor: "总管理员", action: `${labelNow}首日任务`, target: `H3.dayOne.${task.id}`, reason });
+        toast(`· ${task.task} 已${labelNow}`);
+      },
+    });
+  };
+
+  /** 删除首日任务(处置类 · 不挂 amplifies)。 */
+  const openDeleteDayOneTask = (task: DayOneTask) => {
+    openActionConfirm({
+      action: `删除首日任务 · ${task.task}`,
+      detail: (
+        <>
+          <b>{task.task}</b> · 从首日新人清单<b>永久移除</b>这条任务,已派发不回收;生效即时。
+          如只是临时下线,建议改用「停用」。操作确认留痕。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        const list = effectiveDayOneTasks().filter((t) => t.id !== task.id);
+        writeDayOneTasks(list, `删除首日任务 ${task.task}`, reason);
+        logAudit({ actor: "总管理员", action: "删除首日任务", target: `H3.dayOne.${task.id}`, reason });
+        toast(`· ${task.task} 已删除`);
+      },
+    });
+  };
+
+  const weeklyTierLabel = (tier: "t1" | "t2") => (tier === "t1" ? "周一档" : "周二档");
+
+  /** 每周单任务多字段编辑(条件/奖励/状态/完成判定)。 */
+  const openWeeklyEdit = (tier: "t1" | "t2", task: WeeklyTask) => {
+    openActionConfirm({
+      action: `编辑${weeklyTierLabel(tier)} · ${task.cond}`,
+      detail: (
+        <>
+          <b>{task.cond}</b> · {tier === "t1" ? "一档按优先级命中第一条派发" : "二档完成池每条独立派发"} · 多字段:条件 / 奖励 / 状态 / 完成判定。
           <b>升奖励 = 放大 NEX 流出</b>,过 B1 红线;同周锁定、下周生效。
         </>
       ),
       amplifies: true,
-      edit: { kind: "text", current: cur },
-      run: (reason, v) => {
-        if (!v) return;
-        setParam(`H3.weekly.t2.${idx}`, v, { action: `改周二档 ${cond}`, reason });
-        toast(`· 周二档 ${cond} 已改为 ${v} · 下周生效`);
+      businessForm: {
+        kind: "weekly-task-edit",
+        subject: `${weeklyTierLabel(tier)} · ${task.cond}`,
+        currentCond: task.cond,
+        currentReward: task.reward,
+        currentStatus: task.status,
+        currentCompletionType: task.completionType ?? "event",
+        currentCompletionEvent: task.completionEvent ?? "",
+      },
+      run: (reason, _v, bv) => {
+        if (!bv) return;
+        const next = effectiveWeekly(tier).map((t) =>
+          t.id === task.id ? { ...t, cond: bv.cond, reward: bv.reward, status: bv.status, completionType: bv.completionType, completionEvent: bv.completionEvent } : t,
+        );
+        writeWeekly(tier, next, `编辑${weeklyTierLabel(tier)} ${task.cond}`, reason);
+        toast(`· ${weeklyTierLabel(tier)}「${bv.cond}」已更新 · 已过 B1 覆盖率核验`);
+      },
+    });
+  };
+
+  /** 新增每周任务。 */
+  const openWeeklyAdd = (tier: "t1" | "t2") => {
+    openActionConfirm({
+      action: `新增${weeklyTierLabel(tier)}任务`,
+      detail: (
+        <>
+          新增一条{weeklyTierLabel(tier)}任务:条件 / 奖励 / 状态 / 完成判定。<b>新增即放大 NEX 流出</b>,过 B1 红线;下周生效。
+        </>
+      ),
+      amplifies: true,
+      businessForm: {
+        kind: "weekly-task-edit",
+        subject: `新${weeklyTierLabel(tier)}任务`,
+        currentCond: "",
+        currentReward: "",
+        currentStatus: "active",
+        currentCompletionType: "event",
+        currentCompletionEvent: "",
+      },
+      run: (reason, _v, bv) => {
+        if (!bv) return;
+        const newTask: WeeklyTask = { id: `${tier}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, cond: bv.cond, reward: bv.reward, status: bv.status, completionType: bv.completionType, completionEvent: bv.completionEvent };
+        writeWeekly(tier, [...effectiveWeekly(tier), newTask], `新增${weeklyTierLabel(tier)} ${bv.cond}`, reason);
+        toast(`· ${weeklyTierLabel(tier)}「${bv.cond}」已新增 · 已过 B1 覆盖率核验`);
+      },
+    });
+  };
+
+  /** 启用 / 停用每周任务(处置类)。 */
+  const openWeeklyToggle = (tier: "t1" | "t2", task: WeeklyTask) => {
+    const next = task.status === "active" ? "paused" : "active";
+    const labelNow = next === "active" ? "启用" : "停用";
+    openActionConfirm({
+      action: `${labelNow}${weeklyTierLabel(tier)} · ${task.cond}`,
+      detail: (
+        <>
+          <b>{task.cond}</b> · 当前 {task.status === "active" ? "生效中" : "已停用"} · {labelNow}:
+          {next === "paused" ? "本周起不派发此条,已派发不回收。" : "恢复派发。"}{" "}操作确认留痕。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        const list = effectiveWeekly(tier).map((t) => (t.id === task.id ? { ...t, status: next } : t));
+        writeWeekly(tier, list, `${labelNow}${weeklyTierLabel(tier)} ${task.cond}`, reason);
+        logAudit({ actor: "总管理员", action: `${labelNow}${weeklyTierLabel(tier)}`, target: `H3.weekly.${tier}.${task.id}`, reason });
+        toast(`· ${task.cond} 已${labelNow}`);
+      },
+    });
+  };
+
+  /** 删除每周任务(处置类)。 */
+  const openWeeklyDelete = (tier: "t1" | "t2", task: WeeklyTask) => {
+    openActionConfirm({
+      action: `删除${weeklyTierLabel(tier)} · ${task.cond}`,
+      detail: (
+        <>
+          <b>{task.cond}</b> · 从{weeklyTierLabel(tier)}<b>永久移除</b>,已派发不回收。临时下线建议改用「停用」。操作确认留痕。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        const list = effectiveWeekly(tier).filter((t) => t.id !== task.id);
+        writeWeekly(tier, list, `删除${weeklyTierLabel(tier)} ${task.cond}`, reason);
+        logAudit({ actor: "总管理员", action: `删除${weeklyTierLabel(tier)}`, target: `H3.weekly.${tier}.${task.id}`, reason });
+        toast(`· ${task.cond} 已删除`);
       },
     });
   };
@@ -256,23 +528,156 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
     });
   };
 
-  /** 月度主题奖励改。 */
-  const openMonthlyMc = (id: string, theme: string, cur: string) => {
+  /** 月度单主题多字段编辑(主题/账龄/奖励/子目标/状态)。 */
+  const openMonthlyEdit = (task: MonthlyTask) => {
     openActionConfirm({
-      action: `改月度挑战奖励 · ${theme}`,
+      action: `编辑月度挑战 · ${task.theme}`,
       detail: (
         <>
-          <b>{theme}</b> · 当前 {cur} · 3 个子目标全达成才可领,跨月清空重派。
-          <b>升奖励 = 放大 NEX 流出</b>,过 B1 红线;改动只对<b>本月新派</b>生效,
-          在途按派发时锁定值结算不追溯。
+          <b>{task.theme}</b> · 多字段:主题 / 账龄段 / 奖励 / 子目标 / 状态 · 3 子目标全达成才可领,跨月清空重派。
+          <b>升奖励 = 放大 NEX 流出</b>,过 B1 红线;改动只对<b>本月新派</b>生效。
         </>
       ),
       amplifies: true,
-      edit: { kind: "text", current: cur },
-      run: (reason, v) => {
-        if (!v) return;
-        setParam(`H3.monthly.${id}.reward`, v, { action: `改月度挑战奖励 ${theme}`, reason });
-        toast(`· 月度 ${theme} 奖励已改为 ${v} · 本月新派生效`);
+      businessForm: {
+        kind: "monthly-task-edit",
+        subject: task.theme,
+        currentTheme: task.theme,
+        currentAge: task.age,
+        currentReward: task.reward,
+        currentGoals: task.goals,
+        currentStatus: task.status,
+      },
+      run: (reason, _v, bv) => {
+        if (!bv) return;
+        const next = effectiveMonthly().map((m) =>
+          m.id === task.id ? { ...m, theme: bv.theme, age: bv.age, reward: bv.reward, goals: bv.goals, status: bv.status } : m,
+        );
+        writeMonthly(next, `编辑月度挑战 ${task.theme}`, reason);
+        toast(`· 月度「${bv.theme}」已更新 · 已过 B1 覆盖率核验`);
+      },
+    });
+  };
+
+  /** 新增月度挑战。 */
+  const openMonthlyAdd = () => {
+    openActionConfirm({
+      action: "新增月度挑战",
+      detail: (
+        <>
+          新增一个月度主题:主题 / 账龄段 / 奖励 / 子目标 / 状态。<b>新增即放大 NEX 流出</b>,过 B1 红线;本月新派生效。
+        </>
+      ),
+      amplifies: true,
+      businessForm: {
+        kind: "monthly-task-edit",
+        subject: "新月度主题",
+        currentTheme: "",
+        currentAge: "",
+        currentReward: "",
+        currentGoals: "",
+        currentStatus: "active",
+      },
+      run: (reason, _v, bv) => {
+        if (!bv) return;
+        const newTask: MonthlyTask = { id: `mc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, theme: bv.theme, age: bv.age, reward: bv.reward, goals: bv.goals, status: bv.status };
+        writeMonthly([...effectiveMonthly(), newTask], `新增月度挑战 ${bv.theme}`, reason);
+        toast(`· 月度「${bv.theme}」已新增 · 已过 B1 覆盖率核验`);
+      },
+    });
+  };
+
+  /** 启用 / 停用月度挑战(处置类)。 */
+  const openMonthlyToggle = (task: MonthlyTask) => {
+    const next = task.status === "active" ? "paused" : "active";
+    const labelNow = next === "active" ? "启用" : "停用";
+    openActionConfirm({
+      action: `${labelNow}月度挑战 · ${task.theme}`,
+      detail: (
+        <>
+          <b>{task.theme}</b> · 当前 {task.status === "active" ? "生效中" : "已停用"} · {labelNow}:
+          {next === "paused" ? "本月起不派发此主题,已派发不回收。" : "恢复派发。"}{" "}操作确认留痕。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        const list = effectiveMonthly().map((m) => (m.id === task.id ? { ...m, status: next } : m));
+        writeMonthly(list, `${labelNow}月度挑战 ${task.theme}`, reason);
+        logAudit({ actor: "总管理员", action: `${labelNow}月度挑战`, target: `H3.monthly.${task.id}`, reason });
+        toast(`· ${task.theme} 已${labelNow}`);
+      },
+    });
+  };
+
+  /** 删除月度挑战(处置类)。 */
+  const openMonthlyDelete = (task: MonthlyTask) => {
+    openActionConfirm({
+      action: `删除月度挑战 · ${task.theme}`,
+      detail: (
+        <>
+          <b>{task.theme}</b> · 从月度挑战<b>永久移除</b>,已派发不回收。临时下线建议改用「停用」。操作确认留痕。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        const list = effectiveMonthly().filter((m) => m.id !== task.id);
+        writeMonthly(list, `删除月度挑战 ${task.theme}`, reason);
+        logAudit({ actor: "总管理员", action: "删除月度挑战", target: `H3.monthly.${task.id}`, reason });
+        toast(`· ${task.theme} 已删除`);
+      },
+    });
+  };
+
+  /** 编辑本周转化卡(多字段:奖励/倍率/倒计时/目标/日产/状态)。 */
+  const openPromoBannerEdit = () => {
+    const pb = effectivePromoBanner();
+    openActionConfirm({
+      action: "编辑本周转化卡",
+      detail: (
+        <>
+          首页「激活设备领 NEX」促销卡 · 多字段:基础奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架。
+          最终奖励 = 基础 × 倍率;<b>升奖励 / 倍率 = 放大 NEX 流出</b>,过 B1 红线;文案归 I 域。
+        </>
+      ),
+      amplifies: true,
+      businessForm: {
+        kind: "promo-banner-edit",
+        currentBaseReward: pb.baseReward,
+        currentMultiplier: pb.multiplier,
+        currentCountdownDays: pb.countdownDays,
+        currentCountdownHours: pb.countdownHours,
+        currentTargetDevice: pb.targetDevice,
+        currentTargetDaily: pb.targetDaily,
+        currentStatus: pb.status,
+      },
+      run: (reason, _v, bv) => {
+        if (!bv) return;
+        const next: PromoBanner = { baseReward: bv.baseReward, multiplier: bv.multiplier, countdownDays: bv.countdownDays, countdownHours: bv.countdownHours, targetDevice: bv.targetDevice, targetDaily: bv.targetDaily, status: bv.status };
+        writePromoBanner(next, "编辑本周转化卡", reason);
+        const final = promoFinalReward(bv.baseReward, bv.multiplier) ?? 0;
+        toast(`· 本周转化卡已更新 · 最终奖励 ${final} NEX · 已过 B1 覆盖率核验`);
+      },
+    });
+  };
+
+  /** 上架 / 下架本周转化卡(处置类)。 */
+  const openPromoBannerToggle = () => {
+    const pb = effectivePromoBanner();
+    const next = pb.status === "active" ? "paused" : "active";
+    const labelNow = next === "active" ? "上架" : "下架";
+    openActionConfirm({
+      action: `${labelNow}本周转化卡`,
+      detail: (
+        <>
+          <b>本周转化卡</b> · 当前 {pb.status === "active" ? "上架中" : "已下架"} · {labelNow}:
+          {next === "paused" ? "下架后首页不再展示此促销卡。" : "上架后首页恢复展示。"}{" "}操作确认留痕。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        writePromoBanner({ ...effectivePromoBanner(), status: next }, `${labelNow}本周转化卡`, reason);
+        logAudit({ actor: "总管理员", action: `${labelNow}本周转化卡`, target: "H3.promoBanner.config", reason });
+        toast(`· 本周转化卡已${labelNow}`);
       },
     });
   };
@@ -481,27 +886,48 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
               <button className="l-btn sm mc" onClick={openTriRewardMc}>调整</button>
             </div>
 
-            {/* 6 任务清单(逐行 · 可调) */}
+            {/* 任务清单(逐行多字段编辑 + 启停 + 增删) */}
+            <div className="l-h" style={{ marginTop: 12, border: 0, paddingBottom: 0 }}>
+              <span className="ttl" style={{ fontSize: 13 }}>任务清单</span>
+              <span className="sub">· 多字段可编辑(名称/路径/奖励/状态)· 可增删 · 停用即用户端不展示</span>
+              <div className="r">
+                <button className="l-btn sm mc" onClick={openAddDayOneTask}>+ 新增任务</button>
+              </div>
+            </div>
             <div style={{ overflowX: "auto", marginTop: 8 }}>
-              <table className="l-tbl" style={{ minWidth: 460 }}>
+              <table className="l-tbl" style={{ minWidth: 680 }}>
                 <thead>
                   <tr>
                     <th>任务</th>
                     <th>跳转路径</th>
                     <th className="num">奖励</th>
+                    <th>状态</th>
+                    <th>完成判定</th>
                     <th style={{ textAlign: "right" }}>动作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {DAY_ONE_TASKS.map((t, i) => {
-                    const cur = dayOneReward(i, t.reward);
+                  {dayOneTasksView.map((t) => {
+                    const isActive = t.status === "active";
+                    const stLabel = isActive ? "生效中" : t.status === "paused" ? "已停用" : "已归档";
+                    const stTone = isActive ? "ok" : "dim";
+                    const dimColor = isActive ? undefined : "var(--ink-3)";
                     return (
-                      <tr key={t.task}>
-                        <td style={{ fontWeight: 600, color: "var(--ink)" }}>{t.task}</td>
+                      <tr key={t.id}>
+                        <td style={{ fontWeight: 600, color: isActive ? "var(--ink)" : "var(--ink-3)" }}>{t.task}</td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{t.href}</td>
-                        <td className="num mono" style={{ fontWeight: 700 }}>{cur}</td>
+                        <td className="num mono" style={{ fontWeight: 700, color: dimColor }}>{t.reward}</td>
+                        <td><span className={`bdg ${stTone}`}>{stLabel}</span></td>
+                        <td style={{ fontSize: 11.5 }}>
+                          <span style={{ color: isActive ? "var(--ink-2)" : "var(--ink-3)" }}>{COMP_LABEL[t.completionType ?? "visit"] ?? "访问路径"}</span>
+                          {t.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{t.completionEvent}</span> : null}
+                        </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openDayOneRewardMc(i, t.task, cur)}>调整</button>
+                          <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
+                            <button className="l-btn sm mc" onClick={() => openDayOneTaskEditMc(t)}>编辑</button>
+                            <button className="l-btn sm mc" aria-label={`${isActive ? "停用" : "启用"} ${t.task}`} onClick={() => openToggleDayOneTask(t)}>{isActive ? "停用" : "启用"}</button>
+                            <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除任务 · ${t.task}`} onClick={() => openDeleteDayOneTask(t)}>删除</button>
+                          </span>
                         </td>
                       </tr>
                     );
@@ -534,28 +960,43 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
             <span className="sub">· 按周键确定性派发 · 同周锁定 · 改动下周生效</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
-            {/* 一档 9 条 */}
-            <div style={{ fontSize: 12, fontWeight: 600, margin: "2px 0 6px", color: "var(--ink-2)" }}>
-              一档(9 条优先级派发 · 命中第一条)
+            {/* 一档(优先级派发 · 多字段可编辑 + 增删 + 启停) */}
+            <div className="l-h" style={{ marginTop: 2, border: 0, paddingBottom: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>一档(优先级派发 · 命中第一条)</span>
+              <div className="r">
+                <button className="l-btn sm mc" onClick={() => openWeeklyAdd("t1")}>+ 新增任务</button>
+              </div>
             </div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="l-tbl" style={{ minWidth: 360 }}>
+            <div style={{ overflowX: "auto", marginTop: 6 }}>
+              <table className="l-tbl" style={{ minWidth: 600 }}>
                 <thead>
                   <tr>
                     <th>条件(优先级自上而下)</th>
                     <th className="num">奖励 NEX</th>
+                    <th>状态</th>
+                    <th>完成判定</th>
                     <th style={{ textAlign: "right" }}>动作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {WEEKLY_T1.map((t, idx) => {
-                    const cur = weeklyT1(idx, t.reward);
+                  {weeklyT1View.map((t) => {
+                    const isActive = t.status === "active";
+                    const stLabel = isActive ? "生效中" : t.status === "paused" ? "已停用" : "已归档";
                     return (
-                      <tr key={t.cond}>
-                        <td style={{ fontWeight: 600, color: "var(--ink)" }}>{t.cond}</td>
-                        <td className="num mono" style={{ fontWeight: 700 }}>{cur}</td>
+                      <tr key={t.id}>
+                        <td style={{ fontWeight: 600, color: isActive ? "var(--ink)" : "var(--ink-3)" }}>{t.cond}</td>
+                        <td className="num mono" style={{ fontWeight: 700, color: isActive ? undefined : "var(--ink-3)" }}>{t.reward}</td>
+                        <td><span className={`bdg ${isActive ? "ok" : "dim"}`}>{stLabel}</span></td>
+                        <td style={{ fontSize: 11.5 }}>
+                          <span style={{ color: "var(--ink-2)" }}>{COMP_LABEL[t.completionType ?? "event"] ?? "业务事件"}</span>
+                          {t.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{t.completionEvent}</span> : null}
+                        </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openWeeklyT1Mc(idx, t.cond, cur)}>调整</button>
+                          <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
+                            <button className="l-btn sm mc" onClick={() => openWeeklyEdit("t1", t)}>编辑</button>
+                            <button className="l-btn sm mc" aria-label={`${isActive ? "停用" : "启用"} ${t.cond}`} onClick={() => openWeeklyToggle("t1", t)}>{isActive ? "停用" : "启用"}</button>
+                            <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除 ${t.cond}`} onClick={() => openWeeklyDelete("t1", t)}>删除</button>
+                          </span>
                         </td>
                       </tr>
                     );
@@ -564,28 +1005,43 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
               </table>
             </div>
 
-            {/* 二档 8 条 */}
-            <div style={{ fontSize: 12, fontWeight: 600, margin: "14px 0 6px", color: "var(--ink-2)" }}>
-              二档(8 条完成池 · 每条独立派发)
+            {/* 二档(完成池 · 多字段可编辑 + 增删 + 启停) */}
+            <div className="l-h" style={{ marginTop: 14, border: 0, paddingBottom: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-2)" }}>二档(完成池 · 每条独立派发)</span>
+              <div className="r">
+                <button className="l-btn sm mc" onClick={() => openWeeklyAdd("t2")}>+ 新增任务</button>
+              </div>
             </div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="l-tbl" style={{ minWidth: 360 }}>
+            <div style={{ overflowX: "auto", marginTop: 6 }}>
+              <table className="l-tbl" style={{ minWidth: 600 }}>
                 <thead>
                   <tr>
                     <th>任务</th>
                     <th className="num">奖励 NEX</th>
+                    <th>状态</th>
+                    <th>完成判定</th>
                     <th style={{ textAlign: "right" }}>动作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {WEEKLY_T2.map((t, idx) => {
-                    const cur = weeklyT2(idx, t.reward);
+                  {weeklyT2View.map((t) => {
+                    const isActive = t.status === "active";
+                    const stLabel = isActive ? "生效中" : t.status === "paused" ? "已停用" : "已归档";
                     return (
-                      <tr key={t.cond}>
-                        <td style={{ fontWeight: 600, color: "var(--ink)" }}>{t.cond}</td>
-                        <td className="num mono" style={{ fontWeight: 700 }}>{cur}</td>
+                      <tr key={t.id}>
+                        <td style={{ fontWeight: 600, color: isActive ? "var(--ink)" : "var(--ink-3)" }}>{t.cond}</td>
+                        <td className="num mono" style={{ fontWeight: 700, color: isActive ? undefined : "var(--ink-3)" }}>{t.reward}</td>
+                        <td><span className={`bdg ${isActive ? "ok" : "dim"}`}>{stLabel}</span></td>
+                        <td style={{ fontSize: 11.5 }}>
+                          <span style={{ color: "var(--ink-2)" }}>{COMP_LABEL[t.completionType ?? "event"] ?? "业务事件"}</span>
+                          {t.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{t.completionEvent}</span> : null}
+                        </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openWeeklyT2Mc(idx, t.cond, cur)}>调整</button>
+                          <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
+                            <button className="l-btn sm mc" onClick={() => openWeeklyEdit("t2", t)}>编辑</button>
+                            <button className="l-btn sm mc" aria-label={`${isActive ? "停用" : "启用"} ${t.cond}`} onClick={() => openWeeklyToggle("t2", t)}>{isActive ? "停用" : "启用"}</button>
+                            <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除 ${t.cond}`} onClick={() => openWeeklyDelete("t2", t)}>删除</button>
+                          </span>
                         </td>
                       </tr>
                     );
@@ -640,7 +1096,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
               <tr><th>任务</th><th>task_key</th><th>服务端完成事件</th><th>下游业务事件</th><th>B3 漏斗</th><th>仅留存</th><th>Day7 贡献</th><th>L 域 BI 表.字段</th><th className="num">24h 样本</th><th className="num">异常率</th></tr>
             </thead>
             <tbody>
-              {DAY_ONE_TASKS.map((t, i) => { const c = questContract(t, i); return (
+              {dayOneTasksView.map((t, i) => { const c = questContract(t, i); return (
                 <tr key={t.task}>
                   <td style={{ fontWeight: 600, color: "var(--ink)" }}>{t.task}</td>
                   <td className="mono" style={{ fontSize: 11 }}>{c.taskKey}</td>
@@ -667,31 +1123,41 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
         {/* (d) Monthly */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">月度挑战(5 主题按账龄派发)</span>
-            <span className="sub">· 每主题 3 个子目标全达成才可领 · 跨月清空重派</span>
+            <span className="ttl">月度挑战(按账龄派发)</span>
+            <span className="sub">· 每主题 3 个子目标全达成才可领 · 跨月清空重派 · 可增删 / 启停</span>
+            <div className="r">
+              <button className="l-btn sm mc" onClick={openMonthlyAdd}>+ 新增主题</button>
+            </div>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl" style={{ minWidth: 560 }}>
+            <table className="l-tbl" style={{ minWidth: 680 }}>
               <thead>
                 <tr>
                   <th>主题</th>
                   <th>账龄段</th>
-                  <th className="num">奖励</th>
+                  <th className="num">奖励 NEX</th>
                   <th>子目标</th>
+                  <th>状态</th>
                   <th style={{ textAlign: "right" }}>动作</th>
                 </tr>
               </thead>
               <tbody>
-                {MONTHLY_MISSIONS.map((m) => {
-                  const cur = monthlyReward(m.id, m.reward);
+                {monthlyView.map((m) => {
+                  const isActive = m.status === "active";
+                  const stLabel = isActive ? "生效中" : m.status === "paused" ? "已停用" : "已归档";
                   return (
                     <tr key={m.id}>
-                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>{m.theme}</td>
-                      <td className="mono" style={{ fontSize: 11.5 }}>{m.age}</td>
-                      <td className="num mono" style={{ fontWeight: 700 }}>{cur} NEX</td>
+                      <td style={{ fontWeight: 600, color: isActive ? "var(--ink)" : "var(--ink-3)" }}>{m.theme}</td>
+                      <td className="mono" style={{ fontSize: 11.5, color: isActive ? "var(--ink-3)" : "var(--ink-4)" }}>{m.age}</td>
+                      <td className="num mono" style={{ fontWeight: 700, color: isActive ? undefined : "var(--ink-3)" }}>{m.reward}</td>
                       <td style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{m.goals}</td>
+                      <td><span className={`bdg ${isActive ? "ok" : "dim"}`}>{stLabel}</span></td>
                       <td style={{ textAlign: "right" }}>
-                        <button className="l-btn sm mc" onClick={() => openMonthlyMc(m.id, m.theme, cur)}>编辑</button>
+                        <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
+                          <button className="l-btn sm mc" onClick={() => openMonthlyEdit(m)}>编辑</button>
+                          <button className="l-btn sm mc" aria-label={`${isActive ? "停用" : "启用"} ${m.theme}`} onClick={() => openMonthlyToggle(m)}>{isActive ? "停用" : "启用"}</button>
+                          <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除 ${m.theme}`} onClick={() => openMonthlyDelete(m)}>删除</button>
+                        </span>
                       </td>
                     </tr>
                   );
@@ -739,6 +1205,43 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
           </div>
         </section>
       </div>
+
+      {/* (f) 本周转化卡(首页促销 banner · G1 补口)*/}
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">本周转化卡(首页促销 banner)</span>
+          <span className="sub">· 首页「激活设备领 NEX」促销卡 · 设备 upsell · 单实例配置(非任务清单)</span>
+          <div className="r">
+            <span className={`bdg ${promoBanner.status === "active" ? "ok" : "dim"}`}>{promoBanner.status === "active" ? "上架中" : "已下架"}</span>
+          </div>
+        </div>
+        <div className="l-b" style={{ paddingTop: 4 }}>
+          <div className="p-row">
+            <span className="k">
+              基础奖励 × 倍率 = 最终奖励
+              <small>对应前端 conversion-banner.vue 的 baseReward × promoMult = finalReward(800×1.5=1200)。</small>
+            </span>
+            <span className="v">{promoBanner.baseReward} × {promoBanner.multiplier} = {promoFinalReward(promoBanner.baseReward, promoBanner.multiplier) ?? "—"} NEX</span>
+            <button className="l-btn sm mc" onClick={openPromoBannerEdit}>调整</button>
+          </div>
+          <div className="p-row">
+            <span className="k">倒计时窗口</span>
+            <span className="v">{promoBanner.countdownDays}d {promoBanner.countdownHours}h</span>
+          </div>
+          <div className="p-row">
+            <span className="k">目标设备 / 日产展示</span>
+            <span className="v">{promoBanner.targetDevice} · ${promoBanner.targetDaily}/d</span>
+          </div>
+          <div className="p-row">
+            <span className="k">首页上下架</span>
+            <span className="v">{promoBanner.status === "active" ? "上架中" : "已下架"}</span>
+            <button className="l-btn sm mc" onClick={openPromoBannerToggle}>{promoBanner.status === "active" ? "下架" : "上架"}</button>
+          </div>
+          <div className="htint" style={{ marginTop: 10, fontSize: 12 }}>
+            <b>本周转化卡</b> = 首页一张设备 upsell 促销 banner(激活 {promoBanner.targetDevice} 领最终奖励),<b>不是任务清单</b>。最终奖励 = 基础 × 倍率;升奖励 / 倍率 = 放大 NEX 流出过 B1 红线。文案(eyebrow / CTA)归 I 域,本块只配奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架。真写键 <span className="mono">H3.promoBanner.config</span>。
+          </div>
+        </div>
+      </section>
 
       </>}
 
@@ -1021,19 +1524,20 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
           {
             label: "首日任务(Day-One)",
             kind: "reference-catalog",
-            maxRows: 6,
-            reason: "首日任务固定六项,需要同屏校验跳转路径和奖励",
+            maxRows: 20,
+            reason: "首日任务运营可增删,常态约六项,上限 20 同屏校验跳转路径/奖励/状态",
           },
+
           {
             label: "每周任务(两档 + 周冠军)",
             kind: "reference-catalog",
-            maxRows: 9,
-            reason: "每周任务为两档固定规则目录,同屏对比优先级与奖励",
+            maxRows: 20,
+            reason: "每周两档运营可增删,常态一档9/二档8,上限 20 同屏对比优先级/奖励/状态",
           },
           {
             label: "月度挑战(5 主题按账龄派发)",
-            maxRows: 5,
-            reason: "月度挑战固定五主题,按账龄派发后不产生无限列表",
+            maxRows: 20,
+            reason: "月度挑战运营可增删,常态约五主题,上限 20 同屏校验账龄/奖励/状态",
           },
         ]}
       />

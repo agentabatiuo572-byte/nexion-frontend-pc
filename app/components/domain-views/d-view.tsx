@@ -29,11 +29,11 @@ const FOLD: Record<string, string> = { D1: "D1", D2: "D2", D3: "D3", D4: "D4", D
 
 // 每页两枚签名 chip(设计稿 f-bar):f-ro = server-canonical 不变量,f-live = 节奏/SLA(K 域同款先例)。
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  D1: ["入账以服务器处理回调为准 · 客户端记账无效", "对账实时比对"],
-  D2: ["状态只能服务器推进 · 客户端只能看", "到账承诺 48h · 审核 ≤ 2 工作日"],
-  D3: ["储备的底账在这里 · 覆盖率由双账本(B1)裁决", "日批对账 UTC 00:00"],
-  D4: ["服务器是唯一账本 · 客户端推的账一律不认", "每笔资金动作必落账"],
-  D5: ["节奏类参数归 H1 派发 · 这里只是生效面", `当前 ${PHASE.current} · 月 ${PHASE.month}`],
+  D1: ["到账以服务器处理完回调为准 · 客户端记的账不算", "对账实时比对"],
+  D2: ["状态只能服务器推进 · 客户端只能看", "到账承诺 48 小时 · 审核 ≤ 2 个工作日"],
+  D3: ["储备的底账在这里 · 覆盖率由总账(B1)裁定", "每天 UTC 00:00 批量对账"],
+  D4: ["服务器是唯一账本 · 客户端报的账一律不认", "每笔资金动作必落账"],
+  D5: ["节奏类参数由 H1 统一派发 · 这页只是生效的地方", `当前 ${PHASE.current} · 月 ${PHASE.month}`],
 };
 
 export function DDomainView({ meta }: { meta: DomainViewMeta }) {

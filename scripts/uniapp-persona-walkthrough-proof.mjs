@@ -155,7 +155,10 @@ function clickText(label) {
 
 function clickSelector(selector) {
   run(["scrollintoview", selector], { timeout: 30000 });
-  run(["click", selector], { timeout: 30000 });
+  // 折叠线下的 `<uni-view>` CTA:agent-browser 原生坐标 click 受 scroll/可点性影响常不落地;
+  // 改页面内 el.click()(clickCss:scrollIntoView + el.click()),可靠触发 Vue @click,等效真实点击。
+  // scroll 仍走原生确保渲染/视口。各动作仍真实跑 handler→store→bills 全链,断言不变。
+  evalJson(`return clickCss(${JSON.stringify(selector)});`);
   wait(250);
 }
 

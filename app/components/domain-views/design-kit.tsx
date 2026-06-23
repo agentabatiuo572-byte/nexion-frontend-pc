@@ -6,7 +6,7 @@
  * 适配:Modal/Drawer 补 ESC+聚焦+点遮罩关闭(a11y 铁律);OperationConfirmModal 负责高敏操作确认 + 理由留痕;
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
-import { isValidElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { TREASURY } from "@/lib/mock/admin/design-data";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -507,7 +507,14 @@ export type BusinessFormSpec =
   | { kind: "course-authoring"; rewardMin?: number; rewardMax?: number; categories?: string[]; durations?: string[]; publishStates?: string[] }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "version-authoring"; version?: string; jurisdiction?: string; zh?: string; en?: string; chapters?: string[]; languageScopes?: string[]; effectiveDate?: string; requiresReack?: boolean }
-  | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean; rollbackRequired?: boolean };
+  | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean; rollbackRequired?: boolean }
+  | { kind: "task-edit"; subject?: string; currentName?: string; currentPath?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
+  | { kind: "day-one-window"; currentActiveHours?: string; currentGraceHours?: string }
+  | { kind: "day-one-tri-reward"; currentActive?: string; currentGrace?: string; currentExpired?: string }
+  | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
+  | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
+  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
+  | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] };
 
 type BriefRow = { label: string; text: string };
 
@@ -596,28 +603,43 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
 }
 
 export function OperatorBriefBlock({ action, detail, amplifies, hasEdit }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const detailId = useId();
   const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit);
   const detailText = compactText(plainText(detail));
   return (
     <div className="tint brand" style={{ marginBottom: 16, border: 0 }}>
-      <div style={{ fontWeight: 600, marginBottom: 10, color: "var(--ink)" }}>执行摘要</div>
-      <div style={{ display: "grid", gap: 8 }}>
-        {brief.map((row) => (
-          <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
-            <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{row.label}</span>
-            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>
-              <AutoGloss>{row.text}</AutoGloss>
-            </span>
-          </div>
-        ))}
-        {detailText && (
-          <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
-            <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>业务规则</span>
-            <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.7 }}>
-              <AutoGloss>{detail}</AutoGloss>
-            </span>
-          </div>
-        )}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={detailId}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "transparent", border: 0, padding: 0, cursor: "pointer", color: "var(--ink)", fontWeight: 600, fontSize: 13 }}
+      >
+        <span>执行摘要</span>
+        <span className="tiny" style={{ color: "var(--brand)", fontWeight: 500 }}>
+          {open ? "收起 " : "查看详情 "}<span aria-hidden="true">{open ? "▲" : "▼"}</span>
+        </span>
+      </button>
+      <div id={detailId} hidden={!open}>
+        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+          {brief.map((row) => (
+            <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
+              <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{row.label}</span>
+              <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.65 }}>
+                <AutoGloss>{row.text}</AutoGloss>
+              </span>
+            </div>
+          ))}
+          {detailText && (
+            <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 10, alignItems: "start" }}>
+              <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>业务规则</span>
+              <span className="tiny" style={{ color: "var(--ink-2)", lineHeight: 1.7 }}>
+                <AutoGloss>{detail}</AutoGloss>
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -729,6 +751,44 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (spec.kind === "export-wizard") {
     return { exportType: spec.exportTypes?.[0] ?? "账单 CSV", timeRange: "", fields: "", piiLevel: spec.piiLevels?.[0] ?? "无 PII", maskPolicy: spec.maskPolicies?.[0] ?? "默认脱敏", recipient: "", ticket: "" };
   }
+  if (spec.kind === "task-edit") {
+    return { name: spec.currentName ?? "", path: spec.currentPath ?? "", reward: spec.currentReward ?? "", status: spec.currentStatus ?? "active", completionType: spec.currentCompletionType ?? "visit", completionEvent: spec.currentCompletionEvent ?? "" };
+  }
+  if (spec.kind === "day-one-window") {
+    return { activeHours: spec.currentActiveHours ?? "24", graceHours: spec.currentGraceHours ?? "72" };
+  }
+  if (spec.kind === "day-one-tri-reward") {
+    return { active: spec.currentActive ?? "500", grace: spec.currentGrace ?? "200", expired: spec.currentExpired ?? "0" };
+  }
+  if (spec.kind === "weekly-task-edit") {
+    return { cond: spec.currentCond ?? "", reward: spec.currentReward ?? "", status: spec.currentStatus ?? "active", completionType: spec.currentCompletionType ?? "event", completionEvent: spec.currentCompletionEvent ?? "" };
+  }
+  if (spec.kind === "monthly-task-edit") {
+    return { theme: spec.currentTheme ?? "", age: spec.currentAge ?? "", reward: spec.currentReward ?? "", goals: spec.currentGoals ?? "", status: spec.currentStatus ?? "active" };
+  }
+  if (spec.kind === "promo-banner-edit") {
+    return { baseReward: spec.currentBaseReward ?? "800", multiplier: spec.currentMultiplier ?? "1.5", countdownDays: spec.currentCountdownDays ?? "4", countdownHours: spec.currentCountdownHours ?? "12", targetDevice: spec.currentTargetDevice ?? "", targetDaily: spec.currentTargetDaily ?? "", status: spec.currentStatus ?? "active" };
+  }
+  if (spec.kind === "voucher-config") {
+    return {
+      name: spec.currentName ?? "",
+      type: spec.currentType ?? "fixed",
+      amountUSD: spec.currentAmountUSD ?? "",
+      percent: spec.currentPercent ?? "",
+      minPurchaseUSD: spec.currentMinPurchaseUSD ?? "",
+      maxDiscountUSD: spec.currentMaxDiscountUSD ?? "",
+      applicableSkus: spec.currentApplicableSkus ?? "",
+      claimSurfaces: spec.currentClaimSurfaces ?? "",
+      audience: spec.currentAudience ?? "all",
+      status: spec.currentStatus ?? "active",
+      startDate: spec.currentStartDate ?? "",
+      endDate: spec.currentEndDate ?? "",
+      popupEnabled: spec.currentPopupEnabled ?? "true",
+      stackWithTrial: spec.currentStackWithTrial ?? "false",
+      stackWithOthers: spec.currentStackWithOthers ?? "false",
+      splittable: spec.currentSplittable ?? "false",
+    };
+  }
   return { rollback: "", ack: "false" };
 }
 
@@ -810,6 +870,68 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     ["name", "scene", "owner", "sla", "actionSeq", "rollback"].forEach((k) => needs(k, k));
   } else if (spec.kind === "export-wizard") {
     ["exportType", "timeRange", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
+  } else if (spec.kind === "task-edit") {
+    needs("name", "任务名称");
+    needs("path", "跳转路径");
+    needs("reward", "奖励");
+    needs("status", "状态");
+    needs("completionType", "完成判定方式");
+    if (state.reward && !/\d/.test(state.reward)) missing.push("奖励需含数字");
+    if (state.completionType === "event" && !state.completionEvent?.trim()) missing.push("业务事件名(完成判定=业务事件 时必填)");
+  } else if (spec.kind === "day-one-window") {
+    needs("activeHours", "满额窗(小时)");
+    needs("graceHours", "宽限窗(小时)");
+    const a = Number(state.activeHours), g = Number(state.graceHours);
+    if (!Number.isFinite(a) || a <= 0) missing.push("满额窗须为正数");
+    else if (!Number.isFinite(g) || g < a) missing.push("宽限窗须 ≥ 满额窗");
+  } else if (spec.kind === "day-one-tri-reward") {
+    needs("active", "满额奖励");
+    needs("grace", "宽限奖励");
+    needs("expired", "过期奖励");
+    const a = Number(state.active), g = Number(state.grace), e = Number(state.expired);
+    if (![a, g, e].every((n) => Number.isFinite(n) && n >= 0)) missing.push("三档须为非负数");
+    else if (a < g || g < e) missing.push("须满额 ≥ 宽限 ≥ 过期");
+  } else if (spec.kind === "weekly-task-edit") {
+    needs("cond", "条件/任务");
+    needs("reward", "奖励");
+    needs("status", "状态");
+    needs("completionType", "完成判定方式");
+    if (state.reward && !/\d/.test(state.reward)) missing.push("奖励需含数字");
+    if (state.completionType === "event" && !state.completionEvent?.trim()) missing.push("业务事件名(完成判定=业务事件 时必填)");
+  } else if (spec.kind === "monthly-task-edit") {
+    needs("theme", "主题");
+    needs("age", "账龄段");
+    needs("reward", "奖励");
+    needs("goals", "子目标");
+    needs("status", "状态");
+    if (state.reward && !/\d/.test(state.reward)) missing.push("奖励需含数字");
+  } else if (spec.kind === "promo-banner-edit") {
+    needs("baseReward", "基础奖励");
+    needs("multiplier", "倍率");
+    needs("countdownDays", "倒计时天");
+    needs("countdownHours", "倒计时时");
+    needs("targetDevice", "目标设备");
+    needs("targetDaily", "日产");
+    needs("status", "状态");
+    ["baseReward", "multiplier", "countdownDays", "countdownHours"].forEach((k) => {
+      const v = state[k];
+      if (v && (!Number.isFinite(Number(v)) || Number(v) < 0)) missing.push(`${k} 须为非负数字`);
+    });
+  } else if (spec.kind === "voucher-config") {
+    needs("name", "名称");
+    needs("type", "类型");
+    needs("audience", "受众");
+    needs("status", "状态");
+    if (state.type === "fixed") {
+      const a = Number(state.amountUSD);
+      if (!Number.isFinite(a) || a <= 0) missing.push("满减面值(正数)");
+    } else if (state.type === "percent") {
+      const p = Number(state.percent);
+      if (!Number.isFinite(p) || p <= 0 || p >= 100) missing.push("折扣率 1-99");
+    }
+    const surfs = (state.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (surfs.length === 0) missing.push("领取入口页面(至少一个)");
+    else if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
   }
   return missing;
 }
@@ -827,6 +949,16 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "balance-adjust") return state.amount;
   if (spec.kind === "sop-authoring") return state.name;
   if (spec.kind === "export-wizard") return state.exportType;
+  if (spec.kind === "task-edit") return `${state.name}(${state.reward}${state.status && state.status !== "active" ? " · " + state.status : ""} · ${state.completionType ?? "visit"})`;
+  if (spec.kind === "day-one-window") return `${state.activeHours}h / ${state.graceHours}h`;
+  if (spec.kind === "day-one-tri-reward") return `${state.active}/${state.grace}/${state.expired}`;
+  if (spec.kind === "weekly-task-edit") return state.cond && state.reward ? `${state.cond}(${state.reward})` : undefined;
+  if (spec.kind === "monthly-task-edit") return state.theme && state.reward ? `${state.theme}(${state.reward})` : undefined;
+  if (spec.kind === "voucher-config") return state.name || undefined;
+  if (spec.kind === "promo-banner-edit") {
+    const f = Number(state.baseReward) * Number(state.multiplier);
+    return Number.isFinite(f) ? `${Math.round(f)} NEX(${state.baseReward}×${state.multiplier})` : undefined;
+  }
   return undefined;
 }
 
@@ -844,14 +976,61 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
       <input className="fld" type={type} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const select = (key: string, label: string, options: string[], proof?: string) => (
+  const select = (key: string, label: string, options: string[], proof?: string, labels?: Record<string, string>) => (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
       <select className="fld" data-proof={proof} value={value[key] ?? options[0] ?? ""} onChange={(e) => set(key, e.target.value)}>
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        {options.map((o) => <option key={o} value={o}>{labels?.[o] ?? o}</option>)}
       </select>
     </label>
   );
+  // Multi-select chip group — stores a comma-joined string in BusinessFormValue
+  // (Record<string,string>-compatible). Inline-styled with V5 tokens so it renders
+  // regardless of modal scope/portal. Operators TAP options instead of typing
+  // (less input, no typos — 多视角预置设计铁律).
+  const multiSelect = (key: string, label: string, options: string[], proof?: string, labels?: Record<string, string>) => {
+    const sel = (value[key] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const toggle = (o: string) => {
+      const next = sel.includes(o) ? sel.filter((x) => x !== o) : [...sel, o];
+      set(key, next.join(","));
+    };
+    return (
+      <div className="field" style={{ marginBottom: 0 }}>
+        <span>{label}</span>
+        <div data-proof={proof} style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+          {options.length === 0 ? (
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>无可选项(先在 E1 上架 SKU)</span>
+          ) : (
+            options.map((o) => {
+              const on = sel.includes(o);
+              return (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => toggle(o)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontSize: 12,
+                    fontWeight: on ? 600 : 500,
+                    padding: "4px 11px",
+                    borderRadius: 999,
+                    cursor: "pointer",
+                    background: on ? "var(--brand)" : "var(--surface-3)",
+                    color: on ? "var(--v5-on-brand)" : "var(--ink-2)",
+                    border: `1px solid ${on ? "var(--brand)" : "var(--border)"}`,
+                  }}
+                >
+                  {on ? "✓ " : ""}{labels?.[o] ?? o}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
 
   if (spec.kind === "role-select") {
     return (
@@ -1049,6 +1228,161 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           <input data-proof="identity-ack" type="checkbox" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
           我已通过上述渠道核实本人身份,确认这不是社工冒名请求
         </label>
+      </div>
+    );
+  }
+
+  if (spec.kind === "task-edit") {
+    return (
+      <div className="field" data-business-form="task-edit">
+        <label>业务表单 · 任务编辑{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("name", "任务名称 name", "如 逛收益页")}
+          {input("path", "跳转路径 path", "如 /earn")}
+          {input("reward", "奖励 reward", "如 50 NEX(可双币:200 NEX + $1)")}
+          {select("status", "状态 status", spec.statusOptions ?? ["active", "paused", "archived"], "task-edit-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
+          {select("completionType", "完成判定方式 completion", spec.completionTypeOptions ?? ["visit", "event", "manual"], "task-edit-completion", { visit: "访问路径自动 visit", event: "业务事件触发 event", manual: "手动核验 manual" })}
+          {input("completionEvent", "完成触发条件 / 事件", "visit 可空;event 填 order.paid;manual 填核验说明")}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          完成判定:<b>访问路径自动</b> = 用户进入「跳转路径」即判完成(浏览类);<b>业务事件触发</b> = server 监听指定事件(如 order.paid / wallet.deposited)才算完成(转化类,谎报无效);<b>手动核验</b> = 运营人工确认。
+          升奖励 = 放大 NEX 流出,过 B1 红线;状态 paused = 用户端不再展示,已派发不回收。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "voucher-config") {
+    return (
+      <div className="field" data-business-form="voucher-config">
+        <label>业务表单 · 代金券配置{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("name", "名称 name", "如 新人专享券")}
+          {select("type", "类型 type", ["fixed", "percent"], "voucher-type", { fixed: "满减 fixed", percent: "折扣 percent" })}
+        </div>
+        <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {input("amountUSD", "满减面值 amount(USD)", "type=fixed 填;如 50", "number")}
+          {input("percent", "折扣率 percent(%)", "type=percent 填;如 8", "number")}
+        </div>
+        <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {input("minPurchaseUSD", "满减门槛 min(USD)", "满 X 可用;0=无门槛", "number")}
+          {input("maxDiscountUSD", "折扣封顶 cap(USD)", "0=不封顶", "number")}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {multiSelect("applicableSkus", "适用 SKU(点选;不选=全设备)", spec.applicableSkuOptions ?? [], "voucher-skus", spec.applicableSkuLabels)}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {multiSelect("claimSurfaces", "领取入口页面(点选)", ["home", "store", "me", "earn"], "voucher-surfaces", { home: "首页", store: "商城", me: "我的", earn: "收益" })}
+        </div>
+        <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {select("audience", "受众 audience", ["new", "all"], "voucher-audience", { new: "新人 new", all: "全部 all" })}
+          {select("status", "状态 status", ["active", "paused"], "voucher-status", { active: "投放中 active", paused: "已暂停 paused" })}
+        </div>
+        <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {input("startDate", "生效起 start", "留空=即时", "date")}
+          {input("endDate", "有效止 end", "留空=长期有效", "date")}
+        </div>
+        <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {select("popupEnabled", "首页弹窗 popup", ["true", "false"], "voucher-popup", { true: "参与弹窗 true", false: "不弹窗 false" })}
+          {select("splittable", "可拆分 splittable", ["false", "true"], "voucher-splittable", { false: "不可拆分 false", true: "可拆分 true" })}
+        </div>
+        <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+          {select("stackWithTrial", "可叠加试用收益 stackWithTrial", ["false", "true"], "voucher-stack-trial", { false: "不可叠加 false", true: "可叠加 true" })}
+          {select("stackWithOthers", "可叠加其它优惠 stackWithOthers", ["false", "true"], "voucher-stack-others", { false: "不可叠加 false", true: "可叠加 true" })}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          <b>满减</b> = 满「门槛」减「面值」;<b>折扣</b> = 百分比折扣,封顶可选。适用 SKU 不选 = 全设备(领券跳商城),单选 = 跳该 SKU 详情页。领取入口 = 关闭弹窗后展示领券 banner 的前端页面。<b>叠加策略</b>:默认不与试用收益 / 其它优惠叠加(二选一取最优)。<b>不可提现</b>(固有性质:折扣只在结算抵扣价格、永不入可提现余额)。代金券是促销折扣、非 NEX 负债,不挂 B1 红线。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "day-one-window") {
+    return (
+      <div className="field" data-business-form="day-one-window">
+        <label>业务表单 · 首日时窗</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("activeHours", "满额窗 active(小时)", "24", "number")}
+          {input("graceHours", "宽限窗 grace(小时)", "72", "number")}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          满额窗内 6 项完成领满额(三相 active 档);超满额窗、宽限窗内完成领宽限档;超宽限窗过期(0)。<b>宽限窗须 ≥ 满额窗</b>。改后只对新进窗用户生效(A 方案快照不追溯);放宽窗 = 放大流出走 B1 红线核验。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "day-one-tri-reward") {
+    return (
+      <div className="field" data-business-form="day-one-tri-reward">
+        <label>业务表单 · 首日三相奖励</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("active", "满额 active(NEX)", "500", "number")}
+          {input("grace", "宽限 grace(NEX)", "200", "number")}
+          {input("expired", "过期 expired(NEX)", "0", "number")}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          满额(active 窗内 6 项完成)/ 宽限(grace 窗内)/ 过期(超窗,通常 0)三档,<b>须满额 ≥ 宽限 ≥ 过期</b>。升任一档 = 放大 NEX 流出,提交即过 B1 备付金红线。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "weekly-task-edit") {
+    return (
+      <div className="field" data-business-form="weekly-task-edit">
+        <label>业务表单 · 每周任务编辑{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("cond", "条件 / 任务 cond", "如 USDT 长期质押")}
+          {input("reward", "奖励 reward", "如 3,000(可双币:200 + $2)")}
+          {select("status", "状态 status", spec.statusOptions ?? ["active", "paused", "archived"], "weekly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
+          {select("completionType", "完成判定方式 completion", spec.completionTypeOptions ?? ["visit", "event", "manual"], "weekly-task-completion", { visit: "访问路径自动 visit", event: "业务事件触发 event", manual: "手动核验 manual" })}
+          {input("completionEvent", "完成触发条件 / 事件", "如 stake.locked / referral.sent")}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          一档按优先级命中第一条派发、二档完成池每条独立派发;完成判定多为业务事件(行为归因,谎报无效)。升奖励 = 放大 NEX 流出过 B1 红线;同周锁定、下周生效;状态 paused = 该条本周起不派发。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "monthly-task-edit") {
+    return (
+      <div className="field" data-business-form="monthly-task-edit">
+        <label>业务表单 · 月度挑战编辑{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("theme", "主题 theme", "如 地基建设者")}
+          {input("age", "账龄段 age", "如 0–2 月")}
+          {input("reward", "奖励 reward", "如 1,500 NEX")}
+          {select("status", "状态 status", spec.statusOptions ?? ["active", "paused", "archived"], "monthly-task-status", { active: "生效中 active", paused: "已停用 paused", archived: "已归档 archived" })}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          {textArea("goals", "子目标 goals(3 个子目标全达成才可领)", "如 累计赚 200 · 绑卡 · 邀 1 人", 2)}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          按账龄段派发,3 个子目标全达成才可领,跨月清空重派;升奖励 = 放大 NEX 流出过 B1 红线;改动只对本月新派生效。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "promo-banner-edit") {
+    const final = Number(value.baseReward) * Number(value.multiplier);
+    return (
+      <div className="field" data-business-form="promo-banner-edit">
+        <label>业务表单 · 本周转化卡</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("baseReward", "基础奖励 base(NEX)", "800", "number")}
+          {input("multiplier", "促销倍率 ×", "1.5", "number")}
+          {input("countdownDays", "倒计时 · 天", "4", "number")}
+          {input("countdownHours", "倒计时 · 时", "12", "number")}
+          {input("targetDevice", "目标设备 target", "自动(用户最高设备)")}
+          {input("targetDaily", "日产展示 $/d", "7.00")}
+          {select("status", "上下架 status", spec.statusOptions ?? ["active", "paused"], "promo-banner-status", { active: "上架中 active", paused: "已下架 paused" })}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          最终奖励 = 基础 × 倍率 = <b>{Number.isFinite(final) ? Math.round(final) : "—"} NEX</b>(对应前端首页「激活设备领 NEX」促销卡)。升奖励 / 倍率 = 放大 NEX 流出,过 B1 红线;文案归 I 域,本块只配奖励 / 倍率 / 倒计时 / 目标设备 / 日产 / 上下架。
+        </div>
       </div>
     );
   }

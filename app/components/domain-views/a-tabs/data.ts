@@ -102,12 +102,19 @@ export const RBAC_MATRIX: MatrixAction[] = [
 ];
 
 /** A1 安全基线 5 行:3 锁死(强制 2FA / 最小权限 / ≥2 超管)+ 2 可调(session / 双档锁)。 */
-export const SECURITY_BASELINES = [
+export const SECURITY_BASELINES: {
+  key: string; name: string; sub: string; locked: boolean;
+  value?: string; paramKey?: string; cur?: string; unit?: string; min?: number; max?: number;
+}[] = [
   { key: "tfa_required", name: "强制双因子(全角色)", sub: "没绑双因子完不成登录——安全基线,不开口子", value: "🔒 强制开启", locked: true },
   { key: "least_priv", name: "最小权限默认", sub: "新账号默认无任何写权,角色要显式分配", value: "🔒 默认拒绝", locked: true },
   { key: "min_supers", name: "最少有效超管", sub: "少于 2 个时账号治理类操作全部被服务器拒绝(防权限死锁)", value: "🔒 ≥ 2 个", locked: true },
-  { key: "session", name: "session 时限", sub: "无操作滑动过期 / 登录后绝对上限;比用户侧明显更短(操盘台高敏)", value: "30min / 8h", locked: false },
-  { key: "lock", name: "登录失败双档锁", sub: "短锁:连错即锁;长锁:24h 锁定 + 双因子重认证(阈值高于用户侧,独立设定)", value: "5 次/15min · 15 次/24h", locked: false },
+  // 可调项拆成单值(原「30min / 8h」「5 次/15min」一个框塞多值已拆开,每项单独输入框 + 单独 key)
+  { key: "session_idle", name: "session 滑动过期", sub: "无操作多久自动登出;比用户侧明显更短(操盘台高敏)", locked: false, paramKey: "A.sec.sessionIdle", cur: "30", unit: "分钟", min: 15, max: 60 },
+  { key: "session_abs", name: "session 绝对上限", sub: "一次登录最长存活多久,到点强制重登", locked: false, paramKey: "A.sec.sessionAbs", cur: "8", unit: "小时", min: 4, max: 12 },
+  { key: "lock_short_cnt", name: "登录失败短锁 · 触发次数", sub: "连错几次触发短锁", locked: false, paramKey: "A.sec.lockShortCnt", cur: "5", unit: "次", min: 3, max: 10 },
+  { key: "lock_short_min", name: "登录失败短锁 · 锁定时长", sub: "触发短锁后锁定多久", locked: false, paramKey: "A.sec.lockShortMin", cur: "15", unit: "分钟", min: 5, max: 60 },
+  { key: "lock_long", name: "登录失败长锁(不可调)", sub: "连错升级 → 锁 24h + 双因子重新认证,防撞库底线档(阈值高于用户侧)", value: "🔒 15 次 / 24h", locked: true },
 ];
 
 /* ============ A2 审计 & 操作确认中心 ============ */

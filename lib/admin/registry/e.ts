@@ -1,6 +1,7 @@
 /** 域 E 设备与商城 — 注册表(config / dashboard / list archetype 混合)。accent=--admin-domain-e。
+ *  ⚠️ E ∈ PORTED_DOMAINS:本文件 content(metrics/rows/groups)为**死代码**,真渲染面 = e-view.tsx + e-tabs/(catalog 走 design-data.ts SKUS,orders/devices 走 e-tabs/data.ts),仅 summary 经 DomainHeader 渲染。改 E 域展示值改 e-view/e-tabs,非本文件。本文件内的 SKU/价格已对齐 canon 仅作存档一致性。
  *  NexionBox 矿机商城与设备生命周期。数值与前端 PRD device specs 对齐(server 权威):
- *  - SKU 7 个管理对象(V2 补 Pro v2 后 6→7);Pro Gen-1 权威定价 $2,399(原型 stray $2,639 已修),Pro v2 为独立 Gen-2 SKU $2,639。
+ *  - SKU 6 个管理对象(在售 4 + 待发布 2);价格 / baseRate 逐字段对齐 canon-numbers.json(S1 $649 · Pro $1,199 · Pro v2 Gen-2 $1,319 · Rack P1 $4,499 · Rack P2 $7,499 · Cloud $19.9)。
  *  - 衰减模型 -4% / -6% / -10% 月分段 + MIN_EFFICIENCY(P3 档 month12 ≈ 22% 效能)。
  *  - TradeInConfig:minHoldingMonths / salvage(月12 归零约束),salvage 不入余额。
  *  - Order 状态机:placed → paid → provisioning → activated + 失败态;退款核减 cumulativeDepositUsdt。
@@ -11,7 +12,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   {
     path: "/devices/pricing",
     summary:
-      "NexionBox 商品目录与定价中枢(E1)— SKU 目录(售价 / 日产 / 库存 / 上下架 / 促销)+ 新增 SKU。价格与 baseRate 为 server 权威,新增 SKU / 改价 / 上下架均需 增长运营 + 财务 操作确认并写入 A2 审计,联动 E4 订单与 E2 收益引擎。",
+      "NexionBox 商品目录和定价中枢(E1)—— 管商品清单(售价、日产、库存、上下架、促销)+ 新增机型。价格和日产基准以服务器为准;新增机型、改价、上下架都要增长运营 + 财务一起确认并记入 A2 审计,会联动 E4 订单和 E2 收益引擎。",
     content: {
       kind: "list",
       metrics: [
@@ -33,12 +34,12 @@ export const DOMAIN_E: ModuleEntry[] = [
         { key: "state", header: "状态", status: true },
       ],
       rows: [
-        { sku: "NexionBox S1", gen: "Gen-1", price: "$1,299", rate: "$14.20 + 24 NEX", stock: "47", state: "上架" },
-        { sku: "NexionBox Pro", gen: "Gen-1", price: "$2,399", rate: "$26.30 + 74 NEX", stock: "23", state: "上架" },
-        { sku: "NexionBox Pro v2", gen: "Gen-2", price: "$2,639", rate: "$28.90 + 84 NEX", stock: "38", state: "待发布" },
-        { sku: "NexionRack P1", gen: "Gen-1", price: "$8,999", rate: "$98.60 + 650 NEX", stock: "8", state: "上架" },
-        { sku: "NexionRack P2", gen: "Gen-2", price: "$14,999", rate: "$164.40 + 1,200 NEX", stock: "4", state: "待发布" },
-        { sku: "Cloud Share", gen: "Gen-1", price: "$19.9", rate: "8–15% 年化 + 3 NEX", stock: "∞", state: "上架" },
+        { sku: "NexionBox S1", gen: "Gen-1", price: "$649", rate: "$7 + 40 NEX", stock: "47", state: "上架" },
+        { sku: "NexionBox Pro", gen: "Gen-1", price: "$1,199", rate: "$13 + 80 NEX", stock: "23", state: "上架" },
+        { sku: "NexionBox Pro v2", gen: "Gen-2", price: "$1,319", rate: "$14 + 90 NEX", stock: "38", state: "待发布" },
+        { sku: "NexionRack P1", gen: "Gen-1", price: "$4,499", rate: "$45 + 300 NEX", stock: "8", state: "上架" },
+        { sku: "NexionRack P2", gen: "Gen-2", price: "$7,499", rate: "$75 + 500 NEX", stock: "4", state: "待发布" },
+        { sku: "Cloud Share", gen: "Gen-1", price: "$19.9", rate: "$0.19 + 3 NEX", stock: "∞", state: "上架" },
       ],
       detail: true,
       rowActions: [
@@ -47,13 +48,13 @@ export const DOMAIN_E: ModuleEntry[] = [
         { label: "改价" },
         { label: "新建促销" },
       ],
-      note: "Pro Gen-1 权威价 $2,399(非 $2,639);Standard 早购促销 9 折剩 3 天。新增 SKU / 改价 / 上下架 / 新建促销需 增长运营 发起 + 财务 确认(总管理员仍需操作确认),写入 A2;Gen-2 上架受 E1 代际门约束。改价即时改写 E4 下单金额与 E2 日产计提。",
+      note: "价格 / baseRate 对齐 canon(S1 $649 · Pro $1,199 · Pro v2 Gen-2 $1,319);S1 早购促销 9 折剩 3 天。新增 SKU / 改价 / 上下架 / 新建促销需 增长运营 发起 + 财务 确认(总管理员仍需操作确认),写入 A2;Gen-2 上架受 E1 代际门约束。改价即时改写 E4 下单金额与 E2 日产计提。",
     },
   },
   {
     path: "/devices/tasks",
     summary:
-      "收益与任务引擎(E2)— 设备日产 baseRate、NEX 配比与每日任务奖励的 server-canonical 参数中枢。改费率即时影响全网在网设备次日计酬,需 增长运营 + 财务 操作确认,联动 B 域应付负债与 D 域提现压力。",
+      "收益与任务引擎(E2)—— 管设备的日产基准、NEX 配比和每日任务奖励,以服务器为准。改了费率从第二天起影响全网在线设备的计酬,要增长运营 + 财务一起确认,会牵动 B 域应付负债和 D 域提现压力。",
     content: {
       kind: "config",
       metrics: [
@@ -67,10 +68,10 @@ export const DOMAIN_E: ModuleEntry[] = [
           title: "基础产出 baseRate",
           note: "baseRate / baseRateNEX 为设备日产基准,server 权威;改动从次日计酬窗口生效。",
           fields: [
-            { label: "Lite baseRate", value: "$0.62 / 日", range: "$0.40–$0.90", effect: "入门款日产基准,影响回本周期话术" },
-            { label: "Standard baseRate", value: "$2.85 / 日", range: "$2.00–$3.80", effect: "主力款,直接影响全网日产大头" },
-            { label: "Pro baseRate", value: "$7.80 / 日", range: "$5.50–$10.00", effect: "高客单日产,牵动应付负债增速" },
-            { label: "NEX 配比 baseRateNEX", value: "Standard 16 NEX / 日", range: "8–24 NEX", effect: "NEX 产出基准,联动 G3 行情与 G6 兑付" },
+            { label: "NexionBox S1 baseRate", value: "$7 / 日", range: "$5–$10", effect: "入门款日产基准,影响回本周期话术" },
+            { label: "NexionBox Pro baseRate", value: "$13 / 日", range: "$10–$18", effect: "主力款,直接影响全网日产大头" },
+            { label: "NexionRack P1 baseRate", value: "$45 / 日", range: "$35–$60", effect: "高客单日产,牵动应付负债增速" },
+            { label: "NEX 配比 baseRateNEX", value: "S1 40 NEX / 日", range: "40–500 NEX", effect: "NEX 产出基准,联动 G3 行情与 G6 兑付" },
           ],
         },
         {
@@ -105,7 +106,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   {
     path: "/devices/trade-in",
     summary:
-      "生命周期 & Trade-in(E3)— 旧机折抵率、最短持有期与残值规则。受全局/独立 geo_block 派生约束(Ch17 核验);salvage 不入余额,折抵原子化,改规则需 增长运营 + 财务 操作确认,联动 E1 抵扣叠加与 E3 退役流转。",
+      "设备生命周期 & 以旧换新(E3)—— 旧机折抵率、最短持有期和残值规则。受地区封锁约束(开启前要按 Ch17 核验);折抵的残值只能抵新机货款、不进可提余额,折抵和下单一笔完成(要么都成、要么都回滚)。改规则要增长运营 + 财务一起确认,会联动 E1 的折扣叠加和旧机退役流转。",
     content: {
       kind: "config",
       metrics: [
@@ -157,7 +158,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   {
     path: "/devices/orders",
     summary:
-      "购机订单状态机(E4)— 用户 / SKU / 金额 / 支付方式 / 状态流转的全量订单台。状态机 placed → paid → provisioning → activated + 失败态;退款核减累计入金,资金侧走 D1/D4,异常订单点开可查全字段。",
+      "购机订单台(E4)—— 全部订单的用户、机型、金额、支付方式和状态流转。订单按固定步骤推进:下单 → 已付 → 开通中 → 已激活,外加失败态;退款会核减累计入金,资金那边走 D1/D4,异常订单点开能看全部字段。",
     content: {
       kind: "list",
       metrics: [
@@ -179,14 +180,14 @@ export const DOMAIN_E: ModuleEntry[] = [
         { key: "ts", header: "下单时间", mono: true, align: "right" },
       ],
       rows: [
-        { oid: "ORD-2606-1142", uid: "U-88421", sku: "Standard (Gen-1)", amount: "$899", pay: "USDT 余额", state: "已激活", ts: "14:08" },
-        { oid: "ORD-2606-1141", uid: "U-90233", sku: "Pro (Gen-1)", amount: "$2,399", pay: "链上充值", state: "开通中", ts: "13:52" },
-        { oid: "ORD-2606-1140", uid: "U-77310", sku: "Lite (Gen-1)", amount: "$199", pay: "USDT 余额", state: "已激活", ts: "13:40" },
-        { oid: "ORD-2606-1139", uid: "U-91002", sku: "Standard (Gen-1)", amount: "$809", pay: "USDT 余额 + trade-in", state: "已激活", ts: "13:21" },
-        { oid: "ORD-2606-1138", uid: "U-83771", sku: "Pro (Gen-1)", amount: "$2,199", pay: "链上充值", state: "已支付", ts: "12:55" },
-        { oid: "ORD-2606-1137", uid: "U-88210", sku: "Standard (Gen-1)", amount: "$899", pay: "USDT 余额", state: "待支付", ts: "12:33" },
-        { oid: "ORD-2606-1136", uid: "U-79944", sku: "Lite (Gen-1)", amount: "$199", pay: "链上充值", state: "支付失败", ts: "11:58" },
-        { oid: "ORD-2606-1135", uid: "U-90577", sku: "Pro (Gen-1)", amount: "$2,399", pay: "链上充值", state: "已退款", ts: "10:42" },
+        { oid: "ORD-2606-1142", uid: "U-88421", sku: "NexionBox S1 (Gen-1)", amount: "$649", pay: "USDT 余额", state: "已激活", ts: "14:08" },
+        { oid: "ORD-2606-1141", uid: "U-90233", sku: "NexionBox Pro (Gen-1)", amount: "$1,199", pay: "链上充值", state: "开通中", ts: "13:52" },
+        { oid: "ORD-2606-1140", uid: "U-77310", sku: "NexionBox S1 (Gen-1)", amount: "$649", pay: "USDT 余额", state: "已激活", ts: "13:40" },
+        { oid: "ORD-2606-1139", uid: "U-91002", sku: "NexionBox S1 (Gen-1)", amount: "$559", pay: "USDT 余额 + trade-in", state: "已激活", ts: "13:21" },
+        { oid: "ORD-2606-1138", uid: "U-83771", sku: "NexionBox Pro (Gen-1)", amount: "$1,199", pay: "链上充值", state: "已支付", ts: "12:55" },
+        { oid: "ORD-2606-1137", uid: "U-88210", sku: "NexionBox S1 (Gen-1)", amount: "$649", pay: "USDT 余额", state: "待支付", ts: "12:33" },
+        { oid: "ORD-2606-1136", uid: "U-79944", sku: "NexionBox S1 (Gen-1)", amount: "$649", pay: "链上充值", state: "支付失败", ts: "11:58" },
+        { oid: "ORD-2606-1135", uid: "U-90577", sku: "NexionBox Pro v2 (Gen-2)", amount: "$1,319", pay: "链上充值", state: "已退款", ts: "10:42" },
       ],
       detail: true,
       rowActions: [
@@ -200,7 +201,7 @@ export const DOMAIN_E: ModuleEntry[] = [
   {
     path: "/devices/ops",
     summary:
-      "设备运维(E5)— 在网设备健康度、算力波动、告警与工单台。监控设备产出异常(掉线 / 算力骤降 / 计酬偏差),告警分级处置;干预性运维(强制下线 / 补偿计酬)需操作确认并写入 A2 审计。",
+      "设备运维(E5)—— 在线设备的健康度、算力波动、告警和工单台。盯设备产出异常(掉线、算力骤降、计酬偏差),按级别处置告警;会动到钱或状态的运维(强制下线、补发收益)要确认并记入 A2 审计。",
     content: {
       kind: "list",
       metrics: [
@@ -222,14 +223,14 @@ export const DOMAIN_E: ModuleEntry[] = [
         { key: "level", header: "级别", status: true },
       ],
       rows: [
-        { did: "DEV-S1-44821", uid: "U-88421", sku: "Standard", eff: "82%", yield: "+0.2%", issue: "—", level: "正常" },
-        { did: "DEV-S1-44790", uid: "U-90233", sku: "Pro", eff: "31%", yield: "-1.1%", issue: "效能逼近 MIN,建议 trade-in", level: "提示" },
-        { did: "DEV-S1-44755", uid: "U-77310", sku: "Lite", eff: "0%", yield: "停产", issue: "心跳超时 6h,暂停计酬", level: "严重" },
-        { did: "DEV-S1-44712", uid: "U-91002", sku: "Standard", eff: "74%", yield: "-9.4%", issue: "日产骤降超阈值,核查计酬", level: "告警" },
-        { did: "DEV-S2-10044", uid: "U-90577", sku: "Pro v2", eff: "96%", yield: "+0.1%", issue: "—", level: "正常" },
-        { did: "DEV-S1-44680", uid: "U-83771", sku: "Pro", eff: "58%", yield: "-12.8%", issue: "计酬偏差,疑似衰减系数漂移", level: "告警" },
-        { did: "DEV-S1-44603", uid: "U-79944", sku: "Lite", eff: "0%", yield: "停产", issue: "掉线 12h,工单待派", level: "严重" },
-        { did: "DEV-S1-44521", uid: "U-88210", sku: "Standard", eff: "67%", yield: "-0.3%", issue: "—", level: "正常" },
+        { did: "DEV-S1-44821", uid: "U-88421", sku: "NexionBox S1", eff: "82%", yield: "+0.2%", issue: "—", level: "正常" },
+        { did: "DEV-S1-44790", uid: "U-90233", sku: "NexionBox Pro", eff: "31%", yield: "-1.1%", issue: "效能逼近 MIN,建议 trade-in", level: "提示" },
+        { did: "DEV-S1-44755", uid: "U-77310", sku: "NexionBox S1", eff: "0%", yield: "停产", issue: "心跳超时 6h,暂停计酬", level: "严重" },
+        { did: "DEV-S1-44712", uid: "U-91002", sku: "NexionBox S1", eff: "74%", yield: "-9.4%", issue: "日产骤降超阈值,核查计酬", level: "告警" },
+        { did: "DEV-S2-10044", uid: "U-90577", sku: "NexionBox Pro v2", eff: "96%", yield: "+0.1%", issue: "—", level: "正常" },
+        { did: "DEV-S1-44680", uid: "U-83771", sku: "NexionBox Pro", eff: "58%", yield: "-12.8%", issue: "计酬偏差,疑似衰减系数漂移", level: "告警" },
+        { did: "DEV-S1-44603", uid: "U-79944", sku: "NexionBox S1", eff: "0%", yield: "停产", issue: "掉线 12h,工单待派", level: "严重" },
+        { did: "DEV-S1-44521", uid: "U-88210", sku: "NexionBox S1", eff: "67%", yield: "-0.3%", issue: "—", level: "正常" },
       ],
       detail: true,
       rowActions: [

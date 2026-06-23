@@ -275,67 +275,28 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     toast(`${op.id} 全部 session 已强制登出 · 该账号重新登录需重过双因子`);
   };
 
-  /* ────────────────── 安全基线 · 2 个可调项 ────────────────── */
-  const adjSession = () => openActionConfirm({
-    action: "调整 session 时限",
-    detail: (
-      <>
-        滑动 <span className="acode">15–60min</span> · 绝对 <span className="acode">4–12h</span>。
-        对<b> 下一次登录签发</b>的 session 生效,在途 session 不受影响。
-        后台是高敏操盘台,时限必须明显短于用户侧——范围上限就是这么来的。
-      </>
-    ),
-    amplifies: false,
-    edit: {
-      kind: "text",
-      current: `${pget("A.sec.sessionIdle") ?? "30"}min / ${pget("A.sec.sessionAbs") ?? "8"}h`,
-      unit: "Nmin / Nh",
-    },
-    run: (reason, v) => {
-      const raw = (v || "").trim();
-      // 解析 "30min / 8h" 或 "30/8"
-      const m = raw.match(/(\d+)\s*min?\s*\/\s*(\d+)\s*h?/i);
-      if (!m) { toast("拒绝:格式如 30min / 8h(滑动 15-60 / 绝对 4-12)"); return; }
-      const idle = Number(m[1]);
-      const abs = Number(m[2]);
-      if (idle < 15 || idle > 60) { toast(`拒绝:滑动 ${idle} 超出 15–60 范围`); return; }
-      if (abs < 4 || abs > 12) { toast(`拒绝:绝对上限 ${abs} 超出 4–12 范围`); return; }
-      setParam("A.sec.sessionIdle", String(idle), { action: `session 滑动过期 → ${idle}min`, reason });
-      setParam("A.sec.sessionAbs", String(abs), { action: `session 绝对上限 → ${abs}h`, reason });
-      logAudit({ actor: "超管", action: `调整 session 时限 · admin.system_param_changed`, target: "A.sec.session", reason });
-      toast(`session 时限调整已发布:滑动 ${idle}min / 绝对 ${abs}h(对下一次签发生效)`);
-    },
-  });
-
-  const adjLock = () => openActionConfirm({
-    action: "调整登录失败锁定",
-    detail: (
-      <>
-        短锁档可调:触发次数 <span className="acode">3–10</span> · 锁定时长 <span className="acode">5–60min</span>。
-        <b> 长锁档锁定不可调</b>:连错 15 次 → 锁 24h + 双因子重新认证,防撞库底线档(阈值高于用户侧)。
-        对<b> 新的失败计数</b>生效,已在锁定中的账号按原时长解锁。
-      </>
-    ),
-    amplifies: false,
-    edit: {
-      kind: "text",
-      current: `${pget("A.sec.lockShortCnt") ?? "5"} 次 / ${pget("A.sec.lockShortMin") ?? "15"}min`,
-      unit: "N 次 / Nmin",
-    },
-    run: (reason, v) => {
-      const raw = (v || "").trim();
-      const m = raw.match(/(\d+)\s*次?\s*\/\s*(\d+)\s*min?/i);
-      if (!m) { toast("拒绝:格式如 5 次 / 15min(触发 3-10 / 时长 5-60)"); return; }
-      const cnt = Number(m[1]);
-      const min = Number(m[2]);
-      if (cnt < 3 || cnt > 10) { toast(`拒绝:触发次数 ${cnt} 超出 3–10 范围`); return; }
-      if (min < 5 || min > 60) { toast(`拒绝:锁定时长 ${min} 超出 5–60 范围`); return; }
-      setParam("A.sec.lockShortCnt", String(cnt), { action: `短锁触发次数 → ${cnt} 次`, reason });
-      setParam("A.sec.lockShortMin", String(min), { action: `短锁锁定时长 → ${min}min`, reason });
-      logAudit({ actor: "超管", action: `调整登录失败锁定 · admin.system_param_changed`, target: "A.sec.lock", reason });
-      toast(`短锁档调整已发布:${cnt} 次 / ${min}min(对新失败计数生效)`);
-    },
-  });
+  /* ────────────────── 安全基线 · 4 个可调项(每项单值 · 单独 key,不再「一个框塞多值」) ────────────────── */
+  const adjustBaseline = (b: (typeof SECURITY_BASELINES)[number]) => {
+    const curN = pget(b.paramKey!) ?? b.cur!;
+    openActionConfirm({
+      action: `调整 · ${b.name}`,
+      detail: (
+        <>
+          <b>{b.name}</b> · 当前 <span className="acode">{curN} {b.unit}</span> · 可填范围 <span className="acode">{b.min}–{b.max} {b.unit}</span>。
+          对<b> 下一次登录签发</b>生效,在途不受影响。后台是高敏操盘台,时限 / 阈值比用户侧更严。
+        </>
+      ),
+      amplifies: false,
+      edit: { kind: "number", current: `${curN} ${b.unit}`, unit: b.unit },
+      run: (reason, v) => {
+        const n = Number((v ?? "").replace(/[^\d.]/g, "").trim());
+        if (!Number.isFinite(n) || n < b.min! || n > b.max!) { toast(`拒绝:${b.name} 需在 ${b.min}–${b.max} ${b.unit} 之间`); return; }
+        setParam(b.paramKey!, String(n), { action: `${b.name} → ${n} ${b.unit}`, reason });
+        logAudit({ actor: "超管", action: `调整安全基线 · ${b.name} · admin.system_param_changed`, target: b.paramKey!, reason });
+        toast(`${b.name} 已调整为 ${n} ${b.unit}(对下一次登录签发生效)`);
+      },
+    });
+  };
 
   /* ────────────────── 全域权限矩阵 · 改授权 / 登记新动作行 ────────────────── */
   const editMx = (m: MatrixAction) => {
@@ -543,7 +504,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">登录与安全基线</span>
-            <span className="sub">· 三条锁死,两条可调</span>
+            <span className="sub">· 四条锁死,四项可调(每项单独调)</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {SECURITY_BASELINES.map((b) => {
@@ -555,15 +516,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                   </div>
                 );
               }
-              // 可调档:从 pget 读真值组合显示
-              const liveVal = b.key === "session"
-                ? `${pget("A.sec.sessionIdle") ?? "30"}min / ${pget("A.sec.sessionAbs") ?? "8"}h`
-                : `${pget("A.sec.lockShortCnt") ?? "5"} 次/${pget("A.sec.lockShortMin") ?? "15"}min · 15 次/24h`;
+              // 可调档:每项单值,从自己的 key 读真值 + 单独「调整」
+              const liveVal = `${pget(b.paramKey!) ?? b.cur} ${b.unit}`;
               return (
                 <div className="a-vrow" key={b.key}>
                   <span className="nm">{b.name}<small>{b.sub}</small></span>
                   <span className="v">{liveVal}</span>
-                  <button className="l-btn sm mc" onClick={b.key === "session" ? adjSession : adjLock}>调整</button>
+                  <button className="l-btn sm mc" onClick={() => adjustBaseline(b)}>调整</button>
                 </div>
               );
             })}

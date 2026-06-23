@@ -21,12 +21,12 @@ export const TASKS: Omit<OpsTask, "id">[] = [
 ];
 
 export const ORDERS: EOrder[] = [
-  { id: "OD-55012", user: "usr_19C7", sku: "NexionBox Pro v2", amt: 2639, state: "active", dc: "us-east-2", age: "2m" },
-  { id: "OD-55011", user: "usr_84F2", sku: "NexionBox S1", amt: 1299, state: "allocating", dc: "—", age: "7m" },
-  { id: "OD-55009", user: "usr_31E8", sku: "NexionRack P2", amt: 14999, state: "paid", dc: "—", age: "15m" },
+  { id: "OD-55012", user: "usr_19C7", sku: "NexionBox Pro v2", amt: 1319, state: "active", dc: "us-east-2", age: "2m" },
+  { id: "OD-55011", user: "usr_84F2", sku: "NexionBox S1", amt: 649, state: "allocating", dc: "—", age: "7m" },
+  { id: "OD-55009", user: "usr_31E8", sku: "NexionRack P2", amt: 7499, state: "paid", dc: "—", age: "15m" },
   { id: "OD-55006", user: "usr_02A9", sku: "Genesis 节点", amt: 9999, state: "active", dc: "eu-west-1", age: "31m" },
-  { id: "OD-55001", user: "usr_55B1", sku: "NexionBox Pro v2", amt: 2639, state: "failed", dc: "—", age: "1h" },
-  { id: "OD-54998", user: "usr_77D4", sku: "NexionBox S1", amt: 1299, state: "refunded", dc: "—", age: "2h" },
+  { id: "OD-55001", user: "usr_55B1", sku: "NexionBox Pro v2", amt: 1319, state: "failed", dc: "—", age: "1h" },
+  { id: "OD-54998", user: "usr_77D4", sku: "NexionBox S1", amt: 649, state: "refunded", dc: "—", age: "2h" },
 ];
 
 export const ORDER_FLOW = ["created", "paid", "allocating", "active"];
@@ -58,6 +58,18 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.tradein.promo.rhythm": "cooldown 14d · max/sess 1 · delay 6s · minAge 30d · /me/devices",
   "E.tradein.inventorySoftMax": "0",
 };
+
+// E2 手机算力档位收益 —— 手机端按校准能力分 5 档,每档日产 USDT/NEX 运营可调。
+// 与前端 Nexion-uniapp/src/mock/phone-tiers.ts 同口径(backend-replaceable · 真后台
+// GET /api/config/phone-tiers)。值为 pget 无记录时的默认(回退);调高任一档 = 放大
+// 资金流出,经 B1 覆盖率护栏。T3 锚定营销文案的 $0.06 典型手机日产。
+export const PHONE_TIERS: { tier: number; name: string; note: string; dailyUsdt: string; dailyNex: string }[] = [
+  { tier: 1, name: "入门档", note: "低端机 / 信号缺失兜底", dailyUsdt: "0.04", dailyNex: "6" },
+  { tier: 2, name: "标准档", note: "中端机", dailyUsdt: "0.05", dailyNex: "8" },
+  { tier: 3, name: "主流档", note: "典型机 · 锚定营销 $0.06", dailyUsdt: "0.06", dailyNex: "10" },
+  { tier: 4, name: "高性能档", note: "次旗舰", dailyUsdt: "0.08", dailyNex: "13" },
+  { tier: 5, name: "旗舰档", note: "旗舰 SoC", dailyUsdt: "0.095", dailyNex: "16" },
+];
 
 // E3 衰减曲线引擎 — 镜像产品 device-lifecycle.ts getEfficiency(三段复利 + floor)。
 // 参数从后台配置(pE)读,使后台为 server-canonical 配置源、曲线真实反映产品衰减。

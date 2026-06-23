@@ -119,9 +119,9 @@ export default function PlatformParamsRegistryPage() {
         <p className="font-mono-tabular text-[11px]" style={{ color: "var(--admin-domain-a)" }}>A5 · 平台基础</p>
         <h1 className="font-display mt-1 text-[24px]" style={{ color: "var(--v5-ink)" }}>平台参数寄存器</h1>
         <p className="mt-1.5 max-w-[760px] text-[12.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>
-          全平台业务常量字段级目录 —— 每个参数为<strong style={{ color: "var(--v5-ink-2)" }}>回源真值</strong>(取自前端代码常量,非示意值),
-          标注控制类型 / 运营杠杆 / 操作确认 / server-canonical / 端点 / 前端出处,并跳转该域 config 模块编辑。
-          这是平台运营面的最细颗粒度控制索引(数据源:全平台参数单一真源,永同步)。
+          全平台业务参数的逐项目录 —— 每个参数显示的是<strong style={{ color: "var(--v5-ink-2)" }}>回源真值</strong>(直接取自前端代码里的真实常量,不是示意值),
+          并标注它属于哪类控制、是否运营可调、改动要不要走操作确认、是否以服务端为准、对应接口和前端出处,点一下就能跳到所在域的配置页去改。
+          这是运营能看到的最细一层参数索引(数据取自全平台参数的唯一来源,始终同步)。
         </p>
         <div className="mt-3 flex flex-wrap gap-2.5">
           <Stat label="平台参数" value={`${rows.length}`} accent="var(--admin-domain-a)" />

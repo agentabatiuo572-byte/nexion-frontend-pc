@@ -263,6 +263,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [editName, setEditName] = useState<string | null>(null);
   const mediaSeq = useRef(0);
   const [taskDrawer, setTaskDrawer] = useState(false);
+  const [editTaskId, setEditTaskId] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState<{ n: string; price: string; req: string; unit: string; sat: string; taskClass: string; model: string; minReward: string; maxReward: string; minVRAM: string; killInit: string }>({ n: "", price: "", req: "S1+", unit: "/job", sat: "", taskClass: "llm-inference", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "派发中" });
   const [reviewDrawer, setReviewDrawer] = useState(false);
   const [editReviewId, setEditReviewId] = useState<string | null>(null);
@@ -369,14 +370,35 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("评价状态更新失败:" + (error instanceof Error ? error.message : "E1_REVIEW_STATUS_FAILED"));
     }
   };
-  const openAddTask = () => { setTaskForm({ n: "", price: "", req: "S1+", unit: "/job", sat: "", taskClass: "llm-inference", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "派发中" }); setTaskDrawer(true); };
-  const submitTask = () => {
+  // 任务表单校验(新增 + 编辑共用):取值完整性,非锁死业务值。
+  const validateTaskForm = (): string | null => {
     const price = Number(taskForm.price) || 0;
-    if (!taskForm.n.trim() || !price) { setToast("请填写任务名称 + 单价"); return; }
+    if (!taskForm.n.trim() || !price) return "请填写任务名称 + 单价";
     // #36 核心配置字段校验:taskClass / 代表模型 / min·maxReward / minVRAM 必填,reward 区间须 min ≤ max
-    if (!taskForm.taskClass.trim() || !taskForm.model.trim() || !taskForm.minVRAM.trim()) { setToast("请补全 taskClass / 代表模型 / minVRAM"); return; }
+    if (!taskForm.taskClass.trim() || !taskForm.model.trim() || !taskForm.minVRAM.trim()) return "请补全 taskClass / 代表模型 / minVRAM";
     const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
-    if (!Number.isFinite(minR) || !Number.isFinite(maxR) || minR <= 0 || maxR < minR) { setToast("奖励区间非法:需 0 < minReward ≤ maxReward"); return; }
+    if (!Number.isFinite(minR) || !Number.isFinite(maxR) || minR <= 0 || maxR < minR) return "奖励区间非法:需 0 < minReward ≤ maxReward";
+    return null;
+  };
+  const openAddTask = () => { setEditTaskId(null); setTaskForm({ n: "", price: "", req: "S1+", unit: "/job", sat: "", taskClass: "llm-inference", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "派发中" }); setTaskDrawer(true); };
+  // 编辑任务:把现有任务 + 其后台配置(E.task.<id>.config)回填到抽屉全字段(种子任务无 config 时取默认)。
+  const openEditTask = (t: OpsTask) => {
+    let cfg: { taskClass?: string; model?: string; minReward?: number; maxReward?: number; minVRAM?: string; kill?: string } = {};
+    try { const raw = pget(`E.task.${t.id}.config`); if (raw) cfg = JSON.parse(raw); } catch { /* 种子任务无持久化 config */ }
+    setTaskForm({
+      n: t.n, price: String(t.price), req: t.req, unit: t.unit, sat: String(Math.round((t.sat ?? 0) * 100)),
+      taskClass: cfg.taskClass || "llm-inference", model: cfg.model || "",
+      minReward: cfg.minReward != null ? String(cfg.minReward) : "", maxReward: cfg.maxReward != null ? String(cfg.maxReward) : "",
+      minVRAM: cfg.minVRAM || "", killInit: cfg.kill || "派发中",
+    });
+    setEditTaskId(t.id);
+    setTaskDrawer(true);
+  };
+  const submitTask = () => {
+    const err = validateTaskForm();
+    if (err) { setToast(err); return; }
+    const price = Number(taskForm.price) || 0;
+    const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
     const sat = Math.max(0, Math.min(100, Number(taskForm.sat) || 0)) / 100;
     const id = "TK-" + ++TASK_SEQ;
     addTaskStore({ id, n: taskForm.n.trim(), price, unit: taskForm.unit, req: taskForm.req, sat });
@@ -384,6 +406,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setParam(`E.task.${id}.config`, JSON.stringify({ taskClass: taskForm.taskClass, model: taskForm.model, minReward: minR, maxReward: maxR, minVRAM: taskForm.minVRAM, kill: taskForm.killInit }), { action: `新增任务配置 ${taskForm.n}(taskClass=${taskForm.taskClass} · kill 初始=${taskForm.killInit})`, reason: "新增任务核心配置" });
     logAudit({ actor: "总管理员", action: `新增任务 ${taskForm.n} · taskClass=${taskForm.taskClass} · 模型 ${taskForm.model} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill 初始 ${taskForm.killInit}`, target: taskForm.n });
     setToast("已新增任务:" + taskForm.n + " · taskClass=" + taskForm.taskClass + " · 待上线(server 校验后对 /earn 任务池可见)");
+    setTaskDrawer(false);
+  };
+  // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask + config。
+  const submitTaskEdit = () => {
+    const err = validateTaskForm();
+    if (err) { setToast(err); return; }
+    setActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认 + A2 审计。` });
     setTaskDrawer(false);
   };
   const delTask = (t: { id: string; n: string }) => {
@@ -508,7 +537,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: EViewCtx = {
     hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
-    tasks, openAddTask, delTask,
+    tasks, openAddTask, openEditTask, delTask,
     orders: ORDERS, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
     isDcPaused,
   };
@@ -612,7 +641,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
             <SkuFld label="标语 tagline" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} placeholder="Personal AI inference box · fully managed" />
             <div className="grid g-2" style={{ gap: 12 }}>
-              <SkuFld label="售价(USD)" type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} placeholder="2639" />
+              <SkuFld label="售价(USD)" type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} placeholder="1319" />
               <SkuFld label="槽位 ID(slug)" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="stellarbox-pro-v2" />
             </div>
           </SkuFieldGroup>
@@ -758,15 +787,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       </Drawer>}
 
       {/* 任务新增 抽屉 */}
-      {taskDrawer && <Drawer title="新增任务" sub={<AutoGloss>AI 算力任务类型 · 单价/门槛改后对新派单 server-canonical 生效</AutoGloss>} onClose={() => setTaskDrawer(false)}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => setTaskDrawer(false)}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!taskForm.n.trim() || !Number(taskForm.price)} onClick={submitTask}>提交新增</Btn></>}>
+      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/taskClass 改后走操作确认 · 对新派单 server-canonical 生效" : "AI 算力任务类型 · 单价/门槛改后对新派单 server-canonical 生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 LLM 推理 405B" /></label>
           <div className="grid g-2" style={{ gap: 12 }}>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>单价(USDT)</AutoGloss></span><input className="fld" type="number" value={taskForm.price} onChange={(e) => setTaskForm({ ...taskForm, price: e.target.value })} placeholder="1.20" /></label>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">计价单位</span><div className="row wrap" style={{ gap: 6 }}>{["/job", "/1k", "/min"].map((u) => <Chip key={u} tab sel={taskForm.unit === u} onClick={() => setTaskForm({ ...taskForm, unit: u })}>{u}</Chip>)}</div></label>
           </div>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">资格门槛(设备要求)</span><div className="row wrap" style={{ gap: 6 }}>{["S1+", "需 NexionBox Pro", "需 NexionRack"].map((r) => <Chip key={r} tab sel={taskForm.req === r} onClick={() => setTaskForm({ ...taskForm, req: r })}>{r}</Chip>)}</div></label>
+          <label className="col" style={{ gap: 5 }}><span className="muted tiny">资格门槛(设备要求)<span style={{ color: "var(--ink-4)" }}> · 手机+ = 含手机的最低门槛(手机可接)</span></span><div className="row wrap" style={{ gap: 6 }}>{["手机+", "S1+", "需 NexionBox Pro", "需 NexionRack"].map((r) => <Chip key={r} tab sel={taskForm.req === r} onClick={() => setTaskForm({ ...taskForm, req: r })}>{r}</Chip>)}</div></label>
           <SkuFld label="初始饱和度 %(预估)" type="number" value={taskForm.sat} onChange={(v) => setTaskForm({ ...taskForm, sat: v })} placeholder="50" hint="0-100" />
           {/* #36 任务核心配置:taskClass / 代表模型 / 奖励区间 / 最低显存 / kill 初始态 */}
           <div className="grid g-2" style={{ gap: 12 }}>
@@ -844,6 +873,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const v = Number(newValue);
               if (Number.isFinite(v) && v > 0) { updateTaskStore(mc.taskId, { price: v }); logAudit({ actor: "总管理员", action: "调整任务单价 " + mc.taskId, target: mc.taskId, after: String(v), reason }); setToast(mc.name + ":已写入 $" + v + " · server-canonical"); }
               else setToast("请填写有效单价");
+            } else if (mc.op === "task-save" && editTaskId) {
+              // 任务全字段编辑:真写 updateTask(基础字段)+ setParam(后台核心配置)+ A2 审计。
+              const price = Number(taskForm.price) || 0;
+              const sat = Math.max(0, Math.min(100, Number(taskForm.sat) || 0)) / 100;
+              const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
+              updateTaskStore(editTaskId, { n: taskForm.n.trim(), price, unit: taskForm.unit, req: taskForm.req, sat });
+              setParam(`E.task.${editTaskId}.config`, JSON.stringify({ taskClass: taskForm.taskClass, model: taskForm.model, minReward: minR, maxReward: maxR, minVRAM: taskForm.minVRAM, kill: taskForm.killInit }), { action: `编辑任务配置 ${taskForm.n.trim()}`, reason });
+              logAudit({ actor: "总管理员", action: `编辑任务 ${taskForm.n.trim()} · 单价 $${price}${taskForm.unit} · 门槛 ${taskForm.req} · taskClass=${taskForm.taskClass} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill ${taskForm.killInit}`, target: editTaskId, reason });
+              setToast("任务已更新:" + taskForm.n.trim() + " · server-canonical");
+              setEditTaskId(null);
             } else if (mc.op === "param" && mc.paramKey) {
               const v = (newValue ?? "").trim();
               if (mc.paramKey.startsWith("E.gen.")) {

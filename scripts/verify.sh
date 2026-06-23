@@ -47,8 +47,8 @@ while IFS='|' read -r path id status; do
   if [ "$status" = "scaffold" ]; then check_html "$path" "规格就绪"; fi
 done < <("$NODE_BIN" "$HERE/nav-routes.mjs" | tr -d '\r')
 nav_count=$("$NODE_BIN" "$HERE/nav-routes.mjs" | grep -c '|')
-if [ "$nav_count" -ne 68 ]; then
-  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 68)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
+if [ "$nav_count" -ne 69 ]; then
+  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 69)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
 else
   echo "  nav-routes: $nav_count 条路由"
 fi
@@ -71,7 +71,7 @@ check_html "/overview/dual-ledger" "应付负债结构"
 check_html "/finance/withdrawals" "提现审核队列"
 check_html "/finance/withdrawals" "WD-90412"
 check_html "/finance/withdrawals" "资金与财务"
-check_html "/finance/withdrawals" "正常 5 态 + 异常 6 态"   # D2 状态机条(server-canonical)
+check_html "/finance/withdrawals" "正常 5 种状态 + 异常 6 种状态"   # D2 状态机条(server-canonical)
 check_html "/finance/withdrawals" "K5 hold"                # 复审未过禁放(PRD D2⑦ 联动)
 # C 域六页(design_handoff_c_domain port 2026-06-11:C1-C6 全设计稿视图)+ 用户详情(L3 深链页 · 保留)
 check_http "/users/search/U-88421"
@@ -79,7 +79,7 @@ check_html "/users/search" "用户与账户"
 check_html "/users/search" "Marcus Lee"
 check_html "/users/search" "账户操作"
 check_html "/users/search" "设备持有者(L4+)"          # C1 stats(C1_STATS 单源)
-check_html "/users/search" "只读检索 · 处置去对应页面"   # C1 f-ro(零写权不变量)
+check_html "/users/search" "只能查看 · 要处置去对应页面"   # C1 f-ro(零写权不变量)
 check_html "/users/actions" "账户处置"                   # C2 处置台(冻结台账权威)
 check_html "/users/actions" "模拟登录控制台"             # C2 impersonate 三道锁
 check_html "/users/actions" "信任 / 禁入名单"            # C2 账户级名单(与 K1 IP 白名单正交)
@@ -119,7 +119,7 @@ check_html "/platform/audit" "操作确认适用动作清单"              # A2 
 check_html "/platform/config" "服务器时钟"                   # A3 server time 单源
 check_html "/platform/config" "防重号策略"                   # A3 24h 去重窗口
 check_html "/platform/config" "熔断闸状态存储"               # A3 只读跳 J1/J2
-check_html "/platform/config" "feature flag"                 # A3 灰度台
+check_html "/platform/config" "功能开关平台"                 # A3 灰度台(已本地化中文,旧英文串 feature flag 过时 2026-06-22)
 check_html "/platform/events" "事件目录"                     # A4 6 family
 check_html "/platform/events" "通用字段"                     # A4 字段固定
 check_html "/platform/events" "八项 KPI"                     # A4 KPI 算式
