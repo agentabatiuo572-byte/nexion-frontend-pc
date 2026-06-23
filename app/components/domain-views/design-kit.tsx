@@ -491,6 +491,17 @@ export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
+
+function initEditValue(spec?: EditSpec | null): string {
+  if (!spec) return "";
+  const kind = spec.kind ?? "text";
+  if (kind !== "select" && kind !== "toggle") return "";
+  const current = spec.current?.trim();
+  if (!current) return "";
+  const options = spec.options ?? ["开启", "关闭"];
+  return options.includes(current) ? current : "";
+}
+
 export type BusinessFormSpec =
   | { kind: "role-select"; currentRole: string; currentTier?: "lead" | "member" | string; roles: RoleOption[]; guardHint?: string;
       /** 可选:传入全域动作 + 各角色授权向量,启用「角色变更权限 diff 预览」(新增/移除/受影响域)。 */
@@ -1730,7 +1741,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
 export function OperationConfirmModal({ action, detail, amplifies, edit, businessForm, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void }) {
   const [reason, setReason] = useState("");
-  const [newVal, setNewVal] = useState("");
+  const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。

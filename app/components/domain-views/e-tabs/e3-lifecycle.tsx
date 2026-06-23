@@ -24,22 +24,52 @@ function Lbl({ zh, code, desc, hot }: { zh: string; code?: string; desc: string;
   );
 }
 
-const TX = [
-  { nm: "设备回收", endpoint: "POST /tradein/recycle", ok: 218, fail: 2, roll: 2, k: "最近失败", dot: "fail", ts: "14:22", reason: "salvage 估值不足 minHoldingMonths · 拒接 · 已回滚" },
-  { nm: "设备置换", endpoint: "POST /tradein/replace", ok: 156, fail: 1, roll: 1, k: "最近失败", dot: "fail", ts: "09:08", reason: "D4 bill 写入失败 · 设备 + 余额 + bill 三部分全回滚" },
-  { nm: "设备停用", endpoint: "POST /tradein/deactivate", ok: 38, fail: 0, roll: 0, k: "最新成功", dot: "ok", ts: "14:31", reason: "u-83271 · stellarbox-s1 (m11) · generation lineage 已归档" },
+const REQUIRED_E3_KEYS = [
+  "E.device.degradeEarly",
+  "E.device.degradeMid",
+  "E.device.degradeLate",
+  "E.device.stageEarlyEnd",
+  "E.device.stageMidEnd",
+  "E.device.cycleMonths",
+  "E.device.minEfficiency",
+  "E.tradein.salvagePct",
+  "E.tradein.minHoldingMonths",
+  "E.tradein.promoMult",
 ];
 
+const num = (value: string, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const countText = (value: number) => new Intl.NumberFormat("zh-CN").format(Math.max(0, Math.round(value)));
+const moneyText = (value: number) => `$${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.max(0, value))}`;
+
 export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
-  const { pE } = ctx;
-  const early = parseFloat(pE("E.device.degradeEarly"));
-  const mid = parseFloat(pE("E.device.degradeMid"));
-  const late = parseFloat(pE("E.device.degradeLate"));
-  const s1 = parseInt(pE("E.device.stageEarlyEnd"), 10);
-  const s2 = parseInt(pE("E.device.stageMidEnd"), 10);
-  const cyc = parseInt(pE("E.device.cycleMonths"), 10);
-  const floorPct = parseFloat(pE("E.device.minEfficiency"));
+  const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations } = ctx;
+  const hasRequiredConfig = REQUIRED_E3_KEYS.every((key) => pE(key) !== "—");
+  if (!e3Ready || !hasRequiredConfig) {
+    return (
+      <section className="param-card">
+        <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">E3 后端配置</div><div className="s">{e3Loading ? "正在读取 MySQL 配置" : e3Error || "后端配置未完整返回"}</div></div></div>
+        <div className="param-foot"><span className="ic"><AlertIcon /></span><span>{e3Error ? `接口读取失败:${e3Error}` : "等待 /api/admin/devices/e3/overview 返回生命周期与 Trade-in 配置。"}</span></div>
+        <button className="adj" onClick={() => void ctx.refreshE3()}>刷新</button>
+      </section>
+    );
+  }
+
+  const early = num(pE("E.device.degradeEarly"), -4);
+  const mid = num(pE("E.device.degradeMid"), -6);
+  const late = num(pE("E.device.degradeLate"), -23.7);
+  const s1 = Math.max(1, Math.round(num(pE("E.device.stageEarlyEnd"), 3)));
+  const s2 = Math.max(s1 + 1, Math.round(num(pE("E.device.stageMidEnd"), 8)));
+  const cyc = Math.max(s2 + 1, Math.round(num(pE("E.device.cycleMonths"), 12)));
+  const floorPct = Math.max(0, Math.min(99, num(pE("E.device.minEfficiency"), 22)));
   const curve = effCurve(early, mid, late, s1, s2, cyc, floorPct);
+  const stats = e3Stats ?? { averageAgeMonths: 0, cliffDeviceCount: 0, tradeinMonthCount: 0, tradeinDiscountUsdt: 0, k2ArbitrageHits: 0 };
+  const totalTxSuccess = e3Operations.reduce((sum, item) => sum + item.ok, 0);
+  const totalTxFailure = e3Operations.reduce((sum, item) => sum + item.fail, 0);
+  const txSuccessRate = totalTxSuccess + totalTxFailure > 0 ? (totalTxSuccess / (totalTxSuccess + totalTxFailure)) * 100 : 0;
 
   const px = (i: number) => (i / cyc) * 700;
   const py = (v: number) => 4 + ((100 - v) / (100 - floorPct)) * 183;
@@ -48,7 +78,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const emphasized = [0, s1, s2, cyc];
   const dotColor = (i: number) => (i <= s1 ? "var(--success)" : i <= s2 ? "var(--warning)" : "var(--brand-2)");
 
-  // 调参按钮:走 操作确认 param(显式 edit 契约),真写 setParam → 曲线/估值器据 pE 重算
+  // 调参按钮:走 操作确认 param(显式 edit 契约),真写后端 E3 配置接口 → 曲线/估值器据 pE 重算
   const adj = (label: string, key: string, unit: string, amplify: boolean, editKind: "number" | "text" | "select" = "number", detail?: string, options?: string[]) =>
     ctx.openActionConfirm({
       name: `${label} 调整`, op: "param", paramKey: key, amplify,
@@ -78,10 +108,10 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "在网设备平均龄", v: "5.2 月", sub: "87% 在早/中期" },
-        { k: "m9–12 断崖设备", v: "3,184", sub: "≈ 7.7% · 进入晚期", tone: "danger" },
-        { k: "Trade-in 本月", v: "412 次", sub: "折抵 $284k", tone: "cyan" },
-        { k: "K2 套利簇命中", v: "12 账户", sub: "CL-318 · 最短持有拦截", tone: "warn" },
+        { k: "在网设备平均龄", v: `${num(String(stats.averageAgeMonths), 0).toFixed(1)} 月`, sub: "来自 nx_user_device" },
+        { k: `m${s2 + 1}–${cyc} 断崖设备`, v: countText(stats.cliffDeviceCount), sub: "进入晚期", tone: "danger" },
+        { k: "Trade-in 本月", v: `${countText(stats.tradeinMonthCount)} 次`, sub: `折抵 ${moneyText(stats.tradeinDiscountUsdt)}`, tone: "cyan" },
+        { k: "K2 套利簇命中", v: `${countText(stats.k2ArbitrageHits)} 账户`, sub: "最短持有拦截", tone: "warn" },
       ]} />
 
       {/* 三段衰减曲线 hero */}
@@ -172,8 +202,8 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             { key: "routes", paramKey: "E.tradein.promo.routes", label: "入口路由(勾选页面)", inputKind: "select", options: ["/me/devices", "/me", "/store", "/earn", "全部页面"], wide: true },
           ]} /></div>
           <div className="pkv"><Lbl zh="库存软上限告警" code="inventory.softMax" desc="回收旧机库存软上限 · 超过即告警 · 0 = 禁用" /><span className="v">{pE("E.tradein.inventorySoftMax")} 台</span><Adj label="库存软上限告警" k="E.tradein.inventorySoftMax" unit="台" /></div>
-          <div className="pkv"><Lbl zh="本月置换笔数" desc="折抵总额 $284k" /><span className="v cyan">412</span><span /></div>
-          <div className="pkv"><Lbl zh="K2 套利簇命中" desc="CL-318 · 12 账户 · 已拦截" /><span className="v warn">12</span><span /></div>
+          <div className="pkv"><Lbl zh="本月置换笔数" desc={`折抵总额 ${moneyText(stats.tradeinDiscountUsdt)}`} /><span className="v cyan">{countText(stats.tradeinMonthCount)}</span><span /></div>
+          <div className="pkv"><Lbl zh="K2 套利簇命中" desc="最短持有拦截" /><span className="v warn">{countText(stats.k2ArbitrageHits)}</span><span /></div>
           <div className="param-foot cyan"><span className="ic"><ShieldIcon /></span><span><b>K2 监控</b>:「最短持有月数」是套利窗口闸门 — 调低风险簇 CL-318(短持有 → 置换 → 反手买入)放大,调高牺牲合法置换体验。「残值率」与「置换活动倍率」为<b>放大资金流出</b>动作(带 ⚡),须操作确认 + B1 覆盖率核验。</span></div>
         </section>
       </div>
@@ -183,10 +213,15 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         <div className="tx-h">
           <span className="ttl">原子换机 tx 监控</span>
           <span className="sub">· server 单事务 · 任一步失败全回滚(设备数组 + 余额 + bill)· 防 half-completed replace</span>
-          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24h · 成功率 <span style={{ color: "var(--success)" }}>99.6%</span></span></span>
+          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24h · 成功率 <span style={{ color: "var(--success)" }}>{txSuccessRate.toFixed(1)}%</span></span></span>
         </div>
         <div className="tx-grid">
-          {TX.map((t) => (
+          {e3Operations.length === 0 ? (
+            <div className="tx-col">
+              <div className="nm">暂无 tx 指标<span className="endpoint">GET /api/admin/devices/e3/tradein/overview</span></div>
+              <div className="latest"><div className="k">后端暂无记录</div><div className="vrow"><span className="dot ok" /><span className="reason">等待业务表产生 Trade-in 操作样本</span></div></div>
+            </div>
+          ) : e3Operations.map((t) => (
             <div className="tx-col" key={t.nm}>
               <div className="nm">{t.nm}<span className="endpoint">{t.endpoint}</span></div>
               <div className="stats">

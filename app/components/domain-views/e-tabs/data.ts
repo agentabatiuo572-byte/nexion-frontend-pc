@@ -1,6 +1,6 @@
 /**
  * E 域核心数据 & 派生口径(从 e-view.tsx 移出,口径不改)。
- * server-canonical:E1/E2/E4 展示值来自后端接口;E5 设备运维来自设备接口;E3 配置态仍由平台配置读取。
+ * server-canonical:E1/E2/E3/E4 展示值来自后端接口;E5 设备运维与数据中心来自设备接口。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
 import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
@@ -21,8 +21,8 @@ export const TERMINAL_STATES = ["payment_failed", "expired", "refunded", "provis
 // 非终态(仍流转,允许补建终态);created/paid 另允许「取消订单」。
 export const NON_TERMINAL = new Set(["created", "paid", "allocating"]);
 
-// E-11 生命周期/置换调参默认值(pget 无记录时回退;真后台由配置端点下发)。
-// 衰减默认值镜像产品源码 device-lifecycle.ts:三段非线性 −4/−6/−23.7%·12 月·floor 22%。
+// E-11 生命周期/置换调参种子参考;运行时由 GET /api/admin/devices/e3/overview 下发。
+// 衰减种子值镜像产品源码 device-lifecycle.ts:三段非线性 −4/−6/−23.7%·12 月·floor 22%。
 export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.device.minEfficiency": "22",       // 源码 MIN_EFFICIENCY = 0.22
   "E.device.degradeEarly": "-4",        // 月 1-3 %/月
@@ -31,7 +31,7 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.device.stageEarlyEnd": "3",        // 早期段末月
   "E.device.stageMidEnd": "8",          // 中期段末月
   "E.device.cycleMonths": "12",         // 生命周期月数
-  // E4 任务锁定月度损失阈值(S1/Pro/Rack 三阶 · USDT · 各值独立可调,backend-replaceable)
+  // E3 任务锁定月度损失阈值(S1/Pro/Rack 三阶 · USDT · 各值独立可调,backend-replaceable)
   "E.device.taskLock.s1": "40",
   "E.device.taskLock.pro": "140",
   "E.device.taskLock.rack": "450",

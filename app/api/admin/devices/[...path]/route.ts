@@ -21,6 +21,9 @@ function backendPath(parts: string[]) {
   const isPhoneTier = parts[0] === "phone-tiers" && parts.length === 2 && !!parts[1];
   const isOrderCollection = parts[0] === "orders" && parts.length === 1;
   const isOrderAction = parts[0] === "orders" && parts.length === 3 && !!parts[1] && (parts[2] === "refund" || parts[2] === "cancel" || parts[2] === "terminal" || parts[2] === "state");
+  const isE3Overview = parts[0] === "e3" && parts[1] === "overview" && parts.length === 2;
+  const isE3Config = parts[0] === "e3" && parts[1] === "config" && parts.length === 2;
+  const isE3TradeinOverview = parts[0] === "e3" && parts[1] === "tradein" && parts[2] === "overview" && parts.length === 3;
   const isE3TradeinAction = parts[0] === "e3" && parts[1] === "tradein" && parts.length === 3 && ["recycle", "replace", "deactivate"].includes(parts[2]);
   const isDeviceRestore = parts.length === 2 && /^[1-9]\d*$/.test(parts[0]) && parts[1] === "restore";
   const isDatacenterCollection = parts[0] === "datacenters" && parts.length === 1;
@@ -35,6 +38,9 @@ function backendPath(parts: string[]) {
     && !isPhoneTier
     && !isOrderCollection
     && !isOrderAction
+    && !isE3Overview
+    && !isE3Config
+    && !isE3TradeinOverview
     && !isE3TradeinAction
     && !isDeviceRestore
     && !isDatacenterCollection

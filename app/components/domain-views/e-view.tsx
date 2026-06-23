@@ -8,7 +8,7 @@
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/评价/代际门、E2 任务引擎、E4 订单状态机、E5 设备运维走后端 API;E3 暂沿用 platform-config-store / setParam。
+ * 真写落点:E1 SKU/评价/代际门、E2 任务引擎、E3 生命周期&Trade-in、E4 订单状态机、E5 设备运维走后端 API。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -40,6 +40,7 @@ import {
   type E1GenerationGateData,
 } from "@/lib/admin/e1-client";
 import { createE2Task, deleteE2Task, fetchE2PhoneTiers, fetchE2Tasks, updateE2PhoneTier, updateE2Task, updateE2TaskPrice, type E2PhoneTier } from "@/lib/admin/e2-client";
+import { fetchE3Snapshot, updateE3Param, updateE3Params, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
 import { cancelE4Order, fetchE4Orders, refundE4Order, terminalE4Order, updateE4OrderState } from "@/lib/admin/e4-client";
 import {
   activateE5Device,
@@ -58,7 +59,7 @@ import {
 } from "@/lib/admin/e5-client";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
-  FOLD, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
+  FOLD, ORDER_FLOW, TERMINAL_STATES,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
 import type { DatacenterForm, Mc, EViewCtx, EOrder } from "./e-tabs/types";
@@ -268,8 +269,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const setSkuStatus = usePlatformConfig((s) => s.setSkuStatus);
   const removeSku = usePlatformConfig((s) => s.removeSku);
   const operator = useAdminAuth((s) => s.operator || s.session?.username || "superadmin");
+  const [e3Params, setE3Params] = useState<Record<string, string>>({});
+  const [e3Stats, setE3Stats] = useState<E3Stats | null>(null);
+  const [e3Operations, setE3Operations] = useState<E3OperationMetric[]>([]);
+  const [e3Loading, setE3Loading] = useState(false);
+  const [e3Error, setE3Error] = useState<string | null>(null);
   const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
-  const pE = (k: string): string => pget(k) ?? E_PARAM_DEFAULTS[k] ?? "—";
+  const isE3ParamKey = (k: string) => k.startsWith("E.device.") || k.startsWith("E.tradein.");
+  const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : (pget(k) ?? "—");
+  const e3Ready = Object.keys(e3Params).length > 0;
 
   // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>(IS_PREVIEW ? (SKUS as OpsSku[]) : []);
@@ -335,6 +343,26 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   }, []);
   useEffect(() => { if (tab === "E1" || tab === "E2") void refreshE2(); }, [tab, refreshE2]);
+
+  // ── E3 生命周期 & Trade-in:服务端配置 / 概览 / tx 监控为单一来源 ──
+  const refreshE3 = useCallback(async () => {
+    setE3Loading(true);
+    setE3Error(null);
+    try {
+      const snapshot = await fetchE3Snapshot();
+      setE3Params(snapshot.params);
+      setE3Stats(snapshot.stats);
+      setE3Operations(snapshot.operations);
+    } catch (error) {
+      setE3Error(error instanceof Error ? error.message : "E3_SYNC_FAILED");
+      setE3Params({});
+      setE3Stats(null);
+      setE3Operations([]);
+    } finally {
+      setE3Loading(false);
+    }
+  }, []);
+  useEffect(() => { if (tab === "E3") void refreshE3(); }, [tab, refreshE3]);
 
   // ── E4 订单状态机:服务端数据为单一来源 ──
   const [orders, setOrders] = useState<EOrder[]>([]);
@@ -839,6 +867,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
+    e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     orders, e4Loading, e4Error, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5Error, e5Page, e5PageSize, e5Total, setE5Page, setE5PageSize, refreshE5, isDcPaused, openDatacenter, deleteDatacenter,
   };
@@ -1293,20 +1322,36 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const v = (newValue ?? "").trim();
               if (mc.paramKey.startsWith("E.gen.")) {
                 setE1Gates(await updateE1GenerationGate(mc.paramKey, v, reason, operator));
+              } else if (isE3ParamKey(mc.paramKey)) {
+                setE3Params(await updateE3Param(mc.paramKey, v, reason, operator));
+                await refreshE3();
               } else {
                 setParam(mc.paramKey, v, { action: mc.name, reason });
               }
               setToast(mc.name + ":已写入 " + v + " · server-canonical");
             } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
-              // 多字段调参:每字段写到自己的 param key(各值独立 backend-replaceable)。
+              // 多字段调参:每字段写到自己的 param key;E3 走后端配置接口,其他域保留原 store 配置。
+              const e3Values: Record<string, string> = {};
               for (const { key, paramKey } of mc.paramKeys) {
-                setParam(paramKey, (businessValue[key] ?? "").trim(), { action: mc.name, reason });
+                const next = (businessValue[key] ?? "").trim();
+                if (isE3ParamKey(paramKey)) {
+                  e3Values[paramKey] = next;
+                } else {
+                  setParam(paramKey, next, { action: mc.name, reason });
+                }
+              }
+              if (Object.keys(e3Values).length) {
+                setE3Params(await updateE3Params(e3Values, reason, operator));
+                await refreshE3();
               }
               const summary = mc.paramKeys.map(({ key }) => (businessValue[key] ?? "").trim()).join(" / ");
               setToast(mc.name + ":已写入 " + summary + " · server-canonical");
             } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
               if (mc.paramKey.startsWith("E.gen.")) {
                 setE1Gates(await updateE1GenerationGate(mc.paramKey, mc.fixedVal, reason, operator));
+              } else if (isE3ParamKey(mc.paramKey)) {
+                setE3Params(await updateE3Param(mc.paramKey, mc.fixedVal, reason, operator));
+                await refreshE3();
               } else {
                 setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason });
               }
