@@ -15,6 +15,10 @@ const CSP_SCRIPT_SRC = IS_PROD
   ? "script-src 'self' 'unsafe-inline'"
   : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
 
+const CSP_CONNECT_SRC = IS_PROD
+  ? "connect-src 'self' https://api.fontshare.com"
+  : "connect-src 'self' http: https: ws: wss:";
+
 const MEDIA_PREVIEW_ORIGINS = Array.from(new Set([
   "http://127.0.0.1:9000",
   "http://localhost:9000",
@@ -36,7 +40,7 @@ const SECURITY_HEADERS = [
       `img-src 'self' data: blob: https: ${CSP_MEDIA_PREVIEW_SRC}`,
       `media-src 'self' data: blob: https: ${CSP_MEDIA_PREVIEW_SRC}`,
       "font-src 'self' data: https://cdn.fontshare.com https://api.fontshare.com",
-      "connect-src 'self' https://api.fontshare.com",
+      CSP_CONNECT_SRC,
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -50,11 +54,14 @@ const SECURITY_HEADERS = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
   },
-  { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+  ...(IS_PROD
+    ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
+    : []),
 ];
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.8.102"],
   async headers() {
     return [
       {

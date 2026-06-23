@@ -8,7 +8,7 @@
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/评价/代际门走后端 API;E2-E5 暂沿用 platform-config-store / setParam。
+ * 真写落点:E1 SKU/评价/代际门、E2 任务引擎走后端 API;E3-E5 暂沿用 platform-config-store / setParam。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -20,20 +20,28 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import {
+  archiveE1GenerationGate,
+  archiveE1Phase,
+  createE1GenerationGate,
+  createE1Phase,
   deleteE1Review,
   deleteE1Sku,
   fetchE1Catalog,
+  patchE1GenerationGate,
+  patchE1Phase,
   saveE1Review,
   saveE1Sku,
+  setE1CurrentPhase,
   updateE1GenerationGate,
   updateE1Review,
   updateE1ReviewStatus,
   updateE1SkuStatus,
   type E1GenerationGateData,
 } from "@/lib/admin/e1-client";
+import { createE2Task, deleteE2Task, fetchE2Tasks, updateE2Task, updateE2TaskPrice } from "@/lib/admin/e2-client";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
-  FOLD, TASKS, ORDERS, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
+  FOLD, ORDERS, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
 import type { Mc, EViewCtx, EOrder } from "./e-tabs/types";
@@ -44,7 +52,6 @@ import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import "./e-domain.css";
 
-let TASK_SEQ = 100;   // 客户端新增任务 id 计数(避免 Date.now/Math.random,SSR 安全)
 let REVIEW_SEQ = 100; // 客户端新增评价 id 计数(SSR 安全)
 
 type SkuMediaKind = "image" | "video";
@@ -67,6 +74,20 @@ const SKU_VIDEO_EXTS = new Set(["mp4", "webm", "mov"]);
 const SKU_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const SKU_MAX_VIDEO_BYTES = 200 * 1024 * 1024;
 const SKU_MEDIA_ACCEPT = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime";
+const SKU_TIER_OPTIONS = [
+  { value: "Entry", label: "入门档" },
+  { value: "Pro", label: "专业档" },
+  { value: "Flagship", label: "旗舰档" },
+  { value: "Share", label: "共享份额" },
+] as const;
+const SKU_LIFECYCLE_OPTIONS = [
+  { value: "active", label: "在产" },
+  { value: "legacy", label: "停代" },
+] as const;
+const REVIEW_STATUS_OPTIONS = [
+  { value: "published", label: "展示中" },
+  { value: "hidden", label: "已隐藏" },
+] as const;
 
 function fileExt(name: string) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -242,17 +263,30 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, refreshE1]);
   const skus = e1Skus;
   const reviews = e1Reviews;
-  const phaseCur = e1Gates?.phaseCurrent ?? pget("H.phase.current") ?? "P3";
+  const phaseCur = e1Gates?.phaseCurrent ?? "";
+  const e1PhaseIds = useMemo(() => (e1Gates?.phases ?? []).map((phase) => phase.p).filter(Boolean), [e1Gates]);
+  const e1PhaseLabel = useCallback((phaseId: string) => {
+    const phase = e1Gates?.phases?.find((item) => item.p === phaseId);
+    return phase?.label || phaseId;
+  }, [e1Gates]);
 
-  // ── E3 任务:真增删改查(persist) ──
-  const seedTasks = useMemo<OpsTask[]>(() => TASKS.map((t, i) => ({ ...t, id: "TK-" + (i + 1) })), []);
-  const ensureTasks = usePlatformConfig((s) => s.ensureTasks);
-  const storeTasks = usePlatformConfig((s) => s.tasks);
-  const addTaskStore = usePlatformConfig((s) => s.addTask);
-  const updateTaskStore = usePlatformConfig((s) => s.updateTask);
-  const removeTaskStore = usePlatformConfig((s) => s.removeTask);
-  useEffect(() => { if (hydrated) ensureTasks(seedTasks); }, [hydrated, seedTasks, ensureTasks]);
-  const tasks = hydrated && storeTasks ? storeTasks : seedTasks;
+  // ── E2 任务引擎:后端接口为单一来源;空表由后端补种 nx_admin_device_task ──
+  const [tasks, setTasks] = useState<OpsTask[]>([]);
+  const [e2Loading, setE2Loading] = useState(false);
+  const [e2Error, setE2Error] = useState<string | null>(null);
+  const refreshE2 = useCallback(async () => {
+    setE2Loading(true);
+    setE2Error(null);
+    try {
+      setTasks(await fetchE2Tasks());
+    } catch (error) {
+      setE2Error(error instanceof Error ? error.message : "E2_SYNC_FAILED");
+      setTasks([]);
+    } finally {
+      setE2Loading(false);
+    }
+  }, []);
+  useEffect(() => { if (tab === "E2") void refreshE2(); }, [tab, refreshE2]);
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -312,8 +346,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         resetSkuMedia(media);
         if (media?.assetId) void refreshCurrentSkuMediaPreview(media.assetId);
       }
-      else { setForm(EMPTY_SKU_FORM); setEditName(null); resetSkuMedia(null); }
-    } else { setForm(EMPTY_SKU_FORM); setEditName(null); resetSkuMedia(null); }
+      else { setForm({ ...EMPTY_SKU_FORM, unlock: e1PhaseIds[0] ?? "" }); setEditName(null); resetSkuMedia(null); }
+    } else { setForm({ ...EMPTY_SKU_FORM, unlock: e1PhaseIds[0] ?? "" }); setEditName(null); resetSkuMedia(null); }
     setSkuDrawer(true);
   };
   const delSku = (name: string) => {
@@ -394,19 +428,27 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setEditTaskId(t.id);
     setTaskDrawer(true);
   };
-  const submitTask = () => {
+  const submitTask = async () => {
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
     const price = Number(taskForm.price) || 0;
     const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
     const sat = Math.max(0, Math.min(100, Number(taskForm.sat) || 0)) / 100;
-    const id = "TK-" + ++TASK_SEQ;
-    addTaskStore({ id, n: taskForm.n.trim(), price, unit: taskForm.unit, req: taskForm.req, sat });
-    // 任务后台权威映射(backend-replaceable):taskClass / 模型 / 奖励区间 / 最低显存 / kill 初始态 持久化到 E.task.<id>.*
-    setParam(`E.task.${id}.config`, JSON.stringify({ taskClass: taskForm.taskClass, model: taskForm.model, minReward: minR, maxReward: maxR, minVRAM: taskForm.minVRAM, kill: taskForm.killInit }), { action: `新增任务配置 ${taskForm.n}(taskClass=${taskForm.taskClass} · kill 初始=${taskForm.killInit})`, reason: "新增任务核心配置" });
-    logAudit({ actor: "总管理员", action: `新增任务 ${taskForm.n} · taskClass=${taskForm.taskClass} · 模型 ${taskForm.model} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill 初始 ${taskForm.killInit}`, target: taskForm.n });
-    setToast("已新增任务:" + taskForm.n + " · taskClass=" + taskForm.taskClass + " · 待上线(server 校验后对 /earn 任务池可见)");
-    setTaskDrawer(false);
+    try {
+      const created = await createE2Task(
+        { id: "", n: taskForm.n.trim(), price, unit: taskForm.unit, req: taskForm.req, sat },
+        "新增任务核心配置",
+        operator);
+      // 任务后台权威映射(backend-replaceable):taskClass / 模型 / 奖励区间 / 最低显存 / kill 初始态 持久化到 E.task.<id>.*
+      setParam(`E.task.${created.id}.config`, JSON.stringify({ taskClass: taskForm.taskClass, model: taskForm.model, minReward: minR, maxReward: maxR, minVRAM: taskForm.minVRAM, kill: taskForm.killInit }), { action: `新增任务配置 ${created.n}(taskClass=${taskForm.taskClass} · kill 初始=${taskForm.killInit})`, reason: "新增任务核心配置" });
+      logAudit({ actor: operator, action: `新增任务 ${created.n} · taskClass=${taskForm.taskClass} · 模型 ${taskForm.model} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill 初始 ${taskForm.killInit}`, target: created.id });
+      await refreshE2();
+      setToast("已新增任务:" + created.n + " · taskClass=" + taskForm.taskClass + " · 后端已生效");
+      setTaskDrawer(false);
+      setEditTaskId(null);
+    } catch (error) {
+      setToast("任务新增失败:" + (error instanceof Error ? error.message : "E2_TASK_CREATE_FAILED"));
+    }
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask + config。
   const submitTaskEdit = () => {
@@ -537,10 +579,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const ctx: EViewCtx = {
     hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
-    tasks, openAddTask, openEditTask, delTask,
+    tasks, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     orders: ORDERS, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
     isDcPaused,
   };
+  const skuPhaseIds = useMemo(() => {
+    const ids = [...e1PhaseIds];
+    if (form.unlock && !ids.includes(form.unlock)) {
+      ids.push(form.unlock);
+    }
+    return ids;
+  }, [e1PhaseIds, form.unlock]);
 
   const headerRight =
     tab === "E1" ? <button className="f-cta" onClick={() => openSku()}>+ 新增 SKU</button>
@@ -586,7 +635,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 </>}>
             <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
             <KV k="状态" v={<Badge tone={ostate[eff] ?? "neutral"}>{stateLabel(eff)}</Badge>} />
-            {!finalized && <KV k="可达下一态" v={nextState ? <>{stateLabel(nextState)}{prevState ? ` · 可回滚至 ${stateLabel(prevState)}` : ""}</> : <span style={{ color: "var(--ink-4)" }}>已达主路径末态(active),仅可补建终态 / 退款</span>} />}
+            {!finalized && <KV k="可达下一态" v={nextState ? <>{stateLabel(nextState)}{prevState ? ` · 可回滚至 ${stateLabel(prevState)}` : ""}</> : <span style={{ color: "var(--ink-4)" }}>已达主路径末态（运行中）,仅可补建终态 / 退款</span>} />}
             <KV k="DC 分配" v={o.dc} />
             <KV k="用户" v={o.user} />
             <KV k="下单时间" v={o.age + " 前"} />
@@ -607,7 +656,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       })()}
 
       {/* SKU 新增 / 编辑 抽屉 */}
-      {skuDrawer && <Drawer title={editName ? "编辑 SKU" : "新增 SKU"} sub={<AutoGloss>{editName ? "改价 / 库存 / 日产基准 / 上架 Phase · 改后走操作确认" : "填写商品规格 · 提交后走操作确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditName(null); resetSkuMedia(null); }}
+      {skuDrawer && <Drawer title={editName ? "编辑 SKU" : "新增 SKU"} sub={<AutoGloss>{editName ? "改价 / 库存 / 日产基准 / 上架阶段 · 改后走操作确认" : "填写商品规格 · 提交后走操作确认"}</AutoGloss>} onClose={() => { setSkuDrawer(false); setEditName(null); resetSkuMedia(null); }}
         footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setSkuDrawer(false); setEditName(null); resetSkuMedia(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!form.name || !form.price || skuMediaUploading || (!!skuMedia && !skuMedia.assetId)} onClick={() => { if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; } if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; } const gErr = validateGateForm(form); if (gErr) { setToast(gErr); return; } setActionConfirm({ name: (editName ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editName, hasImg: !!skuMedia }); setSkuDrawer(false); }}>{editName ? "保存修改" : "提交确认"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <div className="col" style={{ gap: 5 }}><span className="muted tiny">产品图 / 视频</span>
@@ -636,10 +685,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           <SkuFieldGroup n="①" title="基本信息">
             <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 NexionBox Pro v3" />
             <div className="grid g-2" style={{ gap: 12 }}>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">档位 tier</span><select className="fld" value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>{["Entry", "Pro", "Flagship", "Share"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
-              <SkuFld label="营销角标 badge" value={form.badge} onChange={(v) => setForm({ ...form, badge: v })} placeholder="Best Seller / New Gen / Trending" />
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">商品档位</span><select className="fld" value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}>{SKU_TIER_OPTIONS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}</select></label>
+              <SkuFld label="营销角标" value={form.badge} onChange={(v) => setForm({ ...form, badge: v })} placeholder="热卖 / 新一代 / 趋势款" />
             </div>
-            <SkuFld label="标语 tagline" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} placeholder="Personal AI inference box · fully managed" />
+            <SkuFld label="商品标语" value={form.tagline} onChange={(v) => setForm({ ...form, tagline: v })} placeholder="个人 AI 推理主机 · 全托管" />
             <div className="grid g-2" style={{ gap: 12 }}>
               <SkuFld label="售价(USD)" type="number" value={form.price} onChange={(v) => setForm({ ...form, price: v })} placeholder="1319" />
               <SkuFld label="槽位 ID(slug)" value={form.id} onChange={(v) => setForm({ ...form, id: v })} placeholder="stellarbox-pro-v2" />
@@ -652,10 +701,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <SkuFld label="显存 VRAM" value={form.vram} onChange={(v) => setForm({ ...form, vram: v })} placeholder="96GB VRAM" />
             </div>
             {form.tier !== "Share" && <div className="grid g-2" style={{ gap: 12 }}>
-              <SkuFld label="算力 hashRate" value={form.hashRate} onChange={(v) => setForm({ ...form, hashRate: v })} placeholder="1,240 MH/s" />
-              <SkuFld label="功率 power" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,200W TDP" />
+              <SkuFld label="算力" value={form.hashRate} onChange={(v) => setForm({ ...form, hashRate: v })} placeholder="1,240 MH/s" />
+              <SkuFld label="功率" value={form.power} onChange={(v) => setForm({ ...form, power: v })} placeholder="1,200W TDP" />
             </div>}
-            <SkuFld label="数据中心 datacenter" value={form.datacenter} onChange={(v) => setForm({ ...form, datacenter: v })} placeholder="Singapore DC" />
+            <SkuFld label="数据中心" value={form.datacenter} onChange={(v) => setForm({ ...form, datacenter: v })} placeholder="新加坡机房" />
           </SkuFieldGroup>
 
           <SkuFieldGroup n="③" title={form.tier === "Share" ? "收益参数(年化 + NEX)" : "收益参数(双币)"}>
@@ -667,8 +716,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             ) : (
               <>
                 <div className="grid g-2" style={{ gap: 12 }}>
-                  <SkuFld label="Share 年化下限 %" type="number" value={form.shareYieldMin} onChange={(v) => setForm({ ...form, shareYieldMin: v })} placeholder="8" />
-                  <SkuFld label="Share 年化上限 %" type="number" value={form.shareYieldMax} onChange={(v) => setForm({ ...form, shareYieldMax: v })} placeholder="15" />
+                  <SkuFld label="共享份额年化下限 %" type="number" value={form.shareYieldMin} onChange={(v) => setForm({ ...form, shareYieldMin: v })} placeholder="8" />
+                  <SkuFld label="共享份额年化上限 %" type="number" value={form.shareYieldMax} onChange={(v) => setForm({ ...form, shareYieldMax: v })} placeholder="15" />
                 </div>
                 <SkuFld label="日产 NEX(份额每日额外发放)" type="number" value={form.dailyEarnNEX} onChange={(v) => setForm({ ...form, dailyEarnNEX: v })} placeholder="30" />
               </>
@@ -686,37 +735,37 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 <SkuFld label="LoRA 微调 min" type="number" value={form.aiFineTuneMins} onChange={(v) => setForm({ ...form, aiFineTuneMins: v })} placeholder="6" />
               </div>
             </>}
-            <SkuFld label={form.tier === "Share" ? "解锁算力池 unlocks(份额可访问的池)" : "解锁算力池 unlocks"} value={form.aiUnlocks} onChange={(v) => setForm({ ...form, aiUnlocks: v })} placeholder="LLM 70B inference pool" />
+            <SkuFld label={form.tier === "Share" ? "解锁算力池（份额可访问的池）" : "解锁算力池"} value={form.aiUnlocks} onChange={(v) => setForm({ ...form, aiUnlocks: v })} placeholder="LLM 70B 推理池" />
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑤" title="营销 & 社会证明">
             {form.tier !== "Share" ? (
               <div className="grid g-2" style={{ gap: 12 }}>
-                <SkuFld label="累计销量 sold" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="4821" />
+                <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="4821" />
                 <SkuFld label="库存 stock" value={form.stock} onChange={(v) => setForm({ ...form, stock: v })} placeholder="47" hint="留空=∞" />
               </div>
             ) : (
-              <SkuFld label="累计销量 sold" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="12483" hint="份额无限量,不设库存" />
+              <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="12483" hint="份额无限量,不设库存" />
             )}
             <div className="grid g-2" style={{ gap: 12 }}>
-              <SkuFld label="评分 rating" type="number" value={form.rating} onChange={(v) => setForm({ ...form, rating: v })} placeholder="4.8" />
-              <SkuFld label="评论数 reviews" type="number" value={form.reviews} onChange={(v) => setForm({ ...form, reviews: v })} placeholder="2847" />
+              <SkuFld label="评分" type="number" value={form.rating} onChange={(v) => setForm({ ...form, rating: v })} placeholder="4.8" />
+              <SkuFld label="评论数" type="number" value={form.reviews} onChange={(v) => setForm({ ...form, reviews: v })} placeholder="2847" />
             </div>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑥" title="代际 & 生命周期">
             <div className="grid g-2" style={{ gap: 12 }}>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">代际 generation</span><select className="fld" value={form.generation} onChange={(e) => setForm({ ...form, generation: e.target.value })}>{["1", "2", "3"].map((x) => <option key={x} value={x}>Gen {x}</option>)}</select></label>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">生命周期 lifecycle</span><select className="fld" value={form.lifecycle} onChange={(e) => setForm({ ...form, lifecycle: e.target.value })}><option value="active">active(在产)</option><option value="legacy">legacy(停代)</option></select></label>
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">产品代际</span><select className="fld" value={form.generation} onChange={(e) => setForm({ ...form, generation: e.target.value })}>{["1", "2", "3"].map((x) => <option key={x} value={x}>第 {x} 代</option>)}</select></label>
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">生命周期</span><select className="fld" value={form.lifecycle} onChange={(e) => setForm({ ...form, lifecycle: e.target.value })}>{SKU_LIFECYCLE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             </div>
             {form.tier !== "Share" && <>
               <div className="grid g-2" style={{ gap: 12 }}>
-                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁 Phase（代际发布门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })}>{["P1", "P2", "P3", "P4", "P5", "P6"].map((p) => <option key={p} value={p}>{p}{p === "P1" ? "（立即开放）" : "（门控）"}</option>)}</select></label>
+                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（代际发布门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}</option>)}</select></label>
                 <SkuFld label="以旧换新折扣 USD" type="number" value={form.tradeinDiscount} onChange={(v) => setForm({ ...form, tradeinDiscount: v })} placeholder="300" hint="可空" />
               </div>
-              <SkuFld label="被替代为 supersededBy" value={form.supersededBy} onChange={(v) => setForm({ ...form, supersededBy: v })} placeholder="stellarbox-pro-v2(下一代 id)" hint="可空" />
+              <SkuFld label="替代 SKU" value={form.supersededBy} onChange={(v) => setForm({ ...form, supersededBy: v })} placeholder="stellarbox-pro-v2(下一代内部标识)" hint="可空" />
             </>}
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 features · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"Fully managed by Nexion\n99.9% uptime SLA\nFree shipping & installation"} /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"Nexion 全托管\n99.9% 在线率 SLA\n免运费与安装"} /></label>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑦" title="购买限制">
@@ -744,20 +793,20 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 <label className="col" style={{ gap: 5 }}>
                   <span className="muted tiny">多条件判定</span>
                   <div className="row wrap" style={{ gap: 6 }}>
-                    <Chip tab sel={form.gateMode === "all"} onClick={() => setForm({ ...form, gateMode: "all" })}>全部满足(AND)</Chip>
-                    <Chip tab sel={form.gateMode === "either"} onClick={() => setForm({ ...form, gateMode: "either" })}>任一满足(OR)</Chip>
+                    <Chip tab sel={form.gateMode === "all"} onClick={() => setForm({ ...form, gateMode: "all" })}>全部满足</Chip>
+                    <Chip tab sel={form.gateMode === "either"} onClick={() => setForm({ ...form, gateMode: "either" })}>任一满足</Chip>
                   </div>
                 </label>
               </>
             )}
-            <SkuFld label="锁额上限 cap" type="number" value={form.gateQuotaCap} onChange={(v) => setForm({ ...form, gateQuotaCap: v })} placeholder="1000" hint="留空=不限量;设值=本期可售上限(余=cap−已售)" />
+            <SkuFld label="锁额上限" type="number" value={form.gateQuotaCap} onChange={(v) => setForm({ ...form, gateQuotaCap: v })} placeholder="1000" hint="留空=不限量;设值=本期可售上限" />
             {form.gateQuotaCap.trim() && (
               <>
                 <div className="grid g-2" style={{ gap: 12 }}>
-                  <SkuFld label="已售 sold" type="number" value={form.gateQuotaSold} onChange={(v) => setForm({ ...form, gateQuotaSold: v })} placeholder="977" hint="server 维护" />
+                  <SkuFld label="已售数量" type="number" value={form.gateQuotaSold} onChange={(v) => setForm({ ...form, gateQuotaSold: v })} placeholder="977" hint="后端维护" />
                   <label className="col" style={{ gap: 5 }}><span className="muted tiny">锁额周期</span><select className="fld" value={form.gateQuotaPeriod} onChange={(e) => setForm({ ...form, gateQuotaPeriod: e.target.value })}><option value="month">本月</option><option value="lifetime">永久</option></select></label>
                 </div>
-                <label className="col" style={{ gap: 5 }}><span className="muted tiny">enforce 执行方式</span><select className="fld" value={form.gateEnforce} onChange={(e) => setForm({ ...form, gateEnforce: e.target.value })}><option value="true">硬拦截(售罄即禁购)</option><option value="false">仅展示(FOMO 不拦)</option></select></label>
+                <label className="col" style={{ gap: 5 }}><span className="muted tiny">购买限制执行方式</span><select className="fld" value={form.gateEnforce} onChange={(e) => setForm({ ...form, gateEnforce: e.target.value })}><option value="true">硬拦截（售罄即禁购）</option><option value="false">仅展示（不拦截购买）</option></select></label>
               </>
             )}
             {(() => {
@@ -770,7 +819,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const condTxt = parts.length ? parts.join(g.mode === "either" ? " 或 " : " 且 ") : "无等级条件";
               const remaining = gateRemaining(g);
               const quotaTxt = remaining != null ? ` · 锁额 ${g.quotaCap}(余 ${remaining}${g.enforce ? " · 售罄硬拦" : " · 仅展示"})` : "";
-              return <div className="tint cyan tiny">购买门 · {condTxt}{quotaTxt} · 改后对前端商城 / 详情 / checkout server-canonical 生效</div>;
+              return <div className="tint cyan tiny">购买门 · {condTxt}{quotaTxt} · 改后对前端商城 / 详情 / 结算页生效,以后端校验为准</div>;
             })()}
           </SkuFieldGroup>
 
@@ -814,7 +863,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">minVRAM(最低显存)</span><input className="fld" value={taskForm.minVRAM} onChange={(e) => setTaskForm({ ...taskForm, minVRAM: e.target.value })} placeholder="如 80GB" /></label>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">kill 初始状态</span><div className="row wrap" style={{ gap: 6 }}>{["派发中", "已 kill", "限流中"].map((k) => <Chip key={k} tab sel={taskForm.killInit === k} onClick={() => setTaskForm({ ...taskForm, killInit: k })}>{k}</Chip>)}</div></label>
           </div>
-          <div className="tint warn tiny"><AutoGloss>单价 / 门槛 / taskClass 为高敏字段 · server-canonical;taskClass 建立与后台派单引擎的权威映射,改后对新派单生效 + 前端 /earn 任务池同步,需操作确认留痕。</AutoGloss></div>
+          <div className="tint warn tiny"><AutoGloss>单价 / 门槛 / taskClass 为高敏字段 · 以后端为准;taskClass 建立与后台派单引擎的权威映射,改后对新派单生效 + 前端 /earn 任务池同步,需操作确认留痕。</AutoGloss></div>
         </div>
       </Drawer>}
 
@@ -824,13 +873,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         <div className="col" style={{ gap: 12 }}>
           <div className="grid g-2" style={{ gap: 12 }}>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">关联商品(在售设备)</span><select className="fld" value={reviewForm.productId} onChange={(e) => setReviewForm({ ...reviewForm, productId: e.target.value })}>{skus.filter((s) => (s.status || "on") !== "off").map((s) => <option key={s.name} value={s.id || s.name}>{s.name}</option>)}</select></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">评分 rating</span><select className="fld" value={reviewForm.rating} onChange={(e) => setReviewForm({ ...reviewForm, rating: e.target.value })}>{["5", "4", "3", "2", "1"].map((n) => <option key={n} value={n}>{n} ★</option>)}</select></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">评分</span><select className="fld" value={reviewForm.rating} onChange={(e) => setReviewForm({ ...reviewForm, rating: e.target.value })}>{["5", "4", "3", "2", "1"].map((n) => <option key={n} value={n}>{n} ★</option>)}</select></label>
           </div>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">评价人 author</span><input className="fld" value={reviewForm.author} onChange={(e) => setReviewForm({ ...reviewForm, author: e.target.value })} placeholder="Maya · ID" /></label>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">评价内容 content</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={reviewForm.content} onChange={(e) => setReviewForm({ ...reviewForm, content: e.target.value })} placeholder="Paid back in 11 months…" /></label>
+          <label className="col" style={{ gap: 5 }}><span className="muted tiny">评价人</span><input className="fld" value={reviewForm.author} onChange={(e) => setReviewForm({ ...reviewForm, author: e.target.value })} placeholder="张三 · ID" /></label>
+          <label className="col" style={{ gap: 5 }}><span className="muted tiny">评价内容</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={reviewForm.content} onChange={(e) => setReviewForm({ ...reviewForm, content: e.target.value })} placeholder="约 11 个月回本,托管稳定。" /></label>
           <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">时间文案 date</span><input className="fld" value={reviewForm.date} onChange={(e) => setReviewForm({ ...reviewForm, date: e.target.value })} placeholder="2 days ago" /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">状态 status</span><select className="fld" value={reviewForm.status} onChange={(e) => setReviewForm({ ...reviewForm, status: e.target.value })}><option value="published">published(展示)</option><option value="hidden">hidden(隐藏)</option></select></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">时间文案</span><input className="fld" value={reviewForm.date} onChange={(e) => setReviewForm({ ...reviewForm, date: e.target.value })} placeholder="2 天前" /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">状态</span><select className="fld" value={reviewForm.status} onChange={(e) => setReviewForm({ ...reviewForm, status: e.target.value })}>{REVIEW_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
           </div>
           <div className="tint tiny"><AutoGloss>评价为内容运营动作 · 提交即写审计 A2;隐藏态不对用户展示。</AutoGloss></div>
         </div>
@@ -839,12 +888,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {/* 操作确认(唯一动作出口)*/}
       {mc && <OperationConfirmModal
         action={mc.name}
-        detail={mc.detail ?? "server-canonical · 改后对下一笔结算 / 新派单生效,不回溯已计提"}
+        detail={mc.detail ?? "以后端为准 · 改后对下一笔结算 / 新派单生效,不回溯已计提"}
         amplifies={!!mc.amplify}
         edit={mc.edit}
         businessForm={mc.businessForm}
         onClose={() => setActionConfirm(null)}
-        onConfirm={async (reason, newValue) => {
+        onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
           try {
             if (mc.op === "sku-save") {
@@ -866,22 +915,29 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               await refreshE1();
               setToast("SKU " + mc.target + (mc.status === "off" ? " 已下架" : " 已上架"));
             } else if (mc.op === "task-down" && mc.taskId) {
-              removeTaskStore(mc.taskId);
-              logAudit({ actor: "总管理员", action: "下架任务 " + (mc.target ?? mc.taskId), target: mc.taskId, reason });
+              await deleteE2Task(mc.taskId, reason, operator);
+              await refreshE2();
+              logAudit({ actor: operator, action: "下架任务 " + (mc.target ?? mc.taskId), target: mc.taskId, reason });
               setToast("任务已下架:" + (mc.target ?? mc.taskId));
             } else if (mc.op === "task-price" && mc.taskId) {
               const v = Number(newValue);
-              if (Number.isFinite(v) && v > 0) { updateTaskStore(mc.taskId, { price: v }); logAudit({ actor: "总管理员", action: "调整任务单价 " + mc.taskId, target: mc.taskId, after: String(v), reason }); setToast(mc.name + ":已写入 $" + v + " · server-canonical"); }
+              if (Number.isFinite(v) && v > 0) {
+                await updateE2TaskPrice(mc.taskId, v, reason, operator);
+                await refreshE2();
+                logAudit({ actor: operator, action: "调整任务单价 " + mc.taskId, target: mc.taskId, after: String(v), reason });
+                setToast(mc.name + ":已写入 $" + v + " · 后端已生效");
+              }
               else setToast("请填写有效单价");
             } else if (mc.op === "task-save" && editTaskId) {
-              // 任务全字段编辑:真写 updateTask(基础字段)+ setParam(后台核心配置)+ A2 审计。
+              // 任务全字段编辑:基础字段写后端任务表,扩展派单配置继续走配置项承接。
               const price = Number(taskForm.price) || 0;
               const sat = Math.max(0, Math.min(100, Number(taskForm.sat) || 0)) / 100;
               const minR = Number(taskForm.minReward), maxR = Number(taskForm.maxReward);
-              updateTaskStore(editTaskId, { n: taskForm.n.trim(), price, unit: taskForm.unit, req: taskForm.req, sat });
+              await updateE2Task({ id: editTaskId, n: taskForm.n.trim(), price, unit: taskForm.unit, req: taskForm.req, sat }, reason, operator);
               setParam(`E.task.${editTaskId}.config`, JSON.stringify({ taskClass: taskForm.taskClass, model: taskForm.model, minReward: minR, maxReward: maxR, minVRAM: taskForm.minVRAM, kill: taskForm.killInit }), { action: `编辑任务配置 ${taskForm.n.trim()}`, reason });
-              logAudit({ actor: "总管理员", action: `编辑任务 ${taskForm.n.trim()} · 单价 $${price}${taskForm.unit} · 门槛 ${taskForm.req} · taskClass=${taskForm.taskClass} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill ${taskForm.killInit}`, target: editTaskId, reason });
-              setToast("任务已更新:" + taskForm.n.trim() + " · server-canonical");
+              logAudit({ actor: operator, action: `编辑任务 ${taskForm.n.trim()} · 单价 $${price}${taskForm.unit} · 门槛 ${taskForm.req} · taskClass=${taskForm.taskClass} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill ${taskForm.killInit}`, target: editTaskId, reason });
+              await refreshE2();
+              setToast("任务已更新:" + taskForm.n.trim() + " · 后端已生效");
               setEditTaskId(null);
             } else if (mc.op === "param" && mc.paramKey) {
               const v = (newValue ?? "").trim();
@@ -890,14 +946,59 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               } else {
                 setParam(mc.paramKey, v, { action: mc.name, reason });
               }
-              setToast(mc.name + ":已写入 " + v + " · server-canonical");
+              setToast(mc.name + ":已写入 " + v + " · 以后端为准");
             } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
               if (mc.paramKey.startsWith("E.gen.")) {
                 setE1Gates(await updateE1GenerationGate(mc.paramKey, mc.fixedVal, reason, operator));
               } else {
                 setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason });
               }
-              setToast(mc.name + " · 已生效 · server-canonical");
+              setToast(mc.name + " · 已生效 · 以后端为准");
+            } else if (mc.op === "phase-save" && businessValue) {
+              const payload = {
+                label: businessValue.label?.trim(),
+                meta: businessValue.meta?.trim(),
+                skus: businessValue.skus?.trim(),
+                sortOrder: Number(businessValue.sortOrder),
+                status: businessValue.status || "active",
+              };
+              setE1Gates(mc.phaseId
+                ? await patchE1Phase(mc.phaseId, payload, reason, operator)
+                : await createE1Phase(payload, reason, operator));
+              await refreshE1();
+              setToast(mc.phaseId ? "阶段已更新:" + payload.label : "阶段已新增:" + payload.label);
+            } else if (mc.op === "phase-archive" && mc.phaseId) {
+              setE1Gates(await archiveE1Phase(mc.phaseId, reason, operator));
+              await refreshE1();
+              setToast("阶段已归档");
+            } else if (mc.op === "phase-current" && mc.phaseId) {
+              setE1Gates(await setE1CurrentPhase(mc.phaseId, reason, operator));
+              await refreshE1();
+              setToast("当前阶段已切换:" + (mc.target ?? mc.phaseId));
+            } else if (mc.op === "generation-gate-save" && businessValue) {
+              const payload = {
+                skuId: businessValue.skuId,
+                name: businessValue.name?.trim() || undefined,
+                releaseMonth: Number(businessValue.releaseMonth),
+                phase: businessValue.phase,
+                discount: Number(businessValue.discount),
+                eligibility: businessValue.eligibility === "true",
+                phaseOffset: Number(businessValue.phaseOffset || "0"),
+                forceUnlock: businessValue.forceUnlock === "true",
+                status: "active",
+              };
+              setE1Gates(mc.generationGateId
+                ? await patchE1GenerationGate(mc.generationGateId, payload, reason, operator)
+                : await createE1GenerationGate(payload, reason, operator));
+              setToast(mc.generationGateId ? "代际门已更新:" + payload.skuId : "代际门已新增:" + payload.skuId);
+            } else if (mc.op === "generation-gate-force" && mc.generationGateId && mc.generationGate?.forceUnlock != null) {
+              const enabled = !!mc.generationGate.forceUnlock;
+              setE1Gates(await patchE1GenerationGate(mc.generationGateId, { forceUnlock: enabled }, reason, operator));
+              await refreshE1();
+              setToast((enabled ? "强制提前开放已开启:" : "强制提前开放已撤销:") + mc.generationGateId);
+            } else if (mc.op === "generation-gate-archive" && mc.generationGateId) {
+              setE1Gates(await archiveE1GenerationGate(mc.generationGateId, reason, operator));
+              setToast("代际门已移除:" + mc.generationGateId);
             } else if (mc.op === "order-refund" && mc.orderId) {
               setParam(`E.order.${mc.orderId}.refunded`, "true", { action: "订单退款 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已退款 · 资产回退已联动 D4 冲正 + C3"); setSelOrder(null);
             } else if (mc.op === "order-cancel" && mc.orderId) {

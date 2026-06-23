@@ -31,8 +31,6 @@ const CheckSm = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none
 
 const satColor = (pct: number): string => (pct >= 75 ? "var(--warning)" : pct >= 40 ? "var(--success)" : "var(--ink-4)");
 
-/* ── 24h × 6 任务 热力图(静态监控:合成正弦昼夜分布)── */
-const HEAT_BASE = [70, 50, 42, 60, 38, 28];
 function makeRow(base: number): number[] {
   const out: number[] = [];
   for (let h = 0; h < 24; h++) {
@@ -51,25 +49,33 @@ function heatBg(v: number): string {
 }
 const HEAT_SCALE = ["var(--surface-3)", "rgba(41,210,127,.4)", "var(--success)", "var(--warning)", "var(--brand-2)", "var(--danger)"];
 
-const HOOKS = [
-  { nm: "LLM 405B 锁定展示", ct: "3,284 →", up: false },
-  { nm: "视频渲染锁定展示", ct: "1,847 →", up: false },
-  { nm: "LoRA 锁定展示", ct: "912 →", up: false },
-  { nm: "→ Pro v2 升级", ct: "+34", up: true },
-  { nm: "→ Rack P2 升级", ct: "+8", up: true },
-];
+function money(value: number) {
+  return `$${value.toFixed(value >= 10 ? 0 : 2)}`;
+}
 
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const { tasks } = ctx;
-  const heatNames = tasks.slice(0, 6).map((t) => t.n);
+  const avgPrice = tasks.length ? tasks.reduce((sum, t) => sum + t.price, 0) / tasks.length : 0;
+  const avgSat = tasks.length ? Math.round((tasks.reduce((sum, t) => sum + t.sat, 0) / tasks.length) * 100) : 0;
+  const peakTask = [...tasks].sort((a, b) => b.sat - a.sat)[0];
+  const highLoad = tasks.filter((t) => t.sat >= 0.75).length;
+  const midLoad = tasks.filter((t) => t.sat >= 0.4 && t.sat < 0.75).length;
+  const lowLoad = tasks.filter((t) => t.sat < 0.4).length;
+  const maxPriceTask = [...tasks].sort((a, b) => b.price - a.price)[0];
+  const heatTasks = tasks.slice(0, 6);
+  const heatPeak = heatTasks
+    .flatMap((t) => makeRow(Math.round(t.sat * 100)).map((value) => ({ value, name: t.n })))
+    .sort((a, b) => b.value - a.value)[0];
+  const queueRank = [...tasks].sort((a, b) => b.sat - a.sat).slice(0, 5);
+  const donutOffset = 464.96 * (1 - avgSat / 100);
 
   return (
     <>
       <EStats items={[
-        { k: "24h 任务总额", v: "$184k", sub: "12,847 笔 · 全网派单", tone: "ok" },
-        { k: "在线接单设备", v: "41,208", sub: "heartbeat 活跃 · 占 99.2%" },
-        { k: "全网饱和度", v: "63%", sub: "峰值 78% · 19:00 UTC", tone: "warn" },
-        { k: "锁定预览转化", v: "8.4%", sub: "锁定 → 升级 Pro/Rack", tone: "cyan" },
+        { k: "任务类型", v: tasks.length, sub: ctx.e2Loading ? "后端同步中" : ctx.e2Error ? "接口异常" : "/api/admin/devices/tasks", tone: "ok" },
+        { k: "平均单价", v: money(avgPrice), sub: tasks.length ? `${tasks.length} 类任务均价` : "暂无任务" },
+        { k: "平均饱和度", v: `${avgSat}%`, sub: peakTask ? `最高 ${Math.round(peakTask.sat * 100)}% · ${peakTask.n}` : "暂无队列", tone: avgSat >= 75 ? "warn" : "cyan" },
+        { k: "最高单价任务", v: money(maxPriceTask?.price ?? 0), sub: maxPriceTask?.n ?? "暂无任务", tone: "cyan" },
       ]} />
 
       {/* 手机算力档位收益 —— 手机端按校准能力分 5 档,每档日产 USDT/NEX 运营可调 */}
@@ -122,11 +128,13 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         <section className="pane">
           <div className="pane-h">
             <span className="ttl">{tasks.length} 类任务 · 单价 & 门槛</span>
-            <span className="sub">前端 /earn 任务池映射</span>
-            <span className="r"><CodeTag tone="electric">任务引擎</CodeTag><CodeTag>E.task.*</CodeTag></span>
+            <span className="sub">后端任务表 · nx_admin_device_task</span>
+            <span className="r"><CodeTag tone="electric">任务引擎</CodeTag><CodeTag>devices/tasks</CodeTag></span>
           </div>
+          {ctx.e2Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E2 接口同步失败:{ctx.e2Error}</div>}
+          {ctx.e2Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在同步后端任务数据...</div>}
           <div className="task-list">
-            {tasks.map((t) => {
+            {tasks.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无后端任务数据;后端空表时会自动补种默认任务。</div> : tasks.map((t) => {
               const k = taskKind(t.n);
               const pct = Math.round(t.sat * 100);
               const locked = t.req.includes("需");
@@ -154,27 +162,27 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         <aside className="rail">
           <div className="donut-card">
             <div className="h">全网队列饱和度</div>
-            <div className="s">动态调度 · 实时</div>
+            <div className="s">后端任务表 · 当前均值</div>
             <div className="donut-wrap">
               <svg width={180} height={180} viewBox="0 0 180 180">
                 <circle className="ring-bg" cx="90" cy="90" r="74" fill="none" strokeWidth="14" />
-                <circle className="ring-f" cx="90" cy="90" r="74" fill="none" strokeWidth="14" strokeDasharray="464.96" strokeDashoffset="172" />
+                <circle className="ring-f" cx="90" cy="90" r="74" fill="none" strokeWidth="14" strokeDasharray="464.96" strokeDashoffset={donutOffset} />
               </svg>
-              <div className="ctr"><div className="num">63<small>%</small></div><div className="lb">峰值 78%</div></div>
+              <div className="ctr"><div className="num">{avgSat}<small>%</small></div><div className="lb">{peakTask ? `峰值 ${Math.round(peakTask.sat * 100)}%` : "暂无队列"}</div></div>
             </div>
             <div className="legend">
-              <div className="row"><span className="dot" style={{ background: "var(--warning)" }} /><span className="nm">高负载(&gt;75%)</span><span className="pct">2 类</span></div>
-              <div className="row"><span className="dot" style={{ background: "var(--success)" }} /><span className="nm">中负载(40–75%)</span><span className="pct">3 类</span></div>
-              <div className="row"><span className="dot" style={{ background: "var(--ink-4)" }} /><span className="nm">低负载(&lt;40%)</span><span className="pct">1 类</span></div>
+              <div className="row"><span className="dot" style={{ background: "var(--warning)" }} /><span className="nm">高负载(&gt;75%)</span><span className="pct">{highLoad} 类</span></div>
+              <div className="row"><span className="dot" style={{ background: "var(--success)" }} /><span className="nm">中负载(40–75%)</span><span className="pct">{midLoad} 类</span></div>
+              <div className="row"><span className="dot" style={{ background: "var(--ink-4)" }} /><span className="nm">低负载(&lt;40%)</span><span className="pct">{lowLoad} 类</span></div>
             </div>
           </div>
           <div className="hook-card">
-            <div className="h">锁定预览钩子 · 24h<span className="tag">E1 转化</span></div>
-            {HOOKS.map((h, i) => (
-              <div className={`hook-row${h.up ? " up" : ""}`} key={i}>
-                <span className="ic">{h.up ? <CheckSm /> : <LockSm />}</span>
-                <span className="nm">{h.nm}</span>
-                <span className="ct">{h.ct}</span>
+            <div className="h">任务负载排行<span className="tag">后端实时</span></div>
+            {queueRank.length === 0 ? <div className="tint tiny">暂无任务排行</div> : queueRank.map((task) => (
+              <div className={`hook-row${task.req.includes("需") ? "" : " up"}`} key={task.id}>
+                <span className="ic">{task.req.includes("需") ? <LockSm /> : <CheckSm />}</span>
+                <span className="nm">{task.n}</span>
+                <span className="ct">{Math.round(task.sat * 100)}% · {money(task.price)}{task.unit}</span>
               </div>
             ))}
           </div>
@@ -185,24 +193,24 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       <div className="heat-card">
         <div className="heat-h">
           <span className="ttl">24h × 6 任务 · 饱和度热力图</span>
-          <span className="sub">UTC · 每小时平均</span>
-          <span className="r">峰值 19:00 · LoRA 微调 92%</span>
+          <span className="sub">UTC · 当前任务饱和度派生</span>
+          <span className="r">{heatPeak ? `峰值 ${heatPeak.value}% · ${heatPeak.name}` : "暂无任务数据"}</span>
         </div>
-        <div className="heat-grid">
-          {heatNames.map((nm, r) => {
-            const row = makeRow(HEAT_BASE[r] ?? 40);
+        {heatTasks.length === 0 ? <div className="tint tiny">暂无任务热力数据</div> : <div className="heat-grid">
+          {heatTasks.map((task, r) => {
+            const row = makeRow(Math.round(task.sat * 100));
             return (
               <Fragment key={r}>
-                <span className="lbl">{nm}</span>
+                <span className="lbl">{task.n}</span>
                 <div className="heat-row">
                   {row.map((v, h) => (
-                    <div key={h} className="heat-cell" style={{ background: heatBg(v) }} title={`${nm} · ${h < 10 ? "0" + h : h}:00 UTC · ${v}%`} />
+                    <div key={h} className="heat-cell" style={{ background: heatBg(v) }} title={`${task.n} · ${h < 10 ? "0" + h : h}:00 UTC · ${v}%`} />
                   ))}
                 </div>
               </Fragment>
             );
           })}
-        </div>
+        </div>}
         <div className="heat-axis-wrap">
           <span />
           <div className="heat-axis">{Array.from({ length: 24 }, (_, h) => <span key={h}>{h % 3 === 0 ? h : ""}</span>)}</div>
@@ -214,7 +222,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <span style={{ marginLeft: "auto" }}><AutoGloss>悬停查看小时 × 任务负载</AutoGloss></span>
         </div>
       </div>
-      <p className="f-foot">高单价任务(LLM 405B / LoRA / 视频渲染)是<b>升级转化引擎</b> — 在前端 /earn 锁定展示,引导用户购买 Pro 或 Rack。任务单价改后<b>对新派单 server-canonical 生效</b>,已派工单维持原单价完成。</p>
+      <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${maxPriceTask.n}」` : "暂无"}、最高负载任务{peakTask ? `「${peakTask.n}」` : "暂无"}会驱动 /earn 任务池展示。任务单价改后<b>对新派单 server-canonical 生效</b>,已派工单维持原单价完成。</p>
     </>
   );
 }

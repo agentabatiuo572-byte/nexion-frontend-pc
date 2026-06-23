@@ -16,14 +16,14 @@
 .edom .f-foot b { color: var(--ink-2); font-weight: 600; }
 
 /* ##################### E1 商品目录 & 代际门 ##################### */
-/* ===== Phase timeline(代际门 · E2)— 6 列 track + 渐变连接线 + 当前节点光晕 ===== */
+/* ===== Phase timeline(代际门 · E2)— 动态列 track + 渐变连接线 + 当前节点光晕 ===== */
 .edom .phase-bar { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 18px 22px 14px; margin-bottom: 16px; }
 .edom .phase-bar .lbl { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
 .edom .phase-bar .lbl .h { font-size: 14.5px; font-weight: 600; color: var(--ink); white-space: nowrap; }
 .edom .phase-bar .lbl .now { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: 11.5px; font-weight: 600; border: 1px solid var(--brand-border); margin-left: auto; }
 .edom .phase-bar .lbl .now .d { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
-.edom .phase-track { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; position: relative; padding: 8px 0 0; }
-.edom .phase-track::before { content: ''; position: absolute; left: calc(100% / 12); right: calc(100% / 12); top: 30px; height: 2px; background: var(--phase-line, linear-gradient(90deg, var(--success) 0%, var(--success) 38%, var(--brand) 38%, var(--brand) 50%, var(--surface-3) 50%)); }
+.edom .phase-track { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 0; position: relative; padding: 8px 0 0; }
+.edom .phase-track::before { content: ''; position: absolute; left: 48px; right: 48px; top: 30px; height: 2px; background: var(--phase-line, linear-gradient(90deg, var(--success) 0%, var(--success) 38%, var(--brand) 38%, var(--brand) 50%, var(--surface-3) 50%)); }
 .edom .phase { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 8px; }
 .edom .phase .dot { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-3); border: 2px solid var(--border-strong); display: grid; place-items: center; font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--ink-3); z-index: 1; }
 .edom .phase.done .dot { background: var(--success); border-color: var(--success); color: #0A0A0A; }
@@ -68,6 +68,22 @@
 .edom .genrel-table .acts button.brand:hover { background: var(--brand); color: #0A0A0A; }
 .edom .genrel-foot { padding: 10px 20px; border-top: 1px dashed var(--border); background: var(--surface-2); display: flex; gap: 14px; align-items: center; font-size: 11.5px; color: var(--ink-3); flex-wrap: wrap; }
 .edom .genrel-foot b { color: var(--ink-2); font-weight: 600; } .edom .genrel-foot .sep { color: var(--ink-4); }
+.edom .phasecfg-table { display: grid; grid-template-columns: minmax(160px, 1.15fr) 92px 1fr 1fr 80px 90px 210px; font-size: 12.5px; }
+.edom .phasecfg-table .hd, .edom .phasecfg-table .rw { display: contents; }
+.edom .phasecfg-table .c { padding: 11px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; min-width: 0; }
+.edom .phasecfg-table .hd .c { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--ink-4); letter-spacing: .06em; text-transform: uppercase; background: var(--surface-2); border-bottom: 1px solid var(--border-strong); }
+.edom .phasecfg-table .rw:last-child .c { border-bottom: none; }
+.edom .phasecfg-table .mono { font-family: var(--mono); color: var(--ink-2); }
+.edom .phasecfg-table .phase-name { font-weight: 700; color: var(--ink-1); }
+.edom .phasecfg-table .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.edom .phasecfg-table .phaseNow { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 5px; background: var(--brand-soft); color: var(--brand); border: 1px solid var(--brand-border); font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.edom .phasecfg-table .phaseNow .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.edom .phasecfg-table .acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.edom .phasecfg-table .acts button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 11px; cursor: pointer; white-space: nowrap; }
+.edom .phasecfg-table .acts button.brand { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); font-weight: 600; }
+.edom .phasecfg-table .acts button.danger { border-color: var(--danger-border); color: var(--danger); }
+.edom .phasecfg-table .acts button:disabled { cursor: not-allowed; opacity: .55; }
+@media (max-width: 980px) { .edom .phasecfg-table { grid-template-columns: minmax(130px, 1fr) 90px 120px; } .edom .phasecfg-table .optional { display: none; } }
 
 /* ===== SKU matrix card — 200px img | 1fr body ===== */
 .edom .sku-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }

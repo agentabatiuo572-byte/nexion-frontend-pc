@@ -13,13 +13,16 @@ function jsonError(status: number, message: string) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts[0] === "generation-gates" || parts[0] === "phases") {
-    return `/api/admin/devices/e1/${parts.map(encodeURIComponent).join("/")}`;
+  if (parts[0] !== "tasks") {
+    return null;
   }
-  if (parts[0] === "skus" || parts[0] === "reviews") {
-    return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
+  const isCollection = parts.length === 1;
+  const isTask = parts.length === 2 && !!parts[1];
+  const isTaskAction = parts.length === 3 && !!parts[1] && (parts[2] === "price" || parts[2] === "status");
+  if (!isCollection && !isTask && !isTaskAction) {
+    return null;
   }
-  return null;
+  return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
 }
 
 async function proxy(request: Request, context: RouteContext) {
@@ -27,7 +30,7 @@ async function proxy(request: Request, context: RouteContext) {
   const targetPath = backendPath(path);
 
   if (!targetPath) {
-    return jsonError(404, "E1_ROUTE_NOT_FOUND");
+    return jsonError(404, "DEVICES_ROUTE_NOT_FOUND");
   }
 
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
@@ -65,7 +68,7 @@ async function proxy(request: Request, context: RouteContext) {
       },
     });
   } catch {
-    return jsonError(503, "E1_BACKEND_UNAVAILABLE");
+    return jsonError(503, "DEVICES_BACKEND_UNAVAILABLE");
   }
 }
 

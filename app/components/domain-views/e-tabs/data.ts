@@ -93,7 +93,7 @@ export const EMPTY_SKU_FORM = {
   sold: "", stock: "", rating: "", reviews: "",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
-  generation: "1", lifecycle: "active", supersededBy: "", tradeinDiscount: "", unlock: "P1", tag: "",
+  generation: "1", lifecycle: "active", supersededBy: "", tradeinDiscount: "", unlock: "", tag: "",
   // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
@@ -129,7 +129,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     sold: str(s.sold), stock: str(s.stock), rating: str(s.rating), reviews: str(s.reviews),
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
-    generation: str(s.generation) || "1", lifecycle: s.lifecycle ?? "active", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "P1", tag: s.tag ?? "",
+    generation: str(s.generation) || "1", lifecycle: s.lifecycle ?? "active", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "", tag: s.tag ?? "",
     gateType: gateToType(g),
     gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamVolumeMin: str(g?.teamVolumeMin),
     gateMode: g?.mode === "either" ? "either" : "all",
@@ -170,6 +170,7 @@ export function gateRemaining(g: PurchaseGate): number | null {
 // 购买门表单校验(提交前调;返回错误串 = 拦截,null = 通过)。
 // 注:这是输入完整性/取值范围校验,非「锁死业务值」——阈值/开关本身全运营可调(铁律)。
 export function validateGateForm(f: SkuForm): string | null {
+  if (f.tier !== "Share" && !f.unlock.trim()) return "请先配置并选择解锁 Phase";
   if (f.gateType === "activeDirect" && skuNumU(f.gateActiveDirectMin) == null) return "购买门:请填写活跃直推门槛";
   if (f.gateType === "rank" && skuNumU(f.gateRankMin) == null) return "购买门:请填写最低 V 级";
   if (f.gateType === "combo" && skuNumU(f.gateRankMin) == null && skuNumU(f.gateActiveDirectMin) == null && skuNumU(f.gateTeamVolumeMin) == null)

@@ -77,8 +77,11 @@ interface BackendReview {
 
 export interface E1Phase {
   p: string;
+  label?: string;
   meta: string;
   skus: string;
+  sortOrder?: number;
+  status?: string;
 }
 
 export interface E1GenerationRelease {
@@ -91,6 +94,7 @@ export interface E1GenerationRelease {
   phaseOffset?: number;
   forceUnlock?: boolean;
   effectiveReleaseMonth?: number;
+  status?: string;
 }
 
 export interface E1GenerationGateData {
@@ -109,6 +113,26 @@ export interface E1CatalogSnapshot {
   skus: OpsSku[];
   reviews: OpsReview[];
   gates: E1GenerationGateData;
+}
+
+export interface E1GenerationGateInput {
+  skuId?: string;
+  name?: string;
+  releaseMonth?: number;
+  phase?: string;
+  discount?: number;
+  eligibility?: boolean;
+  phaseOffset?: number;
+  forceUnlock?: boolean;
+  status?: string;
+}
+
+export interface E1PhaseInput {
+  label?: string;
+  meta?: string;
+  skus?: string;
+  sortOrder?: number;
+  status?: string;
 }
 
 let requestSeq = 0;
@@ -230,7 +254,7 @@ function fromSku(sku: BackendSku): OpsSku {
     lifecycle: sku.lifecycle ?? undefined,
     supersededBy: sku.supersededBy ?? undefined,
     tradeinDiscount: toOptionalNumber(sku.tradeinDiscount),
-    unlock: sku.unlockPhase ?? "P1",
+    unlock: sku.unlockPhase ?? "",
     purchaseGate: fromPurchaseGate(sku.purchaseGate),
     imageAssetId: sku.imageAssetId ?? undefined,
     imageObjectKey: sku.imageObjectKey ?? undefined,
@@ -272,7 +296,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     lifecycle: sku.lifecycle ?? "active",
     supersededBy: sku.supersededBy ?? null,
     tradeinDiscount: sku.tradeinDiscount ?? null,
-    unlockPhase: sku.unlock || "P1",
+    unlockPhase: sku.unlock || "",
     purchaseGate: toPurchaseGate(sku.purchaseGate),
     imageAssetId: sku.imageAssetId ?? null,
     imageObjectKey: sku.imageObjectKey ?? null,
@@ -414,5 +438,61 @@ export async function updateE1GenerationGate(key: string, value: string, reason:
     method: "PATCH",
     body: JSON.stringify({ key, value, reason, operator }),
     idempotencyPrefix: "e1-generation-gate",
+  });
+}
+
+export async function createE1GenerationGate(input: E1GenerationGateInput, reason: string, operator: string) {
+  return e1Request<E1GenerationGateData>("/generation-gates", {
+    method: "POST",
+    body: JSON.stringify({ ...input, reason, operator }),
+    idempotencyPrefix: "e1-generation-gate-create",
+  });
+}
+
+export async function patchE1GenerationGate(skuId: string, input: E1GenerationGateInput, reason: string, operator: string) {
+  return e1Request<E1GenerationGateData>(`/generation-gates/${encodeURIComponent(skuId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...input, reason, operator }),
+    idempotencyPrefix: "e1-generation-gate-update",
+  });
+}
+
+export async function archiveE1GenerationGate(skuId: string, reason: string, operator: string) {
+  return e1Request<E1GenerationGateData>(`/generation-gates/${encodeURIComponent(skuId)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "e1-generation-gate-archive",
+  });
+}
+
+export async function createE1Phase(input: E1PhaseInput, reason: string, operator: string) {
+  return e1Request<E1GenerationGateData>("/phases", {
+    method: "POST",
+    body: JSON.stringify({ ...input, reason, operator }),
+    idempotencyPrefix: "e1-phase-create",
+  });
+}
+
+export async function patchE1Phase(phaseId: string, input: E1PhaseInput, reason: string, operator: string) {
+  return e1Request<E1GenerationGateData>(`/phases/${encodeURIComponent(phaseId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...input, reason, operator }),
+    idempotencyPrefix: "e1-phase-update",
+  });
+}
+
+export async function archiveE1Phase(phaseId: string, reason: string, operator: string) {
+  return e1Request<E1GenerationGateData>(`/phases/${encodeURIComponent(phaseId)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "e1-phase-archive",
+  });
+}
+
+export async function setE1CurrentPhase(phaseId: string, reason: string, operator: string) {
+  return e1Request<E1GenerationGateData>(`/phases/${encodeURIComponent(phaseId)}/current`, {
+    method: "PATCH",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "e1-phase-current",
   });
 }

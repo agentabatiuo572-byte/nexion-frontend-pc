@@ -1,5 +1,5 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
-import type { E1GenerationGateData } from "@/lib/admin/e1-client";
+import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
 import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
 
 /**
@@ -14,10 +14,16 @@ export type EOp =
   | "sku-delete"      // 删除 SKU(需破坏性理由 + 影响确认)
   | "sku-status"      // 上/下架(真后端 status)
   | "task-down"       // 下架任务(需破坏性理由 + 影响确认)
-  | "task-price"      // 任务改单价(真 store updateTask,操作确认 出价格编辑框)
-  | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ updateTask + setParam config
+  | "task-price"      // 任务改单价(E2 后端 API,操作确认 出价格编辑框)
+  | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API + setParam config
   | "param"           // 自由值调参 → setParam(paramKey, newValue);操作确认 出「目标新值」
-  | "param-fixed"     // 固定值写入 → setParam(paramKey, fixedVal)(如 forceUnlock true/false);不出编辑框
+  | "param-fixed"     // 固定值写入 → setParam(paramKey, fixedVal);不出编辑框
+  | "phase-save"              // E1 Phase 新增/编辑 → nx_admin_phase_config
+  | "phase-current"           // E1 当前 Phase 手动设置 → growth.phase.current
+  | "phase-archive"           // E1 Phase 归档 → 校验引用后归档
+  | "generation-gate-save"     // E1 代际门新增/编辑 → 后端业务表
+  | "generation-gate-force"    // E1 代际门 forceUnlock → 后端业务表
+  | "generation-gate-archive"  // E1 代际门移除 → 后端归档
   | "order-refund"    // 退款(放大流出)
   | "order-cancel"    // 取消订单
   | "order-terminal"  // 补建终态(select)
@@ -37,6 +43,9 @@ export interface McSpec {
   hasImg?: boolean;         // sku-save:含商品媒体(商品主图或商品视频)
   status?: string;          // sku-status:"on"|"off";ops-pause:"on"|"off"
   taskId?: string;          // task-price:目标任务 id
+  phaseId?: string;
+  generationGateId?: string;
+  generationGate?: E1GenerationGateInput;
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单
   dc?: string;              // 运维处置目标数据中心
 }
@@ -66,7 +75,7 @@ export interface EViewCtx {
   e1Loading: boolean;
   e1Error: string | null;
   e1Gates: E1GenerationGateData | null;
-  phaseCur: string;                              // 当前 Phase(pget('H.phase.current') ?? 'P3')
+  phaseCur: string;                              // 当前 Phase,仅来自 E1 后端 generation-gates
   refreshE1: () => Promise<void>;
   openSku: (name?: string) => void;              // 打开 SKU 抽屉(无 name = 新增)
   delSku: (name: string) => void;
@@ -74,8 +83,11 @@ export interface EViewCtx {
   openEditReview: (r: OpsReview) => void;
   toggleReview: (r: OpsReview) => void;
   delReview: (r: OpsReview) => void;
-  // E2 收益 & 任务引擎(改单价走 ctx.openActionConfirm op:"task-price";新增/下架走真 store)
+  // E2 收益 & 任务引擎(任务列表/新增/改单价/下架均走后端 API)
   tasks: OpsTask[];
+  e2Loading: boolean;
+  e2Error: string | null;
+  refreshE2: () => Promise<void>;
   openAddTask: () => void;
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   delTask: (t: { id: string; n: string }) => void;
