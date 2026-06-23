@@ -41,7 +41,7 @@ import {
 } from "@/lib/admin/e1-client";
 import { createE2Task, deleteE2Task, fetchE2PhoneTiers, fetchE2Tasks, updateE2PhoneTier, updateE2Task, updateE2TaskPrice, type E2PhoneTier } from "@/lib/admin/e2-client";
 import { fetchE3Snapshot, updateE3Param, updateE3Params, type E3OperationMetric, type E3Stats } from "@/lib/admin/e3-client";
-import { cancelE4Order, fetchE4Orders, refundE4Order, terminalE4Order, updateE4OrderState } from "@/lib/admin/e4-client";
+import { cancelE4Order, fetchE4OrderPage, refundE4Order, terminalE4Order, updateE4OrderState } from "@/lib/admin/e4-client";
 import {
   activateE5Device,
   createE5Datacenter,
@@ -368,18 +368,39 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [orders, setOrders] = useState<EOrder[]>([]);
   const [e4Loading, setE4Loading] = useState(false);
   const [e4Error, setE4Error] = useState<string | null>(null);
+  const [e4Page, setE4Page] = useState(1);
+  const [e4PageSize, setE4PageSizeState] = useState(10);
+  const [e4Total, setE4Total] = useState(0);
+  const [e4Filter, setE4FilterState] = useState("all");
+  const setE4PageSize = useCallback((pageSize: number) => {
+    setE4PageSizeState(pageSize);
+    setE4Page(1);
+  }, []);
+  const setE4Filter = useCallback((filter: string) => {
+    setE4FilterState(filter);
+    setE4Page(1);
+  }, []);
   const refreshE4 = useCallback(async () => {
     setE4Loading(true);
     setE4Error(null);
     try {
-      setOrders(await fetchE4Orders({ pageNum: 1, pageSize: 100 }));
+      const nextPage = await fetchE4OrderPage({
+        state: e4Filter === "all" ? undefined : e4Filter,
+        pageNum: e4Page,
+        pageSize: e4PageSize,
+      });
+      setOrders(nextPage.records);
+      setE4Total(nextPage.total);
+      setE4Page(nextPage.pageNum);
+      setE4PageSizeState(nextPage.pageSize);
     } catch (error) {
       setE4Error(error instanceof Error ? error.message : "E4_SYNC_FAILED");
       setOrders([]);
+      setE4Total(0);
     } finally {
       setE4Loading(false);
     }
-  }, []);
+  }, [e4Filter, e4Page, e4PageSize]);
   useEffect(() => { if (tab === "E4") void refreshE4(); }, [tab, refreshE4]);
   const orderById = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
   const orderState = useCallback((order: EOrder): string => orderById.get(order.id)?.state ?? order.state, [orderById]);
@@ -868,7 +889,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
-    orders, e4Loading, e4Error, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
+    orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, setE4Page, setE4PageSize, setE4Filter, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5Error, e5Page, e5PageSize, e5Total, setE5Page, setE5PageSize, refreshE5, isDcPaused, openDatacenter, deleteDatacenter,
   };
 

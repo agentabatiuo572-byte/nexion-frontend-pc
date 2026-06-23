@@ -15,10 +15,10 @@ interface ApiResult<T> {
 }
 
 interface PageResult<T> {
-  total: number;
-  pageNum: number;
-  pageSize: number;
-  records: T[];
+  total?: number | string | null;
+  pageNum?: number | string | null;
+  pageSize?: number | string | null;
+  records?: T[] | null;
 }
 
 interface BackendOrder {
@@ -39,6 +39,13 @@ export interface E4OrderQuery {
   keyword?: string;
   pageNum?: number;
   pageSize?: number;
+}
+
+export interface E4OrderPage {
+  total: number;
+  pageNum: number;
+  pageSize: number;
+  records: E4Order[];
 }
 
 let requestSeq = 0;
@@ -91,7 +98,7 @@ function queryString(query: E4OrderQuery) {
   if (query.state && query.state !== "all") params.set("state", query.state);
   if (query.keyword?.trim()) params.set("keyword", query.keyword.trim());
   params.set("pageNum", String(query.pageNum ?? 1));
-  params.set("pageSize", String(query.pageSize ?? 100));
+  params.set("pageSize", String(query.pageSize ?? 10));
   const raw = params.toString();
   return raw ? `?${raw}` : "";
 }
@@ -108,9 +115,19 @@ function fromOrder(order: BackendOrder): E4Order {
   };
 }
 
-export async function fetchE4Orders(query: E4OrderQuery = {}) {
+export async function fetchE4OrderPage(query: E4OrderQuery = {}): Promise<E4OrderPage> {
   const page = await e4Request<PageResult<BackendOrder>>(`/orders${queryString(query)}`);
-  return (page.records ?? []).map(fromOrder);
+  return {
+    total: toNumber(page.total),
+    pageNum: toNumber(page.pageNum, query.pageNum ?? 1),
+    pageSize: toNumber(page.pageSize, query.pageSize ?? 10),
+    records: (page.records ?? []).map(fromOrder),
+  };
+}
+
+export async function fetchE4Orders(query: E4OrderQuery = {}) {
+  const page = await fetchE4OrderPage(query);
+  return page.records;
 }
 
 export async function refundE4Order(orderId: string, reason: string, operator: string) {

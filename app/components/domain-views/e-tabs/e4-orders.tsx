@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { CodeTag, Badge } from "../design-kit";
+import { useMemo } from "react";
+import { CodeTag, Badge, DataListPager } from "../design-kit";
 import type { EViewCtx } from "./types";
 import { ostate, stateLabel } from "./data";
 import { EStats } from "./stats";
@@ -9,16 +9,24 @@ const Chevron = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none
 
 const CONNECTORS = [{ cls: "start", ln: "a" }, { cls: "mid", ln: "b" }, { cls: "end", ln: "c" }];
 const FILTERS = [
-  { s: "all", label: "全部" }, { s: "active", label: "active" }, { s: "allocating", label: "allocating" },
-  { s: "paid", label: "paid" }, { s: "failed", label: "failed / 异常" }, { s: "refunded", label: "refunded" },
+  { s: "all", label: "全部" },
+  { s: "created", label: "created" },
+  { s: "paid", label: "paid" },
+  { s: "allocating", label: "allocating" },
+  { s: "active", label: "active" },
+  { s: "failed", label: "failed" },
+  { s: "payment_failed", label: "payment_failed" },
+  { s: "expired", label: "expired" },
+  { s: "provisioning_failed", label: "provisioning_failed" },
+  { s: "refunded", label: "refunded" },
+  { s: "cancelled", label: "cancelled" },
 ];
-const ERROR_STATES = new Set(["failed", "payment_failed", "expired", "provisioning_failed"]);
 const IN_FLIGHT_STATES = new Set(["created", "paid", "allocating", "failed"]);
 const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
 
 export function E4Orders({ ctx }: { ctx: EViewCtx }) {
   const { orders } = ctx;
-  const [curF, setCurF] = useState("all");
+  const curF = ctx.e4Filter;
   const stateCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const order of orders) {
@@ -26,7 +34,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       counts.set(state, (counts.get(state) ?? 0) + 1);
     }
     return counts;
-  }, [ctx, orders]);
+  }, [ctx.orderState, orders]);
   const activeAmount = orders
     .filter((o) => ctx.orderState(o) === "active")
     .reduce((sum, o) => sum + o.amt, 0);
@@ -46,26 +54,22 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     { cls: "neutral", nm: "cancelled", ct: `${stateCounts.get("cancelled") ?? 0} 在`, desc: "created/paid 前可取消" },
     { cls: "warn", nm: "缺失终态", ct: `${missingTerminal} 待处置`, desc: "failed 待补建终态" },
   ];
-  const rows = orders.filter((o) => {
-    if (curF === "all") return true;
-    const state = ctx.orderState(o);
-    return curF === "failed" ? ERROR_STATES.has(state) : state === curF;
-  });
+  const rows = orders;
 
   return (
     <>
       <EStats items={[
-        { k: "后端订单", v: orders.length, sub: ctx.e4Loading ? "同步中" : ctx.e4Error ? "同步异常" : "已同步", tone: "ok" },
-        { k: "运行中金额", v: money(activeAmount), sub: `${stateCounts.get("active") ?? 0} 笔 active` },
-        { k: "流转中订单", v: inFlight, sub: "created / paid / allocating / failed", tone: inFlight ? "cyan" : "" },
-        { k: "缺失终态", v: missingTerminal, sub: "failed 需补建终态", tone: missingTerminal ? "danger" : "ok" },
+        { k: "后端订单", v: ctx.e4Total, sub: ctx.e4Loading ? "同步中" : ctx.e4Error ? "同步异常" : `第 ${ctx.e4Page} 页 ${orders.length} 条`, tone: "ok" },
+        { k: "运行中金额", v: money(activeAmount), sub: `当前页 ${stateCounts.get("active") ?? 0} 笔 active` },
+        { k: "流转中订单", v: inFlight, sub: "当前页 created / paid / allocating / failed", tone: inFlight ? "cyan" : "" },
+        { k: "缺失终态", v: missingTerminal, sub: "当前页 failed 需补建终态", tone: missingTerminal ? "danger" : "ok" },
       ]} />
 
       {/* 状态机流转图 */}
       <section className="sm-card">
         <div className="sm-h">
           <span className="ttl">订单状态机 · 流转图</span>
-          <span className="sub">后端实时状态 · 主路径 + 终态分支</span>
+          <span className="sub">当前页实时状态 · 主路径 + 终态分支</span>
           <span className="r"><CodeTag tone="electric">订单状态机</CodeTag><CodeTag>devices/orders</CodeTag></span>
         </div>
         {ctx.e4Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E4 同步失败:{ctx.e4Error}</div>}
@@ -100,13 +104,13 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       <section className="q-card">
         <div className="q-h">
           <span className="ttl">订单队列</span>
-          <span className="sub">后端 orders API · 点行查看详情</span>
+          <span className="sub">后端 orders API · pageNum / pageSize · 点行查看详情</span>
           <span className="r"><CodeTag tone="electric">A2 审计</CodeTag></span>
         </div>
         <div className="filter-bar">
           {FILTERS.map((f) => (
-            <span key={f.s} className={`fchip${curF === f.s ? " on" : ""}`} onClick={() => setCurF(f.s)}>
-              {f.s === "all" ? `${f.label} ${orders.length}` : f.label}
+            <span key={f.s} className={`fchip${curF === f.s ? " on" : ""}`} onClick={() => ctx.setE4Filter(f.s)}>
+              {f.label}
             </span>
           ))}
         </div>
@@ -114,8 +118,12 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           <div>订单 ID</div><div>用户</div><div>SKU</div><div style={{ textAlign: "right" }}>金额</div>
           <div>DC 分配</div><div>状态</div><div style={{ textAlign: "right" }}>时长</div><div />
         </div>
-        {rows.length === 0 ? (
-          <div className="q-empty">{orders.length === 0 && !ctx.e4Loading ? "后端暂无订单记录" : "当前筛选无匹配"}</div>
+        {ctx.e4Loading ? (
+          <div className="q-empty">正在从后端加载第 {ctx.e4Page} 页订单...</div>
+        ) : ctx.e4Error ? (
+          <div className="q-empty">E4 订单接口读取失败:{ctx.e4Error}</div>
+        ) : rows.length === 0 ? (
+          <div className="q-empty">{curF === "all" ? "后端暂无订单记录" : "当前状态无匹配订单"}</div>
         ) : rows.map((o) => {
           const st = ctx.orderState(o);
           return (
@@ -131,8 +139,17 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
             </div>
           );
         })}
+        <DataListPager
+          label="订单队列"
+          page={ctx.e4Page}
+          pageSize={ctx.e4PageSize}
+          total={ctx.e4Total}
+          onPageChange={ctx.setE4Page}
+          onPageSizeChange={ctx.setE4PageSize}
+          pageSizeOptions={[10, 20, 50, 100]}
+        />
       </section>
-      <p className="f-foot">补建终态 = 对账兜底:状态机偶发缺失终态时,运营手动落定 <span style={{ fontFamily: "var(--mono)" }}>payment_failed / expired / refunded / provisioning_failed</span> 之一,由后端写 A2 审计。退款 / 取消 / 主路径流转均调用后端订单状态机接口。</p>
+      <p className="f-foot">补建终态 = 对账兜底:状态机偶发缺失终态时,运营手动落定 <span style={{ fontFamily: "var(--mono)" }}>payment_failed / expired / refunded / provisioning_failed</span> 之一,由后端写 A2 审计。订单队列通过后端 <span style={{ fontFamily: "var(--mono)" }}>pageNum / pageSize / state</span> 分页读取,退款 / 取消 / 主路径流转均调用后端订单状态机接口。</p>
     </>
   );
 }
