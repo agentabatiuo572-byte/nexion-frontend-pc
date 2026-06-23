@@ -180,7 +180,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                     <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>
                       {c.name}
                       {managed && (
-                        <span className="chip" style={{ height: 18, fontSize: 11.5, marginLeft: 8 }}>
+                        <span className="chip" style={{ height: 18, fontSize: 11.5, marginLeft: 8, border: "none" }}>
                           <Icon name="lock" size={11} />
                           AI 平台域管理
                         </span>
@@ -189,7 +189,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                     <div className="dim2" style={{ fontSize: 11.5, marginTop: 2 }}>{c.managedBy} · <span className="mono">{c.type}</span></div>
                   </div>
                   {managed ? (
-                    <span className="chip" style={{ color: on ? "var(--m-ok)" : "var(--ink-3)" }}>{on ? "已启用(只读)" : "已停用(只读)"}</span>
+                    <span className="chip" style={{ color: on ? "var(--m-ok)" : "var(--ink-3)", border: "none" }}>{on ? "已启用(只读)" : "已停用(只读)"}</span>
                   ) : (
                     <span data-proof={`session-cat-toggle-${c.type}`}>
                       <Sw on={on} onClick={() => toggleCat(c)} label={`${on ? "禁用" : "启用"} ${c.name}`} />
@@ -295,7 +295,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             return (
               <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <span className="idtag" style={{ fontSize: 11.5, minWidth: 48 }}>{t.id}</span>
-                <span className="chip" style={{ height: 20 }}>{t.type === "advisor" ? "专属顾问" : "普通客服"}</span>
+                <span className="chip" style={{ height: 20, border: "none" }}>{t.type === "advisor" ? "专属顾问" : "普通客服"}</span>
                 <span className="dim" style={{ fontSize: 12.5, flex: 1, minWidth: 0 }}>{t.text}</span>
                 <span className="dim2" style={{ fontSize: 11 }}>{published ? "已发布" : "草稿"}</span>
                 <span data-proof={`session-tpl-publish-${t.id}`}>

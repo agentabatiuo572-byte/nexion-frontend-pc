@@ -343,6 +343,20 @@ else
   fail=$((fail+1)); fails="$fails\n  [shadcn-tokens] ui 组件残留 shadcn 默认 token 未重皮 V5(跑 node scripts/check-shadcn-tokens.mjs 看明细)"
 fi
 
+echo "== [+] 排版 anti-orphan gate(禁止孤字断行 · globals.css 必声明 .dkpage text-wrap:pretty)=="
+if grep -qE '\.dkpage *\{ *text-wrap: *pretty' "$ROOT/app/globals.css"; then
+  pass=$((pass+1)); echo "  ✓ anti-orphan 规则在位(.dkpage text-wrap:pretty + .nowrap 原子保证 · nexion-design 排版铁律)"
+else
+  fail=$((fail+1)); fails="$fails\n  [anti-orphan] globals.css 缺 .dkpage{text-wrap:pretty} 禁止孤字断行规则(见 nexion-design 排版铁律;数字+单位原子另用 .nowrap)"
+fi
+
+echo "== [+] 卡内嵌套铁律 gate(非按钮 filled chip/icon/badge/pill 禁加 border 描边)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/inner-block-no-border-sentinel.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [inner-block-no-border] 非按钮 filled chip/icon/badge + border 违规(跑 node scripts/inner-block-no-border-sentinel.mjs 看明细;合法 keep 加进哨兵 EXEMPT)"
+fi
+
 echo "----------------------------------------"
 if [ "$fail" -eq 0 ]; then
   echo "✓ verify PASS — $pass checks, 0 failed"

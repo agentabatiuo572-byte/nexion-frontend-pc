@@ -44,6 +44,9 @@ function ParamRow({ ctx, p }: { ctx: HCtx; p: TrialParam }) {
     : "只影响新开试用,进行中会话按开始时锁定值结算,不回溯。";
   const editKind = p.key === "autoCharge" ? "select" : "text";
   const options = p.key === "autoCharge" ? ["开", "关"] : undefined;
+  // 非 hot 的 openConfirm 路径:trialOpen 是二元枚举(开放/关闭),走 chips 勾选不让手输(能勾选的不要手输铁律);
+  // 其余非敏感参数(机价零头 / 折扣 / 网段类)是开放数值,保留文本框。
+  const inputOptions = p.key === "trialOpen" ? ["开放", "关闭"] : undefined;
 
   if (p.hot) {
     return (
@@ -91,7 +94,7 @@ function ParamRow({ ctx, p }: { ctx: HCtx; p: TrialParam }) {
           ),
           chips: [["单人直改 · 原因必填", "ready"], ["落审计", "done"]],
           reason: true,
-          input: { label: "目标新值", placeholder: `当前 ${cur}` },
+          input: { label: "目标新值", placeholder: `当前 ${cur}`, options: inputOptions },
           okLabel: "确认修改",
           run: (reason, v) => {
             if (v != null && v.trim().length > 0) {

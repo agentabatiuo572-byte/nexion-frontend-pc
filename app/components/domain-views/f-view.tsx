@@ -11,11 +11,14 @@
  * - 处置类(op:"dispose"):写入固定状态值(approved/rejected/disqualified/frozen/unlocked …)。
  * - 放大资金流出(amplify):OperationConfirmModal amplifies={true} → B1 兑付覆盖率护栏。
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
+import { usePlatformConfig, type OpsSku } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { VRANK_REWARD_SEED } from "./f-tabs/data";
+import { VOUCHER_SEED } from "@/lib/mock/admin/vouchers";
+import { SKUS } from "@/lib/mock/admin/design-data";
 import type { Mc, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { F2Rates } from "./f-tabs/f2-rates";
@@ -33,10 +36,60 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [mc, setActionConfirm] = useState<Mc>(null);
   const setParam = usePlatformConfig((s) => s.setParam);
   const params = usePlatformConfig((s) => s.params);
+  // V-Rank 等级奖励切片 + 代金券 / SKU(供奖励下拉选项)
+  const vRankRewards = usePlatformConfig((s) => s.vRankRewards);
+  const ensureVRankRewards = usePlatformConfig((s) => s.ensureVRankRewards);
+  const addVRankReward = usePlatformConfig((s) => s.addVRankReward);
+  const updateVRankReward = usePlatformConfig((s) => s.updateVRankReward);
+  const removeVRankReward = usePlatformConfig((s) => s.removeVRankReward);
+  const vouchers = usePlatformConfig((s) => s.vouchers);
+  const ensureVouchers = usePlatformConfig((s) => s.ensureVouchers);
+  const skus = usePlatformConfig((s) => s.skus);
+  const ensureSkus = usePlatformConfig((s) => s.ensureSkus);
+  const logAudit = usePlatformConfig((s) => s.logAudit);
   const hydrated = useOpsHydrated();
   const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
 
-  const ctx: FViewCtx = { pget, openActionConfirm: (m) => setActionConfirm(m), nav, toast: (msg) => setToast(msg) };
+  useEffect(() => {
+    ensureVRankRewards(VRANK_REWARD_SEED);
+    ensureVouchers(VOUCHER_SEED);
+    ensureSkus(SKUS as OpsSku[]);
+  }, [ensureVRankRewards, ensureVouchers, ensureSkus]);
+
+  // 首帧 / SSR 用 seed;hydrate 后用真 store(hydration 安全)。
+  const rewards = hydrated && vRankRewards ? vRankRewards : VRANK_REWARD_SEED;
+  const voucherList = hydrated && vouchers ? vouchers : VOUCHER_SEED;
+  const activeVouchers = voucherList.filter((v) => (v.status ?? "active") === "active");
+  const voucherOptions = activeVouchers.map((v) => v.id);
+  const voucherLabels: Record<string, string> = Object.fromEntries(activeVouchers.map((v) => [v.id, v.name]));
+  const skuList = hydrated && skus ? skus : (SKUS as OpsSku[]);
+  const activeSkus = skuList.filter((s) => (s.status || "on") === "on");
+  const skuOptions = activeSkus.map((s) => s.id ?? s.name);
+  const skuLabels: Record<string, string> = Object.fromEntries(activeSkus.map((s) => [s.id ?? s.name, s.name]));
+
+  const ctx: FViewCtx = {
+    pget,
+    openActionConfirm: (m) => setActionConfirm(m),
+    nav,
+    toast: (msg) => setToast(msg),
+    rewards,
+    addReward: (level, item, reason) => {
+      addVRankReward(level, item);
+      logAudit({ actor: "总管理员", action: `F1 ${level} 新增奖励`, target: `F.vrank.${level}.reward.${item.id}`, reason });
+    },
+    updateReward: (level, id, patch, reason) => {
+      updateVRankReward(level, id, patch);
+      logAudit({ actor: "总管理员", action: `F1 ${level} 编辑奖励`, target: `F.vrank.${level}.reward.${id}`, reason });
+    },
+    removeReward: (level, id, reason) => {
+      removeVRankReward(level, id);
+      logAudit({ actor: "总管理员", action: `F1 ${level} 移除奖励`, target: `F.vrank.${level}.reward.${id}`, reason });
+    },
+    voucherOptions,
+    voucherLabels,
+    skuOptions,
+    skuLabels,
+  };
 
   // 跨域 / 跨标签跳转 CTA(放进 DomainHeader 的 right 槽,不改 DomainHeader 组件)
   const CTA: Record<string, { label: string; onClick: () => void }> = {
@@ -63,9 +116,12 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         detail={mc.detail ?? "server-canonical · 改后对下一笔结算生效,不回溯已计提"}
         amplifies={!!mc.amplify}
         edit={mc.edit}
+        businessForm={mc.businessForm}
         onClose={() => setActionConfirm(null)}
-        onConfirm={(reason, newVal) => {
-          if (mc.op === "param" && mc.paramKey) {
+        onConfirm={(reason, newVal, businessValue) => {
+          if (mc.run) {
+            mc.run(reason, businessValue);
+          } else if (mc.op === "param" && mc.paramKey) {
             if (!newVal) { setToast("请填写目标新值"); return; }
             setParam(mc.paramKey, newVal, { action: mc.name, reason });
             setToast(mc.name + " 已确认生效 · 新值 " + newVal);

@@ -278,7 +278,7 @@
 .mdom .prio.high   { color: var(--m-high); }   .mdom .prio.high .bar   { background: var(--m-high); }
 .mdom .prio.normal { color: var(--ink-3); }    .mdom .prio.normal .bar { background: var(--ink-4); }
 .mdom .prio.low    { color: var(--ink-4); }    .mdom .prio.low .bar    { background: var(--ink-4); opacity: .6; }
-.mdom .sens-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--m-high); background: var(--m-high-soft); border: 1px solid var(--m-high-bd); padding: 2px 8px; border-radius: 999px; }
+.mdom .sens-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--m-high); background: var(--m-high-soft); padding: 2px 8px; border-radius: 999px; }
 .mdom .sens-tag .ic, .mdom .sens-tag svg { width: 12px; height: 12px; }
 
 /* ---- cards / sec header ---- */
@@ -537,14 +537,14 @@
 .mdom .pa-prev-to { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 7px; }
 .mdom .pa-prev-to b { color: var(--ink-2); font-weight: 500; }
 .mdom .pa-bubble-row { display: flex; gap: 11px; align-items: flex-start; }
-.mdom .pa-bubble { background: var(--m-hd-soft); border: 1px solid var(--m-hd-border); border-radius: 12px; padding: 12px 14px; max-width: 100%; min-width: 0; }
+.mdom .pa-bubble { background: var(--m-hd-soft); border-radius: 12px; padding: 12px 14px; max-width: 100%; min-width: 0; }
 .mdom .pa-bubble-name { font-size: 12.5px; font-weight: 500; color: var(--m-hd-2); margin-bottom: 5px; }
 .mdom .pa-bubble-text { font-size: 13.5px; line-height: 1.6; color: var(--ink); word-break: break-word; }
-.mdom .pa-cta { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; font-size: 12px; color: var(--m-hd-2); background: color-mix(in srgb, var(--m-hd) 12%, transparent); border: 1px solid var(--m-hd-border); border-radius: 999px; padding: 4px 10px; }
+.mdom .pa-cta { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; font-size: 12px; color: var(--m-hd-2); background: color-mix(in srgb, var(--m-hd) 12%, transparent); border-radius: 999px; padding: 4px 10px; }
 .mdom .pa-cta .ic, .mdom .pa-cta svg { width: 13px; height: 13px; }
 
 /* ---- message bubbles (MessageThread 富气泡) ---- */
-.mdom .msg-sys { align-self: center; font-size: 12px; color: var(--ink-4); background: var(--surface); border: 1px solid var(--border); padding: 4px 12px; border-radius: 999px; text-align: center; }
+.mdom .msg-sys { align-self: center; font-size: 12px; color: var(--ink-4); background: var(--surface); padding: 4px 12px; border-radius: 999px; text-align: center; }
 .mdom .msg-role { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 500; padding: 1px 7px; border-radius: 999px; white-space: nowrap; flex: none; }
 .mdom .msg-role.support { color: var(--m-hd-2); background: var(--m-hd-soft); }
 .mdom .msg-role.advisor { color: var(--m-wait); background: var(--m-wait-soft); }
@@ -553,8 +553,8 @@
 .mdom .msg-vlevel { font-size: 11.5px; font-weight: 500; color: var(--m-wait); background: var(--m-wait-soft); padding: 1px 5px; border-radius: 4px; white-space: nowrap; flex: none; }
 .mdom .msg-script { font-family: var(--m-mono); font-size: 11px; color: var(--m-wait); background: var(--m-wait-soft); padding: 1px 6px; border-radius: 5px; }
 .mdom .msg-bubble { position: relative; font-size: 14px; line-height: 1.5; padding: 8px 56px 8px 13px; border-radius: 14px; word-break: break-word; max-width: 100%; }
-.mdom .msg-bubble.agent { background: var(--m-hd-soft); border: 1px solid var(--m-hd-border); color: var(--ink); border-bottom-right-radius: 5px; }
-.mdom .msg-bubble.user { background: var(--surface-2); border: 1px solid var(--border); color: var(--ink); border-bottom-left-radius: 5px; }
+.mdom .msg-bubble.agent { background: var(--m-hd-soft); color: var(--ink); border-bottom-right-radius: 5px; }
+.mdom .msg-bubble.user { background: var(--surface-2); color: var(--ink); border-bottom-left-radius: 5px; }
 .mdom .msg-time { position: absolute; right: 11px; bottom: 6px; font-size: 10.5px; line-height: 1; color: var(--ink-4); white-space: nowrap; }
 /* Telegram 行布局:左=客户 右=坐席,连发同向收紧间距,顶部右侧「接待客服」 */
 .mdom .msg-tg { display: flex; }
@@ -564,7 +564,7 @@
 .mdom .msg-col { max-width: 80%; display: flex; flex-direction: column; min-width: 0; }
 .mdom .msg-tg.from-right .msg-col { align-items: flex-end; }
 .mdom .msg-tg.from-left .msg-col { align-items: flex-start; }
-.mdom .msg-handler { align-self: flex-end; display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 15px 4px 4px; margin: 0 0 6px auto; }
+.mdom .msg-handler { align-self: flex-end; display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border-radius: 999px; padding: 4px 15px 4px 4px; margin: 0 0 6px auto; }
 .mdom .msg-handler .ic, .mdom .msg-handler svg { color: var(--m-hd-2); }
 .mdom .msg-handler .av { box-shadow: 0 0 0 1px var(--border); }
 

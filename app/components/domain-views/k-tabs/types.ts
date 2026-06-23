@@ -25,8 +25,8 @@ export type ConfirmReq = {
   chips?: ConfirmChip[];
   /** true = 原因必填(标记类 / 白名单 / 手动补触发)。 */
   reason?: boolean;
-  /** 可选输入框(如白名单网段 / 补触发 userId / 覆盖分)。 */
-  input?: { label: string; placeholder?: string };
+  /** 可选输入框:传 options 时渲染 chips 勾选(枚举值不让手输,能勾选的不要手输铁律);不传则文本框(开放值如白名单网段 / 补触发 userId / 覆盖分)。 */
+  input?: { label: string; placeholder?: string; options?: string[] };
   okLabel?: string;
   run: (reason: string, value?: string) => void;
 };

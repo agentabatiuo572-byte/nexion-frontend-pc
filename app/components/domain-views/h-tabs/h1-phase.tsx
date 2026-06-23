@@ -38,11 +38,18 @@ import {
   LOOSEN_DIR,
   NEW_USER_ONLY,
   PHASE_CONTROLS,
+  PHASE_LABELS,
   PHASE_OVERRIDES,
   PHASE_ATTRIBUTION,
   monthToPhase,
   type DialKey,
 } from "./data";
+
+// Phase 切换控制可枚举项 → 勾选不手输:pin 钉到哪个阶段(P1..P6 有限集)。
+// schedule 含可配置推进时刻(cron)/ override 为复合偏移(±N 月 + 批次),均保留自由 text。
+const PHASE_CTL_OPTIONS: Record<string, string[]> = {
+  pin: ["未钉住", ...PHASE_LABELS],
+};
 import type { HCtx } from "./types";
 
 /** 数值比较(放松方向需要数值上行/下行判定;非数值如「是/否」直接放行 amplifies)。 */
@@ -105,7 +112,8 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       ),
       // 放松方向命中 + 数值类项即挂 amplifies(B1 红线核验);非数值「是/否」类不挂(开闸属治理类,SPEC §4 走治理而非红线)。
       amplifies: !!dirHint,
-      edit: { kind: "text", current: cur },
+      // compliance(合规留存)旋钮值是「是/否」二元枚举,勾选不手输;其余 7 旋钮为开放数值保留 text。
+      edit: key === "compliance" ? { kind: "select", current: cur, options: ["是", "否"] } : { kind: "text", current: cur },
       run: (reason, v) => {
         if (!v) return;
         // 二次精算放松方向(用户实际输入后再判;比 amplifies 弹窗时的悲观假设更精确)。
@@ -141,7 +149,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: cur },
+      edit: PHASE_CTL_OPTIONS[key] ? { kind: "select", current: cur, options: PHASE_CTL_OPTIONS[key] } : { kind: "text", current: cur },
       run: (reason, v) => {
         if (v != null) setParam(`H1.ctl.${key}`, v, { action: `H1 切换控制 ${label}`, reason });
         // 处置类 setParam 自动 log 仅记状态键写入,处置事件独立维度需显式 logAudit 二次留痕(D 域 R1 教训)。
@@ -162,7 +170,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: "生效中" },
+      // 处置类(撤销 override):无「目标新值」可填(run 不消费 v),按 MC 显式 edit 契约不传 edit,避免强迫运营手输被忽略的「生效中」串。
       run: (reason) => {
         setParam(`H1.override.${id}.disabled`, "1", { action: `撤销 override · ${cohort}`, reason });
         logAudit({ actor: "总管理员", action: "Phase override 撤销", target: `H1.override.${id}`, reason });

@@ -3,31 +3,40 @@
  * GET /api/admin/f/{vrank|unilevel|tiers|binary|pool|quota|commissions} 各返回同结构。
  * 口径镜像前端真源:VRANK←v-rank.ts、V_VOTES←leadership-pool.ts、UNILEVEL←影响力网络版税表。
  */
+import type { VRankRewardMap } from "@/lib/store/admin/platform-config-store";
 
-/* ===== F1 V-Rank 13 阶(门槛/实物奖/培育奖 NEX/在册人数)===== */
+/* ===== F1 V-Rank 13 阶(门槛/在册人数)===== */
 // 门槛拆成结构化单值字段(原 th 一个字符串塞多值 → 每子值独立,运营各自单独调,不再手打 · 拼接串)。
 // 展示串由 f1-vrank 的 composeTh 合成;每字段单独 pget/setParam key:F.vrank.{v}.{selfBuy|directRefs|teamGv|legCount|legRank}。
-export const VRANK: { v: string; selfBuy?: string; directRefs?: string; teamGv?: string; legCount?: string; legRank?: string; prize: string; nex: string; pop: number }[] = [
-  { v: "V0", prize: "—", nex: "—", pop: 84231 },
-  { v: "V1", selfBuy: "$299", directRefs: "3", prize: "Pilot 徽章", nex: "500", pop: 12483 },
-  { v: "V2", teamGv: "$5k", prize: "操作员勋章", nex: "2,000", pop: 3247 },
-  { v: "V3", teamGv: "$20k", legCount: "2", legRank: "V1", prize: "Apple Watch SE", nex: "10,000", pop: 487 },
-  { v: "V4", teamGv: "$50k", legCount: "3", legRank: "V2", prize: "iPhone 16 Pro", nex: "50,000", pop: 102 },
-  { v: "V5", teamGv: "$150k", legCount: "4", legRank: "V3", prize: "Apple Vision Pro", nex: "200,000", pop: 21 },
-  { v: "V6", teamGv: "$500k", legCount: "5", legRank: "V4", prize: "Rolex Submariner", nex: "800,000", pop: 3 },
-  { v: "V7", teamGv: "$1M", legCount: "6", legRank: "V5", prize: "Tesla Model Y", nex: "3,200,000", pop: 1 },
-  { v: "V8", teamGv: "$3M", legCount: "7", legRank: "V6", prize: "Porsche 911", nex: "10,000,000", pop: 0 },
-  { v: "V9", teamGv: "$10M", prize: "Lamborghini Urus", nex: "—", pop: 0 },
-  { v: "V10", teamGv: "$30M", prize: "私人飞机包月", nex: "—", pop: 0 },
-  { v: "V11", teamGv: "$100M", prize: "加勒比游艇度假", nex: "—", pop: 0 },
-  { v: "V12", teamGv: "$500M", prize: "上市公司股权", nex: "—", pop: 0 },
+// 奖励不再写死在此(已删实物奖 prize + 培育奖 nex 两栏):改走运营可配的「奖励清单」,真源 = platform-config-store.vRankRewards(seed 见 VRANK_REWARD_SEED)。
+export const VRANK: { v: string; selfBuy?: string; directRefs?: string; teamGv?: string; legCount?: string; legRank?: string; pop: number }[] = [
+  { v: "V0", pop: 84231 },
+  { v: "V1", selfBuy: "$299", directRefs: "3", pop: 12483 },
+  { v: "V2", teamGv: "$5k", pop: 3247 },
+  { v: "V3", teamGv: "$20k", legCount: "2", legRank: "V1", pop: 487 },
+  { v: "V4", teamGv: "$50k", legCount: "3", legRank: "V2", pop: 102 },
+  { v: "V5", teamGv: "$150k", legCount: "4", legRank: "V3", pop: 21 },
+  { v: "V6", teamGv: "$500k", legCount: "5", legRank: "V4", pop: 3 },
+  { v: "V7", teamGv: "$1M", legCount: "6", legRank: "V5", pop: 1 },
+  { v: "V8", teamGv: "$3M", legCount: "7", legRank: "V6", pop: 0 },
+  { v: "V9", teamGv: "$10M", pop: 0 },
+  { v: "V10", teamGv: "$30M", pop: 0 },
+  { v: "V11", teamGv: "$100M", pop: 0 },
+  { v: "V12", teamGv: "$500M", pop: 0 },
 ];
-export const F1_FULFILL: { v: string; name: string; ct: number }[] = [
-  { v: "V3", name: "Apple Watch SE", ct: 24 },
-  { v: "V4", name: "iPhone 16 Pro", ct: 10 },
-  { v: "V5", name: "Apple Vision Pro", ct: 3 },
-  { v: "V6", name: "Rolex Submariner", ct: 1 },
-];
+
+// V-Rank 等级奖励种子(backend-replaceable;首帧 ensureVRankRewards 注入,之后以 store 真值为准)。
+// 迁移自旧 nex 字段:V1–V8 各保留一项培育奖 NEX;实物豪礼已删,不迁移;V0、V9–V12 留空待运营配置。
+export const VRANK_REWARD_SEED: VRankRewardMap = {
+  V1: [{ id: "vr-V1-nex", type: "nex", amount: 500 }],
+  V2: [{ id: "vr-V2-nex", type: "nex", amount: 2000 }],
+  V3: [{ id: "vr-V3-nex", type: "nex", amount: 10000 }],
+  V4: [{ id: "vr-V4-nex", type: "nex", amount: 50000 }],
+  V5: [{ id: "vr-V5-nex", type: "nex", amount: 200000 }],
+  V6: [{ id: "vr-V6-nex", type: "nex", amount: 800000 }],
+  V7: [{ id: "vr-V7-nex", type: "nex", amount: 3200000 }],
+  V8: [{ id: "vr-V8-nex", type: "nex", amount: 10000000 }],
+};
 
 /* ===== F2 网络版税(L1-L7 Unilevel + Rate Tier + 8 参数卡)===== */
 export const UNILEVEL: { l: string; usdt: number; nex: number; ui: string; direct: boolean }[] = [
@@ -61,11 +70,33 @@ export const F2_PARAMS: {
 ];
 
 /* ===== F3 双轨结算(用户 A/B 轨)===== */
-export const BINARY: { user: string; a: number; b: number; match: number; today: number; state: string; tone: "ok" | "warn" | "err" }[] = [
+// backend-replaceable:真后台 GET /api/admin/f/binary?date=today 返回同结构数组(此处 mock 一批用户供搜索 + 分页)。
+type BinaryRow = { user: string; a: number; b: number; match: number; today: number; state: string; tone: "ok" | "warn" | "err" };
+const DAILY_CAP = 1500; // 当日已发上限(只读镜像 H1;mock 用于 today 计算)
+function mkBinary(user: string, a: number, b: number): BinaryRow {
+  const blocked = Math.min(a, b) < 1000;
+  const match = blocked ? 0 : Math.round((Math.min(a, b) * 0.1) / 10) * 10;
+  const capped = !blocked && match >= DAILY_CAP;
+  const today = blocked ? 0 : Math.min(match, DAILY_CAP);
+  const st = blocked
+    ? { state: "阻塞 · 弱轨 < $1k", tone: "err" as const }
+    : capped
+      ? { state: "达封顶", tone: "warn" as const }
+      : { state: "结算中", tone: "ok" as const };
+  return { user, a, b, match, today, state: st.state, tone: st.tone };
+}
+export const BINARY: BinaryRow[] = [
   { user: "usr_31E8", a: 84000, b: 62000, match: 6200, today: 1500, state: "结算中", tone: "ok" },
   { user: "usr_19C7", a: 38000, b: 41000, match: 3800, today: 1500, state: "达封顶", tone: "warn" },
-  { user: "usr_02A9", a: 12000, b: 800, match: 0, today: 0, state: "阻塞 · B轨 < $1k", tone: "err" },
+  { user: "usr_02A9", a: 12000, b: 800, match: 0, today: 0, state: "阻塞 · 弱轨 < $1k", tone: "err" },
   { user: "usr_84F2", a: 5400, b: 4900, match: 490, today: 490, state: "结算中", tone: "ok" },
+  // 追加一批结算用户(确定性派生 · 供列表搜索 + 分页;真后台接入即整页替换)
+  ...Array.from({ length: 26 }, (_, i) => {
+    const id = "usr_" + (0xA100 + i * 0x1D7).toString(16).toUpperCase().padStart(4, "0").slice(-4);
+    const a = 2200 + ((i * 7919) % 79000);
+    const b = 600 + ((i * 6131) % 77000);
+    return mkBinary(id, a, b);
+  }),
 ];
 export const BINARY_MAX_AB = 84000;
 

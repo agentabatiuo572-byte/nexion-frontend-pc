@@ -2,7 +2,8 @@
 
 /** F3 · 双轨结算引擎 —— 平衡匹配公式 hero(Track A / min×10% MATCH / Track B)+ 用户当日结算 A/B bar + 门槛/比例/自动安置 配置卡。
  *  贯穿口径:server-canonical · 放大流出→amplifies · 不回溯已计提 · 日封顶只读(权威归 H1)。 */
-import { Badge, CodeTag } from "../design-kit";
+import { useState } from "react";
+import { Badge, CodeTag, DataListPager, useDataListPager } from "../design-kit";
 import { PHASE } from "@/lib/mock/admin/design-data";
 import { BINARY, BINARY_MAX_AB } from "./data";
 import type { FViewCtx } from "./types";
@@ -10,6 +11,11 @@ import type { FViewCtx } from "./types";
 const usd = (n: number): string => "$" + n.toLocaleString();
 
 export function F3Binary({ ctx }: { ctx: FViewCtx }) {
+  // 用户结算列表:搜索(按用户 ID)+ 分页(复用 design-kit 通用 pager)
+  const [q, setQ] = useState("");
+  const kw = q.trim().toLowerCase();
+  const filtered = kw ? BINARY.filter((b) => b.user.toLowerCase().includes(kw)) : BINARY;
+  const pager = useDataListPager(filtered, { initialPageSize: 10, resetKey: kw });
   const thEff = ctx.pget("F.binary.threshold") ?? "$1,000 / 轨";
   const rateEff = ctx.pget("F.binary.matchRate") ?? "10%";
   const spillOn = ctx.pget("F.binary.spillover") !== "已关闭";  // 默认启用,仅显式写入「已关闭」才关(显示值=写入值,防自由文本错配)
@@ -61,8 +67,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
       <section className="pane bin-table">
         <div className="pane-h"><span className="ph-ttl">用户结算视图 · 当日</span><span className="ph-sub">A/B 轨 GV · Balance Match · 状态</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag>F.binary.engine</CodeTag></span></div>
+        <div className="bin-search">
+          <input className="fld" placeholder="搜索用户 ID(如 usr_31E8)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="搜索用户" />
+          {kw && <button className="fbtn" onClick={() => setQ("")}>清除</button>}
+          <span className="muted tiny" style={{ marginLeft: "auto" }}>{pager.total} 名用户</span>
+        </div>
         <div className="bin-row head"><span>用户</span><span>Track A · 左轨</span><span /><span>Track B · 右轨</span><span style={{ textAlign: "right" }}>Balance Match</span><span style={{ textAlign: "right" }}>当日已发</span><span style={{ textAlign: "right" }}>状态</span></div>
-        {BINARY.map((b) => (
+        {pager.pageRows.map((b) => (
           <div key={b.user} className="bin-row">
             <span className="uid">{b.user}</span>
             <span className="bar a"><span className="f" style={{ width: `${(b.a / BINARY_MAX_AB) * 100}%` }} /><span className="blbl">{usd(b.a)}</span></span>
@@ -73,6 +84,17 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <span className="state"><Badge tone={b.tone}>{b.state}</Badge></span>
           </div>
         ))}
+        {pager.pageRows.length === 0 && <div className="bin-empty">无匹配用户 · 换个 ID 试试</div>}
+        <DataListPager
+          label="用户结算视图"
+          page={pager.page}
+          pageSize={pager.pageSize}
+          total={pager.total}
+          rawTotal={BINARY.length}
+          onPageChange={pager.setPage}
+          onPageSizeChange={pager.setPageSize}
+          pageSizeOptions={[10, 20, 50]}
+        />
       </section>
 
       <div className="cfg-grid">

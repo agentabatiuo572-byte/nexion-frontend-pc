@@ -1,6 +1,6 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E1GenerationGateData } from "@/lib/admin/e1-client";
-import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
+import type { OpsSku, OpsReview, OpsTask, OpsDataCenter } from "@/lib/store/admin/platform-config-store";
 
 /**
  * E 域子视图共享类型。
@@ -17,11 +17,14 @@ export type EOp =
   | "task-price"      // 任务改单价(真 store updateTask,操作确认 出价格编辑框)
   | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ updateTask + setParam config
   | "param"           // 自由值调参 → setParam(paramKey, newValue);操作确认 出「目标新值」
+  | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];每字段 setParam 各自 key
   | "param-fixed"     // 固定值写入 → setParam(paramKey, fixedVal)(如 forceUnlock true/false);不出编辑框
   | "order-refund"    // 退款(放大流出)
   | "order-cancel"    // 取消订单
   | "order-terminal"  // 补建终态(select)
-  | "ops-pause";      // DC 批量 pause / 恢复
+  | "ops-pause"       // DC 批量 pause / 恢复
+  | "dc-save"         // 数据中心新增/编辑(businessForm multi-field:id/location/displayName)→ store CRUD
+  | "dc-delete";      // 数据中心删除(需破坏性理由)
 
 export interface McSpec {
   name: string;             // 确认弹窗标题(动作名)
@@ -31,6 +34,7 @@ export interface McSpec {
   edit?: EditSpec;          // 显式 edit 契约:仅自由值/select 调参传
   businessForm?: BusinessFormSpec;
   paramKey?: string;
+  paramKeys?: { key: string; paramKey: string }[];  // param-multi:businessForm 字段 key → param key 映射
   fixedVal?: string;        // param-fixed / 处置固定写入值
   target?: string;          // SKU 名 / 实体名(sku-status / sku-save 等)
   isNew?: boolean;          // sku-save:新增 vs 编辑
@@ -88,4 +92,8 @@ export interface EViewCtx {
   openOrder: (o: EOrder) => void;
   // E5 设备运维
   isDcPaused: (dc: string) => boolean;
+  // E5 数据中心管理(运营可增删改;SKU datacenter 下拉单源)
+  dataCenters: OpsDataCenter[];
+  openDcEdit: (dc?: OpsDataCenter) => void;       // 打开新增/编辑数据中心(无 dc = 新增)
+  delDc: (dc: OpsDataCenter) => void;
 }

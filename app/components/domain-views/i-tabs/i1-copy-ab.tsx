@@ -150,7 +150,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     action: <>回滚 · {HCB} 当前 v7 → 重新发布 {v}</>,
     detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对全体用户生效),所以同样走操作确认。归档版的双语文案体原样恢复,审计记 from v7 → to {v}。</>,
     amplifies: false,
-    edit: { kind: "text", current: v },
+    // 处置类(回滚到已选历史版 v):目标版本由点击的归档版决定,run 不消费 v,按 MC 显式 edit 契约不传 edit,不强迫运营手输已确定的版本号。
     run: (reason) => {
       setParam(`I.copy.${HCB}.status`, `${v} 重新发布`, { action: `回滚到 ${v} · admin.content_rolledback`, reason });
       toast(`回滚 ${v} 已确认生效`);

@@ -69,7 +69,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <div className="audit-h">
             <span className="ph-ttl">佣金流水 · 最近 24h</span>
             <span className="ph-sub">{kindLbl}</span>
-            <span className="ph-r"><span className="tag" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--cyan)", border: "1px solid var(--cyan-border)", background: "var(--cyan-soft)", padding: "2px 7px", borderRadius: 6 }}>A2 append-only</span><span className="tag" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)", border: "1px solid var(--border)", padding: "2px 7px", borderRadius: 6 }}>F.commission.*</span></span>
+            <span className="ph-r"><span className="tag" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--cyan)", background: "var(--cyan-soft)", padding: "2px 7px", borderRadius: 6 }}>A2 append-only</span><span className="tag" style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--ink-4)", border: "1px solid var(--border)", padding: "2px 7px", borderRadius: 6 }}>F.commission.*</span></span>
           </div>
           <div className="filter-bar">
             {F5_FILTERS.map((f) => (

@@ -173,7 +173,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
               <span className="t">坐席负载</span>
               <span className="n">{busyCount} 忙 / {loadRows.length}</span>
               {loadCfg.autoBalance && (
-                <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--m-hd-2)", background: "var(--m-hd-soft)", borderColor: "var(--m-hd-border)" }}>
+                <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--m-hd-2)", background: "var(--m-hd-soft)", border: "none" }}>
                   <Icon name="gauge" size={12} />
                   自动平衡
                 </span>
@@ -196,7 +196,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                       <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{l.name}</span>
                       <span className="dim2" style={{ fontSize: 11.5 }}>{l.role}</span>
                       {l.busy && (
-                        <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--m-high)", background: "var(--m-high-soft)", borderColor: "var(--m-high-bd)" }}>暂停接派单</span>
+                        <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--m-high)", background: "var(--m-high-soft)", border: "none" }}>暂停接派单</span>
                       )}
                     </div>
                     <div style={{ height: 6, background: "var(--surface-3)", borderRadius: 999, marginTop: 6, overflow: "hidden", position: "relative" }}>

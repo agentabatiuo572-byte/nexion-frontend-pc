@@ -840,7 +840,7 @@ Nexion 运营控制后台
 
 | 子模块 | 名称 | 对应前端 | §锚点 | 批次 |
 |---|---|---|---|---|
-| F1 | V-Rank 晋升管理 | /team/rank(13 级)+ 实物奖品 + 培育奖 NEX | §8.2 / §9.11c.1 | V2 |
+| F1 | V-Rank 晋升管理 | /team/rank(13 级)+ 等级奖励清单(USDT/NEX/代金券/SKU/自定义,运营可配) | §8.2 / §9.11c.1 | V2 |
 | F2 | 网络版税费率 | /team/unilevel(L1-L7 USDT+NEX)+ Partner Status 权益 | §8.3 / §9.11c.1 | V2 |
 | F3 | 双轨结算引擎 | /team/binary(min(A,B)×10% / binaryDailyCapUSD) | §8.4 / §13.4.1 | V2 |
 | F4 | 领导奖池 | /team/leadership-pool(5% 周 GMV / V_VOTES) | §8.5 / §9.11c.1 | V2 |

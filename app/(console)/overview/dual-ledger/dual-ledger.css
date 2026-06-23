@@ -33,14 +33,14 @@
 
 .dlpage .help { width: 14px; height: 14px; border-radius: 50%; display: inline-grid; place-items: center;
   font-size: 9px; font-weight: 700; background: var(--surface-3); color: var(--ink-4);
-  border: 1px solid var(--border); cursor: help; vertical-align: middle; }
+  cursor: help; vertical-align: middle; }
 
 /* status pill (端口自 admin-styles .status-pill) */
 .dlpage .status-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600;
   padding: 4px 11px; border-radius: 999px; white-space: nowrap; }
-.dlpage .status-pill.ok { background: var(--success-soft); color: var(--success); border: 1px solid var(--success-border); }
-.dlpage .status-pill.warn { background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border); }
-.dlpage .status-pill.err { background: var(--danger-soft); color: var(--danger); border: 1px solid var(--danger-border); }
+.dlpage .status-pill.ok { background: var(--success-soft); color: var(--success); }
+.dlpage .status-pill.warn { background: var(--warning-soft); color: var(--warning); }
+.dlpage .status-pill.err { background: var(--danger-soft); color: var(--danger); }
 
 /* ---- coverage hero ---- */
 .dlpage .hero { position: relative; overflow: hidden; box-shadow: var(--v5-card-shadow-lift); }
@@ -74,7 +74,7 @@
 
 /* trend */
 .dlpage .trend { display: flex; align-items: center; gap: 16px; margin-top: 20px;
-  padding: 13px 15px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 13px 15px; border-radius: var(--r-sm);
   background: var(--surface-2); }
 .dlpage .trend .tx { flex: 1; min-width: 0; }
 .dlpage .trend .tx .k { font-size: 11.5px; color: var(--ink-3); }
@@ -126,8 +126,7 @@
   margin-left: 2px; color: var(--ink); }
 .dlpage .fuse-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .dlpage .fuse-active { display: inline-flex; align-items: center; gap: 8px; padding: 8px 13px; border-radius: 9px;
-  font-size: 13px; font-weight: 600; background: var(--danger-soft); color: var(--danger);
-  border: 1px solid var(--danger-border); }
+  font-size: 13px; font-weight: 600; background: var(--danger-soft); color: var(--danger); }
 .dlpage .dec-foot { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border); display: flex; gap: 24px; }
 .dlpage .dec-foot-v { font-size: 17px; font-weight: 600; margin-top: 3px; color: var(--ink); }
 

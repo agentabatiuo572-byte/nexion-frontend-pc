@@ -13,6 +13,13 @@ import {
   NEX_MARKET, NEX_KLINE,
   CURVE_FIELDS, CURVE_LABELS, CURVE_LOOSEN_DIR, MARKET_CURVE, CURVE_STATE, CURVE_CONTROLS,
 } from "./data";
+
+// 排程控制可枚举项 → 勾选不手输:pin 钉哪一天(曲线 7 天有限集)/ loop 二元(循环 / 停末值);
+// schedule 含可配置推进时刻(cron),保留自由 text(不锁死可配置性)。
+const CTL_OPTIONS: Record<string, string[]> = {
+  pin: ["未钉住", ...MARKET_CURVE.map((_r, i) => `D${i + 1}`)],
+  loop: ["循环", "停在末值"],
+};
 import type { GCtx } from "./types";
 
 export function G3Market({ ctx }: { ctx: GCtx }) {
@@ -69,7 +76,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     action: `行情排程控制 · ${name}`,
     detail: <><b>{name}</b> · 当前:{cur}。排程按 server 时间表推进当日生效帧;钉住 / 暂停推进不影响已配置的曲线本身。改排程产 <span className="mono">market.curve_advanced</span> / <span className="mono">market.schedule_changed</span> 审计。运营执行门槛:财务主管 / 超管。</>,
     amplifies: false,
-    edit: { kind: "text", current: cur },
+    edit: CTL_OPTIONS[key] ? { kind: "select", current: cur, options: CTL_OPTIONS[key] } : { kind: "text", current: cur },
     run: (reason, v) => { if (v != null) setParam(`G.market.curve.ctl.${key}`, v, { action: `行情排程控制 ${name}`, reason }); toast(`· ${name} 已更新为 ${v}`); },
   });
 
@@ -199,7 +206,8 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
             <div className="p-row"><div className="txt"><div className="k">喂价源</div><div className="s">内部做市源 / 外部喂价源 · 外部源 1 tick/4s 同频</div></div><span className="v">{oracle}</span><button className="l-btn sm mc" onClick={() => openActionConfirm({
               action: "切换喂价源",
               detail: <>内部做市源 ↔ 外部喂价源切换。基础设施操作,RBAC 细分前由超管代理执行门槛:超管。</>,
-              edit: { kind: "text", current: oracle },
+              // 喂价源是二元枚举,勾选不手输;选项对齐 NEX_MARKET.oracle seed 值族(「内部做市」无「源」后缀),避免 f-stat 显示漂移。
+              edit: { kind: "select", current: oracle, options: ["内部做市", "外部喂价"] },
               run: (reason, v) => { if (v) setParam("G.market.oracle", v, { action: "切换喂价源", reason }); toast(`喂价源已切换为 ${v}`); },
             })}>切换源</button></div>
             <div className="p-row"><div className="txt"><div className="k">偏离告警阈值</div><div className="s">现价与喂价源偏离超此即告警</div></div><span className="v">{dev}</span><button className="l-btn sm mc" onClick={() => adj("deviation", "偏离告警阈值", dev, "范围 0–50%")}>调整</button></div>

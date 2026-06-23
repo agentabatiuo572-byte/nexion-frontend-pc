@@ -179,7 +179,7 @@ export default function DualLedgerPage() {
         <div className="flex items-center gap-2">
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
-            style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)", border: "1px solid color-mix(in srgb, var(--admin-domain-b) 30%, transparent)" }}
+            style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
           >
             <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
             域 B · 总览驾驶舱

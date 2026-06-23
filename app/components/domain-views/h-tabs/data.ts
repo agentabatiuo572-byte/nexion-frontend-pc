@@ -100,6 +100,9 @@ const PHASE_BUCKETS: ReadonlyArray<{ phase: string; months: readonly number[] }>
 export const monthToPhase = (m1: number): string =>
   PHASE_BUCKETS.find((b) => b.months.includes(m1))?.phase ?? "P1";
 
+/** 阶段标签有限集(P1..P6)— 单源派生自 PHASE_BUCKETS,供 pin 控制勾选(不手输「P3」串)。 */
+export const PHASE_LABELS: string[] = PHASE_BUCKETS.map((b) => b.phase);
+
 /** Phase 切换控制 3 类(定时 / pin / override)。 */
 export const PHASE_CONTROLS = [
   { key: "schedule", name: "定时按月推进", sub: "当前时间表:每月 1 日 00:00 UTC 自动 +1 月,产 phase.transitioned", current: "每月 1 日自动推进" },

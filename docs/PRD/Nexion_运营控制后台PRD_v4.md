@@ -2327,7 +2327,7 @@ L5 是平台**数据导出与监管报告生成的统一管控面**——账单 
 | C | `GET /api/admin/users` · `POST /api/admin/users/:id/{freeze\|unfreeze}` · `GET /api/admin/users/:id` | Ch5 |
 | D | `GET /api/admin/withdrawals[?status=]` · `POST /api/admin/withdrawals/:id/{approve\|reject}` · `/api/admin/bills/export` | Ch6 |
 | E | `GET/PUT /api/admin/products/*` · `PUT /api/admin/config/tradein` · `GET /api/admin/orders` | Ch10 |
-| F | `GET /api/admin/team/prize-queue` · `PUT /api/admin/team/{rates\|matching}` · `POST /api/admin/risk/leaderboard/:userId/disqualify` | Ch11 |
+| F | `GET/PUT /api/admin/config/v-ranks` · `GET /api/admin/team/reward-payouts` · `PUT /api/admin/team/{rates\|matching}` · `POST /api/admin/risk/leaderboard/:userId/disqualify` | Ch11 |
 | G | `PUT /api/admin/genesis/{economics\|dividend-rate}` · `POST /api/admin/genesis/pause` · `GET/PUT /api/admin/market/curve` · `POST /api/admin/market/advance` · staking/exchange config + kill | Ch12 |
 | H | `GET/PUT /api/admin/trial/config` · `POST /api/admin/trial/sessions/:userId/{cancel\|charge}` · quest/活动/签到/里程碑 config | Ch7/Ch13 |
 | I | `GET/PUT /api/admin/content/*` · `PUT /api/admin/stella/cadence-config` · `PUT /api/admin/legal/risk-disclosure` · `/api/admin/learn/*` · `/api/admin/conversation/*` | Ch14 |

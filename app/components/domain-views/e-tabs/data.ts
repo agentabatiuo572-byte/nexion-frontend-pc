@@ -51,11 +51,20 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.device.stageEarlyEnd": "3",        // 早期段末月
   "E.device.stageMidEnd": "8",          // 中期段末月
   "E.device.cycleMonths": "12",         // 生命周期月数
-  "E.device.taskLockThresholds": "$40 / $140 / $450", // E4 任务锁定月度损失阈值(S1/Pro/Rack)
+  // E4 任务锁定月度损失阈值(S1/Pro/Rack 三阶 · USDT · 各值独立可调,backend-replaceable)
+  "E.device.taskLock.s1": "40",
+  "E.device.taskLock.pro": "140",
+  "E.device.taskLock.rack": "450",
   "E.tradein.salvagePct": "30",
+  "E.tradein.eligibility": "L4+ 持有者",  // 置换资格门槛(持有等级)· 运营可调
   "E.tradein.minHoldingMonths": "6",
   "E.tradein.promoMult": "1.0",
-  "E.tradein.promo.rhythm": "cooldown 14d · max/sess 1 · delay 6s · minAge 30d · /me/devices",
+  // 置换弹窗节奏 5 参(各值独立可调):冷却天 / 每会话上限 / 延迟秒 / 设备最低龄天 / 入口路由
+  "E.tradein.promo.cooldownDays": "14",
+  "E.tradein.promo.maxPerSession": "1",
+  "E.tradein.promo.delaySec": "6",
+  "E.tradein.promo.minAgeDays": "30",
+  "E.tradein.promo.routes": "/me/devices",
   "E.tradein.inventorySoftMax": "0",
 };
 
@@ -83,6 +92,26 @@ export function effCurve(early: number, mid: number, late: number, stage1: numbe
   }
   return pts;
 }
+
+// 算力池预置(SKU「解锁算力池 unlocks」多选 — 取自现有 SKU seed 的算力池文案)。
+// 运营勾选多个 + 仍可自定义;表单内以逗号串存 form.aiUnlocks(单值 string,前端零改、原样渲染逗号串 = 功能一致)。
+// backend-replaceable:真后台对接时由 GET /api/admin/compute-pools 下发替换本地预置(同 DATA_CENTERS 模式)。
+export const AI_COMPUTE_POOLS = [
+  "LLM 70B inference pool",
+  "Flagship compute pool (Fine-tune + 405B inference)",
+  "Flagship AI + multi-tenant 405B",
+  "Training pool (RLHF / from-scratch 8B)",
+  "Training pool (RLHF / 70B from-scratch)",
+  "Fractional access to network's IG + EM + SP pools",
+] as const;
+
+// 数据中心 seed(E5 运维可增删改的单源;SKU datacenter 下拉读 displayName)。
+// { id 区域 id · location 所在地 · displayName 前端展示名称 };真后台对接 1:1 映射数据中心资源。
+export const DATA_CENTERS_SEED: { id: string; location: string; displayName: string }[] = [
+  { id: "ap-southeast-1", location: "亚太 · 新加坡", displayName: "Singapore DC" },
+  { id: "eu-west-1", location: "欧洲 · 都柏林", displayName: "Dublin DC" },
+  { id: "us-east-2", location: "美国 · 弗吉尼亚", displayName: "Virginia DC" },
+];
 
 // ── SKU 表单 = 前端 Product 全字段镜像。input 一律 string,提交时 formToSku 转结构化 OpsSku ──
 export const EMPTY_SKU_FORM = {

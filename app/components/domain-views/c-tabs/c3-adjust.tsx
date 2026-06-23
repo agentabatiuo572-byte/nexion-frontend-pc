@@ -156,7 +156,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
               <div className="row" style={{ alignItems: "flex-start" }}>
                 <label>目标用户</label>
                 {resolvedUser ? (
-                  <div data-proof="c3-user-card" style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 12, padding: "8px 10px", borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+                  <div data-proof="c3-user-card" style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", fontSize: 12, padding: "8px 10px", borderRadius: 8, background: "var(--surface-2)" }}>
                     <span className="mono" style={{ fontWeight: 700, color: "var(--ink)" }}>{resolvedUser.id}</span>
                     <span style={{ color: "var(--ink-2)" }}>{resolvedUser.name}</span>
                     <span className={`bdg ${resolvedUser.kyc === "verified" ? "ok" : resolvedUser.kyc === "pending" ? "warn" : "bad"}`}>{KYC_LABEL[resolvedUser.kyc] ?? resolvedUser.kyc}</span>

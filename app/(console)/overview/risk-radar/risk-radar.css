@@ -15,7 +15,7 @@
 
 /* ---- 左栏:Kill-Switch 闸门灯 ---- */
 .radarpage .gate { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 9px;
-  border: 1px solid var(--border); background: var(--surface-2); margin-bottom: 7px; }
+  background: var(--surface-2); margin-bottom: 7px; }
 .radarpage .gate:last-child { margin-bottom: 0; }
 .radarpage .gate .light { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
 .radarpage .gate.on .light { background: var(--success);

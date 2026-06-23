@@ -52,7 +52,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
     "日限 / 80% 上限 / fee / cooldown(随 Phase)",
     "批准/延迟/冻结提现 · 操作确认 · 补单",
     "/admin/withdrawals · /admin/recon · /admin/pool",
-    "财务 + 风控 · 大额放行操作确认",
+    "大额放行操作确认",
     "B1 覆盖率红线前置 · 联动 K3 / C4",
     "admin.withdrawal_reviewed · payout.*",
   ],

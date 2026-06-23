@@ -87,6 +87,14 @@ export interface OpsSku {
   status: string;               // on(在售)/ off(下架)/ pending(待上架确认)
 }
 
+// 数据中心(E5 运维可增删改的单源;SKU datacenter 下拉读 displayName,用户侧展示托管 DC 名)。
+// backend-replaceable:真后台 1:1 映射数据中心资源(GET/POST/PUT/DELETE /api/admin/data-centers)。
+export interface OpsDataCenter {
+  id: string;            // 区域 id(如 ap-southeast-1)· 唯一 key
+  location: string;      // 所在地(如 亚太 · 新加坡)
+  displayName: string;   // 前端展示名称(如 Singapore DC)
+}
+
 // 代金券(voucher)— 运营配置的领券促销。本结构是前端 VoucherDef
 // (Nexion-uniapp/src/mock/vouchers.ts)的**结构化超集**(满足字段级镜像门:
 // 后台可编辑字段 ⊇ 前端展示字段);真后台对接时 1:1 映射同一资源:
@@ -117,6 +125,24 @@ export interface OpsVoucher {
   // 不可提现是代金券固有性质(折扣只抵扣价格、永不入可提现余额),由前端设计保证、非可配开关。
   status: "active" | "paused";  // active=投放中 / paused=已暂停
 }
+
+// V-Rank 等级奖励项(F1)— 运营可配的「奖励清单」单项。每个 V 级 → 一组奖励项。
+// 替代旧的硬编码「实物奖 prize + 培育奖 nex」两栏:奖励改为运营可加可删、类型可选。
+// 五类:usdt / nex(填 amount)· voucher(引用 OpsVoucher.id)· sku(引用 OpsSku.id)· custom(自定义文本)。
+// backend-replaceable:真后台对接 1:1 映射同一资源:
+//   list/get → GET /api/admin/f/vrank-rewards[?level=V3]
+//   add/update/remove → POST · PUT · DELETE /api/admin/f/vrank-rewards/:id
+export type VRankRewardType = "usdt" | "nex" | "voucher" | "sku" | "custom";
+export interface OpsVRankRewardItem {
+  id: string;                // 唯一 key(真后台主键)
+  type: VRankRewardType;
+  amount?: number;           // usdt / nex 金额
+  voucherId?: string;        // 引用 OpsVoucher.id(type=voucher)
+  skuId?: string;            // 引用 OpsSku.id(type=sku)
+  custom?: string;           // 自定义奖励文本(type=custom)
+}
+// 按 V 级聚合:{ V1: [...], V3: [...] };空数组 = 该等级暂无奖励。
+export type VRankRewardMap = Record<string, OpsVRankRewardItem[]>;
 
 // 运营账号 · 凭据下发方式:邀请链接(操作员自设密码,管理员永不知晓)/ SSO 企业单点 / 临时密码强制首登改。
 // 注:管理员后台**永不存/设明文密码**(最小知悉 + 抗抵赖);密码 server 侧仅存 hash。
@@ -177,6 +203,11 @@ interface PlatformConfigStore {
   updateSku: (name: string, patch: Partial<OpsSku>) => void;
   setSkuStatus: (name: string, status: string) => void;
   removeSku: (name: string) => void;
+  dataCenters: OpsDataCenter[] | null;
+  ensureDataCenters: (seed: OpsDataCenter[]) => void;
+  addDataCenter: (dc: OpsDataCenter) => void;
+  updateDataCenter: (id: string, patch: Partial<OpsDataCenter>) => void;
+  removeDataCenter: (id: string) => void;
   reviews: OpsReview[] | null;
   ensureReviews: (seed: OpsReview[]) => void;
   addReview: (r: OpsReview) => void;
@@ -196,6 +227,12 @@ interface PlatformConfigStore {
   updateVoucher: (id: string, patch: Partial<OpsVoucher>) => void;
   setVoucherStatus: (id: string, status: string) => void;
   removeVoucher: (id: string) => void;
+  // ── V-Rank 等级奖励(F1)· 按 V 级聚合的奖励项清单 ──
+  vRankRewards: VRankRewardMap | null;
+  ensureVRankRewards: (seed: VRankRewardMap) => void;
+  addVRankReward: (level: string, item: OpsVRankRewardItem) => void;
+  updateVRankReward: (level: string, id: string, patch: Partial<OpsVRankRewardItem>) => void;
+  removeVRankReward: (level: string, id: string) => void;
   // ── 地基原语:域级参数统一真写 + 审计(覆盖大量「调参数」类动作:费率 / APY / 阈值 / dial / 限额)──
   // key 命名约定:"<域>.<对象>.<参数>",如 "G.staking.apy.s1" / "D.withdraw.dailyCap" / "F.unilevel.L1"。
   params: Record<string, string | number | boolean>;
@@ -221,6 +258,11 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
       updateSku: (name, patch) => set((s) => ({ skus: (s.skus ?? []).map((x) => (x.name === name ? { ...x, ...patch } : x)) })),
       setSkuStatus: (name, status) => set((s) => ({ skus: (s.skus ?? []).map((x) => (x.name === name ? { ...x, status } : x)) })),
       removeSku: (name) => set((s) => ({ skus: (s.skus ?? []).filter((x) => x.name !== name) })),
+      dataCenters: null,
+      ensureDataCenters: (seed) => set((s) => (s.dataCenters ? s : { dataCenters: seed })),
+      addDataCenter: (dc) => set((s) => ({ dataCenters: [...(s.dataCenters ?? []), dc] })),
+      updateDataCenter: (id, patch) => set((s) => ({ dataCenters: (s.dataCenters ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+      removeDataCenter: (id) => set((s) => ({ dataCenters: (s.dataCenters ?? []).filter((x) => x.id !== id) })),
       reviews: null,
       ensureReviews: (seed) => set((s) => (s.reviews ? s : { reviews: seed })),
       addReview: (r) => set((s) => ({ reviews: [r, ...(s.reviews ?? [])] })),
@@ -240,6 +282,23 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
       updateVoucher: (id, patch) => set((s) => ({ vouchers: (s.vouchers ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
       setVoucherStatus: (id, status) => set((s) => ({ vouchers: (s.vouchers ?? []).map((x) => (x.id === id ? { ...x, status: status as OpsVoucher["status"] } : x)) })),
       removeVoucher: (id) => set((s) => ({ vouchers: (s.vouchers ?? []).filter((x) => x.id !== id) })),
+      vRankRewards: null,
+      ensureVRankRewards: (seed) => set((s) => (s.vRankRewards ? s : { vRankRewards: seed })),
+      addVRankReward: (level, item) =>
+        set((s) => {
+          const map = s.vRankRewards ?? {};
+          return { vRankRewards: { ...map, [level]: [...(map[level] ?? []), item] } };
+        }),
+      updateVRankReward: (level, id, patch) =>
+        set((s) => {
+          const map = s.vRankRewards ?? {};
+          return { vRankRewards: { ...map, [level]: (map[level] ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)) } };
+        }),
+      removeVRankReward: (level, id) =>
+        set((s) => {
+          const map = s.vRankRewards ?? {};
+          return { vRankRewards: { ...map, [level]: (map[level] ?? []).filter((x) => x.id !== id) } };
+        }),
       params: {},
       audit: [],
       setParam: (key, value, meta) =>
@@ -267,7 +326,7 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
     }),
     {
       name: "nexion-admin-platform-v1",
-      version: 6, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product;v4:SKU 加 purchaseGate(购买门),清旧 SKU 重建带门 seed;v5:SKU 日产值对齐公布档(Pro v2 14/90·Cloud 3 NEX),清旧 SKU 重建;v6:新增 OpsVoucher(代金券)。
+      version: 8, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product;v4:SKU 加 purchaseGate(购买门),清旧 SKU 重建带门 seed;v5:SKU 日产值对齐公布档(Pro v2 14/90·Cloud 3 NEX),清旧 SKU 重建;v6:新增 OpsVoucher(代金券);v7:新增 V-Rank 等级奖励(删实物/发货,奖励改可配清单);v8:新增 OpsDataCenter(E5 数据中心可增删改 + SKU datacenter 下拉单源)。
       storage: createJSONStorage(() => localStorage),
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<PlatformConfigStore>;
@@ -276,6 +335,8 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
         if (version < 4) p.skus = null; // SKU 新增 purchaseGate 字段 + Pro/Rack P1 默认门;清旧 seed 由 ensureSkus 按新 seed 重建
         if (version < 5) p.skus = null; // SKU 日产值对齐公布档(Pro v2 14.5→14 / 100→90 NEX · Cloud 1→3 NEX);清旧 stale seed 重建
         if (version < 6) p.vouchers = null; // 新增代金券字段,由 ensureVouchers 按 seed 重建
+        if (version < 7) p.vRankRewards = null; // 新增 V-Rank 等级奖励,由 ensureVRankRewards 按 seed 重建
+        if (version < 8) p.dataCenters = null; // 新增数据中心,由 ensureDataCenters 按 seed 重建
         return p as PlatformConfigStore;
       },
     },

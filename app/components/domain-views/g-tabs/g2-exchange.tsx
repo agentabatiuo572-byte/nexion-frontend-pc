@@ -42,7 +42,8 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
         {c.loosen ? <>放宽是放大 USDT 流出,确认放行时服务器验备付金覆盖率红线(低于红线 422 拒);收紧不受限。</> : isQueueMode ? <>从「排队」改为「拒绝」= 收紧方向(超 cap 用户立即被拒,资金不锁死)。执行门槛:运营主管(`admin.exchange_queue_config_changed`)。</> : "随费率启用生效。"}
       </>,
       amplifies: c.loosen,
-      edit: { kind: "text", current: cur },
+      // queueMode 是二元枚举(排队 / 拒绝),勾选不手输;其余额度 / 费率为开放数值保留 text。
+      edit: isQueueMode ? { kind: "select", current: cur, options: ["排队", "拒绝"] } : { kind: "text", current: cur },
       run: (reason, v) => { if (v) setParam(`G.exchange.${c.key}`, v, { action: `兑换${isQueueMode ? "队列策略" : "额度"}调整 ${c.name}`, reason }); toast(`${c.name} 已更新为 ${v}`); },
     });
   };

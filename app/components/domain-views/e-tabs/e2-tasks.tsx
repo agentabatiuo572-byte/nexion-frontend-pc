@@ -1,13 +1,20 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Btn, CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
+import type { OpsTask } from "@/lib/store/admin/platform-config-store";
 import { EStats } from "./stats";
 import { PHONE_TIERS } from "./data";
 
-/* ── 任务图标(按任务名推断 kind;OpsSchema 无 kind 字段)── */
+/* ── 任务类型 → 图标 kind(单一真源:taskClass 权威枚举 ↔ 图标)── */
 type Kind = "llm" | "img" | "vid" | "ft" | "em";
-function taskKind(n: string): Kind {
+const KIND_ORDER: Kind[] = ["llm", "img", "vid", "ft", "em"];
+const KIND_LABEL: Record<Kind, string> = { llm: "LLM 推理", img: "图像生成", vid: "视频渲染", ft: "微调", em: "Embedding" };
+// 新增/编辑任务弹窗的 taskClass 权威枚举 → 图标 kind(与 e-view.tsx 抽屉 select 同源)。
+const CLASS_TO_KIND: Record<string, Kind> = { "llm-inference": "llm", "image-gen": "img", "video-render": "vid", "fine-tune": "ft", "embedding": "em" };
+
+/* 种子任务无持久化 config 时,按任务名推断 kind(seed 命名与类型一一对应)。 */
+function kindByName(n: string): Kind {
   if (/llm|405b|70b|推理/i.test(n)) return "llm";
   if (/图像|image|sdxl|img/i.test(n)) return "img";
   if (/视频|渲染|video|vid/i.test(n)) return "vid";
@@ -15,6 +22,19 @@ function taskKind(n: string): Kind {
   if (/embed|em\b|嵌入/i.test(n)) return "em";
   return "llm";
 }
+/* 任务 kind 真源:优先读后台权威 taskClass(E.task.{id}.config),回退种子命名推断。
+   修复点:此前图标只按名称正则推断,新增任务名不匹配正则 → 图标与所选 taskClass 不一致。 */
+function taskKindOf(t: OpsTask, pget: (k: string) => string | undefined): Kind {
+  try {
+    const raw = pget(`E.task.${t.id}.config`);
+    if (raw) {
+      const cfg = JSON.parse(raw) as { taskClass?: string };
+      if (cfg.taskClass && CLASS_TO_KIND[cfg.taskClass]) return CLASS_TO_KIND[cfg.taskClass];
+    }
+  } catch { /* 种子任务无 config,落回名称推断 */ }
+  return kindByName(t.n);
+}
+
 function KindIcon({ k }: { k: Kind }) {
   const p: Record<Kind, ReactNode> = {
     llm: <><path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /><circle cx="12" cy="12" r="3" /></>,
@@ -31,8 +51,9 @@ const CheckSm = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none
 
 const satColor = (pct: number): string => (pct >= 75 ? "var(--warning)" : pct >= 40 ? "var(--success)" : "var(--ink-4)");
 
-/* ── 24h × 6 任务 热力图(静态监控:合成正弦昼夜分布)── */
-const HEAT_BASE = [70, 50, 42, 60, 38, 28];
+/* ── 24h 饱和度热力图(静态监控:合成正弦昼夜分布;base 由任务 sat 派生,口径单源)── */
+// base ≈ sat*100 − 12(夹 12–80),复刻原 6 任务观感并对任意任务数泛化。
+const heatBase = (sat: number): number => Math.max(12, Math.min(80, Math.round(sat * 100) - 12));
 function makeRow(base: number): number[] {
   const out: number[] = [];
   for (let h = 0; h < 24; h++) {
@@ -50,6 +71,7 @@ function heatBg(v: number): string {
   return "var(--danger)";
 }
 const HEAT_SCALE = ["var(--surface-3)", "rgba(41,210,127,.4)", "var(--success)", "var(--warning)", "var(--brand-2)", "var(--danger)"];
+const HEAT_PER_ZONE = 6;   // 每个热力图区域最多 6 个任务,超出新增区域
 
 const HOOKS = [
   { nm: "LLM 405B 锁定展示", ct: "3,284 →", up: false },
@@ -59,9 +81,45 @@ const HOOKS = [
   { nm: "→ Rack P2 升级", ct: "+8", up: true },
 ];
 
+const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
+
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
-  const { tasks } = ctx;
-  const heatNames = tasks.slice(0, 6).map((t) => t.n);
+  const { tasks, pget } = ctx;
+
+  // ── 任务列表:分类筛选 + 翻页(纯视图态)──
+  const [filterKind, setFilterKind] = useState<"all" | Kind>("all");
+  const [page, setPage] = useState(1);
+
+  // 每个任务的 kind(真源 taskClass)— 列表筛选/图标/计数共用,单点派生。
+  const kindMap = useMemo(() => new Map(tasks.map((t) => [t.id, taskKindOf(t, pget)])), [tasks, pget]);
+  const kindCount = (k: Kind): number => tasks.reduce((acc, t) => acc + (kindMap.get(t.id) === k ? 1 : 0), 0);
+
+  const filtered = filterKind === "all" ? tasks : tasks.filter((t) => kindMap.get(t.id) === filterKind);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE));
+  const curPage = Math.min(page, totalPages);   // clamp 防筛选/缩页越界
+  const pageRows = filtered.slice((curPage - 1) * LIST_PAGE_SIZE, curPage * LIST_PAGE_SIZE);
+
+  // ── 热力图:全部任务按每区域 ≤6 切区域(网络级监控,不随列表筛选)──
+  const zones = useMemo(() => {
+    const out: OpsTask[][] = [];
+    for (let i = 0; i < tasks.length; i += HEAT_PER_ZONE) out.push(tasks.slice(i, i + HEAT_PER_ZONE));
+    return out;
+  }, [tasks]);
+
+  // 全网峰值(派生,不硬编码):遍历各任务合成行取最大。
+  const peak = useMemo(() => {
+    let pct = 0, hour = 0, name = "";
+    for (const t of tasks) {
+      const row = makeRow(heatBase(t.sat));
+      for (let h = 0; h < 24; h++) if (row[h] > pct) { pct = row[h]; hour = h; name = t.n; }
+    }
+    return { pct, hour, name };
+  }, [tasks]);
+
+  // donut 负载分布(派生,与任务列表同源,随增删自动同步)。
+  const hiLoad = tasks.filter((t) => t.sat >= 0.75).length;
+  const loLoad = tasks.filter((t) => t.sat < 0.40).length;
+  const midLoad = tasks.length - hiLoad - loLoad;
 
   return (
     <>
@@ -87,7 +145,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             const n = ctx.pget(nKey) ?? t.dailyNex;
             return (
               <div key={t.tier} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 14, alignItems: "center", paddingTop: t.tier === 1 ? 0 : 10, borderTop: t.tier === 1 ? "none" : "1px solid var(--border)" }}>
-                <span style={{ minWidth: 40, height: 26, padding: "0 8px", borderRadius: 7, background: "var(--brand-soft)", color: "var(--brand)", border: "1px solid var(--brand-border)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)" }}>T{t.tier}</span>
+                <span style={{ minWidth: 40, height: 26, padding: "0 8px", borderRadius: 7, background: "var(--brand-soft)", color: "var(--brand)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)" }}>T{t.tier}</span>
                 <div className="col" style={{ gap: 2 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{t.name}</span>
                   <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{t.note}</span>
@@ -113,21 +171,33 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           })}
         </div>
         <div className="tint cyan tiny" style={{ margin: "0 16px 14px" }}>
-          <AutoGloss>与前端手机算力档位同口径(backend-replaceable · GET /api/config/phone-tiers)· 调高任一档先过 B1 覆盖率护栏 · 经操作确认写 A2 审计 · 对下一结算周期生效,不回溯已计提。T3 为典型机,锚定营销文案的 $0.06/天。</AutoGloss>
+          <AutoGloss>这 5 档就是用户 App 手机算力卡片上显示的每日收益,在这里改就等于改用户端看到的数字。把某一档调高 = 平台多发钱,提交时系统会先核对资金覆盖率(B1)够不够,不够会被拦下。改动从下一个结算周期开始算,之前已经发给用户的收益不会变。T3 是典型机型,对应营销文案里说的 </AutoGloss><span className="nowrap">$0.06/天</span>。
         </div>
       </section>
 
       <div className="e3-main">
-        {/* 左:6 任务卡 */}
+        {/* 左:任务列表(分类筛选 + 翻页) */}
         <section className="pane">
           <div className="pane-h">
-            <span className="ttl">{tasks.length} 类任务 · 单价 & 门槛</span>
+            <span className="ttl">任务列表</span>
+            <span className="tcount">共 {tasks.length} 个{filterKind !== "all" ? ` · 筛选 ${filtered.length}` : ""}</span>
             <span className="sub">前端 /earn 任务池映射</span>
             <span className="r"><CodeTag tone="electric">任务引擎</CodeTag><CodeTag>E.task.*</CodeTag></span>
           </div>
+          <div className="filter-bar">
+            <span className={`fchip${filterKind === "all" ? " on" : ""}`} onClick={() => { setFilterKind("all"); setPage(1); }}>全部 {tasks.length}</span>
+            <span className="fdiv" aria-hidden />
+            {KIND_ORDER.map((k) => (
+              <span key={k} className={`fchip${filterKind === k ? " on" : ""}`} onClick={() => { setFilterKind(k); setPage(1); }}>
+                {KIND_LABEL[k]} {kindCount(k)}
+              </span>
+            ))}
+          </div>
           <div className="task-list">
-            {tasks.map((t) => {
-              const k = taskKind(t.n);
+            {pageRows.length === 0 ? (
+              <div className="rv-empty">当前分类无匹配任务</div>
+            ) : pageRows.map((t) => {
+              const k = kindMap.get(t.id) ?? "llm";
               const pct = Math.round(t.sat * 100);
               const locked = t.req.includes("需");
               return (
@@ -148,6 +218,13 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               );
             })}
           </div>
+          {totalPages > 1 && (
+            <div className="rv-pager">
+              <button className="step" disabled={curPage <= 1} onClick={() => setPage(curPage - 1)}>‹ 上一页</button>
+              <span className="ind">第 <b>{curPage}</b> / {totalPages} 页 · 共 {filtered.length} 个</span>
+              <button className="step" disabled={curPage >= totalPages} onClick={() => setPage(curPage + 1)}>下一页 ›</button>
+            </div>
+          )}
         </section>
 
         {/* 右 rail:饱和度 donut + 锁定钩子 */}
@@ -163,9 +240,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               <div className="ctr"><div className="num">63<small>%</small></div><div className="lb">峰值 78%</div></div>
             </div>
             <div className="legend">
-              <div className="row"><span className="dot" style={{ background: "var(--warning)" }} /><span className="nm">高负载(&gt;75%)</span><span className="pct">2 类</span></div>
-              <div className="row"><span className="dot" style={{ background: "var(--success)" }} /><span className="nm">中负载(40–75%)</span><span className="pct">3 类</span></div>
-              <div className="row"><span className="dot" style={{ background: "var(--ink-4)" }} /><span className="nm">低负载(&lt;40%)</span><span className="pct">1 类</span></div>
+              <div className="row"><span className="dot" style={{ background: "var(--warning)" }} /><span className="nm">高负载(&gt;75%)</span><span className="pct">{hiLoad} 类</span></div>
+              <div className="row"><span className="dot" style={{ background: "var(--success)" }} /><span className="nm">中负载(40–75%)</span><span className="pct">{midLoad} 类</span></div>
+              <div className="row"><span className="dot" style={{ background: "var(--ink-4)" }} /><span className="nm">低负载(&lt;40%)</span><span className="pct">{loLoad} 类</span></div>
             </div>
           </div>
           <div className="hook-card">
@@ -181,31 +258,41 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         </aside>
       </div>
 
-      {/* 24h × 6 任务 热力图 */}
+      {/* 24h 任务饱和度热力图 —— 每区域最多 6 任务,超出新增区域,每行 2-3 区域随页面缩放自适应 */}
       <div className="heat-card">
         <div className="heat-h">
-          <span className="ttl">24h × 6 任务 · 饱和度热力图</span>
-          <span className="sub">UTC · 每小时平均</span>
-          <span className="r">峰值 19:00 · LoRA 微调 92%</span>
+          <span className="ttl">24h 任务饱和度热力图</span>
+          <span className="sub">每区域最多 6 任务 · UTC 每小时平均</span>
+          {peak.name && <span className="r">峰值 {peak.hour < 10 ? "0" + peak.hour : peak.hour}:00 · {peak.name} {peak.pct}%</span>}
         </div>
-        <div className="heat-grid">
-          {heatNames.map((nm, r) => {
-            const row = makeRow(HEAT_BASE[r] ?? 40);
-            return (
-              <Fragment key={r}>
-                <span className="lbl">{nm}</span>
-                <div className="heat-row">
-                  {row.map((v, h) => (
-                    <div key={h} className="heat-cell" style={{ background: heatBg(v) }} title={`${nm} · ${h < 10 ? "0" + h : h}:00 UTC · ${v}%`} />
-                  ))}
-                </div>
-              </Fragment>
-            );
-          })}
-        </div>
-        <div className="heat-axis-wrap">
-          <span />
-          <div className="heat-axis">{Array.from({ length: 24 }, (_, h) => <span key={h}>{h % 3 === 0 ? h : ""}</span>)}</div>
+        <div className="heat-zones">
+          {zones.map((zone, zi) => (
+            <div className="heat-zone" key={zi}>
+              <div className="zone-h">
+                <span className="z-ttl">区域 {zi + 1}</span>
+                <span className="z-sub">{zone.length} 任务</span>
+              </div>
+              <div className="heat-grid">
+                {zone.map((t) => {
+                  const row = makeRow(heatBase(t.sat));
+                  return (
+                    <Fragment key={t.id}>
+                      <span className="lbl" title={t.n}>{t.n}</span>
+                      <div className="heat-row">
+                        {row.map((v, h) => (
+                          <div key={h} className="heat-cell" style={{ background: heatBg(v) }} title={`${t.n} · ${h < 10 ? "0" + h : h}:00 UTC · ${v}%`} />
+                        ))}
+                      </div>
+                    </Fragment>
+                  );
+                })}
+              </div>
+              <div className="heat-axis-wrap">
+                <span />
+                <div className="heat-axis">{Array.from({ length: 24 }, (_, h) => <span key={h}>{h % 3 === 0 ? h : ""}</span>)}</div>
+              </div>
+            </div>
+          ))}
         </div>
         <div className="heat-legend">
           <span>低</span>

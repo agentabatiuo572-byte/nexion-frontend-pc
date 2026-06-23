@@ -507,14 +507,19 @@ export type BusinessFormSpec =
   | { kind: "course-authoring"; rewardMin?: number; rewardMax?: number; categories?: string[]; durations?: string[]; publishStates?: string[] }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "version-authoring"; version?: string; jurisdiction?: string; zh?: string; en?: string; chapters?: string[]; languageScopes?: string[]; effectiveDate?: string; requiresReack?: boolean }
-  | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean; rollbackRequired?: boolean }
+  | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean }
   | { kind: "task-edit"; subject?: string; currentName?: string; currentPath?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "day-one-window"; currentActiveHours?: string; currentGraceHours?: string }
   | { kind: "day-one-tri-reward"; currentActive?: string; currentGrace?: string; currentExpired?: string }
+  // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
+  // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
+  // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
-  | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] };
+  | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] }
+  | { kind: "vrank-reward-edit"; subject?: string; voucherOptions?: string[]; voucherLabels?: Record<string, string>; skuOptions?: string[]; skuLabels?: Record<string, string>; currentType?: string; currentAmount?: string; currentVoucherId?: string; currentSkuId?: string; currentCustom?: string };
 
 type BriefRow = { label: string; text: string };
 
@@ -760,6 +765,9 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (spec.kind === "day-one-tri-reward") {
     return { active: spec.currentActive ?? "500", grace: spec.currentGrace ?? "200", expired: spec.currentExpired ?? "0" };
   }
+  if (spec.kind === "multi-field") {
+    return Object.fromEntries(spec.fields.map((f) => [f.key, f.current ?? f.options?.[0] ?? ""]));
+  }
   if (spec.kind === "weekly-task-edit") {
     return { cond: spec.currentCond ?? "", reward: spec.currentReward ?? "", status: spec.currentStatus ?? "active", completionType: spec.currentCompletionType ?? "event", completionEvent: spec.currentCompletionEvent ?? "" };
   }
@@ -787,6 +795,15 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       stackWithTrial: spec.currentStackWithTrial ?? "false",
       stackWithOthers: spec.currentStackWithOthers ?? "false",
       splittable: spec.currentSplittable ?? "false",
+    };
+  }
+  if (spec.kind === "vrank-reward-edit") {
+    return {
+      rtype: spec.currentType ?? "nex",
+      amount: spec.currentAmount ?? "",
+      voucherId: spec.currentVoucherId ?? (spec.voucherOptions?.[0] ?? ""),
+      skuId: spec.currentSkuId ?? (spec.skuOptions?.[0] ?? ""),
+      custom: spec.currentCustom ?? "",
     };
   }
   return { rollback: "", ack: "false" };
@@ -846,7 +863,6 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     ["version", "jurisdiction", "languageScope", "effectiveDate", "requiresReack", "zh", "en"].forEach((key) => needs(key, key));
   } else if (spec.kind === "destructive-reason") {
     if ((spec.requireAck ?? true) && state.ack !== "true") missing.push("影响确认");
-    if (spec.rollbackRequired) needs("rollback", "回滚方案");
   } else if (spec.kind === "identity-verify") {
     needs("channel", "核验渠道");
     needs("verifiedAt", "核验时间");
@@ -891,6 +907,15 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const a = Number(state.active), g = Number(state.grace), e = Number(state.expired);
     if (![a, g, e].every((n) => Number.isFinite(n) && n >= 0)) missing.push("三档须为非负数");
     else if (a < g || g < e) missing.push("须满额 ≥ 宽限 ≥ 过期");
+  } else if (spec.kind === "multi-field") {
+    spec.fields.forEach((f) => needs(f.key, f.label));
+    const nums = spec.fields.filter((f) => f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
+    if (nums.some(({ n }) => !Number.isFinite(n))) missing.push("数值字段须为有效数字");
+    else if (spec.ascending) {
+      for (let i = 1; i < nums.length; i++) {
+        if (nums[i].n <= nums[i - 1].n) { missing.push(`${nums[i].f.label} 须大于 ${nums[i - 1].f.label}`); break; }
+      }
+    }
   } else if (spec.kind === "weekly-task-edit") {
     needs("cond", "条件/任务");
     needs("reward", "奖励");
@@ -932,6 +957,18 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const surfs = (state.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     if (surfs.length === 0) missing.push("领取入口页面(至少一个)");
     else if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
+  } else if (spec.kind === "vrank-reward-edit") {
+    needs("rtype", "奖励类型");
+    if (state.rtype === "usdt" || state.rtype === "nex") {
+      const a = Number(state.amount);
+      if (!Number.isFinite(a) || a <= 0) missing.push("奖励金额(正数)");
+    } else if (state.rtype === "voucher") {
+      needs("voucherId", "代金券");
+    } else if (state.rtype === "sku") {
+      needs("skuId", "系统 SKU");
+    } else if (state.rtype === "custom") {
+      needs("custom", "自定义奖励内容");
+    }
   }
   return missing;
 }
@@ -952,12 +989,22 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "task-edit") return `${state.name}(${state.reward}${state.status && state.status !== "active" ? " · " + state.status : ""} · ${state.completionType ?? "visit"})`;
   if (spec.kind === "day-one-window") return `${state.activeHours}h / ${state.graceHours}h`;
   if (spec.kind === "day-one-tri-reward") return `${state.active}/${state.grace}/${state.expired}`;
+  if (spec.kind === "multi-field") return spec.fields.map((f) => state[f.key]).filter((v) => v != null && v !== "").join(" / ") || undefined;
   if (spec.kind === "weekly-task-edit") return state.cond && state.reward ? `${state.cond}(${state.reward})` : undefined;
   if (spec.kind === "monthly-task-edit") return state.theme && state.reward ? `${state.theme}(${state.reward})` : undefined;
   if (spec.kind === "voucher-config") return state.name || undefined;
   if (spec.kind === "promo-banner-edit") {
     const f = Number(state.baseReward) * Number(state.multiplier);
     return Number.isFinite(f) ? `${Math.round(f)} NEX(${state.baseReward}×${state.multiplier})` : undefined;
+  }
+  if (spec.kind === "vrank-reward-edit") {
+    const t = state.rtype;
+    if (t === "usdt") return state.amount ? `USDT $${state.amount}` : undefined;
+    if (t === "nex") return state.amount ? `${Number(state.amount).toLocaleString()} NEX` : undefined;
+    if (t === "voucher") return state.voucherId ? `代金券 ${spec.voucherLabels?.[state.voucherId] ?? state.voucherId}` : undefined;
+    if (t === "sku") return state.skuId ? `SKU ${spec.skuLabels?.[state.skuId] ?? state.skuId}` : undefined;
+    if (t === "custom") return state.custom || undefined;
+    return undefined;
   }
   return undefined;
 }
@@ -1032,6 +1079,29 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
     );
   };
 
+  if (spec.kind === "multi-field") {
+    return (
+      <div className="field" data-business-form="multi-field">
+        <label>{spec.title ?? "业务表单 · 多字段配置"}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {spec.fields.map((f) => (
+            <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
+              <span>{f.label}</span>
+              {f.inputKind === "select" ? (
+                // 能枚举的值用下拉,不让运营手输(最高设计铁律:能勾选的不要输入)
+                <select className="fld" value={value[f.key] ?? f.options?.[0] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
+                  {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : (
+                <input className="fld" type={f.inputKind === "number" ? "number" : "text"} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+              )}
+            </label>
+          ))}
+        </div>
+        {spec.hint && <div className="tint tiny" style={{ marginTop: 10 }}>{spec.hint}</div>}
+      </div>
+    );
+  }
   if (spec.kind === "role-select") {
     return (
       <div className="field" data-business-form="role-select">
@@ -1297,6 +1367,47 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
     );
   }
 
+  if (spec.kind === "vrank-reward-edit") {
+    const rtype = value.rtype ?? "nex";
+    const voucherOpts = spec.voucherOptions ?? [];
+    const skuOpts = spec.skuOptions ?? [];
+    return (
+      <div className="field" data-business-form="vrank-reward-edit">
+        <label>业务表单 · 等级奖励{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div style={{ marginBottom: 10 }}>
+          {select("rtype", "奖励类型 type", ["usdt", "nex", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", nex: "NEX 代币", voucher: "代金券", sku: "系统 SKU", custom: "自定义" })}
+        </div>
+        {(rtype === "usdt" || rtype === "nex") && (
+          <div data-proof="vrank-reward-amount">
+            {input("amount", rtype === "usdt" ? "金额 amount(USDT)" : "数量 amount(NEX)", rtype === "usdt" ? "如 50" : "如 10000", "number")}
+          </div>
+        )}
+        {rtype === "voucher" && (
+          <div data-proof="vrank-reward-voucher">
+            {voucherOpts.length === 0
+              ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无可选代金券(先到 H7 代金券配置 新建并投放)。</div>
+              : select("voucherId", "选择代金券 voucher", voucherOpts, "vrank-reward-voucher-sel", spec.voucherLabels)}
+          </div>
+        )}
+        {rtype === "sku" && (
+          <div data-proof="vrank-reward-sku">
+            {skuOpts.length === 0
+              ? <div className="tiny" style={{ color: "var(--ink-4)" }}>暂无在售 SKU(先到 E1 商品上架)。</div>
+              : select("skuId", "选择 SKU sku", skuOpts, "vrank-reward-sku-sel", spec.skuLabels)}
+          </div>
+        )}
+        {rtype === "custom" && (
+          <div data-proof="vrank-reward-custom">
+            {input("custom", "自定义奖励内容 custom", "如 限量徽章 / 线下活动名额")}
+          </div>
+        )}
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          <b>USDT / NEX</b> = 直接发放金额(会放大资金流出,过 B1 备付金覆盖率检查);<b>代金券 / SKU</b> = 从现有代金券 / 在售 SKU 中选;<b>自定义</b> = 自由文本(线下兑付,不入资金账)。
+        </div>
+      </div>
+    );
+  }
+
   if (spec.kind === "day-one-window") {
     return (
       <div className="field" data-business-form="day-one-window">
@@ -1519,19 +1630,9 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
       <div className="tint danger tiny" style={{ marginBottom: 10 }}>
         目标 <span className="mono">{spec.target}</span> · {spec.impact}
       </div>
-      <label className="field" style={{ marginBottom: 0 }}>
-        <span>回滚方案 / 替代方案</span>
-        <textarea
-          data-proof="destructive-rollback"
-          rows={2}
-          value={value.rollback ?? ""}
-          onChange={(e) => set("rollback", e.target.value)}
-          placeholder="例: 如误删,从最近商品快照恢复;通知前台撤下入口"
-        />
-      </label>
       <label className="row" style={{ gap: 8, marginTop: 10, color: "var(--ink-2)", fontSize: 12.5 }}>
         <input data-proof="destructive-ack" type="checkbox" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
-        我已确认影响范围、审计留痕和回滚方案
+        我已确认影响范围,本操作将写入审计留痕
       </label>
     </div>
   );

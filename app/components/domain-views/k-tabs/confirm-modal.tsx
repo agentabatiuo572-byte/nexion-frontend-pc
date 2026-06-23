@@ -6,7 +6,7 @@
  * 强制留痕(写 setParam → A2 审计);reason=true 时原因必填,input 为可选输入框。
  */
 import { useState } from "react";
-import { Modal, Btn, OperatorBriefBlock } from "../design-kit";
+import { Modal, Btn, Chip, OperatorBriefBlock } from "../design-kit";
 import type { ConfirmReq } from "./types";
 
 export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () => void }) {
@@ -14,7 +14,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
   const [value, setValue] = useState("");
   const reasonMin = 8;
   const reasonOk = !req.reason || reason.trim().length >= reasonMin;
-  const inputOk = !req.input || value.trim().length >= 1;
+  // chips 模式:所选项即非空,用精确判空(防空串 option 误配后按钮静默禁用);文本模式:仍要求 trim 后非空(拒纯空白)。
+  const inputOk = !req.input || (req.input.options ? value !== "" : value.trim().length >= 1);
   const can = reasonOk && inputOk;
   return (
     <Modal
@@ -55,15 +56,24 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
       {req.input && (
         <div style={{ marginTop: 13 }}>
           <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 6 }}>{req.input.label}</div>
-          <input
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={req.input.placeholder}
-            style={{
-              width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
-              padding: "8px 12px", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13, outline: "none",
-            }}
-          />
+          {req.input.options && req.input.options.length > 0 ? (
+            // 枚举值:勾选 chips 不让手输(能勾选的不要手输铁律);value=所选项,inputOk 同文本框(选中即非空、确认按钮才启用)。
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {req.input.options.map((o) => (
+                <Chip key={o} tab sel={value === o} onClick={() => setValue(o)}>{o}</Chip>
+              ))}
+            </div>
+          ) : (
+            <input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={req.input.placeholder}
+              style={{
+                width: "100%", background: "var(--surface-2)", border: "1px solid var(--border-strong)", borderRadius: 8,
+                padding: "8px 12px", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13, outline: "none",
+              }}
+            />
+          )}
         </div>
       )}
       <div style={{ marginTop: 13 }}>

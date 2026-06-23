@@ -4,7 +4,7 @@ import type { ModuleEntry } from "@/lib/admin/module-content";
 export const DOMAIN_F: ModuleEntry[] = [
   {
     path: "/network/v-rank",
-    summary: "V-Rank 会员等级体系(V0–V12)的晋升门槛和权益。等级由服务器判定;改门槛或权益要增长运营 + 风控一起确认并记入 A2 审计。",
+    summary: "V-Rank 会员等级体系(V0–V12)的晋升门槛和权益。等级由服务器判定;改门槛或权益走操作确认并记入 A2 审计。",
     content: {
       kind: "config",
       metrics: [
@@ -45,7 +45,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           ],
         },
       ],
-      confirmPolicy: "门槛 / 权益 / 保级规则变更需 增长运营 + 风控 操作确认;改动写入 A2 审计,下一结算周期生效。",
+      confirmPolicy: "门槛 / 权益 / 保级规则变更需操作确认 + 理由;改动写入 A2 审计,下一结算周期生效。",
       impact: [
         "上调晋升门槛 → 高阶用户占比下降,网络版税与领导奖池支出收缩",
         "放宽保级宽限 → 等级稳定性上升,但权益支出口径随之增加",
@@ -55,7 +55,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/royalty",
-    summary: "推荐分销的版税费率体系。直推版税固定 10%(不可调);费率档(L1–L7)是合伙人身份对应的权益层级、不是在 10% 上再加成;佣金算出来后有 30 天冷却期。改费率要财务 + 风控一起确认。",
+    summary: "推荐分销的版税费率体系。直推版税固定 10%(不可调);费率档(L1–L7)是合伙人身份对应的权益层级、不是在 10% 上再加成;佣金算出来后有 30 天冷却期。改费率走操作确认。",
     content: {
       kind: "config",
       metrics: [
@@ -94,7 +94,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           ],
         },
       ],
-      confirmPolicy: "Direct Royalty 为产品锁定值不开放调整;权益层 / 冷却天数变更需 财务 + 风控 操作确认,写入 A2 审计。",
+      confirmPolicy: "Direct Royalty 为产品锁定值不开放调整;权益层 / 冷却天数变更需操作确认 + 理由,写入 A2 审计。",
       impact: [
         "缩短佣金冷却 → 解锁加速,短期套利与异常增长风险上升,联动 F4 反欺诈监控",
         "调整 Partner Status 权益层 → 影响顶层用户配额与领导奖池占比,需同步 F4 评估",
@@ -104,7 +104,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/binary",
-    summary: "平衡匹配结算引擎。把团队分成 A、B 两路,按业绩较小的一路来匹配计酬;新成员自动归位补到弱的一侧,并设每日封顶。改封顶或匹配比例要财务 + 风控一起确认。",
+    summary: "平衡匹配结算引擎。把团队分成 A、B 两路,按业绩较小的一路来匹配计酬;新成员自动归位补到弱的一侧,并设每日封顶。改封顶或匹配比例走操作确认。",
     content: {
       kind: "config",
       metrics: [
@@ -143,7 +143,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           ],
         },
       ],
-      confirmPolicy: "匹配比例 / 封顶 / auto-placement 策略变更需 财务 + 风控 操作确认;封顶分段与 H1 阶段拨盘联动,改动写入 A2 审计。",
+      confirmPolicy: "匹配比例 / 封顶 / auto-placement 策略变更需操作确认 + 理由;封顶分段与 H1 阶段拨盘联动,改动写入 A2 审计。",
       impact: [
         "上调匹配比例或封顶 → 结算支出与资金敞口同步放大,需同步 D4 计提评估",
         "放宽超额结转 → 单用户累积敞口上升,联动 B5 头部集中度监控",
@@ -201,7 +201,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           ],
         },
       ],
-      confirmPolicy: "奖池比例 / 分配权重 / 单人封顶 / 配额额度 / 大使授予 / 取消资格变更需 财务 + 风控 操作确认(放大流出项前置 B1 覆盖率核验);分配名单按 F1 等级日切快照,改动写入 A2 审计。",
+      confirmPolicy: "奖池比例 / 分配权重 / 单人封顶 / 配额额度 / 大使授予 / 取消资格变更需操作确认 + 理由(放大流出项前置 B1 覆盖率核验);分配名单按 F1 等级日切快照,改动写入 A2 审计。",
       impact: [
         "上调入池比例 → 奖池规模放大,平台版税净留存下降",
         "放宽资格门槛 → 分配人数上升,人均份额摊薄,需评估激励效果",

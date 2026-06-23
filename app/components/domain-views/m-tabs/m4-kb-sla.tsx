@@ -119,7 +119,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
                   <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>{f.question}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, flexWrap: "wrap" }}>
                     <span className="idtag" style={{ fontSize: 11 }}>{f.id}</span>
-                    <span className="chip" style={{ height: 18, fontSize: 11 }}>{catCN(f.category)}</span>
+                    <span className="chip" style={{ height: 18, fontSize: 11, border: "none" }}>{catCN(f.category)}</span>
                     <span className="dim2" style={{ fontSize: 11 }}>{SURFACE_CN[f.surface]} · <span className="mono">{f.updatedAt}</span></span>
                   </div>
                 </div>
@@ -272,7 +272,7 @@ function EditSlaModal({
     >
       <div className="field" style={{ marginBottom: 12 }} data-proof="support-sla-category">
         <label>分类</label>
-        <div className="chip" style={{ width: "fit-content" }}>{catCN(category)} · {category}</div>
+        <div className="chip" style={{ width: "fit-content", border: "none" }}>{catCN(category)} · {category}</div>
       </div>
       <div className="grid g-2" style={{ gap: 12 }}>
         <label className="field"><label>首响(分钟)</label><input className="fld mono" type="number" value={firstResponseMins} onChange={(e) => setFirst(e.target.value)} /></label>

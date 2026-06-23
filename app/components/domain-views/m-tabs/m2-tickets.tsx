@@ -308,7 +308,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
                     <div className="tk-id">{t.id}</div>
                   </td>
                   <td>
-                    <span className="chip">{catCN(t.category)}</span>
+                    <span className="chip" style={{ border: "none" }}>{catCN(t.category)}</span>
                   </td>
                   <td>
                     <Prio p={t.priority} />
@@ -449,7 +449,7 @@ function TicketDrawer({
           </div>
           <h2 style={{ fontSize: 18, margin: "11px 0 0", fontWeight: 500 }}>{ticket.subject}</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 9, flexWrap: "wrap" }}>
-            <span className="chip">{catCN(ticket.category)}</span>
+            <span className="chip" style={{ border: "none" }}>{catCN(ticket.category)}</span>
             <span className="agent dim" style={{ fontSize: 12.5 }}>
               <MAvatar name={ticket.owner} size="sm" /> {ownerLabel(ticket.owner)}
             </span>
