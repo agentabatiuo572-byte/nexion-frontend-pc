@@ -471,7 +471,21 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认 + A2 审计。` });
     setTaskDrawer(false);
   };
+  const skuLabelsUsingTask = (taskId: string, taskName: string) => skus
+    .filter((sku) => {
+      const unlocks = sku.aiUnlocks?.trim();
+      return unlocks === taskId || unlocks === taskName;
+    })
+    .map((sku) => {
+      const id = sku.id || sku.name;
+      return id && id !== sku.name ? `${sku.name}(${id})` : sku.name;
+    });
   const delTask = (t: { id: string; n: string }) => {
+    const refSkus = skuLabelsUsingTask(t.id, t.n);
+    if (refSkus.length > 0) {
+      setToast(`任务无法下架:${t.n} 正在被 E1 SKU 使用:${refSkus.join("、")}。请先到 E1 修改这些 SKU 的解锁算力池。`);
+      return;
+    }
     setActionConfirm({
       name: "下架任务 · " + t.n,
       op: "task-down",

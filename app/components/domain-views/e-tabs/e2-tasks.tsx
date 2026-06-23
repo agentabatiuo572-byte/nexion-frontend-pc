@@ -4,15 +4,26 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
 
-/* ── 任务图标(按任务名推断 kind;OpsSchema 无 kind 字段)── */
+/* ── 任务图标:优先按后端 taskClass 映射,任务名仅作为旧数据兜底 ── */
 type Kind = "llm" | "img" | "vid" | "ft" | "em";
-function taskKind(n: string): Kind {
+const TASK_CLASS_KIND: Record<string, Kind> = {
+  "llm-inference": "llm",
+  "image-gen": "img",
+  "video-render": "vid",
+  "fine-tune": "ft",
+  embedding: "em",
+};
+function taskKindByName(n: string): Kind {
   if (/llm|405b|70b|推理/i.test(n)) return "llm";
   if (/图像|image|sdxl|img/i.test(n)) return "img";
   if (/视频|渲染|video|vid/i.test(n)) return "vid";
   if (/微调|lora|ft|fine/i.test(n)) return "ft";
   if (/embed|em\b|嵌入/i.test(n)) return "em";
   return "llm";
+}
+function taskKind(taskClass: string | undefined, name: string): Kind {
+  const normalized = taskClass?.trim();
+  return normalized && TASK_CLASS_KIND[normalized] ? TASK_CLASS_KIND[normalized] : taskKindByName(name);
 }
 function KindIcon({ k }: { k: Kind }) {
   const p: Record<Kind, ReactNode> = {
@@ -131,7 +142,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           {ctx.e2Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在同步任务数据...</div>}
           <div className="task-list">
             {tasks.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无任务数据。</div> : tasks.map((t) => {
-              const k = taskKind(t.n);
+              const k = taskKind(t.taskClass, t.n);
               const pct = Math.round(t.sat * 100);
               const locked = t.req.includes("需");
               return (
