@@ -10,8 +10,9 @@ import type { OpsVRankRewardItem } from "@/lib/store/admin/platform-config-store
 export interface McSpec {
   name: string;
   amplify?: boolean;             // 放大资金流出 → OperationConfirmModal amplifies={true} → B1 覆盖率护栏
-  op?: "param" | "dispose";
+  op?: "param" | "dispose" | "param-multi";
   paramKey?: string;
+  paramKeys?: { key: string; paramKey: string }[];  // param-multi:businessForm 字段 key → param key 映射(每字段独立 setParam,backend-replaceable)
   fixedVal?: string;             // 处置类固定写入值(approved/rejected/disqualified/frozen/unlocked …)
   status?: string;
   edit?: EditSpec;               // 调参类目标新值编辑规格

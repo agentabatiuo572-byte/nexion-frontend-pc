@@ -125,6 +125,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             if (!newVal) { setToast("请填写目标新值"); return; }
             setParam(mc.paramKey, newVal, { action: mc.name, reason });
             setToast(mc.name + " 已确认生效 · 新值 " + newVal);
+          } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
+            // 多字段调参:每字段写到自己的 param key(各值独立 backend-replaceable),镜像 E 域 shell。
+            for (const { key, paramKey } of mc.paramKeys) {
+              setParam(paramKey, String(businessValue[key] ?? "").trim(), { action: mc.name, reason });
+            }
+            const summary = mc.paramKeys.map(({ key }) => String(businessValue[key] ?? "").trim()).join(" / ");
+            setToast(mc.name + " 已确认生效 · " + summary);
           } else if (mc.op === "dispose" && mc.paramKey && mc.fixedVal) {
             setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason });
             setToast(mc.name + " 已确认生效");

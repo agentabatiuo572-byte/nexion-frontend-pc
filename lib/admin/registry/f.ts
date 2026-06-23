@@ -104,7 +104,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/binary",
-    summary: "平衡匹配结算引擎。把团队分成 A、B 两路,按业绩较小的一路来匹配计酬;新成员自动归位补到弱的一侧,并设每日封顶。改封顶或匹配比例走操作确认。",
+    summary: "平衡匹配结算引擎。把团队分成 A、B 两路,按业绩较小的一路来匹配计酬;新成员自动归位补到弱的一侧,并设每日封顶。结算周期(每日/每周/每月)与沉淀处置(每月清零/每次对碰清零/转结)可配,改封顶 / 匹配比例 / 结算周期走操作确认。",
     content: {
       kind: "config",
       metrics: [
@@ -116,12 +116,12 @@ export const DOMAIN_F: ModuleEntry[] = [
       groups: [
         {
           title: "平衡匹配规则",
-          note: "取 Track A / Track B 两路较小侧业绩匹配计酬,结余结转下一周期。",
+          note: "取 Track A / Track B 两路较小侧业绩匹配计酬,沉淀处置与结算周期可配。",
           fields: [
             { label: "匹配比例", value: "10%", range: "5–15%", effect: "上调 → 匹配支出线性放大" },
             { label: "计酬基数", value: "min(Track A, Track B)", range: "口径固定", effect: "较小侧业绩" },
-            { label: "结余结转", value: "较大侧结转下周期", range: "开 / 关", effect: "关 → 结余清零" },
-            { label: "结算周期", value: "每日日切", range: "日 / 周", effect: "匹配计提节奏" },
+            { label: "沉淀处置", value: "每月清零(默认)", range: "每月清零 / 每次对碰清零 / 转结", effect: "转结 → 敞口累积" },
+            { label: "结算周期", value: "每月(默认)", range: "日 / 周 / 月", effect: "匹配派发节奏 · 可配" },
           ],
         },
         {

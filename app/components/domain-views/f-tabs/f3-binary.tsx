@@ -25,18 +25,26 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const binCapSeed = PHASE.dials.find((d) => d.key === "binaryDailyCapUSD")?.val ?? "$2,000";
   const binCapOv = ctx.pget("H.phase.dial.binaryCap");
   const binCap = binCapOv ? (/^\d+$/.test(binCapOv) ? `$${Number(binCapOv).toLocaleString()}` : binCapOv) : String(binCapSeed);
+  // 结算周期 + 沉淀处置(运营可配,中文直存=显示值;默认每月 / 每月清零)。沉淀「转结」放大负债,改前过 B1 覆盖率。
+  const periodEff = ctx.pget("F.binary.settlePeriod") ?? "每月";
+  const residualEff = ctx.pget("F.binary.residualPolicy") ?? "每月清零";
+  const residualSub =
+    residualEff === "转结" ? "转结下期 · 不清零"
+    : residualEff === "每次对碰清零" ? "每次对碰清零 · 不结转"
+    : residualEff === "每月清零" ? "月底归零 · 不结转"
+    : residualEff;  // 脏值透传,让运营感知异常(非静默 fallback)
   return (
     <>
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">今日 Balance Match</div><div className="v">$10,490</div><div className="sub">4 用户参与结算</div></div>
         <div className="f-stat"><div className="k">参与结算用户</div><div className="v">1,842</div><div className="sub">两轨均 ≥ $1k 阈值</div></div>
         <div className="f-stat warn"><div className="k">阻塞用户(轨不平衡)</div><div className="v">468</div><div className="sub">单轨 &lt; $1k 门槛</div></div>
-        <div className="f-stat cyan"><div className="k">沉淀池(未匹配)</div><div className="v">$1.2M</div><div className="sub">月底归零 · 不结转</div></div>
+        <div className="f-stat cyan"><div className="k">沉淀池(未匹配)</div><div className="v">$1.2M</div><div className="sub">{residualSub}</div></div>
       </div>
 
       <div className="f3-hero">
         <section className="pane">
-          <div className="pane-h"><span className="ph-ttl">平衡匹配公式</span><span className="ph-sub">服务端权威 · 每日结算窗口</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">双轨结算</CodeTag></span></div>
+          <div className="pane-h"><span className="ph-ttl">平衡匹配公式</span><span className="ph-sub">服务端权威 · {periodEff}结算窗口</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">双轨结算</CodeTag></span></div>
           <div className="formula">
             <div className="track a"><div className="nm">TRACK A · 左轨</div><div className="gv">$84,000</div><div className="meta">较大侧 · 自动安置流入<br />本期累计 GV(月初归零)</div></div>
             <div className="balance">
@@ -103,7 +111,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="cs">最低门槛 · 改后对下一周期结算生效</div>
           <div className="ckv"><span className="k">两轨结算门槛</span><span className="v">{thEff}</span></div>
           <div className="ckv"><span className="k">沉淀池(未达门槛)</span><span className="v">$1.2M</span></div>
-          <div className="ckv"><span className="k">沉淀处置</span><span className="v" style={{ color: "var(--ink-3)" }}>月底归零</span></div>
+          <div className="ckv"><span className="k">沉淀处置</span><span className="v" style={{ color: "var(--ink-3)" }}>{residualEff}</span></div>
           <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ name: "两轨结算门槛调整", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `两轨结算最低门槛 · 当前 ${thEff} · 改后对下一周期结算生效,不影响本期已计提。` })}>调整门槛</button></div>
         </div>
 
@@ -127,9 +135,35 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "GV 归零口径调整", op: "param", paramKey: "F.binary.gvResetCron", edit: { kind: "text", current: resetEff }, detail: "GV 月度归零 cron · 改为「保留」会拉大利息负债(科目 #3)与佣金应付,须严格 操作确认。" })}>归零口径</button>
           </div>
         </div>
+
+        <div className="cfg-card">
+          <div className="ch">结算周期 &amp; 沉淀处置<span className="tag">F.binary.settlement</span></div>
+          <div className="cs">双轨对碰派发节奏 + 沉淀池处置策略 · 改后下一周期生效</div>
+          <div className="ckv"><span className="k">结算周期</span><span className="v" style={{ color: "var(--brand)" }}>{periodEff}</span></div>
+          <div className="ckv"><span className="k">沉淀处置策略</span><span className="v">{residualEff}</span></div>
+          <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
+            name: "结算周期 & 沉淀处置调整",
+            op: "param-multi",
+            amplify: true,
+            businessForm: {
+              kind: "multi-field",
+              title: "目标新值 · 结算周期 & 沉淀处置",
+              hint: "结算周期=双轨对碰的派发节奏(每日/每周/每月);沉淀处置=对碰后未匹配剩余点数的处理。「转结」沿用沉淀到下期会拉大佣金应付与利息负债(科目 #3),受 B1 覆盖率约束。",
+              fields: [
+                { key: "period", label: "结算周期", current: periodEff, inputKind: "select", options: ["每日", "每周", "每月"] },
+                { key: "residual", label: "沉淀处置策略", current: residualEff, inputKind: "select", options: ["每月清零", "每次对碰清零", "转结"] },
+              ],
+            },
+            paramKeys: [
+              { key: "period", paramKey: "F.binary.settlePeriod" },
+              { key: "residual", paramKey: "F.binary.residualPolicy" },
+            ],
+            detail: "结算周期(每日/每周/每月) + 沉淀处置(每月清零/每次对碰清零/转结) · server-canonical · 改后对下一周期结算生效,不回溯已计提;「转结」放大负债须 B1 覆盖率评估。",
+          })}>调整周期 &amp; 策略</button></div>
+        </div>
       </div>
 
-      <p className="f-foot">阻塞用户(单轨 &lt; $1k)占比 25%,是双轨制设计意图 — <b>逼用户两侧均衡发展</b>,而不只是单边狂铺。沉淀池月底归零是 B 端杠杆,但口径若改为「保留」则会拉大利息负债(科目 #3)与佣金应付,须严格 操作确认。</p>
+      <p className="f-foot">阻塞用户(单轨 &lt; $1k)占比 25%,是双轨制设计意图 — <b>逼用户两侧均衡发展</b>,而不只是单边狂铺。沉淀池当前口径「{residualEff}」是 B 端杠杆;改为「转结」会拉大利息负债(科目 #3)与佣金应付,须严格 操作确认 + B1 覆盖率评估。</p>
     </>
   );
 }
