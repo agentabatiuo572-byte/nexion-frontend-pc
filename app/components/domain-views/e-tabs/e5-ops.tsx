@@ -23,13 +23,6 @@ const DEV_STATE_TONE: Record<E5DeviceState, string> = {
 };
 const ECG_PATH = "M0,30 L80,30 L100,30 L110,12 L120,48 L130,18 L140,30 L220,30 L240,30 L250,10 L260,52 L270,18 L280,30 L360,30 L380,30 L390,12 L400,48 L410,18 L420,30 L500,30 L520,30 L530,10 L540,52 L550,18 L560,30 L640,30 L660,30 L670,12 L680,48 L690,18 L700,30 L800,30";
 
-const DC_META = [
-  { id: "us-east-2", reg: "美国 · 弗吉尼亚" },
-  { id: "eu-west-1", reg: "欧洲 · 都柏林" },
-  { id: "ap-southeast-1", reg: "亚太 · 新加坡" },
-];
-const DC_REGION = new Map(DC_META.map((dc) => [dc.id, dc.reg]));
-
 type FeedType = "heart" | "info" | "alert" | "audit" | "danger";
 type FeedRow = { ts: string; type: FeedType; body: ReactNode; desc: string; actor: string };
 
@@ -71,6 +64,12 @@ function isActivatable(state: E5DeviceState) {
 
 function isDeactivatable(state: E5DeviceState) {
   return state === "active" || state === "busy" || state === "offline" || state === "abnormal";
+}
+
+function dcStatusLabel(status: string) {
+  if (status === "maintenance") return "维护中";
+  if (status === "disabled") return "已禁用";
+  return "启用";
 }
 
 function buildFeed(devices: E5Device[], overview: E5Overview | null): FeedRow[] {
@@ -135,9 +134,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const abnormalDevices = overview?.abnormalDevices ?? devices.filter((d) => d.state === "abnormal" || d.state === "offline").length;
   const recycledDevices = overview?.recycledDevices ?? devices.filter((d) => d.state === "unbound").length;
   const dcStats = new Map((overview?.datacenters ?? []).map((dc) => [dc.dcLocation, dc]));
-  const dcRows = overview?.datacenters?.length
-    ? overview.datacenters.map((dc) => ({ id: dc.dcLocation, reg: DC_REGION.get(dc.dcLocation) ?? "后端返回 DC" }))
-    : DC_META;
+  const dcRows = ctx.e5Datacenters.length ? ctx.e5Datacenters : overview?.datacenters ?? [];
   const devAct = (d: E5Device, op: "device-activate" | "device-deactivate", name: string, detail: string, amplify = false) =>
     ctx.openActionConfirm({ name: `${name} · ${d.serial}`, op, deviceId: d.deviceId, deviceNo: d.serial, amplify, detail });
   const feed = buildFeed(devices, overview);
@@ -268,13 +265,24 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       </section>
 
       {/* 3 DC 控制面板 */}
+      <div className="dc-toolbar">
+        <div>
+          <div className="ttl">数据中心</div>
+          <div className="sub">GET /api/admin/devices/datacenters · 增删改查写入 MySQL</div>
+        </div>
+        <button className="l-btn sm mc" onClick={() => ctx.openDatacenter()}>+ 新增数据中心</button>
+      </div>
       <div className="dc-grid">
+        {!ctx.e5Loading && !ctx.e5Error && dcRows.length === 0 && (
+          <section className="feed-card dc-empty">后端暂无数据中心配置</section>
+        )}
         {dcRows.map((dc) => {
-          const realDc = dcStats.get(dc.id);
-          const paused = ctx.isDcPaused(dc.id);
+          const realDc = dcStats.get(dc.dcLocation) ?? dc;
+          const paused = ctx.isDcPaused(dc.dcLocation);
           const abnormal = realDc?.abnormalDevices ?? 0;
-          const cls = paused ? "paused" : abnormal > 0 ? "warn" : realDc ? "online" : "idle";
-          const stateLbl = paused ? "已暂停" : abnormal > 0 ? "波动中" : realDc ? "在线" : "未返回";
+          const disabled = dc.status === "disabled";
+          const cls = paused || disabled ? "paused" : abnormal > 0 ? "warn" : realDc ? "online" : "idle";
+          const stateLbl = disabled ? "已禁用" : paused ? "已暂停" : abnormal > 0 ? "波动中" : realDc ? "在线" : "未返回";
           const sparkColor = paused ? "var(--ink-4)" : abnormal > 0 ? "var(--warning)" : "var(--success)";
           const online = realDc?.onlineDevices;
           const onlineValue = online ?? 0;
@@ -282,10 +290,10 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           const gpu = realDc ? `${Math.round(realDc.avgGpuUsage)}%` : "—";
           const spark = currentSpark(onlineValue);
           return (
-            <div className={`dc-card ${cls}`} key={dc.id}>
+            <div className={`dc-card ${cls}`} key={dc.dcLocation}>
               <div className="dc-h">
                 <span className="ic"><RackIcon /></span>
-                <div className="t"><div className="nm">{dc.id}</div><div className="reg">{dc.reg}</div></div>
+                <div className="t"><div className="nm">{dc.dcLocation}</div><div className="reg">{dc.regionLabel} · {dcStatusLabel(dc.status)}</div></div>
                 <span className="state"><span className="d" />{stateLbl}</span>
               </div>
               <div className="dc-body">
@@ -300,10 +308,12 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                 </div>
               </div>
               <div className="dc-foot">
-                <button onClick={() => ctx.toast(`${dc.id} · 健康详情已打开`)}>健康详情</button>
+                <button onClick={() => ctx.toast(`${dc.dcLocation} · 健康详情已打开`)}>健康详情</button>
+                <button onClick={() => ctx.openDatacenter(dc)}>编辑</button>
+                <button className="dgr" onClick={() => ctx.deleteDatacenter(dc)}>删除</button>
                 {paused
-                  ? <button className="resume" onClick={() => toggle(dc.id)}>恢复派单</button>
-                  : <button className="pause" onClick={() => toggle(dc.id)}><PauseIcon /> 批量 pause</button>}
+                  ? <button className="resume" onClick={() => toggle(dc.dcLocation)}>恢复派单</button>
+                  : <button className="pause" onClick={() => toggle(dc.dcLocation)}><PauseIcon /> 批量 pause</button>}
               </div>
             </div>
           );

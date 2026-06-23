@@ -1,7 +1,7 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
 import type { E2PhoneTier } from "@/lib/admin/e2-client";
-import type { E5Device, E5Overview } from "@/lib/admin/e5-client";
+import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
 
 /**
@@ -33,7 +33,16 @@ export type EOp =
   | "order-terminal"  // 补建终态(select)
   | "device-activate"    // E5 设备激活/恢复 → 后端 Device restore/activate API
   | "device-deactivate"  // E5 取消激活/解绑 → 后端 device deactivate API
-  | "ops-pause";      // DC 批量 pause / 恢复
+  | "ops-pause"      // DC 批量 pause / 恢复
+  | "dc-save"        // E5 数据中心新增 / 编辑 → nx_compute_datacenter
+  | "dc-delete";     // E5 数据中心软删除 → nx_compute_datacenter
+
+export interface DatacenterForm {
+  dcLocation: string;
+  regionLabel: string;
+  status: E5DatacenterStatus;
+  sortOrder: string;
+}
 
 export interface McSpec {
   name: string;             // 确认弹窗标题(动作名)
@@ -58,6 +67,7 @@ export interface McSpec {
   deviceId?: number;        // E5 设备主键(后端 nx_user_device.id)
   deviceNo?: string;        // E5 展示编号(instanceNo)
   dc?: string;              // 运维处置目标数据中心
+  dcForm?: DatacenterForm;
 }
 export type Mc = McSpec | null;
 
@@ -115,6 +125,7 @@ export interface EViewCtx {
   // E5 设备运维(设备列表/激活/解绑/DC pause 均走后端 API)
   e5Devices: E5Device[];
   e5Overview: E5Overview | null;
+  e5Datacenters: E5Datacenter[];
   e5Loading: boolean;
   e5Error: string | null;
   e5Page: number;
@@ -124,4 +135,6 @@ export interface EViewCtx {
   setE5PageSize: (pageSize: number) => void;
   refreshE5: () => Promise<void>;
   isDcPaused: (dc: string) => boolean;
+  openDatacenter: (dc?: E5Datacenter) => void;
+  deleteDatacenter: (dc: E5Datacenter) => void;
 }

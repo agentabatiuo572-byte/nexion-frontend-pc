@@ -1,6 +1,7 @@
 export const E5_MAX_DEVICES = 6;
 
 export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "unbound" | "abnormal";
+export type E5DatacenterStatus = "active" | "maintenance" | "disabled";
 
 export interface E5Device {
   id: string;
@@ -31,6 +32,9 @@ export interface E5Device {
 
 export interface E5Datacenter {
   dcLocation: string;
+  regionLabel: string;
+  status: E5DatacenterStatus;
+  sortOrder: number;
   totalDevices: number;
   onlineDevices: number;
   pendingRecycleDevices: number;
@@ -40,6 +44,13 @@ export interface E5Datacenter {
   avgGpuPowerW: number;
   dispatchPaused: boolean;
   pausedReason: string;
+}
+
+export interface E5DatacenterInput {
+  dcLocation: string;
+  regionLabel: string;
+  status: E5DatacenterStatus;
+  sortOrder: number;
 }
 
 export interface E5Overview {
@@ -109,6 +120,9 @@ interface BackendDevice {
 
 interface BackendDatacenter {
   dcLocation?: string | null;
+  regionLabel?: string | null;
+  status?: string | null;
+  sortOrder?: number | string | null;
   totalDevices?: number | string | null;
   onlineDevices?: number | string | null;
   pendingRecycleDevices?: number | string | null;
@@ -210,8 +224,12 @@ function queryString(query: E5DeviceQuery) {
 }
 
 function fromDatacenter(row: BackendDatacenter): E5Datacenter {
+  const status = text(row.status, "active").toLowerCase();
   return {
     dcLocation: text(row.dcLocation, "UNASSIGNED"),
+    regionLabel: text(row.regionLabel, "未配置区域"),
+    status: status === "maintenance" || status === "disabled" ? status : "active",
+    sortOrder: toNumber(row.sortOrder, 100),
     totalDevices: toNumber(row.totalDevices),
     onlineDevices: toNumber(row.onlineDevices),
     pendingRecycleDevices: toNumber(row.pendingRecycleDevices),
@@ -296,6 +314,11 @@ export async function fetchE5Overview(): Promise<E5Overview> {
   };
 }
 
+export async function fetchE5Datacenters(): Promise<E5Datacenter[]> {
+  const rows = await e5Request<BackendDatacenter[]>("/datacenters");
+  return (rows ?? []).map(fromDatacenter);
+}
+
 export async function activateE5Device(deviceId: number, reason: string, operator: string) {
   const saved = await e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/restore`, {
     method: "POST",
@@ -319,5 +342,31 @@ export async function setE5DatacenterPaused(dcLocation: string, paused: boolean,
     method: "POST",
     body: JSON.stringify({ reason, operator }),
     idempotencyPrefix: paused ? "e5-dc-pause" : "e5-dc-resume",
+  });
+}
+
+export async function createE5Datacenter(input: E5DatacenterInput, reason: string, operator: string) {
+  const saved = await e5Request<BackendDatacenter>("/datacenters", {
+    method: "POST",
+    body: JSON.stringify({ ...input, reason, operator }),
+    idempotencyPrefix: "e5-dc-create",
+  });
+  return fromDatacenter(saved);
+}
+
+export async function updateE5Datacenter(dcLocation: string, input: E5DatacenterInput, reason: string, operator: string) {
+  const saved = await e5Request<BackendDatacenter>(`/datacenters/${encodeURIComponent(dcLocation)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...input, reason, operator }),
+    idempotencyPrefix: "e5-dc-update",
+  });
+  return fromDatacenter(saved);
+}
+
+export async function deleteE5Datacenter(dcLocation: string, reason: string, operator: string) {
+  return e5Request<{ dcLocation: string; deleted: boolean }>(`/datacenters/${encodeURIComponent(dcLocation)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "e5-dc-delete",
   });
 }

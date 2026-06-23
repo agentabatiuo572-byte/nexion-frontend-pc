@@ -40,13 +40,27 @@ import {
 } from "@/lib/admin/e1-client";
 import { createE2Task, deleteE2Task, fetchE2PhoneTiers, fetchE2Tasks, updateE2PhoneTier, updateE2Task, updateE2TaskPrice, type E2PhoneTier } from "@/lib/admin/e2-client";
 import { cancelE4Order, fetchE4Orders, refundE4Order, terminalE4Order, updateE4OrderState } from "@/lib/admin/e4-client";
-import { activateE5Device, deactivateE5Device, fetchE5Devices, fetchE5Overview, setE5DatacenterPaused, type E5Device, type E5Overview } from "@/lib/admin/e5-client";
+import {
+  activateE5Device,
+  createE5Datacenter,
+  deactivateE5Device,
+  deleteE5Datacenter,
+  fetchE5Datacenters,
+  fetchE5Devices,
+  fetchE5Overview,
+  setE5DatacenterPaused,
+  updateE5Datacenter,
+  type E5Datacenter,
+  type E5DatacenterInput,
+  type E5Device,
+  type E5Overview,
+} from "@/lib/admin/e5-client";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
-import type { Mc, EViewCtx, EOrder } from "./e-tabs/types";
+import type { DatacenterForm, Mc, EViewCtx, EOrder } from "./e-tabs/types";
 import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
@@ -317,6 +331,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── E5 设备运维:服务端 fleet / overview 为单一来源 ──
   const [e5Devices, setE5Devices] = useState<E5Device[]>([]);
   const [e5Overview, setE5Overview] = useState<E5Overview | null>(null);
+  const [e5Datacenters, setE5Datacenters] = useState<E5Datacenter[]>([]);
   const [e5Loading, setE5Loading] = useState(tab === "E5");
   const [e5Error, setE5Error] = useState<string | null>(null);
   const [e5Page, setE5Page] = useState(1);
@@ -330,26 +345,29 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setE5Loading(true);
     setE5Error(null);
     try {
-      const [nextDevicePage, nextOverview] = await Promise.all([
+      const [nextDevicePage, nextOverview, nextDatacenters] = await Promise.all([
         fetchE5Devices({ pageNum: e5Page, pageSize: e5PageSize }),
         fetchE5Overview(),
+        fetchE5Datacenters(),
       ]);
       setE5Devices(nextDevicePage.records);
       setE5Total(nextDevicePage.total);
       setE5Page(nextDevicePage.pageNum);
       setE5PageSizeState(nextDevicePage.pageSize);
       setE5Overview(nextOverview);
+      setE5Datacenters(nextDatacenters);
     } catch (error) {
       setE5Error(error instanceof Error ? error.message : "E5_SYNC_FAILED");
       setE5Devices([]);
       setE5Total(0);
       setE5Overview(null);
+      setE5Datacenters([]);
     } finally {
       setE5Loading(false);
     }
   }, [e5Page, e5PageSize]);
   useEffect(() => { if (tab === "E5") void refreshE5(); }, [tab, refreshE5]);
-  const e5PausedDcs = useMemo(() => new Map((e5Overview?.datacenters ?? []).map((dc) => [dc.dcLocation, dc.dispatchPaused])), [e5Overview]);
+  const e5PausedDcs = useMemo(() => new Map(e5Datacenters.map((dc) => [dc.dcLocation, dc.dispatchPaused])), [e5Datacenters]);
   const isDcPaused = (dc: string): boolean => e5PausedDcs.get(dc) ?? false;
 
   // ── 抽屉本地态 ──
@@ -366,6 +384,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [reviewDrawer, setReviewDrawer] = useState(false);
   const [editReviewId, setEditReviewId] = useState<string | null>(null);
   const [reviewForm, setReviewForm] = useState({ productId: "", author: "", rating: "5", content: "", date: "刚刚", status: "published" });
+  const [dcDrawer, setDcDrawer] = useState(false);
+  const [editDcLocation, setEditDcLocation] = useState<string | null>(null);
+  const [dcForm, setDcForm] = useState<DatacenterForm>({ dcLocation: "", regionLabel: "", status: "active", sortOrder: "100" });
 
   const resetSkuMedia = useCallback((media: SkuMedia = null) => {
     mediaSeq.current += 1;
@@ -468,6 +489,54 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       setToast("评价状态更新失败:" + (error instanceof Error ? error.message : "E1_REVIEW_STATUS_FAILED"));
     }
+  };
+  const openDatacenter = (dc?: E5Datacenter) => {
+    setDcForm(dc
+      ? {
+          dcLocation: dc.dcLocation,
+          regionLabel: dc.regionLabel,
+          status: dc.status,
+          sortOrder: String(dc.sortOrder),
+        }
+      : { dcLocation: "", regionLabel: "", status: "active", sortOrder: "100" });
+    setEditDcLocation(dc?.dcLocation ?? null);
+    setDcDrawer(true);
+  };
+  const openDatacenterSaveConfirm = () => {
+    const dcLocation = dcForm.dcLocation.trim();
+    const regionLabel = dcForm.regionLabel.trim();
+    const sortOrder = Number(dcForm.sortOrder);
+    if (!editDcLocation && !dcLocation) { setToast("请填写 DC 标识"); return; }
+    if (!regionLabel) { setToast("请填写区域展示名"); return; }
+    if (!Number.isFinite(sortOrder) || sortOrder < 0) { setToast("请填写有效排序值"); return; }
+    const normalized: DatacenterForm = {
+      dcLocation: editDcLocation ?? dcLocation,
+      regionLabel,
+      status: dcForm.status,
+      sortOrder: String(Math.floor(sortOrder)),
+    };
+    setActionConfirm({
+      name: (editDcLocation ? "编辑数据中心 · " : "新增数据中心 · ") + normalized.dcLocation,
+      op: "dc-save",
+      dc: editDcLocation ?? normalized.dcLocation,
+      dcForm: normalized,
+      isNew: !editDcLocation,
+      detail: `${editDcLocation ? "更新" : "新增"}数据中心卡片配置:${normalized.dcLocation} · ${normalized.regionLabel} · 状态 ${normalized.status} · 写入后端 MySQL 并刷新 E5 卡片。`,
+    });
+    setDcDrawer(false);
+  };
+  const deleteDatacenter = (dc: E5Datacenter) => {
+    setActionConfirm({
+      name: "删除数据中心 · " + dc.dcLocation,
+      op: "dc-delete",
+      dc: dc.dcLocation,
+      detail: `软删除 ${dc.dcLocation} 数据中心卡片配置。不会删除设备库存,但该数据中心不再出现在 E5 卡片列表。需填写操作理由 + 审计留痕。`,
+      businessForm: {
+        kind: "destructive-reason",
+        target: dc.dcLocation,
+        impact: "E5 数据中心卡片列表会移除该配置;设备库存数据不回溯删除。",
+      },
+    });
   };
   // 任务表单校验(新增 + 编辑共用):取值完整性,非锁死业务值。
   const validateTaskForm = (): string | null => {
@@ -669,7 +738,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     orders, e4Loading, e4Error, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
-    e5Devices, e5Overview, e5Loading, e5Error, e5Page, e5PageSize, e5Total, setE5Page, setE5PageSize, refreshE5, isDcPaused,
+    e5Devices, e5Overview, e5Datacenters, e5Loading, e5Error, e5Page, e5PageSize, e5Total, setE5Page, setE5PageSize, refreshE5, isDcPaused, openDatacenter, deleteDatacenter,
   };
   const skuPhaseIds = useMemo(() => {
     const ids = [...e1PhaseIds];
@@ -1006,6 +1075,36 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         </div>
       </Drawer>}
 
+      {/* E5 数据中心新增 / 编辑抽屉 */}
+      {dcDrawer && <Drawer title={editDcLocation ? "编辑数据中心" : "新增数据中心"} sub={<AutoGloss>数据中心卡片配置 · 写入后端 MySQL</AutoGloss>} onClose={() => { setDcDrawer(false); setEditDcLocation(null); }}
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setDcDrawer(false); setEditDcLocation(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={(!editDcLocation && !dcForm.dcLocation.trim()) || !dcForm.regionLabel.trim()} onClick={openDatacenterSaveConfirm}>{editDcLocation ? "保存修改" : "提交新增"}</Btn></>}>
+        <div className="col" style={{ gap: 12 }}>
+          <label className="col" style={{ gap: 5 }}>
+            <span className="muted tiny">DC 标识</span>
+            <input className="fld" value={dcForm.dcLocation} disabled={!!editDcLocation} onChange={(e) => setDcForm({ ...dcForm, dcLocation: e.target.value })} placeholder="us-east-2" />
+          </label>
+          <label className="col" style={{ gap: 5 }}>
+            <span className="muted tiny">区域展示名</span>
+            <input className="fld" value={dcForm.regionLabel} onChange={(e) => setDcForm({ ...dcForm, regionLabel: e.target.value })} placeholder="美国 · 弗吉尼亚" />
+          </label>
+          <div className="grid g-2" style={{ gap: 12 }}>
+            <label className="col" style={{ gap: 5 }}>
+              <span className="muted tiny">状态</span>
+              <select className="fld" value={dcForm.status} onChange={(e) => setDcForm({ ...dcForm, status: e.target.value as DatacenterForm["status"] })}>
+                <option value="active">active</option>
+                <option value="maintenance">maintenance</option>
+                <option value="disabled">disabled</option>
+              </select>
+            </label>
+            <label className="col" style={{ gap: 5 }}>
+              <span className="muted tiny">排序</span>
+              <input className="fld" type="number" min={0} value={dcForm.sortOrder} onChange={(e) => setDcForm({ ...dcForm, sortOrder: e.target.value })} placeholder="100" />
+            </label>
+          </div>
+          <div className="tint warn tiny"><AutoGloss>删除数据中心只移除卡片配置,不会删除设备库存;暂停/恢复派单仍走 E5 运维处置接口。</AutoGloss></div>
+        </div>
+      </Drawer>}
+
       {/* 操作确认(唯一动作出口)*/}
       {mc && <OperationConfirmModal
         action={mc.name}
@@ -1174,6 +1273,25 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               await deactivateE5Device(mc.deviceId, reason, operator);
               await refreshE5();
               setToast("设备 " + (mc.deviceNo ?? mc.deviceId) + " 已取消激活/解绑 · 后端已生效");
+            } else if (mc.op === "dc-save" && mc.dcForm) {
+              const payload: E5DatacenterInput = {
+                dcLocation: mc.dcForm.dcLocation.trim(),
+                regionLabel: mc.dcForm.regionLabel.trim(),
+                status: mc.dcForm.status,
+                sortOrder: Number(mc.dcForm.sortOrder) || 100,
+              };
+              if (mc.isNew) {
+                await createE5Datacenter(payload, reason, operator);
+              } else {
+                await updateE5Datacenter(mc.dc ?? payload.dcLocation, payload, reason, operator);
+              }
+              await refreshE5();
+              setEditDcLocation(null);
+              setToast((mc.isNew ? "数据中心已新增:" : "数据中心已更新:") + payload.dcLocation);
+            } else if (mc.op === "dc-delete" && mc.dc) {
+              await deleteE5Datacenter(mc.dc, reason, operator);
+              await refreshE5();
+              setToast("数据中心已删除:" + mc.dc);
             } else if (mc.op === "ops-pause" && mc.dc) {
               const paused = mc.fixedVal === "true";
               await setE5DatacenterPaused(mc.dc, paused, reason, operator);
