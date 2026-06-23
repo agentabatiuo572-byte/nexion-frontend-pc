@@ -12,12 +12,34 @@ function jsonError(status: number, message: string) {
   return Response.json({ code: status, message, data: null }, { status });
 }
 
+function isNonEmpty(value: string | undefined) {
+  return !!value && value.trim().length > 0;
+}
+
 function backendPath(parts: string[]) {
-  if (parts[0] === "generation-gates" || parts[0] === "phases") {
-    return `/api/admin/devices/e1/${parts.map(encodeURIComponent).join("/")}`;
+  if (parts.length === 2 && parts[0] === "accounts" && parts[1] === "overview") {
+    return "/api/admin/platform/accounts/overview";
   }
-  if (parts[0] === "skus" || parts[0] === "reviews") {
-    return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
+  if (parts.length === 1 && parts[0] === "accounts") {
+    return "/api/admin/platform/accounts";
+  }
+  if (parts.length === 3 && parts[0] === "accounts" && isNonEmpty(parts[1]) && (parts[2] === "role" || parts[2] === "status")) {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/${parts[2]}`;
+  }
+  if (parts.length === 3 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "reset-2fa") {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/reset-2fa`;
+  }
+  if (parts.length === 4 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "sessions" && parts[3] === "revoke") {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/sessions/revoke`;
+  }
+  if (parts.length === 3 && parts[0] === "accounts" && parts[1] === "security-baselines" && isNonEmpty(parts[2])) {
+    return `/api/admin/platform/accounts/security-baselines/${encodeURIComponent(parts[2])}`;
+  }
+  if (parts.length === 4 && parts[0] === "rbac" && parts[1] === "actions" && isNonEmpty(parts[2]) && parts[3] === "grants") {
+    return `/api/admin/platform/rbac/actions/${encodeURIComponent(parts[2])}/grants`;
+  }
+  if (parts.length === 2 && parts[0] === "rbac" && parts[1] === "actions") {
+    return "/api/admin/platform/rbac/actions";
   }
   return null;
 }
@@ -27,7 +49,7 @@ async function proxy(request: Request, context: RouteContext) {
   const targetPath = backendPath(path);
 
   if (!targetPath) {
-    return jsonError(404, "E1_ROUTE_NOT_FOUND");
+    return jsonError(404, "PLATFORM_ROUTE_NOT_FOUND");
   }
 
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
@@ -65,7 +87,7 @@ async function proxy(request: Request, context: RouteContext) {
       },
     });
   } catch {
-    return jsonError(503, "E1_BACKEND_UNAVAILABLE");
+    return jsonError(503, "PLATFORM_BACKEND_UNAVAILABLE");
   }
 }
 

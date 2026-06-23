@@ -1,46 +1,30 @@
 "use client";
 
-/**
- * A1 运营账号 & 权限 — design_handoff_a_domain/A1 设计稿 port(657 行 / 9 弹窗权威)。
- *
- * A 域三铁律实装(UI 不变量,server-canonical 镜像):
- *  ① 全员强制 2FA(不可关)— 详情 drawer 内 2FA 只展示「已绑定(强制项,不可关)」;
- *     重置 2FA = 解绑后下次登录强制重新绑定,不是「关闭 2FA」语义,UI 全程无关闭按钮。
- *  ② 新账号默认零写权 — 开户表单提交 detail 注明「默认零写权,只有选择的角色授权」+ 操作确认 modal 内强调。
- *  ③ 有效超管 ≥2(server 校验)— effectiveSupers 实时派生:
- *     OPERATORS.filter(role==="super" && status==="enabled") + pget(A.acct.<id>.status/role) 覆盖种子;
- *     禁用账号 / 改角色降级超管时 UI 拒写(若 -1 后 < 2 → toast 拒 + return,不弹 操作确认);
- *     f-stat「有效超管」3→2 警示 amber / 2→拒写 red / ≥3 绿。
- *
- * 真写键(A.*):
- *  A.acct.<id>.status(enabled / disabled)· A.acct.<id>.role(超管降级 / 角色变更)·
- *  A.acct.<id>.tier(member / lead)· A.acct.<id>.tfaResetAt(2FA 重置时间)·
- *  A.acct.<newId>.{status,role,tier}(新建账号)·
- *  A.rbac.<role>.<actionId>(矩阵授权变更)· A.rbac.action.<id>(新动作行登记)·
- *  A.sec.{sessionIdle,sessionAbs,lockShortCnt,lockShortMin}(安全基线 2 可调项)·
- *  A.session.user.<uid>.killedAt(强制登出 session 联动 — 同 C2/C5 user 级键)。
- *
- * 操作确认 显式 edit 契约(2026-06 跨域硬化):
- *  - 调参传 edit:改角色 select / 矩阵授权 text / 登记新动作行 text / session text / 双档锁 text;
- *  - 处置(禁用 / 启用 / 重置 2FA / 新建账号)不传 edit;凭据铁律下,重置 2FA 弹窗绝不出现密码输入字段。
- *
- * amplifies:A1 不碰资金流出方向,全部动作 amplifies=false。
- *
- * 设计稿元素省略:f-bar/f-nav/f-title/f-desc/f-cta 已由 DomainHeader 承担,本组件从 .f-stats 开始。
- */
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Drawer, PaginationExemptionList } from "../design-kit";
-import { usePlatformConfig, type OpsAccount } from "@/lib/store/admin/platform-config-store";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
-  A1_STATS, ROLE_DEFS, OPERATORS, RBAC_MATRIX, SECURITY_BASELINES,
-  type Operator, type RoleKey, type GrantCell, type MatrixAction,
-} from "./data";
+  changeA1AccountRole,
+  createA1Account,
+  createA1RbacAction,
+  fetchA1Overview,
+  resetA1Account2fa,
+  revokeA1AccountSessions,
+  updateA1AccountStatus,
+  updateA1RbacGrants,
+  updateA1SecurityBaseline,
+  type A1CreateAccountInput,
+  type A1Operator,
+  type A1Overview,
+  type A1RoleDefinition,
+  type GrantCell,
+} from "@/lib/admin/a1-client";
+import { RBAC_MATRIX, ROLE_DEFS, SECURITY_BASELINES, type MatrixAction } from "./data";
 import type { ACtx } from "./types";
 
-/* ──────────────────────────── helpers ──────────────────────────── */
-
-type DomainGroup = MatrixAction["domainGroup"] | "all";
+type DomainGroup = "资金" | "用户/风控" | "增长/内容" | "基座/应急" | "all";
+type SecurityBaselineSeed = (typeof SECURITY_BASELINES)[number];
 
 const DOM_CHIPS: { key: DomainGroup; label: string }[] = [
   { key: "all", label: "全部" },
@@ -51,13 +35,28 @@ const DOM_CHIPS: { key: DomainGroup; label: string }[] = [
 ];
 
 const GRANT_LABEL: Record<GrantCell, string> = {
-  M: "可发起(操作员)",
-  C: "可执行(lead 门槛)",
+  M: "可发起",
+  C: "lead 执行门槛",
   R: "只读",
   "-": "无权",
 };
 
 const GRANT_OPTIONS: GrantCell[] = ["-", "R", "M", "C"];
+const PWD_CHARS = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
+
+function genPwdSegment(): string {
+  let r = "";
+  for (let i = 0; i < 4; i++) r += PWD_CHARS[Math.floor(Math.random() * PWD_CHARS.length)];
+  return r;
+}
+
+function genPwd(): string {
+  return `NX-${genPwdSegment()}-${genPwdSegment()}-${genPwdSegment()}`;
+}
+
+function toGrantCell(value: string | undefined): GrantCell {
+  return value === "M" || value === "C" || value === "R" || value === "-" ? value : "-";
+}
 
 function cellNode(c: GrantCell): ReactNode {
   if (c === "M") return <span className="a1-cell mk">M</span>;
@@ -66,139 +65,169 @@ function cellNode(c: GrantCell): ReactNode {
   return <span className="a1-cell no">—</span>;
 }
 
-/* 一次性临时密码格式预览(凭据铁律:真密码 server 生成;后台不持明文)。 */
-const PWD_CHARS = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
-function genPwdSegment(): string {
-  let r = "";
-  for (let i = 0; i < 4; i++) r += PWD_CHARS[Math.floor(Math.random() * PWD_CHARS.length)];
-  return r;
-}
-function genPwd(): string {
-  return `NX-${genPwdSegment()}-${genPwdSegment()}-${genPwdSegment()}`;
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
-/* ──────────────────────────── 组件 ──────────────────────────── */
+function roleName(roles: A1RoleDefinition[], role: string) {
+  return roles.find((r) => r.key === role)?.name ?? role;
+}
+
+function roleTierLabel(roles: A1RoleDefinition[], op: Pick<A1Operator, "role" | "tier">) {
+  return `${roleName(roles, op.role)}${op.tier === "lead" ? "(lead)" : "(member)"}`;
+}
+
+function grantAt(row: { grants: readonly string[] }, index: number) {
+  return toGrantCell(row.grants[index]);
+}
+
+function firstMatch(value: string | undefined, pattern: RegExp) {
+  const match = value?.match(pattern);
+  return match?.[1];
+}
 
 export function A1Accounts({ ctx }: { ctx: ACtx }) {
-  const { pget, setParam, logAudit, toast, openActionConfirm } = ctx;
-  // audit-ok:hydration — A1 账号/RBAC/安全基线全走 pget 实时态(已通过 ctx.pget 内置 hydrated gate);
-  // addAccount 仅为写动作引用,不读 persist 态(useAccount.accounts 未被消费)。
-  const addAccount = usePlatformConfig((s) => s.addAccount);
-
-  /* 矩阵筛 */
+  const { toast, openActionConfirm } = ctx;
+  const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "superadmin");
+  const [overview, setOverview] = useState<A1Overview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [mutatingAction, setMutatingAction] = useState<string | null>(null);
   const [dom, setDom] = useState<DomainGroup>("all");
-  /* 账号表分页 */
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState(10);
-  /* 角色详情 drawer */
   const [roleIdx, setRoleIdx] = useState<number | null>(null);
-  /* 新建账号 drawer */
   const [naOpen, setNaOpen] = useState(false);
 
-  /* 实时态 helpers ——————————————————————————————————————————— */
-  const effStatus = (op: Operator): "enabled" | "disabled" =>
-    (pget(`A.acct.${op.id}.status`) as "enabled" | "disabled" | undefined) ?? op.status;
-  const effRole = (op: Operator): RoleKey =>
-    (pget(`A.acct.${op.id}.role`) as RoleKey | undefined) ?? op.role;
-  const effTier = (op: Operator): "lead" | "member" | null => {
-    const v = pget(`A.acct.${op.id}.tier`);
-    if (v === "lead") return "lead";
-    if (v === "member") return null;
-    return op.tier;
-  };
-  const effSessions = (op: Operator): number => {
-    const v = pget(`A.acct.${op.id}.sessions`);
-    return v !== undefined ? Number(v) : op.sessions;
-  };
+  const refreshOverview = useCallback(async (quiet = false) => {
+    if (!quiet) {
+      setLoading(true);
+    }
+    setLoadError(null);
+    try {
+      setOverview(await fetchA1Overview());
+    } catch (error) {
+      setLoadError(errorMessage(error));
+    } finally {
+      if (!quiet) {
+        setLoading(false);
+      }
+    }
+  }, []);
 
-  /* 启用 + 超管实时计数(三铁律 ③ 守门数源) */
-  const effectiveSupers = useMemo(
-    () => OPERATORS.filter((o) => effRole(o) === "super" && effStatus(o) === "enabled").length,
-    // params 影响 effStatus/effRole,但 pget 闭包内已读 params;每次 render 重算即可。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ctx.params],
+  useEffect(() => {
+    void refreshOverview();
+  }, [refreshOverview]);
+
+  const runMutation = useCallback(
+    async (action: string, work: () => Promise<unknown>, success: string) => {
+      setMutatingAction(action);
+      try {
+        await work();
+        await refreshOverview(true);
+        toast(success);
+      } catch (error) {
+        toast(`提交失败:${errorMessage(error)}`);
+      } finally {
+        setMutatingAction(null);
+      }
+    },
+    [refreshOverview, toast],
   );
+
+  const roles = ROLE_DEFS;
+  const operators = overview?.operators ?? [];
+  const securityBaselines = overview?.securityBaselines ?? [];
+  const rbacRows = RBAC_MATRIX;
+  const stats = overview?.stats;
+  const effectiveSupers = stats?.effectiveSupers ?? 0;
   const supersTone = effectiveSupers <= 1 ? "danger" : effectiveSupers === 2 ? "warn" : "ok";
-  const supersLabel = effectiveSupers <= 1 ? "danger" : effectiveSupers === 2 ? "warn" : "ok";
-
-  /* 账号状态派生(启用 / 禁用)。 */
-  const enabledCount = useMemo(
-    () => OPERATORS.filter((o) => effStatus(o) === "enabled").length,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ctx.params],
-  );
-  const disabledCount = OPERATORS.length - enabledCount;
-
-  /* 矩阵授权实时读(pget 覆盖种子)。 */
-  const cellLive = (m: MatrixAction, roleIdx: number): GrantCell => {
-    const k = `A.rbac.${ROLE_DEFS[roleIdx].key}.${m.id}`;
-    const v = pget(k) as GrantCell | undefined;
-    return v ?? m.grants[roleIdx];
+  const backendSessionBaseline = securityBaselines.find((b) => b.key === "session")?.value;
+  const backendLockBaseline = securityBaselines.find((b) => b.key === "lock")?.value;
+  const baselineCurrent = (key: string) => {
+    if (key === "session_idle") return firstMatch(backendSessionBaseline, /(\d+(?:\.\d+)?)\s*min/i) ?? "30";
+    if (key === "session_abs") return firstMatch(backendSessionBaseline, /\/\s*(\d+(?:\.\d+)?)\s*h/i) ?? "8";
+    if (key === "lock_short_cnt") return firstMatch(backendLockBaseline, /(\d+(?:\.\d+)?)\s*次/) ?? "5";
+    if (key === "lock_short_min") return firstMatch(backendLockBaseline, /\/\s*(\d+(?:\.\d+)?)\s*min/i) ?? "15";
+    return SECURITY_BASELINES.find((baseline) => baseline.key === key)?.cur ?? "";
   };
+  const baselineDisplay = (baseline: SecurityBaselineSeed) => (
+    baseline.locked ? baseline.value ?? "" : `${baselineCurrent(baseline.key)} ${baseline.unit ?? ""}`.trim()
+  );
+  const sessionBaseline = `滑动 ${baselineCurrent("session_idle")} 分钟 · 最长 ${baselineCurrent("session_abs")} 小时`;
+  const lockBaseline = `${baselineCurrent("lock_short_cnt")} 次 / ${baselineCurrent("lock_short_min")} 分钟`;
 
-  /* ────────────────── 账号 CRUD 弹窗 ────────────────── */
+  const totalPages = Math.max(1, Math.ceil(operators.length / perPage));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageStart = operators.length ? safePage * perPage : 0;
+  const pageEnd = Math.min(pageStart + perPage, operators.length);
+  const pageRows = operators.slice(pageStart, pageEnd);
+  const mxRows = useMemo(
+    () => rbacRows.filter((m) => dom === "all" || m.domainGroup === dom),
+    [dom, rbacRows],
+  );
 
-  const changeRole = (op: Operator) => {
-    const curRole = effRole(op);
-    const curTier = effTier(op);
+  useEffect(() => {
+    if (page > totalPages - 1) {
+      setPage(totalPages - 1);
+    }
+  }, [page, totalPages]);
+
+  const changeRole = (op: A1Operator) => {
     openActionConfirm({
       action: `变更角色 · ${op.id}`,
       detail: (
         <>
-          <b>{op.id} · {op.name}</b> · 当前 <b>{ROLE_DEFS.find((r) => r.key === curRole)?.name ?? curRole}{curTier ? "(lead)" : "(member)"}</b>。
-          在下方业务表单选择目标角色(<span className="acode">super / finance / risk / growth / content / support / audit</span>)
-          和 <span className="acode">member / lead</span> 层级;变更立即重算该账号全部授权。
-          <b> 服务器两道校验:</b>① 最小权限基线(越权组合直接拒);② 若把超管降级,先校验剩余有效超管 ≥2(本页 UI 同步预判)。
+          <b>{op.id} · {op.name}</b> · 当前 <b>{roleTierLabel(roles, op)}</b>。
+          在下方业务表单选择目标角色和层级;提交后由后端更新账号角色关系、平台配置和审计记录。
+          <b> 后端校验:</b>最小权限基线、角色合法性、有效超管不得少于 2 个。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "role-select",
-        currentRole: curRole,
-        currentTier: curTier ? "lead" : "member",
-        roles: ROLE_DEFS.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
+        currentRole: op.role,
+        currentTier: op.tier === "lead" ? "lead" : "member",
+        roles: roles.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
         guardHint: `有效超管 ${effectiveSupers} 个;降级超管时仍需 ≥2`,
-        // 权限 diff 数据源:全域动作 + 各角色实时授权向量(cellLive 覆盖种子)→ 表单内派生新增/移除/受影响域
-        actions: RBAC_MATRIX.map((m) => ({ label: m.action, domainGroup: m.domainGroup })),
+        actions: rbacRows.map((m) => ({ label: m.action, domainGroup: m.domainGroup })),
         grantsByRole: Object.fromEntries(
-          ROLE_DEFS.map((_, ri) => [ROLE_DEFS[ri].key, RBAC_MATRIX.map((m) => cellLive(m, ri))]),
+          roles.map((r, ri) => [r.key, rbacRows.map((m) => grantAt(m, ri))]),
         ),
       },
-      run: (reason, v) => {
-        const raw = (v || "").trim();
-        const [roleStr, lvStr] = raw.split("/").map((s) => s.trim());
-        const roleKeys = ROLE_DEFS.map((r) => r.key);
-        if (!roleKeys.includes(roleStr as RoleKey)) {
-          toast(`拒绝:无效角色 key (${roleStr}) · 合法:${roleKeys.join(" / ")}`);
+      run: (reason, value) => {
+        const raw = (value || "").trim();
+        const [roleStr, tierStr] = raw.split("/").map((s) => s.trim());
+        if (!roles.some((r) => r.key === roleStr)) {
+          toast(`拒绝:无效角色 key (${roleStr})`);
           return;
         }
-        const nextRole = roleStr as RoleKey;
-        const nextTier: "lead" | "member" = lvStr === "lead" ? "lead" : "member";
-        // 三铁律 ③:超管降级 — 若该账号当前为有效超管,且 -1 后 < 2 → 拒。
-        if (curRole === "super" && effStatus(op) === "enabled" && nextRole !== "super" && effectiveSupers - 1 < 2) {
-          toast("拒绝:剩余有效超管将不足 2 个(防权限死锁,server 同样校验 403)");
+        const nextTier = tierStr === "lead" ? "lead" : "member";
+        if (op.role === "super" && op.status === "enabled" && roleStr !== "super" && effectiveSupers - 1 < 2) {
+          toast("拒绝:剩余有效超管将不足 2 个");
           return;
         }
-        setParam(`A.acct.${op.id}.role`, nextRole, { action: `变更角色 ${op.id}: ${curRole}${curTier ? "(lead)" : ""} → ${nextRole}${nextTier === "lead" ? "(lead)" : ""}`, reason });
-        setParam(`A.acct.${op.id}.tier`, nextTier, { action: `变更层级 ${op.id} → ${nextTier}`, reason });
-        logAudit({ actor: "超管", action: `变更角色 ${op.id} · admin.operator_role_changed`, target: op.id, reason });
-        toast(`${op.id} 角色变更已发布:${curRole}${curTier ? "(lead)" : ""} → ${nextRole}(${nextTier})`);
+        void runMutation(
+          `变更角色 ${op.id}`,
+          () => changeA1AccountRole(op.id, roleStr, nextTier, reason, operator),
+          `${op.id} 角色已变更为 ${roleName(roles, roleStr)}(${nextTier})`,
+        );
       },
     });
   };
 
-  const reset2fa = (op: Operator) => openActionConfirm({
+  const reset2fa = (op: A1Operator) => openActionConfirm({
     action: `重置双因子 · ${op.id}`,
     detail: (
       <>
         <div className="atint danger" style={{ marginBottom: 12 }}>
-          <b>社工高危路径</b> · 「员工丢手机求重置」是夺取后台账号的经典话术。提交前请用第二渠道(当面 / 视频)核实本人身份;操作理由里写明身份核实方式。
+          <b>社工高危路径</b> · 提交前请用第二渠道核实本人身份;核验方式和工单会随理由提交到后端审计。
         </div>
         <div className="dlg-sec">重置后会发生什么</div>
         <div style={{ marginTop: 6, marginBottom: 4 }}>
-          <div>1 · 该账号当前绑定的全部验证器<b> 立即失效</b></div>
-          <div>2 · 执行生效起到重新绑定前,该账号<b> 无法登录后台</b></div>
-          <div>3 · 下次登录强制进入双因子<b> 重新绑定</b>流程(2FA 是强制项,绝非「关闭 2FA」)</div>
+          <div>1 · 当前绑定的验证器立即失效</div>
+          <div>2 · 重新绑定前无法登录后台</div>
+          <div>3 · 下次登录强制重新绑定双因子</div>
         </div>
       </>
     ),
@@ -209,144 +238,162 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       channels: ["视频核实", "当面核实", "回拨预留工作号"],
       ticketHint: "如 SEC-20260618-001",
     },
-    run: (reason, _v, bv) => {
-      const now = new Date().toISOString();
-      // 身份核验证据落审计(反社工取证):核验渠道/时间/工单号写入 setParam action + logAudit,backend-replaceable。
-      const verify = `核验 ${bv?.channel ?? "—"} · ${bv?.verifiedAt || "—"} · 工单 ${bv?.ticket || "—"}`;
-      setParam(`A.acct.${op.id}.tfaResetAt`, now, { action: `重置双因子 ${op.id}(${verify})`, reason });
-      logAudit({ actor: "超管", action: `重置双因子 ${op.id} · admin.operator_2fa_reset · ${verify}`, target: op.id, reason });
-      toast(`${op.id} 双因子重置已执行 · 核验留痕 · 该账号需重新绑定`);
+    run: (reason, _value, businessValue) => {
+      const verify = `核验 ${businessValue?.channel ?? "—"} · ${businessValue?.verifiedAt || "—"} · 工单 ${businessValue?.ticket || "—"}`;
+      void runMutation(
+        `重置双因子 ${op.id}`,
+        () => resetA1Account2fa(op.id, `${reason}；${verify}`, operator),
+        `${op.id} 双因子重置已提交 · 该账号需重新绑定`,
+      );
     },
   });
 
-  const disableAcct = (op: Operator) => {
-    // 三铁律 ③:禁用前预判 — 若该账号是有效超管,-1 后 < 2 → 拒(不弹 操作确认)。
-    if (effRole(op) === "super" && effStatus(op) === "enabled" && effectiveSupers - 1 < 2) {
-      toast("拒绝:剩余有效超管将不足 2 个(防权限死锁,server 同样校验 403)");
+  const disableAcct = (op: A1Operator) => {
+    if (op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
+      toast("拒绝:剩余有效超管将不足 2 个");
       return;
     }
     openActionConfirm({
       action: `禁用账号 · ${op.id}`,
       detail: (
         <>
-          <b>{op.id} · {op.name}</b> · 角色 {ROLE_DEFS.find((r) => r.key === effRole(op))?.name}。
-          禁用后:① 收回全部后台访问权,该账号<b> 所有活跃 session 立即吊销</b>;② 账号转「已禁用」,授权快照保留,重新启用走操作确认;
-          ③ 在途高敏动作<b> 不会自动取消</b>,请在操作确认中心(A2)逐一处理。
-          {effRole(op) === "super" && (
-            <> <b>服务器再校验:</b>剩余有效超管 {effectiveSupers} − 1 = {effectiveSupers - 1} ≥ 2 ✓ 可过。</>
-          )}
+          <b>{op.id} · {op.name}</b> · 角色 {roleTierLabel(roles, op)}。
+          禁用后后端会收回后台访问权并吊销该账号全部活跃 session;在途高敏动作仍需到 A2 操作确认中心处理。
+          {op.role === "super" && <> 剩余有效超管 {effectiveSupers} - 1 = {effectiveSupers - 1}。</>}
         </>
       ),
       amplifies: false,
       run: (reason) => {
-        setParam(`A.acct.${op.id}.status`, "disabled", { action: `禁用账号 ${op.id}`, reason });
-        setParam(`A.session.user.${op.id}.killedAt`, new Date().toISOString(), { action: `禁用联动:${op.id} 全部 session 吊销`, reason });
-        logAudit({ actor: "超管", action: `禁用账号 ${op.id} · admin.operator_account_disabled`, target: op.id, reason });
-        toast(`${op.id} 已确认生效 · 全部 session 已吊销`);
+        void runMutation(
+          `禁用账号 ${op.id}`,
+          () => updateA1AccountStatus(op.id, "disabled", reason, operator),
+          `${op.id} 已禁用 · 活跃 session 已由后端吊销`,
+        );
       },
     });
   };
 
-  const enableAcct = (op: Operator) => openActionConfirm({
+  const enableAcct = (op: A1Operator) => openActionConfirm({
     action: `启用账号 · ${op.id}`,
     detail: (
       <>
-        <b>{op.id} · {op.name}</b> · 启用后:
-        ① 恢复后台访问权,角色沿用禁用前快照 <b>{ROLE_DEFS.find((r) => r.key === effRole(op))?.name}{effTier(op) ? "(lead)" : ""}</b>;
-        ② 首次登录<b> 重新校验双因子</b>(2FA 强制项);
-        ③ 启用记录写入角色历史与审计。
+        <b>{op.id} · {op.name}</b> · 启用后恢复后台访问权,角色沿用 <b>{roleTierLabel(roles, op)}</b>;
+        首次登录仍需通过强制双因子校验。
       </>
     ),
     amplifies: false,
     run: (reason) => {
-      setParam(`A.acct.${op.id}.status`, "enabled", { action: `启用账号 ${op.id}`, reason });
-      logAudit({ actor: "超管", action: `启用账号 ${op.id} · admin.operator_account_enabled`, target: op.id, reason });
-      toast(`${op.id} 已确认生效 · 已恢复后台访问`);
+      void runMutation(
+        `启用账号 ${op.id}`,
+        () => updateA1AccountStatus(op.id, "enabled", reason, operator),
+        `${op.id} 已启用`,
+      );
     },
   });
 
-  /* ────────────────── 强制登出 session(详情 drawer 内) ────────────────── */
-  const kickAllSessions = (op: Operator) => {
-    setParam(`A.session.user.${op.id}.killedAt`, new Date().toISOString(), {
-      action: `强制登出 ${op.id} 全部 session`,
-      reason: "超管即时止血(普通确认,事后可查)",
-    });
-    logAudit({ actor: "超管", action: `强制登出 session ${op.id} · admin.operator_session_revoked`, target: op.id, reason: "普通确认 · 必填原因" });
-    toast(`${op.id} 全部 session 已强制登出 · 该账号重新登录需重过双因子`);
-  };
+  const kickAllSessions = (op: A1Operator) => openActionConfirm({
+    action: `强制登出 · ${op.id}`,
+    detail: (
+      <>
+        <b>{op.id} · {op.name}</b> 当前活跃 session <b>{op.sessions}</b> 个。
+        确认后后端立即吊销该账号全部 session,重新登录必须重过后台认证与双因子。
+      </>
+    ),
+    amplifies: false,
+    run: (reason) => {
+      void runMutation(
+        `强制登出 ${op.id}`,
+        () => revokeA1AccountSessions(op.id, reason, operator),
+        `${op.id} 全部 session 已强制登出`,
+      );
+    },
+  });
 
-  /* ────────────────── 安全基线 · 4 个可调项(每项单值 · 单独 key,不再「一个框塞多值」) ────────────────── */
-  const adjustBaseline = (b: (typeof SECURITY_BASELINES)[number]) => {
-    const curN = pget(b.paramKey!) ?? b.cur!;
+  const adjustBaseline = (baseline: SecurityBaselineSeed) => {
+    if (baseline.locked) {
+      toast("该安全基线由后端锁定,不可在前端调整");
+      return;
+    }
+    const curN = Number(baselineCurrent(baseline.key) || baseline.cur);
+    const fallbackNumber = (key: string, fallback: number) => Number(baselineCurrent(key) || fallback);
     openActionConfirm({
-      action: `调整 · ${b.name}`,
+      action: `调整 · ${baseline.name}`,
       detail: (
         <>
-          <b>{b.name}</b> · 当前 <span className="acode">{curN} {b.unit}</span> · 可填范围 <span className="acode">{b.min}–{b.max} {b.unit}</span>。
+          <b>{baseline.name}</b> · 当前 <span className="acode">{curN} {baseline.unit}</span> · 可填范围 <span className="acode">{baseline.min}–{baseline.max} {baseline.unit}</span>。
           对<b> 下一次登录签发</b>生效,在途不受影响。后台是高敏操盘台,时限 / 阈值比用户侧更严。
         </>
       ),
       amplifies: false,
-      edit: { kind: "number", current: `${curN} ${b.unit}`, unit: b.unit },
-      run: (reason, v) => {
-        const n = Number((v ?? "").replace(/[^\d.]/g, "").trim());
-        if (!Number.isFinite(n) || n < b.min! || n > b.max!) { toast(`拒绝:${b.name} 需在 ${b.min}–${b.max} ${b.unit} 之间`); return; }
-        setParam(b.paramKey!, String(n), { action: `${b.name} → ${n} ${b.unit}`, reason });
-        logAudit({ actor: "超管", action: `调整安全基线 · ${b.name} · admin.system_param_changed`, target: b.paramKey!, reason });
-        toast(`${b.name} 已调整为 ${n} ${b.unit}(对下一次登录签发生效)`);
+      edit: { kind: "number", current: `${curN} ${baseline.unit}`, unit: baseline.unit },
+      run: (reason, value) => {
+        const n = Number((value ?? "").replace(/[^\d.]/g, "").trim());
+        if (!Number.isFinite(n) || n < baseline.min! || n > baseline.max!) {
+          toast(`拒绝:${baseline.name} 需在 ${baseline.min}–${baseline.max} ${baseline.unit} 之间`);
+          return;
+        }
+        let backendKey: "session" | "lock";
+        let backendValue: string;
+        if (baseline.key === "session_idle" || baseline.key === "session_abs") {
+          const idle = baseline.key === "session_idle" ? n : fallbackNumber("session_idle", 30);
+          const absolute = baseline.key === "session_abs" ? n : fallbackNumber("session_abs", 8);
+          backendKey = "session";
+          backendValue = `${idle}min / ${absolute}h`;
+        } else if (baseline.key === "lock_short_cnt" || baseline.key === "lock_short_min") {
+          const count = baseline.key === "lock_short_cnt" ? n : fallbackNumber("lock_short_cnt", 5);
+          const minutes = baseline.key === "lock_short_min" ? n : fallbackNumber("lock_short_min", 15);
+          backendKey = "lock";
+          backendValue = `${count} 次 / ${minutes}min`;
+        } else {
+          toast("拒绝:该安全基线暂不支持前端调整");
+          return;
+        }
+        void runMutation(
+          `调整安全基线 ${baseline.key}`,
+          () => updateA1SecurityBaseline(backendKey, backendValue, reason, operator),
+          `${baseline.name} 已调整为 ${n} ${baseline.unit}(对下一次登录签发生效)`,
+        );
       },
     });
   };
 
-  /* ────────────────── 全域权限矩阵 · 改授权 / 登记新动作行 ────────────────── */
-  const editMx = (m: MatrixAction) => {
-    const liveGrants = ROLE_DEFS.map((_, j) => cellLive(m, j));
+  const editMx = (row: MatrixAction) => {
+    const liveGrants = roles.map((_, index) => grantAt(row, index));
     openActionConfirm({
-      action: `变更授权 · ${m.action}`,
+      action: `变更授权 · ${row.action}`,
       detail: (
         <>
-          逐角色授权 — 顺序 <span className="acode">超管 / 财务 / 风控 / 增长 / 内容 / 客服 / 只读审计</span>,
-          值用 <span className="acode">M / C / R / -</span>(M 可发起 · C lead 执行门槛 · R 只读 · - 无权),斜杠分隔,共 7 项。
-          <b> 服务器校验最小权限底线</b>:越权组合直接拒(增长 ≠ 资金放行 / 财务 ≠ 风控写权 / 只读审计永远零写权);
-          变更带版本号,各域页面同步生效。
+          逐角色授权,值用 <span className="acode">M / C / R / -</span>。
+          提交后后端校验最小权限底线:只读审计零写权、账号治理超管授权不可移除、跨域越权组合直接拒绝。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "permission-matrix",
-        actionLabel: m.action,
-        roles: ROLE_DEFS.map((r, j) => ({ key: r.key, label: r.name, current: liveGrants[j] })),
-        guardHint: "只读审计零写权、账号治理超管 M 等底线仍由提交逻辑校验",
+        actionLabel: row.action,
+        roles: roles.map((r, index) => ({ key: r.key, label: r.name, current: liveGrants[index] })),
+        guardHint: "后端会校验权限矩阵底线并写入配置与审计",
       },
-      run: (reason, v) => {
-        const parts = (v || "").split("/").map((s) => s.trim()) as GrantCell[];
-        if (parts.length !== 7) { toast(`拒绝:需要 7 项授权(收到 ${parts.length})`); return; }
-        const bad = parts.find((p) => !GRANT_OPTIONS.includes(p));
-        if (bad) { toast(`拒绝:无效授权值 "${bad}",仅允许 M / C / R / -`); return; }
-        // 校验:只读审计不能拿 M/C(除审计导出本身的 M)。
-        const auditIdx = ROLE_DEFS.findIndex((r) => r.key === "audit");
-        if (m.id !== "audit_export" && (parts[auditIdx] === "M" || parts[auditIdx] === "C")) {
-          toast("拒绝:只读审计永远零写权(server 422)");
+      run: (reason, value) => {
+        const grants = (value || "").split("/").map((s) => s.trim());
+        if (grants.length !== roles.length) {
+          toast(`拒绝:需要 ${roles.length} 项授权(收到 ${grants.length})`);
           return;
         }
-        // 校验:三铁律 ③ 矩阵维度 — operator_governance(账号治理唯一发起角色 = 超管)行
-        // 超管列必须保持 M;改成 -/R/C 等价于"删除矩阵超管授权" → 与禁用最后一个超管同效,
-        // 直接破坏 操作确认 死锁防护。UI 拒写(audit R1 P1-1 修)。
-        const superIdx = ROLE_DEFS.findIndex((r) => r.key === "super");
-        if (m.id === "operator_governance" && parts[superIdx] !== "M") {
-          toast("拒绝:超管对账号治理动作必为 M(三铁律 ③ 矩阵维度 · 防权限死锁)");
+        const bad = grants.find((grant) => !GRANT_OPTIONS.includes(grant as GrantCell));
+        if (bad) {
+          toast(`拒绝:无效授权值 "${bad}"`);
           return;
         }
-        const diff: string[] = [];
-        ROLE_DEFS.forEach((r, j) => {
-          if (parts[j] !== liveGrants[j]) {
-            setParam(`A.rbac.${r.key}.${m.id}`, parts[j], { action: `RBAC ${m.action} · ${r.name} ${liveGrants[j]} → ${parts[j]}`, reason });
-            diff.push(`${r.name}:${liveGrants[j]}→${parts[j]}`);
-          }
-        });
-        if (!diff.length) { toast("没有授权变化"); return; }
-        logAudit({ actor: "超管", action: `变更授权 ${m.action} · admin.operator_role_changed`, target: m.id, reason });
-        toast(`${m.action} 授权变更已发布(${diff.join(" · ")})`);
+        if (!grants.some((grant, index) => grant !== liveGrants[index])) {
+          toast("没有授权变化");
+          return;
+        }
+        void runMutation(
+          `变更授权 ${row.id}`,
+          () => updateA1RbacGrants(row.id, grants, reason, operator),
+          `${row.action} 授权变更已发布`,
+        );
       },
     });
   };
@@ -355,218 +402,258 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     action: "登记新动作行",
     detail: (
       <>
-        新域新增高敏动作时在这里登记进总表;<b>默认全部无权</b>,按最小权限只给必要的(可发布后再走「改授权」逐角色开口)。
-        只读审计默认<span className="acode"> R</span>(取证需要)。发布后各域页面的局部权限表同步。
+        新增高敏动作会登记到后端 RBAC 总表;默认写权全关,只读审计默认保留取证读取。登记后再通过「改授权」逐角色开口。
       </>
     ),
     amplifies: false,
-    edit: { kind: "text", current: "", unit: "如:批量补发收益(E3)" },
-    run: (reason, v) => {
-      const name = (v || "").trim();
-      if (!name) { toast("拒绝:动作名不能为空"); return; }
-      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || `act_${Date.now()}`;
-      setParam(`A.rbac.action.${slug}`, "registered", { action: `登记新动作行 ${name}(默认 -/-/-/-/-/-/R)`, reason });
-      logAudit({ actor: "超管", action: `登记新动作行 ${name} · admin.rbac_action_registered`, target: slug, reason });
-      toast(`新动作行已提交发布确认:${name} · 默认全部无权(只读审计 R)`);
+    edit: { kind: "text", current: "动作名", unit: "如:新提现参数审核" },
+    run: (reason, value) => {
+      const action = (value || "").trim();
+      if (action.length < 4) {
+        toast("拒绝:动作名称至少 4 个字符");
+        return;
+      }
+      const domainGroup = dom === "all" ? "基座/应急" : dom;
+      void runMutation(
+        `登记动作 ${action}`,
+        () => createA1RbacAction(action, domainGroup, reason, operator),
+        `动作 ${action} 已登记到 RBAC 总表`,
+      );
     },
   });
 
-  /* ────────────────── 渲染 ────────────────── */
+  const createAccount = (form: A1CreateAccountInput & { reason: string }) => {
+    openActionConfirm({
+      action: `新建运营账号 · ${form.displayName}`,
+      detail: (
+        <>
+          <b>{form.displayName}</b> ({form.email}) · 角色 <b>{roleName(roles, form.role)}</b>
+          {form.tier === "lead" ? "(lead)" : "(member)"} · 凭据
+          <span className="acode">{form.deliver === "mail" ? "工作邮箱自动下发" : "发起人当面交付"}</span>。
+          <div style={{ marginTop: 8 }}>
+            <b>新账号默认零写权,只有所选角色授权</b> · 首次登录强制绑定双因子 · 开通动作由后端创建账号、关系和审计。
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-4)" }}>
+            临时密码由服务器生成和下发,前端只展示格式预览,不会保存或回显明文。
+          </div>
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        const finalReason = `${form.reason}；${reason}`;
+        void runMutation(
+          `新建运营账号 ${form.email}`,
+          () => createA1Account(form, finalReason, operator),
+          `账号 ${form.displayName} 已创建`,
+        );
+        setNaOpen(false);
+      },
+    });
+  };
 
-  const totalPages = Math.max(1, Math.ceil(OPERATORS.length / perPage));
-  const safePage = Math.min(page, totalPages - 1);
-  const pageStart = safePage * perPage;
-  const pageEnd = Math.min(pageStart + perPage, OPERATORS.length);
-  const pageRows = OPERATORS.slice(pageStart, pageEnd);
+  if (loading && !overview) {
+    return (
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">运营账号 & RBAC</span>
+          <span className="sub">· 正在从后端加载 A1 overview</span>
+        </div>
+        <div className="l-b">
+          <div className="atint">正在读取 /api/admin/platform/accounts/overview。</div>
+        </div>
+      </section>
+    );
+  }
 
-  const mxRows = RBAC_MATRIX.filter((m) => dom === "all" || m.domainGroup === dom);
+  if (!overview) {
+    return (
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">运营账号 & RBAC</span>
+          <span className="sub">· 后端数据加载失败</span>
+        </div>
+        <div className="l-b">
+          <div className="atint danger">A1 真实接口不可用:{loadError || "UNKNOWN_ERROR"}</div>
+          <button className="l-btn sm mc" onClick={() => void refreshOverview()}>重试</button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <>
-      {/* ───── 4 f-stat ───── */}
+      {loadError && (
+        <div className="atint danger" style={{ marginBottom: 12 }}>
+          后端刷新失败:{loadError}
+          <button className="l-btn sm mc" onClick={() => void refreshOverview()} style={{ marginLeft: 8 }}>重试</button>
+        </div>
+      )}
+      {mutatingAction && (
+        <div className="atint" style={{ marginBottom: 12 }}>
+          正在提交后端操作:{mutatingAction}
+        </div>
+      )}
+
       <div className="f-stats">
         <div className="f-stat">
           <div className="k">运营账号</div>
-          <div className="v">{A1_STATS.totalAccounts} 个</div>
-          <div className="sub">启用 {enabledCount} · 已禁用 {disabledCount}</div>
+          <div className="v">{stats?.totalAccounts ?? operators.length} 个</div>
+          <div className="sub">启用 {stats?.activeAccounts ?? 0} · 已禁用 {stats?.disabledAccounts ?? 0}</div>
         </div>
-        <div className="f-stat cyan">
+        <div className="f-stat">
           <div className="k">活跃 session</div>
-          <div className="v">{A1_STATS.activeSessions} 个</div>
-          <div className="sub">滑动 {pget("A.sec.sessionIdle") ?? "30"} 分钟过期 · 最长 {pget("A.sec.sessionAbs") ?? "8"} 小时</div>
+          <div className="v">{stats?.activeSessions ?? 0} 个</div>
+          <div className="sub">{sessionBaseline}</div>
         </div>
         <div className={`f-stat ${supersTone}`}>
           <div className="k">有效超管</div>
           <div className="v">{effectiveSupers} 个</div>
-          <div className="sub">
-            {supersLabel === "danger"
-              ? "拒写:不足 2 个,账号治理类操作全部 server 拒"
-              : supersLabel === "warn"
-                ? "警示:已到 ≥2 底线,禁用 / 降级超管前 server 校验"
-                : "底线 ≥2 · 禁用前服务器校验"}
-          </div>
+          <div className="sub">后端约束 ≥2 · {effectiveSupers <= 2 ? "接近下限" : "健康"}</div>
         </div>
-        <div className="f-stat warn">
-          <div className="k">待确认账号工单</div>
-          <div className="v">{A1_STATS.pendingAcctTickets} 件</div>
+        <div className="f-stat">
+          <div className="k">账号治理待办</div>
+          <div className="v">{stats?.pendingAcctTickets ?? 0} 件</div>
           <div className="sub">
             在操作确认中心(A2)排队 · <Link className="l-btn sm" href="/platform/audit" style={{ marginLeft: 4 }}>→ 去 A2</Link>
           </div>
         </div>
       </div>
 
-      {/* ───── (a) 运营账号列表 ───── */}
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">运营账号(a)</span>
-          <span className="sub">· 点行看详情:角色历史 + 活跃 session(可强制登出)</span>
+          <span className="sub">· 数据来自后端账号表与 A1 配置 · 所有处置写入真实接口</span>
           <div className="r">
-            <button className="l-btn sm primary" onClick={() => setNaOpen(true)}>+ 新建运营账号</button>
+            <button className="l-btn sm" onClick={() => void refreshOverview(true)} disabled={!!mutatingAction}>刷新</button>
+            <button className="l-btn sm mc" onClick={() => setNaOpen(true)} disabled={!roles.length || !!mutatingAction}>+ 新建账号</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 920 }}>
+          <table className="l-tbl" style={{ minWidth: 980 }}>
             <thead>
               <tr>
-                <th>账号</th><th>角色</th><th>双因子</th><th>状态</th><th>最近登录</th>
-                <th className="num">session</th><th style={{ textAlign: "right" }}></th>
+                <th>账号</th>
+                <th>角色</th>
+                <th>双因子</th>
+                <th>状态</th>
+                <th>最近登录</th>
+                <th>session</th>
+                <th style={{ textAlign: "right" }}>操作</th>
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((op) => {
-                const st = effStatus(op);
-                const role = effRole(op);
-                const tier = effTier(op);
-                const roleDef = ROLE_DEFS.find((r) => r.key === role);
-                const ss = effSessions(op);
-                return (
-                  <tr key={op.id} className="click" onClick={() => setRoleIdx(null /* drawer 用账号详情走 acctOpen,见下 */)}>
-                    <td>
-                      <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{op.id}</span>
-                      <div style={{ fontSize: 12, color: "var(--ink-4)" }}>{op.name}</div>
-                    </td>
-                    <td>
-                      <span className="bdg dim">{roleDef?.name ?? role}{tier ? " · lead" : ""}</span>
-                    </td>
-                    <td>
-                      {op.tfa ? <span className="bdg ok">已绑定</span> : <span className="bdg bad">未绑定</span>}
-                    </td>
-                    <td>
-                      {st === "enabled" ? <span className="bdg ok">启用</span> : <span className="bdg dim">已禁用</span>}
-                    </td>
-                    <td className="mono" style={{ fontSize: 12 }}>{op.lastLogin}</td>
-                    <td className="num mono">{ss}</td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {st === "enabled" ? (
-                        <>
-                          <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); changeRole(op); }}>改角色</button>{" "}
-                          <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); reset2fa(op); }}>重置双因子</button>{" "}
-                          <button className="l-btn sm dgr" onClick={(e) => { e.stopPropagation(); disableAcct(op); }}>禁用</button>
-                        </>
+              {pageRows.map((op) => (
+                <tr key={op.id}>
+                  <td>
+                    <div style={{ fontWeight: 700, color: "var(--ink)" }}>{op.id} · {op.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 2 }}>{op.email}</div>
+                  </td>
+                  <td>
+                    <span className="mc">{roleName(roles, op.role)}</span>
+                    <span style={{ marginLeft: 6, fontSize: 12, color: "var(--ink-4)" }}>{op.tier === "lead" ? "lead" : "member"}</span>
+                  </td>
+                  <td>{op.tfa ? <span className="mc ok">强制已绑</span> : <span className="mc danger">未绑定</span>}</td>
+                  <td>{op.status === "enabled" ? <span className="mc ok">启用</span> : <span className="mc danger">已禁用</span>}</td>
+                  <td style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{op.lastLogin || "—"}</td>
+                  <td><span className="mono">{op.sessions}</span></td>
+                  <td style={{ textAlign: "right" }}>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                      <button className="l-btn sm" onClick={() => changeRole(op)} disabled={!!mutatingAction || !roles.length}>改角色</button>
+                      <button className="l-btn sm" onClick={() => reset2fa(op)} disabled={!!mutatingAction}>重置 2FA</button>
+                      <button className="l-btn sm" onClick={() => kickAllSessions(op)} disabled={!!mutatingAction || op.sessions === 0}>强制登出</button>
+                      {op.status === "enabled" ? (
+                        <button className="l-btn sm dgr" onClick={() => disableAcct(op)} disabled={!!mutatingAction}>禁用</button>
                       ) : (
-                        <button className="l-btn sm okk" onClick={(e) => { e.stopPropagation(); enableAcct(op); }}>启用</button>
+                        <button className="l-btn sm mc" onClick={() => enableAcct(op)} disabled={!!mutatingAction}>启用</button>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {!pageRows.length && (
+                <tr>
+                  <td colSpan={7} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
+                    后端暂无运营账号记录
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-        {/* 分页器 */}
-        <div className="l-b" style={{ paddingTop: 6, paddingBottom: 0 }}>
+        <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="pager">
-            <span className="pager-info">显示 {pageStart + 1}–{pageEnd} / {OPERATORS.length}</span>
+            <span className="pager-info">显示 {operators.length ? pageStart + 1 : 0}–{pageEnd} / {operators.length}</span>
             <button className="pager-btn" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>‹</button>
             <span className="pager-num">{safePage + 1} / {totalPages}</span>
             <button className="pager-btn" disabled={safePage >= totalPages - 1} onClick={() => setPage(safePage + 1)}>›</button>
-            <select
-              className="pager-size"
-              value={perPage}
-              onChange={(e) => { setPerPage(Number(e.target.value)); setPage(0); }}
-            >
-              <option value={10}>每页 10</option>
-              <option value={20}>每页 20</option>
-              <option value={50}>每页 50</option>
+            <select className="pager-size" value={perPage} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(0); }}>
+              {[10, 20, 50].map((n) => <option key={n} value={n}>{n}/页</option>)}
             </select>
           </div>
-        </div>
-        <div className="l-b" style={{ paddingTop: 10 }}>
-          <div className="atint">
-            <b>这页不管用户</b> · 终端用户的冻结、登录、资产都在用户域(C);后台对用户做的每个处置,「操作者」是这页的运营账号、「对象」才是用户账户。运营账号不持任何用户资产,也不进用户事件流。
+          <div className="atint" style={{ marginTop: 10 }}>
+            后端会再次校验有效超管 ≥2、角色合法性和写权限;前端预判只用于减少误操作。
           </div>
         </div>
       </section>
 
-      {/* ───── 登录与安全基线 + 角色定义 ───── */}
       <div className="two-col">
-        {/* 安全基线 */}
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">登录与安全基线</span>
             <span className="sub">· 四条锁死,四项可调(每项单独调)</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
-            {SECURITY_BASELINES.map((b) => {
-              if (b.locked) {
-                return (
-                  <div className="a-vrow" key={b.key}>
-                    <span className="nm">{b.name}<small>{b.sub}</small></span>
-                    <span className="acode lock" title="server 校验,前端不可关">{b.value}</span>
-                  </div>
-                );
-              }
-              // 可调档:每项单值,从自己的 key 读真值 + 单独「调整」
-              const liveVal = `${pget(b.paramKey!) ?? b.cur} ${b.unit}`;
-              return (
-                <div className="a-vrow" key={b.key}>
-                  <span className="nm">{b.name}<small>{b.sub}</small></span>
-                  <span className="v">{liveVal}</span>
-                  <button className="l-btn sm mc" onClick={() => adjustBaseline(b)}>调整</button>
-                </div>
-              );
-            })}
+            {SECURITY_BASELINES.map((baseline) => (
+              <div className="a-vrow" key={baseline.key}>
+                <span className="nm">{baseline.name}<small>{baseline.sub}</small></span>
+                <span className={baseline.locked ? "acode lock" : "v"} title={baseline.locked ? "server 校验,前端不可关" : undefined}>
+                  {baselineDisplay(baseline)}
+                </span>
+                {!baseline.locked && (
+                  <button className="l-btn sm mc" onClick={() => adjustBaseline(baseline)} disabled={!!mutatingAction}>调整</button>
+                )}
+              </div>
+            ))}
             <div className="atint" style={{ marginTop: 10 }}>
-              <b>疑似被盗怎么办</b> · 超管可立即强制登出该账号全部 session(普通确认、必填原因,事后可查);要收权限走「禁用账号」操作确认。
+              <b>疑似被盗怎么办</b> · 超管可立即强制登出该账号全部 session(普通确认、必填原因,事后可查);要收权限走「禁用账号」操作确认。登录失败短锁基线: <b>{lockBaseline}</b>。
             </div>
           </div>
         </section>
 
-        {/* 角色定义 */}
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">角色定义(c)· 7 角色,V1 固定</span>
             <span className="sub">· 点角色看它在矩阵里拿到的全部动作</span>
           </div>
           <div className="l-b" style={{ paddingTop: 2 }}>
-            {ROLE_DEFS.map((r, i) => (
-              <div className="a1-role" key={r.key} onClick={() => setRoleIdx(i)}>
-                <span className="av" style={{ background: "var(--surface-2)", color: r.color }}>{r.av}</span>
+            {roles.map((role, index) => (
+              <div className="a1-role" key={role.key} onClick={() => setRoleIdx(index)}>
+                <span className="av" style={{ background: "var(--surface-2)", color: role.color || "var(--ink-2)" }}>{role.av}</span>
                 <span className="bd">
-                  <span className="t">{r.name}</span>
-                  <span className="s">{r.desc}</span>
+                  <span className="t">{role.name}</span>
+                  <span className="s">{role.desc}</span>
                 </span>
-                <span className="scope">{r.scope}</span>
+                <span className="scope">{role.scope}</span>
               </div>
             ))}
           </div>
         </section>
       </div>
 
-      {/* ───── (b) 全域权限矩阵 ───── */}
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">全域权限矩阵(b)· 域 × 动作 × 角色</span>
           <span className="sub">· 各域页面的权限表都是这张总表的局部投影 · 每行可改授权,变更即发布</span>
           <div className="r chips">
-            <button className="l-btn sm mc" onClick={newMxRow} style={{ marginRight: 6 }}>+ 登记新动作行</button>
+            <button className="l-btn sm mc" onClick={newMxRow} disabled={!!mutatingAction || !roles.length} style={{ marginRight: 6 }}>+ 登记新动作行</button>
             <span className="lb">域</span>
-            {DOM_CHIPS.map((c) => (
+            {DOM_CHIPS.map((chip) => (
               <button
-                key={c.key}
-                className={`chip${dom === c.key ? " sel" : ""}`}
-                onClick={() => setDom(c.key)}
-              >{c.label}</button>
+                key={chip.key}
+                className={`chip${dom === chip.key ? " sel" : ""}`}
+                onClick={() => setDom(chip.key)}
+                type="button"
+              >{chip.label}</button>
             ))}
           </div>
         </div>
@@ -575,172 +662,145 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             <thead>
               <tr>
                 <th>动作(代表性抽样)</th>
-                {ROLE_DEFS.map((r) => <th key={r.key}>{r.name}</th>)}
+                {roles.map((role) => <th key={role.key}>{role.name}</th>)}
                 <th style={{ textAlign: "right" }}></th>
               </tr>
             </thead>
             <tbody>
-              {mxRows.map((m) => (
-                <tr key={m.id}>
-                  <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{m.action}</td>
-                  {ROLE_DEFS.map((_, j) => (
-                    <td key={j}>{cellNode(cellLive(m, j))}</td>
+              {mxRows.map((row) => (
+                <tr key={row.id}>
+                  <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{row.action}</td>
+                  {roles.map((role, index) => (
+                    <td key={role.key}>{cellNode(grantAt(row, index))}</td>
                   ))}
                   <td style={{ textAlign: "right" }}>
-                    <button className="l-btn sm mc" onClick={() => editMx(m)}>改授权</button>
+                    <button className="l-btn sm mc" onClick={() => editMx(row)} disabled={!!mutatingAction}>改授权</button>
                   </td>
                 </tr>
               ))}
+              {!mxRows.length && (
+                <tr>
+                  <td colSpan={roles.length + 2} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
+                    暂无该域动作
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12, color: "var(--ink-3)", marginBottom: 8 }}>
-            <span><span className="a1-cell mk">M</span> 可发起</span>
-            <span><span className="a1-cell ck">C</span> lead 执行门槛</span>
-            <span><span className="a1-cell rd">读</span> 只读</span>
-            <span><span className="a1-cell no">—</span> 无权</span>
+            {GRANT_OPTIONS.map((grant) => (
+              <span key={grant}>{cellNode(grant)} {GRANT_LABEL[grant]}</span>
+            ))}
           </div>
           <div className="atint">
-            执行门槛(C)指角色内的 <b>lead 层级</b>——同角色 lead 可直接执行本角色动作并填写理由,超管覆盖全域(俗称的「主管」即此)。合规审查(KYC 复审 / 风险披露 / 法务文案)目前由风控代行,不单设合规角色。
-          </div>
-          <div className="atint" style={{ marginTop: 8 }}>
-            授权变更会按最小权限自动校验:增长拿资金放行、财务拿风控写权这类越权组合会被直接拒。客服在单用户范围内有受限发起权(小额余额调整、协助 KYC 标记),生效仍要 lead 门槛与理由留痕。
+            授权变更走后端接口 `/api/admin/platform/rbac/actions/:actionId/grants`, 后端统一校验最小权限和写入审计。
           </div>
         </div>
       </section>
 
-      {/* ───── f-foot ───── */}
       <p className="f-foot">
-        <b>执行门槛</b>:账号建 / 停 / 启 / 改角色 / 重置双因子 = 仅超管可执行,执行前必须填写理由;强制登出 session = 仅超管、确认即时生效、必填原因;查看类只读留痕。全部写操作落审计页(A2)。
-        <b> 矩阵权威口径</b>:各域页面的权限表是局部声明,这张总表是聚合视图;如遇旧称呼(平台管理员 = 超管 / 风控运营 = 风控成员 / 审计员 = 只读审计),按此对应。
+        <b>执行门槛</b>:账号建 / 停 / 启 / 改角色 / 重置双因子 / 强制登出走后端真实接口;安全基线 / RBAC 矩阵恢复 PRD 总表展示,提交动作仍通过后端接口发布。
       </p>
       <PaginationExemptionList
         items={[
           {
             label: "全域权限矩阵(b)· 域 × 动作 × 角色",
             kind: "fixed-matrix",
-            maxRows: 16,
+            maxRows: Math.max(16, rbacRows.length),
             reason: "固定角色动作矩阵,按域 chip 过滤,全量同屏比翻页更利于授权对比",
           },
         ]}
       />
 
-      {/* ───── 角色详情 Drawer ───── */}
-      {roleIdx !== null && (() => {
-        const r = ROLE_DEFS[roleIdx];
-        const granted = RBAC_MATRIX.filter((m) => cellLive(m, roleIdx) !== "-").slice(0, 8);
+      {roleIdx !== null && roles[roleIdx] && (() => {
+        const role = roles[roleIdx];
+        const granted = rbacRows.filter((row) => grantAt(row, roleIdx) !== "-").slice(0, 8);
         return (
           <Drawer
-            title={`角色 · ${r.name}`}
-            sub={r.desc}
+            title={`角色 · ${role.name}`}
+            sub={role.desc}
             onClose={() => setRoleIdx(null)}
           >
             <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.6, marginBottom: 10 }}>
-              可访问域:<b style={{ color: "var(--ink-2)" }}>{r.scope}</b>。下表是该角色在全域矩阵中被授予的代表性动作(实时按 pget 读)。
+              可访问域:<b style={{ color: "var(--ink-2)" }}>{role.scope}</b>。下表是该角色在全域矩阵中被授予的代表性动作(PRD 总表展示)。
             </div>
             <table className="l-tbl">
               <thead><tr><th>动作</th><th>授权</th></tr></thead>
               <tbody>
-                {granted.map((m) => {
-                  const c = cellLive(m, roleIdx);
-                  const label = c === "M" ? "可发起" : c === "C" ? "lead 执行门槛" : "只读";
+                {granted.map((row) => {
+                  const grant = grantAt(row, roleIdx);
                   return (
-                    <tr key={m.id}>
-                      <td style={{ fontSize: 12.5 }}>{m.action}</td>
-                      <td>{cellNode(c)} <span style={{ marginLeft: 6, fontSize: 11.5, color: "var(--ink-4)" }}>{label}</span></td>
+                    <tr key={row.id}>
+                      <td style={{ fontSize: 12.5 }}>{row.action}</td>
+                      <td>{cellNode(grant)} <span style={{ marginLeft: 6, fontSize: 11.5, color: "var(--ink-4)" }}>{GRANT_LABEL[grant]}</span></td>
                     </tr>
                   );
                 })}
+                {!granted.length && (
+                  <tr>
+                    <td colSpan={2} style={{ color: "var(--ink-4)", textAlign: "center", padding: 18 }}>该角色暂无授权动作</td>
+                  </tr>
+                )}
               </tbody>
             </table>
             <div className="atint" style={{ marginTop: 14 }}>
-              完整授权以矩阵为准;授权变更走操作确认发布,服务器逐请求校验。
+              完整授权以矩阵为准;授权变更走后端操作确认接口发布。
             </div>
           </Drawer>
         );
       })()}
 
-      {/* ───── 新建账号 Drawer(表单 → 提交 openActionConfirm) ───── */}
       {naOpen && (
         <NewAccountDrawer
+          roles={roles}
+          disabled={!!mutatingAction}
           onClose={() => setNaOpen(false)}
-          onSubmit={(form) => {
-            const newId = `op-${String(70 + OPERATORS.length).padStart(3, "0")}`;
-            openActionConfirm({
-              action: `新建运营账号 · ${form.displayName}`,
-              detail: (
-                <>
-                  <b>{form.displayName}</b>{" "}({form.email}) · 角色 <b>{ROLE_DEFS.find((r) => r.key === form.role)?.name}</b>{form.tier === "lead" ? "(lead)" : "(member)"} · 凭据 <span className="acode">{form.deliver === "mail" ? "工作邮箱自动下发" : "发起人当面交付"}</span>。
-                  <div style={{ marginTop: 8 }}>
-                    <b>新账号默认零写权,只有上面选的角色授权</b> · 首次登录强制绑定双因子 · 开通本身要过操作确认,超管执行且理由必填。
-                  </div>
-                  <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-4)" }}>
-                    临时密码<b> 只显示 / 下发一次</b>,审计只记「已签发」事件、不存明文;24 小时内未首登自动失效,需超管重新签发;首次登录强制改密 + 绑定双因子,临时密码随即作废。
-                  </div>
-                </>
-              ),
-              amplifies: false,
-              run: (reason) => {
-                setParam(`A.acct.${newId}.status`, "enabled", { action: `新建运营账号 ${form.displayName}`, reason });
-                setParam(`A.acct.${newId}.role`, form.role, { action: `新账号角色 ${form.role}`, reason });
-                setParam(`A.acct.${newId}.tier`, form.tier, { action: `新账号层级 ${form.tier}`, reason });
-                const acct: OpsAccount = {
-                  id: newId,
-                  acct: form.email,
-                  name: form.displayName,
-                  role: form.role,
-                  status: "active",
-                  tfa: true,
-                  cred: form.deliver === "mail" ? "temp" : "invite",
-                };
-                addAccount(acct);
-                logAudit({ actor: "超管", action: `新建运营账号 ${form.displayName} · admin.operator_account_created`, target: newId, reason });
-                toast(`账号 ${form.displayName} (${newId}) 已创建 · 凭据按所选方式下发`);
-                setNaOpen(false);
-              },
-            });
-          }}
-          onKickAll={(uid) => kickAllSessions({ id: uid } as Operator)}
+          onSubmit={createAccount}
         />
       )}
     </>
   );
 }
 
-/* ──────────────────────────── 新建账号 Drawer 表单 ──────────────────────────── */
-
-type NaForm = {
-  displayName: string;
-  email: string;
-  role: RoleKey;
-  tier: "lead" | "member";
-  deliver: "mail" | "handoff";
+type NaForm = A1CreateAccountInput & {
   reason: string;
 };
 
 function NewAccountDrawer({
-  onClose, onSubmit,
+  roles,
+  disabled,
+  onClose,
+  onSubmit,
 }: {
+  roles: A1RoleDefinition[];
+  disabled?: boolean;
   onClose: () => void;
   onSubmit: (form: NaForm) => void;
-  onKickAll: (uid: string) => void;
 }) {
+  const defaultRole = roles[0]?.key ?? "";
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<RoleKey>("risk");
+  const [role, setRole] = useState(defaultRole);
   const [tier, setTier] = useState<"lead" | "member">("member");
   const [deliver, setDeliver] = useState<"mail" | "handoff">("mail");
   const [reason, setReason] = useState("");
   const [pwd, setPwd] = useState(() => genPwd());
 
+  useEffect(() => {
+    if (!roles.some((item) => item.key === role)) {
+      setRole(roles[0]?.key ?? "");
+    }
+  }, [role, roles]);
+
   const emailOk = email.trim().endsWith("@nexion.io") && email.includes("@");
-  const canSubmit = displayName.trim().length > 0 && emailOk && reason.trim().length > 0;
+  const canSubmit = !disabled && displayName.trim().length > 0 && emailOk && role.length > 0 && reason.trim().length > 0;
 
   return (
     <Drawer
       title="新建运营账号"
-      sub="① 账号信息 → ② 初始角色 → ③ 层级 → ④ 凭据 → 操作理由(必填)"
+      sub="① 账号信息 → ② 初始角色 → ③ 层级 → ④ 凭据 → 操作理由"
       onClose={onClose}
       footer={
         <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
@@ -778,99 +838,61 @@ function NewAccountDrawer({
 
       <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>② 初始角色 *</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-        {ROLE_DEFS.map((r) => (
+        {roles.map((item) => (
           <label
-            key={r.key}
+            key={item.key}
             className="l-btn"
             style={{
               justifyContent: "flex-start",
               padding: "10px 12px",
-              background: role === r.key ? "var(--a-ac-soft)" : "var(--surface-2)",
-              color: role === r.key ? "var(--a-ac)" : "var(--ink-2)",
-              fontWeight: role === r.key ? 600 : 500,
+              background: role === item.key ? "var(--a-ac-soft)" : "var(--surface-2)",
+              color: role === item.key ? "var(--a-ac)" : "var(--ink-2)",
+              fontWeight: role === item.key ? 600 : 500,
               cursor: "pointer",
             }}
           >
             <input
               type="radio"
               name="operator-role"
-              value={r.key}
-              checked={role === r.key}
-              onChange={() => setRole(r.key)}
+              value={item.key}
+              checked={role === item.key}
+              onChange={() => setRole(item.key)}
               style={{ accentColor: "var(--a-ac)" }}
             />
-            <span style={{ fontSize: 13 }}>{r.name}</span>
-            <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }}>{r.scope}</span>
+            <span style={{ fontSize: 13 }}>{item.name}</span>
+            <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }}>{item.scope}</span>
           </label>
         ))}
       </div>
 
       <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>③ 层级</div>
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        <label
-          className="l-btn sm"
-          style={{
-            background: tier === "member" ? "var(--a-ac-soft)" : "var(--surface-2)",
-            color: tier === "member" ? "var(--a-ac)" : "var(--ink-3)",
-            fontWeight: tier === "member" ? 600 : 500,
-            cursor: "pointer",
-          }}
-        >
+        <label className="l-btn sm" style={{ background: tier === "member" ? "var(--a-ac-soft)" : "var(--surface-2)", color: tier === "member" ? "var(--a-ac)" : "var(--ink-3)", fontWeight: tier === "member" ? 600 : 500, cursor: "pointer" }}>
           <input type="radio" name="operator-tier" value="member" checked={tier === "member"} onChange={() => setTier("member")} style={{ accentColor: "var(--a-ac)" }} />
           member 成员
         </label>
-        <label
-          className="l-btn sm"
-          style={{
-            background: tier === "lead" ? "var(--a-ac-soft)" : "var(--surface-2)",
-            color: tier === "lead" ? "var(--a-ac)" : "var(--ink-3)",
-            fontWeight: tier === "lead" ? 600 : 500,
-            cursor: "pointer",
-          }}
-        >
+        <label className="l-btn sm" style={{ background: tier === "lead" ? "var(--a-ac-soft)" : "var(--surface-2)", color: tier === "lead" ? "var(--a-ac)" : "var(--ink-3)", fontWeight: tier === "lead" ? 600 : 500, cursor: "pointer" }}>
           <input type="radio" name="operator-tier" value="lead" checked={tier === "lead"} onChange={() => setTier("lead")} style={{ accentColor: "var(--a-ac)" }} />
-          lead 主管(可执行本角色动作)
+          lead 主管
         </label>
       </div>
 
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>④ 初始凭据 · 一次性临时密码</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>④ 初始凭据 · 格式预览</div>
       <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span className="mono" style={{ fontSize: 14, fontWeight: 700, letterSpacing: ".04em", color: "var(--ink)" }}>{pwd}</span>
-          <button className="l-btn sm" onClick={() => setPwd(genPwd())}>换一个</button>
-          <span style={{ fontSize: 12, color: "var(--ink-4)" }}>格式预览 · 真密码在确认通过那一刻才由服务器生成;后台不持有明文</span>
+          <button className="l-btn sm" onClick={() => setPwd(genPwd())} type="button">换一个</button>
+          <span style={{ fontSize: 12, color: "var(--ink-4)" }}>真密码由服务器生成;前端不持明文</span>
         </div>
         <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12, color: "var(--ink-3)" }}>下发方式</span>
-          <button
-            className="l-btn sm"
-            onClick={() => setDeliver("mail")}
-            style={{
-              background: deliver === "mail" ? "var(--a-ac-soft)" : "var(--surface-2)",
-              color: deliver === "mail" ? "var(--a-ac)" : "var(--ink-3)",
-              fontWeight: deliver === "mail" ? 600 : 500,
-            }}
-          >工作邮箱自动下发</button>
-          <button
-            className="l-btn sm"
-            onClick={() => setDeliver("handoff")}
-            style={{
-              background: deliver === "handoff" ? "var(--a-ac-soft)" : "var(--surface-2)",
-              color: deliver === "handoff" ? "var(--a-ac)" : "var(--ink-3)",
-              fontWeight: deliver === "handoff" ? 600 : 500,
-            }}
-          >发起人当面交付</button>
+          <button className="l-btn sm" type="button" onClick={() => setDeliver("mail")} style={{ background: deliver === "mail" ? "var(--a-ac-soft)" : "var(--surface-2)", color: deliver === "mail" ? "var(--a-ac)" : "var(--ink-3)", fontWeight: deliver === "mail" ? 600 : 500 }}>工作邮箱自动下发</button>
+          <button className="l-btn sm" type="button" onClick={() => setDeliver("handoff")} style={{ background: deliver === "handoff" ? "var(--a-ac-soft)" : "var(--surface-2)", color: deliver === "handoff" ? "var(--a-ac)" : "var(--ink-3)", fontWeight: deliver === "handoff" ? 600 : 500 }}>发起人当面交付</button>
         </div>
       </div>
 
-      <div style={{ marginBottom: 12, fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.7 }}>
-        <div>1 · 临时密码<b style={{ color: "var(--ink-2)" }}> 只显示 / 下发一次</b>,审计只记「已签发」事件、不存明文</div>
-        <div>2 · <b style={{ color: "var(--ink-2)" }}>24 小时</b>内未首登自动失效,需超管重新签发</div>
-        <div>3 · 首次登录<b style={{ color: "var(--ink-2)" }}> 强制改密 + 绑定双因子</b>,临时密码随即作废</div>
-      </div>
-
       <div className="atint" style={{ marginBottom: 14 }}>
-        <b>开通即生效的三条底线</b> · 默认零写权(只有上面选的角色授权)· 首次登录强制绑定双因子 · 开通本身要过操作确认,超管执行且理由必填。
+        <b>开通即生效的三条底线</b> · 默认零写权 · 首次登录强制绑定双因子 · 开通动作写入后端审计。
       </div>
 
       <label style={{ fontSize: 12, color: "var(--ink-3)" }}>

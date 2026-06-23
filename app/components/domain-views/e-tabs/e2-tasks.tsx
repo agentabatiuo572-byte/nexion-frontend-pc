@@ -4,7 +4,6 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
 import type { OpsTask } from "@/lib/store/admin/platform-config-store";
 import { EStats } from "./stats";
-import { PHONE_TIERS } from "./data";
 
 /* ── 任务类型 → 图标 kind(单一真源:taskClass 权威枚举 ↔ 图标)── */
 type Kind = "llm" | "img" | "vid" | "ft" | "em";
@@ -73,13 +72,12 @@ function heatBg(v: number): string {
 const HEAT_SCALE = ["var(--surface-3)", "rgba(41,210,127,.4)", "var(--success)", "var(--warning)", "var(--brand-2)", "var(--danger)"];
 const HEAT_PER_ZONE = 6;   // 每个热力图区域最多 6 个任务,超出新增区域
 
-const HOOKS = [
-  { nm: "LLM 405B 锁定展示", ct: "3,284 →", up: false },
-  { nm: "视频渲染锁定展示", ct: "1,847 →", up: false },
-  { nm: "LoRA 锁定展示", ct: "912 →", up: false },
-  { nm: "→ Pro v2 升级", ct: "+34", up: true },
-  { nm: "→ Rack P2 升级", ct: "+8", up: true },
-];
+function money(value: number) {
+  return `$${value.toFixed(value >= 10 ? 0 : 2)}`;
+}
+function amount(value: number) {
+  return value.toFixed(4).replace(/\.?0+$/, "");
+}
 
 const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
 
@@ -124,25 +122,21 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "24h 任务总额", v: "$184k", sub: "12,847 笔 · 全网派单", tone: "ok" },
-        { k: "在线接单设备", v: "41,208", sub: "heartbeat 活跃 · 占 99.2%" },
-        { k: "全网饱和度", v: "63%", sub: "峰值 78% · 19:00 UTC", tone: "warn" },
-        { k: "锁定预览转化", v: "8.4%", sub: "锁定 → 升级 Pro/Rack", tone: "cyan" },
+        { k: "任务类型", v: tasks.length, sub: ctx.e2Loading ? "同步中" : ctx.e2Error ? "同步异常" : "已同步", tone: "ok" },
+        { k: "平均单价", v: money(avgPrice), sub: tasks.length ? `${tasks.length} 类任务均价` : "暂无任务" },
+        { k: "平均饱和度", v: `${avgSat}%`, sub: peakTask ? `最高 ${Math.round(peakTask.sat * 100)}% · ${peakTask.n}` : "暂无队列", tone: avgSat >= 75 ? "warn" : "cyan" },
+        { k: "最高单价任务", v: money(maxPriceTask?.price ?? 0), sub: maxPriceTask?.n ?? "暂无任务", tone: "cyan" },
       ]} />
 
       {/* 手机算力档位收益 —— 手机端按校准能力分 5 档,每档日产 USDT/NEX 运营可调 */}
       <section className="pane">
         <div className="pane-h">
           <span className="ttl">手机算力档位收益 · 5 档</span>
-          <span className="sub">按校准能力分档 · 与前端同口径</span>
-          <span className="r"><CodeTag tone="electric">收益引擎</CodeTag><CodeTag>E.phone.tier*</CodeTag></span>
         </div>
         <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {PHONE_TIERS.map((t) => {
-            const uKey = `E.phone.tier${t.tier}.dailyUsdt`;
-            const nKey = `E.phone.tier${t.tier}.dailyNex`;
-            const u = ctx.pget(uKey) ?? t.dailyUsdt;
-            const n = ctx.pget(nKey) ?? t.dailyNex;
+          {ctx.phoneTiers.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无手机档位数据。</div> : ctx.phoneTiers.map((t) => {
+            const u = amount(t.dailyUsdt);
+            const n = amount(t.dailyNex);
             return (
               <div key={t.tier} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 14, alignItems: "center", paddingTop: t.tier === 1 ? 0 : 10, borderTop: t.tier === 1 ? "none" : "1px solid var(--border)" }}>
                 <span style={{ minWidth: 40, height: 26, padding: "0 8px", borderRadius: 7, background: "var(--brand-soft)", color: "var(--brand)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)" }}>T{t.tier}</span>
@@ -156,12 +150,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
-                    name: `手机 T${t.tier} 日产 USDT 调整`, op: "param", paramKey: uKey, amplify: true,
+                    name: `手机 T${t.tier} 日产 USDT 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
                     edit: { kind: "text", current: u, unit: "USDT/天" },
                     detail: `手机算力 T${t.tier}(${t.name})· 日产 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已计提。`,
                   })}>调 USDT</Btn>
                   <Btn sm onClick={() => ctx.openActionConfirm({
-                    name: `手机 T${t.tier} 日产 NEX 调整`, op: "param", paramKey: nKey, amplify: true,
+                    name: `手机 T${t.tier} 日产 NEX 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
                     edit: { kind: "text", current: n, unit: "NEX/天" },
                     detail: `手机算力 T${t.tier}(${t.name})· 日产 NEX 当前 ${n} · NEX 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
                   })}>调 NEX</Btn>
@@ -231,13 +225,13 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         <aside className="rail">
           <div className="donut-card">
             <div className="h">全网队列饱和度</div>
-            <div className="s">动态调度 · 实时</div>
+            <div className="s">当前均值</div>
             <div className="donut-wrap">
               <svg width={180} height={180} viewBox="0 0 180 180">
                 <circle className="ring-bg" cx="90" cy="90" r="74" fill="none" strokeWidth="14" />
-                <circle className="ring-f" cx="90" cy="90" r="74" fill="none" strokeWidth="14" strokeDasharray="464.96" strokeDashoffset="172" />
+                <circle className="ring-f" cx="90" cy="90" r="74" fill="none" strokeWidth="14" strokeDasharray="464.96" strokeDashoffset={donutOffset} />
               </svg>
-              <div className="ctr"><div className="num">63<small>%</small></div><div className="lb">峰值 78%</div></div>
+              <div className="ctr"><div className="num">{avgSat}<small>%</small></div><div className="lb">{peakTask ? `峰值 ${Math.round(peakTask.sat * 100)}%` : "暂无队列"}</div></div>
             </div>
             <div className="legend">
               <div className="row"><span className="dot" style={{ background: "var(--warning)" }} /><span className="nm">高负载(&gt;75%)</span><span className="pct">{hiLoad} 类</span></div>
@@ -246,12 +240,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             </div>
           </div>
           <div className="hook-card">
-            <div className="h">锁定预览钩子 · 24h<span className="tag">E1 转化</span></div>
-            {HOOKS.map((h, i) => (
-              <div className={`hook-row${h.up ? " up" : ""}`} key={i}>
-                <span className="ic">{h.up ? <CheckSm /> : <LockSm />}</span>
-                <span className="nm">{h.nm}</span>
-                <span className="ct">{h.ct}</span>
+            <div className="h">任务负载排行<span className="tag">实时</span></div>
+            {queueRank.length === 0 ? <div className="tint tiny">暂无任务排行</div> : queueRank.map((task) => (
+              <div className={`hook-row${task.req.includes("需") ? "" : " up"}`} key={task.id}>
+                <span className="ic">{task.req.includes("需") ? <LockSm /> : <CheckSm />}</span>
+                <span className="nm">{task.n}</span>
+                <span className="ct">{Math.round(task.sat * 100)}% · {money(task.price)}{task.unit}</span>
               </div>
             ))}
           </div>
@@ -301,7 +295,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <span style={{ marginLeft: "auto" }}><AutoGloss>悬停查看小时 × 任务负载</AutoGloss></span>
         </div>
       </div>
-      <p className="f-foot">高单价任务(LLM 405B / LoRA / 视频渲染)是<b>升级转化引擎</b> — 在前端 /earn 锁定展示,引导用户购买 Pro 或 Rack。任务单价改后<b>对新派单 server-canonical 生效</b>,已派工单维持原单价完成。</p>
+      <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${maxPriceTask.n}」` : "暂无"}、最高负载任务{peakTask ? `「${peakTask.n}」` : "暂无"}会驱动 /earn 任务池展示。任务单价改后<b>对新派单 server-canonical 生效</b>,已派工单维持原单价完成。</p>
     </>
   );
 }

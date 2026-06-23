@@ -31,9 +31,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const collapsed = mounted ? collapsedRaw : false;
   const expanded = mounted ? expandedRaw : ["B"];
 
-  if (!mounted) {
-    return <div className="h-screen w-screen" style={{ background: "var(--v5-bg)" }} />;
-  }
+  if (!mounted) return <LoginGate />;
 
   if (!isAuthenticated) return <LoginGate />;
 
