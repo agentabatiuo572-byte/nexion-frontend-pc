@@ -1,6 +1,7 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
 import type { E2PhoneTier } from "@/lib/admin/e2-client";
+import type { E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
 
 /**
@@ -30,6 +31,8 @@ export type EOp =
   | "order-refund"    // 退款(放大流出)
   | "order-cancel"    // 取消订单
   | "order-terminal"  // 补建终态(select)
+  | "device-activate"    // E5 设备激活/恢复 → 后端 Device restore/activate API
+  | "device-deactivate"  // E5 取消激活/解绑 → 后端 device deactivate API
   | "ops-pause";      // DC 批量 pause / 恢复
 
 export interface McSpec {
@@ -52,6 +55,8 @@ export interface McSpec {
   generationGateId?: string;
   generationGate?: E1GenerationGateInput;
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单
+  deviceId?: number;        // E5 设备主键(后端 nx_user_device.id)
+  deviceNo?: string;        // E5 展示编号(instanceNo)
   dc?: string;              // 运维处置目标数据中心
 }
 export type Mc = McSpec | null;
@@ -107,6 +112,11 @@ export interface EViewCtx {
   isRefunded: (id: string) => boolean;
   terminalOf: (id: string) => string | undefined;
   openOrder: (o: EOrder) => void;
-  // E5 设备运维
+  // E5 设备运维(设备列表/激活/解绑/DC pause 均走后端 API)
+  e5Devices: E5Device[];
+  e5Overview: E5Overview | null;
+  e5Loading: boolean;
+  e5Error: string | null;
+  refreshE5: () => Promise<void>;
   isDcPaused: (dc: string) => boolean;
 }

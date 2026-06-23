@@ -1,6 +1,6 @@
 /**
  * E 域核心数据 & 派生口径(从 e-view.tsx 移出,口径不改)。
- * server-canonical:E1/E2/E4 展示值来自后端接口;E3/E5 配置态仍由平台配置读取。
+ * server-canonical:E1/E2/E4 展示值来自后端接口;E5 设备运维来自设备接口;E3 配置态仍由平台配置读取。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
 import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";

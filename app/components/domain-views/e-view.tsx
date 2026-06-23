@@ -8,7 +8,7 @@
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/评价/代际门、E2 任务引擎、E4 订单状态机走后端 API;E3/E5 暂沿用 platform-config-store / setParam。
+ * 真写落点:E1 SKU/评价/代际门、E2 任务引擎、E4 订单状态机、E5 设备运维走后端 API;E3 暂沿用 platform-config-store / setParam。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -40,6 +40,7 @@ import {
 } from "@/lib/admin/e1-client";
 import { createE2Task, deleteE2Task, fetchE2PhoneTiers, fetchE2Tasks, updateE2PhoneTier, updateE2Task, updateE2TaskPrice, type E2PhoneTier } from "@/lib/admin/e2-client";
 import { cancelE4Order, fetchE4Orders, refundE4Order, terminalE4Order, updateE4OrderState } from "@/lib/admin/e4-client";
+import { activateE5Device, deactivateE5Device, fetchE5Devices, fetchE5Overview, setE5DatacenterPaused, type E5Device, type E5Overview } from "@/lib/admin/e5-client";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
@@ -234,7 +235,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const operator = useAdminAuth((s) => s.operator || s.session?.username || "superadmin");
   const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
   const pE = (k: string): string => pget(k) ?? E_PARAM_DEFAULTS[k] ?? "—";
-  const isDcPaused = (dc: string): boolean => pget(`E.ops.${dc}.paused`) === "true";
 
   // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
@@ -313,6 +313,33 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     const state = orderById.get(id)?.state;
     return state && (TERMINAL_STATES as readonly string[]).includes(state) ? state : undefined;
   }, [orderById]);
+
+  // ── E5 设备运维:服务端 fleet / overview 为单一来源 ──
+  const [e5Devices, setE5Devices] = useState<E5Device[]>([]);
+  const [e5Overview, setE5Overview] = useState<E5Overview | null>(null);
+  const [e5Loading, setE5Loading] = useState(tab === "E5");
+  const [e5Error, setE5Error] = useState<string | null>(null);
+  const refreshE5 = useCallback(async () => {
+    setE5Loading(true);
+    setE5Error(null);
+    try {
+      const [nextDevices, nextOverview] = await Promise.all([
+        fetchE5Devices({ pageNum: 1, pageSize: 100 }),
+        fetchE5Overview(),
+      ]);
+      setE5Devices(nextDevices);
+      setE5Overview(nextOverview);
+    } catch (error) {
+      setE5Error(error instanceof Error ? error.message : "E5_SYNC_FAILED");
+      setE5Devices([]);
+      setE5Overview(null);
+    } finally {
+      setE5Loading(false);
+    }
+  }, []);
+  useEffect(() => { if (tab === "E5") void refreshE5(); }, [tab, refreshE5]);
+  const e5PausedDcs = useMemo(() => new Map((e5Overview?.datacenters ?? []).map((dc) => [dc.dcLocation, dc.dispatchPaused])), [e5Overview]);
+  const isDcPaused = (dc: string): boolean => e5PausedDcs.get(dc) ?? false;
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -631,7 +658,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     orders, e4Loading, e4Error, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
-    isDcPaused,
+    e5Devices, e5Overview, e5Loading, e5Error, refreshE5, isDcPaused,
   };
   const skuPhaseIds = useMemo(() => {
     const ids = [...e1PhaseIds];
@@ -1128,9 +1155,19 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setToast("订单 " + mc.orderId + " 已补建终态:" + stateLabel(v));
               }
               setSelOrder(null);
+            } else if (mc.op === "device-activate" && mc.deviceId) {
+              await activateE5Device(mc.deviceId, reason, operator);
+              await refreshE5();
+              setToast("设备 " + (mc.deviceNo ?? mc.deviceId) + " 已提交激活 · 后端已生效");
+            } else if (mc.op === "device-deactivate" && mc.deviceId) {
+              await deactivateE5Device(mc.deviceId, reason, operator);
+              await refreshE5();
+              setToast("设备 " + (mc.deviceNo ?? mc.deviceId) + " 已取消激活/解绑 · 后端已生效");
             } else if (mc.op === "ops-pause" && mc.dc) {
               const paused = mc.fixedVal === "true";
-              setParam(`E.ops.${mc.dc}.paused`, paused ? "true" : "false", { action: (paused ? "批量 pause 数据中心 " : "恢复数据中心派单 ") + mc.dc, reason }); setToast(mc.dc + (paused ? " 已暂停派单" : " 已恢复派单"));
+              await setE5DatacenterPaused(mc.dc, paused, reason, operator);
+              await refreshE5();
+              setToast(mc.dc + (paused ? " 已暂停派单" : " 已恢复派单") + " · 后端已生效");
             } else { setToast("已确认生效"); }
           } catch (error) {
             setToast((mc.name || "操作") + ":失败 " + (error instanceof Error ? error.message : "E1_ACTION_FAILED"));

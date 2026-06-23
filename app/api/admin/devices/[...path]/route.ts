@@ -13,9 +13,7 @@ function jsonError(status: number, message: string) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts[0] !== "tasks" && parts[0] !== "phone-tiers" && parts[0] !== "orders") {
-    return null;
-  }
+  const isOverview = parts[0] === "overview" && parts.length === 1;
   const isTaskCollection = parts[0] === "tasks" && parts.length === 1;
   const isTask = parts[0] === "tasks" && parts.length === 2 && !!parts[1];
   const isTaskAction = parts[0] === "tasks" && parts.length === 3 && !!parts[1] && (parts[2] === "price" || parts[2] === "status");
@@ -23,7 +21,22 @@ function backendPath(parts: string[]) {
   const isPhoneTier = parts[0] === "phone-tiers" && parts.length === 2 && !!parts[1];
   const isOrderCollection = parts[0] === "orders" && parts.length === 1;
   const isOrderAction = parts[0] === "orders" && parts.length === 3 && !!parts[1] && (parts[2] === "refund" || parts[2] === "cancel" || parts[2] === "terminal" || parts[2] === "state");
-  if (!isTaskCollection && !isTask && !isTaskAction && !isPhoneTierCollection && !isPhoneTier && !isOrderCollection && !isOrderAction) {
+  const isE3TradeinAction = parts[0] === "e3" && parts[1] === "tradein" && parts.length === 3 && ["recycle", "replace", "deactivate"].includes(parts[2]);
+  const isDeviceRestore = parts.length === 2 && /^[1-9]\d*$/.test(parts[0]) && parts[1] === "restore";
+  const isDatacenterAction = parts[0] === "datacenters" && parts.length === 3 && !!parts[1] && (parts[2] === "pause" || parts[2] === "resume");
+  if (
+    !isOverview
+    && !isTaskCollection
+    && !isTask
+    && !isTaskAction
+    && !isPhoneTierCollection
+    && !isPhoneTier
+    && !isOrderCollection
+    && !isOrderAction
+    && !isE3TradeinAction
+    && !isDeviceRestore
+    && !isDatacenterAction
+  ) {
     return null;
   }
   return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
