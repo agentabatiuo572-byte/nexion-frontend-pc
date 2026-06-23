@@ -108,6 +108,11 @@ const REVIEW_STATUS_OPTIONS = [
   { value: "published", label: "展示中" },
   { value: "hidden", label: "已隐藏" },
 ] as const;
+const DC_STATUS_OPTIONS: { value: DatacenterForm["status"]; label: string }[] = [
+  { value: "active", label: "启用中" },
+  { value: "maintenance", label: "维护中" },
+  { value: "disabled", label: "已禁用" },
+];
 
 function fileExt(name: string) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -398,6 +403,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   useEffect(() => { if (tab === "E5") void refreshE5(); }, [tab, refreshE5]);
   const e5PausedDcs = useMemo(() => new Map(e5Datacenters.map((dc) => [dc.dcLocation, dc.dispatchPaused])), [e5Datacenters]);
   const isDcPaused = (dc: string): boolean => e5PausedDcs.get(dc) ?? false;
+  const skuDatacenterOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return e5Datacenters.reduce<{ value: string; label: string }[]>((acc, dc) => {
+      const value = dc.regionLabel.trim();
+      if (!value || seen.has(value)) return acc;
+      seen.add(value);
+      acc.push({ value, label: `${value} · ${dc.dcLocation}` });
+      return acc;
+    }, []);
+  }, [e5Datacenters]);
+  const skuDatacenterSet = useMemo(() => new Set(skuDatacenterOptions.map((item) => item.value)), [skuDatacenterOptions]);
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -428,6 +444,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!src?.startsWith("blob:")) return;
     return () => URL.revokeObjectURL(src);
   }, [skuMedia?.src]);
+  useEffect(() => {
+    if (!skuDrawer || e5Loading || skuDatacenterOptions.length === 0) return;
+    setForm((current) => {
+      const datacenter = current.datacenter.trim();
+      if (!datacenter || skuDatacenterSet.has(datacenter)) return current;
+      return { ...current, datacenter: "" };
+    });
+  }, [skuDrawer, e5Loading, skuDatacenterOptions.length, skuDatacenterSet]);
 
   const refreshCurrentSkuMediaPreview = useCallback(async (assetId?: string) => {
     if (!assetId) return;
@@ -561,13 +585,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       status: dcForm.status,
       sortOrder: String(Math.floor(sortOrder)),
     };
+    const statusLabel = DC_STATUS_OPTIONS.find((item) => item.value === normalized.status)?.label ?? normalized.status;
     setActionConfirm({
       name: (editDcLocation ? "编辑数据中心 · " : "新增数据中心 · ") + normalized.dcLocation,
       op: "dc-save",
       dc: editDcLocation ?? normalized.dcLocation,
       dcForm: normalized,
       isNew: !editDcLocation,
-      detail: `${editDcLocation ? "更新" : "新增"}数据中心卡片配置:${normalized.dcLocation} · ${normalized.regionLabel} · 状态 ${normalized.status} · 写入后端 MySQL 并刷新 E5 卡片。`,
+      detail: `${editDcLocation ? "更新" : "新增"}数据中心卡片配置:${normalized.dcLocation} · ${normalized.regionLabel} · 状态 ${statusLabel} · 写入后端 MySQL 并刷新 E5 卡片。`,
     });
     setDcDrawer(false);
   };
@@ -798,6 +823,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const openSkuSaveConfirm = () => {
     if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
     if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
+    const datacenter = form.datacenter.trim();
+    if (datacenter && !skuDatacenterSet.has(datacenter)) {
+      setForm({ ...form, datacenter: "" });
+    }
     const poolErr = validateSkuUnlockPool();
     if (poolErr) { setToast(poolErr); return; }
     const gErr = validateGateForm(form);
@@ -936,8 +965,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <span className="muted tiny">数据中心 datacenter<span style={{ color: "var(--ink-4)" }}> · 选 E5 数据中心(前端展示名称)· 在 E5 运维增删改</span></span>
               <select className="fld" value={form.datacenter} onChange={(e) => setForm({ ...form, datacenter: e.target.value })}>
                 <option value="">— 未指定 —</option>
-                {e5Datacenters.map((dc) => <option key={dc.dcLocation} value={dc.regionLabel}>{dc.regionLabel} · {dc.dcLocation}</option>)}
-                {form.datacenter.trim() && !e5Datacenters.some((dc) => dc.regionLabel === form.datacenter.trim()) && <option value={form.datacenter}>{form.datacenter}(已不在数据中心列表)</option>}
+                {skuDatacenterOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
           </SkuFieldGroup>
@@ -1150,9 +1178,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <label className="col" style={{ gap: 5 }}>
               <span className="muted tiny">状态</span>
               <select className="fld" value={dcForm.status} onChange={(e) => setDcForm({ ...dcForm, status: e.target.value as DatacenterForm["status"] })}>
-                <option value="active">active</option>
-                <option value="maintenance">maintenance</option>
-                <option value="disabled">disabled</option>
+                {DC_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="col" style={{ gap: 5 }}>
