@@ -17,7 +17,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { confirm } from "@/lib/store/ui";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask, type OpsDataCenter } from "@/lib/store/admin/platform-config-store";
+import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { SKUS, REVIEWS } from "@/lib/mock/admin/design-data";
 import {
@@ -60,7 +60,6 @@ import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media
 import {
   FOLD, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
-  DATA_CENTERS_SEED, AI_COMPUTE_POOLS,
 } from "./e-tabs/data";
 import type { DatacenterForm, Mc, EViewCtx, EOrder } from "./e-tabs/types";
 import { E1Catalog } from "./e-tabs/e1-catalog";
@@ -244,22 +243,6 @@ function SkuFld({ label, value, onChange, placeholder, type = "text", hint, list
 // 仍可自定义临时活动角标(限时5折/双十一…)—— 「能勾选的不要手输」+「业务值必须可配置」并存。
 const SKU_BADGE_PRESETS = ["Best Seller", "Trending", "New Gen", "Flagship", "Low Barrier"] as const;
 
-// 多选算力池:勾选预置(toggle)→ 逗号串存单 string(OpsSku.aiUnlocks 不改类型、前端零改、原样渲染逗号串 = 功能一致);
-// 下方文本框可手输自定义/微调(与 chips 同源 form.aiUnlocks)——「能勾选的不要手输」+「可配置」并存。
-function SkuMultiSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
-  const sel = value.split(",").map((s) => s.trim()).filter(Boolean);
-  const toggle = (o: string) => onChange((sel.includes(o) ? sel.filter((x) => x !== o) : [...sel, o]).join(", "));
-  return (
-    <label className="col" style={{ gap: 5 }}>
-      <span className="muted tiny">{label}</span>
-      <div className="row wrap" style={{ gap: 6 }}>
-        {options.map((o) => <Chip key={o} tab sel={sel.includes(o)} onClick={() => toggle(o)}>{o}</Chip>)}
-      </div>
-      <input className="fld" value={value} onChange={(e) => onChange(e.target.value)} placeholder="勾选预置或手输自定义(逗号分隔多个)" style={{ marginTop: 4 }} />
-    </label>
-  );
-}
-
 export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const [tab] = useState(FOLD[meta.l2Id] ?? "E1");
@@ -279,12 +262,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const updateSku = usePlatformConfig((s) => s.updateSku);
   const setSkuStatus = usePlatformConfig((s) => s.setSkuStatus);
   const removeSku = usePlatformConfig((s) => s.removeSku);
-  // E5 数据中心(可增删改单源;SKU datacenter 下拉读 displayName)
-  const ensureDataCenters = usePlatformConfig((s) => s.ensureDataCenters);
-  const storeDataCenters = usePlatformConfig((s) => s.dataCenters);
-  const addDataCenter = usePlatformConfig((s) => s.addDataCenter);
-  const updateDataCenter = usePlatformConfig((s) => s.updateDataCenter);
-  const removeDataCenter = usePlatformConfig((s) => s.removeDataCenter);
   const operator = useAdminAuth((s) => s.operator || s.session?.username || "superadmin");
   const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
   const pE = (k: string): string => pget(k) ?? E_PARAM_DEFAULTS[k] ?? "—";
@@ -317,14 +294,20 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
   useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, refreshE1]);
   useEffect(() => { if (hydrated) ensureSkus(SKUS as OpsSku[]); }, [hydrated, ensureSkus]);
-  useEffect(() => { if (hydrated) ensureDataCenters(DATA_CENTERS_SEED); }, [hydrated, ensureDataCenters]);
-  const dataCenters: OpsDataCenter[] = (hydrated && storeDataCenters) ? storeDataCenters : DATA_CENTERS_SEED;
   // 后端连得上用真数据;连不上或返回空时回退本地原型 seed,避免同步后目录空白
   // (SKUS/REVIEWS 与 OpsSku/OpsReview 同构,真后端可用时由 refreshE1 无缝覆盖)
   // 预览模式直接用本地 state(删空就空,不复活);真后端模式连不上时回退原型 seed
   const skus = IS_PREVIEW ? e1Skus : (e1Skus.length > 0 ? e1Skus : (SKUS as OpsSku[]));
   const reviews = IS_PREVIEW ? e1Reviews : (e1Reviews.length > 0 ? e1Reviews : (REVIEWS as OpsReview[]));
   const phaseCur = e1Gates?.phaseCurrent ?? pget("H.phase.current") ?? "P3";
+  const e1PhaseIds = e1Gates?.phaseOrder?.length
+    ? e1Gates.phaseOrder
+    : (e1Gates?.phases ?? []).map((phase) => phase.p);
+  const skuPhaseIds = e1PhaseIds;
+  const e1PhaseLabel = (phaseId: string): string => {
+    const phase = e1Gates?.phases.find((item) => item.p === phaseId);
+    return phase?.label || phaseId;
+  };
 
   // ── E2 任务引擎:服务端数据为单一来源 ──
   const [tasks, setTasks] = useState<OpsTask[]>([]);
@@ -469,6 +452,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── 回调(注入 ctx)──
   const openSku = (name?: string) => {
     if (!tasks.length && !e2Loading) void refreshE2();
+    if (!e5Datacenters.length && !e5Loading) void refreshE5();
     if (name) {
       const s = skus.find((x) => x.name === name);
       if (s) {
@@ -493,35 +477,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         target: name,
         impact: "商品目录与用户端购买入口会移除;已售设备订单和账本不回溯。",
       },
-    });
-  };
-  // ── E5 数据中心 CRUD(走操作确认 + multi-field businessForm + A2 审计;onConfirm 真写 store)──
-  const openDcEdit = (dc?: OpsDataCenter) => {
-    setActionConfirm({
-      name: dc ? `编辑数据中心 · ${dc.displayName}` : "新增数据中心",
-      op: "dc-save",
-      target: dc?.id, // 编辑携原 id(更新键);新增不传
-      detail: dc
-        ? `编辑数据中心 ${dc.id} 的 区域 ID / 所在地 / 前端展示名称 · SKU「数据中心」下拉读「前端展示名称」· 操作确认 + A2 审计`
-        : "新增一个数据中心(区域 ID / 所在地 / 前端展示名称)· SKU「数据中心」下拉即可选 · 操作确认 + A2 审计",
-      businessForm: {
-        kind: "multi-field",
-        title: "数据中心配置",
-        fields: [
-          { key: "id", label: "区域 ID", current: dc?.id ?? "", placeholder: "如 ap-southeast-1" },
-          { key: "location", label: "所在地", current: dc?.location ?? "", placeholder: "如 亚太 · 新加坡" },
-          { key: "displayName", label: "前端展示名称", current: dc?.displayName ?? "", placeholder: "如 Singapore DC", wide: true },
-        ],
-      },
-    });
-  };
-  const delDc = (dc: OpsDataCenter) => {
-    setActionConfirm({
-      name: `删除数据中心 · ${dc.displayName}`,
-      op: "dc-delete",
-      target: dc.id,
-      detail: `删除数据中心「${dc.displayName}」(${dc.id})· 引用此 DC 的 SKU 下拉将回退为陈旧值兜底显示 · 需操作理由 + A2 审计`,
-      businessForm: { kind: "destructive-reason", target: dc.displayName, impact: "该数据中心从可选列表移除;已绑定此 DC 的 SKU 仍保留旧值(陈旧值兜底)。" },
     });
   };
   const openAddReview = () => { const firstSku = skus.find((s) => (s.status || "on") !== "off"); setReviewForm({ productId: firstSku?.id || firstSku?.name || "", author: "", rating: "5", content: "", date: "刚刚", status: "published" }); setEditReviewId(null); setReviewDrawer(true); };
@@ -823,14 +778,40 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   };
   const isSquare = !!(skuMedia?.kind === "image" && skuMedia.w && skuMedia.h && Math.abs(skuMedia.w - skuMedia.h) <= Math.max(skuMedia.w, skuMedia.h) * 0.02);
+  const skuUnlockPoolOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return tasks.reduce<{ id: string; name: string }[]>((acc, task) => {
+      const id = task.id.trim();
+      if (!id || seen.has(id)) return acc;
+      seen.add(id);
+      acc.push({ id, name: task.n.trim() || id });
+      return acc;
+    }, []);
+  }, [tasks]);
+  const skuUnlockPoolIdSet = useMemo(() => new Set(skuUnlockPoolOptions.map((item) => item.id)), [skuUnlockPoolOptions]);
+  const validateSkuUnlockPool = () => {
+    const poolId = form.aiUnlocks.trim();
+    if (!poolId || skuUnlockPoolIdSet.has(poolId)) return "";
+    if (e2Loading) return "E2 任务列表正在加载,请稍后再提交";
+    return "解锁算力池请选择 E2 6 类任务中的一项";
+  };
+  const openSkuSaveConfirm = () => {
+    if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
+    if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
+    const poolErr = validateSkuUnlockPool();
+    if (poolErr) { setToast(poolErr); return; }
+    const gErr = validateGateForm(form);
+    if (gErr) { setToast(gErr); return; }
+    setActionConfirm({ name: (editName ? "编辑 SKU · " : "新增 SKU · ") + (form.name || "未命名"), op: "sku-save", isNew: !editName, hasImg: !!skuMedia });
+    setSkuDrawer(false);
+  };
 
   const ctx: EViewCtx = {
     hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
-    tasks, openAddTask, openEditTask, delTask,
-    orders: ORDERS, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
-    isDcPaused,
-    dataCenters, openDcEdit, delDc,
+    tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
+    orders, e4Loading, e4Error, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
+    e5Devices, e5Overview, e5Datacenters, e5Loading, e5Error, e5Page, e5PageSize, e5Total, setE5Page, setE5PageSize, refreshE5, isDcPaused, openDatacenter, deleteDatacenter,
   };
 
   const headerRight =
@@ -955,8 +936,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               <span className="muted tiny">数据中心 datacenter<span style={{ color: "var(--ink-4)" }}> · 选 E5 数据中心(前端展示名称)· 在 E5 运维增删改</span></span>
               <select className="fld" value={form.datacenter} onChange={(e) => setForm({ ...form, datacenter: e.target.value })}>
                 <option value="">— 未指定 —</option>
-                {dataCenters.map((dc) => <option key={dc.id} value={dc.displayName}>{dc.displayName} · {dc.location}</option>)}
-                {form.datacenter.trim() && !dataCenters.some((dc) => dc.displayName === form.datacenter.trim()) && <option value={form.datacenter}>{form.datacenter}(已不在数据中心列表)</option>}
+                {e5Datacenters.map((dc) => <option key={dc.dcLocation} value={dc.regionLabel}>{dc.regionLabel} · {dc.dcLocation}</option>)}
+                {form.datacenter.trim() && !e5Datacenters.some((dc) => dc.regionLabel === form.datacenter.trim()) && <option value={form.datacenter}>{form.datacenter}(已不在数据中心列表)</option>}
               </select>
             </label>
           </SkuFieldGroup>
@@ -989,7 +970,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 <SkuFld label="LoRA 微调 min" type="number" value={form.aiFineTuneMins} onChange={(v) => setForm({ ...form, aiFineTuneMins: v })} placeholder="6" />
               </div>
             </>}
-            <SkuMultiSelect label={form.tier === "Share" ? "解锁算力池 unlocks(份额可访问的池 · 可多选)" : "解锁算力池 unlocks(可多选)"} value={form.aiUnlocks} onChange={(v) => setForm({ ...form, aiUnlocks: v })} options={[...AI_COMPUTE_POOLS]} />
+            <label className="col" style={{ gap: 5 }}>
+              <span className="muted tiny">{form.tier === "Share" ? "解锁算力池（份额可访问的池）" : "解锁算力池"}</span>
+              <select className="fld" value={form.aiUnlocks} onChange={(e) => setForm({ ...form, aiUnlocks: e.target.value })} disabled={skuUnlockPoolOptions.length === 0}>
+                <option value="">{e2Loading ? "任务列表加载中" : skuUnlockPoolOptions.length ? "请选择算力池" : "暂无可选任务"}</option>
+                {skuUnlockPoolOptions.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </label>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑤" title="营销 & 社会证明">
@@ -1395,31 +1382,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               setToast("数据中心已删除:" + mc.dc);
             } else if (mc.op === "ops-pause" && mc.dc) {
               const paused = mc.fixedVal === "true";
-              setParam(`E.ops.${mc.dc}.paused`, paused ? "true" : "false", { action: (paused ? "批量 pause 数据中心 " : "恢复数据中心派单 ") + mc.dc, reason }); setToast(mc.dc + (paused ? " 已暂停派单" : " 已恢复派单"));
-            } else if (mc.op === "dc-save" && businessValue) {
-              // 数据中心新增/编辑:multi-field 已校验三字段非空;编辑携原 id 作更新键(允许改 id)。
-              const id = (businessValue.id ?? "").trim();
-              const location = (businessValue.location ?? "").trim();
-              const displayName = (businessValue.displayName ?? "").trim();
-              const editing = mc.target;
-              if (editing) {
-                updateDataCenter(editing, { id, location, displayName });
-                // 改了区域 id:把按旧 id 键(E.ops.<id>.paused)的暂停态迁到新 id,避免暂停状态静默丢失。
-                if (editing !== id) {
-                  const wasPaused = params[`E.ops.${editing}.paused`];
-                  if (wasPaused !== undefined) {
-                    setParam(`E.ops.${id}.paused`, wasPaused, { action: `数据中心暂停态迁移 ${editing}→${id}`, reason });
-                    setParam(`E.ops.${editing}.paused`, "false", { action: `数据中心旧 id 暂停态清理 ${editing}`, reason });
-                  }
-                }
-              } else addDataCenter({ id, location, displayName });
-              logAudit({ actor: operator, action: (editing ? "编辑数据中心 " : "新增数据中心 ") + `${displayName}(${id})`, target: id, reason });
-              setToast((editing ? "数据中心已更新:" : "数据中心已新增:") + displayName);
-            } else if (mc.op === "dc-delete" && mc.target) {
-              const dc = dataCenters.find((x) => x.id === mc.target);
-              removeDataCenter(mc.target);
-              logAudit({ actor: operator, action: `删除数据中心 ${dc?.displayName ?? mc.target}(${mc.target})`, target: mc.target, reason });
-              setToast("数据中心已删除:" + (dc?.displayName ?? mc.target));
+              await setE5DatacenterPaused(mc.dc, paused, reason, operator);
+              await refreshE5();
+              setToast(mc.dc + (paused ? " 已暂停派单" : " 已恢复派单") + " · 后端已生效");
             } else { setToast("已确认生效"); }
           } catch (error) {
             setToast((mc.name || "操作") + ":失败 " + (error instanceof Error ? error.message : "E1_ACTION_FAILED"));

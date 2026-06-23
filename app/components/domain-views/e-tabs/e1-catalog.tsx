@@ -252,7 +252,6 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         kind: "destructive-reason",
         target: phaseLabel(ph.p),
         impact: "后端会先校验当前阶段、SKU 解锁阶段、代际门发布阶段引用;仍被使用时拒绝删除。",
-        rollbackRequired: true,
       },
       detail: "归档 nx_admin_phase_config 记录,不物理删除。删除前必须先把相关 SKU 和代际门迁移到其他阶段。",
       amplify: false,
@@ -298,7 +297,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       name: `移除代际门 · ${g.name}`,
       op: "generation-gate-archive",
       generationGateId: g.id,
-      businessForm: { kind: "destructive-reason", target: g.name, impact: "该 SKU 将从 E1 二代+ 发布时点表移除,用户端发布门不会再读取这条配置。", rollbackRequired: true },
+      businessForm: { kind: "destructive-reason", target: g.name, impact: "该 SKU 将从 E1 二代+ 发布时点表移除,用户端发布门不会再读取这条配置。" },
       detail: "归档 nx_admin_device_generation_gate 记录,不物理删除,便于审计和恢复",
       amplify: false,
     });

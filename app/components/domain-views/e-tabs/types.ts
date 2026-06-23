@@ -1,6 +1,8 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
-import type { E1GenerationGateData } from "@/lib/admin/e1-client";
-import type { OpsSku, OpsReview, OpsTask, OpsDataCenter } from "@/lib/store/admin/platform-config-store";
+import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
+import type { E2PhoneTier } from "@/lib/admin/e2-client";
+import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
+import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
 
 /**
  * E 域子视图共享类型。
@@ -20,12 +22,28 @@ export type EOp =
   | "param"           // 自由值调参 → setParam(paramKey, newValue);操作确认 出「目标新值」
   | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];每字段 setParam 各自 key
   | "param-fixed"     // 固定值写入 → setParam(paramKey, fixedVal)(如 forceUnlock true/false);不出编辑框
+  | "phase-save"      // E1 阶段新增/编辑
+  | "phase-current"   // E1 当前阶段切换
+  | "phase-archive"   // E1 阶段归档
+  | "generation-gate-save"    // E1 代际门新增/编辑
+  | "generation-gate-force"   // E1 代际门强制提前开放/撤销
+  | "generation-gate-archive" // E1 代际门归档
+  | "order-state"     // E4 订单状态推进/回滚
   | "order-refund"    // 退款(放大流出)
   | "order-cancel"    // 取消订单
   | "order-terminal"  // 补建终态(select)
+  | "device-activate" // E5 设备激活
+  | "device-deactivate" // E5 设备取消激活/解绑
   | "ops-pause"       // DC 批量 pause / 恢复
   | "dc-save"         // 数据中心新增/编辑(businessForm multi-field:id/location/displayName)→ store CRUD
   | "dc-delete";      // 数据中心删除(需破坏性理由)
+
+export interface DatacenterForm {
+  dcLocation: string;
+  regionLabel: string;
+  status: E5DatacenterStatus;
+  sortOrder: string;
+}
 
 export interface McSpec {
   name: string;             // 确认弹窗标题(动作名)
@@ -119,8 +137,6 @@ export interface EViewCtx {
   setE5PageSize: (pageSize: number) => void;
   refreshE5: () => Promise<void>;
   isDcPaused: (dc: string) => boolean;
-  // E5 数据中心管理(运营可增删改;SKU datacenter 下拉单源)
-  dataCenters: OpsDataCenter[];
-  openDcEdit: (dc?: OpsDataCenter) => void;       // 打开新增/编辑数据中心(无 dc = 新增)
-  delDc: (dc: OpsDataCenter) => void;
+  openDatacenter: (dc?: E5Datacenter) => void;
+  deleteDatacenter: (dc: E5Datacenter) => void;
 }

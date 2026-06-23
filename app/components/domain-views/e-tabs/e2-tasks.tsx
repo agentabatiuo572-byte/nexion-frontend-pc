@@ -91,6 +91,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   // 每个任务的 kind(真源 taskClass)— 列表筛选/图标/计数共用,单点派生。
   const kindMap = useMemo(() => new Map(tasks.map((t) => [t.id, taskKindOf(t, pget)])), [tasks, pget]);
   const kindCount = (k: Kind): number => tasks.reduce((acc, t) => acc + (kindMap.get(t.id) === k ? 1 : 0), 0);
+  const avgPrice = tasks.length ? tasks.reduce((sum, t) => sum + t.price, 0) / tasks.length : 0;
+  const avgSat = tasks.length ? Math.round((tasks.reduce((sum, t) => sum + t.sat, 0) / tasks.length) * 100) : 0;
+  const peakTask = [...tasks].sort((a, b) => b.sat - a.sat)[0];
+  const maxPriceTask = [...tasks].sort((a, b) => b.price - a.price)[0];
+  const queueRank = [...tasks].sort((a, b) => b.sat - a.sat).slice(0, 5);
+  const donutOffset = 464.96 * (1 - avgSat / 100);
 
   const filtered = filterKind === "all" ? tasks : tasks.filter((t) => kindMap.get(t.id) === filterKind);
   const totalPages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE));
