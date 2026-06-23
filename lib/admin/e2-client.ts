@@ -21,6 +21,30 @@ interface BackendTask {
   requirement?: string | null;
   saturation?: number | string | null;
   status?: string | null;
+  taskClass?: string | null;
+  model?: string | null;
+  minReward?: number | string | null;
+  maxReward?: number | string | null;
+  minVram?: string | null;
+  killInit?: string | null;
+}
+
+interface BackendPhoneTier {
+  tier: number;
+  name: string;
+  note?: string | null;
+  dailyUsdt?: number | string | null;
+  dailyNex?: number | string | null;
+  status?: string | null;
+}
+
+export interface E2PhoneTier {
+  tier: number;
+  name: string;
+  note: string;
+  dailyUsdt: number;
+  dailyNex: number;
+  status: string;
 }
 
 let requestSeq = 0;
@@ -77,6 +101,12 @@ function fromTask(task: BackendTask): OpsTask {
     unit: task.unit || "/job",
     req: task.requirement || "S1+",
     sat: toSat(task.saturation),
+    taskClass: task.taskClass || "llm-inference",
+    model: task.model || "",
+    minReward: toNumber(task.minReward),
+    maxReward: toNumber(task.maxReward),
+    minVRAM: task.minVram || "",
+    killInit: task.killInit || "派发中",
   };
 }
 
@@ -88,8 +118,25 @@ function toTaskPayload(task: OpsTask, reason: string, operator: string) {
     requirement: task.req,
     saturation: task.sat,
     status: "active",
+    taskClass: task.taskClass || "llm-inference",
+    model: task.model || "",
+    minReward: task.minReward ?? 0,
+    maxReward: task.maxReward ?? 0,
+    minVram: task.minVRAM || "",
+    killInit: task.killInit || "派发中",
     reason,
     operator,
+  };
+}
+
+function fromPhoneTier(tier: BackendPhoneTier): E2PhoneTier {
+  return {
+    tier: tier.tier,
+    name: tier.name,
+    note: tier.note || "",
+    dailyUsdt: toNumber(tier.dailyUsdt),
+    dailyNex: toNumber(tier.dailyNex),
+    status: tier.status || "active",
   };
 }
 
@@ -131,4 +178,23 @@ export async function deleteE2Task(taskId: string, reason: string, operator: str
     body: JSON.stringify({ status: "inactive", reason, operator }),
     idempotencyPrefix: "e2-task-delete",
   });
+}
+
+export async function fetchE2PhoneTiers() {
+  const tiers = await e2Request<BackendPhoneTier[]>("/phone-tiers");
+  return (tiers ?? []).map(fromPhoneTier);
+}
+
+export async function updateE2PhoneTier(
+  tier: number,
+  patch: Partial<Pick<E2PhoneTier, "dailyUsdt" | "dailyNex">>,
+  reason: string,
+  operator: string,
+) {
+  const saved = await e2Request<BackendPhoneTier>(`/phone-tiers/${encodeURIComponent(String(tier))}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...patch, reason, operator }),
+    idempotencyPrefix: "e2-phone-tier",
+  });
+  return fromPhoneTier(saved);
 }

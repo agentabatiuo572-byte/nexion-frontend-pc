@@ -3,22 +3,12 @@
  * server-canonical:展示值优先 pget(key) ?? mock;订单状态走 orderState 派生(取消 > 退款 > 补建终态 > 原始)。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
-import type { OpsSku, OpsTask, PurchaseGate } from "@/lib/store/admin/platform-config-store";
+import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
 import type { EOrder } from "./types";
 
 // 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
 export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5" };
-
-// E3 任务池种子(/earn 任务池映射;真后台由任务引擎下发,本处为 seed)。
-export const TASKS: Omit<OpsTask, "id">[] = [
-  { n: "LLM 推理 405B", price: 1.2, unit: "/job", req: "需 NexionBox Pro", sat: 0.82 },
-  { n: "LLM 推理 70B", price: 0.46, unit: "/job", req: "S1+", sat: 0.61 },
-  { n: "图像生成 SDXL", price: 0.34, unit: "/job", req: "S1+", sat: 0.55 },
-  { n: "视频渲染", price: 2.8, unit: "/job", req: "需 NexionRack", sat: 0.74 },
-  { n: "微调 / LoRA", price: 5.1, unit: "/job", req: "需 NexionRack", sat: 0.48 },
-  { n: "Embedding 批处理", price: 0.12, unit: "/1k", req: "S1+", sat: 0.39 },
-];
 
 export const ORDERS: EOrder[] = [
   { id: "OD-55012", user: "usr_19C7", sku: "NexionBox Pro v2", amt: 1319, state: "active", dc: "us-east-2", age: "2m" },
@@ -58,18 +48,6 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.tradein.promo.rhythm": "cooldown 14d · max/sess 1 · delay 6s · minAge 30d · /me/devices",
   "E.tradein.inventorySoftMax": "0",
 };
-
-// E2 手机算力档位收益 —— 手机端按校准能力分 5 档,每档日产 USDT/NEX 运营可调。
-// 与前端 Nexion-uniapp/src/mock/phone-tiers.ts 同口径(backend-replaceable · 真后台
-// GET /api/config/phone-tiers)。值为 pget 无记录时的默认(回退);调高任一档 = 放大
-// 资金流出,经 B1 覆盖率护栏。T3 锚定营销文案的 $0.06 典型手机日产。
-export const PHONE_TIERS: { tier: number; name: string; note: string; dailyUsdt: string; dailyNex: string }[] = [
-  { tier: 1, name: "入门档", note: "低端机 / 信号缺失兜底", dailyUsdt: "0.04", dailyNex: "6" },
-  { tier: 2, name: "标准档", note: "中端机", dailyUsdt: "0.05", dailyNex: "8" },
-  { tier: 3, name: "主流档", note: "典型机 · 锚定营销 $0.06", dailyUsdt: "0.06", dailyNex: "10" },
-  { tier: 4, name: "高性能档", note: "次旗舰", dailyUsdt: "0.08", dailyNex: "13" },
-  { tier: 5, name: "旗舰档", note: "旗舰 SoC", dailyUsdt: "0.095", dailyNex: "16" },
-];
 
 // E3 衰减曲线引擎 — 镜像产品 device-lifecycle.ts getEfficiency(三段复利 + floor)。
 // 参数从后台配置(pE)读,使后台为 server-canonical 配置源、曲线真实反映产品衰减。

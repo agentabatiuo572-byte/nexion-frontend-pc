@@ -1,5 +1,6 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
+import type { E2PhoneTier } from "@/lib/admin/e2-client";
 import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
 
 /**
@@ -15,7 +16,8 @@ export type EOp =
   | "sku-status"      // 上/下架(真后端 status)
   | "task-down"       // 下架任务(需破坏性理由 + 影响确认)
   | "task-price"      // 任务改单价(E2 后端 API,操作确认 出价格编辑框)
-  | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API + setParam config
+  | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API
+  | "phone-tier"      // 手机算力档位收益 → E2 后端 API
   | "param"           // 自由值调参 → setParam(paramKey, newValue);操作确认 出「目标新值」
   | "param-fixed"     // 固定值写入 → setParam(paramKey, fixedVal);不出编辑框
   | "phase-save"              // E1 Phase 新增/编辑 → nx_admin_phase_config
@@ -43,6 +45,8 @@ export interface McSpec {
   hasImg?: boolean;         // sku-save:含商品媒体(商品主图或商品视频)
   status?: string;          // sku-status:"on"|"off";ops-pause:"on"|"off"
   taskId?: string;          // task-price:目标任务 id
+  phoneTier?: number;
+  phoneField?: "dailyUsdt" | "dailyNex";
   phaseId?: string;
   generationGateId?: string;
   generationGate?: E1GenerationGateInput;
@@ -85,6 +89,7 @@ export interface EViewCtx {
   delReview: (r: OpsReview) => void;
   // E2 收益 & 任务引擎(任务列表/新增/改单价/下架均走后端 API)
   tasks: OpsTask[];
+  phoneTiers: E2PhoneTier[];
   e2Loading: boolean;
   e2Error: string | null;
   refreshE2: () => Promise<void>;

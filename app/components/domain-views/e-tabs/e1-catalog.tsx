@@ -87,7 +87,9 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
 }
 
 export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
-  const { skus, reviews } = ctx;
+  const { skus, reviews, tasks } = ctx;
+  const taskNameById = new Map(tasks.map((task) => [task.id, task.n]));
+  const unlockPoolName = (value?: string) => value ? (taskNameById.get(value) ?? value) : "—";
   const phaseOrder = ctx.e1Gates?.phaseOrder ?? [];
   const phases = ctx.e1Gates?.phases ?? [];
   const platformMonth = ctx.e1Gates?.platformMonth ?? 0;
@@ -494,7 +496,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   <div className="it"><span className="k">GPU</span><span className="v">{s.gpu || "—"}</span></div>
                   <div className="it"><span className="k">显存</span><span className="v">{s.vram || "—"}</span></div>
                   <div className="it"><span className="k">DC</span><span className="v">{s.datacenter || "—"}</span></div>
-                  <div className="it"><span className="k">特性</span><span className="v">{s.features?.[0] || s.aiUnlocks || "—"}</span></div>
+                  <div className="it"><span className="k">算力池</span><span className="v">{unlockPoolName(s.aiUnlocks)}</span></div>
                 </div>
                 <div className="meta">
                   {s.rating != null && <span className="rt">★ {s.rating.toFixed(1)}</span>}

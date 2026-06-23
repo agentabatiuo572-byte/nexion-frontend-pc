@@ -13,13 +13,15 @@ function jsonError(status: number, message: string) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts[0] !== "tasks") {
+  if (parts[0] !== "tasks" && parts[0] !== "phone-tiers") {
     return null;
   }
-  const isCollection = parts.length === 1;
-  const isTask = parts.length === 2 && !!parts[1];
-  const isTaskAction = parts.length === 3 && !!parts[1] && (parts[2] === "price" || parts[2] === "status");
-  if (!isCollection && !isTask && !isTaskAction) {
+  const isTaskCollection = parts[0] === "tasks" && parts.length === 1;
+  const isTask = parts[0] === "tasks" && parts.length === 2 && !!parts[1];
+  const isTaskAction = parts[0] === "tasks" && parts.length === 3 && !!parts[1] && (parts[2] === "price" || parts[2] === "status");
+  const isPhoneTierCollection = parts[0] === "phone-tiers" && parts.length === 1;
+  const isPhoneTier = parts[0] === "phone-tiers" && parts.length === 2 && !!parts[1];
+  if (!isTaskCollection && !isTask && !isTaskAction && !isPhoneTierCollection && !isPhoneTier) {
     return null;
   }
   return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;

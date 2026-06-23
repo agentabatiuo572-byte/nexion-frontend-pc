@@ -15,6 +15,12 @@ export interface OpsTask {
   unit: string;
   req: string;
   sat: number;
+  taskClass?: string;
+  model?: string;
+  minReward?: number;
+  maxReward?: number;
+  minVRAM?: string;
+  killInit?: string;
 }
 
 // 购买门(per-user 购买限制)— 镜像前端 Product.purchaseGate(Nexion-uniapp/src/mock/products.ts)。
@@ -68,7 +74,7 @@ export interface OpsSku {
   aiLlmTokensPerSec?: number;   // LLM 推理 tok/s
   aiVideoMinPerHour?: number;   // 视频渲染 输出分钟/render hour
   aiFineTuneMins?: number;      // LoRA 微调 turnaround 分钟
-  aiUnlocks?: string;           // 解锁算力池文案
+  aiUnlocks?: string;           // 解锁算力池任务 ID(E2 taskId;展示时映射任务名)
   // ── 特性清单 ──
   features?: string[];          // 卖点列表(详情页)
   // ── 代际 & 生命周期 ──

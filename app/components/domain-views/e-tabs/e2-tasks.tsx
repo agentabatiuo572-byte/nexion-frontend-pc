@@ -1,9 +1,8 @@
 import { Fragment, type ReactNode } from "react";
-import { Btn, CodeTag } from "../design-kit";
+import { Btn } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
-import { PHONE_TIERS } from "./data";
 
 /* ── 任务图标(按任务名推断 kind;OpsSchema 无 kind 字段)── */
 type Kind = "llm" | "img" | "vid" | "ft" | "em";
@@ -52,6 +51,9 @@ const HEAT_SCALE = ["var(--surface-3)", "rgba(41,210,127,.4)", "var(--success)",
 function money(value: number) {
   return `$${value.toFixed(value >= 10 ? 0 : 2)}`;
 }
+function amount(value: number) {
+  return value.toFixed(4).replace(/\.?0+$/, "");
+}
 
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const { tasks } = ctx;
@@ -72,7 +74,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "任务类型", v: tasks.length, sub: ctx.e2Loading ? "后端同步中" : ctx.e2Error ? "接口异常" : "/api/admin/devices/tasks", tone: "ok" },
+        { k: "任务类型", v: tasks.length, sub: ctx.e2Loading ? "同步中" : ctx.e2Error ? "同步异常" : "已同步", tone: "ok" },
         { k: "平均单价", v: money(avgPrice), sub: tasks.length ? `${tasks.length} 类任务均价` : "暂无任务" },
         { k: "平均饱和度", v: `${avgSat}%`, sub: peakTask ? `最高 ${Math.round(peakTask.sat * 100)}% · ${peakTask.n}` : "暂无队列", tone: avgSat >= 75 ? "warn" : "cyan" },
         { k: "最高单价任务", v: money(maxPriceTask?.price ?? 0), sub: maxPriceTask?.n ?? "暂无任务", tone: "cyan" },
@@ -82,15 +84,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
       <section className="pane">
         <div className="pane-h">
           <span className="ttl">手机算力档位收益 · 5 档</span>
-          <span className="sub">按校准能力分档 · 与前端同口径</span>
-          <span className="r"><CodeTag tone="electric">收益引擎</CodeTag><CodeTag>E.phone.tier*</CodeTag></span>
         </div>
         <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {PHONE_TIERS.map((t) => {
-            const uKey = `E.phone.tier${t.tier}.dailyUsdt`;
-            const nKey = `E.phone.tier${t.tier}.dailyNex`;
-            const u = ctx.pget(uKey) ?? t.dailyUsdt;
-            const n = ctx.pget(nKey) ?? t.dailyNex;
+          {ctx.phoneTiers.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无手机档位数据。</div> : ctx.phoneTiers.map((t) => {
+            const u = amount(t.dailyUsdt);
+            const n = amount(t.dailyNex);
             return (
               <div key={t.tier} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 14, alignItems: "center", paddingTop: t.tier === 1 ? 0 : 10, borderTop: t.tier === 1 ? "none" : "1px solid var(--border)" }}>
                 <span style={{ minWidth: 40, height: 26, padding: "0 8px", borderRadius: 7, background: "var(--brand-soft)", color: "var(--brand)", border: "1px solid var(--brand-border)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600, fontFamily: "var(--mono)" }}>T{t.tier}</span>
@@ -104,12 +102,12 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                 </div>
                 <div className="row" style={{ gap: 6 }}>
                   <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
-                    name: `手机 T${t.tier} 日产 USDT 调整`, op: "param", paramKey: uKey, amplify: true,
+                    name: `手机 T${t.tier} 日产 USDT 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
                     edit: { kind: "text", current: u, unit: "USDT/天" },
                     detail: `手机算力 T${t.tier}(${t.name})· 日产 USDT 当前 $${u} · 调高为放大资金流出,须核验 B1 覆盖率;改后对下一结算周期生效,不回溯已计提。`,
                   })}>调 USDT</Btn>
                   <Btn sm onClick={() => ctx.openActionConfirm({
-                    name: `手机 T${t.tier} 日产 NEX 调整`, op: "param", paramKey: nKey, amplify: true,
+                    name: `手机 T${t.tier} 日产 NEX 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyNex", amplify: true,
                     edit: { kind: "text", current: n, unit: "NEX/天" },
                     detail: `手机算力 T${t.tier}(${t.name})· 日产 NEX 当前 ${n} · NEX 派发为资金流出,受 B1 覆盖率约束;改后对下一结算周期生效。`,
                   })}>调 NEX</Btn>
@@ -119,7 +117,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           })}
         </div>
         <div className="tint cyan tiny" style={{ margin: "0 16px 14px" }}>
-          <AutoGloss>与前端手机算力档位同口径(backend-replaceable · GET /api/config/phone-tiers)· 调高任一档先过 B1 覆盖率护栏 · 经操作确认写 A2 审计 · 对下一结算周期生效,不回溯已计提。T3 为典型机,锚定营销文案的 $0.06/天。</AutoGloss>
+          <AutoGloss>调高任一档先过 B1 覆盖率护栏 · 经操作确认写 A2 审计 · 对下一结算周期生效,不回溯已计提。T3 为典型机,锚定营销文案的 $0.06/天。</AutoGloss>
         </div>
       </section>
 
@@ -128,13 +126,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         <section className="pane">
           <div className="pane-h">
             <span className="ttl">{tasks.length} 类任务 · 单价 & 门槛</span>
-            <span className="sub">后端任务表 · nx_admin_device_task</span>
-            <span className="r"><CodeTag tone="electric">任务引擎</CodeTag><CodeTag>devices/tasks</CodeTag></span>
           </div>
-          {ctx.e2Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E2 接口同步失败:{ctx.e2Error}</div>}
-          {ctx.e2Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在同步后端任务数据...</div>}
+          {ctx.e2Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E2 同步失败:{ctx.e2Error}</div>}
+          {ctx.e2Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在同步任务数据...</div>}
           <div className="task-list">
-            {tasks.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无后端任务数据;后端空表时会自动补种默认任务。</div> : tasks.map((t) => {
+            {tasks.length === 0 && !ctx.e2Loading ? <div className="tint tiny">暂无任务数据。</div> : tasks.map((t) => {
               const k = taskKind(t.n);
               const pct = Math.round(t.sat * 100);
               const locked = t.req.includes("需");
@@ -162,7 +158,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         <aside className="rail">
           <div className="donut-card">
             <div className="h">全网队列饱和度</div>
-            <div className="s">后端任务表 · 当前均值</div>
+            <div className="s">当前均值</div>
             <div className="donut-wrap">
               <svg width={180} height={180} viewBox="0 0 180 180">
                 <circle className="ring-bg" cx="90" cy="90" r="74" fill="none" strokeWidth="14" />
@@ -177,7 +173,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
             </div>
           </div>
           <div className="hook-card">
-            <div className="h">任务负载排行<span className="tag">后端实时</span></div>
+            <div className="h">任务负载排行<span className="tag">实时</span></div>
             {queueRank.length === 0 ? <div className="tint tiny">暂无任务排行</div> : queueRank.map((task) => (
               <div className={`hook-row${task.req.includes("需") ? "" : " up"}`} key={task.id}>
                 <span className="ic">{task.req.includes("需") ? <LockSm /> : <CheckSm />}</span>
