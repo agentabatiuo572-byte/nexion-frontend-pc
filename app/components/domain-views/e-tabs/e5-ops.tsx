@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CodeTag, Badge } from "../design-kit";
+import { CodeTag, Badge, DataListPager } from "../design-kit";
 import { E5_MAX_DEVICES, type E5Device, type E5DeviceState, type E5Overview } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
@@ -190,18 +190,18 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           <span className="r"><CodeTag tone="electric">GET /api/admin/devices</CodeTag></span>
         </div>
         <div style={{ overflowX: "auto", padding: "4px 4px 0" }}>
-          <table style={{ width: "100%", minWidth: 880, borderCollapse: "collapse", fontSize: 12.5 }}>
+          <table style={{ width: "100%", minWidth: 1020, borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--ink-4)", fontSize: 11.5 }}>
-                <th style={{ padding: "8px 10px" }}>设备</th><th style={{ padding: "8px 10px" }}>用户</th><th style={{ padding: "8px 10px" }}>SKU</th>
-                <th style={{ padding: "8px 10px" }}>设备编号</th><th style={{ padding: "8px 10px" }}>DC</th><th style={{ padding: "8px 10px" }}>用户槽位</th>
+                <th style={{ padding: "8px 10px" }}>设备编号</th><th style={{ padding: "8px 10px" }}>设备名称</th><th style={{ padding: "8px 10px" }}>用户</th>
+                <th style={{ padding: "8px 10px" }}>SKU / 产品</th><th style={{ padding: "8px 10px" }}>DC</th><th style={{ padding: "8px 10px" }}>用户槽位</th>
                 <th style={{ padding: "8px 10px" }}>状态</th><th style={{ padding: "8px 10px", textAlign: "right" }}>动作</th>
               </tr>
             </thead>
             <tbody>
               {ctx.e5Loading && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在从后端加载设备库存...</td>
+                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在从后端加载第 {ctx.e5Page} 页设备库存...</td>
                 </tr>
               )}
               {!ctx.e5Loading && ctx.e5Error && (
@@ -214,35 +214,57 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                   <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>后端暂无设备库存数据</td>
                 </tr>
               )}
-              {!ctx.e5Loading && !ctx.e5Error && devices.map((d) => (
-                <tr key={`${d.deviceId}-${d.serial}`} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink)", fontWeight: 600 }}>{d.deviceId || d.serial}</td>
-                  <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{d.user}</td>
-                  <td style={{ padding: "9px 10px" }}>{d.sku}</td>
-                  <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{d.serial}</td>
-                  <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{d.dc}</td>
-                  <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{d.slot}</td>
-                  <td style={{ padding: "9px 10px" }}><Badge tone={DEV_STATE_TONE[d.state]}>{DEV_STATE_LABEL[d.state]}</Badge></td>
-                  <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                    {isActivatable(d.state) && (
-                      <>
-                        <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "激活设备", `激活 ${d.serial}(用户 ${d.user} 槽位 ${d.slot})· 后端校验设备状态 + MAX_DEVICES(${MAX_DEVICES}) + A2 审计`)}>激活</button>{" "}
-                        <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "强制激活设备", `强制激活 ${d.serial} · 运维异常补救 · force 不绕过 MAX_DEVICES(${MAX_DEVICES})硬上限 · 理由必填 + A2`, true)}>强制激活</button>
-                      </>
-                    )}
-                    {isDeactivatable(d.state) && (
-                      <>
-                        <button className="l-btn sm mc" onClick={() => devAct(d, "device-deactivate", "取消激活设备", `取消激活 ${d.serial} · 停止派单与计提 · 后端写设备状态并留审计`)}>取消激活</button>{" "}
-                        <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "解绑设备", `解绑 ${d.serial} · 与用户 ${d.user} 槽位解除关联(异常设备处置)· 理由必填 + A2`, true)}>解绑</button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {!ctx.e5Loading && !ctx.e5Error && devices.map((d) => {
+                const skuMain = d.productCode || d.sku;
+                const skuSub = d.productTier && d.productTier !== skuMain ? d.productTier : "";
+                return (
+                  <tr key={`${d.deviceId}-${d.serial}`} style={{ borderTop: "1px solid var(--border)" }}>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink)", fontWeight: 600 }}>{d.serial}</td>
+                    <td style={{ padding: "9px 10px" }}>
+                      <div style={{ color: "var(--ink)", fontWeight: 600 }}>{d.deviceName}</div>
+                      <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{d.rawStatus}</div>
+                    </td>
+                    <td style={{ padding: "9px 10px" }}>
+                      <div style={{ color: "var(--ink)", fontWeight: 600 }}>{d.nickname}</div>
+                      <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{d.userNo || (d.userId ? `uid:${d.userId}` : "—")}</div>
+                    </td>
+                    <td style={{ padding: "9px 10px" }}>
+                      <div className="mono" style={{ color: "var(--ink)" }}>{skuMain}</div>
+                      {skuSub ? <div style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{skuSub}</div> : null}
+                    </td>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{d.dc}</td>
+                    <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{d.slot}</td>
+                    <td style={{ padding: "9px 10px" }}><Badge tone={DEV_STATE_TONE[d.state]}>{DEV_STATE_LABEL[d.state]}</Badge></td>
+                    <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
+                      {isActivatable(d.state) && (
+                        <>
+                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "激活设备", `激活 ${d.serial}(用户 ${d.user} 槽位 ${d.slot})· 后端校验设备状态 + MAX_DEVICES(${MAX_DEVICES}) + A2 审计`)}>激活</button>{" "}
+                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "强制激活设备", `强制激活 ${d.serial} · 运维异常补救 · force 不绕过 MAX_DEVICES(${MAX_DEVICES})硬上限 · 理由必填 + A2`, true)}>强制激活</button>
+                        </>
+                      )}
+                      {isDeactivatable(d.state) && (
+                        <>
+                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-deactivate", "取消激活设备", `取消激活 ${d.serial} · 停止派单与计提 · 后端写设备状态并留审计`)}>取消激活</button>{" "}
+                          <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "解绑设备", `解绑 ${d.serial} · 与用户 ${d.user} 槽位解除关联(异常设备处置)· 理由必填 + A2`, true)}>解绑</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-        <p className="f-foot" style={{ margin: "10px 14px 14px" }}><b>库存激活闭环</b> · 列表读取 <span className="mono">/api/admin/devices</span>;激活调用设备恢复/激活接口;取消激活与解绑调用设备停用接口。所有写操作必须带理由、幂等键、操作人,由后端写设备状态并进入 A2 审计。</p>
+        <DataListPager
+          label="设备库存"
+          page={ctx.e5Page}
+          pageSize={ctx.e5PageSize}
+          total={ctx.e5Total}
+          onPageChange={ctx.setE5Page}
+          onPageSizeChange={ctx.setE5PageSize}
+          pageSizeOptions={[10, 20, 50, 100]}
+        />
+        <p className="f-foot" style={{ margin: "10px 14px 14px" }}><b>库存激活闭环</b> · 列表分页读取 <span className="mono">/api/admin/devices?pageNum=&pageSize=</span>;激活调用设备恢复/激活接口;取消激活与解绑调用设备停用接口。所有写操作必须带理由、幂等键、操作人,由后端写设备状态并进入 A2 审计。</p>
       </section>
 
       {/* 3 DC 控制面板 */}

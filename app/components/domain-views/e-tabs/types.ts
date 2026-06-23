@@ -117,6 +117,11 @@ export interface EViewCtx {
   e5Overview: E5Overview | null;
   e5Loading: boolean;
   e5Error: string | null;
+  e5Page: number;
+  e5PageSize: number;
+  e5Total: number;
+  setE5Page: (page: number) => void;
+  setE5PageSize: (pageSize: number) => void;
   refreshE5: () => Promise<void>;
   isDcPaused: (dc: string) => boolean;
 }

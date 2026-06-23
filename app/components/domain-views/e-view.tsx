@@ -319,24 +319,35 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e5Overview, setE5Overview] = useState<E5Overview | null>(null);
   const [e5Loading, setE5Loading] = useState(tab === "E5");
   const [e5Error, setE5Error] = useState<string | null>(null);
+  const [e5Page, setE5Page] = useState(1);
+  const [e5PageSize, setE5PageSizeState] = useState(10);
+  const [e5Total, setE5Total] = useState(0);
+  const setE5PageSize = useCallback((pageSize: number) => {
+    setE5PageSizeState(pageSize);
+    setE5Page(1);
+  }, []);
   const refreshE5 = useCallback(async () => {
     setE5Loading(true);
     setE5Error(null);
     try {
-      const [nextDevices, nextOverview] = await Promise.all([
-        fetchE5Devices({ pageNum: 1, pageSize: 100 }),
+      const [nextDevicePage, nextOverview] = await Promise.all([
+        fetchE5Devices({ pageNum: e5Page, pageSize: e5PageSize }),
         fetchE5Overview(),
       ]);
-      setE5Devices(nextDevices);
+      setE5Devices(nextDevicePage.records);
+      setE5Total(nextDevicePage.total);
+      setE5Page(nextDevicePage.pageNum);
+      setE5PageSizeState(nextDevicePage.pageSize);
       setE5Overview(nextOverview);
     } catch (error) {
       setE5Error(error instanceof Error ? error.message : "E5_SYNC_FAILED");
       setE5Devices([]);
+      setE5Total(0);
       setE5Overview(null);
     } finally {
       setE5Loading(false);
     }
-  }, []);
+  }, [e5Page, e5PageSize]);
   useEffect(() => { if (tab === "E5") void refreshE5(); }, [tab, refreshE5]);
   const e5PausedDcs = useMemo(() => new Map((e5Overview?.datacenters ?? []).map((dc) => [dc.dcLocation, dc.dispatchPaused])), [e5Overview]);
   const isDcPaused = (dc: string): boolean => e5PausedDcs.get(dc) ?? false;
@@ -658,7 +669,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     orders, e4Loading, e4Error, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
-    e5Devices, e5Overview, e5Loading, e5Error, refreshE5, isDcPaused,
+    e5Devices, e5Overview, e5Loading, e5Error, e5Page, e5PageSize, e5Total, setE5Page, setE5PageSize, refreshE5, isDcPaused,
   };
   const skuPhaseIds = useMemo(() => {
     const ids = [...e1PhaseIds];

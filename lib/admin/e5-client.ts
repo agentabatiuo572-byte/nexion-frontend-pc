@@ -5,8 +5,14 @@ export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "unbou
 export interface E5Device {
   id: string;
   deviceId: number;
+  userId: string;
+  userNo: string;
+  nickname: string;
   user: string;
+  deviceName: string;
   sku: string;
+  productTier: string;
+  productCode: string;
   serial: string;
   dc: string;
   slot: string;
@@ -54,6 +60,13 @@ export interface E5DeviceQuery {
   pageSize?: number;
 }
 
+export interface E5DevicePage {
+  total: number;
+  pageNum: number;
+  pageSize: number;
+  records: E5Device[];
+}
+
 interface ApiResult<T> {
   code: number;
   message?: string;
@@ -70,6 +83,8 @@ interface PageResult<T> {
 interface BackendDevice {
   id?: number | string | null;
   userId?: number | string | null;
+  userNo?: string | null;
+  nickname?: string | null;
   instanceNo?: string | null;
   name?: string | null;
   productTier?: string | null;
@@ -189,7 +204,7 @@ function queryString(query: E5DeviceQuery) {
   if (query.dcLocation && query.dcLocation !== "all") params.set("dcLocation", query.dcLocation);
   if (query.keyword?.trim()) params.set("keyword", query.keyword.trim());
   params.set("pageNum", String(query.pageNum ?? 1));
-  params.set("pageSize", String(query.pageSize ?? 100));
+  params.set("pageSize", String(query.pageSize ?? 10));
   const raw = params.toString();
   return raw ? `?${raw}` : "";
 }
@@ -212,15 +227,25 @@ function fromDatacenter(row: BackendDatacenter): E5Datacenter {
 function fromDevice(row: BackendDevice, slot: string): E5Device {
   const deviceId = toNumber(row.id);
   const instanceNo = text(row.instanceNo, deviceId ? `dev-${deviceId}` : "unknown-device");
-  const userId = text(row.userId, "unassigned");
+  const userId = text(row.userId);
+  const userNo = text(row.userNo, userId ? `U${userId.padStart(8, "0")}` : "");
+  const nickname = text(row.nickname, userId ? `user-${userId}` : "未绑定用户");
   const pendingDeactivate = toBool(row.pendingDeactivate);
   const productTier = text(row.productTier);
   const productCode = text(row.productCode);
+  const deviceName = text(row.name, instanceNo);
+  const sku = [productCode, productTier].filter(Boolean).join(" / ") || "未知 SKU";
   return {
     id: instanceNo,
     deviceId,
-    user: userId === "unassigned" ? "—" : `uid:${userId}`,
-    sku: text(row.name, productTier || productCode || "未知设备"),
+    userId,
+    userNo,
+    nickname,
+    user: userNo ? `${nickname} · ${userNo}` : nickname,
+    deviceName,
+    sku,
+    productTier,
+    productCode,
     serial: instanceNo,
     dc: text(row.dcLocation, "UNASSIGNED"),
     slot,
@@ -241,16 +266,21 @@ function fromDevice(row: BackendDevice, slot: string): E5Device {
 function mapDevices(records: BackendDevice[]) {
   const slotsByUser = new Map<string, number>();
   return (records ?? []).map((row) => {
-    const userKey = text(row.userId, "unassigned");
+    const userKey = text(row.userNo || row.userId, "unassigned");
     const slotNo = (slotsByUser.get(userKey) ?? 0) + 1;
     slotsByUser.set(userKey, slotNo);
     return fromDevice(row, `${Math.min(slotNo, E5_MAX_DEVICES)}/${E5_MAX_DEVICES}`);
   });
 }
 
-export async function fetchE5Devices(query: E5DeviceQuery = {}) {
+export async function fetchE5Devices(query: E5DeviceQuery = {}): Promise<E5DevicePage> {
   const page = await e5Request<PageResult<BackendDevice>>(queryString(query));
-  return mapDevices(page.records ?? []);
+  return {
+    total: toNumber(page.total),
+    pageNum: toNumber(page.pageNum, query.pageNum ?? 1),
+    pageSize: toNumber(page.pageSize, query.pageSize ?? 10),
+    records: mapDevices(page.records ?? []),
+  };
 }
 
 export async function fetchE5Overview(): Promise<E5Overview> {
