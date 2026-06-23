@@ -12,21 +12,36 @@ function jsonError(status: number, message: string) {
   return Response.json({ code: status, message, data: null }, { status });
 }
 
+function isNonEmpty(value: string | undefined) {
+  return !!value && value.trim().length > 0;
+}
+
 function backendPath(parts: string[]) {
-  if (parts[0] !== "tasks" && parts[0] !== "phone-tiers" && parts[0] !== "orders") {
-    return null;
+  if (parts.length === 2 && parts[0] === "accounts" && parts[1] === "overview") {
+    return "/api/admin/platform/accounts/overview";
   }
-  const isTaskCollection = parts[0] === "tasks" && parts.length === 1;
-  const isTask = parts[0] === "tasks" && parts.length === 2 && !!parts[1];
-  const isTaskAction = parts[0] === "tasks" && parts.length === 3 && !!parts[1] && (parts[2] === "price" || parts[2] === "status");
-  const isPhoneTierCollection = parts[0] === "phone-tiers" && parts.length === 1;
-  const isPhoneTier = parts[0] === "phone-tiers" && parts.length === 2 && !!parts[1];
-  const isOrderCollection = parts[0] === "orders" && parts.length === 1;
-  const isOrderAction = parts[0] === "orders" && parts.length === 3 && !!parts[1] && (parts[2] === "refund" || parts[2] === "cancel" || parts[2] === "terminal" || parts[2] === "state");
-  if (!isTaskCollection && !isTask && !isTaskAction && !isPhoneTierCollection && !isPhoneTier && !isOrderCollection && !isOrderAction) {
-    return null;
+  if (parts.length === 1 && parts[0] === "accounts") {
+    return "/api/admin/platform/accounts";
   }
-  return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
+  if (parts.length === 3 && parts[0] === "accounts" && isNonEmpty(parts[1]) && (parts[2] === "role" || parts[2] === "status")) {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/${parts[2]}`;
+  }
+  if (parts.length === 3 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "reset-2fa") {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/reset-2fa`;
+  }
+  if (parts.length === 4 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "sessions" && parts[3] === "revoke") {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/sessions/revoke`;
+  }
+  if (parts.length === 3 && parts[0] === "accounts" && parts[1] === "security-baselines" && isNonEmpty(parts[2])) {
+    return `/api/admin/platform/accounts/security-baselines/${encodeURIComponent(parts[2])}`;
+  }
+  if (parts.length === 4 && parts[0] === "rbac" && parts[1] === "actions" && isNonEmpty(parts[2]) && parts[3] === "grants") {
+    return `/api/admin/platform/rbac/actions/${encodeURIComponent(parts[2])}/grants`;
+  }
+  if (parts.length === 2 && parts[0] === "rbac" && parts[1] === "actions") {
+    return "/api/admin/platform/rbac/actions";
+  }
+  return null;
 }
 
 async function proxy(request: Request, context: RouteContext) {
@@ -34,7 +49,7 @@ async function proxy(request: Request, context: RouteContext) {
   const targetPath = backendPath(path);
 
   if (!targetPath) {
-    return jsonError(404, "DEVICES_ROUTE_NOT_FOUND");
+    return jsonError(404, "PLATFORM_ROUTE_NOT_FOUND");
   }
 
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
@@ -72,7 +87,7 @@ async function proxy(request: Request, context: RouteContext) {
       },
     });
   } catch {
-    return jsonError(503, "DEVICES_BACKEND_UNAVAILABLE");
+    return jsonError(503, "PLATFORM_BACKEND_UNAVAILABLE");
   }
 }
 

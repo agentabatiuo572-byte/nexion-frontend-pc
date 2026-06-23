@@ -2,12 +2,20 @@ import { NextResponse } from "next/server";
 
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 
-export async function POST() {
+function isSecureRequest(request: Request) {
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  if (forwardedProto) {
+    return forwardedProto === "https";
+  }
+  return new URL(request.url).protocol === "https:";
+}
+
+export async function POST(request: Request) {
   const response = NextResponse.json({ code: 0, message: "OK", data: null });
   response.cookies.set(ADMIN_TOKEN_COOKIE, "", {
     httpOnly: true,
     sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    secure: isSecureRequest(request),
     path: "/",
     maxAge: 0,
   });

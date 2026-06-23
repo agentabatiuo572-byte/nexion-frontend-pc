@@ -8,7 +8,7 @@
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/评价/代际门、E2 任务引擎走后端 API;E3-E5 暂沿用 platform-config-store / setParam。
+ * 真写落点:E1 SKU/评价/代际门、E2 任务引擎、E4 订单状态机走后端 API;E3/E5 暂沿用 platform-config-store / setParam。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -39,9 +39,10 @@ import {
   type E1GenerationGateData,
 } from "@/lib/admin/e1-client";
 import { createE2Task, deleteE2Task, fetchE2PhoneTiers, fetchE2Tasks, updateE2PhoneTier, updateE2Task, updateE2TaskPrice, type E2PhoneTier } from "@/lib/admin/e2-client";
+import { cancelE4Order, fetchE4Orders, refundE4Order, terminalE4Order, updateE4OrderState } from "@/lib/admin/e4-client";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
-  FOLD, ORDERS, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
+  FOLD, ORDER_FLOW, TERMINAL_STATES, E_PARAM_DEFAULTS,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
 import type { Mc, EViewCtx, EOrder } from "./e-tabs/types";
@@ -233,12 +234,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const operator = useAdminAuth((s) => s.operator || s.session?.username || "superadmin");
   const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
   const pE = (k: string): string => pget(k) ?? E_PARAM_DEFAULTS[k] ?? "—";
-  const isRefunded = (id: string): boolean => pget(`E.order.${id}.refunded`) === "true";
-  const isCancelled = (id: string): boolean => pget(`E.order.${id}.cancelled`) === "true";
-  const terminalOf = (id: string): string | undefined => pget(`E.order.${id}.terminalState`);
   const isDcPaused = (dc: string): boolean => pget(`E.ops.${dc}.paused`) === "true";
-  const advancedOf = (id: string): string | undefined => pget(`E.order.${id}.advanceState`);
-  const orderState = (o: EOrder): string => (isCancelled(o.id) ? "cancelled" : isRefunded(o.id) ? "refunded" : terminalOf(o.id) ?? advancedOf(o.id) ?? o.state);
 
   // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
@@ -291,6 +287,32 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   }, []);
   useEffect(() => { if (tab === "E1" || tab === "E2") void refreshE2(); }, [tab, refreshE2]);
+
+  // ── E4 订单状态机:服务端数据为单一来源 ──
+  const [orders, setOrders] = useState<EOrder[]>([]);
+  const [e4Loading, setE4Loading] = useState(false);
+  const [e4Error, setE4Error] = useState<string | null>(null);
+  const refreshE4 = useCallback(async () => {
+    setE4Loading(true);
+    setE4Error(null);
+    try {
+      setOrders(await fetchE4Orders({ pageNum: 1, pageSize: 100 }));
+    } catch (error) {
+      setE4Error(error instanceof Error ? error.message : "E4_SYNC_FAILED");
+      setOrders([]);
+    } finally {
+      setE4Loading(false);
+    }
+  }, []);
+  useEffect(() => { if (tab === "E4") void refreshE4(); }, [tab, refreshE4]);
+  const orderById = useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
+  const orderState = useCallback((order: EOrder): string => orderById.get(order.id)?.state ?? order.state, [orderById]);
+  const isRefunded = useCallback((id: string): boolean => orderById.get(id)?.state === "refunded", [orderById]);
+  const isCancelled = useCallback((id: string): boolean => orderById.get(id)?.state === "cancelled", [orderById]);
+  const terminalOf = useCallback((id: string): string | undefined => {
+    const state = orderById.get(id)?.state;
+    return state && (TERMINAL_STATES as readonly string[]).includes(state) ? state : undefined;
+  }, [orderById]);
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -608,7 +630,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
-    orders: ORDERS, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
+    orders, e4Loading, e4Error, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
     isDcPaused,
   };
   const skuPhaseIds = useMemo(() => {
@@ -663,14 +685,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {/* 订单详情抽屉 */}
       {selOrder && (() => {
-        const o = selOrder;
+        const o = orderById.get(selOrder.id) ?? selOrder;
         const eff = orderState(o);
-        const finalized = isCancelled(o.id) || isRefunded(o.id) || !!terminalOf(o.id) || o.state === "active" || o.state === "refunded";
-        const canCancel = !finalized && (o.state === "created" || o.state === "paid");
+        const finalized = isCancelled(o.id) || isRefunded(o.id) || !!terminalOf(o.id) || eff === "active" || eff === "refunded";
+        const canCancel = !finalized && (eff === "created" || eff === "paid");
         // 设计稿:补建终态对所有非终态「始终」可达(含 failed —— 缺失终态 / DC 分配超时正是对账兜底场景)
         const canTerminal = !finalized;
         const idx = ORDER_FLOW.indexOf(o.state) >= 0 ? ORDER_FLOW.indexOf(o.state) : (o.state === "failed" ? 2 : -1);
-        // #21 单订单推进 / 回滚:基于当前 live 态在主路径上的位置派生可达下一态 / 上一态(写 E.order.<id>.advanceState)
+        // #21 单订单推进 / 回滚:基于后端 live 态在主路径上的位置派生可达下一态 / 上一态。
         const flowIdx = ORDER_FLOW.indexOf(eff);
         const nextState = !finalized && flowIdx >= 0 && flowIdx < ORDER_FLOW.length - 1 ? ORDER_FLOW[flowIdx + 1] : undefined;
         const prevState = !finalized && flowIdx > 0 ? ORDER_FLOW[flowIdx - 1] : undefined;
@@ -679,12 +701,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             footer={finalized
               ? <Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelOrder(null)}>关闭</Btn>
               : <>
-                  {o.state === "failed" && <Btn onClick={() => { setToast("已重试 DC 分配 " + o.id); setSelOrder(null); }}>重试配机</Btn>}
-                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${nextState}`, op: "param-fixed", paramKey: `E.order.${o.id}.advanceState`, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认 + A2 审计` })}>推进下一态</Btn>}
-                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${prevState}`, op: "param-fixed", paramKey: `E.order.${o.id}.advanceState`, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认 + A2 审计` })}>回滚上一态</Btn>}
+                  {eff === "failed" && <Btn onClick={() => setActionConfirm({ name: `重试配机 · ${o.id}`, op: "order-state", orderId: o.id, fixedVal: "allocating", amplify: false, detail: `将 ${o.id} 从 failed 重新置为 allocating,重新进入 DC 分配队列 · 须操作确认 + A2 审计` })}>重试配机</Btn>}
+                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${nextState}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认 + A2 审计` })}>推进下一态</Btn>}
+                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${prevState}`, op: "order-state", orderId: o.id, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认 + A2 审计` })}>回滚上一态</Btn>}
                   {canCancel && <Btn onClick={() => setActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}(${stateLabel(eff)})· 终止后续分配/扣费,资产/额度回退联动 D4/C3 · 须操作确认 + 审计留痕` })}>取消订单</Btn>}
                   {canTerminal && <Btn onClick={() => setActionConfirm({ name: "补建订单终态 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: [...TERMINAL_STATES] }, detail: `为缺失终态的订单 ${o.id} 手动落定终态(支付失败/过期/退款/开通失败)· 状态机对账兜底 · 须操作确认 + 审计留痕` })}>补建终态</Btn>}
-                  {o.state === "failed"
+                  {eff === "failed"
                     ? <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setActionConfirm({ name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true, detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · 资产/额度回退联动 D4 + C3 · 写 A2 审计 · 不可逆` })}><AutoGloss>退款(操作确认)</AutoGloss></Btn>
                     : <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelOrder(null)}>关闭</Btn>}
                 </>}>
@@ -1083,13 +1105,28 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (mc.op === "generation-gate-archive" && mc.generationGateId) {
               setE1Gates(await archiveE1GenerationGate(mc.generationGateId, reason, operator));
               setToast("代际门已移除:" + mc.generationGateId);
+            } else if (mc.op === "order-state" && mc.orderId && mc.fixedVal) {
+              await updateE4OrderState(mc.orderId, mc.fixedVal, reason, operator);
+              await refreshE4();
+              setToast("订单 " + mc.orderId + " 已更新为:" + stateLabel(mc.fixedVal));
+              setSelOrder(null);
             } else if (mc.op === "order-refund" && mc.orderId) {
-              setParam(`E.order.${mc.orderId}.refunded`, "true", { action: "订单退款 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已退款 · 资产回退已联动 D4 冲正 + C3"); setSelOrder(null);
+              await refundE4Order(mc.orderId, reason, operator);
+              await refreshE4();
+              setToast("订单 " + mc.orderId + " 已退款 · 资产回退已联动 D4 冲正 + C3");
+              setSelOrder(null);
             } else if (mc.op === "order-cancel" && mc.orderId) {
-              setParam(`E.order.${mc.orderId}.cancelled`, "true", { action: "取消订单 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已取消 · 后续分配/扣费已终止"); setSelOrder(null);
+              await cancelE4Order(mc.orderId, reason, operator);
+              await refreshE4();
+              setToast("订单 " + mc.orderId + " 已取消 · 后续分配/扣费已终止");
+              setSelOrder(null);
             } else if (mc.op === "order-terminal" && mc.orderId) {
               const v = (newValue ?? "").trim();
-              if (v) { setParam(`E.order.${mc.orderId}.terminalState`, v, { action: "补建订单终态 " + mc.orderId, reason }); setToast("订单 " + mc.orderId + " 已补建终态:" + stateLabel(v)); }
+              if (v) {
+                await terminalE4Order(mc.orderId, v, reason, operator);
+                await refreshE4();
+                setToast("订单 " + mc.orderId + " 已补建终态:" + stateLabel(v));
+              }
               setSelOrder(null);
             } else if (mc.op === "ops-pause" && mc.dc) {
               const paused = mc.fixedVal === "true";

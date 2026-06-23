@@ -1,11 +1,7 @@
 /**
  * A 域(平台基座)页面级数据 —— design_handoff_a_domain port。
  * 单源纪律(权威数值零复制,全部 join 或同源派生):
- *  - 账号 = OPERATORS(13 行,设计稿 a-view 旧 ACCOUNTS 6 行扩展,沿用 OpsAccount 结构);
- *    超管子集 = OPERATORS.filter(role==="super" && status==="enabled") → 三铁律「有效超管 ≥2」实时派生;
- *  - 角色定义 7 行 = ROLE_DEFS(与 design-data.ROLES 同源,设计稿配色 hex 全换 token);
- *  - 矩阵 = RBAC_MATRIX 16 动作 × 7 角色(设计稿 a1 MX 原样移植 + 域分组);
- *  - 安全基线 = SECURITY_BASELINES 5 行(3 锁死 + 2 可调);
+ *  - A1 账号由真实后端接口提供;RBAC/安全基线保留 PRD 展示 seed,写入仍走后端接口;
  *  - 高敏动作 = OPERATION_QUEUE 14 行(扩展 design-data.SENSITIVE_OPERATIONS,id 接续 WO-8852..WO-8838,
  *    类型 fund/param/acct/sos,标记 amplifies/sos,operator 字段含角色);
  *  - 审计日志 = AUDIT_LOGS 8 行(沿用 design-data.AUDIT 真值,域筛维度 D/C/H/I/A);
@@ -32,18 +28,9 @@
  */
 import { ROLES, SENSITIVE_OPERATIONS, AUDIT, KILLSWITCH } from "@/lib/mock/admin/design-data";
 
-/* ============ A1 账号 & RBAC ============ */
-export const A1_STATS = {
-  totalAccounts: 13,
-  activeAccounts: 12,
-  disabledAccounts: 1,
-  activeSessions: 14,
-  effectiveSupers: 3,
-  pendingAcctTickets: 2,
-};
-
-/** 角色 key 映射 design-data.ROLES 单源;角色描述与配色 = ROLE_DEFS。 */
+/* A1 account rows load from backend; these definitions keep the original PRD matrix shape. */
 export type RoleKey = "super" | "finance" | "risk" | "growth" | "content" | "support" | "audit";
+
 export const ROLE_DEFS: { key: RoleKey; name: string; av: string; color: string; desc: string; scope: string }[] = [
   { key: "super", name: "超管", av: "超", color: "var(--ink-2)", desc: "全域读写 + 全域执行;账号治理与系统参数的唯一操作 / 留痕角色", scope: "全部 12 域" },
   { key: "finance", name: "财务", av: "财", color: "var(--success)", desc: "储备与应付对账、提现放行、覆盖率监控;资金类动作执行门槛为 lead/超管", scope: "B · D · L,资金类执行" },
@@ -54,34 +41,13 @@ export const ROLE_DEFS: { key: RoleKey; name: string; av: string; color: string;
   { key: "audit", name: "只读审计", av: "审", color: "var(--ink-3)", desc: "零写权;全量查询与脱敏导出,取证专用", scope: "全域只读" },
 ];
 
-/** 13 账号(设计稿 a1 ACC 原样移植,id 命名 op-XXX;role 用 RoleKey)。 */
-export type Operator = {
-  id: string; name: string; role: RoleKey; tier: "lead" | "member" | null;
-  tfa: boolean; status: "enabled" | "disabled"; lastLogin: string; sessions: number;
-};
-export const OPERATORS: Operator[] = [
-  { id: "op-001", name: "陈锐", role: "super", tier: null, tfa: true, status: "enabled", lastLogin: "今天 09:12", sessions: 2 },
-  { id: "op-002", name: "赵敏", role: "super", tier: null, tfa: true, status: "enabled", lastLogin: "今天 08:40", sessions: 1 },
-  { id: "op-007", name: "林一帆", role: "super", tier: null, tfa: true, status: "enabled", lastLogin: "昨天 22:03", sessions: 0 },
-  { id: "op-011", name: "王磊", role: "risk", tier: "lead", tfa: true, status: "enabled", lastLogin: "今天 10:01", sessions: 2 },
-  { id: "op-012", name: "许晴", role: "risk", tier: null, tfa: true, status: "enabled", lastLogin: "今天 09:55", sessions: 1 },
-  { id: "op-021", name: "李文", role: "content", tier: "lead", tfa: true, status: "enabled", lastLogin: "今天 09:30", sessions: 2 },
-  { id: "op-024", name: "周倩", role: "content", tier: null, tfa: true, status: "enabled", lastLogin: "06-10 17:20", sessions: 0 },
-  { id: "op-031", name: "吴桐", role: "finance", tier: "lead", tfa: true, status: "enabled", lastLogin: "今天 08:15", sessions: 1 },
-  { id: "op-032", name: "郑爽", role: "finance", tier: null, tfa: true, status: "enabled", lastLogin: "今天 09:48", sessions: 1 },
-  { id: "op-041", name: "高翔", role: "growth", tier: null, tfa: true, status: "enabled", lastLogin: "06-10 20:11", sessions: 0 },
-  { id: "op-051", name: "刘佳", role: "support", tier: null, tfa: true, status: "enabled", lastLogin: "今天 10:05", sessions: 3 },
-  { id: "op-061", name: "审计专户", role: "audit", tier: null, tfa: true, status: "enabled", lastLogin: "06-09 14:00", sessions: 1 },
-  { id: "op-018", name: "何斌(已离职)", role: "risk", tier: null, tfa: true, status: "disabled", lastLogin: "05-20 11:32", sessions: 0 },
-];
-
-/** RBAC 矩阵 16 动作 × 7 角色;cell 类型:M(可发起)/ C(lead 执行门槛)/ R(只读)/ -(无权)。 */
 export type GrantCell = "M" | "C" | "R" | "-";
 export type MatrixAction = {
   id: string; action: string;
   domainGroup: "资金" | "用户/风控" | "增长/内容" | "基座/应急";
   grants: [super_: GrantCell, finance: GrantCell, risk: GrantCell, growth: GrantCell, content: GrantCell, support: GrantCell, audit: GrantCell];
 };
+
 export const RBAC_MATRIX: MatrixAction[] = [
   { id: "balance_adjust", action: "余额/资产调整(C3)", domainGroup: "用户/风控", grants: ["C", "C", "-", "-", "-", "M", "R"] },
   { id: "user_freeze", action: "账户冻结/解冻(C2)", domainGroup: "用户/风控", grants: ["C", "-", "M", "-", "-", "-", "R"] },
@@ -101,20 +67,18 @@ export const RBAC_MATRIX: MatrixAction[] = [
   { id: "audit_export", action: "审计全量导出(A2)", domainGroup: "基座/应急", grants: ["M", "-", "-", "-", "-", "-", "M"] },
 ];
 
-/** A1 安全基线 5 行:3 锁死(强制 2FA / 最小权限 / ≥2 超管)+ 2 可调(session / 双档锁)。 */
 export const SECURITY_BASELINES: {
   key: string; name: string; sub: string; locked: boolean;
   value?: string; paramKey?: string; cur?: string; unit?: string; min?: number; max?: number;
 }[] = [
-  { key: "tfa_required", name: "强制双因子(全角色)", sub: "没绑双因子完不成登录——安全基线,不开口子", value: "🔒 强制开启", locked: true },
-  { key: "least_priv", name: "最小权限默认", sub: "新账号默认无任何写权,角色要显式分配", value: "🔒 默认拒绝", locked: true },
-  { key: "min_supers", name: "最少有效超管", sub: "少于 2 个时账号治理类操作全部被服务器拒绝(防权限死锁)", value: "🔒 ≥ 2 个", locked: true },
-  // 可调项拆成单值(原「30min / 8h」「5 次/15min」一个框塞多值已拆开,每项单独输入框 + 单独 key)
+  { key: "tfa_required", name: "强制双因子(全角色)", sub: "没绑双因子完不成登录——安全基线,不开口子", value: "强制开启", locked: true },
+  { key: "least_priv", name: "最小权限默认", sub: "新账号默认无任何写权,角色要显式分配", value: "默认拒绝", locked: true },
+  { key: "min_supers", name: "最少有效超管", sub: "少于 2 个时账号治理类操作全部被服务器拒绝(防权限死锁)", value: ">= 2 个", locked: true },
   { key: "session_idle", name: "session 滑动过期", sub: "无操作多久自动登出;比用户侧明显更短(操盘台高敏)", locked: false, paramKey: "A.sec.sessionIdle", cur: "30", unit: "分钟", min: 15, max: 60 },
   { key: "session_abs", name: "session 绝对上限", sub: "一次登录最长存活多久,到点强制重登", locked: false, paramKey: "A.sec.sessionAbs", cur: "8", unit: "小时", min: 4, max: 12 },
   { key: "lock_short_cnt", name: "登录失败短锁 · 触发次数", sub: "连错几次触发短锁", locked: false, paramKey: "A.sec.lockShortCnt", cur: "5", unit: "次", min: 3, max: 10 },
   { key: "lock_short_min", name: "登录失败短锁 · 锁定时长", sub: "触发短锁后锁定多久", locked: false, paramKey: "A.sec.lockShortMin", cur: "15", unit: "分钟", min: 5, max: 60 },
-  { key: "lock_long", name: "登录失败长锁(不可调)", sub: "连错升级 → 锁 24h + 双因子重新认证,防撞库底线档(阈值高于用户侧)", value: "🔒 15 次 / 24h", locked: true },
+  { key: "lock_long", name: "登录失败长锁(不可调)", sub: "连错升级 → 锁 24h + 双因子重新认证,防撞库底线档(阈值高于用户侧)", value: "15 次 / 24h", locked: true },
 ];
 
 /* ============ A2 审计 & 操作确认中心 ============ */
@@ -437,7 +401,7 @@ export const DOMAIN_EXTENSIONS: Batch[] = [
   },
 ];
 
-/** 跨域消费方 join:OPERATORS / SENSITIVE_OPERATIONS / AUDIT / KILLSWITCH 等单源(防本文件自存口径)。 */
+/** 跨域消费方 join:SENSITIVE_OPERATIONS / AUDIT / KILLSWITCH 等单源(A1 账号行由后端提供)。 */
 export const _SOURCE_NOTES = {
   ROLES, // design-data.ROLES = 7 角色 token 配色单源
   SENSITIVE_OPERATIONS, // design-data.SENSITIVE_OPERATIONS = 首页高敏操作动态面板的 4 行子集,本表 14 行扩展

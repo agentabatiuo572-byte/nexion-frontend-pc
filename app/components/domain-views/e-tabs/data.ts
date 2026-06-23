@@ -1,23 +1,13 @@
 /**
  * E 域核心数据 & 派生口径(从 e-view.tsx 移出,口径不改)。
- * server-canonical:展示值优先 pget(key) ?? mock;订单状态走 orderState 派生(取消 > 退款 > 补建终态 > 原始)。
+ * server-canonical:E1/E2/E4 展示值来自后端接口;E3/E5 配置态仍由平台配置读取。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
 import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
-import type { EOrder } from "./types";
 
 // 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
 export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5" };
-
-export const ORDERS: EOrder[] = [
-  { id: "OD-55012", user: "usr_19C7", sku: "NexionBox Pro v2", amt: 1319, state: "active", dc: "us-east-2", age: "2m" },
-  { id: "OD-55011", user: "usr_84F2", sku: "NexionBox S1", amt: 649, state: "allocating", dc: "—", age: "7m" },
-  { id: "OD-55009", user: "usr_31E8", sku: "NexionRack P2", amt: 7499, state: "paid", dc: "—", age: "15m" },
-  { id: "OD-55006", user: "usr_02A9", sku: "Genesis 节点", amt: 9999, state: "active", dc: "eu-west-1", age: "31m" },
-  { id: "OD-55001", user: "usr_55B1", sku: "NexionBox Pro v2", amt: 1319, state: "failed", dc: "—", age: "1h" },
-  { id: "OD-54998", user: "usr_77D4", sku: "NexionBox S1", amt: 649, state: "refunded", dc: "—", age: "2h" },
-];
 
 export const ORDER_FLOW = ["created", "paid", "allocating", "active"];
 // design-kit Badge tone 映射(订单状态)。

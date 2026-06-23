@@ -26,6 +26,7 @@ export type EOp =
   | "generation-gate-save"     // E1 代际门新增/编辑 → 后端业务表
   | "generation-gate-force"    // E1 代际门 forceUnlock → 后端业务表
   | "generation-gate-archive"  // E1 代际门移除 → 后端归档
+  | "order-state"     // 主路径推进 / 回滚 / 失败重试 → E4 后端状态机
   | "order-refund"    // 退款(放大流出)
   | "order-cancel"    // 取消订单
   | "order-terminal"  // 补建终态(select)
@@ -98,6 +99,9 @@ export interface EViewCtx {
   delTask: (t: { id: string; n: string }) => void;
   // E4 订单状态机
   orders: EOrder[];
+  e4Loading: boolean;
+  e4Error: string | null;
+  refreshE4: () => Promise<void>;
   orderState: (o: EOrder) => string;
   isCancelled: (id: string) => boolean;
   isRefunded: (id: string) => boolean;
