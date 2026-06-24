@@ -1,43 +1,108 @@
 "use client";
 
-/**
- * C5 安全 & 会话 — 单用户账户安全处置面(design_handoff_c_domain port)。
- * 核心规矩 = 防社工夺号:用户端没有「忘记 2FA」自助通道,这里是唯一恢复路径——
- *  - 凭据铁律:关 2FA / 密码重置走 操作确认但**绝不传 edit**(不存在任何可输密码的框);
- *    密码只存哈希,后台看不到也改不了明文,重置 = 作废旧密码 + 发一次性重置验证码;
- *  - 操作确认 显式 edit 契约:凭证参数调整传 edit:{kind:"text",current};处置(踢线/解锁/2FA/重置)不传;
- *  - 锁定两档:15min 短锁普通确认(二验后即时)/ 24h 长锁 操作确认(解锁 = 绕过强制重置);
- *  - 数字单源:SEC(锁定 214 = 短 198 + 长 16,与 C6 同源)/ SESSIONS_2231(C2 同源同行)/
- *    CRED_PARAMS + STEPUP_RO(C.sess.<key> 真写,step-up 线 V1 只读)。
- * 真写键:C.sess.<key> / C.session.<ssid>.forcedOut(单会话)/ C.session.user.<uid>.allOut(整链,
- * 与 C2 强制登出 / 冻结联动同键)/ C.twofa.<uid> / C.user.<uid>.pwReset / C.lock.<id>。
- * 2FA 双源闭合:本页写 C.twofa,360 HUB 走 useUserOps.twoFactorReset —— 关 2FA 同时写两路,
- * 状态 tint 读两源任一(audit P1 修:跨页同实体必同源)。
- */
-import { useState } from "react";
-import { Drawer, PaginationExemptionList } from "../design-kit";
-import { useUserOps, useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { SEC, SESSIONS_2231, LOCKS, CRED_PARAMS, STEPUP_RO } from "./data";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataListPager, Drawer } from "../design-kit";
+import {
+  disableUserTwoFactor,
+  fetchUserProfilesPage,
+  fetchUserSecurityOverview,
+  requestUserPasswordReset,
+  revokeUserSession,
+  revokeUserSessions,
+  unlockUserSecurity,
+  updateUserCredentialParam,
+  type User360Profile,
+  type UserCredentialParam,
+  type UserSecurityOverview,
+  type UserSecurityUserRow,
+  type UserSession,
+} from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
-type Step = [what: string, when: string, mark: string];
+const OPERATOR = "superadmin";
+const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 
-const markColor = (m: string) =>
-  m === "⚠" ? "var(--warning)" : m === "✓" ? "var(--success)" : "var(--ink-4)";
+function text(value: unknown, fallback = "—") {
+  return value === null || value === undefined || String(value).trim() === "" ? fallback : String(value);
+}
 
-function StepRows({ steps }: { steps: Step[] }) {
+function toNumber(value: unknown, fallback = 0) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function formatDateTime(value: unknown) {
+  if (!value) return "—";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return text(value);
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function userIdOf(row?: UserSecurityUserRow | null) {
+  const raw = row?.userId;
+  return raw === null || raw === undefined || raw === "" ? null : raw;
+}
+
+function userLabel(row?: UserSecurityUserRow | null) {
+  if (!row) return "未选择用户";
+  return `${text(row.userNo)} · ${text(row.nickname)}`;
+}
+
+function profileKey(account?: User360Profile | null) {
+  const raw = account?.userNo || account?.id;
+  return raw === null || raw === undefined || raw === "" ? null : String(raw);
+}
+
+function profileLabel(account?: User360Profile | null) {
+  if (!account) return "未选择用户";
+  return `${text(account.userNo, text(account.id))} · ${text(account.nickname)}`;
+}
+
+function profileMeta(account?: User360Profile | null) {
+  if (!account) return "—";
+  return [account.phoneMasked, account.status, account.kycStatus].map((item) => text(item, "")).filter(Boolean).join(" · ") || "—";
+}
+
+function sessionId(session?: UserSession | null) {
+  return text(session?.refreshTokenId, "—");
+}
+
+function rowKey(row: UserSecurityUserRow) {
+  return text(row.userNo, text(row.userId));
+}
+
+function sessionTone(status?: string | null) {
+  const normalized = text(status, "").toUpperCase();
+  if (normalized === "ACTIVE") return "ok";
+  if (normalized === "REVOKED") return "bad";
+  if (normalized === "EXPIRED") return "dim";
+  return "warn";
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "C5_DATA_LOAD_FAILED");
+}
+
+function identityTrail(prefix: string, businessValue?: { channel?: string; verifiedAt?: string; ticket?: string }) {
+  return `${prefix} · 二验 ${businessValue?.channel ?? "—"} · ${businessValue?.verifiedAt || "—"} · 工单 ${businessValue?.ticket || "—"}`;
+}
+
+function StatCard({ tone, label, value, sub }: { tone?: string; label: string; value: string | number; sub: string }) {
   return (
-    <>
-      {steps.map(([what, when, mark], i) => (
-        <div className="kv" key={i}>
-          <span className="k" style={{ color: "var(--ink-2)", display: "inline-flex", alignItems: "center", gap: 7 }}>
-            <span style={{ color: markColor(mark) }}>{mark}</span>
-            {what}
-          </span>
-          <span className="v mono" style={{ fontSize: 11.5, fontWeight: 500, color: "var(--ink-4)" }}>{when}</span>
-        </div>
-      ))}
-    </>
+    <div className={`f-stat ${tone ?? ""}`}>
+      <div className="k">{label}</div>
+      <div className="v">{value}</div>
+      <div className="sub">{sub}</div>
+    </div>
   );
 }
 
@@ -45,295 +110,483 @@ function SecLabel({ children }: { children: string }) {
   return <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>{children}</div>;
 }
 
-// 锁定明细连错记录(照设计稿:长锁 3 行 / 短锁 2 行)。
-const lockSteps = (long: boolean): Step[] =>
-  long
-    ? [["密码错误 · 5 次 → 触发短锁", "—", "✓"], ["短锁内继续错 · 累计 10 次", "—", "✓"], ["升级 24h 长锁 + 挂强制重置", "已触发", "⚠"]]
-    : [["密码错误 · 累计 5 次", "—", "✓"], ["触发 15 分钟短锁", "已触发", "⚠"]];
-
 export function C5Security({ ctx }: { ctx: CCtx }) {
-  const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
-  const resetTwoFactor = useUserOps((s) => s.resetTwoFactor);
-  const opsTwofaReset = useUserOps((s) => s.users);
-  const hydrated = useOpsHydrated();
-  const [uid, setUid] = useState("usr_2231");
-  const [inp, setInp] = useState("usr_2231");
+  const { toast, openActionConfirm, openConfirm } = ctx;
+  const [overview, setOverview] = useState<UserSecurityOverview | null>(null);
+  const [selectedUserKey, setSelectedUserKey] = useState("usr_2231");
+  const [userLookup, setUserLookup] = useState("usr_2231");
+  const [userOptions, setUserOptions] = useState<User360Profile[]>([]);
+  const [selectedLookupUser, setSelectedLookupUser] = useState<User360Profile | null>(null);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [ssId, setSsId] = useState<string | null>(null);
   const [lockId, setLockId] = useState<string | null>(null);
 
-  // 会话样本只有 usr_2231(C2 账户明细「活跃会话 3 个」同源同行);其他 uid 空表。
-  const sessions = uid === "usr_2231" ? SESSIONS_2231 : [];
-  // 整链踢线(C2 强制登出 / 冻结联动 / 本页全部踢线同键)→ 单会话行同步显示已踢。
-  const userAllOut = pget(`C.session.user.${uid}.allOut`) === "true";
-  // 2FA 双源任一关闭即显示关闭(本页 C.twofa + 360 HUB twoFactorReset 同实体同态)。
-  const twofaOff = pget(`C.twofa.${uid}`) === "disabled" || (hydrated && !!opsTwofaReset[uid]?.twoFactorReset);
-  const pwSent = pget(`C.user.${uid}.pwReset`) === "link-sent";
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const data = await fetchUserSecurityOverview({ userKey: selectedUserKey.trim() || "usr_2231", pageNum: page, pageSize });
+      setOverview(data);
+      setError(null);
+    } catch (err) {
+      setError(`C5 数据加载失败 · ${errorMessage(err)}`);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [page, pageSize, selectedUserKey]);
 
-  const ss = ssId ? SESSIONS_2231.find((s) => s.id === ssId) : undefined;
-  const lk = lockId ? LOCKS.find((l) => l.id === lockId) : undefined;
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setUserSearchLoading(true);
+      try {
+        const keyword = userLookup.trim();
+        const pageData = await fetchUserProfilesPage({ keyword: keyword || undefined, pageNum: 1, pageSize: 8 });
+        if (!cancelled) setUserOptions(pageData.records ?? []);
+      } catch (err) {
+        if (!cancelled) {
+          setUserOptions([]);
+          setError(`C5 用户搜索失败 · ${errorMessage(err)}`);
+        }
+      } finally {
+        if (!cancelled) setUserSearchLoading(false);
+      }
+    }, 260);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [userLookup]);
+
+  const perform = useCallback(async (work: () => Promise<string>, fallback: string) => {
+    setBusy(true);
+    try {
+      const message = await work();
+      await loadData(true);
+      toast(message || fallback);
+      setError(null);
+    } catch (err) {
+      const message = errorMessage(err);
+      setError(`C5 操作失败 · ${message}`);
+      toast(`C5 操作失败 · ${message}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [loadData, toast]);
+
+  const selectedUser = overview?.selectedUser ?? null;
+  const selectedUserId = userIdOf(selectedUser);
+  const sessionPage = overview?.sessions;
+  const sessions = useMemo(() => sessionPage?.records ?? [], [sessionPage?.records]);
+  const total = toNumber(sessionPage?.total, sessions.length);
+  const credentialParams = overview?.credentialParams ?? [];
+  const lockedUsers = overview?.lockedUsers ?? [];
+  const activeSessions = toNumber(overview?.stats?.activeSessions);
+  const lockedShort = toNumber(overview?.stats?.lockedShort);
+  const lockedLong = toNumber(overview?.stats?.lockedLong);
+  const tokenReuseToday = toNumber(overview?.stats?.tokenReuseToday);
+  const selectedSession = ssId ? sessions.find((session) => session.refreshTokenId === ssId) : undefined;
+  const selectedLock = lockId ? lockedUsers.find((row) => rowKey(row) === lockId) : undefined;
+
+  const selectLookupUser = (account: User360Profile) => {
+    const key = profileKey(account);
+    if (!key) return;
+    setSelectedLookupUser(account);
+    setUserLookup(profileLabel(account));
+    setSelectedUserKey(key);
+    setPage(1);
+    setSsId(null);
+    setLockId(null);
+    setShowUserMenu(false);
+  };
+
+  const chooseFirstUserOption = () => {
+    const first = userOptions[0];
+    if (first) selectLookupUser(first);
+  };
 
   const revokeOne = (id: string) =>
     openConfirm({
       action: `踢线 · ${id}`,
-      detail: "吊销该会话的长短凭证,用户该设备立即下线。收紧动作,单人即时,写原因。",
-      chips: [["即时 · 服务器吊销", "ready"], ["和 C2 共用审计事件", "done"]],
+      detail: "吊销该会话的长短凭证,用户该设备立即下线。后端写入 nx_user_session.revoked_at 并产生审计。",
+      chips: [["即时 · 服务器吊销", "ready"], ["真实接口 · C5", "done"]],
       reason: true,
       okLabel: "确认踢线",
       run: (reason) => {
-        setParam(`C.session.${id}.forcedOut`, "true", { action: `踢线 ${id} · admin.session_revoked`, reason });
-        toast(`${id} 已踢线 · 留痕`);
+        void perform(async () => {
+          await revokeUserSession(id, reason, OPERATOR);
+          return `${id} 已踢线 · 后端留痕`;
+        }, "会话已踢线");
       },
     });
+
+  const revokeAll = () => {
+    if (!selectedUserId) return;
+    openConfirm({
+      action: `全部踢线 · ${userLabel(selectedUser)}`,
+      detail: "吊销该用户全部活跃会话,常用于疑似被盗号。结果以后端返回为准。",
+      chips: [["整链吊销", "ready"], ["写审计", "done"]],
+      reason: true,
+      okLabel: "确认全部踢线",
+      run: (reason) => {
+        void perform(async () => {
+          await revokeUserSessions(selectedUserId, reason, OPERATOR);
+          return `${userLabel(selectedUser)} 全部会话已踢线`;
+        }, "全部会话已踢线");
+      },
+    });
+  };
+
+  const disable2fa = () => {
+    if (!selectedUserId) return;
+    openActionConfirm({
+      action: `人工关闭 2FA · ${userLabel(selectedUser)}`,
+      detail: <>用户丢了验证器设备时的恢复通道。前置实名二验,确认通过后服务器关闭 2FA 并作废备份码。</>,
+      amplifies: false,
+      businessForm: {
+        kind: "identity-verify",
+        subject: `${userLabel(selectedUser)} · 关闭 2FA`,
+        channels: ["视频核实", "当面核实", "回拨预留号码"],
+        ticketHint: "如 KYC-20260618-001",
+      },
+      run: (reason, _value, businessValue) => {
+        void perform(async () => {
+          await disableUserTwoFactor(selectedUserId, identityTrail(reason, businessValue), OPERATOR);
+          return "2FA 已关闭 · 二验结果已留痕";
+        }, "2FA 已关闭");
+      },
+    });
+  };
+
+  const passwordReset = () => {
+    if (!selectedUserId) return;
+    openActionConfirm({
+      action: `密码重置 · ${userLabel(selectedUser)}`,
+      detail: <>后台看不到也改不了密码明文。确认后作废旧密码并发送一次性重置验证码,用户自行设置新密码。</>,
+      amplifies: false,
+      businessForm: {
+        kind: "identity-verify",
+        subject: `${userLabel(selectedUser)} · 密码重置`,
+        channels: ["视频核实", "当面核实", "回拨预留号码"],
+        ticketHint: "如 KYC-20260618-001",
+      },
+      run: (reason, _value, businessValue) => {
+        void perform(async () => {
+          await requestUserPasswordReset(selectedUserId, identityTrail(reason, businessValue), OPERATOR);
+          return "旧密码已作废 · 重置验证码已发用户";
+        }, "密码重置已提交");
+      },
+    });
+  };
+
+  const unlockUser = (row: UserSecurityUserRow) => {
+    const userId = userIdOf(row);
+    if (!userId) return;
+    const longLock = row.lockKind === "LONG";
+    const submit = (reason: string, businessValue?: { channel?: string; verifiedAt?: string; ticket?: string }) => {
+      void perform(async () => {
+        await unlockUserSecurity(userId, longLock ? identityTrail(reason, businessValue) : reason, OPERATOR);
+        return `${userLabel(row)} 已解除锁定`;
+      }, "锁定已解除");
+    };
+    if (longLock) {
+      openActionConfirm({
+        action: `解除长锁 · ${userLabel(row)}`,
+        detail: "长锁通常挂着强制重置流程,解锁等于绕过它。必须完成实名二验并写明原因。",
+        amplifies: false,
+        businessForm: {
+          kind: "identity-verify",
+          subject: `${userLabel(row)} · 解除长锁`,
+          channels: ["视频核实", "当面核实", "回拨预留号码"],
+          ticketHint: "如 SEC-20260618-001",
+        },
+        run: (reason, _value, businessValue) => submit(reason, businessValue),
+      });
+      return;
+    }
+    openConfirm({
+      action: `解除短锁 · ${userLabel(row)}`,
+      detail: "清空登录失败计数,用户可重新登录。后端写 nx_user_security.login_fail_count。",
+      chips: [["短锁", "ready"], ["清失败计数", "done"]],
+      reason: true,
+      okLabel: "确认解锁",
+      run: (reason) => submit(reason),
+    });
+  };
+
+  const updateParam = (param: UserCredentialParam) => {
+    if (!param.key || param.readOnly) return;
+    openActionConfirm({
+      action: `凭证参数调整 · ${text(param.name)}`,
+      detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · {text(param.note)}。只对新签发凭证生效。</>,
+      amplifies: false,
+      edit: { kind: "text", current: text(param.value, "") },
+      run: (reason, nextValue) => {
+        const value = (nextValue ?? "").trim();
+        if (!value) return;
+        void perform(async () => {
+          await updateUserCredentialParam(param.key as string, value, reason, OPERATOR);
+          return `${text(param.name)} 已更新为 ${value}`;
+        }, "凭证参数已更新");
+      },
+    });
+  };
 
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat"><div className="k">活跃会话(全平台)</div><div className="v">{SEC.activeSessions.toLocaleString("en-US")}</div><div className="sub">30 天不活跃自动过期</div></div>
-        <div className="f-stat ok"><div className="k">2FA 开启率</div><div className="v">{SEC.twofaRate}%</div><div className="sub">TOTP · 备份码上限 8 个</div></div>
-        <div className="f-stat warn"><div className="k">锁定中账户</div><div className="v">{SEC.lockedShort + SEC.lockedLong}</div><div className="sub">短锁 {SEC.lockedShort} · 长锁 {SEC.lockedLong}</div></div>
-        <div className="f-stat danger"><div className="k">今日凭证异常回收</div><div className="v">{SEC.tokenReuseToday}</div><div className="sub">刷新凭证被重复使用 → 整链踢线</div></div>
+        <StatCard label="活跃会话(全平台)" value={activeSessions.toLocaleString("en-US")} sub="来自 nx_user_session" />
+        <StatCard tone="ok" label="2FA 开启率" value={`${text(overview?.stats?.twoFactorRatePct, "0.0")}%`} sub="来自 nx_user_security" />
+        <StatCard tone="warn" label="锁定中账户" value={lockedShort + lockedLong} sub={`短锁 ${lockedShort} · 长锁 ${lockedLong}`} />
+        <StatCard tone="danger" label="今日凭证异常回收" value={tokenReuseToday} sub="刷新凭证复用 → 整链踢线" />
       </div>
 
-      {/* 凭证与会话参数(C.sess.<key> 真写;step-up 再验证线 V1 只读) */}
+      {error && <div className="ctint bad" style={{ marginBottom: 12 }}>{error}</div>}
+      {loading && <div className="ctint" style={{ marginBottom: 12 }}>C5 数据加载中...</div>}
+
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">凭证与会话参数</span>
-          <span className="sub">· 安全基础设施参数,改动操作确认 · 只对新签发生效</span>
+          <span className="sub">· 后端配置读取 · 改动写 nx_config_item</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 40px", minWidth: 0 }}>
-            {CRED_PARAMS.map((p) => {
-              const v = pget(`C.sess.${p.key}`) ?? p.cur;
-              return (
-                <div className="p-row" key={p.key}>
-                  <div className="txt">
-                    <div className="k">{p.name}</div>
-                    <div className="s">{p.sub}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "0 32px", minWidth: 0 }}>
+            {credentialParams.map((param) => (
+              <div className="p-row" key={text(param.key)}>
+                <div className="txt">
+                  <div className="k">
+                    {text(param.name)}
+                    {param.readOnly && <span className="bdg dim" style={{ marginLeft: 6 }}>V1 只读</span>}
                   </div>
-                  <span className="v">{v}</span>
-                  <button className="l-btn sm mc" onClick={() => openActionConfirm({
-                    action: `凭证参数调整 · ${p.name}`,
-                    detail: <><b>{p.name}</b> · 当前 {v} · {p.note}。安全基础设施参数,操作确认。</>,
-                    amplifies: false,
-                    edit: { kind: "text", current: v },
-                    run: (reason, nv) => {
-                      if (!nv) return;
-                      setParam(`C.sess.${p.key}`, nv, { action: `凭证参数调整 ${p.name}`, reason });
-                      toast(`${p.name} 已更新为 ${nv} · 理由留痕`);
-                    },
-                  })}>调整</button>
+                  <div className="s">{text(param.note)}</div>
                 </div>
-              );
-            })}
-            <div className="p-row">
-              <div className="txt">
-                <div className="k">{STEPUP_RO.name} <span className="bdg dim">V1 只读</span></div>
-                <div className="s">{STEPUP_RO.sub}</div>
+                <span className="v">{text(param.value)}</span>
+                <button className="l-btn sm mc" disabled={busy || !!param.readOnly} onClick={() => updateParam(param)}>
+                  {param.readOnly ? "只读" : "调整"}
+                </button>
               </div>
-              <span className="v">{STEPUP_RO.cur}</span>
-            </div>
+            ))}
+            {credentialParams.length === 0 && <div className="ctint">暂无凭证参数</div>}
           </div>
-          <div className="ctint" style={{ marginTop: 10 }}><b>异常自动防御</b> · 同一个长凭证被使用两次(疑似被盗复制)→ 服务器立即回收整条会话链;两步验证的挑战码 5 分钟过期(固定)。</div>
+          <div className="ctint" style={{ marginTop: 10 }}>
+            <b>异常自动防御</b> · 同一个长凭证被使用两次时,服务器立即回收整条会话链;挑战码过期与二验强制由后端执行。
+          </div>
         </div>
       </section>
 
       <div className="two-col r125-1">
-        {/* 单用户安全处置 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">单用户安全处置 · {uid}</span>
+            <span className="ttl">单用户安全处置 · {userLabel(selectedUser)}</span>
             <span className="sub">· 会话 / 2FA / 锁定</span>
             <div className="r">
-              <div className="lookup">
-                <input value={inp} onChange={(e) => setInp(e.target.value)} />
-                <button className="l-btn primary" onClick={() => {
-                  const id = inp.trim() || "usr_2231";
-                  setUid(id);
-                  toast(`已加载 ${id} 的会话与安全状态`);
-                }}>查询</button>
+              <div className="lookup" style={{ position: "relative", minWidth: 320 }}>
+                <input
+                  value={userLookup}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setUserLookup(next);
+                    setShowUserMenu(true);
+                    if (selectedLookupUser && next !== profileLabel(selectedLookupUser)) {
+                      setSelectedLookupUser(null);
+                    }
+                  }}
+                  onFocus={() => setShowUserMenu(true)}
+                  onBlur={() => window.setTimeout(() => setShowUserMenu(false), 140)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      chooseFirstUserOption();
+                    }
+                  }}
+                  placeholder="搜索用户编码 / 用户名 / 手机号 / 邮箱"
+                />
+                {showUserMenu && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      right: 0,
+                      left: 0,
+                      zIndex: 30,
+                      maxHeight: 260,
+                      overflowY: "auto",
+                      border: "1px solid var(--line)",
+                      borderRadius: 8,
+                      background: "var(--panel)",
+                      boxShadow: "0 14px 36px rgba(15, 23, 42, 0.16)",
+                      padding: 6,
+                    }}
+                  >
+                    {userSearchLoading && <div className="ctint" style={{ margin: 4 }}>搜索用户中...</div>}
+                    {!userSearchLoading && userOptions.length === 0 && <div className="ctint" style={{ margin: 4 }}>没有匹配用户</div>}
+                    {!userSearchLoading && userOptions.map((account) => {
+                      const key = profileKey(account) ?? profileLabel(account);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className="l-btn"
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            selectLookupUser(account);
+                          }}
+                          style={{
+                            width: "100%",
+                            justifyContent: "space-between",
+                            marginBottom: 4,
+                            padding: "8px 10px",
+                            textAlign: "left",
+                          }}
+                        >
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: "block", fontWeight: 650, color: "var(--ink)" }}>{profileLabel(account)}</span>
+                            <span className="mono" style={{ display: "block", marginTop: 3, fontSize: 11, color: "var(--ink-4)" }}>
+                              {profileMeta(account)}
+                            </span>
+                          </span>
+                          <span className="bdg ok" style={{ flex: "0 0 auto" }}>选择</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table className="l-tbl" style={{ minWidth: 620 }}>
-              <thead><tr><th>会话</th><th>IP</th><th>设备</th><th>最近活跃</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <table className="l-tbl" style={{ minWidth: 700 }}>
+              <thead>
+                <tr>
+                  <th>会话</th>
+                  <th>IP</th>
+                  <th>设备</th>
+                  <th>状态</th>
+                  <th>最近活跃</th>
+                  <th style={{ textAlign: "right" }}>动作</th>
+                </tr>
+              </thead>
               <tbody>
-                {sessions.map((s) => {
-                  const forcedOut = pget(`C.session.${s.id}.forcedOut`) === "true" || userAllOut;
+                {sessions.map((session) => {
+                  const id = sessionId(session);
+                  const revoked = text(session.status, "").toUpperCase() === "REVOKED";
                   return (
-                    <tr key={s.id} className="click" style={forcedOut ? { opacity: 0.62 } : undefined} onClick={() => setSsId(s.id)}>
-                      <td className="mono" style={{ color: "var(--ink)" }}>{s.id} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
-                      <td className="mono" style={{ fontSize: 11.5 }}>{s.ip}</td>
-                      <td style={{ fontSize: 12 }}>{s.dev}</td>
-                      <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{s.last}</td>
+                    <tr key={id} className="click" style={revoked ? { opacity: 0.62 } : undefined} onClick={() => setSsId(id)}>
+                      <td className="mono" style={{ color: "var(--ink)" }}>{id} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
+                      <td className="mono" style={{ fontSize: 11.5 }}>{text(session.clientIpMasked)}</td>
+                      <td style={{ fontSize: 12 }}>{text(session.deviceName)}</td>
+                      <td><span className={`bdg ${sessionTone(session.status)}`}>{text(session.status)}</span></td>
+                      <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{formatDateTime(session.issuedAt)}</td>
                       <td style={{ textAlign: "right" }}>
-                        {forcedOut
-                          ? <span className="bdg dim">已踢线</span>
-                          : <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); revokeOne(s.id); }}>踢线</button>}
+                        {revoked ? (
+                          <span className="bdg dim">已踢线</span>
+                        ) : (
+                          <button className="l-btn sm" disabled={busy} onClick={(event) => { event.stopPropagation(); revokeOne(id); }}>踢线</button>
+                        )}
                       </td>
                     </tr>
                   );
                 })}
                 {sessions.length === 0 && (
-                  <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--ink-4)", padding: "18px 12px" }}>该用户暂无活跃会话记录</td></tr>
+                  <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--ink-4)", padding: "18px 12px" }}>该用户暂无会话记录</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+          <DataListPager
+            label="用户会话"
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+          />
           <div className="l-b" style={{ paddingTop: 10 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="l-btn" onClick={() => openConfirm({
-                action: `全部踢线 · ${uid}`,
-                detail: "吊销该用户全部会话(常用于疑似被盗号)。收紧动作单人即时,写原因。",
-                chips: [["整链吊销", "ready"], ["落审计 · 喂 B5", "done"]],
-                reason: true,
-                okLabel: "确认全部踢线",
-                run: (reason) => {
-                  // 整链键以当前查询 uid 为目标(audit P1 修:不再固定写 usr_2231 的会话);
-                  // user 级 allOut 与 C2 强制登出 / 冻结联动同键,单会话行派生同步显示已踢。
-                  setParam(`C.session.user.${uid}.allOut`, "true", { action: `全部踢线 ${uid} · admin.session_revoked`, reason });
-                  toast(`${uid} 全部会话已踢线 · 留痕 · 喂 B5`);
-                },
-              })}>全部踢线</button>
-              {/* 凭据铁律:关 2FA / 密码重置 = 处置,绝不传 edit —— 不存在任何可输密码的框 */}
-              <button className="l-btn mc" onClick={() => openActionConfirm({
-                action: "人工关闭 2FA(丢设备路径 · 实名二验)",
-                detail: <>用户丢了验证器设备时的唯一恢复通道。<b>前置:用户先过一次实名二验</b>(结果会记进审计);确认通过后服务器关闭 2FA 并作废全部备份码,用户重新走开启流程。操作确认防社工——攻击者最爱借客服关 2FA。带防重号,重复请求不会重复作废。</>,
-                amplifies: false,
-                businessForm: { kind: "identity-verify", subject: `${uid} · 关闭 2FA`, channels: ["视频核实", "当面核实", "回拨预留号码"], ticketHint: "如 KYC-20260618-001" },
-                run: (reason, _v, bv) => {
-                  const verify = `二验 ${bv?.channel ?? "—"} · ${bv?.verifiedAt || "—"} · 工单 ${bv?.ticket || "—"}`;
-                  setParam(`C.twofa.${uid}`, "disabled", { action: `人工关闭 2FA ${uid} · admin.2fa_disabled · ${verify}`, reason });
-                  resetTwoFactor(uid); // 双源同写:360 HUB(useUserOps.twoFactorReset)同实体同态
-                  toast("2FA 已关闭 · 二验结果留痕");
-                },
-              })}>关闭 2FA(操作确认 + 实名二验)</button>
-              <button className="l-btn mc" onClick={() => openActionConfirm({
-                action: "密码重置(操作确认 + 实名二验)",
-                detail: <><b>看不到也改不了密码明文</b>(只存哈希)。确认通过后:作废当前密码,给用户手机发一次性重置验证码,用户自己设新密码后获得新会话。前置实名二验,带防重号。</>,
-                amplifies: false,
-                businessForm: { kind: "identity-verify", subject: `${uid} · 密码重置`, channels: ["视频核实", "当面核实", "回拨预留号码"], ticketHint: "如 KYC-20260618-001" },
-                run: (reason, _v, bv) => {
-                  const verify = `二验 ${bv?.channel ?? "—"} · ${bv?.verifiedAt || "—"} · 工单 ${bv?.ticket || "—"}`;
-                  setParam(`C.user.${uid}.pwReset`, "link-sent", { action: `密码重置 ${uid}(发送重置验证码,后台不持有明文)· ${verify}`, reason });
-                  toast("密码已作废 · 重置验证码已发用户 · 二验留痕");
-                },
-              })}>密码重置(操作确认 + 实名二验)</button>
+              <button className="l-btn" disabled={!selectedUserId || busy} onClick={revokeAll}>全部踢线</button>
+              <button className="l-btn mc" disabled={!selectedUserId || busy} onClick={disable2fa}>关闭 2FA(操作确认 + 实名二验)</button>
+              <button className="l-btn mc" disabled={!selectedUserId || busy} onClick={passwordReset}>密码重置(操作确认 + 实名二验)</button>
             </div>
-            <div className="ctint" style={{ marginTop: 10 }}>
-              {twofaOff
-                ? <><b>2FA 状态</b> · 已关闭(人工)· 备份码已作废 · 等用户重新开启</>
-                : <><b>2FA 状态</b> · 已开启(TOTP)· 备份码剩 6 / 8 · 开启于 3/14</>}
-            </div>
-            {pwSent && (
-              <div className="ctint warn" style={{ marginTop: 8 }}><b>密码重置</b> · 已作废旧密码并发送一次性重置验证码 · 等用户完成重置</div>
+            {selectedUser && (
+              <>
+                <div className="ctint" style={{ marginTop: 10 }}>
+                  <b>2FA 状态</b> · {selectedUser.twoFactorEnabled ? "已开启" : "已关闭"} · 登录失败 {toNumber(selectedUser.loginFailCount)} 次
+                </div>
+                {selectedUser.passwordResetRequired && (
+                  <div className="ctint warn" style={{ marginTop: 8 }}>
+                    <b>密码重置</b> · 旧密码已作废,等待用户完成重置
+                  </div>
+                )}
+              </>
             )}
           </div>
         </section>
 
-        {/* 锁定状态与解除(阈值在 C6 配,处置权在本页) */}
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">锁定状态与解除</span>
-            <span className="sub">· 解锁处置权在这页;「何时锁」的阈值在 C6 配</span>
+            <span className="sub">· 锁定事实来自 nx_user_security</span>
           </div>
           <div className="l-b">
-            {LOCKS.map((l) => {
-              const long = l.type === "24h";
-              const unlocked = pget(`C.lock.${l.id}`) === "unlocked";
+            {lockedUsers.map((row) => {
+              const longLock = row.lockKind === "LONG";
+              const id = rowKey(row);
               return (
-                <div className="lock-row" key={l.id} style={unlocked ? { opacity: 0.62 } : undefined} onClick={() => setLockId(l.id)}>
-                  <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{l.id} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></span>
-                  <span className={`bdg ${long ? "bad" : "warn"}`}>{long ? "24 小时长锁" : "15 分钟短锁"}</span>
-                  <span style={{ flex: 1, fontSize: 12, color: "var(--ink-3)" }}>{l.why}</span>
-                  <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{l.left}</span>
-                  {unlocked ? (
-                    <span className="bdg dim">已解除 · 留痕</span>
-                  ) : long ? (
-                    <button className="l-btn sm mc" onClick={(e) => {
-                      e.stopPropagation();
-                      openActionConfirm({
-                        action: `解除 24 小时长锁 · ${l.id}`,
-                        detail: "长锁挂着强制重置流程,解锁等于绕过它——操作确认 + 用户先过实名二验(结果入审计)。",
-                        amplifies: false,
-                        businessForm: { kind: "identity-verify", subject: `${l.id} · 解除 24h 长锁`, channels: ["视频核实", "当面核实", "回拨预留号码"], ticketHint: "如 SEC-20260618-001" },
-                        run: (reason, _v, bv) => {
-                          const verify = `二验 ${bv?.channel ?? "—"} · ${bv?.verifiedAt || "—"} · 工单 ${bv?.ticket || "—"}`;
-                          setParam(`C.lock.${l.id}`, "unlocked", { action: `解除 24h 长锁 ${l.id} · ${verify}`, reason });
-                          toast(`${l.id} 长锁已解除 · 二验留痕`);
-                        },
-                      });
-                    }}>解锁(操作确认)</button>
-                  ) : (
-                    <button className="l-btn sm" onClick={(e) => {
-                      e.stopPropagation();
-                      openConfirm({
-                        action: `解除 15 分钟短锁 · ${l.id}`,
-                        detail: "高频排障路径:用户过实名二验后即时解锁,写原因留痕。",
-                        chips: [["实名二验前置", "ready"], ["即时 · 留痕", "done"]],
-                        reason: true,
-                        okLabel: "确认解锁",
-                        run: (reason) => {
-                          setParam(`C.lock.${l.id}`, "unlocked", { action: `解除 15min 短锁 ${l.id}`, reason });
-                          toast(`${l.id} 短锁已解除 · 留痕`);
-                        },
-                      });
-                    }}>解锁(二验后即时)</button>
-                  )}
+                <div className="lock-row" key={id} onClick={() => setLockId(id)}>
+                  <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(row.userNo)} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></span>
+                  <span className={`bdg ${longLock ? "bad" : "warn"}`}>{text(row.lockLabel)}</span>
+                  <span style={{ flex: 1, fontSize: 12, color: "var(--ink-3)" }}>{text(row.nickname)} · {text(row.lockReason)}</span>
+                  <span className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(row.lockLeft)}</span>
+                  <button className={`l-btn sm ${longLock ? "mc" : ""}`} disabled={busy} onClick={(event) => { event.stopPropagation(); unlockUser(row); }}>
+                    解锁
+                  </button>
                 </div>
               );
             })}
-            <div className="ctint" style={{ marginTop: 12 }}><b>两档解锁路径</b> · <b>15 分钟短锁</b>(密码或 2FA 连错 5 次):客服让用户过实名二验后即时解,写原因;<b>24 小时长锁</b>(连错 10 次,带强制重置):操作确认 + 实名二验——解长锁等于绕过强制重置,所以审得严。</div>
+            {lockedUsers.length === 0 && <div className="ctint">暂无锁定账户</div>}
           </div>
         </section>
       </div>
 
-      <p className="f-foot"><b>真值都在服务器</b>:客户端把「2FA 已开启」改成关闭没有用——敏感操作校验的是会话凭证里的服务器标记;踢线是服务器吊销长短凭证,客户端不能本地续命。强制登出和账户操作页(C2)共用同一套会话体系和同一条审计事件。关 2FA、重置密码、解锁的每一步(含实名二验结果)全部进审计,异常安全事件(批量踢线、关 2FA 激增)喂风险雷达(B5)。</p>
-      <PaginationExemptionList
-        items={[
-          {
-            label: "单用户安全处置 · usr_2231",
-            maxRows: 3,
-            reason: "安全处置表仅展示当前查询用户会话,完整检索由查询框切换",
-          },
-        ]}
-      />
-
-      {/* 会话明细 Drawer */}
-      {ss && (
-        <Drawer title={`会话明细 · ${ss.id}`} onClose={() => setSsId(null)}
-          footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setSsId(null)}>关闭</button>}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{ss.dev} · {ss.ip}</div>
-          <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.6 }}>最近活跃 {ss.last}。会话真值在服务器,客户端改不了;踢线 = 服务器吊销长短凭证。</div>
-          <SecLabel>登录轨迹</SecLabel>
-          <StepRows steps={ss.trail} />
-          <SecLabel>设备与位置</SecLabel>
-          <div className="kv"><span className="k">设备指纹</span><span className="v">{ss.fp}</span></div>
-          <div className="kv"><span className="k">登录地</span><span className="v">{ss.geo}</span></div>
-          <div className="kv"><span className="k">凭证</span><span className="v">{ss.tok}</span></div>
-          <div className="ctint" style={{ marginTop: 12 }}><b>处置在右侧「踢线」</b>:吊销该会话凭证。可疑登录地/代理 IP 会同步给风险雷达(B5)。</div>
+      {selectedSession && (
+        <Drawer title={`会话详情 · ${sessionId(selectedSession)}`} sub={`${userLabel(selectedUser)} · ${text(selectedSession.status)}`} onClose={() => setSsId(null)}
+          footer={<button className="l-btn danger" disabled={busy || text(selectedSession.status, "").toUpperCase() === "REVOKED"} onClick={() => revokeOne(sessionId(selectedSession))}>踢线</button>}>
+          <SecLabel>服务器会话</SecLabel>
+          <div className="kv"><span className="k">刷新凭证</span><span className="v mono">{sessionId(selectedSession)}</span></div>
+          <div className="kv"><span className="k">设备</span><span className="v">{text(selectedSession.deviceName)}</span></div>
+          <div className="kv"><span className="k">IP</span><span className="v mono">{text(selectedSession.clientIpMasked)}</span></div>
+          <div className="kv"><span className="k">状态</span><span className="v">{text(selectedSession.status)}</span></div>
+          <div className="kv"><span className="k">签发</span><span className="v mono">{formatDateTime(selectedSession.issuedAt)}</span></div>
+          <div className="kv"><span className="k">过期</span><span className="v mono">{formatDateTime(selectedSession.expiresAt)}</span></div>
+          <div className="kv"><span className="k">吊销</span><span className="v mono">{formatDateTime(selectedSession.revokedAt)}</span></div>
         </Drawer>
       )}
 
-      {/* 锁定明细 Drawer */}
-      {lk && (() => {
-        const long = lk.type === "24h";
-        return (
-          <Drawer title={`锁定明细 · ${lk.id}`} onClose={() => setLockId(null)}
-            footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setLockId(null)}>关闭</button>}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{long ? "24 小时长锁" : "15 分钟短锁"} · {lk.left}</div>
-            <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.6 }}>触发原因:{lk.why}。计数按 IP + 账户双维度在服务器记,锁定期间一切登录 / 发码 / 重置都拒。</div>
-            <SecLabel>连错记录(本次锁定窗内)</SecLabel>
-            <StepRows steps={lockSteps(long)} />
-            <SecLabel>锁定信息</SecLabel>
-            <div className="kv"><span className="k">类型</span><span className="v">{long ? "24 小时长锁(挂强制重置)" : "15 分钟短锁"}</span></div>
-            <div className="kv"><span className="k">计数维度</span><span className="v">IP + 账户</span></div>
-            <div className="kv"><span className="k">剩余</span><span className="v">{lk.left}</span></div>
-            <div className="kv"><span className="k">解锁条件</span><span className="v">{long ? "操作确认 + 实名二验" : "实名二验后即时"}</span></div>
-            <div className="ctint" style={{ marginTop: 12 }}><b>解锁入口在右侧</b>:{long ? "长锁解锁等于绕过强制重置,操作确认 + 实名二验。" : "短锁过实名二验即时解。"} 锁定阈值在登录风控页(C6)配,这里只处置。</div>
-          </Drawer>
-        );
-      })()}
+      {selectedLock && (
+        <Drawer title={`锁定详情 · ${text(selectedLock.userNo)}`} sub={`${text(selectedLock.nickname)} · ${text(selectedLock.lockLabel)}`} onClose={() => setLockId(null)}
+          footer={<button className={`l-btn ${selectedLock.lockKind === "LONG" ? "mc" : "primary"}`} disabled={busy} onClick={() => unlockUser(selectedLock)}>解除锁定</button>}>
+          <SecLabel>锁定事实</SecLabel>
+          <div className="kv"><span className="k">用户编码</span><span className="v mono">{text(selectedLock.userNo)}</span></div>
+          <div className="kv"><span className="k">用户昵称</span><span className="v">{text(selectedLock.nickname)}</span></div>
+          <div className="kv"><span className="k">失败次数</span><span className="v mono">{toNumber(selectedLock.loginFailCount)}</span></div>
+          <div className="kv"><span className="k">锁定类型</span><span className="v">{text(selectedLock.lockLabel)}</span></div>
+          <div className="kv"><span className="k">强制重置</span><span className="v">{selectedLock.passwordResetRequired ? "是" : "否"}</span></div>
+          <div className="kv"><span className="k">说明</span><span className="v">{text(selectedLock.lockReason)}</span></div>
+        </Drawer>
+      )}
     </>
   );
 }

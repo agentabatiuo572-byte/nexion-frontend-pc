@@ -14,7 +14,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
-import { PaginationExemptionList } from "../design-kit";
+import { DataListPager, useDataListPager } from "../design-kit";
 import { USERS, REGISTERED_USERS, K_RISK, fmtUsd } from "@/lib/mock/admin/design-data";
 import { useUserOps, useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { C1_STATS, C4_LEDGER, KYC_STATE, frozenTotal, manualFrozenSeeds } from "./data";
@@ -59,6 +59,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
     if (ql && !(u.id.toLowerCase().includes(ql) || u.name.toLowerCase().includes(ql) || u.ref.toLowerCase().includes(ql))) return false;
     return true;
   });
+  const pager = useDataListPager(rows, { initialPageSize: 5, resetKey: `${seg}|${ql}` });
 
   return (
     <>
@@ -75,7 +76,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
           <span className="sub">· 用户分层口径 L0–L5 / V0–V12 · 手机号仅脱敏/哈希搜</span>
           <div className="r">
             <div className="search-bar">
-              <input placeholder="userId / 姓名 / 推荐码" value={q} onChange={(e) => setQ(e.target.value)} />
+              <input placeholder="用户编码 / 姓名 / 推荐码" value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
             <div className="chips">
               {SEGS.map(([v, lb]) => (
@@ -86,13 +87,13 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1000 }}>
-            <thead><tr><th>userId</th><th>姓名</th><th>生命周期</th><th>V-Rank</th><th className="num">设备</th><th>KYC</th><th>风险分</th><th className="num">余额</th><th>状态</th></tr></thead>
+            <thead><tr><th>用户编码</th><th>姓名</th><th>生命周期</th><th>V-Rank</th><th className="num">设备</th><th>KYC</th><th>风险分</th><th className="num">余额</th><th>状态</th></tr></thead>
             <tbody>
-              {rows.map((u) => {
+              {pager.pageRows.map((u) => {
                 const frozen = liveFrozen(u.id, u.frozen);
                 return (
                   <tr key={u.id} className="click" onClick={() => router.push(`/users/search/${u.id}`)}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{u.id} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{u.ref} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
                     <td>{u.name}</td>
                     <td><span className="bdg dim">{u.lc}</span></td>
                     <td><span className="bdg dim">{u.vrank}</span></td>
@@ -104,28 +105,27 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
                   </tr>
                 );
               })}
-              {rows.length === 0 && (
+              {pager.pageRows.length === 0 && (
                 <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>无匹配用户 · 换个检索词或分组试试</td></tr>
               )}
             </tbody>
           </table>
         </div>
+        <DataListPager
+          label="C1 用户列表"
+          page={pager.page}
+          pageSize={pager.pageSize}
+          total={pager.total}
+          rawTotal={USERS.length}
+          onPageChange={pager.setPage}
+          onPageSizeChange={pager.setPageSize}
+          pageSizeOptions={[5, 10, 20]}
+        />
         <div className="l-b" style={{ paddingTop: 12 }}>
           <div className="ctint"><b>检索结果只读</b> · 本页只定位与展示;冻结/解冻去 C2,资产调整去 C3,实名裁决去 C4,安全处置去 C5,各自走操作确认。</div>
         </div>
       </section>
-
       <p className="f-foot">隐私三道闸:手机号/地址全程脱敏(检索、展示、导出);看敏感维度落 <b>admin.user_profile_viewed</b>;导出名单落 <b>admin.user_list_exported</b>(检索条件以哈希记录,不含明文),统一归口导出审计台(L5)。生命周期 L0–L5 / V-Rank V0–V12 是内部分诊口径,用户端永不可见。</p>
-      <PaginationExemptionList
-        items={[
-          {
-            label: "检索 & 画像",
-            kind: "sample-ledger",
-            maxRows: 7,
-            reason: "C1 只读检索固定七个种子用户,真实处置从深链进入各业务页",
-          },
-        ]}
-      />
     </>
   );
 }

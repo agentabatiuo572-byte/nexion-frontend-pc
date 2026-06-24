@@ -29,6 +29,7 @@ next-env.d.ts
 
 # playwright / browser self-check artifacts
 /.playwright-mcp/
+/.codex-run/
 *.png
 
 # scratch / exploration / temp (非产品代码,勿托管)

@@ -9,7 +9,6 @@
  *  - 配对地址 = WITHDRAWALS 同链同址(31E8 TR7N…f2 / 77D4 TBn8…1p / 2231 bc1q…7e),弃设计稿发明地址;
  *  - 覆盖率/红线 = lib/mock/admin/ledger LEDGER(C3 加钱红线核验展示用,不重算);
  *  - C4 三段人数闭合 REGISTERED_USERS(已验证 = 总数 − 未验证 − 复审中);
- *  - C5/C6 锁定数同源 SEC(短锁 198 + 长锁 16 = 214,两页引同一常量)。
  * 真写键沿用旧 c-view 体系:C.adjust.<id>.status / C.user.<id>.pwReset / C.impersonate.<id>.ended;
  * 会话键空间两级:C.session.<ssid>.forcedOut(单会话,C5)+ C.session.user.<uid>.allOut(整链,
  * C2 强制登出 / 冻结联动 / C5 全部踢线同键);新增 C.kyc.<id>.st(三态 verified/none/review,
@@ -213,16 +212,6 @@ export const KYC_STATE: Record<KycRow["st"], [label: string, tone: string]> = {
 };
 export const KYC_NETWORKS = "TRC20 / ERC20 / BTC / ETH";
 
-/* ============ C5 安全会话 ============ */
-// 锁定数与 C6 同源(214 = 短 198 + 长 16);今日凭证异常回收 = refresh 重用检测整链踢线。
-export const SEC = {
-  activeSessions: 96_420,
-  twofaRate: 38.2,
-  lockedShort: 198,
-  lockedLong: 16,
-  tokenReuseToday: 3,
-};
-
 // usr_2231 会话(C2 账户明细「活跃会话 3 个」同源同行;ss id 单一定义,两页引用)。
 export const SESSIONS_2231: { id: string; ip: string; dev: string; last: string; fp: string; geo: string; tok: string; trail: [string, string, string][] }[] = [
   { id: "ss_88a2", ip: "45.142.××", dev: "iOS · App", last: "2 小时前", fp: "a1b2c3 · iOS 17.4 · Safari", geo: "新加坡(与常用地一致)", tok: "短凭证 4h · 长凭证 30d", trail: [["首次登录 · 密码 + 短信", "3 周前", "✓"], ["本次活跃", "2 小时前", "✓"]] },
@@ -243,35 +232,3 @@ export const CRED_PARAMS = [
   { key: "sessionIdle", name: "会话不活跃过期", sub: "超过就失效,要重新登录", cur: "30 天", note: "范围 7–90 天 · 实时按新阈值判" },
 ];
 export const STEPUP_RO = { name: "敏感操作再验证线", cur: "7 天", sub: "超过 N 天没活跃的会话,提现/改密/关 2FA 前要再验一次 · 目前写死 7 天,可配化等开发确认" };
-
-/* ============ C6 注册登录风控 ============ */
-export const C6_STATS = {
-  otpToday: 31_240,
-  captchaTrigToday: 412,
-  locked: SEC.lockedShort + SEC.lockedLong, // 214 · 与 C5 单源
-  stuffingClusters7d: 38,
-};
-
-// 参数行(C.regrisk.<key> 真写;每个 PRD 参数独立 key 独立写路径 —— 字段级门)。
-export const C6_PARAMS: { group: "otp" | "lock" | "captcha"; key: string; name: string; sub: string; cur: string; note: string }[] = [
-  { group: "otp", key: "otpTtl", name: "有效期", sub: "过期作废,客户端只做格式校验,真值在服务器", cur: "5 分钟", note: "范围 1–15 分钟 · 新发的按新值" },
-  { group: "otp", key: "otpCooldown", name: "重发冷却", sub: "防短信轰炸的第一道闸", cur: "60 秒", note: "范围 30–300 秒 · 实时" },
-  { group: "otp", key: "otpMax24h", name: "同号 24h 上限", sub: "超过就要先过人机验证才发", cur: "3 次", note: "范围 1–10 次 · 实时,联动人机验证触发" },
-  { group: "lock", key: "lockShortCnt", name: "短锁 · 触发次数", sub: "密码或两步验证连错几次触发短锁 · 锁定期间一切登录和验证码都拒", cur: "5 次", note: "范围 3–10 次" },
-  { group: "lock", key: "lockShortMin", name: "短锁 · 锁定时长", sub: "触发短锁后锁定多久", cur: "15 分钟", note: "范围 5–60 分钟" },
-  { group: "lock", key: "lockLongCnt", name: "长锁 · 触发次数", sub: "连错升级到长锁的次数 · 触发后强制走密码重置", cur: "10 次", note: "范围 5–20 次" },
-  { group: "lock", key: "lockLongMin", name: "长锁 · 锁定时长", sub: "触发长锁后锁定多久", cur: "24 小时", note: "范围 12–48 小时" },
-  // 注:设计稿 CAPTCHA 卡的「触发阈值」与 OTP 卡「同号 24h 上限」是同一参数(SPEC §6 单一线:
-  // 同号 24h 3 次 → 超线触发 CAPTCHA)。设计稿拆两行是自带双源,按「防参数配两套打架」铁律
-  // 收敛:唯一写路径 = otpMax24h,CAPTCHA 卡该行改只读镜像(c6 组件渲染)。
-];
-
-// K1 三参数:本页提交一律 422 拒收(接口层强制单一入口;suggestedPath 仅导航建议非 redirect)。
-// k1 键名 = k-tabs K1_PARAMS 权威键(K.k1.<param>),不发明别名。
-export const K1_REJECT_CODE = "MULTI_ACCOUNT_PARAM_BELONGS_TO_K1";
-export const K1_PARAMS = [
-  { name: "同 IP 24h 注册上限", k1: "maxSignupPerIp24h" },
-  { name: "同设备绑定账户上限", k1: "maxAccountsPerDevice" },
-  { name: "同支付工具绑定上限", k1: "maxAccountsPerPaymentInstrument" },
-];
-export const K1_PATH = "/risk/multi-account";

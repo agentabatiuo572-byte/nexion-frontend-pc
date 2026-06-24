@@ -1,41 +1,188 @@
 "use client";
 
 /**
- * C1 用户详情(L3 · 画像全景)。L1 用户与账户 → L2 检索画像 → L3 本页。
- * 跨域聚合:资产(C3)/ 风险(K4)/ KYC(C4)/ 会话(C5)/ 账户操作(C2)/ 审计(A2)。数据 mock。
+ * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
  */
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Snowflake, LogOut, UserCog, KeyRound, ShieldAlert } from "lucide-react";
-import { findUser, type UserKyc } from "@/lib/mock/admin/users";
-import { fmtUsd, fmtNum } from "@/lib/format";
+import { ArrowLeft, KeyRound, LogOut, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
+import {
+  fetchUser360,
+  requestUserPasswordReset,
+  revokeUserSessions,
+  startUserImpersonation,
+  updateUserStatus,
+  type JsonRecord,
+  type User360Detail,
+  type User360Profile,
+  type User360Section,
+  type User360Summary,
+} from "@/lib/admin/user360-client";
+import { fmtNum, fmtUsd } from "@/lib/format";
 import { confirm, toast } from "@/lib/store/ui";
 import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
 import { StatusPill, type PillTone } from "@/app/components/kit/status-pill";
-import { AuditTimeline } from "@/app/components/kit/audit-timeline";
-import { DepositSection } from "@/app/components/hub/deposit-section";
-import { WithdrawalSection } from "@/app/components/hub/withdrawal-section";
-import { DevicesSection } from "@/app/components/hub/devices-section";
-import { EarningsSection } from "@/app/components/hub/earnings-section";
-import { ReferralSection } from "@/app/components/hub/referral-section";
-import { VRankSection } from "@/app/components/hub/vrank-section";
-import { FinancialSection } from "@/app/components/hub/financial-section";
-import { EngagementSection } from "@/app/components/hub/engagement-section";
-import { AccountSection } from "@/app/components/hub/account-section";
-import { CommerceSection } from "@/app/components/hub/commerce-section";
-import { NotificationSection } from "@/app/components/hub/notification-section";
-import { RewardsSection } from "@/app/components/hub/rewards-section";
-import { useUserOps, useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { C4_LEDGER } from "@/app/components/domain-views/c-tabs/data";
-import type { AuditEntry } from "@/app/components/kit/audit-timeline";
+import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
 
-const KYC_TONE: Record<UserKyc, PillTone> = { 已认证: "success", 复审中: "warning", 待认证: "neutral" };
-function riskColor(s: number): string {
-  return s >= 70 ? "var(--v5-danger)" : s >= 40 ? "var(--v5-warning)" : "var(--v5-success)";
+const OPERATOR = "superadmin";
+
+type Column = {
+  key: string;
+  label: string;
+  numeric?: boolean;
+  render?: (value: unknown, row: JsonRecord) => ReactNode;
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  ACTIVE: "正常",
+  FROZEN: "冻结",
+  BANNED: "封禁",
+  RESTRICTED: "受限",
+};
+
+const KYC_LABEL: Record<string, string> = {
+  VERIFIED: "已认证",
+  APPROVED: "已认证",
+  PASSED: "已认证",
+  PENDING: "待认证",
+  REVIEW: "复审中",
+  REVIEWING: "复审中",
+  REJECTED: "未通过",
+  FAILED: "未通过",
+};
+
+function asText(value: unknown, fallback = "-") {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value === "boolean") return value ? "是" : "否";
+  return fallback;
 }
 
-function Section({ title, tag, children }: { title: string; tag?: string; children: React.ReactNode }) {
+function asNumber(value: unknown, fallback = 0) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function asArray<T extends JsonRecord = JsonRecord>(value: unknown): T[] {
+  return Array.isArray(value)
+    ? value.filter((row): row is T => !!row && typeof row === "object" && !Array.isArray(row))
+    : [];
+}
+
+function asList(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function rows(section: User360Section | null | undefined) {
+  return asArray(section?.records);
+}
+
+function money(value: unknown, digits = 2) {
+  return fmtUsd(asNumber(value), digits);
+}
+
+function numberLabel(value: unknown) {
+  return fmtNum(asNumber(value));
+}
+
+function statusLabel(value: unknown) {
+  const key = asText(value).toUpperCase();
+  return STATUS_LABEL[key] ?? key;
+}
+
+function kycLabel(value: unknown) {
+  const key = asText(value).toUpperCase();
+  return KYC_LABEL[key] ?? key;
+}
+
+function statusTone(value: unknown): PillTone {
+  const key = asText(value).toUpperCase();
+  if (key === "ACTIVE") return "success";
+  if (key === "FROZEN" || key === "RESTRICTED") return "warning";
+  if (key === "BANNED") return "danger";
+  return "neutral";
+}
+
+function kycTone(value: unknown): PillTone {
+  const key = asText(value).toUpperCase();
+  if (key === "VERIFIED" || key === "APPROVED" || key === "PASSED") return "success";
+  if (key === "REVIEW" || key === "REVIEWING" || key === "PENDING") return "warning";
+  if (key === "REJECTED" || key === "FAILED") return "danger";
+  return "neutral";
+}
+
+function riskTone(score: number): PillTone {
+  return score >= 70 ? "danger" : score >= 40 ? "warning" : "success";
+}
+
+function riskColor(score: number) {
+  return score >= 70 ? "var(--v5-danger)" : score >= 40 ? "var(--v5-warning)" : "var(--v5-success)";
+}
+
+function formatDate(value: unknown) {
+  const text = asText(value, "");
+  if (!text) return "-";
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+  return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function displayValue(value: unknown) {
+  if (value == null || value === "") return "-";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
+  if (typeof value === "string") {
+    if (/^\d{4}-\d{2}-\d{2}T/.test(value)) return formatDate(value);
+    return value;
+  }
+  if (Array.isArray(value)) return value.length ? `${value.length} 条` : "-";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "UNKNOWN_ERROR";
+}
+
+function sectionStatus(section: User360Section | null | undefined) {
+  return asText(section?.sourceStatus, "READY");
+}
+
+function auditDetail(row: JsonRecord) {
+  const detail = row.detailJson;
+  if (typeof detail === "string" && detail.trim()) {
+    try {
+      const parsed = JSON.parse(detail) as Record<string, unknown>;
+      const reason = asText(parsed.reason, "");
+      const fromStatus = asText(parsed.fromStatus, "");
+      const toStatus = asText(parsed.toStatus, "");
+      if (reason && fromStatus && toStatus) return `${fromStatus} -> ${toStatus} · ${reason}`;
+      if (reason) return reason;
+    } catch {
+      return detail;
+    }
+  }
+  return asText(row.result, "");
+}
+
+function toAuditEntries(rowsValue: unknown): AuditEntry[] {
+  return asArray(rowsValue).map((row, index) => ({
+    id: asText(row.id, `${index}`),
+    actor: asText(row.actorUsername, "系统"),
+    role: "superadmin",
+    action: asText(row.action, "UNKNOWN"),
+    detail: auditDetail(row),
+    at: formatDate(row.createdAt),
+    ip: asText(row.clientIp, "-"),
+  }));
+}
+
+function Section({ title, tag, children }: { title: string; tag?: string; children: ReactNode }) {
   return (
     <div className="rounded-[12px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
       <div className="mb-2.5 flex items-center gap-2">
@@ -47,214 +194,538 @@ function Section({ title, tag, children }: { title: string; tag?: string; childr
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-1.5" style={{ borderBottom: "1px solid var(--v5-border)" }}>
+    <div className="flex items-center justify-between gap-3 py-1.5" style={{ borderBottom: "1px solid var(--v5-border)" }}>
       <span className="text-[12px]" style={{ color: "var(--v5-ink-4)" }}>{label}</span>
-      <span className="text-[12.5px]" style={{ color: "var(--v5-ink)" }}>{children}</span>
+      <span className="text-right text-[12.5px]" style={{ color: "var(--v5-ink)" }}>{children}</span>
     </div>
+  );
+}
+
+function DataTable({ rows, columns, emptyText = "暂无记录" }: { rows: JsonRecord[]; columns: Column[]; emptyText?: string }) {
+  if (rows.length === 0) {
+    return <p className="rounded-[8px] px-3 py-3 text-[12px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)" }}>{emptyText}</p>;
+  }
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table className="w-full text-left text-[12px]" style={{ minWidth: 760, borderCollapse: "separate", borderSpacing: 0 }}>
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column.key} className={column.numeric ? "text-right" : ""} style={{ color: "var(--v5-ink-4)", borderBottom: "1px solid var(--v5-border)", padding: "8px 10px", fontWeight: 500 }}>{column.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${asText(row.id ?? row.bizNo ?? row.orderNo ?? row.depositNo ?? row.withdrawalNo ?? row.instanceNo, "row")}-${index}`}>
+              {columns.map((column) => (
+                <td key={column.key} className={column.numeric ? "text-right font-mono-tabular" : ""} style={{ color: "var(--v5-ink-2)", borderBottom: "1px solid var(--v5-border)", padding: "8px 10px", maxWidth: 220 }}>
+                  <span className="line-clamp-2">{column.render ? column.render(row[column.key], row) : displayValue(row[column.key])}</span>
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HubSection({
+  id,
+  title,
+  section,
+  columns,
+  children,
+  emptyText,
+}: {
+  id?: string;
+  title: string;
+  section?: User360Section | null;
+  columns?: Column[];
+  children?: ReactNode;
+  emptyText?: string;
+}) {
+  const dataRows = rows(section);
+  return (
+    <div id={id} style={{ scrollMarginTop: 76 }}>
+      <Section title={title} tag={`source ${sectionStatus(section)}`}>
+        {children}
+        {columns && (
+          <div className={children ? "mt-3" : ""}>
+            <DataTable rows={dataRows} columns={columns} emptyText={emptyText} />
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)] disabled:cursor-not-allowed disabled:opacity-55"
+      style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
+    >
+      {children}
+    </button>
   );
 }
 
 export default function UserDetailPage() {
   const params = useParams<{ id: string }>();
-  const user = findUser(params.id);
-  const hydrated = useOpsHydrated();
-  const storeAudit = useUserOps((s) => s.users[params.id]?.audit);
-  const storeFrozen = useUserOps((s) => s.users[params.id]?.frozen);
-  const opsAudit = hydrated ? (storeAudit ?? []) : [];
-  const frozen = hydrated ? (storeFrozen ?? false) : false;
-  const setFrozen = useUserOps((s) => s.setFrozen);
-  const opsLog = useUserOps((s) => s.log);
-  // 余额 = 种子 + 运营调整累计(C3 earningAppend 同 store;收益台账卡已叠加,主卡同源防双口径)。
-  const storeBalAdj = useUserOps((s) => s.users[params.id]?.balanceAdjustUsd);
-  const storeNexAdj = useUserOps((s) => s.users[params.id]?.balanceAdjustNex);
-  const balAdjUsd = hydrated ? (storeBalAdj ?? 0) : 0;
-  const balAdjNex = hydrated ? (storeNexAdj ?? 0) : 0;
-  // KYC 展示同源 C4 唯一真相源(audit P1 修):实时裁决(C.kyc.<id>.st,C4 人工/K5 回写)>
-  // C4 台账种子(usr_77D4 复审中等)> findUser 基础映射(不再自存一份口径)。
-  const pcParams = usePlatformConfig((s) => s.params);
-  const c4Live = hydrated ? (pcParams?.[`C.kyc.${params.id}.st`] as string | undefined) : undefined;
-  const c4Seed = C4_LEDGER.find((r) => r.id === params.id)?.st;
-  const KYC_ST_LABEL: Record<string, UserKyc> = { verified: "已认证", review: "复审中", none: "待认证" };
-  const kycLive: UserKyc = (c4Live && KYC_ST_LABEL[c4Live]) || (c4Seed && KYC_ST_LABEL[c4Seed]) || user?.kyc || "待认证";
+  const userKey = params.id;
+  const [detail, setDetail] = useState<User360Detail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState<string | null>(null);
 
-  if (!user) {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setDetail(await fetchUser360(userKey));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [userKey]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const profile: User360Profile | null = detail?.profile ?? null;
+  const summary: User360Summary = detail?.summary ?? {};
+  const userId = profile?.id ?? summary.userId;
+  const userNo = asText(profile?.userNo ?? summary.userNo, "-");
+  const nickname = asText(profile?.nickname, "用户详情");
+  const status = asText(profile?.status ?? summary.status, "UNKNOWN").toUpperCase();
+  const riskScore = asNumber(summary.riskScore ?? profile?.riskScore);
+  const riskBand = asText(summary.riskBand ?? profile?.riskBand, riskScore >= 70 ? "高风险" : riskScore >= 40 ? "中风险" : "低风险");
+  const nonActive = status !== "ACTIVE" && status !== "UNKNOWN";
+  const frozen = status === "FROZEN";
+  const actionDisabled = !!actionPending || !userId;
+
+  const sessions = useMemo(() => asArray(detail?.sessions), [detail?.sessions]);
+  const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
+
+  function scrollToHub(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function runAction(label: string, action: () => Promise<unknown>, successTitle: string, description?: string) {
+    setActionPending(label);
+    try {
+      await action();
+      await load();
+      toast.success(successTitle, description);
+    } catch (err) {
+      toast.error("操作失败", errorMessage(err));
+    } finally {
+      setActionPending(null);
+    }
+  }
+
+  async function doFreeze() {
+    if (!userId) {
+      toast.error("缺少用户主键", "请刷新后重试");
+      return;
+    }
+    const nextStatus = frozen ? "ACTIVE" : "FROZEN";
+    const yes = await confirm({
+      title: frozen ? "解冻账户?" : "冻结账户?",
+      message: frozen
+        ? `恢复 ${nickname} 的提现与交易能力。`
+        : `冻结 ${nickname} 的提现与交易,转合规核查。操作会写入审计。`,
+      confirmLabel: frozen ? "确认解冻" : "确认冻结",
+      danger: !frozen,
+    });
+    if (!yes) return;
+    await runAction(
+      frozen ? "unfreeze" : "freeze",
+      () => updateUserStatus(userId, nextStatus, frozen ? "C1 详情页人工复核通过后恢复账户" : "C1 详情页人工风控处置冻结账户", OPERATOR),
+      frozen ? "账户已解冻" : "账户已冻结",
+      `${userNo} · ${nickname}`,
+    );
+  }
+
+  async function confirmAction(
+    label: string,
+    title: string,
+    message: string,
+    confirmLabel: string,
+    action: () => Promise<unknown>,
+    danger?: boolean,
+  ) {
+    const yes = await confirm({ title, message, confirmLabel, danger });
+    if (!yes) return;
+    await runAction(label, action, confirmLabel, `${userNo} · ${nickname}`);
+  }
+
+  const kpis = [
+    { label: "可提余额", value: money(summary.walletUsdt ?? profile?.walletUsdt), accent: "var(--admin-domain-d)", anchor: "hub-deposit" },
+    { label: "累计充值", value: money(summary.depositedUsd), accent: "var(--admin-domain-c)", anchor: "hub-deposit" },
+    { label: "累计提现", value: money(summary.withdrawnUsd), accent: "var(--v5-warning)", anchor: "hub-withdrawal" },
+    { label: "团队规模", value: `${numberLabel(summary.teamSize)} 人`, accent: "var(--admin-domain-f)", anchor: "hub-referral" },
+    { label: "设备数", value: `${numberLabel(summary.deviceCount)} 台`, accent: "var(--admin-domain-e)", anchor: "hub-devices" },
+  ];
+
+  if (loading && !detail) {
     return (
       <div className="w-full">
         <Link href="/users/search" prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           <ArrowLeft size={14} /> 返回检索
         </Link>
-        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>用户 {params.id} 不存在。</p>
+        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>正在加载用户详情...</p>
       </div>
     );
   }
 
-  async function doFreeze() {
-    const next = !frozen;
-    const yes = await confirm({
-      title: next ? "冻结账户?" : "解冻账户?",
-      message: next ? `冻结 ${user!.nickname} 的提现与交易,转合规核查。需填写操作理由 + 审计留痕。` : `恢复 ${user!.nickname} 的提现与交易能力。`,
-      confirmLabel: next ? "确认冻结" : "确认解冻",
-      danger: next,
-    });
-    if (yes) {
-      setFrozen(user!.id, next);
-      toast.success(next ? "账户已冻结" : "账户已解冻", `${user!.id} · ${user!.nickname}`);
-    }
+  if (error && !detail) {
+    return (
+      <div className="w-full">
+        <Link href="/users/search" prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
+          <ArrowLeft size={14} /> 返回检索
+        </Link>
+        <div className="mt-6 rounded-[12px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
+          <p className="text-[14px]" style={{ color: "var(--v5-danger)" }}>用户详情加载失败: {error}</p>
+          <button type="button" onClick={() => void load()} className="mt-3 inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
+            <RefreshCcw size={14} /> 重试
+          </button>
+        </div>
+      </div>
+    );
   }
-  async function act(title: string, message: string, ok: string, action: string, detail: string, tone: "danger" | "warning" | "success" | "neutral", danger?: boolean) {
-    const yes = await confirm({ title, message, confirmLabel: ok, danger });
-    if (yes) {
-      opsLog(user!.id, action, detail, tone);
-      toast.success(ok, `${user!.id} · ${user!.nickname}`);
-    }
-  }
-  const mergedAudit: AuditEntry[] = [
-    ...opsAudit.map((a) => ({ id: a.id, actor: a.actor, role: "superadmin" as const, action: a.action, detail: a.detail, at: a.tsLabel, ip: "—" })),
-    ...user.audit,
-  ];
 
-  // KPI 卡点击 = 滚动到本页该用户对应的 360 卡(显示「该用户」明细),不跳全局看板。
-  const kpis = [
-    { label: "可提余额", value: fmtUsd(user.balanceUsd + balAdjUsd), accent: "var(--admin-domain-d)", anchor: "hub-deposit" },
-    { label: "累计充值", value: fmtUsd(user.depositedUsd), accent: "var(--admin-domain-c)", anchor: "hub-deposit" },
-    { label: "累计提现", value: fmtUsd(user.withdrawnUsd), accent: "var(--v5-warning)", anchor: "hub-withdrawal" },
-    { label: "团队规模", value: `${fmtNum(user.teamSize)} 人`, accent: "var(--admin-domain-f)", anchor: "hub-referral" },
-    { label: "设备数", value: `${fmtNum(user.deviceCount)} 台`, accent: "var(--admin-domain-e)", anchor: "hub-devices" },
-  ];
-  function scrollToHub(id: string) {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!profile || !detail) {
+    return (
+      <div className="w-full">
+        <Link href="/users/search" prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
+          <ArrowLeft size={14} /> 返回检索
+        </Link>
+        <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>后端未返回用户详情。</p>
+      </div>
+    );
   }
 
   return (
     <div className="mx-auto w-full max-w-[1100px]">
-      {/* 返回 + 头部 */}
       <Link href="/users/search" prefetch={false} className="inline-flex items-center gap-1 text-[12.5px] transition-colors hover:opacity-80" style={{ color: "var(--v5-ink-3)" }}>
         <ArrowLeft size={14} /> 返回检索
       </Link>
 
       <header className="mt-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="font-display text-[24px]" style={{ color: "var(--v5-ink)" }}>{user.nickname}</h1>
-            <span className="font-mono-tabular text-[12px]" style={{ color: "var(--v5-ink-4)" }}>{user.id}</span>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="font-display text-[24px]" style={{ color: "var(--v5-ink)" }}>{nickname}</h1>
+            <span className="font-mono-tabular text-[12px]" style={{ color: "var(--v5-ink-4)" }}>用户编码 {userNo}</span>
           </div>
-          <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>{user.email} · 注册 {user.registeredAt}({user.regPhase})</p>
+          <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
+            {asText(profile.phoneMasked)} · 注册 {formatDate(profile.registeredAt)} · 最近登录 {formatDate(profile.lastLoginAt)}
+          </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusPill label={`KYC ${kycLive}`} tone={KYC_TONE[kycLive]} size="sm" dot={false} />
-            <StatusPill label={`风险 ${user.riskScore}`} tone={user.riskScore >= 70 ? "danger" : user.riskScore >= 40 ? "warning" : "success"} size="sm" />
-            <span className="font-mono-tabular rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-3)" }}>分层 {user.lifecycle} · {user.vRank}</span>
-            {user.flags.map((f) => (
-              <span key={f} className="rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 14%, transparent)", color: "var(--v5-danger)" }}>{f}</span>
+            <StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" />
+            <StatusPill label={`KYC ${kycLabel(summary.kycStatus ?? profile.kycStatus)}`} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} />
+            <StatusPill label={`${riskBand} ${riskScore}`} tone={riskTone(riskScore)} size="sm" />
+            <span className="font-mono-tabular rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-3)" }}>
+              分层 {asText(profile.userLevel)} · {asText(profile.vRank)}
+            </span>
+            {asList(detail.risk?.flags).map((flag, index) => (
+              <span key={`${displayValue(flag)}-${index}`} className="rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 14%, transparent)", color: "var(--v5-danger)" }}>
+                {displayValue(flag)}
+              </span>
             ))}
           </div>
         </div>
+        <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] disabled:opacity-60" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
+          <RefreshCcw size={14} /> 刷新
+        </button>
       </header>
 
-      {frozen && (
+      {nonActive && (
         <div className="mt-3 flex items-center gap-2 rounded-[10px] px-3 py-2 text-[12.5px]" style={{ background: "color-mix(in srgb, var(--v5-danger) 12%, transparent)", color: "var(--v5-danger)", border: "1px solid color-mix(in srgb, var(--v5-danger) 30%, transparent)" }}>
-          <Snowflake size={14} /> 账户已冻结 — 提现与交易已停用,待操作确认解冻。
+          <Snowflake size={14} /> 当前账户状态: {statusLabel(status)}。提现与交易能力以服务端状态为准。
         </div>
       )}
 
-      {/* KPI 行(跨域) */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {kpis.map((k) => (
-          <button key={k.label} type="button" onClick={() => scrollToHub(k.anchor)} title={`查看该用户 ${k.label} 明细`}
-            className="block w-full text-left transition-transform hover:-translate-y-0.5">
-            <KpiStatCard label={k.label} value={k.value} accent={k.accent} />
+        {kpis.map((kpi) => (
+          <button key={kpi.label} type="button" onClick={() => scrollToHub(kpi.anchor)} title={`查看该用户 ${kpi.label} 明细`} className="block w-full text-left transition-transform hover:-translate-y-0.5">
+            <KpiStatCard label={kpi.label} value={kpi.value} accent={kpi.accent} />
           </button>
         ))}
       </div>
 
-      {/* 主体两栏 */}
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        {/* 左:风险画像 + 资产 */}
         <div className="flex flex-col gap-4">
           <Section title="风险画像" tag="K4 风险评分 · C4 KYC">
             <div className="flex items-center gap-4">
               <div>
-                <p className="font-mono-tabular text-[32px] leading-none" style={{ color: riskColor(user.riskScore) }}>{user.riskScore}</p>
-                <p className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>/ 100 · ≥70 高危</p>
+                <p className="font-mono-tabular text-[32px] leading-none" style={{ color: riskColor(riskScore) }}>{riskScore}</p>
+                <p className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>{riskBand}</p>
               </div>
               <div className="flex-1">
-                <Row label="KYC 状态"><StatusPill label={kycLive} tone={KYC_TONE[kycLive]} size="sm" dot={false} /></Row>
-                <Row label="风险标记">{user.flags.length ? user.flags.join(" · ") : "无"}</Row>
+                <Row label="KYC 状态"><StatusPill label={kycLabel(summary.kycStatus ?? profile.kycStatus)} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} /></Row>
+                <Row label="风险标记">{asList(detail.risk?.flags).map(displayValue).join(" · ") || "无"}</Row>
+                <Row label="风险案件">{numberLabel(detail.risk?.openCaseCount)} 个未关闭</Row>
               </div>
             </div>
           </Section>
 
           <Section title="资产 & 账户" tag="C3 余额资产 · 双币 USDT/NEX">
-            <Row label="可提余额 · USDT"><span className="font-mono-tabular">{fmtUsd(user.balanceUsd + balAdjUsd)}</span></Row>
-            <Row label="NEX 余额"><span className="font-mono-tabular">{((user.nexBalance ?? Math.round(user.balanceUsd * 1.6 + user.depositedUsd * 0.4)) + balAdjNex).toLocaleString()} NEX</span></Row>
-            <Row label="累计充值"><span className="font-mono-tabular">{fmtUsd(user.depositedUsd)}</span></Row>
-            <Row label="累计提现"><span className="font-mono-tabular">{fmtUsd(user.withdrawnUsd)}</span></Row>
-            <Row label="净沉淀"><span className="font-mono-tabular" style={{ color: user.depositedUsd - user.withdrawnUsd >= 0 ? "var(--v5-success)" : "var(--v5-danger)" }}>{fmtUsd(user.depositedUsd - user.withdrawnUsd)}</span></Row>
+            <Row label="可提余额 · USDT"><span className="font-mono-tabular">{money(summary.walletUsdt ?? profile.walletUsdt)}</span></Row>
+            <Row label="NEX 余额"><span className="font-mono-tabular">{fmtNum(asNumber(summary.walletNex ?? profile.walletNex))} NEX</span></Row>
+            <Row label="累计充值"><span className="font-mono-tabular">{money(summary.depositedUsd)}</span></Row>
+            <Row label="累计提现"><span className="font-mono-tabular">{money(summary.withdrawnUsd)}</span></Row>
+            <Row label="提现申请额"><span className="font-mono-tabular">{money(summary.withdrawRequestedUsd)}</span></Row>
           </Section>
         </div>
 
-        {/* 右:账户操作 + 会话 */}
         <div className="flex flex-col gap-4">
-          <Section title="账户操作" tag="C2 · 需 操作确认">
+          <Section title="账户操作" tag="C2 · 真实接口 · 审计留痕">
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={doFreeze}
-                className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]" style={{ border: "1px solid var(--v5-border)", color: frozen ? "var(--v5-success)" : "var(--v5-ink-2)" }}>
+              <ActionButton onClick={() => void doFreeze()} disabled={actionDisabled}>
                 <Snowflake size={14} style={{ color: frozen ? "var(--v5-success)" : "var(--v5-danger)" }} /> {frozen ? "解冻账户" : "冻结账户"}
-              </button>
-              <button type="button" onClick={() => act("强制登出?", `使 ${user.nickname} 的全部会话失效。`, "确认登出", "强制登出", "全部登录会话已失效", "warning")}
-                className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
+              </ActionButton>
+              <ActionButton
+                onClick={() => void confirmAction(
+                  "revoke",
+                  "强制登出?",
+                  `使 ${nickname} 的全部会话失效,操作写入审计。`,
+                  "确认登出",
+                  () => revokeUserSessions(userId!, "C1 详情页人工安全处置强制登出全部会话", OPERATOR),
+                )}
+                disabled={actionDisabled}
+              >
                 <LogOut size={14} style={{ color: "var(--v5-warning)" }} /> 强制登出
-              </button>
-              <button type="button" onClick={() => act("以该用户身份登入?", `impersonate ${user.nickname} · 全程审计留痕。`, "确认登入", "impersonate", "以该用户身份登入(只读)· 审计留痕", "neutral")}
-                className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
+              </ActionButton>
+              <ActionButton
+                onClick={() => void confirmAction(
+                  "impersonate",
+                  "以该用户身份登入?",
+                  `${nickname} 的 impersonate 会话有效期 15 分钟,全程审计留痕。`,
+                  "确认登入",
+                  () => startUserImpersonation(userId!, "C1 详情页客服排障发起受控 impersonate 会话", OPERATOR, 15),
+                )}
+                disabled={actionDisabled}
+              >
                 <UserCog size={14} style={{ color: "var(--v5-tech-cyan)" }} /> impersonate
-              </button>
-              <button type="button" onClick={() => act("重置该用户密码?", `失效 ${user.nickname} 的当前密码并发送一次性重置链接 · 同步踢线全部会话 · 操作确认留痕。`, "确认重置", "重置密码", "失效当前密码 + 发送一次性重置链接 + 全部会话踢线 · 审计留痕", "warning")}
-                className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}>
+              </ActionButton>
+              <ActionButton
+                onClick={() => void confirmAction(
+                  "password-reset",
+                  "重置该用户密码?",
+                  `失效 ${nickname} 的当前密码并要求重新设置,同步写入审计。`,
+                  "确认重置",
+                  () => requestUserPasswordReset(userId!, "C1 详情页人工安全处置触发密码重置", OPERATOR),
+                  true,
+                )}
+                disabled={actionDisabled}
+              >
                 <KeyRound size={14} style={{ color: "var(--v5-warning)" }} /> 重置密码
-              </button>
+              </ActionButton>
             </div>
             <p className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
-              <ShieldAlert size={12} /> 高敏动作均需操作确认,全程写入审计。
+              <ShieldAlert size={12} /> 高敏动作均需确认,由后端接口写入审计。{actionPending ? ` 当前执行: ${actionPending}` : ""}
             </p>
           </Section>
 
           <Section title="安全 & 会话" tag="C5 安全会话">
-            <ul className="flex flex-col gap-1.5">
-              {user.sessions.map((s) => (
-                <li key={s.id} className="flex items-center justify-between rounded-[8px] p-2" style={{ background: "var(--v5-surface-2)" }}>
-                  <div>
-                    <p className="text-[12.5px]" style={{ color: "var(--v5-ink)" }}>{s.device}</p>
-                    <p className="font-mono-tabular text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>{s.ip} · {s.lastActive}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              <KpiStatCard label="活跃会话" value={numberLabel(summary.activeSessionCount)} accent="var(--admin-domain-c)" />
+              <KpiStatCard label="2FA" value={summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
+              <KpiStatCard label="锁定" value={summary.locked ? "是" : "否"} accent="var(--v5-warning)" />
+            </div>
+            <DataTable
+              rows={sessions}
+              columns={[
+                { key: "deviceName", label: "设备" },
+                { key: "clientIpMasked", label: "IP" },
+                { key: "status", label: "状态", render: (value) => <StatusPill label={asText(value)} tone={asText(value).toUpperCase() === "ACTIVE" ? "success" : "neutral"} size="sm" /> },
+                { key: "issuedAt", label: "签发", render: formatDate },
+                { key: "expiresAt", label: "过期", render: formatDate },
+              ]}
+              emptyText="暂无会话"
+            />
           </Section>
         </div>
       </div>
 
-      {/* 360 HUB · 字段级明细(C1·deepening)。KPI 卡锚点滚动至此(均为该用户数据)。 */}
       <div className="mt-4 flex flex-col gap-4">
-        <div id="hub-deposit" style={{ scrollMarginTop: 76 }}><DepositSection user={user} /></div>
-        <div id="hub-withdrawal" style={{ scrollMarginTop: 76 }}><WithdrawalSection user={user} /></div>
-        <div id="hub-devices" style={{ scrollMarginTop: 76 }}><DevicesSection user={user} /></div>
-        <EarningsSection user={user} />
-        <div id="hub-referral" style={{ scrollMarginTop: 76 }}><ReferralSection user={user} /></div>
-        <VRankSection user={user} />
-        <FinancialSection user={user} />
-        <EngagementSection user={user} />
-        <CommerceSection user={user} />
-        <AccountSection user={user} />
-        <NotificationSection user={user} />
-        <div id="hub-rewards" style={{ scrollMarginTop: 76 }}><RewardsSection user={user} /></div>
+        <HubSection
+          id="hub-deposit"
+          title="充值记录"
+          section={detail.deposits}
+          columns={[
+            { key: "depositNo", label: "充值单号" },
+            { key: "channel", label: "渠道" },
+            { key: "asset", label: "币种" },
+            { key: "amount", label: "金额", numeric: true },
+            { key: "statusLabel", label: "状态" },
+            { key: "confirmedAt", label: "确认时间", render: formatDate },
+          ]}
+        >
+          <Row label="确认总额">{money(detail.deposits?.confirmedUsd)}</Row>
+        </HubSection>
+
+        <HubSection
+          id="hub-withdrawal"
+          title="提现记录"
+          section={detail.withdrawals}
+          columns={[
+            { key: "withdrawalNo", label: "提现单号" },
+            { key: "asset", label: "币种" },
+            { key: "chain", label: "链" },
+            { key: "amount", label: "金额", numeric: true },
+            { key: "status", label: "状态" },
+            { key: "riskScore", label: "风险分", numeric: true },
+            { key: "createdAt", label: "创建时间", render: formatDate },
+          ]}
+        >
+          <Row label="完成总额">{money(detail.withdrawals?.completedUsd)}</Row>
+          <Row label="申请总额">{money(detail.withdrawals?.requestedUsd)}</Row>
+        </HubSection>
+
+        <HubSection
+          id="hub-devices"
+          title="设备明细"
+          section={detail.devices}
+          columns={[
+            { key: "instanceNo", label: "实例" },
+            { key: "name", label: "名称" },
+            { key: "productTier", label: "规格" },
+            { key: "status", label: "状态" },
+            { key: "runtimeStatus", label: "运行态" },
+            { key: "dailyUsdt", label: "日 USDT", numeric: true },
+            { key: "dailyNex", label: "日 NEX", numeric: true },
+          ]}
+        >
+          <Row label="在线 / 活跃">{numberLabel(detail.devices?.onlineCount)} / {numberLabel(detail.devices?.activeCount)}</Row>
+          <Row label="日产出">{money(detail.devices?.dailyUsdt)} · {fmtNum(asNumber(detail.devices?.dailyNex))} NEX</Row>
+        </HubSection>
+
+        <HubSection
+          title="收益明细"
+          section={{ records: asArray(detail.earnings?.records), sourceStatus: asText(detail.earnings?.sourceStatus, "READY") }}
+          columns={[
+            { key: "bizNo", label: "业务单号" },
+            { key: "bizType", label: "类型" },
+            { key: "asset", label: "币种" },
+            { key: "direction", label: "方向" },
+            { key: "amount", label: "金额", numeric: true },
+            { key: "balanceAfter", label: "余额", numeric: true },
+            { key: "createdAt", label: "时间", render: formatDate },
+          ]}
+        >
+          <Row label="收益合计">{money(detail.earnings?.totalUsdt)} · {fmtNum(asNumber(detail.earnings?.totalNex))} NEX</Row>
+          <Row label="设备日产出">{money(detail.earnings?.deviceDailyUsdt)} · {fmtNum(asNumber(detail.earnings?.deviceDailyNex))} NEX</Row>
+        </HubSection>
+
+        <HubSection
+          id="hub-referral"
+          title="推荐团队"
+          section={{ records: asArray(detail.referral?.members), sourceStatus: asText(detail.referral?.sourceStatus, "READY") }}
+          columns={[
+            { key: "memberNo", label: "成员编码" },
+            { key: "nickname", label: "昵称" },
+            { key: "vRank", label: "V-Rank" },
+            { key: "level", label: "层级", numeric: true },
+            { key: "volume", label: "贡献额", numeric: true },
+            { key: "createdAt", label: "加入时间", render: formatDate },
+          ]}
+        >
+          <Row label="团队规模">{numberLabel(detail.referral?.teamSize)} 人</Row>
+          <Row label="直推人数">{numberLabel(detail.referral?.directCount)} 人</Row>
+          <Row label="团队业绩">{money(detail.referral?.teamVolumeUsd)}</Row>
+        </HubSection>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Section title="V-Rank" tag={`source ${sectionStatus(detail.vrank)}`}>
+            <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
+            <Row label="用户层级">{asText(detail.vrank?.userLevel)}</Row>
+            <Row label="团队规模">{numberLabel(detail.vrank?.teamSize)} 人</Row>
+            <Row label="直推人数">{numberLabel(detail.vrank?.directCount)} 人</Row>
+            <Row label="团队业绩">{money(detail.vrank?.teamVolumeUsd)}</Row>
+          </Section>
+
+          <Section title="账户合规" tag={`source ${sectionStatus(detail.account)}`}>
+            <Row label="用户编码">{userNo}</Row>
+            <Row label="账户状态"><StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" /></Row>
+            <Row label="KYC"><StatusPill label={kycLabel(summary.kycStatus ?? profile.kycStatus)} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} /></Row>
+            <Row label="2FA">{summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
+            <Row label="需重置密码">{summary.passwordResetRequired ? "是" : "否"}</Row>
+          </Section>
+        </div>
+
+        <HubSection
+          title="财务轨迹"
+          section={{ records: asArray(detail.financial?.exchangeRows), sourceStatus: asText(detail.financial?.sourceStatus, "READY") }}
+          columns={[
+            { key: "bizNo", label: "业务单号" },
+            { key: "bizType", label: "类型" },
+            { key: "asset", label: "币种" },
+            { key: "direction", label: "方向" },
+            { key: "amount", label: "金额", numeric: true },
+            { key: "createdAt", label: "时间", render: formatDate },
+          ]}
+          emptyText="暂无兑换/转换账单"
+        >
+          <Row label="钱包 USDT">{money((detail.financial?.wallet as JsonRecord | undefined)?.usdt)}</Row>
+          <Row label="钱包 NEX">{fmtNum(asNumber((detail.financial?.wallet as JsonRecord | undefined)?.nex))} NEX</Row>
+          <Row label="质押记录">{numberLabel(asArray(detail.financial?.stakingLedgerRows).length)} 条</Row>
+        </HubSection>
+
+        <HubSection
+          title="参与与通知"
+          section={detail.notifications}
+          columns={[
+            { key: "title", label: "标题" },
+            { key: "type", label: "类型" },
+            { key: "pushStatus", label: "推送" },
+            { key: "readFlag", label: "已读" },
+            { key: "createdAt", label: "创建时间", render: formatDate },
+          ]}
+        >
+          <Row label="未读">{numberLabel(detail.notifications?.unreadCount)} 条</Row>
+          <Row label="待推送">{numberLabel(detail.notifications?.pendingPushCount)} 条</Row>
+          <Row label="失败">{numberLabel(detail.notifications?.failedPushCount)} 条</Row>
+        </HubSection>
+
+        <HubSection
+          title="商城订单"
+          section={{ records: asArray(detail.commerce?.orders), sourceStatus: asText(detail.commerce?.sourceStatus, "READY") }}
+          columns={[
+            { key: "orderNo", label: "订单号" },
+            { key: "skuName", label: "商品" },
+            { key: "amount", label: "金额", numeric: true },
+            { key: "state", label: "状态" },
+            { key: "dcLocation", label: "机房" },
+            { key: "orderedAt", label: "下单时间", render: formatDate },
+          ]}
+        >
+          <Row label="订单总数">{numberLabel(detail.commerce?.total)} 单</Row>
+          <Row label="活跃订单">{numberLabel(detail.commerce?.activeOrderCount)} 单</Row>
+        </HubSection>
       </div>
 
-      {/* 审计 */}
       <div className="mt-4">
         <Section title="审计时间线" tag="A2 全程留痕">
-          <AuditTimeline entries={mergedAudit} />
+          <AuditTimeline entries={auditEntries} />
         </Section>
       </div>
     </div>

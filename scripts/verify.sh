@@ -116,8 +116,8 @@ check_html "/platform/audit" "高敏操作动态"                  # A2 14 件 p
 check_html "/platform/audit" "审计日志"                      # A2 只追加
 check_html "/platform/audit" "应急快速轨"                    # A2 SOS SLA 倒计时
 check_html "/platform/audit" "操作确认适用动作清单"              # A2 9 大类机制参数
-check_html "/platform/config" "服务器时钟"                   # A3 server time 单源
-check_html "/platform/config" "防重号策略"                   # A3 24h 去重窗口
+check_html "/platform/config" "系统健康"                     # A3 后端健康只读
+check_html "/platform/config" "数据来源"                     # A3 真实接口读取状态
 check_html "/platform/config" "熔断闸状态存储"               # A3 只读跳 J1/J2
 check_html "/platform/config" "功能开关平台"                 # A3 灰度台(已本地化中文,旧英文串 feature flag 过时 2026-06-22)
 check_html "/platform/events" "事件目录"                     # A4 6 family

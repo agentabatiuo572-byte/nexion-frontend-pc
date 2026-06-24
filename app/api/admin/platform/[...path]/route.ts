@@ -17,6 +17,12 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 2 && parts[0] === "config" && parts[1] === "overview") {
+    return "/api/admin/platform/config/overview";
+  }
+  if (parts.length === 1 && parts[0] === "config") {
+    return "/api/admin/platform/config";
+  }
   if (parts.length === 2 && parts[0] === "accounts" && parts[1] === "overview") {
     return "/api/admin/platform/accounts/overview";
   }
@@ -40,6 +46,23 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 2 && parts[0] === "rbac" && parts[1] === "actions") {
     return "/api/admin/platform/rbac/actions";
+  }
+  if (parts.length >= 1 && parts[0] === "audit") {
+    if (parts.length === 2 && (parts[1] === "overview" || parts[1] === "logs" || parts[1] === "exports")) {
+      return `/api/admin/platform/audit/${parts[1]}`;
+    }
+    if (parts.length === 4 && parts[1] === "logs" && parts[2] === "trace" && isNonEmpty(parts[3])) {
+      return `/api/admin/platform/audit/logs/trace/${encodeURIComponent(parts[3])}`;
+    }
+    if (parts.length === 4 && parts[1] === "operations" && isNonEmpty(parts[2]) && (parts[3] === "approve" || parts[3] === "reject")) {
+      return `/api/admin/platform/audit/operations/${encodeURIComponent(parts[2])}/${parts[3]}`;
+    }
+    if (parts.length === 3 && parts[1] === "mechanism-params" && isNonEmpty(parts[2])) {
+      return `/api/admin/platform/audit/mechanism-params/${encodeURIComponent(parts[2])}`;
+    }
+    if (parts.length === 3 && parts[1] === "stats" && ["summary", "actions", "services", "users"].includes(parts[2])) {
+      return `/api/admin/platform/audit/stats/${parts[2]}`;
+    }
   }
   return null;
 }
