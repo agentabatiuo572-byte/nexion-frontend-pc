@@ -13,13 +13,43 @@ function jsonError(status: number, message: string) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts[0] === "generation-gates" || parts[0] === "phases") {
-    return `/api/admin/devices/e1/${parts.map(encodeURIComponent).join("/")}`;
+  const isOverview = parts[0] === "overview" && parts.length === 1;
+  const isTaskCollection = parts[0] === "tasks" && parts.length === 1;
+  const isTask = parts[0] === "tasks" && parts.length === 2 && !!parts[1];
+  const isTaskAction = parts[0] === "tasks" && parts.length === 3 && !!parts[1] && (parts[2] === "price" || parts[2] === "status");
+  const isPhoneTierCollection = parts[0] === "phone-tiers" && parts.length === 1;
+  const isPhoneTier = parts[0] === "phone-tiers" && parts.length === 2 && !!parts[1];
+  const isOrderCollection = parts[0] === "orders" && parts.length === 1;
+  const isOrderAction = parts[0] === "orders" && parts.length === 3 && !!parts[1] && (parts[2] === "refund" || parts[2] === "cancel" || parts[2] === "terminal" || parts[2] === "state");
+  const isE3Overview = parts[0] === "e3" && parts[1] === "overview" && parts.length === 2;
+  const isE3Config = parts[0] === "e3" && parts[1] === "config" && parts.length === 2;
+  const isE3TradeinOverview = parts[0] === "e3" && parts[1] === "tradein" && parts[2] === "overview" && parts.length === 3;
+  const isE3TradeinAction = parts[0] === "e3" && parts[1] === "tradein" && parts.length === 3 && ["recycle", "replace", "deactivate"].includes(parts[2]);
+  const isDeviceRestore = parts.length === 2 && /^[1-9]\d*$/.test(parts[0]) && parts[1] === "restore";
+  const isDatacenterCollection = parts[0] === "datacenters" && parts.length === 1;
+  const isDatacenterItem = parts[0] === "datacenters" && parts.length === 2 && !!parts[1];
+  const isDatacenterAction = parts[0] === "datacenters" && parts.length === 3 && !!parts[1] && (parts[2] === "pause" || parts[2] === "resume");
+  if (
+    !isOverview
+    && !isTaskCollection
+    && !isTask
+    && !isTaskAction
+    && !isPhoneTierCollection
+    && !isPhoneTier
+    && !isOrderCollection
+    && !isOrderAction
+    && !isE3Overview
+    && !isE3Config
+    && !isE3TradeinOverview
+    && !isE3TradeinAction
+    && !isDeviceRestore
+    && !isDatacenterCollection
+    && !isDatacenterItem
+    && !isDatacenterAction
+  ) {
+    return null;
   }
-  if (parts[0] === "skus" || parts[0] === "reviews") {
-    return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
-  }
-  return null;
+  return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
 }
 
 async function proxy(request: Request, context: RouteContext) {
@@ -27,7 +57,7 @@ async function proxy(request: Request, context: RouteContext) {
   const targetPath = backendPath(path);
 
   if (!targetPath) {
-    return jsonError(404, "E1_ROUTE_NOT_FOUND");
+    return jsonError(404, "DEVICES_ROUTE_NOT_FOUND");
   }
 
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
@@ -65,7 +95,7 @@ async function proxy(request: Request, context: RouteContext) {
       },
     });
   } catch {
-    return jsonError(503, "E1_BACKEND_UNAVAILABLE");
+    return jsonError(503, "DEVICES_BACKEND_UNAVAILABLE");
   }
 }
 

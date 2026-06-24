@@ -1,6 +1,9 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
-import type { E1GenerationGateData } from "@/lib/admin/e1-client";
-import type { OpsSku, OpsReview, OpsTask, OpsDataCenter } from "@/lib/store/admin/platform-config-store";
+import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
+import type { E2PhoneTier } from "@/lib/admin/e2-client";
+import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
+import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
+import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
 
 /**
  * E 域子视图共享类型。
@@ -14,17 +17,34 @@ export type EOp =
   | "sku-delete"      // 删除 SKU(需破坏性理由 + 影响确认)
   | "sku-status"      // 上/下架(真后端 status)
   | "task-down"       // 下架任务(需破坏性理由 + 影响确认)
-  | "task-price"      // 任务改单价(真 store updateTask,操作确认 出价格编辑框)
-  | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ updateTask + setParam config
-  | "param"           // 自由值调参 → setParam(paramKey, newValue);操作确认 出「目标新值」
-  | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];每字段 setParam 各自 key
-  | "param-fixed"     // 固定值写入 → setParam(paramKey, fixedVal)(如 forceUnlock true/false);不出编辑框
+  | "task-price"      // 任务改单价(E2 后端 API,操作确认 出价格编辑框)
+  | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API
+  | "phone-tier"      // 手机算力档位收益 → E2 后端 API
+  | "param"           // 自由值调参 → E3 走后端 config,其它 legacy setParam;操作确认 出「目标新值」
+  | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];E3 逐字段写后端 config
+  | "param-fixed"     // 固定值写入 → E3 走后端 config,其它 legacy setParam;不出编辑框
+  | "phase-save"      // E1 阶段新增/编辑
+  | "phase-current"   // E1 当前阶段切换
+  | "phase-archive"   // E1 阶段归档
+  | "generation-gate-save"    // E1 代际门新增/编辑
+  | "generation-gate-force"   // E1 代际门强制提前开放/撤销
+  | "generation-gate-archive" // E1 代际门归档
+  | "order-state"     // E4 订单状态推进/回滚
   | "order-refund"    // 退款(放大流出)
   | "order-cancel"    // 取消订单
   | "order-terminal"  // 补建终态(select)
+  | "device-activate" // E5 设备激活
+  | "device-deactivate" // E5 设备取消激活/解绑
   | "ops-pause"       // DC 批量 pause / 恢复
   | "dc-save"         // 数据中心新增/编辑(businessForm multi-field:id/location/displayName)→ store CRUD
   | "dc-delete";      // 数据中心删除(需破坏性理由)
+
+export interface DatacenterForm {
+  dcLocation: string;
+  regionLabel: string;
+  status: E5DatacenterStatus;
+  sortOrder: string;
+}
 
 export interface McSpec {
   name: string;             // 确认弹窗标题(动作名)
@@ -41,8 +61,16 @@ export interface McSpec {
   hasImg?: boolean;         // sku-save:含商品媒体(商品主图或商品视频)
   status?: string;          // sku-status:"on"|"off";ops-pause:"on"|"off"
   taskId?: string;          // task-price:目标任务 id
+  phoneTier?: number;
+  phoneField?: "dailyUsdt" | "dailyNex";
+  phaseId?: string;
+  generationGateId?: string;
+  generationGate?: E1GenerationGateInput;
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单
+  deviceId?: number;        // E5 设备主键(后端 nx_user_device.id)
+  deviceNo?: string;        // E5 展示编号(instanceNo)
   dc?: string;              // 运维处置目标数据中心
+  dcForm?: DatacenterForm;
 }
 export type Mc = McSpec | null;
 
@@ -70,7 +98,7 @@ export interface EViewCtx {
   e1Loading: boolean;
   e1Error: string | null;
   e1Gates: E1GenerationGateData | null;
-  phaseCur: string;                              // 当前 Phase(pget('H.phase.current') ?? 'P3')
+  phaseCur: string;                              // 当前 Phase,仅来自 E1 后端 generation-gates
   refreshE1: () => Promise<void>;
   openSku: (name?: string) => void;              // 打开 SKU 抽屉(无 name = 新增)
   delSku: (name: string) => void;
@@ -78,22 +106,52 @@ export interface EViewCtx {
   openEditReview: (r: OpsReview) => void;
   toggleReview: (r: OpsReview) => void;
   delReview: (r: OpsReview) => void;
-  // E2 收益 & 任务引擎(改单价走 ctx.openActionConfirm op:"task-price";新增/下架走真 store)
+  // E2 收益 & 任务引擎(任务列表/新增/改单价/下架均走后端 API)
   tasks: OpsTask[];
+  phoneTiers: E2PhoneTier[];
+  e2Loading: boolean;
+  e2Error: string | null;
+  refreshE2: () => Promise<void>;
   openAddTask: () => void;
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   delTask: (t: { id: string; n: string }) => void;
+  // E3 生命周期 & Trade-in(配置/指标/tx 监控均走后端 API)
+  e3Ready: boolean;
+  e3Loading: boolean;
+  e3Error: string | null;
+  e3Stats: E3Stats | null;
+  e3Operations: E3OperationMetric[];
+  refreshE3: () => Promise<void>;
   // E4 订单状态机
   orders: EOrder[];
+  e4Loading: boolean;
+  e4Error: string | null;
+  e4Page: number;
+  e4PageSize: number;
+  e4Total: number;
+  e4Filter: string;
+  setE4Page: (page: number) => void;
+  setE4PageSize: (pageSize: number) => void;
+  setE4Filter: (filter: string) => void;
+  refreshE4: () => Promise<void>;
   orderState: (o: EOrder) => string;
   isCancelled: (id: string) => boolean;
   isRefunded: (id: string) => boolean;
   terminalOf: (id: string) => string | undefined;
   openOrder: (o: EOrder) => void;
-  // E5 设备运维
+  // E5 设备运维(设备列表/激活/解绑/DC pause 均走后端 API)
+  e5Devices: E5Device[];
+  e5Overview: E5Overview | null;
+  e5Datacenters: E5Datacenter[];
+  e5Loading: boolean;
+  e5Error: string | null;
+  e5Page: number;
+  e5PageSize: number;
+  e5Total: number;
+  setE5Page: (page: number) => void;
+  setE5PageSize: (pageSize: number) => void;
+  refreshE5: () => Promise<void>;
   isDcPaused: (dc: string) => boolean;
-  // E5 数据中心管理(运营可增删改;SKU datacenter 下拉单源)
-  dataCenters: OpsDataCenter[];
-  openDcEdit: (dc?: OpsDataCenter) => void;       // 打开新增/编辑数据中心(无 dc = 新增)
-  delDc: (dc: OpsDataCenter) => void;
+  openDatacenter: (dc?: E5Datacenter) => void;
+  deleteDatacenter: (dc: E5Datacenter) => void;
 }

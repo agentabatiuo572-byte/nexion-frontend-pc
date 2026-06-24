@@ -1,33 +1,13 @@
 /**
  * E 域核心数据 & 派生口径(从 e-view.tsx 移出,口径不改)。
- * server-canonical:展示值优先 pget(key) ?? mock;订单状态走 orderState 派生(取消 > 退款 > 补建终态 > 原始)。
+ * server-canonical:E1/E2/E3/E4 展示值来自后端接口;E5 设备运维与数据中心来自设备接口。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
-import type { OpsSku, OpsTask, PurchaseGate } from "@/lib/store/admin/platform-config-store";
-import type { EOrder } from "./types";
+import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
 
 // 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
 export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5" };
-
-// E3 任务池种子(/earn 任务池映射;真后台由任务引擎下发,本处为 seed)。
-export const TASKS: Omit<OpsTask, "id">[] = [
-  { n: "LLM 推理 405B", price: 1.2, unit: "/job", req: "需 NexionBox Pro", sat: 0.82 },
-  { n: "LLM 推理 70B", price: 0.46, unit: "/job", req: "S1+", sat: 0.61 },
-  { n: "图像生成 SDXL", price: 0.34, unit: "/job", req: "S1+", sat: 0.55 },
-  { n: "视频渲染", price: 2.8, unit: "/job", req: "需 NexionRack", sat: 0.74 },
-  { n: "微调 / LoRA", price: 5.1, unit: "/job", req: "需 NexionRack", sat: 0.48 },
-  { n: "Embedding 批处理", price: 0.12, unit: "/1k", req: "S1+", sat: 0.39 },
-];
-
-export const ORDERS: EOrder[] = [
-  { id: "OD-55012", user: "usr_19C7", sku: "NexionBox Pro v2", amt: 1319, state: "active", dc: "us-east-2", age: "2m" },
-  { id: "OD-55011", user: "usr_84F2", sku: "NexionBox S1", amt: 649, state: "allocating", dc: "—", age: "7m" },
-  { id: "OD-55009", user: "usr_31E8", sku: "NexionRack P2", amt: 7499, state: "paid", dc: "—", age: "15m" },
-  { id: "OD-55006", user: "usr_02A9", sku: "Genesis 节点", amt: 9999, state: "active", dc: "eu-west-1", age: "31m" },
-  { id: "OD-55001", user: "usr_55B1", sku: "NexionBox Pro v2", amt: 1319, state: "failed", dc: "—", age: "1h" },
-  { id: "OD-54998", user: "usr_77D4", sku: "NexionBox S1", amt: 649, state: "refunded", dc: "—", age: "2h" },
-];
 
 export const ORDER_FLOW = ["created", "paid", "allocating", "active"];
 // design-kit Badge tone 映射(订单状态)。
@@ -41,8 +21,8 @@ export const TERMINAL_STATES = ["payment_failed", "expired", "refunded", "provis
 // 非终态(仍流转,允许补建终态);created/paid 另允许「取消订单」。
 export const NON_TERMINAL = new Set(["created", "paid", "allocating"]);
 
-// E-11 生命周期/置换调参默认值(pget 无记录时回退;真后台由配置端点下发)。
-// 衰减默认值镜像产品源码 device-lifecycle.ts:三段非线性 −4/−6/−23.7%·12 月·floor 22%。
+// E-11 生命周期/置换调参种子参考;运行时由 GET /api/admin/devices/e3/overview 下发。
+// 衰减种子值镜像产品源码 device-lifecycle.ts:三段非线性 −4/−6/−23.7%·12 月·floor 22%。
 export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.device.minEfficiency": "22",       // 源码 MIN_EFFICIENCY = 0.22
   "E.device.degradeEarly": "-4",        // 月 1-3 %/月
@@ -51,7 +31,7 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.device.stageEarlyEnd": "3",        // 早期段末月
   "E.device.stageMidEnd": "8",          // 中期段末月
   "E.device.cycleMonths": "12",         // 生命周期月数
-  // E4 任务锁定月度损失阈值(S1/Pro/Rack 三阶 · USDT · 各值独立可调,backend-replaceable)
+  // E3 任务锁定月度损失阈值(S1/Pro/Rack 三阶 · USDT · 各值独立可调,backend-replaceable)
   "E.device.taskLock.s1": "40",
   "E.device.taskLock.pro": "140",
   "E.device.taskLock.rack": "450",
@@ -67,18 +47,6 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.tradein.promo.routes": "/me/devices",
   "E.tradein.inventorySoftMax": "0",
 };
-
-// E2 手机算力档位收益 —— 手机端按校准能力分 5 档,每档日产 USDT/NEX 运营可调。
-// 与前端 Nexion-uniapp/src/mock/phone-tiers.ts 同口径(backend-replaceable · 真后台
-// GET /api/config/phone-tiers)。值为 pget 无记录时的默认(回退);调高任一档 = 放大
-// 资金流出,经 B1 覆盖率护栏。T3 锚定营销文案的 $0.06 典型手机日产。
-export const PHONE_TIERS: { tier: number; name: string; note: string; dailyUsdt: string; dailyNex: string }[] = [
-  { tier: 1, name: "入门档", note: "低端机 / 信号缺失兜底", dailyUsdt: "0.04", dailyNex: "6" },
-  { tier: 2, name: "标准档", note: "中端机", dailyUsdt: "0.05", dailyNex: "8" },
-  { tier: 3, name: "主流档", note: "典型机 · 锚定营销 $0.06", dailyUsdt: "0.06", dailyNex: "10" },
-  { tier: 4, name: "高性能档", note: "次旗舰", dailyUsdt: "0.08", dailyNex: "13" },
-  { tier: 5, name: "旗舰档", note: "旗舰 SoC", dailyUsdt: "0.095", dailyNex: "16" },
-];
 
 // E3 衰减曲线引擎 — 镜像产品 device-lifecycle.ts getEfficiency(三段复利 + floor)。
 // 参数从后台配置(pE)读,使后台为 server-canonical 配置源、曲线真实反映产品衰减。
@@ -122,7 +90,7 @@ export const EMPTY_SKU_FORM = {
   sold: "", stock: "", rating: "", reviews: "",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
-  generation: "1", lifecycle: "active", supersededBy: "", tradeinDiscount: "", unlock: "P1", tag: "",
+  generation: "1", lifecycle: "active", supersededBy: "", tradeinDiscount: "", unlock: "", tag: "",
   // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
@@ -158,7 +126,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     sold: str(s.sold), stock: str(s.stock), rating: str(s.rating), reviews: str(s.reviews),
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
-    generation: str(s.generation) || "1", lifecycle: s.lifecycle ?? "active", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "P1", tag: s.tag ?? "",
+    generation: str(s.generation) || "1", lifecycle: s.lifecycle ?? "active", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "", tag: s.tag ?? "",
     gateType: gateToType(g),
     gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamVolumeMin: str(g?.teamVolumeMin),
     gateMode: g?.mode === "either" ? "either" : "all",
@@ -199,6 +167,7 @@ export function gateRemaining(g: PurchaseGate): number | null {
 // 购买门表单校验(提交前调;返回错误串 = 拦截,null = 通过)。
 // 注:这是输入完整性/取值范围校验,非「锁死业务值」——阈值/开关本身全运营可调(铁律)。
 export function validateGateForm(f: SkuForm): string | null {
+  if (f.tier !== "Share" && !f.unlock.trim()) return "请先配置并选择解锁 Phase";
   if (f.gateType === "activeDirect" && skuNumU(f.gateActiveDirectMin) == null) return "购买门:请填写活跃直推门槛";
   if (f.gateType === "rank" && skuNumU(f.gateRankMin) == null) return "购买门:请填写最低 V 级";
   if (f.gateType === "combo" && skuNumU(f.gateRankMin) == null && skuNumU(f.gateActiveDirectMin) == null && skuNumU(f.gateTeamVolumeMin) == null)

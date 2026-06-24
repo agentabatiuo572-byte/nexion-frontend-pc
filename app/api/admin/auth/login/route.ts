@@ -28,6 +28,14 @@ function upstreamResponse(text: string, upstream: Response) {
   });
 }
 
+function isSecureRequest(request: Request) {
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  if (forwardedProto) {
+    return forwardedProto === "https";
+  }
+  return new URL(request.url).protocol === "https:";
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const username = typeof body?.username === "string" ? body.username.trim() : "";
@@ -71,7 +79,7 @@ export async function POST(request: Request) {
     response.cookies.set(ADMIN_TOKEN_COOKIE, accessToken, {
       httpOnly: true,
       sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
+      secure: isSecureRequest(request),
       path: "/",
       maxAge: ADMIN_TOKEN_MAX_AGE_SECONDS,
     });
