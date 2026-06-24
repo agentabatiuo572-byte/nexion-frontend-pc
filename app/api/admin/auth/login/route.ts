@@ -36,10 +36,44 @@ function isSecureRequest(request: Request) {
   return new URL(request.url).protocol === "https:";
 }
 
+// 本地预览模式统一开关(与 E1/数据 route handler 共用):=1 时不调真后端,全走本地 mock。
+const LOCAL_PREVIEW = process.env.NEXT_PUBLIC_ADMIN_AUTH_BYPASS === "1";
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const username = typeof body?.username === "string" ? body.username.trim() : "";
   const password = typeof body?.password === "string" ? body.password : "";
+
+  // 本地预览模式:不调真后端(8110),任意账号密码(含空)直接种本地 superadmin session + token cookie。
+  // 协作者真登录代码保持不动(下方 try 块);仅 LOCAL_PREVIEW=1 时短路。
+  if (LOCAL_PREVIEW) {
+    const response = NextResponse.json(
+      {
+        code: 0,
+        message: "OK (local preview)",
+        data: {
+          tokenType: "Bearer",
+          session: {
+            adminId: 1,
+            username: username || "local",
+            operator: "本地预览",
+            role: "superadmin",
+            authorities: [],
+          },
+        },
+      },
+      { status: 200 },
+    );
+    response.cookies.set(ADMIN_TOKEN_COOKIE, "local-preview-token", {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: isSecureRequest(request),
+      path: "/",
+      maxAge: ADMIN_TOKEN_MAX_AGE_SECONDS,
+    });
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  }
 
   if (!username || !password) {
     return jsonError(401, "ADMIN_CREDENTIAL_INVALID");

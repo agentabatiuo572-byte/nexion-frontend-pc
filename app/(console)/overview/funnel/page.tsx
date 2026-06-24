@@ -13,7 +13,7 @@
  */
 import "../b-domain.css";
 import "./funnel.css";
-import { useId } from "react";
+import { useId, useState, type CSSProperties } from "react";
 import { Filter, Users, PieChart, TrendingUp, AlertTriangle } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 
@@ -21,24 +21,24 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 
 // ---- 漏斗阶段(注册表 data:[1240,769,223,78,41]) ----
 // 段色走 token:brand / brand 浅调 / cyan / cyan 浅调 / success(对应设计稿 lemon / lemon亮 / purple / purple亮 / green)。
-type Stage = { nm: string; ct: number; lc: string; conv: string | null; bad?: boolean; color: string };
+type Stage = { key: string; nm: string; ct: number; lc: string; conv: string | null; bad?: boolean; color: string };
 const STAGES: Stage[] = [
-  { nm: "注册", ct: 1240, lc: "L1", conv: null, color: "var(--brand)" },
-  { nm: "绑卡", ct: 769, lc: "L2", conv: "62.0%", color: "color-mix(in srgb, var(--brand) 78%, #fff)" },
-  { nm: "首购", ct: 223, lc: "L3→L4", conv: "29.0%", bad: true, color: "var(--cyan)" },
-  { nm: "复购", ct: 78, lc: "L5", conv: "35.0%", color: "color-mix(in srgb, var(--cyan) 70%, #fff)" },
-  { nm: "提现", ct: 41, lc: "L5", conv: "52.6%", color: "var(--success)" },
+  { key: "reg", nm: "注册", ct: 1240, lc: "L1", conv: null, color: "var(--brand)" },
+  { key: "bind", nm: "绑卡", ct: 769, lc: "L2", conv: "62.0%", color: "color-mix(in srgb, var(--brand) 78%, #fff)" },
+  { key: "buy", nm: "首购", ct: 223, lc: "L3→L4", conv: "29.0%", bad: true, color: "var(--cyan)" },
+  { key: "rebuy", nm: "复购", ct: 78, lc: "L5", conv: "35.0%", color: "color-mix(in srgb, var(--cyan) 70%, #fff)" },
+  { key: "cash", nm: "提现", ct: 41, lc: "L5", conv: "52.6%", color: "var(--success)" },
 ];
 const MAX_CT = STAGES[0].ct;
 const wpct = (ct: number) => 16 + (ct / MAX_CT) * 84; // 16%..100% 宽度区间
 
 // 阶段转化轨(环比上窗口)
-type Trans = { nm: string; v: string; vColor?: string; flow: string; note: string; noteKind: "muted" | "up" | "dn"; bad?: boolean };
+type Trans = { nm: string; from: string; to: string; v: string; vColor?: string; flow: string; note: string; noteKind: "muted" | "up" | "dn"; bad?: boolean };
 const TRANS: Trans[] = [
-  { nm: "注册 → 绑卡", v: "62.0%", flow: "1,240 → 769", note: "$1 KYC express", noteKind: "muted" },
-  { nm: "绑卡 → 首购", v: "29.0%", vColor: "var(--brand-2)", flow: "769 → 223", note: "↓ 环比 −2.4pt", noteKind: "dn", bad: true },
-  { nm: "首购 → 复购", v: "35.0%", flow: "223 → 78", note: "↑ 环比 +3.1pt", noteKind: "up" },
-  { nm: "整体转化", v: "18.0%", flow: "注册 → 首购", note: "223 / 1,240", noteKind: "muted" },
+  { nm: "注册 → 绑卡", from: "reg", to: "bind", v: "62.0%", flow: "1,240 → 769", note: "$1 KYC express", noteKind: "muted" },
+  { nm: "绑卡 → 首购", from: "bind", to: "buy", v: "29.0%", vColor: "var(--brand-2)", flow: "769 → 223", note: "↓ 环比 −2.4pt", noteKind: "dn", bad: true },
+  { nm: "首购 → 复购", from: "buy", to: "rebuy", v: "35.0%", flow: "223 → 78", note: "↑ 环比 +3.1pt", noteKind: "up" },
+  { nm: "整体转化", from: "reg", to: "buy", v: "18.0%", flow: "注册 → 首购", note: "223 / 1,240", noteKind: "muted" },
 ];
 
 // 首购周 Cohort 留存(注册表 data:[100,86,74,68,61,57,54,52])
@@ -74,6 +74,20 @@ function buildArea(data: number[], W: number, H: number, pad: number, min: numbe
 
 export default function FunnelPage() {
   const gradId = useId().replace(/:/g, ""); // SVG gradient id 唯一化(避免提取为组件后碰撞,与 B5 一致)
+
+  // 漏斗段 ↔ 阶段转化卡片 双向联动焦点(hover 段亮其相关转化卡片,反之亦然)
+  const [focus, setFocus] = useState<{ type: "stage" | "trans"; id: string } | null>(null);
+  const isStageActive = (key: string) => {
+    if (!focus) return false;
+    if (focus.type === "stage") return focus.id === key;
+    const t = TRANS.find((x) => x.nm === focus.id);
+    return !!t && (t.from === key || t.to === key);
+  };
+  const isTransActive = (t: Trans) => {
+    if (!focus) return false;
+    if (focus.type === "trans") return focus.id === t.nm;
+    return t.from === focus.id || t.to === focus.id;
+  };
   // Cohort:0..100 归一(min 0 ~ max 100)
   const cohW = 600, cohH = 170;
   const coh = buildArea(COH, cohW, cohH, 6, 0, 100);
@@ -117,14 +131,24 @@ export default function FunnelPage() {
             <div className="r"><span className="b-tag">注册 → 提现 整体 3.3%</span></div>
           </div>
 
-          <div>
+          <div className="funnel-list">
             {STAGES.map((s, i) => {
               const top = wpct(s.ct);
               const bot = i < STAGES.length - 1 ? wpct(STAGES[i + 1].ct) : top * 0.82;
               const tl = r1((100 - top) / 2), tr = r1((100 + top) / 2);
               const bl = r1((100 - bot) / 2), br = r1((100 + bot) / 2);
+              const prevCt = i > 0 ? STAGES[i - 1].ct : null;
+              const lost = prevCt != null ? prevCt - s.ct : null;
+              const shareL1 = r1((s.ct / MAX_CT) * 100); // 占注册(L1)渗透率,确定性派生
+              const active = isStageActive(s.key);
+              const showTip = focus?.type === "stage" && focus.id === s.key;
+              // 详情浮层垂直锚定:首段向下展开、末段向上展开、中段居中,避免溢出卡片上下沿
+              const tipPos: CSSProperties =
+                i === 0 ? { top: 6, bottom: "auto", transform: "none" }
+                : i === STAGES.length - 1 ? { top: "auto", bottom: 6, transform: "none" }
+                : { top: "50%", transform: "translateY(-50%)" };
               return (
-                <div key={s.nm}>
+                <div key={s.key}>
                   {s.conv && (
                     <div className="conv-mark">
                       <span className={`conv-pill${s.bad ? " bad" : ""}`}>
@@ -133,16 +157,36 @@ export default function FunnelPage() {
                       </span>
                     </div>
                   )}
-                  <div
-                    className="funnel-stage"
-                    style={{
-                      background: `linear-gradient(180deg, ${s.color}, color-mix(in srgb, ${s.color} 80%, #000))`,
-                      clipPath: `polygon(${tl}% 0, ${tr}% 0, ${br}% 100%, ${bl}% 100%)`,
-                    }}
-                  >
-                    <span className="nm">{s.nm}</span>
-                    <span className="ct">{s.ct.toLocaleString()}</span>
-                    <span className="lc">{s.lc}</span>
+                  <div className="stage-anchor">
+                    <div
+                      className={`funnel-stage${active ? " is-active" : ""}`}
+                      style={{
+                        background: `linear-gradient(180deg, ${s.color}, color-mix(in srgb, ${s.color} 80%, #000))`,
+                        clipPath: `polygon(${tl}% 0, ${tr}% 0, ${br}% 100%, ${bl}% 100%)`,
+                        "--stage-color": s.color,
+                      } as CSSProperties}
+                      onMouseEnter={() => setFocus({ type: "stage", id: s.key })}
+                      onMouseLeave={() => setFocus(null)}
+                    >
+                      <span className="nm">{s.nm}</span>
+                      <span className="ct">{s.ct.toLocaleString()}</span>
+                      <span className="lc">{s.lc}</span>
+                    </div>
+                    {showTip && (
+                      <div className="stage-tip" role="tooltip" style={tipPos}>
+                        <div className="st-h">
+                          <span className="st-nm">{s.nm}</span>
+                          <span className="st-lc">{s.lc}</span>
+                          {s.bad && <span className="st-flag">瓶颈</span>}
+                        </div>
+                        <dl className="st-rows">
+                          <div><dt>人数</dt><dd className="nowrap">{s.ct.toLocaleString()}</dd></div>
+                          <div><dt>占注册 L1</dt><dd className="nowrap">{shareL1}%</dd></div>
+                          <div><dt>自上阶段转化</dt><dd className="nowrap">{s.conv ? `${s.bad ? "▼ " : ""}${s.conv}` : "漏斗入口"}</dd></div>
+                          <div><dt>较上阶段流失</dt><dd className="nowrap">{lost != null ? `−${lost.toLocaleString()} 人` : "—"}</dd></div>
+                        </dl>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -158,7 +202,12 @@ export default function FunnelPage() {
           </div>
           <div className="trans">
             {TRANS.map((t) => (
-              <div key={t.nm} className={`t${t.bad ? " bad" : ""}`}>
+              <div
+                key={t.nm}
+                className={`t${t.bad ? " bad" : ""}${isTransActive(t) ? " is-active" : ""}`}
+                onMouseEnter={() => setFocus({ type: "trans", id: t.nm })}
+                onMouseLeave={() => setFocus(null)}
+              >
                 <div className="tr1">
                   <span className="nm">{t.nm}</span>
                   <span className="v" style={t.vColor ? { color: t.vColor } : undefined}>{t.v}</span>

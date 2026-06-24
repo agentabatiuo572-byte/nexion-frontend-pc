@@ -11,6 +11,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { KILLSWITCH, TREASURY } from "@/lib/mock/admin/design-data";
 import { EMER_SLA, AUTO_RULES, TAMPER_ALERT_CONFIG } from "./data";
 import type { JCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
 
 type Gate = (typeof KILLSWITCH)[number];
 const IMPACT_LABEL: Record<string, string> = { immediate: "立即出钱", delayed: "延迟出钱", none: "不出钱" };
@@ -25,6 +26,7 @@ const pct = (v: number) => Math.min(100, Math.max(0, (v / RANGE) * 100));
 
 export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
+  const propose = usePropose();
   // #28 批量关停选择集:运营勾选要熔断的闸(替代旧的固定「立即出钱」闸硬编码)。
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const toggleSel = (key: string) => setSel((s) => ({ ...s, [key]: !s[key] }));
@@ -44,17 +46,17 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const killed = KILLSWITCH.length - live;
   const covPass = COV >= RED;
 
-  const killGate = (g: Gate, emer: boolean) => openActionConfirm({
-    action: emer ? `应急熔断 · ${g.name} · emergency=true` : `Kill-Switch 熔断 · ${g.name}`,
-    detail: emer ? (
-      <><b>应急快速通道</b>:{g.name}(<span className="mono">{g.key}</span>)熔断提案进 A2 队列最高优先级 · 执行门槛响应时限压至 <b>{slaMins} 分钟</b> · 超时自动逐级升级呼叫(I3 critical 通道)· A2 记录标 <b>emergency=true</b> 高亮审计 · 仅止血方向适用 · 不取消确认理由(§15.1)。</>
-    ) : (
+  // 单闸熔断恒走常规轨(emergency=false):止血即时生效、server 当场拒绝下游请求。
+  // 「应急轨」(emergency=true · A2 高亮 + SLA 压缩 + I3 升级)仅用于侧栏「批量应急关停」(launchBatch),
+  // 对齐 PRD §15 J1-MD3 —— 单闸不设独立应急按钮(常规熔断已即时止血,单闸再分两轨只增认知负担)。
+  const killGate = (g: Gate) => openActionConfirm({
+    action: `Kill-Switch 熔断 · ${g.name}`,
+    detail: (
       <><b>{g.name}</b>(<span className="mono">{g.key}</span> · {g.cap})· {g.desc} · 资金语义:<b>{IMPACT_LABEL[g.coverageImpactCategory]}</b> · 熔断方向不前置 B1 · 常规轨(emergency=false)· server 即时拒绝下游能力请求。<b>处置预案(disposition_plan,可选)</b>:在途请求冻结待恢复 · 客服话术同步 · 恢复条件 = 根因消除 + 执行门槛操作确认。</>
     ),
     run: (reason) => {
-      setParam(`J.killswitch.${g.key}`, "off", { action: (emer ? "应急熔断功能闸(emergency=true)" : "熔断功能闸(常规轨)") + " " + g.key, reason });
-      if (emer) setParam(`J.killswitch.${g.key}.emergency`, "true", { action: `A2 应急标记 ${g.key}`, reason });
-      toast((emer ? "应急熔断 " : "已熔断 ") + g.name + (emer ? " · A2 emergency=true" : " · 写 A2"));
+      setParam(`J.killswitch.${g.key}`, "off", { action: `熔断功能闸(常规轨) ${g.key}`, reason });
+      toast(`已熔断 ${g.name} · 写 A2`);
     },
   });
 
@@ -67,9 +69,25 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         : <>不挂 B1(非放大流出闸)· 直接恢复。</>} 恢复恒走常规轨,不可应急加速(§15.1)。</>
     ),
     run: (reason) => {
-      setParam(`J.killswitch.${g.key}`, "on", { action: `恢复功能闸 ${g.key}` + (g.coveragePrecheckRequired ? `(B1 核验 ${COV}%≥${RED}%)` : ""), reason });
-      if (effEmer(g)) setParam(`J.killswitch.${g.key}.emergency`, "false", { action: `清除应急标记 ${g.key}`, reason });
-      toast(`已恢复 ${g.name} · A2 留痕`);
+      // 按执行门槛分流:Kill-Switch 恢复 = 超管门槛;非超管身份发起则入 A2 pending 提案等超管执行。
+      const mutations = [
+        { key: `J.killswitch.${g.key}`, value: "on", action: `恢复功能闸 ${g.key}` + (g.coveragePrecheckRequired ? `(B1 核验 ${COV}%≥${RED}%)` : "") },
+      ];
+      if (effEmer(g)) mutations.push({ key: `J.killswitch.${g.key}.emergency`, value: "false", action: `清除应急标记 ${g.key}` });
+      propose(toast, {
+        action: `Kill-Switch 恢复 · ${g.name}`,
+        obj: `${g.key} · ${g.cap}`,
+        before: "disabled",
+        after: "enabled",
+        type: "sos",
+        amplifies: g.amplifies,
+        sos: true,
+        gate: { roles: [] },
+        gateLabel: "超管",
+        reason,
+        mutations,
+        sourceDomain: "J1",
+      });
     },
   });
 
@@ -171,10 +189,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               <div className="c mono ink">{effChange(g).split(" · ")[0]}</div>
               <div className="c">{effEmer(g) ? <span className="badge-emergency">应急</span> : <span className="mono" style={{ color: "var(--ink-4)" }}>—</span>}</div>
               <div className="c acts">
-                {on ? (<>
-                  <button className="kill" onClick={() => killGate(g, false)}>熔断</button>
-                  <button className="emer" onClick={() => killGate(g, true)}>应急熔断</button>
-                </>) : (
+                {on ? (
+                  <button className="kill" onClick={() => killGate(g)}>熔断</button>
+                ) : (
                   <button className="resume" onClick={() => resumeGate(g)}>恢复</button>
                 )}
               </div>

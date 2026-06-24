@@ -30,6 +30,7 @@ import {
 import type { ICtx } from "./types";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import { LEDGER } from "@/lib/mock/admin/ledger";
+import { usePropose } from "@/lib/admin/use-propose";
 
 type NsFlt = "all" | "issues" | "mkt";
 type CatFlt = "all" | "Basics" | "Earn" | "Team" | "Wealth" | "Security";
@@ -86,6 +87,7 @@ function parseCourseDrafts(raw: string | undefined): Course[] {
 
 export function I6I18n({ ctx }: { ctx: ICtx }) {
   const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
   const [nsDrawer, setNsDrawer] = useState<NsDrawer | null>(null);
@@ -274,15 +276,20 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       edit: { kind: "text", current: String(c.reward), unit: "NEX/课" },
       run: (reason, v) => {
         if (!v) return;
-        setParam(
-          `I.tutorial.${c.id}.reward`,
-          v,
-          {
-            action: `课程奖励调整 ${c.title} · admin.learn_reward_changed(coverageAtSubmit ${LEDGER.coverageRatio.toFixed(1)}%)`,
-            reason,
-          },
-        );
-        toast(`${c.title} 奖励已更新为 ${v} NEX/课 · 已过 B1 红线核验 · server-canonical`);
+        // 按执行门槛分流:课程奖励上调 = 内容 lead/超管;非授权身份发起则入 A2 pending 提案。
+        propose(toast, {
+          action: `课程奖励调整 · ${c.title}`,
+          obj: `${c.cat} · ${c.title}`,
+          before: `${c.reward} NEX/课`,
+          after: `${v} NEX/课`,
+          type: "fund",
+          amplifies: true,
+          gate: { roles: ["content"], requireLead: true },
+          gateLabel: "内容 lead / 超管",
+          reason,
+          mutations: [{ key: `I.tutorial.${c.id}.reward`, value: v, action: `课程奖励调整 ${c.title} · admin.learn_reward_changed(coverageAtSubmit ${LEDGER.coverageRatio.toFixed(1)}%)` }],
+          sourceDomain: "I7",
+        });
       },
     });
 

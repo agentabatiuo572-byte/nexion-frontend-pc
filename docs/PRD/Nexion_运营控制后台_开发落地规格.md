@@ -52,7 +52,7 @@
 - 高敏动作仍使用 confirm-with-reason 外壳,但业务表单体必须在确认外壳内可操作。
 
 ### 0.4 Idempotency-Key
-所有资金/资产/状态写操作携 `Idempotency-Key` header,server 24h dedup(A3 可配 1–72h),网络抖动 retry 返 200 + 原结果,**不重复生效**。
+所有资金/资产/状态写操作携 `Idempotency-Key` header,server 24h dedup(**固定 24h 后端不变量,运营不可调**),网络抖动 retry 返 200 + 原结果,**不重复生效**。
 
 ### 0.5 接口硬校验(server 强制)
 - 业务规则前置失败 → **400 / 422**;状态机非法转移 → **409**。
@@ -91,7 +91,7 @@
 |---|---|---|---|---|---|
 | A1 | 运营账号 & RBAC | 后台账号体系与 7 角色 RBAC 权限地基 + 登录策略 | A 平台基础 | V1·Ch2 | §9.11d / §1.2 |
 | A2 | 审计 & 操作确认 | 高敏写 append-only 审计留痕 + 高敏动作确认契约权威(确认弹窗 + 理由必填) | A 平台基础 | V1·Ch2 | §9.11d / §9.11e |
-| A3 | 系统配置 | server time / Idempotency / feature flag / kill-switch config store | A 平台基础 | V1·Ch2 | §9.11a.4 / §9.11d.1 / §9.11e |
+| A3 | 系统配置 | feature flag / kill-switch config store / 系统健康(server time / Idempotency 为固定后端不变量,运营无配置面) | A 平台基础 | V1·Ch2 | §9.11a.4 / §9.11d.1 / §9.11e |
 | B1 | 双账本总览 | 真实储备 vs 应付负债并列 + 兑付覆盖率(资金安全最高水位) | B 总览 | V1·Ch4 | §5.14 / §9.6.3 |
 | B2 | 资金池水位 | 应付负债 8 类科目 + 到期负债预测概览(口径同 D3) | B 总览 | V1·Ch4 | §9.2/§9.3/§9.6/§10 |
 | B3 | 转化漏斗 | 注册→绑卡→首购→复投→提现五级漏斗 + L2–L5 + Day7 留存 | B 总览 | V1·Ch4 | §1.6 / §2.4.7 |
@@ -143,7 +143,7 @@
 | I5 | 风险披露版本管理 | 披露文案 version×法域双维 + 改版触发 re-ack(合规关键件) | I 内容 | V4·Ch14 | §11.4a / §9.11d.1 / §9.11d.2 / §9.11c.2 |
 | I6 | i18n 文案管理 | en/zh 双语镜像 + marketing 多版(~770 key,两语言同步) | I 内容 | V4·Ch14 | §14 / §9.11c.2 |
 | I7 | 教程中心 | /learn 课程内容/featured/完成 NEX 奖励(Learn-to-Earn) | I 内容 | V4·Ch14 | §11.11 |
-| J1 | Kill-Switch 矩阵 | 7 功能闸 kill 统一权威矩阵 + kill/恢复 + 联动 + 应急通道 | J 应急 | V4·Ch15 | §9.11d.1 / §9.11d.2 |
+| J1 | Kill-Switch 矩阵 | 5 功能闸 kill 统一权威矩阵 + kill/恢复 + 联动 + 应急通道 | J 应急 | V4·Ch15 | §9.11d.1 / §9.11d.2 |
 | J2 | Geo-block | 国家码级地域屏蔽 + per-endpoint geo_block + 边缘 IP 判定 | J 应急 | V4·Ch15 | §9.11d.1 |
 | J3 | 篡改防御监控 | 只读监控看板:client 篡改尝试被 server 拦截的计数与告警 | J 应急 | V4·Ch15 | §9.11d.2 / §9.11d.3 |
 | J4 | 监管点名应急 SOP | 应急组合处置剧本编排(串联 J1/J2/I5/C2/K1/D2/I3) | J 应急 | V4·Ch15 | §9.11d |
@@ -170,8 +170,8 @@
 |---|---|---|---|
 | **OperatorAccount** | accountId:string · displayName:string · role:enum{super\|finance\|risk\|growth\|content\|support\|auditor} · permissionTier:enum{member\|lead} · twoFactorBound:bool · status:enum{enabled\|disabled\|locked} · lastLoginAt:ms-epoch · activeSessions:数组 | SC | §9.1 / Ch2 A1 |
 | **AuditLog** | operator · role · action · object{domain,objectId} · before · after · reason · ip · ts:ms-epoch · (可选)Idempotency-Key;**append-only,保留 ≥13 月;高敏写与审计记录同事务落库** | SC | §9.1 / Ch2 A2 |
-| **SystemConfig** | serverTime{ntpSource,currentTs:ms-epoch,driftMs} · idempotency{ttlHours(默认24),dedupHitCount24h} · featureFlags[]{key,state:enum{on\|off\|灰度%},scope:enum{all\|cohort\|phase}} · health{pipeline,ledger,ntp,endpoints} | SC | §9.1 / Ch2 A3 |
-| **KillSwitchConfig** | key:enum{withdraw\|staking\|genesis\|exchange\|trial\|nexv2\|premium\|geo-block} · enabled:bool(geo-block=activeCountries.length>0) · activeCountries:数组(仅 geo-block) · lastChangedAt:ms-epoch · operator · reason;**8 闸(7 功能闸+geo-block);A3 子对象非独立表;V1 A3 托管→V4 J1/J2** | SC | §9.1 / Ch2 A3 / §9.11d.1 |
+| **SystemConfig** | 运营托管:featureFlags[]{key,state:enum{on\|off\|灰度%},scope:enum{all\|cohort\|phase}} · health{pipeline,ledger,ntp,endpoints}。**固定后端不变量(运营不可调、无配置面)**:serverTime{ntpSource,currentTs:ms-epoch,driftMs} 单源 · idempotency{ttlHours(24),dedupHitCount24h} Idempotency-Key 去重 | SC | §9.1 / Ch2 A3 |
+| **KillSwitchConfig** | key:enum{withdraw\|staking\|genesis\|exchange\|trial\|geo-block} · enabled:bool(geo-block=activeCountries.length>0) · activeCountries:数组(仅 geo-block) · lastChangedAt:ms-epoch · operator · reason;**6 闸(5 功能闸+geo-block);A3 子对象非独立表;V1 A3 托管→V4 J1/J2** | SC | §9.1 / Ch2 A3 / §9.11d.1 |
 | **EventSchema registry** | eventName(domain.object_action) · propertiesSchema · version · piiPolicy(禁原始PII) · ownerDomain;**domain 枚举 §2.4.3 现行 22 个** | SC | §9.1 / Ch2 A4 |
 | **FunnelEvent 派生** | 五级漏斗 register_completed→kyc.express_verified→checkout.completed→reinvest/二次checkout→withdraw.submitted,按 cohort/phase/ref 切片 | 派生视图 | §9.1 / Ch2 A4 |
 
@@ -180,7 +180,7 @@
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **TreasuryLedger·B1 应付负债账本** | 负债8科目[可提余额,USDT staking 本金,staking 应付利息,Genesis 日分红承诺,NEXv2 未来兑付,待提现 queue,佣金冷却未解锁,锁仓本息其他](均 number/USDT) · coverageRatio:number(派生=储备÷负债) · netExposureUsdt · redLine(默认100%) · yellowLine(默认110%);**yellowLine>redLine 否则 400;红线拒绝 422** | SC | §9.1 / Ch4 B1 / §17.1 |
-| 风险雷达态势(B5) | 五维:挤兑比率(黄20/红40,red>yellow;红线=J1 R1 自动熔断引用线) · 出金压力比 e(t)(模型 §5.3,红线 0.7 固定,早期警戒不触发自动) · 异常账户 · 提现积压 · kill-switch 状态灯(7功能闸) · 覆盖率灯 | 派生视图 | Ch4 B5 |
+| 风险雷达态势(B5) | 五维:挤兑比率(黄20/红40,red>yellow;红线=J1 R1 自动熔断引用线) · 出金压力比 e(t)(模型 §5.3,红线 0.7 固定,早期警戒不触发自动) · 异常账户 · 提现积压 · kill-switch 状态灯(5功能闸) · 覆盖率灯 | 派生视图 | Ch4 B5 |
 
 ### 域 C — 用户管理
 
@@ -261,7 +261,7 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **Kill-Switch 矩阵**(J1) | 7 功能闸{withdraw〔应急新增〕,staking,genesis,exchange,trial,nexv2,premium}:enabled:bool · operator · reason · coveragePrecheckRequired(恢复方向前置 B1 的闸标记) · autoTrigger{rule:R1\|R2,补录窗 30min};复用 admin.killswitch_toggled(原提案状态机已随 2026-06 操作确认决议废除) | SC | §17.1 / Ch15 J1 |
+| **Kill-Switch 矩阵**(J1) | 5 功能闸{withdraw〔应急新增〕,staking,genesis,exchange,trial}:enabled:bool · operator · reason · coveragePrecheckRequired(恢复方向前置 B1 的闸标记) · autoTrigger{rule:R1\|R2,补录窗 30min};复用 admin.killswitch_toggled(原提案状态机已随 2026-06 操作确认决议废除) | SC | §17.1 / Ch15 J1 |
 | **Geo-block**(J2) | activeCountries(ISO alpha-2) · limitedCountries(受限只读档,ISO alpha-2) · enabled(=length>0) · perEndpoint[{endpoint,geoBlock,derivationStatus}] · edgeJudgeHealth · operator · reason;**server 边缘判 IP,财务不参与执行;limited→blocked 为监管升级路径** | SC | §17.1 / Ch15 J2 |
 | **篡改监控**(J3) | tamper_path:enum(§9.11d.2 10类+chargeFailRate) · 拦截计数 · 涉及账户;告警 state:enum{normal\|flagged\|escalated};**纯只读,处置跳 K** | 派生视图 | §17.1 / Ch15 J3 |
 | **应急 SOP**(J4) | 剧本=kill+geo-block+披露+提现暂停+通知组合(串联 J1/J2/I5/C2/K1/D2/I3) · 演练态(lastDrill/演练就绪,沙箱不下发生产) | SC(编排) | Ch15 J4 |
@@ -298,9 +298,9 @@
 | `/api/admin/accounts/:id` | PUT | 禁用/启用/改角色/重置 2FA(仅超管) | A1-MD2~MD5 | A1 |
 | `/api/admin/accounts/:id/logout` | POST | 强制登出运营 session(仅超管,reason 必填) | A1-MD6 | A1 |
 | `/api/admin/audit?filter=` | GET | 审计日志查询(append-only,server 强制可见性;含高敏动作流水监控面) | — | A2 |
-| `/api/admin/system/config` | GET / PUT | 系统配置(server time/idempotency/health;仅超管) | A3-MD5(PUT) | A3 |
+| `/api/admin/system/config` | GET | 系统健康(health;server time / idempotency 为固定后端不变量,不在配置面) | — | A3 |
 | `/api/admin/feature-flags` | GET / PUT | feature flag 查询/切换 | A3-MD1(PUT) | A3 |
-| `/api/admin/killswitch` | GET / PUT | kill-switch 8 闸查询/切换(携 Key;熔断=风控/财务/超管,恢复=仅超管+B1;**V1 临时,V4 写迁 J1/J2,读保留别名**) | A3-MD2~MD4(PUT) | A3 |
+| `/api/admin/killswitch` | GET / PUT | kill-switch 6 闸查询/切换(携 Key;熔断=风控/财务/超管,恢复=仅超管+B1;**V1 临时,V4 写迁 J1/J2,读保留别名**) | A3-MD2~MD4(PUT) | A3 |
 | `/api/admin/platform/phase-config` | GET | Phase 现值下发(dial 现值,权威 H1) | — | A3/H1 |
 
 ### 域 B — 驾驶舱(treasury 系列实现权威在 D3)
@@ -462,7 +462,7 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/killswitch/matrix` | GET | 7 功能闸矩阵(server-canonical,client 仅读灯) | — | J1 |
+| `/api/admin/killswitch/matrix` | GET | 5 功能闸矩阵(server-canonical,client 仅读灯) | — | J1 |
 | `/api/admin/killswitch/feature/:key` | PUT | 单闸熔断/恢复(熔断=风控/财务/超管单人确认+全运营广播;恢复=仅超管,前置 B1 闸 `coverageRatio ≥ recoverGate` 未达 422 `COVERAGE_BELOW_REDLINE`;携 Key) | J1-MD1/MD2 | J1 |
 | `/api/admin/killswitch/feature/emergency` | POST | 批量应急熔断(可多闸;仅 disable,enable 返 403;触发事由空 422 / reason 空 400;风控/超管单人确认逐闸独立生效+全运营广播;携 Key) | J1-MD3 | J1 |
 | `/api/admin/killswitch/auto-rules/eval` | POST | (server 内部)R1/R2 自动熔断评估命中调 feature 写入(`trigger=auto`,30min 内值班补录 J1-MD5) | (自动+J1-MD5 补录) | J1 |
@@ -533,8 +533,7 @@
 | 最少有效超管数 | ≥ 2 | 固定下限 2 | 实时(禁用超管前校验) | A1 | A1 |
 | 审计日志保留期 | ≥ 13 个月 | 13–36 月 | 仅新对象 | A2 | A2 |
 | 理由最小长度 | 8 字 | 0–50 字 | 实时 | A2 | A2 |
-| Idempotency-Key TTL | 24h | 1h–72h | 实时(新键) | A3 | A3 |
-| kill-switch 闸清单/默认态(8闸) | 7 功能闸 enabled=true + geo-block 空 | 各 enabled/disabled | 实时(熔断即 enforce) | A3(V1)→J1/J2(V4) | A3 |
+| kill-switch 闸清单/默认态(6闸) | 5 功能闸 enabled=true + geo-block 空 | 各 enabled/disabled | 实时(熔断即 enforce) | A3(V1)→J1/J2(V4) | A3 |
 | 事件采样率 | view/session 10% / 资金风控转化 100% | — | 配置即生效 | A4 | A4 |
 
 ### 4.2 域 B — 总览驾驶舱
@@ -771,7 +770,7 @@
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 |
 |---|---|---|---|---|
-| 7 功能闸状态 | 全部 enabled=true | 各 enabled/disabled | 实时(确认执行后 enforce;恢复仅超管+B1 前置 422) | **J1**(各域生效面读) |
+| 5 功能闸状态 | 全部 enabled=true | 各 enabled/disabled | 实时(确认执行后 enforce;恢复仅超管+B1 前置 422) | **J1**(各域生效面读) |
 | 应急升级链兜底 | 总时限 60min / 最大 4 轮(耗尽 escalation_exhausted,永不自动放行) | 时限 15–240min / 轮数 2–10 | 改后对新应急提案 | J1 |
 | `recoverGate`(恢复放行判据) | coverageRatio ≥ redLine | 权威归 B1 只读 | 实时(恢复放行前) | J1(引用 B1) |
 | R1 提现激增自动熔断 | > B5 挤兑红线 `bankrunRed`(默认 40%,B5 经确认弹窗 B5-MD1 可调;分子 24h 提现申请额 / 分母 B1/D3 储备;J1 引用不另持) | — | 滑动 24h | J1(引用 B5) |
@@ -911,7 +910,6 @@
 | 审计/埋点 schema 变更 | ✅(仅超管) | — | — | — | — | — | 是(A2-MD1,理由必填) | A2 |
 | 审计日志查询/导出 | ✅(全) | 读(风控/账户) | 读(资金) | 读(增长) | 读(单用户) | ✅(全量脱敏) | 否(只读) | A2 |
 | feature flag 切换 | ✅(全部 flag) | — | — | ✅(限增长/AB 类) | — | — | 是(理由必填;server 按 flag 分类校验资质) | A3 |
-| 系统参数(server time/Idempotency TTL) | ✅(仅超管) | — | — | — | — | — | 是(理由必填) | A3 |
 | **kill-switch 熔断(止血方向)** | ✅ | ✅ | ✅(资金止血) | — | — | — | 是(理由必填+触发依据;即时生效+广播) | A3→J1 |
 | **kill-switch 恢复(放大方向)** | ✅(仅超管) | — | — | — | — | — | 是(理由必填+B1 红线预检 422) | A3→J1 |
 | **geo-block 国家级屏蔽** | ✅ | ✅ | —(财务不参与) | — | — | — | 是(理由必填) | A3→J2 |
@@ -1028,7 +1026,6 @@
 | A3-MD2 | kill-switch 功能闸熔断确认 | — | v1 A3④a |
 | A3-MD3 | kill-switch 功能闸恢复确认 | 是 | v1 A3④a |
 | A3-MD4 | geo-block 国家列表配置 | — | v1 A3④a |
-| A3-MD5 | 系统参数配置确认 | 是 | v1 A3④a |
 
 ### 9.2 B 总览驾驶舱
 

@@ -28,12 +28,12 @@
  */
 import { PHASE, fmtUsd } from "@/lib/mock/admin/design-data";
 import { LEDGER } from "@/lib/mock/admin/ledger";
+import { PHASES, monthToPhase } from "@/lib/mock/admin/command-center";
 
 /* ============ H1 Phase 调度器 ============ */
 
+// 当前月/阶段已上收节奏单源 rhythmState(运营在 H1 可配),不再从 PHASE seed 派生本对象字段(2026-06-24 audit 清死字段)。
 export const H1_STATS = {
-  currentMonth: PHASE.month, // 7
-  currentPhase: PHASE.current, // "P3"
   globalRatio: "96.8%",
   overrideRatio: "3.2%",
   coverageRatio: LEDGER.coverageRatio.toFixed(1),
@@ -86,22 +86,22 @@ export const DIAL_MATRIX: (number | string)[][] = [
   /* M12 */ [1, 1, 1, 30, 45, 2000, 1, "是"],
 ];
 
-/** 月 → 阶段映射桶(P3 收紧期持续 3 月,与 design-data.PHASE.month=7 + PHASE.current="P3" 单源一致;
- *  曾用 `Math.ceil(m/2)` 机械公式会把月 7 算成 P4,与全站 PHASE.current="P3" 矛盾,2026-06-12 H 域 port audit 拍定查表。 */
-const PHASE_BUCKETS: ReadonlyArray<{ phase: string; months: readonly number[] }> = [
-  { phase: "P1", months: [1, 2] },
-  { phase: "P2", months: [3, 4] },
-  { phase: "P3", months: [5, 6, 7] },
-  { phase: "P4", months: [8] },
-  { phase: "P5", months: [9, 10] },
-  { phase: "P6", months: [11, 12] },
-];
-/** 月 → 阶段(查表)。月号超界回退 P1(理论不会发生,12 月节奏闭环)。 */
-export const monthToPhase = (m1: number): string =>
-  PHASE_BUCKETS.find((b) => b.months.includes(m1))?.phase ?? "P1";
+/** 月 → 阶段:上收 command-center 节奏单源(权重派生,total-aware)。
+ *  total=12 时精确复现旧查表 canon(P3=月5-7 / P4=月8;2026-06-12 H 域 audit 拍定),
+ *  改总时长按 RHYTHM_WEIGHTS[2,2,3,1,2,2] 等比重分布。h1-phase 调用传 rs.totalMonths。 */
+export { monthToPhase };
 
-/** 阶段标签有限集(P1..P6)— 单源派生自 PHASE_BUCKETS,供 pin 控制勾选(不手输「P3」串)。 */
-export const PHASE_LABELS: string[] = PHASE_BUCKETS.map((b) => b.phase);
+/** 阶段标签有限集(P1..P6)— 单源派生自 command-center.PHASES,供 pin 控制勾选(不手输「P3」串)。 */
+export const PHASE_LABELS: string[] = PHASES.map((p) => p.code);
+
+/** 某旋钮在某月的生效值(单源 = 逐月 override `H1.dial.<key>.m<N>` ?? 设计稿 DIAL_MATRIX;月>12 无 seed 回退末行)。
+ *  D5 提现派发只读三项 / F3 双轨日封顶的「当前派发值」= dialValueAt(pget, key, rs.currentMonth),随当前运营月实时流转,
+ *  不再走旧 `H.phase.dial.<key>` 镜像快照(那套只在编辑当前月格时双写、改当前月不跟、且 D5 键名曾错配 —— 2026-06-24 audit 废除)。 */
+export const dialValueAt = (pget: (k: string) => string | undefined, key: DialKey, month: number): string => {
+  const col = DIAL_KEYS.indexOf(key);
+  const seed = String(DIAL_MATRIX[Math.min(month, DIAL_MATRIX.length) - 1][col]);
+  return pget(`H1.dial.${key}.m${month}`) ?? seed;
+};
 
 /** Phase 切换控制 3 类(定时 / pin / override)。 */
 export const PHASE_CONTROLS = [
@@ -117,10 +117,11 @@ export const PHASE_OVERRIDES = [
 ];
 
 /** Phase 效果归因 3 行(B4 节奏看板上游)。 */
+// cur 不 baked:由 h1-phase 按节奏单源 rhythmState.currentPhase 匹配 code 动态高亮(归因仅 P1-P3 历史采样,当前阶段为 P4+ 时无行高亮)。
 export const PHASE_ATTRIBUTION = [
-  { phase: "P1 引爆(月1-2)", first: "5.4%", reinvest: "18%", weekly: "$1.9M", d7: "64.1%", cur: false },
-  { phase: "P2 扩张(月3-4)", first: "6.2%", reinvest: "21%", weekly: "$2.6M", d7: "61.0%", cur: false },
-  { phase: "P3 收紧(月5-7)· 当前", first: "6.8%", reinvest: "26.9%", weekly: "$2.1M", d7: "58.2%", cur: true },
+  { code: "P1", phase: "P1 引爆(月1-2)", first: "5.4%", reinvest: "18%", weekly: "$1.9M", d7: "64.1%" },
+  { code: "P2", phase: "P2 扩张(月3-4)", first: "6.2%", reinvest: "21%", weekly: "$2.6M", d7: "61.0%" },
+  { code: "P3", phase: "P3 收紧(月5-7)", first: "6.8%", reinvest: "26.9%", weekly: "$2.1M", d7: "58.2%" },
 ];
 
 /* ============ H2 免费试用引擎 ============ */
@@ -204,17 +205,8 @@ export const TRIAL_GATES = [
 
 /* ============ H3 任务引擎 + H4 活动 ============ */
 
-/** 当前 Phase 的周倍率(派生 WEEKLY_MULT,2026-06-12 audit R1):
- *  原 H3_STATS.phaseBonusP3 = "×1.1(P3)" 死编码,改任一处倍率另一处不动。
- *  改派生 = 改 WEEKLY_MULT 当前 Phase 行 mult 后,KPI 自动跟随。 */
-const _currentPhaseMult = (): string => {
-  // WEEKLY_MULT 中 "P3 当前" 命中 PHASE.current(此处不能 import WEEKLY_MULT 因还没声明,
-  // 用闭包延迟读;实际 runtime 时 WEEKLY_MULT 已初始化)。
-  // 在 phaseBonusP3 getter 处取真值。
-  return "×1.1"; // 仅作占位,实际值由 phaseBonusP3 getter 派生
-};
-void _currentPhaseMult; // 占位,getter 在 H3_STATS 中按 PHASE 派生
-
+// 当前 Phase 周倍率已由 h3-quest-events 用 rhythmState.currentPhase 现场派生 phaseBonusLive(2026-06-24 audit
+// 废除原 H3_STATS.phaseBonusP3 getter + _currentPhaseMult 占位:它们读 PHASE seed,改当前月不跟、零消费)。
 export const H3_STATS = {
   dayOneRate24h: "71%",
   dayOneRateGrace: "18%",
@@ -222,13 +214,6 @@ export const H3_STATS = {
   t1Done: "38K",
   t2Done: "146K",
   weeklyNex: "2.4M NEX",
-  // phaseBonusP3 派生 WEEKLY_MULT + design-data.PHASE 单源:
-  //   .find(m => m.p.startsWith(PHASE.current))?.mult + "(" + PHASE.current + ")"
-  // 因 WEEKLY_MULT 在下方声明,这里用 getter 延迟求值。
-  get phaseBonusP3(): string {
-    const row = WEEKLY_MULT.find((m) => m.p.startsWith(PHASE.current));
-    return row ? `${row.mult}(${PHASE.current})` : `×1(${PHASE.current})`;
-  },
   monthlyInflight: 31_240,
 };
 
@@ -286,11 +271,12 @@ export const WEEKLY_T2 = [
   { id: "w2-7", cond: "看 Genesis", reward: "60", status: "active", completionType: "visit", completionEvent: "" },
 ];
 
-/** 6 阶段倍率曲线(P3 = 当前,加成 ×1.1)。 */
+/** 6 阶段倍率曲线。p = 纯阶段码 P1..P6(persist key `H3.weekly.mult.<P>` 单源);
+ *  「当前」标记由 h3-quest-events 按节奏单源 rhythmState.currentPhase 动态渲染,不 baked 进数据。 */
 export const WEEKLY_MULT = [
   { p: "P1", mult: "1.0×" },
   { p: "P2", mult: "1.0×" },
-  { p: "P3 当前", mult: "1.1×" },
+  { p: "P3", mult: "1.1×" },
   { p: "P4", mult: "1.2×" },
   { p: "P5", mult: "1.3×" },
   { p: "P6", mult: "1.5×" },

@@ -10,7 +10,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
 import { KPIS } from "@/lib/mock/admin/design-data";
-import { PHASES, CURRENT_PHASE } from "@/lib/mock/admin/command-center";
+import { PHASES, rhythmState } from "@/lib/mock/admin/command-center";
 import { DEV_DIST, DEV_TOTAL, DEV_TILES, DECAY_SEGS, TASK_TILES, TIERS, VR_HIST, REF_DIST, COMM_DIST, TEAM_GMV, PH_ROWS } from "./data";
 import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
@@ -58,6 +58,8 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
   const tierMax = TIERS[0].n;
   const vrMax = Math.max(...VR_HIST);
   const refMax = Math.max(...REF_DIST.map((r) => r.n));
+  const rs = rhythmState(ctx.pget); // 节奏单源镜像(运营在 H1 可配;Phase 切片 chip + 效果报表表格当前列由此派生)
+  const phaseIdx = Math.max(0, PHASES.findIndex((p) => p.code === rs.currentPhase)); // 效果报表「(当前)/(计划)」列锚 = 当前阶段下标,不硬钉 P3
 
   return (
     <div>
@@ -78,7 +80,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="sep" />
         <div className="chips"><span className="lb">Phase 切片</span>
-          {["P1–P6 全量对比", `仅当前 ${CURRENT_PHASE.code}`].map((c, i) => (
+          {["P1–P6 全量对比", `仅当前 ${rs.currentPhase}`].map((c, i) => (
             <button key={c} className={"chip" + (i === phSlice ? " sel" : "")} onClick={() => { setPhSlice(i); ctx.toast(`视图已切换:${c} · 仅视图,实时生效`); }}>{c}</button>
           ))}
         </div>
@@ -222,8 +224,8 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
               <thead><tr>
                 <th>指标 \ Phase</th>
                 {PHASES.map((p, i) => (
-                  <th key={p.code} className={i === 2 ? "cur" : undefined} style={{ textAlign: "center" }}>
-                    {p.code} {p.name}{i === 2 ? "(当前)" : i > 2 ? "(计划)" : ""}
+                  <th key={p.code} className={i === phaseIdx ? "cur" : undefined} style={{ textAlign: "center" }}>
+                    {p.code} {p.name}{i === phaseIdx ? "(当前)" : i > phaseIdx ? "(计划)" : ""}
                   </th>
                 ))}
               </tr></thead>
@@ -232,7 +234,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
                   <tr key={r.nm}>
                     <td style={{ fontWeight: 600, color: "var(--ink)" }}><AutoGloss>{r.nm}</AutoGloss></td>
                     {r.vals.map((v, i) => (
-                      <td key={i} className={"pv" + (i === 2 ? " cur" : "")}>
+                      <td key={i} className={"pv" + (i === phaseIdx ? " cur" : "")}>
                         {v}{r.steps[i] && <span className={"stp " + (r.steps[i].startsWith("-") ? "dn" : "up")}>{r.steps[i]}</span>}
                       </td>
                     ))}

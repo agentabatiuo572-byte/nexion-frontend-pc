@@ -12,9 +12,11 @@ import { LEDGER } from "@/lib/mock/admin/ledger";
 import { fmtM } from "@/lib/mock/admin/design-data";
 import { G_FIN, USDT_TIERS, G1_POS, G1_POS_DETAIL, type PoolTier } from "./data";
 import type { GCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
 
 export function G1Staking({ ctx }: { ctx: GCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
+  const propose = usePropose();
   const [drawer, setDrawer] = useState<string | null>(null);
   const cov = LEDGER.coverageRatio.toFixed(1);
 
@@ -39,7 +41,23 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       </>,
       amplifies: true,
       edit: { kind: "text", current: apy },
-      run: (reason, v) => { if (v) setParam(`G.staking.apy.${t.tier}`, v, { action: `Staking APY 调整 ${prod} ${t.term}`, reason }); toast(`${prod} ${t.term} APY 已更新为 ${v} · 仅新单生效`); },
+      run: (reason, v) => {
+        if (!v) { toast("请填写新 APY"); return; }
+        // 按执行门槛分流:Staking APY 调整 = 财务 lead/超管;非授权身份发起则入 A2 pending 提案。
+        propose(toast, {
+          action: `Staking APY 调整 · ${prod} · ${t.term}`,
+          obj: `${prod} · ${t.term}`,
+          before: apy,
+          after: v,
+          type: "param",
+          amplifies: true,
+          gate: { roles: ["finance"], requireLead: true },
+          gateLabel: "财务 lead / 超管",
+          reason,
+          mutations: [{ key: `G.staking.apy.${t.tier}`, value: v, action: `Staking APY 调整 ${prod} ${t.term}` }],
+          sourceDomain: "G1",
+        });
+      },
     });
   };
   const adjPenalty = (prod: string, t: PoolTier) => {
@@ -49,7 +67,23 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       detail: <>当前罚款 {pen} 本金。<b>降罚款是放大流出</b>,提交时服务器先验备付金覆盖率红线(当前 {cov}%)。只对新单生效。</>,
       amplifies: true,
       edit: { kind: "text", current: pen },
-      run: (reason, v) => { if (v) setParam(`G.staking.penalty.${t.tier}`, v, { action: `Staking 罚款调整 ${prod} ${t.term}`, reason }); toast(`${prod} ${t.term} 罚款已更新为 ${v} · 仅新单生效`); },
+      run: (reason, v) => {
+        if (!v) { toast("请填写新罚款"); return; }
+        // 按执行门槛分流:Staking 罚款调整(降罚款=放大流出)= 财务 lead/超管,与 APY 调整同形;非授权身份发起入 A2 pending。
+        propose(toast, {
+          action: `Staking 罚款调整 · ${prod} · ${t.term}`,
+          obj: `${prod} · ${t.term}`,
+          before: pen,
+          after: v,
+          type: "param",
+          amplifies: true,
+          gate: { roles: ["finance"], requireLead: true },
+          gateLabel: "财务 lead / 超管",
+          reason,
+          mutations: [{ key: `G.staking.penalty.${t.tier}`, value: v, action: `Staking 罚款调整 ${prod} ${t.term}` }],
+          sourceDomain: "G1",
+        });
+      },
     });
   };
   const adjMin = (prod: string, t: PoolTier) => {
@@ -67,7 +101,22 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       action: `${enabled ? "停售" : "恢复开售"}档位 · ${prod} · ${t.term}`,
       detail: <>{enabled ? "停售只停新锁,在锁单照常计息到期(除非走熔断)。" : "恢复该档新锁仓开放。"}操作确认。</>,
       amplifies: !enabled, // 恢复开售 = 放大流出方向
-      run: (reason) => { setParam(`G.staking.enabled.${t.tier}`, enabled ? "false" : "true", { action: `Staking 档位${enabled ? "停售" : "恢复"} ${prod} ${t.term}`, reason }); toast(`${prod} ${t.term} 已${enabled ? "停售" : "恢复开售"} · 在锁不受影响`); },
+      run: (reason) => {
+        // 档位停售/恢复 = 财务 lead/超管(恢复开售=放大流出),与 APY/罚款同形;非授权身份发起入 A2 pending。
+        propose(toast, {
+          action: `Staking 档位${enabled ? "停售" : "恢复开售"} · ${prod} · ${t.term}`,
+          obj: `${prod} · ${t.term}`,
+          before: enabled ? "开售" : "停售",
+          after: enabled ? "停售" : "开售",
+          type: "param",
+          amplifies: !enabled,
+          gate: { roles: ["finance"], requireLead: true },
+          gateLabel: "财务 lead / 超管",
+          reason,
+          mutations: [{ key: `G.staking.enabled.${t.tier}`, value: enabled ? "false" : "true", action: `Staking 档位${enabled ? "停售" : "恢复"} ${prod} ${t.term}` }],
+          sourceDomain: "G1",
+        });
+      },
     });
   };
   // 单档熔断 = 行级动作(audit 修:旧 killPool 写 G.staking.kill 无读取方 → 改写 G.staking.<tier>.killed=true 与状态灯/计数同键)。
@@ -77,11 +126,33 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `${killed ? "解除" : ""}单档熔断 · ${prod} · ${t.term}`,
       detail: killed
-        ? <>解除熔断:该档恢复新锁开放,在锁单回正常计息;<b>恢复 = 放大流出方向</b>,确认放行时验备付金覆盖率红线(当前 {cov}%)。同步 J1 staking 闸编排。</>
-        : <>熔断该档:立即停新锁 + 在锁单按处置方案走(slashed)。<b>处置方案随提案提交</b>(写进目标新值,如「在锁本金按原 APY 结算到提交日,本金按 90% 退回」);熔断同步紧急开关矩阵(J1)和风险雷达(B5)。风控/合规执行门槛:超管。</>,
+        ? <>解除熔断:该档恢复新锁开放,在锁单回正常计息;<b>恢复 = 放大流出方向</b>,确认放行时验备付金覆盖率红线(当前 {cov}%)。同步 J1 staking 闸编排;非超管发起入 A2 pending 应急轨(SOS)。</>
+        : <>熔断该档:立即停新锁 + 在锁单按处置方案走(slashed)。<b>即时止血,确认即执行</b>,处置方案登记入审计(如「在锁本金按原 APY 结算到提交日,本金按 90% 退回」);熔断同步紧急开关矩阵(J1)和风险雷达(B5)。</>,
       amplifies: killed, // 解除熔断 = 放大流出
       edit: killed ? undefined : { kind: "text", current: "(写处置方案,如:按原 APY 结算至提交日 · 本金 90% 退回)" },
-      run: (reason) => { setParam(`G.staking.${t.tier}.killed`, killed ? "false" : "true", { action: `Staking 单档${killed ? "解除熔断" : "熔断"} ${prod} ${t.term}`, reason }); toast(`${prod} ${t.term} 已${killed ? "解除熔断" : "熔断"} · 同步 J1/B5`); },
+      run: (reason, v) => {
+        if (!killed) {
+          // 熔断 = 即时止血 = 直接执行不入 pending(对齐「即时止血不排队」原则,a2 §确认门);处置方案 v 登记入审计。
+          setParam(`G.staking.${t.tier}.killed`, "true", { action: `Staking 单档熔断 ${prod} ${t.term} · 处置:${v || "(未填)"}`, reason });
+          toast(`${prod} ${t.term} 已熔断 · 处置方案登记 · 同步 J1/B5`);
+          return;
+        }
+        // 解除熔断(放大流出)= 超管门槛;非超管发起入 A2 pending 应急轨(sos:true → 进 A2 SOS 计数/筛选/SLA)。
+        propose(toast, {
+          action: `Staking 单档解除熔断 · ${prod} · ${t.term}`,
+          obj: `${prod} · ${t.term}`,
+          before: "已熔断",
+          after: "营业",
+          type: "sos",
+          sos: true,
+          amplifies: true,
+          gate: { roles: [] }, // 仅超管
+          gateLabel: "超管",
+          reason,
+          mutations: [{ key: `G.staking.${t.tier}.killed`, value: "false", action: `Staking 单档解除熔断 ${prod} ${t.term}` }],
+          sourceDomain: "G1",
+        });
+      },
     });
   };
 

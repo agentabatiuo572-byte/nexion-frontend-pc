@@ -10,9 +10,9 @@
  *  ② reason-required — 所有高敏动作提交前必须填操作理由,弹窗校验不通过不写 store;
  *  ③ 确认即执行 + 幂等 — 确认成功 toast 含「Idempotency-Key 24h dedup」提示,失败回 pending 零副作用。
  *
- * 真写键(A.*):
- *  A.appr.<id>.status(approved / rejected / withdrawn)·
- *  A.confirm.reasonMin(理由最短长度)· A.appr.ret(日志保留期)· A.appr.schemaVer(字段结构注册)。
+ * 真写键(A.*):A.confirm.reasonMin(理由最短长度)· A.appr.ret(日志保留期)· A.appr.schemaVer(字段结构注册)。
+ *  高敏提案裁决态(approved/rejected)写 pending store(resolveProposal),不写 A.appr.<id>.status;
+ *  执行时按 proposal.mutations 回放写各自目标域键(如 G.staking.* / D.withdraw.*),真后台为一次事务 + 幂等。
  *
  * 操作确认 显式 edit 契约(2026-06 跨域硬化):
  *  - 调参(理由最短长度 / 保留期 / schema 注册)传 edit:{kind,current,unit};
@@ -26,16 +26,21 @@ import { useEffect, useMemo, useState } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import {
   A2_STATS,
-  OPERATION_QUEUE,
   AUDIT_LOGS,
   OPERATION_HISTORY,
   MECHANISM_PARAMS,
   CONFIRM_CATEGORIES,
-  type OperationRow,
   type OperationType,
   type AuditDomain,
 } from "./data";
 import type { ACtx } from "./types";
+import { usePlatformConfig, type OpsAuditEntry } from "@/lib/store/admin/platform-config-store";
+import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { usePendingOps, type PendingProposal } from "@/lib/store/admin/pending-ops-store";
+import { useActingOperator, actingRoleLabel } from "@/lib/store/admin/acting-operator-store";
+import { canExecute } from "@/lib/admin/ops-authority";
+import { applyMutations } from "@/lib/admin/propose-or-execute";
+import { PENDING_SEED } from "./pending-seed";
 
 /* ────────────────── helpers ────────────────── */
 
@@ -96,10 +101,50 @@ function fmtHMS(seconds: number): string {
   return `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
 }
 
+/* ── 实时审计接线:把 store append 的 OpsAuditEntry 映射成审计日志展示行,使全后台高敏操作真正出现在 A2 ── */
+type AuditLogRow = { ts: string; actor: string; role: string; action: string; obj: string; delta: string; domain: string; ip: string; live?: boolean };
+
+function fmtAuditTs(ts: number): string {
+  const d = new Date(ts);
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** 从 OpsAuditEntry 推域:target 带「X.」前缀取首字母;无前缀按 action 粗判,兜底归 A(账号/系统治理)。 */
+function deriveAuditDomain(e: OpsAuditEntry): string {
+  const m = /^([A-M])\./.exec(e.target ?? "");
+  if (m) return m[1];
+  if (/提现|withdraw|账单|余额|储备|退款|payout|对账/i.test(e.action)) return "D";
+  if (/账户|冻结|解冻|KYC|impersonate|会话|登出/i.test(e.action)) return "C";
+  return "A";
+}
+
+function entryToLogRow(e: OpsAuditEntry): AuditLogRow {
+  const delta =
+    e.before != null || e.after != null
+      ? `${e.before ?? "—"} → ${e.after ?? "—"}`
+      : e.reason
+        ? `理由 ${e.reason}`
+        : "—";
+  return { ts: fmtAuditTs(e.ts), actor: e.actor, role: "实时", action: e.action, obj: e.target ?? "—", delta, domain: deriveAuditDomain(e), ip: "—", live: true };
+}
+
 /* ────────────────── 主组件 ────────────────── */
 
 export function A2Audit({ ctx }: { ctx: ACtx }) {
   const { pget, setParam, logAudit, toast, openActionConfirm, openConfirm } = ctx;
+
+  /* 实时审计流(全后台 setParam/logAudit append 至此);hydrated 前不读,避免 SSR 水合不一致。 */
+  const liveAudit = usePlatformConfig((s) => s.audit);
+  const hydrated = useOpsHydrated();
+
+  /* 高敏操作动态 = 实时 pending 队列(按执行门槛分流)。各域权限不足的高敏动作入此队列。 */
+  const proposals = usePendingOps((s) => s.proposals);
+  const ensureProposals = usePendingOps((s) => s.ensureProposals);
+  const resolveProposal = usePendingOps((s) => s.resolveProposal);
+  const acting = useActingOperator((s) => s.acting);
+  useEffect(() => {
+    ensureProposals(PENDING_SEED);
+  }, [ensureProposals]);
 
   /* 应急 SLA 倒计时(初始 42:10,每秒 -1) */
   const [sosSec, setSosSec] = useState<number>(42 * 60 + 10);
@@ -118,62 +163,71 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const [dFlt, setDFlt] = useState<DomainFilter>("all");
 
   /* drawers */
-  const [woIdx, setWoIdx] = useState<number | null>(null);
+  const [woId, setWoId] = useState<string | null>(null);
   const [logIdx, setLogIdx] = useState<number | null>(null);
   const [histIdx, setHistIdx] = useState<number | null>(null);
   const [mcListOpen, setActionConfirmListOpen] = useState(false);
 
-  /* ────────────────── 动作实时态(pget 覆盖种子) ────────────────── */
-  const effStatus = (w: OperationRow): "pending" | "approved" | "rejected" | "withdrawn" =>
-    (pget(`A.appr.${w.id}.status`) as "approved" | "rejected" | "withdrawn" | undefined) ?? "pending";
+  /* ────────────────── 高敏提案 执行 / 驳回(均按执行门槛 canExecute gate) ────────────────── */
 
-  /* ────────────────── 高敏动作 ────────────────── */
-
-  const approveWo = (w: OperationRow) => {
+  const approveWo = (p: PendingProposal) => {
+    if (!canExecute(acting, p.gate)) {
+      toast(`权限不足:执行「${p.action}」需 ${p.gateLabel};当前身份 ${actingRoleLabel(acting)}`);
+      return;
+    }
     openActionConfirm({
-      action: <>确认执行 · {w.id}({w.action})</>,
+      action: <>{p.action} · {p.id}</>,
       detail: (
         <>
-          对象 <b>{w.obj}</b> · 提案 <b>{w.before} → {w.after}</b> · 发起人 {w.operator}。
-          操作理由必填,确认后一次性事务写入目标域并落审计
-          {w.sos ? (<>,<b> 应急轨:确认后立即生效并通知 J 域值班</b></>) : null}。<br />
-          执行门槛:<b>{w.roleGate}</b> · 防重号 Idempotency-Key 24h dedup。
+          对象 <b>{p.obj}</b> · 提案 <b>{p.before} → {p.after}</b> · 发起人 {p.proposer}。
+          操作理由必填,确认后回放写入目标域并落审计(真后台为一次事务 + 幂等)
+          {p.sos ? (<>,<b> 应急轨:确认后立即生效并通知 J 域值班</b></>) : null}。<br />
+          执行门槛:<b>{p.gateLabel}</b> · 当前执行身份 <b>{actingRoleLabel(acting)}</b> · 防重号 Idempotency-Key 24h dedup。
         </>
       ),
-      amplifies: w.amplifies,
+      amplifies: p.amplifies,
       run: (reason) => {
-        const isWithdraw = w.id.includes("8852");
-        setParam(`A.appr.${w.id}.status`, "approved", {
-          action: `确认执行 ${w.id} · ${w.operatorRole}_lead${isWithdraw ? " → D2 同事务写" : ""} · admin.operation_confirmed`,
-          reason,
-        });
-        logAudit({ actor: CURRENT_USER_NAME, action: `确认执行 ${w.id} · admin.operation_confirmed(${w.operatorRole}_lead/超管)`, target: w.id, reason });
-        toast(`${w.id} 已执行 · 目标域写入 + 审计留痕 · idempotency 24h dedup`);
+        // 执行前二次校验(读**实时**身份,非 modal 打开时闭包):① 提案仍 pending(防竞态重复回放)② 当前身份仍够门槛。
+        const live = useActingOperator.getState().acting;
+        if (usePendingOps.getState().proposals?.find((x) => x.id === p.id)?.status !== "pending") {
+          toast(`${p.id} 已被处理,无需重复执行`); return;
+        }
+        if (!canExecute(live, p.gate)) { toast(`权限不足:执行「${p.action}」需 ${p.gateLabel};当前身份 ${actingRoleLabel(live)}`); return; }
+        applyMutations(setParam, p.mutations, reason, live.name);
+        logAudit({ actor: live.name, action: `执行提案 ${p.id} · ${p.action}(${p.before}→${p.after}) · admin.proposal_executed`, target: p.obj, reason });
+        resolveProposal(p.id, "approved");
+        toast(`${p.id} 已执行 · 目标域写入 + 审计留痕 · idempotency 24h dedup`);
       },
     });
   };
 
-  const rejectWo = (w: OperationRow) => {
+  const rejectWo = (p: PendingProposal) => {
+    if (!canExecute(acting, p.gate)) {
+      toast(`权限不足:驳回「${p.action}」需 ${p.gateLabel};当前身份 ${actingRoleLabel(acting)}`);
+      return;
+    }
     openConfirm({
-      action: <>取消执行 · {w.id} · {w.action}</>,
+      action: <>驳回提案 · {p.id} · {p.action}</>,
       detail: (
         <>
-          取消后该动作转 <b>rejected</b>(终态),原因必填并随审计永久留痕。需要再做只能重新发起新的操作确认。
+          驳回后该提案转 <b>rejected</b>(终态),原因必填并随审计永久留痕。需要再做只能重新发起。
         </>
       ),
       chips: [
-        ["取消 = 终态 · 不可逆", "ready"],
+        ["驳回 = 终态 · 不可逆", "ready"],
         ["原因必填 · 写入审计", "ready"],
       ],
       reason: true,
-      okLabel: "确认取消",
+      okLabel: "确认驳回",
       run: (reason) => {
-        setParam(`A.appr.${w.id}.status`, "rejected", {
-          action: `取消执行 ${w.id} · admin.operation_rejected`,
-          reason,
-        });
-        logAudit({ actor: CURRENT_USER_NAME, action: `取消执行 ${w.id} · admin.operation_rejected`, target: w.id, reason });
-        toast(`${w.id} 已取消 · 原因留痕`);
+        const live = useActingOperator.getState().acting;
+        if (usePendingOps.getState().proposals?.find((x) => x.id === p.id)?.status !== "pending") {
+          toast(`${p.id} 已被处理,无需重复驳回`); return;
+        }
+        if (!canExecute(live, p.gate)) { toast(`权限不足:驳回「${p.action}」需 ${p.gateLabel};当前身份 ${actingRoleLabel(live)}`); return; }
+        logAudit({ actor: live.name, action: `驳回提案 ${p.id} · ${p.action} · admin.proposal_rejected`, target: p.obj, reason });
+        resolveProposal(p.id, "rejected");
+        toast(`${p.id} 已驳回 · 原因留痕`);
       },
     });
   };
@@ -286,24 +340,27 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     });
   };
 
-  /* ────────────────── 工单过滤 + 排序(fund 置顶 · stable) ────────────────── */
+  /* ────────────────── 提案过滤 + 排序(pending 优先 · fund 置顶 · 新在前) ────────────────── */
+  const livePending = useMemo(() => (hydrated ? (proposals ?? []) : []), [hydrated, proposals]);
+  const pendingCount = useMemo(() => livePending.filter((p) => p.status === "pending").length, [livePending]);
+  const fundPendingCount = useMemo(() => livePending.filter((p) => p.status === "pending" && p.type === "fund").length, [livePending]);
+  const sosPendingCount = useMemo(() => livePending.filter((p) => p.status === "pending" && p.sos).length, [livePending]);
   const filteredQ = useMemo(() => {
-    const arr = OPERATION_QUEUE.filter((w) => {
-      const tOk = qType === "all" || w.type === qType || (qType === "sos" && w.sos);
-      const mOk = qOperator === "all" || w.operator.includes(qOperator);
+    const arr = livePending.filter((p) => {
+      const tOk = qType === "all" || p.type === qType || (qType === "sos" && p.sos);
+      const mOk = qOperator === "all" || p.proposer.includes(qOperator);
       return tOk && mOk;
     });
-    // fund 置顶 stable:用 indexOf 锚定原序,fund 排前
-    return arr
-      .map((w, i) => ({ w, i }))
-      .sort((a, b) => {
-        const af = a.w.type === "fund" ? 0 : 1;
-        const bf = b.w.type === "fund" ? 0 : 1;
-        if (af !== bf) return af - bf;
-        return a.i - b.i;
-      })
-      .map((x) => x.w);
-  }, [qType, qOperator]);
+    return [...arr].sort((a, b) => {
+      const ap = a.status === "pending" ? 0 : 1;
+      const bp = b.status === "pending" ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      const af = a.type === "fund" ? 0 : 1;
+      const bf = b.type === "fund" ? 0 : 1;
+      if (af !== bf) return af - bf;
+      return b.ts - a.ts;
+    });
+  }, [qType, qOperator, livePending]);
 
   const qTotal = filteredQ.length;
   const qPages = Math.max(1, Math.ceil(qTotal / qPerPage));
@@ -313,9 +370,14 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const qRows = filteredQ.slice(qStart, qEnd);
 
   /* ────────────────── 审计日志过滤 ────────────────── */
+  // 实时条目(本会话所有高敏操作)在前 + 种子演示数据在后;此前本页只渲染种子、与实时 audit[] 脱节。
+  const allLogs = useMemo<AuditLogRow[]>(
+    () => [...(hydrated ? (liveAudit ?? []).map(entryToLogRow) : []), ...AUDIT_LOGS],
+    [liveAudit, hydrated],
+  );
   const logRows = useMemo(
-    () => AUDIT_LOGS.filter((l) => dFlt === "all" || l.domain === dFlt),
-    [dFlt],
+    () => allLogs.filter((l) => dFlt === "all" || l.domain === dFlt),
+    [allLogs, dFlt],
   );
 
   /* ────────────────── 渲染 ────────────────── */
@@ -326,18 +388,18 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       <div className="f-stats">
         <div className="f-stat warn">
           <div className="k">高敏动作</div>
-          <div className="v">{A2_STATS.pendingTickets} 件</div>
-          <div className="sub">资金类 {A2_STATS.fundTickets} 件置顶 · 理由必填留痕</div>
+          <div className="v">{hydrated ? pendingCount : A2_STATS.pendingTickets} 件</div>
+          <div className="sub">资金类 {hydrated ? fundPendingCount : A2_STATS.fundTickets} 件置顶 · 理由必填留痕</div>
         </div>
         <div className="f-stat danger">
           <div className="k">应急快速轨</div>
-          <div className="v">{A2_STATS.sosTickets} 件</div>
+          <div className="v">{hydrated ? sosPendingCount : A2_STATS.sosTickets} 件</div>
           <div className="sub">J 域熔断恢复 · SLA <span className="mono">{fmtHMS(sosSec)}</span></div>
         </div>
         <div className="f-stat">
           <div className="k">今日审计事件</div>
-          <div className="v">{A2_STATS.todayAuditEvents.toLocaleString()} 条</div>
-          <div className="sub">全部 admin.* 动作统一落这里</div>
+          <div className="v">{(A2_STATS.todayAuditEvents + (hydrated ? (liveAudit?.length ?? 0) : 0)).toLocaleString()} 条</div>
+          <div className="sub">全部 admin.* 动作统一落这里{hydrated && liveAudit?.length ? ` · 含本会话 ${liveAudit.length} 条实时` : ""}</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">本周执行 / 取消</div>
@@ -350,7 +412,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">高敏操作动态(b)· pending</span>
-          <span className="sub">· 大额/资金类置顶 · 点击执行会打开独立操作确认弹窗,理由必填后立即生效</span>
+          <span className="sub">· 实时 · 当前执行身份 <b>{actingRoleLabel(acting)}</b> · 够门槛直接执行 / 不够则提交提案 · 大额置顶</span>
           <div className="r chips">
             <span className="lb">筛</span>
             {TYPE_CHIPS.map((c) => (
@@ -380,46 +442,48 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               </tr>
             </thead>
             <tbody>
-              {qRows.map((w) => {
-                const idx = OPERATION_QUEUE.indexOf(w);
-                const status = effStatus(w);
+              {qRows.map((p) => {
+                const status = p.status;
                 const isFinal = status !== "pending";
+                const canExec = canExecute(acting, p.gate);
                 return (
-                  <tr key={w.id} className="click" onClick={() => setWoIdx(idx)}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{w.id}</td>
-                    <td style={{ fontSize: 12.5 }}>{w.action}</td>
-                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{w.obj}</td>
+                  <tr key={p.id} className="click" onClick={() => setWoId(p.id)}>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{p.id}</td>
+                    <td style={{ fontSize: 12.5 }}>{p.action}</td>
+                    <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{p.obj}</td>
                     <td>
                       <span className="a2-ba">
-                        <span className="o">{w.before}</span> → <span className="n">{w.after}</span>
+                        <span className="o">{p.before}</span> → <span className="n">{p.after}</span>
                       </span>
                     </td>
-                    <td style={{ fontSize: 12 }}>{w.operator}</td>
+                    <td style={{ fontSize: 12 }}>{p.proposer}</td>
                     <td>
-                      {w.amplifies && <span className="a2-amp">🔥 放大流出</span>}
-                      {w.amplifies && w.sos ? " " : null}
-                      {w.sos && <span className="a2-sos">⚡ 应急轨</span>}
-                      {!w.amplifies && !w.sos && <span style={{ color: "var(--ink-4)" }}>—</span>}
+                      {p.amplifies && <span className="a2-amp">🔥 放大流出</span>}
+                      {p.amplifies && p.sos ? " " : null}
+                      {p.sos && <span className="a2-sos">⚡ 应急轨</span>}
+                      {!p.amplifies && !p.sos && <span style={{ color: "var(--ink-4)" }}>—</span>}
                     </td>
                     <td>
                       <span className="a2-ttl">
-                        {w.ts} · 留痕
+                        {p.tsLabel} · 留痕
                       </span>
                     </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
-                      ) : (
+                      ) : canExec ? (
                         <>
                           <button
                             className="l-btn sm mc"
-                            onClick={(e) => { e.stopPropagation(); approveWo(w); }}
+                            onClick={(e) => { e.stopPropagation(); approveWo(p); }}
                           >执行</button>{" "}
                           <button
                             className="l-btn sm"
-                            onClick={(e) => { e.stopPropagation(); rejectWo(w); }}
+                            onClick={(e) => { e.stopPropagation(); rejectWo(p); }}
                           >取消</button>
                         </>
+                      ) : (
+                        <span className="bdg dim" title={`需 ${p.gateLabel} 执行`}>待 {p.gateLabel}</span>
                       )}
                     </td>
                   </tr>
@@ -470,7 +534,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">审计日志(a)· 只追加</span>
-            <span className="sub">· 按域/操作者/动作/时间筛 · 点行看全字段</span>
+            <span className="sub">· 实时:全后台高敏操作即时入账(实时在前 · 种子在后)· 按域/动作/时间筛 · 点行看全字段</span>
             <div className="r">
               <button className="l-btn sm" onClick={exportAudit}>导出(脱敏)</button>
             </div>
@@ -482,7 +546,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 <button
                   key={c.key}
                   className={`chip${dFlt === c.key ? " sel" : ""}`}
-                  onClick={() => setDFlt(c.key)}
+                  onClick={() => { setDFlt(c.key); setLogIdx(null); }}
                 >{c.label}</button>
               ))}
             </div>
@@ -495,18 +559,18 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 </tr>
               </thead>
               <tbody>
-                {logRows.map((l) => {
-                  const i = AUDIT_LOGS.indexOf(l);
-                  return (
-                    <tr key={`${l.ts}-${l.action}-${i}`} className="click" onClick={() => setLogIdx(i)}>
-                      <td className="mono" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.ts}</td>
-                      <td style={{ fontSize: 11.5 }}>{l.actor} · {l.role}</td>
-                      <td className="mono" style={{ fontSize: 11 }}>{l.action}</td>
-                      <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{l.obj}</td>
-                      <td className="mono" style={{ fontSize: 11 }}>{l.delta}</td>
-                    </tr>
-                  );
-                })}
+                {logRows.map((l, i) => (
+                  <tr key={`${l.ts}-${l.action}-${i}`} className="click" onClick={() => setLogIdx(i)}>
+                    <td className="mono" style={{ fontSize: 11, whiteSpace: "nowrap" }}>{l.ts}</td>
+                    <td style={{ fontSize: 11.5 }}>{l.actor} · {l.role}</td>
+                    <td className="mono" style={{ fontSize: 11 }}>{l.action}</td>
+                    <td style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{l.obj}</td>
+                    <td className="mono" style={{ fontSize: 11 }}>{l.delta}</td>
+                  </tr>
+                ))}
+                {!logRows.length && (
+                  <tr><td colSpan={5} style={{ color: "var(--ink-4)", textAlign: "center", padding: 18 }}>该筛选暂无审计记录</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -604,7 +668,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <b>分工一句话</b>:这页管「记录谁做了什么 + 操作确认的流程」;「谁能做什么」的授权矩阵在账号页(A1);
         事件叫什么名、带什么字段归事件中台(A4)定义,这页负责落库与可查。
         <b> 执行门槛</b>:资金类 = 财务(lead)/超管;风控与账户类 = 风控(lead)/超管;
-        内容类 = 内容(lead)/超管;账号治理与系统参数 = 仅超管。
+        内容类 = 内容(lead)/超管;账号治理 = 仅超管。
         应急轨动作(J 域熔断/恢复)按 SLA 倒计时置顶,超时升级告警到超管。
       </p>
       <PaginationExemptionList
@@ -624,45 +688,48 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       />
 
       {/* ───── 高敏动作详情 Drawer ───── */}
-      {woIdx !== null && (() => {
-        const w = OPERATION_QUEUE[woIdx];
-        const status = effStatus(w);
+      {woId !== null && (() => {
+        const p = (proposals ?? []).find((x) => x.id === woId);
+        if (!p) return null;
+        const status = p.status;
         const isFinal = status !== "pending";
+        const canExec = canExecute(acting, p.gate);
         return (
           <Drawer
-            title={`高敏动作 · ${w.id}`}
+            title={`高敏动作 · ${p.id}`}
             sub={
               <>
-                {w.action} · 对象 {w.obj} · 发起人 {w.operator} · 提案 {w.before} → {w.after}
+                {p.action} · 对象 {p.obj} · 发起人 {p.proposer} · 提案 {p.before} → {p.after}
               </>
             }
-            onClose={() => setWoIdx(null)}
+            onClose={() => setWoId(null)}
             footer={
-              !isFinal ? (
+              !isFinal && canExec ? (
                 <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
                   <button
                     className="l-btn mc"
                     style={{ flex: 1, justifyContent: "center" }}
-                    onClick={() => { setWoIdx(null); approveWo(w); }}
+                    onClick={() => { setWoId(null); approveWo(p); }}
                   >执行</button>
                   <button
                     className="l-btn"
                     style={{ flex: 1, justifyContent: "center" }}
-                    onClick={() => { setWoIdx(null); rejectWo(w); }}
+                    onClick={() => { setWoId(null); rejectWo(p); }}
                   >取消</button>
                 </div>
               ) : null
             }
           >
             <div className="l-b" style={{ padding: "4px 0 0" }}>
-              <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>
-              <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "(应急 SLA)" : "(理由必填留痕)"}</span></div>
-              <div className="kv"><span className="k">执行门槛</span><span className="v">{w.roleGate}</span></div>
+              <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{p.reason}</span></div>
+              <div className="kv"><span className="k">记录时间</span><span className="v">{p.tsLabel}{p.sos ? "(应急 SLA)" : "(理由必填留痕)"}</span></div>
+              <div className="kv"><span className="k">执行门槛</span><span className="v">{p.gateLabel}</span></div>
+              <div className="kv"><span className="k">当前执行身份</span><span className="v">{actingRoleLabel(acting)}{canExec ? "(可执行)" : "(权限不足 · 只读)"}</span></div>
               <div className="kv"><span className="k">防重</span><span className="v">执行携 Idempotency-Key · 24h dedup · 重复提交不重复生效</span></div>
-              <div className="kv"><span className="k">原子性</span><span className="v" style={{ maxWidth: 320, textAlign: "right" }}>确认执行 = 一次事务写目标域;失败则动作保持 pending,目标域零副作用</span></div>
+              <div className="kv"><span className="k">原子性</span><span className="v" style={{ maxWidth: 320, textAlign: "right" }}>执行 = 回放写目标域 + 落审计(真后台为一次事务 + 幂等);失败则提案保持 pending</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
-              {w.amplifies ? (
+              {p.amplifies ? (
                 <>
                   <b>🔥 放大资金流出</b>:提交时备付金覆盖率已过线;放行弹窗会再显示当前覆盖率,
                   恶化到红线下请驳回并注明。
@@ -676,13 +743,19 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 动作终态:<span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span> · 已留痕,无法再次裁决。
               </div>
             )}
+            {!isFinal && !canExec && (
+              <div className="atint warn" style={{ marginTop: 8 }}>
+                当前身份 {actingRoleLabel(acting)} 权限不足,无法执行/驳回本提案 —— 需 {p.gateLabel}。切换身份后可处置。
+              </div>
+            )}
           </Drawer>
         );
       })()}
 
       {/* ───── 审计记录 Drawer ───── */}
       {logIdx !== null && (() => {
-        const l = AUDIT_LOGS[logIdx];
+        const l = logRows[logIdx];
+        if (!l) return null;
         const needIdem = l.action.includes("withdraw") || l.action.includes("balance") || l.action.includes("operation_confirmed");
         return (
           <Drawer

@@ -11,7 +11,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
 import { KPIS } from "@/lib/mock/admin/design-data";
-import { CURRENT_PHASE } from "@/lib/mock/admin/command-center";
+import { rhythmState } from "@/lib/mock/admin/command-center";
 import { WEEKS, PHASE_SWITCH_IDX, KPI_COLORS, KPI_PLAIN, KPI_EXT, kpiState } from "./data";
 import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
@@ -69,6 +69,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   const redNames = KPIS.filter((_, i) => states[i] === "r").map((k) => `#${k.n}`).join(" ");
   const k = KPIS[selKpi];
   const ext = KPI_EXT[k.n];
+  const rs = rhythmState(ctx.pget); // 节奏单源镜像(运营在 H1 可配;当前阶段 / 月由此派生,不抄快照)
 
   const toggleOvl = (i: number) => setOvlSel((p) => (p.includes(i) ? (p.length > 1 ? p.filter((x) => x !== i) : p) : [...p, i]));
 
@@ -155,7 +156,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
         <div className="f-stat ok"><div className="k">达标 KPI</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 高于目标线</div></div>
         <div className="f-stat warn"><div className="k">预警 KPI</div><div className="v">{yellow}</div><div className="sub">黄灯 · 距目标 −{ylOffset}% 区间内</div></div>
         <div className="f-stat danger"><div className="k">未达 KPI</div><div className="v">{red}</div><div className="sub">红灯 · {redNames || "—"}</div></div>
-        <div className="f-stat cyan"><div className="k">当前 Phase</div><div className="v">{CURRENT_PHASE.code} · 月 {CURRENT_PHASE.month}</div><div className="sub">趋势图已叠加 Phase 切换标记</div></div>
+        <div className="f-stat cyan"><div className="k">当前 Phase</div><div className="v">{rs.currentPhase} · 月 {rs.currentMonth}</div><div className="sub">趋势图已叠加 Phase 切换标记</div></div>
       </div>
 
       {/* view params bar(全部仅视图 · 实时生效 · 普通确认批) */}
@@ -207,7 +208,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
               <svg className="spark" viewBox="0 0 150 30" preserveAspectRatio="none" aria-hidden>
                 <path d={sparkPath(kk.spark, 150, 30)} fill="none" stroke={LED_COLOR[st]} strokeWidth={1.8} />
               </svg>
-              <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{CURRENT_PHASE.code}</span><span className="lat">~2min</span></div>
+              <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{rs.currentPhase}</span><span className="lat">~2min</span></div>
             </button>
           );
         })}

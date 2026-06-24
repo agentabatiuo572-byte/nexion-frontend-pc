@@ -16,7 +16,7 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
-import { PHASE } from "@/lib/mock/admin/design-data";
+import { rhythmState } from "@/lib/mock/admin/command-center";
 import H1Phase from "./h-tabs/h1-phase";
 import H2Trial from "./h-tabs/h2-trial";
 import H3QuestEvents from "./h-tabs/h3-quest-events";
@@ -28,7 +28,7 @@ import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
 const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H3", H5: "H5", H6: "H5", H7: "H7" };
 
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  H1: ["阶段流转只能服务器推进 · 客户端不能改", `${PHASE.current} · 月 ${PHASE.month} · 每月 1 日 00:00 UTC 自动推进`],
+  H1: ["阶段流转只能服务器推进 · 客户端不能改", "每月 1 日 00:00 UTC 自动推进"], // live 恒由下方 rs 分支覆盖,此 seed 不渲染(不依赖 PHASE)
   H2: ["扣款失败概率只在服务器 · 永不下发前端", "自动推送 1.5 秒即时急停 · 进行中的按开始时锁定值结算"],
   H3: ["转盘抽奖在服务器跑 · 概率公开,但中没中不由前端定", "进行中的按入窗/入周/跨档快照结算 · 不追溯"],
   H5: ["签到/转盘的结果由服务器定 · 客户端只显示", "幸运两档概率之和 ≤100% · 里程碑阈值严格从低到高"],
@@ -55,7 +55,10 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
-  const [ro, live] = RO_LIVE[tab];
+  const [ro, liveSeed] = RO_LIVE[tab];
+  // H1 实时态 = 节奏单源(运营可配 H1.rhythm.*),其余 tab 用 RO_LIVE seed;与 B4/L1/L4/首页 pulse 同源。
+  const rs = rhythmState(ctx.pget);
+  const live = tab === "H1" ? `${rs.currentPhase} · 月 ${rs.currentMonth}/${rs.totalMonths} · 每月 1 日 00:00 UTC 自动推进` : liveSeed;
   const right = (
     <>
       <span className="f-ro"><span className="d" />{ro}</span>

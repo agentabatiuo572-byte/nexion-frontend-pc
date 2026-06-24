@@ -8,7 +8,7 @@
  * A 域三铁律 server-canonical 承诺(UI 不变量,见 a-tabs/types.ts 文件头):
  *  ① 全员强制 2FA(不可关)② 新账号默认零写权 ③ 有效超管 ≥2(实时派生 OPERATORS.filter)
  *  ④ A2 append-only + reason-required + 确认即执行+幂等(Idempotency-Key 24h dedup)
- *  ⑤ A3 server time 单源 + killswitch 操作面迁 J1/J2(本页只读)
+ *  ⑤ A3 killswitch 操作面迁 J1/J2(本页只读);server time 单源 / 防重号仍是后端不变量(配置卡 2026-06-24 移除)
  *  ⑥ A4 资金/KPI 只认 is_server_authoritative=true + PII 禁入
  * amplifies 仅资金放大流出方向(A2 工单放行 fund 类 + amplifies 行)。
  */
@@ -30,7 +30,7 @@ const FOLD: Record<string, string> = { A1: "A1", A2: "A2", A3: "A3", A4: "A4" };
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
   A1: ["每点一个功能,服务器都会重新核对你有没有权限", "当前 3 个超级管理员 · 满足「至少 2 个」"],
   A2: ["日志只能往里加 · 谁也改不了删不了,超级管理员也不行", "高风险操作 14 件 · 应急通道 1 件"],
-  A3: ["时间、防重复、熔断开关都以服务器为准 · 改本地无效", "5 个熔断开关全开 · 运行正常"],
+  A3: ["熔断开关、功能灰度都以服务器为准 · 改本地无效", "5 个熔断开关全开 · 运行正常"],
   A4: ["资金和 KPI 只认服务器正式发出的事件", "运行正常 · 今日 420 万条事件"],
 };
 

@@ -3,30 +3,32 @@
 /**
  * H1 Phase 调度器 — 12 月 × 8 旋钮节奏的逐值权威面(SPEC §4 H1)。
  *
- * 5 段(严格按设计稿 DOM 顺序):
+ * 6 段(严格按设计稿 DOM 顺序 + 节奏骨架):
  *  (a) 顶部 4 张 f-stat KPI(本组件自渲染 H1_STATS · 与 H2/H3/H5 一致;沙盒预览按钮放此段右上);
- *  (b) 12 月 × 8 旋钮 dial 矩阵(.dial-tbl):
- *      - 当前月(H1_STATS.currentMonth = 7)整行 .cur 高亮;
- *      - 单元格 cur = pget(`H1.dial.<key>.m<N>`) ?? DIAL_MATRIX[N-1][col];
+ *  (a2) 节奏骨架(运营可配):节奏总时长(select 9/12/15/18/24)+ 当前节奏位置(multi-field:当前月 select + 阶段进度 %);
+ *       真源 rhythmState(pget) ← H1.rhythm.{totalMonths,currentMonth,phaseProgressPct};B4 看板 / L1 / L4 / 首页 pulse 同源镜像,绝不抄快照;
+ *  (b) 逐月 × 8 旋钮 dial 矩阵(.dial-tbl · 行数 = rs.totalMonths):
+ *      - 当前月(rs.currentMonth,运营可配)整行 .cur 高亮;
+ *      - 单元格 cur = dialValueAt(pget,key,N) 单源(逐月 override ?? DIAL_MATRIX,超 12 月回退末行);
  *      - 与上月不同值 chg 黄色高亮(参考上月也走 pget 单源,改值会真实流动);
  *      - 点击单元格弹 操作确认,放松方向(LOOSEN_DIR 命中 + 方向符合)挂 amplifies=true 过 B1 红线;
  *      - NEW_USER_ONLY(newUser/invite)detail 加注「仅新用户;存量不回溯」;
- *      - onConfirm 写 `H1.dial.<k>.m<N>`,当 N === currentMonth 同时双写 `H.phase.dial.<k>`(D5/F3 实时镜像)。
+ *      - onConfirm 只写 `H1.dial.<k>.m<N>`;D5/F3 经 dialValueAt(@当前月)即时同源派生,无镜像双写(旧 H.phase.dial 2026-06-24 audit 废)。
  *  (c) Phase 切换控制 3 类(.p-row × 3):定时/pin/override 改三类走 操作确认 不挂 amplifies;
  *  (d) 生效中 override 台账(.p-row × N):每行带「撤销/解除」操作确认(不挂 amplifies,treated 作处置类);
  *      - 真写键 `H1.override.<id>.disabled` = "1",撤回带原因;
- *  (e) Phase 效果归因(.l-tbl):3 行只读 + 当前 P3 .cur 高亮 + 链接到 B4(/risk/health-monitor)。
+ *  (e) Phase 效果归因(.l-tbl):3 行只读 + 当前阶段 .cur 高亮(按 rs.currentPhase 匹配 code,非固定 P3)+ 链接到 B4(/risk/health-monitor)。
  *
  * 真写键(全部 H1.* 单源):
- *  H1.dial.<key>.m<N> · H.phase.dial.<key>(currentMonth 镜像)·
- *  H1.ctl.{schedule,pin,override} · H1.override.<id>.disabled
+ *  H1.rhythm.{totalMonths,currentMonth,phaseProgressPct}(节奏骨架,运营可配 · 全站同源)·
+ *  H1.dial.<key>.m<N>(逐月旋钮)· H1.ctl.{schedule,pin,override} · H1.override.<id>.disabled
  *
  * amplifies 触发(过 B1 100% 红线):
  *  - 矩阵格 + LOOSEN_DIR 命中(nexGate/cooldown/binaryCap)+ 方向符合(数值类比较)。
  *
- * 与 D5(/funds/withdraw-params)+ F3 同源:
- *  - 旧 h-view 沿用 H.phase.dial.<key>,D5 pget 同键(d5-params.tsx line 21);
- *  - 改 currentMonth 行的格会被 D5/F3 实时跟上(~60s 全网生效)。
+ * 与 D5(/funds/withdraw-params)+ F3 同源(2026-06-24 audit 改派生):
+ *  - D5 提现派发三项 / F3 双轨日封顶经 dialValueAt(pget, key, rs.currentMonth) 直接读逐月矩阵@当前月;
+ *  - 改当前月 / 总时长 / 当前月格的值,D5/F3 即时同源跟随(不走旧 H.phase.dial 镜像快照,无键名错配)。
  */
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
@@ -34,7 +36,6 @@ import {
   H1_STATS,
   DIAL_KEYS,
   DIAL_LABELS,
-  DIAL_MATRIX,
   LOOSEN_DIR,
   NEW_USER_ONLY,
   PHASE_CONTROLS,
@@ -42,8 +43,10 @@ import {
   PHASE_OVERRIDES,
   PHASE_ATTRIBUTION,
   monthToPhase,
+  dialValueAt,
   type DialKey,
 } from "./data";
+import { rhythmState, RHYTHM_TOTAL_OPTIONS } from "@/lib/mock/admin/command-center";
 
 // Phase 切换控制可枚举项 → 勾选不手输:pin 钉到哪个阶段(P1..P6 有限集)。
 // schedule 含可配置推进时刻(cron)/ override 为复合偏移(±N 月 + 批次),均保留自由 text。
@@ -51,6 +54,7 @@ const PHASE_CTL_OPTIONS: Record<string, string[]> = {
   pin: ["未钉住", ...PHASE_LABELS],
 };
 import type { HCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
 
 /** 数值比较(放松方向需要数值上行/下行判定;非数值如「是/否」直接放行 amplifies)。 */
 function isLoosenDirection(key: DialKey, before: string, after: string): boolean {
@@ -69,13 +73,12 @@ function isChanged(prev: string, cur: string): boolean {
 
 export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const { pget, setParam, toast, openActionConfirm, logAudit } = ctx;
+  const propose = usePropose();
+  // 节奏骨架 live 单源(运营可配 H1.rhythm.*;seed 回退)。当前月 / 总时长 / 当前阶段 / 阶段进度全由此派生。
+  const rs = rhythmState(pget);
 
-  // 单元格 cur 取值:优先 pget(`H1.dial.<k>.m<N>`),fallback 设计稿 DIAL_MATRIX。
-  const getCell = (m1: number, col: number): string => {
-    const key = DIAL_KEYS[col];
-    const seed = String(DIAL_MATRIX[m1 - 1][col]);
-    return pget(`H1.dial.${key}.m${m1}`) ?? seed;
-  };
+  // 单元格 cur 取值 = dialValueAt 单源(逐月 override ?? DIAL_MATRIX,超 12 月回退末 seed 行);D5/F3 当前派发值同走此源。
+  const getCell = (m1: number, col: number): string => dialValueAt(pget, DIAL_KEYS[col], m1);
 
   /** 改单元格 = 真写 + 当前月同步 H.phase.dial.<k>(D5/F3 镜像)。 */
   const openCellMc = (m1: number, col: number) => {
@@ -84,7 +87,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     const cur = getCell(m1, col);
     const newOnly = NEW_USER_ONLY.includes(key);
     const dirHint = LOOSEN_DIR[key]; // 提案打开时还不知道改后值,先给出"该项放松方向 = X"提示
-    const isCurrentMonth = m1 === H1_STATS.currentMonth;
+    const isCurrentMonth = m1 === rs.currentMonth;
 
     openActionConfirm({
       action: `改旋钮 · 月 ${m1} · ${label.name}`,
@@ -104,8 +107,8 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
           {" "}建议先沙盒预览下游影响(D5 提现 / F3 双轨)。
           {isCurrentMonth && (
             <>
-              {" "}<b>当前月格:本月生效值同步刷新</b>,D5 提现页镜像 ~60s 内随之走。
-              (F3 V3 接线前为声明意图,真消费由 D5 单家承担,见 d5-params.tsx pget。)
+              {" "}<b>当前月格:本月生效值即时刷新</b>,D5 提现派发(冷却 / 惩罚费率 / 合规)与 F3 双轨日封顶随之走
+              —— 它们同源派生自本月矩阵(dialValueAt @ 当前月),非缓存镜像。
             </>
           )}
         </>
@@ -118,22 +121,25 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         if (!v) return;
         // 二次精算放松方向(用户实际输入后再判;比 amplifies 弹窗时的悲观假设更精确)。
         const trulyLoosen = isLoosenDirection(key, cur, v);
-        setParam(`H1.dial.${key}.m${m1}`, v, {
-          action: `H1 dial 改值 · 月 ${m1} · ${label.name}`,
+        // 逐月旋钮单源:只写 H1.dial.<key>.m<N>。当 N=当前月时,D5/F3 经 dialValueAt(@当前月)即时读到该值,
+        // 无需再双写 H.phase.dial 镜像(旧镜像 2026-06-24 audit 已废:改当前月不跟 + D5 键名错配)。
+        const mutations = [
+          { key: `H1.dial.${key}.m${m1}`, value: v, action: `H1 dial 改值 · 月 ${m1} · ${label.name}` },
+        ];
+        // 按执行门槛分流:Phase dial 调整 = 增长 lead/超管;非授权身份发起则入 A2 pending 提案。
+        propose(toast, {
+          action: `Phase dial 调整 · 月 ${m1} · ${label.name}`,
+          obj: `H1 · ${label.name} · 月 ${m1}${isCurrentMonth ? "(当月)" : ""}`,
+          before: cur,
+          after: v,
+          type: "param",
+          amplifies: trulyLoosen,
+          gate: { roles: ["growth"], requireLead: true },
+          gateLabel: "增长 lead / 超管",
           reason,
+          mutations,
+          sourceDomain: "H1",
         });
-        // 当前月格 = D5/F3 当下消费的派发现值,必须同步双写,否则下游展示与本表脱钩。
-        if (isCurrentMonth) {
-          setParam(`H.phase.dial.${key}`, v, {
-            action: `H1 当月派发同步 · ${label.name}`,
-            reason: `${reason}(当月格同步 D5/F3 镜像)`,
-          });
-        }
-        toast(
-          `· 月 ${m1} ${label.name} 已改为 ${v}${
-            trulyLoosen ? " · 放松方向已过 B1 覆盖率核验" : ""
-          }${isCurrentMonth ? " · 当月生效,~60s 全网" : " · 待该月推进后生效"}`,
-        );
       },
     });
   };
@@ -196,14 +202,86 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     });
   };
 
+  /** 节奏总时长(月)——运营可配,写 H1.rhythm.totalMonths 单源。改后矩阵行数 + 阶段分布随之变。 */
+  const openTotalMonthsMc = () => {
+    openActionConfirm({
+      action: "节奏总时长",
+      detail: (
+        <>
+          当前 <b>{rs.totalMonths} 个月</b>运营节奏(P1 拉新 → P6 软退场)。改总时长后:逐月旋钮矩阵行数随之增减,
+          6 个 Phase 按月数权重等比重重分布(默认 12 月 = P1·2 / P2·2 / P3·3 / P4·1 / P5·2 / P6·2)。
+          {" "}<b>当前运营月超出新总时长会自动收到末月</b>。B4 节奏看板 / L 域 KPI / 首页脉搏同步刷新。
+        </>
+      ),
+      amplifies: false,
+      // 枚举档位,勾选不手输。
+      edit: { kind: "select", current: String(rs.totalMonths), options: RHYTHM_TOTAL_OPTIONS.map(String) },
+      run: (reason, v) => {
+        if (!v) return;
+        const next = Number(v);
+        if (!Number.isFinite(next) || next <= 0) return;
+        setParam("H1.rhythm.totalMonths", String(next), { action: "节奏总时长调整", reason });
+        // 当前月超界 → clamp 到新末月,避免 currentMonth > total 的不一致。
+        if (rs.currentMonth > next) {
+          setParam("H1.rhythm.currentMonth", String(next), { action: "当前运营月随总时长 clamp", reason });
+        }
+        logAudit({ actor: "总管理员", action: "节奏总时长调整", target: "H1.rhythm.totalMonths", reason });
+        toast(`· 节奏总时长已改为 ${next} 个月 · 已记审计`);
+      },
+    });
+  };
+
+  /** 当前节奏位置(当前月 + 本阶段进度)——一组相关值,多字段弹窗,各值独立写 H1.rhythm.* 单源。 */
+  const openCurrentPosMc = () => {
+    openActionConfirm({
+      action: "当前节奏位置",
+      detail: (
+        <>
+          设定平台当前走到第几月、本阶段进行到多少。当前 <b>第 {rs.currentMonth}/{rs.totalMonths} 月 · {rs.currentPhase} {rs.currentPhaseName}</b>,
+          本阶段已进行 <b>{rs.phaseProgressPct}%</b>。月份与阶段由权重派生联动;改后 B4 看板 / H1 矩阵当前月高亮 / L 域 KPI / 首页脉搏全部跟随。
+          {" "}(真后台由 cron 每月 1 日自动 +1 月;此处为手动设定 / 校准入口。)
+        </>
+      ),
+      amplifies: false,
+      businessForm: {
+        kind: "multi-field",
+        title: "当前节奏位置",
+        hint: "当前运营月为有限集(勾选);本阶段进度为开放数值(0–100)。",
+        fields: [
+          {
+            key: "currentMonth",
+            label: "当前运营月",
+            inputKind: "select",
+            current: String(rs.currentMonth),
+            options: Array.from({ length: rs.totalMonths }, (_, i) => String(i + 1)),
+          },
+          { key: "phaseProgressPct", label: "本阶段进度(%)", inputKind: "number", current: String(rs.phaseProgressPct), placeholder: "0–100" },
+        ],
+      },
+      run: (reason, _v, bf) => {
+        if (!bf) return;
+        const m = Number(bf.currentMonth);
+        if (Number.isFinite(m) && m > 0) {
+          setParam("H1.rhythm.currentMonth", String(Math.max(1, Math.min(rs.totalMonths, Math.round(m)))), { action: "设定当前运营月", reason });
+        }
+        const p = Number(bf.phaseProgressPct);
+        if (Number.isFinite(p)) {
+          setParam("H1.rhythm.phaseProgressPct", String(Math.max(0, Math.min(100, Math.round(p)))), { action: "设定本阶段进度", reason });
+        }
+        logAudit({ actor: "总管理员", action: "设定当前节奏位置", target: "H1.rhythm.currentMonth", reason });
+        toast("· 当前节奏位置已更新 · 已记审计");
+      },
+    });
+  };
+
   return (
     <>
       {/* (a) 顶部 4 张 f-stat KPI(本组件自渲,与 H2/H3/H5 一致)。 */}
       <div className="f-stats">
         <div className="f-stat">
           <div className="k">当前运营月 / 阶段</div>
-          <div className="v">月 {H1_STATS.currentMonth} · {H1_STATS.currentPhase}</div>
-          <div className="sub">定时推进 · 每月 1 日 00:00 UTC</div>
+          <div className="v">月 {rs.currentMonth} · {rs.currentPhase}</div>
+          <div className="sub">{rs.totalMonths} 月节奏 · 定时推进每月 1 日 00:00 UTC</div>
         </div>
         <div className="f-stat">
           <div className="k">用户分布</div>
@@ -227,10 +305,38 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         <button className="f-cta" onClick={openSandbox}>沙盒预览(只读)</button>
       </div>
 
-      {/* (b) 12 月 × 8 旋钮 dial 矩阵 */}
+      {/* 节奏骨架(运营可配):总时长 + 当前位置。B4 看板 / L 域 / 首页脉搏同源镜像,绝不抄快照。 */}
+      <section className="l-card" style={{ marginBottom: 16 }}>
+        <div className="l-h">
+          <span className="ttl">节奏骨架</span>
+          <span className="sub">· 运营节奏的总时长与当前位置 · 操作确认可回滚 · 全站同源派生</span>
+        </div>
+        <div className="l-b" style={{ paddingTop: 4 }}>
+          <div className="p-row">
+            <span style={{ flex: 1 }}>
+              <b>节奏总时长</b>
+              <br />
+              <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>P1 拉新 → P6 软退场的总月数;矩阵行数与各阶段月数随之等比重分布</span>
+            </span>
+            <span className="bdg">{rs.totalMonths} 个月</span>
+            <button className="l-btn sm mc" onClick={openTotalMonthsMc}>改总时长</button>
+          </div>
+          <div className="p-row">
+            <span style={{ flex: 1 }}>
+              <b>当前节奏位置</b>
+              <br />
+              <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>当前走到第几月 + 本阶段进度;阶段由月份派生(真后台 cron 自动推进,此处手动设定 / 校准)</span>
+            </span>
+            <span className="bdg">第 {rs.currentMonth}/{rs.totalMonths} 月 · {rs.currentPhase} · {rs.phaseProgressPct}%</span>
+            <button className="l-btn sm mc" onClick={openCurrentPosMc}>设定位置</button>
+          </div>
+        </div>
+      </section>
+
+      {/* (b) 逐月 × 8 旋钮 dial 矩阵 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">逐月旋钮矩阵(12 月 × 8 项 · 逐值权威)</span>
+          <span className="ttl">逐月旋钮矩阵({rs.totalMonths} 月 × 8 项 · 逐值权威)</span>
           <span className="sub">· 点任意单元格发起改值(操作确认)· 当前月高亮 · 黄色 = 与上月不同</span>
           <div className="r">
             <span className="bdg ok">约 60 秒内全网生效</span>
@@ -255,10 +361,10 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
               </tr>
             </thead>
             <tbody>
-              {DIAL_MATRIX.map((_row, idx) => {
+              {Array.from({ length: rs.totalMonths }, (_, idx) => {
                 const m1 = idx + 1;
-                const isCur = m1 === H1_STATS.currentMonth;
-                const phaseTag = monthToPhase(m1);
+                const isCur = m1 === rs.currentMonth;
+                const phaseTag = monthToPhase(m1, rs.totalMonths);
                 return (
                   <tr key={m1} className={isCur ? "cur" : undefined}>
                     <td>
@@ -373,18 +479,21 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                 </tr>
               </thead>
               <tbody>
-                {PHASE_ATTRIBUTION.map((r) => (
+                {PHASE_ATTRIBUTION.map((r) => {
+                  const isCur = r.code === rs.currentPhase; // 当前阶段高亮随节奏单源流转,不固定 P3
+                  return (
                   <tr
-                    key={r.phase}
-                    style={r.cur ? { background: "rgba(255,107,53,.08)" } : undefined}
+                    key={r.code}
+                    style={isCur ? { background: "rgba(255,107,53,.08)" } : undefined}
                   >
-                    <td style={{ fontWeight: 600, color: "var(--ink)" }}>{r.phase}</td>
+                    <td style={{ fontWeight: 600, color: "var(--ink)" }}>{r.phase}{isCur ? " · 当前" : ""}</td>
                     <td className="num mono">{r.first}</td>
                     <td className="num mono">{r.reinvest}</td>
                     <td className="num mono">{r.weekly}</td>
                     <td className="num mono">{r.d7}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -398,10 +507,10 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       <PaginationExemptionList
         items={[
           {
-            label: "逐月旋钮矩阵(12 月 × 8 项 · 逐值权威)",
+            label: `逐月旋钮矩阵(${rs.totalMonths} 月 × 8 项 · 逐值权威)`,
             kind: "fixed-matrix",
-            maxRows: 12,
-            reason: "12 个月节奏矩阵必须同屏对比当前月和前后月,翻页会破坏横向校验",
+            maxRows: rs.totalMonths,
+            reason: `${rs.totalMonths} 个月节奏矩阵必须同屏对比当前月和前后月,翻页会破坏横向校验`,
           },
           {
             label: "Phase 效果归因",

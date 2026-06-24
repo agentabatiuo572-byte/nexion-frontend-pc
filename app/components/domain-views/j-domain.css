@@ -106,9 +106,6 @@
 .jdom .matrix-tbl .acts button.resume { color: var(--success); border-color: color-mix(in srgb, var(--success) 32%, transparent);
   background: var(--success-soft); font-weight: 600; }
 .jdom .matrix-tbl .acts button.resume:hover { background: var(--success); color: #0A0A0A; }
-.jdom .matrix-tbl .acts button.emer { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 32%, transparent);
-  background: color-mix(in srgb, var(--warning) 8%, transparent); }
-.jdom .matrix-tbl .acts button.emer:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); }
 
 /* 应急快速通道 + B1 备付金检查 双卡 */
 .jdom .j1-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }

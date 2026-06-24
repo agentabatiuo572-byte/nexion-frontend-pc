@@ -100,6 +100,9 @@ export default function UserDetailPage() {
     });
     if (yes) {
       setFrozen(user!.id, next);
+      // 360 HUB 是快捷操作面:冻结/解冻沿用轻量 confirm + per-user 审计(setFrozen 内 withAudit,
+      // 见 360 HUB 审计时间线),与同页其他快捷动作(act → opsLog)一致。需理由的权威 操作确认
+      // 冻结/解冻在 C2 账户操作页(openActionConfirm + logAudit admin.user_frozen),已落平台 A2。
       toast.success(next ? "账户已冻结" : "账户已解冻", `${user!.id} · ${user!.nickname}`);
     }
   }

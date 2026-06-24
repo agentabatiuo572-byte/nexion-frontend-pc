@@ -51,14 +51,27 @@ for (const f of fs.readdirSync(VIEWS_DIR).filter((x) => /-view\.tsx$/.test(x)).s
   else if (actual < base) { warnings.push(`${f}: 死控件 ${actual} < 基线 ${base}(已补 ${base - actual})— 可把 baseline 降到 ${actual}`); baselineDrift++; }
 }
 
-// ── 规则 2:防 built 退化(storeAction 真落地)──
+// ── 规则 2:防 built 退化(storeAction / restAction 真落地)──
 const storeBlob = (() => {
   let b = ""; const dir = path.join(ROOT, "lib/store/admin");
   try { for (const f of fs.readdirSync(dir)) if (f.endsWith(".ts")) b += read(path.join(dir, f)); } catch {}
   return b;
 })();
+// REST 化动作的真写入口在后端 client(lib/admin/*-client.ts),不经 store。这类行用 restAction 字段标注,
+// 门照样反查「真落地(在 lib/admin/*)+ 被 view 调用」两不变量 —— 只是落地面从 store 换成 REST client,
+// 防把 REST 动作改回死控件(删 client 调用 / 虚标 built)。例:A1 账号治理 createA1Account · E2 任务 CRUD createE2Task。
+const libBlob = (() => {
+  let b = ""; const dir = path.join(ROOT, "lib/admin");
+  try { for (const f of fs.readdirSync(dir)) if (f.endsWith(".ts")) b += read(path.join(dir, f)); } catch {}
+  return b;
+})();
 for (const r of rows) {
   if (r.status !== "built") continue;
+  if (r.restAction) {
+    if (!libBlob.includes(r.restAction)) problems.push(`[built 退化] ${r.id}: restAction "${r.restAction}" 不在 lib/admin/*(被删/虚标)`);
+    else if (!appBlob.includes(r.restAction)) problems.push(`[built 未接线] ${r.id}: restAction "${r.restAction}" 定义于 client 但 app/ 无 view 调用(UI 没接)`);
+    continue;
+  }
   if (!r.storeAction) { problems.push(`[built 缺 storeAction] ${r.id} ${r.object}·${r.action}`); continue; }
   if (!storeBlob.includes(r.storeAction)) problems.push(`[built 退化] ${r.id}: storeAction "${r.storeAction}" 不在 lib/store/admin/*(被删/虚标)`);
   else if (!appBlob.includes(r.storeAction)) problems.push(`[built 未接线] ${r.id}: "${r.storeAction}" 在 store 定义但 app/ 无 view 调用(UI 没接)`);

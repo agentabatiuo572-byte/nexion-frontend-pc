@@ -13,17 +13,18 @@ export const VRANK: { v: string; selfBuy?: string; directRefs?: string; teamGv?:
   { v: "V0", pop: 84231 },
   { v: "V1", selfBuy: "$299", directRefs: "3", pop: 12483 },
   { v: "V2", teamGv: "$5k", pop: 3247 },
-  { v: "V3", teamGv: "$20k", legCount: "2", legRank: "V1", pop: 487 },
-  { v: "V4", teamGv: "$50k", legCount: "3", legRank: "V2", pop: 102 },
-  { v: "V5", teamGv: "$150k", legCount: "4", legRank: "V3", pop: 21 },
-  { v: "V6", teamGv: "$500k", legCount: "5", legRank: "V4", pop: 3 },
-  { v: "V7", teamGv: "$1M", legCount: "6", legRank: "V5", pop: 1 },
-  { v: "V8", teamGv: "$3M", legCount: "7", legRank: "V6", pop: 0 },
-  { v: "V9", teamGv: "$10M", pop: 0 },
-  { v: "V10", teamGv: "$30M", pop: 0 },
-  { v: "V11", teamGv: "$100M", pop: 0 },
-  { v: "V12", teamGv: "$500M", pop: 0 },
+  { v: "V3", teamGv: "$20k", legCount: "2", legRank: "V1", pop: 360 },
+  { v: "V4", teamGv: "$50k", legCount: "3", legRank: "V2", pop: 84 },
+  { v: "V5", teamGv: "$150k", legCount: "4", legRank: "V3", pop: 27 },
+  { v: "V6", teamGv: "$500k", legCount: "5", legRank: "V4", pop: 11 },
+  { v: "V7", teamGv: "$1M", legCount: "6", legRank: "V5", pop: 6 },
+  { v: "V8", teamGv: "$3M", legCount: "7", legRank: "V6", pop: 4 },
+  { v: "V9", teamGv: "$10M", pop: 2 },
+  { v: "V10", teamGv: "$30M", pop: 2 },
+  { v: "V11", teamGv: "$100M", pop: 1 },
+  { v: "V12", teamGv: "$500M", pop: 1 },
 ];
+// pop(在册人数)镜像 LEADERSHIP_CANON.ranks 的同一全网分布(V3+ 段);canon-sentinel 守前后端 + F1↔canon 一致。
 
 // V-Rank 等级奖励种子(backend-replaceable;首帧 ensureVRankRewards 注入,之后以 store 真值为准)。
 // 迁移自旧 nex 字段:V1–V8 各保留一项培育奖 NEX;实物豪礼已删,不迁移;V0、V9–V12 留空待运营配置。
@@ -114,11 +115,59 @@ export const F4_PODIUM: { rank: number; uid: string; gv: string; tip: string; cl
   { rank: 1, uid: "usr_31E8", gv: "$214k", tip: "本期 GV", cls: "r-1" },
   { rank: 3, uid: "usr_55B1", gv: "$156k", tip: "取消资格", cls: "r-3 dq" },
 ];
-// 领导池 V 级票数权重(指数翻倍 V3=1 → V12=512)。镜像 leadership-pool.ts V_VOTES。
-export const V_VOTES: { v: string; votes: number }[] = [
-  { v: "V3", votes: 1 }, { v: "V4", votes: 2 }, { v: "V5", votes: 4 }, { v: "V6", votes: 8 }, { v: "V7", votes: 16 },
-  { v: "V8", votes: 32 }, { v: "V9", votes: 64 }, { v: "V10", votes: 128 }, { v: "V11", votes: 256 }, { v: "V12", votes: 512 },
-];
+/* ===== F4 领导池 canon —— 镜像前端真源 store/leadership-pool.ts(backend-replaceable:
+   config 走 GET /api/config/leadership-pool[PRD §9.11c.1];live state[分布/池额/history]走 /api/pool/state[candidate·PRD 待补])。
+   后台所有领导池展示数从此派生,禁散落硬编码。改前端 seed/票权 → 同步改此处(canon-sentinel 守前后端一致)。 */
+export const LEADERSHIP_CANON = {
+  weeklyGmvUsdt: 9_746_420,   // 周平台 GMV 基数
+  poolRatio: 0.05,            // 5% 入池(运营可配 F.pool.ratio)
+  monthlyCapUsdt: 2_600_000,  // 月度预留护栏(运营可配 F.pool.monthlyCap)
+  unlockRank: 3,              // 参与门槛 = 票权首个非零 = V3+
+  topN: 10,                   // 集中度展示口径:顶部 N 名领袖
+  // V 级 → 票权(指数翻倍) + 全网人头(镜像 GLOBAL_V_DISTRIBUTION 的 V3+ 段)
+  ranks: [
+    { v: 3, votes: 1, pop: 360 }, { v: 4, votes: 2, pop: 84 }, { v: 5, votes: 4, pop: 27 },
+    { v: 6, votes: 8, pop: 11 }, { v: 7, votes: 16, pop: 6 }, { v: 8, votes: 32, pop: 4 },
+    { v: 9, votes: 64, pop: 2 }, { v: 10, votes: 128, pop: 2 }, { v: 11, votes: 256, pop: 1 }, { v: 12, votes: 512, pop: 1 },
+  ],
+} as const;
+
+/** 周池额 = 周 GMV × 比例(派生,单源;与前端 currentWeekPoolUSDT 同口径)。 */
+export function leadershipPoolUsdt(ratioPct: number = LEADERSHIP_CANON.poolRatio): number {
+  return Math.round(LEADERSHIP_CANON.weeklyGmvUsdt * ratioPct);
+}
+/** 全网总票(V3+ 加权)。 */
+export function leadershipTotalVotes(): number {
+  return LEADERSHIP_CANON.ranks.reduce((s, r) => s + r.votes * r.pop, 0);
+}
+/** 合格领袖人数(V3+)。 */
+export function leadershipQualifiers(): number {
+  return LEADERSHIP_CANON.ranks.reduce((s, r) => s + r.pop, 0);
+}
+/** 顶部 N 名占比(给定 ranks[{pop,votes}],派生)。按票权降序取顶部 N 人——运营即便改乱票权也正确取真·顶部。
+ *  供 F4 用运营 pget 改后的有效票权实时重算,使「调高权重→集中度上抬」承诺真落地。 */
+export function leadershipTopConcentrationFrom(ranks: { pop: number; votes: number }[], topN: number = LEADERSHIP_CANON.topN): number {
+  const total = ranks.reduce((s, r) => s + r.pop * r.votes, 0);
+  if (total === 0) return 0;
+  const sorted = [...ranks].sort((a, b) => b.votes - a.votes);
+  let remaining = topN;
+  let sum = 0;
+  for (const r of sorted) {
+    const take = Math.min(r.pop, remaining);
+    sum += take * r.votes;
+    remaining -= take;
+    if (remaining <= 0) break;
+  }
+  return sum / total;
+}
+
+/** 顶部 N 名领袖占池比(0-1,派生真值;默认用 canon 静态票权)。 */
+export function leadershipTopConcentration(topN: number = LEADERSHIP_CANON.topN): number {
+  return leadershipTopConcentrationFrom(LEADERSHIP_CANON.ranks.map((r) => ({ pop: r.pop, votes: r.votes })), topN);
+}
+
+// 领导池 V 级票数权重(指数翻倍 V3=1 → V12=512)。派生自 LEADERSHIP_CANON,单源。
+export const V_VOTES: { v: string; votes: number }[] = LEADERSHIP_CANON.ranks.map((r) => ({ v: `V${r.v}`, votes: r.votes }));
 
 /* ===== F5 佣金事件审计 ===== */
 // 6-kind 拆分(commission 支出按类;ALL=$8.42M 为该域 mock,与 LEDGER/REVENUE 不同量纲,无单源冲突)。

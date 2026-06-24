@@ -62,6 +62,7 @@ import {
   type EventState,
 } from "./data";
 import type { HCtx } from "./types";
+import { rhythmState } from "@/lib/mock/admin/command-center";
 
 /** 首日任务行(seed + 运营增删改写 H3.dayOne.tasks JSON 的统一形状)。 */
 type DayOneTask = { id: string; task: string; href: string; reward: string; status: string; completionType?: string; completionEvent?: string };
@@ -148,6 +149,10 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
     setParam(`H3.weekly.${tier}.tasks`, JSON.stringify(next), { action, reason });
   const champBonus = () => pget("H3.weekly.champBonus") ?? "+500 NEX × P3 1.1×";
   const multAt = (p: string, seed: string) => pget(`H3.weekly.mult.${p}`) ?? seed;
+  // 当前阶段倍率(live;随节奏单源 currentPhase 流转,不固定 P3)。
+  const rs = rhythmState(pget);
+  const phaseMultRow = WEEKLY_MULT.find((m) => m.p === rs.currentPhase);
+  const phaseBonusLive = `${phaseMultRow?.mult ?? "1.0×"}(${rs.currentPhase})`;
   /** 月度挑战列表单源。 */
   const effectiveMonthly = (): MonthlyTask[] => {
     const raw = pget("H3.monthly.tasks");
@@ -854,7 +859,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
         <div className="f-stat warn">
           <div className="k">本周 NEX 派发</div>
           <div className="v">{H3_STATS.weeklyNex}</div>
-          <div className="sub">含 Phase 加成 {H3_STATS.phaseBonusP3}</div>
+          <div className="sub">含 Phase 加成 {phaseBonusLive}</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">月度挑战在途</div>
@@ -1065,7 +1070,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
             <div className="mult-track">
               {WEEKLY_MULT.map((m) => {
                 const cur = multAt(m.p, m.mult);
-                const isCur = m.p.startsWith("P3");
+                const isCur = m.p === rs.currentPhase;
                 return (
                   <div
                     key={m.p}
@@ -1074,7 +1079,7 @@ export function H3QuestEvents({ ctx }: { ctx: HCtx }) {
                     style={{ cursor: "pointer" }}
                     title="点击改值(操作确认)"
                   >
-                    <div className="m">{m.p}</div>
+                    <div className="m">{m.p}{isCur ? " 当前" : ""}</div>
                     <div className="vv">{cur}</div>
                   </div>
                 );

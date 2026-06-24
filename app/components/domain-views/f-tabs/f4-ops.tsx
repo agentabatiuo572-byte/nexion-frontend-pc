@@ -2,7 +2,10 @@
 
 /** F4 · 池/配额/大使/榜 —— 领导奖池 / 硬件配额 / 区域大使确认 / 排行榜反欺诈 4 区操盘 + V_VOTES 票数权重(log2 柱 + 可点表)。
  *  ⚡ 放大流出项(池比例 / 榜单奖池 / V_VOTES / 大使确认)前置 B1 覆盖率核验。 */
-import { V_VOTES, F4_QUOTA, F4_AMB_BANDS, F4_PODIUM } from "./data";
+import {
+  V_VOTES, F4_QUOTA, F4_AMB_BANDS, F4_PODIUM,
+  LEADERSHIP_CANON, leadershipPoolUsdt, leadershipQualifiers, leadershipTopConcentrationFrom,
+} from "./data";
 import type { FViewCtx } from "./types";
 
 const VOTE_LOG_MAX = Math.log2(513);
@@ -11,17 +14,30 @@ function voteTier(i: number): string { return i < 3 ? "t-low" : i < 7 ? "t-mid" 
 
 export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const ratioEff = ctx.pget("F.pool.ratio") ?? "5%";
-  const capEff = ctx.pget("F.pool.monthlyCap") ?? "$50,000";
+  const capEff = ctx.pget("F.pool.monthlyCap") ?? "$2,600,000";
   const proEff = ctx.pget("F.quota.proUnlock") ?? "直推 5 / 月业绩 $50k";
   const rackEff = ctx.pget("F.quota.rackUnlock") ?? "直推 15";
   const stockEff = ctx.pget("F.quota.monthlyStock") ?? "96 台";
   const ambState = ctx.pget("F.ambassador.q3-2025.status");
   const lbPool = ctx.pget("F.leaderboard.poolUsd") ?? "$48,000";
   const lbDq = ctx.pget("F.leaderboard.period.status") === "disqualified";
+  // 领导池展示数全部从 canon 派生(与前端 store 同口径);比例/票权随运营 pget 实时联动,禁硬编码。
+  const gmv = LEADERSHIP_CANON.weeklyGmvUsdt;
+  const ratioNum = parseFloat(String(ratioEff)) / 100;
+  const effRatio = Number.isFinite(ratioNum) && ratioNum > 0 ? ratioNum : LEADERSHIP_CANON.poolRatio;
+  const poolUsdt = leadershipPoolUsdt(effRatio);
+  // 顶部 N 名集中度用运营改后的有效票权(pget)实时重算,使 f4-warn「调高权重→占比上抬」真落地。
+  const effRanks = LEADERSHIP_CANON.ranks.map((r) => ({ pop: r.pop, votes: Number(ctx.pget(`F.pool.votes.V${r.v}`)) || r.votes }));
+  const topConcPct = Math.round(leadershipTopConcentrationFrom(effRanks) * 100);
+  const qualifiers = leadershipQualifiers();
+  const monthPoolUsdt = Math.round(poolUsdt * 4.33);
+  const usd = (n: number) => "$" + n.toLocaleString("en-US");
+  const usdK = (n: number) => "$" + (n / 1000).toFixed(1) + "k";
+  const usdM = (n: number) => "$" + (n / 1e6).toFixed(2) + "M";
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">本周领导池注入</div><div className="v">$214k</div><div className="sub">5% × 周 GMV $4.28M</div></div>
+        <div className="f-stat ok"><div className="k">本周领导池</div><div className="v">{usdK(poolUsdt)}</div><div className="sub">{ratioEff} × 周 GMV {usdM(gmv)}</div></div>
         <div className="f-stat"><div className="k">本月硬件配额剩余</div><div className="v">32 / 96</div><div className="sub">Pro 18 · Rack 14 余</div></div>
         <div className="f-stat warn"><div className="k">大使待确认</div><div className="v">{ambState ? (ambState === "approved" ? "已批" : "已驳") : "7"}</div><div className="sub">含 4 类预算申请</div></div>
         <div className="f-stat danger"><div className="k">榜单刷榜取消资格</div><div className="v">3</div><div className="sub">K2 反欺诈联动</div></div>
@@ -35,14 +51,14 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             <div className="t"><div className="nm">领导奖池</div><div className="s">5% 周 GMV / V_VOTES 加权分配</div></div>
             <span className="tag">F4 · F.pool.*</span>
           </div>
-          <div className="pool-hero"><div><div className="lbl">本周已注入</div><div className="v">$214,000</div></div><div className="meta">周日 23:59 UTC 结算<br />参与 V8+ 用户 <b>45</b></div></div>
+          <div className="pool-hero"><div><div className="lbl">本周池(周 GMV × {ratioEff})</div><div className="v">{usd(poolUsdt)}</div></div><div className="meta">周日 23:59 UTC 快照 → 周一 00:00 UTC 派发<br />参与 V{LEADERSHIP_CANON.unlockRank}+ 领袖 <b>{qualifiers}</b></div></div>
           <div className="kv-row"><span className="k">奖池比例(周 GMV)</span><span className="v brand">{ratioEff}</span></div>
           <div className="kv-row"><span className="k">月度预留上限(cap)</span><span className="v">{capEff}</span></div>
-          <div className="kv-row"><span className="k">顶部 10 人池占比</span><span className="v warn">≈ 80%</span></div>
+          <div className="kv-row"><span className="k">顶部 {LEADERSHIP_CANON.topN} 名占比(派生)</span><span className="v warn">≈ {topConcPct}%</span></div>
           <div className="kv-row"><span className="k">分配口径</span><span className="v dim">按 V_VOTES 权重</span></div>
           <div className="sect-foot">
             <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "领导池比例调整(周 GMV)", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: ratioEff, unit: "%" }, detail: `每周 GMV 注入领导池的比例 · 当前 ${ratioEff} · 放大池子流出,受 B1 约束。` })}>调整池比例</button>
-            <button onClick={() => ctx.openActionConfirm({ name: "领导池月度 cap 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: capEff }, detail: `领导池月度预留封顶 · 当前 ${capEff} · 防预算超支(超额顺延次月)。` })}>调整月度 cap</button>
+            <button onClick={() => ctx.openActionConfirm({ name: "领导池月度 cap 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: capEff }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 防单月预算超支,达上限触发运营预警(当前月池约 ${usdM(monthPoolUsdt)},常态不触顶)。` })}>调整月度 cap</button>
           </div>
         </section>
 
@@ -113,13 +129,16 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
       <section className="sect votes-card">
         <div className="sect-h">
           <span className="ic pool"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg></span>
-          <div className="t"><div className="nm">V 级票数权重 · 领导池分配依据</div><div className="s">指数翻倍 V3=1 → V12=512 · 顶部 10 人吃池 80%</div></div>
+          <div className="t"><div className="nm">V 级票数权重 · 领导池分配依据</div><div className="s">指数翻倍 V3=1 → V12=512 · 顶部 {LEADERSHIP_CANON.topN} 名领袖 ≈{topConcPct}%</div></div>
           <span className="tag">F.pool.votes.*</span>
         </div>
         <div className="votes-grid">
-          {V_VOTES.map((r, i) => (
-            <div key={r.v} className="vote-col"><span className="v">{r.votes}</span><span className={`b ${voteTier(i)}`} style={{ height: voteH(r.votes) }} /><span className="l">{r.v}</span></div>
-          ))}
+          {V_VOTES.map((r, i) => {
+            const eff = Number(ctx.pget(`F.pool.votes.${r.v}`)) || r.votes;
+            return (
+              <div key={r.v} className="vote-col"><span className="v">{eff}</span><span className={`b ${voteTier(i)}`} style={{ height: voteH(eff) }} /><span className="l">{r.v}</span></div>
+            );
+          })}
         </div>
         <div className="vote-table">
           {V_VOTES.map((r) => {
@@ -131,10 +150,10 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             );
           })}
         </div>
-        <div className="f4-warn"><b>权重一动则虹吸放大</b> · 调高高 V 级权重会进一步放大头部分润,顶部 10 人池占比将从 ≈80% 上抬。<b>每一项调整均视为「放大资金流出」</b>,须先核验 B1 兑付覆盖率(§1.8)。</div>
+        <div className="f4-warn"><b>权重一动则虹吸放大</b> · 调高高 V 级权重会进一步放大头部分润,顶部 {LEADERSHIP_CANON.topN} 名占比将从 ≈{topConcPct}% 进一步上抬。<b>每一项调整均视为「放大资金流出」</b>,须先核验 B1 兑付覆盖率(§1.8)。</div>
       </section>
 
-      <p className="f-foot">4 个子模块共用一条 server 评估总线:<b>每周日 23:59 UTC</b> 结算时,server 依据 V_VOTES、配额库存、大使预算、榜单结果一次性派发。运营侧调参均经 操作确认;放大流出项前置 B1 覆盖率核验。</p>
+      <p className="f-foot">4 个子模块共用一条 server 评估总线:<b>每周日 23:59 UTC 快照 → 周一 00:00 UTC</b> 派发时,server 依据 V_VOTES、配额库存、大使预算、榜单结果一次性派发。运营侧调参均经 操作确认;放大流出项前置 B1 覆盖率核验。</p>
     </>
   );
 }

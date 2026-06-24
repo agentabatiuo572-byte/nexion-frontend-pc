@@ -20,6 +20,8 @@ export const PHASES: PhaseNode[] = [
   { code: "P5", name: "收紧" },
   { code: "P6", name: "软退场" },
 ];
+// ⚠️ seed 默认快照。当前节奏「真 live 值」= 运营可配的 H1.rhythm.*(见下 rhythmState);
+// 此常量与 design-data.PHASE 仅在运营未改时作回退。month/total 勿当 live 真源直接渲染——走 rhythmState。
 export const CURRENT_PHASE = {
   code: "P3",
   name: "扩张期",
@@ -29,6 +31,85 @@ export const CURRENT_PHASE = {
   etaDays: 14,
   focus: "重心:拉新 + 首购转化,放宽试用,谨慎放大资金流出",
 };
+
+// ── 节奏骨架单源(运营可配 · H1 拥有,backend-replaceable)──────────────────────────
+// 三个持久键 H1.rhythm.{totalMonths,currentMonth,phaseProgressPct} 是「当前节奏状态」唯一 live 真源;
+// RHYTHM_SEED / CURRENT_PHASE / design-data.PHASE 仅作默认 seed(运营未改时回退)。
+// B4 节奏页 / H1 调度器 / L1 / L4 / 首页 pulse 全部 rhythmState(pget) 同源镜像,绝不抄快照(防分叉)。
+export const RHYTHM_SEED = { totalMonths: 12, currentMonth: 7, phaseProgressPct: 58 };
+// 9 起步:6 个 phase 各需 ≥1 月,小于 9 月时按权重分布会把 P4(权重最小=1)挤成 0 月(退化为不可达阶段)。
+export const RHYTHM_TOTAL_OPTIONS = [9, 12, 15, 18, 24];
+const RHYTHM_MIN_TOTAL = 9;
+const RHYTHM_MAX_TOTAL = 24;
+
+// 默认 12 月节奏 = phase → 月 权威查表(P3 扩张 3 月最长、P4 深化 1 月最短)。
+// 「月 7 → P3 / 月 8 → P4」全站对齐口径(2026-06-12 H 域 audit 拍定);canon-sentinel 静态解析本字面
+// (`phase: "Pn", months: [...]`),勿删 months 字面。改总时长时按各 phase 月数权重等比重分布。
+export const PHASE_BUCKETS: ReadonlyArray<{ phase: string; months: readonly number[] }> = [
+  { phase: "P1", months: [1, 2] },
+  { phase: "P2", months: [3, 4] },
+  { phase: "P3", months: [5, 6, 7] },
+  { phase: "P4", months: [8] },
+  { phase: "P5", months: [9, 10] },
+  { phase: "P6", months: [11, 12] },
+];
+// 月数权重派生自 buckets(零复制):[2,2,3,1,2,2]。默认总时长 = 权重和 = 12。
+export const RHYTHM_WEIGHTS = PHASE_BUCKETS.map((b) => b.months.length);
+const RHYTHM_DEFAULT_TOTAL = RHYTHM_WEIGHTS.reduce((a, b) => a + b, 0);
+
+const clampInt = (n: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, Math.round(n)));
+
+/** 给定总月数,算各阶段「月末边界」(累积,整数,单调非降,末位 = total)。 */
+function phaseEnds(total: number): number[] {
+  const wsum = RHYTHM_WEIGHTS.reduce((a, b) => a + b, 0); // 12
+  let acc = 0;
+  const ends = RHYTHM_WEIGHTS.map((w) => {
+    acc += (w / wsum) * total;
+    return Math.round(acc);
+  });
+  for (let i = 1; i < ends.length; i++) if (ends[i] < ends[i - 1]) ends[i] = ends[i - 1];
+  ends[ends.length - 1] = total; // 浮点累积舍入纠偏:末阶段必收于 total
+  return ends;
+}
+
+/** 月 → 阶段下标(0-based,P1=0..P6=5)。月号 clamp 到 [1,total]。
+ *  默认总时长(12)走查表精确复现 canon;非默认按权重等比重分布。 */
+export function monthToPhaseIdx(m1: number, total: number = RHYTHM_SEED.totalMonths): number {
+  const t = clampInt(total, RHYTHM_MIN_TOTAL, RHYTHM_MAX_TOTAL);
+  const mm = clampInt(m1, 1, t);
+  if (t === RHYTHM_DEFAULT_TOTAL) {
+    const idx = PHASE_BUCKETS.findIndex((b) => b.months.includes(mm));
+    return idx < 0 ? PHASES.length - 1 : idx;
+  }
+  const ends = phaseEnds(t);
+  const idx = ends.findIndex((e) => mm <= e);
+  return idx < 0 ? PHASES.length - 1 : idx;
+}
+
+/** 月 → 阶段 code(P1..P6)。total 省略 = 默认 12 月节奏。 */
+export function monthToPhase(m1: number, total: number = RHYTHM_SEED.totalMonths): string {
+  return PHASES[monthToPhaseIdx(m1, total)].code;
+}
+
+export interface RhythmState {
+  totalMonths: number;
+  currentMonth: number;
+  currentPhase: string; // P1..P6(由当前月 + 总时长派生)
+  currentPhaseName: string; // 拉新 / 激活 / 扩张 ...
+  phaseProgressPct: number; // 0..100,本阶段已进行
+}
+
+/** 节奏骨架 live 单源:读 H1.rhythm.*(运营可配)+ seed 回退 + clamp。pget = (k)=>params[k]。 */
+export function rhythmState(pget: (k: string) => string | number | boolean | undefined): RhythmState {
+  const rawTotal = Number(pget("H1.rhythm.totalMonths"));
+  const totalMonths = clampInt(Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : RHYTHM_SEED.totalMonths, RHYTHM_MIN_TOTAL, RHYTHM_MAX_TOTAL);
+  const rawMonth = Number(pget("H1.rhythm.currentMonth"));
+  const currentMonth = clampInt(Number.isFinite(rawMonth) && rawMonth > 0 ? rawMonth : RHYTHM_SEED.currentMonth, 1, totalMonths);
+  const rawProg = Number(pget("H1.rhythm.phaseProgressPct"));
+  const phaseProgressPct = clampInt(Number.isFinite(rawProg) ? rawProg : RHYTHM_SEED.phaseProgressPct, 0, 100);
+  const idx = monthToPhaseIdx(currentMonth, totalMonths);
+  return { totalMonths, currentMonth, currentPhase: PHASES[idx].code, currentPhaseName: PHASES[idx].name, phaseProgressPct };
+}
 
 // ── Phase 控制 dial(节奏状态卡 · 权威归 H1)──
 export type DialTrend = "up" | "down" | "flat";
