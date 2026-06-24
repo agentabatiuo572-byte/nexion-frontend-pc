@@ -717,7 +717,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const submitTaskEdit = () => {
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    setActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认 + A2 审计。` });
+    setActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认。` });
     setTaskDrawer(false);
   };
   const skuLabelsUsingTask = (taskId: string, taskName: string) => skus
@@ -930,13 +930,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             footer={finalized
               ? <Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelOrder(null)}>关闭</Btn>
               : <>
-                  {eff === "failed" && <Btn onClick={() => setActionConfirm({ name: `重试配机 · ${o.id}`, op: "order-state", orderId: o.id, fixedVal: "allocating", amplify: false, detail: `将 ${o.id} 从 failed 重新置为 allocating,重新进入 DC 分配队列 · 须操作确认 + A2 审计` })}>重试配机</Btn>}
-                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${nextState}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认 + A2 审计` })}>推进下一态</Btn>}
-                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${prevState}`, op: "order-state", orderId: o.id, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认 + A2 审计` })}>回滚上一态</Btn>}
+                  {eff === "failed" && <Btn onClick={() => setActionConfirm({ name: `重试配机 · ${o.id}`, op: "order-state", orderId: o.id, fixedVal: "allocating", amplify: false, detail: `将 ${o.id} 从 failed 重新置为 allocating,重新进入 DC 分配队列 · 须操作确认` })}>重试配机</Btn>}
+                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${nextState}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认` })}>推进下一态</Btn>}
+                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${prevState}`, op: "order-state", orderId: o.id, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认` })}>回滚上一态</Btn>}
                   {canCancel && <Btn onClick={() => setActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}(${stateLabel(eff)})· 终止后续分配/扣费,资产/额度回退联动 D4/C3 · 须操作确认 + 审计留痕` })}>取消订单</Btn>}
                   {canTerminal && <Btn onClick={() => setActionConfirm({ name: "补建订单终态 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: [...TERMINAL_STATES] }, detail: `为缺失终态的订单 ${o.id} 手动落定终态(支付失败/过期/退款/开通失败)· 状态机对账兜底 · 须操作确认 + 审计留痕` })}>补建终态</Btn>}
                   {eff === "failed"
-                    ? <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setActionConfirm({ name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true, detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · 资产/额度回退联动 D4 + C3 · 写 A2 审计 · 不可逆` })}><AutoGloss>退款(操作确认)</AutoGloss></Btn>
+                    ? <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setActionConfirm({ name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true, detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · 资产/额度回退联动 D4 + C3 · 不可逆` })}><AutoGloss>退款(操作确认)</AutoGloss></Btn>
                     : <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelOrder(null)}>关闭</Btn>}
                 </>}>
             <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
@@ -947,7 +947,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <KV k="下单时间" v={o.age + " 前"} />
             {isCancelled(o.id) && <KV k="取消" v={<span style={{ color: "var(--ink-3)" }}>已取消 · 后续分配/扣费已终止,资产回退联动 D4/C3</span>} />}
             {isRefunded(o.id) && <KV k="退款" v={<span style={{ color: "var(--warning)" }}>已退款 · 资产回退已联动 D4/C3</span>} />}
-            {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <KV k="补建终态" v={<span style={{ color: "var(--warning)" }}>{stateLabel(terminalOf(o.id)!)} · 人工补建,已写入 A2 审计</span>} />}
+            {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <KV k="补建终态" v={<span style={{ color: "var(--warning)" }}>{stateLabel(terminalOf(o.id)!)} · 人工补建</span>} />}
             {o.state === "failed" && <KV k="失败" v={<span style={{ color: "var(--danger)" }}>DC 分配超时 · 待处置</span>} />}
             <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>状态轨迹</div>
             <div className="edrawer-trail">

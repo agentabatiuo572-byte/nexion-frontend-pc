@@ -1355,7 +1355,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {select("status", "状态", ["active", "archived"], { active: "启用", archived: "已归档" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          目标 <span className="mono">{businessNewValue(spec, value)}</span> · 保存到 nx_admin_phase_config。内部 ID 使用 MySQL 自增主键,页面只展示阶段名称。
+          目标 <span className="mono">{businessNewValue(spec, value)}</span> · 保存阶段配置。内部 ID 使用系统生成值,页面只展示阶段名称。
         </div>
       </div>
     );
