@@ -1136,8 +1136,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 > 2. **`commission.paid` 的 `kind` 值命名(`network` vs `unilevel`)+ `layer` 属性注册**:前端现有 TypeScript 类型(**§12.5** Commission Event,非 §12.4)网络版税类用 `"unilevel"`,本章草拟为 `"network"`;**V2 申请 A4 注册时须二选一统一**(建议优先沿用前端现有 `"unilevel"` 以减少改动面;若改为 `network` 须同步前端 §12.5 类型)。同时确认 `commission.paid` 的 `layer` 属性(整型,L1-L7 层号)在 A4 schema registry 中登记为可聚合过滤维度,作为 KPI #7 基础计数的 server 聚合锚点(详见 F5⑧)。本章 F2③/F3⑧/F4⑧/F5⑧/F4d 全文凡出现 `kind:"network"` 处均标注「候选值,待工单确认」。
 > 3. **KPI #7「团队佣金触发率」由 F5 落地基础读数**:V1 B3⑧ 明确 #7「为 V2 基础计数 / V4 完整下钻,V1 阶段 F 域未落地」(§1.6);**F5 佣金审计模块落地后由其提供 #7 基础读数**(§2.4.6 #7),V1 B3 已明确不承载 #7,**F5 为唯一产出方**。#7 口径以 V1 §2.4.6 权威定义为准(「L1 被推荐人首单 `commission.paid` ÷ 直推数」,不限 kind),不在 F5 悬空收窄(详见 F5⑧)。
 > 4. **排行榜奖池派发 / 取消资格端点归属确认**:V1 §Ch8 K2④/⑤ 已声明 `POST /api/admin/risk/leaderboard/:userId/disqualify` 写端点与奖池剔除由 F4d(V2)接管;**V2 落地须确认 F4d 不与 K2 在 `/api/admin/risk/` namespace 双写**,K2 仅产刷榜信号、F4d 持取消资格执行端点(详见 F4d⑤/⑦)。**排行榜正常派奖为 server 自动执行(§8.11.3),F4d 后台展示结算结果并提供纠错入口;all-time 奖池无自动 reset(§8.11.4 Resets In = —),其结算触发规则(milestone 触发或纯手动)须一并确认(详见 F4d②/④/⑤)**。
-> 5. **`unmatchedSurplusDisposition`(较大侧未匹配处置)行为权威与是否可配,须 PM 裁定**:前端 §8.4.0.2 与 §8.4.1 对该行为内部矛盾(§8.4.0.2 称「累积到下个结算周期**或**作为平台运营备付金」,§8.4.1 称两轨未达门槛则「当月归零」);PM 须在 V2 gate 前裁定 **(a)** 是否允许后台运营配置此行为(可配枚举 vs 只读展示);**(b)** 以 §8.4.0.2 还是 §8.4.1 为行为权威。**裁定前 F3③ 不得将其作为有效写入字段写入接口校验,F3⑤ PUT 端点对应字段同步冻结**(详见 F3③/⑤)。
-> 6. **`binaryTrackMinUsd`(两轨门槛)结算路径单一口径,须 PM 确认**:前端 §8.4.1「当月归零」与 §8.4.0.2「未达门槛计为 pending、达标后批量结算」语义相反,影响后台结算逻辑实现;**V2 gate 前确认唯一口径并记入 §3.15,后台 UI 说明文案与结算逻辑据结论更新,不得先行硬编任一路径**(详见 F3③)。
+> 5. **`residualPolicy`(较大侧未匹配处置 / 沉淀处置)— ✅ 已 PM 裁定**:裁定为**三档运营可配**枚举 `每月清零 | 每次对碰清零 | 转结`,默认 `每月清零`(前端 §8.4.1.2 权威,取代 §8.4.0.2「累积或备付金」并存表述);字段已解冻为有效写入(F3③ 列入参数 / F3⑤ PUT 接受校验 / F3-MD5 确认弹窗),改向「转结」前置 B1 红线核验。同时新增 `settlePeriod`(结算周期 每日/每周/每月,默认每月,§8.4.1.2)。
+> 6. **`binaryTrackMinUsd`(两轨门槛)结算路径单一口径 — ✅ 已 PM 裁定**:两轨任一未达 $1,000/月门槛 → 该周期匹配归零(前端 §8.4.1.2 权威,非 pending 批量结算);门槛恒按月口径,与结算周期正交。后台 UI 文案与结算逻辑据「归零」口径落地(详见 F3③)。
 > 7. **`commission/cooling-days` 权威归属**:候选三项——①F2 自持;②D5 共享(保持独立参数);③commission 结算引擎独立配置面。归属变化直接影响 F2⑤ 写入接口实现(若归 D5 则该端点退化为只读)。确认时同步明确与 B2 §7 冷却负债计算的取数路径(详见 F2③/④/⑤)。
 > 8. **F2 出口费率合并护栏**:`UNILEVEL_USDT[L1..L7]` 各层之和 25% 护栏为编辑自设,无 V1 / 前端 / 12 月节奏表依据,须 PM 确认。**原 Direct Rate-Tier(8-15%)与 Network L1 叠加风险已随 v3.7「直推固定 10% / Direct = `UNILEVEL_USDT[1]` 单一源」化解**(L1 仅计一次,名义总 22%,无 25% 叠加),无需额外合并出口护栏(详见 F2③)。
 > 9. **佣金类别 5 类 vs 6 类**:前端 §8.6 节标题写「5 类」,正文 table / filter pills / how-it-works 写「6 类(含 genesis)」;后台按 6 类实现而前端按 5 类过滤会致 genesis 数据在 `/team/commissions` 消失。**V2 sprint 前由 PM 与前端确认 genesis 是否纳入 filter pills 并更新 §8.6 标题,不得等到 V4**(详见 F5①)。
@@ -1455,14 +1455,14 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 #### [F3] 双轨结算引擎
 
-**① 目的 & 对齐**: 配置双轨对碰(平衡匹配)的较小侧匹配比例、两轨最低门槛、自动分配(内部 spillover)规则、较大侧未匹配处置与月度 GV 归零,并以只读方式展示 H1 Phase 派发的双轨日封顶现值。对齐前端 §8.4(双轨平衡匹配 `/team/binary`)+ §13.4.1(`binaryDailyCapUSD` Phase 派发)+ 12 月节奏表 §6.4(`binaryDailyCap` 权威值)。服务的业务目标:用 `min(A, B) × 10%` 较小侧匹配公式鼓励两轨均衡发展、用两轨门槛形成业绩沉淀缓冲、用自动分配增强网络绑定降低退出意愿、用日封顶随 Phase 收紧延长 LTV 并控制日结流出。**用户侧一律称 Track A / Track B,不暴露翼 / 左 / 右 / spillover / 上线 / 下线**(§8.4 铁律;内部 enum `binary: "left"|"right"` 仅技术字段)。
+**① 目的 & 对齐**: 配置双轨对碰(平衡匹配)的较小侧匹配比例、两轨最低门槛、自动分配(内部 spillover)规则、结算周期与沉淀处置策略、月度 GV 归零,并以只读方式展示 H1 Phase 派发的双轨日封顶现值。对齐前端 §8.4(双轨平衡匹配 `/team/binary`,含 §8.4.1.2 结算周期与沉淀处置)+ §13.4.1(`binaryDailyCapUSD` Phase 派发)+ 12 月节奏表 §6.4(`binaryDailyCap` 权威值)。服务的业务目标:用 `min(A, B) × 10%` 较小侧匹配公式鼓励两轨均衡发展、用两轨门槛形成业绩沉淀缓冲、用自动分配增强网络绑定降低退出意愿、用日封顶随 Phase 收紧延长 LTV 并控制日结流出。**用户侧一律称 Track A / Track B,不暴露翼 / 左 / 右 / spillover / 上线 / 下线**(§8.4 铁律;内部 enum `binary: "left"|"right"` 仅技术字段)。
 
 **② 后台界面**: 平衡匹配结算面 + 日封顶面 + 两轨门槛面 + 自动分配面 + 月归零面,五区。
 1. **平衡匹配结算面**:`[userId / Track A 月 GV / Track B 月 GV / 较小侧 / Balance Match(= min×比例)/ 是否达两轨门槛 / 当日已发(对日封顶)/ 状态]`;支持按用户 / cohort / 是否阻塞筛选。
 2. **日封顶面**:`binaryDailyCapUSD` 当前值(随 Phase)+ Phase 现值只读 + 距下一拐点(月 7 由 $5,000 → $2,000)+ 跳 H1 调整入口。**此面为只读展示,不内联编辑 cap**。
 3. **两轨门槛面**:两轨最低门槛 `$1,000/轨` 配置 + 未达门槛 pending 业绩沉淀池规模监控。
 4. **自动分配面**:spillover 规则配置(上游饱和自动填下游)+ 自动分配记录 `[网络伙伴 / 被分配成员数 / 目标轨]`(用户侧称 Auto-placement)。
-5. **月归零面**:月度 GV 自然月归零口径展示(每月 1 日 00:00 UTC 滚动归零、月底 23:59 UTC 锁定结算,§8.4.1.1)+ 较大侧未匹配体量沉淀监控 + 处置方式展示(见 ③ `unmatchedSurplusDisposition`,**裁定前以只读口径展示,不提供运营配置入口**)。
+5. **结算周期 & 沉淀面**:结算周期(`settlePeriod`,每日/每周/每月)与沉淀处置策略(`residualPolicy`,每月清零/每次对碰清零/转结)配置 + 月度 GV 自然月归零口径展示(每月 1 日 00:00 UTC 滚动归零、月底 23:59 UTC 锁定结算,§8.4.1.1)+ 较大侧未匹配体量沉淀池监控。
 
 **③ 可控参数**:
 
@@ -1472,16 +1472,19 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 双轨日封顶(`binaryDailyCapUSD`) | **12 月 §6.4 权威 = H1 Phase 派发**:**月 1-6 = $5,000;月 7+ = $2,000**(直接引用 12 月 §6.4,以月份为口径)。**F3 是生效面,权威归 H1,不另设第二源** | 由 H1 Phase 引擎控制(F3 不写) | Phase 派发(月粒度;现值由 H1 服务端下发,F3 只读展示) | `/team/binary` 日封顶常量(§8.4.1 较小侧匹配公式;§13.4.1 接入点 — 直接显示金额,无 phase 提示) |
 | 两轨最低门槛(`binaryTrackMinUsd`) | **现状**(§8.4.1):**$1,000/轨**(Track A ≥ $1,000 且 Track B ≥ $1,000 才结算) | $0–$5,000 | 仅新结算周期 | `/team/binary` 阻塞警告(任一轨 < $1,000)+ 资格 chip |
 | 自动分配规则(`spilloverEnabled` + 饱和阈值) | 现状:启用(上游节点饱和后新成员自动分配到下游轨,内部 `isSpillover: true`,§8.4.2) | 启用 / 停用 + 阈值 | 实时 | `/team/binary` 自动分配记录(Auto-placement,用户侧不暴露 spillover) |
-| 较大侧未匹配处置方式(`unmatchedSurplusDisposition`) | **现状**(§8.4.0.2):较大侧未匹配体量「累积到下个结算周期**或**作为平台运营备付金」(前端两表述并存) | **裁定前冻结:只读展示,不作为有效写入字段**(见下注 + 引言阻断项 5) | — | `/team/binary` 月归零面沉淀监控(用户侧不直接展示处置去向) |
+| 结算周期(`settlePeriod`) | **每月**(对齐前端 §8.4.1.2 默认) | 每日 / 每周 / 每月 | 仅新结算周期(改后对下一周期结算生效) | `/team/binary` 预计奖金 hero(金额 + 「本周期…估算」标签随周期联动)+ 公式「{周期}结算」+ 玩法说明结算频率 FAQ(§8.4.1.2) |
+| 沉淀处置策略(`residualPolicy`,原冻结字段 `unmatchedSurplusDisposition`,PM 裁定后解冻) | **每月清零**(PM 裁定:三档可配,默认每月清零;取代前端 §8.4.0.2「累积或备付金」并存表述) | 每月清零 / 每次对碰清零 / 转结 | 仅新结算周期 | `/team/binary` 月归零面沉淀监控 + 玩法说明沉淀处置 FAQ(§8.4.1.2) |
 | 月度 GV 归零口径(`gvResetCron`) | **现状**(§8.4.1.1):每月 1 日 00:00 UTC 滚动归零;月底 23:59 UTC 锁定结算 | 固定(自然月) | — | `/team/binary` 月业绩统计周期 |
 
 > **默认值口径**:匹配比例 / 两轨门槛 / 自动分配 / GV 归零为前端 §8.4 现状值;**双轨日封顶 `binaryDailyCapUSD` 以 12 月 §6.4 为权威(月 1-6 = $5,000 / 月 7+ = $2,000,以月份数为口径),且权威归 H1 Phase 引擎**——F3 不另设 cap 源,只读展示 H1 下发现值。前端 §8.4.1 正文固定写 $5,000 与 §13.4.1 可变(月 7 起 $2,000)的现状差异已记入 V1 §3.15,后台以 12 月 §6.4 月份口径为准。
 >
 > **`binaryDailyCap` 月份拐点权威(月 7,非月 6)**:以 12 月 §6.4 为权威——**月 6 cap 仍为 $5,000,月 7 起才切 $2,000**,不以「进入 P4(月段 6)」即切换。V1 §1.7 H1 矩阵注已明确「双轨日封顶在**月 7**(P4 带内)由 $5,000 降 $2,000」,故月份拐点权威已定,**无需向 H1 额外确认**;前端 §13.4.1 将 P4 月段标为 6-8(可能引起「月 6 即切」误读)的差异,后台 H1 调度器以**月份数**(非 Phase 编号)为 Phase dial 触发口径。
 >
-> **`unmatchedSurplusDisposition` 行为冻结(CRITICAL,引言阻断项 5)**:前端 §8.4.0.2 称较大侧未匹配体量「累积到下个结算周期**或**作为平台运营备付金」(两选项并存),§8.4.1 又称两轨未达门槛则「当月归零」——**前端 §8.4.0.2 与 §8.4.1 对该行为内部矛盾**(累积下周期 / 备付金 vs 当月归零)。须 PM 在 V2 gate 前裁定 **(a)** 是否允许后台运营配置此行为(可配枚举 vs 只读展示);**(b)** 以 §8.4.0.2 还是 §8.4.1 为行为权威。**裁定前本字段不作为有效写入字段写入接口校验**(F3⑤ PUT 对应字段同步冻结),后台仅以只读口径展示当前行为,不提供运营配置入口。
+> **`residualPolicy` 沉淀处置已裁定(原引言阻断项 5,PM 裁定解冻)**:较大侧未匹配体量的处置由 PM 裁定为**三档运营可配**枚举 `每月清零 | 每次对碰清零 | 转结`,默认 `每月清零`(前端 §8.4.1.2 权威口径,取代 §8.4.0.2「累积或备付金」并存表述)。本字段解冻为有效写入字段(F3⑤ PUT 接受校验);「转结」为放大平台负债方向(沉淀累积 → 利息负债科目 #3 + 佣金应付),改向「转结」前置 B1 兑付覆盖率红线核验(低于红线 422)。沉淀处置与结算周期(`settlePeriod`)正交配置:`每次对碰清零` 的清零频率 = 结算周期,`每月清零` 恒按自然月,`转结` 不清零。
 >
-> **`binaryTrackMinUsd` 结算路径单一口径(HIGH,引言阻断项 6)**:前端 §8.4.1 称两轨未达门槛则「当月归零」,§8.4.0.2 又称「未达门槛的业绩计为 pending,达标后批量结算」——两处语义相反(归零 vs pending 批量结算),影响后台结算逻辑实现。须 V2 gate 前与 PM 确认唯一口径并记入 §3.15;**后台 UI 说明文案和结算逻辑据确认结论更新,不得先行硬编任一路径**。
+> **`settlePeriod` 结算周期(PM 裁定新增)**:对碰奖金派发节奏 `每日 | 每周 | 每月`,默认 `每月`(前端 §8.4.1.2 权威)。轨道 GV 始终按自然月累计,结算周期决定按何种节奏计算并派发;前端 hero 预计金额随周期联动(周期业绩 = 月业绩 × 周期天数/30,封顶 = 日封顶 × 周期天数),默认每月 = `min(月 Track A, 月 Track B) × 10%`。
+>
+> **`binaryTrackMinUsd` 结算路径已裁定(原引言阻断项 6,PM 裁定)**:两轨任一未达 $1,000/月门槛 → 该周期匹配归零(前端 §8.4.1.2 权威口径);门槛恒按月口径,与结算周期正交。后台 UI 说明文案与结算逻辑据此口径(归零,非 pending 批量结算)落地。
 
 **④ 操作动作**:
 
@@ -1490,7 +1493,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 调匹配比例(`balanceMatchRate`) | 增长运营(lead)/ 超管 | F3-MD1(理由必填;**上调方向 + B1 红线预检**)(上调比例放大双轨佣金流出) | `admin.binary_config_changed`(field=balanceMatchRate / before / after / operator / reason) |
 | 补发 / 纠错 Balance Match | 财务(lead)/ 超管 | F3-MD2(理由必填;**补发方向 + B1 红线预检**)(资产变更,联动 D4 bill) | `admin.commission_reissued` / `admin.commission_reversed`(kind=binary,见 F5⑧) |
 | 调两轨门槛 / 自动分配规则 | 增长运营(lead) | F3-MD3(理由必填;**降门槛方向 + B1 红线预检**)(门槛 / 分配影响结算资格与资金沉淀) | `admin.binary_config_changed`(field=trackMin\|spillover / before / after / operator / reason) |
-| 调较大侧未匹配处置(`unmatchedSurplusDisposition`) | **裁定前不开放** — 行为权威待 PM V2 gate 裁定(引言阻断项 5);裁定为可配后再定执行权与确认弹窗 | — | （裁定前无写入动作） |
+| 调结算周期 / 沉淀处置(`settlePeriod` / `residualPolicy`) | 增长运营(lead)/ 超管 | F3-MD5(理由必填;**沉淀改向「转结」+ B1 红线预检**)(转结放大负债;改结算周期影响派发节奏与用户预期) | `admin.binary_config_changed`(field=settlePeriod\|residualPolicy / before / after / operator / reason) |
 | 暂停 / 恢复双轨结算(故障应急) | 风控运营(lead)/ 增长运营(lead)(任一可独立执行) | F3-MD4(理由必填) | `admin.binary_settlement_paused`(paused / operator / reason) |
 | 调双轨日封顶 | **不在 F3 写** — 跳 H1(Phase dial)经 H1 侧确认弹窗 | 否(只读 + 导航) | cap 变更审计由 H1 记录(`phase.dial_changed`,§3.14) |
 
@@ -1505,6 +1508,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 调匹配比例 | ②第 1 区平衡匹配结算面「编辑匹配比例」 | 行内按钮 | 仅增长运营 lead / 超管渲染 | 打开弹窗 F3-MD1 |
 | 补发 / 纠错 Balance Match | ②第 1 区结算面用户行「补发 / 纠错」 | 菜单项(警示色) | 仅财务 lead / 超管渲染 | 打开弹窗 F3-MD2 |
 | 调两轨门槛 / 自动分配规则 | ②第 3 区两轨门槛面「保存门槛」/ ②第 4 区自动分配面「保存分配规则」 | 主按钮 | 仅增长运营 lead / 超管渲染;未变更时置灰 | 打开弹窗 F3-MD3 |
+| 调结算周期 / 沉淀处置 | ②第 5 区结算周期 & 沉淀面「调整周期 & 策略」 | 主按钮(警示色) | 仅增长运营 lead / 超管渲染 | 打开弹窗 F3-MD5 |
 | 暂停 / 恢复双轨结算 | ②第 1 区结算面顶部「结算总开关」 | 开关(警示色) | 仅风控运营 lead / 增长运营 lead / 超管渲染 | 打开弹窗 F3-MD4 |
 | 调双轨日封顶 | ②第 2 区日封顶面「去 H1 调整」 | 链接 | 恒可用(只读面) | 跳转 H1 调度器,无本模块弹窗 |
 | 结算面筛选(用户 / cohort / 阻塞) | ②第 1 区筛选器 | 就地筛选 | 恒可用 | 就地筛选,无弹窗 |
@@ -1542,7 +1546,7 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 ##### [F3-MD3] 调两轨门槛 / 自动分配规则确认
 - **功能**:更新 `binaryTrackMinUsd` 与 spillover 规则(启停 + 饱和阈值),确认即生效。
-- **布局结构**:1. **信息区**:当前门槛(现状 $1,000/轨)/ spillover 启停与阈值 / pending 沉淀池规模。2. **影响预览区(必有)**:before→after diff;**降门槛方向 B1 红线核验结果回显**(更多用户达结算资格放大流出;低于红线阻断 + 置灰,422 文案);提示行「门槛未达处置路径(归零 vs pending)待 PM 裁定(③ 注,引言阻断项 6),本变更不固化处置路径」。3. **输入区**:见下表。4. **按钮区**。
+- **布局结构**:1. **信息区**:当前门槛(现状 $1,000/轨)/ spillover 启停与阈值 / pending 沉淀池规模。2. **影响预览区(必有)**:before→after diff;**降门槛方向 B1 红线核验结果回显**(更多用户达结算资格放大流出;低于红线阻断 + 置灰,422 文案);提示行「门槛未达 → 该周期匹配归零(PM 已裁定,§8.4.1.2;门槛恒按月口径,与结算周期正交)」。3. **输入区**:见下表。4. **按钮区**。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
@@ -1569,11 +1573,26 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 - **错误态**:400 `REASON_REQUIRED` / 409(结算态已被他人变更,提示刷新)/ 403。
 - **成功反馈**:弹窗关闭;总开关态就地更新;toast「双轨结算已暂停 / 已恢复 · 已记审计」;事件 `admin.binary_settlement_paused` 落 A2;实时告警超管 / 风控 lead / 增长运营 lead。
 
+##### [F3-MD5] 调结算周期 / 沉淀处置确认
+- **功能**:更新 `settlePeriod`(结算周期)与 `residualPolicy`(沉淀处置策略),多字段一次确认,仅对下一结算周期生效。
+- **布局结构**:1. **信息区**:当前结算周期(现状每月)/ 当前沉淀处置(现状每月清零)/ 沉淀池规模。2. **影响预览区(必有)**:before→after 并排;**沉淀改向「转结」时 B1 红线核验结果回显**(沉淀累积放大负债 → 利息负债科目 #3 + 佣金应付;低于红线阻断 + 置灰,422 文案);提示行「仅新结算周期生效,不回溯已结算;前端 hero 预计金额与结算频率文案随之联动(§8.4.1.2)」。3. **输入区**:见下表。4. **按钮区**。
+- **输入与选择控件**:
+
+| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
+|---|---|---|---|---|
+| settlePeriod | 单选 / 下拉(每日 / 每周 / 每月) | 否(至少改一项) | 枚举内 | 当前值 |
+| residualPolicy | 单选 / 下拉(每月清零 / 每次对碰清零 / 转结) | 否(至少改一项) | 枚举内 | 当前值 |
+| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+
+- **按钮区**:`[取消]` · `[确认调周期 & 策略]`(警示色主按钮;均未变更 / 沉淀改向转结 B1 阻断 / reason 未达标时置灰;loading 防双击)。
+- **错误态**:422 `COVERAGE_BELOW_REDLINE`(沉淀改向「转结」B1 阻断)/ 400(枚举越界)/ 400 `REASON_REQUIRED` / 409(提示刷新)/ 403。
+- **成功反馈**:弹窗关闭;结算周期 & 沉淀面就地更新;toast「结算周期 / 沉淀处置已更新 · 下一结算周期生效 · 已记审计」;事件 `admin.binary_config_changed`(field=settlePeriod|residualPolicy,携 `coverage_checked`)落 A2;实时告警超管 / 增长运营 lead。
+
 **⑤ 接口**:
-- `GET /api/admin/config/binary` — 返回 `{ balanceMatchRate, binaryTrackMinUsd, spillover:{ enabled, saturationThreshold }, unmatchedSurplusDisposition(只读字段,见下), gvResetCron, dailyCap:{ value, phase, asOf } }`,**server-canonical**;`dailyCap` 字段为 H1 Phase 现值只读投影(F3 不写 cap);`unmatchedSurplusDisposition` 为**只读展示字段**(裁定前不接受写入,见 PUT)。
-- `PUT /api/admin/config/binary` — 更新匹配比例 / 两轨门槛 / 自动分配规则;经确认弹窗提交(F3-MD1 / F3-MD3,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**上调匹配比例 / 降两轨门槛前置 B1 覆盖率红线校验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`)**。**`binaryDailyCapUSD` 不在本 endpoint 可写**(写入返回 `422` + `suggestedPath: "/api/admin/phase/dials"`,advisory-only;H1 是 cap 唯一配置入口,与 D5↔H1 体例一致;该 422 + suggestedPath 响应体格式待前端 PRD §9.11 接口约定章节补充标准化定义后对齐,本端点不先行硬定通用错误体格式)。**`unmatchedSurplusDisposition` 字段在本 endpoint 冻结**:PM V2 gate 裁定其是否可配前(引言阻断项 5),写入该字段一律拒绝(裁定前不作为有效写入字段做接口校验);裁定为可配后再解冻并补字段校验。
+- `GET /api/admin/config/binary` — 返回 `{ balanceMatchRate, binaryTrackMinUsd, spillover:{ enabled, saturationThreshold }, settlePeriod, residualPolicy, gvResetCron, dailyCap:{ value, phase, asOf } }`,**server-canonical**;`dailyCap` 字段为 H1 Phase 现值只读投影(F3 不写 cap)。前端经平台配置接口读取 `settlePeriod` / `residualPolicy` 后联动渲染(§8.4.1.2;前端以 `lib/binary-settlement.ts` 单源承接,backend-replaceable)。
+- `PUT /api/admin/config/binary` — 更新匹配比例 / 两轨门槛 / 自动分配规则 / 结算周期 / 沉淀处置;经确认弹窗提交(F3-MD1 / F3-MD3 / F3-MD5,body 携 reason,server 校验非空 400 `REASON_REQUIRED`)即时生效;**上调匹配比例 / 降两轨门槛 / 沉淀改向「转结」前置 B1 覆盖率红线校验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`)**;`settlePeriod` / `residualPolicy` 改后仅对下一结算周期生效,不回溯已结算。**`binaryDailyCapUSD` 不在本 endpoint 可写**(写入返回 `422` + `suggestedPath: "/api/admin/phase/dials"`,advisory-only;H1 是 cap 唯一配置入口,与 D5↔H1 体例一致;该 422 + suggestedPath 响应体格式待前端 PRD §9.11 接口约定章节补充标准化定义后对齐,本端点不先行硬定通用错误体格式)。`residualPolicy`(原冻结字段 `unmatchedSurplusDisposition`)已 PM 裁定解冻,接受 `每月清零 | 每次对碰清零 | 转结` 枚举写入校验;`settlePeriod` 接受 `每日 | 每周 | 每月` 枚举写入校验。
 - `POST /api/admin/team/binary/:userId/adjust` — 补发 / 纠错单用户 Balance Match;payload `{ amount, direction(reissue|reverse), reason }`(经确认弹窗 F3-MD2,reason server 校验非空 400 `REASON_REQUIRED`;**reissue 方向前置 B1 红线预检,低于红线 422 `COVERAGE_BELOW_REDLINE`**);**`Idempotency-Key` 必带**(资产写入防重复);确认即时生效,server 原子写余额 + D4 bill。
-- **server-side 结算(非 admin)**:Balance Match 由 server 按 §8.4.1 公式日结算(`min(leftVolumeMonth, rightVolumeMonth) × rate`,受 `binaryDailyCapUSD` 封顶 + 两轨门槛 gating);两轨门槛未达时的处置(当月归零 vs pending 批量结算)及较大侧未匹配处置(累积下周期 vs 备付金)**均按 PM V2 gate 裁定结论实现**(引言阻断项 5/6),裁定前 server 行为以前端现状为占位、后台不固化任一路径;F3 后台提供规则配置,**结算 server-canonical**。
+- **server-side 结算(非 admin)**:Balance Match 由 server 按 §8.4.1 / §8.4.1.2 公式、依 `settlePeriod` 结算(`min(leftVolumeMonth, rightVolumeMonth) × rate` 折算到结算周期,受 `binaryDailyCapUSD` 封顶 + 两轨门槛 gating);两轨门槛未达 → 该周期匹配归零,较大侧未匹配体量按 `residualPolicy`(每月清零 / 每次对碰清零 / 转结)处置(均 PM 已裁定,§8.4.1.2);F3 后台提供 `settlePeriod` / `residualPolicy` 规则配置,**结算 server-canonical**。
 
 **⑥ 权限 & 审计**:
 
@@ -1582,14 +1601,15 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 | 查看结算 / 封顶 / 门槛 / 分配 | ✅ | ✅(只读) | ✅ | ✅(只读) | ✅(只读) |
 | 调匹配比例 | ✅ | — | ✅(lead) | — | — |
 | 调门槛 / 自动分配 | ✅ | — | ✅(lead) | — | — |
+| 调结算周期 / 沉淀处置 | ✅ | — | ✅(lead) | — | — |
 | 补发 / 纠错 Balance Match | ✅ | ✅(lead) | — | — | — |
 | 暂停 / 恢复结算 | ✅ | — | ✅(lead,任一可独立执行) | ✅(lead,任一可独立执行) | — |
 
-> 「✅(lead)」指对应角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`field / before / after / userId(纠错时)/ scope(rate\|trackMin\|spillover\|adjust\|pause) / operator / reason / ts`。(`unmatchedSurplus` scope 在 PM 裁定可配后补入。)
+> 「✅(lead)」指对应角色的 lead 层级,member 不可执行(2026-06 操作确认决议:原复核层级转为执行门槛)。审计字段引用 A2 统一 schema:`field / before / after / userId(纠错时)/ scope(rate\|trackMin\|spillover\|settlePeriod\|residualPolicy\|adjust\|pause) / operator / reason / ts`。(`settlePeriod` / `residualPolicy` scope 随 PM 裁定已纳入,经 F3-MD5 确认弹窗。)
 
 **⑦ 风控 & 联动**:
 - **server 结算 + binaryDailyCap Phase 派发**:双轨结算 100% server-canonical,日封顶由 H1 Phase 引擎下发(F3 不另设),较小侧匹配 + 两轨门槛 gating + 月归零均 server enforce(§9.11d.2);client 仅展示今日估算。**`binaryDailyCapUSD` 月份拐点权威为月 7**(12 月 §6.4 + V1 §1.7 矩阵注已确认月 7 切换,非月 6);Phase dial 触发以**月份数**为口径,前端 §13.4.1 P4 月段 6-8 的现状差异,**无须再向 H1 确认拐点**。
-- **未匹配大轨沉淀**:较大侧未匹配体量按 `unmatchedSurplusDisposition` 处置——其行为权威(累积下周期 vs 备付金)及两轨门槛未达处置(归零 vs pending)**待 PM V2 gate 裁定**(引言阻断项 5/6),后台监控沉淀池规模,裁定前不固化处置路径。
+- **未匹配大轨沉淀 & 结算周期**:较大侧未匹配体量按 `residualPolicy`(每月清零 / 每次对碰清零 / 转结,PM 已裁定,§8.4.1.2)处置,后台监控沉淀池规模;`settlePeriod` 决定派发节奏。**沉淀改向「转结」放大负债**(累积 → 利息负债科目 #3 + 佣金应付)→ 改向前置 B1 红线核验(低于红线 422)。
 - **放大流出前置约束**:上调匹配比例 / 降两轨门槛前 server 强制核验 B1 覆盖率(§1.8 原则一)。
 - **中性语言铁律**:界面与用户侧文案一律 Track A / Track B / 较小侧 / 自动分配 / 网络伙伴,**不暴露翼 / 左 / 右 / spillover / 上线 / 下线**(§8.4);内部 `binary: "left"|"right"` / `isSpillover` 仅后台技术字段。
 
