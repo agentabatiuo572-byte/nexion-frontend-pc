@@ -1,13 +1,21 @@
 /**
  * 按执行门槛分流的统一入口 —— 各域高敏动作的 run/onConfirm 调它替代直接 setParam。
  *  - 当前身份够该动作门槛 → 直接执行(回放 mutations + 审计),沿用「确认即执行」;
- *  - 不够门槛 → 入 pending 提案队列 + 审计留痕,等有权者(lead/超管)在 A2 执行回写。
+ *  - 不够门槛 → 写入 A2 后端 pending ticket + 审计留痕,等有权者(lead/超管)在 A2 裁决。
  * 仍是单人确认(执行者一人,不引入第二人会签)。
  */
 import type { ActingOperator } from "@/lib/store/admin/acting-operator-store";
 import { ROLE_LABEL } from "@/lib/store/admin/acting-operator-store";
 import { canExecute, type ExecGate } from "@/lib/admin/ops-authority";
-import type { PendingMutation, PendingProposal, ProposalType } from "@/lib/store/admin/pending-ops-store";
+import type { A2OperationType } from "@/lib/admin/a2-client";
+
+export type ProposalType = "fund" | "param" | "acct" | "sos";
+
+export interface PendingMutation {
+  key: string;
+  value: string;
+  action: string;
+}
 
 export interface ProposeSpec {
   action: string;
@@ -29,7 +37,20 @@ export interface ProposeDeps {
   // 与各域 ctx.setParam / ctx.logAudit(窄签名)对齐;平台 store 的宽签名也可赋值(逆变)。
   setParam: (key: string, value: string, meta: { action: string; reason: string; actor?: string }) => void;
   logAudit: (e: { actor: string; action: string; target: string; reason?: string }) => void;
-  addProposal: (p: Omit<PendingProposal, "id" | "ts" | "tsLabel" | "status">) => void;
+  createProposal: (input: {
+    action: string;
+    obj: string;
+    beforeValue: string;
+    afterValue: string;
+    operator: string;
+    operatorRole: string;
+    type: A2OperationType;
+    amplifies: boolean;
+    sos: boolean;
+    roleGate: string;
+    reason: string;
+    sourceDomain: string;
+  }) => Promise<unknown>;
   toast: (s: string) => void;
 }
 
@@ -45,8 +66,8 @@ export function applyMutations(
   }
 }
 
-export function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): "executed" | "proposed" {
-  const { acting, setParam, logAudit, addProposal, toast } = deps;
+export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Promise<"executed" | "proposed" | "failed"> {
+  const { acting, setParam, logAudit, createProposal, toast } = deps;
   const proposerRole = ROLE_LABEL[acting.role] + (acting.tier === "lead" ? " lead" : "");
 
   if (canExecute(acting, spec.gate)) {
@@ -61,28 +82,31 @@ export function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): "execute
     return "executed";
   }
 
-  addProposal({
-    action: spec.action,
-    obj: spec.obj,
-    before: spec.before,
-    after: spec.after,
-    type: spec.type,
-    amplifies: !!spec.amplifies,
-    sos: !!spec.sos,
-    proposer: acting.name,
-    proposerRole,
-    gate: spec.gate,
-    gateLabel: spec.gateLabel,
-    reason: spec.reason,
-    mutations: spec.mutations,
-    sourceDomain: spec.sourceDomain,
-  });
-  logAudit({
-    actor: acting.name,
-    action: `${spec.action}(${spec.before}→${spec.after}) · 提交提案(${proposerRole} 权限不足,待 ${spec.gateLabel} 执行)`,
-    target: spec.obj,
-    reason: spec.reason,
-  });
-  toast(`权限不足:已提交提案,待 ${spec.gateLabel} 在 A2 执行`);
-  return "proposed";
+  try {
+    await createProposal({
+      action: spec.action,
+      obj: spec.obj,
+      beforeValue: spec.before,
+      afterValue: spec.after,
+      operator: acting.name,
+      operatorRole: proposerRole,
+      type: spec.type,
+      amplifies: !!spec.amplifies,
+      sos: !!spec.sos,
+      roleGate: spec.gateLabel,
+      reason: spec.reason,
+      sourceDomain: spec.sourceDomain,
+    });
+    logAudit({
+      actor: acting.name,
+      action: `${spec.action}(${spec.before}→${spec.after}) · 提交后端提案(${proposerRole} 权限不足,待 ${spec.gateLabel} 执行)`,
+      target: spec.obj,
+      reason: spec.reason,
+    });
+    toast(`权限不足:已写入 A2 后端待确认队列,待 ${spec.gateLabel} 执行`);
+    return "proposed";
+  } catch (error) {
+    toast(`A2 提案提交失败:${error instanceof Error ? error.message : "A2_PROPOSAL_FAILED"}`);
+    return "failed";
+  }
 }

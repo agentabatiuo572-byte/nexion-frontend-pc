@@ -30,6 +30,7 @@
  *  - D5 提现派发三项 / F3 双轨日封顶经 dialValueAt(pget, key, rs.currentMonth) 直接读逐月矩阵@当前月;
  *  - 改当前月 / 总时长 / 当前月格的值,D5/F3 即时同源跟随(不走旧 H.phase.dial 镜像快照,无键名错配)。
  */
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import {
@@ -46,7 +47,8 @@ import {
   dialValueAt,
   type DialKey,
 } from "./data";
-import { rhythmState, RHYTHM_TOTAL_OPTIONS } from "@/lib/mock/admin/command-center";
+import { rhythmState } from "@/lib/mock/admin/command-center";
+import { fetchH1Rhythm, updateH1RhythmParam, type H1RhythmOverview } from "@/lib/admin/h1-client";
 
 // Phase 切换控制可枚举项 → 勾选不手输:pin 钉到哪个阶段(P1..P6 有限集)。
 // schedule 含可配置推进时刻(cron)/ override 为复合偏移(±N 月 + 批次),均保留自由 text。
@@ -74,8 +76,37 @@ function isChanged(prev: string, cur: string): boolean {
 export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const { pget, setParam, toast, openActionConfirm, logAudit } = ctx;
   const propose = usePropose();
+  const [rhythm, setRhythm] = useState<H1RhythmOverview | null>(null);
+  const rhythmValue = (key: string) => {
+    if (rhythm && key === "H1.rhythm.totalMonths") return rhythm.totalMonths;
+    if (rhythm && key === "H1.rhythm.currentMonth") return rhythm.currentMonth;
+    if (rhythm && key === "H1.rhythm.phaseProgressPct") return rhythm.phaseProgressPct;
+    return pget(key);
+  };
   // 节奏骨架 live 单源(运营可配 H1.rhythm.*;seed 回退)。当前月 / 总时长 / 当前阶段 / 阶段进度全由此派生。
-  const rs = rhythmState(pget);
+  const rs = rhythmState(rhythmValue);
+  const rhythmOptions = rhythm?.options?.length ? rhythm.options : [9, 12, 15, 18, 24];
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchH1Rhythm()
+      .then((next) => {
+        if (!cancelled) setRhythm(next);
+      })
+      .catch((error) => {
+        if (!cancelled) toast(`H1 节奏接口读取失败:${error instanceof Error ? error.message : "UNKNOWN_ERROR"}`);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [toast]);
+
+  const syncRhythmState = (next: H1RhythmOverview, reason: string, action: string) => {
+    setRhythm(next);
+    setParam("H1.rhythm.totalMonths", String(next.totalMonths), { action, reason });
+    setParam("H1.rhythm.currentMonth", String(next.currentMonth), { action, reason });
+    setParam("H1.rhythm.phaseProgressPct", String(next.phaseProgressPct), { action, reason });
+  };
 
   // 单元格 cur 取值 = dialValueAt 单源(逐月 override ?? DIAL_MATRIX,超 12 月回退末 seed 行);D5/F3 当前派发值同走此源。
   const getCell = (m1: number, col: number): string => dialValueAt(pget, DIAL_KEYS[col], m1);
@@ -215,18 +246,18 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       ),
       amplifies: false,
       // 枚举档位,勾选不手输。
-      edit: { kind: "select", current: String(rs.totalMonths), options: RHYTHM_TOTAL_OPTIONS.map(String) },
+      edit: { kind: "select", current: String(rs.totalMonths), options: rhythmOptions.map(String) },
       run: (reason, v) => {
         if (!v) return;
         const next = Number(v);
         if (!Number.isFinite(next) || next <= 0) return;
-        setParam("H1.rhythm.totalMonths", String(next), { action: "节奏总时长调整", reason });
-        // 当前月超界 → clamp 到新末月,避免 currentMonth > total 的不一致。
-        if (rs.currentMonth > next) {
-          setParam("H1.rhythm.currentMonth", String(next), { action: "当前运营月随总时长 clamp", reason });
-        }
-        logAudit({ actor: "总管理员", action: "节奏总时长调整", target: "H1.rhythm.totalMonths", reason });
-        toast(`· 节奏总时长已改为 ${next} 个月 · 已记审计`);
+        void updateH1RhythmParam("totalMonths", next, reason, "superadmin")
+          .then((overview) => {
+            syncRhythmState(overview, reason, "节奏总时长调整");
+            logAudit({ actor: "总管理员", action: "节奏总时长调整", target: "H1.rhythm.totalMonths", reason });
+            toast(`· 节奏总时长已改为 ${overview.totalMonths} 个月 · 后端已留痕`);
+          })
+          .catch((error) => toast(`H1 节奏总时长更新失败:${error instanceof Error ? error.message : "UNKNOWN_ERROR"}`));
       },
     });
   };
@@ -260,16 +291,30 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       },
       run: (reason, _v, bf) => {
         if (!bf) return;
-        const m = Number(bf.currentMonth);
-        if (Number.isFinite(m) && m > 0) {
-          setParam("H1.rhythm.currentMonth", String(Math.max(1, Math.min(rs.totalMonths, Math.round(m)))), { action: "设定当前运营月", reason });
-        }
-        const p = Number(bf.phaseProgressPct);
-        if (Number.isFinite(p)) {
-          setParam("H1.rhythm.phaseProgressPct", String(Math.max(0, Math.min(100, Math.round(p)))), { action: "设定本阶段进度", reason });
-        }
-        logAudit({ actor: "总管理员", action: "设定当前节奏位置", target: "H1.rhythm.currentMonth", reason });
-        toast("· 当前节奏位置已更新 · 已记审计");
+        void (async () => {
+          try {
+            let overview = rhythm ?? (await fetchH1Rhythm());
+            let changed = false;
+            const m = Number(bf.currentMonth);
+            if (Number.isFinite(m) && m > 0) {
+              const nextMonth = Math.max(1, Math.min(overview.totalMonths, Math.round(m)));
+              overview = await updateH1RhythmParam("currentMonth", nextMonth, reason, "superadmin");
+              changed = true;
+            }
+            const p = Number(bf.phaseProgressPct);
+            if (Number.isFinite(p)) {
+              const nextProgress = Math.max(0, Math.min(100, Math.round(p)));
+              overview = await updateH1RhythmParam("phaseProgressPct", nextProgress, reason, "superadmin");
+              changed = true;
+            }
+            if (!changed) return;
+            syncRhythmState(overview, reason, "设定当前节奏位置");
+            logAudit({ actor: "总管理员", action: "设定当前节奏位置", target: "H1.rhythm.currentMonth", reason });
+            toast("· 当前节奏位置已更新 · 后端已留痕");
+          } catch (error) {
+            toast(`H1 当前节奏位置更新失败:${error instanceof Error ? error.message : "UNKNOWN_ERROR"}`);
+          }
+        })();
       },
     });
   };

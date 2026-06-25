@@ -330,6 +330,28 @@ export async function rejectA2Operation(operationId: string, reason: string, ope
   return fromTicket(row);
 }
 
+export async function createA2OperationProposal(input: {
+  action: string;
+  obj: string;
+  beforeValue: string;
+  afterValue: string;
+  operator: string;
+  operatorRole: string;
+  type: A2OperationType;
+  amplifies: boolean;
+  sos: boolean;
+  roleGate: string;
+  reason: string;
+  sourceDomain: string;
+}) {
+  const row = await a2Request<BackendTicket>("/operations", {
+    method: "POST",
+    body: JSON.stringify(input),
+    idempotencyPrefix: "a2-operation-proposal",
+  });
+  return fromTicket(row);
+}
+
 export async function exportA2Audit(reason: string, filter: Record<string, unknown>) {
   return a2Request<{ jobNo: string; status: string; idempotencyKey: string; createdAt: string }>("/exports", {
     method: "POST",

@@ -12,12 +12,16 @@ function jsonError(status: number, message: string) {
   return Response.json({ code: status, message, data: null }, { status });
 }
 
+function isNonEmpty(value: string | undefined) {
+  return !!value && value.trim().length > 0;
+}
+
 function backendPath(parts: string[]) {
-  if (parts[0] === "generation-gates" || parts[0] === "phases") {
-    return `/api/admin/devices/e1/${parts.map(encodeURIComponent).join("/")}`;
+  if (parts.length === 1 && parts[0] === "rhythm") {
+    return "/api/admin/growth/rhythm";
   }
-  if (parts[0] === "skus" || parts[0] === "reviews") {
-    return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
+  if (parts.length === 2 && parts[0] === "rhythm" && isNonEmpty(parts[1])) {
+    return `/api/admin/growth/rhythm/${encodeURIComponent(parts[1])}`;
   }
   return null;
 }
@@ -27,7 +31,7 @@ async function proxy(request: Request, context: RouteContext) {
   const targetPath = backendPath(path);
 
   if (!targetPath) {
-    return jsonError(404, "E1_ROUTE_NOT_FOUND");
+    return jsonError(404, "GROWTH_ROUTE_NOT_FOUND");
   }
 
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
@@ -65,7 +69,7 @@ async function proxy(request: Request, context: RouteContext) {
       },
     });
   } catch {
-    return jsonError(503, "E1_BACKEND_UNAVAILABLE");
+    return jsonError(503, "GROWTH_BACKEND_UNAVAILABLE");
   }
 }
 
@@ -73,18 +77,6 @@ export async function GET(request: Request, context: RouteContext) {
   return proxy(request, context);
 }
 
-export async function POST(request: Request, context: RouteContext) {
-  return proxy(request, context);
-}
-
-export async function PUT(request: Request, context: RouteContext) {
-  return proxy(request, context);
-}
-
 export async function PATCH(request: Request, context: RouteContext) {
-  return proxy(request, context);
-}
-
-export async function DELETE(request: Request, context: RouteContext) {
   return proxy(request, context);
 }

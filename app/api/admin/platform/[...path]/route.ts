@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import { localMockResponse } from "@/lib/admin/local-mock-backend";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -52,6 +51,9 @@ function backendPath(parts: string[]) {
     if (parts.length === 2 && (parts[1] === "overview" || parts[1] === "logs" || parts[1] === "exports")) {
       return `/api/admin/platform/audit/${parts[1]}`;
     }
+    if (parts.length === 2 && parts[1] === "operations") {
+      return "/api/admin/platform/audit/operations";
+    }
     if (parts.length === 4 && parts[1] === "logs" && parts[2] === "trace" && isNonEmpty(parts[3])) {
       return `/api/admin/platform/audit/logs/trace/${encodeURIComponent(parts[3])}`;
     }
@@ -79,12 +81,6 @@ async function proxy(request: Request, context: RouteContext) {
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
   if (!token) {
     return jsonError(401, "ADMIN_AUTH_REQUIRED");
-  }
-
-  // 本地预览模式:平台域短路返回本地 mock(accounts/overview = A1 账户总览)。
-  const localMock = localMockResponse("platform", request.method, path, new URL(request.url).searchParams);
-  if (localMock) {
-    return Response.json(localMock, { headers: { "Cache-Control": "no-store" } });
   }
 
   const sourceUrl = new URL(request.url);
