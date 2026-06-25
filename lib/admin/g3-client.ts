@@ -1,0 +1,312 @@
+import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+
+interface ApiResult<T> {
+  code: number;
+  message?: string;
+  data?: T;
+}
+
+type RawNumber = number | string | null | undefined;
+
+interface BackendFrame {
+  dayIndex?: RawNumber;
+  targetPrice?: RawNumber;
+  pumpProbability?: RawNumber;
+  volatilityPct?: RawNumber;
+}
+
+interface BackendControl {
+  key?: string | null;
+  name?: string | null;
+  description?: string | null;
+  value?: string | null;
+  rawValue?: string | null;
+  cronExpression?: string | null;
+  zone?: string | null;
+  fallback?: boolean | string | null;
+}
+
+interface BackendCoverage {
+  coverageRatio?: RawNumber;
+  redlinePct?: RawNumber;
+  redlineBreached?: boolean | string | null;
+  precheck?: string | null;
+}
+
+interface BackendOverrides {
+  currentPrice?: RawNumber;
+  volatilityPct?: RawNumber;
+  oracle?: string | null;
+  deviationPct?: RawNumber;
+  costBasis?: RawNumber;
+  paused?: boolean | string | null;
+}
+
+interface BackendOverview {
+  currentPrice?: RawNumber;
+  activeDayIndex?: RawNumber;
+  activeFrame?: BackendFrame | null;
+  weekPeakPrice?: RawNumber;
+  frames?: BackendFrame[] | null;
+  controls?: BackendControl[] | null;
+  overrides?: BackendOverrides | null;
+  coverage?: BackendCoverage | null;
+  serverCanonical?: boolean | null;
+  sources?: string[] | null;
+}
+
+interface BackendHistoryPoint {
+  sampledAt?: string | null;
+  price?: RawNumber;
+  deltaPct?: RawNumber;
+}
+
+interface BackendHistory {
+  points?: BackendHistoryPoint[] | null;
+  intervalMinutes?: RawNumber;
+  serverCanonical?: boolean | null;
+  sources?: string[] | null;
+}
+
+export type G3CurveField = "targetPrice" | "pumpProbability" | "volatilityPct";
+export type G3OverrideKey = "currentPrice" | "volatilityPct" | "oracle" | "deviationPct" | "costBasis" | "paused";
+
+export interface G3CurveFrame {
+  dayIndex: number;
+  targetPrice: number;
+  pumpProbability: number;
+  volatilityPct: number;
+}
+
+export interface G3Control {
+  key: string;
+  name: string;
+  description: string;
+  value: string;
+  rawValue?: string;
+  cronExpression?: string;
+  zone?: string;
+  fallback?: boolean;
+}
+
+export interface G3Coverage {
+  coverageRatio: number;
+  redlinePct: number;
+  redlineBreached: boolean;
+  precheck: string;
+}
+
+export interface G3Overrides {
+  currentPrice: number;
+  volatilityPct: number;
+  oracle: string;
+  deviationPct: number;
+  costBasis: number;
+  paused: boolean;
+}
+
+export interface G3Overview {
+  currentPrice: number;
+  activeDayIndex: number;
+  activeFrame: G3CurveFrame;
+  weekPeakPrice: number;
+  frames: G3CurveFrame[];
+  controls: G3Control[];
+  overrides: G3Overrides;
+  coverage: G3Coverage;
+  serverCanonical: boolean;
+  sources: string[];
+}
+
+export interface G3HistoryPoint {
+  sampledAt: string;
+  price: number;
+  deltaPct: number;
+}
+
+export interface G3History {
+  points: G3HistoryPoint[];
+  intervalMinutes: number;
+  serverCanonical: boolean;
+  sources: string[];
+}
+
+let requestSeq = 0;
+
+function idempotencyKey(prefix: string) {
+  requestSeq = (requestSeq + 1) % 1_000_000;
+  return `${prefix}-${Date.now()}-${requestSeq}`;
+}
+
+function toNumber(value: RawNumber, fallback = 0) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(/[$,%±\s]/g, ""));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  return fallback;
+}
+
+function toBool(value: boolean | string | null | undefined, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "on", "enabled", "paused"].includes(normalized)) return true;
+    if (["false", "0", "off", "disabled", "running"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function asText(value: unknown, fallback = "—") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function normalizeFrame(frame: BackendFrame | null | undefined, fallbackIndex: number): G3CurveFrame {
+  return {
+    dayIndex: toNumber(frame?.dayIndex, fallbackIndex),
+    targetPrice: toNumber(frame?.targetPrice, 0.171),
+    pumpProbability: toNumber(frame?.pumpProbability, 0.55),
+    volatilityPct: toNumber(frame?.volatilityPct, 3),
+  };
+}
+
+function normalizeOverview(data: BackendOverview | null | undefined): G3Overview {
+  const frames = (data?.frames ?? []).map(normalizeFrame);
+  const safeFrames = frames.length === 7 ? frames : Array.from({ length: 7 }, (_, index) => normalizeFrame(null, index));
+  const activeDayIndex = Math.max(0, Math.min(6, toNumber(data?.activeDayIndex, 0)));
+  const activeFrame = normalizeFrame(data?.activeFrame, activeDayIndex);
+  const coverage = data?.coverage ?? {};
+  const overrides = data?.overrides ?? {};
+  return {
+    currentPrice: toNumber(data?.currentPrice, activeFrame.targetPrice),
+    activeDayIndex,
+    activeFrame,
+    weekPeakPrice: toNumber(data?.weekPeakPrice, Math.max(...safeFrames.map((frame) => frame.targetPrice))),
+    frames: safeFrames,
+    controls: (data?.controls ?? []).map((control) => ({
+      key: asText(control.key, "unknown"),
+      name: asText(control.name, asText(control.key, "unknown")),
+      description: asText(control.description),
+      value: asText(control.value),
+      rawValue: typeof control.rawValue === "string" ? control.rawValue : undefined,
+      cronExpression: typeof control.cronExpression === "string" ? control.cronExpression : undefined,
+      zone: typeof control.zone === "string" ? control.zone : undefined,
+      fallback: typeof control.fallback === "undefined" ? undefined : toBool(control.fallback, false),
+    })),
+    overrides: {
+      currentPrice: toNumber(overrides.currentPrice, toNumber(data?.currentPrice, activeFrame.targetPrice)),
+      volatilityPct: toNumber(overrides.volatilityPct, activeFrame.volatilityPct),
+      oracle: asText(overrides.oracle, "内部做市"),
+      deviationPct: toNumber(overrides.deviationPct, 5),
+      costBasis: toNumber(overrides.costBasis, 0.085),
+      paused: toBool(overrides.paused, false),
+    },
+    coverage: {
+      coverageRatio: toNumber(coverage.coverageRatio),
+      redlinePct: toNumber(coverage.redlinePct),
+      redlineBreached: toBool(coverage.redlineBreached, false),
+      precheck: asText(coverage.precheck, "week peak NEX liability is checked before raising price or pump probability"),
+    },
+    serverCanonical: data?.serverCanonical === true,
+    sources: data?.sources ?? [],
+  };
+}
+
+function normalizeHistory(data: BackendHistory | null | undefined): G3History {
+  return {
+    points: (data?.points ?? []).map((point) => ({
+      sampledAt: asText(point.sampledAt, ""),
+      price: toNumber(point.price),
+      deltaPct: toNumber(point.deltaPct),
+    })),
+    intervalMinutes: toNumber(data?.intervalMinutes),
+    serverCanonical: data?.serverCanonical === true,
+    sources: data?.sources ?? [],
+  };
+}
+
+async function g3Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+  const headers = new Headers(init?.headers);
+  if (init?.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (init?.idempotencyPrefix) {
+    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+  }
+
+  const response = await fetch(`/api/admin/market${path}`, {
+    ...init,
+    headers,
+    cache: "no-store",
+  });
+  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+
+  if (!response.ok || !result || result.code !== 0) {
+    if (isAdminAuthFailure(response.status, result?.message)) {
+      resetAdminSession();
+    }
+    throw new Error(result?.message || `G3_REQUEST_FAILED_${response.status}`);
+  }
+
+  return result.data as T;
+}
+
+function serializeFrames(frames: G3CurveFrame[]) {
+  return frames.map((frame) => ({
+    dayIndex: frame.dayIndex,
+    targetPrice: String(frame.targetPrice),
+    pumpProbability: String(frame.pumpProbability),
+    volatilityPct: String(frame.volatilityPct),
+  }));
+}
+
+export async function fetchG3MarketOverview() {
+  return normalizeOverview(await g3Request<BackendOverview>("/nex/curve"));
+}
+
+export async function fetchG3MarketHistory() {
+  return normalizeHistory(await g3Request<BackendHistory>("/nex/curve/history"));
+}
+
+export async function updateG3CurveFrame(
+  overview: G3Overview,
+  dayIndex: number,
+  field: G3CurveField,
+  value: string,
+  reason: string,
+  operator: string,
+) {
+  const frames = serializeFrames(overview.frames);
+  const target = frames.find((frame) => frame.dayIndex === dayIndex);
+  if (!target) throw new Error("G3_CURVE_DAY_NOT_FOUND");
+  target[field] = value;
+  return normalizeOverview(await g3Request<BackendOverview>("/nex/curve", {
+    method: "PUT",
+    body: JSON.stringify({ frames, reason, operator }),
+    idempotencyPrefix: `g3-curve-d${dayIndex + 1}-${field}`,
+  }));
+}
+
+export async function updateG3Control(controlKey: string, value: string, reason: string, operator: string) {
+  return normalizeOverview(await g3Request<BackendOverview>(`/nex/curve/controls/${encodeURIComponent(controlKey)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ value, reason, operator }),
+    idempotencyPrefix: `g3-control-${controlKey}`,
+  }));
+}
+
+export async function updateG3Override(overrideKey: G3OverrideKey, value: string, reason: string, operator: string) {
+  return normalizeOverview(await g3Request<BackendOverview>(`/nex/overrides/${encodeURIComponent(overrideKey)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ value, reason, operator }),
+    idempotencyPrefix: `g3-override-${overrideKey}`,
+  }));
+}
+
+export async function advanceG3CurrentFrame(reason: string, operator: string) {
+  return normalizeOverview(await g3Request<BackendOverview>("/nex/curve/advance", {
+    method: "POST",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "g3-advance",
+  }));
+}
