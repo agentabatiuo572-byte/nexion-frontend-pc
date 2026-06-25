@@ -1,131 +1,252 @@
 "use client";
 
 /**
- * C1 检索 & 画像 — C 域入口与用户检索面(design_handoff_c_domain port)。
- * 单源纪律:
- *  - 用户行 = design-data.USERS 全量 7 行(设计稿中文名单为发明,弃);风险分与 K4 同分单源;
- *  - 高风险档 = K_RISK.scoreHigh 只读引用,不重算;
- *  - 冻结账户 = frozenTotal(manualLive):K1 批量 86 + 人工存量 11 + C2 台账实时人工冻结数,
- *    与 C2 页同一派生口径(useUserOps 覆盖种子,严禁两页各写一份);
- *  - 行内冻结实时态 = useUserOps frozen 覆盖 USERS.frozen 种子(与 C2 / 360 页同 store)。
- * 本页零写权:行点击深链 /users/search/<id> 进 360 画像;处置去 C2/C3/C4/C5。
- * 页头导出按钮(C1HeaderActions)走普通确认 + logAudit(admin.user_list_exported,归口 L5)。
+ * C1 检索 & 画像。
+ * 用户列表、分组筛选与搜索均走 /api/admin/users/profiles;接口在种子用户缺失时由后端先写入真实表再分页返回。
+ * 本页只读:行点击深链 /users/search/<userNo> 进 360 画像;处置去 C2/C3/C4/C5。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
-import { DataListPager, useDataListPager } from "../design-kit";
-import { USERS, REGISTERED_USERS, K_RISK, fmtUsd } from "@/lib/mock/admin/design-data";
-import { useUserOps, useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { C1_STATS, C4_LEDGER, KYC_STATE, frozenTotal, manualFrozenSeeds } from "./data";
+import { DataListPager } from "../design-kit";
+import {
+  fetchUserProfilesPage,
+  type User360Profile,
+  type UserPage,
+  type UserProfileQuery,
+} from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
 type Seg = "all" | "frozen" | "highrisk" | "kyc";
-const SEGS: [Seg, string][] = [["all", "全部"], ["frozen", "冻结"], ["highrisk", "高风险"], ["kyc", "KYC 待确认"]];
+type C1Stats = {
+  totalUsers: number;
+  highRisk: number;
+  frozen: number;
+  kycPending: number;
+};
 
-const riskTone = (r: number) => (r >= 70 ? "bad" : r >= 40 ? "warn" : "ok");
+const SEGS: [Seg, string][] = [["all", "全部"], ["frozen", "冻结"], ["highrisk", "高风险"], ["kyc", "KYC 待确认"]];
+const EMPTY_PAGE: UserPage<User360Profile> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
+
+const STATUS_META: Record<string, [label: string, tone: string]> = {
+  ACTIVE: ["正常", "ok"],
+  FROZEN: ["冻结", "bad"],
+  RESTRICTED: ["受限", "warn"],
+  BANNED: ["禁用", "bad"],
+};
+
+const KYC_META: Record<string, [label: string, tone: string]> = {
+  APPROVED: ["已验证", "ok"],
+  VERIFIED: ["已验证", "ok"],
+  PENDING: ["复审中", "warn"],
+  REVIEW: ["复审中", "warn"],
+  NONE: ["未验证", "dim"],
+  REJECTED: ["已拒绝", "bad"],
+};
+
+function text(value: unknown, fallback = "—") {
+  return value === null || value === undefined || value === "" ? fallback : String(value);
+}
+
+function asNumber(value: unknown) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : 0;
+}
+
+function riskTone(value: unknown) {
+  const score = asNumber(value);
+  if (score >= 70) return "bad";
+  if (score >= 40) return "warn";
+  return "ok";
+}
+
+function formatUsd(value: unknown) {
+  return `$${asNumber(value).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+function statusMeta(value: unknown) {
+  const status = text(value, "ACTIVE").toUpperCase();
+  return STATUS_META[status] ?? [status || "未知", "dim"];
+}
+
+function kycMeta(value: unknown) {
+  const status = text(value, "NONE").toUpperCase();
+  return KYC_META[status] ?? [status || "未知", "dim"];
+}
+
+function queryForSeg(seg: Seg): Pick<UserProfileQuery, "status" | "kycStatus" | "riskMin"> {
+  if (seg === "frozen") return { status: "FROZEN,BANNED,RESTRICTED" };
+  if (seg === "highrisk") return { riskMin: 70 };
+  if (seg === "kyc") return { kycStatus: "PENDING" };
+  return {};
+}
+
+function profileKey(profile: User360Profile) {
+  return text(profile.userNo, text(profile.id, ""));
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "C1_REQUEST_FAILED";
+}
 
 export function C1Search({ ctx }: { ctx: CCtx }) {
   const router = useRouter();
   const [seg, setSeg] = useState<Seg>("all");
   const [q, setQ] = useState("");
-  const opsUsers = useUserOps((s) => s.users);
-  const hydrated = useOpsHydrated();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [pageData, setPageData] = useState<UserPage<User360Profile>>(EMPTY_PAGE);
+  const [stats, setStats] = useState<C1Stats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // 冻结实时态:store 覆盖种子(与 C2 / 360 页同源)。
-  const liveFrozen = (id: string, seed: boolean) =>
-    hydrated && opsUsers[id] ? !!opsUsers[id].frozen : seed;
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      fetchUserProfilesPage({ pageNum: 1, pageSize: 1 }),
+      fetchUserProfilesPage({ riskMin: 70, pageNum: 1, pageSize: 1 }),
+      fetchUserProfilesPage({ status: "FROZEN,BANNED,RESTRICTED", pageNum: 1, pageSize: 1 }),
+      fetchUserProfilesPage({ kycStatus: "PENDING", pageNum: 1, pageSize: 1 }),
+    ])
+      .then(([all, highRisk, frozen, kycPending]) => {
+        if (!alive) return;
+        setStats({
+          totalUsers: all.total,
+          highRisk: highRisk.total,
+          frozen: frozen.total,
+          kycPending: kycPending.total,
+        });
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(`C1 统计加载失败 · ${errorMessage(err)}`);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
-  // 实时人工冻结数 = manualFrozenSeeds(C2 台账 ∪ USERS 去重)统一派生 —— 与 C2 页同一列表,
-  // 360 页冻结任一检索用户同样计入;种子下 = 1(usr_55B1)→ 总数 98。
-  const manualLive = manualFrozenSeeds.filter(({ id, seed }) => liveFrozen(id, seed)).length;
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    fetchUserProfilesPage({
+      ...queryForSeg(seg),
+      keyword: q.trim() || undefined,
+      pageNum: page,
+      pageSize,
+    })
+      .then((next) => {
+        if (!alive) return;
+        setPageData(next);
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setPageData({ ...EMPTY_PAGE, pageNum: page, pageSize });
+        setError(`C1 用户列表加载失败 · ${errorMessage(err)}`);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [seg, q, page, pageSize]);
 
-  // KYC 列 = C4 唯一真相源(本页不自存):实时裁决(C.kyc.<id>.st)> C4 台账种子 > USERS 基础态(台账样本窗外用户)。
-  // 三态与 C4 同口径:verified / review(K5 复审中)/ none —— USERS.kyc 只作 verified/none 回落,不表达复审态。
-  const kycOf = (id: string, seed: string): keyof typeof KYC_STATE => {
-    const live = ctx.pget(`C.kyc.${id}.st`) as keyof typeof KYC_STATE | undefined;
-    if (live) return live;
-    const row = C4_LEDGER.find((r) => r.id === id);
-    if (row) return row.st;
-    return seed === "verified" ? "verified" : "none";
+  const changeSeg = (next: Seg) => {
+    setSeg(next);
+    setPage(1);
   };
 
-  const ql = q.trim().toLowerCase();
-  const rows = USERS.filter((u) => {
-    const frozen = liveFrozen(u.id, u.frozen);
-    if (seg === "frozen" && !frozen) return false;
-    if (seg === "highrisk" && u.risk < 70) return false;
-    if (seg === "kyc" && kycOf(u.id, u.kyc) === "verified") return false;
-    if (ql && !(u.id.toLowerCase().includes(ql) || u.name.toLowerCase().includes(ql) || u.ref.toLowerCase().includes(ql))) return false;
-    return true;
-  });
-  const pager = useDataListPager(rows, { initialPageSize: 5, resetKey: `${seg}|${ql}` });
+  const changeKeyword = (value: string) => {
+    setQ(value);
+    setPage(1);
+  };
+
+  const openProfile = (profile: User360Profile) => {
+    const key = profileKey(profile);
+    if (!key) {
+      ctx.toast("该用户缺少用户编码,无法打开详情");
+      return;
+    }
+    router.push(`/users/search/${encodeURIComponent(key)}`);
+  };
+
+  const rows = pageData.records ?? [];
 
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat"><div className="k">注册用户</div><div className="v">{REGISTERED_USERS.toLocaleString("en-US")}</div><div className="sub">本周新增 {C1_STATS.weeklyNew.toLocaleString("en-US")}</div></div>
-        <div className="f-stat ok"><div className="k">设备持有者(L4+)</div><div className="v">{C1_STATS.deviceHolders.toLocaleString("en-US")}</div><div className="sub">占 {C1_STATS.holderPct}%</div></div>
-        <div className="f-stat warn"><div className="k">高风险档(K4)</div><div className="v">{K_RISK.scoreHigh.toLocaleString("en-US")}</div><div className="sub">只读引用 · 不重算</div></div>
-        <div className="f-stat cyan"><div className="k">冻结账户(C2)</div><div className="v">{frozenTotal(manualLive)}</div><div className="sub">台账在账户操作页</div></div>
+        <div className="f-stat"><div className="k">注册用户</div><div className="v">{(stats?.totalUsers ?? pageData.total).toLocaleString("en-US")}</div><div className="sub">真实账户表分页查询</div></div>
+        <div className="f-stat ok"><div className="k">KYC 待确认</div><div className="v">{(stats?.kycPending ?? 0).toLocaleString("en-US")}</div><div className="sub">状态来自用户实名字段</div></div>
+        <div className="f-stat warn"><div className="k">高风险档(K4)</div><div className="v">{(stats?.highRisk ?? 0).toLocaleString("en-US")}</div><div className="sub">风险分 ≥ 70</div></div>
+        <div className="f-stat cyan"><div className="k">冻结/受限账户</div><div className="v">{(stats?.frozen ?? 0).toLocaleString("en-US")}</div><div className="sub">冻结、禁用、受限合计</div></div>
       </div>
 
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">检索 &amp; 画像</span>
-          <span className="sub">· 用户分层口径 L0–L5 / V0–V12 · 手机号仅脱敏/哈希搜</span>
+          <span className="sub">· 用户分层口径 L0-L5 / V0-V12 · 手机号仅脱敏展示</span>
           <div className="r">
             <div className="search-bar">
-              <input placeholder="用户编码 / 姓名 / 推荐码" value={q} onChange={(e) => setQ(e.target.value)} />
+              <input placeholder="用户编码 / 昵称 / 推荐码 / 手机号" value={q} onChange={(e) => changeKeyword(e.target.value)} />
             </div>
             <div className="chips">
               {SEGS.map(([v, lb]) => (
-                <button key={v} className={`chip${seg === v ? " sel" : ""}`} onClick={() => setSeg(v)}>{lb}</button>
+                <button key={v} className={`chip${seg === v ? " sel" : ""}`} onClick={() => changeSeg(v)}>{lb}</button>
               ))}
             </div>
           </div>
         </div>
+        {error && <div className="ctint warn" style={{ margin: 12 }}>{error}</div>}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1000 }}>
-            <thead><tr><th>用户编码</th><th>姓名</th><th>生命周期</th><th>V-Rank</th><th className="num">设备</th><th>KYC</th><th>风险分</th><th className="num">余额</th><th>状态</th></tr></thead>
+            <thead><tr><th>用户编码</th><th>昵称</th><th>生命周期</th><th>V-Rank</th><th className="num">设备</th><th>KYC</th><th>风险分</th><th className="num">USDT余额</th><th>状态</th></tr></thead>
             <tbody>
-              {pager.pageRows.map((u) => {
-                const frozen = liveFrozen(u.id, u.frozen);
+              {rows.map((u) => {
+                const [statusLabel, statusTone] = statusMeta(u.status);
+                const [kycLabel, kycTone] = kycMeta(u.kycStatus);
                 return (
-                  <tr key={u.id} className="click" onClick={() => router.push(`/users/search/${u.id}`)}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{u.ref} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
-                    <td>{u.name}</td>
-                    <td><span className="bdg dim">{u.lc}</span></td>
-                    <td><span className="bdg dim">{u.vrank}</span></td>
-                    <td className="num mono">{u.devices}</td>
-                    <td>{(() => { const st = kycOf(u.id, u.kyc); const [label, tone] = KYC_STATE[st]; return <span className={`bdg ${tone}`}>{label}</span>; })()}</td>
-                    <td><span className={`bdg ${riskTone(u.risk)}`}>{u.risk}</span></td>
-                    <td className="num mono" style={{ fontWeight: 600 }}>{fmtUsd(u.balance)}</td>
-                    <td>{frozen ? <span className="bdg bad">冻结</span> : <span className="bdg ok">正常</span>}</td>
+                  <tr key={profileKey(u)} className="click" onClick={() => openProfile(u)}>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(u.userNo, "未生成")} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
+                    <td>{text(u.nickname)}</td>
+                    <td><span className="bdg dim">{text(u.userLevel)}</span></td>
+                    <td><span className="bdg dim">{text(u.vRank)}</span></td>
+                    <td className="num mono">{text(u.deviceCount, "0")} / {text(u.activeDeviceCount, "0")}</td>
+                    <td><span className={`bdg ${kycTone}`}>{kycLabel}</span></td>
+                    <td><span className={`bdg ${riskTone(u.riskScore)}`}>{text(u.riskScore, "0")}</span></td>
+                    <td className="num mono" style={{ fontWeight: 600 }}>{formatUsd(u.walletUsdt)}</td>
+                    <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                   </tr>
                 );
               })}
-              {pager.pageRows.length === 0 && (
+              {!loading && rows.length === 0 && (
                 <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>无匹配用户 · 换个检索词或分组试试</td></tr>
+              )}
+              {loading && (
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "22px 12px" }}>正在加载用户列表...</td></tr>
               )}
             </tbody>
           </table>
         </div>
         <DataListPager
           label="C1 用户列表"
-          page={pager.page}
-          pageSize={pager.pageSize}
-          total={pager.total}
-          rawTotal={USERS.length}
-          onPageChange={pager.setPage}
-          onPageSizeChange={pager.setPageSize}
+          page={page}
+          pageSize={pageSize}
+          total={pageData.total}
+          rawTotal={stats?.totalUsers}
+          onPageChange={setPage}
+          onPageSizeChange={(next) => {
+            setPageSize(next);
+            setPage(1);
+          }}
           pageSizeOptions={[5, 10, 20]}
         />
         <div className="l-b" style={{ paddingTop: 12 }}>
           <div className="ctint"><b>检索结果只读</b> · 本页只定位与展示;冻结/解冻去 C2,资产调整去 C3,实名裁决去 C4,安全处置去 C5,各自走操作确认。</div>
         </div>
       </section>
-      <p className="f-foot">隐私三道闸:手机号/地址全程脱敏(检索、展示、导出);看敏感维度落 <b>admin.user_profile_viewed</b>;导出名单落 <b>admin.user_list_exported</b>(检索条件以哈希记录,不含明文),统一归口导出审计台(L5)。生命周期 L0–L5 / V-Rank V0–V12 是内部分诊口径,用户端永不可见。</p>
+      <p className="f-foot">隐私三道闸:手机号/地址全程脱敏(检索、展示、导出);看敏感维度落 <b>admin.user_profile_viewed</b>;导出名单落 <b>admin.user_list_exported</b>(检索条件以哈希记录,不含明文),统一归口导出审计台(L5)。生命周期 L0-L5 / V-Rank V0-V12 是内部分诊口径,用户端永不可见。</p>
     </>
   );
 }

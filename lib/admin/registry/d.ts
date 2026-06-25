@@ -1,12 +1,9 @@
 /**
  * 域 D 资金管理 — 注册表。accent=--admin-domain-d。
  * ⚠️ D ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = d-view.tsx + d-tabs/),仅 summary 经 DomainHeader 渲染。
- * 改 D 域数据/动作请改 d-tabs/data.ts 与 lib/mock/admin/design-data.ts(WITHDRAWALS/TOPUPS/D_FUND/MATURITY),勿在此处改 content。
+ * D1-D5 数据与动作走 finance/treasury/growth 后端代理,勿在此处恢复 mock content。
  */
 import type { ModuleEntry } from "@/lib/admin/module-content";
-import { LEDGER } from "@/lib/mock/admin/ledger";
-
-const _cov = LEDGER.coverageRatio.toFixed(1);
 
 const placeholder = (note: string): ModuleEntry["content"] => ({ kind: "dashboard", metrics: [], note });
 
@@ -21,13 +18,13 @@ export const DOMAIN_D: ModuleEntry[] = [
     path: "/finance/withdrawals",
     summary:
       "提现审核队列(D2)。三路信号只用、不重算:风险分(来自 K4 同一个分)、命中的规则(来自 K3)、实名状态(来自 C4)。提现状态由服务器统一推进——正常 5 种状态 + 异常 6 种状态。小额(<$1,000)且低风险的,普通确认就能快速放行,守住 48 小时到账承诺;大额要走确认 + 先过 B1 备付金覆盖率预检。被 K5 拉去复审、还没过的单子禁止放行;批量里夹着大额会自动拆成单笔逐一审。放行会实时扣减 D3 储备,并同步给 B1/B5。",
-    content: placeholder("死代码:D2 真渲染面在 d-tabs/d2-withdrawals.tsx(队列源 = design-data.WITHDRAWALS)。"),
+    content: placeholder("死代码:D2 真渲染面在 d-tabs/d2-withdrawals.tsx(队列源 = finance/withdrawals)。"),
   },
   {
     path: "/finance/pool",
     summary:
-      `资金池水位仪表盘(D3)。储备和负债明细的底层权威账页:真实储备明细(在锁本金的扣减和负债科目 #2 是同一笔,不重复计)+ 8 类应付负债科目(口径和 B2 一致,试用影子收益单独放脚注)+ 到期预测三类叠加(未来 7 天 / 30 天,压力情景默认收起)+ 净敞口曲线。本页不算覆盖率(那个由 B1 裁定,当前 ${_cov}%);注资登记是全后台唯一真正写库的入口(B1 那边只是入口按钮),要确认 + 防重复 + 留凭证。`,
-    content: placeholder("死代码:D3 真渲染面在 d-tabs/d3-treasury.tsx(LEDGER/LIABILITIES/MATURITY 单源派生)。"),
+      "资金池水位仪表盘(D3)。储备和负债明细的底层权威账页:真实储备明细 + 应付负债科目 + 到期预测 + 覆盖率序列。本页走 treasury/dual-ledger,注资登记、口径、阈值调整都写后端配置和审计。",
+    content: placeholder("死代码:D3 真渲染面在 d-tabs/d3-treasury.tsx(treasury/dual-ledger)。"),
   },
   {
     path: "/finance/ledger",

@@ -1,263 +1,359 @@
 "use client";
 
-/**
- * D1 充值对账中心 — 渠道费率/启停(操作确认)+ 主备 PSP(Checkout.com/Stripe,操作确认)+ 卡风控三参数(操作确认)
- * + 支付商对账(差异核销 操作确认)+ 充值流水三态 + BIN 攻击监控(锁/解锁仍需操作确认 带原因)+ 拒付处置(操作确认 · 三连原子)。
- * 入账唯一真相 = server 处理 PSP 回调/链上确认;本页只观测与处置,不另立储备账(入账事件喂 D3)。
- */
-import { useState } from "react";
-import { fmtUsd } from "@/lib/mock/admin/design-data";
-import { CHANNELS, CARD_PARAMS, RECON, RECON_LEDGER_TOTAL, RECON_LEDGER_CNT, BINS, CBS, TOPUP_TABS, topupsByTab } from "./data";
-import { D_FUND } from "@/lib/mock/admin/design-data";
-import { PaginationExemption } from "../design-kit";
+import { useEffect, useMemo, useState } from "react";
+import {
+  createD1BinLock,
+  fetchD1TopupFlows,
+  fetchD1TopupOverview,
+  refundD1Chargeback,
+  setD1BinLock,
+  switchD1Psp,
+  updateD1CardRisk,
+  updateD1TopupChannelEnabled,
+  updateD1TopupChannelFee,
+  updateD1TopupChannelMin,
+  writeoffD1Reconciliation,
+  type D1DepositFlow,
+  type D1Overview,
+  type PageResult,
+} from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
+const OPERATOR = "superadmin";
+const FLOW_TABS = [
+  ["", "全部"],
+  ["pending", "处理中"],
+  ["confirmed", "已入账"],
+  ["abnormal", "异常"],
+] as const;
+
+function money(value: number, digits = 2) {
+  return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits })}`;
+}
+
+function timeText(value?: string) {
+  if (!value) return "—";
+  return value.replace("T", " ").slice(0, 19);
+}
+
+function statusTone(status: string) {
+  const s = status.toUpperCase();
+  if (["SUCCESS", "CONFIRMED", "CREDITED", "CHARGEBACK_REFUNDED"].includes(s)) return "ok";
+  if (["FAILED", "EXPIRED", "REJECTED", "ABNORMAL", "CHARGEBACK_ENTERED"].includes(s)) return "bad";
+  return "warn";
+}
+
 export function D1Recon({ ctx }: { ctx: DCtx }) {
-  const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
-  const [flowTab, setFlowTab] = useState<"pending" | "confirmed" | "abnormal">("confirmed");
+  const { toast, openActionConfirm, openConfirm } = ctx;
+  const [overview, setOverview] = useState<D1Overview | null>(null);
+  const [flows, setFlows] = useState<PageResult<D1DepositFlow>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
+  const [status, setStatus] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [manualBin, setManualBin] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const chOn = (id: string, seed: boolean) => { const v = pget(`D.channel.${id}`); return v === undefined ? seed : v === "enable"; };
-  const chFee = (id: string, seed: string) => pget(`D.fee.${id}`) ?? seed;
-  const pspPrimary = pget("D.psp.primary") ?? "Checkout.com";
-  const binLocked = (i: number, seed: boolean) => { const v = pget(`D.bin.${i}`); return v === undefined ? seed : v === "locked"; };
-  const reconciled = (ch: string) => pget(`D.reconcile.${ch}`) === "reconciled";
-  const cbDone = (id: string, seed: boolean) => seed || pget(`D.chargeback.${id}`) === "refunded";
+  const loadOverview = async () => {
+    const next = await fetchD1TopupOverview();
+    setOverview(next);
+    return next;
+  };
 
-  const diffRows = RECON.filter((r) => r.diff && !reconciled(r.ch));
-  const diffUsd = diffRows.reduce((s, r) => s + (r.pspAmt - r.ledAmt), 0);
-  // 手动锁段(D.bin.manual.<段>)真写后即时进热力列表与计数(写读同链,防半截闭环)
-  const manualBins = Object.keys(ctx.params).filter((k) => k.startsWith("D.bin.manual.") && ctx.params[k] === "locked").map((k) => k.slice("D.bin.manual.".length));
-  const binLockedCnt = D_FUND.binLockedBase + BINS.filter((b, i) => binLocked(i, b.locked)).length + manualBins.length;
+  const loadFlows = async () => {
+    const next = await fetchD1TopupFlows({ status, keyword, pageNum: page, pageSize });
+    setFlows(next);
+    return next;
+  };
+
+  const refresh = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      await Promise.all([loadOverview(), loadFlows()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "D1 数据加载失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, page, pageSize]);
+
+  const pages = useMemo(() => Math.max(1, Math.ceil(flows.total / flows.pageSize)), [flows.total, flows.pageSize]);
+
+  const applyOverview = async (task: () => Promise<D1Overview>, ok: string) => {
+    try {
+      const next = await task();
+      setOverview(next);
+      toast(ok);
+      void loadFlows();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "D1 操作失败");
+    }
+  };
+
+  const updateChannelText = (channelCode: string, kind: "fee" | "min", current: string) => {
+    openActionConfirm({
+      action: kind === "fee" ? `充值费率调整 · ${channelCode}` : `最小充值额调整 · ${channelCode}`,
+      detail: "写入 nx_config_item，后端返回最新 D1 概览；已创建的新单不回写。",
+      edit: { kind: "text", current },
+      run: (reason, value) => {
+        if (!value?.trim()) {
+          toast("请输入目标值");
+          return;
+        }
+        void applyOverview(
+          () => kind === "fee"
+            ? updateD1TopupChannelFee(channelCode, value.trim(), reason, OPERATOR)
+            : updateD1TopupChannelMin(channelCode, value.trim(), reason, OPERATOR),
+          `${channelCode} 已更新`,
+        );
+      },
+    });
+  };
+
+  if (loading && !overview) {
+    return <section className="l-card"><div className="l-b">D1 数据加载中...</div></section>;
+  }
 
   return (
     <>
+      {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D1 数据加载失败 · {error}</div>}
+
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">今日已确认入账</div><div className="v">${(RECON_LEDGER_TOTAL / 1000).toFixed(1)}K</div><div className="sub">{RECON_LEDGER_CNT} 笔 · 五渠道合计(平台入账侧)</div></div>
-        <div className="f-stat warn"><div className="k">对账差异(未核销)</div><div className="v">{diffRows.length} 笔 · ${diffUsd.toLocaleString("en-US")}</div><div className="sub">单边挂账 {diffRows.filter((r) => r.diff?.includes("单边")).length} · 金额差 {diffRows.filter((r) => r.diff?.includes("金额差")).length}</div></div>
-        <div className="f-stat cyan"><div className="k">风控备付金 fee_buffer</div><div className="v">${D_FUND.feeBufferUsd.toLocaleString("en-US")}</div><div className="sub">卡渠道 3.5% 手续费累计 · 非利润</div></div>
-        <div className="f-stat danger"><div className="k">BIN 锁卡中</div><div className="v">{binLockedCnt}</div><div className="sub">同卡 24h ≥ 5 次失败自动锁</div></div>
+        <div className="f-stat ok"><div className="k">今日入账金额</div><div className="v">{money(overview?.ledgerTotal ?? 0)}</div><div className="sub">{overview?.ledgerCount ?? 0} 笔来自真实充值/支付表</div></div>
+        <div className="f-stat warn"><div className="k">对账差异</div><div className="v">{overview?.diffCount ?? 0} 项</div><div className="sub">差异金额 {money(overview?.diffAmount ?? 0)}</div></div>
+        <div className="f-stat cyan"><div className="k">卡费缓冲</div><div className="v">{money(overview?.feeBufferUsd ?? 0)}</div><div className="sub">按今日刷卡实收和配置计算</div></div>
+        <div className="f-stat danger"><div className="k">BIN 锁定</div><div className="v">{overview?.binLockedCount ?? 0}</div><div className="sub">来源: 失败支付 + 手动锁定配置</div></div>
       </div>
 
-      {/* 渠道参数 + 启停 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">充值渠道与费率</span>
-          <span className="sub">· 改费率只影响之后的新充值单,在途单按锁定费率走 · 启停和费率调整都要操作确认</span>
-          <div className="r">
-            <span className="dcode">主 PSP:{pspPrimary} · 备:{pspPrimary === "Checkout.com" ? "Stripe" : "Checkout.com"}</span>
-            <button className="l-btn mc" onClick={() => openActionConfirm({
-              action: "主备支付商切换",
-              detail: <>当前主 <b>{pspPrimary}</b> / 备 {pspPrimary === "Checkout.com" ? "Stripe" : "Checkout.com"},按地区卡段自动路由。切换后<b>全部新刷卡交易</b>走新主路;在途授权单(已授权即费率/路由锁定)不受影响。影响全部刷卡入账路由,操作确认。</>,
-              run: (reason) => { const next = pspPrimary === "Checkout.com" ? "Stripe" : "Checkout.com"; setParam("D.psp.primary", next, { action: `主备 PSP 切换 → ${next} 主`, reason }); toast(`主备已切换:${next} 为主 · 新交易生效 · 理由留痕`); },
-            })}>主备切换(操作确认)</button>
-          </div>
-        </div>
-        <div className="l-b" style={{ paddingTop: 6 }}>
-          {CHANNELS.map((c) => { const on = chOn(c.id, c.on); const fee = chFee(c.id, c.fee); const min = pget(`D.min.${c.id}`) ?? c.min; return (
-            <div className="ch-row" key={c.id}>
-              <span className="nm">{c.id}{on ? <span className="bdg ok">营业中</span> : <span className="bdg bad">已停用</span>}</span>
-              <span className="meta">最小充值 {min}(per-channel)<button className="l-btn sm mc" style={{ marginLeft: 8 }} onClick={() => openActionConfirm({
-                action: `最小充值额调整 · ${c.id}`,
-                detail: <><b>{c.id}</b> · 当前 {min} · 最小充值额按渠道分别配置,不可设单一全局值;仅对之后的新充值单生效。</>,
-                edit: { kind: "text", current: min },
-                run: (reason, v) => { if (v) setParam(`D.min.${c.id}`, v, { action: `最小充值额调整 ${c.id}`, reason }); toast(`${c.id} 最小充值额已更新为 ${v} · 仅新单生效`); },
-              })}>调下限</button></span>
-              <span className="v">{fee}</span>
-              <button className="l-btn sm mc" onClick={() => openActionConfirm({
-                action: `充值费率调整 · ${c.id}`,
-                detail: <><b>{c.id}</b> · 当前 {fee} · 只影响之后的新充值单——链上单以「交易已广播」、刷卡单以「银行已授权」为界,之前的按老费率走。</>,
-                edit: { kind: "text", current: fee },
-                run: (reason, v) => { if (v) setParam(`D.fee.${c.id}`, v, { action: `充值费率调整 ${c.id}`, reason }); toast(`${c.id} 费率已更新为 ${v} · 仅新单生效`); },
-              })}>调费率</button>
-              <button className={`l-btn sm${on ? " mc" : ""}`} onClick={() => openActionConfirm({
-                action: `${on ? "停用" : "启用"}充值渠道 · ${c.id}`,
-                detail: <>{on ? "停用后用户端该渠道立即下架,新充值进不来;在途单照常确认。" : "重新开放该渠道入口。"}渠道启停直接影响资金流入通道,操作确认。</>,
-                run: (reason) => { setParam(`D.channel.${c.id}`, on ? "disable" : "enable", { action: `充值渠道${on ? "停用" : "启用"} ${c.id}`, reason }); toast(`${c.id} 已${on ? "停用" : "启用"} · 理由留痕`); },
-              })}>{on ? "停用" : "启用"}</button>
+      <div className="two-col r11">
+        <section className="l-card">
+          <div className="l-h">
+            <span className="ttl">充值渠道</span>
+            <span className="sub">· 真实配置读取 / 写入 nx_config_item</span>
+            <div className="r">
+              <button className="l-btn sm" onClick={() => void refresh()}>刷新</button>
             </div>
-          ); })}
-          <div className="card-params">
-            {CARD_PARAMS.map((p) => { const cur = pget(`D.${p.key}`) ?? p.cur; return (
-              <div className="dtint row-tint" key={p.key}>
-                <span style={{ flex: 1 }}><b>{p.name}</b> · {p.note.split(" · ")[0]}</span>
+          </div>
+          <div className="l-b">
+            {(overview?.channels ?? []).map((channel) => (
+              <div className="p-row" key={channel.code}>
+                <div className="txt">
+                  <div className="k">{channel.id}</div>
+                  <div className="s">费率 {channel.fee} · 最小充值 {channel.minAmount}</div>
+                </div>
+                <span className={`bdg ${channel.enabled ? "ok" : "bad"}`}>{channel.enabled ? "启用" : "停用"}</span>
+                <button className="l-btn sm mc" onClick={() => updateChannelText(channel.code, "min", channel.minAmount)}>最小额</button>
+                <button className="l-btn sm mc" onClick={() => updateChannelText(channel.code, "fee", channel.fee)}>费率</button>
                 <button className="l-btn sm mc" onClick={() => openActionConfirm({
-                  action: `刷卡风控参数 · ${p.name}`,
-                  detail: <><b>{p.name}</b> · 当前 {cur} · {p.note}。</>,
-                  edit: { kind: "text", current: cur },
-                  run: (reason, v) => { if (v) setParam(`D.${p.key}`, v, { action: `刷卡风控参数 ${p.name}`, reason }); toast(`${p.name} 已更新为 ${v} · 实时生效`); },
+                  action: `${channel.enabled ? "停用" : "启用"}充值渠道 · ${channel.id}`,
+                  detail: "渠道状态由后端配置控制，保存后只影响新交易。",
+                  run: (reason) => void applyOverview(
+                    () => updateD1TopupChannelEnabled(channel.code, !channel.enabled, reason, OPERATOR),
+                    `${channel.id} 已${channel.enabled ? "停用" : "启用"}`,
+                  ),
+                })}>{channel.enabled ? "停用" : "启用"}</button>
+              </div>
+            ))}
+            <div className="dtint" style={{ marginTop: 12 }}>
+              当前主 PSP: <b>{overview?.primaryPsp ?? "—"}</b> · 备用: {overview?.backupPsp ?? "—"}
+              <button className="l-btn sm mc" style={{ marginLeft: 10 }} onClick={() => openActionConfirm({
+                action: "主备 PSP 切换",
+                detail: `切换到 ${overview?.backupPsp ?? "备用 PSP"}，后端写配置并落审计。`,
+                run: (reason) => void applyOverview(
+                  () => switchD1Psp(overview?.backupPsp ?? "Stripe", reason, OPERATOR),
+                  "主备 PSP 已切换",
+                ),
+              })}>切换主备</button>
+            </div>
+          </div>
+        </section>
+
+        <section className="l-card">
+          <div className="l-h">
+            <span className="ttl">刷卡风控参数</span>
+            <span className="sub">· 后端配置即时生效</span>
+          </div>
+          <div className="l-b">
+            {(overview?.cardParams ?? []).map((param) => (
+              <div className="p-row" key={param.key}>
+                <div className="txt"><div className="k">{param.name}</div><div className="s">{param.note}</div></div>
+                <span className="v">{param.value}</span>
+                <button className="l-btn sm mc" onClick={() => openActionConfirm({
+                  action: `刷卡风控参数 · ${param.name}`,
+                  detail: "写入后端配置，D1 概览重新从接口读取。",
+                  edit: { kind: "text", current: param.value },
+                  run: (reason, value) => {
+                    if (!value?.trim()) {
+                      toast("请输入目标值");
+                      return;
+                    }
+                    void applyOverview(() => updateD1CardRisk(param.key, value.trim(), reason, OPERATOR), `${param.name} 已更新`);
+                  },
                 })}>调整</button>
               </div>
-            ); })}
+            ))}
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
-      {/* 对账面 */}
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">支付商报表 vs 平台入账</span>
-          <span className="sub">· 左边是支付商/链上看到的,右边是平台记的账,对不上的标红等人工核销</span>
-          <div className="r"><span className="dcode electric">差异核销操作确认</span></div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 920 }}>
-            <thead><tr><th>渠道</th><th className="num">支付商侧 笔数</th><th className="num">支付商侧 金额</th><th className="num">平台入账 笔数</th><th className="num">平台入账 金额</th><th className="num">差异</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
-            <tbody>
-              {RECON.map((r) => { const done = reconciled(r.ch); const bad = !!r.diff && !done; return (
-                <tr key={r.ch} style={bad ? { background: "var(--danger-soft)" } : undefined}>
-                  <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{r.ch}</td>
-                  <td className="num mono">{r.pspCnt}</td><td className="num mono">{fmtUsd(r.pspAmt)}</td>
-                  <td className="num mono">{r.ledCnt}</td><td className="num mono">{fmtUsd(r.ledAmt)}</td>
-                  <td className="num mono" style={{ fontWeight: 700, color: bad ? "var(--danger)" : "var(--success)", fontSize: 12 }}>{bad ? r.diff!.split(" · ")[0] : done && r.diff ? "已核销" : "对平"}</td>
-                  <td style={{ textAlign: "right" }}>{bad ? (
-                    <button className="l-btn sm mc" onClick={() => openActionConfirm({
-                      action: `对账差异核销 · ${r.ch}`,
-                      detail: <><b>{r.diff}</b>。核销 = 账本调整级动作:确认差异原因并冲销单边挂账,操作确认 + 防重号(24h 去重),核销记录喂财务报表(L3)和监管报告(L5)。</>,
-                      run: (reason) => { setParam(`D.reconcile.${r.ch}`, "reconciled", { action: `对账差异核销 ${r.ch}`, reason }); toast(`${r.ch} 差异已核销 · 理由留痕`); },
-                    })}>核销</button>
-                  ) : <span className="bdg ok">✓</span>}</td>
-                </tr>
-              ); })}
-            </tbody>
-          </table>
-        </div>
-        <PaginationExemption
-          label="支付商对账差异表"
-          maxRows={5}
-          reason="固定五渠道对账样本,逐渠道全量展示比翻页更利于核销"
-        />
-      </section>
-
-      {/* 充值流水 */}
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">充值流水</span>
-          <span className="sub">· 已确认 = 已写账单(D4)+ 已累计终身入金(E 域换新资格源)</span>
-          <div className="r"><div className="chips">
-            {TOPUP_TABS.map((t) => (
-              <button key={t.key} className={`chip${flowTab === t.key ? " sel" : ""}`} onClick={() => setFlowTab(t.key)}>{t.label}</button>
-            ))}
-          </div></div>
+          <span className="sub">· 后端分页 · 支持状态与关键字查询</span>
+          <div className="r">
+            <div className="chips">
+              {FLOW_TABS.map(([key, label]) => (
+                <button key={key || "all"} className={`chip${status === key ? " sel" : ""}`} onClick={() => { setStatus(key); setPage(1); }}>{label}</button>
+              ))}
+            </div>
+            <div className="lookup">
+              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="充值单 / 用户编号 / 凭证" />
+              <button className="l-btn primary" onClick={() => { setPage(1); void loadFlows().catch((err) => setError(err.message)); }}>查询</button>
+            </div>
+          </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 980 }}>
-            <thead><tr><th>充值单</th><th>账户</th><th>渠道</th><th className="num">到账额</th><th className="num">渠道实收</th><th>凭证</th><th>状态</th><th>时间</th></tr></thead>
+            <thead><tr><th>充值单</th><th>用户</th><th>通道</th><th className="num">金额</th><th className="num">三方实收</th><th>状态</th><th>凭证</th><th>创建时间</th></tr></thead>
             <tbody>
-              {topupsByTab(flowTab).map((f) => { const tone = f.stLabel.startsWith("已入账") ? "ok" : f.stLabel.includes("拒") || f.stLabel.includes("超时") ? "bad" : "warn"; return (
-                <tr key={f.id}>
-                  <td className="mono" style={{ color: "var(--ink)" }}>{f.id}</td>
-                  <td className="mono">{f.user}</td>
-                  <td><span className="bdg dim">{f.channel}</span></td>
-                  <td className="num mono" style={{ fontWeight: 700 }}>{fmtUsd(f.amount)}</td>
-                  <td className="num mono" style={{ color: "var(--ink-3)" }}>{f.recvLabel}</td>
-                  <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{f.proof}</td>
-                  <td><span className={`bdg ${tone}`}>{f.stLabel}</span></td>
-                  <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{f.t}</td>
+              {flows.records.length === 0 ? (
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: "26px 12px" }}>暂无充值流水</td></tr>
+              ) : flows.records.map((flow) => (
+                <tr key={flow.depositNo}>
+                  <td className="mono" style={{ color: "var(--ink)" }}>{flow.depositNo}</td>
+                  <td className="mono">{flow.userId}</td>
+                  <td>{flow.channel} / {flow.asset}</td>
+                  <td className="num mono">{money(flow.amount)}</td>
+                  <td className="num mono">{money(flow.providerReceived)}</td>
+                  <td><span className={`bdg ${statusTone(flow.status)}`}>{flow.statusLabel}</span></td>
+                  <td className="mono" style={{ color: "var(--ink-4)" }}>{flow.proof}</td>
+                  <td className="mono" style={{ color: "var(--ink-4)" }}>{timeText(flow.createdAt)}</td>
                 </tr>
-              ); })}
+              ))}
             </tbody>
           </table>
         </div>
-        <PaginationExemption
-          label="充值流水分状态样本"
-          maxRows={5}
-          reason="按状态 tab 后单屏最多五条,用于核对样本而非无限流水查询"
-        />
+        <div className="l-b" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <span className="sub">共 {flows.total} 条 · 第 {flows.pageNum}/{pages} 页</span>
+          <div className="chips">
+            {[10, 20, 50].map((size) => <button key={size} className={`chip${pageSize === size ? " sel" : ""}`} onClick={() => { setPageSize(size); setPage(1); }}>{size}/页</button>)}
+            <button className="chip" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>上一页</button>
+            <button className="chip" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}>下一页</button>
+          </div>
+        </div>
       </section>
 
-      <div className="two-col r12">
-        {/* BIN attack */}
+      <div className="two-col r11">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">刷卡攻击监控</span>
-            <span className="sub">· 按卡段 / IP / 设备聚合的 24h 失败热力 · 超线自动锁卡,人工也能锁</span>
-            <div className="r"><button className="l-btn" onClick={() => openConfirm({
-              action: "手动锁卡段",
-              detail: "立即拦下指定卡段/指纹的后续刷卡尝试(默认 24h)。锁卡是即时止血,单人可操作,落审计;失败热力同步给反多账户引擎(K1)支付工具维度。",
-              chips: [["即时止血 · 单人可锁", "ready"], ["落审计 · 喂 K1", "done"]],
-              reason: true, input: { label: "卡段 / 指纹", placeholder: "如 BIN 4716 02·· 或 fp_22ab…" }, okLabel: "确认锁卡",
-              run: (reason, v) => { if (v) setParam(`D.bin.manual.${v}`, "locked", { action: `手动锁卡段 ${v}`, reason }); toast(`${v ?? ""} 已锁 24h · 落审计`); },
-            })}>手动锁卡段</button></div>
+            <span className="ttl">对账差异</span>
+            <span className="sub">· 三方记录与账本聚合比对</span>
           </div>
           <div className="l-b">
-            <div className="heat">
-              {manualBins.map((seg) => (
-                <div className="h-row hot" key={`manual-${seg}`}>
-                  <span className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{seg}<small style={{ display: "block", fontWeight: 400, color: "var(--ink-4)" }}>手动锁段</small></span>
-                  <span className="bar"><i style={{ width: "100%", background: "var(--danger)" }} /></span>
-                  <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)" }}>手动锁 24h</span>
-                  <button className="l-btn sm" onClick={() => openConfirm({
-                    action: `解锁卡段 · ${seg}`,
-                    detail: "解锁后该卡段恢复刷卡。解锁必须写原因。",
-                    chips: [["必须写原因", "ready"], ["落审计", "done"]], reason: true, okLabel: "确认解锁",
-                    run: (reason) => { setParam(`D.bin.manual.${seg}`, "unlocked", { action: `解锁卡段 ${seg}`, reason }); toast(`${seg} 已解锁 · 原因留痕`); },
-                  })}>解锁</button>
-                </div>
-              ))}
-              {BINS.map((b, i) => { const locked = binLocked(i, b.locked); return (
-                <div className={`h-row${locked ? " hot" : ""}`} key={b.name}>
-                  <span className="mono" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{b.name}<small style={{ display: "block", fontWeight: 400, color: "var(--ink-4)" }}>{b.meta}</small></span>
-                  <span className="bar"><i style={{ width: `${(b.fails / 10) * 100}%`, background: b.fails >= 5 ? "var(--danger)" : "var(--warning)" }} /></span>
-                  <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: b.fails >= 5 ? "var(--danger)" : "var(--warning)" }}>{b.fails} 次/24h</span>
-                  {locked ? (
-                    <button className="l-btn sm" onClick={() => openConfirm({
-                      action: `解锁卡段 · ${b.name}`,
-                      detail: "解锁后该卡段恢复刷卡。解锁必须写原因(比如确认为正常商户批量代付)。",
-                      chips: [["必须写原因", "ready"], ["落审计", "done"]], reason: true, okLabel: "确认解锁",
-                      run: (reason) => { setParam(`D.bin.${i}`, "unlocked", { action: `解锁卡段 ${b.name}`, reason }); toast(`${b.name} 已解锁 · 原因留痕`); },
-                    })}>解锁</button>
-                  ) : (
-                    <button className="l-btn sm" onClick={() => openConfirm({
-                      action: `手动锁卡 · ${b.name}`,
-                      detail: "立即拦下该卡段/指纹的后续刷卡尝试(默认 24h)。锁卡是即时止血,单人可操作,落审计;失败热力同步给 K1 支付工具维度。",
-                      chips: [["即时止血 · 单人可锁", "ready"], ["落审计 · 喂 K1", "done"]], reason: true, okLabel: "确认锁卡",
-                      run: (reason) => { setParam(`D.bin.${i}`, "locked", { action: `手动锁卡 ${b.name}`, reason }); toast(`${b.name} 已锁 24h · 落审计`); },
-                    })}>锁卡</button>
-                  )}
-                </div>
-              ); })}
-            </div>
-            <div className="dtint" style={{ marginTop: 12 }}><b>说明</b> · 锁卡由服务器执行,页面只是观测和手动补锁;锁卡热力同步给反多账户引擎(K1)的支付工具维度。后台对账只看得到卡段和末四位,完整卡号从不经过平台(直送收单行)。</div>
+            {(overview?.reconciliation ?? []).map((row) => (
+              <div className="cb-row" key={row.channel}>
+                <span className="mono" style={{ fontWeight: 700 }}>{row.channel}</span>
+                <span style={{ flex: 1 }}>三方 {row.providerCount} / {money(row.providerAmount)} · 账本 {row.ledgerCount} / {money(row.ledgerAmount)}</span>
+                <span className={`bdg ${row.reconciled || row.diffAmount === 0 ? "ok" : "warn"}`}>{row.reconciled ? "已核销" : row.diff}</span>
+                {!row.reconciled && row.diffAmount !== 0 && (
+                  <button className="l-btn sm mc" onClick={() => openConfirm({
+                    action: `核销对账差异 · ${row.channel}`,
+                    detail: `差异金额 ${money(row.diffAmount)}。确认后写后端配置和审计。`,
+                    reason: true,
+                    okLabel: "核销",
+                    run: (reason) => void applyOverview(() => writeoffD1Reconciliation(row.channel, reason, OPERATOR), `${row.channel} 差异已核销`),
+                  })}>核销</button>
+                )}
+              </div>
+            ))}
           </div>
         </section>
 
-        {/* chargeback */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">拒付处置</span>
-            <span className="sub">· 已发生拒付的刷卡充值单 · 退款 = 追回已入账 + 从备付金扣回</span>
+            <span className="ttl">BIN 锁定</span>
+            <span className="sub">· 失败支付 + 手动配置</span>
           </div>
           <div className="l-b">
-            <div className="dtint" style={{ marginBottom: 12, display: "flex", gap: 18, flexWrap: "wrap" }}>
-              <span><b>fee_buffer 今日流水</b></span>
-              <span className="mono" style={{ color: "var(--success)" }}>+$3,225(今日 Card 入账 $92,140 × 3.5%)</span>
-              <span className="mono" style={{ color: "var(--negative)" }}>−$29(TP-76870 拒付:费冲回 $4.2 + 拒付手续费 $25)</span>
-              <span className="mono" style={{ color: "var(--ink-3)" }}>余额 ${D_FUND.feeBufferUsd.toLocaleString("en-US")}</span>
+            <div className="lookup" style={{ marginBottom: 10 }}>
+              <input value={manualBin} onChange={(e) => setManualBin(e.target.value)} placeholder="输入卡段，如 424242" />
+              <button className="l-btn primary" onClick={() => {
+                const segment = manualBin.trim();
+                if (!segment) {
+                  toast("请输入卡段");
+                  return;
+                }
+                openConfirm({
+                  action: `锁定卡段 · ${segment}`,
+                  detail: "锁定状态写入后端配置，D1 概览重新查询。",
+                  reason: true,
+                  okLabel: "锁定",
+                  run: (reason) => void applyOverview(() => createD1BinLock(segment, reason, OPERATOR), `${segment} 已锁定`),
+                });
+              }}>手动锁定</button>
             </div>
-            {CBS.map((c) => { const done = cbDone(c.id, c.st === "已退款追回"); return (
-              <div className="cb-row" key={c.id}>
-                <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{c.id}</span>
-                <span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>{c.user}</span>
-                <span className="mono" style={{ fontWeight: 700 }}>{c.amt}</span>
-                <span style={{ fontSize: 12, color: "var(--ink-4)", flex: 1 }}>{c.code}</span>
-                {done ? <span className="bdg ok">已退款追回</span> : (
-                  <>
-                    <span className="bdg warn">待处置</span>
-                    <button className="l-btn sm mc" onClick={() => openActionConfirm({
-                      action: `拒付退款追回 · ${c.id}`,
-                      detail: <><b>{c.user} · {c.amt}</b>(原因码 {c.code.split(" · ")[0]})。同一笔服务器事务原子完成三件事:追回已入账余额、从风控备付金扣回、核减该用户终身入金(防止拒付后还留着换新资格)。带防重号,操作确认。</>,
-                      run: (reason) => { setParam(`D.chargeback.${c.id}`, "refunded", { action: `拒付退款追回 ${c.id}`, reason }); toast(`${c.id} 退款追回完成 · 终身入金已核减`); },
-                    })}>退款追回</button>
-                  </>
-                )}
+            {(overview?.bins ?? []).map((bin) => (
+              <div className="cb-row" key={bin.segment}>
+                <span className="mono" style={{ fontWeight: 700 }}>{bin.segment}</span>
+                <span style={{ flex: 1 }}>{bin.meta} · 24h 失败 {bin.fails24h} 次 · {bin.note}</span>
+                <span className={`bdg ${bin.locked ? "bad" : "ok"}`}>{bin.locked ? "锁定" : "放行"}</span>
+                <button className="l-btn sm mc" onClick={() => openConfirm({
+                  action: `${bin.locked ? "解锁" : "锁定"}卡段 · ${bin.segment}`,
+                  detail: "状态由后端配置保存，保存后重新查询。",
+                  reason: true,
+                  okLabel: bin.locked ? "解锁" : "锁定",
+                  run: (reason) => void applyOverview(() => setD1BinLock(bin.segment, !bin.locked, reason, OPERATOR), `${bin.segment} 已${bin.locked ? "解锁" : "锁定"}`),
+                })}>{bin.locked ? "解锁" : "锁定"}</button>
               </div>
-            ); })}
-            <div className="dtint warn" style={{ marginTop: 12 }}><b>退款的连带动作</b> · 追回入账、备付金扣回、该用户终身入金核减,三件事在同一笔服务器事务里原子完成(带防重号),不会出现「钱退了但换新资格还在」的半截账。</div>
+            ))}
           </div>
         </section>
       </div>
 
-      <p className="f-foot"><b>入账的唯一真相源是服务器处理支付商回调 / 链上确认</b>——客户端的余额显示只是渲染,客户端推的账单一律视为伪造。每笔确认入账写一条账单(D4)并累计该用户终身入金(以旧换新门槛的依据);确认入账同时是资金池储备(D3)的流入来源,本页不另立储备账,只产生入账事件供 D3 聚合。<b>四类动作要操作确认</b>:渠道启停、主备支付商切换、拒付退款、对账差异核销;BIN 锁卡是即时止血,单人可锁但解锁要写原因。</p>
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">拒付追回</span>
+          <span className="sub">· 来源真实支付记录</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 920 }}>
+            <thead><tr><th>案件号</th><th>用户编码</th><th className="num">金额</th><th>原因</th><th>入账状态</th><th>追回状态</th><th>创建时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <tbody>
+              {(overview?.chargebacks ?? []).length === 0 ? (
+                <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: "24px 12px" }}>暂无拒付案件</td></tr>
+              ) : overview?.chargebacks.map((row) => (
+                <tr key={row.caseNo}>
+                  <td className="mono">{row.caseNo}</td>
+                  <td className="mono">{row.userCode}</td>
+                  <td className="num mono">{money(row.amount)}</td>
+                  <td>{row.reasonCode}</td>
+                  <td><span className="bdg dim">{row.enteredStatus}</span></td>
+                  <td><span className={`bdg ${statusTone(row.status)}`}>{row.status}</span></td>
+                  <td className="mono">{timeText(row.createdAt)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    {row.status !== "CHARGEBACK_REFUNDED" && (
+                      <button className="l-btn sm mc" onClick={() => openConfirm({
+                        action: `拒付追回 · ${row.caseNo}`,
+                        detail: `追回 ${money(row.amount)}，后端更新支付记录并重新查询。`,
+                        reason: true,
+                        okLabel: "确认追回",
+                        run: (reason) => void applyOverview(() => refundD1Chargeback(row.caseNo, reason, OPERATOR), `${row.caseNo} 已追回`),
+                      })}>追回</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </>
   );
 }
