@@ -51,8 +51,8 @@ while IFS='|' read -r path id status; do
   if [ "$status" = "scaffold" ]; then check_html "$path" "规格就绪"; fi
 done < <("$NODE_BIN" "$HERE/nav-routes.mjs" | tr -d '\r')
 nav_count=$("$NODE_BIN" "$HERE/nav-routes.mjs" | grep -c '|')
-if [ "$nav_count" -ne 69 ]; then
-  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 69)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
+if [ "$nav_count" -ne 70 ]; then
+  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 70)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
 else
   echo "  nav-routes: $nav_count 条路由"
 fi
@@ -167,6 +167,8 @@ check_html "/finance/params" "提现参数"
 check_html "/finance/params" "节奏派发 · 只读"             # H1 派发三项只读区(防双源)
 check_html "/finance/params" "本页可调(操作确认)"        # D5 owns 三参数区
 check_html "/finance/params" "红线核验"                    # 放松方向 B1 覆盖率核验说明
+# 注:L 域(数据与分析 BI)主内容区为客户端渲染(SSR 仅侧栏 + 域名/summary),body needle curl 取不到,
+# 故 L1–L6 与既有 L 页一致只走 nav 自动 HTTP200(check_http);L6 用户行为热力图运行时校验靠 Playwright 浏览器自检。
 
 echo "== [4/4] 体验回归(运营者 / PM 视角 · 自动可检信号) =="
 # 镜头 B 初次运营者:信息气味 / 状态信号 / 空态引导不退化

@@ -248,6 +248,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "L3", name: "财务报表", path: "/analytics/financial", prdAnchor: "L3", batch: "V4", status: "flagship" },
       { id: "L4", name: "设备/任务/网络报表", path: "/analytics/operations", prdAnchor: "L4", batch: "V4", status: "flagship" },
       { id: "L5", name: "导出 & 监管报告", path: "/analytics/export", prdAnchor: "L5", batch: "V4", status: "flagship" },
+      { id: "L6", name: "用户行为热力图", path: "/analytics/behavior-heatmap", prdAnchor: "L6", batch: "V4", status: "flagship" },
     ],
   },
   {

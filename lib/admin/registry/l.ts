@@ -5,6 +5,7 @@
  *  注册 1240→绑卡 769→首购 223→复购 78→提现 41;储备 $6.34M / 应付 $5.37M / 覆盖率 118.1% 绿区(派生自 LEDGER 单源·越南基准 m7)。 */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 import { LEDGER } from "@/lib/mock/admin/ledger";
+import { PAGE_TREE, TRACKED_COUNT, EXCLUDED_PAGES } from "@/lib/mock/admin/behavior-heatmap";
 
 // L3 财务 BI 口径派生自 LEDGER 单源,与 D3 / B1 双账本一致
 const _lResM = (LEDGER.reserveUsd / 1e6).toFixed(2);
@@ -390,6 +391,22 @@ export const DOMAIN_L: ModuleEntry[] = [
         { label: "重跑" },
       ],
       note: "报告内容快照自 A4 事件流与 server 端结算账本,口径与 KPI 看板 / 财务报表一致。监管报送类报告导出需经 A2 审计留痕;生成失败项可重跑,生成任务记录 append-only 不可篡改。",
+    },
+  },
+  {
+    path: "/analytics/behavior-heatmap",
+    summary:
+      "用户行为热力图 —— 前端各页面的浏览、点击、停留与跳出按页面级别聚合成热力矩阵,可设置统计粒度(全部 / 一级 / 二级 / 三级页面),并点页下钻到单页点击坐标热力。来源:A4 事件流(以服务器为准),帮产品/运营定位「哪些页面最热、用户在页内点哪、哪些页面留不住人」。只读报表域,不改任何业务规则。",
+    content: {
+      kind: "dashboard",
+      metrics: [
+        { label: "追踪页面", value: String(TRACKED_COUNT), sub: `前端 ${PAGE_TREE.length} 页 · ${EXCLUDED_PAGES.length} 系统页除外`, accent: "var(--admin-domain-l)", hint: "纳入行为统计的前端页面数(纯会话/工具页除外)。" },
+        { label: "统计粒度", value: "4 档", sub: "全部 / 一级 / 二级 / 三级", accent: "var(--admin-domain-l)", hint: "按 UX 层级上卷:一级=tab/顶级入口,二级=板块子页,三级=详情/指南叶子页。" },
+        { label: "统计维度", value: "4 维", sub: "PV/UV · 点击 · 停留 · 跳出", accent: "var(--admin-domain-l)", hint: "矩阵四列;跳出率用绝对阈值警示色,其余按列归一化。" },
+        { label: "时间窗", value: "3 档", sub: "24h / 7d / 30d", accent: "var(--admin-domain-l)", hint: "计数类指标随窗缩放;停留/跳出为率,不随窗缩放。" },
+      ],
+      controlLink: { label: "埋点事件体系(A4)", href: "/platform/events" },
+      note: "页面活跃热力矩阵 + 单页点击坐标热力下钻;粒度/时间窗/排序均为会话级视图参数,不写业务规则;聚合导出落 admin.report_exported 审计。口径来自 A4 事件 schema v3.7。",
     },
   },
 ];

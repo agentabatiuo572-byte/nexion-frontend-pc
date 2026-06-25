@@ -18,9 +18,10 @@ import { L2HeaderActions, L2Funnel } from "./l-tabs/l2-funnel";
 import { L3HeaderActions, L3Finance } from "./l-tabs/l3-finance";
 import { L4HeaderActions, L4Ops } from "./l-tabs/l4-ops";
 import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
+import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
 
-const FOLD: Record<string, string> = { L1: "L1", L2: "L2", L3: "L3", L4: "L4", L5: "L5" };
+const FOLD: Record<string, string> = { L1: "L1", L2: "L2", L3: "L3", L4: "L4", L5: "L5", L6: "L6" };
 
 export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -45,7 +46,8 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     : tab === "L2" ? <L2HeaderActions ctx={ctx} />
     : tab === "L3" ? <L3HeaderActions ctx={ctx} />
     : tab === "L4" ? <L4HeaderActions ctx={ctx} />
-    : <L5HeaderActions ctx={ctx} />;
+    : tab === "L5" ? <L5HeaderActions ctx={ctx} />
+    : <L6HeaderActions ctx={ctx} />;
 
   return (
     <div className="dkpage ldom">
@@ -56,6 +58,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "L3" && <L3Finance ctx={ctx} />}
       {tab === "L4" && <L4Ops ctx={ctx} />}
       {tab === "L5" && <L5Export ctx={ctx} />}
+      {tab === "L6" && <L6BehaviorHeatmap ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal
