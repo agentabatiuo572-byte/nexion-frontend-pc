@@ -710,7 +710,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setTaskDrawer(false);
       setEditTaskId(null);
     } catch (error) {
-      setToast("任务新增失败:" + (error instanceof Error ? error.message : "E2_TASK_CREATE_FAILED"));
+      const msg = error instanceof Error ? error.message : "E2_TASK_CREATE_FAILED";
+      logAudit({ actor: operator, action: "新增任务失败:" + taskForm.n.trim() + " · " + msg, target: taskForm.n.trim() }); // A2:高敏 op 失败留痕(规则 6)
+      setToast("任务新增失败:" + msg);
     }
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
@@ -1258,13 +1260,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             if (mc.op === "sku-save") {
               const ex = editName ? skus.find((x) => x.name === editName) : undefined;
               const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
+              let mirror = sku; // store 镜像值:PREVIEW 用本地,真后端用返回的 canonical SKU(防 store 镜像与后端 drift)
               if (IS_PREVIEW) {
                 setE1Skus((prev) => editName ? prev.map((x) => (x.id === ex?.id || x.name === editName) ? sku : x) : [sku, ...prev]);
               } else {
-                await saveE1Sku(sku, editName ? (ex?.id || ex?.name || editName) : undefined, reason, operator);
+                const saved = await saveE1Sku(sku, editName ? (ex?.id || ex?.name || editName) : undefined, reason, operator);
+                if (saved) mirror = attachSkuMedia(saved, skuMedia);
                 await refreshE1();
               }
-              if (editName) updateSku(editName, sku); else addSku(sku); // store 镜像(跨域 SKU 真源)
+              if (editName) updateSku(editName, mirror); else addSku(mirror); // store 镜像(跨域 SKU 真源,后端 canonical 优先)
               logAudit({ actor: operator, action: editName ? "编辑SKU " + form.name : "新增SKU " + form.name, target: sku.name, reason });
               setToast(editName ? "SKU 已更新:" + form.name : "SKU 已新增:" + form.name + " · 待上架");
               setEditName(null);
@@ -1426,6 +1430,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               setE1Gates(mc.generationGateId
                 ? await patchE1GenerationGate(mc.generationGateId, payload, reason, operator)
                 : await createE1GenerationGate(payload, reason, operator));
+              await refreshE1(); // 对齐 phase-save/gate-force:刷新 e1Skus/phases 等派生面,防 SKU 解锁阶段下拉读 stale
               logAudit({ actor: operator, action: (mc.generationGateId ? "编辑代际门 " : "新增代际门 ") + payload.skuId, target: mc.generationGateId ?? payload.skuId, reason });
               setToast(mc.generationGateId ? "代际门已更新:" + payload.skuId : "代际门已新增:" + payload.skuId);
             } else if (mc.op === "generation-gate-force" && mc.generationGateId && mc.generationGate?.forceUnlock != null) {
@@ -1436,6 +1441,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               setToast((enabled ? "强制提前开放已开启:" : "强制提前开放已撤销:") + mc.generationGateId);
             } else if (mc.op === "generation-gate-archive" && mc.generationGateId) {
               setE1Gates(await archiveE1GenerationGate(mc.generationGateId, reason, operator));
+              await refreshE1(); // 对齐 phase-archive:刷新派生面
               logAudit({ actor: operator, action: "移除代际门", target: mc.generationGateId, reason });
               setToast("代际门已移除:" + mc.generationGateId);
             } else if (mc.op === "order-state" && mc.orderId && mc.fixedVal) {
