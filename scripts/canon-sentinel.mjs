@@ -232,6 +232,7 @@ if (!nextProducts || !uniProducts) {
 // 单源三方:canon.withdrawal ↔ uniapp product-phase.PHASES ↔ admin H1 DIAL_MATRIX(nexGate 列,月→phase)+ D5 OWN_PARAMS。
 const uniPhase = readIfExists(path.join(UNI_ROOT, "src", "store", "product-phase.ts"));
 const adminH = read(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "data.ts"));
+const adminCC = read(path.join(ROOT, "lib", "mock", "admin", "command-center.ts")); // PHASE_BUCKETS 节奏单源(2026-06-24 上收)
 const adminDdata = read(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "data.ts"));
 const wd = canon.withdrawal || {};
 if (!uniPhase) {
@@ -244,9 +245,9 @@ if (!uniPhase) {
   for (const m of uniPhase.matchAll(/id:\s*"(P\d)"[\s\S]*?withdrawPenaltyFeeRate:\s*([\d.]+)[\s\S]*?nexFeeOffsetRate:\s*([\d.]+)/g)) {
     uniByPhase[m[1]] = { penalty: numberFrom(m[2]), offset: numberFrom(m[3]) };
   }
-  // admin PHASE_BUCKETS: 月 → phase(单源,勿硬编码映射)
+  // admin PHASE_BUCKETS(command-center 节奏单源): 月 → phase(2026-06-24 上收;勿硬编码映射)
   const monthToPhase = {};
-  for (const m of adminH.matchAll(/phase:\s*"(P\d)",\s*months:\s*\[([\d,\s]+)\]/g)) {
+  for (const m of adminCC.matchAll(/phase:\s*"(P\d)",\s*months:\s*\[([\d,\s]+)\]/g)) {
     for (const mo of m[2].split(",").map((s) => parseInt(s.trim(), 10)).filter(Number.isFinite)) monthToPhase[mo] = m[1];
   }
   // admin DIAL_MATRIX: 月行 → nexGate 列(DIAL_KEYS 第 4 列 idx 3 = 提现惩罚费率 %)

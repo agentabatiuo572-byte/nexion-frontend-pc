@@ -20,7 +20,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           fields: [
             { label: "V1 入门", value: "直推 2 · 团队规模 5", range: "门槛可配", effect: "解锁基础网络版税" },
             { label: "V3 进阶", value: "直推 4 · 团队规模 30", range: "门槛可配", effect: "解锁更高版税层" },
-            { label: "V6 骨干", value: "直推 6 · 团队规模 200", range: "门槛可配", effect: "进入领导奖池候选" },
+            { label: "V6 骨干", value: "直推 6 · 团队规模 200", range: "门槛可配", effect: "领导奖池占比跃升(8 票)" },
             { label: "V9 核心", value: "直推 8 · 团队规模 1,200", range: "门槛可配", effect: "领导奖池更高占比" },
             { label: "V12 顶阶", value: "直推 10 · 团队规模 6,000", range: "门槛可配", effect: "全权益解锁" },
           ],
@@ -30,7 +30,7 @@ export const DOMAIN_F: ModuleEntry[] = [
           note: "权益随等级解锁;调整即时影响新结算周期。",
           fields: [
             { label: "网络版税层级", value: "随 V 级开放 L1–L7", range: "L1–L7", effect: "联动 F2 费率层" },
-            { label: "领导奖池资格", value: "V6 起候选", range: "V4–V8 起", effect: "联动 F4 分配" },
+            { label: "领导奖池资格", value: "V3 起解锁", range: "V3 起", effect: "联动 F4 分配" },
             { label: "硬件配额额度", value: "随 V 级递增", range: "额度可配", effect: "联动 F4 配额区" },
             { label: "可见性 gating", value: "按等级渐进展示", range: "开 / 关", effect: "前端等级可见范围" },
           ],
@@ -158,9 +158,9 @@ export const DOMAIN_F: ModuleEntry[] = [
       kind: "config",
       metrics: [
         { label: "奖池比例", value: "5%", sub: "周 GMV 计提", accent: "var(--admin-domain-f)", hint: "从周交易额(GMV)计提入池的比例(基准 5%)。" },
-        { label: "本期奖池", value: "$96,400", sub: "待分配", accent: "var(--admin-domain-f)", hint: "本结算周期累计入池金额。" },
-        { label: "达标领导", value: "84", sub: "V6+ 候选", accent: "var(--v5-success)" },
-        { label: "结算周期", value: "周结", sub: "每周一日切", accent: "var(--v5-ink-3)" },
+        { label: "本周奖池", value: "$487,321", sub: "周 GMV × 5%", accent: "var(--admin-domain-f)", hint: "本周池额 = 周 GMV($9.75M) × 比例,与前端 canon 同源派生。" },
+        { label: "合格领袖", value: "498", sub: "V3+ 全网", accent: "var(--v5-success)" },
+        { label: "结算周期", value: "周结", sub: "周日快照·周一派发", accent: "var(--v5-ink-3)" },
       ],
       groups: [
         {
@@ -174,12 +174,11 @@ export const DOMAIN_F: ModuleEntry[] = [
         },
         {
           title: "分配权重",
-          note: "在达标领导层间按等级与团队贡献加权分配。",
+          note: "在 V3+ 领袖间按等级指数票权分配;高阶稀少但票权碾压,池子向头部集中。",
           fields: [
-            { label: "资格门槛", value: "V6 及以上", range: "V4–V8", effect: "联动 F1 等级判定" },
-            { label: "等级权重", value: "V6:1 / V9:2 / V12:3", range: "权重可配", effect: "高阶占比更大" },
-            { label: "团队贡献权重", value: "团队 GMV 占比", range: "权重可配", effect: "贡献越大份额越高" },
-            { label: "单人封顶", value: "奖池 8%", range: "5–15%", effect: "防止单人独占" },
+            { label: "资格门槛", value: "V3 及以上", range: "V3 起", effect: "票权首个非零 = V3;联动 F1 等级判定" },
+            { label: "等级权重", value: "指数翻倍 V3=1→V12=512", range: "权重可配", effect: "高阶指数级占比更大" },
+            { label: "头部集中度", value: "顶部 10 名 ≈61%", range: "随权重/分布派生", effect: "设计内头部虹吸,B5 监控" },
           ],
         },
         {
@@ -205,7 +204,7 @@ export const DOMAIN_F: ModuleEntry[] = [
       impact: [
         "上调入池比例 → 奖池规模放大,平台版税净留存下降",
         "放宽资格门槛 → 分配人数上升,人均份额摊薄,需评估激励效果",
-        "单人封顶与团队贡献权重联动 B5 头部集中度,防止奖池过度集中",
+        "等级权重决定头部集中度(顶部 10 名 ≈61%),联动 B5 监控;头部集中是设计内的虹吸",
         "硬件配额上调 → 采购上限放大,联动 E 域库存与履约;大使授予 / 榜单奖池为放大流出,受 B1 约束",
       ],
     },

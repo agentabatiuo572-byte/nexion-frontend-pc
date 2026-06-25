@@ -17,7 +17,7 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
-import { PHASE } from "@/lib/mock/admin/design-data";
+import { rhythmState } from "@/lib/mock/admin/command-center";
 import { D1Recon } from "./d-tabs/d1-recon";
 import { D2Withdrawals } from "./d-tabs/d2-withdrawals";
 import { D3HeaderActions, D3Treasury } from "./d-tabs/d3-treasury";
@@ -33,7 +33,7 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
   D2: ["状态只能服务器推进 · 客户端只能看", "到账承诺 48 小时 · 审核 ≤ 2 个工作日"],
   D3: ["储备的底账在这里 · 覆盖率由总账(B1)裁定", "每天 UTC 00:00 批量对账"],
   D4: ["服务器是唯一账本 · 客户端报的账一律不认", "每笔资金动作必落账"],
-  D5: ["节奏类参数由 H1 统一派发 · 这页只是生效的地方", `当前 ${PHASE.current} · 月 ${PHASE.month}`],
+  D5: ["节奏类参数由 H1 统一派发 · 这页只是生效的地方", "当前节奏位置由 H1 单源派发"], // live 恒由下方 rs 分支覆盖,此 seed 不渲染(不依赖 PHASE)
 };
 
 export function DDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -56,7 +56,10 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
     openConfirm: setCf,
   };
 
-  const [ro, live] = RO_LIVE[tab];
+  const [ro, liveSeed] = RO_LIVE[tab];
+  // D5 实时态 = 节奏单源(运营在 H1 可配),与 H1/B4/L1/L4/首页 pulse 同源,不抄 PHASE seed 快照。
+  const rs = rhythmState(ctx.pget);
+  const live = tab === "D5" ? `当前 ${rs.currentPhase} · 月 ${rs.currentMonth}/${rs.totalMonths}` : liveSeed;
   const right = (
     <>
       <span className="f-ro"><span className="d" />{ro}</span>

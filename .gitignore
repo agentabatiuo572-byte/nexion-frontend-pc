@@ -42,3 +42,6 @@ node_modules/
 
 # 备份回收站(勿托管)
 /.trash/
+
+# dev server 日志（勿入库）
+.dev-3002.log

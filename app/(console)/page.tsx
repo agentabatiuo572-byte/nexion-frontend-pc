@@ -22,6 +22,7 @@ import {
   KPIS,
   PENDING_OPERATIONS,
   DOMAIN_PULSE,
+  rhythmState,
   type AlertItem,
 } from "@/lib/mock/admin/command-center";
 import { fmtPct, fmtUsdCompact, fmtNum } from "@/lib/format";
@@ -141,6 +142,11 @@ export default function CommandCenter() {
     if (code === "D") return `待确认提现 ${inReview} · 积压 ${fmtUsdCompact(backlogUsd)}`;
     if (code === "J") return `Kill ${killOnline}/${KILL_GATES.length} 在线${killTripped ? ` · ${killTripped} 熔断` : ""} · Geo 屏蔽 3 国`;
     if (code === "L") return `8 KPI · 达标 ${passedKpi} / 未达 ${KPIS.length - passedKpi}`;
+    if (code === "H") {
+      // H 域脉搏 = 节奏单源(运营在 H1 可配),与 B4/H1/L1/L4 同源,不读 DOMAIN_PULSE.H 死串。
+      const rs = rhythmState((k) => (opsHydrated ? killParams?.[k] : undefined));
+      return `${rs.currentPhase} ${rs.currentPhaseName}期 · 第 ${rs.currentMonth}/${rs.totalMonths} 月`;
+    }
     return DOMAIN_PULSE[code] ?? "";
   }
 

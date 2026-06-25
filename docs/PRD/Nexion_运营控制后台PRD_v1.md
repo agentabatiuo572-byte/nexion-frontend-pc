@@ -138,7 +138,7 @@
 
 ### 1.7 12 月运营节奏 P1–P6 概述
 
-平台运营按 12 个月划分为 6 个运营阶段(Phase),后台 **H1「Phase 调度器」**(★V1)是其参数的唯一操作面;用户端只读取派发结果、**永不感知阶段切换**(前端 §13.4 铁律:Phase 是 PM 内部命名,P1–P6 等术语永不出现在用户 UI)。
+平台运营按 12 个月划分为 6 个运营阶段(Phase)(**默认 12 月;节奏总时长由 H1「节奏骨架」运营可配 9–24 月,6 段按月数权重等比重分布,见 Ch7 [H1] ③(c2)**),后台 **H1「Phase 调度器」**(★V1)是其参数的唯一操作面;用户端只读取派发结果、**永不感知阶段切换**(前端 §13.4 铁律:Phase 是 PM 内部命名,P1–P6 等术语永不出现在用户 UI)。
 
 **参数默认值以 `NEXION_12月节奏表.md` §6.4 `ProductPhase` 为权威**(2026-06-01 directive,优先于前端现状)。该 12 月运营模型**按月**派发 **7 个时变 dial**(新用户加成 / 邀请加成 / 复投加成 / 提现惩罚费率 / 提现冷却 / 双轨日封顶 / 任务加成);后台再叠加前端 §13.4.1 的 **`complianceHoldEnabled`**,合计 **8 dial**。下表按 P1–P6 命名带汇总(部分 dial 在带**内**按月有拐点,见表注),完整逐月矩阵在 **Ch7(H1)** 展开。
 
@@ -405,13 +405,28 @@ server-canonical;角色判定与权限校验在服务端每次请求执行(后�
 #### [A2] 审计 & 操作确认
 
 **① 目的 & 对齐**
-A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 (1) 全量、append-only、不可删改的审计日志,(2) 高敏动作清单与操作确认(Confirm-with-Reason)契约的权威定义。**§3.14 跨域归属表已将「审计日志 / 操作确认」权威归属定为 A2,引用方 = 全域所有高敏写操作**;各章「⑥ 权限 & 审计」段的审计记录字段结构、所有标「确认弹窗」的高敏动作、`admin.*` 审计事件落库,全部以 A2 为统一机制,各域不另立确认与审计体系。对齐前端 §9.11d(服务端权威 + 篡改防御——后台对可篡改状态的每一次纠正/执行都留痕)+ §9.11e(原子性 / 幂等——高敏动作的资金写入须事务边界 + `Idempotency-Key`,不重复生效)。服务的业务目标:落地 §1.8 原则二.2(审计可追溯)+ 原则二.4(操作确认),为运营内部操作提供完整问责链与高敏动作的执行确认契约。
+A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 (1) 全量、append-only、不可删改的审计日志,(2) 高敏动作清单与操作确认(Confirm-with-Reason)契约的权威定义。**§3.14 跨域归属表已将「审计日志 / 操作确认」权威归属定为 A2,引用方 = 全域所有高敏写操作**;各章「⑥ 权限 & 审计」段的审计记录字段结构、所有标「确认弹窗」的高敏动作、`admin.*` 审计事件落库,全部以 A2 为统一机制,各域不另立确认与审计体系。对齐前端 §9.11d(服务端权威 + 篡改防御——后台对可篡改状态的每一次纠正/执行都留痕)+ §9.11e(原子性 / 幂等——高敏动作的资金写入须事务边界 + `Idempotency-Key`,不重复生效)。服务的业务目标:落地 §1.8 原则二.2(审计可追溯)+ 原则二.4(操作确认),为运营内部操作提供完整问责链与高敏动作的执行确认契约。**A2 ②(b) 同时承载高敏动作的实时 pending 队列**——发起人未达某动作执行门槛时,该动作不直接生效而入队为提案,由具门槛者(对应域 lead / 超管)执行回写或驳回(仍单人确认,执行者一人,非双人会签),实现「按执行门槛分流」。
 
 **② 后台界面**
 两视图:(a) 审计日志查询 + (b) 高敏操作流水。
 
 1. **(a) 审计日志查询**:全量审计事件检索表,每条记录统一 schema `[who(操作者 + 角色) / when(时间 ms) / action(动作) / object(对象域 + 对象 ID) / before → after(前后值) / reason(理由) / IP]`;支持按**域 / 操作者 / 动作类型 / 对象 / 时间区间**多维筛选;**只读审计角色可全量查询与导出**(取证用)。日志为 append-only,界面无任何编辑 / 删除入口(§⑦)。
-2. **(b) 高敏操作流水**:按「高敏动作清单」(③)过滤的审计子视图——`[流水 ID / 动作类型 / 操作者(+角色) / 对象 / before → after / 理由 / 时间]`,按动作敏感度与金额排序,资金类 / 大额置顶;**只读监控面,无待办/处理概念**(高敏动作由操作者在业务域经确认弹窗即时执行,本视图供超管/各角色 lead 事后监督)。每条高敏动作落审计的同时向超管与对应域角色 lead **实时告警推送**(站内,可选邮件)——单人执行模式下的事后监督补偿机制。
+2. **(b) 高敏操作动态(实时 pending 队列 + 监控)**:高敏动作按**执行门槛分流**的实时视图——`[提案 ID / 动作类型 / 操作者(+角色) / 对象 / before → after / 理由 / 执行门槛 / 状态(pending / 已执行 / 已驳回) / 时间]`,pending 优先、资金类 / 大额置顶。两条路径:
+   - **够权 → 确认即执行**:操作者对自己达到执行门槛的动作,在业务域经确认弹窗即时执行(不变),落审计并在本视图记为「已执行」;本视图对超管 / 各角色 lead 提供事后监督。
+   - **不够权 → 入 pending 提案**:操作者发起超出自己执行门槛的高敏动作时不直接生效,而是携**可序列化的目标域写入描述符**入此队列(提案)+ 审计留痕;具备该动作执行门槛者(对应域 lead / 超管)在本视图**执行**(回放写回目标域 + 落审计 + 提案转「已执行」)或**驳回**(终态,理由必填)。**仍单人确认**——执行者一人(可为发起人本人若够权,或更高门槛执行者),不引入第二人会签。
+   每条高敏动作(直接执行或提案执行)落审计的同时向超管与对应域角色 lead **实时告警推送**(站内,可选邮件)。**应急轨(SOS)动作**(单档熔断恢复、kill-switch 恢复)额外进 SOS 计数与 SLA 倒计时视图。
+
+> **执行门槛分流业务流程(状态机)**:
+> `发起高敏动作` → server 判定发起人角色是否达该动作执行门槛(③ 清单逐动作门槛;超管恒达)
+> - **达门槛** → 确认弹窗(理由必填;放大流出方向前置 B1 覆盖率红线核验 422)→ `确认即执行` + 同事务落审计 → 终态。
+> - **未达门槛** → `入 pending(提案)` + 审计留痕 → 具门槛者在 A2:① **执行**(A2-MD2,同样确认弹窗 + B1 预检)→ 回放目标域写入 + 落审计 → 提案转 `已执行`(终态);② **驳回**(A2-MD3,理由必填)→ 提案转 `已驳回`(终态,需重新发起)。
+> pending 提案仅 `pending` 态可被执行 / 驳回(幂等:重复执行不二次回放、不重复审计;执行/驳回前 server 实时复核执行者门槛)。
+
+> **分流方向原则**:放大资金流出 / 解除止血方向(提现放行、解冻、解除熔断、升 APY、降罚款、档位恢复开售)+ 经济产品参数变更(APY、罚款、档位启停)按执行门槛分流;**即时止血**(单档熔断、kill-switch 熔断)与**案件级收紧处置**(提现拒绝、延迟、冻结)为直接执行 + 留痕,不入分流队列(止血不排队)。
+
+> **执行门槛矩阵(摘要;逐动作门槛见 ③ 高敏动作清单)**:超管恒可;**财务 lead** = G1 APY / 罚款 / 档位停售恢复、D2 大额放行 / 解冻 / 退款覆盖;**增长 lead** = H1 Phase dial(放大方向);**内容 lead** = I7 课程奖励;**仅超管** = G1 单档熔断解除、J1 Kill-Switch 恢复、A1 账号治理、K4 风险模型发布。
+
+> **落地范围(焦点动作集)**:实时 pending 分流当前已在一组放大流出焦点杠杆落地——G1(APY / 罚款 / 档位停售恢复 / 单档熔断解除)、D2(大额放行 / 解冻 / 退款覆盖)、H1(Phase dial)、I7(课程奖励)、J1(Kill-Switch 恢复)。其余域的放大流出动作当前仍按「够权确认即执行 + 审计」运行(**均落 A2 审计,审计完整性不受影响**),按执行门槛分流入队为后续批次目标;差异仅在「未达门槛时是否入队等待」,不影响留痕与问责。
 
 **③ 可控参数**
 
@@ -434,7 +449,7 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 > - **账户高敏处置**:账户冻结 / 解冻(C2)、impersonate 授权(C2)、人工标记/撤销 KYC(C4,执行=风控 lead/超管)、人工 disable 2FA(C5)、密码重置(C5)、解除账户锁定(24h 长锁路径)(C5);单用户冻结→C2 路径;
 > - **批量账户簇冻结**:批量冻结关联账户簇(K1 反多账户引擎,执行=风控(lead)/超管,与 K1⑥ 矩阵对齐;与 C2 单用户冻结分工——单用户→C2,批量簇→K1,两者均入本清单);
 > - **后台账号治理**:运营账号创建 / 禁用 / 启用 / 角色变更 / 2FA 重置(A1,执行=仅超管);
-> - **feature flag / 系统参数配置**(A3)。
+> - **feature flag 切换**(A3)。
 >
 > **K 域旧命名映射注脚**:本清单引用 K 域动作(K1 批量冻结、K4 风险模型、K5 复审裁决)时,角色映射为 §1.1 体系:平台管理员→超级管理员、风控运营→风控(member)、审计员→只读审计;主管层级 = 角色内 lead 层级(承担高敏执行门槛)。K1④ 正文与 K1⑥ 矩阵以**矩阵为准**(矩阵粒度更细),执行权 = 风控(lead)/超管;K5④ 正文与 K5⑥ 矩阵以矩阵为准,执行权 = 风控(lead)/超管。
 >
@@ -447,6 +462,10 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 | 审计日志查询 | 全角色(各按可见性裁剪)/ 只读审计可全量 | 否(只读) | 元操作;查询本身留痕(operator / 查询范围) |
 | 审计日志导出 | 只读审计 / 财务 / 风控(按域裁剪) | 否(只读脱敏导出,直接生效留痕) | admin 审计事件(导出范围 / operator);PII 脱敏(§2.4.3) |
 | 审计/埋点 schema 变更(新增事件/属性) | 仅超管 | A2-MD1(理由必填) | admin 审计事件(schema 前后版本 / operator / reason);呼应 §2.4.8 与 A4 |
+| 执行 pending 提案(②b) | 该动作执行门槛者(canExecute;对应域 lead / 超管;超管恒可) | A2-MD2(理由必填;放大流出前置 B1 红线 422) | `admin.proposal_executed` + 回放目标域写入审计(原动作 `admin.*` 事件) |
+| 驳回 pending 提案(②b) | 同上(该动作执行门槛者) | A2-MD3(理由必填) | `admin.proposal_rejected`(终态) |
+
+> **执行门槛分流执行契约(②b pending)**:操作者发起超出自身执行门槛的高敏动作时,server 不直接执行而**入 pending 队列**(提案携可序列化目标域写入描述符 + `{reason}`);具该动作执行门槛者在 ②b 经 A2-MD2 **执行**——server 二次复核执行者门槛(`canExecute`,超管恒可)后回放目标域写入(body 携 `{reason}` + 资金类 `Idempotency-Key`,放大流出前置 B1 红线 422),写入与审计同事务,提案转「已执行」;或经 A2-MD3 **驳回**(终态)。仍单人确认(执行者一人),非双人会签。
 
 > **高敏动作端点直接执行契约(全域统一)**:A2 自身不发起业务动作,而是定义各域高敏动作的执行契约并承载其留痕。各章 ④ 段标「确认弹窗」的动作,由操作者在业务域界面经该动作的专属确认弹窗(④a 规格)提交,目标域 endpoint **body 必携 `{reason}`**(server 校验非空,缺失返 400 `REASON_REQUIRED`),资金/资产类另携 `Idempotency-Key`(§9.11e),放大资金流出方向前置 B1 覆盖率红线核验(低于红线 422);写入与审计记录同事务落库,无审批中转环节。A2 是这些动作的审计存储与高敏流水监控面(②b)。
 
@@ -460,6 +479,8 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 | 审计日志导出 | ②(a)列表顶部「导出」 | 次按钮 | 仅只读审计/财务/风控渲染;当前筛选结果为空时置灰 | 直接生效:按当前筛选范围生成脱敏导出文件 + toast + 留痕 |
 | 高敏操作流水查看 | ②(b)导航 tab | 链接 | 超管/各角色 lead/只读审计可见 | 跳转流水视图,无弹窗 |
 | schema 变更 | A4 schema registry 视图(§2.4.8)「新增事件/属性」 | 次按钮 | 仅超管渲染 | 打开弹窗 A2-MD1 |
+| 执行 pending 提案 | ②(b)pending 行「执行」按钮 / 提案抽屉 footer | 主按钮 | 仅达该动作执行门槛者渲染;不够权显「待 <门槛>」徽标(无按钮) | 打开弹窗 A2-MD2 |
+| 驳回 pending 提案 | ②(b)pending 行「驳回」按钮 / 提案抽屉 footer | 次按钮 | 同上(达门槛者可见) | 打开弹窗 A2-MD3 |
 
 **(2) 弹窗规格**
 
@@ -484,9 +505,38 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 - **错误态**:422 `SCHEMA_BREAKING_CHANGE`(diff 含删除/改名,弹窗不关,内联指出违规条目)/ 400 `REASON_REQUIRED` / 409(版本冲突,他人已先发布,提示刷新 diff)/ 403。
 - **成功反馈**:弹窗关闭;registry 版本号 +1 并就地更新;toast「schema 已发布 · 已记审计」;admin 审计事件落 A2;实时告警全体超管。
 
+##### [A2-MD2] 执行 pending 提案确认
+- **功能**:对 ②b 队列中一条 pending 提案执行——server 二次复核执行者门槛后回放提案携带的目标域写入,落审计并将提案转「已执行」。仅达该动作执行门槛者可触发(超管恒可)。
+- **布局结构**:1. **信息区**:动作类型 / 对象 / `before → after` / 发起人(+角色) / 发起理由 / 执行门槛标签。2. **影响预览区**:回放将写入的目标域键与新值;放大资金流出方向动作展示当前 B1 覆盖率与红线(低于红线禁执行)。3. **输入区**:执行理由(见下表)。4. **按钮区**:取消 / 确认执行。
+- **输入与选择控件**:
+
+| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
+|---|---|---|---|---|
+| 执行理由(reason) | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+
+- **错误态**:403 `EXEC_FORBIDDEN`(执行者未达门槛,server 二次复核拒,内联提示「需 <门槛> 执行」)/ 409 `PROPOSAL_NOT_PENDING`(提案已被执行 / 驳回,提示刷新)/ 422 `COVERAGE_BELOW_REDLINE`(放大流出且覆盖率低于红线)/ 400 `REASON_REQUIRED`。
+- **成功反馈**:弹窗关闭;提案行转「已执行」并移出 pending;目标域值就地更新;toast「已执行 · 目标域写入 + 审计留痕」;`admin.proposal_executed` + 回放动作的 `admin.*` 事件落 A2;实时告警超管与对应域 lead。
+
+##### [A2-MD3] 驳回 pending 提案确认
+- **功能**:对 ②b 队列中一条 pending 提案驳回(终态)——提案作废需重新发起,理由随审计永久留痕。仅达该动作执行门槛者可触发。
+- **布局结构**:1. **信息区**:动作类型 / 对象 / `before → after` / 发起人 / 发起理由。2. **影响预览区**:提示「驳回为终态不可逆,目标域不变更,发起人需重新发起」。3. **输入区**:驳回理由(必填)。4. **按钮区**:取消 / 确认驳回。
+- **输入与选择控件**:
+
+| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
+|---|---|---|---|---|
+| 驳回理由(reason) | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+
+- **错误态**:403 `EXEC_FORBIDDEN` / 409 `PROPOSAL_NOT_PENDING` / 400 `REASON_REQUIRED`。
+- **成功反馈**:弹窗关闭;提案行转「已驳回」并移出 pending;目标域不变更;toast「已驳回 · 原因留痕」;`admin.proposal_rejected` 落 A2;实时告警发起人与超管。
+
 **⑤ 接口**
 - `GET /api/admin/audit?filter=` — 审计日志查询,`filter` 支持 `{ domain, operator, action, object_id, from_ts, to_ts, sensitive }`(`sensitive=true` 按高敏动作清单过滤,即 ②b 高敏操作流水的数据源);返回统一 schema 记录列表(见 ⑥);**各角色可见性由 server 强制 filter(非 UI 层可选)**——客服只能查 `{operator: self}` 或 `{object_id: 本次服务的用户 ID}` 的记录,其余角色按 domain 枚举做 server 强制白名单过滤,只读审计角色可全量查询无过滤限制;append-only,无写/删 endpoint。
 - **高敏动作端点说明**:高敏动作即各业务域的原执行 endpoint(无审批中转层)——各域写 endpoint 按 ④ 的执行契约统一约束:body 携 `{reason}`(server 校验非空 400 `REASON_REQUIRED`)、资金/资产类携 `Idempotency-Key`(server 24h dedup,重复提交同一 key 返回 200 + 原始结果)、放大流出方向前置 B1 红线核验(低于红线 422)、写入与审计同事务。
+- **执行门槛分流 pending 队列**(②b,backend-replaceable;原型以可序列化描述符在本地回放,真后台落库):
+  - `GET /api/admin/audit/pending` — pending 提案列表(发起人 / 对象 / before→after / 执行门槛 / 状态 / 可序列化 mutation 描述符);可见性同审计查询(server 强制 filter)。
+  - `POST /api/admin/audit/pending` — 发起入队(发起人未达执行门槛时由各域写动作触发;body 携 `{action, obj, before, after, mutations[], gate, reason}`;server 落库 + 实时告警具门槛者)。
+  - `POST /api/admin/audit/pending/:id/execute` — 具门槛者执行:server 复核 `canExecute`(否则 403 `EXEC_FORBIDDEN`)+ 仅 pending 态(否则 409 `PROPOSAL_NOT_PENDING`)+ 放大流出 B1 红线(否则 422);回放 mutations 写目标域 + 落审计,与目标域写入同事务、携 `Idempotency-Key`,提案转「已执行」。
+  - `POST /api/admin/audit/pending/:id/reject` — 具门槛者驳回(终态,body 携 `{reason}`,400 `REASON_REQUIRED`)。
 
 server-canonical;审计写入服务端权威。**审计日志为 append-only**,服务端不提供任何更新 / 删除审计记录的 endpoint(§⑦)。
 
@@ -498,6 +548,7 @@ server-canonical;审计写入服务端权威。**审计日志为 append-only**,�
 | 审计日志导出 | ✅ | ✅(资金域脱敏) | ✅(风控域脱敏) | — | — | — | ✅(全量脱敏) |
 | 高敏操作流水查看 | ✅(全域) | ✅(资金类) | ✅(风控/账户类) | — | — | — | ✅(全量) |
 | schema 变更 | ✅ | — | — | — | — | — | — |
+| 执行 / 驳回 pending 提案(②b) | ✅(全域) | ✅(达门槛的资金/参数类) | ✅(达门槛的风控/账户类) | ✅(达门槛的节奏类) | ✅(达门槛的内容类) | — | — |
 
 > **审计日志可见性 server-enforce**:各角色的审计日志可见性由 server 在 `GET /api/admin/audit` 强制 filter(非 UI 层可选)——客服只能查 `{operator: self}` 或 `{object_id: 本次服务的用户 ID}` 的记录;其余角色按 domain 枚举做 server 强制白名单过滤;只读审计角色可全量查询无过滤限制。高敏操作流水(②b)对各角色 lead 层级额外开放本域高敏动作的监督视图。
 
@@ -509,12 +560,14 @@ server-canonical;审计写入服务端权威。**审计日志为 append-only**,�
 - **高敏写入的原子性 + 幂等(§9.11e)**:高敏动作触发的目标域写入(资金 / 资产 / 参数)经事务边界一次性提交、携 `Idempotency-Key` 去重,网络 retry 不致重复执行 / 重复扣款 / 重复入账;写入失败则目标域无副作用(§9.11e 原子性)。
 - **审计字段统一 schema(各章 ⑥ 引用)**:各域审计字段以 A2 schema 为单源,避免各章自定义字段导致取证口径分裂;新动作的 action 枚举与对象类型在 A2 登记。
 - **高敏动作实时告警(单人执行的事后监督补偿)**:高敏动作落审计的同时,server 向超管与对应域角色 lead 推送实时告警(站内,可选邮件),并进入 ②b 高敏操作流水置顶;异常执行(高频/大额/非工作时段)可被快速发现与追责。
+- **执行门槛分流(单人确认,非双人会签)**:高敏动作发起人未达该动作执行门槛时,server 不直接执行而入 ②b pending 队列(提案);具门槛者(对应域 lead / 超管)执行回写或驳回。执行 / 驳回前 server **实时复核执行者门槛**(`canExecute`,超管恒可)+ 校验提案仍 pending(幂等:重复执行不二次回放 / 不重复审计)。这是「单人确认」在权限不足时的**路由补偿**——执行者仍一人,非双签;`pending 提案执行/驳回权 = 该动作执行门槛`(逐提案动态判定,非 A2 固定角色权)。**即时止血方向**(单档熔断、kill-switch 熔断、案件级拒绝 / 延迟 / 冻结)不入队,直接执行 + 留痕(止血不排队)。
 - **跨域权威(§3.14)**:审计日志 / 操作确认权威归 A2,全域引用——B/C/D/H/K 各章 ⑥ 段的确认契约与留痕均落 A2,本卷各章已据此声明「确认与审计留痕落 A2,本域不另立确认机制」。
 
 **⑧ 埋点(事件)**
 对齐 A4(§2.4.5 ⑥ admin family;审计为元事件):
 - **承载(元事件,非新增 KPI 事件)**:A2 是各域 `admin.*` 审计事件的**统一落库管道**——各章产生的 `admin.*` 审计事件(如 `admin.balance_adjusted` / `admin.user_frozen` / `admin.kyc_status_changed` / `admin.withdraw_*` / `admin.treasury_threshold_changed` / `admin.feature_flag_changed` / `admin.killswitch_toggled` 等)全部经 A2 落 append-only 审计库;**事件命名归 A4 §2.4.5 ⑥ admin family,A2 负责落库与可查询**,二者分工:A4 定义命名/属性 schema、A2 是这些事件的审计存储与高敏流水监控面。
 - **产生**:高敏操作流水(②b)与实时告警均为审计库的派生视图/推送,不产生新事件。(原复核工作流元事件 `admin.approval_expired` 已随 2026-06 操作确认决议废除注销,A4 registry 同步移除。)
+- **执行门槛分流元事件(新增)**:`admin.proposal_submitted`(发起人未达门槛,动作入 ②b pending 队列)/ `admin.proposal_executed`(具门槛者执行,携回放的目标域 `admin.*` 子事件)/ `admin.proposal_rejected`(驳回终态)——经 A4 §2.4.5 ⑥ admin family 注册、A2 落库;供高敏动作分流监督与 SOS SLA 看板派生。
 - **注**:所有各章声明「须经 A4 schema registry 注册」的 `admin.*` 事件,其**注册命名空间归 A4(§2.4.5 ⑥)、审计落库与高敏流水归 A2**。
 
 ---
@@ -522,34 +575,30 @@ server-canonical;审计写入服务端权威。**审计日志为 append-only**,�
 #### [A3] 系统配置
 
 **① 目的 & 对齐**
-A3 托管**平台级系统配置与横切技术约束**——server time 权威、Idempotency-Key 策略、feature flag 平台、**kill-switch config store**、系统健康。这些是全平台时间判定、幂等去重、灰度发布、紧急熔断的服务端地基,被多域依赖。对齐前端 **§9.11a.4 中「当前时间权威值」职责**(server time 权威——Trial / Phase 等一切时间判定以服务端时钟为准,防 client clock skew;§9.11a.4 其余 8 条 server-side responsibilities 由 H2 Trial 承接)+ §9.11e(`Idempotency-Key`——资金写入幂等去重键,server 24h dedup)+ §9.11d.3(feature flag / A-B 实验值 server-driven)+ §9.11d.1(kill-switch 闸清单)。服务的业务目标:为 §1.8 原则二.1(server-canonical)与原则二.3(幂等)提供平台级技术底座;**kill-switch config store 是 B5 风险雷达(Ch4)所引用「服务端 kill-switch config store」的实际托管处**(§9.11d.1 定义闸清单,B5 只读其状态灯)。
+A3 托管**平台级横切配置**——feature flag 平台、**kill-switch config store**、系统健康(运营可视/可配范围);并承载两条**固定后端不变量**——server time 单源、Idempotency-Key 去重——作为全平台时间判定与幂等去重的服务端地基(平台强制、运营不可调,**不设配置卡**,约束见 ⑦)。这些底座被多域依赖。对齐前端 **§9.11a.4 中「当前时间权威值」职责**(server time 权威——Trial / Phase 等一切时间判定以服务端时钟为准,防 client clock skew;§9.11a.4 其余 8 条 server-side responsibilities 由 H2 Trial 承接)+ §9.11e(`Idempotency-Key`——资金写入幂等去重键,server 24h dedup)+ §9.11d.3(feature flag / A-B 实验值 server-driven)+ §9.11d.1(kill-switch 闸清单)。服务的业务目标:为 §1.8 原则二.1(server-canonical)与原则二.3(幂等)提供平台级技术底座;**kill-switch config store 是 B5 风险雷达(Ch4)所引用「服务端 kill-switch config store」的实际托管处**(§9.11d.1 定义闸清单,B5 只读其状态灯)。
 
 > **§9.11d.3 内容归属边界(A3 覆盖范围示例)**:§9.11d.3 中 PHASES 全表由 H1 Phase 调度器承接(§3.3 H1),chargeFailRate 归 H2,multiplier/做市价格曲线由对应业务域接管;**A3 feature flag 平台仅承接无明确业务域归属的横切平台 flag**,不覆盖 §9.11d.3 全部内容。归属判定示例——**归 A3 的横切 flag**:A-B 实验开关、灰度发布百分比开关、跨域通用能力开关;**不归 A3 的反例**:PHASES 全表归 H1、chargeFailRate 归 H2、业务域 multiplier 归对应业务域。
 
-> **kill-switch 托管的 V1→V4 边界**:**V1 阶段由 A3 config store 托管 8 闸(7 个二元功能闸〔6 源自前端 §9.11d.1 + 后台应急新增 withdraw 提现闸〕 + 1 个 geo-block 闸)的闸状态与切换入口**(临时承载);**V4 由 J1(Kill-Switch 矩阵,7 功能闸)/ J2(Geo-block)接管管理操作面**——J1/J2 是 kill-switch 的管理操作面,A3 config store 是 V1 阶段的状态存储与临时切换面。**本章是 kill-switch config store 的存储端定义**:B5⑦ 为消费方声明,二者协作而非竞争——A3 为存储端权威、B5 为消费引用方。B5⑦ 中「或专属 config endpoint 待开发确认」的不确定性由本章终结:A3 config store 已终结 B5⑦「落点待开发确认」的不确定性,**B5⑦ 正文须同批次更新为「V1 由 A3 `/api/admin/killswitch` 承载;切换面 V4 归 J1/J2」**,B5⑦「以本子模块此处声明为准」限定改为「仅指消费端读取视图,存储端权威见后台 PRD §2.3 A3」。B5② / B5④ / B5⑦ 已声明「状态在 V1 阶段来自服务端 kill-switch config store(§9.11d.1),V4 归 J1/J2」,本子模块即该 config store 的托管定义,与 B5 引用逐一吻合。(§3.14 跨域归属表目前无「kill-switch 状态」权威归属行。)
+> **kill-switch 托管的 V1→V4 边界**:**V1 阶段由 A3 config store 托管 6 闸(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw 提现闸〕 + 1 个 geo-block 闸)的闸状态与切换入口**(临时承载);**V4 由 J1(Kill-Switch 矩阵,5 功能闸)/ J2(Geo-block)接管管理操作面**——J1/J2 是 kill-switch 的管理操作面,A3 config store 是 V1 阶段的状态存储与临时切换面。**本章是 kill-switch config store 的存储端定义**:B5⑦ 为消费方声明,二者协作而非竞争——A3 为存储端权威、B5 为消费引用方。B5⑦ 中「或专属 config endpoint 待开发确认」的不确定性由本章终结:A3 config store 已终结 B5⑦「落点待开发确认」的不确定性,**B5⑦ 正文须同批次更新为「V1 由 A3 `/api/admin/killswitch` 承载;切换面 V4 归 J1/J2」**,B5⑦「以本子模块此处声明为准」限定改为「仅指消费端读取视图,存储端权威见后台 PRD §2.3 A3」。B5② / B5④ / B5⑦ 已声明「状态在 V1 阶段来自服务端 kill-switch config store(§9.11d.1),V4 归 J1/J2」,本子模块即该 config store 的托管定义,与 B5 引用逐一吻合。(§3.14 跨域归属表目前无「kill-switch 状态」权威归属行。)
 
 **② 后台界面**
-五视图:(a) server time 权威配置 + (b) Idempotency-Key 策略 + (c) feature flag 平台 + (d) kill-switch config store + (e) 系统健康。
+三视图:(a) feature flag 平台 + (b) kill-switch config store + (c) 系统健康。**server time 单源与 Idempotency-Key 去重不在本配置面**——为固定后端不变量(平台强制、运营不可调,无卡;约束见 ⑦)。
 
-1. **(a) server time 权威配置**:服务端时间同步源配置(NTP 源 / 同步状态 / 当前 server 时钟 + 漂移监控);明示「一切时间判定(Trial 倒计时、Phase 月龄、提现冷却、锁仓到期)以 server time 为准,client 时钟仅 UI 显示」(§9.11a.4 当前时间权威值职责)。
-2. **(b) Idempotency-Key 策略**:幂等键 TTL 配置 + 去重窗口监控(命中重复键的拦截计数);明示资金 / 资产写入 endpoint 必须携 `Idempotency-Key`,server 在 TTL 内 dedup(§9.11e)。
-3. **(c) feature flag 平台**:feature flag 清单 `[flag key / 当前态(on/off/灰度%)/ 适用范围(全量/cohort/Phase)/ 最近变更]`;A-B 实验值 server-driven(§9.11d.3),客户端读取派发结果。flag 切换经 ④ 确认弹窗(A3-MD1,理由必填)。**A3 feature flag 覆盖范围示例**:归 A3 的横切 flag(A-B 实验开关 / 灰度发布百分比 / 跨域通用能力开关);不归 A3 的反例(PHASES→H1 / chargeFailRate→H2 / 业务域 multiplier→对应业务域)。
-4. **(d) kill-switch config store**:8 闸(7 个二元功能闸 + 1 个 geo-block 闸)的服务端闸状态托管表 `[闸 key / 状态(enabled/disabled,geo-block 为 activeCountries 非空判定)/ 最近变更(operator / reason)]`——`withdraw 提现(后台应急新增,enforce 于 D 域提现 endpoint)/ staking 单档 / genesis / exchange / trial / nexv2 / premium`(7 个二元功能闸,其中 6 个源自前端 §9.11d.1)+ `geo-block`(国家级屏蔽,结构 `{ key:'geo-block', enabled: countryList.length>0, activeCountries:[] }`);闸切换经 ④ 确认弹窗(熔断 A3-MD2 / 恢复 A3-MD3,V1 临时入口,V4 转 J1/J2)。**默认态**:7 个二元功能闸 `enabled=true`(未熔断);geo-block 默认 `activeCountries` 为空列表(无封锁),`enabled = activeCountries.length > 0`(非 boolean ON/OFF)。
-5. **(e) 系统健康**:服务端关键依赖健康面(事件管道 / 账本写入 / endpoint 可用性 / NTP 同步)的运营内部监控总览。
+1. **(a) feature flag 平台**:feature flag 清单 `[flag key / 当前态(on/off/灰度%)/ 适用范围(全量/cohort/Phase)/ 最近变更]`;A-B 实验值 server-driven(§9.11d.3),客户端读取派发结果。flag 切换经 ④ 确认弹窗(A3-MD1,理由必填)。**A3 feature flag 覆盖范围示例**:归 A3 的横切 flag(A-B 实验开关 / 灰度发布百分比 / 跨域通用能力开关);不归 A3 的反例(PHASES→H1 / chargeFailRate→H2 / 业务域 multiplier→对应业务域)。
+2. **(b) kill-switch config store**:6 闸(5 个二元功能闸 + 1 个 geo-block 闸)的服务端闸状态托管表 `[闸 key / 状态(enabled/disabled,geo-block 为 activeCountries 非空判定)/ 最近变更(operator / reason)]`——`withdraw 提现(后台应急新增,enforce 于 D 域提现 endpoint)/ staking 单档 / genesis / exchange / trial`(5 个二元功能闸,其中 4 个源自前端 §9.11d.1)+ `geo-block`(国家级屏蔽,结构 `{ key:'geo-block', enabled: countryList.length>0, activeCountries:[] }`);闸切换经 ④ 确认弹窗(熔断 A3-MD2 / 恢复 A3-MD3,V1 临时入口,V4 转 J1/J2)。**默认态**:5 个二元功能闸 `enabled=true`(未熔断);geo-block 默认 `activeCountries` 为空列表(无封锁),`enabled = activeCountries.length > 0`(非 boolean ON/OFF)。
+3. **(c) 系统健康**:服务端关键依赖健康面(事件管道 / 账本写入 / endpoint 可用性 / NTP 同步)的运营内部监控总览。
 
 **③ 可控参数**
 
 | 参数 | 默认值 | 范围 | 生效时机 | 影响 / 依据 |
 |---|---|---|---|---|
-| server time 同步源 | NTP 权威源(服务端单源) | 配置级(NTP 源切换) | 实时(下一同步周期) | §9.11a.4 当前时间权威值:Trial / Phase / 冷却 / 到期一切时间判定依赖;client 时钟仅显示 |
-| Idempotency-Key TTL | **24h** | 1h–72h | 实时(对新键生效) | §9.11e:资金/资产写入幂等去重窗口;防网络抖动 retry 重复扣款/入账 |
 | feature flag 清单 | 平台 flag 集(灰度发布开关) | 配置级(增删 flag 须发布) | 实时(切换即派发) | §9.11d.3:A-B 实验 / 灰度 server-driven;client 读派发结果 |
 | kill-switch 闸清单与默认态(6 闸) | 5 个二元功能闸 `enabled=true`(含后台应急新增 withdraw) + geo-block `activeCountries` 空(无封锁) | 各闸 enabled/disabled(geo-block 为国家列表) | 实时(熔断即服务端 enforce) | §9.11d.1(4 闸)+ 后台应急 withdraw:监管点名/紧急下架时全局停用闸;V1 由 A3 托管、V4 归 J1/J2 |
 | geo-block 国家列表 | 空(无封锁) | 国家码列表 | 实时(enforce 即生效) | §9.11d.1 Region geo-block;`enabled = countryList.length > 0`(非纯 boolean);通过同一 `PUT /api/admin/killswitch?key=geo-block` + activeCountries 字段实现,不设独立 endpoint |
 
 > **kill-switch 闸数量口径(6 闸:5 个二元功能闸 + 1 个 geo-block 国家列表闸)**:前端 §9.11d.1 Kill Switch 表原列 Staking pool 单档 / Genesis 一二级 pause / NEX↔USDT swap(exchange)/ Free-trial entry / NEX v2 Lock / Premium 订阅 / Region geo-block 等二元闸 + 「Risk-disclosure 版本号 + 司法辖区双维 re-ack」条款 re-ack 机制(非二元熔断闸,运营面归 I5 / J 域,V4)。**NEX v2 Lock / Premium 订阅两产品已下线,其 kill 闸随产品移除**;故后台 A3 托管的二元功能闸源自前端 §9.11d.1 的 4 个(Staking 单档 / Genesis pause / exchange swap pause / Free-trial entry)。**后台另在前端 §9.11d.1 之外应急新增 `withdraw` 提现闸**(enforce 于 D 域提现 endpoint,用于监管点名/挤兑场景一键冻结全平台提现流出)。故 A3 config store 托管 **6 个 kill-switch 闸(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw〕 + 1 个 geo-block 国家列表闸)**——其中 5 个功能闸为二元 enabled/disabled、geo-block 为国家列表语义(`enabled = activeCountries.length > 0`)。geo-block 默认态 = `activeCountries` 为空列表(无封锁);其余 5 个功能闸默认 `enabled=true`,与 B5② geo-block 灯语义声明完全对齐(A3 全章与 B5②④⑦ 统一使用「6 闸」整体计数口径)。
 
-> **默认值口径**:Idempotency-Key TTL 24h 取自前端 §9.11e（server dedup 窗口）；kill-switch 7 个功能闸默认 `enabled=true` 为未熔断常态（6 源自前端 §9.11d.1 + 后台应急新增 withdraw;熔断为监管/应急例外动作），geo-block 默认空列表(无封锁)。12 月节奏表 §6 未覆盖系统配置类参数（server time / 幂等键 / flag / 闸），本表按前端 §9.11a.4 / §9.11e / §9.11d.1 / §9.11d.3 现状规则设默认并注明依据（§1.3 默认值口径）。
+> **默认值口径**:kill-switch 5 个功能闸默认 `enabled=true` 为未熔断常态（4 源自前端 §9.11d.1 + 后台应急新增 withdraw;熔断为监管/应急例外动作），geo-block 默认空列表(无封锁)。12 月节奏表 §6 未覆盖系统配置类参数（flag / 闸），本表按前端 §9.11d.1 / §9.11d.3 现状规则设默认并注明依据（§1.3 默认值口径）。**server time 单源与 Idempotency-Key（24h dedup）为固定后端不变量,非本表可调参数**（平台强制,依据 §9.11a.4 / §9.11e）。
 
 **④ 操作动作**
 
@@ -559,10 +608,9 @@ A3 托管**平台级系统配置与横切技术约束**——server time 权威�
 | kill-switch 功能闸熔断(enable→disable,V1 临时入口) | 风控 / 财务 / 超管 | A3-MD2(理由必填;止血方向,确认即生效) | `admin.killswitch_toggled`(闸 key / disable / operator / reason) |
 | kill-switch 功能闸恢复(disable→enable,V1 临时入口) | 仅超管 | A3-MD3(理由必填+B1 红线预检) | `admin.killswitch_toggled`(闸 key / enable / operator / reason) |
 | geo-block 国家列表配置(V1 临时入口) | 风控 / 超管 | A3-MD4(理由必填;V4 转 J2;排除财务,见下注) | `admin.killswitch_toggled`(key=geo-block / 国家列表变更 / operator / reason) |
-| 系统参数配置(server time 源 / Idempotency TTL) | 仅超管 | A3-MD5(理由必填) | admin 审计事件(参数 / before / after / operator / reason) |
 | 查看系统健康 / flag 清单 / 闸状态 | 全角色(各按可见性裁剪)/ 只读审计可全量 | 否(只读) | admin 审计事件(查看范围 / operator) |
 
-> kill-switch 两个方向区别对待(2026-06 操作确认决议):**熔断(enable→disable)是止血方向**——监管点名 / 紧急下架场景需分钟级响应,风控/财务/超管单人经确认弹窗即时执行,执行后实时告警全体超管 + 全运营账号广播;**恢复(disable→enable)是放大流出方向**——执行权仅超管,且前置 B1 兑付覆盖率红线核验(低于红线 server 拒绝 422,弹窗内展示预检结果)。V1 由 A3 config store 临时承载切换入口,V4 由 J1(7 功能闸,含后台应急新增 withdraw)/ J2(geo-block)接管管理操作面。**执行角色分层依据**:① **feature flag** — 增长仅可执行与增长活动/A-B 实验相关的 flag(如 quest 倍率实验);涉及资金/Phase dial/风控行为的 flag 执行权为超管,服务端按 flag 分类校验执行角色资质。② **kill-switch 功能闸熔断** — 资金安全止血场景,财务可参与执行。③ **geo-block** — 为合规/监管驱动(非资金止血),财务不参与、风控主导;与功能闸熔断执行角色不一致是设计意图(分层依据不同),非笔误。
+> kill-switch 两个方向区别对待(2026-06 操作确认决议):**熔断(enable→disable)是止血方向**——监管点名 / 紧急下架场景需分钟级响应,风控/财务/超管单人经确认弹窗即时执行,执行后实时告警全体超管 + 全运营账号广播;**恢复(disable→enable)是放大流出方向**——执行权仅超管,且前置 B1 兑付覆盖率红线核验(低于红线 server 拒绝 422,弹窗内展示预检结果)。V1 由 A3 config store 临时承载切换入口,V4 由 J1(5 功能闸,含后台应急新增 withdraw)/ J2(geo-block)接管管理操作面。**执行角色分层依据**:① **feature flag** — 增长仅可执行与增长活动/A-B 实验相关的 flag(如 quest 倍率实验);涉及资金/Phase dial/风控行为的 flag 执行权为超管,服务端按 flag 分类校验执行角色资质。② **kill-switch 功能闸熔断** — 资金安全止血场景,财务可参与执行。③ **geo-block** — 为合规/监管驱动(非资金止血),财务不参与、风控主导;与功能闸熔断执行角色不一致是设计意图(分层依据不同),非笔误。
 
 **④a 交互与弹窗规格**
 
@@ -570,12 +618,11 @@ A3 托管**平台级系统配置与横切技术约束**——server time 权威�
 
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
-| feature flag 切换 | ②(c)flag 清单行内开关 / 灰度% 编辑 | 开关 / 行内按钮 | 按 flag 分类裁剪(增长仅见增长类);无权限角色只读 | 打开弹窗 A3-MD1 |
-| 功能闸熔断 | ②(d)闸状态表行内「熔断」 | 行内警示按钮 | 仅 `enabled` 态闸显示;风控/财务/超管渲染 | 打开弹窗 A3-MD2 |
-| 功能闸恢复 | ②(d)闸状态表行内「恢复」 | 行内按钮 | 仅 `disabled` 态闸显示;仅超管渲染 | 打开弹窗 A3-MD3 |
-| geo-block 配置 | ②(d)geo-block 行「编辑国家列表」 | 行内按钮 | 风控/超管渲染 | 打开弹窗 A3-MD4 |
-| 系统参数配置 | ②(a)/(b) 参数卡「编辑」 | 次按钮 | 仅超管渲染 | 打开弹窗 A3-MD5 |
-| 查看健康/清单/状态 | ②(a)-(e) 导航 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
+| feature flag 切换 | ②(a)flag 清单行内开关 / 灰度% 编辑 | 开关 / 行内按钮 | 按 flag 分类裁剪(增长仅见增长类);无权限角色只读 | 打开弹窗 A3-MD1 |
+| 功能闸熔断 | ②(b)闸状态表行内「熔断」 | 行内警示按钮 | 仅 `enabled` 态闸显示;风控/财务/超管渲染 | 打开弹窗 A3-MD2 |
+| 功能闸恢复 | ②(b)闸状态表行内「恢复」 | 行内按钮 | 仅 `disabled` 态闸显示;仅超管渲染 | 打开弹窗 A3-MD3 |
+| geo-block 配置 | ②(b)geo-block 行「编辑国家列表」 | 行内按钮 | 风控/超管渲染 | 打开弹窗 A3-MD4 |
+| 查看健康/清单/状态 | ②(a)-(c) 导航 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
 
 **(2) 弹窗规格**
 
@@ -618,15 +665,8 @@ A3 托管**平台级系统配置与横切技术约束**——server time 权威�
 - **错误态**:400 `REASON_REQUIRED` / 403(财务角色调用返回 403,见 ⑤)/ 409(列表已被他人变更,提示刷新)。
 - **成功反馈**:弹窗关闭;geo-block 行就地更新;toast「屏蔽列表已更新 · 已记审计」;事件 `admin.killswitch_toggled`(key=geo-block);实时告警全体超管。
 
-##### [A3-MD5] 系统参数配置确认
-- **功能**:变更横切技术参数(server time 同步源 / Idempotency-Key TTL),确认即生效,影响全平台。
-- **布局结构**:1. **信息区**:参数名 / 当前值 / 参数说明(引用 ③ 表「影响/依据」)。2. **影响预览区**:before→after 并排;TTL 缩短时提示行「缩短去重窗口将放宽重复请求拦截」。3. **输入区**:目标值(数字输入/下拉,按参数类型;范围校验同 ③ 表)+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认变更。
-- **错误态**:422(超出 ③ 表范围,server 返回合法区间)/ 400 `REASON_REQUIRED` / 403(非超管)。
-- **成功反馈**:弹窗关闭;参数卡就地更新;toast「参数已生效 · 已记审计」;admin 审计事件落 A2;实时告警全体超管。
-
 **⑤ 接口**
-- `GET /api/admin/system/config` — 返回系统配置 `{ serverTime:{ ntpSource, currentTs, driftMs }, idempotency:{ ttlHours, dedupHitCount24h }, health:{ pipeline, ledger, ntp, endpoints } }`。
-- `PUT /api/admin/system/config` — 系统参数配置(server time 源 / Idempotency TTL;仅超管,body 携 reason,server 校验非空 400)。
+- `GET /api/admin/system/config` — 返回系统健康 `{ health:{ pipeline, ledger, ntp, endpoints } }`(server time 单源 / Idempotency-Key 为固定后端不变量,**不在本 endpoint 配置面**;feature flag / kill-switch 走各自 endpoint)。
 - `GET /api/admin/feature-flags` / `PUT /api/admin/feature-flags` — feature flag 清单查询 / 切换(body 携 reason;服务端按 flag 分类校验执行角色资质;切换产 `admin.feature_flag_changed`)。
 - `GET /api/admin/killswitch` / `PUT /api/admin/killswitch`(**V1 临时**)— kill-switch 闸状态查询 / 切换 `{ key, enabled, activeCountries?, reason }`,geo-block 闸 `enabled = activeCountries.length > 0`(非纯 boolean,对齐 B5⑤)。**单一 endpoint 按 key 路由**:每次调用切换单一闸,**服务端按 key 与方向校验执行角色资质——功能闸熔断(→disabled)可为风控/财务/超管;功能闸恢复(→enabled)仅超管,且 server 前置 B1 覆盖率红线核验(低于红线返回 422 `COVERAGE_BELOW_REDLINE`);geo-block 拒绝财务(返回 403),仅风控/超管可执行**;geo-block 不设独立 endpoint(经同一 `PUT /api/admin/killswitch?key=geo-block` + activeCountries 字段实现)。**请求体须携 `Idempotency-Key`(server 24h dedup,防网络抖动重复熔断/恢复,§1.8 原则二.3)与 reason(缺失 400 `REASON_REQUIRED`);操作者经确认弹窗(A3-MD2~MD4)直接调用,写入与审计同事务,熔断动作另触发全运营账号广播**;切换产 `admin.killswitch_toggled`。**V4 落地后切换面迁移至 J1/J2 endpoint**,A3 `/killswitch` 标注「V1 临时,V4 转 J 域」。
 
@@ -641,11 +681,10 @@ server-canonical;**server time 为单源时间权威**(防 client clock skew,§9
 | kill-switch 功能闸熔断 | ✅ | ✅ | ✅ | — | — | — | — |
 | kill-switch 功能闸恢复 | ✅ | — | — | — | — | — | — |
 | geo-block 配置 | ✅ | — | ✅ | — | — | — | — |
-| 系统参数配置(time/idempotency) | ✅ | — | — | — | — | — | — |
 
 > **kill-switch 按方向分两行**:熔断(止血)财务/风控可执行,恢复(放大流出)仅超管 + B1 前置——服务端按 key 与方向区分执行资质(geo-block 拒绝财务返回 403,见 ⑤)。恢复方向执行权就高为超管独占,与 K4 模型发布、A1 账号治理同属 2026-06 操作确认决议的执行门槛就高类。
 
-审计记录字段:`操作者 / 角色 / 动作(feature_flag_change|killswitch_toggle|geo_block_config|system_param_change) / 对象(flag key|闸 key|参数名) / 前值 / 后值 / reason / 时间(ms)`。只读审计可全量追溯 feature flag 切换史、kill-switch 熔断/恢复史、系统参数变更史——这是平台级配置变更的取证地基。
+审计记录字段:`操作者 / 角色 / 动作(feature_flag_change|killswitch_toggle|geo_block_config) / 对象(flag key|闸 key) / 前值 / 后值 / reason / 时间(ms)`。只读审计可全量追溯 feature flag 切换史、kill-switch 熔断/恢复史——这是平台级配置变更的取证地基。
 
 **⑦ 风控 & 联动**
 - **server time 单源(核心约束)**:服务端时钟是全平台一切时间判定的唯一权威(Trial 倒计时 / Phase 月龄 / 提现冷却 / 锁仓到期),client 时钟仅 UI 显示、不参与判定(§9.11a.4 当前时间权威值);防用户改本地时钟套利（如伪造 Trial 到期、提前解锁）。H2 Trial / H1 Phase 的时间判定均依赖此单源。
@@ -660,7 +699,7 @@ server-canonical;**server time 为单源时间权威**(防 client clock skew,§9
   - `admin.feature_flag_changed` — 触发点:feature flag 切换确认执行;属性:`flag_key / before / after / scope(all|cohort|phase) / operator / reason / ts`;喂 A2 审计。
   - `admin.killswitch_toggled` — 触发点:kill-switch 闸熔断/恢复确认执行（含 geo-block 国家列表变更）;属性:`switch_key / action(enable|disable) / active_countries(geo-block 时)/ operator / reason / ts`;喂 A2 审计 + B5 风险雷达（状态灯变更,V1 阶段由 A3 产生此事件）。
 - **消费**:无用户侧事件;A3 为平台配置域,仅产 admin 审计事件。
-- **注**:`admin.feature_flag_changed` / `admin.killswitch_toggled` 须经 A4 schema registry 注册（归入 §2.4.5 ⑥ admin family）、经 A2 落 append-only 审计库;**B5② / B5⑦ 须补充反向引用「V1 阶段 kill-switch 状态来自后台 A3 系统配置（§2.3 A3）托管的 config store」**,与 A3① 形成双向引用;**B5⑧ 消费端事件名应对齐为 `admin.killswitch_toggled`(V1 阶段由 A3 产生;V4 J1/J2 落地后由 J 域产生)**。系统参数配置（server time / idempotency）变更产 admin 审计事件落 A2，无独立 KPI 事件（纯运营内部配置）。
+- **注**:`admin.feature_flag_changed` / `admin.killswitch_toggled` 须经 A4 schema registry 注册（归入 §2.4.5 ⑥ admin family）、经 A2 落 append-only 审计库;**B5② / B5⑦ 须补充反向引用「V1 阶段 kill-switch 状态来自后台 A3 系统配置（§2.3 A3）托管的 config store」**,与 A3① 形成双向引用;**B5⑧ 消费端事件名应对齐为 `admin.killswitch_toggled`(V1 阶段由 A3 产生;V4 J1/J2 落地后由 J 域产生)**。
 
 ### 2.4 埋点事件体系(A4)
 
@@ -945,7 +984,7 @@ Nexion 运营控制后台
 >
 > 全章遵循 §1.8 三条贯穿原则:**原则一**(双账本兑付覆盖率)由 B1 落地、B2/B5 引用;**原则二**(server-canonical + 操作确认)约束所有阈值配置与登记动作;**原则三**(埋点优先)——本章**所有数字无一例外派生自 A4 事件流(Ch2 §2.4)**,驾驶舱不做临时查询。[^ch4-principles]
 >
-> 跨域归属(§3.14)在本章的体现:兑付覆盖率权威归 **B1**;资金池水位深度页权威归 **D3**(B2 为其驾驶舱概览卡);Phase dial 权威归 **H1**(B4 只读展示,调整跳 H1);风险评分权威归 **K4**;kill-switch 状态在 V1 阶段由服务端 kill-switch config store 托管(§9.11d.1 定义其闸清单),V4 落地后非 geo-block 的 7 个功能闸(含后台应急新增 withdraw)由 **J1**(Kill-Switch 矩阵)接管管理操作面、geo-block 闸由 **J2**(Geo-block)接管(B5 只读聚合,处置跳对应域)。驾驶舱是"看板与跳转入口",**本身不持有处置权**。
+> 跨域归属(§3.14)在本章的体现:兑付覆盖率权威归 **B1**;资金池水位深度页权威归 **D3**(B2 为其驾驶舱概览卡);Phase dial 权威归 **H1**(B4 只读展示,调整跳 H1);风险评分权威归 **K4**;kill-switch 状态在 V1 阶段由服务端 kill-switch config store 托管(§9.11d.1 定义其闸清单),V4 落地后非 geo-block 的 5 个功能闸(含后台应急新增 withdraw)由 **J1**(Kill-Switch 矩阵)接管管理操作面、geo-block 闸由 **J2**(Geo-block)接管(B5 只读聚合,处置跳对应域)。驾驶舱是"看板与跳转入口",**本身不持有处置权**。
 
 [^ch4-principles]: §1.8 原标题/引言写「两条」原则但正文实含三条(原则一双账本 / 原则二 server-canonical / 原则三 埋点优先)。**已于本批(Ch4)同步修正** §1.8 标题与引言为「三条」——后台 PRD 内部笔误,非跨文档问题。
 
@@ -1470,7 +1509,7 @@ B3 服务的 **V1 KPI 收窄至 #1/#2/#3/#4**:**#1 Day0 接入**(分子与分母
 >
 > B5 **不直接处置任何风险**——提现放行/冻结落 D2、账户冻结/解冻落 C2/K、kill-switch 熔断/恢复落 J,均在目标域经各自确认弹窗(理由必填,§1.8 原则二.4)。B5 是"雷达 + 分诊跳转",这是"驾驶舱不持处置权"在风控域的体现。
 >
-> **kill-switch 切换入口的 V1 过渡(J1 / J2 分流)**:雷达 kill-switch 状态灯的**切换操作面在 J 域**,按闸类型分流——**非 geo-block 的 7 个功能闸**(withdraw〔后台应急新增〕 / staking / genesis / exchange / trial / NEXv2 / premium)切换面在 **J1(Kill-Switch 矩阵,V4 待建)**;**geo-block 闸**切换面在 **J2(Geo-block,V4 待建)**。V4 J1/J2 落地前,实际熔断/恢复操作由服务端 kill-switch config store 经 A3 系统配置(V1)或专属 config endpoint 执行(具体托管落点须开发侧确认),B5 切换入口标注「J1/J2 V4 待建」,V1 阶段点击跳转至当前承载该 config 的配置面。
+> **kill-switch 切换入口的 V1 过渡(J1 / J2 分流)**:雷达 kill-switch 状态灯的**切换操作面在 J 域**,按闸类型分流——**非 geo-block 的 5 个功能闸**(withdraw〔后台应急新增〕 / staking / genesis / exchange / trial)切换面在 **J1(Kill-Switch 矩阵,V4 待建)**;**geo-block 闸**切换面在 **J2(Geo-block,V4 待建)**。V4 J1/J2 落地前,实际熔断/恢复操作由服务端 kill-switch config store 经 A3 系统配置(V1)或专属 config endpoint 执行(具体托管落点须开发侧确认),B5 切换入口标注「J1/J2 V4 待建」,V1 阶段点击跳转至当前承载该 config 的配置面。
 
 **告警类型 → 分诊处置域映射**(上「一键跳处置域」行的语义展开;B5 只读分诊,任何处置均落目标域各自确认弹窗(理由必填),§1.8 原则二.4):雷达各维度(②)与未处理告警列表的每类信号,按下表分诊到承载处置的目标域。本表为**功能性分诊契约**(不含界面跳转路径);开发据「分诊处置域」列接线告警的下钻目标,据「处置动作语义」列确认处置不在 B5 落地。
 
@@ -1514,7 +1553,7 @@ B3 服务的 **V1 KPI 收窄至 #1/#2/#3/#4**:**#1 Day0 接入**(分子与分母
 - **成功反馈**:弹窗关闭;②(1) 挤兑预警区灯色就地重判;toast「挤兑阈值已更新 · 已记审计」;admin 审计事件(前后值 + 原因,④ 审计点)落 A2;实时告警超管 / 风控 lead;V4 J1 R1 自动熔断引用线随之更新(J1 引用不另持,§15 J1④)。
 
 **⑤ 接口**
-- `GET /api/admin/risk/radar` — 返回五维风险态势 `{ bankrun:{ ratio24h, light, withdraw24hUsdt, reserveUsdt, pressureRatio }, abnormalAccounts:{ count, byCategory }, withdrawBacklog:{ byState:[{state, count, amountUsdt}] }, killSwitches:[{ key, enabled }], coverage:{ ratio, light } }`(`pressureRatio` = 出金压力比 e(t),模型 §5.3,红线 0.7 固定);各维度数据**引用单一源**——挤兑分母储备来自 B1/D3、覆盖率来自 B1、kill-switch(**7 功能闸**:§9.11d.1 的 6 个二元功能闸 + 后台应急新增 withdraw)来自服务端 config store(V4 归 J1)、异常账户来自 K、队列来自 D2。**geo-block 闸不在本雷达 `killSwitches[]` 内,其状态归 J2 地域屏蔽面(见 ②)**。
+- `GET /api/admin/risk/radar` — 返回五维风险态势 `{ bankrun:{ ratio24h, light, withdraw24hUsdt, reserveUsdt, pressureRatio }, abnormalAccounts:{ count, byCategory }, withdrawBacklog:{ byState:[{state, count, amountUsdt}] }, killSwitches:[{ key, enabled }], coverage:{ ratio, light } }`(`pressureRatio` = 出金压力比 e(t),模型 §5.3,红线 0.7 固定);各维度数据**引用单一源**——挤兑分母储备来自 B1/D3、覆盖率来自 B1、kill-switch(**5 功能闸**:§9.11d.1 的 4 个二元功能闸 + 后台应急新增 withdraw)来自服务端 config store(V4 归 J1)、异常账户来自 K、队列来自 D2。**geo-block 闸不在本雷达 `killSwitches[]` 内,其状态归 J2 地域屏蔽面(见 ②)**。
 - **SSE 实时**:`GET /api/admin/risk/radar/stream`(Server-Sent Events)推送风险维度实时变化(挤兑比率 / kill-switch 状态 / 覆盖率灯),保证雷达实时性。
 - `PUT /api/admin/risk/bankrun-thresholds`(挤兑阈值配置,确认弹窗 B5-MD1:body 必携 `{reason}`,空值返 400 `REASON_REQUIRED`,确认即生效;**服务端强制校验 `bankrunRed > bankrunYellow`,违反返回 400**)。
 - `PUT /api/admin/risk/alert-subscription`(告警订阅)。
@@ -1534,7 +1573,7 @@ server-canonical;比率与金额均服务端权威实时计算。
 
 **⑦ 风控 & 联动**
 - **只读雷达,不直接处置**(核心约束):B5 五维全部为只读聚合 + 跳转,处置落 D / K / J(§3.14 各域权威)。
-- **kill-switch 状态单一源**:服务端 kill-switch config store 共托管 **8 闸**(§9.11d.1 的 6 个二元功能闸 + 后台应急新增 withdraw = 7 功能闸,再 + geo-block);V1 由 A3 系统配置或专属 config endpoint 托管(落点待开发确认)。**B5 雷达只读其中 7 个功能闸的 enabled 灯——geo-block 归 J2、不在 B5 功能闸灯内(见 ②)**。**V4 落地后由 J1(7 功能闸)/ J2(geo-block)接管为管理操作面**——J1/J2 是管理操作面而非 V1 状态存储源;B5 不持有 kill-switch 开关,只读 enabled 灯,避免双写造成状态分叉。(§3.14 跨域归属表目前**无 kill-switch 状态权威归属行**;在该行补入前,以本子模块此处声明为准。)
+- **kill-switch 状态单一源**:服务端 kill-switch config store 共托管 **6 闸**(§9.11d.1 的 4 个二元功能闸 + 后台应急新增 withdraw = 5 功能闸,再 + geo-block);V1 由 A3 系统配置或专属 config endpoint 托管(落点待开发确认)。**B5 雷达只读其中 5 个功能闸的 enabled 灯——geo-block 归 J2、不在 B5 功能闸灯内(见 ②)**。**V4 落地后由 J1(5 功能闸)/ J2(geo-block)接管为管理操作面**——J1/J2 是管理操作面而非 V1 状态存储源;B5 不持有 kill-switch 开关,只读 enabled 灯,避免双写造成状态分叉。(§3.14 跨域归属表目前**无 kill-switch 状态权威归属行**;在该行补入前,以本子模块此处声明为准。)
 - **覆盖率来自 B1,挤兑分母储备取 B1/D3**:兑付覆盖率告警维度引用 B1(§3.14:覆盖率权威归 B1),与 B1 告警条联动同源;挤兑比率分母(真实储备)取 B1/D3 储备口径。**注:§3.14 D3 引用方列遗漏 B5**(D3 行引用方现仅列 B1/B2/J1),B5⑤/⑦ 已声明挤兑分母储备取自 B1/D3、与 D3 存在消费关系。
 - **挤兑联动 B1/B2**:挤兑比率分子(24h 提现申请额)取 `withdraw.submitted` 24h 聚合;比率告警时联动 B2 到期预测判断流动性可覆盖天数 + 提示运营在 D 域调度提现节奏(经确认弹窗、理由必填)。
 - **风险评分来自 K4**:异常账户维度引用 K4 风险评分(§3.14),不另设评分模型。
@@ -3189,7 +3228,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 - 当前生效的 8 项 dial 实时值快照(取自 server-canonical 下发值)。
 
 **(b) 逐月 dial 矩阵(后台管理共 8 项,本模块核心)**
-- 矩阵维度:行 = 运营月(月 1–12,共 12 行),列 = 8 项 dial,单元格 = 该月该 dial 的权威取值。
+- 矩阵维度:行 = 运营月(默认月 1–12 共 12 行;**行数 = 节奏总时长,运营可配 9–24 月,见 ③(c2)**),列 = 8 项 dial,单元格 = 该月该 dial 的权威取值(超 12 月无 seed 的行回退末行值)。
 - 这是 §1.7 承诺的「完整逐月矩阵在 Ch7 展开」;§1.7 为 phase-band 汇总,**本矩阵为逐月逐值权威**。
 - 每个 dial 列标注**生效范围**(实时全量 / 仅新用户)——见 ④ 参数表「生效范围」列。
 - 每个单元格可下钻到沙盒预览(改值入口)。
@@ -3198,6 +3237,12 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 - **手动 pin**:将全局或指定 cohort 钉到某一 Phase(覆盖定时推进),用于演示、应急冻结、活动对齐。
 - **定时按月推进**:配置自动按运营月推进的时间表(切换日期 / 目标月)。
 - **cohort override**:按注册批次(cohort)整体加速或延迟其 phase 进度(相对全局月偏移),用于分批放量或分批收紧。
+
+**(c2) 节奏骨架配置(节奏总时长 / 当前运营月 / 本阶段进度)**
+- **节奏总时长**:运营可在 **9 / 12 / 15 / 18 / 24 月**间调整(默认 12,权威 = 12 月节奏表 §6.4)。改后逐月 dial 矩阵行数随之增减,6 个 Phase 段按各段月数权重等比重重分布(默认 12 月 = P1·2 / P2·2 / P3·3 / P4·1 / P5·2 / P6·2 月);当前运营月超出新总时长时自动收敛至末月。**下限 9 月**——低于 9 月会令最短的 P4 段被压缩为 0 月而不可达。控件为枚举勾选(不手输)。
+- **当前节奏位置**:设定 / 校准当前走到第几月(1..总时长)+ 本阶段已进行进度(0–100%);单弹窗多字段、各值独立写入。真实环境由 server cron 每月 1 日 00:00 UTC 自动推进,此为手动设定 / 校准入口。当前所处 Phase 段由当前月按月数权重派生(月 → 段),不单独设定。
+- 二者均为高敏写,经业务专属确认弹窗 + 理由必填 + A2 审计(同 (c) Phase 切换控制门槛:增长 lead / 超管)。
+- 改后 **B4 节奏状态看板 / H1 矩阵当前月高亮 / L 域 KPI(当前 Phase·月)/ 首页域脉搏 / D5 提现派发只读三项 / F3 双轨日封顶**全部同源派生跟随(单源,不抄快照)。
 
 **(d) 沙盒预览**
 - 选定一组 dial 改动后,预览其对全站下游的影响(D5 提现 cooldown/withdrawPenaltyFeeRate 面、F3 双轨封顶、受影响用户规模、预估资金流出方向变化)。
@@ -3258,6 +3303,16 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 > **`withdrawCooldownDays` 粒度差异注**:§13.4.1(简化实现)将月 6-8 合并入相邻 phase band(30d),月 9-10 为 45d;此处 **月 8=35d** 按 12 月节奏表 §6.4 权威分月值展开,与 §13.4.1 phase-band 汇总存在粒度差异(§13.4.1 无 35d 中间档)。
 >
 > **生效范围语义**:「仅新用户」= 改值仅影响该值生效后新注册 / 新建立关系的用户,存量用户保持其建立时锁定的加成基数;「实时全量」= 改值即时对全量用户的对应动作生效。每个 dial 在矩阵 (b) 与本表均明确标注,改 dial 时界面必须回显其生效范围,确认弹窗与审计记录须固化该范围。
+
+**节奏骨架参数(运营可配,真写键 `H1.rhythm.*`;对应 ③(c2)):**
+
+| 参数 | 默认值 | 范围 | 生效时机 | 影响 |
+|------|--------|------|----------|------|
+| `H1.rhythm.totalMonths` 节奏总时长 | 12 月 | 枚举 9 / 12 / 15 / 18 / 24 | 实时 | 逐月 dial 矩阵行数 + 各 Phase 段月数(按权重 [2,2,3,1,2,2] 等比重分布;< 9 月 P4 退化故下限 9) |
+| `H1.rhythm.currentMonth` 当前运营月 | 7(server cron 每月 +1) | 1..总时长 | 实时 | 当前 Phase 段(月→段权重派生)+ 当月派发 dial 值(D5/F3 等下游同源派生) |
+| `H1.rhythm.phaseProgressPct` 本阶段进度 | 58% | 0–100 | 实时 | B4 节奏看板进度 / 路线图填充 |
+
+> **当月派发值单源派生(2026-06-24)**:D5 提现派发只读三项(冷却 / 惩罚费率 / 合规留存)与 F3 双轨日封顶的「当前派发值」**= 逐月 dial 矩阵在 `H1.rhythm.currentMonth` 行的取值**(单源,随当前运营月实时流转),不另设镜像快照——杜绝改当前月后下游展示与 H1 矩阵脱钩(键名亦统一 dial 规范名,零错配)。
 
 **Cohort override 数据**:cohort 标识(注册批次,数据类型为 `YYYY-Www` 注册周字符串,对齐 §2.4.4 cohort 属性)、相对全局月偏移(加速 +N 月 / 延迟 −N 月)、override 生效区间、命中用户规模快照。
 
@@ -4244,8 +4299,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 |---|---|---|---|
 | **OperatorAccount**(运营账号) | `accountId / displayName / role(super\|finance\|risk\|growth\|content\|support\|auditor)/ permissionTier(member\|lead)/ twoFactorBound(bool)/ status(enabled\|disabled\|locked)/ lastLoginAt / activeSessions[]{sessionId,device,ip,startedAt}` | Ch2 A1(§2.1) | 平台运营方内部员工后台登录账号,**与 C 域用户账户(`User`)是两套独立实体**;不持用户资产、不入 A4 用户事件流。强制 2FA;新建默认无写权;系统强制保持 ≥ 2 个有效超管。`role` 固定为 §1.1 七角色枚举,`permissionTier` 区分 member / lead(lead 承担高敏执行门槛资质)。`status` 含 `locked` 临时锁定态(对应 A1③ 双档锁定:短锁 15min / 长锁档,与 C5 用户侧 `status` 处理对称) |
 | **AuditLog**(审计日志) | `operator / role / action / object{domain,objectId} / before / after / reason / ip / ts(ms)` | Ch2 A2(§2.2) | **append-only,不可删改**(无更新 / 删除 endpoint);全域所有高敏写操作的统一留痕地基(§3.14:审计权威归 A2)。各章「⑥ 权限 & 审计」段的审计字段均为本统一 schema 的实例化。高敏动作记录(按 A2③ 高敏动作清单过滤)构成 A2②b 高敏操作流水视图并触发实时告警。`Idempotency-Key`(资金 / 资产类动作,可选字段)按 A2⑥ 源章 schema 一并留痕,与 endpoint 层 `Idempotency-Key` header 同源、非独立核心字段。保留期 ≥ 13 个月(对齐 §2.4.9) |
-| **SystemConfig**(系统配置) | `serverTime{ntpSource,currentTs,driftMs} / idempotency{ttlHours(默认24),dedupHitCount24h} / featureFlags[]{key,state(on\|off\|灰度%),scope(all\|cohort\|phase)} / health{pipeline,ledger,ntp,endpoints}` | Ch2 A3(§2.3) | 平台级横切技术约束的托管模型;server time 单源、Idempotency-Key 策略、feature flag 平台、系统健康。`featureFlags` 仅承接无明确业务域归属的横切 flag(PHASES 全表归 H1、chargeFailRate 归 H2) |
-| **KillSwitchConfig**(熔断闸配置) | `key(withdraw\|staking\|genesis\|exchange\|trial\|nexv2\|premium\|geo-block)/ enabled(bool;geo-block 为 activeCountries.length>0)/ activeCountries[](仅 geo-block)/ lastChangedAt / operator / reason` | Ch2 A3(§2.3,§9.11d.1 + 后台应急新增 withdraw) | **8 闸**(7 个二元功能闸〔6 源自前端 §9.11d.1 + 后台应急新增 withdraw〕 + 1 个 geo-block 国家列表闸);7 个功能闸默认 `enabled=true`、geo-block 默认 `activeCountries` 空。本实体为 A3 SystemConfig 下的子配置对象(A3 config store 的 kill-switch 子域,A3④d),**非独立 DB 表**。**每次闸切换(PUT)经确认弹窗 + 理由必填 + 幂等执行**(熔断方向执行=风控/财务/超管;恢复方向执行=仅超管 + B1 红线前置 422;与 §9.2 API 总表确认弹窗=是 及 A3④、§2.2 高敏动作清单一致;切换 `Idempotency-Key` 由 A3⑤ 正文明确,§1.8 原则二.3)。V1 由 A3 config store 托管为存储端权威,V4 切换面归 J1(功能闸)/ J2(geo-block);B5 风险雷达只读其状态灯 |
+| **SystemConfig**(系统配置) | 运营托管:`featureFlags[]{key,state(on\|off\|灰度%),scope(all\|cohort\|phase)} / health{pipeline,ledger,ntp,endpoints}`;**固定后端不变量(运营不可调、无配置面)**:`serverTime{ntpSource,currentTs,driftMs}` 单源 / `idempotency{ttlHours(24),dedupHitCount24h}` Idempotency-Key 去重 | Ch2 A3(§2.3) | 平台级横切配置托管模型;**运营面仅 feature flag 平台 + 系统健康**(kill-switch 子配置见 KillSwitchConfig)。server time 单源、Idempotency-Key 为**固定后端不变量**(约束见 A3⑦,运营无配置卡)。`featureFlags` 仅承接无明确业务域归属的横切 flag(PHASES 全表归 H1、chargeFailRate 归 H2) |
+| **KillSwitchConfig**(熔断闸配置) | `key(withdraw\|staking\|genesis\|exchange\|trial\|geo-block)/ enabled(bool;geo-block 为 activeCountries.length>0)/ activeCountries[](仅 geo-block)/ lastChangedAt / operator / reason` | Ch2 A3(§2.3,§9.11d.1 + 后台应急新增 withdraw) | **6 闸**(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw〕 + 1 个 geo-block 国家列表闸);5 个功能闸默认 `enabled=true`、geo-block 默认 `activeCountries` 空。本实体为 A3 SystemConfig 下的子配置对象(A3 config store 的 kill-switch 子域,A3④d),**非独立 DB 表**。**每次闸切换(PUT)经确认弹窗 + 理由必填 + 幂等执行**(熔断方向执行=风控/财务/超管;恢复方向执行=仅超管 + B1 红线前置 422;与 §9.2 API 总表确认弹窗=是 及 A3④、§2.2 高敏动作清单一致;切换 `Idempotency-Key` 由 A3⑤ 正文明确,§1.8 原则二.3)。V1 由 A3 config store 托管为存储端权威,V4 切换面归 J1(功能闸)/ J2(geo-block);B5 风险雷达只读其状态灯 |
 | **EventSchema registry**(埋点 schema 注册表) | `eventName(domain.object_action)/ propertiesSchema / version / piiPolicy(禁原始 PII)/ ownerDomain` | Ch2 A4(§2.4.8) | A4 owns;事件名 / 属性 schema + 版本的单一治理源。schema 变更经超管确认弹窗(A2-MD1,理由必填)。所有各章声明「须经 A4 schema registry 注册」的 `admin.*` / `risk.*` / `trial.*` 事件在此登记(详见 §9.3 ④) |
 | **WithdrawRule**(提现风控规则) | `ruleId / dimension(金额\|速度\|新账户\|地址信誉)/ condition / action(delay\|freeze\|manual)/ state(draft\|active\|paused\|archived)/ priority` | Ch8 K3(§Ch8 K3) | 四维提现风控规则;状态机 `draft→active⇄paused→archived`,`archived→active/paused` 禁止(409)。`action` 命中动作枚举为 `delay\|freeze\|manual`(对齐 K3③ `ruleActionMap` 范围);**`pass`(自动放行)是路由结论输出(K3⑤ `routingStats.pass`),非规则可配命中动作**——K3⑧ 明确 `pass` 自动放行无 `risk.withdraw_held` 事件、为隐式默认路径。路由结论喂 D2;`active⇄paused` 经确认弹窗(理由必填,执行=风控 lead/超管)。可配阈值见 K3③(`largeAmountUsdt` 默认 $1,000 等)。`draft` 态 K3 正文隐含(K3⑤「恢复历史规则须走新建 draft 流程」) |
 | **RiskScore**(单用户风险分) | `userId / score(0–100)/ band(low\|mid\|high)/ dimensions[]{dim,hit,contribution}/ overridden(bool)/ modelVersion / asOf` | Ch8 K4(§Ch8 K4) | **server-canonical 唯一评分源**;D2 / C1 / B5 复用同一份分数,不各自重算(§3.14)。评分可解释(每分可追溯命中维度与贡献);人工覆盖强制 reason + 审计 |
@@ -4280,8 +4335,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | A1 | `/api/admin/accounts/:id/logout` | POST | 强制登出运营账号 session(仅超管,须 reason) | Ch2 A1 | — | — |
 | A2 | `/api/admin/audit?filter=` | GET | 审计日志查询(server 强制可见性 filter;append-only) | Ch2 A2 | — | — |
 | A2 | `/api/admin/audit?filter=&sensitive=true` | GET | 高敏操作流水(审计库按高敏动作清单过滤的子视图,A2②b) | Ch2 A2 | — | — |
-| A3 | `/api/admin/system/config` | GET | 系统配置(server time / idempotency / health) | Ch2 A3 | — | — |
-| A3 | `/api/admin/system/config` | PUT | 系统参数配置(server time 源 / Idempotency TTL) | Ch2 A3 | 是 | — |
+| A3 | `/api/admin/system/config` | GET | 系统健康(health;server time / idempotency 为固定后端不变量,不在配置面) | Ch2 A3 | — | — |
 | A3 | `/api/admin/feature-flags` | GET / PUT | feature flag 清单查询 / 切换 | Ch2 A3 | 是(PUT) | — |
 | A3 | `/api/admin/killswitch` | GET / PUT | kill-switch 6 闸状态查询 / 切换(5 功能闸〔含后台应急新增 withdraw〕 + geo-block;按 key 路由;geo-block `enabled=activeCountries.length>0`;V1 临时,V4 转 J1/J2) | Ch2 A3 | 是(PUT) | 是(PUT)<sup>[a3]</sup> |
 | B1 | `/api/admin/treasury/coverage` | GET | 兑付覆盖率 + 双账本汇总(`reserveTotalUsdt` 引用 D3) | Ch4 B1 | — | — |
@@ -4408,7 +4462,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 无权角色即使绕过前端调用 endpoint,服务端授权层仍返回 403(详见 ⑤ RBAC)。
 
-**② Idempotency-Key(幂等去重)**:所有资金 / 资产写操作(提现放行 / 退款、储备注入、人工资产调整、KYC 变更、账户冻结 / 解冻(C2)、批量冻结、试用强制扣款、Phase / Trial 配置写、kill-switch 切换、账单调整、A2 审批放行)强制携 `Idempotency-Key`,server 在 TTL(默认 **24h**,A3 可配 1h–72h)内 dedup;网络抖动 retry 不致重复扣款 / 重复入账 / 重复放行 / 重复冻结(§9.11e)。TTL 策略由 A3 SystemConfig 托管。
+**② Idempotency-Key(幂等去重)**:所有资金 / 资产写操作(提现放行 / 退款、储备注入、人工资产调整、KYC 变更、账户冻结 / 解冻(C2)、批量冻结、试用强制扣款、Phase / Trial 配置写、kill-switch 切换、账单调整、A2 审批放行)强制携 `Idempotency-Key`,server 在固定 TTL(**24h**,固定后端不变量、运营不可调,§9.11e)内 dedup;网络抖动 retry 不致重复扣款 / 重复入账 / 重复放行 / 重复冻结。TTL 为平台级固定常量,非 A3 运营配置项(A3⑦)。
 
 > **账户安全操作幂等(已核源)**:**账户安全操作(密码重置 / disable-2fa)亦携 `Idempotency-Key`**——C5⑤ 正文( / 1634)对 `invalidate-password` / `disable-2fa` 均明确「`Idempotency-Key` 必带」,C2⑤同向标注账户写操作携 `Idempotency-Key`(§1.8 原则二.3),故二者纳入本幂等范围(对齐 §9.2 C5 行「是」+ 脚注 [c5])。
 >
@@ -4436,7 +4490,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 **⑥ 实时(SSE / WS)**:态势感知类视图采用服务端推送保证实时性——驾驶舱 B5 风险雷达(`/api/admin/risk/radar/stream`,SSE:挤兑比率 / kill-switch 状态 / 覆盖率灯实时变化)为 V1 已定义的实时端点;B1/B2 水位、B3 漏斗、D2 提现队列态势的实时刷新同采此模式(具体端点随对应域实现细化)。客户端订阅服务端权威状态变化,不本地推进状态。
 
 **⑦ MOCK→REAL 迁移**:V1 前端 mock 实现迁移至 server-side 的清单——下列当前在客户端的能力须在真后台对接时迁为服务端权威,各条引用对应正确锚点:
-- `mockServerNow` → A3 server time 单源,NTP 权威(§9.11a.4)
+- `mockServerNow` → server time 单源(固定后端不变量,NTP 权威,§9.11a.4;A3⑦ 约束,运营无配置面)
 - `chargeFailRate` RNG → H2 server-only,前端永不可知(§9.11d.3)
 - trial / 提现 / KYC 状态机推进 → server-canonical 状态机,client 仅订阅(§9.11f)
 - ID mint(bill / order / withdrawal / card)→ server mint(§9.11d.2)

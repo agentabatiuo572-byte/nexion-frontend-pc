@@ -3,12 +3,13 @@
 /**
  * B4 节奏状态(总览驾驶舱 · 只读)。
  * UI 严格对齐设计稿 project/「B4 节奏状态.html」:
- *   HERO  阶段指标条(4)+ 12 月节奏阶段路线图(P1→P6 强度柱 + stepper + 当前进度徽标)
+ *   HERO  阶段指标条(4)+ 节奏阶段路线图(P1→P6 强度柱 + stepper + 当前进度徽标;当前态随节奏单源流转)
  *   ROW2  近 8 月月新增入金柱 + 本月运营预算分配环图
  *   STRIP 新增 / 流出比趋势(大数 + 面积折线 + 健康线 1.2 + 逐点标值)
  * 顶部域标 / 导航 / 实时态由 console 外壳 + 全局顶栏承载(BPageHeader 已省略设计稿 .b-nav / .b-live)。
- * 数据 mock(确定性),与注册表 lib/admin/registry/b.ts 的 /overview/rhythm 口径一致。
- * 本页为只读展示;阶段切换 / 参数调整跳 F 域 Phase dial(controlLink → /growth/phase)。
+ * 当前阶段 / 运营月 / 阶段进度 / 总时长 = rhythmState(pget) ← H1.rhythm.* 单源(运营在 H1 可配),本页只读同源镜像,绝不抄快照;
+ * 其余(月新增入金 / 预算分配 / 比率趋势)为确定性 mock(本任务范围外)。
+ * 本页为只读展示;阶段切换 / 节奏骨架调整跳 H1 Phase 调度器(controlLink → /growth/phase)。
  */
 import "../b-domain.css";
 import "./rhythm.css";
@@ -16,27 +17,17 @@ import { useId } from "react";
 import { Activity, BarChart3, PieChart, TrendingUp } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import { LEDGER } from "@/lib/mock/admin/ledger";
-import { PHASES as PHASE_NODES } from "@/lib/mock/admin/command-center";
+import { PHASES as PHASE_NODES, rhythmState } from "@/lib/mock/admin/command-center";
+import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
+import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-// ---- 12 月节奏阶段。阶段名单一源 = command-center.PHASES(曾本地另写「渗透/成熟」与权威「激活/深化」分叉,
-// 2026-06-10 收敛);强度指数/进度态为本节奏页专属演示维度。当前 P3 扩张期,阶段进度 58%。 ----
+// ---- 节奏阶段强度(演示维度,6 phase 一一对应,本页专属)。阶段名单 + 当前位置 = command-center 节奏单源:
+// 当前阶段 / 月份 / 进度 / done-cur-next 态全部 rhythmState(pget) 派生(运营在 H1 可配),本页只读镜像,绝不抄快照。 ----
 type PhaseState = "done" | "cur" | "next";
-const PHASE_META: { intensity: number; state: PhaseState }[] = [
-  { intensity: 55, state: "done" },
-  { intensity: 78, state: "done" },
-  { intensity: 92, state: "cur" },
-  { intensity: 70, state: "next" },
-  { intensity: 40, state: "next" },
-  { intensity: 18, state: "next" },
-];
-const PHASES = PHASE_NODES.map((n, i) => ({ p: n.code, nm: n.name, ...PHASE_META[i] }));
-const CUR_IDX = 2; // P3
-const CUR_PROG = 0.58; // 本阶段已进行 58%
-const MAX_I = Math.max(...PHASES.map((p) => p.intensity));
-// 进度填充百分比:已走完 P1→P3 节点 + P3→P4 段的 58%(节点等距分布于 0..100)。
-const FILL_PCT = r1(((CUR_IDX + CUR_PROG) / (PHASES.length - 1)) * 100);
+const PHASE_INTENSITY = [55, 78, 92, 70, 40, 18];
+const MAX_I = Math.max(...PHASE_INTENSITY);
 
 // ---- 近 8 月月新增入金(万 USDT),末月为本月(brand 强调)。 ----
 const INFLOW = [62, 84, 118, 142, 168, 190, 205, 198];
@@ -82,6 +73,22 @@ const ratioChart = (() => {
 
 export default function RhythmPage() {
   const gradId = useId().replace(/:/g, ""); // SVG gradient id 唯一化(与 B5 一致,防组件化后碰撞)
+  // 节奏骨架同源镜像:读运营可配的 H1.rhythm.*(seed 回退,水合前 = seed 防 hydration mismatch);
+  // 当前阶段 / 月份 / 进度 / 路线图全派生,不抄快照(↔ H1 调度器单源)。
+  const params = usePlatformConfig((s) => s.params);
+  const hydrated = useOpsHydrated();
+  const rs = rhythmState((k) => (hydrated ? params?.[k] : undefined));
+  const phaseLabel = `${rs.currentPhase} ${rs.currentPhaseName}期`;
+  const curIdx = Math.max(0, PHASE_NODES.findIndex((n) => n.code === rs.currentPhase));
+  const curProg = rs.phaseProgressPct / 100;
+  // 进度填充百分比:已走完节点 + 当前段内进度(节点等距分布于 0..100)。
+  const fillPct = Math.min(100, r1(((curIdx + curProg) / (PHASE_NODES.length - 1)) * 100)); // 末阶段(P6)进度>0 时封顶 100%,防进度条/徽标越界
+  const phases = PHASE_NODES.map((n, i) => ({
+    p: n.code,
+    nm: n.name,
+    intensity: PHASE_INTENSITY[i],
+    state: (i < curIdx ? "done" : i === curIdx ? "cur" : "next") as PhaseState,
+  }));
   return (
     <div className="dkpage bpage rhythmpage">
       <BPageHeader
@@ -89,7 +96,7 @@ export default function RhythmPage() {
         title="节奏状态"
         desc={
           <>
-            12 个月运营节奏(<b>P1 拉新 → P6 软收场</b>)现在走到哪个阶段、进度多少,以及几个关键节奏指标。给决策层判断该扩张还是该收紧用,和 <b>F 域参数中枢</b>联动(本页只读)。
+            {rs.totalMonths} 个月运营节奏(<b>P1 拉新 → P6 软收场</b>)现在走到哪个阶段、进度多少,以及几个关键节奏指标。给决策层判断该扩张还是该收紧用,和 <b>F 域参数中枢</b>联动(本页只读)。
           </>
         }
         ctaLabel="调 Phase dial"
@@ -102,15 +109,15 @@ export default function RhythmPage() {
           <div className="pm">
             <div className="k">
               当前阶段
-              <span className="help" data-tip="12 月运营节奏共 6 个 Phase,当前处于 P3 扩张期(第 7 个月)。">?</span>
+              <span className="help" data-tip={`${rs.totalMonths} 月运营节奏共 6 个 Phase,当前处于 ${phaseLabel}(第 ${rs.currentMonth} 个月)。`}>?</span>
             </div>
-            <div className="v" style={{ color: "var(--brand)" }}>P3 扩张期</div>
-            <div className="d">第 7 / 12 月</div>
+            <div className="v" style={{ color: "var(--brand)" }}>{phaseLabel}</div>
+            <div className="d">第 {rs.currentMonth} / {rs.totalMonths} 月</div>
           </div>
           <div className="pm">
             <div className="k">阶段进度</div>
-            <div className="v">58<small>%</small></div>
-            <div className="d">P3 已进行</div>
+            <div className="v">{rs.phaseProgressPct}<small>%</small></div>
+            <div className="d">{rs.currentPhase} 已进行</div>
           </div>
           <div className="pm">
             <div className="k">
@@ -129,13 +136,13 @@ export default function RhythmPage() {
 
         <div className="roadmap">
           <div className="rm-line">
-            <div className="rm-fill" style={{ width: `${FILL_PCT}%` }} />
+            <div className="rm-fill" style={{ width: `${fillPct}%` }} />
           </div>
-          <div className="cur-badge" style={{ left: `calc(10px + (100% - 20px) * ${FILL_PCT / 100})` }}>
-            进行 58%
+          <div className="cur-badge" style={{ left: `calc(10px + (100% - 20px) * ${fillPct / 100})` }}>
+            进行 {rs.phaseProgressPct}%
           </div>
           <div className="rm-cols">
-            {PHASES.map((ph) => (
+            {phases.map((ph) => (
               <div key={ph.p} className={`rm-col${ph.state === "done" ? " done" : ph.state === "cur" ? " cur" : ""}`}>
                 <div className="rm-int">
                   <div className="ib" style={{ height: `${r1((ph.intensity / MAX_I) * 88)}px` }}>
@@ -273,7 +280,7 @@ export default function RhythmPage() {
       </section>
 
       <p className="b-foot">
-        当前处于 <b>P3 扩张期</b>(第 7/12 月,阶段进度 58%),新增 / 流出比 1.42 仍高于扩张健康线 1.2 但较上窗 1.51 回落。节奏引擎建议维持放量,并在比率跌破 1.2 或覆盖率触红线 {LEDGER.redlinePct}% 时切入 <b>P5 收紧</b>。阶段切换需 F1 参数中枢 + 决策层确认。
+        当前处于 <b>{phaseLabel}</b>(第 {rs.currentMonth}/{rs.totalMonths} 月,阶段进度 {rs.phaseProgressPct}%),新增 / 流出比 1.42 仍高于扩张健康线 1.2 但较上窗 1.51 回落。节奏引擎建议维持放量,并在比率跌破 1.2 或覆盖率触红线 {LEDGER.redlinePct}% 时切入 <b>P5 收紧</b>。阶段切换需 F1 参数中枢 + 决策层确认。
       </p>
     </div>
   );

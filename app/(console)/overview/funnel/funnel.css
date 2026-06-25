@@ -10,16 +10,52 @@
 .funnelpage .b3-hero { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; align-items: stretch; }
 @container bpage (max-width: 980px) { .funnelpage .b3-hero { grid-template-columns: 1fr; } }
 
-/* ----- 真锥形漏斗(clip-path polygon 逐级收窄) ----- */
+/* ----- 真锥形漏斗(clip-path polygon 逐级收窄) -----
+   名称/层级居中堆叠在数字上下:落在梯形对称轴上,clip-path 永不裁切
+   (旧版 .nm left:16px / .lc right:16px 绝对定位会被锥形边角裁掉,只剩数字)。 */
 .funnelpage .funnel-stage { position: relative; height: 66px; margin-bottom: 3px; display: flex;
-  align-items: center; justify-content: center;
+  flex-direction: column; align-items: center; justify-content: center; gap: 1px; line-height: 1.12;
   /* 亮底深字:统一用品牌深墨提升对比,免逐段硬编码 */
-  color: color-mix(in srgb, var(--brand) 26%, #000); }
-.funnelpage .funnel-stage .ct { font-family: var(--font-jet-mono), monospace; font-size: 21px; font-weight: 600;
-  letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.funnelpage .funnel-stage .nm { position: absolute; left: 16px; font-size: 13px; font-weight: 600; }
-.funnelpage .funnel-stage .lc { position: absolute; right: 16px; font-family: var(--font-jet-mono), monospace;
-  font-size: 11px; opacity: .72; }
+  color: color-mix(in srgb, var(--brand) 26%, #000);
+  /* hover 联动:仅合成器友好属性(transform/opacity/filter),60fps 安全 */
+  transform-origin: center; will-change: transform, filter;
+  transition: transform .22s var(--ease-out, cubic-bezier(.16,1,.3,1)), opacity .2s ease, filter .22s ease; }
+.funnelpage .funnel-stage .nm { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.funnelpage .funnel-stage .ct { font-family: var(--font-jet-mono), monospace; font-size: 20px; font-weight: 600;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.funnelpage .funnel-stage .lc { font-family: var(--font-jet-mono), monospace; font-size: 10.5px; font-weight: 600;
+  opacity: .66; letter-spacing: .02em; white-space: nowrap; }
+
+/* ----- 漏斗段高亮:直接 hover 或被右侧「阶段转化」卡片联动(is-active 由 React focus 驱动) ----- */
+/* 高亮段:微亮 + 轻放大,并沿锥形轮廓投同色光晕(drop-shadow 跟随 clip-path 形状);其余段保持原样不变暗 */
+.funnelpage .funnel-stage.is-active { transform: scale(1.028); z-index: 2;
+  filter: brightness(1.07) drop-shadow(0 4px 13px color-mix(in srgb, var(--stage-color, var(--brand)) 45%, transparent)); }
+@media (prefers-reduced-motion: reduce) {
+  .funnelpage .funnel-stage { transition: none; }
+  .funnelpage .funnel-stage.is-active { transform: none; }
+}
+
+/* ----- 段详情浮层(仅直接 hover 的段显示;pointer-events:none 让指针穿透回锥形,防闪烁) ----- */
+.funnelpage .stage-anchor { position: relative; }
+.funnelpage .stage-tip { position: absolute; right: 10px; z-index: 5; pointer-events: none;
+  min-width: 172px; padding: 9px 11px 10px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 26px color-mix(in srgb, #000 42%, transparent);
+  animation: stageTipIn .14s var(--ease-out, cubic-bezier(.16,1,.3,1)); }
+.funnelpage .stage-tip .st-h { display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
+  padding-bottom: 7px; border-bottom: 1px solid var(--border); }
+.funnelpage .stage-tip .st-nm { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.funnelpage .stage-tip .st-lc { font-family: var(--font-jet-mono), monospace; font-size: 10.5px;
+  font-weight: 600; color: var(--ink-3); }
+.funnelpage .stage-tip .st-flag { margin-left: auto; font-size: 10.5px; font-weight: 600;
+  padding: 1px 7px; border-radius: 6px; background: var(--brand-2-soft); color: var(--brand-2); }
+.funnelpage .stage-tip .st-rows { display: flex; flex-direction: column; gap: 5px; margin: 0; }
+.funnelpage .stage-tip .st-rows > div { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.funnelpage .stage-tip dt { font-size: 11.5px; color: var(--ink-3); margin: 0; }
+.funnelpage .stage-tip dd { font-family: var(--font-jet-mono), monospace; font-size: 12px; font-weight: 600;
+  color: var(--ink); font-variant-numeric: tabular-nums; margin: 0; }
+@keyframes stageTipIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .funnelpage .stage-tip { animation: none; } }
 
 /* 段间转化标记 */
 .funnelpage .conv-mark { display: flex; align-items: center; gap: 8px; margin: -1px 0 -1px auto; width: fit-content;
@@ -32,8 +68,13 @@
 /* ----- 阶段转化轨 ----- */
 .funnelpage .trans { display: flex; flex-direction: column; gap: 10px; }
 .funnelpage .trans .t { border-radius: 11px; background: var(--surface-2);
-  padding: 13px 15px; }
+  padding: 13px 15px; transition: box-shadow .18s ease, background .18s ease; }
 .funnelpage .trans .t.bad { background: var(--brand-2-soft); }
+/* 被漏斗段联动 / 直接 hover:内描边光圈 + 抬升,标出与左侧漏斗段的对应关系 */
+.funnelpage .trans .t.is-active { background: var(--surface-3);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--brand) 55%, transparent); }
+.funnelpage .trans .t.bad.is-active { background: var(--brand-2-soft);
+  box-shadow: inset 0 0 0 1.5px var(--brand-2); }
 .funnelpage .trans .t .tr1 { display: flex; align-items: baseline; gap: 9px; }
 .funnelpage .trans .t .tr1 .nm { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
 .funnelpage .trans .t .tr1 .v { font-family: var(--font-jet-mono), monospace; font-size: 24px; font-weight: 600;

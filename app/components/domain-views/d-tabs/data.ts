@@ -200,11 +200,10 @@ export const OWN_PARAMS: { key: string; name: string; cur: string; sub: string; 
 ];
 
 // H1 Phase 派发只读三项(权威 H1,/growth/phase;PUT 携带返 422 PHASE_PARAM_READONLY)。
-// 当前 = P3 · 月 7(对齐 PHASE 单源;月 8=35d 为 12 月节奏表权威目标值,前端简化实现缺中间档须补)。
-// 现值同源:H1 真写键 H.phase.dial.<h1Key>(h-view 同键),D5 视图 pget 同源镜像、seed 仅回落——
-// H1 调 dial 后本页/stat 实时跟(曾硬编码快照,「同 X 展示必同源」audit 修正)。
+// 现值同源:D5 视图经 dialValueAt(pget, <DIAL_KEYS 名>, rs.currentMonth) 直接派生自 H1 逐月旋钮矩阵,
+// 随当前运营月实时流转(2026-06-24 audit:废除旧 H.phase.dial 镜像 + 错配 h1Key/seed,改矩阵单源派生)。
 export const PHASE_RO = {
-  cooldown: { name: "冷却天数", h1Key: "withdrawCooldownDays", seed: "30", fmt: (v: string) => (/^\d+$/.test(v) ? `${v}d(当前)` : `${v}(当前)`), sub: "两次提现之间的间隔 · 随运营月份阶梯上调", segs: [["月 1–7", "30 天", true], ["月 8", "35 天", false], ["月 9+", "45 天", false]] as [string, string, boolean][] },
-  nexGate: { name: "提现惩罚费率", h1Key: "nexGate", seed: "20", fmt: (v: string) => (/^\d+(\.\d+)?$/.test(v) ? `${v}%(当前)` : `${v}(当前)`), sub: "无 NEX 抵扣时按提现金额收的费率(烧 NEX 可减免至 0)", segs: [["月 1–8", "20%", true], ["月 9–10", "25%", false], ["月 11–12", "30%", false]] as [string, string, boolean][] },
-  hold: { name: "增强合规审查", h1Key: "complianceHoldEnabled", seed: "未激活(P5 起)", fmt: (v: string) => v, sub: "激活后大额提现进延长审查 · 月 8(P5 带)起整带开启,无月内拐点" },
+  cooldown: { name: "冷却天数", fmt: (v: string) => (/^\d+$/.test(v) ? `${v}d(当前)` : `${v}(当前)`), sub: "两次提现之间的间隔 · 随运营月份阶梯上调", segs: [["月 1–7", "30 天", true], ["月 8", "35 天", false], ["月 9+", "45 天", false]] as [string, string, boolean][] },
+  nexGate: { name: "提现惩罚费率", fmt: (v: string) => (/^\d+(\.\d+)?$/.test(v) ? `${v}%(当前)` : `${v}(当前)`), sub: "无 NEX 抵扣时按提现金额收的费率(烧 NEX 可减免至 0)", segs: [["月 1–8", "20%", true], ["月 9–10", "25%", false], ["月 11–12", "30%", false]] as [string, string, boolean][] },
+  hold: { name: "增强合规审查", fmt: (v: string) => v, sub: "激活后大额提现进延长审查 · 月 8(P5 带)起整带开启,无月内拐点" },
 };

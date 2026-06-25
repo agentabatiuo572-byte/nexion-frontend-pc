@@ -5,23 +5,27 @@
  *  - D5 owns 三参数(日限次数 / 余额上限 / NEX 抵扣率):操作确认 + 放松方向 B1 覆盖率红线核验(amplifies);
  *  - 节奏派发三项(冷却 / 提现惩罚费率 / 增强合规审查):权威归 H1(/growth/phase),本页只读 + 跳转,
  *    接口层拒收(PUT 携带返 422 PHASE_PARAM_READONLY)。
- * 当前 = P3 · 月 7(PHASE 单源);月 8=35d 为 12 月节奏表权威目标值。
+ * 当前阶段 / 月 = rhythmState(pget) ← H1.rhythm.* 节奏单源(运营在 H1 可配,本页只读镜像);月 8=35d 为节奏表权威目标值。
  */
 import Link from "next/link";
 import { LEDGER } from "@/lib/mock/admin/ledger";
-import { D_FUND, PHASE } from "@/lib/mock/admin/design-data";
+import { D_FUND } from "@/lib/mock/admin/design-data";
+import { rhythmState } from "@/lib/mock/admin/command-center";
 import { OWN_PARAMS, PHASE_RO } from "./data";
+import { dialValueAt } from "../h-tabs/data";
 import type { DCtx } from "./types";
 
 export function D5Params({ ctx }: { ctx: DCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const cov = LEDGER.coverageRatio.toFixed(1);
-  // H1 派发现值同源镜像(与 h-view 同键 H.phase.dial.<key>;H1 改 dial 本页实时跟,不缓存为权威)
-  const h1 = (key: string, seed: string) => pget(`H.phase.dial.${key}`) ?? seed;
-  const cooldownV = h1(PHASE_RO.cooldown.h1Key, PHASE_RO.cooldown.seed);
-  const nexGateV = h1(PHASE_RO.nexGate.h1Key, PHASE_RO.nexGate.seed);
-  const holdV = h1(PHASE_RO.hold.h1Key, PHASE_RO.hold.seed);
-  const holdShort = holdV.includes("未激活") || holdV === "false" ? "未激活" : holdV;
+  // 当前节奏位置 + 当前月派发值,全部单源派生(运营在 H1 可配,随当前运营月实时流转)。
+  const rs = rhythmState(pget);
+  // H1 当前月派发只读三项 = dialValueAt(矩阵 @ 当前月);不走 H.phase.dial 镜像快照(改当前月/总时长会实时跟,键名零错配)。
+  const cooldownV = dialValueAt(pget, "cooldown", rs.currentMonth);
+  const nexGateV = dialValueAt(pget, "nexGate", rs.currentMonth);
+  const complianceV = dialValueAt(pget, "compliance", rs.currentMonth); // 矩阵值 "是" / "否"
+  const holdV = complianceV === "是" ? "激活" : "未激活";
+  const holdShort = holdV;
 
   return (
     <>
@@ -104,7 +108,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
               <span className="v">{PHASE_RO.hold.fmt(holdV)}</span>
             </div>
             <div className="dtint" style={{ marginTop: 10 }}><b>为什么这里改不了</b> · 这三项是 12 月节奏的派发参数,提现队列(D2)按它们判「冷却到没到、NEX 够不够、要不要进增强审查」。如果这页也能改,就成了两套来源打架——所以服务器在接口层直接拒收这三个字段(422 退回并指向 H1),调整一律去 H1 走操作确认,变更记录也由 H1 留(phase.dial_changed)。</div>
-            <div className="dtint warn" style={{ marginTop: 10 }}><b>月 8 = 35 天的注</b> · 35 天是 12 月节奏表的权威目标值,用户端目前的简化实现里还没有这个中间档,要前端补——上线前以 35d 为准核对。当前 {PHASE.current} · 月 {PHASE.month},距月 8 拐点还有 1 个月。</div>
+            <div className="dtint warn" style={{ marginTop: 10 }}><b>月 8 = 35 天的注</b> · 35 天是 12 月节奏表的权威目标值,用户端目前的简化实现里还没有这个中间档,要前端补——上线前以 35d 为准核对。当前 {rs.currentPhase} · 月 {rs.currentMonth}{rs.currentMonth < 8 && rs.totalMonths >= 8 ? `,距月 8 拐点还有 ${8 - rs.currentMonth} 个月` : ""}。</div>
           </div>
         </section>
       </div>

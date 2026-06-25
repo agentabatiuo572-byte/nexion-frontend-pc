@@ -14,6 +14,7 @@ import { WD_ST, LARGE_LINE, wdStats } from "./data";
 import { D_FUND } from "@/lib/mock/admin/design-data";
 import type { DCtx } from "./types";
 import { DataListPager, useDataListPager } from "../design-kit";
+import { usePropose } from "@/lib/admin/use-propose";
 
 const riskColor = (s: number) => (s >= 70 ? "var(--danger)" : s >= 40 ? "var(--warning)" : "var(--success)");
 
@@ -27,6 +28,7 @@ const FILTERS: { key: string; label: string }[] = [
 
 export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [filter, setFilter] = useState("pending");
   const [curId, setCurId] = useState(WITHDRAWALS[0].id);
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -71,7 +73,22 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         action: `大额放行 · ${w.id} · $${w.amount.toLocaleString("en-US")}`,
         detail: <><b>{w.user}</b> · 风险分 {w.risk} · {w.rules !== "—" ? `命中 ${w.rules} · ` : ""}放行后储备实时核减 {`$${w.amount.toLocaleString("en-US")}`},当前覆盖率 {cov}%(红线 {LEDGER.redlinePct})核验通过。{w.kyc.includes("复审") && <b>注意:该用户另有 K5 复审在途,放行前确认与本单无关联冻结。</b>}带防重号,重试不会重复放行。</>,
         amplifies: true,
-        run: (reason) => { setSt(w.id, "review-passed", `大额放行 ${w.id}`, reason); toast(`${w.id} 已放行 → 出金中 · 储备同步核减`); },
+        run: (reason) => {
+          // 大额放行 = 财务 lead/超管;非授权身份发起则入 A2 pending 提案,等有权者执行回写。
+          propose(toast, {
+            action: `大额放行 · ${w.id} · $${w.amount.toLocaleString("en-US")}`,
+            obj: `${w.user} · $${w.amount.toLocaleString("en-US")}`,
+            before: "review-pending",
+            after: "review-passed",
+            type: "fund",
+            amplifies: true,
+            gate: { roles: ["finance"], requireLead: true },
+            gateLabel: "财务 lead / 超管",
+            reason,
+            mutations: [{ key: `D.withdraw.${w.id}.st`, value: "review-passed", action: `大额放行 ${w.id}` }],
+            sourceDomain: "D2",
+          });
+        },
       });
     } else {
       openConfirm({
@@ -114,12 +131,42 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     action: `解冻提现 · ${w.id}`,
     detail: <>解冻 = 恢复资金流出,操作确认 + B1 覆盖率核验(当前 {cov}%)。解冻后回到待人工状态重新分诊,不直接放行。</>,
     amplifies: true,
-    run: (reason) => { setSt(w.id, "review-pending", `解冻提现 ${w.id}`, reason); toast(`${w.id} 已解冻 → 回待确认队列`); },
+    run: (reason) => {
+      // 解冻 = 恢复资金流出 = 财务 lead/超管,与大额放行同形;非授权身份发起入 A2 pending。
+      propose(toast, {
+        action: `解冻提现 · ${w.id}`,
+        obj: `${w.user} · $${w.amount.toLocaleString("en-US")}`,
+        before: "frozen",
+        after: "review-pending",
+        type: "fund",
+        amplifies: true,
+        gate: { roles: ["finance"], requireLead: true },
+        gateLabel: "财务 lead / 超管",
+        reason,
+        mutations: [{ key: `D.withdraw.${w.id}.st`, value: "review-pending", action: `解冻提现 ${w.id}` }],
+        sourceDomain: "D2",
+      });
+    },
   });
   const refundOv = (w: WithdrawalRow) => openActionConfirm({
     action: `手动退款覆盖 · ${w.id}`,
     detail: <>把这笔冻结提现直接退回用户余额并关单(服务器记退款账单)。资金动作,操作确认 + 防重号。</>,
-    run: (reason) => { setSt(w.id, "refunded", `手动退款覆盖 ${w.id}`, reason); toast(`${w.id} 已退回余额 · 理由留痕`); },
+    run: (reason) => {
+      // 手动退款覆盖 = 资金动作 = 财务 lead/超管;非授权身份发起入 A2 pending。
+      propose(toast, {
+        action: `手动退款覆盖 · ${w.id}`,
+        obj: `${w.user} · $${w.amount.toLocaleString("en-US")}`,
+        before: effSt(w.id),
+        after: "refunded",
+        type: "fund",
+        amplifies: false,
+        gate: { roles: ["finance"], requireLead: true },
+        gateLabel: "财务 lead / 超管",
+        reason,
+        mutations: [{ key: `D.withdraw.${w.id}.st`, value: "refunded", action: `手动退款覆盖 ${w.id}` }],
+        sourceDomain: "D2",
+      });
+    },
   });
 
   const batch = (action: "approve" | "delay" | "reject" | "freeze") => {

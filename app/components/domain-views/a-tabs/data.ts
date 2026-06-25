@@ -9,17 +9,17 @@
  *  - 机制参数 = MECHANISM_PARAMS 5 行(reason-required / 理由长度 / 保留 13 月 / 9 大类清单 / schema);
  *  - feature flag = FEATURE_FLAGS 5 行(设计稿原 FLAGS,resourceOwner 注明发起资格);
  *  - 5 闸只读 = killSwitchReadonly 派生 design-data.KILLSWITCH(操作面在 J1/J2);
- *  - NTP / 系统健康 = NTP_SOURCE / SYSTEM_HEALTH 5 项;
+ *  - 系统健康 = SYSTEM_HEALTH 5 项;
  *  - 6 family = EVENT_FAMILIES + family 内事件清单(设计稿 FAMS 原样);
  *  - domain 枚举 22 已注册 + 9 待扩展;
  *  - 通用字段 6 行(简化 10 → 6,设计稿 a4-vrow 同款);口径参数 4 行;KPI 算式 8 行(权威 §2.4.6);
  *  - 扩展批次 = DOMAIN_EXTENSIONS 4 批(V3 已落 / V4 内容 / J 域 schema / V4 收口)。
- * 真写键 22 类(A.*):
+ * 真写键 20 类(A.*):
  *  A.acct.<id>.{status,role,tier,tfaResetAt}(账号 CRUD)/ A.session.<sid>.killedAt(强制登出)/
  *  A.rbac.<role>.<actionId>(矩阵授权)/ A.rbac.action.<id>(新动作行)/
  *  A.sec.{sessionIdle,sessionAbs,lockShortCnt,lockShortMin}(安全基线 2 可调项)/
- *  A.appr.<id>.status(动作裁决)/ A.confirm.reasonMin / A.appr.{ret,schemaVer}(机制参数)/
- *  A.sys.{ntpSource,idempotencyWindow}(系统配置)/ A.flag.<key>.status(feature flag)/
+ *  A.confirm.reasonMin / A.appr.{ret,schemaVer}(机制参数;裁决态 approved/rejected 已移至 pending store resolveProposal,不再写 A.appr.<id>.status)/
+ *  A.flag.<key>.status(feature flag)/
  *  A.event.{<name>.rollout,kpi.<key>,schemaVer}(事件中台)/ A.batch.<id>.status(扩展批次)。
  * **A 域三铁律 server-canonical 承诺**(三个不变量,UI 拒写 + toast):
  *  ① 全员强制 2FA(不可关)→ toggle 2FA 必拒;
@@ -32,7 +32,7 @@ import { ROLES, SENSITIVE_OPERATIONS, AUDIT, KILLSWITCH } from "@/lib/mock/admin
 export type RoleKey = "super" | "finance" | "risk" | "growth" | "content" | "support" | "audit";
 
 export const ROLE_DEFS: { key: RoleKey; name: string; av: string; color: string; desc: string; scope: string }[] = [
-  { key: "super", name: "超管", av: "超", color: "var(--ink-2)", desc: "全域读写 + 全域执行;账号治理与系统参数的唯一操作 / 留痕角色", scope: "全部 12 域" },
+  { key: "super", name: "超管", av: "超", color: "var(--ink-2)", desc: "全域读写 + 全域执行;账号治理的唯一操作 / 留痕角色", scope: "全部 12 域" },
   { key: "finance", name: "财务", av: "财", color: "var(--success)", desc: "储备与应付对账、提现放行、覆盖率监控;资金类动作执行门槛为 lead/超管", scope: "B · D · L,资金类执行" },
   { key: "risk", name: "风控", av: "风", color: "var(--danger)", desc: "反作弊、KYC 复审、风险披露、应急止血;合规审查 V1 由风控代行", scope: "K · J · C4/C6 · I5" },
   { key: "growth", name: "增长", av: "增", color: "var(--warning)", desc: "节奏 dial、试用、任务活动、增长类实验;不碰资金放行与安全配置", scope: "H · B4,增长类 flag/实验" },
@@ -164,21 +164,16 @@ export const CONFIRM_CATEGORIES = [
   { cat: "账户高敏处置", examples: "冻结/解冻 · impersonate(C2)· KYC 人工标记(C4)· 2FA/密码(C5)", roleGate: "风控 lead / 超管" },
   { cat: "批量簇冻结", examples: "关联账户簇批量冻结(K1)", roleGate: "风控 lead / 超管" },
   { cat: "后台账号治理", examples: "建/停/启/改角色/重置双因子(A1)", roleGate: "超管" },
-  { cat: "平台配置", examples: "feature flag · 系统参数(A3)· 内容发布(I 域)", roleGate: "超管 / 内容 lead" },
+  { cat: "平台配置", examples: "feature flag(A3)· 内容发布(I 域)", roleGate: "超管 / 内容 lead" },
 ];
 
 /* ============ A3 系统配置 ============ */
 export const A3_STATS = {
-  clockDrift: "+4 ms",
-  driftThreshold: "±100ms",
-  idempBlocked24h: 312,
   flagCount: 5,
   flagGrayCount: 2,
   killGates: 7,
   killGatesUp: 7,
 };
-
-export const NTP_SOURCE = { current: "pool.ntp.org ×3", note: "三源仲裁,稳定性优先;切换走超管操作确认" };
 
 /** 5 feature flag(横切类,业务主参数不入)。resourceOwner = 发起资格(SPEC §4)。
  *  name = 运营可读中文名(给人看)· desc = 一句话用途;key = 后台技术标识(开发/审计契约,UI 作小号副标)。 */

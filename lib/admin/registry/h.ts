@@ -12,8 +12,8 @@ export const DOMAIN_H: ModuleEntry[] = [
   {
     path: "/growth/phase",
     summary:
-      "12 个月运营节奏的唯一操作台,8 个节奏旋钮都以这里为准(Premium/NEX v2 的旋钮随模块下线已移除,「提现积分」改为「提现罚金费率」;NEX 抵扣率在 D5)。前端只用服务器下发的当前旋钮值;调旋钮、手动锁定某个阶段、对特定用户群单独覆盖,都要确认;往松了调(降冷却、降罚金、升封顶)要先过 B1 兑付覆盖率,低于红线直接拒绝。下游 D5/F3/E2/H3 只能读、不能改。",
-    content: placeholder("死代码:H1 真渲染面在 h-tabs/h1-phase.tsx(DIAL_MATRIX 12×8 + LOOSEN_DIR + NEW_USER_ONLY + PHASE_CONTROLS 3 类)。"),
+      "运营节奏的唯一操作台(节奏总时长 / 当前运营月在「节奏骨架」段可配,默认 12 月),8 个节奏旋钮都以这里为准(Premium/NEX v2 的旋钮随模块下线已移除,「提现积分」改为「提现罚金费率」;NEX 抵扣率在 D5)。前端只用服务器下发的当前旋钮值;调旋钮、手动锁定某个阶段、对特定用户群单独覆盖,都要确认;往松了调(降冷却、降罚金、升封顶)要先过 B1 兑付覆盖率,低于红线直接拒绝。下游 D5/F3/E2/H3 只能读、不能改。",
+    content: placeholder("死代码:H1 真渲染面在 h-tabs/h1-phase.tsx(DIAL_MATRIX 默认 12×8、运营可调总时长 + LOOSEN_DIR + NEW_USER_ONLY + PHASE_CONTROLS 3 类)。"),
   },
   {
     path: "/growth/trial",

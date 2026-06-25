@@ -29,6 +29,10 @@ check_http() {
 check_html() {
   if "$CURL_BIN" -s --max-time 10 "$BASE$1" | grep -qF "$2"; then pass=$((pass+1)); else fail=$((fail+1)); fails="$fails\n  [needle] $1 :: $2"; fi
 }
+# 负向探针:断言某串「已不在」页面(删卡后防回归);命中 = FAIL。
+check_absent() {
+  if "$CURL_BIN" -s --max-time 10 "$BASE$1" | grep -qF "$2"; then fail=$((fail+1)); fails="$fails\n  [should-be-absent] $1 :: $2"; else pass=$((pass+1)); fi
+}
 
 echo "== [1/4] tsc =="
 # 注:不能用 `tsc | tail`,管道退出码是 tail 的(0)会吞掉 tsc 失败。捕获输出 + 退出码。
@@ -116,8 +120,8 @@ check_html "/platform/audit" "高敏操作动态"                  # A2 14 件 p
 check_html "/platform/audit" "审计日志"                      # A2 只追加
 check_html "/platform/audit" "应急快速轨"                    # A2 SOS SLA 倒计时
 check_html "/platform/audit" "操作确认适用动作清单"              # A2 9 大类机制参数
-check_html "/platform/config" "系统健康"                     # A3 后端健康只读
-check_html "/platform/config" "数据来源"                     # A3 真实接口读取状态
+check_absent "/platform/config" "服务器时钟"                 # A3 (a) 服务器时钟·全平台时间单源卡已删(2026-06-24,含 KPI/NTP/漂移)
+check_absent "/platform/config" "防重号策略"                 # A3 (b) 防重号策略卡已删(2026-06-24,含 KPI/去重窗口)
 check_html "/platform/config" "熔断闸状态存储"               # A3 只读跳 J1/J2
 check_html "/platform/config" "功能开关平台"                 # A3 灰度台(已本地化中文,旧英文串 feature flag 过时 2026-06-22)
 check_html "/platform/events" "事件目录"                     # A4 6 family
@@ -329,6 +333,13 @@ else
   fail=$((fail+1)); fails="$fails\n  [canon-sentinel] 核心业务数字跨端漂移 / 提现费模型不一致 / 旧 2% 费残留(跑 node scripts/canon-sentinel.mjs 看明细)"
 fi
 
+echo "== [+] 领导池 canon 双端单源 gate(池额/集中度/合格数/票权人头前后端一致 + 禁散落 80%/V8+/假池额/假门槛)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/leadership-pool-canon-sentinel.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [leadership-pool-canon] 领导池模型前后端漂移 / 集中度非派生 / 散落硬编码 80%·V8+·假池额(跑 node scripts/leadership-pool-canon-sentinel.mjs 看明细)"
+fi
+
 echo "== [+] Kill-switch 计数一致 gate(防 premium/nexv2 下线后「N 闸」残留漂移)=="
 if (cd "$ROOT" && "$NODE_BIN" scripts/kill-switch-count-sentinel.mjs); then
   pass=$((pass+1))
@@ -355,6 +366,20 @@ if (cd "$ROOT" && "$NODE_BIN" scripts/inner-block-no-border-sentinel.mjs); then
   pass=$((pass+1))
 else
   fail=$((fail+1)); fails="$fails\n  [inner-block-no-border] 非按钮 filled chip/icon/badge + border 违规(跑 node scripts/inner-block-no-border-sentinel.mjs 看明细;合法 keep 加进哨兵 EXEMPT)"
+fi
+
+echo "== [+] A2 审计覆盖 gate(高敏操作必落 A2 审计 + A2 页订阅实时 store)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/a2-audit-coverage-sentinel.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [a2-audit-coverage] A2 页脱离实时 audit / 高敏 gap 分支漏 logAudit / A1 runMutation 漏传审计(跑 node scripts/a2-audit-coverage-sentinel.mjs 看明细)"
+fi
+
+echo "== [+] 节奏单源 gate(活渲染面禁读 PHASE/CURRENT_PHASE 当前态,必走 rhythmState)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/rhythm-single-source-sentinel.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [rhythm-single-source] 活渲染面直接读 PHASE.*/CURRENT_PHASE.* 显示当前节奏(应 rhythmState 单源;跑 node scripts/rhythm-single-source-sentinel.mjs 看明细)"
 fi
 
 echo "----------------------------------------"

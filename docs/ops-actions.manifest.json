@@ -1,6 +1,6 @@
 {
  "version": 1,
- "note": "运营动作完整性 — 机读清单(OPS-ACTIONS-MATRIX 的机读版)。status: built(真写持久store,门反查storeAction真落地) / pending(死控件待补,放行但计欠账) / missing(完全缺失待补) / readonly(合理只读,须带reason)。门 scripts/ops-actions-audit.mjs 驱动:防新增死控件(deadControlBaseline 只减不增)+ 防built退化(storeAction必须真在store且被view调用)。补一个动作:status→built + 填storeAction + 降baseline。",
+ "note": "运营动作完整性 — 机读清单(OPS-ACTIONS-MATRIX 的机读版)。status: built(真写持久store,门反查storeAction真落地) / pending(死控件待补,放行但计欠账) / missing(完全缺失待补) / readonly(合理只读,须带reason)。门 scripts/ops-actions-audit.mjs 驱动:防新增死控件(deadControlBaseline 只减不增)+ 防built退化(storeAction必须真在store且被view调用)。补一个动作:status→built + 填storeAction + 降baseline。REST 化动作(真写走后端 lib/admin/*-client.ts 而非 store,如 A1 账号治理 createA1Account / E2 任务 CRUD createE2Task):填 restAction(+restFile)替代 storeAction,门改校验 restAction 真在 lib/admin/* 且被 view 调用(同样反查真落地+接线,防 REST 动作被改回死控件)。",
  "deadControlBaseline": {
   "a-view.tsx": 0,
   "c-view.tsx": 0,
@@ -22,9 +22,10 @@
    "action": "新增账号",
    "status": "built",
    "view": "a-tabs/a1-accounts.tsx",
-   "storeAction": "addAccount",
-   "storeFile": "platform-config-store",
-   "batch": "done"
+   "restAction": "createA1Account",
+   "restFile": "lib/admin/a1-client.ts",
+   "batch": "done",
+   "note": "A1 账号治理走真后端 REST(createA1Account @ a1-client.ts,a1-accounts.tsx:465 调用),server 侧落审计 + 前端补 A2 镜像;store addAccount 仅本地 mock 兜底非真写路径(门按 restAction 校验真落地+接线)"
   },
   {
    "id": "OPS-A-02",
@@ -174,16 +175,6 @@
    "view": "a-tabs/a2-audit.tsx",
    "batch": "done",
    "storeAction": "logAudit"
-  },
-  {
-   "id": "OPS-A-17",
-   "domain": "A",
-   "object": "NTP 源 / 幂等窗口(A3)",
-   "action": "调整(操作确认 + edit)",
-   "status": "built",
-   "view": "a-tabs/a3-config.tsx",
-   "batch": "done",
-   "storeAction": "setParam"
   },
   {
    "id": "OPS-A-18",
@@ -735,9 +726,10 @@
    "action": "新增/编辑/删除",
    "status": "built",
    "view": "e-view.tsx",
-   "storeAction": "addTask",
-   "storeFile": "platform-config-store",
-   "batch": "done"
+   "restAction": "createE2Task",
+   "restFile": "lib/admin/e2-client.ts",
+   "batch": "done",
+   "note": "E2 任务 CRUD 走真后端 REST(createE2Task/updateE2Task/deleteE2Task @ e2-client.ts,e-view.tsx submitTask 调用);store addTask 仅本地 mock 兜底非真写路径(门按 restAction 校验真落地+接线)"
   },
   {
    "id": "OPS-E-11",
@@ -1237,12 +1229,12 @@
    "id": "OPS-J-01",
    "domain": "J",
    "object": "Kill-Switch 5闸",
-   "action": "熔断/应急熔断/恢复/应急批量(操作确认)",
+   "action": "熔断/恢复/应急批量(操作确认)",
    "status": "built",
    "view": "j-view.tsx",
    "batch": "done",
    "storeAction": "setParam",
-   "note": "设计稿 port:5 闸矩阵(前端 4 + withdraw;Premium/NEXv2 已下线);恢复 amplifying 闸 操作确认弹窗 B1 红线护栏(覆盖率<redLine 禁放行);应急轨 A2 emergency 标记(J.killswitch.<key>.emergency)"
+   "note": "设计稿 port:5 闸矩阵(前端 4 + withdraw;Premium/NEXv2 已下线);单闸熔断恒走常规轨(对齐 PRD §15:单闸仅 J1-MD1 熔断/J1-MD2 恢复);恢复 amplifying 闸 操作确认弹窗 B1 红线护栏(覆盖率<redLine 禁放行);应急轨 emergency=true(A2 高亮+SLA 压缩+I3 升级)仅用于侧栏批量应急关停 J1-MD3,A2 标记 J.killswitch.<key>.emergency"
   },
   {
    "id": "OPS-J-02",

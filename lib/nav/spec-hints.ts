@@ -19,7 +19,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
   A: [
     "RBAC / 审计 / 配置 / 埋点 — 全后台横切地基",
     "角色矩阵 · 审计流水 · feature flag 表",
-    "角色权限位 · 幂等键 TTL · server time 源",
+    "角色权限位 · feature flag 灰度档 · 熔断闸状态",
     "建角色 / 改权限 / 发 flag · 操作确认",
     "/admin/rbac · /admin/audit · /admin/config",
     "仅 superadmin · 全部写操作留痕",

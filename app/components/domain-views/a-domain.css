@@ -153,7 +153,6 @@
 .adom .a2-ba .n { color: var(--ink); font-weight: 700; }
 
 /* ============================ A3 系统配置 ============================ */
-.adom .a3-clock { font-family: var(--mono); font-size: 26px; font-weight: 600; letter-spacing: .02em; color: var(--ink); }
 .adom .a3-hl { display: flex; align-items: center; gap: 8px; padding: 8px 2px; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
 .adom .a3-hl:last-child { border-bottom: none; }
 .adom .a3-hl .d { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }

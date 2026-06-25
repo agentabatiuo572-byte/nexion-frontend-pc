@@ -4,7 +4,8 @@
  *  贯穿口径:server-canonical · 放大流出→amplifies · 不回溯已计提 · 日封顶只读(权威归 H1)。 */
 import { useState } from "react";
 import { Badge, CodeTag, DataListPager, useDataListPager } from "../design-kit";
-import { PHASE } from "@/lib/mock/admin/design-data";
+import { rhythmState } from "@/lib/mock/admin/command-center";
+import { dialValueAt } from "../h-tabs/data";
 import { BINARY, BINARY_MAX_AB } from "./data";
 import type { FViewCtx } from "./types";
 
@@ -20,11 +21,10 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const rateEff = ctx.pget("F.binary.matchRate") ?? "10%";
   const spillOn = ctx.pget("F.binary.spillover") !== "已关闭";  // 默认启用,仅显式写入「已关闭」才关(显示值=写入值,防自由文本错配)
   const resetEff = ctx.pget("F.binary.gvResetCron") ?? "每月 1 日 00:00 UTC";
-  // #24 双轨日封顶只读镜像 H1 当前月派发值(单源:H1 dial 覆盖 H.phase.dial.binaryCap → PHASE.dials 当前月权威值),
-  // 修早期硬编码 $5,000 与 H1 当前月(月7=$2,000)口径冲突。
-  const binCapSeed = PHASE.dials.find((d) => d.key === "binaryDailyCapUSD")?.val ?? "$2,000";
-  const binCapOv = ctx.pget("H.phase.dial.binaryCap");
-  const binCap = binCapOv ? (/^\d+$/.test(binCapOv) ? `$${Number(binCapOv).toLocaleString()}` : binCapOv) : String(binCapSeed);
+  // #24 双轨日封顶只读 = H1 当前月派发值,单源派生自逐月矩阵 dialValueAt(binaryCap, 当前月),随当前运营月实时流转(不抄 H.phase.dial 镜像快照)。
+  const rs = rhythmState(ctx.pget);
+  const binCapRaw = dialValueAt(ctx.pget, "binaryCap", rs.currentMonth);
+  const binCap = /^\d+$/.test(binCapRaw) ? `$${Number(binCapRaw).toLocaleString()}` : binCapRaw;
   // 结算周期 + 沉淀处置(运营可配,中文直存=显示值;默认每月 / 每月清零)。沉淀「转结」放大负债,改前过 B1 覆盖率。
   const periodEff = ctx.pget("F.binary.settlePeriod") ?? "每月";
   const residualEff = ctx.pget("F.binary.residualPolicy") ?? "每月清零";
@@ -67,8 +67,8 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
 
         <section className="pane cap-card">
           <div className="pane-h"><span className="ph-ttl">双轨日封顶</span><span className="ph-sub">左右两轨每日计酬上限</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">H1 派发 · 只读</CodeTag></span></div>
-          <div className="cap-body"><div className="vv" data-proof="f3-cap-h1">{binCap}</div><div className="lbl">{PHASE.label} 现值 · H1 当前月派生 · 全局统一</div></div>
-          <div className="next-step">只读镜像 H1 当前月(<b>{PHASE.label}</b>)派发值;Phase 推进后随 H1 自动收紧,改值去 H1。</div>
+          <div className="cap-body"><div className="vv" data-proof="f3-cap-h1">{binCap}</div><div className="lbl">月 {rs.currentMonth} · {rs.currentPhase} 现值 · H1 当前月派生 · 全局统一</div></div>
+          <div className="next-step">只读镜像 H1 当前月(<b>月 {rs.currentMonth} · {rs.currentPhase}</b>)派发值;Phase 推进后随 H1 自动收紧,改值去 H1。</div>
           <div className="cap-action"><button onClick={() => ctx.nav("H")}>前往 H1 调整 →</button></div>
         </section>
       </div>

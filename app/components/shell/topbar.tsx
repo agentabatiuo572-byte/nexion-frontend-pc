@@ -20,6 +20,7 @@ import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { SESSION_CONVOS } from "@/app/components/domain-views/m-tabs/data";
 import { CommandPalette } from "@/app/components/command-palette";
+import { useActingOperator, ACTING_PRESETS, actingRoleLabel } from "@/lib/store/admin/acting-operator-store";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
   const [open, setOpen] = useState(false);
@@ -201,6 +202,77 @@ function SupportInboxPill() {
   );
 }
 
+// 操作员身份切换(演示装置)— 以不同身份操作触发 A2 执行门槛分流:够权直接执行 / 不够入 pending 提案。
+// 真后台身份来自登录 session(useAdminAuth),此切换器仅原型演示用。
+function ActingSwitcher() {
+  const acting = useActingOperator((s) => s.acting);
+  const setActing = useActingOperator((s) => s.setActing);
+  const hydrated = useOpsHydrated();
+  const [open, setOpen] = useState(false);
+  const cur = hydrated ? acting : ACTING_PRESETS[0];
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="演示装置:以不同身份操作 → 触发执行门槛分流(够权直接执行 / 不够入 A2 pending 提案)。真后台身份来自登录 session。"
+        className="hidden items-center gap-1.5 rounded-[9px] px-2.5 py-1.5 text-[12px] transition-opacity hover:opacity-90 lg:flex"
+        style={{ background: "var(--v5-surface-2)", border: "1px dashed var(--v5-border-strong)" }}
+      >
+        <span style={{ color: "var(--v5-ink-4)" }}>身份</span>
+        <span style={{ color: "var(--v5-ink-2)", fontWeight: 600 }}>{actingRoleLabel(cur)}</span>
+        <ChevronDown size={13} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+      </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="关闭菜单"
+            className="fixed inset-0 cursor-default"
+            style={{ zIndex: "var(--admin-z-topbar)" }}
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-[12px] py-1.5"
+            style={{
+              background: "var(--v5-surface)",
+              border: "1px solid var(--v5-border-strong)",
+              boxShadow: "var(--v5-card-shadow-lift-strong)",
+              zIndex: "calc(var(--admin-z-topbar) + 1)",
+            }}
+          >
+            <p className="px-3 py-1.5 text-[10.5px] uppercase tracking-[0.14em]" style={{ color: "var(--v5-ink-4)" }}>
+              以…身份操作(演示)
+            </p>
+            {ACTING_PRESETS.map((op) => {
+              const sel = cur.name === op.name;
+              return (
+                <button
+                  key={op.name}
+                  type="button"
+                  onClick={() => { setActing(op); setOpen(false); }}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]"
+                  style={{ color: sel ? "var(--v5-brand)" : "var(--v5-ink-2)", fontWeight: sel ? 600 : 500 }}
+                >
+                  <span>{op.name}</span>
+                  {sel && <span style={{ color: "var(--v5-brand)" }} aria-hidden>✓</span>}
+                </button>
+              );
+            })}
+            <div className="my-1 h-px" style={{ background: "var(--v5-border)" }} />
+            <p className="px-3 py-1.5 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
+              权限不足的高敏动作会进 A2 待执行队列,等有权身份执行。
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function TopBar({ role, operator }: { role: AdminRole; operator: string }) {
   return (
     <header
@@ -223,6 +295,7 @@ export function TopBar({ role, operator }: { role: AdminRole; operator: string }
         <span className="h-4 w-px" style={{ background: "var(--v5-border)" }} />
         {canSee(role, ["support", "risk"]) && <SupportInboxPill />}
         <NotificationBell />
+        <ActingSwitcher />
         <RoleSwitcher role={role} operator={operator} />
       </div>
     </header>

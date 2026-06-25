@@ -4,7 +4,7 @@
  *  奖励改为运营可配的「奖励清单」(USDT / NEX / 代金券 / SKU / 自定义),实物奖与发货队列已删。 */
 import { CodeTag } from "../design-kit";
 import type { BusinessFormValue } from "../design-kit";
-import { VRANK } from "./data";
+import { VRANK, LEADERSHIP_CANON, leadershipTopConcentration, leadershipQualifiers } from "./data";
 import type { FViewCtx } from "./types";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/store/admin/platform-config-store";
 
@@ -133,12 +133,18 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   };
 
   const configuredLevels = VRANK.filter((r) => rewardsOf(r.v).length > 0).length;
+  const topConcPct = Math.round(leadershipTopConcentration() * 100); // 顶部 N 名领袖占池比(派生,与 F4 同源)
+  // 顶栏会员数派生自 VRANK 单源(V3+ = canon 合格领袖,与 F4/registry 498 一致),不硬编码。
+  const v3plus = leadershipQualifiers();
+  const totalMembers = VRANK.reduce((s, r) => s + r.pop, 0);
+  const v0Pop = VRANK.find((r) => r.v === "V0")?.pop ?? 0;
+  const v3plusPct = ((v3plus / totalMembers) * 100).toFixed(2);
 
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat"><div className="k">总会员</div><div className="v">100,575</div><div className="sub">含 V0 84,231</div></div>
-        <div className="f-stat ok"><div className="k">V3+ 高价值</div><div className="v">614</div><div className="sub">≈ 0.61% · 顶部漏斗</div></div>
+        <div className="f-stat"><div className="k">总会员</div><div className="v">{totalMembers.toLocaleString()}</div><div className="sub">含 V0 {v0Pop.toLocaleString()}</div></div>
+        <div className="f-stat ok"><div className="k">V3+ 高价值</div><div className="v">{v3plus}</div><div className="sub">≈ {v3plusPct}% · 顶部漏斗</div></div>
         <div className="f-stat cyan"><div className="k">本月晋升</div><div className="v">+217</div><div className="sub">V1 +148 · V2 +43 · V3+ +26</div></div>
         <div className="f-stat cyan"><div className="k">已配奖励等级</div><div className="v">{configuredLevels}</div><div className="sub">全 13 阶 · 运营可增删</div></div>
       </div>
@@ -198,7 +204,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, lineHeight: 1.5 }}>log 标尺以可视化顶部稀薄分布 · V8+ 仅 1 人;V12 至今 0 人。</div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, lineHeight: 1.5 }}>log 标尺以可视化顶部稀薄分布 · V8+ 仅 10 人;V12 仅 1 人。</div>
           </div>
 
           <div className="rail-card">
@@ -225,7 +231,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         </aside>
       </div>
 
-      <p className="f-foot"><b>顶部稀薄、底部臃肿</b>是 V-Rank 设计意图;V3+ 仅占 0.61% 但承担 80% 领导池分配。调高 V8+ 门槛会收紧头部分润但需先核验 B1 覆盖率 · 调高低阶门槛(V1/V2)会压制新人进群速度。</p>
+      <p className="f-foot"><b>顶部稀薄、底部臃肿</b>是 V-Rank 设计意图;领导池全部分给 V{LEADERSHIP_CANON.unlockRank}+ 领袖,且高阶指数票权让顶部 {LEADERSHIP_CANON.topN} 名(V8+)虹吸 ≈{topConcPct}% 池子。调高 V8+ 门槛会收紧头部分润但需先核验 B1 覆盖率 · 调高低阶门槛(V1/V2)会压制新人进群速度。</p>
     </>
   );
 }
