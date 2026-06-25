@@ -1,7 +1,7 @@
 /* ============================================================
    L 域(数据与分析 BI)内容页设计类 — design_handoff_l_domain port
    全部 scope 在 .ldom(挂在 l-view 根 .dkpage.ldom);token 复用 globals 别名。
-   L 域主题 = --cyan(紫,BI 调性);设计稿项目规则:除按钮外卡片/badge/chip 无边框 → 直接写无边框终值。
+   L 域主题 = --cyan(青,BI 调性);设计稿项目规则:除按钮外卡片/badge/chip 无边框 → 直接写无边框终值。
    响应式按内容区真实宽走 container query(.ldom 为容器锚)。
    ============================================================ */
 
@@ -329,3 +329,37 @@
 .ldom .bottom-split { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; margin-bottom: 16px; }
 @container ldom (max-width: 1100px) { .ldom .bottom-split { grid-template-columns: 1fr; } }
 .ldom .bottom-split .l-card { margin-bottom: 0; }
+
+/* ============================ L6 用户行为热力图 ============================ */
+/* 活跃热力矩阵:格色由内联 color-mix 强度驱动(cellv 复用 ret-tbl 模式) */
+.ldom .heat-tbl td.cellv { font-family: var(--mono); font-size: 12.5px; font-weight: 600; text-align: center; border-radius: 6px; white-space: nowrap; }
+.ldom .heat-tbl td.cellv .cu { display: block; font-size: 10px; font-weight: 500; opacity: .72; margin-top: 1px; }
+.ldom .heat-row { cursor: pointer; transition: background .12s; }
+.ldom .heat-row:hover { background: var(--surface-2); }
+.ldom .heat-row.sel { background: color-mix(in srgb, var(--cyan) 9%, transparent); }
+.ldom .heat-row.sel td:first-child { box-shadow: inset 2px 0 0 var(--cyan); }
+.ldom .heat-tbl .pg-nm { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.ldom .heat-tbl .pg-nm .lc { font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--cyan); background: var(--cyan-soft); border-radius: 4px; padding: 1px 5px; }
+/* rest 态可点 affordance:行尾 chevron(常驻淡色,hover/选中转青) */
+.ldom .heat-tbl .pg-go { margin-left: auto; font-size: 14px; font-weight: 700; color: var(--ink-4); line-height: 1; transition: color .12s, transform .12s; }
+.ldom .heat-row:hover .pg-go { color: var(--cyan); transform: translateX(2px); }
+.ldom .heat-row.sel .pg-go { color: var(--cyan); }
+.ldom .heat-tbl .pg-route { font-family: var(--mono); font-size: 11px; color: var(--ink-4); margin-top: 2px; }
+/* 跳出率第二图例(橙→红绝对阈值) */
+.ldom .bounce-legend { display: flex; gap: 4px; align-items: center; font-size: 11.5px; color: var(--ink-4); }
+.ldom .bounce-legend i { width: 18px; height: 10px; border-radius: 3px; }
+
+/* 单页坐标热力下钻:手机线框 + 区域占比 */
+.ldom .heat-drill { display: grid; grid-template-columns: 250px 1fr; gap: 0; }
+@container ldom (max-width: 900px) { .ldom .heat-drill { grid-template-columns: 1fr; } .ldom .heat-drill .phone-pane { border-right: none; border-bottom: 1px solid var(--border); } }
+.ldom .heat-drill > div { padding: 18px 20px; }
+.ldom .heat-drill .phone-pane { border-right: 1px solid var(--border); display: grid; place-items: center; }
+.ldom .phone-frame { width: 100%; max-width: 188px; height: auto; display: block; }
+.ldom .zone-pane .zone-h { font-size: 12.5px; font-weight: 600; color: var(--ink-2); margin-bottom: 12px; }
+.ldom .zone-row { display: grid; grid-template-columns: 13px 1fr 96px auto auto; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--border); }
+.ldom .zone-row:last-of-type { border-bottom: none; }
+.ldom .zone-row .zsw { width: 12px; height: 12px; border-radius: 4px; background: var(--cyan); }
+.ldom .zone-row .znm { font-size: 12px; color: var(--ink-2); }
+.ldom .zone-row .ztrack { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.ldom .zone-row .ztrack i { display: block; height: 100%; border-radius: 999px; background: var(--cyan); }
+.ldom .zone-row .zpct { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--ink); text-align: right; }

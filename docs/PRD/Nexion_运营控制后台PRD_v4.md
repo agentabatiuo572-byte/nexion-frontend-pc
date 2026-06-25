@@ -1697,7 +1697,7 @@ server-canonical；J4 编排的每个原子动作均落各域 server 权威面�
 
 ## 第 16 章 数据与分析 BI(域 L)
 
-> 本章覆盖域 L 的五个子模块(L1 KPI 看板 · L2 漏斗/cohort/留存 · L3 财务报表 · L4 设备/任务/网络报表 · L5 导出 & 监管报告),全部 **V4**。L 域是平台**全链路事件流的读侧 BI 消费面**——把散落在 A4 事件流(Ch2 §2.4)里的获客 / 转化 / 资金 / 留存 / 风控事件,按 KPI / 漏斗 / 财务 / 运营 / 监管五类视角聚合成统一的运营分析操盘面。服务对象为 §1.1 七角色中的**增长(Growth)、财务(Finance)、风控(Risk)、只读审计**角色与超级管理员;L 域所有看板/报表**纯运营内部**(用户端 H5 app 永不可见)。
+> 本章覆盖域 L 的六个子模块(L1 KPI 看板 · L2 漏斗/cohort/留存 · L3 财务报表 · L4 设备/任务/网络报表 · L5 导出 & 监管报告 · L6 用户行为热力图),全部 **V4**。L 域是平台**全链路事件流的读侧 BI 消费面**——把散落在 A4 事件流(Ch2 §2.4)里的获客 / 转化 / 资金 / 留存 / 风控事件,按 KPI / 漏斗 / 财务 / 运营 / 监管五类视角聚合成统一的运营分析操盘面。服务对象为 §1.1 七角色中的**增长(Growth)、财务(Finance)、风控(Risk)、只读审计**角色与超级管理员;L 域所有看板/报表**纯运营内部**(用户端 H5 app 永不可见)。
 >
 > **全章「合规复核职能」口径注(§A1)**:本章 L5 监管报告 / 解密导出 / 披露引用类动作所称「合规复核」职能,统一指**承担合规复核职责的角色实例**——V1 §1.1 七角色枚举(超管/财务/风控/增长/内容/客服/只读审计)未单列独立「合规(Compliance)」角色,**合规审查职责(KYC 复审 / 风险披露 / 监管报送 / 法务文案审批)在 V1 由风控角色承担**(2026-06 操作确认决议后,原合规复核层级统一迁移为执行门槛:执行权=风控 lead / 超管),不单设独立合规角色;专设独立 Compliance 角色为 **V2+ 选项**(§A1 合规角色决策)。该裁决已在 Ch5 C4 / Ch8 K5 / Ch12 I5 / Ch15 J4 落地,本章 L5 涉合规复核职能处一律落**纯风控**(执行权=风控 lead/超管,确认弹窗 + 理由必填),与 C4/K5/I5/J4 一致、不引入未定义角色;故 L 域 RBAC ⑥ 矩阵可直接投影到 `/api/admin/rbac/roles` 的 `risk` key(§A1:perRole 闭集无 compliance key),L 域不出现独立「合规」行。
 >
@@ -1719,9 +1719,9 @@ server-canonical；J4 编排的每个原子动作均落各域 server 权威面�
 
 ### 16.1 域 L 控制面索引
 
-> 本节为 L 域的**结构索引**(非 7 段功能子模块),给出五个子模块的 BI 消费面定位、消费的 A4 事件 family 映射、与各权威域(A4/B1/D3/B2/B3)的引用关系,以及 **L 域统一约束框架**(读侧无写权威 / 口径单一源 / 导出审计 + 操作确认 / cutover union 兜底)。本框架在此一处权威定义,L1–L5 各子模块回指、仅写本模块差异,不复述。
+> 本节为 L 域的**结构索引**(非 7 段功能子模块),给出五个子模块的 BI 消费面定位、消费的 A4 事件 family 映射、与各权威域(A4/B1/D3/B2/B3)的引用关系,以及 **L 域统一约束框架**(读侧无写权威 / 口径单一源 / 导出审计 + 操作确认 / cutover union 兜底)。本框架在此一处权威定义,L1–L6 各子模块回指、仅写本模块差异,不复述。
 
-**五子模块定位**
+**六子模块定位**
 
 | ID | 名称 | BI 消费面职责 | 消费的 A4 事件 family / 引用权威域 | 前端锚点 |
 |---|---|---|---|---|
@@ -1730,8 +1730,9 @@ server-canonical；J4 编排的每个原子动作均落各域 server 权威面�
 | L3 | 财务报表 | 收入/兑付/敞口/负债到期的只读财务聚合报表面 | money family + 引用 B1(双账本)/ D3(水位)/ B2(负债科目) | §9.6 |
 | L4 | 设备/任务/网络报表 | 平台运营指标报表:在网设备/产出/衰减 · 任务完成 · 网络/团队结构 · Phase 节奏效果 | device / earnings / quest / daily / phase / commission family(跨域聚合) | §5.4/§5.5/§6.8/§9.11c.1(§3.3 索引 §5.1.1 为软锚) |
 | L5 | 导出 & 监管报告 | 账单 CSV / 合规报表 / 监管报告生成（导出 = 数据出境敏感动作） | 全域 family(导出范围)+ 引用 J4 应急 / A2 审计 / I5 披露 | §9.7 |
+| L6 | 用户行为热力图 | 前端各页浏览/点击/停留/跳出按页面·层级聚合的热力矩阵 + 单页点击坐标热力下钻(只读行为分析,非 KPI 口径) | **净新** `app.page_viewed` / `app.element_clicked`(client 行为事件,需 A4 注册)+ page catalog | 前端全站路由(pages.json · §3 信息架构) |
 
-**L 域统一约束框架(本节权威定义,L1–L5 回指)**
+**L 域统一约束框架(本节权威定义,L1–L6 回指)**
 
 1. **读侧无写权威(核心约束)**:L 域子模块**一律无写数据动作**——不改任何 KPI/漏斗/财务/运营口径,不写任何业务状态。口径变更必须回到权威面:KPI 口径改 §2.4.6(经 A4 治理 + schema 变更操作确认,§2.4.8)、财务口径改 B1/D3/B2、漏斗口径改 §2.4.7。L 域仅有的「写」是**视图配置保存**(切片/周期/看板布局,不改数据口径)与**导出**(只读产出),二者均产 admin 审计事件,不进资金账。
 2. **口径单一源(不与 B 域重复持有)**:L 报表的每个数字与 B 驾驶舱(Ch4)对应数字**同口径单一源**——B 是实时收窄概览、L 是完整深度下钻,二者派生同一 A4 事件流、同一 §2.4.6/§2.4.7 口径;L 不另立任何聚合源,避免双源分叉。L3 财务数字引用 B1/D3/B2 既有 endpoint(L3⑤),不重算储备/负债/覆盖率。
@@ -2271,6 +2272,109 @@ L5 是平台**数据导出与监管报告生成的统一管控面**——账单 
 
 ---
 
+#### [L6] 用户行为热力图
+
+**① 目的 & 对齐**
+L6 是平台**用户前端界面操作的行为分析面**——把用户在 H5/uniapp 前端各页面的**浏览(PV/UV)、点击/点按、停留时长、跳出**按页面聚合成热力矩阵,并支持下钻到单页的**点击坐标热力**(看用户在某页内具体点哪)。对齐前端**全站路由**(uniapp `pages.json` 全站路由 + §3 信息架构;按 UX 层级划分为一级入口页 / 二级板块子页 / 三级详情·指南叶子页,具体页数随前端发版、由 page catalog 同步,不在本 PRD 写死)。服务的业务目标:增长 / 产品据此定位「**哪些页面/层级最热、用户在页内点哪、哪些页面留不住人(高跳出)**」,指导 §1.4 转化优先的 H 域增长动作与 I 域文案/页面优化,并为前端改版提供数据依据。**L6 是只读分析面,不改任何业务规则**(约束见 §16.1 框架 1);**口径不属 §2.4.6 八项 KPI**——是 KPI/漏斗之外的「页面级行为」正交视角,与 L1/L2 互补(L1 看 KPI、L2 看转化漏斗、L6 看页面热度与页内点击),数字不与 L1/L2 重复持有。
+
+**前端埋点需求(核心新增前置 · blocking,本子模块特有)**
+L6 是全后台**唯一依赖一组全新前端行为埋点**的子模块——现有 A4 事件流(§2.4.5)仅含特定页的交互事件(如 `store.viewed` / `nova.push_clicked`),**无覆盖全站的通用页面浏览 / 点击坐标事件**。L6 上线前置 = 前端 uniapp 新增两个 client 上报事件 + 一份页面目录,经 A4 schema registry 注册(§2.4.5,归 `app` 既有 domain 的净新 object_action,blocking 工单,体例同 §A.2 各批):
+
+| 事件名(A4 `domain.object_action`) | 触发点(前端) | 关键属性 | 权威性 |
+|---|---|---|---|
+| `app.page_viewed` | 每页 `onShow` 进入时上报;离开/下一跳时回填停留 | `route`(物理路由)· `page_level`(1/2/3,UX 层级)· `parent_l1` · `parent_l2`(上卷锚)· `session_id` · `user_id`(或 anon→user,§2.4.4)· `dwell_ms`(离开时回填)· `ts` | client 交互上报 `is_server_authoritative=false` |
+| `app.element_clicked` | 页面内 tap/click(事件委托) | `route` · `x_norm` / `y_norm`(0–1 归一化坐标)· `zone`(语义区:顶栏/主CTA/内容列表/底部导航)· `element_id`(可选)· `ts` | client 交互上报 `is_server_authoritative=false` |
+
+**派生指标(后台 BI 聚合,非前端上报)**:PV=`app.page_viewed` 计数 · UV=去重 `user_id` · 点击=`app.element_clicked` 计数 · 平均停留=`dwell_ms` 按 PV 加权均值 · **跳出率=进入某页后会话内无下一跳(无后续 `app.page_viewed`)占比**。**页面目录(page catalog)**:前端构建期由 `pages.json` + i18n `headerTitles` 派生 `[{route, title_zh, level, parent_l1, parent_l2, tracked}]` 同步至后台页面注册表,供 L6 渲染中文页名 + 按层级上卷;纯系统/会话页(`session/kicked` / `ref/code` / `tx/hash`)`tracked=false` 不计。**这两个事件为行为分析事件,§2.4.6 未将其锁定为任何 KPI 口径**——仅作页面行为参考,不进资金 / KPI / 漏斗权威口径(与 `store.viewed` 被 §2.4.6 锁定为 #3/#4 口径不同;`store.viewed` 仍各归其口径,L6 只额外消费上述两个通用事件)。
+
+**数据流水线图**(橙=前端本次新增的 blocking 前置依赖 · 蓝=A4 既有事件中台 · 绿=后台本次交付):
+
+```mermaid
+flowchart LR
+  A["前端 uniapp · 新增行为埋点<br/>(blocking 前置)<br/>app.page_viewed · app.element_clicked<br/>+ page catalog(route/层级/上卷)"]:::new
+  B["A4 事件流<br/>schema registry 注册<br/>is_server_authoritative=false"]:::mid
+  C["后台 BI 聚合<br/>按 page catalog 层级上卷<br/>+ 单页坐标 · 预聚合非临时查询"]:::mid
+  D["运营后台 L6<br/>页面活跃热力矩阵(PV/UV·点击·停留·跳出)<br/>+ 单页点击坐标热力下钻"]:::done
+  A -->|每页浏览 + 页内点击上报| B --> C --> D
+  classDef new fill:#FAEEDA,stroke:#BA7517,color:#633806
+  classDef mid fill:#E6F1FB,stroke:#378ADD,color:#0C447C
+  classDef done fill:#E1F5EE,stroke:#1D9E75,color:#085041
+```
+
+**② 后台界面**
+页面活跃热力矩阵 + 单页点击坐标热力下钻,两视图:
+
+1. **(a) 页面活跃热力矩阵**:行 = 页面(按所选**页面粒度**上卷)· 列 = `[PV/UV · 点击 · 平均停留 · 跳出率]` 四维 · 单元格按强度着色(活跃维度按本列最大值归一化的青系色阶;**跳出率用绝对阈值警示色**:>50% 红线 / 35–50% 橙 / 低=淡橙,高跳出是问题不是「热」)。双图例(活跃低→高 + 跳出阈值)。行可点 → 打开 (b) 下钻。
+2. **(b) 单页点击坐标热力下钻**:点矩阵某行 → 该页的手机界面线框 + **点击密度热区叠加**(按 `x_norm/y_norm` 聚合)+ **区域占比**(顶栏/主CTA/内容列表/底部导航 各区点击份额,Top 区标「最热」)。**聚合行(上卷了多页)不提供单页坐标热力**——展示提示「切到逐页粒度查看具体页点击分布」(坐标跨异构页面叠加无意义)。
+3. **统计覆盖披露**:页脚明示「共追踪 N / M 个前端页面」+ 被排除的系统页清单(不静默截断)。
+
+**③ 可控参数**
+
+| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 / 依据 |
+|---|---|---|---|---|
+| 页面粒度(统计到哪个层级) | **全部(逐页)** | 全部 / 一级 / 二级 / 三级 | 实时(仅视图) | 「设置统计到哪个层级的页面」:一级=上卷到一级入口页、二级=上卷到二级板块页、三级=仅三级叶子页、全部=逐页;按 page catalog 的 `level/parent` 上卷 |
+| 时间窗 | **近 7 天** | 近 24h / 7d / 30d | 实时(仅视图) | 计数类指标随窗缩放;停留/跳出为率不随窗缩放 |
+| 排序维度 + 方向 | **按 PV 降序** | PV/点击/停留/跳出 × 升/降 | 实时(仅视图) | 升序便于定位最高跳出/最低停留的流失页 |
+| 跳出率警示阈值 | **>50% 红 / 35–50% 橙(净新运营设计)** | 红线 40%–60% 可调 | 实时(仅视图阈值) | 看板预警阈值,非业务口径 |
+| 页面目录(route/层级/上卷) | **由前端构建期派生(pages.json + headerTitles),只读** | 只读(前端发版同步) | 前端发版同步 | 后台不可编辑页面层级,口径权威在前端路由;§16.1 框架 1 读侧无写权威 |
+
+> **默认值口径**:页面粒度 / 时间窗 / 排序 / 警示阈值均为净新运营**视图参数**,按页面分析运营逻辑设默认(无业务口径写权);页面目录权威在前端路由(只读同步)。前端无独立行为热力面,L6 是 `app.page_viewed`/`app.element_clicked` 两个新事件的首个统一展示面,无现状值冲突。
+
+**④ 操作动作**
+
+| 动作 | 执行权 | 确认弹窗 | 审计点 |
+|---|---|---|---|
+| 视图配置(页面粒度 / 时间窗 / 排序 / 警示阈值) | 增长 / 产品 / 只读审计 | 否(仅视图,不改任何口径,直接生效) | `admin.bi_query_run`(可选,视图定义 / 操作者) |
+| 行下钻查询(打开单页坐标热力) | 增长 / 产品 / 风控 / 只读审计 | 否(只读查询) | `admin.bi_query_run`(可选,route / 操作者) |
+| 导出行为热力序列(矩阵 PV/UV/点击/停留/跳出 + 单页区分布 CSV,聚合无 PII) | 增长 / 只读审计 | 否(聚合计数无 PII 明文,§2.4.3,直接生效留痕) | `admin.report_exported`(范围 / 字段 / 行数 / 操作者,§16.1 框架 3) |
+
+> L6 **无写数据动作**——页面粒度/时间窗/排序均为会话级视图参数,不改任何业务规则;page catalog 权威在前端路由(只读)。导出为页面级聚合计数(PV/UV/点击/停留/跳出 + 区点击份额),**不含手机号/设备号等明文**(约束 §16.1 框架 3 聚合类免确认弹窗、直接生效仍落审计)。
+
+**④a 交互与弹窗规格**
+
+**(1) 动作触发总表**(L6 全部为只读/聚合动作,无高敏确认弹窗)
+
+| 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
+|---|---|---|---|---|
+| 视图配置 | ②(a)顶部 view-bar:页面粒度 / 时间窗 / 排序 chip | chip 组 | 增长/产品/只读审计渲染 | 就地切换 + 重渲染矩阵,toast「仅视图」,无弹窗 |
+| 行下钻查询 | ②(a)矩阵任一行(行尾 chevron 提示可点) | 可点行 + rest 态 chevron | 恒可用(按角色裁剪) | 打开/刷新 ②(b) 单页坐标热力,选中行高亮,无弹窗 |
+| 导出行为热力序列 | ②顶部「导出行为热力序列」 | 次按钮 | 增长/只读审计渲染;当前结果集为空时置灰 | 直接生效:按当前粒度/窗口生成聚合 CSV + 确认提示(聚合无 PII)+ toast「已导出 · 已记审计」+ `admin.report_exported` 留痕 |
+
+**⑤ 接口**
+- `GET /api/admin/bi/behavior?window=24h|7d|30d&depth=all|L1|L2|L3` — 页面活跃矩阵:返回 `[{ route, titleZh, level, pv, uv, clicks, dwellMs, bounceRate, pageCount }]`(按 depth 上卷;数据由 A4 事件库按 `app.page_viewed`/`app.element_clicked` 预聚合,**非临时查询**,§2.4.8)。**server-canonical**:源事件为 client 交互上报(`is_server_authoritative=false`),仅作行为分析,不进资金/KPI 权威口径;聚合按 page catalog 的 `level/parent` 上卷,PV/UV/点击求和、停留/跳出按 PV 加权。
+- `GET /api/admin/bi/behavior/click-heat?route=` — 单页点击坐标分布:`{ route, titleZh, zones:[{label,cx,cy,share}], points:[{x,y,weight}] }`(`x/y` 归一化 0–1)。聚合节点不返回坐标(前端引导切逐页)。
+- `GET /api/admin/bi/behavior/page-catalog` — 页面目录(前端发版同步):`[{ route, titleZh, level, parentL1, parentL2, tracked }]`,L6 渲染页名 + 上卷锚。
+- `GET /api/admin/bi/export/behavior?window=&depth=` — 行为热力序列 CSV 导出(聚合计数无 PII,落 `admin.report_exported`,§16.1 框架 3)。
+
+> **L6 端点归 `/api/admin/bi/*`**(§9.2① 命名规范 + 本章接口段总注:BI 读端点统一前缀);page catalog 为前端构建期派生的只读同步资源,后台不写。
+
+**⑥ 权限 & 审计**
+
+| 角色 | 矩阵/下钻只读 | 视图配置 | 行为序列导出 |
+|---|---|---|---|
+| 增长 | ✅ | ✅ | ✅ |
+| 产品(归增长职能,§A1 无独立 product 角色则投影 growth) | ✅ | ✅ | ✅ |
+| 风控 | ✅ | ✅ | — |
+| 只读审计 | ✅ | ✅ | ✅ |
+
+> **⑥ 矩阵投影注**:L6 读权按行为分析职能分配,主用方为**增长**(产品分析职能并入,§A1 perRole 闭集无独立 `product` key → 投影 `growth`);无高敏处置权(处置跳 H/I 权威域)。审计字段:`admin.bi_query_run`(可选)记 `operator / view_def(depth+window+sort) / ts`;`admin.report_exported` 记 `operator / scope / fields / row_count / format / ts`(§16.1 框架 3)。审计落 A2(§3.14),append-only。
+
+**⑦ 风控 & 联动**
+- **server-canonical 约束**:L6 两个源事件 `app.page_viewed` / `app.element_clicked` 均为 **client 交互上报(`is_server_authoritative=false`)**——§2.4.6 **未将其锁定为任何 KPI 口径**,故 L6 仅作页面行为分析参考,**不进资金 / KPI / 漏斗权威口径**(与 `store.viewed` 被 §2.4.6 锁定为 #3/#4 口径的处理不同)。聚合由 A4 事件库预聚合产出(§2.4.8),非临时 SQL。
+- **跨模块联动**:L6 是 H/I 域增长优化的输入面——**高跳出页 / 低停留页**联动 I 域(I1 文案 A/B / 页面优化)与 H 域(转化动作);**热门入口 / 冷门页**指导前端改版与 Nova 推送位(I2)布点。L6 与 L1/L2 互补:L1 KPI 异常 / L2 漏斗掉量时,可跨看 L6 对应页的页面热度与页内点击佐证归因(同源 A4 事件流,口径正交不重复)。
+- **篡改防御(§9.11d)**:`app.page_viewed` / `app.element_clicked` 为 client 上报非权威事件,**可丢可重、不影响任何资金/KPI/漏斗权威口径**(§9.11d.2 / §2.4.8);client 无法通过伪造行为事件影响任何业务结算或 KPI,最坏仅使 L6 热力图的行为统计有噪声(纯分析面,不参与任何决策性结算)。
+
+**⑧ 埋点(事件)**
+对齐 A4(§2.4.5),L6 是**新增两个通用前端行为事件的发起需求方 + 主消费方**:
+
+- **新增(前端 client,§2.4.5 注册,blocking 前置)**:`app.page_viewed`(每页 onShow + 离开回填 dwell)· `app.element_clicked`(页内 tap,含归一化坐标 + zone);均归 `app` 既有 domain 的净新 object_action,`is_server_authoritative=false`,经 A4 schema registry 新增注册(体例同 §A.2 各批,**为 L6 BI cutover 的 blocking 工单**)。属性见 ① 前端埋点需求表。
+- **消费**:`app.page_viewed`(PV/UV/停留/跳出口径)· `app.element_clicked`(点击数 + 坐标热区);按 page catalog `route/level/parent` 上卷、按 `window` 切片。
+- **产生(admin 审计,§2.4.5 ⑥ admin family)**:`admin.report_exported`(行为序列导出)· `admin.bi_query_run`(可选,下钻/视图查询);均经 A4 schema registry 注册(归 §2.4.5 ⑥)。
+- **占位 union 兜底**:L6 两个源事件为**净新 client 事件**(非任何既有占位批次),其注册即上线前置——不走 §A.2 #14/#16/#19 union 兜底(那是既有事件占位 admin family;本两事件是全新注册);cutover = A4 注册落地 + 前端埋点上线。
+- **喂给**:L6 页面活跃矩阵 + 单页坐标热力(终点消费面);热点/跳出洞察喂 H/I 域优化决策。
+
+---
+
 ## 第 17 章 全局总收口(数据模型 / API / 架构总表 + 跨文档一致性)
 
 > 本章是全套运营控制后台 PRD(**V1–V4 四卷,12 域 + 全局收口,Ch1–Ch17,60+ 个 8 段功能子模块**)的**收口章**。前 16 章按域纵向展开,本章横向收敛为七节:① 全局数据模型总表(§17.1)② 全局 API 总表(§17.2)③ 全局横切机制总表(§17.3)④ 完整 §3.14 跨域归属总表(§17.4)⑤ 跨文档一致性最终处置(§17.5,整合附录 A)⑥ 开放 PM 决议清单(§17.6)⑦ 交付总览 + 投产就绪度(§17.7)。
@@ -2333,7 +2437,7 @@ L5 是平台**数据导出与监管报告生成的统一管控面**——账单 
 | I | `GET/PUT /api/admin/content/*` · `PUT /api/admin/stella/cadence-config` · `PUT /api/admin/legal/risk-disclosure` · `/api/admin/learn/*` · `/api/admin/conversation/*` | Ch14 |
 | J | `PUT /api/admin/killswitch/feature/:key` · `PUT /api/admin/killswitch/geo` · 篡改监控只读 · 应急 SOP 剧本 | Ch15 |
 | K | `GET /api/admin/risk/users/:id/score` · 提现风控规则引擎 config · 反多账户去重簇查询 · 套利检测信号 · 大额 KYC 复审队列 | Ch8 |
-| L | `/api/admin/bi/*`(KPI/漏斗/cohort/运营报表)· `POST /api/admin/bi/export/request` · 财务报表读引用 `/api/admin/treasury/*` | Ch16 |
+| L | `/api/admin/bi/*`(KPI/漏斗/cohort/运营报表)· `GET /api/admin/bi/behavior[/click-heat/page-catalog]`(L6 行为热力)· `POST /api/admin/bi/export/request` · 财务报表读引用 `/api/admin/treasury/*` | Ch16 |
 
 > **端点权威单源(§9.2⑥)**:同一资源读写路径唯一。已登记的跨章共用端点:`maturity-forecast`(D3 权威实现 / B2 调用,字段 `genesisDividendUsdt` 已全卷统一)· `/api/admin/bills/export`(D4 具名 / L5 引用)· kill-switch 切换(A3 V1 临时 → J1/J2 V4 迁移,A3 读路径保留兼容别名)。
 
@@ -2426,7 +2530,7 @@ L5 是平台**数据导出与监管报告生成的统一管控面**——账单 
 | V1 | Ch1–Ch9 + 附录 A | A 基础 / B 驾驶舱 / C 用户 / D 资金 / H1-H2 Phase+Trial / K 风控 | 26 个 8 段 |
 | V2 | Ch10–Ch11 | E 设备商城 / F 分销团队 | 15 个 8 段功能规格(收编为 E1-E5 + F1-F5;E 含 E1a/E1b/E3a/E3b、F 含 F4b/F4c/F4d 子区)|
 | V3 | Ch12–Ch13 | G 金融产品 / H3-H6 增长活动 | 11 个 8 段(G1-G7 + H3-H6) |
-| V4 | Ch14–Ch17 | I 内容CMS / J 紧急合规 / L 数据BI / 全局收口 | 17 个 8 段(I1-I7 + I9 + J1-J4+L1-L5)+ Ch17 收口 |
+| V4 | Ch14–Ch17 | I 内容CMS / J 紧急合规 / L 数据BI / 全局收口 | 18 个 8 段(I1-I7 + I9 + J1-J4+L1-L6)+ Ch17 收口 |
 
 **投产就绪度**:
 
