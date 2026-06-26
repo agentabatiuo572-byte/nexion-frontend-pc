@@ -5,6 +5,7 @@
  */
 import type { ReactNode } from "react";
 import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
+import type { LBiActions, LBiData } from "@/lib/admin/l-client";
 
 export type ActionConfirmReq = {
   action: ReactNode;
@@ -12,7 +13,7 @@ export type ActionConfirmReq = {
   amplifies?: boolean;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
-  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void;
+  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
 export type LCtx = {
@@ -23,4 +24,9 @@ export type LCtx = {
   logAudit: (e: { actor: string; action: string; target: string; before?: string; after?: string; reason?: string }) => void;
   toast: (s: string) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
+  biData?: LBiData | null;
+  biLoading?: boolean;
+  biError?: string | null;
+  reloadBi?: () => Promise<void>;
+  biActions?: LBiActions;
 };

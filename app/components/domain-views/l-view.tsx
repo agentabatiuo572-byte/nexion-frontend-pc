@@ -7,7 +7,7 @@
  * 写动作仅导出/监管报告/排程模板类,真写 L.report.* / L.export.* / L.regulatory.* / L.param.*(setParam + logAudit 双留痕);
  * 聚合导出仍需操作确认(confirm + 审计);视图参数普通确认批(ViewParamModal,会话级)。操作确认 显式 edit 契约同全域。
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./l-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -20,6 +20,7 @@ import { L4HeaderActions, L4Ops } from "./l-tabs/l4-ops";
 import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
 import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
+import { fetchLBiOverviews, lBiActions, type LBiData } from "@/lib/admin/l-client";
 
 const FOLD: Record<string, string> = { L1: "L1", L2: "L2", L3: "L3", L4: "L4", L5: "L5", L6: "L6" };
 
@@ -31,6 +32,25 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   const params = usePlatformConfig((s) => s.params);
   const hydrated = useOpsHydrated();
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
+  const [biData, setBiData] = useState<LBiData | null>(null);
+  const [biLoading, setBiLoading] = useState(true);
+  const [biError, setBiError] = useState<string | null>(null);
+
+  const reloadBi = useCallback(async () => {
+    setBiLoading(true);
+    setBiError(null);
+    try {
+      setBiData(await fetchLBiOverviews());
+    } catch (error) {
+      setBiError(error instanceof Error ? error.message : "BI_DATA_LOAD_FAILED");
+    } finally {
+      setBiLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadBi();
+  }, [reloadBi]);
 
   const ctx: LCtx = {
     pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
@@ -39,6 +59,11 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     logAudit,
     toast: setToast,
     openActionConfirm: setActionConfirm,
+    biData,
+    biLoading,
+    biError,
+    reloadBi,
+    biActions: lBiActions,
   };
 
   const right =
@@ -68,7 +93,13 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           edit={mc.edit}
           businessForm={mc.businessForm}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => { mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
+          onConfirm={(reason, newValue, businessValue) => {
+            const req = mc;
+            setActionConfirm(null);
+            void Promise.resolve(req.run(reason, newValue, businessValue)).catch((error) => {
+              setToast(error instanceof Error ? error.message : "操作失败");
+            });
+          }}
         />
       )}
       {toastNode}

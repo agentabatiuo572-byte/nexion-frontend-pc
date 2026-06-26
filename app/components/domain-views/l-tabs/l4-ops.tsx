@@ -9,17 +9,18 @@ import { useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
-import { KPIS } from "@/lib/mock/admin/design-data";
-import { PHASES, rhythmState } from "@/lib/mock/admin/command-center";
-import { DEV_DIST, DEV_TOTAL, DEV_TILES, DECAY_SEGS, TASK_TILES, TIERS, VR_HIST, REF_DIST, COMM_DIST, TEAM_GMV, PH_ROWS } from "./data";
+import { LDataState, num, rec, rows } from "./live-data";
 import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
 
-const k5 = KPIS[4];
-const k7 = KPIS[6];
-const accRate = (TASK_TILES.doneN / TASK_TILES.dispatchedN) * 100; // 57.8
+type DistRow = { nm: string; n: number; color: string; gen?: string };
+type DecayRow = { m: string; r: string; tone: string; imp: string };
+type TierRow = { nm: string; n: number; acc: number; color: string };
+type PctRow = { nm: string; pct: number; color: string };
+type PhaseRow = { nm: string; vals: string[]; steps: string[] };
 
 export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
+  const deviceTotal = num(ctx.biData?.l4?.deviceTotal);
   const exportOps = async () => {
     const ok = await confirm({
       title: "导出运营报表 CSV",
@@ -27,16 +28,33 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
       confirmLabel: "导出",
     });
     if (!ok) return;
-    ctx.logAudit({ actor: "总管理员", action: "导出运营报表 CSV(聚合 · 无用户明细)", target: "admin.report_exported", after: "export_type=operations_agg" });
-    ctx.toast("已导出运营报表 CSV · 落 admin.report_exported 审计");
+    await ctx.biActions?.createReport({
+      exportType: "运营报表",
+      timeRange: "当前报表周期",
+      fields: "设备/任务/网络/Phase 聚合指标",
+      piiLevel: "无 PII",
+      maskPolicy: "NONE",
+      recipient: "运营管理员",
+      ticket: "L4-OPS-AGG",
+    }, "导出 L4 运营聚合报表用于周度复盘");
+    await ctx.reloadBi?.();
+    ctx.toast("运营聚合报表导出任务已提交 · 数据来自后端 BI 接口");
   };
   const exportTree = () => ctx.openActionConfirm({
     action: "导出网络 / 团队结构明细 · 含 userId 团队树",
-    detail: <><b>隐私敏感批量导出</b> · 范围:全网团队树(userId 维度直推/团队边)· 行数预估 <b>{DEV_TOTAL.toLocaleString("en-US")}</b> · 脱敏策略:userId 保留(关联键)、手机号 hash、地址截断(L5 字段级规则表)· 操作链:增长 / 只读审计(操作员)→ 超管(执行门槛)· 落 admin.report_exported(含 operator / role_gate)。</>,
-    run: (reason) => {
-      ctx.setParam("L.export.networkTree", "requested", { action: "团队树明细导出任务(操作确认 · PII 敏感)", reason });
-      ctx.logAudit({ actor: "总管理员", action: "团队树明细导出任务创建", target: "admin.report_exported", after: `export_type=network_tree · rows≈${DEV_TOTAL.toLocaleString("en-US")} · masking=partial`, reason });
-      ctx.toast("团队明细导出任务已创建 · 待操作确认(L5 可跟踪)");
+    detail: <><b>隐私敏感批量导出</b> · 范围:全网团队树(用户编码维度直推/团队边)· 行数预估 <b>{deviceTotal.toLocaleString("en-US")}</b> · 脱敏策略:用户编码保留(关联键)、手机号 hash、地址截断(L5 字段级规则表)· 操作链:增长 / 只读审计(操作员)→ 超管(执行门槛)· 落 admin.report_exported(含 operator / role_gate)。</>,
+    run: async (reason) => {
+      await ctx.biActions?.createReport({
+        exportType: "团队树明细",
+        timeRange: "全网",
+        fields: "用户编码维度直推/团队边/团队规模",
+        piiLevel: "低(脱敏 ID)",
+        maskPolicy: "部分脱敏",
+        recipient: "增长管理员",
+        ticket: "L4-NETWORK-TREE",
+      }, reason);
+      await ctx.reloadBi?.();
+      ctx.toast("团队明细导出任务已提交 · 待后端确认流转");
     },
   });
   return (
@@ -53,12 +71,47 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
   const [vp, setVp] = useState<ViewParamReq | null>(null);
   const [period, setPeriod] = useState(1);
   const [phSlice, setPhSlice] = useState(0);
+  const data = ctx.biData?.l4;
+  if (!data) return <LDataState ctx={ctx} label="L4" />;
+  const deviceTilesRaw = rec(data.deviceTiles);
+  const taskTilesRaw = rec(data.taskTiles);
+  const DEV_TOTAL = num(data.deviceTotal);
+  const DEV_TILES = {
+    locked: num(deviceTilesRaw.locked),
+    retired: num(deviceTilesRaw.retired),
+    dailyUsd: String(deviceTilesRaw.dailyUsd ?? "—"),
+    dailyNex: String(deviceTilesRaw.dailyNex ?? "—"),
+  };
+  const TASK_TILES = {
+    done: String(taskTilesRaw.done ?? "—"),
+    dispatched: String(taskTilesRaw.dispatched ?? "—"),
+    doneN: num(taskTilesRaw.doneN),
+    dispatchedN: num(taskTilesRaw.dispatchedN, 1),
+    saturation: String(taskTilesRaw.saturation ?? "—"),
+    checkin: String(taskTilesRaw.checkin ?? "—"),
+    tierAvg: String(taskTilesRaw.tierAvg ?? "—"),
+  };
+  const DEV_DIST = rows<DistRow>(data.deviceDistribution);
+  const DECAY_SEGS = rows<DecayRow>(data.decaySegments);
+  const TIERS = rows<TierRow>(data.taskTiers);
+  const VR_HIST = rows<number>(data.vrHistory);
+  const REF_DIST = rows<DistRow>(data.referralDistribution);
+  const COMM_DIST = rows<PctRow>(data.commissionDistribution);
+  const TEAM_GMV = String(data.teamGmv ?? "—");
+  const PH_ROWS = rows<PhaseRow>(data.phaseRows);
+  const PHASES = rows<{ code: string; name: string }>(data.phases).length ? rows<{ code: string; name: string }>(data.phases) : rows<{ code: string; name: string }>(ctx.biData?.phases);
+  const currentPhaseRaw = rec(data.currentPhase ?? ctx.biData?.currentPhase);
+  const k5Raw = rec(data.promoKpi);
+  const k7Raw = rec(data.commissionKpi);
+  const k5 = { value: num(k5Raw.value), target: num(k5Raw.target) };
+  const k7 = { value: num(k7Raw.value), target: num(k7Raw.target) };
+  const accRate = (TASK_TILES.doneN / TASK_TILES.dispatchedN) * 100;
   const below = accRate < accLine;
-  const devMax = Math.max(...DEV_DIST.map((d) => d.n));
-  const tierMax = TIERS[0].n;
-  const vrMax = Math.max(...VR_HIST);
-  const refMax = Math.max(...REF_DIST.map((r) => r.n));
-  const rs = rhythmState(ctx.pget); // 节奏单源镜像(运营在 H1 可配;Phase 切片 chip + 效果报表表格当前列由此派生)
+  const devMax = Math.max(...(DEV_DIST.length ? DEV_DIST.map((d) => d.n) : [1]));
+  const tierMax = TIERS[0]?.n || 1;
+  const vrMax = Math.max(...(VR_HIST.length ? VR_HIST : [1]));
+  const refMax = Math.max(...(REF_DIST.length ? REF_DIST.map((r) => r.n) : [1]));
+  const rs = { currentPhase: String(currentPhaseRaw.code ?? "P3"), currentMonth: num(currentPhaseRaw.month, 0) };
   const phaseIdx = Math.max(0, PHASES.findIndex((p) => p.code === rs.currentPhase)); // 效果报表「(当前)/(计划)」列锚 = 当前阶段下标,不硬钉 P3
 
   return (
