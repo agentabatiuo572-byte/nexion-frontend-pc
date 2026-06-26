@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 69 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 增 H7 代金券)。
+ * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 68 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -183,10 +183,9 @@ export const CONSOLE_NAV: NavDomain[] = [
     l2: [
       { id: "H1", name: "Phase 调度器", path: "/growth/phase", prdAnchor: "H1", batch: "V1", status: "flagship" },
       { id: "H2", name: "免费试用引擎", path: "/growth/trial", prdAnchor: "H2", batch: "V1", status: "flagship" },
-      { id: "H3", name: "Quest 引擎", path: "/growth/quest", prdAnchor: "H3", batch: "V3", status: "flagship" },
-      { id: "H4", name: "活动中心 CMS", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
+      { id: "H3", name: "任务引擎", path: "/growth/quest", prdAnchor: "H3", batch: "V3", status: "flagship" },
+      { id: "H4", name: "活动中心", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
       { id: "H5", name: "签到 & NEX", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
-      { id: "H6", name: "里程碑庆祝", path: "/growth/milestones", prdAnchor: "H6", batch: "V3", status: "flagship" },
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
     ],
   },
@@ -301,4 +300,4 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
-export const L2_COUNT = ALL_L2.length; // 69(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 增 H7 代金券)
+export const L2_COUNT = ALL_L2.length; // 68(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)

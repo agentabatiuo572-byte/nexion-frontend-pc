@@ -103,7 +103,7 @@
 .hdom .two-col .l-card { margin-bottom: 0; display: flex; flex-direction: column; }
 .hdom .two-col .l-card .l-b { flex: 1; }
 
-/* p-row 通用参数行(H1 切换控制 / H2 19 参数 / H5 签到规则 / H6 5 档) */
+/* p-row 通用参数行(H1 切换控制 / H2 19 参数 / H5 签到规则 / 收益里程碑 5 档) */
 .hdom .p-row { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
 .hdom .p-row:last-child { border-bottom: none; }
 .hdom .p-row .k { flex: 1; color: var(--ink-2); min-width: 0; }

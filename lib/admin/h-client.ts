@@ -214,22 +214,22 @@ export async function updateH5PowerUp(id: number, key: "day" | "note", value: st
   );
 }
 
-export async function updateH6EarnMilestone(key: string, thresholdUsd: string | number, rewardNex: string | number, reason: string) {
+export async function updateH5EarnMilestone(key: string, thresholdUsd: string | number, rewardNex: string | number, reason: string) {
   return growthRequest<Record<string, any>>(
     `/earn-milestones/${encodeURIComponent(key)}`,
     {
       method: "PATCH",
       body: JSON.stringify({ thresholdUsd: Number(thresholdUsd), rewardNex: Number(rewardNex), reason, operator: "superadmin" }),
     },
-    "h6-earn",
+    "h5-earn",
   );
 }
 
-export async function updateH6TickInterval(value: string | number, reason: string) {
+export async function updateH5EarnTickInterval(value: string | number, reason: string) {
   return growthRequest<Record<string, any>>(
     "/earn-milestones/tick-interval",
     { method: "PATCH", body: commandBody("tick", value, reason) },
-    "h6-tick",
+    "h5-earn-tick",
   );
 }
 

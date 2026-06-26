@@ -3,7 +3,7 @@
  * 命中注册表 → ModulePage(archetype 真实页);未命中 → ScaffoldPage(规格就绪占位)。
  * 🔴 Next 16:params 是 Promise,必须 await。显式旗舰路由(文件夹)优先于本动态段。
  */
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { findBySlugs } from "@/lib/nav/console-nav";
 import { findModuleEntry } from "@/lib/admin/registry";
 import { ModulePage } from "@/app/components/archetypes/module-page";
@@ -17,6 +17,10 @@ export default async function CatchAllScaffold({
   params: Promise<{ domain: string; module: string }>;
 }) {
   const { domain, module: moduleSlug } = await params;
+  if (domain === "growth" && moduleSlug === "milestones") {
+    redirect("/growth/daily");
+  }
+
   const match = findBySlugs(domain, moduleSlug);
   if (!match) notFound();
 

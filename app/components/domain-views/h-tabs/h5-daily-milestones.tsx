@@ -5,10 +5,10 @@ import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH5CheckIn,
   updateH5CheckInRule,
+  updateH5EarnMilestone,
+  updateH5EarnTickInterval,
   updateH5PowerUp,
   updateH5StreakMilestone,
-  updateH6EarnMilestone,
-  updateH6TickInterval,
 } from "@/lib/admin/h-client";
 import type { HCtx } from "./types";
 
@@ -148,7 +148,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         if (!form) return;
         const threshold = numericInput(form.threshold, milestone.threshold);
         const nex = numericInput(form.nex, milestone.nex);
-        apply(await updateH6EarnMilestone(milestone.key, threshold, nex, reason));
+        apply(await updateH5EarnMilestone(milestone.key, threshold, nex, reason));
         toast(`${milestone.key} 已更新`);
       },
     });
@@ -157,7 +157,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openTick = () => {
     const current = text(model?.tickInterval?.seconds ?? model?.tickInterval?.value, "4");
     openConfirm({
-      action: "H6 触发检查间隔",
+      action: "收益里程碑触发检查间隔",
       detail: <>当前 <b>{text(model?.tickInterval?.value, current)}</b>,后端限制最小/最大值。</>,
       chips: [["写后端配置", "ready"], ["审计留痕", "done"]],
       reason: true,
@@ -165,20 +165,20 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       okLabel: "确认修改",
       run: async (reason, value) => {
         if (!value) return;
-        apply(await updateH6TickInterval(value, reason));
-        toast("H6 触发检查间隔已更新");
+        apply(await updateH5EarnTickInterval(value, reason));
+        toast("收益里程碑触发检查间隔已更新");
       },
     });
   };
 
   if (loading) {
-    return <section className="l-card"><div className="l-b">H5/H6 数据加载中...</div></section>;
+    return <section className="l-card"><div className="l-b">H5 数据加载中...</div></section>;
   }
 
   if (error || !model) {
     return (
       <section className="l-card">
-        <div className="l-h"><span className="ttl">H5/H6 数据加载失败</span></div>
+        <div className="l-h"><span className="ttl">H5 数据加载失败</span></div>
         <div className="l-b">{error ?? "UNKNOWN_ERROR"}</div>
       </section>
     );
@@ -305,7 +305,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">H6 收益里程碑</span>
+          <span className="ttl">收益里程碑</span>
           <span className="sub">· 门槛顺序和奖励由后端校验</span>
           <div className="r">
             <button className="l-btn sm mc" onClick={openTick}>检查间隔: {text(model.tickInterval?.value)}</button>
@@ -340,7 +340,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       </section>
 
       <div className="htint warn">
-        <b>server-canonical</b> · H5/H6 读模型为空时后端先写入默认配置,再从 MySQL 配置表查询返回;前端不再以本地 mock 作为有效数据源。
+        <b>server-canonical</b> · H5 读模型为空时后端先写入默认配置,再从 MySQL 配置表查询返回;前端不再以本地 mock 作为有效数据源。
       </div>
 
       <PaginationExemptionList
@@ -351,7 +351,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
             reason: "里程碑数量有限,需要同屏比较门槛和奖励",
           },
           {
-            label: "H6 收益里程碑",
+            label: "收益里程碑",
             maxRows: model.earnMilestones.length,
             reason: "门槛必须严格递增,不适合分页割裂校验",
           },

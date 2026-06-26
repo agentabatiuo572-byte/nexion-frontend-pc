@@ -76,7 +76,7 @@ function ownerFor(r: CgmRow): { path: string; label: string } {
     [/trial|shadow|discount|autopush|autocharge/, "/growth/trial", "H2 Trial 引擎"],
     [/phase|10-dial|getphasereward|monthly_locked|inviteBonusMultiplier/, "/growth/phase", "H1 Phase 调度"],
     [/quest|tier[12]|streak|weekly_bonus|spin_prizes|lucky/, "/growth/quest", "H3 任务引擎"],
-    [/milestone|achievement|earnings_milestone/, "/growth/milestones", "H6 里程碑"],
+    [/milestone|achievement|earnings_milestone/, "/growth/daily", "H5 签到 & 里程碑"],
     [/stella|cadence|agent_pool|enterliveagent/, "/content/notifications", "I3 推送/Stella"],
     [/unilevel|binary|commission|sponsor|invite_reward|welcome_gift/, "/network/royalty", "F2 佣金规则"],
     [/v_rank|directbonus|peerbonus|cultivation|v_vote|vrankcond|prizename|v_distribution/, "/network/v-rank", "F1 V 级阶梯"],

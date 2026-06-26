@@ -70,6 +70,15 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/growth/milestones",
+        destination: "/growth/daily",
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

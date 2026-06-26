@@ -347,12 +347,12 @@ export type Batch = {
 export const DOMAIN_EXTENSIONS: Batch[] = [
   {
     id: "v3-init", title: "V3 起始批", state: "done",
-    proposer: "活动(H4)/ 里程碑(H6)/ 金融产品(G)",
+    proposer: "活动(H4)/ 里程碑(H5)/ 金融产品(G)",
     impact: "占位事件已迁回各自 domain",
     newDomains: ["event", "milestone", "nex", "premium", "repurchase"].map((d) => ({ name: d, n: true })),
     details: [
       ["event.*", "活动中心事件(H4)· 已迁回"],
-      ["milestone.*", "收益里程碑(H6)· 已迁回"],
+      ["milestone.*", "收益里程碑(H5)· 已迁回"],
       ["nex.* / premium.* / repurchase.*", "金融产品三件套(G 域)· 已迁回"],
     ],
   },

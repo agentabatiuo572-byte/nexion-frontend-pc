@@ -87,7 +87,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
     "stake.* · genesis.* · admin.apy_changed",
   ],
   H: [
-    "Phase 调度 / 试用 / Quest / 活动 / 签到 / 里程碑",
+    "Phase 调度 / 试用 / Quest / 活动 / 签到&里程碑",
     "Phase 仪表 · 10-dial 表 · 活动 CMS · Quest 表",
     "10 dial(月粒度)· cohort override · 倍率",
     "调 dial / 发活动 · 操作确认 · 排程",
