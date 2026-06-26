@@ -490,6 +490,9 @@ export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
+type NotifyTemplateOption = { value: string; label: string; campaignNo?: string; meta?: string; tier?: string; status?: string; audience?: string; searchText?: string };
+type SopActionOption = { value: string; label: string; domain: string; action: string; ref?: string | null; approve?: boolean; description?: string; searchText?: string };
+type SopRollbackOption = { value: string; label: string; scene?: string; riskLevel?: string; plan: string; searchText?: string };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
 function initEditValue(spec?: EditSpec | null): string {
@@ -510,7 +513,9 @@ export type BusinessFormSpec =
   | { kind: "schema-authoring"; ownerDomains?: string[]; propertyTypes?: string[]; samplingPolicies?: string[]; versionHint?: string }
   | { kind: "disposition-lifecycle"; subject: string; periods?: string[]; ownerHint?: string }
   | { kind: "balance-adjust"; subject: string; currencies?: string[]; directions?: string[] }
-  | { kind: "sop-authoring"; scenes?: string[]; owners?: string[]; nameHint?: string }
+  | { kind: "sop-authoring"; scenes?: string[]; owners?: string[]; nameHint?: string; notifyTemplates?: NotifyTemplateOption[]; actionOptions?: SopActionOption[]; rollbackOptions?: SopRollbackOption[];
+      currentName?: string; currentScene?: string; currentOwner?: string; currentSla?: string; currentEmergencyTrack?: boolean;
+      currentActionSeq?: string; currentNotifyCampaignNo?: string; currentNotifyTemplate?: string; currentRollback?: string; currentDrillRequired?: boolean }
   | { kind: "export-wizard"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; keyName?: string; zh?: string; en?: string; placeholders?: string[] }
@@ -785,7 +790,22 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return { direction: spec.directions?.[0] ?? "增加", amount: "", currency: spec.currencies?.[0] ?? "USDT", voucher: "" };
   }
   if (spec.kind === "sop-authoring") {
-    return { name: "", scene: spec.scenes?.[0] ?? "监管点名", owner: spec.owners?.[0] ?? "风控 lead", sla: "15 分钟", emergencyTrack: "true", actionSeq: "", notifyTemplate: "", rollback: "", drillRequired: "true" };
+    const notify = spec.notifyTemplates?.find((item) => item.value === spec.currentNotifyCampaignNo) ?? spec.notifyTemplates?.[0];
+    return {
+      name: spec.currentName ?? "",
+      scene: spec.currentScene ?? spec.scenes?.[0] ?? "监管点名",
+      owner: spec.currentOwner ?? spec.owners?.[0] ?? "风控 lead",
+      sla: spec.currentSla ?? "15 分钟",
+      emergencyTrack: spec.currentEmergencyTrack === false ? "false" : "true",
+      actionSeq: spec.currentActionSeq ?? "",
+      actionSearch: "",
+      notifyCampaignNo: spec.currentNotifyCampaignNo ?? notify?.value ?? "",
+      notifyTemplate: spec.currentNotifyTemplate ?? notify?.label ?? "",
+      notifySearch: spec.currentNotifyTemplate ?? "",
+      rollback: spec.currentRollback ?? "",
+      rollbackSearch: "",
+      drillRequired: spec.currentDrillRequired === false ? "false" : "true",
+    };
   }
   if (spec.kind === "export-wizard") {
     return { exportType: spec.exportTypes?.[0] ?? "账单 CSV", timeRange: "", fields: "", piiLevel: spec.piiLevels?.[0] ?? "无 PII", maskPolicy: spec.maskPolicies?.[0] ?? "默认脱敏", recipient: "", ticket: "" };
@@ -936,6 +956,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isFinite(amt) || amt <= 0) missing.push("调整金额(正数)");
   } else if (spec.kind === "sop-authoring") {
     ["name", "scene", "owner", "sla", "actionSeq", "rollback"].forEach((k) => needs(k, k));
+    needs("notifyCampaignNo", "I3 通知模板");
   } else if (spec.kind === "export-wizard") {
     ["exportType", "timeRange", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
   } else if (spec.kind === "task-edit") {
@@ -1643,6 +1664,47 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   }
 
   if (spec.kind === "sop-authoring") {
+    const notifyTemplates = spec.notifyTemplates ?? [];
+    const notifyQuery = (value.notifySearch ?? "").trim().toLowerCase();
+    const selectedNotify = notifyTemplates.find((item) => item.value === value.notifyCampaignNo);
+    const shownNotifyTemplates = notifyTemplates
+      .filter((item) => !notifyQuery || (item.searchText ?? `${item.label} ${item.meta ?? ""}`).toLowerCase().includes(notifyQuery))
+      .slice(0, 8);
+    const chooseNotify = (item: NotifyTemplateOption) => onChange({
+      ...value,
+      notifyCampaignNo: item.value,
+      notifyTemplate: item.label,
+      notifySearch: item.label,
+    });
+    const actionOptions = spec.actionOptions ?? [];
+    const actionQuery = (value.actionSearch ?? "").trim().toLowerCase();
+    const actionLines = (value.actionSeq ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const shownActionOptions = actionOptions
+      .filter((item) => !actionQuery || (item.searchText ?? `${item.label} ${item.description ?? ""}`).toLowerCase().includes(actionQuery))
+      .slice(0, 8);
+    const setActionLines = (lines: string[]) => onChange({ ...value, actionSeq: lines.join("\n") });
+    const actionLine = (item: SopActionOption) => `${item.domain}·${item.action}${item.ref ? `·${item.ref}` : ""}`;
+    const addAction = (item: SopActionOption) => {
+      const nextLine = actionLine(item);
+      setActionLines([...actionLines, nextLine]);
+    };
+    const removeAction = (idx: number) => setActionLines(actionLines.filter((_, i) => i !== idx));
+    const splitAction = (line: string) => {
+      const [domain, ...rest] = line.split(/[·|｜]/).map((part) => part.trim()).filter(Boolean);
+      return { domain: domain || "J4", action: rest.join(" · ") || line };
+    };
+    const rollbackOptions = spec.rollbackOptions ?? [];
+    const rollbackQuery = (value.rollbackSearch ?? "").trim().toLowerCase();
+    const selectedRollback = rollbackOptions.find((item) => item.plan === value.rollback || item.value === value.rollbackTemplate);
+    const shownRollbackOptions = rollbackOptions
+      .filter((item) => !rollbackQuery || (item.searchText ?? `${item.label} ${item.scene ?? ""} ${item.riskLevel ?? ""} ${item.plan}`).toLowerCase().includes(rollbackQuery))
+      .slice(0, 8);
+    const chooseRollback = (item: SopRollbackOption) => onChange({
+      ...value,
+      rollbackTemplate: item.value,
+      rollback: item.plan,
+      rollbackSearch: item.label,
+    });
     return (
       <div className="field" data-business-form="sop-authoring">
         <label>业务表单 · 应急 SOP 剧本编排</label>
@@ -1651,13 +1713,180 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {select("scene", "触发场景 scene", spec.scenes ?? ["监管点名", "对账缺口", "挤兑预警", "数据泄露", "制裁名单更新"])}
           {select("owner", "责任角色 owner", spec.owners ?? ["风控 lead", "合规审计", "超管", "财务 lead"])}
           {input("sla", "SLA(响应时限)", "15 分钟")}
-          {input("notifyTemplate", "通知模板 notify", "I3 critical · 全体超管")}
         </div>
-        <div style={{ marginTop: 10 }}>
-          {textArea("actionSeq", "动作序列 action sequence(每行一步:域·原子动作·参数)", "J1·熔断提现闸\nJ2·封锁命中辖区 IR / VE\nI5·更新风险披露\nC2·冻结命中账户簇", 4)}
+        <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
+          <span>通知模板 notify · 来自 I3</span>
+          <input
+            className="fld"
+            value={value.notifySearch ?? ""}
+            onChange={(e) => onChange({ ...value, notifySearch: e.target.value, notifyCampaignNo: "", notifyTemplate: "" })}
+            placeholder="搜索通知标题 / 编号 / 优先级 / 受众"
+          />
+          <div data-proof="sop-i3-notify-template-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
+            {notifyTemplates.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>I3 暂无可选通知模板,请先确认 I3 Campaign 接口已返回数据。</div>
+            ) : shownNotifyTemplates.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的通知模板,请换个关键词。</div>
+            ) : shownNotifyTemplates.map((item) => {
+              const active = item.value === value.notifyCampaignNo;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => chooseNotify(item)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    gap: 8,
+                    alignItems: "center",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`,
+                    background: active ? "var(--brand-soft)" : "var(--surface-2)",
+                    color: "var(--ink)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>{item.label}</span>
+                  <span className="mono" style={{ fontSize: 11, color: active ? "var(--brand)" : "var(--ink-3)" }}>{item.campaignNo ?? item.value}</span>
+                  {item.meta && <span className="tiny" style={{ gridColumn: "1 / -1", color: "var(--ink-3)" }}>{item.meta}</span>}
+                </button>
+              );
+            })}
+          </div>
+          {selectedNotify && (
+            <div className="tint tiny" style={{ marginTop: 8 }}>
+              已选择 <span className="mono">{selectedNotify.campaignNo}</span> · {selectedNotify.label}
+            </div>
+          )}
         </div>
-        <div style={{ marginTop: 10 }}>
-          {textArea("rollback", "回滚方案 rollback", "根因消除 + 执行门槛操作确认后逐步恢复;恢复恒走常规轨", 2)}
+        <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
+          <span>动作序列 action sequence · 后端动作模板</span>
+          <input
+            className="fld"
+            value={value.actionSearch ?? ""}
+            onChange={(e) => onChange({ ...value, actionSearch: e.target.value })}
+            placeholder="搜索域 / 动作 / 参数 / 说明"
+          />
+          <div data-proof="sop-action-option-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
+            {actionOptions.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可选原子动作,请确认 J4 SOP 接口已返回 actionOptions。</div>
+            ) : shownActionOptions.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的原子动作,请换个关键词。</div>
+            ) : shownActionOptions.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => addAction(item)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 8,
+                  alignItems: "center",
+                  textAlign: "left",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  color: "var(--ink)",
+                  cursor: "pointer",
+                }}
+              >
+                <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{item.domain}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 650 }}>{item.action}</span>
+                  {item.description && <span className="tiny" style={{ display: "block", color: "var(--ink-3)" }}>{item.description}</span>}
+                </span>
+                <span className="tiny" style={{ color: item.approve === false ? "var(--ink-3)" : "var(--danger)" }}>
+                  {item.approve === false ? "无需确认" : "需确认"}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div data-proof="sop-action-sequence" style={{ display: "grid", gap: 6, marginTop: 10 }}>
+            <span className="tiny" style={{ color: "var(--ink-3)" }}>已编排步骤</span>
+            {actionLines.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>请从上方动作模板添加至少 1 个步骤。</div>
+            ) : actionLines.map((line, idx) => {
+              const step = splitAction(line);
+              return (
+                <div
+                  key={`${line}-${idx}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto auto 1fr auto",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "7px 9px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    background: "var(--surface-3)",
+                  }}
+                >
+                  <span className="mono" style={{ color: "var(--ink-3)", fontSize: 11 }}>{idx + 1}</span>
+                  <span className="mono" style={{ color: "var(--brand)", fontSize: 11 }}>{step.domain}</span>
+                  <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{step.action}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAction(idx)}
+                    style={{ border: 0, background: "transparent", color: "var(--danger)", cursor: "pointer", fontSize: 12 }}
+                  >
+                    移除
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
+          <span>回滚方案 rollback · 后端模板</span>
+          <input
+            className="fld"
+            value={value.rollbackSearch ?? ""}
+            onChange={(e) => onChange({ ...value, rollbackSearch: e.target.value, rollbackTemplate: "", rollback: "" })}
+            placeholder="搜索场景 / 模板 / 风险等级 / 回滚内容"
+          />
+          <div data-proof="sop-rollback-template-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
+            {rollbackOptions.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可选回滚模板,请确认 J4 SOP 接口已返回 rollbackOptions。</div>
+            ) : shownRollbackOptions.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的回滚模板,请换个关键词。</div>
+            ) : shownRollbackOptions.map((item) => {
+              const active = item.plan === value.rollback || item.value === value.rollbackTemplate;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => chooseRollback(item)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    gap: 8,
+                    alignItems: "center",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`,
+                    background: active ? "var(--brand-soft)" : "var(--surface-2)",
+                    color: "var(--ink)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ fontSize: 12.5, fontWeight: 650 }}>{item.label}</span>
+                  <span className="mono" style={{ fontSize: 11, color: active ? "var(--brand)" : "var(--ink-3)" }}>{item.riskLevel ?? "MEDIUM"}</span>
+                  <span className="tiny" style={{ gridColumn: "1 / -1", color: "var(--ink-3)" }}>
+                    {item.scene ?? "通用"} · {item.plan}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {selectedRollback && (
+            <div className="tint tiny" style={{ marginTop: 8 }}>
+              已选择 {selectedRollback.label} · {selectedRollback.plan}
+            </div>
+          )}
         </div>
         <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>

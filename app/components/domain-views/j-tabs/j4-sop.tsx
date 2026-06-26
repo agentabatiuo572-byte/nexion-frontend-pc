@@ -3,13 +3,13 @@
 /**
  * J4 · 监管点名应急 SOP — 8 剧本库(actionSequence timeline)+ 应急快速轨 SLA + 执行追溯历史。
  * 每步原子动作落各域确认门,J4 编排面不再额外操作确认;应急快速轨只加速确认理由 SLA,绝不取消确认理由。
- * 剧本编辑 / 演练 / 执行 / 新增均走 OperationConfirmModal → setParam(J.emergency.playbook.*)。
+ * 剧本编辑 / 演练 / 执行 / 新增均走 OperationConfirmModal → 后端 /emergency/sop/* 接口。
  */
 import { useState } from "react";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { PLAYBOOKS, PB_SCENES, EXECS, type Playbook } from "./data";
 import type { JCtx } from "./types";
+import type { J4PlaybookCreateInput, Playbook } from "@/lib/admin/j-client";
 
 /* 域 badge → 色族(danger=J 域 / warning=D2 / brand=I5 / cyan=I3,I2 / brand-2=C2,K1 / success=B1) */
 const DOM_CLS: Record<string, string> = { J1: "dj", J2: "dj", D2: "dd", I5: "di5", I3: "di", I2: "di", C2: "dc", K1: "dc", B1: "db" };
@@ -19,34 +19,79 @@ function axRender(s: string) {
   return s.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? <b key={i}>{part}</b> : <span key={i}>{part}</span>));
 }
 
+function playbookFormBody(bv: Record<string, string> | undefined, fallbackName: string): J4PlaybookCreateInput {
+  return {
+    name: bv?.name?.trim() || fallbackName,
+    scene: bv?.scene,
+    owner: bv?.owner,
+    sla: bv?.sla,
+    emergencyTrack: bv?.emergencyTrack === "true",
+    actionSeq: bv?.actionSeq,
+    notifyCampaignNo: bv?.notifyCampaignNo,
+    notifyTemplate: bv?.notifyTemplate,
+    rollback: bv?.rollback,
+    drillRequired: bv?.drillRequired === "true",
+  };
+}
+
+function actionSeqText(p: Playbook) {
+  return p.seq.map((s) => `${s.dom}·${s.ax.replace(/\*\*/g, "")}`).join("\n");
+}
+
 /** J4 页头 CTA(挂 DomainHeader 右槽):+ 新增剧本。 */
 export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
-  const { setParam, toast, openActionConfirm } = ctx;
+  const { toast, openActionConfirm, actions, emergency } = ctx;
+  const runBackend = (task: Promise<void>, ok: string) => {
+    task
+      .then(() => actions.reloadJEmergency())
+      .then(() => toast(ok))
+      .catch((error) => toast(`操作失败 · ${error instanceof Error ? error.message : "J4_API_FAILED"}`));
+  };
   const newPb = () => openActionConfirm({
     action: "新增应急剧本",
     detail: <><b>SOP 编排器</b>:配置名称 / 触发场景 / 责任角色 / SLA / 应急轨 / 动作序列(各域原子动作)/ 通知模板 / 回滚方案 / 演练要求 · 走操作确认 · 入库后进剧本库 · 写 admin.emergency_playbook_edited。</>,
-    businessForm: { kind: "sop-authoring", nameHint: "如 监管点名快速止血" },
+    businessForm: {
+      kind: "sop-authoring",
+      nameHint: "如 监管点名快速止血",
+      notifyTemplates: emergency.notifyTemplates ?? [],
+      actionOptions: emergency.sop?.actionOptions ?? [],
+      rollbackOptions: emergency.sop?.rollbackOptions ?? [],
+    },
     run: (reason, _v, bv) => {
-      const steps = (bv?.actionSeq || "").split("\n").map((s) => s.trim()).filter(Boolean);
-      const slug = (bv?.name || "未命名").replace(/[^\w一-龥]+/g, "_");
-      setParam(`J.emergency.playbook.draft.${slug}`, JSON.stringify({ name: bv?.name, scene: bv?.scene, owner: bv?.owner, sla: bv?.sla, emergency: bv?.emergencyTrack, actions: steps, notify: bv?.notifyTemplate, rollback: bv?.rollback, drill: bv?.drillRequired }), { action: `新增应急剧本「${bv?.name}」(${steps.length} 步 · ${bv?.scene} · 责任 ${bv?.owner} · SLA ${bv?.sla})`, reason });
-      toast(`新剧本「${bv?.name}」已确认生效(${steps.length} 步)· 记入草稿位`);
+      const name = bv?.name || "未命名应急剧本";
+      runBackend(actions.createJ4Playbook(playbookFormBody(bv, name), reason), `新剧本「${name}」已确认生效 · 记入草稿位`);
     },
   });
   return <button className="f-cta" onClick={newPb}>+ 新增剧本</button>;
 }
 
 export function J4Sop({ ctx }: { ctx: JCtx }) {
-  const { pget, setParam, toast, openActionConfirm } = ctx;
+  const { toast, openActionConfirm, actions, emergency, contentLoading } = ctx;
   const [scene, setScene] = useState("全部");
+  const data = emergency.sop;
+  if (contentLoading && !data) {
+    return <section className="pb-grid"><div className="pb-card"><div className="pb-top"><span className="pb-code">J4</span><div className="nm">SOP 数据加载中</div></div></div></section>;
+  }
+  if (!data) {
+    return <section className="pb-grid"><div className="pb-card"><div className="pb-top"><span className="pb-code">J4</span><div className="nm">暂无 SOP 数据</div></div></div></section>;
+  }
+  const PLAYBOOKS = data.playbooks;
+  const PB_SCENES = data.scenes;
+  const EXECS = data.executions;
   // 应急加急参数与 J1 同源(J.emergency.* store 覆盖回落 PRD 默认 15/60/4),J1 调整后本卡同步。
-  const slaMins = pget("J.emergency.confirmSlaMins") ?? "15";
-  const escMins = pget("J.emergency.escalateMaxMins") ?? "60";
-  const escRounds = pget("J.emergency.escalateMaxRounds") ?? "4";
+  const slaMins = String(data.sla.confirmSlaMins ?? "15");
+  const escMins = String(data.sla.escalateMaxMins ?? "60");
+  const escRounds = String(data.sla.escalateMaxRounds ?? "4");
   // 近 90d 实战执行次数从 EXECS 派生(名称含「(演练)」的为演练记录)。
   const liveExecs = EXECS.filter((e) => !e.name.includes("(演练)")).length;
 
-  const effDrillState = (p: Playbook): "active" | "todo" => (pget(`J.emergency.playbook.${p.code}.drill`) === "drilling" ? "active" : p.state);
+  const runBackend = (task: Promise<void>, ok: string) => {
+    task
+      .then(() => actions.reloadJEmergency())
+      .then(() => toast(ok))
+      .catch((error) => toast(`操作失败 · ${error instanceof Error ? error.message : "J4_API_FAILED"}`));
+  };
+  const effDrillState = (p: Playbook): "active" | "todo" | string => p.state;
   const shown = PLAYBOOKS.filter((p) => scene === "全部" || p.scene === scene);
   const ready = PLAYBOOKS.filter((p) => effDrillState(p) === "active").length;
   const todo = PLAYBOOKS.length - ready;
@@ -55,11 +100,28 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
   const editPb = (p: Playbook) => openActionConfirm({
     action: `编辑应急剧本 · ${p.code} ${p.name}`,
     detail: <><b>SOP 编排器 · 剧本库维护</b>:重排 {p.name} 的动作序列(当前 {p.seq.length} 步)/ 触发场景 / 责任角色 / SLA / 应急轨 / 通知模板 / 回滚方案 · 风控/超管执行门槛 · 写 admin.emergency_playbook_edited(before→after action_sequence,A2 留痕)。</>,
-    businessForm: { kind: "sop-authoring", nameHint: p.name, owners: [p.owner, "风控 lead", "合规审计", "超管"] },
+    businessForm: {
+      kind: "sop-authoring",
+      nameHint: p.name,
+      owners: [p.owner, "风控 lead", "合规审计", "超管"],
+      notifyTemplates: emergency.notifyTemplates ?? [],
+      actionOptions: data.actionOptions ?? [],
+      rollbackOptions: data.rollbackOptions ?? [],
+      currentName: p.name,
+      currentScene: p.scene,
+      currentOwner: p.owner,
+      currentSla: p.sla,
+      currentEmergencyTrack: p.emer,
+      currentActionSeq: actionSeqText(p),
+      currentNotifyCampaignNo: p.notifyCampaignNo,
+      currentNotifyTemplate: p.notifyTemplate,
+      currentRollback: p.rollback,
+      currentDrillRequired: p.drillRequired,
+    },
     run: (reason, _v, bv) => {
       const steps = (bv?.actionSeq || "").split("\n").map((s) => s.trim()).filter(Boolean);
-      setParam(`J.emergency.playbook.${p.code}`, JSON.stringify({ name: bv?.name || p.name, scene: bv?.scene, owner: bv?.owner, sla: bv?.sla, emergency: bv?.emergencyTrack, actions: steps, notify: bv?.notifyTemplate, rollback: bv?.rollback, drill: bv?.drillRequired }), { action: `编辑应急剧本 ${p.code}(${p.name})· ${steps.length} 步`, reason });
-      toast(`${p.code} 剧本变更已确认生效(${steps.length} 步)`);
+      const summary = steps.length ? steps.join(" | ") : `${bv?.name || p.name} · ${bv?.scene || p.scene} · ${bv?.owner || p.owner}`;
+      runBackend(actions.updateJ4Playbook(p.code, { ...playbookFormBody(bv, p.name), summary }, reason), `${p.code} 剧本变更已确认生效(${steps.length} 步)`);
     },
   });
 
@@ -67,8 +129,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     action: `启动演练 · ${p.code} ${p.name}`,
     detail: <><b>演练执行</b>(非实战):走完 {p.seq.length} 步动作序列 · 每步原子动作在<b>沙箱环境</b>验证 · 实际不下发到生产 · 演练结果写 A2 · 通过则最近演练时间更新 · 剧本进入「演练就绪」。</>,
     run: (reason) => {
-      setParam(`J.emergency.playbook.${p.code}.drill`, "drilling", { action: `启动演练 ${p.code}(${p.name})· 沙箱`, reason });
-      toast(`${p.code} 演练已启动 · 沙箱执行`);
+      runBackend(actions.drillJ4Playbook(p.code, reason), `${p.code} 演练已启动 · 沙箱执行`);
     },
   });
 
@@ -94,8 +155,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       </>
     ),
     run: (reason) => {
-      setParam(`J.emergency.playbook.${p.code}.execute`, isEmer ? "emergency" : "regular", { action: `执行应急剧本 ${p.code}(${isEmer ? "应急轨 emergency=true" : "常规轨"})`, reason });
-      toast(`${p.code} ${isEmer ? "应急执行 · A2 emergency=true" : "常规执行 · A2 留痕"}`);
+      runBackend(actions.executeJ4Playbook(p.code, isEmer, reason), `${p.code} ${isEmer ? "应急执行 · A2 emergency=true" : "常规执行 · A2 留痕"}`);
     },
   });
 
@@ -103,7 +163,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat"><div className="k">剧本库</div><div className="v">{PLAYBOOKS.length}</div><div className="sub">已发布 + 2 草稿</div></div>
+        <div className="f-stat"><div className="k">剧本库</div><div className="v">{PLAYBOOKS.length}</div><div className="sub">已发布 + 草稿</div></div>
         <div className="f-stat ok"><div className="k">演练就绪</div><div className="v">{ready}</div><div className="sub">近 90d 已演练</div></div>
         <div className="f-stat warn"><div className="k">待演练</div><div className="v">{todo}</div><div className="sub">超期 · 阻断「演练就绪」</div></div>
         <div className="f-stat danger"><div className="k">应急轨剧本</div><div className="v">{emerCount}</div><div className="sub">可走应急加急通道</div></div>
@@ -177,7 +237,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
               <div className="meta">
                 <div className="it"><span className="k">SLA</span><span className="v">{p.sla}</span></div>
                 <div className="it"><span className="k">责任</span><span className="v"><AutoGloss>{p.owner}</AutoGloss></span></div>
-                <div className="it"><span className="k">最近演练</span><span className={"v" + (state === "todo" ? " warn" : "")}>{pget(`J.emergency.playbook.${p.code}.drill`) === "drilling" ? "刚刚 · 沙箱" : p.lastDrill}</span></div>
+                <div className="it"><span className="k">最近演练</span><span className={"v" + (state === "todo" ? " warn" : "")}>{p.lastDrill}</span></div>
               </div>
               <div className="acts">
                 <button className="edit" onClick={() => editPb(p)}>编辑</button>

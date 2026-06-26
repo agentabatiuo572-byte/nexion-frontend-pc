@@ -3,47 +3,61 @@
 /**
  * J1 · Kill-Switch 矩阵 — 5 闸 status grid + 矩阵主表 + 应急快速通道 + B1 备付金前置核验 + 自动触发规则。
  * 闸集 = 前端 §9.11d.1 的 4 闸 + 后台应急新增 withdraw(5 闸,与 B5 雷达 / 首页单源;Premium/NEX v2 已下线)。
- * B1 数值全部从 LEDGER 单源派生(TREASURY);recoverGate = B1.redLine,不另立数值。
+ * B1 数值全部从后端 coverage facade 单源派生;recoverGate = B1.redLine,不另立数值。
  */
 import { useState } from "react";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { KILLSWITCH, TREASURY } from "@/lib/mock/admin/design-data";
-import { EMER_SLA, AUTO_RULES, TAMPER_ALERT_CONFIG } from "./data";
 import type { JCtx } from "./types";
-import { usePropose } from "@/lib/admin/use-propose";
+import type { AutoRuleRow, EmergencySlaRow, JGate } from "@/lib/admin/j-client";
 
-type Gate = (typeof KILLSWITCH)[number];
+type Gate = JGate;
 const IMPACT_LABEL: Record<string, string> = { immediate: "立即出钱", delayed: "延迟出钱", none: "不出钱" };
 const PROPOSAL_LABEL: Record<string, string> = { idle: "无", pending: "待确认", approved: "已通过", rejected: "已驳回" };
 
-/* B1 标尺:量程 0 — (redLine+40);三段 = 危险 <redLine / 审慎 redLine—yellowLine / 健康 ≥yellowLine */
-const COV = TREASURY.coverageRatio;
-const RED = TREASURY.redLine;
-const YELLOW = TREASURY.yellowLine;
-const RANGE = RED + 40;
-const pct = (v: number) => Math.min(100, Math.max(0, (v / RANGE) * 100));
-
 export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
-  const { pget, setParam, toast, openActionConfirm } = ctx;
-  const propose = usePropose();
+  const { toast, openActionConfirm, actions, emergency, contentLoading } = ctx;
+  const data = emergency.killSwitch;
+  const gates = data?.activeGates ?? [];
+  const EMER_SLA = data?.emergencySla ?? [];
+  const AUTO_RULES = data?.autoRules ?? [];
+  const coverage = data?.coverage;
+  const COV = coverage?.coverageRatio ?? 0;
+  const RED = coverage?.redlinePct ?? 0;
+  const YELLOW = coverage?.yellowLinePct ?? RED + 25;
+  const RANGE = RED + 40;
+  const pct = (v: number) => Math.min(100, Math.max(0, (v / RANGE) * 100));
   // #28 批量关停选择集:运营勾选要熔断的闸(替代旧的固定「立即出钱」闸硬编码)。
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const toggleSel = (key: string) => setSel((s) => ({ ...s, [key]: !s[key] }));
 
-  const effOn = (g: Gate): boolean => { const v = pget(`J.killswitch.${g.key}`); return v ? v === "on" : g.on; };
-  const effEmer = (g: Gate): boolean => pget(`J.killswitch.${g.key}.emergency`) === "true";
-  const effChange = (g: Gate): string => (pget(`J.killswitch.${g.key}`) ? "刚刚 · 你 / 执行门槛" : g.lastChange);
-  const effProposal = (g: Gate): string => (pget(`J.killswitch.${g.key}`) ? "approved" : g.proposalStatus);
-  // R3 阈值与 J3 告警阈值同源(PRD J1④ R3 判据引用 J3③,不另立 key);R1/R2 走 J.autorule.* 可操作确认调。
-  const tamperThr = (pget("J.tamper.alertConfig") ?? TAMPER_ALERT_CONFIG.threshold).split("·")[0].trim();
-  const effThr = (r: (typeof AUTO_RULES)[number]) => (r.id === "tamperCluster" ? tamperThr : pget(`J.autorule.${r.id}`) ?? r.thr);
-  // recoverGate 跟随 B1 红线单源(LEDGER),J 域只读引用不持有;其余应急参数 store 可调。
-  const effSla = (row: (typeof EMER_SLA)[number]) => (row.id === "recoverGate" ? String(RED) : pget(`J.emergency.${row.id}`) ?? row.v);
-  const slaMins = effSla(EMER_SLA[0]);
+  if (contentLoading && !data) {
+    return <section className="matrix-card"><div className="matrix-h"><span className="ttl">J1 数据加载中</span><span className="sub">· 正在读取紧急开关接口</span></div></section>;
+  }
+  if (!data) {
+    return <section className="matrix-card"><div className="matrix-h"><span className="ttl">J1 暂无紧急开关数据</span><span className="sub">· 后端接口未返回数据</span></div></section>;
+  }
 
-  const live = KILLSWITCH.filter(effOn).length;
-  const killed = KILLSWITCH.length - live;
+  const runBackend = (task: Promise<void>, ok: string) => {
+    task
+      .then(() => actions.reloadJEmergency())
+      .then(() => toast(ok))
+      .catch((error) => toast(`操作失败 · ${error instanceof Error ? error.message : "J1_API_FAILED"}`));
+  };
+
+  const effOn = (g: Gate): boolean => g.enabled;
+  const effEmer = (g: Gate): boolean => g.emergency;
+  const effChange = (g: Gate): string => g.lastChange;
+  const effProposal = (g: Gate): string => g.proposalStatus || "idle";
+  // R3 阈值与 J3 告警阈值同源(PRD J1④ R3 判据引用 J3③,不另立 key);R1/R2 走 J.autorule.* 可操作确认调。
+  const tamperThr = (emergency.tamper?.alertConfig.label ?? "10 次 / 24h").split("·")[0].trim();
+  const effThr = (r: AutoRuleRow) => (r.id === "tamperCluster" ? tamperThr : r.thr);
+  // recoverGate 跟随 B1 红线单源(LEDGER),J 域只读引用不持有;其余应急参数 store 可调。
+  const effSla = (row: EmergencySlaRow) => row.v;
+  const slaMins = EMER_SLA[0] ? effSla(EMER_SLA[0]) : "15";
+
+  const live = gates.filter(effOn).length;
+  const killed = gates.length - live;
   const covPass = COV >= RED;
 
   // 单闸熔断恒走常规轨(emergency=false):止血即时生效、server 当场拒绝下游请求。
@@ -55,8 +69,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <><b>{g.name}</b>(<span className="mono">{g.key}</span> · {g.cap})· {g.desc} · 资金语义:<b>{IMPACT_LABEL[g.coverageImpactCategory]}</b> · 熔断方向不前置 B1 · 常规轨(emergency=false)· server 即时拒绝下游能力请求。<b>处置预案(disposition_plan,可选)</b>:在途请求冻结待恢复 · 客服话术同步 · 恢复条件 = 根因消除 + 执行门槛操作确认。</>
     ),
     run: (reason) => {
-      setParam(`J.killswitch.${g.key}`, "off", { action: `熔断功能闸(常规轨) ${g.key}`, reason });
-      toast(`已熔断 ${g.name} · 写 A2`);
+      runBackend(actions.toggleJ1KillSwitch(g.key, false, reason), `已熔断 ${g.name} · 写 A2`);
     },
   });
 
@@ -69,31 +82,13 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         : <>不挂 B1(非放大流出闸)· 直接恢复。</>} 恢复恒走常规轨,不可应急加速(§15.1)。</>
     ),
     run: (reason) => {
-      // 按执行门槛分流:Kill-Switch 恢复 = 超管门槛;非超管身份发起则入 A2 pending 提案等超管执行。
-      const mutations = [
-        { key: `J.killswitch.${g.key}`, value: "on", action: `恢复功能闸 ${g.key}` + (g.coveragePrecheckRequired ? `(B1 核验 ${COV}%≥${RED}%)` : "") },
-      ];
-      if (effEmer(g)) mutations.push({ key: `J.killswitch.${g.key}.emergency`, value: "false", action: `清除应急标记 ${g.key}` });
-      propose(toast, {
-        action: `Kill-Switch 恢复 · ${g.name}`,
-        obj: `${g.key} · ${g.cap}`,
-        before: "disabled",
-        after: "enabled",
-        type: "sos",
-        amplifies: g.amplifies,
-        sos: true,
-        gate: { roles: [] },
-        gateLabel: "超管",
-        reason,
-        mutations,
-        sourceDomain: "J1",
-      });
+      runBackend(actions.toggleJ1KillSwitch(g.key, true, reason), `${g.name} 已恢复 · B1 前置核验已记录`);
     },
   });
 
   const launchBatch = () => {
     // #28:用运营勾选的在线闸作为批量关停目标(替代旧固定「立即出钱」闸);未选任何闸禁止确认。
-    const targets = KILLSWITCH.filter((g) => sel[g.key] && effOn(g));
+    const targets = gates.filter((g) => sel[g.key] && effOn(g));
     if (!targets.length) { toast("请先在上方闸卡勾选要批量关停的在线功能闸(至少一个)"); return; }
     openActionConfirm({
       action: "应急批量熔断 · 监管点名场景",
@@ -101,39 +96,33 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <>一次性熔断<b>已选 {targets.length} 闸</b> · 用于<b>监管点名 / 法务事件</b>等重大合规触发 · 工单进 A2 队列最高优先级 · 执行门槛 SLA <b>{slaMins} 分钟</b> · 所有步骤标 emergency=true 高亮审计 · <b>已选闸:{targets.map((g) => g.name).join(" / ")}</b> · 资金影响:{targets.map((g) => IMPACT_LABEL[g.coverageImpactCategory]).join(" / ")} · 每闸独立写 A2 事件。</>
       ),
       run: (reason) => {
-        targets.forEach((g) => {
-          setParam(`J.killswitch.${g.key}`, "off", { action: `应急批量熔断 ${g.key}(emergency=true)`, reason });
-          setParam(`J.killswitch.${g.key}.emergency`, "true", { action: `A2 应急标记 ${g.key}`, reason });
-        });
         setSel({});
-        toast(`应急批量熔断 · ${targets.length} 闸 · emergency=true`);
+        runBackend(actions.emergencyDisableJ1(targets.map((g) => g.key), reason), `应急批量熔断 · ${targets.length} 闸 · emergency=true`);
       },
     });
   };
-  const selOnCount = KILLSWITCH.filter((g) => sel[g.key] && effOn(g)).length;
+  const selOnCount = gates.filter((g) => sel[g.key] && effOn(g)).length;
 
-  const adjEmer = (row: (typeof EMER_SLA)[number]) => {
+  const adjEmer = (row: EmergencySlaRow) => {
     const cur = effSla(row);
     openActionConfirm({
       action: `应急参数调整 · ${row.k}`,
       detail: <><b>{row.k}</b> · {row.d}{row.id === "confirmSlaMins" && <> · 超时自动升级呼叫经 I3 critical 通道</>}{row.id === "escalateMaxMins" && <> · 耗尽后工单终止(守确认理由铁律的活性兜底)</>}{row.id === "escalateMaxRounds" && <> · 超过即终止工单</>}。</>,
       edit: { kind: row.kind, current: cur, unit: row.unit },
       run: (reason, newValue) => {
-        setParam(`J.emergency.${row.id}`, newValue ?? cur, { action: `调整应急参数 ${row.k} ${cur}→${newValue}`, reason });
-        toast(`${row.k} 已调整 · 确认中`);
+        runBackend(actions.updateJ1Sla(row.id, newValue ?? cur, reason), `${row.k} 已调整 · 已写入后端`);
       },
     });
   };
 
-  const adjRule = (r: (typeof AUTO_RULES)[number]) => {
+  const adjRule = (r: AutoRuleRow) => {
     const cur = effThr(r);
     openActionConfirm({
       action: `自动触发规则调整 · ${r.nm}`,
       detail: <><b>{r.nm}</b> · 当前 {cur} · 命中后自动熔断对应闸 · 自动熔断免预先确认,值班人 30 分钟内补填理由确认 · 走应急快速轨。</>,
       edit: { kind: "text", current: cur },
       run: (reason, newValue) => {
-        setParam(`J.autorule.${r.id}`, newValue ?? cur, { action: `调整自动触发规则 ${r.nm} ${cur}→${newValue}`, reason });
-        toast(`${r.nm} 已确认生效`);
+        runBackend(actions.updateJ1AutoRule(r.id, newValue ?? cur, reason), `${r.nm} 已确认生效`);
       },
     });
   };
@@ -142,7 +131,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">在线功能闸</div><div className="v">{live} / {KILLSWITCH.length}</div><div className="sub">{killed === 0 ? "全闸正常营业" : "部分业务已关停"}</div></div>
+        <div className="f-stat ok"><div className="k">在线功能闸</div><div className="v">{live} / {gates.length}</div><div className="sub">{killed === 0 ? "全闸正常营业" : "部分业务已关停"}</div></div>
         <div className="f-stat warn"><div className="k">应急轨提案</div><div className="v">0</div><div className="sub">pending 执行门槛 SLA</div></div>
         <div className="f-stat danger"><div className="k">已熔断闸</div><div className="v">{killed}</div><div className="sub">B1 前置阻断 0</div></div>
         <div className="f-stat cyan"><div className="k">B1 覆盖率</div><div className="v">{COV}%</div><div className="sub">redLine {RED}% · 距 +{(COV - RED).toFixed(0)}pt</div></div>
@@ -150,7 +139,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
       {/* 5 闸 status cards */}
       <div className="gates-strip">
-        {KILLSWITCH.map((g) => { const on = effOn(g); return (
+        {gates.map((g) => { const on = effOn(g); return (
           <div key={g.key} className={"gate-card" + (on ? "" : " killed")}>
             <div className="top">
               {on && <input type="checkbox" data-proof="j1-gate-select" checked={!!sel[g.key]} onChange={() => toggleSel(g.key)} title="勾选纳入批量关停" style={{ marginRight: 6, cursor: "pointer" }} />}
@@ -168,7 +157,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       {/* 矩阵主表 */}
       <section className="matrix-card">
         <div className="matrix-h">
-          <span className="ttl"><AutoGloss>{`功能开关总表 · ${KILLSWITCH.length} 个业务闸`}</AutoGloss></span>
+          <span className="ttl"><AutoGloss>{`功能开关总表 · ${gates.length} 个业务闸`}</AutoGloss></span>
           <span className="sub">· 状态以服务器为准</span>
           <div className="r"><CodeTag tone="electric">审计留痕</CodeTag><CodeTag>每次切换都记录</CodeTag></div>
         </div>
@@ -178,7 +167,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
             <div className="c"><AutoGloss>恢复需备付金</AutoGloss></div><div className="c">确认状态</div><div className="c">最近变更</div><div className="c">应急</div>
             <div className="c" style={{ justifyContent: "flex-end" }}>动作</div>
           </div>
-          {KILLSWITCH.map((g) => { const on = effOn(g); const prop = effProposal(g); return (
+          {gates.map((g) => { const on = effOn(g); const prop = effProposal(g); return (
             <div className="rw" key={g.key}>
               <div className="c"><div style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</div><span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{g.key}</span></div>
               <div className="c cap"><span className="nm">{g.cap}</span><span className="desc"><AutoGloss>{g.desc}</AutoGloss></span></div>
