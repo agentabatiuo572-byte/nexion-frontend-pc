@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 68 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)。
+ * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 66 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;I5 并入 I4、I7 并入 I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -200,10 +200,8 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "I1", name: "转化文案 A/B", path: "/content/copy-ab", prdAnchor: "I1", batch: "V4", status: "flagship" },
       { id: "I2", name: "Nova 推送运营", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
       { id: "I3", name: "通知 Campaign", path: "/content/notifications", prdAnchor: "I3", batch: "V4", status: "flagship" },
-      { id: "I4", name: "信任中心 CMS", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
-      { id: "I5", name: "风险披露版本", path: "/content/disclosure", prdAnchor: "I5", batch: "V4", status: "flagship" },
-      { id: "I6", name: "i18n 文案管理", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
-      { id: "I7", name: "教程中心", path: "/content/learn", prdAnchor: "I7", batch: "V4", status: "flagship" },
+      { id: "I4", name: "信任中心与披露", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
+      { id: "I6", name: "i18n 文案与教程", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
     ],
   },
   {
@@ -300,4 +298,4 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
-export const L2_COUNT = ALL_L2.length; // 68(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)
+export const L2_COUNT = ALL_L2.length; // 66(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;I5→I4;I7→I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)

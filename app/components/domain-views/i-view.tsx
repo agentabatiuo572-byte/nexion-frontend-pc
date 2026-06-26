@@ -3,19 +3,16 @@
 /**
  * I 内容与合规 CMS — design_handoff_i_domain 设计稿 port(2026-06-11 重构;2026-06-15 客服 I8/I9 迁出至域 M 客服中心)。
  * 5 子页覆盖 7 PRD 子模块:I1 转化文案 A/B / I2 Nova 推送运营 / I3 通知 Campaign /
- *   I4+I5 信任中心与披露(合并) / I6+I7 i18n 与教程(合并)。
+ *   I4 信任中心与披露(合并) / I6 i18n 与教程(合并)。
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)。
- * 真写统一 platform-config setParam(I.*)+ usePlatformConfig.novas 共享 store(I2 旧 i-view 已建)。
- * 单源:NOVA(design-data,Nova 通道单源)/ COPY_POOL / CAMPAIGNS / TRUST_SECTIONS / JURISDICTIONS /
- *   NAMESPACES / COURSES(i-tabs/data 文件头裁定)。
- * amplifies 唯一流出方向 = I7 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,B1 现行 403)。
+ * 真写统一走后端 /content/* 接口;概览为空时由后端写入 MySQL 种子后再查出。
+ * amplifies 唯一流出方向 = 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,B1 现行 403)。
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./i-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { fetchIContentOverviews, iContentActions, type IContentData } from "@/lib/admin/i-client";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { I1CopyAb } from "./i-tabs/i1-copy-ab";
 import { I2Nova } from "./i-tabs/i2-nova";
@@ -29,9 +26,7 @@ const FOLD: Record<string, string> = {
   I2: "I2",
   I3: "I3",
   I4: "I4",
-  I5: "I4", // I5 披露合并入 I4 信任中心页
   I6: "I6",
-  I7: "I6", // I7 课程合并入 I6 i18n 页
 };
 
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
@@ -45,21 +40,48 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
 export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "I1", [meta.l2Id]);
-  const setParam = usePlatformConfig((s) => s.setParam);
-  const logAudit = usePlatformConfig((s) => s.logAudit);
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  const [content, setContent] = useState<IContentData>({});
+  const [contentLoading, setContentLoading] = useState(true);
+  const [contentError, setContentError] = useState<string | null>(null);
+
+  const reloadIContent = useCallback(async () => {
+    setContentLoading(true);
+    setContentError(null);
+    try {
+      setContent(await fetchIContentOverviews());
+    } catch (error) {
+      setContentError(error instanceof Error ? error.message : "I_CONTENT_LOAD_FAILED");
+    } finally {
+      setContentLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadIContent();
+  }, [reloadIContent]);
+
+  const actions = useMemo(
+    () => ({
+      ...iContentActions,
+      reloadIContent,
+    }),
+    [reloadIContent],
+  );
 
   const ctx: ICtx = {
-    pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
-    params: hydrated && params ? params : {},
-    setParam,
-    logAudit,
+    pget: () => undefined,
+    params: {},
+    setParam: () => undefined,
+    logAudit: () => undefined,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
+    content,
+    actions,
+    contentLoading,
+    contentError,
   };
 
   const [ro, live] = RO_LIVE[tab];
@@ -73,6 +95,16 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   return (
     <div className="dkpage idom">
       <DomainHeader {...meta} right={right} />
+
+      {contentError && (
+        <section className="l-card">
+          <div className="l-b">
+            <div className="itint danger">
+              <b>I 域数据加载失败</b> · {contentError}
+            </div>
+          </div>
+        </section>
+      )}
 
       {tab === "I1" && <I1CopyAb ctx={ctx} />}
       {tab === "I2" && <I2Nova ctx={ctx} />}

@@ -1,36 +1,17 @@
 "use client";
 
 /**
- * I6 i18n + I7 教程中心(合并页) — design_handoff_i_domain/I6 i18n与教程.html port。
- * 单源:
- *  - 命名空间矩阵 = NAMESPACES(11 显示 + 30+ 省略行)/ 完整性 = INTEGRITY_ISSUES /
- *    课程目录 = COURSES / 奖励区间 = TUTORIAL_REWARD_RANGE / 推荐位默认 = TUTORIAL_FEATURED_DEFAULT /
- *    效果监控 = TUTORIAL_METRICS(i-tabs/data 文件头裁定)。
- *  - 状态实时态 = pget(`I.i18n.<ns>.status`)/ pget(`I.tutorial.<id>.status`)/
- *    pget(`I.tutorial.<id>.reward`)/ pget("I.tutorial.featured") 覆盖种子;
- *    真写统一落 platform-config setParam(I.*)。
+ * I6 i18n 文案与教程(合并页) — design_handoff_i_domain/I6 i18n与教程.html port。
+ * 单源:后端 /content/i18n-learning/overview;空库时后端写入 MySQL 种子后再查出。
  * 操作确认 显式 edit 契约:奖励调整 / 换推荐课 = 调参传 edit;
  *   课程发布 / 词条发布 / marketing 多版 / 课程下架 = 处置不传 edit。
- * I 域唯一 amplifies = I7 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,
+ * I 域唯一 amplifies = 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,
  *   B1 现行 403,以收口裁定为准;审计带 coverageAtSubmit);其余动作 amplifies=false。
  * 完整性扫描 / 新建课程 / 编辑草稿 = 运营设定(仍需操作确认 + 留痕)→ openConfirm。
  */
 import { useState } from "react";
-import {
-  I6_STATS,
-  NAMESPACES,
-  INTEGRITY_ISSUES,
-  COURSES,
-  TUTORIAL_REWARD_RANGE,
-  TUTORIAL_FEATURED_DEFAULT,
-  TUTORIAL_METRICS,
-  type Namespace,
-  type Course,
-} from "./data";
 import type { ICtx } from "./types";
 import { Drawer, PaginationExemptionList } from "../design-kit";
-import { LEDGER } from "@/lib/mock/admin/ledger";
-import { usePropose } from "@/lib/admin/use-propose";
 
 type NsFlt = "all" | "issues" | "mkt";
 type CatFlt = "all" | "Basics" | "Earn" | "Team" | "Wealth" | "Security";
@@ -52,6 +33,15 @@ const CAT_FLT: [CatFlt, string][] = [
 const HCB_KEY = "milestones.earnCross";
 
 type NsDrawer = { ns: string; keys: number; cov: number; variants: string };
+type Namespace = { ns: string; keys: number; coverage: number; variants: string; lastChange: string };
+type IntegrityIssue = { code: string; kind: string; cnt: number; samples: string[]; status: string };
+type HardcodedFinding = { location: string; rawCopy: string; suggestedKey: string; status: string };
+type Course = {
+  id: string; title: string; cat: string; icon: string;
+  format: "Article" | "Video" | "Hands-on";
+  level: "Beginner" | "Intermediate" | "Advanced";
+  reward: number; featured: boolean; duration: string; v: string; status: string; body: string;
+};
 const COURSE_ICON_BY_CAT: Record<string, string> = {
   Basics: "🚀",
   Earn: "⚡",
@@ -60,54 +50,53 @@ const COURSE_ICON_BY_CAT: Record<string, string> = {
   Security: "🛡",
 };
 
-function parseCourseDrafts(raw: string | undefined): Course[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as Partial<Course>[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((item) => {
-      if (!item?.id || !item.title || !item.cat || !item.format || !item.level) return [];
-      return [{
-        id: String(item.id),
-        title: String(item.title),
-        cat: String(item.cat),
-        icon: COURSE_ICON_BY_CAT[String(item.cat)] ?? "📘",
-        format: item.format as Course["format"],
-        level: item.level as Course["level"],
-        reward: Number.isFinite(Number(item.reward)) ? Number(item.reward) : 10,
-        featured: false,
-        duration: String(item.duration ?? "5 min"),
-        v: String(item.v ?? "draft"),
-      }];
-    });
-  } catch {
-    return [];
-  }
-}
-
 export function I6I18n({ ctx }: { ctx: ICtx }) {
-  const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
-  const propose = usePropose();
+  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
   const [nsDrawer, setNsDrawer] = useState<NsDrawer | null>(null);
   const [hcDrawer, setHcDrawer] = useState(false);
+  const data = content.i18nLearning;
+  const I6_STATS = data?.stats ?? { managedKeys: 0, totalKeys: 0, integrityIssues: 0, coursesOnline: 0, weeklyNexPayout: "—" };
+  const NAMESPACES: Namespace[] = data?.namespaces ?? [];
+  const INTEGRITY_ISSUES: IntegrityIssue[] = data?.integrityIssues ?? [];
+  const HARDCODED_FINDINGS: HardcodedFinding[] = data?.hardcodedFindings ?? [];
+  const COURSES: Course[] = (data?.courses ?? []).map((c) => ({
+    id: c.id,
+    title: c.title,
+    cat: c.category,
+    icon: COURSE_ICON_BY_CAT[c.category] ?? "📘",
+    format: c.format,
+    level: c.level,
+    reward: Number(c.rewardNex),
+    featured: c.featured,
+    duration: c.duration,
+    v: c.version,
+    status: c.status,
+    body: c.body,
+  }));
+  const TUTORIAL_REWARD_RANGE = data?.rewardRange ?? { min: 0, max: 0 };
+  const TUTORIAL_FEATURED_DEFAULT = data?.featuredCourseId ?? "";
+  const TUTORIAL_METRICS = (data?.metrics ?? []).map((m) => ({ k: m.key, v: m.value }));
+  const focusMessage = data?.focusMessage;
+  const runBackend = (task: Promise<void>, ok: string) => {
+    task
+      .then(() => actions.reloadIContent())
+      .then(() => toast(ok))
+      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+  };
 
-  // 实时课程奖励 / 状态 / 推荐位(pget 覆盖种子)。
-  const courseDrafts = parseCourseDrafts(pget("I.tutorial.drafts"));
-  const allCourses = [...courseDrafts, ...COURSES];
+  const allCourses = COURSES;
   const liveReward = (c: Course): string => {
-    const stored = pget(`I.tutorial.${c.id}.reward`);
-    if (stored) return stored.includes("NEX") ? stored : `${stored} NEX`;
     return `${c.reward} NEX`;
   };
   const liveStatus = (c: Course): string =>
-    pget(`I.tutorial.${c.id}.status`) ?? "published";
+    c.status || "published";
   const liveFeatured = (): string =>
-    pget("I.tutorial.featured") ?? TUTORIAL_FEATURED_DEFAULT;
-  const hcbDraftZh = pget(`I.i18n.${HCB_KEY}.draft.zh`);
-  const hcbDraftEn = pget(`I.i18n.${HCB_KEY}.draft.en`);
-  const hcbStatus = pget(`I.i18n.${HCB_KEY}.status`);
+    TUTORIAL_FEATURED_DEFAULT;
+  const hcbDraftZh = focusMessage?.zh;
+  const hcbDraftEn = focusMessage?.en;
+  const hcbStatus = focusMessage?.status;
 
   const filteredNs = NAMESPACES.filter((n) => {
     if (nsFlt === "all") return true;
@@ -117,14 +106,9 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
   const filteredCrs = allCourses.filter((c) => catFlt === "all" || c.cat === catFlt);
 
   /* ============ I6 actions ============ */
-  // audit P1 修:完整性 stat 与扫描/修复联动 —— 不再是装饰按钮,真实扣减实时态(派生自 pget(`I.i18n.fix.<kind>`))。
-  const fixedCount = INTEGRITY_ISSUES.reduce(
-    (sum, iss) => sum + (pget(`I.i18n.fix.${iss.kind}`) === "fixed" ? iss.cnt : 0),
-    0,
-  );
-  const liveIntegrity = Math.max(0, I6_STATS.integrityIssues - fixedCount);
+  const liveIntegrity = Math.max(0, I6_STATS.integrityIssues);
   const liveIntegritySub = (() => {
-    const remain = INTEGRITY_ISSUES.filter((iss) => pget(`I.i18n.fix.${iss.kind}`) !== "fixed");
+    const remain = INTEGRITY_ISSUES.filter((iss) => iss.status !== "fixed");
     if (remain.length === 0) return "已全部修复 · 待重扫确认清零";
     return remain.map((r) => `${r.kind.split(" ")[0]} ${r.cnt}`).join(" · ");
   })();
@@ -134,7 +118,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       detail: <>扫缺镜像 / 占位符不匹配 / 疑似硬编码 / 禁词,只读不改数据;结果刷新本表。</>,
       chips: [["只读扫描 · 普通确认", "done"]],
       okLabel: "开始扫描",
-      run: () => toast(liveIntegrity === 0 ? "扫描完成 · 0 处问题 · 清零 ✓" : `扫描完成 · ${liveIntegrity} 处问题`),
+      run: () => runBackend(actions.rescanI6("全量重扫词条完整性"), liveIntegrity === 0 ? "扫描完成 · 0 处问题 · 清零 ✓" : `扫描完成 · ${liveIntegrity} 处问题`),
     });
 
   const editKeyDraft = () =>
@@ -155,16 +139,10 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
         placeholders: ["{amount}", "{nex}"],
       },
       run: (reason, _v, form) => {
-        // audit P1 修:key 后缀避免多 key 共享 status 互相覆盖(milestones.earnCross / .weekly 等同空间多 key)
-        setParam(`I.i18n.${HCB_KEY}.status`, "v5 draft saved", {
-          action: `编辑草稿 ${HCB_KEY} · admin.i18n_draft_saved`,
-          reason,
-        });
-        if (form) {
-          setParam(`I.i18n.${HCB_KEY}.draft.zh`, form.zh, { action: `编辑草稿 ${HCB_KEY} · 中文文案`, reason });
-          setParam(`I.i18n.${HCB_KEY}.draft.en`, form.en, { action: `编辑草稿 ${HCB_KEY} · English copy`, reason });
-        }
-        toast(`${HCB_KEY} 草稿已保存 · 占位符校验通过 · 留审计`);
+        runBackend(actions.saveI6LocalizedDraft(HCB_KEY, {
+          zh: form?.zh || focusMessage?.zh || "",
+          en: form?.en || focusMessage?.en || "",
+        }, reason), `${HCB_KEY} 草稿已保存 · 占位符校验通过 · 留审计`);
       },
     });
 
@@ -180,12 +158,10 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        setParam(
-          `I.i18n.${HCB_KEY}.status`,
-          "v5 published(en+zh)",
-          { action: `发布词条 milestones.earnCross v5 · admin.i18n_published`, reason },
-        );
-        toast(`milestones.earnCross v5 已确认生效`);
+        runBackend(actions.publishI6LocalizedMessage(HCB_KEY, {
+          zh: focusMessage?.zh || "",
+          en: focusMessage?.en || "",
+        }, reason), `milestones.earnCross v5 已确认生效`);
       },
     });
 
@@ -200,47 +176,35 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        setParam(
-          `I.i18n.${HCB_KEY}.ab`,
-          "A/B scheduled",
-          { action: `开 marketing 多版 A/B · ${HCB_KEY} · admin.i18n_experiment_toggled`, reason },
-        );
-        toast(`marketing 多版 A/B 已确认生效`);
+        runBackend(actions.startI6MarketingExperiment(HCB_KEY, reason), "marketing 多版 A/B 已确认生效");
       },
     });
 
-  const fixIntegrity = (kind: string, cnt: number) =>
+  const fixIntegrity = (issue: IntegrityIssue) =>
     openActionConfirm({
-      action: <>修复完整性问题 · {kind}</>,
+      action: <>修复完整性问题 · {issue.kind}</>,
       detail: (
         <>
-          {kind} 共 <b>{cnt}</b> 处。补齐缺失的镜像 / 修正占位符 / 替换硬编码为词条引用;保存后入待重扫确认队列,重扫清零相关词条才能发版。
+          {issue.kind} 共 <b>{issue.cnt}</b> 处。补齐缺失的镜像 / 修正占位符 / 替换硬编码为词条引用;保存后入待重扫确认队列,重扫清零相关词条才能发版。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "localized-copy",
-        keyName: kind,
-        zh: `${kind} 修复后的中文镜像 · {amount}`,
-        en: `${kind} repaired English mirror · {amount}`,
-        placeholders: kind.includes("placeholder") ? ["{amount}"] : undefined,
+        keyName: issue.kind,
+        zh: `${issue.kind} 修复后的中文镜像 · {amount}`,
+        en: `${issue.kind} repaired English mirror · {amount}`,
+        placeholders: issue.kind.includes("placeholder") ? ["{amount}"] : undefined,
       },
       run: (reason, _v, form) => {
-        // audit P1 修:写键 I.i18n.fix.<kind>=fixed,liveIntegrity 派生即时扣减(stat 真随修复变化)。
-        setParam(
-          `I.i18n.fix.${kind}`,
-          "fixed",
-          { action: `修复完整性 ${kind} (${cnt} 处)· admin.i18n_integrity_fix`, reason },
-        );
-        if (form) {
-          setParam(`I.i18n.fix.${kind}.zh`, form.zh, { action: `修复完整性 ${kind} · 中文镜像`, reason });
-          setParam(`I.i18n.fix.${kind}.en`, form.en, { action: `修复完整性 ${kind} · English mirror`, reason });
-        }
-        toast(`${kind} ${cnt} 处已修复 · 待重扫确认`);
+        runBackend(actions.fixI6Integrity(issue.code, {
+          zh: form?.zh || "",
+          en: form?.en || "",
+        }, reason), `${issue.kind} ${issue.cnt} 处已修复 · 待重扫确认`);
       },
     });
 
-  /* ============ I7 actions ============ */
+  /* ============ tutorial actions ============ */
   const pubCrs = (c: Course) =>
     openActionConfirm({
       action: <>发布课程新版 · {c.title}</>,
@@ -251,12 +215,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        setParam(
-          `I.tutorial.${c.id}.status`,
-          "published",
-          { action: `发布课程 ${c.id} · admin.learn_course_published`, reason },
-        );
-        toast(`${c.title} 已发布至 /learn`);
+        runBackend(actions.publishI6Course(c.id, reason), `${c.title} 已发布至 /learn`);
       },
     });
 
@@ -267,29 +226,14 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       detail: (
         <>
           分类「{c.cat}」完成 NEX 奖励调整 ·{" "}
-          <b>放大 NEX 流出,受 B1 兑付覆盖率红线约束</b>(当前{" "}
-          {LEDGER.coverageRatio.toFixed(1)}% &gt; 红线 {LEDGER.redlinePct})。
-          <b>SPEC §4 注</b>:拒绝码 V4 目标 422,B1 现行 403,以收口裁定为准。审计带 coverageAtSubmit。
+          <b>放大 NEX 流出,受 B1 兑付覆盖率红线约束</b>。后端会在提交时校验覆盖率,不达标直接拒绝。
         </>
       ),
       amplifies: true,
       edit: { kind: "text", current: String(c.reward), unit: "NEX/课" },
       run: (reason, v) => {
         if (!v) return;
-        // 按执行门槛分流:课程奖励上调 = 内容 lead/超管;非授权身份发起则入 A2 pending 提案。
-        propose(toast, {
-          action: `课程奖励调整 · ${c.title}`,
-          obj: `${c.cat} · ${c.title}`,
-          before: `${c.reward} NEX/课`,
-          after: `${v} NEX/课`,
-          type: "fund",
-          amplifies: true,
-          gate: { roles: ["content"], requireLead: true },
-          gateLabel: "内容 lead / 超管",
-          reason,
-          mutations: [{ key: `I.tutorial.${c.id}.reward`, value: v, action: `课程奖励调整 ${c.title} · admin.learn_reward_changed(coverageAtSubmit ${LEDGER.coverageRatio.toFixed(1)}%)` }],
-          sourceDomain: "I7",
-        });
+        runBackend(actions.updateI6CourseReward(c.id, Number(v), reason), `${c.title} 奖励已调整为 ${v} NEX/课`);
       },
     });
 
@@ -303,12 +247,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        setParam(
-          `I.tutorial.${c.id}.status`,
-          "archived",
-          { action: `下架课程 ${c.id} · admin.learn_course_archived`, reason },
-        );
-        toast(`${c.title} 下架已确认生效`);
+        runBackend(actions.archiveI6Course(c.id, reason), `${c.title} 下架已确认生效`);
       },
     });
 
@@ -332,41 +271,18 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
         const title = form?.titleZh?.trim() || id;
         const category = form?.category || "Basics";
         const reward = Number(form?.reward);
-        const draft: Course = {
-          id,
-          title,
-          cat: category,
-          icon: COURSE_ICON_BY_CAT[category] ?? "📘",
-          format: (form?.format as Course["format"]) || "Article",
-          level: (form?.difficulty as Course["level"]) || "Beginner",
-          reward: Number.isFinite(reward) ? reward : TUTORIAL_REWARD_RANGE.min,
-          featured: false,
+        runBackend(actions.createI6Course(id, {
+          titleZh: form?.titleZh || title,
+          titleEn: form?.titleEn || title,
+          bodyZh: form?.bodyZh || "",
+          bodyEn: form?.bodyEn || "",
+          category,
+          format: form?.format || "Article",
+          difficulty: form?.difficulty || "Beginner",
+          rewardNex: Number.isFinite(reward) ? reward : TUTORIAL_REWARD_RANGE.min,
           duration: form?.duration || "5 min",
-          v: form?.publishState || "draft",
-        };
-        const nextDrafts = [draft, ...parseCourseDrafts(pget("I.tutorial.drafts")).filter((c) => c.id !== id)];
-        setParam(
-          `I.tutorial.${id}.status`,
-          form?.publishState || "draft",
-          { action: `新建课程草稿 · admin.learn_course_draft`, reason },
-        );
-        setParam("I.tutorial.drafts", JSON.stringify(nextDrafts), {
-          action: `登记课程草稿 ${id} · admin.learn_course_registry_updated`,
-          reason,
-        });
-        if (form) {
-          setParam(`I.tutorial.${id}.category`, form.category, { action: `新建课程草稿 ${id} · category`, reason });
-          setParam(`I.tutorial.${id}.reward`, form.reward, { action: `新建课程草稿 ${id} · reward`, reason });
-          setParam(`I.tutorial.${id}.format`, form.format, { action: `新建课程草稿 ${id} · format`, reason });
-          setParam(`I.tutorial.${id}.difficulty`, form.difficulty, { action: `新建课程草稿 ${id} · difficulty`, reason });
-          setParam(`I.tutorial.${id}.duration`, form.duration, { action: `新建课程草稿 ${id} · duration`, reason });
-          setParam(`I.tutorial.${id}.publishState`, form.publishState, { action: `新建课程草稿 ${id} · publish state`, reason });
-          setParam(`I.tutorial.${id}.title.zh`, form.titleZh, { action: `新建课程草稿 ${id} · 中文标题`, reason });
-          setParam(`I.tutorial.${id}.title.en`, form.titleEn, { action: `新建课程草稿 ${id} · English title`, reason });
-          setParam(`I.tutorial.${id}.body.zh`, form.bodyZh, { action: `新建课程草稿 ${id} · 中文正文`, reason });
-          setParam(`I.tutorial.${id}.body.en`, form.bodyEn, { action: `新建课程草稿 ${id} · English body`, reason });
-        }
-        toast(`课程草稿已建 · 发布需操作确认`);
+          publishState: form?.publishState || "draft",
+        }, reason), "课程草稿已建 · 发布需操作确认");
       },
     });
 
@@ -388,12 +304,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
         const target = COURSES.find((c) => c.id === v.trim());
         if (!target) { toast(`课程 id ${v} 不存在 · 未执行`); return; }
         if (liveStatus(target) === "archived") { toast(`${v} 已下架 · 不可作为推荐位 · 未执行`); return; }
-        setParam(
-          "I.tutorial.featured",
-          v.trim(),
-          { action: `更换推荐位课程 → ${v} · admin.learn_featured_changed`, reason },
-        );
-        toast(`推荐位已更换为 ${v} · 已写审计`);
+        runBackend(actions.updateI6FeaturedCourse(v.trim(), reason), `推荐位已更换为 ${v} · 已写审计`);
       },
     });
   };
@@ -415,6 +326,13 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       </>
     );
   };
+
+  if (contentLoading && !data) {
+    return <section className="l-card"><div className="l-b"><div className="itint">I6 数据加载中...</div></div></section>;
+  }
+  if (!data) {
+    return <section className="l-card"><div className="l-b"><div className="itint danger">I6 暂无真实接口数据</div></div></section>;
+  }
 
   /* ============ render ============ */
   return (
@@ -632,7 +550,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
                 <button
                   className="l-btn sm mc"
                   style={{ marginTop: 6 }}
-                  onClick={() => fixIntegrity(iss.kind, iss.cnt)}
+                  onClick={() => fixIntegrity(iss)}
                 >
                   修复
                 </button>
@@ -649,10 +567,10 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
         </section>
       </div>
 
-      {/* (I7 · a) 课程列表 */}
+      {/* I6 教程列表 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">教程中心(I7 · a)· /learn · 5 分类 × 3 课</span>
+          <span className="ttl">教程中心(I6 · 教程)· /learn · 5 分类 × 3 课</span>
           <span className="sub">
             · 15 课 + 推荐位 · 学完发 NEX · 涨奖励过 B1 红线
           </span>
@@ -778,7 +696,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       </section>
 
       <div className="two-col">
-        {/* (I7 · b) 推荐位 + 奖励区间 */}
+        {/* I6 推荐位 + 奖励区间 */}
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">推荐位 + 单课奖励区间</span>
@@ -809,7 +727,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
           </div>
         </section>
 
-        {/* (I7 · c) 课程效果监控 */}
+        {/* I6 课程效果监控 */}
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">课程效果监控</span>
@@ -860,7 +778,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       <p className="f-foot">
         <b>执行门槛</b>:词条草稿、课程草稿随便存(保存即校验镜像 + 占位符,留审计);词条发布 / 回滚、课程发布 / 回滚 / 换推荐课 = 内容执行门槛:内容主管/超管;marketing 多版 A/B 启停增长也可发起;
         <b>课程奖励上调</b> = 内容执行门槛:内容主管/超管 + 备付金红线前置(财务对覆盖率有知情职能,仅为知情职能)。
-        <b>底座地位</b>:转化文案(I1)、推送模板(I2)、信任内容(I4)、披露条款(I5)、课程文案(I7)都挂这里的词条——改文案必须经这页的镜像同步,别处没有旁路。教学引导文案归这页,任务本身的玩法归任务页(H3)。
+        <b>底座地位</b>:转化文案(I1)、推送模板(I2)、信任内容与披露条款(I4)、课程文案都挂这里的词条——改文案必须经这页的镜像同步,别处没有旁路。教学引导文案归这页,任务本身的玩法归任务页(H3)。
       </p>
       <PaginationExemptionList
         items={[
@@ -871,7 +789,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
             reason: "命名空间固定十三组,需要同屏核对覆盖率和缺 key",
           },
           {
-            label: "教程中心(I7 · a)· /learn · 5 分类 × 3 课",
+            label: "教程中心(I6 · 教程)· /learn · 5 分类 × 3 课",
             kind: "reference-catalog",
             maxRows: 15,
             reason: "教程中心固定五分类十五课种子目录,创建新课走草稿流",
@@ -965,33 +883,27 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  [
-                    "store/bundle 页脚",
-                    '"Limited time only"',
-                    "store.bundleUrgency",
-                  ],
-                  [
-                    "wallet 空态",
-                    '"No transactions yet"',
-                    "wallet.emptyState",
-                  ],
-                  ["team 邀请卡", '"Invite & earn"', "team.inviteCta"],
-                  ["earn 任务卡角标", '"NEW"', "earn.newBadge"],
-                ].map((row) => (
-                  <tr key={row[0]}>
-                    <td style={{ fontSize: 12 }}>{row[0]}</td>
+                {HARDCODED_FINDINGS.map((row) => (
+                  <tr key={row.location}>
+                    <td style={{ fontSize: 12 }}>{row.location}</td>
                     <td className="mono" style={{ fontSize: 11.5 }}>
-                      {row[1]}
+                      {row.rawCopy}
                     </td>
                     <td
                       className="mono"
                       style={{ fontSize: 11.5, color: "var(--i-ac)" }}
                     >
-                      {row[2]}
+                      {row.suggestedKey}
                     </td>
                   </tr>
                 ))}
+                {HARDCODED_FINDINGS.length === 0 && (
+                  <tr>
+                    <td colSpan={3} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
+                      暂无疑似硬编码
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

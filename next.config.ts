@@ -77,6 +77,16 @@ const nextConfig: NextConfig = {
         destination: "/growth/daily",
         permanent: false,
       },
+      {
+        source: "/content/disclosure",
+        destination: "/content/trust",
+        permanent: false,
+      },
+      {
+        source: "/content/learn",
+        destination: "/content/i18n",
+        permanent: false,
+      },
     ];
   },
 };

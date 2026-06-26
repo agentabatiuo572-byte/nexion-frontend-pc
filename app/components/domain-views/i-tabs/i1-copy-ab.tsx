@@ -2,11 +2,7 @@
 
 /**
  * I1 转化文案 A/B — design_handoff_i_domain/I1 转化文案AB.html port。
- * 单源:
- *  - 文案池 = COPY_POOL · 版本历史 = COPY_VERSIONS(home.conversionBanner 演示位)
- *    · 框架参数 = EXP_FRAMEWORK · 实验池 = EXPS(i-tabs/data 文件头裁定)。
- *  - 状态实时态 = pget(`I.copy.<key>.status`) / pget(`I.exp.<id>.status`) / pget(`I.exp.framework.<param>`)
- *    覆盖种子,真写统一落 platform-config setParam(I.*)。
+ * 单源:后端 /content/copy-ab/overview;空库时后端写入 MySQL 种子后再查出。
  * 操作确认 显式 edit 契约:发布新版 / 回滚到历史版 / 调整框架参数 = 调参传 edit;
  *   下架 / 停止实验 / 采纳获胜变体 = 处置不传 edit。
  * amplifies = false(I1 不碰 B1 红线 —— 只改措辞,不动费率/奖励/价格)。
@@ -14,11 +10,19 @@
  */
 import { useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
-import { I1_STATS, COPY_POOL, COPY_VERSIONS, EXP_FRAMEWORK, EXPS, type CopyRow, type ExpRow } from "./data";
 import type { ICtx } from "./types";
 
 type Surf = "all" | "Home" | "Me" | "商城";
 type ExpFlt = "all" | "running" | "concluded";
+type CopyRow = {
+  key: string; desc: string; surface: "Home" | "Me" | "商城";
+  version: string; status: string; i18nKey: string; expId: string; lastChange: string;
+  draftVersion?: string; draftZh?: string; draftEn?: string; draftSurface?: string; draftAudience?: string; draftTrafficSplit?: string; draftNote?: string;
+};
+type ExpRow = {
+  id: string; copyKey: string; variants: [name: string, split: number, cvr: number][];
+  audience: string; impressions: string; conversions: string; state: string; note: string;
+};
 
 const SURF_FLT: [Surf, string][] = [["all", "全部"], ["Home", "Home"], ["Me", "Me"], ["商城", "商城"]];
 const EXP_FLT: [ExpFlt, string][] = [["all", "全部"], ["running", "进行中"], ["concluded", "已结"]];
@@ -26,29 +30,74 @@ const EXP_FLT: [ExpFlt, string][] = [["all", "全部"], ["running", "进行中"]
 const VAR_COLORS = ["var(--i-ac)", "var(--admin-cat-5)", "var(--admin-cat-3)"];
 
 export function I1CopyAb({ ctx }: { ctx: ICtx }) {
-  const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
+  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const [surf, setSurf] = useState<Surf>("all");
   const [expFlt, setExpFlt] = useState<ExpFlt>("all");
+  const data = content.copyAb;
+  const I1_STATS = data?.stats ?? { managedCopies: 0, runningExps: 0, weeklyExposures: "—", topLift: "—" };
+  const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
+    key: row.key,
+    desc: row.desc,
+    surface: (row.surface === "Me" || row.surface === "商城" ? row.surface : "Home") as CopyRow["surface"],
+    version: row.version,
+    status: row.status,
+    i18nKey: row.i18nKey,
+    expId: row.expId,
+    lastChange: row.lastChange,
+    draftVersion: row.draftVersion,
+    draftZh: row.draftZh,
+    draftEn: row.draftEn,
+    draftSurface: row.draftSurface,
+    draftAudience: row.draftAudience,
+    draftTrafficSplit: row.draftTrafficSplit,
+    draftNote: row.draftNote,
+  }));
+  const COPY_VERSIONS = (data?.versions ?? []).map((row) => ({
+    copyKey: row.copyKey,
+    v: row.version,
+    st: row.status,
+    chain: row.chain,
+    ts: row.ts,
+    zh: row.zh,
+    en: row.en,
+    surface: row.surface,
+    audience: row.audience,
+    trafficSplit: row.trafficSplit,
+    versionNote: row.versionNote,
+  }));
+  const EXP_FRAMEWORK = (data?.frameworkParams ?? []).map((row) => ({
+    key: row.key,
+    name: row.name,
+    cur: row.current,
+    sub: row.description,
+  }));
+  const EXPS: ExpRow[] = (data?.experiments ?? []).map((row) => ({
+    id: row.id,
+    copyKey: row.copyKey,
+    variants: row.variants.map((v) => [v.name, v.split, Number(v.cvr)]),
+    audience: row.audience,
+    impressions: row.impressions,
+    conversions: row.conversions,
+    state: row.state,
+    note: row.note,
+  }));
 
-  // 文案池实时态(pget 覆盖种子 status)。
-  const liveCopyStatus = (c: CopyRow): string =>
-    pget(`I.copy.${c.key}.status`) ?? c.status;
-  const liveCopyDraftZh = (key: string): string | undefined => pget(`I.copy.${key}.draft.zh`);
-  const liveCopyDraftEn = (key: string): string | undefined => pget(`I.copy.${key}.draft.en`);
-  const liveCopyDraftMeta = (key: string): { audience?: string; trafficSplit?: string; note?: string; surface?: string } => ({
-    audience: pget(`I.copy.${key}.draft.audience`),
-    trafficSplit: pget(`I.copy.${key}.draft.trafficSplit`),
-    note: pget(`I.copy.${key}.draft.versionNote`),
-    surface: pget(`I.copy.${key}.draft.surface`),
-  });
+  const runBackend = (task: Promise<void>, ok: string) => {
+    task
+      .then(() => actions.reloadIContent())
+      .then(() => toast(ok))
+      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+  };
 
-  // 实验实时态(pget 覆盖种子 state)。
-  const liveExpState = (e: ExpRow): string =>
-    pget(`I.exp.${e.id}.status`) ?? e.state;
-
-  // 框架参数实时值。
-  const liveFw = (key: string, cur: string): string =>
-    pget(`I.exp.framework.${key}`) ?? cur;
+  const liveCopyStatus = (c: CopyRow): string => c.status;
+  const liveCopyDraftZh = (key: string): string | undefined => COPY_POOL.find((c) => c.key === key)?.draftZh;
+  const liveCopyDraftEn = (key: string): string | undefined => COPY_POOL.find((c) => c.key === key)?.draftEn;
+  const liveCopyDraftMeta = (key: string): { audience?: string; trafficSplit?: string; note?: string; surface?: string } => {
+    const row = COPY_POOL.find((c) => c.key === key);
+    return { audience: row?.draftAudience, trafficSplit: row?.draftTrafficSplit, note: row?.draftNote, surface: row?.draftSurface };
+  };
+  const liveExpState = (e: ExpRow): string => e.state;
+  const liveFw = (_key: string, cur: string): string => cur;
 
   const filteredPool = COPY_POOL.filter((c) => surf === "all" || c.surface === surf);
   const filteredExps = EXPS.filter((e) => {
@@ -73,22 +122,21 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     },
     run: (reason, v, form) => {
       if (!v) return;
-      setParam(`I.copy.${c.key}.status`, `${v} published`, { action: `发布新版 ${c.key} → ${v} · admin.content_published`, reason });
-      if (form) {
-        setParam(`I.copy.${c.key}.${v}.zh`, form.zh, { action: `发布新版 ${c.key} · 中文文案`, reason });
-        setParam(`I.copy.${c.key}.${v}.en`, form.en, { action: `发布新版 ${c.key} · English copy`, reason });
-        setParam(`I.copy.${c.key}.${v}.surface`, form.surface, { action: `发布新版 ${c.key} · surface`, reason });
-        setParam(`I.copy.${c.key}.${v}.audience`, form.audience, { action: `发布新版 ${c.key} · audience`, reason });
-        setParam(`I.copy.${c.key}.${v}.trafficSplit`, form.trafficSplit, { action: `发布新版 ${c.key} · traffic split`, reason });
-        setParam(`I.copy.${c.key}.${v}.versionNote`, form.versionNote, { action: `发布新版 ${c.key} · version note`, reason });
-      }
-      toast(`${c.key} 新版已确认生效 · 目标 ${v}`);
+      runBackend(actions.publishI1CopyVersion(c.key, {
+        version: v,
+        surface: form?.surface || c.surface,
+        audience: form?.audience || "全量",
+        trafficSplit: form?.trafficSplit || "100",
+        versionNote: form?.versionNote || "后台发布新版",
+        zh: form?.zh || c.draftZh || `${c.desc} 中文新版`,
+        en: form?.en || c.draftEn || `${c.key} English version`,
+      }, reason), `${c.key} 新版已确认生效 · 目标 ${v}`);
     },
   });
 
   // home.conversionBanner 演示位(版本详情卡固定位)。
   const HCB = "home.conversionBanner";
-  const hcbRow = COPY_POOL.find((c) => c.key === HCB)!;
+  const hcbRow = COPY_POOL.find((c) => c.key === HCB) ?? COPY_POOL[0];
 
   const pubDraftV8 = () => openActionConfirm({
     action: <>发布新版 · {HCB}</>,
@@ -98,23 +146,22 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       kind: "copy-edit",
       keyName: HCB,
       version: "v8",
-      surface: hcbRow.surface,
+      surface: hcbRow?.surface || "Home",
       zh: "完成 {amount} USDT 复投并获得 {nex} NEX 奖励",
       en: "Reinvest {amount} USDT and earn {nex} NEX",
       placeholders: ["{amount}", "{nex}"],
     },
     run: (reason, v, form) => {
       if (!v) return;
-      setParam(`I.copy.${HCB}.status`, `${v} published`, { action: `发布新版 ${HCB} → ${v} · admin.content_published`, reason });
-      if (form) {
-        setParam(`I.copy.${HCB}.${v}.zh`, form.zh, { action: `发布新版 ${HCB} · 中文文案`, reason });
-        setParam(`I.copy.${HCB}.${v}.en`, form.en, { action: `发布新版 ${HCB} · English copy`, reason });
-        setParam(`I.copy.${HCB}.${v}.surface`, form.surface, { action: `发布新版 ${HCB} · surface`, reason });
-        setParam(`I.copy.${HCB}.${v}.audience`, form.audience, { action: `发布新版 ${HCB} · audience`, reason });
-        setParam(`I.copy.${HCB}.${v}.trafficSplit`, form.trafficSplit, { action: `发布新版 ${HCB} · traffic split`, reason });
-        setParam(`I.copy.${HCB}.${v}.versionNote`, form.versionNote, { action: `发布新版 ${HCB} · version note`, reason });
-      }
-      toast(`${HCB} 新版已确认生效 · 目标 ${v}`);
+      runBackend(actions.publishI1CopyVersion(HCB, {
+        version: v,
+        surface: form?.surface || hcbRow?.surface || "Home",
+        audience: form?.audience || "全量",
+        trafficSplit: form?.trafficSplit || "100",
+        versionNote: form?.versionNote || "v8 发布",
+        zh: form?.zh || "",
+        en: form?.en || "",
+      }, reason), `${HCB} 新版已确认生效 · 目标 ${v}`);
     },
   });
 
@@ -126,23 +173,21 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       kind: "copy-edit",
       keyName: HCB,
       version: "v8",
-      surface: hcbRow.surface,
+      surface: hcbRow?.surface || "Home",
       zh: "完成 {amount} USDT 复投并获得 {nex} NEX 奖励",
       en: "Reinvest {amount} USDT and earn {nex} NEX",
       placeholders: ["{amount}", "{nex}"],
     },
     run: (reason, _v, form) => {
-      setParam(`I.copy.${HCB}.status`, "v8 draft saved", { action: `编辑草稿 v8 ${HCB} · admin.content_version_drafted`, reason });
-      if (form) {
-        setParam(`I.copy.${HCB}.draft.zh`, form.zh, { action: `编辑草稿 v8 ${HCB} · 中文文案`, reason });
-        setParam(`I.copy.${HCB}.draft.en`, form.en, { action: `编辑草稿 v8 ${HCB} · English copy`, reason });
-        setParam(`I.copy.${HCB}.draft.version`, form.version, { action: `编辑草稿 v8 ${HCB} · variant id`, reason });
-        setParam(`I.copy.${HCB}.draft.surface`, form.surface, { action: `编辑草稿 v8 ${HCB} · surface`, reason });
-        setParam(`I.copy.${HCB}.draft.audience`, form.audience, { action: `编辑草稿 v8 ${HCB} · audience`, reason });
-        setParam(`I.copy.${HCB}.draft.trafficSplit`, form.trafficSplit, { action: `编辑草稿 v8 ${HCB} · traffic split`, reason });
-        setParam(`I.copy.${HCB}.draft.versionNote`, form.versionNote, { action: `编辑草稿 v8 ${HCB} · version note`, reason });
-      }
-      toast(`草稿 v8 已保存 · 占位符校验通过 · 留审计`);
+      runBackend(actions.saveI1CopyDraft(HCB, {
+        version: form?.version || "v8",
+        surface: form?.surface || hcbRow?.surface || "Home",
+        audience: form?.audience || "全量",
+        trafficSplit: form?.trafficSplit || "50",
+        versionNote: form?.versionNote || "草稿保存",
+        zh: form?.zh || "",
+        en: form?.en || "",
+      }, reason), "草稿 v8 已保存 · 占位符校验通过 · 留审计");
     },
   });
 
@@ -152,8 +197,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     amplifies: false,
     // 处置类(回滚到已选历史版 v):目标版本由点击的归档版决定,run 不消费 v,按 MC 显式 edit 契约不传 edit,不强迫运营手输已确定的版本号。
     run: (reason) => {
-      setParam(`I.copy.${HCB}.status`, `${v} 重新发布`, { action: `回滚到 ${v} · admin.content_rolledback`, reason });
-      toast(`回滚 ${v} 已确认生效`);
+      runBackend(actions.rollbackI1CopyVersion(HCB, v, reason), `回滚 ${v} 已确认生效`);
     },
   });
 
@@ -162,8 +206,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     detail: <>下架后该文案位<b>没有生效版本</b>,App 端会退回内置兜底文案——一般只在文案出合规问题时才这么做;常规换版直接发新版即可。下架立即生效。</>,
     amplifies: false,
     run: (reason) => {
-      setParam(`I.copy.${HCB}.status`, "v7 archived", { action: `下架 ${HCB} v7 · admin.content_archived`, reason });
-      toast(`v7 下架已确认生效`);
+      runBackend(actions.archiveI1Copy(HCB, reason), "当前发布版下架已确认生效");
     },
   });
 
@@ -176,8 +219,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     okLabel: "保存",
     run: (reason, v) => {
       if (!v) return;
-      setParam(`I.exp.framework.${key}`, v, { action: `实验框架参数调整 ${name}`, reason });
-      toast(`${name} 默认值已更新为 ${v} · 留审计`);
+      runBackend(actions.updateI1Framework(key, v, reason), `${name} 默认值已更新为 ${v} · 留审计`);
     },
   });
 
@@ -186,8 +228,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     detail: <>停止后<b>全部用户回到当前发布版</b>,实验转已结(可再选择采纳或弃用)。停止会改变用户所见文案分布,所以要操作确认。已收集的曝光/转化数据保留,结算页可查。</>,
     amplifies: false,
     run: (reason) => {
-      setParam(`I.exp.${id}.status`, "stopped", { action: `停止实验 ${id} · admin.content_experiment_toggled(stopped)`, reason });
-      toast(`${id} 停止已确认生效`);
+      runBackend(actions.stopI1Experiment(id, reason), `${id} 停止已确认生效`);
     },
   });
 
@@ -196,8 +237,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     detail: <>把获胜变体<b>采纳为该文案位的发布版</b>——这等价于一次正式发布(对全体用户生效),审计会记采纳来源实验号。采纳前确认:样本达标 ✓ 提升显著 ✓。</>,
     amplifies: false,
     run: (reason) => {
-      setParam(`I.exp.${id}.status`, "adopted", { action: `采纳获胜变体 ${id} · admin.content_published(adopted from EXP)`, reason });
-      toast(`${id} 获胜变体采纳已确认生效`);
+      runBackend(actions.adoptI1Experiment(id, reason), `${id} 获胜变体采纳已确认生效`);
     },
   });
 
@@ -226,6 +266,13 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const hcbDraftZh = liveCopyDraftZh(HCB);
   const hcbDraftEn = liveCopyDraftEn(HCB);
   const hcbDraftMeta = liveCopyDraftMeta(HCB);
+
+  if (contentLoading && !data) {
+    return <section className="l-card"><div className="l-b"><div className="itint">I1 数据加载中...</div></div></section>;
+  }
+  if (!data) {
+    return <section className="l-card"><div className="l-b"><div className="itint danger">I1 暂无真实接口数据</div></div></section>;
+  }
 
   return (
     <>
@@ -345,7 +392,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
               <div className="itint cyan" data-proof="copy-draft-preview" style={{ marginBottom: 12 }}>
                 <b>当前草稿回显</b> · 受众 <span className="mono">{hcbDraftMeta.audience ?? "全量"}</span>
                 {" "}· 分流 <span className="mono">{hcbDraftMeta.trafficSplit ?? "50"}%</span>
-                {" "}· 位置 <span className="mono">{hcbDraftMeta.surface ?? hcbRow.surface}</span>
+                {" "}· 位置 <span className="mono">{hcbDraftMeta.surface ?? hcbRow?.surface ?? "Home"}</span>
                 {hcbDraftMeta.note ? <> · 说明 <span className="mono">{hcbDraftMeta.note}</span></> : null}
                 <div className="ab-grid" style={{ marginTop: 8 }}>
                   <div className="ab-prev">
@@ -371,7 +418,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {COPY_VERSIONS.map((row) => (
+                  {COPY_VERSIONS.filter((row) => row.copyKey === HCB).map((row) => (
                     <tr key={row.v}>
                       <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{row.v}</td>
                       <td>{renderVerStatus(row.st)}</td>
@@ -391,7 +438,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
             </div>
             <button className="l-btn sm mc" style={{ marginTop: 10 }} onClick={archiveCurV7}>下架当前发布版(v7)</button>
             {/* 触摸 hcbRow 仅用于编译期完整性(确保 HCB 在 COPY_POOL 中存在,后续 audit 改文案位时强类型保证)。 */}
-            <span style={{ display: "none" }} data-hcb={hcbRow.key} />
+            <span style={{ display: "none" }} data-hcb={hcbRow?.key ?? HCB} />
           </div>
         </section>
 

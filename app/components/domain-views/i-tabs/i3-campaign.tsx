@@ -2,26 +2,16 @@
 
 /**
  * I3 通知 Campaign — design_handoff_i_domain/I3 通知Campaign.html port。
- * 单源:
- *  - 4 档 CAP = CAP_TIERS(SPEC §6 权威 · critical=∞ 锁死);
- *  - campaign 池 = CAMPAIGNS;tier 颜色映射 = I3_TIER_STATE;统计 = I3_STATS(i-tabs/data 文件头裁定)。
- *  - 实时态 = pget(`I.campaign.<id>.status`) 覆盖种子 st / pget(`I.cap.<tier>`) 覆盖种子 cap。
+ * 单源:后端 /content/campaigns/overview;空库时后端写入 MySQL 种子后再查出。
  * 操作确认 显式 edit 契约:CAP 调整(传 edit text)= 调参;调度下发 / 取消 = 纯处置(不传 edit)。
  * critical 档锁定 = 不渲染调整按钮(渲染 icode lock)。
  * amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
- * 新建 Campaign / 行点击详情 = 本地 Drawer 原语(design-kit 共享 Drawer);
- *   提交新建 → setParam(`I.campaign.<slug>.status`, "pending") + toast。
+ * 新建 Campaign / 行点击详情 = 本地 Drawer 原语(design-kit 共享 Drawer);提交新建走后端 /content/campaigns。
  */
 import { useMemo, useState, type ReactNode } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
-import {
-  I3_STATS,
-  CAP_TIERS,
-  CAMPAIGNS,
-  I3_TIER_STATE,
-  type CampaignRow,
-} from "./data";
 import type { ICtx } from "./types";
+import type { NotificationCampaignRow } from "@/lib/admin/i-client";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft";
 const ST_FLT: [StFlt, string][] = [
@@ -31,15 +21,20 @@ const ST_FLT: [StFlt, string][] = [
   ["draft", "草稿"],
 ];
 
+type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
+  kind: "system";
+  st: NotificationCampaignRow["status"];
+  budget?: number;
+};
 type TierK = CampaignRow["tier"];
 const TIER_OPTS: TierK[] = ["critical", "high", "normal", "low"];
-const AUDIENCE_OPTS = [
-  "全量",
-  "SFC 辖区 · 未重确认用户",
-  "近 30 天提现 >$1k",
-  "注册 ≤14 天",
-  "P3 阶段活跃用户",
-];
+const I3_TIER_STATE: Record<TierK, [label: string, tone: string]> = {
+  critical: ["紧急", "danger"],
+  high: ["高", "warn"],
+  normal: ["普通", "cyan"],
+  low: ["低", "dim"],
+};
+const DEFAULT_AUDIENCE_OPTS = ["全量", "SFC 辖区 · 未重确认用户", "近 30 天提现 >$1k", "注册 ≤14 天", "P3 阶段活跃用户"];
 
 /** 名称 → slug(小写、空格转 -、保留中英数字,去其他符号)。 */
 function slug(s: string): string {
@@ -50,13 +45,6 @@ function slug(s: string): string {
     .replace(/[^\p{L}\p{N}\-]+/gu, "")
     .slice(0, 48) || "untitled";
 }
-
-type SwipeRow = { to: string; kind: string; note: string };
-const SWIPE_ROWS: SwipeRow[] = [
-  { to: "/reinvest", kind: "commission", note: "佣金到账 → 复投" },
-  { to: "/me/bills", kind: "refund", note: "退款到账 → 账单" },
-  { to: "—(留空)", kind: "system", note: "维护公告 / KYC 提醒 / 监管通告 / 运营公告 — system kind 无转化跳转" },
-];
 
 type NewForm = {
   name: string;
@@ -77,49 +65,46 @@ const FORM_INIT: NewForm = {
 };
 
 export function I3Campaign({ ctx }: { ctx: ICtx }) {
-  const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
+  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const [stFlt, setStFlt] = useState<StFlt>("all");
   const [newOpen, setNewOpen] = useState(false);
   const [form, setForm] = useState<NewForm>(FORM_INIT);
   const [detail, setDetail] = useState<CampaignRow | null>(null);
-  // audit P1 修:新建 Campaign 草稿要在列表里可见(种子是 const seed,不能改);用 useState 维护新行,
-  // 与 CAMPAIGNS 合并渲染(同源单一时间线 = pget(`I.campaign.<id>.status`),双源共用同一 liveSt)。
   const [newRows, setNewRows] = useState<CampaignRow[]>([]);
+  const data = content.campaigns;
+  const I3_STATS = data?.stats ?? { monthCampaigns: 0, monthSent: 0, monthScheduled: 0, monthDraft: 0, criticalInflight: 0, avgReadRate: "—", weeklySwipe: "—" };
+  const CAMPAIGNS: CampaignRow[] = (data?.campaigns ?? []).map((row) => ({
+    ...row,
+    kind: "system",
+    st: row.status,
+  }));
+  const CAP_TIERS = data?.capRules ?? [];
+  const AUDIENCE_OPTS = data?.audiences?.length ? data.audiences : DEFAULT_AUDIENCE_OPTS;
+  const SWIPE_ROWS = data?.swipeRoutes ?? [];
+  const runBackend = (task: Promise<void>, ok: string) => {
+    task
+      .then(() => actions.reloadIContent())
+      .then(() => toast(ok))
+      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+  };
 
-  // 实时态(pget 覆盖种子);"pending" = 新建草稿态(submitNew 写入),纳入白名单防种子覆盖。
   const liveSt = (c: CampaignRow): CampaignRow["st"] => {
-    const v = pget(`I.campaign.${c.id}.status`);
-    if (v === "scheduled" || v === "sending" || v === "sent" || v === "cancelled" || v === "draft") return v;
-    if (v === "pending") return "draft"; // pending 视为 draft(待确认未发出)
     return c.st;
   };
-  // audit P0 修:critical 是合规硬约束 ∞,不可调降——pget 路径也必须拦(防 dev console 直接 setParam 绕开 UI 按钮拦截)。
-  const liveCap = (tier: string, cap: string): string => (tier === "critical" ? "∞ 永不淘汰" : pget(`I.cap.${tier}`) ?? cap);
-  const liveCampaign = (c: CampaignRow): CampaignRow => {
-    const draftTier = pget(`I.campaign.${c.id}.draft.tier`);
-    const tier = TIER_OPTS.includes(draftTier as TierK) ? (draftTier as TierK) : c.tier;
-    const draftBody = pget(`I.campaign.${c.id}.draft.body`);
-    return {
-      ...c,
-      name: pget(`I.campaign.${c.id}.draft.title`) ?? c.name,
-      bodyZh: draftBody ?? c.bodyZh,
-      bodyEn: draftBody ?? c.bodyEn,
-      tier,
-      audience: pget(`I.campaign.${c.id}.draft.audience`) ?? c.audience,
-      schedule: pget(`I.campaign.${c.id}.draft.schedule`) ?? c.schedule,
-    };
+  const liveCap = (tier: string, cap: string): string => (tier === "critical" ? "∞ 永不淘汰" : cap);
+  const liveCampaign = (c: CampaignRow): CampaignRow => c;
+  const liveBudget = (id: string): string | undefined => {
+    const row = CAMPAIGNS.find((c) => c.id === id);
+    return row?.budget === undefined ? undefined : String(row.budget);
   };
-  const liveBudget = (id: string): string | undefined => pget(`I.campaign.${id}.draft.budget`);
 
   const filtered = useMemo(() => {
-    // 新建草稿置顶,再接种子(单一时间线);liveSt 已统一 pget 派生,过滤同一口径。
     return [...newRows, ...CAMPAIGNS].filter((c) => {
       if (stFlt === "all") return true;
       const st = liveSt(c);
       return st === stFlt;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stFlt, ctx.params, newRows]);
+  }, [stFlt, newRows, CAMPAIGNS]);
 
   /* ---------- actions ---------- */
 
@@ -139,11 +124,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     ),
     amplifies: false,
     run: (reason) => {
-      setParam(`I.campaign.${c.id}.status`, "scheduled", {
-        action: `调度下发 ${c.id} · admin.notification_campaign_sent`,
-        reason,
-      });
-      toast(`${c.id} 调度下发已确认生效`);
+      runBackend(actions.scheduleI3Campaign(c.id, reason), `${c.id} 调度下发已确认生效`);
     },
   });
 
@@ -165,19 +146,14 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       audiences: AUDIENCE_OPTS,
     },
     run: (reason, _v, form) => {
-      setParam(`I.campaign.${c.id}.status`, "draft", {
-        action: `编辑草稿 ${c.id} · admin.notification_campaign_draft_saved`,
-        reason,
-      });
-      if (form) {
-        setParam(`I.campaign.${c.id}.draft.title`, form.title, { action: `编辑草稿 ${c.id} · title`, reason });
-        setParam(`I.campaign.${c.id}.draft.body`, form.body, { action: `编辑草稿 ${c.id} · body`, reason });
-        setParam(`I.campaign.${c.id}.draft.tier`, form.tier, { action: `编辑草稿 ${c.id} · tier`, reason });
-        setParam(`I.campaign.${c.id}.draft.audience`, form.audience, { action: `编辑草稿 ${c.id} · audience`, reason });
-        setParam(`I.campaign.${c.id}.draft.schedule`, form.schedule, { action: `编辑草稿 ${c.id} · schedule`, reason });
-        setParam(`I.campaign.${c.id}.draft.budget`, form.budget, { action: `编辑草稿 ${c.id} · budget`, reason });
-      }
-      toast(`${c.id} 草稿已保存 · 留审计`);
+      runBackend(actions.updateI3CampaignDraft(c.id, {
+        title: form?.title || c.name,
+        body: form?.body || c.bodyZh,
+        tier: form?.tier || c.tier,
+        audience: form?.audience || c.audience,
+        schedule: form?.schedule || c.schedule,
+        budget: Number(form?.budget ?? c.budget ?? 0),
+      }, reason), `${c.id} 草稿已保存 · 留审计`);
     },
   });
 
@@ -191,11 +167,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     ),
     amplifies: false,
     run: (reason) => {
-      setParam(`I.campaign.${c.id}.status`, "sending", {
-        action: `立即下发 ${c.id} · admin.notification_campaign_sent`,
-        reason,
-      });
-      toast(`${c.id} 立即下发已确认生效`);
+      runBackend(actions.sendI3CampaignNow(c.id, reason), `${c.id} 立即下发已确认生效`);
     },
   });
 
@@ -209,11 +181,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     reason: true,
     okLabel: "确认取消",
     run: (reason) => {
-      setParam(`I.campaign.${c.id}.status`, "cancelled", {
-        action: `取消 campaign ${c.id} · admin.notification_campaign_cancelled`,
-        reason,
-      });
-      toast(`${c.id} 已取消`);
+      runBackend(actions.cancelI3Campaign(c.id, reason), `${c.id} 已取消`);
     },
   });
 
@@ -231,11 +199,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     edit: { kind: "text", current: cap },
     run: (reason, v) => {
       if (!v) return;
-      setParam(`I.cap.${tier}`, v, {
-        action: `CAP 调整 ${tier} · admin.notification_cap_changed`,
-        reason,
-      });
-      toast(`${tier} CAP 已更新为 ${v} · 理由留痕`);
+      runBackend(actions.updateI3Cap(tier, v, reason), `${tier} CAP 已更新为 ${v} · 理由留痕`);
     },
   });
 
@@ -251,21 +215,14 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       return;
     }
     const id = `CMP-N-${slug(trimmedName)}`; // N- 前缀:与种子 CMP-26xx 命名空间显式隔离,防 slug 撞号(R2 P1 修)
-    setParam(`I.campaign.${id}.status`, "pending", {
-      action: `新建 Campaign ${id} · admin.notification_campaign_created`,
-      reason: `tier=${form.tier} · audience=${form.audience}${form.budget ? ` · budget=${form.budget}` : ""}`,
-    });
-    // 同时追加到 newRows,让新草稿在列表里可见(双源同 liveSt 派生,无双口径分叉)。
-    setNewRows((rs) => [
-      {
-        id, name: trimmedName, kind: "system",
-        tier: form.tier, audience: form.audience, reach: "—",
-        st: "draft", schedule: "—", sent: "—", read: "—",
-        bodyEn: form.content, bodyZh: form.content, swipeTo: "—",
-      },
-      ...rs,
-    ]);
-    toast(`Campaign 草稿已建 · ${id} · 下发需操作确认`);
+    runBackend(actions.createI3Campaign({
+      name: trimmedName,
+      title: form.title.trim(),
+      content: form.content.trim(),
+      tier: form.tier,
+      audience: form.audience,
+      budget: Number(form.budget || 0),
+    }, `新建 Campaign 草稿 ${id}`), `Campaign 草稿已建 · ${id} · 下发需操作确认`);
     setNewOpen(false);
     setForm(FORM_INIT);
   };
@@ -304,6 +261,13 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     }
     return null;
   };
+
+  if (contentLoading && !data) {
+    return <section className="l-card"><div className="l-b"><div className="itint">I3 数据加载中...</div></div></section>;
+  }
+  if (!data) {
+    return <section className="l-card"><div className="l-b"><div className="itint danger">I3 暂无真实接口数据</div></div></section>;
+  }
 
   return (
     <>
@@ -430,7 +394,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
             <b>为什么动容量闸要操作确认</b> · 调小高档容量可能把还没读的合规通知挤掉——这影响 critical/high 类的可见性,所以内容和风控都能提交,但必须主管执行并填写理由。critical 档直接锁死不开口子。
           </div>
           <div className="itint cyan" style={{ marginTop: 8 }}>
-            <b>合规通道特例</b> · 风险披露改版触发的重确认提醒(I4–I5 页)和 J 域监管应急公告,由对应域发起、借这页的通道按 <b>critical</b> 下发;这两类的执行门槛升到合规/超管级,常规运营公告执行门槛是内容主管。
+            <b>合规通道特例</b> · 风险披露改版触发的重确认提醒(I4 页)和 J 域监管应急公告,由对应域发起、借这页的通道按 <b>critical</b> 下发;这两类的执行门槛升到合规/超管级,常规运营公告执行门槛是内容主管。
           </div>
         </div>
       </section>
@@ -473,7 +437,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
 
       {/* ===== f-foot ===== */}
       <p className="f-foot">
-        <b>执行门槛</b>:草稿随便建(留审计);调度下发 / 取消 = 内容提交(风控合规类可由风控提交),内容主管/超管执行;容量闸调整 = 内容或风控执行门槛:主管。<b>事件去向</b>:送达 / 已读 / 滑动动作三类事件喂触达健康度看板和数据 BI(L 域:触达→已读→转化漏斗、各档送达率);有转化路径的滑动(佣金→复投)喂实时漏斗(B3)。<b>I5 re-ack 与 J 域监管应急</b>共用 critical 通道:由对应域提交、借这页的通道按 critical 下发,执行门槛升合规/超管级。通知类事件的归类登记(notification 域)是 BI 上线前必办工单,占位期按临时编号入库<span title="§2.4.3 domain 枚举扩展 · V4 内容批次 · blocking">。</span>下发带防重号,重复点不会发两遍。
+        <b>执行门槛</b>:草稿随便建(留审计);调度下发 / 取消 = 内容提交(风控合规类可由风控提交),内容主管/超管执行;容量闸调整 = 内容或风控执行门槛:主管。<b>事件去向</b>:送达 / 已读 / 滑动动作三类事件喂触达健康度看板和数据 BI(L 域:触达→已读→转化漏斗、各档送达率);有转化路径的滑动(佣金→复投)喂实时漏斗(B3)。<b>I4 re-ack 与 J 域监管应急</b>共用 critical 通道:由对应域提交、借这页的通道按 critical 下发,执行门槛升合规/超管级。通知类事件的归类登记(notification 域)是 BI 上线前必办工单,占位期按临时编号入库<span title="§2.4.3 domain 枚举扩展 · V4 内容批次 · blocking">。</span>下发带防重号,重复点不会发两遍。
       </p>
       <PaginationExemptionList
         items={[
@@ -688,7 +652,7 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
 
       {c.tier === "critical" && (
         <div className="itint warn">
-          <b>合规通道特例</b> · 风险披露重确认(I4-I5)+ J 域监管应急公告借这页 critical 下发;执行门槛升合规/超管。
+          <b>合规通道特例</b> · 风险披露重确认(I4)+ J 域监管应急公告借这页 critical 下发;执行门槛升合规/超管。
         </div>
       )}
     </div>
