@@ -1,7 +1,7 @@
 /**
  * 域 H 增长与运营节奏 — 注册表(H1 Phase / H2 试用 / H3 Quest / H4 活动 / H5 签到 / H6 里程碑)。accent=--admin-domain-h。
  * ⚠️ H ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = h-view.tsx + h-tabs/),仅 summary 经 DomainHeader 渲染。
- * 改 H 域数据/动作请改 h-tabs/data.ts,勿在此处改 content。
+ * 改 H 域数据/动作请改后端 growth 接口与 h-tabs 页面组件,勿在此处改 content。
  * FOLD: H4→H3(任务与活动同页) / H6→H5(签到与里程碑同页)。
  */
 import type { ModuleEntry } from "@/lib/admin/module-content";
@@ -13,13 +13,13 @@ export const DOMAIN_H: ModuleEntry[] = [
     path: "/growth/phase",
     summary:
       "运营节奏的唯一操作台(节奏总时长 / 当前运营月在「节奏骨架」段可配,默认 12 月),8 个节奏旋钮都以这里为准(Premium/NEX v2 的旋钮随模块下线已移除,「提现积分」改为「提现罚金费率」;NEX 抵扣率在 D5)。前端只用服务器下发的当前旋钮值;调旋钮、手动锁定某个阶段、对特定用户群单独覆盖,都要确认;往松了调(降冷却、降罚金、升封顶)要先过 B1 兑付覆盖率,低于红线直接拒绝。下游 D5/F3/E2/H3 只能读、不能改。",
-    content: placeholder("死代码:H1 真渲染面在 h-tabs/h1-phase.tsx(DIAL_MATRIX 默认 12×8、运营可调总时长 + LOOSEN_DIR + NEW_USER_ONLY + PHASE_CONTROLS 3 类)。"),
+    content: placeholder("死代码:H1 真渲染面在 h-tabs/h1-phase.tsx,数据来自 /api/admin/growth/phases。"),
   },
   {
     path: "/growth/trial",
     summary:
       "免费试用引擎 · 19 个参数的操作面 + 7 种会话状态监控 + 4 道前置闸(资格统一裁决、30 天冷却、K2 防刷循环、扣款防重复)。规则 A:购机前的试用收益只能抵购机款(上限 $50)、不能提现,购机后剩余部分才进余额。敏感项(机价、扣款失败概率〔只在服务器、永不下发前端〕、自动扣款)要走确认;其余项增长角色可直接改、但必须填原因;自动推送可实时急停。这页不挂「放大流出」标记(试用收益是折扣、不是负债)。",
-    content: placeholder("死代码:H2 真渲染面在 h-tabs/h2-trial.tsx(TRIAL_CONFIG 19 + 7 态 SS + 4 行 sessions + 4 道闸)。"),
+    content: placeholder("死代码:H2 真渲染面在 h-tabs/h2-trial.tsx,数据来自 /api/admin/growth/trials。"),
   },
   {
     path: "/growth/quest",
@@ -31,7 +31,7 @@ export const DOMAIN_H: ModuleEntry[] = [
     path: "/growth/events",
     summary:
       "限时活动管理 · 8 种活动类型(折扣 / 推荐 / 转盘 / 区域 / 新手引导 / 加成 / 季节 / 持有)+ 同时只能有一个「精选」活动 + 4 行可追踪指标(只读取 E/F/G 状态)+ 幸运转盘治理。转盘三道护栏(各档中奖权重之和 = 100、档位数在 2–12 之间、真钱奖项要过 B1)+ 覆盖率低于 100% 时自动暂停真钱档 + 同一用户同一活动每天只能转一次。「精选」全站唯一;已结束的活动优先级最高。改投放地区等高敏操作走超级管理员。",
-    content: placeholder("死代码:H4 已合并到 H3 真渲染面 h-tabs/h3-quest-events.tsx(EVENTS_CMS 8 玩法 + WHEEL 8 档 + GUARDS 3 行 + TRACKABLES 4 行)。"),
+    content: placeholder("死代码:H4 已合并到 H3 真渲染面 h-tabs/h3-quest-events.tsx,数据来自 /api/admin/growth/quest-events。"),
   },
   {
     path: "/growth/daily",
@@ -43,7 +43,7 @@ export const DOMAIN_H: ModuleEntry[] = [
     path: "/growth/milestones",
     summary:
       "收益累计里程碑 · 5 档阈值和对应 NEX 奖励的配置 + 监控。自动触发:用户累计收益跨过某档阈值,自动弹庆祝 + 自动发 NEX,一次只过一档。调高奖励 / 调低阈值 = 放大 NEX 流出,要过 B1 红线;各档阈值必须从低到高严格排序。弹庆祝、发 NEX、记账单三件事在一笔事务里完成,同一用户同一里程碑不会重复发,中途崩溃也不会出现「标记已发但 NEX 没到账」的半截状态;一次跨过多档时按当时配置依次结算(用快照锁定)。",
-    content: placeholder("死代码:H6 已合并到 H5 真渲染面 h-tabs/h5-daily-milestones.tsx(EARN_MS 5 档 + 三规矩 + TICK_INTERVAL)。"),
+    content: placeholder("死代码:H6 已合并到 H5 真渲染面 h-tabs/h5-daily-milestones.tsx,数据来自 /api/admin/growth/check-in。"),
   },
   {
     path: "/growth/vouchers",

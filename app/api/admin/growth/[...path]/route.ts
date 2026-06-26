@@ -17,13 +17,22 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts.length === 1 && parts[0] === "rhythm") {
-    return "/api/admin/growth/rhythm";
+  if (!parts.length) return null;
+  const allowedHeads = new Set([
+    "phases",
+    "rhythm",
+    "trials",
+    "quest-events",
+    "check-in",
+    "earn-milestones",
+    "withdraw-gate",
+    "vouchers",
+  ]);
+  if (!allowedHeads.has(parts[0])) return null;
+  if (parts.some((part) => !isNonEmpty(part) || part.includes("..") || part.includes("/") || part.includes("\\"))) {
+    return null;
   }
-  if (parts.length === 2 && parts[0] === "rhythm" && isNonEmpty(parts[1])) {
-    return `/api/admin/growth/rhythm/${encodeURIComponent(parts[1])}`;
-  }
-  return null;
+  return `/api/admin/growth/${parts.map((part) => encodeURIComponent(part)).join("/")}`;
 }
 
 async function proxy(request: Request, context: RouteContext) {
@@ -78,5 +87,13 @@ export async function GET(request: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
+  return proxy(request, context);
+}
+
+export async function POST(request: Request, context: RouteContext) {
+  return proxy(request, context);
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
   return proxy(request, context);
 }
