@@ -1,7 +1,7 @@
 /**
  * 域 K 风控与反作弊 — 注册表。accent=--admin-domain-k(高危/拦截类用语义 danger/warning)。
  * ⚠️ K ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = k-view.tsx + k-tabs/),仅 summary 经 DomainHeader 渲染。
- * 改 K 域数据/动作请改 k-tabs/data.ts 与 lib/mock/admin/design-data.ts(K_RISK),勿在此处改 content。
+ * 改 K 域数据/动作请改 lib/admin/k-client.ts 与后端 /api/admin/risk/*,勿在此处改 content。
  */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 

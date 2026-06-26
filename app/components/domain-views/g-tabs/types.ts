@@ -1,6 +1,32 @@
-/**
- * G 域视图层契约 —— 复用 K 域三类弹窗原语(操作确认 显式 edit / 普通确认),
- * 详情下钻用 design-kit Drawer(设计稿 openDetailDrawer 的工程映射)。
- */
-export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
-export type { KCtx as GCtx } from "../k-tabs/types";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
+import type { BusinessFormSpec, BusinessFormValue, EditSpec } from "../design-kit";
+
+export type ActionConfirmReq = {
+  action: ReactNode;
+  detail: ReactNode;
+  amplifies?: boolean;
+  edit?: EditSpec;
+  businessForm?: BusinessFormSpec;
+  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void;
+};
+
+export type ConfirmReq = {
+  action: ReactNode;
+  detail: ReactNode;
+  chips?: [text: string, tone: "done" | "ready"][];
+  reason?: boolean;
+  input?: { label: string; placeholder?: string; options?: string[] };
+  okLabel?: string;
+  run: (reason: string, value?: string) => void;
+};
+
+export type ConfirmChip = [text: string, tone: "done" | "ready"];
+
+export type GCtx = {
+  pget: (k: string) => string | undefined;
+  params: Record<string, unknown>;
+  setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
+  toast: (s: string) => void;
+  openActionConfirm: Dispatch<SetStateAction<ActionConfirmReq | null>>;
+  openConfirm: Dispatch<SetStateAction<ConfirmReq | null>>;
+};

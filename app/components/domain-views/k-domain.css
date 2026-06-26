@@ -153,6 +153,12 @@
 .kdom .param-grid .p .v .vu { font-size: 12px; color: var(--ink-4); font-weight: 500; }
 .kdom .param-grid .p .v .l-btn { margin-left: auto; }
 .kdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }
+.kdom .threshold-parts { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.kdom .threshold-parts .seg { display: inline-flex; align-items: center; justify-content: center; min-height: 22px; padding: 2px 7px; border-radius: 6px; background: var(--surface-3); color: var(--ink-2); line-height: 1; }
+.kdom .threshold-parts .seg.op { color: var(--warning); background: var(--warning-soft); }
+.kdom .threshold-parts .seg.num { color: var(--ink); min-width: 30px; font-variant-numeric: tabular-nums; }
+.kdom .threshold-parts .seg.scope { color: var(--cyan); background: var(--cyan-soft); }
+.kdom .threshold-parts .sep { color: var(--ink-4); font-size: 12px; }
 
 /* ============================ K3 ============================ */
 .kdom .dim-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }

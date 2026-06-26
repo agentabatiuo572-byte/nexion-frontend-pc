@@ -289,8 +289,7 @@ export const USERS = [
   { id: "usr_90F0", name: "Sara Lindqvist", lc: "L3", vrank: "V1", devices: 1, kyc: "verified", risk: 9, balance: 890, nex: 1320, ref: "NX-9001", frozen: false, joined: "2026-05-22" },
 ];
 
-// (旧 CLUSTERS 四行简表已随 K 域设计稿 port 移除 —— 簇明细唯一渲染面在 k-tabs/data.ts K1_CLUSTERS,
-//  跨页只消费 K_RISK 聚合口径,避免簇数据双源。)
+// (K1-K5 页面已接入后端 /api/admin/risk/*,本文件仅保留其他旧视图仍消费的聚合口径。)
 
 // Kill-Switch 5 闸(前端 §9.11d.1 的 4 + 后台应急新增 withdraw;Premium/NEX v2 已下线,原 6+withdraw=7 收敛到 4+withdraw=5;主人 2026-06-05 拍板)。
 // PRD §15.2 完整字段:coverageImpactCategory(资金语义)/ coveragePrecheckRequired(恢复前置 B1)/
