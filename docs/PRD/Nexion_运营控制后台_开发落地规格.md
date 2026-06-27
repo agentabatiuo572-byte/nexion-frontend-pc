@@ -71,7 +71,7 @@
 
 ### 0.9 同名不同域参数辨析(易混淆,严禁混用)
 - **提现冷却** `withdrawCooldownDays`(D5 生效面,权威 H1 Phase 派发,30/35/45d)≠ **试用再次冷却** H2 `cooldownDays`(30d 固定)≠ **佣金冷却** `commission/cooling-days`(F2,30d,权威归属待定见第7章 #5)。
-- **大额 $1,000** 三处独立、权威分属、可独立调:**D2** 大额人工审核触发线(后台静态,执行门槛升为财务 lead/超管)/ **K3** `largeAmountUsdt`(提现路由结论)/ **K5** `largeWithdrawReviewUsdt`(KYC 复审工单)。
+- **大额 $1,000** 三处独立、权威分属、可独立调:**D2** 大额人工审核触发线(后台静态,执行门槛升为财务/超管)/ **K3** `largeAmountUsdt`(提现路由结论)/ **K5** `largeWithdrawReviewUsdt`(KYC 复审工单)。
 - **拐点**:`binaryDailyCap` 在月 **7**(非月 6);`withdrawCooldownDays` 月 **8=35d** 中间档(前端缺,须新增)。
 
 ### 0.10 Phase 派发参数权威唯一性
@@ -168,7 +168,7 @@
 
 | 实体 | 关键字段(名:类型) | 权威源 | 出处§ |
 |---|---|---|---|
-| **OperatorAccount** | accountId:string · displayName:string · role:enum{super\|finance\|risk\|growth\|content\|support\|auditor} · permissionTier:enum{member\|lead} · twoFactorBound:bool · status:enum{enabled\|disabled\|locked} · lastLoginAt:ms-epoch · activeSessions:数组 | SC | §9.1 / Ch2 A1 |
+| **OperatorAccount** | accountId:string · displayName:string · role:enum{super\|finance\|risk\|growth\|content\|support\|auditor} · twoFactorBound:bool · status:enum{enabled\|disabled\|locked} · lastLoginAt:ms-epoch · activeSessions:数组 | SC | §9.1 / Ch2 A1 |
 | **AuditLog** | operator · role · action · object{domain,objectId} · before · after · reason · ip · ts:ms-epoch · (可选)Idempotency-Key;**append-only,保留 ≥13 月;高敏写与审计记录同事务落库** | SC | §9.1 / Ch2 A2 |
 | **SystemConfig** | 运营托管:featureFlags[]{key,state:enum{on\|off\|灰度%},scope:enum{all\|cohort\|phase}} · health{pipeline,ledger,ntp,endpoints}。**固定后端不变量(运营不可调、无配置面)**:serverTime{ntpSource,currentTs:ms-epoch,driftMs} 单源 · idempotency{ttlHours(24),dedupHitCount24h} Idempotency-Key 去重 | SC | §9.1 / Ch2 A3 |
 | **KillSwitchConfig** | key:enum{withdraw\|staking\|genesis\|exchange\|trial\|geo-block} · enabled:bool(geo-block=activeCountries.length>0) · activeCountries:数组(仅 geo-block) · lastChangedAt:ms-epoch · operator · reason;**6 闸(5 功能闸+geo-block);A3 子对象非独立表;V1 A3 托管→V4 J1/J2** | SC | §9.1 / Ch2 A3 / §9.11d.1 |
@@ -296,7 +296,7 @@
 | `/api/admin/rbac/roles` | GET / PUT | 七角色权限矩阵(声明式权威)/ 变更授予(仅超管) | 是(④a,PUT) | A1 |
 | `/api/admin/accounts` | GET / POST | 运营账号列表+详情 / 创建(仅超管) | A1-MD1(POST) | A1 |
 | `/api/admin/accounts/:id` | PUT | 禁用/启用/改角色/重置 2FA(仅超管) | A1-MD2~MD5 | A1 |
-| `/api/admin/accounts/:id/logout` | POST | 强制登出运营 session(仅超管,reason 必填) | A1-MD6 | A1 |
+| `/api/admin/accounts/:id/logout` | POST | 强制登出运营 session(超管/风控;禁止登出自己或超管账号;reason 必填) | A1-MD6 | A1 |
 | `/api/admin/audit?filter=` | GET | 审计日志查询(append-only,server 强制可见性;含高敏动作流水监控面) | — | A2 |
 | `/api/admin/system/config` | GET | 系统健康(health;server time / idempotency 为固定后端不变量,不在配置面) | — | A3 |
 | `/api/admin/feature-flags` | GET / PUT | feature flag 查询/切换 | A3-MD1(PUT) | A3 |
@@ -334,11 +334,11 @@
 | `/api/admin/users/:userId/adjust/:requestId` | DELETE | 发起人撤回未处理的调整请求单(客服超额发起场景) | — | C3 |
 | `/api/admin/kyc` · `/kyc/:userId` | GET | KYC 列表 / 单用户详情 | — | C4 |
 | `/api/kyc/status/:userId` | GET | **KYC 状态单源读**(D2/G2/K5 引用) | — | C4 |
-| `/api/admin/kyc/:userId/{verify\|revoke}` | POST | 人工标记/撤销 KYC(携 Key;执行=风控 lead/超管) | C4-MD1/MD2 | C4 |
+| `/api/admin/kyc/:userId/{verify\|revoke}` | POST | 人工标记/撤销 KYC(携 Key;执行=风控/超管) | C4-MD1/MD2 | C4 |
 | `/api/admin/kyc/:userId/trigger-review` | POST | 触发复审→产 K5 工单(不改态) | — | C4 |
 | `/api/admin/users/:userId/sessions` · `/revoke-session` | GET/POST | session 列表 / 强制登出 | C5-MD1(POST) | C5 |
 | `/api/admin/users/:userId/invalidate-password` · `/disable-2fa` | POST | 密码重置/disable 2FA(理由必填+KYC 二验防社工;携 Key) | C5-MD2/MD3 | C5 |
-| `/api/admin/users/:userId/unlock` | POST | 解除账户锁定(24h 长锁执行=风控 lead/超管;15min 短锁即时) | C5-MD4 | C5 |
+| `/api/admin/users/:userId/unlock` | POST | 解除账户锁定(24h 长锁执行=风控/超管;15min 短锁即时) | C5-MD4 | C5 |
 | `/api/admin/auth/config` | GET / PUT | 注册登录风控参数(携 K1 去重参数返 422) | C6-MD1~MD3(PUT) | C6 |
 
 ### 域 D — 资金
@@ -349,7 +349,7 @@
 | `/api/admin/topup/channel/:id/{enable\|disable}` · `/topup/psp/switch` | POST | 渠道启停 / 主备 PSP 切换(PSP 切换执行=仅超管) | D1-MD1/MD2 | D1 |
 | `/api/admin/topup/chargeback/:topupId/refund` · `/topup/reconcile` | POST | chargeback 退款 / 对账核销(携 Key) | D1-MD3/MD4 | D1 |
 | `/api/admin/withdrawals?status=&cursor=` · `/withdrawals/:id` | GET | 提现队列 / 单笔详情 | — | D2 |
-| `/api/admin/withdrawals/:id/{approve\|reject\|delay\|freeze\|unfreeze\|refund}` | POST | 单笔状态推进(单一 URL 覆盖所有金额,server 按金额校验执行资质——大额 ≥$1,000 放行=财务 lead/超管;非法 409;携 Key) | D2-MD1~MD6 | D2 |
+| `/api/admin/withdrawals/:id/{approve\|reject\|delay\|freeze\|unfreeze\|refund}` | POST | 单笔状态推进(单一 URL 覆盖所有金额,server 按金额校验执行资质——大额 ≥$1,000 放行=财务/超管;非法 409;携 Key) | D2-MD1~MD6 | D2 |
 | `/api/admin/withdrawals/batch` | POST | 批量(含大额单自动分拣转人工逐笔确认,不整体失败) | D2-MD7 | D2 |
 | `/api/admin/withdrawals/pause` | POST | **withdraw 闸 D 域 enforce 生效面**(被 J1 `:key=withdraw` 控) | (经 J1-MD1/MD2) | D2/J1 |
 | `/api/admin/treasury/reserve` | GET | 真实储备明细(**唯一储备源**) | — | D3 |
@@ -384,7 +384,7 @@
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
 | `/api/admin/config/v-ranks` · `/v-ranks` | GET / PUT | 13 阶 V 级配置(门槛保序 Vn≥Vn-1 违反 400) | F1-MD2(高敏) | F1 |
-| `/api/admin/users/:userId/vrank/override` | POST | 手动晋升/回滚 V 级(携 Key;执行=增长 lead/超管) | F1-MD1 | F1 |
+| `/api/admin/users/:userId/vrank/override` | POST | 手动晋升/回滚 V 级(携 Key;执行=增长/超管) | F1-MD1 | F1 |
 | `/api/admin/team/prize-queue` · `/prize-queue/:id/ship` | GET/POST | 实物奖发货队列 / 标发货(须 kycAddressVerified 否则 409) | F1-MD3(ship) | F1 |
 | `/api/admin/config/commission/rates` | GET / PUT | 佣金费率/Partner Status 门槛权益/InfluenceScore/promo(高敏+B1 前置) | F2-MD1~MD3(高敏) | F2 |
 | `/api/admin/config/commission/cooling-days` | GET / PUT | 佣金冷却(authorityOwner **TBD**:F2/commission/D5) | F2-MD5(PUT) | F2 |
@@ -452,9 +452,9 @@
 | `/api/stella/config-invalidate` | SSE | cadence 变更推 client 失效重拉 | — | I2 |
 | `/api/admin/notifications/campaigns` | GET / POST | campaign 列表 / 下发(携 Key 防重复) | I3-MD1(POST) | I3 |
 | `/api/notifications?cursor=&priority=` · `/:id/read` · `/stream`(SSE) | GET/POST/SSE | (用户)分页拉取 / 标读 / 推优先级升级 | — | I3 |
-| `/api/admin/trust/sections` · `/:sectionKey/versions` · `/:sectionKey` | GET/PUT | 信任 section 列表 / 历史 / 发布回滚(携 Key;财务数字/NEX 叙事类执行=风控 lead/超管) | I4-MD1~MD3(PUT) | I4 |
+| `/api/admin/trust/sections` · `/:sectionKey/versions` · `/:sectionKey` | GET/PUT | 信任 section 列表 / 历史 / 发布回滚(携 Key;财务数字/NEX 叙事类执行=风控/超管) | I4-MD1~MD3(PUT) | I4 |
 | `/api/legal/risk-disclosure/current?jurisdiction=` | GET | (用户)当前 IP/KYC 辖区披露版本(server 权威判辖区) | — | I5 |
-| `/api/admin/legal/risk-disclosure` | PUT | 发布披露新版(per jurisdiction×locale;携 Key;发布标 ack stale 触发 re-ack;执行=风控 lead/超管) | I5-MD1~MD3 | I5 |
+| `/api/admin/legal/risk-disclosure` | PUT | 发布披露新版(per jurisdiction×locale;携 Key;发布标 ack stale 触发 re-ack;执行=风控/超管) | I5-MD1~MD3 | I5 |
 | `/api/admin/i18n/namespaces` · `/:namespace/keys` · `/:namespace` · `/i18n/integrity` | GET/PUT | namespace 矩阵 / key 列表 / 发布(校验镜像+占位符;携 Key)/ 完整性扫描 | I6-MD1~MD3(发布) | I6 |
 | `/api/admin/learn/courses` · `/:slug/versions` · `/:slug` | GET/PUT | 课程列表 / 历史 / 发布回滚+改奖励(改奖励核 B1;携 Key) | I7-MD1~MD4(PUT) | I7 |
 
@@ -480,14 +480,14 @@
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
 | `/api/admin/risk/multi-account?layer=` · `/risk/cluster/:id` | GET | 三层去重命中 / 簇详情+图谱 | — | K1 |
-| `/api/admin/risk/cluster/:id/freeze` · `/release` | POST | 批量冻结执行(确认弹窗+理由必填,携 Key,server 原子置各账户 frozen;执行=风控 lead/超管)/ 解除误判 | 是 | K1 |
+| `/api/admin/risk/cluster/:id/freeze` · `/release` | POST | 批量冻结执行(确认弹窗+理由必填,携 Key,server 原子置各账户 frozen;执行=风控/超管)/ 解除误判 | 是 | K1 |
 | `/api/admin/risk/ip-whitelist` | GET/POST/DELETE | IP 白名单列表 / 添加 / 移除(仅 IP 维度共享网络豁免,不解冻账户;移除强制 reason;与 C2 账户级名单不重叠) | 否(免MC+审计) | K1 |
 | `/api/admin/risk/arbitrage?type=` · `/risk/welcome-gift/block` | GET/POST | 套利刷量检测列表(消费 minHoldingMonths 只读)/ 拦截 gift 发放 | 否(预防性) | K2 |
-| `/api/admin/risk/withdraw-rules` | GET/PUT | 规则列表+命中日志 / CRUD 启停(archived→active 返 409;启停经确认弹窗,执行=风控 lead/超管) | 是 | K3 |
+| `/api/admin/risk/withdraw-rules` | GET/PUT | 规则列表+命中日志 / CRUD 启停(archived→active 返 409;启停经确认弹窗,执行=风控/超管) | 是 | K3 |
 | `/api/admin/risk/score/:userId` · `/risk/model` | GET | 单用户评分+可解释(唯一评分源)/ 模型配置+分布 | — | K4 |
-| `/api/admin/risk/model` | PUT | 权重/分档/开关(六维和=1 违反 422;执行=仅超管,风控 lead 起草草稿) | 是 | K4 |
+| `/api/admin/risk/model` | PUT | 权重/分档/开关(六维和=1 违反 422;执行=仅超管,风控可起草草稿) | 是 | K4 |
 | `/api/admin/risk/score/:userId/override` · `/score/recompute` | POST | 单用户评分覆盖(**不走 MC**,强制 reason+审计)/ 重算 | 否 | K4 |
-| `/api/admin/risk/kyc-review` · `/:id/decide` | GET/POST | 复审队列+复审单 / 通过驳回(回写 C4;携 Key;执行=风控 lead/超管) | 是 | K5 |
+| `/api/admin/risk/kyc-review` · `/:id/decide` | GET/POST | 复审队列+复审单 / 通过驳回(回写 C4;携 Key;执行=风控/超管) | 是 | K5 |
 
 ### 域 L — 数据 BI(无高敏处置权,唯一升 MC=含敏感/超 rowCap 导出)
 
@@ -817,7 +817,7 @@
   - `review-passed/processing → frozen`(freeze 可在 review-pending 及之后任何在途态)/ `frozen → review-pending`(unfreeze)
   - `review-passed → processing → sent → confirmed`(链上)/ `processing,sent → tx-failed,tx-orphaned`
   - `{review-rejected,address-invalid,tx-failed,tx-orphaned} → refunded`(冻结额退回 + refund bill)
-- **守卫**:approve 经确认弹窗 D2-MD1(理由必填+B1 红线预检);小额(<$1,000)执行=财务,大额(≥$1,000)执行=财务(lead)/超管;freeze/unfreeze/manual-refund-override 经确认弹窗(理由必填),执行=财务(lead)/风控(lead)/超管。K4 风险分档路由 + K3 路由结论(delay/freeze/manual)优先于小额快速通道(仅 K3=pass 才放小额)。大额进 K5 复审 → 联动 frozen。
+- **守卫**:approve 经确认弹窗 D2-MD1(理由必填+B1 红线预检);小额(<$1,000)执行=财务,大额(≥$1,000)执行=财务/超管;freeze/unfreeze/manual-refund-override 经确认弹窗(理由必填),执行=财务/风控/超管。K4 风险分档路由 + K3 路由结论(delay/freeze/manual)优先于小额快速通道(仅 K3=pass 才放小额)。大额进 K5 复审 → 联动 frozen。
 - **事件**:`withdraw.{submitted,approved,rejected,delayed,frozen,sent,confirmed}`。
 
 ### 5.2 A2 高敏操作执行约束(Ch2 A2;原复核工单状态机已随 2026-06 操作确认决议废除)
@@ -827,7 +827,7 @@
 
 ### 5.3 K5 大额 KYC 复审(Ch8 K5)
 - **状态集**:`triggered / in-review / passed / rejected`
-- **合法转移**:`(命中四触发条件 OR)→ triggered`(largeWithdrawReviewUsdt≥$1,000 / cumulativeKycThresholdUsdt≥$100 lifetime / 兑换累计达线 / 风险分≥reviewTriggerScore 85)→ `in-review` → `passed | rejected`(确认弹窗:执行=风控(lead)/超管)
+- **合法转移**:`(命中四触发条件 OR)→ triggered`(largeWithdrawReviewUsdt≥$1,000 / cumulativeKycThresholdUsdt≥$100 lifetime / 兑换累计达线 / 风险分≥reviewTriggerScore 85)→ `in-review` → `passed | rejected`(确认弹窗:执行=风控/超管)
 - **守卫/联动**:`triggered/in-review` → D2 frozen;`passed` → 解冻 + 回写 C4 KYC 升级;`rejected` → 维持 frozen + §9.11f 退款。同 userId 已 in-review 新命中 → 合并工单(累加 triggerReasons[]),不重复开单。
 - **约束**:`/decide` 携 Key + 确认弹窗(理由必填);KYC 态权威在 C4,K5 不持状态。
 
@@ -851,7 +851,7 @@
 
 ### 5.7 F1 V-Rank 晋升(Ch11 F1,13 阶 V0–V12)
 - **状态集**:`V0 … V12`
-- **合法转移**:晋升 `V(n) → V(n+1)`(server 在被动评估触发点 re-check;条件 **AND 复合**,各阶组合不一)/ 手动晋升回滚 `V(x) → V(y)`(确认弹窗 F1-MD1,理由必填;执行=增长运营(lead)/超管)/ **不降级**(vRankPermanent=true,唯一例外账户注销)
+- **合法转移**:晋升 `V(n) → V(n+1)`(server 在被动评估触发点 re-check;条件 **AND 复合**,各阶组合不一)/ 手动晋升回滚 `V(x) → V(y)`(确认弹窗 F1-MD1,理由必填;执行=增长运营/超管)/ **不降级**(vRankPermanent=true,唯一例外账户注销)
 - **约束**:`/vrank/override` 携 Key + MC 两步,server 原子置 V 级并联动版税/票数/可见性;client 显示对但 server 可 reject(anti-abuse/race)是产品契约;改门槛不回溯已晋升者。
 
 ### 5.8 G1 Staking position(Ch12 G1,对齐 §9.6)
@@ -899,14 +899,14 @@
 
 ## 第 6 章 RBAC 权限矩阵(角色 × 高敏动作)
 
-> 七角色(§1.1 / A1③):**超管 / 风控 / 财务 / 增长 / 客服 / 只读审计**(第 7 角色「内容」仅 I 域内容 CMS 高敏发布动作,无资金/资产/规则/熔断高敏写,不列入本表)。**层级**:「财务(lead)」=财务主管、「风控(lead)」=风控主管——2026-06 操作确认决议后,原复核层级统一迁移为**执行门槛**:标 (lead) 的动作仅该角色 lead 层级(及超管)可执行,member 不可执行。**K 域旧命名映射**:平台管理员→超管、风控运营→风控(member)、审计员→只读审计。单元格 ✅=可执行(经该动作确认弹窗+理由必填即时生效)/ 读=只读 / —=无权。「确认弹窗」列=是否高敏(入 A2③ 清单:确认弹窗+reason 强制 400+高敏流水/实时告警;放大流出方向另前置 B1 红线 422);弹窗 ID 细则见各卷 PRD ④a 与本规格第 9 章总表。
+> 七角色(§1.1 / A1③):**超管 / 风控 / 财务 / 增长 / 客服 / 只读审计**(第 7 角色「内容」仅 I 域内容 CMS 高敏发布动作,无资金/资产/规则/熔断高敏写,不列入本表)。A1 不再区分旧双层级,原复核层级已迁移为**按角色或仅超管的执行门槛**。**K 域旧命名映射**:平台管理员→超管、风控运营→风控、审计员→只读审计。单元格 ✅=可执行(经该动作确认弹窗+理由必填即时生效)/ 读=只读 / —=无权。「确认弹窗」列=是否高敏(入 A2③ 清单:确认弹窗+reason 强制 400+高敏流水/实时告警;放大流出方向另前置 B1 红线 422);弹窗 ID 细则见各卷 PRD ④a 与本规格第 9 章总表。
 
 | 高敏动作 | 超管 | 风控 | 财务 | 增长 | 客服 | 审计 | 确认弹窗 | 模块 |
 |---|---|---|---|---|---|---|---|---|
 | 创建/禁用/启用运营账号 | ✅(仅超管) | — | — | — | — | — | 是(理由必填;禁用超管前校验≥2) | A1 |
 | 分配/变更账号角色 / 变更 RBAC 授予 | ✅(仅超管) | — | — | — | — | — | 是(权限边界=最高敏,理由必填) | A1 |
 | 重置运营账号 2FA | ✅(仅超管) | — | — | — | — | — | 是(理由必填+身份核实勾选) | A1 |
-| 强制登出运营 session | ✅(仅超管) | — | — | — | — | — | 是(理由必填,止血即时) | A1 |
+| 强制登出运营 session | ✅(非自己、非超管目标) | ✅(非自己、非超管目标) | — | — | — | — | 是(理由必填,止血即时) | A1 |
 | 审计/埋点 schema 变更 | ✅(仅超管) | — | — | — | — | — | 是(A2-MD1,理由必填) | A2 |
 | 审计日志查询/导出 | ✅(全) | 读(风控/账户) | 读(资金) | 读(增长) | 读(单用户) | ✅(全量脱敏) | 否(只读) | A2 |
 | feature flag 切换 | ✅(全部 flag) | — | — | ✅(限增长/AB 类) | — | — | 是(理由必填;server 按 flag 分类校验资质) | A3 |
@@ -914,35 +914,35 @@
 | **kill-switch 恢复(放大方向)** | ✅(仅超管) | — | — | — | — | — | 是(理由必填+B1 红线预检 422) | A3→J1 |
 | **geo-block 国家级屏蔽** | ✅ | ✅ | —(财务不参与) | — | — | — | 是(理由必填) | A3→J2 |
 | 覆盖率红黄线 / 挤兑阈值 | ✅ | ✅(lead,挤兑阈值) | ✅(lead,覆盖率阈值) | — | — | — | 是(理由必填;放松方向警示) | B1/B5 |
-| 储备注入 / 对账核销 | ✅ | — | ✅(lead) | — | — | — | 是(理由必填+Idempotency-Key) | B1/D3/D1 |
-| **充值 PSP 退款 / chargeback / 渠道启停** | ✅ | — | ✅(lead) | — | — | — | 是(理由必填) | D1 |
+| 储备注入 / 对账核销 | ✅ | — | ✅ | — | — | — | 是(理由必填+Idempotency-Key) | B1/D3/D1 |
+| **充值 PSP 退款 / chargeback / 渠道启停** | ✅ | — | ✅ | — | — | — | 是(理由必填) | D1 |
 | **提现放行(小额 <$1,000)** | ✅ | — | ✅ | — | 读(受限) | 读 | 是(D2-MD1,理由必填+B1 红线预检) | D2 |
-| **提现放行(大额 ≥$1,000)** | ✅ | — | ✅(lead) | — | — | — | 是(D2-MD1+大额确认勾选;超阈不可批量自动放行) | D2 |
+| **提现放行(大额 ≥$1,000)** | ✅ | — | ✅ | — | — | — | 是(D2-MD1+大额确认勾选;超阈不可批量自动放行) | D2 |
 | 提现 reject / delay | ✅ | ✅ | ✅ | — | — | — | 是(理由必填) | D2 |
-| 提现 freeze / unfreeze / manual-refund-override | ✅ | ✅(lead) | ✅(lead) | — | — | — | 是(理由必填) | D2 |
-| 提现参数(日限/上限/网络费) | ✅ | — | ✅(lead) | — | — | — | 是(理由必填;放宽方向 B1 预检) | D5 |
+| 提现 freeze / unfreeze / manual-refund-override | ✅ | ✅ | ✅ | — | — | — | 是(理由必填) | D2 |
+| 提现参数(日限/上限/网络费) | ✅ | — | ✅ | — | — | — | 是(理由必填;放宽方向 B1 预检) | D5 |
 | **余额调整 ≤$500 / >$500** | ✅ | — | ✅(>$500 用 lead) | — | ✅(≤$500) | — | 是(理由必填;加余额方向 B1 预检) | C3 |
-| 积分调整 | ✅ | — | ✅(lead) | ✅ | ✅ | — | 是(理由必填;走 points 字段,不入 D4) | C3 |
-| **账户冻结/解冻(单用户)** | ✅ | ✅(lead) | ✅ | — | — | — | 是(理由必填;联动 D2 frozen) | C2 |
-| **impersonate(模拟登录)** | ✅ | ✅(lead) | — | — | ✅ | — | 是(理由必填;只读+≤30min+全审计) | C2 |
-| 账户加白/拉黑(userId 级) | ✅ | ✅(lead) | — | — | — | — | 是(理由必填) | C2 |
-| 人工标记/撤销 KYC | ✅ | ✅(lead) | — | — | 发起请求单(不具执行权) | — | 是(理由必填;执行=风控 lead/超管) | C4 |
-| disable 2FA / 密码重置 / 解除锁定 | ✅ | ✅(lead) | — | — | ✅(部分) | — | 是(理由必填+KYC 二验防社工) | C5 |
-| 注册/登录风控参数 | ✅ | ✅(lead) | — | — | — | — | 是(理由必填) | C6 |
-| **批量冻结关联账户簇** | ✅ | ✅(lead) | — | — | — | — | 是(K1-MD1,理由必填+Key;冻结态落 C2) | K1 |
+| 积分调整 | ✅ | — | ✅ | ✅ | ✅ | — | 是(理由必填;走 points 字段,不入 D4) | C3 |
+| **账户冻结/解冻(单用户)** | ✅ | ✅ | ✅ | — | — | — | 是(理由必填;联动 D2 frozen) | C2 |
+| **impersonate(模拟登录)** | ✅ | ✅ | — | — | ✅ | — | 是(理由必填;只读+≤30min+全审计) | C2 |
+| 账户加白/拉黑(userId 级) | ✅ | ✅ | — | — | — | — | 是(理由必填) | C2 |
+| 人工标记/撤销 KYC | ✅ | ✅ | — | — | 发起请求单(不具执行权) | — | 是(理由必填;执行=风控/超管) | C4 |
+| disable 2FA / 密码重置 / 解除锁定 | ✅ | ✅ | — | — | ✅(部分) | — | 是(理由必填+KYC 二验防社工) | C5 |
+| 注册/登录风控参数 | ✅ | ✅ | — | — | — | — | 是(理由必填) | C6 |
+| **批量冻结关联账户簇** | ✅ | ✅ | — | — | — | — | 是(K1-MD1,理由必填+Key;冻结态落 C2) | K1 |
 | **风险评分模型权重/分档** | ✅(仅超管,发布) | 起草草稿(lead,不生效) | — | — | — | — | 是(K4-MD1,理由必填;六维和=1 违 422) | K4 |
 | 单用户风险评分覆盖 | ✅ | ✅ | — | — | — | — | 是(K4-MD2,理由必填;非高敏不入流水告警) | K4 |
-| 大额 KYC 复审裁决 | ✅ | ✅(lead) | — | — | — | — | 是(理由必填;态落 C4) | K5 |
-| 提现风控规则引擎配置 | ✅ | ✅(lead) | — | — | — | — | 是(理由必填) | K3 |
+| 大额 KYC 复审裁决 | ✅ | ✅ | — | — | — | — | 是(理由必填;态落 C4) | K5 |
+| 提现风控规则引擎配置 | ✅ | ✅ | — | — | — | — | 是(理由必填) | K3 |
 | **Phase dial 改动/pin/cohort override** | ✅(全部;放大流出方向 dial 仅超管) | — | — | ✅(非放大方向) | — | — | 是(理由必填;放大方向弹窗强制覆盖率预检) | H1 |
-| Trial 敏感参数 | ✅ | — | — | ✅(lead) | — | — | 是(理由必填) | H2 |
-| 兑换三阈值 caps/gate | ✅ | ✅(lead) | ✅(lead) | — | — | — | 是(理由必填;放宽方向 B1 预检) | G2 |
+| Trial 敏感参数 | ✅ | — | — | ✅ | — | — | 是(理由必填) | H2 |
+| 兑换三阈值 caps/gate | ✅ | ✅ | ✅ | — | — | — | 是(理由必填;放宽方向 B1 预检) | G2 |
 | Staking APY/罚款/单档 kill | ✅ | ✅(lead,kill 止血) | ✅(lead,参数) | — | — | — | 是(理由必填;APY 调升 B1 预检;单档 disable 归 G1,不入 J1) | G1 |
 | Genesis 经济(单价/分红率/pause/geo) | ✅(分红率仅超管) | ✅(lead,pause/geo) | ✅(lead,其余参数) | — | — | — | 是(理由必填;分红率放大负债前置 B1) | G4 |
-| 佣金事件撤销/补发/暂停 | ✅ | ✅(lead) | ✅(lead,联动 D 退回) | — | — | — | 是(理由必填;补发方向 B1 预检) | F5 |
-| 网络版税费率 / Partner Status | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(理由必填;调升 B1 预检,应付负债来源) | F2 |
+| 佣金事件撤销/补发/暂停 | ✅ | ✅ | ✅(联动 D 退回) | — | — | — | 是(理由必填;补发方向 B1 预检) | F5 |
+| 网络版税费率 / Partner Status | ✅ | ✅ | ✅ | ✅(增长侧) | — | — | 是(理由必填;调升 B1 预检,应付负债来源) | F2 |
 | 风险披露版本切换 + 强制 re-ack | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
-| 监管点名应急 SOP 编排执行 | ✅ | ✅(lead) | — | — | — | — | 是(J4-MD3,理由必填+触发事由;逐步经各域弹窗,串联 J1/J2/I5/C2/K1/D2/I3) | J4 |
+| 监管点名应急 SOP 编排执行 | ✅ | ✅ | — | — | — | — | 是(J4-MD3,理由必填+触发事由;逐步经各域弹窗,串联 J1/J2/I5/C2/K1/D2/I3) | J4 |
 | **数据导出/监管报告(含敏感)** | ✅(超限/解密仅超管) | ✅(lead,风控域) | ✅(lead,资金域) | — | — | ✅(全量脱敏) | 是(理由必填;数据出境=敏感,脱敏+审计) | L5 |
 
 ## 第 7 章 未决项清单(开发/上线阻塞点)

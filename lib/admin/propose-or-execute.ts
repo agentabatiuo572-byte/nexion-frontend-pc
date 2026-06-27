@@ -1,7 +1,7 @@
 /**
  * 按执行门槛分流的统一入口 —— 各域高敏动作的 run/onConfirm 调它替代直接 setParam。
  *  - 当前身份够该动作门槛 → 直接执行(回放 mutations + 审计),沿用「确认即执行」;
- *  - 不够门槛 → 写入 A2 后端 pending ticket + 审计留痕,等有权者(lead/超管)在 A2 裁决。
+ *  - 不够门槛 → 写入 A2 后端 pending ticket + 审计留痕,等有权角色或超管在 A2 裁决。
  * 仍是单人确认(执行者一人,不引入第二人会签)。
  */
 import type { ActingOperator } from "@/lib/store/admin/acting-operator-store";
@@ -68,7 +68,7 @@ export function applyMutations(
 
 export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Promise<"executed" | "proposed" | "failed"> {
   const { acting, setParam, logAudit, createProposal, toast } = deps;
-  const proposerRole = ROLE_LABEL[acting.role] + (acting.tier === "lead" ? " lead" : "");
+  const proposerRole = ROLE_LABEL[acting.role];
 
   if (canExecute(acting, spec.gate)) {
     applyMutations(setParam, spec.mutations, spec.reason, acting.name);

@@ -15,7 +15,7 @@
  *  - 通用字段 6 行(简化 10 → 6,设计稿 a4-vrow 同款);口径参数 4 行;KPI 算式 8 行(权威 §2.4.6);
  *  - 扩展批次 = DOMAIN_EXTENSIONS 4 批(V3 已落 / V4 内容 / J 域 schema / V4 收口)。
  * 真写键 20 类(A.*):
- *  A.acct.<id>.{status,role,tier,tfaResetAt}(账号 CRUD)/ A.session.<sid>.killedAt(强制登出)/
+ *  A.acct.<id>.{status,role,tfaResetAt}(账号 CRUD)/ A.session.<sid>.killedAt(强制登出)/
  *  A.rbac.<role>.<actionId>(矩阵授权)/ A.rbac.action.<id>(新动作行)/
  *  A.sec.{sessionIdle,sessionAbs,lockShortCnt,lockShortMin}(安全基线 2 可调项)/
  *  A.confirm.reasonMin / A.appr.{ret,schemaVer}(机制参数;裁决态 approved/rejected 已移至 pending store resolveProposal,不再写 A.appr.<id>.status)/
@@ -33,11 +33,11 @@ export type RoleKey = "super" | "finance" | "risk" | "growth" | "content" | "sup
 
 export const ROLE_DEFS: { key: RoleKey; name: string; av: string; color: string; desc: string; scope: string }[] = [
   { key: "super", name: "超管", av: "超", color: "var(--ink-2)", desc: "全域读写 + 全域执行;账号治理的唯一操作 / 留痕角色", scope: "全部 12 域" },
-  { key: "finance", name: "财务", av: "财", color: "var(--success)", desc: "储备与应付对账、提现放行、覆盖率监控;资金类动作执行门槛为 lead/超管", scope: "B · D · L,资金类执行" },
+  { key: "finance", name: "财务", av: "财", color: "var(--success)", desc: "储备与应付对账、提现放行、覆盖率监控;资金类动作按 RBAC 授权执行", scope: "B · D · L,资金类执行" },
   { key: "risk", name: "风控", av: "风", color: "var(--danger)", desc: "反作弊、KYC 复审、风险披露、应急止血;合规审查 V1 由风控代行", scope: "K · J · C4/C6 · I5" },
   { key: "growth", name: "增长", av: "增", color: "var(--warning)", desc: "节奏 dial、试用、任务活动、增长类实验;不碰资金放行与安全配置", scope: "H · B4,增长类 flag/实验" },
   { key: "content", name: "内容", av: "内", color: "var(--admin-cat-5, #9B89E0)", desc: "全站文案、推送、通知、信任内容、课程;高敏合规内容只能草拟", scope: "I 域全部" },
-  { key: "support", name: "客服", av: "客", color: "var(--a-ac)", desc: "单用户范围受限操作:小额调整发起、协助 KYC 标记;确认必须主管层", scope: "C 域单用户视图" },
+  { key: "support", name: "客服", av: "客", color: "var(--a-ac)", desc: "单用户范围受限操作:小额调整发起、协助 KYC 标记;岗位在客服中心独立配置", scope: "C 域单用户视图" },
   { key: "audit", name: "只读审计", av: "审", color: "var(--ink-3)", desc: "零写权;全量查询与脱敏导出,取证专用", scope: "全域只读" },
 ];
 
@@ -107,31 +107,31 @@ export type OperationRow = {
   reason: string;
 };
 export const OPERATION_QUEUE: OperationRow[] = [
-  { id: "WO-8852", action: "提现放行(大额操作确认)", obj: "usr-7F21 · $8,200", before: "review", after: "approved", operator: "郑爽(财务)", operatorRole: "finance", type: "fund", amplifies: true, sos: false, ts: "2m", mine: false, roleGate: "财务 lead / 超管", reason: "用户工单 #4471 核实补偿;依据已附" },
-  { id: "WO-8851", action: "账单手工调整", obj: "bill-2K8842 · 误扣冲正", before: "—", after: "+$214.00", operator: "吴桐(财务 lead)", operatorRole: "finance", type: "fund", amplifies: true, sos: false, ts: "18m", mine: false, roleGate: "财务 lead / 超管", reason: "客服工单 #4488 误扣证据齐全" },
-  { id: "WO-8850", action: "J1 熔断恢复 · exchange 闸", obj: "J 域 · 兑换能力", before: "disabled", after: "enabled", operator: "王磊(风控 lead)", operatorRole: "risk", type: "sos", amplifies: false, sos: true, ts: "42m", mine: false, roleGate: "超管(应急轨)", reason: "风险事件已闭环,SLA 内恢复" },
-  { id: "WO-8849", action: "课程奖励上调(I7)", obj: "genesis-nodes · +40→+45 NEX", before: "+40", after: "+45", operator: "李文(内容 lead)", operatorRole: "content", type: "fund", amplifies: true, sos: false, ts: "36m", mine: false, roleGate: "内容 lead / 超管", reason: "P3 阶段教育引流提升,B1 覆盖率核验通过" },
-  { id: "WO-8848", action: "余额调整(客服小额)", obj: "usr-9C03 · 补偿", before: "$0", after: "+$36.00", operator: "刘佳(客服)", operatorRole: "support", type: "fund", amplifies: true, sos: false, ts: "34m", mine: false, roleGate: "财务 lead / 超管", reason: "客诉 ticket #5512 已核实" },
-  { id: "WO-8847", action: "Phase dial · 周任务倍率", obj: "H1 · P3 月档", before: "1.25×", after: "1.30×", operator: "高翔(增长)", operatorRole: "growth", type: "param", amplifies: true, sos: false, ts: "1h", mine: false, roleGate: "对应域 lead / 超管(dial 放大方向加风控 lead)", reason: "本周 KPI 节奏校准,7 日窗口实验" },
-  { id: "WO-8846", action: "OTP 发送频次(C6)", obj: "注册风控", before: "3 次/小时", after: "5 次/小时", operator: "许晴(风控)", operatorRole: "risk", type: "param", amplifies: false, sos: false, ts: "2h", mine: false, roleGate: "风控 lead / 超管", reason: "正常用户重发投诉激增,放宽频控" },
-  { id: "WO-8845", action: "风险模型权重(K4)", obj: "多账户信号权重", before: "0.32", after: "0.40", operator: "王磊(风控 lead)", operatorRole: "risk", type: "param", amplifies: false, sos: false, ts: "3h", mine: false, roleGate: "超管 / 风控 lead", reason: "K1 簇击中样本回归,权重需上调" },
-  { id: "WO-8844", action: "账户冻结(C2)", obj: "usr-1A77 · 套利簇关联", before: "active", after: "frozen", operator: "许晴(风控)", operatorRole: "risk", type: "acct", amplifies: false, sos: false, ts: "4h", mine: false, roleGate: "风控 lead / 超管", reason: "K1 多账户簇命中,套利路径已闭合证据" },
-  { id: "WO-8843", action: "披露新版发布(I5)", obj: "SFC · v12→v13", before: "v12", after: "v13", operator: "王磊(风控 lead)", operatorRole: "risk", type: "acct", amplifies: false, sos: false, ts: "5h", mine: false, roleGate: "风控 lead / 超管", reason: "监管发函要求条款更新,7 日内全量重确认" },
+  { id: "WO-8852", action: "提现放行(大额操作确认)", obj: "usr-7F21 · $8,200", before: "review", after: "approved", operator: "郑爽(财务)", operatorRole: "finance", type: "fund", amplifies: true, sos: false, ts: "2m", mine: false, roleGate: "财务 / 超管", reason: "用户工单 #4471 核实补偿;依据已附" },
+  { id: "WO-8851", action: "账单手工调整", obj: "bill-2K8842 · 误扣冲正", before: "—", after: "+$214.00", operator: "吴桐(财务)", operatorRole: "finance", type: "fund", amplifies: true, sos: false, ts: "18m", mine: false, roleGate: "财务 / 超管", reason: "客服工单 #4488 误扣证据齐全" },
+  { id: "WO-8850", action: "J1 熔断恢复 · exchange 闸", obj: "J 域 · 兑换能力", before: "disabled", after: "enabled", operator: "王磊(风控)", operatorRole: "risk", type: "sos", amplifies: false, sos: true, ts: "42m", mine: false, roleGate: "超管(应急轨)", reason: "风险事件已闭环,SLA 内恢复" },
+  { id: "WO-8849", action: "课程奖励上调(I7)", obj: "genesis-nodes · +40→+45 NEX", before: "+40", after: "+45", operator: "李文(内容)", operatorRole: "content", type: "fund", amplifies: true, sos: false, ts: "36m", mine: false, roleGate: "内容 / 超管", reason: "P3 阶段教育引流提升,B1 覆盖率核验通过" },
+  { id: "WO-8848", action: "余额调整(客服小额)", obj: "usr-9C03 · 补偿", before: "$0", after: "+$36.00", operator: "刘佳(客服)", operatorRole: "support", type: "fund", amplifies: true, sos: false, ts: "34m", mine: false, roleGate: "财务 / 超管", reason: "客诉 ticket #5512 已核实" },
+  { id: "WO-8847", action: "Phase dial · 周任务倍率", obj: "H1 · P3 月档", before: "1.25×", after: "1.30×", operator: "高翔(增长)", operatorRole: "growth", type: "param", amplifies: true, sos: false, ts: "1h", mine: false, roleGate: "对应域角色 / 超管(dial 放大方向需风控或超管)", reason: "本周 KPI 节奏校准,7 日窗口实验" },
+  { id: "WO-8846", action: "OTP 发送频次(C6)", obj: "注册风控", before: "3 次/小时", after: "5 次/小时", operator: "许晴(风控)", operatorRole: "risk", type: "param", amplifies: false, sos: false, ts: "2h", mine: false, roleGate: "风控 / 超管", reason: "正常用户重发投诉激增,放宽频控" },
+  { id: "WO-8845", action: "风险模型权重(K4)", obj: "多账户信号权重", before: "0.32", after: "0.40", operator: "王磊(风控)", operatorRole: "risk", type: "param", amplifies: false, sos: false, ts: "3h", mine: false, roleGate: "超管 / 风控", reason: "K1 簇击中样本回归,权重需上调" },
+  { id: "WO-8844", action: "账户冻结(C2)", obj: "usr-1A77 · 套利簇关联", before: "active", after: "frozen", operator: "许晴(风控)", operatorRole: "risk", type: "acct", amplifies: false, sos: false, ts: "4h", mine: false, roleGate: "风控 / 超管", reason: "K1 多账户簇命中,套利路径已闭合证据" },
+  { id: "WO-8843", action: "披露新版发布(I5)", obj: "SFC · v12→v13", before: "v12", after: "v13", operator: "王磊(风控)", operatorRole: "risk", type: "acct", amplifies: false, sos: false, ts: "5h", mine: false, roleGate: "风控 / 超管", reason: "监管发函要求条款更新,7 日内全量重确认" },
   // SPEC §4「创建运营账号」仅超管可执行,本行作为账号治理类高敏动作演示。
   { id: "WO-8842", action: "运营账号创建(A1)", obj: "新风控成员", before: "—", after: "op-072", operator: "赵敏(超管)", operatorRole: "super", type: "acct", amplifies: false, sos: false, ts: "6h", mine: false, roleGate: "超管", reason: "新员工入职,风控成员岗 op-072" },
   { id: "WO-8840", action: "feature flag · 灰度 20%", obj: "新提现页灰度", before: "off", after: "20%", operator: "高翔(增长)", operatorRole: "growth", type: "param", amplifies: false, sos: false, ts: "8h", mine: false, roleGate: "超管", reason: "新提现 UX A/B,灰度 20% 7 日观察" },
-  { id: "WO-8839", action: "储备注入登记(B1/D3)", obj: "+$500K 入储备池", before: "—", after: "+$500K", operator: "吴桐(财务 lead)", operatorRole: "finance", type: "fund", amplifies: false, sos: false, ts: "12h", mine: false, roleGate: "财务 lead / 超管", reason: "财务季度调拨,提升 B1 覆盖率 +5pp" },
-  { id: "WO-8838", action: "提现参数 · 冷却时长(D5)", obj: "非 Phase 参数", before: "48h", after: "36h", operator: "吴桐(财务 lead)", operatorRole: "finance", type: "param", amplifies: true, sos: false, ts: "14h", mine: true, roleGate: "财务 lead / 超管", reason: "缩短冷却提升用户体验,逐步降低摩擦" },
+  { id: "WO-8839", action: "储备注入登记(B1/D3)", obj: "+$500K 入储备池", before: "—", after: "+$500K", operator: "吴桐(财务)", operatorRole: "finance", type: "fund", amplifies: false, sos: false, ts: "12h", mine: false, roleGate: "财务 / 超管", reason: "财务季度调拨,提升 B1 覆盖率 +5pp" },
+  { id: "WO-8838", action: "提现参数 · 冷却时长(D5)", obj: "非 Phase 参数", before: "48h", after: "36h", operator: "吴桐(财务)", operatorRole: "finance", type: "param", amplifies: true, sos: false, ts: "14h", mine: true, roleGate: "财务 / 超管", reason: "缩短冷却提升用户体验,逐步降低摩擦" },
 ];
 
 /** 8 行审计日志(沿用 design-data.AUDIT 真值 + 域分类)。域映射 D/C/H/I/A。 */
 export type AuditDomain = "D" | "C" | "H" | "I" | "A" | "K" | "B";
 export const AUDIT_LOGS: { ts: string; actor: string; role: string; action: string; obj: string; delta: string; domain: AuditDomain; ip: string }[] = [
-  { ts: "今天 10:12", actor: "王磊", role: "风控 lead", action: "killswitch_toggled", obj: "J1 · exchange 闸", delta: "enabled → disabled", domain: "A", ip: "10.2.3.21" },
-  { ts: "今天 09:21", actor: "吴桐", role: "财务 lead", action: "withdraw_approved", obj: "D2 · usr-7F21 $12,400", delta: "review → sent", domain: "D", ip: "10.2.3.31" },
-  { ts: "今天 09:02", actor: "李文", role: "内容 lead", action: "content_published", obj: "I1 · home.conversionBanner", delta: "v7 → v8", domain: "I", ip: "10.2.3.41" },
-  { ts: "今天 08:55", actor: "陈锐", role: "超管", action: "operator_role_changed", obj: "A1 · op-041", delta: "增长 → 增长(lead)", domain: "A", ip: "10.2.3.11" },
-  { ts: "今天 08:40", actor: "吴桐", role: "财务 lead", action: "operation_rejected", obj: "H5 · 幸运 2× 概率", delta: "5% → 8%(驳回)", domain: "H", ip: "10.2.3.31" },
+  { ts: "今天 10:12", actor: "王磊", role: "风控", action: "killswitch_toggled", obj: "J1 · exchange 闸", delta: "enabled → disabled", domain: "A", ip: "10.2.3.21" },
+  { ts: "今天 09:21", actor: "吴桐", role: "财务", action: "withdraw_approved", obj: "D2 · usr-7F21 $12,400", delta: "review → sent", domain: "D", ip: "10.2.3.31" },
+  { ts: "今天 09:02", actor: "李文", role: "内容", action: "content_published", obj: "I1 · home.conversionBanner", delta: "v7 → v8", domain: "I", ip: "10.2.3.41" },
+  { ts: "今天 08:55", actor: "陈锐", role: "超管", action: "operator_role_changed", obj: "A1 · op-041", delta: "增长 → 增长", domain: "A", ip: "10.2.3.11" },
+  { ts: "今天 08:40", actor: "吴桐", role: "财务", action: "operation_rejected", obj: "H5 · 幸运 2× 概率", delta: "5% → 8%(驳回)", domain: "H", ip: "10.2.3.31" },
   { ts: "昨天 21:18", actor: "许晴", role: "风控", action: "user_frozen", obj: "C2 · usr-1A77", delta: "active → frozen", domain: "C", ip: "10.2.3.22" },
   { ts: "昨天 18:02", actor: "刘佳", role: "客服", action: "operation_withdrawn", obj: "C3 · usr-9C03 余额", delta: "+$36(撤回)", domain: "C", ip: "10.2.3.51" },
   { ts: "昨天 15:44", actor: "高翔", role: "增长", action: "phase_dial_changed", obj: "H1 · 周任务倍率", delta: "1.20× → 1.25×", domain: "H", ip: "10.2.3.41" },
@@ -139,8 +139,8 @@ export const AUDIT_LOGS: { ts: string; actor: string; role: string; action: stri
 
 /** 4 行执行历史(approved/rejected/withdrawn/expired 四终态)。 */
 export const OPERATION_HISTORY = [
-  { id: "WO-8841", action: "提现放行 $12,400", st: "approved", chain: "吴桐(财务 lead) · reason + admin.operation_confirmed", t: "今天 09:21", note: "原因:大额操作确认线上人工核验,KYC 与风险分均过" },
-  { id: "WO-8836", action: "幸运 2× 概率 5%→8%", st: "rejected", chain: "吴桐(财务 lead) · reason + admin.operation_rejected", t: "今天 08:40", note: "取消原因:本周代币流出已超预算 12%,下周再议" },
+  { id: "WO-8841", action: "提现放行 $12,400", st: "approved", chain: "吴桐(财务) · reason + admin.operation_confirmed", t: "今天 09:21", note: "原因:大额操作确认线上人工核验,KYC 与风险分均过" },
+  { id: "WO-8836", action: "幸运 2× 概率 5%→8%", st: "rejected", chain: "吴桐(财务) · reason + admin.operation_rejected", t: "今天 08:40", note: "取消原因:本周代币流出已超预算 12%,下周再议" },
   { id: "WO-8830", action: "余额调整 +$50", st: "withdrawn", chain: "刘佳(客服) · reason + admin.operation_cancelled", t: "昨天 18:02", note: "取消原因:用户工单重复,已有在途补偿" },
   { id: "WO-8798", action: "OTP 频次参数", st: "expired", chain: "许晴(风控) · reason 校验未通过", t: "06-08 00:00", note: "作废事件落审计(admin.operation_expired)" },
 ] as const;
@@ -156,15 +156,15 @@ export const MECHANISM_PARAMS = [
 
 /** 9 大类操作确认清单(drawer 详情)。 */
 export const CONFIRM_CATEGORIES = [
-  { cat: "资金/资产调整", examples: "余额增减(C3)· 手工账单(D4)· 储备注入(B1/D3)· 对账核销(D1)", roleGate: "财务 lead / 超管" },
-  { cat: "大额资金放行", examples: "提现放行/冻结/退款(D2)· 渠道退款(D1)", roleGate: "财务 lead / 超管" },
-  { cat: "参数批改", examples: "红黄线(B1)· 提现参数(D5)· OTP/锁定(C6)· Phase dial(H1)· 试用敏感参数(H2)", roleGate: "对应域 lead / 超管(dial 放大方向加风控 lead)" },
-  { cat: "风险模型/KYC 裁决", examples: "K4 权重分档(执行门槛升超管)· K5 大额复审", roleGate: "超管 / 风控 lead" },
+  { cat: "资金/资产调整", examples: "余额增减(C3)· 手工账单(D4)· 储备注入(B1/D3)· 对账核销(D1)", roleGate: "财务 / 超管" },
+  { cat: "大额资金放行", examples: "提现放行/冻结/退款(D2)· 渠道退款(D1)", roleGate: "财务 / 超管" },
+  { cat: "参数批改", examples: "红黄线(B1)· 提现参数(D5)· OTP/锁定(C6)· Phase dial(H1)· 试用敏感参数(H2)", roleGate: "对应域角色 / 超管(dial 放大方向需风控或超管)" },
+  { cat: "风险模型/KYC 裁决", examples: "K4 权重分档(执行门槛升超管)· K5 大额复审", roleGate: "超管 / 风控" },
   { cat: "熔断闸", examples: "5 功能闸 + 地区屏蔽(J1/J2 管理面)", roleGate: "超管" },
-  { cat: "账户高敏处置", examples: "冻结/解冻 · impersonate(C2)· KYC 人工标记(C4)· 2FA/密码(C5)", roleGate: "风控 lead / 超管" },
-  { cat: "批量簇冻结", examples: "关联账户簇批量冻结(K1)", roleGate: "风控 lead / 超管" },
+  { cat: "账户高敏处置", examples: "冻结/解冻 · impersonate(C2)· KYC 人工标记(C4)· 2FA/密码(C5)", roleGate: "风控 / 超管" },
+  { cat: "批量簇冻结", examples: "关联账户簇批量冻结(K1)", roleGate: "风控 / 超管" },
   { cat: "后台账号治理", examples: "建/停/启/改角色/重置双因子(A1)", roleGate: "超管" },
-  { cat: "平台配置", examples: "feature flag(A3)· 内容发布(I 域)", roleGate: "超管 / 内容 lead" },
+  { cat: "平台配置", examples: "feature flag(A3)· 内容发布(I 域)", roleGate: "超管 / 内容" },
 ];
 
 /* ============ A3 系统配置 ============ */

@@ -684,8 +684,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       <p className="f-foot">
         <b>分工一句话</b>:这页管「记录谁做了什么 + 操作确认的流程」;「谁能做什么」的授权矩阵在账号页(A1);
         事件叫什么名、带什么字段归事件中台(A4)定义,这页负责落库与可查。
-        <b> 执行门槛</b>:资金类 = 财务(lead)/超管;风控与账户类 = 风控(lead)/超管;
-        内容类 = 内容(lead)/超管;账号治理与系统参数 = 仅超管。
+        <b> 执行门槛</b>:资金类 = 财务/超管;风控与账户类 = 风控/超管;
+        内容类 = 内容/超管;账号治理与系统参数 = 仅超管。
         应急轨动作(J 域熔断/恢复)按 SLA 倒计时置顶,超时升级告警到超管。
       </p>
 
@@ -768,7 +768,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <div className="kv"><span className="k">前值 → 后值</span><span className="v mono">{l.delta}</span></div>
               <div className="kv"><span className="k">原因</span><span className="v">(发起时必填,原样留存)</span></div>
               <div className="kv"><span className="k">IP</span><span className="v mono">{l.ip}</span></div>
-              <div className="kv"><span className="k">操作 / 留痕</span><span className="v">{l.actor} / 对应 lead 或超管</span></div>
+              <div className="kv"><span className="k">操作 / 留痕</span><span className="v">{l.actor} / 对应角色或超管</span></div>
               <div className="kv"><span className="k">防重号</span><span className="v mono">{needIdem ? "idem-… (资金类必带)" : "—(非资金类)"}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
