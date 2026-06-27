@@ -5,7 +5,7 @@
  * 用户列表、分组筛选与搜索均走 /api/admin/users/profiles;接口在种子用户缺失时由后端先写入真实表再分页返回。
  * 本页只读:行点击深链 /users/search/<userNo> 进 360 画像;处置去 C2/C3/C4/C5。
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { DataListPager } from "../design-kit";
@@ -24,9 +24,11 @@ type C1Stats = {
   frozen: number;
   kycPending: number;
 };
+export type C1ExportQuery = Pick<UserProfileQuery, "keyword" | "status" | "kycStatus" | "riskMin">;
 
 const SEGS: [Seg, string][] = [["all", "全部"], ["frozen", "冻结"], ["highrisk", "高风险"], ["kyc", "KYC 待确认"]];
 const EMPTY_PAGE: UserPage<User360Profile> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
+const EXPORT_PAGE_SIZE = 100;
 
 const STATUS_META: Record<string, [label: string, tone: string]> = {
   ACTIVE: ["正常", "ok"],
@@ -89,7 +91,127 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "C1_REQUEST_FAILED";
 }
 
-export function C1Search({ ctx }: { ctx: CCtx }) {
+function currentExportQuery(seg: Seg, keyword: string): C1ExportQuery {
+  return {
+    ...queryForSeg(seg),
+    keyword: keyword.trim() || undefined,
+  };
+}
+
+function excelEscape(value: unknown) {
+  const raw = text(value, "");
+  const safe = /^[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return safe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function excelCell(value: unknown, align: "left" | "right" = "left") {
+  const valueText = excelEscape(value);
+  const style = align === "right"
+    ? "mso-number-format:'\\@';text-align:right;"
+    : "mso-number-format:'\\@';";
+  return `<td style="${style}">${valueText}</td>`;
+}
+
+function excelHeader(value: string) {
+  return `<th style="background:#eef3f8;font-weight:700;border:1px solid #c8d3df;">${excelEscape(value)}</th>`;
+}
+
+function buildMaskedUserExcel(rows: User360Profile[]) {
+  const headers = [
+    "用户编码",
+    "昵称",
+    "手机号(脱敏)",
+    "国家/地区",
+    "生命周期",
+    "V-Rank",
+    "KYC",
+    "状态",
+    "风险分",
+    "风险等级",
+    "设备数",
+    "活跃设备数",
+    "USDT余额",
+    "NEX余额",
+    "注册时间",
+    "最近登录",
+  ];
+  const body = rows.map((profile) => {
+    const [statusLabel] = statusMeta(profile.status);
+    const [kycLabel] = kycMeta(profile.kycStatus);
+    return `<tr>${
+      [
+        text(profile.userNo, "未生成"),
+        text(profile.nickname),
+        text(profile.phoneMasked),
+        text(profile.countryCode),
+        text(profile.userLevel),
+        text(profile.vRank),
+        kycLabel,
+        statusLabel,
+        text(profile.riskScore, "0"),
+        text(profile.riskBand),
+        text(profile.deviceCount, "0"),
+        text(profile.activeDeviceCount, "0"),
+        text(profile.walletUsdt, "0"),
+        text(profile.walletNex, "0"),
+        text(profile.registeredAt),
+        text(profile.lastLoginAt),
+      ].map((cell, index) => excelCell(cell, index >= 8 && index <= 13 ? "right" : "left")).join("")
+    }</tr>`;
+  }).join("");
+
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    table { border-collapse: collapse; font-family: Arial, sans-serif; font-size: 12px; }
+    td { border: 1px solid #d7dee8; padding: 6px 8px; }
+    th { padding: 7px 8px; }
+  </style>
+</head>
+<body>
+  <table>
+    <thead><tr>${headers.map(excelHeader).join("")}</tr></thead>
+    <tbody>${body}</tbody>
+  </table>
+</body>
+</html>`;
+}
+
+function downloadMaskedUserExcel(rows: User360Profile[]) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-");
+  const fileName = `c1-masked-users-${stamp}.xls`;
+  const blob = new Blob(["\ufeff", buildMaskedUserExcel(rows)], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1200);
+  return fileName;
+}
+
+async function fetchAllExportUsers(query: C1ExportQuery) {
+  const first = await fetchUserProfilesPage({ ...query, pageNum: 1, pageSize: EXPORT_PAGE_SIZE });
+  const records = [...first.records];
+  const totalPages = Math.max(1, Math.ceil(first.total / EXPORT_PAGE_SIZE));
+  for (let pageNum = 2; pageNum <= totalPages; pageNum += 1) {
+    const page = await fetchUserProfilesPage({ ...query, pageNum, pageSize: EXPORT_PAGE_SIZE });
+    records.push(...page.records);
+  }
+  return records;
+}
+
+export function C1Search({
+  ctx,
+  onExportQueryChange,
+}: {
+  ctx: CCtx;
+  onExportQueryChange?: (query: C1ExportQuery) => void;
+}) {
   const router = useRouter();
   const [seg, setSeg] = useState<Seg>("all");
   const [q, setQ] = useState("");
@@ -152,6 +274,10 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
       alive = false;
     };
   }, [seg, q, page, pageSize]);
+
+  useEffect(() => {
+    onExportQueryChange?.(currentExportQuery(seg, q));
+  }, [onExportQueryChange, seg, q]);
 
   const changeSeg = (next: Seg) => {
     setSeg(next);
@@ -246,27 +372,54 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
           <div className="ctint"><b>检索结果只读</b> · 本页只定位与展示;冻结/解冻去 C2,资产调整去 C3,实名裁决去 C4,安全处置去 C5,各自走操作确认。</div>
         </div>
       </section>
-      <p className="f-foot">隐私三道闸:手机号/地址全程脱敏(检索、展示、导出);看敏感维度落 <b>admin.user_profile_viewed</b>;导出名单落 <b>admin.user_list_exported</b>(检索条件以哈希记录,不含明文),统一归口导出审计台(L5)。生命周期 L0-L5 / V-Rank V0-V12 是内部分诊口径,用户端永不可见。</p>
+      <p className="f-foot">手机号、地址等敏感字段在检索、展示、导出时只显示脱敏值;名单导出按当前筛选条件生成文件并保留操作记录。生命周期 L0-L5 / V-Rank V0-V12 是内部分诊口径,用户端永不可见。</p>
     </>
   );
 }
 
-export function C1HeaderActions({ ctx }: { ctx: CCtx }) {
+export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuery }) {
+  const [exporting, setExporting] = useState(false);
+
+  const runExport = useCallback(async () => {
+    if (exporting) {
+      ctx.toast("C1 用户名单正在生成,请稍候");
+      return;
+    }
+    setExporting(true);
+    try {
+      const rows = await fetchAllExportUsers(query);
+      if (rows.length === 0) {
+        ctx.toast("当前筛选条件下没有可导出的用户");
+        return;
+      }
+      const fileName = downloadMaskedUserExcel(rows);
+      ctx.logAudit({
+        actor: "总管理员",
+        action: `导出用户名单(脱敏 Excel) · ${rows.length} 行`,
+        target: "C1",
+      });
+      ctx.toast(`已下载 ${rows.length.toLocaleString("en-US")} 条脱敏用户名单 · ${fileName}`);
+    } catch (err) {
+      ctx.toast(`C1 导出失败 · ${errorMessage(err)}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [ctx, exporting, query]);
+
   return (
     <button
       className="f-cta"
+      disabled={exporting}
+      style={exporting ? { opacity: 0.62, cursor: "wait" } : undefined}
       onClick={() => ctx.openConfirm({
-        action: "导出用户名单(脱敏 CSV)",
-        detail: "按当前检索条件导出。手机号、地址全部脱敏;检索条件以哈希记入审计,不含明文。落 admin.user_list_exported,统一归口到导出审计台(L5)。",
+        action: "导出用户名单(脱敏 Excel)",
+        detail: "按当前 C1 检索条件导出用户编码、昵称、脱敏手机号、账户状态、KYC、层级、V-Rank、设备、风险分、余额和时间字段;不包含数据库 userId。",
         okLabel: "确认导出",
-        run: () => {
-          ctx.logAudit({ actor: "总管理员", action: "导出用户名单(脱敏 CSV)· admin.user_list_exported", target: "C1" });
-          ctx.toast("名单已导出(脱敏)· 落审计并归口 L5");
-        },
+        run: () => { void runExport(); },
       })}
     >
       <Download size={14} />
-      导出用户名单(脱敏)
+      {exporting ? "生成中..." : "导出用户名单(脱敏)"}
     </button>
   );
 }

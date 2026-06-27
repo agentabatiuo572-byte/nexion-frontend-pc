@@ -21,7 +21,7 @@ import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { ImpersonateMirror } from "@/app/components/impersonate/impersonate-mirror";
 import { USERS } from "@/lib/mock/admin/design-data";
-import { C1Search, C1HeaderActions } from "./c-tabs/c1-search";
+import { C1Search, C1HeaderActions, type C1ExportQuery } from "./c-tabs/c1-search";
 import { C2Actions } from "./c-tabs/c2-actions";
 import { C3Adjust } from "./c-tabs/c3-adjust";
 import { C4Kyc, C4HeaderActions } from "./c-tabs/c4-kyc";
@@ -53,6 +53,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [impUser, setImpUser] = useState<MirrorUser | null>(null);
+  const [c1ExportQuery, setC1ExportQuery] = useState<C1ExportQuery>({});
 
   const ctx: CCtx = {
     pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
@@ -74,7 +75,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
     <>
       <span className="f-ro"><span className="d" />{ro}</span>
       <span className="f-live"><span className="dot" />{live}</span>
-      {tab === "C1" && <C1HeaderActions ctx={ctx} />}
+      {tab === "C1" && <C1HeaderActions ctx={ctx} query={c1ExportQuery} />}
       {tab === "C4" && <C4HeaderActions ctx={ctx} />}
     </>
   );
@@ -83,7 +84,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
     <div className="dkpage cdom">
       <DomainHeader {...meta} right={right} />
 
-      {tab === "C1" && <C1Search ctx={ctx} />}
+      {tab === "C1" && <C1Search ctx={ctx} onExportQueryChange={setC1ExportQuery} />}
       {tab === "C2" && <C2Actions ctx={ctx} />}
       {tab === "C3" && <C3Adjust ctx={ctx} />}
       {tab === "C4" && <C4Kyc ctx={ctx} />}
