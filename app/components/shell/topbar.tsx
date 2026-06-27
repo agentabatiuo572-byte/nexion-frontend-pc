@@ -18,7 +18,6 @@ import { fmtPct } from "@/lib/format";
 import { NotificationBell } from "./notification-bell";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { SESSION_CONVOS } from "@/app/components/domain-views/m-tabs/data";
 import { CommandPalette } from "@/app/components/command-palette";
 import { useActingOperator, ACTING_PRESETS, actingRoleLabel } from "@/lib/store/admin/acting-operator-store";
 
@@ -159,20 +158,20 @@ function SearchBox({ role }: { role: AdminRole }) {
   );
 }
 
-// 客服中心快捷入口 — 坐席切到别的页面时仍能看到「有客户在等回复」并一键回即时会话台(Q2 续聊提醒)。
-// 待回复数与 M1 客服总览同源派生自 I.session.convos(open 且末条为用户发言),无第二份 mock。
+// 客服中心快捷入口 — 坐席切到别的页面时仍能看到「有客户在等回复」并一键回即时会话台。
+// 待回复数只来自 M 页加载到本地视图态的后端会话快照;未加载时为 0,不使用静态会话兜底。
 function SupportInboxPill() {
   const params = usePlatformConfig((s) => s.params);
   const hydrated = useOpsHydrated();
   const pending = useMemo(() => {
-    let list: Array<{ status: string; messages: Array<{ sender: string }> }> = SESSION_CONVOS;
+    let list: Array<{ status: string; messages: Array<{ sender: string }> }> = [];
     const raw = hydrated ? (params?.["I.session.convos"] as string | undefined) : undefined;
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) list = parsed;
       } catch {
-        /* 解析失败回退种子 */
+        list = [];
       }
     }
     return list.filter((c) => c.status === "open" && c.messages[c.messages.length - 1]?.sender === "user").length;

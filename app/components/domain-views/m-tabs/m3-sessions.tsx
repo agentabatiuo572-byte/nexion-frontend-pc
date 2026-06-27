@@ -2,10 +2,8 @@
 
 /**
  * M3 即时会话台 — 收件箱三栏(列表 + 富气泡对话 + 客户档案)(helpdesk 设计稿布局,由 I9 迁出)。
- * 字段镜像 UniApp conversations mock。真写统一落 platform-config params(persist 兼容前缀):
- *  - I.session.convos: 坐席会话(分配/回复/主动发起/推送/归档/标签/备注);
- *  - I.support.tickets: 转工单时写对方真写键,不造影子;
- *  - I.session.ui.lastConvo: 坐席续聊 UI 态(轻写)。
+ * 会话 / 工单读写走后端 content 接口;I.session.* / I.support.* 为 M 容器传入的视图适配键。
+ * I.session.ui.lastConvo 仅保留为坐席续聊 UI 态。
  * 例行坐席操作(回复/转交/改状态/推送/归档/标签/备注)直接执行 + 自动 A2 审计;
  * 主动发起会话(人群投放) / 转工单 走操作确认 + 理由。续聊恢复后刷新仍回上次会话。
  */
@@ -13,20 +11,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
-  ADVISOR_SCRIPTS,
   PUSH_SKUS,
-  SESSION_CONVOS,
-  SESSION_REPLY_TEMPLATES,
   STANDBY_POOL_LABEL,
-  SUPPORT_TICKETS,
   TRANSFER_TIMEOUT_MINS,
   transferTargetLabel,
+  type AdvisorScript,
   type CustomerNote,
   type CustomerProfile,
   type InitiateIdentity,
   type PushSku,
   type SessionConvo,
   type SessionMsg,
+  type SessionReplyTpl,
   type SessionStatus,
   type SessionTransfer,
   type SupportTicket,
@@ -34,9 +30,14 @@ import {
 import { ConvStat, Empty, MAvatar, ownerLabel, relWhen } from "./hd-ui";
 import { InitiateModal, QuickActionModal, ReturnModal, TransferModal, type InitiatePayload, type ReturnPayload, type TransferPayload } from "./m3-modals";
 import type { MCtx } from "./types";
+import type { MSupportAgent } from "@/lib/admin/m-client";
 
 const CONVO_KEY = "I.session.convos";
 const TICKET_KEY = "I.support.tickets";
+const SCRIPT_LIST_KEY = "I.session.scripts";
+const REPLY_TEMPLATE_LIST_KEY = "I.session.replyTemplates";
+const AGENT_LIST_KEY = "I.support.agents";
+const TRANSFER_TARGETS_KEY = "I.session.transferTargets";
 const LAST_CONVO_KEY = "I.session.ui.lastConvo";
 const FALLBACK_KEY = "I.session.workbench.timeoutFallback"; // 工作台「转入待处理超时回落备勤池」开关("on"=启用)
 const INBOX_PAGE_SIZE = 8; // 会话收件箱每页条数(翻页器)
@@ -72,6 +73,9 @@ function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
     return fallback;
   }
 }
+function textOf(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : value == null ? fallback : String(value);
+}
 function cloneConvos(rows: SessionConvo[]): SessionConvo[] {
   return rows.map((c) => ({ ...c, messages: c.messages.map((m) => ({ ...m })) }));
 }
@@ -97,7 +101,42 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const router = useRouter();
 
-  const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), SESSION_CONVOS)), [ctx.params, pget]);
+  const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), [])), [ctx.params, pget]);
+  const advisorScripts = useMemo(() => parseParamArray<AdvisorScript>(pget(SCRIPT_LIST_KEY), []), [ctx.params, pget]);
+  const replyTemplates = useMemo(() => parseParamArray<SessionReplyTpl>(pget(REPLY_TEMPLATE_LIST_KEY), []), [ctx.params, pget]);
+  const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
+  const transferTargets = useMemo(() => parseParamArray<Record<string, unknown>>(pget(TRANSFER_TARGETS_KEY), []), [ctx.params, pget]);
+  const initiateIdentities = useMemo<InitiateIdentity[]>(() => {
+    return supportAgents
+      .filter((agent) => agent.enabled)
+      .flatMap((agent) =>
+        agent.serviceTypes.map((type) => ({
+          id: `${agent.id}:${type}`,
+          name: agent.name,
+          type,
+          label: type === "advisor" ? "专属顾问" : "普通客服",
+        })),
+      );
+  }, [supportAgents]);
+  const transferAgents = useMemo(
+    () => supportAgents.filter((agent) => agent.enabled && agent.transferable && !agent.busy).map((agent) => ({ id: agent.id, name: agent.name, position: agent.position })),
+    [supportAgents],
+  );
+  const transferQueues = useMemo(() => {
+    const rows = transferTargets
+      .filter((target) => textOf(target.targetType).toLowerCase() === "queue")
+      .map((target) => textOf(target.targetName || target.targetId).trim())
+      .filter(Boolean);
+    return Array.from(new Set(rows));
+  }, [transferTargets]);
+  const initiateCustomers = useMemo(() => {
+    const rows = new Map<string, CustomerProfile>();
+    convos.forEach((convo) => {
+      const profile = convo.profile;
+      if (profile?.uid && !rows.has(profile.uid)) rows.set(profile.uid, profile);
+    });
+    return Array.from(rows.values());
+  }, [convos]);
 
   const [seg, setSeg] = useState<ConvSeg>("all");
   const [query, setQuery] = useState("");
@@ -305,7 +344,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
 
   const runInitiate = (p: InitiatePayload) => {
     const now = Date.now();
-    const existing = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), SESSION_CONVOS));
+    const existing = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), []));
     const cid = `cv-out-${now}`;
     const opening: SessionMsg = { ts: now, sender: "agent", agentName: p.identity.name, text: p.text };
     if (p.identity.type === "advisor" && p.ctaHref && p.ctaHref !== "—" && p.ctaHref !== "") opening.ctaHref = p.ctaHref;
@@ -346,7 +385,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       amplifies: false,
       run: (reason: string) => {
         const now = Date.now();
-        const existingTickets = cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), SUPPORT_TICKETS));
+        const existingTickets = cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), []));
         const id = nextTicketId(existingTickets);
         const newTicket: SupportTicket = {
           id,
@@ -604,6 +643,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
               onReplyChange={setReplyBody}
               onSend={sendReply}
               onPushSku={pushSku}
+              advisorScripts={advisorScripts}
+              replyTemplates={replyTemplates}
             />
           )}
         </div>
@@ -623,8 +664,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         onRemoveTag={removeCustomerTag}
       />
 
-      {showInitiate && <InitiateModal onClose={() => setShowInitiate(false)} onSend={runInitiate} />}
-      {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} />}
+      {showInitiate && <InitiateModal onClose={() => setShowInitiate(false)} onSend={runInitiate} identities={initiateIdentities} advisorScripts={advisorScripts} replyTemplates={replyTemplates} customers={initiateCustomers} />}
+      {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}
       {showReturn && selected?.transfer && <ReturnModal fromAgent={selected.transfer.from} onClose={() => setShowReturn(false)} onSubmit={runReturn} />}
       {quick && selected?.profile && (
         <QuickActionModal kind={quick} profile={selected.profile} onClose={() => setQuick(null)} onAddNote={addNote} onRemoveNote={removeNote} onAccount={runAccountAction} />
@@ -728,20 +769,24 @@ function ChatComposer({
   onReplyChange,
   onSend,
   onPushSku,
+  advisorScripts,
+  replyTemplates,
 }: {
   convo: SessionConvo;
   replyBody: string;
   onReplyChange: (v: string) => void;
   onSend: () => void;
   onPushSku: (sku: PushSku) => void;
+  advisorScripts: AdvisorScript[];
+  replyTemplates: SessionReplyTpl[];
 }) {
   const [pickOpen, setPickOpen] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const isAdvisor = convo.type === "advisor";
   const quick: Array<{ id: string; group: string; text: string }> = isAdvisor
-    ? ADVISOR_SCRIPTS.filter((s) => s.status === "published").map((s) => ({ id: s.id, group: s.group, text: s.text }))
-    : SESSION_REPLY_TEMPLATES.filter((t) => t.type === "support").map((t) => ({ id: t.id, group: "客服", text: t.text }));
+    ? advisorScripts.filter((s) => s.status === "published").map((s) => ({ id: s.id, group: s.group, text: s.text }))
+    : replyTemplates.filter((t) => t.type === "support" && t.status === "published").map((t) => ({ id: t.id, group: "客服", text: t.text }));
   const fill = (text: string) => onReplyChange(replyBody ? `${replyBody} ${text}` : text);
   const doSend = () => {
     if (!replyBody.trim() || sending) return;

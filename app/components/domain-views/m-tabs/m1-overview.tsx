@@ -8,11 +8,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  AGENT_ROSTER,
   LOAD_CONFIG_DEFAULT,
-  SESSION_CONVOS,
-  SUPPORT_SLA,
-  SUPPORT_TICKETS,
   type LoadConfig,
   type SessionConvo,
   type SupportSla,
@@ -22,14 +18,15 @@ import {
 import { Icon, type IconName, Modal, Toggle } from "../design-kit";
 import { catCN, MAvatar } from "./hd-ui";
 import type { MCtx } from "./types";
+import type { MSupportAgent } from "@/lib/admin/m-client";
 
 const TICKET_KEY = "I.support.tickets";
 const SLA_KEY = "I.support.sla";
 const CONVO_KEY = "I.session.convos";
+const AGENT_LIST_KEY = "I.support.agents";
 const LOAD_KEY = (f: string) => `I.support.load.${f}`;
 const AGENT_CAP_KEY = (name: string) => `I.support.agent.${name}.cap`;
 const AGENT_BUSY_KEY = (name: string) => `I.support.agent.${name}.busy`;
-const ACTOR = "Marina K.";
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -66,9 +63,10 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const { pget } = ctx;
   const [showLoad, setShowLoad] = useState(false);
 
-  const tickets = useMemo(() => parseParamArray<SupportTicket>(pget(TICKET_KEY), SUPPORT_TICKETS), [ctx.params, pget]);
-  const sla = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), SUPPORT_SLA), [ctx.params, pget]);
-  const convos = useMemo(() => parseParamArray<SessionConvo>(pget(CONVO_KEY), SESSION_CONVOS), [ctx.params, pget]);
+  const tickets = useMemo(() => parseParamArray<SupportTicket>(pget(TICKET_KEY), []), [ctx.params, pget]);
+  const sla = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
+  const convos = useMemo(() => parseParamArray<SessionConvo>(pget(CONVO_KEY), []), [ctx.params, pget]);
+  const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
 
   const openTickets = tickets.filter((t) => t.status === "open" || t.status === "in_progress").length;
   const pendingUser = tickets.filter((t) => t.status === "pending_user").length;
@@ -84,14 +82,14 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
     overflowQueue: pget(LOAD_KEY("overflowQueue")) ?? LOAD_CONFIG_DEFAULT.overflowQueue,
   };
 
-  const loadRows = AGENT_ROSTER.map((a) => {
+  const loadRows = supportAgents.map((a) => {
     const openTk = tickets.filter((t) => t.owner === a.name && (t.status === "open" || t.status === "in_progress")).length;
     const openCv = convos.filter((c) => c.owner === a.name && c.status === "open").length;
     const total = openTk + openCv;
-    const cap = numOr(pget(AGENT_CAP_KEY(a.name)), a.defaultCap || loadCfg.defaultCap);
-    const busy = boolOr(pget(AGENT_BUSY_KEY(a.name)), false);
+    const cap = numOr(pget(AGENT_CAP_KEY(a.name)), a.maxConcurrent || loadCfg.defaultCap);
+    const busy = boolOr(pget(AGENT_BUSY_KEY(a.name)), Boolean(a.busy || !a.enabled));
     const util = Math.round((total / Math.max(1, cap)) * 100);
-    return { ...a, openTk, openCv, total, cap, busy, util };
+    return { id: a.id, name: a.name, role: a.position, enabled: a.enabled, openTk, openCv, total, cap, busy, util };
   }).sort((x, y) => y.util - x.util);
   const busyCount = loadRows.filter((r) => r.busy).length;
   const maxLoad = Math.max(1, ...loadRows.map((l) => Math.max(l.total, l.cap)));
@@ -186,15 +184,23 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
             </div>
           </div>
           <div style={{ padding: "0 18px 16px" }}>
-            {loadRows.map((l) => {
+            {loadRows.length === 0 ? (
+              <div className="itint" style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 13 }}>暂无客服坐席</div>
+                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>坐席名单来自 A1 管理员里的客服角色,请先给管理员分配客服角色。</div>
+              </div>
+            ) : loadRows.map((l) => {
               const tone = l.util >= 100 ? "var(--m-urgent)" : l.util >= loadCfg.warnPct ? "var(--m-high)" : l.util >= 50 ? "var(--m-hd-2)" : "var(--m-ok)";
               return (
-                <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 0", borderTop: "1px solid var(--border)" }}>
+                <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 0", borderTop: "1px solid var(--border)" }}>
                   <MAvatar name={l.name} size="sm" />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{l.name}</span>
                       <span className="dim2" style={{ fontSize: 11.5 }}>{l.role}</span>
+                      {!l.enabled && (
+                        <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--ink-3)", background: "var(--surface-3)", border: "none" }}>未启用</span>
+                      )}
                       {l.busy && (
                         <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--m-high)", background: "var(--m-high-soft)", border: "none" }}>暂停接派单</span>
                       )}
@@ -216,7 +222,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
       </div>
 
       <p className="dim2" style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>
-        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>口径</b>:本页所有数字单源派生自 platform-config(<span className="mono">I.support.*</span> / <span className="mono">I.session.*</span>),与工单台 / 会话台 / 知识库写的真写键同源,不另造统计快照。负载从工单 / 会话 owner 派生(<b style={{ color: "var(--ink-3)", fontWeight: 500 }}>非真实在线状态</b>);写动作在 M2 / M3 / M4 执行,负载调度策略经「调整负载」高敏弹窗落库。
+        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>口径</b>:本页数字来自后端工单、会话、SLA 与坐席负载配置。坐席名单来自 A1 客服角色,岗位 / 服务类型在 M5 配置;负载从工单 / 会话 owner 派生,负载调度策略经「调整负载」高敏弹窗落库。
       </p>
 
       {showLoad && <LoadConfigModal ctx={ctx} loadCfg={loadCfg} rows={loadRows} onClose={() => setShowLoad(false)} />}
@@ -225,7 +231,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
 }
 
 /* ============ 坐席负载调度弹窗(高敏 · 必填理由 · setParam 真写 + 审计)============ */
-type LoadRow = { name: string; role: string; total: number; cap: number; busy: boolean; util: number };
+type LoadRow = { id: string; name: string; role: string; enabled: boolean; total: number; cap: number; busy: boolean; util: number };
 
 function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: LoadConfig; rows: LoadRow[]; onClose: () => void }) {
   const [autoBalance, setAutoBalance] = useState(loadCfg.autoBalance);
@@ -234,8 +240,8 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   const [warnPct, setWarnPct] = useState(String(loadCfg.warnPct));
   const [quietHour, setQuietHour] = useState(loadCfg.quietHourBalance);
   const [overflow, setOverflow] = useState(loadCfg.overflowQueue);
-  const [caps, setCaps] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.name, String(r.cap)])));
-  const [busyMap, setBusyMap] = useState<Record<string, boolean>>(() => Object.fromEntries(rows.map((r) => [r.name, r.busy])));
+  const [caps, setCaps] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.id, String(r.cap)])));
+  const [busyMap, setBusyMap] = useState<Record<string, boolean>>(() => Object.fromEntries(rows.map((r) => [r.id, r.busy])));
   const [reason, setReason] = useState("");
   const reasonOk = reason.trim().length >= 6;
 
@@ -244,26 +250,33 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   function save() {
     if (!reasonOk) return;
     const r = reason.trim();
-    const writes: Array<[string, string]> = [];
-    if (autoBalance !== loadCfg.autoBalance) writes.push([LOAD_KEY("autoBalance"), autoBalance ? "1" : "0"]);
-    if (quietHour !== loadCfg.quietHourBalance) writes.push([LOAD_KEY("quietHourBalance"), quietHour ? "1" : "0"]);
-    if (Number(defaultCap) !== loadCfg.defaultCap) writes.push([LOAD_KEY("defaultCap"), clamp(defaultCap, 0, 40)]);
-    if (Number(burstCap) !== loadCfg.burstCap) writes.push([LOAD_KEY("burstCap"), clamp(burstCap, 0, 40)]);
-    if (Number(warnPct) !== loadCfg.warnPct) writes.push([LOAD_KEY("warnPct"), clamp(warnPct, 50, 100)]);
-    if (overflow.trim() !== loadCfg.overflowQueue) writes.push([LOAD_KEY("overflowQueue"), overflow.trim()]);
+    let changed = autoBalance !== loadCfg.autoBalance
+      || quietHour !== loadCfg.quietHourBalance
+      || Number(defaultCap) !== loadCfg.defaultCap
+      || Number(burstCap) !== loadCfg.burstCap
+      || Number(warnPct) !== loadCfg.warnPct
+      || overflow.trim() !== loadCfg.overflowQueue;
+    const agentState: Record<string, { cap: number; busy: boolean }> = {};
     for (const r2 of rows) {
-      const nc = clamp(caps[r2.name] ?? String(r2.cap), 0, 40);
-      if (Number(nc) !== r2.cap) writes.push([AGENT_CAP_KEY(r2.name), nc]);
-      if (busyMap[r2.name] !== r2.busy) writes.push([AGENT_BUSY_KEY(r2.name), busyMap[r2.name] ? "1" : "0"]);
+      const nc = clamp(caps[r2.id] ?? String(r2.cap), 0, 40);
+      agentState[r2.id] = { cap: Number(nc), busy: Boolean(busyMap[r2.id]) };
+      if (Number(nc) !== r2.cap || busyMap[r2.id] !== r2.busy) changed = true;
     }
-    if (writes.length === 0) {
+    if (!changed) {
       ctx.toast("负载调度未变更");
       onClose();
       return;
     }
-    for (const [k, v] of writes) ctx.setParam(k, v, { action: "M1 坐席负载调度", reason: r });
-    ctx.logAudit({ actor: ACTOR, action: "坐席负载调度", target: `${writes.length} 项配置`, reason: r });
-    ctx.toast(`负载调度已更新 · ${writes.length} 项 · 已留档`);
+    ctx.setParam("I.support.load.__bulk", JSON.stringify({
+      autoBalance,
+      defaultCap: Number(clamp(defaultCap, 0, 40)),
+      burstCap: Number(clamp(burstCap, 0, 40)),
+      warnPct: Number(clamp(warnPct, 50, 100)),
+      quietHourBalance: quietHour,
+      overflowQueue: overflow.trim(),
+      agentState,
+    }), { action: "M1 坐席负载调度", reason: r });
+    ctx.toast("负载调度已提交 · 后端留档");
     onClose();
   }
 
@@ -272,8 +285,15 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       ctx.toast("手动均衡需先填变更理由(≥6 字)");
       return;
     }
-    ctx.logAudit({ actor: ACTOR, action: "坐席负载手动均衡", target: "全体在岗坐席", reason: reason.trim() });
-    ctx.toast("已触发一次手动均衡 · 理由已留档");
+    ctx.setParam("I.support.load.__rebalance", JSON.stringify(rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      cap: r.cap,
+      busy: r.busy,
+      total: r.total,
+      util: r.util,
+    }))), { action: "M1 坐席负载手动均衡", reason: reason.trim() });
+    ctx.toast("已触发一次手动均衡 · 后端留档");
     onClose();
   }
 
@@ -326,13 +346,13 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
           <div className="sub" style={{ fontWeight: 600 }}>坐席个人上限 / 接派单</div>
           <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
             {rows.map((r, i) => (
-              <div key={r.name} className="row" style={{ alignItems: "center", gap: 10, padding: "9px 12px", borderTop: i ? "1px solid var(--border)" : "none" }}>
+              <div key={r.id} className="row" style={{ alignItems: "center", gap: 10, padding: "9px 12px", borderTop: i ? "1px solid var(--border)" : "none" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>{r.name}</div>
                   <div className="sub mono">{r.role} · {r.total}/{r.cap} · {r.util}%</div>
                 </div>
-                <input className="fld mono" type="number" min={0} max={40} value={caps[r.name] ?? String(r.cap)} onChange={(e) => setCaps((s) => ({ ...s, [r.name]: e.target.value }))} style={{ width: 68, textAlign: "right" }} aria-label={`${r.name} 接派单上限`} />
-                <Toggle on={!busyMap[r.name]} onClick={() => setBusyMap((s) => ({ ...s, [r.name]: !s[r.name] }))} />
+                <input className="fld mono" type="number" min={0} max={40} value={caps[r.id] ?? String(r.cap)} onChange={(e) => setCaps((s) => ({ ...s, [r.id]: e.target.value }))} style={{ width: 68, textAlign: "right" }} aria-label={`${r.name} 接派单上限`} />
+                <Toggle on={!busyMap[r.id]} onClick={() => setBusyMap((s) => ({ ...s, [r.id]: !s[r.id] }))} />
               </div>
             ))}
           </div>

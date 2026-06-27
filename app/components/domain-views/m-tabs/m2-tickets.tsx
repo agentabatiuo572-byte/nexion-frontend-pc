@@ -2,21 +2,17 @@
 
 /**
  * M2 工单台 — 全宽表格列队 + 右侧滑出详情抽屉(helpdesk 设计稿布局)。
- * 真写统一落 platform-config params(persist 兼容前缀):
- *  - I.support.tickets: UniApp ticket mock 字段镜像 + admin owner/status/priority/reply
- *  - 升级为即时会话时写 I.session.convos(对方真写键,不造影子)。
+ * 业务读写走后端 content/ticket/conversation 接口;I.support.* / I.session.* 为 M 容器传入的视图适配键。
  * 例行坐席操作(回复/改状态/改优先级/转交/关闭重开)直接执行 + 自动 A2 审计;
  * 仅「升级为即时会话」这类跨载体处置走操作确认 + 理由。
  */
 import { useEffect, useMemo, useState } from "react";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
-  SESSION_CONVOS,
   SUPPORT_AGENTS,
-  SUPPORT_REPLY_TEMPLATES,
-  SUPPORT_SLA,
-  SUPPORT_TICKETS,
   type SessionConvo,
+  type SessionReplyTpl,
+  type SupportSla,
   type SupportTicket,
   type SupportTicketCategory,
   type SupportTicketPriority,
@@ -27,6 +23,8 @@ import type { MCtx } from "./types";
 
 const TICKET_KEY = "I.support.tickets";
 const CONVO_KEY = "I.session.convos";
+const SLA_KEY = "I.support.sla";
+const REPLY_TEMPLATE_KEY = "I.session.replyTemplates";
 
 type Scope = "active" | "archived" | "all";
 const SCOPES: Array<[Scope, string]> = [
@@ -63,7 +61,15 @@ function cloneConvos(rows: SessionConvo[]): SessionConvo[] {
 
 export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
-  const tickets = useMemo(() => cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), SUPPORT_TICKETS)), [ctx.params, pget]);
+  const tickets = useMemo(() => cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), [])), [ctx.params, pget]);
+  const replyTemplates = useMemo(
+    () =>
+      parseParamArray<SessionReplyTpl>(pget(REPLY_TEMPLATE_KEY), [])
+        .filter((tpl) => tpl.type === "support" && tpl.status === "published")
+        .map((tpl) => tpl.text),
+    [ctx.params, pget],
+  );
+  const slaRows = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
 
   const [scope, setScope] = useState<Scope>("active");
   const [categoryFilter, setCategoryFilter] = useState<"all" | SupportTicketCategory>("all");
@@ -199,7 +205,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       amplifies: false,
       run: (reason: string) => {
         const now = Date.now();
-        const existingConvos = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), SESSION_CONVOS));
+        const existingConvos = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), []));
         const newConvo: SessionConvo = {
           id: `cv-from-${ticket.id}`,
           type: "support",
@@ -247,7 +253,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     });
   };
 
-  const categoryOptions: HDOption[] = [{ value: "all", label: "全部分类" }, ...SUPPORT_SLA.map((s) => ({ value: s.category, label: catCN(s.category) }))];
+  const categoryOptions: HDOption[] = [{ value: "all", label: "全部分类" }, ...slaRows.map((s) => ({ value: s.category, label: catCN(s.category) }))];
 
   const threadMessages: ThreadMessage[] = (selected?.messages ?? []).map((m) => ({
     ts: m.ts,
@@ -398,6 +404,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           onCloseReopen={closeOrReopen}
           onEscalate={escalateToConversation}
           thread={threadMessages}
+          replyTemplates={replyTemplates}
         />
       )}
     </div>
@@ -416,6 +423,7 @@ function TicketDrawer({
   onCloseReopen,
   onEscalate,
   thread,
+  replyTemplates,
 }: {
   ticket: SupportTicket;
   replyBody: string;
@@ -428,6 +436,7 @@ function TicketDrawer({
   onCloseReopen: () => void;
   onEscalate: () => void;
   thread: ThreadMessage[];
+  replyTemplates: string[];
 }) {
   const isClosed = ticket.status === "closed";
   const statusItems: MenuItem[] = STATUS_MENU.map(([s, label]) => ({ label, cur: ticket.status === s, onClick: () => onStatus(s) }));
@@ -484,7 +493,8 @@ function TicketDrawer({
                 <Icon name="flame" size={13} />
                 快捷回复
               </span>
-              {SUPPORT_REPLY_TEMPLATES.map((tpl, i) => (
+              {replyTemplates.length === 0 && <span className="dim2" style={{ fontSize: 11.5 }}>暂无可用回复模板</span>}
+              {replyTemplates.map((tpl, i) => (
                 <button key={i} type="button" className="chip" title={tpl} onClick={() => onReplyChange(replyBody ? `${replyBody} ${tpl}` : tpl)}>
                   {tpl.slice(0, 14)}…
                 </button>

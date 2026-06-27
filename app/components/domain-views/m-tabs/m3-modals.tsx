@@ -10,18 +10,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Icon, Modal } from "../design-kit";
 import {
-  ADVISOR_SCRIPTS,
   AUDIENCE_PRESETS,
-  CUSTOMER_DIRECTORY,
-  INITIATE_IDENTITIES,
   SEG_FIELDS,
-  SESSION_AGENTS,
-  SESSION_REPLY_TEMPLATES,
   STANDBY_POOL_LABEL,
-  TRANSFER_QUEUES,
+  type AdvisorScript,
   type CustomerProfile,
   type InitiateIdentity,
   type SegCond,
+  type SessionReplyTpl,
   type TransferTarget,
 } from "./data";
 import { MAvatar, ownerLabel, relWhen } from "./hd-ui";
@@ -167,23 +163,12 @@ export function QuickActionModal({
   const [via, setVia] = useState<"sms" | "email">("sms");
 
   if (kind === "history") {
-    const rows = [
-      { id: "CV-9871", t: "2026-05-28", agent: "Mia", topic: "设备升级咨询", dur: "12 min" },
-      { id: "CV-9542", t: "2026-05-12", agent: "Sarah K.", topic: "算力调度异常", dur: "31 min" },
-      { id: "CV-9011", t: "2026-04-20", agent: "Mia", topic: "锁仓询价", dur: "8 min" },
-    ];
     return (
       <Modal title="历史会话" icon="clock" onClose={onClose} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button></>}>
-        <div className="sub" style={{ marginBottom: 8 }}>{profile.nickname} · 近 3 条预览</div>
-        <div style={{ border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
-          {rows.map((r, i) => (
-            <div key={r.id} className="row" style={{ gap: 12, padding: "10px 12px", borderTop: i ? "1px solid var(--border)" : "none" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13 }}>{r.topic}</div>
-                <div className="mono tiny" style={{ color: "var(--ink-4)", marginTop: 2 }}>{r.id} · {r.t} · 接待 {r.agent} · {r.dur}</div>
-              </div>
-            </div>
-          ))}
+        <div className="sub" style={{ marginBottom: 8 }}>{profile.nickname} · 后端会话记录</div>
+        <div className="itint">
+          <div style={{ fontSize: 13 }}>请在 M3 会话列表使用用户昵称 / 用户编码搜索查看该用户的真实历史会话。</div>
+          <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>本弹窗不再展示静态历史预览。</div>
         </div>
       </Modal>
     );
@@ -193,15 +178,9 @@ export function QuickActionModal({
       <Modal title="关联工单" icon="doc" onClose={onClose} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button></>}>
         <div className="sub" style={{ marginBottom: 8 }}>{profile.nickname} · 当前 {profile.tickets} 张未关闭</div>
         <div className="itint">
-          <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 13 }}>设备 LED 状态异常,已提交固件日志</div>
-              <div className="mono tiny" style={{ color: "var(--ink-4)", marginTop: 2 }}>TK-2104 · Hardware · 2 天前</div>
-            </div>
-            <span className="bdg warn">处理中</span>
-          </div>
+          <div style={{ fontSize: 13 }}>请在 M2 工单台使用用户昵称 / 用户编码 / 工单号搜索查看真实关联工单。</div>
+          <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>本弹窗不再展示静态工单预览。</div>
         </div>
-        <div className="sub" style={{ marginTop: 8 }}>完整工单在 M2 工单台按该用户筛选查看。</div>
       </Modal>
     );
   }
@@ -339,35 +318,59 @@ function CustomSegment({ conds, setConds }: { conds: SegCond[]; setConds: (c: Se
 
 /* ============ 主动发起会话(身份 + 单人/固定档/自定义圈选 + 内容源 + 撰写 + 预览)============ */
 export type InitiatePayload = { identity: InitiateIdentity; targetLabel: string; targetDesc: string; text: string; ctaHref?: string; reason?: string; profile?: CustomerProfile; isSegment?: boolean };
-export function InitiateModal({ onClose, onSend }: { onClose: () => void; onSend: (p: InitiatePayload) => void }) {
-  const [identId, setIdentId] = useState(INITIATE_IDENTITIES[0].id);
-  const identity = INITIATE_IDENTITIES.find((i) => i.id === identId) ?? INITIATE_IDENTITIES[0];
-  const isAdvisor = identity.type === "advisor";
+export function InitiateModal({
+  onClose,
+  onSend,
+  identities = [],
+  advisorScripts = [],
+  replyTemplates = [],
+  customers = [],
+}: {
+  onClose: () => void;
+  onSend: (p: InitiatePayload) => void;
+  identities?: InitiateIdentity[];
+  advisorScripts?: AdvisorScript[];
+  replyTemplates?: SessionReplyTpl[];
+  customers?: CustomerProfile[];
+}) {
+  const [identId, setIdentId] = useState(identities[0]?.id ?? "");
+  const identity = identities.find((i) => i.id === identId) ?? identities[0];
+  const isAdvisor = identity?.type === "advisor";
   const [mode, setMode] = useState<"user" | "audience">("user");
   const [custUid, setCustUid] = useState("");
   const [custQuery, setCustQuery] = useState("");
   const [audMode, setAudMode] = useState<"preset" | "custom">("preset");
   const [preset, setPreset] = useState<string>(AUDIENCE_PRESETS[0]);
   const [conds, setConds] = useState<SegCond[]>([]);
-  const pubScripts = ADVISOR_SCRIPTS.filter((s) => s.status === "published");
-  const [scriptId, setScriptId] = useState(pubScripts[0]?.id ?? ADVISOR_SCRIPTS[0]?.id ?? "");
-  const supportTpls = SESSION_REPLY_TEMPLATES.filter((t) => t.type === "support");
+  const pubScripts = advisorScripts.filter((s) => s.status === "published");
+  const [scriptId, setScriptId] = useState(pubScripts[0]?.id ?? advisorScripts[0]?.id ?? "");
+  const supportTpls = replyTemplates.filter((t) => t.type === "support" && t.status === "published");
   const [tplId, setTplId] = useState(supportTpls[0]?.id ?? "");
   const [text, setText] = useState("");
   const [reason, setReason] = useState("");
 
-  const script = ADVISOR_SCRIPTS.find((s) => s.id === scriptId) ?? null;
+  const script = advisorScripts.find((s) => s.id === scriptId) ?? null;
   useEffect(() => {
-    if (isAdvisor) { const s = ADVISOR_SCRIPTS.find((x) => x.id === scriptId); setText(s ? s.text : ""); }
-    else { const t = SESSION_REPLY_TEMPLATES.find((x) => x.id === tplId); setText(t ? t.text : ""); }
-  }, [isAdvisor, scriptId, tplId]);
+    if (identities.length === 0) {
+      if (identId) setIdentId("");
+      return;
+    }
+    if (!identities.some((i) => i.id === identId)) setIdentId(identities[0].id);
+  }, [identId, identities]);
+  useEffect(() => {
+    if (custUid && !customers.some((c) => c.uid === custUid)) setCustUid("");
+  }, [custUid, customers]);
+  useEffect(() => {
+    if (isAdvisor) { const s = advisorScripts.find((x) => x.id === scriptId); setText(s ? s.text : ""); }
+    else { const t = replyTemplates.find((x) => x.id === tplId); setText(t ? t.text : ""); }
+  }, [advisorScripts, isAdvisor, replyTemplates, scriptId, tplId]);
 
-  const selectedCust = CUSTOMER_DIRECTORY.find((c) => c.uid === custUid) ?? null;
+  const selectedCust = customers.find((c) => c.uid === custUid) ?? null;
   const targetLabel = mode === "user" ? selectedCust?.nickname ?? "" : audMode === "preset" ? preset : segValid(conds) ? "自定义人群" : "";
   const targetDesc = mode === "user" ? `单个客户 ${selectedCust?.nickname ?? ""}(${selectedCust?.uid ?? ""})` : audMode === "preset" ? `人群 · ${preset}` : `自定义人群 · ${segSummary(conds)}`;
   const needReason = mode === "audience";
   const targetOk = mode === "user" ? !!selectedCust : audMode === "preset" ? true : segValid(conds);
-  const ok = text.trim() !== "" && targetOk && (!needReason || reason.trim().length >= 6);
+  const ok = !!identity && text.trim() !== "" && targetOk && (!needReason || reason.trim().length >= 6);
 
   return (
     <Modal
@@ -386,7 +389,10 @@ export function InitiateModal({ onClose, onSend }: { onClose: () => void; onSend
             type="button"
             className="btn btn-pri btn-sm"
             disabled={!ok}
-            onClick={() => onSend({ identity, targetLabel, targetDesc, text: text.trim(), ctaHref: isAdvisor && script ? script.ctaHref : "—", reason: needReason ? reason.trim() : undefined, profile: mode === "user" ? selectedCust ?? undefined : undefined, isSegment: mode === "audience" })}
+            onClick={() => {
+              if (!identity) return;
+              onSend({ identity, targetLabel, targetDesc, text: text.trim(), ctaHref: isAdvisor && script ? script.ctaHref : "—", reason: needReason ? reason.trim() : undefined, profile: mode === "user" ? selectedCust ?? undefined : undefined, isSegment: mode === "audience" });
+            }}
           >
             发起会话{!ok ? " · 待补全" : ""}
           </button>
@@ -397,10 +403,11 @@ export function InitiateModal({ onClose, onSend }: { onClose: () => void; onSend
         <div className="pa-col">
           <Field label="发起身份">
             <select className="fld" value={identId} onChange={(e) => setIdentId(e.target.value)}>
-              {INITIATE_IDENTITIES.map((i) => <option key={i.id} value={i.id}>{i.label} · {i.name}（{i.id}）</option>)}
+              {identities.length === 0 && <option value="">暂无可发起身份</option>}
+              {identities.map((i) => <option key={i.id} value={i.id}>{i.label} · {i.name}（{i.id}）</option>)}
             </select>
             <span className="hint" style={{ color: isAdvisor ? "var(--m-wait)" : "var(--ink-4)" }}>
-              {isAdvisor ? "顾问身份 · 可带主动话术与转化跳转" : "客服身份 · 中性答复,无主动话术 / 跳转"}
+              {identity ? (isAdvisor ? "顾问身份 · 可带主动话术与转化跳转" : "客服身份 · 中性答复,无主动话术 / 跳转") : "请先在 M5 给客服配置可用服务类型"}
             </span>
           </Field>
 
@@ -414,10 +421,16 @@ export function InitiateModal({ onClose, onSend }: { onClose: () => void; onSend
               <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div className="inp">
                   <Icon name="search" size={15} />
-                  <input value={custQuery} onChange={(e) => setCustQuery(e.target.value)} placeholder="搜索客户 昵称 / UID / 地区" />
+                  <input value={custQuery} onChange={(e) => setCustQuery(e.target.value)} placeholder="搜索客户 昵称 / 用户编码 / 地区" />
                 </div>
                 <div style={{ maxHeight: 224, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                  {CUSTOMER_DIRECTORY.filter((c) => {
+                  {customers.length === 0 && (
+                    <div className="itint">
+                      <div style={{ fontSize: 13 }}>暂无可选客户</div>
+                      <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>请先确认 M3 会话接口已返回客户档案。</div>
+                    </div>
+                  )}
+                  {customers.filter((c) => {
                     const q = custQuery.trim().toLowerCase();
                     return !q || (c.nickname + c.uid + c.region).toLowerCase().includes(q);
                   }).map((c) => (
@@ -461,7 +474,7 @@ export function InitiateModal({ onClose, onSend }: { onClose: () => void; onSend
           <Field label={isAdvisor ? "选择话术" : "选择回复模板"}>
             {isAdvisor ? (
               <select className="fld" value={scriptId} onChange={(e) => setScriptId(e.target.value)}>
-                {ADVISOR_SCRIPTS.map((s) => <option key={s.id} value={s.id}>{s.id} · {s.group}{s.ctaHref !== "—" ? `（${s.ctaHref}）` : ""}</option>)}
+                {advisorScripts.map((s) => <option key={s.id} value={s.id}>{s.id} · {s.group}{s.ctaHref !== "—" ? `（${s.ctaHref}）` : ""}</option>)}
               </select>
             ) : (
               <select className="fld" value={tplId} onChange={(e) => setTplId(e.target.value)}>
@@ -489,7 +502,7 @@ export function InitiateModal({ onClose, onSend }: { onClose: () => void; onSend
             </div>
             <div className="pa-bubble-row">
               <div className="pa-bubble">
-                <div className="pa-bubble-name">{identity.name}</div>
+                <div className="pa-bubble-name">{identity?.name ?? "待选择身份"}</div>
                 <div className="pa-bubble-text">{text || "(开场消息为空)"}</div>
                 {isAdvisor && script && script.ctaHref !== "—" && (
                   <span className="pa-cta"><Icon name="arrow" size={13} />{script.ctaHref}</span>
@@ -505,15 +518,28 @@ export function InitiateModal({ onClose, onSend }: { onClose: () => void; onSend
 
 /* ============ 跨坐席转交(选目标 + 转交原因)============
  * 例行内部交接:不弹操作确认(MC)、不写 A2 审计;转交原因记入会话系统消息。 */
+type TransferAgentOption = { id: string; name: string; position?: string };
 export type TransferPayload = { to: TransferTarget; reason: string };
-export function TransferModal({ currentOwner, onClose, onSubmit }: { currentOwner: string; onClose: () => void; onSubmit: (p: TransferPayload) => void }) {
-  const agents = SESSION_AGENTS.filter((a) => a !== "Unassigned" && a !== currentOwner);
-  const [kind, setKind] = useState<"agent" | "queue" | "standby">("agent");
-  const [agent, setAgent] = useState(agents[0] ?? "");
-  const [queue, setQueue] = useState(TRANSFER_QUEUES[0] ?? "");
+export function TransferModal({
+  currentOwner,
+  onClose,
+  onSubmit,
+  agents = [],
+  queues = [],
+}: {
+  currentOwner: string;
+  onClose: () => void;
+  onSubmit: (p: TransferPayload) => void;
+  agents?: TransferAgentOption[];
+  queues?: string[];
+}) {
+  const agentOptions = agents.filter((a) => a.name !== "Unassigned" && a.name !== currentOwner);
+  const [kind, setKind] = useState<"agent" | "queue" | "standby">(agentOptions.length ? "agent" : queues.length ? "queue" : "standby");
+  const [agent, setAgent] = useState(agentOptions[0]?.name ?? "");
+  const [queue, setQueue] = useState(queues[0] ?? "");
   const [reason, setReason] = useState("");
   const reasonOk = reason.trim().length >= 6;
-  const targetOk = kind === "agent" ? !!agent : true;
+  const targetOk = kind === "agent" ? !!agent : kind === "queue" ? !!queue : true;
   const to: TransferTarget = kind === "agent" ? { kind: "agent", name: agent } : kind === "queue" ? { kind: "queue", queue } : { kind: "standby" };
   const ok = reasonOk && targetOk;
   return (
@@ -538,29 +564,39 @@ export function TransferModal({ currentOwner, onClose, onSubmit }: { currentOwne
         <div className="field">
           <label>转交目标</label>
           <div className="row" style={{ gap: 6 }}>
-            <button type="button" className={`chip${kind === "agent" ? " sel" : ""}`} onClick={() => setKind("agent")}>指定坐席</button>
-            <button type="button" className={`chip${kind === "queue" ? " sel" : ""}`} onClick={() => setKind("queue")}>技能队列</button>
+            <button type="button" className={`chip${kind === "agent" ? " sel" : ""}`} disabled={agentOptions.length === 0} onClick={() => setKind("agent")}>指定坐席</button>
+            <button type="button" className={`chip${kind === "queue" ? " sel" : ""}`} disabled={queues.length === 0} onClick={() => setKind("queue")}>技能队列</button>
             <button type="button" className={`chip${kind === "standby" ? " sel" : ""}`} onClick={() => setKind("standby")}>备勤池</button>
           </div>
           {kind === "agent" && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4, maxHeight: 224, overflow: "auto" }}>
-              {agents.map((a) => (
+              {agentOptions.length === 0 && (
+                <div className="itint">
+                  <div style={{ fontSize: 13 }}>暂无可转交坐席</div>
+                  <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>可转交坐席来自 M5 岗位配置中的启用且未暂停接派单坐席。</div>
+                </div>
+              )}
+              {agentOptions.map((a) => (
                 <button
-                  key={a}
+                  key={a.id}
                   type="button"
-                  onClick={() => setAgent(a)}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: `1px solid ${agent === a ? "var(--m-hd-border)" : "var(--border)"}`, background: agent === a ? "var(--m-hd-soft)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
+                  onClick={() => setAgent(a.name)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: `1px solid ${agent === a.name ? "var(--m-hd-border)" : "var(--border)"}`, background: agent === a.name ? "var(--m-hd-soft)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
                 >
-                  <MAvatar name={a} size="sm" />
-                  <span style={{ flex: 1, fontSize: 13, color: "var(--ink)" }}>{a}</span>
-                  {agent === a && <Icon name="check" size={15} />}
+                  <MAvatar name={a.name} size="sm" />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 13, color: "var(--ink)" }}>{a.name}</span>
+                    {a.position && <span className="dim2" style={{ fontSize: 11.5 }}>{a.position}</span>}
+                  </span>
+                  {agent === a.name && <Icon name="check" size={15} />}
                 </button>
               ))}
             </div>
           )}
           {kind === "queue" && (
             <select className="fld" style={{ marginTop: 8 }} value={queue} onChange={(e) => setQueue(e.target.value)}>
-              {TRANSFER_QUEUES.map((q) => <option key={q} value={q}>{q}</option>)}
+              {queues.length === 0 && <option value="">暂无可转交队列</option>}
+              {queues.map((q) => <option key={q} value={q}>{q}</option>)}
             </select>
           )}
           {kind === "standby" && (
