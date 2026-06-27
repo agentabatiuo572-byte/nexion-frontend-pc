@@ -125,7 +125,7 @@ export interface StakeRow { id: string; pool: string; principalUsd: number; apy:
 export interface GenesisRow { id: string; nodeNo: string; boughtAt: string; dailyDivUsd: number; status: "active" | "listed" | "sold"; }
 export interface ExchangeRow { id: string; tsLabel: string; pair: string; amountNex: number; rate: number; }
 export interface UserFinancial { staking: StakeRow[]; genesis: GenesisRow[]; exchange: ExchangeRow[]; stakedUsdTotal: number; genesisDailyTotal: number; }
-// USDT-only staking pools(NEX 质押已下线);APY 与 g-tabs/data.ts USDT_TIERS canon 同源(12/35/80/180)。
+// USDT-only staking pools(NEX 质押已下线);APY 与 G1 后端种子档位保持一致(12/35/80/180)。
 const POOLS = ["USDT-30d", "USDT-90d", "USDT-180d", "USDT-365d"];
 const LOCKS: Record<string, number> = { "USDT-30d": 30, "USDT-90d": 90, "USDT-180d": 180, "USDT-365d": 365 };
 const APYS: Record<string, number> = { "USDT-30d": 12, "USDT-90d": 35, "USDT-180d": 80, "USDT-365d": 180 };

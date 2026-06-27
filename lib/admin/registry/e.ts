@@ -1,5 +1,5 @@
 /** 域 E 设备与商城 — 注册表(config / dashboard / list archetype 混合)。accent=--admin-domain-e。
- *  ⚠️ E ∈ PORTED_DOMAINS:本文件 content(metrics/rows/groups)为**死代码**,真渲染面 = e-view.tsx + e-tabs/(catalog 走 design-data.ts SKUS,orders/devices 走 e-tabs/data.ts),仅 summary 经 DomainHeader 渲染。改 E 域展示值改 e-view/e-tabs,非本文件。本文件内的 SKU/价格已对齐 canon 仅作存档一致性。
+ *  ⚠️ E ∈ PORTED_DOMAINS:本文件 content(metrics/rows/groups)为**死代码**,真渲染面 = e-view.tsx + e-tabs/(E1 catalog / E4 orders / E5 devices 均走后端代理),仅 summary 经 DomainHeader 渲染。改 E 域展示值改 e-view/e-tabs,非本文件。本文件内的 SKU/价格已对齐 canon 仅作存档一致性。
  *  NexionBox 矿机商城与设备生命周期。数值与前端 PRD device specs 对齐(server 权威):
  *  - SKU 6 个管理对象(在售 4 + 待发布 2);价格 / baseRate 逐字段对齐 canon-numbers.json(S1 $649 · Pro $1,199 · Pro v2 Gen-2 $1,319 · Rack P1 $4,499 · Rack P2 $7,499 · Cloud $19.9)。
  *  - 衰减模型 -4% / -6% / -10% 月分段 + MIN_EFFICIENCY(P3 档 month12 ≈ 22% 效能)。

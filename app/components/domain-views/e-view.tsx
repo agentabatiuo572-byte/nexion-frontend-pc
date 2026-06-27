@@ -19,7 +19,6 @@ import { confirm } from "@/lib/store/ui";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { SKUS, REVIEWS } from "@/lib/mock/admin/design-data";
 import {
   archiveE1GenerationGate,
   archiveE1Phase,
@@ -72,7 +71,7 @@ import { E5Ops } from "./e-tabs/e5-ops";
 import "./e-domain.css";
 
 let REVIEW_SEQ = 100; // 客户端新增评价 id 计数(SSR 安全)
-// 本地预览旁路:bypass=1 时 E1 走本地 mock state(增删改全本地,不调注定 401 的后端);=0 接真后端。
+// 本地预览旁路:bypass=1 时 E1 操作只更新当前页面临时 state;真实后台模式以接口返回为准。
 const IS_PREVIEW = process.env.NEXT_PUBLIC_ADMIN_AUTH_BYPASS === "1";
 
 type SkuMediaKind = "image" | "video";
@@ -280,14 +279,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const e3Ready = Object.keys(e3Params).length > 0;
 
   // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
-  const [e1Skus, setE1Skus] = useState<OpsSku[]>(IS_PREVIEW ? (SKUS as OpsSku[]) : []);
-  const [e1Reviews, setE1Reviews] = useState<OpsReview[]>(IS_PREVIEW ? (REVIEWS as OpsReview[]) : []);
+  const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
+  const [e1Reviews, setE1Reviews] = useState<OpsReview[]>([]);
   const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(null);
   const [e1Loading, setE1Loading] = useState(false);
   const [e1Error, setE1Error] = useState<string | null>(null);
   const refreshE1 = useCallback(async () => {
-    // 本地预览旁路(BYPASS=1):E1 数据来自本地 mock state(初始已装载),增删改也在本地完成;
-    // 跳过注定 401 的后端请求。=0 时走真后端。
+    // 本地预览旁路(BYPASS=1):操作只作用于当前页面临时 state。真实模式不做前端兜底,
+    // 空库由后端 seed 到 MySQL 后再查出。
     if (IS_PREVIEW) {
       setE1Error("本地预览模式");
       return;
@@ -306,12 +305,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   }, []);
   useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, refreshE1]);
-  useEffect(() => { if (hydrated) ensureSkus(SKUS as OpsSku[]); }, [hydrated, ensureSkus]);
-  // 后端连得上用真数据;连不上或返回空时回退本地原型 seed,避免同步后目录空白
-  // (SKUS/REVIEWS 与 OpsSku/OpsReview 同构,真后端可用时由 refreshE1 无缝覆盖)
-  // 预览模式直接用本地 state(删空就空,不复活);真后端模式连不上时回退原型 seed
-  const skus = IS_PREVIEW ? e1Skus : (e1Skus.length > 0 ? e1Skus : (SKUS as OpsSku[]));
-  const reviews = IS_PREVIEW ? e1Reviews : (e1Reviews.length > 0 ? e1Reviews : (REVIEWS as OpsReview[]));
+  useEffect(() => { if (hydrated && e1Skus.length > 0) ensureSkus(e1Skus); }, [hydrated, e1Skus, ensureSkus]);
+  const skus = e1Skus;
+  const reviews = e1Reviews;
   const phaseCur = e1Gates?.phaseCurrent ?? pget("H.phase.current") ?? "P3";
   const e1PhaseIds = e1Gates?.phaseOrder?.length
     ? e1Gates.phaseOrder
