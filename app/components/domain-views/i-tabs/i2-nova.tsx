@@ -15,8 +15,15 @@ type NovaForm = { name: string; tick: string; cd: string; ctr: string };
 const EMPTY_FORM: NovaForm = { name: "", tick: "", cd: "", ctr: "" };
 type OpsNova = { key: string; name: string; trigger: string; tick: string; cd: string; phaseKeyed: string; ctr: number; on: boolean };
 
-const slug = (s: string) =>
-  s.trim().toLowerCase().replace(/[^a-z0-9一-鿿]+/g, "-").replace(/^-+|-+$/g, "") || "untitled";
+const normalizeNovaKey = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+
+const slug = (s: string) => normalizeNovaKey(s) || "untitled";
 
 export function I2Nova({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
@@ -139,17 +146,25 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   // ── 新模板:走操作确认(传 edit 录模板 key) ──
   const newTpl = () => openActionConfirm({
     action: <>新增 Nova 推送模板</>,
-    detail: <>新建草稿后挂双语词条(I6);发布走操作确认。</>,
+    detail: <>新建草稿后挂双语词条(I6);发布走操作确认。模板 key 仅支持字母、数字、短横线、下划线。</>,
     amplifies: false,
     edit: { kind: "text", current: "—", unit: "模板 key" },
     run: (reason, v) => {
-      if (!v) return;
+      const raw = (v ?? "").trim();
+      const key = normalizeNovaKey(raw);
+      if (key.length < 2) {
+        toast("模板 key 至少 2 位,仅支持字母、数字、短横线、下划线");
+        return;
+      }
+      if (key !== raw) {
+        toast(`模板 key 已规范化为 ${key}`);
+      }
       runBackend(actions.createI2Template({
-        channel: v,
-        name: v,
+        channel: key,
+        name: key,
         cta: "→ /content",
         version: "v1",
-      }, reason), `模板 ${v} 已创建 · 待发布确认`);
+      }, reason), `模板 ${key} 已创建 · 待发布确认`);
     },
   });
 
@@ -350,6 +365,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <tbody>
                 {NOVA_TPLS.map((t) => {
                   const st = tplStatus(t.ch);
+                  const canPublish = st !== "published";
+                  const canArchive = st !== "archived";
                   return (
                     <tr key={t.ch}>
                       <td className="mono" style={{ fontSize: 11.5 }}>{t.ch}</td>
@@ -358,8 +375,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                       <td className="mono" style={{ fontWeight: 700 }}>{t.v}</td>
                       <td>{renderTplBadge(st)}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="l-btn sm mc" onClick={() => publishTpl(t.ch, t.name)}>发布</button>
-                        <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => archiveTpl(t.ch, t.name)}>归档</button>
+                        {canPublish && (
+                          <button className="l-btn sm mc" onClick={() => publishTpl(t.ch, t.name)}>发布</button>
+                        )}
+                        {canArchive && (
+                          <button className="l-btn sm" style={{ marginLeft: canPublish ? 6 : 0 }} onClick={() => archiveTpl(t.ch, t.name)}>归档</button>
+                        )}
                       </td>
                     </tr>
                   );
