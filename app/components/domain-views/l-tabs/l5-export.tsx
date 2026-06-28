@@ -6,11 +6,11 @@
  * 导出任务状态机:pending →[含敏感 OR 超限] pending_confirm(/split)→ generating → ready(限时 24h)→ expired;失败可重试(24h 去重)。
  * 真写:任务放行/重试/解密/监管报告/报送排程/模板全部走 /api/admin/bi,后端写 MySQL + A2 审计。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, num, rec, rows, str, strings } from "./live-data";
-import type { LExportTask } from "@/lib/admin/l-client";
+import { fetchL5ExportTasks, type AdminPage, type LExportTask } from "@/lib/admin/l-client";
 import type { LCtx } from "./types";
 
 const TPL_ICONS: Record<string, React.ReactNode> = {
@@ -26,6 +26,17 @@ type RegulatoryTemplate = { key: string; nm: string; cy: string; meta: string; l
 type TraceRow = { tone: string; txt: string[]; ts: string };
 type MaskRule = { f: string; cat: string; catTone: string; rule: string; ruleNote: string; dec: string; appr: string };
 type AuditRow = { ts: string; who: string; what: string; rows: string; pii: boolean; mask: string; chain: string; dl: string };
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
+}
 
 export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
   const newExport = () => ctx.openActionConfirm({
@@ -63,8 +74,40 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
 export function L5Export({ ctx }: { ctx: LCtx }) {
   const { toast, openActionConfirm } = ctx;
   const [filter, setFilter] = useState(0);
+  const [taskPageNum, setTaskPageNum] = useState(1);
+  const [taskPage, setTaskPage] = useState<AdminPage<LExportTask> | null>(null);
+  const [taskLoading, setTaskLoading] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
 
   const data = ctx.biData?.l5;
+  const filterStatus =
+    filter === 1 ? "PENDING_CONFIRM,PENDING_SPLIT_CONFIRM"
+    : filter === 2 ? "GENERATING"
+    : filter === 3 ? "READY"
+    : "";
+  useEffect(() => {
+    if (!data) {
+      setTaskPage(null);
+      setTaskLoading(false);
+      return;
+    }
+    let alive = true;
+    setTaskLoading(true);
+    setTaskError(null);
+    fetchL5ExportTasks(filterStatus, taskPageNum, 8)
+      .then((page) => {
+        if (alive) setTaskPage(page);
+      })
+      .catch((error) => {
+        if (alive) setTaskError(error instanceof Error ? error.message : "导出任务加载失败");
+      })
+      .finally(() => {
+        if (alive) setTaskLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [filterStatus, taskPageNum, data]);
   if (!data) return <LDataState ctx={ctx} label="L5" />;
   const statsRaw = rec(data.stats);
   const L5_STATS = {
@@ -75,7 +118,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     regulatoryQ: num(statsRaw.regulatoryQ),
   };
   const ST_LABEL = rec(data.statusLabels);
-  const EXPORT_TASKS = rows<LExportTask>(data.exportTasks);
+  const fallbackTasks = rows<LExportTask>(data.exportTasks);
+  const EXPORT_TASKS = taskPage?.records ?? fallbackTasks;
   const REG_TEMPLATES = rows<RegulatoryTemplate>(data.regulatoryTemplates);
   const J4_TRACE = rows<TraceRow>(data.j4Trace);
   const MASK_RULES = rows<MaskRule>(data.maskRules);
@@ -90,12 +134,10 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   };
   const effSt = (t: LExportTask): string => t.st.toUpperCase();
   const effActs = (t: LExportTask): LExportTask["acts"] => t.acts;
-  const visibleTasks = EXPORT_TASKS.filter((task) => {
-    if (filter === 1) return effSt(task).startsWith("PENDING_");
-    if (filter === 2) return effSt(task) === "GENERATING";
-    if (filter === 3) return effSt(task) === "READY";
-    return true;
-  });
+  const visibleTasks = EXPORT_TASKS;
+  const taskPageSize = taskPage?.pageSize ?? 8;
+  const taskTotal = taskPage?.total ?? visibleTasks.length;
+  const taskPages = Math.max(1, Math.ceil(taskTotal / taskPageSize));
   const pendingCount = EXPORT_TASKS.filter((t) => effSt(t).startsWith("PENDING_")).length;
   const splitCount = EXPORT_TASKS.filter((t) => effSt(t) === "PENDING_SPLIT_CONFIRM").length;
   const decryptedQ = AUDIT_ROWS.filter((a) => a.mask === "decrypted").length;
@@ -114,9 +156,15 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     await ctx.reloadBi?.();
     toast(`${t.id} 已重新发起 · 后端状态已刷新${t.pii ? " · 含敏感重走操作确认" : ""}`);
   };
+  const downloadTask = async (t: LExportTask) => {
+    await ctx.biActions?.reportAction(t.id, "download", "下载可用报表文件并记录审计", t.pii);
+    const file = await ctx.biActions?.downloadReport(t.id);
+    if (file) downloadBlob(file.blob, file.fileName);
+    toast(`${t.id} 下载已开始 · 后端已签发文件流并记录审计`);
+  };
   const genReport = (nm: string) => openActionConfirm({
     action: `生成监管报告 · ${nm}`,
-    detail: <><b>监管报送 = 数据出境敏感</b> · 模板:{nm} · 数据范围按辖区要求 · <b>关联 I5 当前披露版本 × 司法辖区</b> · 法务确认状态随任务流转 · 操作链:风控(操作员,兼合规确认)→ 超管 / 风控(执行门槛)· 落 admin.report_exported(+ 披露版本 + 辖区)。</>,
+    detail: <><b>监管报送 = 数据出境敏感</b> · 模板:{nm} · 数据范围按辖区要求 · <b>关联 I4 当前披露版本 × 司法辖区</b> · 法务确认状态随任务流转 · 操作链:风控(操作员,兼合规确认)→ 超管 / 风控(执行门槛)· 落 admin.report_exported(+ 披露版本 + 辖区)。</>,
     run: async (reason) => {
       await ctx.biActions?.createReport({
         exportType: `监管报告 · ${nm}`,
@@ -190,7 +238,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <div className="f-stat"><div className="k">本月导出任务</div><div className="v">{L5_STATS.monthTotal}</div><div className="sub">聚合 {L5_STATS.aggCount} · 含敏感 {L5_STATS.sensitiveCount}</div></div>
         <div className="f-stat warn"><div className="k">待操作确认</div><div className="v">{pendingCount}</div><div className="sub">含 {splitCount} 个超限拆分待超管批</div></div>
         <div className="f-stat danger"><div className="k">解密导出(本季)</div><div className="v">{decryptedQ}</div><div className="sub">强操作确认 + 强制事由 · 全留痕</div></div>
-        <div className="f-stat cyan"><div className="k">监管报告(本季)</div><div className="v">{L5_STATS.regulatoryQ}</div><div className="sub">关联 I5 披露版本 × 司法辖区</div></div>
+        <div className="f-stat cyan"><div className="k">监管报告(本季)</div><div className="v">{L5_STATS.regulatoryQ}</div><div className="sub">关联 I4 披露版本 × 司法辖区</div></div>
       </div>
 
       {/* 导出安全参数 */}
@@ -222,7 +270,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           <span className="sub">· <AutoGloss>发起 / 跟踪 · 同样范围 24 小时内重复发起会自动合并,不会生成两份</AutoGloss></span>
           <div className="r"><div className="chips">
             {["全部", "待确认", "生成中", "可下载"].map((c, i) => (
-              <button key={c} className={"chip" + (i === filter ? " sel" : "")} onClick={() => { setFilter(i); toast(`任务列表筛选:${c}`); }}>{c}</button>
+              <button key={c} className={"chip" + (i === filter ? " sel" : "")} onClick={() => { setFilter(i); setTaskPageNum(1); toast(`任务列表筛选:${c}`); }}>{c}</button>
             ))}
           </div></div>
         </div>
@@ -257,14 +305,31 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {acts.length === 0 && <span className="mono" style={{ color: "var(--ink-4)" }}>—</span>}
                       {acts.includes("approve") && <button className="l-btn sm mc" onClick={() => approveTask(t)}>操作确认</button>}
-                      {acts.includes("download") && <button className="l-btn sm" onClick={() => { void ctx.biActions?.downloadToken(t.id).then(() => toast("限时下载 token 已由后端签发 · 24 小时有效")).catch((error) => toast(error instanceof Error ? error.message : "下载 token 签发失败")); }}>下载</button>}
+                      {acts.includes("download") && <button className="l-btn sm" onClick={() => { void downloadTask(t).catch((error) => toast(error instanceof Error ? error.message : "下载失败")); }}>下载</button>}
                       {acts.includes("retry") && <button className="l-btn sm" onClick={() => { void retryTask(t).catch((error) => toast(error instanceof Error ? error.message : "重新发起失败")); }}>重新发起</button>}
                     </td>
                   </tr>
                 );
               })}
+              {visibleTasks.length === 0 && (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>
+                    {taskLoading ? "导出任务加载中..." : "当前筛选暂无导出任务"}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+        </div>
+        <div className="l-b" style={{ paddingTop: 10 }}>
+          {taskError && <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>导出任务加载失败 · {taskError}</div>}
+          <div className="row" data-list-pager="true" data-list-label="L5 导出任务管理" style={{ justifyContent: "flex-end", gap: 8 }}>
+            <span className="mono" style={{ color: "var(--ink-4)", fontSize: 11.5 }}>
+              第 {taskPageNum} / {taskPages} 页 · 共 {taskTotal} 条
+            </span>
+            <button className="l-btn sm" disabled={taskPageNum <= 1 || taskLoading} onClick={() => setTaskPageNum((p) => Math.max(1, p - 1))}>上一页</button>
+            <button className="l-btn sm" disabled={taskPageNum >= taskPages || taskLoading} onClick={() => setTaskPageNum((p) => Math.min(taskPages, p + 1))}>下一页</button>
+          </div>
         </div>
       </section>
 
@@ -403,12 +468,6 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <p className="f-foot"><b>L5 的「写」只有导出产出本身</b>(<AutoGloss>只读数据的导出,不改任何业务状态</AutoGloss>)。<AutoGloss>账单 CSV 复用账本域(D4)既有导出通道,本页只做</AutoGloss><b>管控 / 审计 / 脱敏的叠加层</b>,<AutoGloss>不另开口子、不私加参数;导出范围必须覆盖全部 8 类账单(含 bonus 与 C3 人工调整 adjustment),不能静默丢掉。导出的数据全部来自服务端权威事件流与双账本聚合——</AutoGloss><b>客户端自己上报的状态绝不导出</b>。<AutoGloss>脱敏在服务端执行;下载链接由服务端签发、限时失效,绕不过也越不了权。每条</AutoGloss> <b>admin.report_exported</b> <AutoGloss>记录谁导的 / 导了什么 / 多少行 / 含不含隐私 / 怎么脱敏 / 谁发起谁确认 / 什么时间,进只追加不可改的审计库——这是防止数据被滥用带出去的核心防线。</AutoGloss></p>
       <PaginationExemptionList
         items={[
-          {
-            label: "导出任务管理",
-            kind: "sample-ledger",
-            maxRows: 6,
-            reason: "导出任务当前六条样本,生成/放行动作按状态处理",
-          },
           {
             label: "导出审计台",
             kind: "sample-ledger",

@@ -74,6 +74,7 @@ export type LBiActions = {
   createReport: (input: LReportCreateInput, reason: string) => Promise<void>;
   reportAction: (reportId: string, action: "approve" | "rerun" | "download", reason: string, includeSensitive?: boolean) => Promise<void>;
   downloadToken: (reportId: string) => Promise<Record<string, unknown>>;
+  downloadReport: (reportId: string) => Promise<{ blob: Blob; fileName: string }>;
   updateExportParam: (key: string, value: string, reason: string) => Promise<void>;
   updateRegulatorySchedule: (value: string, reason: string) => Promise<void>;
   createRegulatoryTemplate: (name: string, reason: string) => Promise<void>;
@@ -210,6 +211,39 @@ export async function fetchLBiOverviews(): Promise<LBiData> {
   return apiRequest("/overview").then(normalizeOverviews);
 }
 
+export async function fetchL5ExportTasks(status = "", pageNum = 1, pageSize = 8): Promise<AdminPage<LExportTask>> {
+  const query = new URLSearchParams({
+    pageNum: String(pageNum),
+    pageSize: String(pageSize),
+  });
+  if (status.trim()) query.set("status", status.trim());
+  return apiRequest<AdminPage<LReportView>>(`/reports?${query.toString()}`).then((page) => ({
+    ...page,
+    records: page.records.map(reportToTask),
+  }));
+}
+
+function filenameFromDisposition(disposition: string | null, fallback: string) {
+  if (!disposition) return fallback;
+  const utf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8?.[1]) return decodeURIComponent(utf8[1].replace(/"/g, ""));
+  const ascii = disposition.match(/filename="?([^";]+)"?/i);
+  return ascii?.[1] ? ascii[1] : fallback;
+}
+
+async function downloadReportFile(reportId: string) {
+  const res = await fetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download`, { cache: "no-store" });
+  const contentType = res.headers.get("Content-Type") || "";
+  if (!res.ok || contentType.includes("application/json")) {
+    const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
+    throw new Error(formatAdminApiError(payload?.message, `BI_DOWNLOAD_${res.status}`));
+  }
+  return {
+    blob: await res.blob(),
+    fileName: filenameFromDisposition(res.headers.get("Content-Disposition"), `${reportId}.csv`),
+  };
+}
+
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
   return { ...body, reason, operator: OPERATOR };
 }
@@ -221,6 +255,7 @@ export const lBiActions: LBiActions = {
     body: JSON.stringify(withReason({ includeSensitive, includeDecrypted: false }, reason)),
   }).then(() => undefined),
   downloadToken: (reportId) => apiRequest(`/exports/${encodeURIComponent(reportId)}/download-token`),
+  downloadReport: downloadReportFile,
   updateExportParam: (key, value, reason) => apiRequest(`/export/params/${encodeURIComponent(key)}`, {
     method: "PATCH",
     body: JSON.stringify(withReason({ value }, reason)),

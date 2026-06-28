@@ -5,7 +5,7 @@
  * 形态:① 页面活跃热力矩阵(行=页面[按所选层级上卷],列=PV/UV·点击·停留·跳出,格色=强度);
  *      ② 点行下钻到单页 SVG 手机框坐标热力(看该页内用户点哪)。
  * 粒度可设:全部 / 一级 / 二级 / 三级(按 UX 层级上卷,即「统计到哪个层级的页面」)。
- * 只读报表域:无任何写业务规则动作;唯一写动作=聚合导出(confirm + logAudit)。
+ * 只读报表域:无任何写业务规则动作;唯一写动作=聚合导出(confirm + BI export task)。
  */
 import { useId, useMemo, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -77,13 +77,17 @@ export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
       confirmLabel: "导出",
     });
     if (!ok) return;
-    ctx.logAudit({
-      actor: "总管理员",
-      action: "导出用户行为热力序列 CSV(聚合 · 无 PII)",
-      target: "admin.report_exported",
-      after: "export_type=behavior_heatmap",
-    });
-    ctx.toast("已导出行为热力序列 CSV");
+    await ctx.biActions?.createReport({
+      exportType: "行为热力图",
+      timeRange: "当前时间窗",
+      fields: "页面 PV/UV/点击/平均停留/跳出率/点击区分布",
+      piiLevel: "无 PII",
+      maskPolicy: "NONE",
+      recipient: "BI 管理员",
+      ticket: "L6-BEHAVIOR-HEATMAP",
+    }, "导出 L6 行为热力聚合序列用于产品分析");
+    await ctx.reloadBi?.();
+    ctx.toast("行为热力导出任务已提交 · 数据来自后端 BI/export");
   };
   return (
     <>
@@ -342,7 +346,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
                   </div>
                 ))}
               <div className="ltint cyan" style={{ marginTop: 12, fontSize: 12 }}>
-                <b>提示</b> · <AutoGloss>点击坐标按页面线框分区聚合,接真后台后替换为真实坐标采样;深色热区=用户实际点按密度高。</AutoGloss>
+                <b>提示</b> · <AutoGloss>点击坐标按页面线框分区聚合,来源为后端行为聚合数据;深色热区=用户实际点按密度高。</AutoGloss>
               </div>
             </div>
           </div>

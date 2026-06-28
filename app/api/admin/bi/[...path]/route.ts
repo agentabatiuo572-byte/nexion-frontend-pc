@@ -46,12 +46,15 @@ async function proxy(request: Request, context: RouteContext) {
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
       cache: "no-store",
     });
-    return new Response(await upstream.text(), {
+    const responseHeaders = new Headers({
+      "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+      "Cache-Control": "no-store",
+    });
+    const disposition = upstream.headers.get("Content-Disposition");
+    if (disposition) responseHeaders.set("Content-Disposition", disposition);
+    return new Response(await upstream.arrayBuffer(), {
       status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
-        "Cache-Control": "no-store",
-      },
+      headers: responseHeaders,
     });
   } catch {
     return jsonError(503, "BI_BACKEND_UNAVAILABLE");
