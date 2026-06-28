@@ -112,6 +112,7 @@ export interface D2Withdrawal {
   nickname: string;
   phoneMasked: string;
   kycStatus: string;
+  userStatus: string;
   riskScore: number;
   hitRules: string;
   withdrawalCount24h: number;
@@ -145,6 +146,8 @@ export interface D3DualLedger {
 export interface D4Bill {
   id: number;
   userId: number;
+  userNo: string;
+  nickname: string;
   bizNo: string;
   bizType: string;
   asset: string;
@@ -159,6 +162,8 @@ export interface D4Bill {
 
 export interface D4UserLedger {
   userId: number;
+  userNo: string;
+  nickname: string;
   rows: D4Bill[];
   totals: Record<string, number>;
   balance: Record<string, number>;
@@ -204,6 +209,11 @@ function bool(value: unknown, fallback = false) {
     if (["false", "0", "off", "disabled", "disable", "unlocked"].includes(normalized)) return false;
   }
   return fallback;
+}
+
+function userNoOf(value: unknown) {
+  const id = Math.trunc(num(value));
+  return id > 0 ? `U${String(id).padStart(8, "0")}` : "—";
 }
 
 function arr<T>(value: unknown): T[] {
@@ -342,10 +352,11 @@ function normalizeWithdrawal(row: D2Withdrawal): D2Withdrawal {
     status: text(row.status),
     createdAt: text(row.createdAt),
     updatedAt: text(row.updatedAt),
-    userNo: text(row.userNo, `UID-${num(row.userId)}`),
+    userNo: text(row.userNo, userNoOf(row.userId)),
     nickname: text(row.nickname),
     phoneMasked: text(row.phoneMasked, ""),
     kycStatus: text(row.kycStatus),
+    userStatus: text(row.userStatus, "UNKNOWN"),
     riskScore: num(row.riskScore),
     hitRules: text(row.hitRules, ""),
     withdrawalCount24h: num(row.withdrawalCount24h),
@@ -395,6 +406,8 @@ function normalizeBill(row: D4Bill): D4Bill {
     ...row,
     id: num(row.id),
     userId: num(row.userId),
+    userNo: text(row.userNo, userNoOf(row.userId)),
+    nickname: text(row.nickname, ""),
     bizNo: text(row.bizNo),
     bizType: text(row.bizType),
     asset: text(row.asset),
@@ -553,6 +566,8 @@ export async function fetchD4UserLedger(userId: number) {
   const raw = await apiRequest<Record<string, unknown>>("treasury", `/ledger/users/${encodeURIComponent(String(userId))}`);
   return {
     userId: num(raw?.userId, userId),
+    userNo: text(raw?.userNo, userNoOf(userId)),
+    nickname: text(raw?.nickname, ""),
     rows: arr<D4Bill>(raw?.rows).map(normalizeBill),
     totals: Object.fromEntries(Object.entries((raw?.sums ?? {}) as Record<string, unknown>).map(([key, value]) => [key, num(value)])),
     balance: {

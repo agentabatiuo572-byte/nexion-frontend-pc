@@ -58,6 +58,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}
+          coverage={mc.coverage}
           edit={mc.edit}
           businessForm={mc.businessForm}
           onClose={() => setActionConfirm(null)}

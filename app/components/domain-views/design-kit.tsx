@@ -8,7 +8,6 @@
  */
 import { isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { TREASURY } from "@/lib/mock/admin/design-data";
 import { AutoGloss } from "@/app/components/kit/gloss";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
@@ -1973,8 +1972,14 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   );
 }
 
+export type CoverageSnapshot = {
+  coverageRatio: number;
+  redlinePct: number;
+  healthyPct?: number;
+};
+
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, edit, businessForm, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void }) {
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
@@ -1983,8 +1988,8 @@ export function OperationConfirmModal({ action, detail, amplifies, edit, busines
   const spec: EditSpec | null = edit ?? null;
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
-  // B1 红线禁放行(§15.1 recoverGate):放大流出动作在覆盖率 < 红线时禁止确认放行(server 422 的前端镜像)。
-  const covBlocked = !!amplifies && TREASURY.coverageRatio < TREASURY.redLine;
+  // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
+  const covBlocked = Boolean(amplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   const reasonMin = 8;
   const reasonOk = reason.trim().length >= reasonMin;
   const businessMissing = missingBusinessFields(businessForm, businessValue);
@@ -2003,13 +2008,19 @@ export function OperationConfirmModal({ action, detail, amplifies, edit, busines
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
           <span className="ico"><Icon name="alert" size={16} /></span>
           <div className="tiny">
-            <b>会增加资金流出</b> · 系统会先检查 B1 备付金覆盖率。当前覆盖率
-            <b className="mono"> {TREASURY.coverageRatio}%</b>
-            {TREASURY.coverageRatio >= TREASURY.yellowLine
-              ? ` > 健康线 ${TREASURY.yellowLine}% ✓`
-              : TREASURY.coverageRatio >= TREASURY.redLine
-                ? ` · 高于红线 ${TREASURY.redLine}%,但低于健康线 ${TREASURY.yellowLine}%,请审慎提交`
-                : ` < 红线 ${TREASURY.redLine}% ✗ 系统会拒绝提交`}
+            <b>会增加资金流出</b> · 系统会先检查 B1 备付金覆盖率。
+            {coverage ? (
+              <>
+                当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
+                {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
+                  ? `，高于健康线 ${coverage.healthyPct}%`
+                  : coverage.coverageRatio >= coverage.redlinePct
+                    ? `，高于红线 ${coverage.redlinePct}%，请审慎提交`
+                    : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
+              </>
+            ) : (
+              <>提交时由后端实时校验覆盖率，当前弹窗不使用前端兜底值。</>
+            )}
           </div>
         </div>
       )}

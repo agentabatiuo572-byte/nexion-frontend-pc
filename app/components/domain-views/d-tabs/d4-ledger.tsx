@@ -33,6 +33,11 @@ function tone(row: D4Bill) {
   return "warn";
 }
 
+function userLabel(row: Pick<D4Bill, "userNo" | "nickname"> | Pick<D4UserLedger, "userNo" | "nickname"> | null | undefined) {
+  if (!row) return "—";
+  return [row.userNo, row.nickname].filter(Boolean).join(" · ") || "—";
+}
+
 export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const { toast, openConfirm } = ctx;
   const [bills, setBills] = useState<PageResult<D4Bill>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
@@ -86,9 +91,13 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const pages = Math.max(1, Math.ceil(bills.total / bills.pageSize));
   const users = useMemo(() => {
     const map = new Map<number, string>();
-    bills.records.forEach((row) => map.set(row.userId, `账户 ${row.userId}`));
+    bills.records.forEach((row) => map.set(row.userId, userLabel(row)));
     return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
   }, [bills.records]);
+  const selectedUserLabel = useMemo(() => {
+    const fromOptions = users.find((user) => user.id === selectedUserId)?.label;
+    return fromOptions ?? userLabel(userLedger);
+  }, [selectedUserId, userLedger, users]);
   const stats = useMemo(() => {
     const inflow = bills.records.filter((row) => row.direction === "IN" || row.direction === "CREDIT").reduce((sum, row) => sum + row.amount, 0);
     const outflow = bills.records.filter((row) => row.direction !== "IN" && row.direction !== "CREDIT").reduce((sum, row) => sum + row.amount, 0);
@@ -106,7 +115,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       return;
     }
     openConfirm({
-      action: `手动调账 · 账户 ${selectedUserId}`,
+      action: `手动调账 · ${selectedUserLabel}`,
       detail: `${direction === "CREDIT" ? "增加" : "扣减"} ${amount} ${asset}，关联凭证 ${relatedBizNo.trim() || "未填写"}`,
       reason: true,
       okLabel: "提交调账",
@@ -158,7 +167,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
               ))}
             </div>
             <div className="lookup">
-              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="账单号 / 业务号 / 备注" />
+              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="账单号 / 用户编码 / 昵称 / 备注" />
               <button className="l-btn primary" onClick={() => { setPage(1); void loadBills(); }}>查询</button>
             </div>
           </div>
@@ -172,7 +181,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
               ) : bills.records.map((row) => (
                 <tr key={row.id}>
                   <td className="mono" style={{ color: "var(--ink)" }}>{row.bizNo}</td>
-                  <td className="mono">账户 {row.userId}</td>
+                  <td><span className="mono">{row.userNo}</span>{row.nickname && <div style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.nickname}</div>}</td>
                   <td><span className="bdg dim">{row.bizType}</span></td>
                   <td className="num mono" style={{ color: row.direction === "IN" || row.direction === "CREDIT" ? "var(--success)" : "var(--negative)", fontWeight: 700 }}>{signed(row)}</td>
                   <td className="num mono">{money(row.balanceAfter)} {row.asset}</td>

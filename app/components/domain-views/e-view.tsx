@@ -459,6 +459,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }, []);
   }, [e5Datacenters]);
   const skuDatacenterSet = useMemo(() => new Set(skuDatacenterOptions.map((item) => item.value)), [skuDatacenterOptions]);
+  const skuDatacenterDefault = skuDatacenterOptions[0]?.value ?? "";
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -493,10 +494,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!skuDrawer || e5Loading || skuDatacenterOptions.length === 0) return;
     setForm((current) => {
       const datacenter = current.datacenter.trim();
-      if (!datacenter || skuDatacenterSet.has(datacenter)) return current;
-      return { ...current, datacenter: "" };
+      if (datacenter && skuDatacenterSet.has(datacenter)) return current;
+      return { ...current, datacenter: skuDatacenterDefault };
     });
-  }, [skuDrawer, e5Loading, skuDatacenterOptions.length, skuDatacenterSet]);
+  }, [skuDrawer, e5Loading, skuDatacenterOptions.length, skuDatacenterSet, skuDatacenterDefault]);
 
   const refreshCurrentSkuMediaPreview = useCallback(async (assetId?: string) => {
     if (!assetId) return;
@@ -871,8 +872,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
     if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
     const datacenter = form.datacenter.trim();
-    if (datacenter && !skuDatacenterSet.has(datacenter)) {
-      setForm({ ...form, datacenter: "" });
+    if (!datacenter || !skuDatacenterSet.has(datacenter)) {
+      if (!skuDatacenterDefault) {
+        setToast("请先在 E5 配置至少一个数据中心,再保存 SKU");
+        return;
+      }
+      setForm({ ...form, datacenter: skuDatacenterDefault });
     }
     const poolErr = validateSkuUnlockPool();
     if (poolErr) { setToast(poolErr); return; }
@@ -1012,7 +1017,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <label className="col" style={{ gap: 5 }}>
               <span className="muted tiny">数据中心 datacenter<span style={{ color: "var(--ink-4)" }}> · 选 E5 数据中心(前端展示名称)· 在 E5 运维增删改</span></span>
               <select className="fld" value={form.datacenter} onChange={(e) => setForm({ ...form, datacenter: e.target.value })}>
-                <option value="">— 未指定 —</option>
+                {skuDatacenterOptions.length === 0 && <option value="">E5 暂无数据中心</option>}
                 {skuDatacenterOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>

@@ -63,6 +63,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       action: `提现参数调整 · ${label}`,
       detail: "保存后立即影响提现审核；放松资金流出限制时会先做覆盖率红线校验。",
       amplifies,
+      coverage: params ? { coverageRatio: params.coverageRatio, redlinePct: params.redlinePct } : undefined,
       edit: { kind: "number", current, unit },
       run: (reason, value) => {
         if (!value?.trim()) {

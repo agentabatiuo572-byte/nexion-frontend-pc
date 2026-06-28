@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  advanceG3CurrentFrame,
   fetchG3MarketHistory,
   fetchG3MarketOverview,
   updateG3Control,
@@ -276,6 +277,19 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     },
   });
 
+  const advanceFrame = () => openActionConfirm({
+    action: "手动推进行情生效日",
+    detail: <>将当前生效日从 D{curDay} 推进到 {curDay >= 7 ? "D1" : `D${curDay + 1}`}，由后端写入当前帧与全站现价单源，并产生日推进审计。自动排程仍按当前配置继续执行。</>,
+    amplifies: false,
+    run: (reason) => {
+      void mutate(
+        "advance-frame",
+        () => advanceG3CurrentFrame(reason, OPERATOR),
+        "行情生效日已手动推进 · 已同步现价单源",
+      );
+    },
+  });
+
   const W = 760;
   const H = 180;
   const P = 30;
@@ -303,7 +317,10 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         <div className="l-h">
           <span className="ttl">周曲线关键帧(7 天 × 3 项 · 逐值权威)</span>
           <span className="sub">· 点任意单元格改值(操作确认)· 当前生效日高亮 · 黄色 = 与昨日不同 · ★ 周峰值</span>
-          <div className="r"><span className="bdg ok">自动按日推进 · 可调时间</span></div>
+          <div className="r">
+            <span className="bdg ok">自动按日推进 · 可调时间</span>
+            <button className="l-btn sm mc" disabled={busy} onClick={advanceFrame}>手动推进一日</button>
+          </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="dial-tbl" style={{ minWidth: 680 }}>

@@ -67,10 +67,41 @@ function isDailyLimitExceeded(row: D2Withdrawal, dailyLimitCount: number) {
   return Number(row.withdrawalCount24h || 0) > dailyLimitCount;
 }
 
+function isKycApproved(row: D2Withdrawal) {
+  const status = row.kycStatus.toUpperCase();
+  return status === "VERIFIED" || status === "APPROVED";
+}
+
+function isUserActive(row: D2Withdrawal) {
+  return row.userStatus.toUpperCase() === "ACTIVE";
+}
+
+function hasBlockingRisk(row: D2Withdrawal) {
+  const hitRules = row.hitRules.trim().toUpperCase();
+  return row.riskScore >= 70 || (hitRules !== "" && !["[]", "{}", "NULL", "NONE", "-", "—"].includes(hitRules));
+}
+
+function approveBlockReason(row: D2Withdrawal, dailyLimitCount: number) {
+  if (isDailyLimitExceeded(row, dailyLimitCount)) return "超日限";
+  if (!isKycApproved(row)) return "KYC未通过";
+  if (!isUserActive(row)) return "账户受限";
+  if (hasBlockingRisk(row)) return "风险待处理";
+  return "";
+}
+
 function errorText(err: unknown) {
   const message = err instanceof Error ? err.message : "D2 审核失败";
   if (message === "WITHDRAWAL_DAILY_LIMIT_EXCEEDED") {
     return "已超过 D5 每日提现次数，请先调整 D5 日限或延迟处理";
+  }
+  if (message === "WITHDRAWAL_KYC_NOT_APPROVED") {
+    return "KYC 未通过，不能直接放行提现";
+  }
+  if (message === "WITHDRAWAL_USER_STATUS_BLOCKED") {
+    return "用户账户不是 ACTIVE 状态，不能直接放行提现";
+  }
+  if (message === "WITHDRAWAL_RISK_HIT_BLOCKED") {
+    return "提现命中高风险或风险规则，不能直接放行提现";
   }
   return message;
 }
@@ -158,11 +189,12 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const label = actionLabel(action);
     if (action === "APPROVE" || action === "UNFREEZE") {
       const limitHint = `24h 次数 ${row.withdrawalCount24h}/${dailyLimitCount}`;
-      const blockedHint = isDailyLimitExceeded(row, dailyLimitCount) ? "，已超过 D5 日限" : "";
+      const blockedHint = action === "APPROVE" ? approveBlockReason(row, dailyLimitCount) : "";
       openActionConfirm({
         action: `${label}提现 · ${row.withdrawalNo}`,
-        detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，${limitHint}${blockedHint}；放大资金流出方向会走覆盖率预检。`,
+        detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，${limitHint}${blockedHint ? `；当前阻断：${blockedHint}` : ""}；放大资金流出方向会走覆盖率预检。`,
         amplifies: true,
+        coverage: d5Params ? { coverageRatio: d5Params.coverageRatio, redlinePct: d5Params.redlinePct } : undefined,
         run: (reason) => void runReview(row, action, reason),
       });
       return;
@@ -229,7 +261,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                   <tr key={row.withdrawalNo}>
                     <td className="mono" style={{ color: "var(--ink)" }}>{row.withdrawalNo}</td>
                     <td className="mono">{row.userNo}</td>
-                    <td>{row.nickname}<div className="mono" style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.kycStatus}</div></td>
+                    <td>{row.nickname}<div className="mono" style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.userStatus} · KYC {row.kycStatus}</div></td>
                     <td>{row.asset} / {row.chain}</td>
                     <td className="num mono" style={{ color: "var(--ink)", fontWeight: 700 }}>{money(row.amount)}</td>
                     <td className="num mono">{money(row.fee)}</td>
@@ -241,15 +273,16 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
                         {availableActions(row).map((action) => {
-                          const disabled = action === "APPROVE" && dailyBlocked;
+                          const approveReason = action === "APPROVE" ? approveBlockReason(row, dailyLimitCount) : "";
+                          const disabled = action === "APPROVE" && approveReason !== "";
                           return (
                             <button
                               key={action}
                               className={`l-btn sm ${action === "APPROVE" || action === "UNFREEZE" ? "mc" : ""}`}
                               disabled={disabled}
-                              title={disabled ? "已超过 D5 每日提现次数" : undefined}
+                              title={disabled ? approveReason : undefined}
                               onClick={() => confirmReview(row, action)}>
-                              {disabled ? "超日限" : actionLabel(action)}
+                              {disabled ? approveReason : actionLabel(action)}
                             </button>
                           );
                         })}
