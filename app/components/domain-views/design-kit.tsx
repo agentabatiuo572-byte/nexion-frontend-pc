@@ -506,7 +506,7 @@ function initEditValue(spec?: EditSpec | null): string {
 }
 
 export type BusinessFormSpec =
-  | { kind: "role-select"; currentRole: string; currentTier?: "lead" | "member" | string; roles: RoleOption[]; guardHint?: string;
+  | { kind: "role-select"; currentRole: string; roles: RoleOption[]; guardHint?: string;
       /** 可选:传入全域动作 + 各角色授权向量,启用「角色变更权限 diff 预览」(新增/移除/受影响域)。 */
       actions?: { label: string; domainGroup?: string }[]; grantsByRole?: Record<string, string[]> }
   | { kind: "identity-verify"; subject: string; channels?: string[]; ticketHint?: string }
@@ -681,7 +681,7 @@ const DEFAULT_LANGUAGE_SCOPES = ["en+zh", "zh", "en"];
 function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (!spec) return {};
   if (spec.kind === "role-select") {
-    return { role: spec.currentRole, tier: spec.currentTier === "lead" ? "lead" : "member" };
+    return { role: spec.currentRole };
   }
   if (spec.kind === "permission-matrix") {
     return Object.fromEntries(spec.roles.map((r) => [`grant.${r.key}`, r.current]));
@@ -794,7 +794,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return {
       name: spec.currentName ?? "",
       scene: spec.currentScene ?? spec.scenes?.[0] ?? "监管点名",
-      owner: spec.currentOwner ?? spec.owners?.[0] ?? "风控 lead",
+      owner: spec.currentOwner ?? spec.owners?.[0] ?? "风控",
       sla: spec.currentSla ?? "15 分钟",
       emergencyTrack: spec.currentEmergencyTrack === false ? "false" : "true",
       actionSeq: spec.currentActionSeq ?? "",
@@ -871,7 +871,6 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   };
   if (spec.kind === "role-select") {
     needs("role", "目标角色");
-    needs("tier", "层级");
   } else if (spec.kind === "permission-matrix") {
     spec.roles.forEach((r) => needs(`grant.${r.key}`, `${r.label} 授权`));
     if (!spec.roles.some((r) => (state[`grant.${r.key}`] ?? r.current) !== r.current)) {
@@ -1056,7 +1055,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
 
 function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFormValue): string | undefined {
   if (!spec) return undefined;
-  if (spec.kind === "role-select") return `${state.role}${state.tier === "lead" ? "/lead" : ""}`;
+  if (spec.kind === "role-select") return state.role;
   if (spec.kind === "permission-matrix") return spec.roles.map((r) => state[`grant.${r.key}`]).join("/");
   if (spec.kind === "copy-edit") return state.version;
   if (spec.kind === "version-authoring") return state.version;
@@ -1196,7 +1195,6 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
         <label>业务表单 · 改角色</label>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("role", "目标角色 role", spec.roles.map((r) => r.key), "role-select-target")}
-          {select("tier", "层级 tier", ["member", "lead"], "role-select-tier")}
         </div>
         <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
           {spec.roles.map((r) => (
@@ -1206,7 +1204,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           ))}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          当前 <span className="mono">{spec.currentRole}{spec.currentTier === "lead" ? "/lead" : "/member"}</span> → 目标 <span className="mono">{businessNewValue(spec, value)}</span>
+          当前 <span className="mono">{spec.currentRole}</span> → 目标 <span className="mono">{businessNewValue(spec, value)}</span>
           {spec.guardHint ? <> · {spec.guardHint}</> : null}
         </div>
         {spec.actions && spec.grantsByRole && (() => {
@@ -1719,7 +1717,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "剧本名称 name", spec.nameHint ?? "如 监管点名快速止血")}
           {select("scene", "触发场景 scene", spec.scenes ?? ["监管点名", "对账缺口", "挤兑预警", "数据泄露", "制裁名单更新"])}
-          {select("owner", "责任角色 owner", spec.owners ?? ["风控 lead", "合规审计", "超管", "财务 lead"])}
+          {select("owner", "责任角色 owner", spec.owners ?? ["风控", "合规审计", "超管", "财务"])}
           {input("sla", "SLA(响应时限)", "15 分钟")}
         </div>
         <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>

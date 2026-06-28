@@ -7,7 +7,7 @@
  *  - 调参传 edit:回滚(text/current=v)/ 发布披露新版(text/current=j.v)/ 调整受限动作范围(text/current);
  *  - 处置不传 edit:发布信任版块 / 下架信任版块。
  * amplifies 全为 false —— I4 不碰 B1(条款重签不是熔断、不动账本)。
- * 凭据 / 合规铁律:披露全链 操作员 = 风控,执行门槛 = 风控 lead / 超管;详情文案体现这一点。
+ * 凭据 / 合规铁律:披露全链 操作员 = 风控,执行门槛 = 风控 / 超管;详情文案体现这一点。
  */
 import { useState } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
@@ -91,7 +91,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       detail: (
         <>
           对外信任内容上线,发布后 /trust 页即时换新。<b>执行门槛:{s.roleGate}</b>
-          {s.highSensitivity && "(对外财务/代币叙事是高敏合规面,内容主管无权放行)"}。审计必须带「数据来源」与「对外披露(非内部账本)」标注;带防重号。
+          {s.highSensitivity && "(对外财务/代币叙事是高敏合规面,内容角色无权放行)"}。审计必须带「数据来源」与「对外披露(非内部账本)」标注;带防重号。
         </>
       ),
       amplifies: false,
@@ -136,7 +136,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       action: <>草拟披露新版(SFC · v13 draft)· 风控提交</>,
       detail: (
         <>
-          7 章节逐章改;中英两份镜像同步(占位符一致)。草稿不生效;发布走「执行门槛:风控 lead/超管」操作确认并触发该法域重确认。
+          7 章节逐章改;中英两份镜像同步(占位符一致)。草稿不生效;发布走「执行门槛:风控/超管」操作确认并触发该法域重确认。
         </>
       ),
       amplifies: false,
@@ -167,7 +167,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       action: <>配置法域 × 版本映射(风控提交 · 操作确认)</>,
       detail: (
         <>
-          增法域、改某法域的生效版本映射都在这里;版本号只增不减。改映射等同给该法域换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 lead / 超管</b>。
+          增法域、改某法域的生效版本映射都在这里;版本号只增不减。改映射等同给该法域换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 / 超管</b>。
         </>
       ),
       chips: [
@@ -186,7 +186,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       action: <>发布披露新版 · {j.code} {j.v} → 新版</>,
       detail: (
         <>
-          <b>合规关键动作</b>:发布即把 {j.code} 法域全部用户的确认状态标成过期(stale),受限动作(提现等)在重确认前被服务器拦截;重确认提醒自动经通知页(I3)<b>critical</b> 通道下发。<b>发起人必须是风控,执行门槛 = 风控 lead / 超管</b>;内容角色草拟的文本由风控提交。中英镜像与占位符校验通过才能发;带防重号。监管点名当天可走此路径即时改条款。
+          <b>合规关键动作</b>:发布即把 {j.code} 法域全部用户的确认状态标成过期(stale),受限动作(提现等)在重确认前被服务器拦截;重确认提醒自动经通知页(I3)<b>critical</b> 通道下发。<b>发起人必须是风控,执行门槛 = 风控 / 超管</b>;内容角色草拟的文本由风控提交。中英镜像与占位符校验通过才能发;带防重号。监管点名当天可走此路径即时改条款。
         </>
       ),
       amplifies: false,
@@ -221,7 +221,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           {on
             ? <>把 <b>{g.name}</b> 移出受限范围:确认状态过期时<b>不再拦截</b>该动作。<b>缩小范围等于放松合规拦截</b>,确认时写清依据。</>
             : <>把 <b>{g.name}</b> 纳入受限范围:确认状态过期时拦截该动作。</>}
-          {" "}风控提交,风控 lead / 超管执行。
+          {" "}风控提交,风控 / 超管执行。
         </>
       ),
       amplifies: false,
@@ -348,7 +348,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">披露矩阵(I4 · 披露)· version × jurisdiction</span>
-          <span className="sub">· 风控提交 · 风控 lead / 超管执行</span>
+          <span className="sub">· 风控提交 · 风控 / 超管执行</span>
           <div className="r">
             <span className="icode danger">合规关键 · 风控确认</span>
             <button className="l-btn sm mc" onClick={draftDisclosure}>草拟新版(SFC v13)</button>
@@ -405,7 +405,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="itint danger">
-            <b>披露全链 操作员 = 风控、执行门槛 = 风控 lead / 超管;内容仅草拟。re-ack 非熔断闸,不入 J1/J2。</b>
+            <b>披露全链 操作员 = 风控、执行门槛 = 风控 / 超管;内容仅草拟。re-ack 非熔断闸,不入 J1/J2。</b>
           </div>
           {disclosureDraft && disclosureDraft.version && disclosureDraft.zh && disclosureDraft.en && (
             <div className="itint cyan" data-proof="disclosure-draft-preview" style={{ marginTop: 10 }}>
@@ -531,7 +531,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       </section>
 
       <p className="f-foot">
-        <b>执行门槛(两套,别混)</b>:信任中心(I4)= 内容执行门槛:一般版块内容主管,<b>财务数字 / NEX 叙事 / 对外合规声明类必须合规或超管执行</b>(财务角色对数字口径有知情确认职能,但仅为知情职能);风险披露(I4)= <b>风控执行门槛:风控 lead / 超管</b>,内容角色只能草拟、不能提交——条款是合规命脉,不给内容主管单独放行的口子。<b>事件去向</b>:版块曝光喂 BI(信任→转化间接归因);披露确认 / 重确认触发 / 拦截三类事件喂合规覆盖看板(L 域)和风控(K 域,拦截数是闸有效性信号)。披露类事件的归类登记(disclosure 域)是 BI 上线前必办工单,占位期按临时编号入库
+        <b>执行门槛(两套,别混)</b>:信任中心(I4)= 内容执行门槛:一般版块内容角色,<b>财务数字 / NEX 叙事 / 对外合规声明类必须合规或超管执行</b>(财务角色对数字口径有知情确认职能,但仅为知情职能);风险披露(I4)= <b>风控执行门槛:风控 / 超管</b>,内容角色只能草拟、不能提交——条款是合规命脉,不给内容角色单独放行的口子。<b>事件去向</b>:版块曝光喂 BI(信任→转化间接归因);披露确认 / 重确认触发 / 拦截三类事件喂合规覆盖看板(L 域)和风控(K 域,拦截数是闸有效性信号)。披露类事件的归类登记(disclosure 域)是 BI 上线前必办工单,占位期按临时编号入库
         <span title="§2.4.3 domain 枚举扩展 · V4 内容批次 · blocking">。</span>
       </p>
       <PaginationExemptionList
@@ -641,7 +641,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           </div>
           <div className="kv">
             <span className="k">操作 / 留痕</span>
-            <span className="v">风控 / 风控 lead 或超管</span>
+            <span className="v">风控 / 超管</span>
           </div>
           <div className="kv">
             <span className="k">法域判定输入</span>

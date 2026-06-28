@@ -9,13 +9,12 @@
 
 ## 操作目标
 
-创建账号或变更账号角色。必须提供结构化角色选择, 不能要求操作者手写 `finance/lead` 这类编码。
+创建账号或变更账号角色。必须提供结构化角色选择, 不能要求操作者手写角色编码。
 
 ## 必须控件
 
 - target operator readonly, 新建时为 email/display name
 - role select: super, finance, risk, growth, content, support, audit
-- lead/member segmented control
 - permission summary preview
 - effective superadmin count preview
 - audit reason textarea
@@ -23,7 +22,6 @@
 ## 写入 action
 
 - `A.acct.<id>.role`
-- `A.acct.<id>.tier`
 - 新建时 `A.acct.<newId>.status`
 - A2 audit: `admin.operator_role_changed` / `admin.operator_created`
 

@@ -1,3 +1,4 @@
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 
@@ -47,7 +48,7 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
   const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
 
   if (!response.ok || !result || result.code !== 0 || !result.data?.session) {
-    throw new Error(result?.message || "ADMIN_CREDENTIAL_INVALID");
+    throw new Error(formatAdminApiError(result?.message, "ADMIN_CREDENTIAL_INVALID"));
   }
 
   return {

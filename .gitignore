@@ -30,6 +30,8 @@ next-env.d.ts
 # playwright / browser self-check artifacts
 /.playwright-mcp/
 /.codex-run/
+/playwright-report/
+/test-results/
 *.png
 
 # scratch / exploration / temp (非产品代码,勿托管)
@@ -45,4 +47,6 @@ node_modules/
 
 # dev server 日志（勿入库）
 .dev-3002.log
+codex-*.log
+/.codex-*.log
 /logs/

@@ -1,4 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -428,7 +429,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(result?.message || `USERS_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result?.message, `USERS_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;
@@ -447,6 +448,59 @@ export async function fetchUserProfilesPage(query: UserProfileQuery = {}) {
   const pageSize = query.pageSize ?? 10;
   const page = await usersRequest<PageResult<User360Profile>>(`/profiles${queryString({ ...query, pageNum, pageSize })}`);
   return normalizePage(page, pageNum, pageSize);
+}
+
+function filenameFromDisposition(disposition: string | null, fallback: string) {
+  if (!disposition) return fallback;
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  }
+  return disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? fallback;
+}
+
+export async function exportUserProfilesExcel(
+  reason: string,
+  query: UserProfileQuery = {},
+  operator = "superadmin",
+) {
+  const response = await fetch("/api/admin/users/profiles/export", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey("c1-user-profile-export"),
+    },
+    body: JSON.stringify({
+      keyword: query.keyword,
+      status: query.status,
+      kycStatus: query.kycStatus,
+      riskMin: query.riskMin,
+      reason,
+      operator,
+    }),
+    cache: "no-store",
+  });
+
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!response.ok || contentType.includes("application/json")) {
+    const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
+    if (isAdminAuthFailure(response.status, result?.message)) {
+      resetAdminSession();
+    }
+    throw new Error(formatAdminApiError(result?.message, `USERS_EXPORT_FAILED_${response.status}`));
+  }
+
+  return {
+    blob: await response.blob(),
+    fileName: filenameFromDisposition(
+      response.headers.get("Content-Disposition"),
+      `c1-masked-users-${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-")}.xls`,
+    ),
+  };
 }
 
 export async function fetchUserAssetAdjustmentOverview() {
@@ -579,7 +633,7 @@ export async function updateUserStatus(userId: number | string, status: UserStat
   return usersRequest<User360Profile>(`/profiles/${encodeURIComponent(String(userId))}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, reason, operator }),
-    idempotencyPrefix: "c1-user-status",
+    idempotencyPrefix: "c2-user-status",
   });
 }
 
@@ -587,7 +641,7 @@ export async function revokeUserSessions(userId: number | string, reason: string
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/sessions/revoke-all`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c5-user-revoke-sessions",
+    idempotencyPrefix: "c2-user-revoke-sessions",
   });
 }
 
@@ -595,7 +649,7 @@ export async function startUserImpersonation(userId: number | string, reason: st
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/impersonations`, {
     method: "POST",
     body: JSON.stringify({ ttlMinutes, reason, operator }),
-    idempotencyPrefix: "c1-user-impersonation",
+    idempotencyPrefix: "c2-user-impersonation-start",
   });
 }
 

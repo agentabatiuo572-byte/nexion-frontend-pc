@@ -246,7 +246,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
         </section>
       </div>
 
-      <p className="f-foot"><b>封锁在服务器入口生效、客户端绕不过</b>:<AutoGloss>封锁名单以服务器为准,被封国家的 IP 会在入口</AutoGloss><b>直接被拒</b>。<AutoGloss>地区靠</AutoGloss><b>访问 IP 判定</b>(<AutoGloss>和「风险提示书」按 IP+国籍判定是两套机制</AutoGloss>)。<AutoGloss>每个功能入口可以单独设封锁国家,也可默认继承全局黑名单。名单变更要</AutoGloss><b>风控 lead / 超管执行操作确认</b>(<AutoGloss>财务不参与</AutoGloss>),<AutoGloss>每次都留完整审计记录。</AutoGloss></p>
+      <p className="f-foot"><b>封锁在服务器入口生效、客户端绕不过</b>:<AutoGloss>封锁名单以服务器为准,被封国家的 IP 会在入口</AutoGloss><b>直接被拒</b>。<AutoGloss>地区靠</AutoGloss><b>访问 IP 判定</b>(<AutoGloss>和「风险提示书」按 IP+国籍判定是两套机制</AutoGloss>)。<AutoGloss>每个功能入口可以单独设封锁国家,也可默认继承全局黑名单。名单变更要</AutoGloss><b>风控 / 超管执行操作确认</b>(<AutoGloss>财务不参与</AutoGloss>),<AutoGloss>每次都留完整审计记录。</AutoGloss></p>
     </div>
   );
 }

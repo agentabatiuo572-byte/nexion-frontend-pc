@@ -103,7 +103,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     businessForm: {
       kind: "sop-authoring",
       nameHint: p.name,
-      owners: [p.owner, "风控 lead", "合规审计", "超管"],
+      owners: [p.owner, "风控", "合规审计", "超管"],
       notifyTemplates: emergency.notifyTemplates ?? [],
       actionOptions: data.actionOptions ?? [],
       rollbackOptions: data.rollbackOptions ?? [],

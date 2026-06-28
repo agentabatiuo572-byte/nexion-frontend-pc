@@ -1,3 +1,5 @@
+import { formatAdminApiError } from "@/lib/admin/error-messages";
+
 export const E5_MAX_DEVICES = 6;
 
 export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "unbound" | "abnormal";
@@ -206,7 +208,7 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(result?.message || `E5_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result?.message, `E5_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;

@@ -28,7 +28,7 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
   };
   const alertConfig = () => openActionConfirm({
     action: "配置篡改告警阈值 / 喂 K4 开关",
-    detail: <><b>账户级篡改告警频次阈值</b> · 当前 <b className="mono">{cur}</b>(范围 1–100 次/24h)· 超此频次单账户判为异常篡改告警。<b>篡改告警喂 K4 风险评分</b>:作弊信号作为风险评分输入。监控敏感度变更影响风控信号 · 风控 操作员 · 执行门槛:风控 lead / 超管  · 携 Idempotency-Key · A2 留痕。</>,
+    detail: <><b>账户级篡改告警频次阈值</b> · 当前 <b className="mono">{cur}</b>(范围 1–100 次/24h)· 超此频次单账户判为异常篡改告警。<b>篡改告警喂 K4 风险评分</b>:作弊信号作为风险评分输入。监控敏感度变更影响风控信号 · 风控 操作员 · 执行门槛:风控 / 超管  · 携 Idempotency-Key · A2 留痕。</>,
     edit: { kind: "text", current: cur },
     run: (reason, newValue) => {
       const next = newValue ?? cur;

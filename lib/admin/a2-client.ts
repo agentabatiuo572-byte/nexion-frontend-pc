@@ -310,6 +310,31 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   return result.data as T;
 }
 
+function fileNameFromContentDisposition(header: string | null, fallback: string) {
+  if (!header) return fallback;
+  const encoded = header.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.replace(/^"|"$/g, ""));
+    } catch {
+      return encoded.replace(/^"|"$/g, "");
+    }
+  }
+  return header.match(/filename="?([^";]+)"?/i)?.[1] ?? fallback;
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  if (typeof document === "undefined") return;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function fetchA2Overview() {
   return normalizeOverview(await a2Request<BackendOverview>("/overview"));
 }
@@ -355,11 +380,26 @@ export async function createA2OperationProposal(input: {
 }
 
 export async function exportA2Audit(reason: string, filter: Record<string, unknown>) {
-  return a2Request<{ jobNo: string; status: string; idempotencyKey: string; createdAt: string }>("/exports", {
+  const response = await fetch("/api/admin/platform/audit/exports", {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey("a2-audit-export"),
+    },
     body: JSON.stringify({ reason, filter }),
-    idempotencyPrefix: "a2-audit-export",
+    cache: "no-store",
   });
+  if (!response.ok) {
+    const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
+    throw new Error(formatAdminApiError(result?.message, `A2_AUDIT_EXPORT_FAILED_${response.status}`));
+  }
+  const blob = await response.blob();
+  const fileName = fileNameFromContentDisposition(
+    response.headers.get("Content-Disposition"),
+    `a2-audit-${Date.now()}.xls`,
+  );
+  downloadBlob(blob, fileName);
+  return { fileName, size: blob.size };
 }
 
 export async function updateA2MechanismParam(paramKey: string, value: string, reason: string, operator: string) {

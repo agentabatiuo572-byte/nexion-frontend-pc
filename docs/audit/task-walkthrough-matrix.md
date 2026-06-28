@@ -28,7 +28,7 @@ This matrix converts runtime route/action evidence into persona task status. A t
 
 | ID | Persona Task | Target Surface | Status | Blocking Evidence |
 |---|---|---|---|---|
-| AT-001 | Superadmin creates operator account and changes role | Admin RBAC | verified | `SPEC-L2a03`: role-select proof persisted `op-041` role/tier as `finance/lead` after reopening `/platform/rbac`; browser evidence confirms 7 role options, member/lead controls, and reason-disabled confirm |
+| AT-001 | Superadmin creates operator account and changes role | Admin RBAC | verified | `SPEC-L2a03`: role-select proof persisted `op-041` role as `finance` after reopening `/platform/rbac`; browser evidence confirms 7 role options and reason-disabled confirm |
 | AT-002 | Superadmin changes permission matrix | Admin RBAC | verified | `SPEC-L2a03`: permission-matrix proof changed support grant to `R`, wrote audit, survived route reopen, and browser evidence confirms no-diff disabled plus `客服:-→R` diff preview |
 | AT-003 | Content operator edits/repairs localized copy | Admin i18n/learn | verified | `SPEC-L2a02`: i18n edit guard rejects missing placeholders, then persists zh/en draft preview after refresh; repair updates integrity count; AD-09 sampler `businessIncompleteModal=0` |
 | AT-004 | Content operator creates a course | Admin i18n/learn | verified | `SPEC-L2a02`: course-authoring proof persisted slug/category/format/difficulty/duration/reward/publishState/title/body and visible draft row after reopen |

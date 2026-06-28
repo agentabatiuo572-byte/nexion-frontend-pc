@@ -108,12 +108,8 @@ function operatorDisplayLabel(op: Pick<A1Operator, "name" | "email">) {
   return email && email !== name ? `${name}(${email})` : name;
 }
 
-function operatorAuditTarget(op: Pick<A1Operator, "name" | "email">) {
-  return op.email?.trim() || operatorDisplayName(op);
-}
-
 export function A1Accounts({ ctx }: { ctx: ACtx }) {
-  const { toast, openActionConfirm, logAudit } = ctx;
+  const { toast, openActionConfirm } = ctx;
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "superadmin");
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? null);
   const currentSessionRole = useAdminAuth((s) => s.session?.role ?? s.role);
@@ -152,17 +148,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       action: string,
       work: () => Promise<unknown>,
       success: string,
-      audit?: { target: string; reason: string },
     ) => {
       setMutatingAction(action);
       try {
         await work();
-        // A1 账号治理走真后端(a1-client REST),后端落 server 侧审计;此处补一条 platform-config
-        // A2 审计镜像,使原型 A2 审计页可见、且 backend-replaceable(高敏动作必留痕,见 a-tabs/types §④)。
-        // 集中在唯一写动作 chokepoint 落审计:任何账号治理动作只要传 audit 就不会漏写。
-        if (audit) {
-          logAudit({ actor: operator, action, target: audit.target, reason: audit.reason });
-        }
         await refreshOverview(true);
         toast(success);
       } catch (error) {
@@ -171,7 +160,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         setMutatingAction(null);
       }
     },
-    [refreshOverview, toast, logAudit, operator],
+    [refreshOverview, toast],
   );
 
   const roles = ROLE_DEFS;
@@ -270,7 +259,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           `变更角色 ${displayName} → ${roleName(roles, roleStr)}`,
           () => changeA1AccountRole(op.id, roleStr, reason, operator),
           `${displayName} 角色已变更为 ${roleName(roles, roleStr)}`,
-          { target: operatorAuditTarget(op), reason },
         );
       },
     });
@@ -304,7 +292,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         `重置双因子 ${operatorDisplayName(op)}`,
         () => resetA1Account2fa(op.id, `${reason}；${verify}`, operator),
         `${operatorDisplayName(op)} 双因子重置已提交 · 该账号需重新绑定`,
-        { target: operatorAuditTarget(op), reason: `${reason}；${verify}` },
       );
     },
   });
@@ -330,7 +317,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           `禁用账号 ${displayName}`,
           () => updateA1AccountStatus(op.id, "disabled", reason, operator),
           `${displayName} 已禁用 · 活跃 session 已由后端吊销`,
-          { target: operatorAuditTarget(op), reason },
         );
       },
     });
@@ -350,7 +336,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         `启用账号 ${operatorDisplayName(op)}`,
         () => updateA1AccountStatus(op.id, "enabled", reason, operator),
         `${operatorDisplayName(op)} 已启用`,
-        { target: operatorAuditTarget(op), reason },
       );
     },
   });
@@ -379,7 +364,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           `强制登出 ${displayName}`,
           () => revokeA1AccountSessions(op.id, reason, operator),
           `${displayName} 全部 session 已强制登出`,
-          { target: operatorAuditTarget(op), reason },
         );
       },
     });
@@ -428,7 +412,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           `调整安全基线 ${baseline.name}`,
           () => updateA1SecurityBaseline(backendKey, backendValue, reason, operator),
           `${baseline.name} 已调整为 ${n} ${baseline.unit}(对下一次登录签发生效)`,
-          { target: `${backendKey}=${backendValue}`, reason },
         );
       },
     });
@@ -470,7 +453,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           `变更授权 ${row.action}`,
           () => updateA1RbacGrants(row.id, grants, reason, operator),
           `${row.action} 授权变更已发布`,
-          { target: row.id, reason },
         );
       },
     });
@@ -496,7 +478,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         `登记新动作行 ${action}`,
         () => createA1RbacAction(action, domainGroup, reason, operator),
         `动作 ${action} 已登记到 RBAC 总表`,
-        { target: action, reason },
       );
     },
   });
@@ -524,7 +505,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           `新建运营账号 ${form.displayName}(${roleName(roles, form.role)})`,
           () => createA1Account(form, finalReason, operator),
           `账号 ${form.displayName} 已创建`,
-          { target: form.email, reason: finalReason },
         );
         setNaOpen(false);
       },

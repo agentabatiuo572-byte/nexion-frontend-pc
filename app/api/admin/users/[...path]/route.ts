@@ -53,6 +53,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "profiles") {
     return "/api/admin/users/profiles";
   }
+  if (parts.length === 2 && parts[0] === "profiles" && parts[1] === "export") {
+    return "/api/admin/users/profiles/export";
+  }
   if (parts.length === 1 && parts[0] === "sessions") {
     return "/api/admin/users/sessions";
   }
@@ -139,12 +142,17 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
-    return new Response(await upstream.text(), {
+    const responseHeaders = new Headers({
+      "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+      "Cache-Control": "no-store",
+    });
+    const disposition = upstream.headers.get("Content-Disposition");
+    if (disposition) {
+      responseHeaders.set("Content-Disposition", disposition);
+    }
+    return new Response(await upstream.arrayBuffer(), {
       status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
-        "Cache-Control": "no-store",
-      },
+      headers: responseHeaders,
     });
   } catch {
     return jsonError(503, "USERS_BACKEND_UNAVAILABLE");

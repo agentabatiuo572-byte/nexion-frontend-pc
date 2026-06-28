@@ -1,3 +1,5 @@
+import { formatAdminApiError } from "@/lib/admin/error-messages";
+
 interface ApiResult<T> {
   code: number;
   message?: string;
@@ -64,7 +66,7 @@ async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPre
   });
   const result = (await response.json()) as ApiResult<T>;
   if (!response.ok || result.code !== 0) {
-    throw new Error(result.message || `GROWTH_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result.message, `GROWTH_REQUEST_FAILED_${response.status}`));
   }
   return result.data as T;
 }

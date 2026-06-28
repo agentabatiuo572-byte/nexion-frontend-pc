@@ -1,3 +1,4 @@
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 import type {
   AdvisorScript,
   CustomerProfile,
@@ -196,7 +197,6 @@ export type MSupportAgent = {
   name: string;
   email: string;
   adminRole: string;
-  adminTier: string;
   status: string;
   position: string;
   serviceTypes: MSupportServiceType[];
@@ -292,7 +292,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(payload.message || `CONTENT_API_${res.status}`);
+    throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
   }
   return payload.data as T;
 }
@@ -595,7 +595,6 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     name,
     email: str(row.email, ""),
     adminRole: str(row.adminRole, ""),
-    adminTier: str(row.adminTier, ""),
     status: str(row.status, "ACTIVE"),
     position: str(row.position, "一线客服"),
     serviceTypes: serviceTypes.length ? serviceTypes : ["support"],

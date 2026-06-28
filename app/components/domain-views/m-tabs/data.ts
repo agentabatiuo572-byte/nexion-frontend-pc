@@ -531,7 +531,7 @@ export const SESSION_CONVOS: SessionConvo[] = [
  * 负载利用率 util% = (open 工单 + open 会话) / cap;非真实 presence。 */
 export type AgentMeta = { name: string; role: string; defaultCap: number };
 export const AGENT_ROSTER: AgentMeta[] = [
-  { name: "Marina K.", role: "资金客服 lead", defaultCap: 12 },
+  { name: "Marina K.", role: "资金客服主管", defaultCap: 12 },
   { name: "Tomas R.", role: "实名 / 合规客服", defaultCap: 10 },
   { name: "Hiro T.", role: "硬件支持", defaultCap: 10 },
   { name: "Aisha O.", role: "通用客服", defaultCap: 10 },

@@ -189,7 +189,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF1Error(null);
     },
     updateReward: async (level, id, patch, reason) => {
-      if (!patch.type) throw new Error("F1_REWARD_TYPE_REQUIRED");
+      if (!patch.type) throw new Error("请选择奖励类型。");
       setF1Overview(await updateF1VRankReward(level, id, {
         type: patch.type,
         amount: patch.amount,

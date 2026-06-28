@@ -105,12 +105,21 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
-    return new Response(await upstream.text(), {
+    const responseHeaders = new Headers({
+      "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+      "Cache-Control": "no-store",
+    });
+    const contentDisposition = upstream.headers.get("Content-Disposition");
+    const contentLength = upstream.headers.get("Content-Length");
+    if (contentDisposition) {
+      responseHeaders.set("Content-Disposition", contentDisposition);
+    }
+    if (contentLength) {
+      responseHeaders.set("Content-Length", contentLength);
+    }
+    return new Response(await upstream.arrayBuffer(), {
       status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
-        "Cache-Control": "no-store",
-      },
+      headers: responseHeaders,
     });
   } catch {
     return jsonError(503, "PLATFORM_BACKEND_UNAVAILABLE");

@@ -116,7 +116,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   };
   const genReport = (nm: string) => openActionConfirm({
     action: `生成监管报告 · ${nm}`,
-    detail: <><b>监管报送 = 数据出境敏感</b> · 模板:{nm} · 数据范围按辖区要求 · <b>关联 I5 当前披露版本 × 司法辖区</b> · 法务确认状态随任务流转 · 操作链:风控(操作员,兼合规确认)→ 超管 / 风控 lead(执行门槛)· 落 admin.report_exported(+ 披露版本 + 辖区)。</>,
+    detail: <><b>监管报送 = 数据出境敏感</b> · 模板:{nm} · 数据范围按辖区要求 · <b>关联 I5 当前披露版本 × 司法辖区</b> · 法务确认状态随任务流转 · 操作链:风控(操作员,兼合规确认)→ 超管 / 风控(执行门槛)· 落 admin.report_exported(+ 披露版本 + 辖区)。</>,
     run: async (reason) => {
       await ctx.biActions?.createReport({
         exportType: `监管报告 · ${nm}`,
@@ -133,7 +133,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   });
   const decryptExport = () => openActionConfirm({
     action: "解密导出 · masking_policy = decrypted",
-    detail: <><b>PII 解密明文导出 = 最高敏感档</b> · 解密字段:手机号 / 卡 token / 地址(按字段勾选)· <b>强操作确认 + 强制事由</b>(操作理由即强制事由,写入审计)· 操作员:风控 / 只读审计 → 执行门槛:超管 / 风控 lead · 落 admin.report_exported(解密字段清单 / 事由 / operator / role_gate)· A2 只追加,不可抵赖。</>,
+    detail: <><b>PII 解密明文导出 = 最高敏感档</b> · 解密字段:手机号 / 卡 token / 地址(按字段勾选)· <b>强操作确认 + 强制事由</b>(操作理由即强制事由,写入审计)· 操作员:风控 / 只读审计 → 执行门槛:超管 / 风控 · 落 admin.report_exported(解密字段清单 / 事由 / operator / role_gate)· A2 只追加,不可抵赖。</>,
     run: async (reason) => {
       await ctx.biActions?.createReport({
         exportType: "解密导出",
@@ -273,7 +273,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">监管报告生成</span>
           <span className="sub">· <AutoGloss>由风控同事手动发起,不会被应急剧本自动触发 · 报告会带上当前风险披露版本和对应辖区</AutoGloss></span>
-          <div className="r"><span className="lcode">操作员 = 风控 → 执行门槛 = 超管 / 风控 lead</span></div>
+          <div className="r"><span className="lcode">操作员 = 风控 → 执行门槛 = 超管 / 风控</span></div>
         </div>
         <div className="l-b">
           <div className="tpl-grid">

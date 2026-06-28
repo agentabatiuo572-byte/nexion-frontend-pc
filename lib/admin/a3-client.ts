@@ -1,4 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -182,7 +183,7 @@ async function a3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(result?.message || `A3_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result?.message, `A3_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;

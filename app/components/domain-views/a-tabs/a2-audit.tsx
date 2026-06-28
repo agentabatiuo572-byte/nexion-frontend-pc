@@ -94,6 +94,35 @@ function fmtHMS(seconds: number): string {
   return `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
 }
 
+type OperationMarker = {
+  key: string;
+  label: string;
+  className: string;
+};
+
+function operationMarkers(w: A2OperationRow): OperationMarker[] {
+  const markers: OperationMarker[] = [];
+  if (w.amplifies) {
+    markers.push({ key: "amplifies", label: "🔥 放大流出", className: "a2-amp" });
+  }
+  if (w.sos) {
+    markers.push({ key: "sos", label: "⚡ 应急轨", className: "a2-sos" });
+  }
+  if (markers.length > 0) {
+    return markers;
+  }
+  if (w.type === "acct") {
+    return [{ key: "acct", label: "账号/权限高敏", className: "a2-sensitive acct" }];
+  }
+  if (w.type === "param") {
+    return [{ key: "param", label: "参数高敏", className: "a2-sensitive param" }];
+  }
+  if (w.type === "fund") {
+    return [{ key: "fund", label: "资金高敏", className: "a2-sensitive fund" }];
+  }
+  return [{ key: "general", label: "高敏动作", className: "a2-sensitive" }];
+}
+
 /* ────────────────── 主组件 ────────────────── */
 
 export function A2Audit({ ctx }: { ctx: ACtx }) {
@@ -229,8 +258,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       okLabel: "导出",
       run: async (reason) => {
         try {
-          const job = await exportA2Audit(reason, { domain: dFlt });
-          toast(`导出任务已建:${job.jobNo} · 动作已由后端留痕`);
+          const file = await exportA2Audit(reason, { domain: dFlt });
+          toast(`已下载 ${file.fileName} · 导出动作已由后端留痕`);
           await refreshOverview();
         } catch (error) {
           toast(`导出失败:${error instanceof Error ? error.message : "A2_AUDIT_EXPORT_FAILED"}`);
@@ -447,10 +476,11 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     </td>
                     <td style={{ fontSize: 12 }}>{w.operator}</td>
                     <td>
-                      {w.amplifies && <span className="a2-amp">🔥 放大流出</span>}
-                      {w.amplifies && w.sos ? " " : null}
-                      {w.sos && <span className="a2-sos">⚡ 应急轨</span>}
-                      {!w.amplifies && !w.sos && <span style={{ color: "var(--ink-4)" }}>—</span>}
+                      <span className="a2-markers">
+                        {operationMarkers(w).map((marker) => (
+                          <span key={marker.key} className={marker.className}>{marker.label}</span>
+                        ))}
+                      </span>
                     </td>
                     <td>
                       <span className="a2-ttl">
@@ -734,8 +764,21 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   <b>🔥 放大资金流出</b>:提交时备付金覆盖率已过线;放行弹窗会再显示当前覆盖率,
                   恶化到红线下请驳回并注明。
                 </>
+              ) : w.sos ? (
+                <>
+                  <b>⚡ 应急轨高敏</b>:涉及熔断、恢复或紧急处置,核对值班授权、影响面和恢复条件后再裁决。
+                </>
+              ) : w.type === "acct" ? (
+                <>
+                  <b>账号/权限高敏</b>:A1 新增/禁用管理员、改角色、重置 2FA、强制登出、RBAC 调整都按高敏处理,
+                  审核时核对目标账号、申请角色和操作理由。
+                </>
+              ) : w.type === "param" ? (
+                <>
+                  <b>参数高敏</b>:参数会影响后续业务规则,审核时核对前后值、影响范围和回滚口径。
+                </>
               ) : (
-                <>非资金放大类:按动作说明核对前后值与原因即可。</>
+                <>高敏动作:按动作说明核对对象、前后值、影响范围与原因。</>
               )}
             </div>
             {isFinal && (

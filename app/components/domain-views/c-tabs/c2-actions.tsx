@@ -197,7 +197,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const resolveAccount = useCallback(async (rawValue: string | undefined) => {
     const raw = (rawValue ?? "").trim();
     if (!raw) {
-      throw new Error("USER_CODE_REQUIRED");
+      throw new Error("请选择用户。");
     }
     const needle = raw.toUpperCase();
     const local = accounts.find((account) =>
@@ -208,7 +208,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
     const detail = await fetchUser360(raw);
     if (!detail?.profile?.id) {
-      throw new Error("USER_NOT_FOUND");
+      throw new Error("没有找到对应用户,请重新选择。");
     }
     return detail.profile;
   }, [accounts]);

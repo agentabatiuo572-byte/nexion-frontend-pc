@@ -40,7 +40,7 @@ function asNumber(value: unknown, fallback = 0) {
 function errorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "C4_REQUEST_FAILED";
   if (message.includes("COVERAGE_BELOW_REDLINE")) {
-    return "COVERAGE_BELOW_REDLINE: B1 覆盖率低于红线,后端拒绝人工放开实名通过";
+    return "B1 兑付覆盖率低于红线,后端拒绝人工放开实名通过";
   }
   return message;
 }

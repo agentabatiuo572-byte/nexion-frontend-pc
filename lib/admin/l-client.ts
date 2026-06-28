@@ -1,3 +1,5 @@
+import { formatAdminApiError } from "@/lib/admin/error-messages";
+
 const OPERATOR = "superadmin";
 
 type ApiResult<T> = {
@@ -93,7 +95,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(payload.message || `BI_API_${res.status}`);
+    throw new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`));
   }
   return payload.data as T;
 }

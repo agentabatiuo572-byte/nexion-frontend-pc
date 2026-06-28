@@ -1,3 +1,5 @@
+import { formatAdminApiError } from "@/lib/admin/error-messages";
+
 interface ApiResult<T> {
   code: number;
   message?: string;
@@ -37,7 +39,7 @@ async function mediaRequest<T>(path: string, init?: RequestInit & { idempotencyP
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(result?.message || `MEDIA_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result?.message, `MEDIA_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;

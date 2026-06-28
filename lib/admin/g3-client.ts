@@ -1,4 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -245,7 +246,7 @@ async function g3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(result?.message || `G3_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result?.message, `G3_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;
@@ -278,7 +279,7 @@ export async function updateG3CurveFrame(
 ) {
   const frames = serializeFrames(overview.frames);
   const target = frames.find((frame) => frame.dayIndex === dayIndex);
-  if (!target) throw new Error("G3_CURVE_DAY_NOT_FOUND");
+  if (!target) throw new Error("G3 曲线日不存在,请刷新页面后重试。");
   target[field] = value;
   return normalizeOverview(await g3Request<BackendOverview>("/nex/curve", {
     method: "PUT",
