@@ -72,6 +72,10 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
     setParam(FAQ_KEY, JSON.stringify(faqs.map((f) => (f.id === id ? { ...f, status: "published", updatedAt: new Date().toISOString().slice(0, 10) } : f))), { action: `发布支持 FAQ ${id} · admin.support_faq_published`, reason: "FAQ 发布(例行,自动留档)" });
     toast(`${id} 已发布`);
   };
+  const unpublishFaq = (id: string) => {
+    setParam(FAQ_KEY, JSON.stringify(faqs.map((f) => (f.id === id ? { ...f, status: "draft", updatedAt: new Date().toISOString().slice(0, 10) } : f))), { action: `下架支持 FAQ ${id} · admin.support_faq_unpublished`, reason: "FAQ 下架(例行,自动留档)" });
+    toast(`${id} 已下架为草稿`);
+  };
 
   const saveSla = (cat: SupportTicketCategory, form: { firstResponseMins: string; resolutionHours: string; queue: string; escalation: string; reason: string }) => {
     const firstResponseMins = Number(form.firstResponseMins);
@@ -126,8 +130,9 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
                     发布
                   </button>
                 ) : (
-                  <button type="button" className="btn btn-ghost btn-icon btn-sm" title="编辑" onClick={() => toast(`已打开编辑器 · ${f.id}`)}>
-                    <Icon name="doc" size={16} />
+                  <button type="button" data-proof="support-faq-unpublish" className="btn btn-sec btn-sm" onClick={() => unpublishFaq(f.id)}>
+                    <Icon name="box" size={16} />
+                    下架
                   </button>
                 )}
               </div>

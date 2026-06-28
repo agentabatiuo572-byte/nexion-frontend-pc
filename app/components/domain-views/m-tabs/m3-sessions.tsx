@@ -315,6 +315,18 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   };
   const waitTransfer = () => {
     if (!selected?.transfer) return;
+    const now = Date.now();
+    const t = selected.transfer;
+    updateConvo(
+      selected.id,
+      (c) => ({
+        ...c,
+        lastTs: now,
+        messages: [...c.messages, { ts: now, sender: "agent", agentName: "系统", text: `保持转入待处理 · 继续等待 ${transferTargetLabel(t.to)} 接入(来自 ${t.from})` }],
+      }),
+      "转入待处理继续等待(例行,自动留档)",
+      `会话等待处理 ${selected.id} · admin.conversation_transfer_wait`,
+    );
     toast(`${selected.id} 保持转入待处理 · 继续等待接入`);
   };
   const runReturn = (p: ReturnPayload) => {
@@ -690,6 +702,7 @@ function ChatHeader({
 }) {
   const name = convo.profile?.nickname ?? convo.customer ?? convo.agentName;
   const active = convo.status === "open";
+  const closed = convo.status === "closed" || convo.archived;
   const incoming = !!convo.transfer; // 转入待处理:常规动作收起,改由转交横幅处置
   return (
     <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", rowGap: 8 }}>
@@ -708,18 +721,24 @@ function ChatHeader({
       ) : (
         <>
           <ConvStat active={active} />
-          <button type="button" data-proof="session-transfer" className="btn btn-sec btn-sm" onClick={onTransfer}>
-            <Icon name="users" size={16} />
-            转交
-          </button>
-          <button type="button" data-proof="session-status" className="btn btn-sec btn-sm" onClick={() => onStatus(active ? "resolved" : "open")}>
-            <Icon name={active ? "check" : "arrow"} size={16} />
-            {active ? "标记已解决" : "重新激活"}
-          </button>
-          <button type="button" data-proof="session-to-ticket" className="btn btn-cyan btn-sm" onClick={onToTicket}>
-            <Icon name="doc" size={16} />
-            转工单
-          </button>
+          {active && !closed && (
+            <button type="button" data-proof="session-transfer" className="btn btn-sec btn-sm" onClick={onTransfer}>
+              <Icon name="users" size={16} />
+              转交
+            </button>
+          )}
+          {!closed && (
+            <button type="button" data-proof="session-status" className="btn btn-sec btn-sm" onClick={() => onStatus(active ? "resolved" : "open")}>
+              <Icon name={active ? "check" : "arrow"} size={16} />
+              {active ? "标记已解决" : "重新激活"}
+            </button>
+          )}
+          {!closed && (
+            <button type="button" data-proof="session-to-ticket" className="btn btn-cyan btn-sm" onClick={onToTicket}>
+              <Icon name="doc" size={16} />
+              转工单
+            </button>
+          )}
         </>
       )}
       <button type="button" className="btn btn-ghost btn-icon btn-sm" title="客户档案" onClick={onToggleProfile}>

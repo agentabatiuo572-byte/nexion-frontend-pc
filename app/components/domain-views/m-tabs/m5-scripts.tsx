@@ -345,6 +345,28 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
         toast(`${id} ${on ? "已归档" : "发布已生效"}`);
       },
     });
+  const newReplyTemplate = () =>
+    openActionConfirm({
+      action: <>新增即时回复模板</>,
+      detail: <>新增草稿后进入坐席快捷回复模板库,发布后可在 M2/M3 回复框中选用。</>,
+      amplifies: false,
+      edit: { kind: "text", current: "", unit: "模板文案" },
+      run: (reason: string, v?: string) => {
+        const text = v?.trim();
+        if (!text) return;
+        const row: SessionReplyTpl = {
+          id: `RT-${Date.now()}`,
+          type: "support",
+          text,
+          status: "draft",
+        };
+        setParam(REPLY_TEMPLATE_LIST_KEY, JSON.stringify([row, ...replyTemplates]), {
+          action: "新增即时回复模板 · admin.conversation_template_created",
+          reason,
+        });
+        toast("即时回复模板已创建 · 待发布确认");
+      },
+    });
 
   const tileStyle = { padding: "11px 12px", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10, textAlign: "left" as const, cursor: "pointer", fontFamily: "inherit" };
   const tileHead = (k: string) => (
@@ -573,6 +595,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
               <span className="n">{replyTemplateTotal} 条</span>
           </div>
           <span className="dim2" style={{ fontSize: 11.5 }}>坐席快捷回复 · 例行维护</span>
+          <span className="sp" style={{ flex: 1 }} />
+          <button type="button" data-proof="session-tpl-new" className="btn btn-pri btn-sm" onClick={newReplyTemplate}>
+            <Icon name="plus" size={16} />
+            新增模板
+          </button>
         </div>
         <div style={{ padding: "0 8px 8px" }}>
           {replyTemplatePageLoading && <div className="itint" style={{ margin: "0 12px 8px" }}>正在加载模板分页...</div>}
@@ -721,10 +748,19 @@ function AgentProfileModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx:
   );
 }
 
-function userIdOf(profile: User360Profile): number {
-  const raw = profile.id;
-  const parsed = typeof raw === "number" ? raw : Number(raw);
+function numericUserId(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const raw = value == null ? "" : String(value).trim();
+  if (!raw) return 0;
+  const direct = Number(raw);
+  if (Number.isFinite(direct)) return direct;
+  const matched = raw.match(/\d+/)?.[0];
+  const parsed = matched ? Number(matched) : 0;
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function userIdOf(profile: User360Profile): number {
+  return numericUserId(profile.id) || numericUserId(profile.userNo);
 }
 
 function userNoOf(profile: User360Profile): string {
@@ -815,7 +851,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
       icon="users"
       wide
       onClose={onClose}
-      footer={<><span className="sub">用户来自 C1 用户画像分页接口 · 已选 {bindableSelectedUsers.length} 人</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>绑定{canSave ? ` ${bindableSelectedUsers.length} 人` : " · 待补全"}</button></>}
+      footer={<><span className="sub">用户来自 C1 用户画像分页接口 · 已选 {bindableSelectedUsers.length} 人</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="advisor-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>绑定{canSave ? ` ${bindableSelectedUsers.length} 人` : " · 待补全"}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -879,6 +915,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
               <button
                 key={`${userNoOf(user)}-${id}`}
                 type="button"
+                data-proof="advisor-user-option"
                 disabled={alreadyBound}
                 onClick={() => toggleUser(user)}
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: `1px solid ${checked ? "var(--m-hd-border)" : "var(--border)"}`, background: checked ? "var(--m-hd-soft)" : alreadyBound ? "var(--bg-2)" : "transparent", cursor: alreadyBound ? "not-allowed" : "pointer", textAlign: "left", fontFamily: "inherit", opacity: alreadyBound ? 0.62 : 1 }}
