@@ -37,6 +37,13 @@ function numericInput(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+const NUMERIC_RULE_KEYS = new Set(["baseline", "bonus7", "p15", "p2", "broken"]);
+
+function numericText(value: unknown, fallback = "") {
+  const match = String(value ?? "").match(/-?\d+(?:\.\d+)?/);
+  return match ? match[0] : fallback;
+}
+
 export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const [model, setModel] = useState<H5Model | null>(null);
@@ -63,9 +70,12 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   const openRule = (rule: CheckInRule) => {
     const current = text(rule.cur);
+    const currentNumber = numericText(current);
     const submit = async (reason: string, value?: string) => {
       if (!value) return;
-      apply(await updateH5CheckInRule(rule.key, value, reason));
+      const nextValue = NUMERIC_RULE_KEYS.has(rule.key) ? numericText(value, currentNumber) : value;
+      if (!nextValue) return;
+      apply(await updateH5CheckInRule(rule.key, nextValue, reason));
       toast(`${rule.name} 已更新`);
     };
     if (rule.hot) {
@@ -73,7 +83,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         action: `签到规则 · ${rule.name}`,
         detail: <>当前 <b>{current}</b>。幸运概率由后端校验两档合计不超过 100%。</>,
         amplifies: true,
-        edit: { kind: "text", current },
+        edit: { kind: "number", current: currentNumber || current },
         run: submit,
       });
       return;
@@ -83,7 +93,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       detail: <>当前 <b>{current}</b>,提交后写入后端配置。</>,
       chips: [["写后端配置", "ready"], ["审计留痕", "done"]],
       reason: true,
-      input: { label: "目标新值", placeholder: `当前 ${current}` },
+      input: { label: "目标新值", placeholder: `当前 ${currentNumber || current}` },
       okLabel: "确认修改",
       run: submit,
     });
@@ -156,16 +166,19 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
   const openTick = () => {
     const current = text(model?.tickInterval?.seconds ?? model?.tickInterval?.value, "4");
+    const currentSeconds = String(model?.tickInterval?.seconds ?? numericText(model?.tickInterval?.value, "4"));
     openConfirm({
       action: "收益里程碑触发检查间隔",
       detail: <>当前 <b>{text(model?.tickInterval?.value, current)}</b>,后端限制最小/最大值。</>,
       chips: [["写后端配置", "ready"], ["审计留痕", "done"]],
       reason: true,
-      input: { label: "秒数", placeholder: current },
+      input: { label: "秒数", placeholder: currentSeconds },
       okLabel: "确认修改",
       run: async (reason, value) => {
         if (!value) return;
-        apply(await updateH5EarnTickInterval(value, reason));
+        const nextValue = numericText(value, currentSeconds);
+        if (!nextValue) return;
+        apply(await updateH5EarnTickInterval(nextValue, reason));
         toast("收益里程碑触发检查间隔已更新");
       },
     });
