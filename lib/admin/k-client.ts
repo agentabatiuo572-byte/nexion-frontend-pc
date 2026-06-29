@@ -239,6 +239,7 @@ export type K3Hit = {
   ruleId: string;
   dimension: string;
   action: RuleAction;
+  reason: string;
   timeText: string;
 };
 export type WithdrawRuleOverview = {
@@ -472,6 +473,7 @@ function normalizeK3(raw: unknown): WithdrawRuleOverview {
     ruleId: str(row.ruleId),
     dimension: str(row.dimension),
     action: normalizeRuleAction(row.action),
+    reason: str(row.reason),
     timeText: str(row.timeText),
   });
   return {

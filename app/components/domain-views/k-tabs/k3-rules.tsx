@@ -454,8 +454,8 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 880 }}>
-            <thead><tr><th>提现单</th><th>账户</th><th className="num">金额</th><th>命中规则</th><th>维度</th><th>路由结论</th><th>时间</th></tr></thead>
+          <table className="l-tbl" style={{ minWidth: 1040 }}>
+            <thead><tr><th>提现单</th><th>账户</th><th className="num">金额</th><th>命中规则</th><th>维度</th><th>路由结论</th><th>命中原因</th><th>时间</th></tr></thead>
             <tbody>
               {hits.map((h) => {
                 const [actLb, actTone] = RULE_ACT[h.action];
@@ -467,6 +467,7 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
                     <td className="mono" style={{ fontSize: 12 }}>{h.ruleId}</td>
                     <td style={{ fontSize: 12.5 }}>{h.dimension}</td>
                     <td><span className={`bdg ${actTone}`}>{actLb}</span></td>
+                    <td title={h.reason || undefined} style={{ maxWidth: 260, fontSize: 12.5, color: "var(--ink-2)" }}>{h.reason || "—"}</td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{h.timeText}</td>
                   </tr>
                 );

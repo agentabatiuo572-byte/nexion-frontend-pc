@@ -76,9 +76,20 @@ function isUserActive(row: D2Withdrawal) {
   return row.userStatus.toUpperCase() === "ACTIVE";
 }
 
+function isMeaningfulRiskText(value: string) {
+  const text = value.trim().toUpperCase();
+  return text !== "" && !["[]", "{}", "NULL", "NONE", "-", "—"].includes(text);
+}
+
 function hasBlockingRisk(row: D2Withdrawal) {
-  const hitRules = row.hitRules.trim().toUpperCase();
-  return row.riskScore >= 70 || (hitRules !== "" && !["[]", "{}", "NULL", "NONE", "-", "—"].includes(hitRules));
+  return row.riskScore >= 70 || isMeaningfulRiskText(row.hitRules) || isMeaningfulRiskText(row.riskReason);
+}
+
+function riskReasonText(row: D2Withdrawal) {
+  const reason = row.riskReason.trim();
+  const rules = row.hitRules.trim();
+  if (reason && rules) return `${rules} · ${reason}`;
+  return reason || rules || "无";
 }
 
 function approveBlockReason(row: D2Withdrawal, dailyLimitCount: number) {
@@ -192,7 +203,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       const blockedHint = action === "APPROVE" ? approveBlockReason(row, dailyLimitCount) : "";
       openActionConfirm({
         action: `${label}提现 · ${row.withdrawalNo}`,
-        detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，${limitHint}${blockedHint ? `；当前阻断：${blockedHint}` : ""}；放大资金流出方向会走覆盖率预检。`,
+        detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，${limitHint}；命中原因：${riskReasonText(row)}${blockedHint ? `；当前阻断：${blockedHint}` : ""}；放大资金流出方向会走覆盖率预检。`,
         amplifies: true,
         coverage: d5Params ? { coverageRatio: d5Params.coverageRatio, redlinePct: d5Params.redlinePct } : undefined,
         run: (reason) => void runReview(row, action, reason),
@@ -201,7 +212,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     }
     openConfirm({
       action: `${label}提现 · ${row.withdrawalNo}`,
-      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，保存后重新查询提现队列。`,
+      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，命中原因：${riskReasonText(row)}；保存后重新查询提现队列。`,
       reason: true,
       okLabel: label,
       run: (reason) => void runReview(row, action, reason),
@@ -249,7 +260,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           <table className="l-tbl" style={{ minWidth: 1260 }}>
             <thead>
               <tr>
-                <th>提现单</th><th>用户编码</th><th>用户</th><th>资产/链</th><th className="num">金额</th><th className="num">手续费</th><th>风险</th><th>24h次数</th><th>状态</th><th>地址</th><th>创建时间</th><th style={{ textAlign: "right" }}>动作</th>
+                <th>提现单</th><th>用户编码</th><th>用户</th><th>资产/链</th><th className="num">金额</th><th className="num">手续费</th><th>风险/命中原因</th><th>24h次数</th><th>状态</th><th>地址</th><th>创建时间</th><th style={{ textAlign: "right" }}>动作</th>
               </tr>
             </thead>
             <tbody>
@@ -265,7 +276,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                     <td>{row.asset} / {row.chain}</td>
                     <td className="num mono" style={{ color: "var(--ink)", fontWeight: 700 }}>{money(row.amount)}</td>
                     <td className="num mono">{money(row.fee)}</td>
-                    <td><span className={`bdg ${row.riskScore >= 70 ? "bad" : row.riskScore >= 45 ? "warn" : "ok"}`}>{row.riskScore}</span><div className="mono" style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.hitRules || "—"}</div></td>
+                    <td style={{ maxWidth: 270 }}>
+                      <span className={`bdg ${row.riskScore >= 70 ? "bad" : row.riskScore >= 45 ? "warn" : "ok"}`}>{row.riskScore}</span>
+                      <div className="mono" style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.hitRules || "—"}</div>
+                      <div title={row.riskReason || undefined} style={{ color: "var(--ink-2)", fontSize: 12, lineHeight: 1.35, marginTop: 3 }}>{row.riskReason || "—"}</div>
+                    </td>
                     <td><span className={`bdg ${dailyBlocked ? "bad" : row.withdrawalCount24h >= dailyLimitCount ? "warn" : "ok"}`}>{row.withdrawalCount24h}/{dailyLimitCount}</span></td>
                     <td><span className={`bdg ${statusTone(row.status)}`}>{statusLabel(row.status)}</span></td>
                     <td className="mono" style={{ maxWidth: 190, overflow: "hidden", textOverflow: "ellipsis" }}>{row.targetAddress}</td>

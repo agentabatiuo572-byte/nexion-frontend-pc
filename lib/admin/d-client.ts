@@ -115,6 +115,7 @@ export interface D2Withdrawal {
   userStatus: string;
   riskScore: number;
   hitRules: string;
+  riskReason: string;
   withdrawalCount24h: number;
   statusHistory: string;
   auditTrail: string;
@@ -359,6 +360,7 @@ function normalizeWithdrawal(row: D2Withdrawal): D2Withdrawal {
     userStatus: text(row.userStatus, "UNKNOWN"),
     riskScore: num(row.riskScore),
     hitRules: text(row.hitRules, ""),
+    riskReason: text(row.riskReason, ""),
     withdrawalCount24h: num(row.withdrawalCount24h),
     statusHistory: text(row.statusHistory, ""),
     auditTrail: text(row.auditTrail, ""),
