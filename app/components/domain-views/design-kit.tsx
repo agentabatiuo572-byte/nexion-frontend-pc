@@ -271,7 +271,7 @@ export function PaginationExemption({
         padding: "9px 12px",
       }}
     >
-      <span className="mono">paginationExempt</span> · {label} · {kind} · 最多 {maxRows} 行 · {reason}
+      列表说明 · {label} · 最多 {maxRows} 行 · {reason}
     </div>
   );
 }
@@ -346,6 +346,8 @@ export function Modal({ title, icon, onClose, children, footer, wide }: { title:
 /* Drawer — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
 export function Drawer({ title, sub, onClose, children, footer }: { title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const subId = useId();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -356,9 +358,9 @@ export function Drawer({ title, sub, onClose, children, footer }: { title: React
   return (
     <div className="dkpage">
       <div className="drawer-scrim" onClick={onClose} aria-hidden />
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" className="drawer" style={{ outline: "none" }}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={sub ? subId : undefined} className="drawer" style={{ outline: "none" }}>
         <div className="drawer-h">
-          <div><div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{title}</div>{sub && <div className="muted tiny">{sub}</div>}</div>
+          <div><div id={titleId} style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{title}</div>{sub && <div id={subId} className="muted tiny">{sub}</div>}</div>
           <div className="spacer" />
           <button className="icon-btn" onClick={onClose} aria-label="关闭"><Icon name="x" size={16} /></button>
         </div>
@@ -486,7 +488,19 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[] };
+export type EditSpec = {
+  kind?: "number" | "text" | "select" | "toggle";
+  current?: string;
+  unit?: string;
+  options?: string[];
+  min?: number;
+  max?: number;
+  gt?: number;
+  lt?: number;
+  maxLength?: number;
+  pattern?: "url" | "single-keyword";
+  disallowValues?: string[];
+};
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -500,6 +514,38 @@ function initEditValue(spec?: EditSpec | null): string {
   if (!current) return "";
   const options = spec.options ?? ["开启", "关闭"];
   return options.includes(current) ? current : "";
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function editValueProblems(spec: EditSpec | null, value: string): string[] {
+  if (!spec) return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  const missing: string[] = [];
+  if (spec.maxLength != null && trimmed.length > spec.maxLength) missing.push(`目标新值最多 ${spec.maxLength} 字`);
+  if (spec.kind === "number") {
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) missing.push("目标新值须为有效数字");
+    else {
+      if (spec.gt != null && !(n > spec.gt)) missing.push(`目标新值须大于 ${spec.gt}`);
+      if (spec.lt != null && !(n < spec.lt)) missing.push(`目标新值须小于 ${spec.lt}`);
+      if (spec.min != null && n < spec.min) missing.push(`目标新值须不小于 ${spec.min}`);
+      if (spec.max != null && n > spec.max) missing.push(`目标新值须不大于 ${spec.max}`);
+    }
+  }
+  if (spec.pattern === "url" && !isHttpUrl(trimmed)) missing.push("目标新值须为 http/https URL");
+  if (spec.pattern === "single-keyword" && /[,，;；\n\r|]/.test(trimmed)) missing.push("一次只能填写一个识别词");
+  const blocked = (spec.disallowValues ?? []).map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (blocked.includes(trimmed.toLowerCase())) missing.push("目标新值与现有值重复");
+  return missing;
 }
 
 export type BusinessFormSpec =
@@ -527,7 +573,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean; allowEmpty?: boolean; min?: number; max?: number; gt?: number; lt?: number; maxLength?: number; disallowValues?: string[] }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -621,7 +667,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
 }
 
 export function OperatorBriefBlock({ action, detail, amplifies, hasEdit }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const detailId = useId();
   const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit);
   const detailText = compactText(plainText(detail));
@@ -960,12 +1006,26 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (![a, g, e].every((n) => Number.isFinite(n) && n >= 0)) missing.push("三档须为非负数");
     else if (a < g || g < e) missing.push("须满额 ≥ 宽限 ≥ 过期");
   } else if (spec.kind === "multi-field") {
-    spec.fields.forEach((f) => needs(f.key, f.label));
+    spec.fields.forEach((f) => {
+      if (!f.allowEmpty) needs(f.key, f.label);
+      const value = (state[f.key] ?? "").trim();
+      if (f.maxLength != null && value.length > f.maxLength) missing.push(`${f.label} 最多 ${f.maxLength} 字`);
+      const blocked = (f.disallowValues ?? []).map((item) => item.trim().toLowerCase()).filter(Boolean);
+      if (value && blocked.includes(value.toLowerCase())) missing.push(`${f.label} 与现有值重复`);
+    });
     const nums = spec.fields.filter((f) => f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
     if (nums.some(({ n }) => !Number.isFinite(n))) missing.push("数值字段须为有效数字");
-    else if (spec.ascending) {
-      for (let i = 1; i < nums.length; i++) {
-        if (nums[i].n <= nums[i - 1].n) { missing.push(`${nums[i].f.label} 须大于 ${nums[i - 1].f.label}`); break; }
+    else {
+      for (const { f, n } of nums) {
+        if (f.gt != null && !(n > f.gt)) { missing.push(`${f.label} 须大于 ${f.gt}`); break; }
+        if (f.lt != null && !(n < f.lt)) { missing.push(`${f.label} 须小于 ${f.lt}`); break; }
+        if (f.min != null && n < f.min) { missing.push(`${f.label} 须不小于 ${f.min}`); break; }
+        if (f.max != null && n > f.max) { missing.push(`${f.label} 须不大于 ${f.max}`); break; }
+      }
+      if (spec.ascending) {
+        for (let i = 1; i < nums.length; i++) {
+          if (nums[i].n <= nums[i - 1].n) { missing.push(`${nums[i].f.label} 须大于 ${nums[i - 1].f.label}`); break; }
+        }
       }
     }
   } else if (spec.kind === "weekly-task-edit") {
@@ -1152,7 +1212,16 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
                   {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : (
-                <input className="fld" type={f.inputKind === "number" ? "number" : "text"} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                <input
+                  className="fld"
+                  type={f.inputKind === "number" ? "number" : "text"}
+                  min={f.inputKind === "number" ? f.min ?? f.gt : undefined}
+                  max={f.inputKind === "number" ? f.max ?? f.lt : undefined}
+                  maxLength={f.maxLength}
+                  value={value[f.key] ?? ""}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  placeholder={f.placeholder ?? ""}
+                />
               )}
             </label>
           ))}
@@ -1726,7 +1795,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
 
   return (
     <div className="field" data-business-form="destructive-reason">
-      <label>业务表单 · 删除 / 下架影响确认</label>
+      <label>业务表单 · 高影响操作确认</label>
       <div className="tint danger tiny" style={{ marginBottom: 10 }}>
         目标 <span className="mono">{spec.target}</span> · {spec.impact}
       </div>
@@ -1754,7 +1823,8 @@ export function OperationConfirmModal({ action, detail, amplifies, edit, busines
   const reasonOk = reason.trim().length >= reasonMin;
   const businessMissing = missingBusinessFields(businessForm, businessValue);
   const derivedNewVal = businessNewValue(businessForm, businessValue);
-  const canConfirm = !covBlocked && reasonOk && (!spec || newVal.trim().length > 0) && businessMissing.length === 0;
+  const editProblems = editValueProblems(spec, newVal);
+  const canConfirm = !covBlocked && reasonOk && (!spec || newVal.trim().length > 0) && editProblems.length === 0 && businessMissing.length === 0;
   return (
     <Modal title={action} icon="shield" onClose={onClose}
       footer={<>
@@ -1801,12 +1871,20 @@ export function OperationConfirmModal({ action, detail, amplifies, edit, busines
               <input
                 className="fld"
                 type={kind === "number" ? "number" : "text"}
+                min={kind === "number" ? spec.min ?? spec.gt : undefined}
+                max={kind === "number" ? spec.max ?? spec.lt : undefined}
+                maxLength={spec.maxLength}
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
                 placeholder={spec.current ? `输入新值(当前 ${spec.current})` : "输入目标新值"}
                 style={{ maxWidth: 240 }}
               />
               {spec.unit && <span className="muted tiny">{spec.unit}</span>}
+            </div>
+          )}
+          {editProblems.length > 0 && (
+            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
+              目标新值还需修正: {editProblems.slice(0, 3).join(" / ")}。
             </div>
           )}
           {newVal && spec.current && (

@@ -241,4 +241,40 @@ export const DOMAIN_E: ModuleEntry[] = [
       note: "算力波动以 baseRate × E3 当月效能为基准比对;日产偏差超阈值或心跳超时即升级告警。强制下线 / 补偿计酬 / 批量计酬修正为干预性操作,需操作确认 + 理由并写入 A2 审计;监控数据 server 权威,本台只读展示 + 工单流转。",
     },
   },
+  {
+    // E6 电脑算力配置页。E ∈ PORTED_DOMAINS:content 为死代码,真渲染面 = e-view.tsx + e-tabs/e6-compute-config;仅 summary 经 DomainHeader 渲染。
+    path: "/devices/compute-config",
+    summary:
+      "算力与设备配置(E6)—— 电脑算力配置页。维护电脑算力入口开关、在线系数、显卡档位映射、客户端下载地址与双语文案;所有写入走操作确认、理由和 A2 审计。",
+    content: {
+      kind: "config",
+      metrics: [
+        { label: "入口开关", value: "1", sub: "默认关闭", accent: "var(--admin-domain-e)", hint: "电脑算力入口默认关闭;开启后客户端出现弱入口与下载页。" },
+        { label: "显卡档位", value: "6", sub: "G1-G6", accent: "var(--success)", hint: "档位名称、TOPS、识别词都可调整。" },
+      ],
+      groups: [
+        {
+          title: "电脑算力入口",
+          note: "入口默认关闭;切换走操作确认 + 理由 ≥8 字 + A2 审计 + 幂等键。",
+          fields: [
+            { label: "电脑共享算力入口", value: "默认关闭", range: "开 / 关", effect: "控制客户端『电脑共享算力』PC 入口显隐。" },
+          ],
+        },
+        {
+          title: "算力与设备配置",
+          note: "显卡档位、识别词、在线系数和下载内容均已接入可审计配置。",
+          fields: [
+            { label: "显卡算力映射表", value: "已接入", range: "G1–G6", effect: "档位名称、TOPS、识别词可新增 / 修改 / 删除。" },
+            { label: "在线加成系数", value: "已接入", range: "H5 基础托管 / App 连续在线", effect: "后续结算按新值派生,不回溯历史收益。" },
+            { label: "客户端下载配置", value: "已接入", range: "URL + 双语内容", effect: "地址为空时客户端显示即将开放,不展示假链接。" },
+          ],
+        },
+      ],
+      confirmPolicy: "入口开关、映射表、在线系数、下载配置均需操作确认 + 理由(≥8 字),写入 A2 审计;幂等键防重复提交。",
+      impact: [
+        "开启入口 → 客户端显现『电脑共享算力』PC 弱入口 + 下载页",
+        "关闭入口 → 客户端隐藏该入口,不影响既有手机 / 设备算力业务",
+      ],
+    },
+  },
 ];

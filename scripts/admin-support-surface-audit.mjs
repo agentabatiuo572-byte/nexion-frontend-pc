@@ -56,7 +56,7 @@ assertContains("lib/nav/console-nav.ts", [
   'path: "/service/tickets"',
   'id: "M3"',
   'path: "/service/sessions"',
-  "69 个 L2",
+  "72 个 L2",
 ]);
 assertAbsent("lib/nav/console-nav.ts", 'path: "/content/support"', "I8 应已迁出至域 M");
 assertAbsent("lib/nav/console-nav.ts", 'path: "/content/conversation-center"', "I9 应已迁出至域 M");
@@ -150,7 +150,7 @@ assertAbsent("app/components/domain-views/i-view.tsx", "I9Conversation", "客服
 
 // verify needle
 assertContains("scripts/verify.sh", [
-  "期望 69",
+  "期望 72",
   'check_html "/service/tickets" "工单详情与处理"',
   'check_html "/service/sessions" "主动发起会话"',
   "admin-support-surface-audit.mjs",
@@ -168,9 +168,9 @@ assertContains(path.join(PLAN, "Nexion-uniapp/src/store/tickets.ts"), [
   "lastReplyAt: now",
 ]);
 
-// 路由计数:console-nav 69 条;/service 客服路由 = 5
+// 路由计数:console-nav 72 条;/service 客服路由 = 5
 const navPaths = read("lib/nav/console-nav.ts").match(/path:\s*"[^"]+"/g) || [];
-if (navPaths.length !== 69) failures.push(`console-nav path count ${navPaths.length}, expected 69`);
+if (navPaths.length !== 72) failures.push(`console-nav path count ${navPaths.length}, expected 72`);
 const serviceRouteCount = (read("lib/nav/console-nav.ts").match(/path:\s*"\/service\//g) || []).length;
 if (serviceRouteCount !== 5) failures.push(`/service routes ${serviceRouteCount}, expected 5`);
 

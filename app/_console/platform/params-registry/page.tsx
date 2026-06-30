@@ -127,7 +127,7 @@ export default function PlatformParamsRegistryPage() {
           <Stat label="平台参数" value={`${rows.length}`} accent="var(--admin-domain-a)" />
           <Stat label="覆盖域" value={`${domains.length}`} />
           <Stat label="高敏(操作确认)" value={`${mcCount}`} accent="var(--v5-warning)" />
-          <Stat label="server-canonical" value="服务端权威" sub="客户端仅 UI cache" />
+          <Stat label="权威来源" value="服务端" sub="客户端仅展示缓存" />
         </div>
       </header>
 
@@ -183,7 +183,7 @@ export default function PlatformParamsRegistryPage() {
       </div>
 
       <p className="mt-4 text-[11px] leading-relaxed" style={{ color: "var(--v5-ink-4)" }}>
-        资金 / 资产 / 收益 / 规则 / kill-switch 类参数变更一律 操作确认 + 操作理由必填 + server-canonical 服务端权威 + 审计留痕;
+        资金 / 资产 / 收益 / 规则 / kill-switch 类参数变更一律 操作确认 + 操作理由必填 + 服务端权威 + 审计留痕;
         本页为只读索引,实际改值在各域 config 模块内执行。
       </p>
     </div>

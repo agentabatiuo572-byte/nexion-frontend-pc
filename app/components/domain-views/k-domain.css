@@ -13,7 +13,7 @@
 @container kdom (max-width: 980px) { .kdom .f-stats { grid-template-columns: repeat(2, 1fr); } }
 .kdom .f-stat { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; }
 .kdom .f-stat .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
-.kdom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: -.01em; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.kdom .f-stat .v { font-size: 22px; font-weight: 600; letter-spacing: 0; margin-top: 4px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .kdom .f-stat .sub { font-size: 12px; color: var(--ink-4); margin-top: 3px; }
 .kdom .f-stat.warn .v { color: var(--warning); }
 .kdom .f-stat.ok .v { color: var(--success); }
@@ -23,7 +23,7 @@
 .kdom .f-cta { display: inline-flex; align-items: center; gap: 7px; padding: 8px 15px; border-radius: 9px;
   border: 1px solid var(--warning-border); background: var(--warning-soft); color: var(--warning);
   font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; font-family: inherit; }
-.kdom .f-cta:hover { background: var(--warning); color: #0A0A0A; }
+.kdom .f-cta:hover { background: var(--warning); color: var(--bg); }
 .kdom .f-ro { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
   background: var(--surface-2); color: var(--ink-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .kdom .f-ro .d { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-4); }
@@ -46,21 +46,27 @@
 .kdom .chip { padding: 5px 11px; border-radius: 999px; background: var(--surface-2); color: var(--ink-3);
   font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; border: none; font-family: inherit; transition: background .12s, color .12s; }
 .kdom .chip:hover { background: var(--surface-3); color: var(--ink); }
-.kdom .chip.sel { background: var(--warning); color: #0A0A0A; font-weight: 600; }
+.kdom .chip.sel { background: var(--warning); color: var(--bg); font-weight: 600; }
+.kdom .chip:focus-visible,
+.kdom .l-btn:focus-visible,
+.kdom .chip:focus,
+.kdom .l-btn:focus { outline: 2px solid var(--warning); outline-offset: 2px; }
 
 .kdom .l-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: 8px;
   border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2);
   font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; white-space: nowrap; text-decoration: none; }
 .kdom .l-btn:hover { background: var(--surface-3); color: var(--ink); }
-.kdom .l-btn.primary { background: var(--warning); border-color: var(--warning); color: #0A0A0A; font-weight: 600; }
+.kdom .l-btn.primary { background: var(--warning); border-color: var(--warning); color: var(--bg); font-weight: 600; }
 .kdom .l-btn.primary:hover { filter: brightness(1.07); }
 .kdom .l-btn.mc { color: var(--warning); border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 8%, transparent); font-weight: 600; }
 .kdom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); }
 .kdom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+.kdom .l-btn:disabled { opacity: .48; cursor: not-allowed; color: var(--ink-4); }
+.kdom .l-btn:disabled:hover { background: var(--surface-2); color: var(--ink-4); }
 
 .kdom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.kdom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
-  letter-spacing: .06em; text-transform: uppercase; text-align: left; padding: 10px 12px;
+.kdom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--ink-4);
+  letter-spacing: 0; text-transform: none; text-align: left; padding: 10px 12px;
   background: var(--surface-2); border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
 .kdom .l-tbl td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: var(--ink-2); vertical-align: middle; }
 .kdom .l-tbl tr:last-child td { border-bottom: none; }
@@ -70,7 +76,7 @@
 .kdom .l-tbl .mono { font-family: var(--mono); font-size: 12px; }
 
 .kdom .bdg { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 5px;
-  font-size: 11.5px; font-weight: 700; font-family: var(--mono); letter-spacing: .02em; white-space: nowrap; }
+  font-size: 11.5px; font-weight: 600; font-family: var(--mono); letter-spacing: 0; white-space: nowrap; }
 .kdom .bdg.ok { background: var(--success-soft); color: var(--success); }
 .kdom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
 .kdom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
@@ -114,7 +120,7 @@
 .kdom .meter { display: inline-flex; align-items: center; gap: 8px; min-width: 130px; }
 .kdom .meter .track { flex: 1; height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
 .kdom .meter .track i { display: block; height: 100%; border-radius: 999px; }
-.kdom .meter .n { font-family: var(--mono); font-size: 11.5px; font-weight: 700; width: 34px; text-align: right; }
+.kdom .meter .n { font-family: var(--mono); font-size: 11.5px; font-weight: 600; width: 34px; text-align: right; }
 
 .kdom .cl-split { display: grid; grid-template-columns: 330px 1fr; gap: 0; }
 @container kdom (max-width: 1100px) { .kdom .cl-split { grid-template-columns: 1fr; } .kdom .cl-split .graph { border-right: none; border-bottom: 1px solid var(--border); } }
@@ -125,7 +131,7 @@
 .kdom .edge-legend .sw2 { width: 16px; height: 3px; border-radius: 2px; }
 .kdom .gift-row { margin-bottom: 8px; font-size: 12px; display: flex; gap: 10px; align-items: center;
   padding: 11px 14px; border-radius: 9px; background: var(--warning-soft); color: var(--ink-2); }
-.kdom .gift-row .gid { font-family: var(--mono); font-weight: 700; }
+.kdom .gift-row .gid { font-family: var(--mono); font-weight: 600; }
 .kdom .gift-row .gtx { flex: 1; }
 .kdom svg text { font-family: var(--mono); }
 
@@ -167,7 +173,7 @@
 .kdom .dim-grid .dim .cond b { color: var(--warning); }
 .kdom .dim-grid .dim .why { font-size: 11.5px; color: var(--ink-4); line-height: 1.5; }
 .kdom .dim-grid .dim .ft { display: flex; align-items: center; gap: 7px; margin-top: auto; padding-top: 8px; border-top: 1px dashed var(--border); }
-.kdom .dim-grid .dim .ft .act { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+.kdom .dim-grid .dim .ft .act { font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 5px; }
 .kdom .dim-grid .dim .ft .act.delay { background: var(--warning-soft); color: var(--warning); }
 .kdom .dim-grid .dim .ft .act.manual { background: var(--cyan-soft); color: var(--cyan); }
 .kdom .dim-grid .dim .ft .act.freeze { background: var(--danger-soft); color: var(--danger); }
@@ -202,7 +208,7 @@
 .kdom .dim-row .nm { font-size: 12.5px; color: var(--ink-2); }
 .kdom .dim-row .track { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
 .kdom .dim-row .track i { display: block; height: 100%; border-radius: 999px; background: var(--warning); }
-.kdom .dim-row .pt { font-family: var(--mono); font-size: 12px; font-weight: 700; text-align: right; color: var(--ink-2); }
+.kdom .dim-row .pt { font-family: var(--mono); font-size: 12px; font-weight: 600; text-align: right; color: var(--ink-2); }
 .kdom .dim-note { font-size: 11.5px; color: var(--ink-4); margin: -2px 0 4px 0; padding-left: 2px; }
 
 .kdom .dist-wrap { display: flex; align-items: center; gap: 26px; flex: 1; }
@@ -218,7 +224,7 @@
 .kdom .dist-rows .r .dot2 { width: 9px; height: 9px; border-radius: 3px; }
 .kdom .dist-rows .r .nm { font-size: 13px; color: var(--ink-2); }
 .kdom .dist-rows .r .nm small { color: var(--ink-4); font-size: 11px; margin-left: 4px; }
-.kdom .dist-rows .r .ct { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--ink); text-align: right; }
+.kdom .dist-rows .r .ct { font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--ink); text-align: right; }
 .kdom .dist-rows .r .pc { font-family: var(--mono); font-size: 12px; color: var(--ink-4); width: 52px; text-align: right; }
 .kdom .band-tints { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
 @container kdom (max-width: 1280px) { .kdom .band-tints { grid-template-columns: 1fr; } }
@@ -235,7 +241,7 @@
 .kdom .sla { display: inline-flex; align-items: center; gap: 7px; }
 .kdom .sla .track { width: 72px; height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
 .kdom .sla .track i { display: block; height: 100%; border-radius: 999px; }
-.kdom .sla .t { font-family: var(--mono); font-size: 11.5px; font-weight: 700; }
+.kdom .sla .t { font-family: var(--mono); font-size: 11.5px; font-weight: 600; }
 
 .kdom .tk-split { display: grid; grid-template-columns: 1.25fr 1fr; gap: 0; }
 @container kdom (max-width: 1100px) { .kdom .tk-split { grid-template-columns: 1fr; } .kdom .tk-split > div:first-child { border-right: none; border-bottom: 1px solid var(--border); } }

@@ -11,9 +11,29 @@ import { useId } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import { K_RISK, RISK } from "@/lib/mock/admin/design-data";
 import { K1_PARAMS, K1_CLUSTERS, K1_WHITELIST, CLUSTER_ST, strengthColor, type ClusterStatus, type K1Cluster } from "./data";
+import { RISK_CLUSTER_PARAMS, riskClusterParamKey, type RiskClusterParamDef } from "@/lib/mock/admin/compute-config";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+
+const K1_PARAM_META: Record<string, { unit?: string; min?: number; max?: number; gt?: number }> = {
+  maxSignupPerIp24h: { unit: "个号", min: 1, max: 10 },
+  maxAccountsPerDevice: { unit: "个号", min: 1, max: 5 },
+  maxAccountsPerPaymentInstrument: { unit: "个号", min: 1, max: 5 },
+  clusterFreezeSuggestThreshold: { min: 0, max: 1 },
+};
+
+const CLUSTER_EARNING_IMPACT: Record<ClusterStatus, { label: string; tone: string; desc: string }> = {
+  detected: { label: "正常槽内可提", tone: "dim", desc: "仅命中待判,正常手机槽内收益继续可提;超出槽位进入审核中。" },
+  flagged: { label: "审核中", tone: "warn", desc: "已标可疑后,同簇超出正常槽位的托管收益进入审核中,等待人工结论。" },
+  frozen: { label: "锁定奖励", tone: "bad", desc: "已冻结簇的新增托管收益进入锁定奖励,提现侧同步更严处理。" },
+  released: { label: "恢复正常", tone: "ok", desc: "误判解除后,后续收益按正常账户释放;历史待审仍按审计结果处理。" },
+  cleared: { label: "正常释放", tone: "ok", desc: "判定正常后退出多账户监控队列,后续收益按普通账户释放。" },
+};
+
+function numericText(value: string): string {
+  return value.match(/\d+(?:\.\d+)?/)?.[0] ?? value;
+}
 
 export function K1HeaderActions() {
   return <span className="f-ro"><span className="d" />判定全部在服务端 · 客户端改不动</span>;
@@ -86,12 +106,44 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     return (v as ClusterStatus | undefined) ?? c.status;
   };
 
+  const k1ParamValue = (p: (typeof K1_PARAMS)[number]): string => {
+    if (p.key === "linkWeight") {
+      const device = ctx.pget("K.k1.linkWeight.device") ?? "0.5";
+      const payment = ctx.pget("K.k1.linkWeight.payment") ?? "0.4";
+      const ip = ctx.pget("K.k1.linkWeight.ip") ?? "0.1";
+      return `设备 ${device} · 支付 ${payment} · IP ${ip}`;
+    }
+    const saved = ctx.pget(`K.k1.${p.key}`);
+    const meta = K1_PARAM_META[p.key];
+    if (saved) return `${saved}${meta?.unit ? ` ${meta.unit}` : ""}`;
+    return p.val;
+  };
+
+  const riskParamValue = (p: RiskClusterParamDef): string =>
+    String(ctx.pget(riskClusterParamKey(p.key)) ?? p.defaultVal);
+
+  const editRiskParam = (p: RiskClusterParamDef) => {
+    const isRatio = p.unit.includes("0-1");
+    ctx.openActionConfirm({
+      action: `收益释放参数调整 · ${p.label}`,
+      detail: `${p.label} · 当前 ${riskParamValue(p)} ${p.unit}。${p.desc}${p.frontendEffect} 改动后只影响后续注册、结算和提现分诊;历史审计不回写。`,
+      amplifies: ["freePhoneSlotsPerCluster", "duplicateAccountPendingFrom", "duplicateAccountFreezeFrom", "pendingReleaseHours"].includes(p.key),
+      edit: { kind: "number", current: riskParamValue(p), unit: p.unit, min: isRatio ? 0 : 1, max: isRatio ? 1 : undefined },
+      run: (reason, newVal) => {
+        if (!newVal) return;
+        ctx.setParam(riskClusterParamKey(p.key), newVal, { action: `调整收益释放参数 ${p.label}`, reason });
+        ctx.toast(`${p.label} 已更新 · 后续结算和分诊按新值执行`);
+      },
+    });
+  };
+
   // 簇处置动作 —— 解除误判/判正常 = 放行方向挂 B1;冻结 = 收紧不挂。
   const flagCluster = (c: K1Cluster) =>
     ctx.openConfirm({
       action: `标记可疑账户簇 · ${c.id}`,
-      detail: "只是打上「可疑」标签,不冻结任何资产或余额 —— 后续批量冻结才需要操作确认。标记会同步给风险评分(K4)和风险雷达(B5)。",
-      chips: [["仅标记 · 不动资产", "done"], ["落 admin.cluster_flagged 审计", "ready"]],
+      detail: "只是打上「可疑」标签,不冻结任何资产或余额 —— 后续批量冻结才需要操作确认。标记会同步给风险评分(K4)和风险雷达(B5);超出正常槽位的托管收益进入审核中,提现侧会展示关联簇并提高分诊优先级。",
+      chips: [["仅标记 · 不动资产", "done"], ["写入审计", "ready"]],
+      reason: true,
       okLabel: "确认标记",
       run: (reason) => {
         ctx.setParam(`K.cluster.${c.id}.st`, "flagged", { action: `标记可疑账户簇 ${c.id}`, reason: reason || "人工标记可疑" });
@@ -102,7 +154,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const freezeCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `批量冻结关联账户 · ${c.id}`,
-      detail: `把簇内 ${c.n} 个账户全部冻结(冻结台账落用户域 C2)。关联强度 ${c.strength.toFixed(2)} · 维度:${c.layerLabel} · 涉及新人礼 ${c.gifts.length ? c.gifts[0][1] : "无"}。请求自带防重号(Idempotency-Key),网络抖动不会重复冻结同一批;确认通过后由服务器一次性原子冻结并产事件,页面不做本地冻结 · 写入 admin.cluster_frozen`,
+      detail: `把簇内 ${c.n} 个账户全部冻结(冻结台账落用户域 C2)。关联强度 ${c.strength.toFixed(2)} · 维度:${c.layerLabel} · 涉及新人礼 ${c.gifts.length ? c.gifts[0][1] : "无"}。冻结后新增托管收益进入锁定奖励,提现分诊同步更严。请求自带防重号,网络抖动不会重复冻结同一批;确认通过后由服务器一次性原子冻结并写入审计,页面不做本地冻结。`,
       run: (reason) => {
         ctx.setParam(`K.cluster.${c.id}.st`, "frozen", { action: `批量冻结关联账户簇 ${c.id}(${c.n} 账户)`, reason });
         ctx.toast(`${c.id} 已批量冻结 ${c.n} 个账户 · 台账落 C2`);
@@ -112,7 +164,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const releaseCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `解除误判 · ${c.id}`,
-      detail: "解冻 = 放行,必须第二个人确认不是被滥用。解除后账户恢复正常,本簇移入「已解除误判」。常见正当理由:家庭共用卡、合租网络、已知合作账户 · 写入 admin.cluster_released",
+      detail: "解冻 = 放行,必须第二个人确认不是被滥用。解除后账户恢复正常,后续托管收益按普通账户释放,提现分诊恢复普通队列,本簇移入「已解除误判」。常见正当理由:家庭共用卡、合租网络、已知合作账户。写入审计。",
       amplifies: true,
       run: (reason) => {
         ctx.setParam(`K.cluster.${c.id}.st`, "released", { action: `解除误判关联簇 ${c.id}`, reason });
@@ -123,7 +175,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const clearCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `判定为正常 · ${c.id}`,
-      detail: "这个动作会把账户簇永久移出监控队列,以后这批账户不再参与多账户检测,也会减少风险评分和刷量检测的输入 —— 影响不可逆,风险与「解除误判」对称,所以同样要理由必填确认,并且必须写清理由(比如共享办公网络、已知合作账户)。命中 IP 白名单的纯技术性正常由系统自动放过,不用走这里 · 写入 admin.cluster_cleared",
+      detail: "这个动作会把账户簇永久移出监控队列,以后这批账户不再参与多账户检测,也会减少风险评分和刷量检测的输入。后续收益按普通账户释放,提现分诊不再叠加本簇风险;影响不可逆,风险与「解除误判」对称,所以同样要理由必填确认。命中 IP 白名单的纯技术性正常由系统自动放过,不用走这里。写入审计。",
       amplifies: true,
       run: (reason) => {
         ctx.setParam(`K.cluster.${c.id}.st`, "cleared", { action: `判定为正常 ${c.id}(永久移出监控)`, reason });
@@ -146,12 +198,42 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     });
 
   const adjParam = (p: (typeof K1_PARAMS)[number]) => {
-    const cur = ctx.pget(`K.k1.${p.key}`) ?? p.val;
+    if (p.key === "linkWeight") {
+      const device = ctx.pget("K.k1.linkWeight.device") ?? "0.5";
+      const payment = ctx.pget("K.k1.linkWeight.payment") ?? "0.4";
+      const ip = ctx.pget("K.k1.linkWeight.ip") ?? "0.1";
+      ctx.openActionConfirm({
+        action: "关联强度权重调整",
+        detail: "三个维度分开填,避免把多个值塞进一个输入框。权重只影响之后的新聚簇判定,不追溯历史簇;放宽会让更多小号通过,所以操作理由必填。",
+        amplifies: true,
+        businessForm: {
+          kind: "multi-field",
+          title: "关联强度权重",
+          hint: "建议三项合计为 1。IP 权重保持较低,避免合租网络、校园网误伤。",
+          fields: [
+            { key: "device", label: "设备权重", current: device, inputKind: "number", min: 0, max: 1 },
+            { key: "payment", label: "支付工具权重", current: payment, inputKind: "number", min: 0, max: 1 },
+            { key: "ip", label: "IP 权重", current: ip, inputKind: "number", min: 0, max: 1 },
+          ],
+        },
+        run: (reason, _newVal, bv) => {
+          if (!bv) return;
+          ctx.setParam("K.k1.linkWeight.device", bv.device, { action: "调整关联强度设备权重", reason });
+          ctx.setParam("K.k1.linkWeight.payment", bv.payment, { action: "调整关联强度支付工具权重", reason });
+          ctx.setParam("K.k1.linkWeight.ip", bv.ip, { action: "调整关联强度 IP 权重", reason });
+          ctx.setParam("K.k1.linkWeight", `设备 ${bv.device} · 支付 ${bv.payment} · IP ${bv.ip}`, { action: "调整关联强度权重汇总", reason });
+          ctx.toast("关联强度权重已更新 · 后续新判定批生效");
+        },
+      });
+      return;
+    }
+    const cur = numericText(String(ctx.pget(`K.k1.${p.key}`) ?? p.val));
+    const meta = K1_PARAM_META[p.key] ?? {};
     ctx.openActionConfirm({
       action: `拦截阈值调整 · ${p.name}`,
-      detail: `${p.name} · 当前 ${cur} · ${p.note}。这条线由服务器在注册 / 绑上级 / 绑卡入口直接执行,改严会拦掉更多注册,改松会放进更多小号 —— 所以要理由必填确认,通过后下一次校验生效 · 写入 admin.risk_threshold_adjusted`,
+      detail: `${p.name} · 当前 ${cur} · ${p.note}。这条线由服务器在注册 / 绑上级 / 绑卡入口直接执行,改严会拦掉更多注册,改松会放进更多小号 —— 所以要理由必填确认,通过后下一次校验生效并写入审计。`,
       amplifies: true,
-      edit: { kind: "text", current: cur },
+      edit: { kind: "number", current: cur, unit: meta.unit, min: meta.min, max: meta.max, gt: meta.gt },
       run: (reason, newVal) => {
         if (!newVal) return;
         ctx.setParam(`K.k1.${p.key}`, newVal, { action: `调整拦截阈值 ${p.name}`, reason });
@@ -165,7 +247,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     () =>
       Object.entries(ctx.params)
         .filter(([k]) => k.startsWith("K.wl.add."))
-        .map(([k, v]) => [k.slice("K.wl.add.".length), String(v), "你", "2026-12-31"] as [string, string, string, string]),
+        .map(([k, v]) => [k.slice("K.wl.add.".length), String(v), "当前操作者", "2026-12-31"] as [string, string, string, string]),
     [ctx.params],
   );
   const wlRows = [...K1_WHITELIST.filter(([cidr]) => ctx.pget(`K.wl.del.${cidr}`) !== "1"), ...wlAdded.filter(([cidr]) => ctx.pget(`K.wl.del.${cidr}`) !== "1")];
@@ -208,6 +290,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const cur = K1_CLUSTERS[sel];
   const curSt = liveSt(cur);
+  const curImpact = CLUSTER_EARNING_IMPACT[curSt];
+  const normalSlots = riskParamValue(RISK_CLUSTER_PARAMS.find((p) => p.key === "freePhoneSlotsPerCluster")!);
+  const pendingFrom = riskParamValue(RISK_CLUSTER_PARAMS.find((p) => p.key === "duplicateAccountPendingFrom")!);
+  const freezeFrom = riskParamValue(RISK_CLUSTER_PARAMS.find((p) => p.key === "duplicateAccountFreezeFrom")!);
 
   return (
     <div>
@@ -223,20 +309,51 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         <div className="l-h">
           <span className="ttl">拦截阈值</span>
           <span className="sub">· 注册 / 绑上级 / 绑卡入口由服务器按这些线直接拦 · 改动要理由必填确认</span>
-          <div className="r"><span className="kcode electric" title="linkWeight 例外:仅对之后的新判定批生效,不追溯历史簇">改后下一次校验生效 · linkWeight 仅新判定批</span></div>
+          <div className="r"><span className="kcode electric" title="关联权重仅对之后的新判定批生效,不追溯历史簇">改后下一次校验生效 · 关联权重仅新判定批</span></div>
         </div>
         <div className="l-b">
           <div className="param-list">
             {K1_PARAMS.map((p) => {
-              const curV = ctx.pget(`K.k1.${p.key}`);
+              const curV = p.key === "linkWeight"
+                ? ctx.pget("K.k1.linkWeight")
+                : ctx.pget(`K.k1.${p.key}`);
               return (
                 <div className="p" key={p.key}>
                   <div className="txt"><div className="k">{p.name}</div><div className="s">{p.sub}{curV ? <span> · 已调整(原 {p.val})</span> : null}</div></div>
-                  <span className="v" style={p.key === "linkWeight" ? { fontSize: 13 } : undefined}>{curV ?? p.val}</span>
-                  <button className="l-btn sm mc" onClick={() => adjParam(p)} title={`PRD K1③ ${p.key}`}>调整</button>
+                  <span className="v" style={p.key === "linkWeight" ? { fontSize: 13 } : undefined}>{k1ParamValue(p)}</span>
+                  <button className="l-btn sm mc" onClick={() => adjParam(p)} title={`PRD K1③ ${p.name}`}>调整</button>
                 </div>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* SPEC-7 收益释放参数 */}
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">收益释放参数</span>
+          <span className="sub">· H5 托管收益按账户结算,同簇多号超过阈值后进入审核中或锁定奖励 · 全部后台可调</span>
+          <div className="r"><span className="kcode electric">影响注册后收益分桶 + 提现分诊</span></div>
+        </div>
+        <div className="l-b">
+          <div className="param-list" data-proof="k1-risk-release-params">
+            {RISK_CLUSTER_PARAMS.map((p) => {
+              const curV = ctx.pget(riskClusterParamKey(p.key));
+              return (
+                <div className="p" key={p.key}>
+                  <div className="txt">
+                    <div className="k">{p.label}</div>
+                    <div className="s">{p.desc}{curV ? <span> · 已调整(默认 {p.defaultVal} {p.unit})</span> : null}</div>
+                  </div>
+                  <span className="v">{riskParamValue(p)}<span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 3 }}>{p.unit}</span></span>
+                  <button className="l-btn sm mc" onClick={() => editRiskParam(p)}>调整</button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="ktint warn" style={{ marginTop: 12 }}>
+            <b>落地规则</b> · 正常槽位内收益进入可提现;超过待审起点进入审核中;达到冻结建议线或人工冻结后进入锁定奖励。App 在线证明时长达标后,可作为人工释放锁定收益的正向依据。
           </div>
         </div>
       </section>
@@ -293,12 +410,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 12 }}>
           <div className="sm-strip">
-            <span className="st">detected 命中</span><span className="ar">人工标记 →</span>
-            <span className="st warn">flagged 可疑</span><span className="ar">操作确认 →</span>
-            <span className="st bad">frozen 已冻结</span><span className="ar">操作确认 →</span>
-            <span className="st ok">released 解除误判</span>
+            <span className="st">命中待判</span><span className="ar">人工标记 →</span>
+            <span className="st warn">已标可疑</span><span className="ar">操作确认 →</span>
+            <span className="st bad">已冻结</span><span className="ar">操作确认 →</span>
+            <span className="st ok">解除误判</span>
             <span className="ar" style={{ marginLeft: 14 }}>命中白名单自动 / 人工操作确认 →</span>
-            <span className="st ok">cleared 判定正常</span>
+            <span className="st ok">判定正常</span>
           </div>
         </div>
       </section>
@@ -330,6 +447,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <span className="it"><span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warning)", display: "inline-block" }} />领过新人礼</span>
             </div>
             <div className="ktint" style={{ fontSize: 12 }}><b>判读</b> · {cur.note}</div>
+            <div className={`ktint ${curImpact.tone === "bad" ? "bad" : curImpact.tone === "warn" ? "warn" : ""}`} data-proof="k1-cluster-earning-impact" style={{ fontSize: 12, marginTop: 10 }}>
+              <b>收益影响</b> · 当前结论:<span className={`bdg ${curImpact.tone}`} style={{ marginLeft: 6 }}>{curImpact.label}</span>
+              <div style={{ marginTop: 6 }}>{curImpact.desc}</div>
+              <div style={{ marginTop: 6 }}>当前参数:正常释放 {normalSlots} 个手机槽;第 {pendingFrom} 个账号起进入审核中;第 {freezeFrom} 个账号起建议锁定奖励。</div>
+            </div>
           </div>
           <div className="tbl-pane">
             <table className="l-tbl">

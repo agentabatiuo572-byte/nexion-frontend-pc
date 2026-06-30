@@ -44,7 +44,7 @@ export function ExposureCard() {
       <hr className="mb-3 mt-auto border-0" style={{ height: 1, background: "var(--v5-border)" }} />
       <div className="flex items-center justify-between gap-3 py-1 text-[12.5px]">
         <span style={{ color: "var(--v5-ink-3)" }}><AutoGloss>口径</AutoGloss></span>
-        <span style={{ color: "var(--v5-ink-2)" }}><AutoGloss>运营内部 · server-canonical</AutoGloss></span>
+        <span style={{ color: "var(--v5-ink-2)" }}><AutoGloss>运营内部 · 服务端权威</AutoGloss></span>
       </div>
       <div className="flex items-center justify-between gap-3 py-1 text-[12.5px]">
         <span style={{ color: "var(--v5-ink-3)" }}>告警渠道</span>

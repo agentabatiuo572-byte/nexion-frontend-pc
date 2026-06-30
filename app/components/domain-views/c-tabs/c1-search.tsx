@@ -115,7 +115,7 @@ export function C1Search({ ctx }: { ctx: CCtx }) {
         </div>
       </section>
 
-      <p className="f-foot">隐私三道闸:手机号/地址全程脱敏(检索、展示、导出);看敏感维度落 <b>admin.user_profile_viewed</b>;导出名单落 <b>admin.user_list_exported</b>(检索条件以哈希记录,不含明文),统一归口导出审计台(L5)。生命周期 L0–L5 / V-Rank V0–V12 是内部分诊口径,用户端永不可见。</p>
+      <p className="f-foot">隐私三道闸:手机号/地址全程脱敏(检索、展示、导出);看敏感维度落画像查看审计;导出名单落名单导出审计(检索条件以哈希记录,不含明文),统一归口导出审计台(L5)。生命周期 L0–L5 / V-Rank V0–V12 是内部分诊口径,客户端永不可见。</p>
       <PaginationExemptionList
         items={[
           {
@@ -136,10 +136,10 @@ export function C1HeaderActions({ ctx }: { ctx: CCtx }) {
       className="f-cta"
       onClick={() => ctx.openConfirm({
         action: "导出用户名单(脱敏 CSV)",
-        detail: "按当前检索条件导出。手机号、地址全部脱敏;检索条件以哈希记入审计,不含明文。落 admin.user_list_exported,统一归口到导出审计台(L5)。",
+        detail: "按当前检索条件导出。手机号、地址全部脱敏;检索条件以哈希记入审计,不含明文。统一归口到导出审计台(L5)。",
         okLabel: "确认导出",
         run: () => {
-          ctx.logAudit({ actor: "总管理员", action: "导出用户名单(脱敏 CSV)· admin.user_list_exported", target: "C1" });
+          ctx.logAudit({ actor: "总管理员", action: "导出名单(脱敏 CSV)", target: "C1" });
           ctx.toast("名单已导出(脱敏)· 落审计并归口 L5");
         },
       })}

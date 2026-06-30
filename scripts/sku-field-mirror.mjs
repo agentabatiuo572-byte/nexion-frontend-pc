@@ -9,9 +9,10 @@
  *
  * 跨项目读前端真实现面(相对 admin root)。前端项目不在预期路径时跳过(非爆红),保证 admin 仓库可独立 verify。
  *
- * 🔴 真实现面 = uniapp(Nexion-uniapp,主人 2026-06-14 拍板:前端唯一实现面;H5 Nexion-prototype 已冻结)。
- * 哨兵原读 H5 → 漏掉 uniapp 新增的展示字段(如 purchaseGate),门形同虚设;2026-06-18 re-point 到 uniapp。
- * 评价(Review)uniapp 无独立模型(无 reviews.ts),沿用 H5 reviews.ts 作 Review 形状的 canonical 镜像源。
+ * 🔴 真实现面 = uniapp(Nexion-uniapp,主人 2026-06-14 拍板:前端唯一实现面;
+ * H5 工程已于 2026-06-26 退役删除)。
+ * 评价(Review)镜像源已撤(原 H5 reviews.ts 已删);如 uniapp 后续补 Review 模型,
+ * 在此 re-point 到 ../Nexion-uniapp/src/mock/reviews.ts 即可。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -87,16 +88,10 @@ for (const f of aiFields) {
   if (!opsFields.has(t)) missing.push(`AIPerformance.${f} → OpsSku.${t}(缺失)`);
 }
 
-// ── E1 评价 Review 镜像(后台 OpsReview ⊇ 前端 reviews.ts Review)──
-// 评价镜像源:uniapp 无独立 Review 模型(无 reviews.ts),沿用 H5 reviews.ts 作 Review 形状 canonical。
-const FE_REVIEWS = path.join("..", "Nexion-prototype", "lib", "mock", "reviews.ts");
-let reviewFieldCount = 0;
+// ── E1 评价 Review 镜像 ──
+// 2026-06-26 H5 退役后,Review canonical 源临时缺位;只统计 OpsReview 字段数,不做 ⊇ 比对。
+// 待 uniapp 补 Review 模型(src/mock/reviews.ts)后,re-point 即可恢复 ⊇ 镜像。
 const opsReviewFields = new Set(extractInterfaceFields(storeSrc, "OpsReview") ?? []);
-if (fs.existsSync(FE_REVIEWS) && opsReviewFields.size) {
-  const reviewFields = extractInterfaceFields(fs.readFileSync(FE_REVIEWS, "utf8"), "Review") ?? [];
-  reviewFieldCount = reviewFields.length;
-  for (const f of reviewFields) if (!opsReviewFields.has(f)) missing.push(`Review.${f} → OpsReview.${f}(缺失)`);
-}
 
 if (missing.length) {
   console.error("✗ E1 字段镜像 gate:后台未覆盖前端展示字段:");
@@ -104,5 +99,5 @@ if (missing.length) {
   console.error("  修复:platform-config-store.ts 的 OpsSku/OpsReview 补字段 + e-view 表单/seed 补录入。");
   process.exit(1);
 }
-console.log(`✓ E1 字段镜像 gate:OpsSku(${opsFields.size})⊇ Product(${productFields.length}+AI ${aiFields.length}) · OpsReview(${opsReviewFields.size})⊇ Review(${reviewFieldCount}) — 0 缺口`);
+console.log(`✓ E1 字段镜像 gate:OpsSku(${opsFields.size})⊇ Product(${productFields.length}+AI ${aiFields.length}) · OpsReview(${opsReviewFields.size}) 无 canonical 源(H5 已退役) — 0 缺口`);
 process.exit(0);

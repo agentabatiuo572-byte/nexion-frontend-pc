@@ -183,7 +183,7 @@ export default function CommandCenter() {
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
-            欢迎,{operator}<AutoGloss> · 资金兑付安全和转化健康一屏看全 · 数据都来自 A4 事件流,以服务端为准(server-canonical)。</AutoGloss>
+            欢迎,{operator}<AutoGloss> · 资金兑付安全和转化健康一屏看全 · 数据都来自 A4 事件流,以服务端为准。</AutoGloss>
           </p>
         </div>
         <div className="flex items-center gap-2.5">

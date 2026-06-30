@@ -3,11 +3,10 @@
   "routes": {
     "adminPages": 12,
     "adminNavRoutes": 66,
-    "nextReferencePages": 80,
     "uniappPages": 81
   },
   "modalFiles": 41,
-  "interactionRows": 230,
+  "interactionRows": 150,
   "businessFlows": 18,
   "featureMappings": 18,
   "ledgerCreated": false,

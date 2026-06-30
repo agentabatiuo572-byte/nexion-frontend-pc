@@ -1,267 +1,14 @@
 {
-  "generatedAt": "2026-06-12T16:24:56.130Z",
-  "description": "L1 round-1 shard dispatch plan generated from M0 route and business-flow inventories.",
+  "generatedAt": "2026-06-28T04:06:33.071Z",
+  "description": "L1 round-1 shard dispatch plan generated from M0 route and business-flow inventories. The old H5 app retired on 2026-06-26; active frontend shards cover UniApp only.",
   "counts": {
-    "shards": 35,
-    "nextReferenceRoutes": 80,
-    "uniappRoutes": 81,
+    "shards": 25,
+    "uniappRoutes": 82,
     "adminRoutes": 66,
-    "uncoveredNextReference": 0,
     "uncoveredUniapp": 0,
     "uncoveredAdmin": 0
   },
   "shards": [
-    {
-      "id": "NEXT-FR-01",
-      "side": "nextReference",
-      "title": "home + market + phase/trust signals",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/",
-        "/genesis/marketplace",
-        "/globe",
-        "/market",
-        "/search",
-        "/trust",
-        "/trust/nex"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-02",
-      "side": "nextReference",
-      "title": "onboarding + auth",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/login",
-        "/onboarding/connect",
-        "/onboarding/estimator",
-        "/onboarding/intro",
-        "/ref/[code]",
-        "/register"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-03",
-      "side": "nextReference",
-      "title": "store + checkout + orders",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/store",
-        "/store/[productId]",
-        "/store/bundle",
-        "/store/checkout",
-        "/store/orders",
-        "/store/orders/[id]"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-04",
-      "side": "nextReference",
-      "title": "earn + devices + missions",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/daily",
-        "/earn",
-        "/missions"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-05",
-      "side": "nextReference",
-      "title": "wallet + finance actions",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/me/wallet",
-        "/me/wallet/bills",
-        "/me/wallet/cards",
-        "/me/wallet/cards/new",
-        "/me/wallet/exchange",
-        "/me/wallet/exchange/how-it-works",
-        "/me/wallet/nex",
-        "/me/wallet/nex-v2-lock",
-        "/me/wallet/premium",
-        "/me/wallet/repurchase",
-        "/me/wallet/repurchase/how-it-works",
-        "/me/wallet/topup",
-        "/me/wallet/withdraw",
-        "/me/wallet/withdraw/tracking",
-        "/tx/[hash]"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-06",
-      "side": "nextReference",
-      "title": "profile + KYC + security + support",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/me",
-        "/me/help",
-        "/me/language",
-        "/me/notifications",
-        "/me/preferences",
-        "/me/profile",
-        "/me/risk-disclosure",
-        "/me/security",
-        "/me/security/kyc-express",
-        "/me/support",
-        "/me/support/tickets"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-07",
-      "side": "nextReference",
-      "title": "team + commissions + rank",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/team",
-        "/team/agent",
-        "/team/binary",
-        "/team/binary/how-it-works",
-        "/team/commissions",
-        "/team/commissions/how-it-works",
-        "/team/leaderboard",
-        "/team/leadership-pool",
-        "/team/leadership-pool/how-it-works",
-        "/team/network",
-        "/team/quota",
-        "/team/rank",
-        "/team/rank/how-it-works",
-        "/team/tree",
-        "/team/unilevel",
-        "/team/unilevel/how-it-works"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-08",
-      "side": "nextReference",
-      "title": "genesis + staking + token economy",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/genesis",
-        "/genesis/holder",
-        "/genesis/how-it-works",
-        "/genesis/marketplace",
-        "/staking",
-        "/staking/how-it-works"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-09",
-      "side": "nextReference",
-      "title": "content/learn/events/developer",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/developer",
-        "/events",
-        "/learn"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
-    {
-      "id": "NEXT-FR-10",
-      "side": "nextReference",
-      "title": "me long-tail pages",
-      "kind": "runtime-crawl",
-      "routes": [
-        "/me/achievements",
-        "/me/devices",
-        "/me/goals",
-        "/me/proof",
-        "/me/receipts",
-        "/me/replay-tour",
-        "/me/trial",
-        "/me/wrapped"
-      ],
-      "requiredEvidence": [
-        "accessibility snapshot",
-        "screenshot",
-        "console errors",
-        "interactive element result table",
-        "modal five-tuple when applicable",
-        "list baseline when applicable"
-      ],
-      "status": "pending"
-    },
     {
       "id": "UNI-FR-01",
       "side": "uniapp",
@@ -339,6 +86,7 @@
       "title": "earn + devices + missions",
       "kind": "runtime-crawl",
       "routes": [
+        "/#/pages/compute-share/download",
         "/#/pages/daily/daily",
         "/#/pages/earn/earn",
         "/#/pages/missions/missions"
@@ -866,7 +614,6 @@
     }
   ],
   "uncovered": {
-    "nextReference": [],
     "uniapp": [],
     "admin": []
   }

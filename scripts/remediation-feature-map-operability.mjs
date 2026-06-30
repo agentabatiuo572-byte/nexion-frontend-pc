@@ -41,7 +41,6 @@ function routeMatchesLedger(ledgerRoute, targetRoute, scope) {
     if (!route) return false;
     if (route === normalizedTarget) return true;
     if (scope === "frontend" && route === "all-frontend-routes" && normalizedTarget.startsWith("/#/pages/")) return true;
-    if (scope === "frontend" && route === "all-next-reference-routes" && !normalizedTarget.startsWith("/#/")) return true;
     if (route.endsWith("[productId]") && normalizedTarget.includes("/store/detail")) return true;
     if (route.includes("[") && route.replace(/\[[^\]]+\]/g, "").length > 1) {
       return normalizedTarget.startsWith(route.replace(/\[[^\]]+\]/g, ""));
@@ -84,7 +83,7 @@ function proofMappingId(row) {
 
 function proofSide(row) {
   if (row.side === "admin") return "admin";
-  if (["uniapp", "frontend", "nextReference"].includes(row.side)) return "frontend";
+  if (["uniapp", "frontend"].includes(row.side)) return "frontend";
   return row.side || "unknown";
 }
 
@@ -97,7 +96,7 @@ const blockingLedger = ledger.filter(
 
 const adminRuntimeByRoute = groupByRoute(loadShardRows("-runtime.ndjson").filter((row) => row.side === "admin" && row.status === "captured"));
 const frontRuntimeByRoute = groupByRoute(
-  loadShardRows("-runtime.ndjson").filter((row) => ["nextReference", "uniapp"].includes(row.side) && row.status === "captured"),
+  loadShardRows("-runtime.ndjson").filter((row) => row.side === "uniapp" && row.status === "captured"),
 );
 const adminActionByRoute = groupByRoute(loadShardRows("-action-sample.ndjson").filter((row) => row.side === "admin"));
 const frontActionByRoute = groupByRoute(loadShardRows("-front-action-sample.ndjson"));

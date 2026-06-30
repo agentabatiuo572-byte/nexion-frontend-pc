@@ -3,20 +3,48 @@
 /**
  * D2 提现审核队列 — 后台最高频操盘动作。
  * 三路信号只消费不重算:风险分(K4 同分单源)/ 命中规则(K3_HITS 同单同刻)/ 实名态(C4);
- * 状态机 server-canonical(正常 5 态 + 异常 6 态);小额(<$1,000)低风险普通确认快速放行保 48h SLA,
- * 大额 操作确认(amplifies → B1 覆盖率预检);K5 复审 hold 的单(holdK5)复审未过禁放(PRD D2⑦);
+  * 状态机以服务端为准(正常 5 态 + 异常 6 态);低于可配置大额线的低风险单可普通确认快速放行保 48h SLA,
+ * 大额 操作确认(amplifies → B1 覆盖率预检);K5 复审未裁决的单(holdK5)复审未过禁放(PRD D2⑦);
  * 批量含大额自动分拣转单笔(LARGE_AMOUNT_REQUIRES_MAKER_CHECKER 语义)。
  */
 import { useState } from "react";
 import { WITHDRAWALS, type WithdrawalRow } from "@/lib/mock/admin/design-data";
 import { LEDGER } from "@/lib/mock/admin/ledger";
-import { WD_ST, LARGE_LINE, wdStats } from "./data";
+import { WD_ST, wdStats } from "./data";
 import { D_FUND } from "@/lib/mock/admin/design-data";
+import { WITHDRAW_REVIEW_PARAMS, withdrawReviewParamKey, type WithdrawReviewParamDef } from "@/lib/mock/admin/compute-config";
 import type { DCtx } from "./types";
 import { DataListPager, useDataListPager } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
 
 const riskColor = (s: number) => (s >= 70 ? "var(--danger)" : s >= 40 ? "var(--warning)" : "var(--success)");
+const fmtUsd = (n: number) => `$${n.toLocaleString("en-US")}`;
+
+const D2_USER_CLUSTER: Record<string, string> = {
+  usr_8807: "CL-318 · 已标可疑",
+  usr_8812: "CL-318 · 已标可疑",
+  usr_77D4: "CL-322 · 命中待判",
+};
+
+function d2Disposition(w: WithdrawalRow): { label: string; tone: string } {
+  if (w.rules.includes("WR-04")) return { label: "冻结", tone: "bad" };
+  if (w.rules.includes("WR-01")) return { label: "转人工审核", tone: "cyan" };
+  if (w.rules.includes("WR-02") || w.rules.includes("WR-03")) return { label: "延迟审核", tone: "warn" };
+  return { label: "放行", tone: "ok" };
+}
+
+function d2RiskReasons(w: WithdrawalRow): string[] {
+  const reasons: string[] = [];
+  if (w.rules !== "—") reasons.push(w.rules);
+  if (w.risk >= 70) reasons.push("K4 高风险分");
+  if (w.holdK5) reasons.push(`K5 复审 ${w.holdK5} 未裁决`);
+  if (!w.pts) reasons.push("NEX 抵扣不足");
+  return reasons.length ? reasons : ["未命中提现规则"];
+}
+
+function wdStatusLabel(state: string): string {
+  return WD_ST[state]?.[0] ?? state;
+}
 
 const FILTERS: { key: string; label: string }[] = [
   { key: "pending", label: "待人工" },
@@ -34,7 +62,15 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const [sel, setSel] = useState<Record<string, boolean>>({});
 
   const effSt = (id: string) => pget(`D.withdraw.${id}.st`) ?? WITHDRAWALS.find((w) => w.id === id)!.st;
-  const stats = wdStats(effSt);
+  const reviewParamValue = (p: WithdrawReviewParamDef): string => String(pget(withdrawReviewParamKey(p.key)) ?? p.defaultVal);
+  const largeConfirmLine = (() => {
+    const p = WITHDRAW_REVIEW_PARAMS.find((item) => item.key === "largeConfirmUsdt") ?? WITHDRAW_REVIEW_PARAMS[0];
+    const n = Number(reviewParamValue(p));
+    return Number.isFinite(n) && n > 0 ? n : Number(p.defaultVal);
+  })();
+  const largeConfirmLabel = fmtUsd(largeConfirmLine);
+  const isLarge = (w: WithdrawalRow) => w.amount >= largeConfirmLine;
+  const stats = wdStats(effSt, largeConfirmLine);
   const cov = LEDGER.coverageRatio.toFixed(1);
   // KYC 列同源 C4 权威(C.kyc.<uid>.st):C4 人工标记/撤销、K5 裁决回写后本列实时跟;
   // 无实时裁决时回落种子串(种子带工单上下文如「已通过(复审中 K5)」,信息更全)。
@@ -43,11 +79,23 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const live = pget(`C.kyc.${w.user}.st`);
     return live ? (KYC_LIVE[live] ?? w.kyc) : w.kyc;
   };
+  const editReviewParam = (p: WithdrawReviewParamDef) =>
+    openActionConfirm({
+      action: `提现审核参数调整 · ${p.label}`,
+      detail: `${p.label} · 当前 ${fmtUsd(Number(reviewParamValue(p)))}。${p.desc}${p.frontendEffect} 改动后下一笔提现审核分流生效,历史单不回写。`,
+      amplifies: false,
+      edit: { kind: "number", current: reviewParamValue(p), unit: p.unit, gt: 0 },
+      run: (reason, newVal) => {
+        if (!newVal) return;
+        ctx.setParam(withdrawReviewParamKey(p.key), newVal, { action: `调整提现审核参数 ${p.label}`, reason });
+        ctx.toast(`${p.label} 已更新为 ${fmtUsd(Number(newVal))} · 下一笔审核分流生效`);
+      },
+    });
 
   const rows = WITHDRAWALS.filter((w) => {
     const st = effSt(w.id);
     if (filter === "pending") return st === "review-pending";
-    if (filter === "large") return w.amount >= LARGE_LINE;
+    if (filter === "large") return isLarge(w);
     if (filter === "high") return w.risk >= 70;
     if (filter === "frozen") return st === "frozen";
     return true;
@@ -62,10 +110,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   /* ── 动作(放行/拒绝/延迟/冻结/解冻/退款覆盖)── */
   const approve = (w: WithdrawalRow) => {
-    const large = w.amount >= LARGE_LINE;
+    const large = isLarge(w);
     if (w.holdK5 && effSt(w.id) === "review-pending") {
       // PRD D2⑦:大额触发 K5 复审,复审未过维持待确认/延迟 —— 不弹放行,提示去 K5
-      toast(`${w.id} 在 K5 复审 hold(${w.holdK5})· 复审未过不可放行,先去 K5 裁决`);
+      toast(`${w.id} 在 K5 复审未裁决(${w.holdK5})· 复审未过不可放行,先去 K5 裁决`);
       return;
     }
     if (large) {
@@ -78,8 +126,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           propose(toast, {
             action: `大额放行 · ${w.id} · $${w.amount.toLocaleString("en-US")}`,
             obj: `${w.user} · $${w.amount.toLocaleString("en-US")}`,
-            before: "review-pending",
-            after: "review-passed",
+            before: wdStatusLabel(effSt(w.id)),
+            after: wdStatusLabel("review-passed"),
             type: "fund",
             amplifies: true,
             gate: { roles: ["finance"], requireLead: true },
@@ -93,9 +141,9 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     } else {
       openConfirm({
         action: `快速放行 · ${w.id} · $${w.amount}`,
-        detail: "小额(< $1,000)且风险分低于路由线(40)、未命中任何风控规则——符合快速通道,单人即时放行保 48h 到账。放行事件落审计。",
-        chips: [["小额低风险 · 单人即时", "ready"], ["落审计 · 储备同步核减", "done"]], okLabel: "确认放行",
-        run: (reason) => { setSt(w.id, "review-passed", `快速放行 ${w.id}`, reason || "快速通道"); toast(`${w.id} 已快速放行 → 出金中`); },
+        detail: <>小额(低于 {largeConfirmLabel})且风险分低于路由线(40)、未命中任何风控规则——符合快速通道,单人即时放行保 48h 到账。放行事件落审计。</>,
+        chips: [["小额低风险 · 单人即时", "ready"], ["落审计 · 储备同步核减", "done"]], reason: true, okLabel: "确认放行",
+        run: (reason) => { setSt(w.id, "review-passed", `快速放行 ${w.id}`, reason); toast(`${w.id} 已快速放行 → 出金中`); },
       });
     }
   };
@@ -136,8 +184,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       propose(toast, {
         action: `解冻提现 · ${w.id}`,
         obj: `${w.user} · $${w.amount.toLocaleString("en-US")}`,
-        before: "frozen",
-        after: "review-pending",
+        before: wdStatusLabel(effSt(w.id)),
+        after: wdStatusLabel("review-pending"),
         type: "fund",
         amplifies: true,
         gate: { roles: ["finance"], requireLead: true },
@@ -156,8 +204,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       propose(toast, {
         action: `手动退款覆盖 · ${w.id}`,
         obj: `${w.user} · $${w.amount.toLocaleString("en-US")}`,
-        before: effSt(w.id),
-        after: "refunded",
+        before: wdStatusLabel(effSt(w.id)),
+        after: wdStatusLabel("refunded"),
         type: "fund",
         amplifies: false,
         gate: { roles: ["finance"], requireLead: true },
@@ -182,24 +230,24 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       });
       return;
     }
-    const large = ids.filter((id) => row(id).amount >= LARGE_LINE);
-    // 批量放行的拦截分拣与单笔同一不变量:大额转单笔操作确认;K5 复审 hold 的单(含小额)复审未过禁放,同样拦截(PRD D2⑦,防批量路径旁路)
-    const held = action === "approve" ? ids.filter((id) => row(id).amount < LARGE_LINE && row(id).holdK5) : [];
-    const small = ids.filter((id) => row(id).amount < LARGE_LINE && !(action === "approve" && row(id).holdK5));
+    const large = ids.filter((id) => isLarge(row(id)));
+    // 批量放行的拦截分拣与单笔同一不变量:大额转单笔操作确认;K5 复审未裁决的单(含小额)复审未过禁放,同样拦截(PRD D2⑦,防批量路径旁路)
+    const held = action === "approve" ? ids.filter((id) => !isLarge(row(id)) && row(id).holdK5) : [];
+    const small = ids.filter((id) => !isLarge(row(id)) && !(action === "approve" && row(id).holdK5));
     openConfirm({
       action: `批量${lbl} · ${ids.length} 笔`,
       detail: <>
-        {large.length ? <><b>其中 {large.length} 笔是大额(≥ $1,000),服务器会把它们挑出来转单笔人工 + 操作确认</b>;</> : null}
-        {held.length ? <><b>{held.length} 笔在 K5 复审 hold(复审未过禁放),已剔除</b>;</> : null}
+        {large.length ? <><b>其中 {large.length} 笔是大额(≥ {largeConfirmLabel}),服务器会把它们挑出来转单笔人工 + 操作确认</b>;</> : null}
+        {held.length ? <><b>{held.length} 笔在 K5 复审未裁决(复审未过禁放),已剔除</b>;</> : null}
         {small.length ? <>剩余 {small.length} 笔照常批量{lbl}。</> : <>无可批量处理的单。</>}
         每条单独记审计 + 整体记批次号。
       </>,
-      chips: [["大额 / K5 hold 自动拦截", "ready"], ["逐条审计 + 批次号", "done"]], reason: true, okLabel: `确认批量${lbl}`,
+      chips: [["大额 / K5 复审未裁决自动拦截", "ready"], ["逐条审计 + 批次号", "done"]], reason: true, okLabel: `确认批量${lbl}`,
       run: (reason) => {
         const next = action === "approve" ? "review-passed" : action === "delay" ? "delayed" : "rejected";
         small.forEach((id) => setSt(id, next, `批量${lbl} ${id}`, reason));
         setSel({});
-        toast(`批量${lbl} ${small.length} 笔完成${large.length ? ` · ${large.length} 笔大额转单笔` : ""}${held.length ? ` · ${held.length} 笔 K5 hold 已剔除` : ""}`);
+        toast(`批量${lbl} ${small.length} 笔完成${large.length ? ` · ${large.length} 笔大额转单笔` : ""}${held.length ? ` · ${held.length} 笔 K5 复审未裁决已剔除` : ""}`);
       },
     });
   };
@@ -207,11 +255,14 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const selCount = Object.keys(sel).filter((k) => sel[k]).length;
   const curSt = effSt(cur.id);
   const dimMax = Math.max(...cur.riskDims.map((d) => d[1]), 1);
+  const curDisposition = d2Disposition(cur);
+  const curCluster = D2_USER_CLUSTER[cur.user] ?? "无关联簇";
+  const curRiskReasons = d2RiskReasons(cur);
 
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat warn"><div className="k">待确认核</div><div className="v">{stats.pendingTotal}</div><div className="sub">大额 {stats.largeTotal} · K5 复审 hold {stats.k5HoldCnt}(含小额累计过线)</div></div>
+        <div className="f-stat warn"><div className="k">待确认核</div><div className="v">{stats.pendingTotal}</div><div className="sub">大额 {stats.largeTotal} · K5 复审未裁决 {stats.k5HoldCnt}(含小额累计过线)</div></div>
         <div className="f-stat"><div className="k">今日已放行</div><div className="v">${(D_FUND.payoutTodayUsd / 1000).toFixed(1)}K</div><div className="sub">{D_FUND.payoutTodayCnt} 笔 · 平均 {D_FUND.payoutAvgHours}h 到账</div></div>
         <div className="f-stat ok"><div className="k">兑付覆盖率(B1 裁决)</div><div className="v">{cov}%</div><div className="sub">红线 {LEDGER.redlinePct} · 放大流出前自动核验</div></div>
         <div className="f-stat danger"><div className="k">冻结中</div><div className="v">{stats.frozenTotal}</div><div className="sub">${(stats.frozenUsd / 1000).toFixed(1)}K · 解冻要操作确认</div></div>
@@ -221,26 +272,52 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">提现单状态机</span>
-          <span className="sub">· 全部由服务器推进,非法跳转返回 409 · 任何失败态的钱都经「已退回」回余额,不留悬空</span>
+          <span className="sub">· 全部由服务器推进,不允许的跳转会被服务器拒绝 · 任何失败态的钱都经「已退回」回余额,不留悬空</span>
           <div className="r"><span className="dcode electric">正常 5 态 + 异常 6 态</span></div>
         </div>
         <div className="l-b">
           <div className="sm-flow">
-            <span className="st">submitted 已提交</span><span className="ar">风控自动评分 →</span>
-            <span className="st warn">review-pending 待人工</span><span className="ar">放行 →</span>
-            <span className="st ok">review-passed 已批</span><span className="ar">→</span>
-            <span className="st">processing 出金中</span><span className="ar">→</span>
-            <span className="st">sent 已发链上</span><span className="ar">3–12 块确认 →</span>
-            <span className="st ok">confirmed 到账</span>
+            <span className="st">已提交</span><span className="ar">风控自动评分 →</span>
+            <span className="st warn">待人工审核</span><span className="ar">放行 →</span>
+            <span className="st ok">已审核通过</span><span className="ar">→</span>
+            <span className="st">出金中</span><span className="ar">→</span>
+            <span className="st">已发链上</span><span className="ar">3–12 块确认 →</span>
+            <span className="st ok">已到账</span>
           </div>
           <div className="sm-flow" style={{ marginTop: 6 }}>
             <span style={{ fontSize: 11.5, color: "var(--ink-4)", marginRight: 4 }}>从「待人工」可走:</span>
-            <span className="st bad">rejected 拒绝(退回余额)</span>
-            <span className="st warn">delayed 延迟(到期回队列)</span>
-            <span className="st bad">frozen 冻结(任何在途态可冻)</span>
+            <span className="st bad">拒绝(退回余额)</span>
+            <span className="st warn">延迟(到期回队列)</span>
+            <span className="st bad">冻结(任何在途态可冻)</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-4)", margin: "0 4px 0 12px" }}>链上异常:</span>
-            <span className="st bad">tx-failed / 孤块 / 地址非法</span><span className="ar">→</span>
-            <span className="st ok">refunded 已退回余额</span>
+            <span className="st bad">链上失败 / 孤块 / 地址非法</span><span className="ar">→</span>
+            <span className="st ok">已退回余额</span>
+          </div>
+        </div>
+      </section>
+
+      {/* 审核参数 */}
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">审核参数</span>
+          <span className="sub">· 改动走操作确认和审计 · 下一笔提现审核分流生效</span>
+          <div className="r"><span className="dcode electric">当前大额线 {largeConfirmLabel}</span></div>
+        </div>
+        <div className="l-b">
+          <div className="param-list" data-proof="d2-withdraw-review-params">
+            {WITHDRAW_REVIEW_PARAMS.map((p) => {
+              const current = Number(reviewParamValue(p));
+              return (
+                <div className="p" key={p.key}>
+                  <div className="txt">
+                    <div className="k">{p.label}</div>
+                    <div className="s">{p.desc}</div>
+                  </div>
+                  <span className="v">{fmtUsd(current)}</span>
+                  <button className="l-btn sm mc" onClick={() => editReviewParam(p)}>调整</button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -269,7 +346,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
               ) : pager.pageRows.map((w) => {
                 const st = effSt(w.id);
                 const [stLabel, stTone] = WD_ST[st] ?? [st, "dim"];
-                const large = w.amount >= LARGE_LINE;
+                const large = isLarge(w);
                 return (
                   <tr key={w.id} className="click" onClick={() => setCurId(w.id)} style={st === "frozen" ? { background: "var(--danger-soft)" } : undefined}>
                     <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={!!sel[w.id]} onChange={(e) => setSel((s) => ({ ...s, [w.id]: e.target.checked }))} /></td>
@@ -286,8 +363,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
                       {st === "review-pending" && (
                         <>
-                          {w.holdK5 ? <span className="bdg dim" title="K5 复审未过不可放行(PRD D2⑦)">K5 hold</span>
-                            : w.amount >= LARGE_LINE ? <button className="l-btn sm mc" onClick={() => approve(w)}>放行(操作确认)</button>
+                          {w.holdK5 ? <span className="bdg dim" title="K5 复审未过不可放行(PRD D2⑦)">K5 复审未决</span>
+                            : isLarge(w) ? <button className="l-btn sm mc" onClick={() => approve(w)}>放行(操作确认)</button>
                             : w.risk < 40 && w.rules === "—" && w.pts ? <button className="l-btn sm" onClick={() => approve(w)}>快速放行</button>
                             : <button className="l-btn sm" onClick={() => delay(w)}>延迟</button>}
                           {" "}<button className="l-btn sm" onClick={() => reject(w)}>拒绝</button>
@@ -327,7 +404,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <button className="l-btn" onClick={() => batch("delay")}>延迟</button>
             <button className="l-btn" onClick={() => batch("reject")}>拒绝</button>
             <button className="l-btn mc" onClick={() => batch("freeze")}>冻结(操作确认)</button>
-            <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-4)" }}>批量里混进大额单(≥ $1,000)时,服务器会把它们挑出来转单笔人工,小额照常批量过</span>
+            <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--ink-4)" }}>批量里混进大额单(≥ {largeConfirmLabel})时,服务器会把它们挑出来转单笔人工,小额照常批量过</span>
           </div>
         </div>
       </section>
@@ -340,8 +417,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           <div className="r">
             {curSt === "review-pending" && (
               <>
-                {cur.holdK5 ? <span className="bdg dim" title="K5 复审未过不可放行">K5 hold · 禁放</span>
-                  : cur.amount >= LARGE_LINE ? <button className="l-btn mc" onClick={() => approve(cur)}>放行(操作确认)</button>
+                {cur.holdK5 ? <span className="bdg dim" title="K5 复审未过不可放行">K5 复审未决 · 禁放</span>
+                  : isLarge(cur) ? <button className="l-btn mc" onClick={() => approve(cur)}>放行(操作确认)</button>
                   : <button className="l-btn primary" onClick={() => approve(cur)}>放行</button>}
                 <button className="l-btn" onClick={() => delay(cur)}>延迟</button>
                 <button className="l-btn" onClick={() => reject(cur)}>拒绝</button>
@@ -357,6 +434,19 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             {cur.info.map(([k, v]) => (
               <div className="kv" key={k}><span className="k">{k}</span><span className="v">{v}</span></div>
             ))}
+            <div className="dtint warn" data-proof="d2-withdraw-risk-summary" style={{ marginTop: 12 }}>
+              <b>分诊依据</b>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                <span className={`bdg ${curDisposition.tone}`}>处理结论:{curDisposition.label}</span>
+                <span className="bdg dim">K1 关联簇:{curCluster}</span>
+                <span className="bdg dim">K4 风险分:{cur.risk}</span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                {curRiskReasons.map((reason) => (
+                  <span className="bdg warn" key={reason}>{reason}</span>
+                ))}
+              </div>
+            </div>
           </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>风险分明细(K4 · 只读引用)</div>
@@ -371,13 +461,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>该用户提现历史</div>
             <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.8 }}>{cur.hist}</div>
             {cur.holdK5 && curSt !== "rejected" && curSt !== "refunded" && (
-              <div className="dtint warn" style={{ marginTop: 12 }}><b>K5 复审 hold</b> · 本单/本人在大额 KYC 复审({cur.holdK5})未裁决,复审未过维持待确认/延迟,不可放行(风控与反作弊 → 大额 KYC 复审里裁决)。</div>
+              <div className="dtint warn" style={{ marginTop: 12 }}><b>K5 复审未决</b> · 本单/本人在大额 KYC 复审({cur.holdK5})未裁决,复审未过维持待确认/延迟,不可放行(风控与反作弊 → 大额 KYC 复审里裁决)。</div>
             )}
           </div>
         </div>
       </section>
 
-      <p className="f-foot"><b>三类参数三个家</b>:大额操作确认线($1,000)是本队列自己的静态参数;风控路由线(金额/速度/新账户/地址信誉)归 K3 规则引擎,这里照单消费——<b>K3 给出延迟/冻结/转人工时,小额快速通道不能盖过它</b>;冷却天数和提现惩罚费率是运营节奏参数,归 H1 派发、在 D5 生效,这里只拿来判「冷却到没到、按惩罚费率扣多少(用户烧 NEX 可抵)」。「24h 提交」按提交次数计(含被拒/退回的提交)——日限(D5,当前 {pget("D.dailyLimitCount") ?? "1 次 / 日"})限的是在途成功单,反复被拒又反复提交正是 WR-02 的速度信号。月 8 以后(P5+)叠加增强合规审查(H1 派发,这里只读)。放行实时核减资金池储备(D3)→ 影响兑付覆盖率(B1)→ 喂挤兑雷达(B5);大额单触发 KYC 复审(K5),复审没过的维持待确认/延迟。所有写操作带防重号,网络重试不会重复放行或重复退款。</p>
+      <p className="f-foot"><b>三类参数三个家</b>:大额操作确认线(当前 {largeConfirmLabel})归 D2 审核队列配置;风控路由线(金额/速度/新账户/地址信誉)归 K3 规则引擎,这里照单消费——<b>K3 给出延迟/冻结/转人工时,小额快速通道不能盖过它</b>;冷却天数和提现惩罚费率是运营节奏参数,归 H1 派发、在 D5 生效,这里只拿来判「冷却到没到、按惩罚费率扣多少(用户烧 NEX 可抵)」。「24h 提交」按提交次数计(含被拒/退回的提交)——日限(D5,当前 {pget("D.dailyLimitCount") ?? "1 次 / 日"})限的是在途成功单,反复被拒又反复提交正是 WR-02 的速度信号。月 8 以后(P5+)叠加增强合规审查(H1 派发,这里只读)。放行实时核减资金池储备(D3)→ 影响兑付覆盖率(B1)→ 喂挤兑雷达(B5);大额单触发 KYC 复审(K5),复审没过的维持待确认/延迟。所有写操作带防重号,网络重试不会重复放行或重复退款。</p>
     </>
   );
 }

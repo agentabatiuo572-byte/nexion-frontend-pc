@@ -3,7 +3,7 @@
 /**
  * E 设备与商城 — 设计稿 design_handoff_e_domain 内容视图。
  * 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3):
- * E1 商品目录&代际门 / E2 收益&任务引擎 / E3 生命周期&Trade-in / E4 订单状态机 / E5 设备运维。
+ * E1 商品目录&代际门 / E2 收益&任务引擎 / E3 生命周期&Trade-in / E4 订单状态机 / E5 设备运维 / E6 算力与设备配置(三端改造 SPEC-0 新增)。
  * nav id == 视图 key == prdAnchor == PRD §10 章节(已全部重编号统一,FOLD 现为恒等映射)。
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
@@ -59,6 +59,15 @@ import {
 } from "@/lib/admin/e5-client";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
+  COMPUTE_COEFFICIENTS,
+  COMPUTE_DOWNLOAD_CONTENT,
+  COMPUTE_GPU_KEYWORD_SLOTS,
+  COMPUTE_GPU_TIERS,
+  computeCoeffParamKey,
+  computeDownloadParamKey,
+  computeGpuTierParamKey,
+} from "@/lib/mock/admin/compute-config";
+import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
@@ -69,11 +78,101 @@ import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
 import { E3Manual } from "./e-tabs/e3-manual";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
+import { E6ComputeConfig } from "./e-tabs/e6-compute-config";
 import "./e-domain.css";
 
 let REVIEW_SEQ = 100; // 客户端新增评价 id 计数(SSR 安全)
 // 本地预览旁路:bypass=1 时 E1 走本地 mock state(增删改全本地,不调注定 401 的后端);=0 接真后端。
 const IS_PREVIEW = process.env.NEXT_PUBLIC_ADMIN_AUTH_BYPASS === "1";
+
+const DOWNLOAD_COPY_LIMITS = { zhTitle: 80, zhGuide: 240, enTitle: 120, enGuide: 320 } as const;
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function computeStoredValue(pget: EViewCtx["pget"], key: string, fallback: string): string {
+  return pget(key) ?? fallback;
+}
+
+function computeTierTops(pget: EViewCtx["pget"], tierId: (typeof COMPUTE_GPU_TIERS)[number]["id"]): number {
+  const tier = COMPUTE_GPU_TIERS.find((item) => item.id === tierId);
+  if (!tier) return 0;
+  const stored = Number(pget(computeGpuTierParamKey(tier.id, "tops")));
+  return Number.isFinite(stored) && stored > 0 ? stored : tier.defaultTops;
+}
+
+function validateE6ComputeWrite(mc: Mc, pget: EViewCtx["pget"], newValue?: string, businessValue?: Record<string, string>): string | null {
+  if (!mc) return null;
+  const op = mc.op;
+  if (op === "param" && mc.paramKey) {
+    const value = (newValue ?? "").trim();
+    const coeff = COMPUTE_COEFFICIENTS.find((item) => computeCoeffParamKey(item.key) === mc.paramKey);
+    if (coeff) {
+      const n = Number(value);
+      const isRatio = coeff.unit.includes("0–1");
+      if (!Number.isFinite(n) || (isRatio ? n < 0 : n <= 0)) return isRatio ? `${coeff.label}须在 0–1 之间` : `${coeff.label}须为大于 0 的数字`;
+      if (isRatio && n > 1) return `${coeff.label}须在 0–1 之间`;
+      return null;
+    }
+    if (mc.paramKey === computeDownloadParamKey("url")) {
+      if (value && !isHttpUrl(value)) return "客户端下载地址须为 http/https URL,或使用清空地址";
+      return null;
+    }
+    for (const tier of COMPUTE_GPU_TIERS) {
+      for (const field of COMPUTE_GPU_KEYWORD_SLOTS) {
+        if (mc.paramKey !== computeGpuTierParamKey(tier.id, field)) continue;
+        if (!value) return "单个显卡型号关键词不能为空";
+        if (/[,，;；\n\r|]/.test(value)) return "一次只能填写一个显卡型号关键词";
+        const sameTierKeywords = COMPUTE_GPU_KEYWORD_SLOTS
+          .filter((slot) => slot !== field)
+          .map((slot) => {
+            const originalIndex = COMPUTE_GPU_KEYWORD_SLOTS.indexOf(slot);
+            return computeStoredValue(pget, computeGpuTierParamKey(tier.id, slot), tier.keywords[originalIndex] ?? "")
+              .trim()
+              .toLowerCase();
+          })
+          .filter(Boolean);
+        if (sameTierKeywords.includes(value.toLowerCase())) return "同一档位已存在该显卡型号关键词";
+        return null;
+      }
+    }
+  }
+  if (op === "param-multi" && mc.paramKeys && businessValue) {
+    const tier = COMPUTE_GPU_TIERS.find((item) =>
+      mc.paramKeys?.some(({ paramKey }) => paramKey === computeGpuTierParamKey(item.id, "label") || paramKey === computeGpuTierParamKey(item.id, "tops")),
+    );
+    if (tier) {
+      const label = (businessValue.label ?? "").trim();
+      const tops = Number((businessValue.tops ?? "").trim());
+      if (!label) return "档位展示名称不能为空";
+      if (label.length > 24) return "档位展示名称最多 24 字";
+      if (!Number.isFinite(tops) || tops <= 0) return "算力 TOPS 须为正数";
+      const nextTops = new Map(COMPUTE_GPU_TIERS.map((item) => [item.id, computeTierTops(pget, item.id)]));
+      nextTops.set(tier.id, tops);
+      for (let i = 1; i < COMPUTE_GPU_TIERS.length; i += 1) {
+        const prev = COMPUTE_GPU_TIERS[i - 1];
+        const current = COMPUTE_GPU_TIERS[i];
+        if (!((nextTops.get(current.id) ?? 0) > (nextTops.get(prev.id) ?? 0))) {
+          return "六档显卡算力 TOPS 保存后必须严格递增";
+        }
+      }
+      return null;
+    }
+    for (const [field, limit] of Object.entries(DOWNLOAD_COPY_LIMITS)) {
+      const paramKey = computeDownloadParamKey(field as keyof typeof DOWNLOAD_COPY_LIMITS);
+      if (!mc.paramKeys.some((item) => item.paramKey === paramKey)) continue;
+      const value = (businessValue[field] ?? "").trim();
+      if (value.length > limit) return `${COMPUTE_DOWNLOAD_CONTENT[field as keyof typeof DOWNLOAD_COPY_LIMITS].label}最多 ${limit} 字`;
+    }
+  }
+  return null;
+}
 
 type SkuMediaKind = "image" | "video";
 type SkuMedia = {
@@ -715,11 +814,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("任务新增失败:" + msg);
     }
   };
-  // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
+  // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass 以服务端为准)→ onConfirm 真写 updateTask。
   const submitTaskEdit = () => {
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    setActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认 + A2 审计。` });
+    setActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· 服务端权威,改后对新派单生效,已派工单维持原配置完成 · 须操作确认 + A2 审计。` });
     setTaskDrawer(false);
   };
   const skuLabelsUsingTask = (taskId: string, taskName: string) => skus
@@ -910,6 +1009,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "E3" && <E3Lifecycle ctx={ctx} />}
       {tab === "E4" && <E4Orders ctx={ctx} />}
       {tab === "E5" && <E5Ops ctx={ctx} />}
+      {tab === "E6" && <E6ComputeConfig ctx={ctx} />}
 
       {/* E3 操作说明手册弹窗(右上角按钮触发) */}
       {tab === "E3" && manualOpen && <E3Manual ctx={ctx} onClose={() => setManualOpen(false)} />}
@@ -1165,7 +1265,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       </Drawer>}
 
       {/* 任务新增 抽屉 */}
-      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/taskClass 改后走操作确认 · 对新派单 server-canonical 生效" : "AI 算力任务类型 · 单价/门槛改后对新派单 server-canonical 生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
+      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/taskClass 改后走操作确认 · 对新派单按服务端配置生效" : "AI 算力任务类型 · 单价/门槛改后对新派单按服务端配置生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
         footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 LLM 推理 405B" /></label>
@@ -1255,6 +1355,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           // 本地预览:代际门(E.gen.*)后端单源,无本地 gate state,跳过避免 401
           if (IS_PREVIEW && (mc.op === "param" || mc.op === "param-fixed") && mc.paramKey?.startsWith("E.gen.")) {
             setToast("本地预览模式:代际门参数需连后端生效"); setActionConfirm(null); return;
+          }
+          const e6ValidationError = validateE6ComputeWrite(mc, pget, newValue, businessValue);
+          if (e6ValidationError) {
+            setToast(e6ValidationError);
+            return;
           }
           try {
             if (mc.op === "sku-save") {
@@ -1351,13 +1456,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setE3Params(await updateE3Param(mc.paramKey, v, reason, operator));
                 await refreshE3();
               } else {
-                setParam(mc.paramKey, v, { action: mc.name, reason });
+                setParam(mc.paramKey, v, { action: mc.name, reason, actor: operator });
               }
               // E.gen / E3 走后端 API 不经 setParam → 补 A2 审计镜像(else 分支 setParam 已自带审计)
               if (mc.paramKey.startsWith("E.gen.") || isE3ParamKey(mc.paramKey)) {
                 logAudit({ actor: operator, action: mc.name, target: mc.paramKey, after: v, reason });
               }
-              setToast(mc.name + ":已写入 " + v + " · server-canonical");
+              setToast(mc.name + ":已写入 " + v + " · 服务端权威");
             } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
               // 多字段调参:每字段写到自己的 param key;E3 走后端配置接口,其他域保留原 store 配置。
               const e3Values: Record<string, string> = {};
@@ -1366,7 +1471,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 if (isE3ParamKey(paramKey)) {
                   e3Values[paramKey] = next;
                 } else {
-                  setParam(paramKey, next, { action: mc.name, reason });
+                  setParam(paramKey, next, { action: mc.name, reason, actor: operator });
                 }
               }
               if (Object.keys(e3Values).length) {
@@ -1376,7 +1481,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 logAudit({ actor: operator, action: mc.name, target: Object.keys(e3Values).join(","), after: Object.values(e3Values).join(" / "), reason });
               }
               const summary = mc.paramKeys.map(({ key }) => (businessValue[key] ?? "").trim()).join(" / ");
-              setToast(mc.name + ":已写入 " + summary + " · server-canonical");
+              setToast(mc.name + ":已写入 " + summary + " · 服务端权威");
             } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
               if (mc.paramKey.startsWith("E.gen.")) {
                 setE1Gates(await updateE1GenerationGate(mc.paramKey, mc.fixedVal, reason, operator));
@@ -1384,7 +1489,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setE3Params(await updateE3Param(mc.paramKey, mc.fixedVal, reason, operator));
                 await refreshE3();
               } else {
-                setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason });
+                setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason, actor: operator });
               }
               // E.gen / E3 走后端 API 不经 setParam → 补 A2 审计镜像
               if (mc.paramKey.startsWith("E.gen.") || isE3ParamKey(mc.paramKey)) {

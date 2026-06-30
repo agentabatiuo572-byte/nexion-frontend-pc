@@ -78,13 +78,11 @@ export const WD_ST: Record<string, [label: string, tone: string]> = {
   refunded: ["已退回", "dim"],
 };
 
-export const LARGE_LINE = 1000; // D2 大额操作确认线(静态参数,与 K3 路由线 / K5 复审线三参数独立、目前碰巧同值)
-
 // D2 stat 派生(base+样本窗;样本实时态由视图层用 pget 覆盖后再计)。
-export const wdStats = (effSt: (id: string) => string) => {
+export const wdStats = (effSt: (id: string) => string, largeApprovalLine: number) => {
   const pending = WITHDRAWALS.filter((w) => effSt(w.id) === "review-pending");
   const frozen = WITHDRAWALS.filter((w) => effSt(w.id) === "frozen");
-  const largePending = pending.filter((w) => w.amount >= LARGE_LINE);
+  const largePending = pending.filter((w) => w.amount >= largeApprovalLine);
   const k5Hold = WITHDRAWALS.filter((w) => w.holdK5 && ["review-pending", "frozen", "delayed"].includes(effSt(w.id)));
   return {
     pendingTotal: D_FUND.wdPendingBase + pending.length,
@@ -141,7 +139,7 @@ export const BILL_TYPES: { key: string; label: string; tone: string }[] = [
   { key: "adjustment", label: "人工调整", tone: "cyan" },
 ];
 
-// 全平台账单流水样例(今日;与 D1/D2/K 联动:BL-99820 ↔ WD-90412(K5 复审 hold,不是出金中);
+// 全平台账单流水样例(今日;与 D1/D2/K 联动:BL-99820 ↔ WD-90412(K5 复审未决,不是出金中);
 // BL-99812 ↔ usr_8812 今日第 3 笔被拒退回(D2 WD-90388 hist「前 3 笔已拒」同链);
 // usr_55B1 的 WD-90377 退回发生在 5/28,属历史账,见 LEDGERS 滚动余额(同一事件单一时间线);
 // BL-99819 = usr_19C7 全部设备日产合计 +$17/日(与其账本 5/28-5/30 行同量级);BL-99808 = 试用兑换终态 bonus。
@@ -150,7 +148,7 @@ export const BILLS: BillRow[] = [
   // C3 双事件演示位:发起层 ADJ-1183(c-tabs ADJUST_HIST 首行)↔ 记账层本行,账单号互链、报表按号去重。
   { id: "BL-99823", user: "usr_2231", type: "adjustment", amt: "+$120", cur: "USDT", st: "已入账", memo: "人工调整 · ADJ-1183 · 工单 T-8812(C3 发起)", t: "14:30" },
   { id: "BL-99821", user: "usr_22A1", type: "topup", amt: "+$500", cur: "USDT", st: "已入账", memo: "TP-77120 · Card", t: "14:08" },
-  { id: "BL-99820", user: "usr_31E8", type: "withdraw", amt: "−$8,200", cur: "USDT", st: "复审 hold", memo: "WD-90412 · K5 复审 hold(KR-7741)", t: "14:02" },
+  { id: "BL-99820", user: "usr_31E8", type: "withdraw", amt: "−$8,200", cur: "USDT", st: "复审未决", memo: "WD-90412 · K5 复审未决(KR-7741)", t: "14:02" },
   { id: "BL-99819", user: "usr_19C7", type: "earning", amt: "+$17", cur: "USDT", st: "已入账", memo: "设备日产 · 41 台", t: "14:00" },
   { id: "BL-99817", user: "usr_84F2", type: "commission", amt: "+$112", cur: "USDT", st: "冷却中", memo: "F 域计提 · 30d 冷却", t: "13:51" },
   { id: "BL-99815", user: "usr_02A9", type: "swap", amt: "−2,000 NEX", cur: "NEX→USDT", st: "已入账", memo: "EX-3321", t: "13:40" },

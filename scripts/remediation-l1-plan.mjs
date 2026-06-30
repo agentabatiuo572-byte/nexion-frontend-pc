@@ -44,7 +44,6 @@ function groupRoutes(routes, side, groups) {
 const routes = readJson(path.join(INV, "routes.json"));
 const flows = readJson(path.join(INV, "business-flows.json"));
 
-const nextPages = routes.nextReference.pages;
 const uniPages = routes.uniapp.pages.map((page) => ({ route: page.h5Url }));
 const adminRoutes = routes.admin.navRoutes.filter((route) => route.route);
 
@@ -78,7 +77,6 @@ const adminGroups = [
 ];
 
 const shards = [
-  ...groupRoutes(nextPages, "nextReference", frontGroups).map((s) => ({ ...s, id: `NEXT-${s.id}` })),
   ...groupRoutes(uniPages, "uniapp", frontGroups).map((s) => ({ ...s, id: `UNI-${s.id}` })),
   ...groupRoutes(adminRoutes, "admin", adminGroups),
   {
@@ -102,20 +100,17 @@ const shards = [
 ].filter((shard) => (shard.routes ? shard.routes.length > 0 : true));
 
 const uncovered = {
-  nextReference: nextPages.map((r) => r.route).filter((route) => !shards.some((s) => s.side === "nextReference" && s.routes?.includes(route))),
   uniapp: uniPages.map((r) => r.route).filter((route) => !shards.some((s) => s.side === "uniapp" && s.routes?.includes(route))),
   admin: adminRoutes.map((r) => r.route).filter((route) => !shards.some((s) => s.side === "admin" && s.routes?.includes(route))),
 };
 
 const plan = {
   generatedAt,
-  description: "L1 round-1 shard dispatch plan generated from M0 route and business-flow inventories.",
+  description: "L1 round-1 shard dispatch plan generated from M0 route and business-flow inventories. The old H5 app retired on 2026-06-26; active frontend shards cover UniApp only.",
   counts: {
     shards: shards.length,
-    nextReferenceRoutes: nextPages.length,
     uniappRoutes: uniPages.length,
     adminRoutes: adminRoutes.length,
-    uncoveredNextReference: uncovered.nextReference.length,
     uncoveredUniapp: uncovered.uniapp.length,
     uncoveredAdmin: uncovered.admin.length,
   },

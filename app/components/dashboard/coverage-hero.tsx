@@ -53,13 +53,13 @@ export function CoverageHero() {
         aria-hidden
       />
 
-      {/* 顶栏:B1 + 标题 + server-canonical */}
+      {/* 顶栏:B1 + 标题 + 服务端权威 */}
       <div className="relative flex flex-wrap items-center gap-2.5">
         <span className="font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)", border: "1px solid var(--v5-border)" }}>B1</span>
         <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}>双账本总览 · <AutoGloss>兑付覆盖率</AutoGloss></span>
         <span className="ml-auto inline-flex items-center gap-1.5 rounded-[7px] px-2 py-0.5 font-mono-tabular text-[11px]" style={{ background: "var(--v5-tech-cyan-soft)", color: "var(--v5-tech-cyan)", border: "1px solid var(--v5-tech-cyan-border)" }}>
           <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-tech-cyan)" }} />
-          server-canonical
+          服务端权威
         </span>
       </div>
 

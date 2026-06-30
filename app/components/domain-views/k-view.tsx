@@ -20,9 +20,10 @@ import { K2HeaderActions, K2Arbitrage } from "./k-tabs/k2-arbitrage";
 import { K3HeaderActions, K3Rules } from "./k-tabs/k3-rules";
 import { K4HeaderActions, K4Scoring } from "./k-tabs/k4-scoring";
 import { K5HeaderActions, K5Kyc } from "./k-tabs/k5-kyc";
+import { K6JanusC2 } from "./k-tabs/k6-janus-c2";
 import type { ConfirmReq, KCtx, ActionConfirmReq } from "./k-tabs/types";
 
-const FOLD: Record<string, string> = { K1: "K1", K2: "K2", K3: "K3", K4: "K4", K5: "K5" };
+const FOLD: Record<string, string> = { K1: "K1", K2: "K2", K3: "K3", K4: "K4", K5: "K5", K6: "K6" };
 
 export function KDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -47,7 +48,8 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     : tab === "K2" ? <K2HeaderActions />
     : tab === "K3" ? <K3HeaderActions ctx={ctx} />
     : tab === "K4" ? <K4HeaderActions />
-    : <K5HeaderActions />;
+    : tab === "K5" ? <K5HeaderActions />
+    : null;
 
   return (
     <div className="dkpage kdom">
@@ -58,6 +60,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "K3" && <K3Rules ctx={ctx} />}
       {tab === "K4" && <K4Scoring ctx={ctx} />}
       {tab === "K5" && <K5Kyc ctx={ctx} />}
+      {tab === "K6" && <K6JanusC2 />}
 
       {mc && (
         <OperationConfirmModal

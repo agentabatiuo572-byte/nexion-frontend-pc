@@ -28,7 +28,7 @@
 | `crudActions` | 运营要**改**什么 + 目标态(`view`/`adjust`/`freeze`/`credit`/`debit`/`add`/`edit`/`delete`/`approve`/`toggle`/`export`/`reverse`…) |
 | `operationConfirm` | bool;**资金 / 资产 / 收益 / 规则参数 / kill-switch 一律 true** |
 | `serverCanonical` | server 权威约束一句话(抄前端 store 头注的 `PRODUCTION:` 行) |
-| `endpoint` | 读端 + 写端 `<VERB> /api/...`(取自 store 注 / `Nexion-prototype/lib/v3/_config/README.md`);无则 `TBD·建议<path>` |
+| `endpoint` | 读端 + 写端 `<VERB> /api/...`(取自当前前端 store 注 / PRD 接口锚);无则 `TBD·建议<path>` |
 | `adminTarget` | `registry:<path>`(archetype 条目)/ `page:<route>`(旗舰)/ `hub:<section>`(360 区块) |
 | `coverage` | `built`(已实现且回源核实)/ `spec_only`(PRD 已写未实现)/ `gap`(都没有)/ `waived:<理由>` |
 | `batch` | `B0..` 排期 |

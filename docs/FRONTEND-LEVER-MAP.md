@@ -1,6 +1,6 @@
 # H5 前端杠杆 ↔ 运营后台控制 · 逐一核对表(grounded)
 
-> 2026-06-03 · 对着 **H5 前端 app 真实路由**(`D:\WORKS\PLAN\Nexion-prototype\app\(main)\**`)逐个用户可见杠杆核对后台是否有对应控制面。
+> 当前口径 · 对着 **UniApp 前端真实路由**(`D:\WORKS\PLAN\Nexion-uniapp\src\pages\**`)逐个用户可见杠杆核对后台是否有对应控制面。
 > 不再凭 PRD 臆测;每行 = 一个真实前端页面/杠杆 → 它在 admin 的控制入口(域·模块·路由)→ 控制动作。
 > 状态:✅ 有控制面 · ⚠️ 薄弱/建议补强 · ❌ 缺口。
 
@@ -74,6 +74,24 @@
 | Kill-Switch/Geo-block/篡改/SOP | J1-J4(/emergency/*) | ✅ |
 | RBAC/审计/系统配置/埋点 | A1-A4(/platform/*) | ✅ |
 | 数据 BI/报表/导出 | L1-L5(/analytics/*) | ✅ |
+
+## 三端架构改造增量映射（SPEC-5 并表）
+
+> 本节并入 `PRD/三端架构改造/D_后台可控映射.md` 的 M1-M11。机器门：`scripts/fe-be-mapping-coverage.mjs`，已接入 `scripts/verify.sh`。SPEC-6 新三端入口首页已走新路由；旧三条首页维持删除态，不得恢复为验收入口。
+
+| ID | 三端改造业务 | 前端证据 | 后台控制 / 承接 | 状态 |
+|---|---|---|---|---|
+| M1 | 平台配置读取与电脑共享算力入口开关 | UniApp `config` store 读取默认关闭的电脑共享算力开关 | E6 `/devices/compute-config` 电脑共享算力入口，操作确认 + 理由 + A2 审计 | ✅ |
+| M2 | 手机算力激活登记锚点 | UniApp 设备激活写入结算锚点 | 激活登记为前台固定行为，本期无后台登记开关；E6 在线加成系数承接登记后的收益参数 | ✅ |
+| M3 | 收益按墙钟结算 | UniApp `settleDevice` / `settle()` 单源结算 | D5 金融参数 + E6 算力参数承接口径，收益绝对值仍对齐经济模型单源 | ✅ |
+| M4 | 载体在线分层（App 增强 / H5 托管） | UniApp `carrier` / H5 基线系数分支 | E6 在线加成系数（H5 基础托管系数 / App 连续在线满额时长） | ✅ |
+| M5 | 电脑算力弱入口与下载页 | UniApp Earn 弱入口、设备空槽位入口、下载页 | E6 入口开关、客户端下载地址、下载页中英标题与说明 | ✅ |
+| M6 | G1-G6 显卡算力档位与识别词 | UniApp `gpu-tiers` 与 pc-gpu 设备派生 | E6 显卡算力映射表，档位名称 / TOPS / 单个识别词逐项增删改，禁止单框多值 | ✅ |
+| M7 | pc-gpu 槽位与设备生命周期 | UniApp 6 槽位、pc-gpu 连接 / 下架 / 预留槽位逻辑 | E6 控制入口与映射，E5 继续承接设备运维和槽位上限口径 | ✅ |
+| M8 | 三端入口首页新方案 | 新 `entry-surfaces` 三条首页 + 完整链接索引；旧签名版 APP / H5 / 白壳接管三条旧首页继续删除 | 当前为评审入口与静态首页，不开放后台改文案；若进入运营化，标题 / CTA / 多语言接 I1 文案 A/B 与 I6 i18n | ✅ |
+| M9 | 白壳变脸触发与远程接管地址 | Janus 白壳服务 remoteUrl 当前回正盘默认首页 | K6 `/risk/janus-c2` 策略中心、规则树、手动状态、远程地址选择、审计 | ✅ |
+| M10 | 账户数据聚合 | UniApp `account-cloud` mock + `bindAccount` / `persistAccountSnapshot`；stale merge 覆盖余额、设备、任务身份、`currentTask` object/null、同 id 任务时间回退、`recentTasks`、`latestWithdrawal` 单调状态 | C1/C2/C3/C5/E5/D4 既有账户查询、处置、会话下线、设备运维、账本审计承接 | ✅ |
+| M11 | 三端入口与构建变体识别 | UniApp `entry-surface` 识别签名 App / H5 / 白 App | 载体识别本身无直接业务开关；白 App 接管归 K6，电脑入口归 E6 | ✅ |
 
 ## 核对结论
 - H5 ~70 个用户页/杠杆,**绝大多数都已映射到 admin 控制面且可操作**(操作确认 角色感知)。

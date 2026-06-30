@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 69 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 增 H7 代金券)。
+ * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 72 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 增 H7 代金券;E 增 E6 算力与设备配置 · 三端改造 SPEC-0;K 增 K6 Janus C2 控制台)。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -135,12 +135,15 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["growth", "support"],
     // 设计稿收编 E1-E7 → 5 子模块并全系统统一连续编号 E1-E5:代际发布门(原 E2)并入 E1、
     // 设备生命周期(原 E4)并入 E5→现 E3。同 F 域 F1-F8→F1-F5。nav id == prdAnchor == PRD §10 章节(PRD 已同步重编号)。
+    // E6 算力与设备配置:三端改造 SPEC-0 新增(非设计稿收编),挂平台 feature-flag 寄存器(computeShareEnabled…);
+    // 显卡映射表 / 在线系数 / 下载地址留 SPEC-2 填。E 为 PORTED_DOMAIN,E6 真渲染面 = e-view.tsx + e-tabs/e6-compute-config。
     l2: [
       { id: "E1", name: "商品目录 & 代际门", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
       { id: "E2", name: "收益 & 任务引擎", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
       { id: "E3", name: "生命周期 & Trade-in", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单状态机", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
       { id: "E5", name: "设备运维", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
+      { id: "E6", name: "算力与设备配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -234,6 +237,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "K3", name: "提现风控规则引擎", path: "/risk/withdrawal-rules", prdAnchor: "K3", batch: "V1", status: "flagship" },
       { id: "K4", name: "风险评分模型", path: "/risk/scoring", prdAnchor: "K4", batch: "V1", status: "flagship" },
       { id: "K5", name: "大额 KYC 复审 & 告警", path: "/risk/kyc-review", prdAnchor: "K5", batch: "V1", status: "flagship" },
+      { id: "K6", name: "Janus C2 控制台", path: "/risk/janus-c2", prdAnchor: "K6", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -301,4 +305,4 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
-export const L2_COUNT = ALL_L2.length; // 69(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 增 H7 代金券)
+export const L2_COUNT = ALL_L2.length; // 72(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 增 H7 代金券;E 增 E6 算力与设备配置;K 增 K6 Janus C2 控制台)

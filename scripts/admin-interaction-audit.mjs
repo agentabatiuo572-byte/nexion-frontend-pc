@@ -97,19 +97,13 @@ for (const f of walk(path.join(ROOT, "app"), /\.tsx$/)) {
   }
 }
 
-// ───────────── F 前端 PRD 版本号三处一致 ─────────────
+// ───────────── F 前端 PRD 文件唯一性 ─────────────
+// 2026-06-26 H5 工程退役后,prd-guard hook 一并删除;
+// 此处只保留 PRD 文件唯一性检查(防多版本并存)。
 (() => {
   const prdDir = path.join(PLAN, "PRD");
   const prdFiles = fs.readdirSync(prdDir).filter((n) => /^Nexion_产品功能架构设计文档_v[\d.]+\.md$/.test(n));
-  if (prdFiles.length !== 1) { add("F", "MEDIUM", prdDir, `前端 PRD 文件应唯一,实测 ${prdFiles.length} 个:${prdFiles.join(", ")}`); return; }
-  const fileVer = prdFiles[0].match(/_v([\d.]+)\.md$/)[1];
-  const guard = read(path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"));
-  const expectedPrd = path.join(prdDir, prdFiles[0]);
-  const guardPath = (guard.match(/const PRD = normalize\(['"]([^'"]+)['"]\)/) || [])[1];
-  if (!guardPath) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), "prd-guard 未声明 canonical PRD 路径");
-  else if (canonicalPathKey(guardPath) !== canonicalPathKey(expectedPrd)) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), `prd-guard 守护路径 ${guardPath} ≠ canonical PRD ${expectedPrd}`);
-  const guardVer = (guard.match(/产品功能架构设计文档_v([\d.]+)\.md/) || [])[1];
-  if (guardVer && guardVer !== fileVer) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), `prd-guard 守护版本 v${guardVer} ≠ 实际 PRD 文件 v${fileVer}`);
+  if (prdFiles.length !== 1) add("F", "MEDIUM", prdDir, `前端 PRD 文件应唯一,实测 ${prdFiles.length} 个:${prdFiles.join(", ")}`);
 })();
 
 // ───────────── G 凭据反模式:运营后台出现明文密码输入 ─────────────

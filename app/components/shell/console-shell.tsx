@@ -16,9 +16,19 @@ import { TopBar } from "./topbar";
 import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 
+const LOCAL_PREVIEW = process.env.NEXT_PUBLIC_ADMIN_AUTH_BYPASS === "1";
+
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
+  const [narrow, setNarrow] = useState(false);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 640px)");
+    const sync = () => setNarrow(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   const isAuthenticated = useAdminAuth((s) => s.isAuthenticated);
   const authRole = useAdminAuth((s) => s.role);
@@ -26,21 +36,22 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const collapsedRaw = useAdminUi((s) => s.sidebarCollapsed);
   const expandedRaw = useAdminUi((s) => s.expandedGroups);
 
-  const role = mounted ? authRole : "superadmin";
-  const operator = mounted ? operatorRaw : "总管理员";
+  const role = LOCAL_PREVIEW ? "superadmin" : mounted ? authRole : "superadmin";
+  const operator = LOCAL_PREVIEW ? "本地预览" : mounted ? operatorRaw : "总管理员";
   const collapsed = mounted ? collapsedRaw : false;
+  const effectiveCollapsed = narrow ? true : collapsed;
   const expanded = mounted ? expandedRaw : ["B"];
 
-  if (!mounted) return <LoginGate />;
+  if (!LOCAL_PREVIEW && !mounted) return <LoginGate />;
 
-  if (!isAuthenticated) return <LoginGate />;
+  if (!LOCAL_PREVIEW && !isAuthenticated) return <LoginGate />;
 
   return (
     <div
       className="grid h-screen w-screen overflow-hidden"
       style={{
         gridTemplateColumns: `${
-          collapsed ? "var(--admin-sidebar-w-collapsed)" : "var(--admin-sidebar-w)"
+          effectiveCollapsed ? "var(--admin-sidebar-w-collapsed)" : "var(--admin-sidebar-w)"
         } 1fr`,
         gridTemplateRows: "var(--admin-topbar-h) 1fr",
         background: "var(--v5-bg)",
@@ -48,7 +59,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       }}
     >
       <div style={{ gridColumn: 1, gridRow: "1 / span 2", minWidth: 0 }}>
-        <Sidebar role={role} collapsed={collapsed} expanded={expanded} />
+        <Sidebar role={role} collapsed={effectiveCollapsed} expanded={expanded} />
       </div>
       <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0 }}>
         <TopBar role={role} operator={operator} />

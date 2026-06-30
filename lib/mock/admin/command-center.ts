@@ -199,7 +199,7 @@ export interface AlertItem {
 export const ALERTS: AlertItem[] = [
   { id: "al-cov", level: "low", text: `出金压力比 ${(LEDGER.pressureRatio * 100).toFixed(0)}% · 远低 70% 红线 · 覆盖率 ${LEDGER.coverageRatio.toFixed(1)}% 绿区(扩张健康)`, href: "/overview/dual-ledger" },
   { id: "al-multi", level: "high", text: "WD-90408 关联多账户簇 CL-318(K1)· WR-02 已延迟观察", href: "/finance/withdrawals" }, // 对齐 D2 队列单源(旧 WD-2606 体系已删)
-  { id: "al-newbig", level: "mid", text: "K5 复审 hold 提现单 ×3 · 复审未过不可放行", href: "/finance/withdrawals" },
+  { id: "al-newbig", level: "mid", text: "K5 复审未决提现单 ×3 · 复审未过不可放行", href: "/finance/withdrawals" },
   { id: "al-kill", level: "low", text: "Kill-Switch 5/5 在线 · 全闸正常营业", href: "/emergency/kill-switch" },
 ];
 

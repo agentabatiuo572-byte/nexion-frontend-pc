@@ -11,6 +11,7 @@ const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || process.env.ADMIN_BASE || "
 const session = process.env.AGENT_BROWSER_SESSION || `nexion-feature-map-walkthrough-${Date.now()}-${process.pid}`;
 const OUT_FILE = path.join(ROOT, "docs", "audit", "shards", "feature-mapping-walkthrough-proof.ndjson");
 const ADMIN_STORE_KEY = "nexion-admin-platform-v1";
+const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_BIN || "agent-browser";
 const results = [];
 
 function quoteShellArg(arg) {
@@ -19,19 +20,36 @@ function quoteShellArg(arg) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function closeSessionQuietly() {
+  const args = ["--session", session, "close"];
+  try {
+    if (process.platform === "win32") {
+      spawnSync([AGENT_BROWSER_BIN, ...args.map(quoteShellArg)].join(" "), [], {
+        cwd: ROOT,
+        shell: true,
+        timeout: 15000,
+        stdio: "ignore",
+      });
+    } else {
+      spawnSync(AGENT_BROWSER_BIN, args, { cwd: ROOT, timeout: 15000, stdio: "ignore" });
+    }
+  } catch {}
+}
+
+process.once("exit", closeSessionQuietly);
+
 function run(args, options = {}) {
   const fullArgs = ["--session", session, ...args];
-  const agentBrowserBin = process.env.AGENT_BROWSER_BIN || "agent-browser";
   const result =
     process.platform === "win32"
-      ? spawnSync([agentBrowserBin, ...fullArgs.map(quoteShellArg)].join(" "), [], {
+      ? spawnSync([AGENT_BROWSER_BIN, ...fullArgs.map(quoteShellArg)].join(" "), [], {
           cwd: ROOT,
           encoding: "utf8",
           input: options.input,
           shell: true,
           timeout: options.timeout || 30000,
         })
-      : spawnSync(agentBrowserBin, fullArgs, {
+      : spawnSync(AGENT_BROWSER_BIN, fullArgs, {
           cwd: ROOT,
           encoding: "utf8",
           input: options.input,
@@ -173,6 +191,33 @@ function openUni(hashRoute) {
 
 function openAdmin(route) {
   return openUrl(`${ADMIN_BASE_URL}${route}`);
+}
+
+// 后台访问前先登录:2026-06-24 起本地预览(.env.local NEXT_PUBLIC_ADMIN_AUTH_BYPASS=1)不再 console 内短路,
+// 登录页照常出现但登录接口短路(任意账密种本地 superadmin 会话)。agent-browser 每次全新空浏览器无登录态,
+// 故 admin 段开始前必须提交一次登录,否则停在登录页读不到任何业务 needle。auth(nexion-admin-auth-v2)登录后持久,
+// 贯穿后续 openAdmin;仅平台 store(nexion-admin-platform-v1)被各步按需清理,不影响登录态。
+function loginAdmin() {
+  const state = openUrl(`${ADMIN_BASE_URL}/`);
+  const pre = evalJson("return { ok: (document.body.innerText || '').includes('运营总览') };");
+  if (pre.ok) return state;
+  evalJson(`
+    const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
+    const pwd = inputs.find((i) => i.type === 'password');
+    const acct = inputs.find((i) => i !== pwd) || inputs[0];
+    if (acct) setNativeValue(acct, 'ops-preview');
+    if (pwd) setNativeValue(pwd, 'preview-2026');
+    const btn = Array.from(document.querySelectorAll('button')).find((b) => /登录/.test(text(b)) && visible(b));
+    if (!btn) throw new Error('admin login button not found');
+    btn.click();
+    return { submitted: true };
+  `);
+  return waitForEval(
+    "admin login + console render",
+    "return { ok: (document.body.innerText || '').includes('运营总览') };",
+    25000,
+    500,
+  );
 }
 
 function clickSelector(selector) {
@@ -375,7 +420,7 @@ await step("FM-013", "language-switch-changes-copy-across-routes", () => {
   };
 });
 
-openAdmin("/");
+loginAdmin();
 evalJson(`localStorage.removeItem(${JSON.stringify(ADMIN_STORE_KEY)}); return { clearedAdminStore: true };`);
 wait(600);
 

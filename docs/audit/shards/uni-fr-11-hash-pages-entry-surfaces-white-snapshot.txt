@@ -1,0 +1,22 @@
+白 APP 接管首页
+体检融合
+白 APP 接管
+Health scan into Nexion home
+Hardware score, account balance and fleet status stay on one takeover screen before moving into the live tabs.
+Continue to Nexion
+Security sessions
+入口状态
+体检融合
+Visible
+Health score
+Merged
+Fleet status
+Smooth
+Tab handoff
+Enter shell
+Health-tool visual language remains at the top of the handoff.
+Read account
+Balance, devices and sessions come from the same account state.
+Move onward
+Store, earn, team and wallet tabs continue as the live product.
+查看三端完整入口链接

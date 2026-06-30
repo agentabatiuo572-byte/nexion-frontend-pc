@@ -117,6 +117,13 @@
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
+@media (max-width: 640px) {
+  :root {
+    --admin-sidebar-w: var(--admin-sidebar-w-collapsed);
+    --admin-gutter: 12px;
+  }
+}
+
 /* ============================================================================
    暗色(html[data-theme="dark"])— 黑曜石 + 柠檬绿。首版主推。
    ============================================================================ */

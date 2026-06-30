@@ -3,8 +3,11 @@
  * L3d/L5 canon-number sentinel.
  *
  * Reads docs/remediation/canon-numbers.json, then extracts the same business
- * constants from Admin, Next reference, and UniApp sources. The gate fails on
- * numeric drift, so a display copy update cannot silently fork core economics.
+ * constants from Admin and UniApp sources. The gate fails on numeric drift,
+ * so a display copy update cannot silently fork core economics.
+ *
+ * 2026-06-26: H5 reference workspace retired; only Admin + UniApp ends are
+ * checked (formerly tri-end).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -12,7 +15,6 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
-const NEXT_ROOT = path.join(PLAN_ROOT, "Nexion-prototype");
 const UNI_ROOT = path.join(PLAN_ROOT, "Nexion-uniapp");
 const CANON_PATH = path.join(ROOT, "docs", "remediation", "canon-numbers.json");
 
@@ -135,39 +137,32 @@ function expectNumber(id, actual, expected, evidence, tolerance = 1e-9) {
   if (!ok) failures.push(`${id}: ${actual} expected ${expected}`);
 }
 
-const nextStaking = readIfExists(path.join(NEXT_ROOT, "lib", "v3", "staking.ts"));
 const uniStaking = readIfExists(path.join(UNI_ROOT, "src", "store", "staking.ts"));
 const adminG = read(path.join(ROOT, "app", "components", "domain-views", "g-tabs", "data.ts"));
 
-if (!nextStaking || !uniStaking) {
-  failures.push("sibling Next/UniApp source missing; cannot prove cross-end canon");
+if (!uniStaking) {
+  failures.push("sibling UniApp staking source missing; cannot prove cross-end canon");
 } else {
-  const nextApy = parseNumberRecord(nextStaking, "STAKING_APY");
   const uniApy = parseNumberRecord(uniStaking, "STAKING_APY");
-  const nextPenalty = parseNumberRecord(nextStaking, "STAKING_PENALTY");
   const uniPenalty = parseNumberRecord(uniStaking, "STAKING_PENALTY");
   for (const [term, expected] of Object.entries(canon.staking.usdtApy)) {
-    expectNumber(`staking.next.apy.${term}`, nextApy?.[term] ?? null, expected, ["../Nexion-prototype/lib/v3/staking.ts"]);
     expectNumber(`staking.uni.apy.${term}`, uniApy?.[term] ?? null, expected, ["../Nexion-uniapp/src/store/staking.ts"]);
     const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
     expectNumber(`staking.admin.apy.${term}`, (adminTier?.apyPct ?? null) === null ? null : adminTier.apyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
   }
   for (const [term, expected] of Object.entries(canon.staking.usdtPenalty)) {
-    expectNumber(`staking.next.penalty.${term}`, nextPenalty?.[term] ?? null, expected, ["../Nexion-prototype/lib/v3/staking.ts"]);
     expectNumber(`staking.uni.penalty.${term}`, uniPenalty?.[term] ?? null, expected, ["../Nexion-uniapp/src/store/staking.ts"]);
     const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
     expectNumber(`staking.admin.penalty.${term}`, (adminTier?.penaltyPct ?? null) === null ? null : adminTier.penaltyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
   }
 }
 
-const nextGenesis = readIfExists(path.join(NEXT_ROOT, "lib", "v3", "genesis.ts"));
 const uniGenesis = readIfExists(path.join(UNI_ROOT, "src", "store", "genesis.ts"));
-if (!nextGenesis || !uniGenesis) {
-  failures.push("sibling Next/UniApp Genesis source missing; cannot prove Genesis canon");
+if (!uniGenesis) {
+  failures.push("sibling UniApp Genesis source missing; cannot prove Genesis canon");
 } else {
   const adminGenesis = parseNumberRecord(adminG, "GENESIS") ?? {};
   for (const [label, src, evidence] of [
-    ["next", nextGenesis, "../Nexion-prototype/lib/v3/genesis.ts"],
     ["uni", uniGenesis, "../Nexion-uniapp/src/store/genesis.ts"],
   ]) {
     expectNumber(`genesis.${label}.totalSlots`, extractConstNumber(src, "TOTAL_SLOTS"), canon.genesis.totalSlots, [evidence]);
@@ -183,19 +178,15 @@ if (!nextGenesis || !uniGenesis) {
   expectNumber("genesis.admin.floorPerNode", adminGenesis.floorPerNodePerDay ?? null, canon.genesis.floorPerNodePerDayUSD, ["app/components/domain-views/g-tabs/data.ts"]);
 }
 
-const nextLifecycle = readIfExists(path.join(NEXT_ROOT, "lib", "store", "device-lifecycle.ts"));
 const uniLifecycle = readIfExists(path.join(UNI_ROOT, "src", "store", "device-lifecycle.ts"));
 const adminE = read(path.join(ROOT, "app", "components", "domain-views", "e-tabs", "data.ts"));
-if (!nextLifecycle || !uniLifecycle) {
-  failures.push("sibling Next/UniApp lifecycle source missing; cannot prove lifecycle canon");
+if (!uniLifecycle) {
+  failures.push("sibling UniApp lifecycle source missing; cannot prove lifecycle canon");
 } else {
-  const nextDeg = parseNumberRecord(nextLifecycle, "DEGRADATION_PER_MONTH");
   const uniDeg = parseNumberRecord(uniLifecycle, "DEGRADATION_PER_MONTH");
   for (const [phase, expected] of Object.entries(canon.deviceLifecycle.degradationPerMonth)) {
-    expectNumber(`lifecycle.next.${phase}`, nextDeg?.[phase] ?? null, expected, ["../Nexion-prototype/lib/store/device-lifecycle.ts"]);
     expectNumber(`lifecycle.uni.${phase}`, uniDeg?.[phase] ?? null, expected, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
   }
-  expectNumber("lifecycle.next.minEfficiency", extractConstNumber(nextLifecycle, "MIN_EFFICIENCY"), canon.deviceLifecycle.minEfficiency, ["../Nexion-prototype/lib/store/device-lifecycle.ts"]);
   expectNumber("lifecycle.uni.minEfficiency", extractConstNumber(uniLifecycle, "MIN_EFFICIENCY"), canon.deviceLifecycle.minEfficiency, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
 
   const adminDefaults = extractRecord(adminE, "E_PARAM_DEFAULTS") ?? "";
@@ -209,13 +200,11 @@ if (!nextLifecycle || !uniLifecycle) {
   expectNumber("lifecycle.admin.degradeLate", (adminNum("E.device.degradeLate") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.late, ["app/components/domain-views/e-tabs/data.ts"]);
 }
 
-const nextProducts = readIfExists(path.join(NEXT_ROOT, "lib", "mock", "products.ts"));
 const uniProducts = readIfExists(path.join(UNI_ROOT, "src", "mock", "products.ts"));
-if (!nextProducts || !uniProducts) {
-  failures.push("sibling Next/UniApp products source missing; cannot prove product canon");
+if (!uniProducts) {
+  failures.push("sibling UniApp products source missing; cannot prove product canon");
 } else {
   for (const [label, values, evidence] of [
-    ["next", collectProductValues(nextProducts), "../Nexion-prototype/lib/mock/products.ts"],
     ["uni", collectProductValues(uniProducts), "../Nexion-uniapp/src/mock/products.ts"],
   ]) {
     for (const [id, expected] of Object.entries(canon.products)) {

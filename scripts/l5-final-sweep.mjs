@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
-const NEXT_ROOT = path.join(PLAN_ROOT, "Nexion-prototype");
+// 2026-06-26 H5 工程已退役;L5 final sweep 现只跑 admin + uniapp 两端。
 const UNI_ROOT = path.join(PLAN_ROOT, "Nexion-uniapp");
 const AUDIT = path.join(ROOT, "docs", "audit");
 const SHARDS = path.join(AUDIT, "shards");
@@ -113,8 +113,9 @@ function taskCounts() {
 }
 
 function runtimeEvidenceSummary() {
-  const runtimeFiles = shardFiles(/^(ad-\d+|next-fr-\d+|uni-fr-\d+)-runtime\.ndjson$/i);
-  const actionFiles = shardFiles(/^(ad-\d+|next-fr-\d+|uni-fr-\d+).*action-sample\.ndjson$/i);
+  // 2026-06-26 H5 退役;next-fr-* shards 不再扫,只剩 admin + uniapp。
+  const runtimeFiles = shardFiles(/^(ad-\d+|uni-fr-\d+)-runtime\.ndjson$/i);
+  const actionFiles = shardFiles(/^(ad-\d+|uni-fr-\d+).*action-sample\.ndjson$/i);
   const runtimeRows = runtimeFiles.flatMap((file) => readNdjson(file).map((row) => ({ ...row, shardFile: rel(file) })));
   const actionRows = actionFiles.flatMap((file) => readNdjson(file).map((row) => ({ ...row, shardFile: rel(file) })));
 
@@ -148,7 +149,6 @@ function runtimeEvidenceSummary() {
     actionBad,
     routeCounts: {
       admin: routeCount("AD-"),
-      next: routeCount("NEXT-FR-"),
       uniapp: routeCount("UNI-FR-"),
     },
     files: {
@@ -172,9 +172,7 @@ if (RUN_VERIFIERS) {
     ADMIN_BASE_URL: process.env.ADMIN_BASE_URL ?? "http://localhost:3002",
     UNI_BASE_URL: process.env.UNI_BASE_URL ?? "http://localhost:5173",
   }));
-  verifierRuns.push(runCommand("next-reference-verify", NEXT_ROOT, "bash", ["scripts/verify.sh", "all"], {
-    BASE_URL: process.env.NEXT_BASE_URL ?? "http://localhost:3001",
-  }));
+  // 2026-06-26 H5 退役;只跑 admin + uniapp。
   verifierRuns.push(runCommand("uniapp-verify", UNI_ROOT, "bash", ["scripts/verify.sh"], {
     BASE_URL: process.env.UNI_BASE_URL ?? "http://localhost:5173",
   }));
@@ -232,7 +230,7 @@ addCheck(
   "L5-04",
   "Runtime route/action traversal has zero blockers",
   route.runtimeBad.length === 0 && route.actionBad.length === 0 && gatePassed("admin-list-global"),
-  `routes admin=${route.routeCounts.admin}, next=${route.routeCounts.next}, uniapp=${route.routeCounts.uniapp}; runtimeBad=${route.runtimeBad.length}; actionBad=${route.actionBad.length}; listGlobal=${gatePassed("admin-list-global") ? "passed" : "failed"}`,
+  `routes admin=${route.routeCounts.admin}, uniapp=${route.routeCounts.uniapp}; runtimeBad=${route.runtimeBad.length}; actionBad=${route.actionBad.length}; listGlobal=${gatePassed("admin-list-global") ? "passed" : "failed"}`,
   ["docs/audit/shards/", "docs/audit/admin-global-list-capability-runtime-evidence.md"],
 );
 
@@ -286,31 +284,30 @@ addCheck(
 );
 
 const fm013 = featureProofRows.find((row) => row.id === "FM-013" && row.status === "passed");
-const nextVerifyPassed = verifierRuns.find((run) => run.id === "next-reference-verify")?.status === "passed";
 const uniVerifyPassed = verifierRuns.find((run) => run.id === "uniapp-verify")?.status === "passed";
 addCheck(
   checks,
   "L5-09",
   "i18n mirror, language switching, and meta leak gates",
-  Boolean(fm013) && (!RUN_VERIFIERS || (nextVerifyPassed && uniVerifyPassed)),
-  `FM-013=${fm013 ? "passed" : "missing"}; nextVerify=${nextVerifyPassed ?? "not-run"}; uniVerify=${uniVerifyPassed ?? "not-run"}`,
-  ["../Nexion-prototype/scripts/verify.sh", "../Nexion-uniapp/scripts/verify.sh", "docs/audit/shards/feature-mapping-walkthrough-proof.ndjson"],
+  Boolean(fm013) && (!RUN_VERIFIERS || uniVerifyPassed),
+  `FM-013=${fm013 ? "passed" : "missing"}; uniVerify=${uniVerifyPassed ?? "not-run"}`,
+  ["../Nexion-uniapp/scripts/verify.sh", "docs/audit/shards/feature-mapping-walkthrough-proof.ndjson"],
 );
 
 addCheck(
   checks,
   "L5-10",
   "Meta-leak guard has zero product-visible hits",
-  (!RUN_VERIFIERS || (nextVerifyPassed && uniVerifyPassed)),
-  RUN_VERIFIERS ? "covered by Next interaction-audit and UniApp grep sentinel" : "not run; covered when --run-verifiers is used",
-  ["../Nexion-prototype/scripts/interaction-audit.mjs", "../Nexion-uniapp/scripts/verify.sh"],
+  (!RUN_VERIFIERS || uniVerifyPassed),
+  RUN_VERIFIERS ? "covered by UniApp grep sentinel" : "not run; covered when --run-verifiers is used",
+  ["../Nexion-uniapp/scripts/verify.sh"],
 );
 
 addCheck(
   checks,
   "L5-11",
   "Runtime console/route errors are zero",
-  route.runtimeBad.length === 0 && route.routeCounts.admin >= 66 && route.routeCounts.next >= 80 && route.routeCounts.uniapp >= 81,
+  route.runtimeBad.length === 0 && route.routeCounts.admin >= 66 && route.routeCounts.uniapp >= 81,
   `runtimeBad=${route.runtimeBad.length}; routeCounts=${JSON.stringify(route.routeCounts)}`,
   route.files.runtime.slice(0, 6).concat(route.files.runtime.length > 6 ? ["docs/audit/shards/*-runtime.ndjson"] : []),
 );
