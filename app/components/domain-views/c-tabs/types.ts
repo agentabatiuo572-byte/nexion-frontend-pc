@@ -9,7 +9,4 @@ import type { DCtx } from "../d-tabs/types";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type CCtx = Omit<DCtx, "logAudit"> & {
-  /** A2 审计(platform-config logAudit 原生支持 reason,C 域处置类动作必带原因留痕)。 */
-  logAudit: (e: { actor: string; action: string; target: string; reason?: string }) => void;
-};
+export type CCtx = DCtx;

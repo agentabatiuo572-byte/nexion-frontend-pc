@@ -1,5 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
-import type { OpsTask } from "@/lib/store/admin/platform-config-store";
+import type { OpsTask } from "@/lib/admin/platform-types";
 
 interface ApiResult<T> {
   code: number;

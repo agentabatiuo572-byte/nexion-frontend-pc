@@ -259,30 +259,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const updateConvo = (id: string, updater: (c: SessionConvo) => SessionConvo, reason: string, action: string) =>
     writeConvos(convos.map((c) => (c.id === id ? updater(c) : c)), reason, action);
 
-  // ── 转入待处理:工作台「超时回落备勤池」策略(坐席在工作台自选;开则超时自动回落,关则一直等待)──
+  // ── 转入待处理:工作台「超时回落备勤池」策略由后端定时任务执行;前端只保存策略与展示状态──
   const fallbackOn = pget(FALLBACK_KEY) === "on";
-  const setFallback = (on: boolean) => setParam(FALLBACK_KEY, on ? "on" : "off", { action: "工作台·转入待处理超时回落备勤池开关", reason: "ui-state" });
-  // 启用时:超时未接入的「转入待处理」会话自动回落备勤池重分配(写系统消息 + fellBack 防重复;不弹 MC、不写 A2)。
-  useEffect(() => {
-    if (!fallbackOn) return;
-    const now = Date.now();
-    const overdue = convos.filter((c) => c.transfer && !c.transfer.fellBack && c.transfer.to.kind !== "standby" && isTransferOverdue(c.transfer));
-    if (overdue.length === 0) return;
-    const ids = new Set(overdue.map((c) => c.id));
-    const next = convos.map((c) =>
-      ids.has(c.id) && c.transfer
-        ? {
-            ...c,
-            owner: STANDBY_POOL_LABEL,
-            lastTs: now,
-            transfer: { ...c.transfer, to: { kind: "standby" as const }, fellBack: true },
-            messages: [...c.messages, { ts: now, sender: "agent" as const, agentName: "系统", text: `转入待处理超过 ${TRANSFER_TIMEOUT_MINS} 分钟未接入 · 已自动回落${STANDBY_POOL_LABEL}重新分配(来自 ${c.transfer.from})` }],
-          }
-        : c,
-    );
-    writeConvos(next, "超时未接入自动回落备勤池(例行,自动留档)", `转入待处理超时回落 ${overdue.length} 个会话 · admin.conversation_transfer_fallback`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convos, fallbackOn]);
+  const setFallback = (on: boolean) => setParam(FALLBACK_KEY, on ? "on" : "off", { action: "工作台·转入待处理超时回落备勤池开关", reason: "调整 M3 会话转入待处理超时回落策略" });
 
   const sendReply = () => {
     if (!selected) return;

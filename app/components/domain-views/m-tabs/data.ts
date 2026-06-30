@@ -332,9 +332,9 @@ export type CustomerProfile = {
 
 /* ============ 跨坐席转交(转入待处理)============
  * 坐席 A 在会话中发起转交 → 选目标(指定坐席 / 技能队列 / 备勤池)+ 填转交原因 → 会话进「转入待处理」。
- * 属例行内部交接:用 I.session.convos 例行直写 + 系统消息留档,**不弹操作确认(MC)、不调 logAudit(高敏 A2)**。
+ * 属例行内部交接:经后端会话接口写入系统消息和 A2 审计。
  * 目标坐席 B 工作台从「转入待处理」筛选档看到,三选一处置:接收接入 / 等待处理 / 手动退回(注明原因)。
- * 超时回落备勤池为工作台可选策略(I.session.workbench.timeoutFallback):开则超时未接入自动回落备勤池重分配,关则一直等待。 */
+ * 超时回落备勤池为工作台可选策略(I.session.workbench.timeoutFallback):后端定时任务读取该策略并执行回落。 */
 export type TransferTarget =
   | { kind: "agent"; name: string }   // 指定坐席 B
   | { kind: "queue"; queue: string }  // 技能队列(后端 transferTargets)
@@ -344,10 +344,10 @@ export type SessionTransfer = {
   to: TransferTarget;  // 转交目标
   reason: string;      // 转交原因(留档进会话系统消息,不入 A2)
   ts: number;          // 转交时刻(用于「转入待处理」超时判定)
-  fellBack?: boolean;  // 已超时回落备勤池(防重复回落)
+  fellBack?: boolean;  // 后端已超时回落备勤池
 };
 export const STANDBY_POOL_LABEL = "备勤池";
-// 转入待处理超时阈值(分钟):超过视为超时;工作台开「超时回落备勤池」则自动回落,否则持续等待。
+// 转入待处理超时阈值(分钟):超过视为超时;实际回落由后端定时任务执行。
 export const TRANSFER_TIMEOUT_MINS = 30;
 export function transferTargetLabel(t: TransferTarget): string {
   return t.kind === "agent" ? t.name : t.kind === "queue" ? t.queue : STANDBY_POOL_LABEL;

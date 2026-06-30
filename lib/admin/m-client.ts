@@ -139,6 +139,10 @@ type SessionAdvisorPolicyView = {
   audience?: string;
 };
 
+type SessionWorkbenchPolicyView = {
+  timeoutFallback?: boolean;
+};
+
 type SessionScriptView = {
   id?: string;
   scriptGroup?: string;
@@ -160,6 +164,7 @@ type SessionReplyTemplateView = {
 type SessionTemplateOverview = {
   categories?: SessionCategoryView[];
   advisorPolicy?: SessionAdvisorPolicyView;
+  workbenchPolicy?: SessionWorkbenchPolicyView;
   scripts?: SessionScriptView[];
   replyTemplates?: SessionReplyTemplateView[];
 };
@@ -244,6 +249,9 @@ export type MContentData = {
     cooldownHours: number;
     maxPerSession: number;
     audience: string;
+  };
+  workbenchPolicy: {
+    timeoutFallback: string;
   };
   scripts: AdvisorScript[];
   scriptAudience: Record<string, string>;
@@ -744,6 +752,9 @@ export async function fetchMContentData(): Promise<MContentData> {
       maxPerSession: num(sessionTemplates.advisorPolicy?.maxPerSession, 1),
       audience: str(sessionTemplates.advisorPolicy?.audience, "全量"),
     },
+    workbenchPolicy: {
+      timeoutFallback: bool(sessionTemplates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
+    },
     scripts: asArray<SessionScriptView>(sessionTemplates.scripts).map(adaptScript),
     scriptAudience,
     replyTemplates: asArray<SessionReplyTemplateView>(sessionTemplates.replyTemplates).map(adaptReplyTemplate),
@@ -805,6 +816,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.session.advisor.policy.cooldownHours": String(data.advisorPolicy.cooldownHours),
     "I.session.advisor.policy.maxPerSession": String(data.advisorPolicy.maxPerSession),
     "I.session.advisor.policy.audience": data.advisorPolicy.audience,
+    "I.session.workbench.timeoutFallback": data.workbenchPolicy.timeoutFallback,
   };
   data.categories.forEach((cat) => {
     params[`I.session.cat.${cat.type}.enabled`] = cat.enabled ? "on" : "off";
@@ -1046,6 +1058,12 @@ export const mContentActions = {
   },
   updateAdvisorPolicy(field: string, value: string, reason: string) {
     return apiRequest<SessionAdvisorPolicyView>(`/session-templates/advisor-policy/${encodeURIComponent(field)}`, {
+      method: "PATCH",
+      body: JSON.stringify(withReason({ value }, reason)),
+    });
+  },
+  updateWorkbenchPolicy(field: string, value: string, reason: string) {
+    return apiRequest<SessionWorkbenchPolicyView>(`/session-templates/workbench-policy/${encodeURIComponent(field)}`, {
       method: "PATCH",
       body: JSON.stringify(withReason({ value }, reason)),
     });

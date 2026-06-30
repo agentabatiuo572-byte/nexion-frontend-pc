@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { Btn, CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
-import type { OpsTask } from "@/lib/store/admin/platform-config-store";
+import type { OpsTask } from "@/lib/admin/platform-types";
 import { EStats } from "./stats";
 
 /* ── 任务类型 → 图标 kind(单一真源:taskClass 权威枚举 ↔ 图标)── */
@@ -21,16 +21,10 @@ function kindByName(n: string): Kind {
   if (/embed|em\b|嵌入/i.test(n)) return "em";
   return "llm";
 }
-/* 任务 kind 真源:优先读后台权威 taskClass(E.task.{id}.config),回退种子命名推断。
+/* 任务 kind 真源:优先读后台权威 taskClass 字段,回退种子命名推断。
    修复点:此前图标只按名称正则推断,新增任务名不匹配正则 → 图标与所选 taskClass 不一致。 */
-function taskKindOf(t: OpsTask, pget: (k: string) => string | undefined): Kind {
-  try {
-    const raw = pget(`E.task.${t.id}.config`);
-    if (raw) {
-      const cfg = JSON.parse(raw) as { taskClass?: string };
-      if (cfg.taskClass && CLASS_TO_KIND[cfg.taskClass]) return CLASS_TO_KIND[cfg.taskClass];
-    }
-  } catch { /* 种子任务无 config,落回名称推断 */ }
+function taskKindOf(t: OpsTask): Kind {
+  if (t.taskClass && CLASS_TO_KIND[t.taskClass]) return CLASS_TO_KIND[t.taskClass];
   return kindByName(t.n);
 }
 
@@ -82,14 +76,14 @@ function amount(value: number) {
 const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
 
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
-  const { tasks, pget } = ctx;
+  const { tasks } = ctx;
 
   // ── 任务列表:分类筛选 + 翻页(纯视图态)──
   const [filterKind, setFilterKind] = useState<"all" | Kind>("all");
   const [page, setPage] = useState(1);
 
   // 每个任务的 kind(真源 taskClass)— 列表筛选/图标/计数共用,单点派生。
-  const kindMap = useMemo(() => new Map(tasks.map((t) => [t.id, taskKindOf(t, pget)])), [tasks, pget]);
+  const kindMap = useMemo(() => new Map(tasks.map((t) => [t.id, taskKindOf(t)])), [tasks]);
   const kindCount = (k: Kind): number => tasks.reduce((acc, t) => acc + (kindMap.get(t.id) === k ? 1 : 0), 0);
   const avgPrice = tasks.length ? tasks.reduce((sum, t) => sum + t.price, 0) / tasks.length : 0;
   const avgSat = tasks.length ? Math.round((tasks.reduce((sum, t) => sum + t.sat, 0) / tasks.length) * 100) : 0;

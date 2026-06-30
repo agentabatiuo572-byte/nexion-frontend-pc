@@ -11,8 +11,6 @@ import { useMemo, useState } from "react";
 import "./c-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { C1Search, C1HeaderActions, type C1ExportQuery } from "./c-tabs/c1-search";
 import { C2Actions } from "./c-tabs/c2-actions";
@@ -37,19 +35,11 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
 export function CDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "C1", [meta.l2Id]);
-  const setParam = usePlatformConfig((s) => s.setParam);
-  const logAudit = usePlatformConfig((s) => s.logAudit);
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [c1ExportQuery, setC1ExportQuery] = useState<C1ExportQuery>({});
 
   const ctx: CCtx = {
-    pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
-    params: hydrated && params ? params : {},
-    setParam,
-    logAudit,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,

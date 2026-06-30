@@ -386,7 +386,7 @@ export const REVIEWS = [
   { id: "rv-011", productId: "cloud-share", author: "Sam · UK", rating: 4, date: "2 weeks ago", content: "Lowest barrier to get in. Smaller yields but completely hands-off.", status: "published" },
 ];
 
-// I2 Nova 推送通道 seed(镜像 OpsNova;后台支持增删改查 + kill 启停,真写 platform-config-store.novas + persist + 审计)。
+// I2 Nova 推送通道 seed(镜像 OpsNova;后台支持增删改查 + kill 启停,真写 content 后端 + A2 审计)。
 export const NOVA = [
   { key: "welcome", name: "welcome", tick: "注册 8s", cd: "24h", on: true, ctr: 31.2 },
   { key: "market", name: "market-event", tick: "12 min", cd: "30 min", on: true, ctr: 22.4 },

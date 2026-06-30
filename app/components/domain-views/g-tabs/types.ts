@@ -23,9 +23,6 @@ export type ConfirmReq = {
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
 
 export type GCtx = {
-  pget: (k: string) => string | undefined;
-  params: Record<string, unknown>;
-  setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
   toast: (s: string) => void;
   openActionConfirm: Dispatch<SetStateAction<ActionConfirmReq | null>>;
   openConfirm: Dispatch<SetStateAction<ConfirmReq | null>>;

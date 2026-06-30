@@ -3,7 +3,7 @@
  * server-canonical:E1/E2/E3/E4 展示值来自后端接口;E5 设备运维与数据中心来自设备接口。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
-import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
+import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 
 // 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。

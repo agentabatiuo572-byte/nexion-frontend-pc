@@ -6,7 +6,7 @@ import { CodeTag } from "../design-kit";
 import type { BusinessFormValue } from "../design-kit";
 import type { FViewCtx } from "./types";
 import type { F1VRankRow } from "@/lib/admin/f1-client";
-import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/store/admin/platform-config-store";
+import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 
 function popPct(p: number, logMax: number): number { return p <= 0 ? 0 : Math.max(2, (Math.log10(Math.max(p, 1)) / logMax) * 100); }
 function pyrPct(p: number, logMax: number): number { return p <= 0 ? 0 : Math.max(3, (Math.log10(Math.max(p, 1)) / logMax) * 100); }

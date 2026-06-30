@@ -1,9 +1,9 @@
 // 运营后台 · 交互完整性自查门(防「打地鼠」)。
 // 把本会话踩过的 6 类问题固化成静态扫描,每次 verify 跑一遍,残留即 FAIL。
-//   A 死控件:hub 卡有 onClick 动作却没接真状态 store(只 toast)
+//   A 死控件:hub 卡有 onClick 动作却没接真实后端 client(只 toast)
 //   B 上下文错配:多-Tab 域视图页头动作未随 Tab 切换(硬编码单一动作)
 //   C 链接目标错:per-user 详情页 KPI/stat 链到全局域路由(应锚点到本页/本实体)
-//   E persist 不显:读 admin persist store 的组件缺水合门(useOpsHydrated/mounted)
+//   E persist 不显:读 admin persist store 的组件缺水合门(mounted/hasHydrated)
 //   F 版本漂移:前端 PRD 文件名 / 内部版本表 / prd-guard 路径 三者版本号不一致
 //   G 凭据反模式:运营后台出现明文密码输入(应走邀请 / SSO / 临时密码强制改)
 //   H 绕 操作确认:高敏处置(放行/驳回/封禁/冻结/终止/升级/kill/红冲…)的 onClick 直接 setParam 或仅高敏 setToast 而未经 setActionConfirm 操作确认(C-10 强制登出 + 本轮 a/c/k-view 放行驳回/终止/升级 教训)
@@ -38,15 +38,15 @@ function canonicalPathKey(p) {
   return value;
 }
 
-// ───────────── A 死控件:hub 卡有动作按钮却没接真状态 store ─────────────
+// ───────────── A 死控件:hub 卡有动作按钮却没接真实后端 client ─────────────
 for (const f of walk(path.join(ROOT, "app/components/hub"), /\.tsx$/)) {
   const s = read(f);
   const hasActionBtn = /onClick=\{(?:\(\)\s*=>|async)/.test(s) && /\b(toast|confirm)\b/.test(s);
-  const importsRealStore = /from "@\/lib\/store\/admin\/platform-config-store"/.test(s);
+  const importsBackendClient = /from "@\/lib\/admin\//.test(s) || /\/api\/admin\//.test(s);
   // 纯只读卡(只有 <Link> 跳转、无 onClick 动作)豁免
   const onlyLinks = !/onClick=\{/.test(s);
-  if (hasActionBtn && !importsRealStore && !onlyLinks && !s.includes("audit-ok:no-store")) {
-    add("A", "HIGH", f, "hub 卡含 onClick 动作 + toast/confirm,但未 import 后端接线或平台配置 store→ 疑似死控件(点了不改状态)。接真实接口/store 或标注 // audit-ok:no-store");
+  if (hasActionBtn && !importsBackendClient && !onlyLinks && !s.includes("audit-ok:no-store")) {
+    add("A", "HIGH", f, "hub 卡含 onClick 动作 + toast/confirm,但未 import 后端接线→ 疑似死控件(点了不改状态)。接真实接口或标注 // audit-ok:no-store");
   }
 }
 
@@ -92,9 +92,9 @@ for (const f of walk(path.join(ROOT, "app"), /\.tsx$/)) {
   for (const hook of storeImportNames) {
     // 读 state 字段(selector 含 s.<field>,排除只取 action 的情况较难,宽松:出现 useXxx((s) => s. 即视为读 state)
     const readsState = new RegExp(hook + "\\(\\(s\\)\\s*=>\\s*s\\.").test(s);
-    const gated = /useOpsHydrated|usePlatformHydrated|\bmounted\b|hasHydrated/.test(s);
+    const gated = /\bmounted\b|hasHydrated/.test(s);
     if (readsState && !gated && !s.includes("audit-ok:hydration")) {
-      add("E", "HIGH", f, `${rel(f)} 读 persist store(${hook}.state)但无水合门(useOpsHydrated/mounted)→ 刷新后 UI 可能不反映持久态(SSR 水合时序)。加水合门或标注 // audit-ok:hydration`);
+      add("E", "HIGH", f, `${rel(f)} 读 persist store(${hook}.state)但无水合门(mounted/hasHydrated)→ 刷新后 UI 可能不反映持久态(SSR 水合时序)。加水合门或标注 // audit-ok:hydration`);
       break;
     }
   }

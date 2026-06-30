@@ -1,5 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
-import type { OpsReview, OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
+import type { OpsReview, OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 
 interface ApiResult<T> {

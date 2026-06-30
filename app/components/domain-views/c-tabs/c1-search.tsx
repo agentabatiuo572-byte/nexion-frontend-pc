@@ -294,11 +294,6 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
     try {
       const file = await exportUserProfilesExcel(reason, query);
       const fileName = downloadBlob(file.blob, file.fileName);
-      ctx.logAudit({
-        actor: "总管理员",
-        action: `导出用户名单(脱敏 Excel) · ${fileName}`,
-        target: "C1",
-      });
       ctx.toast(`已下载脱敏用户名单 · ${fileName}`);
     } catch (err) {
       ctx.toast(`C1 导出失败 · ${errorMessage(err)}`);

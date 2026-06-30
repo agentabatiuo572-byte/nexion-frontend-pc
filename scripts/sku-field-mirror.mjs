@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const ADMIN_STORE = "lib/store/admin/platform-config-store.ts";
+const ADMIN_TYPES = "lib/admin/platform-types.ts";
 const FE_PRODUCTS = path.join("..", "Nexion-uniapp", "src", "mock", "products.ts");
 
 // 提取一个 TS interface 的顶层字段名(平结构,无嵌套花括号)。
@@ -57,10 +57,10 @@ const AI_MAP = {
 };
 const AI_IGNORE = new Set(["bestForCategory"]);
 
-const storeSrc = fs.readFileSync(ADMIN_STORE, "utf8");
-const opsList = extractInterfaceFields(storeSrc, "OpsSku");
+const adminTypeSrc = fs.readFileSync(ADMIN_TYPES, "utf8");
+const opsList = extractInterfaceFields(adminTypeSrc, "OpsSku");
 if (!opsList || opsList.length === 0) {
-  console.error("✗ 未能解析 OpsSku 接口(" + ADMIN_STORE + ")");
+  console.error("✗ 未能解析 OpsSku 接口(" + ADMIN_TYPES + ")");
   process.exit(1);
 }
 const opsFields = new Set(opsList);
@@ -91,7 +91,7 @@ for (const f of aiFields) {
 // 评价镜像源:uniapp 无独立 Review 模型(无 reviews.ts),沿用 H5 reviews.ts 作 Review 形状 canonical。
 const FE_REVIEWS = path.join("..", "Nexion-prototype", "lib", "mock", "reviews.ts");
 let reviewFieldCount = 0;
-const opsReviewFields = new Set(extractInterfaceFields(storeSrc, "OpsReview") ?? []);
+const opsReviewFields = new Set(extractInterfaceFields(adminTypeSrc, "OpsReview") ?? []);
 if (fs.existsSync(FE_REVIEWS) && opsReviewFields.size) {
   const reviewFields = extractInterfaceFields(fs.readFileSync(FE_REVIEWS, "utf8"), "Review") ?? [];
   reviewFieldCount = reviewFields.length;
@@ -101,7 +101,7 @@ if (fs.existsSync(FE_REVIEWS) && opsReviewFields.size) {
 if (missing.length) {
   console.error("✗ E1 字段镜像 gate:后台未覆盖前端展示字段:");
   for (const m of missing) console.error("  · " + m);
-  console.error("  修复:platform-config-store.ts 的 OpsSku/OpsReview 补字段 + e-view 表单/seed 补录入。");
+  console.error("  修复:platform-types.ts 的 OpsSku/OpsReview 补字段 + e-view 表单/后端接口补录入。");
   process.exit(1);
 }
 console.log(`✓ E1 字段镜像 gate:OpsSku(${opsFields.size})⊇ Product(${productFields.length}+AI ${aiFields.length}) · OpsReview(${opsReviewFields.size})⊇ Review(${reviewFieldCount}) — 0 缺口`);

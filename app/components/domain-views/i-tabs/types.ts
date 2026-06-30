@@ -1,5 +1,5 @@
 /**
- * I 域视图层契约 —— 复用 K 域三类弹窗原语 + D 域 logAudit 扩展(reason):
+ * I 域视图层契约 —— 复用 K 域三类弹窗原语:
  *  - ActionConfirmReq = 操作确认(发布/下架/回滚/实验启停/CAP 调整/披露发布/i18n 发布/课程奖励调参);
  *    显式 edit 契约:调参传 edit:{kind:"text", current};纯处置(发布/下架/启停)不传。
  *  - ConfirmReq = 普通确认(I1 实验框架默认参数 = 运营设定 / I6 完整性扫描 = 只读 / 词条草稿);
@@ -11,9 +11,8 @@ import type { IContentActions, IContentData } from "@/lib/admin/i-client";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-/** I 域 ctx:沿用 DCtx(含 logAudit 带 reason 的 admin family 审计写口)。 */
-export type ICtx = Omit<DCtx, "logAudit"> & {
-  logAudit: (e: { actor: string; action: string; target: string; reason?: string }) => void;
+/** I 域 ctx:后端 content client 是业务权威,前端仅承载弹窗和页面数据。 */
+export type ICtx = DCtx & {
   content: IContentData;
   actions: IContentActions;
   contentLoading: boolean;

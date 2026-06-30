@@ -71,10 +71,6 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   );
 
   const ctx: ICtx = {
-    pget: () => undefined,
-    params: {},
-    setParam: () => undefined,
-    logAudit: () => undefined,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,

@@ -13,8 +13,6 @@ import { useMemo, useState } from "react";
 import "./g-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { G1Staking } from "./g-tabs/g1-staking";
 import { G2Exchange } from "./g-tabs/g2-exchange";
@@ -37,16 +35,10 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
 export function GDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "G1", [meta.l2Id]);
-  const setParam = usePlatformConfig((s) => s.setParam);
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
 
   const ctx: GCtx = {
-    pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
-    params: hydrated && params ? params : {},
-    setParam,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,

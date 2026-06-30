@@ -9,6 +9,7 @@ const forbiddenImports = [
   "@/lib/mock/admin/user-deposits",
   "@/lib/mock/admin/users",
   "@/lib/mock/admin/vouchers",
+  "@/lib/store/admin/platform-config-store",
   "@/lib/store/admin/user-ops-store",
 ];
 

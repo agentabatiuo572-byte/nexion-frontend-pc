@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
-import type { OpsSku, OpsReview } from "@/lib/store/admin/platform-config-store";
+import type { OpsSku, OpsReview } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
 import { gateRemaining } from "./data";
 import { EStats } from "./stats";

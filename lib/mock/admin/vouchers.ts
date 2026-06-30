@@ -1,4 +1,4 @@
-import type { OpsVoucher } from "@/lib/store/admin/platform-config-store";
+import type { OpsVoucher } from "@/lib/admin/platform-types";
 
 /**
  * 代金券 seed —— 与前端 Nexion-uniapp/src/mock/vouchers.ts 的 VOUCHERS **同契约同值**

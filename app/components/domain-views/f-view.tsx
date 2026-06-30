@@ -5,9 +5,9 @@
  * 标签:F1 V-Rank 晋升 / F2 网络版税费率 / F3 双轨结算引擎 / F4 池·配额·大使·榜 / F5 佣金事件审计。
  * 导航已按设计稿收编为 F1–F5(旧 F6 硬件配额 / F7 区域大使 / F8 排行榜&反欺诈 已并入 F4「池/配额/大使/榜」聚合视图)。
  *
- * 本 shell 只持有共享 store 接线 + OperationConfirmModal;各 tab 视觉/布局拆到 f-tabs/*(复用 design-kit 原语 + f-domain.css 设计类)。
- * 真写落点:F1 走后端 teams/ranks;F2/F3/F4/F5 走后端 teams/{rates|binary|leadership-pool|commissions} + commissions/config;其它 F tab 仍走 platform-config-store 的 backend-replaceable keyed 状态。
- * - 调参类(op:"param"):F1 V-Rank 字段、F2 费率/参数、F3 双轨配置、F4 池/配额/大使/榜配置写后端;其它 key 仍由 setParam 承接。
+ * 本 shell 只持有后端快照 state + OperationConfirmModal;各 tab 视觉/布局拆到 f-tabs/*(复用 design-kit 原语 + f-domain.css 设计类)。
+ * 真写落点:F1 走后端 teams/ranks;F2/F3/F4/F5 走后端 teams/{rates|binary|leadership-pool|commissions} + commissions/config。
+ * - 调参类(op:"param"):F1 V-Rank 字段、F2 费率/参数、F3 双轨配置、F4 池/配额/大使/榜配置写后端;未知 key 直接失败。
  * - 处置类(op:"dispose"):写入固定状态值(approved/rejected/disqualified/frozen/unlocked …)。
  * - 放大资金流出(amplify):OperationConfirmModal amplifies={true} → B1 兑付覆盖率护栏。
  */
@@ -15,8 +15,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import {
   addF1VRankReward,
   fetchF3BinaryOverview,
@@ -79,11 +77,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f5Overview, setF5Overview] = useState<F5CommissionAuditOverview | null>(null);
   const [f5Loading, setF5Loading] = useState(tab === "F5");
   const [f5Error, setF5Error] = useState<string | null>(null);
-  const setParam = usePlatformConfig((s) => s.setParam);
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
-  const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
-
   useEffect(() => {
     setTab(routeTab);
   }, [routeTab]);
@@ -169,7 +162,6 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [refreshF5, tab]);
 
   const ctx: FViewCtx = {
-    pget,
     openActionConfirm: (m) => setActionConfirm(m),
     nav,
     toast: (msg) => setToast(msg),
@@ -299,11 +291,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (tab === "F4") {
               await ctx.updateF4Config(mc.paramKey, newVal, reason);
             } else {
-              setParam(mc.paramKey, newVal, { action: mc.name, reason });
+              throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
             setToast(mc.name + " 已确认生效 · 新值 " + newVal);
           } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
-            // 多字段调参:每字段写到自己的 param key;F3/F4 经后端持久化,其它 F tab 暂由 store 承接。
+            // 多字段调参:每字段写到自己的 param key;F3/F4 经后端持久化,其它 key 不允许本地兜底。
             if (tab === "F3") {
               for (const { key, paramKey } of mc.paramKeys) {
                 const value = String(businessValue[key] ?? "").trim();
@@ -315,9 +307,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
                 if (value) await ctx.updateF4Config(paramKey, value, reason);
               }
             } else {
-              for (const { key, paramKey } of mc.paramKeys) {
-                setParam(paramKey, String(businessValue[key] ?? "").trim(), { action: mc.name, reason });
-              }
+              throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKeys.map((item) => item.paramKey).join(",")}`);
             }
             const summary = mc.paramKeys.map(({ key }) => String(businessValue[key] ?? "").trim()).join(" / ");
             setToast(mc.name + " 已确认生效 · " + summary);
@@ -327,7 +317,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else if (tab === "F5") {
               await ctx.updateF5Config(mc.paramKey, mc.fixedVal, reason);
             } else {
-              setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason });
+              throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
             setToast(mc.name + " 已确认生效");
           } else {

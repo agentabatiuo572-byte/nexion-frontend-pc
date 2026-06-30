@@ -17,8 +17,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { confirm } from "@/lib/store/ui";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/hydration";
+import type { OpsSku, OpsReview, OpsTask } from "@/lib/admin/platform-types";
 import {
   archiveE1GenerationGate,
   archiveE1Phase,
@@ -254,26 +253,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [mc, setActionConfirm] = useState<Mc>(null);
   const [selOrder, setSelOrder] = useState<EOrder | null>(null);
   const [manualOpen, setManualOpen] = useState(false); // E3 操作说明手册弹窗
-  const hydrated = useOpsHydrated();
-
-  // ── 共享 store 接线 ──
-  const params = usePlatformConfig((s) => s.params);
-  // SKU store 镜像(E1 展示走本地 e1Skus / 真后端;但增删改同步写 platform-config-store.skus,
-  // 使其成为后台单一 SKU 真源——供 H7 代金券适用 SKU、F1 V-Rank 奖励 SKU 下拉等跨域消费,backend-replaceable)。
-  const ensureSkus = usePlatformConfig((s) => s.ensureSkus);
-  const addSku = usePlatformConfig((s) => s.addSku);
-  const updateSku = usePlatformConfig((s) => s.updateSku);
-  const setSkuStatus = usePlatformConfig((s) => s.setSkuStatus);
-  const removeSku = usePlatformConfig((s) => s.removeSku);
   const operator = useAdminAuth((s) => s.operator || s.session?.username || "superadmin");
   const [e3Params, setE3Params] = useState<Record<string, string>>({});
   const [e3Stats, setE3Stats] = useState<E3Stats | null>(null);
   const [e3Operations, setE3Operations] = useState<E3OperationMetric[]>([]);
   const [e3Loading, setE3Loading] = useState(false);
   const [e3Error, setE3Error] = useState<string | null>(null);
-  const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
   const isE3ParamKey = (k: string) => k.startsWith("E.device.") || k.startsWith("E.tradein.");
-  const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : (pget(k) ?? "—");
+  const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : "—";
   const e3Ready = Object.keys(e3Params).length > 0;
 
   // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
@@ -303,10 +290,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   }, []);
   useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, refreshE1]);
-  useEffect(() => { if (hydrated && e1Skus.length > 0) ensureSkus(e1Skus); }, [hydrated, e1Skus, ensureSkus]);
   const skus = e1Skus;
   const reviews = e1Reviews;
-  const phaseCur = e1Gates?.phaseCurrent ?? pget("H.phase.current") ?? "P3";
+  const phaseCur = e1Gates?.phaseCurrent ?? "P3";
   const e1PhaseIds = e1Gates?.phaseOrder?.length
     ? e1Gates.phaseOrder
     : (e1Gates?.phases ?? []).map((phase) => phase.p);
@@ -884,7 +870,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const ctx: EViewCtx = {
-    hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
+    pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
@@ -1257,15 +1243,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             if (mc.op === "sku-save") {
               const ex = editName ? skus.find((x) => x.name === editName) : undefined;
               const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
-              let mirror = sku; // store 镜像值:PREVIEW 用本地,真后端用返回的 canonical SKU(防 store 镜像与后端 drift)
               if (IS_PREVIEW) {
                 setE1Skus((prev) => editName ? prev.map((x) => (x.id === ex?.id || x.name === editName) ? sku : x) : [sku, ...prev]);
               } else {
-                const saved = await saveE1Sku(sku, editName ? (ex?.id || ex?.name || editName) : undefined, reason, operator);
-                if (saved) mirror = attachSkuMedia(saved, skuMedia);
+                await saveE1Sku(sku, editName ? (ex?.id || ex?.name || editName) : undefined, reason, operator);
                 await refreshE1();
               }
-              if (editName) updateSku(editName, mirror); else addSku(mirror); // store 镜像(跨域 SKU 真源,后端 canonical 优先)
               setToast(editName ? "SKU 已更新:" + form.name : "SKU 已新增:" + form.name + " · 待上架");
               setEditName(null);
               resetSkuMedia(null);
@@ -1277,7 +1260,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 await deleteE1Sku(sku?.id || mc.target, reason, operator);
                 await refreshE1();
               }
-              removeSku(sku?.name ?? mc.target); // store 镜像
               setToast("SKU 已删除:" + mc.target);
             } else if (mc.op === "sku-status" && mc.target) {
               const sku = skus.find((x) => x.name === mc.target || x.id === mc.target);
@@ -1287,7 +1269,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 await updateE1SkuStatus(sku?.id || mc.target, mc.status!, reason, operator);
                 await refreshE1();
               }
-              setSkuStatus(sku?.name ?? mc.target, mc.status!); // store 镜像
               setToast("SKU " + mc.target + (mc.status === "off" ? " 已下架" : " 已上架"));
             } else if (mc.op === "task-down" && mc.taskId) {
               await deleteE2Task(mc.taskId, reason, operator);

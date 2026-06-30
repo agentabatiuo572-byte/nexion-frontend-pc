@@ -17,11 +17,6 @@ export type ActionConfirmReq = {
 };
 
 export type LCtx = {
-  pget: (k: string) => string | undefined;
-  params: Record<string, unknown>;
-  setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
-  /** A2 留痕(导出/报告类强留痕;含 PII 标 masking_policy)。 */
-  logAudit: (e: { actor: string; action: string; target: string; before?: string; after?: string; reason?: string }) => void;
   toast: (s: string) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
   biData?: LBiData | null;

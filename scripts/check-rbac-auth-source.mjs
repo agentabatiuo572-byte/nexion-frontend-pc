@@ -78,12 +78,10 @@ if (existsSync(retiredUserOpsStore)) {
   process.exit(1);
 }
 
-const platformConfigStore = readFileSync(join(root, "lib", "store", "admin", "platform-config-store.ts"), "utf8");
-const platformStoreForbidden = ["persist(", "createJSONStorage", "localStorage", "nexion-admin-platform-v1"];
-const platformStoreHits = platformStoreForbidden.filter((token) => platformConfigStore.includes(token));
-if (platformStoreHits.length) {
-  console.error("RBAC auth source guard failed: platform config business state must not be persisted client-side.");
-  for (const token of platformStoreHits) console.error(`- lib/store/admin/platform-config-store.ts contains ${token}`);
+const retiredPlatformConfigStore = join(root, "lib", "store", "admin", "platform-config-store.ts");
+if (existsSync(retiredPlatformConfigStore)) {
+  console.error("RBAC auth source guard failed: retired platform business store must not exist.");
+  console.error("- lib/store/admin/platform-config-store.ts keeps params/audit/SKU/reward state client-side");
   process.exit(1);
 }
 

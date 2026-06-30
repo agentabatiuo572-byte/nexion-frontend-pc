@@ -4,15 +4,13 @@
  * L 数据与分析 BI — design_handoff_l_domain 设计稿 port(2026-06-10 重构)。
  * 5 子页:L1 KPI 看板 / L2 漏斗·Cohort·留存 / L3 财务报表 / L4 设备·任务·网络报表 / L5 导出 & 监管报告。
  * 读侧无写权威:口径全部单一源派生(KPIS/FUNNEL/REVENUE/LEDGER/LIABILITIES/MATURITY/PHASES/F5);
- * 写动作仅导出/监管报告/排程模板类,真写 L.report.* / L.export.* / L.regulatory.* / L.param.*(setParam + logAudit 双留痕);
+ * 写动作仅导出/监管报告/排程模板类,真写统一走 L 后端接口并由后端审计留痕;
  * 聚合导出仍需操作确认(confirm + 审计);视图参数普通确认批(ViewParamModal,会话级)。操作确认 显式 edit 契约同全域。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./l-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import { L1HeaderActions, L1Kpi } from "./l-tabs/l1-kpi";
 import { L2HeaderActions, L2Funnel } from "./l-tabs/l2-funnel";
 import { L3HeaderActions, L3Finance } from "./l-tabs/l3-finance";
@@ -27,10 +25,6 @@ const FOLD: Record<string, string> = { L1: "L1", L2: "L2", L3: "L3", L4: "L4", L
 export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "L1", [meta.l2Id]);
-  const setParam = usePlatformConfig((s) => s.setParam);
-  const logAudit = usePlatformConfig((s) => s.logAudit);
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [biData, setBiData] = useState<LBiData | null>(null);
   const [biLoading, setBiLoading] = useState(true);
@@ -53,10 +47,6 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [reloadBi]);
 
   const ctx: LCtx = {
-    pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
-    params: hydrated && params ? params : {},
-    setParam,
-    logAudit,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     biData,

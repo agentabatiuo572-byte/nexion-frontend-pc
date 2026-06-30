@@ -42,10 +42,6 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const [cf, setCf] = useState<ConfirmReq | null>(null);
 
   const ctx: HCtx = {
-    pget: () => undefined,
-    params: {},
-    setParam: () => undefined,
-    logAudit: () => undefined,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,

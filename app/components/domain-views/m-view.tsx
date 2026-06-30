@@ -10,8 +10,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import "./m-domain.css";
 import { Icon, MessageThread, OperationConfirmModal, useToast, type ThreadMessage } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import {
   adminIdForAgent,
   agentIdForName,
@@ -31,7 +29,7 @@ import type { AdvisorScript, SessionConvo, SessionReplyTpl, SessionType, Support
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 
-// 持续接待 dock 跨 M 子页 UI 态(只保留本地轻持久,切页不挂断)。
+// 持续接待 dock 跨 M 子页 UI 态(只保留组件内存,切页不挂断)。
 const DOCK_CONVO_KEY = "I.session.convos";
 const DOCK_LAST_KEY = "I.session.ui.lastConvo";
 const DOCK_OPEN_KEY = "I.session.ui.dockOpen"; // "1" = 展开面板,否则收为药丸
@@ -56,15 +54,12 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "M1", [meta.l2Id]);
-  const setParamLocal = usePlatformConfig((s) => s.setParam);
-  const logAudit = usePlatformConfig((s) => s.logAudit);
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [mData, setMData] = useState<MContentData | null>(null);
   const [mLoading, setMLoading] = useState(true);
   const [mError, setMError] = useState<string | null>(null);
+  const [uiParams, setUiParams] = useState<Record<string, string>>({});
 
   const reloadMContent = useCallback(async () => {
     setMLoading(true);
@@ -85,14 +80,14 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const legacyParams = useMemo(() => (mData ? buildMLegacyParams(mData) : {}), [mData]);
   const mergedParams = useMemo(
-    () => ({ ...(hydrated && params ? params : {}), ...legacyParams }),
-    [hydrated, params, legacyParams],
+    () => ({ ...uiParams, ...legacyParams }),
+    [uiParams, legacyParams],
   );
 
   const runMWrite = useCallback(
     (key: string, value: string, meta?: { action?: string; reason?: string }) => {
       if (isMUiKey(key)) {
-        setParamLocal(key, value, { action: meta?.action ?? "M UI state", reason: meta?.reason });
+        setUiParams((prev) => ({ ...prev, [key]: value }));
         return;
       }
       void applyMBackendWrite(key, value, legacyParams, mData, meta)
@@ -102,14 +97,13 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           setToast(`M 接口写入失败 · ${message}`);
         });
     },
-    [legacyParams, mData, reloadMContent, setParamLocal, setToast],
+    [legacyParams, mData, reloadMContent, setToast],
   );
 
   const ctx: MCtx = {
     pget: (k) => mergedParams[k] as string | undefined,
     params: mergedParams,
     setParam: runMWrite,
-    logAudit,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
@@ -226,7 +220,7 @@ function parseRecord<T>(raw: string | undefined): T | null {
 }
 
 function isMUiKey(key: string) {
-  return key === DOCK_LAST_KEY || key === DOCK_OPEN_KEY || key === DOCK_OFF_KEY || key === "I.session.workbench.timeoutFallback";
+  return key === DOCK_LAST_KEY || key === DOCK_OPEN_KEY || key === DOCK_OFF_KEY;
 }
 
 function reasonOf(meta?: { action?: string; reason?: string }) {
@@ -517,6 +511,11 @@ async function applyMBackendWrite(
     await mContentActions.updateAdvisorPolicy(policyMatch[1], value, reason);
     return;
   }
+  const workbenchPolicyMatch = key.match(/^I\.session\.workbench\.(.+)$/);
+  if (workbenchPolicyMatch) {
+    await mContentActions.updateWorkbenchPolicy(workbenchPolicyMatch[1], value, reason);
+    return;
+  }
   if (key === "I.session.script.__create") {
     const payload = parseRecord<{ scriptGroup?: AdvisorScript["group"]; text?: string; ctaPath?: string; audience?: string; status?: AdvisorScript["status"] }>(value);
     if (payload?.text) {
@@ -553,7 +552,9 @@ async function applyMBackendWrite(
     const next = parseRows<SessionReplyTpl>(value);
     const added = addedRow(prev, next);
     if (added) await mContentActions.createReplyTemplate({ type: added.type, text: added.text, status: added.status }, reason);
+    return;
   }
+  throw new Error(`M_BACKEND_ROUTE_MISSING:${key}`);
 }
 function dockRelWhen(ts: number): string {
   const diff = Date.now() - ts;

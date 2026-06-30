@@ -1,6 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
-import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/store/admin/platform-config-store";
+import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 
 interface ApiResult<T> {
   code: number;

@@ -3,7 +3,7 @@ import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1
 import type { E2PhoneTier } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
-import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
+import type { OpsSku, OpsReview, OpsTask } from "@/lib/admin/platform-types";
 
 /**
  * E 域子视图共享类型。
@@ -87,8 +87,6 @@ export interface EOrder {
 
 /** 子视图上下文:派生读 + 打开抽屉/操作确认 + toast。全部由 shell 注入,子视图无自有 store。 */
 export interface EViewCtx {
-  hydrated: boolean;
-  pget: (k: string) => string | undefined;
   pE: (k: string) => string;
   openActionConfirm: (m: McSpec) => void;
   toast: (msg: string) => void;
