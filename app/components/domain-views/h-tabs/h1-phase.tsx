@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
@@ -112,7 +113,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       edit: { kind: "select", current: String(rhythm.totalMonths), options: rhythm.options.map(String) },
       run: async (reason, value) => {
         if (!value) return;
-        const next = await updateH1RhythmParam("totalMonths", value, reason, "superadmin");
+        const next = await updateH1RhythmParam("totalMonths", value, reason, currentAdminOperator());
         const phases = await fetchH1Phases();
         setModel({ ...(phases as H1Model), rhythm: next });
         toast(`H1 节奏总时长已更新为 ${next.totalMonths} 个月`);
@@ -150,10 +151,10 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
         if (!form) return;
         let overview = rhythm;
         if (form.currentMonth) {
-          overview = await updateH1RhythmParam("currentMonth", form.currentMonth, reason, "superadmin");
+          overview = await updateH1RhythmParam("currentMonth", form.currentMonth, reason, currentAdminOperator());
         }
         if (form.phaseProgressPct) {
-          overview = await updateH1RhythmParam("phaseProgressPct", form.phaseProgressPct, reason, "superadmin");
+          overview = await updateH1RhythmParam("phaseProgressPct", form.phaseProgressPct, reason, currentAdminOperator());
         }
         const phases = await fetchH1Phases();
         setModel({ ...(phases as H1Model), rhythm: overview });

@@ -1,10 +1,11 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useEffect, useMemo, useState } from "react";
 import { createD4Adjustment, fetchD4Bills, fetchD4UserLedger, type D4Bill, type D4UserLedger, type PageResult } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const BILL_TYPES = [
   ["", "全部"],
   ["DEPOSIT", "充值"],
@@ -127,7 +128,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
           amount,
           relatedBizNo: relatedBizNo.trim(),
           reason,
-          operator: OPERATOR,
+          operator: OPERATOR(),
         })
           .then(() => {
             toast("调账申请已写入后端");

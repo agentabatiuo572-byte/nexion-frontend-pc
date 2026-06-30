@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataListPager, Drawer } from "../design-kit";
 import {
@@ -19,7 +20,7 @@ import {
 } from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 
 function text(value: unknown, fallback = "—") {
@@ -113,8 +114,8 @@ function SecLabel({ children }: { children: string }) {
 export function C5Security({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const [overview, setOverview] = useState<UserSecurityOverview | null>(null);
-  const [selectedUserKey, setSelectedUserKey] = useState("usr_2231");
-  const [userLookup, setUserLookup] = useState("usr_2231");
+  const [selectedUserKey, setSelectedUserKey] = useState("");
+  const [userLookup, setUserLookup] = useState("");
   const [userOptions, setUserOptions] = useState<User360Profile[]>([]);
   const [selectedLookupUser, setSelectedLookupUser] = useState<User360Profile | null>(null);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
@@ -130,7 +131,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const data = await fetchUserSecurityOverview({ userKey: selectedUserKey.trim() || "usr_2231", pageNum: page, pageSize });
+      const key = selectedUserKey.trim();
+      const data = await fetchUserSecurityOverview({ userKey: key || undefined, pageNum: page, pageSize });
       setOverview(data);
       setError(null);
     } catch (err) {
@@ -223,7 +225,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       okLabel: "确认踢线",
       run: (reason) => {
         void perform(async () => {
-          await revokeUserSession(id, reason, OPERATOR);
+          await revokeUserSession(id, reason, OPERATOR());
           return `${id} 已踢线 · 后端留痕`;
         }, "会话已踢线");
       },
@@ -239,7 +241,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       okLabel: "确认全部踢线",
       run: (reason) => {
         void perform(async () => {
-          await revokeUserSessions(selectedUserId, reason, OPERATOR);
+          await revokeUserSessions(selectedUserId, reason, OPERATOR());
           return `${userLabel(selectedUser)} 全部会话已踢线`;
         }, "全部会话已踢线");
       },
@@ -260,7 +262,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       },
       run: (reason, _value, businessValue) => {
         void perform(async () => {
-          await disableUserTwoFactor(selectedUserId, identityTrail(reason, businessValue), OPERATOR);
+          await disableUserTwoFactor(selectedUserId, identityTrail(reason, businessValue), OPERATOR());
           return "2FA 已关闭 · 二验结果已留痕";
         }, "2FA 已关闭");
       },
@@ -281,7 +283,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       },
       run: (reason, _value, businessValue) => {
         void perform(async () => {
-          await requestUserPasswordReset(selectedUserId, identityTrail(reason, businessValue), OPERATOR);
+          await requestUserPasswordReset(selectedUserId, identityTrail(reason, businessValue), OPERATOR());
           return "旧密码已作废 · 重置验证码已发用户";
         }, "密码重置已提交");
       },
@@ -294,7 +296,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     const longLock = row.lockKind === "LONG";
     const submit = (reason: string, businessValue?: { channel?: string; verifiedAt?: string; ticket?: string }) => {
       void perform(async () => {
-        await unlockUserSecurity(userId, longLock ? identityTrail(reason, businessValue) : reason, OPERATOR);
+        await unlockUserSecurity(userId, longLock ? identityTrail(reason, businessValue) : reason, OPERATOR());
         return `${userLabel(row)} 已解除锁定`;
       }, "锁定已解除");
     };
@@ -334,7 +336,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         const value = (nextValue ?? "").trim();
         if (!value) return;
         void perform(async () => {
-          await updateUserCredentialParam(param.key as string, value, reason, OPERATOR);
+          await updateUserCredentialParam(param.key as string, value, reason, OPERATOR());
           return `${text(param.name)} 已更新为 ${value}`;
         }, "凭证参数已更新");
       },

@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { DataListPager, Drawer } from "../design-kit";
@@ -19,7 +20,7 @@ import {
 } from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const ASSETS = ["USDT", "NEX"] as const;
 const DIRECTIONS = ["增加", "扣减"] as const;
 const REASON_CODES = ["客服补偿", "系统纠错", "活动补发", "争议退回"] as const;
@@ -238,7 +239,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
               backendDirection,
               String(amount),
               `${reasonCode} · ${reason}`,
-              OPERATOR,
+              OPERATOR(),
             );
             return `调整单 ${text(saved.adjustmentNo)} 已提交复核`;
           },
@@ -259,8 +260,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         void perform(
           async () => {
             await (approved
-              ? approveUserAssetAdjustment(adjustmentNo, reason, OPERATOR)
-              : rejectUserAssetAdjustment(adjustmentNo, reason, OPERATOR));
+              ? approveUserAssetAdjustment(adjustmentNo, reason, OPERATOR())
+              : rejectUserAssetAdjustment(adjustmentNo, reason, OPERATOR()));
             return `${adjustmentNo} 已${approved ? "通过" : "驳回"}`;
           },
           "调整单已裁决",
@@ -281,7 +282,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       run: (reason) => {
         void perform(
           async () => {
-            await rejectUserAssetAdjustment(adjustmentNo, reason, OPERATOR);
+            await rejectUserAssetAdjustment(adjustmentNo, reason, OPERATOR());
             return `${adjustmentNo} 已撤销`;
           },
           "挂起申请已撤销",
@@ -318,7 +319,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
               reverseDirection,
               String(amount),
               `冲正 ${adjustmentNo} · ${reason}`,
-              OPERATOR,
+              OPERATOR(),
             );
             return `冲正单 ${text(saved.adjustmentNo)} 已提交复核`;
           },

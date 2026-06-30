@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useEffect, useMemo, useState } from "react";
 import {
   createD1BinLock,
@@ -19,7 +20,7 @@ import {
 } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const FLOW_TABS = [
   ["", "全部"],
   ["pending", "处理中"],
@@ -109,8 +110,8 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         }
         void applyOverview(
           () => kind === "fee"
-            ? updateD1TopupChannelFee(channelCode, value.trim(), reason, OPERATOR)
-            : updateD1TopupChannelMin(channelCode, value.trim(), reason, OPERATOR),
+            ? updateD1TopupChannelFee(channelCode, value.trim(), reason, OPERATOR())
+            : updateD1TopupChannelMin(channelCode, value.trim(), reason, OPERATOR()),
           `${channelCode} 已更新`,
         );
       },
@@ -155,7 +156,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                   action: `${channel.enabled ? "停用" : "启用"}充值渠道 · ${channel.id}`,
                   detail: "渠道状态由后端配置控制，保存后只影响新交易。",
                   run: (reason) => void applyOverview(
-                    () => updateD1TopupChannelEnabled(channel.code, !channel.enabled, reason, OPERATOR),
+                    () => updateD1TopupChannelEnabled(channel.code, !channel.enabled, reason, OPERATOR()),
                     `${channel.id} 已${channel.enabled ? "停用" : "启用"}`,
                   ),
                 })}>{channel.enabled ? "停用" : "启用"}</button>
@@ -167,7 +168,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 action: "主备 PSP 切换",
                 detail: `切换到 ${overview?.backupPsp ?? "备用 PSP"}，后端写配置并落审计。`,
                 run: (reason) => void applyOverview(
-                  () => switchD1Psp(overview?.backupPsp ?? "Stripe", reason, OPERATOR),
+                  () => switchD1Psp(overview?.backupPsp ?? "Stripe", reason, OPERATOR()),
                   "主备 PSP 已切换",
                 ),
               })}>切换主备</button>
@@ -194,7 +195,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                       toast("请输入目标值");
                       return;
                     }
-                    void applyOverview(() => updateD1CardRisk(param.key, value.trim(), reason, OPERATOR), `${param.name} 已更新`);
+                    void applyOverview(() => updateD1CardRisk(param.key, value.trim(), reason, OPERATOR()), `${param.name} 已更新`);
                   },
                 })}>调整</button>
               </div>
@@ -268,7 +269,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                     detail: `差异金额 ${money(row.diffAmount)}。确认后写后端配置和审计。`,
                     reason: true,
                     okLabel: "核销",
-                    run: (reason) => void applyOverview(() => writeoffD1Reconciliation(row.channel, reason, OPERATOR), `${row.channel} 差异已核销`),
+                    run: (reason) => void applyOverview(() => writeoffD1Reconciliation(row.channel, reason, OPERATOR()), `${row.channel} 差异已核销`),
                   })}>核销</button>
                 )}
               </div>
@@ -295,7 +296,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                   detail: "锁定状态写入后端配置，D1 概览重新查询。",
                   reason: true,
                   okLabel: "锁定",
-                  run: (reason) => void applyOverview(() => createD1BinLock(segment, reason, OPERATOR), `${segment} 已锁定`),
+                  run: (reason) => void applyOverview(() => createD1BinLock(segment, reason, OPERATOR()), `${segment} 已锁定`),
                 });
               }}>手动锁定</button>
             </div>
@@ -309,7 +310,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                   detail: "状态由后端配置保存，保存后重新查询。",
                   reason: true,
                   okLabel: bin.locked ? "解锁" : "锁定",
-                  run: (reason) => void applyOverview(() => setD1BinLock(bin.segment, !bin.locked, reason, OPERATOR), `${bin.segment} 已${bin.locked ? "解锁" : "锁定"}`),
+                  run: (reason) => void applyOverview(() => setD1BinLock(bin.segment, !bin.locked, reason, OPERATOR()), `${bin.segment} 已${bin.locked ? "解锁" : "锁定"}`),
                 })}>{bin.locked ? "解锁" : "锁定"}</button>
               </div>
             ))}
@@ -344,7 +345,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                         detail: `追回 ${money(row.amount)}，后端更新支付记录并重新查询。`,
                         reason: true,
                         okLabel: "确认追回",
-                        run: (reason) => void applyOverview(() => refundD1Chargeback(row.caseNo, reason, OPERATOR), `${row.caseNo} 已追回`),
+                        run: (reason) => void applyOverview(() => refundD1Chargeback(row.caseNo, reason, OPERATOR()), `${row.caseNo} 已追回`),
                       })}>追回</button>
                     )}
                   </td>

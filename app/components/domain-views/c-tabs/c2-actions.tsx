@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { DataListPager, Drawer, useDataListPager } from "../design-kit";
@@ -20,7 +21,7 @@ import {
 } from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const K1_PATH = "/risk/multi-account";
 
 const STATUS_META: Record<string, [label: string, tone: string]> = {
@@ -233,7 +234,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       const id = accountId(account);
       if (!id) return toast("账户缺少后端ID");
       void perform(
-        () => updateUserStatus(id, "FROZEN", reason, OPERATOR).then(() => `${displayAccount(account)} 已冻结 · 活跃会话已吊销`),
+        () => updateUserStatus(id, "FROZEN", reason, OPERATOR()).then(() => `${displayAccount(account)} 已冻结 · 活跃会话已吊销`),
         "账户已冻结",
       );
     },
@@ -247,7 +248,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       const id = accountId(account);
       if (!id) return toast("账户缺少后端ID");
       void perform(
-        () => updateUserStatus(id, "ACTIVE", reason, OPERATOR).then(() => `${displayAccount(account)} 已恢复为正常状态`),
+        () => updateUserStatus(id, "ACTIVE", reason, OPERATOR()).then(() => `${displayAccount(account)} 已恢复为正常状态`),
         "账户已恢复",
       );
     },
@@ -261,7 +262,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       const id = accountId(account);
       if (!id) return toast("账户缺少后端ID");
       void perform(
-        () => revokeUserSessions(id, reason, OPERATOR).then(() => `${displayAccount(account)} 全部活跃会话已踢线`),
+        () => revokeUserSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 全部活跃会话已踢线`),
         "会话已踢线",
       );
     },
@@ -275,7 +276,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     run: (reason, value) => {
       void perform(async () => {
         const target = await resolveAccount(value);
-        await startUserImpersonation(accountId(target), reason, OPERATOR, 30);
+        await startUserImpersonation(accountId(target), reason, OPERATOR(), 30);
         return `模拟登录 ${displayAccount(target)} 已授权 · 只读 30min`;
       }, "模拟登录已授权");
     },
@@ -289,7 +290,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       const sessionNo = text(session.sessionNo, "");
       if (!sessionNo) return toast("会话缺少 sessionNo");
       void perform(
-        () => terminateUserImpersonation(sessionNo, reason, OPERATOR).then(() => `${sessionNo} 已终止`),
+        () => terminateUserImpersonation(sessionNo, reason, OPERATOR()).then(() => `${sessionNo} 已终止`),
         "模拟会话已终止",
       );
     },
@@ -303,7 +304,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     run: (reason, value) => {
       void perform(async () => {
         const target = await resolveAccount(value);
-        await upsertUserAccountList(accountId(target), kind, reason, OPERATOR);
+        await upsertUserAccountList(accountId(target), kind, reason, OPERATOR());
         return `${displayAccount(target)} 已加入${kind === "ALLOW" ? "信任" : "禁入"}名单`;
       }, "名单已更新");
     },
@@ -316,7 +317,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     run: (reason) => {
       if (entry.userId === null || entry.userId === undefined) return toast("名单行缺少 userId");
       void perform(
-        () => removeUserAccountList(entry.userId!, reason, OPERATOR).then(() => `${displayAccount(entry)} 已移出名单`),
+        () => removeUserAccountList(entry.userId!, reason, OPERATOR()).then(() => `${displayAccount(entry)} 已移出名单`),
         "已移出名单",
       );
     },

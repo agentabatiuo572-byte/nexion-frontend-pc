@@ -1,4 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import type {
   AdvisorScript,
   CustomerProfile,
@@ -13,8 +14,6 @@ import type {
   SupportTicketPriority,
   SupportTicketStatus,
 } from "@/app/components/domain-views/m-tabs/data";
-
-const OPERATOR = "superadmin";
 
 type ApiResult<T> = {
   code?: number;
@@ -297,7 +296,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, operator: OPERATOR, reason };
+  return { ...body, operator: currentAdminOperator(), reason };
 }
 
 function upper(value: string | undefined, fallback: string) {
@@ -324,6 +323,10 @@ function bool(value: unknown, fallback = false) {
 function requireLoadRaw(raw: Record<string, unknown> | undefined): Record<string, unknown> {
   if (!raw || typeof raw !== "object") {
     throw new Error("M_LOAD_CONFIG_BACKEND_RESPONSE_MISSING");
+  }
+  const nested = raw.loadConfig;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    return nested as Record<string, unknown>;
   }
   return raw;
 }

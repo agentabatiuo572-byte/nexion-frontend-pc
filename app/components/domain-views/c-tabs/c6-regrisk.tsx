@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 /**
  * C6 注册/登录风控配置。
  * 数据源为后端 /registration-risk/overview；调参写 /registration-risk/params/{paramKey}。
@@ -15,7 +16,7 @@ import {
 } from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const K1_REJECT_CODE_FALLBACK = "MULTI_ACCOUNT_PARAM_BELONGS_TO_K1";
 const K1_PATH_FALLBACK = "/risk/multi-account";
 
@@ -137,7 +138,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
                 return;
               }
               void perform(async () => {
-                await updateUserRegistrationRiskParam(key, value, reason, OPERATOR);
+                await updateUserRegistrationRiskParam(key, value, reason, OPERATOR());
                 return `${text(param.name)} 已更新为 ${value}`;
               }, "登录风控参数已更新");
             },
@@ -156,7 +157,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     okLabel: "确认恢复",
     run: (reason) => {
       void perform(async () => {
-        await updateUserRegistrationRiskParam("captchaOff", "", reason, OPERATOR);
+        await updateUserRegistrationRiskParam("captchaOff", "", reason, OPERATOR());
         return "人机验证已恢复";
       }, "人机验证已恢复");
     },
@@ -174,7 +175,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         return;
       }
       void perform(async () => {
-        await updateUserRegistrationRiskParam("captchaOff", value, reason, OPERATOR);
+        await updateUserRegistrationRiskParam("captchaOff", value, reason, OPERATOR());
         return `人机验证已临时关闭 · ${value}`;
       }, "人机验证已临时关闭");
     },

@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 /**
  * G2 兑换风控 — 数据来自后端 /api/admin/market/exchange。
  * 后端空库时先写入 nx_exchange_order 示例兑换单，再返回真实查询结果。
@@ -18,7 +19,7 @@ import {
 } from "@/lib/admin/g2-client";
 import type { GCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 type GateKey = "kyc" | "user" | "platform" | "geo";
 
 function messageOf(error: unknown) {
@@ -170,7 +171,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
         if (!nextValue) return;
         void mutate(
           `param-${cap.key}`,
-          () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR),
+          () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR()),
           `${cap.name} 已更新为 ${value}`,
         );
       },
@@ -188,7 +189,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       run: (reason) => {
         void mutate(
           "swap",
-          () => updateG2ExchangeSwapStatus(nextEnabled, reason, OPERATOR),
+          () => updateG2ExchangeSwapStatus(nextEnabled, reason, OPERATOR()),
           `swap 已${nextEnabled ? "恢复" : "熔断"} · 同步 J1`,
         );
       },
@@ -206,7 +207,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       run: (reason) => {
         void mutate(
           `cancel-${order.exchangeNo}`,
-          () => cancelG2ExchangeQueueOrder(order.exchangeNo, reason, OPERATOR),
+          () => cancelG2ExchangeQueueOrder(order.exchangeNo, reason, OPERATOR()),
           `${order.exchangeNo} 排队单已取消 · 退回余额 · 留痕`,
         );
       },

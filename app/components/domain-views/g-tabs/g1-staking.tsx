@@ -1,8 +1,8 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 /**
- * G1 Staking 池配置 — 资金池、持仓状态、B1 覆盖率和 J1 闸状态都来自后端。
- * 后端空库时会先写入 nx_staking_product / nx_staking_position 种子数据，再返回当前查询结果。
+ * G1 Staking 池配置 — 资金池、持仓状态、B1 覆盖率和 J1 闸状态都来自后端业务表。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Drawer, PaginationExemption } from "../design-kit";
@@ -17,7 +17,7 @@ import {
 } from "@/lib/admin/g1-client";
 import type { GCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const CANONICAL_USDT_TIERS = ["usdt30d", "usdt90d", "usdt180d", "usdt365d"] as const;
 const CANONICAL_USDT_TIER_SET = new Set<string>(CANONICAL_USDT_TIERS);
 
@@ -155,7 +155,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         void mutate(
           `apy-${pool.tierKey}`,
-          () => updateG1StakingPoolParam(pool.tierKey, "apy", value, reason, OPERATOR),
+          () => updateG1StakingPoolParam(pool.tierKey, "apy", value, reason, OPERATOR()),
           `${pool.product} ${displayTerm(pool)} APY 已更新为 ${value} · 仅新单生效`,
         );
       },
@@ -171,7 +171,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         void mutate(
           `penalty-${pool.tierKey}`,
-          () => updateG1StakingPoolParam(pool.tierKey, "penalty", value, reason, OPERATOR),
+          () => updateG1StakingPoolParam(pool.tierKey, "penalty", value, reason, OPERATOR()),
           `${pool.product} ${displayTerm(pool)} 罚款已更新为 ${value} · 仅新单生效`,
         );
       },
@@ -187,7 +187,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         void mutate(
           `min-${pool.tierKey}`,
-          () => updateG1StakingPoolParam(pool.tierKey, "min", value, reason, OPERATOR),
+          () => updateG1StakingPoolParam(pool.tierKey, "min", value, reason, OPERATOR()),
           `${pool.product} ${displayTerm(pool)} 最小额已更新为 ${value} · 仅新单生效`,
         );
       },
@@ -202,7 +202,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       run: (reason) => {
         void mutate(
           `sale-${pool.tierKey}`,
-          () => updateG1StakingPoolSaleStatus(pool.tierKey, nextEnabled, reason, OPERATOR),
+          () => updateG1StakingPoolSaleStatus(pool.tierKey, nextEnabled, reason, OPERATOR()),
           `${pool.product} ${displayTerm(pool)} 已${pool.enabled ? "停售" : "恢复开售"} · 在锁不受影响`,
         );
       },
@@ -219,7 +219,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       run: (reason) => {
         void mutate(
           `kill-${pool.tierKey}`,
-          () => updateG1StakingPoolKillStatus(pool.tierKey, nextKilled, reason, OPERATOR),
+          () => updateG1StakingPoolKillStatus(pool.tierKey, nextKilled, reason, OPERATOR()),
           `${pool.product} ${displayTerm(pool)} 已${pool.killed ? "解除熔断" : "熔断"} · 同步 J1/B5`,
         );
       },

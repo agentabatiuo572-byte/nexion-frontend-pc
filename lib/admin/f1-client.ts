@@ -748,9 +748,6 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
       rewards: rowRewards,
     };
   });
-  if (rows.length === 0) {
-    throw new Error("F1 暂无 V-Rank 数据,请确认后端已写入种子数据。");
-  }
   for (const [level, items] of Object.entries(backendRewards)) {
     if (!rewards[level]) rewards[level] = normalizeRewardList(items);
   }
@@ -787,9 +784,6 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
     configKey: asText(item.configKey, ""),
     nexConfigKey: asText(item.nexConfigKey, ""),
   }));
-  if (unilevel.length === 0) {
-    throw new Error("F2 暂无层级佣金数据,请确认后端已写入种子数据。");
-  }
   const rateTiers = (data?.rateTiers ?? []).map((item) => ({
     nm: asText(item.name, "Tier"),
     req: asText(item.requirement, "-"),
@@ -843,9 +837,6 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     state: asText(item.state, "-"),
     tone: asText(item.tone, ""),
   }));
-  if (settlements.length === 0) {
-    throw new Error("F3 暂无双轨结算数据,请确认后端已写入种子数据。");
-  }
   const formula = data?.formula ?? {};
   const dailyCap = data?.dailyCap ?? {};
   const config = data?.config ?? {};
@@ -923,9 +914,6 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     votes: toNumber(row.votes),
     configKey: asText(row.configKey, ""),
   }));
-  if (quotaRows.length === 0 || voteWeights.length === 0) {
-    throw new Error("F4 暂无领导力池配置数据,请确认后端已写入种子数据。");
-  }
   const config = data?.config ?? {};
   return {
     metrics,
@@ -1002,9 +990,6 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       auditKey: asText(item.auditKey, `F.commission.${id}.status`),
     };
   });
-  if (commissionKinds.length === 0 || commissionFilters.length === 0 || commissionEvents.length === 0) {
-    throw new Error("F5 暂无佣金审计数据,请确认后端已写入种子数据。");
-  }
   const pagination = data?.pagination ?? {};
   return {
     summary: {

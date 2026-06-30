@@ -1,10 +1,11 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useEffect, useMemo, useState } from "react";
 import { createD3Injection, fetchD3DualLedger, updateD3Scope, updateD3Thresholds, type D3DualLedger } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 
 function money(value: number) {
   return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
@@ -63,7 +64,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       reason: true,
       okLabel: "登记",
       run: (reason) => {
-        void createD3Injection(nextAmount, nextVoucher, reason, OPERATOR)
+        void createD3Injection(nextAmount, nextVoucher, reason, OPERATOR())
           .then((next) => {
             setData(next);
             setAmount("");
@@ -87,7 +88,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       reason: true,
       okLabel: "保存口径",
       run: (reason) => {
-        void updateD3Scope(nextScope, reason, OPERATOR)
+        void updateD3Scope(nextScope, reason, OPERATOR())
           .then((next) => {
             setData(next);
             toast("口径已保存");
@@ -104,7 +105,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       reason: true,
       okLabel: "保存阈值",
       run: (reason) => {
-        void updateD3Thresholds({ redlinePct, healthyPct, runRiskPct }, reason, OPERATOR)
+        void updateD3Thresholds({ redlinePct, healthyPct, runRiskPct }, reason, OPERATOR())
           .then((next) => {
             setData(next);
             toast("覆盖率阈值已保存");

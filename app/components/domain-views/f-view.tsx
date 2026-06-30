@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 /**
  * F 分销与团队 — 设计稿 design_handoff_f_domain 内容视图(F1–F5)。
  * 标签:F1 V-Rank 晋升 / F2 网络版税费率 / F3 双轨结算引擎 / F4 池·配额·大使·榜 / F5 佣金事件审计。
@@ -44,7 +45,7 @@ import { F5Audit } from "./f-tabs/f5-audit";
 import "./f-domain.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
-const ADMIN_OPERATOR = "superadmin";
+const ADMIN_OPERATOR = currentAdminOperator;
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
@@ -171,13 +172,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f1Error,
     refreshF1,
     updateVRankThreshold: async (rank, field, value, reason) => {
-      setF1Overview(await updateF1VRankThreshold(rank, field, value, reason, ADMIN_OPERATOR));
+      setF1Overview(await updateF1VRankThreshold(rank, field, value, reason, ADMIN_OPERATOR()));
       setF1Error(null);
     },
     rewards: f1Overview?.rewards ?? {},
     addReward: async (level, item, reason) => {
       const { id: _id, ...payload } = item;
-      setF1Overview(await addF1VRankReward(level, payload, reason, ADMIN_OPERATOR));
+      setF1Overview(await addF1VRankReward(level, payload, reason, ADMIN_OPERATOR()));
       setF1Error(null);
     },
     updateReward: async (level, id, patch, reason) => {
@@ -188,11 +189,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         voucherId: patch.voucherId,
         skuId: patch.skuId,
         custom: patch.custom,
-      }, reason, ADMIN_OPERATOR));
+      }, reason, ADMIN_OPERATOR()));
       setF1Error(null);
     },
     removeReward: async (level, id, reason) => {
-      setF1Overview(await removeF1VRankReward(level, id, reason, ADMIN_OPERATOR));
+      setF1Overview(await removeF1VRankReward(level, id, reason, ADMIN_OPERATOR()));
       setF1Error(null);
     },
     voucherOptions: f1Overview?.voucherOptions ?? [],
@@ -209,7 +210,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2Error,
     refreshF2,
     updateF2Config: async (key, value, reason) => {
-      setF2Overview(await updateFTeamConfig(key, value, reason, ADMIN_OPERATOR));
+      setF2Overview(await updateFTeamConfig(key, value, reason, ADMIN_OPERATOR()));
       setF2Error(null);
     },
     f3Metrics: f3Overview?.metrics ?? [],
@@ -227,7 +228,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Error,
     refreshF3,
     updateF3Config: async (key, value, reason) => {
-      setF3Overview(await updateF3TeamConfig(key, value, reason, ADMIN_OPERATOR));
+      setF3Overview(await updateF3TeamConfig(key, value, reason, ADMIN_OPERATOR()));
       setF3Error(null);
     },
     f4Overview,
@@ -235,7 +236,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f4Error,
     refreshF4,
     updateF4Config: async (key, value, reason) => {
-      setF4Overview(await updateF4TeamConfig(key, value, reason, ADMIN_OPERATOR));
+      setF4Overview(await updateF4TeamConfig(key, value, reason, ADMIN_OPERATOR()));
       setF4Error(null);
     },
     f5Overview,
@@ -243,7 +244,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f5Error,
     refreshF5,
     updateF5Config: async (key, value, reason) => {
-      setF5Overview(await updateF5TeamConfig(key, value, reason, ADMIN_OPERATOR));
+      setF5Overview(await updateF5TeamConfig(key, value, reason, ADMIN_OPERATOR()));
       setF5Error(null);
     },
   };

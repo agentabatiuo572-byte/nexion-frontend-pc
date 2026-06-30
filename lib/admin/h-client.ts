@@ -1,4 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 
 interface ApiResult<T> {
   code: number;
@@ -71,8 +72,8 @@ async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPre
   return result.data as T;
 }
 
-function commandBody(key: string, value: string | number | boolean, reason: string, operator = "superadmin") {
-  return JSON.stringify({ key, value: String(value), reason, operator });
+function commandBody(key: string, value: string | number | boolean, reason: string, operator = currentAdminOperator()) {
+  return JSON.stringify({ key, value: String(value), reason, operator: operator || currentAdminOperator() });
 }
 
 export async function fetchH1Rhythm(): Promise<H1RhythmOverview> {
@@ -88,7 +89,7 @@ export async function updateH1RhythmParam(
   key: H1RhythmParamKey,
   value: string | number,
   reason: string,
-  operator = "superadmin",
+  operator = currentAdminOperator(),
 ): Promise<H1RhythmOverview> {
   return normalizeRhythm(
     await growthRequest<Record<string, unknown>>(
@@ -221,7 +222,7 @@ export async function updateH5EarnMilestone(key: string, thresholdUsd: string | 
     `/earn-milestones/${encodeURIComponent(key)}`,
     {
       method: "PATCH",
-      body: JSON.stringify({ thresholdUsd: Number(thresholdUsd), rewardNex: Number(rewardNex), reason, operator: "superadmin" }),
+      body: JSON.stringify({ thresholdUsd: Number(thresholdUsd), rewardNex: Number(rewardNex), reason, operator: currentAdminOperator() }),
     },
     "h5-earn",
   );
@@ -242,7 +243,7 @@ export async function fetchH7Vouchers(): Promise<Record<string, any>> {
 export async function createH7Voucher(voucher: Record<string, any>, reason: string) {
   return growthRequest<Record<string, any>>(
     "/vouchers",
-    { method: "POST", body: JSON.stringify({ ...voucher, reason, operator: "superadmin" }) },
+    { method: "POST", body: JSON.stringify({ ...voucher, reason, operator: currentAdminOperator() }) },
     "h7-create",
   );
 }
@@ -250,7 +251,7 @@ export async function createH7Voucher(voucher: Record<string, any>, reason: stri
 export async function updateH7Voucher(id: string, voucher: Record<string, any>, reason: string) {
   return growthRequest<Record<string, any>>(
     `/vouchers/${encodeURIComponent(id)}`,
-    { method: "PATCH", body: JSON.stringify({ ...voucher, id, reason, operator: "superadmin" }) },
+    { method: "PATCH", body: JSON.stringify({ ...voucher, id, reason, operator: currentAdminOperator() }) },
     "h7-update",
   );
 }

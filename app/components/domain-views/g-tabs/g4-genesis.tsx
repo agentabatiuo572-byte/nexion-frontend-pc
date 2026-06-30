@@ -1,8 +1,8 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 /**
- * G4 Genesis 经济 — 数据来自后端 /api/admin/market/nex/genesis。
- * 后端空库时先写入 nx_genesis_series / nx_genesis_holding / nx_genesis_order 种子数据，再返回真实查询结果。
+ * G4 Genesis 经济 — 数据来自后端 /api/admin/market/nex/genesis 及 Genesis 业务表。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -18,7 +18,7 @@ import {
 } from "@/lib/admin/g4-client";
 import type { GCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -178,7 +178,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         void mutate(
           `param-${param.key}`,
-          () => updateG4GenesisParam(param.key, value, reason, OPERATOR),
+          () => updateG4GenesisParam(param.key, value, reason, OPERATOR()),
           `${param.name} 已更新为 ${value}`,
         );
       },
@@ -195,7 +195,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       run: (reason) => {
         void mutate(
           "market-status",
-          () => updateG4GenesisMarketStatus(!marketOn, reason, OPERATOR),
+          () => updateG4GenesisMarketStatus(!marketOn, reason, OPERATOR()),
           `Genesis 市场已${marketOn ? "熔断" : "恢复"}`,
         );
       },
@@ -212,7 +212,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       run: (reason) => {
         void mutate(
           "rerun-batch",
-          () => rerunG4GenesisDividendBatch(dividend.batchNo, reason, OPERATOR),
+          () => rerunG4GenesisDividendBatch(dividend.batchNo, reason, OPERATOR()),
           `${dividend.batchNo} 重跑完成`,
         );
       },

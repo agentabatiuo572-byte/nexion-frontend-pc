@@ -1,12 +1,13 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { fetchH1Rhythm, type H1RhythmOverview } from "@/lib/admin/h1-client";
 import { fetchD5WithdrawalParams, updateD5WithdrawalParam, type D5Params as D5ParamData } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 
 function pct(value: number) {
   return `${Number(value || 0).toFixed(2)}%`;
@@ -70,7 +71,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           toast("请输入目标值");
           return;
         }
-        void updateD5WithdrawalParam(key, value.trim(), reason, OPERATOR)
+        void updateD5WithdrawalParam(key, value.trim(), reason, OPERATOR())
           .then((next) => {
             setParams(next);
             setError("");

@@ -1,6 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
-
-const OPERATOR = "superadmin";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 
 type ApiResult<T> = {
   code?: number;
@@ -245,7 +244,7 @@ async function downloadReportFile(reportId: string) {
 }
 
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, reason, operator: OPERATOR };
+  return { ...body, reason, operator: currentAdminOperator() };
 }
 
 export const lBiActions: LBiActions = {

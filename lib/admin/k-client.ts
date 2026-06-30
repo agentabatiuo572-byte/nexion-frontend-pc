@@ -1,6 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
-
-const OPERATOR = "superadmin";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 
 type ApiResult<T> = {
   code?: number;
@@ -73,7 +72,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, operator: OPERATOR, reason };
+  return { ...body, operator: currentAdminOperator(), reason };
 }
 
 function rec(value: unknown): Record<string, unknown> {

@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 /**
  * G3 NEX 行情引擎 — 数据来自后端 /api/admin/market/nex/curve 与 /curve/history。
  * 后端空库时先写入 nx_config_item / nx_price_index 的初始化数据，再返回真实查询结果。
@@ -19,7 +20,7 @@ import {
 } from "@/lib/admin/g3-client";
 import type { GCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const CURVE_FIELDS: G3CurveField[] = ["targetPrice", "pumpProbability", "volatilityPct"];
 const CURVE_LABELS: Record<G3CurveField, { name: string; unit: string }> = {
   targetPrice: { name: "目标价", unit: "$" },
@@ -219,7 +220,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         void mutate(
           `curve-${dayIndex}-${field}`,
-          () => updateG3CurveFrame(overview, dayIndex, field, value, reason, OPERATOR),
+          () => updateG3CurveFrame(overview, dayIndex, field, value, reason, OPERATOR()),
           `D${dayIndex + 1} ${label.name} 已更新为 ${value}${isCurrentDay ? " · 当日生效" : " · 待推进到该日生效"}`,
         );
       },
@@ -238,7 +239,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         if (value == null) return;
         void mutate(
           `control-${key}`,
-          () => updateG3Control(key, value, reason, OPERATOR),
+          () => updateG3Control(key, value, reason, OPERATOR()),
           `${name} 已更新为 ${value}`,
         );
       },
@@ -255,7 +256,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         void mutate(
           `override-${overrideKey}`,
-          () => updateG3Override(overrideKey, value, reason, OPERATOR),
+          () => updateG3Override(overrideKey, value, reason, OPERATOR()),
           `${label} 已更新为 ${value}`,
         );
       },
@@ -271,7 +272,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     run: (reason) => {
       void mutate(
         "override-paused",
-        () => updateG3Override("paused", String(!paused), reason, OPERATOR),
+        () => updateG3Override("paused", String(!paused), reason, OPERATOR()),
         `行情引擎已${paused ? "恢复" : "暂停"} · 通知 J1 编排`,
       );
     },
@@ -284,7 +285,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     run: (reason) => {
       void mutate(
         "advance-frame",
-        () => advanceG3CurrentFrame(reason, OPERATOR),
+        () => advanceG3CurrentFrame(reason, OPERATOR()),
         "行情生效日已手动推进 · 已同步现价单源",
       );
     },
@@ -403,7 +404,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
                 if (!value) return;
                 void mutate(
                   "override-oracle",
-                  () => updateG3Override("oracle", value, reason, OPERATOR),
+                  () => updateG3Override("oracle", value, reason, OPERATOR()),
                   `喂价源已切换为 ${value}`,
                 );
               },

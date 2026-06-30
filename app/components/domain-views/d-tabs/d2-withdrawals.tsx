@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useEffect, useMemo, useState } from "react";
 import {
   fetchD2Withdrawals,
@@ -11,7 +12,7 @@ import {
 } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const STATUS_TABS = [
   ["", "全部"],
   ["REVIEWING", "待审核"],
@@ -186,7 +187,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const runReview = async (row: D2Withdrawal, action: "APPROVE" | "DELAY" | "FREEZE" | "UNFREEZE" | "REJECT", reason: string) => {
     try {
-      const updated = await reviewD2Withdrawal(row.withdrawalNo, action, reason, OPERATOR);
+      const updated = await reviewD2Withdrawal(row.withdrawalNo, action, reason, OPERATOR());
       toast(`${row.withdrawalNo} 已${actionLabel(action)} · 当前 ${statusLabel(updated.status)}`);
       await load();
     } catch (err) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 /**
  * G7 复投激励 — 数据来自后端 /api/admin/market/nex/repurchase。
  * 后端空库时先写入 REPURCHASE_90D 产品和复投锁仓种子，再从 nx_staking_position 汇总返回。
@@ -14,7 +15,7 @@ import {
 } from "@/lib/admin/g7-client";
 import type { GCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 
 const PARAM_COPY: Record<string, { name: string; sub: string }> = {
   apy: { name: "年化 APY", sub: "90 天锁仓 · 只对新单生效" },
@@ -157,7 +158,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         if (!value) return;
         void mutate(
           `param-${param.key}`,
-          () => updateG7RepurchaseParam(param.key, value, reason, OPERATOR),
+          () => updateG7RepurchaseParam(param.key, value, reason, OPERATOR()),
           `${label} 已更新为 ${value}`,
         );
       },

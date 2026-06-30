@@ -1,5 +1,6 @@
 "use client";
 
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { DataListPager } from "../design-kit";
@@ -14,7 +15,7 @@ import {
 } from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
-const OPERATOR = "superadmin";
+const OPERATOR = currentAdminOperator;
 const BASE_NETWORKS = ["TRC20", "ERC20", "BTC", "ETH"] as const;
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 
@@ -153,7 +154,7 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
       run: (reason) => {
         void perform(
           async () => {
-            await updateUserKycStatus(selected.userId!, nextStatus, reason, OPERATOR);
+            await updateUserKycStatus(selected.userId!, nextStatus, reason, OPERATOR());
             return `${rowDisplay(selected)} 已更新为${label}`;
           },
           "KYC 状态已更新",
@@ -176,7 +177,7 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
       run: (reason) => {
         void perform(
           async () => {
-            await updateUserKycStatus(selected.userId!, "PENDING", reason, OPERATOR);
+            await updateUserKycStatus(selected.userId!, "PENDING", reason, OPERATOR());
             return `${rowDisplay(selected)} 已进入复审中`;
           },
           "复审已触发",
@@ -201,7 +202,7 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
       run: (reason) => {
         void perform(
           async () => {
-            await updateUserKycNetworkWhitelist(nextNetworks.join(" / "), reason, OPERATOR);
+            await updateUserKycNetworkWhitelist(nextNetworks.join(" / "), reason, OPERATOR());
             return `${network} 已${enabled ? "停用" : "启用"}`;
           },
           "配对网络白名单已更新",
@@ -349,7 +350,7 @@ export function C4HeaderActions({ ctx }: { ctx: CCtx }) {
         reason: true,
         okLabel: "确认导出",
         run: (reason) => {
-          void createUserKycExport("MASKED_LEDGER", reason, OPERATOR)
+          void createUserKycExport("MASKED_LEDGER", reason, OPERATOR())
             .then((job) => ctx.toast(`KYC 脱敏导出已创建 · ${text(job.jobNo)}`))
             .catch((err) => ctx.toast(errorMessage(err)));
         },

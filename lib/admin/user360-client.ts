@@ -1,4 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
@@ -466,7 +467,7 @@ function filenameFromDisposition(disposition: string | null, fallback: string) {
 export async function exportUserProfilesExcel(
   reason: string,
   query: UserProfileQuery = {},
-  operator = "superadmin",
+  operator = currentAdminOperator(),
 ) {
   const response = await fetch("/api/admin/users/profiles/export", {
     method: "POST",
