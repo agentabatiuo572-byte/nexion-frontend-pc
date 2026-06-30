@@ -17,7 +17,7 @@ import "./a-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { A1Accounts } from "./a-tabs/a1-accounts";
 import { A2Audit } from "./a-tabs/a2-audit";

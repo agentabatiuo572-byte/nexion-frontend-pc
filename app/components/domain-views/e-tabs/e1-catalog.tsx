@@ -311,7 +311,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         { k: "门控 SKU", v: gated, sub: "解锁需阶段推进", tone: "warn" },
       ]} />
       {ctx.e1Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>E1 数据同步中...</div>}
-      {ctx.e1Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>后端未连接,当前显示本地原型数据({ctx.e1Error})</div>}
+      {ctx.e1Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E1 后端数据读取失败,未启用本地静态兜底({ctx.e1Error})</div>}
 
       {/* 1. 代际发布门 timeline */}
       {hasPhaseConfig ? (

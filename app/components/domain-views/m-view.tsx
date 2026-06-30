@@ -11,7 +11,7 @@ import "./m-domain.css";
 import { Icon, MessageThread, OperationConfirmModal, useToast, type ThreadMessage } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import {
   adminIdForAgent,
   agentIdForName,
@@ -416,14 +416,12 @@ async function writeSlaRows(prev: SupportSla[], next: SupportSla[], reason: stri
 }
 
 function currentLoadPayload(data: MContentData | null): MLoadConfigWrite {
+  if (!data) {
+    throw new Error("M_LOAD_CONFIG_BACKEND_SNAPSHOT_MISSING");
+  }
   return {
-    autoBalance: data?.loadConfig.autoBalance ?? true,
-    defaultCap: data?.loadConfig.defaultCap ?? 10,
-    burstCap: data?.loadConfig.burstCap ?? 14,
-    warnPct: data?.loadConfig.warnPct ?? 80,
-    quietHourBalance: data?.loadConfig.quietHourBalance ?? false,
-    overflowQueue: data?.loadConfig.overflowQueue ?? "转人工备勤队列",
-    agentState: data?.agentState ?? {},
+    ...data.loadConfig,
+    agentState: data.agentState,
   };
 }
 

@@ -10,7 +10,6 @@ const UNI_BASE_URL = process.env.UNI_BASE_URL || "http://localhost:5173";
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || process.env.ADMIN_BASE || "http://localhost:3002";
 const session = process.env.AGENT_BROWSER_SESSION || `nexion-feature-map-walkthrough-${Date.now()}-${process.pid}`;
 const OUT_FILE = path.join(ROOT, "docs", "audit", "shards", "feature-mapping-walkthrough-proof.ndjson");
-const ADMIN_STORE_KEY = "nexion-admin-platform-v1";
 const results = [];
 
 function quoteShellArg(arg) {
@@ -116,7 +115,7 @@ function evalJson(body, timeout = 30000) {
       if (typeof uni !== 'undefined' && uni.getStorageSync) return uni.getStorageSync(key);
       try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return localStorage.getItem(key); }
     };
-    const persistedAdmin = () => JSON.parse(localStorage.getItem(${JSON.stringify(ADMIN_STORE_KEY)}) || '{"state":{}}').state || {};
+    const retiredAdminPlatformKeys = () => Object.keys(localStorage).filter((key) => /^nexion-admin-platform-v\\d+$/i.test(key));
     const clearNexionStorage = () => {
       for (const storage of [localStorage, sessionStorage]) {
         for (const key of Object.keys(storage)) {
@@ -376,7 +375,7 @@ await step("FM-013", "language-switch-changes-copy-across-routes", () => {
 });
 
 openAdmin("/");
-evalJson(`localStorage.removeItem(${JSON.stringify(ADMIN_STORE_KEY)}); return { clearedAdminStore: true };`);
+evalJson(`return clearNexionStorage();`);
 wait(600);
 
 await step("FM-005-ADMIN", "admin-staking-config-writes-param-and-audit", () => {
@@ -401,23 +400,22 @@ await step("FM-005-ADMIN", "admin-staking-config-writes-param-and-audit", () => 
     return { modalText };
   `);
   wait(700);
-  const persisted = evalJson(`
-    const state = persistedAdmin();
-    const params = state.params || {};
-    const audit = state.audit || [];
-    const entry = audit.find((row) => row.target === 'G.staking.apy.usdt30d' && row.after === '13%');
-    return { params, auditEntry: entry, body: bodyText() };
+  const updated = waitForEval("staking APY backend update visible", `
+    const body = bodyText();
+    return {
+      ok: body.includes('13%') && retiredAdminPlatformKeys().length === 0,
+      retiredKeys: retiredAdminPlatformKeys(),
+      body,
+    };
   `);
-  expect(persisted.params["G.staking.apy.usdt30d"] === "13%", "staking APY param did not persist");
-  expect(!!persisted.auditEntry && /runtime proof/.test(persisted.auditEntry.reason || ""), "staking APY audit entry missing proof reason");
   openAdmin("/finance-products/staking");
   const reopened = evalJson("return { body: bodyText(), href: location.href };");
-  expect(reopened.body.includes("13%"), "staking APY persisted value not rendered after reopen");
+  expect(reopened.body.includes("13%"), "staking APY backend value not rendered after reopen");
   return {
     initialHref: initial.href,
     modalHasBusinessControls: modal.modalText.includes("目标新值") && modal.modalText.includes("操作理由"),
-    persistedKey: "G.staking.apy.usdt30d",
-    auditId: persisted.auditEntry.id,
+    backendValueVisible: updated.body.includes("13%"),
+    retiredAdminPlatformKeys: updated.retiredKeys,
     reopenedHref: reopened.href,
   };
 });
@@ -489,15 +487,14 @@ await step("FM-016", "params-registry-to-owner-module-switch", () => {
     confirmDialog();
   `);
   wait(700);
-  const persisted = evalJson(`
-    const state = persistedAdmin();
-    const params = state.params || {};
-    const audit = state.audit || [];
-    const entry = audit.find((row) => row.target === 'G.staking.enabled.usdt30d' && row.after === 'false');
-    return { params, auditEntry: entry, body: bodyText() };
+  const updated = waitForEval("staking sale-status backend update visible", `
+    const body = bodyText();
+    return {
+      ok: body.includes('已停售') && retiredAdminPlatformKeys().length === 0,
+      retiredKeys: retiredAdminPlatformKeys(),
+      body,
+    };
   `);
-  expect(persisted.params["G.staking.enabled.usdt30d"] === "false", "staking module switch param did not persist");
-  expect(!!persisted.auditEntry && /module switch/.test(persisted.auditEntry.reason || ""), "staking module switch audit entry missing proof reason");
   openAdmin("/finance-products/staking");
   const reopened = evalJson("return { body: bodyText(), href: location.href };");
   expect(reopened.body.includes("已停售"), "module switch state not rendered after reopen");
@@ -505,8 +502,8 @@ await step("FM-016", "params-registry-to-owner-module-switch", () => {
     registry,
     ownerHref: owner.href,
     modalHasBusinessImpact: opened.modalText.includes("停售只停新锁"),
-    persistedKey: "G.staking.enabled.usdt30d",
-    auditId: persisted.auditEntry.id,
+    backendSaleStatusVisible: updated.body.includes("已停售"),
+    retiredAdminPlatformKeys: updated.retiredKeys,
     reopenedHref: reopened.href,
   };
 });

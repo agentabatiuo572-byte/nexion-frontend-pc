@@ -1,9 +1,8 @@
 /**
  * 设计稿内容层 mock 数据(从设计稿 admin-data.js 原样移植,PRD 口径)。
  * 仅供 app/components/domain-views/* 复刻设计稿内容页使用。
- * 资金/兑付口径统一从 LEDGER(单一权威源)派生,杜绝双账本矛盾。
+ * B 域资金/兑付口径已移出本文件;运行态必须读取 /api/admin/treasury/b-domain。
  */
-import { LEDGER } from "./ledger";
 
 export const fmtUsd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
 export const fmtM = (n: number) => "$" + (n / 1e6).toFixed(2) + "M";
@@ -46,58 +45,31 @@ export function kpiState(k: (typeof KPIS)[number], ylOffset = 10): "g" | "y" | "
   return near ? "y" : "r";
 }
 
-// 兑付/储备口径单一权威源 = LEDGER(指挥台 B1 同源);此处仅换算导出名,值不另立一套。
-const _r1 = (n: number) => Math.round(n * 10) / 10;
+// B1/B2/B3 运行态不允许从设计稿 mock 层取数;保留空结构用于旧导出兼容。
 export const TREASURY = {
-  reserveTotal: LEDGER.reserveUsd,
-  liabilityTotal: LEDGER.liabilitiesUsd,
-  coverageRatio: _r1(LEDGER.coverageRatio),
-  redLine: LEDGER.redlinePct,
-  yellowLine: LEDGER.healthyPct,
-  light: LEDGER.coverageRatio >= LEDGER.healthyPct ? "green" : LEDGER.coverageRatio >= LEDGER.redlinePct ? "amber" : "red",
-  deltaPct: _r1(LEDGER.coverageSeries[LEDGER.coverageSeries.length - 1] - LEDGER.coverageSeries[0]),
-  netExposure: LEDGER.reserveUsd - LEDGER.liabilitiesUsd, // 储备−应付;现为正=盈余(118% 覆盖·绿区,m7 扩张)
-  exposureSeries: LEDGER.coverageSeries.map((c) => Math.round(LEDGER.liabilitiesUsd * (c / 100 - 1))),
-  injectedCumulative: 300_000, // 手动注入登记累计(D3 储备明细行同源;旧 12.4M 超储备总额 6.34M,不自洽已修)
+  reserveTotal: 0,
+  liabilityTotal: 0,
+  coverageRatio: 0,
+  redLine: 0,
+  yellowLine: 0,
+  light: "unavailable",
+  deltaPct: 0,
+  netExposure: 0,
+  exposureSeries: [] as number[],
+  injectedCumulative: 0,
+  source: "/api/admin/treasury/b-domain",
 };
 
-// 8 类负债 = LEDGER.accounts(单源);色用 --admin-cat-* token(不硬编码 hex)。
-export const LIABILITIES = LEDGER.accounts.map((a, i) => ({
-  id: i + 1,
-  name: a.label,
-  amount: a.amount,
-  color: `var(${a.catVar})`,
-}));
+export const LIABILITIES: { id: number; name: string; amount: number; color: string }[] = [];
 
-// 到期负债预测(未来 7 天,今天=06-11 起含当日;D3 权威源,B2 卡 / L3 报表同数)。
-// 量级与 LEDGER 闭合:7 日提现解锁 $348K ≪ 科目#1 可提 $1.18M;7 日利息 $78K < 科目#3 存量 $312K;
-// Genesis 日分红 ≈ $20.3K/日 = 已售 847 节点 × $24/节点/日(基数口径:平台日交易量 $24.2M × 0.1% ÷ 1,000 slot;
-//   G4 权威调和:科目#4 $268K 按保底口径预提(节点价 × 0.1% = $10/节点/日 × ~31 日),基数口径高出保底的部分
-//   从当期交易抽成直接派发不占预提 —— $24/节点/日为产品权威档(14 月回本),与 G4 派发监控同源)。
-// (旧值 7 日到期 $4.0M 超科目存量数倍且日期落在过去,2026-06-10 D 域 port 修正;genesis 列 2026-06-11 G 域 port 对齐 $24 档。)
-export const MATURITY = [
-  { d: "06-11", withdraw: 52000, interest: 11000, genesis: 20300 },
-  { d: "06-12", withdraw: 47000, interest: 12000, genesis: 20300 },
-  { d: "06-13", withdraw: 63000, interest: 10000, genesis: 20400 },
-  { d: "06-14", withdraw: 41000, interest: 13000, genesis: 20400 },
-  { d: "06-15", withdraw: 58000, interest: 9000, genesis: 20500 },
-  { d: "06-16", withdraw: 38000, interest: 12000, genesis: 20500 },
-  { d: "06-17", withdraw: 49000, interest: 11000, genesis: 20600 },
-];
-// 7 日到期聚合 + 储备可覆盖天数(单源派生;L3 报表 / D3 仪表盘共用,勿另算)。
+export const MATURITY: { d: string; withdraw: number; interest: number; genesis: number }[] = [];
 export const MAT_7D = MATURITY.reduce(
   (s, m) => ({ withdraw: s.withdraw + m.withdraw, interest: s.interest + m.interest, genesis: s.genesis + m.genesis }),
   { withdraw: 0, interest: 0, genesis: 0 },
 );
-export const RESERVE_COVER_DAYS = Math.round(LEDGER.reserveUsd / ((MAT_7D.withdraw + MAT_7D.interest + MAT_7D.genesis) / 7));
+export const RESERVE_COVER_DAYS = 0;
 
-export const FUNNEL = [
-  { stage: "注册", ev: "auth.register_completed", users: 128400, cvr: null as number | null, lc: "L1", color: "#9EDC1D", target: undefined as string | undefined },
-  { stage: "绑卡 $1 KYC", ev: "kyc.express_verified", users: 97300, cvr: 75.8, lc: "L2", color: "#B6E84A", target: undefined },
-  { stage: "首购", ev: "checkout.completed", users: 33180, cvr: 34.1, lc: "L3→L4", target: ">30%", color: "#9B89E0" },
-  { stage: "复投", ev: "checkout.completed ×2", users: 8920, cvr: 26.9, lc: "L5", color: "#B6A4FF", target: undefined }, // V1 降级口径(wallet.reinvest 未注册,V3 后切双口径;与 B3/L2 一致)
-  { stage: "提现", ev: "withdraw.submitted", users: 21640, cvr: 65.2, lc: "L5", color: "#29D27F", target: undefined },
-];
+export const FUNNEL: { stage: string; ev: string; users: number; cvr: number | null; lc: string; color: string; target?: string }[] = [];
 
 // Phase 现状单一源对齐 command-center.CURRENT_PHASE(P3 扩张期 · 月 7;曾写「月 6 · 拉新加速期」分叉,2026-06-10 收敛)。
 export const PHASE = {

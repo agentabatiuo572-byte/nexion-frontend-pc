@@ -17,8 +17,11 @@ function isText(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts.length === 1 && ["overview", "dual-ledger", "injections"].includes(parts[0])) {
+  if (parts.length === 1 && ["overview", "dual-ledger", "injections", "b-domain"].includes(parts[0])) {
     return `/api/admin/treasury/${parts[0]}`;
+  }
+  if (parts.length === 4 && parts[0] === "b-domain" && parts[1] === "alerts" && isText(parts[2]) && parts[3] === "ack") {
+    return `/api/admin/treasury/b-domain/alerts/${encodeURIComponent(parts[2])}/ack`;
   }
   if (parts.length === 2 && parts[0] === "dual-ledger" && ["scope", "thresholds"].includes(parts[1])) {
     return `/api/admin/treasury/dual-ledger/${parts[1]}`;

@@ -67,6 +67,7 @@ export interface A1CreateAccountInput {
   email: string;
   role: string;
   deliver: "mail" | "handoff";
+  initialPassword?: string;
 }
 
 let requestSeq = 0;

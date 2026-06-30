@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * 运营后台 · 平台级配置可变 store(真状态 + persist)。
- * 与 user-ops-store(per-user)互补:此处放平台级、跨用户的运营配置增删改查(先落 E3 任务引擎,可扩展到 SKU/质押档等)。
- * 真后台对接:每个 action 对应平台配置端点(如 POST /api/admin/tasks),此处 mock state + 乐观更新 + persist(刷新不丢)。
+ * 运营后台 · 平台级配置运行态 adapter。
+ * 平台级、跨用户的运营配置以服务端接口为权威;这里仅保留页面会话内的乐观 UI 状态。
+ * 禁止浏览器持久层承载券、等级奖励、参数、审计等业务态。
  */
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
 
 export interface OpsTask {
   id: string;
@@ -247,11 +246,9 @@ interface PlatformConfigStore {
   logAudit: (entry: Omit<OpsAuditEntry, "id" | "ts">) => void;
 }
 
-let AUDIT_SEQ = 0; // 跨 reload 防审计 id 碰撞(配合 audit.length)
+let AUDIT_SEQ = 0; // 运行期审计 id 去重(配合 audit.length)
 
-export const usePlatformConfig = create<PlatformConfigStore>()(
-  persist(
-    (set) => ({
+export const usePlatformConfig = create<PlatformConfigStore>()((set) => ({
       tasks: null,
       accounts: null,
       ensureTasks: (seed) => set((s) => (s.tasks ? s : { tasks: seed })),
@@ -309,7 +306,7 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
       audit: [],
       setParam: (key, value, meta) =>
         set((s) => {
-          const params = s.params ?? {}; // 老 persist 记录可能无此字段
+          const params = s.params ?? {};
           const audit = s.audit ?? [];
           const before = params[key];
           const entry: OpsAuditEntry = {
@@ -329,22 +326,4 @@ export const usePlatformConfig = create<PlatformConfigStore>()(
           const audit = s.audit ?? [];
           return { audit: [{ id: `AU-${audit.length}-${(AUDIT_SEQ = (AUDIT_SEQ + 1) % 1_000_000)}`, ts: Date.now(), ...e }, ...audit] };
         }),
-    }),
-    {
-      name: "nexion-admin-platform-v1",
-      version: 8, // v2:OpsSku 镜像前端 Product 超集;v3:评价改 per-product;v4:SKU 加 purchaseGate(购买门),清旧 SKU 重建带门 seed;v5:SKU 日产值对齐公布档(Pro v2 14/90·Cloud 3 NEX),清旧 SKU 重建;v6:新增 OpsVoucher(代金券);v7:新增 V-Rank 等级奖励(删实物/发货,奖励改可配清单);v8:新增 OpsDataCenter(E5 数据中心可增删改 + SKU datacenter 下拉单源)。
-      storage: createJSONStorage(() => localStorage),
-      migrate: (persisted, version) => {
-        const p = (persisted ?? {}) as Partial<PlatformConfigStore>;
-        if (version < 2) p.skus = null; // 丢弃旧结构 SKU,避免渲染时 dailyEarn 等新字段缺失
-        if (version < 3) p.reviews = null; // 评价改 per-product(无通用"*"),清旧 seed 由 ensureReviews 按新 per-product seed 重建
-        if (version < 4) p.skus = null; // SKU 新增 purchaseGate 字段 + Pro/Rack P1 默认门;清旧 seed 由 ensureSkus 按新 seed 重建
-        if (version < 5) p.skus = null; // SKU 日产值对齐公布档(Pro v2 14.5→14 / 100→90 NEX · Cloud 1→3 NEX);清旧 stale seed 重建
-        if (version < 6) p.vouchers = null; // 新增代金券字段,由 ensureVouchers 按 seed 重建
-        if (version < 7) p.vRankRewards = null; // 新增 V-Rank 等级奖励,由 ensureVRankRewards 按 seed 重建
-        if (version < 8) p.dataCenters = null; // 新增数据中心,由 ensureDataCenters 按 seed 重建
-        return p as PlatformConfigStore;
-      },
-    },
-  ),
-);
+}));

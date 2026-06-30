@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import {
   addF1VRankReward,
   fetchF3BinaryOverview,

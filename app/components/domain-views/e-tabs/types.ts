@@ -20,9 +20,9 @@ export type EOp =
   | "task-price"      // 任务改单价(E2 后端 API,操作确认 出价格编辑框)
   | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API
   | "phone-tier"      // 手机算力档位收益 → E2 后端 API
-  | "param"           // 自由值调参 → E3 走后端 config,其它 legacy setParam;操作确认 出「目标新值」
-  | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];E3 逐字段写后端 config
-  | "param-fixed"     // 固定值写入 → E3 走后端 config,其它 legacy setParam;不出编辑框
+  | "param"           // 自由值调参 → E1/E3 后端配置接口;未接后端的 key 直接失败,不写本地 store
+  | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];逐字段写后端 config
+  | "param-fixed"     // 固定值写入 → E1/E3 后端配置接口;不出编辑框
   | "phase-save"      // E1 阶段新增/编辑
   | "phase-current"   // E1 当前阶段切换
   | "phase-archive"   // E1 阶段归档

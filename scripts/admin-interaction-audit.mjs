@@ -14,6 +14,9 @@ import { fileURLToPath } from "url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN = path.resolve(ROOT, "..");
+const PRD_DIR = fs.existsSync(path.join(ROOT, "docs", "PRD"))
+  ? path.join(ROOT, "docs", "PRD")
+  : path.join(PLAN, "PRD");
 const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } };
 function walk(dir, re, acc = []) {
   try {
@@ -39,11 +42,11 @@ function canonicalPathKey(p) {
 for (const f of walk(path.join(ROOT, "app/components/hub"), /\.tsx$/)) {
   const s = read(f);
   const hasActionBtn = /onClick=\{(?:\(\)\s*=>|async)/.test(s) && /\b(toast|confirm)\b/.test(s);
-  const importsRealStore = /from "@\/lib\/store\/admin\/(user-ops-store|platform-config-store)"/.test(s);
+  const importsRealStore = /from "@\/lib\/store\/admin\/platform-config-store"/.test(s);
   // 纯只读卡(只有 <Link> 跳转、无 onClick 动作)豁免
   const onlyLinks = !/onClick=\{/.test(s);
   if (hasActionBtn && !importsRealStore && !onlyLinks && !s.includes("audit-ok:no-store")) {
-    add("A", "HIGH", f, "hub 卡含 onClick 动作 + toast/confirm,但未 import 真状态 store(user-ops/platform-config)→ 疑似死控件(点了不改状态)。接 store 或标注 // audit-ok:no-store");
+    add("A", "HIGH", f, "hub 卡含 onClick 动作 + toast/confirm,但未 import 后端接线或平台配置 store→ 疑似死控件(点了不改状态)。接真实接口/store 或标注 // audit-ok:no-store");
   }
 }
 
@@ -99,7 +102,7 @@ for (const f of walk(path.join(ROOT, "app"), /\.tsx$/)) {
 
 // ───────────── F 前端 PRD 版本号三处一致 ─────────────
 (() => {
-  const prdDir = path.join(PLAN, "PRD");
+  const prdDir = PRD_DIR;
   const prdFiles = fs.readdirSync(prdDir).filter((n) => /^Nexion_产品功能架构设计文档_v[\d.]+\.md$/.test(n));
   if (prdFiles.length !== 1) { add("F", "MEDIUM", prdDir, `前端 PRD 文件应唯一,实测 ${prdFiles.length} 个:${prdFiles.join(", ")}`); return; }
   const fileVer = prdFiles[0].match(/_v([\d.]+)\.md$/)[1];

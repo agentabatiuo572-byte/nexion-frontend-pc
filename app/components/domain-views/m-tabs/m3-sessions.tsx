@@ -11,7 +11,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
-  PUSH_SKUS,
   STANDBY_POOL_LABEL,
   TRANSFER_TIMEOUT_MINS,
   transferTargetLabel,
@@ -19,7 +18,6 @@ import {
   type CustomerNote,
   type CustomerProfile,
   type InitiateIdentity,
-  type PushSku,
   type SessionConvo,
   type SessionMsg,
   type SessionReplyTpl,
@@ -31,6 +29,7 @@ import { ConvStat, Empty, MAvatar, ownerLabel, relWhen } from "./hd-ui";
 import { InitiateModal, QuickActionModal, ReturnModal, TransferModal, type InitiatePayload, type ReturnPayload, type TransferPayload } from "./m3-modals";
 import type { MCtx } from "./types";
 import type { MSupportAgent } from "@/lib/admin/m-client";
+import { fetchE1Catalog, type E1CatalogSnapshot } from "@/lib/admin/e1-client";
 
 const CONVO_KEY = "I.session.convos";
 const TICKET_KEY = "I.support.tickets";
@@ -41,6 +40,9 @@ const TRANSFER_TARGETS_KEY = "I.session.transferTargets";
 const LAST_CONVO_KEY = "I.session.ui.lastConvo";
 const FALLBACK_KEY = "I.session.workbench.timeoutFallback"; // 工作台「转入待处理超时回落备勤池」开关("on"=启用)
 const INBOX_PAGE_SIZE = 8; // 会话收件箱每页条数(翻页器)
+
+type PushSku = { id: string; title: string; subtitle: string; to: string };
+type PushSkuSource = E1CatalogSnapshot["skus"][number];
 
 type ConvSeg = "all" | "unread" | "incoming" | "active" | "resolved" | "archived";
 const SEGS: Array<[ConvSeg, string]> = [
@@ -95,6 +97,15 @@ function nextTicketId(rows: SupportTicket[]): string {
 const HREF_CN: Record<string, string> = { "/store": "商城", "/staking": "锁仓", "/genesis": "创世节点" };
 function hrefLabel(href: string): string {
   return HREF_CN[href] ?? href;
+}
+function toPushSku(sku: PushSkuSource): PushSku {
+  const subtitle = [sku.tier, sku.tagline, sku.gpu || sku.vram].filter(Boolean).slice(0, 2).join(" · ");
+  return {
+    id: sku.id || sku.name,
+    title: sku.name || sku.id || "未命名 SKU",
+    subtitle: subtitle || "E1 商品目录",
+    to: "/store",
+  };
 }
 
 export function M3Sessions({ ctx }: { ctx: MCtx }) {
@@ -154,6 +165,31 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [showTransfer, setShowTransfer] = useState(false); // 转交弹窗
   const [showReturn, setShowReturn] = useState(false);     // 手动退回弹窗
   const [profilePeek, setProfilePeek] = useState(false); // 窄屏右栏抽屉开关
+  const [pushSkus, setPushSkus] = useState<PushSku[]>([]);
+  const [pushSkuLoading, setPushSkuLoading] = useState(true);
+  const [pushSkuError, setPushSkuError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setPushSkuLoading(true);
+    fetchE1Catalog()
+      .then((snapshot) => {
+        if (!active) return;
+        setPushSkus(snapshot.skus.filter((sku) => sku.status !== "off").map(toPushSku));
+        setPushSkuError(null);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setPushSkus([]);
+        setPushSkuError(error instanceof Error ? error.message : "E1_SKU_LOAD_FAILED");
+      })
+      .finally(() => {
+        if (active) setPushSkuLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // 续聊恢复:hydrate 后一次性恢复上次会话;手动选过即锁(restoredRef)。
   const restoredRef = useRef(false);
@@ -655,6 +691,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
               onReplyChange={setReplyBody}
               onSend={sendReply}
               onPushSku={pushSku}
+              pushSkus={pushSkus}
+              pushSkuLoading={pushSkuLoading}
+              pushSkuError={pushSkuError}
               advisorScripts={advisorScripts}
               replyTemplates={replyTemplates}
             />
@@ -788,6 +827,9 @@ function ChatComposer({
   onReplyChange,
   onSend,
   onPushSku,
+  pushSkus,
+  pushSkuLoading,
+  pushSkuError,
   advisorScripts,
   replyTemplates,
 }: {
@@ -796,6 +838,9 @@ function ChatComposer({
   onReplyChange: (v: string) => void;
   onSend: () => void;
   onPushSku: (sku: PushSku) => void;
+  pushSkus: PushSku[];
+  pushSkuLoading: boolean;
+  pushSkuError: string | null;
   advisorScripts: AdvisorScript[];
   replyTemplates: SessionReplyTpl[];
 }) {
@@ -815,7 +860,7 @@ function ChatComposer({
   };
   return (
     <div className="ChatComposer">
-      {pickOpen && <SkuPicker onClose={() => setPickOpen(false)} onPick={(sku) => { onPushSku(sku); setPickOpen(false); }} />}
+      {pickOpen && <SkuPicker skus={pushSkus} loading={pushSkuLoading} error={pushSkuError} onClose={() => setPickOpen(false)} onPick={(sku) => { onPushSku(sku); setPickOpen(false); }} />}
       {tplOpen && <TemplatePicker title={isAdvisor ? "快捷话术回复" : "回复模板"} items={quick} onClose={() => setTplOpen(false)} onPick={(text) => { fill(text); setTplOpen(false); }} />}
       <div className="composer-tools">
         <button type="button" className={`composer-tool${tplOpen ? " on" : ""}`} aria-expanded={tplOpen} onClick={() => { setTplOpen((v) => !v); setPickOpen(false); }}>
@@ -826,7 +871,7 @@ function ChatComposer({
         <button type="button" data-proof="session-push-sku" className={`composer-tool${pickOpen ? " on" : ""}`} aria-expanded={pickOpen} onClick={() => { setPickOpen((v) => !v); setTplOpen(false); }}>
           <Icon name="box" size={15} />
           <span>推送商品</span>
-          <span className="composer-tool-n">{PUSH_SKUS.length}</span>
+          <span className="composer-tool-n">{pushSkuLoading ? "..." : pushSkus.length}</span>
         </button>
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
@@ -915,7 +960,7 @@ function TemplatePicker({ title, items, onClose, onPick }: { title: string; item
   );
 }
 
-function SkuPicker({ onClose, onPick }: { onClose: () => void; onPick: (sku: PushSku) => void }) {
+function SkuPicker({ skus, loading, error, onClose, onPick }: { skus: PushSku[]; loading: boolean; error: string | null; onClose: () => void; onPick: (sku: PushSku) => void }) {
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -933,7 +978,7 @@ function SkuPicker({ onClose, onPick }: { onClose: () => void; onPick: (sku: Pus
     };
   }, [onClose]);
   const ql = q.trim().toLowerCase();
-  const list = ql ? PUSH_SKUS.filter((s) => (s.id + s.title + s.subtitle).toLowerCase().includes(ql)) : PUSH_SKUS;
+  const list = ql ? skus.filter((s) => (s.id + s.title + s.subtitle).toLowerCase().includes(ql)) : skus;
   return (
     <div ref={ref} className="sku-pop">
       <div className="sku-pop-h">
@@ -950,10 +995,20 @@ function SkuPicker({ onClose, onPick }: { onClose: () => void; onPick: (sku: Pus
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索 SKU 名称 / 编号" />
       </div>
       <div className="sku-pop-list">
-        {list.length === 0 ? (
+        {loading ? (
           <div className="sku-pop-empty">
             <Icon name="box" size={16} />
-            没有匹配「{q}」的商品
+            正在读取 E1 商品目录
+          </div>
+        ) : error ? (
+          <div className="sku-pop-empty">
+            <Icon name="box" size={16} />
+            E1 商品目录读取失败:{error}
+          </div>
+        ) : list.length === 0 ? (
+          <div className="sku-pop-empty">
+            <Icon name="box" size={16} />
+            {q ? `没有匹配「${q}」的商品` : "E1 暂无可推送商品"}
           </div>
         ) : (
           list.map((s) => (
@@ -973,7 +1028,7 @@ function SkuPicker({ onClose, onPick }: { onClose: () => void; onPick: (sku: Pus
         )}
       </div>
       <div className="sku-pop-foot">
-        <span className="mono dim2" style={{ fontSize: 11 }}>共 {PUSH_SKUS.length} 个可推送商品</span>
+        <span className="mono dim2" style={{ fontSize: 11 }}>共 {skus.length} 个可推送商品 · 来源 E1 商品目录</span>
       </div>
     </div>
   );

@@ -18,7 +18,7 @@ import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { confirm } from "@/lib/store/ui";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import {
   archiveE1GenerationGate,
   archiveE1Phase,
@@ -257,8 +257,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const hydrated = useOpsHydrated();
 
   // ── 共享 store 接线 ──
-  const setParam = usePlatformConfig((s) => s.setParam);
-  const logAudit = usePlatformConfig((s) => s.logAudit);
   const params = usePlatformConfig((s) => s.params);
   // SKU store 镜像(E1 展示走本地 e1Skus / 真后端;但增删改同步写 platform-config-store.skus,
   // 使其成为后台单一 SKU 真源——供 H7 代金券适用 SKU、F1 V-Rank 奖励 SKU 下拉等跨域消费,backend-replaceable)。
@@ -701,14 +699,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         },
         "新增任务核心配置",
         operator);
-      logAudit({ actor: operator, action: `新增任务 ${created.n} · taskClass=${taskForm.taskClass} · 模型 ${taskForm.model} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill 初始 ${taskForm.killInit}`, target: created.id });
       await refreshE2();
       setToast("已新增任务:" + created.n + " · taskClass=" + taskForm.taskClass + " · 后端已生效");
       setTaskDrawer(false);
       setEditTaskId(null);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "E2_TASK_CREATE_FAILED";
-      logAudit({ actor: operator, action: "新增任务失败:" + taskForm.n.trim() + " · " + msg, target: taskForm.n.trim() }); // A2:高敏 op 失败留痕(规则 6)
       setToast("任务新增失败:" + msg);
     }
   };
@@ -1270,7 +1266,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 await refreshE1();
               }
               if (editName) updateSku(editName, mirror); else addSku(mirror); // store 镜像(跨域 SKU 真源,后端 canonical 优先)
-              logAudit({ actor: operator, action: editName ? "编辑SKU " + form.name : "新增SKU " + form.name, target: sku.name, reason });
               setToast(editName ? "SKU 已更新:" + form.name : "SKU 已新增:" + form.name + " · 待上架");
               setEditName(null);
               resetSkuMedia(null);
@@ -1283,7 +1278,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 await refreshE1();
               }
               removeSku(sku?.name ?? mc.target); // store 镜像
-              logAudit({ actor: operator, action: "删除SKU " + mc.target, target: sku?.name ?? mc.target, reason });
               setToast("SKU 已删除:" + mc.target);
             } else if (mc.op === "sku-status" && mc.target) {
               const sku = skus.find((x) => x.name === mc.target || x.id === mc.target);
@@ -1294,19 +1288,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 await refreshE1();
               }
               setSkuStatus(sku?.name ?? mc.target, mc.status!); // store 镜像
-              logAudit({ actor: operator, action: "SKU " + (mc.status === "off" ? "下架" : "上架") + " " + mc.target, target: sku?.name ?? mc.target, reason });
               setToast("SKU " + mc.target + (mc.status === "off" ? " 已下架" : " 已上架"));
             } else if (mc.op === "task-down" && mc.taskId) {
               await deleteE2Task(mc.taskId, reason, operator);
               await refreshE2();
-              logAudit({ actor: operator, action: "下架任务 " + (mc.target ?? mc.taskId), target: mc.taskId, reason });
               setToast("任务已下架:" + (mc.target ?? mc.taskId));
             } else if (mc.op === "task-price" && mc.taskId) {
               const v = Number(newValue);
               if (Number.isFinite(v) && v > 0) {
                 await updateE2TaskPrice(mc.taskId, v, reason, operator);
                 await refreshE2();
-                logAudit({ actor: operator, action: "调整任务单价 " + mc.taskId, target: mc.taskId, after: String(v), reason });
                 setToast(mc.name + ":已写入 $" + v + " · 后端已生效");
               }
               else setToast("请填写有效单价");
@@ -1329,7 +1320,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 minVRAM: taskForm.minVRAM.trim(),
                 killInit: taskForm.killInit,
               }, reason, operator);
-              logAudit({ actor: operator, action: `编辑任务 ${taskForm.n.trim()} · 单价 $${price}${taskForm.unit} · 门槛 ${taskForm.req} · taskClass=${taskForm.taskClass} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill ${taskForm.killInit}`, target: editTaskId, reason });
               await refreshE2();
               setToast("任务已更新:" + taskForm.n.trim() + " · 后端已生效");
               setEditTaskId(null);
@@ -1339,7 +1329,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 const patch = mc.phoneField === "dailyUsdt" ? { dailyUsdt: v } : { dailyNex: v };
                 await updateE2PhoneTier(mc.phoneTier, patch, reason, operator);
                 await refreshE2();
-                logAudit({ actor: operator, action: `调整手机 T${mc.phoneTier} ${mc.phoneField}`, target: String(mc.phoneTier), after: String(v), reason });
                 setToast(mc.name + ":已写入 " + v + " · 后端已生效");
               } else {
                 setToast("请填写有效档位收益");
@@ -1352,29 +1341,23 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setE3Params(await updateE3Param(mc.paramKey, v, reason, operator));
                 await refreshE3();
               } else {
-                setParam(mc.paramKey, v, { action: mc.name, reason });
-              }
-              // E.gen / E3 走后端 API 不经 setParam → 补 A2 审计镜像(else 分支 setParam 已自带审计)
-              if (mc.paramKey.startsWith("E.gen.") || isE3ParamKey(mc.paramKey)) {
-                logAudit({ actor: operator, action: mc.name, target: mc.paramKey, after: v, reason });
+                throw new Error("E_PARAM_BACKEND_ROUTE_MISSING:" + mc.paramKey);
               }
               setToast(mc.name + ":已写入 " + v + " · server-canonical");
             } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
-              // 多字段调参:每字段写到自己的 param key;E3 走后端配置接口,其他域保留原 store 配置。
+              // 多字段调参:每字段写到自己的 param key;E 域只允许走后端配置接口。
               const e3Values: Record<string, string> = {};
               for (const { key, paramKey } of mc.paramKeys) {
                 const next = (businessValue[key] ?? "").trim();
                 if (isE3ParamKey(paramKey)) {
                   e3Values[paramKey] = next;
                 } else {
-                  setParam(paramKey, next, { action: mc.name, reason });
+                  throw new Error("E_PARAM_BACKEND_ROUTE_MISSING:" + paramKey);
                 }
               }
               if (Object.keys(e3Values).length) {
                 setE3Params(await updateE3Params(e3Values, reason, operator));
                 await refreshE3();
-                // E3 字段走后端配置接口不经 setParam → 补 A2 审计镜像(非 E3 字段 setParam 已自带审计)
-                logAudit({ actor: operator, action: mc.name, target: Object.keys(e3Values).join(","), after: Object.values(e3Values).join(" / "), reason });
               }
               const summary = mc.paramKeys.map(({ key }) => (businessValue[key] ?? "").trim()).join(" / ");
               setToast(mc.name + ":已写入 " + summary + " · server-canonical");
@@ -1385,11 +1368,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setE3Params(await updateE3Param(mc.paramKey, mc.fixedVal, reason, operator));
                 await refreshE3();
               } else {
-                setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason });
-              }
-              // E.gen / E3 走后端 API 不经 setParam → 补 A2 审计镜像
-              if (mc.paramKey.startsWith("E.gen.") || isE3ParamKey(mc.paramKey)) {
-                logAudit({ actor: operator, action: mc.name, target: mc.paramKey, after: mc.fixedVal, reason });
+                throw new Error("E_PARAM_BACKEND_ROUTE_MISSING:" + mc.paramKey);
               }
               setToast(mc.name + " · 已生效 · 以后端为准");
             } else if (mc.op === "phase-save" && businessValue) {
@@ -1404,17 +1383,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 ? await patchE1Phase(mc.phaseId, payload, reason, operator)
                 : await createE1Phase(payload, reason, operator));
               await refreshE1();
-              logAudit({ actor: operator, action: (mc.phaseId ? "编辑阶段 " : "新增阶段 ") + payload.label, target: mc.phaseId ?? payload.label ?? "E.phase", reason });
               setToast(mc.phaseId ? "阶段已更新:" + payload.label : "阶段已新增:" + payload.label);
             } else if (mc.op === "phase-archive" && mc.phaseId) {
               setE1Gates(await archiveE1Phase(mc.phaseId, reason, operator));
               await refreshE1();
-              logAudit({ actor: operator, action: "归档阶段", target: mc.phaseId, reason });
               setToast("阶段已归档");
             } else if (mc.op === "phase-current" && mc.phaseId) {
               setE1Gates(await setE1CurrentPhase(mc.phaseId, reason, operator));
               await refreshE1();
-              logAudit({ actor: operator, action: "切换当前阶段", target: mc.target ?? mc.phaseId, reason });
               setToast("当前阶段已切换:" + (mc.target ?? mc.phaseId));
             } else if (mc.op === "generation-gate-save" && businessValue) {
               const payload = {
@@ -1432,35 +1408,29 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 ? await patchE1GenerationGate(mc.generationGateId, payload, reason, operator)
                 : await createE1GenerationGate(payload, reason, operator));
               await refreshE1(); // 对齐 phase-save/gate-force:刷新 e1Skus/phases 等派生面,防 SKU 解锁阶段下拉读 stale
-              logAudit({ actor: operator, action: (mc.generationGateId ? "编辑代际门 " : "新增代际门 ") + payload.skuId, target: mc.generationGateId ?? payload.skuId, reason });
               setToast(mc.generationGateId ? "代际门已更新:" + payload.skuId : "代际门已新增:" + payload.skuId);
             } else if (mc.op === "generation-gate-force" && mc.generationGateId && mc.generationGate?.forceUnlock != null) {
               const enabled = !!mc.generationGate.forceUnlock;
               setE1Gates(await patchE1GenerationGate(mc.generationGateId, { forceUnlock: enabled }, reason, operator));
               await refreshE1();
-              logAudit({ actor: operator, action: (enabled ? "开启" : "撤销") + "代际门强制提前开放", target: mc.generationGateId, after: enabled ? "forceUnlock" : "off", reason });
               setToast((enabled ? "强制提前开放已开启:" : "强制提前开放已撤销:") + mc.generationGateId);
             } else if (mc.op === "generation-gate-archive" && mc.generationGateId) {
               setE1Gates(await archiveE1GenerationGate(mc.generationGateId, reason, operator));
               await refreshE1(); // 对齐 phase-archive:刷新派生面
-              logAudit({ actor: operator, action: "移除代际门", target: mc.generationGateId, reason });
               setToast("代际门已移除:" + mc.generationGateId);
             } else if (mc.op === "order-state" && mc.orderId && mc.fixedVal) {
               await updateE4OrderState(mc.orderId, mc.fixedVal, reason, operator);
               await refreshE4();
-              logAudit({ actor: operator, action: mc.name, target: mc.orderId, after: mc.fixedVal, reason });
               setToast("订单 " + mc.orderId + " 已更新为:" + stateLabel(mc.fixedVal));
               setSelOrder(null);
             } else if (mc.op === "order-refund" && mc.orderId) {
               await refundE4Order(mc.orderId, reason, operator);
               await refreshE4();
-              logAudit({ actor: operator, action: "退款订单 " + mc.orderId, target: mc.orderId, reason });
               setToast("订单 " + mc.orderId + " 已退款 · 资产回退已联动 D4 冲正 + C3");
               setSelOrder(null);
             } else if (mc.op === "order-cancel" && mc.orderId) {
               await cancelE4Order(mc.orderId, reason, operator);
               await refreshE4();
-              logAudit({ actor: operator, action: "取消订单 " + mc.orderId, target: mc.orderId, reason });
               setToast("订单 " + mc.orderId + " 已取消 · 后续分配/扣费已终止");
               setSelOrder(null);
             } else if (mc.op === "order-terminal" && mc.orderId) {
@@ -1468,19 +1438,16 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (v) {
                 await terminalE4Order(mc.orderId, v, reason, operator);
                 await refreshE4();
-                logAudit({ actor: operator, action: "补建订单终态 " + mc.orderId, target: mc.orderId, after: v, reason });
                 setToast("订单 " + mc.orderId + " 已补建终态:" + stateLabel(v));
               }
               setSelOrder(null);
             } else if (mc.op === "device-activate" && mc.deviceId) {
               await activateE5Device(mc.deviceId, reason, operator);
               await refreshE5();
-              logAudit({ actor: operator, action: "激活设备 " + (mc.deviceNo ?? mc.deviceId), target: String(mc.deviceId), reason });
               setToast("设备 " + (mc.deviceNo ?? mc.deviceId) + " 已提交激活 · 后端已生效");
             } else if (mc.op === "device-deactivate" && mc.deviceId) {
               await deactivateE5Device(mc.deviceId, reason, operator);
               await refreshE5();
-              logAudit({ actor: operator, action: "取消激活/解绑设备 " + (mc.deviceNo ?? mc.deviceId), target: String(mc.deviceId), reason });
               setToast("设备 " + (mc.deviceNo ?? mc.deviceId) + " 已取消激活/解绑 · 后端已生效");
             } else if (mc.op === "dc-save" && mc.dcForm) {
               const payload: E5DatacenterInput = {
@@ -1496,18 +1463,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               }
               await refreshE5();
               setEditDcLocation(null);
-              logAudit({ actor: operator, action: (mc.isNew ? "新增数据中心 " : "编辑数据中心 ") + payload.regionLabel + "(" + payload.dcLocation + ")", target: mc.dc ?? payload.dcLocation, reason });
               setToast((mc.isNew ? "数据中心已新增:" : "数据中心已更新:") + payload.dcLocation);
             } else if (mc.op === "dc-delete" && mc.dc) {
               await deleteE5Datacenter(mc.dc, reason, operator);
               await refreshE5();
-              logAudit({ actor: operator, action: "删除数据中心 " + mc.dc, target: mc.dc, reason });
               setToast("数据中心已删除:" + mc.dc);
             } else if (mc.op === "ops-pause" && mc.dc) {
               const paused = mc.fixedVal === "true";
               await setE5DatacenterPaused(mc.dc, paused, reason, operator);
               await refreshE5();
-              logAudit({ actor: operator, action: mc.dc + (paused ? " 暂停派单" : " 恢复派单"), target: mc.dc, reason });
               setToast(mc.dc + (paused ? " 已暂停派单" : " 已恢复派单") + " · 后端已生效");
             } else { setToast("已确认生效"); }
           } catch (error) {

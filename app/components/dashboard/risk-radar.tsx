@@ -6,8 +6,15 @@
  */
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import type { AlertItem, AlertLevel } from "@/lib/mock/admin/command-center";
 import { AutoGloss } from "@/app/components/kit/gloss";
+
+export type AlertLevel = "high" | "mid" | "low";
+export interface AlertItem {
+  id: string;
+  level: AlertLevel;
+  text: string;
+  href: string;
+}
 
 const LEVEL_COLOR: Record<AlertLevel, string> = {
   high: "var(--v5-danger)",
@@ -18,6 +25,7 @@ const LEVEL_COLOR: Record<AlertLevel, string> = {
 export interface KillGate {
   key: string;
   on: boolean; // true = 正常(闸关闭),false = 已触发熔断(闸打开)
+  state?: "on" | "off" | "missing";
 }
 
 export function RiskRadar({
@@ -32,7 +40,8 @@ export function RiskRadar({
   killGates: KillGate[];
 }) {
   const highCount = alerts.filter((a) => a.level === "high").length;
-  const killOpen = killGates.filter((k) => !k.on).length;
+  const killOpen = killGates.filter((k) => (k.state ? k.state === "off" : !k.on)).length;
+  const killMissing = killGates.filter((k) => k.state === "missing").length;
 
   return (
     <div className="flex h-full flex-col rounded-[16px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
@@ -55,14 +64,20 @@ export function RiskRadar({
       </div>
 
       {/* Kill 状态灯 */}
-      <p className="mt-3.5 text-[12px]" style={{ color: "var(--v5-ink-2)", fontWeight: 600 }}><AutoGloss>Kill-Switch 状态灯 · </AutoGloss>{killOpen}/{killGates.length} 开</p>
+      <p className="mt-3.5 text-[12px]" style={{ color: "var(--v5-ink-2)", fontWeight: 600 }}>
+        <AutoGloss>Kill-Switch 状态灯 · </AutoGloss>{killOpen}/{killGates.length} 开{killMissing > 0 ? ` · ${killMissing} 未配置` : ""}
+      </p>
       <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {killGates.map((k) => (
-          <div key={k.key} className="flex items-center gap-1.5 rounded-[8px] px-2 py-1.5" style={{ border: "1px solid var(--v5-border)", background: k.on ? "var(--v5-surface-2)" : "var(--v5-danger-soft)" }}>
-            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: k.on ? "var(--v5-success)" : "var(--v5-danger)" }} />
+        {killGates.map((k) => {
+          const missing = k.state === "missing";
+          const off = k.state ? k.state === "off" : !k.on;
+          return (
+          <div key={k.key} className="flex items-center gap-1.5 rounded-[8px] px-2 py-1.5" style={{ border: "1px solid var(--v5-border)", background: missing ? "var(--v5-surface-3)" : off ? "var(--v5-danger-soft)" : "var(--v5-surface-2)" }}>
+            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: missing ? "var(--v5-ink-4)" : off ? "var(--v5-danger)" : "var(--v5-success)" }} />
             <span className="font-mono-tabular truncate text-[10.5px]" style={{ color: "var(--v5-ink-3)" }}>{k.key}</span>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 实时告警(原 AlertCenter 列表) */}

@@ -1,17 +1,10 @@
 /** 域 L 数据与分析 BI — 注册表(dashboard ×4 + list ×1)。accent=--admin-domain-l。
  *  数据均派生自 A4 server-authoritative 事件流(schema v3.7),与 B 域驾驶舱口径一致:
  *  八项验收 KPI(Day-0 接入 87% / Day-7 留存 58% / 首购转化 18% / 复购 35% / 推广 22% /
- *  Nova CTR 31% / Staking TVL $1.64M / Genesis 售罄 84%)。漏斗与 12 月节奏对齐:
- *  注册 1240→绑卡 769→首购 223→复购 78→提现 41;储备 $6.34M / 应付 $5.37M / 覆盖率 118.1% 绿区(派生自 LEDGER 单源·越南基准 m7)。 */
+ *  Nova CTR 31% / Staking TVL $1.64M / Genesis 售罄 84%)。B 域资金口径不在注册表静态提供。 */
 import type { ModuleEntry } from "@/lib/admin/module-content";
-import { LEDGER } from "@/lib/mock/admin/ledger";
 
-// L3 财务 BI 口径派生自 LEDGER 单源,与 D3 / B1 双账本一致
-const _lResM = (LEDGER.reserveUsd / 1e6).toFixed(2);
-const _lLiabM = (LEDGER.liabilitiesUsd / 1e6).toFixed(2);
-const _lNetRaw = LEDGER.reserveUsd - LEDGER.liabilitiesUsd;
-const _lNetLabel = _lNetRaw >= 0 ? `+$${(_lNetRaw / 1e6).toFixed(2)}M` : `-$${Math.abs(_lNetRaw / 1e6).toFixed(2)}M`;
-const _lCov = LEDGER.coverageRatio.toFixed(1);
+const LIVE_B_TREASURY_SOURCE = "/api/admin/treasury/b-domain";
 export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/kpi",
@@ -205,10 +198,10 @@ export const DOMAIN_L: ModuleEntry[] = [
         },
         {
           label: "净敞口",
-          value: _lNetLabel,
-          sub: "储备 − 应付",
+          value: "读取接口",
+          sub: "B1/B2 实时口径",
           accent: "var(--v5-warning)",
-          hint: `可用储备 $${_lResM}M − 应付负债 $${_lLiabM}M。储备高于应付(绿区盈余),与覆盖率 ${_lCov}% 对应。`,
+          hint: `可用储备、应付负债和覆盖率必须读取 ${LIVE_B_TREASURY_SOURCE},注册表不再提供静态 B 财务数。`,
         },
         {
           label: "Staking TVL",
@@ -254,16 +247,15 @@ export const DOMAIN_L: ModuleEntry[] = [
         {
           type: "bars",
           title: "近 8 月兑付覆盖率",
-          sub: `储备 / 应付 · 红线 ${LEDGER.redlinePct}%`,
+          sub: `储备 / 应付 · 读取 ${LIVE_B_TREASURY_SOURCE}`,
           color: "var(--admin-domain-l)",
-          data: LEDGER.coverageSeries.map((v) => Math.round(v)),
-          labels: ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8"],
-          refLine: LEDGER.redlinePct,
+          data: [],
+          labels: [],
           unit: "%",
         },
       ],
       controlLink: { label: "调提现/资金参数", href: "/finance/params" },
-      note: `本月收入 $1.98M 而兑付 $1.62M,净敞口 ${_lNetLabel}(盈余),覆盖率口径(${_lCov}%)与 B1 双账本一致、高于健康线 ${LEDGER.healthyPct}%(绿区),扩张期储备累积。Staking TVL $1.64M 达标。报表为周期汇总,资金口径以 server 端结算账本为权威。`,
+      note: `本月收入与兑付支出为 L 域周期汇总;净敞口、覆盖率、红线和负债科目必须读取 ${LIVE_B_TREASURY_SOURCE} 或 L 财务真实接口,注册表不再冒充实时 B 财务数。`,
     },
   },
   {

@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 /**
- * A2 审计覆盖哨兵 —— 防「高敏操作不落 A2 审计」复发 + 防「A2 审计页脱离实时 store」回退。
+ * A2 审计覆盖哨兵 —— 防「高敏操作不落 A2 审计」复发 + 防「A2 审计页脱离后端 A2 overview」回退。
  *
  * 缘起(2026-06-24):全 13 域审计发现两类坑:
- *   ① A2 审计页 a2-audit.tsx 只渲染静态种子 AUDIT_LOGS,从不订阅实时 usePlatformConfig().audit[],
- *      → 全后台高敏操作虽已 setParam/logAudit 落审计,却在 A2 页永远看不见(展示侧脱节)。
+ *   ① A2 审计页 a2-audit.tsx 只渲染静态种子 AUDIT_LOGS,或回退为本地 usePlatformConfig().audit[],
+ *      → 全后台高敏操作虽已落后端审计,却在 A2 页永远看不见(展示侧脱节)。
  *   ② 部分高敏写动作走后端 REST / 专用 CRUD(A 域账号治理、E 域订单/设备/E3 参数/代际门),
  *      onConfirm 漏补相邻 logAudit/setParam → 平台 A2 审计零写入(写入侧漏)。
  * 典型「修一处≠修全部」+「声明≠实现」(manifest storeAction 标 setParam,实现却是 REST)。
  *
- * 本哨兵不重做敏感度分类(那由域审计产出),只把已修的审计写入路径钉成机器门,防回退:
- *   A. a2-audit.tsx 必订阅实时 audit[](usePlatformConfig((s) => s.audit)),否则重连被回改回种子。
- *   B. a1-accounts.tsx:① 唯一写动作 chokepoint runMutation 内有集中 logAudit;
- *      ② 每个 runMutation 调用都传 audit 对象({ target: … })——防新增账号治理动作漏审计。
- *   C. e-view.tsx onConfirm 每个高敏 gap 分支(代际门 / 阶段 / 订单 / 设备 / E3 参数 / 派单 / 数据中心)必含 logAudit。
+ * 本哨兵不重做敏感度分类(那由域审计产出),只把已修的后端审计/工单路径钉成机器门,防回退:
+ *   A. a2-audit.tsx 必读取后端 fetchA2Overview().recentLogs,否则重连被回改回种子或本地 store。
+ *   B. A1 账号治理必须走后端 /api/admin/platform/accounts|rbac client,不允许回退本地 logAudit/usePlatformConfig。
+ *   C. e-view.tsx onConfirm 每个高敏 gap 分支(代际门 / 阶段 / 订单 / 设备 / E3 参数 / 派单 / 数据中心)
+ *      必须调用真实后端 client,且禁止用本地 logAudit 伪装 A2 证据。
+ *   D. A2 审批、驳回、提案、导出必须走后端 audit client + platform proxy,焦点域禁止回退本地 store。
  * 注:360 HUB 用户详情页冻结/解冻是轻量快捷动作(confirm + per-user 审计),不进平台 A2;权威
  *     reason-required 冻结/解冻在 C2 账户操作页(操作确认 + logAudit admin.user_frozen),已覆盖平台 A2。
  */
@@ -33,42 +34,76 @@ const failures = [];
 const A2 = "app/components/domain-views/a-tabs/a2-audit.tsx";
 const A1 = "app/components/domain-views/a-tabs/a1-accounts.tsx";
 const EVIEW = "app/components/domain-views/e-view.tsx";
+const A1_CLIENT = "lib/admin/a1-client.ts";
+const A2_CLIENT = "lib/admin/a2-client.ts";
+const PLATFORM_ROUTE = "app/api/admin/platform/[...path]/route.ts";
 
-// ── A. A2 审计页订阅实时 store ──
+// ── A. A2 审计页读取后端 A2 overview/recentLogs ──
 const a2 = read(A2);
 if (a2 == null) failures.push(`${A2} 未找到`);
-else if (!/usePlatformConfig\(\s*\(s\)\s*=>\s*s\.audit\s*\)/.test(a2)) {
-  failures.push(`${A2}: 未订阅实时审计 usePlatformConfig((s) => s.audit) —— A2 页疑似回退为只读种子,实时操作将不可见`);
+else if (!a2.includes("fetchA2Overview") || !/overview\?\.recentLogs\s*\?\?\s*\[\]/.test(a2)) {
+  failures.push(`${A2}: 未读取后端 A2 overview/recentLogs —— A2 页疑似回退为只读种子或本地 store,真实审计将不可见`);
 }
 
-// ── B. A1 账号治理集中审计 chokepoint + 每个 runMutation 传 audit ──
+// ── B. A1 账号治理走后端 client,禁止回退本地平台 store 审计 ──
 const a1 = read(A1);
+const a1Client = read(A1_CLIENT);
 if (a1 == null) failures.push(`${A1} 未找到`);
 else {
-  if (!a1.includes("logAudit({ actor: operator, action, target: audit.target")) {
-    failures.push(`${A1}: runMutation 集中 logAudit chokepoint 缺失 —— A 域账号治理(建/停/启/改角色/2FA/强制登出/RBAC/安全基线)将不落 A2 审计`);
+  if (/usePlatformConfig|logAudit|setParam/.test(a1)) {
+    failures.push(`${A1}: 账号治理回退本地 usePlatformConfig/logAudit/setParam —— A1 必须走后端账号/RBAC接口并由服务端审计`);
   }
-  const rm = count(a1, "void runMutation(");
-  // 减去 runMutation 签名里的类型注解 `audit?: { target: …}`,只数真正传入的 audit 对象。
-  const auditArgs = count(a1, "{ target:") - count(a1, "audit?: { target:");
-  if (rm !== auditArgs) {
-    failures.push(`${A1}: runMutation 调用数 ${rm} ≠ 传 audit 对象({ target: … })数 ${auditArgs} —— 有账号治理动作漏传审计(高敏动作必落 A2)`);
+  for (const token of ["fetchA1Overview", "createA1Account", "changeA1AccountRole", "updateA1AccountStatus", "resetA1Account2fa", "revokeA1AccountSessions", "updateA1RbacGrants"]) {
+    if (!a1.includes(token)) failures.push(`${A1}: 缺 ${token} —— A1 账号/RBAC治理疑似未走后端 client`);
+  }
+  if (!/await\s+refreshOverview\(true\)/.test(a1)) {
+    failures.push(`${A1}: runMutation 成功后未刷新后端 overview —— A1 下游状态可能只停留在本地`);
+  }
+}
+if (a1Client == null) failures.push(`${A1_CLIENT} 未找到`);
+else {
+  if (!a1Client.includes('fetch(`/api/admin/platform${path}`')) {
+    failures.push(`${A1_CLIENT}: 未通过 /api/admin/platform 代理访问后端账号治理接口`);
+  }
+  if (!a1Client.includes('"Idempotency-Key"')) {
+    failures.push(`${A1_CLIENT}: 写操作缺 Idempotency-Key 透传 —— A1 高敏账号治理缺幂等门`);
+  }
+  for (const pathNeedle of ["/accounts/overview", "/accounts", "/rbac/actions"]) {
+    if (!a1Client.includes(pathNeedle)) failures.push(`${A1_CLIENT}: 缺 ${pathNeedle} client 路径`);
   }
 }
 
-// ── C. e-view onConfirm 每个高敏 gap 分支必含 logAudit ──
-// 这些分支走后端 API / 专用 CRUD,不经 setParam 自动审计,必须显式 logAudit。op key 是稳定契约(非展示文案)。
-const GAP_OPS = [
-  "param", "param-multi", "param-fixed",
-  "phase-save", "phase-archive", "phase-current",
-  "generation-gate-save", "generation-gate-force", "generation-gate-archive",
-  "order-state", "order-refund", "order-cancel", "order-terminal",
-  "device-activate", "device-deactivate", "ops-pause",
-  "dc-save", "dc-delete",
-];
+// ── C. e-view onConfirm 每个高敏 gap 分支必须真实调用后端,且不能回退本地审计镜像 ──
+// op key 是稳定契约(非展示文案)。一组 token 任一命中即可表示该分支覆盖对应后端动作族。
+const GAP_OPS = {
+  "param": ["updateE1GenerationGate", "updateE3Param"],
+  "param-multi": ["updateE3Params"],
+  "param-fixed": ["updateE1GenerationGate", "updateE3Param"],
+  "phase-save": ["patchE1Phase", "createE1Phase"],
+  "phase-archive": ["archiveE1Phase"],
+  "phase-current": ["setE1CurrentPhase"],
+  "generation-gate-save": ["patchE1GenerationGate", "createE1GenerationGate"],
+  "generation-gate-force": ["patchE1GenerationGate"],
+  "generation-gate-archive": ["archiveE1GenerationGate"],
+  "order-state": ["updateE4OrderState"],
+  "order-refund": ["refundE4Order"],
+  "order-cancel": ["cancelE4Order"],
+  "order-terminal": ["terminalE4Order"],
+  "device-activate": ["activateE5Device"],
+  "device-deactivate": ["deactivateE5Device"],
+  "ops-pause": ["setE5DatacenterPaused"],
+  "dc-save": ["createE5Datacenter", "updateE5Datacenter"],
+  "dc-delete": ["deleteE5Datacenter"],
+};
 const ev = read(EVIEW);
 if (ev == null) failures.push(`${EVIEW} 未找到`);
 else {
+  if (/logAudit\(/.test(ev)) {
+    failures.push(`${EVIEW}: 仍存在本地 logAudit() —— E 域高敏链路不得用 platform-config 内存审计伪装 A2 后端审计`);
+  }
+  if (/\bsetParam\(/.test(ev)) {
+    failures.push(`${EVIEW}: 仍存在 setParam() —— E 域参数/高敏配置不得回退 platform-config 内存态`);
+  }
   // 只取分支起点 `if (mc.op === "X"` / `} else if (mc.op === "X"`,排除 IS_PREVIEW 预览短路里的 (mc.op === …)。
   const branchRe = /(?:if|else if) \(mc\.op === "([^"]+)"/g;
   const marks = [];
@@ -80,17 +115,17 @@ else {
     const end = i + 1 < marks.length ? marks[i + 1].idx : Math.min(ev.length, start + 900);
     return ev.slice(start, end);
   };
-  for (const op of GAP_OPS) {
+  for (const [op, backendTokens] of Object.entries(GAP_OPS)) {
     const body = branchOf(op);
     if (body == null) {
       failures.push(`${EVIEW}: onConfirm 未找到 mc.op === "${op}" 分支(分支被删/改名?同步更新本哨兵 GAP_OPS)`);
-    } else if (!/logAudit\(/.test(body)) {
-      failures.push(`${EVIEW}: onConfirm 分支 "${op}" 缺 logAudit —— 该高敏动作走后端不落 A2 审计`);
+    } else if (!backendTokens.some((token) => body.includes(token))) {
+      failures.push(`${EVIEW}: onConfirm 分支 "${op}" 未命中后端 client(${backendTokens.join(" | ")}) —— 该动作疑似只改本地状态`);
     }
   }
 }
 
-// ── D. 高敏操作动态实时化:A2 订阅 pending store + 焦点动作接 proposeOrExecute(防回退种子/断链)──
+// ── D. 高敏操作动态后端化:A2 读后端工单队列 + 审批/驳回/提案走 audit client/proxy ──
 const PENDING_FOCAL = [
   "app/components/domain-views/j-tabs/j1-killswitch.tsx",
   "app/components/domain-views/g-tabs/g1-staking.tsx",
@@ -99,38 +134,46 @@ const PENDING_FOCAL = [
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
 ];
 if (a2 != null) {
-  if (!a2.includes("usePendingOps")) failures.push(`${A2}: 高敏操作动态未订阅实时 usePendingOps —— pending 队列疑似回退为静态种子`);
-  if (!a2.includes("resolveProposal")) failures.push(`${A2}: 缺 resolveProposal —— A2 执行/驳回未回写 pending 状态`);
+  if (!a2.includes("overview?.operationQueue ?? []")) failures.push(`${A2}: 高敏操作动态未读取后端 operationQueue`);
+  if (!a2.includes("approveA2Operation") || !a2.includes("rejectA2Operation")) failures.push(`${A2}: A2 执行/驳回未走后端 audit operation client`);
+  if (count(a2, "await refreshOverview();") < 2) failures.push(`${A2}: A2 审批/驳回后未刷新后端 overview`);
 }
 for (const f of PENDING_FOCAL) {
   const src = read(f);
   if (src == null) {
     failures.push(`${f} 未找到(焦点动作文件移动?同步本哨兵 PENDING_FOCAL)`);
-  } else if (!src.includes("usePropose")) {
-    failures.push(`${f}: 焦点高敏动作未接 usePropose —— 该域动作不再按执行门槛分流入 pending`);
+  } else if (/usePlatformConfig|setParam|logAudit/.test(src)) {
+    failures.push(`${f}: 焦点域回退本地 usePlatformConfig/setParam/logAudit —— 应走各域真实 client 或 A2 后端提案`);
   }
 }
-// 焦点域内**同形** amplifying 动作必一并接 propose(防「修一处漏同类」回退,审计 Round1 P1):
-//   G1 = 4 个配置杠杆(APY / 罚款 / 停售恢复 / 单档熔断);D2 = 3 个资金流出动作(大额放行 / 解冻 / 退款覆盖)。
-//   每个 propose 提案带一行 sourceDomain:"<域>",据此计数。仅收紧动作(G1 最小额 / D2 拒绝·延迟·冻结)留直接执行。
-// 注:其余 ~11 域(D5/C2/C3/C4/G4/H3/H5/K1/K2/K3/K5)的 amplifying 动作仍「确认即执行 + 审计」,
-//     未接执行门槛分流 —— 这是主人「焦点动作集」范围选择(非全量),非缺陷;欲全量覆盖另开批次。
-const g1src = read("app/components/domain-views/g-tabs/g1-staking.tsx");
-if (g1src != null && count(g1src, 'sourceDomain: "G1"') < 4) {
-  failures.push(`g1-staking: propose 提案 < 4 —— G1 同形 amplifying 动作(APY/罚款/停售恢复/熔断)疑有回退为直接执行`);
+const a2Client = read(A2_CLIENT);
+if (a2Client == null) failures.push(`${A2_CLIENT} 未找到`);
+else {
+  for (const token of ["fetchA2Overview", "approveA2Operation", "rejectA2Operation", "createA2OperationProposal", "exportA2Audit", "updateA2MechanismParam"]) {
+    if (!a2Client.includes(token)) failures.push(`${A2_CLIENT}: 缺 ${token} 后端 audit client`);
+  }
+  for (const pathNeedle of ['"/overview"', '"/operations"', "/api/admin/platform/audit/exports", "mechanism-params"]) {
+    if (!a2Client.includes(pathNeedle)) failures.push(`${A2_CLIENT}: 缺 ${pathNeedle} audit 路径`);
+  }
+  if (!a2Client.includes('"Idempotency-Key"')) failures.push(`${A2_CLIENT}: A2 写操作缺 Idempotency-Key`);
 }
-const d2src = read("app/components/domain-views/d-tabs/d2-withdrawals.tsx");
-if (d2src != null && count(d2src, 'sourceDomain: "D2"') < 3) {
-  failures.push(`d2-withdrawals: propose 提案 < 3 —— D2 同形资金动作(大额放行/解冻/退款覆盖)疑有回退为直接执行`);
+const platformRoute = read(PLATFORM_ROUTE);
+if (platformRoute == null) failures.push(`${PLATFORM_ROUTE} 未找到`);
+else {
+  if (!platformRoute.includes('parts[0] === "audit"')) failures.push(`${PLATFORM_ROUTE}: 缺 audit proxy 总入口`);
+  if (!platformRoute.includes('parts[1] === "overview"') || !platformRoute.includes('parts[1] === "exports"')) failures.push(`${PLATFORM_ROUTE}: 缺 audit overview/exports proxy 映射`);
+  if (!platformRoute.includes('parts[1] === "operations"')) failures.push(`${PLATFORM_ROUTE}: 缺 audit operations proxy 映射`);
+  if (!platformRoute.includes('parts[1] === "mechanism-params"')) failures.push(`${PLATFORM_ROUTE}: 缺 audit mechanism-params proxy 映射`);
+  if (!platformRoute.includes("ADMIN_AUTH_REQUIRED")) failures.push(`${PLATFORM_ROUTE}: proxy 缺 admin token 强校验`);
 }
 
 const result = {
   status: failures.length === 0 ? "passed" : "failed",
   checked: {
-    a2Subscribe: A2,
-    a1Chokepoint: A1,
-    eviewGapBranches: `${EVIEW} (${GAP_OPS.length} ops)`,
-    pendingRealtime: `${A2} usePendingOps + ${PENDING_FOCAL.length} 焦点域 usePropose`,
+    a2BackendAudit: A2,
+    a1BackendAudit: `${A1} + ${A1_CLIENT}`,
+    eviewGapBranches: `${EVIEW} (${Object.keys(GAP_OPS).length} ops)`,
+    a2BackendOperations: `${A2} + ${A2_CLIENT} + ${PLATFORM_ROUTE} + ${PENDING_FOCAL.length} 焦点域本地 store 禁回退`,
   },
   failureCount: failures.length,
   failures,

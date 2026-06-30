@@ -1,4 +1,4 @@
-// 客服中心域 M 数据。真写键前缀沿用 I.support.*/I.session.* 保 persist 兼容,与 nav 域 code M 解耦。从 i-tabs/data.ts 迁出。
+// 客服中心域 M 数据模型。运行态业务数据由后端 content 接口提供;I.support.*/I.session.* 仅作为视图适配键。
 
 /* ============ M2 Help/Support CMS + Ticket Desk(原 I8）============ */
 export type SupportTicketStatus = "open" | "in_progress" | "pending_user" | "resolved" | "closed";
@@ -275,14 +275,6 @@ export const SESSION_REPLY_TEMPLATES: SessionReplyTpl[] = [
   { id: "RT-S5", type: "support", text: "设备掉线先长按电源 10 秒重启、在 App 里重新配网;还不行我帮你登记换货。", status: "published" },
 ];
 
-// 坐席可向会话推送的商品卡(顾问对客呈现;副标只写定性卖点,不写年化/收益数字,守铁律)
-export type PushSku = { id: string; title: string; subtitle: string; to: string };
-export const PUSH_SKUS: PushSku[] = [
-  { id: "SKU-PRO", title: "NexionBox Pro 升级", subtitle: "算力更高 · 设备闲置时也多赚", to: "/store" },
-  { id: "SKU-LOCK", title: "180 天锁仓 · 稳收计划", subtitle: "更优收益档位 · 适合短期不动用的余额", to: "/staking" },
-  { id: "SKU-GEN", title: "创世节点", subtitle: "稀缺权益 · 长期分红", to: "/genesis" },
-];
-
 /* ============ 主动发起会话(融合:设计稿身份+撰写+预览 ⊕ v3 单人/固定档/自定义圈选)============ */
 // 一个后台客服账号可挂的客服 / 顾问身份;发起会话时择一对客呈现。
 export type InitiateIdentity = { id: string; name: string; type: "support" | "advisor"; label: string };
@@ -345,7 +337,7 @@ export type CustomerProfile = {
  * 超时回落备勤池为工作台可选策略(I.session.workbench.timeoutFallback):开则超时未接入自动回落备勤池重分配,关则一直等待。 */
 export type TransferTarget =
   | { kind: "agent"; name: string }   // 指定坐席 B
-  | { kind: "queue"; queue: string }  // 技能队列(派生 SUPPORT_SLA.queue)
+  | { kind: "queue"; queue: string }  // 技能队列(后端 transferTargets)
   | { kind: "standby" };              // 备勤池
 export type SessionTransfer = {
   from: string;        // 来源坐席 A
@@ -354,8 +346,6 @@ export type SessionTransfer = {
   ts: number;          // 转交时刻(用于「转入待处理」超时判定)
   fellBack?: boolean;  // 已超时回落备勤池(防重复回落)
 };
-// 技能队列单源:派生 SUPPORT_SLA.queue(去重),不另造常量。
-export const TRANSFER_QUEUES: string[] = Array.from(new Set(SUPPORT_SLA.map((s) => s.queue)));
 export const STANDBY_POOL_LABEL = "备勤池";
 // 转入待处理超时阈值(分钟):超过视为超时;工作台开「超时回落备勤池」则自动回落,否则持续等待。
 export const TRANSFER_TIMEOUT_MINS = 30;
@@ -527,7 +517,7 @@ export const SESSION_CONVOS: SessionConvo[] = [
  * 实时态覆盖键(pget,与 M1/LoadConfig 同源):
  *   I.support.agent.<name>.cap   = 该坐席接派单上限(数字字符串)
  *   I.support.agent.<name>.busy  = "1" 暂停接派单 / 其它=正常
- *   I.support.load.<field>       = 全局负载策略(见 LOAD_CONFIG_DEFAULT)
+ *   I.support.load.<field>       = 后端全局负载策略(/content/tickets/load-config)
  * 负载利用率 util% = (open 工单 + open 会话) / cap;非真实 presence。 */
 export type AgentMeta = { name: string; role: string; defaultCap: number };
 export const AGENT_ROSTER: AgentMeta[] = [
@@ -547,14 +537,6 @@ export type LoadConfig = {
   warnPct: number;
   quietHourBalance: boolean;
   overflowQueue: string;
-};
-export const LOAD_CONFIG_DEFAULT: LoadConfig = {
-  autoBalance: true,
-  defaultCap: 10,
-  burstCap: 14,
-  warnPct: 80,
-  quietHourBalance: false,
-  overflowQueue: "转人工备勤队列",
 };
 export const LOAD_FIELD_LABEL: Record<keyof LoadConfig, string> = {
   autoBalance: "自动平衡负载",

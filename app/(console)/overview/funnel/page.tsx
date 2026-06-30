@@ -7,8 +7,7 @@
  *   ROW2  首购周 Cohort 留存(面积曲线)+ 首购渠道来源(环图)
  *   STRIP 每日首购转化率(面积 + 目标参照线)
  * 顶部域标 / 控制入口由共享 BPageHeader 承载(去设计稿 B1-B5 分段导航与 server-canonical pill)。
- * 数据为确定性 mock,与注册表 lib/admin/registry/b.ts 的 /overview/funnel 口径一致;
- * 真实视角:全部派生自 A4 事件流(服务端权威),用于定位漏斗瓶颈。
+ * 数据从 /api/admin/treasury/b-domain 读取;B3 配置缺失时由后端写入 MySQL 种子再读出。
  * 色彩走 globals bare-token 别名(--brand/--cyan/--success/--admin-cat-N…),双主题安全,无硬编码 hex。
  */
 import "../b-domain.css";
@@ -16,46 +15,15 @@ import "./funnel.css";
 import { useId, useState, type CSSProperties } from "react";
 import { Filter, Users, PieChart, TrendingUp, AlertTriangle } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
+import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
-// ---- 漏斗阶段(注册表 data:[1240,769,223,78,41]) ----
-// 段色走 token:brand / brand 浅调 / cyan / cyan 浅调 / success(对应设计稿 lemon / lemon亮 / purple / purple亮 / green)。
 type Stage = { key: string; nm: string; ct: number; lc: string; conv: string | null; bad?: boolean; color: string };
-const STAGES: Stage[] = [
-  { key: "reg", nm: "注册", ct: 1240, lc: "L1", conv: null, color: "var(--brand)" },
-  { key: "bind", nm: "绑卡", ct: 769, lc: "L2", conv: "62.0%", color: "color-mix(in srgb, var(--brand) 78%, #fff)" },
-  { key: "buy", nm: "首购", ct: 223, lc: "L3→L4", conv: "29.0%", bad: true, color: "var(--cyan)" },
-  { key: "rebuy", nm: "复购", ct: 78, lc: "L5", conv: "35.0%", color: "color-mix(in srgb, var(--cyan) 70%, #fff)" },
-  { key: "cash", nm: "提现", ct: 41, lc: "L5", conv: "52.6%", color: "var(--success)" },
-];
-const MAX_CT = STAGES[0].ct;
-const wpct = (ct: number) => 16 + (ct / MAX_CT) * 84; // 16%..100% 宽度区间
 
-// 阶段转化轨(环比上窗口)
 type Trans = { nm: string; from: string; to: string; v: string; vColor?: string; flow: string; note: string; noteKind: "muted" | "up" | "dn"; bad?: boolean };
-const TRANS: Trans[] = [
-  { nm: "注册 → 绑卡", from: "reg", to: "bind", v: "62.0%", flow: "1,240 → 769", note: "$1 KYC express", noteKind: "muted" },
-  { nm: "绑卡 → 首购", from: "bind", to: "buy", v: "29.0%", vColor: "var(--brand-2)", flow: "769 → 223", note: "↓ 环比 −2.4pt", noteKind: "dn", bad: true },
-  { nm: "首购 → 复购", from: "buy", to: "rebuy", v: "35.0%", flow: "223 → 78", note: "↑ 环比 +3.1pt", noteKind: "up" },
-  { nm: "整体转化", from: "reg", to: "buy", v: "18.0%", flow: "注册 → 首购", note: "223 / 1,240", noteKind: "muted" },
-];
-
-// 首购周 Cohort 留存(注册表 data:[100,86,74,68,61,57,54,52])
-const COH = [100, 86, 74, 68, 61, 57, 54, 52];
-
-// 首购渠道来源(注册表 segments,占比 + --admin-cat-N)
 type Ch = { nm: string; pc: number; catVar: string };
-const CH: Ch[] = [
-  { nm: "推荐裂变(V-Rank)", pc: 42, catVar: "--admin-cat-1" },
-  { nm: "自然 / 直接访问", pc: 26, catVar: "--admin-cat-2" },
-  { nm: "试用转付费", pc: 18, catVar: "--admin-cat-4" },
-  { nm: "投放广告", pc: 14, catVar: "--admin-cat-6" },
-];
-
-// 每日首购转化率(注册表 data:[17.2,16.8,18.1,19.0,18.4,17.6,18.2,18.0],refLine 18)
-const DAILY = [17.2, 16.8, 18.1, 19.0, 18.4, 17.6, 18.2, 18.0];
-const DAILY_TARGET = 18;
 
 // ---- SVG 面积图路径(确定性四舍五入,防水合) ----
 function buildArea(data: number[], W: number, H: number, pad: number, min: number, max: number) {
@@ -63,8 +31,9 @@ function buildArea(data: number[], W: number, H: number, pad: number, min: numbe
   const rng = max - min || 1;
   const yTop = H - 8; // 底部基线内缩
   const span = H - 26;
+  const denom = Math.max(n - 1, 1);
   const pts = data.map((v, i) => [
-    r1((i / (n - 1)) * (W - 2 * pad) + pad),
+    r1((i / denom) * (W - 2 * pad) + pad),
     r1(yTop - ((v - min) / rng) * span),
   ] as [number, number]);
   const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`).join(" ");
@@ -74,9 +43,52 @@ function buildArea(data: number[], W: number, H: number, pad: number, min: numbe
 
 export default function FunnelPage() {
   const gradId = useId().replace(/:/g, ""); // SVG gradient id 唯一化(避免提取为组件后碰撞,与 B5 一致)
+  const bDomain = useBDomainDashboard();
+  const [focus, setFocus] = useState<{ type: "stage" | "trans"; id: string } | null>(null);
+  const { funnel } = bDomain;
+  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
+    return (
+      <div className="dkpage bpage funnelpage">
+        <BPageHeader
+          id="B3"
+          title="转化漏斗"
+          desc="读取 B 域真实漏斗阶段、转化轨迹、渠道和每日转化率。"
+          ctaLabel="调 Phase dial"
+          ctaHref="/growth/phase"
+        />
+        <BDomainDataState title="B3 转化漏斗" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
+      </div>
+    );
+  }
+  if (!funnel.stages.length || !funnel.transitions.length || funnel.cohort.length < 2 || !funnel.channels.length || funnel.daily.length < 2) {
+    return (
+      <div className="dkpage bpage funnelpage">
+        <BPageHeader
+          id="B3"
+          title="转化漏斗"
+          desc="B3 需要漏斗阶段、转化轨、cohort、渠道和每日转化率序列。"
+          ctaLabel="调 Phase dial"
+          ctaHref="/growth/phase"
+        />
+        <BDomainWarnings warnings={bDomain.warnings} />
+        <BDomainDataState title="B3 转化漏斗" error="B3_REQUIRED_DATA_EMPTY" onRetry={bDomain.reload} />
+      </div>
+    );
+  }
+  const STAGES: Stage[] = funnel.stages;
+  const TRANS: Trans[] = funnel.transitions;
+  const COH = funnel.cohort;
+  const CH: Ch[] = funnel.channels;
+  const DAILY = funnel.daily;
+  const DAILY_TARGET = funnel.dailyTarget;
+  const maxCt = Math.max(...STAGES.map((stage) => stage.ct), 1);
+  const entryCt = Math.max(STAGES[0]?.ct ?? maxCt, 1);
+  const firstBuyCt = STAGES.find((stage) => stage.key === "buy" || stage.nm.includes("首购"))?.ct ?? 0;
+  const latestCohort = COH[COH.length - 1] ?? 0;
+  const wpct = (ct: number) => 16 + (ct / maxCt) * 84; // 16%..100% 宽度区间
+  const bottleneck = TRANS.find((item) => item.bad) ?? TRANS[0];
 
   // 漏斗段 ↔ 阶段转化卡片 双向联动焦点(hover 段亮其相关转化卡片,反之亦然)
-  const [focus, setFocus] = useState<{ type: "stage" | "trans"; id: string } | null>(null);
   const isStageActive = (key: string) => {
     if (!focus) return false;
     if (focus.type === "stage") return focus.id === key;
@@ -92,10 +104,13 @@ export default function FunnelPage() {
   const cohW = 600, cohH = 170;
   const coh = buildArea(COH, cohW, cohH, 6, 0, 100);
 
-  // Daily:固定刻度 14..22 + 目标线 y(注册表区间 17.2..19.0,沿设计稿 min14/max22)
-  const dW = 1400, dH = 150, dMin = 14, dMax = 22;
+  // Daily:按接口数据和目标线动态取刻度,避免配置变更后曲线溢出。
+  const dW = 1400, dH = 150;
+  const dMin = Math.floor(Math.min(...DAILY, DAILY_TARGET, 14));
+  const dMax = Math.ceil(Math.max(...DAILY, DAILY_TARGET, 22));
   const daily = buildArea(DAILY, dW, dH, 8, dMin, dMax);
-  const dailyTargetY = r1(dH - 8 - ((DAILY_TARGET - dMin) / (dMax - dMin)) * (dH - 26));
+  const dailyRange = dMax - dMin || 1;
+  const dailyTargetY = r1(dH - 8 - ((DAILY_TARGET - dMin) / dailyRange) * (dH - 26));
   const todayVal = DAILY[DAILY.length - 1];
 
   // 渠道环图:conic-gradient 拼段
@@ -105,6 +120,7 @@ export default function FunnelPage() {
     acc += c.pc;
     return seg;
   }).join(", ");
+  const donutBg = conicStops ? `conic-gradient(${conicStops})` : "var(--surface-3)";
 
   return (
     <div className="dkpage bpage funnelpage">
@@ -119,6 +135,7 @@ export default function FunnelPage() {
         ctaLabel="调 Phase dial"
         ctaHref="/growth/phase"
       />
+      <BDomainWarnings warnings={bDomain.warnings} />
 
       {/* HERO: 漏斗 + 阶段转化 */}
       <div className="b3-hero">
@@ -128,7 +145,7 @@ export default function FunnelPage() {
             <span className="ic"><Filter size={15} /></span>
             <span className="h">生命周期漏斗 L1 → L5</span>
             <span className="sub">近 30 日新增用户口径</span>
-            <div className="r"><span className="b-tag">注册 → 提现 整体 3.3%</span></div>
+            <div className="r"><span className="b-tag">整体 {funnel.overallConversionPct.toFixed(1)}%</span></div>
           </div>
 
           <div className="funnel-list">
@@ -139,7 +156,7 @@ export default function FunnelPage() {
               const bl = r1((100 - bot) / 2), br = r1((100 + bot) / 2);
               const prevCt = i > 0 ? STAGES[i - 1].ct : null;
               const lost = prevCt != null ? prevCt - s.ct : null;
-              const shareL1 = r1((s.ct / MAX_CT) * 100); // 占注册(L1)渗透率,确定性派生
+              const shareL1 = r1((s.ct / entryCt) * 100); // 占注册(L1)渗透率,确定性派生
               const active = isStageActive(s.key);
               const showTip = focus?.type === "stage" && focus.id === s.key;
               // 详情浮层垂直锚定:首段向下展开、末段向上展开、中段居中,避免溢出卡片上下沿
@@ -227,7 +244,7 @@ export default function FunnelPage() {
           <div className="bottleneck" style={{ marginTop: "auto" }}>
             <span className="bn-ic"><AlertTriangle size={17} /></span>
             <div>
-              <b>绑卡 → 首购</b> 为最大流失环节,环比再降 2.4pt;建议联动 <b>H 域试用</b> / 首购促销定向干预。
+              <b>{bottleneck?.nm ?? "暂无瓶颈"}</b> 为当前最大流失环节;建议联动 <b>H 域试用</b> / 首购促销定向干预。
             </div>
           </div>
         </section>
@@ -240,7 +257,7 @@ export default function FunnelPage() {
             <span className="ic"><Users size={15} /></span>
             <span className="h">首购周 Cohort 留存</span>
             <span className="sub">首购后第 N 周仍有活跃产出</span>
-            <div className="r"><span className="b-tag">W7 稳定 52%</span></div>
+            <div className="r"><span className="b-tag">W{COH.length - 1} 稳定 {latestCohort}%</span></div>
           </div>
           <svg className="chart-svg" viewBox={`0 0 ${cohW} ${cohH}`} preserveAspectRatio="none" style={{ height: 170 }} aria-hidden>
             <defs>
@@ -283,13 +300,13 @@ export default function FunnelPage() {
           <div className="ttl-row">
             <span className="ic"><PieChart size={15} /></span>
             <span className="h">首购渠道来源</span>
-            <span className="sub">223 首购用户归因</span>
+            <span className="sub">{firstBuyCt.toLocaleString()} 首购用户归因</span>
           </div>
           <div className="donut-wrap">
-            <div className="donut" style={{ width: 140, height: 140, background: `conic-gradient(${conicStops})` }}>
+            <div className="donut" style={{ width: 140, height: 140, background: donutBg }}>
               <div className="hole">
                 <div>
-                  <div className="big">223</div>
+                  <div className="big">{firstBuyCt.toLocaleString()}</div>
                   <div className="sm">首购用户</div>
                 </div>
               </div>
@@ -312,7 +329,7 @@ export default function FunnelPage() {
         <div className="ttl-row">
           <span className="ic"><TrendingUp size={15} /></span>
           <span className="h">每日首购转化率</span>
-          <span className="sub">近 8 日 · 目标 18%</span>
+          <span className="sub">近 {DAILY.length} 日 · 目标 {DAILY_TARGET}%</span>
           <div className="r"><span className="b-tag">今日 {r1(todayVal)}%</span></div>
         </div>
         <svg className="chart-svg" viewBox={`0 0 ${dW} ${dH}`} preserveAspectRatio="none" style={{ height: 150 }} aria-hidden>
@@ -334,7 +351,7 @@ export default function FunnelPage() {
             vectorEffect="non-scaling-stroke"
           />
           <text x="6" y={r1(dailyTargetY - 7)} fill="var(--brand-2)" fontSize={12} fontFamily="var(--font-jet-mono), monospace">
-            目标 18%
+            目标 {DAILY_TARGET}%
           </text>
           <path
             d={daily.line}
@@ -366,7 +383,7 @@ export default function FunnelPage() {
       </section>
 
       <p className="b-foot">
-        <b>绑卡 → 首购</b>(29.0%)为最大流失环节,环比下滑 2.4pt,建议联动 H 域试用 / 首购促销定向干预。复购率回升 +3.1pt,留存曲线第 7 周稳定在 52%。所有阶段口径来自 <b>A4 事件流</b>。
+        <b>{bottleneck?.nm ?? "暂无瓶颈"}</b>{bottleneck ? `(${bottleneck.v})` : ""} 为当前重点环节,建议联动 H 域试用 / 首购促销定向干预。所有阶段口径来自服务端 B 域聚合接口。
       </p>
     </div>
   );

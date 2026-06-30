@@ -21,11 +21,13 @@
 .radarpage .gate.on .light { background: var(--success);
   box-shadow: 0 0 0 3px var(--success-soft), 0 0 10px color-mix(in srgb, var(--success) 50%, transparent); }
 .radarpage .gate.off .light { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.radarpage .gate.missing .light { background: var(--ink-4); box-shadow: 0 0 0 3px var(--surface-3); }
 .radarpage .gate .nm { font-size: 13px; font-weight: 500; white-space: nowrap; color: var(--ink); }
 .radarpage .gate .dom { font-family: var(--font-jet-mono), monospace; font-size: 10px; color: var(--ink-4); margin-left: auto; }
 .radarpage .gate .st { font-family: var(--font-jet-mono), monospace; font-size: 11px; font-weight: 600; }
 .radarpage .gate.on .st { color: var(--success); }
 .radarpage .gate.off .st { color: var(--danger); }
+.radarpage .gate.missing .st { color: var(--ink-4); }
 
 /* ---- 左栏:告警 feed ---- */
 .radarpage .feed { display: flex; flex-direction: column; }

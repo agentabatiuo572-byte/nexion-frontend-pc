@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
 import type { AdminRole } from "@/lib/nav/console-nav";
 
 export interface AdminSession {
@@ -20,35 +19,26 @@ interface AdminAuthState {
   signOut: () => void;
 }
 
-export const useAdminAuth = create<AdminAuthState>()(
-  persist(
-    (set) => ({
+export const useAdminAuth = create<AdminAuthState>()((set) => ({
+  isAuthenticated: false,
+  operator: "",
+  role: "auditor",
+  tokenType: null,
+  session: null,
+  signIn: ({ tokenType, session }) =>
+    set({
+      isAuthenticated: true,
+      operator: session.operator,
+      role: session.role,
+      tokenType,
+      session,
+    }),
+  signOut: () =>
+    set({
       isAuthenticated: false,
       operator: "",
       role: "auditor",
       tokenType: null,
       session: null,
-      signIn: ({ tokenType, session }) =>
-        set({
-          isAuthenticated: true,
-          operator: session.operator,
-          role: session.role,
-          tokenType,
-          session,
-        }),
-      signOut: () =>
-        set({
-          isAuthenticated: false,
-          operator: "",
-          role: "auditor",
-          tokenType: null,
-          session: null,
-        }),
     }),
-    {
-      name: "nexion-admin-auth-v2",
-      storage: createJSONStorage(() => localStorage),
-      version: 2,
-    },
-  ),
-);
+}));

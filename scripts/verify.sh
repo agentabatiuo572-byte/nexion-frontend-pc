@@ -44,6 +44,10 @@ else
   echo "  TSC FAILED:"; echo "$tsc_out" | tail -12; exit 1
 fi
 
+echo "== [1b/4] runtime source guards =="
+(cd "$ROOT" && "$NODE_BIN" scripts/check-runtime-mock-imports.mjs)
+(cd "$ROOT" && "$NODE_BIN" scripts/check-m-domain-backend-config.mjs)
+
 echo "== [2/4] nav routes (HTTP 200 + scaffold needle) =="
 while IFS='|' read -r path id status; do
   [ -z "$path" ] && continue
@@ -234,6 +238,13 @@ else
   fail=$((fail+1)); fails="$fails\n  [interaction-audit] 有 HIGH 残留(跑 node scripts/admin-interaction-audit.mjs 看明细)"
 fi
 
+echo "== [+] Admin auth source gate(禁止本地预览登录/RBAC 本地身份源)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/check-rbac-auth-source.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [admin-auth-source] auth route 本地预览登录 / RBAC 本地身份源残留"
+fi
+
 echo "== [+] 动作完整性 gate(防新增死控件 + built 不退化 + 欠账量化;OPS_BATCH 收紧批次)=="
 # 默认不设 OPS_BATCH = 只锁死回归 + 计欠账(pending 不爆红,允许增量补齐);逐批收紧:OPS_BATCH=P0 bash scripts/verify.sh
 if (cd "$ROOT" && OPS_BATCH="${OPS_BATCH:-}" "$NODE_BIN" scripts/ops-actions-audit.mjs); then
@@ -370,11 +381,11 @@ else
   fail=$((fail+1)); fails="$fails\n  [inner-block-no-border] 非按钮 filled chip/icon/badge + border 违规(跑 node scripts/inner-block-no-border-sentinel.mjs 看明细;合法 keep 加进哨兵 EXEMPT)"
 fi
 
-echo "== [+] A2 审计覆盖 gate(高敏操作必落 A2 审计 + A2 页订阅实时 store)=="
+echo "== [+] A2 审计覆盖 gate(高敏操作必落后端 A2 审计 + A2 页读取 overview)=="
 if (cd "$ROOT" && "$NODE_BIN" scripts/a2-audit-coverage-sentinel.mjs); then
   pass=$((pass+1))
 else
-  fail=$((fail+1)); fails="$fails\n  [a2-audit-coverage] A2 页脱离实时 audit / 高敏 gap 分支漏 logAudit / A1 runMutation 漏传审计(跑 node scripts/a2-audit-coverage-sentinel.mjs 看明细)"
+  fail=$((fail+1)); fails="$fails\n  [a2-audit-coverage] A2 页脱离后端 overview / 高敏 gap 分支审计镜像缺失 / A1-A2 后端审计链断开(跑 node scripts/a2-audit-coverage-sentinel.mjs 看明细)"
 fi
 
 echo "== [+] 节奏单源 gate(活渲染面禁读 PHASE/CURRENT_PHASE 当前态,必走 rhythmState)=="

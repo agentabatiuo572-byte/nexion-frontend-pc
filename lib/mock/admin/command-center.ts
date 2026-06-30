@@ -1,10 +1,9 @@
 /**
  * 指挥台首页 mock 数据(确定性)。
- * 生命体征复用 lib/mock/admin/ledger.ts;此处补:节奏 phase、转化漏斗、八项 KPI、
+ * 此处保留非 B 域的节奏 phase、转化漏斗、八项 KPI、
  * 平台 vitals、告警、跨域待办。真实环境由 A4 事件流 + 各域 store 聚合。
  */
 import type { AdminRole } from "@/lib/nav/console-nav";
-import { LEDGER } from "@/lib/mock/admin/ledger";
 import { KPIS as CORE_KPIS, MATURITY, kpiState } from "@/lib/mock/admin/design-data";
 
 // ── 12 月运营节奏(集中定义,topbar 与首页共用)──
@@ -130,31 +129,23 @@ export const PHASE_DIALS: PhaseDial[] = [
   { key: "genesis", label: "Genesis 放量", value: "渐进", trend: "up" },
 ];
 
-// ── 到期预测(未来 7d · B2)── 每日到期应付:提现 / 质押利息 / Genesis 分红(USD)
+// ── 到期预测(B2)── 运行态读取 /api/admin/treasury/b-domain;此处只保留空兼容结构。
 export interface MaturityDay {
   d: string; // 日签 MM/DD
   withdraw: number;
   interest: number;
   genesis: number;
 }
-// 到期预测单一源 = design-data.MATURITY(D3 maturity-forecast 口径;B2 卡与 L3 报表同数)。
-// 曾另立一套 7 日值($416K 级)与 L3($3.92M 级)7× 分叉 —— 2026-06-10 收敛为派生。
 export const MATURITY_7D: MaturityDay[] = MATURITY.map((m) => ({ d: m.d, withdraw: m.withdraw, interest: m.interest, genesis: m.genesis }));
 
-// ── 转化漏斗(today)── prevCount = 昨日同级,用于环比 delta
+// ── 转化漏斗(B3)── 运行态读取 /api/admin/treasury/b-domain;此处只保留空兼容结构。
 export interface FunnelStage {
   key: string;
   label: string;
   count: number;
   prevCount: number;
 }
-export const FUNNEL: FunnelStage[] = [
-  { key: "register", label: "注册", count: 1_240, prevCount: 1_180 },
-  { key: "kyc", label: "绑卡($1 验证)", count: 769, prevCount: 742 },
-  { key: "first_buy", label: "首购", count: 223, prevCount: 240 },
-  { key: "repurchase", label: "复购", count: 78, prevCount: 71 },
-  { key: "withdraw", label: "提现", count: 41, prevCount: 38 },
-];
+export const FUNNEL: FunnelStage[] = [];
 
 // ── 八项 KPI 验收墙(§17.2)──
 export interface Kpi {
@@ -197,7 +188,6 @@ export interface AlertItem {
   href: string;
 }
 export const ALERTS: AlertItem[] = [
-  { id: "al-cov", level: "low", text: `出金压力比 ${(LEDGER.pressureRatio * 100).toFixed(0)}% · 远低 70% 红线 · 覆盖率 ${LEDGER.coverageRatio.toFixed(1)}% 绿区(扩张健康)`, href: "/overview/dual-ledger" },
   { id: "al-multi", level: "high", text: "WD-90408 关联多账户簇 CL-318(K1)· WR-02 已延迟观察", href: "/finance/withdrawals" }, // 对齐 D2 队列单源(旧 WD-2606 体系已删)
   { id: "al-newbig", level: "mid", text: "K5 复审 hold 提现单 ×3 · 复审未过不可放行", href: "/finance/withdrawals" },
   { id: "al-kill", level: "low", text: "Kill-Switch 5/5 在线 · 全闸正常营业", href: "/emergency/kill-switch" },
@@ -220,7 +210,7 @@ export const PENDING_OPERATIONS: PendingOperation[] = [
 /** 域速览的关键指标(mock,每域一句"现在什么状态")。 */
 export const DOMAIN_PULSE: Record<string, string> = {
   A: "操作员 12 · 今日审计 86",
-  B: `覆盖率 ${LEDGER.coverageRatio.toFixed(1)}% · ${LEDGER.coverageRatio >= LEDGER.healthyPct ? "健康" : LEDGER.coverageRatio >= LEDGER.redlinePct ? "警戒" : "危急"}`,
+  B: "B 域实时接口 · /api/admin/treasury/b-domain",
   C: "活跃用户 28.4K · 高风险 2",
   D: "待确认提现 23 · 冻结 5 · 覆盖率核验在位", // 对齐 D2 真渲染面(样本窗 4 + 存量 19;冻结 $12.4K)
   E: "在售 SKU 6 · 库存正常",

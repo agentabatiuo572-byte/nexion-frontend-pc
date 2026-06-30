@@ -23,6 +23,15 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "config") {
     return "/api/admin/platform/config";
   }
+  if (parts.length === 2 && parts[0] === "events" && parts[1] === "overview") {
+    return "/api/admin/platform/events/overview";
+  }
+  if (parts.length === 3 && parts[0] === "events" && parts[1] === "params" && isNonEmpty(parts[2])) {
+    return `/api/admin/platform/events/params/${encodeURIComponent(parts[2])}`;
+  }
+  if (parts.length === 2 && parts[0] === "events" && (parts[1] === "schema-registrations" || parts[1] === "domain-extension-batches")) {
+    return `/api/admin/platform/events/${parts[1]}`;
+  }
   if (parts.length === 2 && parts[0] === "accounts" && parts[1] === "overview") {
     return "/api/admin/platform/accounts/overview";
   }

@@ -255,15 +255,6 @@ export type MLoadConfigWrite = MLoadConfig & {
   agentState: MAgentState;
 };
 
-const DEFAULT_LOAD_CONFIG: MLoadConfig = {
-  autoBalance: true,
-  defaultCap: 10,
-  burstCap: 14,
-  warnPct: 80,
-  quietHourBalance: false,
-  overflowQueue: "转人工备勤队列",
-};
-
 const CATEGORY_LABEL: Record<string, string> = {
   advisor: "专属顾问",
   support: "普通客服",
@@ -320,6 +311,41 @@ function bool(value: unknown, fallback = false) {
   if (typeof value === "string") return ["1", "true", "on", "enabled"].includes(value.toLowerCase());
   if (typeof value === "number") return value !== 0;
   return fallback;
+}
+
+function requireLoadRaw(raw: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("M_LOAD_CONFIG_BACKEND_RESPONSE_MISSING");
+  }
+  return raw;
+}
+
+function loadNumber(raw: Record<string, unknown>, field: keyof MLoadConfig): number {
+  const parsed = Number(raw[field]);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`M_LOAD_CONFIG_FIELD_MISSING:${String(field)}`);
+  }
+  return parsed;
+}
+
+function loadBoolean(raw: Record<string, unknown>, field: keyof MLoadConfig): boolean {
+  const value = raw[field];
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "on", "enabled"].includes(normalized)) return true;
+    if (["0", "false", "off", "disabled"].includes(normalized)) return false;
+  }
+  throw new Error(`M_LOAD_CONFIG_FIELD_MISSING:${String(field)}`);
+}
+
+function loadText(raw: Record<string, unknown>, field: keyof MLoadConfig): string {
+  const value = str(raw[field]).trim();
+  if (!value) {
+    throw new Error(`M_LOAD_CONFIG_FIELD_MISSING:${String(field)}`);
+  }
+  return value;
 }
 
 function asArray<T>(value: unknown): T[] {
@@ -599,7 +625,7 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     position: str(row.position, "一线客服"),
     serviceTypes: serviceTypes.length ? serviceTypes : ["support"],
     tags: asStringArray(row.tags),
-    maxConcurrent: num(row.maxConcurrent, DEFAULT_LOAD_CONFIG.defaultCap),
+    maxConcurrent: num(row.maxConcurrent, 0),
     enabled: bool(row.enabled, true),
     transferable: bool(row.transferable, true),
     busy: bool(row.busy, false),
@@ -626,28 +652,32 @@ function adaptAdvisorAssignment(row: Record<string, unknown>): MAdvisorAssignmen
 }
 
 function adaptLoadConfig(raw: Record<string, unknown> | undefined, agents: MSupportAgent[]): MLoadConfigWrite {
-  const agentRaw = raw?.agentState && typeof raw.agentState === "object" ? (raw.agentState as Record<string, unknown>) : {};
+  const loadRaw = requireLoadRaw(raw);
+  const base: MLoadConfig = {
+    autoBalance: loadBoolean(loadRaw, "autoBalance"),
+    defaultCap: loadNumber(loadRaw, "defaultCap"),
+    burstCap: loadNumber(loadRaw, "burstCap"),
+    warnPct: loadNumber(loadRaw, "warnPct"),
+    quietHourBalance: loadBoolean(loadRaw, "quietHourBalance"),
+    overflowQueue: loadText(loadRaw, "overflowQueue"),
+  };
+  const agentRaw = loadRaw.agentState && typeof loadRaw.agentState === "object" ? (loadRaw.agentState as Record<string, unknown>) : {};
   const agentState: MAgentState = {};
   agents.forEach((agent) => {
     agentState[agent.id] = {
-      cap: agent.maxConcurrent || DEFAULT_LOAD_CONFIG.defaultCap,
+      cap: agent.maxConcurrent || base.defaultCap,
       busy: agent.busy,
     };
   });
   Object.entries(agentRaw).forEach(([id, value]) => {
     const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
     agentState[id] = {
-      cap: num(row.cap, agentState[id]?.cap ?? DEFAULT_LOAD_CONFIG.defaultCap),
+      cap: num(row.cap, agentState[id]?.cap ?? base.defaultCap),
       busy: bool(row.busy, false),
     };
   });
   return {
-    autoBalance: bool(raw?.autoBalance, DEFAULT_LOAD_CONFIG.autoBalance),
-    defaultCap: num(raw?.defaultCap, DEFAULT_LOAD_CONFIG.defaultCap),
-    burstCap: num(raw?.burstCap, DEFAULT_LOAD_CONFIG.burstCap),
-    warnPct: num(raw?.warnPct, DEFAULT_LOAD_CONFIG.warnPct),
-    quietHourBalance: bool(raw?.quietHourBalance, DEFAULT_LOAD_CONFIG.quietHourBalance),
-    overflowQueue: str(raw?.overflowQueue, DEFAULT_LOAD_CONFIG.overflowQueue),
+    ...base,
     agentState,
   };
 }

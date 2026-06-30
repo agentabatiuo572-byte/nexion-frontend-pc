@@ -41,8 +41,8 @@ async function contentApiRequest<T>(path: string): Promise<T> {
   return payload.data as T;
 }
 
-function withReason<T extends Record<string, unknown>>(body: T, reason: string) {
-  return { ...body, operator: OPERATOR, reason };
+function withReason<T extends Record<string, unknown>>(body: T, reason: string, operator = OPERATOR) {
+  return { ...body, operator: operator || OPERATOR, reason };
 }
 
 function rows<T>(value: unknown): T[] {
@@ -295,7 +295,7 @@ export type JEmergencyData = {
 export type JEmergencyActions = {
   reloadJEmergency: () => Promise<void>;
   toggleJ1KillSwitch: (key: string, enabled: boolean, reason: string) => Promise<void>;
-  emergencyDisableJ1: (keys: string[], reason: string) => Promise<void>;
+  emergencyDisableJ1: (keys: string[], reason: string, operator?: string) => Promise<void>;
   updateJ1Sla: (paramKey: string, value: string, reason: string) => Promise<void>;
   updateJ1AutoRule: (ruleId: string, value: string, reason: string) => Promise<void>;
   updateJ2Country: (countryCode: string, status: "blocked" | "limited" | "allowed", reason: string) => Promise<void>;
@@ -616,7 +616,7 @@ export async function fetchJEmergencyOverviews(): Promise<JEmergencyData> {
 
 export const jEmergencyActions: Omit<JEmergencyActions, "reloadJEmergency"> = {
   toggleJ1KillSwitch: (key, enabled, reason) => apiRequest(`/kill-switches/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify(withReason({ enabled: enabled ? "enabled" : "disabled" }, reason)) }).then(() => undefined),
-  emergencyDisableJ1: (keys, reason) => apiRequest("/kill-switches/emergency-disable", { method: "POST", body: JSON.stringify(withReason({ keys }, reason)) }).then(() => undefined),
+  emergencyDisableJ1: (keys, reason, operator) => apiRequest("/kill-switches/emergency-disable", { method: "POST", body: JSON.stringify(withReason({ keys }, reason, operator)) }).then(() => undefined),
   updateJ1Sla: (paramKey, value, reason) => apiRequest(`/kill-switches/emergency-sla/${encodeURIComponent(paramKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
   updateJ1AutoRule: (ruleId, value, reason) => apiRequest(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, { method: "PATCH", body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
   updateJ2Country: (countryCode, status, reason) => apiRequest(`/geo-block/countries/${encodeURIComponent(countryCode)}`, { method: "PUT", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),

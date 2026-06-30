@@ -3,30 +3,33 @@
 /**
  * 侧栏导航徽标 — 客服中心「待处理」实时计数(供左侧风琴导航 M3 入口显数量)。
  * 待处理 = 未读 或 转入待处理 且未归档,与 M3 收件箱 SEGS「未读/转入待处理」同口径。
- * 只读取 M 页从后端接口加载后的会话快照;未加载时保持 0,不再用静态会话种子兜底。
+ * 只读取后端会话快照;未加载时保持 0,不再用静态会话种子或本地 persist 兜底。
  */
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
+import { useEffect, useState } from "react";
+import { fetchMContentData } from "@/lib/admin/m-client";
 import type { SessionConvo } from "../domain-views/m-tabs/data";
 
-const CONVO_KEY = "I.session.convos";
-
-function parseConvos(raw: string | undefined): SessionConvo[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SessionConvo[]) : [];
-  } catch {
-    return [];
-  }
+function pendingCount(conversations: SessionConvo[]) {
+  return conversations.filter((c) => !c.archived && (c.unread > 0 || c.transfer != null)).length;
 }
 
 /** 客服会话待处理数(未读 或 转入待处理 · 未归档)。 */
 export function useServicePendingCount(): number {
-  const hydrated = useOpsHydrated();
-  const params = usePlatformConfig((s) => s.params);
-  const raw = hydrated && params ? (params[CONVO_KEY] as string | undefined) : undefined;
-  return parseConvos(raw).filter((c) => !c.archived && (c.unread > 0 || c.transfer != null)).length;
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchMContentData()
+      .then((data) => {
+        if (!cancelled) setPending(pendingCount(data.conversations));
+      })
+      .catch(() => {
+        if (!cancelled) setPending(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return pending;
 }
 
 /** 导航徽标映射:path → 待处理数(目前仅 M3 即时会话台)。 */

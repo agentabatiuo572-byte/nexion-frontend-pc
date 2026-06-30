@@ -3,8 +3,16 @@
 /** 风险雷达 — 全局告警聚合(覆盖率红线 / 风险命中 / kill 状态),按级别色点,点击钻取。 */
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import type { AlertItem, AlertLevel } from "@/lib/mock/admin/command-center";
 import { AutoGloss } from "@/app/components/kit/gloss";
+
+type AlertLevel = "high" | "mid" | "low";
+
+type AlertItem = {
+  id: string;
+  level: AlertLevel;
+  text: string;
+  href: string;
+};
 
 const LEVEL_COLOR: Record<AlertLevel, string> = {
   high: "var(--v5-danger)",

@@ -7,9 +7,15 @@
  */
 import Link from "next/link";
 import { useState } from "react";
-import type { FunnelStage } from "@/lib/mock/admin/command-center";
 import { fmtNum, fmtPct } from "@/lib/format";
 import { AutoGloss } from "@/app/components/kit/gloss";
+
+type FunnelStageInput = {
+  key: string;
+  label: string;
+  count: number;
+  prevCount: number;
+};
 
 // 设计稿几何:cx=210,5 段 6 节点半宽,段高 62,间隙 14,viewBox 360×382
 const CX = 210;
@@ -30,8 +36,9 @@ const NECK = [
 const UP = "#29D27F";
 const DOWN = "#DD6F5C";
 const r2 = (n: number) => Math.round(n * 100) / 100;
+const pctSafe = (num: number, den: number) => (den > 0 ? Math.round((num / den) * 100) : 0);
 
-export function FunnelStrip({ stages }: { stages: FunnelStage[] }) {
+export function FunnelStrip({ stages }: { stages: FunnelStageInput[] }) {
   const [focus, setFocus] = useState<number | null>(null);
   const first = stages[0]?.count || 1;
   const last = stages[stages.length - 1]?.count || 0;
@@ -101,7 +108,7 @@ export function FunnelStrip({ stages }: { stages: FunnelStage[] }) {
           {/* 颈部留存率标记 */}
           {NECK.map((n, i) => {
             if (i + 1 >= stages.length) return null;
-            const cvr = Math.round((stages[i + 1].count / stages[i].count) * 100);
+            const cvr = pctSafe(stages[i + 1].count, stages[i].count);
             return (
               <g key={i}>
                 <text x={n.x} y={n.y} textAnchor="end" className="font-mono-tabular" style={{ fill: "var(--v5-ink-4)", fontSize: 11 }}>{cvr}%</text>
@@ -114,7 +121,7 @@ export function FunnelStrip({ stages }: { stages: FunnelStage[] }) {
         {/* 阶段列表 */}
         <div className="flex flex-col">
           {stages.map((s, i) => {
-            const cvr = i > 0 ? Math.round((s.count / stages[i - 1].count) * 100) : null;
+            const cvr = i > 0 ? pctSafe(s.count, stages[i - 1].count) : null;
             const d = s.count - s.prevCount;
             const up = d >= 0;
             return (

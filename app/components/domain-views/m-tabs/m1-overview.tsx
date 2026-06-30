@@ -8,7 +8,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  LOAD_CONFIG_DEFAULT,
   type LoadConfig,
   type SessionConvo,
   type SupportSla,
@@ -42,6 +41,32 @@ const numOr = (raw: string | undefined, fb: number) => {
   return raw != null && raw !== "" && !Number.isNaN(n) ? n : fb;
 };
 const boolOr = (raw: string | undefined, fb: boolean) => (raw === "1" ? true : raw === "0" ? false : fb);
+const boolParam = (raw: string | undefined): boolean | null => (raw === "1" ? true : raw === "0" ? false : null);
+const numParam = (raw: string | undefined): number | null => {
+  const n = Number(raw);
+  return raw != null && raw !== "" && Number.isFinite(n) ? n : null;
+};
+
+function loadConfigFromBackendParams(pget: (key: string) => string | undefined): LoadConfig | null {
+  const autoBalance = boolParam(pget(LOAD_KEY("autoBalance")));
+  const defaultCap = numParam(pget(LOAD_KEY("defaultCap")));
+  const burstCap = numParam(pget(LOAD_KEY("burstCap")));
+  const warnPct = numParam(pget(LOAD_KEY("warnPct")));
+  const quietHourBalance = boolParam(pget(LOAD_KEY("quietHourBalance")));
+  const overflowQueue = pget(LOAD_KEY("overflowQueue"));
+  if (
+    autoBalance == null ||
+    defaultCap == null ||
+    burstCap == null ||
+    warnPct == null ||
+    quietHourBalance == null ||
+    overflowQueue == null ||
+    overflowQueue.trim() === ""
+  ) {
+    return null;
+  }
+  return { autoBalance, defaultCap, burstCap, warnPct, quietHourBalance, overflowQueue };
+}
 
 function catRisk(tickets: SupportTicket[], cat: SupportTicketCategory): { lvl: string; pct: number; n: number } {
   const open = tickets.filter((t) => t.category === cat && (t.status === "open" || t.status === "in_progress" || t.status === "pending_user"));
@@ -73,20 +98,13 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const liveSessions = convos.filter((c) => c.status === "open").length;
   const pendingReplies = convos.filter((c) => c.status === "open" && c.messages[c.messages.length - 1]?.sender === "user").length;
 
-  const loadCfg: LoadConfig = {
-    autoBalance: boolOr(pget(LOAD_KEY("autoBalance")), LOAD_CONFIG_DEFAULT.autoBalance),
-    defaultCap: numOr(pget(LOAD_KEY("defaultCap")), LOAD_CONFIG_DEFAULT.defaultCap),
-    burstCap: numOr(pget(LOAD_KEY("burstCap")), LOAD_CONFIG_DEFAULT.burstCap),
-    warnPct: numOr(pget(LOAD_KEY("warnPct")), LOAD_CONFIG_DEFAULT.warnPct),
-    quietHourBalance: boolOr(pget(LOAD_KEY("quietHourBalance")), LOAD_CONFIG_DEFAULT.quietHourBalance),
-    overflowQueue: pget(LOAD_KEY("overflowQueue")) ?? LOAD_CONFIG_DEFAULT.overflowQueue,
-  };
+  const loadCfg = useMemo(() => loadConfigFromBackendParams(pget), [ctx.params, pget]);
 
   const loadRows = supportAgents.map((a) => {
     const openTk = tickets.filter((t) => t.owner === a.name && (t.status === "open" || t.status === "in_progress")).length;
     const openCv = convos.filter((c) => c.owner === a.name && c.status === "open").length;
     const total = openTk + openCv;
-    const cap = numOr(pget(AGENT_CAP_KEY(a.name)), a.maxConcurrent || loadCfg.defaultCap);
+    const cap = numOr(pget(AGENT_CAP_KEY(a.name)), a.maxConcurrent || loadCfg?.defaultCap || 0);
     const busy = boolOr(pget(AGENT_BUSY_KEY(a.name)), Boolean(a.busy || !a.enabled));
     const util = Math.round((total / Math.max(1, cap)) * 100);
     return { id: a.id, name: a.name, role: a.position, enabled: a.enabled, openTk, openCv, total, cap, busy, util };
@@ -170,14 +188,24 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
             <div className="sec-h">
               <span className="t">坐席负载</span>
               <span className="n">{busyCount} 忙 / {loadRows.length}</span>
-              {loadCfg.autoBalance && (
+              {loadCfg?.autoBalance && (
                 <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--m-hd-2)", background: "var(--m-hd-soft)", border: "none" }}>
                   <Icon name="gauge" size={12} />
                   自动平衡
                 </span>
               )}
+              {!loadCfg && (
+                <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--m-high)", background: "var(--m-high-soft)", border: "none" }}>
+                  后端配置未返回
+                </span>
+              )}
               <span className="sp" />
-              <button type="button" className="btn btn-sec btn-sm" onClick={() => setShowLoad(true)}>
+              <button
+                type="button"
+                className="btn btn-sec btn-sm"
+                onClick={() => (loadCfg ? setShowLoad(true) : ctx.toast("M1 负载配置未从后端返回,请先检查 /content/tickets/load-config"))}
+                disabled={!loadCfg}
+              >
                 <Icon name="gauge" size={16} />
                 调整负载
               </button>
@@ -190,7 +218,8 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                 <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>坐席名单来自 A1 管理员里的客服角色,请先给管理员分配客服角色。</div>
               </div>
             ) : loadRows.map((l) => {
-              const tone = l.util >= 100 ? "var(--m-urgent)" : l.util >= loadCfg.warnPct ? "var(--m-high)" : l.util >= 50 ? "var(--m-hd-2)" : "var(--m-ok)";
+              const warnPct = loadCfg?.warnPct ?? 101;
+              const tone = l.util >= 100 ? "var(--m-urgent)" : l.util >= warnPct ? "var(--m-high)" : l.util >= 50 ? "var(--m-hd-2)" : "var(--m-ok)";
               return (
                 <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 0", borderTop: "1px solid var(--border)" }}>
                   <MAvatar name={l.name} size="sm" />
@@ -225,7 +254,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
         <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>口径</b>:本页数字来自后端工单、会话、SLA 与坐席负载配置。坐席名单来自 A1 客服角色,岗位 / 服务类型在 M5 配置;负载从工单 / 会话 owner 派生,负载调度策略经「调整负载」高敏弹窗落库。
       </p>
 
-      {showLoad && <LoadConfigModal ctx={ctx} loadCfg={loadCfg} rows={loadRows} onClose={() => setShowLoad(false)} />}
+      {showLoad && loadCfg && <LoadConfigModal ctx={ctx} loadCfg={loadCfg} rows={loadRows} onClose={() => setShowLoad(false)} />}
     </div>
   );
 }

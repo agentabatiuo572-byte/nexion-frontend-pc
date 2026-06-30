@@ -14,7 +14,7 @@ import "./g-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { useOpsHydrated } from "@/lib/store/admin/hydration";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { G1Staking } from "./g-tabs/g1-staking";
 import { G2Exchange } from "./g-tabs/g2-exchange";

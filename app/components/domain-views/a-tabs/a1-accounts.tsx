@@ -17,14 +17,36 @@ import {
   type A1CreateAccountInput,
   type A1Operator,
   type A1Overview,
+  type A1RbacAction,
   type A1RoleDefinition,
   type GrantCell,
 } from "@/lib/admin/a1-client";
-import { RBAC_MATRIX, ROLE_DEFS, SECURITY_BASELINES, type MatrixAction } from "./data";
 import type { ACtx } from "./types";
 
 type DomainGroup = "资金" | "用户/风控" | "增长/内容" | "基座/应急" | "all";
-type SecurityBaselineSeed = (typeof SECURITY_BASELINES)[number];
+type MatrixAction = A1RbacAction;
+type SecurityBaselineSeed = {
+  key: string;
+  name: string;
+  sub: string;
+  locked: boolean;
+  value?: string;
+  cur?: string;
+  unit?: string;
+  min?: number;
+  max?: number;
+};
+
+const SECURITY_BASELINE_META: SecurityBaselineSeed[] = [
+  { key: "tfa_required", name: "强制双因子(全角色)", sub: "没绑双因子完不成登录——安全基线,不开口子", value: "强制开启", locked: true },
+  { key: "least_priv", name: "最小权限默认", sub: "新账号默认无任何写权,角色要显式分配", value: "默认拒绝", locked: true },
+  { key: "min_supers", name: "最少有效超管", sub: "少于 2 个时账号治理类操作全部被服务器拒绝(防权限死锁)", value: ">= 2 个", locked: true },
+  { key: "session_idle", name: "session 滑动过期", sub: "无操作多久自动登出;比用户侧明显更短(操盘台高敏)", locked: false, cur: "30", unit: "分钟", min: 15, max: 60 },
+  { key: "session_abs", name: "session 绝对上限", sub: "一次登录最长存活多久,到点强制重登", locked: false, cur: "8", unit: "小时", min: 4, max: 12 },
+  { key: "lock_short_cnt", name: "登录失败短锁 · 触发次数", sub: "连错几次触发短锁", locked: false, cur: "5", unit: "次", min: 3, max: 10 },
+  { key: "lock_short_min", name: "登录失败短锁 · 锁定时长", sub: "触发短锁后锁定多久", locked: false, cur: "15", unit: "分钟", min: 5, max: 60 },
+  { key: "lock_long", name: "登录失败长锁(不可调)", sub: "连错升级 → 锁 24h + 双因子重新认证,防撞库底线档(阈值高于用户侧)", value: "15 次 / 24h", locked: true },
+];
 
 const DOM_CHIPS: { key: DomainGroup; label: string }[] = [
   { key: "all", label: "全部" },
@@ -163,7 +185,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     [refreshOverview, toast],
   );
 
-  const roles = ROLE_DEFS;
+  const roles = overview?.roles ?? [];
   const operators = overview?.operators ?? [];
   const currentOperator = useMemo(() => {
     const id = currentAdminId === null ? null : String(currentAdminId);
@@ -171,7 +193,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   }, [currentAdminId, operators]);
   const currentForceLogoutRole = forceLogoutRole(currentOperator?.role ?? currentSessionRole);
   const securityBaselines = overview?.securityBaselines ?? [];
-  const rbacRows = RBAC_MATRIX;
+  const rbacRows = overview?.rbacMatrix ?? [];
   const stats = overview?.stats;
   const effectiveSupers = stats?.effectiveSupers ?? 0;
   const supersTone = effectiveSupers <= 1 ? "danger" : effectiveSupers === 2 ? "warn" : "ok";
@@ -182,8 +204,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (key === "session_abs") return firstMatch(backendSessionBaseline, /\/\s*(\d+(?:\.\d+)?)\s*h/i) ?? "8";
     if (key === "lock_short_cnt") return firstMatch(backendLockBaseline, /(\d+(?:\.\d+)?)\s*次/) ?? "5";
     if (key === "lock_short_min") return firstMatch(backendLockBaseline, /\/\s*(\d+(?:\.\d+)?)\s*min/i) ?? "15";
-    return SECURITY_BASELINES.find((baseline) => baseline.key === key)?.cur ?? "";
+    return SECURITY_BASELINE_META.find((baseline) => baseline.key === key)?.cur ?? "";
   };
+  const securityBaselineRows = SECURITY_BASELINE_META;
   const baselineDisplay = (baseline: SecurityBaselineSeed) => (
     baseline.locked ? baseline.value ?? "" : `${baselineCurrent(baseline.key)} ${baseline.unit ?? ""}`.trim()
   );
@@ -674,7 +697,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             <span className="sub">· 四条锁死,四项可调(每项单独调)</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
-            {SECURITY_BASELINES.map((baseline) => (
+            {securityBaselineRows.map((baseline) => (
               <div className="a-vrow" key={baseline.key}>
                 <span className="nm">{baseline.name}<small>{baseline.sub}</small></span>
                 <span className={baseline.locked ? "acode lock" : "v"} title={baseline.locked ? "server 校验,前端不可关" : undefined}>
