@@ -70,7 +70,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   useEffect(() => {
     setWeights(dimensions.map((d) => d.weightPct / 100));
     setTouched(false);
-  }, [dimSignature, dimensions]);
+  }, [dimSignature]);
 
   const liveWeights = touched ? weights : dimensions.map((d) => d.weightPct / 100);
   const pctWeights = liveWeights.map((v) => Math.round(v * 100));

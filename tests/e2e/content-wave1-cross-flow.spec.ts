@@ -8,13 +8,13 @@ test.describe.configure({ mode: "serial" });
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const BACKEND_URL = process.env.NEXION_BACKEND_URL ?? "http://127.0.0.1:8110";
 const MYSQL_EXE = process.env.MYSQL_EXE ?? "D:\\software\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe";
-const USERNAME = "e2e_shift_content_1_20260630174418";
-const PASSWORD = "E2eShift@202606301744181Aa";
-const PREFIX = "e2e-content1-20260630174418";
+const USERNAME = process.env.CONTENT_E2E_USERNAME ?? "e2e_shift_content_1_20260630174418";
+const PASSWORD = process.env.CONTENT_E2E_PASSWORD ?? "E2eShift@202606301744181Aa";
+const PREFIX = process.env.CONTENT_E2E_PREFIX ?? "e2e-content1-20260630174418";
 const RUN_TOKEN = `${PREFIX}-${Date.now().toString(36)}`;
 const OPERATOR = "E2E Shift content 1";
 const REASON = `${PREFIX} Wave-1 content 本地交叉测试保留数据`;
-const REPORT_DIR = path.join(process.cwd(), ".codex-run", "content-wave1", PREFIX);
+const REPORT_DIR = process.env.CONTENT_E2E_REPORT_DIR ?? path.join(process.cwd(), ".codex-run", "content-wave1", PREFIX);
 const REPORT_FILE = path.join(REPORT_DIR, `${RUN_TOKEN}.json`);
 
 type JsonMap = Record<string, unknown>;
@@ -404,7 +404,6 @@ test("Wave-1 content: I/J/K/L with D2/G1/G2 admission gates", async ({ page }, t
       "from ['\\\"]@?/lib/mock|from ['\\\"].*mock|mock 用户详情|hardcoded content|硬编码内容",
       "app",
       "lib",
-      "tests/e2e/content-wave1-cross-flow.spec.ts",
     ]);
     const backendHits = rg([
       "-n",
