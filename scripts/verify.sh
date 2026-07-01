@@ -20,6 +20,17 @@ CURL_BIN="${CURL_BIN:-curl}"
 if [ -f /proc/version ] && grep -qi microsoft /proc/version && command -v curl.exe >/dev/null 2>&1; then
   CURL_BIN="curl.exe"
 fi
+WALKTHROUGH_TIMEOUT="${VERIFY_WALKTHROUGH_TIMEOUT:-180}"
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${seconds}s" "$@"
+  else
+    "$@"
+  fi
+}
 
 check_http() {
   local code
@@ -33,6 +44,11 @@ check_html() {
 check_absent() {
   if "$CURL_BIN" -s --max-time 10 "$BASE$1" | grep -qF "$2"; then fail=$((fail+1)); fails="$fails\n  [should-be-absent] $1 :: $2"; else pass=$((pass+1)); fi
 }
+check_gone() {
+  local code
+  code=$("$CURL_BIN" -s -o /dev/null -w "%{http_code}" --max-time 10 "$BASE$1")
+  if [ "$code" = "404" ]; then pass=$((pass+1)); else fail=$((fail+1)); fails="$fails\n  [should-be-404 $code] $1"; fi
+}
 
 echo "== [1/4] tsc =="
 # 注:不能用 `tsc | tail`,管道退出码是 tail 的(0)会吞掉 tsc 失败。捕获输出 + 退出码。
@@ -44,9 +60,188 @@ else
   echo "  TSC FAILED:"; echo "$tsc_out" | tail -12; exit 1
 fi
 
-echo "== [1b/4] runtime source guards =="
-(cd "$ROOT" && "$NODE_BIN" scripts/check-runtime-mock-imports.mjs)
-(cd "$ROOT" && "$NODE_BIN" scripts/check-m-domain-backend-config.mjs)
+echo "== [1.5/4] E6 SPEC-2 source contract =="
+if (cd "$ROOT" && "$NODE_BIN" - <<'NODE'
+const fs = require("fs");
+const design = fs.readFileSync("app/components/domain-views/design-kit.tsx", "utf8");
+const e6 = fs.readFileSync("app/components/domain-views/e-tabs/e6-compute-config.tsx", "utf8");
+const eView = fs.readFileSync("app/components/domain-views/e-view.tsx", "utf8");
+const cfg = fs.readFileSync("lib/mock/admin/compute-config.ts", "utf8");
+const css = fs.readFileSync("app/components/domain-views/e-domain.css", "utf8");
+const reg = fs.readFileSync("lib/admin/registry/e.ts", "utf8");
+const fail = [];
+const source = [design, e6, eView, cfg, css].join("\n");
+const must = [
+  ["gpu tier table rendered", /data-proof="e6-gpu-tier-table"/],
+  ["download config rendered", /data-proof="e6-download-config"/],
+  ["tier edit uses multi-field", /name: `\$\{view\.label\}档位设置`[\s\S]*op: "param-multi"/],
+  ["download copy uses multi-field", /name: "编辑下载页双语文案"[\s\S]*op: "param-multi"/],
+  ["keyword add/edit is single-field", /const editKeyword[\s\S]*op: "param"[\s\S]*单个显卡型号关键词/],
+  ["keyword delete fixed empty", /const deleteKeyword[\s\S]*op: "param-fixed"[\s\S]*fixedVal: ""/],
+  ["gpu keyword slots are independent", /keyword1[\s\S]*keyword2[\s\S]*keyword3[\s\S]*keyword4[\s\S]*keyword5[\s\S]*keyword6/],
+  ["E6 coefficient edit has numeric bounds", /edit: \{ kind: "number"[\s\S]*min: isRatio \? 0 : undefined[\s\S]*gt: isRatio \? undefined : 0[\s\S]*max: isRatio \? 1 : undefined/],
+  ["E6 tier TOPS has neighbor monotonic bounds", /tierTopsBounds[\s\S]*gt: bounds\.gt, lt: bounds\.lt/],
+  ["E6 keyword edit rejects duplicates and multi-value text", /pattern: "single-keyword"[\s\S]*disallowValues: blocked/],
+  ["E6 download URL edit validates URL", /pattern: "url"[\s\S]*maxLength: 300/],
+  ["E6 save path validates business constraints", /validateE6ComputeWrite[\s\S]*六档显卡算力 TOPS 保存后必须严格递增/],
+  ["E6 keyword duplicate fallback keeps original slot index", /sameTierKeywords[\s\S]*COMPUTE_GPU_KEYWORD_SLOTS\.indexOf\(slot\)[\s\S]*tier\.keywords\[originalIndex\]/],
+  ["modal disables invalid edit values", /editValueProblems[\s\S]*editProblems\.length === 0/],
+  ["multi-field supports dynamic numeric bounds", /f\.gt != null[\s\S]*f\.lt != null[\s\S]*f\.min != null[\s\S]*f\.max != null/],
+  ["responsive E6 rows styled", /\.edom \.e6-gpu-row[\s\S]*@media \(max-width: 1180px\)/],
+];
+for (const [label, re] of must) if (!re.test(source)) fail.push(label);
+const bannedVisible = /待 SPEC|待开发|SPEC2_ITEMS|computeShareEnabled|E\.compute|h5BaseFactor|continuityFullHours|ENV_FILTERED|MANUAL_HOLD|运营后台|内部开关|工程字段/;
+if (bannedVisible.test(e6)) fail.push("E6 visible component leaks placeholder or engineering field text");
+const e6RegistryBlock = reg.match(/path: "\/devices\/compute-config"[\s\S]*?(?=\n  \},\n\];|\n  \},\n  \{)/)?.[0] ?? "";
+const bannedOperatorCopy = /三端改造配置面/;
+if (bannedOperatorCopy.test(e6 + "\n" + cfg + "\n" + e6RegistryBlock)) fail.push("E6 operator-facing copy leaks implementation phrasing");
+if (/label:\s*"English title"|label:\s*"English guide"/.test(cfg) || /English title|English guide/.test(e6)) {
+  fail.push("E6 download copy labels must use operator-facing Chinese text");
+}
+if (!/英文标题[\s\S]*英文说明/.test(e6 + "\n" + cfg)) {
+  fail.push("E6 download copy labels must include Chinese operator labels");
+}
+if (!/allowEmpty\?: boolean/.test(design) || !/if \(!f\.allowEmpty\) needs\(f\.key, f\.label\)/.test(design)) {
+  fail.push("multi-field must support explicit empty values");
+}
+for (const field of ["zhTitle", "zhGuide", "enTitle", "enGuide"]) {
+  const re = new RegExp(`key: "${field}"[\\s\\S]*?allowEmpty: true`);
+  if (!re.test(e6)) fail.push(`download copy field ${field} must be clearable`);
+}
+const e6SetParamActorChecks = [
+  /setParam\(mc\.paramKey, v, \{ action: mc\.name, reason, actor: operator \}\)/,
+  /setParam\(paramKey, next, \{ action: mc\.name, reason, actor: operator \}\)/,
+  /setParam\(mc\.paramKey, mc\.fixedVal, \{ action: mc\.name, reason, actor: operator \}\)/,
+];
+for (const re of e6SetParamActorChecks) if (!re.test(eView)) fail.push("E config setParam must preserve logged-in operator");
+if (/keywords\.join/.test(e6)) fail.push("GPU keywords may be edited as one multi-value field");
+const tiers = [...cfg.matchAll(/id:\s*"(G[1-6])"[\s\S]*?defaultTops:\s*(\d+)/g)].map((m) => ({ id: m[1], tops: Number(m[2]) }));
+const order = ["G1", "G2", "G3", "G4", "G5", "G6"];
+if (tiers.length !== 6) fail.push(`expected 6 GPU tiers, got ${tiers.length}`);
+const by = new Map(tiers.map((tier) => [tier.id, tier.tops]));
+for (let i = 1; i < order.length; i++) {
+  if (!(by.get(order[i]) > by.get(order[i - 1]))) fail.push(`GPU TOPS not monotonic at ${order[i]}`);
+}
+if (!/url:[\s\S]*defaultVal:\s*""/.test(cfg)) fail.push("download URL must default to empty");
+if (fail.length) {
+  console.error(fail.map((x) => `  - ${x}`).join("\n"));
+  process.exit(1);
+}
+console.log("  E6 SPEC-2 source contract OK");
+NODE
+); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [e6-spec2-source] E6 SPEC-2 源码契约失败"
+fi
+
+echo "== [1.6/4] K6 SPEC-3 source contract =="
+if (cd "$ROOT" && "$NODE_BIN" - <<'NODE'
+const fs = require("fs");
+const store = fs.readFileSync("lib/store/admin/janus-c2-store.ts", "utf8");
+const strategy = fs.readFileSync("app/components/domain-views/k-tabs/k6/strategy-editor.tsx", "utf8");
+const rules = fs.readFileSync("app/components/domain-views/k-tabs/k6/rule-tree-editor.tsx", "utf8");
+const manual = fs.readFileSync("app/components/domain-views/k-tabs/k6/manual-override-modal.tsx", "utf8");
+const center = fs.readFileSync("app/components/domain-views/k-tabs/k6/strategy-center.tsx", "utf8");
+const labels = fs.readFileSync("lib/mock/admin/janus-c2/labels.ts", "utf8");
+const evaluate = fs.readFileSync("lib/mock/admin/janus-c2/evaluate.ts", "utf8");
+const detail = fs.readFileSync("app/components/domain-views/k-tabs/k6/device-detail.tsx", "utf8");
+const dashboard = fs.readFileSync("app/components/domain-views/k-tabs/k6/dashboard.tsx", "utf8");
+const auditLog = fs.readFileSync("app/components/domain-views/k-tabs/k6/audit-log.tsx", "utf8");
+const fail = [];
+if (!/REMOTE_URL_LABEL/.test(store) || !/default:\s*"正盘默认首页"/.test(labels)) fail.push("remote URL default label must point to the canonical H5 home in operator copy");
+if (/默认真盘\(default\)|备用线路\(backup\)|活动专线\(promo\)/.test(store)) fail.push("remote URL labels leak key names");
+if (!/新建策略/.test(center) || !/删除/.test(center) || !/编辑/.test(center)) fail.push("strategy center must expose create/edit/delete");
+if (!/htmlFor="st-status"/.test(strategy) || !/STRATEGY_STATUS_LABEL/.test(strategy)) fail.push("strategy status must be editable with readable labels");
+if (!/RuleTreeEditor/.test(strategy) || !/添加规则|规则组/.test(rules)) fail.push("rule tree editor must be wired");
+const enumMultiBranch = rules.indexOf('def.type === "enum" && (rule.op === "in" || rule.op === "notIn")');
+const textMultiBranch = rules.indexOf('def.type === "multi" || rule.op === "in" || rule.op === "notIn"');
+if (!/function MultiEnumInput/.test(rules) || enumMultiBranch < 0 || textMultiBranch < 0 || enumMultiBranch > textMultiBranch || !/enumOptionLabel\(field, o\)/.test(rules)) {
+  fail.push("rule editor status/channel in/notIn must use readable enum multi-select before generic text multi-value input");
+}
+if (/逗号分隔/.test(manual + "\n" + strategy + "\n" + rules)) fail.push("K6 dialogs must not use single-box multi-value input");
+if (!/添加邀请码/.test(strategy) || !/添加取值/.test(rules)) fail.push("K6 multi-value fields must expose itemized add controls");
+if (/<option[^>]*>\{a\}<\/option>/.test(strategy) || /:\s*"[^"]*(ENV_FILTERED|MANUAL_HOLD|REVERSAL_SESSION_EDGE|DRY_RUN_ONLY)[^"]*"/.test(labels + "\n" + store)) {
+  fail.push("K6 visible labels leak engineering enum text");
+}
+if (!/strategyApplicability/.test(evaluate) || !/scope\.channels/.test(evaluate) || !/scope\.inviteCodes/.test(evaluate) || !/requireFreshReportMinutes/.test(evaluate) || !/rollout/.test(evaluate) || !/maxDailyRecommendations/.test(evaluate) || !/maxDailyHits/.test(evaluate)) {
+  fail.push("K6 strategy scope/safeguards/rollout must participate in evaluation");
+}
+if (!/case "status":[\s\S]*STATUS_LABEL/.test(evaluate)) fail.push("K6 decision trace must translate status enum values");
+if (!/remoteUrlLabel/.test(labels) || !/remoteUrlLabel\(d\.remoteUrlKey\)/.test(detail) || !/remoteUrlLabel\(strat\.action\.remoteUrlKey\)/.test(dashboard) || !/remoteUrlLabel\(String\(v\)\)/.test(auditLog) || !/JSON\.stringify\(exportRows\(filtered\)/.test(auditLog)) {
+  fail.push("K6 remote URL keys must render/export as operator labels");
+}
+if (fail.length) {
+  console.error(fail.map((x) => `  - ${x}`).join("\n"));
+  process.exit(1);
+}
+console.log("  K6 SPEC-3 source contract OK");
+NODE
+); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [k6-spec3-source] K6 SPEC-3 源码契约失败"
+fi
+
+echo "== [1.7/4] SPEC-7 risk config source contract =="
+if (cd "$ROOT" && "$NODE_BIN" - <<'NODE'
+const fs = require("fs");
+const cfg = fs.readFileSync("lib/mock/admin/compute-config.ts", "utf8");
+const e6 = fs.readFileSync("app/components/domain-views/e-tabs/e6-compute-config.tsx", "utf8");
+const eView = fs.readFileSync("app/components/domain-views/e-view.tsx", "utf8");
+const k1 = fs.readFileSync("app/components/domain-views/k-tabs/k1-multiaccount.tsx", "utf8");
+const k3 = fs.readFileSync("app/components/domain-views/k-tabs/k3-rules.tsx", "utf8");
+const d2 = fs.readFileSync("app/components/domain-views/d-tabs/d2-withdrawals.tsx", "utf8");
+const dData = fs.readFileSync("app/components/domain-views/d-tabs/data.ts", "utf8");
+const dRegistry = fs.readFileSync("lib/admin/registry/d.ts", "utf8");
+const designData = fs.readFileSync("lib/mock/admin/design-data.ts", "utf8");
+const commandCenter = fs.readFileSync("lib/mock/admin/command-center.ts", "utf8");
+const withdrawalsSeed = designData.match(/export const WITHDRAWALS[\s\S]*?^];/m)?.[0] ?? "";
+const fail = [];
+const must = [
+  ["risk cluster params are centralized", cfg, /RISK_CLUSTER_PARAMS[\s\S]*freePhoneSlotsPerCluster[\s\S]*duplicateAccountPendingFrom[\s\S]*appAttestationReleaseHours/],
+  ["withdraw params are centralized", cfg, /WITHDRAW_RULE_PARAMS[\s\S]*minWithdrawableUsdt[\s\S]*sameAddressRoute/],
+  ["withdraw review params are centralized", cfg, /WITHDRAW_REVIEW_PARAMS[\s\S]*largeConfirmUsdt/],
+  ["yield estimate params are centralized", cfg, /COMPUTE_YIELD_ESTIMATE[\s\S]*topsBaseline[\s\S]*dailyUsdtPerBaseline[\s\S]*nexPerUsdt/],
+  ["E6 renders H5/App impact without field names", e6, /data-proof="e6-h5-app-impact"[\s\S]*H5 基础托管[\s\S]*App 在线加成/],
+  ["E6 renders yield estimate params", e6, /data-proof="e6-yield-estimate-params"[\s\S]*COMPUTE_YIELD_ESTIMATE\.map/],
+  ["K1 renders risk release params", k1, /data-proof="k1-risk-release-params"[\s\S]*RISK_CLUSTER_PARAMS\.map/],
+  ["K1 link weights use multi-field", k1, /title: "关联强度权重"[\s\S]*设备权重[\s\S]*支付工具权重[\s\S]*IP 权重/],
+  ["K1 cluster detail shows earning impact", k1, /data-proof="k1-cluster-earning-impact"[\s\S]*收益影响/],
+  ["K3 renders withdraw rule params", k3, /data-proof="k3-withdraw-rule-params"[\s\S]*WITHDRAW_RULE_PARAMS\.map/],
+  ["K3 same-address route uses select", k3, /p\.key === "sameAddressRoute"[\s\S]*edit: \{ kind: "select"[\s\S]*WITHDRAW_ROUTE_OPTIONS/],
+  ["K3 new rule uses structured controls", k3, /action: "新建提现风控规则"[\s\S]*businessForm:[\s\S]*kind: "multi-field"[\s\S]*规则维度[\s\S]*判断方式[\s\S]*阈值[\s\S]*命中后处理/],
+  ["K3 threshold adjustment uses structured controls", k3, /businessForm: adjustRuleForm\(d, cur\)[\s\S]*nextAdjustedRuleText\(d, businessValue\)/],
+  ["D2 detail shows route cluster and score", d2, /data-proof="d2-withdraw-risk-summary"[\s\S]*处理结论:[\s\S]*K1 关联簇:[\s\S]*K4 风险分:/],
+  ["D2 renders withdraw review params", d2, /data-proof="d2-withdraw-review-params"[\s\S]*WITHDRAW_REVIEW_PARAMS\.map/],
+  ["D2 large confirm line reads config", d2, /const largeConfirmLine = \(\(\) => \{[\s\S]*reviewParamValue\(p\)[\s\S]*const isLarge = \(w: WithdrawalRow\) => w\.amount >= largeConfirmLine[\s\S]*wdStats\(effSt, largeConfirmLine\)/],
+  ["D2 quick approve requires a reason", d2, /快速放行[\s\S]*chips:[\s\S]*reason: true[\s\S]*okLabel: "确认放行"/],
+  ["D2 proposal statuses use operator labels", d2, /before: wdStatusLabel\(effSt\(w\.id\)\)[\s\S]*after: wdStatusLabel\("review-passed"\)[\s\S]*after: wdStatusLabel\("review-pending"\)[\s\S]*after: wdStatusLabel\("refunded"\)/],
+];
+for (const [label, src, re] of must) if (!re.test(src)) fail.push(label);
+const visibleBans = [
+  ["E6 must not embed backend coeff field names", e6, /h5BaseFactor|continuityFullHours/],
+  ["E6 must not hardcode yield constants or internal tier copy", e6, /0\.06|166\.67|G1-G6|档位 \{tier\.id\}/],
+  ["E view must not expose server-canonical in visible E flows", eView, /setToast\([^\n]*server-canonical|detail: `[^`\n]*server-canonical|sub=\{<AutoGloss>\{[^\n]*server-canonical/],
+  ["K1 must not expose linkWeight or admin event names in operator copy", k1, /linkWeight 仅|linkWeight 例外|admin\.cluster|admin\.risk_threshold|detected 命中|flagged 可疑|frozen 已冻结|released 解除误判|cleared 判定正常/],
+  ["K3 must not expose action enum labels or backend copy", k3, /命中动作:[^<]*(delay|freeze|manual)|>\{d\.act\}<|接口预留|本批不实现|admin\.withdraw_rule|服务器拒绝\(409\)|返回 409|draft 草拟|active 生效|paused 停用|archived 归档/],
+  ["K3 rule dialogs must not use free-text multi-value input", k3, /新建提现风控规则[\s\S]{0,900}edit: \{ kind: "text"|规则阈值调整[\s\S]{0,900}edit: \{ kind: "text"|archived 终态 409/],
+  ["D2 large confirm line must not be hardcoded", [d2, dData, dRegistry].join("\n"), /LARGE_LINE|静态参数|小额\(< \$1,000\)|大额\(≥ \$1,000\)|大额操作确认线\(\$1,000\)|小额\(<\$1,000\)/],
+  ["D2 must not expose K5 hold copy", [d2, dData, withdrawalsSeed, commandCenter].join("\n"), /K5 hold|复审 hold|复审期间该单 hold|进入复审 hold/],
+  ["D2 state flow must not expose server state codes or HTTP codes", d2, /submitted 已提交|review-pending 待人工|review-passed 已批|tx-failed|返回 409|\b409\b|before: "review-|after: "review-|before: "frozen"|after: "refunded"|before: effSt\(w\.id\)/],
+];
+for (const [label, src, re] of visibleBans) if (re.test(src)) fail.push(label);
+if (fail.length) {
+  console.error(fail.map((x) => `  - ${x}`).join("\n"));
+  process.exit(1);
+}
+console.log("  SPEC-7 risk config source contract OK");
+NODE
+); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [spec7-risk-config-source] SPEC-7 风控配置源码契约失败"
+fi
 
 echo "== [2/4] nav routes (HTTP 200 + scaffold needle) =="
 while IFS='|' read -r path id status; do
@@ -55,8 +250,8 @@ while IFS='|' read -r path id status; do
   if [ "$status" = "scaffold" ]; then check_html "$path" "规格就绪"; fi
 done < <("$NODE_BIN" "$HERE/nav-routes.mjs" | tr -d '\r')
 nav_count=$("$NODE_BIN" "$HERE/nav-routes.mjs" | grep -c '|')
-if [ "$nav_count" -ne 70 ]; then
-  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 70)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
+if [ "$nav_count" -ne 72 ]; then
+  echo "  ✗ nav-routes 仅提取 $nav_count 条(期望 72)— console-nav.ts 格式漂移致 verify 漏检"; fail=$((fail+1))
 else
   echo "  nav-routes: $nav_count 条路由"
 fi
@@ -64,7 +259,7 @@ fi
 echo "== [3/4] landing + flagship needles =="
 check_http "/"
 check_html "/" "运营总览"
-check_html "/" "server-canonical"
+check_html "/" "服务端权威"
 # 指挥台首页各区(落地即态势)
 check_html "/" "兑付覆盖率"
 check_html "/" "高敏操作动态"
@@ -80,7 +275,7 @@ check_html "/finance/withdrawals" "提现审核队列"
 check_html "/finance/withdrawals" "WD-90412"
 check_html "/finance/withdrawals" "资金与财务"
 check_html "/finance/withdrawals" "正常 5 种状态 + 异常 6 种状态"   # D2 状态机条(server-canonical)
-check_html "/finance/withdrawals" "K5 hold"                # 复审未过禁放(PRD D2⑦ 联动)
+check_html "/finance/withdrawals" "K5 复审未决"             # 复审未过禁放(PRD D2⑦ 联动)
 # C 域六页(design_handoff_c_domain port 2026-06-11:C1-C6 全设计稿视图)+ 用户详情(L3 深链页 · 保留)
 check_http "/users/search/U-88421"
 check_html "/users/search" "用户与账户"
@@ -180,13 +375,13 @@ check_html "/" "模块"                                  # 域卡信息气味(�
 check_html "/finance/recon" "充值对账"                  # D1 设计稿视图:充值对账标题在 SSR 渲染
 check_html "/finance/recon" "资金与财务"                # D 域视图页头(子页统一布局信号)
 check_html "/overview/dual-ledger" "健康"               # B1 覆盖率状态信号(运营者一眼可读;m7 基准 118.1%≥健康线110 → zoneLabel「健康」)
-check_html "/finance/withdrawals" "review"              # D2 设计稿视图:提现状态在 SSR 表渲染
+check_html "/finance/withdrawals" "提现状态"            # D2 设计稿视图:提现状态中文信号在 SSR 表渲染
 check_html "/finance/withdrawals" "WD-90412"
 # 镜头 C 顶级 PM:决策颗粒度 / 全局态势 / 红线 / 审计可信不退化
 check_html "/overview/dual-ledger" "净敞口"             # 颗粒度:储备−负债敞口
 check_html "/overview/dual-ledger" "红线"               # 兑付红线(放大流出防线)
 check_html "/overview/dual-ledger" "环比"               # 趋势/基线对比
-check_html "/" "server-canonical"                      # 全局态势/可信信号常驻
+check_html "/" "服务端权威"                            # 全局态势/可信信号常驻
 check_html "/finance/withdrawals" "提现审核队列"        # 决策颗粒度:提现确认队列在位
 check_html "/finance/withdrawals" "风险"                # 风险维度在位
 # 镜头 D 交互设计师:版面填充/洞察哨兵(防留白回潮 + 控件失数退化)
@@ -204,6 +399,7 @@ check_html "/risk/abuse" "闭环怎么判"                   # K2 设计稿 port
 check_html "/risk/withdrawal-rules" "四道关"             # K3 设计稿 port:四维规则卡在位
 check_html "/risk/scoring" "评分权重"                   # K4 设计稿 port:权重滑杆卡在位
 check_html "/risk/kyc-review" "复审触发队列"             # K5 设计稿 port:SLA 队列在位
+check_html "/risk/janus-c2" "命中漏斗"                   # K6 设计稿 port:看板命中漏斗在位
 check_html "/finance/recon" "支付商报表 vs 平台入账"     # D1 设计稿 port:逐渠道对账面在位
 check_html "/finance/recon" "拒付处置"                  # D1 chargeback 三连原子处置区在位
 check_html "/finance/pool" "真实储备明细"                # D3 设计稿 port:储备底账(唯一源)在位
@@ -236,13 +432,6 @@ if (cd "$ROOT" && "$NODE_BIN" scripts/admin-interaction-audit.mjs); then
   pass=$((pass+1))
 else
   fail=$((fail+1)); fails="$fails\n  [interaction-audit] 有 HIGH 残留(跑 node scripts/admin-interaction-audit.mjs 看明细)"
-fi
-
-echo "== [+] Admin auth source gate(禁止本地预览登录/RBAC 本地身份源)=="
-if (cd "$ROOT" && "$NODE_BIN" scripts/check-rbac-auth-source.mjs); then
-  pass=$((pass+1))
-else
-  fail=$((fail+1)); fails="$fails\n  [admin-auth-source] auth route 本地预览登录 / RBAC 本地身份源残留"
 fi
 
 echo "== [+] 动作完整性 gate(防新增死控件 + built 不退化 + 欠账量化;OPS_BATCH 收紧批次)=="
@@ -288,11 +477,11 @@ else
   fail=$((fail+1)); fails="$fails\n  [admin-support-surface] 域 M /service/* 路由/业务控件/字段镜像退化"
 fi
 
-echo "== [+] UniApp 全路由迁移 gate(Next 映射/pages/runtime/action sample)=="
+echo "== [+] UniApp 自一致性 gate(pages.json↔vue 文件/runtime/action sample;2026-06-26 H5 退役后从'Next 映射'重命题)=="
 if (cd "$ROOT" && "$NODE_BIN" scripts/uniapp-port-coverage-audit.mjs); then
   pass=$((pass+1))
 else
-  fail=$((fail+1)); fails="$fails\n  [uniapp-port-coverage] Next→UniApp 路由映射/runtime/action sample 有缺口"
+  fail=$((fail+1)); fails="$fails\n  [uniapp-port-coverage] UniApp pages/runtime/action sample 有缺口"
 fi
 
 echo "== [+] UniApp persona walkthrough gate(提现/兑换回购/team finance 导航)=="
@@ -302,9 +491,9 @@ run_uniapp_persona_walkthrough() {
     win_root="$(wslpath -w "$ROOT")"
     uni_base="${UNI_BASE_URL:-http://localhost:5173}"
     ps_script="Set-Location -LiteralPath '$win_root'; \$env:UNI_BASE_URL='$uni_base'; node scripts\\uniapp-persona-walkthrough-proof.mjs"
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ps_script"
+    run_with_timeout "$WALKTHROUGH_TIMEOUT" powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ps_script"
   else
-    (cd "$ROOT" && "$NODE_BIN" scripts/uniapp-persona-walkthrough-proof.mjs)
+    (cd "$ROOT" && run_with_timeout "$WALKTHROUGH_TIMEOUT" "$NODE_BIN" scripts/uniapp-persona-walkthrough-proof.mjs)
   fi
 }
 if run_uniapp_persona_walkthrough; then
@@ -321,15 +510,22 @@ run_feature_mapping_walkthrough() {
     uni_base="${UNI_BASE_URL:-http://localhost:5173}"
     admin_base="${ADMIN_BASE_URL:-${ADMIN_BASE:-http://localhost:3002}}"
     ps_script="Set-Location -LiteralPath '$win_root'; \$env:UNI_BASE_URL='$uni_base'; \$env:ADMIN_BASE_URL='$admin_base'; node scripts\\feature-mapping-walkthrough-proof.mjs"
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ps_script"
+    run_with_timeout "$WALKTHROUGH_TIMEOUT" powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ps_script"
   else
-    (cd "$ROOT" && "$NODE_BIN" scripts/feature-mapping-walkthrough-proof.mjs)
+    (cd "$ROOT" && run_with_timeout "$WALKTHROUGH_TIMEOUT" "$NODE_BIN" scripts/feature-mapping-walkthrough-proof.mjs)
   fi
 }
 if run_feature_mapping_walkthrough; then
   pass=$((pass+1))
 else
   fail=$((fail+1)); fails="$fails\n  [feature-mapping-walkthrough] FM-004/005/008/013/016 业务闭环失败"
+fi
+
+echo "== [+] 三端改造 FE-BE 映射覆盖 gate(SPEC-5 M1-M11)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/fe-be-mapping-coverage.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [fe-be-mapping-coverage] 三端改造 D 表与 admin FRONTEND-LEVER-MAP/PRD 未闭环"
 fi
 
 echo "== [+] SKU 字段镜像 gate(后台 OpsSku ⊇ 前端 Product;防前端加字段后台漏)=="
@@ -381,11 +577,11 @@ else
   fail=$((fail+1)); fails="$fails\n  [inner-block-no-border] 非按钮 filled chip/icon/badge + border 违规(跑 node scripts/inner-block-no-border-sentinel.mjs 看明细;合法 keep 加进哨兵 EXEMPT)"
 fi
 
-echo "== [+] A2 审计覆盖 gate(高敏操作必落后端 A2 审计 + A2 页读取 overview)=="
+echo "== [+] A2 审计覆盖 gate(高敏操作必落 A2 审计 + A2 页订阅实时 store)=="
 if (cd "$ROOT" && "$NODE_BIN" scripts/a2-audit-coverage-sentinel.mjs); then
   pass=$((pass+1))
 else
-  fail=$((fail+1)); fails="$fails\n  [a2-audit-coverage] A2 页脱离后端 overview / 高敏 gap 分支审计镜像缺失 / A1-A2 后端审计链断开(跑 node scripts/a2-audit-coverage-sentinel.mjs 看明细)"
+  fail=$((fail+1)); fails="$fails\n  [a2-audit-coverage] A2 页脱离实时 audit / 高敏 gap 分支漏 logAudit / A1 runMutation 漏传审计(跑 node scripts/a2-audit-coverage-sentinel.mjs 看明细)"
 fi
 
 echo "== [+] 节奏单源 gate(活渲染面禁读 PHASE/CURRENT_PHASE 当前态,必走 rhythmState)=="

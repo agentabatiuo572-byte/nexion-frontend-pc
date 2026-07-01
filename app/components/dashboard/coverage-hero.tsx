@@ -3,35 +3,25 @@
 /**
  * B1 双账本总览 · 兑付覆盖率 hero(设计稿 CoverageHero 模式)。
  * 大数 + 状态灯 + 横向分区条(红/黄/绿)+ 当前标记 + 阈值图例 + 三账本子卡 + 溯源脚注。
- * 数字从 /api/admin/treasury/b-domain 读取(储备 ÷ 应付负债);server-canonical,前端只读展示。
+ * 数字全部取自 canonical LEDGER(储备 ÷ 应付负债);server-canonical,前端只读展示。
  */
 import Link from "next/link";
-import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { LEDGER } from "@/lib/mock/admin/ledger";
 import { fmtUsdCompact } from "@/lib/format";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function CoverageHero() {
-  const bDomain = useBDomainDashboard();
-  const { ledger: LEDGER } = bDomain;
-  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
-    return <BDomainDataState title="B1 兑付覆盖率" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
-  }
   const cov = LEDGER.coverageRatio;
   const { redlinePct: red, healthyPct: healthy, reserveUsd, liabilitiesUsd, coverageSeries: cs } = LEDGER;
-  if (cs.length < 2) {
-    return <BDomainDataState title="B1 兑付覆盖率" error="B1_COVERAGE_SERIES_EMPTY" onRetry={bDomain.reload} />;
-  }
   const net = reserveUsd - liabilitiesUsd; // 净敞口(负 = 缺口)
-  const series = cs;
 
   const zone = cov < red ? "danger" : cov < healthy ? "warning" : "success";
   const zoneVar = zone === "danger" ? "var(--v5-danger)" : zone === "warning" ? "var(--v5-warning)" : "var(--v5-success)";
   const zoneLabel = zone === "danger" ? "跌破红线" : zone === "warning" ? "警戒" : "健康";
-  const deltaPp = r2(series[series.length - 1] - series[series.length - 2]); // 较上窗口
-  const trendPp = r2(series[series.length - 1] - series[0]); // 近 8 窗口
+  const deltaPp = r2(cs[cs.length - 1] - cs[cs.length - 2]); // 较上窗口
+  const trendPp = r2(cs[cs.length - 1] - cs[0]); // 近 8 窗口
 
   // 横向分区条量程(90%–130%):红 < 红线、黄 红线→健康线、绿 ≥ 健康线(容纳 m7 绿区 118 + 头寸)
   const lo = 90;
@@ -50,7 +40,7 @@ export function CoverageHero() {
   ];
   const tiles = [
     { k: "真实储备账本", v: fmtUsdCompact(reserveUsd), cap: "口径同 D3 · 实时聚合" },
-    { k: "应付负债账本", v: fmtUsdCompact(liabilitiesUsd), cap: `${LEDGER.accounts.length} 类科目汇总 → B2` },
+    { k: "应付负债账本", v: fmtUsdCompact(liabilitiesUsd), cap: "8 类科目汇总 → B2" },
     { k: "净敞口(储备 − 负债)", v: fmtUsdCompact(net), cap: net < 0 ? "覆盖率 <100% · 兑付缺口" : "30d 趋势 →", tone: net < 0 ? "var(--v5-danger)" : "var(--v5-success)" },
   ];
 
@@ -63,13 +53,13 @@ export function CoverageHero() {
         aria-hidden
       />
 
-      {/* 顶栏:B1 + 标题 + server-canonical */}
+      {/* 顶栏:B1 + 标题 + 服务端权威 */}
       <div className="relative flex flex-wrap items-center gap-2.5">
         <span className="font-mono-tabular rounded-[7px] px-2 py-0.5 text-[11px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)", border: "1px solid var(--v5-border)" }}>B1</span>
         <span className="font-display text-[14.5px]" style={{ color: "var(--v5-ink)" }}>双账本总览 · <AutoGloss>兑付覆盖率</AutoGloss></span>
         <span className="ml-auto inline-flex items-center gap-1.5 rounded-[7px] px-2 py-0.5 font-mono-tabular text-[11px]" style={{ background: "var(--v5-tech-cyan-soft)", color: "var(--v5-tech-cyan)", border: "1px solid var(--v5-tech-cyan-border)" }}>
           <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-tech-cyan)" }} />
-          server-canonical
+          服务端权威
         </span>
       </div>
 

@@ -1,9 +1,9 @@
 // 运营后台 · 交互完整性自查门(防「打地鼠」)。
 // 把本会话踩过的 6 类问题固化成静态扫描,每次 verify 跑一遍,残留即 FAIL。
-//   A 死控件:hub 卡有 onClick 动作却没接真实后端 client(只 toast)
+//   A 死控件:hub 卡有 onClick 动作却没接真状态 store(只 toast)
 //   B 上下文错配:多-Tab 域视图页头动作未随 Tab 切换(硬编码单一动作)
 //   C 链接目标错:per-user 详情页 KPI/stat 链到全局域路由(应锚点到本页/本实体)
-//   E persist 不显:读 admin persist store 的组件缺水合门(mounted/hasHydrated)
+//   E persist 不显:读 admin persist store 的组件缺水合门(useOpsHydrated/mounted)
 //   F 版本漂移:前端 PRD 文件名 / 内部版本表 / prd-guard 路径 三者版本号不一致
 //   G 凭据反模式:运营后台出现明文密码输入(应走邀请 / SSO / 临时密码强制改)
 //   H 绕 操作确认:高敏处置(放行/驳回/封禁/冻结/终止/升级/kill/红冲…)的 onClick 直接 setParam 或仅高敏 setToast 而未经 setActionConfirm 操作确认(C-10 强制登出 + 本轮 a/c/k-view 放行驳回/终止/升级 教训)
@@ -14,9 +14,6 @@ import { fileURLToPath } from "url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN = path.resolve(ROOT, "..");
-const PRD_DIR = fs.existsSync(path.join(ROOT, "docs", "PRD"))
-  ? path.join(ROOT, "docs", "PRD")
-  : path.join(PLAN, "PRD");
 const read = (p) => { try { return fs.readFileSync(p, "utf8"); } catch { return ""; } };
 function walk(dir, re, acc = []) {
   try {
@@ -38,15 +35,15 @@ function canonicalPathKey(p) {
   return value;
 }
 
-// ───────────── A 死控件:hub 卡有动作按钮却没接真实后端 client ─────────────
+// ───────────── A 死控件:hub 卡有动作按钮却没接真状态 store ─────────────
 for (const f of walk(path.join(ROOT, "app/components/hub"), /\.tsx$/)) {
   const s = read(f);
   const hasActionBtn = /onClick=\{(?:\(\)\s*=>|async)/.test(s) && /\b(toast|confirm)\b/.test(s);
-  const importsBackendClient = /from "@\/lib\/admin\//.test(s) || /\/api\/admin\//.test(s);
+  const importsRealStore = /from "@\/lib\/store\/admin\/(user-ops-store|platform-config-store)"/.test(s);
   // 纯只读卡(只有 <Link> 跳转、无 onClick 动作)豁免
   const onlyLinks = !/onClick=\{/.test(s);
-  if (hasActionBtn && !importsBackendClient && !onlyLinks && !s.includes("audit-ok:no-store")) {
-    add("A", "HIGH", f, "hub 卡含 onClick 动作 + toast/confirm,但未 import 后端接线→ 疑似死控件(点了不改状态)。接真实接口或标注 // audit-ok:no-store");
+  if (hasActionBtn && !importsRealStore && !onlyLinks && !s.includes("audit-ok:no-store")) {
+    add("A", "HIGH", f, "hub 卡含 onClick 动作 + toast/confirm,但未 import 真状态 store(user-ops/platform-config)→ 疑似死控件(点了不改状态)。接 store 或标注 // audit-ok:no-store");
   }
 }
 
@@ -92,27 +89,21 @@ for (const f of walk(path.join(ROOT, "app"), /\.tsx$/)) {
   for (const hook of storeImportNames) {
     // 读 state 字段(selector 含 s.<field>,排除只取 action 的情况较难,宽松:出现 useXxx((s) => s. 即视为读 state)
     const readsState = new RegExp(hook + "\\(\\(s\\)\\s*=>\\s*s\\.").test(s);
-    const gated = /\bmounted\b|hasHydrated/.test(s);
+    const gated = /useOpsHydrated|usePlatformHydrated|\bmounted\b|hasHydrated/.test(s);
     if (readsState && !gated && !s.includes("audit-ok:hydration")) {
-      add("E", "HIGH", f, `${rel(f)} 读 persist store(${hook}.state)但无水合门(mounted/hasHydrated)→ 刷新后 UI 可能不反映持久态(SSR 水合时序)。加水合门或标注 // audit-ok:hydration`);
+      add("E", "HIGH", f, `${rel(f)} 读 persist store(${hook}.state)但无水合门(useOpsHydrated/mounted)→ 刷新后 UI 可能不反映持久态(SSR 水合时序)。加水合门或标注 // audit-ok:hydration`);
       break;
     }
   }
 }
 
-// ───────────── F 前端 PRD 版本号三处一致 ─────────────
+// ───────────── F 前端 PRD 文件唯一性 ─────────────
+// 2026-06-26 H5 工程退役后,prd-guard hook 一并删除;
+// 此处只保留 PRD 文件唯一性检查(防多版本并存)。
 (() => {
-  const prdDir = PRD_DIR;
+  const prdDir = path.join(PLAN, "PRD");
   const prdFiles = fs.readdirSync(prdDir).filter((n) => /^Nexion_产品功能架构设计文档_v[\d.]+\.md$/.test(n));
-  if (prdFiles.length !== 1) { add("F", "MEDIUM", prdDir, `前端 PRD 文件应唯一,实测 ${prdFiles.length} 个:${prdFiles.join(", ")}`); return; }
-  const fileVer = prdFiles[0].match(/_v([\d.]+)\.md$/)[1];
-  const guard = read(path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"));
-  const expectedPrd = path.join(prdDir, prdFiles[0]);
-  const guardPath = (guard.match(/const PRD = normalize\(['"]([^'"]+)['"]\)/) || [])[1];
-  if (!guardPath) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), "prd-guard 未声明 canonical PRD 路径");
-  else if (canonicalPathKey(guardPath) !== canonicalPathKey(expectedPrd)) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), `prd-guard 守护路径 ${guardPath} ≠ canonical PRD ${expectedPrd}`);
-  const guardVer = (guard.match(/产品功能架构设计文档_v([\d.]+)\.md/) || [])[1];
-  if (guardVer && guardVer !== fileVer) add("F", "MEDIUM", path.join(PLAN, "Nexion-prototype/.claude/hooks/prd-guard.mjs"), `prd-guard 守护版本 v${guardVer} ≠ 实际 PRD 文件 v${fileVer}`);
+  if (prdFiles.length !== 1) add("F", "MEDIUM", prdDir, `前端 PRD 文件应唯一,实测 ${prdFiles.length} 个:${prdFiles.join(", ")}`);
 })();
 
 // ───────────── G 凭据反模式:运营后台出现明文密码输入 ─────────────

@@ -3,7 +3,7 @@ import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1
 import type { E2PhoneTier } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
-import type { OpsSku, OpsReview, OpsTask } from "@/lib/admin/platform-types";
+import type { OpsSku, OpsReview, OpsTask } from "@/lib/store/admin/platform-config-store";
 
 /**
  * E 域子视图共享类型。
@@ -20,9 +20,9 @@ export type EOp =
   | "task-price"      // 任务改单价(E2 后端 API,操作确认 出价格编辑框)
   | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API
   | "phone-tier"      // 手机算力档位收益 → E2 后端 API
-  | "param"           // 自由值调参 → E1/E3 后端配置接口;未接后端的 key 直接失败,不写本地 store
-  | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];逐字段写后端 config
-  | "param-fixed"     // 固定值写入 → E1/E3 后端配置接口;不出编辑框
+  | "param"           // 自由值调参 → E3 走后端 config,其它 legacy setParam;操作确认 出「目标新值」
+  | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];E3 逐字段写后端 config
+  | "param-fixed"     // 固定值写入 → E3 走后端 config,其它 legacy setParam;不出编辑框
   | "phase-save"      // E1 阶段新增/编辑
   | "phase-current"   // E1 当前阶段切换
   | "phase-archive"   // E1 阶段归档
@@ -87,6 +87,8 @@ export interface EOrder {
 
 /** 子视图上下文:派生读 + 打开抽屉/操作确认 + toast。全部由 shell 注入,子视图无自有 store。 */
 export interface EViewCtx {
+  hydrated: boolean;
+  pget: (k: string) => string | undefined;
   pE: (k: string) => string;
   openActionConfirm: (m: McSpec) => void;
   toast: (msg: string) => void;

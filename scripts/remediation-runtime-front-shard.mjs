@@ -1,5 +1,5 @@
-// Runtime crawl helper for Next reference and UniApp H5 L1 shards.
-// It mirrors the admin route crawler but chooses base URL by shard side.
+// Runtime crawl helper for UniApp H5 L1 shards.
+// The old H5 app retired on 2026-06-26; active frontend evidence is UniApp.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -9,9 +9,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AUDIT = path.join(ROOT, "docs", "audit");
 const SHARDS = path.join(AUDIT, "shards");
 const SCREENSHOTS = path.join(AUDIT, "screenshots");
-const NEXT_BASE_URL = process.env.NEXT_BASE_URL || "http://localhost:3001";
 const UNI_BASE_URL = process.env.UNI_BASE_URL || "http://localhost:5173";
-const shardId = process.argv[2] || "NEXT-FR-01";
+const shardId = process.argv[2] || "UNI-FR-01";
 const session = process.env.AGENT_BROWSER_SESSION || `nexion-front-${shardId.toLowerCase()}`;
 
 function readJson(file) {
@@ -85,13 +84,6 @@ function lineJson(file, obj) {
 }
 
 function sampleRoute(route, side) {
-  if (side === "nextReference") {
-    return route
-      .replace("[productId]", "stellarbox-s1")
-      .replace("[id]", "ORD-AUDIT-0001")
-      .replace("[code]", "NX-DEMO")
-      .replace("[hash]", "0xdemo");
-  }
   if (side === "uniapp") {
     if (route === "/#/pages/store/detail") return "/#/pages/store/detail?id=stellarbox-s1";
     if (route === "/#/pages/store/order-detail") return "/#/pages/store/order-detail?id=ORD-AUDIT-0001";
@@ -101,14 +93,16 @@ function sampleRoute(route, side) {
 
 function routeUrl(route, side) {
   const sampled = sampleRoute(route, side);
-  const base = side === "uniapp" ? UNI_BASE_URL : NEXT_BASE_URL;
+  if (side !== "uniapp") throw new Error(`Unsupported frontend side after H5 retirement: ${side}`);
+  const base = UNI_BASE_URL;
   if (sampled.startsWith("/#/")) return `${base}${sampled}`;
   if (sampled.startsWith("#/")) return `${base}/${sampled}`;
   return `${base}${sampled}`;
 }
 
 function seedAuditState(side) {
-  const base = side === "uniapp" ? `${UNI_BASE_URL}/#/pages/onboarding/intro` : `${NEXT_BASE_URL}/onboarding/intro`;
+  if (side !== "uniapp") throw new Error(`Unsupported frontend side after H5 retirement: ${side}`);
+  const base = `${UNI_BASE_URL}/#/pages/onboarding/intro`;
   run(["open", base], { timeout: 45000 });
   run(["wait", "--load", "networkidle"], { timeout: 45000 });
   return evalJson(`JSON.stringify((() => {
@@ -132,31 +126,46 @@ function seedAuditState(side) {
         { status: 'paid', ts: now - 90000, note: 'Settled via usdt-trc20' },
       ],
     };
-    if (${JSON.stringify(side)} === 'nextReference') {
-      localStorage.setItem('nexion-auth-v1', JSON.stringify({
-        state: { isAuthenticated: true, email, onboardingComplete: true },
-        version: 2,
-      }));
-      localStorage.setItem('nexion-orders-v4', JSON.stringify({
-        state: { orders: [auditOrder] },
-        version: 0,
-      }));
+    const uniAuth = {
+      isAuthenticated: true,
+      email,
+      onboardingComplete: true,
+    };
+    const uniOrders = { orders: [auditOrder] };
+    if (window.uni && typeof window.uni.setStorageSync === 'function') {
+      window.uni.setStorageSync('nexion-auth-v1', uniAuth);
+      window.uni.setStorageSync('nexion-orders-v4', uniOrders);
     } else {
-      const uniAuth = {
-        isAuthenticated: true,
-        email,
-        onboardingComplete: true,
-      };
-      const uniOrders = { orders: [auditOrder] };
-      if (window.uni && typeof window.uni.setStorageSync === 'function') {
-        window.uni.setStorageSync('nexion-auth-v1', uniAuth);
-        window.uni.setStorageSync('nexion-orders-v4', uniOrders);
-      } else {
-        localStorage.setItem('nexion-auth-v1', JSON.stringify(uniAuth));
-        localStorage.setItem('nexion-orders-v4', JSON.stringify(uniOrders));
-      }
+      localStorage.setItem('nexion-auth-v1', JSON.stringify(uniAuth));
+      localStorage.setItem('nexion-orders-v4', JSON.stringify(uniOrders));
     }
     return { ok: true, side: ${JSON.stringify(side)}, auth: localStorage.getItem('nexion-auth-v1') };
+  })())`);
+}
+
+function enableComputeShareForAudit() {
+  run(["open", `${UNI_BASE_URL}/#/pages/me/devices`], { timeout: 45000 });
+  run(["wait", "--load", "networkidle"], { timeout: 45000 });
+  return evalJson(`JSON.stringify((() => {
+    const store = window.getApp?.()._pStores?.config;
+    if (!store || typeof store._devSetFlag !== 'function') {
+      return { ok: false, reason: 'config-store-unavailable' };
+    }
+    store._devSetFlag('computeShareEnabled', true);
+    if (typeof store._devSetComputeShareContent === 'function') {
+      store._devSetComputeShareContent({
+        enTitle: 'Audit GPU title from config',
+        enGuide: 'Audit GPU guide from config proves E6 download copy reaches the client.',
+        zhTitle: '审计配置标题',
+        zhGuide: '审计配置说明',
+      });
+    }
+    return {
+      ok: store.isEnabled('computeShareEnabled'),
+      route: location.href,
+      title: store.config?.computeShare?.content?.enTitle || null,
+      guide: store.config?.computeShare?.content?.enGuide || null,
+    };
   })())`);
 }
 
@@ -166,8 +175,8 @@ fs.mkdirSync(SCREENSHOTS, { recursive: true });
 const plan = readJson(path.join(AUDIT, "l1-shards.json"));
 const shard = plan.shards.find((item) => item.id === shardId);
 if (!shard) throw new Error(`Unknown shard: ${shardId}`);
-if (!["nextReference", "uniapp"].includes(shard.side)) {
-  throw new Error(`Shard ${shardId} is ${shard.side}; use this script only for NEXT-FR-* or UNI-FR-* shards`);
+if (shard.side !== "uniapp") {
+  throw new Error(`Shard ${shardId} is ${shard.side}; use this script only for active UNI-FR-* shards`);
 }
 
 const outFile = path.join(SHARDS, `${shardId.toLowerCase()}-runtime.ndjson`);
@@ -179,9 +188,10 @@ for (const route of shard.routes || []) {
   const url = routeUrl(route, shard.side);
   const slug = safeName(route);
   const startedAt = new Date().toISOString();
+  const gatedState = route === "/#/pages/compute-share/download" ? enableComputeShareForAudit() : null;
   const entry = {
     shardId,
-    source: shard.side === "uniapp" ? "E-runtime-crawl" : "B-runtime-crawl",
+    source: "E-runtime-crawl",
     side: shard.side,
     route,
     url,
@@ -272,6 +282,7 @@ for (const route of shard.routes || []) {
     const isNotFound = runtime.errorText && /(404|not found)/i.test(runtime.bodyPreview || "");
     entry.status = isNotFound ? "route-error" : "captured";
     entry.seededState = seededState?.ok ? { ok: true, side: seededState.side } : seededState;
+    if (gatedState) entry.gatedState = gatedState;
     entry.evidence = {
       snapshot: path.relative(ROOT, snapshotPath).replace(/\\/g, "/"),
       screenshot: path.relative(ROOT, screenshotPath).replace(/\\/g, "/"),

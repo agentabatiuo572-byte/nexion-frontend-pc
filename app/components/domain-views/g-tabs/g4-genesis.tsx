@@ -1,255 +1,67 @@
 "use client";
 
-import { currentAdminOperator } from "@/lib/admin/current-operator";
 /**
- * G4 Genesis 经济 — 数据来自后端 /api/admin/market/nex/genesis 及 Genesis 业务表。
+ * G4 Genesis 经济 — 节点总量/单价/分红率(0.1%/日裁定)/二级版税 + 一二级监控 + 分红派发 + 持有台账。
+ * 分红双口径权威调和:基数口径派发($24.2M × 0.1% ÷ 1,000 = $24/slot/日,产品权威档·14 月回本)
+ * + 保底口径预提(节点价 × 0.1% = $10/节点/日 → 科目#4 $268K),超出保底部分从当期交易抽成直接派发不占预提;
+ * 派发流量与 MATURITY.genesis(20.3K/日 = 847 × $24)同源。
+ * 市场熔断 = J.killswitch.genesis(J1 同键);geo = GEOBLOCK(J2 权威只读)。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { Drawer } from "../design-kit";
-import {
-  fetchG4GenesisOverview,
-  rerunG4GenesisDividendBatch,
-  updateG4GenesisMarketStatus,
-  updateG4GenesisParam,
-  type G4Node,
-  type G4Overview,
-  type G4Param,
-} from "@/lib/admin/g4-client";
+import { Drawer, PaginationExemption } from "../design-kit";
+import { LEDGER } from "@/lib/mock/admin/ledger";
+import { GEOBLOCK, fmtM } from "@/lib/mock/admin/design-data";
+import { GENESIS, GENESIS_POOL_TODAY, GENESIS_PAYOUT_TODAY, GENESIS_NODES, GENESIS_NODE_DETAIL, G_FIN } from "./data";
 import type { GCtx } from "./types";
 
-const OPERATOR = currentAdminOperator;
-
-function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function fmtNumber(value: number, max = 2) {
-  return value.toLocaleString("en-US", { maximumFractionDigits: max });
-}
-
-function fmtUsd(value: number, max = 2) {
-  return `$${fmtNumber(value, max)}`;
-}
-
-function fmtUsdCompact(value: number) {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-  return fmtUsd(value);
-}
-
-function toneClass(tone: string) {
-  if (tone === "danger" || tone === "bad") return "bad";
-  if (tone === "warn" || tone === "ok" || tone === "dim") return tone;
-  return "dim";
-}
-
-function paramEditValue(param: G4Param) {
-  return param.value || param.displayValue;
-}
-
-function paramByKey(overview: G4Overview, key: string) {
-  return overview.params.find((param) => param.key === key);
-}
-
 export function G4Genesis({ ctx }: { ctx: GCtx }) {
-  const { toast, openActionConfirm, openConfirm } = ctx;
-  const [overview, setOverview] = useState<G4Overview | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
   const [nodeDrawer, setNodeDrawer] = useState<string | null>(null);
-  const [nodePageNo, setNodePageNo] = useState(1);
-  const [nodePageSize, setNodePageSize] = useState(10);
+  const cov = LEDGER.coverageRatio.toFixed(1);
 
-  const reload = useCallback(async (silent = false, page = nodePageNo, pageSize = nodePageSize) => {
-    if (!silent) setLoading(true);
-    setError("");
-    try {
-      const next = await fetchG4GenesisOverview(page, pageSize);
-      setOverview(next);
-      setNodePageNo(next.nodePage.page);
-      setNodePageSize(next.nodePage.pageSize);
-    } catch (err) {
-      setError(messageOf(err));
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [nodePageNo, nodePageSize]);
+  const marketOn = (pget("J.killswitch.genesis") ?? "on") === "on";
+  const geoBlocked = GEOBLOCK.filter((g) => g.status === "blocked").map((g) => g.cc);
+  const soldPct = (GENESIS.sold / GENESIS.totalSlots) * 100;
+  const batchRerun = pget(`G.genesis.rerun.${GENESIS.todayBatch}`) === "done";
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const next = await fetchG4GenesisOverview(1, 10);
-        if (!cancelled) {
-          setOverview(next);
-          setNodePageNo(next.nodePage.page);
-          setNodePageSize(next.nodePage.pageSize);
-        }
-      } catch (err) {
-        if (!cancelled) setError(messageOf(err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const mutate = useCallback(async (key: string, action: () => Promise<G4Overview>, success: string) => {
-    setBusyKey(key);
-    setError("");
-    try {
-      await action();
-      const next = await fetchG4GenesisOverview(nodePageNo, nodePageSize);
-      setOverview(next);
-      setNodePageNo(next.nodePage.page);
-      setNodePageSize(next.nodePage.pageSize);
-      toast(success);
-    } catch (err) {
-      const message = messageOf(err);
-      setError(message);
-      toast(`G4 操作失败 · ${message}`);
-    } finally {
-      setBusyKey(null);
-    }
-  }, [nodePageNo, nodePageSize, toast]);
-
-  const selectedNode = useMemo(() => {
-    if (!overview || !nodeDrawer) return null;
-    return overview.nodes.find((node) => node.id === nodeDrawer) || null;
-  }, [overview, nodeDrawer]);
-
-  if (loading && !overview) {
-    return (
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">G4 Genesis 经济</span><span className="sub">· 正在读取真实接口数据</span></div>
-        <div className="l-b"><div className="gtint">G4 数据加载中...</div></div>
-      </section>
-    );
-  }
-
-  if (!overview) {
-    return (
-      <section className="l-card">
-        <div className="l-h"><span className="ttl">G4 Genesis 经济</span><span className="sub">· 真实接口数据</span></div>
-        <div className="l-b">
-          <div className="gtint">G4 数据加载失败 · {error || "UNKNOWN_ERROR"}</div>
-          <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
-        </div>
-      </section>
-    );
-  }
-
-  const busy = !!busyKey;
-  const cov = overview.coverage.coverageRatio.toFixed(1);
-  const marketOn = overview.market.enabled;
-  const stats = overview.stats;
-  const dividend = overview.dividend;
-  const geoBlocked = overview.geoBlocked.filter((geo) => geo.status === "blocked").map((geo) => geo.cc).join(" / ") || "-";
-  const batchRerun = dividend.batchStatus === "done";
-  const soldPct = Math.max(0, Math.min(100, stats.soldPct));
-  const nodePage = overview.nodePage;
-
-  const loadNodePage = (page: number, pageSize = nodePage.pageSize) => {
-    void reload(false, page, pageSize);
-  };
-
-  const changeNodePageSize = (value: string) => {
-    const nextPageSize = Number(value);
-    if (!Number.isFinite(nextPageSize)) return;
-    setNodePageNo(1);
-    setNodePageSize(nextPageSize);
-    void reload(false, 1, nextPageSize);
-  };
-
-  const adjustParam = (param: G4Param) => {
-    openActionConfirm({
-      action: `Genesis 经济参数 · ${param.name}`,
-      detail: <><b>{param.name}</b> · 当前 {param.displayValue} · {param.note}</>,
-      amplifies: param.b1RedlineTriggered,
-      edit: { kind: "text", current: paramEditValue(param) },
-      run: (reason, value) => {
-        if (!value) return;
-        void mutate(
-          `param-${param.key}`,
-          () => updateG4GenesisParam(param.key, value, reason, OPERATOR()),
-          `${param.name} 已更新为 ${value}`,
-        );
-      },
-    });
-  };
-
-  const runMarketSwitch = () => {
-    openActionConfirm({
-      action: marketOn ? "一二级市场熔断" : "恢复一二级市场",
-      detail: marketOn
-        ? <>立即停一二级市场交易，联动 {overview.market.linkedDomain} 开关 {overview.market.configKey}。</>
-        : <>恢复一二级市场会恢复 Genesis 节点流转与分红派发，提交前核验 B1 覆盖率，当前 {cov}%。</>,
-      amplifies: !marketOn,
-      run: (reason) => {
-        void mutate(
-          "market-status",
-          () => updateG4GenesisMarketStatus(!marketOn, reason, OPERATOR()),
-          `Genesis 市场已${marketOn ? "熔断" : "恢复"}`,
-        );
-      },
-    });
-  };
-
-  const runRerunBatch = () => {
-    openConfirm({
-      action: `重跑今日分红批次 ${dividend.batchNo}`,
-      detail: "批次按日期带防重号:已发过的户不会重复发,只补发失败户。重跑结果落审计。",
-      chips: [["按日期防重 · 只补失败户", "done"], ["落审计", "ready"]],
-      reason: true,
-      okLabel: "确认重跑",
-      run: (reason) => {
-        void mutate(
-          "rerun-batch",
-          () => rerunG4GenesisDividendBatch(dividend.batchNo, reason, OPERATOR()),
-          `${dividend.batchNo} 重跑完成`,
-        );
-      },
-    });
-  };
-
-  const supplyParam = paramByKey(overview, "supply");
-  const priceParam = paramByKey(overview, "price");
-  const dividendParam = paramByKey(overview, "dividend");
-  const royaltyParam = paramByKey(overview, "royalty");
-  const divBaseParam = paramByKey(overview, "divBase");
+  const adjEco = (key: string, label: string, cur: string, note: string) => openActionConfirm({
+    action: `Genesis 经济参数 · ${label}`,
+    detail: <><b>{label}</b> · 当前 {cur} · {note}。运营执行门槛:财务主管/超管。</>,
+    edit: { kind: "text", current: cur },
+    run: (reason, v) => { if (v) setParam(`G.genesis.${key}`, v, { action: `Genesis 经济参数 ${label}`, reason }); toast(`${label} 已更新为 ${v}`); },
+  });
 
   return (
     <>
-      {error && <div className="gtint" style={{ marginBottom: 12 }}>G4 操作提示 · {error}</div>}
       <div className="f-stats">
-        <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div><div className="sub">{fmtUsd(stats.unitPrice, 0)} / 张 · 距售罄 {fmtNumber(stats.unsold, 0)} 张</div></div>
-        <div className="f-stat"><div className="k">分红承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">按真实 series + config 计算</div></div>
-        <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div><div className="sub">24h 量 {fmtUsdCompact(stats.secondary.vol24h)} · 在挂 {fmtNumber(stats.secondary.listed, 0)}</div></div>
-        <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">联动 {overview.market.linkedDomain} · {overview.market.configKey}</div></div>
+        <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{GENESIS.sold} / {GENESIS.totalSlots.toLocaleString("en-US")}</div><div className="sub">${GENESIS.unitPrice.toLocaleString("en-US")} / 张 · 距售罄 {GENESIS.totalSlots - GENESIS.sold} 张</div></div>
+        <div className="f-stat"><div className="k">分红承诺预提</div><div className="v">{fmtM(G_FIN.genesisAccrual)}</div><div className="sub">科目 #4 · 保底口径(节点价 × 0.1%)预提</div></div>
+        <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">${(GENESIS.secondary.floor / 1000).toFixed(1)}K</div><div className="sub">24h 量 ${(GENESIS.secondary.vol24h / 1000).toFixed(0)}K · 在挂 {GENESIS.secondary.listed}</div></div>
+        <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">证券类风险时一键停 · 联动 J1</div></div>
       </div>
 
       <div className="two-col r11" style={{ marginBottom: 16 }}>
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">节点经济参数</span>
-            <span className="sub">· 来自 nx_config_item + nx_genesis_series</span>
+            <span className="sub">· 分红率改动最敏感</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 2 }}>一级售出进度 {fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div>
+              <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 2 }}>一级售出进度 {GENESIS.sold} / {GENESIS.totalSlots.toLocaleString("en-US")}</div>
               <div className="sold"><i style={{ width: `${soldPct}%` }} /></div>
             </div>
-            {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{supplyParam.sub}</div></div><span className="v">{supplyParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(supplyParam)}>调整</button></div>}
-            {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价</div><div className="s">{priceParam.sub}</div></div><span className="v">{priceParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(priceParam)}>调整</button></div>}
-            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日分红率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(dividendParam)}>调整</button></div>}
-            {royaltyParam && <div className="p-row"><div className="txt"><div className="k">二级版税</div><div className="s">{royaltyParam.sub}</div></div><span className="v">{royaltyParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(royaltyParam)}>调整</button></div>}
+            <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">不能低于已铸造量</div></div><span className="v">{pget("G.genesis.supply") ?? "1,000"}</span><button className="l-btn sm mc" onClick={() => adjEco("supply", "节点总量", pget("G.genesis.supply") ?? "1,000", `≥ 已售 ${GENESIS.sold} · 只影响未来供应`)}>调整</button></div>
+            <div className="p-row"><div className="txt"><div className="k">一级单价</div><div className="s">在途购买锁价</div></div><span className="v">{pget("G.genesis.price") ?? "$9,999"}</span><button className="l-btn sm mc" onClick={() => adjEco("price", "一级单价", pget("G.genesis.price") ?? "$9,999", "只对新购生效")}>调整</button></div>
+            <div className="p-row"><div className="txt"><div className="k">每日分红率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">保底预提 = 节点价 × 持有量 × 0.1%/日(科目 #4)</div></div><span className="v">{pget("G.genesis.dividend") ?? "0.1% / 日"}</span><button className="l-btn sm mc" onClick={() => openActionConfirm({
+              action: "改每日分红率",
+              detail: <>当前基准 <b>0.1%/日</b>。升分红率 = 放大 USDT 流出,确认放行时验备付金红线(当前 {cov}%,422);<b>偏离 0.1% 基准的任何调整必须在原因里附 PM 决议引用</b>。财务主管执行门槛:超管。</>,
+              amplifies: true,
+              edit: { kind: "text", current: pget("G.genesis.dividend") ?? "0.1% / 日" },
+              run: (reason, v) => { if (v) setParam("G.genesis.dividend", v, { action: "Genesis 分红率调整", reason }); toast(`分红率已更新为 ${v} · 附 PM 决议引用`); },
+            })}>调整</button></div>
+            <div className="p-row"><div className="txt"><div className="k">二级版税</div><div className="s">卖家成交扣</div></div><span className="v">{pget("G.genesis.royalty") ?? "2.5%"}</span><button className="l-btn sm mc" onClick={() => adjEco("royalty", "二级版税", pget("G.genesis.royalty") ?? "2.5%", "范围 0–20% · 只对新成交")}>调整</button></div>
           </div>
         </section>
 
@@ -258,24 +70,32 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             <span className="ttl">一二级市场</span>
             <span className="sub">· 实时 stats · 分红跟随 NFT</span>
             <div className="r">
-              <button className="l-btn mc" disabled={busy} onClick={runMarketSwitch}>{marketOn ? "市场熔断" : "恢复市场"}</button>
+              <button className="l-btn mc" onClick={() => openActionConfirm({
+                action: marketOn ? "一二级市场熔断" : "恢复一二级市场",
+                detail: marketOn
+                  ? <>立即停一二级市场交易(证券类风险时用)。在锁分红按处置方案走(保留 / 暂停)。风控/合规执行门槛:超管,同步紧急开关矩阵(J1 genesis 闸)。</>
+                  : <>恢复一二级市场 = 恢复高客单产品流转与分红派发,确认放行时核验 B1 覆盖率(当前 {cov}%),同步 J1。</>,
+                amplifies: !marketOn,
+                run: (reason) => { setParam("J.killswitch.genesis", marketOn ? "off" : "on", { action: marketOn ? "Genesis 市场熔断" : "Genesis 市场恢复", reason }); toast(`Genesis 市场已${marketOn ? "熔断" : "恢复"} · 同步 J1`); },
+              })}>{marketOn ? "市场熔断" : "恢复市场"}</button>
               <Link href="/emergency/geo-block" className="l-btn">地域封锁(J2)→</Link>
             </div>
           </div>
           <div className="l-b">
             <div className="mk-tiles">
-              <div className="t"><div className="k">地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div></div>
-              <div className="t"><div className="k">24h 成交量</div><div className="v">{fmtUsdCompact(stats.secondary.vol24h)}</div></div>
-              <div className="t"><div className="k">在挂</div><div className="v">{fmtNumber(stats.secondary.listed, 0)}</div></div>
-              <div className="t"><div className="k">持有人</div><div className="v">{fmtNumber(stats.secondary.owners, 0)}</div></div>
+              <div className="t"><div className="k">地板价</div><div className="v">${(GENESIS.secondary.floor / 1000).toFixed(1)}K</div></div>
+              <div className="t"><div className="k">24h 成交量</div><div className="v">${(GENESIS.secondary.vol24h / 1000).toFixed(0)}K</div></div>
+              <div className="t"><div className="k">在挂</div><div className="v">{GENESIS.secondary.listed}</div></div>
+              <div className="t"><div className="k">持有人</div><div className="v">{GENESIS.secondary.owners}</div></div>
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>节点状态机</div>
             <div className="sm-strip">
-              {overview.stateMachine.map((state, index) => (
-                <span key={state} className={index <= 1 ? "st ok" : "st"}>{state}</span>
-              ))}
+              <span className="st ok">minted 售出/铸造</span><span className="ar">→</span>
+              <span className="st ok">held 持有计分红</span><span className="ar">挂单 →</span>
+              <span className="st">listed 二级挂单</span><span className="ar">成交扣 2.5% →</span>
+              <span className="st">sold 分红跟随新持有者</span>
             </div>
-            <div className="gtint" style={{ marginTop: 12 }}><b>分红与负债</b> · 当前地域封锁:{geoBlocked}(J2 只读)。二级转让后分红权跟随最新持有者，节点台账来自持有表。</div>
+            <div className="gtint" style={{ marginTop: 12 }}><b>分红与负债</b> · 买入即按保底口径增应付负债(科目 4「Genesis 日分红承诺」),每天 00:00 UTC 批量派发记账(D4),带防重号(按日期去重,重跑不重复发)。二级转让时分红权跟着 NFT 走,不跟旧持有者。二级版税收入进网络金库。当前地域封锁:{geoBlocked.join(" / ")}(J2 制裁名单,只读)。</div>
           </div>
         </section>
       </div>
@@ -283,91 +103,78 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">分红派发监控</span>
-          <span className="sub">· 派发池和批次来自后端计算</span>
+          <span className="sub">· 派发 = 平台日交易量基数 × 0.1% ÷ 1,000 slot · 预提 = 节点价 × 0.1% 保底(科目 #4)</span>
           <div className="r">
-            {divBaseParam && <button className="l-btn mc" disabled={busy} onClick={() => adjustParam(divBaseParam)}>调整基数口径</button>}
-            <button className="l-btn" disabled={busy} onClick={runRerunBatch}>重跑今日批次{batchRerun ? "(已重跑)" : ""}</button>
+            <button className="l-btn mc" onClick={() => openActionConfirm({
+              action: "调整分红基数口径",
+              detail: <>当前:派发池 = <b>平台日交易量 × 0.1% ÷ 1,000 slot 均分</b>(${GENESIS.perSlotPerDay}/slot/日);负债预提按节点价 × 0.1% 保底。改基数口径(换基数、换均分方式)= 改分红算法,直接影响每日应付——确认放行时验备付金红线(422),必须附 PM 决议引用。财务主管执行门槛:超管。</>,
+              amplifies: true,
+              edit: { kind: "text", current: "平台日交易量 × 0.1% ÷ 1,000" },
+              run: (reason, v) => { if (v) setParam("G.genesis.divBase", v, { action: "Genesis 分红基数口径调整", reason }); toast("基数口径调整已确认生效 · 附 PM 决议"); },
+            })}>调整基数口径(操作确认)</button>
+            <button className="l-btn" onClick={() => openConfirm({
+              action: `重跑今日分红批次 ${GENESIS.todayBatch}`,
+              detail: "批次按日期带防重号:已发过的户不会重复发,只补发失败户。重跑结果落审计。",
+              chips: [["按日期防重 · 只补失败户", "done"], ["落审计", "ready"]], reason: true, okLabel: "确认重跑",
+              run: (reason) => { setParam(`G.genesis.rerun.${GENESIS.todayBatch}`, "done", { action: `重跑分红批次 ${GENESIS.todayBatch}`, reason }); toast(`${GENESIS.todayBatch} 重跑完成 · 补发 0 户(无失败)`); },
+            })}>重跑今日批次{batchRerun ? "(已重跑)" : ""}</button>
           </div>
         </div>
         <div className="l-b">
           <div className="mk-tiles">
-            <div className="t"><div className="k">平台日交易量基数(今日)</div><div className="v">{fmtUsdCompact(dividend.dailyVolumeBase)}</div></div>
-            <div className="t"><div className="k">今日分红池</div><div className="v" style={{ color: "var(--success)" }}>{fmtUsdCompact(dividend.poolToday)}</div></div>
-            <div className="t"><div className="k">每 slot 均分</div><div className="v">{fmtUsd(dividend.perSlotPerDay)} / 天</div></div>
-            <div className="t"><div className="k">今日批次 {dividend.batchNo}</div><div className="v" style={{ color: "var(--success)" }}>已派 {fmtNumber(stats.sold, 0)} 户 · {fmtUsdCompact(dividend.payoutToday)}</div></div>
+            <div className="t"><div className="k">平台日交易量基数(今日)</div><div className="v">${(GENESIS.dailyVolumeBase / 1e6).toFixed(1)}M</div></div>
+            <div className="t"><div className="k">今日分红池(基数 × 0.1%)</div><div className="v" style={{ color: "var(--success)" }}>${(GENESIS_POOL_TODAY / 1000).toFixed(1)}K</div></div>
+            <div className="t"><div className="k">每 slot 均分(÷ 1,000)</div><div className="v">${GENESIS.perSlotPerDay} / 天</div></div>
+            <div className="t"><div className="k">今日批次 {GENESIS.todayBatch}</div><div className="v" style={{ color: "var(--success)" }}>已派 {GENESIS.sold} 户 · ${(GENESIS_PAYOUT_TODAY / 1000).toFixed(1)}K</div></div>
           </div>
-          <div className="gtint" style={{ marginTop: 12 }}><b>两套口径</b> · 用户派发按配置基数均分；财务预提按节点价 × 持有量 × 分红率保底。改分红率或基数口径会触发 B1 覆盖率预检，当前覆盖率 {cov}%。</div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>两套口径怎么对上</b> · 用户看到的叙事是「全网每日交易量的 0.1% 按 slot 均分」(随营收浮动,当前 ${GENESIS.perSlotPerDay}/slot/日;未售出 slot 的份额留存金库);财务预提负债按「节点价 × 持有量 × 0.1%/日 = ${GENESIS.floorPerNodePerDay}/节点/日」保底挂科目 #4——基数口径高出保底的部分从当期交易抽成直接派发,不占预提。实际派发流量(已售 {GENESIS.sold} 户 × ${GENESIS.perSlotPerDay} ≈ ${(GENESIS_PAYOUT_TODAY / 1000).toFixed(1)}K/日)进资金池到期预测(D3)。改基数口径 = 改分红算法,操作确认 + 附 PM 决议引用。</div>
         </div>
       </section>
 
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">节点持有台账</span>
-          <span className="sub">· 来自 nx_genesis_holding · 点击查看详情</span>
+          <span className="sub">· 只读 · 服务器单源,序号伪造不了 · 二级转让后 lifetime 分红跟随新持有者</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 760 }}>
             <thead><tr><th>节点</th><th>持有者(脱敏)</th><th>来源</th><th className="num">lifetime 分红</th><th>状态</th></tr></thead>
-            <tbody>
-              {overview.nodes.length === 0 ? (
-                <tr><td colSpan={5} style={{ color: "var(--ink-3)", padding: 16 }}>暂无节点持有记录</td></tr>
-              ) : overview.nodes.map((node) => (
-                <tr key={node.id} className="click" onClick={() => setNodeDrawer(node.id)}>
-                  <td className="mono" style={{ color: "var(--ink)" }}>{node.id} <span className="more">详情›</span></td>
-                  <td className="mono">{node.owner}</td>
-                  <td>{node.source}</td>
-                  <td className="num mono">{node.lifetimeDividend}</td>
-                  <td><span className={`bdg ${toneClass(node.statusTone)}`}>{node.statusLabel}</span></td>
-                </tr>
-              ))}
-            </tbody>
+            <tbody>{GENESIS_NODES.map((n) => (
+              <tr key={n[0]} className="click" onClick={() => setNodeDrawer(n[0])}>
+                <td className="mono" style={{ color: "var(--ink)" }}>{n[0]} <span className="more">详情›</span></td>
+                <td className="mono">{n[1]}</td><td>{n[2]}</td>
+                <td className="num mono">{n[3]}</td>
+                <td><span className={`bdg ${n[5]}`}>{n[4]}</span></td>
+              </tr>
+            ))}</tbody>
           </table>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", padding: "12px 14px 14px", flexWrap: "wrap" }}>
-          <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-            第 {fmtNumber(nodePage.page, 0)} / {fmtNumber(nodePage.totalPages, 0)} 页 · 共 {fmtNumber(nodePage.total, 0)} 条
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <select
-              aria-label="节点持有台账每页条数"
-              value={nodePage.pageSize}
-              disabled={loading || busy}
-              onChange={(event) => changeNodePageSize(event.target.value)}
-              style={{ height: 30, borderRadius: 6, border: "1px solid var(--line)", background: "var(--panel)", color: "var(--ink)", padding: "0 8px", fontSize: 12 }}
-            >
-              {[10, 20, 50].map((size) => (
-                <option value={size} key={size}>{size} 条 / 页</option>
-              ))}
-            </select>
-            <button className="l-btn sm" disabled={loading || busy || !nodePage.hasPrev} onClick={() => loadNodePage(nodePage.page - 1)}>上一页</button>
-            <button className="l-btn sm" disabled={loading || busy || !nodePage.hasNext} onClick={() => loadNodePage(nodePage.page + 1)}>下一页</button>
-          </div>
+          <PaginationExemption
+            label="Genesis 节点持有台账"
+            maxRows={5}
+            reason="当前为只读监控样例和节点详情入口,全量一屏展示比分页更利于核对分红跟随关系。"
+          />
         </div>
       </section>
 
-      <p className="f-foot"><b>持有、分红、二级成交全部服务器为准</b>:节点序号和分红服务端单源,客户端伪造持有/分红无效。数据源:{overview.sources.join(" / ")}。</p>
+      <p className="f-foot"><b>持有、分红、二级成交全部服务器为准</b>:节点序号和分红服务端单源,客户端伪造持有/分红无效;空持有就显示真实空状态。<b>每日分红率基准 0.1%/日</b>——保底预提按节点价 × 持有量 × 0.1%/日挂科目 #4,基数口径(日交易量 × 0.1% ÷ 1,000 slot)派发、超出保底部分当期化。升分红率/改基数口径先过备付金红线(422),偏离 0.1% 基准要附 PM 决议引用。市场熔断 + 地域封锁是紧急开关矩阵(J1)的生效面(证券类风险 / 国家级屏蔽)。</p>
 
-      {selectedNode && <NodeDrawer node={selectedNode} onClose={() => setNodeDrawer(null)} />}
+      {nodeDrawer && (() => { const n = GENESIS_NODES.find((x) => x[0] === nodeDrawer)!; const d = GENESIS_NODE_DETAIL[nodeDrawer]; return (
+        <Drawer title={`Genesis 节点 · ${nodeDrawer}`} sub={`持有者 ${n[1]} · ${n[4]} · 购入:${d.buy}`} onClose={() => setNodeDrawer(null)}
+          footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setNodeDrawer(null)}>关闭</button>}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>分红</div>
+          {d.div.map(([k, v]) => (
+            <div className="kv2" key={k}><span className="k">{k}</span><span className="v">{v}</span></div>
+          ))}
+          <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>二级流转记录</div>
+          <table className="l-tbl">
+            <thead><tr><th>时间</th><th>事件</th><th>版税</th></tr></thead>
+            <tbody>{d.xfer.map((x, i) => (
+              <tr key={i}><td className="mono">{x[0]}</td><td style={{ fontSize: 12 }}>{x[1]}</td><td style={{ fontSize: 12, color: "var(--ink-3)" }}>{x[2]}</td></tr>
+            ))}</tbody>
+          </table>
+          <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · 分红双口径(基数派发 / 保底预提)见派发监控卡;调分红率/版税去经济参数(操作确认 + 过红线)。市场熔断/地域封锁是 J1 矩阵生效面。</div>
+        </Drawer>
+      ); })()}
     </>
-  );
-}
-
-function NodeDrawer({ node, onClose }: { node: G4Node; onClose: () => void }) {
-  return (
-    <Drawer title={`Genesis 节点 · ${node.id}`} sub={`持有者 ${node.owner} · ${node.statusLabel} · 购入:${node.buy}`} onClose={onClose}
-      footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={onClose}>关闭</button>}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>分红</div>
-      {node.dividends.map((item) => (
-        <div className="kv2" key={item.label}><span className="k">{item.label}</span><span className="v">{item.value}</span></div>
-      ))}
-      <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>二级流转记录</div>
-      <table className="l-tbl">
-        <thead><tr><th>时间</th><th>事件</th><th>版税</th></tr></thead>
-        <tbody>{node.transfers.map((transfer, index) => (
-          <tr key={`${transfer.time}-${index}`}><td className="mono">{transfer.time}</td><td style={{ fontSize: 12 }}>{transfer.event}</td><td style={{ fontSize: 12, color: "var(--ink-3)" }}>{transfer.royalty}</td></tr>
-        ))}</tbody>
-      </table>
-      <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · 节点详情来自后端持有记录和分红口径计算。</div>
-    </Drawer>
   );
 }

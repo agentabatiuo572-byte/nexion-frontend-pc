@@ -4,48 +4,20 @@
  * H7 代金券配置 — 运营创建 / 编辑 / 上下架 / 删除领券促销。
  * 真渲染面(H ∈ PORTED_DOMAINS · registry content 死代码)。
  *
- * 真写后端 growth/vouchers 接口。OpsVoucher 是前端 VoucherDef 的结构化超集
+ * 真写 store:usePlatformConfig.vouchers(OpsVoucher[]) + ensure/add/update/setStatus/remove,
+ * persist nexion-admin-platform-v1。OpsVoucher 是前端 VoucherDef 的结构化超集
  * (字段级镜像门:后台可编辑 ⊇ 前端展示)。增/编辑走 OperationConfirmModal 的
  * businessForm "voucher-config"(当前值预填 = 显式 before→after);上下架/删除为纯处置(不传 businessForm/edit)。
  * 代金券是促销折扣、非 NEX 负债 → 不挂 amplifies / B1 红线(与 H2 试用折扣同口径)。
  */
-import { useEffect, useState } from "react";
-import {
-  createH7Voucher,
-  deleteH7Voucher,
-  fetchH7Vouchers,
-  updateH7Voucher,
-  updateH7VoucherStatus,
-} from "@/lib/admin/h-client";
+import { useEffect } from "react";
+import { usePlatformConfig, type OpsVoucher, type OpsSku } from "@/lib/store/admin/platform-config-store";
+import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { VOUCHER_SEED } from "@/lib/mock/admin/vouchers";
+import { SKUS } from "@/lib/mock/admin/design-data";
 import type { HCtx } from "./types";
 
 const SURFACE_LABEL: Record<string, string> = { home: "首页", store: "商城", me: "我的", earn: "收益" };
-
-type OpsSku = {
-  id?: string;
-  name: string;
-  status?: string;
-};
-
-type OpsVoucher = {
-  id: string;
-  name: string;
-  type: "fixed" | "percent";
-  amountUSD?: number;
-  percent?: number;
-  minPurchaseUSD?: number;
-  maxDiscountUSD?: number;
-  applicableSkus: string[];
-  audience: "new" | "all";
-  startAt: number;
-  endAt: number;
-  claimSurfaces: string[];
-  popupEnabled: boolean;
-  stackWithTrial: boolean;
-  stackWithOthers: boolean;
-  splittable: boolean;
-  status: "active" | "paused";
-};
 
 // UTC getters — stored ms are UTC midnights (seed uses Date.UTC; toMs parses
 // date-only strings as UTC per ES spec), so the round-trip stays TZ-stable
@@ -108,52 +80,31 @@ function parseVoucher(bv: Record<string, string>, id: string): OpsVoucher {
 }
 
 export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
-  const { toast, openActionConfirm } = ctx;
-  const [data, setData] = useState<{ vouchers: OpsVoucher[]; skus: OpsSku[]; stats?: Record<string, number> }>({
-    vouchers: [],
-    skus: [],
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const hydrated = useOpsHydrated();
+  const vouchers = usePlatformConfig((s) => s.vouchers);
+  const ensureVouchers = usePlatformConfig((s) => s.ensureVouchers);
+  const addVoucher = usePlatformConfig((s) => s.addVoucher);
+  const updateVoucher = usePlatformConfig((s) => s.updateVoucher);
+  const setVoucherStatus = usePlatformConfig((s) => s.setVoucherStatus);
+  const removeVoucher = usePlatformConfig((s) => s.removeVoucher);
+  const skus = usePlatformConfig((s) => s.skus);
+  const ensureSkus = usePlatformConfig((s) => s.ensureSkus);
+  const { toast, openActionConfirm, logAudit } = ctx;
 
-  const applyResponse = (payload: Record<string, any>) => {
-    setData({
-      vouchers: Array.isArray(payload.vouchers) ? payload.vouchers : [],
-      skus: Array.isArray(payload.skus) ? payload.skus : [],
-      stats: payload.stats ?? undefined,
-    });
-  };
+  useEffect(() => { ensureVouchers(VOUCHER_SEED); ensureSkus(SKUS as OpsSku[]); }, [ensureVouchers, ensureSkus]);
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    fetchH7Vouchers()
-      .then((payload) => {
-        if (!alive) return;
-        applyResponse(payload);
-        setError(null);
-      })
-      .catch((err) => {
-        if (!alive) return;
-        setError(err instanceof Error ? err.message : "H7_VOUCHER_LOAD_FAILED");
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => { alive = false; };
-  }, []);
-
-  const list = data.vouchers;
-  // 适用 SKU 下拉选项 = 后端返回的在售 SKU;value=产品 id(对齐前端 applicableSkus),label=中文名(运营友好)。
-  const skuList = data.skus;
+  // 首帧 / SSR 用 seed(与服务端一致,防 hydration 抖动);hydrate 后用真 store。
+  const list = hydrated && vouchers ? vouchers : VOUCHER_SEED;
+  // 适用 SKU 下拉选项 = 现存上架(status=on)SKU;value=产品 id(对齐前端 applicableSkus),label=中文名(运营友好)。
+  const skuList = hydrated && skus ? skus : (SKUS as OpsSku[]);
   const activeSkus = skuList.filter((s) => (s.status || "on") === "on");
   const skuOptions = activeSkus.map((s) => s.id ?? s.name);
   const skuLabels: Record<string, string> = Object.fromEntries(activeSkus.map((s) => [s.id ?? s.name, s.name]));
 
-  const total = data.stats?.total ?? list.length;
-  const activeN = data.stats?.active ?? list.filter((v) => v.status === "active").length;
-  const pausedN = data.stats?.paused ?? list.filter((v) => v.status === "paused").length;
-  const popupN = data.stats?.popup ?? list.filter((v) => v.popupEnabled && v.status === "active").length;
+  const total = list.length;
+  const activeN = list.filter((v) => v.status === "active").length;
+  const pausedN = list.filter((v) => v.status === "paused").length;
+  const popupN = list.filter((v) => v.popupEnabled && v.status === "active").length;
 
   const openAdd = () => {
     openActionConfirm({
@@ -177,11 +128,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         currentStackWithOthers: "false",
         currentSplittable: "false",
       },
-      run: async (reason, _v, bv) => {
+      run: (reason, _v, bv) => {
         if (!bv) return;
         const id = `vc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
         const next = parseVoucher(bv, id);
-        applyResponse(await createH7Voucher(next, reason));
+        addVoucher(next);
+        logAudit({ actor: "总管理员", action: "新增代金券", target: `voucher.${id}`, reason });
         toast(`· 代金券「${next.name}」已新增`);
       },
     });
@@ -218,10 +170,11 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         currentStackWithOthers: v.stackWithOthers ? "true" : "false",
         currentSplittable: v.splittable ? "true" : "false",
       },
-      run: async (reason, _v, bv) => {
+      run: (reason, _v, bv) => {
         if (!bv) return;
         const next = parseVoucher(bv, v.id);
-        applyResponse(await updateH7Voucher(v.id, next, reason));
+        updateVoucher(v.id, next);
+        logAudit({ actor: "总管理员", action: "编辑代金券", target: `voucher.${v.id}`, reason });
         toast(`· 代金券「${next.name}」已更新`);
       },
     });
@@ -239,8 +192,9 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           {" "}操作确认留痕。
         </>
       ),
-      run: async (reason) => {
-        applyResponse(await updateH7VoucherStatus(v.id, next, reason));
+      run: (reason) => {
+        setVoucherStatus(v.id, next);
+        logAudit({ actor: "总管理员", action: `${label}代金券`, target: `voucher.${v.id}`, reason });
         toast(`· ${v.name} 已${label}`);
       },
     });
@@ -254,8 +208,9 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           <b>{v.name}</b> · 从代金券列表<b>永久移除</b>,已领不回收;生效即时。临时下线建议改用「暂停」。操作确认留痕。
         </>
       ),
-      run: async (reason) => {
-        applyResponse(await deleteH7Voucher(v.id, reason));
+      run: (reason) => {
+        removeVoucher(v.id);
+        logAudit({ actor: "总管理员", action: "删除代金券", target: `voucher.${v.id}`, reason });
         toast(`· ${v.name} 已删除`);
       },
     });
@@ -264,8 +219,6 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   return (
     <>
       {/* 顶部 KPI */}
-      {error ? <div className="l-card bad">H7 数据加载失败 · {error}</div> : null}
-      {loading ? <div className="l-card">H7 数据加载中...</div> : null}
       <div className="f-stats">
         <div className="f-stat">
           <div className="k">代金券总数</div>
@@ -342,7 +295,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>前后端同契约</b> · 本表的 OpsVoucher 是前端 VoucherDef 的结构化超集,任何上下架 / 改参 <b>立即对前端领券弹窗与 banner 生效</b>。代金券是促销折扣、非 NEX 负债,不走 B1 兑付红线。
+            <b>前后端同契约</b> · 本表的 OpsVoucher 是前端 VoucherDef 的结构化超集,任何上下架 / 改参 <b>立即对前端领券弹窗与 banner 生效</b>(mock 原型两端各自 store,真后台对接时映射同一资源)。代金券是促销折扣、非 NEX 负债,不走 B1 兑付红线。
           </div>
         </div>
       </section>

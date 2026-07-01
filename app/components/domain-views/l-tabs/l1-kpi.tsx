@@ -10,31 +10,21 @@ import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
-import { LDataState, kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
+import { KPIS } from "@/lib/mock/admin/design-data";
+import { rhythmState } from "@/lib/mock/admin/command-center";
+import { WEEKS, PHASE_SWITCH_IDX, KPI_COLORS, KPI_PLAIN, KPI_EXT, kpiState } from "./data";
 import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
 
-type Kpi = KpiRow;
-type KpiExt = {
-  fx: string;
-  fxBold: string[];
-  num: string;
-  den: string;
-  delta: string;
-  note: string;
-  jump: { label: string; href?: string }[];
-};
+type Kpi = (typeof KPIS)[number];
 const LED_COLOR = { g: "var(--success)", y: "var(--warning)", r: "var(--danger)" } as const;
 
 function sparkPath(series: readonly number[], w: number, h: number): string {
   const min = Math.min(...series), max = Math.max(...series), rng = max - min || 1;
   return series.map((v, i) => `${i ? "L" : "M"}${((i / (series.length - 1)) * w).toFixed(1)} ${(h - 3 - ((v - min) / rng) * (h - 6)).toFixed(1)}`).join(" ");
 }
-const tgtLabel = (k: Kpi) => {
-  const [low = 0, high = 0] = k.band ?? [];
-  return k.dir === "band" ? `健康带 ${low}–${high}${k.unit}` : `目标 ${k.dir === "lte" ? "< " : "> "}${k.target}${k.unit}`;
-};
-const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
+const tgtLabel = (k: Kpi) => ("band" in k && k.dir === "band" ? `健康带 ${k.band[0]}–${k.band[1]}${k.unit}` : `目标 ${k.dir === "lte" ? "< " : "> "}${k.target}${k.unit}`);
+const tgtValue = (k: Kpi) => ("band" in k && k.dir === "band" ? k.band[0] : k.target);
 
 export function L1HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportKpi = async () => {
@@ -44,17 +34,8 @@ export function L1HeaderActions({ ctx }: { ctx: LCtx }) {
       confirmLabel: "导出",
     });
     if (!ok) return;
-    await ctx.biActions?.createReport({
-      exportType: "KPI 序列",
-      timeRange: "当前时间窗",
-      fields: "8 KPI 当前值/目标/环比序列",
-      piiLevel: "无 PII",
-      maskPolicy: "NONE",
-      recipient: "BI 管理员",
-      ticket: "L1-KPI",
-    }, "导出 KPI 聚合序列用于经营复盘");
-    await ctx.reloadBi?.();
-    ctx.toast("KPI 序列导出任务已提交 · 数据来自后端 BI 接口");
+    ctx.logAudit({ actor: "总管理员", action: "导出 KPI 序列 CSV(聚合 · 无 PII)", target: "admin.report_exported", after: "export_type=kpi_series · 8 KPI × 7 周" });
+    ctx.toast("已导出 8 项 KPI 序列 CSV · 落 admin.report_exported 审计");
   };
   return (
     <>
@@ -81,24 +62,14 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   const [gran, setGran] = useState("week");
   const [slice, setSlice] = useState(0);
 
-  const data = ctx.biData?.l1;
-  const KPIS = rows<Kpi>(data?.kpis);
-  if (!KPIS.length) return <LDataState ctx={ctx} label="L1" />;
-  const WEEKS = strings(data?.weeks);
-  const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, 3);
-  const KPI_COLORS = strings(data?.kpiColors);
-  const KPI_PLAIN = rec<string>(data?.kpiPlain);
-  const KPI_EXT = rec<KpiExt>(data?.kpiExt);
-  const safeSelKpi = Math.min(selKpi, KPIS.length - 1);
   const states = KPIS.map((k) => kpiState(k, ylOffset));
   const green = states.filter((s) => s === "g").length;
   const yellow = states.filter((s) => s === "y").length;
   const red = states.filter((s) => s === "r").length;
   const redNames = KPIS.filter((_, i) => states[i] === "r").map((k) => `#${k.n}`).join(" ");
-  const k = KPIS[safeSelKpi];
-  const ext = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "后端暂未返回该 KPI 解释", jump: [] };
-  const phase = rec(ctx.biData?.currentPhase);
-  const rs = { currentPhase: String(phase.code ?? "P3"), currentMonth: num(phase.month, 0) };
+  const k = KPIS[selKpi];
+  const ext = KPI_EXT[k.n];
+  const rs = rhythmState(ctx.pget); // 节奏单源镜像(运营在 H1 可配;当前阶段 / 月由此派生,不抄快照)
 
   const toggleOvl = (i: number) => setOvlSel((p) => (p.includes(i) ? (p.length > 1 ? p.filter((x) => x !== i) : p) : [...p, i]));
 
@@ -327,7 +298,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
                     <td className="mono">{kk.n}</td>
                     <td style={{ fontWeight: 600, color: "var(--ink)" }}><AutoGloss>{kk.name}</AutoGloss></td>
                     <td><div style={{ color: "var(--ink-2)" }}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></div><div className="mono fx" style={{ color: "var(--ink-4)", fontSize: 11.5, marginTop: 3 }}>{renderFx(KPI_EXT[kk.n].fx, KPI_EXT[kk.n].fxBold)}</div></td>
-                    <td className="num mono" style={{ color: "var(--ink)" }}>{tgtLabel(kk).replace("目标 ", "").replace("健康带 ", "")}</td>
+                    <td className="num mono" style={{ color: "var(--ink)" }}>{"band" in kk && kk.dir === "band" ? `${kk.band[0]}–${kk.band[1]}${kk.unit}` : `${kk.dir === "lte" ? "< " : "> "}${kk.target}${kk.unit}`}</td>
                     <td><span className="lcode">{kk.vis}</span></td>
                     <td>{st === "g" ? <span className="bdg ok">达标</span> : st === "y" ? <span className="bdg warn">预警</span> : <span className="bdg bad">未达</span>}</td>
                   </tr>

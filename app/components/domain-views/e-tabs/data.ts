@@ -3,11 +3,11 @@
  * server-canonical:E1/E2/E3/E4 展示值来自后端接口;E5 设备运维与数据中心来自设备接口。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
-import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
 
-// 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
+// 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3);E6 算力与设备配置为三端改造 SPEC-0 新增。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
-export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5" };
+export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5", E6: "E6" };
 
 export const ORDER_FLOW = ["created", "paid", "allocating", "active"];
 // design-kit Badge tone 映射(订单状态)。

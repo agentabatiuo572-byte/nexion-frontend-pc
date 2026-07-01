@@ -1,6 +1,6 @@
 // Runtime proof for SPEC-L2c01 C-domain 2FA disable persistence.
 // It proves the C5 operation is not toast-only: the modal is actionable,
-// the backend-backed status survives reload, and the result syncs to the 360 HUB.
+// writes both stores, persists after reload, and syncs to the 360 HUB.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -10,6 +10,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE_URL = process.env.ADMIN_BASE_URL || "http://localhost:3002";
 const session = process.env.AGENT_BROWSER_SESSION || "nexion-c-domain-security-proof";
 const PLATFORM_KEY = "nexion-admin-platform-v1";
+const USER_OPS_KEY = "nexion-admin-ops-v1";
 const TARGET_USER_ID = "U-88421";
 const results = [];
 
@@ -192,7 +193,8 @@ try {
 open("/");
 evalJson(`
   localStorage.removeItem(${JSON.stringify(PLATFORM_KEY)});
-  return { cleared: [${JSON.stringify(PLATFORM_KEY)}] };
+  localStorage.removeItem(${JSON.stringify(USER_OPS_KEY)});
+  return { cleared: [${JSON.stringify(PLATFORM_KEY)}, ${JSON.stringify(USER_OPS_KEY)}] };
 `);
 
 await step("c5-query-target-user", () => {
@@ -264,16 +266,26 @@ await step("disable-2fa-persists-and-survives-refresh", () => {
   wait();
   const state = evalJson(`
     const platform = persisted(${JSON.stringify(PLATFORM_KEY)});
+    const ops = persisted(${JSON.stringify(USER_OPS_KEY)});
+    const userOps = ops.users?.[${JSON.stringify(TARGET_USER_ID)}] || {};
     const body = document.body.innerText;
     return {
       c5ShowsOff: body.includes('2FA 状态') && body.includes('已关闭(人工)'),
-      localAuditHit: (platform.audit || []).some((entry) =>
+      platformValue: platform.params?.['C.twofa.${TARGET_USER_ID}'],
+      platformAuditHit: (platform.audit || []).some((entry) =>
         String(entry.action || '').includes('人工关闭 2FA ${TARGET_USER_ID}') &&
         String(entry.reason || '').includes('L2c01 runtime proof')
       ),
+      twoFactorReset: userOps.twoFactorReset === true,
+      userOpsAuditHit: (userOps.audit || []).some((entry) => String(entry.action || '').includes('重置 2FA')),
+      userOpsAudit: (userOps.audit || []).slice(0, 3),
     };
   `);
   expect(state.c5ShowsOff, "C5 does not show disabled 2FA after reload");
+  expectEqual(state.platformValue, "disabled", "platform C.twofa persisted value");
+  expect(state.platformAuditHit, "platform audit entry missing");
+  expect(state.twoFactorReset, "user ops twoFactorReset missing");
+  expect(state.userOpsAuditHit, "user ops audit entry missing");
   return state;
 });
 
@@ -309,10 +321,10 @@ fs.writeFileSync(
     targetUserId: TARGET_USER_ID,
     status: "captured",
     result: {
-      classification: "backend-backed-cross-surface",
+      classification: "state-persisted-cross-surface",
       noObservableChange: 0,
       businessIncompleteModal: 0,
-      backendAction: `/api/admin/users/profiles/${TARGET_USER_ID}/security/disable-2fa`,
+      persistedKeys: [`C.twofa.${TARGET_USER_ID}`, `${USER_OPS_KEY}.users.${TARGET_USER_ID}.twoFactorReset`],
     },
     evidence: {
       script: "scripts/admin-c-domain-security-proof.mjs",

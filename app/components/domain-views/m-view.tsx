@@ -3,33 +3,26 @@
 /**
  * M 客服中心 — 抽 I8(工单)+ I9(即时会话)重组的独立域。5 子页:
  *   M1 客服总览 / M2 工单台 / M3 即时会话台 / M4 知识库与 SLA / M5 话术与模板配置。
- * 业务数据读写后端 content 接口;I.support.* / I.session.* 仅作为子组件视图态适配键。
+ * 真写键沿用 I.support.* / I.session.*(persist 兼容,与 nav 域 code M 解耦)。
  * MC 显式 edit 契约:调参传 edit、处置不传。MessageThread 共享组件复用于 M2/M3。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import "./m-domain.css";
 import { Icon, MessageThread, OperationConfirmModal, useToast, type ThreadMessage } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import {
-  adminIdForAgent,
-  agentIdForName,
-  buildMLegacyParams,
-  fetchMContentData,
-  mContentActions,
-  type MContentData,
-  type MLoadConfigWrite,
-} from "@/lib/admin/m-client";
+import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
+import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1Overview } from "./m-tabs/m1-overview";
 import { M2Tickets } from "./m-tabs/m2-tickets";
 import { M3Sessions } from "./m-tabs/m3-sessions";
 import { M4KbSla } from "./m-tabs/m4-kb-sla";
 import { M5Scripts } from "./m-tabs/m5-scripts";
-import type { AdvisorScript, SessionConvo, SessionReplyTpl, SessionType, SupportFaq, SupportSla, SupportTicket, SupportTicketCategory, SupportTicketPriority } from "./m-tabs/data";
+import { SESSION_CONVOS, SUPPORT_TICKETS, type SessionConvo, type SupportTicket } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 
-// 持续接待 dock 跨 M 子页 UI 态(只保留组件内存,切页不挂断)。
+// 持续接待 dock 跨 M 子页 UI 态(随 platform-config 持久,切页不挂断)。
 const DOCK_CONVO_KEY = "I.session.convos";
 const DOCK_LAST_KEY = "I.session.ui.lastConvo";
 const DOCK_OPEN_KEY = "I.session.ui.dockOpen"; // "1" = 展开面板,否则收为药丸
@@ -54,75 +47,38 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "M1", [meta.l2Id]);
+  const setParam = usePlatformConfig((s) => s.setParam);
+  const logAudit = usePlatformConfig((s) => s.logAudit);
+  const params = usePlatformConfig((s) => s.params);
+  const hydrated = useOpsHydrated();
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
-  const [mData, setMData] = useState<MContentData | null>(null);
-  const [mLoading, setMLoading] = useState(true);
-  const [mError, setMError] = useState<string | null>(null);
-  const [uiParams, setUiParams] = useState<Record<string, string>>({});
-
-  const reloadMContent = useCallback(async () => {
-    setMLoading(true);
-    try {
-      const next = await fetchMContentData();
-      setMData(next);
-      setMError(null);
-    } catch (error) {
-      setMError(error instanceof Error ? error.message : "M_CONTENT_LOAD_FAILED");
-    } finally {
-      setMLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void reloadMContent();
-  }, [reloadMContent]);
-
-  const legacyParams = useMemo(() => (mData ? buildMLegacyParams(mData) : {}), [mData]);
-  const mergedParams = useMemo(
-    () => ({ ...uiParams, ...legacyParams }),
-    [uiParams, legacyParams],
-  );
-
-  const runMWrite = useCallback(
-    (key: string, value: string, meta?: { action?: string; reason?: string }) => {
-      if (isMUiKey(key)) {
-        setUiParams((prev) => ({ ...prev, [key]: value }));
-        return;
-      }
-      void applyMBackendWrite(key, value, legacyParams, mData, meta)
-        .then(() => reloadMContent())
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : "M_CONTENT_WRITE_FAILED";
-          setToast(`M 接口写入失败 · ${message}`);
-        });
-    },
-    [legacyParams, mData, reloadMContent, setToast],
-  );
 
   const ctx: MCtx = {
-    pget: (k) => mergedParams[k] as string | undefined,
-    params: mergedParams,
-    setParam: runMWrite,
+    pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
+    params: hydrated && params ? params : {},
+    setParam,
+    logAudit,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
   };
 
   const [ro, liveLabel] = RO_LIVE[tab];
-  // 实时计数:M1/M2/M3 的「实时计数/汇总」从后端会话 / 工单快照派生;
-  // M4/M5 是描述标签(未声称计数)保留原文。
+  // 实时计数:M1/M2/M3 的「实时计数/汇总」从真写键(I.session.convos / I.support.tickets)派生真数字,
+  // 替代原静态虚标(名副其实 + 随会话/工单变动实时刷新);M4/M5 是描述标签(未声称计数)保留原文。
+  // hydration 守卫:未 hydrate 用 seed 计数(SSR 与首帧一致防抖动)。
   const liveCount = useMemo(() => {
     if (tab !== "M1" && tab !== "M2" && tab !== "M3") return null;
-    const convos = dockParseConvos(mergedParams["I.session.convos"] as string | undefined);
-    const tickets = parseTicketsLive(mergedParams["I.support.tickets"] as string | undefined);
+    const convos = dockParseConvos(hydrated ? (params?.["I.session.convos"] as string | undefined) : undefined);
+    const tickets = parseTicketsLive(hydrated ? (params?.["I.support.tickets"] as string | undefined) : undefined);
     const openConvos = convos.filter((c) => c.status === "open" && !c.archived).length;
     const unreadConvos = convos.filter((c) => c.unread > 0 && !c.archived).length;
     const openTickets = tickets.filter((t) => t.status !== "resolved" && t.status !== "closed").length;
     if (tab === "M3") return `进行中 ${openConvos} · 待回复 ${unreadConvos}`;
     if (tab === "M2") return `处理中工单 ${openTickets}`;
     return `工单 ${openTickets} · 会话 ${openConvos}`; // M1
-  }, [tab, mergedParams]);
+  }, [tab, params, hydrated]);
   const live = liveCount ?? liveLabel;
   const right = (
     <>
@@ -135,31 +91,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     <div className="dkpage mdom">
       <DomainHeader {...meta} right={right} />
 
-      {mError && (
-        <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon name="bell" size={16} />
-          <span className="dim" style={{ fontSize: 13 }}>M 数据加载失败 · {mError}</span>
-          <span className="sp" />
-          <button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>
-            <Icon name="arrow" size={16} />
-            重试
-          </button>
-        </div>
-      )}
-
-      {!mData ? (
-        <div className="card card-pad">
-          <span className="dim" style={{ fontSize: 13 }}>{mLoading ? "正在加载 M 客服中心真实数据..." : "暂无可展示的 M 客服中心真实数据"}</span>
-        </div>
-      ) : (
-        <>
-          {tab === "M1" && <M1Overview ctx={ctx} />}
-          {tab === "M2" && <M2Tickets ctx={ctx} />}
-          {tab === "M3" && <M3Sessions ctx={ctx} />}
-          {tab === "M4" && <M4KbSla ctx={ctx} />}
-          {tab === "M5" && <M5Scripts ctx={ctx} />}
-        </>
-      )}
+      {tab === "M1" && <M1Overview ctx={ctx} />}
+      {tab === "M2" && <M2Tickets ctx={ctx} />}
+      {tab === "M3" && <M3Sessions ctx={ctx} />}
+      {tab === "M4" && <M4KbSla ctx={ctx} />}
+      {tab === "M5" && <M5Scripts ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal
@@ -181,380 +117,22 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
 /* ============ MP2 持续接待 dock —— 切页不挂断(M3 自身是全屏对话台,故 M3 不显)============ */
 function dockParseConvos(raw: string | undefined): SessionConvo[] {
-  if (!raw) return [];
+  if (!raw) return SESSION_CONVOS;
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SessionConvo[]) : [];
+    return Array.isArray(parsed) ? (parsed as SessionConvo[]) : SESSION_CONVOS;
   } catch {
-    return [];
+    return SESSION_CONVOS;
   }
 }
 function parseTicketsLive(raw: string | undefined): SupportTicket[] {
-  if (!raw) return [];
+  if (!raw) return SUPPORT_TICKETS;
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as SupportTicket[]) : [];
+    return Array.isArray(parsed) ? (parsed as SupportTicket[]) : SUPPORT_TICKETS;
   } catch {
-    return [];
+    return SUPPORT_TICKETS;
   }
-}
-
-function parseRows<T>(raw: string | undefined): T[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function parseRecord<T>(raw: string | undefined): T | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as T) : null;
-  } catch {
-    return null;
-  }
-}
-
-function isMUiKey(key: string) {
-  return key === DOCK_LAST_KEY || key === DOCK_OPEN_KEY || key === DOCK_OFF_KEY;
-}
-
-function reasonOf(meta?: { action?: string; reason?: string }) {
-  const r = meta?.reason?.trim();
-  return r && r !== "ui-state" && r.length >= 2 ? r : "M 客服中心后台操作留档";
-}
-
-function changedRow<T extends { id: string }>(prev: T[], next: T[]) {
-  return next.find((row) => {
-    const before = prev.find((item) => item.id === row.id);
-    return before && JSON.stringify(before) !== JSON.stringify(row);
-  });
-}
-
-function addedRow<T extends { id: string }>(prev: T[], next: T[]) {
-  return next.find((row) => !prev.some((item) => item.id === row.id));
-}
-
-function userIdFromProfile(convo: SessionConvo) {
-  const raw = convo.profile?.uid || "";
-  const match = raw.match(/\d+/);
-  return match ? Number(match[0]) : undefined;
-}
-
-function firstAgentText(convo: SessionConvo) {
-  return convo.messages.find((m) => m.sender === "agent" && m.agentName !== "系统")?.text || convo.messages.at(-1)?.text || "客服已主动发起会话";
-}
-
-function ticketBody(ticket: SupportTicket) {
-  return ticket.messages[0]?.body || ticket.subject || "客服工单已创建";
-}
-
-async function writeTicketRows(prev: SupportTicket[], next: SupportTicket[], reason: string, action?: string, data?: MContentData | null) {
-  const added = addedRow(prev, next);
-  if (added) {
-    const fromConvo = added.subject.match(/由会话\s+([^\s]+)\s+转入/);
-    if (fromConvo?.[1]) {
-      await mContentActions.convertConversationToTicket(
-        fromConvo[1],
-        {
-          category: added.category,
-          priority: added.priority,
-          title: added.subject,
-          assignedAdminId: adminIdForAgent(added.owner, data),
-          assignedAdminName: added.owner || "Unassigned",
-        },
-        reason,
-      );
-      return;
-    }
-    await mContentActions.createTicket(
-      {
-        category: added.category,
-        priority: added.priority,
-        title: added.subject,
-        body: ticketBody(added),
-        assignedAdminId: adminIdForAgent(added.owner, data),
-        assignedAdminName: added.owner || "Unassigned",
-      },
-      reason,
-    );
-    return;
-  }
-
-  const row = changedRow(prev, next);
-  if (!row) return;
-  const before = prev.find((item) => item.id === row.id);
-  if (!before) return;
-  const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
-  if (newMessage?.author === "agent") {
-    await mContentActions.replyTicket(row.id, newMessage.body, reason);
-    return;
-  }
-  if (row.status !== before.status) {
-    await mContentActions.updateTicketStatus(row.id, row.status, reason);
-    return;
-  }
-  if (row.priority !== before.priority) {
-    await mContentActions.updateTicketPriority(row.id, row.priority, reason);
-    return;
-  }
-  if (row.owner !== before.owner) {
-    await mContentActions.assignTicket(row.id, row.owner, adminIdForAgent(row.owner, data), reason);
-    return;
-  }
-  if (action?.includes("conversation_from_ticket")) return;
-  await mContentActions.replyTicket(row.id, "工单信息已同步更新", reason);
-}
-
-async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[], reason: string, action?: string, data?: MContentData | null) {
-  const added = addedRow(prev, next);
-  if (added) {
-    const ownerAgentName = added.owner === "Unassigned" ? added.agentName : added.owner;
-    await mContentActions.initiateConversation(
-      {
-        conversationType: added.type,
-        userId: userIdFromProfile(added),
-        ownerAgentId: agentIdForName(ownerAgentName, data),
-        ownerAgentName,
-        openingText: firstAgentText(added),
-      },
-      reason,
-    );
-    return;
-  }
-
-  const row = changedRow(prev, next);
-  if (!row) return;
-  const before = prev.find((item) => item.id === row.id);
-  if (!before) return;
-
-  if (!before.transfer && row.transfer) {
-    const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
-    await mContentActions.transferConversation(row.id, row.transfer, row.transfer.reason || reason, targetId);
-    return;
-  }
-  if (before.transfer && !row.transfer) {
-    if (action?.includes("退回") || action?.includes("return")) await mContentActions.returnTransfer(row.id, reason);
-    else await mContentActions.acceptTransfer(row.id, reason);
-    return;
-  }
-  if (before.transfer && row.transfer && JSON.stringify(before.transfer) !== JSON.stringify(row.transfer)) {
-    if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, reason);
-    else {
-      const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
-      await mContentActions.transferConversation(row.id, row.transfer, row.transfer.reason || reason, targetId);
-    }
-    return;
-  }
-
-  const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
-  if (newMessage?.sender === "agent") {
-    if (action?.includes("transfer_wait")) {
-      await mContentActions.waitTransfer(row.id, reason);
-    } else {
-      const body = newMessage.ctaHref ? `${newMessage.text} ${newMessage.ctaHref}` : newMessage.text;
-      await mContentActions.replyConversation(row.id, body, reason);
-    }
-    return;
-  }
-  if (row.status !== before.status) {
-    await mContentActions.updateConversationStatus(row.id, row.status, reason);
-    return;
-  }
-  if (Boolean(row.archived) !== Boolean(before.archived)) {
-    await mContentActions.archiveConversation(row.id, Boolean(row.archived), reason);
-    return;
-  }
-  if (JSON.stringify(row.profile?.notes ?? []) !== JSON.stringify(before.profile?.notes ?? [])) {
-    const note = row.profile?.notes?.[0]?.text || "客户备注已更新";
-    await mContentActions.replyConversation(row.id, `内部备注: ${note}`, reason);
-    return;
-  }
-  if (JSON.stringify(row.profile?.tags ?? []) !== JSON.stringify(before.profile?.tags ?? [])) {
-    await mContentActions.replyConversation(row.id, `客户标签更新: ${(row.profile?.tags ?? []).join(" / ")}`, reason);
-  }
-}
-
-async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: string) {
-  const added = addedRow(prev, next);
-  if (added) {
-    await mContentActions.createFaq(
-      {
-        category: added.category,
-        question: added.question,
-        answer: added.answer,
-        status: added.status,
-        surface: added.surface,
-      },
-      reason,
-    );
-    return;
-  }
-  const row = changedRow(prev, next);
-  if (!row) return;
-  const before = prev.find((item) => item.id === row.id);
-  if (before && row.status !== before.status) await mContentActions.updateFaqStatus(row.id, row.status, reason);
-  else await mContentActions.updateFaq(row, reason);
-}
-
-async function writeSlaRows(prev: SupportSla[], next: SupportSla[], reason: string) {
-  const row = next.find((item) => {
-    const before = prev.find((old) => old.category === item.category);
-    return before && JSON.stringify(before) !== JSON.stringify(item);
-  }) ?? next.find((item) => !prev.some((old) => old.category === item.category));
-  if (row) await mContentActions.updateSla(row, reason);
-}
-
-function currentLoadPayload(data: MContentData | null): MLoadConfigWrite {
-  if (!data) {
-    throw new Error("M_LOAD_CONFIG_BACKEND_SNAPSHOT_MISSING");
-  }
-  return {
-    ...data.loadConfig,
-    agentState: data.agentState,
-  };
-}
-
-async function applyMBackendWrite(
-  key: string,
-  value: string,
-  legacyParams: Record<string, string>,
-  data: MContentData | null,
-  meta?: { action?: string; reason?: string },
-) {
-  const reason = reasonOf(meta);
-  if (key === "I.support.load.__bulk") {
-    const payload = parseRecord<MLoadConfigWrite>(value);
-    if (payload) await mContentActions.updateLoadConfig(payload, reason);
-    return;
-  }
-  if (key === "I.support.load.__rebalance") {
-    await mContentActions.rebalanceLoad(parseRows<Record<string, unknown>>(value), reason);
-    return;
-  }
-  if (key === "I.support.agentProfile.__update") {
-    const payload = parseRecord<{
-      adminId?: number;
-      position?: string;
-      serviceTypes?: Array<"support" | "advisor">;
-      tags?: string[];
-      maxConcurrent?: number;
-      enabled?: boolean;
-      transferable?: boolean;
-      busy?: boolean;
-    }>(value);
-    if (payload?.adminId) await mContentActions.updateSupportAgentProfile(payload.adminId, payload, reason);
-    return;
-  }
-  if (key === "I.support.advisorAssignment.__create") {
-    const payload = parseRecord<{ adminId?: number; userId?: number; userIds?: number[]; assignmentType?: string }>(value);
-    const userIds = Array.isArray(payload?.userIds)
-      ? payload.userIds
-      : payload?.userId
-        ? [payload.userId]
-        : [];
-    if (payload?.adminId && userIds.length > 0) await mContentActions.assignAdvisorUsers(payload.adminId, userIds, payload.assignmentType || "PRIMARY", reason);
-    return;
-  }
-  if (key === "I.support.advisorAssignment.__delete") {
-    const payload = parseRecord<{ adminId?: number; assignmentId?: number }>(value);
-    if (payload?.adminId && payload.assignmentId) await mContentActions.deactivateAdvisorAssignment(payload.adminId, payload.assignmentId, reason);
-    return;
-  }
-  if (key.startsWith("I.support.load.")) {
-    const field = key.replace("I.support.load.", "") as keyof MLoadConfigWrite;
-    const payload = currentLoadPayload(data);
-    if (field === "autoBalance" || field === "quietHourBalance") (payload[field] as boolean) = value === "1";
-    else if (field === "defaultCap" || field === "burstCap" || field === "warnPct") (payload[field] as number) = Number(value);
-    else if (field === "overflowQueue") payload.overflowQueue = value;
-    await mContentActions.updateLoadConfig(payload, reason);
-    return;
-  }
-  const agentMatch = key.match(/^I\.support\.agent\.(.+)\.(cap|busy)$/);
-  if (agentMatch) {
-    const [, name, field] = agentMatch;
-    const id = agentIdForName(name, data);
-    const payload = currentLoadPayload(data);
-    payload.agentState = { ...payload.agentState, [id]: { ...(payload.agentState[id] ?? { cap: payload.defaultCap, busy: false }) } };
-    if (field === "cap") payload.agentState[id].cap = Number(value);
-    else payload.agentState[id].busy = value === "1";
-    await mContentActions.updateLoadConfig(payload, reason);
-    return;
-  }
-  if (key === "I.support.tickets") {
-    await writeTicketRows(parseRows<SupportTicket>(legacyParams[key]), parseRows<SupportTicket>(value), reason, meta?.action, data);
-    return;
-  }
-  if (key === "I.session.convos") {
-    await writeConversationRows(parseRows<SessionConvo>(legacyParams[key]), parseRows<SessionConvo>(value), reason, meta?.action, data);
-    return;
-  }
-  if (key === "I.support.faqs") {
-    await writeFaqRows(parseRows<SupportFaq>(legacyParams[key]), parseRows<SupportFaq>(value), reason);
-    return;
-  }
-  if (key === "I.support.sla") {
-    await writeSlaRows(parseRows<SupportSla>(legacyParams[key]), parseRows<SupportSla>(value), reason);
-    return;
-  }
-  const catMatch = key.match(/^I\.session\.cat\.(.+)\.enabled$/);
-  if (catMatch) {
-    await mContentActions.updateCategory(catMatch[1] as SessionType, value === "on", reason);
-    return;
-  }
-  const policyMatch = key.match(/^I\.session\.advisor\.policy\.(.+)$/);
-  if (policyMatch) {
-    await mContentActions.updateAdvisorPolicy(policyMatch[1], value, reason);
-    return;
-  }
-  const workbenchPolicyMatch = key.match(/^I\.session\.workbench\.(.+)$/);
-  if (workbenchPolicyMatch) {
-    await mContentActions.updateWorkbenchPolicy(workbenchPolicyMatch[1], value, reason);
-    return;
-  }
-  if (key === "I.session.script.__create") {
-    const payload = parseRecord<{ scriptGroup?: AdvisorScript["group"]; text?: string; ctaPath?: string; audience?: string; status?: AdvisorScript["status"] }>(value);
-    if (payload?.text) {
-      await mContentActions.createScript(
-        {
-          scriptGroup: payload.scriptGroup || "开场",
-          text: payload.text,
-          ctaPath: payload.ctaPath || "—",
-          audience: payload.audience || "全量",
-          status: payload.status || "draft",
-        },
-        reason,
-      );
-    }
-    return;
-  }
-  const scriptStatusMatch = key.match(/^I\.session\.script\.(.+)\.status$/);
-  if (scriptStatusMatch) {
-    await mContentActions.updateScriptStatus(scriptStatusMatch[1], value === "published" ? "published" : "draft", reason);
-    return;
-  }
-  const scriptAudienceMatch = key.match(/^I\.session\.script\.(.+)\.audience$/);
-  if (scriptAudienceMatch) {
-    await mContentActions.updateScriptAudience(scriptAudienceMatch[1], value, reason);
-    return;
-  }
-  const tplStatusMatch = key.match(/^I\.session\.tpl\.(.+)\.status$/);
-  if (tplStatusMatch) {
-    await mContentActions.updateReplyTemplateStatus(tplStatusMatch[1], value === "published" ? "published" : "draft", reason);
-    return;
-  }
-  if (key === "I.session.replyTemplates") {
-    const prev = parseRows<SessionReplyTpl>(legacyParams[key]);
-    const next = parseRows<SessionReplyTpl>(value);
-    const added = addedRow(prev, next);
-    if (added) await mContentActions.createReplyTemplate({ type: added.type, text: added.text, status: added.status }, reason);
-    return;
-  }
-  throw new Error(`M_BACKEND_ROUTE_MISSING:${key}`);
 }
 function dockRelWhen(ts: number): string {
   const diff = Date.now() - ts;

@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { localMockResponse } from "@/lib/admin/local-mock-backend";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -14,14 +15,6 @@ function jsonError(status: number, message: string) {
 
 function backendPath(parts: string[]) {
   const isOverview = parts[0] === "overview" && parts.length === 1;
-  const isSkuCollection = parts[0] === "skus" && parts.length === 1;
-  const isSku = parts[0] === "skus" && parts.length === 2 && !!parts[1];
-  const isSkuStatus = parts[0] === "skus" && parts.length === 3 && !!parts[1] && parts[2] === "status";
-  const isReviewCollection = parts[0] === "reviews" && parts.length === 1;
-  const isReview = parts[0] === "reviews" && parts.length === 2 && !!parts[1];
-  const isReviewStatus = parts[0] === "reviews" && parts.length === 3 && !!parts[1] && parts[2] === "status";
-  const isGenerationGateCollection = parts[0] === "generation-gates" && parts.length === 1;
-  const isGenerationGate = parts[0] === "generation-gates" && parts.length === 2 && !!parts[1];
   const isTaskCollection = parts[0] === "tasks" && parts.length === 1;
   const isTask = parts[0] === "tasks" && parts.length === 2 && !!parts[1];
   const isTaskAction = parts[0] === "tasks" && parts.length === 3 && !!parts[1] && (parts[2] === "price" || parts[2] === "status");
@@ -39,14 +32,6 @@ function backendPath(parts: string[]) {
   const isDatacenterAction = parts[0] === "datacenters" && parts.length === 3 && !!parts[1] && (parts[2] === "pause" || parts[2] === "resume");
   if (
     !isOverview
-    && !isSkuCollection
-    && !isSku
-    && !isSkuStatus
-    && !isReviewCollection
-    && !isReview
-    && !isReviewStatus
-    && !isGenerationGateCollection
-    && !isGenerationGate
     && !isTaskCollection
     && !isTask
     && !isTaskAction
@@ -65,11 +50,7 @@ function backendPath(parts: string[]) {
   ) {
     return null;
   }
-  const encodedPath = parts.map(encodeURIComponent).join("/");
-  if (parts[0] === "generation-gates") {
-    return `/api/admin/devices/e1/${encodedPath}`;
-  }
-  return `/api/admin/devices/${encodedPath}`;
+  return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
 }
 
 async function proxy(request: Request, context: RouteContext) {
@@ -83,6 +64,12 @@ async function proxy(request: Request, context: RouteContext) {
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
   if (!token) {
     return jsonError(401, "ADMIN_AUTH_REQUIRED");
+  }
+
+  // 本地预览模式:短路返回本地 mock,不调真后端(命中白名单读端点;写端点回成功无操作)。
+  const localMock = localMockResponse("devices", request.method, path, new URL(request.url).searchParams);
+  if (localMock) {
+    return Response.json(localMock, { headers: { "Cache-Control": "no-store" } });
   }
 
   const sourceUrl = new URL(request.url);

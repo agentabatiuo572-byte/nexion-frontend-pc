@@ -3,7 +3,7 @@
 /**
  * E 设备与商城 — 设计稿 design_handoff_e_domain 内容视图。
  * 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3):
- * E1 商品目录&代际门 / E2 收益&任务引擎 / E3 生命周期&Trade-in / E4 订单状态机 / E5 设备运维。
+ * E1 商品目录&代际门 / E2 收益&任务引擎 / E3 生命周期&Trade-in / E4 订单状态机 / E5 设备运维 / E6 算力与设备配置(三端改造 SPEC-0 新增)。
  * nav id == 视图 key == prdAnchor == PRD §10 章节(已全部重编号统一,FOLD 现为恒等映射)。
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
@@ -17,7 +17,9 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { confirm } from "@/lib/store/ui";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { OpsSku, OpsReview, OpsTask } from "@/lib/admin/platform-types";
+import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask } from "@/lib/store/admin/platform-config-store";
+import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { SKUS, REVIEWS } from "@/lib/mock/admin/design-data";
 import {
   archiveE1GenerationGate,
   archiveE1Phase,
@@ -57,6 +59,15 @@ import {
 } from "@/lib/admin/e5-client";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
+  COMPUTE_COEFFICIENTS,
+  COMPUTE_DOWNLOAD_CONTENT,
+  COMPUTE_GPU_KEYWORD_SLOTS,
+  COMPUTE_GPU_TIERS,
+  computeCoeffParamKey,
+  computeDownloadParamKey,
+  computeGpuTierParamKey,
+} from "@/lib/mock/admin/compute-config";
+import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
@@ -67,11 +78,101 @@ import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
 import { E3Manual } from "./e-tabs/e3-manual";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
+import { E6ComputeConfig } from "./e-tabs/e6-compute-config";
 import "./e-domain.css";
 
 let REVIEW_SEQ = 100; // 客户端新增评价 id 计数(SSR 安全)
-// 本地预览旁路:bypass=1 时 E1 操作只更新当前页面临时 state;真实后台模式以接口返回为准。
+// 本地预览旁路:bypass=1 时 E1 走本地 mock state(增删改全本地,不调注定 401 的后端);=0 接真后端。
 const IS_PREVIEW = process.env.NEXT_PUBLIC_ADMIN_AUTH_BYPASS === "1";
+
+const DOWNLOAD_COPY_LIMITS = { zhTitle: 80, zhGuide: 240, enTitle: 120, enGuide: 320 } as const;
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function computeStoredValue(pget: EViewCtx["pget"], key: string, fallback: string): string {
+  return pget(key) ?? fallback;
+}
+
+function computeTierTops(pget: EViewCtx["pget"], tierId: (typeof COMPUTE_GPU_TIERS)[number]["id"]): number {
+  const tier = COMPUTE_GPU_TIERS.find((item) => item.id === tierId);
+  if (!tier) return 0;
+  const stored = Number(pget(computeGpuTierParamKey(tier.id, "tops")));
+  return Number.isFinite(stored) && stored > 0 ? stored : tier.defaultTops;
+}
+
+function validateE6ComputeWrite(mc: Mc, pget: EViewCtx["pget"], newValue?: string, businessValue?: Record<string, string>): string | null {
+  if (!mc) return null;
+  const op = mc.op;
+  if (op === "param" && mc.paramKey) {
+    const value = (newValue ?? "").trim();
+    const coeff = COMPUTE_COEFFICIENTS.find((item) => computeCoeffParamKey(item.key) === mc.paramKey);
+    if (coeff) {
+      const n = Number(value);
+      const isRatio = coeff.unit.includes("0–1");
+      if (!Number.isFinite(n) || (isRatio ? n < 0 : n <= 0)) return isRatio ? `${coeff.label}须在 0–1 之间` : `${coeff.label}须为大于 0 的数字`;
+      if (isRatio && n > 1) return `${coeff.label}须在 0–1 之间`;
+      return null;
+    }
+    if (mc.paramKey === computeDownloadParamKey("url")) {
+      if (value && !isHttpUrl(value)) return "客户端下载地址须为 http/https URL,或使用清空地址";
+      return null;
+    }
+    for (const tier of COMPUTE_GPU_TIERS) {
+      for (const field of COMPUTE_GPU_KEYWORD_SLOTS) {
+        if (mc.paramKey !== computeGpuTierParamKey(tier.id, field)) continue;
+        if (!value) return "单个显卡型号关键词不能为空";
+        if (/[,，;；\n\r|]/.test(value)) return "一次只能填写一个显卡型号关键词";
+        const sameTierKeywords = COMPUTE_GPU_KEYWORD_SLOTS
+          .filter((slot) => slot !== field)
+          .map((slot) => {
+            const originalIndex = COMPUTE_GPU_KEYWORD_SLOTS.indexOf(slot);
+            return computeStoredValue(pget, computeGpuTierParamKey(tier.id, slot), tier.keywords[originalIndex] ?? "")
+              .trim()
+              .toLowerCase();
+          })
+          .filter(Boolean);
+        if (sameTierKeywords.includes(value.toLowerCase())) return "同一档位已存在该显卡型号关键词";
+        return null;
+      }
+    }
+  }
+  if (op === "param-multi" && mc.paramKeys && businessValue) {
+    const tier = COMPUTE_GPU_TIERS.find((item) =>
+      mc.paramKeys?.some(({ paramKey }) => paramKey === computeGpuTierParamKey(item.id, "label") || paramKey === computeGpuTierParamKey(item.id, "tops")),
+    );
+    if (tier) {
+      const label = (businessValue.label ?? "").trim();
+      const tops = Number((businessValue.tops ?? "").trim());
+      if (!label) return "档位展示名称不能为空";
+      if (label.length > 24) return "档位展示名称最多 24 字";
+      if (!Number.isFinite(tops) || tops <= 0) return "算力 TOPS 须为正数";
+      const nextTops = new Map(COMPUTE_GPU_TIERS.map((item) => [item.id, computeTierTops(pget, item.id)]));
+      nextTops.set(tier.id, tops);
+      for (let i = 1; i < COMPUTE_GPU_TIERS.length; i += 1) {
+        const prev = COMPUTE_GPU_TIERS[i - 1];
+        const current = COMPUTE_GPU_TIERS[i];
+        if (!((nextTops.get(current.id) ?? 0) > (nextTops.get(prev.id) ?? 0))) {
+          return "六档显卡算力 TOPS 保存后必须严格递增";
+        }
+      }
+      return null;
+    }
+    for (const [field, limit] of Object.entries(DOWNLOAD_COPY_LIMITS)) {
+      const paramKey = computeDownloadParamKey(field as keyof typeof DOWNLOAD_COPY_LIMITS);
+      if (!mc.paramKeys.some((item) => item.paramKey === paramKey)) continue;
+      const value = (businessValue[field] ?? "").trim();
+      if (value.length > limit) return `${COMPUTE_DOWNLOAD_CONTENT[field as keyof typeof DOWNLOAD_COPY_LIMITS].label}最多 ${limit} 字`;
+    }
+  }
+  return null;
+}
 
 type SkuMediaKind = "image" | "video";
 type SkuMedia = {
@@ -253,25 +354,39 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [mc, setActionConfirm] = useState<Mc>(null);
   const [selOrder, setSelOrder] = useState<EOrder | null>(null);
   const [manualOpen, setManualOpen] = useState(false); // E3 操作说明手册弹窗
+  const hydrated = useOpsHydrated();
+
+  // ── 共享 store 接线 ──
+  const setParam = usePlatformConfig((s) => s.setParam);
+  const logAudit = usePlatformConfig((s) => s.logAudit);
+  const params = usePlatformConfig((s) => s.params);
+  // SKU store 镜像(E1 展示走本地 e1Skus / 真后端;但增删改同步写 platform-config-store.skus,
+  // 使其成为后台单一 SKU 真源——供 H7 代金券适用 SKU、F1 V-Rank 奖励 SKU 下拉等跨域消费,backend-replaceable)。
+  const ensureSkus = usePlatformConfig((s) => s.ensureSkus);
+  const addSku = usePlatformConfig((s) => s.addSku);
+  const updateSku = usePlatformConfig((s) => s.updateSku);
+  const setSkuStatus = usePlatformConfig((s) => s.setSkuStatus);
+  const removeSku = usePlatformConfig((s) => s.removeSku);
   const operator = useAdminAuth((s) => s.operator || s.session?.username || "superadmin");
   const [e3Params, setE3Params] = useState<Record<string, string>>({});
   const [e3Stats, setE3Stats] = useState<E3Stats | null>(null);
   const [e3Operations, setE3Operations] = useState<E3OperationMetric[]>([]);
   const [e3Loading, setE3Loading] = useState(false);
   const [e3Error, setE3Error] = useState<string | null>(null);
+  const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
   const isE3ParamKey = (k: string) => k.startsWith("E.device.") || k.startsWith("E.tradein.");
-  const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : "—";
+  const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : (pget(k) ?? "—");
   const e3Ready = Object.keys(e3Params).length > 0;
 
   // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
-  const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
-  const [e1Reviews, setE1Reviews] = useState<OpsReview[]>([]);
+  const [e1Skus, setE1Skus] = useState<OpsSku[]>(IS_PREVIEW ? (SKUS as OpsSku[]) : []);
+  const [e1Reviews, setE1Reviews] = useState<OpsReview[]>(IS_PREVIEW ? (REVIEWS as OpsReview[]) : []);
   const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(null);
   const [e1Loading, setE1Loading] = useState(false);
   const [e1Error, setE1Error] = useState<string | null>(null);
   const refreshE1 = useCallback(async () => {
-    // 本地预览旁路(BYPASS=1):操作只作用于当前页面临时 state。真实模式不做前端兜底,
-    // 空库由后端 seed 到 MySQL 后再查出。
+    // 本地预览旁路(BYPASS=1):E1 数据来自本地 mock state(初始已装载),增删改也在本地完成;
+    // 跳过注定 401 的后端请求。=0 时走真后端。
     if (IS_PREVIEW) {
       setE1Error("本地预览模式");
       return;
@@ -290,9 +405,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
   }, []);
   useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, refreshE1]);
-  const skus = e1Skus;
-  const reviews = e1Reviews;
-  const phaseCur = e1Gates?.phaseCurrent ?? "P3";
+  useEffect(() => { if (hydrated) ensureSkus(SKUS as OpsSku[]); }, [hydrated, ensureSkus]);
+  // 后端连得上用真数据;连不上或返回空时回退本地原型 seed,避免同步后目录空白
+  // (SKUS/REVIEWS 与 OpsSku/OpsReview 同构,真后端可用时由 refreshE1 无缝覆盖)
+  // 预览模式直接用本地 state(删空就空,不复活);真后端模式连不上时回退原型 seed
+  const skus = IS_PREVIEW ? e1Skus : (e1Skus.length > 0 ? e1Skus : (SKUS as OpsSku[]));
+  const reviews = IS_PREVIEW ? e1Reviews : (e1Reviews.length > 0 ? e1Reviews : (REVIEWS as OpsReview[]));
+  const phaseCur = e1Gates?.phaseCurrent ?? pget("H.phase.current") ?? "P3";
   const e1PhaseIds = e1Gates?.phaseOrder?.length
     ? e1Gates.phaseOrder
     : (e1Gates?.phases ?? []).map((phase) => phase.p);
@@ -443,7 +562,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }, []);
   }, [e5Datacenters]);
   const skuDatacenterSet = useMemo(() => new Set(skuDatacenterOptions.map((item) => item.value)), [skuDatacenterOptions]);
-  const skuDatacenterDefault = skuDatacenterOptions[0]?.value ?? "";
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -478,10 +596,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!skuDrawer || e5Loading || skuDatacenterOptions.length === 0) return;
     setForm((current) => {
       const datacenter = current.datacenter.trim();
-      if (datacenter && skuDatacenterSet.has(datacenter)) return current;
-      return { ...current, datacenter: skuDatacenterDefault };
+      if (!datacenter || skuDatacenterSet.has(datacenter)) return current;
+      return { ...current, datacenter: "" };
     });
-  }, [skuDrawer, e5Loading, skuDatacenterOptions.length, skuDatacenterSet, skuDatacenterDefault]);
+  }, [skuDrawer, e5Loading, skuDatacenterOptions.length, skuDatacenterSet]);
 
   const refreshCurrentSkuMediaPreview = useCallback(async (assetId?: string) => {
     if (!assetId) return;
@@ -685,20 +803,22 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         },
         "新增任务核心配置",
         operator);
+      logAudit({ actor: operator, action: `新增任务 ${created.n} · taskClass=${taskForm.taskClass} · 模型 ${taskForm.model} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill 初始 ${taskForm.killInit}`, target: created.id });
       await refreshE2();
       setToast("已新增任务:" + created.n + " · taskClass=" + taskForm.taskClass + " · 后端已生效");
       setTaskDrawer(false);
       setEditTaskId(null);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "E2_TASK_CREATE_FAILED";
+      logAudit({ actor: operator, action: "新增任务失败:" + taskForm.n.trim() + " · " + msg, target: taskForm.n.trim() }); // A2:高敏 op 失败留痕(规则 6)
       setToast("任务新增失败:" + msg);
     }
   };
-  // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
+  // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass 以服务端为准)→ onConfirm 真写 updateTask。
   const submitTaskEdit = () => {
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
-    setActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认。` });
+    setActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· 服务端权威,改后对新派单生效,已派工单维持原配置完成 · 须操作确认 + A2 审计。` });
     setTaskDrawer(false);
   };
   const skuLabelsUsingTask = (taskId: string, taskName: string) => skus
@@ -854,12 +974,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
     if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
     const datacenter = form.datacenter.trim();
-    if (!datacenter || !skuDatacenterSet.has(datacenter)) {
-      if (!skuDatacenterDefault) {
-        setToast("请先在 E5 配置至少一个数据中心,再保存 SKU");
-        return;
-      }
-      setForm({ ...form, datacenter: skuDatacenterDefault });
+    if (datacenter && !skuDatacenterSet.has(datacenter)) {
+      setForm({ ...form, datacenter: "" });
     }
     const poolErr = validateSkuUnlockPool();
     if (poolErr) { setToast(poolErr); return; }
@@ -870,7 +986,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const ctx: EViewCtx = {
-    pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
+    hydrated, pget, pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
     skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
@@ -893,6 +1009,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "E3" && <E3Lifecycle ctx={ctx} />}
       {tab === "E4" && <E4Orders ctx={ctx} />}
       {tab === "E5" && <E5Ops ctx={ctx} />}
+      {tab === "E6" && <E6ComputeConfig ctx={ctx} />}
 
       {/* E3 操作说明手册弹窗(右上角按钮触发) */}
       {tab === "E3" && manualOpen && <E3Manual ctx={ctx} onClose={() => setManualOpen(false)} />}
@@ -915,13 +1032,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             footer={finalized
               ? <Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelOrder(null)}>关闭</Btn>
               : <>
-                  {eff === "failed" && <Btn onClick={() => setActionConfirm({ name: `重试配机 · ${o.id}`, op: "order-state", orderId: o.id, fixedVal: "allocating", amplify: false, detail: `将 ${o.id} 从 failed 重新置为 allocating,重新进入 DC 分配队列 · 须操作确认` })}>重试配机</Btn>}
-                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${nextState}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认` })}>推进下一态</Btn>}
-                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${prevState}`, op: "order-state", orderId: o.id, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认` })}>回滚上一态</Btn>}
+                  {eff === "failed" && <Btn onClick={() => setActionConfirm({ name: `重试配机 · ${o.id}`, op: "order-state", orderId: o.id, fixedVal: "allocating", amplify: false, detail: `将 ${o.id} 从 failed 重新置为 allocating,重新进入 DC 分配队列 · 须操作确认 + A2 审计` })}>重试配机</Btn>}
+                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${nextState}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认 + A2 审计` })}>推进下一态</Btn>}
+                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${prevState}`, op: "order-state", orderId: o.id, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认 + A2 审计` })}>回滚上一态</Btn>}
                   {canCancel && <Btn onClick={() => setActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}(${stateLabel(eff)})· 终止后续分配/扣费,资产/额度回退联动 D4/C3 · 须操作确认 + 审计留痕` })}>取消订单</Btn>}
                   {canTerminal && <Btn onClick={() => setActionConfirm({ name: "补建订单终态 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: [...TERMINAL_STATES] }, detail: `为缺失终态的订单 ${o.id} 手动落定终态(支付失败/过期/退款/开通失败)· 状态机对账兜底 · 须操作确认 + 审计留痕` })}>补建终态</Btn>}
                   {eff === "failed"
-                    ? <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setActionConfirm({ name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true, detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · 资产/额度回退联动 D4 + C3 · 不可逆` })}><AutoGloss>退款(操作确认)</AutoGloss></Btn>
+                    ? <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setActionConfirm({ name: "退款 · " + o.id, op: "order-refund", orderId: o.id, amplify: true, detail: `退款 ${o.id} · $${o.amt.toLocaleString()} · 资产/额度回退联动 D4 + C3 · 写 A2 审计 · 不可逆` })}><AutoGloss>退款(操作确认)</AutoGloss></Btn>
                     : <Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelOrder(null)}>关闭</Btn>}
                 </>}>
             <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
@@ -932,7 +1049,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <KV k="下单时间" v={o.age + " 前"} />
             {isCancelled(o.id) && <KV k="取消" v={<span style={{ color: "var(--ink-3)" }}>已取消 · 后续分配/扣费已终止,资产回退联动 D4/C3</span>} />}
             {isRefunded(o.id) && <KV k="退款" v={<span style={{ color: "var(--warning)" }}>已退款 · 资产回退已联动 D4/C3</span>} />}
-            {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <KV k="补建终态" v={<span style={{ color: "var(--warning)" }}>{stateLabel(terminalOf(o.id)!)} · 人工补建</span>} />}
+            {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <KV k="补建终态" v={<span style={{ color: "var(--warning)" }}>{stateLabel(terminalOf(o.id)!)} · 人工补建,已写入 A2 审计</span>} />}
             {o.state === "failed" && <KV k="失败" v={<span style={{ color: "var(--danger)" }}>DC 分配超时 · 待处置</span>} />}
             <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>状态轨迹</div>
             <div className="edrawer-trail">
@@ -999,7 +1116,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <label className="col" style={{ gap: 5 }}>
               <span className="muted tiny">数据中心 datacenter<span style={{ color: "var(--ink-4)" }}> · 选 E5 数据中心(前端展示名称)· 在 E5 运维增删改</span></span>
               <select className="fld" value={form.datacenter} onChange={(e) => setForm({ ...form, datacenter: e.target.value })}>
-                {skuDatacenterOptions.length === 0 && <option value="">E5 暂无数据中心</option>}
+                <option value="">— 未指定 —</option>
                 {skuDatacenterOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
@@ -1148,7 +1265,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       </Drawer>}
 
       {/* 任务新增 抽屉 */}
-      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/taskClass 改后走操作确认 · 对新派单 server-canonical 生效" : "AI 算力任务类型 · 单价/门槛改后对新派单 server-canonical 生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
+      {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/taskClass 改后走操作确认 · 对新派单按服务端配置生效" : "AI 算力任务类型 · 单价/门槛改后对新派单按服务端配置生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
         footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 LLM 推理 405B" /></label>
@@ -1239,16 +1356,25 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           if (IS_PREVIEW && (mc.op === "param" || mc.op === "param-fixed") && mc.paramKey?.startsWith("E.gen.")) {
             setToast("本地预览模式:代际门参数需连后端生效"); setActionConfirm(null); return;
           }
+          const e6ValidationError = validateE6ComputeWrite(mc, pget, newValue, businessValue);
+          if (e6ValidationError) {
+            setToast(e6ValidationError);
+            return;
+          }
           try {
             if (mc.op === "sku-save") {
               const ex = editName ? skus.find((x) => x.name === editName) : undefined;
               const sku = attachSkuMedia(formToSku(form, ex), skuMedia);
+              let mirror = sku; // store 镜像值:PREVIEW 用本地,真后端用返回的 canonical SKU(防 store 镜像与后端 drift)
               if (IS_PREVIEW) {
                 setE1Skus((prev) => editName ? prev.map((x) => (x.id === ex?.id || x.name === editName) ? sku : x) : [sku, ...prev]);
               } else {
-                await saveE1Sku(sku, editName ? (ex?.id || ex?.name || editName) : undefined, reason, operator);
+                const saved = await saveE1Sku(sku, editName ? (ex?.id || ex?.name || editName) : undefined, reason, operator);
+                if (saved) mirror = attachSkuMedia(saved, skuMedia);
                 await refreshE1();
               }
+              if (editName) updateSku(editName, mirror); else addSku(mirror); // store 镜像(跨域 SKU 真源,后端 canonical 优先)
+              logAudit({ actor: operator, action: editName ? "编辑SKU " + form.name : "新增SKU " + form.name, target: sku.name, reason });
               setToast(editName ? "SKU 已更新:" + form.name : "SKU 已新增:" + form.name + " · 待上架");
               setEditName(null);
               resetSkuMedia(null);
@@ -1260,6 +1386,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 await deleteE1Sku(sku?.id || mc.target, reason, operator);
                 await refreshE1();
               }
+              removeSku(sku?.name ?? mc.target); // store 镜像
+              logAudit({ actor: operator, action: "删除SKU " + mc.target, target: sku?.name ?? mc.target, reason });
               setToast("SKU 已删除:" + mc.target);
             } else if (mc.op === "sku-status" && mc.target) {
               const sku = skus.find((x) => x.name === mc.target || x.id === mc.target);
@@ -1269,16 +1397,20 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 await updateE1SkuStatus(sku?.id || mc.target, mc.status!, reason, operator);
                 await refreshE1();
               }
+              setSkuStatus(sku?.name ?? mc.target, mc.status!); // store 镜像
+              logAudit({ actor: operator, action: "SKU " + (mc.status === "off" ? "下架" : "上架") + " " + mc.target, target: sku?.name ?? mc.target, reason });
               setToast("SKU " + mc.target + (mc.status === "off" ? " 已下架" : " 已上架"));
             } else if (mc.op === "task-down" && mc.taskId) {
               await deleteE2Task(mc.taskId, reason, operator);
               await refreshE2();
+              logAudit({ actor: operator, action: "下架任务 " + (mc.target ?? mc.taskId), target: mc.taskId, reason });
               setToast("任务已下架:" + (mc.target ?? mc.taskId));
             } else if (mc.op === "task-price" && mc.taskId) {
               const v = Number(newValue);
               if (Number.isFinite(v) && v > 0) {
                 await updateE2TaskPrice(mc.taskId, v, reason, operator);
                 await refreshE2();
+                logAudit({ actor: operator, action: "调整任务单价 " + mc.taskId, target: mc.taskId, after: String(v), reason });
                 setToast(mc.name + ":已写入 $" + v + " · 后端已生效");
               }
               else setToast("请填写有效单价");
@@ -1301,6 +1433,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 minVRAM: taskForm.minVRAM.trim(),
                 killInit: taskForm.killInit,
               }, reason, operator);
+              logAudit({ actor: operator, action: `编辑任务 ${taskForm.n.trim()} · 单价 $${price}${taskForm.unit} · 门槛 ${taskForm.req} · taskClass=${taskForm.taskClass} · 奖励 ${minR}-${maxR} · minVRAM ${taskForm.minVRAM} · kill ${taskForm.killInit}`, target: editTaskId, reason });
               await refreshE2();
               setToast("任务已更新:" + taskForm.n.trim() + " · 后端已生效");
               setEditTaskId(null);
@@ -1310,6 +1443,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 const patch = mc.phoneField === "dailyUsdt" ? { dailyUsdt: v } : { dailyNex: v };
                 await updateE2PhoneTier(mc.phoneTier, patch, reason, operator);
                 await refreshE2();
+                logAudit({ actor: operator, action: `调整手机 T${mc.phoneTier} ${mc.phoneField}`, target: String(mc.phoneTier), after: String(v), reason });
                 setToast(mc.name + ":已写入 " + v + " · 后端已生效");
               } else {
                 setToast("请填写有效档位收益");
@@ -1322,26 +1456,32 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setE3Params(await updateE3Param(mc.paramKey, v, reason, operator));
                 await refreshE3();
               } else {
-                throw new Error("E_PARAM_BACKEND_ROUTE_MISSING:" + mc.paramKey);
+                setParam(mc.paramKey, v, { action: mc.name, reason, actor: operator });
               }
-              setToast(mc.name + ":已写入 " + v + " · server-canonical");
+              // E.gen / E3 走后端 API 不经 setParam → 补 A2 审计镜像(else 分支 setParam 已自带审计)
+              if (mc.paramKey.startsWith("E.gen.") || isE3ParamKey(mc.paramKey)) {
+                logAudit({ actor: operator, action: mc.name, target: mc.paramKey, after: v, reason });
+              }
+              setToast(mc.name + ":已写入 " + v + " · 服务端权威");
             } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
-              // 多字段调参:每字段写到自己的 param key;E 域只允许走后端配置接口。
+              // 多字段调参:每字段写到自己的 param key;E3 走后端配置接口,其他域保留原 store 配置。
               const e3Values: Record<string, string> = {};
               for (const { key, paramKey } of mc.paramKeys) {
                 const next = (businessValue[key] ?? "").trim();
                 if (isE3ParamKey(paramKey)) {
                   e3Values[paramKey] = next;
                 } else {
-                  throw new Error("E_PARAM_BACKEND_ROUTE_MISSING:" + paramKey);
+                  setParam(paramKey, next, { action: mc.name, reason, actor: operator });
                 }
               }
               if (Object.keys(e3Values).length) {
                 setE3Params(await updateE3Params(e3Values, reason, operator));
                 await refreshE3();
+                // E3 字段走后端配置接口不经 setParam → 补 A2 审计镜像(非 E3 字段 setParam 已自带审计)
+                logAudit({ actor: operator, action: mc.name, target: Object.keys(e3Values).join(","), after: Object.values(e3Values).join(" / "), reason });
               }
               const summary = mc.paramKeys.map(({ key }) => (businessValue[key] ?? "").trim()).join(" / ");
-              setToast(mc.name + ":已写入 " + summary + " · server-canonical");
+              setToast(mc.name + ":已写入 " + summary + " · 服务端权威");
             } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
               if (mc.paramKey.startsWith("E.gen.")) {
                 setE1Gates(await updateE1GenerationGate(mc.paramKey, mc.fixedVal, reason, operator));
@@ -1349,7 +1489,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 setE3Params(await updateE3Param(mc.paramKey, mc.fixedVal, reason, operator));
                 await refreshE3();
               } else {
-                throw new Error("E_PARAM_BACKEND_ROUTE_MISSING:" + mc.paramKey);
+                setParam(mc.paramKey, mc.fixedVal, { action: mc.name, reason, actor: operator });
+              }
+              // E.gen / E3 走后端 API 不经 setParam → 补 A2 审计镜像
+              if (mc.paramKey.startsWith("E.gen.") || isE3ParamKey(mc.paramKey)) {
+                logAudit({ actor: operator, action: mc.name, target: mc.paramKey, after: mc.fixedVal, reason });
               }
               setToast(mc.name + " · 已生效 · 以后端为准");
             } else if (mc.op === "phase-save" && businessValue) {
@@ -1364,14 +1508,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 ? await patchE1Phase(mc.phaseId, payload, reason, operator)
                 : await createE1Phase(payload, reason, operator));
               await refreshE1();
+              logAudit({ actor: operator, action: (mc.phaseId ? "编辑阶段 " : "新增阶段 ") + payload.label, target: mc.phaseId ?? payload.label ?? "E.phase", reason });
               setToast(mc.phaseId ? "阶段已更新:" + payload.label : "阶段已新增:" + payload.label);
             } else if (mc.op === "phase-archive" && mc.phaseId) {
               setE1Gates(await archiveE1Phase(mc.phaseId, reason, operator));
               await refreshE1();
+              logAudit({ actor: operator, action: "归档阶段", target: mc.phaseId, reason });
               setToast("阶段已归档");
             } else if (mc.op === "phase-current" && mc.phaseId) {
               setE1Gates(await setE1CurrentPhase(mc.phaseId, reason, operator));
               await refreshE1();
+              logAudit({ actor: operator, action: "切换当前阶段", target: mc.target ?? mc.phaseId, reason });
               setToast("当前阶段已切换:" + (mc.target ?? mc.phaseId));
             } else if (mc.op === "generation-gate-save" && businessValue) {
               const payload = {
@@ -1389,29 +1536,35 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 ? await patchE1GenerationGate(mc.generationGateId, payload, reason, operator)
                 : await createE1GenerationGate(payload, reason, operator));
               await refreshE1(); // 对齐 phase-save/gate-force:刷新 e1Skus/phases 等派生面,防 SKU 解锁阶段下拉读 stale
+              logAudit({ actor: operator, action: (mc.generationGateId ? "编辑代际门 " : "新增代际门 ") + payload.skuId, target: mc.generationGateId ?? payload.skuId, reason });
               setToast(mc.generationGateId ? "代际门已更新:" + payload.skuId : "代际门已新增:" + payload.skuId);
             } else if (mc.op === "generation-gate-force" && mc.generationGateId && mc.generationGate?.forceUnlock != null) {
               const enabled = !!mc.generationGate.forceUnlock;
               setE1Gates(await patchE1GenerationGate(mc.generationGateId, { forceUnlock: enabled }, reason, operator));
               await refreshE1();
+              logAudit({ actor: operator, action: (enabled ? "开启" : "撤销") + "代际门强制提前开放", target: mc.generationGateId, after: enabled ? "forceUnlock" : "off", reason });
               setToast((enabled ? "强制提前开放已开启:" : "强制提前开放已撤销:") + mc.generationGateId);
             } else if (mc.op === "generation-gate-archive" && mc.generationGateId) {
               setE1Gates(await archiveE1GenerationGate(mc.generationGateId, reason, operator));
               await refreshE1(); // 对齐 phase-archive:刷新派生面
+              logAudit({ actor: operator, action: "移除代际门", target: mc.generationGateId, reason });
               setToast("代际门已移除:" + mc.generationGateId);
             } else if (mc.op === "order-state" && mc.orderId && mc.fixedVal) {
               await updateE4OrderState(mc.orderId, mc.fixedVal, reason, operator);
               await refreshE4();
+              logAudit({ actor: operator, action: mc.name, target: mc.orderId, after: mc.fixedVal, reason });
               setToast("订单 " + mc.orderId + " 已更新为:" + stateLabel(mc.fixedVal));
               setSelOrder(null);
             } else if (mc.op === "order-refund" && mc.orderId) {
               await refundE4Order(mc.orderId, reason, operator);
               await refreshE4();
+              logAudit({ actor: operator, action: "退款订单 " + mc.orderId, target: mc.orderId, reason });
               setToast("订单 " + mc.orderId + " 已退款 · 资产回退已联动 D4 冲正 + C3");
               setSelOrder(null);
             } else if (mc.op === "order-cancel" && mc.orderId) {
               await cancelE4Order(mc.orderId, reason, operator);
               await refreshE4();
+              logAudit({ actor: operator, action: "取消订单 " + mc.orderId, target: mc.orderId, reason });
               setToast("订单 " + mc.orderId + " 已取消 · 后续分配/扣费已终止");
               setSelOrder(null);
             } else if (mc.op === "order-terminal" && mc.orderId) {
@@ -1419,16 +1572,19 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               if (v) {
                 await terminalE4Order(mc.orderId, v, reason, operator);
                 await refreshE4();
+                logAudit({ actor: operator, action: "补建订单终态 " + mc.orderId, target: mc.orderId, after: v, reason });
                 setToast("订单 " + mc.orderId + " 已补建终态:" + stateLabel(v));
               }
               setSelOrder(null);
             } else if (mc.op === "device-activate" && mc.deviceId) {
               await activateE5Device(mc.deviceId, reason, operator);
               await refreshE5();
+              logAudit({ actor: operator, action: "激活设备 " + (mc.deviceNo ?? mc.deviceId), target: String(mc.deviceId), reason });
               setToast("设备 " + (mc.deviceNo ?? mc.deviceId) + " 已提交激活 · 后端已生效");
             } else if (mc.op === "device-deactivate" && mc.deviceId) {
               await deactivateE5Device(mc.deviceId, reason, operator);
               await refreshE5();
+              logAudit({ actor: operator, action: "取消激活/解绑设备 " + (mc.deviceNo ?? mc.deviceId), target: String(mc.deviceId), reason });
               setToast("设备 " + (mc.deviceNo ?? mc.deviceId) + " 已取消激活/解绑 · 后端已生效");
             } else if (mc.op === "dc-save" && mc.dcForm) {
               const payload: E5DatacenterInput = {
@@ -1444,15 +1600,18 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               }
               await refreshE5();
               setEditDcLocation(null);
+              logAudit({ actor: operator, action: (mc.isNew ? "新增数据中心 " : "编辑数据中心 ") + payload.regionLabel + "(" + payload.dcLocation + ")", target: mc.dc ?? payload.dcLocation, reason });
               setToast((mc.isNew ? "数据中心已新增:" : "数据中心已更新:") + payload.dcLocation);
             } else if (mc.op === "dc-delete" && mc.dc) {
               await deleteE5Datacenter(mc.dc, reason, operator);
               await refreshE5();
+              logAudit({ actor: operator, action: "删除数据中心 " + mc.dc, target: mc.dc, reason });
               setToast("数据中心已删除:" + mc.dc);
             } else if (mc.op === "ops-pause" && mc.dc) {
               const paused = mc.fixedVal === "true";
               await setE5DatacenterPaused(mc.dc, paused, reason, operator);
               await refreshE5();
+              logAudit({ actor: operator, action: mc.dc + (paused ? " 暂停派单" : " 恢复派单"), target: mc.dc, reason });
               setToast(mc.dc + (paused ? " 已暂停派单" : " 已恢复派单") + " · 后端已生效");
             } else { setToast("已确认生效"); }
           } catch (error) {

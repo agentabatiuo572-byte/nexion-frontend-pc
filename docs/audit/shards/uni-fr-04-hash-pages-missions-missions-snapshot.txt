@@ -1,1 +1,7 @@
-(no interactive elements)
+- button "Back" [ref=e5]
+- button "Notifications" [ref=e6]
+- button "Browse Store" [ref=e7]
+- button "1 Re-invest $100 to your network +120 NEX" [ref=e1]
+- button "2 Browse 3 store products +50 NEX" [ref=e2]
+- button "3 Complete 50 AI inference jobs +80 NEX" [ref=e3]
+- button "4 Swap any NEX ↔ USDT amount +80 NEX" [ref=e4]

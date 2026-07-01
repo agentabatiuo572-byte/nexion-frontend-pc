@@ -2,7 +2,7 @@
 //
 // Generates the machine-readable denominators required by
 // docs/remediation/MASTER-PLAN.md:
-// - route inventory for admin / Next.js reference / UniApp
+// - route inventory for admin / UniApp
 // - modal trigger inventory
 // - static interaction count inventory
 // - seed business-flow inventory
@@ -18,9 +18,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
+// 2026-06-26 H5 工程已退役;PROJECTS 现只剩 admin + uniapp 两端。
 const PROJECTS = {
   admin: ROOT,
-  nextReference: path.join(PLAN_ROOT, "Nexion-prototype"),
   uniapp: path.join(PLAN_ROOT, "Nexion-uniapp"),
 };
 const REMEDIATION_DIR = path.join(ROOT, "docs", "remediation");
@@ -200,7 +200,6 @@ function getUniappRoutes() {
 
 function generateRoutesInventory() {
   const admin = getAdminRoutes();
-  const nextReference = { pages: getNextRoutes(PROJECTS.nextReference) };
   const uniapp = getUniappRoutes();
   return {
     generatedAt,
@@ -208,11 +207,9 @@ function generateRoutesInventory() {
     counts: {
       adminPages: admin.pages.length,
       adminNavRoutes: admin.navRoutes.filter((r) => r.route).length,
-      nextReferencePages: nextReference.pages.length,
       uniappPages: uniapp.pages.length,
     },
     admin,
-    nextReference,
     uniapp,
   };
 }
@@ -270,7 +267,6 @@ function routeInteractionRows(side, projectRoot, routes, kind) {
     let file = route.file ? path.join(projectRoot, route.file) : null;
     if (!file || !fs.existsSync(file)) {
       if (side === "admin") file = routeFileForAdminRoute(route.route);
-      else if (side === "nextReference") file = routeFileForNext(projectRoot, route.route);
     }
     const text = file ? readText(file) : "";
     return {
@@ -296,7 +292,6 @@ function generateInteractionsInventory(routesInventory) {
     rows: [
       ...routeInteractionRows("admin", ROOT, adminNavRoutes, "tsx"),
       ...routeInteractionRows("admin", ROOT, adminExtraPages, "tsx"),
-      ...routeInteractionRows("nextReference", PROJECTS.nextReference, routesInventory.nextReference.pages, "tsx"),
       ...routeInteractionRows("uniapp", PROJECTS.uniapp, routesInventory.uniapp.pages, "vue"),
     ],
   };
@@ -463,8 +458,7 @@ function seedLedgerEntries() {
     mk("INIT-002", "admin", "/content/i18n", "i18n fill modal has no editable copy field", "modal-blocked", "P1", "The Fill action opens a modal with no text editing path."),
     mk("INIT-003", "admin", "all-admin-list-routes", "Admin information lists lack pagination and some lack filters", "list-capability", "P1", "List/table surfaces are missing pagination/filter/search/sort/empty-state baseline."),
     mk("INIT-004", "admin", "C-domain", "C domain 2FA action is toast-only fake write", "fake-write", "P0", "2FA operation presents success feedback without persisted state change."),
-    mk("INIT-005", "frontend", "all-next-reference-routes", "Reference source has 6 dead href anchors", "dead-control", "P1", "Known href=\"#\" remnants need L1 reproduction and routing/fix-in-port decision."),
-    mk("INIT-006", "frontend", "i18n", "Reference source en/zh i18n key mismatch", "i18n", "P1", "Known en/zh diff of 99 keys needs refreshed count and UniApp migration handling."),
+    // INIT-005/006:H5 工程退役后(2026-06-26)失效,改 closed。
     mk("INIT-007", "cross", "feature-mapping", "No full frontend-admin feature mapping exists", "spec-gap", "P0", "Configurable frontend business points are not yet reconciled to admin management surfaces."),
     mk("INIT-008", "uniapp", "all-uniapp-routes", "UniApp full-route migration needs batch audit against reference behavior", "port-drift", "P1", "UniApp is delivery target and must carry fix-in-port behavior rather than copying reference bugs."),
   ];

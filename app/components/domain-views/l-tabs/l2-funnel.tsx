@@ -9,42 +9,17 @@ import { useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
-import { LDataState, num, rec, rows, str, strings, type KpiRow } from "./live-data";
+import { FUNNEL, KPIS } from "@/lib/mock/admin/design-data";
+import { FUNNEL_EXT, TRIAL_STEPS, COHORTS, CURVES, XD } from "./data";
 import type { LCtx } from "./types";
 
-type FunnelRow = { stage: string; ev?: string; users: number; cvr?: number | null; lc: string; color: string; target?: string | null };
-type FunnelExt = {
-  plain: string;
-  inflow: string;
-  lost: string;
-  dwell: number[];
-  note: string;
-  tg?: string | null;
-  trial?: boolean;
-  v1?: boolean;
-};
-type TrialStep = { e: string; n: number; arr?: string; arrLb?: string };
-type CohortRow = { w: string; size: number; d1?: number | null; d7?: number | null; d30?: number | null };
-type XdMetric = { rows: (string | number)[][]; alert: number[]; unit: string; msg: { pre: string; bold: string; post: string } };
-
-function normalizeXdMetric(raw: unknown): XdMetric {
-  const data = rec(raw);
-  const msg = rec(data.msg);
-  const message = str(data.message);
-  return {
-    rows: rows<(string | number)[]>(data.rows),
-    alert: rows<number>(data.alert),
-    unit: str(data.unit, "%"),
-    msg: {
-      pre: str(msg.pre, message),
-      bold: str(msg.bold),
-      post: str(msg.post),
-    },
-  };
-}
+const STAGE_EV = ["auth.register_completed", "kyc.express_verified", "checkout.completed", "checkout.completed ×2", "withdraw.submitted"];
+const fullCvr = ((FUNNEL[4].users / FUNNEL[0].users) * 100).toFixed(1);
+const trialBuy = ((TRIAL_STEPS[2].n / TRIAL_STEPS[1].n) * 100).toFixed(1);
+const day7 = KPIS[1];
 
 /** cohort 热力格:紫系浓度四档(--cyan 族),深格切暗字。 */
-function heatStyle(v: number | null | undefined): React.CSSProperties {
+function heatStyle(v: number | null): React.CSSProperties {
   if (v == null) return { background: "var(--surface-2)", color: "var(--ink-4)" };
   const a = v >= 62 ? 70 : v >= 59 ? 45 : v >= 56 ? 25 : 10;
   return { background: `color-mix(in srgb, var(--cyan) ${a}%, transparent)`, color: a >= 45 ? "#0A0A0A" : "var(--ink-2)" };
@@ -58,17 +33,8 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
       confirmLabel: "导出",
     });
     if (!ok) return;
-    await ctx.biActions?.createReport({
-      exportType: "漏斗序列",
-      timeRange: "当前 cohort 窗口",
-      fields: "漏斗去重人数/CVR/cohort 留存率",
-      piiLevel: "无 PII",
-      maskPolicy: "NONE",
-      recipient: "BI 管理员",
-      ticket: "L2-FUNNEL",
-    }, "导出漏斗 cohort 聚合序列用于转化分析");
-    await ctx.reloadBi?.();
-    ctx.toast("漏斗 cohort 导出任务已提交 · 数据来自后端 BI 接口");
+    ctx.logAudit({ actor: "总管理员", action: "导出 cohort/漏斗序列 CSV(聚合 · 无 PII)", target: "admin.report_exported", after: "export_type=funnel_cohort" });
+    ctx.toast("已导出 cohort/漏斗序列 CSV · 落 admin.report_exported 审计");
   };
   return (
     <>
@@ -87,37 +53,23 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const [slice, setSlice] = useState(0);
   const [gran, setGran] = useState(0);
 
-  const data = ctx.biData?.l2;
-  const FUNNEL = rows<FunnelRow>(data?.funnel);
-  const FUNNEL_EXT = rows<FunnelExt>(data?.funnelExt);
-  const TRIAL_STEPS = rows<TrialStep>(data?.trialSteps);
-  const COHORTS = rows<CohortRow>(data?.cohorts);
-  const CURVES = rec<[number, number][]>(data?.curves);
-  const XD = rec(data?.crossAnalysis);
-  const STAGE_EV = strings(data?.stageEvents);
-  const day7 = (data?.day7Kpi ?? {}) as Partial<KpiRow>;
-  if (!FUNNEL.length || !FUNNEL_EXT.length || !COHORTS.length) return <LDataState ctx={ctx} label="L2" />;
-  const safeStage = Math.min(selStage, FUNNEL.length - 1);
-  const safeCohort = Math.min(selCohort, COHORTS.length - 1);
-  const fullCvr = FUNNEL[0]?.users ? ((FUNNEL[FUNNEL.length - 1].users / FUNNEL[0].users) * 100).toFixed(1) : "0.0";
-  const trialBuy = TRIAL_STEPS[1]?.n ? ((num(TRIAL_STEPS[2]?.n) / TRIAL_STEPS[1].n) * 100).toFixed(1) : "0.0";
   const maxUsers = FUNNEL[0].users;
-  const s = FUNNEL[safeStage];
-  const ext = FUNNEL_EXT[safeStage] ?? { plain: s.stage, inflow: "—", lost: "—", dwell: [], note: "" };
-  const dwellMax = Math.max(...(ext.dwell.length ? ext.dwell : [1]));
-  const xd = normalizeXdMetric(XD[metric]);
+  const s = FUNNEL[selStage];
+  const ext = FUNNEL_EXT[selStage];
+  const dwellMax = Math.max(...ext.dwell);
+  const xd = XD[metric];
 
   /* ---- 留存衰减曲线(W21 形状为基,按所选 cohort Day7 平移;虚线为对比 cohort) ---- */
   const curveChart = () => {
     const W = 560, H = 200, P = 30;
-    const base = COHORTS[safeCohort].d7 ?? 58;
-    const scaled = (CURVES.W21 ?? []).map(([d, v]) => [d, d === 0 ? 100 : v + (base - 58)] as [number, number]);
+    const base = COHORTS[selCohort].d7 ?? 58;
+    const scaled = CURVES.W21.map(([d, v]) => [d, d === 0 ? 100 : v + (base - 58)] as [number, number]);
     const X = (d: number) => P + (d / 30) * (W - P - 14);
     const Y = (v: number) => H - 24 - ((v - 30) / 70) * (H - 44);
     const mp = scaled.map(([d, v], i) => `${i ? "L" : "M"}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ");
-    const cp = cmp !== "none" ? (CURVES[cmp] ?? []).map(([d, v], i) => `${i ? "L" : "M"}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ") : null;
+    const cp = cmp !== "none" ? CURVES[cmp].map(([d, v], i) => `${i ? "L" : "M"}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ") : null;
     return (
-      <svg className="curve-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`留存衰减曲线 ${COHORTS[safeCohort].w}`}>
+      <svg className="curve-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`留存衰减曲线 ${COHORTS[selCohort].w}`}>
         {[1, 7, 14, 30].map((d) => (
           <g key={d}>
             <line x1={X(d)} y1={14} x2={X(d)} y2={H - 24} stroke="var(--border)" />
@@ -143,7 +95,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
     <div>
       {/* stat strip */}
       <div className="f-stats">
-        <div className="f-stat cyan"><div className="k">本周注册 cohort</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 新注册 · 按注册周分组</div></div>
+        <div className="f-stat cyan"><div className="k">本周注册 cohort</div><div className="v">2026-W22</div><div className="sub">{COHORTS[5].size.toLocaleString("en-US")} 新注册 · 按注册周分组</div></div>
         <div className="f-stat"><div className="k">全漏斗转化(注册→提现)</div><div className="v">{fullCvr}%</div><div className="sub">注册 cohort 中最终发起提现的比例</div></div>
         <div className="f-stat warn"><div className="k">Day7 留存(W21 cohort)</div><div className="v">{day7.value}%</div><div className="sub">目标 &gt; {day7.target}% · 连续 3 周未达(黄灯)</div></div>
         <div className="f-stat ok"><div className="k">trial→购买率</div><div className="v">{trialBuy}%</div><div className="sub">L3→L4 子路径 · 并列独立计量</div></div>
@@ -187,10 +139,10 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
               const w = Math.max((f.users / maxUsers) * 100, 4);
               const ex = FUNNEL_EXT[i];
               return (
-                <button key={f.stage} className={"fn-row" + (i === safeStage ? " sel" : "")} onClick={() => setSelStage(i)}>
+                <button key={f.stage} className={"fn-row" + (i === selStage ? " sel" : "")} onClick={() => setSelStage(i)}>
                   <div className="lbl">
                     <span className="nm"><AutoGloss>{f.stage}</AutoGloss><span className="lc">{f.lc}</span>{ex.v1 && <span className="bdg dim" style={{ fontSize: 10.5 }}>暂用二次下单口径</span>}</span>
-                    <span className="ev" title={STAGE_EV[i] ?? f.ev ?? ""}><AutoGloss>{ex.plain}</AutoGloss></span>
+                    <span className="ev" title={STAGE_EV[i]}><AutoGloss>{ex.plain}</AutoGloss></span>
                   </div>
                   <div className="barzone"><div className="bar" style={{ width: `${w}%`, background: f.color }}><span>{f.users.toLocaleString("en-US")}</span></div></div>
                   <div className="cvr">{f.cvr != null ? <><span className="pc">{f.cvr}%</span><span className="tg">{ex.tg ? `目标 ${ex.tg}` : "上级转化"}</span></> : <span className="tg">漏斗顶</span>}</div>
@@ -201,7 +153,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
           <div className="stage-x">
             <div className="hd">
               <span className="t"><AutoGloss>{s.stage}</AutoGloss> 级展开</span>
-              <span className="lcode">{STAGE_EV[safeStage] ?? s.ev}</span>
+              <span className="lcode">{STAGE_EV[selStage]}</span>
               {ext.tg && <span className="bdg ok">目标 {ext.tg}</span>}
               <span style={{ marginLeft: "auto" }} />
               <button className="l-btn sm" onClick={() => ctx.toast(`路径分析:「${s.stage}未转化」用户规模与特征已生成 · admin.bi_query_run`)}>路径分析</button>
@@ -252,7 +204,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
               <tbody>
                 {COHORTS.map((c, i) => (
                   <tr key={c.w}>
-                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{c.w}{i === safeCohort && <span className="bdg cyan" style={{ fontSize: 10.5, marginLeft: 4 }}>曲线</span>}</td>
+                    <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{c.w}{i === selCohort && <span className="bdg cyan" style={{ fontSize: 10.5, marginLeft: 4 }}>曲线</span>}</td>
                     <td className="num mono">{c.size.toLocaleString("en-US")}</td>
                     {[c.d1, c.d7, c.d30].map((v, j) => (
                       <td key={j} className="cellv" style={heatStyle(v)} onClick={() => { setSelCohort(i); ctx.toast(`切换曲线 cohort → ${c.w}`); }} title={`${c.w} · Day${[1, 7, 30][j]}`}>{v == null ? "—" : `${v}%`}</td>
@@ -265,7 +217,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
             <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}><b>读法</b> · <AutoGloss>横向看单个 cohort 的衰减;纵向看产品迭代 / Phase 切换对同一留存窗的影响。W20 起 Day7 整列转暗(P3 扩张拉新期),Day1 未受影响——流失发生在第 2–7 天,指向推送节奏而非首日体验。</AutoGloss></div>
           </div>
           <div>
-            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>留存衰减曲线 · {COHORTS[safeCohort].w}</div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>留存衰减曲线 · {COHORTS[selCohort].w}</div>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>该 cohort 留存率随天数衰减 · 虚线为对比 cohort</div>
             {curveChart()}
             <div className="chips" style={{ marginTop: 10 }}><span className="lb">对比</span>

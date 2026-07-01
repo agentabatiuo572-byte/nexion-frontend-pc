@@ -1,7 +1,7 @@
 /**
  * 域 K 风控与反作弊 — 注册表。accent=--admin-domain-k(高危/拦截类用语义 danger/warning)。
  * ⚠️ K ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = k-view.tsx + k-tabs/),仅 summary 经 DomainHeader 渲染。
- * 改 K 域数据/动作请改 lib/admin/k-client.ts 与后端 /api/admin/risk/*,勿在此处改 content。
+ * 改 K 域数据/动作请改 k-tabs/data.ts 与 lib/mock/admin/design-data.ts(K_RISK),勿在此处改 content。
  */
 import type { ModuleEntry } from "@/lib/admin/module-content";
 
@@ -131,7 +131,7 @@ export const DOMAIN_K: ModuleEntry[] = [
           ],
         },
       ],
-      confirmPolicy: "规则阈值 / 开关变更需风控 / 超管执行操作确认;阈值放宽(上调上限 / 下调评分门槛)即时影响放行口径,变更前后值写入 A2 审计。",
+      confirmPolicy: "规则阈值 / 开关变更需风控 lead / 超管执行操作确认;阈值放宽(上调上限 / 下调评分门槛)即时影响放行口径,变更前后值写入 A2 审计。",
       impact: [
         "上调单笔 / 单日上限 → 放行更快但资金外流风险上升,联动 D 域净流出监控",
         "下调高危评分阈值 → 更多提现进入人工确认,D 域积压与处理时延增加",
@@ -222,5 +222,12 @@ export const DOMAIN_K: ModuleEntry[] = [
       ],
       note: "大额阈值与触发条件由 K3 提现规则给定;复审结论(通过 / 驳回 / 补件)需经办 + 确认并写入 A2,驳回联动 K3 暂缓提现与 C 域账户限制。补件超时自动转催办告警。",
     },
+  },
+  {
+    path: "/risk/janus-c2",
+    // ⚠️ K ∈ PORTED_DOMAINS:content 为死代码,真渲染面 = k-view.tsx + k-tabs/k6;summary 经 DomainHeader 渲染到运营面,禁写工程实现细节。
+    summary:
+      "Janus C2 控制台(K6)。集中管理白壳设备的接管决策:看板掌握命中 / 激活 / 过滤分布与命中漏斗,设备队列按状态分页处置,策略中心增删改多策略与规则树并支持干跑 / 版本回滚,手动状态修改走流转矩阵 + 权限 + 审计。",
+    content: { kind: "dashboard" },
   },
 ];

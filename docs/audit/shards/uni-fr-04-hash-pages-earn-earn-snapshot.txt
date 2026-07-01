@@ -1,1 +1,1 @@
-(no interactive elements)
+- button "You have a voucher to claim" [ref=e1]

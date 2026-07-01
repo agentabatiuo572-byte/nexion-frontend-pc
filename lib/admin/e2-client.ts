@@ -1,5 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
-import type { OpsTask } from "@/lib/admin/platform-types";
+import type { OpsTask } from "@/lib/store/admin/platform-config-store";
 
 interface ApiResult<T> {
   code: number;
@@ -88,7 +87,7 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`));
+    throw new Error(result?.message || `E2_REQUEST_FAILED_${response.status}`);
   }
 
   return result.data as T;

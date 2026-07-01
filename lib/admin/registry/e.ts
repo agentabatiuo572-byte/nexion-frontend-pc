@@ -1,5 +1,5 @@
 /** 域 E 设备与商城 — 注册表(config / dashboard / list archetype 混合)。accent=--admin-domain-e。
- *  ⚠️ E ∈ PORTED_DOMAINS:本文件 content(metrics/rows/groups)为**死代码**,真渲染面 = e-view.tsx + e-tabs/(E1 catalog / E4 orders / E5 devices 均走后端代理),仅 summary 经 DomainHeader 渲染。改 E 域展示值改 e-view/e-tabs,非本文件。本文件内的 SKU/价格已对齐 canon 仅作存档一致性。
+ *  ⚠️ E ∈ PORTED_DOMAINS:本文件 content(metrics/rows/groups)为**死代码**,真渲染面 = e-view.tsx + e-tabs/(catalog 走 design-data.ts SKUS,orders/devices 走 e-tabs/data.ts),仅 summary 经 DomainHeader 渲染。改 E 域展示值改 e-view/e-tabs,非本文件。本文件内的 SKU/价格已对齐 canon 仅作存档一致性。
  *  NexionBox 矿机商城与设备生命周期。数值与前端 PRD device specs 对齐(server 权威):
  *  - SKU 6 个管理对象(在售 4 + 待发布 2);价格 / baseRate 逐字段对齐 canon-numbers.json(S1 $649 · Pro $1,199 · Pro v2 Gen-2 $1,319 · Rack P1 $4,499 · Rack P2 $7,499 · Cloud $19.9)。
  *  - 衰减模型 -4% / -6% / -10% 月分段 + MIN_EFFICIENCY(P3 档 month12 ≈ 22% 效能)。
@@ -239,6 +239,42 @@ export const DOMAIN_E: ModuleEntry[] = [
         { label: "派工单" },
       ],
       note: "算力波动以 baseRate × E3 当月效能为基准比对;日产偏差超阈值或心跳超时即升级告警。强制下线 / 补偿计酬 / 批量计酬修正为干预性操作,需操作确认 + 理由并写入 A2 审计;监控数据 server 权威,本台只读展示 + 工单流转。",
+    },
+  },
+  {
+    // E6 电脑算力配置页。E ∈ PORTED_DOMAINS:content 为死代码,真渲染面 = e-view.tsx + e-tabs/e6-compute-config;仅 summary 经 DomainHeader 渲染。
+    path: "/devices/compute-config",
+    summary:
+      "算力与设备配置(E6)—— 电脑算力配置页。维护电脑算力入口开关、在线系数、显卡档位映射、客户端下载地址与双语文案;所有写入走操作确认、理由和 A2 审计。",
+    content: {
+      kind: "config",
+      metrics: [
+        { label: "入口开关", value: "1", sub: "默认关闭", accent: "var(--admin-domain-e)", hint: "电脑算力入口默认关闭;开启后客户端出现弱入口与下载页。" },
+        { label: "显卡档位", value: "6", sub: "G1-G6", accent: "var(--success)", hint: "档位名称、TOPS、识别词都可调整。" },
+      ],
+      groups: [
+        {
+          title: "电脑算力入口",
+          note: "入口默认关闭;切换走操作确认 + 理由 ≥8 字 + A2 审计 + 幂等键。",
+          fields: [
+            { label: "电脑共享算力入口", value: "默认关闭", range: "开 / 关", effect: "控制客户端『电脑共享算力』PC 入口显隐。" },
+          ],
+        },
+        {
+          title: "算力与设备配置",
+          note: "显卡档位、识别词、在线系数和下载内容均已接入可审计配置。",
+          fields: [
+            { label: "显卡算力映射表", value: "已接入", range: "G1–G6", effect: "档位名称、TOPS、识别词可新增 / 修改 / 删除。" },
+            { label: "在线加成系数", value: "已接入", range: "H5 基础托管 / App 连续在线", effect: "后续结算按新值派生,不回溯历史收益。" },
+            { label: "客户端下载配置", value: "已接入", range: "URL + 双语内容", effect: "地址为空时客户端显示即将开放,不展示假链接。" },
+          ],
+        },
+      ],
+      confirmPolicy: "入口开关、映射表、在线系数、下载配置均需操作确认 + 理由(≥8 字),写入 A2 审计;幂等键防重复提交。",
+      impact: [
+        "开启入口 → 客户端显现『电脑共享算力』PC 弱入口 + 下载页",
+        "关闭入口 → 客户端隐藏该入口,不影响既有手机 / 设备算力业务",
+      ],
     },
   },
 ];

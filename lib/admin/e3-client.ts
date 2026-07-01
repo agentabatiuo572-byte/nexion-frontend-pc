@@ -1,5 +1,4 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
 
 export interface E3Stats {
   averageAgeMonths: number;
@@ -168,7 +167,7 @@ async function e3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `E3_REQUEST_FAILED_${response.status}`));
+    throw new Error(result?.message || `E3_REQUEST_FAILED_${response.status}`);
   }
 
   return result.data as T;

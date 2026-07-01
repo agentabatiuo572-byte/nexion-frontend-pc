@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
-const NEXT_ROOT = path.join(PLAN_ROOT, "Nexion-prototype");
+// 2026-06-26 H5 工程已退役;此脚本现只扫 admin + uniapp 两端。
 const UNI_ROOT = path.join(PLAN_ROOT, "Nexion-uniapp");
 const AUDIT_DIR = path.join(ROOT, "docs", "audit");
 const LEDGER = path.join(AUDIT_DIR, "ledger.ndjson");
@@ -245,25 +245,7 @@ function appendIfNew(raw) {
   appended.push(entry);
 }
 
-const nextDeadLinks = scanDeadLinks(
-  NEXT_ROOT,
-  "frontend",
-  ["app", "components"],
-  /\bhref\s*=\s*(?:"#"|'#'|\{\s*["']#["']\s*\})/g,
-  "next-reference-static",
-);
-for (const row of nextDeadLinks) {
-  appendIfNew({
-    side: "frontend",
-    route: row.route,
-    title: `Dead href anchor in ${row.file}`,
-    category: "dead-control",
-    severity: "P1",
-    actual: `${row.count} href=\"#\" occurrence(s). Samples: ${row.samples.join(" | ")}`,
-    evidence: [`Nexion-prototype/${row.file}`],
-  });
-}
-
+// 2026-06-26 H5 已退役,nextDeadLinks scan 移除。
 const uniDeadLinks = scanDeadLinks(
   UNI_ROOT,
   "uniapp",
@@ -284,7 +266,7 @@ for (const row of uniDeadLinks) {
 }
 
 for (const diff of [
-  diffI18n(NEXT_ROOT, "frontend", "lib/i18n/messages/en.ts", "lib/i18n/messages/zh.ts"),
+  // 2026-06-26 H5 退役,frontend i18n diff 移除;只检 uniapp。
   diffI18n(UNI_ROOT, "uniapp", "src/i18n/messages/en.ts", "src/i18n/messages/zh.ts"),
 ]) {
   if (diff.missingInZh.length || diff.extraInZh.length) {
@@ -307,7 +289,6 @@ for (const diff of [
 
 report.staticCandidates.toastOnly = scanToastOnlyCandidates();
 report.staticCandidates.modalNoInput = scanModalNoInputCandidates();
-report.staticCandidates.nextDeadLinks = nextDeadLinks;
 report.staticCandidates.uniDeadLinks = uniDeadLinks;
 report.ledgerAppended = appended.map((entry) => entry.id);
 
@@ -328,9 +309,7 @@ ${appended.length ? appended.map((entry) => `- ${entry.id}: ${entry.title}`).joi
 
 - toast-only candidates: ${report.staticCandidates.toastOnly.length}
 - modal-no-input candidates: ${report.staticCandidates.modalNoInput.length}
-- Next dead-link files: ${nextDeadLinks.length}
 - UniApp dead-link files: ${uniDeadLinks.length}
-- Next i18n missingInZh: ${report.frontendI18nDiff?.missingInZh?.length ?? 0}; extraInZh: ${report.frontendI18nDiff?.extraInZh?.length ?? 0}
 - UniApp i18n missingInZh: ${report.uniappI18nDiff?.missingInZh?.length ?? 0}; extraInZh: ${report.uniappI18nDiff?.extraInZh?.length ?? 0}
 `,
 );
@@ -341,6 +320,5 @@ console.log(JSON.stringify({
   ledgerEntries: ledger.length,
   toastOnlyCandidates: report.staticCandidates.toastOnly.length,
   modalNoInputCandidates: report.staticCandidates.modalNoInput.length,
-  nextDeadLinkFiles: nextDeadLinks.length,
   uniDeadLinkFiles: uniDeadLinks.length,
 }, null, 2));

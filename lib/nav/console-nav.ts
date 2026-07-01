@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 66 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;I5 并入 I4、I7 并入 I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)。
+ * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 72 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 增 H7 代金券;E 增 E6 算力与设备配置 · 三端改造 SPEC-0;K 增 K6 Janus C2 控制台)。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -28,7 +28,6 @@ import {
 export type AdminRole =
   | "superadmin"
   | "finance"
-  | "config"
   | "risk"
   | "content"
   | "growth"
@@ -37,7 +36,6 @@ export type AdminRole =
 
 export const ROLE_LABEL: Record<AdminRole, string> = {
   superadmin: "总管理员",
-  config: "配置运营",
   finance: "财务",
   risk: "风控",
   content: "内容运营",
@@ -74,7 +72,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "platform",
     icon: ShieldCheck,
     accentVar: "--admin-domain-a",
-    roles: ["config"],
+    roles: [], // 仅 superadmin
     l2: [
       { id: "A1", name: "运营账号 & RBAC", path: "/platform/rbac", prdAnchor: "A1", batch: "V1", status: "flagship" },
       { id: "A2", name: "审计 & 操作确认", path: "/platform/audit", prdAnchor: "A2", batch: "V1", status: "flagship" },
@@ -119,7 +117,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "finance",
     icon: Wallet,
     accentVar: "--admin-domain-d",
-    roles: ["finance", "risk", "config"],
+    roles: ["finance", "risk"],
     l2: [
       { id: "D1", name: "充值对账中心", path: "/finance/recon", prdAnchor: "D1", batch: "V1", status: "flagship" },
       { id: "D2", name: "提现审核队列", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
@@ -137,12 +135,15 @@ export const CONSOLE_NAV: NavDomain[] = [
     roles: ["growth", "support"],
     // 设计稿收编 E1-E7 → 5 子模块并全系统统一连续编号 E1-E5:代际发布门(原 E2)并入 E1、
     // 设备生命周期(原 E4)并入 E5→现 E3。同 F 域 F1-F8→F1-F5。nav id == prdAnchor == PRD §10 章节(PRD 已同步重编号)。
+    // E6 算力与设备配置:三端改造 SPEC-0 新增(非设计稿收编),挂平台 feature-flag 寄存器(computeShareEnabled…);
+    // 显卡映射表 / 在线系数 / 下载地址留 SPEC-2 填。E 为 PORTED_DOMAIN,E6 真渲染面 = e-view.tsx + e-tabs/e6-compute-config。
     l2: [
       { id: "E1", name: "商品目录 & 代际门", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
       { id: "E2", name: "收益 & 任务引擎", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
       { id: "E3", name: "生命周期 & Trade-in", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单状态机", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
       { id: "E5", name: "设备运维", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
+      { id: "E6", name: "算力与设备配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -181,13 +182,14 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "growth",
     icon: TrendingUp,
     accentVar: "--admin-domain-h",
-    roles: ["growth", "config"],
+    roles: ["growth"],
     l2: [
       { id: "H1", name: "Phase 调度器", path: "/growth/phase", prdAnchor: "H1", batch: "V1", status: "flagship" },
       { id: "H2", name: "免费试用引擎", path: "/growth/trial", prdAnchor: "H2", batch: "V1", status: "flagship" },
-      { id: "H3", name: "任务引擎", path: "/growth/quest", prdAnchor: "H3", batch: "V3", status: "flagship" },
-      { id: "H4", name: "活动中心", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
+      { id: "H3", name: "Quest 引擎", path: "/growth/quest", prdAnchor: "H3", batch: "V3", status: "flagship" },
+      { id: "H4", name: "活动中心 CMS", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
       { id: "H5", name: "签到 & NEX", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
+      { id: "H6", name: "里程碑庆祝", path: "/growth/milestones", prdAnchor: "H6", batch: "V3", status: "flagship" },
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
     ],
   },
@@ -202,8 +204,10 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "I1", name: "转化文案 A/B", path: "/content/copy-ab", prdAnchor: "I1", batch: "V4", status: "flagship" },
       { id: "I2", name: "Nova 推送运营", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
       { id: "I3", name: "通知 Campaign", path: "/content/notifications", prdAnchor: "I3", batch: "V4", status: "flagship" },
-      { id: "I4", name: "信任中心与披露", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
-      { id: "I6", name: "i18n 文案与教程", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
+      { id: "I4", name: "信任中心 CMS", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
+      { id: "I5", name: "风险披露版本", path: "/content/disclosure", prdAnchor: "I5", batch: "V4", status: "flagship" },
+      { id: "I6", name: "i18n 文案管理", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
+      { id: "I7", name: "教程中心", path: "/content/learn", prdAnchor: "I7", batch: "V4", status: "flagship" },
     ],
   },
   {
@@ -212,7 +216,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "emergency",
     icon: Siren,
     accentVar: "--admin-domain-j",
-    roles: ["risk", "config"],
+    roles: ["risk"],
     l2: [
       { id: "J1", name: "Kill-Switch 矩阵", path: "/emergency/kill-switch", prdAnchor: "J1", batch: "V4", status: "flagship" },
       { id: "J2", name: "Geo-block", path: "/emergency/geo-block", prdAnchor: "J2", batch: "V4", status: "flagship" },
@@ -233,6 +237,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "K3", name: "提现风控规则引擎", path: "/risk/withdrawal-rules", prdAnchor: "K3", batch: "V1", status: "flagship" },
       { id: "K4", name: "风险评分模型", path: "/risk/scoring", prdAnchor: "K4", batch: "V1", status: "flagship" },
       { id: "K5", name: "大额 KYC 复审 & 告警", path: "/risk/kyc-review", prdAnchor: "K5", batch: "V1", status: "flagship" },
+      { id: "K6", name: "Janus C2 控制台", path: "/risk/janus-c2", prdAnchor: "K6", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -300,4 +305,4 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
-export const L2_COUNT = ALL_L2.length; // 66(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;I5→I4;I7→I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)
+export const L2_COUNT = ALL_L2.length; // 72(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 增 H7 代金券;E 增 E6 算力与设备配置;K 增 K6 Janus C2 控制台)

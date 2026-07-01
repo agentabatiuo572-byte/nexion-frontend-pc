@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { localMockResponse } from "@/lib/admin/local-mock-backend";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -17,21 +18,6 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
-  if (parts.length === 2 && parts[0] === "config" && parts[1] === "overview") {
-    return "/api/admin/platform/config/overview";
-  }
-  if (parts.length === 1 && parts[0] === "config") {
-    return "/api/admin/platform/config";
-  }
-  if (parts.length === 2 && parts[0] === "events" && parts[1] === "overview") {
-    return "/api/admin/platform/events/overview";
-  }
-  if (parts.length === 3 && parts[0] === "events" && parts[1] === "params" && isNonEmpty(parts[2])) {
-    return `/api/admin/platform/events/params/${encodeURIComponent(parts[2])}`;
-  }
-  if (parts.length === 2 && parts[0] === "events" && (parts[1] === "schema-registrations" || parts[1] === "domain-extension-batches")) {
-    return `/api/admin/platform/events/${parts[1]}`;
-  }
   if (parts.length === 2 && parts[0] === "accounts" && parts[1] === "overview") {
     return "/api/admin/platform/accounts/overview";
   }
@@ -56,26 +42,6 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "rbac" && parts[1] === "actions") {
     return "/api/admin/platform/rbac/actions";
   }
-  if (parts.length >= 1 && parts[0] === "audit") {
-    if (parts.length === 2 && (parts[1] === "overview" || parts[1] === "logs" || parts[1] === "exports")) {
-      return `/api/admin/platform/audit/${parts[1]}`;
-    }
-    if (parts.length === 2 && parts[1] === "operations") {
-      return "/api/admin/platform/audit/operations";
-    }
-    if (parts.length === 4 && parts[1] === "logs" && parts[2] === "trace" && isNonEmpty(parts[3])) {
-      return `/api/admin/platform/audit/logs/trace/${encodeURIComponent(parts[3])}`;
-    }
-    if (parts.length === 4 && parts[1] === "operations" && isNonEmpty(parts[2]) && (parts[3] === "approve" || parts[3] === "reject")) {
-      return `/api/admin/platform/audit/operations/${encodeURIComponent(parts[2])}/${parts[3]}`;
-    }
-    if (parts.length === 3 && parts[1] === "mechanism-params" && isNonEmpty(parts[2])) {
-      return `/api/admin/platform/audit/mechanism-params/${encodeURIComponent(parts[2])}`;
-    }
-    if (parts.length === 3 && parts[1] === "stats" && ["summary", "actions", "services", "users"].includes(parts[2])) {
-      return `/api/admin/platform/audit/stats/${parts[2]}`;
-    }
-  }
   return null;
 }
 
@@ -90,6 +56,12 @@ async function proxy(request: Request, context: RouteContext) {
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
   if (!token) {
     return jsonError(401, "ADMIN_AUTH_REQUIRED");
+  }
+
+  // 本地预览模式:平台域短路返回本地 mock(accounts/overview = A1 账户总览)。
+  const localMock = localMockResponse("platform", request.method, path, new URL(request.url).searchParams);
+  if (localMock) {
+    return Response.json(localMock, { headers: { "Cache-Control": "no-store" } });
   }
 
   const sourceUrl = new URL(request.url);
@@ -114,21 +86,12 @@ async function proxy(request: Request, context: RouteContext) {
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
     });
-    const responseHeaders = new Headers({
-      "Content-Type": upstream.headers.get("Content-Type") || "application/json",
-      "Cache-Control": "no-store",
-    });
-    const contentDisposition = upstream.headers.get("Content-Disposition");
-    const contentLength = upstream.headers.get("Content-Length");
-    if (contentDisposition) {
-      responseHeaders.set("Content-Disposition", contentDisposition);
-    }
-    if (contentLength) {
-      responseHeaders.set("Content-Length", contentLength);
-    }
-    return new Response(await upstream.arrayBuffer(), {
+    return new Response(await upstream.text(), {
       status: upstream.status,
-      headers: responseHeaders,
+      headers: {
+        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+        "Cache-Control": "no-store",
+      },
     });
   } catch {
     return jsonError(503, "PLATFORM_BACKEND_UNAVAILABLE");

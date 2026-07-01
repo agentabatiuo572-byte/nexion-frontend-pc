@@ -12,6 +12,7 @@ const session =
   process.env.AGENT_BROWSER_SESSION || `nexion-uni-persona-walkthrough-proof-${Date.now()}-${process.pid}`;
 const OUT_FILE = path.join(ROOT, "docs", "audit", "shards", "uniapp-persona-walkthrough-proof.ndjson");
 const WITHDRAW_ADDRESS = "TVALIDWITHDRAWADDRESS1234567890ABCDE";
+const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_BIN || "agent-browser";
 const results = [];
 
 function quoteShellArg(arg) {
@@ -20,19 +21,36 @@ function quoteShellArg(arg) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function closeSessionQuietly() {
+  const args = ["--session", session, "close"];
+  try {
+    if (process.platform === "win32") {
+      spawnSync([AGENT_BROWSER_BIN, ...args.map(quoteShellArg)].join(" "), [], {
+        cwd: ROOT,
+        shell: true,
+        timeout: 15000,
+        stdio: "ignore",
+      });
+    } else {
+      spawnSync(AGENT_BROWSER_BIN, args, { cwd: ROOT, timeout: 15000, stdio: "ignore" });
+    }
+  } catch {}
+}
+
+process.once("exit", closeSessionQuietly);
+
 function run(args, options = {}) {
   const fullArgs = ["--session", session, ...args];
-  const agentBrowserBin = process.env.AGENT_BROWSER_BIN || "agent-browser";
   const result =
     process.platform === "win32"
-      ? spawnSync([agentBrowserBin, ...fullArgs.map(quoteShellArg)].join(" "), [], {
+      ? spawnSync([AGENT_BROWSER_BIN, ...fullArgs.map(quoteShellArg)].join(" "), [], {
           cwd: ROOT,
           encoding: "utf8",
           input: options.input,
           shell: true,
           timeout: options.timeout || 30000,
         })
-      : spawnSync(agentBrowserBin, fullArgs, {
+      : spawnSync(AGENT_BROWSER_BIN, fullArgs, {
           cwd: ROOT,
           encoding: "utf8",
           input: options.input,
@@ -260,7 +278,7 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   expect(proof.hasTrackingId, "withdraw tracking id missing");
   expect(proof.hasAddress, "withdraw address missing on tracking page");
   expect(proof.hasAmount, "withdraw amount missing on tracking page");
-  expect(proof.nexBill?.ref && /NEX burned/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (25 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
+  expect(proof.nexBill?.ref && /Fee offset|NEX used/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (25 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
   expect(proof.bill?.ref && proof.bill.memo.includes("USDT-TRC20"), "withdraw bill missing or incomplete");
   return {
     href: proof.href,

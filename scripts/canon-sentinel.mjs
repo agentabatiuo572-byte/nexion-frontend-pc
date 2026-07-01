@@ -3,8 +3,11 @@
  * L3d/L5 canon-number sentinel.
  *
  * Reads docs/remediation/canon-numbers.json, then extracts the same business
- * constants from Admin, Next reference, and UniApp sources. The gate fails on
- * numeric drift, so a display copy update cannot silently fork core economics.
+ * constants from Admin and UniApp sources. The gate fails on numeric drift,
+ * so a display copy update cannot silently fork core economics.
+ *
+ * 2026-06-26: H5 reference workspace retired; only Admin + UniApp ends are
+ * checked (formerly tri-end).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -12,14 +15,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
-const NEXT_ROOT = fs.existsSync(path.join(PLAN_ROOT, "nexion-frontend-app"))
-  ? path.join(PLAN_ROOT, "nexion-frontend-app")
-  : path.join(PLAN_ROOT, "Nexion-prototype");
-const UNI_ROOT = fs.existsSync(path.join(PLAN_ROOT, "nexion-frontend-uniapp"))
-  ? path.join(PLAN_ROOT, "nexion-frontend-uniapp")
-  : path.join(PLAN_ROOT, "Nexion-uniapp");
+const UNI_ROOT = path.join(PLAN_ROOT, "Nexion-uniapp");
 const CANON_PATH = path.join(ROOT, "docs", "remediation", "canon-numbers.json");
-const STRICT_SIBLING_CANON = process.env.CHECK_SIBLING_CANON === "1";
 
 function read(file) {
   return fs.readFileSync(file, "utf8");
@@ -136,71 +133,36 @@ const failures = [];
 
 function expectNumber(id, actual, expected, evidence, tolerance = 1e-9) {
   const ok = actual !== null && approxEqual(actual, expected, tolerance);
-  const optionalSibling = !STRICT_SIBLING_CANON && evidence.some((item) => item.startsWith("../"));
-  if (!ok && optionalSibling) {
-    pushCheck(checks, id, true, `optional sibling canon drift: ${actual} expected ${expected}`, evidence);
-    return;
-  }
   pushCheck(checks, id, ok, `${actual} expected ${expected}`, evidence);
   if (!ok) failures.push(`${id}: ${actual} expected ${expected}`);
 }
 
-function siblingSourceMissing(id, message) {
-  if (STRICT_SIBLING_CANON) {
-    failures.push(message);
-  } else {
-    pushCheck(checks, id, true, `optional sibling canon skipped: ${message}`, []);
-  }
-}
-
-const nextStaking = readIfExists(path.join(NEXT_ROOT, "lib", "v3", "staking.ts"));
 const uniStaking = readIfExists(path.join(UNI_ROOT, "src", "store", "staking.ts"));
-const adminG = readIfExists(path.join(ROOT, "app", "components", "domain-views", "g-tabs", "data.ts"));
-const adminG1View = readIfExists(path.join(ROOT, "app", "components", "domain-views", "g-tabs", "g1-staking.tsx")) || "";
-const adminG4View = readIfExists(path.join(ROOT, "app", "components", "domain-views", "g-tabs", "g4-genesis.tsx")) || "";
+const adminG = read(path.join(ROOT, "app", "components", "domain-views", "g-tabs", "data.ts"));
 
-if (!nextStaking || !uniStaking) {
-  siblingSourceMissing("sibling.staking.source", "sibling Next/UniApp source missing; cannot prove cross-end canon");
+if (!uniStaking) {
+  failures.push("sibling UniApp staking source missing; cannot prove cross-end canon");
 } else {
-  const nextApy = parseNumberRecord(nextStaking, "STAKING_APY");
   const uniApy = parseNumberRecord(uniStaking, "STAKING_APY");
-  const nextPenalty = parseNumberRecord(nextStaking, "STAKING_PENALTY");
   const uniPenalty = parseNumberRecord(uniStaking, "STAKING_PENALTY");
   for (const [term, expected] of Object.entries(canon.staking.usdtApy)) {
-    expectNumber(`staking.next.apy.${term}`, nextApy?.[term] ?? null, expected, ["../Nexion-prototype/lib/v3/staking.ts"]);
     expectNumber(`staking.uni.apy.${term}`, uniApy?.[term] ?? null, expected, ["../Nexion-uniapp/src/store/staking.ts"]);
-    if (adminG) {
-      const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
-      expectNumber(`staking.admin.apy.${term}`, (adminTier?.apyPct ?? null) === null ? null : adminTier.apyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
-    }
+    const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
+    expectNumber(`staking.admin.apy.${term}`, (adminTier?.apyPct ?? null) === null ? null : adminTier.apyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
   }
   for (const [term, expected] of Object.entries(canon.staking.usdtPenalty)) {
-    expectNumber(`staking.next.penalty.${term}`, nextPenalty?.[term] ?? null, expected, ["../Nexion-prototype/lib/v3/staking.ts"]);
     expectNumber(`staking.uni.penalty.${term}`, uniPenalty?.[term] ?? null, expected, ["../Nexion-uniapp/src/store/staking.ts"]);
-    if (adminG) {
-      const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
-      expectNumber(`staking.admin.penalty.${term}`, (adminTier?.penaltyPct ?? null) === null ? null : adminTier.penaltyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
-    }
-  }
-  if (!adminG) {
-    pushCheck(
-      checks,
-      "staking.admin.backendDriven",
-      /fetchG1StakingOverview/.test(adminG1View),
-      "admin G1 has no static staking data; it reads backend staking overview",
-      ["app/components/domain-views/g-tabs/g1-staking.tsx"],
-    );
+    const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
+    expectNumber(`staking.admin.penalty.${term}`, (adminTier?.penaltyPct ?? null) === null ? null : adminTier.penaltyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
   }
 }
 
-const nextGenesis = readIfExists(path.join(NEXT_ROOT, "lib", "v3", "genesis.ts"));
 const uniGenesis = readIfExists(path.join(UNI_ROOT, "src", "store", "genesis.ts"));
-if (!nextGenesis || !uniGenesis) {
-  siblingSourceMissing("sibling.genesis.source", "sibling Next/UniApp Genesis source missing; cannot prove Genesis canon");
+if (!uniGenesis) {
+  failures.push("sibling UniApp Genesis source missing; cannot prove Genesis canon");
 } else {
-  const adminGenesis = adminG ? parseNumberRecord(adminG, "GENESIS") ?? {} : null;
+  const adminGenesis = parseNumberRecord(adminG, "GENESIS") ?? {};
   for (const [label, src, evidence] of [
-    ["next", nextGenesis, "../Nexion-prototype/lib/v3/genesis.ts"],
     ["uni", uniGenesis, "../Nexion-uniapp/src/store/genesis.ts"],
   ]) {
     expectNumber(`genesis.${label}.totalSlots`, extractConstNumber(src, "TOTAL_SLOTS"), canon.genesis.totalSlots, [evidence]);
@@ -208,37 +170,23 @@ if (!nextGenesis || !uniGenesis) {
     expectNumber(`genesis.${label}.unitPrice`, extractFieldNumber(src, "unitPriceUSDT"), canon.genesis.unitPriceUSDT, [evidence]);
     expectNumber(`genesis.${label}.seedSoldSlots`, extractFieldNumber(src, "soldSlots"), canon.genesis.seedSoldSlots, [evidence]);
   }
-  if (adminGenesis) {
-    expectNumber("genesis.admin.totalSlots", adminGenesis.totalSlots ?? null, canon.genesis.totalSlots, ["app/components/domain-views/g-tabs/data.ts"]);
-    expectNumber("genesis.admin.unitPrice", adminGenesis.unitPrice ?? null, canon.genesis.unitPriceUSDT, ["app/components/domain-views/g-tabs/data.ts"]);
-    expectNumber("genesis.admin.royaltyRate", (adminGenesis.royaltyPct ?? null) === null ? null : adminGenesis.royaltyPct / 100, canon.genesis.royaltyRate, ["app/components/domain-views/g-tabs/data.ts"]);
-    expectNumber("genesis.admin.dividendShareRate", (adminGenesis.dividendSharePct ?? null) === null ? null : adminGenesis.dividendSharePct / 100, canon.genesis.dividendShareRate, ["app/components/domain-views/g-tabs/data.ts"]);
-    expectNumber("genesis.admin.perSlotDisplay", adminGenesis.perSlotPerDay ?? null, canon.genesis.perSlotPerDayDisplayUSD, ["app/components/domain-views/g-tabs/data.ts"], 0.1);
-    expectNumber("genesis.admin.floorPerNode", adminGenesis.floorPerNodePerDay ?? null, canon.genesis.floorPerNodePerDayUSD, ["app/components/domain-views/g-tabs/data.ts"]);
-  } else {
-    pushCheck(
-      checks,
-      "genesis.admin.backendDriven",
-      /fetchG4GenesisOverview/.test(adminG4View),
-      "admin G4 has no static Genesis data; it reads backend Genesis overview",
-      ["app/components/domain-views/g-tabs/g4-genesis.tsx"],
-    );
-  }
+  expectNumber("genesis.admin.totalSlots", adminGenesis.totalSlots ?? null, canon.genesis.totalSlots, ["app/components/domain-views/g-tabs/data.ts"]);
+  expectNumber("genesis.admin.unitPrice", adminGenesis.unitPrice ?? null, canon.genesis.unitPriceUSDT, ["app/components/domain-views/g-tabs/data.ts"]);
+  expectNumber("genesis.admin.royaltyRate", (adminGenesis.royaltyPct ?? null) === null ? null : adminGenesis.royaltyPct / 100, canon.genesis.royaltyRate, ["app/components/domain-views/g-tabs/data.ts"]);
+  expectNumber("genesis.admin.dividendShareRate", (adminGenesis.dividendSharePct ?? null) === null ? null : adminGenesis.dividendSharePct / 100, canon.genesis.dividendShareRate, ["app/components/domain-views/g-tabs/data.ts"]);
+  expectNumber("genesis.admin.perSlotDisplay", adminGenesis.perSlotPerDay ?? null, canon.genesis.perSlotPerDayDisplayUSD, ["app/components/domain-views/g-tabs/data.ts"], 0.1);
+  expectNumber("genesis.admin.floorPerNode", adminGenesis.floorPerNodePerDay ?? null, canon.genesis.floorPerNodePerDayUSD, ["app/components/domain-views/g-tabs/data.ts"]);
 }
 
-const nextLifecycle = readIfExists(path.join(NEXT_ROOT, "lib", "store", "device-lifecycle.ts"));
 const uniLifecycle = readIfExists(path.join(UNI_ROOT, "src", "store", "device-lifecycle.ts"));
 const adminE = read(path.join(ROOT, "app", "components", "domain-views", "e-tabs", "data.ts"));
-if (!nextLifecycle || !uniLifecycle) {
-  siblingSourceMissing("sibling.lifecycle.source", "sibling Next/UniApp lifecycle source missing; cannot prove lifecycle canon");
+if (!uniLifecycle) {
+  failures.push("sibling UniApp lifecycle source missing; cannot prove lifecycle canon");
 } else {
-  const nextDeg = parseNumberRecord(nextLifecycle, "DEGRADATION_PER_MONTH");
   const uniDeg = parseNumberRecord(uniLifecycle, "DEGRADATION_PER_MONTH");
   for (const [phase, expected] of Object.entries(canon.deviceLifecycle.degradationPerMonth)) {
-    expectNumber(`lifecycle.next.${phase}`, nextDeg?.[phase] ?? null, expected, ["../Nexion-prototype/lib/store/device-lifecycle.ts"]);
     expectNumber(`lifecycle.uni.${phase}`, uniDeg?.[phase] ?? null, expected, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
   }
-  expectNumber("lifecycle.next.minEfficiency", extractConstNumber(nextLifecycle, "MIN_EFFICIENCY"), canon.deviceLifecycle.minEfficiency, ["../Nexion-prototype/lib/store/device-lifecycle.ts"]);
   expectNumber("lifecycle.uni.minEfficiency", extractConstNumber(uniLifecycle, "MIN_EFFICIENCY"), canon.deviceLifecycle.minEfficiency, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
 
   const adminDefaults = extractRecord(adminE, "E_PARAM_DEFAULTS") ?? "";
@@ -252,13 +200,11 @@ if (!nextLifecycle || !uniLifecycle) {
   expectNumber("lifecycle.admin.degradeLate", (adminNum("E.device.degradeLate") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.late, ["app/components/domain-views/e-tabs/data.ts"]);
 }
 
-const nextProducts = readIfExists(path.join(NEXT_ROOT, "lib", "mock", "products.ts"));
 const uniProducts = readIfExists(path.join(UNI_ROOT, "src", "mock", "products.ts"));
-if (!nextProducts || !uniProducts) {
-  siblingSourceMissing("sibling.products.source", "sibling Next/UniApp products source missing; cannot prove product canon");
+if (!uniProducts) {
+  failures.push("sibling UniApp products source missing; cannot prove product canon");
 } else {
   for (const [label, values, evidence] of [
-    ["next", collectProductValues(nextProducts), "../Nexion-prototype/lib/mock/products.ts"],
     ["uni", collectProductValues(uniProducts), "../Nexion-uniapp/src/mock/products.ts"],
   ]) {
     for (const [id, expected] of Object.entries(canon.products)) {
@@ -272,16 +218,14 @@ if (!nextProducts || !uniProducts) {
 
 // ---- Withdrawal fee model canon (仅活跃面 uniapp + admin;H5 冻结保留旧模型,故排除) ----
 // 新模型:无 NEX → grossFee = 金额 × penaltyFeeRate(按 phase);烧 NEX → nexFeeOffsetRate USD/NEX 抵扣。
-// 单源三方:canon.withdrawal ↔ uniapp product-phase.PHASES ↔ admin 后端 H1 rhythm/config + D5 OWN_PARAMS。
+// 单源三方:canon.withdrawal ↔ uniapp product-phase.PHASES ↔ admin H1 DIAL_MATRIX(nexGate 列,月→phase)+ D5 OWN_PARAMS。
 const uniPhase = readIfExists(path.join(UNI_ROOT, "src", "store", "product-phase.ts"));
-const adminHStatic = readIfExists(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "data.ts"));
-const adminHView = read(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "h1-phase.tsx"));
-const adminH = adminHStatic || adminHView;
-const adminDdata = readIfExists(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "data.ts"));
-const adminD5View = readIfExists(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "d5-params.tsx")) || "";
+const adminH = read(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "data.ts"));
+const adminCC = read(path.join(ROOT, "lib", "mock", "admin", "command-center.ts")); // PHASE_BUCKETS 节奏单源(2026-06-24 上收)
+const adminDdata = read(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "data.ts"));
 const wd = canon.withdrawal || {};
 if (!uniPhase) {
-  siblingSourceMissing("sibling.withdrawal.source", "uniapp product-phase.ts missing; cannot prove withdrawal canon");
+  failures.push("uniapp product-phase.ts missing; cannot prove withdrawal canon");
 } else if (!wd.penaltyFeeRateByPhase || wd.nexFeeOffsetRateUSDPerNex == null) {
   failures.push("canon.withdrawal missing penaltyFeeRateByPhase / nexFeeOffsetRateUSDPerNex");
 } else {
@@ -290,14 +234,14 @@ if (!uniPhase) {
   for (const m of uniPhase.matchAll(/id:\s*"(P\d)"[\s\S]*?withdrawPenaltyFeeRate:\s*([\d.]+)[\s\S]*?nexFeeOffsetRate:\s*([\d.]+)/g)) {
     uniByPhase[m[1]] = { penalty: numberFrom(m[2]), offset: numberFrom(m[3]) };
   }
-  // 旧 admin 静态矩阵兼容:如存在前端 H1 data.ts,月 → phase;当前真实后台已改为后端 H1 rhythm/config 单源。
+  // admin PHASE_BUCKETS(command-center 节奏单源): 月 → phase(2026-06-24 上收;勿硬编码映射)
   const monthToPhase = {};
-  for (const m of (adminHStatic || "").matchAll(/phase:\s*"(P\d)",\s*months:\s*\[([\d,\s]+)\]/g)) {
+  for (const m of adminCC.matchAll(/phase:\s*"(P\d)",\s*months:\s*\[([\d,\s]+)\]/g)) {
     for (const mo of m[2].split(",").map((s) => parseInt(s.trim(), 10)).filter(Number.isFinite)) monthToPhase[mo] = m[1];
   }
   // admin DIAL_MATRIX: 月行 → nexGate 列(DIAL_KEYS 第 4 列 idx 3 = 提现惩罚费率 %)
   const adminPenaltyByPhase = {};
-  for (const m of (adminHStatic || "").matchAll(/\/\*\s*M(\d+)\s*\*\/\s*\[([^\]]+)\]/g)) {
+  for (const m of adminH.matchAll(/\/\*\s*M(\d+)\s*\*\/\s*\[([^\]]+)\]/g)) {
     const month = parseInt(m[1], 10);
     const nexGatePct = numberFrom(m[2].split(",")[3].trim());
     const phase = monthToPhase[month];
@@ -306,39 +250,18 @@ if (!uniPhase) {
     else if (adminPenaltyByPhase[phase] !== nexGatePct) adminPenaltyByPhase[phase] = NaN; // phase 内月值不一致 = 漂移
   }
   // admin D5 OWN_PARAMS nexFeeOffsetRate 默认值("$0.40 / NEX")
-  const d5 = adminDdata?.match(/key:\s*"nexFeeOffsetRate"[\s\S]{0,160}?cur:\s*"\$?([\d.]+)/);
+  const d5 = adminDdata.match(/key:\s*"nexFeeOffsetRate"[\s\S]{0,160}?cur:\s*"\$?([\d.]+)/);
   const adminOffset = d5 ? numberFrom(d5[1]) : null;
 
   for (const [phase, expected] of Object.entries(wd.penaltyFeeRateByPhase)) {
     expectNumber(`withdraw.uni.penalty.${phase}`, uniByPhase[phase]?.penalty ?? null, expected, ["../Nexion-uniapp/src/store/product-phase.ts"]);
-    if (adminHStatic) {
-      const pct = adminPenaltyByPhase[phase];
-      expectNumber(`withdraw.admin.penalty.${phase}`, pct === undefined || Number.isNaN(pct) ? null : pct / 100, expected, ["app/components/domain-views/h-tabs/data.ts"]);
-    }
-  }
-  if (!adminHStatic) {
-    pushCheck(
-      checks,
-      "withdraw.admin.penalty.backendDriven",
-      /fetchH1Phases|updateH1RhythmParam/.test(adminH),
-      "admin H1 has no static DIAL_MATRIX; it reads backend rhythm/config",
-      ["app/components/domain-views/h-tabs/h1-phase.tsx"],
-    );
+    const pct = adminPenaltyByPhase[phase];
+    expectNumber(`withdraw.admin.penalty.${phase}`, pct === undefined || Number.isNaN(pct) ? null : pct / 100, expected, ["app/components/domain-views/h-tabs/data.ts"]);
   }
   for (const [phase, info] of Object.entries(uniByPhase)) {
     expectNumber(`withdraw.uni.offset.${phase}`, info.offset, wd.nexFeeOffsetRateUSDPerNex, ["../Nexion-uniapp/src/store/product-phase.ts"]);
   }
-  if (adminDdata) {
-    expectNumber("withdraw.admin.offset", adminOffset, wd.nexFeeOffsetRateUSDPerNex, ["app/components/domain-views/d-tabs/data.ts"]);
-  } else {
-    pushCheck(
-      checks,
-      "withdraw.admin.params.backendDriven",
-      /fetchD5WithdrawalParams/.test(adminD5View),
-      "admin D5 has no static withdrawal params; it reads backend withdrawal params",
-      ["app/components/domain-views/d-tabs/d5-params.tsx"],
-    );
-  }
+  expectNumber("withdraw.admin.offset", adminOffset, wd.nexFeeOffsetRateUSDPerNex, ["app/components/domain-views/d-tabs/data.ts"]);
 }
 
 // ---- 旧 2% 提现费指纹哨兵:防 max(1,min(20,amt*0.02)) clamp 复发(新模型 = penaltyFeeRate × 金额 − NEX 抵扣)----

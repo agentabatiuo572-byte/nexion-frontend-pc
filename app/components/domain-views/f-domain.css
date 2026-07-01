@@ -195,17 +195,6 @@
 .fdom .bin-table { padding: 0; overflow: hidden; }
 .fdom .bin-search { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); }
 .fdom .bin-search .fld { max-width: 300px; }
-.fdom .bin-user-select { position: relative; width: min(420px, 100%); }
-.fdom .bin-user-select .fld { width: 100%; max-width: none; }
-.fdom .bin-user-pop { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; right: 0; max-height: 272px; overflow: auto; padding: 4px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); box-shadow: 0 18px 40px rgba(0,0,0,.22); }
-.fdom .bin-user-option { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-2); text-align: left; cursor: pointer; }
-.fdom .bin-user-option:hover,
-.fdom .bin-user-option[aria-selected="true"] { background: var(--surface-2); color: var(--ink); }
-.fdom .bin-user-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.fdom .bin-user-main b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; color: var(--ink); }
-.fdom .bin-user-main span { font-size: 11px; color: var(--ink-4); }
-.fdom .bin-user-meta { flex: 0 0 auto; font-family: var(--mono); font-size: 11px; color: var(--ink-4); white-space: nowrap; }
-.fdom .bin-user-empty { padding: 9px 10px; font-size: 12px; color: var(--ink-4); }
 .fdom .bin-empty { padding: 28px 20px; text-align: center; font-size: 12.5px; color: var(--ink-4); border-top: 1px solid var(--border); }
 .fdom .bin-row { display: grid; grid-template-columns: 110px 1fr 12px 1fr 130px 90px 110px; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--border); }
 .fdom .bin-row.head { padding: 11px 20px; background: var(--surface-2); border-top: 0; font-size: 10.5px; font-weight: 600; color: var(--ink-3); letter-spacing: .04em; }

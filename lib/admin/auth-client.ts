@@ -1,10 +1,8 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 
 const ADMIN_ROLES = new Set<AdminRole>([
   "superadmin",
-  "config",
   "finance",
   "risk",
   "growth",
@@ -49,35 +47,17 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
   const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
 
   if (!response.ok || !result || result.code !== 0 || !result.data?.session) {
-    throw new Error(formatAdminApiError(result?.message, "ADMIN_CREDENTIAL_INVALID"));
+    throw new Error(result?.message || "ADMIN_CREDENTIAL_INVALID");
   }
 
-  return normalizeLoginPayload(result.data);
-}
-
-export async function currentAdminSession(): Promise<LoginResult | null> {
-  const response = await fetch("/api/admin/auth/session", { cache: "no-store" });
-  const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
-
-  if (response.status === 401 || !result?.data?.session) {
-    return null;
-  }
-  if (!response.ok || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, "ADMIN_SESSION_INVALID"));
-  }
-
-  return normalizeLoginPayload(result.data);
-}
-
-function normalizeLoginPayload(payload: LoginPayload): LoginResult {
   return {
-    tokenType: payload.tokenType || "Bearer",
+    tokenType: result.data.tokenType || "Bearer",
     session: {
-      adminId: payload.session.adminId,
-      username: payload.session.username,
-      operator: payload.session.operator || payload.session.username,
-      role: normalizeAdminRole(payload.session.role),
-      authorities: payload.session.authorities ?? [],
+      adminId: result.data.session.adminId,
+      username: result.data.session.username,
+      operator: result.data.session.operator || result.data.session.username,
+      role: normalizeAdminRole(result.data.session.role),
+      authorities: result.data.session.authorities ?? [],
     },
   };
 }

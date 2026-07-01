@@ -1,10 +1,16 @@
+// UniApp self-consistency audit.
+//
+// 2026-06-26: H5 工程退役后,原"Next → UniApp port 覆盖"命题失效。
+// 本脚本重命题为"uniapp 自一致性 audit":
+//   1) pages.json 列出的每个 page 对应 .vue 文件须存在
+//   2) runtime evidence shards 覆盖每个 page(EXPECTED_EXTRA 豁免)
+//   3) action sample shards 无 blocking classification
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
-const NEXT_ROOT = path.join(PLAN_ROOT, "Nexion-prototype");
 const UNI_ROOT = path.join(PLAN_ROOT, "Nexion-uniapp");
 const UNI_PAGES_JSON = path.join(UNI_ROOT, "src", "pages.json");
 const SHARDS = path.join(ROOT, "docs", "audit", "shards");
@@ -14,23 +20,13 @@ const BLOCKING_ACTION_CLASSIFICATIONS = new Set([
   "hash-only-no-content",
   "no-observable-change",
 ]);
+// uniapp-first 页面:运行时取证豁免清单(原"Next 原型无对应"豁免逻辑保留语义)。
 const EXPECTED_EXTRA_UNI_ROUTES = new Set([
   "/#/pages/onboarding/terms",
-  // uniapp-first 即时会话中心(Next 原型无对应,主人 2026-06-14 定 uniapp 主导前端;后台对端见 admin I9)。
-  // 非 Next→uni port,故豁免本 audit 的 extra-route 与 runtime-evidence 检查(端口覆盖范围外)。
   "/#/pages/support/messages",
   "/#/pages/support/chat",
-  // uniapp-first 「我的奖励」(代金券 + 系统奖励聚合,Next 原型无对应;后台对端见 admin C1 奖励卡 + H7)。
   "/#/pages/me/rewards",
-  // uniapp-first 账号/设备检测的他端踢出阻断屏(Next 原型无对应)。
   "/#/pages/session/kicked",
-]);
-// Next(H5 旧原型)仍保留、但已从 uniapp 主面故意下线的功能路由(产品决策删除,非未迁移)。
-// 2026-06-15:Premium 订阅 + NEX v2 Founders 锁仓整模块下线(前端 uniapp + 后台 G5/G6 + PRD 同步);
-// H5 原型为冻结 legacy 不回改,故在端口覆盖审计登记为「故意移除」,不计未迁移缺口。
-const REMOVED_NEXT_ROUTES = new Set([
-  "/me/wallet/premium",
-  "/me/wallet/nex-v2-lock",
 ]);
 
 function readJson(file) {
@@ -45,51 +41,6 @@ function parseNdjson(file) {
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => JSON.parse(line));
-}
-
-function walkPageFiles(dir, out = []) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) walkPageFiles(full, out);
-    else if (entry.name === "page.tsx") out.push(full);
-  }
-  return out;
-}
-
-function toNextRoute(file) {
-  const parts = path
-    .relative(path.join(NEXT_ROOT, "app"), file)
-    .split(path.sep)
-    .slice(0, -1)
-    .filter((part) => !/^\(.+\)$/.test(part));
-  const route = `/${parts.join("/")}`.replace(/\/$/, "");
-  return route || "/";
-}
-
-function nextRouteCandidates(route) {
-  const explicit = {
-    "/": ["/#/pages/index/index"],
-    "/login": ["/#/pages/login/login"],
-    "/register": ["/#/pages/register/register"],
-    "/ref/[code]": ["/#/pages/ref/code"],
-    "/tx/[hash]": ["/#/pages/tx/hash"],
-    "/store/[productId]": ["/#/pages/store/detail"],
-    "/store/orders/[id]": ["/#/pages/store/order-detail"],
-    "/me/security/kyc-express": ["/#/pages/me/kyc"],
-  };
-  if (explicit[route]) return explicit[route];
-
-  const parts = route.split("/").filter(Boolean);
-  if (parts.length === 1) return [`/#/pages/${parts[0]}/${parts[0]}`];
-
-  const [first, ...rest] = parts;
-  const dashed = rest.join("-");
-  const shortHow = dashed.replace(/-how-it-works$/, "-how");
-  return [
-    `/#/pages/${first}/${dashed}`,
-    `/#/pages/${first}/${shortHow}`,
-    `/#/pages/${first}/${rest.join("/")}`,
-  ];
 }
 
 function loadUniPages() {
@@ -125,33 +76,14 @@ function loadActionRows() {
 
 const findings = [];
 
-if (!fs.existsSync(NEXT_ROOT)) findings.push({ issue: "missing-next-root", path: NEXT_ROOT });
 if (!fs.existsSync(UNI_ROOT)) findings.push({ issue: "missing-uni-root", path: UNI_ROOT });
 if (!fs.existsSync(UNI_PAGES_JSON)) findings.push({ issue: "missing-pages-json", path: UNI_PAGES_JSON });
 
-const nextRoutes = fs.existsSync(NEXT_ROOT)
-  ? walkPageFiles(path.join(NEXT_ROOT, "app")).map(toNextRoute).sort((a, b) => a.localeCompare(b))
-  : [];
 const uniPages = fs.existsSync(UNI_PAGES_JSON) ? loadUniPages() : [];
-const uniRouteSet = new Set(uniPages.map((page) => page.h5Url));
-
-const mapping = [];
-for (const route of nextRoutes) {
-  if (REMOVED_NEXT_ROUTES.has(route)) continue; // 故意从 uniapp 下线的功能(产品删除),H5 legacy 保留
-  const candidates = nextRouteCandidates(route);
-  const uniRoute = candidates.find((candidate) => uniRouteSet.has(candidate));
-  if (!uniRoute) findings.push({ issue: "missing-uni-route-for-next-route", route, candidates });
-  else mapping.push({ nextRoute: route, uniRoute });
-}
 
 for (const page of uniPages) {
   if (!page.exists) findings.push({ issue: "missing-uni-vue-file", route: page.h5Url, file: page.file });
 }
-
-const mappedUniRoutes = new Set(mapping.map((row) => row.uniRoute));
-const extraUniRoutes = uniPages.map((page) => page.h5Url).filter((route) => !mappedUniRoutes.has(route)).sort();
-const unexpectedExtraUniRoutes = extraUniRoutes.filter((route) => !EXPECTED_EXTRA_UNI_ROUTES.has(route));
-for (const route of unexpectedExtraUniRoutes) findings.push({ issue: "unexpected-extra-uni-route", route });
 
 const runtimeRows = loadRuntimeRows();
 const runtimeByRoute = new Map();
@@ -164,8 +96,21 @@ for (const row of runtimeRows) {
   }
 }
 
+const computeShareRuntime = runtimeByRoute.get("/#/pages/compute-share/download");
+if (computeShareRuntime) {
+  const preview = computeShareRuntime.evidence?.runtime?.bodyPreview ?? "";
+  const gated = computeShareRuntime.gatedState ?? {};
+  if (gated.ok !== true || !preview.includes("Audit GPU title from config") || !preview.includes("Audit GPU guide from config")) {
+    findings.push({
+      issue: "compute-share-download-config-copy-not-proven",
+      route: "/#/pages/compute-share/download",
+      shardFile: computeShareRuntime.shardFile,
+      gated,
+    });
+  }
+}
+
 for (const page of uniPages) {
-  // uniapp-first 路由(EXPECTED_EXTRA)非 Next→uni port,不在端口覆盖运行时取证范围内 → 豁免。
   if (!runtimeByRoute.has(page.h5Url) && !EXPECTED_EXTRA_UNI_ROUTES.has(page.h5Url)) {
     findings.push({ issue: "missing-uni-runtime-evidence", route: page.h5Url });
   }
@@ -189,12 +134,8 @@ for (const row of actionRows) {
 
 const result = {
   status: findings.length === 0 ? "passed" : "failed",
-  nextRoutes: nextRoutes.length,
   uniPages: uniPages.length,
-  mappedRoutes: mapping.length,
-  extraUniRoutes,
   expectedExtraUniRoutes: Array.from(EXPECTED_EXTRA_UNI_ROUTES).sort(),
-  removedNextRoutes: Array.from(REMOVED_NEXT_ROUTES).sort(),
   missingUniVueFiles: uniPages.filter((page) => !page.exists).length,
   runtimeRows: runtimeRows.length,
   runtimeCaptured: runtimeRows.filter((row) => row.status === "captured").length,

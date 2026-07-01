@@ -2,33 +2,24 @@
 
 /**
  * B1 净敞口曲线 · 30d · USDT(设计稿 ExposureCard 模式)。
- * 净敞口 = 储备 − 应付负债。数据来自 B 域真实聚合接口。
+ * 净敞口 = 储备 − 应付负债。当前 +$270K 盈余(绿区);覆盖率高位下行,带「触红线」外推预警。
+ * 曲线由 coverageSeries × 负债推导(与覆盖率同源),并带"触红线"外推。
  */
 import Link from "next/link";
-import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { LEDGER } from "@/lib/mock/admin/ledger";
 import { AreaChart } from "@/app/components/kit/charts/area-chart";
 import { fmtUsdCompact, fmtPct } from "@/lib/format";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
 
 export function ExposureCard() {
-  const bDomain = useBDomainDashboard();
-  const { ledger: LEDGER } = bDomain;
-  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
-    return <BDomainDataState title="B1 净敞口曲线" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />;
-  }
   const { reserveUsd, liabilitiesUsd, coverageSeries: cs, redlinePct: red } = LEDGER;
   const net = reserveUsd - liabilitiesUsd; // 精确净敞口(与 hero 子卡一致)
   const deficit = net < 0;
   const tone = deficit ? "var(--v5-danger)" : "var(--v5-success)";
-  if (cs.length < 2) {
-    return <BDomainDataState title="B1 净敞口曲线" error="B1_COVERAGE_SERIES_EMPTY" onRetry={bDomain.reload} />;
-  }
   // 由覆盖率序列推导净敞口走势(储备 = 负债 × cov%,净敞口 = 储备 − 负债)
-  const series = cs;
-  const netSeries = series.map((c) => Math.round(liabilitiesUsd * (c / 100 - 1)));
+  const netSeries = cs.map((c) => Math.round(liabilitiesUsd * (c / 100 - 1)));
   const cov = LEDGER.coverageRatio;
-  const slope = series.length > 1 ? (series[series.length - 1] - series[0]) / (series.length - 1) : 0;
+  const slope = (cs[cs.length - 1] - cs[0]) / (cs.length - 1);
   const windowsToRedline = slope < -0.01 && cov > red ? Math.max(1, Math.round((cov - red) / -slope)) : null;
 
   return (
@@ -53,7 +44,7 @@ export function ExposureCard() {
       <hr className="mb-3 mt-auto border-0" style={{ height: 1, background: "var(--v5-border)" }} />
       <div className="flex items-center justify-between gap-3 py-1 text-[12.5px]">
         <span style={{ color: "var(--v5-ink-3)" }}><AutoGloss>口径</AutoGloss></span>
-        <span style={{ color: "var(--v5-ink-2)" }}><AutoGloss>运营内部 · server-canonical</AutoGloss></span>
+        <span style={{ color: "var(--v5-ink-2)" }}><AutoGloss>运营内部 · 服务端权威</AutoGloss></span>
       </div>
       <div className="flex items-center justify-between gap-3 py-1 text-[12.5px]">
         <span style={{ color: "var(--v5-ink-3)" }}>告警渠道</span>

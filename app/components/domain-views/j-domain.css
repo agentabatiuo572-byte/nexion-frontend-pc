@@ -343,11 +343,6 @@
 .jdom .accts-h .ttl { font-size: 14px; font-weight: 600; color: var(--ink); }
 .jdom .accts-h .sub { font-size: 11.5px; color: var(--ink-4); }
 .jdom .accts-h .r { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-.jdom .accts-page { display: inline-flex; align-items: center; gap: 6px; }
-.jdom .accts-page button { height: 26px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--border-strong);
-  background: var(--surface-2); color: var(--ink-2); font-size: 11px; font-family: inherit; cursor: pointer; white-space: nowrap; }
-.jdom .accts-page button:disabled { opacity: .45; cursor: not-allowed; }
-.jdom .accts-page button:not(:disabled):hover { background: var(--surface-3); color: var(--ink); }
 .jdom .accts-tbl { display: grid; grid-template-columns: 110px 90px 110px minmax(220px, 1fr) 130px 100px 180px; min-width: 1020px; font-size: 12.5px; }
 .jdom .accts-tbl .hd, .jdom .accts-tbl .rw { display: contents; }
 .jdom .accts-tbl .c { padding: 11px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 7px; min-width: 0; }

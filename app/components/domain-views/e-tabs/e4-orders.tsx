@@ -70,7 +70,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
         <div className="sm-h">
           <span className="ttl">订单状态机 · 流转图</span>
           <span className="sub">当前页实时状态 · 主路径 + 终态分支</span>
-          <span className="r"><CodeTag tone="electric">订单状态机</CodeTag></span>
+          <span className="r"><CodeTag tone="electric">订单状态机</CodeTag><CodeTag>devices/orders</CodeTag></span>
         </div>
         {ctx.e4Error && <div className="tint warn tiny" style={{ marginBottom: 12 }}>E4 同步失败:{ctx.e4Error}</div>}
         {ctx.e4Loading && <div className="tint tiny" style={{ marginBottom: 12 }}>正在同步订单数据...</div>}
@@ -104,7 +104,8 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
       <section className="q-card">
         <div className="q-h">
           <span className="ttl">订单队列</span>
-          <span className="sub">当前筛选结果</span>
+          <span className="sub">后端 orders API · pageNum / pageSize · 点行查看详情</span>
+          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag></span>
         </div>
         <div className="filter-bar">
           {FILTERS.map((f) => (
@@ -148,7 +149,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           pageSizeOptions={[10, 20, 50, 100]}
         />
       </section>
-      <p className="f-foot">补建终态 = 对账兜底:状态机偶发缺失终态时,运营手动落定 <span style={{ fontFamily: "var(--mono)" }}>payment_failed / expired / refunded / provisioning_failed</span> 之一。退款 / 取消 / 主路径流转均按订单状态机处理。</p>
+      <p className="f-foot">补建终态 = 对账兜底:状态机偶发缺失终态时,运营手动落定 <span style={{ fontFamily: "var(--mono)" }}>payment_failed / expired / refunded / provisioning_failed</span> 之一,由后端写 A2 审计。订单队列通过后端 <span style={{ fontFamily: "var(--mono)" }}>pageNum / pageSize / state</span> 分页读取,退款 / 取消 / 主路径流转均调用后端订单状态机接口。</p>
     </>
   );
 }

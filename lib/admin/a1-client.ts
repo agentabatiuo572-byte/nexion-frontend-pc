@@ -1,5 +1,3 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
-
 export type GrantCell = "-" | "R" | "M" | "C";
 
 interface ApiResult<T> {
@@ -31,6 +29,7 @@ export interface A1Operator {
   name: string;
   email: string;
   role: string;
+  tier: "lead" | "member" | null;
   tfa: boolean;
   status: "enabled" | "disabled";
   lastLogin: string;
@@ -66,8 +65,8 @@ export interface A1CreateAccountInput {
   displayName: string;
   email: string;
   role: string;
+  tier: "lead" | "member";
   deliver: "mail" | "handoff";
-  initialPassword?: string;
 }
 
 let requestSeq = 0;
@@ -94,7 +93,7 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`));
+    throw new Error(result?.message || `A1_REQUEST_FAILED_${response.status}`);
   }
 
   return result.data as T;
@@ -115,12 +114,13 @@ export function createA1Account(input: A1CreateAccountInput, reason: string, ope
 export function changeA1AccountRole(
   accountId: string,
   role: string,
+  tier: "lead" | "member",
   reason: string,
   operator: string,
 ) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/role`, {
     method: "PATCH",
-    body: JSON.stringify({ role, reason, operator }),
+    body: JSON.stringify({ role, tier, reason, operator }),
     idempotencyPrefix: "a1-account-role",
   });
 }

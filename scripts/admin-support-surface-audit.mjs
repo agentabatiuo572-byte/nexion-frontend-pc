@@ -8,9 +8,6 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN = path.resolve(ROOT, "..");
-const UNI_ROOT = fs.existsSync(path.join(PLAN, "nexion-frontend-uniapp"))
-  ? path.join(PLAN, "nexion-frontend-uniapp")
-  : path.join(PLAN, "Nexion-uniapp");
 const failures = [];
 
 function read(relOrAbs) {
@@ -59,6 +56,7 @@ assertContains("lib/nav/console-nav.ts", [
   'path: "/service/tickets"',
   'id: "M3"',
   'path: "/service/sessions"',
+  "72 个 L2",
 ]);
 assertAbsent("lib/nav/console-nav.ts", 'path: "/content/support"', "I8 应已迁出至域 M");
 assertAbsent("lib/nav/console-nav.ts", 'path: "/content/conversation-center"', "I9 应已迁出至域 M");
@@ -87,7 +85,7 @@ assertContains("app/components/domain-views/m-tabs/data.ts", [
   "SESSION_CONVOS",
   "export type SessionTransfer",      // 跨坐席转交模型
   "transfer?: SessionTransfer",       // 会话挂转交态(转入待处理)
-  "export type TransferTarget",       // 转交目标模型;技能队列来自后端 I.session.transferTargets
+  "TRANSFER_QUEUES",                  // 技能队列(派生 SLA)
 ]);
 
 // M2 工单坐席台:控件存活 + 真写键 + 共享线程 + 互转 + 行为
@@ -152,25 +150,27 @@ assertAbsent("app/components/domain-views/i-view.tsx", "I9Conversation", "客服
 
 // verify needle
 assertContains("scripts/verify.sh", [
-  "期望 70",
+  "期望 72",
   'check_html "/service/tickets" "工单详情与处理"',
   'check_html "/service/sessions" "主动发起会话"',
   "admin-support-surface-audit.mjs",
 ]);
 
 // UniApp 工单字段镜像(前端不变,迁移后仍须对齐)
-assertContains(path.join(UNI_ROOT, "src/mock/tickets.ts"), [
+assertContains(path.join(PLAN, "Nexion-uniapp/src/mock/tickets.ts"), [
   "lastReplyAt: number",
   "owner: string",
   'owner: "Marina K."',
 ]);
-assertContains(path.join(UNI_ROOT, "src/store/tickets.ts"), [
+assertContains(path.join(PLAN, "Nexion-uniapp/src/store/tickets.ts"), [
   "lastReplyAt: raw.lastReplyAt ?? ticket.updatedAt",
   'owner: raw.owner ?? "Unassigned"',
   "lastReplyAt: now",
 ]);
 
-// 路由计数:这里仅守 M 域客服路由,全局 nav 数量由 scripts/nav-routes.mjs 负责。
+// 路由计数:console-nav 72 条;/service 客服路由 = 5
+const navPaths = read("lib/nav/console-nav.ts").match(/path:\s*"[^"]+"/g) || [];
+if (navPaths.length !== 72) failures.push(`console-nav path count ${navPaths.length}, expected 72`);
 const serviceRouteCount = (read("lib/nav/console-nav.ts").match(/path:\s*"\/service\//g) || []).length;
 if (serviceRouteCount !== 5) failures.push(`/service routes ${serviceRouteCount}, expected 5`);
 

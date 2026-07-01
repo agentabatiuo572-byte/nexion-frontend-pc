@@ -19,11 +19,15 @@
  *
  * 设计稿元素省略:f-bar/f-nav/f-title/f-desc 已由 DomainHeader 承担,本组件从 .f-stats 开始。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { PaginationExemptionList } from "../design-kit";
-import { useAdminAuth } from "@/lib/store/admin-auth";
-import { fetchA3Overview, updateA3FeatureFlag, type A3FeatureFlag, type A3Overview } from "@/lib/admin/a3-client";
+import {
+  A3_STATS,
+  FEATURE_FLAGS,
+  SYSTEM_HEALTH,
+  killSwitchReadonly,
+} from "./data";
 import type { ACtx } from "./types";
 
 /* ────────────────── helpers ────────────────── */
@@ -34,41 +38,18 @@ const FLAG_STATUS_OPTIONS = ["on", "off", "灰度 10%", "灰度 20%", "灰度 50
 /* ────────────────── 组件 ────────────────── */
 
 export function A3Config({ ctx }: { ctx: ACtx }) {
-  const { toast, openActionConfirm } = ctx;
+  const { pget, setParam, toast, openActionConfirm } = ctx;
   const router = useRouter();
-  const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "superadmin");
-  const [overview, setOverview] = useState<A3Overview | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [mutating, setMutating] = useState<string | null>(null);
-
-  const refreshOverview = useCallback(async (quiet = false) => {
-    if (!quiet) setLoading(true);
-    setLoadError(null);
-    try {
-      setOverview(await fetchA3Overview());
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
-    } finally {
-      if (!quiet) setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshOverview();
-  }, [refreshOverview]);
 
   /* 5 闸只读派生(killSwitchReadonly 同源 design-data.KILLSWITCH + geo-block 行)。
    *「生效中」= enabled 或 「空列表 · 无封锁」(geo-block 列表非空才算「生效」,空列表 = 无封锁 = 通) */
-  const gates = overview?.killSwitches ?? [];
-  const featureFlags = overview?.featureFlags ?? [];
-  const systemHealth = overview?.systemHealth ?? [];
-  const upGates = overview?.stats.killGatesUp ?? gates.filter((g) => g.up).length;
+  const gates = useMemo(() => killSwitchReadonly(), []);
+  const upGates = gates.filter((g) => g.st === "enabled" || g.st.includes("空列表")).length;
 
   /* ────────────────── 调参动作:feature flag 切换 ────────────────── */
 
-  const flagChg = (f: A3FeatureFlag) => {
-    const cur = f.status;
+  const flagChg = (f: (typeof FEATURE_FLAGS)[number]) => {
+    const cur = (pget(`A.flag.${f.key}.status`) as string | undefined) ?? f.st;
     openActionConfirm({
       action: `切换功能开关 · ${f.name}`,
       detail: (
@@ -87,16 +68,11 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
           toast("拒绝:功能开关目标态须为 on / off / 灰度档,非法值未写入");
           return;
         }
-        setMutating(f.key);
-        updateA3FeatureFlag(f.key, val, reason, operator)
-          .then((next) => {
-            setOverview(next);
-            toast(`「${f.name}」已切换为 ${val} · 后端留痕`);
-          })
-          .catch((error: unknown) => {
-            toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
-          })
-          .finally(() => setMutating(null));
+        setParam(`A.flag.${f.key}.status`, val, {
+          action: `功能开关切换「${f.name}」(${f.key}) → ${val} · admin.feature_flag_changed`,
+          reason,
+        });
+        toast(`「${f.name}」已切换为 ${val} · 留痕`);
       },
     });
   };
@@ -105,34 +81,17 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
 
   return (
     <>
-      {loadError && (
-        <section className="l-card">
-          <div className="l-b">
-            <div className="atint warn" style={{ fontSize: 12 }}>
-              A3 接口读取失败:{loadError}
-              <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void refreshOverview()}>重试</button>
-            </div>
-          </div>
-        </section>
-      )}
-      {loading && !overview && (
-        <section className="l-card">
-          <div className="l-b">
-            <div className="atint" style={{ fontSize: 12 }}>正在读取 /api/admin/platform/config/overview。</div>
-          </div>
-        </section>
-      )}
       {/* 2 f-stat(服务器时钟 / 防重号 KPI 已随对应卡片移除 2026-06-24) */}
       <div className="f-stats" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
         <div className="f-stat cyan">
           <div className="k">功能开关</div>
-          <div className="v">{overview?.stats.flagCount ?? featureFlags.length} 个</div>
-          <div className="sub">{overview?.stats.flagGrayCount ?? featureFlags.filter((flag) => flag.status.includes("灰度")).length} 个灰度中 · 切换走操作确认</div>
+          <div className="v">{A3_STATS.flagCount} 个</div>
+          <div className="sub">{A3_STATS.flagGrayCount} 个灰度中 · 切换走操作确认</div>
         </div>
         <div className="f-stat ok">
           <div className="k">熔断闸</div>
           <div className="v">{upGates} / {gates.length} 开</div>
-          <div className="sub">功能闸 + 地区屏蔽(空列表)</div>
+          <div className="sub">5 功能闸 + 地区屏蔽(空列表)</div>
         </div>
       </div>
 
@@ -155,8 +114,8 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
               </tr>
             </thead>
             <tbody>
-              {featureFlags.map((f) => {
-                const cur = f.status;
+              {FEATURE_FLAGS.map((f) => {
+                const cur = (pget(`A.flag.${f.key}.status`) as string | undefined) ?? f.st;
                 const stCls = cur === "on" ? "ok" : cur === "off" ? "dim" : "warn";
                 return (
                   <tr key={f.key}>
@@ -170,18 +129,11 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
                     <td className="mono" style={{ fontSize: 11.5 }}>{f.lastChange}</td>
                     <td style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{f.resourceOwner}</td>
                     <td style={{ textAlign: "right" }}>
-                      <button className="l-btn sm mc" onClick={() => flagChg(f)} disabled={mutating === f.key}>{mutating === f.key ? "提交中" : "切换"}</button>
+                      <button className="l-btn sm mc" onClick={() => flagChg(f)}>切换</button>
                     </td>
                   </tr>
                 );
               })}
-              {!featureFlags.length && (
-                <tr>
-                  <td colSpan={6} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
-                    后端暂无功能开关记录
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
@@ -223,26 +175,19 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
               </thead>
               <tbody>
                 {gates.map((g) => {
-                  const isUp = g.up;
+                  const isUp = g.st === "enabled" || g.st.includes("空列表");
                   return (
                     <tr key={g.key}>
                       <td style={{ verticalAlign: "top" }}>
                         <div style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</div>
                         <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{g.key}</span>
                       </td>
-                      <td><span className={`a3-gate ${isUp ? "up" : "down"}`}>{g.status}</span></td>
+                      <td><span className={`a3-gate ${isUp ? "up" : "down"}`}>{g.st}</span></td>
                       <td className="mono" style={{ fontSize: 11.5 }}>{g.lastChange}</td>
                       <td style={{ fontSize: 11.5 }}>{g.chain}</td>
                     </tr>
                   );
                 })}
-                {!gates.length && (
-                  <tr>
-                    <td colSpan={4} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
-                      后端暂无熔断闸记录
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
@@ -263,7 +208,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
             <span className="sub">· 服务端关键依赖 · 只读</span>
           </div>
           <div className="l-b">
-            {systemHealth.map((h) => (
+            {SYSTEM_HEALTH.map((h) => (
               <div className="a3-hl" key={h.name}>
                 <span
                   className="d"
@@ -278,11 +223,6 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
                 </span>
               </div>
             ))}
-            {!systemHealth.length && (
-              <div className="atint warn" style={{ fontSize: 12 }}>
-                后端暂无系统健康记录
-              </div>
-            )}
             <div className="atint" style={{ marginTop: 10 }}>
               <b>系统健康只读</b> · 服务端关键依赖的实时状态,查看类全角色按裁剪可看。
               健康面异常只告警、不在这页处置——管道问题找技术值班,资金账异常走驾驶舱(B1/B2)。

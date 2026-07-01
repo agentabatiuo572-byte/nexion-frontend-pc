@@ -10,6 +10,8 @@ const UNI_BASE_URL = process.env.UNI_BASE_URL || "http://localhost:5173";
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || process.env.ADMIN_BASE || "http://localhost:3002";
 const session = process.env.AGENT_BROWSER_SESSION || `nexion-feature-map-walkthrough-${Date.now()}-${process.pid}`;
 const OUT_FILE = path.join(ROOT, "docs", "audit", "shards", "feature-mapping-walkthrough-proof.ndjson");
+const ADMIN_STORE_KEY = "nexion-admin-platform-v1";
+const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_BIN || "agent-browser";
 const results = [];
 
 function quoteShellArg(arg) {
@@ -18,19 +20,36 @@ function quoteShellArg(arg) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+function closeSessionQuietly() {
+  const args = ["--session", session, "close"];
+  try {
+    if (process.platform === "win32") {
+      spawnSync([AGENT_BROWSER_BIN, ...args.map(quoteShellArg)].join(" "), [], {
+        cwd: ROOT,
+        shell: true,
+        timeout: 15000,
+        stdio: "ignore",
+      });
+    } else {
+      spawnSync(AGENT_BROWSER_BIN, args, { cwd: ROOT, timeout: 15000, stdio: "ignore" });
+    }
+  } catch {}
+}
+
+process.once("exit", closeSessionQuietly);
+
 function run(args, options = {}) {
   const fullArgs = ["--session", session, ...args];
-  const agentBrowserBin = process.env.AGENT_BROWSER_BIN || "agent-browser";
   const result =
     process.platform === "win32"
-      ? spawnSync([agentBrowserBin, ...fullArgs.map(quoteShellArg)].join(" "), [], {
+      ? spawnSync([AGENT_BROWSER_BIN, ...fullArgs.map(quoteShellArg)].join(" "), [], {
           cwd: ROOT,
           encoding: "utf8",
           input: options.input,
           shell: true,
           timeout: options.timeout || 30000,
         })
-      : spawnSync(agentBrowserBin, fullArgs, {
+      : spawnSync(AGENT_BROWSER_BIN, fullArgs, {
           cwd: ROOT,
           encoding: "utf8",
           input: options.input,
@@ -115,7 +134,7 @@ function evalJson(body, timeout = 30000) {
       if (typeof uni !== 'undefined' && uni.getStorageSync) return uni.getStorageSync(key);
       try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return localStorage.getItem(key); }
     };
-    const retiredAdminPlatformKeys = () => Object.keys(localStorage).filter((key) => /^nexion-admin-platform-v\\d+$/i.test(key));
+    const persistedAdmin = () => JSON.parse(localStorage.getItem(${JSON.stringify(ADMIN_STORE_KEY)}) || '{"state":{}}').state || {};
     const clearNexionStorage = () => {
       for (const storage of [localStorage, sessionStorage]) {
         for (const key of Object.keys(storage)) {
@@ -172,6 +191,33 @@ function openUni(hashRoute) {
 
 function openAdmin(route) {
   return openUrl(`${ADMIN_BASE_URL}${route}`);
+}
+
+// 后台访问前先登录:2026-06-24 起本地预览(.env.local NEXT_PUBLIC_ADMIN_AUTH_BYPASS=1)不再 console 内短路,
+// 登录页照常出现但登录接口短路(任意账密种本地 superadmin 会话)。agent-browser 每次全新空浏览器无登录态,
+// 故 admin 段开始前必须提交一次登录,否则停在登录页读不到任何业务 needle。auth(nexion-admin-auth-v2)登录后持久,
+// 贯穿后续 openAdmin;仅平台 store(nexion-admin-platform-v1)被各步按需清理,不影响登录态。
+function loginAdmin() {
+  const state = openUrl(`${ADMIN_BASE_URL}/`);
+  const pre = evalJson("return { ok: (document.body.innerText || '').includes('运营总览') };");
+  if (pre.ok) return state;
+  evalJson(`
+    const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
+    const pwd = inputs.find((i) => i.type === 'password');
+    const acct = inputs.find((i) => i !== pwd) || inputs[0];
+    if (acct) setNativeValue(acct, 'ops-preview');
+    if (pwd) setNativeValue(pwd, 'preview-2026');
+    const btn = Array.from(document.querySelectorAll('button')).find((b) => /登录/.test(text(b)) && visible(b));
+    if (!btn) throw new Error('admin login button not found');
+    btn.click();
+    return { submitted: true };
+  `);
+  return waitForEval(
+    "admin login + console render",
+    "return { ok: (document.body.innerText || '').includes('运营总览') };",
+    25000,
+    500,
+  );
 }
 
 function clickSelector(selector) {
@@ -374,8 +420,8 @@ await step("FM-013", "language-switch-changes-copy-across-routes", () => {
   };
 });
 
-openAdmin("/");
-evalJson(`return clearNexionStorage();`);
+loginAdmin();
+evalJson(`localStorage.removeItem(${JSON.stringify(ADMIN_STORE_KEY)}); return { clearedAdminStore: true };`);
 wait(600);
 
 await step("FM-005-ADMIN", "admin-staking-config-writes-param-and-audit", () => {
@@ -400,22 +446,23 @@ await step("FM-005-ADMIN", "admin-staking-config-writes-param-and-audit", () => 
     return { modalText };
   `);
   wait(700);
-  const updated = waitForEval("staking APY backend update visible", `
-    const body = bodyText();
-    return {
-      ok: body.includes('13%') && retiredAdminPlatformKeys().length === 0,
-      retiredKeys: retiredAdminPlatformKeys(),
-      body,
-    };
+  const persisted = evalJson(`
+    const state = persistedAdmin();
+    const params = state.params || {};
+    const audit = state.audit || [];
+    const entry = audit.find((row) => row.target === 'G.staking.apy.usdt30d' && row.after === '13%');
+    return { params, auditEntry: entry, body: bodyText() };
   `);
+  expect(persisted.params["G.staking.apy.usdt30d"] === "13%", "staking APY param did not persist");
+  expect(!!persisted.auditEntry && /runtime proof/.test(persisted.auditEntry.reason || ""), "staking APY audit entry missing proof reason");
   openAdmin("/finance-products/staking");
   const reopened = evalJson("return { body: bodyText(), href: location.href };");
-  expect(reopened.body.includes("13%"), "staking APY backend value not rendered after reopen");
+  expect(reopened.body.includes("13%"), "staking APY persisted value not rendered after reopen");
   return {
     initialHref: initial.href,
     modalHasBusinessControls: modal.modalText.includes("目标新值") && modal.modalText.includes("操作理由"),
-    backendValueVisible: updated.body.includes("13%"),
-    retiredAdminPlatformKeys: updated.retiredKeys,
+    persistedKey: "G.staking.apy.usdt30d",
+    auditId: persisted.auditEntry.id,
     reopenedHref: reopened.href,
   };
 });
@@ -487,14 +534,15 @@ await step("FM-016", "params-registry-to-owner-module-switch", () => {
     confirmDialog();
   `);
   wait(700);
-  const updated = waitForEval("staking sale-status backend update visible", `
-    const body = bodyText();
-    return {
-      ok: body.includes('已停售') && retiredAdminPlatformKeys().length === 0,
-      retiredKeys: retiredAdminPlatformKeys(),
-      body,
-    };
+  const persisted = evalJson(`
+    const state = persistedAdmin();
+    const params = state.params || {};
+    const audit = state.audit || [];
+    const entry = audit.find((row) => row.target === 'G.staking.enabled.usdt30d' && row.after === 'false');
+    return { params, auditEntry: entry, body: bodyText() };
   `);
+  expect(persisted.params["G.staking.enabled.usdt30d"] === "false", "staking module switch param did not persist");
+  expect(!!persisted.auditEntry && /module switch/.test(persisted.auditEntry.reason || ""), "staking module switch audit entry missing proof reason");
   openAdmin("/finance-products/staking");
   const reopened = evalJson("return { body: bodyText(), href: location.href };");
   expect(reopened.body.includes("已停售"), "module switch state not rendered after reopen");
@@ -502,8 +550,8 @@ await step("FM-016", "params-registry-to-owner-module-switch", () => {
     registry,
     ownerHref: owner.href,
     modalHasBusinessImpact: opened.modalText.includes("停售只停新锁"),
-    backendSaleStatusVisible: updated.body.includes("已停售"),
-    retiredAdminPlatformKeys: updated.retiredKeys,
+    persistedKey: "G.staking.enabled.usdt30d",
+    auditId: persisted.auditEntry.id,
     reopenedHref: reopened.href,
   };
 });

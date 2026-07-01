@@ -1,7 +1,7 @@
 /**
- * 后台模块内容规格 — 注册表条目的数据形状。3 个 archetype(list/config/dashboard)据此渲染模块兜底页。
- * 目标:把尚未定制的模块用"archetype + 内容数据"变成可迁移的结构化页面;已接真实接口的模块应在注册表说明数据源。
- * 注册表可承载真实接口说明或临时种子快照,不得冒充实时后端数据。
+ * 后台模块内容规格 — 注册表条目的数据形状。3 个 archetype(list/config/dashboard)据此渲染真实页。
+ * 目标:把 64 个脚手架模块用"archetype + 内容数据"变成四镜头合规的真实页,而非手写每页。
+ * 内容均为 mock,但结构 backend-replaceable(可序列化、字段化)。
  */
 export type Archetype = "list" | "config" | "dashboard";
 

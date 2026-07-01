@@ -1,6 +1,7 @@
-// Runtime action sampler for Next reference and UniApp H5 front shards.
+// Runtime action sampler for UniApp H5 front shards.
 // Route-level crawl proves pages render; this script samples business controls
 // and records whether clicking them creates a real observable effect.
+// The old H5 app retired on 2026-06-26; active frontend evidence is UniApp.
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -11,9 +12,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AUDIT = path.join(ROOT, "docs", "audit");
 const SHARDS = path.join(AUDIT, "shards");
 const SCREENSHOTS = path.join(AUDIT, "screenshots");
-const NEXT_BASE_URL = process.env.NEXT_BASE_URL || "http://localhost:3001";
 const UNI_BASE_URL = process.env.UNI_BASE_URL || "http://localhost:5173";
-const shardId = process.argv[2] || "NEXT-FR-01";
+const shardId = process.argv[2] || "UNI-FR-01";
 const maxActionsPerRoute = Number(process.env.FRONT_ACTION_SAMPLE_LIMIT || 4);
 const session = process.env.AGENT_BROWSER_SESSION || `nexion-front-actions-${shardId.toLowerCase()}`;
 
@@ -102,13 +102,6 @@ function lineJson(file, obj) {
 }
 
 function sampleRoute(route, side) {
-  if (side === "nextReference") {
-    return route
-      .replace("[productId]", "stellarbox-s1")
-      .replace("[id]", "ORD-AUDIT-0001")
-      .replace("[code]", "NX-DEMO")
-      .replace("[hash]", "0xdemo");
-  }
   if (side === "uniapp") {
     if (route === "/#/pages/store/detail") return "/#/pages/store/detail?id=stellarbox-s1";
     if (route === "/#/pages/store/order-detail") return "/#/pages/store/order-detail?id=ORD-AUDIT-0001";
@@ -118,14 +111,16 @@ function sampleRoute(route, side) {
 
 function routeUrl(route, side) {
   const sampled = sampleRoute(route, side);
-  const base = side === "uniapp" ? UNI_BASE_URL : NEXT_BASE_URL;
+  if (side !== "uniapp") throw new Error(`Unsupported frontend side after H5 retirement: ${side}`);
+  const base = UNI_BASE_URL;
   if (sampled.startsWith("/#/")) return `${base}${sampled}`;
   if (sampled.startsWith("#/")) return `${base}/${sampled}`;
   return `${base}${sampled}`;
 }
 
 function seedAuditState(side) {
-  const base = side === "uniapp" ? `${UNI_BASE_URL}/#/pages/onboarding/intro` : `${NEXT_BASE_URL}/onboarding/intro`;
+  if (side !== "uniapp") throw new Error(`Unsupported frontend side after H5 retirement: ${side}`);
+  const base = `${UNI_BASE_URL}/#/pages/onboarding/intro`;
   run(["open", base], { timeout: 45000 });
   run(["wait", "--load", "networkidle"], { timeout: 45000 });
   return evalJson(`JSON.stringify((() => {
@@ -149,25 +144,14 @@ function seedAuditState(side) {
         { status: 'paid', ts: now - 90000, note: 'Settled via usdt-trc20' },
       ],
     };
-    if (${JSON.stringify(side)} === 'nextReference') {
-      localStorage.setItem('nexion-auth-v1', JSON.stringify({
-        state: { isAuthenticated: true, email, onboardingComplete: true },
-        version: 2,
-      }));
-      localStorage.setItem('nexion-orders-v4', JSON.stringify({
-        state: { orders: [auditOrder] },
-        version: 0,
-      }));
-    } else {
-      const uniAuth = { isAuthenticated: true, email, onboardingComplete: true };
-      const uniOrders = { orders: [auditOrder] };
-      if (window.uni && typeof window.uni.setStorageSync === 'function') {
-        window.uni.setStorageSync('nexion-auth-v1', uniAuth);
-        window.uni.setStorageSync('nexion-orders-v4', uniOrders);
-      }
-      localStorage.setItem('nexion-auth-v1', JSON.stringify(uniAuth));
-      localStorage.setItem('nexion-orders-v4', JSON.stringify(uniOrders));
+    const uniAuth = { isAuthenticated: true, email, onboardingComplete: true };
+    const uniOrders = { orders: [auditOrder] };
+    if (window.uni && typeof window.uni.setStorageSync === 'function') {
+      window.uni.setStorageSync('nexion-auth-v1', uniAuth);
+      window.uni.setStorageSync('nexion-orders-v4', uniOrders);
     }
+    localStorage.setItem('nexion-auth-v1', JSON.stringify(uniAuth));
+    localStorage.setItem('nexion-orders-v4', JSON.stringify(uniOrders));
     return { ok: true, side: ${JSON.stringify(side)} };
   })())`);
 }
@@ -281,15 +265,6 @@ function uniqueBusinessActions(routeRow) {
   const actions = [];
   for (const control of controls) {
     if (control.disabled) continue;
-    if (side === "nextReference") {
-      const tag = String(control.tag || "");
-      const role = String(control.role || "");
-      if (["textarea", "select"].includes(tag)) continue;
-      if (tag === "input" && !["button", "submit"].includes(String(control.type || "").toLowerCase())) continue;
-      const isNativeAction = ["button", "a", "input", "select", "textarea"].includes(tag);
-      const isSemanticAction = ["button", "link"].includes(role) || Boolean(control.href);
-      if (!isNativeAction && !isSemanticAction) continue;
-    }
     for (const label of labelsForControl(control, side)) {
       if (STRUCTURAL_UNI_TAGS.has(String(control.tag || ""))) continue;
       if (side === "uniapp" && label.length > 70) continue;
@@ -394,8 +369,8 @@ fs.mkdirSync(SCREENSHOTS, { recursive: true });
 const plan = readJson(path.join(AUDIT, "l1-shards.json"));
 const shard = plan.shards.find((item) => item.id === shardId);
 if (!shard) throw new Error(`Unknown shard: ${shardId}`);
-if (!["nextReference", "uniapp"].includes(shard.side)) {
-  throw new Error(`Shard ${shardId} is ${shard.side}; use this script only for NEXT-FR-* or UNI-FR-* shards`);
+if (shard.side !== "uniapp") {
+  throw new Error(`Shard ${shardId} is ${shard.side}; use this script only for active UNI-FR-* shards`);
 }
 
 const routeEvidenceFile = path.join(SHARDS, `${shardId.toLowerCase()}-runtime.ndjson`);
@@ -435,7 +410,7 @@ for (const routeRow of routeRows) {
     const routeSlug = safeName(route);
     const entry = {
       shardId,
-      source: shard.side === "uniapp" ? "E-runtime-action-sample" : "B-runtime-action-sample",
+      source: "E-runtime-action-sample",
       side: shard.side,
       route,
       url,

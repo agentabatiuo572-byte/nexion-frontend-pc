@@ -61,31 +61,12 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   devIndicators: false,
-  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.8.*"],
+  allowedDevOrigins: ["127.0.0.1", "localhost", "192.168.8.102"],
   async headers() {
     return [
       {
         source: "/(.*)",
         headers: SECURITY_HEADERS,
-      },
-    ];
-  },
-  async redirects() {
-    return [
-      {
-        source: "/growth/milestones",
-        destination: "/growth/daily",
-        permanent: false,
-      },
-      {
-        source: "/content/disclosure",
-        destination: "/content/trust",
-        permanent: false,
-      },
-      {
-        source: "/content/learn",
-        destination: "/content/i18n",
-        permanent: false,
       },
     ];
   },

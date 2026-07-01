@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Badge, DataListPager } from "../design-kit";
+import { CodeTag, Badge, DataListPager } from "../design-kit";
 import { E5_MAX_DEVICES, type E5Device, type E5DeviceState, type E5Overview } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
@@ -96,8 +96,8 @@ function buildFeed(devices: E5Device[], overview: E5Overview | null): FeedRow[] 
         ts: "now",
         type: "alert",
         body: <><b>{dc.dcLocation}</b> 存在异常设备</>,
-        desc: `异常 ${fmtCount(dc.abnormalDevices)} · 平均 GPU ${Math.round(dc.avgGpuUsage)}%`,
-        actor: "device-monitor",
+        desc: `异常 ${fmtCount(dc.abnormalDevices)} · 平均 GPU ${Math.round(dc.avgGpuUsage)}% · 后端 heartbeat 聚合`,
+        actor: "heartbeat",
       });
     });
   }
@@ -107,7 +107,7 @@ function buildFeed(devices: E5Device[], overview: E5Overview | null): FeedRow[] 
       ts: "now",
       type: device.state === "abnormal" ? "danger" : "alert",
       body: <><b>{device.serial}</b> {DEV_STATE_LABEL[device.state]}</>,
-      desc: `${device.dc || "未分配 DC"} · ${device.runtimeStatus || device.rawStatus || "状态待同步"}`,
+      desc: `${device.dc || "未分配 DC"} · ${device.runtimeStatus || device.rawStatus || "后端状态待同步"}`,
       actor: "device-agent",
     });
   });
@@ -117,7 +117,7 @@ function buildFeed(devices: E5Device[], overview: E5Overview | null): FeedRow[] 
     rows.push({
       ts: "now",
       type: "info",
-      body: <><b>{first.serial}</b> 库存记录已同步</>,
+      body: <><b>{first.serial}</b> 库存记录已从后端返回</>,
       desc: `${first.user || "未绑定用户"} · ${first.sku || "未配置 SKU"} · ${DEV_STATE_LABEL[first.state]}`,
       actor: "inventory",
     });
@@ -145,7 +145,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       name: paused ? `恢复派单 · ${dcId}` : `批量 pause · ${dcId}`,
       op: "ops-pause", dc: dcId, fixedVal: paused ? "false" : "true", amplify: false,
       detail: paused
-        ? `恢复 ${dcId} 派单 · 重新接入调度,无需重启设备`
+        ? `恢复 ${dcId} 派单 · heartbeat 重新接入调度,无需重启设备`
         : `暂停 ${dcId} 全节点派单 · 仅运维窗口,不影响已售设备结算(用户按 baseRate 继续计提)· 处置限单 DC`,
     });
   };
@@ -153,17 +153,17 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "在线设备(全网)", v: fmtCount(onlineDevices), sub: "全网设备概览", tone: "ok" },
-        { k: "离线 / 异常", v: fmtCount(abnormalDevices), sub: "运行状态汇总", tone: "warn" },
+        { k: "在线设备(全网)", v: fmtCount(onlineDevices), sub: "来自 /api/admin/devices/overview", tone: "ok" },
+        { k: "离线 / 异常", v: fmtCount(abnormalDevices), sub: "后端 runtime / heartbeat 聚合", tone: "warn" },
         { k: "单户设备上限", v: "6", sub: "MAX_DEVICES 闸门" },
-        { k: "回收 / 停用", v: fmtCount(recycledDevices), sub: "可恢复设备", tone: "cyan" },
+        { k: "回收 / 停用", v: fmtCount(recycledDevices), sub: "可恢复设备走后端恢复接口", tone: "cyan" },
       ]} />
 
       {/* Global heartbeat banner */}
       <section className="heartbeat">
         <div>
           <div className="hb-num">{fmtCount(totalDevices)}</div>
-          <div className="hb-lbl"><b>实时</b> 在网设备 · 最近状态同步</div>
+          <div className="hb-lbl"><b>实时</b> 在网设备 · heartbeat 心跳 30s · 后端概览同步</div>
         </div>
         <div className="ecg-wrap">
           <svg viewBox="0 0 800 60" preserveAspectRatio="none">
@@ -172,7 +172,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           </svg>
         </div>
         <div className="hb-ctrl">
-          <div className="row"><span>过去 1h 心跳失联</span><span className="v">{fmtCount(abnormalDevices)}</span></div>
+          <div className="row"><span>过去 1h heartbeat 失联</span><span className="v">{fmtCount(abnormalDevices)}</span></div>
           <div className="row"><span>过去 24h 自动重连</span><span className="v">—</span></div>
           <div className="row"><span>持续异常 &gt; 1h</span><span className="v warn">{fmtCount(overview?.offlineDevices)}</span></div>
           <div className="row"><span>调度延迟 P95</span><span className="v">—</span></div>
@@ -184,6 +184,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
         <div className="feed-h">
           <span className="ttl">设备库存 & 激活</span>
           <span className="sub">激活 / 取消激活 / 强制激活 / 解绑 · 校验订单关系 + 用户槽位 + MAX_DEVICES({MAX_DEVICES})</span>
+          <span className="r"><CodeTag tone="electric">GET /api/admin/devices</CodeTag></span>
         </div>
         <div style={{ overflowX: "auto", padding: "4px 4px 0" }}>
           <table style={{ width: "100%", minWidth: 1020, borderCollapse: "collapse", fontSize: 12.5 }}>
@@ -197,17 +198,17 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
             <tbody>
               {ctx.e5Loading && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在加载第 {ctx.e5Page} 页设备库存...</td>
+                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在从后端加载第 {ctx.e5Page} 页设备库存...</td>
                 </tr>
               )}
               {!ctx.e5Loading && ctx.e5Error && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存读取异常:{ctx.e5Error}</td>
+                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存接口异常:{ctx.e5Error}</td>
                 </tr>
               )}
               {!ctx.e5Loading && !ctx.e5Error && devices.length === 0 && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>暂无设备库存数据</td>
+                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>后端暂无设备库存数据</td>
                 </tr>
               )}
               {!ctx.e5Loading && !ctx.e5Error && devices.map((d) => {
@@ -234,14 +235,14 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                     <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
                       {isActivatable(d.state) && (
                         <>
-                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "激活设备", `激活 ${d.serial}(用户 ${d.user} 槽位 ${d.slot})· 校验设备状态 + MAX_DEVICES(${MAX_DEVICES})`)}>激活</button>{" "}
-                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "强制激活设备", `强制激活 ${d.serial} · 运维异常补救 · force 不绕过 MAX_DEVICES(${MAX_DEVICES})硬上限 · 理由必填`, true)}>强制激活</button>
+                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "激活设备", `激活 ${d.serial}(用户 ${d.user} 槽位 ${d.slot})· 后端校验设备状态 + MAX_DEVICES(${MAX_DEVICES}) + A2 审计`)}>激活</button>{" "}
+                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "强制激活设备", `强制激活 ${d.serial} · 运维异常补救 · force 不绕过 MAX_DEVICES(${MAX_DEVICES})硬上限 · 理由必填 + A2`, true)}>强制激活</button>
                         </>
                       )}
                       {isDeactivatable(d.state) && (
                         <>
-                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-deactivate", "取消激活设备", `取消激活 ${d.serial} · 停止派单与计提`)}>取消激活</button>{" "}
-                          <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "解绑设备", `解绑 ${d.serial} · 与用户 ${d.user} 槽位解除关联(异常设备处置)· 理由必填`, true)}>解绑</button>
+                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-deactivate", "取消激活设备", `取消激活 ${d.serial} · 停止派单与计提 · 后端写设备状态并留审计`)}>取消激活</button>{" "}
+                          <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "解绑设备", `解绑 ${d.serial} · 与用户 ${d.user} 槽位解除关联(异常设备处置)· 理由必填 + A2`, true)}>解绑</button>
                         </>
                       )}
                     </td>
@@ -260,19 +261,20 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           onPageSizeChange={ctx.setE5PageSize}
           pageSizeOptions={[10, 20, 50, 100]}
         />
+        <p className="f-foot" style={{ margin: "10px 14px 14px" }}><b>库存激活闭环</b> · 列表分页读取 <span className="mono">/api/admin/devices?pageNum=&pageSize=</span>;激活调用设备恢复/激活接口;取消激活与解绑调用设备停用接口。所有写操作必须带理由、幂等键、操作人,由后端写设备状态并进入 A2 审计。</p>
       </section>
 
       {/* 3 DC 控制面板 */}
       <div className="dc-toolbar">
         <div>
           <div className="ttl">数据中心</div>
-          <div className="sub">区域、状态与派单控制</div>
+          <div className="sub">GET /api/admin/devices/datacenters · 增删改查写入 MySQL</div>
         </div>
         <button className="l-btn sm mc" onClick={() => ctx.openDatacenter()}>+ 新增数据中心</button>
       </div>
       <div className="dc-grid">
         {!ctx.e5Loading && !ctx.e5Error && dcRows.length === 0 && (
-          <section className="feed-card dc-empty">暂无数据中心配置</section>
+          <section className="feed-card dc-empty">后端暂无数据中心配置</section>
         )}
         {dcRows.map((dc) => {
           const realDc = dcStats.get(dc.dcLocation) ?? dc;
@@ -322,7 +324,8 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       <section className="feed-card">
         <div className="feed-h">
           <span className="ttl">运维活动 · 最近 24h</span>
-          <span className="sub">心跳异常 + 批量操作 + 自动重连</span>
+          <span className="sub">heartbeat 异常 + 批量操作 + 自动重连</span>
+          <span className="r"><CodeTag tone="electric">A2 审计</CodeTag></span>
         </div>
         <div className="feed">
           {feed.length ? feed.map((f, i) => (
@@ -336,13 +339,13 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
             <div className="feed-it">
               <div className="ts">now</div>
               <div className="dot info"><FeedIcon t="info" /></div>
-              <div className="body">暂无运维活动数据<div className="desc">等待设备概览或库存列表返回</div></div>
+              <div className="body">后端暂无运维活动数据<div className="desc">等待 /api/admin/devices/overview 或设备列表返回</div></div>
               <div className="actor">device-ops-api</div>
             </div>
           )}
         </div>
       </section>
-      <p className="f-foot">批量 pause 是<b>仅限运维窗口</b>的处置 — 暂停 DC 全节点派单,但不影响已售设备结算(用户依然按 baseRate 计提收益)。处置范围限单 DC,跨 DC 联动须分次操作。<b>心跳失联 &gt; 24h</b> 的设备自动进入永久离线列表,资产回退由系统定时任务兜底。</p>
+      <p className="f-foot">批量 pause 是<b>仅限运维窗口</b>的处置 — 暂停 DC 全节点派单,但不影响已售设备结算(用户依然按 baseRate 计提收益)。处置范围限单 DC,跨 DC 联动须分次操作。<b>heartbeat 失联 &gt; 24h</b> 的设备自动进入永久离线列表,资产回退由 server cron 兜底。</p>
     </>
   );
 }

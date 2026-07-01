@@ -4,7 +4,6 @@
  */
 import type { ReactNode } from "react";
 import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
-import type { JEmergencyActions, JEmergencyData } from "@/lib/admin/j-client";
 
 export type ActionConfirmReq = {
   action: ReactNode;
@@ -22,8 +21,4 @@ export type JCtx = {
   setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
   toast: (s: string) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
-  emergency: JEmergencyData;
-  actions: JEmergencyActions;
-  contentLoading: boolean;
-  contentError: string | null;
 };

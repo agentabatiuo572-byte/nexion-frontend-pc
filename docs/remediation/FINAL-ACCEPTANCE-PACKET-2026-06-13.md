@@ -60,7 +60,7 @@ Optional live readiness:
 | 点名问题 | 关闭证据 |
 |---|---|
 | 弹窗不是摆设,必须有业务控件 | `SPEC-L2a01`, `SPEC-L2a02`, `SPEC-L2a03`, `admin-modal-contract-runtime-evidence.md`, L5-05 |
-| 例如“改角色”必须能改角色 | `admin-rbac-device-modal-runtime-evidence.md`: `finance` role selection persist |
+| 例如“改角色”必须能改角色 | `admin-rbac-device-modal-runtime-evidence.md`: `finance/lead` role selection persist |
 | 内容/i18n 弹窗必须能编辑业务内容 | `admin-content-business-modal-runtime-evidence.md`: zh/en edit/repair/course/disclosure/campaign fields + persist |
 | 列表分页/筛选缺失 | `SPEC-L2d01`, `SPEC-L2d02`, `admin-global-list-capability-runtime-evidence.md`, L5-04 |
 | 前端流程断头、死控件、假写 | `SPEC-L2b01`~`SPEC-L2b05`, `SPEC-L3c01`~`SPEC-L3c03`, L5-02/L5-04 |

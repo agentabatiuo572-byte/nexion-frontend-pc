@@ -5,25 +5,14 @@
  * flex 填充卡片高度:bar 区垂直居中,底部"最大流失环节"洞察 + 下钻锚定(消除留白)。
  */
 import Link from "next/link";
+import type { FunnelStage } from "@/lib/mock/admin/command-center";
 import { fmtNum, fmtPct } from "@/lib/format";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
 
 const SWATCH = ["#A8DC2E", "#9EDC1D", "#8E93C9", "#9588DA", "#9B89E0"];
 const TARGET: Record<string, number> = { first_buy: 30 }; // 软目标(对齐 KPI L2→L3 与 P3 焦点)
 
-export interface FunnelStageInput {
-  key: string;
-  label: string;
-  count: number;
-  prevCount: number;
-}
-
-export function FunnelBars({ stages }: { stages: FunnelStageInput[] }) {
-  if (stages.length === 0) {
-    return <BDomainDataState title="B3 转化漏斗" error="B3_REQUIRED_DATA_EMPTY" />;
-  }
-
+export function FunnelBars({ stages }: { stages: FunnelStage[] }) {
   const max = stages[0]?.count || 1;
   const first = stages[0]?.count || 1;
   const last = stages[stages.length - 1]?.count || 0;
@@ -32,7 +21,7 @@ export function FunnelBars({ stages }: { stages: FunnelStageInput[] }) {
   // 最大流失环节(最低"较上级转化")
   let worst = { from: "", to: "", cvr: 101 };
   for (let i = 1; i < stages.length; i++) {
-    const cvr = Math.round((stages[i].count / Math.max(stages[i - 1].count, 1)) * 100);
+    const cvr = Math.round((stages[i].count / stages[i - 1].count) * 100);
     if (cvr < worst.cvr) worst = { from: stages[i - 1].label, to: stages[i].label, cvr };
   }
 
@@ -50,7 +39,7 @@ export function FunnelBars({ stages }: { stages: FunnelStageInput[] }) {
       {/* bar 区:垂直居中吸收余高 */}
       <div className="flex flex-1 flex-col justify-center gap-3 py-3">
         {stages.map((s, i) => {
-          const cvr = i > 0 ? Math.round((s.count / Math.max(stages[i - 1].count, 1)) * 100) : null;
+          const cvr = i > 0 ? Math.round((s.count / stages[i - 1].count) * 100) : null;
           const d = s.count - s.prevCount;
           const up = d >= 0;
           const target = TARGET[s.key];

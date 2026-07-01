@@ -4,7 +4,7 @@
  *    schema 注册 / feature flag 切换 / 事件灰度·全量·停用 / 口径参数 / 扩展工单登记);
  *    显式 edit 契约:调参传 edit:{kind:"text",current};处置(停启/禁用/执行/取消)不传 edit。
  *  - ConfirmReq = 普通确认(强制登出 session / 脱敏导出 / 取消动作 — 仍需操作确认但强制留痕,必填原因)。
- *  - 真写统一走 A 域后端 client + 服务端审计;前端不再保留平台业务 store。
+ *  - 真写统一 platform-config setParam(A.*)+ 共享 useAccount store(A1 沿用 OpsAccount,旧 a-view 已建)。
  * A 域三铁律 server-canonical 承诺(UI 不变量):
  *  ① 全员强制 2FA(不可关)— toggle 2FA 必拒;
  *  ② 新账号默认零写权(显式分配)— RBAC 矩阵起点全 "—";
@@ -19,4 +19,6 @@ import type { DCtx } from "../d-tabs/types";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type ACtx = DCtx;
+export type ACtx = Omit<DCtx, "logAudit"> & {
+  logAudit: (e: { actor: string; action: string; target: string; reason?: string }) => void;
+};

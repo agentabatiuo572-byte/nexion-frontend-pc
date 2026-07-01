@@ -2,12 +2,16 @@
 
 /**
  * M4 知识库与 SLA — Help/FAQ 内容池 + Ticket 分类×SLA 矩阵(helpdesk 设计稿布局,由 I8 迁出)。
- * FAQ / SLA 读写走后端 content/knowledge 接口;I.support.* 为 M 容器传入的视图适配键。
+ * 真写统一落 platform-config params(persist 兼容前缀):
+ *  - I.support.faqs: FAQ/help content rows(新增 / 发布)
+ *  - I.support.sla: category SLA matrix(编辑)
  * 新建 FAQ、保存 SLA 走弹窗 + 审计理由;均刷新后仍在。
  */
 import { useEffect, useMemo, useState } from "react";
 import { Icon, Modal, PaginationExemptionList } from "../design-kit";
 import {
+  SUPPORT_FAQS,
+  SUPPORT_SLA,
   type SupportFaq,
   type SupportSla,
   type SupportTicketCategory,
@@ -43,8 +47,8 @@ const minReason = (r: string) => r.trim().length >= 8;
 
 export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast } = ctx;
-  const faqs = useMemo(() => parseParamArray<SupportFaq>(pget(FAQ_KEY), []), [ctx.params, pget]);
-  const sla = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
+  const faqs = useMemo(() => parseParamArray<SupportFaq>(pget(FAQ_KEY), SUPPORT_FAQS), [ctx.params, pget]);
+  const sla = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), SUPPORT_SLA), [ctx.params, pget]);
 
   const [showAddFaq, setShowAddFaq] = useState(false);
   const [editCat, setEditCat] = useState<SupportTicketCategory | null>(null);
@@ -71,10 +75,6 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const publishFaq = (id: string) => {
     setParam(FAQ_KEY, JSON.stringify(faqs.map((f) => (f.id === id ? { ...f, status: "published", updatedAt: new Date().toISOString().slice(0, 10) } : f))), { action: `发布支持 FAQ ${id} · admin.support_faq_published`, reason: "FAQ 发布(例行,自动留档)" });
     toast(`${id} 已发布`);
-  };
-  const unpublishFaq = (id: string) => {
-    setParam(FAQ_KEY, JSON.stringify(faqs.map((f) => (f.id === id ? { ...f, status: "draft", updatedAt: new Date().toISOString().slice(0, 10) } : f))), { action: `下架支持 FAQ ${id} · admin.support_faq_unpublished`, reason: "FAQ 下架(例行,自动留档)" });
-    toast(`${id} 已下架为草稿`);
   };
 
   const saveSla = (cat: SupportTicketCategory, form: { firstResponseMins: string; resolutionHours: string; queue: string; escalation: string; reason: string }) => {
@@ -130,9 +130,8 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
                     发布
                   </button>
                 ) : (
-                  <button type="button" data-proof="support-faq-unpublish" className="btn btn-sec btn-sm" onClick={() => unpublishFaq(f.id)}>
-                    <Icon name="box" size={16} />
-                    下架
+                  <button type="button" className="btn btn-ghost btn-icon btn-sm" title="编辑" onClick={() => toast(`已打开编辑器 · ${f.id}`)}>
+                    <Icon name="doc" size={16} />
                   </button>
                 )}
               </div>
@@ -176,7 +175,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
 
       <PaginationExemptionList
         items={[
-          { label: "Help/FAQ 内容管理", maxRows: 3, reason: "FAQ 内容由后端接口返回,新增后进入内容池" },
+          { label: "Help/FAQ 内容管理", maxRows: 3, reason: "FAQ 为种子内容,新增后进入内容池" },
           { label: "Ticket 分类与 SLA", kind: "reference-catalog", maxRows: 6, reason: "SLA 分类固定,同屏核对升级路径比翻页更适合" },
         ]}
       />

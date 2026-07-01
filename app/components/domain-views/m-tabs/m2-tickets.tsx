@@ -2,16 +2,21 @@
 
 /**
  * M2 工单台 — 全宽表格列队 + 右侧滑出详情抽屉(helpdesk 设计稿布局)。
- * 业务读写走后端 content/ticket/conversation 接口;I.support.* / I.session.* 为 M 容器传入的视图适配键。
+ * 真写统一落 platform-config params(persist 兼容前缀):
+ *  - I.support.tickets: UniApp ticket mock 字段镜像 + admin owner/status/priority/reply
+ *  - 升级为即时会话时写 I.session.convos(对方真写键,不造影子)。
  * 例行坐席操作(回复/改状态/改优先级/转交/关闭重开)直接执行 + 自动 A2 审计;
  * 仅「升级为即时会话」这类跨载体处置走操作确认 + 理由。
  */
 import { useEffect, useMemo, useState } from "react";
-import { Icon, MessageThread, Modal, type ThreadMessage } from "../design-kit";
+import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
+  SESSION_CONVOS,
+  SUPPORT_AGENTS,
+  SUPPORT_REPLY_TEMPLATES,
+  SUPPORT_SLA,
+  SUPPORT_TICKETS,
   type SessionConvo,
-  type SessionReplyTpl,
-  type SupportSla,
   type SupportTicket,
   type SupportTicketCategory,
   type SupportTicketPriority,
@@ -19,13 +24,9 @@ import {
 } from "./data";
 import { catCN, Empty, HDSelect, MAvatar, MiniMenu, ownerLabel, PRIO_CN, Prio, relWhen, TicketStatus, TK_STATUS_CN, type HDOption, type MenuItem } from "./hd-ui";
 import type { MCtx } from "./types";
-import type { MSupportAgent } from "@/lib/admin/m-client";
 
 const TICKET_KEY = "I.support.tickets";
 const CONVO_KEY = "I.session.convos";
-const SLA_KEY = "I.support.sla";
-const REPLY_TEMPLATE_KEY = "I.session.replyTemplates";
-const AGENT_LIST_KEY = "I.support.agents";
 
 type Scope = "active" | "archived" | "all";
 const SCOPES: Array<[Scope, string]> = [
@@ -39,18 +40,9 @@ const STATUS_MENU: Array<[SupportTicketStatus, string]> = [
   ["pending_user", "待用户补充"],
   ["resolved", "标记已解决"],
 ];
-const CATEGORY_LIST: SupportTicketCategory[] = ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"];
 const PRIORITY_LIST: SupportTicketPriority[] = ["urgent", "high", "normal", "low"];
 const PAGE_SIZE_OPTIONS = ["8", "15", "30"];
 const WHO_CN: Record<"user" | "agent", string> = { user: "用户", agent: "坐席" };
-type CreateTicketForm = {
-  category: SupportTicketCategory;
-  priority: SupportTicketPriority;
-  owner: string;
-  title: string;
-  body: string;
-  reason: string;
-};
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -71,36 +63,13 @@ function cloneConvos(rows: SessionConvo[]): SessionConvo[] {
 
 export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
-  const tickets = useMemo(() => cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), [])), [ctx.params, pget]);
-  const replyTemplates = useMemo(
-    () =>
-      parseParamArray<SessionReplyTpl>(pget(REPLY_TEMPLATE_KEY), [])
-        .filter((tpl) => tpl.type === "support" && tpl.status === "published")
-        .map((tpl) => tpl.text),
-    [ctx.params, pget],
-  );
-  const slaRows = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
-  const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
-  const ownerOptions = useMemo(() => {
-    const activeAgentNames = supportAgents
-      .filter((agent) => agent.enabled)
-      .map((agent) => agent.name.trim())
-      .filter(Boolean);
-    const ticketOwners = tickets.map((ticket) => ticket.owner).filter((owner) => owner && owner !== "Unassigned");
-    return Array.from(new Set([...activeAgentNames, ...ticketOwners, "Unassigned"]));
-  }, [supportAgents, tickets]);
-  const ticketCategoryOptions = useMemo(() => {
-    const cats = new Set<SupportTicketCategory>(CATEGORY_LIST);
-    slaRows.forEach((row) => cats.add(row.category));
-    return Array.from(cats).map((value) => ({ value, label: catCN(value) }));
-  }, [slaRows]);
+  const tickets = useMemo(() => cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), SUPPORT_TICKETS)), [ctx.params, pget]);
 
   const [scope, setScope] = useState<Scope>("active");
   const [categoryFilter, setCategoryFilter] = useState<"all" | SupportTicketCategory>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
   const [replyBody, setReplyBody] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
@@ -156,39 +125,6 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const updateTicket = (id: string, updater: (t: SupportTicket) => SupportTicket, reason: string, action: string) => {
     const next = tickets.map((t) => (t.id === id ? updater(t) : t));
     setParam(TICKET_KEY, JSON.stringify(next), { action, reason });
-  };
-
-  const createTicket = (form: CreateTicketForm) => {
-    const title = form.title.trim();
-    const body = form.body.trim();
-    const reason = form.reason.trim();
-    if (!title || !body || reason.length < 8) {
-      toast("新建工单需要标题 / 正文 / 8 字以上审计理由");
-      return;
-    }
-    if (!form.owner || form.owner === "Unassigned") {
-      toast("新建工单需要选择真实客服负责人");
-      return;
-    }
-    const now = Date.now();
-    const row: SupportTicket = {
-      id: `TK-${now}`,
-      subject: title,
-      category: form.category,
-      status: "open",
-      priority: form.priority,
-      createdAt: now,
-      updatedAt: now,
-      lastReplyAt: now,
-      unread: 1,
-      owner: form.owner,
-      messages: [{ ts: now, author: "user", body }],
-    };
-    setParam(TICKET_KEY, JSON.stringify([row, ...tickets]), { action: `新建客服工单 ${row.id} · admin.support_ticket_created`, reason });
-    setSelectedId(row.id);
-    setDrawerOpen(true);
-    setShowCreate(false);
-    toast(`${row.id} 已创建并进入 ${ownerLabel(form.owner)} 队列`);
   };
 
   // 例行:回复(正文本身即留档)
@@ -263,7 +199,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       amplifies: false,
       run: (reason: string) => {
         const now = Date.now();
-        const existingConvos = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), []));
+        const existingConvos = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), SESSION_CONVOS));
         const newConvo: SessionConvo = {
           id: `cv-from-${ticket.id}`,
           type: "support",
@@ -311,7 +247,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     });
   };
 
-  const categoryOptions: HDOption[] = [{ value: "all", label: "全部分类" }, ...ticketCategoryOptions];
+  const categoryOptions: HDOption[] = [{ value: "all", label: "全部分类" }, ...SUPPORT_SLA.map((s) => ({ value: s.category, label: catCN(s.category) }))];
 
   const threadMessages: ThreadMessage[] = (selected?.messages ?? []).map((m) => ({
     ts: m.ts,
@@ -344,10 +280,6 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           <Icon name="search" size={15} />
           <input data-proof="support-ticket-search" placeholder="搜索主题 / 单号 / 负责人 / 分类" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
-        <button type="button" data-proof="support-ticket-create" className="btn btn-pri btn-sm" onClick={() => setShowCreate(true)}>
-          <Icon name="plus" size={16} />
-          新建工单
-        </button>
         <span className="mono dim2" style={{ marginLeft: "auto", fontSize: 12.5 }}>共 {filtered.length} 条</span>
       </div>
 
@@ -466,17 +398,6 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           onCloseReopen={closeOrReopen}
           onEscalate={escalateToConversation}
           thread={threadMessages}
-          replyTemplates={replyTemplates}
-          ownerOptions={ownerOptions}
-        />
-      )}
-
-      {showCreate && (
-        <CreateTicketModal
-          categoryOptions={ticketCategoryOptions}
-          ownerOptions={ownerOptions}
-          onClose={() => setShowCreate(false)}
-          onSave={createTicket}
         />
       )}
     </div>
@@ -495,8 +416,6 @@ function TicketDrawer({
   onCloseReopen,
   onEscalate,
   thread,
-  replyTemplates,
-  ownerOptions,
 }: {
   ticket: SupportTicket;
   replyBody: string;
@@ -509,13 +428,11 @@ function TicketDrawer({
   onCloseReopen: () => void;
   onEscalate: () => void;
   thread: ThreadMessage[];
-  replyTemplates: string[];
-  ownerOptions: string[];
 }) {
   const isClosed = ticket.status === "closed";
   const statusItems: MenuItem[] = STATUS_MENU.map(([s, label]) => ({ label, cur: ticket.status === s, onClick: () => onStatus(s) }));
   const priorityItems: MenuItem[] = PRIORITY_LIST.map((p) => ({ label: PRIO_CN[p], cur: ticket.priority === p, onClick: () => onPriority(p) }));
-  const ownerItems: MenuItem[] = ownerOptions.map((n) => ({ label: ownerLabel(n), cur: ticket.owner === n, onClick: () => onOwner(n) }));
+  const ownerItems: MenuItem[] = SUPPORT_AGENTS.map((n) => ({ label: ownerLabel(n), cur: ticket.owner === n, onClick: () => onOwner(n) }));
 
   return (
     <>
@@ -567,8 +484,7 @@ function TicketDrawer({
                 <Icon name="flame" size={13} />
                 快捷回复
               </span>
-              {replyTemplates.length === 0 && <span className="dim2" style={{ fontSize: 11.5 }}>暂无可用回复模板</span>}
-              {replyTemplates.map((tpl, i) => (
+              {SUPPORT_REPLY_TEMPLATES.map((tpl, i) => (
                 <button key={i} type="button" className="chip" title={tpl} onClick={() => onReplyChange(replyBody ? `${replyBody} ${tpl}` : tpl)}>
                   {tpl.slice(0, 14)}…
                 </button>
@@ -596,83 +512,5 @@ function TicketDrawer({
         )}
       </div>
     </>
-  );
-}
-
-function CreateTicketModal({
-  categoryOptions,
-  ownerOptions,
-  onClose,
-  onSave,
-}: {
-  categoryOptions: Array<{ value: SupportTicketCategory; label: string }>;
-  ownerOptions: string[];
-  onClose: () => void;
-  onSave: (form: CreateTicketForm) => void;
-}) {
-  const firstOwner = ownerOptions.find((owner) => owner !== "Unassigned") ?? ownerOptions[0] ?? "Unassigned";
-  const [category, setCategory] = useState<SupportTicketCategory>(categoryOptions[0]?.value ?? "account");
-  const [priority, setPriority] = useState<SupportTicketPriority>("normal");
-  const [owner, setOwner] = useState(firstOwner);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [reason, setReason] = useState("");
-  return (
-    <Modal
-      title="新建客服工单"
-      icon="doc"
-      wide
-      onClose={onClose}
-      footer={
-        <>
-          <span className="dim2" style={{ fontSize: 11.5 }}>负责人来自 M5 客服岗位列表</span>
-          <span style={{ flex: 1 }} />
-          <button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button>
-          <button
-            type="button"
-            data-proof="support-ticket-create-save"
-            className="btn btn-pri btn-sm"
-            onClick={() => onSave({ category, priority, owner, title, body, reason })}
-          >
-            保存工单
-          </button>
-        </>
-      }
-    >
-      <div className="grid g-3" style={{ gap: 12, marginBottom: 12 }}>
-        <label className="field">
-          <label>分类</label>
-          <select className="fld" value={category} onChange={(e) => setCategory(e.target.value as SupportTicketCategory)}>
-            {categoryOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <label>优先级</label>
-          <select className="fld" value={priority} onChange={(e) => setPriority(e.target.value as SupportTicketPriority)}>
-            {PRIORITY_LIST.map((item) => <option key={item} value={item}>{PRIO_CN[item]}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <label>负责人</label>
-          <select className="fld" value={owner} onChange={(e) => setOwner(e.target.value)}>
-            {ownerOptions.map((item) => <option key={item} value={item}>{ownerLabel(item)}</option>)}
-          </select>
-        </label>
-      </div>
-      <div style={{ display: "grid", gap: 12 }}>
-        <label className="field">
-          <label>标题</label>
-          <input className="fld" data-proof="support-ticket-create-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例:提现审核进度咨询" />
-        </label>
-        <label className="field">
-          <label>问题描述</label>
-          <textarea className="fld" data-proof="support-ticket-create-body" rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder="写清用户诉求、截图/订单号/交易号等关键信息" style={{ resize: "vertical" }} />
-        </label>
-        <label className="field">
-          <label>审计理由(≥8 字)</label>
-          <input className="fld" data-proof="support-ticket-create-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管人工补建用户反馈工单" />
-        </label>
-      </div>
-    </Modal>
   );
 }

@@ -1,0 +1,11 @@
+三端入口
+完整链接
+三端入口
+完整可点击链接
+签名版 APP、H5 网页版、白 APP 接管首页分开进入，正盘默认首页保持独立。
+签名版 APP 首页
+http://localhost:5173/#/pages/entry-surfaces/signed
+H5 网页版首页
+http://localhost:5173/#/pages/entry-surfaces/h5
+白 APP 接管首页
+http://localhost:5173/#/pages/entry-surfaces/white?entry=white-app

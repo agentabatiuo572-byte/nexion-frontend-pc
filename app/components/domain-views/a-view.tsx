@@ -4,7 +4,7 @@
  * A 平台基础 — design_handoff_a_domain 设计稿 port(2026-06-11 重构)。
  * 4 子页(A5 有独立 page,不入 FOLD):A1 账号 RBAC / A2 审计操作确认中心 / A3 系统配置 / A4 事件中台。
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)。
- * A1/A2/A3/A4 读写以各自后端 client 为准,本 shell 只负责弹窗与 toast。
+ * 真写统一 platform-config setParam(A.*)+ 共享 useAccount store(OpsAccount,沿用旧 a-view)。
  * A 域三铁律 server-canonical 承诺(UI 不变量,见 a-tabs/types.ts 文件头):
  *  ① 全员强制 2FA(不可关)② 新账号默认零写权 ③ 有效超管 ≥2(实时派生 OPERATORS.filter)
  *  ④ A2 append-only + reason-required + 确认即执行+幂等(Idempotency-Key 24h dedup)
@@ -16,6 +16,8 @@ import { useMemo, useState } from "react";
 import "./a-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
+import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
+import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { A1Accounts } from "./a-tabs/a1-accounts";
 import { A2Audit } from "./a-tabs/a2-audit";
@@ -35,10 +37,18 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
 export function ADomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "A1", [meta.l2Id]);
+  const setParam = usePlatformConfig((s) => s.setParam);
+  const logAudit = usePlatformConfig((s) => s.logAudit);
+  const params = usePlatformConfig((s) => s.params);
+  const hydrated = useOpsHydrated();
   const [actionConfirmReq, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
 
   const ctx: ACtx = {
+    pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
+    params: hydrated && params ? params : {},
+    setParam,
+    logAudit,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,

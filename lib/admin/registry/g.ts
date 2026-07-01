@@ -1,7 +1,7 @@
 /**
  * 域 G 金融产品 — 注册表。accent=--admin-domain-g。
  * ⚠️ G ∈ PORTED_DOMAINS:本文件 content 为死代码(真渲染面 = g-view.tsx + g-tabs/),仅 summary 经 DomainHeader 渲染。
- * 改 G 域数据/动作请改对应 g*-client 后端接口与 g-tabs 页面,勿在此处改 content。
+ * 改 G 域数据/动作请改 g-tabs/data.ts 与 lib/mock/admin/design-data.ts(MATURITY/GEOBLOCK/KILLSWITCH),勿在此处改 content。
  * Premium(旧 G5)/ NEX v2 Founders(旧 G6)已于 2026-06-15 下线;NEX 质押档(G1 nex30/90/180/365)已于 2026-06-17 下线、仅留 USDT 质押;G7 复投激励独立成页。
  */
 import type { ModuleEntry } from "@/lib/admin/module-content";

@@ -72,12 +72,11 @@ const adminRoutes = new Set([
   ...routes.admin.pages.map((route) => route.route),
 ]);
 const uniRoutes = new Set(routes.uniapp.pages.map((route) => route.h5Url));
-const nextRoutes = new Set(routes.nextReference.pages.map((route) => route.route));
 
 function frontendExists(route) {
   if (route === "all-frontend-routes") return true;
   if (route.startsWith("#/")) return uniRoutes.has(`/${route}`);
-  if (route.startsWith("/")) return nextRoutes.has(route);
+  if (route.startsWith("/#/")) return uniRoutes.has(route);
   return true;
 }
 

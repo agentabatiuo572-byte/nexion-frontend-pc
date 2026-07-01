@@ -3,24 +3,13 @@
 /**
  * 顶栏消息入口(设计稿 admin-shell 的 bell → Drawer 侧滑抽屉,非下拉)。
  * 右侧滑入、整高;标题「告警 & 待办」,两段:风险雷达告警(B5)+ 操作确认 待确认(A2);
- * 底部 CTA「前往 A2 审计中心」。B5 告警取 B 域真实聚合接口;A2 待办取审计待确认队列。
+ * 底部 CTA「前往 A2 审计中心」。数据取 canonical ALERTS + PENDING_OPERATIONS。
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Bell, X, AlertTriangle, ChevronRight } from "lucide-react";
+import { ALERTS, PENDING_OPERATIONS, type AlertLevel } from "@/lib/mock/admin/command-center";
 import { RoleBadge } from "@/app/components/kit/role-badge";
-import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
-import type { AdminRole } from "@/lib/nav/console-nav";
-import { fmtPct } from "@/lib/format";
-
-type AlertLevel = "high" | "mid" | "low";
-interface ShellAlert {
-  id: string;
-  level: AlertLevel;
-  text: string;
-  href: string;
-}
 
 const LEVEL: Record<AlertLevel, { color: string; label: string }> = {
   high: { color: "var(--v5-danger)", label: "高危" },
@@ -28,82 +17,10 @@ const LEVEL: Record<AlertLevel, { color: string; label: string }> = {
   low: { color: "var(--v5-ink-4)", label: "正常" },
 };
 
-function severityLevel(sev: string): AlertLevel {
-  if (sev === "p0" || sev === "p1") return "high";
-  if (sev === "p2") return "mid";
-  return "low";
-}
-
-function roleForA2Operation(row: A2OperationRow): AdminRole {
-  const gate = `${row.roleGate} ${row.operatorRole}`.toLowerCase();
-  if (gate.includes("财务") || gate.includes("finance")) return "finance";
-  if (gate.includes("风控") || gate.includes("risk")) return "risk";
-  if (gate.includes("内容") || gate.includes("content")) return "content";
-  if (gate.includes("增长") || gate.includes("growth")) return "growth";
-  if (gate.includes("客服") || gate.includes("support")) return "support";
-  if (gate.includes("审计") || gate.includes("auditor")) return "auditor";
-  if (row.type === "fund") return "finance";
-  if (row.type === "sos") return "risk";
-  return "superadmin";
-}
-
-function operationDetail(row: A2OperationRow) {
-  const delta = row.before !== "—" || row.after !== "—" ? `${row.before} → ${row.after}` : row.reason;
-  return `${row.obj} · ${delta}`;
-}
+const BADGE = ALERTS.filter((a) => a.level !== "low").length;
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
-  const [pendingOperations, setPendingOperations] = useState<A2OperationRow[]>([]);
-  const [a2Error, setA2Error] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    fetchA2Overview()
-      .then((overview) => {
-        if (!alive) return;
-        setPendingOperations(overview.operationQueue.filter((item) => item.status === "pending"));
-        setA2Error(null);
-      })
-      .catch((error: unknown) => {
-        if (!alive) return;
-        setPendingOperations([]);
-        setA2Error(error instanceof Error ? error.message : "A2_OVERVIEW_LOAD_FAILED");
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const bDomain = useBDomainDashboard();
-  const alerts: ShellAlert[] = (() => {
-    if (bDomain.error) {
-      return [{ id: "b-sync", level: "high", text: `B 域风险雷达同步失败: ${bDomain.error}`, href: "/overview/risk-radar" }];
-    }
-    if (!bDomain.hasData) {
-      return bDomain.loading ? [{ id: "b-sync", level: "low", text: "B 域风险雷达同步中", href: "/overview/risk-radar" }] : [];
-    }
-    const coverageLevel: AlertLevel =
-      bDomain.ledger.coverageRatio < bDomain.ledger.redlinePct
-        ? "high"
-        : bDomain.ledger.coverageRatio < bDomain.ledger.healthyPct
-          ? "mid"
-          : "low";
-    const coverageText =
-      coverageLevel === "high"
-        ? `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} 已跌破红线 ${fmtPct(bDomain.ledger.redlinePct)}`
-        : coverageLevel === "mid"
-          ? `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} 低于健康线 ${fmtPct(bDomain.ledger.healthyPct)}`
-          : `兑付覆盖率 ${fmtPct(bDomain.ledger.coverageRatio)} · 风险雷达同步`;
-    return [
-      { id: "b-coverage", level: coverageLevel, text: coverageText, href: "/overview/dual-ledger" },
-      ...bDomain.riskRadar.feed.slice(0, 5).map((item, index) => ({
-        id: `b-feed-${index}-${item.sev}`,
-        level: severityLevel(item.sev),
-        text: item.t,
-        href: item.href || "/overview/risk-radar",
-      })),
-    ];
-  })();
-  const badge = alerts.filter((a) => a.level !== "low").length;
   return (
     <>
       <button
@@ -111,36 +28,26 @@ export function NotificationBell() {
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`告警与待办${badge > 0 ? ` · ${badge} 条待处理` : ""}`}
+        aria-label={`告警与待办${BADGE > 0 ? ` · ${BADGE} 条待处理` : ""}`}
         className="relative grid h-9 w-9 place-items-center rounded-[9px] transition-colors hover:bg-[var(--v5-surface-2)]"
         style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
       >
         <Bell size={16} aria-hidden />
-        {badge > 0 && (
+        {BADGE > 0 && (
           <span
             className="font-mono-tabular absolute -right-1.5 -top-1.5 grid h-[16px] min-w-[16px] place-items-center rounded-full px-1 text-[10px]"
             style={{ background: "var(--v5-danger)", color: "#fff", border: "2px solid var(--v5-surface)", fontWeight: 600 }}
           >
-            {badge > 9 ? "9+" : badge}
+            {BADGE > 9 ? "9+" : BADGE}
           </span>
         )}
       </button>
-      {open && <NotificationDrawer alerts={alerts} pendingOperations={pendingOperations} a2Error={a2Error} onClose={() => setOpen(false)} />}
+      {open && <NotificationDrawer onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function NotificationDrawer({
-  alerts,
-  pendingOperations,
-  a2Error,
-  onClose,
-}: {
-  alerts: ShellAlert[];
-  pendingOperations: A2OperationRow[];
-  a2Error: string | null;
-  onClose: () => void;
-}) {
+function NotificationDrawer({ onClose }: { onClose: () => void }) {
   const [shown, setShown] = useState(false);
   useEffect(() => {
     setShown(true);
@@ -179,7 +86,7 @@ function NotificationDrawer({
         <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: "1px solid var(--v5-border)" }}>
           <div className="min-w-0">
             <p className="font-display text-[15px]" style={{ color: "var(--v5-ink)" }}>告警 &amp; 待办</p>
-            <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{alerts.length} 条告警 · {pendingOperations.length} 项待确认</p>
+            <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{ALERTS.length} 条告警 · {PENDING_OPERATIONS.length} 项待确认</p>
           </div>
           <button
             type="button"
@@ -197,7 +104,7 @@ function NotificationDrawer({
           {/* 风险雷达告警 B5 */}
           <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>风险雷达告警 · B5</p>
           <div className="flex flex-col gap-2">
-            {alerts.map((a) => {
+            {ALERTS.map((a) => {
               const lv = LEVEL[a.level];
               return (
                 <Link
@@ -224,42 +131,20 @@ function NotificationDrawer({
           {/* 操作确认 待确认 A2 */}
           <p className="mb-2.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>操作确认 待确认 · A2</p>
           <div className="flex flex-col gap-2">
-            {a2Error && (
-              <Link
-                href="/platform/audit"
-                prefetch={false}
-                onClick={onClose}
-                className="block rounded-[10px] p-3 transition-colors hover:bg-[var(--v5-surface-3)]"
-                style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>A2 审计队列同步失败</span>
-                </div>
-                <p className="mt-1 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{a2Error}</p>
-              </Link>
-            )}
-            {!a2Error && pendingOperations.length === 0 && (
-              <div
-                className="rounded-[10px] p-3 text-[12px]"
-                style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)", color: "var(--v5-ink-3)" }}
-              >
-                A2 当前没有待确认操作。
-              </div>
-            )}
-            {pendingOperations.map((a) => (
+            {PENDING_OPERATIONS.map((a) => (
               <Link
                 key={a.id}
-                href="/platform/audit"
+                href={a.href}
                 prefetch={false}
                 onClick={onClose}
                 className="block rounded-[10px] p-3 transition-colors hover:bg-[var(--v5-surface-3)]"
                 style={{ background: "var(--v5-surface-2)", border: "1px solid var(--v5-border)" }}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>{a.action}</span>
-                  <span className="ml-auto"><RoleBadge role={roleForA2Operation(a)} size="sm" /></span>
+                  <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>{a.label}</span>
+                  <span className="ml-auto"><RoleBadge role={a.requiredRole} size="sm" /></span>
                 </div>
-                <p className="mt-1 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{operationDetail(a)}</p>
+                <p className="mt-1 text-[11.5px]" style={{ color: "var(--v5-ink-3)" }}>{a.detail}</p>
               </Link>
             ))}
           </div>
