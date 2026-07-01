@@ -164,6 +164,8 @@ type SessionTemplateOverview = {
   categories?: SessionCategoryView[];
   advisorPolicy?: SessionAdvisorPolicyView;
   workbenchPolicy?: SessionWorkbenchPolicyView;
+  audienceOptions?: string[];
+  segmentFields?: Record<string, unknown>[];
   scripts?: SessionScriptView[];
   replyTemplates?: SessionReplyTemplateView[];
 };
@@ -252,6 +254,8 @@ export type MContentData = {
   workbenchPolicy: {
     timeoutFallback: string;
   };
+  audienceOptions: string[];
+  segmentFields: Record<string, unknown>[];
   scripts: AdvisorScript[];
   scriptAudience: Record<string, string>;
   replyTemplates: SessionReplyTpl[];
@@ -758,6 +762,8 @@ export async function fetchMContentData(): Promise<MContentData> {
     workbenchPolicy: {
       timeoutFallback: bool(sessionTemplates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
     },
+    audienceOptions: asArray<string>(sessionTemplates.audienceOptions).map((item) => str(item)).filter(Boolean),
+    segmentFields: asArray<Record<string, unknown>>(sessionTemplates.segmentFields),
     scripts: asArray<SessionScriptView>(sessionTemplates.scripts).map(adaptScript),
     scriptAudience,
     replyTemplates: asArray<SessionReplyTemplateView>(sessionTemplates.replyTemplates).map(adaptReplyTemplate),
@@ -820,6 +826,8 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.session.advisor.policy.maxPerSession": String(data.advisorPolicy.maxPerSession),
     "I.session.advisor.policy.audience": data.advisorPolicy.audience,
     "I.session.workbench.timeoutFallback": data.workbenchPolicy.timeoutFallback,
+    "I.session.audienceOptions": JSON.stringify(data.audienceOptions),
+    "I.session.segmentFields": JSON.stringify(data.segmentFields),
   };
   data.categories.forEach((cat) => {
     params[`I.session.cat.${cat.type}.enabled`] = cat.enabled ? "on" : "off";

@@ -41,9 +41,8 @@ const SUPPORT_AGENT_PAGE_SIZE = 5;
 const SCRIPT_PAGE_SIZE = 5;
 const REPLY_TEMPLATE_PAGE_SIZE = 5;
 
-// 受众五档(复用 I3 受众文案口径)。
-const AUDIENCE_OPTIONS = ["全量", "SFC 辖区 · 未重确认", "近 30 天提现偏高", "注册 ≤14 天", "P3 阶段活跃"];
-const DEFAULT_AUDIENCE = AUDIENCE_OPTIONS[0];
+// 后端未返回枚举时仅用于空态兜底;运行态优先使用 I.session.audienceOptions。
+const DEFAULT_AUDIENCE_OPTIONS = ["全量", "SFC 辖区 · 未重确认", "近 30 天提现偏高", "注册 ≤14 天", "P3 阶段活跃"];
 const DEFAULT_ADVISOR_POLICY = { enabled: "off", delayMs: 0, cooldownHours: 0, maxPerSession: 0 };
 
 const CAT_ICON: Record<SessionType, IconName> = { advisor: "users", support: "bell", ai: "power" };
@@ -119,6 +118,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   const replyTemplates = parseParamArray<SessionReplyTpl>(pget(REPLY_TEMPLATE_LIST_KEY), []);
   const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
   const advisorAssignments = useMemo(() => parseParamArray<MAdvisorAssignment>(pget(ASSIGNMENT_LIST_KEY), []), [ctx.params, pget]);
+  const audienceOptions = useMemo(() => {
+    const rows = parseParamArray<string>(pget("I.session.audienceOptions"), []);
+    return rows.length > 0 ? rows : DEFAULT_AUDIENCE_OPTIONS;
+  }, [ctx.params, pget]);
+  const defaultAudience = audienceOptions[0] ?? "全量";
   const [profileAgent, setProfileAgent] = useState<MSupportAgent | null>(null);
   const [assignAgent, setAssignAgent] = useState<MSupportAgent | null>(null);
   const [agentPage, setAgentPage] = useState(1);
@@ -137,10 +141,10 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   const catEnabled = (cat: { type: SessionType; enabled: boolean }): boolean => (pget(CAT_KEY(cat.type)) ?? (cat.enabled ? "on" : "off")) === "on";
   const policyVal = (field: string, def: string | number): string => pget(POLICY_KEY(field)) ?? String(def);
   const scriptStatus = (id: string, def: string): string => pget(SCRIPT_KEY(id)) ?? def;
-  const scriptAudience = (id: string): string => pget(SCRIPT_AUDIENCE_KEY(id)) ?? DEFAULT_AUDIENCE;
+  const scriptAudience = (id: string): string => pget(SCRIPT_AUDIENCE_KEY(id)) ?? defaultAudience;
   const tplStatus = (id: string, def: string): string => pget(TPL_KEY(id)) ?? def;
 
-  const currentAudience = policyVal("audience", DEFAULT_AUDIENCE);
+  const currentAudience = policyVal("audience", defaultAudience);
   const masterOn = policyVal("enabled", DEFAULT_ADVISOR_POLICY.enabled) === "on";
   const agentSnapshot = useMemo(
     () => supportAgents.map((agent) => `${agent.adminId}:${agent.position}:${agent.serviceTypes.join(",")}:${agent.maxConcurrent}:${agent.enabled}:${agent.busy}:${agent.assignedUserCount}`).join("|"),
@@ -298,7 +302,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       action: <>圈定顾问推送受众</>,
       detail: <>限定顾问主动触达的人群范围;对新会话即时生效,已在会话中的用户不受影响。</>,
       amplifies: false,
-      edit: { kind: "select", current: currentAudience, options: AUDIENCE_OPTIONS },
+      edit: { kind: "select", current: currentAudience, options: audienceOptions },
       run: (reason: string, v?: string) => {
         if (!v) return;
         setParam(POLICY_KEY("audience"), v, { action: `圈定顾问推送受众 · admin.conversation_autopush_changed`, reason });
@@ -326,7 +330,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       run: (reason: string, v?: string) => {
         const text = v?.trim();
         if (!text) return;
-        setParam("I.session.script.__create", JSON.stringify({ scriptGroup: "开场", text, ctaPath: "—", audience: currentAudience, status: "draft" }), {
+        setParam("I.session.script.__create", JSON.stringify({ scriptGroup: "开场", text, ctaPath: "—", audience: currentAudience || defaultAudience, status: "draft" }), {
           action: "新增顾问话术 · admin.conversation_script_created",
           reason,
         });

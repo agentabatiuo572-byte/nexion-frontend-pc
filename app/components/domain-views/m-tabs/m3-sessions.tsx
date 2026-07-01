@@ -12,6 +12,8 @@ import { useRouter } from "next/navigation";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
+  AUDIENCE_PRESETS,
+  SEG_FIELDS,
   TRANSFER_TIMEOUT_MINS,
   transferTargetLabel,
   type AdvisorScript,
@@ -37,6 +39,8 @@ const SCRIPT_LIST_KEY = "I.session.scripts";
 const REPLY_TEMPLATE_LIST_KEY = "I.session.replyTemplates";
 const AGENT_LIST_KEY = "I.support.agents";
 const TRANSFER_TARGETS_KEY = "I.session.transferTargets";
+const AUDIENCE_OPTIONS_KEY = "I.session.audienceOptions";
+const SEGMENT_FIELDS_KEY = "I.session.segmentFields";
 const LAST_CONVO_KEY = "I.session.ui.lastConvo";
 const FALLBACK_KEY = "I.session.workbench.timeoutFallback"; // 工作台「转入待处理超时回落备勤池」开关("on"=启用)
 const INBOX_PAGE_SIZE = 8; // 会话收件箱每页条数(翻页器)
@@ -140,6 +144,14 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       .filter(Boolean);
     return Array.from(new Set(rows));
   }, [transferTargets]);
+  const audiencePresets = useMemo(() => {
+    const rows = parseParamArray<string>(pget(AUDIENCE_OPTIONS_KEY), []);
+    return rows.length > 0 ? rows : AUDIENCE_PRESETS;
+  }, [ctx.params, pget]);
+  const segmentFields = useMemo(() => {
+    const rows = parseParamArray<typeof SEG_FIELDS[number]>(pget(SEGMENT_FIELDS_KEY), []);
+    return rows.length > 0 ? rows : SEG_FIELDS;
+  }, [ctx.params, pget]);
   const initiateCustomers = useMemo(() => {
     const rows = new Map<string, CustomerProfile>();
     convos.forEach((convo) => {
@@ -694,7 +706,18 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         onRemoveTag={removeCustomerTag}
       />
 
-      {showInitiate && <InitiateModal onClose={() => setShowInitiate(false)} onSend={runInitiate} identities={initiateIdentities} advisorScripts={advisorScripts} replyTemplates={replyTemplates} customers={initiateCustomers} />}
+      {showInitiate && (
+        <InitiateModal
+          onClose={() => setShowInitiate(false)}
+          onSend={runInitiate}
+          identities={initiateIdentities}
+          advisorScripts={advisorScripts}
+          replyTemplates={replyTemplates}
+          customers={initiateCustomers}
+          audiencePresets={audiencePresets}
+          segmentFields={segmentFields}
+        />
+      )}
       {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}
       {showReturn && selected?.transfer && <ReturnModal fromAgent={selected.transfer.from} onClose={() => setShowReturn(false)} onSubmit={runReturn} />}
       {quick && selected?.profile && (

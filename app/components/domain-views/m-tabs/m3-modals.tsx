@@ -255,11 +255,11 @@ export function QuickActionModal({
 }
 
 /* ============ 自定义圈选构建器(字段 × 运算符 × 值,多条件「且」)============ */
-export function segSummary(conds: SegCond[]): string {
+export function segSummary(conds: SegCond[], fields = SEG_FIELDS): string {
   return conds
     .filter((c) => String(c.value).trim() !== "")
     .map((c) => {
-      const f = SEG_FIELDS.find((x) => x.id === c.field);
+      const f = fields.find((x) => x.id === c.field);
       const tail = f?.unit ? (f.unit === "USDT" ? ` ${f.unit}` : f.unit) : "";
       return `${f?.label ?? c.field} ${c.op} ${c.value}${tail}`;
     })
@@ -268,10 +268,11 @@ export function segSummary(conds: SegCond[]): string {
 export function segValid(conds: SegCond[]): boolean {
   return conds.length > 0 && conds.every((c) => String(c.value).trim() !== "");
 }
-function CustomSegment({ conds, setConds }: { conds: SegCond[]; setConds: (c: SegCond[]) => void }) {
-  const fieldOf = (id: string) => SEG_FIELDS.find((f) => f.id === id) ?? SEG_FIELDS[0];
+function CustomSegment({ conds, setConds, fields = SEG_FIELDS }: { conds: SegCond[]; setConds: (c: SegCond[]) => void; fields?: typeof SEG_FIELDS }) {
+  const availableFields = fields.length > 0 ? fields : SEG_FIELDS;
+  const fieldOf = (id: string) => availableFields.find((f) => f.id === id) ?? availableFields[0];
   const add = () => {
-    const f = SEG_FIELDS[0];
+    const f = availableFields[0];
     setConds([...conds, { field: f.id, op: f.ops[0], value: f.vals ? f.vals[0] : "" }]);
   };
   const upd = (i: number, patch: Partial<SegCond>) => setConds(conds.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -289,7 +290,7 @@ function CustomSegment({ conds, setConds }: { conds: SegCond[]; setConds: (c: Se
               value={c.field}
               onChange={(e) => { const nf = fieldOf(e.target.value); upd(i, { field: nf.id, op: nf.ops[0], value: nf.vals ? nf.vals[0] : "" }); }}
             >
-              {SEG_FIELDS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+              {availableFields.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
             </select>
             <select className="fld" style={{ width: 64 }} value={c.op} onChange={(e) => upd(i, { op: e.target.value })}>
               {f.ops.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -325,6 +326,8 @@ export function InitiateModal({
   advisorScripts = [],
   replyTemplates = [],
   customers = [],
+  audiencePresets = AUDIENCE_PRESETS,
+  segmentFields = SEG_FIELDS,
 }: {
   onClose: () => void;
   onSend: (p: InitiatePayload) => void;
@@ -332,7 +335,10 @@ export function InitiateModal({
   advisorScripts?: AdvisorScript[];
   replyTemplates?: SessionReplyTpl[];
   customers?: CustomerProfile[];
+  audiencePresets?: readonly string[];
+  segmentFields?: typeof SEG_FIELDS;
 }) {
+  const presets = audiencePresets.length > 0 ? audiencePresets : AUDIENCE_PRESETS;
   const [identId, setIdentId] = useState(identities[0]?.id ?? "");
   const identity = identities.find((i) => i.id === identId) ?? identities[0];
   const isAdvisor = identity?.type === "advisor";
@@ -340,7 +346,7 @@ export function InitiateModal({
   const [custUid, setCustUid] = useState("");
   const [custQuery, setCustQuery] = useState("");
   const [audMode, setAudMode] = useState<"preset" | "custom">("preset");
-  const [preset, setPreset] = useState<string>(AUDIENCE_PRESETS[0]);
+  const [preset, setPreset] = useState<string>(presets[0]);
   const [conds, setConds] = useState<SegCond[]>([]);
   const pubScripts = advisorScripts.filter((s) => s.status === "published");
   const [scriptId, setScriptId] = useState(pubScripts[0]?.id ?? advisorScripts[0]?.id ?? "");
@@ -361,13 +367,16 @@ export function InitiateModal({
     if (custUid && !customers.some((c) => c.uid === custUid)) setCustUid("");
   }, [custUid, customers]);
   useEffect(() => {
+    if (!presets.includes(preset)) setPreset(presets[0]);
+  }, [preset, presets]);
+  useEffect(() => {
     if (isAdvisor) { const s = advisorScripts.find((x) => x.id === scriptId); setText(s ? s.text : ""); }
     else { const t = replyTemplates.find((x) => x.id === tplId); setText(t ? t.text : ""); }
   }, [advisorScripts, isAdvisor, replyTemplates, scriptId, tplId]);
 
   const selectedCust = customers.find((c) => c.uid === custUid) ?? null;
   const targetLabel = mode === "user" ? selectedCust?.nickname ?? "" : audMode === "preset" ? preset : segValid(conds) ? "自定义人群" : "";
-  const targetDesc = mode === "user" ? `单个客户 ${selectedCust?.nickname ?? ""}(${selectedCust?.uid ?? ""})` : audMode === "preset" ? `人群 · ${preset}` : `自定义人群 · ${segSummary(conds)}`;
+  const targetDesc = mode === "user" ? `单个客户 ${selectedCust?.nickname ?? ""}(${selectedCust?.uid ?? ""})` : audMode === "preset" ? `人群 · ${preset}` : `自定义人群 · ${segSummary(conds, segmentFields)}`;
   const needReason = mode === "audience";
   const targetOk = mode === "user" ? !!selectedCust : audMode === "preset" ? true : segValid(conds);
   const ok = !!identity && text.trim() !== "" && targetOk && (!needReason || reason.trim().length >= 6);
@@ -462,10 +471,10 @@ export function InitiateModal({
                 </div>
                 {audMode === "preset" ? (
                   <select className="fld" value={preset} onChange={(e) => setPreset(e.target.value)}>
-                    {AUDIENCE_PRESETS.map((a) => <option key={a} value={a}>{a}</option>)}
+                    {presets.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
                 ) : (
-                  <CustomSegment conds={conds} setConds={setConds} />
+                  <CustomSegment conds={conds} setConds={setConds} fields={segmentFields} />
                 )}
               </div>
             )}
