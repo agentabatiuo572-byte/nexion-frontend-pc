@@ -124,9 +124,9 @@ function backendPath(parts: string[]) {
     parts[0] === "exchange" &&
     parts[1] === "queue" &&
     isNonEmpty(parts[2]) &&
-    parts[3] === "cancel"
+    (parts[3] === "cancel" || parts[3] === "kyc-review")
   ) {
-    return `/api/admin/market/exchange/queue/${encodeURIComponent(parts[2])}/cancel`;
+    return `/api/admin/market/exchange/queue/${encodeURIComponent(parts[2])}/${parts[3]}`;
   }
   return null;
 }

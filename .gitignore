@@ -47,6 +47,7 @@ node_modules/
 
 # dev server 日志（勿入库）
 .dev-3002.log
+frontend-restart-latest*.log
 codex-*.log
 /.codex-*.log
 /logs/

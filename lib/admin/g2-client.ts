@@ -377,3 +377,11 @@ export async function cancelG2ExchangeQueueOrder(exchangeNo: string, reason: str
     idempotencyPrefix: "g2-cancel-queue",
   }));
 }
+
+export async function triggerG2ExchangeKycReview(exchangeNo: string, reason: string, operator: string) {
+  return normalizeOverview(await g2Request<BackendOverview>(`/exchange/queue/${encodeURIComponent(exchangeNo)}/kyc-review`, {
+    method: "POST",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "g2-kyc-review",
+  }));
+}

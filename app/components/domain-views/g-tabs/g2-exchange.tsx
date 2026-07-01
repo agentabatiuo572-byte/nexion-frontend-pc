@@ -11,6 +11,7 @@ import { Drawer } from "../design-kit";
 import {
   cancelG2ExchangeQueueOrder,
   fetchG2ExchangeOverview,
+  triggerG2ExchangeKycReview,
   updateG2ExchangeParam,
   updateG2ExchangeSwapStatus,
   type G2Cap,
@@ -214,6 +215,24 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     });
   };
 
+  const triggerKycReview = (order: G2ExchangeOrder) => {
+    setQueueDrawer(null);
+    openConfirm({
+      action: `提交 KYC 复审 · ${order.exchangeNo}`,
+      detail: <>将该兑换单送入 K5 大额/KYC 复审,服务端会更新兑换状态并写入复审票据。适用于实名状态、累计兑换或人工风控需要复核的排队单。</>,
+      chips: [["K5 复审", "ready"], ["落审计", "done"]],
+      reason: true,
+      okLabel: "提交复审",
+      run: (reason) => {
+        void mutate(
+          `kyc-${order.exchangeNo}`,
+          () => triggerG2ExchangeKycReview(order.exchangeNo, reason, OPERATOR()),
+          `${order.exchangeNo} 已提交 KYC 复审 · 同步 K5`,
+        );
+      },
+    });
+  };
+
   return (
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G2 操作提示 · {error}</div>}
@@ -327,7 +346,10 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
 
       {selectedQueue && (
         <Drawer title={`次日队列单 · ${selectedQueue.exchangeNo}`} sub={`${selectedQueue.userNo} · ${selectedQueue.exchangeAmountDisplay} · ${selectedQueue.etaLabel} 自动出队成交`} onClose={() => setQueueDrawer(null)}
-          footer={<button className="l-btn mc" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => cancelQueue(selectedQueue)}>强制取消此单 →</button>}>
+          footer={<>
+            <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => triggerKycReview(selectedQueue)}>提交 KYC 复审</button>
+            <button className="l-btn mc" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => cancelQueue(selectedQueue)}>强制取消此单 →</button>
+          </>}>
           <div className="kv2"><span className="k">用户编码</span><span className="v mono">{selectedQueue.userNo}</span></div>
           <div className="kv2"><span className="k">用户名</span><span className="v">{selectedQueue.nickname}</span></div>
           <div className="kv2"><span className="k">方向</span><span className="v">{selectedQueue.directionLabel}</span></div>
