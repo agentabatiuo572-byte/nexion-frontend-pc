@@ -4,6 +4,7 @@ import type { AdminSession } from "@/lib/store/admin-auth";
 
 const ADMIN_ROLES = new Set<AdminRole>([
   "superadmin",
+  "config",
   "finance",
   "risk",
   "growth",

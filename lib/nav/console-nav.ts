@@ -28,6 +28,7 @@ import {
 export type AdminRole =
   | "superadmin"
   | "finance"
+  | "config"
   | "risk"
   | "content"
   | "growth"
@@ -36,6 +37,7 @@ export type AdminRole =
 
 export const ROLE_LABEL: Record<AdminRole, string> = {
   superadmin: "总管理员",
+  config: "配置运营",
   finance: "财务",
   risk: "风控",
   content: "内容运营",
@@ -72,7 +74,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "platform",
     icon: ShieldCheck,
     accentVar: "--admin-domain-a",
-    roles: [], // 仅 superadmin
+    roles: ["config"],
     l2: [
       { id: "A1", name: "运营账号 & RBAC", path: "/platform/rbac", prdAnchor: "A1", batch: "V1", status: "flagship" },
       { id: "A2", name: "审计 & 操作确认", path: "/platform/audit", prdAnchor: "A2", batch: "V1", status: "flagship" },
@@ -117,7 +119,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "finance",
     icon: Wallet,
     accentVar: "--admin-domain-d",
-    roles: ["finance", "risk"],
+    roles: ["finance", "risk", "config"],
     l2: [
       { id: "D1", name: "充值对账中心", path: "/finance/recon", prdAnchor: "D1", batch: "V1", status: "flagship" },
       { id: "D2", name: "提现审核队列", path: "/finance/withdrawals", prdAnchor: "D2", batch: "V1", status: "flagship" },
@@ -179,7 +181,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "growth",
     icon: TrendingUp,
     accentVar: "--admin-domain-h",
-    roles: ["growth"],
+    roles: ["growth", "config"],
     l2: [
       { id: "H1", name: "Phase 调度器", path: "/growth/phase", prdAnchor: "H1", batch: "V1", status: "flagship" },
       { id: "H2", name: "免费试用引擎", path: "/growth/trial", prdAnchor: "H2", batch: "V1", status: "flagship" },
@@ -210,7 +212,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "emergency",
     icon: Siren,
     accentVar: "--admin-domain-j",
-    roles: ["risk"],
+    roles: ["risk", "config"],
     l2: [
       { id: "J1", name: "Kill-Switch 矩阵", path: "/emergency/kill-switch", prdAnchor: "J1", batch: "V4", status: "flagship" },
       { id: "J2", name: "Geo-block", path: "/emergency/geo-block", prdAnchor: "J2", batch: "V4", status: "flagship" },
