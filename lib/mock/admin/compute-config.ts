@@ -103,6 +103,9 @@ export const computeYieldEstimateParamKey = (key: ComputeYieldEstimateKey): stri
 // PROD 替换点:
 //   - 读:GET  /api/admin/risk-cluster/config
 //   - 改:PATCH /api/admin/risk-cluster/config/:key body { value: number; reason: string }
+// 参数控件类型: number=数值输入;boolean=开关;enum=可选值(options 提供)。
+export type RiskParamKind = "number" | "boolean" | "enum";
+
 export interface RiskClusterParamDef {
   key:
     | "freePhoneSlotsPerCluster"
@@ -113,9 +116,13 @@ export interface RiskClusterParamDef {
     | "maxSignupPerIp24h"
     | "maxAccountsPerDevice"
     | "maxAccountsPerPaymentInstrument"
-    | "clusterFreezeSuggestThreshold";
+    | "clusterFreezeSuggestThreshold"
+    | "releaseMode"
+    | "freeSlotRequiresBinding";
   label: string;
-  defaultVal: number;
+  kind: RiskParamKind;
+  defaultVal: number | string | boolean;
+  options?: string[];
   unit: string;
   desc: string;
   frontendEffect: string;
@@ -127,14 +134,16 @@ export const RISK_CLUSTER_PARAMS: RiskClusterParamDef[] = [
   {
     key: "freePhoneSlotsPerCluster",
     label: "同簇正常释放手机槽",
+    kind: "number",
     defaultVal: 1,
     unit: "个",
-    desc: "每个风险簇默认可正常释放收益的 H5 手机槽位数。",
-    frontendEffect: "超过该槽位的账号收益进入审核中或锁定奖励。",
+    desc: "每个风险簇默认可正常释放收益的 H5 手机槽位数;也是同簇释放窗口内的熔断上限。",
+    frontendEffect: "超过该槽位的账号收益进入审核中或锁定奖励;窗口内释放账户数达线后,后续待审收益升为锁定。",
   },
   {
     key: "duplicateAccountPendingFrom",
     label: "重复账号待审起点",
+    kind: "number",
     defaultVal: 2,
     unit: "第 N 个账号",
     desc: "同簇第 N 个账号起,托管收益进入审核中。",
@@ -143,6 +152,7 @@ export const RISK_CLUSTER_PARAMS: RiskClusterParamDef[] = [
   {
     key: "duplicateAccountFreezeFrom",
     label: "重复账号冻结建议线",
+    kind: "number",
     defaultVal: 4,
     unit: "第 N 个账号",
     desc: "同簇第 N 个账号起,建议 K1 标记或冻结。",
@@ -150,31 +160,35 @@ export const RISK_CLUSTER_PARAMS: RiskClusterParamDef[] = [
   },
   {
     key: "pendingReleaseHours",
-    label: "待审收益观察时长",
+    label: "待审收益观察窗口",
+    kind: "number",
     defaultVal: 72,
     unit: "小时",
-    desc: "待审收益自动释放前的最短观察时间。",
-    frontendEffect: "调短=更快可提;调长=更强套现延迟。",
+    desc: "待审收益的观察与熔断统计窗口。窗口到达不会自动放行——释放只认 App 在线证明达标或人工放行。",
+    frontendEffect: "只影响同簇熔断统计与运营口径,不是自动放行倒计时。",
   },
   {
     key: "appAttestationReleaseHours",
     label: "App 在线证明时长",
+    kind: "number",
     defaultVal: 2,
     unit: "小时",
-    desc: "同簇账号通过 App 连续在线证明后可释放锁定收益的时长。",
-    frontendEffect: "强化 H5 升级 App 的转化钩子。",
+    desc: "账号 App 连续在线累计达该时长后,具备释放待审/锁定收益的资格。",
+    frontendEffect: "释放的两个来源之一(另一为人工放行);也强化 H5 升级 App 的转化钩子。",
   },
   {
     key: "maxSignupPerIp24h",
     label: "同 IP 24h 注册上限",
+    kind: "number",
     defaultVal: 3,
     unit: "个号",
     desc: "同一 IP 桶 24 小时内可注册账号数。",
-    frontendEffect: "超过后注册进入人工或拒绝路线。",
+    frontendEffect: "超过后注册进入人工或拒绝路线,不创建账号。",
   },
   {
     key: "maxAccountsPerDevice",
     label: "同设备账号上限",
+    kind: "number",
     defaultVal: 2,
     unit: "个号",
     desc: "同一服务端设备标识允许绑定的账号数。",
@@ -183,6 +197,7 @@ export const RISK_CLUSTER_PARAMS: RiskClusterParamDef[] = [
   {
     key: "maxAccountsPerPaymentInstrument",
     label: "同收款工具账号上限",
+    kind: "number",
     defaultVal: 1,
     unit: "个号",
     desc: "同一提现地址或支付工具允许关联的账号数。",
@@ -191,10 +206,30 @@ export const RISK_CLUSTER_PARAMS: RiskClusterParamDef[] = [
   {
     key: "clusterFreezeSuggestThreshold",
     label: "风险簇冻结建议强度",
+    kind: "number",
     defaultVal: 0.82,
     unit: "0-1",
-    desc: "K1 聚簇强度达到该值后建议冻结。",
-    frontendEffect: "影响 K1 标记和 K3 提现路由。",
+    desc: "K1 聚簇加权分达到该值后建议冻结;提现侧达线即升人工分诊。",
+    frontendEffect: "影响 K1 标记建议和 K3 提现路由。",
+  },
+  {
+    key: "releaseMode",
+    label: "待审收益释放模式",
+    kind: "enum",
+    defaultVal: "attest_or_manual",
+    options: ["attest_or_manual", "manual_only"],
+    unit: "模式",
+    desc: "待审收益的放行来源。没有「到时自动放行」选项:要么 App 在线证明达标,要么人工放行;manual_only 时仅人工。",
+    frontendEffect: "决定前端待审收益能否由在线证明解锁。",
+  },
+  {
+    key: "freeSlotRequiresBinding",
+    label: "首号免费槽需绑定",
+    kind: "boolean",
+    defaultVal: true,
+    unit: "开关",
+    desc: "开启后,纯裸号(无支付工具/无推荐关系/无 App 在线证明)的首号收益也先进审核中,完成任一有效绑定后才正常释放。",
+    frontendEffect: "堵「批量裸号吃首槽」;关闭则首号收益直接可提。",
   },
 ];
 
@@ -210,9 +245,11 @@ export const riskClusterParamKey = (key: RiskClusterParamKey): string =>
 export type WithdrawRouteSeed = "pass" | "delay" | "manual" | "freeze" | "reject";
 
 export interface WithdrawRuleParamDef {
-  key: "minWithdrawableUsdt" | "sameAddressRoute";
+  key: "minWithdrawableUsdt" | "sameAddressRoute" | "firstWithdrawalManual" | "newAddressHoldHours";
   label: string;
-  defaultVal: number | WithdrawRouteSeed;
+  kind: RiskParamKind;
+  defaultVal: number | boolean | WithdrawRouteSeed;
+  options?: string[];
   unit: string;
   desc: string;
   frontendEffect: string;
@@ -224,6 +261,7 @@ export const WITHDRAW_RULE_PARAMS: WithdrawRuleParamDef[] = [
   {
     key: "minWithdrawableUsdt",
     label: "最低可提现金额",
+    kind: "number",
     defaultVal: 20,
     unit: "USDT",
     desc: "提现页允许提交的最小可提现金额。",
@@ -232,16 +270,126 @@ export const WITHDRAW_RULE_PARAMS: WithdrawRuleParamDef[] = [
   {
     key: "sameAddressRoute",
     label: "同地址多账号路由",
+    kind: "enum",
     defaultVal: "manual",
-    unit: "pass/delay/manual/freeze/reject",
+    options: ["pass", "delay", "manual", "freeze", "reject"],
+    unit: "路由",
     desc: "同一收款地址被多个账号使用时,K3 返回的提现前置路由。",
     frontendEffect: "命中后提现进入人工/延迟/冻结/拒绝,不会由客户端自动推进为已打款。",
+  },
+  {
+    key: "firstWithdrawalManual",
+    label: "新号首提必人工",
+    kind: "boolean",
+    defaultVal: true,
+    unit: "开关",
+    desc: "账户首次提现无条件进入人工审核队列,无论其它风控信号如何(冷启动保守,兜「每号换设备+换地址」的分散薅)。",
+    frontendEffect: "首笔提现固定进入审核中,不能直达打款。",
+  },
+  {
+    key: "newAddressHoldHours",
+    label: "新提现地址延迟时长",
+    kind: "number",
+    defaultVal: 24,
+    unit: "小时",
+    desc: "提现地址首次绑定后 N 小时内的提现走延迟/人工路由(防临提现才换全新地址)。",
+    frontendEffect: "新绑地址的提现进入延迟处理,不即时放行。",
   },
 ];
 
 export type WithdrawRuleParamKey = WithdrawRuleParamDef["key"];
 export const withdrawRuleParamKey = (key: WithdrawRuleParamKey): string =>
   `${WITHDRAW_RULE_PARAM_PREFIX}${key}`;
+
+// ── SPEC-7 新人礼发放配置(mock seed,backend-replaceable)────────────────
+// K2/营销配置权威;uniapp config-types.ts RewardsConfig 同构(lockMode/usdtAmount/nexAmount)。
+// PROD 替换点: PATCH /api/admin/rewards/welcome-gift/config { lockMode, usdtAmount, nexAmount, reason }
+export interface RewardRiskParamDef {
+  key: "lockMode" | "usdtAmount" | "nexAmount";
+  label: string;
+  kind: RiskParamKind;
+  defaultVal: string | number;
+  options?: string[];
+  unit: string;
+  desc: string;
+  frontendEffect: string;
+}
+
+export const REWARD_RISK_PARAM_PREFIX = "K.rewards.welcomeGift.";
+
+export const REWARD_RISK_PARAMS: RewardRiskParamDef[] = [
+  {
+    key: "lockMode",
+    label: "新人礼发放模式",
+    kind: "enum",
+    defaultVal: "risk_bucket",
+    options: ["risk_bucket", "direct"],
+    unit: "模式",
+    desc: "risk_bucket = 新人礼按账户当前风险桶发放(同簇多号进待审/锁定);direct = 直接入可提余额(演示/活动期开闸)。",
+    frontendEffect: "决定注册赠金能否直达可提余额。",
+  },
+  {
+    key: "usdtAmount",
+    label: "新人礼 USDT 金额",
+    kind: "number",
+    defaultVal: 5,
+    unit: "USDT",
+    desc: "注册礼包的 USDT 部分,邀请落地页/注册页展示与实际入账同源。",
+    frontendEffect: "调高 = 放大获客成本流出,先核 B1 覆盖率。",
+  },
+  {
+    key: "nexAmount",
+    label: "新人礼 NEX 数量",
+    kind: "number",
+    defaultVal: 20,
+    unit: "NEX",
+    desc: "注册礼包的 NEX 部分(原 200 ≈ 免费 $2000 提现抵扣额度,过松,已收紧为 20)。",
+    frontendEffect: "随发放模式进桶;调高同样先核 B1 覆盖率。",
+  },
+];
+
+export const rewardRiskParamKey = (key: RewardRiskParamDef["key"]): string =>
+  `${REWARD_RISK_PARAM_PREFIX}${key}`;
+
+// ── SPEC-7 §5b K1 聚簇维度权重(K4 评分权威可配)──────────────────────────
+// uniapp config-types.ts RiskScoreConfig.dimensionWeights 同构;mock K4 分 =
+// 命中维度权重和(cap 1)。强维任一命中即入簇(OR),中弱维权重和达
+// weakSignalClusterThreshold 才入簇;空维度不计分(空值降权)。P5 接 K4 UI。
+// PROD 替换点: PATCH /api/admin/risk-score/weights/:dimension { value, reason }
+export interface RiskScoreWeightDef {
+  key:
+    | "serverDeviceId"
+    | "ipBucket"
+    | "withdrawAddress"
+    | "paymentInstrument"
+    | "sponsor"
+    | "uaFingerprint"
+    | "signupTiming"
+    | "weakSignalClusterThreshold";
+  label: string;
+  kind: RiskParamKind;
+  defaultVal: number;
+  /** 强=任一命中即入簇;中/弱=权重叠加达阈入簇;阈值行本身无强弱。 */
+  tier: "strong" | "medium" | "weak" | "threshold";
+  unit: string;
+  desc: string;
+}
+
+export const RISK_SCORE_PARAM_PREFIX = "K.riskScore.";
+
+export const RISK_SCORE_WEIGHT_PARAMS: RiskScoreWeightDef[] = [
+  { key: "serverDeviceId", label: "设备标识权重", kind: "number", defaultVal: 0.9, tier: "strong", unit: "0-1", desc: "同服务端设备标识,任一命中即入簇。" },
+  { key: "ipBucket", label: "IP 桶权重(24h 窗)", kind: "number", defaultVal: 0.8, tier: "strong", unit: "0-1", desc: "同 IP 桶且注册时间差 24h 内,任一命中即入簇。" },
+  { key: "withdrawAddress", label: "提现地址权重", kind: "number", defaultVal: 0.9, tier: "strong", unit: "0-1", desc: "共用提现地址,任一命中即入簇;未提现前为空,提现时补判并回溯。" },
+  { key: "paymentInstrument", label: "支付工具权重", kind: "number", defaultVal: 0.5, tier: "medium", unit: "0-1", desc: "共用支付/收款工具;未绑卡为空,降权不缺省判清白。" },
+  { key: "sponsor", label: "推荐链权重", kind: "number", defaultVal: 0.4, tier: "medium", unit: "0-1", desc: "同推荐人;无邀请码为空,降权。" },
+  { key: "uaFingerprint", label: "设备指纹权重", kind: "number", defaultVal: 0.2, tier: "weak", unit: "0-1", desc: "UA/机型粗指纹,叠加信号。" },
+  { key: "signupTiming", label: "注册时序权重", kind: "number", defaultVal: 0.3, tier: "weak", unit: "0-1", desc: "同 IP 短时(1h)多号的时序聚类信号;裸号也据此入观察。" },
+  { key: "weakSignalClusterThreshold", label: "弱信号入簇阈值", kind: "number", defaultVal: 0.6, tier: "threshold", unit: "0-1", desc: "中弱维权重和达到该值即入簇(强维不看此阈值)。" },
+];
+
+export const riskScoreParamKey = (key: RiskScoreWeightDef["key"]): string =>
+  `${RISK_SCORE_PARAM_PREFIX}${key}`;
 
 // ── SPEC-7 提现审核队列参数(mock seed,backend-replaceable)──────────────
 // D2 是提现审核队列权威;该组参数只影响后台审核分流,不改 K3 风控路由结论。

@@ -130,7 +130,7 @@ export const K_RISK = {
   frozenBase: 11, // 已冻结簇存量 → 样本 CL-301 计入后 12
   frozenAccountsBase: 80, // 已冻结账户存量 → +CL-301 6 账户 = 86
   giftBlockedUsd: 2_140, // 新人礼拦截金额(本月,K1/K2 同源)
-  giftBlockedCnt: 428, // 新人礼拦截笔数(×200 NEX = 85,600 NEX)
+  giftBlockedCnt: 428, // 新人礼拦截笔数(NEX 口径在 K2 按 K.rewards.welcomeGift.nexAmount 当前值派生,默认 ×20 = 8,560 NEX)
   loopConfirmed: 4, // K2 闭环判定(3 层全中,本月;RISK.alerts K2 行同源)
   loopWarn: 17, // K2 预警转人工(≥2 层,30 天滑动窗)
   boardSignals: 3, // K2 刷榜信号(本期,处置归 F8)

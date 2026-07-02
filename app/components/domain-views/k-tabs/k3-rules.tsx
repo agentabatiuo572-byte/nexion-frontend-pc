@@ -180,6 +180,22 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
     String(ctx.pget(withdrawRuleParamKey(p.key)) ?? p.defaultVal);
 
   const editWithdrawParam = (p: WithdrawRuleParamDef) => {
+    if (p.kind === "boolean") {
+      const current = withdrawParamValue(p) === "true" ? "开启" : "关闭";
+      ctx.openActionConfirm({
+        action: `提现前置参数调整 · ${p.label}`,
+        detail: `${p.label} · 当前 ${current}。${p.desc}${p.frontendEffect} 改动后下一笔提现请求生效,在途单不回写。`,
+        amplifies: true,
+        edit: { kind: "select", current, options: ["开启", "关闭"] },
+        run: (reason, newVal) => {
+          if (!newVal) return;
+          const next = newVal === "开启" ? "true" : "false";
+          ctx.setParam(withdrawRuleParamKey(p.key), next, { action: `调整提现前置参数 ${p.label}为${newVal}`, reason });
+          ctx.toast(`${p.label} 已更新为${newVal} · 下一笔提现生效`);
+        },
+      });
+      return;
+    }
     if (p.key === "sameAddressRoute") {
       const currentLabel = routeLabel(withdrawParamValue(p));
       ctx.openActionConfirm({
@@ -314,7 +330,11 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           <div className="param-list" data-proof="k3-withdraw-rule-params">
             {WITHDRAW_RULE_PARAMS.map((p) => {
               const current = withdrawParamValue(p);
-              const display = p.key === "sameAddressRoute" ? routeLabel(current) : `${current} ${p.unit}`;
+              const display = p.key === "sameAddressRoute"
+                ? routeLabel(current)
+                : p.kind === "boolean"
+                  ? (current === "true" ? "开启" : "关闭")
+                  : `${current} ${p.unit}`;
               return (
                 <div className="p" key={p.key}>
                   <div className="txt">

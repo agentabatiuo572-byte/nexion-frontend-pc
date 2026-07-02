@@ -10,6 +10,7 @@ import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import { K_RISK } from "@/lib/mock/admin/design-data";
 import { K2_PARAMS, K2_VIEWS, K2_JUDGE, type K2View, type K2Row } from "./data";
+import { REWARD_RISK_PARAMS, rewardRiskParamKey, type RewardRiskParamDef } from "@/lib/mock/admin/compute-config";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -24,6 +25,44 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   // E3 权威只读:与 /devices/trade-in 同一 pget 键(同口径必同源)。
   const minHolding = ctx.pget("E.tradein.minHoldingMonths") ?? "6";
+
+  // 新人礼发放配置(SPEC-7):与 uniapp rewards.welcomeGift 同构;文案与统计从当前值派生,禁写死金额。
+  const GIFT_MODE_LABELS: Record<string, string> = { risk_bucket: "按风险桶发放", direct: "直入可提余额" };
+  const giftParamValue = (key: RewardRiskParamDef["key"]) =>
+    ctx.pget(rewardRiskParamKey(key)) ?? String(REWARD_RISK_PARAMS.find((p) => p.key === key)!.defaultVal);
+  const giftUsd = giftParamValue("usdtAmount");
+  const giftNex = Number(giftParamValue("nexAmount")) || 0;
+
+  const adjGiftParam = (p: RewardRiskParamDef) => {
+    if (p.key === "lockMode") {
+      const backMap: Record<string, string> = { 按风险桶发放: "risk_bucket", 直入可提余额: "direct" };
+      const curLabel = GIFT_MODE_LABELS[giftParamValue("lockMode")] ?? giftParamValue("lockMode");
+      ctx.openActionConfirm({
+        action: `新人礼发放配置 · ${p.label}`,
+        detail: `${p.label} · 当前 ${curLabel}。${p.desc}${p.frontendEffect} 切到「直入可提余额」= 放行方向,先核 B1 覆盖率 · 写入审计`,
+        amplifies: true,
+        edit: { kind: "select", current: curLabel, options: Object.values(GIFT_MODE_LABELS) },
+        run: (reason, newVal) => {
+          const next = newVal ? backMap[newVal] : undefined;
+          if (!next) return;
+          ctx.setParam(rewardRiskParamKey(p.key), next, { action: `调整新人礼发放模式 → ${newVal}`, reason });
+          ctx.toast("新人礼发放模式已更新 · 后续注册按新模式入账");
+        },
+      });
+      return;
+    }
+    ctx.openActionConfirm({
+      action: `新人礼发放配置 · ${p.label}`,
+      detail: `${p.label} · 当前 ${giftParamValue(p.key)} ${p.unit}。${p.desc}${p.frontendEffect} 只影响后续发放,已发放的不回写 · 写入审计`,
+      amplifies: true,
+      edit: { kind: "number", current: giftParamValue(p.key), unit: p.unit, min: 0 },
+      run: (reason, newVal) => {
+        if (!newVal) return;
+        ctx.setParam(rewardRiskParamKey(p.key), newVal, { action: `调整${p.label} → ${newVal} ${p.unit}`, reason });
+        ctx.toast(`${p.label} 已更新 · 落地页展示与入账同步生效`);
+      },
+    });
+  };
 
   const lvlBadge = (n: number) => <span className={`bdg ${n >= 3 ? "bad" : n === 2 ? "warn" : "dim"}`}>{n} / 3 层</span>;
 
@@ -43,7 +82,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const blockGift = (r: K2Row) =>
     ctx.openConfirm({
       action: `拦截新人礼 · ${r.cells[0]}`,
-      detail: "停发这个簇后续的新人礼($5 + 200 NEX)。拦的是还没发出去的钱,不动任何已入账资产,所以不用操作确认;要追回已发放的,走用户域余额调整(C3,那边才是操作确认)。",
+      detail: `停发这个簇后续的新人礼($${giftUsd} + ${giftNex} NEX)。拦的是还没发出去的钱,不动任何已入账资产,所以不用操作确认;要追回已发放的,走用户域余额调整(C3,那边才是操作确认)。`,
       chips: [["预防性阻断 · 不动已入账资产", "done"], ["台账留痕", "ready"]],
       reason: true,
       okLabel: "确认拦截",
@@ -107,7 +146,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       <div className="f-stats">
         <div className="f-stat warn"><div className="k">闭环判定(3 层全中)</div><div className="v">{K_RISK.loopConfirmed}</div><div className="sub">本月 · 已联动 K1 冻结 3 簇</div></div>
         <div className="f-stat"><div className="k">预警转人工(2 层可疑)</div><div className="v">{K_RISK.loopWarn}</div><div className="sub">30 天滑动窗口内</div></div>
-        <div className="f-stat ok"><div className="k">新人礼拦截</div><div className="v">{K_RISK.giftBlockedCnt} 笔</div><div className="sub">${fmt(K_RISK.giftBlockedUsd)} + {fmt(K_RISK.giftBlockedCnt * 200)} NEX 守住</div></div>
+        <div className="f-stat ok"><div className="k">新人礼拦截</div><div className="v">{K_RISK.giftBlockedCnt} 笔</div><div className="sub">${fmt(K_RISK.giftBlockedUsd)} + {fmt(K_RISK.giftBlockedCnt * giftNex)} NEX 守住</div></div>
         <div className="f-stat danger"><div className="k">刷榜信号(本期)</div><div className="v">{K_RISK.boardSignals}</div><div className="sub">增速 &gt; 5× 基线 · 处置归 F8</div></div>
       </div>
 
@@ -165,6 +204,38 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                 </div>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* 新人礼发放配置(SPEC-7 · uniapp rewards.welcomeGift 同构) */}
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">新人礼发放配置</span>
+          <span className="sub">· 注册礼包发多少、怎么入账 —— 落地页展示、实际入账、拦截统计都从这里取值</span>
+          <div className="r"><span className="kcode electric" title="与前端 rewards.welcomeGift 配置同构,发放拦截(上表统计)与此同口径">金额与模式单源</span></div>
+        </div>
+        <div className="l-b">
+          <div className="param-grid" data-proof="k2-welcome-gift-params">
+            {REWARD_RISK_PARAMS.map((p) => {
+              const curV = ctx.pget(rewardRiskParamKey(p.key));
+              const shown = p.key === "lockMode" ? (GIFT_MODE_LABELS[giftParamValue("lockMode")] ?? giftParamValue("lockMode")) : giftParamValue(p.key);
+              return (
+                <div className="p" key={p.key}>
+                  <div className="k">{p.label}</div>
+                  <div className="v">
+                    {shown}
+                    {p.kind === "number" ? <span className="vu">{p.unit}</span> : null}
+                    {curV ? <span className="vu">· 原 {p.key === "lockMode" ? GIFT_MODE_LABELS[String(p.defaultVal)] : p.defaultVal}</span> : null}
+                    <button className="l-btn sm mc" onClick={() => adjGiftParam(p)} title={`PRD K2 ${p.key}`}>调整</button>
+                  </div>
+                  <div className="s">{p.desc}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="ktint" style={{ marginTop: 12, fontSize: 12 }}>
+            <b>发放模式</b> · 按风险桶发放 = 新人礼跟随账户当前风险桶,同簇多号进「审核中 / 锁定奖励」;直入可提余额 = 演示 / 活动期开闸,谨慎使用。金额调整只影响后续发放,已发放的不回写。
           </div>
         </div>
       </section>

@@ -1,0 +1,8 @@
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3002
+- PID:          6280
+- Dir:          D:\WORKS\PLAN\Nexion-admin-prototype
+- Log:          .next\dev\logs\next-development.log
+
+Run taskkill /PID 6280 /F to stop it.

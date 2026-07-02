@@ -10,6 +10,7 @@ import { useId, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import { REGISTERED_USERS, K_RISK } from "@/lib/mock/admin/design-data";
 import { K4_DIMS, K4_DIST, K4_LOOKUP, K4_OVERRIDES, scoreColor } from "./data";
+import { RISK_SCORE_WEIGHT_PARAMS, riskScoreParamKey, type RiskScoreWeightDef } from "@/lib/mock/admin/compute-config";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -118,6 +119,28 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
         if (!newVal) return;
         ctx.setParam("K.score.escalate", newVal, { action: `调整自动升级线 → ${newVal} 分`, reason });
         ctx.toast("自动升级线调整已确认生效");
+      },
+    });
+  };
+
+  // SPEC-7 §5b 聚簇维度权重(K1 入簇判定 + 多账户维度输入;uniapp riskScore.dimensionWeights 同构)。
+  const CLUSTER_TIER_BADGE: Record<RiskScoreWeightDef["tier"], [label: string, tone: string]> = {
+    strong: ["强维", "bad"],
+    medium: ["中维", "warn"],
+    weak: ["弱维", "dim"],
+    threshold: ["阈值", "dim"],
+  };
+  const clusterWeightValue = (p: RiskScoreWeightDef) => ctx.pget(riskScoreParamKey(p.key)) ?? String(p.defaultVal);
+  const adjClusterWeight = (p: RiskScoreWeightDef) => {
+    ctx.openActionConfirm({
+      action: `聚簇维度权重调整 · ${p.label}`,
+      detail: `${p.label} · 当前 ${clusterWeightValue(p)}(0-1)。${p.desc} 调低权重或阈值 = 放宽入簇,更多账户按普通账户释放收益与提现,放行方向先核 B1 覆盖率;与评分权重同级,执行门槛为平台管理员,只对新判定批生效 · 写入审计`,
+      amplifies: true,
+      edit: { kind: "number", current: clusterWeightValue(p), unit: "0-1", min: 0, max: 1 },
+      run: (reason, newVal) => {
+        if (!newVal) return;
+        ctx.setParam(riskScoreParamKey(p.key), newVal, { action: `调整聚簇维度权重 ${p.label} → ${newVal}`, reason });
+        ctx.toast(`${p.label} 已更新 · 仅对新判定批生效`);
       },
     });
   };
@@ -248,6 +271,36 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           </div>
         </section>
       </div>
+
+      {/* SPEC-7 §5b 聚簇维度权重(K1 入簇判定;与上方六维评分权重是两套语义) */}
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">聚簇维度权重</span>
+          <span className="sub">· K1 判「几个号是不是同一个人」的依据:强维任一命中即入簇,中弱维叠加达阈值才入簇,资料缺的维度不计分</span>
+          <div className="r"><span className="kcode" style={{ background: "var(--warning-soft)", color: "var(--warning)" }} title="影响入簇判定、收益分桶、提现分诊,与评分权重同级,执行门槛为平台管理员">平台管理员</span></div>
+        </div>
+        <div className="l-b">
+          <div className="param-list" data-proof="k4-cluster-dimension-weights">
+            {RISK_SCORE_WEIGHT_PARAMS.map((p) => {
+              const curV = ctx.pget(riskScoreParamKey(p.key));
+              const [tierLb, tierTone] = CLUSTER_TIER_BADGE[p.tier];
+              return (
+                <div className="p" key={p.key}>
+                  <div className="txt">
+                    <div className="k">{p.label} <span className={`bdg ${tierTone}`}>{tierLb}</span></div>
+                    <div className="s">{p.desc}{curV ? <span> · 已调整(默认 {p.defaultVal})</span> : null}</div>
+                  </div>
+                  <span className="v">{clusterWeightValue(p)}</span>
+                  <button className="l-btn sm mc" onClick={() => adjClusterWeight(p)}>调整</button>
+                </div>
+              );
+            })}
+          </div>
+          <div className="ktint" style={{ marginTop: 12, fontSize: 12 }}>
+            <b>和上面「评分权重」的分工</b> · 评分权重把六个维度合成 0–100 的用户风险分(合计必须 = 1);这里是 K1 判定账户簇的维度权重(各自 0–1、不要求合计),同时作为风险分的多账户维度输入。注册、收益分桶、提现分诊按这套权重实时判簇,只对新判定批生效。
+          </div>
+        </div>
+      </section>
 
       {/* 单用户查询(可解释性) */}
       <section className="l-card">

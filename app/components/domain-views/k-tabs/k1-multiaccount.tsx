@@ -11,7 +11,7 @@ import { useId } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import { K_RISK, RISK } from "@/lib/mock/admin/design-data";
 import { K1_PARAMS, K1_CLUSTERS, K1_WHITELIST, CLUSTER_ST, strengthColor, type ClusterStatus, type K1Cluster } from "./data";
-import { RISK_CLUSTER_PARAMS, riskClusterParamKey, type RiskClusterParamDef } from "@/lib/mock/admin/compute-config";
+import { RISK_CLUSTER_PARAMS, riskClusterParamKey, type RiskClusterParamDef, REWARD_RISK_PARAMS, rewardRiskParamKey } from "@/lib/mock/admin/compute-config";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -122,12 +122,62 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const riskParamValue = (p: RiskClusterParamDef): string =>
     String(ctx.pget(riskClusterParamKey(p.key)) ?? p.defaultVal);
 
+  // 运营可读中文标签 ↔ 工程值映射(enum/boolean 参数不给运营裸工程串)。
+  const RELEASE_MODE_LABELS: Record<string, string> = {
+    attest_or_manual: "在线证明或人工放行",
+    manual_only: "仅人工放行",
+  };
+  const BOOL_LABELS: Record<string, string> = { true: "开启", false: "关闭" };
+
+  // 新人礼当前额度(与 K2 发放配置同源派生,禁写死金额)。
+  const giftAmountLabel = (() => {
+    const gv = (key: "usdtAmount" | "nexAmount") =>
+      ctx.pget(rewardRiskParamKey(key)) ?? String(REWARD_RISK_PARAMS.find((p) => p.key === key)!.defaultVal);
+    return `$${gv("usdtAmount")} + ${gv("nexAmount")} NEX`;
+  })();
+
+  const riskParamDisplay = (p: RiskClusterParamDef): string => {
+    const v = riskParamValue(p);
+    if (p.key === "releaseMode") return RELEASE_MODE_LABELS[v] ?? v;
+    if (p.kind === "boolean") return BOOL_LABELS[v] ?? v;
+    return v;
+  };
+  const riskParamDefaultDisplay = (p: RiskClusterParamDef): string => {
+    if (p.key === "releaseMode") return RELEASE_MODE_LABELS[String(p.defaultVal)] ?? String(p.defaultVal);
+    if (p.kind === "boolean") return BOOL_LABELS[String(p.defaultVal)] ?? String(p.defaultVal);
+    return `${p.defaultVal} ${p.unit}`;
+  };
+
   const editRiskParam = (p: RiskClusterParamDef) => {
+    const amplifies = [
+      "freePhoneSlotsPerCluster", "duplicateAccountPendingFrom", "duplicateAccountFreezeFrom",
+      "pendingReleaseHours", "releaseMode", "freeSlotRequiresBinding",
+    ].includes(p.key);
+    if (p.kind !== "number") {
+      const isMode = p.key === "releaseMode";
+      const options = isMode ? Object.values(RELEASE_MODE_LABELS) : ["开启", "关闭"];
+      const backMap: Record<string, string> = isMode
+        ? { "在线证明或人工放行": "attest_or_manual", "仅人工放行": "manual_only" }
+        : { 开启: "true", 关闭: "false" };
+      ctx.openActionConfirm({
+        action: `收益释放参数调整 · ${p.label}`,
+        detail: `${p.label} · 当前 ${riskParamDisplay(p)}。${p.desc}${p.frontendEffect} 改动后只影响后续注册、结算和提现分诊;历史审计不回写。`,
+        amplifies,
+        edit: { kind: "select", current: riskParamDisplay(p), options },
+        run: (reason, newVal) => {
+          const next = newVal ? backMap[newVal] : undefined;
+          if (!next) return;
+          ctx.setParam(riskClusterParamKey(p.key), next, { action: `调整收益释放参数 ${p.label}`, reason });
+          ctx.toast(`${p.label} 已更新 · 后续结算和分诊按新值执行`);
+        },
+      });
+      return;
+    }
     const isRatio = p.unit.includes("0-1");
     ctx.openActionConfirm({
       action: `收益释放参数调整 · ${p.label}`,
       detail: `${p.label} · 当前 ${riskParamValue(p)} ${p.unit}。${p.desc}${p.frontendEffect} 改动后只影响后续注册、结算和提现分诊;历史审计不回写。`,
-      amplifies: ["freePhoneSlotsPerCluster", "duplicateAccountPendingFrom", "duplicateAccountFreezeFrom", "pendingReleaseHours"].includes(p.key),
+      amplifies,
       edit: { kind: "number", current: riskParamValue(p), unit: p.unit, min: isRatio ? 0 : 1, max: isRatio ? 1 : undefined },
       run: (reason, newVal) => {
         if (!newVal) return;
@@ -344,16 +394,16 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 <div className="p" key={p.key}>
                   <div className="txt">
                     <div className="k">{p.label}</div>
-                    <div className="s">{p.desc}{curV ? <span> · 已调整(默认 {p.defaultVal} {p.unit})</span> : null}</div>
+                    <div className="s">{p.desc}{curV ? <span> · 已调整(默认 {riskParamDefaultDisplay(p)})</span> : null}</div>
                   </div>
-                  <span className="v">{riskParamValue(p)}<span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 3 }}>{p.unit}</span></span>
+                  <span className="v">{riskParamDisplay(p)}{p.kind === "number" ? <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 3 }}>{p.unit}</span> : null}</span>
                   <button className="l-btn sm mc" onClick={() => editRiskParam(p)}>调整</button>
                 </div>
               );
             })}
           </div>
           <div className="ktint warn" style={{ marginTop: 12 }}>
-            <b>落地规则</b> · 正常槽位内收益进入可提现;超过待审起点进入审核中;达到冻结建议线或人工冻结后进入锁定奖励。App 在线证明时长达标后,可作为人工释放锁定收益的正向依据。
+            <b>落地规则</b> · 正常槽位内收益进入可提现;超过待审起点进入审核中;达到冻结建议线或人工冻结后进入锁定奖励。审核中的收益<b>不随时间自动放行</b>:释放只认 App 在线证明达标或人工放行两个来源,且同簇在观察窗口内的批量释放有熔断——超出正常槽位数的待审收益自动升为锁定奖励。
           </div>
         </div>
       </section>
@@ -473,7 +523,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               </tbody>
             </table>
             <div style={{ fontSize: 13, fontWeight: 600, margin: "16px 0 8px", color: "var(--ink)" }}>
-              新人礼重复发放记录 <span className="kcode" style={{ marginLeft: 6 }} title="welcome gift $5 + 200 NEX · 发放由服务器按账户只发一次,清缓存无效">同一实体多号领取</span>
+              新人礼重复发放记录 <span className="kcode" style={{ marginLeft: 6 }} title={`welcome gift ${giftAmountLabel} · 发放由服务器按账户只发一次,清缓存无效`}>同一实体多号领取</span>
             </div>
             {cur.gifts.length ? (
               cur.gifts.map((g) => (

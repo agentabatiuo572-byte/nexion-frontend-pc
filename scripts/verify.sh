@@ -191,6 +191,9 @@ const e6 = fs.readFileSync("app/components/domain-views/e-tabs/e6-compute-config
 const eView = fs.readFileSync("app/components/domain-views/e-view.tsx", "utf8");
 const k1 = fs.readFileSync("app/components/domain-views/k-tabs/k1-multiaccount.tsx", "utf8");
 const k3 = fs.readFileSync("app/components/domain-views/k-tabs/k3-rules.tsx", "utf8");
+const k2 = fs.readFileSync("app/components/domain-views/k-tabs/k2-arbitrage.tsx", "utf8");
+const k4 = fs.readFileSync("app/components/domain-views/k-tabs/k4-scoring.tsx", "utf8");
+const kData = fs.readFileSync("app/components/domain-views/k-tabs/data.ts", "utf8");
 const d2 = fs.readFileSync("app/components/domain-views/d-tabs/d2-withdrawals.tsx", "utf8");
 const dData = fs.readFileSync("app/components/domain-views/d-tabs/data.ts", "utf8");
 const dRegistry = fs.readFileSync("lib/admin/registry/d.ts", "utf8");
@@ -208,6 +211,12 @@ const must = [
   ["K1 renders risk release params", k1, /data-proof="k1-risk-release-params"[\s\S]*RISK_CLUSTER_PARAMS\.map/],
   ["K1 link weights use multi-field", k1, /title: "关联强度权重"[\s\S]*设备权重[\s\S]*支付工具权重[\s\S]*IP 权重/],
   ["K1 cluster detail shows earning impact", k1, /data-proof="k1-cluster-earning-impact"[\s\S]*收益影响/],
+  ["welcome gift params are centralized", cfg, /REWARD_RISK_PARAMS[\s\S]*lockMode[\s\S]*usdtAmount[\s\S]*nexAmount/],
+  ["cluster dimension weights are centralized", cfg, /RISK_SCORE_WEIGHT_PARAMS[\s\S]*serverDeviceId[\s\S]*weakSignalClusterThreshold/],
+  ["K2 renders welcome gift params", k2, /data-proof="k2-welcome-gift-params"[\s\S]*REWARD_RISK_PARAMS\.map/],
+  ["K2 gift stats derive from configured NEX amount", k2, /giftBlockedCnt \* giftNex/],
+  ["K4 renders cluster dimension weights", k4, /data-proof="k4-cluster-dimension-weights"[\s\S]*RISK_SCORE_WEIGHT_PARAMS\.map/],
+  ["K gift sample rows use current 20-NEX math", kData, /\$45 \+ 180 NEX[\s\S]*\$20 \+ 80 NEX/],
   ["K3 renders withdraw rule params", k3, /data-proof="k3-withdraw-rule-params"[\s\S]*WITHDRAW_RULE_PARAMS\.map/],
   ["K3 same-address route uses select", k3, /p\.key === "sameAddressRoute"[\s\S]*edit: \{ kind: "select"[\s\S]*WITHDRAW_ROUTE_OPTIONS/],
   ["K3 new rule uses structured controls", k3, /action: "新建提现风控规则"[\s\S]*businessForm:[\s\S]*kind: "multi-field"[\s\S]*规则维度[\s\S]*判断方式[\s\S]*阈值[\s\S]*命中后处理/],
@@ -224,6 +233,7 @@ const visibleBans = [
   ["E6 must not hardcode yield constants or internal tier copy", e6, /0\.06|166\.67|G1-G6|档位 \{tier\.id\}/],
   ["E view must not expose server-canonical in visible E flows", eView, /setToast\([^\n]*server-canonical|detail: `[^`\n]*server-canonical|sub=\{<AutoGloss>\{[^\n]*server-canonical/],
   ["K1 must not expose linkWeight or admin event names in operator copy", k1, /linkWeight 仅|linkWeight 例外|admin\.cluster|admin\.risk_threshold|detected 命中|flagged 可疑|frozen 已冻结|released 解除误判|cleared 判定正常/],
+  ["K1/K2 must not carry stale 200-NEX gift copy", [k1, k2].join("\n"), /\$5 \+ 200 NEX|giftBlockedCnt \* 200/],
   ["K3 must not expose action enum labels or backend copy", k3, /命中动作:[^<]*(delay|freeze|manual)|>\{d\.act\}<|接口预留|本批不实现|admin\.withdraw_rule|服务器拒绝\(409\)|返回 409|draft 草拟|active 生效|paused 停用|archived 归档/],
   ["K3 rule dialogs must not use free-text multi-value input", k3, /新建提现风控规则[\s\S]{0,900}edit: \{ kind: "text"|规则阈值调整[\s\S]{0,900}edit: \{ kind: "text"|archived 终态 409/],
   ["D2 large confirm line must not be hardcoded", [d2, dData, dRegistry].join("\n"), /LARGE_LINE|静态参数|小额\(< \$1,000\)|大额\(≥ \$1,000\)|大额操作确认线\(\$1,000\)|小额\(<\$1,000\)/],

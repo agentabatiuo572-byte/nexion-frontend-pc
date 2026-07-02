@@ -37,7 +37,7 @@ export const K1_CLUSTERS: K1Cluster[] = [
   {
     id: "CL-318", key: "fp_8a3f…c2", layer: "device", layerLabel: "设备指纹", n: 12, strength: 0.88, span: "5/02 – 5/19(17 天)", status: "flagged",
     note: "12 个账户共用 2 台设备 + 3 张卡,注册集中在 17 天内,9 个号领过新人礼 —— 典型批量养号。建议批量冻结。",
-    gifts: [["G-2241", "已发 9 笔 · $45 + 1,800 NEX", "异常 · 已停发后续"], ["G-2238", "拦截 3 笔", "已拦截"]],
+    gifts: [["G-2241", "已发 9 笔 · $45 + 180 NEX", "异常 · 已停发后续"], ["G-2238", "拦截 3 笔", "已拦截"]],
     nodes: [
       ["usr_55B1", "5/19", "NX-5512", "是", "$1,240", "frozen"], // 上级码与 USERS.ref 单源对齐(同簇靠设备共享入簇,上级不必同主号)
       ["usr_8812", "5/17", "NX-8821", "是", "$200", "flagged"],
@@ -49,7 +49,7 @@ export const K1_CLUSTERS: K1Cluster[] = [
   {
     id: "CL-322", key: "card_…7741", layer: "payment", layerLabel: "支付工具", n: 5, strength: 0.74, span: "4/28 – 5/30(32 天)", status: "detected",
     note: "5 个账户共用同一张卡充值,设备各不相同 —— 可能是家庭共用,也可能是分散养号。建议先人工复审。",
-    gifts: [["G-2255", "已发 4 笔 · $20 + 800 NEX", "待判定"]],
+    gifts: [["G-2255", "已发 4 笔 · $20 + 80 NEX", "待判定"]],
     nodes: [
       ["usr_77D4", "5/30", "NX-7741", "是", "$310", "detected"],
       ["usr_7702", "5/21", "NX-7741", "是", "$150", "detected"],
@@ -151,8 +151,8 @@ export const K2_VIEWS: Record<K2View, { label: string; sub: string; head: string
     head: ["簇", "实体", "已发 / 已拦", "涉及金额", "闭环特征", "层数命中", "动作"],
     note: "K1 看「同一实体重复领」,这里加看行为:领完礼 24h 内无任何使用、直接转走或沉默,才算刷取闭环。拦截只停发后面的,不动已入账的钱。",
     rows: [
-      { rid: "G-318", cluster: "CL-318", cells: ["CL-318", "fp_8a3f…", "9 发 / 3 拦", "$45 + 1,800 NEX", "领礼后 24h 零活跃 · 直奔试用"], lvl: 3, acts: ["blockgift", "freeze"] },
-      { rid: "G-322", cluster: "CL-322", cells: ["CL-322", "card_…7741", "4 发 / 0 拦", "$20 + 800 NEX", "部分账户有真实充值,待人工"], lvl: 2, acts: ["blockgift", "flag"] },
+      { rid: "G-318", cluster: "CL-318", cells: ["CL-318", "fp_8a3f…", "9 发 / 3 拦", "$45 + 180 NEX", "领礼后 24h 零活跃 · 直奔试用"], lvl: 3, acts: ["blockgift", "freeze"] },
+      { rid: "G-322", cluster: "CL-322", cells: ["CL-322", "card_…7741", "4 发 / 0 拦", "$20 + 80 NEX", "部分账户有真实充值,待人工"], lvl: 2, acts: ["blockgift", "flag"] },
     ],
   },
   board: {

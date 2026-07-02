@@ -14,9 +14,9 @@
 
 ## 第 10 章 设备与商城(域 E)
 
-> **编号收编(2026-06 实现对齐)**:域 E 原 7 功能子模块在运营后台**收编为 5 个页面级模块 E1-E5**,2026-06-29 追加 **E6 算力与设备配置**(PC 算力备用模块配置面),与导航 / 实现一致:**E1** 商品目录 & 代际门(原 E1 商品目录&定价 + 原 E2 代际发布门)· **E2** 收益 & 任务引擎(原 E3)· **E3** 生命周期 & Trade-in(原 E4 设备生命周期 + 原 E5 Trade-in 配置)· **E4** 订单状态机(原 E6)· **E5** 设备运维(原 E7)· **E6** 算力与设备配置(三端架构改造 PC 算力备用模块)。两个合并页内的功能区以 **E1a/E1b**、**E3a/E3b** 子标号细分,各自保留完整 8 段规格。全章 E 编号引用均按此收编后口径(E1=商品+代际门、E2=收益任务、E3=生命周期+Trade-in、E4=订单、E5=运维、E6=算力与设备配置)。
+> **编号收编(2026-06 实现对齐)**:域 E 原 7 功能子模块在运营后台**收编为 5 个页面级模块 E1-E5**(连续编号,与导航 / 实现一致):**E1** 商品目录 & 代际门(原 E1 商品目录&定价 + 原 E2 代际发布门)· **E2** 收益 & 任务引擎(原 E3)· **E3** 生命周期 & Trade-in(原 E4 设备生命周期 + 原 E5 Trade-in 配置)· **E4** 订单状态机(原 E6)· **E5** 设备运维(原 E7)。两个合并页内的功能区以 **E1a/E1b**、**E3a/E3b** 子标号细分,各自保留完整 8 段规格。全章 E 编号引用均按此收编后口径(E1=商品+代际门、E2=收益任务、E3=生命周期+Trade-in、E4=订单、E5=运维)。
 
-> **本章是 V2 分卷的首章**,覆盖域 E 收编后的 **6 个页面级子模块 E1-E6**(下分 8 功能区:E1a 商品目录 & 定价 / E1b 代际发布门 / E2 收益 & 任务引擎 / E3a 设备生命周期 / E3b Trade-in 配置 / E4 订单状态机 / E5 设备运维 / E6 算力与设备配置),全部 V2。E 域是平台两大硬件收入引擎之一(硬件 GMV)的运营控制面:从「卖什么、卖多少钱、何时放新代」(E1)到「设备产出多少、衰减多快」(E2 / E3a)、「旧机如何置换升级」(E3b)、「订单如何履约与退款」(E4)、「在网设备如何运维」(E5)、「电脑算力备用模块何时开放、如何匹配显卡档位、下载入口展示什么」(E6),构成设备资产从发布到退役再到备用算力入口的完整生命周期运营闭环。
+> **本章是 V2 分卷的首章**,覆盖域 E 收编后的 **5 个页面级子模块 E1-E5**(下分 7 功能区:E1a 商品目录 & 定价 / E1b 代际发布门 / E2 收益 & 任务引擎 / E3a 设备生命周期 / E3b Trade-in 配置 / E4 订单状态机 / E5 设备运维),全部 V2。E 域是平台两大硬件收入引擎之一(硬件 GMV)的运营控制面:从「卖什么、卖多少钱、何时放新代」(E1)到「设备产出多少、衰减多快」(E2 / E3a)、「旧机如何置换升级」(E3b)、「订单如何履约与退款」(E4)、「在网设备如何运维」(E5),构成设备资产从发布到退役的完整生命周期运营闭环。
 >
 > 本章承接 V1 已落地的横切地基:**审计 / 操作确认权威归 A2**(§3.14;全章高敏写操作复用 A2 操作确认契约——确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`)+ 审计 schema,2026-06 操作确认决议,E 域不另立确认机制)、**埋点命名 / 身份 / 通用属性权威归 A4**(§2.4;本章所有 `device.*` / `store.*` / `checkout.*` / `admin.*` 事件均在 A4 schema registry 注册,⑧ 段不另立命名)、**资金动作权威归 D 域**(订单支付走 D1 充值 / PSP、paid 写 D4 账本,见 E4)。
 >
@@ -1114,148 +1114,104 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 
 ---
 
-#### [E6] 算力与设备配置
+#### [E6a] 在线加成系数
 
-**① 目的 & 对齐**
-E6 是三端架构改造中「电脑共享算力」备用模块的运营配置面。对齐 `PRD/三端架构改造` SPEC-0~SPEC-2:默认关闭 PC 算力入口,开启后用户端出现弱入口与下载页;显卡型号按 G1-G6 档位映射为 TOPS 与收益展示;PC 设备以 `pc-gpu` kind 占用既有 6 槽位。E6 不提供 PC 桌面客户端真实检测能力,也不替代 E5 的槽位上限守卫;它只提供入口、系数、显卡映射与下载内容配置。
+**① 目的 & 对齐**:为运营提供「载体在线分层」数值系数的调参面 —— 调整 H5 非常驻载体的基础托管档位与 App 连续在线达满的稳定加成时长,以服务端为唯一权威下发给用户端计产。对齐前端 §6.11(载体分层与收益服务端结算 · 载体因子表 / 登记 / 结算 / `onlineBonus`)、§6.10(手机算力显示规则与校准)、§13.3(关键参数集:在线加成系数 `h5BaseFactor` 0.6 / `continuityFullHours` 2)、§12.2(`Device.lastSettledAt` 登记结算锚点);代码事实源:uniapp `store/config-types.ts`(`OnlineBonus`)+ `mock/platform-config.ts`(`DEFAULT_PLATFORM_CONFIG.onlineBonus`)+ `lib/hashpower.ts`(`H5_BASE_FACTOR` / `CONTINUITY_FULL_MS` 派生)+ `lib/carrier.ts`(`Carrier`),admin `lib/mock/admin/compute-config.ts`(`COMPUTE_COEFFICIENTS`)。服务的业务目标:维持手机算力呈现口径可信、调控 H5↔App 的产出差以引导用户升级到 App 载体。served goal 主锚 = §18.2 留存(Day-7 留存 / 「仍开过 app」—— 连续在线激励)+ §1.3 设备阶梯零门槛 top-of-funnel(手机→NexionBox→…→创世节点 中,H5→App 是免费手机层内子步骤,属留存 / engagement 杠杆,App「升级」为免费下载、不直接产生设备销售或撮合服务费);§1.4(设备销售收入 + 算力撮合服务费)为显式 distal 漏斗终点链接(常驻 App → 更多触点 → 下游设备销售转化),非本系数直接归因。
 
-**② 后台界面**
-1. **状态总览**:显示入口开关状态、在线系数数量、显卡档位数量、下载配置状态,用于判断 PC 算力备用模块是否可演示。
-2. **平台特性开关**:运营可开关「电脑共享算力入口」,默认关闭;关闭时用户端不显示入口、下载页守卫返回设备页、历史 pc-gpu 设备隐藏。
-3. **在线加成系数**:展示并可调整 H5 基础托管系数与 App 连续在线满额时长;与 SPEC-1 `onlineBonus` 同 key。
-4. **显卡算力映射表**:按 G1-G6 展示档位名称、TOPS、估算日产、识别词;支持编辑档位名称 / TOPS、单个识别词新增 / 编辑 / 删除。
-5. **客户端下载配置**:配置下载地址、中文标题、中文说明、英文标题、英文说明;下载地址可为空,为空时用户端显示即将开放并保留演示连接路径。
+**② 后台界面**:路由 `/devices/compute-config`(E 域 flagship tab,真渲染面 = `domain-views/e-view.tsx` + `e-tabs/e6-compute-config.tsx`)。顶部 `EStats` 四联:平台特性开关数 / 已开启数 / 待填配置项(SPEC-2)/ 在线加成系数数。本子模块对应「在线加成系数 · 载体在线分层」面板:逐行 = 系数中文名 + key(`h5BaseFactor` / `continuityFullHours`)+ 用途说明 + 当前值(带单位)+ 行尾「调整」按钮(`data-proof=e6-coeff-<key>`);未设值时回退 `COMPUTE_COEFFICIENTS.defaultVal`。改值唯一出口 = shell 持有的 `OperationConfirmModal`(经 `EViewCtx.openActionConfirm` 注入,显式 `edit` 契约出「目标新值」number 输入)。
 
-**③ 可控参数**
+数据流水线(admin 改系数 → 审计 → server-canonical → 前端读 → 载体分层计产):
 
-| 参数 | 默认值 | 范围 / 校验 | 生效时机 | 影响的前端 |
+```mermaid
+flowchart LR
+  classDef existing fill:#10243a,stroke:#3a93ff,color:#fff
+  classDef done fill:#0a3b25,stroke:#19a463,color:#fff
+  classDef pending fill:#4a2c08,stroke:#c07a1c,color:#fff
+  A["运营在 /devices/compute-config 调系数 / 切开关"]:::existing --> B["操作确认弹窗:目标新值 + 理由 ≥8 字"]:::existing
+  B --> C["setParam(E.compute.*) 写入 + A2 审计 append-only"]:::done
+  C --> D["服务端权威 PlatformConfig:featureFlags + onlineBonus"]:::done
+  D --> E["GET /api/config/platform 下发 · 客户端只读缓存(下次拉取读取)"]:::done
+  E --> F["前端 hashpower.ts 派生 H5_BASE_FACTOR / CONTINUITY_FULL_MS"]:::done
+  F --> G["载体分层计产:H5 基础托管 · App 全因子在线加成(§6.11)"]:::done
+  F --> H["手机算力实时显示与校准(§6.10)"]:::done
+  D --> I["computeShareEnabled 规划门控 PC 入口显隐 · 前端消费 / 本体后续 SPEC"]:::pending
+```
+
+**③ 可控参数**:
+
+| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
 |---|---|---|---|---|
-| 电脑共享算力入口 | 关闭 | 开 / 关 | 实时 | 设备页弱入口、下载页守卫、pc-gpu 设备可见性 |
-| H5 基础托管系数 | 0.6 | 0–1 | 实时 | H5 手机算力基础托管收益 |
-| App 连续在线满额时长 | 2 小时 | >0 | 实时 | App 在线加成满额判定 |
-| G1-G6 档位名称 | 入门级 / 主流级 / 性能级 / 高性能级 / 旗舰级 / 专业级 | 非空文案 | 实时(新匹配生效) | pc-gpu 卡片展示 |
-| G1-G6 TOPS | 40 / 90 / 160 / 290 / 460 / 660 | 正数,且 G1<G2<G3<G4<G5<G6 | 实时(新派生生效) | pc-gpu 算力、收益展示 |
-| 每档显卡识别词 | 运营维护 | 单个词条非空;一个输入框只改一个词条 | 实时 | 显卡型号命中档位 |
-| 客户端下载地址 | 空 | URL 或空 | 实时 | 下载页主按钮 |
-| 下载页中英标题 / 说明 | 默认引导文案 | 可为空;中英字段独立 | 实时 | 下载页展示文案 |
+| `h5BaseFactor`(H5 基础托管系数) | 0.6(现状实现值,12 月节奏表未覆盖,取前端 `DEFAULT_PLATFORM_CONFIG.onlineBonus`) | `(0,1]`(开下界、含 1;`hashpower.ts` INVARIANT,排除 0 —— 0 会把 H5 产出清零、违反不变量) | 下次 `platform-config` 拉取生效(客户端冷启动或 TTL 刷新;无服务端推送通道),不回溯已结算收益 | H5 载体手机算力 = baseline × `h5BaseFactor` × 在线 × 抖动(基础托管,不叠充电 / 散热 / 连续在线);影响 §6.10 显示 + §6.11 计产 |
+| `continuityFullHours`(连续在线满额时长) | 2(现状实现值,单位小时) | `> 0`(建议 0.5–24) | 下次 `platform-config` 拉取生效(冷启动 / TTL 刷新),不回溯已结算收益 | App 载体连续在线达此时长后稳定加成因子升至满额 1.0(此前自 0.85 线性爬升,`hashpower.ts` `CONTINUITY_FLOOR`);影响 §6.10 / §6.11 |
 
-> **UI 文案约束**:交互层字段必须显示「档位展示名称」「算力 TOPS」「单个显卡型号关键词」「客户端下载地址」「中文标题」「中文说明」「英文标题」「英文说明」等运营可理解描述,不得显示工程字段名。工程 key 仅允许出现在代码、接口与 PRD 表格中,不得透出到按钮、标签、弹窗输入项或 toast。
+> 默认值依据:`NEXION_12月节奏表.md` 未覆盖在线加成系数,按现状实现值取数(前端 `mock/platform-config.ts` 与 admin `COMPUTE_COEFFICIENTS` 一致),供开发对照现状。
+>
+> 配套不可配下限:`CONTINUITY_FLOOR`(`hashpower.ts` = 0.85,连续在线斜坡下限)是前端数值杠杆但**有意固定的客户端常量**(换机 / 被踢出后的起步惩罚起点),当前**不纳入 server-canonical 配置** —— `OnlineBonus` 仅 `h5BaseFactor` / `continuityFullHours` 两键(`config-types.ts`)。若运营确需调下限,须作为 `onlineBonus` 第三键纳入 E6a 三端同步,否则保持 by-design 固定。
 
-**④ 操作动作**
+**④ 操作动作**:`调整<系数>`(改 `h5BaseFactor` / `continuityFullHours`)。执行角色:**超管**(平台经济口径参数,直接影响全网产出;必要时风控会签 / 知会);参数批改类高敏动作,不涉资金流出 / kill-switch。每次改值经业务专属确认弹窗 + 理由必填 → `setParam(E.compute.<key>, value)` 写入 server-canonical(下次拉取生效)+ A2 审计 + 实时告警。
 
-| 动作 | 执行权 | 确认弹窗 | 审计点 |
-|---|---|---|---|
-| 开启 / 关闭电脑共享算力入口 | 商品运营 / 运维(lead) / 超管 | E6-MD1 | `admin.compute_config_changed`(entry_flag / before / after / operator / reason) |
-| 调整在线加成系数 | 商品运营 / 运维(lead) / 超管 | E6-MD2 | `admin.compute_config_changed`(coefficient / before / after / operator / reason) |
-| 编辑显卡档位名称 / TOPS | 商品运营 / 运维(lead) / 超管 | E6-MD3 | `admin.compute_config_changed`(gpu_tier / before / after / operator / reason) |
-| 新增 / 编辑 / 删除识别词 | 商品运营 / 运维(lead) / 超管 | E6-MD4 | `admin.compute_config_changed`(gpu_keyword / before / after / operator / reason) |
-| 设置 / 清空客户端下载地址 | 商品运营 / 运维(lead) / 超管 | E6-MD5 | `admin.compute_config_changed`(download_url / before / after / operator / reason) |
-| 编辑下载页双语文案 | 商品运营 / 运维(lead) / 超管 | E6-MD6 | `admin.compute_config_changed`(download_copy / before / after / operator / reason) |
+**④a 交互与弹窗规格**:
+- 触发控件:系数行右侧「调整」按钮(`.adj`,`data-proof=e6-coeff-<key>`;位置:在线加成系数面板每行尾;可用态:`hydrated` 后可点;点击行为:`openActionConfirm({op:"param", paramKey:computeCoeffParamKey(key), edit:{kind:"number", current, unit}})` → 因传 `edit` 而出「目标新值」number 输入)。
+- 弹窗(shell `OperationConfirmModal`,唯一动作出口):
+  - 信息区:动作名(如「H5 基础托管系数 调整」)+ detail(server-canonical 说明 + `frontendEffect`)。
+  - 影响预览区:当前值 → 目标新值;「改后写入 server-canonical,全网下次拉取生效,不回溯已结算收益,以服务器为准」提示。
+  - 输入区:① 目标新值(number 输入,`kind=number`,带单位「× 基线 · 取值 `(0,1]`」/「小时」,placeholder `0.6` / `2`);② 理由(reason,必填 ≥8 字 / `reasonMin=8`)。
+  - 输入控件表:目标新值 number(必填 —— **现状仅校验非空** / `newVal.trim().length>0`;范围约束 `(0,1]` / `>0` 为 server-canonical 不变量,**PROD 服务端兜底拒绝越界**;现状 admin `EditSpec` 无 min/max/step 槽位、`canConfirm` 与 `e-view` `E.compute` param 分支均未做客户端范围校验,标 TBD);reason text(必填 ≥8 字;无客户端上界,`textarea` 无 maxLength;空 reason 由 PROD 服务端拒绝为**建议契约(TBD)**)。
+  - 按钮区:确认(写入)/ 取消(视觉弱于确认)。
+  - 错误态:目标新值空值 → `canConfirm` 阻止提交(现状仅非空校验);数字越界 / 非有限值的拒绝为 **PROD 服务端兜底(TBD,现状客户端未拦)**;reason 不足 8 字 → 阻止提交(`reasonMin`)。
+  - 成功反馈:toast「<动作名>:已写入 <值> · server-canonical」;A2 审计落账。
 
-**④a 交互与弹窗规格**
+**⑤ 接口**:
+- 用户端读(已落地,server-canonical):`GET /api/config/platform` → `PlatformConfig { featureFlags, onlineBonus }`(`mock/platform-config.ts` 头注 PROD 行;客户端只读缓存,前端 `hashpower.ts` 派生 `H5_BASE_FACTOR` / `CONTINUITY_FULL_MS`)。
+- admin 改(TBD·建议):`PATCH /api/admin/config/online-bonus/:key` body `{ value: number; reason: string }`,`Idempotency-Key` 请求去重头(PROD PATCH);`:key ∈ {h5BaseFactor, continuityFullHours}`。
+- admin 读(TBD·建议):`GET /api/admin/config/online-bonus` → `{ key: ComputeCoefficientKey; value: number }[]`。
+- 现状 mock(backend-replaceable):`e6-compute-config.tsx` → `openActionConfirm(op:"param")` → `e-view.tsx` `setParam("E.compute.<key>", value, {action, reason})`(走 `E.compute` else 分支,自带 A2 审计);读经 `pget("E.compute.<key>")`,未设回退 `defaultVal`。DR-7:admin 与 uniapp 各自 mock,结构 / 键一致,PROD 由服务端打通。
+- 注:admin `compute-config.ts` PROD 头注当前仅文档化 feature-flags 的 GET/PATCH,未文档化 online-bonus(`COMPUTE_COEFFICIENTS`)的 admin 读 / 改端点 —— 故上述 online-bonus admin 端点标 TBD·建议是准确的(头注非对称,非本草稿缺陷)。
 
-**(1) 动作触发总表**
+**⑥ 权限 & 审计**:角色×动作矩阵片段 —— 查看:全运营角色只读;调整系数:**超管**执行(必要时风控会签)+ 理由必填 + A2 审计。审计**沿用统一 A2 schema(§2.x A2 ⑥)**,字段(append-only):`actor`(operator)、`role`、`ip`、`action`(如「H5 基础托管系数 调整」)、`target`(paramKey `E.compute.h5BaseFactor` / `E.compute.continuityFullHours`)、`before`、`after`、`reason`(≥8 字)、`ts`;`setParam` 调用即写审计(`e-view.tsx` `setParam(..., {action, reason})`)。高敏配置变更实时告警运营群。注:现状 mock `OpsAuditEntry` = `{id,ts,actor,action,target,before,after,reason}`,**缺 `role` / `ip`**,登记为代码侧待补(code ↔ PRD-canonical 审计 schema 漂移,以 §2.x A2 ⑥ 为审计 schema 单源);`Idempotency-Key` 非审计列,为 PROD PATCH 请求去重头(见 ⑤)。
 
-| 动作 | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
+**⑦ 风控 & 联动**:server-canonical —— `PlatformConfig` 服务端权威,客户端仅 UI cache(DR-7,对齐 §9.11d server-driven 理念),客户端不可篡改;前端 `hashpower.ts` 不变量(每个因子 ∈ `(0,1]`)仅为显示兜底,权威值以服务端为准。下次拉取生效(非实时):改后对全网在客户端**下次 `platform-config` 拉取(冷启动或 TTL 刷新)时生效**;无服务端推送 / SSE 通道,故非实时;客户端 re-fetch 节奏 / TTL 现状代码未定义,须 PROD 定义(建议冷启动 + 周期 TTL 刷新)。不回溯已结算收益(§6.11 收益服务端结算 + §12.2 `Device.lastSettledAt` 为结算边界)。范围不变量:`h5BaseFactor ∈ (0,1]`(排除 0)、`continuityFullHours > 0`,为 server-canonical 约束(`hashpower.ts` INVARIANT);PROD 须服务端兜底拒绝越界,防异常系数放大产出;现状 admin mock 仅校验非空、未做客户端范围校验(TBD,见 ④a)。联动:调 `h5BaseFactor` 改变 H5↔App 产出差 → §6.10 手机算力显示 + §6.11 载体计产口径(影响「升级 App」转化口径)。注:App 满额在线加成仅在**充电 + 连续在线**时达成(`charge` 1.0 × `continuity` 满额 1.0);非充电新会话 App(`charge` 0.6 × `continuity` floor 0.85 ≈ 0.51,jitter 后)渲染可**低于** H5 平 0.6 基线(≈0.58)—— 「升级 App 拿在线加成」对充电 + 连续在线 App 成立,operator 调参勿假设 App 恒高于 H5(App 产出独立于 `h5BaseFactor`,调低 `h5BaseFactor` 仅拉大差距)。跨端一致:admin `E.compute.*` 与 uniapp `PlatformConfig.onlineBonus` 同 key(单一标识),增减 / 改名 key 须三端同步(`config-types.ts` / `platform-config.ts` / `hashpower.ts` ↔ `compute-config.ts`)。
+
+**⑧ 埋点(事件)**:纯平台配置,无用户侧业务事件;仅 admin 审计事件(对齐 A4 命名 `domain.object_action`)。`compute.coefficient_changed` —— 触发点:E6a「调整」确认提交成功;关键属性:`actor`、`coeffKey`(`h5BaseFactor` | `continuityFullHours`)、`before`、`after`、`reason`、`ts`;消费:A2 审计流水 + 配置变更告警,不进用户漏斗 / KPI。
+
+#### [E6b] 平台特性开关
+
+**① 目的 & 对齐**:为运营提供平台布尔特性开关(feature flag)寄存器,规划用于门控用户端对应功能的显隐(forward-spec);本期(SPEC-0)示范 `computeShareEnabled`(电脑共享算力 PC 入口,默认关闭)。对齐 uniapp `store/config-types.ts`(`FeatureFlags.computeShareEnabled` / `FeatureFlagKey`)+ `mock/platform-config.ts`(`DEFAULT_PLATFORM_CONFIG.featureFlags`,DR-1 默认 OFF),admin `lib/mock/admin/compute-config.ts`(`COMPUTE_FLAGS`)。**现状(真)**:flag 在 admin 可切换 + DR-1 默认 OFF + admin/uniapp 双 mock 镜像;前端**尚无任何 UI 消费此 flag**(grep `computeShareEnabled` 于 uniapp `src/` 仅命中 `mock/platform-config.ts` 与 `store/config-types.ts`,0 个 `.vue` / 组件 / store 消费;`config-types.ts` 注:「前端零入口零推送;后台一键开启后前端才长出弱入口」—— 将来时)。**门控用户端「电脑共享算力」PC 弱入口与下载页显隐是 forward-spec(后续 SPEC,pending),前端消费未落地**;电脑算力本体(对应 §6.11 载体分层将新增的 PC 载体)亦为后续 SPEC,前端 PRD 暂无独立章节。服务的业务目标:以可控开关分阶段对用户放开新算力载体入口(对齐 §1.4 **算力撮合服务费**新增量 —— 共享自有 PC 算力 ≠ 购买 NexionBox,故不含设备销售口径;撮合服务费是三杠杆里最直接的 §1.4 链;与 12 月节奏的功能开放节拍对齐)。
+
+**② 后台界面**:同路由 `/devices/compute-config` 的「平台特性开关 · feature flags」面板。逐行 = flag 中文名 + key(`computeShareEnabled`)+ 用途说明 + 当前态(已开启 / 已关闭)+ 开关控件(`role=switch`,`aria-checked`,`data-on`,`data-proof=e6-flag-toggle`);未设值时回退 `COMPUTE_FLAGS.defaultOn`(`false`)。切换唯一出口 = shell `OperationConfirmModal`(`op:"param-fixed"`,固定 `on` / `off`,不传 `edit` → 不出「目标新值」number 输入)。该开关 → server-canonical 配置的处置路径见 [E6a] ② 流水线节点 I(`computeShareEnabled` 规划门控 PC 入口显隐分支,`:::pending`)。
+
+**③ 可控参数**:
+
+| 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
 |---|---|---|---|---|
-| 开启 / 关闭电脑共享算力入口 | ②第 2 区开关 | Toggle | 有 E6 配置权限渲染 | 打开 E6-MD1 |
-| 调整在线加成系数 | ②第 3 区系数行「调整」 | 行内按钮 | 有 E6 配置权限渲染 | 打开 E6-MD2 |
-| 编辑显卡档位 | ②第 4 区 G1-G6 行「编辑档位」 | 行内按钮 | 有 E6 配置权限渲染 | 打开 E6-MD3 |
-| 新增 / 编辑 / 删除识别词 | ②第 4 区识别词 chip / 行内按钮 | chip 操作 / 行内按钮 | 有 E6 配置权限渲染 | 打开 E6-MD4 |
-| 设置 / 清空客户端下载地址 | ②第 5 区下载地址按钮 | 行内按钮 | 有 E6 配置权限渲染 | 打开 E6-MD5 |
-| 编辑下载页双语文案 | ②第 5 区文案配置按钮 | 行内按钮 | 有 E6 配置权限渲染 | 打开 E6-MD6 |
+| `computeShareEnabled`(电脑共享算力入口) | `false`(默认关闭,DR-1) | 布尔(`on` / `off`) | 下次 `platform-config` 拉取生效(冷启动 / TTL 刷新;无推送通道) | **[forward-spec · 前端消费未落地]** 规划门控用户端「电脑共享算力」PC 弱入口与下载页显隐(开启则显现、关闭则隐藏);现状前端无任何 UI 消费此 flag,toggle 仅改 server-canonical flag 值 |
 
-**(2) 弹窗规格(逐弹窗)**
+> admin params 存储以字符串 `"on"` / `"off"` 编码(`pget` 派生);PROD 接口 body 用 `enabled: boolean`(`compute-config.ts` 头注),与 uniapp 端 `boolean` 一致 —— 编码差异为各端 mock 细节,跨端 key 与语义一致。
 
-##### [E6-MD1] 电脑共享算力入口开关确认
-- **功能**:开启或关闭电脑共享算力入口,确认即实时生效。
-- **布局结构**:1. 信息区:当前状态与目标状态。2. 影响预览区:关闭后用户端弱入口、下载页、pc-gpu 设备展示全部隐藏;开启后仅出现弱入口,不主动推送。3. 输入区:操作理由。4. 按钮区。
-- **输入与选择控件**:
+**④ 操作动作**:`开启<flag>` / `关闭<flag>`(切 `computeShareEnabled`)。执行角色:**对齐 A3/J1 feature-flag 治理分层 —— 增长(lead)/ 超管执行,止血场景风控参与**;开启即对全网放开新载体入口,reversible 且不涉资金流出 / kill-switch。切换经业务专属确认弹窗(toggle)+ 理由必填 → `setParam(E.compute.computeShareEnabled, "on"|"off")` 写入 server-canonical(下次拉取生效)+ A2 审计 + 实时告警。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 操作理由 | textarea | 是 | 8–200 字 | 空 |
+**④a 交互与弹窗规格**:
+- 触发控件:flag 行右侧开关(`role=switch`,`data-on`,`data-proof=e6-flag-toggle`;位置:平台特性开关面板每行尾;可用态:`hydrated` 后可点;点击行为:`openActionConfirm({op:"param-fixed", paramKey:computeFlagParamKey(key), fixedVal:next?"on":"off"})` → 因不传 `edit` 故无「目标新值」number 输入)。
+- 弹窗(shell `OperationConfirmModal`):
+  - 信息区:动作名(「开启 / 关闭 电脑共享算力入口 · `computeShareEnabled`」)+ detail(`frontendEffect`,forward-spec:**规划**开启后用户端显现 PC 入口与下载页、关闭则隐藏;现状前端尚无消费,toggle 仅改 server-canonical flag 值)。
+  - 影响预览区:当前态 → 目标态(开 / 关);(规划)门控用户端入口显隐说明。
+  - 输入区:仅 理由(reason,必填 ≥8 字 / `reasonMin=8`);无目标新值 number 输入(`param-fixed` 固定值)。
+  - 输入控件表:reason text(必填 ≥8 字;无客户端上界;空 reason 由 PROD 服务端拒绝为建议契约,TBD)。
+  - 按钮区:确认 / 取消(视觉弱于确认)。
+  - 错误态:reason 不足 8 字 → 阻止提交(`reasonMin`)。
+  - 成功反馈:toast「<动作名> · 已写入 · 以后端为准」;A2 审计落账。
 
-##### [E6-MD2] 在线加成系数调整
-- **功能**:调整 H5 基础托管系数或 App 连续在线满额时长,确认即实时生效。
-- **输入与选择控件**:
+**⑤ 接口**:
+- 用户端读(已落地,server-canonical):`GET /api/config/platform` → `featureFlags.computeShareEnabled`(`mock/platform-config.ts` 头注 PROD 行;客户端只读缓存)。
+- admin 改(已定义于 `compute-config.ts` 头注 PROD 行):`PATCH /api/admin/config/feature-flags/:key` body `{ enabled: boolean; reason: string }`,`Idempotency-Key` 请求去重头(PROD PATCH)。
+- admin 读:`GET /api/admin/config/feature-flags` → `{ key: ComputeFlagKey; enabled: boolean }[]`。
+- 现状 mock(backend-replaceable):`e6-compute-config.tsx` → `openActionConfirm(op:"param-fixed")` → `e-view.tsx` `setParam("E.compute.computeShareEnabled", "on"|"off", {action, reason})`(自带 A2 审计);读经 `pget`,未设回退 `defaultOn=false`。
 
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 目标新值 | number input | 是 | 系数 0–1;小时数 >0 | 当前值 |
-| 操作理由 | textarea | 是 | 8–200 字 | 空 |
+**⑥ 权限 & 审计**:角色×动作矩阵片段 —— 查看:全运营角色只读;切换开关:**增长(lead)/ 超管**执行(对齐 A3/J1 flag 治理,止血场景风控参与)+ 理由必填 + A2 审计。审计**沿用统一 A2 schema(§2.x A2 ⑥)**,字段(append-only):`actor`、`role`、`ip`、`action`(如「开启 电脑共享算力入口」)、`target`(`E.compute.computeShareEnabled`)、`before`(on / off)、`after`、`reason`(≥8 字)、`ts`。注:同 E6a —— 现状 mock `OpsAuditEntry` 缺 `role` / `ip`,登记为代码侧待补(以 §2.x A2 ⑥ 为 schema 单源);`Idempotency-Key` 非审计列,为 PROD PATCH 请求去重头(见 ⑤)。开关变更实时告警(放开 / 收起用户侧载体入口为高敏配置)。
 
-- **保存门**:H5 基础托管系数允许 `0`,拒绝 `<0` 或 `>1`;App 连续在线满额时长必须 `>0`。前端确认按钮与服务端保存校验必须同口径。
+**⑦ 风控 & 联动**:server-canonical —— `featureFlags` 服务端权威,客户端仅 UI cache(DR-7),不可篡改。下次拉取生效:改后对全网在客户端**下次 `platform-config` 拉取(冷启动 / TTL 刷新)时生效**;无推送通道,非实时;开关本身不涉已结算收益,无回溯问题。联动(forward-spec):`computeShareEnabled` 规划门控用户端电脑算力 PC 入口与下载页显隐,**现状前端无消费(后续 SPEC,pending)**;开启即对全网放开新载体入口,须与 12 月节奏(新载体何时对用户开放)、容量与风控就绪对齐。电脑算力本体计产规则、PC 载体因子待后续 SPEC 在 §6.11 载体因子表落地。**治理边界**:`computeShareEnabled` = 平台能力开关(载体放开,E6 域托管),与 §9.11d.1 → J1 止血型 kill-switch 功能闸**分治、不重叠**(`computeShareEnabled` 不在 §9.11d.1 二元功能闸集合,无双写冲突);交叉引用 A3 / J1。**上线顺序门**:`computeShareEnabled → on` 仅在 **PC-载体 SPEC(§6.11 PC 载体行 + 计产规则)落地后**才有业务价值;此前 ON 会暴露指向尚未实现功能的不完整入口,须按此顺序依赖放开。跨端一致:admin `E.compute.computeShareEnabled` 与 uniapp `FeatureFlags.computeShareEnabled` 同 key,增减 flag 须三端同步(`config-types.ts` / `platform-config.ts` ↔ `compute-config.ts`)。
 
-##### [E6-MD3] 显卡档位编辑
-- **功能**:编辑单个 G1-G6 档位的展示名称与 TOPS。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 档位展示名称 | text input | 是 | 非空,1–24 字 | 当前档位名 |
-| 算力 TOPS | number input | 是 | 正数;保存后 G1-G6 仍严格递增 | 当前 TOPS |
-| 操作理由 | textarea | 是 | 8–200 字 | 空 |
-
-##### [E6-MD4] 显卡识别词编辑
-- **功能**:对单个档位新增 / 编辑 / 删除一个显卡型号识别词。新增和编辑只允许一个业务输入框;删除为固定清空动作,不出现多值输入框。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 单个显卡型号关键词 | text input | 新增/编辑必填;删除不显示 | 非空,不得与同档位既有词条重复 | 当前词条或空 |
-| 操作理由 | textarea | 是 | 8–200 字 | 空 |
-
-##### [E6-MD5] 客户端下载地址配置
-- **功能**:设置或清空客户端下载地址。清空后用户端不显示真实下载按钮,保留即将开放提示与演示连接路径。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 客户端下载地址 | url input | 设置必填;清空不显示 | URL 或空 | 当前地址 |
-| 操作理由 | textarea | 是 | 8–200 字 | 空 |
-
-##### [E6-MD6] 下载页双语文案编辑
-- **功能**:编辑下载页中文 / 英文标题与说明,四个字段独立,允许清空以便运营临时隐藏文案。
-- **输入与选择控件**:
-
-| 字段 | 控件类型 | 必填 | 校验 | 默认值 |
-|---|---|---|---|---|
-| 中文标题 | text input | 否 | 0–80 字 | 当前中文标题 |
-| 中文说明 | textarea | 否 | 0–240 字 | 当前中文说明 |
-| 英文标题 | text input | 否 | 0–120 字 | 当前英文标题 |
-| 英文说明 | textarea | 否 | 0–320 字 | 当前英文说明 |
-| 操作理由 | textarea | 是 | 8–200 字 | 空 |
-
-> **弹窗约束**:E6-MD3 / E6-MD4 / E6-MD6 均禁止把多个业务值塞进一个输入框;每个可编辑值必须独立控件。确认按钮在业务校验未通过或理由不足时置灰。
-
-**⑤ 接口**
-- `GET /api/admin/config/compute-share` — 读取 E6 全量配置(入口开关、在线系数、显卡档位、下载内容)。
-- `PUT /api/admin/config/compute-share/entry` — 开关电脑共享算力入口,body 携 `{enabled, reason}`。
-- `PUT /api/admin/config/compute-share/coefficients/:key` — 调整在线系数,body 携 `{value, reason}`。
-- `PUT /api/admin/config/compute-share/gpu-tiers/:tierId` — 编辑档位名称 / TOPS,body 携 `{label, tops, reason}`。
-- `PUT /api/admin/config/compute-share/gpu-tiers/:tierId/keywords/:slot` — 新增 / 编辑 / 删除单个识别词,body 携 `{keyword, reason}`;删除时 keyword 为空。
-- `PUT /api/admin/config/compute-share/download-url` — 设置 / 清空下载地址,body 携 `{url, reason}`。
-- `PUT /api/admin/config/compute-share/download-copy` — 编辑下载页双语文案,body 携 `{zhTitle, zhGuide, enTitle, enGuide, reason}`。
-
-**⑥ 权限 / 审计**
-- 执行权:商品运营、运维 lead、超管;只读审计只能查看。
-- 所有写操作复用 A2 操作确认契约:理由必填,写入与审计同事务,actor 必须使用登录操作者,不得回退到默认管理员。
-- 审计详情必须包含配置项、before、after、operator、reason、ts;显卡识别词动作还须包含档位与词条槽位。
-
-**⑦ 风控 & 联动**
-- **默认关闭**:电脑共享算力入口默认关闭,关闭时全端零入口、下载页直访被守卫、pc-gpu 历史设备隐藏。
-- **不替代 E5 槽位守卫**:pc-gpu 占用既有激活槽位;`MAX_DEVICES=6` 仍由 E5 / 服务端激活守卫负责,E6 不提供槽位上限配置。
-- **显卡档位单调**:G1-G6 TOPS 必须严格递增;保存违反单调性时 server 422。
-- **下载地址安全**:默认空;空值不代表故障,用户端以即将开放与演示连接口径呈现。
-- **文案防泄漏**:UI 交互层不得出现工程字段名、占位占坑文案或“待 SPEC”类交付痕迹。
-
-**⑧ 埋点(事件)**
-对齐 A4 admin family:
-- `admin.compute_config_changed` — 触发点:入口开关、在线系数、显卡档位、识别词、下载 URL、下载文案配置确认执行;属性 `config_area / target / before / after / operator / reason / ts / source:E6`。
-- 用户端下载页访问与演示连接事件归前端 `computeShare` 业务事件,后台 E6 仅持配置与审计,不直接产用户侧行为事件。
-
----
+**⑧ 埋点(事件)**:纯平台配置,无用户侧业务事件;仅 admin 审计事件(对齐 A4)。`compute.flag_toggled` —— 触发点:E6b 开关切换确认成功;关键属性:`actor`、`flagKey`(`computeShareEnabled`)、`before`、`after`、`reason`、`ts`;消费:A2 审计流水 + 配置变更告警。注:当 `computeShareEnabled` 翻为 `on` 后,用户端新增 PC 入口曝光 / 点击等用户侧事件由后续「电脑算力」SPEC 定义,不在本开关范围。
 
 ## 第 11 章 分销与团队(域 F)
 

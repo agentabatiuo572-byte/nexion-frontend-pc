@@ -651,6 +651,8 @@
 | `clusterFreezeSuggestThreshold` | 0.7 | 0–1 | K1 | K1 |
 | `trialCycleThreshold` | 同实体 ≥3 次/30 天 | 2–10 | K2(归属待定,见第7章) | K2 |
 | `welcomeGiftAnomalyThreshold` | 同实体 ≥2 笔 | 1–5 | K2 | K2 |
+| `rewards.welcomeGift.usdtAmount` / `.nexAmount` | $5 / 20 NEX | ≥0 | K2(新人礼发放配置) | K2 |
+| `rewards.welcomeGift.lockMode` | `risk_bucket` | risk_bucket/direct | K2 | K2 |
 | `leaderboardVelocityMultiplier` | >5× 基线→信号 | 2×–20× | **K2**(F4d 只读) | K2 |
 | `largeAmountUsdt`(提现路由) | ≥ $1,000 | $100–$50,000 | K3 | K3 |
 | `velocity24h` | 笔数>3 或 >$5,000/24h | 笔数 1–20 / $500–$50,000 | K3 | K3 |
@@ -659,6 +661,8 @@
 | `weight.{6维}` | multiAccount 0.25/arbitrage 0.2/kycStatus 0.2/withdrawVelocity 0.15/accountAge 0.1/anomalyBehavior 0.1 | 各 0–1(**和=1 强制**) | **K4** | K4 |
 | `scoreBand.{low,mid,high}` | <40 / 40–69 / ≥70 | 0–100(low<mid<high) | K4 | K4 |
 | `autoEscalateScore` | ≥ 85 | 70–100 | K4 | K4 |
+| `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 6 维评分权重) | K4 |
+| SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | `releaseMode` / `freeSlotRequiresBinding` / `appAttestationReleaseHours` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等全表在 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
 | `largeWithdrawReviewUsdt`(KYC 复审) | ≥ $1,000 | $100–$50,000 | K5 | K5 |
 | `cumulativeKycThresholdUsdt` | $100 lifetime | $50–$1,000 | K5(V1)→G2(V3) | K5 |
 | `reviewSlaDays` / `reviewTriggerScore` | ≤7 工作日(大额≤15) / ≥85 | 1–15 天 / 70–100 | K5 | K5 |

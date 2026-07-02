@@ -2417,7 +2417,7 @@ flowchart LR
 | I | Nova cadence config(10 channel) | I2 | server | per-channel kill(不入 J1 闸集) |
 | I | 会话中心(会话 / 话术 / AutoPushPolicy) | I9 | server | Conversation 字段镜像前端 §12.9a(+ owner/status);AutoPushPolicy 4 参;话术/模板发布态;`I.session.*` 单源 |
 | J | Kill-switch matrix(6 闸) | J1/J2 | server | 5 功能闸(含后台应急新增 withdraw)+ geo-block;V1 A3 存储 → V4 J1/J2 管理面 |
-| K | 风险评分模型 / 去重指纹 / 提现风控规则 / 大额 KYC 复审 | K4/K1/K3/K5 | server | 风险评分(K4,B5/D2/各域消费)· IP/设备/支付三层去重(K1)· 套利/刷量检测(K2,产 risk.arbitrage_suspected)· 大额 KYC 复审(K5) |
+| K | 风险评分模型 / 去重指纹 / 提现风控规则 | K4/K1/K3 | server | 风险评分(K4,B5/D2/各域消费)· IP/设备/支付三层去重(K1)· 套利/刷量检测(K2,产 risk.arbitrage_suspected)· 大额 KYC 复审(K5) |
 | L | KPI 口径(8 项)/ 漏斗口径 | §2.4.6 / §2.4.7(L 读) | server | L 域只读引用,不重定义 |
 
 ### 17.2 全局 API 总表
@@ -2450,7 +2450,7 @@ flowchart LR
 - **充值对账/退款类**:充值渠道侧 PSP 退款(D1);
 - **大额资金放行**:提现审核放行 / 冻结 / 退款(D2,放行前置 B1 覆盖率预检);
 - **参数批改**:兑付覆盖率红黄线(B1)、挤兑阈值(B5)、提现参数(D5)、注册登录风控参数(C6)、预测参数配置/口径配置(D3/B2)、充值渠道启停 / PSP 切换(D1)、Phase dial 改动 / pin / cohort override(H1:非放大流出方向执行=增长/超管;**放大流出方向 dial 执行=仅超管**)、Trial 敏感参数(H2);
-- **风险模型 / KYC 裁决(K 域)**:K4 风险模型权重/分档(**执行=仅超管**,风控可起草草稿)· K5 大额 KYC 复审裁决(执行=风控 lead/超管);
+- **风险模型 / KYC 裁决(K 域,两类分列)**:K4 风险模型权重/分档(**执行=仅超管**,风控可起草草稿)· K5 大额 KYC 复审裁决(执行=风控 lead/超管);
 - **kill-switch**:6 闸(5 个二元功能闸 + geo-block;V1 入口在 A3、V4 归 J1/J2;**恢复方向(disable→enable)执行=仅超管 + B1 红线前置,熔断方向为止血动作,执行=风控/财务/超管**);
 - **账户高敏处置**:账户冻结 / 解冻(C2)、impersonate 授权(C2)、人工标记/撤销 KYC(C4,执行=风控 lead/超管)、人工 disable 2FA / 密码重置 / 解除账户锁定(C5);
 - **批量账户簇冻结**:批量冻结关联账户簇(K1,执行=风控 lead/超管;单用户冻结→C2);
