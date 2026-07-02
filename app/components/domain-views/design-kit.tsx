@@ -667,7 +667,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
 }
 
 export function OperatorBriefBlock({ action, detail, amplifies, hasEdit }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const detailId = useId();
   const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit);
   const detailText = compactText(plainText(detail));
