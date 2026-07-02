@@ -101,8 +101,8 @@ export interface G3Overrides {
   currentPrice: number;
   volatilityPct: number;
   oracle: string;
-  deviationPct: number;
-  costBasis: number;
+  deviationPct: number | null;
+  costBasis: number | null;
   paused: boolean;
 }
 
@@ -218,8 +218,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
       currentPrice: requireNumber(overrides.currentPrice, "overrides.currentPrice"),
       volatilityPct: requireNumber(overrides.volatilityPct, "overrides.volatilityPct"),
       oracle: asText(overrides.oracle),
-      deviationPct: requireNumber(overrides.deviationPct, "overrides.deviationPct"),
-      costBasis: requireNumber(overrides.costBasis, "overrides.costBasis"),
+      deviationPct: parseNumber(overrides.deviationPct),
+      costBasis: parseNumber(overrides.costBasis),
       paused: toBool(overrides.paused, false),
     },
     coverage: {

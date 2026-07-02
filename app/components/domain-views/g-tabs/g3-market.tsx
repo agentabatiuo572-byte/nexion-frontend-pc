@@ -48,8 +48,16 @@ function fmtPct(value: number) {
   return `${fmtCompact(value, 4)}%`;
 }
 
-function rawValue(value: number) {
-  return Number.isFinite(value) ? String(value) : "";
+function fmtOptionalPrice(value: number | null) {
+  return value == null ? "未配置" : fmtPrice(value);
+}
+
+function fmtOptionalPct(value: number | null) {
+  return value == null ? "未配置" : fmtPct(value);
+}
+
+function rawValue(value: number | null) {
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
 function frameValue(frame: G3Overview["frames"][number], field: G3CurveField) {
@@ -179,8 +187,8 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const price = fmtPrice(overview.currentPrice);
   const volatility = `+/-${fmtCompact(overview.overrides.volatilityPct, 4)}%`;
   const oracle = overview.overrides.oracle;
-  const deviation = fmtPct(overview.overrides.deviationPct);
-  const costBasis = fmtPrice(overview.overrides.costBasis);
+  const deviation = fmtOptionalPct(overview.overrides.deviationPct);
+  const costBasis = fmtOptionalPrice(overview.overrides.costBasis);
   const scheduleControl = overview.controls.find((control) => control.key === "schedule");
   const schedV = controlValue(overview, "schedule");
   const scheduleMeta = scheduleControl?.cronExpression

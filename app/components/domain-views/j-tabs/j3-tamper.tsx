@@ -70,6 +70,9 @@ export function J3Tamper({ ctx }: { ctx: JCtx }) {
     const stepX = W / Math.max(1, pts.length - 1);
     let line = "";
     let area = "";
+    if (!pts.length) {
+      return { linePath: `M0,${H} L${W},${H}`, areaPath: `M0,${H} L${W},${H} Z`, peak: 0, peakX: 0, peakY: H };
+    }
     const pk = Math.max(...pts);
     let px = 0;
     let py = 0;

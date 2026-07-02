@@ -356,11 +356,10 @@ function loadBoolean(raw: Record<string, unknown>, field: keyof MLoadConfig): bo
 }
 
 function loadText(raw: Record<string, unknown>, field: keyof MLoadConfig): string {
-  const value = str(raw[field]).trim();
-  if (!value) {
+  if (!(field in raw) || raw[field] == null) {
     throw new Error(`M_LOAD_CONFIG_FIELD_MISSING:${String(field)}`);
   }
-  return value;
+  return str(raw[field]).trim();
 }
 
 function asArray<T>(value: unknown): T[] {

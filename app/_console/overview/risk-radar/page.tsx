@@ -44,21 +44,6 @@ export default function RiskRadarPage() {
       </div>
     );
   }
-  if (!riskRadar.gates.length || !riskRadar.feed.length || riskRadar.pressureSeries.length < 2 || !riskRadar.rules.length || !riskRadar.severity.length || !riskRadar.volume.length) {
-    return (
-      <div className="dkpage bpage radarpage">
-        <BPageHeader
-          id="B5"
-          title="风险雷达"
-          desc="B5 需要熔断闸门、告警 feed、出金压力、命中规则、严重度和告警量序列。"
-          ctaLabel="Kill-Switch 矩阵"
-          ctaHref="/emergency/kill-switch"
-        />
-        <BDomainWarnings warnings={bDomain.warnings} />
-        <BDomainDataState title="B5 风险雷达" error="B5_REQUIRED_DATA_EMPTY" onRetry={bDomain.reload} />
-      </div>
-    );
-  }
   const GATES = riskRadar.gates;
   const GATES_TRIPPED = riskRadar.trippedGateCount || GATES.filter((g) => (g.state ? g.state === "off" : !g.on)).length;
   const GATES_MISSING = GATES.filter((g) => g.state === "missing").length;
@@ -82,6 +67,7 @@ export default function RiskRadarPage() {
   // ---- 趋势 SVG 几何(端口自设计稿 <script>)----
   const W = 1180;
   const H = 150;
+  const hasPressureSeries = BR.length > 0;
   const n = BR.length;
   const pad = 8;
   const vmin = 0;
@@ -90,8 +76,8 @@ export default function RiskRadarPage() {
   const yOf = (v: number) => H - 12 - ((v - vmin) / rng) * (H - 28);
   const denom = Math.max(n - 1, 1);
   const pts = BR.map((v, i) => [(i / denom) * (W - 2 * pad) + pad, yOf(v)] as const);
-  const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
-  const area = `${line} L${pts[n - 1][0].toFixed(1)} ${H} L${pts[0][0].toFixed(1)} ${H} Z`;
+  const line = hasPressureSeries ? pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ") : "";
+  const area = hasPressureSeries ? `${line} L${pts[n - 1][0].toFixed(1)} ${H} L${pts[0][0].toFixed(1)} ${H} Z` : "";
   const ty = yOf(BR_TIGHT);
 
   // ---- donut conic 段(占比累计)----
@@ -217,76 +203,84 @@ export default function RiskRadarPage() {
               <span className="sub">近 {BR.length} 窗口 · 红线 {BR_TIGHT}%</span>
               <div className="r"><span className="b-tag">{risingWindows} 个窗口未降 · 当前 {currentPressure}%</span></div>
             </div>
-            <svg
-              className="chart-svg"
-              viewBox={`0 0 ${W} ${H}`}
-              preserveAspectRatio="none"
-              style={{ height: 150 }}
-              role="img"
-              aria-label={`出金压力比近 8 窗口趋势,当前 ${currentPressure}%,红线 ${BR_TIGHT}%`}
-            >
-              <defs>
-                <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="var(--danger)" stopOpacity="0.3" />
-                  <stop offset="1" stopColor="var(--danger)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <path d={area} fill={`url(#${gradId})`} />
-              <line
-                x1="0"
-                y1={ty.toFixed(1)}
-                x2={W}
-                y2={ty.toFixed(1)}
-                stroke="var(--danger)"
-                strokeWidth="1.5"
-                strokeDasharray="7 6"
-                vectorEffect="non-scaling-stroke"
-              />
-              <text x="6" y={(ty + 15).toFixed(1)} fill="var(--danger)" fontSize="12" fontFamily="var(--font-jet-mono), monospace">
-                红线 {BR_TIGHT}%
-              </text>
-              <path
-                d={line}
-                fill="none"
-                stroke="var(--danger)"
-                strokeWidth="2.4"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-              />
-              {pts.map((p, i) => {
-                const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
-                const tx = i === 0 ? p[0] + 1 : i === n - 1 ? p[0] - 1 : p[0];
-                return (
-                  <g key={i}>
-                    <circle
-                      cx={p[0].toFixed(1)}
-                      cy={p[1].toFixed(1)}
-                      r="3.2"
-                      fill="var(--surface)"
-                      stroke="var(--danger)"
-                      strokeWidth="2"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                    <text
-                      x={tx.toFixed(1)}
-                      y={(p[1] - 9).toFixed(1)}
-                      fill="var(--ink-3)"
-                      fontSize="11.5"
-                      fontFamily="var(--font-jet-mono), monospace"
-                      textAnchor={anchor}
-                    >
-                      {BR[i].toFixed(1)}%
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-            <div className="cohort-axis">
-              {BR.map((_, i) => (
-                <span key={i}>W{i + 1}</span>
-              ))}
-            </div>
+            {hasPressureSeries ? (
+              <>
+                <svg
+                  className="chart-svg"
+                  viewBox={`0 0 ${W} ${H}`}
+                  preserveAspectRatio="none"
+                  style={{ height: 150 }}
+                  role="img"
+                  aria-label={`出金压力比近 ${BR.length} 窗口趋势,当前 ${currentPressure}%,红线 ${BR_TIGHT}%`}
+                >
+                  <defs>
+                    <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stopColor="var(--danger)" stopOpacity="0.3" />
+                      <stop offset="1" stopColor="var(--danger)" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <path d={area} fill={`url(#${gradId})`} />
+                  <line
+                    x1="0"
+                    y1={ty.toFixed(1)}
+                    x2={W}
+                    y2={ty.toFixed(1)}
+                    stroke="var(--danger)"
+                    strokeWidth="1.5"
+                    strokeDasharray="7 6"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <text x="6" y={(ty + 15).toFixed(1)} fill="var(--danger)" fontSize="12" fontFamily="var(--font-jet-mono), monospace">
+                    红线 {BR_TIGHT}%
+                  </text>
+                  <path
+                    d={line}
+                    fill="none"
+                    stroke="var(--danger)"
+                    strokeWidth="2.4"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  {pts.map((p, i) => {
+                    const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
+                    const tx = i === 0 ? p[0] + 1 : i === n - 1 ? p[0] - 1 : p[0];
+                    return (
+                      <g key={i}>
+                        <circle
+                          cx={p[0].toFixed(1)}
+                          cy={p[1].toFixed(1)}
+                          r="3.2"
+                          fill="var(--surface)"
+                          stroke="var(--danger)"
+                          strokeWidth="2"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <text
+                          x={tx.toFixed(1)}
+                          y={(p[1] - 9).toFixed(1)}
+                          fill="var(--ink-3)"
+                          fontSize="11.5"
+                          fontFamily="var(--font-jet-mono), monospace"
+                          textAnchor={anchor}
+                        >
+                          {BR[i].toFixed(1)}%
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+                <div className="cohort-axis">
+                  {BR.map((_, i) => (
+                    <span key={i}>W{i + 1}</span>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="empty-state" style={{ minHeight: 150, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 13 }}>
+                暂无出金压力趋势样本
+              </div>
+            )}
             {/* 挤兑比率副灯 — 储备生存度量,与出金压力比 e(t)(流量健康)两层防线;红线 40% = J1 R1 自动熔断引用线 */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)", fontSize: 11.5 }}>
               <span style={{ color: "var(--ink-3)" }}>

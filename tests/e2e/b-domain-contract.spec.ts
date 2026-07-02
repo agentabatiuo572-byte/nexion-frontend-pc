@@ -7,13 +7,14 @@ test.describe("B domain real-interface contract", () => {
     await installAuthenticatedAdmin(page);
   });
 
-  test("blocks the command center when B5 child data is incomplete", async ({ page }) => {
+  test("opens the command center when B5 child data is empty", async ({ page }) => {
     await routeBDomain(page, { current: dashboard({ omitRiskChildren: true }) });
 
     await page.goto("/");
 
-    await expect(page.getByText("B 域指挥台加载失败")).toBeVisible();
-    await expect(page.getByText("B5_REQUIRED_DATA_EMPTY")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "运营总览" })).toBeVisible();
+    await expect(page.getByText("B 域指挥台加载失败")).toHaveCount(0);
+    await expect(page.getByText("B5_REQUIRED_DATA_EMPTY")).toHaveCount(0);
   });
 
   test("shows backend warnings and refreshes shared B state after alert ack", async ({ page }) => {

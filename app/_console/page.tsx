@@ -268,9 +268,7 @@ export default function CommandCenter() {
       ? "B1_COVERAGE_SERIES_EMPTY"
       : !funnel.stages.length || !funnel.transitions.length || funnel.cohort.length < 2 || !funnel.channels.length || funnel.daily.length < 2
         ? "B3_REQUIRED_DATA_EMPTY"
-        : !riskRadar.gates.length || !riskRadar.feed.length || riskRadar.pressureSeries.length < 2 || !riskRadar.rules.length || !riskRadar.severity.length || !riskRadar.volume.length
-          ? "B5_REQUIRED_DATA_EMPTY"
-          : "";
+        : "";
   if (homeDataError) {
     return renderBDomainState(homeDataError);
   }
