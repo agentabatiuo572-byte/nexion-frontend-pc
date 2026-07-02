@@ -1,13 +1,22 @@
 /**
  * A5 平台参数寄存器(Platform Parameter Registry · 旗舰)。
- * 把全平台业务常量(回源前端真值)按 12 域归集成单一字段级目录:
- * 每个参数 = 真值 + 控制类型 + 运营杠杆 + 操作确认 + 端点 + 前端出处 + 跳转该域 config 模块编辑。
- * 数据 = 直接读 docs/cgm/cgm.manifest.json 的 platform 行(CGM 单一真源,永同步)。
- * 这是「平台版 360 HUB」:平台运营面的最细颗粒度控制索引。server component · 只读 + 跳转。
+ * 后端 A3 平台配置索引:只展示真实接口返回的配置项;接口为空或未登录时显示空态。
+ * server component · 只读 + 跳转。
  */
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { ArrowUpRight, ShieldCheck, Database, SlidersHorizontal, Zap } from "lucide-react";
-import manifestJson from "@/docs/cgm/cgm.manifest.json";
+
+export const dynamic = "force-dynamic";
+
+const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
+const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
+
+interface ApiResult<T> {
+  code: number;
+  message?: string;
+  data?: T;
+}
 
 interface CgmRow {
   id: string;
@@ -27,7 +36,11 @@ interface CgmRow {
   coverage?: string;
   batch?: string;
 }
-const rows = (manifestJson as unknown as { rows: CgmRow[] }).rows.filter((r) => r.scope === "platform");
+interface PlatformConfigOverview {
+  featureFlags?: Array<Record<string, unknown>> | null;
+  killSwitches?: Array<Record<string, unknown>> | null;
+  systemHealth?: Array<Record<string, unknown>> | null;
+}
 
 const DOMAIN_META: Record<string, { label: string; accent: string }> = {
   A: { label: "平台基础", accent: "var(--admin-domain-a)" },
@@ -76,15 +89,15 @@ function ownerFor(r: CgmRow): { path: string; label: string } {
     [/trial|shadow|discount|autopush|autocharge/, "/growth/trial", "H2 Trial 引擎"],
     [/phase|10-dial|getphasereward|monthly_locked|inviteBonusMultiplier/, "/growth/phase", "H1 Phase 调度"],
     [/quest|tier[12]|streak|weekly_bonus|spin_prizes|lucky/, "/growth/quest", "H3 任务引擎"],
-    [/milestone|achievement|earnings_milestone/, "/growth/milestones", "H6 里程碑"],
+    [/milestone|achievement|earnings_milestone/, "/growth/daily", "H5 签到 & 里程碑"],
     [/stella|cadence|agent_pool|enterliveagent/, "/content/notifications", "I3 推送/Stella"],
     [/unilevel|binary|commission|sponsor|invite_reward|welcome_gift/, "/network/royalty", "F2 佣金规则"],
     [/v_rank|directbonus|peerbonus|cultivation|v_vote|vrankcond|prizename|v_distribution/, "/network/v-rank", "F1 V 级阶梯"],
     [/leadership|currentweekpool|领导池/, "/network/leadership-pool", "F4 领导池"],
     [/withdrawal|提现|min_withdrawal|fee|daily_cap|user_daily/, "/finance/params", "D5 提现参数"],
     [/billtype|账单/, "/finance/ledger", "D4 平台账本"],
-    [/lesson|categor|learn|format_label/, "/content/learn", "I7 学习中心"],
-    [/disclos|risk.?disclosure|compliance|kyc.?express|trust/, "/content/disclosure", "I5 披露合规"],
+    [/lesson|categor|learn|format_label/, "/content/i18n", "I6 i18n 文案与教程"],
+    [/disclos|risk.?disclosure|compliance|kyc.?express|trust/, "/content/trust", "I4 信任中心与披露"],
     [/banner|copy|文案/, "/content/copy-ab", "I1 文案 AB"],
     [/killswitch|kill.?switch|neterror|congestion|coveragedegraded|realprize/, "/emergency/kill-switch", "J1 Kill-Switch"],
     [/confirm|toast|useui/, "/platform/config", "A3 系统配置"],
@@ -96,7 +109,7 @@ function ownerFor(r: CgmRow): { path: string; label: string } {
     A: ["/platform/config", "A3 系统配置"], C: ["/network/v-rank", "F1 V 级阶梯"],
     D: ["/finance/params", "D5 提现参数"], E: ["/devices/pricing", "E1 商品定价"],
     F: ["/network/royalty", "F2 佣金规则"], G: ["/finance-products/staking", "G1 Staking"],
-    H: ["/growth/phase", "H1 Phase 调度"], I: ["/content/disclosure", "I5 披露合规"],
+    H: ["/growth/phase", "H1 Phase 调度"], I: ["/content/trust", "I4 信任中心与披露"],
     J: ["/emergency/kill-switch", "J1 Kill-Switch"], K: ["/risk/withdrawal-rules", "K3 提现风控"],
     L: ["/analytics/operations", "L4 运营指标"], B: ["/overview/rhythm", "B3 节奏"],
   };
@@ -109,7 +122,55 @@ function opsList(p: CgmRow["opsPurpose"]): string[] {
   return Array.isArray(p) ? p : [p];
 }
 
-export default function PlatformParamsRegistryPage() {
+function text(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function backendRows(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((item) => item && typeof item === "object").map((item) => item as Record<string, unknown>)
+    : [];
+}
+
+function configRow(row: Record<string, unknown>, kind: "flag" | "kill" | "health"): CgmRow {
+  const key = text(row.key, text(row.name, "unknown"));
+  const source = text(row.name, key);
+  return {
+    id: `a3-${kind}-${key}`,
+    domain: "A",
+    scope: "platform",
+    controlType: kind === "kill" ? "function-action" : kind === "health" ? "data-CRUD" : "param-config",
+    frontendField: key,
+    frontendSource: source,
+    opsPurpose: "platform_integrity",
+    endpoint: "/api/admin/platform/config/overview",
+    operationConfirm: kind !== "health",
+    serverCanonical: "true",
+  };
+}
+
+async function fetchPlatformRows(): Promise<CgmRow[]> {
+  const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
+  if (!token) return [];
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/api/admin/platform/config/overview`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const result = (await response.json().catch(() => null)) as ApiResult<PlatformConfigOverview> | null;
+    if (!response.ok || result?.code !== 0 || !result.data) return [];
+    return [
+      ...backendRows(result.data.featureFlags).map((row) => configRow(row, "flag")),
+      ...backendRows(result.data.killSwitches).map((row) => configRow(row, "kill")),
+      ...backendRows(result.data.systemHealth).map((row) => configRow(row, "health")),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+export default async function PlatformParamsRegistryPage() {
+  const rows = await fetchPlatformRows();
   const domains = Object.keys(DOMAIN_META).filter((d) => rows.some((r) => r.domain === d));
   const mcCount = rows.filter((r) => r.operationConfirm).length;
 
@@ -119,18 +180,25 @@ export default function PlatformParamsRegistryPage() {
         <p className="font-mono-tabular text-[11px]" style={{ color: "var(--admin-domain-a)" }}>A5 · 平台基础</p>
         <h1 className="font-display mt-1 text-[24px]" style={{ color: "var(--v5-ink)" }}>平台参数寄存器</h1>
         <p className="mt-1.5 max-w-[760px] text-[12.5px] leading-relaxed" style={{ color: "var(--v5-ink-3)" }}>
-          全平台业务参数的逐项目录 —— 每个参数显示的是<strong style={{ color: "var(--v5-ink-2)" }}>回源真值</strong>(直接取自前端代码里的真实常量,不是示意值),
-          并标注它属于哪类控制、是否运营可调、改动要不要走操作确认、是否以服务端为准、对应接口和前端出处,点一下就能跳到所在域的配置页去改。
-          这是运营能看到的最细一层参数索引(数据取自全平台参数的唯一来源,始终同步)。
+          本页只读取后端平台配置接口返回的配置项,并标注控制类型、操作确认、服务端权威与编辑入口。
+          接口无数据、未登录或后端不可用时不展示业务参数记录。
         </p>
         <div className="mt-3 flex flex-wrap gap-2.5">
           <Stat label="平台参数" value={`${rows.length}`} accent="var(--admin-domain-a)" />
           <Stat label="覆盖域" value={`${domains.length}`} />
           <Stat label="高敏(操作确认)" value={`${mcCount}`} accent="var(--v5-warning)" />
-          <Stat label="权威来源" value="服务端" sub="客户端仅展示缓存" />
+          <Stat label="server-canonical" value={rows.length ? "服务端权威" : "0"} sub={rows.length ? "客户端仅 UI cache" : "接口空态"} />
         </div>
       </header>
 
+      {rows.length === 0 ? (
+        <section className="rounded-[12px] p-5" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
+          <p className="font-display text-[14px]" style={{ color: "var(--v5-ink)" }}>暂无后端平台参数记录</p>
+          <p className="mt-1 text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+            请先登录并确认 /api/admin/platform/config/overview 返回配置项;本页不会从文档或前端常量生成业务参数。
+          </p>
+        </section>
+      ) : (
       <div className="flex flex-col gap-3.5">
         {domains.map((d) => {
           const meta = DOMAIN_META[d];
@@ -181,9 +249,10 @@ export default function PlatformParamsRegistryPage() {
           );
         })}
       </div>
+      )}
 
       <p className="mt-4 text-[11px] leading-relaxed" style={{ color: "var(--v5-ink-4)" }}>
-        资金 / 资产 / 收益 / 规则 / kill-switch 类参数变更一律 操作确认 + 操作理由必填 + 服务端权威 + 审计留痕;
+        资金 / 资产 / 收益 / 规则 / kill-switch 类参数变更一律 操作确认 + 操作理由必填 + server-canonical 服务端权威 + 审计留痕;
         本页为只读索引,实际改值在各域 config 模块内执行。
       </p>
     </div>

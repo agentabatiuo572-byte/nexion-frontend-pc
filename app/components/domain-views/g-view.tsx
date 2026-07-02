@@ -4,7 +4,7 @@
  * G 金融产品 — design_handoff_g_domain 设计稿 port(2026-06-11;2026-06-15 下线 Premium/NEX v2)。
  * 5 子页:G1 Staking / G2 兑换风控 / G3 NEX 行情引擎 / G4 Genesis 经济 / G7 复投激励。
  * 三类弹窗:OperationConfirmModal(操作确认 + 显式 edit 契约)/ KConfirmModal(普通确认,复用 K 原语)/ Drawer(详情下钻)。
- * 真写沿用旧契约(G.staking.* / G.exchange.* / G.market.* / G.genesis.* / G.repurchase.*);
+ * 真写走后端 G 域接口;业务参数由服务端业务表持有。
  * 产品级熔断改写 J.killswitch.<staking|exchange|genesis> 与 J1/首页/B5 同键真联动。
  * 单源:LEDGER 科目体系(在锁/利息/到期应付,含 #5 NEX v2 存量在锁负债仍计兑付)/ NEX_MARKET(G2/G7 定价源)/ GEOBLOCK(J2)/ MATURITY(Genesis 派发流量)。
  * amplifies = 放大流出方向(升 APY/降罚款/放宽 caps/拉价/升 pump/升分红/升倍率/恢复熔断/恢复开售)。
@@ -13,8 +13,6 @@ import { useMemo, useState } from "react";
 import "./g-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { G1Staking } from "./g-tabs/g1-staking";
 import { G2Exchange } from "./g-tabs/g2-exchange";
@@ -37,16 +35,10 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
 export function GDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "G1", [meta.l2Id]);
-  const setParam = usePlatformConfig((s) => s.setParam);
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
 
   const ctx: GCtx = {
-    pget: (k) => (hydrated ? (params?.[k] as string | undefined) : undefined),
-    params: hydrated && params ? params : {},
-    setParam,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,

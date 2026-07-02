@@ -7,12 +7,21 @@
 import { useEffect, useRef, useState } from "react";
 import { Sparkline } from "@/app/components/kit/kpi-stat-card";
 import { AreaChart } from "@/app/components/kit/charts/area-chart";
-import type { Kpi } from "@/lib/mock/admin/command-center";
 import { AutoGloss } from "@/app/components/kit/gloss";
 
-export function KpiWall({ kpis }: { kpis: Kpi[] }) {
+export type DashboardKpi = {
+  key: string;
+  label: string;
+  value: string;
+  target: string;
+  pass: boolean;
+  series: number[];
+  hint: string;
+};
+
+export function KpiWall({ kpis }: { kpis: DashboardKpi[] }) {
   const passed = kpis.filter((k) => k.pass).length;
-  const [sel, setSel] = useState<{ kpi: Kpi; n: number } | null>(null);
+  const [sel, setSel] = useState<{ kpi: DashboardKpi; n: number } | null>(null);
 
   return (
     <div>
@@ -58,7 +67,7 @@ export function KpiWall({ kpis }: { kpis: Kpi[] }) {
   );
 }
 
-function KpiModal({ kpi, n, onClose }: { kpi: Kpi; n: number; onClose: () => void }) {
+function KpiModal({ kpi, n, onClose }: { kpi: DashboardKpi; n: number; onClose: () => void }) {
   const color = kpi.pass ? "var(--v5-success)" : "var(--v5-danger)";
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {

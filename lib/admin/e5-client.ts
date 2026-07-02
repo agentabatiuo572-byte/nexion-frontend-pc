@@ -1,4 +1,4 @@
-export const E5_MAX_DEVICES = 6;
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 
 export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "unbound" | "abnormal";
 export type E5DatacenterStatus = "active" | "maintenance" | "disabled";
@@ -16,7 +16,6 @@ export interface E5Device {
   productCode: string;
   serial: string;
   dc: string;
-  slot: string;
   state: E5DeviceState;
   rawStatus: string;
   runtimeStatus: string;
@@ -28,6 +27,8 @@ export interface E5Device {
   activatedAt: string;
   deactivatedAt: string;
   pendingDeactivate: boolean;
+  slotNo: number | null;
+  slot: string;
 }
 
 export interface E5Datacenter {
@@ -44,6 +45,7 @@ export interface E5Datacenter {
   avgGpuPowerW: number;
   dispatchPaused: boolean;
   pausedReason: string;
+  onlineSeries: number[];
 }
 
 export interface E5DatacenterInput {
@@ -60,6 +62,7 @@ export interface E5Overview {
   recycledDevices: number;
   pendingRecycleDevices: number;
   abnormalDevices: number;
+  maxDevicesPerUser: number | null;
   datacenters: E5Datacenter[];
 }
 
@@ -116,6 +119,7 @@ interface BackendDevice {
   pausedReason?: string | null;
   activeTaskNo?: string | null;
   heartbeatAt?: string | null;
+  userDeviceSlotNo?: number | string | null;
 }
 
 interface BackendDatacenter {
@@ -132,6 +136,7 @@ interface BackendDatacenter {
   avgGpuPowerW?: number | string | null;
   dispatchPaused?: boolean | string | number | null;
   pausedReason?: string | null;
+  onlineSeries?: unknown;
 }
 
 interface BackendOverview {
@@ -141,6 +146,7 @@ interface BackendOverview {
   recycledDevices?: number | string | null;
   pendingRecycleDevices?: number | string | null;
   abnormalDevices?: number | string | null;
+  maxDevicesPerUser?: number | string | null;
   datacenters?: BackendDatacenter[] | null;
 }
 
@@ -206,7 +212,7 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(result?.message || `E5_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result?.message, `E5_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;
@@ -225,6 +231,9 @@ function queryString(query: E5DeviceQuery) {
 
 function fromDatacenter(row: BackendDatacenter): E5Datacenter {
   const status = text(row.status, "active").toLowerCase();
+  const onlineSeries = Array.isArray(row.onlineSeries)
+    ? row.onlineSeries.map((value) => toNumber(value as number | string | boolean | null | undefined)).filter((value) => value >= 0)
+    : [];
   return {
     dcLocation: text(row.dcLocation, "UNASSIGNED"),
     regionLabel: text(row.regionLabel, "未配置区域"),
@@ -239,10 +248,11 @@ function fromDatacenter(row: BackendDatacenter): E5Datacenter {
     avgGpuPowerW: toNumber(row.avgGpuPowerW),
     dispatchPaused: toBool(row.dispatchPaused),
     pausedReason: text(row.pausedReason, ""),
+    onlineSeries,
   };
 }
 
-function fromDevice(row: BackendDevice, slot: string): E5Device {
+function fromDevice(row: BackendDevice): E5Device {
   const deviceId = toNumber(row.id);
   const instanceNo = text(row.instanceNo, deviceId ? `dev-${deviceId}` : "unknown-device");
   const userId = text(row.userId);
@@ -253,6 +263,7 @@ function fromDevice(row: BackendDevice, slot: string): E5Device {
   const productCode = text(row.productCode);
   const deviceName = text(row.name, instanceNo);
   const sku = [productCode, productTier].filter(Boolean).join(" / ") || "未知 SKU";
+  const slotNo = toNumber(row.userDeviceSlotNo);
   return {
     id: instanceNo,
     deviceId,
@@ -266,7 +277,6 @@ function fromDevice(row: BackendDevice, slot: string): E5Device {
     productCode,
     serial: instanceNo,
     dc: text(row.dcLocation, "UNASSIGNED"),
-    slot,
     state: normalizeState(row.status, row.runtimeStatus, pendingDeactivate),
     rawStatus: text(row.status, "UNKNOWN"),
     runtimeStatus: text(row.runtimeStatus, "UNKNOWN"),
@@ -278,17 +288,13 @@ function fromDevice(row: BackendDevice, slot: string): E5Device {
     activatedAt: text(row.activatedAt, "—"),
     deactivatedAt: text(row.deactivatedAt, ""),
     pendingDeactivate,
+    slotNo: slotNo > 0 ? slotNo : null,
+    slot: slotNo > 0 ? String(slotNo) : "—",
   };
 }
 
 function mapDevices(records: BackendDevice[]) {
-  const slotsByUser = new Map<string, number>();
-  return (records ?? []).map((row) => {
-    const userKey = text(row.userNo || row.userId, "unassigned");
-    const slotNo = (slotsByUser.get(userKey) ?? 0) + 1;
-    slotsByUser.set(userKey, slotNo);
-    return fromDevice(row, `${Math.min(slotNo, E5_MAX_DEVICES)}/${E5_MAX_DEVICES}`);
-  });
+  return (records ?? []).map(fromDevice);
 }
 
 export async function fetchE5Devices(query: E5DeviceQuery = {}): Promise<E5DevicePage> {
@@ -310,6 +316,7 @@ export async function fetchE5Overview(): Promise<E5Overview> {
     recycledDevices: toNumber(overview.recycledDevices),
     pendingRecycleDevices: toNumber(overview.pendingRecycleDevices),
     abnormalDevices: toNumber(overview.abnormalDevices),
+    maxDevicesPerUser: toNumber(overview.maxDevicesPerUser) > 0 ? toNumber(overview.maxDevicesPerUser) : null,
     datacenters: (overview.datacenters ?? []).map(fromDatacenter),
   };
 }

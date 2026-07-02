@@ -146,8 +146,13 @@
 /* ============================ A2 审计 & 操作确认 ============================ */
 .adom .a2-ttl { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
 .adom .a2-ttl.hot { color: var(--danger); font-weight: 700; }
+.adom .a2-markers { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .adom .a2-amp { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 5px; background: var(--danger-soft); color: var(--danger); font-size: 11px; font-weight: 700; font-family: var(--mono); white-space: nowrap; }
 .adom .a2-sos { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 5px; background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); font-size: 11px; font-weight: 700; font-family: var(--mono); white-space: nowrap; }
+.adom .a2-sensitive { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 5px; background: color-mix(in srgb, var(--cyan) 14%, transparent); color: var(--cyan); font-size: 11px; font-weight: 700; font-family: var(--mono); white-space: nowrap; }
+.adom .a2-sensitive.acct { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.adom .a2-sensitive.param { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
+.adom .a2-sensitive.fund { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .adom .a2-ba { font-family: var(--mono); font-size: 11.5px; }
 .adom .a2-ba .o { color: var(--ink-4); text-decoration: line-through; }
 .adom .a2-ba .n { color: var(--ink); font-weight: 700; }

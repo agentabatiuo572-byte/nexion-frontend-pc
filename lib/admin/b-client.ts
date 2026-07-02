@@ -203,8 +203,22 @@ function num(value: unknown, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function requiredNum(value: unknown, field: string) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
+  }
+  return n;
+}
+
 function text(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function requiredText(value: unknown, field: string) {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
 }
 
 function bool(value: unknown, fallback = false) {
@@ -217,12 +231,36 @@ function bool(value: unknown, fallback = false) {
   return fallback;
 }
 
+function requiredBool(value: unknown, field: string) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "on", "enabled", "enable"].includes(normalized)) return true;
+    if (["false", "0", "off", "disabled", "disable"].includes(normalized)) return false;
+  }
+  throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
+}
+
 function arr<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function requiredArr<T>(value: unknown, field: string): T[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
+  }
+  return value as T[];
+}
+
 function row(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function requiredRow(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
+  }
+  return value as Record<string, unknown>;
 }
 
 function catVar(value: unknown, index: number) {
@@ -240,204 +278,208 @@ function nextId(prefix: string) {
 }
 
 function normalizeLedger(raw: Record<string, unknown>): BLedger {
-  const snapshot = row(raw.snapshot);
-  const reserveUsd = num(snapshot.reserveUsd);
-  const liabilitiesUsd = num(snapshot.liabilitiesUsd);
-  const queueBacklogUsd = num(snapshot.queueBacklogUsd);
-  const accounts = arr<Record<string, unknown>>(raw.accounts).map((item, index) => {
-    const amount = num(item.amount);
+  const snapshot = requiredRow(raw.snapshot, "dualLedger.snapshot");
+  const reserveUsd = requiredNum(snapshot.reserveUsd, "dualLedger.snapshot.reserveUsd");
+  const liabilitiesUsd = requiredNum(snapshot.liabilitiesUsd, "dualLedger.snapshot.liabilitiesUsd");
+  const queueBacklogUsd = requiredNum(snapshot.queueBacklogUsd, "dualLedger.snapshot.queueBacklogUsd");
+  const accounts = requiredArr<Record<string, unknown>>(raw.accounts, "dualLedger.accounts").map((item, index) => {
+    const amount = requiredNum(item.amount, `dualLedger.accounts.${index}.amount`);
     return {
-      key: text(item.key, `liability-${index + 1}`),
-      label: text(item.label, `科目 ${index + 1}`),
+      key: requiredText(item.key, `dualLedger.accounts.${index}.key`),
+      label: requiredText(item.label, `dualLedger.accounts.${index}.label`),
       amount,
-      source: text(item.source),
+      source: requiredText(item.source, `dualLedger.accounts.${index}.source`),
       pc: liabilitiesUsd > 0 ? Math.round((amount / liabilitiesUsd) * 1000) / 10 : 0,
       cat: CAT_VARS[index % CAT_VARS.length],
     };
   });
-  const prev = row(raw.prev);
-  const coverageSeries = arr<unknown>(snapshot.coverageSeries).map((item) => num(item));
+  const prev = requiredRow(raw.prev, "dualLedger.prev");
+  const coverageSeries = requiredArr<unknown>(snapshot.coverageSeries, "dualLedger.snapshot.coverageSeries")
+    .map((item, index) => requiredNum(item, `dualLedger.snapshot.coverageSeries.${index}`));
   return {
     reserveUsd,
     liabilitiesUsd,
-    coverageRatio: num(snapshot.coverageRatio),
-    redlinePct: num(snapshot.redlinePct),
-    healthyPct: num(snapshot.healthyPct),
-    runRiskPct: num(snapshot.runRiskPct),
+    coverageRatio: requiredNum(snapshot.coverageRatio, "dualLedger.snapshot.coverageRatio"),
+    redlinePct: requiredNum(snapshot.redlinePct, "dualLedger.snapshot.redlinePct"),
+    healthyPct: requiredNum(snapshot.healthyPct, "dualLedger.snapshot.healthyPct"),
+    runRiskPct: requiredNum(snapshot.runRiskPct, "dualLedger.snapshot.runRiskPct"),
     pressureRatio: reserveUsd > 0 ? queueBacklogUsd / reserveUsd : 0,
-    netFlow24hUsd: num(snapshot.netFlow24hUsd),
-    queueBacklogCount: num(snapshot.queueBacklogCount),
+    netFlow24hUsd: requiredNum(snapshot.netFlow24hUsd, "dualLedger.snapshot.netFlow24hUsd"),
+    queueBacklogCount: requiredNum(snapshot.queueBacklogCount, "dualLedger.snapshot.queueBacklogCount"),
     queueBacklogUsd,
-    avgRiskScore: num(snapshot.avgRiskScore),
+    avgRiskScore: requiredNum(snapshot.avgRiskScore, "dualLedger.snapshot.avgRiskScore"),
     coverageSeries,
     accounts,
     prev: {
-      reserveUsd: num(prev.reserveUsd, reserveUsd),
-      netFlow24hUsd: num(prev.netFlow24hUsd),
-      queueBacklogCount: num(prev.queueBacklogCount),
-      avgRiskScore: num(prev.avgRiskScore),
+      reserveUsd: requiredNum(prev.reserveUsd, "dualLedger.prev.reserveUsd"),
+      netFlow24hUsd: requiredNum(prev.netFlow24hUsd, "dualLedger.prev.netFlow24hUsd"),
+      queueBacklogCount: requiredNum(prev.queueBacklogCount, "dualLedger.prev.queueBacklogCount"),
+      avgRiskScore: requiredNum(prev.avgRiskScore, "dualLedger.prev.avgRiskScore"),
     },
   };
 }
 
-function normalizeLiquidity(raw: Record<string, unknown>, ledger: BLedger): BLiquidity {
-  const liabilities = arr<Record<string, unknown>>(raw.liabilities).map((item, index) => ({
-    nm: text(item.nm, text(item.label, `科目 ${index + 1}`)),
-    pc: num(item.pc),
-    amount: num(item.amount),
+function normalizeLiquidity(raw: Record<string, unknown>, _ledger: BLedger): BLiquidity {
+  const liabilities = requiredArr<Record<string, unknown>>(raw.liabilities, "liquidity.liabilities").map((item, index) => ({
+    nm: requiredText(item.nm ?? item.label, `liquidity.liabilities.${index}.nm`),
+    pc: requiredNum(item.pc, `liquidity.liabilities.${index}.pc`),
+    amount: requiredNum(item.amount, `liquidity.liabilities.${index}.amount`),
     cat: catVar(item.cat, index),
-    source: text(item.source),
+    source: requiredText(item.source, `liquidity.liabilities.${index}.source`),
   }));
   return {
-    coverage: row(raw.coverage),
-    liabilities: liabilities.length
-      ? liabilities
-      : ledger.accounts.map((item) => ({ nm: item.label, pc: item.pc, amount: item.amount, cat: item.cat, source: item.source })),
-    runway: arr<Record<string, unknown>>(raw.runway).map((item, index) => ({
-      day: text(item.day, `D+${index + 1}`),
-      valueWan: num(item.valueWan),
+    coverage: requiredRow(raw.coverage, "liquidity.coverage"),
+    liabilities,
+    runway: requiredArr<Record<string, unknown>>(raw.runway, "liquidity.runway").map((item, index) => ({
+      day: requiredText(item.day, `liquidity.runway.${index}.day`),
+      valueWan: requiredNum(item.valueWan, `liquidity.runway.${index}.valueWan`),
     })),
-    runwayTotalWan: num(raw.runwayTotalWan),
-    flow: arr<Record<string, unknown>>(raw.flow).map((item, index) => ({
-      label: text(item.label, `W${index + 1}`),
-      valueWan: num(item.valueWan),
+    runwayTotalWan: requiredNum(raw.runwayTotalWan, "liquidity.runwayTotalWan"),
+    flow: requiredArr<Record<string, unknown>>(raw.flow, "liquidity.flow").map((item, index) => ({
+      label: requiredText(item.label, `liquidity.flow.${index}.label`),
+      valueWan: requiredNum(item.valueWan, `liquidity.flow.${index}.valueWan`),
     })),
   };
 }
 
 function normalizeFunnel(raw: Record<string, unknown>): BFunnel {
   return {
-    stages: arr<Record<string, unknown>>(raw.stages).map((item, index) => {
-      const nm = text(item.nm, `阶段 ${index + 1}`);
-      const ct = num(item.ct);
+    stages: requiredArr<Record<string, unknown>>(raw.stages, "funnel.stages").map((item, index) => {
+      const nm = requiredText(item.nm, `funnel.stages.${index}.nm`);
+      const ct = requiredNum(item.ct, `funnel.stages.${index}.ct`);
       return {
-        key: text(item.key, `stage-${index + 1}`),
+        key: requiredText(item.key, `funnel.stages.${index}.key`),
         nm,
         ct,
-        lc: text(item.lc),
+        lc: requiredText(item.lc, `funnel.stages.${index}.lc`),
         conv: text(item.conv, "") || null,
         bad: bool(item.bad),
-        color: text(item.color, "var(--brand)"),
+        color: requiredText(item.color, `funnel.stages.${index}.color`),
         label: nm,
         count: ct,
-        prevCount: num(item.prevCount, ct),
+        prevCount: requiredNum(item.prevCount, `funnel.stages.${index}.prevCount`),
       };
     }),
-    transitions: arr<Record<string, unknown>>(raw.transitions).map((item) => ({
-      nm: text(item.nm, text(item.a, "阶段转化")),
-      from: text(item.from),
-      to: text(item.to),
-      v: text(item.v, "0%"),
+    transitions: requiredArr<Record<string, unknown>>(raw.transitions, "funnel.transitions").map((item, index) => ({
+      nm: requiredText(item.nm ?? item.a, `funnel.transitions.${index}.nm`),
+      from: requiredText(item.from, `funnel.transitions.${index}.from`),
+      to: requiredText(item.to, `funnel.transitions.${index}.to`),
+      v: requiredText(item.v, `funnel.transitions.${index}.v`),
       vColor: text(item.vColor, ""),
-      flow: text(item.flow),
+      flow: requiredText(item.flow, `funnel.transitions.${index}.flow`),
       note: text(item.note),
       noteKind: (["muted", "up", "dn"].includes(text(item.noteKind)) ? text(item.noteKind) : "muted") as "muted" | "up" | "dn",
       bad: bool(item.bad),
     })),
-    cohort: arr<unknown>(raw.cohort).map((item) => num(item)),
-    channels: arr<Record<string, unknown>>(raw.channels).map((item, index) => ({
-      nm: text(item.nm, `渠道 ${index + 1}`),
-      pc: num(item.pc, num(item.v)),
+    cohort: requiredArr<unknown>(raw.cohort, "funnel.cohort").map((item, index) => requiredNum(item, `funnel.cohort.${index}`)),
+    channels: requiredArr<Record<string, unknown>>(raw.channels, "funnel.channels").map((item, index) => ({
+      nm: requiredText(item.nm, `funnel.channels.${index}.nm`),
+      pc: requiredNum(item.pc ?? item.v, `funnel.channels.${index}.pc`),
       catVar: catVar(item.catVar ?? item.c, index),
       q: text(item.q, ""),
     })),
-    daily: arr<unknown>(raw.daily).map((item) => num(item)),
-    dailyTarget: num(raw.dailyTarget),
-    overallConversionPct: num(raw.overallConversionPct),
+    daily: requiredArr<unknown>(raw.daily, "funnel.daily").map((item, index) => requiredNum(item, `funnel.daily.${index}`)),
+    dailyTarget: requiredNum(raw.dailyTarget, "funnel.dailyTarget"),
+    overallConversionPct: requiredNum(raw.overallConversionPct, "funnel.overallConversionPct"),
   };
 }
 
 function normalizeRhythm(raw: Record<string, unknown>): BRhythm {
-  const h1 = row(raw.h1);
+  const h1 = requiredRow(raw.h1, "rhythm.h1");
   return {
     h1: {
-      currentPhase: text(h1.currentPhase),
-      currentPhaseName: text(h1.currentPhaseName),
-      currentMonth: num(h1.currentMonth),
-      totalMonths: num(h1.totalMonths),
-      phaseProgressPct: num(h1.phaseProgressPct),
+      currentPhase: requiredText(h1.currentPhase, "rhythm.h1.currentPhase"),
+      currentPhaseName: requiredText(h1.currentPhaseName, "rhythm.h1.currentPhaseName"),
+      currentMonth: requiredNum(h1.currentMonth, "rhythm.h1.currentMonth"),
+      totalMonths: requiredNum(h1.totalMonths, "rhythm.h1.totalMonths"),
+      phaseProgressPct: requiredNum(h1.phaseProgressPct, "rhythm.h1.phaseProgressPct"),
     },
-    phaseNodes: arr<Record<string, unknown>>(raw.phaseNodes).map((item, index) => ({
-      code: text(item.code, `P${index + 1}`),
-      name: text(item.name, `阶段 ${index + 1}`),
-      intensity: num(item.intensity),
+    phaseNodes: requiredArr<Record<string, unknown>>(raw.phaseNodes, "rhythm.phaseNodes").map((item, index) => ({
+      code: requiredText(item.code, `rhythm.phaseNodes.${index}.code`),
+      name: requiredText(item.name, `rhythm.phaseNodes.${index}.name`),
+      intensity: requiredNum(item.intensity, `rhythm.phaseNodes.${index}.intensity`),
     })),
-    inflowWan: arr<unknown>(raw.inflowWan).map((item) => num(item)),
-    budget: arr<Record<string, unknown>>(raw.budget).map((item, index) => ({
-      nm: text(item.nm, `预算 ${index + 1}`),
-      pc: num(item.pc, num(item.v)),
+    inflowWan: requiredArr<unknown>(raw.inflowWan, "rhythm.inflowWan").map((item, index) => requiredNum(item, `rhythm.inflowWan.${index}`)),
+    budget: requiredArr<Record<string, unknown>>(raw.budget, "rhythm.budget").map((item, index) => ({
+      nm: requiredText(item.nm, `rhythm.budget.${index}.nm`),
+      pc: requiredNum(item.pc ?? item.v, `rhythm.budget.${index}.pc`),
       varName: catVar(item.varName ?? item.c, index),
     })),
-    ratio: arr<unknown>(raw.ratio).map((item) => num(item)),
-    healthyRatio: num(raw.healthyRatio),
-    currentRatio: num(raw.currentRatio),
-    suggestion: text(raw.suggestion),
+    ratio: requiredArr<unknown>(raw.ratio, "rhythm.ratio").map((item, index) => requiredNum(item, `rhythm.ratio.${index}`)),
+    healthyRatio: requiredNum(raw.healthyRatio, "rhythm.healthyRatio"),
+    currentRatio: requiredNum(raw.currentRatio, "rhythm.currentRatio"),
+    suggestion: requiredText(raw.suggestion, "rhythm.suggestion"),
   };
 }
 
 function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
   return {
-    gates: arr<Record<string, unknown>>(raw.gates).map((item) => {
+    gates: requiredArr<Record<string, unknown>>(raw.gates, "riskRadar.gates").map((item, index) => {
       const rawState = text(item.state);
-      const state = (["on", "off", "missing"].includes(rawState) ? rawState : bool(item.on, true) ? "on" : "off") as "on" | "off" | "missing";
+      const state = (["on", "off", "missing"].includes(rawState)
+        ? rawState
+        : requiredBool(item.on, `riskRadar.gates.${index}.on`) ? "on" : "off") as "on" | "off" | "missing";
       return {
-        nm: text(item.nm),
-        dom: text(item.dom),
+        nm: requiredText(item.nm, `riskRadar.gates.${index}.nm`),
+        dom: requiredText(item.dom, `riskRadar.gates.${index}.dom`),
         on: state === "missing" ? true : state === "on",
         state,
         configKey: text(item.configKey, ""),
       };
     }),
-    trippedGateCount: num(raw.trippedGateCount),
-    feed: arr<Record<string, unknown>>(raw.feed).map((item) => ({
-      sev: (["p0", "p1", "p2", "p3"].includes(text(item.sev)) ? text(item.sev) : "p2") as "p0" | "p1" | "p2" | "p3",
-      t: text(item.t),
-      m: text(item.m),
-      href: text(item.href, "/overview/risk-radar"),
+    trippedGateCount: requiredNum(raw.trippedGateCount, "riskRadar.trippedGateCount"),
+    feed: requiredArr<Record<string, unknown>>(raw.feed, "riskRadar.feed").map((item, index) => ({
+      sev: (["p0", "p1", "p2", "p3"].includes(requiredText(item.sev, `riskRadar.feed.${index}.sev`))
+        ? requiredText(item.sev, `riskRadar.feed.${index}.sev`)
+        : "p2") as "p0" | "p1" | "p2" | "p3",
+      t: requiredText(item.t, `riskRadar.feed.${index}.t`),
+      m: requiredText(item.m, `riskRadar.feed.${index}.m`),
+      href: requiredText(item.href, `riskRadar.feed.${index}.href`),
     })),
-    pressureSeries: arr<unknown>(raw.pressureSeries).map((item) => num(item)),
-    pressureTightPct: num(raw.pressureTightPct),
-    currentPressurePct: num(raw.currentPressurePct),
-    rules: arr<Record<string, unknown>>(raw.rules).map((item) => ({
-      nm: text(item.nm),
-      ct: num(item.ct),
+    pressureSeries: requiredArr<unknown>(raw.pressureSeries, "riskRadar.pressureSeries").map((item, index) => requiredNum(item, `riskRadar.pressureSeries.${index}`)),
+    pressureTightPct: requiredNum(raw.pressureTightPct, "riskRadar.pressureTightPct"),
+    currentPressurePct: requiredNum(raw.currentPressurePct, "riskRadar.currentPressurePct"),
+    rules: requiredArr<Record<string, unknown>>(raw.rules, "riskRadar.rules").map((item, index) => ({
+      nm: requiredText(item.nm, `riskRadar.rules.${index}.nm`),
+      ct: requiredNum(item.ct, `riskRadar.rules.${index}.ct`),
       sev: text(item.sev, ""),
       dom: text(item.dom, ""),
     })),
-    flaggedAccounts: num(raw.flaggedAccounts),
-    severity: arr<Record<string, unknown>>(raw.severity).map((item, index) => ({
-      nm: text(item.nm, `P${index}`),
-      count: num(item.count, num(item.v)),
-      c: text(item.c, CAT_VARS[index % CAT_VARS.length]),
+    flaggedAccounts: requiredNum(raw.flaggedAccounts, "riskRadar.flaggedAccounts"),
+    severity: requiredArr<Record<string, unknown>>(raw.severity, "riskRadar.severity").map((item, index) => ({
+      nm: requiredText(item.nm, `riskRadar.severity.${index}.nm`),
+      count: requiredNum(item.count ?? item.v, `riskRadar.severity.${index}.count`),
+      c: requiredText(item.c, `riskRadar.severity.${index}.c`),
     })),
-    volume: arr<Record<string, unknown>>(raw.volume).map((item, index) => ({
-      label: text(item.label, index === 6 ? "今日" : `D-${6 - index}`),
-      count: num(item.count, num(item.v)),
+    volume: requiredArr<Record<string, unknown>>(raw.volume, "riskRadar.volume").map((item, index) => ({
+      label: requiredText(item.label, `riskRadar.volume.${index}.label`),
+      count: requiredNum(item.count ?? item.v, `riskRadar.volume.${index}.count`),
     })),
-    bankRunRatio: num(raw.bankRunRatio),
+    bankRunRatio: requiredNum(raw.bankRunRatio, "riskRadar.bankRunRatio"),
   };
 }
 
 export function normalizeBDomainDashboard(raw: Record<string, unknown> | null | undefined): BDomainDashboard {
-  const dualLedger = row(raw?.dualLedger);
+  const source = requiredRow(raw, "data");
+  const dualLedger = requiredRow(source.dualLedger, "dualLedger");
   const ledger = normalizeLedger(dualLedger);
   return {
-    generatedAt: text(raw?.generatedAt, ""),
-    sources: arr<string>(raw?.sources),
-    warnings: arr<Record<string, unknown>>(raw?.warnings).map((item) => ({
-      key: text(item.key),
-      code: text(item.code, "B_CONFIG_WARNING"),
-      message: text(item.message, text(item.code, "B_CONFIG_WARNING")),
+    generatedAt: requiredText(source.generatedAt, "generatedAt"),
+    sources: requiredArr<string>(source.sources, "sources"),
+    warnings: requiredArr<Record<string, unknown>>(source.warnings, "warnings").map((item, index) => ({
+      key: requiredText(item.key, `warnings.${index}.key`),
+      code: requiredText(item.code, `warnings.${index}.code`),
+      message: requiredText(item.message, `warnings.${index}.message`),
     })),
     alerts: {
-      coverageRedlineAcked: bool(row(raw?.alerts).coverageRedlineAcked),
-      sources: arr<string>(row(raw?.alerts).sources),
+      coverageRedlineAcked: requiredBool(requiredRow(source.alerts, "alerts").coverageRedlineAcked, "alerts.coverageRedlineAcked"),
+      sources: requiredArr<string>(requiredRow(source.alerts, "alerts").sources, "alerts.sources"),
     },
     ledger,
-    liquidity: normalizeLiquidity(row(raw?.liquidity), ledger),
-    funnel: normalizeFunnel(row(raw?.funnel)),
-    rhythm: normalizeRhythm(row(raw?.rhythm)),
-    riskRadar: normalizeRisk(row(raw?.riskRadar)),
+    liquidity: normalizeLiquidity(requiredRow(source.liquidity, "liquidity"), ledger),
+    funnel: normalizeFunnel(requiredRow(source.funnel, "funnel")),
+    rhythm: normalizeRhythm(requiredRow(source.rhythm, "rhythm")),
+    riskRadar: normalizeRisk(requiredRow(source.riskRadar, "riskRadar")),
   };
 }
 

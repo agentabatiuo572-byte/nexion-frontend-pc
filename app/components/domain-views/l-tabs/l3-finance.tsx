@@ -8,14 +8,12 @@
 import { useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { confirm } from "@/lib/store/ui";
-import { TREASURY, LIABILITIES, REVENUE, fmtM } from "@/lib/mock/admin/design-data";
-import { LEDGER } from "@/lib/mock/admin/ledger";
-import { REV_EXT, REDEMPTION, COVERAGE_12W, COVERAGE_WKS, BREACHES, MATURITY_WIN, MAT_SCHEDULE, RESERVE_COVER_DAYS } from "./data";
+import { LDataState, fmtM, num, rec, rows, strings } from "./live-data";
 import type { LCtx } from "./types";
 
-const revTotal = REV_EXT.reduce((s, r) => s + r.amt, 0);
-const redRate = ((REDEMPTION.confirmed / REDEMPTION.submitted) * 100).toFixed(1);
-const liabTotal = LIABILITIES.reduce((s, l) => s + l.amount, 0);
+type LiabilityRow = { id: number; name: string; amount: number; color: string };
+type RevenueExtRow = { nm: string; src: string; amt: number; mom: string; up: boolean; color: string };
+type BreachRow = { i: number; type: string; label: string };
 
 export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportAgg = async () => {
@@ -25,16 +23,33 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
       confirmLabel: "导出",
     });
     if (!ok) return;
-    ctx.logAudit({ actor: "总管理员", action: "导出聚合财务汇总 CSV(无用户明细)", target: "admin.report_exported", after: "export_type=finance_agg · 2026-05" });
-    ctx.toast("已导出聚合财务汇总 CSV · 落 admin.report_exported 审计");
+    await ctx.biActions?.createReport({
+      exportType: "财务报表",
+      timeRange: "当前报表周期",
+      fields: "收入结构/兑付/净敞口/负债到期聚合金额与比率",
+      piiLevel: "无 PII",
+      maskPolicy: "NONE",
+      recipient: "财务管理员",
+      ticket: "L3-FINANCE-AGG",
+    }, "导出 L3 聚合财务汇总用于周期核账");
+    await ctx.reloadBi?.();
+    ctx.toast("聚合财务汇总导出任务已提交 · 数据来自后端 BI 接口");
   };
   const exportDetail = () => ctx.openActionConfirm({
     action: "财务报表导出 · 含资金明细",
     detail: <><b>数据出境敏感动作</b> · 导出范围:2026-05 收入/兑付/敞口/负债到期 + 用户级资金明细 · 行数预估 <b>48,210</b>(未超 100 万行上限)· 脱敏策略:<b>默认脱敏</b>(手机号 hash / 卡 token 掩码后 4 位 / 地址截断至行政区,L5 字段级规则表)· 操作链:财务(操作员)→ 超管(执行门槛)· 下载链接限时 24h · 落 admin.report_exported(含 operator / role_gate/字段清单/行数)。</>,
-    run: (reason) => {
-      ctx.setParam("L.export.financeDetail", "requested", { action: "财务含资金明细导出任务(操作确认 · 默认脱敏)", reason });
-      ctx.logAudit({ actor: "总管理员", action: "财务含资金明细导出任务创建", target: "admin.report_exported", after: "export_type=finance_detail · rows≈48,210 · masking=默认脱敏", reason });
-      ctx.toast("含资金明细导出任务已创建 · 待操作确认(L5 导出任务管理可跟踪)");
+    run: async (reason) => {
+      await ctx.biActions?.createReport({
+        exportType: "财务报表",
+        timeRange: "当前报表周期",
+        fields: "收入/兑付/敞口/负债到期 + 用户级资金明细",
+        piiLevel: "高(含手机 / 地址)",
+        maskPolicy: "默认脱敏",
+        recipient: "财务管理员",
+        ticket: "L3-FINANCE-DETAIL",
+      }, reason);
+      await ctx.reloadBi?.();
+      ctx.toast("含资金明细导出任务已提交 · 待后端确认流转");
     },
   });
   return (
@@ -50,7 +65,55 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
   const [matWin, setMatWin] = useState<"7d" | "30d">("7d");
   const [period, setPeriod] = useState(2);
   const [term, setTerm] = useState(2);
-  const m = MATURITY_WIN[matWin];
+
+  const data = ctx.biData?.l3;
+  if (!data) return <LDataState ctx={ctx} label="L3" />;
+  const ledgerRaw = rec(data.ledger);
+  const treasuryRaw = rec(data.treasury);
+  const revenueRaw = rec(data.revenue);
+  const redemptionRaw = rec(data.redemption);
+  const maturityRaw = rec(data.maturityWindow);
+  const mRaw = rec(maturityRaw[matWin]);
+  const scheduleRaw = rec(data.maturitySchedule);
+  const LEDGER = {
+    reserveUsd: num(ledgerRaw.reserveUsd),
+    liabilitiesUsd: num(ledgerRaw.liabilitiesUsd),
+  };
+  const TREASURY = {
+    coverageRatio: num(treasuryRaw.coverageRatio),
+    redLine: num(treasuryRaw.redLine, 100),
+    yellowLine: num(treasuryRaw.yellowLine, 110),
+    netExposure: num(treasuryRaw.netExposure),
+  };
+  const LIABILITIES = rows<LiabilityRow>(data.liabilities);
+  const REV_EXT = rows<RevenueExtRow>(data.revenueExt);
+  const REDEMPTION = {
+    submitted: num(redemptionRaw.submitted),
+    confirmed: num(redemptionRaw.confirmed),
+    avgLatency: String(redemptionRaw.avgLatency ?? "—"),
+    rejected: num(redemptionRaw.rejected),
+    delayed: num(redemptionRaw.delayed),
+    frozen: num(redemptionRaw.frozen),
+    prevRate: num(redemptionRaw.prevRate),
+    prevLabel: String(redemptionRaw.prevLabel ?? "上期"),
+  };
+  const COVERAGE_12W = rows<number>(data.coverage12w);
+  const COVERAGE_WKS = strings(data.coverageWeeks);
+  const BREACHES = rows<BreachRow>(data.coverageBreaches);
+  const MAT_SCHEDULE = {
+    weeks: strings(scheduleRaw.weeks),
+    data: rows<number[]>(scheduleRaw.data),
+  };
+  const m = {
+    withdraw: num(mRaw.withdraw),
+    interest: num(mRaw.interest),
+    genesis: num(mRaw.genesis),
+  };
+  const RESERVE_COVER_DAYS = num(data.reserveCoverDays);
+  const revTotal = REV_EXT.reduce((sum, row) => sum + row.amt, 0);
+  const redRate = REDEMPTION.submitted ? ((REDEMPTION.confirmed / REDEMPTION.submitted) * 100).toFixed(1) : "0.0";
+  const liabTotal = LIABILITIES.reduce((sum, row) => sum + row.amount, 0);
+  if (!REV_EXT.length || !LIABILITIES.length || !COVERAGE_12W.length) return <LDataState ctx={ctx} label="L3" />;
 
   /* ---- 净敞口 / 覆盖率走势(12 周 + 红黄线 LEDGER 持有 + breach 事件标注) ---- */
   const expChart = () => {
@@ -99,15 +162,17 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
   const matChart = () => {
     const W = 560, H = 180, P = 34;
     const colors = ["var(--cyan)", "var(--brand)", "var(--warning)"];
-    const max = Math.max(...MAT_SCHEDULE.data.flat()) * 1.15;
+    const values = MAT_SCHEDULE.data.flat();
+    const max = Math.max(...(values.length ? values : [1])) * 1.15;
     const bw = 18, gap = 5;
     return (
       <svg className="mat-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="负债到期 30 天排程">
         {MAT_SCHEDULE.weeks.map((wk, g) => {
           const gx = P + (g + 0.5) * ((W - 2 * P) / 4); // 四组中心均匀分布,右组不触边
+          const group = MAT_SCHEDULE.data[g] ?? [0, 0, 0];
           return (
             <g key={wk}>
-              {MAT_SCHEDULE.data[g].map((v, s) => {
+              {group.map((v, s) => {
                 const bh = (v / max) * (H - 50);
                 return <rect key={s} x={gx + s * (bw + gap) - (bw * 3 + gap * 2) / 2} y={H - 26 - bh} width={bw} height={bh} rx={3} fill={colors[s]} opacity={0.85}><title>{`${wk} · ${fmtM(v)}`}</title></rect>;
               })}

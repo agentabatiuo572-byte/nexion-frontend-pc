@@ -5,10 +5,10 @@
  * UI 严格对齐设计稿 project/「B1 双账本总览.html」3 段式:
  *   BAND1 兑付覆盖率 hero + 双账本对照卡(B-01)
  *   BAND2 运营决策卡(B-02/B-03)+ 风险雷达卡(B-05)
- *   BAND3 应付负债结构(8 科目 · 下钻 B2)
+ *   BAND3 应付负债结构(下钻 B2)
  * 顶部域标保留本项目外壳风格;其下布局端口设计稿(dual-ledger.css · .dlpage 作用域)。
- * 决策动作保留真实接线:阈值/熔断/告警处置经操作确认,写 platform-config-store(persist + 审计)。
- * 数据 mock(确定性,lib/mock/admin/ledger);内部真实视角:储备 vs 应付负债。
+ * 决策动作保留真实接线:阈值写 D3,熔断写 J1,告警确认写 B1 告警接口并进入 A2 审计。
+ * 数据从 /api/admin/treasury/b-domain 读取;后端无 B 域配置时先写入 MySQL 种子再读出。
  */
 import "./dual-ledger.css";
 import Link from "next/link";
@@ -25,28 +25,53 @@ import {
   SlidersHorizontal,
   TrendingDown,
 } from "lucide-react";
-import { LEDGER } from "@/lib/mock/admin/ledger";
+import { acknowledgeBDomainAlert, useBDomainDashboard } from "@/lib/admin/b-client";
+import { updateD3Thresholds } from "@/lib/admin/d-client";
+import { jEmergencyActions } from "@/lib/admin/j-client";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
 import { Sparkline } from "@/app/components/kit/kpi-stat-card";
 import { OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
+import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-// B 域驾驶舱真写落点的 setParam key(与 J 域同 key 空间共享 global 熔断)。
-const KEY_REDLINE = "B.coverage.redline";
-const KEY_RUN_RISK = "B.runRisk.threshold";
-const KEY_KILL_GLOBAL = "J.killswitch.global";
 const ALERT_ID = "coverage-redline"; // 当前唯一 P0:覆盖率跌破/逼近红线
-const KEY_ALERT_ACK = `B.alert.${ALERT_ID}.ack`;
-const RUN_RISK_DEFAULT = 15; // 挤兑压力红线默认(%)
 const SCALE_MAX = 120; // 仪表标尺上限
 
   // 驾驶舱决策动作(高敏,均走操作确认)。
 type Mc = { kind: "redline" } | { kind: "runRisk" } | { kind: "kill" } | { kind: "ack" };
 
 export default function DualLedgerPage() {
+  const bDomain = useBDomainDashboard();
+  const { ledger: LEDGER, riskRadar, alerts } = bDomain;
+  const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
+  const [toastNode, setToast] = useToast();
+  const [mc, setActionConfirm] = useState<Mc | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+
+  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
+    return (
+      <div className="dkpage dlpage">
+        <header className="mb-5">
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+              style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
+            >
+              <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
+              域 B · 总览驾驶舱
+            </span>
+            <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
+          </div>
+          <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>双账本总览</h1>
+        </header>
+        <BDomainDataState title="B1 双账本" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
+        {toastNode}
+      </div>
+    );
+  }
+
   const {
     reserveUsd,
     liabilitiesUsd,
@@ -61,22 +86,42 @@ export default function DualLedgerPage() {
     coverageSeries,
     prev,
   } = LEDGER;
+  const b1DataError =
+    coverageSeries.length < 2
+      ? "B1_COVERAGE_SERIES_EMPTY"
+      : accounts.length === 0
+        ? "B1_LEDGER_ACCOUNTS_EMPTY"
+        : "";
+  if (b1DataError) {
+    return (
+      <div className="dkpage dlpage">
+        <header className="mb-5">
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+              style={{ background: "color-mix(in srgb, var(--admin-domain-b) 14%, transparent)", color: "var(--admin-domain-b)" }}
+            >
+              <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: "var(--admin-domain-b)" }} />
+              域 B · 总览驾驶舱
+            </span>
+            <span className="font-mono-tabular text-[11px]" style={{ color: "var(--v5-ink-4)" }}>B1</span>
+          </div>
+          <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>双账本总览</h1>
+        </header>
+        <BDomainWarnings warnings={bDomain.warnings} />
+        <BDomainDataState title="B1 双账本" error={b1DataError} onRetry={bDomain.reload} />
+        {toastNode}
+      </div>
+    );
+  }
   const netExposure = reserveUsd - liabilitiesUsd;
 
-  // 真写落点:阈值 / 熔断 / 告警处置统一进 platform-config-store(setParam keyed 状态 + 审计),persist + 水合门。
-  const setParam = usePlatformConfig((s) => s.setParam);
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
-  const pget = (k: string): string | undefined => (hydrated ? (params?.[k] as string | undefined) : undefined);
-  const [toastNode, setToast] = useToast();
-  const [mc, setActionConfirm] = useState<Mc | null>(null);
-  const [hovered, setHovered] = useState<number | null>(null);
-
-  // 派生:阈值以 store 为准,缺省回落 mock / 默认(刷新后仍反映 + 即时变)。
-  const effRedline = Number(pget(KEY_REDLINE) ?? redlinePct);
-  const effRunRisk = Number(pget(KEY_RUN_RISK) ?? RUN_RISK_DEFAULT);
-  const killActive = pget(KEY_KILL_GLOBAL) === "off";
-  const alertAcked = pget(KEY_ALERT_ACK) === "true";
+  // 派生:阈值和熔断态均以后端接口为准。
+  const effRedline = Number(redlinePct);
+  const effRunRisk = Number(LEDGER.runRiskPct);
+  const killDomains = riskRadar.gates.map((gate) => gate.dom).filter(Boolean);
+  const killActive = killDomains.length > 0 && riskRadar.gates.every((gate) => (gate.state ? gate.state === "off" : !gate.on));
+  const alertAcked = alerts.coverageRedlineAcked;
 
   // 覆盖率 zone(以生效红线判定)
   const zone = coverageRatio < effRedline ? "danger" : coverageRatio < healthyPct ? "warning" : "success";
@@ -98,7 +143,10 @@ export default function DualLedgerPage() {
         : `高于健康线 +${(coverageRatio - healthyPct).toFixed(1)}pct`;
 
   // 触红线预测:由近 8 窗口斜率外推(真实趋势,非装饰)
-  const slope = (coverageSeries[coverageSeries.length - 1] - coverageSeries[0]) / (coverageSeries.length - 1);
+  const slope =
+    coverageSeries.length > 1
+      ? (coverageSeries[coverageSeries.length - 1] - coverageSeries[0]) / (coverageSeries.length - 1)
+      : 0;
   const windowsToRedline =
     slope < -0.01 && coverageRatio > effRedline
       ? Math.max(1, Math.round((coverageRatio - effRedline) / -slope))
@@ -107,8 +155,10 @@ export default function DualLedgerPage() {
   const trendColor = windowsToRedline != null ? "var(--warning)" : "var(--ink-3)";
 
   // 真实环比(对上一统计窗口),替代硬编码 delta
-  const reserveChg = round2(((reserveUsd - prev.reserveUsd) / prev.reserveUsd) * 100);
-  const outflowChg = Math.round(((Math.abs(netFlow24hUsd) - Math.abs(prev.netFlow24hUsd)) / Math.abs(prev.netFlow24hUsd)) * 100);
+  const prevReserve = Math.abs(prev.reserveUsd) > 0 ? prev.reserveUsd : reserveUsd || 1;
+  const prevFlowAbs = Math.abs(prev.netFlow24hUsd) > 0 ? Math.abs(prev.netFlow24hUsd) : 1;
+  const reserveChg = round2(((reserveUsd - prevReserve) / prevReserve) * 100);
+  const outflowChg = Math.round(((Math.abs(netFlow24hUsd) - prevFlowAbs) / prevFlowAbs) * 100);
   const backlogChg = queueBacklogCount - prev.queueBacklogCount;
   const riskChg = avgRiskScore - prev.avgRiskScore;
 
@@ -130,8 +180,8 @@ export default function DualLedgerPage() {
       deltaColor: reserveChg < 0 ? "var(--negative)" : "var(--success)", ext: "环比上窗口",
     },
     {
-      label: "24h 净流入", value: `+${fmtUsdCompact(Math.abs(netFlow24hUsd))}`, valColor: "var(--success)", href: "/overview/liquidity",
-      arrow: "↗", deltaText: `流入 +${outflowChg}%`, deltaColor: "var(--success)", ext: "较上窗口",
+      label: "24h 净流", value: `${netFlow24hUsd >= 0 ? "+" : "−"}${fmtUsdCompact(Math.abs(netFlow24hUsd))}`, valColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--negative)", href: "/overview/liquidity",
+      arrow: netFlow24hUsd >= 0 ? "↗" : "↘", deltaText: `${netFlow24hUsd >= 0 ? "流入" : "流出"} ${outflowChg >= 0 ? "+" : ""}${outflowChg}%`, deltaColor: netFlow24hUsd >= 0 ? "var(--success)" : "var(--warning)", ext: "较上窗口",
     },
     {
       label: "提现队列积压", value: fmtNum(queueBacklogCount), valSmall: "单", valColor: "var(--ink)", href: "/finance/withdrawals",
@@ -145,31 +195,41 @@ export default function DualLedgerPage() {
     },
   ];
 
-  // 应付负债 8 科目(占比派生)
-  const liabRows = accounts.map((a) => ({ ...a, pct: round2((a.amount / liabilitiesUsd) * 100) }));
+  // 应付负债科目(占比派生)
+  const liabRows = accounts.map((a) => ({ ...a, pct: liabilitiesUsd > 0 ? round2((a.amount / liabilitiesUsd) * 100) : 0 }));
 
   const onMcConfirm = (reason: string, newValue?: string) => {
     if (!mc) return;
-    if (mc.kind === "redline") {
-      const v = round2(Number(newValue));
-      if (Number.isFinite(v)) {
-        setParam(KEY_REDLINE, v, { action: "调整兑付覆盖率红线阈值", reason });
-        setToast(`兑付覆盖率红线已调整为 ${fmtPct(v, 0)}(A2 留痕)`);
-      }
-    } else if (mc.kind === "runRisk") {
-      const v = round2(Number(newValue));
-      if (Number.isFinite(v)) {
-        setParam(KEY_RUN_RISK, v, { action: "调整挤兑压力红线阈值", reason });
-        setToast(`挤兑压力红线已调整为 ${fmtPct(v, 0)}(A2 留痕)`);
-      }
-    } else if (mc.kind === "kill") {
-      setParam(KEY_KILL_GLOBAL, "off", { action: "驾驶舱触发全局熔断", reason });
-      setToast("已触发全局熔断 · 全平台放大流出停摆(A2 留痕)");
-    } else {
-      setParam(KEY_ALERT_ACK, "true", { action: "标记兑付红线告警已处置", reason });
-      setToast("告警已标记处置(A2 留痕)");
-    }
+    const current = mc;
     setActionConfirm(null);
+    void (async () => {
+      try {
+        if (current.kind === "redline") {
+          const v = round2(Number(newValue));
+          if (!Number.isFinite(v)) throw new Error("THRESHOLD_VALUE_INVALID");
+          await updateD3Thresholds({ redlinePct: String(v) }, reason, operator);
+          await bDomain.reload();
+          setToast(`兑付覆盖率红线已写入 D3 阈值接口: ${fmtPct(v, 0)}(A2 留痕)`);
+        } else if (current.kind === "runRisk") {
+          const v = round2(Number(newValue));
+          if (!Number.isFinite(v)) throw new Error("THRESHOLD_VALUE_INVALID");
+          await updateD3Thresholds({ runRiskPct: String(v) }, reason, operator);
+          await bDomain.reload();
+          setToast(`挤兑压力红线已写入 D3 阈值接口: ${fmtPct(v, 0)}(A2 留痕)`);
+        } else if (current.kind === "kill") {
+          if (!killDomains.length) throw new Error("B_RISK_GATES_REQUIRED");
+          await jEmergencyActions.emergencyDisableJ1(killDomains, reason, operator);
+          await bDomain.reload();
+          setToast("已调用 J1 应急批量熔断接口(A2 留痕)");
+        } else {
+          await acknowledgeBDomainAlert(ALERT_ID, reason, operator);
+          await bDomain.reload();
+          setToast("告警已写入 B1 告警确认接口(A2 留痕)");
+        }
+      } catch (err) {
+        setToast(err instanceof Error ? err.message : "B_DOMAIN_OPERATION_FAILED");
+      }
+    })();
   };
 
   return (
@@ -188,6 +248,7 @@ export default function DualLedgerPage() {
         </div>
         <h1 className="font-display mt-2 text-[24px]" style={{ color: "var(--v5-ink)" }}>双账本总览</h1>
       </header>
+      <BDomainWarnings warnings={bDomain.warnings} />
 
       {/* BAND 1: 覆盖率 hero + 双账本对照 */}
       <div className="band hero-row">
@@ -431,7 +492,7 @@ export default function DualLedgerPage() {
           <div className="alertbar" style={{ marginTop: 14 }}>
             <span className="ico" style={{ color: "var(--warning)" }}><AlertTriangle size={16} /></span>
             <div style={{ fontSize: "12.5px" }}>
-              净流出放大 + 覆盖率下行 → 雷达多维同步偏紧,建议联动确认大额提现与分红节奏。
+              {netFlow24hUsd >= 0 ? "净流入为正" : "净流出放大"} + 覆盖率趋势联动 → 建议持续确认大额提现与分红节奏。
             </div>
           </div>
         </section>
@@ -445,7 +506,7 @@ export default function DualLedgerPage() {
           <span className="sub">用户应付项分账</span>
           <div className="r">
             <span className="liab-total">{fmtUsd(liabilitiesUsd)}</span>
-            <span className="b1-tag">8 科目 · 下钻 B2</span>
+            <span className="b1-tag">{liabRows.length} 科目 · 下钻 B2</span>
           </div>
         </div>
 
@@ -458,7 +519,7 @@ export default function DualLedgerPage() {
                 style={{
                   width: isLast ? undefined : `${a.pct}%`,
                   flex: isLast ? "1 1 0%" : undefined,
-                  background: `var(${a.catVar})`,
+                  background: `var(${a.cat})`,
                   opacity: hovered != null && hovered !== i ? 0.3 : 1,
                   filter: hovered === i ? "brightness(1.15)" : "none",
                 }}
@@ -478,7 +539,7 @@ export default function DualLedgerPage() {
               onMouseEnter={() => setHovered(i)}
               onMouseLeave={() => setHovered(null)}
             >
-              <span className="dot" style={{ background: `var(${a.catVar})` }} />
+              <span className="dot" style={{ background: `var(${a.cat})` }} />
               <span className="nm">{a.label}</span>
               <span className="am">{fmtUsdCompact(a.amount)}</span>
               <span className="pc">{fmtPct(a.pct)}</span>

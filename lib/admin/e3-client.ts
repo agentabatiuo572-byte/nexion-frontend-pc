@@ -1,4 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 
 export interface E3Stats {
   averageAgeMonths: number;
@@ -119,7 +120,7 @@ function toBackendKey(frontendKey: string) {
 function frontendParams(config: Record<string, string | number | null> | null | undefined) {
   return Object.entries(config ?? {}).reduce<Record<string, string>>((acc, [key, value]) => {
     const frontendKey = BACKEND_TO_FRONTEND_KEY[key] ?? key;
-    acc[frontendKey] = text(value, "0");
+    acc[frontendKey] = text(value, "—");
     return acc;
   }, {});
 }
@@ -167,7 +168,7 @@ async function e3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(result?.message || `E3_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result?.message, `E3_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;

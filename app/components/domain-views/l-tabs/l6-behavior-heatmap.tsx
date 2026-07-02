@@ -5,24 +5,22 @@
  * 形态:① 页面活跃热力矩阵(行=页面[按所选层级上卷],列=PV/UV·点击·停留·跳出,格色=强度);
  *      ② 点行下钻到单页 SVG 手机框坐标热力(看该页内用户点哪)。
  * 粒度可设:全部 / 一级 / 二级 / 三级(按 UX 层级上卷,即「统计到哪个层级的页面」)。
- * 只读报表域:无任何写业务规则动作;唯一写动作=聚合导出(confirm + logAudit 落 admin.report_exported)。
- * 数据源:lib/mock/admin/behavior-heatmap(backend-replaceable,确定性种子;接真后台换 fetch UI 零改)。
+ * 只读报表域:无任何写业务规则动作;唯一写动作=聚合导出(confirm + BI export task)。
  */
 import { useId, useMemo, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { confirm } from "@/lib/store/ui";
 import {
-  PAGE_TREE,
-  TRACKED_COUNT,
-  EXCLUDED_PAGES,
-  buildPageActivity,
   aggregateByDepth,
+  activityForWindow,
+  clickHeatForRoute,
+  normalizeL6BehaviorHeatmap,
   summarize,
-  buildPageClickHeat,
   type DepthFilter,
-  type TimeWindow,
   type HeatRow,
-} from "@/lib/mock/admin/behavior-heatmap";
+  type TimeWindow,
+} from "./l6-live-data";
+import { LDataState } from "./live-data";
 import type { LCtx } from "./types";
 
 const DEPTHS: { v: DepthFilter; lb: string }[] = [
@@ -75,17 +73,21 @@ export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
     const ok = await confirm({
       title: "导出行为热力序列 CSV",
       message:
-        "内容:当前粒度与时间窗下每页(或上卷节点)的 PV/UV/点击/平均停留/跳出率,以及单页点击区分布。全部为聚合计数,不含手机号、设备号等明文。仍需操作确认,落 admin.report_exported 审计。",
+        "内容:当前粒度与时间窗下每页(或上卷节点)的 PV/UV/点击/平均停留/跳出率,以及单页点击区分布。全部为聚合计数,不含手机号、设备号等明文。仍需操作确认。",
       confirmLabel: "导出",
     });
     if (!ok) return;
-    ctx.logAudit({
-      actor: "总管理员",
-      action: "导出用户行为热力序列 CSV(聚合 · 无 PII)",
-      target: "admin.report_exported",
-      after: "export_type=behavior_heatmap",
-    });
-    ctx.toast("已导出行为热力序列 CSV · 落 admin.report_exported 审计");
+    await ctx.biActions?.createReport({
+      exportType: "行为热力图",
+      timeRange: "当前时间窗",
+      fields: "页面 PV/UV/点击/平均停留/跳出率/点击区分布",
+      piiLevel: "无 PII",
+      maskPolicy: "NONE",
+      recipient: "BI 管理员",
+      ticket: "L6-BEHAVIOR-HEATMAP",
+    }, "导出 L6 行为热力聚合序列用于产品分析");
+    await ctx.reloadBi?.();
+    ctx.toast("行为热力导出任务已提交 · 数据来自后端 BI/export");
   };
   return (
     <>
@@ -107,14 +109,15 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [sel, setSel] = useState<string | null>(null);
   const gradId = "l6heat-" + useId().replace(/:/g, "");
+  const heatmapData = useMemo(() => normalizeL6BehaviorHeatmap(ctx.biData?.l6), [ctx.biData?.l6]);
 
-  const stats = useMemo(() => buildPageActivity(win), [win]);
+  const stats = useMemo(() => activityForWindow(heatmapData, win), [heatmapData, win]);
   const summary = useMemo(() => summarize(stats), [stats]);
   const rows = useMemo<HeatRow[]>(() => {
-    const r = aggregateByDepth(stats, depth);
+    const r = aggregateByDepth(heatmapData.pageTree, stats, depth);
     const dir = sortDir === "desc" ? 1 : -1;
     return [...r].sort((a, b) => (b[sort] - a[sort]) * dir);
-  }, [stats, depth, sort, sortDir]);
+  }, [heatmapData.pageTree, stats, depth, sort, sortDir]);
 
   // 每列最大值(按当前行集归一化)
   const maxPv = Math.max(1, ...rows.map((r) => r.pv));
@@ -124,9 +127,13 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   // 下钻:默认选最热行,可点切换
   const activeKey = sel ?? rows[0]?.key ?? null;
   const activeRow = rows.find((r) => r.key === activeKey) ?? null;
-  const heat = useMemo(() => (activeKey ? buildPageClickHeat(activeKey) : null), [activeKey]);
+  const heat = useMemo(() => (activeKey ? clickHeatForRoute(heatmapData, activeKey) : null), [activeKey, heatmapData]);
 
   const depthLb = DEPTHS.find((d) => d.v === depth)?.lb ?? "全部";
+
+  if (!heatmapData.pageTree.length) {
+    return <LDataState ctx={ctx} label="L6" />;
+  }
 
   const selectRow = (key: string) => {
     setSel(key);
@@ -339,7 +346,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
                   </div>
                 ))}
               <div className="ltint cyan" style={{ marginTop: 12, fontSize: 12 }}>
-                <b>提示</b> · <AutoGloss>点击坐标按页面线框分区聚合,接真后台后替换为真实坐标采样;深色热区=用户实际点按密度高。</AutoGloss>
+                <b>提示</b> · <AutoGloss>点击坐标按页面线框分区聚合,来源为后端行为聚合数据;深色热区=用户实际点按密度高。</AutoGloss>
               </div>
             </div>
           </div>
@@ -350,12 +357,11 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       {/* 覆盖面 + 排除声明(不静默截断) */}
       <p className="f-foot">
         <b>统计覆盖</b> ·{" "}
-        <AutoGloss>{`共追踪 ${TRACKED_COUNT} / ${PAGE_TREE.length} 个前端页面;`}</AutoGloss>
-        <b>不纳入统计的系统页({EXCLUDED_PAGES.length})</b>:
-        <AutoGloss>{EXCLUDED_PAGES.map((p) => p.titleZh).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
+        <AutoGloss>{`共追踪 ${heatmapData.trackedCount} / ${heatmapData.totalPages} 个前端页面;`}</AutoGloss>
+        <b>不纳入统计的系统页({heatmapData.excludedPages.length})</b>:
+        <AutoGloss>{heatmapData.excludedPages.map((p) => p.titleZh).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
         <b>L6 没有任何「写数据」动作</b>:
-        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则;口径来自 A4 事件流(以服务器为准),聚合导出落</AutoGloss>{" "}
-        <b>admin.report_exported</b> <AutoGloss>审计。</AutoGloss>
+        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。</AutoGloss>
       </p>
     </div>
   );

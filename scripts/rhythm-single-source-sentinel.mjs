@@ -4,15 +4,13 @@
  *
  * 不变量:活渲染面(app/(console) + app/components/domain-views)禁止直接读
  *   PHASE.current / PHASE.month / PHASE.label / PHASE.dials / CURRENT_PHASE.{code,month,total}
- * 来显示「当前节奏状态」(阶段 / 运营月 / 总时长)—— 必须走 rhythmState(pget) 单源。
+ * 来显示「当前节奏状态」(阶段 / 运营月 / 总时长)—— 必须走 H1 真实接口单源。
  *
- * 为什么:节奏总时长 + 当前运营月已运营可配(H1.rhythm.*)。任何面若读旧 seed 常量
- *   (design-data.PHASE / command-center.CURRENT_PHASE)就会在运营改节奏后抄快照、与全站分叉。
+ * 为什么:节奏总时长 + 当前运营月已运营可配(H1.rhythm.*)。任何面若读旧常量就会在运营改节奏后抄快照、与全站分叉。
  *   本轮审计正是命中 F3 双轨卡标签 / L4 效果报表表格 / D5 派发只读三项 / H3 倍率标记 等漏接面。
  *
- * 豁免:整行注释(// 或 * 开头)与行尾注释不计;seed 定义在 lib/ 不在扫描范围。
- * 修复:import { rhythmState } from "@/lib/mock/admin/command-center";
- *       const rs = rhythmState(pget); 用 rs.currentPhase / rs.currentMonth / rs.totalMonths。
+ * 豁免:整行注释(// 或 * 开头)与行尾注释不计。
+ * 修复:从 H1 真实接口读取 currentPhase / currentMonth / totalMonths。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -51,7 +49,7 @@ SCAN_DIRS.forEach(walk);
 if (hits.length) {
   console.error("[rhythm-single-source] 活渲染面直接读 PHASE.*/CURRENT_PHASE.* 显示当前节奏状态(应改 rhythmState(pget) 单源):");
   for (const h of hits) console.error("  " + h);
-  console.error("  修复:const rs = rhythmState(pget); 用 rs.currentPhase / rs.currentMonth / rs.totalMonths(seed 常量仅作 lib/ 内回退)。");
+  console.error("  修复:从 H1 真实接口读取 currentPhase / currentMonth / totalMonths。");
   process.exit(1);
 }
 

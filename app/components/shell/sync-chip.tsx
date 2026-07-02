@@ -22,7 +22,7 @@ export function SyncChip() {
           style={{ background: "var(--v5-success)" }}
         />
       </span>
-      服务端权威 · 实时
+      server-canonical · live
     </span>
   );
 }

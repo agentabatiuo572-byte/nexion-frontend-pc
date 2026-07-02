@@ -112,7 +112,9 @@
   --admin-z-drawer: 60;
   --admin-z-toast: 80;
 
-  /* ---- 字体链(Manrope 经 next/font 加载,对齐设计稿 V5 Dark spec) ---- */
+  /* ---- 字体链(本地系统字体优先,避免构建期外网字体下载依赖) ---- */
+  --font-display: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-jet-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --font-v5: var(--font-display), "Manrope", -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }

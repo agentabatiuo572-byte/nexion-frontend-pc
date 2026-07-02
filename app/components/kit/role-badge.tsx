@@ -7,6 +7,7 @@ import { ROLE_LABEL } from "@/lib/nav/console-nav";
 
 const ROLE_ACCENT: Record<AdminRole, string> = {
   superadmin: "--admin-domain-b", // 柠檬绿
+  config: "--admin-domain-a", // 靛蓝
   finance: "--admin-domain-d", // 翡翠绿
   risk: "--admin-domain-k", // 琥珀
   content: "--admin-domain-i", // 粉

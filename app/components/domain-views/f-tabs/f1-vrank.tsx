@@ -4,16 +4,15 @@
  *  奖励改为运营可配的「奖励清单」(USDT / NEX / 代金券 / SKU / 自定义),实物奖与发货队列已删。 */
 import { CodeTag } from "../design-kit";
 import type { BusinessFormValue } from "../design-kit";
-import { VRANK, LEADERSHIP_CANON, leadershipTopConcentration, leadershipQualifiers } from "./data";
 import type { FViewCtx } from "./types";
-import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/store/admin/platform-config-store";
+import type { F1VRankRow } from "@/lib/admin/f1-client";
+import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 
-const LOG_MAX = Math.log10(84231);
-function popPct(p: number): number { return p <= 0 ? 0 : Math.max(2, (Math.log10(Math.max(p, 1)) / LOG_MAX) * 100); }
-function pyrPct(p: number): number { return p <= 0 ? 0 : Math.max(3, (Math.log10(Math.max(p, 1)) / LOG_MAX) * 100); }
+function popPct(p: number, logMax: number): number { return p <= 0 ? 0 : Math.max(2, (Math.log10(Math.max(p, 1)) / logMax) * 100); }
+function pyrPct(p: number, logMax: number): number { return p <= 0 ? 0 : Math.max(3, (Math.log10(Math.max(p, 1)) / logMax) * 100); }
 function popColor(i: number): string { return i <= 2 ? "var(--cyan)" : i <= 5 ? "var(--brand)" : i <= 7 ? "var(--warning)" : "var(--brand-2)"; }
 
-type VRow = (typeof VRANK)[number];
+type VRow = F1VRankRow;
 type VField = { k: string; label: string; cur: string; kind: "text" | "number"; options?: string[] };
 
 // 奖励 chip 文案(运营可读)。
@@ -50,16 +49,57 @@ function toneOf(k: string): string {
 }
 
 export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
+  const rows = ctx.vrankRows;
+  const logMax = Math.max(1, Math.log10(Math.max(...rows.map((r) => r.pop), 1)));
+
+  if (ctx.f1Loading && rows.length === 0) {
+    return (
+      <section className="ladder">
+        <div className="ladder-h">
+          <span className="ph-ttl">V-Rank 13 阶阶梯</span>
+          <span className="ph-sub">正在读取后端数据</span>
+          <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">server-canonical</CodeTag></span>
+        </div>
+        <div className="empty">F1 数据加载中...</div>
+      </section>
+    );
+  }
+
+  if (ctx.f1Error && rows.length === 0) {
+    return (
+      <section className="ladder">
+        <div className="ladder-h">
+          <span className="ph-ttl">V-Rank 13 阶阶梯</span>
+          <span className="ph-sub">后端接口返回失败</span>
+        </div>
+        <div className="empty">F1 数据加载失败 · {ctx.f1Error}</div>
+        <button type="button" className="f-cta" onClick={() => void ctx.refreshF1()}>重试</button>
+      </section>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <section className="ladder">
+        <div className="ladder-h">
+          <span className="ph-ttl">V-Rank 13 阶阶梯</span>
+          <span className="ph-sub">后端暂无数据</span>
+          <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">server-canonical</CodeTag></span>
+        </div>
+        <div className="empty">F1 暂无 V-Rank 数据</div>
+      </section>
+    );
+  }
+
   // 门槛改为每子值单独单值「调整」(不再一个文本框手打「自买 $299 · 直推 3」整串);展示行由各字段合成可读串。
-  const fg = (r: VRow, k: string, dflt: string): string => ctx.pget(`F.vrank.${r.v}.${k}`) ?? dflt;
   const rewardsOf = (v: string): OpsVRankRewardItem[] => ctx.rewards[v] ?? [];
   const hasFundReward = (v: string): boolean => rewardsOf(v).some((it) => isFund(it.type));
   const composeTh = (r: VRow): string => {
     const p: string[] = [];
-    if (r.selfBuy != null) p.push(`自买 ${fg(r, "selfBuy", r.selfBuy)}`);
-    if (r.teamGv != null) p.push(`团队 GV ${fg(r, "teamGv", r.teamGv)}`);
-    if (r.directRefs != null) p.push(`直推 ${fg(r, "directRefs", r.directRefs)}`);
-    if (r.legCount != null) p.push(`${fg(r, "legCount", r.legCount)} 条分支 · 每条 ≥${fg(r, "legRank", r.legRank ?? "")}`);
+    if (r.selfBuy != null) p.push(`自买 ${r.selfBuy}`);
+    if (r.teamGv != null) p.push(`团队 GV ${r.teamGv}`);
+    if (r.directRefs != null) p.push(`直推 ${r.directRefs}`);
+    if (r.legCount != null) p.push(`${r.legCount} 条分支 · 每条 ≥${r.legRank ?? "—"}`);
     return p.length ? p.join(" · ") : "—";
   };
   const fieldsOf = (r: VRow): VField[] => {
@@ -69,12 +109,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     if (r.directRefs != null) f.push({ k: "directRefs", label: "直推数", cur: r.directRefs, kind: "number" });
     if (r.legCount != null) f.push({ k: "legCount", label: "达标分支数", cur: r.legCount, kind: "number" });
     // 分支最低等级 = V-Rank 13 阶有限枚举(运营从已存在等级里勾选,不手输「V3」串)。
-    if (r.legRank != null) f.push({ k: "legRank", label: "分支最低等级", cur: r.legRank, kind: "text", options: VRANK.map((x) => x.v) });
+    if (r.legRank != null) f.push({ k: "legRank", label: "分支最低等级", cur: r.legRank, kind: "text", options: rows.map((x) => x.v) });
     return f;
   };
   const editField = (r: VRow, f: VField) => {
     const fund = hasFundReward(r.v);
-    const cur = fg(r, f.k, f.cur);
+    const cur = f.cur;
     ctx.openActionConfirm({
       name: `${r.v} 门槛 · ${f.label}调整`, amplify: fund, op: "param", paramKey: `F.vrank.${r.v}.${f.k}`,
       edit: f.options ? { kind: "select", current: cur, options: f.options } : { kind: f.kind, current: cur },
@@ -94,10 +134,10 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       name: `${r.v} · 新增奖励`, amplify: false,
       businessForm: { kind: "vrank-reward-edit", ...rewardFormBase(r) },
       detail: `为 ${r.v} 等级新增一项晋升奖励。USDT / NEX 类为资金 / 代币流出,派发时受 B1 备付金覆盖率约束;代金券 / SKU / 自定义不直接入资金账。`,
-      run: (reason, bv) => {
+      run: async (reason, bv) => {
         if (!bv) return;
         const item: OpsVRankRewardItem = { id: genRewardId(), ...rewardFields(bv) };
-        ctx.addReward(r.v, item, reason);
+        await ctx.addReward(r.v, item, reason);
         ctx.toast(`${r.v} · 已新增奖励 ${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}`);
       },
     });
@@ -114,9 +154,9 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         currentCustom: item.custom,
       },
       detail: `编辑 ${r.v} 等级奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」。改类型 / 金额后对下一轮派发生效,不回溯已发放。`,
-      run: (reason, bv) => {
+      run: async (reason, bv) => {
         if (!bv) return;
-        ctx.updateReward(r.v, item.id, rewardFields(bv), reason);
+        await ctx.updateReward(r.v, item.id, rewardFields(bv), reason);
         ctx.toast(`${r.v} · 奖励已更新`);
       },
     });
@@ -125,20 +165,22 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     ctx.openActionConfirm({
       name: `${r.v} · 移除奖励`,
       detail: `移除 ${r.v} 等级的奖励「${rewardLabel(item, ctx.voucherLabels, ctx.skuLabels)}」。移除后该奖励不再发放;已派发的不回收。`,
-      run: (reason) => {
-        ctx.removeReward(r.v, item.id, reason);
+      run: async (reason) => {
+        await ctx.removeReward(r.v, item.id, reason);
         ctx.toast(`${r.v} · 已移除奖励`);
       },
     });
   };
 
-  const configuredLevels = VRANK.filter((r) => rewardsOf(r.v).length > 0).length;
-  const topConcPct = Math.round(leadershipTopConcentration() * 100); // 顶部 N 名领袖占池比(派生,与 F4 同源)
-  // 顶栏会员数派生自 VRANK 单源(V3+ = canon 合格领袖,与 F4/registry 498 一致),不硬编码。
-  const v3plus = leadershipQualifiers();
-  const totalMembers = VRANK.reduce((s, r) => s + r.pop, 0);
-  const v0Pop = VRANK.find((r) => r.v === "V0")?.pop ?? 0;
-  const v3plusPct = ((v3plus / totalMembers) * 100).toFixed(2);
+  const configuredLevels = rows.filter((r) => rewardsOf(r.v).length > 0).length;
+  const topConcPct = ctx.leadership?.topConcentrationPct ?? 0; // 顶部 N 名领袖占池比(后端派生)
+  // 顶栏会员数派生自后端 rows/leadership,不硬编码。
+  const v3plus = ctx.leadership?.qualifiers ?? rows.filter((r) => Number(r.v.replace("V", "")) >= 3).reduce((s, r) => s + r.pop, 0);
+  const totalMembers = ctx.leadership?.totalMembers ?? rows.reduce((s, r) => s + r.pop, 0);
+  const v0Pop = rows.find((r) => r.v === "V0")?.pop ?? 0;
+  const v3plusPct = totalMembers > 0 ? ((v3plus / totalMembers) * 100).toFixed(2) : "0.00";
+  const unlockRank = ctx.leadership?.unlockRank ?? 3;
+  const topN = ctx.leadership?.topN ?? 10;
 
   return (
     <>
@@ -156,11 +198,12 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
             <span className="ph-sub">门槛 · 奖励 · 在册人数</span>
             <span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">server-canonical</CodeTag></span>
           </div>
-          {VRANK.map((r, i) => {
+          {ctx.f1Error && <div className="empty">F1 刷新失败 · {ctx.f1Error}</div>}
+          {rows.map((r, i) => {
             const flds = fieldsOf(r);
             const items = rewardsOf(r.v);
             return (
-              <div key={r.v} className={`lrow${r.pop === 0 ? " empty" : ""}${i === VRANK.length - 1 ? " last" : ""}`}>
+              <div key={r.v} className={`lrow${r.pop === 0 ? " empty" : ""}${i === rows.length - 1 ? " last" : ""}`}>
                 <div className={`vbadge v-${i}`}>{r.v}</div>
                 <div className="lcell"><div className="l1">{composeTh(r)}</div><div className="l2">F.vrank.{r.v}</div></div>
                 <div className="lcell">
@@ -175,7 +218,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                   </div>
                 </div>
                 <div className="pop">
-                  <div className="bar"><div className="f" style={{ width: `${popPct(r.pop)}%`, background: popColor(i) }} /></div>
+                  <div className="bar"><div className="f" style={{ width: `${popPct(r.pop, logMax)}%`, background: popColor(i) }} /></div>
                   <div className="ct">{r.pop.toLocaleString()}</div>
                 </div>
                 <div className="lact">
@@ -192,13 +235,13 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
           <div className="rail-card">
             <div className="rc-h">人口金字塔<span className="tag">log</span></div>
             <div className="pyr">
-              {[...VRANK].reverse().map((r) => {
-                const idx = VRANK.findIndex((x) => x.v === r.v);
+              {[...rows].reverse().map((r) => {
+                const idx = rows.findIndex((x) => x.v === r.v);
                 const zero = r.pop === 0;
                 return (
                   <div key={r.v} className="pyr-row">
                     <span className="lbl">{r.v}</span>
-                    <div className={`b${idx >= 6 ? " top" : ""}`} style={zero ? { width: 1, opacity: 0.18 } : { width: `${pyrPct(r.pop)}%` }} />
+                    <div className={`b${idx >= 6 ? " top" : ""}`} style={zero ? { width: 1, opacity: 0.18 } : { width: `${pyrPct(r.pop, logMax)}%` }} />
                     <span className="ct">{r.pop.toLocaleString()}</span>
                   </div>
                 );
@@ -231,7 +274,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
         </aside>
       </div>
 
-      <p className="f-foot"><b>顶部稀薄、底部臃肿</b>是 V-Rank 设计意图;领导池全部分给 V{LEADERSHIP_CANON.unlockRank}+ 领袖,且高阶指数票权让顶部 {LEADERSHIP_CANON.topN} 名(V8+)虹吸 ≈{topConcPct}% 池子。调高 V8+ 门槛会收紧头部分润但需先核验 B1 覆盖率 · 调高低阶门槛(V1/V2)会压制新人进群速度。</p>
+      <p className="f-foot"><b>顶部稀薄、底部臃肿</b>是 V-Rank 设计意图;领导池全部分给 V{unlockRank}+ 领袖,且高阶指数票权让顶部 {topN} 名(V8+)虹吸 ≈{topConcPct}% 池子。调高 V8+ 门槛会收紧头部分润但需先核验 B1 覆盖率 · 调高低阶门槛(V1/V2)会压制新人进群速度。</p>
     </>
   );
 }

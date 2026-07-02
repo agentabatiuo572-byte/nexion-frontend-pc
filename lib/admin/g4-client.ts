@@ -268,9 +268,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
     owner: asText(node.owner),
     userNo: asText(node.userNo),
     source: asText(node.source),
-    lifetimeDividend: asText(node.lifetimeDividend, "$0"),
-    status: asText(node.status, "held"),
-    statusLabel: asText(node.statusLabel, asText(node.status, "held")),
+    lifetimeDividend: asText(node.lifetimeDividend, ""),
+    status: asText(node.status, ""),
+    statusLabel: asText(node.statusLabel, asText(node.status, "")),
     statusTone: asText(node.statusTone, "dim"),
     buy: asText(node.buy),
     dividends: (node.dividends ?? []).map((fact) => ({
@@ -290,14 +290,14 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
   const page = Math.max(1, Math.min(totalPages, Math.trunc(toNumber(nodePage.page, 1))));
   return {
     stats: {
-      totalSlots: toNumber(stats.totalSlots, 1000),
+      totalSlots: toNumber(stats.totalSlots),
       sold: toNumber(stats.sold),
-      unitPrice: toNumber(stats.unitPrice, 9999),
+      unitPrice: toNumber(stats.unitPrice),
       unsold: toNumber(stats.unsold),
       soldPct: toNumber(stats.soldPct),
       genesisAccrualUsd: toNumber(stats.genesisAccrualUsd),
-      marketOn: toBool(stats.marketOn, true),
-      todayBatch: asText(stats.todayBatch, "GD-0611"),
+      marketOn: toBool(stats.marketOn, false),
+      todayBatch: asText(stats.todayBatch, ""),
       secondary: {
         floor: toNumber(secondary.floor),
         vol24h: toNumber(secondary.vol24h),
@@ -319,18 +319,18 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
     })),
     dividend: {
       dailyVolumeBase: toNumber(dividend.dailyVolumeBase),
-      dividendPct: toNumber(dividend.dividendPct, 0.1),
+      dividendPct: toNumber(dividend.dividendPct),
       poolToday: toNumber(dividend.poolToday),
       perSlotPerDay: toNumber(dividend.perSlotPerDay),
       floorPerNodePerDay: toNumber(dividend.floorPerNodePerDay),
       payoutToday: toNumber(dividend.payoutToday),
-      batchNo: asText(dividend.batchNo, "GD-0611"),
+      batchNo: asText(dividend.batchNo, ""),
       batchStatus: asText(dividend.batchStatus, "ready"),
     },
     market: {
-      enabled: toBool(market.enabled, true),
-      configKey: asText(market.configKey, "J.killswitch.genesis"),
-      linkedDomain: asText(market.linkedDomain, "J1"),
+      enabled: toBool(market.enabled, false),
+      configKey: asText(market.configKey, ""),
+      linkedDomain: asText(market.linkedDomain, ""),
     },
     geoBlocked: (data?.geoBlocked ?? []).map((geo) => ({
       cc: asText(geo.cc),

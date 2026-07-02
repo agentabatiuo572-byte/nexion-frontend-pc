@@ -5,6 +5,7 @@
  */
 import type { ReactNode } from "react";
 import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
+import type { LBiActions, LBiData } from "@/lib/admin/l-client";
 
 export type ActionConfirmReq = {
   action: ReactNode;
@@ -12,17 +13,15 @@ export type ActionConfirmReq = {
   amplifies?: boolean;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
-  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void;
+  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
 export type LCtx = {
-  pget: (k: string) => string | undefined;
-  params: Record<string, unknown>;
-  setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
-  /** A2 留痕(导出/报告类强留痕;含 PII 标 masking_policy)。 */
-  logAudit: (e: { actor: string; action: string; target: string; before?: string; after?: string; reason?: string }) => void;
-  biLoading?: boolean;
-  biError?: string | null;
   toast: (s: string) => void;
   openActionConfirm: (req: ActionConfirmReq) => void;
+  biData?: LBiData | null;
+  biLoading?: boolean;
+  biError?: string | null;
+  reloadBi?: () => Promise<void>;
+  biActions?: LBiActions;
 };

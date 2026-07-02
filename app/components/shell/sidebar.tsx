@@ -20,9 +20,9 @@ function LogoMark() {
       style={{
         width: 30,
         height: 30,
-        background: "linear-gradient(135deg, var(--v5-brand) 0%, var(--v5-brand-2) 130%)",
+        background: "linear-gradient(135deg, var(--v5-brand) 0%, #9B89E0 130%)",
         color: "var(--v5-on-brand)",
-        fontWeight: 600,
+        fontWeight: 700,
         fontSize: 16,
         boxShadow: "var(--v5-spotlight-brand)",
       }}

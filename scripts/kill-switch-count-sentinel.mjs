@@ -6,10 +6,9 @@
  * 但多处「7闸/6闸/7-7/六功能闸/七闸/七个熔断闸」漏改、含运营可见 stat 卡 + 首页驾驶舱告警;
  * 典型「修一处≠修全部」,且旧 grep 只盯「N 闸」漏掉了「N/N」「N 功能闸」「中文数字 N 闸」)。
  *
- * 单源 = lib/mock/admin/design-data.ts 的 KILLSWITCH 数组(功能闸权威)。
- * 两道断言:
- *   ① 结构:KILLSWITCH 恰好 = {withdraw,staking,genesis,exchange,trial}(防再加 premium/nexv2 或漏删)。
- *   ② 计数:app/ lib/ 代码里所有「断言式功能闸计数」的数字 == 功能闸数 N。覆盖形态:
+ * 单源 = EXPECTED_KEYS(当前后端功能闸集合)。如新增/移除功能闸,同步改此常量与可见文案。
+ * 断言:
+ *   计数:app/ lib/ 代码里所有「断言式功能闸计数」的数字 == 功能闸数 N。覆盖形态:
  *      N 道熔断闸 / N 个?熔断闸 / N 功能闸 / N 大业务闸门 / N 闸(全开|全部在线|矩阵|只读|在线)/
  *      Kill[-Switch] N 闸 / Kill[-Switch] N/N / N/N 熔断(总数=N)/ 中文数字「N个熔断闸·N功能闸·NN闸」。
  *      旧 7/6(含已下线两闸)即违例。
@@ -25,29 +24,10 @@ const CN = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九
 
 const read = (f) => fs.readFileSync(f, "utf8");
 
-// ---- ① 解析 KILLSWITCH 单源 ----
-const designData = read(path.join(ROOT, "lib", "mock", "admin", "design-data.ts"));
-const ksStart = designData.search(/export const KILLSWITCH\s*=\s*\[/);
 const failures = [];
-let N = EXPECTED_KEYS.length;
-if (ksStart < 0) {
-  failures.push("KILLSWITCH 数组未找到(design-data.ts 格式漂移?)");
-} else {
-  const after = designData.slice(ksStart);
-  const open = after.indexOf("[");
-  let depth = 0, end = -1;
-  for (let i = open; i < after.length; i += 1) {
-    if (after[i] === "[") depth += 1;
-    else if (after[i] === "]") { depth -= 1; if (depth === 0) { end = i; break; } }
-  }
-  const keys = [...after.slice(open + 1, end).matchAll(/key:\s*"(\w+)"/g)].map((m) => m[1]);
-  N = keys.length;
-  if ([...keys].sort().join(",") !== [...EXPECTED_KEYS].sort().join(",")) {
-    failures.push(`KILLSWITCH 功能闸集漂移:实际 [${keys.join(", ")}] ≠ 期望 [${EXPECTED_KEYS.join(", ")}](若有意增删,同步改本哨兵 EXPECTED_KEYS + 全仓「N 闸」措辞)`);
-  }
-}
+const N = EXPECTED_KEYS.length;
 
-// ---- ② 扫描 app/ lib/ 的断言式闸计数,必 == N ----
+// ---- 扫描 app/ lib/ 的断言式闸计数,必 == N ----
 const ARABIC = [
   /(\d+)\s*道熔断闸/g,
   /(\d+)\s*个?熔断闸/g,

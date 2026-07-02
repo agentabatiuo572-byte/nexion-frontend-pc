@@ -2,10 +2,8 @@
 
 /**
  * M3 即时会话台 — 收件箱三栏(列表 + 富气泡对话 + 客户档案)(helpdesk 设计稿布局,由 I9 迁出)。
- * 字段镜像 UniApp conversations mock。真写统一落 platform-config params(persist 兼容前缀):
- *  - I.session.convos: 坐席会话(分配/回复/主动发起/推送/归档/标签/备注);
- *  - I.support.tickets: 转工单时写对方真写键,不造影子;
- *  - I.session.ui.lastConvo: 坐席续聊 UI 态(轻写)。
+ * 会话 / 工单读写走后端 content 接口;I.session.* / I.support.* 为 M 容器传入的视图适配键。
+ * I.session.ui.lastConvo 仅保留为坐席续聊 UI 态。
  * 例行坐席操作(回复/转交/改状态/推送/归档/标签/备注)直接执行 + 自动 A2 审计;
  * 主动发起会话(人群投放) / 转工单 走操作确认 + 理由。续聊恢复后刷新仍回上次会话。
  */
@@ -13,20 +11,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
-  ADVISOR_SCRIPTS,
-  PUSH_SKUS,
-  SESSION_CONVOS,
-  SESSION_REPLY_TEMPLATES,
   STANDBY_POOL_LABEL,
-  SUPPORT_TICKETS,
   TRANSFER_TIMEOUT_MINS,
   transferTargetLabel,
+  type AdvisorScript,
   type CustomerNote,
   type CustomerProfile,
   type InitiateIdentity,
-  type PushSku,
+  type SegField,
   type SessionConvo,
   type SessionMsg,
+  type SessionReplyTpl,
   type SessionStatus,
   type SessionTransfer,
   type SupportTicket,
@@ -34,12 +29,23 @@ import {
 import { ConvStat, Empty, MAvatar, ownerLabel, relWhen } from "./hd-ui";
 import { InitiateModal, QuickActionModal, ReturnModal, TransferModal, type InitiatePayload, type ReturnPayload, type TransferPayload } from "./m3-modals";
 import type { MCtx } from "./types";
+import type { MSupportAgent } from "@/lib/admin/m-client";
+import { fetchE1Catalog, type E1CatalogSnapshot } from "@/lib/admin/e1-client";
 
 const CONVO_KEY = "I.session.convos";
 const TICKET_KEY = "I.support.tickets";
+const SCRIPT_LIST_KEY = "I.session.scripts";
+const REPLY_TEMPLATE_LIST_KEY = "I.session.replyTemplates";
+const AGENT_LIST_KEY = "I.support.agents";
+const TRANSFER_TARGETS_KEY = "I.session.transferTargets";
+const AUDIENCE_OPTIONS_KEY = "I.session.audienceOptions";
+const SEGMENT_FIELDS_KEY = "I.session.segmentFields";
 const LAST_CONVO_KEY = "I.session.ui.lastConvo";
 const FALLBACK_KEY = "I.session.workbench.timeoutFallback"; // 工作台「转入待处理超时回落备勤池」开关("on"=启用)
 const INBOX_PAGE_SIZE = 8; // 会话收件箱每页条数(翻页器)
+
+type PushSku = { id: string; title: string; subtitle: string; to: string };
+type PushSkuSource = E1CatalogSnapshot["skus"][number];
 
 type ConvSeg = "all" | "unread" | "incoming" | "active" | "resolved" | "archived";
 const SEGS: Array<[ConvSeg, string]> = [
@@ -72,6 +78,9 @@ function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
     return fallback;
   }
 }
+function textOf(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : value == null ? fallback : String(value);
+}
 function cloneConvos(rows: SessionConvo[]): SessionConvo[] {
   return rows.map((c) => ({ ...c, messages: c.messages.map((m) => ({ ...m })) }));
 }
@@ -92,12 +101,64 @@ const HREF_CN: Record<string, string> = { "/store": "商城", "/staking": "锁�
 function hrefLabel(href: string): string {
   return HREF_CN[href] ?? href;
 }
+function toPushSku(sku: PushSkuSource): PushSku {
+  const subtitle = [sku.tier, sku.tagline, sku.gpu || sku.vram].filter(Boolean).slice(0, 2).join(" · ");
+  return {
+    id: sku.id || sku.name,
+    title: sku.name || sku.id || "未命名 SKU",
+    subtitle: subtitle || "E1 商品目录",
+    to: "/store",
+  };
+}
 
 export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const router = useRouter();
 
-  const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), SESSION_CONVOS)), [ctx.params, pget]);
+  const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), [])), [ctx.params, pget]);
+  const advisorScripts = useMemo(() => parseParamArray<AdvisorScript>(pget(SCRIPT_LIST_KEY), []), [ctx.params, pget]);
+  const replyTemplates = useMemo(() => parseParamArray<SessionReplyTpl>(pget(REPLY_TEMPLATE_LIST_KEY), []), [ctx.params, pget]);
+  const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
+  const transferTargets = useMemo(() => parseParamArray<Record<string, unknown>>(pget(TRANSFER_TARGETS_KEY), []), [ctx.params, pget]);
+  const initiateIdentities = useMemo<InitiateIdentity[]>(() => {
+    return supportAgents
+      .filter((agent) => agent.enabled)
+      .flatMap((agent) =>
+        agent.serviceTypes.map((type) => ({
+          id: `${agent.id}:${type}`,
+          name: agent.name,
+          type,
+          label: type === "advisor" ? "专属顾问" : "普通客服",
+        })),
+      );
+  }, [supportAgents]);
+  const transferAgents = useMemo(
+    () => supportAgents.filter((agent) => agent.enabled && agent.transferable && !agent.busy).map((agent) => ({ id: agent.id, name: agent.name, position: agent.position })),
+    [supportAgents],
+  );
+  const transferQueues = useMemo(() => {
+    const rows = transferTargets
+      .filter((target) => textOf(target.targetType).toLowerCase() === "queue")
+      .map((target) => textOf(target.targetName || target.targetId).trim())
+      .filter(Boolean);
+    return Array.from(new Set(rows));
+  }, [transferTargets]);
+  const audiencePresets = useMemo(() => {
+    const rows = parseParamArray<string>(pget(AUDIENCE_OPTIONS_KEY), []);
+    return rows;
+  }, [ctx.params, pget]);
+  const segmentFields = useMemo(() => {
+    const rows = parseParamArray<SegField>(pget(SEGMENT_FIELDS_KEY), []);
+    return rows;
+  }, [ctx.params, pget]);
+  const initiateCustomers = useMemo(() => {
+    const rows = new Map<string, CustomerProfile>();
+    convos.forEach((convo) => {
+      const profile = convo.profile;
+      if (profile?.uid && !rows.has(profile.uid)) rows.set(profile.uid, profile);
+    });
+    return Array.from(rows.values());
+  }, [convos]);
 
   const [seg, setSeg] = useState<ConvSeg>("all");
   const [query, setQuery] = useState("");
@@ -115,6 +176,31 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [showTransfer, setShowTransfer] = useState(false); // 转交弹窗
   const [showReturn, setShowReturn] = useState(false);     // 手动退回弹窗
   const [profilePeek, setProfilePeek] = useState(false); // 窄屏右栏抽屉开关
+  const [pushSkus, setPushSkus] = useState<PushSku[]>([]);
+  const [pushSkuLoading, setPushSkuLoading] = useState(true);
+  const [pushSkuError, setPushSkuError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setPushSkuLoading(true);
+    fetchE1Catalog()
+      .then((snapshot) => {
+        if (!active) return;
+        setPushSkus(snapshot.skus.filter((sku) => sku.status !== "off").map(toPushSku));
+        setPushSkuError(null);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setPushSkus([]);
+        setPushSkuError(error instanceof Error ? error.message : "E1_SKU_LOAD_FAILED");
+      })
+      .finally(() => {
+        if (active) setPushSkuLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // 续聊恢复:hydrate 后一次性恢复上次会话;手动选过即锁(restoredRef)。
   const restoredRef = useRef(false);
@@ -184,30 +270,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const updateConvo = (id: string, updater: (c: SessionConvo) => SessionConvo, reason: string, action: string) =>
     writeConvos(convos.map((c) => (c.id === id ? updater(c) : c)), reason, action);
 
-  // ── 转入待处理:工作台「超时回落备勤池」策略(坐席在工作台自选;开则超时自动回落,关则一直等待)──
+  // ── 转入待处理:工作台「超时回落备勤池」策略由后端定时任务执行;前端只保存策略与展示状态──
   const fallbackOn = pget(FALLBACK_KEY) === "on";
-  const setFallback = (on: boolean) => setParam(FALLBACK_KEY, on ? "on" : "off", { action: "工作台·转入待处理超时回落备勤池开关", reason: "ui-state" });
-  // 启用时:超时未接入的「转入待处理」会话自动回落备勤池重分配(写系统消息 + fellBack 防重复;不弹 MC、不写 A2)。
-  useEffect(() => {
-    if (!fallbackOn) return;
-    const now = Date.now();
-    const overdue = convos.filter((c) => c.transfer && !c.transfer.fellBack && c.transfer.to.kind !== "standby" && isTransferOverdue(c.transfer));
-    if (overdue.length === 0) return;
-    const ids = new Set(overdue.map((c) => c.id));
-    const next = convos.map((c) =>
-      ids.has(c.id) && c.transfer
-        ? {
-            ...c,
-            owner: STANDBY_POOL_LABEL,
-            lastTs: now,
-            transfer: { ...c.transfer, to: { kind: "standby" as const }, fellBack: true },
-            messages: [...c.messages, { ts: now, sender: "agent" as const, agentName: "系统", text: `转入待处理超过 ${TRANSFER_TIMEOUT_MINS} 分钟未接入 · 已自动回落${STANDBY_POOL_LABEL}重新分配(来自 ${c.transfer.from})` }],
-          }
-        : c,
-    );
-    writeConvos(next, "超时未接入自动回落备勤池(例行,自动留档)", `转入待处理超时回落 ${overdue.length} 个会话 · admin.conversation_transfer_fallback`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convos, fallbackOn]);
+  const setFallback = (on: boolean) => setParam(FALLBACK_KEY, on ? "on" : "off", { action: "工作台·转入待处理超时回落备勤池开关", reason: "调整 M3 会话转入待处理超时回落策略" });
 
   const sendReply = () => {
     if (!selected) return;
@@ -276,6 +341,18 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   };
   const waitTransfer = () => {
     if (!selected?.transfer) return;
+    const now = Date.now();
+    const t = selected.transfer;
+    updateConvo(
+      selected.id,
+      (c) => ({
+        ...c,
+        lastTs: now,
+        messages: [...c.messages, { ts: now, sender: "agent", agentName: "系统", text: `保持转入待处理 · 继续等待 ${transferTargetLabel(t.to)} 接入(来自 ${t.from})` }],
+      }),
+      "转入待处理继续等待(例行,自动留档)",
+      `会话等待处理 ${selected.id} · admin.conversation_transfer_wait`,
+    );
     toast(`${selected.id} 保持转入待处理 · 继续等待接入`);
   };
   const runReturn = (p: ReturnPayload) => {
@@ -305,7 +382,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
 
   const runInitiate = (p: InitiatePayload) => {
     const now = Date.now();
-    const existing = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), SESSION_CONVOS));
+    const existing = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), []));
     const cid = `cv-out-${now}`;
     const opening: SessionMsg = { ts: now, sender: "agent", agentName: p.identity.name, text: p.text };
     if (p.identity.type === "advisor" && p.ctaHref && p.ctaHref !== "—" && p.ctaHref !== "") opening.ctaHref = p.ctaHref;
@@ -346,7 +423,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       amplifies: false,
       run: (reason: string) => {
         const now = Date.now();
-        const existingTickets = cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), SUPPORT_TICKETS));
+        const existingTickets = cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), []));
         const id = nextTicketId(existingTickets);
         const newTicket: SupportTicket = {
           id,
@@ -604,6 +681,11 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
               onReplyChange={setReplyBody}
               onSend={sendReply}
               onPushSku={pushSku}
+              pushSkus={pushSkus}
+              pushSkuLoading={pushSkuLoading}
+              pushSkuError={pushSkuError}
+              advisorScripts={advisorScripts}
+              replyTemplates={replyTemplates}
             />
           )}
         </div>
@@ -623,8 +705,19 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         onRemoveTag={removeCustomerTag}
       />
 
-      {showInitiate && <InitiateModal onClose={() => setShowInitiate(false)} onSend={runInitiate} />}
-      {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} />}
+      {showInitiate && (
+        <InitiateModal
+          onClose={() => setShowInitiate(false)}
+          onSend={runInitiate}
+          identities={initiateIdentities}
+          advisorScripts={advisorScripts}
+          replyTemplates={replyTemplates}
+          customers={initiateCustomers}
+          audiencePresets={audiencePresets}
+          segmentFields={segmentFields}
+        />
+      )}
+      {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}
       {showReturn && selected?.transfer && <ReturnModal fromAgent={selected.transfer.from} onClose={() => setShowReturn(false)} onSubmit={runReturn} />}
       {quick && selected?.profile && (
         <QuickActionModal kind={quick} profile={selected.profile} onClose={() => setQuick(null)} onAddNote={addNote} onRemoveNote={removeNote} onAccount={runAccountAction} />
@@ -649,6 +742,7 @@ function ChatHeader({
 }) {
   const name = convo.profile?.nickname ?? convo.customer ?? convo.agentName;
   const active = convo.status === "open";
+  const closed = convo.status === "closed" || convo.archived;
   const incoming = !!convo.transfer; // 转入待处理:常规动作收起,改由转交横幅处置
   return (
     <div style={{ padding: "13px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", rowGap: 8 }}>
@@ -667,18 +761,24 @@ function ChatHeader({
       ) : (
         <>
           <ConvStat active={active} />
-          <button type="button" data-proof="session-transfer" className="btn btn-sec btn-sm" onClick={onTransfer}>
-            <Icon name="users" size={16} />
-            转交
-          </button>
-          <button type="button" data-proof="session-status" className="btn btn-sec btn-sm" onClick={() => onStatus(active ? "resolved" : "open")}>
-            <Icon name={active ? "check" : "arrow"} size={16} />
-            {active ? "标记已解决" : "重新激活"}
-          </button>
-          <button type="button" data-proof="session-to-ticket" className="btn btn-cyan btn-sm" onClick={onToTicket}>
-            <Icon name="doc" size={16} />
-            转工单
-          </button>
+          {active && !closed && (
+            <button type="button" data-proof="session-transfer" className="btn btn-sec btn-sm" onClick={onTransfer}>
+              <Icon name="users" size={16} />
+              转交
+            </button>
+          )}
+          {!closed && (
+            <button type="button" data-proof="session-status" className="btn btn-sec btn-sm" onClick={() => onStatus(active ? "resolved" : "open")}>
+              <Icon name={active ? "check" : "arrow"} size={16} />
+              {active ? "标记已解决" : "重新激活"}
+            </button>
+          )}
+          {!closed && (
+            <button type="button" data-proof="session-to-ticket" className="btn btn-cyan btn-sm" onClick={onToTicket}>
+              <Icon name="doc" size={16} />
+              转工单
+            </button>
+          )}
         </>
       )}
       <button type="button" className="btn btn-ghost btn-icon btn-sm" title="客户档案" onClick={onToggleProfile}>
@@ -728,20 +828,30 @@ function ChatComposer({
   onReplyChange,
   onSend,
   onPushSku,
+  pushSkus,
+  pushSkuLoading,
+  pushSkuError,
+  advisorScripts,
+  replyTemplates,
 }: {
   convo: SessionConvo;
   replyBody: string;
   onReplyChange: (v: string) => void;
   onSend: () => void;
   onPushSku: (sku: PushSku) => void;
+  pushSkus: PushSku[];
+  pushSkuLoading: boolean;
+  pushSkuError: string | null;
+  advisorScripts: AdvisorScript[];
+  replyTemplates: SessionReplyTpl[];
 }) {
   const [pickOpen, setPickOpen] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const isAdvisor = convo.type === "advisor";
   const quick: Array<{ id: string; group: string; text: string }> = isAdvisor
-    ? ADVISOR_SCRIPTS.filter((s) => s.status === "published").map((s) => ({ id: s.id, group: s.group, text: s.text }))
-    : SESSION_REPLY_TEMPLATES.filter((t) => t.type === "support").map((t) => ({ id: t.id, group: "客服", text: t.text }));
+    ? advisorScripts.filter((s) => s.status === "published").map((s) => ({ id: s.id, group: s.group, text: s.text }))
+    : replyTemplates.filter((t) => t.type === "support" && t.status === "published").map((t) => ({ id: t.id, group: "客服", text: t.text }));
   const fill = (text: string) => onReplyChange(replyBody ? `${replyBody} ${text}` : text);
   const doSend = () => {
     if (!replyBody.trim() || sending) return;
@@ -751,7 +861,7 @@ function ChatComposer({
   };
   return (
     <div className="ChatComposer">
-      {pickOpen && <SkuPicker onClose={() => setPickOpen(false)} onPick={(sku) => { onPushSku(sku); setPickOpen(false); }} />}
+      {pickOpen && <SkuPicker skus={pushSkus} loading={pushSkuLoading} error={pushSkuError} onClose={() => setPickOpen(false)} onPick={(sku) => { onPushSku(sku); setPickOpen(false); }} />}
       {tplOpen && <TemplatePicker title={isAdvisor ? "快捷话术回复" : "回复模板"} items={quick} onClose={() => setTplOpen(false)} onPick={(text) => { fill(text); setTplOpen(false); }} />}
       <div className="composer-tools">
         <button type="button" className={`composer-tool${tplOpen ? " on" : ""}`} aria-expanded={tplOpen} onClick={() => { setTplOpen((v) => !v); setPickOpen(false); }}>
@@ -762,7 +872,7 @@ function ChatComposer({
         <button type="button" data-proof="session-push-sku" className={`composer-tool${pickOpen ? " on" : ""}`} aria-expanded={pickOpen} onClick={() => { setPickOpen((v) => !v); setTplOpen(false); }}>
           <Icon name="box" size={15} />
           <span>推送商品</span>
-          <span className="composer-tool-n">{PUSH_SKUS.length}</span>
+          <span className="composer-tool-n">{pushSkuLoading ? "..." : pushSkus.length}</span>
         </button>
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
@@ -851,7 +961,7 @@ function TemplatePicker({ title, items, onClose, onPick }: { title: string; item
   );
 }
 
-function SkuPicker({ onClose, onPick }: { onClose: () => void; onPick: (sku: PushSku) => void }) {
+function SkuPicker({ skus, loading, error, onClose, onPick }: { skus: PushSku[]; loading: boolean; error: string | null; onClose: () => void; onPick: (sku: PushSku) => void }) {
   const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -869,7 +979,7 @@ function SkuPicker({ onClose, onPick }: { onClose: () => void; onPick: (sku: Pus
     };
   }, [onClose]);
   const ql = q.trim().toLowerCase();
-  const list = ql ? PUSH_SKUS.filter((s) => (s.id + s.title + s.subtitle).toLowerCase().includes(ql)) : PUSH_SKUS;
+  const list = ql ? skus.filter((s) => (s.id + s.title + s.subtitle).toLowerCase().includes(ql)) : skus;
   return (
     <div ref={ref} className="sku-pop">
       <div className="sku-pop-h">
@@ -886,10 +996,20 @@ function SkuPicker({ onClose, onPick }: { onClose: () => void; onPick: (sku: Pus
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索 SKU 名称 / 编号" />
       </div>
       <div className="sku-pop-list">
-        {list.length === 0 ? (
+        {loading ? (
           <div className="sku-pop-empty">
             <Icon name="box" size={16} />
-            没有匹配「{q}」的商品
+            正在读取 E1 商品目录
+          </div>
+        ) : error ? (
+          <div className="sku-pop-empty">
+            <Icon name="box" size={16} />
+            E1 商品目录读取失败:{error}
+          </div>
+        ) : list.length === 0 ? (
+          <div className="sku-pop-empty">
+            <Icon name="box" size={16} />
+            {q ? `没有匹配「${q}」的商品` : "E1 暂无可推送商品"}
           </div>
         ) : (
           list.map((s) => (
@@ -909,7 +1029,7 @@ function SkuPicker({ onClose, onPick }: { onClose: () => void; onPick: (sku: Pus
         )}
       </div>
       <div className="sku-pop-foot">
-        <span className="mono dim2" style={{ fontSize: 11 }}>共 {PUSH_SKUS.length} 个可推送商品</span>
+        <span className="mono dim2" style={{ fontSize: 11 }}>共 {skus.length} 个可推送商品 · 来源 E1 商品目录</span>
       </div>
     </div>
   );

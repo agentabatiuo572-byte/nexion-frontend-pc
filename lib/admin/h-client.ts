@@ -25,9 +25,15 @@ function nextIdempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-function numberValue(value: unknown, fallback: number) {
+function numberValue(value: unknown) {
   const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+  return Number.isFinite(n) ? n : null;
+}
+
+function requiredNumber(value: unknown, field: string) {
+  const n = numberValue(value);
+  if (n == null) throw new Error(`H1 后端数据缺少字段:${field}`);
+  return n;
 }
 
 function clampInt(value: number, min: number, max: number) {
@@ -35,18 +41,22 @@ function clampInt(value: number, min: number, max: number) {
 }
 
 function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview {
+  if (!raw) throw new Error("H1 后端未返回节奏数据");
   const rawOptions = Array.isArray(raw?.options) ? raw.options : [];
   const options = rawOptions.map((item) => Number(item)).filter((item) => Number.isFinite(item));
-  const normalizedOptions = options.length ? options : [9, 12, 15, 18, 24];
-  const totalMonths = normalizedOptions.includes(numberValue(raw?.totalMonths, 12))
-    ? numberValue(raw?.totalMonths, 12)
-    : 12;
+  const totalMonths = Math.max(1, Math.round(requiredNumber(raw.totalMonths, "totalMonths")));
+  const rawCurrentMonth = requiredNumber(raw.currentMonth, "currentMonth");
+  const rawPhaseProgress = requiredNumber(raw.phaseProgressPct, "phaseProgressPct");
+  const currentPhase = typeof raw.currentPhase === "string" && raw.currentPhase.trim()
+    ? raw.currentPhase.trim()
+    : null;
+  if (!currentPhase) throw new Error("H1 后端数据缺少字段:currentPhase");
   return {
     totalMonths,
-    currentMonth: clampInt(numberValue(raw?.currentMonth, 7), 1, totalMonths),
-    currentPhase: typeof raw?.currentPhase === "string" ? raw.currentPhase : "P3",
-    phaseProgressPct: clampInt(numberValue(raw?.phaseProgressPct, 58), 0, 100),
-    options: normalizedOptions,
+    currentMonth: clampInt(rawCurrentMonth, 1, totalMonths),
+    currentPhase,
+    phaseProgressPct: rawPhaseProgress == null ? 0 : clampInt(rawPhaseProgress, 0, 100),
+    options,
     sources: Array.isArray(raw?.sources) ? raw.sources.map(String) : [],
   };
 }

@@ -4,12 +4,13 @@
  * L5 · 导出 & 监管报告 — 全平台数据出口的唯一管控面。
  * 三道防线:每次导出落 admin.report_exported 审计;含 PII/资金明细批量导出经 操作确认;敏感字段默认脱敏(解密强操作确认+事由)。
  * 导出任务状态机:pending →[含敏感 OR 超限] pending_confirm(/split)→ generating → ready(限时 24h)→ expired;失败可重试(24h 去重)。
- * 真写:任务放行/重试/解密/监管报告 → L.export.* / L.regulatory.*;报送排程/模板沿用既有 L.report.* 契约(setParam + logAudit 双留痕)。
+ * 真写:任务放行/重试/解密/监管报告/报送排程/模板全部走 /api/admin/bi,后端写 MySQL + A2 审计。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { PaginationExemptionList } from "../design-kit";
-import { EXPORT_TASKS, ST_LABEL, REG_TEMPLATES, J4_TRACE, MASK_RULES, EXPORT_PARAMS, AUDIT_ROWS, L5_STATS, SCHEDULE_OPTS, SCHEDULE_DEFAULT, type ExportTask } from "./data";
+import { LDataState, num, rec, rows, str, strings } from "./live-data";
+import { fetchL5ExportTasks, type AdminPage, type LExportTask } from "@/lib/admin/l-client";
 import type { LCtx } from "./types";
 
 const TPL_ICONS: Record<string, React.ReactNode> = {
@@ -17,7 +18,25 @@ const TPL_ICONS: Record<string, React.ReactNode> = {
   fund: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.5" /><path d="M3 10h18" /></svg>,
   shield: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg>,
   geo: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></svg>,
+  doc: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6" /><path d="M8 13h8M8 17h5" /></svg>,
 };
+
+type ExportParam = { k: string; v: string; fixed?: boolean; cur?: string; s: string };
+type RegulatoryTemplate = { key: string; nm: string; cy: string; meta: string; last: string; icon: string };
+type TraceRow = { tone: string; txt: string[]; ts: string };
+type MaskRule = { f: string; cat: string; catTone: string; rule: string; ruleNote: string; dec: string; appr: string };
+type AuditRow = { ts: string; who: string; what: string; rows: string; pii: boolean; mask: string; chain: string; dl: string };
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = href;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(href);
+}
 
 export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
   const newExport = () => ctx.openActionConfirm({
@@ -29,12 +48,19 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
       piiLevels: ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"],
       maskPolicies: ["默认脱敏", "字段掩码", "解密(强操作确认)"],
     },
-    run: (reason, _v, bv) => {
+    run: async (reason, _v, bv) => {
       const summary = `${bv?.exportType} · ${bv?.timeRange} · 字段[${bv?.fields || "全字段"}] · ${bv?.piiLevel} · ${bv?.maskPolicy} · 接收 ${bv?.recipient}`;
-      const slug = (bv?.ticket || bv?.exportType || "export").replace(/[^\w一-龥]+/g, "_");
-      ctx.setParam(`L.export.new.${slug}`, JSON.stringify({ type: bv?.exportType, range: bv?.timeRange, fields: bv?.fields, pii: bv?.piiLevel, mask: bv?.maskPolicy, recipient: bv?.recipient, ticket: bv?.ticket }), { action: `发起导出任务「${summary}」`, reason });
-      ctx.logAudit({ actor: "总管理员", action: `发起导出任务「${summary}」`, target: "admin.report_exported", after: `PII=${bv?.piiLevel} · 脱敏=${bv?.maskPolicy} · 工单 ${bv?.ticket}`, reason });
-      ctx.toast(`导出任务已创建:${bv?.exportType} · ${bv?.piiLevel} · 落 admin.report_exported`);
+      await ctx.biActions?.createReport({
+        exportType: String(bv?.exportType ?? "后台导出报表"),
+        timeRange: String(bv?.timeRange ?? "ON_DEMAND"),
+        fields: String(bv?.fields || "全字段"),
+        piiLevel: String(bv?.piiLevel ?? "无 PII"),
+        maskPolicy: String(bv?.maskPolicy ?? "默认脱敏"),
+        recipient: String(bv?.recipient ?? "未指定"),
+        ticket: String(bv?.ticket ?? "L5-EXPORT"),
+      }, reason);
+      await ctx.reloadBi?.();
+      ctx.toast(`导出任务已创建:${summary} · 数据已写入后端`);
     },
   });
   return (
@@ -46,94 +72,164 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
 }
 
 export function L5Export({ ctx }: { ctx: LCtx }) {
-  const { pget, params, setParam, logAudit, toast, openActionConfirm } = ctx;
+  const { toast, openActionConfirm } = ctx;
   const [filter, setFilter] = useState(0);
+  const [taskPageNum, setTaskPageNum] = useState(1);
+  const [taskPage, setTaskPage] = useState<AdminPage<LExportTask> | null>(null);
+  const [taskLoading, setTaskLoading] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
 
-  /* ---- 任务态:store 覆盖回落 mock(放行→generating / 重试→按 PII 重走确认或直接生成) ---- */
-  const effSt = (t: ExportTask): string => {
-    const v = pget(`L.export.${t.id}`);
-    if (v === "approved") return "generating";
-    if (v === "retried") return t.pii ? "pending_confirm" : "generating";
-    return t.st;
+  const data = ctx.biData?.l5;
+  const filterStatus =
+    filter === 1 ? "PENDING_CONFIRM,PENDING_SPLIT_CONFIRM"
+    : filter === 2 ? "GENERATING"
+    : filter === 3 ? "READY"
+    : "";
+  useEffect(() => {
+    if (!data) {
+      setTaskPage(null);
+      setTaskLoading(false);
+      return;
+    }
+    let alive = true;
+    setTaskLoading(true);
+    setTaskError(null);
+    fetchL5ExportTasks(filterStatus, taskPageNum, 8)
+      .then((page) => {
+        if (alive) setTaskPage(page);
+      })
+      .catch((error) => {
+        if (alive) setTaskError(error instanceof Error ? error.message : "导出任务加载失败");
+      })
+      .finally(() => {
+        if (alive) setTaskLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [filterStatus, taskPageNum, data]);
+  if (!data) return <LDataState ctx={ctx} label="L5" />;
+  const statsRaw = rec(data.stats);
+  const L5_STATS = {
+    monthTotal: num(statsRaw.monthTotal, rows<LExportTask>(data.exportTasks).length),
+    aggCount: num(statsRaw.aggCount),
+    sensitiveCount: num(statsRaw.sensitiveCount),
+    decryptedQ: num(statsRaw.decryptedQ),
+    regulatoryQ: num(statsRaw.regulatoryQ),
   };
-  const effActs = (t: ExportTask): ExportTask["acts"] => {
-    const v = pget(`L.export.${t.id}`);
-    if (v === "approved") return [];
-    if (v === "retried") return t.pii ? ["approve"] : [];
-    return t.acts;
+  const ST_LABEL = rec(data.statusLabels);
+  const fallbackTasks = rows<LExportTask>(data.exportTasks);
+  const EXPORT_TASKS = taskPage?.records ?? fallbackTasks;
+  const REG_TEMPLATES = rows<RegulatoryTemplate>(data.regulatoryTemplates);
+  const J4_TRACE = rows<TraceRow>(data.j4Trace);
+  const MASK_RULES = rows<MaskRule>(data.maskRules);
+  const EXPORT_PARAMS = rows<ExportParam>(data.exportParams);
+  const AUDIT_ROWS = rows<AuditRow>(data.auditRows);
+  const SCHEDULE_OPTS = strings(data.scheduleOptions);
+  const schedule = str(data.scheduleDefault, SCHEDULE_OPTS[0] ?? "每月 5 日");
+  const statusLabel = (status: string): [string, string] => {
+    const value = ST_LABEL[status];
+    if (Array.isArray(value)) return [str(value[0], status), str(value[1], "dim")];
+    return [status, "dim"];
   };
-  const pendingCount = EXPORT_TASKS.filter((t) => effSt(t).startsWith("pending_")).length;
-  const splitCount = EXPORT_TASKS.filter((t) => effSt(t) === "pending_split_confirm").length;
+  const effSt = (t: LExportTask): string => t.st.toUpperCase();
+  const effActs = (t: LExportTask): LExportTask["acts"] => t.acts;
+  const visibleTasks = EXPORT_TASKS;
+  const taskPageSize = taskPage?.pageSize ?? 8;
+  const taskTotal = taskPage?.total ?? visibleTasks.length;
+  const taskPages = Math.max(1, Math.ceil(taskTotal / taskPageSize));
+  const pendingCount = EXPORT_TASKS.filter((t) => effSt(t).startsWith("PENDING_")).length;
+  const splitCount = EXPORT_TASKS.filter((t) => effSt(t) === "PENDING_SPLIT_CONFIRM").length;
   const decryptedQ = AUDIT_ROWS.filter((a) => a.mask === "decrypted").length;
 
-  const approveTask = (t: ExportTask) => openActionConfirm({
+  const approveTask = (t: LExportTask) => openActionConfirm({
     action: `操作确认放行 · ${t.id}`,
-    detail: <><b>{t.type}</b> · 范围:{t.scope} · 行数 {t.rows} · 脱敏 <b>{t.mask}</b> · {effSt(t) === "pending_split_confirm" && <><b>超 100 万行上限,按拆分批次放行(超管)</b> · </>}放行后进入 generating → ready(限时链接 24h)· 落 admin.report_exported(operator/scope/fields/row_count/contains_pii/masking_policy/operator / role_gate/ts)。</>,
-    run: (reason) => {
-      setParam(`L.export.${t.id}`, "approved", { action: `导出任务放行 ${t.id}(${t.type})`, reason });
-      logAudit({ actor: "总管理员", action: `导出任务放行 ${t.id}`, target: "admin.report_exported", after: `${t.type} · rows=${t.rows} · masking=${t.mask}`, reason });
-      toast(`${t.id} 已放行 → generating · A2 留痕`);
+    detail: <><b>{t.type}</b> · 范围:{t.scope} · 行数 {t.rows} · 脱敏 <b>{t.mask}</b> · {effSt(t) === "PENDING_SPLIT_CONFIRM" && <><b>超 100 万行上限,按拆分批次放行(超管)</b> · </>}放行后进入 generating → ready(限时链接 24h)· 落 admin.report_exported(operator/scope/fields/row_count/contains_pii/masking_policy/operator / role_gate/ts)。</>,
+    run: async (reason) => {
+      await ctx.biActions?.reportAction(t.id, "approve", reason, t.pii);
+      await ctx.reloadBi?.();
+      toast(`${t.id} 已提交放行 · 后端状态已刷新`);
     },
   });
-  const retryTask = (t: ExportTask) => {
-    setParam(`L.export.${t.id}`, "retried", { action: `导出任务重新发起 ${t.id}`, reason: "同范围 24h 内自动合并" });
-    toast(`${t.id} 已重新发起 · 同范围 24 小时内自动合并${t.pii ? " · 含敏感重走操作确认" : ""}`);
+  const retryTask = async (t: LExportTask) => {
+    await ctx.biActions?.reportAction(t.id, "rerun", "同范围 24 小时内重新发起自动合并", t.pii);
+    await ctx.reloadBi?.();
+    toast(`${t.id} 已重新发起 · 后端状态已刷新${t.pii ? " · 含敏感重走操作确认" : ""}`);
+  };
+  const downloadTask = async (t: LExportTask) => {
+    await ctx.biActions?.reportAction(t.id, "download", "下载可用报表文件并记录审计", t.pii);
+    const file = await ctx.biActions?.downloadReport(t.id);
+    if (file) downloadBlob(file.blob, file.fileName);
+    toast(`${t.id} 下载已开始 · 后端已签发文件流并记录审计`);
   };
   const genReport = (nm: string) => openActionConfirm({
     action: `生成监管报告 · ${nm}`,
-    detail: <><b>监管报送 = 数据出境敏感</b> · 模板:{nm} · 数据范围按辖区要求 · <b>关联 I5 当前披露版本 × 司法辖区</b> · 法务确认状态随任务流转 · 操作链:风控(操作员,兼合规确认)→ 超管 / 风控 lead(执行门槛)· 落 admin.report_exported(+ 披露版本 + 辖区)。</>,
-    run: (reason) => {
-      setParam(`L.regulatory.${nm}`, "requested", { action: `生成监管报告 ${nm}(操作确认)`, reason });
-      logAudit({ actor: "总管理员", action: `生成监管报告 ${nm}`, target: "admin.report_exported", after: "含 PII · masked · 关联 I5 披露版本 × 辖区", reason });
-      toast(`${nm} 报告生成任务已创建 · 待操作确认`);
+    detail: <><b>监管报送 = 数据出境敏感</b> · 模板:{nm} · 数据范围按辖区要求 · <b>关联 I4 当前披露版本 × 司法辖区</b> · 法务确认状态随任务流转 · 操作链:风控(操作员,兼合规确认)→ 超管 / 风控(执行门槛)· 落 admin.report_exported(+ 披露版本 + 辖区)。</>,
+    run: async (reason) => {
+      await ctx.biActions?.createReport({
+        exportType: `监管报告 · ${nm}`,
+        timeRange: "按辖区要求",
+        fields: "合规台账/披露版本/辖区数据",
+        piiLevel: "高(含手机 / 地址)",
+        maskPolicy: "默认脱敏",
+        recipient: "风控管理员",
+        ticket: `L5-REG-${nm}`,
+      }, reason);
+      await ctx.reloadBi?.();
+      toast(`${nm} 报告生成任务已提交 · 后端已入库`);
     },
   });
   const decryptExport = () => openActionConfirm({
     action: "解密导出 · masking_policy = decrypted",
-    detail: <><b>PII 解密明文导出 = 最高敏感档</b> · 解密字段:手机号 / 卡 token / 地址(按字段勾选)· <b>强操作确认 + 强制事由</b>(操作理由即强制事由,写入审计)· 操作员:风控 / 只读审计 → 执行门槛:超管 / 风控 lead · 落 admin.report_exported(解密字段清单 / 事由 / operator / role_gate)· A2 只追加,不可抵赖。</>,
-    run: (reason) => {
-      setParam("L.export.decrypted", "requested", { action: "解密导出发起(decrypted · 强操作确认)", reason });
-      logAudit({ actor: "总管理员", action: "解密导出发起", target: "admin.report_exported", after: "masking_policy=decrypted · 字段与事由已留痕", reason });
-      toast("解密导出已发起 · 待强操作确认 · 解密字段与事由已留痕");
+    detail: <><b>PII 解密明文导出 = 最高敏感档</b> · 解密字段:手机号 / 卡 token / 地址(按字段勾选)· <b>强操作确认 + 强制事由</b>(操作理由即强制事由,写入审计)· 操作员:风控 / 只读审计 → 执行门槛:超管 / 风控 · 落 admin.report_exported(解密字段清单 / 事由 / operator / role_gate)· A2 只追加,不可抵赖。</>,
+    run: async (reason) => {
+      await ctx.biActions?.createReport({
+        exportType: "解密导出",
+        timeRange: "按工单",
+        fields: "手机号/卡 token/地址",
+        piiLevel: "高(含手机 / 地址)",
+        maskPolicy: "解密导出",
+        recipient: "风控管理员",
+        ticket: "L5-DECRYPTED",
+      }, reason);
     },
   });
-  const adjParam = (p: (typeof EXPORT_PARAMS)[number]) => openActionConfirm({
+  const adjParam = (p: ExportParam) => openActionConfirm({
     action: `导出安全参数调整 · ${p.k}`,
     detail: <><b>{p.k}</b> · 当前:{p.cur} · 数据出境管控基线参数,调整经操作确认 · 含敏感操作确认开关为铁律不可关(不在可调范围)。</>,
     edit: { kind: "text", current: p.cur ?? p.v },
-    run: (reason, newValue) => {
-      setParam(`L.param.${p.k}`, newValue ?? p.v, { action: `调整导出安全参数 ${p.k}`, reason });
-      toast(`${p.k} 调整已确认生效`);
+    run: async (reason, newValue) => {
+      await ctx.biActions?.updateExportParam(p.k, newValue ?? p.v, reason);
+      await ctx.reloadBi?.();
+      toast(`${p.k} 调整已写入后端`);
     },
   });
 
-  /* ---- 报送排程 & 报表模板(既有真功能,L.report.* 契约保留) ---- */
-  const schedule = pget("L.report.schedule") ?? SCHEDULE_DEFAULT;
-  const templates = Object.keys(params).filter((k) => k.startsWith("L.report.template.") && params[k] === "created").map((k) => k.slice("L.report.template.".length));
   const adjSchedule = () => openActionConfirm({
     action: "调整监管报送排程",
     detail: <>从「{schedule}」切换报送周期 · 改后按新周期自动触发生成 · 写入 L.report.schedule + A2 审计。</>,
     edit: { kind: "select", current: schedule, options: [...SCHEDULE_OPTS] },
-    run: (reason, newValue) => {
+    run: async (reason, newValue) => {
       const v = (newValue ?? "").trim();
       if (!v) return;
-      setParam("L.report.schedule", v, { action: "调整监管报送排程", reason });
-      logAudit({ actor: "总管理员", action: "调整监管报送排程", target: "L.report.schedule", before: schedule, after: v, reason });
-      toast(`报送排程已调整:${schedule} → ${v} · 写入 A2 审计`);
+      await ctx.biActions?.updateRegulatorySchedule(v, reason);
+      await ctx.reloadBi?.();
+      toast(`报送排程已调整:${schedule} → ${v} · 已写入后端`);
     },
   });
   const newTemplate = () => openActionConfirm({
     action: "新建报表模板",
     detail: <>输入模板名称创建自定义报送口径,供 L5 监管报告复用 · 写入 L.report.template.&lt;名称&gt; + A2 审计。</>,
     edit: { kind: "text", current: "—(输入模板名称)" },
-    run: (reason, newValue) => {
+    run: async (reason, newValue) => {
       const name = (newValue ?? "").trim();
       if (!name) return;
-      setParam(`L.report.template.${name}`, "created", { action: `新建报表模板 ${name}`, reason });
-      logAudit({ actor: "总管理员", action: `新建报表模板 ${name}`, target: `L.report.template.${name}`, after: "created", reason });
-      toast(`报表模板已新建:${name} · 写入 A2 审计`);
+      await ctx.biActions?.createRegulatoryTemplate(name, reason);
+      await ctx.reloadBi?.();
+      toast(`报表模板已新建:${name} · 已写入后端`);
     },
   });
+  const customTemplates = REG_TEMPLATES.filter((template) => template.icon === "doc");
 
   return (
     <div>
@@ -142,7 +238,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <div className="f-stat"><div className="k">本月导出任务</div><div className="v">{L5_STATS.monthTotal}</div><div className="sub">聚合 {L5_STATS.aggCount} · 含敏感 {L5_STATS.sensitiveCount}</div></div>
         <div className="f-stat warn"><div className="k">待操作确认</div><div className="v">{pendingCount}</div><div className="sub">含 {splitCount} 个超限拆分待超管批</div></div>
         <div className="f-stat danger"><div className="k">解密导出(本季)</div><div className="v">{decryptedQ}</div><div className="sub">强操作确认 + 强制事由 · 全留痕</div></div>
-        <div className="f-stat cyan"><div className="k">监管报告(本季)</div><div className="v">{L5_STATS.regulatoryQ}</div><div className="sub">关联 I5 披露版本 × 司法辖区</div></div>
+        <div className="f-stat cyan"><div className="k">监管报告(本季)</div><div className="v">{L5_STATS.regulatoryQ}</div><div className="sub">关联 I4 披露版本 × 司法辖区</div></div>
       </div>
 
       {/* 导出安全参数 */}
@@ -174,7 +270,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           <span className="sub">· <AutoGloss>发起 / 跟踪 · 同样范围 24 小时内重复发起会自动合并,不会生成两份</AutoGloss></span>
           <div className="r"><div className="chips">
             {["全部", "待确认", "生成中", "可下载"].map((c, i) => (
-              <button key={c} className={"chip" + (i === filter ? " sel" : "")} onClick={() => { setFilter(i); toast(`任务列表筛选:${c}`); }}>{c}</button>
+              <button key={c} className={"chip" + (i === filter ? " sel" : "")} onClick={() => { setFilter(i); setTaskPageNum(1); toast(`任务列表筛选:${c}`); }}>{c}</button>
             ))}
           </div></div>
         </div>
@@ -193,8 +289,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
           <table className="l-tbl" style={{ minWidth: 1080 }}>
             <thead><tr><th>任务</th><th>类型</th><th>范围</th><th>字段 / PII</th><th>脱敏</th><th className="num">行数</th><th>状态</th><th>操作链</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
             <tbody>
-              {EXPORT_TASKS.map((t) => {
-                const st = ST_LABEL[effSt(t)];
+              {visibleTasks.map((t) => {
+                const st = statusLabel(effSt(t));
                 const acts = effActs(t);
                 return (
                   <tr key={t.id}>
@@ -205,18 +301,35 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                     <td>{t.mask === "—" ? <span className="bdg dim">—</span> : <span className={"mask-pill " + t.mask}>{t.mask}</span>}</td>
                     <td className="num mono">{t.rows}</td>
                     <td><span className={"bdg " + st[1]}>{st[0]}</span></td>
-                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{pget(`L.export.${t.id}`) === "approved" ? t.chain.replace("待批", "已批") : t.chain}</td>
+                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{t.chain}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {acts.length === 0 && <span className="mono" style={{ color: "var(--ink-4)" }}>—</span>}
                       {acts.includes("approve") && <button className="l-btn sm mc" onClick={() => approveTask(t)}>操作确认</button>}
-                      {acts.includes("download") && <button className="l-btn sm" onClick={() => { logAudit({ actor: "总管理员", action: `下载导出产物 ${t.id}`, target: "admin.report_exported", after: "限时链接 24h · 下载行为留痕" }); toast("限时下载链接已打开(服务端签发 · 24 小时有效)· 下载行为落审计"); }}>下载</button>}
-                      {acts.includes("retry") && <button className="l-btn sm" onClick={() => retryTask(t)}>重新发起</button>}
+                      {acts.includes("download") && <button className="l-btn sm" onClick={() => { void downloadTask(t).catch((error) => toast(error instanceof Error ? error.message : "下载失败")); }}>下载</button>}
+                      {acts.includes("retry") && <button className="l-btn sm" onClick={() => { void retryTask(t).catch((error) => toast(error instanceof Error ? error.message : "重新发起失败")); }}>重新发起</button>}
                     </td>
                   </tr>
                 );
               })}
+              {visibleTasks.length === 0 && (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>
+                    {taskLoading ? "导出任务加载中..." : "当前筛选暂无导出任务"}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+        </div>
+        <div className="l-b" style={{ paddingTop: 10 }}>
+          {taskError && <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>导出任务加载失败 · {taskError}</div>}
+          <div className="row" data-list-pager="true" data-list-label="L5 导出任务管理" style={{ justifyContent: "flex-end", gap: 8 }}>
+            <span className="mono" style={{ color: "var(--ink-4)", fontSize: 11.5 }}>
+              第 {taskPageNum} / {taskPages} 页 · 共 {taskTotal} 条
+            </span>
+            <button className="l-btn sm" disabled={taskPageNum <= 1 || taskLoading} onClick={() => setTaskPageNum((p) => Math.max(1, p - 1))}>上一页</button>
+            <button className="l-btn sm" disabled={taskPageNum >= taskPages || taskLoading} onClick={() => setTaskPageNum((p) => Math.min(taskPages, p + 1))}>下一页</button>
+          </div>
         </div>
       </section>
 
@@ -225,15 +338,15 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">监管报告生成</span>
           <span className="sub">· <AutoGloss>由风控同事手动发起,不会被应急剧本自动触发 · 报告会带上当前风险披露版本和对应辖区</AutoGloss></span>
-          <div className="r"><span className="lcode">操作员 = 风控 → 执行门槛 = 超管 / 风控 lead</span></div>
+          <div className="r"><span className="lcode">操作员 = 风控 → 执行门槛 = 超管 / 风控</span></div>
         </div>
         <div className="l-b">
           <div className="tpl-grid">
             {REG_TEMPLATES.map((t) => (
               <div key={t.key} className="tpl">
-                <div className="top"><span className="ic">{TPL_ICONS[t.icon]}</span><div><div className="nm"><AutoGloss>{t.nm}</AutoGloss></div><div className="cy">{t.cy}</div></div></div>
+                <div className="top"><span className="ic">{TPL_ICONS[t.icon] ?? TPL_ICONS.doc}</span><div><div className="nm"><AutoGloss>{t.nm}</AutoGloss></div><div className="cy">{t.cy}</div></div></div>
                 <div className="meta"><AutoGloss>{t.meta}</AutoGloss></div>
-                <div className="ft"><span className="st">{pget(`L.regulatory.${t.nm}`) === "requested" ? "刚刚 · 待操作确认" : t.last}</span><button className="l-btn sm mc" onClick={() => genReport(t.nm)}>生成</button></div>
+                <div className="ft"><span className="st">{t.last}</span><button className="l-btn sm mc" onClick={() => genReport(t.nm)}>生成</button></div>
               </div>
             ))}
           </div>
@@ -280,8 +393,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                 <div><div style={{ fontSize: 12.5, fontWeight: 600 }}>报表模板</div><div style={{ fontSize: 11.5, color: "var(--ink-4)" }}>自定义报送口径模板</div></div>
                 <button className="l-btn sm mc" style={{ marginLeft: "auto" }} onClick={newTemplate}>+ 新建模板</button>
               </div>
-              {templates.length > 0
-                ? <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{templates.map((t) => <span key={t} className="lcode electric" title="已建报表模板">{t}</span>)}</div>
+              {customTemplates.length > 0
+                ? <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{customTemplates.map((t) => <span key={t.key} className="lcode electric" title="已建报表模板">{t.nm}</span>)}</div>
                 : <div style={{ fontSize: 11.5, color: "var(--ink-4)" }}>暂无自定义模板 · 点「新建模板」创建报送口径</div>}
             </div>
           </div>
@@ -355,12 +468,6 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <p className="f-foot"><b>L5 的「写」只有导出产出本身</b>(<AutoGloss>只读数据的导出,不改任何业务状态</AutoGloss>)。<AutoGloss>账单 CSV 复用账本域(D4)既有导出通道,本页只做</AutoGloss><b>管控 / 审计 / 脱敏的叠加层</b>,<AutoGloss>不另开口子、不私加参数;导出范围必须覆盖全部 8 类账单(含 bonus 与 C3 人工调整 adjustment),不能静默丢掉。导出的数据全部来自服务端权威事件流与双账本聚合——</AutoGloss><b>客户端自己上报的状态绝不导出</b>。<AutoGloss>脱敏在服务端执行;下载链接由服务端签发、限时失效,绕不过也越不了权。每条</AutoGloss> <b>admin.report_exported</b> <AutoGloss>记录谁导的 / 导了什么 / 多少行 / 含不含隐私 / 怎么脱敏 / 谁发起谁确认 / 什么时间,进只追加不可改的审计库——这是防止数据被滥用带出去的核心防线。</AutoGloss></p>
       <PaginationExemptionList
         items={[
-          {
-            label: "导出任务管理",
-            kind: "sample-ledger",
-            maxRows: 6,
-            reason: "导出任务当前六条样本,生成/放行动作按状态处理",
-          },
           {
             label: "导出审计台",
             kind: "sample-ledger",

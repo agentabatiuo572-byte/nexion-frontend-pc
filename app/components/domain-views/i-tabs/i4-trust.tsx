@@ -1,87 +1,59 @@
 "use client";
 
 /**
- * I4 信任中心 + I5 风险披露(合并页) — design_handoff_i_domain/I4 信任中心与披露.html port。
- * 单源:
- *  - 信任 6 版块 = TRUST_SECTIONS / 财务字段 = FINANCIALS_FIELDS / 4 法域 = JURISDICTIONS
- *    / 7 章节 = DISCLOSURE_CHAPTERS / 受限动作 = GATED_ACTIONS(i-tabs/data 文件头裁定);
- *  - 实时态 pget 覆盖种子:I.trust.<key>.status(I4 版块发布/下架/回滚)
- *    / I.disclosure.<jur>.version(I5 披露发布)/ I.disclosure.SFC.draft(SFC v13 草稿)
- *    / I.gated(I5 受限动作范围)。
+ * I4 信任中心与风险披露(合并页) — design_handoff_i_domain/I4 信任中心与披露.html port。
+ * 单源:后端 /content/trust-disclosure/overview;空库时保持空态,不补前端业务样例。
  * 操作确认 显式 edit 契约:
  *  - 调参传 edit:回滚(text/current=v)/ 发布披露新版(text/current=j.v)/ 调整受限动作范围(text/current);
  *  - 处置不传 edit:发布信任版块 / 下架信任版块。
- * amplifies 全为 false —— I4-I5 不碰 B1(条款重签不是熔断、不动账本)。
- * 凭据 / 合规铁律:I5 全链 操作员 = 风控,执行门槛 = 风控 lead / 超管;详情文案体现这一点。
+ * amplifies 全为 false —— I4 不碰 B1(条款重签不是熔断、不动账本)。
+ * 凭据 / 合规铁律:披露全链 操作员 = 风控,执行门槛 = 风控 / 超管;详情文案体现这一点。
  */
 import { useState } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
-import {
-  I4_STATS,
-  TRUST_SECTIONS,
-  FINANCIALS_FIELDS,
-  JURISDICTIONS,
-  DISCLOSURE_CHAPTERS,
-  GATED_ACTIONS,
-  type TrustSection,
-  type Jurisdiction,
-} from "./data";
 import type { ICtx } from "./types";
 
-type TrustDetailKey = TrustSection["key"];
-
-/** 各版块结构化字段(I4 · b 版块详情)。 */
-const SECTION_FIELDS: Record<TrustDetailKey, [string, string][]> = {
-  financials: [],
-  leadership: [
-    ["成员数", "5 行高管卡"],
-    ["字段", "姓名 / 职务 / 前公司 / LinkedIn 占位链接"],
-    ["示例", "CEO · ex-AWS · href=#"],
-  ],
-  nexNarrative: [
-    ["行情 stats", "24h 量 / 市值 / 流通量(实时部分走行情源)"],
-    ["客户榜", "前 3 大 AI 客户 NEX 消费"],
-    ["叙事", "30% 收入回购销毁"],
-    ["口径对齐", "市值/流通量须与金融产品域(G)一致"],
-  ],
-  complianceBadges: [
-    ["徽章", "SOC2 · ISO27001 · CertiK"],
-    ["属性", "对外合规声明 → 执行门槛升级"],
-  ],
-  auditsReserves: [["外链", "链上储备证明 / 审计报告(占位 href=#)"]],
-  listings: [["外链", "PancakeSwap 等行情页(占位 href=#)"]],
+type TrustSection = {
+  key: string; desc: string; struct: string; v: string; status: string; lastChange: string; roleGate: string; highSensitivity: boolean;
 };
-
-/** 7 章节正文节选(zh / en 镜像)。 */
-const CHAPTER_BODY_ZH =
-  "本章节为受管合规文案。所有收益数字均为基于历史网络数据的估算,不构成对未来收益的承诺;实际产出受全网算力、设备状态与市场价格影响……";
-const CHAPTER_BODY_EN =
-  "This section is managed compliance copy. All earnings figures are estimates based on historical network data and do not constitute a promise of future returns…";
+type Jurisdiction = {
+  code: string; name: string; v: string; status: string; publishedAt: string; affected: number; ackProgress: number; blocked: number;
+};
+type GateAction = { key: string; name: string; sub: string; st: string; tone: string; active: boolean };
+type TrustDetailKey = string;
 
 export function I4Trust({ ctx }: { ctx: ICtx }) {
-  const { pget, setParam, toast, openActionConfirm, openConfirm } = ctx;
+  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [chapNo, setChapNo] = useState<string | null>(null);
-
-  // 信任版块实时态(pget 覆盖种子 status)。
-  const liveTrustStatus = (s: TrustSection): string =>
-    pget(`I.trust.${s.key}.status`) ?? s.status;
-  // 披露版本实时态。
-  const liveJurVersion = (j: Jurisdiction): string =>
-    pget(`I.disclosure.${j.code}.version`) ?? j.v;
-  // 受限动作范围实时态。
-  // 受限动作改逐项启停(不再一个文本框手打「提现 + 质押」整串);每动作单独 key。
-  const gateOn = (k: string): boolean => (pget(`I.gated.${k}`) ?? "on") === "on";
-  const disclosureDraft = {
-    version: pget("I.disclosure.SFC.draft"),
-    jurisdiction: pget("I.disclosure.SFC.draft.jurisdiction"),
-    languageScope: pget("I.disclosure.SFC.draft.languageScope"),
-    effectiveDate: pget("I.disclosure.SFC.draft.effectiveDate"),
-    requiresReack: pget("I.disclosure.SFC.draft.requiresReack"),
-    zh: pget("I.disclosure.SFC.draft.zh"),
-    en: pget("I.disclosure.SFC.draft.en"),
+  const data = content.trustDisclosure;
+  const I4_STATS = data?.stats ?? { managedSections: 0, jurisdictions: 0, staleAckUsers: 0, weeklyGateBlocked: 0 };
+  const TRUST_SECTIONS: TrustSection[] = (data?.trustSections ?? []).map((s) => ({ ...s, v: s.version }));
+  const FINANCIALS_FIELDS = (data?.financialFields ?? []).map((f) => ({ k: f.key, v: f.value, delta: f.delta }));
+  const JURISDICTIONS: Jurisdiction[] = (data?.jurisdictions ?? []).map((j) => ({ ...j, v: j.version }));
+  const DISCLOSURE_CHAPTERS = data?.chapters ?? [];
+  const GATED_ACTIONS: GateAction[] = (data?.gatedActions ?? []).map((g) => ({ key: g.key, name: g.name, sub: g.sub, st: g.status, tone: g.tone, active: g.active }));
+  const SECTION_FIELDS = (data?.sectionFields ?? []).reduce<Record<string, [string, string][]>>((acc, field) => {
+    acc[field.sectionKey] = [...(acc[field.sectionKey] ?? []), [field.key, field.value]];
+    return acc;
+  }, {});
+  const activeJurisdiction = JURISDICTIONS[0];
+  const activeJurisdictionCode = activeJurisdiction?.code ?? "";
+  const activeChapter = DISCLOSURE_CHAPTERS.find((c) => c.jurisdiction === activeJurisdictionCode) ?? DISCLOSURE_CHAPTERS[0];
+  const CHAPTER_BODY_ZH = activeChapter?.zhBody ?? "";
+  const CHAPTER_BODY_EN = activeChapter?.enBody ?? "";
+  const runBackend = (task: Promise<void>, ok: string) => {
+    task
+      .then(() => actions.reloadIContent())
+      .then(() => toast(ok))
+      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
   };
+
+  const liveTrustStatus = (s: TrustSection): string => s.status;
+  const liveJurVersion = (j: Jurisdiction): string => j.v;
+  const gateOn = (k: string): boolean => GATED_ACTIONS.find((g) => g.key === k)?.active ?? false;
+  const disclosureDraft = data?.draft;
 
   const openSecDetail = (s: TrustSection) => setSecKey(s.key);
   const openJurDetail = (j: Jurisdiction) => setJurCode(j.code);
@@ -94,16 +66,12 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       detail: (
         <>
           对外信任内容上线,发布后 /trust 页即时换新。<b>执行门槛:{s.roleGate}</b>
-          {s.highSensitivity && "(对外财务/代币叙事是高敏合规面,内容主管无权放行)"}。审计必须带「数据来源」与「对外披露(非内部账本)」标注;带防重号。
+          {s.highSensitivity && "(对外财务/代币叙事是高敏合规面,内容角色无权放行)"}。审计必须带「数据来源」与「对外披露(非内部账本)」标注;带防重号。
         </>
       ),
       amplifies: false,
       run: (reason) => {
-        setParam(`I.trust.${s.key}.status`, "published", {
-          action: `发布信任版块 ${s.key} · admin.trust_content_published`,
-          reason,
-        });
-        toast(`${s.key} 已发布至 /trust`);
+        runBackend(actions.publishI4TrustSection(s.key, s.v, reason), `${s.key} 已发布至 /trust`);
       },
     });
 
@@ -119,11 +87,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       edit: { kind: "text", current: s.v },
       run: (reason, nv) => {
         if (!nv) return;
-        setParam(`I.trust.${s.key}.status`, `${nv} 重新发布`, {
-          action: `回滚信任版块 ${s.key} → ${nv} · admin.trust_content_rolledback`,
-          reason,
-        });
-        toast(`${s.key} 回滚已确认生效`);
+        runBackend(actions.rollbackI4TrustSection(s.key, nv, reason), `${s.key} 回滚已确认生效`);
       },
     });
 
@@ -137,46 +101,45 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        setParam(`I.trust.${s.key}.status`, "archived", {
-          action: `下架信任版块 ${s.key} · admin.trust_content_archived`,
-          reason,
-        });
-        toast(`${s.key} 下架已确认生效`);
+        runBackend(actions.archiveI4TrustSection(s.key, reason), `${s.key} 下架已确认生效`);
       },
     });
 
-  // ---------- I5 披露动作 ----------
+  // ---------- I4 披露动作 ----------
   const draftDisclosure = () =>
     openActionConfirm({
-      action: <>草拟披露新版(SFC · v13 draft)· 风控提交</>,
+      action: <>草拟披露新版 · 风控提交</>,
       detail: (
         <>
-          7 章节逐章改;中英两份镜像同步(占位符一致)。草稿不生效;发布走「执行门槛:风控 lead/超管」操作确认并触发该法域重确认。
+          7 章节逐章改;中英两份镜像同步(占位符一致)。草稿不生效;发布走「执行门槛:风控/超管」操作确认并触发该法域重确认。
         </>
       ),
       amplifies: false,
       businessForm: {
         kind: "version-authoring",
-        version: "v13",
-        jurisdiction: "SFC",
+        version: disclosureDraft?.version ?? "",
+        jurisdiction: disclosureDraft?.jurisdiction ?? activeJurisdictionCode,
         zh: CHAPTER_BODY_ZH,
         en: CHAPTER_BODY_EN,
       },
       run: (reason, _v, form) => {
-        const version = form?.version || "v13";
-        setParam("I.disclosure.SFC.draft", version, {
-          action: `草拟披露新版 SFC ${version}`,
-          reason,
-        });
-        if (form) {
-          setParam("I.disclosure.SFC.draft.zh", form.zh, { action: `草拟披露新版 SFC ${version} · 中文正文`, reason });
-          setParam("I.disclosure.SFC.draft.en", form.en, { action: `草拟披露新版 SFC ${version} · English body`, reason });
-          setParam("I.disclosure.SFC.draft.jurisdiction", form.jurisdiction, { action: `草拟披露新版 SFC ${version} · jurisdiction`, reason });
-          setParam("I.disclosure.SFC.draft.languageScope", form.languageScope, { action: `草拟披露新版 SFC ${version} · language scope`, reason });
-          setParam("I.disclosure.SFC.draft.effectiveDate", form.effectiveDate, { action: `草拟披露新版 SFC ${version} · effective date`, reason });
-          setParam("I.disclosure.SFC.draft.requiresReack", form.requiresReack, { action: `草拟披露新版 SFC ${version} · requires re-ack`, reason });
+        const version = form?.version?.trim() || disclosureDraft?.version?.trim() || "";
+        const jurisdiction = form?.jurisdiction?.trim() || disclosureDraft?.jurisdiction?.trim() || activeJurisdictionCode;
+        const zh = form?.zh?.trim() || CHAPTER_BODY_ZH;
+        const en = form?.en?.trim() || CHAPTER_BODY_EN;
+        if (!version || !jurisdiction || !zh || !en) {
+          toast("缺少后端披露版本/法域/正文,无法提交草稿");
+          return;
         }
-        toast("披露草稿已存 · 发布需风控操作确认");
+        runBackend(actions.saveI4DisclosureDraft(jurisdiction, {
+          version,
+          jurisdiction,
+          languageScope: form?.languageScope || disclosureDraft?.languageScope || "",
+          effectiveDate: form?.effectiveDate || disclosureDraft?.effectiveDate || "",
+          requiresReack: form?.requiresReack ?? true,
+          zh,
+          en,
+        }, reason), "披露草稿已存 · 发布需风控操作确认");
       },
     });
 
@@ -185,7 +148,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       action: <>配置法域 × 版本映射(风控提交 · 操作确认)</>,
       detail: (
         <>
-          增法域、改某法域的生效版本映射都在这里;版本号只增不减。改映射等同给该法域换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 lead / 超管</b>。
+          增法域、改某法域的生效版本映射都在这里;版本号只增不减。改映射等同给该法域换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 / 超管</b>。
         </>
       ),
       chips: [
@@ -195,11 +158,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       reason: true,
       okLabel: "保存配置",
       run: (reason) => {
-        setParam("I.disclosure.matrix", "configured", {
-          action: "配置披露法域 × 版本映射 · admin.disclosure_jurisdiction_configured",
-          reason,
-        });
-        toast("法域矩阵配置已提交风控操作确认");
+        runBackend(actions.configureI4Matrix(reason), "法域矩阵配置已提交风控操作确认");
       },
     });
 
@@ -208,7 +167,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       action: <>发布披露新版 · {j.code} {j.v} → 新版</>,
       detail: (
         <>
-          <b>合规关键动作</b>:发布即把 {j.code} 法域全部用户的确认状态标成过期(stale),受限动作(提现等)在重确认前被服务器拦截;重确认提醒自动经通知页(I3)<b>critical</b> 通道下发。<b>发起人必须是风控,执行门槛 = 风控 lead / 超管</b>;内容角色草拟的文本由风控提交。中英镜像与占位符校验通过才能发;带防重号。监管点名当天可走此路径即时改条款。
+          <b>合规关键动作</b>:发布即把 {j.code} 法域全部用户的确认状态标成过期(stale),受限动作(提现等)在重确认前被服务器拦截;重确认提醒自动经通知页(I3)<b>critical</b> 通道下发。<b>发起人必须是风控,执行门槛 = 风控 / 超管</b>;内容角色草拟的文本由风控提交。中英镜像与占位符校验通过才能发;带防重号。监管点名当天可走此路径即时改条款。
         </>
       ),
       amplifies: false,
@@ -222,23 +181,19 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       },
       run: (reason, v, form) => {
         if (!v) return;
-        setParam(`I.disclosure.${j.code}.version`, v, {
-          action: `发布披露新版 ${j.code} → ${v} · admin.disclosure_published`,
-          reason,
-        });
-        if (form) {
-          setParam(`I.disclosure.${j.code}.${v}.zh`, form.zh, { action: `发布披露新版 ${j.code} ${v} · 中文正文`, reason });
-          setParam(`I.disclosure.${j.code}.${v}.en`, form.en, { action: `发布披露新版 ${j.code} ${v} · English body`, reason });
-          setParam(`I.disclosure.${j.code}.${v}.jurisdiction`, form.jurisdiction, { action: `发布披露新版 ${j.code} ${v} · jurisdiction`, reason });
-          setParam(`I.disclosure.${j.code}.${v}.languageScope`, form.languageScope, { action: `发布披露新版 ${j.code} ${v} · language scope`, reason });
-          setParam(`I.disclosure.${j.code}.${v}.effectiveDate`, form.effectiveDate, { action: `发布披露新版 ${j.code} ${v} · effective date`, reason });
-          setParam(`I.disclosure.${j.code}.${v}.requiresReack`, form.requiresReack, { action: `发布披露新版 ${j.code} ${v} · requires re-ack`, reason });
-        }
-        toast(`${j.code} 披露新版已发布 · 目标 ${v}`);
+        runBackend(actions.publishI4Disclosure(j.code, {
+          version: v,
+          jurisdiction: form?.jurisdiction || j.code,
+          languageScope: form?.languageScope || "en+zh",
+          effectiveDate: form?.effectiveDate || disclosureDraft?.effectiveDate || "",
+          requiresReack: form?.requiresReack ?? true,
+          zh: form?.zh || CHAPTER_BODY_ZH,
+          en: form?.en || CHAPTER_BODY_EN,
+        }, reason), `${j.code} 披露新版已发布 · 目标 ${v}`);
       },
     });
 
-  const toggleGate = (g: (typeof GATED_ACTIONS)[number]) => {
+  const toggleGate = (g: GateAction) => {
     const on = gateOn(g.key);
     openActionConfirm({
       action: <>{on ? "移出" : "纳入"}受限动作 · {g.name}</>,
@@ -247,16 +202,16 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           {on
             ? <>把 <b>{g.name}</b> 移出受限范围:确认状态过期时<b>不再拦截</b>该动作。<b>缩小范围等于放松合规拦截</b>,确认时写清依据。</>
             : <>把 <b>{g.name}</b> 纳入受限范围:确认状态过期时拦截该动作。</>}
-          {" "}风控提交,风控 lead / 超管执行。
+          {" "}风控提交,风控 / 超管执行。
         </>
       ),
       amplifies: false,
       run: (reason) => {
-        setParam(`I.gated.${g.key}`, on ? "off" : "on", {
-          action: `受限动作范围 · ${on ? "移出" : "纳入"} ${g.name} · admin.disclosure_gate_changed`,
-          reason,
-        });
-        toast(`${g.name} 已${on ? "移出" : "纳入"}受限范围`);
+        const nextScope = GATED_ACTIONS
+          .filter((item) => (item.key === g.key ? !on : item.active))
+          .map((item) => item.name)
+          .join(" + ");
+        runBackend(actions.updateI4GateScope(nextScope || g.name, reason), `${g.name} 已${on ? "移出" : "纳入"}受限范围`);
       },
     });
   };
@@ -265,6 +220,13 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
   const sec = secKey ? TRUST_SECTIONS.find((s) => s.key === secKey) ?? null : null;
   const jur = jurCode ? JURISDICTIONS.find((j) => j.code === jurCode) ?? null : null;
   const chap = chapNo ? DISCLOSURE_CHAPTERS.find((c) => c.no === chapNo) ?? null : null;
+
+  if (contentLoading && !data) {
+    return <section className="l-card"><div className="l-b"><div className="itint">I4 数据加载中...</div></div></section>;
+  }
+  if (!data) {
+    return <section className="l-card"><div className="l-b"><div className="itint danger">I4 暂无真实接口数据</div></div></section>;
+  }
 
   return (
     <>
@@ -277,12 +239,12 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         <div className="f-stat cyan">
           <div className="k">披露法域 × 版本</div>
           <div className="v">{I4_STATS.jurisdictions} 法域</div>
-          <div className="sub">MAS · BaFin · FinCEN · SFC</div>
+          <div className="sub">{JURISDICTIONS.map((j) => j.code).join(" · ") || "暂无后端法域"}</div>
         </div>
         <div className="f-stat warn">
           <div className="k">待重确认用户</div>
           <div className="v">{I4_STATS.staleAckUsers.toLocaleString("en-US")}</div>
-          <div className="sub">SFC v12 · 下次提现前必须确认</div>
+          <div className="sub">{activeJurisdiction ? `${activeJurisdiction.code} ${activeJurisdiction.v}` : "暂无后端法域版本"} · 下次提现前必须确认</div>
         </div>
         <div className="f-stat">
           <div className="k">合规闸拦截(本周)</div>
@@ -363,14 +325,14 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      {/* (I5 · a) 披露版本 × 法域矩阵 */}
+      {/* I4 披露版本 × 法域矩阵 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">披露矩阵(I5 · a)· version × jurisdiction</span>
-          <span className="sub">· 风控提交 · 风控 lead / 超管执行</span>
+          <span className="ttl">披露矩阵(I4 · 披露)· version × jurisdiction</span>
+          <span className="sub">· 风控提交 · 风控 / 超管执行</span>
           <div className="r">
             <span className="icode danger">合规关键 · 风控确认</span>
-            <button className="l-btn sm mc" onClick={draftDisclosure}>草拟新版(SFC v13)</button>
+            <button className="l-btn sm mc" onClick={draftDisclosure}>草拟新版</button>
             <button className="l-btn sm" onClick={configMatrix}>配置矩阵</button>
           </div>
         </div>
@@ -424,14 +386,14 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="itint danger">
-            <b>I5 全链 操作员 = 风控、执行门槛 = 风控 lead / 超管;内容仅草拟。re-ack 非熔断闸,不入 J1/J2。</b>
+            <b>披露全链 操作员 = 风控、执行门槛 = 风控 / 超管;内容仅草拟。re-ack 非熔断闸,不入 J1/J2。</b>
           </div>
-          {disclosureDraft.version && disclosureDraft.zh && disclosureDraft.en && (
+          {disclosureDraft && disclosureDraft.version && disclosureDraft.zh && disclosureDraft.en && (
             <div className="itint cyan" data-proof="disclosure-draft-preview" style={{ marginTop: 10 }}>
-              <b>当前 SFC 草稿回显</b> · 版本 <span className="mono">{disclosureDraft.version}</span>
-              {" "}· 法域 <span className="mono">{disclosureDraft.jurisdiction ?? "SFC"}</span>
+              <b>当前披露草稿回显</b> · 版本 <span className="mono">{disclosureDraft.version}</span>
+              {" "}· 法域 <span className="mono">{disclosureDraft.jurisdiction ?? ""}</span>
               {" "}· 语言 <span className="mono">{disclosureDraft.languageScope ?? "en+zh"}</span>
-              {" "}· 生效日 <span className="mono">{disclosureDraft.effectiveDate ?? "2026-06-30"}</span>
+              {" "}· 生效日 <span className="mono">{disclosureDraft.effectiveDate ?? ""}</span>
               {" "}· re-ack <span className="mono">{disclosureDraft.requiresReack ?? "true"}</span>
               <div className="grid g-2" style={{ gap: 10, marginTop: 8 }}>
                 <div className="ab-prev">
@@ -448,10 +410,10 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      {/* (I5 · b) 7 章节版本详情(SFC v12) */}
+      {/* I4 章节版本详情 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">版本详情(I5 · b)· SFC v12 · 7 章节</span>
+          <span className="ttl">版本详情(I4 · 披露)· {activeJurisdiction ? `${activeJurisdiction.code} ${activeJurisdiction.v}` : "暂无后端法域"}</span>
           <span className="sub">· 中英镜像 + 占位符一致</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
@@ -468,10 +430,10 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      {/* (I5 · c) re-ack 覆盖监控 */}
+      {/* I4 re-ack 覆盖监控 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">重确认覆盖监控(I5 · c)</span>
+          <span className="ttl">重确认覆盖监控(I4 · 披露)</span>
           <span className="sub">· 改版后各法域确认进度 · 数字来自服务器确认事件</span>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -489,7 +451,6 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
             <tbody>
               {JURISDICTIONS.map((j) => {
                 const acked = Math.round((j.affected * j.ackProgress) / 100);
-                const isSfc = j.code === "SFC";
                 return (
                   <tr key={j.code}>
                     <td>
@@ -506,7 +467,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
                     </td>
                     <td
                       className="num mono"
-                      style={isSfc && j.blocked > 0 ? { color: "var(--warning)" } : undefined}
+                      style={j.blocked > 0 ? { color: "var(--warning)" } : undefined}
                     >
                       {j.blocked}
                     </td>
@@ -523,10 +484,10 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      {/* (I5 · d) 受限动作范围 */}
+      {/* I4 受限动作范围 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">受限动作范围(I5 · d)</span>
+          <span className="ttl">受限动作范围(I4 · 披露)</span>
           <span className="sub">· 确认状态过期时,哪些动作会被拦 · 逐项启停(不再手打整串)</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
@@ -550,7 +511,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       </section>
 
       <p className="f-foot">
-        <b>执行门槛(两套,别混)</b>:信任中心(I4)= 内容执行门槛:一般版块内容主管,<b>财务数字 / NEX 叙事 / 对外合规声明类必须合规或超管执行</b>(财务角色对数字口径有知情确认职能,但仅为知情职能);风险披露(I5)= <b>风控执行门槛:风控 lead / 超管</b>,内容角色只能草拟、不能提交——条款是合规命脉,不给内容主管单独放行的口子。<b>事件去向</b>:版块曝光喂 BI(信任→转化间接归因);披露确认 / 重确认触发 / 拦截三类事件喂合规覆盖看板(L 域)和风控(K 域,拦截数是闸有效性信号)。披露类事件的归类登记(disclosure 域)是 BI 上线前必办工单,占位期按临时编号入库
+        <b>执行门槛(两套,别混)</b>:信任中心(I4)= 内容执行门槛:一般版块内容角色,<b>财务数字 / NEX 叙事 / 对外合规声明类必须合规或超管执行</b>(财务角色对数字口径有知情确认职能,但仅为知情职能);风险披露(I4)= <b>风控执行门槛:风控 / 超管</b>,内容角色只能草拟、不能提交——条款是合规命脉,不给内容角色单独放行的口子。<b>事件去向</b>:版块曝光喂 BI(信任→转化间接归因);披露确认 / 重确认触发 / 拦截三类事件喂合规覆盖看板(L 域)和风控(K 域,拦截数是闸有效性信号)。披露类事件的归类登记(disclosure 域)是 BI 上线前必办工单,占位期按临时编号入库
         <span title="§2.4.3 domain 枚举扩展 · V4 内容批次 · blocking">。</span>
       </p>
       <PaginationExemptionList
@@ -562,12 +523,12 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
             reason: "信任中心固定六版块,需同屏核对版本与状态",
           },
           {
-            label: "披露矩阵(I5 · a)· version × jurisdiction",
+            label: "披露矩阵(I4 · 披露)· version × jurisdiction",
             maxRows: 4,
             reason: "披露矩阵固定四法域,发布关系必须同屏对比",
           },
           {
-            label: "重确认覆盖监控(I5 · c)",
+            label: "重确认覆盖监控(I4 · 披露)",
             maxRows: 4,
             reason: "重确认监控固定四法域样本,完整 ack 事件进 BI",
           },
@@ -618,7 +579,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           ) : (
             <>
               <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>结构化字段</div>
-              {SECTION_FIELDS[sec.key].map(([k, v], i) => (
+              {(SECTION_FIELDS[sec.key] ?? []).map(([k, v], i) => (
                 <div className="kv" key={i}>
                   <span className="k">{k}</span>
                   <span className="v">{v}</span>
@@ -660,7 +621,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           </div>
           <div className="kv">
             <span className="k">操作 / 留痕</span>
-            <span className="v">风控 / 风控 lead 或超管</span>
+            <span className="v">风控 / 超管</span>
           </div>
           <div className="kv">
             <span className="k">法域判定输入</span>
@@ -675,7 +636,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       {/* 章节 Drawer */}
       {chap && (
         <Drawer
-          title={`章节 ${chap.no} · ${chap.zh}(SFC v12)`}
+          title={`章节 ${chap.no} · ${chap.zh}(${chap.jurisdiction} ${chap.version})`}
           onClose={() => setChapNo(null)}
           footer={
             <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setChapNo(null)}>
@@ -693,7 +654,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
               </thead>
               <tbody>
                 <tr>
-                  <td style={{ fontSize: 12.5, lineHeight: 1.7 }}>{CHAPTER_BODY_ZH}</td>
+                  <td style={{ fontSize: 12.5, lineHeight: 1.7 }}>{chap.zhBody}</td>
                 </tr>
               </tbody>
             </table>
@@ -708,7 +669,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
               </thead>
               <tbody>
                 <tr>
-                  <td style={{ fontSize: 12.5, lineHeight: 1.7 }}>{CHAPTER_BODY_EN}</td>
+                  <td style={{ fontSize: 12.5, lineHeight: 1.7 }}>{chap.enBody}</td>
                 </tr>
               </tbody>
             </table>

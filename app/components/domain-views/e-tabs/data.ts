@@ -3,11 +3,11 @@
  * server-canonical:E1/E2/E3/E4 展示值来自后端接口;E5 设备运维与数据中心来自设备接口。
  * 视图局部的纯设计数组(timeline / 热力图 / DC / feed / tx 监控 等)放各子视图文件内,保持本文件聚焦逻辑。
  */
-import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
+import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 
-// 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3);E6 算力与设备配置为三端改造 SPEC-0 新增。
+// 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
-export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5", E6: "E6" };
+export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5" };
 
 export const ORDER_FLOW = ["created", "paid", "allocating", "active"];
 // design-kit Badge tone 映射(订单状态)。
@@ -20,33 +20,6 @@ export const stateLabel = (s: string): string => STATE_LABEL[s] ?? s;
 export const TERMINAL_STATES = ["payment_failed", "expired", "refunded", "provisioning_failed"] as const;
 // 非终态(仍流转,允许补建终态);created/paid 另允许「取消订单」。
 export const NON_TERMINAL = new Set(["created", "paid", "allocating"]);
-
-// E-11 生命周期/置换调参种子参考;运行时由 GET /api/admin/devices/e3/overview 下发。
-// 衰减种子值镜像产品源码 device-lifecycle.ts:三段非线性 −4/−6/−23.7%·12 月·floor 22%。
-export const E_PARAM_DEFAULTS: Record<string, string> = {
-  "E.device.minEfficiency": "22",       // 源码 MIN_EFFICIENCY = 0.22
-  "E.device.degradeEarly": "-4",        // 月 1-3 %/月
-  "E.device.degradeMid": "-6",          // 月 4-8 %/月
-  "E.device.degradeLate": "-23.7",      // 月 9-12 %/月(断崖)
-  "E.device.stageEarlyEnd": "3",        // 早期段末月
-  "E.device.stageMidEnd": "8",          // 中期段末月
-  "E.device.cycleMonths": "12",         // 生命周期月数
-  // E3 任务锁定月度损失阈值(S1/Pro/Rack 三阶 · USDT · 各值独立可调,backend-replaceable)
-  "E.device.taskLock.s1": "40",
-  "E.device.taskLock.pro": "140",
-  "E.device.taskLock.rack": "450",
-  "E.tradein.salvagePct": "30",
-  "E.tradein.eligibility": "L4+ 持有者",  // 置换资格门槛(持有等级)· 运营可调
-  "E.tradein.minHoldingMonths": "6",
-  "E.tradein.promoMult": "1.0",
-  // 置换弹窗节奏 5 参(各值独立可调):冷却天 / 每会话上限 / 延迟秒 / 设备最低龄天 / 入口路由
-  "E.tradein.promo.cooldownDays": "14",
-  "E.tradein.promo.maxPerSession": "1",
-  "E.tradein.promo.delaySec": "6",
-  "E.tradein.promo.minAgeDays": "30",
-  "E.tradein.promo.routes": "/me/devices",
-  "E.tradein.inventorySoftMax": "0",
-};
 
 // E3 衰减曲线引擎 — 镜像产品 device-lifecycle.ts getEfficiency(三段复利 + floor)。
 // 参数从后台配置(pE)读,使后台为 server-canonical 配置源、曲线真实反映产品衰减。
@@ -61,36 +34,16 @@ export function effCurve(early: number, mid: number, late: number, stage1: numbe
   return pts;
 }
 
-// 算力池预置(SKU「解锁算力池 unlocks」多选 — 取自现有 SKU seed 的算力池文案)。
-// 运营勾选多个 + 仍可自定义;表单内以逗号串存 form.aiUnlocks(单值 string,前端零改、原样渲染逗号串 = 功能一致)。
-// backend-replaceable:真后台对接时由 GET /api/admin/compute-pools 下发替换本地预置(同 DATA_CENTERS 模式)。
-export const AI_COMPUTE_POOLS = [
-  "LLM 70B inference pool",
-  "Flagship compute pool (Fine-tune + 405B inference)",
-  "Flagship AI + multi-tenant 405B",
-  "Training pool (RLHF / from-scratch 8B)",
-  "Training pool (RLHF / 70B from-scratch)",
-  "Fractional access to network's IG + EM + SP pools",
-] as const;
-
-// 数据中心 seed(E5 运维可增删改的单源;SKU datacenter 下拉读 displayName)。
-// { id 区域 id · location 所在地 · displayName 前端展示名称 };真后台对接 1:1 映射数据中心资源。
-export const DATA_CENTERS_SEED: { id: string; location: string; displayName: string }[] = [
-  { id: "ap-southeast-1", location: "亚太 · 新加坡", displayName: "Singapore DC" },
-  { id: "eu-west-1", location: "欧洲 · 都柏林", displayName: "Dublin DC" },
-  { id: "us-east-2", location: "美国 · 弗吉尼亚", displayName: "Virginia DC" },
-];
-
 // ── SKU 表单 = 前端 Product 全字段镜像。input 一律 string,提交时 formToSku 转结构化 OpsSku ──
 export const EMPTY_SKU_FORM = {
-  name: "", id: "", tier: "Entry", tagline: "", badge: "",
-  gpu: "", vram: "", hashRate: "", power: "", datacenter: "Singapore DC",
+  name: "", id: "", tier: "", tagline: "", badge: "",
+  gpu: "", vram: "", hashRate: "", power: "", datacenter: "",
   price: "",
   dailyEarn: "", dailyEarnNEX: "", shareYieldMin: "", shareYieldMax: "",
   sold: "", stock: "", rating: "", reviews: "",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
-  generation: "1", lifecycle: "active", supersededBy: "", tradeinDiscount: "", unlock: "", tag: "",
+  generation: "", lifecycle: "", supersededBy: "", tradeinDiscount: "", unlock: "", tag: "",
   // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
@@ -119,14 +72,14 @@ export function skuToForm(s: OpsSku): SkuForm {
   const str = (v: number | string | undefined): string => (v === undefined || v === null ? "" : String(v));
   const g = s.purchaseGate;
   return {
-    name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "Entry", tagline: s.tagline ?? "", badge: s.badge ?? "",
+    name: s.name ?? "", id: s.id ?? "", tier: s.tier ?? "", tagline: s.tagline ?? "", badge: s.badge ?? "",
     gpu: s.gpu ?? "", vram: s.vram ?? "", hashRate: s.hashRate ?? "", power: s.power ?? "", datacenter: s.datacenter ?? "",
     price: str(s.price),
     dailyEarn: str(s.dailyEarn), dailyEarnNEX: str(s.dailyEarnNEX), shareYieldMin: str(s.shareYieldMin), shareYieldMax: str(s.shareYieldMax),
     sold: str(s.sold), stock: str(s.stock), rating: str(s.rating), reviews: str(s.reviews),
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
-    generation: str(s.generation) || "1", lifecycle: s.lifecycle ?? "active", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "", tag: s.tag ?? "",
+    generation: str(s.generation), lifecycle: s.lifecycle ?? "", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "", tag: s.tag ?? "",
     gateType: gateToType(g),
     gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamVolumeMin: str(g?.teamVolumeMin),
     gateMode: g?.mode === "either" ? "either" : "all",

@@ -1,5 +1,4 @@
 import { cookies } from "next/headers";
-import { localMockResponse } from "@/lib/admin/local-mock-backend";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -12,12 +11,6 @@ async function proxyDevicesCollection(request: Request) {
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
   if (!token) {
     return jsonError(401, "ADMIN_AUTH_REQUIRED");
-  }
-
-  // 本地预览模式:设备裸 collection(端点8)→ 本地 mock 分页。
-  const localMock = localMockResponse("devices", request.method, [], new URL(request.url).searchParams);
-  if (localMock) {
-    return Response.json(localMock, { headers: { "Cache-Control": "no-store" } });
   }
 
   const sourceUrl = new URL(request.url);

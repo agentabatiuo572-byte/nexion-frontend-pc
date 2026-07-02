@@ -1,4 +1,5 @@
-import type { OpsTask } from "@/lib/store/admin/platform-config-store";
+import { formatAdminApiError } from "@/lib/admin/error-messages";
+import type { OpsTask } from "@/lib/admin/platform-types";
 
 interface ApiResult<T> {
   code: number;
@@ -66,8 +67,14 @@ function toNumber(value: number | string | null | undefined, fallback = 0) {
 }
 
 function toSat(value: number | string | null | undefined) {
-  const parsed = toNumber(value, 0);
+  if (value == null || (typeof value === "string" && !value.trim())) return null;
+  const parsed = toNumber(value, Number.NaN);
+  if (!Number.isFinite(parsed)) return null;
   return Math.max(0, Math.min(1, parsed > 1 ? parsed / 100 : parsed));
+}
+
+function text(value: string | null | undefined) {
+  return value == null ? "" : String(value).trim();
 }
 
 async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
@@ -87,7 +94,7 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(result?.message || `E2_REQUEST_FAILED_${response.status}`);
+    throw new Error(formatAdminApiError(result?.message, `E2_REQUEST_FAILED_${response.status}`));
   }
 
   return result.data as T;
@@ -98,15 +105,15 @@ function fromTask(task: BackendTask): OpsTask {
     id: task.taskId,
     n: task.name,
     price: toNumber(task.price),
-    unit: task.unit || "/job",
-    req: task.requirement || "S1+",
+    unit: text(task.unit),
+    req: text(task.requirement),
     sat: toSat(task.saturation),
-    taskClass: task.taskClass || "llm-inference",
-    model: task.model || "",
+    taskClass: text(task.taskClass),
+    model: text(task.model),
     minReward: toNumber(task.minReward),
     maxReward: toNumber(task.maxReward),
-    minVRAM: task.minVram || "",
-    killInit: task.killInit || "派发中",
+    minVRAM: text(task.minVram),
+    killInit: text(task.killInit),
   };
 }
 
@@ -118,12 +125,12 @@ function toTaskPayload(task: OpsTask, reason: string, operator: string) {
     requirement: task.req,
     saturation: task.sat,
     status: "active",
-    taskClass: task.taskClass || "llm-inference",
+    taskClass: task.taskClass,
     model: task.model || "",
     minReward: task.minReward ?? 0,
     maxReward: task.maxReward ?? 0,
     minVram: task.minVRAM || "",
-    killInit: task.killInit || "派发中",
+    killInit: task.killInit || "",
     reason,
     operator,
   };

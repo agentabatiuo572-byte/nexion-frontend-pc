@@ -636,7 +636,7 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     name,
     email: str(row.email, ""),
     adminRole: str(row.adminRole, ""),
-    status: str(row.status, "ACTIVE"),
+    status: str(row.status, ""),
     position: str(row.position, "一线客服"),
     serviceTypes: serviceTypes.length ? serviceTypes : ["support"],
     tags: asStringArray(row.tags),
@@ -657,7 +657,7 @@ function adaptAdvisorAssignment(row: Record<string, unknown>): MAdvisorAssignmen
     userNo: str(row.userNo, row.userId ? `U${String(row.userId).padStart(8, "0")}` : ""),
     nickname: str(row.nickname, "未命名用户"),
     assignmentType: str(row.assignmentType, "PRIMARY"),
-    status: str(row.status, "ACTIVE"),
+    status: str(row.status, ""),
     startsAt: str(row.startsAt, ""),
     endsAt: str(row.endsAt, ""),
     operator: str(row.operator, ""),
@@ -733,7 +733,7 @@ export async function fetchMContentData(): Promise<MContentData> {
   const advisorAssignments = asArray<Record<string, unknown>>(supportAgentOverview.advisorAssignments).map(adaptAdvisorAssignment);
   const transferTargets = asArray<Record<string, unknown>>(supportAgentOverview.transferTargets);
   const loadConfig = adaptLoadConfig(loadRaw, supportAgents);
-  const scriptAudience = Object.fromEntries(asArray<SessionScriptView>(sessionTemplates.scripts).map((row) => [str(row.id), str(row.audience, "全量")]));
+  const scriptAudience = Object.fromEntries(asArray<SessionScriptView>(sessionTemplates.scripts).map((row) => [str(row.id), str(row.audience)]));
 
   return {
     tickets,
@@ -757,7 +757,7 @@ export async function fetchMContentData(): Promise<MContentData> {
       delayMs: num(sessionTemplates.advisorPolicy?.delayMs, 1500),
       cooldownHours: num(sessionTemplates.advisorPolicy?.cooldownHours, 24),
       maxPerSession: num(sessionTemplates.advisorPolicy?.maxPerSession, 1),
-      audience: str(sessionTemplates.advisorPolicy?.audience, "全量"),
+      audience: str(sessionTemplates.advisorPolicy?.audience),
     },
     workbenchPolicy: {
       timeoutFallback: bool(sessionTemplates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
@@ -824,7 +824,6 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.session.advisor.policy.delayMs": String(data.advisorPolicy.delayMs),
     "I.session.advisor.policy.cooldownHours": String(data.advisorPolicy.cooldownHours),
     "I.session.advisor.policy.maxPerSession": String(data.advisorPolicy.maxPerSession),
-    "I.session.advisor.policy.audience": data.advisorPolicy.audience,
     "I.session.workbench.timeoutFallback": data.workbenchPolicy.timeoutFallback,
     "I.session.audienceOptions": JSON.stringify(data.audienceOptions),
     "I.session.segmentFields": JSON.stringify(data.segmentFields),
@@ -834,7 +833,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
   });
   data.scripts.forEach((script) => {
     params[`I.session.script.${script.id}.status`] = script.status;
-    params[`I.session.script.${script.id}.audience`] = data.scriptAudience[script.id] || "全量";
+    params[`I.session.script.${script.id}.audience`] = data.scriptAudience[script.id] || "";
   });
   data.replyTemplates.forEach((tpl) => {
     params[`I.session.tpl.${tpl.id}.status`] = tpl.status;

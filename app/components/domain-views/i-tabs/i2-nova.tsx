@@ -2,44 +2,54 @@
 
 /**
  * I2 Nova 推送运营 — design_handoff_i_domain/I2 Nova推送运营.html port。
- * 单源:
- *  - Nova 通道 = design-data.NOVA(10 通道 seed)+ usePlatformConfig.novas 共享 store(增删改 kill 真写 + persist + 审计);
- *  - 事件触发类闭口 = NOVA_EVENT_DRIVEN(口径闭合,旁置 v3 整合工单状态);
- *  - 模板池 = NOVA_TPLS · 状态实时态 = pget(`I.tpl.<ch>.status`) ?? "published";
- *  - social 池分布 = SOCIAL_DIST(color 已为 var(--admin-cat-*)),pool 行 = SOCIAL_POOLS。
+ * 单源:后端 /content/nova/overview;空库时保持后端空态,不补前端业务样例。
  * 操作确认 显式 edit 契约:调 cadence(tick/cd) / 调 CTR / 调概率分布 / 池条目数 = 调参传 edit;
  *   kill 单频道 / 启停 / 发布 / 归档模板 = 处置不传 edit。
  * amplifies = false(I2 不碰 B1 红线 —— 只动推送节奏与文案出口,不动费率/奖励/价格)。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
-import { I2_STATS, NOVA_EVENT_DRIVEN, NOVA_TPLS, SOCIAL_DIST, SOCIAL_POOLS } from "./data";
 import type { ICtx } from "./types";
-import { usePlatformConfig, type OpsNova } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { NOVA } from "@/lib/mock/admin/design-data";
 
 type NovaForm = { name: string; tick: string; cd: string; ctr: string };
 const EMPTY_FORM: NovaForm = { name: "", tick: "", cd: "", ctr: "" };
+type OpsNova = { key: string; name: string; trigger: string; tick: string; cd: string; phaseKeyed: string; ctr: number; on: boolean };
 
-const slug = (s: string) =>
-  s.trim().toLowerCase().replace(/[^a-z0-9一-鿿]+/g, "-").replace(/^-+|-+$/g, "") || "untitled";
+const normalizeNovaKey = (s: string) =>
+  s
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+
+const slug = (s: string) => normalizeNovaKey(s) || "untitled";
 
 export function I2Nova({ ctx }: { ctx: ICtx }) {
-  const { pget, setParam, toast, openActionConfirm, openConfirm, logAudit } = ctx;
-  const hydrated = useOpsHydrated();
+  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const data = content.nova;
+  const I2_STATS = data?.stats ?? { todayDelivered: "—", ctr: "—", ctrTarget: 0, onlineChannels: 0, totalChannels: 0, weeklySocial: "—" };
+  const novas: OpsNova[] = (data?.channels ?? []).map((n) => ({
+    key: n.key,
+    name: n.name,
+    trigger: n.trigger,
+    tick: n.tick,
+    cd: n.cooldown,
+    phaseKeyed: n.phaseKeyed,
+    ctr: Number(n.ctr),
+    on: n.enabled,
+  }));
+  const NOVA_EVENT_DRIVEN = (data?.eventDriven ?? []).map((r) => ({ name: r.name, why: r.reason, owner: r.owner, tone: r.tone, st: r.status }));
+  const NOVA_TPLS = (data?.templates ?? []).map((t) => ({ ch: t.channel, name: t.name, cta: t.cta, v: t.version, status: t.status }));
+  const SOCIAL_DIST = data?.socialDistribution ?? [];
+  const SOCIAL_POOLS = (data?.socialPools ?? []).map((p) => ({ key: p.key, name: p.name, sub: p.description, cnt: p.count }));
 
-  // ── 共享 store:Nova 通道单源(增删改 kill 走 store,非 setParam)──
-  const seedNovas = useMemo(() => NOVA as OpsNova[], []);
-  const ensureNovas = usePlatformConfig((s) => s.ensureNovas);
-  const storeNovas = usePlatformConfig((s) => s.novas);
-  const addNovaStore = usePlatformConfig((s) => s.addNova);
-  const updateNovaStore = usePlatformConfig((s) => s.updateNova);
-  const removeNovaStore = usePlatformConfig((s) => s.removeNova);
-  useEffect(() => { if (hydrated) ensureNovas(seedNovas); }, [hydrated, seedNovas, ensureNovas]);
-  // audit R2 P1 修:zustand persist 同步水合,首帧 storeNovas 已可能 = persisted;
-  // 删 `hydrated &&` 二阶 gate,直接 `storeNovas ?? seedNovas` 消除 seed→store 二次渲染视觉 flicker。
-  const novas = storeNovas ?? seedNovas;
+  const runBackend = (task: Promise<void>, ok: string) => {
+    task
+      .then(() => actions.reloadIContent())
+      .then(() => toast(ok))
+      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+  };
 
   // ── Drawer 表单(新增 / 编辑通道复用同一抽屉)──
   const [novaDrawer, setNovaDrawer] = useState(false);
@@ -62,22 +72,25 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     const ctrNum = Number(form.ctr) || 0;
     if (editNovaKey) {
       const prev = novas.find((x) => x.key === editNovaKey);
-      updateNovaStore(editNovaKey, { name, tick, cd, ctr: ctrNum });
-      logAudit({
-        actor: "总管理员",
-        action: `编辑 Nova 通道 ${name} · admin.nova_channel_updated`,
-        target: editNovaKey,
-      });
-      toast(`Nova 通道已更新:${prev?.name ?? editNovaKey} → ${name}`);
+      runBackend(actions.updateI2NovaChannel(editNovaKey, {
+        name,
+        trigger: prev?.trigger || "后台编辑 Nova 通道",
+        tick,
+        cooldown: cd,
+        ctr: ctrNum,
+        enabled: prev?.on ?? true,
+      }, "后台编辑 Nova 通道"), `Nova 通道已更新:${prev?.name ?? editNovaKey} → ${name}`);
     } else {
       const key = `${slug(name)}-${novas.length + 100}`;
-      addNovaStore({ key, name, tick, cd, ctr: ctrNum, on: true });
-      logAudit({
-        actor: "总管理员",
-        action: `新增 Nova 通道 ${name} · admin.nova_channel_added`,
-        target: key,
-      });
-      toast(`Nova 通道已新增:${name}`);
+      runBackend(actions.createI2NovaChannel({
+        key,
+        name,
+        trigger: "后台新增 Nova 通道",
+        tick,
+        cooldown: cd,
+        ctr: ctrNum,
+        enabled: true,
+      }, "后台新增 Nova 通道"), `Nova 通道已新增:${name}`);
     }
     closeDrawer();
   };
@@ -90,14 +103,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       : <>恢复投递。频道开启后下一次 cadence tick 自动推送。</>,
     amplifies: false,
     run: (reason) => {
-      updateNovaStore(n.key, { on: !n.on });
-      logAudit({
-        actor: "总管理员",
-        action: `${n.on ? "kill" : "恢复"} Nova 通道 ${n.name} · admin.nova_channel_killed`,
-        target: n.key,
-        reason,
-      });
-      toast(`${n.name} 通道${n.on ? "已 kill" : "已恢复"}`);
+      runBackend(actions.updateI2NovaChannelStatus(n.key, !n.on, reason), `${n.name} 通道${n.on ? "已 kill" : "已恢复"}`);
     },
   });
 
@@ -108,19 +114,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     reason: true,
     okLabel: "确认删除",
     run: (reason) => {
-      removeNovaStore(n.key);
-      logAudit({
-        actor: "总管理员",
-        action: `删除 Nova 通道 ${n.name}`,
-        target: n.key,
-        reason,
-      });
-      toast(`Nova 通道已删除:${n.name}`);
+      runBackend(actions.deleteI2NovaChannel(n.key, reason), `Nova 通道已删除:${n.name}`);
     },
   });
 
-  // ── 模板状态实时态(pget 覆盖 published 默认) ──
-  const tplStatus = (ch: string): string => pget(`I.tpl.${ch}.status`) ?? "published";
+  const tplStatus = (ch: string): string => NOVA_TPLS.find((t) => t.ch === ch)?.status?.toLowerCase() ?? "published";
   const renderTplBadge = (st: string) => {
     if (st === "published") return <span className="bdg ok">published</span>;
     if (st === "archived") return <span className="bdg dim">archived</span>;
@@ -133,8 +131,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     detail: <>频道 <b>{ch}</b>。发布即对该频道下一条推送生效;服务器侧校验中英镜像 + 占位符一致,不齐直接拒。</>,
     amplifies: false,
     run: (reason) => {
-      setParam(`I.tpl.${ch}.status`, "published", { action: `发布模板 ${name} · admin.nova_template_published`, reason });
-      toast(`${name} 发布已确认生效`);
+      runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 发布已确认生效`);
     },
   });
   const archiveTpl = (ch: string, name: string) => openActionConfirm({
@@ -142,26 +139,37 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     detail: <>归档后该模板从频道可选池移除,已在投递队列里的不撤回。</>,
     amplifies: false,
     run: (reason) => {
-      setParam(`I.tpl.${ch}.status`, "archived", { action: `归档模板 ${name}`, reason });
-      toast(`${name} 归档已确认生效`);
+      runBackend(actions.updateI2TemplateStatus(ch, "ARCHIVED", reason), `${name} 归档已确认生效`);
     },
   });
 
   // ── 新模板:走操作确认(传 edit 录模板 key) ──
   const newTpl = () => openActionConfirm({
     action: <>新增 Nova 推送模板</>,
-    detail: <>新建草稿后挂双语词条(I6);发布走操作确认。</>,
+    detail: <>新建草稿后挂双语词条(I6);发布走操作确认。模板 key 仅支持字母、数字、短横线、下划线。</>,
     amplifies: false,
     edit: { kind: "text", current: "—", unit: "模板 key" },
     run: (reason, v) => {
-      if (!v) return;
-      setParam(`I.tpl.${v}.status`, "draft", { action: `新增 Nova 模板 ${v}`, reason });
-      toast(`模板 ${v} 已创建 · 待发布确认`);
+      const raw = (v ?? "").trim();
+      const key = normalizeNovaKey(raw);
+      if (key.length < 2) {
+        toast("模板 key 至少 2 位,仅支持字母、数字、短横线、下划线");
+        return;
+      }
+      if (key !== raw) {
+        toast(`模板 key 已规范化为 ${key}`);
+      }
+      runBackend(actions.createI2Template({
+        channel: key,
+        name: key,
+        cta: "→ /content",
+        version: "v1",
+      }, reason), `模板 ${key} 已创建 · 待发布确认`);
     },
   });
 
   // ── social 概率分布:拆成 5 个单值(按序号 key,不再一个文本框手打「30/25/20/15/10」整串)──
-  const distPct = (d: { pct: number }, i: number): number => Number(pget(`I.social.dist.${i}`) ?? d.pct);
+  const distPct = (d: { pct: number }, _i: number): number => Number(d.pct);
   const editDistCat = (d: { name: string; pct: number }, i: number) => openActionConfirm({
     action: <>调整 social 概率 · {d.name}</>,
     detail: <>{d.name} 当前 <b>{distPct(d, i)}%</b> · 5 类合计必须 = 100%,不足或超出服务器直接拒;对新派发即时生效。</>,
@@ -170,8 +178,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     run: (reason, v) => {
       const n = (v ?? "").replace(/[^\d.]/g, "").trim();
       if (!n) return;
-      setParam(`I.social.dist.${i}`, n, { action: `social 概率分布 · ${d.name} → ${n}%`, reason });
-      toast(`${d.name} 概率已改为 ${n}% · 注意 5 类合计须 = 100%`);
+      const target = Math.max(0, Math.min(100, Math.round(Number(n))));
+      const next = SOCIAL_DIST.map((item, idx) => ({ key: item.key, pct: idx === i ? target : item.pct }));
+      const delta = 100 - next.reduce((sum, item) => sum + item.pct, 0);
+      const adjustIdx = next.findIndex((_item, idx) => idx !== i);
+      if (adjustIdx >= 0) next[adjustIdx] = { ...next[adjustIdx], pct: Math.max(0, next[adjustIdx].pct + delta) };
+      runBackend(actions.updateI2Distribution(next, reason), `${d.name} 概率已改为 ${target}%`);
     },
   });
 
@@ -183,12 +195,18 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     edit: { kind: "text", current: String(cnt), unit: "条数" },
     run: (reason, v) => {
       if (!v) return;
-      setParam(`I.social.pool.${key}.cnt`, v, { action: `编辑 social 池 ${name}`, reason });
-      toast(`${name} 已更新 · 理由留痕`);
+      runBackend(actions.updateI2Pool(key, Math.max(0, Math.round(Number(v))), reason), `${name} 已更新 · 理由留痕`);
     },
   });
 
   const onlineCount = novas.filter((n) => n.on).length;
+
+  if (contentLoading && !data) {
+    return <section className="l-card"><div className="l-b"><div className="itint">I2 数据加载中...</div></div></section>;
+  }
+  if (!data) {
+    return <section className="l-card"><div className="l-b"><div className="itint danger">I2 暂无真实接口数据</div></div></section>;
+  }
 
   return (
     <>
@@ -240,25 +258,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             </thead>
             <tbody>
               {novas.map((n) => {
-                // phase-keyed 显示:仅 tradein / taskLockMonthly 有,其他「—」
-                const phaseKeyed = n.key === "tradein"
-                  ? "P1-2 不推 · P5-6 歇 24h"
-                  : n.key === "taskLockMonthly"
-                    ? "P1-2 歇 30d · P5-6 歇 3.5d"
-                    : "—";
-                // 内容触发:design-data NOVA 没带 desc 字段,这里按 key 落地一组业务化描述。
-                const trigger = ({
-                  welcome: "注册后首推 · 玩法解释",
-                  market: "全网算力波动 / NEX 价播报",
-                  upgrade: "按持有机队推荐升级",
-                  dailySummary: "每完成 25 个任务推一次日报",
-                  tradein: "Trade-in 升级钩子",
-                  social: "5 类真实事件按概率派发",
-                  eventClaim: "有可领取活动奖励时催领",
-                  wrapped: "半年/年度 Wrapped 回顾召回(实际一次性)",
-                  taskLockMonthly: "月度任务累计召回",
-                  quest: "首日任务宽限 / 过期召回(一次性)",
-                } as Record<string, string>)[n.key] ?? n.name;
+                const phaseKeyed = n.phaseKeyed || "—";
+                const trigger = n.trigger || n.name;
                 const phaseStyle = phaseKeyed === "—"
                   ? { fontSize: 11.5, color: "var(--ink-4)" }
                   : { fontSize: 11.5, color: "var(--warning)" };
@@ -364,6 +365,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <tbody>
                 {NOVA_TPLS.map((t) => {
                   const st = tplStatus(t.ch);
+                  const canPublish = st !== "published";
+                  const canArchive = st !== "archived";
                   return (
                     <tr key={t.ch}>
                       <td className="mono" style={{ fontSize: 11.5 }}>{t.ch}</td>
@@ -372,8 +375,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                       <td className="mono" style={{ fontWeight: 700 }}>{t.v}</td>
                       <td>{renderTplBadge(st)}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="l-btn sm mc" onClick={() => publishTpl(t.ch, t.name)}>发布</button>
-                        <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => archiveTpl(t.ch, t.name)}>归档</button>
+                        {canPublish && (
+                          <button className="l-btn sm mc" onClick={() => publishTpl(t.ch, t.name)}>发布</button>
+                        )}
+                        {canArchive && (
+                          <button className="l-btn sm" style={{ marginLeft: canPublish ? 6 : 0 }} onClick={() => archiveTpl(t.ch, t.name)}>归档</button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -520,7 +527,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 className="fld"
                 value={form.ctr}
                 onChange={(e) => setForm({ ...form, ctr: e.target.value })}
-                placeholder="如 27.4"
+                placeholder="输入接口返回的 CTR"
               />
             </label>
           </div>

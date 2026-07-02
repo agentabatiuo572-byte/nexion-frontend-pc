@@ -139,13 +139,21 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-function toNumber(value: RawNumber, fallback = 0) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+function parseNumber(value: RawNumber) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string" && value.trim()) {
     const parsed = Number(value.replace(/[$,%±\s]/g, ""));
-    return Number.isFinite(parsed) ? parsed : fallback;
+    return Number.isFinite(parsed) ? parsed : null;
   }
-  return fallback;
+  return null;
+}
+
+function requireNumber(value: RawNumber, field: string) {
+  const parsed = parseNumber(value);
+  if (parsed == null) {
+    throw new Error(`G3 后端数据缺少字段:${field}`);
+  }
+  return parsed;
 }
 
 function toBool(value: boolean | string | null | undefined, fallback = false) {
@@ -162,51 +170,63 @@ function asText(value: unknown, fallback = "—") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-function normalizeFrame(frame: BackendFrame | null | undefined, fallbackIndex: number): G3CurveFrame {
+function requireText(value: unknown, field: string) {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  throw new Error(`G3 后端数据缺少字段:${field}`);
+}
+
+function normalizeFrame(frame: BackendFrame | null | undefined, index: number): G3CurveFrame {
+  if (!frame) throw new Error(`G3 后端数据缺少字段:frames[${index}]`);
   return {
-    dayIndex: toNumber(frame?.dayIndex, fallbackIndex),
-    targetPrice: toNumber(frame?.targetPrice, 0.171),
-    pumpProbability: toNumber(frame?.pumpProbability, 0.55),
-    volatilityPct: toNumber(frame?.volatilityPct, 3),
+    dayIndex: requireNumber(frame.dayIndex, `frames[${index}].dayIndex`),
+    targetPrice: requireNumber(frame.targetPrice, `frames[${index}].targetPrice`),
+    pumpProbability: requireNumber(frame.pumpProbability, `frames[${index}].pumpProbability`),
+    volatilityPct: requireNumber(frame.volatilityPct, `frames[${index}].volatilityPct`),
   };
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): G3Overview {
+  if (!data) throw new Error("G3 后端未返回行情总览数据");
   const frames = (data?.frames ?? []).map(normalizeFrame);
-  const safeFrames = frames.length === 7 ? frames : Array.from({ length: 7 }, (_, index) => normalizeFrame(null, index));
-  const activeDayIndex = Math.max(0, Math.min(6, toNumber(data?.activeDayIndex, 0)));
-  const activeFrame = normalizeFrame(data?.activeFrame, activeDayIndex);
-  const coverage = data?.coverage ?? {};
-  const overrides = data?.overrides ?? {};
+  const activeDayIndex = Math.max(0, requireNumber(data.activeDayIndex, "activeDayIndex"));
+  const activeFrame = data?.activeFrame
+    ? normalizeFrame(data.activeFrame, activeDayIndex)
+    : frames.find((frame) => frame.dayIndex === activeDayIndex);
+  if (!activeFrame) throw new Error("G3 后端数据缺少字段:activeFrame");
+  if (!data.coverage) throw new Error("G3 后端数据缺少字段:coverage");
+  if (!data.overrides) throw new Error("G3 后端数据缺少字段:overrides");
+  const coverage = data.coverage;
+  const overrides = data.overrides;
   return {
-    currentPrice: toNumber(data?.currentPrice, activeFrame.targetPrice),
+    currentPrice: requireNumber(data.currentPrice, "currentPrice"),
     activeDayIndex,
     activeFrame,
-    weekPeakPrice: toNumber(data?.weekPeakPrice, Math.max(...safeFrames.map((frame) => frame.targetPrice))),
-    frames: safeFrames,
+    weekPeakPrice: requireNumber(data.weekPeakPrice, "weekPeakPrice"),
+    frames,
     controls: (data?.controls ?? []).map((control) => ({
-      key: asText(control.key, "unknown"),
-      name: asText(control.name, asText(control.key, "unknown")),
+      key: requireText(control.key, "controls.key"),
+      name: requireText(control.name, "controls.name"),
       description: asText(control.description),
-      value: asText(control.value),
+      value: requireText(control.value, "controls.value"),
       rawValue: typeof control.rawValue === "string" ? control.rawValue : undefined,
       cronExpression: typeof control.cronExpression === "string" ? control.cronExpression : undefined,
       zone: typeof control.zone === "string" ? control.zone : undefined,
       fallback: typeof control.fallback === "undefined" ? undefined : toBool(control.fallback, false),
     })),
     overrides: {
-      currentPrice: toNumber(overrides.currentPrice, toNumber(data?.currentPrice, activeFrame.targetPrice)),
-      volatilityPct: toNumber(overrides.volatilityPct, activeFrame.volatilityPct),
-      oracle: asText(overrides.oracle, "内部做市"),
-      deviationPct: toNumber(overrides.deviationPct, 5),
-      costBasis: toNumber(overrides.costBasis, 0.085),
+      currentPrice: requireNumber(overrides.currentPrice, "overrides.currentPrice"),
+      volatilityPct: requireNumber(overrides.volatilityPct, "overrides.volatilityPct"),
+      oracle: asText(overrides.oracle),
+      deviationPct: requireNumber(overrides.deviationPct, "overrides.deviationPct"),
+      costBasis: requireNumber(overrides.costBasis, "overrides.costBasis"),
       paused: toBool(overrides.paused, false),
     },
     coverage: {
-      coverageRatio: toNumber(coverage.coverageRatio),
-      redlinePct: toNumber(coverage.redlinePct),
+      coverageRatio: requireNumber(coverage.coverageRatio, "coverage.coverageRatio"),
+      redlinePct: requireNumber(coverage.redlinePct, "coverage.redlinePct"),
       redlineBreached: toBool(coverage.redlineBreached, false),
-      precheck: asText(coverage.precheck, "week peak NEX liability is checked before raising price or pump probability"),
+      precheck: asText(coverage.precheck),
     },
     serverCanonical: data?.serverCanonical === true,
     sources: data?.sources ?? [],
@@ -214,13 +234,14 @@ function normalizeOverview(data: BackendOverview | null | undefined): G3Overview
 }
 
 function normalizeHistory(data: BackendHistory | null | undefined): G3History {
+  if (!data) throw new Error("G3 后端未返回行情历史数据");
   return {
-    points: (data?.points ?? []).map((point) => ({
+    points: (data.points ?? []).map((point, index) => ({
       sampledAt: asText(point.sampledAt, ""),
-      price: toNumber(point.price),
-      deltaPct: toNumber(point.deltaPct),
+      price: requireNumber(point.price, `points[${index}].price`),
+      deltaPct: requireNumber(point.deltaPct, `points[${index}].deltaPct`),
     })),
-    intervalMinutes: toNumber(data?.intervalMinutes),
+    intervalMinutes: requireNumber(data.intervalMinutes, "intervalMinutes"),
     serverCanonical: data?.serverCanonical === true,
     sources: data?.sources ?? [],
   };

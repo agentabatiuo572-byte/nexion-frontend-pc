@@ -8,7 +8,6 @@
  */
 import { isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { TREASURY } from "@/lib/mock/admin/design-data";
 import { AutoGloss } from "@/app/components/kit/gloss";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
@@ -271,7 +270,7 @@ export function PaginationExemption({
         padding: "9px 12px",
       }}
     >
-      列表说明 · {label} · 最多 {maxRows} 行 · {reason}
+      <span className="mono">paginationExempt</span> · {label} · {kind} · 最多 {maxRows} 行 · {reason}
     </div>
   );
 }
@@ -346,8 +345,6 @@ export function Modal({ title, icon, onClose, children, footer, wide }: { title:
 /* Drawer — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
 export function Drawer({ title, sub, onClose, children, footer }: { title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const titleId = useId();
-  const subId = useId();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -358,9 +355,9 @@ export function Drawer({ title, sub, onClose, children, footer }: { title: React
   return (
     <div className="dkpage">
       <div className="drawer-scrim" onClick={onClose} aria-hidden />
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={sub ? subId : undefined} className="drawer" style={{ outline: "none" }}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" className="drawer" style={{ outline: "none" }}>
         <div className="drawer-h">
-          <div><div id={titleId} style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{title}</div>{sub && <div id={subId} className="muted tiny">{sub}</div>}</div>
+          <div><div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{title}</div>{sub && <div className="muted tiny">{sub}</div>}</div>
           <div className="spacer" />
           <button className="icon-btn" onClick={onClose} aria-label="关闭"><Icon name="x" size={16} /></button>
         </div>
@@ -488,22 +485,13 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = {
-  kind?: "number" | "text" | "select" | "toggle";
-  current?: string;
-  unit?: string;
-  options?: string[];
-  min?: number;
-  max?: number;
-  gt?: number;
-  lt?: number;
-  maxLength?: number;
-  pattern?: "url" | "single-keyword";
-  disallowValues?: string[];
-};
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[] };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
+type NotifyTemplateOption = { value: string; label: string; campaignNo?: string; meta?: string; tier?: string; status?: string; audience?: string; searchText?: string };
+type SopActionOption = { value: string; label: string; domain: string; action: string; ref?: string | null; approve?: boolean; description?: string; searchText?: string };
+type SopRollbackOption = { value: string; label: string; scene?: string; riskLevel?: string; plan: string; searchText?: string };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
 function initEditValue(spec?: EditSpec | null): string {
@@ -516,47 +504,17 @@ function initEditValue(spec?: EditSpec | null): string {
   return options.includes(current) ? current : "";
 }
 
-function isHttpUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "https:" || parsed.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
-
-function editValueProblems(spec: EditSpec | null, value: string): string[] {
-  if (!spec) return [];
-  const trimmed = value.trim();
-  if (!trimmed) return [];
-  const missing: string[] = [];
-  if (spec.maxLength != null && trimmed.length > spec.maxLength) missing.push(`目标新值最多 ${spec.maxLength} 字`);
-  if (spec.kind === "number") {
-    const n = Number(trimmed);
-    if (!Number.isFinite(n)) missing.push("目标新值须为有效数字");
-    else {
-      if (spec.gt != null && !(n > spec.gt)) missing.push(`目标新值须大于 ${spec.gt}`);
-      if (spec.lt != null && !(n < spec.lt)) missing.push(`目标新值须小于 ${spec.lt}`);
-      if (spec.min != null && n < spec.min) missing.push(`目标新值须不小于 ${spec.min}`);
-      if (spec.max != null && n > spec.max) missing.push(`目标新值须不大于 ${spec.max}`);
-    }
-  }
-  if (spec.pattern === "url" && !isHttpUrl(trimmed)) missing.push("目标新值须为 http/https URL");
-  if (spec.pattern === "single-keyword" && /[,，;；\n\r|]/.test(trimmed)) missing.push("一次只能填写一个识别词");
-  const blocked = (spec.disallowValues ?? []).map((item) => item.trim().toLowerCase()).filter(Boolean);
-  if (blocked.includes(trimmed.toLowerCase())) missing.push("目标新值与现有值重复");
-  return missing;
-}
-
 export type BusinessFormSpec =
-  | { kind: "role-select"; currentRole: string; currentTier?: "lead" | "member" | string; roles: RoleOption[]; guardHint?: string;
+  | { kind: "role-select"; currentRole: string; roles: RoleOption[]; guardHint?: string;
       /** 可选:传入全域动作 + 各角色授权向量,启用「角色变更权限 diff 预览」(新增/移除/受影响域)。 */
       actions?: { label: string; domainGroup?: string }[]; grantsByRole?: Record<string, string[]> }
   | { kind: "identity-verify"; subject: string; channels?: string[]; ticketHint?: string }
   | { kind: "schema-authoring"; ownerDomains?: string[]; propertyTypes?: string[]; samplingPolicies?: string[]; versionHint?: string }
   | { kind: "disposition-lifecycle"; subject: string; periods?: string[]; ownerHint?: string }
   | { kind: "balance-adjust"; subject: string; currencies?: string[]; directions?: string[] }
-  | { kind: "sop-authoring"; scenes?: string[]; owners?: string[]; nameHint?: string }
+  | { kind: "sop-authoring"; scenes?: string[]; owners?: string[]; nameHint?: string; notifyTemplates?: NotifyTemplateOption[]; actionOptions?: SopActionOption[]; rollbackOptions?: SopRollbackOption[];
+      currentName?: string; currentScene?: string; currentOwner?: string; currentSla?: string; currentEmergencyTrack?: boolean;
+      currentActionSeq?: string; currentNotifyCampaignNo?: string; currentNotifyTemplate?: string; currentRollback?: string; currentDrillRequired?: boolean }
   | { kind: "export-wizard"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; keyName?: string; zh?: string; en?: string; placeholders?: string[] }
@@ -573,7 +531,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean; allowEmpty?: boolean; min?: number; max?: number; gt?: number; lt?: number; maxLength?: number; disallowValues?: string[] }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; min?: number; max?: number; step?: number; wide?: boolean }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -667,7 +625,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
 }
 
 export function OperatorBriefBlock({ action, detail, amplifies, hasEdit }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const detailId = useId();
   const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit);
   const detailText = compactText(plainText(detail));
@@ -713,16 +671,13 @@ const DEFAULT_GRANTS = ["-", "R", "M", "C"];
 const DEFAULT_COURSE_CATEGORIES = ["Basics", "Earn", "Team", "Wealth", "Security"];
 const DEFAULT_COURSE_DURATIONS = ["5 min", "8 min", "12 min", "15 min"];
 const DEFAULT_COURSE_PUBLISH_STATES = ["draft", "ready", "published"];
-const DEFAULT_COPY_AUDIENCES = ["全量", "P3 · 全语言", "zh · 注册>30天", "注册 ≤14 天", "P2-P3"];
-const DEFAULT_COPY_TRAFFIC_SPLITS = ["50", "34", "25", "10"];
 const DEFAULT_CAMPAIGN_TIERS = ["critical", "high", "normal", "low"];
-const DEFAULT_CAMPAIGN_AUDIENCES = ["全量", "SFC 辖区 · 未重确认用户", "近 30 天提现 >$1k", "注册 ≤14 天", "P3 阶段活跃用户"];
 const DEFAULT_LANGUAGE_SCOPES = ["en+zh", "zh", "en"];
 
 function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (!spec) return {};
   if (spec.kind === "role-select") {
-    return { role: spec.currentRole, tier: spec.currentTier === "lead" ? "lead" : "member" };
+    return { role: spec.currentRole };
   }
   if (spec.kind === "permission-matrix") {
     return Object.fromEntries(spec.roles.map((r) => [`grant.${r.key}`, r.current]));
@@ -736,8 +691,8 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       en: spec.en ?? "",
       version: spec.version ?? "vNext",
       surface: spec.surface ?? "",
-      audience: spec.audiences?.[0] ?? DEFAULT_COPY_AUDIENCES[0],
-      trafficSplit: spec.trafficSplits?.[0] ?? DEFAULT_COPY_TRAFFIC_SPLITS[0],
+      audience: spec.audiences?.[0] ?? "",
+      trafficSplit: spec.trafficSplits?.[0] ?? "",
       versionNote: spec.versionNote ?? "日常内容迭代",
     };
   }
@@ -770,7 +725,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       title: spec.title ?? "",
       body: spec.body ?? "",
       tier: spec.defaultTier ?? spec.tiers?.[0] ?? "normal",
-      audience: spec.defaultAudience ?? spec.audiences?.[0] ?? "全量",
+      audience: spec.defaultAudience ?? spec.audiences?.[0] ?? "",
       schedule: "保存为草稿",
       budget: spec.budget ?? "0",
     };
@@ -799,9 +754,9 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (spec.kind === "version-authoring") {
     return {
       version: spec.version ?? "vNext",
-      jurisdiction: spec.jurisdiction ?? "SFC",
+      jurisdiction: spec.jurisdiction ?? "",
       languageScope: spec.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
-      effectiveDate: spec.effectiveDate ?? "2026-06-30",
+      effectiveDate: spec.effectiveDate ?? "",
       requiresReack: spec.requiresReack === false ? "false" : "true",
       zh: spec.zh ?? "",
       en: spec.en ?? "",
@@ -831,7 +786,22 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return { direction: spec.directions?.[0] ?? "增加", amount: "", currency: spec.currencies?.[0] ?? "USDT", voucher: "" };
   }
   if (spec.kind === "sop-authoring") {
-    return { name: "", scene: spec.scenes?.[0] ?? "监管点名", owner: spec.owners?.[0] ?? "风控 lead", sla: "15 分钟", emergencyTrack: "true", actionSeq: "", notifyTemplate: "", rollback: "", drillRequired: "true" };
+    const notify = spec.notifyTemplates?.find((item) => item.value === spec.currentNotifyCampaignNo) ?? spec.notifyTemplates?.[0];
+    return {
+      name: spec.currentName ?? "",
+      scene: spec.currentScene ?? spec.scenes?.[0] ?? "监管点名",
+      owner: spec.currentOwner ?? spec.owners?.[0] ?? "风控",
+      sla: spec.currentSla ?? "15 分钟",
+      emergencyTrack: spec.currentEmergencyTrack === false ? "false" : "true",
+      actionSeq: spec.currentActionSeq ?? "",
+      actionSearch: "",
+      notifyCampaignNo: spec.currentNotifyCampaignNo ?? notify?.value ?? "",
+      notifyTemplate: spec.currentNotifyTemplate ?? notify?.label ?? "",
+      notifySearch: spec.currentNotifyTemplate ?? "",
+      rollback: spec.currentRollback ?? "",
+      rollbackSearch: "",
+      drillRequired: spec.currentDrillRequired === false ? "false" : "true",
+    };
   }
   if (spec.kind === "export-wizard") {
     return { exportType: spec.exportTypes?.[0] ?? "账单 CSV", timeRange: "", fields: "", piiLevel: spec.piiLevels?.[0] ?? "无 PII", maskPolicy: spec.maskPolicies?.[0] ?? "默认脱敏", recipient: "", ticket: "" };
@@ -897,7 +867,6 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   };
   if (spec.kind === "role-select") {
     needs("role", "目标角色");
-    needs("tier", "层级");
   } else if (spec.kind === "permission-matrix") {
     spec.roles.forEach((r) => needs(`grant.${r.key}`, `${r.label} 授权`));
     if (!spec.roles.some((r) => (state[`grant.${r.key}`] ?? r.current) !== r.current)) {
@@ -982,6 +951,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isFinite(amt) || amt <= 0) missing.push("调整金额(正数)");
   } else if (spec.kind === "sop-authoring") {
     ["name", "scene", "owner", "sla", "actionSeq", "rollback"].forEach((k) => needs(k, k));
+    needs("notifyCampaignNo", "I3 通知模板");
   } else if (spec.kind === "export-wizard") {
     ["exportType", "timeRange", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
   } else if (spec.kind === "task-edit") {
@@ -1006,26 +976,20 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (![a, g, e].every((n) => Number.isFinite(n) && n >= 0)) missing.push("三档须为非负数");
     else if (a < g || g < e) missing.push("须满额 ≥ 宽限 ≥ 过期");
   } else if (spec.kind === "multi-field") {
-    spec.fields.forEach((f) => {
-      if (!f.allowEmpty) needs(f.key, f.label);
-      const value = (state[f.key] ?? "").trim();
-      if (f.maxLength != null && value.length > f.maxLength) missing.push(`${f.label} 最多 ${f.maxLength} 字`);
-      const blocked = (f.disallowValues ?? []).map((item) => item.trim().toLowerCase()).filter(Boolean);
-      if (value && blocked.includes(value.toLowerCase())) missing.push(`${f.label} 与现有值重复`);
-    });
+    spec.fields.forEach((f) => needs(f.key, f.label));
     const nums = spec.fields.filter((f) => f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
-    if (nums.some(({ n }) => !Number.isFinite(n))) missing.push("数值字段须为有效数字");
-    else {
-      for (const { f, n } of nums) {
-        if (f.gt != null && !(n > f.gt)) { missing.push(`${f.label} 须大于 ${f.gt}`); break; }
-        if (f.lt != null && !(n < f.lt)) { missing.push(`${f.label} 须小于 ${f.lt}`); break; }
-        if (f.min != null && n < f.min) { missing.push(`${f.label} 须不小于 ${f.min}`); break; }
-        if (f.max != null && n > f.max) { missing.push(`${f.label} 须不大于 ${f.max}`); break; }
-      }
-      if (spec.ascending) {
-        for (let i = 1; i < nums.length; i++) {
-          if (nums[i].n <= nums[i - 1].n) { missing.push(`${nums[i].f.label} 须大于 ${nums[i - 1].f.label}`); break; }
-        }
+    const hasInvalidNumber = nums.some(({ n }) => !Number.isFinite(n));
+    if (hasInvalidNumber) {
+      missing.push("数值字段须为有效数字");
+    } else {
+      nums.forEach(({ f, n }) => {
+        if (f.min != null && n < f.min) missing.push(`${f.label} 须 ≥ ${f.min}`);
+        if (f.max != null && n > f.max) missing.push(`${f.label} 须 ≤ ${f.max}`);
+      });
+    }
+    if (!hasInvalidNumber && spec.ascending) {
+      for (let i = 1; i < nums.length; i++) {
+        if (nums[i].n <= nums[i - 1].n) { missing.push(`${nums[i].f.label} 须大于 ${nums[i - 1].f.label}`); break; }
       }
     }
   } else if (spec.kind === "weekly-task-edit") {
@@ -1087,7 +1051,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
 
 function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFormValue): string | undefined {
   if (!spec) return undefined;
-  if (spec.kind === "role-select") return `${state.role}${state.tier === "lead" ? "/lead" : ""}`;
+  if (spec.kind === "role-select") return state.role;
   if (spec.kind === "permission-matrix") return spec.roles.map((r) => state[`grant.${r.key}`]).join("/");
   if (spec.kind === "copy-edit") return state.version;
   if (spec.kind === "version-authoring") return state.version;
@@ -1140,11 +1104,12 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>) => {
     const proof = typeof proofOrLabels === "string" ? proofOrLabels : undefined;
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
+    const current = value[key] ?? options[0] ?? "";
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
-      <select className="fld" data-proof={proof} value={value[key] ?? options[0] ?? ""} onChange={(e) => set(key, e.target.value)}>
-        {options.map((o) => <option key={o} value={o}>{labels?.[o] ?? o}</option>)}
+      <select className="fld" data-proof={proof} value={current} disabled={options.length === 0} onChange={(e) => set(key, e.target.value)}>
+        {options.length === 0 ? <option value="">无后端返回选项</option> : options.map((o) => <option key={o} value={o}>{labels?.[o] ?? o}</option>)}
       </select>
     </label>
     );
@@ -1212,16 +1177,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
                   {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
               ) : (
-                <input
-                  className="fld"
-                  type={f.inputKind === "number" ? "number" : "text"}
-                  min={f.inputKind === "number" ? f.min ?? f.gt : undefined}
-                  max={f.inputKind === "number" ? f.max ?? f.lt : undefined}
-                  maxLength={f.maxLength}
-                  value={value[f.key] ?? ""}
-                  onChange={(e) => set(f.key, e.target.value)}
-                  placeholder={f.placeholder ?? ""}
-                />
+                <input className="fld" type={f.inputKind === "number" ? "number" : "text"} min={f.min} max={f.max} step={f.step} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
               )}
             </label>
           ))}
@@ -1236,7 +1192,6 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
         <label>业务表单 · 改角色</label>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("role", "目标角色 role", spec.roles.map((r) => r.key), "role-select-target")}
-          {select("tier", "层级 tier", ["member", "lead"], "role-select-tier")}
         </div>
         <div className="row wrap" style={{ gap: 8, marginTop: 10 }}>
           {spec.roles.map((r) => (
@@ -1246,7 +1201,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           ))}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          当前 <span className="mono">{spec.currentRole}{spec.currentTier === "lead" ? "/lead" : "/member"}</span> → 目标 <span className="mono">{businessNewValue(spec, value)}</span>
+          当前 <span className="mono">{spec.currentRole}</span> → 目标 <span className="mono">{businessNewValue(spec, value)}</span>
           {spec.guardHint ? <> · {spec.guardHint}</> : null}
         </div>
         {spec.actions && spec.grantsByRole && (() => {
@@ -1314,7 +1269,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           <div className="grid g-2" style={{ gap: 10, marginBottom: 10 }}>
             {input("version", "变体/版本号 variant id", "v8")}
             {input("surface", "投放位置 surface", "Home / Me / Store")}
-            {select("audience", "受众 audience", spec.audiences ?? DEFAULT_COPY_AUDIENCES)}
+            {select("audience", "受众 audience", spec.audiences ?? [])}
             {input("trafficSplit", "分流比例 traffic split(%)", "50", "number")}
           </div>
         )}
@@ -1378,7 +1333,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("title", "通知标题 title", "Campaign title")}
           {select("tier", "优先级 priority", spec.tiers ?? DEFAULT_CAMPAIGN_TIERS)}
-          {select("audience", "受众 audience", spec.audiences ?? DEFAULT_CAMPAIGN_AUDIENCES)}
+          {select("audience", "受众 audience", spec.audiences ?? [])}
           {select("schedule", "排期 schedule", ["保存为草稿", "排期下发", "立即下发"])}
           {input("budget", "预算 budget(USD)", "0", "number")}
         </div>
@@ -1406,7 +1361,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {select("forceUnlock", "强制提前开放", ["false", "true"], { false: "否", true: "是" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          目标 <span className="mono">{businessNewValue(spec, value)}</span> · 新增/修改后写入 nx_admin_device_generation_gate,不再写死到配置项。
+          目标 <span className="mono">{businessNewValue(spec, value)}</span> · 新增/修改后写入后端发布门,不再写死到配置项。
         </div>
       </div>
     );
@@ -1424,7 +1379,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {select("status", "状态", ["active", "archived"], { active: "启用", archived: "已归档" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          目标 <span className="mono">{businessNewValue(spec, value)}</span> · 保存到 nx_admin_phase_config。内部 ID 使用 MySQL 自增主键,页面只展示阶段名称。
+          目标 <span className="mono">{businessNewValue(spec, value)}</span> · 保存阶段配置。内部 ID 使用系统生成值,页面只展示阶段名称。
         </div>
       </div>
     );
@@ -1435,10 +1390,10 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
       <div className="field" data-business-form="version-authoring">
         <label>业务表单 · 新版本草拟 / 发布</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("version", "版本号 version", "v13")}
-          {input("jurisdiction", "法域 jurisdiction", "SFC")}
+          {input("version", "版本号 version", "输入版本号")}
+          {input("jurisdiction", "法域 jurisdiction", "输入法域")}
           {select("languageScope", "语言范围 language scope", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES)}
-          {input("effectiveDate", "生效日 effective date", "2026-06-30", "date")}
+          {input("effectiveDate", "生效日 effective date", "YYYY-MM-DD", "date")}
           {select("requiresReack", "是否要求 re-ack", ["true", "false"])}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
@@ -1679,7 +1634,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {input("propName", "属性名 property", "order_id")}
           {select("propType", "属性类型 type", spec.propertyTypes ?? ["string", "number", "boolean", "enum", "timestamp", "id"])}
           {select("samplingPolicy", "采样策略 sampling", spec.samplingPolicies ?? ["100%(资金/风控/转化)", "浏览 10%", "会话 25%"])}
-          {input("version", "schema 版本 version", spec.versionHint ?? "v13")}
+          {input("version", "schema 版本 version", spec.versionHint ?? "输入 schema 版本")}
         </div>
         <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
@@ -1712,21 +1667,229 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   }
 
   if (spec.kind === "sop-authoring") {
+    const notifyTemplates = spec.notifyTemplates ?? [];
+    const notifyQuery = (value.notifySearch ?? "").trim().toLowerCase();
+    const selectedNotify = notifyTemplates.find((item) => item.value === value.notifyCampaignNo);
+    const shownNotifyTemplates = notifyTemplates
+      .filter((item) => !notifyQuery || (item.searchText ?? `${item.label} ${item.meta ?? ""}`).toLowerCase().includes(notifyQuery))
+      .slice(0, 8);
+    const chooseNotify = (item: NotifyTemplateOption) => onChange({
+      ...value,
+      notifyCampaignNo: item.value,
+      notifyTemplate: item.label,
+      notifySearch: item.label,
+    });
+    const actionOptions = spec.actionOptions ?? [];
+    const actionQuery = (value.actionSearch ?? "").trim().toLowerCase();
+    const actionLines = (value.actionSeq ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const shownActionOptions = actionOptions
+      .filter((item) => !actionQuery || (item.searchText ?? `${item.label} ${item.description ?? ""}`).toLowerCase().includes(actionQuery))
+      .slice(0, 8);
+    const setActionLines = (lines: string[]) => onChange({ ...value, actionSeq: lines.join("\n") });
+    const actionLine = (item: SopActionOption) => `${item.domain}·${item.action}${item.ref ? `·${item.ref}` : ""}`;
+    const addAction = (item: SopActionOption) => {
+      const nextLine = actionLine(item);
+      setActionLines([...actionLines, nextLine]);
+    };
+    const removeAction = (idx: number) => setActionLines(actionLines.filter((_, i) => i !== idx));
+    const splitAction = (line: string) => {
+      const [domain, ...rest] = line.split(/[·|｜]/).map((part) => part.trim()).filter(Boolean);
+      return { domain: domain || "J4", action: rest.join(" · ") || line };
+    };
+    const rollbackOptions = spec.rollbackOptions ?? [];
+    const rollbackQuery = (value.rollbackSearch ?? "").trim().toLowerCase();
+    const selectedRollback = rollbackOptions.find((item) => item.plan === value.rollback || item.value === value.rollbackTemplate);
+    const shownRollbackOptions = rollbackOptions
+      .filter((item) => !rollbackQuery || (item.searchText ?? `${item.label} ${item.scene ?? ""} ${item.riskLevel ?? ""} ${item.plan}`).toLowerCase().includes(rollbackQuery))
+      .slice(0, 8);
+    const chooseRollback = (item: SopRollbackOption) => onChange({
+      ...value,
+      rollbackTemplate: item.value,
+      rollback: item.plan,
+      rollbackSearch: item.label,
+    });
     return (
       <div className="field" data-business-form="sop-authoring">
         <label>业务表单 · 应急 SOP 剧本编排</label>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "剧本名称 name", spec.nameHint ?? "如 监管点名快速止血")}
           {select("scene", "触发场景 scene", spec.scenes ?? ["监管点名", "对账缺口", "挤兑预警", "数据泄露", "制裁名单更新"])}
-          {select("owner", "责任角色 owner", spec.owners ?? ["风控 lead", "合规审计", "超管", "财务 lead"])}
+          {select("owner", "责任角色 owner", spec.owners ?? ["风控", "合规审计", "超管", "财务"])}
           {input("sla", "SLA(响应时限)", "15 分钟")}
-          {input("notifyTemplate", "通知模板 notify", "I3 critical · 全体超管")}
         </div>
-        <div style={{ marginTop: 10 }}>
-          {textArea("actionSeq", "动作序列 action sequence(每行一步:域·原子动作·参数)", "J1·熔断提现闸\nJ2·封锁命中辖区 IR / VE\nI5·更新风险披露\nC2·冻结命中账户簇", 4)}
+        <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
+          <span>通知模板 notify · 来自 I3</span>
+          <input
+            className="fld"
+            value={value.notifySearch ?? ""}
+            onChange={(e) => onChange({ ...value, notifySearch: e.target.value, notifyCampaignNo: "", notifyTemplate: "" })}
+            placeholder="搜索通知标题 / 编号 / 优先级 / 受众"
+          />
+          <div data-proof="sop-i3-notify-template-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
+            {notifyTemplates.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>I3 暂无可选通知模板,请先确认 I3 Campaign 接口已返回数据。</div>
+            ) : shownNotifyTemplates.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的通知模板,请换个关键词。</div>
+            ) : shownNotifyTemplates.map((item) => {
+              const active = item.value === value.notifyCampaignNo;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => chooseNotify(item)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    gap: 8,
+                    alignItems: "center",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`,
+                    background: active ? "var(--brand-soft)" : "var(--surface-2)",
+                    color: "var(--ink)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>{item.label}</span>
+                  <span className="mono" style={{ fontSize: 11, color: active ? "var(--brand)" : "var(--ink-3)" }}>{item.campaignNo ?? item.value}</span>
+                  {item.meta && <span className="tiny" style={{ gridColumn: "1 / -1", color: "var(--ink-3)" }}>{item.meta}</span>}
+                </button>
+              );
+            })}
+          </div>
+          {selectedNotify && (
+            <div className="tint tiny" style={{ marginTop: 8 }}>
+              已选择 <span className="mono">{selectedNotify.campaignNo}</span> · {selectedNotify.label}
+            </div>
+          )}
         </div>
-        <div style={{ marginTop: 10 }}>
-          {textArea("rollback", "回滚方案 rollback", "根因消除 + 执行门槛操作确认后逐步恢复;恢复恒走常规轨", 2)}
+        <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
+          <span>动作序列 action sequence · 后端动作模板</span>
+          <input
+            className="fld"
+            value={value.actionSearch ?? ""}
+            onChange={(e) => onChange({ ...value, actionSearch: e.target.value })}
+            placeholder="搜索域 / 动作 / 参数 / 说明"
+          />
+          <div data-proof="sop-action-option-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
+            {actionOptions.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可选原子动作,请确认 J4 SOP 接口已返回 actionOptions。</div>
+            ) : shownActionOptions.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的原子动作,请换个关键词。</div>
+            ) : shownActionOptions.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => addAction(item)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 8,
+                  alignItems: "center",
+                  textAlign: "left",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-2)",
+                  color: "var(--ink)",
+                  cursor: "pointer",
+                }}
+              >
+                <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{item.domain}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 650 }}>{item.action}</span>
+                  {item.description && <span className="tiny" style={{ display: "block", color: "var(--ink-3)" }}>{item.description}</span>}
+                </span>
+                <span className="tiny" style={{ color: item.approve === false ? "var(--ink-3)" : "var(--danger)" }}>
+                  {item.approve === false ? "无需确认" : "需确认"}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div data-proof="sop-action-sequence" style={{ display: "grid", gap: 6, marginTop: 10 }}>
+            <span className="tiny" style={{ color: "var(--ink-3)" }}>已编排步骤</span>
+            {actionLines.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>请从上方动作模板添加至少 1 个步骤。</div>
+            ) : actionLines.map((line, idx) => {
+              const step = splitAction(line);
+              return (
+                <div
+                  key={`${line}-${idx}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto auto 1fr auto",
+                    gap: 8,
+                    alignItems: "center",
+                    padding: "7px 9px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    background: "var(--surface-3)",
+                  }}
+                >
+                  <span className="mono" style={{ color: "var(--ink-3)", fontSize: 11 }}>{idx + 1}</span>
+                  <span className="mono" style={{ color: "var(--brand)", fontSize: 11 }}>{step.domain}</span>
+                  <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{step.action}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAction(idx)}
+                    style={{ border: 0, background: "transparent", color: "var(--danger)", cursor: "pointer", fontSize: 12 }}
+                  >
+                    移除
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
+          <span>回滚方案 rollback · 后端模板</span>
+          <input
+            className="fld"
+            value={value.rollbackSearch ?? ""}
+            onChange={(e) => onChange({ ...value, rollbackSearch: e.target.value, rollbackTemplate: "", rollback: "" })}
+            placeholder="搜索场景 / 模板 / 风险等级 / 回滚内容"
+          />
+          <div data-proof="sop-rollback-template-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
+            {rollbackOptions.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可选回滚模板,请确认 J4 SOP 接口已返回 rollbackOptions。</div>
+            ) : shownRollbackOptions.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的回滚模板,请换个关键词。</div>
+            ) : shownRollbackOptions.map((item) => {
+              const active = item.plan === value.rollback || item.value === value.rollbackTemplate;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => chooseRollback(item)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    gap: 8,
+                    alignItems: "center",
+                    textAlign: "left",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${active ? "var(--brand)" : "var(--border)"}`,
+                    background: active ? "var(--brand-soft)" : "var(--surface-2)",
+                    color: "var(--ink)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ fontSize: 12.5, fontWeight: 650 }}>{item.label}</span>
+                  <span className="mono" style={{ fontSize: 11, color: active ? "var(--brand)" : "var(--ink-3)" }}>{item.riskLevel ?? "MEDIUM"}</span>
+                  <span className="tiny" style={{ gridColumn: "1 / -1", color: "var(--ink-3)" }}>
+                    {item.scene ?? "通用"} · {item.plan}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {selectedRollback && (
+            <div className="tint tiny" style={{ marginTop: 8 }}>
+              已选择 {selectedRollback.label} · {selectedRollback.plan}
+            </div>
+          )}
         </div>
         <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
@@ -1795,7 +1958,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
 
   return (
     <div className="field" data-business-form="destructive-reason">
-      <label>业务表单 · 高影响操作确认</label>
+      <label>业务表单 · 删除 / 下架影响确认</label>
       <div className="tint danger tiny" style={{ marginBottom: 10 }}>
         目标 <span className="mono">{spec.target}</span> · {spec.impact}
       </div>
@@ -1807,8 +1970,14 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   );
 }
 
+export type CoverageSnapshot = {
+  coverageRatio: number;
+  redlinePct: number;
+  healthyPct?: number;
+};
+
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, edit, businessForm, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; edit?: EditSpec; businessForm?: BusinessFormSpec; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void }) {
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
@@ -1817,14 +1986,13 @@ export function OperationConfirmModal({ action, detail, amplifies, edit, busines
   const spec: EditSpec | null = edit ?? null;
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
-  // B1 红线禁放行(§15.1 recoverGate):放大流出动作在覆盖率 < 红线时禁止确认放行(server 422 的前端镜像)。
-  const covBlocked = !!amplifies && TREASURY.coverageRatio < TREASURY.redLine;
+  // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
+  const covBlocked = Boolean(amplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   const reasonMin = 8;
   const reasonOk = reason.trim().length >= reasonMin;
   const businessMissing = missingBusinessFields(businessForm, businessValue);
   const derivedNewVal = businessNewValue(businessForm, businessValue);
-  const editProblems = editValueProblems(spec, newVal);
-  const canConfirm = !covBlocked && reasonOk && (!spec || newVal.trim().length > 0) && editProblems.length === 0 && businessMissing.length === 0;
+  const canConfirm = !covBlocked && reasonOk && (!spec || newVal.trim().length > 0) && businessMissing.length === 0;
   return (
     <Modal title={action} icon="shield" onClose={onClose}
       footer={<>
@@ -1838,13 +2006,19 @@ export function OperationConfirmModal({ action, detail, amplifies, edit, busines
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
           <span className="ico"><Icon name="alert" size={16} /></span>
           <div className="tiny">
-            <b>会增加资金流出</b> · 系统会先检查 B1 备付金覆盖率。当前覆盖率
-            <b className="mono"> {TREASURY.coverageRatio}%</b>
-            {TREASURY.coverageRatio >= TREASURY.yellowLine
-              ? ` > 健康线 ${TREASURY.yellowLine}% ✓`
-              : TREASURY.coverageRatio >= TREASURY.redLine
-                ? ` · 高于红线 ${TREASURY.redLine}%,但低于健康线 ${TREASURY.yellowLine}%,请审慎提交`
-                : ` < 红线 ${TREASURY.redLine}% ✗ 系统会拒绝提交`}
+            <b>会增加资金流出</b> · 系统会先检查 B1 备付金覆盖率。
+            {coverage ? (
+              <>
+                当前覆盖率 <b className="mono">{coverage.coverageRatio}%</b>
+                {coverage.healthyPct !== undefined && coverage.coverageRatio >= coverage.healthyPct
+                  ? `，高于健康线 ${coverage.healthyPct}%`
+                  : coverage.coverageRatio >= coverage.redlinePct
+                    ? `，高于红线 ${coverage.redlinePct}%，请审慎提交`
+                    : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
+              </>
+            ) : (
+              <>提交时由后端实时校验覆盖率，当前弹窗不使用前端兜底值。</>
+            )}
           </div>
         </div>
       )}
@@ -1871,20 +2045,12 @@ export function OperationConfirmModal({ action, detail, amplifies, edit, busines
               <input
                 className="fld"
                 type={kind === "number" ? "number" : "text"}
-                min={kind === "number" ? spec.min ?? spec.gt : undefined}
-                max={kind === "number" ? spec.max ?? spec.lt : undefined}
-                maxLength={spec.maxLength}
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
                 placeholder={spec.current ? `输入新值(当前 ${spec.current})` : "输入目标新值"}
                 style={{ maxWidth: 240 }}
               />
               {spec.unit && <span className="muted tiny">{spec.unit}</span>}
-            </div>
-          )}
-          {editProblems.length > 0 && (
-            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-              目标新值还需修正: {editProblems.slice(0, 3).join(" / ")}。
             </div>
           )}
           {newVal && spec.current && (

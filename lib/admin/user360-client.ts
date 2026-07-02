@@ -391,6 +391,14 @@ function toNumber(value: number | string | null | undefined, fallback = 0) {
   return fallback;
 }
 
+function requireNumber(value: number | string | null | undefined, field: string) {
+  const parsed = toNumber(value, Number.NaN);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`USER360_FIELD_REQUIRED:${field}`);
+  }
+  return parsed;
+}
+
 function queryString(query: Record<string, string | number | boolean | null | undefined>) {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
@@ -403,7 +411,7 @@ function queryString(query: Record<string, string | number | boolean | null | un
 
 function normalizePage<T>(page: PageResult<T>, fallbackPageNum: number, fallbackPageSize: number): UserPage<T> {
   return {
-    total: toNumber(page.total),
+    total: requireNumber(page.total, "page.total"),
     pageNum: toNumber(page.pageNum, fallbackPageNum),
     pageSize: toNumber(page.pageSize, fallbackPageSize),
     records: page.records ?? [],

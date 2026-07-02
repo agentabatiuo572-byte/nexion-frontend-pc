@@ -221,7 +221,7 @@ if (!uniProducts) {
 // 单源三方:canon.withdrawal ↔ uniapp product-phase.PHASES ↔ admin H1 DIAL_MATRIX(nexGate 列,月→phase)+ D5 OWN_PARAMS。
 const uniPhase = readIfExists(path.join(UNI_ROOT, "src", "store", "product-phase.ts"));
 const adminH = read(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "data.ts"));
-const adminCC = read(path.join(ROOT, "lib", "mock", "admin", "command-center.ts")); // PHASE_BUCKETS 节奏单源(2026-06-24 上收)
+const adminCC = adminH; // PHASE_BUCKETS must come from the active admin H-domain source, not mock fixtures.
 const adminDdata = read(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "data.ts"));
 const wd = canon.withdrawal || {};
 if (!uniPhase) {

@@ -8,7 +8,7 @@ import { RoleBadge } from "./role-badge";
 export interface AuditEntry {
   id: string;
   actor: string;
-  role: AdminRole;
+  role?: AdminRole;
   action: string;
   detail?: string;
   at: string;
@@ -40,7 +40,7 @@ export function AuditTimeline({ entries }: { entries: AuditEntry[] }) {
             {/* 内容 */}
             <div className={`flex-1 ${last ? "" : "pb-3.5"}`}>
               <div className="flex flex-wrap items-center gap-2">
-                <RoleBadge role={e.role} size="sm" />
+                {e.role && <RoleBadge role={e.role} size="sm" />}
                 <span className="text-[12.5px]" style={{ color: "var(--v5-ink)" }}>
                   {e.actor}
                 </span>

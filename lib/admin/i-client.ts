@@ -218,7 +218,8 @@ export type TrustDisclosureStats = {
   jurisdictions: number;
   staleAckUsers: number;
   weeklyGateBlocked: number;
-  sfcReackPct?: number;
+  reackJurisdiction?: string;
+  reackPct?: number;
 };
 
 export type TrustSectionView = {

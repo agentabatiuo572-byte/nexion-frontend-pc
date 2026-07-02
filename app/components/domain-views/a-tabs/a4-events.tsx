@@ -26,36 +26,56 @@
  *
  * 设计稿元素省略:f-bar/f-nav/f-title/f-desc/f-cta 已由 DomainHeader 承担,本组件从 .f-stats 开始。
  */
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Drawer, PaginationExemptionList } from "../design-kit";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
-  A4_STATS,
-  EVENT_FAMILIES,
-  REGISTERED_DOMAINS,
-  PENDING_DOMAINS,
-  COMMON_FIELDS,
-  KPI_DIMENSION_PARAMS,
-  KPI_FORMULAS,
-  DOMAIN_EXTENSIONS,
-  type EventFamily,
-  type Batch,
-} from "./data";
+  fetchA4Overview,
+  registerA4DomainExtension,
+  registerA4Schema,
+  updateA4DimensionParam,
+  type A4DomainExtensionBatch,
+  type A4EventFamily,
+  type A4Overview,
+} from "@/lib/admin/a4-client";
 import type { ACtx } from "./types";
 
 /* ────────────────── helpers ────────────────── */
 
-const BATCH_STATE: Record<Batch["state"], { tone: "ok" | "warn" | "dim"; label: string }> = {
+const BATCH_STATE: Record<A4DomainExtensionBatch["state"], { tone: "ok" | "warn" | "dim"; label: string }> = {
   done: { tone: "ok", label: "已落地" },
   inprogress: { tone: "warn", label: "进行中" },
   pending: { tone: "warn", label: "待注册" },
   scheduled: { tone: "dim", label: "排期中" },
+  registered: { tone: "warn", label: "已登记" },
 };
 
 /* ────────────────── 组件 ────────────────── */
 
 export function A4Events({ ctx }: { ctx: ACtx }) {
-  const { pget, setParam, toast, openActionConfirm } = ctx;
+  const { toast, openActionConfirm } = ctx;
+  const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
+  const [overview, setOverview] = useState<A4Overview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [mutating, setMutating] = useState<string | null>(null);
+
+  const refreshOverview = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    setLoadError(null);
+    try {
+      setOverview(await fetchA4Overview());
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshOverview();
+  }, [refreshOverview]);
 
   /* drawers */
   const [famIdx, setFamIdx] = useState<number | null>(null);
@@ -64,15 +84,37 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
   const [naBatch, setNaBatch] = useState(false);
   const [batchForm, setBatchForm] = useState({ domain: "", event: "", producer: "", consumer: "" });
 
-  /* 实时态(pget 覆盖种子) */
-  const liveSchemaVer = (pget("A.event.schemaVer") as string | undefined) ?? A4_STATS.schemaVersion;
-  const liveDay0 = (pget("A.event.kpi.day0") as string | undefined) ?? "90 秒";
-  const liveEventRetention = (pget("A.event.kpi.event_retention") as string | undefined) ?? "13 个月";
-  const liveSampling = (pget("A.event.kpi.sampling") as string | undefined) ?? "浏览 10% · 资金 100%";
+  /* 后端实时态 */
+  const A4_STATS = overview?.stats ?? { todayEvents: "0", todayAuditEvents: 0, registeredDomains: 0, pendingDomains: 0, batchDone: 0, batchTotal: 0, schemaVersion: "—" };
+  const EVENT_FAMILIES = overview?.eventFamilies ?? [];
+  const REGISTERED_DOMAINS = overview?.registeredDomains ?? [];
+  const PENDING_DOMAINS = overview?.pendingDomains ?? [];
+  const COMMON_FIELDS = overview?.commonFields ?? [];
+  const KPI_DIMENSION_PARAMS = overview?.dimensionParams ?? [];
+  const KPI_FORMULAS = overview?.kpiFormulas ?? [];
+  const DOMAIN_EXTENSIONS = overview?.domainExtensions ?? [];
+  const paramValue = (key: string, fallback = "") => KPI_DIMENSION_PARAMS.find((param) => param.key === key)?.value ?? fallback;
+  const liveSchemaVer = A4_STATS.schemaVersion;
+  const liveDay0 = paramValue("day0");
+  const liveEventRetention = paramValue("event_retention");
+  const liveSampling = paramValue("sampling");
 
   /* 完成进度 = done + inprogress(BI 上线前必办:已落地 + 进行中算「已动起来」) */
-  const batchDone = DOMAIN_EXTENSIONS.filter((b) => b.state === "done" || b.state === "inprogress").length;
-  const batchTotal = DOMAIN_EXTENSIONS.length;
+  const batchDone = A4_STATS.batchDone || DOMAIN_EXTENSIONS.filter((b) => b.state === "done" || b.state === "inprogress").length;
+  const batchTotal = A4_STATS.batchTotal || DOMAIN_EXTENSIONS.length;
+
+  const updateParam = (key: string, value: string, reason: string, success: string) => {
+    setMutating(`param-${key}`);
+    updateA4DimensionParam(key, value, reason, operator)
+      .then((next) => {
+        setOverview(next);
+        toast(success);
+      })
+      .catch((error: unknown) => {
+        toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
+      })
+      .finally(() => setMutating(null));
+  };
 
   /* ────────────────── 口径参数调整 ────────────────── */
 
@@ -91,11 +133,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
       run: (reason, v) => {
         const val = (v || "").trim();
         if (!val) { toast("拒绝:Day0 接入窗口不能为空"); return; }
-        setParam("A.event.kpi.day0", val, {
-          action: `Day0 接入窗口 → ${val} · admin.event_dimension_changed`,
-          reason,
-        });
-        toast(`Day0 已更新为 ${val}`);
+        updateParam("day0", val, reason, `Day0 已更新为 ${val}`);
       },
     });
   };
@@ -115,11 +153,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
       run: (reason, v) => {
         const val = (v || "").trim();
         if (!val) { toast("拒绝:留存期不能为空"); return; }
-        setParam("A.event.kpi.event_retention", val, {
-          action: `事件留存期 → ${val} · admin.event_dimension_changed`,
-          reason,
-        });
-        toast(`事件留存期已更新为 ${val}`);
+        updateParam("event_retention", val, reason, `事件留存期已更新为 ${val}`);
       },
     });
   };
@@ -139,11 +173,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
       run: (reason, v) => {
         const val = (v || "").trim();
         if (!val) { toast("拒绝:采样率不能为空"); return; }
-        setParam("A.event.kpi.sampling", val, {
-          action: `采样率 → ${val} · admin.event_dimension_changed`,
-          reason,
-        });
-        toast(`采样率已更新为 ${val}`);
+        updateParam("sampling", val, reason, `采样率已更新为 ${val}`);
       },
     });
   };
@@ -173,13 +203,16 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
         if (!ev) { toast("拒绝:事件名不能为空"); return; }
         if (bv?.isPII === "true") { toast("拒绝:含 PII 明文的事件禁止注册(A 域三铁律 ② · server 422)"); return; }
         const ver = (bv?.version || "").trim() || liveSchemaVer;
-        setParam(`A.event.schema.${ev}`, JSON.stringify({
-          owner: bv?.ownerDomain, producer: bv?.producer, consumer: bv?.consumer,
-          property: bv?.propName, propType: bv?.propType,
-          serverAuthoritative: bv?.isServerAuthoritative, sampling: bv?.samplingPolicy, version: ver,
-        }), { action: `schema 注册事件 ${ev}(${bv?.ownerDomain})· admin.event_schema_registered`, reason });
-        setParam("A.event.schemaVer", ver, { action: `schema registry 版本 → ${ver}`, reason });
-        toast(`事件 ${ev} schema 已注册(${ver} · ${bv?.producer})· 理由留痕`);
+        setMutating("schema");
+        registerA4Schema(ver, reason, operator)
+          .then((next) => {
+            setOverview(next);
+            toast(`事件 ${ev} schema 已提交注册(${ver} · ${bv?.producer})· 后端留痕`);
+          })
+          .catch((error: unknown) => {
+            toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
+          })
+          .finally(() => setMutating(null));
       },
     });
   };
@@ -195,6 +228,23 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
 
   return (
     <>
+      {loadError && (
+        <section className="l-card">
+          <div className="l-b">
+            <div className="atint warn" style={{ fontSize: 12 }}>
+              A4 接口读取失败:{loadError}
+              <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void refreshOverview()}>重试</button>
+            </div>
+          </div>
+        </section>
+      )}
+      {loading && !overview && (
+        <section className="l-card">
+          <div className="l-b">
+            <div className="atint" style={{ fontSize: 12 }}>正在读取 /api/admin/platform/events/overview。</div>
+          </div>
+        </section>
+      )}
       {/* ───── 4 f-stat ───── */}
       <div className="f-stats">
         <div className="f-stat">
@@ -299,6 +349,9 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                 </div>
               );
             })}
+            {!COMMON_FIELDS.length && (
+              <div className="atint warn" style={{ fontSize: 12 }}>后端暂无通用字段记录</div>
+            )}
             <div style={{ fontSize: 12, fontWeight: 600, margin: "10px 0 4px" }}>口径参数(锚定 12 月运营周期)</div>
             {KPI_DIMENSION_PARAMS.map((p) => {
               if (p.locked) {
@@ -392,7 +445,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
             <span className="ar">→</span>
             <span className="st hot">
               事件库
-              <small>13 个月</small>
+              <small>{liveEventRetention || "0"}</small>
             </span>
             <span className="ar">→</span>
             <span className="st">实时漏斗(B3)</span>
@@ -418,7 +471,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">domain 扩展批次看板 · BI 上线前必办</span>
-          <span className="sub">· 扩展落地前,新类事件暂记 admin 名下占位 + 临时编号,落地后迁回各自 domain</span>
+          <span className="sub">· 扩展落地前,新类事件先进入待归属登记清单,落地后迁回各自 domain</span>
           <div className="r">
             <button className="l-btn sm mc" onClick={registerBatch}>登记扩展工单</button>
           </div>
@@ -428,7 +481,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
             <thead>
               <tr>
                 <th>批次</th><th>新增 domain / 事件</th><th>提出方</th>
-                <th>状态</th><th>占位影响</th><th style={{ textAlign: "right" }}></th>
+                <th>状态</th><th>归属影响</th><th style={{ textAlign: "right" }}></th>
               </tr>
             </thead>
             <tbody>
@@ -467,8 +520,8 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="atint warn">
             <b>为什么是「必办」</b> · BI(L 域)切换到正式口径前,这四批必须清零——
-            否则内容/通知/披露/课程的事件还挂在 admin 名下的临时编号上,BI 一上线口径就带着占位债跑,
-            以后迁移要重算历史。占位期间口径权威不受影响(算式不变,只是归类临时)。
+            否则内容/通知/披露/课程的事件仍停留在待归属登记清单,BI 一上线口径就带着归属债跑,
+            以后迁移要重算历史。待归属期间口径权威不受影响(算式不变,只是归类待迁移)。
           </div>
         </div>
       </section>
@@ -504,7 +557,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
 
       {/* ───── family 事件清单 Drawer ───── */}
       {famIdx !== null && (() => {
-        const f: EventFamily = EVENT_FAMILIES[famIdx];
+              const f: A4EventFamily = EVENT_FAMILIES[famIdx];
         return (
           <Drawer
             title={`family ${f.title} · 事件清单`}
@@ -520,10 +573,10 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                 <tr><th>事件</th><th>说明</th></tr>
               </thead>
               <tbody>
-                {f.events.map(([name, desc]) => (
-                  <tr key={name}>
-                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{name}</td>
-                    <td style={{ fontSize: 12 }}>{desc}</td>
+                {f.events.map((event) => (
+                  <tr key={event.item}>
+                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{event.item}</td>
+                    <td style={{ fontSize: 12 }}>{event.desc}</td>
                   </tr>
                 ))}
               </tbody>
@@ -537,7 +590,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
 
       {/* ───── 扩展批次明细 Drawer ───── */}
       {batchIdx !== null && (() => {
-        const b: Batch = DOMAIN_EXTENSIONS[batchIdx];
+        const b: A4DomainExtensionBatch = DOMAIN_EXTENSIONS[batchIdx];
         const st = BATCH_STATE[b.state];
         return (
           <Drawer
@@ -553,16 +606,16 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                 <tr><th>事件 / 项</th><th>说明</th></tr>
               </thead>
               <tbody>
-                {b.details.map(([item, desc]) => (
-                  <tr key={item}>
-                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{item}</td>
-                    <td style={{ fontSize: 12 }}>{desc}</td>
+                {b.details.map((detail) => (
+                  <tr key={detail.item}>
+                    <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{detail.item}</td>
+                    <td style={{ fontSize: 12 }}>{detail.desc}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             <div className="atint" style={{ marginTop: 14 }}>
-              扩展登记走 schema 注册同一条确认路(超管操作确认);迁移时历史占位事件批量改归属、口径不重算。
+              扩展登记走 schema 注册同一条确认路(超管操作确认);迁移时历史待归属事件批量改归属、口径不重算。
             </div>
           </Drawer>
         );
@@ -588,16 +641,18 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                   setNaBatch(false);
                   openActionConfirm({
                     action: `登记 domain 扩展工单 · ${domain}`,
-                    detail: (<><b>{domain}</b> · 事件 <span className="acode">{event}</span> · 生产 {producer || "—"} → 消费 {consumer || "—"}。落地前按 admin 占位 + 临时编号入库;超管执行,注册完成后归档。</>),
+                    detail: (<><b>{domain}</b> · 事件 <span className="acode">{event}</span> · 生产 {producer || "—"} → 消费 {consumer || "—"}。落地前进入待归属登记清单;超管执行,注册完成后归档。</>),
                     amplifies: false,
                     run: (reason) => {
-                      const slug = `${domain}_${event}`.replace(/[^a-z0-9]/gi, "_").slice(0, 40) || `batch_${Date.now()}`;
-                      setParam(`A.batch.new.${slug}.domain`, domain, { action: `登记扩展工单 ${domain} · admin.domain_extension_registered`, reason });
-                      setParam(`A.batch.new.${slug}.event`, event, { action: `扩展工单事件名 ${event}`, reason });
-                      setParam(`A.batch.new.${slug}.producer`, producer, { action: "扩展工单生产方", reason });
-                      setParam(`A.batch.new.${slug}.consumer`, consumer, { action: "扩展工单消费方", reason });
-                      setParam(`A.batch.new.${slug}.status`, "registered", { action: `登记扩展工单 ${domain} 状态`, reason });
-                      toast(`扩展工单 ${domain} / ${event} 已提交注册确认`);
+                      const value = [domain, event, producer, consumer].filter(Boolean).join(" / ");
+                      setMutating("domain-extension");
+                      registerA4DomainExtension(value, reason, operator)
+                        .then(() => refreshOverview(true))
+                        .then(() => toast(`扩展工单 ${domain} / ${event} 已提交注册确认`))
+                        .catch((error: unknown) => {
+                          toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
+                        })
+                        .finally(() => setMutating(null));
                     },
                   });
                 }}
@@ -621,7 +676,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                 <label style={{ fontSize: 12, color: "var(--ink-3)" }}>消费方(谁用)
                   <input value={batchForm.consumer} onChange={(e) => setBatchForm({ ...batchForm, consumer: e.target.value })} placeholder="如 B3 漏斗 / L2 留存" style={fst} />
                 </label>
-                <div className="atint">提交后走超管操作确认(填理由);注册为占位 + 临时编号,落地后迁回各自 domain。</div>
+                <div className="atint">提交后走超管操作确认(填理由);注册为待归属记录,落地后迁回各自 domain。</div>
               </div>
             );
           })()}

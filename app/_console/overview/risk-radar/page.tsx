@@ -4,10 +4,10 @@
  * B5 风险雷达(只读 · 全域风险面板)。
  * UI 严格对齐设计稿 project/「B5 风险雷达.html」command / alert board:
  *   左栏 Kill-Switch 闸门灯 + 未处理告警 feed
- *   右栏 报警瓦片三联 + 出金压力比趋势(SVG area · 红线 70%)+ 底部三联
+ *   右栏 报警瓦片三联 + 出金压力比趋势(SVG area · 动态红线)+ 底部三联
  *        (异常账户命中规则 bars / 告警严重度 donut / 近 7 日告警量 mini-bars)
  * 顶部域标/标题由共享 BPageHeader 承载;布局端口设计稿(risk-radar.css · .radarpage 作用域)。
- * 数据 mock(确定性),与注册表 lib/admin/registry/b.ts 的 /overview/risk-radar 口径一致。
+ * 数据从 /api/admin/treasury/b-domain 读取;B5 配置缺失时由后端写入 MySQL 种子再读出。
  * 只读看板:无写动作(熔断切换在 J1 · 经 操作确认);CTA 深链 Kill-Switch 矩阵。
  */
 import "../b-domain.css";
@@ -23,79 +23,73 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
-import { KILLSWITCH, RISK } from "@/lib/mock/admin/design-data";
-import { usePlatformConfig } from "@/lib/store/admin/platform-config-store";
-import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { LEDGER } from "@/lib/mock/admin/ledger";
-
-// ---- 设计数据(与 registry b.ts /overview/risk-radar 对齐)----
-
-// Kill-Switch 闸门 — 单一源:闸集/标识取自 J1 权威 KILLSWITCH;在线态以 platform-config-store
-// (J.killswitch.<key>)为准、缺省回落 KILLSWITCH.on —— 与 J1 矩阵恒一致(operator 在 J1 熔断后,
-// 本只读雷达即时同步)。5 闸:资金/兑付 4 + 获客/收入 1;此处只读,熔断/恢复在 J1 操作确认。
-const GATE_NAMES: Record<string, string> = {
-  withdraw: "提现闸", exchange: "兑换闸", staking: "算力质押闸",
-  genesis: "Genesis 闸", trial: "试用闸",
-};
-
-// 未处理告警 feed — 每条深链至告警来源域(点击钻取处置)。
-const FEED: { sev: "p0" | "p1" | "p2"; t: string; m: string; href: string }[] = [
-  { sev: "p2", t: `出金压力比 ${(LEDGER.pressureRatio * 100).toFixed(0)}% 远低 70% 红线 · 覆盖率 ${LEDGER.coverageRatio.toFixed(1)}% 绿区`, m: "B1 双账本 · 4m 前", href: "/overview/dual-ledger" },
-  { sev: "p1", t: "K2 闭环判定 4 起(本月) · 预警转人工 17", m: "K2 套利检测 · 12m 前", href: "/risk/abuse" },
-  { sev: "p2", t: "24h 资金净流入 +33% · 扩张健康", m: "D3 资金池 · 26m 前", href: "/finance/pool" },
-  { sev: "p2", t: "提现队列积压 142 单 · $430K", m: "D2 提现队列 · 41m 前", href: "/finance/withdrawals" },
-  { sev: "p2", t: "提现队列占储备 6.8% · 远低 15% 预警线", m: "B5 雷达 · 1h 前", href: "/overview/liquidity" },
-  { sev: "p2", t: "风险评分均值 31 ↘ −2", m: "K4 风险评分 · 2h 前", href: "/risk/scoring" },
-];
-
-// 出金压力比 e(t) 趋势(模型 §5.3 · 近 8 窗口 · 红线 70%;m7 基准 = 32%)
-const BR = [9, 12, 18, 24, 28, 30, 31, 32];
-const BR_TIGHT = 70; // 出金压力比红线(>0.7 触发退出)
-
-// 异常账户命中规则(近 7 日 · 命中账户数)
-const RULES: { nm: string; ct: number }[] = [
-  { nm: "多开", ct: 14 },
-  { nm: "自循环刷返", ct: 9 },
-  { nm: "异常提现", ct: 7 },
-  { nm: "设备指纹", ct: 5 },
-  { nm: "IP 聚集", ct: 2 },
-];
-
-// 告警严重度分布(全域 · 含已处置);count→占比,环图与图例按占比从大到小(设计稿视觉序)。
-const SEV: { nm: string; count: number; c: string }[] = [
-  { nm: "P3 低 · 信息提示", count: 8, c: "var(--admin-cat-2)" },
-  { nm: "P2 中 · 参数 / 队列", count: 3, c: "var(--admin-cat-4)" },
-  { nm: "P1 高 · 异常 / 风控", count: 2, c: "var(--warning)" },
-  { nm: "P0 严重 · 覆盖率 / 储备", count: 1, c: "var(--danger)" },
-];
-const SEV_TOTAL = SEV.reduce((s, x) => s + x.count, 0); // 14
-
-// 近 7 日告警量(每日新增 · 全域)
-const VOL = [3, 5, 4, 6, 8, 7, 9];
-const VOL_LABELS = ["D-6", "D-5", "D-4", "D-3", "D-2", "D-1", "今日"];
+import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 
 export default function RiskRadarPage() {
   const gradId = useId().replace(/:/g, "");
-
-  // 闸门在线态:store(J.killswitch.<key>)为准、缺省回落 KILLSWITCH.on(与 J1 矩阵单源同步)。
-  const params = usePlatformConfig((s) => s.params);
-  const hydrated = useOpsHydrated();
-  const GATES = KILLSWITCH.map((k) => {
-    const ov = hydrated ? (params?.[`J.killswitch.${k.key}`] as string | undefined) : undefined;
-    return { nm: GATE_NAMES[k.key] ?? k.name, dom: k.key, on: ov ? ov === "on" : k.on };
-  });
-  const GATES_TRIPPED = GATES.filter((g) => !g.on).length;
+  const bDomain = useBDomainDashboard();
+  const { riskRadar } = bDomain;
+  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
+    return (
+      <div className="dkpage bpage radarpage">
+        <BPageHeader
+          id="B5"
+          title="风险雷达"
+          desc="读取 B 域真实挤兑压力、异常账户、熔断闸门和告警面板。"
+          ctaLabel="Kill-Switch 矩阵"
+          ctaHref="/emergency/kill-switch"
+        />
+        <BDomainDataState title="B5 风险雷达" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
+      </div>
+    );
+  }
+  if (!riskRadar.gates.length || !riskRadar.feed.length || riskRadar.pressureSeries.length < 2 || !riskRadar.rules.length || !riskRadar.severity.length || !riskRadar.volume.length) {
+    return (
+      <div className="dkpage bpage radarpage">
+        <BPageHeader
+          id="B5"
+          title="风险雷达"
+          desc="B5 需要熔断闸门、告警 feed、出金压力、命中规则、严重度和告警量序列。"
+          ctaLabel="Kill-Switch 矩阵"
+          ctaHref="/emergency/kill-switch"
+        />
+        <BDomainWarnings warnings={bDomain.warnings} />
+        <BDomainDataState title="B5 风险雷达" error="B5_REQUIRED_DATA_EMPTY" onRetry={bDomain.reload} />
+      </div>
+    );
+  }
+  const GATES = riskRadar.gates;
+  const GATES_TRIPPED = riskRadar.trippedGateCount || GATES.filter((g) => (g.state ? g.state === "off" : !g.on)).length;
+  const GATES_MISSING = GATES.filter((g) => g.state === "missing").length;
+  const FEED = riskRadar.feed;
+  const BR = riskRadar.pressureSeries;
+  const BR_TIGHT = riskRadar.pressureTightPct;
+  const currentPressure = riskRadar.currentPressurePct || BR[BR.length - 1] || 0;
+  const prevPressure = BR[BR.length - 2] ?? currentPressure;
+  const RULES = riskRadar.rules;
+  const flaggedAccounts = riskRadar.flaggedAccounts || RULES.reduce((sum, item) => sum + item.ct, 0);
+  const SEV = riskRadar.severity;
+  const sevTotalRaw = SEV.reduce((s, x) => s + x.count, 0);
+  const SEV_TOTAL = Math.max(sevTotalRaw, 1);
+  const VOL_ROWS = riskRadar.volume;
+  const VOL = VOL_ROWS.map((row) => row.count);
+  const p0Count = FEED.filter((item) => item.sev === "p0").length;
+  const p1Count = FEED.filter((item) => item.sev === "p1").length;
+  const p2Count = FEED.filter((item) => item.sev === "p2").length;
+  const bankRunRatio = riskRadar.bankRunRatio || 0;
 
   // ---- 趋势 SVG 几何(端口自设计稿 <script>)----
   const W = 1180;
   const H = 150;
   const n = BR.length;
   const pad = 8;
-  const vmin = 2;
-  const vmax = 16;
+  const vmin = 0;
+  const vmax = Math.max(BR_TIGHT, ...BR, 1);
   const rng = vmax - vmin;
   const yOf = (v: number) => H - 12 - ((v - vmin) / rng) * (H - 28);
-  const pts = BR.map((v, i) => [(i / (n - 1)) * (W - 2 * pad) + pad, yOf(v)] as const);
+  const denom = Math.max(n - 1, 1);
+  const pts = BR.map((v, i) => [(i / denom) * (W - 2 * pad) + pad, yOf(v)] as const);
   const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
   const area = `${line} L${pts[n - 1][0].toFixed(1)} ${H} L${pts[0][0].toFixed(1)} ${H} Z`;
   const ty = yOf(BR_TIGHT);
@@ -108,10 +102,12 @@ export default function RiskRadarPage() {
     acc += pc;
     return seg;
   });
+  const severityBg = stops.length ? `conic-gradient(${stops.join(",")})` : "var(--surface-3)";
   const sevPct = (count: number) => Math.round((count / SEV_TOTAL) * 100);
 
-  const maxRule = Math.max(...RULES.map((r) => r.ct));
-  const maxVol = Math.max(...VOL);
+  const maxRule = Math.max(...RULES.map((r) => r.ct), 1);
+  const maxVol = Math.max(...VOL, 1);
+  const risingWindows = BR.reduce((count, value, index) => (index > 0 && value >= BR[index - 1] ? count + 1 : count), 0);
 
   return (
     <div className="dkpage bpage radarpage">
@@ -127,6 +123,7 @@ export default function RiskRadarPage() {
         ctaLabel="Kill-Switch 矩阵"
         ctaHref="/emergency/kill-switch"
       />
+      <BDomainWarnings warnings={bDomain.warnings} />
 
       <div className="b5-main">
         {/* ===== 左栏:闸门 + 告警 feed ===== */}
@@ -142,18 +139,21 @@ export default function RiskRadarPage() {
               </div>
             </div>
             <div>
-              {GATES.map((g) => (
-                <div key={g.dom} className={`gate ${g.on ? "on" : "off"}`}>
-                  <span className="light" />
-                  <span className="nm">{g.nm}</span>
-                  <span className="dom">{g.dom}</span>
-                  <span className="st">{g.on ? "待命" : "已熔断"}</span>
-                </div>
-              ))}
+              {GATES.map((g) => {
+                const state = g.state ?? (g.on ? "on" : "off");
+                return (
+                  <div key={g.dom} className={`gate ${state === "missing" ? "missing" : state === "on" ? "on" : "off"}`}>
+                    <span className="light" />
+                    <span className="nm">{g.nm}</span>
+                    <span className="dom">{g.dom}</span>
+                    <span className="st">{state === "missing" ? "未配置" : state === "on" ? "待命" : "已熔断"}</span>
+                  </div>
+                );
+              })}
             </div>
             <div className="muted tiny" style={{ marginTop: 9 }}>
               {GATES_TRIPPED === 0
-                ? `${GATES.length} 闸全绿待命`
+                ? `${GATES.length - GATES_MISSING} 闸待命${GATES_MISSING ? ` · ${GATES_MISSING} 未配置` : ""}`
                 : `${GATES.length} 闸 · ${GATES_TRIPPED} 已熔断(详见 J1)`}
               {" "}· 熔断 / 恢复需 J 域 风控主管 + 总管理员 操作确认
             </div>
@@ -163,7 +163,7 @@ export default function RiskRadarPage() {
             <div className="ttl-row" style={{ marginBottom: 8 }}>
               <span className="ic"><AlertTriangle size={16} aria-hidden /></span>
               <span className="h">未处理告警</span>
-              <div className="r"><span className="badge-s orange">6 待处理</span></div>
+              <div className="r"><span className="badge-s orange">{FEED.length} 待处理</span></div>
             </div>
             <div className="feed">
               {FEED.map((f, i) => (
@@ -187,23 +187,25 @@ export default function RiskRadarPage() {
             <div className="alarm">
               <div className="k">
                 出金压力比{" "}
-                <span className="help" data-tip="(payout + 佣金) ÷ 毛流入(模型 §5.3 庞氏度量)。逼近红线 70% 时联动 D 域收紧 / 退出。">?</span>
+                <span className="help" data-tip={`(payout + 佣金) ÷ 毛流入(模型 §5.3 庞氏度量)。逼近红线 ${BR_TIGHT}% 时联动 D 域收紧 / 退出。`}>?</span>
               </div>
-              <div className="v" style={{ color: "var(--success)" }}>32%</div>
-              <div className="d" style={{ color: "var(--success)" }}>↗ 上窗 31% · 远低 70% 红线(扩张健康)</div>
+              <div className="v" style={{ color: currentPressure < BR_TIGHT ? "var(--success)" : "var(--danger)" }}>{currentPressure}%</div>
+              <div className="d" style={{ color: currentPressure < BR_TIGHT ? "var(--success)" : "var(--danger)" }}>
+                {currentPressure >= prevPressure ? "↗" : "↘"} 上窗 {prevPressure}% · 红线 {BR_TIGHT}%
+              </div>
             </div>
             <div className="alarm warn">
               <div className="k">
                 异常账户{" "}
                 <span className="help" data-tip="命中风控规则(多开 / 套利 / 异常提现等)的账户数,来自 K 域。">?</span>
               </div>
-              <div className="v" style={{ color: "var(--warning)" }}>37</div>
-              <div className="d" style={{ color: "var(--warning)" }}>↗ +9 · 命中风控规则</div>
+              <div className="v" style={{ color: "var(--warning)" }}>{flaggedAccounts}</div>
+              <div className="d" style={{ color: "var(--warning)" }}>{RULES.length} 类规则命中</div>
             </div>
             <div className="alarm warn">
               <div className="k">未处理告警</div>
-              <div className="v">6</div>
-              <div className="d muted">↗ +2 · P0:1 · P1:2 · P2:3</div>
+              <div className="v">{FEED.length}</div>
+              <div className="d muted">P0:{p0Count} · P1:{p1Count} · P2:{p2Count}</div>
             </div>
           </div>
 
@@ -212,8 +214,8 @@ export default function RiskRadarPage() {
             <div className="ttl-row">
               <span className="ic"><Radar size={16} aria-hidden /></span>
               <span className="h">出金压力比趋势</span>
-              <span className="sub">近 8 窗口 · 红线 70%</span>
-              <div className="r"><span className="b-tag">连升 8 窗口 · 斜率走高</span></div>
+              <span className="sub">近 {BR.length} 窗口 · 红线 {BR_TIGHT}%</span>
+              <div className="r"><span className="b-tag">{risingWindows} 个窗口未降 · 当前 {currentPressure}%</span></div>
             </div>
             <svg
               className="chart-svg"
@@ -221,7 +223,7 @@ export default function RiskRadarPage() {
               preserveAspectRatio="none"
               style={{ height: 150 }}
               role="img"
-              aria-label="出金压力比近 8 窗口趋势,当前 32%,红线 70%"
+              aria-label={`出金压力比近 8 窗口趋势,当前 ${currentPressure}%,红线 ${BR_TIGHT}%`}
             >
               <defs>
                 <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -241,7 +243,7 @@ export default function RiskRadarPage() {
                 vectorEffect="non-scaling-stroke"
               />
               <text x="6" y={(ty + 15).toFixed(1)} fill="var(--danger)" fontSize="12" fontFamily="var(--font-jet-mono), monospace">
-                红线 70%
+                红线 {BR_TIGHT}%
               </text>
               <path
                 d={line}
@@ -291,7 +293,7 @@ export default function RiskRadarPage() {
                 挤兑比率(24h 提现申请 ÷ 储备){" "}
                 <span className="help" data-tip="储备生存度量,与出金压力比(流量健康,早期警戒)互补分层。黄 20% 预警 · 红 40% 为 J1 提现闸自动熔断引用线(R1,J1 引用不另持)。">?</span>
               </span>
-              <span style={{ marginLeft: "auto", fontFamily: "var(--font-jet-mono), monospace", fontWeight: 600, color: "var(--success)" }}>{RISK.bankRunRatio}%</span>
+              <span style={{ marginLeft: "auto", fontFamily: "var(--font-jet-mono), monospace", fontWeight: 600, color: bankRunRatio < 20 ? "var(--success)" : "var(--warning)" }}>{bankRunRatio}%</span>
               <span style={{ color: "var(--ink-4)" }}>黄 20% · 红 40%(J1 R1 引用)</span>
             </div>
           </section>
@@ -328,11 +330,11 @@ export default function RiskRadarPage() {
               <div className="donut-wrap">
                 <div
                   className="donut"
-                  style={{ width: 120, height: 120, background: `conic-gradient(${stops.join(",")})` }}
+                  style={{ width: 120, height: 120, background: severityBg }}
                 >
                   <div className="hole">
                     <div>
-                      <div className="big">{SEV_TOTAL}</div>
+                      <div className="big">{sevTotalRaw}</div>
                       <div className="sm">告警</div>
                     </div>
                   </div>
@@ -357,7 +359,8 @@ export default function RiskRadarPage() {
                 <span className="sub">全域</span>
               </div>
               <div className="mini-bars">
-                {VOL.map((v, i) => {
+                {VOL_ROWS.map((row, i) => {
+                  const v = row.count;
                   const recent = i >= VOL.length - 2;
                   return (
                     <div key={i} className="mini-col">
@@ -371,7 +374,7 @@ export default function RiskRadarPage() {
                             : "color-mix(in srgb, var(--brand) 72%, #000)",
                         }}
                       />
-                      <div className="lbl">{VOL_LABELS[i]}</div>
+                      <div className="lbl">{row.label}</div>
                     </div>
                   );
                 })}
@@ -382,8 +385,8 @@ export default function RiskRadarPage() {
       </div>
 
       <p className="b-foot">
-        出金压力比 <b>32%</b>,远低 70% 红线、扩张健康;异常账户 +9 主要来自多开与自循环刷返。
-        <b>{GATES_TRIPPED === 0 ? `Kill-Switch ${GATES.length} 闸全绿(0 / ${GATES.length} 熔断)` : `Kill-Switch ${GATES_TRIPPED} / ${GATES.length} 闸已熔断`}</b>,P0 告警为覆盖率逼近健康线下方预警。熔断触发需 J 域 操作确认 + 全站广播。
+        出金压力比 <b>{currentPressure}%</b>,红线 {BR_TIGHT}%;异常账户 {flaggedAccounts} 个,来自 {RULES.length} 类命中规则。
+        <b>{GATES_TRIPPED === 0 ? `Kill-Switch ${GATES.length - GATES_MISSING} 闸待命${GATES_MISSING ? `,${GATES_MISSING} 闸未配置` : ""}` : `Kill-Switch ${GATES_TRIPPED} / ${GATES.length} 闸已熔断`}</b>,P0 告警为覆盖率逼近健康线下方预警。熔断触发需 J 域 操作确认 + 全站广播。
       </p>
     </div>
   );

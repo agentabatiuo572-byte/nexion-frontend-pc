@@ -37,9 +37,11 @@ const REQUIRED_E3_KEYS = [
   "E.tradein.promoMult",
 ];
 
-const num = (value: string, fallback: number) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+const parseConfigNumber = (value: string) => {
+  const normalized = value.trim();
+  if (!normalized || normalized === "—") return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
 const countText = (value: number) => new Intl.NumberFormat("zh-CN").format(Math.max(0, Math.round(value)));
@@ -48,25 +50,48 @@ const moneyText = (value: number) => `$${new Intl.NumberFormat("en-US", { maximu
 export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const { pE, e3Loading, e3Error, e3Ready, e3Stats, e3Operations } = ctx;
   const hasRequiredConfig = REQUIRED_E3_KEYS.every((key) => pE(key) !== "—");
-  if (!e3Ready || !hasRequiredConfig) {
+  const earlyRaw = parseConfigNumber(pE("E.device.degradeEarly"));
+  const midRaw = parseConfigNumber(pE("E.device.degradeMid"));
+  const lateRaw = parseConfigNumber(pE("E.device.degradeLate"));
+  const stageEarlyEndRaw = parseConfigNumber(pE("E.device.stageEarlyEnd"));
+  const stageMidEndRaw = parseConfigNumber(pE("E.device.stageMidEnd"));
+  const cycleMonthsRaw = parseConfigNumber(pE("E.device.cycleMonths"));
+  const floorPctRaw = parseConfigNumber(pE("E.device.minEfficiency"));
+  const numericConfigEntries: Array<[string, number | null]> = [
+    ["E.device.degradeEarly", earlyRaw],
+    ["E.device.degradeMid", midRaw],
+    ["E.device.degradeLate", lateRaw],
+    ["E.device.stageEarlyEnd", stageEarlyEndRaw],
+    ["E.device.stageMidEnd", stageMidEndRaw],
+    ["E.device.cycleMonths", cycleMonthsRaw],
+    ["E.device.minEfficiency", floorPctRaw],
+  ];
+  const invalidConfigKeys = hasRequiredConfig
+    ? numericConfigEntries.filter(([, value]) => value == null).map(([key]) => key)
+    : [];
+  const configIssue = invalidConfigKeys.length
+    ? `后端配置包含非数字值:${invalidConfigKeys.join(", ")}`
+    : e3Error || "后端配置未完整返回";
+  if (!e3Ready || !hasRequiredConfig || invalidConfigKeys.length) {
     return (
       <section className="param-card">
-        <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">E3 后端配置</div><div className="s">{e3Loading ? "正在读取 MySQL 配置" : e3Error || "后端配置未完整返回"}</div></div></div>
-        <div className="param-foot"><span className="ic"><AlertIcon /></span><span>{e3Error ? `接口读取失败:${e3Error}` : "等待 /api/admin/devices/e3/overview 返回生命周期与 Trade-in 配置。"}</span></div>
+        <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">E3 后端配置</div><div className="s">{e3Loading ? "正在读取 MySQL 配置" : configIssue}</div></div></div>
+        <div className="param-foot"><span className="ic"><AlertIcon /></span><span>{e3Error ? `接口读取失败:${e3Error}` : "等待 /api/admin/devices/e3/overview 返回完整且有效的生命周期与 Trade-in 配置。"}</span></div>
         <button className="adj" onClick={() => void ctx.refreshE3()}>刷新</button>
       </section>
     );
   }
 
-  const early = num(pE("E.device.degradeEarly"), -4);
-  const mid = num(pE("E.device.degradeMid"), -6);
-  const late = num(pE("E.device.degradeLate"), -23.7);
-  const s1 = Math.max(1, Math.round(num(pE("E.device.stageEarlyEnd"), 3)));
-  const s2 = Math.max(s1 + 1, Math.round(num(pE("E.device.stageMidEnd"), 8)));
-  const cyc = Math.max(s2 + 1, Math.round(num(pE("E.device.cycleMonths"), 12)));
-  const floorPct = Math.max(0, Math.min(99, num(pE("E.device.minEfficiency"), 22)));
+  const early = earlyRaw!;
+  const mid = midRaw!;
+  const late = lateRaw!;
+  const s1 = Math.max(1, Math.round(stageEarlyEndRaw!));
+  const s2 = Math.max(s1 + 1, Math.round(stageMidEndRaw!));
+  const cyc = Math.max(s2 + 1, Math.round(cycleMonthsRaw!));
+  const floorPct = Math.max(0, Math.min(99, floorPctRaw!));
   const curve = effCurve(early, mid, late, s1, s2, cyc, floorPct);
   const stats = e3Stats ?? { averageAgeMonths: 0, cliffDeviceCount: 0, tradeinMonthCount: 0, tradeinDiscountUsdt: 0, k2ArbitrageHits: 0 };
+  const averageAgeMonths = Number.isFinite(stats.averageAgeMonths) ? stats.averageAgeMonths : null;
   const totalTxSuccess = e3Operations.reduce((sum, item) => sum + item.ok, 0);
   const totalTxFailure = e3Operations.reduce((sum, item) => sum + item.fail, 0);
   const txSuccessRate = totalTxSuccess + totalTxFailure > 0 ? (totalTxSuccess / (totalTxSuccess + totalTxFailure)) * 100 : 0;
@@ -108,7 +133,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   return (
     <>
       <EStats items={[
-        { k: "在网设备平均龄", v: `${num(String(stats.averageAgeMonths), 0).toFixed(1)} 月`, sub: "来自 nx_user_device" },
+        { k: "在网设备平均龄", v: averageAgeMonths == null ? "—" : `${averageAgeMonths.toFixed(1)} 月`, sub: "来自真实设备资产" },
         { k: `m${s2 + 1}–${cyc} 断崖设备`, v: countText(stats.cliffDeviceCount), sub: "进入晚期", tone: "danger" },
         { k: "Trade-in 本月", v: `${countText(stats.tradeinMonthCount)} 次`, sub: `折抵 ${moneyText(stats.tradeinDiscountUsdt)}`, tone: "cyan" },
         { k: "K2 套利簇命中", v: `${countText(stats.k2ArbitrageHits)} 账户`, sub: "最短持有拦截", tone: "warn" },
@@ -118,8 +143,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       <section className="curve-card">
         <div className="curve-h">
           <span className="ttl">设备效率衰减曲线</span>
-          <span className="sub">三段非线性 · {cyc} 月 · server-canonical(镜像产品 device-lifecycle.ts)</span>
-          <span className="r"><CodeTag tone="electric">E.device.*</CodeTag></span>
+          <span className="sub">三段非线性 · {cyc} 月</span>
         </div>
         <div className="curve-wrap">
           <div className="curve-y">{[100, 80, 60, 40, floorPct].map((y) => <span key={y}>{y}%</span>)}</div>
@@ -167,7 +191,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       <div className="params-grid">
         {/* 左:设备生命周期 */}
         <section className="param-card">
-          <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">设备生命周期</div><div className="s">三段非线性衰减 · server 权威</div></div><span className="tag">E.device.*</span></div>
+          <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">设备生命周期</div><div className="s">三段非线性衰减</div></div></div>
           <div className="pkv"><Lbl zh={`早期衰减率(m1–${s1})`} code="degradeEarly" desc="平缓段 · 不刺激置换 · 每月效率下降幅度" /><span className="v ok">{pE("E.device.degradeEarly")}%</span><Adj label="早期衰减率" k="E.device.degradeEarly" unit="%" /></div>
           <div className="pkv"><Lbl zh={`中期衰减率(m${s1 + 1}–${s2})`} code="degradeMid" desc="中速段 · 收益边际下降 · 每月效率下降幅度" /><span className="v warn">{pE("E.device.degradeMid")}%</span><Adj label="中期衰减率" k="E.device.degradeMid" unit="%" /></div>
           <div className="pkv"><Lbl zh={`晚期衰减率(m${s2 + 1}–${cyc})`} code="degradeLate" desc="断崖段 · 驱动置换冲动 · 上调=加快换机现金流(放大资金流出)" hot /><span className="v danger">{pE("E.device.degradeLate")}%</span><Adj label="晚期衰减率" k="E.device.degradeLate" unit="%" amplify detail="晚期断崖衰减率 · 上调加快置换节奏(更多 Trade-in 现金流),m9-12 收益下挫 · 放大资金流出须操作确认 + B1 覆盖率" /></div>
@@ -188,7 +212,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
         {/* 右:Trade-in 置换配置 */}
         <section className="param-card">
-          <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">Trade-in 置换配置</div><div className="s">折抵定价 · 套利防控</div></div><span className="tag">E.tradein.*</span></div>
+          <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">Trade-in 置换配置</div><div className="s">折抵定价 · 套利防控</div></div></div>
           <div className="pkv"><Lbl zh="残值率" code="salvage" desc="置换折抵基准 · 旧机残值 = 原价 × 此比例,再与设备月龄复合衰减" /><span className="v cyan">{pE("E.tradein.salvagePct")}%</span><Adj label="残值率" k="E.tradein.salvagePct" unit="%" amplify detail="置换残值率 · 放大资金流出(更高折抵)须操作确认 + B1 覆盖率 · 改后对新报价生效" /></div>
           <div className="pkv"><Lbl zh="残值衰减" code="decay" desc={`旧机残值随设备月龄按三段衰减 · ${cyc} 月触底`} /><span className="v" style={{ fontSize: 13, color: "var(--ink-3)" }}>随三段 · {cyc} 月</span><span /></div>
           <div className="pkv"><Lbl zh="最短持有月数" code="minHoldingMonths" desc="套利窗口闸门 · 设备买后须满此月数才可置换,防快进快出刷折抵" hot /><span className="v warn">{pE("E.tradein.minHoldingMonths")} 月</span><Adj label="最短持有月数" k="E.tradein.minHoldingMonths" unit="月" detail="套利窗口闸门 · 调高收紧 CL-318 拦截、牺牲合法置换体验,调低放大套利风险" /></div>
@@ -218,12 +242,12 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         <div className="tx-grid">
           {e3Operations.length === 0 ? (
             <div className="tx-col">
-              <div className="nm">暂无 tx 指标<span className="endpoint">GET /api/admin/devices/e3/tradein/overview</span></div>
+              <div className="nm">暂无 tx 指标</div>
               <div className="latest"><div className="k">后端暂无记录</div><div className="vrow"><span className="dot ok" /><span className="reason">等待业务表产生 Trade-in 操作样本</span></div></div>
             </div>
           ) : e3Operations.map((t) => (
             <div className="tx-col" key={t.nm}>
-              <div className="nm">{t.nm}<span className="endpoint">{t.endpoint}</span></div>
+              <div className="nm">{t.nm}</div>
               <div className="stats">
                 <div className="s ok"><div className="k">24h 成功</div><div className="v">{t.ok}</div></div>
                 <div className="s fail"><div className="k">失败</div><div className="v">{t.fail}</div></div>
@@ -235,13 +259,6 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
               </div>
             </div>
           ))}
-        </div>
-        <div className="tx-foot">
-          <span><b>原子事务</b> · 任一 endpoint 任一步失败 · server 全回滚到调用前(§7.5.3 M1)</span>
-          <span className="sep">·</span>
-          <span><b>generation lineage</b> 由 server 在 replace 原子事务内写入 · 不受 client 控制</span>
-          <span className="sep">·</span>
-          <span>失败样本 → <a style={{ color: "var(--cyan)", cursor: "pointer" }} onClick={() => ctx.toast("打开 D4 bill · 跳转失败 tx 详情")}>查 D4 bill · 轨迹</a></span>
         </div>
       </section>
       <p className="f-foot">设备衰减曲线 + Trade-in 残值率<b>共同构成用户置换节奏</b>:晚期断崖把用户推向置换决策点,残值率决定置换吸引力。两者改动会影响:① 硬件 GMV(置换新单)② D4 资金应付(置换补差)③ K2 套利风险。任一参数调整后<b>立即对前端 / 估值器生效</b>(不回溯已生效报价)。</p>

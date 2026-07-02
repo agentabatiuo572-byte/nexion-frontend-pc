@@ -48,6 +48,13 @@ function rows<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function requiredRows<T>(value: unknown, field: string): T[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`J_DOMAIN_FIELD_REQUIRED:${field}`);
+  }
+  return value as T[];
+}
+
 function rec(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
@@ -62,10 +69,28 @@ function num(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function requiredNum(value: unknown, field: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`J_DOMAIN_FIELD_REQUIRED:${field}`);
+  }
+  return parsed;
+}
+
 function bool(value: unknown, fallback = false) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") return value === "true" || value === "enabled" || value === "on";
   return fallback;
+}
+
+function requiredBool(value: unknown, field: string) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "on", "enabled", "enable"].includes(normalized)) return true;
+    if (["false", "0", "off", "disabled", "disable"].includes(normalized)) return false;
+  }
+  throw new Error(`J_DOMAIN_FIELD_REQUIRED:${field}`);
 }
 
 function strArray(value: unknown) {
@@ -332,10 +357,10 @@ function normalizeKillSwitch(raw: unknown): KillSwitchOverview {
     })),
     retiredGates: rows<Record<string, unknown>>(data.retiredGates),
     coverage: {
-      coverageRatio: num(coverage.coverageRatio),
-      redlinePct: num(coverage.redlinePct),
-      yellowLinePct: num(coverage.yellowLinePct),
-      recoveryAllowed: bool(coverage.recoveryAllowed),
+      coverageRatio: requiredNum(coverage.coverageRatio, "coverage.coverageRatio"),
+      redlinePct: requiredNum(coverage.redlinePct, "coverage.redlinePct"),
+      yellowLinePct: requiredNum(coverage.yellowLinePct, "coverage.yellowLinePct"),
+      recoveryAllowed: requiredBool(coverage.recoveryAllowed, "coverage.recoveryAllowed"),
     },
     stats: rec(data.stats),
     emergencySla: rows<Record<string, unknown>>(data.emergencySla).map((row) => ({
@@ -370,7 +395,7 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
     blocked: rows<GeoCountry>(data.blocked),
     limited: rows<GeoCountry>(data.limited),
     countries: rows<GeoCountry>(data.countries),
-    endpoints: rows<Record<string, unknown>>(data.endpoints).map((row) => {
+    endpoints: requiredRows<Record<string, unknown>>(data.endpoints, "geo.endpoints").map((row, index) => {
       const endpoint = str(row.endpoint);
       const countries = strArray(row.countries);
       const source = str(row.source);
@@ -388,19 +413,19 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
         sourceLabel: str(row.sourceLabel),
         sourceDescription: str(row.sourceDescription),
         srcDesc: str(row.sourceDescription),
-        hits: num(row.hits),
+        hits: requiredNum(row.hits, `geo.endpoints.${index}.hits`),
       };
     }),
-    hits: rows<Record<string, unknown>>(data.hits).map((row) => ({
+    hits: requiredRows<Record<string, unknown>>(data.hits, "geo.hits").map((row, index) => ({
       cc: str(row.cc),
       name: str(row.name),
       nm: str(row.name),
-      count: num(row.count),
-      ct: num(row.count),
+      count: requiredNum(row.count, `geo.hits.${index}.count`),
+      ct: requiredNum(row.count, `geo.hits.${index}.count`),
     })),
     edge: {
-      source: str(edge.source, "服务器边缘 IP 判定"),
-      metrics: rows<Record<string, unknown>>(edge.metrics).map((row) => ({
+      source: str(edge.source),
+      metrics: requiredRows<Record<string, unknown>>(edge.metrics, "geo.edge.metrics").map((row) => ({
         key: str(row.key),
         k: str(row.key),
         value: str(row.value),
@@ -413,10 +438,11 @@ function normalizeGeo(raw: unknown): GeoBlockOverview {
   };
 }
 
-function normalizeTrendWindow(value: unknown): TamperTrendWindow {
+function normalizeTrendWindow(value: unknown, field: string): TamperTrendWindow {
   const row = rec(value);
-  const points = rows<unknown>(row.points).map((item) => num(item));
-  return { points, pts: points, max: num(row.max), labels: strArray(row.labels) };
+  const points = requiredRows<unknown>(row.points, `${field}.points`)
+    .map((item, index) => requiredNum(item, `${field}.points.${index}`));
+  return { points, pts: points, max: requiredNum(row.max, `${field}.max`), labels: strArray(row.labels) };
 }
 
 function normalizeTamper(raw: unknown): TamperOverview {
@@ -427,29 +453,29 @@ function normalizeTamper(raw: unknown): TamperOverview {
   return {
     stats: rec(data.stats),
     trend: {
-      "24h": normalizeTrendWindow(trend["24h"]),
-      "7d": normalizeTrendWindow(trend["7d"]),
-      "30d": normalizeTrendWindow(trend["30d"]),
+      "24h": normalizeTrendWindow(trend["24h"], "trend.24h"),
+      "7d": normalizeTrendWindow(trend["7d"], "trend.7d"),
+      "30d": normalizeTrendWindow(trend["30d"], "trend.30d"),
     },
-    paths: rows<Record<string, unknown>>(data.paths).map((row) => ({
+    paths: requiredRows<Record<string, unknown>>(data.paths, "tamper.paths").map((row, index) => ({
       id: str(row.id),
       name: str(row.name),
       nm: str(row.name),
       description: str(row.description),
       desc: str(row.description),
-      count: num(row.count),
-      ct: num(row.count),
-      accounts: num(row.accounts),
-      acct: num(row.accounts),
+      count: requiredNum(row.count, `tamper.paths.${index}.count`),
+      ct: requiredNum(row.count, `tamper.paths.${index}.count`),
+      accounts: requiredNum(row.accounts, `tamper.paths.${index}.accounts`),
+      acct: requiredNum(row.accounts, `tamper.paths.${index}.accounts`),
       color: str(row.color),
     })),
-    accounts: rows<Record<string, unknown>>(data.accounts).map((row) => {
+    accounts: requiredRows<Record<string, unknown>>(data.accounts, "tamper.accounts").map((row, index) => {
       const userCode = str(row.userCode, str(row.userNo));
       return {
         userCode,
         userNo: userCode,
-        count: num(row.count),
-        cnt: num(row.count),
+        count: requiredNum(row.count, `tamper.accounts.${index}.count`),
+        cnt: requiredNum(row.count, `tamper.accounts.${index}.count`),
         k4: str(row.k4),
         last: str(row.last),
         paths: strArray(row.paths),
@@ -457,17 +483,17 @@ function normalizeTamper(raw: unknown): TamperOverview {
       };
     }),
     accountPage: {
-      page: num(accountPage.page, 1),
-      pageSize: num(accountPage.pageSize, 5),
-      total: num(accountPage.total, rows<Record<string, unknown>>(data.accounts).length),
-      pages: num(accountPage.pages, 1),
-      hasPrev: bool(accountPage.hasPrev),
-      hasNext: bool(accountPage.hasNext),
+      page: requiredNum(accountPage.page, "accountPage.page"),
+      pageSize: requiredNum(accountPage.pageSize, "accountPage.pageSize"),
+      total: requiredNum(accountPage.total, "accountPage.total"),
+      pages: requiredNum(accountPage.pages, "accountPage.pages"),
+      hasPrev: requiredBool(accountPage.hasPrev, "accountPage.hasPrev"),
+      hasNext: requiredBool(accountPage.hasNext, "accountPage.hasNext"),
     },
     alertConfig: {
-      threshold: num(alertConfig.threshold, 10),
-      label: str(alertConfig.label, "10 次 / 24h"),
-      feedK4: bool(alertConfig.feedK4, true),
+      threshold: requiredNum(alertConfig.threshold, "alertConfig.threshold"),
+      label: str(alertConfig.label),
+      feedK4: requiredBool(alertConfig.feedK4, "alertConfig.feedK4"),
     },
     sources: strArray(data.sources),
   };
@@ -565,10 +591,10 @@ function normalizeNotifyTemplates(raw: unknown): JNotifyTemplateOption[] {
       const campaignNo = str(row.id, str(row.campaignNo));
       const name = str(row.name, campaignNo);
       const tier = str(row.tier, "normal");
-      const audience = str(row.audience, "全量");
+      const audience = str(row.audience);
       const status = str(row.status, "draft");
       const schedule = str(row.schedule);
-      const label = `${name} · ${tier} · ${audience}`;
+      const label = [name, tier, audience].filter(Boolean).join(" · ");
       const meta = [campaignNo, status, schedule].filter(Boolean).join(" · ");
       const searchText = [campaignNo, name, tier, audience, status, schedule, label, meta]
         .filter(Boolean)

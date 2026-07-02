@@ -4,7 +4,7 @@ export interface OpsTask {
   price: number;
   unit: string;
   req: string;
-  sat: number;
+  sat: number | null;
   taskClass?: string;
   model?: string;
   minReward?: number;

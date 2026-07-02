@@ -138,7 +138,7 @@ const evidence = [
     files: [
       [path.join(uniRoot, "src", "lib", "carrier.ts"), ["getCarrier"]],
       [path.join(uniRoot, "src", "lib", "hashpower.ts"), ["H5_BASE_FACTOR"]],
-      [path.join(ROOT, "lib", "mock", "admin", "compute-config.ts"), ["h5BaseFactor", "continuityFullHours"]],
+      [path.join(ROOT, "app", "components", "domain-views", "e-tabs", "e6-compute-config.tsx"), ["在线加成系数", "连续在线"]],
     ],
   },
   {

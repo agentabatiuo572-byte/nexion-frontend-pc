@@ -1,8 +1,8 @@
-# Nexion 运营控制后台 · 原型
+# Nexion 运营控制后台
 
-Nexion 平台的**运营控制后台（Ops Console）高保真原型**。覆盖 12 个业务域、69 个模块，每个模块都配有「可控可配」的后台操作面（不只是看板展示），用于演示运营侧的全链路控制能力。
+Nexion 平台的**运营控制后台（Ops Console）**。覆盖 12 个业务域、69 个模块，每个模块都配有「可控可配」的后台操作面（不只是看板展示），用于运营侧的全链路控制。
 
-> 数据全部为本地 mock（结构对齐 server-canonical），**不接真实后端 / 真实前端原型**，仅作交互演示。
+> 运行时数据来自后端 `/api/admin/**` 代理和真实业务接口；前端不再以本地静态业务数据作为有效数据源。
 
 ---
 
@@ -44,7 +44,7 @@ npm run start
 
 ```
 app/
-├── (console)/              # 后台主框架（路由组）
+├── _console/               # 后台主框架
 │   ├── layout.tsx          # 侧边导航 + 顶栏 shell
 │   ├── overview/           # B 总览驾驶舱 / 指挥台
 │   ├── users/              # C 用户检索 + 深度档案 (search/[id])
@@ -63,10 +63,9 @@ app/
 
 lib/
 ├── admin/
-│   ├── registry/           # A–L 12 域 × 模块注册表（单一真源）
+│   ├── registry/           # A–L 12 域 × 模块注册表（只保留路由 summary）
 │   └── module-content.ts   # 模块内容装配
 ├── nav/console-nav.ts      # 导航树（路由生成单一真源）
-├── mock/admin/             # mock 数据（账本 / 用户 / 提现 / 运营者 …）
 ├── store/                  # Zustand store（鉴权 / 角色 / UI / 主题 …）
 └── format.ts
 
@@ -116,4 +115,4 @@ npm run verify
 ## 说明
 
 - 本仓库为**源码分发包**，不含 `node_modules` 与 `.next` 构建产物，解压后执行 `npm install` 即可。
-- 所有业务数据为 mock，无真实资金 / 用户 / 后端调用。
+- 本地开发需要后端服务可访问，未登录或接口为空时页面展示空态，不回退到本地业务样本。
