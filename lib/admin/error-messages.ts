@@ -6,7 +6,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   REASON_REQUIRED: "请填写操作原因。",
   OPERATOR_REQUIRED: "缺少操作人信息,请重新登录后再试。",
   FORCE_LOGOUT_SELF_FORBIDDEN: "不能强制登出自己的当前账号。",
-  FORCE_LOGOUT_ROLE_FORBIDDEN: "只有超管或风控可以强制登出运营账号。",
+  FORCE_LOGOUT_ROLE_FORBIDDEN: "只有超管可以强制登出运营账号。",
   FORCE_LOGOUT_SUPER_TARGET_FORBIDDEN: "超管账号不能被强制登出。",
   VALIDATION_FAILED: "参数校验失败,请检查输入内容。",
   INVALID_STATE_TRANSITION: "当前状态不允许执行该操作,请刷新后查看最新状态。",

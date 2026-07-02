@@ -248,7 +248,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       return "不能强制登出自己的当前账号";
     }
     if (!["super", "risk"].includes(currentForceLogoutRole)) {
-      return "只有超管或风控可以强制登出运营账号";
+      return "只有超管可以强制登出运营账号";
     }
     if (op.role === "super") {
       return "超管账号不能被强制登出";
@@ -397,7 +397,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <b>{operatorDisplayLabel(op)}</b> 当前活跃 session <b>{op.sessions}</b> 个。
           确认后后端立即吊销该账号全部 session,重新登录必须重过后台认证与双因子。
           <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-4)" }}>
-            规则:不能登出自己;只有超管或风控可执行;超管账号不可被强制登出。
+            规则:不能登出自己;只有超管可执行;超管账号不可被强制登出。
           </div>
         </>
       ),
@@ -753,15 +753,15 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               <div className="atint">后端未返回安全基线配置。</div>
             )}
             <div className="atint" style={{ marginTop: 10 }}>
-              <b>疑似被盗怎么办</b> · 超管或风控可立即强制登出非超管账号全部 session(普通确认、必填原因,事后可查);不能登出自己,Redis 无活跃会话代表目标未登录。要收权限走「禁用账号」操作确认。登录失败短锁基线: <b>{lockBaseline}</b>。
+              <b>疑似被盗怎么办</b> · 超管可立即强制登出非超管账号全部 session(普通确认、必填原因,事后可查);不能登出自己,Redis 无活跃会话代表目标未登录。要收权限走「禁用账号」操作确认。登录失败短锁基线: <b>{lockBaseline}</b>。
             </div>
           </div>
         </section>
 
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">角色定义(c)· 7 角色,V1 固定</span>
-            <span className="sub">· 点角色看它在矩阵里拿到的全部动作</span>
+          <span className="ttl">角色定义(c)· 后端角色表</span>
+          <span className="sub">· 点角色看它在矩阵里拿到的全部动作</span>
           </div>
           <div className="l-b" style={{ paddingTop: 2 }}>
             {roles.map((role, index) => (

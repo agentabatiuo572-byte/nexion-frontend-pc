@@ -33,6 +33,9 @@ export type AdminRole =
   | "content"
   | "growth"
   | "support"
+  | "support_manager"
+  | "support_dedicated"
+  | "support_general"
   | "auditor";
 
 export const ROLE_LABEL: Record<AdminRole, string> = {
@@ -43,8 +46,18 @@ export const ROLE_LABEL: Record<AdminRole, string> = {
   content: "内容运营",
   growth: "增长运营",
   support: "客服",
+  support_manager: "客服主管",
+  support_dedicated: "专属客服",
+  support_general: "通用客服",
   auditor: "审计",
 };
+
+export const SUPPORT_ADMIN_ROLES: AdminRole[] = [
+  "support",
+  "support_manager",
+  "support_dedicated",
+  "support_general",
+];
 
 export type L2Status = "flagship" | "scaffold" | "planned";
 
@@ -291,6 +304,7 @@ export function findBySlugs(domainSlug: string, moduleSlug: string): { domain: N
 export function canSee(role: AdminRole, roles?: AdminRole[]): boolean {
   if (role === "superadmin") return true;
   if (!roles) return true;
+  if (SUPPORT_ADMIN_ROLES.includes(role) && roles.includes("support")) return true;
   return roles.includes(role);
 }
 

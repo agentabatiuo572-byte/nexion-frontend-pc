@@ -17,6 +17,8 @@ import {
 import { Icon, type IconName, Modal, Toggle } from "../design-kit";
 import { catCN, MAvatar } from "./hd-ui";
 import type { MCtx } from "./types";
+import { changeA1AccountRole, fetchA1Overview, type A1Operator, type A1RoleDefinition } from "@/lib/admin/a1-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchUserProfilesPage, type User360Profile } from "@/lib/admin/user360-client";
 import type { MAdvisorAssignment, MSupportAgent } from "@/lib/admin/m-client";
 
@@ -28,6 +30,14 @@ const ASSIGNMENT_LIST_KEY = "I.support.advisorAssignments";
 const LOAD_KEY = (f: string) => `I.support.load.${f}`;
 const AGENT_CAP_KEY = (name: string) => `I.support.agent.${name}.cap`;
 const AGENT_BUSY_KEY = (name: string) => `I.support.agent.${name}.busy`;
+
+const SUPPORT_SEAT_ROLES = [
+  { key: "support_manager", label: "客服主管", hint: "由超管分配;可分配专属/通用客服" },
+  { key: "support_dedicated", label: "专属客服", hint: "由超管/客服主管绑定服务用户" },
+  { key: "support_general", label: "通用客服", hint: "接普通工单与即时会话" },
+];
+const SUPPORT_STAFF_ROLE_KEYS = new Set(["support", "support_dedicated", "support_general"]);
+const SUPPORT_ADMIN_ROLE_KEYS = new Set(["support", "support_manager", "support_dedicated", "support_general"]);
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -105,11 +115,24 @@ function userNoOf(profile: User360Profile): string {
   return profile.userNo || (profile.id ? `U${String(profile.id).padStart(8, "0")}` : "未编号用户");
 }
 
+function isDedicatedSupportAgent(agent: MSupportAgent): boolean {
+  return agent.adminRole === "support_dedicated" || agent.position.includes("专属");
+}
+
+function roleLabel(roles: A1RoleDefinition[], role: string): string {
+  return roles.find((item) => item.key === role)?.name ?? SUPPORT_SEAT_ROLES.find((item) => item.key === role)?.label ?? role;
+}
+
 export function M1Overview({ ctx }: { ctx: MCtx }) {
   const { pget } = ctx;
   const [showLoad, setShowLoad] = useState(false);
-  const [showAssign, setShowAssign] = useState(false);
+  const [showSeatRoles, setShowSeatRoles] = useState(false);
+  const [showUserAssign, setShowUserAssign] = useState(false);
   const [assignAgent, setAssignAgent] = useState<MSupportAgent | null>(null);
+  const operatorName = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
+  const currentRole = useAdminAuth((s) => s.session?.role ?? s.role);
+  const currentRoleKey = String(currentRole);
+  const canManageSupportSeats = currentRoleKey === "superadmin" || currentRoleKey === "super" || currentRoleKey === "support_manager";
 
   const tickets = useMemo(() => parseParamArray<SupportTicket>(pget(TICKET_KEY), []), [ctx.params, pget]);
   const sla = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
@@ -121,7 +144,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
     [supportAgents],
   );
   const assignableAgents = useMemo(
-    () => seatAssignmentAgents.filter((agent) => agent.serviceTypes.includes("advisor")),
+    () => seatAssignmentAgents.filter((agent) => isDedicatedSupportAgent(agent) && agent.serviceTypes.includes("advisor")),
     [seatAssignmentAgents],
   );
   const activeAdvisorAssignmentCount = advisorAssignments.filter((row) => row.status === "ACTIVE").length;
@@ -161,11 +184,9 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
         <button
           type="button"
           className="btn btn-sec btn-sm"
-          title={seatAssignmentAgents.length ? "给用户分配专属客服坐席" : "查看为什么当前无法分配坐席"}
-          onClick={() => {
-            setAssignAgent(assignableAgents[0] ?? seatAssignmentAgents[0] ?? null);
-            setShowAssign(true);
-          }}
+          disabled={!canManageSupportSeats}
+          title={canManageSupportSeats ? "从 A1 管理员账号里分配客服主管 / 专属客服 / 通用客服坐席" : "只有超管或客服主管可以分配客服坐席"}
+          onClick={() => setShowSeatRoles(true)}
         >
           <Icon name="users" size={16} />
           分配坐席
@@ -292,12 +313,15 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                     <button
                       type="button"
                       className="btn btn-sec btn-sm"
-                      disabled={!l.agent.enabled || l.agent.adminId <= 0}
-                      title={l.agent.serviceTypes.includes("advisor") ? "给用户分配此坐席" : "打开分配面板,并提示先开启专属顾问服务类型"}
-                      onClick={() => setAssignAgent(l.agent)}
+                      disabled={!canManageSupportSeats || !l.agent.enabled || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
+                      title={!canManageSupportSeats ? "只有超管或客服主管可以绑定服务用户" : isDedicatedSupportAgent(l.agent) ? "给此专属客服绑定服务用户" : "只有专属客服可以绑定服务用户"}
+                      onClick={() => {
+                        setAssignAgent(l.agent);
+                        setShowUserAssign(true);
+                      }}
                       style={{ marginTop: 2 }}
                     >
-                      分配
+                      绑定用户
                     </button>
                   </div>
                 </div>
@@ -312,13 +336,21 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
       </p>
 
       {showLoad && loadCfg && <LoadConfigModal ctx={ctx} loadCfg={loadCfg} rows={loadRows} onClose={() => setShowLoad(false)} />}
-      {showAssign && (
+      {showSeatRoles && (
+        <SupportSeatRoleModal
+          ctx={ctx}
+          operatorName={operatorName}
+          currentRole={currentRoleKey}
+          onClose={() => setShowSeatRoles(false)}
+        />
+      )}
+      {showUserAssign && (
         <SeatAssignmentModal
           ctx={ctx}
-          agents={seatAssignmentAgents}
+          agents={assignableAgents}
           initialAgent={assignAgent}
           onClose={() => {
-            setShowAssign(false);
+            setShowUserAssign(false);
             setAssignAgent(null);
           }}
         />
@@ -465,6 +497,191 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   );
 }
 
+function SupportSeatRoleModal({
+  ctx,
+  operatorName,
+  currentRole,
+  onClose,
+}: {
+  ctx: MCtx;
+  operatorName: string;
+  currentRole: string;
+  onClose: () => void;
+}) {
+  const [roles, setRoles] = useState<A1RoleDefinition[]>([]);
+  const [operators, setOperators] = useState<A1Operator[]>([]);
+  const [keyword, setKeyword] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [targetRole, setTargetRole] = useState("support_general");
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const canAssignSupervisor = currentRole === "superadmin" || currentRole === "super";
+  const canAssignSupportStaff = canAssignSupervisor || currentRole === "support_manager";
+  const roleOptions = canAssignSupportStaff ? SUPPORT_SEAT_ROLES.filter((role) => canAssignSupervisor || role.key !== "support_manager") : [];
+  const operatorReady = operatorName.trim().length > 0;
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  const candidates = operators
+    .filter((operator) => operator.status === "enabled")
+    .filter((operator) => operator.role !== "super" && operator.role !== "superadmin")
+    .filter((operator) => canAssignSupervisor || (canAssignSupportStaff && SUPPORT_STAFF_ROLE_KEYS.has(operator.role)))
+    .filter((operator) => {
+      if (!normalizedKeyword) return true;
+      return [operator.name, operator.email, operator.id, roleLabel(roles, operator.role)]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedKeyword);
+    });
+  const selected = candidates.find((operator) => operator.id === selectedId) ?? candidates[0] ?? null;
+  const roleExists = roles.some((role) => role.key === targetRole);
+  const reasonOk = reason.trim().length >= 6;
+  const canSave = Boolean(canAssignSupportStaff && operatorReady && selected && targetRole && roleExists && reasonOk && selected.role !== targetRole && !saving);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError("");
+    fetchA1Overview()
+      .then((overview) => {
+        if (!alive) return;
+        setRoles(overview.roles);
+        setOperators(overview.operators);
+        const first = overview.operators.find((operator) => operator.status === "enabled" && operator.role !== "super");
+        setSelectedId((current) => current || first?.id || "");
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setError(err instanceof Error ? err.message : "A1_OPERATORS_LOAD_FAILED");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canAssignSupervisor && targetRole === "support_manager") {
+      setTargetRole("support_general");
+    }
+  }, [canAssignSupervisor, targetRole]);
+
+  useEffect(() => {
+    if (selected && !candidates.some((operator) => operator.id === selected.id)) {
+      setSelectedId(candidates[0]?.id ?? "");
+    }
+  }, [candidates, selected]);
+
+  const save = async () => {
+    if (!canSave || !selected) return;
+    setSaving(true);
+    try {
+      await changeA1AccountRole(selected.id, targetRole, reason.trim(), operatorName.trim());
+      const overview = await fetchA1Overview();
+      setRoles(overview.roles);
+      setOperators(overview.operators);
+      setSelectedId(selected.id);
+      ctx.toast(`${selected.name} 已分配为 ${roleLabel(overview.roles, targetRole)};刷新 M 域后进入坐席名单`);
+      onClose();
+    } catch (err) {
+      ctx.toast(`分配失败:${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="分配客服坐席"
+      icon="users"
+      wide
+      onClose={onClose}
+      footer={<><span className="sub">{!canAssignSupportStaff ? "只有超管或客服主管可以分配客服坐席" : !operatorReady ? "正在读取当前管理员身份" : canAssignSupervisor ? "超管可分配客服主管 / 专属客服 / 通用客服" : "客服主管只能分配专属客服 / 通用客服"}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="m1-seat-role-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : canSave ? "确认分配" : !canAssignSupportStaff || !operatorReady ? "无权限" : roleExists ? "需选择并填写理由" : "后端角色未就绪"}</button></>}
+    >
+      <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>搜索管理员</span>
+            <div className="inp">
+              <Icon name="search" size={15} />
+              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="管理员姓名 / 邮箱 / 当前角色" />
+            </div>
+          </label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 300, overflow: "auto", paddingRight: 2 }}>
+            {loading && <div className="itint">正在读取 A1 管理员账号...</div>}
+            {!loading && error && <div className="itint">A1 管理员读取失败 · {error}</div>}
+            {!loading && !error && candidates.length === 0 && (
+              <div className="itint">
+                <div style={{ fontSize: 13 }}>暂无可分配管理员</div>
+                <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>搜索源是 A1 管理员账号;客服主管只能调整已有客服坐席。</div>
+              </div>
+            )}
+            {!loading && !error && candidates.map((operator) => {
+              const selectedRow = selected?.id === operator.id;
+              const isSupportRole = SUPPORT_ADMIN_ROLE_KEYS.has(operator.role);
+              return (
+                <button
+                  key={operator.id}
+                  type="button"
+                  data-proof="m1-seat-admin-option"
+                  onClick={() => setSelectedId(operator.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: `1px solid ${selectedRow ? "var(--m-hd-border)" : "var(--border)"}`, background: selectedRow ? "var(--m-hd-soft)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
+                >
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{operator.name || operator.email || `管理员 ${operator.id}`}</span>
+                    <span className="mono dim2" style={{ fontSize: 11.5 }}>{operator.email || "未配置邮箱"} · {roleLabel(roles, operator.role)}</span>
+                  </span>
+                  <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>{isSupportRole ? "客服" : "可分配"}</span>
+                  {selectedRow && <Icon name="check" size={15} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>目标客服角色</span>
+            <div style={{ display: "grid", gap: 8 }}>
+              {roleOptions.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  className="btn btn-sec btn-sm"
+                  onClick={() => setTargetRole(option.key)}
+                  style={{ justifyContent: "flex-start", height: "auto", padding: "9px 10px", borderColor: targetRole === option.key ? "var(--m-hd-border)" : undefined, background: targetRole === option.key ? "var(--m-hd-soft)" : undefined }}
+                >
+                  <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+                    <span style={{ color: "var(--ink)" }}>{roleLabel(roles, option.key)}</span>
+                    <span className="dim2" style={{ fontSize: 11.5 }}>{option.hint}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </label>
+          {selected && (
+            <div className="itint" style={{ padding: "10px 12px" }}>
+              <div style={{ fontSize: 13 }}>当前选择: {selected.name || selected.email}</div>
+              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>当前角色 {roleLabel(roles, selected.role)} → 目标角色 {roleLabel(roles, targetRole)}</div>
+            </div>
+          )}
+          {!roleExists && (
+            <div className="itint" style={{ padding: "10px 12px" }}>
+              后端 A1 尚未返回 {targetRole} 角色,请先确认后端已重启并完成角色表自愈。
+            </div>
+          )}
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>分配理由 <b style={{ color: "var(--danger)" }}>*</b></span>
+            <textarea className="fld" rows={4} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管排班调整,将该管理员分配为通用客服承接实时会话。" style={{ resize: "vertical" }} />
+          </label>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function SeatAssignmentModal({
   ctx,
   agents,
@@ -549,20 +766,20 @@ function SeatAssignmentModal({
       userIds,
       assignmentType,
     }), {
-      action: "M1 分配客服坐席",
+      action: "M1 绑定专属客服服务用户",
       reason: reason.trim(),
     });
-    ctx.toast(`${agent.name} 已提交分配 ${userIds.length} 个用户`);
+    ctx.toast(`${agent.name} 已提交绑定 ${userIds.length} 个用户`);
     onClose();
   };
 
   return (
     <Modal
-      title="分配客服坐席"
+      title="绑定专属客服服务用户"
       icon="users"
       wide
       onClose={onClose}
-      footer={<><span className="sub">{agents.length === 0 ? "暂无已启用客服坐席,请先在 A1 给管理员分配客服角色" : agentCanAssign ? `用户来自 C1 用户画像接口 · 已选 ${bindableSelectedUsers.length} 人` : "当前坐席未开启专属顾问服务类型,请先到 M5 配置岗位"}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>分配{canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无坐席" : agentCanAssign ? " · 待补全" : " · 需开启服务类型"}</button></>}
+      footer={<><span className="sub">{agents.length === 0 ? "暂无可绑定用户的专属客服,请先在 A1 分配专属客服角色" : agentCanAssign ? `用户来自 C1 用户画像接口 · 已选 ${bindableSelectedUsers.length} 人` : "当前坐席未开启专属顾问服务类型,请先到 M5 配置岗位"}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>绑定{canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启服务类型"}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -570,8 +787,8 @@ function SeatAssignmentModal({
             <span>选择坐席</span>
             {agents.length === 0 ? (
               <div className="itint" style={{ padding: "10px 12px" }}>
-                <div style={{ fontSize: 13 }}>暂无已启用客服坐席</div>
-                <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>坐席名单来自 A1 管理员客服角色。先给管理员分配客服角色并启用后,这里会出现可选坐席。</div>
+                <div style={{ fontSize: 13 }}>暂无专属客服坐席</div>
+                <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>坐席名单来自 A1 管理员专属客服角色。先给管理员分配专属客服并启用后,这里会出现可选坐席。</div>
               </div>
             ) : (
               <select className="fld" value={agentAdminId || String(agent?.adminId ?? "")} onChange={(e) => { setAgentAdminId(e.target.value); setSelectedUsers([]); }}>
@@ -586,7 +803,7 @@ function SeatAssignmentModal({
           {agents.length > 0 && !agentCanAssign && (
             <div className="itint" style={{ padding: "10px 12px" }}>
               <div style={{ fontSize: 13 }}>该坐席当前不能接收专属服务用户分配</div>
-              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>到 M5「客服岗位与专属顾问」把该坐席服务类型勾选为专属顾问后,这里即可提交分配。</div>
+              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>到 M5「客服岗位与专属顾问」把该坐席服务类型勾选为专属顾问后,这里即可提交绑定。</div>
             </div>
           )}
           <select className="fld" value={assignmentType} onChange={(e) => setAssignmentType(e.target.value)}>
@@ -603,7 +820,7 @@ function SeatAssignmentModal({
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
             <div className="sub" style={{ fontWeight: 600 }}>已选用户</div>
             {bindableSelectedUsers.length === 0 ? (
-              <div className="itint" style={{ padding: "10px 12px" }}>从右侧搜索结果中多选用户。</div>
+              <div className="itint" style={{ padding: "10px 12px" }}>从右侧搜索结果中多选要绑定给专属客服的用户。</div>
             ) : (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {bindableSelectedUsers.map((user) => (
@@ -624,7 +841,7 @@ function SeatAssignmentModal({
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>分配理由 <b style={{ color: "var(--danger)" }}>*</b></span>
-            <textarea className="fld" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管按用户等级与问题类型分配专属坐席跟进。" style={{ resize: "vertical" }} />
+            <textarea className="fld" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管按用户等级与问题类型绑定专属客服跟进。" style={{ resize: "vertical" }} />
           </label>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>

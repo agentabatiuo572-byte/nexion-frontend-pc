@@ -10,6 +10,9 @@ const ADMIN_ROLES = new Set<AdminRole>([
   "growth",
   "content",
   "support",
+  "support_manager",
+  "support_dedicated",
+  "support_general",
   "auditor",
 ]);
 
