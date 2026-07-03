@@ -909,6 +909,13 @@ type NaForm = A1CreateAccountInput & {
   reason: string;
 };
 
+const WORK_EMAIL_DOMAINS = ["@nexion.ai", "@nexion.io"] as const;
+
+function isWorkEmail(email: string) {
+  const normalized = email.trim().toLowerCase();
+  return normalized.includes("@") && WORK_EMAIL_DOMAINS.some((domain) => normalized.endsWith(domain));
+}
+
 function NewAccountDrawer({
   roles,
   disabled,
@@ -934,8 +941,14 @@ function NewAccountDrawer({
     }
   }, [role, roles]);
 
-  const emailOk = email.trim().endsWith("@nexion.io") && email.includes("@");
-  const canSubmit = !disabled && displayName.trim().length > 0 && emailOk && role.length > 0 && reason.trim().length > 0;
+  const emailOk = isWorkEmail(email);
+  const missingItems = [
+    !displayName.trim() ? "显示名" : "",
+    !emailOk ? "工作邮箱需为 @nexion.ai 或 @nexion.io" : "",
+    !role ? "初始角色" : "",
+    !reason.trim() ? "操作理由" : "",
+  ].filter(Boolean);
+  const canSubmit = !disabled && missingItems.length === 0;
 
   return (
     <Drawer
@@ -948,9 +961,10 @@ function NewAccountDrawer({
           <button
             className="l-btn primary"
             disabled={!canSubmit}
+            title={canSubmit ? "确认创建账号" : `待补全:${missingItems.join("、")}`}
             style={{ flex: 2, justifyContent: "center", opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
             onClick={() => canSubmit && onSubmit({ displayName: displayName.trim(), email: email.trim(), role, deliver, reason: reason.trim() })}
-          >确认创建账号</button>
+          >{canSubmit ? "确认创建账号" : `待补全 · ${missingItems[0] ?? "校验中"}`}</button>
         </div>
       }
     >
@@ -966,13 +980,18 @@ function NewAccountDrawer({
           />
         </label>
         <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
-          工作邮箱 *(@nexion.io)
+          工作邮箱 *(@nexion.ai / @nexion.io)
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@nexion.io"
+            placeholder="name@nexion.ai"
             style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
           />
+          {email.trim() && !emailOk && (
+            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
+              仅允许 Nexion 工作邮箱: @nexion.ai 或 @nexion.io。
+            </span>
+          )}
         </label>
       </div>
 
