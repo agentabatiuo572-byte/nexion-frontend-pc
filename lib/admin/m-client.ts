@@ -204,6 +204,7 @@ export type MSupportAgent = {
   email: string;
   adminRole: string;
   status: string;
+  seatType: "MANAGER" | "DEDICATED" | "GENERAL";
   position: string;
   serviceTypes: MSupportServiceType[];
   tags: string[];
@@ -629,6 +630,15 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     .filter((item): item is MSupportServiceType => item != null);
   const adminId = num(row.adminId, 0);
   const name = str(row.name, row.email ? str(row.email) : adminId ? `客服 ${adminId}` : "客服坐席");
+  const seatTypeRaw = str(row.seatType, "").trim().toUpperCase();
+  const position = str(row.position, "通用客服");
+  const seatType = seatTypeRaw === "MANAGER" || seatTypeRaw === "DEDICATED" || seatTypeRaw === "GENERAL"
+    ? seatTypeRaw
+    : position.includes("主管")
+      ? "MANAGER"
+      : position.includes("专属") || position.includes("顾问")
+        ? "DEDICATED"
+        : "GENERAL";
   return {
     id: str(row.id, adminId ? `agent-${adminId}` : agentIdForName(name)),
     adminId,
@@ -636,7 +646,8 @@ function adaptSupportAgent(row: Record<string, unknown>): MSupportAgent {
     email: str(row.email, ""),
     adminRole: str(row.adminRole, ""),
     status: str(row.status, ""),
-    position: str(row.position, "一线客服"),
+    seatType,
+    position,
     serviceTypes: serviceTypes.length ? serviceTypes : ["support"],
     tags: asStringArray(row.tags),
     maxConcurrent: num(row.maxConcurrent, 0),
@@ -997,7 +1008,6 @@ export const mContentActions = {
     });
   },
   updateSupportAgentProfile(adminId: number, profile: {
-    position?: string;
     serviceTypes?: MSupportServiceType[];
     tags?: string[];
     maxConcurrent?: number;
@@ -1008,6 +1018,22 @@ export const mContentActions = {
     return apiRequest<MSupportAgent>(`/support-agents/${encodeURIComponent(String(adminId))}/profile`, {
       method: "PATCH",
       body: JSON.stringify(withReason(profile, reason)),
+    });
+  },
+  assignSupportSeat(adminId: number, seat: {
+    position: string;
+    serviceTypes?: MSupportServiceType[];
+    tags?: string[];
+    maxConcurrent?: number;
+    enabled?: boolean;
+    transferable?: boolean;
+    busy?: boolean;
+    userIds?: number[];
+    assignmentType?: string;
+  }, reason: string) {
+    return apiRequest<MSupportAgent>(`/support-agents/${encodeURIComponent(String(adminId))}/seat-assignment`, {
+      method: "PATCH",
+      body: JSON.stringify(withReason(seat, reason)),
     });
   },
   assignAdvisorUser(adminId: number, userId: number, assignmentType: string, reason: string) {

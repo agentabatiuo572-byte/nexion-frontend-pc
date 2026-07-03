@@ -13,9 +13,6 @@ const ROLE_ACCENT: Record<AdminRole, string> = {
   content: "--admin-domain-i", // 粉
   growth: "--admin-domain-h", // 橙
   support: "--admin-domain-c", // 真青
-  support_manager: "--admin-domain-m",
-  support_dedicated: "--admin-domain-m",
-  support_general: "--admin-domain-c",
   auditor: "--admin-domain-a", // 靛蓝
 };
 

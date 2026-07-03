@@ -439,7 +439,6 @@ async function applyMBackendWrite(
   if (key === "I.support.agentProfile.__update") {
     const payload = parseRecord<{
       adminId?: number;
-      position?: string;
       serviceTypes?: Array<"support" | "advisor">;
       tags?: string[];
       maxConcurrent?: number;
@@ -448,6 +447,22 @@ async function applyMBackendWrite(
       busy?: boolean;
     }>(value);
     if (payload?.adminId) await mContentActions.updateSupportAgentProfile(payload.adminId, payload, reason);
+    return;
+  }
+  if (key === "I.support.seatAssignment.__update") {
+    const payload = parseRecord<{
+      adminId?: number;
+      position?: string;
+      serviceTypes?: Array<"support" | "advisor">;
+      tags?: string[];
+      maxConcurrent?: number;
+      enabled?: boolean;
+      transferable?: boolean;
+      busy?: boolean;
+      userIds?: number[];
+      assignmentType?: string;
+    }>(value);
+    if (payload?.adminId && payload.position) await mContentActions.assignSupportSeat(payload.adminId, { ...payload, position: payload.position }, reason);
     return;
   }
   if (key === "I.support.advisorAssignment.__create") {

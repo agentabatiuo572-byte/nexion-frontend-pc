@@ -390,7 +390,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             <span className="t">客服岗位与专属顾问</span>
             <span className="n">{agentTotal} 名客服</span>
           </div>
-          <span className="dim2" style={{ fontSize: 11.5 }}>名单来自 A1 客服角色 · 岗位和专属关系在这里配置</span>
+          <span className="dim2" style={{ fontSize: 11.5 }}>名单来自 A1 全局客服角色 · 坐席类型由 M1 分配,M5 维护接派单与专属关系</span>
           <span className="sp" style={{ flex: 1 }} />
           <SensTag />
         </div>
@@ -401,7 +401,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           )}
           {agentTotal === 0 ? (
             <div className="itint" style={{ margin: 10 }}>
-              <div style={{ fontSize: 13 }}>暂无客服角色管理员</div>
+              <div style={{ fontSize: 13 }}>暂无客服管理员</div>
               <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>请先在平台管理员里给管理员分配客服角色。</div>
             </div>
           ) : visibleSupportAgents.map((agent) => {
@@ -647,16 +647,15 @@ function toggleList<T extends string>(rows: T[], item: T): T[] {
 }
 
 function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAgent; agents: MSupportAgent[]; ctx: MCtx; onClose: () => void }) {
-  const positionOptions = useMemo(
-    () => Array.from(new Set(agents.map((item) => item.position).filter(Boolean))),
-    [agents],
-  );
   const tagOptions = useMemo(
     () => Array.from(new Set(agents.flatMap((item) => item.tags ?? []).filter(Boolean))),
     [agents],
   );
-  const [position, setPosition] = useState(agent.position || "");
-  const [serviceTypes, setServiceTypes] = useState<MSupportServiceType[]>(agent.serviceTypes.length ? agent.serviceTypes : ["support"]);
+  const position = agent.position || "通用客服";
+  const dedicatedSeat = agent.seatType === "DEDICATED" || position.includes("专属");
+  const [serviceTypes, setServiceTypes] = useState<MSupportServiceType[]>(
+    dedicatedSeat ? (agent.serviceTypes.length ? agent.serviceTypes : ["advisor"]) : ["support"],
+  );
   const [tags, setTags] = useState<string[]>(agent.tags ?? []);
   const [maxConcurrent, setMaxConcurrent] = useState(String(agent.maxConcurrent || 10));
   const [enabled, setEnabled] = useState(agent.enabled);
@@ -670,7 +669,6 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
     if (!canSave) return;
     ctx.setParam("I.support.agentProfile.__update", JSON.stringify({
       adminId: agent.adminId,
-      position: position.trim(),
       serviceTypes,
       tags,
       maxConcurrent: Math.max(0, Math.min(40, Math.round(Number(maxConcurrent) || 0))),
@@ -678,10 +676,10 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
       transferable,
       busy,
     }), {
-      action: "M5 客服岗位配置",
+      action: "M5 客服接派单配置",
       reason: reason.trim(),
     });
-    ctx.toast(`${agent.name} 岗位配置已提交`);
+    ctx.toast(`${agent.name} 接派单配置已提交`);
     onClose();
   };
 
@@ -700,11 +698,9 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
             <div className="dim2" style={{ fontSize: 11.5, marginTop: 3 }}>{agent.email || agent.adminRole} · <span className="mono">A1#{agent.adminId}</span></div>
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
-            <span>岗位</span>
-            <select className="fld" value={position} onChange={(e) => setPosition(e.target.value)}>
-              {!positionOptions.includes(position) && <option value={position}>{position || "未配置岗位"}</option>}
-              {positionOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <span>坐席类型</span>
+            <input className="fld" value={position} readOnly disabled />
+            <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>客服主管 / 专属客服 / 通用客服由 M1「分配坐席」维护。</span>
           </label>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>接派单上限</span>
@@ -719,12 +715,25 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
           <div>
             <div className="sub" style={{ fontWeight: 600, marginBottom: 8 }}>服务类型</div>
             <div className="row wrap" style={{ gap: 8 }}>
-              {(["support", "advisor"] as MSupportServiceType[]).map((type) => (
-                <button key={type} type="button" className={`chip${serviceTypes.includes(type) ? " sel" : ""}`} onClick={() => setServiceTypes((rows) => toggleList(rows, type))}>
-                  {type === "advisor" ? "专属顾问" : "普通客服"}
-                </button>
-              ))}
+              {(["support", "advisor"] as MSupportServiceType[]).map((type) => {
+                const disabled = type === "advisor" && !dedicatedSeat;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`chip${serviceTypes.includes(type) ? " sel" : ""}`}
+                    disabled={disabled}
+                    onClick={() => {
+                      if (!disabled) setServiceTypes((rows) => toggleList(rows, type));
+                    }}
+                    style={disabled ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+                  >
+                    {type === "advisor" ? "专属顾问" : "普通客服"}
+                  </button>
+                );
+              })}
             </div>
+            {!dedicatedSeat && <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 6 }}>只有 M1 分配为专属客服后才能开启专属顾问服务。</div>}
           </div>
           <div>
             <div className="sub" style={{ fontWeight: 600, marginBottom: 8 }}>岗位标签</div>
