@@ -909,11 +909,10 @@ type NaForm = A1CreateAccountInput & {
   reason: string;
 };
 
-const WORK_EMAIL_DOMAINS = ["@nexion.ai", "@nexion.io"] as const;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function isWorkEmail(email: string) {
-  const normalized = email.trim().toLowerCase();
-  return normalized.includes("@") && WORK_EMAIL_DOMAINS.some((domain) => normalized.endsWith(domain));
+function isValidEmail(email: string) {
+  return EMAIL_PATTERN.test(email.trim());
 }
 
 function NewAccountDrawer({
@@ -941,13 +940,15 @@ function NewAccountDrawer({
     }
   }, [role, roles]);
 
-  const emailOk = isWorkEmail(email);
+  const emailOk = isValidEmail(email);
   const missingItems = [
-    !displayName.trim() ? "显示名" : "",
-    !emailOk ? "工作邮箱需为 @nexion.ai 或 @nexion.io" : "",
-    !role ? "初始角色" : "",
-    !reason.trim() ? "操作理由" : "",
+    !displayName.trim() ? "显示名未填写" : "",
+    !email.trim() ? "工作邮箱未填写" : !emailOk ? "工作邮箱格式不正确" : "",
+    !role ? "初始角色未选择" : "",
+    !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
+  const disabledReason = disabled ? "权限或数据仍在加载,暂不能创建" : "";
+  const submitBlockers = [disabledReason, ...missingItems].filter(Boolean);
   const canSubmit = !disabled && missingItems.length === 0;
 
   return (
@@ -956,15 +957,22 @@ function NewAccountDrawer({
       sub="① 账号信息 → ② 初始角色 → ③ 凭据 → 操作理由"
       onClose={onClose}
       footer={
-        <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-          <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>取消</button>
-          <button
-            className="l-btn primary"
-            disabled={!canSubmit}
-            title={canSubmit ? "确认创建账号" : `待补全:${missingItems.join("、")}`}
-            style={{ flex: 2, justifyContent: "center", opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
-            onClick={() => canSubmit && onSubmit({ displayName: displayName.trim(), email: email.trim(), role, deliver, reason: reason.trim() })}
-          >{canSubmit ? "确认创建账号" : `待补全 · ${missingItems[0] ?? "校验中"}`}</button>
+        <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
+          {submitBlockers.length > 0 && (
+            <div style={{ marginBottom: 8, fontSize: 12, color: "var(--danger)", lineHeight: 1.6 }}>
+              不能创建: {submitBlockers.join("、")}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>取消</button>
+            <button
+              className="l-btn primary"
+              disabled={!canSubmit}
+              title={canSubmit ? "确认创建账号" : `不能创建:${submitBlockers.join("、")}`}
+              style={{ flex: 2, justifyContent: "center", opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
+              onClick={() => canSubmit && onSubmit({ displayName: displayName.trim(), email: email.trim(), role, deliver, reason: reason.trim() })}
+            >确认创建账号</button>
+          </div>
         </div>
       }
     >
@@ -980,16 +988,16 @@ function NewAccountDrawer({
           />
         </label>
         <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
-          工作邮箱 *(@nexion.ai / @nexion.io)
+          工作邮箱 *
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@nexion.ai"
+            placeholder="name@example.com"
             style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
           />
           {email.trim() && !emailOk && (
             <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
-              仅允许 Nexion 工作邮箱: @nexion.ai 或 @nexion.io。
+              请输入有效邮箱格式。
             </span>
           )}
         </label>
