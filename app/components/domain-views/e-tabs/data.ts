@@ -46,9 +46,22 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.device.taskLock.s1": "40",
   "E.device.taskLock.pro": "140",
   "E.device.taskLock.rack": "450",
-  "E.tradein.salvagePct": "30",
+  // FEAT-DEV02 升级置换阶梯(激进档):抵扣率按「累计产出 ÷ 实付价」落档,产出越多抵扣越小。
+  // 界点 4 值 + 各档抵扣率 5 值分开配置,区间连续由构造保证;与 uniapp TRADEIN_CREDIT_LADDER、
+  // canon-numbers.json tradeInLadder 三端对账。旧 salvagePct/minHoldingMonths 已删(随时下架,阶梯天然抗套利)。
+  "E.tradein.enabled": "开",
+  "E.tradein.ladder.cut1": "25",
+  "E.tradein.ladder.cut2": "50",
+  "E.tradein.ladder.cut3": "75",
+  "E.tradein.ladder.cut4": "100",
+  "E.tradein.ladder.credit1": "75",
+  "E.tradein.ladder.credit2": "60",
+  "E.tradein.ladder.credit3": "45",
+  "E.tradein.ladder.credit4": "30",
+  "E.tradein.ladder.credit5": "15",
+  "E.tradein.requireHigherPrice": "开",
+  "E.tradein.maxDevicesPerOrder": "1",
   "E.tradein.eligibility": "L4+ 持有者",  // 置换资格门槛(持有等级)· 运营可调
-  "E.tradein.minHoldingMonths": "6",
   "E.tradein.promoMult": "1.0",
   // 置换弹窗节奏 5 参(各值独立可调):冷却天 / 每会话上限 / 延迟秒 / 设备最低龄天 / 入口路由
   "E.tradein.promo.cooldownDays": "14",

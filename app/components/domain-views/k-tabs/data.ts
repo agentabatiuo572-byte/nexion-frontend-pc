@@ -2,7 +2,7 @@
  * K 域(风控与反作弊)视图数据 — design_handoff_k_domain port,全 join 模式:
  *  - 簇统计 / 礼金拦截 / K4 分布 / K5 队列基数 = design-data K_RISK + REGISTERED_USERS 单源;
  *  - K4 单用户分 / K5 工单引用分 = USERS / WITHDRAWALS 同分派生(K4 全平台唯一评分源,谁都不另算);
- *  - minHoldingMonths 权威归 E3(/devices/trade-in,key E.tradein.minHoldingMonths),K2 只读 pget 同源;
+ *  - 置换阶梯权威归 E3(/devices/trade-in,key E.tradein.ladder.*),K2 只读同源(FEAT-DEV02:最短持有闸门已删,阶梯天然抗套利);
  *  - 参数默认值全部对齐 PRD V1 Ch8 K1-K5 ③ 表(12 月周期权威)。
  */
 import { USERS, WITHDRAWALS, K_RISK, REGISTERED_USERS } from "@/lib/mock/admin/design-data";
@@ -136,13 +136,13 @@ export const K2_VIEWS: Record<K2View, { label: string; sub: string; head: string
   },
   tradein: {
     label: "换新套利",
-    sub: "· 以旧换新套利 · 没满最短持有月就想换新,残值已被服务器算成 $0 拦下",
-    head: ["账户", "设备", "购入时间", "持有月数 / 门槛", "残值拦截", "层数命中", "动作"],
-    note: "最短持有月数由商品域 E3 配置,这里只读。服务器守卫:不满门槛残值一律 $0,所以这里只是把反复尝试的人标出来观察,不需要再拦一次。",
+    sub: "· 升级置换套利 · 短期高频「下架置换 → 反手买入」叠加礼金/返佣的行为闭环",
+    head: ["账户", "设备", "购入时间", "产出比 / 抵扣档", "30 天置换次数", "层数命中", "动作"],
+    note: "置换阶梯由商品域 E3 配置,这里只读。单笔置换无套利面(抵扣仅结算抵减、不入余额、仅限升级更高价,平台每笔净收新款);本视图盯的是高频循环 + 礼金/返佣叠加的闭环信号,标记观察为主。",
     rows: [
-      { rid: "D-3315", cells: ["usr_3315", "Nexion One #88412", "2026-04-30", "1.3 / 6 个月", "已拦 · $0"], lvl: 2, acts: ["flag"] },
-      { rid: "D-8807", cluster: "CL-318", cells: ["usr_8807(CL-318)", "Nexion One #91230", "2026-05-12", "0.9 / 6 个月", "已拦 · $0"], lvl: 3, acts: ["freeze", "flag"] },
-      { rid: "D-2208", cells: ["usr_2208", "Pro Gen-1 #71022", "2026-03-18", "2.8 / 6 个月", "已拦 · $0"], lvl: 1, acts: ["flag"] },
+      { rid: "D-3315", cells: ["usr_3315", "NexionBox S1 #88412", "2026-04-30", "18% / 第1档 75%", "3 次"], lvl: 2, acts: ["flag"] },
+      { rid: "D-8807", cluster: "CL-318", cells: ["usr_8807(CL-318)", "NexionBox S1 #91230", "2026-05-12", "9% / 第1档 75%", "5 次"], lvl: 3, acts: ["freeze", "flag"] },
+      { rid: "D-2208", cells: ["usr_2208", "NexionBox Pro #71022", "2026-03-18", "42% / 第2档 60%", "2 次"], lvl: 1, acts: ["flag"] },
     ],
   },
   gift: {

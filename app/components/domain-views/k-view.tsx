@@ -5,7 +5,7 @@
  * 5 子页:K1 反多账户引擎 / K2 套利刷量检测 / K3 提现风控规则引擎 / K4 风险评分模型 / K5 大额 KYC 复审。
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认 + 必填原因)/ —(K 域无视图参数)。
  * 真写统一 platform-config setParam(K.cluster.* / K.arb.* / K.gift.* / K.board.* / K.rule.* / K.score.* / K.kyc.* / K.wl.* / K.k1-k5.*);
- * 单源:K_RISK / REGISTERED_USERS / USERS / WITHDRAWALS(同分派生)/ E.tradein.minHoldingMonths(E3 权威只读)。
+ * 单源:K_RISK / REGISTERED_USERS / USERS / WITHDRAWALS(同分派生)/ E.tradein.ladder.*(E3 置换阶梯,权威只读)。
  * amplifies 仅放大资金流出方向(解除误判 / 复审通过解冻 / 调阈值放宽 / 停用规则)。
  */
 import { useMemo, useState } from "react";

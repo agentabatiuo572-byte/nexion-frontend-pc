@@ -45,6 +45,10 @@
     "subsidyDays": 30,
     "exemptKinds": ["phone", "cloud-share", "pc-gpu"]
   },
+  "tradeInLadder": {
+    "cutsPct": [25, 50, 75, 100],
+    "creditsPct": [75, 60, 45, 30, 15]
+  },
   "products": {
     "stellarbox-s1": {
       "price": 649,

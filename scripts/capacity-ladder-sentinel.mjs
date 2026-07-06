@@ -49,10 +49,28 @@ if (defaults) {
     if (v === undefined) errs.push(`applyTo 缺 SKU:${kind}`);
     else if (v !== "参与递减" && v !== "免递减") errs.push(`applyTo.${kind} 值非法:${v}(须 参与递减/免递减)`);
   }
+
+  // FEAT-DEV02 置换阶梯合法性:界点严格递增且 >0;抵扣率逐档递减且 ∈(0,100];开关枚举;台数 ≥1 整数。
+  const cuts = [1, 2, 3, 4].map((i) => n(`E.tradein.ladder.cut${i}`));
+  for (let i = 0; i < cuts.length; i++) {
+    if (!(cuts[i] > 0)) errs.push(`ladder.cut${i + 1} 须 >0,got ${cuts[i]}`);
+    if (i > 0 && !(cuts[i] > cuts[i - 1])) errs.push(`阶梯界点须严格递增:cut${i}=${cuts[i - 1]} → cut${i + 1}=${cuts[i]}`);
+  }
+  const credits = [1, 2, 3, 4, 5].map((i) => n(`E.tradein.ladder.credit${i}`));
+  for (let i = 0; i < credits.length; i++) {
+    if (!(credits[i] > 0 && credits[i] <= 100)) errs.push(`ladder.credit${i + 1} 须 ∈ (0,100],got ${credits[i]}`);
+    if (i > 0 && !(credits[i] < credits[i - 1])) errs.push(`各档抵扣率须逐档递减:credit${i}=${credits[i - 1]} → credit${i + 1}=${credits[i]}`);
+  }
+  for (const k of ["E.tradein.enabled", "E.tradein.requireHigherPrice"]) {
+    const v = defaults[k];
+    if (v !== "开" && v !== "关") errs.push(`${k} 值非法:${v}(须 开/关)`);
+  }
+  const maxDev = n("E.tradein.maxDevicesPerOrder");
+  if (!(Number.isInteger(maxDev) && maxDev >= 1)) errs.push(`maxDevicesPerOrder 须 ≥1 整数,got ${defaults["E.tradein.maxDevicesPerOrder"]}`);
 }
 
 if (defaults && mock) {
-  const deviceKeys = Object.keys(defaults).filter((k) => k.startsWith("E.device."));
+  const deviceKeys = Object.keys(defaults).filter((k) => k.startsWith("E.device.") || k.startsWith("E.tradein."));
   for (const k of deviceKeys) {
     if (mock[k] === undefined) errs.push(`local-mock-backend 缺键:${k}`);
     else if (mock[k] !== defaults[k]) errs.push(`双副本漂移 ${k}: data.ts=${defaults[k]} vs mock-backend=${mock[k]}`);
@@ -60,7 +78,7 @@ if (defaults && mock) {
 }
 
 // 旧键残留扫描(app/ + lib/ 的 .ts/.tsx 源码)。
-const LEGACY = /E\.device\.(degradeEarly|degradeMid|degradeLate|minEfficiency)\b/;
+const LEGACY = /E\.device\.(degradeEarly|degradeMid|degradeLate|minEfficiency)\b|E\.tradein\.(salvagePct|minHoldingMonths)\b/;
 function walk(dir, hits) {
   for (const name of readdirSync(join(ROOT, dir))) {
     const rel = `${dir}/${name}`;
@@ -80,4 +98,4 @@ if (errs.length) {
   for (const e of errs) console.error(`  ✗ ${e}`);
   process.exit(1);
 }
-console.log(`capacity 参数 gate:合法性 ✓ · 双副本一致(${defaults ? Object.keys(defaults).filter((k) => k.startsWith("E.device.")).length : 0} 键) · applyTo 8 SKU 全覆盖 · 旧键残留 0`);
+console.log(`capacity+ladder 参数 gate:合法性 ✓ · 双副本一致(${defaults ? Object.keys(defaults).filter((k) => k.startsWith("E.device.") || k.startsWith("E.tradein.")).length : 0} 键) · applyTo 8 SKU 全覆盖 · 阶梯界点递增/抵扣率递减 ✓ · 旧键残留 0`);

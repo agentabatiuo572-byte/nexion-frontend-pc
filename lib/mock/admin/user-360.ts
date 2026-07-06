@@ -56,7 +56,7 @@ export function getUserReferral(userId: string, teamSize: number): UserReferral 
 
 // ───── 设备(读 GET /api/admin/users/:userId/devices · 写=设备 action 端点 操作确认)─────
 export type DeviceKind = "phone" | "stellarbox-s1" | "stellarbox-pro" | "stellarrack-p1" | "cloud-share";
-export interface UserDeviceRow { id: string; kind: DeviceKind; name: string; online: boolean; activatedAt: string; todayEarningsUsd: number; generation: number; gpuUsage: number; ageMonths: number; }
+export interface UserDeviceRow { id: string; kind: DeviceKind; name: string; online: boolean; activatedAt: string; todayEarningsUsd: number; gpuUsage: number; ageMonths: number; }
 const DEVS: { kind: DeviceKind; name: string; rate: number }[] = [
   // rate = 每设备日产 USDT 基准(驱动 todayEarningsUsd 展示),对齐 canon-numbers.json dailyEarn。
   { kind: "phone", name: "手机 NPU", rate: 0.06 },
@@ -69,10 +69,10 @@ export function getUserDevices(userId: string, deviceCount: number): UserDeviceR
   const rnd = seeded(userId + ":dev");
   const rows: UserDeviceRow[] = [];
   // 手机恒在(onboarding 设备),其余按 deviceCount
-  rows.push({ id: "DV-" + userId.slice(2) + "-ph", kind: "phone", name: "手机 NPU", online: rnd() < 0.7, activatedAt: dateLabel(rnd), todayEarningsUsd: +(0.04 + rnd() * 0.04).toFixed(2), generation: 1, gpuUsage: Math.floor(60 + rnd() * 35), ageMonths: 1 + Math.floor(rnd() * 5) });
+  rows.push({ id: "DV-" + userId.slice(2) + "-ph", kind: "phone", name: "手机 NPU", online: rnd() < 0.7, activatedAt: dateLabel(rnd), todayEarningsUsd: +(0.04 + rnd() * 0.04).toFixed(2), gpuUsage: Math.floor(60 + rnd() * 35), ageMonths: 1 + Math.floor(rnd() * 5) });
   for (let i = 1; i < Math.max(1, deviceCount); i++) {
     const d = DEVS[1 + Math.floor(rnd() * 3)];
-    rows.push({ id: "DV-" + userId.slice(2) + "-" + pad2(i), kind: d.kind, name: d.name, online: rnd() < 0.78, activatedAt: dateLabel(rnd), todayEarningsUsd: +(d.rate * (0.85 + rnd() * 0.3)).toFixed(2), generation: 1 + Math.floor(rnd() * 2), gpuUsage: Math.floor(70 + rnd() * 28), ageMonths: 1 + Math.floor(rnd() * 8) });
+    rows.push({ id: "DV-" + userId.slice(2) + "-" + pad2(i), kind: d.kind, name: d.name, online: rnd() < 0.78, activatedAt: dateLabel(rnd), todayEarningsUsd: +(d.rate * (0.85 + rnd() * 0.3)).toFixed(2), gpuUsage: Math.floor(70 + rnd() * 28), ageMonths: 1 + Math.floor(rnd() * 8) });
   }
   return rows;
 }

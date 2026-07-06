@@ -228,6 +228,33 @@ if (!uniLifecycle) {
   } else if (JSON.stringify(adminExempt) !== JSON.stringify(canonExempt)) {
     failures.push(`lifecycle.admin.applyTo 免递减集 [${adminExempt.join(",")}] ≠ canon exemptKinds [${canonExempt.join(",")}] (app/components/domain-views/e-tabs/data.ts)`);
   }
+
+  // FEAT-DEV02 (2026-07-06): 置换阶梯三端对账 —— uniapp TRADEIN_CREDIT_LADDER 字面量
+  // ↔ canon.tradeInLadder ↔ admin E.tradein.ladder.* 参数。界点 = uniapp 行的 maxRatioPct
+  // (末行开区间 null 不对界点,只对 credit)。
+  const uniTradein = readIfExists(path.join(UNI_ROOT, "src", "mock", "tradein-config.ts"));
+  if (!uniTradein) {
+    failures.push("sibling UniApp tradein-config source missing; cannot prove trade-in ladder canon");
+  } else {
+    const ladderRowRe = /\{\s*minRatioPct:\s*(\d+(?:\.\d+)?)\s*,\s*maxRatioPct:\s*(\d+(?:\.\d+)?|null)\s*,\s*creditPct:\s*(\d+(?:\.\d+)?)\s*\}/g;
+    const uniRows = [...uniTradein.matchAll(ladderRowRe)].map((m) => ({ max: m[2] === "null" ? null : Number(m[2]), credit: Number(m[3]) }));
+    const canonCuts = canon.tradeInLadder.cutsPct;
+    const canonCredits = canon.tradeInLadder.creditsPct;
+    if (uniRows.length !== canonCredits.length) {
+      failures.push(`tradein.uni ladder rows ${uniRows.length} ≠ canon credits ${canonCredits.length} (../Nexion-uniapp/src/mock/tradein-config.ts)`);
+    } else {
+      uniRows.forEach((r, i) => {
+        expectNumber(`tradein.uni.credit${i + 1}`, r.credit, canonCredits[i], ["../Nexion-uniapp/src/mock/tradein-config.ts"]);
+        if (i < canonCuts.length) expectNumber(`tradein.uni.cut${i + 1}`, r.max, canonCuts[i], ["../Nexion-uniapp/src/mock/tradein-config.ts"]);
+      });
+    }
+    canonCuts.forEach((cut, i) => {
+      expectNumber(`tradein.admin.cut${i + 1}`, adminNum(`E.tradein.ladder.cut${i + 1}`), cut, ["app/components/domain-views/e-tabs/data.ts"]);
+    });
+    canonCredits.forEach((credit, i) => {
+      expectNumber(`tradein.admin.credit${i + 1}`, adminNum(`E.tradein.ladder.credit${i + 1}`), credit, ["app/components/domain-views/e-tabs/data.ts"]);
+    });
+  }
 }
 
 const uniProducts = readIfExists(path.join(UNI_ROOT, "src", "mock", "products.ts"));

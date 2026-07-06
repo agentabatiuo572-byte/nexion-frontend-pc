@@ -3,7 +3,7 @@
 /**
  * K2 套利与刷量检测 — 闭环分级判定(≥2 层预警 / 3 层闭环)+ 四视图(试用循环 / 换新套利 / 新人礼刷取 / 排行榜刷榜)。
  * 分工:K2 只「标记 + 产信号」(仍需操作确认 + 强制原因);批量冻结复用 K1 操作链(K.cluster.<id>.st 同键真联动);
- * minHoldingMonths 权威归 E3(只读 pget 同源);排行榜取消资格 / 奖池剔除归 F8 执行。
+ * 置换阶梯权威归 E3(只读 pget 同源;FEAT-DEV02 最短持有闸门已删);排行榜取消资格 / 奖池剔除归 F8 执行。
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -23,8 +23,8 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const [view, setView] = useState<K2View>("trial");
   const v = K2_VIEWS[view];
 
-  // E3 权威只读:与 /devices/trade-in 同一 pget 键(同口径必同源)。
-  const minHolding = ctx.pget("E.tradein.minHoldingMonths") ?? "6";
+  // E3 权威只读:置换阶梯首档抵扣率(与 /devices/trade-in 同一 pget 键,同口径必同源)。
+  const ladderTopCredit = ctx.pget("E.tradein.ladder.credit1") ?? "75";
 
   // 新人礼发放配置(SPEC-7):与 uniapp rewards.welcomeGift 同构;文案与统计从当前值派生,禁写死金额。
   const GIFT_MODE_LABELS: Record<string, string> = { risk_bucket: "按风险桶发放", direct: "直入可提余额" };
@@ -199,9 +199,9 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">检测阈值</span>
-          <span className="sub">· 换新最短持有月数归 E3 管,这里只读引用</span>
+          <span className="sub">· 置换抵扣阶梯归 E3 管,这里只读引用(随时可置换,抵扣随产出递减)</span>
           <div className="r">
-            <Link className="kcode lock" href="/devices/trade-in" title="minHoldingMonths 权威:E3 生命周期 & Trade-in(点击跳转配置入口)">🔒 换新门槛归 E3 · 只读 {minHolding} 个月</Link>
+            <Link className="kcode lock" href="/devices/trade-in" title="置换阶梯权威:E3 任务产能节奏 & 升级置换(点击跳转配置入口)">🔒 置换阶梯归 E3 · 首档抵扣 {ladderTopCredit}%</Link>
           </div>
         </div>
         <div className="l-b">
@@ -344,7 +344,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       </section>
 
       <p className="f-foot">
-        <b>处置的分工要分清</b>:K2 只「标记 + 发信号」,动钱动账户的执行各有归属 —— 批量冻结复用 K1 的操作操作链;<b>拦截新人礼不用操作确认</b>,因为拦的是还没发出去的钱,不动任何已入账资产(要追回已发的,走用户域余额调整 C3 的操作确认流程);排行榜<b>取消资格和奖池剔除归 F8 执行</b>,这里只产信号,着急时可借 K1 冻结链路先止血。换新套利那条,服务器守卫早把残值算成 $0 拦下了,这里只是把人标出来观察。所有命中信号喂风险评分(K4)和风险雷达(B5)。
+        <b>处置的分工要分清</b>:K2 只「标记 + 发信号」,动钱动账户的执行各有归属 —— 批量冻结复用 K1 的操作链;<b>拦截新人礼不用操作确认</b>,因为拦的是还没发出去的钱,不动任何已入账资产(要追回已发的,走用户域余额调整 C3 的操作确认流程);排行榜<b>取消资格和奖池剔除归 F8 执行</b>,这里只产信号,着急时可借 K1 冻结链路先止血。换新套利那条,单笔置换本身无利可套(抵扣只抵货款、不入余额、仅限升级更高价),这里盯的是高频循环叠加礼金/返佣的闭环,标记观察为主。所有命中信号喂风险评分(K4)和风险雷达(B5)。
       </p>
       <PaginationExemptionList
         items={[

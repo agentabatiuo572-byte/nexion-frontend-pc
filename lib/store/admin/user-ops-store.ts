@@ -143,8 +143,9 @@ export const useUserOps = create<OpsStore>()(
           patch(s, userId, (u) => {
             const dev = u.devices.find((d) => d.id === deviceId);
             if (!dev) return u;
-            const devices = u.devices.map((d) => (d.id === deviceId ? { ...d, generation: d.generation + 1, gpuUsage: 90 + (d.gpuUsage % 10) } : d));
-            return withAudit({ ...u, devices }, "设备换机", `${dev.name} ${deviceId} → G${dev.generation + 1}`, "warning");
+            // FEAT-DEV02:代际概念已删——换机 = 同型号硬件置换(客服处置),不再有 G+1 语义。
+            const devices = u.devices.map((d) => (d.id === deviceId ? { ...d, gpuUsage: 90 + (d.gpuUsage % 10) } : d));
+            return withAudit({ ...u, devices }, "设备换机", `${dev.name} ${deviceId} · 更换同型号新硬件`, "warning");
           }),
         ),
 

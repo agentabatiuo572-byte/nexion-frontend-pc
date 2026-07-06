@@ -33,8 +33,10 @@ const REQUIRED_E3_KEYS = [
   "E.device.cycleMonths",
   "E.device.capacity.floorPct",
   "E.device.capacity.subsidyDays",
-  "E.tradein.salvagePct",
-  "E.tradein.minHoldingMonths",
+  "E.tradein.enabled",
+  "E.tradein.ladder.cut1",
+  "E.tradein.ladder.credit1",
+  "E.tradein.requireHigherPrice",
   "E.tradein.promoMult",
 ];
 
@@ -79,6 +81,9 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const cyc = Math.max(s2 + 1, Math.round(num(pE("E.device.cycleMonths"), 12)));
   const floorPct = Math.max(0, Math.min(99, num(pE("E.device.capacity.floorPct"), 22)));
   const exemptCount = APPLY_TO_SKUS.filter((s) => pE(`E.device.capacity.applyTo.${s.kind}`) === "免递减").length;
+  // FEAT-DEV02 置换阶梯:界点 4 + 抵扣率 5(区间左闭右开,连续性由构造保证)。
+  const ladderCuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
+  const ladderCredits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
   const curve = effCurve(early, mid, late, s1, s2, cyc, floorPct);
   const stats = e3Stats ?? { averageAgeMonths: 0, cliffDeviceCount: 0, tradeinMonthCount: 0, tradeinDiscountUsdt: 0, k2ArbitrageHits: 0 };
   const totalTxSuccess = e3Operations.reduce((sum, item) => sum + item.ok, 0);
@@ -125,7 +130,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         { k: "在网设备平均龄", v: `${num(String(stats.averageAgeMonths), 0).toFixed(1)} 月`, sub: "来自 nx_user_device" },
         { k: `m${s2 + 1}+ 晚段低产能设备`, v: countText(stats.cliffDeviceCount), sub: "进入深降段", tone: "danger" },
         { k: "Trade-in 本月", v: `${countText(stats.tradeinMonthCount)} 次`, sub: `折抵 ${moneyText(stats.tradeinDiscountUsdt)}`, tone: "cyan" },
-        { k: "K2 套利簇命中", v: `${countText(stats.k2ArbitrageHits)} 账户`, sub: "最短持有拦截", tone: "warn" },
+        { k: "K2 套利簇命中", v: `${countText(stats.k2ArbitrageHits)} 账户`, sub: "风险簇拦截", tone: "warn" },
       ]} />
 
       {/* 三段衰减曲线 hero */}
@@ -201,12 +206,26 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <div className="param-foot"><span className="ic"><AlertIcon /></span><span><b>「段3 产能变化」是高敏参数</b>:加深幅度加快置换节奏(更多 Trade-in 现金流),但晚段收益预期下挫会触发用户负面信号;放缓则延后置换、减少现金流。<b>各段月份在「产能分段周期」一行一次调齐</b>;各段行只改每月变化幅度%。<b>「新机任务补贴」是纯展示层</b>——只控制前端补贴标注窗口,结算数学始终按产能曲线连续计算。</span></div>
         </section>
 
-        {/* 右:Trade-in 置换配置 */}
+        {/* 右:升级置换阶梯(FEAT-DEV02 · 无代际,随时下架,产出阶梯抵扣) */}
         <section className="param-card">
-          <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">Trade-in 置换配置</div><div className="s">折抵定价 · 套利防控</div></div><span className="tag">E.tradein.*</span></div>
-          <div className="pkv"><Lbl zh="残值率" code="salvage" desc="置换折抵基准 · 旧机残值 = 原价 × 此比例,再与设备月龄复合衰减" /><span className="v cyan">{pE("E.tradein.salvagePct")}%</span><Adj label="残值率" k="E.tradein.salvagePct" unit="%" amplify detail="置换残值率 · 放大资金流出(更高折抵)须操作确认 + B1 覆盖率 · 改后对新报价生效" /></div>
-          <div className="pkv"><Lbl zh="残值衰减" code="decay" desc={`旧机残值随设备月龄按三段衰减 · ${cyc} 月触底`} /><span className="v" style={{ fontSize: 13, color: "var(--ink-3)" }}>随三段 · {cyc} 月</span><span /></div>
-          <div className="pkv"><Lbl zh="最短持有月数" code="minHoldingMonths" desc="套利窗口闸门 · 设备买后须满此月数才可置换,防快进快出刷折抵" hot /><span className="v warn">{pE("E.tradein.minHoldingMonths")} 月</span><Adj label="最短持有月数" k="E.tradein.minHoldingMonths" unit="月" detail="套利窗口闸门 · 调高收紧 CL-318 拦截、牺牲合法置换体验,调低放大套利风险" /></div>
+          <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">升级置换阶梯</div><div className="s">产出阶梯折抵 · 随时置换</div></div><span className="tag">E.tradein.*</span></div>
+          <div className="pkv"><Lbl zh="置换总开关" code="enabled" desc="关闭后前端全部置换入口隐藏(设备列表/结算拦截同步失效)" hot /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.enabled")}</span><Adj label="置换总开关" k="E.tradein.enabled" unit="" editKind="select" options={["开", "关"]} detail="置换总开关 · 关闭=前端全部置换入口隐藏 · 改后对新渲染生效" /></div>
+          <div className="pkv"><Lbl zh="当前阶梯一览" desc="抵扣率 = 实付价 × 档位比例;档位按「累计产出 ÷ 实付价」落档,产出越多抵扣越小" /><span className="v" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{ladderCredits.join(" / ")}%(界点 {ladderCuts.join("/")}%)</span><span /></div>
+          <div className="pkv"><Lbl zh="阶梯分档界点(4)" code="ladder.cut1–4" desc="产出比的 4 个分档界点(%)· 区间左闭右开、由构造连续无重叠" /><span className="v" style={{ fontSize: 13 }}>{ladderCuts.map((c) => `${c}%`).join(" · ")}</span><AdjMulti title="阶梯分档界点" ascending hint="按「该设备累计产出 ÷ 实付价」的百分比分 5 档:第1档 [0,界点1),第2档 [界点1,界点2)……第5档 [界点4,∞)。须严格递增。改后对新报价生效。" detail="阶梯分档界点(4 值)· server-canonical · 与前端阶梯字面量三端对账 · 改后对新报价生效" fields={[
+            { key: "cut1", paramKey: "E.tradein.ladder.cut1", label: "界点1(%)", inputKind: "number", placeholder: "25" },
+            { key: "cut2", paramKey: "E.tradein.ladder.cut2", label: "界点2(%)", inputKind: "number", placeholder: "50" },
+            { key: "cut3", paramKey: "E.tradein.ladder.cut3", label: "界点3(%)", inputKind: "number", placeholder: "75" },
+            { key: "cut4", paramKey: "E.tradein.ladder.cut4", label: "界点4(%)", inputKind: "number", placeholder: "100" },
+          ]} /></div>
+          <div className="pkv"><Lbl zh="各档抵扣率(5)" code="ladder.credit1–5" desc="5 档抵扣比例(按实付价的 %)· 须逐档递减(产出越多抵扣越小)" hot /><span className="v danger">{ladderCredits.map((c) => `${c}%`).join(" · ")}</span><AdjMulti title="各档抵扣率" amplify hint="第1档(产出比最低)抵扣最高,逐档递减到第5档(已回本)。上调任一档=放大资金流出。哨兵校验:递减、(0,100]。" detail="各档抵扣率(5 值)· 放大资金流出须操作确认 + B1 覆盖率 · 与前端阶梯字面量三端对账 · 改后对新报价生效" fields={[
+            { key: "credit1", paramKey: "E.tradein.ladder.credit1", label: "第1档 <界点1(%)", inputKind: "number", placeholder: "75" },
+            { key: "credit2", paramKey: "E.tradein.ladder.credit2", label: "第2档(%)", inputKind: "number", placeholder: "60" },
+            { key: "credit3", paramKey: "E.tradein.ladder.credit3", label: "第3档(%)", inputKind: "number", placeholder: "45" },
+            { key: "credit4", paramKey: "E.tradein.ladder.credit4", label: "第4档(%)", inputKind: "number", placeholder: "30" },
+            { key: "credit5", paramKey: "E.tradein.ladder.credit5", label: "第5档 ≥界点4(%)", inputKind: "number", placeholder: "15" },
+          ]} /></div>
+          <div className="pkv"><Lbl zh="仅限升级更高价设备" code="requireHigherPrice" desc="开=置换目标必须严格高于本机实付价(抵扣只服务升级,不做平换/降换)" /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.requireHigherPrice")}</span><Adj label="仅限升级更高价设备" k="E.tradein.requireHigherPrice" unit="" editKind="select" options={["开", "关"]} detail="仅限升级更高价设备 · 关闭后允许平换(抵扣可能逼近应付款,请先核 B1 覆盖率) · 改后对新置换请求生效" /></div>
+          <div className="pkv"><Lbl zh="单笔最多抵扣台数" code="maxDevicesPerOrder" desc="一笔升级订单最多可用几台旧机抵扣" /><span className="v">{pE("E.tradein.maxDevicesPerOrder")} 台</span><Adj label="单笔最多抵扣台数" k="E.tradein.maxDevicesPerOrder" unit="台" detail="单笔最多抵扣台数 · 改后对新置换请求生效" /></div>
           <div className="pkv"><Lbl zh="置换资格门槛" code="eligibility" desc="谁可发起置换(持有等级门槛)· 运营可调" /><span className="v" style={{ fontSize: 13, fontFamily: "var(--font-v5)", fontWeight: 500 }}>{pE("E.tradein.eligibility")}</span><Adj label="置换资格门槛" k="E.tradein.eligibility" unit="" editKind="select" options={["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"]} detail="置换资格门槛 · 谁可发起置换(持有等级)· 勾选目标等级 · 改后对新置换请求生效" /></div>
           <div className="pkv"><Lbl zh="置换活动倍率" code="promoMult" desc="置换活动加成倍率 · 改后对新报价生效" /><span className="v">{pE("E.tradein.promoMult")}×</span><Adj label="置换活动倍率" k="E.tradein.promoMult" unit="×" amplify detail="置换活动倍率 · 放大资金流出须操作确认 + B1 覆盖率 · 改后对新报价生效" /></div>
           <div className="pkv"><Lbl zh="置换弹窗节奏(5 参)" code="promo.cooldownDays / maxPerSession / delaySec / minAgeDays / routes" desc="置换升级弹窗的 冷却 / 频次 / 延迟 / 设备最低龄 / 入口路由" /><span className="v" style={{ fontSize: 13, color: "var(--ink-3)" }}>冷却{pE("E.tradein.promo.cooldownDays")}d · {pE("E.tradein.promo.maxPerSession")}/会话 · 延迟{pE("E.tradein.promo.delaySec")}s · 龄≥{pE("E.tradein.promo.minAgeDays")}d</span><AdjMulti title="置换弹窗节奏(5 参)" hint="设备龄 ≥ 最低龄后,弹窗按 冷却天数 + 每会话上限 节流,延迟 N 秒于指定入口路由展示。改后对新弹窗节奏生效。" detail="置换弹窗节奏 5 参 · server-canonical · 改后对新弹窗节奏生效" fields={[
@@ -218,8 +237,8 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           ]} /></div>
           <div className="pkv"><Lbl zh="库存软上限告警" code="inventory.softMax" desc="回收旧机库存软上限 · 超过即告警 · 0 = 禁用" /><span className="v">{pE("E.tradein.inventorySoftMax")} 台</span><Adj label="库存软上限告警" k="E.tradein.inventorySoftMax" unit="台" /></div>
           <div className="pkv"><Lbl zh="本月置换笔数" desc={`折抵总额 ${moneyText(stats.tradeinDiscountUsdt)}`} /><span className="v cyan">{countText(stats.tradeinMonthCount)}</span><span /></div>
-          <div className="pkv"><Lbl zh="K2 套利簇命中" desc="最短持有拦截" /><span className="v warn">{countText(stats.k2ArbitrageHits)}</span><span /></div>
-          <div className="param-foot cyan"><span className="ic"><ShieldIcon /></span><span><b>K2 监控</b>:「最短持有月数」是套利窗口闸门 — 调低风险簇 CL-318(短持有 → 置换 → 反手买入)放大,调高牺牲合法置换体验。「残值率」与「置换活动倍率」为<b>放大资金流出</b>动作(带 ⚡),须操作确认 + B1 覆盖率核验。</span></div>
+          <div className="pkv"><Lbl zh="K2 套利簇命中" desc="风险簇拦截" /><span className="v warn">{countText(stats.k2ArbitrageHits)}</span><span /></div>
+          <div className="param-foot cyan"><span className="ic"><ShieldIcon /></span><span><b>阶梯天然抗套利</b>:抵扣仅在结算时抵减升级应付款、<b>永不进入余额</b>,且默认仅限升级更高价设备 — 每笔置换平台都净收新款,「随时下架」无需最短持有闸门。高抵扣档(新设备早升级)正是运营期望的行为。「各档抵扣率」与「置换活动倍率」为<b>放大资金流出</b>动作(带 ⚡),须操作确认 + B1 覆盖率核验;K2 风险簇监控保留(异常批量置换仍会命中)。</span></div>
         </section>
       </div>
 

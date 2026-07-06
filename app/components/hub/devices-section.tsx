@@ -65,10 +65,10 @@ export function DevicesSection({ user }: { user: AdminUser }) {
     }
   }
   async function doSwap(d: OpsDevice) {
-    const ok = await confirm({ title: "换机?", message: `为「${d.name} ${d.id}」更换新代际硬件(G${d.generation} → G${d.generation + 1})。需填写操作理由并写入审计。`, confirmLabel: "确认换机" });
+    const ok = await confirm({ title: "换机?", message: `为「${d.name} ${d.id}」更换同型号新硬件(故障置换,原机回收翻新)。需填写操作理由并写入审计。`, confirmLabel: "确认换机" });
     if (ok) {
       deviceSwap(user.id, d.id);
-      toast.success("已换机", `${user.id} · ${d.id} → G${d.generation + 1}`);
+      toast.success("已换机", `${user.id} · ${d.id} · 硬件已更换`);
     }
   }
 
@@ -86,7 +86,7 @@ export function DevicesSection({ user }: { user: AdminUser }) {
           <table className="w-full border-collapse text-[11.5px]">
             <thead>
               <tr style={{ background: "var(--v5-surface-2)" }}>
-                {["设备", "状态", "激活", "今日产出", "代际/负载", "操作"].map((h, i) => (
+                {["设备", "状态", "激活", "今日产出", "负载", "操作"].map((h, i) => (
                   <th key={h} className="px-2.5 py-1.5 font-normal" style={{ color: "var(--v5-ink-4)", textAlign: i === 3 ? "right" : "left" }}>{h}</th>
                 ))}
               </tr>
@@ -100,7 +100,7 @@ export function DevicesSection({ user }: { user: AdminUser }) {
                   </td>
                   <td className="font-mono-tabular px-2.5 py-1.5" style={{ color: "var(--v5-ink-3)" }}>{d.activatedAt}</td>
                   <td className="font-mono-tabular px-2.5 py-1.5 text-right" style={{ color: d.online ? "var(--v5-ink)" : "var(--v5-ink-4)" }}>{fmtUsd(d.todayEarningsUsd)}</td>
-                  <td className="font-mono-tabular px-2.5 py-1.5" style={{ color: "var(--v5-ink-4)" }}>G{d.generation} · {d.gpuUsage}%</td>
+                  <td className="font-mono-tabular px-2.5 py-1.5" style={{ color: "var(--v5-ink-4)" }}>{d.gpuUsage}%</td>
                   <td className="px-2.5 py-1.5">
                     {d.recycled ? (
                       <HubActBtn label="恢复" onClick={() => doRestore(d)} />
