@@ -183,11 +183,22 @@ const adminE = read(path.join(ROOT, "app", "components", "domain-views", "e-tabs
 if (!uniLifecycle) {
   failures.push("sibling UniApp lifecycle source missing; cannot prove lifecycle canon");
 } else {
-  const uniDeg = parseNumberRecord(uniLifecycle, "DEGRADATION_PER_MONTH");
-  for (const [phase, expected] of Object.entries(canon.deviceLifecycle.degradationPerMonth)) {
-    expectNumber(`lifecycle.uni.${phase}`, uniDeg?.[phase] ?? null, expected, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
+  // FEAT-DEV01 (2026-07-06): uniapp refactored the degradation constants into
+  // the TASK_CAPACITY_BANDS literal (same numbers, task-capacity narrative).
+  // Band order maps onto early/middle/late; a band-count change must update
+  // canon-numbers.json + this mapping in the same commit.
+  const uniBandRe = /\{\s*throughMonth:\s*(?:\d+|null)\s*,\s*monthlyDeltaPct:\s*(-?\d+(?:\.\d+)?)\s*\}/g;
+  const uniBands = [...uniLifecycle.matchAll(uniBandRe)].map((m) => Number(m[1]) / 100);
+  const lifecyclePhases = Object.entries(canon.deviceLifecycle.degradationPerMonth);
+  if (uniBands.length !== lifecyclePhases.length) {
+    failures.push(`lifecycle.uni band count ${uniBands.length} ≠ canon phase count ${lifecyclePhases.length} (../Nexion-uniapp/src/store/device-lifecycle.ts)`);
+  } else {
+    lifecyclePhases.forEach(([phase, expected], i) => {
+      expectNumber(`lifecycle.uni.${phase}`, uniBands[i] ?? null, expected, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
+    });
   }
-  expectNumber("lifecycle.uni.minEfficiency", extractConstNumber(uniLifecycle, "MIN_EFFICIENCY"), canon.deviceLifecycle.minEfficiency, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
+  const uniFloorMatch = uniLifecycle.match(/CAPACITY_FLOOR\s*=\s*(\d+(?:\.\d+)?)/);
+  expectNumber("lifecycle.uni.minEfficiency", uniFloorMatch ? Number(uniFloorMatch[1]) : null, canon.deviceLifecycle.minEfficiency, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
 
   const adminDefaults = extractRecord(adminE, "E_PARAM_DEFAULTS") ?? "";
   const adminNum = (key) => {
