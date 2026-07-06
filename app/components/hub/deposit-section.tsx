@@ -49,8 +49,8 @@ export function DepositSection({ user }: { user: AdminUser }) {
         <Metric label="充值笔数" sub={`${postedN} 笔已入账`} value={`${dep.topups.length}`} />
       </div>
       <p className="mt-2 text-[11px] leading-relaxed" style={{ color: "var(--v5-ink-4)" }}>
-        <AutoGloss>累计投入仅由真实充值累加(never earnings/salvage/KYC/quest);trade-in 资格按累计投入 + E 域门槛配置评估(</AutoGloss>
-        <Link href="/devices/trade-in" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}>E5 配置<ArrowUpRight size={11} /></Link>
+        <AutoGloss>累计投入仅由真实充值累加(收益、置换抵扣、任务奖励等一律不计入);置换资格按累计投入 + E 域门槛配置评估(</AutoGloss>
+        <Link href="/devices/trade-in" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-e)" }}>E3 配置<ArrowUpRight size={11} /></Link>
         <AutoGloss>)。本卡只读,不写累计入金、不触发资格重算。</AutoGloss>
       </p>
 
