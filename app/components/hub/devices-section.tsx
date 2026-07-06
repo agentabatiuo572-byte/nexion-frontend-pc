@@ -3,7 +3,7 @@
 /**
  * 360 HUB · 设备卡(单用户算力设备 CRUD)— C1·deepening。
  * 真交互层:下线/上线/换机/回收/撤销回收 经 confirm(操作确认 确认)后**真实改 useUserOps state** → 行状态/在线数/今日产出立即更新 + 写审计流。
- * 真后台:每动作对应 server-canonical 端点(POST /api/admin/devices/{id}/{deactivate|activate|replace|recycle|restore},Idempotency-Key)。salvage 不入余额;撤销回收 = 误操作纠偏,恢复为离线。
+ * 真后台:每动作对应 server-canonical 端点(POST /api/admin/devices/{id}/{deactivate|activate|replace|recycle|restore},Idempotency-Key)。回收是客服处置,不产生抵扣/入账(用户侧置换抵扣走 E3 阶梯,仅结算抵减);撤销回收 = 误操作纠偏,恢复为离线。
  * CGM: CGM-C devices[].* / CGM-E activate/deactivate/replace/recycle。
  */
 import { useEffect, useMemo } from "react";
@@ -51,21 +51,21 @@ export function DevicesSection({ user }: { user: AdminUser }) {
     }
   }
   async function doRecycle(d: OpsDevice) {
-    const ok = await confirm({ title: "回收设备?", message: `回收「${d.name} ${d.id}」:停止产出并退出车队,salvage 残值不入余额。需填写操作理由并写入审计。`, confirmLabel: "确认回收", danger: true });
+    const ok = await confirm({ title: "回收设备?", message: `回收「${d.name} ${d.id}」:停止产出并退出车队;回收是客服处置,不产生任何抵扣或入账。操作将写入审计留痕。`, confirmLabel: "确认回收", danger: true });
     if (ok) {
       deviceRecycle(user.id, d.id);
       toast.success("设备已回收", `${user.id} · ${d.id}`);
     }
   }
   async function doRestore(d: OpsDevice) {
-    const ok = await confirm({ title: "撤销回收?", message: `撤销回收「${d.name} ${d.id}」:设备恢复为离线状态(可再上线接入车队)。需填写操作理由并写入审计。`, confirmLabel: "确认撤销回收" });
+    const ok = await confirm({ title: "撤销回收?", message: `撤销回收「${d.name} ${d.id}」:设备恢复为离线状态(可再上线接入车队)。操作将写入审计留痕。`, confirmLabel: "确认撤销回收" });
     if (ok) {
       deviceRestore(user.id, d.id);
       toast.success("已撤销回收", `${user.id} · ${d.id} · 恢复为离线`);
     }
   }
   async function doSwap(d: OpsDevice) {
-    const ok = await confirm({ title: "换机?", message: `为「${d.name} ${d.id}」更换同型号新硬件(故障置换,原机回收翻新)。需填写操作理由并写入审计。`, confirmLabel: "确认换机" });
+    const ok = await confirm({ title: "换机?", message: `为「${d.name} ${d.id}」更换同型号新硬件(故障置换,原机回收翻新)。操作将写入审计留痕。`, confirmLabel: "确认换机" });
     if (ok) {
       deviceSwap(user.id, d.id);
       toast.success("已换机", `${user.id} · ${d.id} · 硬件已更换`);

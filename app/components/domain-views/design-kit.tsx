@@ -573,7 +573,8 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean; allowEmpty?: boolean; min?: number; max?: number; gt?: number; lt?: number; maxLength?: number; disallowValues?: string[] }[] }
+  // warnAbove/warnText:非阻断危险阈值高亮(FEAT-DEV02B 异常3:超过阈值=显著放大让利,弹窗内高亮提示但不拦截,理由留痕加权)。
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean; allowEmpty?: boolean; min?: number; max?: number; gt?: number; lt?: number; maxLength?: number; disallowValues?: string[]; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -1222,6 +1223,11 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
                   onChange={(e) => set(f.key, e.target.value)}
                   placeholder={f.placeholder ?? ""}
                 />
+              )}
+              {f.warnAbove != null && Number(value[f.key]) > f.warnAbove && (
+                <span className="tiny" style={{ display: "block", marginTop: 4, color: "var(--v5-warning)", fontWeight: 600 }}>
+                  ⚠ {f.warnText ?? `已超过 ${f.warnAbove} 的建议上限`}
+                </span>
               )}
             </label>
           ))}

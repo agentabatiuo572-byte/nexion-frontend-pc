@@ -1364,7 +1364,7 @@
    "view": "k-view.tsx",
    "batch": "done",
    "storeAction": "setParam",
-   "note": "PRD K2③ 对齐;trialCycleThreshold 归属 K2/H2 待定(V4 收口),暂 K2 持有 H2 读取;minHoldingMonths 归 E3 只读(pget E.tradein.minHoldingMonths 同源 + 真 Link /devices/trade-in)"
+   "note": "PRD K2③ 对齐;trialCycleThreshold 归属 K2/H2 待定(V4 收口),暂 K2 持有 H2 读取;置换阶梯归 E3 只读(pget E.tradein.ladder.credit1 同源 + 真 Link /devices/trade-in;FEAT-DEV02 最短持有闸门已删)"
   },
   {
    "id": "OPS-K-03",

@@ -110,13 +110,13 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
   // 多字段调参:一个「调整」按钮 → 操作确认弹窗里 N 个带标签输入,每字段写各自的 param key
   // (各值独立 backend-replaceable,不挤一个框)。current 实时从 pE(paramKey) 预填。
-  type MFField = { key: string; paramKey: string; label: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean };
+  type MFField = { key: string; paramKey: string; label: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean; warnAbove?: number; warnText?: string };
   const adjMulti = (title: string, fields: MFField[], opts: { ascending?: boolean; hint?: string; amplify?: boolean; detail?: string } = {}) =>
     ctx.openActionConfirm({
       name: `${title} 调整`, op: "param-multi", amplify: opts.amplify,
       businessForm: {
         kind: "multi-field", title: `目标新值 · ${title}`, ascending: opts.ascending, hint: opts.hint,
-        fields: fields.map((f) => ({ key: f.key, label: f.label, current: pE(f.paramKey), placeholder: f.placeholder, inputKind: f.inputKind, options: f.options, wide: f.wide })),
+        fields: fields.map((f) => ({ key: f.key, label: f.label, current: pE(f.paramKey), placeholder: f.placeholder, inputKind: f.inputKind, options: f.options, wide: f.wide, warnAbove: f.warnAbove, warnText: f.warnText })),
       },
       paramKeys: fields.map((f) => ({ key: f.key, paramKey: f.paramKey })),
       detail: opts.detail ?? `${title} · server-canonical,改后对全网生效,不回溯已生效报价`,
@@ -218,16 +218,18 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             { key: "cut4", paramKey: "E.tradein.ladder.cut4", label: "界点4(%)", inputKind: "number", placeholder: "100" },
           ]} /></div>
           <div className="pkv"><Lbl zh="各档抵扣率(5)" code="ladder.credit1–5" desc="5 档抵扣比例(按实付价的 %)· 须逐档递减(产出越多抵扣越小)" hot /><span className="v danger">{ladderCredits.map((c) => `${c}%`).join(" · ")}</span><AdjMulti title="各档抵扣率" amplify hint="第1档(产出比最低)抵扣最高,逐档递减到第5档(已回本)。上调任一档=放大资金流出。哨兵校验:递减、(0,100]。" detail="各档抵扣率(5 值)· 放大资金流出须操作确认 + B1 覆盖率 · 与前端阶梯字面量三端对账 · 改后对新报价生效" fields={[
-            { key: "credit1", paramKey: "E.tradein.ladder.credit1", label: "第1档 <界点1(%)", inputKind: "number", placeholder: "75" },
-            { key: "credit2", paramKey: "E.tradein.ladder.credit2", label: "第2档(%)", inputKind: "number", placeholder: "60" },
-            { key: "credit3", paramKey: "E.tradein.ladder.credit3", label: "第3档(%)", inputKind: "number", placeholder: "45" },
-            { key: "credit4", paramKey: "E.tradein.ladder.credit4", label: "第4档(%)", inputKind: "number", placeholder: "30" },
-            { key: "credit5", paramKey: "E.tradein.ladder.credit5", label: "第5档 ≥界点4(%)", inputKind: "number", placeholder: "15" },
+            { key: "credit1", paramKey: "E.tradein.ladder.credit1", label: "第1档 <界点1(%)", inputKind: "number", placeholder: "75", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
+            { key: "credit2", paramKey: "E.tradein.ladder.credit2", label: "第2档(%)", inputKind: "number", placeholder: "60", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
+            { key: "credit3", paramKey: "E.tradein.ladder.credit3", label: "第3档(%)", inputKind: "number", placeholder: "45", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
+            { key: "credit4", paramKey: "E.tradein.ladder.credit4", label: "第4档(%)", inputKind: "number", placeholder: "30", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
+            { key: "credit5", paramKey: "E.tradein.ladder.credit5", label: "第5档 ≥界点4(%)", inputKind: "number", placeholder: "15", warnAbove: 75, warnText: "超过 75%:显著提高置换让利,确认前请核 B1 覆盖率" },
           ]} /></div>
           <div className="pkv"><Lbl zh="仅限升级更高价设备" code="requireHigherPrice" desc="开=置换目标必须严格高于本机实付价(抵扣只服务升级,不做平换/降换)" /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.requireHigherPrice")}</span><Adj label="仅限升级更高价设备" k="E.tradein.requireHigherPrice" unit="" editKind="select" options={["开", "关"]} detail="仅限升级更高价设备 · 关闭后允许平换(抵扣可能逼近应付款,请先核 B1 覆盖率) · 改后对新置换请求生效" /></div>
           <div className="pkv"><Lbl zh="单笔最多抵扣台数" code="maxDevicesPerOrder" desc="一笔升级订单最多可用几台旧机抵扣" /><span className="v">{pE("E.tradein.maxDevicesPerOrder")} 台</span><Adj label="单笔最多抵扣台数" k="E.tradein.maxDevicesPerOrder" unit="台" detail="单笔最多抵扣台数 · 改后对新置换请求生效" /></div>
           <div className="pkv"><Lbl zh="置换资格门槛" code="eligibility" desc="谁可发起置换(持有等级门槛)· 运营可调" /><span className="v" style={{ fontSize: 13, fontFamily: "var(--font-v5)", fontWeight: 500 }}>{pE("E.tradein.eligibility")}</span><Adj label="置换资格门槛" k="E.tradein.eligibility" unit="" editKind="select" options={["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"]} detail="置换资格门槛 · 谁可发起置换(持有等级)· 勾选目标等级 · 改后对新置换请求生效" /></div>
-          <div className="pkv"><Lbl zh="置换活动倍率" code="promoMult" desc="置换活动加成倍率 · 改后对新报价生效" /><span className="v">{pE("E.tradein.promoMult")}×</span><Adj label="置换活动倍率" k="E.tradein.promoMult" unit="×" amplify detail="置换活动倍率 · 放大资金流出须操作确认 + B1 覆盖率 · 改后对新报价生效" /></div>
+          <div className="pkv"><Lbl zh="置换活动倍率" code="promoMult" desc="置换活动加成倍率 · 改后对新报价生效" /><span className="v">{pE("E.tradein.promoMult")}×</span><AdjMulti title="置换活动倍率" amplify detail="置换活动倍率 · 放大资金流出须操作确认 + B1 覆盖率 · 改后对新报价生效" fields={[
+            { key: "promoMult", paramKey: "E.tradein.promoMult", label: "促销乘数(×)", inputKind: "number", placeholder: "1.0", warnAbove: 1.5, warnText: "超过 1.5×:显著放大置换让利,确认前请核 B1 覆盖率" },
+          ]} /></div>
           <div className="pkv"><Lbl zh="置换弹窗节奏(5 参)" code="promo.cooldownDays / maxPerSession / delaySec / minAgeDays / routes" desc="置换升级弹窗的 冷却 / 频次 / 延迟 / 设备最低龄 / 入口路由" /><span className="v" style={{ fontSize: 13, color: "var(--ink-3)" }}>冷却{pE("E.tradein.promo.cooldownDays")}d · {pE("E.tradein.promo.maxPerSession")}/会话 · 延迟{pE("E.tradein.promo.delaySec")}s · 龄≥{pE("E.tradein.promo.minAgeDays")}d</span><AdjMulti title="置换弹窗节奏(5 参)" hint="设备龄 ≥ 最低龄后,弹窗按 冷却天数 + 每会话上限 节流,延迟 N 秒于指定入口路由展示。改后对新弹窗节奏生效。" detail="置换弹窗节奏 5 参 · server-canonical · 改后对新弹窗节奏生效" fields={[
             { key: "cooldownDays", paramKey: "E.tradein.promo.cooldownDays", label: "冷却天数(d)", inputKind: "number", placeholder: "14" },
             { key: "maxPerSession", paramKey: "E.tradein.promo.maxPerSession", label: "每会话上限(次)", inputKind: "number", placeholder: "1" },
