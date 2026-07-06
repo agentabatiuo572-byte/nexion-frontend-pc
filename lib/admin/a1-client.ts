@@ -29,6 +29,7 @@ export interface A1RoleDefinition {
 export interface A1Operator {
   id: string;
   name: string;
+  username: string;
   email: string;
   role: string;
   tfa: boolean;
@@ -63,11 +64,22 @@ export interface A1Overview {
 }
 
 export interface A1CreateAccountInput {
+  username: string;
   displayName: string;
-  email: string;
   role: string;
-  deliver: "mail" | "handoff";
-  initialPassword?: string;
+  initialPassword: string;
+  email?: string;
+}
+
+export interface A1UpdateAccountInput {
+  username: string;
+  displayName: string;
+  email?: string;
+}
+
+export interface A1PasswordResetResult {
+  account: A1Operator;
+  temporaryPassword: string;
 }
 
 let requestSeq = 0;
@@ -125,6 +137,19 @@ export function changeA1AccountRole(
   });
 }
 
+export function updateA1AccountProfile(
+  accountId: string,
+  input: A1UpdateAccountInput,
+  reason: string,
+  operator: string,
+) {
+  return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/profile`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...input, reason, operator }),
+    idempotencyPrefix: "a1-account-profile",
+  });
+}
+
 export function updateA1AccountStatus(
   accountId: string,
   status: "enabled" | "disabled",
@@ -138,11 +163,27 @@ export function updateA1AccountStatus(
   });
 }
 
+export function deleteA1Account(accountId: string, reason: string, operator: string) {
+  return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "a1-account-delete",
+  });
+}
+
 export function resetA1Account2fa(accountId: string, reason: string, operator: string) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/reset-2fa`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
     idempotencyPrefix: "a1-reset-2fa",
+  });
+}
+
+export function resetA1AccountPassword(accountId: string, reason: string, operator: string) {
+  return a1Request<A1PasswordResetResult>(`/accounts/${encodeURIComponent(accountId)}/password/reset`, {
+    method: "POST",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "a1-reset-password",
   });
 }
 

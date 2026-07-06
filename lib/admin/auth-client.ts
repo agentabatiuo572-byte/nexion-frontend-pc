@@ -27,6 +27,7 @@ interface LoginPayload {
     operator: string;
     role: string;
     authorities?: string[];
+    passwordChangeRequired?: boolean;
   };
 }
 
@@ -69,6 +70,22 @@ export async function currentAdminSession(): Promise<LoginResult | null> {
   return normalizeLoginPayload(result.data);
 }
 
+export async function changeAdminPassword(currentPassword: string, newPassword: string): Promise<LoginResult> {
+  const response = await fetch("/api/admin/auth/password/change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currentPassword, newPassword }),
+    cache: "no-store",
+  });
+  const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
+
+  if (!response.ok || !result || result.code !== 0 || !result.data?.session) {
+    throw new Error(formatAdminApiError(result?.message, "ADMIN_PASSWORD_CHANGE_FAILED"));
+  }
+
+  return normalizeLoginPayload(result.data);
+}
+
 function normalizeLoginPayload(payload: LoginPayload): LoginResult {
   return {
     tokenType: payload.tokenType || "Bearer",
@@ -78,6 +95,7 @@ function normalizeLoginPayload(payload: LoginPayload): LoginResult {
       operator: payload.session.operator || payload.session.username,
       role: normalizeAdminRole(payload.session.role),
       authorities: payload.session.authorities ?? [],
+      passwordChangeRequired: Boolean(payload.session.passwordChangeRequired),
     },
   };
 }

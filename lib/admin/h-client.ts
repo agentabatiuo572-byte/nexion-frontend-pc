@@ -281,3 +281,45 @@ export async function deleteH7Voucher(id: string, reason: string) {
     "h7-delete",
   );
 }
+
+// ===== H3/H4 业务实体创建(后端 POST /growth/quest-events/*) =====
+
+export async function createH3Mission(mission: Record<string, any>, reason: string) {
+  return growthRequest<Record<string, any>>(
+    "/quest-events/missions",
+    { method: "POST", body: JSON.stringify({ ...mission, reason, operator: currentAdminOperator() }) },
+    "h3-mission-create",
+  );
+}
+
+export async function createH3MonthlyMission(mission: Record<string, any>, reason: string) {
+  return growthRequest<Record<string, any>>(
+    "/quest-events/monthly-missions",
+    { method: "POST", body: JSON.stringify({ ...mission, reason, operator: currentAdminOperator() }) },
+    "h3-monthly-create",
+  );
+}
+
+export async function createH4QuestEvent(event: Record<string, any>, reason: string) {
+  return growthRequest<Record<string, any>>(
+    "/quest-events/events",
+    { method: "POST", body: JSON.stringify({ ...event, reason, operator: currentAdminOperator() }) },
+    "h4-event-create",
+  );
+}
+
+export async function createH4WheelTier(tier: Record<string, any>, reason: string) {
+  return growthRequest<Record<string, any>>(
+    "/quest-events/wheel-tiers",
+    { method: "POST", body: JSON.stringify({ ...tier, reason, operator: currentAdminOperator() }) },
+    "h4-tier-create",
+  );
+}
+
+export async function createH4WheelGuard(guard: Record<string, any>, reason: string) {
+  return growthRequest<Record<string, any>>(
+    "/quest-events/wheel-guards",
+    { method: "POST", body: JSON.stringify({ ...guard, reason, operator: currentAdminOperator() }) },
+    "h4-guard-create",
+  );
+}

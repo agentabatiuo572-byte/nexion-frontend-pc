@@ -429,7 +429,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
         if (m.system) {
           return (
             <div key={`${m.ts}-${i}`} className="msg-sys">
-              {m.body} · <span className="mono">{relWhen(m.ts)}</span>
+              {m.body} · <span className="mono" suppressHydrationWarning>{relWhen(m.ts)}</span>
             </div>
           );
         }
@@ -444,7 +444,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
             <div className="msg-col">
               <div className={`msg-bubble ${isAgent ? "agent" : "user"}`}>
                 <span className="msg-text">{m.body}</span>
-                <span className="msg-time">{relWhen(m.ts)}</span>
+                <span className="msg-time" suppressHydrationWarning>{relWhen(m.ts)}</span>
               </div>
               {m.cta?.kind === "product" && (
                 <button type="button" className="cta-card" onClick={m.cta.onClick}>
@@ -536,7 +536,12 @@ export type BusinessFormSpec =
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
   | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] }
-  | { kind: "vrank-reward-edit"; subject?: string; voucherOptions?: string[]; voucherLabels?: Record<string, string>; skuOptions?: string[]; skuLabels?: Record<string, string>; currentType?: string; currentAmount?: string; currentVoucherId?: string; currentSkuId?: string; currentCustom?: string };
+  | { kind: "vrank-reward-edit"; subject?: string; voucherOptions?: string[]; voucherLabels?: Record<string, string>; skuOptions?: string[]; skuLabels?: Record<string, string>; currentType?: string; currentAmount?: string; currentVoucherId?: string; currentSkuId?: string; currentCustom?: string }
+  | { kind: "mission-create"; subject?: string }
+  | { kind: "monthly-mission-create"; subject?: string }
+  | { kind: "wheel-tier-config"; subject?: string }
+  | { kind: "wheel-guard-config"; subject?: string }
+  | { kind: "quest-event-config"; subject?: string };
 
 type BriefRow = { label: string; text: string };
 
@@ -1601,6 +1606,101 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
     );
   }
 
+  if (spec.kind === "mission-create") {
+    return (
+      <div className="field" data-business-form="mission-create">
+        <label>业务表单 · 新建任务{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("missionCode", "任务编号 code(英文唯一)", "如 dayOne-visit-earn")}
+          {input("missionName", "任务名称", "如 逛收益页")}
+          {input("rewardPoints", "奖励 NEX 数", "如 50", "number")}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          任务编号需英文/数字唯一(作为完成事件标识);奖励放大 NEX 流出,过 B1 红线。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "monthly-mission-create") {
+    return (
+      <div className="field" data-business-form="monthly-mission-create">
+        <label>业务表单 · 新建月度挑战{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("challengeCode", "编号 code(英文唯一)", "如 mc-foundation")}
+          {input("challengeName", "主题名", "如 地基建设者")}
+          {input("theme", "主题标签", "如 地基")}
+          {input("monthsFrom", "账龄起(月)", "0", "number")}
+          {input("monthsTo", "账龄止(月)", "2", "number")}
+          {input("targetType", "目标类型", "如 earn")}
+          {input("targetValue", "目标值", "200", "number")}
+          {select("rewardType", "奖励类型", ["NEX", "USDT"], "monthly-reward-type", { NEX: "NEX 代币", USDT: "USDT 现金" })}
+          {input("rewardAmount", "奖励量", "1500", "number")}
+          {input("rewardName", "奖励展示", "如 1500 NEX")}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          按账龄段派发;奖励 &gt; 0 会放大资金流出,过 B1 备付金红线。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "wheel-tier-config") {
+    return (
+      <div className="field" data-business-form="wheel-tier-config">
+        <label>业务表单 · 新建轮盘档位{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("tierName", "档位名", "如 小额奖")}
+          {input("rewardName", "奖励展示", "如 100 NEX")}
+          {input("probabilityPct", "概率%", "如 5(0-100)", "number")}
+          {select("realOutflow", "真实出金", ["0", "1"], "tier-real-outflow", { "0": "否(体验分/无流出)", "1": "是(真实出金)" })}
+          {select("rewardKind", "奖励类型", ["nex", "usdt", "voucher", "none"], "tier-reward-kind", { nex: "NEX", usdt: "USDT", voucher: "代金券", none: "无" })}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          所有档位概率之和应 = 100;真实出金档位放大资金流出,过 B1 红线。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "wheel-guard-config") {
+    return (
+      <div className="field" data-business-form="wheel-guard-config">
+        <label>业务表单 · 新建轮盘护栏{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("guardKey", "护栏 key(小写英文)", "如 budget")}
+          {input("guardLabel", "护栏名", "如 奖池预算")}
+          {input("guardValue", "默认值", "如 1000")}
+          {input("note", "说明", "如 单次抽奖预算上限")}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          护栏目录项(运行时数值仍走配置项 growth.wheel.guard.*);key 需小写英文唯一。
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "quest-event-config") {
+    return (
+      <div className="field" data-business-form="quest-event-config">
+        <label>业务表单 · 新建活动{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("id", "活动 id(英文唯一)", "如 evt-summer")}
+          {input("name", "活动名", "如 夏日狂欢")}
+          {select("kind", "类型", ["EVENT_ACTIONS", "QUEST"], "event-kind", { EVENT_ACTIONS: "行为活动", QUEST: "任务活动" })}
+          {select("state", "状态", ["ongoing", "scheduled", "ended"], "event-state", { ongoing: "进行中", scheduled: "待开始", ended: "已结束" })}
+          {input("reward", "奖励", "如 100 NEX")}
+          {input("condition", "完成条件", "如 order.paid")}
+          {select("featured", "主推", ["false", "true"], "event-featured", { "false": "否", "true": "是(唯一)" })}
+          {select("trackable", "可追踪", ["false", "true"], "event-trackable", { "false": "否", "true": "是" })}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          活动 id 英文唯一;主推需进行中且全局唯一;奖励放大流出过 B1 红线。
+        </div>
+      </div>
+    );
+  }
+
   if (spec.kind === "promo-banner-edit") {
     const final = Number(value.baseReward) * Number(value.multiplier);
     return (
@@ -2078,16 +2178,20 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   );
 }
 
-/* toast — 自包含顶部居中浮层(对应设计稿 ctx.setToast) */
+/* toast — 自包含顶部居中浮层(对应设计稿 ctx.setToast);hover 暂停自动消失,移开 2s 后再消失。 */
 export function useToast(): [ReactNode, (s: string) => void] {
   const [toast, setToast] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2800);
-    return () => clearTimeout(t);
+    timerRef.current = setTimeout(() => setToast(null), 2800);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [toast]);
   const node = toast ? (
-    <div style={{ position: "fixed", top: "calc(var(--admin-topbar-h) + 32px)", left: "50%", transform: "translateX(-50%)", zIndex: 200, width: "min(420px, calc(100vw - 40px))", justifyContent: "center", background: "var(--v5-surface-2)", color: "var(--v5-ink)", padding: "12px 20px", borderRadius: 11, fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 9, boxShadow: "0 12px 36px rgba(0,0,0,.4)", border: "1px solid var(--v5-border-strong)" }}>
+    <div
+      onMouseEnter={() => { if (timerRef.current) clearTimeout(timerRef.current); }}
+      onMouseLeave={() => { if (timerRef.current) clearTimeout(timerRef.current); timerRef.current = setTimeout(() => setToast(null), 2000); }}
+      style={{ position: "fixed", top: "calc(var(--admin-topbar-h) + 32px)", left: "50%", transform: "translateX(-50%)", zIndex: 200, width: "min(420px, calc(100vw - 40px))", justifyContent: "center", background: "var(--v5-surface-2)", color: "var(--v5-ink)", padding: "12px 20px", borderRadius: 11, fontSize: 13.5, fontWeight: 500, display: "flex", alignItems: "center", gap: 9, boxShadow: "0 12px 36px rgba(0,0,0,.4)", border: "1px solid var(--v5-border-strong)" }}>
       <Icon name="check" size={16} /> {toast}
     </div>
   ) : null;

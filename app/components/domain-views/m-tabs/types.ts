@@ -12,6 +12,10 @@ export type MCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, string>;
   setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
+  addCustomerTag: (convoId: string, tag: string) => void;
+  removeCustomerTag: (convoId: string, tag: string) => void;
+  addCustomerNote: (convoId: string, text: string) => void;
+  removeCustomerNote: (convoId: string, noteId: string) => void;
   toast: (s: string) => void;
   openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq) => void;
   openConfirm: (req: import("../k-tabs/types").ConfirmReq) => void;

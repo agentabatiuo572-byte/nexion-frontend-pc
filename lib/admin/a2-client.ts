@@ -149,6 +149,8 @@ export interface A2AuditLogRow {
   ip: string;
   result: string;
   riskLevel: string;
+  reason: string;
+  idempotencyKey?: string;
 }
 
 export interface A2Overview {
@@ -250,7 +252,9 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
   const detail = parseDetail(log.detailJson);
   const action = asText(log.action, "UNKNOWN");
   const obj = asText(detail.obj ?? detail.resource ?? log.resourceId ?? log.resourceType, "—");
-  const delta = asText(detail.delta, detail.before || detail.after ? `${asText(detail.before)} → ${asText(detail.after)}` : "—");
+  const beforeVal = detail.before ?? detail.oldValue ?? detail.beforePrice ?? detail.fromStatus ?? detail.from;
+  const afterVal = detail.after ?? detail.newValue ?? detail.afterPrice ?? detail.toStatus ?? detail.to;
+  const delta = asText(detail.delta, beforeVal != null || afterVal != null ? `${asText(beforeVal)} → ${asText(afterVal)}` : "—");
   return {
     id: String(log.id ?? `${action}-${log.createdAt ?? Date.now()}`),
     ts: asText(detail.tsLabel, formatTime(log.createdAt)),
@@ -263,6 +267,8 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
     ip: log.clientIp?.trim() || "—",
     result: log.result?.trim() || "SUCCESS",
     riskLevel: log.riskLevel?.trim() || "INFO",
+    reason: asText(detail.reason, "—"),
+    idempotencyKey: detail.idempotencyKey != null ? String(detail.idempotencyKey) : undefined,
   };
 }
 

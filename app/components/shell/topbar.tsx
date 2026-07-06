@@ -199,6 +199,7 @@ function SupportInboxPill() {
 }
 
 export function TopBar({ role, operator }: { role: AdminRole; operator: string }) {
+  const supportOnly = role === "support";
   return (
     <header
       className="flex items-center justify-between gap-4 px-5"
@@ -213,13 +214,13 @@ export function TopBar({ role, operator }: { role: AdminRole; operator: string }
         <SearchBox role={role} />
       </div>
       <div className="flex items-center gap-3">
-        <CoveragePill />
-        <span className="hidden h-4 w-px sm:block" style={{ background: "var(--v5-border)" }} />
-        <span className="hidden md:block"><SyncChip /></span>
+        {!supportOnly && <CoveragePill />}
+        {!supportOnly && <span className="hidden h-4 w-px sm:block" style={{ background: "var(--v5-border)" }} />}
+        {!supportOnly && <span className="hidden md:block"><SyncChip /></span>}
         <span className="hidden lg:block"><UtcClock /></span>
         <span className="h-4 w-px" style={{ background: "var(--v5-border)" }} />
         {canSee(role, ["support", "risk"]) && <SupportInboxPill />}
-        <NotificationBell />
+        {!supportOnly && <NotificationBell />}
         <RoleSwitcher role={role} operator={operator} />
       </div>
     </header>

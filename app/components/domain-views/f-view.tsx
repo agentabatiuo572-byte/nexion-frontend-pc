@@ -28,6 +28,7 @@ import {
   updateF4TeamConfig,
   updateF5TeamConfig,
   updateFTeamConfig,
+  updateF1TeamConfig,
   updateF1VRankReward,
   updateF1VRankThreshold,
   type F3BinaryOverview,
@@ -175,6 +176,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF1Overview(await updateF1VRankThreshold(rank, field, value, reason, ADMIN_OPERATOR()));
       setF1Error(null);
     },
+    updateF1Config: async (key, value, reason) => {
+      setF1Overview(await updateF1TeamConfig(key, value, reason, ADMIN_OPERATOR()));
+      setF1Error(null);
+    },
     rewards: f1Overview?.rewards ?? {},
     addReward: async (level, item, reason) => {
       const { id: _id, ...payload } = item;
@@ -200,12 +205,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     voucherLabels: f1Overview?.voucherLabels ?? {},
     skuOptions: f1Overview?.skuOptions ?? [],
     skuLabels: f1Overview?.skuLabels ?? {},
+    f1ConfigValues: f1Overview?.configValues ?? {},
     f2Metrics: f2Overview?.metrics ?? [],
     f2Unilevel: f2Overview?.unilevel ?? [],
     f2RateTiers: f2Overview?.rateTiers ?? [],
     f2Params: f2Overview?.params ?? [],
     f2CommissionPolicy: f2Overview?.commissionPolicy ?? {},
     f2Guardrails: f2Overview?.guardrails ?? [],
+    f2ConfigValues: f2Overview?.configValues ?? {},
     f2Loading,
     f2Error,
     refreshF2,
@@ -218,6 +225,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Settlements: f3Overview?.settlements ?? [],
     f3MaxTrackGmv: f3Overview?.maxTrackGmv ?? 1,
     f3Config: f3Overview?.config ?? null,
+    f3ConfigValues: f3Overview?.configValues ?? {},
     f3DailyCap: f3Overview?.dailyCap ?? null,
     f3ParticipantCount: f3Overview?.participantCount ?? 0,
     f3BlockedCount: f3Overview?.blockedCount ?? 0,
@@ -251,7 +259,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   // 跨域 / 跨标签跳转 CTA(放进 DomainHeader 的 right 槽,不改 DomainHeader 组件)
   const CTA: Record<string, { label: string; onClick: () => void }> = {
-    F1: { label: "领导池票数权重 →", onClick: () => setToast("跳转 F4 · 领导池票数权重") },
+    F1: { label: "领导池票数权重 →", onClick: () => { setTab("F4"); router.push("/network/leadership-pool"); setToast("已跳转 F4 · 领导池票数权重"); } },
     F2: { label: "合并出口护栏 →", onClick: () => setToast("查看合并出口护栏(§1.8)") },
     F3: { label: "B5 风险雷达 →", onClick: () => nav("B") },
     F4: { label: "F5 佣金审计 →", onClick: () => { setTab("F5"); router.push("/network/commissions"); setToast("已跳转 F5 · 佣金事件审计"); } },
@@ -291,6 +299,8 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
               await ctx.updateF3Config(mc.paramKey, newVal, reason);
             } else if (tab === "F4") {
               await ctx.updateF4Config(mc.paramKey, newVal, reason);
+            } else if (tab === "F1") {
+              await ctx.updateF1Config(mc.paramKey, newVal, reason);
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
@@ -313,7 +323,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             const summary = mc.paramKeys.map(({ key }) => String(businessValue[key] ?? "").trim()).join(" / ");
             setToast(mc.name + " 已确认生效 · " + summary);
           } else if (mc.op === "dispose" && mc.paramKey && mc.fixedVal) {
-            if (tab === "F4") {
+            if (tab === "F1") {
+              await ctx.updateF1Config(mc.paramKey, mc.fixedVal, reason);
+            } else if (tab === "F2") {
+              await ctx.updateF2Config(mc.paramKey, mc.fixedVal, reason);
+            } else if (tab === "F3") {
+              await ctx.updateF3Config(mc.paramKey, mc.fixedVal, reason);
+            } else if (tab === "F4") {
               await ctx.updateF4Config(mc.paramKey, mc.fixedVal, reason);
             } else if (tab === "F5") {
               await ctx.updateF5Config(mc.paramKey, mc.fixedVal, reason);

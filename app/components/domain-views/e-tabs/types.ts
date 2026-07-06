@@ -3,6 +3,7 @@ import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1
 import type { E2PhoneTier } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
+import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
 import type { OpsSku, OpsReview, OpsTask } from "@/lib/admin/platform-types";
 
 /**
@@ -152,4 +153,9 @@ export interface EViewCtx {
   isDcPaused: (dc: string) => boolean;
   openDatacenter: (dc?: E5Datacenter) => void;
   deleteDatacenter: (dc: E5Datacenter) => void;
+  // E6 算力与设备配置(开关/系数/显卡映射/下载内容均走后端 config API,聚合视图)
+  e6Config: E6ComputeConfigView | null;
+  e6Loading: boolean;
+  e6Error: string | null;
+  refreshE6: () => Promise<void>;
 }

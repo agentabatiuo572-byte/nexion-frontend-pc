@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 66 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;I5 并入 I4、I7 并入 I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)。
+ * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 68 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;I5 并入 I4、I7 并入 I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5;+E6 算力与设备配置)。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -105,7 +105,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "users",
     icon: Users,
     accentVar: "--admin-domain-c",
-    roles: ["support", "risk"],
+    roles: ["risk"],
     l2: [
       { id: "C1", name: "检索 & 画像", path: "/users/search", prdAnchor: "C1", batch: "V1", status: "flagship" },
       { id: "C2", name: "账户操作", path: "/users/actions", prdAnchor: "C2", batch: "V1", status: "flagship" },
@@ -136,7 +136,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "devices",
     icon: Server,
     accentVar: "--admin-domain-e",
-    roles: ["growth", "support"],
+    roles: ["growth"],
     // 设计稿收编 E1-E7 → 5 子模块并全系统统一连续编号 E1-E5:代际发布门(原 E2)并入 E1、
     // 设备生命周期(原 E4)并入 E5→现 E3。同 F 域 F1-F8→F1-F5。nav id == prdAnchor == PRD §10 章节(PRD 已同步重编号)。
     l2: [
@@ -145,6 +145,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "E3", name: "生命周期 & Trade-in", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单状态机", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
       { id: "E5", name: "设备运维", path: "/devices/ops", prdAnchor: "E5", batch: "V2", status: "flagship" },
+      { id: "E6", name: "算力与设备配置", path: "/devices/compute-config", prdAnchor: "E6", batch: "V2", status: "flagship" },
     ],
   },
   {
@@ -199,7 +200,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     slug: "content",
     icon: Megaphone,
     accentVar: "--admin-domain-i",
-    roles: ["content", "support"],
+    roles: ["content"],
     l2: [
       { id: "I1", name: "转化文案 A/B", path: "/content/copy-ab", prdAnchor: "I1", batch: "V4", status: "flagship" },
       { id: "I2", name: "Nova 推送运营", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
@@ -289,11 +290,11 @@ export function findBySlugs(domainSlug: string, moduleSlug: string): { domain: N
   return findByPath(`/${domainSlug}/${moduleSlug}`);
 }
 
-/** RBAC:superadmin 全可见;roles 省略=全可见;roles=[] 仅 superadmin;否则按包含判定。 */
+/** RBAC:superadmin 全可见;客服后台角色只看显式 support 域;roles 省略=其它角色可见;roles=[] 仅 superadmin。 */
 export function canSee(role: AdminRole, roles?: AdminRole[]): boolean {
   if (role === "superadmin") return true;
+  if (SUPPORT_ADMIN_ROLES.includes(role)) return roles?.includes("support") === true;
   if (!roles) return true;
-  if (SUPPORT_ADMIN_ROLES.includes(role) && roles.includes("support")) return true;
   return roles.includes(role);
 }
 
@@ -303,4 +304,4 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
-export const L2_COUNT = ALL_L2.length; // 66(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;I5→I4;I7→I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5)
+export const L2_COUNT = ALL_L2.length; // 68(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;I5→I4;I7→I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5;+E6 算力与设备配置)

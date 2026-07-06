@@ -33,6 +33,9 @@ function presentText(value: string, fallback = "未配置") {
   return value.trim() ? value : fallback;
 }
 
+// 领导奖池参与门槛枚举(V0 为新人,无奖池资格 → 从 V1 起)。
+const POOL_UNLOCK_OPTIONS = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12"];
+
 export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const data = ctx.f4Overview;
 
@@ -76,6 +79,27 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
   const maxVote = Math.max(1, ...data.voteWeights.map((row) => row.votes));
   const monthPoolUsd = Math.round(data.weeklyInjectedUsd * 4.33);
   const ambLocked = statusResolved(data.ambassadorStatus);
+  const settleCron = data.configValues["F.pool.settleCron"] ?? "0 23 * * 0";
+  const unlockVRank = data.configValues["F.pool.unlockVRank"] ?? "V3";
+  const lbMinUsd = data.configValues["F.leaderboard.minUsd"] ?? "1";
+  const lbPaused = (data.configValues["F.leaderboard.paused"] ?? "off") === "on";
+  const top1MaxPct = data.configValues["F.pool.top1MaxPct"] ?? "25";
+  const top5MaxPct = data.configValues["F.pool.top5MaxPct"] ?? "60";
+  // 4 周期榜单奖池(JSON today/week/month/allTime)回填解析 · 无记录用默认 5K/50K/250K/1M。
+  const periodPrizeRaw = data.configValues["F.pool.periodPrize"] ?? "";
+  let ppToday = "5000";
+  let ppWeek = "50000";
+  let ppMonth = "250000";
+  let ppAllTime = "1000000";
+  if (periodPrizeRaw) {
+    try {
+      const parsed = JSON.parse(periodPrizeRaw);
+      if (typeof parsed.today === "number") ppToday = String(parsed.today);
+      if (typeof parsed.week === "number") ppWeek = String(parsed.week);
+      if (typeof parsed.month === "number") ppMonth = String(parsed.month);
+      if (typeof parsed.allTime === "number") ppAllTime = String(parsed.allTime);
+    } catch { /* schema 异常用默认,提交时后端 validatePeriodPrize 兜底 */ }
+  }
 
   return (
     <>
@@ -114,6 +138,10 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="sect-foot">
             <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "领导池比例调整(周 GMV)", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周 GMV 注入领导池的比例 · 当前 ${ratioEff} · 放大池子流出,受 B1 约束。` })}>调整池比例</button>
             <button onClick={() => ctx.openActionConfirm({ name: "领导池月度 cap 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 当前月池约 ${usdM(monthPoolUsd)}。` })}>调整月度 cap</button>
+            <button onClick={() => ctx.openActionConfirm({ name: "池结算周期调整", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "cron 表达式" }, detail: `领导奖池自动结算的 cron 周期 · 当前 ${settleCron} · 改后对下一周期派发生效。` })}>结算周期</button>
+            <button onClick={() => ctx.openActionConfirm({ name: "池解锁等级调整", op: "param", paramKey: "F.pool.unlockVRank", edit: { kind: "select", current: unlockVRank, options: POOL_UNLOCK_OPTIONS }, detail: `领导奖池参与门槛 · 当前 ${unlockVRank}+ · 调高收紧参与人数,调低放大分润人数。` })}>解锁等级</button>
+            <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·Top1 上限调整", amplify: true, op: "param", paramKey: "F.pool.top1MaxPct", edit: { kind: "number", current: top1MaxPct, unit: "%" }, detail: `领导池 Top1 头部集中度上限 · 当前 ${top1MaxPct}% · 范围 0-100 · 调低抑制头部虹吸,受 B1 约束。` })}>Top1 集中度</button>
+            <button onClick={() => ctx.openActionConfirm({ name: "头部集中度·Top5 上限调整", amplify: true, op: "param", paramKey: "F.pool.top5MaxPct", edit: { kind: "number", current: top5MaxPct, unit: "%" }, detail: `领导池 Top5 头部集中度上限 · 当前 ${top5MaxPct}% · 范围 0-100 · 调低抑制头部虹吸,受 B1 约束。` })}>Top5 集中度</button>
           </div>
         </section>
 
@@ -177,6 +205,35 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="kv-row"><span className="k">刷榜命中 · K2</span><span className="v" style={{ color: "var(--danger)" }}>{lbDq ? "已处置" : `${data.leaderboardFraudHitCount} 账户`}</span></div>
           <div className="sect-foot">
             <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "本期榜单奖池调整", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd", edit: { kind: "text", current: data.leaderboardPoolLabel }, detail: `本期榜单奖池总额 · 当前 ${lbPool} · 放大奖池流出,受 B1 约束。` })}>调整奖池</button>
+            <button onClick={() => ctx.openActionConfirm({ name: "榜单最小额调整", op: "param", paramKey: "F.leaderboard.minUsd", edit: { kind: "number", current: lbMinUsd, unit: "USD" }, detail: `上榜最低佣金门槛 · 当前 $${lbMinUsd} · 低于此额不计入榜单排名。` })}>榜单最小额</button>
+            <button className={lbPaused ? "primary" : "danger"} onClick={() => ctx.openActionConfirm({ name: lbPaused ? "恢复排行榜派发" : "暂停排行榜派发", op: "dispose", paramKey: "F.leaderboard.paused", fixedVal: lbPaused ? "off" : "on", detail: lbPaused ? "恢复排行榜 · 下期起正常结算榜单奖池与名次,写 A2 审计。" : "暂停排行榜 · 本期榜单冻结,不派发奖池,已计名次保留,写 A2 审计。" })}>{lbPaused ? "恢复榜单" : "暂停榜单"}</button>
+            <button className="primary amp" onClick={() => ctx.openActionConfirm({
+              name: "4 周期榜单奖池调整", amplify: true,
+              businessForm: {
+                kind: "multi-field",
+                title: "4 周期榜单奖池(USD)",
+                hint: "today/week/month/allTime 四周期榜单奖池 · 各须为非负数字 · 放大池子流出受 B1 约束。",
+                fields: [
+                  { key: "today", label: "日榜奖池(USD)", current: ppToday, inputKind: "number", min: 0 },
+                  { key: "week", label: "周榜奖池(USD)", current: ppWeek, inputKind: "number", min: 0 },
+                  { key: "month", label: "月榜奖池(USD)", current: ppMonth, inputKind: "number", min: 0 },
+                  { key: "allTime", label: "总榜奖池(USD)", current: ppAllTime, inputKind: "number", min: 0 },
+                ],
+              },
+              detail: `4 周期榜单奖池 · 当前 日${ppToday}/周${ppWeek}/月${ppMonth}/总${ppAllTime} · 放大池子流出,受 B1 覆盖率约束。`,
+              run: async (reason, bv) => {
+                if (!bv) throw new Error("请填写全部 4 个周期");
+                const today = Number(bv.today);
+                const week = Number(bv.week);
+                const month = Number(bv.month);
+                const allTime = Number(bv.allTime);
+                if (![today, week, month, allTime].every(Number.isFinite) || [today, week, month, allTime].some((n) => n < 0)) {
+                  throw new Error("四个周期奖池均须为非负数字");
+                }
+                await ctx.updateF4Config("F.pool.periodPrize", JSON.stringify({ today, week, month, allTime }), reason);
+                ctx.toast(`4 周期榜单奖池已确认生效 · 日${today}/周${week}/月${month}/总${allTime}`);
+              },
+            })}>4 周期奖池</button>
             <button className="danger" disabled={lbDq} onClick={() => ctx.openActionConfirm({ name: "排行榜取消资格(反欺诈)", op: "dispose", paramKey: "F.leaderboard.period.status", fixedVal: "disqualified", status: "disqualified", detail: "对刷榜账户取消本期资格 · 剔除其榜单名次与奖池分配 · 写 A2 审计。" })}>取消资格 · 反欺诈</button>
           </div>
         </section>

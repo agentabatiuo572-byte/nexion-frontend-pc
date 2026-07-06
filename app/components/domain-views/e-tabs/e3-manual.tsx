@@ -1,7 +1,7 @@
 /**
  * E3 设备生命周期 & 以旧换新 — 运营操作说明手册(右上角「操作说明手册」按钮弹出)。
  * 面向初级运营者:本页是什么、怎么读衰减曲线、每个参数调高/调低的业务影响、怎么调整一个参数
- * (单值输入原理 + 各段月份在哪改)、高敏参数与 B1 资金护栏、Trade-in 术语中英对照、原子换机事务。
+ * (单值输入原理 + 各段月份在哪改)、高敏参数与 B1 资金护栏、换机 术语中英对照、原子换机事务。
  * 当前值经 ctx.pE 实时读出(server-canonical 配置),手册随后台配置同步,不写死。
  */
 import type { ReactNode } from "react";
@@ -43,7 +43,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
     { zh: "置换活动倍率", code: "promoMult", cur: `${promoMult}×`, up: "活动加成更高 → 置换冲动更强(放大资金流出)", down: "加成回落 → 置换回归常态" },
   ];
 
-  // Trade-in 术语中英对照(呼应右栏「置换配置」中文化)。
+  // 换机 术语中英对照(呼应右栏「置换配置」中文化)。
   const TERMS: { code: string; zh: string; note: string }[] = [
     { code: "salvage", zh: "残值率", note: "旧机折抵的基准比例(原价 × 此比例,再随月龄衰减)" },
     { code: "decay", zh: "残值衰减", note: "残值随设备月龄按三段递减,触底归零" },
@@ -59,7 +59,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
       footer={null}>
       <div className="e3man">
         <p className="e3man-lead">
-          本页(<b>E3</b>)管两套相互咬合的规则:<b>设备效率随月衰减的曲线</b> + <b>旧机折价抵扣换新机(Trade-in)的规则</b>。
+          本页(<b>E3</b>)管两套相互咬合的规则:<b>设备效率随月衰减的曲线</b> + <b>旧机折价抵扣换新机(换机)的规则</b>。
           两者共同决定用户的「换机节奏」——晚期断崖把用户推向置换决策点,残值率决定置换的吸引力。
           所有参数 <AutoGloss>server-canonical</AutoGloss>,改动经<AutoGloss>操作确认</AutoGloss>后即对全网新报价 / 估值器生效(<b>不回溯已生效报价</b>)。
         </p>
@@ -110,7 +110,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
           </p>
         </Sec>
 
-        <Sec n="5" title="Trade-in 置换配置 · 术语中英对照">
+        <Sec n="5" title="换机 置换配置 · 术语中英对照">
           <div className="e3man-terms">
             {TERMS.map((t) => (
               <div key={t.code} className="e3man-term">
@@ -123,9 +123,9 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
 
         <Sec n="6" title="原子换机事务(回收 / 置换 / 停用)">
           <ul className="e3man-ul">
-            <li>三类换机(recycle / replace / deactivate)走 server <b>单事务</b>:任一步失败<b>全<AutoGloss>回滚</AutoGloss></b>(设备数组 + 余额 + bill),防止 half-completed。</li>
+            <li>三类换机(recycle / replace / deactivate)走后端 <b>单事务</b>:任一步失败<b>全<AutoGloss>回滚</AutoGloss></b>(设备数组 + 余额 + 账单),防止半完成。</li>
             <li><AutoGloss>salvage</AutoGloss> <b>仅抵新机货款、不入可提余额</b>(资金不变量);<b>month{cyc} 残值归零</b>后只能退役。</li>
-            <li>页面底部「原子换机 tx 监控」看 24h 成功 / 失败 / 回滚;失败样本可跳 D4 bill 查轨迹。</li>
+            <li>页面底部「原子换机事务监控」看 24h 成功 / 失败 / 回滚;失败样本可跳 D4 账单查轨迹。</li>
           </ul>
         </Sec>
       </div>

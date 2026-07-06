@@ -740,9 +740,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     return {
       v,
       selfBuy: optionalText(row.selfBuy),
-      directRefs: optionalText(row.directRefs),
+      directRefs: row.directRefs == null ? undefined : String(row.directRefs),
       teamGv: optionalText(row.teamGv),
-      legCount: optionalText(row.legCount),
+      legCount: row.legCount == null ? undefined : String(row.legCount),
       legRank: optionalText(row.legRank),
       pop: toNumber(row.pop),
       rewards: rowRewards,
@@ -1077,6 +1077,16 @@ export async function updateFTeamConfig(key: string, value: string, reason: stri
     idempotencyPrefix: `f-config-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
   });
   return fetchF2RatesOverview();
+}
+
+// F1 V-Rank 展示文案类配置(头衔/奖品名等)统一走 /commissions/config/{key},写后刷新 F1 overview。
+export async function updateF1TeamConfig(key: string, value: string, reason: string, operator: string) {
+  await f1Request<unknown>(`/commissions/config/${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ value, reason, operator }),
+    idempotencyPrefix: `f1-config-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
+  });
+  return fetchF1VRankOverview();
 }
 
 export async function updateF3TeamConfig(key: string, value: string, reason: string, operator: string) {

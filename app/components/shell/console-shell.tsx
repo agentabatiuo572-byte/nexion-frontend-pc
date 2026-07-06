@@ -8,7 +8,9 @@
  * mount 前只渲染登录壳,避免用客户端默认角色渲染后台内容。
  */
 import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { currentAdminSession } from "@/lib/admin/auth-client";
+import { canSee, CONSOLE_NAV, type AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useAdminUi } from "@/lib/store/admin-ui";
 import { Sidebar } from "./sidebar";
@@ -16,10 +18,25 @@ import { TopBar } from "./topbar";
 import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 
+const SUPPORT_HOME_PATH = "/service/overview";
+
+function defaultPathForRole(role: AdminRole) {
+  return CONSOLE_NAV.find((domain) => canSee(role, domain.roles))?.l2[0]?.path ?? "/";
+}
+
+function canAccessConsolePath(role: AdminRole, pathname: string | null) {
+  const path = pathname || "/";
+  if (path === "/") return true;
+  const domain = CONSOLE_NAV.find((item) => path === `/${item.slug}` || path.startsWith(`/${item.slug}/`));
+  return !domain || canSee(role, domain.roles);
+}
+
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [restoreChecked, setRestoreChecked] = useState(false);
   useEffect(() => setMounted(true), []);
+  const pathname = usePathname();
+  const router = useRouter();
 
   const isAuthenticated = useAdminAuth((s) => s.isAuthenticated);
   const authRole = useAdminAuth((s) => s.role);
@@ -59,6 +76,27 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const operator = mounted ? operatorRaw : "总管理员";
   const collapsed = mounted ? collapsedRaw : false;
   const expanded = mounted ? expandedRaw : ["B"];
+  const shouldRedirectHome = role === "support" && pathname === "/";
+  const shouldRedirectForbidden = !canAccessConsolePath(role, pathname);
+  const redirecting = isAuthenticated && (shouldRedirectHome || shouldRedirectForbidden);
+
+  useEffect(() => {
+    if (!mounted || !isAuthenticated) return;
+    if (shouldRedirectHome) {
+      router.replace(SUPPORT_HOME_PATH);
+      return;
+    }
+    if (shouldRedirectForbidden) {
+      router.replace(defaultPathForRole(role));
+    }
+  }, [
+    isAuthenticated,
+    mounted,
+    role,
+    router,
+    shouldRedirectForbidden,
+    shouldRedirectHome,
+  ]);
 
   if (!mounted) return <LoginGate />;
 
@@ -93,7 +131,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         }}
       >
         <div className="content-shell">
-          <PageTransition>{children}</PageTransition>
+          <PageTransition>{redirecting ? null : children}</PageTransition>
         </div>
       </main>
     </div>

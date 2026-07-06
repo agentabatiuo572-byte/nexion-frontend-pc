@@ -806,13 +806,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             </div>
             <div className="l-b" style={{ padding: 0 }}>
               <div className="kv"><span className="k">操作者 / 角色</span><span className="v">{l.actor} · {l.role}</span></div>
-              <div className="kv"><span className="k">时间(毫秒级)</span><span className="v mono">{l.ts} · ts 1781234567890</span></div>
+              <div className="kv"><span className="k">时间</span><span className="v mono">{l.ts}</span></div>
               <div className="kv"><span className="k">对象</span><span className="v">{l.obj}</span></div>
               <div className="kv"><span className="k">前值 → 后值</span><span className="v mono">{l.delta}</span></div>
-              <div className="kv"><span className="k">原因</span><span className="v">(发起时必填,原样留存)</span></div>
+              <div className="kv"><span className="k">原因</span><span className="v">{l.reason || "—"}</span></div>
               <div className="kv"><span className="k">IP</span><span className="v mono">{l.ip}</span></div>
               <div className="kv"><span className="k">操作 / 留痕</span><span className="v">{l.actor} / 对应角色或超管</span></div>
-              <div className="kv"><span className="k">防重号</span><span className="v mono">{needIdem ? "idem-… (资金类必带)" : "—(非资金类)"}</span></div>
+              <div className="kv"><span className="k">防重号</span><span className="v mono">{l.idempotencyKey || (needIdem ? "idem-… (资金类)" : "—")}</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
               隐私字段(手机号/地址)在事件里只存哈希或 ID,导出时再脱敏一层。

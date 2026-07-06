@@ -157,6 +157,7 @@ export async function provisionAccounts(api: APIRequestContext, accounts: ShiftA
   for (const accountDef of accounts) {
     const response = await api.post("/api/admin/platform/accounts", {
       data: {
+        username: accountDef.username,
         displayName: accountDef.label,
         email: accountDef.email,
         role: "super",

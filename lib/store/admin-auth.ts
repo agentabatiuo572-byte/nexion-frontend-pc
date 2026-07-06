@@ -7,6 +7,7 @@ export interface AdminSession {
   operator: string;
   role: AdminRole;
   authorities: string[];
+  passwordChangeRequired?: boolean;
 }
 
 interface AdminAuthState {
@@ -27,7 +28,7 @@ export const useAdminAuth = create<AdminAuthState>()((set) => ({
   session: null,
   signIn: ({ tokenType, session }) =>
     set({
-      isAuthenticated: true,
+      isAuthenticated: !session.passwordChangeRequired,
       operator: session.operator,
       role: session.role,
       tokenType,

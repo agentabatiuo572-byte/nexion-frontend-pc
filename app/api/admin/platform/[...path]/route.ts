@@ -38,11 +38,20 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "accounts") {
     return "/api/admin/platform/accounts";
   }
+  if (parts.length === 2 && parts[0] === "accounts" && isNonEmpty(parts[1])) {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}`;
+  }
   if (parts.length === 3 && parts[0] === "accounts" && isNonEmpty(parts[1]) && (parts[2] === "role" || parts[2] === "status")) {
     return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/${parts[2]}`;
   }
+  if (parts.length === 3 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "profile") {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/profile`;
+  }
   if (parts.length === 3 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "reset-2fa") {
     return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/reset-2fa`;
+  }
+  if (parts.length === 4 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "password" && parts[3] === "reset") {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/password/reset`;
   }
   if (parts.length === 4 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "sessions" && parts[3] === "revoke") {
     return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/sessions/revoke`;

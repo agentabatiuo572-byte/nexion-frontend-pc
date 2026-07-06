@@ -8,6 +8,11 @@ import {
   updateH4EventFeatured,
   updateH4EventReward,
   updateH4EventStatus,
+  createH3Mission,
+  createH3MonthlyMission,
+  createH4QuestEvent,
+  createH4WheelTier,
+  createH4WheelGuard,
 } from "@/lib/admin/h-client";
 import type { HCtx } from "./types";
 
@@ -226,6 +231,117 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     });
   };
 
+  const openCreateMission = (missionType: "DAY_ONE" | "WEEKLY_T1" | "WEEKLY_T2", subject: string) => {
+    openActionConfirm({
+      action: `新建任务 · ${subject}`,
+      detail: <>新建一条{subject};编号英文唯一,奖励放大 NEX 流出过 B1 红线。</>,
+      amplifies: true,
+      businessForm: { kind: "mission-create", subject },
+      run: async (reason, _v, bv) => {
+        if (!bv) return;
+        const missionCode = String(bv.missionCode || "").trim();
+        const missionName = String(bv.missionName || "").trim();
+        if (!missionCode || !missionName) return;
+        apply(await createH3Mission({ missionCode, missionName, missionType, rewardPoints: Number(bv.rewardPoints) || 0 }, reason));
+        toast(`· 任务「${missionName}」已新建`);
+      },
+    });
+  };
+
+  const openCreateMonthlyMission = () => {
+    openActionConfirm({
+      action: "新建月度挑战",
+      detail: <>新建月度挑战主题;按账龄段派发,奖励 &gt; 0 过 B1 红线。</>,
+      amplifies: true,
+      businessForm: { kind: "monthly-mission-create", subject: "新月度挑战" },
+      run: async (reason, _v, bv) => {
+        if (!bv) return;
+        const payload = {
+          challengeCode: String(bv.challengeCode || "").trim(),
+          challengeName: String(bv.challengeName || "").trim(),
+          theme: String(bv.theme || "").trim(),
+          monthsFrom: Number(bv.monthsFrom) || 0,
+          monthsTo: Number(bv.monthsTo) || 999,
+          targetType: String(bv.targetType || "").trim(),
+          targetValue: Number(bv.targetValue) || 1,
+          rewardType: bv.rewardType || "NEX",
+          rewardAmount: Number(bv.rewardAmount) || 0,
+          rewardName: String(bv.rewardName || "").trim(),
+        };
+        if (!payload.challengeCode || !payload.challengeName) return;
+        apply(await createH3MonthlyMission(payload, reason));
+        toast(`· 月度挑战「${payload.challengeName}」已新建`);
+      },
+    });
+  };
+
+  const openCreateEvent = () => {
+    openActionConfirm({
+      action: "新建活动",
+      detail: <>新建活动事件;id 英文唯一,主推需进行中且全局唯一。</>,
+      amplifies: true,
+      businessForm: { kind: "quest-event-config", subject: "新活动" },
+      run: async (reason, _v, bv) => {
+        if (!bv) return;
+        const payload = {
+          id: String(bv.id || "").trim(),
+          name: String(bv.name || "").trim(),
+          kind: bv.kind || "EVENT_ACTIONS",
+          state: bv.state || "ongoing",
+          reward: String(bv.reward || "").trim(),
+          condition: String(bv.condition || "").trim(),
+          featured: bv.featured === "true",
+          trackable: bv.trackable === "true",
+        };
+        if (!payload.id || !payload.name) return;
+        apply(await createH4QuestEvent(payload, reason));
+        toast(`· 活动「${payload.name}」已新建`);
+      },
+    });
+  };
+
+  const openCreateWheelTier = () => {
+    openActionConfirm({
+      action: "新建轮盘档位",
+      detail: <>新建抽奖档位;概率 0-100,所有档位概率和应=100,真实出金过 B1 红线。</>,
+      amplifies: true,
+      businessForm: { kind: "wheel-tier-config", subject: "新档位" },
+      run: async (reason, _v, bv) => {
+        if (!bv) return;
+        const payload = {
+          tierName: String(bv.tierName || "").trim(),
+          rewardName: String(bv.rewardName || "").trim(),
+          probabilityPct: Number(bv.probabilityPct) || 0,
+          realOutflow: bv.realOutflow === "1" ? 1 : 0,
+          rewardKind: bv.rewardKind || "nex",
+        };
+        if (!payload.tierName || !payload.rewardName) return;
+        apply(await createH4WheelTier(payload, reason));
+        toast(`· 档位「${payload.tierName}」已新建`);
+      },
+    });
+  };
+
+  const openCreateWheelGuard = () => {
+    openActionConfirm({
+      action: "新建轮盘护栏",
+      detail: <>新建轮盘护栏目录项;key 小写英文唯一。</>,
+      businessForm: { kind: "wheel-guard-config", subject: "新护栏" },
+      run: async (reason, _v, bv) => {
+        if (!bv) return;
+        const payload = {
+          guardKey: String(bv.guardKey || "").trim(),
+          guardLabel: String(bv.guardLabel || "").trim(),
+          guardValue: String(bv.guardValue || "").trim(),
+          note: String(bv.note || "").trim(),
+        };
+        if (!payload.guardKey || !payload.guardLabel) return;
+        apply(await createH4WheelGuard(payload, reason));
+        toast(`· 护栏「${payload.guardLabel}」已新建`);
+      },
+    });
+  };
+
   if (loading) {
     return <section className="l-card"><div className="l-b">{moduleLabel} 数据加载中...</div></section>;
   }
@@ -316,6 +432,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日三相奖励", text(model.dayOneTriReward), true)}>
                 调整奖励
               </button>
+              <button className="l-btn sm mc" onClick={() => openCreateMission("DAY_ONE", "首日任务")}>+ 新建任务</button>
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -392,6 +509,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="l-h">
             <span className="ttl">每周任务(两档 + 周冠军)</span>
             <span className="sub">· 按周键确定性派发 · 同周锁定 · 改动下周生效</span>
+            <div className="r">
+              <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T1", "每周一档")}>+ 新建一档</button>
+              <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T2", "每周二档")}>+ 新建二档</button>
+            </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             <div className="l-h" style={{ marginTop: 2, border: 0, paddingBottom: 0 }}>
@@ -551,6 +672,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         <div className="l-h">
           <span className="ttl">月度挑战(按账龄派发)</span>
           <span className="sub">· 每主题 3 个子目标全达成才可领 · 跨月清空重派</span>
+          <div className="r">
+            <button className="l-btn sm mc" onClick={() => openCreateMonthlyMission()}>+ 新建月度挑战</button>
+          </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 680 }}>
@@ -675,6 +799,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <div className="l-h">
             <span className="ttl">活动列表(玩法闭集 8 种 · 当前演示 {model.events.length} 条)</span>
             <span className="sub">· 主推位同时只能有一个 · 时间全按 UTC</span>
+            <div className="r">
+              <button className="l-btn sm mc" onClick={() => openCreateEvent()}>+ 新建活动</button>
+            </div>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 640 }}>
@@ -751,6 +878,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <button className="l-btn mc" onClick={() => openSimpleConfig("wheel.pool", "转盘奖池签名", text(model.wheelSignature), true)}>
                 改奖池 / 概率
               </button>
+              <button className="l-btn sm mc" onClick={() => openCreateWheelTier()}>+ 新建档位</button>
+              <button className="l-btn sm mc" onClick={() => openCreateWheelGuard()}>+ 新建护栏</button>
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>

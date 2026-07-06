@@ -8,7 +8,6 @@
  * 主动发起会话(人群投放) / 转工单 走操作确认 + 理由。续聊恢复后刷新仍回上次会话。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -29,8 +28,9 @@ import {
 import { ConvStat, Empty, MAvatar, ownerLabel, relWhen } from "./hd-ui";
 import { InitiateModal, QuickActionModal, ReturnModal, TransferModal, type InitiatePayload, type ReturnPayload, type TransferPayload } from "./m3-modals";
 import type { MCtx } from "./types";
-import type { MSupportAgent } from "@/lib/admin/m-client";
-import { fetchE1Catalog, type E1CatalogSnapshot } from "@/lib/admin/e1-client";
+import { fetchMSupportWorkbenchSkus, type MSupportAgent } from "@/lib/admin/m-client";
+import type { OpsSku } from "@/lib/admin/platform-types";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const CONVO_KEY = "I.session.convos";
 const TICKET_KEY = "I.support.tickets";
@@ -45,7 +45,7 @@ const FALLBACK_KEY = "I.session.workbench.timeoutFallback"; // 工作台「转�
 const INBOX_PAGE_SIZE = 8; // 会话收件箱每页条数(翻页器)
 
 type PushSku = { id: string; title: string; subtitle: string; to: string };
-type PushSkuSource = E1CatalogSnapshot["skus"][number];
+type PushSkuSource = OpsSku;
 
 type ConvSeg = "all" | "unread" | "incoming" | "active" | "resolved" | "archived";
 const SEGS: Array<[ConvSeg, string]> = [
@@ -106,32 +106,35 @@ function toPushSku(sku: PushSkuSource): PushSku {
   return {
     id: sku.id || sku.name,
     title: sku.name || sku.id || "未命名 SKU",
-    subtitle: subtitle || "E1 商品目录",
+    subtitle: subtitle || "客服工作台商品",
     to: "/store",
   };
 }
 
 export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
-  const router = useRouter();
 
   const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), [])), [ctx.params, pget]);
   const advisorScripts = useMemo(() => parseParamArray<AdvisorScript>(pget(SCRIPT_LIST_KEY), []), [ctx.params, pget]);
   const replyTemplates = useMemo(() => parseParamArray<SessionReplyTpl>(pget(REPLY_TEMPLATE_LIST_KEY), []), [ctx.params, pget]);
   const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
   const transferTargets = useMemo(() => parseParamArray<Record<string, unknown>>(pget(TRANSFER_TARGETS_KEY), []), [ctx.params, pget]);
+  // 发起身份:锁定当前登录客服的坐席身份(adminId 匹配)。登录者是坐席 → 只能以自己身份发起;
+  // 登录者无坐席记录(如 superadmin 主管) → fallback 列全部启用坐席,支持代发。
+  const currentAdminId = useAdminAuth((s) => s.session?.adminId);
   const initiateIdentities = useMemo<InitiateIdentity[]>(() => {
-    return supportAgents
-      .filter((agent) => agent.enabled)
-      .flatMap((agent) =>
-        agent.serviceTypes.map((type) => ({
-          id: `${agent.id}:${type}`,
-          name: agent.name,
-          type,
-          label: type === "advisor" ? "专属顾问" : "普通客服",
-        })),
-      );
-  }, [supportAgents]);
+    const enabled = supportAgents.filter((agent) => agent.enabled);
+    const mine = enabled.filter((agent) => agent.adminId === currentAdminId);
+    const source = mine.length > 0 ? mine : enabled;
+    return source.flatMap((agent) =>
+      agent.serviceTypes.map((type) => ({
+        id: `${agent.id}:${type}`,
+        name: agent.name,
+        type,
+        label: type === "advisor" ? "专属客服" : "普通客服",
+      })),
+    );
+  }, [supportAgents, currentAdminId]);
   const transferAgents = useMemo(
     () => supportAgents.filter((agent) => agent.enabled && agent.transferable && !agent.busy).map((agent) => ({ id: agent.id, name: agent.name, position: agent.position })),
     [supportAgents],
@@ -166,16 +169,14 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [selectedId, setSelectedId] = useState(() => pget(LAST_CONVO_KEY) ?? convos[0]?.id ?? "cv-advisor-1");
   const [replyBody, setReplyBody] = useState("");
   const [quick, setQuick] = useState<"history" | "tickets" | "resetpw" | "account" | "note" | null>(null);
-  // 查看完整客户档案 → 跳 C1 用户 360 页(复用全部内容);占位档案(uid 非 U-)给 toast 不跳。
-  const openFullProfile = () => {
-    const uid = selected?.profile?.uid;
-    if (uid && uid.startsWith("U-")) router.push(`/users/search/${uid}`);
-    else toast("该会话客户档案待补全,暂无法打开 360 页");
-  };
   const [showInitiate, setShowInitiate] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false); // 转交弹窗
   const [showReturn, setShowReturn] = useState(false);     // 手动退回弹窗
   const [profilePeek, setProfilePeek] = useState(false); // 窄屏右栏抽屉开关
+  const openFullProfile = () => {
+    setProfilePeek(true);
+    toast("客户信息已在右侧客服档案面板展示");
+  };
   const [pushSkus, setPushSkus] = useState<PushSku[]>([]);
   const [pushSkuLoading, setPushSkuLoading] = useState(true);
   const [pushSkuError, setPushSkuError] = useState<string | null>(null);
@@ -183,10 +184,10 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   useEffect(() => {
     let active = true;
     setPushSkuLoading(true);
-    fetchE1Catalog()
-      .then((snapshot) => {
+    fetchMSupportWorkbenchSkus()
+      .then((skus) => {
         if (!active) return;
-        setPushSkus(snapshot.skus.filter((sku) => sku.status !== "off").map(toPushSku));
+        setPushSkus(skus.filter((sku) => sku.status !== "off").map(toPushSku));
         setPushSkuError(null);
       })
       .catch((error: unknown) => {
@@ -480,26 +481,24 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
 
   const addNote = (text: string) => {
     if (!selected?.profile || !text.trim()) return;
-    const author = ownerName === "Unassigned" ? "客服坐席" : ownerName;
-    const note: CustomerNote = { id: `NT-${Date.now()}`, ts: Date.now(), author, text: text.trim() };
-    updateConvo(selected.id, (c) => (c.profile ? { ...c, profile: { ...c.profile, notes: [note, ...(c.profile.notes ?? [])] } } : c), "客户备注新增(例行)", `客户备注新增 ${selected.id} · admin.customer_note_added`);
+    ctx.addCustomerNote(selected.id, text.trim());
     toast("客户备注已保存");
   };
   const removeNote = (noteId: string) => {
     if (!selected?.profile) return;
-    updateConvo(selected.id, (c) => (c.profile ? { ...c, profile: { ...c.profile, notes: (c.profile.notes ?? []).filter((n) => n.id !== noteId) } } : c), "客户备注删除(例行)", `客户备注删除 ${selected.id} · admin.customer_note_removed`);
+    ctx.removeCustomerNote(selected.id, noteId);
     toast("客户备注已删除");
   };
   const addCustomerTag = (tag: string) => {
     if (!selected?.profile || !tag.trim()) return;
     const t = tag.trim();
-    if (selected.profile.tags.includes(t)) return;
-    updateConvo(selected.id, (c) => (c.profile ? { ...c, profile: { ...c.profile, tags: [...c.profile.tags, t] } } : c), "客户标签新增(例行)", `客户标签新增 ${selected.id} · admin.customer_tag_added`);
+    if (selected.profile.customTags.includes(t)) return;
+    ctx.addCustomerTag(selected.id, t);
     toast(`已加标签「${t}」`);
   };
   const removeCustomerTag = (tag: string) => {
     if (!selected?.profile) return;
-    updateConvo(selected.id, (c) => (c.profile ? { ...c, profile: { ...c.profile, tags: c.profile.tags.filter((x) => x !== tag) } } : c), "客户标签删除(例行)", `客户标签删除 ${selected.id} · admin.customer_tag_removed`);
+    ctx.removeCustomerTag(selected.id, tag);
   };
   // QuickAction 账户类:客服侧只发起 + 提示,真实处置回 C/D 域;按主人指令 QuickAction 不写审计。
   const runAccountAction = (label: string) => {
@@ -583,7 +582,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
                   {c.profile && <span className="msg-vlevel">{c.profile.vlevel}</span>}
                   <span className="cv-sp" />
                   {c.unread > 0 && <span className="cv-unread">{c.unread}</span>}
-                  <span className="cv-time">{relWhen(c.lastTs)}</span>
+                  <span className="cv-time" suppressHydrationWarning>{relWhen(c.lastTs)}</span>
                 </div>
                 <div className="cv-prev">
                   {lastMsg && lastMsg.sender === "agent" ? "我:" : ""}
@@ -999,17 +998,17 @@ function SkuPicker({ skus, loading, error, onClose, onPick }: { skus: PushSku[];
         {loading ? (
           <div className="sku-pop-empty">
             <Icon name="box" size={16} />
-            正在读取 E1 商品目录
+            正在读取客服工作台商品
           </div>
         ) : error ? (
           <div className="sku-pop-empty">
             <Icon name="box" size={16} />
-            E1 商品目录读取失败:{error}
+            客服工作台商品读取失败:{error}
           </div>
         ) : list.length === 0 ? (
           <div className="sku-pop-empty">
             <Icon name="box" size={16} />
-            {q ? `没有匹配「${q}」的商品` : "E1 暂无可推送商品"}
+            {q ? `没有匹配「${q}」的商品` : "暂无可推送商品"}
           </div>
         ) : (
           list.map((s) => (
@@ -1029,7 +1028,7 @@ function SkuPicker({ skus, loading, error, onClose, onPick }: { skus: PushSku[];
         )}
       </div>
       <div className="sku-pop-foot">
-        <span className="mono dim2" style={{ fontSize: 11 }}>共 {skus.length} 个可推送商品 · 来源 E1 商品目录</span>
+        <span className="mono dim2" style={{ fontSize: 11 }}>共 {skus.length} 个可推送商品 · 来源客服工作台商品</span>
       </div>
     </div>
   );
@@ -1111,7 +1110,7 @@ function UserPanel({
 
         <button type="button" data-proof="customer-profile-open" className="cvp-cta" onClick={onOpenProfile}>
           <Icon name="doc" size={15} />
-          查看完整客户档案
+          查看会话客户信息
           <Icon name="chevron" size={15} />
         </button>
 
@@ -1140,7 +1139,7 @@ function UserPanel({
         </div>
 
         <div className="cvp-sec">客户标签</div>
-        <TagEditor tags={p.tags} onAdd={onAddTag} onRemove={onRemoveTag} />
+        <TagEditor systemTags={p.systemTags} customTags={p.customTags} onAdd={onAddTag} onRemove={onRemoveTag} />
 
         {p.notes && p.notes.length > 0 && (
           <>
@@ -1149,7 +1148,7 @@ function UserPanel({
               {p.notes.map((n) => (
                 <div key={n.id} style={{ padding: "10px 0", display: "flex", flexDirection: "column", gap: 5 }}>
                   <div style={{ fontSize: 12.5, color: "var(--ink)", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{n.text}</div>
-                  <span className="dim2" style={{ fontSize: 11.5 }}>{n.author} · {relWhen(n.ts)}</span>
+                  <span className="dim2" style={{ fontSize: 11.5 }} suppressHydrationWarning>{n.author} · {relWhen(n.ts)}</span>
                 </div>
               ))}
             </div>
@@ -1169,7 +1168,7 @@ function UserPanel({
   );
 }
 
-function TagEditor({ tags, onAdd, onRemove }: { tags: string[]; onAdd: (t: string) => void; onRemove: (t: string) => void }) {
+function TagEditor({ systemTags, customTags, onAdd, onRemove }: { systemTags: string[]; customTags: string[]; onAdd: (t: string) => void; onRemove: (t: string) => void }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1183,7 +1182,13 @@ function TagEditor({ tags, onAdd, onRemove }: { tags: string[]; onAdd: (t: strin
   };
   return (
     <div className="cvp-tags" style={{ marginTop: 4 }}>
-      {tags.map((t) => (
+      {systemTags.map((t) => (
+        <span key={t} className="chip" title="系统标签 · 只读(随状态派生)" style={{ cursor: "default", opacity: 0.8 }}>
+          <Icon name="lock" size={11} />
+          {t}
+        </span>
+      ))}
+      {customTags.map((t) => (
         <button key={t} type="button" className="chip" style={{ cursor: "pointer", paddingRight: 4 }} title="点击移除" onClick={() => onRemove(t)}>
           {t}
           <span style={{ marginLeft: 4, color: "var(--ink-4)", fontSize: 12, lineHeight: 1 }}>×</span>

@@ -76,7 +76,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     return (
       <section className="param-card">
         <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">E3 后端配置</div><div className="s">{e3Loading ? "正在读取 MySQL 配置" : configIssue}</div></div></div>
-        <div className="param-foot"><span className="ic"><AlertIcon /></span><span>{e3Error ? `接口读取失败:${e3Error}` : "等待 /api/admin/devices/e3/overview 返回完整且有效的生命周期与 Trade-in 配置。"}</span></div>
+        <div className="param-foot"><span className="ic"><AlertIcon /></span><span>{e3Error ? `接口读取失败:${e3Error}` : "等待 /api/admin/devices/e3/overview 返回完整且有效的生命周期与 换机 配置。"}</span></div>
         <button className="adj" onClick={() => void ctx.refreshE3()}>刷新</button>
       </section>
     );
@@ -135,7 +135,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       <EStats items={[
         { k: "在网设备平均龄", v: averageAgeMonths == null ? "—" : `${averageAgeMonths.toFixed(1)} 月`, sub: "来自真实设备资产" },
         { k: `m${s2 + 1}–${cyc} 断崖设备`, v: countText(stats.cliffDeviceCount), sub: "进入晚期", tone: "danger" },
-        { k: "Trade-in 本月", v: `${countText(stats.tradeinMonthCount)} 次`, sub: `折抵 ${moneyText(stats.tradeinDiscountUsdt)}`, tone: "cyan" },
+        { k: "换机 本月", v: `${countText(stats.tradeinMonthCount)} 次`, sub: `折抵 ${moneyText(stats.tradeinDiscountUsdt)}`, tone: "cyan" },
         { k: "K2 套利簇命中", v: `${countText(stats.k2ArbitrageHits)} 账户`, sub: "最短持有拦截", tone: "warn" },
       ]} />
 
@@ -194,7 +194,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">设备生命周期</div><div className="s">三段非线性衰减</div></div></div>
           <div className="pkv"><Lbl zh={`早期衰减率(m1–${s1})`} code="degradeEarly" desc="平缓段 · 不刺激置换 · 每月效率下降幅度" /><span className="v ok">{pE("E.device.degradeEarly")}%</span><Adj label="早期衰减率" k="E.device.degradeEarly" unit="%" /></div>
           <div className="pkv"><Lbl zh={`中期衰减率(m${s1 + 1}–${s2})`} code="degradeMid" desc="中速段 · 收益边际下降 · 每月效率下降幅度" /><span className="v warn">{pE("E.device.degradeMid")}%</span><Adj label="中期衰减率" k="E.device.degradeMid" unit="%" /></div>
-          <div className="pkv"><Lbl zh={`晚期衰减率(m${s2 + 1}–${cyc})`} code="degradeLate" desc="断崖段 · 驱动置换冲动 · 上调=加快换机现金流(放大资金流出)" hot /><span className="v danger">{pE("E.device.degradeLate")}%</span><Adj label="晚期衰减率" k="E.device.degradeLate" unit="%" amplify detail="晚期断崖衰减率 · 上调加快置换节奏(更多 Trade-in 现金流),m9-12 收益下挫 · 放大资金流出须操作确认 + B1 覆盖率" /></div>
+          <div className="pkv"><Lbl zh={`晚期衰减率(m${s2 + 1}–${cyc})`} code="degradeLate" desc="断崖段 · 驱动置换冲动 · 上调=加快换机现金流(放大资金流出)" hot /><span className="v danger">{pE("E.device.degradeLate")}%</span><Adj label="晚期衰减率" k="E.device.degradeLate" unit="%" amplify detail="晚期断崖衰减率 · 上调加快置换节奏(更多 换机 现金流),m9-12 收益下挫 · 放大资金流出须操作确认 + B1 覆盖率" /></div>
           <div className="pkv"><Lbl zh="最低效能下限" code="minEfficiency · floor" desc="设备效率衰减到此值即不再下降(地板线)" /><span className="v">{pE("E.device.minEfficiency")}%</span><Adj label="最低效能下限" k="E.device.minEfficiency" unit="%" /></div>
           <div className="pkv"><Lbl zh="衰减分段周期" code="stageEarlyEnd / stageMidEnd / cycleMonths" desc={`三段分界月份与总周期 · 早期[1–${s1}] 中期[${s1 + 1}–${s2}] 晚期[${s2 + 1}–${cyc}] · 一处调齐,改后曲线重算`} /><span className="v" style={{ fontSize: 13 }}>早末 m{s1} · 中末 m{s2} · 周期 {cyc}月</span><AdjMulti title="衰减分段周期" ascending hint="三段非线性的分界:早期[1–早末]、中期[早末+1–中末]、晚期[中末+1–总月数];总月数 = 晚期止月(floor 触底)。须 早末 < 中末 < 总月数。改后全曲线 / 估值器重算。" detail="衰减三段周期(早末 / 中末 / 总月数)· server-canonical · 改后对全网衰减曲线 / 估值器生效,不回溯已生效报价" fields={[
             { key: "early", paramKey: "E.device.stageEarlyEnd", label: "早期段末月(m)", inputKind: "number", placeholder: "3" },
@@ -207,12 +207,12 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
             { key: "rack", paramKey: "E.device.taskLock.rack", label: "Rack 阈(USDT)", inputKind: "number", placeholder: "450" },
           ]} /></div>
           <div className="pkv"><Lbl zh="豁免规则" desc="不参与衰减的设备类型" /><span className="v" style={{ fontFamily: "var(--font-v5)", fontSize: 12, fontWeight: 500, color: "var(--ink-3)" }}>手机 + Cloud Share 免衰减</span><span /></div>
-          <div className="param-foot"><span className="ic"><AlertIcon /></span><span><b>「晚期衰减率」是高敏参数</b>:上调加快置换节奏(更多 Trade-in 现金流),但 m9-12 收益预期下挫会触发用户负面信号;下调延后置换、减少现金流。<b>各段月份在「衰减分段周期」一行一次调齐</b>(早末 / 中末 / 总月数);衰减率行只改各段速率%。</span></div>
+          <div className="param-foot"><span className="ic"><AlertIcon /></span><span><b>「晚期衰减率」是高敏参数</b>:上调加快置换节奏(更多 换机 现金流),但 m9-12 收益预期下挫会触发用户负面信号;下调延后置换、减少现金流。<b>各段月份在「衰减分段周期」一行一次调齐</b>(早末 / 中末 / 总月数);衰减率行只改各段速率%。</span></div>
         </section>
 
-        {/* 右:Trade-in 置换配置 */}
+        {/* 右:换机 置换配置 */}
         <section className="param-card">
-          <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">Trade-in 置换配置</div><div className="s">折抵定价 · 套利防控</div></div></div>
+          <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">换机 置换配置</div><div className="s">折抵定价 · 套利防控</div></div></div>
           <div className="pkv"><Lbl zh="残值率" code="salvage" desc="置换折抵基准 · 旧机残值 = 原价 × 此比例,再与设备月龄复合衰减" /><span className="v cyan">{pE("E.tradein.salvagePct")}%</span><Adj label="残值率" k="E.tradein.salvagePct" unit="%" amplify detail="置换残值率 · 放大资金流出(更高折抵)须操作确认 + B1 覆盖率 · 改后对新报价生效" /></div>
           <div className="pkv"><Lbl zh="残值衰减" code="decay" desc={`旧机残值随设备月龄按三段衰减 · ${cyc} 月触底`} /><span className="v" style={{ fontSize: 13, color: "var(--ink-3)" }}>随三段 · {cyc} 月</span><span /></div>
           <div className="pkv"><Lbl zh="最短持有月数" code="minHoldingMonths" desc="套利窗口闸门 · 设备买后须满此月数才可置换,防快进快出刷折抵" hot /><span className="v warn">{pE("E.tradein.minHoldingMonths")} 月</span><Adj label="最短持有月数" k="E.tradein.minHoldingMonths" unit="月" detail="套利窗口闸门 · 调高收紧 CL-318 拦截、牺牲合法置换体验,调低放大套利风险" /></div>
@@ -232,18 +232,18 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
         </section>
       </div>
 
-      {/* 原子换机 tx 监控 */}
+      {/* 原子换机事务监控 */}
       <section className="tx-card">
         <div className="tx-h">
-          <span className="ttl">原子换机 tx 监控</span>
-          <span className="sub">· server 单事务 · 任一步失败全回滚(设备数组 + 余额 + bill)· 防 half-completed replace</span>
+          <span className="ttl">原子换机事务监控</span>
+          <span className="sub">· 后端单事务 · 任一步失败全回滚(设备数组 + 余额 + 账单)· 防半完成换机</span>
           <span className="r"><CodeTag tone="electric">A2 审计</CodeTag><span>24h · 成功率 <span style={{ color: "var(--success)" }}>{txSuccessRate.toFixed(1)}%</span></span></span>
         </div>
         <div className="tx-grid">
           {e3Operations.length === 0 ? (
             <div className="tx-col">
-              <div className="nm">暂无 tx 指标</div>
-              <div className="latest"><div className="k">后端暂无记录</div><div className="vrow"><span className="dot ok" /><span className="reason">等待业务表产生 Trade-in 操作样本</span></div></div>
+              <div className="nm">暂无事务指标</div>
+              <div className="latest"><div className="k">后端暂无记录</div><div className="vrow"><span className="dot ok" /><span className="reason">等待业务表产生 换机 操作样本</span></div></div>
             </div>
           ) : e3Operations.map((t) => (
             <div className="tx-col" key={t.nm}>
@@ -261,7 +261,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           ))}
         </div>
       </section>
-      <p className="f-foot">设备衰减曲线 + Trade-in 残值率<b>共同构成用户置换节奏</b>:晚期断崖把用户推向置换决策点,残值率决定置换吸引力。两者改动会影响:① 硬件 GMV(置换新单)② D4 资金应付(置换补差)③ K2 套利风险。任一参数调整后<b>立即对前端 / 估值器生效</b>(不回溯已生效报价)。</p>
+      <p className="f-foot">设备衰减曲线 + 换机 残值率<b>共同构成用户置换节奏</b>:晚期断崖把用户推向置换决策点,残值率决定置换吸引力。两者改动会影响:① 硬件 GMV(置换新单)② D4 资金应付(置换补差)③ K2 套利风险。任一参数调整后<b>立即对前端 / 估值器生效</b>(不回溯已生效报价)。</p>
     </>
   );
 }

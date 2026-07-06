@@ -37,6 +37,9 @@ function backendPath(parts: string[]) {
   const isDatacenterCollection = parts[0] === "datacenters" && parts.length === 1;
   const isDatacenterItem = parts[0] === "datacenters" && parts.length === 2 && !!parts[1];
   const isDatacenterAction = parts[0] === "datacenters" && parts.length === 3 && !!parts[1] && (parts[2] === "pause" || parts[2] === "resume");
+  // E6 算力与设备配置:GET 聚合视图(compute-config)+ PATCH 单参数(compute-config/params/{paramKey})。
+  const isComputeConfig = parts[0] === "compute-config" && parts.length === 1;
+  const isComputeConfigParam = parts[0] === "compute-config" && parts[1] === "params" && parts.length === 3 && !!parts[2];
   if (
     !isOverview
     && !isSkuCollection
@@ -62,6 +65,8 @@ function backendPath(parts: string[]) {
     && !isDatacenterCollection
     && !isDatacenterItem
     && !isDatacenterAction
+    && !isComputeConfig
+    && !isComputeConfigParam
   ) {
     return null;
   }

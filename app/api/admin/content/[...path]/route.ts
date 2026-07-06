@@ -24,6 +24,7 @@ function backendPath(parts: string[]) {
     "knowledge",
     "session-templates",
     "support-agents",
+    "support-workbench",
     "templates",
     "nova",
     "copy-ab",

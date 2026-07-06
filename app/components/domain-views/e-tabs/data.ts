@@ -7,7 +7,7 @@ import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 
 // 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
-export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5" };
+export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5", E6: "E6" };
 
 export const ORDER_FLOW = ["created", "paid", "allocating", "active"];
 // design-kit Badge tone 映射(订单状态)。

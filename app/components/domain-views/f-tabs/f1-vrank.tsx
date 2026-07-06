@@ -172,6 +172,19 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     });
   };
 
+  const prizeName = ctx.f1ConfigValues["F.prize.name"] ?? "";
+  const permanentOn = (ctx.f1ConfigValues["F.vrank.permanent"] ?? "on") === "on";
+  // V-Rank 13 阶头衔(JSON V0-V12)回填解析 · 无记录用空串,首次配置时 13 阶全填。
+  const titlesByLevel: Record<string, string> = {};
+  const titlesRaw = ctx.f1ConfigValues["F.vrank.titles"] ?? "";
+  if (titlesRaw) {
+    try {
+      const parsedTitles = JSON.parse(titlesRaw);
+      for (const r of rows) {
+        if (typeof parsedTitles[r.v] === "string") titlesByLevel[r.v] = parsedTitles[r.v];
+      }
+    } catch { /* schema 异常留空,提交时后端 validateVrankTitles 兜底 */ }
+  }
   const configuredLevels = rows.filter((r) => rewardsOf(r.v).length > 0).length;
   const topConcPct = ctx.leadership?.topConcentrationPct ?? 0; // 顶部 N 名领袖占池比(后端派生)
   // 顶栏会员数派生自后端 rows/leadership,不硬编码。
@@ -270,6 +283,71 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 <div className="gov-list"><div className="it">奖励发放与领取记录进<b>审计日志</b>留痕。</div></div>
               </div>
             </div>
+          </div>
+
+          <div className="rail-card">
+            <div className="rc-h">晋升治理<span className="tag">F.vrank.*</span></div>
+            <div className="gov-list">
+              <div className="it">V-Rank 不降级保护 · 当前 <b>{permanentOn ? "已开启" : "已关闭"}</b></div>
+              <div className="it" style={{ marginTop: 4 }}>{permanentOn ? "已晋升用户即使下轮未达当前阶门槛,也保持现有等级。" : "已按门槛严格评估 · 未达标的高阶用户将在下轮评估降级,影响其领导池票权。"}</div>
+            </div>
+            <button type="button" className="f-cta" style={{ marginTop: 8, ...(permanentOn ? { borderColor: "var(--danger)", color: "var(--danger)" } : null) }} onClick={() => ctx.openActionConfirm({
+              name: permanentOn ? "关闭 V-Rank 不降级保护" : "开启 V-Rank 不降级保护",
+              op: "dispose", paramKey: "F.vrank.permanent", fixedVal: permanentOn ? "off" : "on",
+              detail: permanentOn
+                ? "关闭不降级保护 · 下轮评估起,未达当前阶门槛的用户将被降级,影响其等级身份与领导池票权,属高风险动作,写 A2 审计。"
+                : "开启不降级保护 · 已晋升用户即使下轮未达门槛也保持当前阶 · 仅对新晋升按门槛判定,写 A2 审计。",
+            })}>{permanentOn ? "关闭不降级保护" : "开启不降级保护"}</button>
+          </div>
+
+          <div className="rail-card">
+            <div className="rc-h">全局展示文案<span className="tag">F.prize.*</span></div>
+            <div className="gov-list">
+              <div className="it">V-Rank 体系全局奖品名 · 当前 <b>{prizeName || "未配置"}</b></div>
+              <div className="it" style={{ marginTop: 4 }}>用于 PC 与客户端展示,不影响资金计算与晋升判定。</div>
+            </div>
+            <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
+              name: prizeName ? "修改全局奖品名" : "配置全局奖品名",
+              op: "param",
+              paramKey: "F.prize.name",
+              edit: { kind: "text", current: prizeName, unit: "V-Rank 全局奖品名" },
+              detail: "V-Rank 晋升体系的全局唯一奖品名称,用于 PC 与客户端展示;不影响资金计算与晋升判定。",
+            })}>{prizeName ? "修改奖品名" : "配置奖品名"}</button>
+          </div>
+
+          <div className="rail-card">
+            <div className="rc-h">13 阶头衔<span className="tag">F.vrank.titles</span></div>
+            <div className="gov-list">
+              <div className="it">V0-V12 各阶展示头衔 · 已配 <b>{Object.keys(titlesByLevel).length}</b>/13 阶</div>
+              <div className="it" style={{ marginTop: 4 }}>用于 PC 与客户端等级名称展示 · 不影响资金计算与晋升判定。</div>
+            </div>
+            <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
+              name: "V-Rank 13 阶头衔调整",
+              businessForm: {
+                kind: "multi-field",
+                title: "V-Rank 13 阶头衔",
+                hint: "V0-V12 各阶展示头衔 · 13 阶均须非空 · 用于 PC 与客户端等级名称展示 · 不影响资金计算与晋升判定。",
+                fields: rows.map((r) => ({
+                  key: r.v,
+                  label: r.v,
+                  current: titlesByLevel[r.v] ?? "",
+                  inputKind: "text" as const,
+                  placeholder: `${r.v} 头衔`,
+                })),
+              },
+              detail: "V-Rank 13 阶展示头衔 · 13 阶均须非空 · 不影响资金计算与晋升判定 · 用于 PC 与客户端展示。",
+              run: async (reason, bv) => {
+                if (!bv) throw new Error("请填写头衔");
+                const titles: Record<string, string> = {};
+                for (const r of rows) {
+                  const t = (bv[r.v] ?? "").trim();
+                  if (!t) throw new Error(`请填写 ${r.v} 的头衔(13 阶均须非空)`);
+                  titles[r.v] = t;
+                }
+                await ctx.updateF1Config("F.vrank.titles", JSON.stringify(titles), reason);
+                ctx.toast("V-Rank 13 阶头衔已确认生效");
+              },
+            })}>配置 13 阶头衔</button>
           </div>
         </aside>
       </div>

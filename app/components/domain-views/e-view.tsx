@@ -55,6 +55,7 @@ import {
   type E5Device,
   type E5Overview,
 } from "@/lib/admin/e5-client";
+import { fetchE6ComputeConfig, updateE6Param, updateE6Params, isE6ParamKey, type E6ComputeConfigView } from "@/lib/admin/e6-client";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
@@ -67,6 +68,7 @@ import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
 import { E3Manual } from "./e-tabs/e3-manual";
 import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
+import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
 import "./e-domain.css";
 
 let REVIEW_SEQ = 100; // 客户端新增评价临时 id 计数,提交后以后端 id 为准。
@@ -435,6 +437,24 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, [e5Datacenters]);
   const skuDatacenterSet = useMemo(() => new Set(skuDatacenterOptions.map((item) => item.value)), [skuDatacenterOptions]);
   const skuDatacenterDefault = skuDatacenterOptions[0]?.value ?? "";
+
+  // ── E6 算力与设备配置:服务端聚合视图为单一来源 ──
+  const [e6Config, setE6Config] = useState<E6ComputeConfigView | null>(null);
+  const [e6Loading, setE6Loading] = useState(false);
+  const [e6Error, setE6Error] = useState<string | null>(null);
+  const refreshE6 = useCallback(async () => {
+    setE6Loading(true);
+    setE6Error(null);
+    try {
+      setE6Config(await fetchE6ComputeConfig());
+    } catch (error) {
+      setE6Error(error instanceof Error ? error.message : "E6_SYNC_FAILED");
+      setE6Config(null);
+    } finally {
+      setE6Loading(false);
+    }
+  }, []);
+  useEffect(() => { if (tab === "E6") void refreshE6(); }, [tab, refreshE6]);
 
   // ── 抽屉本地态 ──
   const [skuDrawer, setSkuDrawer] = useState(false);
@@ -861,6 +881,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, setE4Page, setE4PageSize, setE4Filter, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5Error, e5Page, e5PageSize, e5Total, setE5Page, setE5PageSize, refreshE5, isDcPaused, openDatacenter, deleteDatacenter,
+    e6Config, e6Loading, e6Error, refreshE6,
   };
 
   const headerRight =
@@ -878,6 +899,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "E3" && <E3Lifecycle ctx={ctx} />}
       {tab === "E4" && <E4Orders ctx={ctx} />}
       {tab === "E5" && <E5Ops ctx={ctx} />}
+      {tab === "E6" && <E6ComputeConfigComp ctx={ctx} />}
 
       {/* E3 操作说明手册弹窗(右上角按钮触发) */}
       {tab === "E3" && manualOpen && <E3Manual ctx={ctx} onClose={() => setManualOpen(false)} />}
@@ -901,8 +923,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               ? <Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => setSelOrder(null)}>关闭</Btn>
               : <>
                   {eff === "failed" && <Btn onClick={() => setActionConfirm({ name: `重试配机 · ${o.id}`, op: "order-state", orderId: o.id, fixedVal: "allocating", amplify: false, detail: `将 ${o.id} 从 failed 重新置为 allocating,重新进入 DC 分配队列 · 须操作确认` })}>重试配机</Btn>}
-                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${nextState}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认` })}>推进下一态</Btn>}
-                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${prevState}`, op: "order-state", orderId: o.id, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认` })}>回滚上一态</Btn>}
+                  {nextState && <Btn onClick={() => setActionConfirm({ name: `推进订单 · ${o.id} → ${stateLabel(nextState)}`, op: "order-state", orderId: o.id, fixedVal: nextState, amplify: false, detail: `手动推进 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(nextState)} · 须操作确认` })}>推进下一态</Btn>}
+                  {prevState && <Btn onClick={() => setActionConfirm({ name: `回滚订单 · ${o.id} → ${stateLabel(prevState)}`, op: "order-state", orderId: o.id, fixedVal: prevState, amplify: false, detail: `回滚 ${o.id} 状态机:${stateLabel(eff)} → ${stateLabel(prevState)}(补救 / 纠错)· 须操作确认` })}>回滚上一态</Btn>}
                   {canCancel && <Btn onClick={() => setActionConfirm({ name: "取消订单 · " + o.id, op: "order-cancel", orderId: o.id, amplify: false, detail: `取消 ${o.id}(${stateLabel(eff)})· 终止后续分配/扣费,资产/额度回退联动 D4/C3 · 须操作确认 + 审计留痕` })}>取消订单</Btn>}
                   {canTerminal && <Btn onClick={() => setActionConfirm({ name: "补建订单终态 · " + o.id, op: "order-terminal", orderId: o.id, amplify: false, edit: { kind: "select", options: [...TERMINAL_STATES] }, detail: `为缺失终态的订单 ${o.id} 手动落定终态(支付失败/过期/退款/开通失败)· 状态机对账兜底 · 须操作确认 + 审计留痕` })}>补建终态</Btn>}
                   {eff === "failed"
@@ -921,11 +943,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             {o.state === "failed" && <KV k="失败" v={<span style={{ color: "var(--danger)" }}>DC 分配超时 · 待处置</span>} />}
             <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>状态轨迹</div>
             <div className="edrawer-trail">
-              {ORDER_FLOW.map((s) => { const done = ORDER_FLOW.indexOf(s) <= idx; return <div key={s} className={`it ${done ? "done" : "grey"}`}><span className={`d ${done ? "done" : "grey"}`} /><span className="nm">{s}</span></div>; })}
-              {o.state === "failed" && <div className="it red"><span className="d red" /><span className="nm">provisioning_failed · DC 分配超时</span></div>}
-              {isCancelled(o.id) && <div className="it grey"><span className="d grey" /><span className="nm">cancelled · 人工取消</span></div>}
-              {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <div className="it red"><span className="d red" /><span className="nm">{terminalOf(o.id)} · 人工补建终态</span></div>}
-              {isRefunded(o.id) && <div className="it warn"><span className="d warn" /><span className="nm">refunded · 人工退款</span></div>}
+              {ORDER_FLOW.map((s) => { const done = ORDER_FLOW.indexOf(s) <= idx; return <div key={s} className={`it ${done ? "done" : "grey"}`}><span className={`d ${done ? "done" : "grey"}`} /><span className="nm">{stateLabel(s)}</span></div>; })}
+              {o.state === "failed" && <div className="it red"><span className="d red" /><span className="nm">开通失败 · DC 分配超时</span></div>}
+              {isCancelled(o.id) && <div className="it grey"><span className="d grey" /><span className="nm">已取消 · 运营手动取消</span></div>}
+              {!isCancelled(o.id) && !isRefunded(o.id) && terminalOf(o.id) && <div className="it red"><span className="d red" /><span className="nm">{stateLabel(terminalOf(o.id)!)} · 人工补建终态</span></div>}
+              {isRefunded(o.id) && <div className="it warn"><span className="d warn" /><span className="nm">已退款 · 人工退款</span></div>}
             </div>
           </Drawer>
         );
@@ -1286,6 +1308,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               }
             } else if (mc.op === "param" && mc.paramKey) {
               const v = (newValue ?? "").trim();
+              if (isE6ParamKey(mc.paramKey)) {
+                await updateE6Param(mc.paramKey, v, reason, operator);
+                await refreshE6();
+                setToast(mc.name + ":已写入 " + v + " · server-canonical");
+                return;
+              }
               if (mc.paramKey.startsWith("E.gen.")) {
                 setE1Gates(await updateE1GenerationGate(mc.paramKey, v, reason, operator));
               } else if (isE3ParamKey(mc.paramKey)) {
@@ -1297,6 +1325,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               setToast(mc.name + ":已写入 " + v + " · server-canonical");
             } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
               // 多字段调参:每字段写到自己的 param key;E 域只允许走后端配置接口。
+              if (mc.paramKeys.every(({ paramKey }) => isE6ParamKey(paramKey))) {
+                const e6Values: Record<string, string> = {};
+                for (const { key, paramKey } of mc.paramKeys) {
+                  e6Values[paramKey] = (businessValue[key] ?? "").trim();
+                }
+                await updateE6Params(e6Values, reason, operator);
+                await refreshE6();
+                const e6Summary = mc.paramKeys.map(({ key }) => (businessValue[key] ?? "").trim()).join(" / ");
+                setToast(mc.name + ":已写入 " + e6Summary + " · server-canonical");
+                return;
+              }
               const e3Values: Record<string, string> = {};
               for (const { key, paramKey } of mc.paramKeys) {
                 const next = (businessValue[key] ?? "").trim();
@@ -1313,6 +1352,12 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const summary = mc.paramKeys.map(({ key }) => (businessValue[key] ?? "").trim()).join(" / ");
               setToast(mc.name + ":已写入 " + summary + " · server-canonical");
             } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
+              if (isE6ParamKey(mc.paramKey)) {
+                await updateE6Param(mc.paramKey, mc.fixedVal, reason, operator);
+                await refreshE6();
+                setToast(mc.name + " · 已生效 · 以后端为准");
+                return;
+              }
               if (mc.paramKey.startsWith("E.gen.")) {
                 setE1Gates(await updateE1GenerationGate(mc.paramKey, mc.fixedVal, reason, operator));
               } else if (isE3ParamKey(mc.paramKey)) {

@@ -38,6 +38,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const periodEff = cfg?.settlePeriod ?? "";
   const residualEff = cfg?.residualPolicy ?? "";
   const residualSub = cfg?.residualSub ?? residualEff;
+  const binaryPaused = (ctx.f3ConfigValues["F.binary.paused"] ?? "off") === "on";
   const selectUser = (user: string) => {
     setSelectedUser(user);
     setLookupText(user);
@@ -249,6 +250,20 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             ],
             detail: "结算周期(每日/每周/每月) + 沉淀处置(每月清零/每次对碰清零/转结) · server-canonical · 改后对下一周期结算生效,不回溯已计提;「转结」放大负债须 B1 覆盖率评估。",
           })}>调整周期 &amp; 策略</button></div>
+        </div>
+
+        <div className="cfg-card">
+          <div className="ch">双轨引擎暂停<span className="tag">F.binary.paused</span></div>
+          <div className="cs">⚡ Kill-switch · 暂停整个双轨 Balance Match 派发</div>
+          <div className="ckv"><span className="k">引擎状态</span><span className="v" style={{ color: binaryPaused ? "var(--danger)" : "var(--success)" }}>{binaryPaused ? "已暂停" : "运行中"}</span></div>
+          <div className="ckv"><span className="k">影响范围</span><span className="v" style={{ color: "var(--ink-3)" }}>{binaryPaused ? "全平台双轨派发冻结" : "正常按周期派发"}</span></div>
+          <div className="cfg-foot"><button className={`fbtn${binaryPaused ? " primary" : " danger"}`} onClick={() => ctx.openActionConfirm({
+            name: binaryPaused ? "恢复双轨结算引擎" : "暂停双轨结算引擎",
+            op: "dispose", paramKey: "F.binary.paused", fixedVal: binaryPaused ? "off" : "on",
+            detail: binaryPaused
+              ? "恢复双轨结算 · 下一周期起正常 Balance Match 派发,写 A2 审计。"
+              : "暂停双轨结算引擎 · 全平台 Balance Match 派发冻结,影响所有双轨用户结算,属极高风险止血动作,写 A2 审计。",
+          })}>{binaryPaused ? "恢复引擎" : "暂停引擎"}</button></div>
         </div>
       </div>
 

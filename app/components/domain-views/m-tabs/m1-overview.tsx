@@ -18,8 +18,8 @@ import { Icon, type IconName, Modal, Toggle } from "../design-kit";
 import { catCN, MAvatar } from "./hd-ui";
 import type { MCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { fetchUserProfilesPage, type User360Profile } from "@/lib/admin/user360-client";
-import type { MAdvisorAssignment, MSupportAgent } from "@/lib/admin/m-client";
+import type { User360Profile } from "@/lib/admin/user360-client";
+import { fetchMSupportWorkbenchUsers, type MAdvisorAssignment, type MSupportAgent } from "@/lib/admin/m-client";
 
 const TICKET_KEY = "I.support.tickets";
 const SLA_KEY = "I.support.sla";
@@ -35,6 +35,7 @@ const SUPPORT_SEAT_TYPES = [
   { position: "专属客服", label: "专属客服", hint: "由超管/客服主管绑定服务用户" },
   { position: "通用客服", label: "通用客服", hint: "接普通工单与即时会话" },
 ];
+const BOUND_ASSIGNMENT_PAGE_SIZE = 8;
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -150,7 +151,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
     [supportAgents],
   );
   const assignableAgents = useMemo(
-    () => seatAssignmentAgents.filter((agent) => isDedicatedSupportAgent(agent) && agent.serviceTypes.includes("advisor")),
+    () => seatAssignmentAgents.filter((agent) => isDedicatedSupportAgent(agent)),
     [seatAssignmentAgents],
   );
   const activeAdvisorAssignmentCount = advisorAssignments.filter((row) => row.status === "ACTIVE").length;
@@ -187,16 +188,17 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
       <div className="m-toolbar">
         <span className="dim" style={{ fontSize: 13 }}>工单和会话的实时概况 · 已分配服务用户 {activeAdvisorAssignmentCount}</span>
         <span className="sp" />
-        <button
-          type="button"
-          className="btn btn-sec btn-sm"
-          disabled={!canManageSupportSeats}
-          title={canManageSupportSeats ? "从客服管理员里分配客服主管 / 专属客服 / 通用客服坐席" : "只有超管或客服主管可以分配客服坐席"}
-          onClick={() => setShowSeatRoles(true)}
-        >
-          <Icon name="users" size={16} />
-          分配坐席
-        </button>
+        {canManageSupportSeats && (
+          <button
+            type="button"
+            className="btn btn-sec btn-sm"
+            title="从客服管理员里分配客服主管 / 专属客服 / 通用客服坐席"
+            onClick={() => setShowSeatRoles(true)}
+          >
+            <Icon name="users" size={16} />
+            分配坐席
+          </button>
+        )}
         <Link href="/service/tickets" className="btn btn-sec btn-sm">
           <Icon name="doc" size={16} />
           进工单台
@@ -316,19 +318,21 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                     <span className="tnum" style={{ fontSize: 13, color: tone, fontWeight: 500 }}>{l.util}%</span>
                     <span className="mono dim2" style={{ fontSize: 11.5 }}>{l.total} / {l.cap} · {l.openTk}单 {l.openCv}话</span>
                     <span className="dim2" style={{ fontSize: 11.5 }}>服务用户 {l.assignments}</span>
-                    <button
-                      type="button"
-                      className="btn btn-sec btn-sm"
-                      disabled={!canManageSupportSeats || !l.agent.enabled || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
-                      title={!canManageSupportSeats ? "只有超管或客服主管可以绑定服务用户" : isDedicatedSupportAgent(l.agent) ? "给此专属客服绑定服务用户" : "只有专属客服可以绑定服务用户"}
-                      onClick={() => {
-                        setAssignAgent(l.agent);
-                        setShowUserAssign(true);
-                      }}
-                      style={{ marginTop: 2 }}
-                    >
-                      绑定用户
-                    </button>
+                    {canManageSupportSeats && (
+                      <button
+                        type="button"
+                        className="btn btn-sec btn-sm"
+                        disabled={!l.agent.enabled || l.agent.adminId <= 0 || !isDedicatedSupportAgent(l.agent)}
+                        title={isDedicatedSupportAgent(l.agent) ? "给此专属客服绑定服务用户" : "只有专属客服可以绑定服务用户"}
+                        onClick={() => {
+                          setAssignAgent(l.agent);
+                          setShowUserAssign(true);
+                        }}
+                        style={{ marginTop: 2 }}
+                      >
+                        绑定用户
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -550,14 +554,23 @@ function SupportSeatRoleModal({
     [agents, canAssignSupervisor, currentAdminId, normalizedKeyword],
   );
   const selected = candidates.find((agent) => String(agent.adminId) === selectedId) ?? candidates[0] ?? null;
-  const activeAssignments = useMemo(
+  const allActiveAssignments = useMemo(
     () => parseParamArray<MAdvisorAssignment>(ctx.pget(ASSIGNMENT_LIST_KEY), [])
-      .filter((row) => row.agentAdminId === selected?.adminId && row.status === "ACTIVE"),
-    [selected?.adminId, ctx.params, ctx],
+      .filter((row) => row.status === "ACTIVE"),
+    [ctx.params, ctx],
   );
+  const activeAssignmentByUserId = useMemo(() => {
+    const map = new Map<number, MAdvisorAssignment>();
+    allActiveAssignments.forEach((row) => {
+      if (Number.isFinite(Number(row.userId)) && !map.has(row.userId)) {
+        map.set(row.userId, row);
+      }
+    });
+    return map;
+  }, [allActiveAssignments]);
   const boundUserIds = useMemo(
-    () => new Set(activeAssignments.map((row) => row.userId).filter((userId) => Number.isFinite(Number(userId)))),
-    [activeAssignments],
+    () => new Set(activeAssignmentByUserId.keys()),
+    [activeAssignmentByUserId],
   );
   const selectedUserIds = useMemo(
     () => new Set(selectedUsers.map(userIdOf).filter((userId) => userId > 0)),
@@ -593,7 +606,7 @@ function SupportSeatRoleModal({
     const timer = window.setTimeout(() => {
       setLoadingUsers(true);
       setUserError("");
-      fetchUserProfilesPage({ keyword: userKeyword.trim(), pageNum: 1, pageSize: 8 })
+      fetchMSupportWorkbenchUsers({ keyword: userKeyword.trim(), pageNum: 1, pageSize: 8 })
         .then((page) => {
           if (!alive) return;
           setUsers(page.records);
@@ -642,7 +655,6 @@ function SupportSeatRoleModal({
         transferable: true,
         busy: selected.busy,
         userIds,
-        assignmentType: "PRIMARY",
       }), {
         action: "M1 分配客服坐席",
         reason: reason.trim(),
@@ -759,7 +771,9 @@ function SupportSeatRoleModal({
               {!loadingUsers && !userError && users.map((user) => {
                 const id = userIdOf(user);
                 const checked = selectedUserIds.has(id);
-                const alreadyBound = boundUserIds.has(id);
+                const boundAssignment = activeAssignmentByUserId.get(id);
+                const alreadyBound = Boolean(boundAssignment);
+                const boundToSelected = boundAssignment?.agentAdminId === selected?.adminId;
                 return (
                   <button
                     key={`seat-user-${userNoOf(user)}-${id}`}
@@ -773,7 +787,7 @@ function SupportSeatRoleModal({
                       <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{user.nickname || "未命名用户"}</span>
                       <span className="mono dim2" style={{ fontSize: 11.5 }}>{userNoOf(user)} · {user.phoneMasked || "未留手机号"} · KYC {user.kycStatus || "PENDING"}</span>
                     </span>
-                    {alreadyBound && <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>已绑定</span>}
+                    {alreadyBound && <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>{boundToSelected ? "已绑定" : "已绑定其他坐席"}</span>}
                     {checked && <Icon name="check" size={15} />}
                   </button>
                 );
@@ -802,8 +816,9 @@ function SeatAssignmentModal({
   onClose: () => void;
 }) {
   const [agentAdminId, setAgentAdminId] = useState(initialAgent ? String(initialAgent.adminId) : "");
-  const [assignmentType, setAssignmentType] = useState("PRIMARY");
   const [keyword, setKeyword] = useState("");
+  const [boundKeyword, setBoundKeyword] = useState("");
+  const [boundPage, setBoundPage] = useState(1);
   const [users, setUsers] = useState<User360Profile[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<User360Profile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -811,14 +826,43 @@ function SeatAssignmentModal({
   const [reason, setReason] = useState("");
   const agent = agents.find((row) => String(row.adminId) === agentAdminId) ?? agents[0] ?? null;
   const agentCanAssign = Boolean(agent?.enabled && agent.serviceTypes.includes("advisor"));
-  const activeAssignments = useMemo(
+  const allActiveAssignments = useMemo(
     () => parseParamArray<MAdvisorAssignment>(ctx.pget(ASSIGNMENT_LIST_KEY), [])
-      .filter((row) => row.agentAdminId === agent?.adminId && row.status === "ACTIVE"),
-    [agent?.adminId, ctx.params, ctx],
+      .filter((row) => row.status === "ACTIVE"),
+    [ctx.params, ctx],
   );
+  const activeAssignments = useMemo(
+    () => allActiveAssignments.filter((row) => row.agentAdminId === agent?.adminId),
+    [agent?.adminId, allActiveAssignments],
+  );
+  const normalizedBoundKeyword = boundKeyword.trim().toLowerCase();
+  const filteredActiveAssignments = useMemo(
+    () => activeAssignments.filter((row) => {
+      if (!normalizedBoundKeyword) return true;
+      return [row.nickname, row.userNo, String(row.userId)]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedBoundKeyword);
+    }),
+    [activeAssignments, normalizedBoundKeyword],
+  );
+  const boundPageCount = Math.max(1, Math.ceil(filteredActiveAssignments.length / BOUND_ASSIGNMENT_PAGE_SIZE));
+  const visibleActiveAssignments = useMemo(
+    () => filteredActiveAssignments.slice((boundPage - 1) * BOUND_ASSIGNMENT_PAGE_SIZE, boundPage * BOUND_ASSIGNMENT_PAGE_SIZE),
+    [boundPage, filteredActiveAssignments],
+  );
+  const activeAssignmentByUserId = useMemo(() => {
+    const map = new Map<number, MAdvisorAssignment>();
+    allActiveAssignments.forEach((row) => {
+      if (Number.isFinite(Number(row.userId)) && !map.has(row.userId)) {
+        map.set(row.userId, row);
+      }
+    });
+    return map;
+  }, [allActiveAssignments]);
   const boundUserIds = useMemo(
-    () => new Set(activeAssignments.map((row) => row.userId).filter((userId) => Number.isFinite(Number(userId)))),
-    [activeAssignments],
+    () => new Set(activeAssignmentByUserId.keys()),
+    [activeAssignmentByUserId],
   );
   const selectedUserIds = useMemo(
     () => new Set(selectedUsers.map(userIdOf).filter((userId) => userId > 0)),
@@ -836,7 +880,7 @@ function SeatAssignmentModal({
     const timer = window.setTimeout(() => {
       setLoading(true);
       setError("");
-      fetchUserProfilesPage({ keyword: keyword.trim(), pageNum: 1, pageSize: 8 })
+      fetchMSupportWorkbenchUsers({ keyword: keyword.trim(), pageNum: 1, pageSize: 8 })
         .then((page) => {
           if (!alive) return;
           setUsers(page.records);
@@ -856,6 +900,14 @@ function SeatAssignmentModal({
     };
   }, [keyword]);
 
+  useEffect(() => {
+    setBoundPage(1);
+  }, [agent?.adminId, normalizedBoundKeyword]);
+
+  useEffect(() => {
+    setBoundPage((page) => Math.min(Math.max(1, page), boundPageCount));
+  }, [boundPageCount]);
+
   const toggleUser = (user: User360Profile) => {
     const userId = userIdOf(user);
     if (!userId || boundUserIds.has(userId)) return;
@@ -872,7 +924,6 @@ function SeatAssignmentModal({
     ctx.setParam("I.support.advisorAssignment.__create", JSON.stringify({
       adminId: agent.adminId,
       userIds,
-      assignmentType,
     }), {
       action: "M1 绑定专属客服服务用户",
       reason: reason.trim(),
@@ -881,13 +932,29 @@ function SeatAssignmentModal({
     onClose();
   };
 
+  const unbind = (assignment: MAdvisorAssignment) => {
+    if (!agent) return;
+    if (!reasonOk) {
+      ctx.toast("解绑需先填写变更理由(≥6 字)");
+      return;
+    }
+    ctx.setParam("I.support.advisorAssignment.__delete", JSON.stringify({
+      adminId: agent.adminId,
+      assignmentId: assignment.id,
+    }), {
+      action: "M1 解绑专属客服服务用户",
+      reason: reason.trim(),
+    });
+    ctx.toast(`${assignment.userNo || assignment.userId} 已提交解绑`);
+  };
+
   return (
     <Modal
-      title="绑定专属客服服务用户"
+      title="绑定/解绑专属客服服务用户"
       icon="users"
       wide
       onClose={onClose}
-      footer={<><span className="sub">{agents.length === 0 ? "暂无可绑定用户的专属客服,请先在 M1 分配专属客服坐席" : agentCanAssign ? `用户来自 C1 用户画像接口 · 已选 ${bindableSelectedUsers.length} 人` : "当前坐席未开启专属顾问服务类型,请先到 M5 配置岗位"}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>绑定{canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启服务类型"}</button></>}
+      footer={<><span className="sub">{agents.length === 0 ? "暂无专属客服,请先在 M1 分配专属客服坐席" : agentCanAssign ? `用户来自客服工作台查询 · 已选 ${bindableSelectedUsers.length} 人 · 已绑定 ${activeAssignments.length} 人` : `当前坐席未开启专属客服服务 · 可解绑已绑定 ${activeAssignments.length} 人`}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>绑定{canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启服务类型"}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -902,7 +969,7 @@ function SeatAssignmentModal({
               <select className="fld" value={agentAdminId || String(agent?.adminId ?? "")} onChange={(e) => { setAgentAdminId(e.target.value); setSelectedUsers([]); }}>
                 {agents.map((row) => (
                   <option key={row.adminId} value={String(row.adminId)}>
-                    {row.name} · {row.position} · 已服务 {row.assignedUserCount} 人{row.serviceTypes.includes("advisor") ? "" : " · 需开启专属顾问"}
+                    {row.name} · {row.position} · 已服务 {row.assignedUserCount} 人{row.serviceTypes.includes("advisor") ? "" : " · 需开启专属客服服务"}
                   </option>
                 ))}
               </select>
@@ -911,13 +978,58 @@ function SeatAssignmentModal({
           {agents.length > 0 && !agentCanAssign && (
             <div className="itint" style={{ padding: "10px 12px" }}>
               <div style={{ fontSize: 13 }}>该坐席当前不能接收专属服务用户分配</div>
-              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>到 M5「客服岗位与专属顾问」把该坐席服务类型勾选为专属顾问后,这里即可提交绑定。</div>
+              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>到 M5「客服岗位与专属客服」把该坐席服务类型勾选为专属客服服务后,这里即可提交绑定;当前已绑定用户仍可在下方解绑。</div>
             </div>
           )}
-          <select className="fld" value={assignmentType} onChange={(e) => setAssignmentType(e.target.value)}>
-            <option value="PRIMARY">主顾问</option>
-            <option value="BACKUP">备用顾问</option>
-          </select>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div className="sub" style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+              <span>当前已绑定用户</span>
+              <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>{activeAssignments.length} 人</span>
+            </div>
+            {activeAssignments.length === 0 ? (
+              <div className="itint" style={{ padding: "10px 12px" }}>此专属客服暂无已绑定服务用户。</div>
+            ) : (
+              <>
+                <div className="inp">
+                  <Icon name="search" size={15} />
+                  <input value={boundKeyword} onChange={(e) => setBoundKeyword(e.target.value)} placeholder="搜索已绑定用户 / 用户编码" />
+                </div>
+                {filteredActiveAssignments.length === 0 ? (
+                  <div className="itint" style={{ padding: "10px 12px" }}>没有匹配的已绑定用户。</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 252, overflow: "auto", paddingRight: 2 }}>
+                    {visibleActiveAssignments.map((row) => (
+                      <div
+                        key={`bound-${row.id}`}
+                        style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-1)" }}
+                      >
+                        <span style={{ minWidth: 0 }}>
+                          <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.nickname || "未命名用户"}</span>
+                          <span className="mono dim2" style={{ display: "block", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.userNo || `用户 ${row.userId}`}</span>
+                        </span>
+                        <button
+                          type="button"
+                          data-proof="m1-seat-assignment-unbind"
+                          className="btn btn-sec btn-sm"
+                          title={reasonOk ? "解除此用户与当前专属客服的绑定" : "先填写变更理由(≥6 字)"}
+                          onClick={() => unbind(row)}
+                        >
+                          解绑
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {filteredActiveAssignments.length > BOUND_ASSIGNMENT_PAGE_SIZE && (
+                  <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                    <span className="sub" style={{ flex: 1 }}>第 {boundPage} / {boundPageCount} 页 · 匹配 {filteredActiveAssignments.length} 人</span>
+                    <button type="button" className="btn btn-sec btn-sm" disabled={boundPage <= 1} onClick={() => setBoundPage((page) => Math.max(1, page - 1))}>上一页</button>
+                    <button type="button" className="btn btn-sec btn-sm" disabled={boundPage >= boundPageCount} onClick={() => setBoundPage((page) => Math.min(boundPageCount, page + 1))}>下一页</button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>搜索用户</span>
             <div className="inp">
@@ -965,23 +1077,47 @@ function SeatAssignmentModal({
           {!loading && !error && users.map((user) => {
             const id = userIdOf(user);
             const checked = selectedUserIds.has(id);
-            const alreadyBound = boundUserIds.has(id);
+            const boundAssignment = activeAssignmentByUserId.get(id);
+            const alreadyBound = Boolean(boundAssignment);
+            const boundToCurrent = boundAssignment?.agentAdminId === agent?.adminId;
             return (
-              <button
+              <div
                 key={`${userNoOf(user)}-${id}`}
-                type="button"
                 data-proof="m1-seat-user-option"
-                disabled={alreadyBound}
-                onClick={() => toggleUser(user)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: `1px solid ${checked ? "var(--m-hd-border)" : "var(--border)"}`, background: checked ? "var(--m-hd-soft)" : alreadyBound ? "var(--bg-2)" : "transparent", cursor: alreadyBound ? "not-allowed" : "pointer", textAlign: "left", fontFamily: "inherit", opacity: alreadyBound ? 0.62 : 1 }}
+                role={alreadyBound ? undefined : "button"}
+                tabIndex={alreadyBound ? undefined : 0}
+                onClick={() => {
+                  if (!alreadyBound) toggleUser(user);
+                }}
+                onKeyDown={(event) => {
+                  if (!alreadyBound && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault();
+                    toggleUser(user);
+                  }
+                }}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 10, border: `1px solid ${checked ? "var(--m-hd-border)" : "var(--border)"}`, background: checked ? "var(--m-hd-soft)" : alreadyBound ? "var(--bg-2)" : "transparent", cursor: alreadyBound ? "default" : "pointer", textAlign: "left", fontFamily: "inherit", opacity: alreadyBound ? 0.78 : 1 }}
               >
                 <span style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{user.nickname || "未命名用户"}</span>
                   <span className="mono dim2" style={{ fontSize: 11.5 }}>{userNoOf(user)} · {user.phoneMasked || "未留手机号"} · KYC {user.kycStatus || "PENDING"}</span>
                 </span>
-                {alreadyBound && <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>已绑定</span>}
+                {alreadyBound && <span className="chip" style={{ height: 20, fontSize: 11, border: "none" }}>{boundToCurrent ? "已绑定" : "已绑定其他坐席"}</span>}
+                {boundAssignment && boundToCurrent && (
+                  <button
+                    type="button"
+                    data-proof="m1-seat-user-unbind"
+                    className="btn btn-sec btn-sm"
+                    title={reasonOk ? "解除此用户与当前专属客服的绑定" : "先填写变更理由(≥6 字)"}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      unbind(boundAssignment);
+                    }}
+                  >
+                    解绑
+                  </button>
+                )}
                 {checked && <Icon name="check" size={15} />}
-              </button>
+              </div>
             );
           })}
         </div>

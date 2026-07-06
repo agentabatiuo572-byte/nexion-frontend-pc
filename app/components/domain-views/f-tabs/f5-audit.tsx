@@ -72,6 +72,17 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
   const kindLbl = curKind === "all" ? "全部类型" : (data.commissionKinds.find((k) => k.key === curKind)?.code ?? "All");
   const summary = data.summary;
+  // 异常预警阈值(JSON {frozen,anomaly})回填解析 · 后端 configValues 暴露;无记录用默认 5/10。
+  const anomalyRaw = data.configValues["F.commission.anomalyThreshold"] ?? "";
+  let anomalyFrozen = "5";
+  let anomalyAnomaly = "10";
+  if (anomalyRaw) {
+    try {
+      const parsed = JSON.parse(anomalyRaw);
+      if (typeof parsed.frozen === "number") anomalyFrozen = String(parsed.frozen);
+      if (typeof parsed.anomaly === "number") anomalyAnomaly = String(parsed.anomaly);
+    } catch { /* schema 异常时用默认,提交时后端 validateAnomalyThreshold 兜底 */ }
+  }
 
   return (
     <>
@@ -179,6 +190,36 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
               <div><b>解锁</b> · 提前进入可提余额(放大流出)。</div>
               <div><b>驳回</b> · 红冲该笔计提(联动 D4),不可逆。</div>
             </div>
+          </div>
+          <div className="rail-card">
+            <div className="rc-h">异常预警阈值<span className="tag">F.commission.*</span></div>
+            <div className="gov-list">
+              <div className="it">已冻结告警 · 达 <b>{anomalyFrozen}</b> 笔触发</div>
+              <div className="it">异常告警 · 达 <b>{anomalyAnomaly}</b> 笔触发</div>
+            </div>
+            <button type="button" className="fbtn primary" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
+              name: "异常预警阈值调整",
+              businessForm: {
+                kind: "multi-field",
+                title: "异常预警阈值(笔)",
+                hint: "达到下列笔数时在审计流标记 HIGH 告警 · 两者均须为非负整数。",
+                fields: [
+                  { key: "frozen", label: "已冻结告警阈值(笔)", current: anomalyFrozen, inputKind: "number", min: 0, step: 1 },
+                  { key: "anomaly", label: "异常告警阈值(笔)", current: anomalyAnomaly, inputKind: "number", min: 0, step: 1 },
+                ],
+              },
+              detail: `异常佣金预警阈值 · 当前 frozen=${anomalyFrozen} / anomaly=${anomalyAnomaly} · 改后对下一轮告警判定生效。`,
+              run: async (reason, bv) => {
+                if (!bv) throw new Error("请填写两个字段");
+                const frozen = Number(bv.frozen);
+                const anomaly = Number(bv.anomaly);
+                if (!Number.isFinite(frozen) || !Number.isFinite(anomaly) || frozen < 0 || anomaly < 0) {
+                  throw new Error("两个阈值均须为非负整数");
+                }
+                await ctx.updateF5Config("F.commission.anomalyThreshold", JSON.stringify({ frozen, anomaly }), reason);
+                ctx.toast(`异常预警阈值已确认生效 · frozen=${frozen} / anomaly=${anomaly}`);
+              },
+            })}>调整阈值</button>
           </div>
         </aside>
       </div>

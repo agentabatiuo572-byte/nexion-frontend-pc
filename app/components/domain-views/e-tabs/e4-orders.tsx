@@ -8,18 +8,11 @@ const Arrow = () => <svg width={16} height={12} viewBox="0 0 16 12" fill="none" 
 const Chevron = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 6l6 6-6 6" /></svg>;
 
 const CONNECTORS = [{ cls: "start", ln: "a" }, { cls: "mid", ln: "b" }, { cls: "end", ln: "c" }];
+// 筛选值 s 是后端订单状态机契约(backend-canonical,不可改);label 运营可读中文,复用 data.ts 的 stateLabel 单一真源。
+const ORDER_STATES = ["created", "paid", "allocating", "active", "failed", "payment_failed", "expired", "provisioning_failed", "refunded", "cancelled"] as const;
 const FILTERS = [
   { s: "all", label: "全部" },
-  { s: "created", label: "created" },
-  { s: "paid", label: "paid" },
-  { s: "allocating", label: "allocating" },
-  { s: "active", label: "active" },
-  { s: "failed", label: "failed" },
-  { s: "payment_failed", label: "payment_failed" },
-  { s: "expired", label: "expired" },
-  { s: "provisioning_failed", label: "provisioning_failed" },
-  { s: "refunded", label: "refunded" },
-  { s: "cancelled", label: "cancelled" },
+  ...ORDER_STATES.map((s) => ({ s, label: stateLabel(s) })),
 ];
 const IN_FLIGHT_STATES = new Set(["created", "paid", "allocating", "failed"]);
 const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
@@ -40,19 +33,21 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     .reduce((sum, o) => sum + o.amt, 0);
   const inFlight = orders.filter((o) => IN_FLIGHT_STATES.has(ctx.orderState(o))).length;
   const missingTerminal = orders.filter((o) => ctx.orderState(o) === "failed").length;
+  // 状态机主路径节点:nm 中文主标(运营可读);ct 计数补全语义(原"X 在"语意残缺)。
   const nodes = [
-    { cls: "start", nm: "created", ct: `${stateCounts.get("created") ?? 0} 在` },
-    { cls: "flow", nm: "paid", ct: `${stateCounts.get("paid") ?? 0} 在` },
-    { cls: "flow", nm: "allocating", ct: `${stateCounts.get("allocating") ?? 0} 在 · DC 分配中` },
-    { cls: "end", nm: "active ✓", ct: `${stateCounts.get("active") ?? 0} 在` },
+    { cls: "start", nm: "已创建", ct: `${stateCounts.get("created") ?? 0} 单` },
+    { cls: "flow", nm: "已支付", ct: `${stateCounts.get("paid") ?? 0} 单` },
+    { cls: "flow", nm: "分配中", ct: `${stateCounts.get("allocating") ?? 0} 单 · DC 分配` },
+    { cls: "end", nm: "运行中 ✓", ct: `${stateCounts.get("active") ?? 0} 单` },
   ];
+  // 终态分支:nm 中文主标;desc 补因果(去状态码裸用,与 nm 不重复)。
   const branches = [
-    { cls: "err", nm: "payment_failed", ct: `${stateCounts.get("payment_failed") ?? 0} 在`, desc: "支付失败 · created 阶段" },
-    { cls: "warn", nm: "expired", ct: `${stateCounts.get("expired") ?? 0} 在`, desc: "订单超时未支付" },
-    { cls: "err", nm: "provisioning_failed", ct: `${stateCounts.get("provisioning_failed") ?? 0} 在`, desc: "DC 分配超时" },
-    { cls: "warn", nm: "refunded", ct: `${stateCounts.get("refunded") ?? 0} 在`, desc: "人工退款 · D4 联动" },
-    { cls: "neutral", nm: "cancelled", ct: `${stateCounts.get("cancelled") ?? 0} 在`, desc: "created/paid 前可取消" },
-    { cls: "warn", nm: "缺失终态", ct: `${missingTerminal} 待处置`, desc: "failed 待补建终态" },
+    { cls: "err", nm: "支付失败", ct: `${stateCounts.get("payment_failed") ?? 0} 单`, desc: "下单后未成功扣款" },
+    { cls: "warn", nm: "已过期", ct: `${stateCounts.get("expired") ?? 0} 单`, desc: "订单超时未支付" },
+    { cls: "err", nm: "开通失败", ct: `${stateCounts.get("provisioning_failed") ?? 0} 单`, desc: "DC 分配超时" },
+    { cls: "warn", nm: "已退款", ct: `${stateCounts.get("refunded") ?? 0} 单`, desc: "人工退款 · D4 账单联动" },
+    { cls: "neutral", nm: "已取消", ct: `${stateCounts.get("cancelled") ?? 0} 单`, desc: "已创建 / 已支付阶段可取消" },
+    { cls: "warn", nm: "缺失终态", ct: `${missingTerminal} 单待处置`, desc: "失败订单待补建终态" },
   ];
   const rows = orders;
 
@@ -60,9 +55,9 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     <>
       <EStats items={[
         { k: "后端订单", v: ctx.e4Total, sub: ctx.e4Loading ? "同步中" : ctx.e4Error ? "同步异常" : `第 ${ctx.e4Page} 页 ${orders.length} 条`, tone: "ok" },
-        { k: "运行中金额", v: money(activeAmount), sub: `当前页 ${stateCounts.get("active") ?? 0} 笔 active` },
-        { k: "流转中订单", v: inFlight, sub: "当前页 created / paid / allocating / failed", tone: inFlight ? "cyan" : "" },
-        { k: "缺失终态", v: missingTerminal, sub: "当前页 failed 需补建终态", tone: missingTerminal ? "danger" : "ok" },
+        { k: "运行中金额", v: money(activeAmount), sub: `当前页 ${stateCounts.get("active") ?? 0} 笔运行中` },
+        { k: "流转中订单", v: inFlight, sub: "当前页 已创建 / 已支付 / 分配中 / 失败", tone: inFlight ? "cyan" : "" },
+        { k: "缺失终态", v: missingTerminal, sub: "当前页失败订单需补建终态", tone: missingTerminal ? "danger" : "ok" },
       ]} />
 
       {/* 状态机流转图 */}

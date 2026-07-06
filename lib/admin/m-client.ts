@@ -1,5 +1,7 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
 import type {
   AdvisorScript,
   CustomerProfile,
@@ -92,9 +94,35 @@ type ContentConversationMessageView = {
   createdAt?: string;
 };
 
+// 后端 ConversationCustomerProfile record 的镜像(跨域聚合客户档案,只读快照)。
+type ConversationCustomerProfile = {
+  uid?: string;
+  nickname?: string;
+  phone?: string;
+  vlevel?: string;
+  kyc?: string;
+  systemTags?: string[];
+  customTags?: string[];
+  risk?: string;
+  riskNote?: string;
+  recharge?: string;
+  withdraw?: string;
+  balance?: string;
+  tickets?: number;
+  device?: string;
+  hashrate?: string;
+  idle?: string | null;
+  region?: string;
+  joined?: string;
+  lastActive?: string;
+  ledger?: Array<{ label?: string; when?: string; amount?: string; up?: boolean; pending?: boolean }>;
+  notes?: Array<{ id?: string; ts?: number; author?: string; text?: string }>;
+};
+
 type ContentConversationDetail = {
   conversation?: ContentConversationView;
   messages?: ContentConversationMessageView[];
+  customerProfile?: ConversationCustomerProfile;
 };
 
 type SupportFaqView = {
@@ -184,6 +212,57 @@ type SupportAgentPageView = {
   advisorAssignments?: Record<string, unknown>[];
 };
 
+type SupportWorkbenchPurchaseGate = {
+  rankMin?: number | null;
+  activeDirectMin?: number | null;
+  teamVolumeMin?: number | null;
+  mode?: "all" | "either" | null;
+  quotaCap?: number | null;
+  quotaSold?: number | null;
+  quotaPeriod?: "month" | "lifetime" | null;
+  enforce?: boolean | null;
+};
+
+type SupportWorkbenchSkuView = {
+  skuId?: string;
+  name?: string;
+  tier?: string | null;
+  tagline?: string | null;
+  badge?: string | null;
+  gpu?: string | null;
+  vram?: string | null;
+  hashRate?: string | null;
+  power?: string | null;
+  datacenter?: string | null;
+  price?: number | string | null;
+  dailyEarn?: number | string | null;
+  dailyEarnNex?: number | string | null;
+  shareYieldMin?: number | string | null;
+  shareYieldMax?: number | string | null;
+  baseRate?: string | null;
+  sold?: number | null;
+  stock?: string | null;
+  rating?: number | string | null;
+  reviews?: number | null;
+  aiImageGenPerMin?: number | null;
+  aiLlmTokensPerSec?: number | null;
+  aiVideoMinPerHour?: number | null;
+  aiFineTuneMins?: number | null;
+  aiUnlocks?: string | null;
+  features?: string[] | null;
+  generation?: number | null;
+  lifecycle?: string | null;
+  supersededBy?: string | null;
+  tradeinDiscount?: number | string | null;
+  unlockPhase?: string | null;
+  purchaseGate?: SupportWorkbenchPurchaseGate | null;
+  imageAssetId?: string | null;
+  imageObjectKey?: string | null;
+  imagePreviewUrl?: string | null;
+  tag?: string | null;
+  status?: string | null;
+};
+
 export type MLoadConfig = {
   autoBalance: boolean;
   defaultCap: number;
@@ -222,7 +301,6 @@ export type MAdvisorAssignment = {
   userId: number;
   userNo: string;
   nickname: string;
-  assignmentType: string;
   status: string;
   startsAt?: string;
   endsAt?: string;
@@ -268,7 +346,7 @@ export type MLoadConfigWrite = MLoadConfig & {
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
-  advisor: "专属顾问",
+  advisor: "专属客服服务",
   support: "普通客服",
   ai: "Nova AI 顾问",
 };
@@ -281,6 +359,16 @@ const MANAGED_BY: Record<string, string> = {
 
 function idempotencyKey() {
   return `m-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function supportWorkbenchQueryString(query: Record<string, string | number | undefined>) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value === undefined || value === "") return;
+    params.set(key, String(value));
+  });
+  const text = params.toString();
+  return text ? `?${text}` : "";
 }
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -323,6 +411,74 @@ function bool(value: unknown, fallback = false) {
   if (typeof value === "string") return ["1", "true", "on", "enabled"].includes(value.toLowerCase());
   if (typeof value === "number") return value !== 0;
   return fallback;
+}
+
+function optionalNum(value: unknown) {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = num(value, Number.NaN);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function adaptPurchaseGate(gate: SupportWorkbenchPurchaseGate | null | undefined): PurchaseGate | undefined {
+  if (!gate) return undefined;
+  const purchaseGate: PurchaseGate = {
+    rankMin: gate.rankMin ?? undefined,
+    activeDirectMin: gate.activeDirectMin ?? undefined,
+    teamVolumeMin: gate.teamVolumeMin ?? undefined,
+    mode: gate.mode === "either" ? "either" : "all",
+    quotaCap: gate.quotaCap ?? undefined,
+    quotaSold: gate.quotaSold ?? undefined,
+    quotaPeriod: gate.quotaPeriod === "lifetime" ? "lifetime" : "month",
+    enforce: gate.enforce !== false,
+  };
+  const hasValue =
+    purchaseGate.rankMin != null ||
+    purchaseGate.activeDirectMin != null ||
+    purchaseGate.teamVolumeMin != null ||
+    purchaseGate.quotaCap != null;
+  return hasValue ? purchaseGate : undefined;
+}
+
+function adaptSupportWorkbenchSku(sku: SupportWorkbenchSkuView): OpsSku {
+  return {
+    id: str(sku.skuId),
+    name: str(sku.name, str(sku.skuId, "未命名 SKU")),
+    tier: str(sku.tier, "Entry"),
+    tagline: sku.tagline ?? undefined,
+    badge: sku.badge ?? undefined,
+    gpu: sku.gpu ?? undefined,
+    vram: sku.vram ?? undefined,
+    hashRate: sku.hashRate ?? undefined,
+    power: sku.power ?? undefined,
+    datacenter: sku.datacenter ?? undefined,
+    price: num(sku.price),
+    dailyEarn: num(sku.dailyEarn),
+    dailyEarnNEX: num(sku.dailyEarnNex),
+    shareYieldMin: optionalNum(sku.shareYieldMin),
+    shareYieldMax: optionalNum(sku.shareYieldMax),
+    baseRate: sku.baseRate ?? undefined,
+    sold: sku.sold ?? undefined,
+    stock: sku.stock ?? "0",
+    rating: optionalNum(sku.rating),
+    reviews: sku.reviews ?? undefined,
+    aiImageGenPerMin: sku.aiImageGenPerMin ?? undefined,
+    aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? undefined,
+    aiVideoMinPerHour: sku.aiVideoMinPerHour ?? undefined,
+    aiFineTuneMins: sku.aiFineTuneMins ?? undefined,
+    aiUnlocks: sku.aiUnlocks ?? undefined,
+    features: sku.features ?? undefined,
+    generation: sku.generation ?? undefined,
+    lifecycle: sku.lifecycle ?? undefined,
+    supersededBy: sku.supersededBy ?? undefined,
+    tradeinDiscount: optionalNum(sku.tradeinDiscount),
+    unlock: str(sku.unlockPhase),
+    purchaseGate: adaptPurchaseGate(sku.purchaseGate),
+    imageAssetId: sku.imageAssetId ?? undefined,
+    imageObjectKey: sku.imageObjectKey ?? undefined,
+    imagePreviewUrl: sku.imagePreviewUrl ?? undefined,
+    tag: str(sku.tag),
+    status: str(sku.status, "pending"),
+  };
 }
 
 function requireLoadRaw(raw: Record<string, unknown> | undefined): Record<string, unknown> {
@@ -448,28 +604,78 @@ function roleKey(type: SessionConvo["type"]) {
   return type === "advisor" ? "conversations.roleAdvisor" : "conversations.roleSupport";
 }
 
-function customerProfile(row: ContentConversationView): CustomerProfile {
-  const uid = row.userId ? `U-${String(row.userId).padStart(5, "0")}` : "—";
+// 客户档案适配:detail 场景用后端跨域聚合的真实档案;列表行(只有 ContentConversationView,
+// 无 detail)或会话未关联用户时降级为占位档案,待打开 detail 后由真实档案覆盖。
+function adaptCustomerProfile(
+  detail: ContentConversationDetail | ContentConversationView,
+  base: ContentConversationView,
+): CustomerProfile {
+  const type = conversationType(base.conversationType);
+  const backend = "customerProfile" in detail && detail.customerProfile ? detail.customerProfile : undefined;
+  const fallbackUid = base.userId ? `U-${String(base.userId).padStart(5, "0")}` : "—";
+  if (!backend) {
+    // 列表场景 / 会话未关联用户:占位档案(只读辅助,真实数据在打开 detail 时由后端聚合返回)
+    return {
+      uid: fallbackUid,
+      nickname: fallbackUid === "—" ? "未关联用户" : `用户 ${fallbackUid}`,
+      phone: "—",
+      vlevel: "—",
+      kyc: "待核对",
+      systemTags: [type === "advisor" ? "顾问会话" : "客服会话"],
+      customTags: [],
+      risk: "中",
+      riskNote: "打开会话后由后端聚合客户资金 / 实名 / 设备档案。",
+      recharge: "—",
+      withdraw: "—",
+      balance: "—",
+      tickets: 0,
+      device: "—",
+      hashrate: "—",
+      region: "—",
+      joined: "—",
+      lastActive: "刚刚",
+      ledger: [],
+      notes: [],
+    };
+  }
+  // detail 场景:后端已跨域聚合真实档案,逐字段兜底
+  const riskRaw = str(backend.risk);
+  const risk: CustomerProfile["risk"] = riskRaw === "高" ? "高" : riskRaw === "低" ? "低" : "中";
+  const systemTags = asStringArray(backend.systemTags);
+  const customTags = asStringArray(backend.customTags);
   return {
-    uid,
-    nickname: uid === "—" ? "未关联用户" : `用户编码 ${uid}`,
-    phone: "—",
-    vlevel: "—",
-    kyc: "待核对",
-    tags: [conversationType(row.conversationType) === "advisor" ? "顾问会话" : "客服会话"],
-    risk: "中",
-    riskNote: "客服会话档案来自后端会话快照;完整资金、实名与设备信息请打开 C1 用户 360 页核对。",
-    recharge: "—",
-    withdraw: "—",
-    balance: "—",
-    tickets: 0,
-    device: "—",
-    hashrate: "—",
-    region: "—",
-    joined: "—",
-    lastActive: "刚刚",
-    ledger: [],
-    notes: [],
+    uid: str(backend.uid, fallbackUid),
+    nickname: str(backend.nickname, fallbackUid === "—" ? "未关联用户" : `用户 ${fallbackUid}`),
+    phone: str(backend.phone, "—"),
+    vlevel: str(backend.vlevel, "—"),
+    kyc: str(backend.kyc, "待核对"),
+    systemTags: systemTags.length ? systemTags : [type === "advisor" ? "顾问会话" : "客服会话"],
+    customTags,
+    risk,
+    riskNote: str(backend.riskNote, "按客服流程核对"),
+    recharge: str(backend.recharge, "—"),
+    withdraw: str(backend.withdraw, "—"),
+    balance: str(backend.balance, "—"),
+    tickets: num(backend.tickets, 0),
+    device: str(backend.device, "—"),
+    hashrate: str(backend.hashrate, "—"),
+    idle: backend.idle ? str(backend.idle) : undefined,
+    region: str(backend.region, "—"),
+    joined: str(backend.joined, "—"),
+    lastActive: str(backend.lastActive, "—") || "—",
+    ledger: asArray<Record<string, unknown>>(backend.ledger).map((row) => ({
+      label: str(row.label),
+      when: str(row.when),
+      amount: str(row.amount),
+      up: typeof row.up === "boolean" ? row.up : undefined,
+      pending: typeof row.pending === "boolean" ? row.pending : undefined,
+    })),
+    notes: asArray<Record<string, unknown>>(backend.notes).map((row) => ({
+      id: str(row.id),
+      ts: num(row.ts, Date.now()),
+      author: str(row.author),
+      text: str(row.text),
+    })),
   };
 }
 
@@ -540,7 +746,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
         ts: asTs(base.transferredAt, updated),
       }
     : undefined;
-  const profile = customerProfile(base);
+  const profile = adaptCustomerProfile(detail, base);
   return {
     id: str(base.conversationNo, `CV-${base.id ?? "UNKNOWN"}`),
     type,
@@ -666,7 +872,6 @@ function adaptAdvisorAssignment(row: Record<string, unknown>): MAdvisorAssignmen
     userId: num(row.userId, 0),
     userNo: str(row.userNo, row.userId ? `U${String(row.userId).padStart(8, "0")}` : ""),
     nickname: str(row.nickname, "未命名用户"),
-    assignmentType: str(row.assignmentType, "PRIMARY"),
     status: str(row.status, ""),
     startsAt: str(row.startsAt, ""),
     endsAt: str(row.endsAt, ""),
@@ -812,6 +1017,27 @@ export async function fetchMSupportAgentsPage(pageNum = 1, pageSize = 5): Promis
   };
 }
 
+export async function fetchMSupportWorkbenchSkus(pageNum = 1, pageSize = 100): Promise<OpsSku[]> {
+  const page = await apiRequest<AdminPage<SupportWorkbenchSkuView>>(
+    `/support-workbench/skus?pageNum=${encodeURIComponent(String(pageNum))}&pageSize=${encodeURIComponent(String(pageSize))}`,
+  );
+  return asArray<SupportWorkbenchSkuView>(page.records).map(adaptSupportWorkbenchSku);
+}
+
+export async function fetchMSupportWorkbenchUsers(query: UserProfileQuery = {}): Promise<AdminPage<User360Profile>> {
+  const pageNum = query.pageNum ?? 1;
+  const pageSize = query.pageSize ?? 10;
+  const page = await apiRequest<AdminPage<User360Profile>>(
+    `/support-workbench/users${supportWorkbenchQueryString({ ...query, pageNum, pageSize })}`,
+  );
+  return {
+    total: num(page.total, 0),
+    pageNum: num(page.pageNum, pageNum),
+    pageSize: num(page.pageSize, pageSize),
+    records: asArray<User360Profile>(page.records),
+  };
+}
+
 export function buildMLegacyParams(data: MContentData): Record<string, string> {
   const params: Record<string, string> = {
     "I.support.tickets": JSON.stringify(data.tickets),
@@ -946,6 +1172,30 @@ export const mContentActions = {
       body: JSON.stringify(withReason({ archived }, reason)),
     });
   },
+  addCustomerTag(conversationNo: string, tag: string, reason: string) {
+    return apiRequest<string[]>(`/conversations/${encodeURIComponent(conversationNo)}/customer-tags`, {
+      method: "POST",
+      body: JSON.stringify(withReason({ tag }, reason)),
+    });
+  },
+  removeCustomerTag(conversationNo: string, tag: string, reason: string) {
+    return apiRequest<string[]>(`/conversations/${encodeURIComponent(conversationNo)}/customer-tags`, {
+      method: "DELETE",
+      body: JSON.stringify(withReason({ tag }, reason)),
+    });
+  },
+  addCustomerNote(conversationNo: string, text: string, reason: string) {
+    return apiRequest<{ id?: string; ts?: number; author?: string; text?: string }>(`/conversations/${encodeURIComponent(conversationNo)}/customer-notes`, {
+      method: "POST",
+      body: JSON.stringify(withReason({ text }, reason)),
+    });
+  },
+  removeCustomerNote(conversationNo: string, noteId: string, reason: string) {
+    return apiRequest<unknown>(`/conversations/${encodeURIComponent(conversationNo)}/customer-notes/${encodeURIComponent(noteId)}`, {
+      method: "DELETE",
+      body: JSON.stringify(withReason({}, reason)),
+    });
+  },
   transferConversation(conversationNo: string, transfer: SessionConvo["transfer"], reason: string, targetIdOverride?: string) {
     const target = transfer?.to;
     const body =
@@ -1029,20 +1279,19 @@ export const mContentActions = {
     transferable?: boolean;
     busy?: boolean;
     userIds?: number[];
-    assignmentType?: string;
   }, reason: string) {
     return apiRequest<MSupportAgent>(`/support-agents/${encodeURIComponent(String(adminId))}/seat-assignment`, {
       method: "PATCH",
       body: JSON.stringify(withReason(seat, reason)),
     });
   },
-  assignAdvisorUser(adminId: number, userId: number, assignmentType: string, reason: string) {
+  assignAdvisorUser(adminId: number, userId: number, reason: string) {
     return apiRequest<MAdvisorAssignment>(`/support-agents/${encodeURIComponent(String(adminId))}/assignments`, {
       method: "POST",
-      body: JSON.stringify(withReason({ userId, assignmentType }, reason)),
+      body: JSON.stringify(withReason({ userId }, reason)),
     });
   },
-  async assignAdvisorUsers(adminId: number, userIds: number[], assignmentType: string, reason: string) {
+  async assignAdvisorUsers(adminId: number, userIds: number[], reason: string) {
     const normalizedUserIds = Array.from(new Set(userIds
       .map((userId) => Number(userId))
       .filter((userId) => Number.isFinite(userId) && userId > 0)));
@@ -1050,7 +1299,7 @@ export const mContentActions = {
     for (const userId of normalizedUserIds) {
       assignments.push(await apiRequest<MAdvisorAssignment>(`/support-agents/${encodeURIComponent(String(adminId))}/assignments`, {
         method: "POST",
-        body: JSON.stringify(withReason({ userId, assignmentType }, reason)),
+        body: JSON.stringify(withReason({ userId }, reason)),
       }));
     }
     return assignments;

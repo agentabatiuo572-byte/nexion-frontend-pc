@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -8,18 +8,23 @@ import {
   changeA1AccountRole,
   createA1Account,
   createA1RbacAction,
+  deleteA1Account,
   fetchA1Overview,
   resetA1Account2fa,
+  resetA1AccountPassword,
   revokeA1AccountSessions,
+  updateA1AccountProfile,
   updateA1AccountStatus,
   updateA1RbacGrants,
   updateA1SecurityBaseline,
   type A1CreateAccountInput,
   type A1Operator,
   type A1Overview,
+  type A1PasswordResetResult,
   type A1RbacAction,
   type A1RoleDefinition,
   type A1SecurityBaseline,
+  type A1UpdateAccountInput,
   type GrantCell,
 } from "@/lib/admin/a1-client";
 import type { ACtx } from "./types";
@@ -65,18 +70,6 @@ const GRANT_LABEL: Record<GrantCell, string> = {
 };
 
 const GRANT_OPTIONS: GrantCell[] = ["-", "R", "M", "C"];
-const PWD_CHARS = "23456789abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ";
-
-function genPwdSegment(): string {
-  let r = "";
-  for (let i = 0; i < 4; i++) r += PWD_CHARS[Math.floor(Math.random() * PWD_CHARS.length)];
-  return r;
-}
-
-function genPwd(): string {
-  return `NX-${genPwdSegment()}-${genPwdSegment()}-${genPwdSegment()}`;
-}
-
 function toGrantCell(value: string | undefined): DisplayGrantCell {
   return value === "M" || value === "C" || value === "R" || value === "-" ? value : null;
 }
@@ -126,14 +119,29 @@ function forceLogoutRole(role: string | undefined | null) {
   return role ?? "";
 }
 
-function operatorDisplayName(op: Pick<A1Operator, "name" | "email">) {
-  return op.name?.trim() || op.email?.trim() || "运营账号";
+function operatorDisplayName(op: Pick<A1Operator, "name" | "username" | "email">) {
+  return op.name?.trim() || op.username?.trim() || op.email?.trim() || "运营账号";
 }
 
-function operatorDisplayLabel(op: Pick<A1Operator, "name" | "email">) {
+function operatorDisplayLabel(op: Pick<A1Operator, "name" | "username" | "email">) {
   const name = operatorDisplayName(op);
+  const username = op.username?.trim();
+  if (username && username !== name) return `${name}(${username})`;
   const email = op.email?.trim();
   return email && email !== name ? `${name}(${email})` : name;
+}
+
+function stopRowAction(event: MouseEvent<HTMLButtonElement>, work: () => void) {
+  event.stopPropagation();
+  work();
+}
+
+function openRowAction(event: KeyboardEvent<HTMLTableRowElement>, work: () => void) {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+  event.preventDefault();
+  work();
 }
 
 export function A1Accounts({ ctx }: { ctx: ACtx }) {
@@ -150,6 +158,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [perPage, setPerPage] = useState(10);
   const [roleIdx, setRoleIdx] = useState<number | null>(null);
   const [naOpen, setNaOpen] = useState(false);
+  const [detailAccount, setDetailAccount] = useState<A1Operator | null>(null);
+  const [editAccountTarget, setEditAccountTarget] = useState<A1Operator | null>(null);
+  const [passwordReset, setPasswordReset] = useState<A1PasswordResetResult | null>(null);
 
   const refreshOverview = useCallback(async (quiet = false) => {
     if (!quiet) {
@@ -339,6 +350,62 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     },
   });
 
+  const resetPassword = (op: A1Operator) => openActionConfirm({
+    action: `重置密码 · ${operatorDisplayName(op)}`,
+    detail: (
+      <>
+        <div className="atint danger" style={{ marginBottom: 12 }}>
+          <b>高敏凭据操作</b> · 系统会生成临时密码、更新账号密码、吊销该账号旧登录态,并要求下次登录立即修改密码。
+        </div>
+        <b>{operatorDisplayLabel(op)}</b> · 登录名 <span className="acode">{op.username || "未返回"}</span>。
+      </>
+    ),
+    amplifies: false,
+    businessForm: {
+      kind: "identity-verify",
+      subject: operatorDisplayLabel(op),
+      channels: ["视频核实", "当面核实", "回拨预留工作号"],
+      ticketHint: "如 SEC-20260618-001",
+    },
+    run: (reason, _value, businessValue) => {
+      const verify = `核验 ${businessValue?.channel ?? "—"} · ${businessValue?.verifiedAt || "—"} · 工单 ${businessValue?.ticket || "—"}`;
+      const action = `重置密码 ${operatorDisplayName(op)}`;
+      setMutatingAction(action);
+      resetA1AccountPassword(op.id, `${reason}；${verify}`, operator)
+        .then(async (result) => {
+          setPasswordReset(result);
+          await refreshOverview(true);
+          toast(`${operatorDisplayName(op)} 密码已重置 · 临时密码只展示在当前弹窗`);
+        })
+        .catch((error) => {
+          toast(`提交失败:${errorMessage(error)}`);
+        })
+        .finally(() => setMutatingAction(null));
+    },
+  });
+
+  const editAccount = (op: A1Operator, form: A1UpdateAccountInput & { reason: string }) => {
+    openActionConfirm({
+      action: `编辑账号 · ${operatorDisplayName(op)}`,
+      detail: (
+        <>
+          <b>{operatorDisplayLabel(op)}</b> · 登录名从 <span className="acode">{op.username || "未返回"}</span> 更新为 <span className="acode">{form.username}</span>。
+          后端会检查登录名和邮箱唯一性;登录名变更后会吊销该账号当前登录态。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        const finalReason = `${form.reason}；${reason}`;
+        void runMutation(
+          `编辑账号 ${operatorDisplayName(op)}`,
+          () => updateA1AccountProfile(op.id, form, finalReason, operator),
+          `${form.displayName} 资料已更新`,
+        );
+        setEditAccountTarget(null);
+      },
+    });
+  };
+
   const disableAcct = (op: A1Operator) => {
     if (op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
       toast("拒绝:剩余有效超管将不足 2 个");
@@ -382,6 +449,39 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       );
     },
   });
+
+  const deleteAcct = (op: A1Operator) => {
+    const targetId = operatorAccountId(op.id);
+    if (currentAdminId !== null && targetId !== null && targetId === currentAdminId) {
+      toast("拒绝:不能删除自己的当前账号");
+      return;
+    }
+    if (op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
+      toast("拒绝:剩余有效超管将不足 2 个");
+      return;
+    }
+    const displayName = operatorDisplayName(op);
+    openActionConfirm({
+      action: `删除账号 · ${displayName}`,
+      detail: (
+        <>
+          <div className="atint danger" style={{ marginBottom: 12 }}>
+            删除会把该运营账号从后端账号表软删除,并吊销该账号全部后台 session。该动作不可用前端状态恢复。
+          </div>
+          <b>{operatorDisplayLabel(op)}</b> · 角色 {roleName(roles, op.role)} · 当前状态 {op.status === "enabled" ? "启用" : "禁用"}。
+        </>
+      ),
+      amplifies: false,
+      run: (reason) => {
+        void runMutation(
+          `删除账号 ${displayName}`,
+          () => deleteA1Account(op.id, reason, operator),
+          `${displayName} 已删除`,
+        );
+        setDetailAccount(null);
+      },
+    });
+  };
 
   const kickAllSessions = (op: A1Operator) => {
     const displayName = operatorDisplayName(op);
@@ -551,14 +651,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       action: `新建运营账号 · ${form.displayName}`,
       detail: (
         <>
-          <b>{form.displayName}</b> ({form.email}) · 角色 <b>{roleName(roles, form.role)}</b>
-          · 凭据
-          <span className="acode">{form.deliver === "mail" ? "工作邮箱自动下发" : "发起人当面交付"}</span>。
+          <b>{form.displayName}</b> · 登录名 <span className="acode">{form.username}</span> · 角色 <b>{roleName(roles, form.role)}</b>。
           <div style={{ marginTop: 8 }}>
-            <b>新账号默认零写权,只有所选角色授权</b> · 首次登录强制绑定双因子 · 开通动作由后端创建账号、关系和审计。
-          </div>
-          <div style={{ marginTop: 8, fontSize: 12, color: "var(--ink-4)" }}>
-            临时密码由服务器生成和下发,前端只展示格式预览,不会保存或回显明文。
+            <b>新账号默认零写权,只有所选角色授权</b> · 初始密码只用于首次登录 · 首次登录必须修改密码。
           </div>
         </>
       ),
@@ -653,7 +748,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 980 }}>
+          <table className="l-tbl" style={{ minWidth: 1120 }}>
             <thead>
               <tr>
                 <th>账号</th>
@@ -669,10 +764,20 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               {pageRows.map((op) => {
                 const logoutBlock = forceLogoutBlockReason(op);
                 return (
-                  <tr key={op.id}>
+                  <tr
+                    key={op.id}
+                    className="click"
+                    tabIndex={0}
+                    aria-label={`查看账号详情 ${operatorDisplayName(op)}`}
+                    onClick={() => setDetailAccount(op)}
+                    onKeyDown={(event) => openRowAction(event, () => setDetailAccount(op))}
+                    style={{ cursor: "pointer" }}
+                  >
                     <td>
                       <div style={{ fontWeight: 700, color: "var(--ink)" }}>{operatorDisplayName(op)}</div>
-                      <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 2 }}>{op.email || "未配置邮箱"}</div>
+                      <div style={{ fontSize: 12, color: "var(--ink-4)", marginTop: 2 }}>
+                        登录名: {op.username || "未返回"}{op.email ? ` · ${op.email}` : ""}
+                      </div>
                     </td>
                     <td>
                       <span className="mc">{roleName(roles, op.role)}</span>
@@ -683,11 +788,13 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                     <td><span className="mono">{op.sessions}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                        <button className="l-btn sm" onClick={() => changeRole(op)} disabled={!!mutatingAction || !roles.length}>改角色</button>
-                        <button className="l-btn sm" onClick={() => reset2fa(op)} disabled={!!mutatingAction}>重置 2FA</button>
+                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!mutatingAction}>编辑</button>
+                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length}>改角色</button>
+                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction}>重置 2FA</button>
+                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!!mutatingAction}>重置密码</button>
                         <button
                           className="l-btn sm"
-                          onClick={() => kickAllSessions(op)}
+                          onClick={(event) => stopRowAction(event, () => kickAllSessions(op))}
                           disabled={!!mutatingAction}
                           data-blocked={logoutBlock ? "true" : undefined}
                           title={logoutBlock ?? "强制吊销该账号全部 Redis 后台会话"}
@@ -696,10 +803,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                           强制登出
                         </button>
                         {op.status === "enabled" ? (
-                          <button className="l-btn sm dgr" onClick={() => disableAcct(op)} disabled={!!mutatingAction}>禁用</button>
+                          <button className="l-btn sm dgr" onClick={(event) => stopRowAction(event, () => disableAcct(op))} disabled={!!mutatingAction}>禁用</button>
                         ) : (
-                          <button className="l-btn sm mc" onClick={() => enableAcct(op)} disabled={!!mutatingAction}>启用</button>
+                          <button className="l-btn sm mc" onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!!mutatingAction}>启用</button>
                         )}
+                        <button className="l-btn sm dgr" onClick={(event) => stopRowAction(event, () => deleteAcct(op))} disabled={!!mutatingAction}>删除</button>
                       </div>
                     </td>
                   </tr>
@@ -901,6 +1009,31 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           onSubmit={createAccount}
         />
       )}
+      {detailAccount && (
+        <AccountDetailDrawer
+          account={detailAccount}
+          roles={roles}
+          onClose={() => setDetailAccount(null)}
+          onEdit={() => {
+            setEditAccountTarget(detailAccount);
+            setDetailAccount(null);
+          }}
+        />
+      )}
+      {editAccountTarget && (
+        <EditAccountDrawer
+          account={editAccountTarget}
+          disabled={!!mutatingAction}
+          onClose={() => setEditAccountTarget(null)}
+          onSubmit={(form) => editAccount(editAccountTarget, form)}
+        />
+      )}
+      {passwordReset && (
+        <PasswordResetDrawer
+          result={passwordReset}
+          onClose={() => setPasswordReset(null)}
+        />
+      )}
     </>
   );
 }
@@ -909,10 +1042,38 @@ type NaForm = A1CreateAccountInput & {
   reason: string;
 };
 
+type EditAccountForm = A1UpdateAccountInput & {
+  reason: string;
+};
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
+const DEFAULT_INITIAL_PASSWORD_CHARS = "23456789abcdefghjkmnpqrstuvwxyz";
+
+function generateDefaultInitialPassword() {
+  const bytes = new Uint8Array(8);
+  const browserCrypto = globalThis.crypto;
+  if (browserCrypto?.getRandomValues) {
+    browserCrypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => DEFAULT_INITIAL_PASSWORD_CHARS[byte % DEFAULT_INITIAL_PASSWORD_CHARS.length]).join("");
+  }
+  return Array.from({ length: 8 }, () => (
+    DEFAULT_INITIAL_PASSWORD_CHARS[Math.floor(Math.random() * DEFAULT_INITIAL_PASSWORD_CHARS.length)]
+  )).join("");
+}
 
 function isValidEmail(email: string) {
-  return EMAIL_PATTERN.test(email.trim());
+  const normalized = email.trim();
+  return !normalized || EMAIL_PATTERN.test(normalized);
+}
+
+function isValidUsername(username: string) {
+  return USERNAME_PATTERN.test(username.trim());
+}
+
+function isStrongInitialPassword(password: string) {
+  const normalized = password.trim();
+  return normalized.length >= 8;
 }
 
 function NewAccountDrawer({
@@ -927,12 +1088,13 @@ function NewAccountDrawer({
   onSubmit: (form: NaForm) => void;
 }) {
   const defaultRole = "";
+  const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState(defaultRole);
-  const [deliver, setDeliver] = useState<"mail" | "handoff">("mail");
+  const [initialPassword, setInitialPassword] = useState(() => generateDefaultInitialPassword());
+  const [showPassword, setShowPassword] = useState(true);
   const [reason, setReason] = useState("");
-  const [pwd, setPwd] = useState(() => genPwd());
 
   useEffect(() => {
     if (!roles.some((item) => item.key === role)) {
@@ -941,10 +1103,14 @@ function NewAccountDrawer({
   }, [role, roles]);
 
   const emailOk = isValidEmail(email);
+  const usernameOk = isValidUsername(username);
+  const passwordOk = isStrongInitialPassword(initialPassword);
   const missingItems = [
+    !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
     !displayName.trim() ? "显示名未填写" : "",
-    !email.trim() ? "工作邮箱未填写" : !emailOk ? "工作邮箱格式不正确" : "",
+    email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     !role ? "初始角色未选择" : "",
+    !initialPassword.trim() ? "初始密码未填写" : !passwordOk ? "初始密码强度不足" : "",
     !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
   const disabledReason = disabled ? "权限或数据仍在加载,暂不能创建" : "";
@@ -954,7 +1120,7 @@ function NewAccountDrawer({
   return (
     <Drawer
       title="新建运营账号"
-      sub="① 账号信息 → ② 初始角色 → ③ 凭据 → 操作理由"
+      sub="① 登录资料 → ② 初始角色 → ③ 初始密码 → 操作理由"
       onClose={onClose}
       footer={
         <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
@@ -970,14 +1136,36 @@ function NewAccountDrawer({
               disabled={!canSubmit}
               title={canSubmit ? "确认创建账号" : `不能创建:${submitBlockers.join("、")}`}
               style={{ flex: 2, justifyContent: "center", opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
-              onClick={() => canSubmit && onSubmit({ displayName: displayName.trim(), email: email.trim(), role, deliver, reason: reason.trim() })}
+              onClick={() => canSubmit && onSubmit({
+                username: username.trim().toLowerCase(),
+                displayName: displayName.trim(),
+                email: email.trim() || undefined,
+                role,
+                initialPassword: initialPassword.trim(),
+                reason: reason.trim(),
+              })}
             >确认创建账号</button>
           </div>
         </div>
       }
     >
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>① 账号信息</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>① 登录资料</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+          登录名 *
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase())}
+            placeholder="risk.shift"
+            autoComplete="username"
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
+          />
+          {username.trim() && !usernameOk && (
+            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
+              3-32 位,仅小写字母、数字、点、下划线或短横线。
+            </span>
+          )}
+        </label>
         <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
           显示名 *
           <input
@@ -988,11 +1176,12 @@ function NewAccountDrawer({
           />
         </label>
         <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
-          工作邮箱 *
+          工作邮箱
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@example.com"
+            autoComplete="email"
             style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
           />
           {email.trim() && !emailOk && (
@@ -1032,22 +1221,31 @@ function NewAccountDrawer({
         ))}
       </div>
 
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>③ 初始凭据 · 格式预览</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>③ 初始密码 *</div>
       <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span className="mono" style={{ fontSize: 14, fontWeight: 700, letterSpacing: ".04em", color: "var(--ink)" }}>{pwd}</span>
-          <button className="l-btn sm" onClick={() => setPwd(genPwd())} type="button">换一个</button>
-          <span style={{ fontSize: 12, color: "var(--ink-4)" }}>真密码由服务器生成;前端不持明文</span>
-        </div>
-        <div style={{ marginTop: 9, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: "var(--ink-3)" }}>下发方式</span>
-          <button className="l-btn sm" type="button" onClick={() => setDeliver("mail")} style={{ background: deliver === "mail" ? "var(--a-ac-soft)" : "var(--surface-2)", color: deliver === "mail" ? "var(--a-ac)" : "var(--ink-3)", fontWeight: deliver === "mail" ? 600 : 500 }}>工作邮箱自动下发</button>
-          <button className="l-btn sm" type="button" onClick={() => setDeliver("handoff")} style={{ background: deliver === "handoff" ? "var(--a-ac-soft)" : "var(--surface-2)", color: deliver === "handoff" ? "var(--a-ac)" : "var(--ink-3)", fontWeight: deliver === "handoff" ? 600 : 500 }}>发起人当面交付</button>
+          <input
+            type={showPassword ? "text" : "password"}
+            value={initialPassword}
+            onChange={(e) => setInitialPassword(e.target.value)}
+            placeholder="至少 8 位"
+            autoComplete="new-password"
+            style={{ flex: "1 1 260px", minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
+          />
+          <button className="l-btn sm" onClick={() => setShowPassword((value) => !value)} type="button">
+            {showPassword ? "隐藏" : "显示"}
+          </button>
+          <button className="l-btn sm" onClick={() => setInitialPassword(generateDefaultInitialPassword())} type="button">
+            重新生成
+          </button>
+          <span style={{ fontSize: 12, color: passwordOk || !initialPassword.trim() ? "var(--ink-4)" : "var(--danger)" }}>
+            默认已生成 8 位初始密码,登录后必须修改。
+          </span>
         </div>
       </div>
 
       <div className="atint" style={{ marginBottom: 14 }}>
-        <b>开通即生效的三条底线</b> · 默认零写权 · 首次登录强制绑定双因子 · 开通动作写入后端审计。
+        <b>开通即生效的三条底线</b> · 默认零写权 · 首次登录强制改密 · 账号创建写入后端审计。
       </div>
 
       <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
@@ -1060,6 +1258,232 @@ function NewAccountDrawer({
           style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 13, resize: "vertical" }}
         />
       </label>
+    </Drawer>
+  );
+}
+
+function AccountDetailDrawer({
+  account,
+  roles,
+  onClose,
+  onEdit,
+}: {
+  account: A1Operator;
+  roles: A1RoleDefinition[];
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const rows = [
+    ["账号 ID", account.id],
+    ["登录名", account.username || "未返回"],
+    ["显示名", operatorDisplayName(account)],
+    ["工作邮箱", account.email || "未填写"],
+    ["角色", roleName(roles, account.role)],
+    ["状态", account.status === "enabled" ? "启用" : "已禁用"],
+    ["双因子", account.tfa ? "强制已绑" : "未绑定"],
+    ["最近登录", account.lastLogin || "—"],
+    ["活跃 session", `${account.sessions}`],
+    ["凭据状态", account.credentialDeliveryStatus || "ACTIVE"],
+  ];
+
+  return (
+    <Drawer
+      title={`账号详情 · ${operatorDisplayName(account)}`}
+      sub={account.username || account.email || account.id}
+      onClose={onClose}
+      footer={
+        <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)", display: "flex", gap: 8 }}>
+          <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>关闭</button>
+          <button className="l-btn primary" onClick={onEdit} style={{ flex: 2, justifyContent: "center" }}>编辑账号</button>
+        </div>
+      }
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
+        <div className="f-stat">
+          <div className="k">角色</div>
+          <div className="v" style={{ fontSize: 18 }}>{roleName(roles, account.role)}</div>
+          <div className="sub">{account.status === "enabled" ? "账号启用中" : "账号已禁用"}</div>
+        </div>
+        <div className="f-stat">
+          <div className="k">会话</div>
+          <div className="v" style={{ fontSize: 18 }}>{account.sessions} 个</div>
+          <div className="sub">{account.credentialDeliveryStatus || "ACTIVE"}</div>
+        </div>
+      </div>
+      <table className="l-tbl">
+        <tbody>
+          {rows.map(([label, value]) => (
+            <tr key={label}>
+              <td style={{ width: 120, color: "var(--ink-4)", fontSize: 12 }}>{label}</td>
+              <td style={{ color: "var(--ink-2)", fontSize: 13 }}>{value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Drawer>
+  );
+}
+
+function EditAccountDrawer({
+  account,
+  disabled,
+  onClose,
+  onSubmit,
+}: {
+  account: A1Operator;
+  disabled?: boolean;
+  onClose: () => void;
+  onSubmit: (form: EditAccountForm) => void;
+}) {
+  const [username, setUsername] = useState(account.username || "");
+  const [displayName, setDisplayName] = useState(operatorDisplayName(account));
+  const [email, setEmail] = useState(account.email || "");
+  const [reason, setReason] = useState("");
+  const usernameOk = isValidUsername(username);
+  const emailOk = isValidEmail(email);
+  const changed =
+    username.trim().toLowerCase() !== (account.username || "").trim().toLowerCase()
+    || displayName.trim() !== operatorDisplayName(account)
+    || email.trim().toLowerCase() !== (account.email || "").trim().toLowerCase();
+  const missingItems = [
+    !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
+    !displayName.trim() ? "显示名未填写" : "",
+    email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
+    !changed ? "资料没有变化" : "",
+    !reason.trim() ? "操作理由未填写" : "",
+  ].filter(Boolean);
+  const disabledReason = disabled ? "账号操作仍在提交,暂不能编辑" : "";
+  const submitBlockers = [disabledReason, ...missingItems].filter(Boolean);
+  const canSubmit = !disabled && missingItems.length === 0;
+
+  return (
+    <Drawer
+      title={`编辑账号 · ${operatorDisplayName(account)}`}
+      sub={account.username || account.id}
+      onClose={onClose}
+      footer={
+        <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
+          {submitBlockers.length > 0 && (
+            <div style={{ marginBottom: 8, fontSize: 12, color: "var(--danger)", lineHeight: 1.6 }}>
+              不能保存: {submitBlockers.join("、")}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>取消</button>
+            <button
+              className="l-btn primary"
+              disabled={!canSubmit}
+              title={canSubmit ? "保存账号资料" : `不能保存:${submitBlockers.join("、")}`}
+              style={{ flex: 2, justifyContent: "center", opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
+              onClick={() => canSubmit && onSubmit({
+                username: username.trim().toLowerCase(),
+                displayName: displayName.trim(),
+                email: email.trim() || undefined,
+                reason: reason.trim(),
+              })}
+            >保存账号资料</button>
+          </div>
+        </div>
+      }
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+          登录名 *
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase())}
+            autoComplete="username"
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
+          />
+          {username.trim() && !usernameOk && (
+            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
+              3-32 位,仅小写字母、数字、点、下划线或短横线。
+            </span>
+          )}
+        </label>
+        <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+          显示名 *
+          <input
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 13 }}
+          />
+        </label>
+        <label style={{ fontSize: 12, color: "var(--ink-3)", gridColumn: "1 / -1" }}>
+          工作邮箱
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
+          />
+          {email.trim() && !emailOk && (
+            <span style={{ display: "block", marginTop: 4, color: "var(--danger)", fontSize: 11 }}>
+              请输入有效邮箱格式。
+            </span>
+          )}
+        </label>
+      </div>
+      <label style={{ fontSize: 12, color: "var(--ink-3)" }}>
+        操作理由 *(必填 · 写入审计)
+        <textarea
+          rows={2}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="为什么修改这个账号资料"
+          style={{ width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "inherit", fontSize: 13, resize: "vertical" }}
+        />
+      </label>
+    </Drawer>
+  );
+}
+
+function PasswordResetDrawer({
+  result,
+  onClose,
+}: {
+  result: A1PasswordResetResult;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const account = result.account;
+  const copyPassword = () => {
+    void navigator.clipboard.writeText(result.temporaryPassword).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    });
+  };
+
+  return (
+    <Drawer
+      title="密码已重置"
+      sub="临时密码只在本次结果中展示"
+      onClose={onClose}
+      footer={
+        <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)", display: "flex", gap: 8 }}>
+          <button className="l-btn" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>关闭</button>
+          <button className="l-btn primary" onClick={copyPassword} style={{ flex: 2, justifyContent: "center" }}>
+            {copied ? "已复制" : "复制临时密码"}
+          </button>
+        </div>
+      }
+    >
+      <div className="atint danger" style={{ marginBottom: 14 }}>
+        关闭此窗口后不会再次显示临时密码;请通过已核验渠道告知对应运维人员。
+      </div>
+      <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.7, marginBottom: 12 }}>
+        账号 <b style={{ color: "var(--ink-2)" }}>{operatorDisplayName(account)}</b>
+        {" · "}登录名 <span className="acode">{account.username || "未返回"}</span>
+      </div>
+      <div style={{ background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 10, padding: 14 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>临时密码</div>
+        <div className="mono" style={{ fontSize: 18, fontWeight: 800, color: "var(--ink)", wordBreak: "break-all" }}>
+          {result.temporaryPassword}
+        </div>
+      </div>
+      <div className="atint" style={{ marginTop: 14 }}>
+        该账号使用临时密码登录后,必须先修改密码才能进入控制台。
+      </div>
     </Drawer>
   );
 }

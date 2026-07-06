@@ -74,7 +74,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const toggle = (dcId: string) => {
     const paused = ctx.isDcPaused(dcId);
     ctx.openActionConfirm({
-      name: paused ? `恢复派单 · ${dcId}` : `批量 pause · ${dcId}`,
+      name: paused ? `恢复派单 · ${dcId}` : `批量暂停 · ${dcId}`,
       op: "ops-pause", dc: dcId, fixedVal: paused ? "false" : "true", amplify: false,
       detail: paused
         ? `恢复 ${dcId} 派单 · 重新接入调度,无需重启设备`
@@ -167,7 +167,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                       {isActivatable(d.state) && (
                         <>
                           <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "激活设备", `激活 ${d.serial}(用户 ${d.user} 槽位 ${slotLabel(d)})· 校验设备状态 + 单户上限(${maxDevicesLabel})`)}>激活</button>{" "}
-                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "强制激活设备", `强制激活 ${d.serial} · 运维异常补救 · force 不绕过单户上限(${maxDevicesLabel}) · 理由必填`, true)}>强制激活</button>
+                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "强制激活设备", `强制激活 ${d.serial} · 运维异常补救 · 强制不绕过单户上限(${maxDevicesLabel}) · 理由必填`, true)}>强制激活</button>
                         </>
                       )}
                       {isDeactivatable(d.state) && (

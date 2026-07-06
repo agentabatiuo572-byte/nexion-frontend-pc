@@ -553,3 +553,60 @@
 .e3man-term .t { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 3px; }
 .e3man-term .n { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
 @media (max-width: 560px) { .e3man-terms { grid-template-columns: 1fr; } .e3man-tr { grid-template-columns: 1fr; } }
+
+/* —— E6 算力与设备配置（从高保真移植）—— */
+/* ##################### E6 算力与设备配置 ##################### */
+.edom .e6-flag-row { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+.edom .e6-flag-row + .e6-flag-row { border-top: 1px solid var(--border); }
+.edom .e6-flag-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.edom .e6-flag-name { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.edom .e6-flag-desc { font-size: 12px; color: var(--ink-3); line-height: 1.5; }
+.edom .e6-flag-ctl { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.edom .e6-flag-state { font-size: 12.5px; font-weight: 600; min-width: 42px; text-align: right; }
+/* 开关 track + knob:纯 token 无 hex;::after 把命中区撑到 ≥44px(视觉 track 30px,满足 tap target)。 */
+/* 卡内嵌套铁律:filled 控件用 soft bg tint 不加 border(off 态 surface-3 / on 态 brand,靠背景对比 + knob 表意)。 */
+.edom .e6-switch { position: relative; width: 52px; height: 30px; flex-shrink: 0; padding: 0; border: none; border-radius: 999px; background: var(--surface-3); cursor: pointer; transition: background .18s ease; }
+.edom .e6-switch::after { content: ""; position: absolute; inset: -7px -6px; }
+.edom .e6-switch[data-on="true"] { background: var(--brand); }
+.edom .e6-switch:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.edom .e6-switch-knob { position: absolute; top: 50%; left: 3px; width: 22px; height: 22px; transform: translateY(-50%); border-radius: 50%; background: var(--ink); transition: left .18s ease, background .18s ease; }
+.edom .e6-switch[data-on="true"] .e6-switch-knob { left: 27px; background: var(--surface); }
+@media (prefers-reduced-motion: reduce) { .edom .e6-switch, .edom .e6-switch-knob { transition: none; } }
+.edom .e6-gpu-table { display: flex; flex-direction: column; }
+.edom .e6-gpu-row { display: grid; grid-template-columns: minmax(180px, 1.05fr) minmax(145px, .72fr) minmax(240px, 1.35fr) auto; gap: 14px; align-items: center; padding: 15px 16px; border-top: 1px solid var(--border); }
+.edom .e6-gpu-row:first-child { border-top: 0; }
+.edom .e6-tier-main { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.edom .e6-tier-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.edom .e6-tier-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 7px; background: var(--brand-soft); color: var(--brand); font-family: var(--mono); font-size: 10.5px; font-weight: 700; }
+.edom .e6-tier-name { color: var(--ink); font-size: 14px; font-weight: 700; }
+.edom .e6-tier-desc { color: var(--ink-3); font-size: 12px; line-height: 1.45; }
+.edom .e6-tier-model { color: var(--ink-4); font-size: 11.5px; line-height: 1.4; }
+.edom .e6-tier-yield { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--ink-3); font-size: 11.5px; line-height: 1.35; }
+.edom .e6-tier-yield b { color: var(--ink); font-family: var(--mono); font-size: 17px; font-weight: 700; }
+.edom .e6-keyword-wrap { display: flex; flex-wrap: wrap; gap: 7px; min-width: 0; }
+.edom .e6-keyword-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; max-width: 100%; padding: 0 5px 0 9px; border-radius: 8px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border); font-size: 11.5px; }
+.edom .e6-keyword-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.edom .e6-keyword-chip button { border: 0; border-radius: 6px; min-height: 22px; padding: 0 6px; background: var(--surface-3); color: var(--ink-3); font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.edom .e6-keyword-chip button:hover { color: var(--ink); background: var(--border); }
+.edom .e6-keyword-chip button.danger { color: var(--danger); background: var(--danger-soft); }
+.edom .e6-inline-add { min-height: 28px; border-radius: 8px; padding: 0 10px; border: 1px dashed var(--border-strong); background: var(--surface); color: var(--brand); font-size: 11.5px; font-weight: 700; cursor: pointer; }
+.edom .e6-inline-add:hover { background: var(--brand-soft); border-color: var(--brand); }
+.edom .e6-slot-full { min-height: 28px; display: inline-flex; align-items: center; border-radius: 8px; padding: 0 9px; background: var(--surface-2); color: var(--ink-4); font-size: 11.5px; }
+.edom .e6-row-actions { display: flex; justify-content: flex-end; }
+.edom .e6-download-box { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+.edom .e6-download-url { display: grid; grid-template-columns: minmax(130px, .3fr) minmax(220px, 1fr) auto; align-items: center; gap: 12px; background: var(--surface-2); border-radius: 10px; padding: 12px; }
+.edom .e6-download-box .k { color: var(--ink-4); font-size: 11.5px; font-weight: 600; line-height: 1.4; }
+.edom .e6-download-box .v { color: var(--ink); font-size: 12.5px; line-height: 1.5; word-break: break-word; }
+.edom .e6-download-box .v.muted { color: var(--ink-4); }
+.edom .e6-copy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.edom .e6-copy-grid > div { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 11px 12px; min-width: 0; }
+@media (max-width: 1180px) {
+  .edom .e6-gpu-row { grid-template-columns: 1fr; align-items: stretch; }
+  .edom .e6-row-actions { justify-content: flex-start; }
+  .edom .e6-download-url { grid-template-columns: 1fr; align-items: start; }
+}
+@media (max-width: 760px) {
+  .edom .e6-flag-row { align-items: flex-start; flex-direction: column; }
+  .edom .e6-flag-ctl { width: 100%; justify-content: space-between; }
+  .edom .e6-copy-grid { grid-template-columns: 1fr; }
+}

@@ -121,7 +121,7 @@ export type SessionStatus = "open" | "resolved" | "closed";
 export type SessionMsg = { ts: number; sender: "user" | "agent"; agentName?: string; text: string; ctaHref?: string };
 
 /* 完整客户档案(设计稿 CustomerProfile 合并）—— 坐席接待时一眼看清价值 / 风险。只读快照,
- * 客户侧真实账户操作回 C/D 域;此处的备注 notes 是客服侧留档(随 convo 写入 I.session.convos 持久)。 */
+ * 客户侧真实账户操作回 C/D 域;systemTags 派生只读,customTags / notes 持久化于后端(nx_customer_tag / nx_customer_note)。 */
 export type CustomerNote = { id: string; ts: number; author: string; text: string };
 export type CustomerLedgerEntry = { label: string; when: string; amount: string; up?: boolean; pending?: boolean };
 export type CustomerProfile = {
@@ -130,7 +130,8 @@ export type CustomerProfile = {
   phone: string;
   vlevel: string;        // V 等级
   kyc: string;           // KYC 状态
-  tags: string[];
+  systemTags: string[];   // 系统派生只读(会话类型 / V等级 / KYC / 风控),刷新随状态重算
+  customTags: string[];   // 坐席自定义标签(持久化于后端,可编辑,跨会话共享)
   risk: "低" | "中" | "高";
   riskNote: string;
   recharge: string;      // 累计充值
@@ -188,7 +189,7 @@ export type SessionConvo = {
   transfer?: SessionTransfer; // 跨坐席转交态;存在即「转入待处理」(挂目标坐席 B/队列/备勤池,待接收/退回)
 };
 
-/* M3 会话、客户档案运行态必须从后端 content/conversations 与 C1 用户接口读取。 */
+/* M3 会话、客户档案运行态必须从后端 content/conversations 与客服工作台接口读取。 */
 export const CUSTOMER_DIRECTORY: CustomerProfile[] = [];
 export const SESSION_AGENTS: readonly string[] = [];
 export const SESSION_CONVOS: SessionConvo[] = [];

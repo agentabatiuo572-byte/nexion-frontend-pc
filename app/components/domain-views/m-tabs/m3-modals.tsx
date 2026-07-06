@@ -91,7 +91,7 @@ export function CustomerProfileModal({
           <div className="row wrap" style={{ gap: 6 }}>
             <span className="bdg cyan">{profile.vlevel}</span>
             <span className="bdg ok">KYC {profile.kyc}</span>
-            {profile.tags.map((t) => <span key={t} className="bdg dim">{t}</span>)}
+            {[...profile.systemTags, ...profile.customTags].map((t) => <span key={t} className="bdg dim">{t}</span>)}
           </div>
           <div className="sub" style={{ fontWeight: 600, marginTop: 4 }}>风险研判</div>
           <div className="itint">
@@ -240,7 +240,7 @@ export function QuickActionModal({
               <div key={n.id} className="itint">
                 <div style={{ fontSize: 13, color: "var(--ink)", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{n.text}</div>
                 <div className="row" style={{ gap: 8, marginTop: 5, alignItems: "center" }}>
-                  <span className="tiny" style={{ color: "var(--ink-4)" }}>{n.author} · {relWhen(n.ts)}</span>
+                  <span className="tiny" style={{ color: "var(--ink-4)" }} suppressHydrationWarning>{n.author} · {relWhen(n.ts)}</span>
                   <span style={{ flex: 1 }} />
                   <button type="button" className="btn btn-sec btn-sm" onClick={() => onRemoveNote(n.id)}>删除</button>
                 </div>

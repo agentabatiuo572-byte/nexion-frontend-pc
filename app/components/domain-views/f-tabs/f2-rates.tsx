@@ -24,6 +24,21 @@ function policyText(policy: Record<string, unknown>, key: string, fallback = "-"
 export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   const hasUnilevelRows = ctx.f2Unilevel.length > 0;
   const maxCombinedOutflow = policyText(ctx.f2CommissionPolicy, "maxCombinedOutflowPct", "-");
+  // Partner Status 4 档门槛(JSON bronze/silver/gold/diamond)回填解析 · 无记录用默认 0/5K/50K/500K。
+  const partnerTiersRaw = ctx.f2ConfigValues["F.partner.tiers"] ?? "";
+  let ptBronze = "0";
+  let ptSilver = "5000";
+  let ptGold = "50000";
+  let ptDiamond = "500000";
+  if (partnerTiersRaw) {
+    try {
+      const parsed = JSON.parse(partnerTiersRaw);
+      if (typeof parsed.bronze === "number") ptBronze = String(parsed.bronze);
+      if (typeof parsed.silver === "number") ptSilver = String(parsed.silver);
+      if (typeof parsed.gold === "number") ptGold = String(parsed.gold);
+      if (typeof parsed.diamond === "number") ptDiamond = String(parsed.diamond);
+    } catch { /* schema 异常用默认,提交时后端 validatePartnerTiers 兜底 */ }
+  }
 
   if (ctx.f2Loading && !hasUnilevelRows) {
     return (
@@ -104,6 +119,43 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             <span className="lg ext">扩展 EXTENDED(L2–L7)</span>
             <span className="mono" style={{ marginLeft: "auto", fontFamily: "var(--mono)" }}>改后对下一笔结算生效 · 不回溯</span>
           </div>
+          <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
+            <span>Unilevel 层级深度 · 当前 <b style={{ color: "var(--ink-2)" }}>{ctx.f2ConfigValues["F.unilevel.depth"] ?? "7"}</b> 层(L1–L{ctx.f2ConfigValues["F.unilevel.depth"] ?? "7"})</span>
+            <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
+              name: "Unilevel 层级深度调整", op: "param", paramKey: "F.unilevel.depth",
+              edit: { kind: "number", current: ctx.f2ConfigValues["F.unilevel.depth"] ?? "7", unit: "层" },
+              detail: `Unilevel 网络版税结算层级深度 · 当前 ${ctx.f2ConfigValues["F.unilevel.depth"] ?? "7"} 层 · 范围 1-10 · 改后对下一笔结算生效,不影响已计提层级。`,
+            })}>调整深度</button>
+          </div>
+          <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
+            <span>单层暂停 · L1–L7 各层独立暂停网络版税派发</span>
+            <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
+              name: "单层暂停管理(L1–L7)",
+              businessForm: {
+                kind: "multi-field",
+                title: "单层暂停管理",
+                hint: "暂停后该层网络版税停止计提 · 不影响其他层 · 改后对下一笔结算生效。",
+                fields: ctx.f2Unilevel.map((u) => ({
+                  key: u.l,
+                  label: `${u.l} ${u.direct ? "直推" : "扩展"}`,
+                  current: (ctx.f2ConfigValues[`F.unilevel.${u.l}.paused`] ?? "off") === "on" ? "on" : "off",
+                  inputKind: "select" as const,
+                  options: ["on", "off"],
+                })),
+              },
+              detail: "L1-L7 各层网络版税独立暂停开关 · on=暂停该层派发 / off=正常计提 · 写 A2 审计。",
+              run: async (reason, bv) => {
+                if (!bv) return;
+                for (const u of ctx.f2Unilevel) {
+                  const val = bv[u.l];
+                  if (val === "on" || val === "off") {
+                    await ctx.updateF2Config(`F.unilevel.${u.l}.paused`, val, reason);
+                  }
+                }
+                ctx.toast("单层暂停已更新 · 改后对下一笔结算生效");
+              },
+            })}>单层暂停管理</button>
+          </div>
         </section>
 
         <section className="pane">
@@ -118,6 +170,39 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             ))}
           </div>
           <div style={{ padding: "0 18px 14px", fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.55 }}>Tier 按 30d 网络贡献 GMV 自动判定 · 派生直接版税(Direct Royalty)的基础费率。</div>
+          <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
+            <span>Partner Status · 当前 <b style={{ color: "var(--ink-2)" }}>${ptBronze}/${ptSilver}/${ptGold}/${ptDiamond}</b>(bronze/silver/gold/diamond)</span>
+            <button className="fbtn primary amp" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
+              name: "Partner Status 4 档门槛调整", amplify: true,
+              businessForm: {
+                kind: "multi-field",
+                title: "Partner Status 4 档门槛(USD)",
+                hint: "bronze/silver/gold/diamond 4 档晋升门槛 · 须为非负数字且非递减(bronze ≤ silver ≤ gold ≤ diamond)。",
+                fields: [
+                  { key: "bronze", label: "Bronze 门槛(USD)", current: ptBronze, inputKind: "number", min: 0 },
+                  { key: "silver", label: "Silver 门槛(USD)", current: ptSilver, inputKind: "number", min: 0 },
+                  { key: "gold", label: "Gold 门槛(USD)", current: ptGold, inputKind: "number", min: 0 },
+                  { key: "diamond", label: "Diamond 门槛(USD)", current: ptDiamond, inputKind: "number", min: 0 },
+                ],
+              },
+              detail: `Partner Status 4 档晋升门槛 · 当前 $${ptBronze}/$${ptSilver}/$${ptGold}/$${ptDiamond} · 调低门槛放大权益发放,受 B1 约束。`,
+              run: async (reason, bv) => {
+                if (!bv) throw new Error("请填写全部 4 档");
+                const bronze = Number(bv.bronze);
+                const silver = Number(bv.silver);
+                const gold = Number(bv.gold);
+                const diamond = Number(bv.diamond);
+                if (![bronze, silver, gold, diamond].every(Number.isFinite) || [bronze, silver, gold, diamond].some((n) => n < 0)) {
+                  throw new Error("4 档门槛均须为非负数字");
+                }
+                if (bronze > silver || silver > gold || gold > diamond) {
+                  throw new Error("4 档门槛须非递减(bronze ≤ silver ≤ gold ≤ diamond)");
+                }
+                await ctx.updateF2Config("F.partner.tiers", JSON.stringify({ bronze, silver, gold, diamond }), reason);
+                ctx.toast(`Partner 4 档门槛已确认生效 · $${bronze}/$${silver}/$${gold}/$${diamond}`);
+              },
+            })}>Partner 4 档</button>
+          </div>
         </section>
       </div>
 

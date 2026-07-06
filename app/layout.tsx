@@ -17,6 +17,7 @@ export default function RootLayout({
       lang="zh"
       data-theme="dark"
       className="h-full antialiased"
+      suppressHydrationWarning
     >
       <body className="min-h-full">
         <ThemeProvider />

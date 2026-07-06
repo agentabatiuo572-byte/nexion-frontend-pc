@@ -49,6 +49,7 @@ export interface FViewCtx {
   f1Error: string | null;
   refreshF1: () => Promise<void>;
   updateVRankThreshold: (rank: string, field: string, value: string, reason: string) => Promise<void>;
+  updateF1Config: (key: string, value: string, reason: string) => Promise<void>;
   rewards: Record<string, OpsVRankRewardItem[]>;
   addReward: (level: string, item: OpsVRankRewardItem, reason: string) => Promise<void>;
   updateReward: (level: string, id: string, patch: Partial<OpsVRankRewardItem>, reason: string) => Promise<void>;
@@ -57,6 +58,8 @@ export interface FViewCtx {
   voucherLabels: Record<string, string>;
   skuOptions: string[];
   skuLabels: Record<string, string>;
+  // F1 展示文案类配置(头衔/奖品名)· 读后端 configValues map + 写经 updateF1Config(单 key PATCH)。
+  f1ConfigValues: Record<string, string>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
   f2Unilevel: F2UnilevelRate[];
@@ -64,6 +67,8 @@ export interface FViewCtx {
   f2Params: F2PolicyParam[];
   f2CommissionPolicy: Record<string, unknown>;
   f2Guardrails: string[];
+  // F2 参数类配置(如 unilevel 层级深度)· 读后端 configValues map + 写经 updateF2Config(单 key PATCH)。
+  f2ConfigValues: Record<string, string>;
   f2Loading: boolean;
   f2Error: string | null;
   refreshF2: () => Promise<void>;
@@ -74,6 +79,8 @@ export interface FViewCtx {
   f3Settlements: F3Settlement[];
   f3MaxTrackGmv: number;
   f3Config: F3BinaryConfig | null;
+  // F3 参数类配置(如双轨暂停开关)· 读后端 configValues map + 写经 updateF3Config。
+  f3ConfigValues: Record<string, string>;
   f3DailyCap: F3DailyCap | null;
   f3ParticipantCount: number;
   f3BlockedCount: number;

@@ -19,13 +19,14 @@ import {
   type MContentData,
   type MLoadConfigWrite,
 } from "@/lib/admin/m-client";
+import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1Overview } from "./m-tabs/m1-overview";
 import { M2Tickets } from "./m-tabs/m2-tickets";
 import { M3Sessions } from "./m-tabs/m3-sessions";
 import { M4KbSla } from "./m-tabs/m4-kb-sla";
 import { M5Scripts } from "./m-tabs/m5-scripts";
-import type { AdvisorScript, SessionConvo, SessionReplyTpl, SessionType, SupportFaq, SupportSla, SupportTicket, SupportTicketCategory, SupportTicketPriority } from "./m-tabs/data";
+import type { AdvisorScript, SessionConvo, SessionMsg, SessionReplyTpl, SessionType, SupportFaq, SupportSla, SupportTicket, SupportTicketCategory, SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 
@@ -78,6 +79,65 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     void reloadMContent();
   }, [reloadMContent]);
 
+  // M3 即时会话 SSE 订阅：后端 OpsConversationStreamController 推 ConversationMessageEvent。
+  // 增量合并进 mData.conversations —— 直接 setMData，绕开 runMWrite 写链（避免被 writeConversationRows
+  // 当成「坐席新回复」二次回写后端，形成回环）。收到事件后 mergedParams 自动重算 → M3 / Dock 重渲。
+  const handleStreamEvent = useCallback((event: ConversationStreamEvent) => {
+    setMData((prev) => {
+      if (!prev) return prev;
+      const idx = prev.conversations.findIndex((c) => c.id === event.conversationNo);
+      // 未知会话（别的坐席的 / 新发起未在本坐席快照）—— 增量合并无法处理；
+      // 不触发整页 reload，等下一次 reloadMContent 快照兜底。
+      if (idx === -1) return prev;
+      const convo = prev.conversations[idx];
+      const eventTs = event.ts ? new Date(event.ts).getTime() : Date.now();
+      let nextConvo: SessionConvo = convo;
+
+      if (event.eventType === "MESSAGE" || event.eventType === "INITIATE") {
+        const sender: "user" | "agent" = event.senderType === "USER" ? "user" : "agent";
+        const text = event.body ?? "";
+        // 去重：同 ts + 同正文已存在则不重复 push（本坐席自己发的回复会经 SSE 回环）。
+        const dup = convo.messages.some((m) => m.ts === eventTs && m.text === text);
+        if (!dup) {
+          const msg: SessionMsg = {
+            ts: eventTs,
+            sender,
+            agentName: sender === "agent" ? (event.senderName ?? convo.agentName) : undefined,
+            text,
+          };
+          nextConvo = {
+            ...convo,
+            messages: [...convo.messages, msg],
+            lastTs: eventTs,
+            unread: sender === "user" ? convo.unread + 1 : convo.unread,
+          };
+        }
+      } else if (event.eventType === "TRANSFER") {
+        // 转交态（from/to/reason）由后端快照权威表达；此处仅扰动 lastTs 让 UI 重渲，
+        // 具体 transfer 字段等下一次 reloadMContent 同步，避免本地推断错位。
+        nextConvo = { ...convo, lastTs: eventTs };
+      } else if (event.eventType === "STATUS") {
+        const lower = (event.body ?? "").toLowerCase();
+        const archived = lower.includes("archive");
+        const closed = lower.includes("close") || lower.includes("resolve") || lower.includes("ticket");
+        nextConvo = {
+          ...convo,
+          lastTs: eventTs,
+          status: closed ? "closed" : convo.status,
+          archived: archived || closed ? true : convo.archived,
+        };
+      }
+
+      if (nextConvo === convo) return prev;
+      const conversations = prev.conversations.slice();
+      conversations[idx] = nextConvo;
+      return { ...prev, conversations };
+    });
+  }, []);
+  // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
+  // 当前 token 仅存 httpOnly cookie，JS 不可达，故不传 token（直连 + ?token 模式留作未来基础设施扩展）。
+  useConversationStream({ onEvent: handleStreamEvent });
+
   const legacyParams = useMemo(() => (mData ? buildMLegacyParams(mData) : {}), [mData]);
   const mergedParams = useMemo(
     () => ({ ...uiParams, ...legacyParams }),
@@ -100,10 +160,36 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     [legacyParams, mData, reloadMContent, setToast],
   );
 
+  // 客户标签(customTags)/备注(notes)走后端专用端点持久化,调完 reload 同步;失败 toast 报错。
+  // reason 固定为描述性 ≥6 字(满足后端 requireReasonCommand;标签/备注为即时编辑,无独立理由框)。
+  const addCustomerTag = useCallback((convoId: string, tag: string) => {
+    void mContentActions.addCustomerTag(convoId, tag, "客服添加客户标签")
+      .then(() => reloadMContent())
+      .catch((error) => setToast(`客户标签保存失败 · ${error instanceof Error ? error.message : ""}`));
+  }, [reloadMContent, setToast]);
+  const removeCustomerTag = useCallback((convoId: string, tag: string) => {
+    void mContentActions.removeCustomerTag(convoId, tag, "客服移除客户标签")
+      .then(() => reloadMContent())
+      .catch((error) => setToast(`客户标签移除失败 · ${error instanceof Error ? error.message : ""}`));
+  }, [reloadMContent, setToast]);
+  const addCustomerNote = useCallback((convoId: string, text: string) => {
+    void mContentActions.addCustomerNote(convoId, text, "客服新增客户备注")
+      .then(() => reloadMContent())
+      .catch((error) => setToast(`客户备注保存失败 · ${error instanceof Error ? error.message : ""}`));
+  }, [reloadMContent, setToast]);
+  const removeCustomerNote = useCallback((convoId: string, noteId: string) => {
+    void mContentActions.removeCustomerNote(convoId, noteId, "客服删除客户备注")
+      .then(() => reloadMContent())
+      .catch((error) => setToast(`客户备注删除失败 · ${error instanceof Error ? error.message : ""}`));
+  }, [reloadMContent, setToast]);
   const ctx: MCtx = {
     pget: (k) => mergedParams[k] as string | undefined,
     params: mergedParams,
     setParam: runMWrite,
+    addCustomerTag,
+    removeCustomerTag,
+    addCustomerNote,
+    removeCustomerNote,
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
@@ -369,14 +455,8 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
     await mContentActions.archiveConversation(row.id, Boolean(row.archived), reason);
     return;
   }
-  if (JSON.stringify(row.profile?.notes ?? []) !== JSON.stringify(before.profile?.notes ?? [])) {
-    const note = row.profile?.notes?.[0]?.text || "客户备注已更新";
-    await mContentActions.replyConversation(row.id, `内部备注: ${note}`, reason);
-    return;
-  }
-  if (JSON.stringify(row.profile?.tags ?? []) !== JSON.stringify(before.profile?.tags ?? [])) {
-    await mContentActions.replyConversation(row.id, `客户标签更新: ${(row.profile?.tags ?? []).join(" / ")}`, reason);
-  }
+  // 客户标签(customTags)与备注(notes)走 ctx.addCustomerTag/addCustomerNote 专用端点持久化,
+  // 不经会话写链,不污染会话消息流。此处无需处理 profile 字段变化。
 }
 
 async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: string) {
@@ -460,19 +540,18 @@ async function applyMBackendWrite(
       transferable?: boolean;
       busy?: boolean;
       userIds?: number[];
-      assignmentType?: string;
     }>(value);
     if (payload?.adminId && payload.position) await mContentActions.assignSupportSeat(payload.adminId, { ...payload, position: payload.position }, reason);
     return;
   }
   if (key === "I.support.advisorAssignment.__create") {
-    const payload = parseRecord<{ adminId?: number; userId?: number; userIds?: number[]; assignmentType?: string }>(value);
+    const payload = parseRecord<{ adminId?: number; userId?: number; userIds?: number[] }>(value);
     const userIds = Array.isArray(payload?.userIds)
       ? payload.userIds
       : payload?.userId
         ? [payload.userId]
         : [];
-    if (payload?.adminId && userIds.length > 0) await mContentActions.assignAdvisorUsers(payload.adminId, userIds, payload.assignmentType || "PRIMARY", reason);
+    if (payload?.adminId && userIds.length > 0) await mContentActions.assignAdvisorUsers(payload.adminId, userIds, reason);
     return;
   }
   if (key === "I.support.advisorAssignment.__delete") {
@@ -672,7 +751,7 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <b style={{ fontSize: 13, fontWeight: 500 }}>{customer}</b>
-            <span className="chip" style={{ height: 18, fontSize: 11 }}>{conv.type === "advisor" ? "专属顾问" : "普通客服"}</span>
+            <span className="chip" style={{ height: 18, fontSize: 11 }}>{conv.type === "advisor" ? "专属客服" : "普通客服"}</span>
           </div>
           <div className="dim2" style={{ fontSize: 11, marginTop: 2 }}>接待 {ownerLabel(conv.owner)} · <span className="mono">{conv.id}</span> · {dockRelWhen(conv.lastTs)}</div>
         </div>
