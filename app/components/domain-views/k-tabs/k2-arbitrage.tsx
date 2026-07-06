@@ -10,7 +10,7 @@ import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import { K_RISK } from "@/lib/mock/admin/design-data";
 import { K2_PARAMS, K2_VIEWS, K2_JUDGE, type K2View, type K2Row } from "./data";
-import { REWARD_RISK_PARAMS, rewardRiskParamKey, type RewardRiskParamDef } from "@/lib/mock/admin/compute-config";
+import { REWARD_RISK_PARAMS, rewardRiskParamKey, type RewardRiskParamDef, OTP_GATE_PARAMS, otpGateParamKey, type OtpGateParamDef } from "@/lib/mock/admin/compute-config";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -63,6 +63,22 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       },
     });
   };
+
+  // 短信闸门参数(FEAT-AUTH01):与 uniapp otpGate 同构;5 个纯数值,统一 number 弹窗。
+  // 不涉资金流出,不挂 amplifies(B1 预检仅资金向)。
+  const otpParamValue = (key: OtpGateParamDef["key"]) =>
+    ctx.pget(otpGateParamKey(key)) ?? String(OTP_GATE_PARAMS.find((p) => p.key === key)!.defaultVal);
+  const adjOtpGateParam = (p: OtpGateParamDef) =>
+    ctx.openActionConfirm({
+      action: `短信闸门参数 · ${p.label}`,
+      detail: `${p.label} · 当前 ${otpParamValue(p.key)} ${p.unit}。${p.desc}${p.frontendEffect} 只影响后续发送判定,已发出的验证码不受影响 · 写入审计`,
+      edit: { kind: "number", current: otpParamValue(p.key), unit: p.unit, min: p.min },
+      run: (reason, newVal) => {
+        if (!newVal) return;
+        ctx.setParam(otpGateParamKey(p.key), newVal, { action: `调整${p.label} → ${newVal} ${p.unit}`, reason });
+        ctx.toast(`${p.label} 已更新 · 后续发送按新阈值判定`);
+      },
+    });
 
   const lvlBadge = (n: number) => <span className={`bdg ${n >= 3 ? "bad" : n === 2 ? "warn" : "dim"}`}>{n} / 3 层</span>;
 
@@ -236,6 +252,37 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           </div>
           <div className="ktint" style={{ marginTop: 12, fontSize: 12 }}>
             <b>发放模式</b> · 按风险桶发放 = 新人礼跟随账户当前风险桶,同簇多号进「审核中 / 锁定奖励」;直入可提余额 = 演示 / 活动期开闸,谨慎使用。金额调整只影响后续发放,已发放的不回写。
+          </div>
+        </div>
+      </section>
+
+      {/* 短信闸门参数(FEAT-AUTH01 · uniapp otpGate 同构) */}
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">短信闸门参数</span>
+          <span className="sub">· 验证码发送限频与滑块人机验证 —— 被轰炸时收紧,正常用户误伤多时放宽</span>
+          <div className="r"><span className="kcode electric" title="与前端 otpGate 配置同构,登录/注册/重置三场景的发码判定同口径">发送判定单源</span></div>
+        </div>
+        <div className="l-b">
+          <div className="param-grid" data-proof="k2-otp-gate-params">
+            {OTP_GATE_PARAMS.map((p) => {
+              const curV = ctx.pget(otpGateParamKey(p.key));
+              return (
+                <div className="p" key={p.key}>
+                  <div className="k">{p.label}</div>
+                  <div className="v">
+                    {otpParamValue(p.key)}
+                    <span className="vu">{p.unit}</span>
+                    {curV ? <span className="vu">· 原 {p.defaultVal}</span> : null}
+                    <button className="l-btn sm mc" onClick={() => adjOtpGateParam(p)} title={`PRD K2 ${p.key}`}>调整</button>
+                  </div>
+                  <div className="s">{p.desc}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="ktint" style={{ marginTop: 12, fontSize: 12 }}>
+            <b>判定顺序</b> · 冷却检查 → 24h 限频(达阈值须先过滑块,一次性票据用完即废)→ 放行发码。参数调整立即生效于后续发送;验证码有效期 / 输错上限对已发出的码按签发时值执行。
           </div>
         </div>
       </section>

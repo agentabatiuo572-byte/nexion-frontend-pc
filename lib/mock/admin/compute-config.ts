@@ -351,6 +351,78 @@ export const REWARD_RISK_PARAMS: RewardRiskParamDef[] = [
 export const rewardRiskParamKey = (key: RewardRiskParamDef["key"]): string =>
   `${REWARD_RISK_PARAM_PREFIX}${key}`;
 
+// ── FEAT-AUTH01 短信验证码闸门参数(mock seed,backend-replaceable)────────
+// K2 风控配置权威;uniapp config-types.ts OtpGateConfig 同构(五键同名)。
+// PROD 替换点: PATCH /api/admin/otp-gate/config { <key>: value, reason }
+export interface OtpGateParamDef {
+  key: "resendSeconds" | "captchaAfterSends" | "otpTtlSeconds" | "maxVerifyAttempts" | "captchaTicketTtlSeconds";
+  label: string;
+  kind: "number";
+  defaultVal: number;
+  unit: string;
+  min: number;
+  desc: string;
+  frontendEffect: string;
+}
+
+export const OTP_GATE_PARAM_PREFIX = "K.otpGate.";
+
+export const OTP_GATE_PARAMS: OtpGateParamDef[] = [
+  {
+    key: "resendSeconds",
+    label: "验证码重发冷却",
+    kind: "number",
+    defaultVal: 60,
+    unit: "秒",
+    min: 0,
+    desc: "同一手机号两次发送的最小间隔;客户端倒计时与服务端限频同源,冷却内的请求直接拒绝且不生成新码。",
+    frontendEffect: "调短 = 放宽发送频率,短信轰炸面变大。",
+  },
+  {
+    key: "captchaAfterSends",
+    label: "滑块验证触发次数",
+    kind: "number",
+    defaultVal: 2,
+    unit: "次/24h",
+    min: 0,
+    desc: "24h 滑动窗内成功发送达此值后,下一次发送需先通过滑块人机验证(默认 2 = 第 3 次起拦)。",
+    frontendEffect: "调 0 = 每次发送都要滑块;调高 = 机器批量收码窗口变大。",
+  },
+  {
+    key: "otpTtlSeconds",
+    label: "验证码有效期",
+    kind: "number",
+    defaultVal: 300,
+    unit: "秒",
+    min: 60,
+    desc: "验证码签发后的服务端有效时长,过期须重新获取;同一手机号同时仅一个有效码,新发自动作废旧码。",
+    frontendEffect: "过长增加被截获重放的窗口,过短误伤慢网络用户。",
+  },
+  {
+    key: "maxVerifyAttempts",
+    label: "验证码输错上限",
+    kind: "number",
+    defaultVal: 5,
+    unit: "次",
+    min: 1,
+    desc: "单个验证码允许的连续输错次数,用尽即作废,须重新获取。",
+    frontendEffect: "调低 = 防爆破更严;调高 = 对手滑用户更宽容。",
+  },
+  {
+    key: "captchaTicketTtlSeconds",
+    label: "滑块通过票据有效期",
+    kind: "number",
+    defaultVal: 120,
+    unit: "秒",
+    min: 30,
+    desc: "滑块验证通过后签发的一次性放行票据有效窗;必须显式随发送提交,用一次即失效,禁止复用。",
+    frontendEffect: "过长 = 滞留票据风险变大;过短 = 用户须频繁重验。",
+  },
+];
+
+export const otpGateParamKey = (key: OtpGateParamDef["key"]): string =>
+  `${OTP_GATE_PARAM_PREFIX}${key}`;
+
 // ── SPEC-7 §5b K1 聚簇维度权重(K4 评分权威可配)──────────────────────────
 // uniapp config-types.ts RiskScoreConfig.dimensionWeights 同构;mock K4 分 =
 // 命中维度权重和(cap 1)。强维任一命中即入簇(OR),中弱维权重和达

@@ -212,6 +212,8 @@ const must = [
   ["K1 link weights use multi-field", k1, /title: "关联强度权重"[\s\S]*设备权重[\s\S]*支付工具权重[\s\S]*IP 权重/],
   ["K1 cluster detail shows earning impact", k1, /data-proof="k1-cluster-earning-impact"[\s\S]*收益影响/],
   ["welcome gift params are centralized", cfg, /REWARD_RISK_PARAMS[\s\S]*lockMode[\s\S]*usdtAmount[\s\S]*nexAmount/],
+  ["otp gate params are centralized", cfg, /OTP_GATE_PARAMS[\s\S]*resendSeconds[\s\S]*captchaAfterSends[\s\S]*otpTtlSeconds[\s\S]*maxVerifyAttempts[\s\S]*captchaTicketTtlSeconds/],
+  ["K2 renders otp gate params", k2, /data-proof="k2-otp-gate-params"[\s\S]*OTP_GATE_PARAMS\.map/],
   ["cluster dimension weights are centralized", cfg, /RISK_SCORE_WEIGHT_PARAMS[\s\S]*serverDeviceId[\s\S]*weakSignalClusterThreshold/],
   ["K2 renders welcome gift params", k2, /data-proof="k2-welcome-gift-params"[\s\S]*REWARD_RISK_PARAMS\.map/],
   ["K2 gift stats derive from configured NEX amount", k2, /giftBlockedCnt \* giftNex/],
