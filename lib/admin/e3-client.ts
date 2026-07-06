@@ -59,13 +59,23 @@ interface BackendTradeinTx {
 }
 
 const BACKEND_TO_FRONTEND_KEY: Record<string, string> = {
-  degradeEarly: "E.device.degradeEarly",
-  degradeMid: "E.device.degradeMid",
-  degradeLate: "E.device.degradeLate",
+  // FEAT-DEV01 任务产能节奏(键名 capacity 口径;数值与旧三段曲线等效)
+  capacityBand1DeltaPct: "E.device.capacity.band1DeltaPct",
+  capacityBand2DeltaPct: "E.device.capacity.band2DeltaPct",
+  capacityBand3DeltaPct: "E.device.capacity.band3DeltaPct",
   stageEarlyEnd: "E.device.stageEarlyEnd",
   stageMidEnd: "E.device.stageMidEnd",
   cycleMonths: "E.device.cycleMonths",
-  minEfficiency: "E.device.minEfficiency",
+  capacityFloorPct: "E.device.capacity.floorPct",
+  capacitySubsidyDays: "E.device.capacity.subsidyDays",
+  capacityApplyToPhone: "E.device.capacity.applyTo.phone",
+  capacityApplyToCloudShare: "E.device.capacity.applyTo.cloud-share",
+  capacityApplyToPcGpu: "E.device.capacity.applyTo.pc-gpu",
+  capacityApplyToS1: "E.device.capacity.applyTo.stellarbox-s1",
+  capacityApplyToPro: "E.device.capacity.applyTo.stellarbox-pro",
+  capacityApplyToProV2: "E.device.capacity.applyTo.stellarbox-pro-v2",
+  capacityApplyToRackP1: "E.device.capacity.applyTo.stellarrack-p1",
+  capacityApplyToRackP2: "E.device.capacity.applyTo.stellarrack-p2",
   taskLockS1: "E.device.taskLock.s1",
   taskLockPro: "E.device.taskLock.pro",
   taskLockRack: "E.device.taskLock.rack",

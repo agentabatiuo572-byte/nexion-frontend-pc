@@ -41,7 +41,9 @@
     "stageEarlyEndMonth": 3,
     "stageMiddleEndMonth": 8,
     "cycleMonths": 12,
-    "minEfficiency": 0.22
+    "minEfficiency": 0.22,
+    "subsidyDays": 30,
+    "exemptKinds": ["phone", "cloud-share", "pc-gpu"]
   },
   "products": {
     "stellarbox-s1": {

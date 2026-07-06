@@ -205,10 +205,29 @@ if (!uniLifecycle) {
     const match = adminDefaults.match(new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`));
     return match ? numberFrom(match[1]) : null;
   };
-  expectNumber("lifecycle.admin.minEfficiency", (adminNum("E.device.minEfficiency") ?? NaN) / 100, canon.deviceLifecycle.minEfficiency, ["app/components/domain-views/e-tabs/data.ts"]);
-  expectNumber("lifecycle.admin.degradeEarly", (adminNum("E.device.degradeEarly") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.early, ["app/components/domain-views/e-tabs/data.ts"]);
-  expectNumber("lifecycle.admin.degradeMiddle", (adminNum("E.device.degradeMid") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.middle, ["app/components/domain-views/e-tabs/data.ts"]);
-  expectNumber("lifecycle.admin.degradeLate", (adminNum("E.device.degradeLate") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.late, ["app/components/domain-views/e-tabs/data.ts"]);
+  // FEAT-DEV01 (2026-07-06): admin 参数键改任务产能口径(数值不变)。
+  expectNumber("lifecycle.admin.minEfficiency", (adminNum("E.device.capacity.floorPct") ?? NaN) / 100, canon.deviceLifecycle.minEfficiency, ["app/components/domain-views/e-tabs/data.ts"]);
+  expectNumber("lifecycle.admin.degradeEarly", (adminNum("E.device.capacity.band1DeltaPct") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.early, ["app/components/domain-views/e-tabs/data.ts"]);
+  expectNumber("lifecycle.admin.degradeMiddle", (adminNum("E.device.capacity.band2DeltaPct") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.middle, ["app/components/domain-views/e-tabs/data.ts"]);
+  expectNumber("lifecycle.admin.degradeLate", (adminNum("E.device.capacity.band3DeltaPct") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.late, ["app/components/domain-views/e-tabs/data.ts"]);
+
+  // FEAT-DEV01 新防线:新机补贴天数三端 + 豁免集(uniapp 字面量 ↔ canon ↔ admin applyTo)镜像。
+  const uniSubsidyMatch = uniLifecycle.match(/SUBSIDY_DAYS\s*=\s*(\d+)/);
+  expectNumber("lifecycle.uni.subsidyDays", uniSubsidyMatch ? Number(uniSubsidyMatch[1]) : null, canon.deviceLifecycle.subsidyDays, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
+  expectNumber("lifecycle.admin.subsidyDays", adminNum("E.device.capacity.subsidyDays"), canon.deviceLifecycle.subsidyDays, ["app/components/domain-views/e-tabs/data.ts"]);
+  const canonExempt = [...canon.deviceLifecycle.exemptKinds].sort();
+  const uniExemptMatch = uniLifecycle.match(/CAPACITY_EXEMPT_KINDS[^=]*=\s*\[([^\]]*)\]/);
+  const uniExempt = uniExemptMatch ? [...uniExemptMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort() : [];
+  if (JSON.stringify(uniExempt) !== JSON.stringify(canonExempt)) {
+    failures.push(`lifecycle.uni.exemptKinds [${uniExempt.join(",")}] ≠ canon [${canonExempt.join(",")}] (../Nexion-uniapp/src/store/device-lifecycle.ts)`);
+  }
+  const adminApplyToEntries = [...adminDefaults.matchAll(/"E\.device\.capacity\.applyTo\.([a-z0-9-]+)"\s*:\s*"([^"]+)"/g)];
+  const adminExempt = adminApplyToEntries.filter((m) => m[2] === "免递减").map((m) => m[1]).sort();
+  if (adminApplyToEntries.length === 0) {
+    failures.push("lifecycle.admin.applyTo entries missing in E_PARAM_DEFAULTS (app/components/domain-views/e-tabs/data.ts)");
+  } else if (JSON.stringify(adminExempt) !== JSON.stringify(canonExempt)) {
+    failures.push(`lifecycle.admin.applyTo 免递减集 [${adminExempt.join(",")}] ≠ canon exemptKinds [${canonExempt.join(",")}] (app/components/domain-views/e-tabs/data.ts)`);
+  }
 }
 
 const uniProducts = readIfExists(path.join(UNI_ROOT, "src", "mock", "products.ts"));

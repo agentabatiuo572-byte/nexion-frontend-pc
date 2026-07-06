@@ -21,16 +21,27 @@ export const TERMINAL_STATES = ["payment_failed", "expired", "refunded", "provis
 // 非终态(仍流转,允许补建终态);created/paid 另允许「取消订单」。
 export const NON_TERMINAL = new Set(["created", "paid", "allocating"]);
 
-// E-11 生命周期/置换调参种子参考;运行时由 GET /api/admin/devices/e3/overview 下发。
-// 衰减种子值镜像产品源码 device-lifecycle.ts:三段非线性 −4/−6/−23.7%·12 月·floor 22%。
+// E-11 产能节奏/置换调参种子参考;运行时由 GET /api/admin/devices/e3/overview 下发。
+// FEAT-DEV01 任务产能节奏(等效换皮):数值 = 原三段曲线原样保留,键名/叙事改「任务产能」。
+// 种子值镜像产品源码 device-lifecycle.ts TASK_CAPACITY_BANDS:−4/−6/−23.7%·floor 22%(canon 哨兵三端对账)。
 export const E_PARAM_DEFAULTS: Record<string, string> = {
-  "E.device.minEfficiency": "22",       // 源码 MIN_EFFICIENCY = 0.22
-  "E.device.degradeEarly": "-4",        // 月 1-3 %/月
-  "E.device.degradeMid": "-6",          // 月 4-8 %/月
-  "E.device.degradeLate": "-23.7",      // 月 9-12 %/月(断崖)
-  "E.device.stageEarlyEnd": "3",        // 早期段末月
-  "E.device.stageMidEnd": "8",          // 中期段末月
-  "E.device.cycleMonths": "12",         // 生命周期月数
+  "E.device.capacity.floorPct": "22",        // 产能下限 · 源码 CAPACITY_FLOOR = 0.22
+  "E.device.capacity.band1DeltaPct": "-4",   // 月 1-3 每月产能变化 %
+  "E.device.capacity.band2DeltaPct": "-6",   // 月 4-8 每月产能变化 %
+  "E.device.capacity.band3DeltaPct": "-23.7",// 月 9 起每月产能变化 %(末段开区间,floor 触底)
+  "E.device.stageEarlyEnd": "3",             // 段1 末月
+  "E.device.stageMidEnd": "8",               // 段2 末月
+  "E.device.cycleMonths": "12",              // 曲线视窗月数
+  "E.device.capacity.subsidyDays": "30",     // 新机任务补贴天数 · 纯展示层,禁入结算(FEAT-DEV01B)
+  // 参与任务递减(每 SKU 开关;值=参与递减/免递减;默认镜像 uniapp CAPACITY_EXEMPT_KINDS)
+  "E.device.capacity.applyTo.phone": "免递减",
+  "E.device.capacity.applyTo.cloud-share": "免递减",
+  "E.device.capacity.applyTo.pc-gpu": "免递减",
+  "E.device.capacity.applyTo.stellarbox-s1": "参与递减",
+  "E.device.capacity.applyTo.stellarbox-pro": "参与递减",
+  "E.device.capacity.applyTo.stellarbox-pro-v2": "参与递减",
+  "E.device.capacity.applyTo.stellarrack-p1": "参与递减",
+  "E.device.capacity.applyTo.stellarrack-p2": "参与递减",
   // E3 任务锁定月度损失阈值(S1/Pro/Rack 三阶 · USDT · 各值独立可调,backend-replaceable)
   "E.device.taskLock.s1": "40",
   "E.device.taskLock.pro": "140",
@@ -48,8 +59,8 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   "E.tradein.inventorySoftMax": "0",
 };
 
-// E3 衰减曲线引擎 — 镜像产品 device-lifecycle.ts getEfficiency(三段复利 + floor)。
-// 参数从后台配置(pE)读,使后台为 server-canonical 配置源、曲线真实反映产品衰减。
+// E3 任务产能曲线引擎 — 镜像产品 device-lifecycle.ts getEfficiency(三段复利 + floor)。
+// 参数从后台配置(pE)读,使后台为 server-canonical 配置源、曲线真实反映设备可接任务产能节奏。
 export function effCurve(early: number, mid: number, late: number, stage1: number, stage2: number, months: number, floorPct: number): number[] {
   const pts: number[] = [100];
   let eff = 1;

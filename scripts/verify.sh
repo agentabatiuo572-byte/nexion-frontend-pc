@@ -554,6 +554,13 @@ else
   fail=$((fail+1)); fails="$fails\n  [canon-sentinel] 核心业务数字跨端漂移 / 提现费模型不一致 / 旧 2% 费残留(跑 node scripts/canon-sentinel.mjs 看明细)"
 fi
 
+echo "== [+] 任务产能参数 gate(FEAT-DEV01:合法性 + data.ts/mock-backend 双副本一致 + 旧衰减键残留 0)=="
+if (cd "$ROOT" && "$NODE_BIN" scripts/capacity-ladder-sentinel.mjs); then
+  pass=$((pass+1))
+else
+  fail=$((fail+1)); fails="$fails\n  [capacity-ladder] 任务产能参数非法 / 双副本漂移 / 旧 E.device.degrade* 键残留(跑 node scripts/capacity-ladder-sentinel.mjs 看明细)"
+fi
+
 echo "== [+] 领导池 canon 双端单源 gate(池额/集中度/合格数/票权人头前后端一致 + 禁散落 80%/V8+/假池额/假门槛)=="
 if (cd "$ROOT" && "$NODE_BIN" scripts/leadership-pool-canon-sentinel.mjs); then
   pass=$((pass+1))

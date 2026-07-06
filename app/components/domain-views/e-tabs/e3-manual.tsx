@@ -20,24 +20,29 @@ function Sec({ n, title, children }: { n: string; title: string; children: React
 
 export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void }) {
   const { pE } = ctx;
-  const early = pE("E.device.degradeEarly");
-  const mid = pE("E.device.degradeMid");
-  const late = pE("E.device.degradeLate");
-  const floor = pE("E.device.minEfficiency");
+  const early = pE("E.device.capacity.band1DeltaPct");
+  const mid = pE("E.device.capacity.band2DeltaPct");
+  const late = pE("E.device.capacity.band3DeltaPct");
+  const floor = pE("E.device.capacity.floorPct");
   const cyc = pE("E.device.cycleMonths");
   const s1 = pE("E.device.stageEarlyEnd");
   const s2 = pE("E.device.stageMidEnd");
+  const subsidy = pE("E.device.capacity.subsidyDays");
   const salvage = pE("E.tradein.salvagePct");
   const minHold = pE("E.tradein.minHoldingMonths");
   const promoMult = pE("E.tradein.promoMult");
+  const exemptCount = ["phone", "cloud-share", "pc-gpu", "stellarbox-s1", "stellarbox-pro", "stellarbox-pro-v2", "stellarrack-p1", "stellarrack-p2"]
+    .filter((kind) => pE(`E.device.capacity.applyTo.${kind}`) === "免递减").length;
 
   // 参数速查:含义 + 调高 / 调低的业务影响(运营视角,非工程视角)。
   const PARAMS: { zh: string; code: string; cur: string; up: string; down: string; hot?: boolean }[] = [
-    { zh: "早期衰减率", code: "degradeEarly", cur: `${early}% / 月`, up: "前期收益掉得更快,体感变差", down: "前期更平缓,留存更好但换机更慢" },
-    { zh: "中期衰减率", code: "degradeMid", cur: `${mid}% / 月`, up: "中段收益边际下降加速", down: "中段更平缓" },
-    { zh: "晚期衰减率", code: "degradeLate", cur: `${late}% / 月`, up: "断崖更陡 → 更快推向置换 → 更多换机现金流(放大资金流出)", down: "断崖延后 → 换机变慢、现金流减少", hot: true },
-    { zh: "最低效能下限", code: "minEfficiency", cur: `${floor}%`, up: "地板抬高,老设备仍有产出(应付负债更高)", down: "地板压低,老设备更早趋近停产" },
-    { zh: "衰减分段周期", code: "stageEarlyEnd / stageMidEnd / cycleMonths", cur: `m${s1} / m${s2} / ${cyc}月`, up: "界点 / 总月后移 → 各段变长、断崖更晚、设备寿命更久", down: "前移 → 断崖更早、曲线压缩、更快换机" },
+    { zh: "段1 产能变化", code: "band1DeltaPct", cur: `${early}% / 月`, up: "前期可接任务量掉得更快,体感变差", down: "前期更平缓,留存更好但换机更慢" },
+    { zh: "段2 产能变化", code: "band2DeltaPct", cur: `${mid}% / 月`, up: "中段任务量边际下降加速", down: "中段更平缓" },
+    { zh: "段3 产能变化", code: "band3DeltaPct", cur: `${late}% / 月`, up: "深降更陡 → 更快推向置换 → 更多换机现金流(放大资金流出)", down: "深降放缓 → 换机变慢、现金流减少", hot: true },
+    { zh: "产能下限", code: "floorPct", cur: `${floor}%`, up: "地板抬高,老设备仍有产出(应付负债更高)", down: "地板压低,老设备更早趋近停产" },
+    { zh: "产能分段周期", code: "stageEarlyEnd / stageMidEnd / cycleMonths", cur: `m${s1} / m${s2} / ${cyc}月`, up: "界点 / 视窗后移 → 各段变长、深降更晚", down: "前移 → 深降更早、曲线压缩、更快换机" },
+    { zh: "新机任务补贴天数", code: "subsidyDays", cur: `${subsidy} 天`, up: "补贴标注窗口更长 → 新机安心期更长(纯展示,不改结算)", down: "窗口更短 → 产能百分比更早露出" },
+    { zh: "参与任务递减(SKU)", code: "applyTo.*", cur: `${exemptCount} 免 / ${8 - exemptCount} 参与`, up: "更多 SKU 参与递减 → 升级压力覆盖面更广", down: "更多 SKU 免递减 → 恒 100% 产能,保护入门体验" },
     { zh: "残值率", code: "salvage", cur: `${salvage}%`, up: "折抵更高 → 置换更划算 → 渗透率升,但新机净收款降(放大资金流出)", down: "折抵更低 → 新机净收款高,但置换吸引力下降", hot: false },
     { zh: "最短持有月数", code: "minHoldingMonths", cur: `${minHold} 月`, up: "收紧套利(CL-318)拦截,但牺牲合法置换体验", down: "放宽 → 快进快出套利风险上升", hot: true },
     { zh: "置换活动倍率", code: "promoMult", cur: `${promoMult}×`, up: "活动加成更高 → 置换冲动更强(放大资金流出)", down: "加成回落 → 置换回归常态" },
@@ -59,17 +64,18 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
       footer={null}>
       <div className="e3man">
         <p className="e3man-lead">
-          本页(<b>E3</b>)管两套相互咬合的规则:<b>设备效率随月衰减的曲线</b> + <b>旧机折价抵扣换新机(Trade-in)的规则</b>。
-          两者共同决定用户的「换机节奏」——晚期断崖把用户推向置换决策点,残值率决定置换的吸引力。
+          本页(<b>E3</b>)管两套相互咬合的规则:<b>设备可接任务产能随月递减的节奏</b>(AI 任务池持续升级,低阶任务量逐月减少)+ <b>旧机折价抵扣换新机(Trade-in)的规则</b>。
+          两者共同决定用户的「升级节奏」——段3 深降把用户推向置换决策点,折抵力度决定置换的吸引力。
           所有参数 <AutoGloss>server-canonical</AutoGloss>,改动经<AutoGloss>操作确认</AutoGloss>后即对全网新报价 / 估值器生效(<b>不回溯已生效报价</b>)。
         </p>
 
-        <Sec n="1" title="怎么读衰减曲线">
+        <Sec n="1" title="怎么读任务产能曲线">
           <ul className="e3man-ul">
-            <li><b>三段非线性</b>:早期(m1–{s1},平缓)→ 中期(m{Number(s1) + 1}–{s2},中速)→ 晚期(m{Number(s2) + 1}–{cyc},<b>断崖</b>)。颜色由绿→黄→橙。</li>
-            <li><b>FLOOR {floor}%</b>:<AutoGloss>效能</AutoGloss>衰减到此下限即不再下降(虚线)。</li>
-            <li>曲线上每个圆点 = 该月的设备效能;放大的点是各段分界(m0 / m{s1} / m{s2} / m{cyc})。</li>
-            <li>断崖段(橙色)是把用户推向 <AutoGloss>trade-in</AutoGloss> 的关键——收益预期下挫驱动换机。</li>
+            <li><b>三段节奏</b>:段1(m1–{s1},平缓)→ 段2(m{Number(s1) + 1}–{s2},中速)→ 段3(m{Number(s2) + 1} 起,<b>深降</b>,开区间)。颜色由绿→黄→橙。</li>
+            <li><b>FLOOR {floor}%</b>:任务产能降到此下限即不再下降(虚线)。</li>
+            <li>曲线上每个圆点 = 该月设备的任务产能;放大的点是各段分界(m0 / m{s1} / m{s2} / m{cyc})。</li>
+            <li>深降段(橙色)是把用户推向 <AutoGloss>trade-in</AutoGloss> 的关键——可接任务量预期下挫驱动换机升级。</li>
+            <li><b>新机任务补贴</b>:新激活设备前 {subsidy} 天为补贴期,前端只显示补贴标注、不显示产能百分比(<b>纯展示层</b>,结算按曲线连续计算,不受影响)。</li>
           </ul>
         </Sec>
 
@@ -90,8 +96,8 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
         <Sec n="3" title="怎么调整一个参数(单值 / 多字段 · 月份在哪改)">
           <ul className="e3man-ul">
             <li>点该行右侧 <b>「调整」</b> → 弹「<AutoGloss>操作确认</AutoGloss>」→ 填<b>目标新值</b> + <b>操作理由(≥8 字)</b> → 确认即生效并写入 <AutoGloss>A2 审计</AutoGloss>。</li>
-            <li><b>单值 / 多字段</b>:单个标量的参数(各段衰减率 / 残值率 / 最短持有月数 / 倍率…)弹<b>单值输入</b>;<b>一组相关的多个值</b>——衰减分段周期(早末 / 中末 / 总月数)、任务锁定阈(S1 / Pro / Rack)、置换弹窗节奏(5 参)——弹<b>多字段输入</b>:一个弹窗里逐项填、一次提交,各值<b>独立写入</b>(backend-replaceable)。</li>
-            <li><b>月份怎么改</b>:三段的起止<b>月份在「衰减分段周期」一行一次调齐</b> —— <code>stageEarlyEnd / stageMidEnd / cycleMonths</code> 三字段(当前 早末 m{s1} · 中末 m{s2} · 总周期 {cyc} 月)。改后早 / 中 / 晚段范围与曲线<b>自动重算</b>(须 早末 &lt; 中末 &lt; 总月数);各段衰减率行只改速率%。
+            <li><b>单值 / 多字段</b>:单个标量的参数(各段产能变化 / 补贴天数 / 残值率 / 最短持有月数 / 倍率…)弹<b>单值输入</b>;<b>一组相关的多个值</b>——产能分段周期(段1末 / 段2末 / 视窗月数)、任务锁定阈(S1 / Pro / Rack)、参与任务递减(逐 SKU 勾选)、置换弹窗节奏(5 参)——弹<b>多字段输入</b>:一个弹窗里逐项填 / 勾选、一次提交,各值<b>独立写入</b>(backend-replaceable)。</li>
+            <li><b>月份怎么改</b>:三段的起止<b>月份在「产能分段周期」一行一次调齐</b> —— <code>stageEarlyEnd / stageMidEnd / cycleMonths</code> 三字段(当前 段1末 m{s1} · 段2末 m{s2} · 视窗 {cyc} 月)。改后各段范围与曲线<b>自动重算</b>(须 段1末 &lt; 段2末 &lt; 视窗月数);各段产能行只改每月变化幅度%。
             </li>
             <li>带 <b>⚡</b> 的「调整」是<AutoGloss>放大流出</AutoGloss>动作(残值率 / 晚期衰减率 / 置换活动倍率),确认前会先校验 <b>B1 备付金<AutoGloss>覆盖率</AutoGloss></b>,低于<AutoGloss>红线</AutoGloss>会被拒绝。</li>
           </ul>
@@ -99,10 +105,10 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
 
         <Sec n="4" title="高敏参数与「高敏」标">
           <p>
-            带<em className="e3man-hot">高敏</em>标的两个参数——<b>晚期衰减率</b> 与 <b>最短持有月数</b>——是本页风险最高的两个杠杆:
+            带<em className="e3man-hot">高敏</em>标的两个参数——<b>段3 产能变化</b> 与 <b>最短持有月数</b>——是本页风险最高的两个杠杆:
           </p>
           <ul className="e3man-ul">
-            <li><b>晚期衰减率(断崖)</b>:直接决定换机节奏与换机现金流,是<AutoGloss>放大流出</AutoGloss>的核心。</li>
+            <li><b>段3 产能变化(深降)</b>:直接决定换机节奏与换机现金流,是<AutoGloss>放大流出</AutoGloss>的核心。</li>
             <li><b>最短持有月数</b>:<AutoGloss>套利</AutoGloss>窗口闸门,K2 风控只读消费它拦截 CL-318 风险簇。</li>
           </ul>
           <p className="e3man-note">

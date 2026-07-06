@@ -9,6 +9,7 @@
  *
  * backend-replaceable:接真后端时 LOCAL_PREVIEW=0,本模块整体跳过,与生产零差异。
  */
+import { E1_GENERATION_GATES } from "@/lib/mock/admin/design-data";
 
 const LOCAL_PREVIEW = process.env.NEXT_PUBLIC_ADMIN_AUTH_BYPASS === "1";
 
@@ -70,13 +71,23 @@ const MOCK_DEVICES = [
 // ─────────────────────────────── E3 生命周期 & Trade-in ───────────────────────────────
 // 前端 key 直接透传(client BACKEND_TO_FRONTEND_KEY 命中不到则原样保留)。镜像 device-lifecycle.ts。
 const MOCK_E3_CONFIG: Record<string, string> = {
-  "E.device.minEfficiency": "22",
-  "E.device.degradeEarly": "-4",
-  "E.device.degradeMid": "-6",
-  "E.device.degradeLate": "-23.7",
+  // FEAT-DEV01 任务产能节奏(等效换皮:数值不变,键名改 capacity 口径,与 e-tabs/data.ts 种子镜像)
+  "E.device.capacity.floorPct": "22",
+  "E.device.capacity.band1DeltaPct": "-4",
+  "E.device.capacity.band2DeltaPct": "-6",
+  "E.device.capacity.band3DeltaPct": "-23.7",
   "E.device.stageEarlyEnd": "3",
   "E.device.stageMidEnd": "8",
   "E.device.cycleMonths": "12",
+  "E.device.capacity.subsidyDays": "30",
+  "E.device.capacity.applyTo.phone": "免递减",
+  "E.device.capacity.applyTo.cloud-share": "免递减",
+  "E.device.capacity.applyTo.pc-gpu": "免递减",
+  "E.device.capacity.applyTo.stellarbox-s1": "参与递减",
+  "E.device.capacity.applyTo.stellarbox-pro": "参与递减",
+  "E.device.capacity.applyTo.stellarbox-pro-v2": "参与递减",
+  "E.device.capacity.applyTo.stellarrack-p1": "参与递减",
+  "E.device.capacity.applyTo.stellarrack-p2": "参与递减",
   "E.device.taskLock.s1": "40",
   "E.device.taskLock.pro": "140",
   "E.device.taskLock.rack": "450",
@@ -114,18 +125,6 @@ const MOCK_BACKEND_REVIEWS = [
   { reviewId: "RV-002", skuId: "stellarbox-pro", author: "王**", rating: 5, content: "Pro 算力明显,任务派发快。", dateText: "2026-06-15", status: "published" },
   { reviewId: "RV-003", skuId: "cloud-share", author: "陈**", rating: 4, content: "入门体验不错,准备升级 S1。", dateText: "2026-06-12", status: "published" },
 ];
-
-const MOCK_E1_GATES = {
-  domain: "E1",
-  phaseOrder: ["P1", "P2", "P3", "P4", "P5", "P6"],
-  phases: [] as unknown[],
-  platformMonth: 7,
-  phaseCurrent: "P3",
-  releases: [] as unknown[],
-  configValues: {} as Record<string, unknown>,
-  allowedFields: [] as string[],
-  sources: [] as unknown[],
-};
 
 // ─────────────────────────────── A1 账户与权限 ───────────────────────────────
 const MOCK_A1_OVERVIEW = {
@@ -198,7 +197,12 @@ export function localMockResponse(
 ): MockResult | null {
   if (!LOCAL_PREVIEW) return null;
   // 非 GET(写操作):统一成功无操作(client 写后 re-fetch,故不持久但页面不崩)。
-  if (method !== "GET") return { code: 0, data: {} };
+  if (method !== "GET") {
+    if (domain === "e1" && (pathParts[0] === "generation-gates" || pathParts[0] === "phases")) {
+      return { code: 0, data: E1_GENERATION_GATES };
+    }
+    return { code: 0, data: {} };
+  }
 
   const key = pathParts.join("/");
 
@@ -217,7 +221,7 @@ export function localMockResponse(
   if (domain === "e1") {
     if (key === "skus") return pageOf(MOCK_BACKEND_SKUS, search);
     if (key === "reviews") return pageOf(MOCK_BACKEND_REVIEWS, search);
-    if (key === "generation-gates") return { code: 0, data: MOCK_E1_GATES };
+    if (key === "generation-gates") return { code: 0, data: E1_GENERATION_GATES };
     return null;
   }
 
