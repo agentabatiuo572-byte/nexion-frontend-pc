@@ -73,6 +73,8 @@
 - **提现冷却** `withdrawCooldownDays`(D5 生效面,权威 H1 Phase 派发,30/35/45d)≠ **试用再次冷却** H2 `cooldownDays`(30d 固定)≠ **佣金冷却** `commission/cooling-days`(F2,30d,权威归属待定见第7章 #5)。
 - **大额 $1,000** 三处独立、权威分属、可独立调:**D2** 大额人工审核触发线(后台静态,执行门槛升为财务 lead/超管)/ **K3** `largeAmountUsdt`(提现路由结论)/ **K5** `largeWithdrawReviewUsdt`(KYC 复审工单)。
 - **拐点**:`binaryDailyCap` 在月 **7**(非月 6);`withdrawCooldownDays` 月 **8=35d** 中间档(前端缺,须新增)。
+- **上架 status ≠ 市场 status**:`RELEASE_GATES.status`(E1,上架进度:待上架/已上架)≠ `SKU.status`(E1,市场售卖状态 `active|legacy`,「经典款」标)——同名不同义,严禁混用。
+- **phase 基准差异(mock/prod 已知语义差)**:前端 mock 的 phase 按**用户注册月龄**推(演示型:每个新账户从 P1 体验);admin `RELEASE_GATES.releaseMonth` 为**平台运营绝对月**。抢先购窗口在各自基准内计算(mock=注册月龄−leadDays/30,prod=绝对上架时点−leadDays 天),同基准内自洽,对接真后台时以平台绝对时点为准。
 
 ### 0.10 Phase 派发参数权威唯一性
 10 个 dial(`newUserBonusMultiplier / inviteRewardMultiplier / reinvestMultiplier / withdrawPointsRatio / withdrawCooldownDays / binaryDailyCap / premiumSubAvailable / nexV2LockAvailable / questBonusMultiplier / complianceHoldEnabled`)**全部权威归 H1**;D5/F3/G5/G6/H3/E1 等生效面 `PUT` 收到这些参数返 **422 `PHASE_PARAM_READONLY`**(+ `redirect:/admin/phase/h1`)。
@@ -216,7 +218,7 @@
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **SKU / Device specs**(E1) | skuKey · price:number/USDT(S1 1,299·Pro 2,399·Pro v2 2,639·Rack P1 8,999·Rack P2 14,999·Cloud Share 199·Genesis 9,999) · baseRate/日(S1 38.50·Pro 76.00·Pro v2 96.00·Rack P1 142.60·Rack P2 248.00·Cloud Share 0.073) · baseRateNEX/日(S1 65·Pro 215·Pro v2 280·Rack P1 950·Rack P2 1,820·Cloud Share 30) · installMonths · stock(<50告警) · status:enum{active\|legacy\|coming-soon};**回本天数/首年净利为派生** | SC | §17.1 / Ch10 E1 |
-| **RELEASE_GATES**(E1,原 GENERATION_RELEASES,上架节奏门) | skuKey · releaseMonth(绝对月,Pro v2 月5/Rack P2 月10) · status · 提前/延迟/强制解锁;固定 tradeinDiscount 字段已废(抵扣走 E3 阶梯) | SC | Ch10 E1 |
+| **RELEASE_GATES**(E1,原 GENERATION_RELEASES,上架节奏门) | skuKey · releaseMonth(绝对月,Pro v2 月5/Rack P2 月10) · status · 提前/延迟/强制解锁 · **tradeInEarlyAccess{enabled 默认 false, leadDays 默认 30(档位 7/14/30/60/90)}**(置换侧抢先购:开启后仅置换路径可在正式上架前 leadDays 天购买;正门不受影响;强制解锁=全面上架,优先于本开关);固定 tradeinDiscount 字段已废(抵扣走 E3 阶梯) | SC | Ch10 E1 |
 | **TaskCapacitySchedule**(E3) | 段1(≤月3,−4%)/段2(≤月8,−6%)/段3(月9+,−23.7%) · CAPACITY_FLOOR=0.22 · 豁免 kind{phone,cloud-share,pc-gpu}(按 SKU 开关) · subsidyDays=30;canon 哨兵三端对账 uniapp 字面量 | SC | §17.1 / Ch10 E3 |
 | **TradeInConfig**(E3) | creditLadder 5 档{minRatioPct,maxRatioPct,creditPct}=75/60/45/30/15(左闭右开,界点 25/50/75/100) · requireHigherPrice=true · maxDevicesPerOrder=1 · promoMult=1.0 · applyTo 白名单 · enabled · eligibility[kind].rules[] · promo 预留组;**置换抵扣仅结算扣减,不入余额(M2);基数=实付净额** | SC | §17.1 / Ch10 E3 |
 | **Order 状态机**(E4) | orderId(server mint) · state:enum{placed\|paid\|provisioning\|activated\|payment_failed\|expired\|refunded\|chargeback\|provisioning_failed} · relatedOrderId(server 校验) · DC · skuKey · userId;**payment_failed 不计 GMV** | SC | §17.1 / Ch10 E4 |
