@@ -35,7 +35,7 @@
 | server 唯一账本 Bill | **D4** | C3 调整 / L5 导出 |
 | 账户冻结态 | **C2** | D2 提现 frozen 联动 |
 | Kill-Switch 功能闸 / geo-block | **J1 / J2**(V4;V1 临时在 A3) | B5 只读状态灯 / 各域 enforce 生效面 |
-| Trade-in `minHoldingMonths` | **E3** | K2 套利检测只读 |
+| Trade-in 抵扣阶梯(5 档界点/比例)+ 置换规则 | **E3** | K2 置换行为监控只读 / uniapp checkout 消费 |
 
 ### 0.2 server-canonical
 所有状态机、资金值、风控值、闸状态 **server 权威**,client 仅 UI cache、**绝不本地推进**(§9.11d.2 / §9.11f)。client 上报的资金/状态不作权威口径。
@@ -58,7 +58,7 @@
 - 业务规则前置失败 → **400 / 422**;状态机非法转移 → **409**。
 - 高敏写 `reason` 缺失 → **400 `REASON_REQUIRED`**(确认弹窗理由必填,server 强制非空,8–200 字)。
 - **放大资金流出方向**(上调 APY/费率/奖励/分红率/匹配比/cap、下调罚款/冷却/积分门、kill 恢复)提交时 server 前置核 **B1 覆盖率红线**,低于 `coverageRedLine`(默认 100%)**统一拒绝返 422**(✅ PM 2026-06-02;旧文 403 已废)。
-- 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / salvage 月12归零 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序 / UNILEVEL_USDT 各层和≤25%。
+- 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / 置换阶梯(区间连续覆盖 0→∞ · 抵扣比例严格递减 · 界点/比例∈(0,100])/ 任务产能节奏(段界递增 · floor∈(0,1))/ V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序 / UNILEVEL_USDT 各层和≤25%。
 
 ### 0.6 ID 全 server mint
 `withdrawalId / topupId / orderId / billId / commissionId / 通知 id / Genesis tokenId` 全部 server 单源生成,client 不可 mint / 枚举 / 撞 ID(§9.11d.2)。
@@ -78,8 +78,8 @@
 10 个 dial(`newUserBonusMultiplier / inviteRewardMultiplier / reinvestMultiplier / withdrawPointsRatio / withdrawCooldownDays / binaryDailyCap / premiumSubAvailable / nexV2LockAvailable / questBonusMultiplier / complianceHoldEnabled`)**全部权威归 H1**;D5/F3/G5/G6/H3/E1 等生效面 `PUT` 收到这些参数返 **422 `PHASE_PARAM_READONLY`**(+ `redirect:/admin/phase/h1`)。
 
 ### 0.11 关键业务不变量
-- `cumulativeDepositUsdt` **仅 D1 真实充值确认链路写**(正向 recordDeposit / 负向 chargeback、E4 退款核减);earnings/salvage/KYC/quest/C3 纯余额补记**均不得触达**(trade-in 资格硬前提)。
-- **salvage credit 不入余额**(E3 不变量 M2:仅作置换扣减项,不写 creditBalance、不可提现、不可累加)。
+- `cumulativeDepositUsdt` **仅 D1 真实充值确认链路写**(正向 recordDeposit / 负向 chargeback、E4 退款核减);earnings/置换抵扣/KYC/quest/C3 纯余额补记**均不得触达**(trade-in 资格硬前提)。
+- **置换抵扣不入余额**(E3 不变量 M2:仅作结算扣减项,不写 creditBalance、不可提现、不可累加);抵扣 = 实付价 × 阶梯比例(产出比落档),服务端下单同事务复算。
 - **trial shadow 非硬负债**(Model A:`computeTrialOffset` 拆分,offsetUSD 抵购机款上限 `trialOffsetCapUSD`=$50、remainderUSD + 全额 NEX 购后入余额成应付)。
 - **Genesis 日分红 = 节点价 × 持有量 × 0.1%/日**(✅ PM 2026-06-01)。
 
@@ -117,10 +117,10 @@
 | D4 | 账本 / 账单审计 | server 唯一账本审计面:账单流水/Running Balance/对账导出 | D 资金 | V1·Ch6 | §9.7 / §12 |
 | D5 | 提现参数配置 | 日限额/余额上限/网络费(cooldown/积分门由 H1 派发只读) | D 资金 | V1·Ch6 | §9.3.2 / §13.4.1 / §9.11c.1 |
 | E1 | 商品目录 & 定价 | 设备 SKU 目录/定价/上下架/库存 + 设备规格唯一权威 | E 设备 | V2·Ch10 | §7.1 / §9.11c.1 |
-| E1 | 代际发布门 | 控制 Gen-2 发布时点 + trade-in 折扣 | E 设备 | V2·Ch10 | §7.1 / 节奏表§6.2 |
+| E1 | 上架节奏门 | 控制 Pro v2 / Rack P2 上架时点(unlocksAtPhase;与置换/代际无关) | E 设备 | V2·Ch10 | §7.1 / 节奏表§6.2 |
 | E2 | 收益 & 任务引擎 | AI 任务定价与路由门槛(设备每日产出"任务侧") | E 设备 | V2·Ch10 | §6.3 / §6.5 / §9.11c.1 |
-| E3 | 设备生命周期 | 效率衰减曲线(12 月自然失效 → 驱动 trade-in/升级/锁仓) | E 设备 | V2·Ch10 | §6.8 / §9.11c.1 / 节奏表§6.1 |
-| E3 | Trade-in 配置 | 残值参数/购买资格/promo/原子换机 tx(minHoldingMonths 权威) | E 设备 | V2·Ch10 | §7.5 / §9.11c.1 |
+| E3 | 任务产能节奏 | 3 段月界+递减幅度/产能下限/豁免 SKU/新机补贴天数(驱动升级置换) | E 设备 | V2·Ch10 | §6.8 / §9.11c.1 / 节奏表§6.1 |
+| E3 | 升级置换阶梯 | 抵扣阶梯 5 档界点与比例/仅限更高价/单笔台数/promoMult/applyTo/总开关 + 购买资格 | E 设备 | V2·Ch10 | §7.5 / §9.11c.1 |
 | E4 | 订单状态机 | 设备订单全生命周期:列表/状态推进/DC 分配/退款 | E 设备 | V2·Ch10 | §7.4 / §9.11f |
 | E5 | 设备运维 | fleet heartbeat 监控/批量操作/库存激活/强制激活解绑 | E 设备 | V2·Ch10 | §6.1 / §11.1 / §9.11d.2 |
 | E6 | 算力与设备配置 | PC 算力备用模块入口开关、在线系数、显卡档位映射、下载内容配置 | E 设备 | V2·Ch10 | 三端改造 SPEC-0~2 |
@@ -165,7 +165,7 @@
 | L1 | KPI 看板 | 八项 KPI 只读展示(口径 §2.4.6 权威,一键下钻) | L 数据 | V4·Ch16 | §18.2 / §2.4.6 |
 | L2 | 漏斗 / cohort / 留存 | 完整漏斗各级 + cohort 留存矩阵 + phase/locale/渠道切片 | L 数据 | V4·Ch16 | §2.4 / §18.2 |
 | L3 | 财务报表 | 只读财务聚合(收入/兑付/敞口/到期),引用 B1+D3+B2 不重算 | L 数据 | V4·Ch16 | §9.6 / §1.4 |
-| L4 | 设备/任务/网络报表 | 只读运营指标(设备产出衰减/任务/网络结构/Phase 效果) | L 数据 | V4·Ch16 | §5.4 / §5.5 / §6.8 / §9.11c.1 |
+| L4 | 设备/任务/网络报表 | 只读运营指标(设备产出/产能递减/任务/网络结构/Phase 效果) | L 数据 | V4·Ch16 | §5.4 / §5.5 / §6.8 / §9.11c.1 |
 | L5 | 导出 & 监管报告 | 数据导出/监管报告统一管控(脱敏+审计+操作确认) | L 数据 | V4·Ch16 | §9.7 |
 
 > 各域 8 段功能规格数:A 3 · B 5 · C 6 · D 5 · E 8 · F 8 · G 7 · H 6(H1/H2 在 V1·Ch7,H3-H6 在 V3·Ch13)· I 7 · J 4 · K 6 · L 5 = **70**(E = E1a/E1b/E2/E3a/E3b/E4/E5/E6 共 8,F = F1/F2/F3/F4/F4b/F4c/F4d/F5 共 8;K6 Janus C2 控制台 = 白壳设备接管决策中枢,出处 Janus C2 PRD v1.0)。
@@ -216,9 +216,9 @@
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
 | **SKU / Device specs**(E1) | skuKey · price:number/USDT(S1 1,299·Pro 2,399·Pro v2 2,639·Rack P1 8,999·Rack P2 14,999·Cloud Share 199·Genesis 9,999) · baseRate/日(S1 38.50·Pro 76.00·Pro v2 96.00·Rack P1 142.60·Rack P2 248.00·Cloud Share 0.073) · baseRateNEX/日(S1 65·Pro 215·Pro v2 280·Rack P1 950·Rack P2 1,820·Cloud Share 30) · installMonths · stock(<50告警) · status:enum{active\|legacy\|coming-soon};**回本天数/首年净利为派生** | SC | §17.1 / Ch10 E1 |
-| **GENERATION_RELEASES**(E1) | skuKey · releaseMonth(绝对月,Pro v2 月5/Rack P2 月10) · status · tradeinDiscount/USDT · 提前/延迟/强制解锁 | SC | Ch10 E1 |
-| **DecayModel**(E3) | month_1_3=−4%/month_4_8=−6%/month_9_12=−10% · MIN_EFFICIENCY=0.22 · 豁免 kind{phone,cloud-share} | SC | §17.1 / Ch10 E3 |
-| **TradeInConfig**(E3) | minHoldingMonths(权威 E3,K2 只读) · salvage{rate 0.30,monthlyDecay 0.025,floor 0}(月12归零) · TRADEIN_UPGRADE_MAP · promo{...};**salvage credit 仅置换扣减,不入余额(M2)** | SC | §17.1 / Ch10 E3 |
+| **RELEASE_GATES**(E1,原 GENERATION_RELEASES,上架节奏门) | skuKey · releaseMonth(绝对月,Pro v2 月5/Rack P2 月10) · status · 提前/延迟/强制解锁;固定 tradeinDiscount 字段已废(抵扣走 E3 阶梯) | SC | Ch10 E1 |
+| **TaskCapacitySchedule**(E3) | 段1(≤月3,−4%)/段2(≤月8,−6%)/段3(月9+,−23.7%) · CAPACITY_FLOOR=0.22 · 豁免 kind{phone,cloud-share,pc-gpu}(按 SKU 开关) · subsidyDays=30;canon 哨兵三端对账 uniapp 字面量 | SC | §17.1 / Ch10 E3 |
+| **TradeInConfig**(E3) | creditLadder 5 档{minRatioPct,maxRatioPct,creditPct}=75/60/45/30/15(左闭右开,界点 25/50/75/100) · requireHigherPrice=true · maxDevicesPerOrder=1 · promoMult=1.0 · applyTo 白名单 · enabled · eligibility[kind].rules[] · promo 预留组;**置换抵扣仅结算扣减,不入余额(M2);基数=实付净额** | SC | §17.1 / Ch10 E3 |
 | **Order 状态机**(E4) | orderId(server mint) · state:enum{placed\|paid\|provisioning\|activated\|payment_failed\|expired\|refunded\|chargeback\|provisioning_failed} · relatedOrderId(server 校验) · DC · skuKey · userId;**payment_failed 不计 GMV** | SC | §17.1 / Ch10 E4 |
 | AI 任务定价(E2) | taskClass:enum{IG\|VG\|LL\|FT\|EM\|SP} · minReward/maxReward(热更) · QUEUE_SATURATION=0.35 · minVRAM · 紧急下架 kill | SC | Ch10 E2 |
 | **ComputeShareConfig**(E6) | 入口开关(default false) · 在线加成{H5 基础托管系数,App 连续在线满额时长} · 显卡档位[G1-G6]{展示名称,算力 TOPS,6 个独立识别词槽位} · 下载配置{客户端下载地址,中文标题,中文说明,英文标题,英文说明};**PC 算力备用模块配置单源,E5 仍持 MAX_DEVICES** | SC | Ch10 E6 / 三端 SPEC-0~2 |
@@ -382,10 +382,10 @@
 | `/api/admin/products/specs` · `/products/specs/:skuKey` | GET / PUT | 全 SKU 规格(server-canonical)/ 改单 SKU(stock:0 经确认弹窗转下架;返 effectiveAt+lockedInFlightOrders) | E1a-MD1/MD2(price/baseRate/status/stock=0) | E1 |
 | `/api/config/cart/bundle-discount` | PUT | 套餐折扣 ladder(4件12%/3件8%/2件5%) | E1a-MD3 | E1 |
 | `/api/admin/config/task-pricing` | GET / PUT | 6 类任务定价(热更,仅新派发生效) | E2-MD1~MD4(PUT) | E2 |
-| `/api/admin/config/lifecycle` | GET / PUT | 衰减曲线/floor/豁免(对存量+新次次快照,不追溯历史) | E3a-MD1~MD4(PUT) | E3 |
-| `/api/admin/config/tradein` | GET / PUT | trade-in 配置(校验 salvage 月12 归零,违反 400) | E3b-MD1~MD7(高敏字段) | E3 |
-| `/api/config/tradein` | GET | trade-in 配置**只读投影**(checkout/K2 消费) | — | E3/K2 |
-| `/api/devices/{recycle\|replace\|deactivate}` | POST | (用户)回收/置换/出槽(salvage 不入余额;单事务) | — | E3 |
+| `/api/admin/config/task-capacity` | GET / PUT | 任务产能节奏(段界/幅度/floor/豁免/补贴天数;对存量+新购次快照,不追溯历史) | E3a-MD1~MD4(PUT) | E3 |
+| `/api/admin/config/tradein` | GET / PUT | 升级置换配置(校验阶梯连续/递减,违反 400) | E3b-MD1~MD7(高敏字段) | E3 |
+| `/api/config/tradein` | GET | 置换配置**只读投影**(checkout/K2 消费) | — | E3/K2 |
+| `/api/orders`(携 `tradeInDeviceId`) | POST | (用户)置换下单:服务端同事务复算阶梯抵扣 + 下架旧机 + 净额扣款(抵扣不入余额;复算≠client 报价时 402 重报价) | — | E3/E4 |
 | `/api/admin/orders?status=&failState=` · `/orders/:id` | GET | 订单列表 / 详情 | — | E4 |
 | `/api/admin/orders/:id` · `/orders/:id/cancel` | PUT/POST | 手动推进回滚改派 DC / 取消(携 Key) | 是(④a,运维/可取消态) | E4 |
 | `/api/orders` | POST | (用户)下单(relatedOrderId server 强校原单 payment_failed+userId 一致否则 400) | — | E4 |
