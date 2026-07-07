@@ -19,7 +19,7 @@ import { confirm } from "@/lib/store/ui";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePlatformConfig, type OpsSku, type OpsReview, type OpsTask } from "@/lib/store/admin/platform-config-store";
 import { useOpsHydrated } from "@/lib/store/admin/user-ops-store";
-import { SKUS, REVIEWS } from "@/lib/mock/admin/design-data";
+import { E1_GENERATION_GATES, SKUS, REVIEWS } from "@/lib/mock/admin/design-data";
 import {
   archiveE1GenerationGate,
   archiveE1Phase,
@@ -381,7 +381,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>(IS_PREVIEW ? (SKUS as OpsSku[]) : []);
   const [e1Reviews, setE1Reviews] = useState<OpsReview[]>(IS_PREVIEW ? (REVIEWS as OpsReview[]) : []);
-  const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(null);
+  const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(IS_PREVIEW ? E1_GENERATION_GATES : null);
   const [e1Loading, setE1Loading] = useState(false);
   const [e1Error, setE1Error] = useState<string | null>(null);
   const refreshE1 = useCallback(async () => {

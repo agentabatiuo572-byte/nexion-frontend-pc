@@ -3,6 +3,7 @@
  * 仅供 app/components/domain-views/* 复刻设计稿内容页使用。
  * 资金/兑付口径统一从 LEDGER(单一权威源)派生,杜绝双账本矛盾。
  */
+import type { E1GenerationGateData } from "@/lib/admin/e1-client";
 import { LEDGER } from "./ledger";
 
 export const fmtUsd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
@@ -399,6 +400,51 @@ export const SKUS = [
   },
 ];
 
+export const E1_GENERATION_GATES: E1GenerationGateData = {
+  domain: "E1",
+  phaseOrder: ["P1", "P2", "P3", "P4", "P5", "P6"],
+  phases: [
+    { p: "P1", label: "P1 冷启动", meta: "基础 SKU 开放", skus: "S1 / Pro / Cloud Share", sortOrder: 10, status: "active" },
+    { p: "P2", label: "P2 扩容", meta: "机架 SKU 放量", skus: "Rack P1", sortOrder: 20, status: "active" },
+    { p: "P3", label: "P3 Gen-2 首发", meta: "二代盒子发布", skus: "Pro v2", sortOrder: 30, status: "active" },
+    { p: "P4", label: "P4 置换窗口", meta: "Trade-in 加速", skus: "Pro v2 扩量", sortOrder: 40, status: "active" },
+    { p: "P5", label: "P5 旗舰升级", meta: "H100 机架发布", skus: "Rack P2", sortOrder: 50, status: "active" },
+    { p: "P6", label: "P6 成熟期", meta: "全 SKU 常态化", skus: "全量复盘", sortOrder: 60, status: "active" },
+  ],
+  platformMonth: 7,
+  phaseCurrent: "P3",
+  releases: [
+    {
+      id: "stellarbox-pro-v2",
+      name: "NexionBox Pro v2",
+      releaseMonth: 7,
+      phase: "P3",
+      discount: 300,
+      eligibility: true,
+      phaseOffset: 0,
+      forceUnlock: false,
+      status: "active",
+    },
+    {
+      id: "stellarrack-p2",
+      name: "NexionRack P2",
+      releaseMonth: 11,
+      phase: "P5",
+      discount: 800,
+      eligibility: false,
+      phaseOffset: 0,
+      forceUnlock: false,
+      status: "active",
+    },
+  ],
+  configValues: {
+    "E.gen.stellarbox-pro-v2.phaseOffset": "0",
+    "E.gen.stellarrack-p2.phaseOffset": "0",
+  },
+  allowedFields: ["releaseMonth", "phase", "discount", "eligibility", "phaseOffset", "forceUnlock", "status"],
+  sources: ["nx_admin_phase_config", "nx_admin_device_generation_gate", "growth.phase.current"],
+};
+
 // 商品用户评价 seed — 镜像前端 lib/mock/reviews.ts。运营后台 E1 可增删改查。
 export const REVIEWS = [
   // 每条评价关联单个具体设备(productId = 设备 id),无通用("*")。镜像前端 reviews.ts。
@@ -442,5 +488,5 @@ export const REVENUE = { gmv: 4_280_000, commission: 1_140_000, token: 980_000, 
 export const DATA = {
   ROLES, KPIS, TREASURY, LIABILITIES, MATURITY, FUNNEL, PHASE, RISK, K_RISK,
   WITHDRAWALS, SENSITIVE_OPERATIONS, TOPUPS, USERS, KILLSWITCH, GEOBLOCK,
-  SKUS, NOVA, AUDIT, REVENUE, fmtUsd, fmtM, fmtK,
+  SKUS, E1_GENERATION_GATES, NOVA, AUDIT, REVENUE, fmtUsd, fmtM, fmtK,
 };

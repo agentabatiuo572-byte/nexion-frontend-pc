@@ -61,15 +61,15 @@ async function proxy(request: Request, context: RouteContext) {
     return jsonError(404, "DEVICES_ROUTE_NOT_FOUND");
   }
 
-  const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
-  if (!token) {
-    return jsonError(401, "ADMIN_AUTH_REQUIRED");
-  }
-
   // 本地预览模式:短路返回本地 mock,不调真后端(命中白名单读端点;写端点回成功无操作)。
   const localMock = localMockResponse("devices", request.method, path, new URL(request.url).searchParams);
   if (localMock) {
     return Response.json(localMock, { headers: { "Cache-Control": "no-store" } });
+  }
+
+  const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
+  if (!token) {
+    return jsonError(401, "ADMIN_AUTH_REQUIRED");
   }
 
   const sourceUrl = new URL(request.url);

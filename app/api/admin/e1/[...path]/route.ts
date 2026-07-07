@@ -31,15 +31,15 @@ async function proxy(request: Request, context: RouteContext) {
     return jsonError(404, "E1_ROUTE_NOT_FOUND");
   }
 
-  const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
-  if (!token) {
-    return jsonError(401, "ADMIN_AUTH_REQUIRED");
-  }
-
   // 本地预览模式:E1 短路返回本地 mock(skus/reviews/generation-gates)。
   const localMock = localMockResponse("e1", request.method, path, new URL(request.url).searchParams);
   if (localMock) {
     return Response.json(localMock, { headers: { "Cache-Control": "no-store" } });
+  }
+
+  const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
+  if (!token) {
+    return jsonError(401, "ADMIN_AUTH_REQUIRED");
   }
 
   const sourceUrl = new URL(request.url);

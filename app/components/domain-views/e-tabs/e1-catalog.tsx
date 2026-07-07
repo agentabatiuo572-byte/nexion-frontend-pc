@@ -110,8 +110,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const gateCandidates = skus.filter((s) => (s.generation ?? 1) >= 2 && !releaseIds.has(skuId(s)));
   const gateSkuOptions = gateCandidates.map(skuId);
 
-  // 代际发布门「是否解锁」单一判定源:当前 Phase 已到达 + E5 资格已补齐 + H1 月龄已到。
-  // forceUnlock 仅绕过月龄门,不能绕过 Phase 或 E5 资格,避免标题写“阶段联动”但状态仍按历史月龄规则开放。
+  // 代际发布门「是否解锁」单一判定源:当前阶段已到达 + 设备资格已补齐 + 平台月龄已到。
+  // forceUnlock 仅绕过月龄门,不能绕过阶段或设备资格,避免标题写“阶段联动”但状态仍按历史月龄规则开放。
   const gateReadiness = (g: E1GenerationRelease) => {
     const offset = g.phaseOffset ?? 0;
     const effectiveMonth = g.releaseMonth + offset;
@@ -122,7 +122,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     const forceMonthOpen = !!g.forceUnlock;
     const blockers: string[] = [];
 
-    if (!eligibilityReady) blockers.push("待E5资格");
+    if (!eligibilityReady) blockers.push("待设备资格");
     if (!phaseReached) blockers.push(gatePhaseIdx >= 0 ? `待${phaseLabel(g.phase)}` : "阶段未匹配");
     if (!monthReached && !forceMonthOpen) blockers.push(`待M${effectiveMonth}`);
 
@@ -141,7 +141,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     state.blockers.slice(0, 2).join(" / ") || "待发布";
   const gateCountdownLabel = (state: ReturnType<typeof gateReadiness>): string => {
     if (state.unlocked) return "已发布";
-    if (!state.eligibilityReady) return "待 E5";
+    if (!state.eligibilityReady) return "待设备资格";
     if (!state.phaseReached) return state.gatePhaseIdx >= 0 ? "待阶段" : "阶段未匹配";
     if (!state.monthReached && !state.forceMonthOpen) {
       const remain = state.effectiveMonth - platformMonth;
@@ -193,7 +193,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
     });
   const genForceUnlock = (g: E1GenerationRelease) => {
     const state = gateReadiness(g);
-    if (!state.eligibilityReady) { ctx.toast(`拒绝 · ${g.name} E5 资格配置未补录 · 后端发布门不能解锁`); return; }
+    if (!state.eligibilityReady) { ctx.toast(`拒绝 · ${g.name} 设备资格未补录 · 发布门不能解锁`); return; }
     if (!state.phaseReached) { ctx.toast(`拒绝 · ${g.name} 当前阶段未到达 ${phaseLabel(g.phase)} · 发布门不能解锁`); return; }
     ctx.openActionConfirm({
       name: `强制提前开放 · ${g.name}`,
@@ -201,7 +201,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       generationGateId: g.id,
       generationGate: { forceUnlock: true },
       amplify: true,
-      detail: `设置 forceUnlock=true,仅绕过 H1 月龄门。Phase 已到达 ${phaseLabel(g.phase)},E5 资格配置已补齐;写入 nx_admin_device_generation_gate。`,
+      detail: `设置强制提前开放,仅绕过平台月龄门。阶段已到达 ${phaseLabel(g.phase)},设备资格已补齐;保存后发布规则立即生效。`,
     });
   };
   const genForceLock = (g: E1GenerationRelease) =>
@@ -211,7 +211,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       generationGateId: g.id,
       generationGate: { forceUnlock: false },
       amplify: false,
-      detail: `设置 forceUnlock=false,重新纳入 H1 月龄门控。若阶段 / E5 / 月龄已经自然满足,SKU 仍会保持已开放。`,
+      detail: `撤销强制提前开放,重新纳入平台月龄门控。若阶段 / 设备资格 / 月龄已经自然满足,SKU 仍会保持已开放。`,
     });
   const openPhaseEditor = (ph?: E1Phase) => {
     const nextSort = phases.reduce((max, item) => Math.max(max, item.sortOrder ?? 0), 0) + 10;
@@ -229,8 +229,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         status: ph?.status ?? "active",
       },
       detail: ph
-        ? "修改阶段名称 / 门槛说明 / SKU 标签 / 排序,写入 nx_admin_phase_config。内部 ID 使用 MySQL 自增主键,不对运营展示。"
-        : "新增 E1 阶段配置,MySQL 自动生成内部 ID;SKU 解锁阶段和代际门发布阶段都从这里选择。",
+        ? "修改阶段名称 / 门槛说明 / SKU 标签 / 排序。系统自动维护阶段编号,运营不需要填写。"
+        : "新增阶段配置;SKU 解锁阶段和代际门发布阶段都从这里选择。",
       amplify: false,
     });
   };
@@ -253,7 +253,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         target: phaseLabel(ph.p),
         impact: "后端会先校验当前阶段、SKU 解锁阶段、代际门发布阶段引用;仍被使用时拒绝删除。",
       },
-      detail: "归档 nx_admin_phase_config 记录,不物理删除。删除前必须先把相关 SKU 和代际门迁移到其他阶段。",
+      detail: "归档这条阶段配置,不物理删除。删除前必须先把相关 SKU 和代际门迁移到其他阶段。",
       amplify: false,
     });
   const openGateEditor = (g?: E1GenerationRelease) => {
@@ -287,8 +287,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         forceUnlock: g?.forceUnlock ?? false,
       },
       detail: g
-        ? "修改发布月 / 阶段 / 抵扣 / E5 资格配置 / 强制提前开放,写入 nx_admin_device_generation_gate"
-        : "为二代及以后 SKU 新增代际发布门,新增后进入 E1 发布时点表并由后端返回",
+        ? "修改发布月 / 阶段 / 抵扣 / 设备资格 / 强制提前开放,保存后影响发布判断"
+        : "为二代及以后 SKU 新增发布规则,新增后进入发布时点表",
       amplify: !!g?.forceUnlock,
     });
   };
@@ -298,7 +298,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
       op: "generation-gate-archive",
       generationGateId: g.id,
       businessForm: { kind: "destructive-reason", target: g.name, impact: "该 SKU 将从 E1 二代+ 发布时点表移除,用户端发布门不会再读取这条配置。" },
-      detail: "归档 nx_admin_device_generation_gate 记录,不物理删除,便于审计和恢复",
+      detail: "归档这条发布规则,不物理删除,便于审计和恢复",
       amplify: false,
     });
 
@@ -318,7 +318,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         <div className="phase-bar">
           <div className="lbl">
             <span className="h">代际发布门 · H1 阶段联动</span>
-            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>门控随阶段推进自动开放 · 以后端为准</span>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>门控随阶段推进自动开放 · 按后台配置生效</span>
             <span className="now"><span className="d" />当前 {phaseLabel(phaseCur)} · {proV2Label}</span>
           </div>
           <div className="phase-track" style={{ ["--phase-line" as string]: phaseLine } as CSSProperties}>
@@ -342,7 +342,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             <span className="now"><span className="d" />等待后端配置</span>
           </div>
           <div className="tint warn tiny" style={{ marginTop: 12 }}>
-            未从后端读取到有效阶段顺序 / 阶段列表 / 当前阶段。请检查 nx_config_item 的 device_e1_generation_gate 与 growth.phase.current 配置。
+            未读取到有效阶段顺序 / 阶段列表 / 当前阶段。请检查阶段配置和当前阶段设置。
           </div>
         </div>
       )}
@@ -352,8 +352,8 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         <div className="genrel-h">
           <span className="ttl">阶段配置</span>
           <span className="sub">· SKU 解锁阶段 / 代际门发布阶段的唯一来源</span>
-          <button className="f-cta" style={{ padding: "5px 11px", fontSize: 12, marginLeft: "auto" }} onClick={() => openPhaseEditor()}>+ 新增阶段</button>
-          <span className="r"><CodeTag tone="electric">nx_admin_phase_config</CodeTag><span>{enabledPhaseCount} 条启用</span></span>
+          <span className="r"><CodeTag tone="electric">阶段规则</CodeTag><span>{enabledPhaseCount} 条启用</span></span>
+          <button className="f-cta" style={{ padding: "5px 11px", fontSize: 12 }} onClick={() => openPhaseEditor()}>+ 新增阶段</button>
         </div>
         <div className="phasecfg-table">
           <div className="hd">
@@ -402,13 +402,13 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         <div className="genrel-h">
           <span className="ttl">二代+ 发布时点</span>
           <span className="sub">· 发布月是发布门原子 · 控制 SKU 从待发布到已开放</span>
-          <button className="f-cta" style={{ padding: "5px 11px", fontSize: 12, marginLeft: "auto" }} onClick={() => openGateEditor()}>+ 新增代际门</button>
-          <span className="r"><CodeTag tone="electric">E.gen.releases</CodeTag><span>平台月龄 M{platformMonth || "未配置"} · {phaseCur ? phaseLabel(phaseCur) : "阶段未配置"}</span></span>
+          <span className="r"><CodeTag tone="electric">发布计划</CodeTag><span>平台月龄 M{platformMonth || "未配置"} · {phaseCur ? phaseLabel(phaseCur) : "阶段未配置"}</span></span>
+          <button className="f-cta" style={{ padding: "5px 11px", fontSize: 12 }} onClick={() => openGateEditor()}>+ 新增代际门</button>
         </div>
         <div className="genrel-table">
           <div className="hd">
             <div className="c">SKU</div><div className="c">计划发布</div><div className="c">当前状态</div><div className="c">阶段</div>
-            <div className="c">距发布</div><div className="c">折扣 USDT</div><div className="c">E5 资格配置</div><div className="c">动作</div>
+            <div className="c">距发布</div><div className="c">折扣 USDT</div><div className="c">设备资格</div><div className="c">动作</div>
           </div>
           {releases.length === 0 && (
             <div className="rw">
@@ -423,7 +423,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
             const cdTxt = gateCountdownLabel(gateState);
             const relLbl = `月 ${g.releaseMonth}` + (offset ? (offset > 0 ? ` (+${offset})` : ` (${offset})`) : "");
             const forceHint = !gateState.eligibilityReady
-              ? "需先在 E5 补录资格配置后才能提前开放"
+              ? "需先补录设备资格后才能提前开放"
               : !gateState.phaseReached
                 ? `需先推进到 ${phaseLabel(g.phase)} 阶段后才能提前开放`
                 : "设置 forceUnlock=true,仅绕过 H1 月龄门";
@@ -431,17 +431,17 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
               <div className="rw" key={g.id}>
                 <div className="c sku">{g.name}<span className="id">{g.id}</span></div>
                 <div className="c mono">{relLbl}</div>
-                <div className="c"><span className={`st ${unlocked ? "active" : "coming"}`} title={unlocked ? (g.forceUnlock ? "Phase / E5 已满足,月龄由强制提前开放绕过" : "Phase / 月龄 / E5 均满足") : gateBlockerLabel(gateState)}>{unlocked ? "已开放" : "待发布"}</span></div>
+                <div className="c"><span className={`st ${unlocked ? "active" : "coming"}`} title={unlocked ? (g.forceUnlock ? "阶段 / 设备资格已满足,月龄由强制提前开放绕过" : "阶段 / 月龄 / 设备资格均满足") : gateBlockerLabel(gateState)}>{unlocked ? "已开放" : "待发布"}</span></div>
                 <div className="c"><span className="phaseChip">{phaseLabel(g.phase)}</span></div>
                 <div className="c"><span className={`countdown ${cdCls}`}>{cdTxt}</span></div>
                 <div className="c mono">${g.discount}</div>
-                <div className="c"><span className={`elg ${g.eligibility ? "ok" : "miss"}`}><span className="dot" />{g.eligibility ? "E5 已配" : "E5 未补录"}</span></div>
+                <div className="c"><span className={`elg ${g.eligibility ? "ok" : "miss"}`}><span className="dot" />{g.eligibility ? "已配置" : "未补录"}</span></div>
                 <div className="c acts">
                   <button onClick={() => openGateEditor(g)}>编辑</button>
                   {unlocked ? (
                     <>
                       <button onClick={() => genShift(g, offset, 1)}>推迟 1M</button>
-                      {g.forceUnlock ? <button className="warn" onClick={() => genForceLock(g)}>撤销强制</button> : <button disabled title="该 SKU 是按阶段 / E5 / 月龄自然开放,没有强制状态可撤销">自然开放</button>}
+                      {g.forceUnlock ? <button className="warn" onClick={() => genForceLock(g)}>撤销强制</button> : <button disabled title="该 SKU 是按阶段 / 设备资格 / 月龄自然开放,没有强制状态可撤销">自然开放</button>}
                     </>
                   ) : (
                     <>
@@ -459,9 +459,9 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
           })}
         </div>
         <div className="genrel-foot">
-          <span><b>后端发布门</b> · 二代及以后 SKU 从待发布到已开放,需同时满足当前 Phase 已到达 + H1 月龄 + E5 资格配置非空</span>
+          <span><b>发布规则</b> · 二代及以后 SKU 从待发布到已开放,需同时满足当前阶段已到达 + 平台月龄已到 + 设备资格已配置</span>
           <span className="sep">·</span>
-          <span><b>强制提前开放</b> 仅绕过月龄门,不绕过 Phase / E5 · 提前 / 延迟 / 撤销均走 操作确认 + A2 审计</span>
+          <span><b>强制提前开放</b> 仅绕过月龄门,不绕过阶段 / 设备资格 · 提前 / 延迟 / 撤销均走操作确认和审计</span>
         </div>
       </div>
 
