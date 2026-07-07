@@ -43,11 +43,26 @@
     "cycleMonths": 12,
     "minEfficiency": 0.22,
     "subsidyDays": 30,
-    "exemptKinds": ["phone", "cloud-share", "pc-gpu"]
+    "exemptKinds": [
+      "phone",
+      "cloud-share",
+      "pc-gpu"
+    ]
   },
   "tradeInLadder": {
-    "cutsPct": [25, 50, 75, 100],
-    "creditsPct": [75, 60, 45, 30, 15]
+    "cutsPct": [
+      25,
+      50,
+      75,
+      100
+    ],
+    "creditsPct": [
+      75,
+      60,
+      45,
+      30,
+      15
+    ]
   },
   "products": {
     "stellarbox-s1": {
@@ -84,8 +99,20 @@
   "withdrawal": {
     "minWithdrawalUSD": 20,
     "dailyBalanceCapRate": 0.8,
-    "penaltyFeeRateByPhase": { "P1": 0.2, "P2": 0.2, "P3": 0.2, "P4": 0.2, "P5": 0.25, "P6": 0.3 },
+    "penaltyFeeRateByPhase": {
+      "P1": 0.2,
+      "P2": 0.2,
+      "P3": 0.2,
+      "P4": 0.2,
+      "P5": 0.25,
+      "P6": 0.3
+    },
     "nexFeeOffsetRateUSDPerNex": 0.4,
     "_note": "NEX 优惠抵扣模型(2026-06-17 取代旧 2% 固定费 feeRate/feeMin/feeMax):无 NEX 按 penaltyFeeRateByPhase×金额收惩罚费,烧 NEX 按 nexFeeOffsetRate($0.40/NEX,远高于市价)抵扣、烧够全免、无硬拦截。penaltyFeeRateByPhase 同源 uniapp product-phase.withdrawPenaltyFeeRate + admin H1 DIAL_MATRIX(月→phase);nexFeeOffsetRate 同源 admin D5 OWN_PARAMS + uniapp product-phase.nexFeeOffsetRate。"
+  },
+  "tradeInEarlyAccess": {
+    "enabled": false,
+    "leadDays": 30,
+    "note": "置换侧抢先购(上架参数,FEAT-DEV02b):默认关;开启后仅置换路径可在上架前 leadDays 天购买"
   }
 }

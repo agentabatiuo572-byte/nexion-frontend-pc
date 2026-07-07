@@ -563,7 +563,7 @@ export type BusinessFormSpec =
   | { kind: "copy-edit"; keyName?: string; version?: string; surface?: string; zh?: string; en?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; versionNote?: string }
   | { kind: "course-authoring"; rewardMin?: number; rewardMax?: number; categories?: string[]; durations?: string[]; publishStates?: string[] }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
-  | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; discount?: number; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
+  | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
   | { kind: "version-authoring"; version?: string; jurisdiction?: string; zh?: string; en?: string; chapters?: string[]; languageScopes?: string[]; effectiveDate?: string; requiresReack?: boolean }
   | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean }
@@ -782,7 +782,6 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       name: spec.name ?? "",
       releaseMonth: String(spec.releaseMonth ?? 1),
       phase: spec.phase ?? spec.phaseOptions[0] ?? "",
-      discount: String(spec.discount ?? 0),
       eligibility: spec.eligibility ? "true" : "false",
       phaseOffset: String(spec.phaseOffset ?? 0),
       forceUnlock: spec.forceUnlock ? "true" : "false",
@@ -944,12 +943,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("skuId", "SKU");
     needs("releaseMonth", "发布月");
     needs("phase", "发布阶段");
-    needs("discount", "折扣");
     const month = Number(state.releaseMonth);
-    const discount = Number(state.discount);
     const offset = Number(state.phaseOffset || "0");
     if (!Number.isInteger(month) || month < 1 || month > 12) missing.push("发布月 1-12");
-    if (!Number.isFinite(discount) || discount < 0) missing.push("折扣金额 ≥ 0");
     if (!Number.isInteger(offset) || offset < -12 || offset > 12) missing.push("发布偏移 -12 到 12");
   } else if (spec.kind === "phase-config") {
     needs("label", "阶段名称");
@@ -1398,7 +1394,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   if (spec.kind === "generation-gate") {
     return (
       <div className="field" data-business-form="generation-gate">
-        <label>业务表单 · E1 代际发布门</label>
+        <label>业务表单 · E1 上架节奏门</label>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.mode === "create"
             ? select("skuId", "目标 SKU", spec.skuOptions)
@@ -1406,7 +1402,6 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {input("name", "展示名称", "留空则使用 SKU 名称")}
           {input("releaseMonth", "计划发布月", "1-12", "number")}
           {select("phase", "发布阶段", spec.phaseOptions, spec.phaseLabels)}
-          {input("discount", "以旧换新折扣 USDT", "300", "number")}
           {input("phaseOffset", "发布偏移（月）", "0", "number")}
           {select("eligibility", "E5 资格配置", ["true", "false"], { true: "已补齐", false: "未补录" })}
           {select("forceUnlock", "强制提前开放", ["false", "true"], { false: "否", true: "是" })}
@@ -1423,7 +1418,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
       <div className="field" data-business-form="phase-config">
         <label>业务表单 · E1 阶段配置</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("label", "阶段名称", "如 代际第一代")}
+          {input("label", "阶段名称", "如 P3 Pro v2 首发")}
           {input("meta", "门槛说明", "如 L0+ / 完成 KYC")}
           {input("skus", "SKU 标签", "如 入门档 / Pro v2")}
           {input("sortOrder", "排序", "10", "number")}

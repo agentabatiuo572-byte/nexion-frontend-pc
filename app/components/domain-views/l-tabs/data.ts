@@ -124,7 +124,7 @@ export const MATURITY_WIN = {
 // 储备可覆盖到期天数:单源 = design-data.RESERVE_COVER_DAYS(顶部 re-export,D3/B2/L3 同数)。
 
 /* ===== L4 · 设备 / 任务 / 网络 / Phase ===== */
-// 代际 × 机型分布:机型对齐 E1 商品目录真实 SKU(lifecycle:S1/Pro/P1=legacy,Pro v2/P2=Gen-2 current);
+// 机型分布:机型对齐 E1 商品目录真实 SKU(lifecycle:S1/Pro/P1=legacy,Pro v2/P2=current);
 // 设备台数为 BI 演示分布,合计 = 41,208(活跃设备口径,各处派生同值)。
 export const DEV_DIST = [
   { nm: "NexionBox S1", gen: "legacy", n: 18204, color: "#B6A4FF" },

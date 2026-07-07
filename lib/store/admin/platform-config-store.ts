@@ -40,7 +40,7 @@ export interface PurchaseGate {
 
 // 商品 SKU(name 作唯一 id)— 字段为前端 Product 模型(Nexion-prototype/lib/mock/products.ts)的
 // 结构化镜像超集:前端商品卡/详情页展示的每个参数都在此可运营。真后台对接时本结构 1:1 映射 Product。
-// 两个正交的「状态」维度:lifecycle = active/legacy(代际生命周期,驱动前端 Legacy 角标);
+// 两个正交的「状态」维度:lifecycle = active/legacy(目录生命周期,驱动前端「经典款」角标);
 // status = on/off/pending(后台上下架态,前端不可见)。baseRate 已拆为 dailyEarn + dailyEarnNEX(结构化双币)。
 export interface OpsSku {
   // ── 标识 ──
@@ -77,11 +77,8 @@ export interface OpsSku {
   aiUnlocks?: string;           // 解锁算力池任务 ID(E2 taskId;展示时映射任务名)
   // ── 特性清单 ──
   features?: string[];          // 卖点列表(详情页)
-  // ── 代际 & 生命周期 ──
-  generation?: number;          // 代际 1 / 2
-  lifecycle?: string;           // active / legacy(代际生命周期;独立于上下架 status)
-  supersededBy?: string;        // 被替代为(下一代 product id / name)
-  tradeinDiscount?: number;     // 以旧换新折扣 USD
+  // ── 生命周期 & 上架 ──
+  lifecycle?: string;           // active / legacy(目录生命周期;独立于上下架 status)
   unlock: string;               // 解锁 Phase(= 前端 unlocksAtPhase)P1-P6
   // ── 购买门(per-user 购买限制 · 镜像前端 Product.purchaseGate;undefined = 自由购买无门)──
   purchaseGate?: PurchaseGate;  // 等级/条件门 + 锁额门(运营在 SKU 抽屉「⑦ 购买限制」配置)

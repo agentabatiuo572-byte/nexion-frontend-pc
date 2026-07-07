@@ -91,6 +91,8 @@ const MOCK_E3_CONFIG: Record<string, string> = {
   "E.device.taskLock.s1": "40",
   "E.device.taskLock.pro": "140",
   "E.device.taskLock.rack": "450",
+  "E.release.earlyAccess.enabled": "关",  // 置换侧抢先购(上架前置换可购)· 源码 TRADEIN_EARLY_ACCESS.enabled=false
+  "E.release.earlyAccess.leadDays": "30", // 抢先购提前天数 · 档位 7/14/30/60/90
   "E.tradein.enabled": "开",
   "E.tradein.ladder.cut1": "25",
   "E.tradein.ladder.cut2": "50",

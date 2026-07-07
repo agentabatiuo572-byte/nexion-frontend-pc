@@ -5,7 +5,7 @@
  */
 import type { OpsSku, PurchaseGate } from "@/lib/store/admin/platform-config-store";
 
-// 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3);E6 算力与设备配置为三端改造 SPEC-0 新增。
+// 全系统统一连续编号 E1-E5(上架门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3);E6 算力与设备配置为三端改造 SPEC-0 新增。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
 export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5", E6: "E6" };
 
@@ -49,6 +49,8 @@ export const E_PARAM_DEFAULTS: Record<string, string> = {
   // FEAT-DEV02 升级置换阶梯(激进档):抵扣率按「累计产出 ÷ 实付价」落档,产出越多抵扣越小。
   // 界点 4 值 + 各档抵扣率 5 值分开配置,区间连续由构造保证;与 uniapp TRADEIN_CREDIT_LADDER、
   // canon-numbers.json tradeInLadder 三端对账。旧 salvagePct/minHoldingMonths 已删(随时下架,阶梯天然抗套利)。
+  "E.release.earlyAccess.enabled": "关",  // 置换侧抢先购(上架前置换可购)· 源码 TRADEIN_EARLY_ACCESS.enabled=false
+  "E.release.earlyAccess.leadDays": "30", // 抢先购提前天数 · 档位 7/14/30/60/90
   "E.tradein.enabled": "开",
   "E.tradein.ladder.cut1": "25",
   "E.tradein.ladder.cut2": "50",
@@ -114,7 +116,7 @@ export const EMPTY_SKU_FORM = {
   sold: "", stock: "", rating: "", reviews: "",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
-  generation: "1", lifecycle: "active", supersededBy: "", tradeinDiscount: "", unlock: "", tag: "",
+  lifecycle: "active", unlock: "", tag: "",
   // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
@@ -150,7 +152,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     sold: str(s.sold), stock: str(s.stock), rating: str(s.rating), reviews: str(s.reviews),
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
-    generation: str(s.generation) || "1", lifecycle: s.lifecycle ?? "active", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "", tag: s.tag ?? "",
+    lifecycle: s.lifecycle ?? "active", unlock: s.unlock ?? "", tag: s.tag ?? "",
     gateType: gateToType(g),
     gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamVolumeMin: str(g?.teamVolumeMin),
     gateMode: g?.mode === "either" ? "either" : "all",
@@ -228,7 +230,7 @@ export function formToSku(f: SkuForm, existing?: OpsSku): OpsSku {
     sold: skuNumU(f.sold), stock: stockTrim === "" ? "∞" : (skuNumU(stockTrim) ?? stockTrim), rating: skuNumU(f.rating), reviews: skuNumU(f.reviews),
     aiImageGenPerMin: skuNumU(f.aiImageGenPerMin), aiLlmTokensPerSec: skuNumU(f.aiLlmTokensPerSec), aiVideoMinPerHour: skuNumU(f.aiVideoMinPerHour), aiFineTuneMins: skuNumU(f.aiFineTuneMins), aiUnlocks: f.aiUnlocks.trim() || undefined,
     features: features.length ? features : undefined,
-    generation: skuNumU(f.generation), lifecycle: f.lifecycle, supersededBy: f.supersededBy.trim() || undefined, tradeinDiscount: skuNumU(f.tradeinDiscount),
+    lifecycle: f.lifecycle,
     unlock: f.unlock, purchaseGate: formToGate(f), tag: f.tag.trim() || existing?.tag || "", status: existing?.status ?? "pending",
   };
 }

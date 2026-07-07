@@ -1,7 +1,7 @@
 /** 域 E 设备与商城 — 注册表(config / dashboard / list archetype 混合)。accent=--admin-domain-e。
  *  ⚠️ E ∈ PORTED_DOMAINS:本文件 content(metrics/rows/groups)为**死代码**,真渲染面 = e-view.tsx + e-tabs/(catalog 走 design-data.ts SKUS,orders/devices 走 e-tabs/data.ts),仅 summary 经 DomainHeader 渲染。改 E 域展示值改 e-view/e-tabs,非本文件。本文件内的 SKU/价格已对齐 canon 仅作存档一致性。
  *  NexionBox 矿机商城与设备生命周期。数值与前端 PRD device specs 对齐(server 权威):
- *  - SKU 6 个管理对象(在售 4 + 待发布 2);价格 / baseRate 逐字段对齐 canon-numbers.json(S1 $649 · Pro $1,199 · Pro v2 Gen-2 $1,319 · Rack P1 $4,499 · Rack P2 $7,499 · Cloud $19.9)。
+ *  - SKU 6 个管理对象(在售 4 + 待发布 2);价格 / baseRate 逐字段对齐 canon-numbers.json(S1 $649 · Pro $1,199 · Pro v2 $1,319 · Rack P1 $4,499 · Rack P2 $7,499 · Cloud $19.9)。
  *  - 衰减模型 -4% / -6% / -10% 月分段 + MIN_EFFICIENCY(P3 档 month12 ≈ 22% 效能)。
  *  - TradeInConfig:minHoldingMonths / salvage(月12 归零约束),salvage 不入余额。
  *  - Order 状态机:placed → paid → provisioning → activated + 失败态;退款核减 cumulativeDepositUsdt。
@@ -16,30 +16,30 @@ export const DOMAIN_E: ModuleEntry[] = [
     content: {
       kind: "list",
       metrics: [
-        { label: "在售 SKU", value: "4 / 6", sub: "2 个待发布", accent: "var(--admin-domain-e)", hint: "已上架可购机型;Gen-2 SKU 预热中未上架。" },
+        { label: "在售 SKU", value: "4 / 6", sub: "2 个待发布", accent: "var(--admin-domain-e)", hint: "已上架可购机型;待上架 SKU 预热中。" },
         { label: "目录均价", value: "$1,149", sub: "加权在售", accent: "var(--admin-domain-e)", hint: "按近 30 日成交结构加权的在售机型均价。" },
         { label: "在售库存", value: "3,420", sub: "可下单台数", accent: "var(--v5-success)", hint: "全 SKU 可立即下单的虚拟库存合计。" },
         { label: "促销中", value: "1", sub: "限时折扣", accent: "var(--v5-warning)", hint: "当前生效的促销活动数;到期自动回原价。" },
       ],
-      search: "搜索机型 / 代际",
+      search: "搜索机型 / 档位",
       filterKey: "state",
       filters: ["全部", "上架", "促销中", "待发布"],
-      primaryAction: { label: "新增 SKU", fields: ["型号 / 档位 / 标语 / 角标 badge", "售价", "GPU / VRAM / 算力 / 功率 / 数据中心", "日产 USDT / 日产 NEX / Share 年化", "AI 图像·张/min / LLM·tok/s / 视频·s/min / LoRA·min / 解锁池", "累计销量 / 评分 / 评论数 / 库存", "代际 / 生命周期 / 解锁 Phase / 换新折扣 / 特性清单", "购买限制:门类型(无/活跃直推/V级/组合)+ 阈值 / 锁额 cap·已售·周期 / enforce 硬拦截"] },
+      primaryAction: { label: "新增 SKU", fields: ["型号 / 档位 / 标语 / 角标 badge", "售价", "GPU / VRAM / 算力 / 功率 / 数据中心", "日产 USDT / 日产 NEX / Share 年化", "AI 图像·张/min / LLM·tok/s / 视频·s/min / LoRA·min / 解锁池", "累计销量 / 评分 / 评论数 / 库存", "生命周期 / 解锁 Phase / 特性清单", "购买限制:门类型(无/活跃直推/V级/组合)+ 阈值 / 锁额 cap·已售·周期 / enforce 硬拦截"] },
       columns: [
         { key: "sku", header: "机型" },
-        { key: "gen", header: "代际" },
+        { key: "lifecycle", header: "生命周期" },
         { key: "price", header: "售价", mono: true, align: "right" },
         { key: "rate", header: "日产", mono: true },
         { key: "stock", header: "库存", mono: true, align: "right" },
         { key: "state", header: "状态", status: true },
       ],
       rows: [
-        { sku: "NexionBox S1", gen: "Gen-1", price: "$649", rate: "$7 + 40 NEX", stock: "47", state: "上架" },
-        { sku: "NexionBox Pro", gen: "Gen-1", price: "$1,199", rate: "$13 + 80 NEX", stock: "23", state: "上架" },
-        { sku: "NexionBox Pro v2", gen: "Gen-2", price: "$1,319", rate: "$14 + 90 NEX", stock: "38", state: "待发布" },
-        { sku: "NexionRack P1", gen: "Gen-1", price: "$4,499", rate: "$45 + 300 NEX", stock: "8", state: "上架" },
-        { sku: "NexionRack P2", gen: "Gen-2", price: "$7,499", rate: "$75 + 500 NEX", stock: "4", state: "待发布" },
-        { sku: "Cloud Share", gen: "Gen-1", price: "$19.9", rate: "$0.19 + 3 NEX", stock: "∞", state: "上架" },
+        { sku: "NexionBox S1", lifecycle: "legacy", price: "$649", rate: "$7 + 40 NEX", stock: "47", state: "上架" },
+        { sku: "NexionBox Pro", lifecycle: "legacy", price: "$1,199", rate: "$13 + 80 NEX", stock: "23", state: "上架" },
+        { sku: "NexionBox Pro v2", lifecycle: "active", price: "$1,319", rate: "$14 + 90 NEX", stock: "38", state: "待发布" },
+        { sku: "NexionRack P1", lifecycle: "legacy", price: "$4,499", rate: "$45 + 300 NEX", stock: "8", state: "上架" },
+        { sku: "NexionRack P2", lifecycle: "active", price: "$7,499", rate: "$75 + 500 NEX", stock: "4", state: "待发布" },
+        { sku: "Cloud Share", lifecycle: "legacy", price: "$19.9", rate: "$0.19 + 3 NEX", stock: "∞", state: "上架" },
       ],
       detail: true,
       rowActions: [
@@ -48,7 +48,7 @@ export const DOMAIN_E: ModuleEntry[] = [
         { label: "改价" },
         { label: "新建促销" },
       ],
-      note: "价格 / baseRate 对齐 canon(S1 $649 · Pro $1,199 · Pro v2 Gen-2 $1,319);S1 早购促销 9 折剩 3 天。新增 SKU / 改价 / 上下架 / 新建促销需 增长运营 发起 + 财务 确认(总管理员仍需操作确认),写入 A2;Gen-2 上架受 E1 代际门约束。改价即时改写 E4 下单金额与 E2 日产计提。",
+      note: "价格 / baseRate 对齐 canon(S1 $649 · Pro $1,199 · Pro v2 $1,319);S1 早购促销 9 折剩 3 天。新增 SKU / 改价 / 上下架 / 新建促销需 增长运营 发起 + 财务 确认(总管理员仍需操作确认),写入 A2;Pro v2 / Rack P2 上架受 E1 上架节奏门约束。改价即时改写 E4 下单金额与 E2 日产计提。",
     },
   },
   {
@@ -133,7 +133,7 @@ export const DOMAIN_E: ModuleEntry[] = [
             { label: "minHoldingMonths", value: "3 月", range: "1–6 月", effect: "持有不足 → 不可 trade-in,防套利刷折抵" },
             { label: "折抵冷却", value: "P3-P4 60 min · P5-P6 24h", range: "phase-keyed", effect: "随 Phase 切换的折抵触发冷却(§11.0A.2a)" },
             { label: "单账户折抵上限", value: "3 台 / 月", range: "1–10 台", effect: "防批量倒机刷新机促销" },
-            { label: "代际折抵约束", value: "仅可换同代或更高代", range: "同代 / 升代", effect: "Gen-1 可换 Gen-1 或 Gen-2,不可降代" },
+            { label: "置换目标约束", value: "仅限更高价 SKU", range: "开 / 关(E3 可配)", effect: "任何已购付费设备可折抵购买任何更高价 SKU" },
           ],
         },
         {
@@ -180,14 +180,14 @@ export const DOMAIN_E: ModuleEntry[] = [
         { key: "ts", header: "下单时间", mono: true, align: "right" },
       ],
       rows: [
-        { oid: "ORD-2606-1142", uid: "U-88421", sku: "NexionBox S1 (Gen-1)", amount: "$649", pay: "USDT 余额", state: "已激活", ts: "14:08" },
-        { oid: "ORD-2606-1141", uid: "U-90233", sku: "NexionBox Pro (Gen-1)", amount: "$1,199", pay: "链上充值", state: "开通中", ts: "13:52" },
-        { oid: "ORD-2606-1140", uid: "U-77310", sku: "NexionBox S1 (Gen-1)", amount: "$649", pay: "USDT 余额", state: "已激活", ts: "13:40" },
-        { oid: "ORD-2606-1139", uid: "U-91002", sku: "NexionBox S1 (Gen-1)", amount: "$559", pay: "USDT 余额 + trade-in", state: "已激活", ts: "13:21" },
-        { oid: "ORD-2606-1138", uid: "U-83771", sku: "NexionBox Pro (Gen-1)", amount: "$1,199", pay: "链上充值", state: "已支付", ts: "12:55" },
-        { oid: "ORD-2606-1137", uid: "U-88210", sku: "NexionBox S1 (Gen-1)", amount: "$649", pay: "USDT 余额", state: "待支付", ts: "12:33" },
-        { oid: "ORD-2606-1136", uid: "U-79944", sku: "NexionBox S1 (Gen-1)", amount: "$649", pay: "链上充值", state: "支付失败", ts: "11:58" },
-        { oid: "ORD-2606-1135", uid: "U-90577", sku: "NexionBox Pro v2 (Gen-2)", amount: "$1,319", pay: "链上充值", state: "已退款", ts: "10:42" },
+        { oid: "ORD-2606-1142", uid: "U-88421", sku: "NexionBox S1", amount: "$649", pay: "USDT 余额", state: "已激活", ts: "14:08" },
+        { oid: "ORD-2606-1141", uid: "U-90233", sku: "NexionBox Pro", amount: "$1,199", pay: "链上充值", state: "开通中", ts: "13:52" },
+        { oid: "ORD-2606-1140", uid: "U-77310", sku: "NexionBox S1", amount: "$649", pay: "USDT 余额", state: "已激活", ts: "13:40" },
+        { oid: "ORD-2606-1139", uid: "U-91002", sku: "NexionBox S1", amount: "$559", pay: "USDT 余额 + trade-in", state: "已激活", ts: "13:21" },
+        { oid: "ORD-2606-1138", uid: "U-83771", sku: "NexionBox Pro", amount: "$1,199", pay: "链上充值", state: "已支付", ts: "12:55" },
+        { oid: "ORD-2606-1137", uid: "U-88210", sku: "NexionBox S1", amount: "$649", pay: "USDT 余额", state: "待支付", ts: "12:33" },
+        { oid: "ORD-2606-1136", uid: "U-79944", sku: "NexionBox S1", amount: "$649", pay: "链上充值", state: "支付失败", ts: "11:58" },
+        { oid: "ORD-2606-1135", uid: "U-90577", sku: "NexionBox Pro v2", amount: "$1,319", pay: "链上充值", state: "已退款", ts: "10:42" },
       ],
       detail: true,
       rowActions: [

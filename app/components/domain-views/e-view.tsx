@@ -2,13 +2,13 @@
 
 /**
  * E 设备与商城 — 设计稿 design_handoff_e_domain 内容视图。
- * 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3):
- * E1 商品目录&代际门 / E2 收益&任务引擎 / E3 生命周期&Trade-in / E4 订单状态机 / E5 设备运维 / E6 算力与设备配置(三端改造 SPEC-0 新增)。
+ * 全系统统一连续编号 E1-E5(上架门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3):
+ * E1 商品目录&上架门 / E2 收益&任务引擎 / E3 生命周期&Trade-in / E4 订单状态机 / E5 设备运维 / E6 算力与设备配置(三端改造 SPEC-0 新增)。
  * nav id == 视图 key == prdAnchor == PRD §10 章节(已全部重编号统一,FOLD 现为恒等映射)。
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/评价/代际门、E2 任务引擎、E3 生命周期&Trade-in、E4 订单状态机、E5 设备运维走后端 API。
+ * 真写落点:E1 SKU/评价/上架门、E2 任务引擎、E3 生命周期&Trade-in、E4 订单状态机、E5 设备运维走后端 API。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -378,7 +378,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : (pget(k) ?? "—");
   const e3Ready = Object.keys(e3Params).length > 0;
 
-  // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
+  // ── E1 商品目录 / 评价 / 上架门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>(IS_PREVIEW ? (SKUS as OpsSku[]) : []);
   const [e1Reviews, setE1Reviews] = useState<OpsReview[]>(IS_PREVIEW ? (REVIEWS as OpsReview[]) : []);
   const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(IS_PREVIEW ? E1_GENERATION_GATES : null);
@@ -1174,25 +1174,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
           </SkuFieldGroup>
 
-          <SkuFieldGroup n="⑥" title="代际 & 生命周期">
+          <SkuFieldGroup n="⑥" title="生命周期 & 上架">
             <div className="grid g-2" style={{ gap: 12 }}>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">产品代际</span><select className="fld" value={form.generation} onChange={(e) => setForm({ ...form, generation: e.target.value })}>{["1", "2", "3"].map((x) => <option key={x} value={x}>第 {x} 代</option>)}</select></label>
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">生命周期</span><select className="fld" value={form.lifecycle} onChange={(e) => setForm({ ...form, lifecycle: e.target.value })}>{SKU_LIFECYCLE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             </div>
             {form.tier !== "Share" && <>
               <div className="grid g-2" style={{ gap: 12 }}>
-                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（代际发布门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}</option>)}</select></label>
-                <SkuFld label="以旧换新折扣 USD" type="number" value={form.tradeinDiscount} onChange={(v) => setForm({ ...form, tradeinDiscount: v })} placeholder="300" hint="可空" />
+                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（上架节奏门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}</option>)}</select></label>
               </div>
-              <label className="col" style={{ gap: 5 }}>
-                <span className="muted tiny">被替代为 supersededBy<span style={{ color: "var(--ink-4)" }}> · 可空 · 选下一代 SKU</span></span>
-                <select className="fld" value={form.supersededBy} onChange={(e) => setForm({ ...form, supersededBy: e.target.value })}>
-                  <option value="">— 无(未被替代)—</option>
-                  {skus.filter((s) => (s.id || s.name) !== (form.id.trim() || editName)).map((s) => <option key={s.name} value={s.id || s.name}>{s.name} · {s.id || s.name}</option>)}
-                  {/* 陈旧值兜底:当前 supersededBy 指向已删/不在目录的 SKU 时补一项,防 select 回显空→提交误清。 */}
-                  {form.supersededBy.trim() && !skus.some((s) => (s.id || s.name) === form.supersededBy.trim()) && <option value={form.supersededBy}>{form.supersededBy}(已不在目录)</option>}
-                </select>
-              </label>
             </>}
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"Nexion 全托管\n99.9% 在线率 SLA\n免运费与安装"} /></label>
           </SkuFieldGroup>
@@ -1352,9 +1341,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
-          // 本地预览:代际门(E.gen.*)后端单源,无本地 gate state,跳过避免 401
+          // 本地预览:上架门(E.gen.*)后端单源,无本地 gate state,跳过避免 401
           if (IS_PREVIEW && (mc.op === "param" || mc.op === "param-fixed") && mc.paramKey?.startsWith("E.gen.")) {
-            setToast("本地预览模式:代际门参数需连后端生效"); setActionConfirm(null); return;
+            setToast("本地预览模式:上架门参数需连后端生效"); setActionConfirm(null); return;
           }
           const e6ValidationError = validateE6ComputeWrite(mc, pget, newValue, businessValue);
           if (e6ValidationError) {
@@ -1536,8 +1525,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 ? await patchE1GenerationGate(mc.generationGateId, payload, reason, operator)
                 : await createE1GenerationGate(payload, reason, operator));
               await refreshE1(); // 对齐 phase-save/gate-force:刷新 e1Skus/phases 等派生面,防 SKU 解锁阶段下拉读 stale
-              logAudit({ actor: operator, action: (mc.generationGateId ? "编辑代际门 " : "新增代际门 ") + payload.skuId, target: mc.generationGateId ?? payload.skuId, reason });
-              setToast(mc.generationGateId ? "代际门已更新:" + payload.skuId : "代际门已新增:" + payload.skuId);
+              logAudit({ actor: operator, action: (mc.generationGateId ? "编辑上架门 " : "新增上架门 ") + payload.skuId, target: mc.generationGateId ?? payload.skuId, reason });
+              setToast(mc.generationGateId ? "上架门已更新:" + payload.skuId : "上架门已新增:" + payload.skuId);
             } else if (mc.op === "generation-gate-force" && mc.generationGateId && mc.generationGate?.forceUnlock != null) {
               const enabled = !!mc.generationGate.forceUnlock;
               setE1Gates(await patchE1GenerationGate(mc.generationGateId, { forceUnlock: enabled }, reason, operator));

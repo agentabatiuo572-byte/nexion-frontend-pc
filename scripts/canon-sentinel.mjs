@@ -321,6 +321,24 @@ if (!uniPhase) {
   expectNumber("withdraw.admin.offset", adminOffset, wd.nexFeeOffsetRateUSDPerNex, ["app/components/domain-views/d-tabs/data.ts"]);
 }
 
+// ---- FEAT-DEV02b:置换侧抢先购三端对账(uniapp TRADEIN_EARLY_ACCESS ↔ admin E.release.earlyAccess.* ↔ canon)----
+if (uniPhase) {
+  const earlyBlock = uniPhase.match(/TRADEIN_EARLY_ACCESS\s*=\s*\{([\s\S]*?)\}\s*as const/)?.[1] ?? "";
+  const uniEnabled = /enabled:\s*(true|false)/.exec(earlyBlock)?.[1] ?? null;
+  const uniLead = /leadDays:\s*(\d+)/.exec(earlyBlock)?.[1] ?? null;
+  const ea = canon.tradeInEarlyAccess;
+  if (uniEnabled === null) failures.push("earlyAccess.uni.enabled missing (../Nexion-uniapp/src/store/product-phase.ts TRADEIN_EARLY_ACCESS)");
+  else if ((uniEnabled === "true") !== ea.enabled) failures.push(`earlyAccess.uni.enabled ${uniEnabled} ≠ canon ${ea.enabled} (../Nexion-uniapp/src/store/product-phase.ts)`);
+  expectNumber("earlyAccess.uni.leadDays", uniLead === null ? null : Number(uniLead), ea.leadDays, ["../Nexion-uniapp/src/store/product-phase.ts"]);
+  const adminE1 = read(path.join(ROOT, "app", "components", "domain-views", "e-tabs", "data.ts"));
+  const adminDefaults2 = extractRecord(adminE1, "E_PARAM_DEFAULTS") ?? "";
+  const adminEnabled = adminDefaults2.match(/"E\.release\.earlyAccess\.enabled"\s*:\s*"([^"]+)"/)?.[1] ?? null;
+  const adminLead = adminDefaults2.match(/"E\.release\.earlyAccess\.leadDays"\s*:\s*"([^"]+)"/)?.[1] ?? null;
+  if (adminEnabled === null) failures.push("earlyAccess.admin.enabled key missing (e-tabs/data.ts)");
+  else if ((adminEnabled === "开") !== ea.enabled) failures.push(`earlyAccess.admin.enabled ${adminEnabled} ≠ canon ${ea.enabled} (app/components/domain-views/e-tabs/data.ts)`);
+  expectNumber("earlyAccess.admin.leadDays", adminLead === null ? null : Number(adminLead), ea.leadDays, ["app/components/domain-views/e-tabs/data.ts"]);
+}
+
 // ---- 旧 2% 提现费指纹哨兵:防 max(1,min(20,amt*0.02)) clamp 复发(新模型 = penaltyFeeRate × 金额 − NEX 抵扣)----
 function walkTsCanon(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

@@ -206,7 +206,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <div className="param-foot"><span className="ic"><AlertIcon /></span><span><b>「段3 产能变化」是高敏参数</b>:加深幅度加快置换节奏(更多 Trade-in 现金流),但晚段收益预期下挫会触发用户负面信号;放缓则延后置换、减少现金流。<b>各段月份在「产能分段周期」一行一次调齐</b>;各段行只改每月变化幅度%。<b>「新机任务补贴」是纯展示层</b>——只控制前端补贴标注窗口,结算数学始终按产能曲线连续计算。</span></div>
         </section>
 
-        {/* 右:升级置换阶梯(FEAT-DEV02 · 无代际,随时下架,产出阶梯抵扣) */}
+        {/* 右:升级置换阶梯(FEAT-DEV02 · 随时下架,产出阶梯抵扣) */}
         <section className="param-card">
           <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">升级置换阶梯</div><div className="s">产出阶梯折抵 · 随时置换</div></div><span className="tag">E.tradein.*</span></div>
           <div className="pkv"><Lbl zh="置换总开关" code="enabled" desc="关闭后前端全部置换入口隐藏(设备列表/结算拦截同步失效)" hot /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.enabled")}</span><Adj label="置换总开关" k="E.tradein.enabled" unit="" editKind="select" options={["开", "关"]} detail="置换总开关 · 关闭=前端全部置换入口隐藏 · 改后对新渲染生效" /></div>

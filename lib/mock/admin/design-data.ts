@@ -319,7 +319,7 @@ export const GEOBLOCK = [
 
 // SKU 目录 — 前端 Product(Nexion-prototype/lib/mock/products.ts)6 款的完整镜像。
 // 数值逐字段对齐前端商品卡(S1 日产 $7 + 40 NEX · v2 $649 锚 / 库存 47 / 评分 4.8 …);baseRate 已拆 dailyEarn + dailyEarnNEX(双币真源),
-// baseRate 仅留派生展示串。在售 4(on)+ 待发布 2(pending:Pro v2=P3 / Rack P2=P5 代际门未放行)= 6,对齐 metrics「4 / 6」。
+// baseRate 仅留派生展示串。在售 4(on)+ 待发布 2(pending:Pro v2=P3 / Rack P2=P5 上架门未放行)= 6,对齐 metrics「4 / 6」。
 // Genesis 属 G4 金融产品(非设备 SKU),已从本目录移除。
 export const SKUS = [
   {
@@ -331,7 +331,7 @@ export const SKUS = [
     sold: 4821, stock: 47, rating: 4.8, reviews: 2847,
     aiImageGenPerMin: 320, aiLlmTokensPerSec: 12400, aiVideoMinPerHour: 18, aiFineTuneMins: 6, aiUnlocks: "TK-5",
     features: ["Fully managed by Nexion", "99.9% uptime SLA", "Real-time remote monitoring", "Free shipping & installation"],
-    generation: 1, lifecycle: "legacy", supersededBy: "stellarbox-pro-v2", tradeinDiscount: 0, unlock: "P1",
+    lifecycle: "legacy", unlock: "P1",
     tag: "legacy", status: "on",
   },
   {
@@ -343,21 +343,21 @@ export const SKUS = [
     sold: 1842, stock: 23, rating: 4.9, reviews: 1124,
     aiImageGenPerMin: 720, aiLlmTokensPerSec: 38000, aiVideoMinPerHour: 12, aiFineTuneMins: 20, aiUnlocks: "TK-6",
     features: ["8× RTX 4090 GPUs", "Priority task allocation", "99.9% uptime SLA", "Hardware insurance included"],
-    generation: 1, lifecycle: "legacy", supersededBy: "stellarrack-p2", tradeinDiscount: 0, unlock: "P1",
+    lifecycle: "legacy", unlock: "P1",
     // 购买门(镜像前端 shipped):单活跃直推 ≥5 + 硬锁额(余 = 1000−977 = 23,对齐 stock 23)。
     purchaseGate: { activeDirectMin: 5, mode: "all", quotaCap: 1000, quotaSold: 977, quotaPeriod: "month", enforce: true },
     tag: "legacy", status: "on",
   },
   {
     name: "NexionBox Pro v2", id: "stellarbox-pro-v2", tier: "Pro",
-    tagline: "2.5× S1 throughput — new generation silicon.", badge: "New Gen",
+    tagline: "2.5× S1 throughput — built for higher-tier task pools.", badge: "Upgrade Pick",
     gpu: "8× RTX 5090", vram: "256GB VRAM", hashRate: "5,120 MH/s", power: "2,200W TDP", datacenter: "Singapore DC",
     price: 1319,
     dailyEarn: 14, dailyEarnNEX: 90, baseRate: "$14/d · 90 NEX",
     sold: 412, stock: 38, rating: 4.9, reviews: 187,
     aiImageGenPerMin: 1080, aiLlmTokensPerSec: 56000, aiVideoMinPerHour: 24, aiFineTuneMins: 12, aiUnlocks: "TK-2",
-    features: ["8× RTX 5090 — new silicon generation", "2.5× S1 throughput on AI workloads", "Trade-in: $300 off when retiring a legacy NexionBox", "Hardware insurance + 5-year warranty"],
-    generation: 2, lifecycle: "active", supersededBy: "", tradeinDiscount: 300, unlock: "P3",
+    features: ["8× RTX 5090 — top-bin silicon", "2.5× S1 throughput on AI workloads", "Upgrade trade-in: retire an owned device for checkout credit", "Hardware insurance + 5-year warranty"],
+    lifecycle: "active", unlock: "P3",
     tag: "popular", status: "pending",
   },
   {
@@ -369,21 +369,21 @@ export const SKUS = [
     sold: 287, stock: 8, rating: 4.9, reviews: 154,
     aiImageGenPerMin: 1800, aiLlmTokensPerSec: 128000, aiVideoMinPerHour: 60, aiFineTuneMins: 8, aiUnlocks: "TK-5",
     features: ["Enterprise A100 GPUs", "Dedicated tier-3 datacenter slot", "VIP support · 24/7 hotline", "5-year extended warranty"],
-    generation: 1, lifecycle: "legacy", supersededBy: "stellarrack-p2", tradeinDiscount: 0, unlock: "P1",
+    lifecycle: "legacy", unlock: "P1",
     // 购买门(镜像前端 shipped):组合 either —— V≥3 或 ≥15 活跃直推 或 ≥$20K 团队业绩 + 硬锁额(余 = 100−92 = 8,对齐 stock 8)。
     purchaseGate: { rankMin: 3, activeDirectMin: 15, teamVolumeMin: 20000, mode: "either", quotaCap: 100, quotaSold: 92, quotaPeriod: "month", enforce: true },
     tag: "pro", status: "on",
   },
   {
     name: "NexionRack P2", id: "stellarrack-p2", tier: "Flagship",
-    tagline: "Datacenter H100 rack — final-tier upgrade window.", badge: "New Gen",
+    tagline: "Datacenter H100 rack — the top compute tier.", badge: "Flagship",
     gpu: "8× NVIDIA H100", vram: "1,024GB VRAM", hashRate: "9,600 MH/s", power: "4,000W TDP", datacenter: "Singapore DC",
     price: 7499,
     dailyEarn: 75, dailyEarnNEX: 500, baseRate: "$75/d · 500 NEX",
     sold: 64, stock: 4, rating: 5.0, reviews: 41,
     aiImageGenPerMin: 3600, aiLlmTokensPerSec: 256000, aiVideoMinPerHour: 120, aiFineTuneMins: 4, aiUnlocks: "TK-4",
-    features: ["8× H100 SXM5 — datacenter-grade Hopper", "Trade-in: $800 off when retiring a legacy Rack", "Dedicated tier-3 DC slot · 24/7 VIP support", "10-year extended warranty + insurance"],
-    generation: 2, lifecycle: "active", supersededBy: "", tradeinDiscount: 800, unlock: "P5",
+    features: ["8× H100 SXM5 — datacenter-grade Hopper", "Upgrade trade-in: retire an owned device for checkout credit", "Dedicated tier-3 DC slot · 24/7 VIP support", "10-year extended warranty + insurance"],
+    lifecycle: "active", unlock: "P5",
     tag: "limited", status: "pending",
   },
   {
@@ -395,7 +395,7 @@ export const SKUS = [
     sold: 12483, stock: "∞", rating: 4.6, reviews: 3812,
     aiUnlocks: "TK-2",
     features: ["Instant activation", "Buy as little as $19.9", "Fixed-income style returns", "Redeem any time after 30 days"],
-    generation: 1, lifecycle: "active", supersededBy: "", tradeinDiscount: 0, unlock: "P1",
+    lifecycle: "active", unlock: "P1",
     tag: "", status: "on",
   },
 ];
@@ -406,7 +406,7 @@ export const E1_GENERATION_GATES: E1GenerationGateData = {
   phases: [
     { p: "P1", label: "P1 冷启动", meta: "基础 SKU 开放", skus: "S1 / Pro / Cloud Share", sortOrder: 10, status: "active" },
     { p: "P2", label: "P2 扩容", meta: "机架 SKU 放量", skus: "Rack P1", sortOrder: 20, status: "active" },
-    { p: "P3", label: "P3 Gen-2 首发", meta: "二代盒子发布", skus: "Pro v2", sortOrder: 30, status: "active" },
+    { p: "P3", label: "P3 Pro v2 首发", meta: "更高算力盒子上架", skus: "Pro v2", sortOrder: 30, status: "active" },
     { p: "P4", label: "P4 置换窗口", meta: "Trade-in 加速", skus: "Pro v2 扩量", sortOrder: 40, status: "active" },
     { p: "P5", label: "P5 旗舰升级", meta: "H100 机架发布", skus: "Rack P2", sortOrder: 50, status: "active" },
     { p: "P6", label: "P6 成熟期", meta: "全 SKU 常态化", skus: "全量复盘", sortOrder: 60, status: "active" },
@@ -419,7 +419,6 @@ export const E1_GENERATION_GATES: E1GenerationGateData = {
       name: "NexionBox Pro v2",
       releaseMonth: 7,
       phase: "P3",
-      discount: 300,
       eligibility: true,
       phaseOffset: 0,
       forceUnlock: false,
@@ -430,7 +429,6 @@ export const E1_GENERATION_GATES: E1GenerationGateData = {
       name: "NexionRack P2",
       releaseMonth: 11,
       phase: "P5",
-      discount: 800,
       eligibility: false,
       phaseOffset: 0,
       forceUnlock: false,
@@ -441,7 +439,7 @@ export const E1_GENERATION_GATES: E1GenerationGateData = {
     "E.gen.stellarbox-pro-v2.phaseOffset": "0",
     "E.gen.stellarrack-p2.phaseOffset": "0",
   },
-  allowedFields: ["releaseMonth", "phase", "discount", "eligibility", "phaseOffset", "forceUnlock", "status"],
+  allowedFields: ["releaseMonth", "phase", "eligibility", "phaseOffset", "forceUnlock", "status"],
   sources: ["nx_admin_phase_config", "nx_admin_device_generation_gate", "growth.phase.current"],
 };
 

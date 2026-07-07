@@ -103,7 +103,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">设备运营报表</span>
-            <span className="sub">· 规模 / 代际 / 产出 / 衰减影响</span>
+            <span className="sub">· 规模 / 机型 / 产出 / 产能递减影响</span>
             <div className="r"><span className="lcode">device.* + earnings.credited</span></div>
           </div>
           <div className="l-b">
@@ -112,7 +112,7 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
               <div className="t"><div className="k">在锁(staking 绑定)</div><div className="v">{DEV_TILES.locked.toLocaleString("en-US")}</div><div className="s">占 {((DEV_TILES.locked / DEV_TOTAL) * 100).toFixed(1)}%</div></div>
               <div className="t"><div className="k">已退役</div><div className="v">{DEV_TILES.retired.toLocaleString("en-US")}</div><div className="s">trade-in 归 E3</div></div>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>按代际 × 机型分布 <span className="lcode" style={{ marginLeft: 6 }}>机型对齐 E1 商品目录</span></div>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>按机型分布 <span className="lcode" style={{ marginLeft: 6 }}>机型对齐 E1 商品目录</span></div>
             {DEV_DIST.map((d) => (
               <div key={d.nm} className="dist-row">
                 <span className="nm"><span className="gtag">{d.gen}</span>{d.nm}</span>

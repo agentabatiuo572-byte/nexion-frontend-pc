@@ -54,8 +54,6 @@ interface BackendSku {
   features?: string[] | null;
   generation?: number | null;
   lifecycle?: string | null;
-  supersededBy?: string | null;
-  tradeinDiscount?: number | string | null;
   unlockPhase?: string | null;
   purchaseGate?: BackendPurchaseGate | null;
   imageAssetId?: string | null;
@@ -89,7 +87,6 @@ export interface E1GenerationRelease {
   name: string;
   releaseMonth: number;
   phase: string;
-  discount: number;
   eligibility: boolean;
   phaseOffset?: number;
   forceUnlock?: boolean;
@@ -120,7 +117,6 @@ export interface E1GenerationGateInput {
   name?: string;
   releaseMonth?: number;
   phase?: string;
-  discount?: number;
   eligibility?: boolean;
   phaseOffset?: number;
   forceUnlock?: boolean;
@@ -250,10 +246,7 @@ function fromSku(sku: BackendSku): OpsSku {
     aiFineTuneMins: sku.aiFineTuneMins ?? undefined,
     aiUnlocks: sku.aiUnlocks ?? undefined,
     features: sku.features ?? undefined,
-    generation: sku.generation ?? undefined,
     lifecycle: sku.lifecycle ?? undefined,
-    supersededBy: sku.supersededBy ?? undefined,
-    tradeinDiscount: toOptionalNumber(sku.tradeinDiscount),
     unlock: sku.unlockPhase ?? "",
     purchaseGate: fromPurchaseGate(sku.purchaseGate),
     imageAssetId: sku.imageAssetId ?? undefined,
@@ -292,10 +285,7 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     aiFineTuneMins: sku.aiFineTuneMins ?? null,
     aiUnlocks: sku.aiUnlocks ?? null,
     features: sku.features ?? [],
-    generation: sku.generation ?? 1,
     lifecycle: sku.lifecycle ?? "active",
-    supersededBy: sku.supersededBy ?? null,
-    tradeinDiscount: sku.tradeinDiscount ?? null,
     unlockPhase: sku.unlock || "",
     purchaseGate: toPurchaseGate(sku.purchaseGate),
     imageAssetId: sku.imageAssetId ?? null,
