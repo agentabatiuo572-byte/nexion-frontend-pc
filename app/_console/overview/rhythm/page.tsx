@@ -37,7 +37,7 @@ const MAX_IN = Math.max(...INFLOW);
 const BUDGET: { nm: string; pc: number; varName: string }[] = [
   { nm: "拉新激励 / 试用补贴", pc: 38, varName: "--admin-cat-1" },
   { nm: "推荐返佣", pc: 27, varName: "--admin-cat-7" },
-  { nm: "Genesis 分红池注入", pc: 20, varName: "--admin-cat-4" },
+  { nm: "Genesis 排放池注入", pc: 20, varName: "--admin-cat-4" },
   { nm: "运营储备金", pc: 15, varName: "--admin-cat-8" },
 ];
 // conic-gradient 段:累加百分比拼接。

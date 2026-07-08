@@ -75,7 +75,7 @@
 | G1 Staking 池 | APY/锁期/容量 | 可编辑配置 + 应用 | config |
 | G2 兑换风控 | 费率/滑点/限额 | 可编辑配置 + 应用 | config |
 | G3 NEX 行情 | 价格/成交 | controlLink→/finance-products/exchange | dashboard |
-| G4 Genesis 经济 | 供给/分红/版税 | 可编辑配置 + 应用 | config |
+| G4 Genesis 经济 | 供给/排放/版税 | 可编辑配置 + 应用 | config |
 | G5 Premium 订阅 | 档位/权益 | 可编辑配置 + 应用 | config |
 | G6 NEX v2 Vault | 锁期/释放 | 可编辑配置 + 应用 | config |
 | G7 复投激励 | 奖励率/门槛 | 可编辑配置 + 应用 | config |

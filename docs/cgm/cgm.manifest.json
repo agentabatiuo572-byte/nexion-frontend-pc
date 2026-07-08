@@ -3628,10 +3628,10 @@
         "content_compliance",
         "risk"
       ],
-      "querySurface": "查 Genesis 总量1000张、单价$9,999、已售 soldSlots、每日全网交易 0.1% 分红比例",
-      "crudActions": "调供应量/单价/分红比例;监管点名'证券类风险'立即下架(kill-switch);POST /api/admin/genesis/adjust",
+      "querySurface": "查 Genesis 总量1000张、单价$9,999、已售 soldSlots、每日全网交易 0.1% 排放比例",
+      "crudActions": "调供应量/单价/排放比例;监管点名'证券类风险'立即下架(kill-switch);POST /api/admin/genesis/adjust",
       "operationConfirm": true,
-      "serverCanonical": "⚠️ Genesis 供应/单价/日分红比例 PRODUCTION server canonical;监管点名立即下架需 server 端 pause/adjust",
+      "serverCanonical": "⚠️ Genesis 供应/单价/日排放比例 PRODUCTION server canonical;监管点名立即下架需 server 端 pause/adjust",
       "endpoint": "读 GET /api/genesis/state · 写 POST /api/admin/genesis/{pause|adjust} (抄 _config README L34)",
       "_slices": [
         "financial-products"
@@ -3678,10 +3678,10 @@
         "conversion",
         "content_compliance"
       ],
-      "querySurface": "查驱动单节点日分红的平台日交易量模型(base $24M + soldSlots×$100),单节点日分红 ≈$24(≈14月回本),全站单一源(genesis页/购买sheet/holder一致)",
-      "crudActions": "调日交易量基数→联动调单节点分红展示;保持回本周期可信不自曝;统一防分叉",
+      "querySurface": "查驱动单节点日排放的平台日交易量模型(base $24M + soldSlots×$100),单节点日排放 ≈$24(≈14月回本),全站单一源(genesis页/购买sheet/holder一致)",
+      "crudActions": "调日交易量基数→联动调单节点排放展示;保持回本周期可信不自曝;统一防分叉",
       "operationConfirm": true,
-      "serverCanonical": "Q14 single source 客户端 mock 平台量模型;PRODUCTION 平台真实日交易量 + 分红比例 server canonical,客户端订阅",
+      "serverCanonical": "Q14 single source 客户端 mock 平台量模型;PRODUCTION 平台真实日交易量 + 排放比例 server canonical,客户端订阅",
       "endpoint": "读 GET /api/genesis/state (含 volume/dividend) (TBD·建议)",
       "_slices": [
         "financial-products"

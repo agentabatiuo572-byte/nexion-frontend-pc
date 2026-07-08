@@ -79,8 +79,8 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
   G: [
     "Staking / 兑换 / 行情 / Genesis / 复投",
     "池配置 · 兑换风控 · 行情曲线 · Genesis 盘",
-    "APY / penalty / caps · 分红率 · gate Phase",
-    "调 APY/分红 · kill 开关 · 操作确认",
+    "APY / penalty / caps · 排放率 · gate Phase",
+    "调 APY/排放 · kill 开关 · 操作确认",
     "/admin/staking · /admin/exchange · /admin/genesis",
     "财务 + 增长 · APY / kill 操作确认",
     "放大流出红线前置 · 联动 B1 / J1",

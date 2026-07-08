@@ -837,7 +837,7 @@ Nexion 运营控制后台
 | 子模块 | 名称 | 对应前端 / 运营职能 | §锚点 | 批次 |
 |---|---|---|---|---|
 | B1 | 双账本总览 | 用户侧信任叙事的真实账本面(纯运营内部) | §5.14 / §9.6.3(102.4% 叙事源) | V1 |
-| B2 | 资金池水位 | 充值/提现/锁仓/分红负债汇总(纯运营内部) | §9.2 / §9.3 / §9.6 / §10 | V1 |
+| B2 | 资金池水位 | 充值/提现/锁仓/排放负债汇总(纯运营内部) | §9.2 / §9.3 / §9.6 / §10 | V1 |
 | B3 | 转化漏斗 | 注册→绑卡→首购→复投→提现(L0-L5) | §2.1 / 第17章·§18.2 KPI | V1 |
 | B4 | 节奏状态 | Phase 现值 + dial 概览 | §13.4 / §13.4.1 | V1 |
 | B5 | 风险雷达 | 挤兑预警 / 异常账户 / kill-switch 状态灯 | §9.11d.1 / §9.11d.2 | V1 |
@@ -895,7 +895,7 @@ Nexion 运营控制后台
 | G1 | Staking 池配置 | /staking(USDT 锁仓 4 档)/ penalty / kill | §9.6 / §9.11c.1 / §9.11d.1 | V3 |
 | G2 | 兑换风控 | /me/wallet/exchange(三阈值 caps / queue) | §9.4 / §9.11c.1 | V3 |
 | G3 | NEX 周曲线关键帧排程器 | /market(price / 周关键帧曲线 / oracle) | §5.7 / §11.9 / §9.11c.1 | V3 |
-| G4 | Genesis 经济 | /genesis(一二级市场 / 分红 / pause / geo) | §10 / §9.11d.1 | V3 |
+| G4 | Genesis 经济 | /genesis(一二级市场 / 排放 / pause / geo) | §10 / §9.11d.1 | V3 |
 | G7 | 复投激励 | /me/wallet/repurchase(APY / 培育 / Genesis 券) | §9.5 | V3 |
 
 #### H 增长与运营节奏 — H1/H2 ★V1,H3–H6 V3
@@ -973,7 +973,7 @@ Nexion 运营控制后台
 - **V1 先行,建运营闭环底座**:A(地基)+ B(态势)+ C(处置入口)+ D(资金管控)+ H1/H2(节奏与转化)+ K(风控)。此六域构成「看得见 / 管得住 / 调得动 / 压得住」的最小可运营闭环。
 - **V2(E+F)** 依赖 V1 的 A(RBAC/审计)与 D(资金),补全设备商城 GMV 与分销佣金两大收入引擎的运营面。
 - **V3(G + H3–H6)** 依赖 V1/V2,补全金融产品与增长活动全套。
-- **V4(I+J+L + 总收口)** 补全内容合规 CMS、紧急合规、数据 BI,并完成全局数据模型/API/技术架构总表与跨前后端文档一致性收口(含将本卷记录的前端 PRD 内部矛盾——「8 dials」笔误、§8.4 双轨固定值 vs §13.4.1 可变参数、KPI 章节序号 §17/§18.2、**Genesis 日分红率 §10.1=0.1% vs §10.3=1.5%(✅ 已裁定 0.1%,PM 2026-06-01;前端 §10.3 笔误待订正)**、提现冷却 §13.4.1 缺月8=35d 中间档——统一上报处置(完整清单见附录 A))。
+- **V4(I+J+L + 总收口)** 补全内容合规 CMS、紧急合规、数据 BI,并完成全局数据模型/API/技术架构总表与跨前后端文档一致性收口(含将本卷记录的前端 PRD 内部矛盾——「8 dials」笔误、§8.4 双轨固定值 vs §13.4.1 可变参数、KPI 章节序号 §17/§18.2、**Genesis 日排放率 §10.1=0.1% vs §10.3=1.5%(✅ 已裁定 0.1%,PM 2026-06-01;前端 §10.3 笔误待订正)**、提现冷却 §13.4.1 缺月8=35d 中间档——统一上报处置(完整清单见附录 A))。
 - 每章经 `nexion-admin-prd` skill 流水线(编写→4 审查→仲裁→修订)产出;全卷在 **T11 V1 gate** 做跨章一致性总审查后定稿。
 
 ---
@@ -1109,7 +1109,7 @@ Nexion 运营控制后台
 
 - **消费(§2.4.5 ③ money,全部 `is_server_authoritative=true`)**:
   - 储备侧:`wallet.topup_confirmed`(充值入储备)、手动注入登记动作事件、`withdraw.confirmed`(已确认出金核减储备账本——储备侧与负债侧同时核减,见下方公式注)。
-  - 负债侧:`withdraw.confirmed`(出金核减应付负债)、`earnings.credited`(收益增应付负债)、`commission.paid`(佣金增负债)、`staking.opened`(锁仓本金增负债)/`staking.claimed`(到期核减)、`genesis.purchased`(分红承诺增负债)。
+  - 负债侧:`withdraw.confirmed`(出金核减应付负债)、`earnings.credited`(收益增应付负债)、`commission.paid`(佣金增负债)、`staking.opened`(锁仓本金增负债)/`staking.claimed`(到期核减)、`genesis.purchased`(排放承诺增负债)。
   - 聚合口径:应付负债 = 余额 + 累计收益 + 待提现 + 锁仓本息;真实储备 = topup 累计 + 注入 − 已确认出金(`withdraw.confirmed`)− **未到期 USDT staking 锁仓本金**(见下方 staking 本金归属说明)。覆盖率 = 储备 ÷ 负债。`withdraw.confirmed` 是储备与负债**同时核减**事件(储备账本付出现金、应付负债同步勾销),上方储备侧与负债侧均列该事件即指同一次核减的两侧记账。**8 类负债科目明细拆解在 B2**,B1 取汇总。
 
 > **USDT staking 锁仓本金的储备归属(避免与 B2 双重计算)**:用户 USDT 锁仓产品的在锁本金(`staking.opened` 未到期部分)在 B2 科目 #2 列为应付负债。为与 B2 科目 #2/#3 的到期预测口径一致、**不产生双重计算**(储备高估、兑付压力低估),B1 真实储备口径采用"**本金不计入可兑付真实储备**"处理:即用户锁仓的 USDT 本金在锁定期内不视为平台可自由兑付的储备(等待到期兑付),故储备公式扣减"未到期 staking 本金";到期(`staking.claimed`)后本金随兑付动作离开负债账本,储备侧同步释放。该归属设计在前端 §9.6 未明确(§9.6 为用户侧产品规格),由本子模块定为权威口径;若开发侧核对后确认 USDT 锁仓本金仍沉淀于平台储备账户内可调度,则改采"本金计入储备、同时在负债侧全额挂账"的等价处理,两种处理均须保证 B1 储备口径与 B2 科目 #2/#3 不重复计同一笔本金(需开发回源 §9.6 锁仓资金的实际托管/可调度性确认)。
@@ -1137,7 +1137,7 @@ B2 是驾驶舱域内的**资金池水位概览卡**,把 B1 应付负债账本�
    | 1 | 可提余额 | 用户钱包内可立即提现的余额 | `earnings.credited` / `wallet.topup_confirmed` 累计 − 已出金 | §9.1 / §9.7 |
    | 2 | USDT staking 本金 | 用户 USDT 锁仓产品在锁本金 | `staking.opened`(USDT 池)− `staking.claimed` | §9.6 |
    | 3 | staking 应付利息 | 锁仓期累计应付未付利息(USDT 池) | 由 `staking.opened` 本金 × APY × 已锁天数线性派生 | §9.6 |
-   | 4 | Genesis 日分红承诺 | Genesis 节点持有者的日分红应付池 | `genesis.purchased` 持有量 × 日分红率 | §10 |
+   | 4 | Genesis 日排放承诺 | Genesis 节点持有者的日排放应付池 | `genesis.purchased` 持有量 × 日排放率 | §10 |
    | 5 | NEX v2 未来兑付 | NEX v2 Founders Vault 锁仓到期应付(250% APY,P6 月 11+ 解锁)。**产品已下线:存量在锁 position 保留至到期兑付,新开锁仓入口已停**——本科目为真实兑付义务,后台只删录入/配置入口、负债存量不删 | `staking.opened`(NEX v2)派生到期兑付额(见下方计算口径) | §9.5b / §13.4 |
    | 6 | 待提现 queue | 已提交 / 审核中 / 处理中、尚未到账的提现冻结额 | `withdraw.submitted` − `withdraw.confirmed`(在途) | §9.3 / §9.3.6 |
    | 7 | 佣金冷却未解锁 | 已计提但仍在冷却期、未可提现的佣金 | `commission.paid` 计提 − 冷却期满可提部分 | §8.6 / §9.11c.1(冷却期参数源 `commission/cooling-days`,见 ⑦) |
@@ -1147,7 +1147,7 @@ B2 是驾驶舱域内的**资金池水位概览卡**,把 B1 应付负债账本�
 
    > **科目 #6 trial shadow 不在 8 类硬负债内**:试用累计 shadow earning 中尚未进 `redeemed` 终态的部分,**平台无兑付义务**(§1.9:未 redeemed 无应付;**Model A 兑现拆分**(§9.11.4):redeemed 终态时经 `computeTrialOffset` 拆分,**仅 `remainderUSD`(超 `trialOffsetCapUSD` 抵扣上限的 USD 部分)+ 购后全额 NEX 入余额才成应付**,`offsetUSD = min(shadow, trialOffsetCapUSD)` 是购机款折扣、不入余额、非应付负债;failed/cancelled 终态归零),故**不列入 8 类应付负债科目**,避免压力测试时虚增负债、低估兑付覆盖率。其潜在转化估算另置于 ③ 到期预测区的"可选压力测试层"(非应付负债,不进入兑付覆盖率分母,见 ③)。
 
-3. **到期负债预测区**:未来 **7d / 30d** 时间轴上的到期兑付额预测,分三类叠加——**提现到期**(待提现 queue 中按提现冷却到期日 / SLA 排布,两层含义见 ③ 与 ⑦)+ **利息到期**(staking 应付利息按到期日排布)+ **Genesis 日分红到期**(节点持有人日分红应付;分红率已裁定 0.1%/日(PM 2026-06-01,§A.1 row5;前端 §10.3=1.5% 笔误待 V4 订正),详见 Ch6 D3);输出每日预计兑付额柱状 + 累计曲线,标注储备可覆盖天数。(D3 为到期预测权威源,§3.14;B2 口径与 Ch6 D3 一致)
+3. **到期负债预测区**:未来 **7d / 30d** 时间轴上的到期兑付额预测,分三类叠加——**提现到期**(待提现 queue 中按提现冷却到期日 / SLA 排布,两层含义见 ③ 与 ⑦)+ **利息到期**(staking 应付利息按到期日排布)+ **Genesis 日排放到期**(节点持有人日排放应付;排放率已裁定 0.1%/日(PM 2026-06-01,§A.1 row5;前端 §10.3=1.5% 笔误待 V4 订正),详见 Ch6 D3);输出每日预计兑付额柱状 + 累计曲线,标注储备可覆盖天数。(D3 为到期预测权威源,§3.14;B2 口径与 Ch6 D3 一致)
    - **NEX v2 到期额超出预测窗口,不在图内**:科目 #5 NEX v2 锁仓最早月 11 开始、24 个月后到期,在 12 月运营周期(V1 范围)内到期应付额为零,**不应出现在 7d/30d 到期预测中**。到期预测区**仅展示预测窗口(7d/30d)内实际到期额**,过滤掉超出窗口的远期负债;运营按钮 / 图例固定标注「NEX v2 到期额超出预测窗口(24 月锁期,12 月运营周期内零到期),不在图内」,避免远期负债被纳入近期兑付压力导致严重高估。
    - **可选压力测试层(trial 潜在 redeemed 预估)**:可叠加一条独立的"trial 潜在转化"压力曲线,基于在册未结 shadow earning 估算未来可能进 redeemed 的并入额。**此为潜在转化估算,非平台应付负债**,默认 OFF,开启仅用于压力测试;**不进入兑付覆盖率分母**,界面明示该层为"假设性压力,非硬负债"。
 
@@ -1207,7 +1207,7 @@ B2 是驾驶舱域内的**资金池水位概览卡**,把 B1 应付负债账本�
 
 **⑤ 接口**
 - `GET /api/admin/treasury/liabilities?breakdown=true` — 返回 8 类负债科目分解 `[{ category, amountUsdt, share }]` + 储备水位 + 覆盖率(引用 B1 口径)。
-- `GET /api/admin/treasury/maturity-forecast?window=7d|30d` — 到期负债预测,返回 `{ daily:[{date, withdrawDueUsdt, interestDueUsdt, genesisDividendUsdt}], cumulative, reserveCoverDays }`(三类到期叠加,与 Ch6 D3⑤ 一致;`genesisDividendUsdt` 分红率已裁定 0.1%/日(PM 2026-06-01,§A.1 row5);已过滤超窗口远期负债如 NEX v2)。
+- `GET /api/admin/treasury/maturity-forecast?window=7d|30d` — 到期负债预测,返回 `{ daily:[{date, withdrawDueUsdt, interestDueUsdt, genesisDividendUsdt}], cumulative, reserveCoverDays }`(三类到期叠加,与 Ch6 D3⑤ 一致;`genesisDividendUsdt` 排放率已裁定 0.1%/日(PM 2026-06-01,§A.1 row5);已过滤超窗口远期负债如 NEX v2)。
 - `PUT /api/admin/treasury/forecast-config`(预测参数配置,确认弹窗 B2-MD1:body 必携 `{reason}`,空值返 400 `REASON_REQUIRED`;计提口径切换时返回 `{ before, after, forecastDeltaPreview }` 供执行前在弹窗影响预览区确认)。
 - `GET /api/admin/treasury/liabilities/export`(导出)。
 
@@ -1235,7 +1235,7 @@ server-canonical;金额币种均 USDT;到期日按服务端权威时间计算。
 **⑧ 埋点(事件)**
 对齐 A4,与 B1 **同源消费**资金事件流,B2 做科目级拆分:
 
-- **消费(§2.4.5 ③ money)**:同 B1 资金事件,**额外按科目语义拆分使用**——`staking.opened`(USDT 池增本金负债 → 科目 2,派生科目 3 应付利息;NEX v2 池 → 科目 5 按到期额一次性登账)、`withdraw.submitted`(增待提现 queue 负债 → 科目 6)、`withdraw.confirmed`(核减 queue 与储备)、`commission.paid`(增佣金负债 → 科目 7,按冷却态拆分)、`genesis.purchased`(增日分红承诺 → 科目 4)、`earnings.credited` / `wallet.topup_confirmed`(科目 1)。trial shadow **不作为硬负债事件消费**(§1.9 无应付义务);trial 潜在转化压力层另消费 `trial.started`(在册未结 shadow)做压测估算,不进负债账本。
+- **消费(§2.4.5 ③ money)**:同 B1 资金事件,**额外按科目语义拆分使用**——`staking.opened`(USDT 池增本金负债 → 科目 2,派生科目 3 应付利息;NEX v2 池 → 科目 5 按到期额一次性登账)、`withdraw.submitted`(增待提现 queue 负债 → 科目 6)、`withdraw.confirmed`(核减 queue 与储备)、`commission.paid`(增佣金负债 → 科目 7,按冷却态拆分)、`genesis.purchased`(增日排放承诺 → 科目 4)、`earnings.credited` / `wallet.topup_confirmed`(科目 1)。trial shadow **不作为硬负债事件消费**(§1.9 无应付义务);trial 潜在转化压力层另消费 `trial.started`(在册未结 shadow)做压测估算,不进负债账本。
 - **产生**:`admin.treasury_threshold_changed`(预测参数配置确认执行(B2-MD1),复用 B1 审计事件族,属性标 `field=forecast_*`);科目分项与 B1 汇总不一致时产 `admin.coverage_threshold_breached` 同族对账告警(喂 B5 + L3)。
 - **喂给**:D3 资金池深度页(B2 与 D3 同口径)、B5 挤兑预警、L3 财务报表(负债到期)。
 
@@ -2837,7 +2837,7 @@ submitted ─风控评分─▶ review-pending ─approve─▶ review-passed �
 #### [D3] 资金池水位仪表盘
 
 **① 目的 & 对齐**
-D3 是**储备 / 负债 / 到期负债的底层账本权威页**(§3.14:储备底层账本权威归 D3)——真实储备明细 + 8 类应付负债科目分解 + 到期负债预测 + 净敞口曲线。对齐前端 §9.6(staking 负债源)/ §9.6.3(102.4% 用户侧叙事)/ §9.2(充值储备流入)/ §9.3(提现负债)/ §10(Genesis 分红负债)。服务的业务目标:储备与负债明细的单一底层账本聚合面,供 **B1**(以 D3 储备为分子、以 B1 自有负债账本为分母裁决兑付覆盖率 + 红黄线告警)与 **B2**(D3 分解的驾驶舱概览卡)消费。**B1/B2 消费 D3 为储备底层账本单一源 + 负债明细聚合输入**——D3 是储备 + 负债明细 + 到期的底层账本权威,B1 是覆盖率裁决面(储备分子取 D3、负债分母用 B1 自有账本)、B2 是其驾驶舱概览卡;储备口径单一源于 D3,杜绝两套储备聚合分叉。**D3 不计算覆盖率**(覆盖率裁决权威在 B1,§3.14)。
+D3 是**储备 / 负债 / 到期负债的底层账本权威页**(§3.14:储备底层账本权威归 D3)——真实储备明细 + 8 类应付负债科目分解 + 到期负债预测 + 净敞口曲线。对齐前端 §9.6(staking 负债源)/ §9.6.3(102.4% 用户侧叙事)/ §9.2(充值储备流入)/ §9.3(提现负债)/ §10(Genesis 排放负债)。服务的业务目标:储备与负债明细的单一底层账本聚合面,供 **B1**(以 D3 储备为分子、以 B1 自有负债账本为分母裁决兑付覆盖率 + 红黄线告警)与 **B2**(D3 分解的驾驶舱概览卡)消费。**B1/B2 消费 D3 为储备底层账本单一源 + 负债明细聚合输入**——D3 是储备 + 负债明细 + 到期的底层账本权威,B1 是覆盖率裁决面(储备分子取 D3、负债分母用 B1 自有账本)、B2 是其驾驶舱概览卡;储备口径单一源于 D3,杜绝两套储备聚合分叉。**D3 不计算覆盖率**(覆盖率裁决权威在 B1,§3.14)。
 
 > **与已写 B1/B2 措辞的关系(§3.14 仲裁)**:若本子模块与已写 Ch4 B1/B2 措辞存在冲突,按 §3.14 三分权裁定——**储备 → D3 权威;负债分母 → B1 权威;覆盖率计算 → B1 裁决**。具体:B1③ 应付负债账本卡 / B1⑦「应付负债账本由 B1 落地为权威」的表述成立——B1 自有负债账本是兑付覆盖率分母权威;B1 以 D3 储备为分子、以 B1 自有负债账本为分母计算覆盖率(比值 + 红黄线告警),是覆盖率的权威裁决面。D3 侧:储备总额的底层账本计算权威在 D3,负债明细的底层科目聚合在 D3 作为 B1 负债账本的输入来源;**应付负债总额作为覆盖率分母的裁决权威归 B1,不归 D3**。B1/B2 不独立重算储备,只引用 D3 储备聚合;D3 不裁决覆盖率分母,只提供储备(分子)与负债明细(分母输入)。B1 已声明「真实储备总额引用 D3 聚合结果」「B2 是 D3 在驾驶舱侧的态势呈现」,本处与之一致。
 
@@ -2861,7 +2861,7 @@ D3 是**储备 / 负债 / 到期负债的底层账本权威页**(§3.14:储备�
    | 1 | 可提余额 | 用户钱包内可立即提现的余额 | `earnings.credited` / `wallet.topup_confirmed` 累计 − 已出金 | §9.1 / §9.7 |
    | 2 | USDT staking 本金 | 用户 USDT 锁仓产品在锁本金 | `staking.opened`(USDT 池)− `staking.claimed` | §9.6 |
    | 3 | staking 应付利息 | 锁仓期累计应付未付利息(USDT 池,按已锁天数线性派生) | 由 `staking.opened` 本金 × USDT 锁仓 APY × 已锁天数派生 | §9.6 |
-   | 4 | Genesis 日分红承诺 | Genesis 节点持有者的日分红应付池 | `genesis.purchased` 持有量 × server 权威日分红率(见脚注[^genesisdiv]) | §10 |
+   | 4 | Genesis 日排放承诺 | Genesis 节点持有者的日排放应付池 | `genesis.purchased` 持有量 × server 权威日排放率(见脚注[^genesisdiv]) | §10 |
    | 5 | NEX v2 未来兑付 | NEX v2 Founders Vault 锁仓到期应付(用户侧 250% APY,P6 月 11+ 解锁)。**产品已下线:存量在锁保留至到期兑付,新开已停**——真实兑付义务,负债存量不删 | `staking.opened`(NEX v2)按到期额一次性登账(见 B2  口径) | §9.5b / §13.4 |
    | 6 | 待提现 queue | 已提交 / 审核中 / 处理中、尚未到账的提现冻结额(在途) | `withdraw.submitted` − `withdraw.confirmed`(在途) | §9.3 / §9.3.6 |
    | 7 | 佣金冷却未解锁 | 已计提但仍在冷却期、未可提现的佣金 | `commission.paid` 计提 − 冷却期满可提部分 | §8.6 / §9.11c.1(`commission/cooling-days`) |
@@ -2869,11 +2869,11 @@ D3 是**储备 / 负债 / 到期负债的底层账本权威页**(§3.14:储备�
 
    > **trial shadow 待入账不计入 8 类负债科目**(脚注,不占编号序列,与 B2  处理一致):试用累计 shadow 未进 `redeemed` 终态部分,平台**无兑付义务**(§1.9:仅 redeemed 终态并入余额,failed/cancelled 归零),故**不进 8 类硬负债**,不占负债科目编号序列;其潜在转化估算仅作 ③ 到期预测区的"可选压力测试层"(默认 OFF,不进 B1 覆盖率分母)。本处理与 B2「trial shadow 不在 8 类硬负债内、以表外脚注说明」完全镜像。
    >
-   > [^genesisdiv]: **Genesis 日分红率为 server 权威字段**:负债科目 #4 日分红率取 `GET /api/genesis/state` 返回的 `dailyDividendShare`(server-canonical,即 `dailyDividendShare`),**不在 PRD 硬编码比例**,PRD 不锁死硬编码比例。**日分红率已裁定 = 0.1%/日(PM 2026-06-01,§A.1 row5)**:`dailyDividendShare` 默认取 0.1%(§10.1.1 权威;前端 §10.3=1.5% 为笔误,V4 上报前端订正);**D3 负债科目 #4 据此精算(节点价 × 持有量 × 0.1%/日),不再阻塞 D 域落地**。Genesis 1000 节点满持下日分红应付池量级按 0.1% 估算,作为 B1 覆盖率红黄线阈值设定的敏感性参考。前端 §10 内部矛盾已裁定,V4 上报前端订正 §10.3=1.5% 笔误。
+   > [^genesisdiv]: **Genesis 日排放率为 server 权威字段**:负债科目 #4 日排放率取 `GET /api/genesis/state` 返回的 `dailyDividendShare`(server-canonical,即 `dailyDividendShare`),**不在 PRD 硬编码比例**,PRD 不锁死硬编码比例。**日排放率已裁定 = 0.1%/日(PM 2026-06-01,§A.1 row5)**:`dailyDividendShare` 默认取 0.1%(§10.1.1 权威;前端 §10.3=1.5% 为笔误,V4 上报前端订正);**D3 负债科目 #4 据此精算(节点价 × 持有量 × 0.1%/日),不再阻塞 D 域落地**。Genesis 1000 节点满持下日排放应付池量级按 0.1% 估算,作为 B1 覆盖率红黄线阈值设定的敏感性参考。前端 §10 内部矛盾已裁定,V4 上报前端订正 §10.3=1.5% 笔误。
    >
    > **科目 #2/#3 与 #5 计提口径区分**:科目 #2/#3(USDT staking)按已锁天数线性计提应付利息;科目 #5(NEX v2)**到期一次性兑付本金 + 250% 收益、不线性计提**(口径与 B2  严格一致),`staking.opened`(NEX v2)时即按到期应付额全额登账。
 
-3. **到期负债预测**(未来 **7d / 30d**,与 B2 同口径):**三类叠加**——**提现冷却解锁到期**(待提现 queue 按 `withdrawCooldownDays` 到期日排布)+ **staking 利息到期**(科目 #3 按到期日)+ **Genesis 分红**(日分红逐日应付,Genesis 日分红是真实日到期负债);输出每日预计兑付额柱状 + 累计曲线 + 储备可覆盖天数。**NEX v2 到期额(科目 #5)最早月 35 落在 12 月运营周期外,过滤出近窗预测**(见 ③ 远期负债说明)。
+3. **到期负债预测**(未来 **7d / 30d**,与 B2 同口径):**三类叠加**——**提现冷却解锁到期**(待提现 queue 按 `withdrawCooldownDays` 到期日排布)+ **staking 利息到期**(科目 #3 按到期日)+ **Genesis 排放**(日排放逐日应付,Genesis 日排放是真实日到期负债);输出每日预计兑付额柱状 + 累计曲线 + 储备可覆盖天数。**NEX v2 到期额(科目 #5)最早月 35 落在 12 月运营周期外,过滤出近窗预测**(见 ③ 远期负债说明)。
 4. **净敞口曲线**:净敞口(= 真实储备 − 应付负债,绝对额 USDT)时间序列折线(7d/30d/90d 可选);敞口转负区段高亮红。供 B1 净敞口卡引用同源储备 + 负债明细。
 5. **对账导出区**:储备 vs 负债快照 / 8 类科目分解 / 到期预测 / 净敞口序列 CSV 导出。
 
@@ -2886,7 +2886,7 @@ D3 是**储备 / 负债 / 到期负债的底层账本权威页**(§3.14:储备�
 | 储备科目纳入口径 | USDT 储备(主)+ 已配置可变现资产 | 科目级 ON/OFF | 仅新对账周期(日批,UTC 00:00 触发;改后下一日批生效,不追溯历史快照) | 与 B2 负债科目开关、B1 储备科目开关对称;科目定义单一源 |
 | 8 类负债科目纳入口径 | 全部纳入(ON);trial shadow 脚注项**不计入硬负债** | 科目级 ON/OFF | 仅新对账周期(日批,UTC 00:00 触发;改后下一日批生效,不追溯历史快照) | 与 B2 §② 8 科目一致;trial shadow 仅压测观测、不占编号 |
 | 预测窗口 | **7d / 30d**(双窗口) | 7d / 30d / 90d | 实时(仅视图) | 与 B2 到期预测窗口一致;对齐 12 月短期兑付排程粒度 |
-| Genesis 日分红是否纳入到期预测 | **ON**(建议默认 ON,Genesis 日分红为真实日到期负债) | ON / OFF | 实时(仅视图) | §10;与 B2 到期预测三类叠加口径一致 |
+| Genesis 日排放是否纳入到期预测 | **ON**(建议默认 ON,Genesis 日排放为真实日到期负债) | ON / OFF | 实时(仅视图) | §10;与 B2 到期预测三类叠加口径一致 |
 | 远期负债近窗排除 | 排除超预测窗口的远期到期(如 NEX v2 月 35 到期) | 固定排除 / 可选纳入远期视图 | 实时(仅视图) | 避免远期负债纳入近期兑付压力导致高估;NEX v2 24 月锁期 12 月周期内零到期 |
 | staking 利息计提口径 | 按已锁天数线性(仅科目 #3 USDT 池) | 线性 / 到期一次性 | 仅新对象(存量不变;切换附预测差值预览) | §9.6 APY 口径;科目 #5 NEX v2 固定到期一次性,不受此开关影响 |
 | trial 潜在 redeemed 压力层 | 关(OFF) | ON / OFF | 实时(仅压测视图) | §9.11b;不进 B1 覆盖率分母 |
@@ -2935,7 +2935,7 @@ D3 是**储备 / 负债 / 到期负债的底层账本权威页**(§3.14:储备�
 **⑤ 接口**
 - `GET /api/admin/treasury/reserve` — 真实储备明细 `{ usdtReserveUsdt, otherLiquidUsdt, injectedCumulativeUsdt, reserveTotalUsdt, asOf }`,**server-canonical 唯一储备源**(B1/B2 调用此为储备总额,§3.14)。
 - `GET /api/admin/treasury/liabilities?breakdown=true` — 8 类负债科目分解 `[{ category, amountUsdt, share }]` + 负债明细聚合(B1/B2 调用此为负债明细输入;覆盖率分母由 B1 以其自有负债账本裁决)。
-- `GET /api/admin/treasury/maturity-forecast?window=7d|30d` — 到期负债预测 `{ daily:[{date, withdrawDueUsdt, interestDueUsdt, genesisDividendUsdt}], cumulative, reserveCoverDays }`(三字段含 Genesis 日分红,`genesisDividendUsdt` 为真实日到期负债,与 ② 科目 #4 一致;已过滤超窗口远期负债如 NEX v2)。**B2 调用同 endpoint**:B2⑤  返回体须同步更新为三字段 `{date, withdrawDueUsdt, interestDueUsdt, genesisDividendUsdt}`、B2② 到期预测文字须同步改为「三类叠加」(草稿落地前须同步 B2⑤ ,不得在 D3 单方声明已回写而 B2 实际未变)。
+- `GET /api/admin/treasury/maturity-forecast?window=7d|30d` — 到期负债预测 `{ daily:[{date, withdrawDueUsdt, interestDueUsdt, genesisDividendUsdt}], cumulative, reserveCoverDays }`(三字段含 Genesis 日排放,`genesisDividendUsdt` 为真实日到期负债,与 ② 科目 #4 一致;已过滤超窗口远期负债如 NEX v2)。**B2 调用同 endpoint**:B2⑤  返回体须同步更新为三字段 `{date, withdrawDueUsdt, interestDueUsdt, genesisDividendUsdt}`、B2② 到期预测文字须同步改为「三类叠加」(草稿落地前须同步 B2⑤ ,不得在 D3 单方声明已回写而 B2 实际未变)。
 - `GET /api/admin/treasury/net-exposure?window=7d|30d|90d` — 净敞口序列(B1 净敞口卡引用同源)。
 - `PUT /api/admin/treasury/forecast-config`(口径配置,确认弹窗 D3-MD1:body 必携 `{reason}`,空值 400 `REASON_REQUIRED`;计提口径切换提交预检返回 `{ before, after, forecastDeltaPreview }`,供弹窗影响预览区展示后确认执行)。
 - `POST /api/admin/treasury/reserve-injection`(储备注入登记,**唯一 server 实现,B1 仅 UI 触发入口**;确认弹窗 D3-MD2(B1 侧入口为 B1-MD2,同一 server 契约):body 携 reason;`Idempotency-Key` 必带,防重复登记同一笔)。
@@ -2967,7 +2967,7 @@ D3 是**储备 / 负债 / 到期负债的底层账本权威页**(§3.14:储备�
 **⑧ 埋点(事件)**
 对齐 A4(Ch2 §2.4),D3 **聚合全部 §2.4.5 ③ money 事件为储备与负债明细单一底层账本源**:
 
-- **消费(§2.4.5 ③ money,全部 `is_server_authoritative=true`)**:`wallet.topup_confirmed`(充值入储备)、`withdraw.confirmed`(出金核减储备与负债)、`earnings.credited`(收益增负债 → 科目 1)、`commission.paid`(佣金增负债 → 科目 7 按冷却态)、`staking.opened`(本金增负债 → 科目 2 USDT / 科目 5 NEX v2;科目 3 应付利息派生)+ `staking.claimed`(到期核减)、`genesis.purchased`(分红承诺增负债 → 科目 4);加手动储备注入登记动作事件。trial shadow **不作为硬负债事件消费**(§1.9 无应付义务;trial shadow 脚注项仅压测观测 `trial.started`,不占负债科目编号)。
+- **消费(§2.4.5 ③ money,全部 `is_server_authoritative=true`)**:`wallet.topup_confirmed`(充值入储备)、`withdraw.confirmed`(出金核减储备与负债)、`earnings.credited`(收益增负债 → 科目 1)、`commission.paid`(佣金增负债 → 科目 7 按冷却态)、`staking.opened`(本金增负债 → 科目 2 USDT / 科目 5 NEX v2;科目 3 应付利息派生)+ `staking.claimed`(到期核减)、`genesis.purchased`(排放承诺增负债 → 科目 4);加手动储备注入登记动作事件。trial shadow **不作为硬负债事件消费**(§1.9 无应付义务;trial shadow 脚注项仅压测观测 `trial.started`,不占负债科目编号)。
   - **储备聚合口径**:真实储备 = topup 累计 + 注入 − 已确认出金(`withdraw.confirmed`)− 未到期 USDT staking 本金;应付负债明细 = 8 类科目之和(trial shadow 脚注项除外)作为 B1 负债账本输入;**覆盖率 = 储备 ÷ 负债,由 B1 计算裁决(D3 不计算覆盖率)**。`withdraw.confirmed` 是储备与负债**同时核减**事件(储备付出现金、负债同步勾销),与 B1⑧ 一致。
 - **产生**:
   - `admin.deposit_reconciled` / `admin.treasury_threshold_changed`(口径配置确认执行,复用 B1/B2 审计事件族,属性标 `field=forecast_*` 或 `field=scope`);储备注入登记 admin 审计事件。
@@ -4310,7 +4310,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | **Withdrawal 扩展态**(提现状态机) | 状态枚举 = **正常 5 态**(`submitted / review-passed / processing / sent / confirmed`,§9.3.6)+ **异常 6 态**(`review-rejected / address-invalid / tx-failed / tx-orphaned / refunded / frozen`,§9.11f)+ **后台扩展中间态 `review-pending`**(D2② 状态机已实现,V1 落地);字段 `withdrawalId(server mint)/ userId / amountUsdt / address(hash)+chain / riskScore(K4)/ kycStatus(C4)/ 手续费明细(penaltyFeeRate / grossFee / nexBurned / feeWaived / actualFee)/ count24h / hitRules(K3)/ state` | Ch6 D2(§9.3 / §9.3.6 / §9.11f) | **`Withdrawal` 实体本体属用户侧(§12,本表不重列)**;本行仅登记 D2 在前端 §9.3.6 正常 5 态之上**新增的异常 6 态(§9.11f)**及**后台扩展中间态 `review-pending`**。`review-pending` 为 **V1 已实现的后台扩展中间态**(D2② 状态机图 `submitted ─风控评分─▶ review-pending`;`/api/admin/withdrawals` status 枚举 已列),承接 `delay` / `freeze` / `reject` / `approve` 四条转出边。V1 落地状态为 **后台扩展态 review-pending + 正常 5 态 + 异常 6 态共 12 态**;**§1.9 术语表当前仅定义 11 态(正常 5 + 异常 6),`review-pending` 补入 §1.9**(D2 已声明此偏差)。全 server-canonical,client 仅订阅;状态推进非法转移返回 409。**手续费明细**为每笔提现的费用记录(server 权威):`grossFee = amountUsdt × penaltyFeeRate`(惩罚费率 Phase 派发,D5 生效面)、`nexBurned`(本次抵扣燃烧的 NEX,可选)、`feeWaived = nexBurned × nexFeeOffsetRate`、`actualFee = grossFee − feeWaived`;NEX 抵扣为可选、不构成提现门槛 |
 | **KycLedger**(KYC 合规台账) | `userId / kycStatus(verified\|unverified\|in-review)/ walletPaired(bool)/ pairedAddress(脱敏)/ network(TRC20\|ERC20\|BTC\|ETH)/ verifiedAt / 变更历史 / 关联 K5 工单` | Ch5 C4(§4.4 / §4.4.1) | **全平台 KYC 状态唯一权威台账**(§3.14);`GET /api/kyc/status/:userId` 单源,D2 提现门槛 / G2 兑换门槛 / K5 复审引用。K5 仅触发复审、裁决回写,不持状态 |
 | **TreasuryLedger·D3 储备账本** | `usdtReserveUsdt / otherLiquidUsdt / injectedCumulativeUsdt / reserveTotalUsdt` | Ch6 D3(储备权威) | **真实储备底层账本权威归 D3**(`GET /api/admin/treasury/reserve` 唯一储备源)。储备口径:**储备 = topup 累计 + 注入 − `withdraw.confirmed` − 未到期 USDT staking 本金**(权威来源 B1⑧ / D3⑦;扣减「未到期 USDT staking 本金」以防止储备高估,具体扣减项字段名待 D3 正文定义)。储备科目纳入口径日批(UTC 00:00)生效 |
-| **TreasuryLedger·B1 应付负债账本** | 负债 **8 类科目** `[可提余额 / USDT staking 本金 / staking 应付利息 / Genesis 日分红承诺 / NEX v2 未来兑付 / 待提现 queue / 佣金冷却未解锁 / 锁仓本息其他]`;派生 `coverageRatio / netExposureUsdt / redLine(默认100%) / yellowLine(默认110%)` | Ch4 B1(负债分母权威) | **兑付覆盖率权威归 B1**(B1 以 D3 储备为分子、自有 8 类负债账本为分母)。**接口强制约束:`yellowLine > redLine`(违反返回 400),与 §9.2 `PUT /api/admin/treasury/thresholds` 及 B1⑤ 一致**。用户侧 102.4% 为对外信任叙事数字,非已实现账本(§1.8 原则一);负债科目纳入口径日批(UTC 00:00)生效 |
+| **TreasuryLedger·B1 应付负债账本** | 负债 **8 类科目** `[可提余额 / USDT staking 本金 / staking 应付利息 / Genesis 日排放承诺 / NEX v2 未来兑付 / 待提现 queue / 佣金冷却未解锁 / 锁仓本息其他]`;派生 `coverageRatio / netExposureUsdt / redLine(默认100%) / yellowLine(默认110%)` | Ch4 B1(负债分母权威) | **兑付覆盖率权威归 B1**(B1 以 D3 储备为分子、自有 8 类负债账本为分母)。**接口强制约束:`yellowLine > redLine`(违反返回 400),与 §9.2 `PUT /api/admin/treasury/thresholds` 及 B1⑤ 一致**。用户侧 102.4% 为对外信任叙事数字,非已实现账本(§1.8 原则一);负债科目纳入口径日批(UTC 00:00)生效 |
 | **FunnelEvent 派生**(漏斗 / KPI 派生视图) | 五级漏斗(§2.4.7:`auth.register_completed → kyc.express_verified → checkout.completed → wallet.reinvest/二次checkout → withdraw.submitted`)按 `cohort / phase / ref` 三维切片;另 KPI 比率口径(§2.4.6):KPI #3 `store.viewed`(L2→L3)、KPI #4 `checkout.completed ÷ store.viewed`(L3→L4) | Ch2 A4(§2.4.6 / §2.4.7,权威定义)/ Ch4 B3(消费方,只读聚合展示) | **非独立持久化实体,是 A4 事件流的预聚合 / 物化派生视图**(§1.8 原则三:不存在无埋点支撑的看板数字),A4 为定义来源、B3 为消费端。只认 `is_server_authoritative=true` 事件;B3 V1 收窄至 KPI #1/#2/#3/#4。五级漏斗(§2.4.7)第 5 级 `wallet.reinvest / withdraw.submitted` 在 V1 KPI 范围外、仅作前瞻性声明,不与已收窄的 V1 KPI 混列 |
 
 > **跨域权威单源约定(§3.14,本表落地)**:Phase 参数 → H1;风险评分(RiskScore/RiskModel)→ K4;资金池水位(储备底层)→ D3;兑付覆盖率(负债分母)→ B1;审计 / 操作确认(AuditLog)→ A2;埋点 schema(EventSchema)→ A4;KYC 状态(KycLedger)→ C4;server 唯一账本(`Bill`,§12 已定义,本表不重列)→ D4。引用方一律不另立同名模型。
@@ -4344,7 +4344,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | B1 | `/api/admin/treasury/reserve-injection` | POST | 储备注入登记(**server 实现权威归 D3**,B1 为 UI 入口) | Ch4 B1 / Ch6 D3 | 是 | 是 |
 | B1 | `/api/admin/treasury/reconciliation/export` | GET | 对账导出(**server 实现权威归 D3**) | Ch4 B1 / Ch6 D3 | — | — |
 | B2 | `/api/admin/treasury/liabilities?breakdown=true` | GET | 8 类负债科目分解 + 储备水位 + 覆盖率(UI 调用方;server 实现在 D3,见 D3 行) | Ch4 B2(调用方;实现 Ch6 D3) | — | — |
-| B2 | `/api/admin/treasury/maturity-forecast?window=` | GET | 到期负债预测(提现 / 利息 / Genesis 日分红三类叠加;UI 调用方,server 实现在 D3,见 D3 行) | Ch4 B2(调用方;实现 Ch6 D3) | — | — |
+| B2 | `/api/admin/treasury/maturity-forecast?window=` | GET | 到期负债预测(提现 / 利息 / Genesis 日排放三类叠加;UI 调用方,server 实现在 D3,见 D3 行) | Ch4 B2(调用方;实现 Ch6 D3) | — | — |
 | B2 | `/api/admin/treasury/liabilities/export` | GET | 8 类负债科目分解导出(UI 调用方;server 实现在 D3,见 D3 行) | Ch4 B2(调用方;实现 Ch6 D3) | — | — |
 | B2 | `/api/admin/treasury/forecast-config` | PUT | 预测参数配置(计提口径切换返回差值预览) | Ch4 B2 / Ch6 D3 | 是 | — |
 | B3 | `/api/admin/funnel?cohort=&phase=&ref=` | GET | 五级漏斗(A4 事件预聚合,非临时查询) | Ch4 B3 | — | — |
@@ -4514,7 +4514,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | 2 | 双轨日封顶:前端 §8.4 固定 $5,000 vs §13.4.1 可变 | Phase 派发可变(月1-6=5000/月7+=2000) | 前端 §8.4 改为可变描述 |
 | 3 | 提现冷却:前端 §13.4.1 缺月8=35d 中间档 | 月1-7=30/月8=35/月9+=45(§6.4) | 前端 P4 带末(月8)新增 35d 状态 |
 | 4 | KPI 章节序号:前端「§17 验收 · §18.2 KPI」混排 | 统一引 §18.2(§1.3 已定) | 前端修正 + SKILL.md §0/§1「§17.2」改「§18.2」 |
-| 5 | **Genesis 日分红率:§10.1=0.1% vs §10.3=1.5%(15× 矛盾)** | **✅ 已裁定 = 0.1%/日(PM 2026-06-01)** | **§10.1 的 0.1% 为权威;前端 §10.3=1.5% 为笔误,V4 上报前端订正为 0.1%。B2/D3 Genesis 到期负债按 0.1% 精算(节点价 × 持有量 × 0.1%/日);G4 据此落地,不再阻塞** |
+| 5 | **Genesis 日排放率:§10.1=0.1% vs §10.3=1.5%(15× 矛盾)** | **✅ 已裁定 = 0.1%/日(PM 2026-06-01)** | **§10.1 的 0.1% 为权威;前端 §10.3=1.5% 为笔误,V4 上报前端订正为 0.1%。B2/D3 Genesis 到期负债按 0.1% 精算(节点价 × 持有量 × 0.1%/日);G4 据此落地,不再阻塞** |
 | 6 | **前端 PRD v3.7 文档编号/计数瑕疵簇**(非后台错,与 KPI 章节序号笔误同批):(a) §14 国际化其下属子节误编为 §15.1-§15.4(父子章号不一致);(b) §11.3 标题「14 个 section」vs 表体实列 13 行;(c) §11.0A named channel 表缺 `wrapped` 行(与 `stella-cadence.ts` 10-key config 不一致) | 后台按逻辑号/正确计数落地(Ch14 I2/I4/I6 已对齐) | V4 上报前端订正 |
 | 7 | **§3.3 L4 锚点 §5.1.1 为软锚**:前端 v3.7 §5.x 无 §5.1.1 子标题(§5.1=Greeting/§5.4=Fleet/§5.5=实时网络任务),设备/网络运营指标真实来源为 §5.4/§5.5/§6.8(DeviceLifecycle 衰减)+ §9.11c.1;Ch16 L4① 已把确证存在的 §5.4/§5.5/§6.8/§9.11c.1 前置为主锚、§5.1.1 降括注软锚 | L4 报表口径以 §9.11c.1 + 各域权威为准 | V4 回源前端终核 |
 | 8 | **前端 `evt-spring-spin` subtitle 含「or a Genesis Node」与转盘奖池裁定不符**:PM 2026-06-02 裁定 Genesis 整台节点不进转盘(风险最低),前端 `events.ts` subtitle「win $1–$500 USDT or a Genesis Node」须删「or a Genesis Node」 | 转盘奖池 8 档无 Genesis(H4 ③) | V4 上报前端订正 events.ts |
@@ -4537,7 +4537,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | 17 | **§3.14 补 I 域内容权威行 + disclosure ack 独立 gate 行(与 KYC 行分立)+ §A1 汇总动作清单回填「风险披露版本发布(I5)」**:通用内容(文案/banner/推送模板/通知/信任内容/i18n/教程)→ I 域权威;disclosure ack → I5 独立 server gate(引用方=各 gated action,C4 仅供 jurisdiction 输入,与 KYC gate 分立);A2 高敏动作清单补「披露发布」动作行(执行=风控 lead/超管,确认弹窗+理由必填) | V4 I 域 + Ch17 |
 | 18 | **🔴 PM 决议:应急熔断执行模型**:原 2026-06-02 裁定「维持应急复核快速通道」已被 **2026-06 操作确认决议取代**——全后台复核机制取消,应急熔断 = 授权角色(风控/财务/超管)单人经确认弹窗 + 理由必填即时执行 + 全运营账号告警广播 + A2 审计;恢复方向(disable→enable)执行=仅超管 + B1 红线前置(422)。Ch15 J 域应急通道正文随 V4 批次同步改写;`emergency.breakglass` 独立权限位不登记(确认弹窗执行契约已覆盖) | ✅ 已裁定(2026-06-11) |
 | 19 | **A4 J 域事件 schema 工单(blocking,BI cutover 前)**:新增 object_action `risk.tamper_detected`(J3)· `admin.emergency_playbook_executed` / `admin.emergency_playbook_edited`(J4);`admin.killswitch_toggled` 扩展可选属性 `emergency / coverage_snapshot / target_ref / disposition_plan`(应急轨/恢复核验/子粒度审计;原 sla_deadline_ts 随复核通道废除不再扩展);均经 A4 schema 变更确认弹窗(A2-MD1,§2.4.8)。不单列 `admin.feature_killed`/`admin.geo_blocked`(子粒度由 `switch_key`+`target_ref` 承载) | V4 J 域 |
-| 20 | **V3 G 域 per-product kill 事件 V4 收敛 + 载荷迁移**:`admin.staking_pool_killed`/`admin.exchange_paused`/`admin.genesis_paused`/`admin.premium_disabled`/`admin.nexv2_disabled`(各标「→同步 J1」)收敛为矩阵层单源 `admin.killswitch_toggled`(poolId/处置方案/geo_block/分红处置载荷迁入扩展属性,避免丢审计字段);B5 状态灯 / A2 审计统一消费。**注:staking per-pool 单档 disable 仍由 G1 原生 endpoint + `admin.staking_pool_enabled_changed` 承载、不进 J1 矩阵收敛**(整体熔断 vs 单档治理两粒度并存) | V3 G + V4 J + Ch17 |
+| 20 | **V3 G 域 per-product kill 事件 V4 收敛 + 载荷迁移**:`admin.staking_pool_killed`/`admin.exchange_paused`/`admin.genesis_paused`/`admin.premium_disabled`/`admin.nexv2_disabled`(各标「→同步 J1」)收敛为矩阵层单源 `admin.killswitch_toggled`(poolId/处置方案/geo_block/排放处置载荷迁入扩展属性,避免丢审计字段);B5 状态灯 / A2 审计统一消费。**注:staking per-pool 单档 disable 仍由 G1 原生 endpoint + `admin.staking_pool_enabled_changed` 承载、不进 J1 矩阵收敛**(整体熔断 vs 单档治理两粒度并存) | V3 G + V4 J + Ch17 |
 | 21 | **A4 L 域事件 schema 工单(blocking,BI cutover 前)**:新增 `admin.report_exported`(operator/export_type/scope/fields/row_count/contains_pii/masking_policy/format/ts;含 PII/资金/监管批量导出经确认弹窗 + 理由必填)+ `admin.bi_query_run`(可选)归 admin family;经 A4 schema 变更确认弹窗(A2-MD1,§2.4.8)。**`report_exported` 统一收编各章导出审计行**(A2/B1/B2/B3/B4/C4/D1 通用导出审计 = 其 `export_type` 实例;C1 `user_list_exported`→`export_type=user_list`;D4 账单导出→`export_type=bills`,端点仍 D4 具名),零迁移成本,归口规则记 §A.2 #10 备注 | V4 L 域 |
 
 ### A.3 T11 全文 gate 已修订记录(本卷内,2026-06-01)

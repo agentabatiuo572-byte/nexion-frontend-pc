@@ -64,7 +64,7 @@ export function FundPool() {
         <span className="text-[13px]" style={{ color: "var(--v5-ink)", fontWeight: 600 }}>到期预测(未来 7d)</span>
         <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-3)" }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-success)" }} />提现</span>
         <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-3)" }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-tech-cyan)" }} />利息</span>
-        <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-3)" }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-brand-2)" }} />分红</span>
+        <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-3)" }}><span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: "var(--v5-brand-2)" }} />排放</span>
         <span className="ml-auto text-[11px]" style={{ color: "var(--v5-ink-4)" }}><AutoGloss>NEX v2 24 月锁期 · 不在窗口内</AutoGloss></span>
       </div>
       <div className="mt-3 flex items-end gap-2" style={{ height: 96 }}>

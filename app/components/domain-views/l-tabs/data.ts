@@ -32,7 +32,7 @@ export const KPI_EXT: Record<number, { fx: string; fxBold: string[]; num: string
   5: { fx: "设备持有者 referral.invite_sent ÷ 设备持有者数", fxBold: ["referral.invite_sent"], num: "17,103", den: "41,208", delta: "+0.3", note: "语义注:严格为「推广率」(发出邀请的设备持有者比例),非收入口径。", jump: [{ label: "跳 L4 网络报表", href: "/analytics/operations" }] },
   6: { fx: "nova.push_clicked ÷ nova.push_sent", fxBold: ["nova.push_clicked", "nova.push_sent"], num: "212,448", den: "778,200", delta: "+0.3", note: "推送事件早已登记、算法早已定义,数据没有缺口。节奏配置在 I2 调。", jump: [{ label: "I2 推送节奏" }] },
   7: { fx: "L1 被推荐人首单 commission.paid ÷ 直推数", fxBold: ["commission.paid"], num: "6,213", den: "8,175", delta: "+1.0", note: "黄灯。依赖 F 域分销关系树;完整下钻在 L4 网络/团队结构报表。", jump: [{ label: "跳 L4 团队下钻", href: "/analytics/operations" }, { label: "F5 佣金审计" }] },
-  8: { fx: "genesis.purchased 累计达 1,000 张的天数", fxBold: ["genesis.purchased"], num: "1,000 张", den: "11 天", delta: "-1", note: "越小越好(目标 < 14 天)。财务侧下钻(收入 + 日分红负债)在 L3。", jump: [{ label: "跳 L3 财务报表", href: "/analytics/financial" }] },
+  8: { fx: "genesis.purchased 累计达 1,000 张的天数", fxBold: ["genesis.purchased"], num: "1,000 张", den: "11 天", delta: "-1", note: "越小越好(目标 < 14 天)。财务侧下钻(收入 + 日排放负债)在 L3。", jump: [{ label: "跳 L3 财务报表", href: "/analytics/financial" }] },
 };
 // KPI 状态灯判定移至 design-data(与 KPIS 同源,首页 KpiWall 共用);此处 re-export 保持视图 import 路径不变。
 export { kpiState } from "@/lib/mock/admin/design-data";
@@ -104,7 +104,7 @@ export const BREACHES = [
 const mat7 = MAT_7D;
 export const MAT_SCHEDULE = {
   weeks: ["本周", "+1 周", "+2 周", "+3 周"],
-  // 每周 [提现, 利息, Genesis 分红](USD);首周 = MATURITY 7 日聚合
+  // 每周 [提现, 利息, Genesis 排放](USD);首周 = MATURITY 7 日聚合
   data: [
     [mat7.withdraw, mat7.interest, mat7.genesis],
     [mat7.withdraw * 0.9, mat7.interest * 0.95, mat7.genesis * 1.05],

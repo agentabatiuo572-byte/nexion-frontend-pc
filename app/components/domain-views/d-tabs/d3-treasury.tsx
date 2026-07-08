@@ -206,7 +206,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       <section className="l-card" style={{ marginTop: 16 }}>
         <div className="l-h">
           <span className="ttl">到期负债预测</span>
-          <span className="sub">· 三类叠加:提现冷却解锁 + 锁仓利息到期 + Genesis 日分红(按服务端 0.1%/日)</span>
+          <span className="sub">· 三类叠加:提现冷却解锁 + 锁仓利息到期 + Genesis 日排放(按服务端 0.1%/日)</span>
           <div className="r">
             <div className="chips">
               <button className={`chip${win === "7d" ? " sel" : ""}`} onClick={() => setWin("7d")}>未来 7 天</button>
@@ -233,7 +233,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "var(--ink-3)", marginTop: 10 }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><i style={{ width: 10, height: 10, borderRadius: 3, background: "var(--success)", display: "inline-block" }} />提现冷却解锁(7d ${(MAT_7D.withdraw / 1000).toFixed(0)}K)</span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><i style={{ width: 10, height: 10, borderRadius: 3, background: "#B6A4FF", display: "inline-block" }} />锁仓利息到期(7d ${(MAT_7D.interest / 1000).toFixed(0)}K)</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><i style={{ width: 10, height: 10, borderRadius: 3, background: "var(--warning)", display: "inline-block" }} />Genesis 日分红(7d ${(MAT_7D.genesis / 1000).toFixed(1)}K)</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><i style={{ width: 10, height: 10, borderRadius: 3, background: "var(--warning)", display: "inline-block" }} />Genesis 日排放(7d ${(MAT_7D.genesis / 1000).toFixed(1)}K)</span>
             <span style={{ marginLeft: "auto", color: "var(--ink-4)" }}>NEX v2 到期在 24 个月锁期之外,不在本图内</span>
           </div>
           <div className="dtint warn" style={{ marginTop: 12 }}><b>预警联动</b> · 某天的到期兑付额逼近储备可覆盖上限时,会喂挤兑雷达(B5)并提示去提现队列(D2)/提现参数(D5)调节奏——本页只出账和预警,不直接动任何开关。</div>

@@ -130,7 +130,7 @@ export const PHASE_DIALS: PhaseDial[] = [
   { key: "genesis", label: "Genesis 放量", value: "渐进", trend: "up" },
 ];
 
-// ── 到期预测(未来 7d · B2)── 每日到期应付:提现 / 质押利息 / Genesis 分红(USD)
+// ── 到期预测(未来 7d · B2)── 每日到期应付:提现 / 质押利息 / Genesis 排放(USD)
 export interface MaturityDay {
   d: string; // 日签 MM/DD
   withdraw: number;

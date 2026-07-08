@@ -38,7 +38,7 @@ const accounts: LiabilityAccount[] = [
   { key: "balance", label: "可提余额", amount: 1_180_000, catVar: "--admin-cat-1" },
   { key: "stake_principal", label: "USDT 质押本金", amount: 1_640_000, catVar: "--admin-cat-2" },
   { key: "stake_interest", label: "质押应付利息", amount: 312_000, catVar: "--admin-cat-3" },
-  { key: "genesis_div", label: "Genesis 日分红承诺", amount: 268_000, catVar: "--admin-cat-4" },
+  { key: "genesis_div", label: "Genesis 排放承诺", amount: 268_000, catVar: "--admin-cat-4" },
   { key: "nexv2", label: "NEX v2 未来兑付", amount: 880_000, catVar: "--admin-cat-5" },
   { key: "withdraw_queue", label: "待提现队列", amount: 430_000, catVar: "--admin-cat-6" },
   { key: "commission_cool", label: "佣金冷却未解锁", amount: 410_000, catVar: "--admin-cat-7" },

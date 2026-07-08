@@ -2,7 +2,7 @@
 
 > 本卷是运营控制后台 PRD 的 **V3 分卷**,承接 V1 卷(`Nexion_运营控制后台PRD_v1.md`)与 V2 卷(`Nexion_运营控制后台PRD_v2.md`)的横切地基:§1.8 三原则(双账本 / server-canonical / 埋点优先)· A2 审计 & 操作确认(Confirm-with-Reason)· A4 埋点事件体系(§2.4)· §3.14 跨域归属 · H1 Phase 8-dial 权威(§1.7)· B1 兑付覆盖率红线。章节编号续 V2(Ch12 起)。
 > **跨卷 §锚点**:§1.x–§9.x(本后台)指向 **V1 文件**;§10.x–§11.x(本后台)指向 **V2 文件**;§13.4 / §9.11x / §6.x / §7.x / §10.x / §5.7 等指向前端 PRD v3.5 与 12 月节奏表。参数默认值锚 12 月节奏表 §6,前端为现状参考。撰写遵循 `nexion-admin-prd` skill 流水线。
-> **本卷主题**:金融产品(G 域)是平台「NEX 平台代币经济(前端 §1.4 第三条收入支柱)+ 设备-外金融产品」核心运营控制面——Staking 池 APY / 兑换风控 caps / NEX 周曲线关键帧排程 / Genesis 经济 / 复投激励;增长活动(H3-H7)是留存与活跃节奏的运营控制面——Quest 任务 / 限时活动 / 签到连胜 / 里程碑 / 代金券促销。两域均高度依赖 H1 Phase 调度(questBonusMultiplier 等时变 dial)与 B1 兑付覆盖率约束(所有放大流出的 APY / 分红 / 奖励)。
+> **本卷主题**:金融产品(G 域)是平台「NEX 平台代币经济(前端 §1.4 第三条收入支柱)+ 设备-外金融产品」核心运营控制面——Staking 池 APY / 兑换风控 caps / NEX 周曲线关键帧排程 / Genesis 经济 / 复投激励;增长活动(H3-H7)是留存与活跃节奏的运营控制面——Quest 任务 / 限时活动 / 签到连胜 / 里程碑 / 代金券促销。两域均高度依赖 H1 Phase 调度(questBonusMultiplier 等时变 dial)与 B1 兑付覆盖率约束(所有放大流出的 APY / 排放 / 奖励)。
 
 ## 目录(V3 卷)
 
@@ -15,17 +15,17 @@
 
 ## 第 12 章 金融产品(域 G)
 
-> **域定位**:金融产品(G 域)是平台「NEX 平台代币经济(前端 §1.4 第三条收入支柱:锁仓 / 兑换 / 二级市场)+ 设备-外金融产品(复投)」的运营控制面(§1.4 四条收入支柱中未列「金融产品利差」独立科目,本域定位对齐 §1.4 既有分类,不另立排名)。它把用户「已收资金」沉淀为锁仓 / 兑换 / 持有 / 复投四类产品,并通过 APY / caps / 价格曲线 / 分红率 等杠杆调节资金流入与流出节奏。G 域 **5 个子模块全部 V3**:G1 Staking 池配置 · G2 兑换风控 · G3 NEX 周曲线关键帧排程器 · G4 Genesis 经济 · G7 复投激励。
+> **域定位**:金融产品(G 域)是平台「NEX 平台代币经济(前端 §1.4 第三条收入支柱:锁仓 / 兑换 / 二级市场)+ 设备-外金融产品(复投)」的运营控制面(§1.4 四条收入支柱中未列「金融产品利差」独立科目,本域定位对齐 §1.4 既有分类,不另立排名)。它把用户「已收资金」沉淀为锁仓 / 兑换 / 持有 / 复投四类产品,并通过 APY / caps / 价格曲线 / 排放率 等杠杆调节资金流入与流出节奏。G 域 **5 个子模块全部 V3**:G1 Staking 池配置 · G2 兑换风控 · G3 NEX 周曲线关键帧排程器 · G4 Genesis 经济 · G7 复投激励。
 >
 > **八条贯穿全章的跨域事实(逐子模块兑现)**:
-> 1. **放大流出前置核验 B1(§1.8 原则一)**:升 APY / 升分红率 / 放宽兑换 caps / 拉升 NEX 现价 / 降罚款 —— 任一放大资金流出方向的金融参数,提交前 server 须先核验 B1 兑付覆盖率红线(`coverageRedLine` 默认 **100%**,§1.8 / Ch4 B1 §③),低于红线 server 拒绝提交(返回 422 + 当前覆盖率)。**NEX 计价负债重估口径(本章权威定义,G3/G6 单向引用此处)**:凡拉升 NEX 现价 / 升 NEX 计价 APY 的 B1 前置核验,**须以「拟生效新价」重算含在锁 NEX 本金在内的全量 NEX 计价应付负债(如 G6 NEX v2 在锁本金 USDT 等值)后再判红线**,避免旧价分母通过、新价生效后跌破红线的窗口(Ch4 B1 §③ 落权威定义)。
-> 2. **USDT 派发即落 D4 bill + 锁仓计 B2/D3 负债**:staking 到期本息 / Genesis 日分红 / NEX v2 到期 / 复投到期 / premium 返现的每笔 USDT 派发即在 **D4 账本落一条 bill**(与 A4 money 事件一一对应,V2 D4 §账实相符);staking / NEX v2 锁仓的**未到期本息**计入 **B2 应付负债 / D3 资金池**应付侧(§3.14:应付负债权威归 B1/B2、资金池水位权威归 D3)。**G 域不另立账本**,只配置产品参数并触发派发,记账与水位归 D/B。
+> 1. **放大流出前置核验 B1(§1.8 原则一)**:升 APY / 升排放率 / 放宽兑换 caps / 拉升 NEX 现价 / 降罚款 —— 任一放大资金流出方向的金融参数,提交前 server 须先核验 B1 兑付覆盖率红线(`coverageRedLine` 默认 **100%**,§1.8 / Ch4 B1 §③),低于红线 server 拒绝提交(返回 422 + 当前覆盖率)。**NEX 计价负债重估口径(本章权威定义,G3/G6 单向引用此处)**:凡拉升 NEX 现价 / 升 NEX 计价 APY 的 B1 前置核验,**须以「拟生效新价」重算含在锁 NEX 本金在内的全量 NEX 计价应付负债(如 G6 NEX v2 在锁本金 USDT 等值)后再判红线**,避免旧价分母通过、新价生效后跌破红线的窗口(Ch4 B1 §③ 落权威定义)。
+> 2. **USDT 派发即落 D4 bill + 锁仓计 B2/D3 负债**:staking 到期本息 / Genesis 日排放 / NEX v2 到期 / 复投到期 / premium 返现的每笔 USDT 派发即在 **D4 账本落一条 bill**(与 A4 money 事件一一对应,V2 D4 §账实相符);staking / NEX v2 锁仓的**未到期本息**计入 **B2 应付负债 / D3 资金池**应付侧(§3.14:应付负债权威归 B1/B2、资金池水位权威归 D3)。**G 域不另立账本**,只配置产品参数并触发派发,记账与水位归 D/B。
 > 3. **server-canonical(§9.11d)**:staking position 状态机 · NEX price 与周价格曲线推进 · exchange gate 决策 · Genesis ownership 全部服务端权威,client 仅 UI cache / preview;后台各子模块写明该约束。
-> 4. **操作确认(Confirm-with-Reason,§1.8 原则二.4;2026-06 操作确认决议)**:改 APY / penalty、改兑换 caps / gate 阈值、改 NEX 周价格曲线关键帧 / 排程 / oracle 源、Genesis pause / 分红率 / geo、各 kill-switch —— 一律单人执行 + 业务专属确认弹窗 + 理由必填(server 强制非空,400 `REASON_REQUIRED`,8–200 字)+ A2 审计留痕(operator / before / after / reason / IP / ts),即时生效;高敏动作落审计同时实时告警超管与对应域角色 lead。**放大资金流出方向的动作前置 B1 兑付覆盖率红线核验**(低于红线 server 拒绝,422 `COVERAGE_BELOW_REDLINE`),其确认弹窗内必有影响预览区展示 server 预检的「拟生效后覆盖率」;资金 / 资产类写入另携 `Idempotency-Key`(§9.11e)。各动作的执行权与弹窗规格见各子模块「④ 操作动作」与「④a」段。**kill-switch 矩阵权威归 J1(V4)**,G 域各子模块是 kill 的**生效面**(本章列出各产品的 kill endpoint,矩阵编排与跨闸联动在 J1);kill 熔断为止血方向(执行=风控(lead)/ 超管,不前置 B1),**恢复方向(disable→enable)执行=仅超管 + B1 红线预检**(V1 切换入口在 A3〔A3-MD3〕,与 V1 A3④ 口径一致)。
+> 4. **操作确认(Confirm-with-Reason,§1.8 原则二.4;2026-06 操作确认决议)**:改 APY / penalty、改兑换 caps / gate 阈值、改 NEX 周价格曲线关键帧 / 排程 / oracle 源、Genesis pause / 排放率 / geo、各 kill-switch —— 一律单人执行 + 业务专属确认弹窗 + 理由必填(server 强制非空,400 `REASON_REQUIRED`,8–200 字)+ A2 审计留痕(operator / before / after / reason / IP / ts),即时生效;高敏动作落审计同时实时告警超管与对应域角色 lead。**放大资金流出方向的动作前置 B1 兑付覆盖率红线核验**(低于红线 server 拒绝,422 `COVERAGE_BELOW_REDLINE`),其确认弹窗内必有影响预览区展示 server 预检的「拟生效后覆盖率」;资金 / 资产类写入另携 `Idempotency-Key`(§9.11e)。各动作的执行权与弹窗规格见各子模块「④ 操作动作」与「④a」段。**kill-switch 矩阵权威归 J1(V4)**,G 域各子模块是 kill 的**生效面**(本章列出各产品的 kill endpoint,矩阵编排与跨闸联动在 J1);kill 熔断为止血方向(执行=风控(lead)/ 超管,不前置 B1),**恢复方向(disable→enable)执行=仅超管 + B1 红线预检**(V1 切换入口在 A3〔A3-MD3〕,与 V1 A3④ 口径一致)。
 > 5. **埋点对齐 A4(§2.4)**:本章所有 `§2.4.x` 埋点锚（domain 枚举 §2.4.3 / money family §2.4.5 ③ / 漏斗定义 §2.4.7）均指 **V1 卷 §2.4(A4 埋点事件体系)**,**非前端 v3.5 §2.4（前端 §2.4 是「30 天用户旅程」，其下无 2.4.3/2.4.5/2.4.7）**——避免 prototype lens 误读为前端锚。§2.4.3 domain 枚举**已含** `staking / exchange / genesis`(G1/G2/G4 复用);**未含** `nex`(G3)/ `repurchase`(G7)—— 这两个 domain 须**向 A4 申请 domain 枚举扩展(V1 §2.4.3），blocking 依赖,登记为 V3 起始工单**(体例参 V2 E4 `order` domain / F5 `commission.kind`)。锁仓 / 分红 / 到期派发类事件 `is_server_authoritative=true`。
-> 6. **12 月默认值口径(§7 硬规则)**:APY / 分红率 / 兑换 caps / NEX 价 / 节点价 等业务常量 12 月 §6 未覆盖 → 以前端 §9.4–§9.6 / §10 / §13.3 现状值为**参考并标注「现状值」**。三者冲突以 12 月节奏表为准,就地注明差异。
+> 6. **12 月默认值口径(§7 硬规则)**:APY / 排放率 / 兑换 caps / NEX 价 / 节点价 等业务常量 12 月 §6 未覆盖 → 以前端 §9.4–§9.6 / §10 / §13.3 现状值为**参考并标注「现状值」**。三者冲突以 12 月节奏表为准,就地注明差异。
 > 7. **中性运营语言**:全程真实平台金融运营者口径(理财产品 / 质押利率 / 兑换风控 / 做市 / 分红 / 锁仓 / 预言机喂价),禁一切编辑性 / 价格操纵类措辞,价格调节统一表述为「做市 / 价格曲线 / 价格上行概率 / 波动幅度」。
-> 8. **派发 / claim / 熔断幂等 + 并发裁决(对齐 §9.11e)**:所有资金派发(staking / Genesis 日分红 / NEX v2 到期 / 复投到期本息)与各 kill endpoint 均须携 **`Idempotency-Key`**(V1 §9.11e 明列「`Idempotency-Key`(资金/资产类动作)」为必填;§9.11e 跨 store mutation 原子性 + 幂等去重),网络 retry 不致重复派发 / 重复入账。**竞态裁决规则**:`kill 锁定优先于 in-flight claim`——position 一旦进 `slashed` / `early_forfeit` 等 kill 终态,并发到达的 `claim` 返 **409**(状态已变,不再派发);参数变更对 in-flight position **按开锁时锁定值结算**(乐观锁,不可追溯改既有 position)。逐子模块 ⑦ 据此兑现各自的派发 / claim / kill 竞态点。
+> 8. **派发 / claim / 熔断幂等 + 并发裁决(对齐 §9.11e)**:所有资金派发(staking / Genesis 日排放 / NEX v2 到期 / 复投到期本息)与各 kill endpoint 均须携 **`Idempotency-Key`**(V1 §9.11e 明列「`Idempotency-Key`(资金/资产类动作)」为必填;§9.11e 跨 store mutation 原子性 + 幂等去重),网络 retry 不致重复派发 / 重复入账。**竞态裁决规则**:`kill 锁定优先于 in-flight claim`——position 一旦进 `slashed` / `early_forfeit` 等 kill 终态,并发到达的 `claim` 返 **409**(状态已变,不再派发);参数变更对 in-flight position **按开锁时锁定值结算**(乐观锁,不可追溯改既有 position)。逐子模块 ⑦ 据此兑现各自的派发 / claim / kill 竞态点。
 
 ---
 
@@ -411,22 +411,22 @@
 ---
 
 #### [G4] Genesis 经济
-**① 目的 & 对齐**: 配置 Genesis 创世节点的经济参数 —— 节点总量 / 一级单价 / 每日分红率 / 二级版税 / 一二级市场 pause / geo 地域限制,作为「代币经济」最高客单价产品(节点 NFT + 永续分红)的运营面。对齐前端 **§10**(`/genesis` 一二级市场 / 每日分红 / pause / geo)+ **§9.11d.1**(Genesis 全局 pause + geo_block)。服务业务目标:用 $9,999 高客单 + 永续分红叙事沉淀大额资金,支撑 **§18.2「Genesis 售罄速度 < 14 天」KPI**(§18.2 八项闭集中 Genesis 直接对应项);同时分红率是应付负债精算的关键输入。
+**① 目的 & 对齐**: 配置 Genesis 创世节点的经济参数 —— 节点总量 / 一级单价 / 每日排放率 / 二级版税 / 一二级市场 pause / geo 地域限制,作为「代币经济」最高客单价产品(节点 NFT + 协议排放权益)的运营面。对齐前端 **§10**(`/genesis` 一二级市场 / 每日排放 / pause / geo)+ **§9.11d.1**(Genesis 全局 pause + geo_block)。服务业务目标:用 $9,999 高客单 + 协议排放权益叙事沉淀大额资金,支撑 **§18.2「Genesis 售罄速度 < 14 天」KPI**(§18.2 八项闭集中 Genesis 直接对应项);同时排放率是应付负债精算的关键输入。
 
-> **✅ 每日分红率已裁定 = 0.1%/日(PM 2026-06-01;V1 附录 §A.1 row5 + §1.7)**:前端原存在自相矛盾(差异 15×)——
+> **✅ 每日排放率已裁定 = 0.1%/日(PM 2026-06-01;V1 附录 §A.1 row5 + §1.7)**:前端原存在自相矛盾(差异 15×)——
 > - **§10.1.1**(一级预售规则):`全网每日交易 0.1% 池子均分`,单张日产约 **$1.50**;
 > - **§10.1.3**(how-it-works §2):`0.1%`,但举例 `当前约 $24/day`;
 > - **§10.3.3**(持有人 Dashboard 业务规则):`dailyDividendPerNode = platformDailyVolumeUSD × 1.5% / 1000`,HOLDER PERKS 文案写 `💎 1.5% 平台分润`。
 >
-> **裁定结论(PM 2026-06-01,V1 §A.1 row5 权威记录)**:**§10.1 的 0.1% 为权威值**;前端 §10.3 = 1.5% 为**笔误**,V4 上报前端订正为 0.1%(§10.1.3 的 $24/day 同属前端示例口径误差,随 V4 订正)。Genesis 日分红应付负债按 **`节点价 × 持有量 × 0.1%/日`** 精算(Ch4 B2 负债科目 4「Genesis 日分红承诺」),**D3 应付负债精算据此落地,不再阻塞**。③ 参数表 `dailyDividendShare` 默认值即 **0.1%/日**(§10.1.1 权威),仍受 B1 红线前置约束。
+> **裁定结论(PM 2026-06-01,V1 §A.1 row5 权威记录)**:**§10.1 的 0.1% 为权威值**;前端 §10.3 = 1.5% 为**笔误**,V4 上报前端订正为 0.1%(§10.1.3 的 $24/day 同属前端示例口径误差,随 V4 订正)。Genesis 日排放应付负债按 **`节点价 × 持有量 × 0.1%/日`** 精算(Ch4 B2 负债科目 4「Genesis 日排放承诺」),**D3 应付负债精算据此落地,不再阻塞**。③ 参数表 `dailyDividendShare` 默认值即 **0.1%/日**(§10.1.1 权威),仍受 B1 红线前置约束。
 
 **② 后台界面**:
 - **节点经济配置面**:`TOTAL_SLOTS / unitPriceUSDT / dailyDividendShare(0.1%/日,已裁定)/ 二级版税% / 一级售出进度 / 已铸造量`。
 - **一二级市场监控**:一级售出 ticker(对齐 §10.1)+ 二级市场 stats(floor / 24h vol / listed / owners,对齐 §10.2.1,SSE 实时)。
-- **分红派发监控**:日分红应付池 + 每日 00:00 UTC 派发批次(喂 B2 负债 / D4 bill)。
+- **排放派发监控**:日排放应付池 + 每日 00:00 UTC 派发批次(喂 B2 负债 / D4 bill)。
 - **geo / pause 面**:一二级市场全局 pause 开关 + `geo_block` 国家清单(边缘 IP 判定)。
-- **ownership 视图**(只读,server-canonical):`tokenId / 持有者(脱敏)/ 来源(一级 / 二级)/ lifetime 分红`;二级转让时分红跟随 NFT(§10.2「dividends move with the NFT」)。
-- **状态机**(节点,server-canonical):`minted(一级售出 / 铸造)→ held(持有计分红)`;旁路:`held → listed(二级挂单)→ sold(二级成交·扣 2.5% 版税·分红跟随新持有者)`。
+- **ownership 视图**(只读,server-canonical):`tokenId / 持有者(脱敏)/ 来源(一级 / 二级)/ lifetime 排放`;二级转让时排放跟随 NFT(§10.2「emission moves with the NFT」)。
+- **状态机**(节点,server-canonical):`minted(一级售出 / 铸造)→ held(持有计排放)`;旁路:`held → listed(二级挂单)→ sold(二级成交·扣 2.5% 版税·排放权跟随新持有者)`。
 
 **③ 可控参数**:
 
@@ -434,21 +434,21 @@
 |---|---|---|---|---|
 | `TOTAL_SLOTS`(节点总量) | **现状值(§10.1.1 / §13.3)**:1,000 | ≥ 已铸造量(不可低于已售) | 仅未来供应(已售不变) | `/genesis` 售出进度 `847/1,000` |
 | `unitPriceUSDT`(一级单价) | **现状值(§10.1.1 / §13.3)**:$9,999 | > 0 | 仅新一级购买(在途锁价) | `/genesis` Hero 单价 + Reserve CTA |
-| `dailyDividendShare`(每日分红率) | **✅ 0.1%/日**(§10.1.1 权威,PM 2026-06-01 裁定;§10.3=1.5% 为前端笔误待 V4 订正)。日分红应付 = `节点价 × 持有量 × 0.1%/日` | 0–可调,升率受 B1 约束 | 实时 | §10.1 日预估收益 / §10.3 holder dashboard 分红 |
+| `dailyDividendShare`(每日排放率) | **✅ 0.1%/日**(§10.1.1 权威,PM 2026-06-01 裁定;§10.3=1.5% 为前端笔误待 V4 订正)。日排放应付 = `节点价 × 持有量 × 0.1%/日` | 0–可调,升率受 B1 约束 | 实时 | §10.1 日预估收益 / §10.3 holder dashboard 排放 |
 | 二级版税(`royalty`) | **现状值(§10.2.3 / §13.3)**:2.5%(卖家成交扣) | 0–20% | 仅新二级成交 | §10.2 挂单 confirm「扣 2.5% 版税」 |
-| 一二级市场 pause(kill) | 关 | bool | 实时(熔断停一二级 + 分红保留 / 暂停按 J1 处置) | §10 市场熔断态(§9.11d.1) |
+| 一二级市场 pause(kill) | 关 | bool | 实时(熔断停一二级 + 排放保留 / 暂停按 J1 处置) | §10 市场熔断态(§9.11d.1) |
 | `geo_block`(地域限制) | 空 | 国家码数组 | 实时(边缘 IP 判定) | §10 marketplace geo 拦截 |
 
-> **默认值口径**:总量 / 单价 / 版税取前端现状值(标注「现状值」);**分红率已裁定 = 0.1%/日**(PM 2026-06-01,§10.1.1 权威;③ 已标注,前端 §10.3=1.5% 笔误待 V4 订正)。升分红率 = 放大 USDT 流出,受 ① B1 红线前置约束。
+> **默认值口径**:总量 / 单价 / 版税取前端现状值(标注「现状值」);**排放率已裁定 = 0.1%/日**(PM 2026-06-01,§10.1.1 权威;③ 已标注,前端 §10.3=1.5% 笔误待 V4 订正)。升排放率 = 放大 USDT 流出,受 ① B1 红线前置约束。
 
 **④ 操作动作**:
 | 动作 | 执行权 | 确认弹窗 | 审计点 |
 |---|---|---|---|
 | 改总量 / 单价 / 版税 | 财务(lead)/ 超管(2026-06 操作确认决议,原复核层级就高为执行门槛) | G4-MD1(理由必填) | `admin.genesis_economics_changed`(字段 / 前后值 / 原因 / operator) |
-| 改每日分红率（基准 0.1%/日） | 仅超管(原复核=超管,就高;放大方向) | G4-MD2(理由必填+B1 红线预检(升率方向);偏离 0.1% 权威基准须附 PM 决议 ref) | `admin.genesis_dividend_rate_changed`(前后值 / coverageAtSubmit / pmRulingRef / operator) |
-| 一二级市场 pause(kill) | 风控(lead)/ 超管(止血方向) | G4-MD3(理由必填;分红处置方案随单提交) | `admin.genesis_paused`(geo_block / 分红处置 / operator)→ 同步 J1 |
+| 改每日排放率（基准 0.1%/日） | 仅超管(原复核=超管,就高;放大方向) | G4-MD2(理由必填+B1 红线预检(升率方向);偏离 0.1% 权威基准须附 PM 决议 ref) | `admin.genesis_dividend_rate_changed`(前后值 / coverageAtSubmit / pmRulingRef / operator) |
+| 一二级市场 pause(kill) | 风控(lead)/ 超管(止血方向) | G4-MD3(理由必填;排放处置方案随单提交) | `admin.genesis_paused`(geo_block / 排放处置 / operator)→ 同步 J1 |
 | 设 / 改 geo_block | 风控 / 合规(lead)/ 超管(收紧方向,体例同 A3-MD4) | G4-MD4(理由必填) | `admin.genesis_geo_changed`(国家清单 / operator) |
-| 查看经济配置 / ownership / 分红派发监控 | 全角色(按可见性裁剪) | 否(只读) | — |
+| 查看经济配置 / ownership / 排放派发监控 | 全角色(按可见性裁剪) | 否(只读) | — |
 
 > **Genesis 恢复(pause→resume)不在本表**:恢复属放大流出方向,V1 经 A3 kill-switch config store 执行(A3-MD3:仅超管 + B1 红线预检),V4 归 J1 矩阵;G4 仅作生效面(章首贯穿事实 ④)。
 
@@ -459,10 +459,10 @@
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
 | 改总量 / 单价 / 版税 | ② 节点经济配置面参数卡「编辑」 | 行内按钮 | 仅财务(lead)/ 超管渲染;市场已 pause 时可编辑(恢复后生效) | 打开弹窗 G4-MD1 |
-| 改每日分红率 | ② 节点经济配置面分红率卡「编辑」 | 行内按钮 | 仅超管渲染 | 打开弹窗 G4-MD2 |
+| 改每日排放率 | ② 节点经济配置面排放率卡「编辑」 | 行内按钮 | 仅超管渲染 | 打开弹窗 G4-MD2 |
 | 一二级市场 pause | ② geo / pause 面「全局暂停」 | 警示按钮 | 仅风控(lead)/ 超管渲染;仅未 pause 态显示 | 打开弹窗 G4-MD3 |
 | 设 / 改 geo_block | ② geo / pause 面「编辑国家列表」 | 行内按钮 | 仅风控 / 合规(lead)/ 超管渲染 | 打开弹窗 G4-MD4 |
-| 查看 ownership / 分红派发监控 | ② ownership 视图 / 分红派发监控 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
+| 查看 ownership / 排放派发监控 | ② ownership 视图 / 排放派发监控 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
 
 **(2) 弹窗规格**
 
@@ -482,24 +482,24 @@
 - **错误态**:422(`TOTAL_SLOTS` 低于已铸造量 / 超出 ③ 表范围,server 返回合法区间)/ 400 `REASON_REQUIRED` / 409(配置已被他人变更,提示刷新)/ 403。
 - **成功反馈**:弹窗关闭;经济配置卡就地更新;toast「经济参数已生效 · 已记审计」;事件 `admin.genesis_economics_changed`;实时告警超管 + 财务 lead。
 
-##### [G4-MD2] Genesis 每日分红率变更
+##### [G4-MD2] Genesis 每日排放率变更
 - **功能**:修改 `dailyDividendShare`(权威基准 0.1%/日,PM 2026-06-01 裁定),确认即实时生效;仅超管。
-- **布局结构**:1. **信息区**:当前分红率 / 当前持有量 / 日分红应付池(= 节点价 × 持有量 × 率,server 派生)/ 最近一次分红率变更记录(引自审计)。2. **影响预览区**:before→after 并排 + 「拟生效后日分红应付」对比;升率方向 server 预检「**拟生效后覆盖率**」,低于 B1 红线展示红线警示条(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);偏离 0.1% 基准时提示行「偏离权威基准,须附 PM 决议 ref」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
+- **布局结构**:1. **信息区**:当前排放率 / 当前持有量 / 日排放应付池(= 节点价 × 持有量 × 率,server 派生)/ 最近一次排放率变更记录(引自审计)。2. **影响预览区**:before→after 并排 + 「拟生效后日排放应付」对比;升率方向 server 预检「**拟生效后覆盖率**」,低于 B1 红线展示红线警示条(确认钮置灰,文案含「覆盖率低于红线,server 将拒绝(422)」);偏离 0.1% 基准时提示行「偏离权威基准,须附 PM 决议 ref」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
-| 目标分红率(%/日) | 数字输入 | 是 | ≥ 0;升率过 B1(③ 表) | 当前值(0.1) |
+| 目标排放率(%/日) | 数字输入 | 是 | ≥ 0;升率过 B1(③ 表) | 当前值(0.1) |
 | PM 决议 ref | 文本输入(决议链接 / 编号) | 偏离 0.1% 基准时必填 | 非空;落审计 `pmRulingRef` | 空 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **按钮区**:`[取消]` · `[确认变更]`(升率预检低于红线 / 偏离基准未附 ref 时置灰;提交 loading 锁定)。
 - **错误态**:422 `COVERAGE_BELOW_REDLINE`(含 server 回传当前覆盖率,弹窗不关,内联阻断条)/ 400 `REASON_REQUIRED` / 400(偏离基准缺 pmRulingRef)/ 409 / 403(非超管)。
-- **成功反馈**:弹窗关闭;分红率卡就地更新;toast「分红率已生效 · 已记审计」;事件 `admin.genesis_dividend_rate_changed`;实时告警全体超管 + 财务 lead。
+- **成功反馈**:弹窗关闭;排放率卡就地更新;toast「排放率已生效 · 已记审计」;事件 `admin.genesis_dividend_rate_changed`;实时告警全体超管 + 财务 lead。
 
 ##### [G4-MD3] Genesis 一二级市场暂停
-- **功能**:一二级市场 pause(对齐 §9.11d.1),止血方向,确认即 server enforce(停一级购买 + 二级挂单成交),分红处置方案随单提交。
-- **布局结构**:1. **信息区**:当前市场状态 / 已售节点数 / 当日未结分红池 / 最近一次 pause 变更记录(引自审计)。2. **影响预览区**:警示条「暂停后一二级 endpoint 全局拒绝;当批未结分红按所选处置方案执行;即时生效并同步 J1 矩阵 + B5 风险雷达」。3. **输入区**:分红处置单选(`held` 保留继续计提 / 暂停计提按 J1 处置)+ `geo_block` 国家多选(可选)+ reason(多行文本,必填,8–200 字)+ 触发依据单选(监管点名 / 兑付风险 / 安全事件 / 其他)。4. **按钮区**:取消 / 确认暂停(警示色;携 `Idempotency-Key`)。
+- **功能**:一二级市场 pause(对齐 §9.11d.1),止血方向,确认即 server enforce(停一级购买 + 二级挂单成交),排放处置方案随单提交。
+- **布局结构**:1. **信息区**:当前市场状态 / 已售节点数 / 当日未结排放池 / 最近一次 pause 变更记录(引自审计)。2. **影响预览区**:警示条「暂停后一二级 endpoint 全局拒绝;当批未结排放按所选处置方案执行;即时生效并同步 J1 矩阵 + B5 风险雷达」。3. **输入区**:排放处置单选(`held` 保留继续计提 / 暂停计提按 J1 处置)+ `geo_block` 国家多选(可选)+ reason(多行文本,必填,8–200 字)+ 触发依据单选(监管点名 / 兑付风险 / 安全事件 / 其他)。4. **按钮区**:取消 / 确认暂停(警示色;携 `Idempotency-Key`)。
 - **错误态**:400 `REASON_REQUIRED` / 409(已为 pause 态,提示刷新)/ 403。
 - **成功反馈**:弹窗关闭;市场状态灯变红;toast「已暂停 · 已记审计」;事件 `admin.genesis_paused`;实时告警超管 + 风控 lead;同步 J1 矩阵 + B5 风险雷达。恢复经 A3-MD3(仅超管 + B1 红线预检)。
 
@@ -521,11 +521,11 @@
 - SSE `/api/genesis/marketplace/stats` — 二级市场实时 stats(floor / vol / listed / owners,对齐 §10.2.1)。
 - `GET /api/admin/genesis/ownership?cursor=` — ownership 视图(server 权威持有台账)。
 - `PUT /api/admin/genesis/economics` — 改总量 / 单价 / 版税(经确认弹窗 G4-MD1,reason 必填(空值 400 `REASON_REQUIRED`))。
-- `PUT /api/admin/genesis/dividend-rate` — 改分红率(基准 0.1%/日;经确认弹窗 G4-MD2,reason 必填,仅超管;**升率 server 先核 B1,< 红线返 422**)。
+- `PUT /api/admin/genesis/dividend-rate` — 改排放率(基准 0.1%/日;经确认弹窗 G4-MD2,reason 必填,仅超管;**升率 server 先核 B1,< 红线返 422**)。
 - `POST /api/admin/genesis/pause` — 一二级 pause(对齐 §9.11d.1;经确认弹窗 G4-MD3,reason 必填;payload `geo_block: string[]`;携 `Idempotency-Key`)。
 
 **⑥ 权限 & 审计**:
-| 角色 | 查看经济/ownership | 改总量/单价/版税 | 改分红率 | pause | geo_block |
+| 角色 | 查看经济/ownership | 改总量/单价/版税 | 改排放率 | pause | geo_block |
 |---|---|---|---|---|---|
 | 运营 | ✅ | — | — | — | — |
 | 财务 | ✅ | ✅(lead) | — | — | — |
@@ -533,25 +533,25 @@
 | 超管 | ✅ | ✅ | ✅(仅超管) | ✅ | ✅ |
 | 客服 / 只读审计 | ✅(只读) | — | — | — | — |
 
-> 执行权 = 单人执行(2026-06 操作确认决议):经济参数按原复核层级就高(财务(lead)/ 超管);分红率原复核 = 超管,就高为仅超管 + B1 红线预检(升率方向);pause / geo_block 为止血 / 收紧方向,风控(lead)/ 超管。
+> 执行权 = 单人执行(2026-06 操作确认决议):经济参数按原复核层级就高(财务(lead)/ 超管);排放率原复核 = 超管,就高为仅超管 + B1 红线预检(升率方向);pause / geo_block 为止血 / 收紧方向,风控(lead)/ 超管。
 
-审计字段(A2):`action / field / before / after / coverageAtSubmit(改分红率时) / pmRulingRef(分红率裁定引用) / geo_block / reason / operator / ts`。
+审计字段(A2):`action / field / before / after / coverageAtSubmit(改排放率时) / pmRulingRef(排放率裁定引用) / geo_block / reason / operator / ts`。
 
 **⑦ 风控 & 联动**:
-- **server-canonical(§9.11d.2)**:Genesis ownership + 分红派发 + 二级成交 server 权威;前端 `useGenesis.ownedTokenIds` 仅展示真实购买序号,client 不得伪造持有 / 分红;§10.3 holder dashboard `myOwned === 0` 显示真实空状态。
-- **负债联动(② 跨域事实)**:`genesis.purchased` 增 B2 应付负债科目 4「Genesis 日分红承诺」,**精算公式 = `节点价 × 持有量 × 0.1%/日`**(分红率已裁定 0.1%,§10.1.1;根因账本归 **D3,B2 为其驾驶舱概览卡同口径**,§3.14);日分红派发落 D4 bill。二级版税收入入网络金库(§10.2.3)。
-- **B1 前置(① 跨域事实)**:升分红率提交即 server 核验覆盖率红线。
-- **篡改防御(§9.11d.2)**:tokenId / 分红 server 单源,client 不可枚举 / 撞 ID;OpenSea 外链为站内 P2P 导流,无真实跨链写。
-- **幂等 & 并发裁决(章首贯穿事实 ⑧;§9.11e)**:每日 00:00 UTC 日分红派发批次携 **`Idempotency-Key`**(batchDate 维度去重,retry / 重跑不重复派发);Genesis pause 后并发到达的当批未结分红按 ④ 分红处置方案处理(`held` 保留 / 暂停按 J1),pause 锁定优先于 in-flight 派发。
+- **server-canonical(§9.11d.2)**:Genesis ownership + 排放派发 + 二级成交 server 权威;前端 `useGenesis.ownedTokenIds` 仅展示真实购买序号,client 不得伪造持有 / 排放;§10.3 holder dashboard `myOwned === 0` 显示真实空状态。
+- **负债联动(② 跨域事实)**:`genesis.purchased` 增 B2 应付负债科目 4「Genesis 日排放承诺」,**精算公式 = `节点价 × 持有量 × 0.1%/日`**(排放率已裁定 0.1%,§10.1.1;根因账本归 **D3,B2 为其驾驶舱概览卡同口径**,§3.14);日排放派发落 D4 bill。二级版税收入入网络金库(§10.2.3)。
+- **B1 前置(① 跨域事实)**:升排放率提交即 server 核验覆盖率红线。
+- **篡改防御(§9.11d.2)**:tokenId / 排放 server 单源,client 不可枚举 / 撞 ID;OpenSea 外链为站内 P2P 导流,无真实跨链写。
+- **幂等 & 并发裁决(章首贯穿事实 ⑧;§9.11e)**:每日 00:00 UTC 日排放派发批次携 **`Idempotency-Key`**(batchDate 维度去重,retry / 重跑不重复派发);Genesis pause 后并发到达的当批未结排放按 ④ 排放处置方案处理(`held` 保留 / 暂停按 J1),pause 锁定优先于 in-flight 派发。
 - **kill 联动 J1(V4)**:Genesis pause + geo_block 是 J1 矩阵生效面(证券类风险 / 国家级屏蔽)。
 
 **⑧ 埋点(事件)**:
 - **消费**:`genesis.purchased`(§2.4.5 ③ money,`is_server_authoritative=true`;G4 监控 + ownership 消费)。
-- **产生(分红 server)**:`genesis.dividend_paid`(每日派发批次,`is_server_authoritative=true`;属性:`tokenId / amountUsdt / rateApplied / ts`)。
+- **产生(排放 server)**:`genesis.dividend_paid`(每日派发批次,`is_server_authoritative=true`;属性:`tokenId / amountUsdt / rateApplied / ts`)。
 - **产生(admin 审计)**:`admin.genesis_economics_changed` · `admin.genesis_dividend_rate_changed` · `admin.genesis_paused` · `admin.genesis_geo_changed`(A2 审计)。
 - **domain 状态**:`genesis` 已在 §2.4.3 枚举内,无需扩展(`genesis.dividend_paid` 为本域内新增 object_action,登记 A4 schema registry)。
 - **喂给**:`genesis.purchased` / `genesis.dividend_paid` → B2 应付负债科目 4 / D3 资金池 / D4 账本 / B1 覆盖率;经济审计 → J1(V4)。
-- **`commission.kind=genesis` 交叉引用归属(非前端 §10 杠杆)**:`commission.kind=genesis`(推荐人因下线买 Genesis 得佣金)**仅见 admin V2 F5 佣金域 + §3.14 归属**,**前端 §10 原型不含此链路**(§10 仅一级 $9,999 买断 / 二级 2.5% 版税 / 每日分红,无 Genesis 推荐佣金)。故 prototype lens 下不应将其当作前端既有杠杆;计提权威归 **V2 F5 消费 / §3.14**。**§3.14 待补一条**:Genesis 推荐佣金链路前端缺失,待 PM 确认是否需要(若需要则 V4 上报前端补 §10 链路)。
+- **`commission.kind=genesis` 交叉引用归属(非前端 §10 杠杆)**:`commission.kind=genesis`(推荐人因下线买 Genesis 得佣金)**仅见 admin V2 F5 佣金域 + §3.14 归属**,**前端 §10 原型不含此链路**(§10 仅一级 $9,999 买断 / 二级 2.5% 版税 / 每日排放,无 Genesis 推荐佣金)。故 prototype lens 下不应将其当作前端既有杠杆;计提权威归 **V2 F5 消费 / §3.14**。**§3.14 待补一条**:Genesis 推荐佣金链路前端缺失,待 PM 确认是否需要(若需要则 V4 上报前端补 §10 链路)。
 
 ---
 
@@ -892,7 +892,7 @@
 | `wheelRealPrizeEnabled`(真实奖总开关) | 开 | kill 开关:关闭则真实奖档(5/7/8)停发、只剩 NEX/积分/券档(应急 / 监管一键止血,联动 J1 矩阵) |
 
 > **B1 兑付覆盖率红线自动降级(核心风险控制)**:server 每次 spin 裁决前核 B1 覆盖率;**低于红线(`coverageRedLine` 默认 100%)→ 自动降级为「仅 NEX/积分/券档」**(真实 USDT 档 5/7/8 当次不参与裁决、概率并入安慰档),无需人工干预,覆盖率回升自动恢复——把转盘真实流出与平台兑付安全硬绑定。
-> **server RNG + NODE_ENV guard**:中奖裁决 100% server 执行(`POST /api/events/:id/spin`),概率表 server 持有,client 永不可知概率 / 不 roll;生产环境 RNG 严禁落客户端随机函数(对齐 G4 分红 / H5 Lucky multiplier 口径)。每日上限按 `eventId × userId × spinDate`(UTC 日桶)server 计票、超额返 409(§⑦)。
+> **server RNG + NODE_ENV guard**:中奖裁决 100% server 执行(`POST /api/events/:id/spin`),概率表 server 持有,client 永不可知概率 / 不 roll;生产环境 RNG 严禁落客户端随机函数(对齐 G4 排放 / H5 Lucky multiplier 口径)。每日上限按 `eventId × userId × spinDate`(UTC 日桶)server 计票、超额返 409(§⑦)。
 > **档位可增删(运营可配,非固定 8 档)**:奖池档位数**非硬编码 8**——运营可**增 / 删 / 改**档位(**2-N 档,N ≤ 12** 受转盘 UI 可读上限约束),每档可改 `奖项类型(kind)/ 金额(amount)/ 概率(weight)/ 是否真实奖(isReal)/ 文案(labelKey)`;**增删档后须重新分配各档 weight 使之和 = 100**,否则 `PUT .../wheel` 返 422。默认 8 档(EV≈$0.73/spin,5/7/8 档真实奖逐项贡献:$1×5% = $0.05,$20×0.9% = $0.18,$500×0.1% = $0.50)为 PM 2026-06-02 裁定的**初始配置**,不是上限或下限。**EV 值随 WHEEL_TIERS[isReal=true] 派生**,改任一档真实奖概率/金额则总 EV 自动更新(`Σ wheel[real].amount × wheel[real].weight ÷ 100`,运营端在改奖池弹窗内可见实时预览)。新增真实奖档(isReal=true)同样受三护栏 + B1 红线 + 操作确认(确认弹窗 H4-MD4 + 理由必填)约束。
 > **改奖池 / 概率 / 护栏**:一律经确认弹窗 H4-MD4(理由必填+B1 红线预检,执行=财务(lead)/ 超管)+ 提交即过 B1 + 落 `admin.event_wheel_changed` 审计(§④);经专属端点 `PUT /api/admin/events/:id/wheel`(§⑤);概率和 ≠ 100% 或档位数越界 [2,12] server 拒绝(422)。
 
@@ -1023,7 +1023,7 @@
 | 30 天里程碑 7 阶梯(阈值 / 奖励 / 类型) | **现状值(§9.8.2)**:3/+5积分 · 7/+15积分 · 14/+1USDT · 21/+100NEX · 30/Lucky Spin 票 · 60/+10USDT · 100/Badge | 阶梯可增删改;奖励 ≥ 0 | 仅新达成(已 claimable 按当前值) | §9.8.2 里程碑路线图 7 行 |
 | Streak Power-Ups 4 档(§9.8.6) | **现状值(`streak-powerups.ts:32-69`)**:7d Royalty Boost / 14d Premium trial / 30d +2% APY / 60d Genesis whitelist | 阈值 + 增益值可改 | 实时(streak 达阈值即解锁) | §9.8.6 4 行 conversion-tied unlock |
 
-> **默认值口径**:积分 / Lucky 概率 / 里程碑 / Streak 规则取前端现状值(标注「现状值」);12 月 §6 未覆盖签到参数。**升 Lucky 概率 / 升里程碑 NEX·USDT 奖励 / 升 Power-Up 增益 = 放大流出**,受跨域事实 2 的 B1 红线前置约束。**Lucky 1.5×/2× 是概率型机制**,数值改动同时受 server-canonical RNG 约束(⑦);两 Lucky 概率约束对称——`p(1.5×)+p(2×) ≤ 100%`,余为 baseline 1.0×,server 校验和 >100% 返 422(与 B1 红线 422 体例并列);可选加单项软上限(如 ≤50%)防极端配置,附 PM 决议 ref(体例同 G4 分红率偏离基准)。Day-30 转盘奖项池 / 概率治理归 H4。
+> **默认值口径**:积分 / Lucky 概率 / 里程碑 / Streak 规则取前端现状值(标注「现状值」);12 月 §6 未覆盖签到参数。**升 Lucky 概率 / 升里程碑 NEX·USDT 奖励 / 升 Power-Up 增益 = 放大流出**,受跨域事实 2 的 B1 红线前置约束。**Lucky 1.5×/2× 是概率型机制**,数值改动同时受 server-canonical RNG 约束(⑦);两 Lucky 概率约束对称——`p(1.5×)+p(2×) ≤ 100%`,余为 baseline 1.0×,server 校验和 >100% 返 422(与 B1 红线 422 体例并列);可选加单项软上限(如 ≤50%)防极端配置,附 PM 决议 ref(体例同 G4 排放率偏离基准)。Day-30 转盘奖项池 / 概率治理归 H4。
 
 **④ 操作动作**:
 | 动作 | 执行权 | 确认弹窗 | 审计点 |

@@ -941,7 +941,7 @@
    "id": "OPS-G-07",
    "domain": "G",
    "object": "Genesis节点",
-   "action": "调总量/单价/版税/分红率/基数口径(升分红amplifies+附PM决议)+ 重跑分红批次(普通确认防重)",
+   "action": "调总量/单价/版税/排放率/基数口径(升排放amplifies+附PM决议)+ 重跑排放批次(普通确认防重)",
    "status": "built",
    "view": "g-tabs/g4-genesis.tsx",
    "batch": "P1",

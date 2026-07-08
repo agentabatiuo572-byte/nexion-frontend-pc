@@ -61,7 +61,7 @@
 | E | 商品SKU | 改价 / 上架 / 下架 / 编辑 / 删除 | ✅ 已落地 · 真 store `addSku/updateSku/setSkuStatus/removeSku` + logAudit(设计稿 port) |
 | E | 任务单价 / 上架阶段门(E1) / 任务产能·trade-in(E3) / 订单(E4) / 运维(E5) | 改单价 / 放行上架·配置置换侧抢先购(E.release.earlyAccess) / 调产能节奏·补贴天数·SKU 递减开关·折抵 / 退款·补建终态 / DC pause | ✅ 已落地 · `updateTask` + `setParam`(E.gen/E.device/E.tradein/E.order/E.ops)+ 操作确认 |
 | F | 网络版税 / V级 / 奖池 / 配额 | 改费率 / 改阈值 / 改比例 | 🟠死控件(16项全死) |
-| G | staking / 兑换 / Genesis / 复投 | 调APY / 汇率费率限额 / 分红 / 紧急pause | 🟠死控件(17项全死) |
+| G | staking / 兑换 / Genesis / 复投 | 调APY / 汇率费率限额 / 排放 / 紧急pause | 🟠死控件(17项全死) |
 | H | phase拨盘 / 试用引擎 / 活动 | 调dial / 改试用参数 / 上下线活动 | 🟠死控件(写useState不持久) |
 | A | 系统参数 / 埋点事件 | 调维护模式·限流 / 灰度·全量 | 🟠死控件 |
 | B | 兑付红线 / Kill-Switch入口 / P0告警 | 调阈值 / 一键触发 / 标记处置 | 🟠+❌ |

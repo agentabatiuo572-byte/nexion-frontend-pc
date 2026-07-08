@@ -72,7 +72,7 @@ export const LIABILITIES = LEDGER.accounts.map((a, i) => ({
 
 // 到期负债预测(未来 7 天,今天=06-11 起含当日;D3 权威源,B2 卡 / L3 报表同数)。
 // 量级与 LEDGER 闭合:7 日提现解锁 $348K ≪ 科目#1 可提 $1.18M;7 日利息 $78K < 科目#3 存量 $312K;
-// Genesis 日分红 ≈ $20.3K/日 = 已售 847 节点 × $24/节点/日(基数口径:平台日交易量 $24.2M × 0.1% ÷ 1,000 slot;
+// Genesis 日排放 ≈ $20.3K/日 = 已售 847 节点 × $24/节点/日(基数口径:平台日交易量 $24.2M × 0.1% ÷ 1,000 slot;
 //   G4 权威调和:科目#4 $268K 按保底口径预提(节点价 × 0.1% = $10/节点/日 × ~31 日),基数口径高出保底的部分
 //   从当期交易抽成直接派发不占预提 —— $24/节点/日为产品权威档(14 月回本),与 G4 派发监控同源)。
 // (旧值 7 日到期 $4.0M 超科目存量数倍且日期落在过去,2026-06-10 D 域 port 修正;genesis 列 2026-06-11 G 域 port 对齐 $24 档。)
@@ -115,7 +115,7 @@ export const PHASE = {
     { key: "questRewardMult", name: "Quest 奖励乘数", val: "1.5×", trend: "↑" },
     { key: "trialOffsetCapUSD", name: "试用抵扣上限", val: "$50", trend: "—" },
     { key: "storeDiscountLadder", name: "商城折扣 ladder", val: "T2", trend: "—" },
-    { key: "genesisDividendRate", name: "Genesis 日分红率", val: "0.1%", trend: "—" },
+    { key: "genesisDividendRate", name: "Genesis 日排放率", val: "0.1%", trend: "—" },
   ],
   timeline: ["P1", "P2", "P3", "P4", "P5", "P6"],
 };
@@ -299,7 +299,7 @@ export const USERS = [
 export const KILLSWITCH = [
   { key: "withdraw", name: "提现", on: true, domain: "D2", cap: "D2 全平台提现流出", desc: "熔断 → 全部提现暂停 · 在途请求冻结待恢复", lastChange: "2d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
   { key: "staking", name: "Staking 锁仓", on: true, domain: "G1", cap: "G1 Staking 池整体", desc: "熔断 → 新增质押停止 · 存量产出按 R-A 衰减续算", lastChange: "5d 前 · ops@nexion / sec@nexion", amplifies: true, coverageImpactCategory: "delayed", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
-  { key: "genesis", name: "Genesis 经济", on: true, domain: "G4", cap: "G4 Genesis 一二级 + 分红", desc: "熔断 → (a)分红派发暂停 · (b)一二级流转冻结", lastChange: "12d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
+  { key: "genesis", name: "Genesis 经济", on: true, domain: "G4", cap: "G4 Genesis 一二级 + 排放", desc: "熔断 → (a)排放派发暂停 · (b)一二级流转冻结", lastChange: "12d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
   { key: "exchange", name: "NEX 兑换", on: true, domain: "G2", cap: "G2 NEX↔USDT swap", desc: "熔断 → NEX→USDT 即时流出停 · 联动 G2 价格快照", lastChange: "3d 前 · risk@nexion / super@nexion", amplifies: true, coverageImpactCategory: "immediate", coveragePrecheckRequired: true, proposalStatus: "idle", operator: "risk", roleGate: "super" },
   { key: "trial", name: "免费试用", on: true, domain: "H2", cap: "H2 free-trial entry", desc: "熔断 → 新试用领取关闭 · shadow earning 不入余额", lastChange: "21d 前 · ops@nexion / super@nexion", amplifies: false, coverageImpactCategory: "none", coveragePrecheckRequired: false, proposalStatus: "idle", operator: "ops", roleGate: "super" },
 ];

@@ -425,7 +425,7 @@ check_html "/finance-products/exchange" "拦截命中与队列"        # G2 三�
 check_html "/finance-products/market" "行情走势"                # G3:kline 在位
 check_html "/finance-products/market" "周曲线关键帧"            # G3 升级:周曲线排程器矩阵在位
 check_html "/finance-products/market" "自动按日推进"            # G3 升级:排程控制(schedule/pin/loop)在位
-check_html "/finance-products/genesis" "分红派发监控"           # G4 设计稿 port:双口径派发卡在位
+check_html "/finance-products/genesis" "排放派发监控"           # G4 设计稿 port:双口径派发卡在位(FEAT-GEN 收益锚=NEX 协议排放,前后端 + 后台全域术语已统一)
 check_html "/finance-products/genesis" "节点持有台账"           # G4 ownership 台账在位
 check_html "/finance-products/repurchase" "复投激励配置"        # G7 复投独立页(Premium/NEX v2 已下线)在位
 echo "  注:运营者/PM/交互设计师 的定性维度由审计 panel(docs/REVIEW-RUBRIC.md 镜头 B/C/D)覆盖,此处仅守信号退化。"

@@ -18,7 +18,7 @@
 | /me/wallet/bills | 账单流水 | /finance/ledger(D4) | 账本/6 类 bill 审计 + 冲正联动 | ✅ |
 | /me/wallet(余额) | 余额/资产 | /users/assets(C3) | 余额调整(操作确认) | ✅ |
 | /staking(+how-it-works) | 质押 | /finance-products/staking(G1) | 各档 APY/罚金/单档 kill(操作确认·放大利息负债) | ✅ |
-| /genesis(+marketplace/holder) | 创世节点一二级 + 分红 | /finance-products/genesis(G4) | 供给/分红率/二级版税/紧急 pause(操作确认) | ✅ |
+| /genesis(+marketplace/holder) | 创世节点一二级 + 排放 | /finance-products/genesis(G4) | 供给/排放率/二级版税/紧急 pause(操作确认) | ✅ |
 
 ## 设备与商城 / 收益(/store · /earn · /me/devices)
 | H5 前端杠杆 | 用户能做什么 | 后台控制 | 控制动作 | 状态 |

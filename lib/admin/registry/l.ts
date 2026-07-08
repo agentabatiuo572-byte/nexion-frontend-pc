@@ -200,9 +200,9 @@ export const DOMAIN_L: ModuleEntry[] = [
         {
           label: "兑付支出",
           value: "$1.62M",
-          sub: "提现 + 分红 + 利息",
+          sub: "提现 + 排放 + 利息",
           accent: "var(--v5-warning)",
-          hint: "提现放行 + Genesis 分红 + 质押利息 + NEX 兑付(本月)。",
+          hint: "提现放行 + Genesis 排放 + 质押利息 + NEX 兑付(本月)。",
           delta: { dir: "up", text: "环比 +6.1%", good: false },
         },
         {
@@ -247,7 +247,7 @@ export const DOMAIN_L: ModuleEntry[] = [
           unit: "万",
           segments: [
             { label: "提现放行", value: 58, color: "var(--admin-cat-6)" },
-            { label: "Genesis 日分红", value: 41, color: "var(--admin-cat-4)" },
+            { label: "Genesis 日排放", value: 41, color: "var(--admin-cat-4)" },
             { label: "质押应付利息", value: 33, color: "var(--admin-cat-3)" },
             { label: "推荐返佣", value: 18, color: "var(--admin-cat-7)" },
             { label: "运营 / 投放", value: 12, color: "var(--admin-cat-8)" },
@@ -382,7 +382,7 @@ export const DOMAIN_L: ModuleEntry[] = [
         { name: "资金流水监管报送(KYC/AML)", type: "监管报送", cycle: "每月 5 日", format: "CSV", updated: "05-31 24:00", state: "排程中" },
         { name: "大额提现与异常账户报送", type: "监管报送", cycle: "每月 5 日", format: "CSV", updated: "05-31 24:00", state: "排程中" },
         { name: "用户事件明细导出(A4)", type: "明细导出", cycle: "按需", format: "CSV", updated: "06-02 14:00", state: "生成中" },
-        { name: "Genesis 发行与分红台账", type: "财务报表", cycle: "每月 1 日", format: "XLSX", updated: "05-01 24:00", state: "已失败" },
+        { name: "Genesis 发行与排放台账", type: "财务报表", cycle: "每月 1 日", format: "XLSX", updated: "05-01 24:00", state: "已失败" },
       ],
       primaryAction: { label: "新建报告", fields: ["报告名", "类型", "周期"] },
       rowActions: [

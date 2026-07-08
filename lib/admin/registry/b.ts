@@ -38,7 +38,7 @@ export const DOMAIN_B: ModuleEntry[] = [
           value: "$5.37M",
           sub: "8 科目合计",
           accent: "var(--v5-ink-3)",
-          hint: "余额 + 质押本息 + Genesis 分红 + NEX 兑付 + 提现队列 + 佣金冷却 + 锁仓。",
+          hint: "余额 + 质押本息 + Genesis 排放 + NEX 兑付 + 提现队列 + 佣金冷却 + 锁仓。",
         },
         {
           label: "24h 净流入",
@@ -71,7 +71,7 @@ export const DOMAIN_B: ModuleEntry[] = [
             { label: "待提现队列", value: 43, color: "var(--admin-cat-6)" },
             { label: "佣金冷却未解锁", value: 41, color: "var(--admin-cat-7)" },
             { label: "质押应付利息", value: 31, color: "var(--admin-cat-3)" },
-            { label: "Genesis 日分红承诺", value: 27, color: "var(--admin-cat-4)" },
+            { label: "Genesis 排放承诺", value: 27, color: "var(--admin-cat-4)" },
             { label: "锁仓本息 / 其他", value: 25, color: "var(--admin-cat-8)" },
           ],
         },
@@ -242,7 +242,7 @@ export const DOMAIN_B: ModuleEntry[] = [
           segments: [
             { label: "拉新激励 / 试用补贴", value: 38, color: "var(--admin-cat-1)" },
             { label: "推荐返佣", value: 27, color: "var(--admin-cat-7)" },
-            { label: "Genesis 分红池注入", value: 20, color: "var(--admin-cat-4)" },
+            { label: "Genesis 排放池注入", value: 20, color: "var(--admin-cat-4)" },
             { label: "运营储备金", value: 15, color: "var(--admin-cat-8)" },
           ],
         },

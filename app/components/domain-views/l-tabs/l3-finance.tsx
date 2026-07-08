@@ -232,9 +232,9 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
           <div className="mat-grid">
             <div className="t"><div className="k">提现到期</div><div className="e">withdrawDueUsdt</div><div className="v">{fmtM(m.withdraw)}</div></div>
             <div className="t"><div className="k">利息到期(staking 本息)</div><div className="e">interestDueUsdt</div><div className="v">{fmtM(m.interest)}</div></div>
-            <div className="t"><div className="k">Genesis 日分红到期</div><div className="e">genesisDividendUsdt · 服务端 0.1%/日</div><div className="v">{fmtM(m.genesis)}</div></div>
+            <div className="t"><div className="k">Genesis 日排放到期</div><div className="e">genesisDividendUsdt · 服务端 0.1%/日</div><div className="v">{fmtM(m.genesis)}</div></div>
           </div>
-          <div className="ltint cyan" style={{ fontSize: 12, marginBottom: 16 }}><b>Genesis 日分红怎么算</b> · <AutoGloss>到期分红 = 持有量 × 服务端下发的日分红率(当前</AutoGloss> <b>0.1%/日</b><AutoGloss>)——比例</AutoGloss><b>不写死在页面里</b>,<AutoGloss>永远以服务端字段为准,和资金池看板是同一个数;字段名</AutoGloss> <span className="lcode">genesisDividendUsdt</span>。</div>
+          <div className="ltint cyan" style={{ fontSize: 12, marginBottom: 16 }}><b>Genesis 日排放怎么算</b> · <AutoGloss>到期排放 = 持有量 × 服务端下发的日排放率(当前</AutoGloss> <b>0.1%/日</b><AutoGloss>)——比例</AutoGloss><b>不写死在页面里</b>,<AutoGloss>永远以服务端字段为准,和资金池看板是同一个数;字段名</AutoGloss> <span className="lcode">genesisDividendUsdt</span>。</div>
           <div className="liab-split">
             <div>
               <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 10 }}>8 类负债科目分解 <span className="lcode" style={{ marginLeft: 6 }}>读引用 D3 liabilities · 定义归 B2</span></div>
@@ -256,7 +256,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
               <div className="exp-legend" style={{ marginTop: 6 }}>
                 <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />提现到期</span>
                 <span className="it"><span className="lsw" style={{ background: "var(--brand)" }} />利息到期</span>
-                <span className="it"><span className="lsw" style={{ background: "var(--warning)" }} />Genesis 日分红</span>
+                <span className="it"><span className="lsw" style={{ background: "var(--warning)" }} />Genesis 日排放</span>
               </div>
             </div>
           </div>

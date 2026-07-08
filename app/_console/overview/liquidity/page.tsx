@@ -26,7 +26,7 @@ const LIAB: { nm: string; pc: number; cat: string }[] = [
   { nm: "待提现队列", pc: 8.0, cat: "--admin-cat-6" },
   { nm: "佣金冷却未解锁", pc: 7.6, cat: "--admin-cat-7" },
   { nm: "质押应付利息", pc: 5.8, cat: "--admin-cat-3" },
-  { nm: "Genesis 日分红承诺", pc: 5.0, cat: "--admin-cat-4" },
+  { nm: "Genesis 排放承诺", pc: 5.0, cat: "--admin-cat-4" },
   { nm: "锁仓本息 / 其他", pc: 4.7, cat: "--admin-cat-8" },
 ];
 
@@ -155,7 +155,7 @@ export default function LiquidityPage() {
             <span className="h">未来 7 日到期兑付预测</span>
             <span className="sub">需准备的可兑付头寸 · 万 USDT</span>
             <div className="r">
-              <span className="b-tag">到期 = 提现冷却 + 利息 + 分红</span>
+              <span className="b-tag">到期 = 提现冷却 + 利息 + 排放</span>
             </div>
           </div>
           <div className="rwrap">

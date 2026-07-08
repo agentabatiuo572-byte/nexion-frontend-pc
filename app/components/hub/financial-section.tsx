@@ -2,7 +2,7 @@
 
 /**
  * 360 HUB · 财务持仓卡(单用户 staking/Genesis/兑换)— C1·deepening。
- * 读:v3/staking + genesis + exchange(per-user)。处置(强制赎回/冻结/分红调整)跳 G 域 操作确认。
+ * 读:v3/staking + genesis + exchange(per-user)。处置(强制赎回/冻结/排放调整)跳 G 域 操作确认。
  * CGM: CGM-G staking/genesis/exchange per-user 持仓行。
  */
 import Link from "next/link";
@@ -27,7 +27,7 @@ export function FinancialSection({ user }: { user: AdminUser }) {
         <HubMetric label="质押本金" sub="USDT" value={fmtUsd(f.stakedUsdTotal)} accent="var(--admin-domain-g)" />
         <HubMetric label="质押仓位" value={`${f.staking.length}`} />
         <HubMetric label="Genesis 节点" value={`${f.genesis.length}`} />
-        <HubMetric label="节点日分红" value={fmtUsd(f.genesisDailyTotal)} accent="var(--v5-success)" />
+        <HubMetric label="节点日排放" value={fmtUsd(f.genesisDailyTotal)} accent="var(--v5-success)" />
       </div>
 
       {empty ? (
@@ -76,7 +76,7 @@ export function FinancialSection({ user }: { user: AdminUser }) {
       <p className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>
         <Link href="/finance-products/staking" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-g)" }}>G1 Staking<ArrowUpRight size={11} /></Link>
         <Link href="/finance-products/genesis" prefetch={false} className="inline-flex items-center gap-0.5 hover:opacity-80" style={{ color: "var(--admin-domain-g)" }}>G4 Genesis<ArrowUpRight size={11} /></Link>
-        <AutoGloss>强制赎回/冻结/分红调整在 G 域 · 操作确认。</AutoGloss>
+        <AutoGloss>强制赎回/冻结/排放调整在 G 域 · 操作确认。</AutoGloss>
       </p>
     </HubCard>
   );

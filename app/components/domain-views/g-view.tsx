@@ -7,7 +7,7 @@
  * 真写沿用旧契约(G.staking.* / G.exchange.* / G.market.* / G.genesis.* / G.repurchase.*);
  * 产品级熔断改写 J.killswitch.<staking|exchange|genesis> 与 J1/首页/B5 同键真联动。
  * 单源:LEDGER 科目体系(在锁/利息/到期应付,含 #5 NEX v2 存量在锁负债仍计兑付)/ NEX_MARKET(G2/G7 定价源)/ GEOBLOCK(J2)/ MATURITY(Genesis 派发流量)。
- * amplifies = 放大流出方向(升 APY/降罚款/放宽 caps/拉价/升 pump/升分红/升倍率/恢复熔断/恢复开售)。
+ * amplifies = 放大流出方向(升 APY/降罚款/放宽 caps/拉价/升 pump/升排放/升倍率/恢复熔断/恢复开售)。
  */
 import { useMemo, useState } from "react";
 import "./g-domain.css";
@@ -30,7 +30,7 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
   G1: ["在锁本金、利息、状态都以服务器为准", "调高年化、调低罚金先过备付金红线"],
   G2: ["拦截判定都在服务器 · 客户端绕不过", "放宽额度先过备付金红线"],
   G3: ["价格 100% 由服务器定 · 是兑换/复投的定价来源", "每 4 秒喂一次价"],
-  G4: ["持有、分红、成交都以服务器为准", "分红率 0.1%/天已裁定"],
+  G4: ["持有、排放、成交都以服务器为准", "排放率 0.1%/天已裁定"],
   G7: ["限时倍率由 H1 派发 · 这页只读", "调高年化、倍率或调低罚金过备付金红线"],
 };
 
