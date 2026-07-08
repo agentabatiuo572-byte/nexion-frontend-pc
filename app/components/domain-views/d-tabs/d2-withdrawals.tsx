@@ -11,6 +11,8 @@ import {
   type PageResult,
 } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const OPERATOR = currentAdminOperator;
 const STATUS_TABS = [
@@ -130,6 +132,7 @@ function availableActions(row: D2Withdrawal): Array<"APPROVE" | "DELAY" | "FREEZ
 
 export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [rows, setRows] = useState<PageResult<D2Withdrawal>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -202,12 +205,29 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     if (action === "APPROVE" || action === "UNFREEZE") {
       const limitHint = `24h 次数 ${row.withdrawalCount24h}/${dailyLimitCount}`;
       const blockedHint = action === "APPROVE" ? approveBlockReason(row, dailyLimitCount) : "";
+      const opKey = action === "APPROVE" ? "d2_withdraw_approve" : "d2_withdraw_unfreeze";
+      const def = findHighOp(opKey)!;
       openActionConfirm({
         action: `${label}提现 · ${row.withdrawalNo}`,
-        detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，${limitHint}；命中原因：${riskReasonText(row)}${blockedHint ? `；当前阻断：${blockedHint}` : ""}；放大资金流出方向会走覆盖率预检。`,
+        detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，${limitHint}；命中原因：${riskReasonText(row)}${blockedHint ? `；当前阻断：${blockedHint}` : ""}；放大资金流出方向会走覆盖率预检。提交后进入 A2 待确认队列,由门槛者确认执行。`,
         amplifies: true,
         coverage: d5Params ? { coverageRatio: d5Params.coverageRatio, redlinePct: d5Params.redlinePct } : undefined,
-        run: (reason) => void runReview(row, action, reason),
+        run: async (reason) => {
+          await propose(toast, {
+            action: `${label}提现 · ${row.withdrawalNo}`,
+            obj: row.withdrawalNo,
+            before: statusLabel(row.status),
+            after: label,
+            type: "fund",
+            amplifies: true,
+            gate: { roles: [] }, // 统一门槛,roles 不再判定
+            gateLabel: def.gateLabel,
+            reason,
+            sourceDomain: "D2",
+            command: def.buildCommand({ withdrawalNo: row.withdrawalNo }),
+            target: def.buildTarget({ withdrawalNo: row.withdrawalNo }),
+          });
+        },
       });
       return;
     }
