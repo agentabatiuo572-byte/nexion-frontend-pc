@@ -6,6 +6,7 @@
 import { ROLE_LABEL } from "@/lib/nav/console-nav";
 import type { AuthPrincipal, ExecGate } from "@/lib/admin/ops-authority";
 import type { A2OperationType } from "@/lib/admin/a2-client";
+import type { ReplayCommand, LockTarget } from "@/lib/admin/high-ops-registry";
 
 export type ProposalType = "fund" | "param" | "acct" | "sos";
 
@@ -21,6 +22,8 @@ export interface ProposeSpec {
   gateLabel: string;
   reason: string;
   sourceDomain: string;
+  command: ReplayCommand;
+  target: LockTarget;
 }
 
 export interface ProposeDeps {
@@ -38,6 +41,8 @@ export interface ProposeDeps {
     roleGate: string;
     reason: string;
     sourceDomain: string;
+    command: ReplayCommand;
+    target: LockTarget;
   }) => Promise<unknown>;
   toast: (s: string) => void;
 }
@@ -60,6 +65,8 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
       roleGate: spec.gateLabel,
       reason: spec.reason,
       sourceDomain: spec.sourceDomain,
+      command: spec.command,
+      target: spec.target,
     });
     toast(`已写入 A2 后端待确认队列,待 ${spec.gateLabel} 执行`);
     return "proposed";
