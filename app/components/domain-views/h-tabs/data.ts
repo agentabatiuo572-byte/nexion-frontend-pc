@@ -41,14 +41,14 @@ export const H1_STATS = {
   pendingProposals: 2,
 };
 
-/** 8 旋钮 key(列序权威 = 设计稿 DIALS 顺序;Premium/NEXv2 gate 旋钮随模块下线移除,提现门旋钮 = 提现惩罚费率;NEX 质押已下线)。 */
+/** 9 旋钮 key(列序权威 = 设计稿 DIALS 顺序;Premium/NEXv2 gate 旋钮随模块下线移除,提现门旋钮 = 提现惩罚费率;NEX 质押已下线;genesisDivOpen = 创世节点排放开阀,分红延期改造新增,上所窗口 M7 翻是)。 */
 export const DIAL_KEYS = [
   "newUser", "invite", "reinvest", "nexGate", "cooldown",
-  "binaryCap", "quest", "compliance",
+  "binaryCap", "quest", "compliance", "genesisDivOpen",
 ] as const;
 export type DialKey = typeof DIAL_KEYS[number];
 
-/** 8 旋钮 label(设计稿 NAMES 列头)。 */
+/** 9 旋钮 label(设计稿 NAMES 列头)。 */
 export const DIAL_LABELS: Record<DialKey, { name: string; unit: string }> = {
   newUser: { name: "新用户加成¹", unit: "×" },
   invite: { name: "邀请加成¹", unit: "×" },
@@ -58,6 +58,7 @@ export const DIAL_LABELS: Record<DialKey, { name: string; unit: string }> = {
   binaryCap: { name: "双轨日封顶", unit: "$" },
   quest: { name: "任务加成", unit: "×" },
   compliance: { name: "合规留存", unit: "" },
+  genesisDivOpen: { name: "创世排放开阀", unit: "" },
 };
 
 /** 放松方向(降冷却 / 降惩罚费率 / 升封顶)= 放大流出,过 B1 红线 422。 */
@@ -70,20 +71,21 @@ export const LOOSEN_DIR: Partial<Record<DialKey, "down" | "up">> = {
 /** 仅新用户(存量锁定基数不回溯);其余项实时全量生效。 */
 export const NEW_USER_ONLY: DialKey[] = ["newUser", "invite"];
 
-/** 12 月 × 8 旋钮值矩阵(行 = 月 1..12,列 = DIAL_KEYS;nexGate 列 = 无 NEX 抵扣时的提现惩罚费率 %,phase 递增)。 */
+/** 12 月 × 9 旋钮值矩阵(行 = 月 1..12,列 = DIAL_KEYS;nexGate 列 = 无 NEX 抵扣时的提现惩罚费率 %,phase 递增;
+ *  末列 genesisDivOpen = 创世节点排放开阀,M1-M6「否」→ M7(上所窗口)起「是」,分红延期改造:上所前只卖预留额度,上所后才开排放)。 */
 export const DIAL_MATRIX: (number | string)[][] = [
-  /* M1 */ [2, 2, 1, 20, 30, 5000, 4, "否"],
-  /* M2 */ [2, 2, 1, 20, 30, 5000, 4, "否"],
-  /* M3 */ [1.5, 1.5, 1, 20, 30, 5000, 1, "否"],
-  /* M4 */ [1.5, 1.5, 1, 20, 30, 5000, 1, "否"],
-  /* M5 */ [1, 1, 2, 20, 30, 5000, 1, "否"],
-  /* M6 */ [1, 1, 2, 20, 30, 5000, 1, "否"],
-  /* M7 */ [1, 1, 1, 20, 30, 2000, 1, "否"],
-  /* M8 */ [1, 1, 1, 20, 35, 2000, 1, "是"],
-  /* M9 */ [1, 1, 1, 25, 45, 2000, 1, "是"],
-  /* M10 */ [1, 1, 1, 25, 45, 2000, 1, "是"],
-  /* M11 */ [1, 1, 1, 30, 45, 2000, 1, "是"],
-  /* M12 */ [1, 1, 1, 30, 45, 2000, 1, "是"],
+  /* M1 */ [2, 2, 1, 20, 30, 5000, 4, "否", "否"],
+  /* M2 */ [2, 2, 1, 20, 30, 5000, 4, "否", "否"],
+  /* M3 */ [1.5, 1.5, 1, 20, 30, 5000, 1, "否", "否"],
+  /* M4 */ [1.5, 1.5, 1, 20, 30, 5000, 1, "否", "否"],
+  /* M5 */ [1, 1, 2, 20, 30, 5000, 1, "否", "否"],
+  /* M6 */ [1, 1, 2, 20, 30, 5000, 1, "否", "否"],
+  /* M7 */ [1, 1, 1, 20, 30, 2000, 1, "否", "是"],
+  /* M8 */ [1, 1, 1, 20, 35, 2000, 1, "是", "是"],
+  /* M9 */ [1, 1, 1, 25, 45, 2000, 1, "是", "是"],
+  /* M10 */ [1, 1, 1, 25, 45, 2000, 1, "是", "是"],
+  /* M11 */ [1, 1, 1, 30, 45, 2000, 1, "是", "是"],
+  /* M12 */ [1, 1, 1, 30, 45, 2000, 1, "是", "是"],
 ];
 
 /** 月 → 阶段:上收 command-center 节奏单源(权重派生,total-aware)。

@@ -280,7 +280,7 @@ export type PushSku = { id: string; title: string; subtitle: string; to: string 
 export const PUSH_SKUS: PushSku[] = [
   { id: "SKU-PRO", title: "NexionBox Pro 升级", subtitle: "算力更高 · 设备闲置时也多赚", to: "/store" },
   { id: "SKU-LOCK", title: "180 天锁仓 · 稳收计划", subtitle: "更优收益档位 · 适合短期不动用的余额", to: "/staking" },
-  { id: "SKU-GEN", title: "创世节点", subtitle: "稀缺权益 · 长期分红", to: "/genesis" },
+  { id: "SKU-GEN", title: "创世节点", subtitle: "稀缺权益 · 长期排放", to: "/genesis" },
 ];
 
 /* ============ 主动发起会话(融合:设计稿身份+撰写+预览 ⊕ v3 单人/固定档/自定义圈选)============ */
@@ -309,7 +309,17 @@ export type SegCond = { field: string; op: string; value: string };
 
 // 坐席会话(字段镜像前端 Conversation/ConvMessage + 后台 owner/status)
 export type SessionStatus = "open" | "resolved" | "closed";
-export type SessionMsg = { ts: number; sender: "user" | "agent"; agentName?: string; text: string; ctaHref?: string };
+/** 坐席消息回执:sent=已送达用户未读,read=用户已读(仅 sender==="agent" 有意义;镜像前端 ConvMessageStatus) */
+export type SessionMsgStatus = "sent" | "read";
+export type SessionMsg = { ts: number; sender: "user" | "agent"; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string };
+
+// 用户短回执池(坐席回复后模拟用户已读→输入中→回执到达的会话闭环;按会话消息数轮询取用)
+export const USER_ACK_POOL: string[] = [
+  "好的,谢谢!",
+  "明白了,我试一下。",
+  "收到,麻烦你了 🙏",
+  "OK,那我等通知。",
+];
 
 /* 完整客户档案(设计稿 CustomerProfile 合并）—— 坐席接待时一眼看清价值 / 风险。只读快照,
  * 客户侧真实账户操作回 C/D 域;此处的备注 notes 是客服侧留档(随 convo 写入 I.session.convos 持久)。 */
@@ -468,9 +478,10 @@ export const SESSION_CONVOS: SessionConvo[] = [
     customer: CUSTOMER_DIRECTORY[0].nickname,
     profile: CUSTOMER_DIRECTORY[0],
     messages: [
-      { ts: SESS_T0 - 3 * HOUR, sender: "agent", agentName: "Mia", text: "你好,我是你的专属顾问 Mia 👋 有明显的机会第一时间提醒你。" },
-      { ts: SESS_T0 - 40 * 60_000, sender: "agent", agentName: "Mia", text: "你的设备近期有不少时段闲置,升级到 NexionBox Pro,同样插着能明显多赚。", ctaHref: "/store" },
-      { ts: SESS_T0 - 12 * 60_000, sender: "agent", agentName: "Mia", text: "180 天锁仓有更优的收益档位,适合短期不动用的余额,要不要我帮你看下额度?", ctaHref: "/staking" },
+      // 回执镜像前端 seed:用户读过欢迎语,最近两条主动触达还未读(前端侧 unread=2 同源)
+      { ts: SESS_T0 - 3 * HOUR, sender: "agent", agentName: "Mia", status: "read", text: "你好,我是你的专属顾问 Mia 👋 有明显的机会第一时间提醒你。" },
+      { ts: SESS_T0 - 40 * 60_000, sender: "agent", agentName: "Mia", status: "sent", text: "你的设备近期有不少时段闲置,升级到 NexionBox Pro,同样插着能明显多赚。", ctaHref: "/store" },
+      { ts: SESS_T0 - 12 * 60_000, sender: "agent", agentName: "Mia", status: "sent", text: "180 天锁仓有更优的收益档位,适合短期不动用的余额,要不要我帮你看下额度?", ctaHref: "/staking" },
     ],
   },
   {
@@ -489,7 +500,7 @@ export const SESSION_CONVOS: SessionConvo[] = [
     profile: CUSTOMER_DIRECTORY[4],
     messages: [
       { ts: SESS_T0 - 6 * HOUR, sender: "user", text: "KYC 一直没过,能看下原因吗?" },
-      { ts: SESS_T0 - 5 * HOUR, sender: "agent", agentName: "Tomas R.", text: "已核对,证件照模糊导致;重新上传清晰照即可,我已重置重试次数。" },
+      { ts: SESS_T0 - 5 * HOUR, sender: "agent", agentName: "Tomas R.", status: "read", text: "已核对,证件照模糊导致;重新上传清晰照即可,我已重置重试次数。" },
     ],
   },
   {
@@ -499,7 +510,7 @@ export const SESSION_CONVOS: SessionConvo[] = [
     profile: CUSTOMER_DIRECTORY[5],
     messages: [
       { ts: SESS_T0 - 50 * 60_000, sender: "agent", agentName: "系统", text: "由「普通客服 · Aisha O.」主动发起 · 目标:提现频繁用户主动关怀" },
-      { ts: SESS_T0 - 45 * 60_000, sender: "agent", agentName: "Aisha O.", text: "您好,注意到您近期提现较频繁;若对提现进度或台账有任何疑问,我可以帮您逐笔核对。" },
+      { ts: SESS_T0 - 45 * 60_000, sender: "agent", agentName: "Aisha O.", status: "sent", text: "您好,注意到您近期提现较频繁;若对提现进度或台账有任何疑问,我可以帮您逐笔核对。" },
     ],
   },
   {
@@ -516,7 +527,7 @@ export const SESSION_CONVOS: SessionConvo[] = [
     },
     messages: [
       { ts: SESS_T0 - 70 * 60_000, sender: "user", text: "我刚充值了一笔大额,想提一部分出来,但提现一直没动静,是怎么回事?" },
-      { ts: SESS_T0 - 52 * 60_000, sender: "agent", agentName: "Sarah K.", text: "我先帮你看下账户状态。你的实名资料还差一项待补充,这块我转给更专业的合规同事帮你跟进。" },
+      { ts: SESS_T0 - 52 * 60_000, sender: "agent", agentName: "Sarah K.", status: "read", text: "我先帮你看下账户状态。你的实名资料还差一项待补充,这块我转给更专业的合规同事帮你跟进。" },
       { ts: SESS_T0 - 38 * 60_000, sender: "agent", agentName: "系统", text: "Sarah K. 转交给 Tomas R. · 原因:新户首充大额＋KYC 待补,涉及实名与风控复核,转给合规客服跟进更对口。" },
     ],
   },

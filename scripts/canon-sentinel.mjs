@@ -167,7 +167,10 @@ if (!uniGenesis) {
   ]) {
     expectNumber(`genesis.${label}.totalSlots`, extractConstNumber(src, "TOTAL_SLOTS"), canon.genesis.totalSlots, [evidence]);
     expectNumber(`genesis.${label}.royaltyRate`, extractConstNumber(src, "GENESIS_ROYALTY_RATE"), canon.genesis.royaltyRate, [evidence]);
-    expectNumber(`genesis.${label}.unitPrice`, extractFieldNumber(src, "unitPriceUSDT"), canon.genesis.unitPriceUSDT, [evidence]);
+    // 分红延期改造:单一 unitPriceUSDT($9,999) → GENESIS_TIERS 3 档阶梯,unitPriceUSDT 变 computed(当前档)。
+    // 锚点价 = 公售 T1 档 priceUSDT(与 canon.unitPriceUSDT 同源),从 GENESIS_TIERS 的 t1 条目抽取。
+    const t1Match = src.match(/id:\s*"t1"[^}]*priceUSDT:\s*(\d+)/);
+    expectNumber(`genesis.${label}.unitPriceAnchor`, t1Match ? Number(t1Match[1]) : null, canon.genesis.unitPriceUSDT, [evidence]);
     expectNumber(`genesis.${label}.seedSoldSlots`, extractFieldNumber(src, "soldSlots"), canon.genesis.seedSoldSlots, [evidence]);
   }
   expectNumber("genesis.admin.totalSlots", adminGenesis.totalSlots ?? null, canon.genesis.totalSlots, ["app/components/domain-views/g-tabs/data.ts"]);

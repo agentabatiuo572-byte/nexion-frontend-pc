@@ -398,6 +398,7 @@ export interface ThreadMessage {
   vlevel?: string; // 用户 VIP chip
   scriptTag?: string; // 话术标记
   cta?: ThreadCta; // 富 CTA(产品卡 / 链接)
+  receipt?: string; // 送达回执(已读 / 未读)—— 仅最后一条坐席消息由调用方填,镜像前端 iMessage 惯例
 }
 
 // 真人头像(对齐设计稿 Avatar):按名字猜性别 → randomuser.me;name-hash 取固定编号;加载失败露首字母。
@@ -411,7 +412,7 @@ export function photoUrl(name?: string): string {
 // accentVar/role/senderName/vlevel/scriptTag 仍在 props 类型中(兼容旧调用),Telegram 样式不再每条显头像/名字/角色,故不读。
 // resetKey(会话 id)变 → 本次渲染不 pop(切会话时历史消息不飞入);同 key 下新增的消息(index ≥ 上次长度)才 msg-pop 飞入。
 // agentName 传入 → 顶部右侧显「接待{handlerRole} · {agentName}」(Telegram 式不每条显名字时,坐席身份在此一处呈现;handlerRole 区分顾问/客服,缺省客服)。
-export function MessageThread({ messages, relWhen, resetKey, agentName, agentAvatar, handlerRole = "客服" }: { messages: ThreadMessage[]; relWhen: (ts: number) => string; accentVar?: string; resetKey?: string; agentName?: string; agentAvatar?: ReactNode; handlerRole?: string }) {
+export function MessageThread({ messages, relWhen, resetKey, agentName, agentAvatar, handlerRole = "客服", typing = false, typingLabel = "对方正在输入…" }: { messages: ThreadMessage[]; relWhen: (ts: number) => string; accentVar?: string; resetKey?: string; agentName?: string; agentAvatar?: ReactNode; handlerRole?: string; typing?: boolean; typingLabel?: string }) {
   const prevLenRef = useRef(messages.length);
   const prevKeyRef = useRef(resetKey);
   let freshFrom = prevLenRef.current;
@@ -479,10 +480,24 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
               {!m.cta && m.ctaHref && m.ctaHref !== "—" && (
                 <span className="msg-script" style={{ marginTop: 6 }}>CTA → {m.ctaHref}</span>
               )}
+              {m.receipt && <span className="msg-receipt">{m.receipt}</span>}
             </div>
           </div>
         );
       })}
+      {typing && (
+        <div className="msg-in msg-tg from-left" role="status" aria-label={typingLabel}>
+          <div className="msg-col">
+            <div className="msg-bubble user msg-typing">
+              <span className="msg-typing-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
