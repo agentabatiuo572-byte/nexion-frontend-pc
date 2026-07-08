@@ -28,3 +28,8 @@ export function gateLabel(gate: ExecGate): string {
   const parts = gate.roles.filter((r) => r !== "superadmin").map((r) => ROLE_LABEL[r]);
   return [...parts, ROLE_LABEL.superadmin].join(" / ");
 }
+
+/** 统一门槛:拥有 A2 审批权即可确认 pending 票(superadmin 授全 265 权限,自然含)。 */
+export function canApprovePending(principal: AuthPrincipal): boolean {
+  return principal.authorities.includes("platform_a2_operation_approve");
+}

@@ -36,6 +36,7 @@ import {
   type A2Overview,
 } from "@/lib/admin/a2-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import type { ACtx } from "./types";
 
 /* ────────────────── helpers ────────────────── */
@@ -128,6 +129,13 @@ function operationMarkers(w: A2OperationRow): OperationMarker[] {
 export function A2Audit({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
+  const session = useAdminAuth((s) => s.session);
+  const principal = {
+    name: session?.operator || session?.username || operator,
+    role: session?.role,
+    authorities: session?.authorities ?? [],
+  } as AuthPrincipal;
+  const canApprove = canApprovePending(principal);
   const [overview, setOverview] = useState<A2Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -490,7 +498,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
-                      ) : (
+                      ) : canApprove ? (
                         <>
                           <button
                             className="l-btn sm mc"
@@ -501,6 +509,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                             onClick={(e) => { e.stopPropagation(); rejectWo(w); }}
                           >取消</button>
                         </>
+                      ) : (
+                        <span className="bdg dim">待门槛者执行</span>
                       )}
                     </td>
                   </tr>
@@ -736,18 +746,24 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             onClose={() => setWoIdx(null)}
             footer={
               !isFinal ? (
-                <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
-                  <button
-                    className="l-btn mc"
-                    style={{ flex: 1, justifyContent: "center" }}
-                    onClick={() => { setWoIdx(null); approveWo(w); }}
-                  >执行</button>
-                  <button
-                    className="l-btn"
-                    style={{ flex: 1, justifyContent: "center" }}
-                    onClick={() => { setWoIdx(null); rejectWo(w); }}
-                  >取消</button>
-                </div>
+                canApprove ? (
+                  <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
+                    <button
+                      className="l-btn mc"
+                      style={{ flex: 1, justifyContent: "center" }}
+                      onClick={() => { setWoIdx(null); approveWo(w); }}
+                    >执行</button>
+                    <button
+                      className="l-btn"
+                      style={{ flex: 1, justifyContent: "center" }}
+                      onClick={() => { setWoIdx(null); rejectWo(w); }}
+                    >取消</button>
+                  </div>
+                ) : (
+                  <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
+                    <span className="bdg dim">待门槛者执行</span>
+                  </div>
+                )
               ) : null
             }
           >
