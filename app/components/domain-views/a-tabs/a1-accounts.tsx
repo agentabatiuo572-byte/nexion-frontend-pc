@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import Link from "next/link";
-import { Drawer, PaginationExemptionList } from "../design-kit";
+import { Drawer } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import {
   changeA1AccountRole,
   createA1Account,
-  createA1RbacAction,
   deleteA1Account,
   fetchA1Overview,
   resetA1Account2fa,
@@ -15,23 +16,17 @@ import {
   revokeA1AccountSessions,
   updateA1AccountProfile,
   updateA1AccountStatus,
-  updateA1RbacGrants,
   updateA1SecurityBaseline,
   type A1CreateAccountInput,
   type A1Operator,
   type A1Overview,
   type A1PasswordResetResult,
-  type A1RbacAction,
   type A1RoleDefinition,
   type A1SecurityBaseline,
   type A1UpdateAccountInput,
-  type GrantCell,
 } from "@/lib/admin/a1-client";
 import type { ACtx } from "./types";
 
-type DomainGroup = "资金" | "用户/风控" | "增长/内容" | "基座/应急" | "all";
-type MatrixAction = A1RbacAction;
-type DisplayGrantCell = GrantCell | null;
 type SecurityBaselineMeta = {
   key: string;
   name: string;
@@ -54,48 +49,12 @@ const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
   lock_short_min: { key: "lock_short_min", name: "登录失败短锁 · 锁定时长", sub: "触发短锁后锁定多久", unit: "分钟", min: 5, max: 60 },
 };
 
-const DOM_CHIPS: { key: DomainGroup; label: string }[] = [
-  { key: "all", label: "全部" },
-  { key: "资金", label: "资金" },
-  { key: "用户/风控", label: "用户/风控" },
-  { key: "增长/内容", label: "增长/内容" },
-  { key: "基座/应急", label: "基座/应急" },
-];
-
-const GRANT_LABEL: Record<GrantCell, string> = {
-  M: "可发起",
-  C: "可执行",
-  R: "只读",
-  "-": "无权",
-};
-
-const GRANT_OPTIONS: GrantCell[] = ["-", "R", "M", "C"];
-function toGrantCell(value: string | undefined): DisplayGrantCell {
-  return value === "M" || value === "C" || value === "R" || value === "-" ? value : null;
-}
-
-function cellNode(c: DisplayGrantCell): ReactNode {
-  if (c === "M") return <span className="a1-cell mk">M</span>;
-  if (c === "C") return <span className="a1-cell ck">C</span>;
-  if (c === "R") return <span className="a1-cell rd">读</span>;
-  if (c === "-") return <span className="a1-cell no">—</span>;
-  return <span className="a1-cell no">缺数据</span>;
-}
-
-function grantLabel(c: DisplayGrantCell) {
-  return c == null ? "缺数据" : GRANT_LABEL[c];
-}
-
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
 function roleName(roles: A1RoleDefinition[], role: string) {
   return roles.find((r) => r.key === role)?.name ?? role;
-}
-
-function grantAt(row: { grants: readonly string[] }, index: number) {
-  return index in row.grants ? toGrantCell(row.grants[index]) : null;
 }
 
 function firstMatch(value: string | undefined, pattern: RegExp) {
@@ -146,6 +105,7 @@ function openRowAction(event: KeyboardEvent<HTMLTableRowElement>, work: () => vo
 
 export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm } = ctx;
+  const propose = usePropose();
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? null);
   const currentSessionRole = useAdminAuth((s) => s.session?.role ?? s.role);
@@ -153,10 +113,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mutatingAction, setMutatingAction] = useState<string | null>(null);
-  const [dom, setDom] = useState<DomainGroup>("all");
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState(10);
-  const [roleIdx, setRoleIdx] = useState<number | null>(null);
   const [naOpen, setNaOpen] = useState(false);
   const [detailAccount, setDetailAccount] = useState<A1Operator | null>(null);
   const [editAccountTarget, setEditAccountTarget] = useState<A1Operator | null>(null);
@@ -210,7 +168,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   }, [currentAdminId, operators]);
   const currentForceLogoutRole = forceLogoutRole(currentOperator?.role ?? currentSessionRole);
   const securityBaselines = overview?.securityBaselines ?? [];
-  const rbacRows = overview?.rbacMatrix ?? [];
   const stats = overview?.stats;
   const effectiveSupers = stats?.effectiveSupers ?? 0;
   const supersTone = effectiveSupers <= 1 ? "danger" : effectiveSupers === 2 ? "warn" : "ok";
@@ -249,10 +206,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const pageStart = operators.length ? safePage * perPage : 0;
   const pageEnd = Math.min(pageStart + perPage, operators.length);
   const pageRows = operators.slice(pageStart, pageEnd);
-  const mxRows = useMemo(
-    () => rbacRows.filter((m) => dom === "all" || m.domainGroup === dom),
-    [dom, rbacRows],
-  );
   const forceLogoutBlockReason = (op: A1Operator) => {
     const targetId = operatorAccountId(op.id);
     if (currentAdminId !== null && targetId !== null && targetId === currentAdminId) {
@@ -294,10 +247,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         currentRole: op.role,
         roles: roles.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
         guardHint: `有效超管 ${effectiveSupers} 个;降级超管时仍需 ≥2`,
-        actions: rbacRows.map((m) => ({ label: m.action, domainGroup: m.domainGroup })),
-        grantsByRole: Object.fromEntries(
-          roles.map((r, ri) => [r.key, rbacRows.map((m) => grantAt(m, ri) ?? "缺数据")]),
-        ),
       },
       run: (reason, value) => {
         const roleStr = (value || "").trim();
@@ -309,11 +258,21 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           toast("拒绝:剩余有效超管将不足 2 个");
           return;
         }
-        void runMutation(
-          `变更角色 ${displayName} → ${roleName(roles, roleStr)}`,
-          () => changeA1AccountRole(op.id, roleStr, reason, operator),
-          `${displayName} 角色已变更为 ${roleName(roles, roleStr)}`,
-        );
+        const def = findHighOp("a1_account_change_role")!;
+        void propose(toast, {
+          action: `变更角色 · ${displayName} → ${roleName(roles, roleStr)}`,
+          obj: String(op.id),
+          before: roleName(roles, op.role),
+          after: roleName(roles, roleStr),
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "A1",
+          command: def.buildCommand({ accountId: op.id, role: roleStr }),
+          target: def.buildTarget({ accountId: op.id }),
+        });
       },
     });
   };
@@ -342,11 +301,21 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     },
     run: (reason, _value, businessValue) => {
       const verify = `核验 ${businessValue?.channel ?? "—"} · ${businessValue?.verifiedAt || "—"} · 工单 ${businessValue?.ticket || "—"}`;
-      void runMutation(
-        `重置双因子 ${operatorDisplayName(op)}`,
-        () => resetA1Account2fa(op.id, `${reason}；${verify}`, operator),
-        `${operatorDisplayName(op)} 双因子重置已提交 · 该账号需重新绑定`,
-      );
+      const def = findHighOp("a1_account_reset_2fa")!;
+      void propose(toast, {
+        action: `重置双因子 · ${operatorDisplayName(op)}`,
+        obj: String(op.id),
+        before: "已绑定",
+        after: "待重新绑定",
+        type: "acct",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason: `${reason}；${verify}`,
+        sourceDomain: "A1",
+        command: def.buildCommand({ accountId: op.id }),
+        target: def.buildTarget({ accountId: op.id }),
+      });
     },
   });
 
@@ -396,11 +365,26 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       amplifies: false,
       run: (reason) => {
         const finalReason = `${form.reason}；${reason}`;
-        void runMutation(
-          `编辑账号 ${operatorDisplayName(op)}`,
-          () => updateA1AccountProfile(op.id, form, finalReason, operator),
-          `${form.displayName} 资料已更新`,
-        );
+        const def = findHighOp("a1_account_update_profile")!;
+        void propose(toast, {
+          action: `编辑账号 · ${operatorDisplayName(op)}`,
+          obj: String(op.id),
+          before: op.username || "—",
+          after: form.username,
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason: finalReason,
+          sourceDomain: "A1",
+          command: def.buildCommand({
+            accountId: op.id,
+            username: form.username,
+            displayName: form.displayName,
+            email: form.email,
+          }),
+          target: def.buildTarget({ accountId: op.id }),
+        });
         setEditAccountTarget(null);
       },
     });
@@ -423,12 +407,22 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       ),
       amplifies: false,
     run: (reason) => {
-        void runMutation(
-          `禁用账号 ${displayName}`,
-          () => updateA1AccountStatus(op.id, "disabled", reason, operator),
-          `${displayName} 已禁用 · 活跃 session 已由后端吊销`,
-        );
-      },
+      const def = findHighOp("a1_account_status_update")!;
+      void propose(toast, {
+        action: `禁用账号 · ${displayName}`,
+        obj: String(op.id),
+        before: "启用",
+        after: "禁用",
+        type: "acct",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "A1",
+        command: def.buildCommand({ accountId: op.id, status: "disabled" }),
+        target: def.buildTarget({ accountId: op.id }),
+      });
+    },
     });
   };
 
@@ -442,11 +436,21 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     ),
     amplifies: false,
     run: (reason) => {
-      void runMutation(
-        `启用账号 ${operatorDisplayName(op)}`,
-        () => updateA1AccountStatus(op.id, "enabled", reason, operator),
-        `${operatorDisplayName(op)} 已启用`,
-      );
+      const def = findHighOp("a1_account_status_update")!;
+      void propose(toast, {
+        action: `启用账号 · ${operatorDisplayName(op)}`,
+        obj: String(op.id),
+        before: "禁用",
+        after: "启用",
+        type: "acct",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "A1",
+        command: def.buildCommand({ accountId: op.id, status: "enabled" }),
+        target: def.buildTarget({ accountId: op.id }),
+      });
     },
   });
 
@@ -473,11 +477,21 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        void runMutation(
-          `删除账号 ${displayName}`,
-          () => deleteA1Account(op.id, reason, operator),
-          `${displayName} 已删除`,
-        );
+        const def = findHighOp("a1_account_delete")!;
+        void propose(toast, {
+          action: `删除账号 · ${displayName}`,
+          obj: String(op.id),
+          before: op.status === "enabled" ? "启用" : "禁用",
+          after: "已删除",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "A1",
+          command: def.buildCommand({ accountId: op.id }),
+          target: def.buildTarget({ accountId: op.id }),
+        });
         setDetailAccount(null);
       },
     });
@@ -503,11 +517,21 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        void runMutation(
-          `强制登出 ${displayName}`,
-          () => revokeA1AccountSessions(op.id, reason, operator),
-          `${displayName} 全部 session 已强制登出`,
-        );
+        const def = findHighOp("a1_account_force_logout")!;
+        void propose(toast, {
+          action: `强制登出 · ${displayName}`,
+          obj: String(op.id),
+          before: `${op.sessions} active sessions`,
+          after: "0 active sessions",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "A1",
+          command: def.buildCommand({ accountId: op.id }),
+          target: def.buildTarget({ accountId: op.id }),
+        });
       },
     });
   };
@@ -572,79 +596,24 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           toast("拒绝:该安全基线暂不支持前端调整");
           return;
         }
-        void runMutation(
-          `调整安全基线 ${baseline.name}`,
-          () => updateA1SecurityBaseline(backendKey, backendValue, reason, operator),
-          `${baseline.name} 已调整为 ${n} ${baseline.unit}(对下一次登录签发生效)`,
-        );
+        const def = findHighOp("a1_security_baseline_update")!;
+        void propose(toast, {
+          action: `调整 · ${baseline.name}`,
+          obj: backendKey,
+          before: baselineDisplay(baseline),
+          after: `${n} ${baseline.unit ?? ""}`.trim(),
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "A1",
+          command: def.buildCommand({ baselineKey: backendKey, value: backendValue }),
+          target: def.buildTarget({ baselineKey: backendKey }),
+        });
       },
     });
   };
-
-  const editMx = (row: MatrixAction) => {
-    const liveGrants = roles.map((_, index) => grantAt(row, index));
-    openActionConfirm({
-      action: `变更授权 · ${row.action}`,
-      detail: (
-        <>
-          逐角色授权,值用 <span className="acode">M / C / R / -</span>。
-          提交后后端校验最小权限底线:只读审计零写权、账号治理超管授权不可移除、跨域越权组合直接拒绝。
-        </>
-      ),
-      amplifies: false,
-      businessForm: {
-        kind: "permission-matrix",
-        actionLabel: row.action,
-        roles: roles.map((r, index) => ({ key: r.key, label: r.name, current: liveGrants[index] ?? "缺数据" })),
-        guardHint: "后端会校验权限矩阵底线并写入配置与审计",
-      },
-      run: (reason, value) => {
-        const grants = (value || "").split("/").map((s) => s.trim());
-        if (grants.length !== roles.length) {
-          toast(`拒绝:需要 ${roles.length} 项授权(收到 ${grants.length})`);
-          return;
-        }
-        const bad = grants.find((grant) => !GRANT_OPTIONS.includes(grant as GrantCell));
-        if (bad) {
-          toast(`拒绝:无效授权值 "${bad}"`);
-          return;
-        }
-        if (!grants.some((grant, index) => grant !== liveGrants[index])) {
-          toast("没有授权变化");
-          return;
-        }
-        void runMutation(
-          `变更授权 ${row.action}`,
-          () => updateA1RbacGrants(row.id, grants, reason, operator),
-          `${row.action} 授权变更已发布`,
-        );
-      },
-    });
-  };
-
-  const newMxRow = () => openActionConfirm({
-    action: "登记新动作行",
-    detail: (
-      <>
-        新增高敏动作会登记到后端 RBAC 总表;默认写权全关,只读审计默认保留取证读取。登记后再通过「改授权」逐角色开口。
-      </>
-    ),
-    amplifies: false,
-    edit: { kind: "text", current: "动作名", unit: "如:新提现参数审核" },
-    run: (reason, value) => {
-      const action = (value || "").trim();
-      if (action.length < 4) {
-        toast("拒绝:动作名称至少 4 个字符");
-        return;
-      }
-      const domainGroup = dom === "all" ? "基座/应急" : dom;
-      void runMutation(
-        `登记新动作行 ${action}`,
-        () => createA1RbacAction(action, domainGroup, reason, operator),
-        `动作 ${action} 已登记到 RBAC 总表`,
-      );
-    },
-  });
 
   const createAccount = (form: A1CreateAccountInput & { reason: string }) => {
     openActionConfirm({
@@ -660,11 +629,27 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       amplifies: false,
       run: (reason) => {
         const finalReason = `${form.reason}；${reason}`;
-        void runMutation(
-          `新建运营账号 ${form.displayName}(${roleName(roles, form.role)})`,
-          () => createA1Account(form, finalReason, operator),
-          `账号 ${form.displayName} 已创建`,
-        );
+        const def = findHighOp("a1_account_create")!;
+        void propose(toast, {
+          action: `新建运营账号 · ${form.displayName}`,
+          obj: form.username,
+          before: "—",
+          after: form.role,
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason: finalReason,
+          sourceDomain: "A1",
+          command: def.buildCommand({
+            username: form.username,
+            displayName: form.displayName,
+            email: form.email,
+            role: form.role,
+            initialPassword: form.initialPassword,
+          }),
+          target: def.buildTarget({ username: form.username }),
+        });
         setNaOpen(false);
       },
     });
@@ -839,8 +824,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         </div>
       </section>
 
-      <div className="two-col">
-        <section className="l-card">
+      <section className="l-card">
           <div className="l-h">
             <span className="ttl">登录与安全基线</span>
             <span className="sub">· 四条锁死,四项可调(每项单独调)</span>
@@ -866,140 +850,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           </div>
         </section>
 
-        <section className="l-card">
-          <div className="l-h">
-          <span className="ttl">角色定义(c)· 后端角色表</span>
-          <span className="sub">· 点角色看它在矩阵里拿到的全部动作</span>
-          </div>
-          <div className="l-b" style={{ paddingTop: 2 }}>
-            {roles.map((role, index) => (
-              <div className="a1-role" key={role.key} onClick={() => setRoleIdx(index)}>
-                <span className="av" style={{ background: "var(--surface-2)", color: role.color || "var(--ink-2)" }}>{role.av}</span>
-                <span className="bd">
-                  <span className="t">{role.name}</span>
-                  <span className="s">{role.desc}</span>
-                </span>
-                <span className="scope">{role.scope}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">全域权限矩阵(b)· 域 × 动作 × 角色</span>
-          <span className="sub">· 各域页面的权限表都是这张总表的局部投影 · 每行可改授权,变更即发布</span>
-          <div className="r chips">
-            <button className="l-btn sm mc" onClick={newMxRow} disabled={!!mutatingAction || !roles.length} style={{ marginRight: 6 }}>+ 登记新动作行</button>
-            <span className="lb">域</span>
-            {DOM_CHIPS.map((chip) => (
-              <button
-                key={chip.key}
-                className={`chip${dom === chip.key ? " sel" : ""}`}
-                onClick={() => setDom(chip.key)}
-                type="button"
-              >{chip.label}</button>
-            ))}
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl a1-mx" style={{ minWidth: 1020 }}>
-            <thead>
-              <tr>
-                <th>动作(代表性抽样)</th>
-                {roles.map((role) => <th key={role.key}>{role.name}</th>)}
-                <th style={{ textAlign: "right" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {mxRows.map((row) => (
-                <tr key={row.id}>
-                  <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{row.action}</td>
-                  {roles.map((role, index) => (
-                    <td key={role.key}>{cellNode(grantAt(row, index))}</td>
-                  ))}
-                  <td style={{ textAlign: "right" }}>
-                    <button className="l-btn sm mc" onClick={() => editMx(row)} disabled={!!mutatingAction}>改授权</button>
-                  </td>
-                </tr>
-              ))}
-              {!mxRows.length && (
-                <tr>
-                  <td colSpan={roles.length + 2} style={{ color: "var(--ink-4)", textAlign: "center", padding: 24 }}>
-                    暂无该域动作
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ paddingTop: 10 }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12, color: "var(--ink-3)", marginBottom: 8 }}>
-            {GRANT_OPTIONS.map((grant) => (
-              <span key={grant}>{cellNode(grant)} {GRANT_LABEL[grant]}</span>
-            ))}
-          </div>
-          <div className="atint">
-            授权变更走后端接口 `/api/admin/platform/rbac/actions/:actionId/grants`, 后端统一校验最小权限和写入审计。
-          </div>
-        </div>
-      </section>
-
       <p className="f-foot">
-        <b>执行门槛</b>:账号建 / 停 / 启 / 改角色 / 重置双因子 / 强制登出走后端真实接口;安全基线 / RBAC 矩阵恢复 PRD 总表展示,提交动作仍通过后端接口发布。
+        <b>执行门槛</b>:账号建 / 停 / 启 / 改角色 / 重置双因子 / 强制登出走后端真实接口;安全基线恢复 PRD 总表展示,提交动作仍通过后端接口发布。
       </p>
-      <PaginationExemptionList
-        items={[
-          {
-            label: "全域权限矩阵(b)· 域 × 动作 × 角色",
-            kind: "fixed-matrix",
-            maxRows: Math.max(16, rbacRows.length),
-            reason: "固定角色动作矩阵,按域 chip 过滤,全量同屏比翻页更利于授权对比",
-          },
-        ]}
-      />
-
-      {roleIdx !== null && roles[roleIdx] && (() => {
-        const role = roles[roleIdx];
-        const granted = rbacRows.filter((row) => {
-          const grant = grantAt(row, roleIdx);
-          return grant != null && grant !== "-";
-        }).slice(0, 8);
-        return (
-          <Drawer
-            title={`角色 · ${role.name}`}
-            sub={role.desc}
-            onClose={() => setRoleIdx(null)}
-          >
-            <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.6, marginBottom: 10 }}>
-              可访问域:<b style={{ color: "var(--ink-2)" }}>{role.scope}</b>。下表是该角色在全域矩阵中被授予的代表性动作(PRD 总表展示)。
-            </div>
-            <table className="l-tbl">
-              <thead><tr><th>动作</th><th>授权</th></tr></thead>
-              <tbody>
-                {granted.map((row) => {
-                  const grant = grantAt(row, roleIdx);
-                  return (
-                    <tr key={row.id}>
-                      <td style={{ fontSize: 12.5 }}>{row.action}</td>
-                      <td>{cellNode(grant)} <span style={{ marginLeft: 6, fontSize: 11.5, color: "var(--ink-4)" }}>{grantLabel(grant)}</span></td>
-                    </tr>
-                  );
-                })}
-                {!granted.length && (
-                  <tr>
-                    <td colSpan={2} style={{ color: "var(--ink-4)", textAlign: "center", padding: 18 }}>该角色暂无授权动作</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-            <div className="atint" style={{ marginTop: 14 }}>
-              完整授权以矩阵为准;授权变更走后端操作确认接口发布。
-            </div>
-          </Drawer>
-        );
-      })()}
 
       {naOpen && (
         <NewAccountDrawer
