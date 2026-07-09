@@ -13,6 +13,8 @@ import {
   type G7Param,
 } from "@/lib/admin/g7-client";
 import type { GCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const OPERATOR = currentAdminOperator;
 
@@ -62,6 +64,7 @@ function paramEditValue(param: G7Param) {
 
 export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<G7Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -155,11 +158,21 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       edit: { kind: "text", current: paramEditValue(param) },
       run: (reason, value) => {
         if (!value) return;
-        void mutate(
-          `param-${param.key}`,
-          () => updateG7RepurchaseParam(param.key, value, reason, OPERATOR()),
-          `${label} 已更新为 ${value}`,
-        );
+        const def = findHighOp("g7_repurchase_param")!;
+        void propose(ctx.toast, {
+          action: `产品参数调整 · ${label}`,
+          obj: param.key,
+          before: param.displayValue,
+          after: String(value),
+          type: "fund",
+          amplifies: param.b1RedlineTriggered,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G7",
+          command: def.buildCommand({ paramKey: param.key, value }),
+          target: def.buildTarget({ paramKey: param.key }),
+        });
       },
     });
   };

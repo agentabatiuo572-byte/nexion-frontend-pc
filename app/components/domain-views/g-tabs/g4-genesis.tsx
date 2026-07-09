@@ -17,6 +17,8 @@ import {
   type G4Param,
 } from "@/lib/admin/g4-client";
 import type { GCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const OPERATOR = currentAdminOperator;
 
@@ -54,6 +56,7 @@ function paramByKey(overview: G4Overview, key: string) {
 
 export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<G4Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -176,11 +179,21 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       edit: { kind: "text", current: paramEditValue(param) },
       run: (reason, value) => {
         if (!value) return;
-        void mutate(
-          `param-${param.key}`,
-          () => updateG4GenesisParam(param.key, value, reason, OPERATOR()),
-          `${param.name} 已更新为 ${value}`,
-        );
+        const def = findHighOp("g4_genesis_param")!;
+        void propose(ctx.toast, {
+          action: `Genesis 经济参数 · ${param.name}`,
+          obj: param.key,
+          before: param.displayValue,
+          after: String(value),
+          type: "fund",
+          amplifies: param.b1RedlineTriggered,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G4",
+          command: def.buildCommand({ paramKey: param.key, value }),
+          target: def.buildTarget({ paramKey: param.key }),
+        });
       },
     });
   };
@@ -193,28 +206,45 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         : <>恢复一二级市场会恢复 Genesis 节点流转与分红派发，提交前核验 B1 覆盖率，当前 {cov}%。</>,
       amplifies: !marketOn,
       run: (reason) => {
-        void mutate(
-          "market-status",
-          () => updateG4GenesisMarketStatus(!marketOn, reason, OPERATOR()),
-          `Genesis 市场已${marketOn ? "熔断" : "恢复"}`,
-        );
+        const def = findHighOp("g4_genesis_market_status")!;
+        void propose(ctx.toast, {
+          action: marketOn ? "一二级市场熔断" : "恢复一二级市场",
+          obj: "genesis",
+          before: marketOn ? "开市" : "熔断",
+          after: marketOn ? "熔断" : "开市",
+          type: "sos",
+          amplifies: !marketOn,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G4",
+          command: def.buildCommand({ enabled: !marketOn }),
+          target: def.buildTarget({}),
+        });
       },
     });
   };
 
   const runRerunBatch = () => {
-    openConfirm({
+    openActionConfirm({
       action: `重跑今日分红批次 ${dividend.batchNo}`,
-      detail: "批次按日期带防重号:已发过的户不会重复发,只补发失败户。重跑结果落审计。",
-      chips: [["按日期防重 · 只补失败户", "done"], ["落审计", "ready"]],
-      reason: true,
-      okLabel: "确认重跑",
+      detail: "批次按日期带防重号:已发过的户不会重复发,只补发失败户。重跑结果落审计 · 入 A2 待门槛者执行。",
       run: (reason) => {
-        void mutate(
-          "rerun-batch",
-          () => rerunG4GenesisDividendBatch(dividend.batchNo, reason, OPERATOR()),
-          `${dividend.batchNo} 重跑完成`,
-        );
+        const def = findHighOp("g4_genesis_rerun_dividend")!;
+        void propose(ctx.toast, {
+          action: `重跑分红批次 · ${dividend.batchNo}`,
+          obj: dividend.batchNo,
+          before: "已派发(失败户待补)",
+          after: "重跑完成 · 只补失败户",
+          type: "fund",
+          amplifies: true,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G4",
+          command: def.buildCommand({ batchNo: dividend.batchNo }),
+          target: def.buildTarget({ batchNo: dividend.batchNo }),
+        });
       },
     });
   };

@@ -18,6 +18,8 @@ import {
   type G2Overview,
 } from "@/lib/admin/g2-client";
 import type { GCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const OPERATOR = currentAdminOperator;
 type GateKey = "kyc" | "user" | "platform" | "geo";
@@ -57,6 +59,7 @@ function toneClass(tone: string) {
 
 export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<G2Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -169,11 +172,21 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       run: (reason, value) => {
         const nextValue = normalizeCapSubmitValue(cap, value);
         if (!nextValue) return;
-        void mutate(
-          `param-${cap.key}`,
-          () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR()),
-          `${cap.name} 已更新为 ${value}`,
-        );
+        const def = findHighOp("g2_exchange_param")!;
+        void propose(ctx.toast, {
+          action: `兑换参数调整 · ${cap.name}`,
+          obj: cap.key,
+          before: cap.displayValue,
+          after: String(value),
+          type: "fund",
+          amplifies: cap.loosen,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G2",
+          command: def.buildCommand({ paramKey: cap.key, value: nextValue }),
+          target: def.buildTarget({ paramKey: cap.key }),
+        });
       },
     });
   };
@@ -187,47 +200,71 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
         : <>恢复全平台兑换 = 恢复 NEX→USDT 流出,确认放行时核验 B1 覆盖率(当前 {cov}%,红线 {redline}%),同步 J1。</>,
       amplifies: nextEnabled,
       run: (reason) => {
-        void mutate(
-          "swap",
-          () => updateG2ExchangeSwapStatus(nextEnabled, reason, OPERATOR()),
-          `swap 已${nextEnabled ? "恢复" : "熔断"} · 同步 J1`,
-        );
+        const def = findHighOp("g2_exchange_swap_status")!;
+        void propose(ctx.toast, {
+          action: nextEnabled ? "恢复 swap 兑换" : "swap 全局熔断",
+          obj: "exchange",
+          before: swap.enabled ? "运行" : "熔断",
+          after: nextEnabled ? "运行" : "熔断",
+          type: "sos",
+          amplifies: nextEnabled,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G2",
+          command: def.buildCommand({ enabled: nextEnabled }),
+          target: def.buildTarget({}),
+        });
       },
     });
   };
 
   const cancelQueue = (order: G2ExchangeOrder) => {
     setQueueDrawer(null);
-    openConfirm({
+    openActionConfirm({
       action: `强制取消排队单 · ${order.exchangeNo}`,
-      detail: <>取消该兑换排队单,{order.exchangeAmountDisplay} 退回用户余额。常用于地域封锁/风控命中,写原因留痕。</>,
-      chips: [["退回不锁死", "done"], ["落审计", "ready"]],
-      reason: true,
-      okLabel: "确认取消",
+      detail: <>取消该兑换排队单,{order.exchangeAmountDisplay} 退回用户余额。常用于地域封锁/风控命中,写原因留痕 · 入 A2 待门槛者执行。</>,
       run: (reason) => {
-        void mutate(
-          `cancel-${order.exchangeNo}`,
-          () => cancelG2ExchangeQueueOrder(order.exchangeNo, reason, OPERATOR()),
-          `${order.exchangeNo} 排队单已取消 · 退回余额 · 留痕`,
-        );
+        const def = findHighOp("g2_exchange_cancel_queue")!;
+        void propose(ctx.toast, {
+          action: `取消排队单 · ${order.exchangeNo}`,
+          obj: order.exchangeNo,
+          before: "排队中",
+          after: "已取消 · 退回余额",
+          type: "fund",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G2",
+          command: def.buildCommand({ exchangeNo: order.exchangeNo }),
+          target: def.buildTarget({ exchangeNo: order.exchangeNo }),
+        });
       },
     });
   };
 
   const triggerKycReview = (order: G2ExchangeOrder) => {
     setQueueDrawer(null);
-    openConfirm({
+    openActionConfirm({
       action: `提交 KYC 复审 · ${order.exchangeNo}`,
-      detail: <>将该兑换单送入 K5 大额/KYC 复审,服务端会更新兑换状态并写入复审票据。适用于实名状态、累计兑换或人工风控需要复核的排队单。</>,
-      chips: [["K5 复审", "ready"], ["落审计", "done"]],
-      reason: true,
-      okLabel: "提交复审",
+      detail: <>将该兑换单送入 K5 大额/KYC 复审,服务端会更新兑换状态并写入复审票据。适用于实名状态、累计兑换或人工风控需要复核的排队单 · 入 A2 待门槛者执行。</>,
       run: (reason) => {
-        void mutate(
-          `kyc-${order.exchangeNo}`,
-          () => triggerG2ExchangeKycReview(order.exchangeNo, reason, OPERATOR()),
-          `${order.exchangeNo} 已提交 KYC 复审 · 同步 K5`,
-        );
+        const def = findHighOp("g2_exchange_trigger_kyc_review")!;
+        void propose(ctx.toast, {
+          action: `提交 KYC 复审 · ${order.exchangeNo}`,
+          obj: order.exchangeNo,
+          before: "排队中",
+          after: "KYC 复审中 · 同步 K5",
+          type: "fund",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G2",
+          command: def.buildCommand({ exchangeNo: order.exchangeNo }),
+          target: def.buildTarget({ exchangeNo: order.exchangeNo }),
+        });
       },
     });
   };

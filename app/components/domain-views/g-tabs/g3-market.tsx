@@ -19,6 +19,8 @@ import {
   type G3OverrideKey,
 } from "@/lib/admin/g3-client";
 import type { GCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const OPERATOR = currentAdminOperator;
 const CURVE_FIELDS: G3CurveField[] = ["targetPrice", "pumpProbability", "volatilityPct"];
@@ -85,6 +87,7 @@ function changePct(points: number[]) {
 
 export function G3Market({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<G3Overview | null>(null);
   const [history, setHistory] = useState<G3HistoryPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -223,11 +226,29 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       edit: { kind: "text", current: rawValue(current) },
       run: (reason, value) => {
         if (!value) return;
-        void mutate(
-          `curve-${dayIndex}-${field}`,
-          () => updateG3CurveFrame(overview, dayIndex, field, value, reason, OPERATOR()),
-          `D${dayIndex + 1} ${label.name} 已更新为 ${value}${isCurrentDay ? " · 当日生效" : " · 待推进到该日生效"}`,
-        );
+        const frames = overview.frames.map((f) => ({
+          dayIndex: f.dayIndex,
+          targetPrice: String(f.targetPrice),
+          pumpProbability: String(f.pumpProbability),
+          volatilityPct: String(f.volatilityPct),
+        }));
+        const target = frames.find((f) => f.dayIndex === dayIndex);
+        if (target) target[field] = value;
+        const def = findHighOp("g3_curve_update")!;
+        void propose(ctx.toast, {
+          action: `周曲线关键帧 · D${dayIndex + 1} · ${label.name}`,
+          obj: `D${dayIndex + 1}.${field}`,
+          before: fmtCurveVal(field, current),
+          after: String(value),
+          type: "fund",
+          amplifies: amp,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G3",
+          command: def.buildCommand({ frames }),
+          target: def.buildTarget({}),
+        });
       },
     });
   };
@@ -242,11 +263,21 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       edit: ctlOptions[key] ? { kind: "select", current, options: ctlOptions[key] } : { kind: "text", current: editCurrent },
       run: (reason, value) => {
         if (value == null) return;
-        void mutate(
-          `control-${key}`,
-          () => updateG3Control(key, value, reason, OPERATOR()),
-          `${name} 已更新为 ${value}`,
-        );
+        const def = findHighOp("g3_curve_control")!;
+        void propose(ctx.toast, {
+          action: `行情排程控制 · ${name}`,
+          obj: key,
+          before: current,
+          after: String(value),
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G3",
+          command: def.buildCommand({ controlKey: key, value }),
+          target: def.buildTarget({ controlKey: key }),
+        });
       },
     });
   };
@@ -259,11 +290,21 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       edit: { kind: "text", current },
       run: (reason, value) => {
         if (!value) return;
-        void mutate(
-          `override-${overrideKey}`,
-          () => updateG3Override(overrideKey, value, reason, OPERATOR()),
-          `${label} 已更新为 ${value}`,
-        );
+        const def = findHighOp("g3_override")!;
+        void propose(ctx.toast, {
+          action: `手动 override · ${label}`,
+          obj: overrideKey,
+          before: current,
+          after: String(value),
+          type: "fund",
+          amplifies: !!amp,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G3",
+          command: def.buildCommand({ overrideKey, value }),
+          target: def.buildTarget({ overrideKey }),
+        });
       },
     });
   };
@@ -275,11 +316,21 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       : <>暂停后现价冻结在最后值、曲线自动推进暂停,全站 NEX 价格停止更新。风控/合规执行门槛:超管。行情不在 J1 五闸内,作独立 pause 通知 J1 编排面联动。</>,
     amplifies: paused,
     run: (reason) => {
-      void mutate(
-        "override-paused",
-        () => updateG3Override("paused", String(!paused), reason, OPERATOR()),
-        `行情引擎已${paused ? "恢复" : "暂停"} · 通知 J1 编排`,
-      );
+      const def = findHighOp("g3_override")!;
+      void propose(ctx.toast, {
+        action: paused ? "恢复行情引擎" : "暂停行情引擎",
+        obj: "paused",
+        before: paused ? "已暂停" : "运行中",
+        after: paused ? "运行中" : "已暂停",
+        type: "fund",
+        amplifies: paused,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "G3",
+        command: def.buildCommand({ overrideKey: "paused", value: String(!paused) }),
+        target: def.buildTarget({ overrideKey: "paused" }),
+      });
     },
   });
 
@@ -288,11 +339,21 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     detail: <>将当前生效日从 D{curDay} 推进到 {curDay >= 7 ? "D1" : `D${curDay + 1}`}，由后端写入当前帧与全站现价单源，并产生日推进审计。自动排程仍按当前配置继续执行。</>,
     amplifies: false,
     run: (reason) => {
-      void mutate(
-        "advance-frame",
-        () => advanceG3CurrentFrame(reason, OPERATOR()),
-        "行情生效日已手动推进 · 已同步现价单源",
-      );
+      const def = findHighOp("g3_curve_advance")!;
+      void propose(ctx.toast, {
+        action: "手动推进行情生效日",
+        obj: "weekly",
+        before: `D${curDay}`,
+        after: curDay >= 7 ? "D1" : `D${curDay + 1}`,
+        type: "param",
+        amplifies: true,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "G3",
+        command: def.buildCommand({}),
+        target: def.buildTarget({}),
+      });
     },
   });
 
@@ -412,11 +473,21 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
               edit: { kind: "select", current: oracle, options: ["内部做市", "外部喂价"] },
               run: (reason, value) => {
                 if (!value) return;
-                void mutate(
-                  "override-oracle",
-                  () => updateG3Override("oracle", value, reason, OPERATOR()),
-                  `喂价源已切换为 ${value}`,
-                );
+                const def = findHighOp("g3_override")!;
+                void propose(ctx.toast, {
+                  action: "切换喂价源",
+                  obj: "oracle",
+                  before: oracle,
+                  after: String(value),
+                  type: "fund",
+                  amplifies: false,
+                  gate: { roles: [] },
+                  gateLabel: def.gateLabel,
+                  reason,
+                  sourceDomain: "G3",
+                  command: def.buildCommand({ overrideKey: "oracle", value }),
+                  target: def.buildTarget({ overrideKey: "oracle" }),
+                });
               },
             })}>切换源</button></div>
             <div className="p-row"><div className="txt"><div className="k">偏离告警阈值</div><div className="s">现价与喂价源偏离超此即告警</div></div><span className="v">{deviation}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adj("deviationPct", "偏离告警阈值", rawValue(overview.overrides.deviationPct), "范围 0-50%")}>调整</button></div>

@@ -16,6 +16,8 @@ import {
   type G1PositionGroup,
 } from "@/lib/admin/g1-client";
 import type { GCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const OPERATOR = currentAdminOperator;
 const CANONICAL_USDT_TIERS = ["usdt30d", "usdt90d", "usdt180d", "usdt365d"] as const;
@@ -40,6 +42,7 @@ function messageOf(error: unknown) {
 
 export function G1Staking({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<G1Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -153,11 +156,21 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       edit: { kind: "text", current: pool.apy },
       run: (reason, value) => {
         if (!value) return;
-        void mutate(
-          `apy-${pool.tierKey}`,
-          () => updateG1StakingPoolParam(pool.tierKey, "apy", value, reason, OPERATOR()),
-          `${pool.product} ${displayTerm(pool)} APY 已更新为 ${value} · 仅新单生效`,
-        );
+        const def = findHighOp("g1_staking_pool_param")!;
+        void propose(ctx.toast, {
+          action: `APY 调整 · ${pool.product} · ${displayTerm(pool)}`,
+          obj: pool.tierKey,
+          before: pool.apyDisplay,
+          after: String(value),
+          type: "param",
+          amplifies: true,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G1",
+          command: def.buildCommand({ tierKey: pool.tierKey, paramKey: "apy", value }),
+          target: def.buildTarget({ tierKey: pool.tierKey }),
+        });
       },
     });
   };
@@ -169,11 +182,21 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       edit: { kind: "text", current: pool.penalty },
       run: (reason, value) => {
         if (!value) return;
-        void mutate(
-          `penalty-${pool.tierKey}`,
-          () => updateG1StakingPoolParam(pool.tierKey, "penalty", value, reason, OPERATOR()),
-          `${pool.product} ${displayTerm(pool)} 罚款已更新为 ${value} · 仅新单生效`,
-        );
+        const def = findHighOp("g1_staking_pool_param")!;
+        void propose(ctx.toast, {
+          action: `罚款调整 · ${pool.product} · ${displayTerm(pool)}`,
+          obj: pool.tierKey,
+          before: pool.penaltyDisplay,
+          after: String(value),
+          type: "param",
+          amplifies: true,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G1",
+          command: def.buildCommand({ tierKey: pool.tierKey, paramKey: "penalty", value }),
+          target: def.buildTarget({ tierKey: pool.tierKey }),
+        });
       },
     });
   };
@@ -185,11 +208,21 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       edit: { kind: "text", current: pool.minStake },
       run: (reason, value) => {
         if (!value) return;
-        void mutate(
-          `min-${pool.tierKey}`,
-          () => updateG1StakingPoolParam(pool.tierKey, "min", value, reason, OPERATOR()),
-          `${pool.product} ${displayTerm(pool)} 最小额已更新为 ${value} · 仅新单生效`,
-        );
+        const def = findHighOp("g1_staking_pool_param")!;
+        void propose(ctx.toast, {
+          action: `最小额调整 · ${pool.product} · ${displayTerm(pool)}`,
+          obj: pool.tierKey,
+          before: pool.minDisplayValue,
+          after: String(value),
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G1",
+          command: def.buildCommand({ tierKey: pool.tierKey, paramKey: "min", value }),
+          target: def.buildTarget({ tierKey: pool.tierKey }),
+        });
       },
     });
   };
@@ -200,11 +233,21 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       action: `${pool.enabled ? "停售" : "恢复开售"}档位 · ${pool.product} · ${displayTerm(pool)}`,
       detail: <>{pool.enabled ? "停售只停新锁,在锁单照常计息到期。" : `恢复该档新锁仓开放,后端会按真实 B1 覆盖率红线校验(当前 ${cov}%,红线 ${redline}%)。`}操作确认。</>,
       run: (reason) => {
-        void mutate(
-          `sale-${pool.tierKey}`,
-          () => updateG1StakingPoolSaleStatus(pool.tierKey, nextEnabled, reason, OPERATOR()),
-          `${pool.product} ${displayTerm(pool)} 已${pool.enabled ? "停售" : "恢复开售"} · 在锁不受影响`,
-        );
+        const def = findHighOp("g1_staking_pool_sale_status")!;
+        void propose(ctx.toast, {
+          action: `${nextEnabled ? "恢复开售" : "停售"} · ${pool.product} · ${displayTerm(pool)}`,
+          obj: pool.tierKey,
+          before: pool.enabled ? "开售" : "停售",
+          after: nextEnabled ? "开售" : "停售",
+          type: "fund",
+          amplifies: nextEnabled,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G1",
+          command: def.buildCommand({ tierKey: pool.tierKey, enabled: nextEnabled }),
+          target: def.buildTarget({ tierKey: pool.tierKey }),
+        });
       },
     });
   };
@@ -217,11 +260,21 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         ? <>解除熔断:该档恢复新锁开放,在锁单回正常计息;后端会按真实 B1 覆盖率红线校验(当前 {cov}%,红线 {redline}%)。</>
         : <>熔断该档:立即停新锁 + 在锁单按处置方案走(slashed)。处置方案写进操作理由,同步 J1 staking 闸编排。</>,
       run: (reason) => {
-        void mutate(
-          `kill-${pool.tierKey}`,
-          () => updateG1StakingPoolKillStatus(pool.tierKey, nextKilled, reason, OPERATOR()),
-          `${pool.product} ${displayTerm(pool)} 已${pool.killed ? "解除熔断" : "熔断"} · 同步 J1/B5`,
-        );
+        const def = findHighOp("g1_staking_pool_kill_status")!;
+        void propose(ctx.toast, {
+          action: `${nextKilled ? "熔断" : "解除熔断"} · ${pool.product} · ${displayTerm(pool)}`,
+          obj: pool.tierKey,
+          before: pool.killed ? "已熔断" : "正常",
+          after: nextKilled ? "已熔断" : "正常",
+          type: "sos",
+          amplifies: !nextKilled,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "G1",
+          command: def.buildCommand({ tierKey: pool.tierKey, killed: nextKilled }),
+          target: def.buildTarget({ tierKey: pool.tierKey }),
+        });
       },
     });
   };
