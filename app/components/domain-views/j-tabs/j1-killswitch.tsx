@@ -10,6 +10,8 @@ import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
 import type { AutoRuleRow, EmergencySlaRow, JGate } from "@/lib/admin/j-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 type Gate = JGate;
 const IMPACT_LABEL: Record<string, string> = { immediate: "立即出钱", delayed: "延迟出钱", none: "不出钱" };
@@ -17,6 +19,7 @@ const PROPOSAL_LABEL: Record<string, string> = { idle: "无", pending: "待确�
 
 export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency, contentLoading } = ctx;
+  const propose = usePropose();
   const data = emergency.killSwitch;
   const gates = data?.activeGates ?? [];
   const EMER_SLA = data?.emergencySla ?? [];
@@ -72,7 +75,21 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <><b>{g.name}</b>(<span className="mono">{g.key}</span> · {g.cap})· {g.desc} · 资金语义:<b>{IMPACT_LABEL[g.coverageImpactCategory]}</b> · 熔断方向不前置 B1 · 常规轨(emergency=false)· server 即时拒绝下游能力请求。<b>处置预案(disposition_plan,可选)</b>:在途请求冻结待恢复 · 客服话术同步 · 恢复条件 = 根因消除 + 执行门槛操作确认。</>
     ),
     run: (reason) => {
-      runBackend(actions.toggleJ1KillSwitch(g.key, false, reason), `已熔断 ${g.name} · 写 A2`);
+      const def = findHighOp("j1_gate_kill")!;
+      void propose(ctx.toast, {
+        action: `Kill-Switch 熔断 · ${g.name}`,
+        obj: g.key,
+        before: "在线",
+        after: "已熔断",
+        type: "sos",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "J1",
+        command: def.buildCommand({ gateKey: g.key }),
+        target: def.buildTarget({ gateKey: g.key }),
+      });
     },
   });
 
@@ -85,7 +102,21 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         : <>不挂 B1(非放大流出闸)· 直接恢复。</>} 恢复恒走常规轨,不可应急加速(§15.1)。</>
     ),
     run: (reason) => {
-      runBackend(actions.toggleJ1KillSwitch(g.key, true, reason), `${g.name} 已恢复 · B1 前置核验已记录`);
+      const def = findHighOp("j1_gate_resume")!;
+      void propose(ctx.toast, {
+        action: `Kill-Switch 恢复 · ${g.name}`,
+        obj: g.key,
+        before: "已熔断",
+        after: "在线",
+        type: "sos",
+        amplifies: true,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "J1",
+        command: def.buildCommand({ gateKey: g.key }),
+        target: def.buildTarget({ gateKey: g.key }),
+      });
     },
   });
 
@@ -99,8 +130,23 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         <>一次性熔断<b>已选 {targets.length} 闸</b> · 用于<b>监管点名 / 法务事件</b>等重大合规触发 · 工单进 A2 队列最高优先级 · 执行门槛 SLA <b>{slaMins} 分钟</b> · 所有步骤标 emergency=true 高亮审计 · <b>已选闸:{targets.map((g) => g.name).join(" / ")}</b> · 资金影响:{targets.map((g) => IMPACT_LABEL[g.coverageImpactCategory]).join(" / ")} · 每闸独立写 A2 事件。</>
       ),
       run: (reason) => {
+        const def = findHighOp("j1_batch_kill")!;
+        const keys = targets.map((g) => g.key);
+        void propose(ctx.toast, {
+          action: `应急批量熔断 · ${targets.length} 闸`,
+          obj: keys.join(","),
+          before: "在线",
+          after: "全部熔断",
+          type: "sos",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "J1",
+          command: def.buildCommand({ keys }),
+          targets: def.buildTargets?.({ keys }),
+        });
         setSel({});
-        runBackend(actions.emergencyDisableJ1(targets.map((g) => g.key), reason), `应急批量熔断 · ${targets.length} 闸 · emergency=true`);
       },
     });
   };

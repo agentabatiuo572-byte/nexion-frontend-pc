@@ -9,12 +9,15 @@ import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
 import type { GeoCountry, GeoEndpoint } from "@/lib/admin/j-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 type Entry = GeoCountry;
 const ISO_RE = /^[A-Z]{2}$/;
 
 export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency, contentLoading } = ctx;
+  const propose = usePropose();
   const data = emergency.geoBlock;
   if (contentLoading && !data) {
     return <section className="deriv-card"><div className="deriv-h"><span className="ttl">J2 数据加载中</span><span className="sub">· 正在读取地区封锁接口</span></div></section>;
@@ -45,12 +48,44 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
   const rmBanned = (c: Entry) => openActionConfirm({
     action: `黑名单解封 · ${c.cc}(${c.name})`,
     detail: <>从全局封禁名单移除 <b>{c.cc}</b>({c.name})· <b>恢复方向</b>:该国 IP 段重新开放对应功能入口 · 已存量账户从只读态切回完整状态 · 同步重算 B 域漏斗地域归因 · <b>合规审计 执行门槛 必参</b>(非财务)· 解封恒走常规轨。</>,
-    run: (reason) => runBackend(actions.updateJ2Country(c.cc, "allowed", reason), `${c.cc} 已解封 · 已移出全局封禁名单`),
+    run: (reason) => {
+      const def = findHighOp("j2_country_manage")!;
+      void propose(ctx.toast, {
+        action: `解封国家 · ${c.cc}`,
+        obj: c.cc,
+        before: "封锁",
+        after: "允许",
+        type: "param",
+        amplifies: true,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "J2",
+        command: def.buildCommand({ countryCode: c.cc, status: "allowed" }),
+        target: def.buildTarget({ countryCode: c.cc }),
+      });
+    },
   });
   const rmLimited = (c: Entry) => openActionConfirm({
     action: `受限解除 · ${c.cc}(${c.name})`,
     detail: <>从受限名单移除 <b>{c.cc}</b>({c.name})· 该国新增资金类操作放开 · 走常规 操作确认。</>,
-    run: (reason) => runBackend(actions.updateJ2Country(c.cc, "allowed", reason), `${c.cc} 受限已解除`),
+    run: (reason) => {
+      const def = findHighOp("j2_country_manage")!;
+      void propose(ctx.toast, {
+        action: `受限解除 · ${c.cc}`,
+        obj: c.cc,
+        before: "受限",
+        after: "允许",
+        type: "param",
+        amplifies: true,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "J2",
+        command: def.buildCommand({ countryCode: c.cc, status: "allowed" }),
+        target: def.buildTarget({ countryCode: c.cc }),
+      });
+    },
   });
   const addTo = (list: "banned" | "limited") => openActionConfirm({
     action: list === "banned" ? "新增黑名单 · 全局封禁" : "新增受限名单",
@@ -61,10 +96,22 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
     run: (reason, newValue) => {
       const cc = (newValue ?? "").trim().toUpperCase();
       if (!ISO_RE.test(cc)) { toast("ISO 国家码无效 · 需 2 位字母(如 VE)"); return; }
-      runBackend(
-        actions.updateJ2Country(cc, list === "banned" ? "blocked" : "limited", reason),
-        `${cc} 已加入${list === "banned" ? "黑名单 · 全功能封禁" : "受限名单 · 只读"}(A2 留痕)`,
-      );
+      const status = list === "banned" ? "blocked" : "limited";
+      const def = findHighOp("j2_country_manage")!;
+      void propose(ctx.toast, {
+        action: `${list === "banned" ? "加入封禁" : "加入受限"} · ${cc}`,
+        obj: cc,
+        before: "允许",
+        after: list === "banned" ? "封锁" : "受限",
+        type: "param",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "J2",
+        command: def.buildCommand({ countryCode: cc, status }),
+        target: def.buildTarget({ countryCode: cc }),
+      });
     },
   });
   const editEndpoint = (e: GeoEndpoint) => {
@@ -104,7 +151,21 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
       const codes = (newValue ?? "").toUpperCase().split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
       const valid = codes.filter((c) => ISO_RE.test(c));
       if (!valid.length) { toast("请粘贴至少一个有效 ISO2 国家码(如 VE, IR, KP),未执行"); return; }
-      runBackend(actions.emergencyBlockJ2(valid, reason), `应急封锁 ${valid.length} 国(${valid.join("/")})· A2 emergency=true`);
+      const def = findHighOp("j2_emergency_block")!;
+      void propose(ctx.toast, {
+        action: `应急批量封锁 · ${valid.length} 国`,
+        obj: valid.join(","),
+        before: "允许",
+        after: "全部封锁",
+        type: "sos",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "J2",
+        command: def.buildCommand({ countries: valid }),
+        targets: def.buildTargets?.({ countries: valid }),
+      });
     },
   });
 

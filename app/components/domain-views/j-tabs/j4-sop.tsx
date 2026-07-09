@@ -10,6 +10,8 @@ import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
 import type { J4PlaybookCreateInput, Playbook } from "@/lib/admin/j-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 /* 域 badge → 色族(danger=J 域 / warning=D2 / brand=I5 / cyan=I3,I2 / brand-2=C2,K1 / success=B1) */
 const DOM_CLS: Record<string, string> = { J1: "dj", J2: "dj", D2: "dd", I5: "di5", I3: "di", I2: "di", C2: "dc", K1: "dc", B1: "db" };
@@ -67,6 +69,7 @@ export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
 
 export function J4Sop({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency, contentLoading } = ctx;
+  const propose = usePropose();
   const [scene, setScene] = useState("全部");
   const data = emergency.sop;
   if (contentLoading && !data) {
@@ -165,9 +168,49 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       </>
     ),
     run: (reason) => {
-      runBackend(actions.executeJ4Playbook(p.code, isEmer, reason), `${p.code} ${isEmer ? "应急执行 · A2 emergency=true" : "常规执行 · A2 留痕"}`);
+      const def = findHighOp("j4_playbook_execute")!;
+      void propose(ctx.toast, {
+        action: `${p.code} ${isEmer ? "应急执行" : "常规执行"}`,
+        obj: p.code,
+        before: "待执行",
+        after: isEmer ? "应急执行 · A2 emergency=true" : "常规执行 · A2 留痕",
+        type: "sos",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "J4",
+        command: def.buildCommand({ code: p.code, emergency: isEmer }),
+        target: def.buildTarget({ code: p.code }),
+      });
     },
   });
+
+  // 回滚单次剧本执行:跨域写入(配置恢复 / 通知停发)· 恒走常规轨 · 不可应急加速。
+  const rollbackPb = (exec: { executionId: string; code: string; name?: string }) =>
+    openActionConfirm({
+      action: `回滚剧本执行 · ${exec.executionId}`,
+      detail: (
+        <><b>{exec.code}</b>(<span className="mono">{exec.executionId}</span>)的本次执行将按 rollback 方案回滚 · 跨域写入(配置恢复 / 通知停发)· 恒走常规轨 · 不可应急加速。</>
+      ),
+      run: (reason) => {
+        const def = findHighOp("j4_playbook_rollback")!;
+        void propose(ctx.toast, {
+          action: `回滚 · ${exec.executionId}`,
+          obj: exec.executionId,
+          before: "已执行",
+          after: "已回滚",
+          type: "sos",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "J4",
+          command: def.buildCommand({ code: exec.code, executionId: exec.executionId }),
+          target: def.buildTarget({ code: exec.code, executionId: exec.executionId }),
+        });
+      },
+    });
 
   return (
     <div>
@@ -285,7 +328,17 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
                 <span><span className="role">操作员</span> {e.operator}</span>
                 <span><span className="role">门槛</span> {e.roleGate}</span>
               </div>
-              <div className="c acts"><button onClick={() => toast(`打开执行追溯详情 · ${e.code} · ${e.ts} · 含每步原子动作 A2 工单链`)}>查看追溯</button></div>
+              <div className="c acts">
+                <button onClick={() => toast(`打开执行追溯详情 · ${e.code} · ${e.ts} · 含每步原子动作 A2 工单链`)}>查看追溯</button>
+                {e.rollbackStatus !== "ROLLED_BACK" && (
+                  <button
+                    className="rollback"
+                    onClick={() => rollbackPb({ executionId: e.executionId || e.ts, code: e.code, name: e.name })}
+                  >
+                    回滚
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div></div>

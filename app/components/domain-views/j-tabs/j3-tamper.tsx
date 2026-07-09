@@ -11,6 +11,8 @@ import Link from "next/link";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const W = 720;
 const H = 200;
@@ -18,14 +20,9 @@ const H = 200;
 /** J3 页头 CTA(挂 DomainHeader 右槽):导出报表(无 操作确认)+ 告警阈值配置(操作确认)。 */
 export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency } = ctx;
+  const propose = usePropose();
   const alert = emergency.tamper?.alertConfig;
   const cur = `${alert?.threshold ?? 10} · K4=${alert?.feedK4 === false ? "off" : "on"}`;
-  const runBackend = (task: Promise<void>, ok: string) => {
-    task
-      .then(() => actions.reloadJEmergency())
-      .then(() => toast(ok))
-      .catch((error) => toast(`操作失败 · ${error instanceof Error ? error.message : "J3_API_FAILED"}`));
-  };
   const alertConfig = () => openActionConfirm({
     action: "配置篡改告警阈值 / 喂 K4 开关",
     detail: <><b>账户级篡改告警频次阈值</b> · 当前 <b className="mono">{cur}</b>(范围 1–100 次/24h)· 超此频次单账户判为异常篡改告警。<b>篡改告警喂 K4 风险评分</b>:作弊信号作为风险评分输入。监控敏感度变更影响风控信号 · 风控 操作员 · 执行门槛:风控 / 超管  · 携 Idempotency-Key · A2 留痕。</>,
@@ -34,7 +31,21 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
       const next = newValue ?? cur;
       const threshold = Number(next.match(/\d+/)?.[0] ?? alert?.threshold ?? 10);
       const feedK4 = !/K4\s*=\s*off|feedK4\s*=\s*false|off/i.test(next);
-      runBackend(actions.updateJ3AlertConfig(threshold, feedK4, reason), "告警阈值配置已确认生效");
+      const def = findHighOp("j3_alert_config")!;
+      void propose(ctx.toast, {
+        action: "配置篡改告警阈值 / 喂 K4 开关",
+        obj: "default",
+        before: String(alert?.threshold ?? "—"),
+        after: `阈值 ${threshold} · K4 ${feedK4 ? "on" : "off"}`,
+        type: "param",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "J3",
+        command: def.buildCommand({ threshold, feedK4 }),
+        target: def.buildTarget({}),
+      });
     },
   });
   return (

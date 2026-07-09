@@ -249,6 +249,8 @@ export type SopExecution = {
   steps: string[];
   operator: string;
   roleGate: string;
+  executionId?: string;
+  rollbackStatus?: string;
 };
 export type J4ActionOption = {
   value: string;
@@ -578,6 +580,8 @@ function normalizeSop(raw: unknown): SopOverview {
       steps: strArray(row.steps),
       operator: str(row.operator),
       roleGate: str(row.roleGate),
+      executionId: str(row.executionId),
+      rollbackStatus: str(row.rollbackStatus),
     })),
     sources: strArray(data.sources),
   };
