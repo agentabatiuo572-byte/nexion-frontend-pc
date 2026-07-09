@@ -23,7 +23,7 @@ export interface ProposeSpec {
   reason: string;
   sourceDomain: string;
   command: ReplayCommand;
-  target: LockTarget;
+  target?: LockTarget; // 多锁 op 仅传 targets,不传 target(避免后端 uk_target 重复插锁)
   targets?: LockTarget[]; // 多锁(J 域 batch 用)
 }
 
@@ -43,7 +43,7 @@ export interface ProposeDeps {
     reason: string;
     sourceDomain: string;
     command: ReplayCommand;
-    target: LockTarget;
+    target?: LockTarget;
     targets?: LockTarget[];
   }) => Promise<unknown>;
   toast: (s: string) => void;
