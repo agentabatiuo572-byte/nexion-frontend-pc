@@ -19,6 +19,8 @@ import {
   type UserImpersonationSession,
   type UserSession,
 } from "@/lib/admin/user360-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
@@ -113,6 +115,7 @@ function activeImpersonation(session: UserImpersonationSession) {
 
 export function C2Actions({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<UserAccountActionOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -228,85 +231,167 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   const freeze = (account: User360Profile) => openActionConfirm({
     action: `冻结账户 · ${displayAccount(account)}`,
-    detail: "确认后写入后端账户状态,冻结动作同步吊销该用户全部活跃会话。刷新后以服务端账户与会话查询结果为准。",
+    detail: "确认后写入 A2 待确认队列,由门槛者执行后落账户状态为 FROZEN,并同步吊销该用户全部活跃会话。刷新后以服务端账户与会话查询结果为准。",
     amplifies: false,
     run: (reason) => {
       const id = accountId(account);
       if (!id) return toast("账户缺少后端ID");
-      void perform(
-        () => updateUserStatus(id, "FROZEN", reason, OPERATOR()).then(() => `${displayAccount(account)} 已冻结 · 活跃会话已吊销`),
-        "账户已冻结",
-      );
+      const def = findHighOp("c2_account_freeze")!;
+      void propose(toast, {
+        action: `冻结账户 · ${displayAccount(account)}`,
+        obj: id,
+        before: "ACTIVE",
+        after: "FROZEN",
+        type: "acct",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "C2",
+        command: def.buildCommand({ userId: id }),
+        target: def.buildTarget({ userId: id }),
+      });
     },
   });
 
   const unfreeze = (account: User360Profile) => openActionConfirm({
     action: `恢复账户 · ${displayAccount(account)}`,
-    detail: "恢复后账户状态改回 ACTIVE。已被踢下线的会话不会复活,用户需要重新登录。",
+    detail: "恢复后账户状态改回 ACTIVE。提交后进入 A2 待确认队列,门槛者确认后落库。已被踢下线的会话不会复活,用户需要重新登录。",
     amplifies: true,
     run: (reason) => {
       const id = accountId(account);
       if (!id) return toast("账户缺少后端ID");
-      void perform(
-        () => updateUserStatus(id, "ACTIVE", reason, OPERATOR()).then(() => `${displayAccount(account)} 已恢复为正常状态`),
-        "账户已恢复",
-      );
+      const def = findHighOp("c2_account_unfreeze")!;
+      void propose(toast, {
+        action: `恢复账户 · ${displayAccount(account)}`,
+        obj: id,
+        before: "FROZEN",
+        after: "ACTIVE",
+        type: "acct",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "C2",
+        command: def.buildCommand({ userId: id }),
+        target: def.buildTarget({ userId: id }),
+      });
     },
   });
 
   const logoutAll = (account: User360Profile) => openActionConfirm({
     action: `强制登出 · ${displayAccount(account)}`,
-    detail: `吊销该用户当前 ${sessionCounts.get(accountId(account)) ?? 0} 个活跃会话,写入 C2 会话处置审计。`,
+    detail: `吊销该用户当前 ${sessionCounts.get(accountId(account)) ?? 0} 个活跃会话。提交后进入 A2 待确认队列,门槛者确认后整链吊销并写 C2 会话处置审计。`,
     amplifies: false,
     run: (reason) => {
       const id = accountId(account);
       if (!id) return toast("账户缺少后端ID");
-      void perform(
-        () => revokeUserSessions(id, reason, OPERATOR()).then(() => `${displayAccount(account)} 全部活跃会话已踢线`),
-        "会话已踢线",
-      );
+      const def = findHighOp("c2_session_revoke_all")!;
+      void propose(toast, {
+        action: `强制登出 · ${displayAccount(account)}`,
+        obj: id,
+        before: `${sessionCounts.get(accountId(account)) ?? 0} 个活跃会话`,
+        after: "0 个活跃会话",
+        type: "acct",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "C2",
+        command: def.buildCommand({ userId: id }),
+        target: def.buildTarget({ userId: id }),
+      });
     },
   });
 
   const startImp = () => openActionConfirm({
     action: "发起模拟登录",
-    detail: "输入用户编码或后端ID。确认后创建后端 impersonation 会话,刷新后在近期会话里展示真实 sessionNo 和剩余时间。",
+    detail: "输入用户编码或后端ID。确认后提交 A2 待确认队列,门槛者确认后创建后端 impersonation 会话,刷新后在近期会话里展示真实 sessionNo 和剩余时间。",
     amplifies: false,
     edit: { kind: "text", current: accounts[0]?.userNo ?? "U00000000", unit: "用户编码" },
     run: (reason, value) => {
-      void perform(async () => {
-        const target = await resolveAccount(value);
-        await startUserImpersonation(accountId(target), reason, OPERATOR(), 30);
-        return `模拟登录 ${displayAccount(target)} 已授权 · 只读 30min`;
-      }, "模拟登录已授权");
+      void (async () => {
+        try {
+          const target = await resolveAccount(value);
+          const id = accountId(target);
+          if (!id) { toast("账户缺少后端ID"); return; }
+          const def = findHighOp("c2_impersonate_start")!;
+          await propose(toast, {
+            action: `发起模拟登录 · ${displayAccount(target)}`,
+            obj: id,
+            before: "—",
+            after: "只读 30min",
+            type: "acct",
+            amplifies: false,
+            gate: { roles: [] },
+            gateLabel: def.gateLabel,
+            reason,
+            sourceDomain: "C2",
+            command: def.buildCommand({ userId: id, ttlMinutes: 30 }),
+            target: def.buildTarget({ userId: id }),
+          });
+        } catch (err) {
+          toast(errorMessage(err));
+        }
+      })();
     },
   });
 
   const endImp = (session: UserImpersonationSession) => openActionConfirm({
     action: `终止模拟会话 · ${text(session.sessionNo)}`,
-    detail: `立即终止 ${displayAccount(session)} 的 impersonation 会话,结束人和原因写入后端记录。`,
+    detail: `立即终止 ${displayAccount(session)} 的 impersonation 会话。提交后进入 A2 待确认队列,门槛者确认后结束人和原因写入后端记录。`,
     amplifies: false,
     run: (reason) => {
       const sessionNo = text(session.sessionNo, "");
       if (!sessionNo) return toast("会话缺少 sessionNo");
-      void perform(
-        () => terminateUserImpersonation(sessionNo, reason, OPERATOR()).then(() => `${sessionNo} 已终止`),
-        "模拟会话已终止",
-      );
+      const def = findHighOp("c2_impersonate_terminate")!;
+      void propose(toast, {
+        action: `终止模拟会话 · ${sessionNo}`,
+        obj: sessionNo,
+        before: "ACTIVE",
+        after: "TERMINATED",
+        type: "acct",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "C2",
+        command: def.buildCommand({ sessionNo }),
+        target: def.buildTarget({ sessionNo }),
+      });
     },
   });
 
   const addList = (kind: "ALLOW" | "BLOCK") => openActionConfirm({
     action: kind === "ALLOW" ? "加入信任名单" : "加入禁入名单",
-    detail: "输入用户编码或后端ID。确认后写入后端名单,刷新后以服务端名单表为准。",
+    detail: "输入用户编码或后端ID。确认后提交 A2 待确认队列,门槛者确认后写入后端名单,刷新后以服务端名单表为准。",
     amplifies: false,
     edit: { kind: "text", current: accounts[0]?.userNo ?? "U00000000", unit: "用户编码" },
     run: (reason, value) => {
-      void perform(async () => {
-        const target = await resolveAccount(value);
-        await upsertUserAccountList(accountId(target), kind, reason, OPERATOR());
-        return `${displayAccount(target)} 已加入${kind === "ALLOW" ? "信任" : "禁入"}名单`;
-      }, "名单已更新");
+      void (async () => {
+        try {
+          const target = await resolveAccount(value);
+          const id = accountId(target);
+          if (!id) { toast("账户缺少后端ID"); return; }
+          const def = findHighOp("c2_blocklist_upsert")!;
+          await propose(toast, {
+            action: `${kind === "ALLOW" ? "加入信任名单" : "加入禁入名单"} · ${displayAccount(target)}`,
+            obj: id,
+            before: kind === "ALLOW" ? "无信任名单" : "无禁入名单",
+            after: kind === "ALLOW" ? "信任" : "禁入",
+            type: "acct",
+            amplifies: false,
+            gate: { roles: [] },
+            gateLabel: def.gateLabel,
+            reason,
+            sourceDomain: "C2",
+            command: def.buildCommand({ userId: id, kind }),
+            target: def.buildTarget({ userId: id }),
+          });
+        } catch (err) {
+          toast(errorMessage(err));
+        }
+      })();
     },
   });
 

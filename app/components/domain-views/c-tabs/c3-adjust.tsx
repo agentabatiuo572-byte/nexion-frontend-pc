@@ -18,6 +18,8 @@ import {
   type UserAssetAdjustmentOverview,
   type UserPage,
 } from "@/lib/admin/user360-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
@@ -105,6 +107,7 @@ function errorMessage(error: unknown) {
 
 export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<UserAssetAdjustmentOverview | null>(null);
   const [pending, setPending] = useState<UserPage<UserAssetAdjustment>>(() => emptyPage(10));
   const [suspended, setSuspended] = useState<UserPage<UserAssetAdjustment>>(() => emptyPage(5));
@@ -231,20 +234,29 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       ),
       amplifies: backendDirection === "CREDIT",
       run: (reason) => {
-        void perform(
-          async () => {
-            const saved = await createUserAssetAdjustment(
-              accountId(selectedUser),
-              asset,
-              backendDirection,
-              String(amount),
-              `${reasonCode} · ${reason}`,
-              OPERATOR(),
-            );
-            return `调整单 ${text(saved.adjustmentNo)} 已提交复核`;
-          },
-          "调整单已提交复核",
-        );
+        const id = accountId(selectedUser);
+        if (!id) { toast("账户缺少后端ID"); return; }
+        const finalReason = `${reasonCode} · ${reason}`;
+        const def = findHighOp("c3_adjust_create")!;
+        void propose(toast, {
+          action: `资产调整 · ${displayUser(selectedUser)} · ${direction === "增加" ? "+" : "-"}${formatAmountValue(amount)} ${asset}`,
+          obj: id,
+          before: "—",
+          after: `${direction === "增加" ? "+" : "-"}${formatAmountValue(amount)} ${asset}`,
+          type: "fund",
+          amplifies: backendDirection === "CREDIT",
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason: finalReason,
+          sourceDomain: "C3",
+          command: def.buildCommand({
+            userId: id,
+            asset,
+            direction: backendDirection,
+            amount: String(amount),
+          }),
+          target: def.buildTarget({ userId: id }),
+        });
       },
     });
   };
@@ -257,15 +269,21 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       detail: `${displayRowUser(row)} · ${formatAdjustmentAmount(row)} · ${text(row.reason)}。${approved && row.credit ? "加钱方向会在后端再次校验覆盖率红线。" : "裁决结果写入后端复核链路。"}`,
       amplifies: approved && !!row.credit,
       run: (reason) => {
-        void perform(
-          async () => {
-            await (approved
-              ? approveUserAssetAdjustment(adjustmentNo, reason, OPERATOR())
-              : rejectUserAssetAdjustment(adjustmentNo, reason, OPERATOR()));
-            return `${adjustmentNo} 已${approved ? "通过" : "驳回"}`;
-          },
-          "调整单已裁决",
-        );
+        const def = findHighOp(approved ? "c3_adjust_approve" : "c3_adjust_reject")!;
+        void propose(toast, {
+          action: `${approved ? "通过" : "驳回"}资产调整 · ${adjustmentNo}`,
+          obj: adjustmentNo,
+          before: text(row.statusLabel, "待复核"),
+          after: approved ? "已通过" : "已驳回",
+          type: "fund",
+          amplifies: approved && !!row.credit,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "C3",
+          command: def.buildCommand({ adjustmentNo }),
+          target: def.buildTarget({ adjustmentNo }),
+        });
       },
     });
   };
@@ -275,18 +293,26 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     if (!adjustmentNo) return toast("调整单号缺失");
     openConfirm({
       action: `撤销挂起申请 · ${adjustmentNo}`,
-      detail: `${displayRowUser(row)} · ${formatAdjustmentAmount(row)}。撤销按后端驳回写入复核原因,不改余额。`,
+      detail: `${displayRowUser(row)} · ${formatAdjustmentAmount(row)}。撤销按后端驳回写入复核原因,不改余额。提交后进入 A2 待确认队列。`,
       chips: [["落审计", "ready"]],
       reason: true,
       okLabel: "确认撤销",
       run: (reason) => {
-        void perform(
-          async () => {
-            await rejectUserAssetAdjustment(adjustmentNo, reason, OPERATOR());
-            return `${adjustmentNo} 已撤销`;
-          },
-          "挂起申请已撤销",
-        );
+        const def = findHighOp("c3_adjust_reject")!;
+        void propose(toast, {
+          action: `撤销挂起申请 · ${adjustmentNo}`,
+          obj: adjustmentNo,
+          before: "SUSPENDED",
+          after: "REJECTED(撤销)",
+          type: "fund",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "C3",
+          command: def.buildCommand({ adjustmentNo }),
+          target: def.buildTarget({ adjustmentNo }),
+        });
       },
     });
   };
@@ -306,25 +332,31 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       detail: (
         <>
           原单 <span className="mono">{adjustmentNo}</span> · {displayRowUser(row)} · {formatAdjustmentAmount(row)}。
-          冲正会创建一条新的反向调整单进入复核,不会修改或删除原记录。
+          冲正会创建一条新的反向调整单进入复核,不会修改或删除原记录。提交后进入 A2 待确认队列。
         </>
       ),
       amplifies: reverseDirection === "CREDIT",
       run: (reason) => {
-        void perform(
-          async () => {
-            const saved = await createUserAssetAdjustment(
-              userId,
-              assetName,
-              reverseDirection,
-              String(amount),
-              `冲正 ${adjustmentNo} · ${reason}`,
-              OPERATOR(),
-            );
-            return `冲正单 ${text(saved.adjustmentNo)} 已提交复核`;
-          },
-          "冲正单已提交复核",
-        );
+        const def = findHighOp("c3_adjust_create")!;
+        void propose(toast, {
+          action: `冲正调整 · ${adjustmentNo}`,
+          obj: userId,
+          before: formatAdjustmentAmount(row),
+          after: `冲正(反向 ${reverseDirection === "CREDIT" ? "+" : "-"}${formatAmountValue(amount)} ${assetName})`,
+          type: "fund",
+          amplifies: reverseDirection === "CREDIT",
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason: `冲正 ${adjustmentNo} · ${reason}`,
+          sourceDomain: "C3",
+          command: def.buildCommand({
+            userId,
+            asset: assetName,
+            direction: reverseDirection,
+            amount: String(amount),
+          }),
+          target: def.buildTarget({ userId }),
+        });
       },
     });
   };

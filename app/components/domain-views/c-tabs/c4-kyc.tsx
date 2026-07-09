@@ -13,6 +13,8 @@ import {
   type UserKycOverview,
   type UserKycStats,
 } from "@/lib/admin/user360-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
@@ -74,6 +76,7 @@ function statusTotal(stats: UserKycStats | null | undefined, filter: KycFilter) 
 
 export function C4Kyc({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<UserKycOverview | null>(null);
   const [filter, setFilter] = useState<KycFilter>("all");
   const [page, setPage] = useState(1);
@@ -152,13 +155,22 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
       ),
       amplifies,
       run: (reason) => {
-        void perform(
-          async () => {
-            await updateUserKycStatus(selected.userId!, nextStatus, reason, OPERATOR());
-            return `${rowDisplay(selected)} 已更新为${label}`;
-          },
-          "KYC 状态已更新",
-        );
+        if (!selected?.userId) { toast("请选择一条 KYC 台账行"); return; }
+        const def = findHighOp("c4_kyc_status_change")!;
+        void propose(toast, {
+          action: `${label} · ${rowDisplay(selected)}`,
+          obj: String(selected.userId),
+          before: text(selected.statusLabel, "—"),
+          after: label,
+          type: "acct",
+          amplifies,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "C4",
+          command: def.buildCommand({ userId: selected.userId, status: nextStatus }),
+          target: def.buildTarget({ userId: selected.userId }),
+        });
       },
     });
   };
@@ -170,18 +182,27 @@ export function C4Kyc({ ctx }: { ctx: CCtx }) {
     }
     openConfirm({
       action: `触发增强复审 · ${rowDisplay(selected)}`,
-      detail: "触发复审会把该用户实名状态写为复审中,后续 K5 裁决再回写同一条后端状态。",
+      detail: "触发复审会把该用户实名状态写为复审中,后续 K5 裁决再回写同一条后端状态。提交后进入 A2 待确认队列。",
       chips: [["写后端状态", "ready"], ["裁决回写同源", "done"]],
       reason: true,
       okLabel: "确认触发",
       run: (reason) => {
-        void perform(
-          async () => {
-            await updateUserKycStatus(selected.userId!, "PENDING", reason, OPERATOR());
-            return `${rowDisplay(selected)} 已进入复审中`;
-          },
-          "复审已触发",
-        );
+        if (!selected?.userId) { toast("请选择一条 KYC 台账行"); return; }
+        const def = findHighOp("c4_kyc_status_change")!;
+        void propose(toast, {
+          action: `触发增强复审 · ${rowDisplay(selected)}`,
+          obj: String(selected.userId),
+          before: text(selected.statusLabel, "—"),
+          after: "复审中",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "C4",
+          command: def.buildCommand({ userId: selected.userId, status: "PENDING" }),
+          target: def.buildTarget({ userId: selected.userId }),
+        });
       },
     });
   };

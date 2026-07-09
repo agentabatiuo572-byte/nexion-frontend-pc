@@ -18,6 +18,8 @@ import {
   type UserSecurityUserRow,
   type UserSession,
 } from "@/lib/admin/user360-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
@@ -113,6 +115,7 @@ function SecLabel({ children }: { children: string }) {
 
 export function C5Security({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [overview, setOverview] = useState<UserSecurityOverview | null>(null);
   const [selectedUserKey, setSelectedUserKey] = useState("");
   const [userLookup, setUserLookup] = useState("");
@@ -219,15 +222,26 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const revokeOne = (id: string) =>
     openConfirm({
       action: `踢线 · ${id}`,
-      detail: "吊销该会话的长短凭证,用户该设备立即下线。后端写入会话吊销时间并产生审计。",
-      chips: [["即时 · 服务器吊销", "ready"], ["真实接口 · C5", "done"]],
+      detail: "吊销该会话的长短凭证,用户该设备立即下线。提交后进入 A2 待确认队列,门槛者确认后服务器吊销并写审计。",
+      chips: [["服务器吊销", "ready"], ["A2 队列", "done"]],
       reason: true,
       okLabel: "确认踢线",
       run: (reason) => {
-        void perform(async () => {
-          await revokeUserSession(id, reason, OPERATOR());
-          return `${id} 已踢线 · 后端留痕`;
-        }, "会话已踢线");
+        const def = findHighOp("c5_session_revoke_one")!;
+        void propose(toast, {
+          action: `踢线 · ${id}`,
+          obj: id,
+          before: "ACTIVE",
+          after: "REVOKED",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "C5",
+          command: def.buildCommand({ refreshTokenId: id }),
+          target: def.buildTarget({ refreshTokenId: id }),
+        });
       },
     });
 
@@ -235,15 +249,27 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!selectedUserId) return;
     openConfirm({
       action: `全部踢线 · ${userLabel(selectedUser)}`,
-      detail: "吊销该用户全部活跃会话,常用于疑似被盗号。结果以后端返回为准。",
-      chips: [["整链吊销", "ready"], ["写审计", "done"]],
+      detail: "吊销该用户全部活跃会话,常用于疑似被盗号。提交后进入 A2 待确认队列,门槛者确认后整链吊销。",
+      chips: [["整链吊销", "ready"], ["A2 队列", "done"]],
       reason: true,
       okLabel: "确认全部踢线",
       run: (reason) => {
-        void perform(async () => {
-          await revokeUserSessions(selectedUserId, reason, OPERATOR());
-          return `${userLabel(selectedUser)} 全部会话已踢线`;
-        }, "全部会话已踢线");
+        if (!selectedUserId) return;
+        const def = findHighOp("c2_session_revoke_all")!;
+        void propose(toast, {
+          action: `全部踢线 · ${userLabel(selectedUser)}`,
+          obj: String(selectedUserId),
+          before: "多会话",
+          after: "0 会话",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "C5",
+          command: def.buildCommand({ userId: selectedUserId }),
+          target: def.buildTarget({ userId: selectedUserId }),
+        });
       },
     });
   };
@@ -252,7 +278,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!selectedUserId) return;
     openActionConfirm({
       action: `人工关闭 2FA · ${userLabel(selectedUser)}`,
-      detail: <>用户丢了验证器设备时的恢复通道。前置实名二验,确认通过后服务器关闭 2FA 并作废备份码。</>,
+      detail: <>用户丢了验证器设备时的恢复通道。前置实名二验,确认后提交 A2 待确认队列,门槛者执行后服务器关闭 2FA 并作废备份码。</>,
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
@@ -261,10 +287,22 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         ticketHint: "如 KYC-20260618-001",
       },
       run: (reason, _value, businessValue) => {
-        void perform(async () => {
-          await disableUserTwoFactor(selectedUserId, identityTrail(reason, businessValue), OPERATOR());
-          return "2FA 已关闭 · 二验结果已留痕";
-        }, "2FA 已关闭");
+        if (!selectedUserId) return;
+        const def = findHighOp("c5_2fa_disable")!;
+        void propose(toast, {
+          action: `人工关闭 2FA · ${userLabel(selectedUser)}`,
+          obj: String(selectedUserId),
+          before: "已开启",
+          after: "已关闭",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason: identityTrail(reason, businessValue),
+          sourceDomain: "C5",
+          command: def.buildCommand({ userId: selectedUserId }),
+          target: def.buildTarget({ userId: selectedUserId }),
+        });
       },
     });
   };
@@ -273,7 +311,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!selectedUserId) return;
     openActionConfirm({
       action: `密码重置 · ${userLabel(selectedUser)}`,
-      detail: <>后台看不到也改不了密码明文。确认后作废旧密码并发送一次性重置验证码,用户自行设置新密码。</>,
+      detail: <>后台看不到也改不了密码明文。确认后提交 A2 待确认队列,门槛者执行后作废旧密码并发送一次性重置验证码,用户自行设置新密码。</>,
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
@@ -282,10 +320,22 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         ticketHint: "如 KYC-20260618-001",
       },
       run: (reason, _value, businessValue) => {
-        void perform(async () => {
-          await requestUserPasswordReset(selectedUserId, identityTrail(reason, businessValue), OPERATOR());
-          return "旧密码已作废 · 重置验证码已发用户";
-        }, "密码重置已提交");
+        if (!selectedUserId) return;
+        const def = findHighOp("c5_password_reset")!;
+        void propose(toast, {
+          action: `密码重置 · ${userLabel(selectedUser)}`,
+          obj: String(selectedUserId),
+          before: "旧密码有效",
+          after: "旧密码已作废",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason: identityTrail(reason, businessValue),
+          sourceDomain: "C5",
+          command: def.buildCommand({ userId: selectedUserId }),
+          target: def.buildTarget({ userId: selectedUserId }),
+        });
       },
     });
   };
@@ -294,16 +344,10 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     const userId = userIdOf(row);
     if (!userId) return;
     const longLock = row.lockKind === "LONG";
-    const submit = (reason: string, businessValue?: { channel?: string; verifiedAt?: string; ticket?: string }) => {
-      void perform(async () => {
-        await unlockUserSecurity(userId, longLock ? identityTrail(reason, businessValue) : reason, OPERATOR());
-        return `${userLabel(row)} 已解除锁定`;
-      }, "锁定已解除");
-    };
     if (longLock) {
       openActionConfirm({
         action: `解除长锁 · ${userLabel(row)}`,
-        detail: "长锁通常挂着强制重置流程,解锁等于绕过它。必须完成实名二验并写明原因。",
+        detail: "长锁通常挂着强制重置流程,解锁等于绕过它。必须完成实名二验并写明原因。提交后进入 A2 待确认队列。",
         amplifies: false,
         businessForm: {
           kind: "identity-verify",
@@ -311,17 +355,49 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
           channels: ["视频核实", "当面核实", "回拨预留号码"],
           ticketHint: "如 SEC-20260618-001",
         },
-        run: (reason, _value, businessValue) => submit(reason, businessValue),
+        run: (reason, _value, businessValue) => {
+          const def = findHighOp("c5_user_unlock")!;
+          void propose(toast, {
+            action: `解除长锁 · ${userLabel(row)}`,
+            obj: String(userId),
+            before: "LONG",
+            after: "已解锁",
+            type: "acct",
+            amplifies: false,
+            gate: { roles: [] },
+            gateLabel: def.gateLabel,
+            reason: identityTrail(reason, businessValue),
+            sourceDomain: "C5",
+            command: def.buildCommand({ userId }),
+            target: def.buildTarget({ userId }),
+          });
+        },
       });
       return;
     }
     openConfirm({
       action: `解除短锁 · ${userLabel(row)}`,
-      detail: "清空登录失败计数,用户可重新登录。后端更新账户安全状态。",
-      chips: [["短锁", "ready"], ["清失败计数", "done"]],
+      detail: "清空登录失败计数,用户可重新登录。提交后进入 A2 待确认队列,门槛者确认后更新账户安全状态。",
+      chips: [["短锁", "ready"], ["A2 队列", "done"]],
       reason: true,
       okLabel: "确认解锁",
-      run: (reason) => submit(reason),
+      run: (reason) => {
+        const def = findHighOp("c5_user_unlock")!;
+        void propose(toast, {
+          action: `解除短锁 · ${userLabel(row)}`,
+          obj: String(userId),
+          before: "SHORT",
+          after: "已解锁",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "C5",
+          command: def.buildCommand({ userId }),
+          target: def.buildTarget({ userId }),
+        });
+      },
     });
   };
 

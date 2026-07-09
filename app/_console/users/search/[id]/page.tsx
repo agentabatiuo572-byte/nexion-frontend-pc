@@ -9,19 +9,17 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, KeyRound, LogOut, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
 import {
   fetchUser360,
-  requestUserPasswordReset,
-  revokeUserSessions,
-  startUserImpersonation,
-  updateUserStatus,
   type JsonRecord,
   type User360Detail,
   type User360Profile,
   type User360Section,
   type User360Summary,
 } from "@/lib/admin/user360-client";
-import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { fmtNum, fmtUsd } from "@/lib/format";
-import { confirm, toast } from "@/lib/store/ui";
+import { toast } from "@/lib/store/ui";
 import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
 import { StatusPill, type PillTone } from "@/app/components/kit/status-pill";
 import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
@@ -147,12 +145,6 @@ function displayValue(value: unknown) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "UNKNOWN_ERROR";
-}
-
-function requireOperator() {
-  const operator = currentAdminOperator("");
-  if (!operator) throw new Error("当前登录会话缺少操作者,请重新登录后再操作。");
-  return operator;
 }
 
 function sectionStatus(section: User360Section | null | undefined) {
@@ -312,6 +304,20 @@ export default function UserDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const propose = usePropose();
+  const [actionConfirm, setActionConfirm] = useState<null | {
+    action: string;
+    detail: string;
+    amplifies?: boolean;
+    run: (reason: string) => void;
+  }>(null);
+  // c1hub 无 CCtx:就近挂载本地 OperationConfirmModal,简化签名(只取 action/detail/amplifies/run)
+  const openActionConfirmReq = (req: {
+    action: string;
+    detail: string;
+    amplifies?: boolean;
+    run: (reason: string) => void;
+  }) => setActionConfirm(req);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -348,53 +354,36 @@ export default function UserDetailPage() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function runAction(label: string, action: () => Promise<unknown>, successTitle: string, description?: string) {
-    setActionPending(label);
-    try {
-      await action();
-      await load();
-      toast.success(successTitle, description);
-    } catch (err) {
-      toast.error("操作失败", errorMessage(err));
-    } finally {
-      setActionPending(null);
-    }
-  }
-
   async function doFreeze() {
     if (!userId) {
       toast.error("缺少用户主键", "请刷新后重试");
       return;
     }
-    const nextStatus = frozen ? "ACTIVE" : "FROZEN";
-    const yes = await confirm({
-      title: frozen ? "解冻账户?" : "冻结账户?",
-      message: frozen
-        ? `恢复 ${nickname} 的提现与交易能力。`
-        : `冻结 ${nickname} 的提现与交易,转合规核查。操作会写入审计。`,
-      confirmLabel: frozen ? "确认解冻" : "确认冻结",
-      danger: !frozen,
+    const opKey = frozen ? "c2_account_unfreeze" : "c2_account_freeze";
+    const def = findHighOp(opKey)!;
+    openActionConfirmReq({
+      action: frozen ? `解冻账户 · ${nickname}` : `冻结账户 · ${nickname}`,
+      detail: frozen
+        ? `恢复 ${nickname} 的提现与交易能力。提交后进入 A2 待确认队列。`
+        : `冻结 ${nickname} 的提现与交易,转合规核查。提交后进入 A2 待确认队列。`,
+      amplifies: !frozen,
+      run: (reason) => {
+        void propose((s: string) => toast.success(s), {
+          action: `${frozen ? "恢复账户" : "冻结账户"} · ${nickname}`,
+          obj: String(userId),
+          before: frozen ? "FROZEN" : "ACTIVE",
+          after: frozen ? "ACTIVE" : "FROZEN",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "C1",
+          command: def.buildCommand({ userId: String(userId) }),
+          target: def.buildTarget({ userId: String(userId) }),
+        });
+      },
     });
-    if (!yes) return;
-    await runAction(
-      frozen ? "unfreeze" : "freeze",
-      () => updateUserStatus(userId, nextStatus, frozen ? "C1 详情页人工复核通过后恢复账户" : "C1 详情页人工风控处置冻结账户", requireOperator()),
-      frozen ? "账户已解冻" : "账户已冻结",
-      `${userNo} · ${nickname}`,
-    );
-  }
-
-  async function confirmAction(
-    label: string,
-    title: string,
-    message: string,
-    confirmLabel: string,
-    action: () => Promise<unknown>,
-    danger?: boolean,
-  ) {
-    const yes = await confirm({ title, message, confirmLabel, danger });
-    if (!yes) return;
-    await runAction(label, action, confirmLabel, `${userNo} · ${nickname}`);
   }
 
   const kpis = [
@@ -523,38 +512,82 @@ export default function UserDetailPage() {
                 <Snowflake size={14} style={{ color: frozen ? "var(--v5-success)" : "var(--v5-danger)" }} /> {frozen ? "解冻账户" : "冻结账户"}
               </ActionButton>
               <ActionButton
-                onClick={() => void confirmAction(
-                  "revoke",
-                  "强制登出?",
-                  `使 ${nickname} 的全部会话失效,操作写入审计。`,
-                  "确认登出",
-                  () => revokeUserSessions(userId!, "C1 详情页人工安全处置强制登出全部会话", requireOperator()),
-                )}
+                onClick={() => openActionConfirmReq({
+                  action: `强制登出 · ${nickname}`,
+                  detail: `使 ${nickname} 的全部会话失效。提交后进入 A2 待确认队列。`,
+                  amplifies: false,
+                  run: (reason) => {
+                    const def = findHighOp("c2_session_revoke_all")!;
+                    void propose((s: string) => toast.success(s), {
+                      action: `强制登出 · ${nickname}`,
+                      obj: String(userId),
+                      before: "多会话",
+                      after: "0 会话",
+                      type: "acct",
+                      amplifies: false,
+                      gate: { roles: [] },
+                      gateLabel: def.gateLabel,
+                      reason,
+                      sourceDomain: "C1",
+                      command: def.buildCommand({ userId: String(userId) }),
+                      target: def.buildTarget({ userId: String(userId) }),
+                    });
+                  },
+                })}
                 disabled={actionDisabled}
               >
                 <LogOut size={14} style={{ color: "var(--v5-warning)" }} /> 强制登出
               </ActionButton>
               <ActionButton
-                onClick={() => void confirmAction(
-                  "impersonate",
-                  "以该用户身份登入?",
-                  `${nickname} 的 impersonate 会话有效期 15 分钟,全程审计留痕。`,
-                  "确认登入",
-                  () => startUserImpersonation(userId!, "C1 详情页客服排障发起受控 impersonate 会话", requireOperator(), 15),
-                )}
+                onClick={() => openActionConfirmReq({
+                  action: `模拟登录 · ${nickname}`,
+                  detail: `${nickname} 的 impersonate 会话有效期 15 分钟,全程审计留痕。提交后进入 A2 待确认队列。`,
+                  amplifies: false,
+                  run: (reason) => {
+                    const def = findHighOp("c2_impersonate_start")!;
+                    void propose((s: string) => toast.success(s), {
+                      action: `发起模拟登录 · ${nickname}`,
+                      obj: String(userId),
+                      before: "—",
+                      after: "只读 15min",
+                      type: "acct",
+                      amplifies: false,
+                      gate: { roles: [] },
+                      gateLabel: def.gateLabel,
+                      reason,
+                      sourceDomain: "C1",
+                      command: def.buildCommand({ userId: String(userId), ttlMinutes: 15 }),
+                      target: def.buildTarget({ userId: String(userId) }),
+                    });
+                  },
+                })}
                 disabled={actionDisabled}
               >
                 <UserCog size={14} style={{ color: "var(--v5-tech-cyan)" }} /> impersonate
               </ActionButton>
               <ActionButton
-                onClick={() => void confirmAction(
-                  "password-reset",
-                  "重置该用户密码?",
-                  `失效 ${nickname} 的当前密码并要求重新设置,同步写入审计。`,
-                  "确认重置",
-                  () => requestUserPasswordReset(userId!, "C1 详情页人工安全处置触发密码重置", requireOperator()),
-                  true,
-                )}
+                onClick={() => openActionConfirmReq({
+                  action: `密码重置 · ${nickname}`,
+                  detail: `失效 ${nickname} 的当前密码并要求重新设置。提交后进入 A2 待确认队列。`,
+                  amplifies: false,
+                  run: (reason) => {
+                    const def = findHighOp("c5_password_reset")!;
+                    void propose((s: string) => toast.success(s), {
+                      action: `密码重置 · ${nickname}`,
+                      obj: String(userId),
+                      before: "旧密码有效",
+                      after: "旧密码已作废",
+                      type: "acct",
+                      amplifies: false,
+                      gate: { roles: [] },
+                      gateLabel: def.gateLabel,
+                      reason,
+                      sourceDomain: "C1",
+                      command: def.buildCommand({ userId: String(userId) }),
+                      target: def.buildTarget({ userId: String(userId) }),
+                    });
+                  },
+                })}
                 disabled={actionDisabled}
               >
                 <KeyRound size={14} style={{ color: "var(--v5-warning)" }} /> 重置密码
@@ -748,6 +781,20 @@ export default function UserDetailPage() {
           <AuditTimeline entries={auditEntries} />
         </Section>
       </div>
+
+      {actionConfirm && (
+        <OperationConfirmModal
+          action={actionConfirm.action}
+          detail={actionConfirm.detail}
+          amplifies={actionConfirm.amplifies ?? false}
+          onClose={() => setActionConfirm(null)}
+          onConfirm={(reason) => {
+            const fn = actionConfirm.run;
+            setActionConfirm(null);
+            fn(reason);
+          }}
+        />
+      )}
     </div>
   );
 }
