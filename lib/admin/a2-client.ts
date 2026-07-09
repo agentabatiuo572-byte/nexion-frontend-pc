@@ -378,6 +378,7 @@ export async function createA2OperationProposal(input: {
   sourceDomain: string;
   command: { domain: string; op: string; params: Record<string, unknown> };
   target: { domain: string; type: string; id: string };
+  targets?: { domain: string; type: string; id: string }[];
 }) {
   const row = await a2Request<BackendTicket>("/operations", {
     method: "POST",

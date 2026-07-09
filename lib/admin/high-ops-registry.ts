@@ -20,6 +20,7 @@ export interface HighOpDef {
   targetType: string; // 锁目标 type
   buildCommand: (ctx: Record<string, unknown>) => ReplayCommand;
   buildTarget: (ctx: Record<string, unknown>) => LockTarget;
+  buildTargets?: (ctx: Record<string, unknown>) => LockTarget[]; // 多锁(batch_kill/emergency_block 用)
 }
 
 /** 批 0:D2 提现放行/解冻。其余域 HIGH 动作分批补登记。 */
@@ -654,6 +655,133 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { userNo: String(ctx.userNo) },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "user", id: String(ctx.userNo) }),
+  },
+  // —— J 域紧急与合规控制(批 4) ——
+  {
+    op: "j1_gate_kill",
+    domain: "J",
+    action: "熔断功能闸",
+    amplifies: false,
+    type: "sos",
+    gateLabel: "门槛者",
+    targetType: "gate",
+    buildCommand: (ctx) => ({
+      domain: "J",
+      op: "j1_gate_kill",
+      params: { gateKey: String(ctx.gateKey) },
+    }),
+    buildTarget: (ctx) => ({ domain: "J", type: "gate", id: String(ctx.gateKey) }),
+  },
+  {
+    op: "j1_gate_resume",
+    domain: "J",
+    action: "恢复功能闸",
+    amplifies: true,
+    type: "sos",
+    gateLabel: "门槛者",
+    targetType: "gate",
+    buildCommand: (ctx) => ({
+      domain: "J",
+      op: "j1_gate_resume",
+      params: { gateKey: String(ctx.gateKey) },
+    }),
+    buildTarget: (ctx) => ({ domain: "J", type: "gate", id: String(ctx.gateKey) }),
+  },
+  {
+    op: "j1_batch_kill",
+    domain: "J",
+    action: "应急批量熔断",
+    amplifies: false,
+    type: "sos",
+    gateLabel: "门槛者",
+    targetType: "gate",
+    buildCommand: (ctx) => ({
+      domain: "J",
+      op: "j1_batch_kill",
+      params: { keys: (ctx.keys as string[]) ?? [] },
+    }),
+    // 多锁:per-gate 一锁(对齐 spec §4.7 业务对象单位)
+    buildTargets: (ctx) =>
+      ((ctx.keys as string[]) ?? []).map((k) => ({ domain: "J", type: "gate", id: String(k) })),
+    // 单锁兜底(若 usePropose 未支持 targets,用首个 gate;正常路径走 buildTargets)
+    buildTarget: (ctx) => ({ domain: "J", type: "gate", id: String(((ctx.keys as string[]) ?? [""])[0]) }),
+  },
+  {
+    op: "j2_country_manage",
+    domain: "J",
+    action: "国家管控",
+    amplifies: false, // 默认封锁不放大;前端调用时按 status=allowed 覆盖为 true(解除方向)
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "country",
+    buildCommand: (ctx) => ({
+      domain: "J",
+      op: "j2_country_manage",
+      params: { countryCode: String(ctx.countryCode), status: String(ctx.status) },
+    }),
+    buildTarget: (ctx) => ({ domain: "J", type: "country", id: String(ctx.countryCode) }),
+  },
+  {
+    op: "j2_emergency_block",
+    domain: "J",
+    action: "应急批量封锁",
+    amplifies: false,
+    type: "sos",
+    gateLabel: "门槛者",
+    targetType: "country",
+    buildCommand: (ctx) => ({
+      domain: "J",
+      op: "j2_emergency_block",
+      params: { countries: (ctx.countries as string[]) ?? [] },
+    }),
+    buildTargets: (ctx) =>
+      ((ctx.countries as string[]) ?? []).map((c) => ({ domain: "J", type: "country", id: String(c) })),
+    buildTarget: (ctx) => ({ domain: "J", type: "country", id: String(((ctx.countries as string[]) ?? [""])[0]) }),
+  },
+  {
+    op: "j3_alert_config",
+    domain: "J",
+    action: "篡改告警阈值配置",
+    amplifies: false,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "alert_config",
+    buildCommand: (ctx) => ({
+      domain: "J",
+      op: "j3_alert_config",
+      params: { threshold: Number(ctx.threshold), feedK4: Boolean(ctx.feedK4) },
+    }),
+    buildTarget: () => ({ domain: "J", type: "alert_config", id: "default" }),
+  },
+  {
+    op: "j4_playbook_execute",
+    domain: "J",
+    action: "执行应急剧本",
+    amplifies: false,
+    type: "sos",
+    gateLabel: "门槛者",
+    targetType: "playbook",
+    buildCommand: (ctx) => ({
+      domain: "J",
+      op: "j4_playbook_execute",
+      params: { code: String(ctx.code), emergency: Boolean(ctx.emergency ?? false) },
+    }),
+    buildTarget: (ctx) => ({ domain: "J", type: "playbook", id: String(ctx.code) }),
+  },
+  {
+    op: "j4_playbook_rollback",
+    domain: "J",
+    action: "回滚剧本执行",
+    amplifies: false,
+    type: "sos",
+    gateLabel: "门槛者",
+    targetType: "playbook_execution",
+    buildCommand: (ctx) => ({
+      domain: "J",
+      op: "j4_playbook_rollback",
+      params: { code: String(ctx.code), executionId: String(ctx.executionId), emergency: false },
+    }),
+    buildTarget: (ctx) => ({ domain: "J", type: "playbook_execution", id: String(ctx.executionId) }),
   },
 ];
 

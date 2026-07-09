@@ -24,6 +24,7 @@ export interface ProposeSpec {
   sourceDomain: string;
   command: ReplayCommand;
   target: LockTarget;
+  targets?: LockTarget[]; // 多锁(J 域 batch 用)
 }
 
 export interface ProposeDeps {
@@ -43,6 +44,7 @@ export interface ProposeDeps {
     sourceDomain: string;
     command: ReplayCommand;
     target: LockTarget;
+    targets?: LockTarget[];
   }) => Promise<unknown>;
   toast: (s: string) => void;
 }
@@ -67,6 +69,7 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
       sourceDomain: spec.sourceDomain,
       command: spec.command,
       target: spec.target,
+      targets: spec.targets,
     });
     toast(`已写入 A2 后端待确认队列,待 ${spec.gateLabel} 执行`);
     return "proposed";
