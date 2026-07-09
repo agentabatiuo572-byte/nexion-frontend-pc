@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { DataListPager, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import type { K5Ticket, KRiskParam, TicketSt } from "@/lib/admin/k-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -183,6 +185,7 @@ function K5ParamValue({ param }: { param: KRiskParam }) {
 }
 
 export function K5Kyc({ ctx }: { ctx: KCtx }) {
+  const propose = usePropose();
   const overview = ctx.risk.kycReview;
   const stats = overview?.stats ?? {};
   const params = overview?.params ?? [];
@@ -224,10 +227,23 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
       action: `${pass ? "通过" : "驳回"} KYC 复审 · ${t.id}`,
       detail: `${t.user} · ${t.type} · ${t.amt !== "—" ? t.amt : t.cum}。${pass ? "通过后回写实名和冻结单据的后续流转。" : "驳回后维持冻结并进入退回 / 驳回路径。"}裁决写后端并保留审计。`,
       amplifies: pass,
-      run: (reason) => void runAction(
-        () => ctx.actions.decideK5Ticket(t.id, pass ? "passed" : "rejected", reason),
-        `${t.id} ${pass ? "已通过" : "已驳回"} · 后端已记录`,
-      ),
+      run: (reason) => {
+        const def = findHighOp(pass ? "k5_ticket_pass" : "k5_ticket_reject")!;
+        void propose(ctx.toast, {
+          action: `${pass ? "通过" : "驳回"} KYC 复审 · ${t.id}`,
+          obj: t.id,
+          before: t.st,
+          after: pass ? "passed" : "rejected",
+          type: "acct",
+          amplifies: pass,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K5",
+          command: def.buildCommand({ ticketId: t.id }),
+          target: def.buildTarget({ ticketId: t.id }),
+        });
+      },
     });
 
   const manualTrigger = () =>
@@ -238,10 +254,27 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
       reason: true,
       input: { label: "用户编号", placeholder: "如 usr_31E8" },
       okLabel: "确认触发",
-      run: (reason, userNo) => {
-        const id = (userNo || "").trim();
-        if (!id) return;
-        void runAction(() => ctx.actions.createK5ManualTicket(id, reason), `已手动触发复审工单(${id})`);
+      run: (reason, value) => {
+        const userNo = (value || "").trim();
+        if (!userNo) {
+          ctx.toast("请输入用户编号");
+          return;
+        }
+        const def = findHighOp("k5_ticket_manual")!;
+        void propose(ctx.toast, {
+          action: `手动补触发复审 · ${userNo}`,
+          obj: userNo,
+          before: "—",
+          after: "已触发复审",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K5",
+          command: def.buildCommand({ userNo }),
+          target: def.buildTarget({ userNo }),
+        });
       },
     });
 

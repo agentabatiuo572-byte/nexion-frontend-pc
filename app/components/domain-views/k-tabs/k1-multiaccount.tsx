@@ -3,6 +3,8 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { DataListPager, Modal } from "../design-kit";
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -119,6 +121,7 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
 }
 
 export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
+  const propose = usePropose();
   const [layer, setLayer] = useState<K1ClusterLayer>("all");
   const [clusterPage, setClusterPage] = useState(1);
   const [clusterPageSize, setClusterPageSize] = useState(5);
@@ -171,14 +174,46 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       chips: [["仅标记 · 不动资产", "done"], ["后端落库 + 审计", "ready"]],
       reason: true,
       okLabel: "确认标记",
-      run: (reason) => void setClusterStatus(c, "flagged", reason, `${c.id} 已标可疑 · 已同步后端`),
+      run: (reason) => {
+        const def = findHighOp("k1_cluster_flag")!;
+        void propose(ctx.toast, {
+          action: `标记可疑账户簇 · ${c.id}`,
+          obj: c.id,
+          before: c.status,
+          after: "flagged",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K1",
+          command: def.buildCommand({ clusterId: c.id }),
+          target: def.buildTarget({ clusterId: c.id }),
+        });
+      },
     });
 
   const freezeCluster = (c: K1Cluster) =>
     ctx.openActionConfirm({
       action: `批量冻结关联账户 · ${c.id}`,
       detail: `把簇内 ${c.n} 个账户置为冻结簇状态。冻结台账和账户执行仍由后端链路处理,本页只提交处置命令和原因。`,
-      run: (reason) => void setClusterStatus(c, "frozen", reason, `${c.id} 已批量冻结 · 后端已记录`),
+      run: (reason) => {
+        const def = findHighOp("k1_cluster_freeze")!;
+        void propose(ctx.toast, {
+          action: `批量冻结关联账户 · ${c.id}`,
+          obj: c.id,
+          before: c.status,
+          after: "frozen",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K1",
+          command: def.buildCommand({ clusterId: c.id }),
+          target: def.buildTarget({ clusterId: c.id }),
+        });
+      },
     });
 
   const releaseCluster = (c: K1Cluster) =>
@@ -186,7 +221,23 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       action: `解除误判 · ${c.id}`,
       detail: "解冻/放行方向会放大资金流出,需要操作确认并写清原因。后端会保留审计记录。",
       amplifies: true,
-      run: (reason) => void setClusterStatus(c, "released", reason, `${c.id} 已解除误判 · 理由留痕`),
+      run: (reason) => {
+        const def = findHighOp("k1_cluster_release")!;
+        void propose(ctx.toast, {
+          action: `解除误判 · ${c.id}`,
+          obj: c.id,
+          before: c.status,
+          after: "released",
+          type: "acct",
+          amplifies: true,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K1",
+          command: def.buildCommand({ clusterId: c.id }),
+          target: def.buildTarget({ clusterId: c.id }),
+        });
+      },
     });
 
   const clearCluster = (c: K1Cluster) =>
@@ -194,7 +245,23 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       action: `判定为正常 · ${c.id}`,
       detail: "该动作会把账户簇移出监控队列,会减少后续风险评分输入,必须填写原因。",
       amplifies: true,
-      run: (reason) => void setClusterStatus(c, "cleared", reason, `${c.id} 已判定正常 · 后端已记录`),
+      run: (reason) => {
+        const def = findHighOp("k1_cluster_cleared")!;
+        void propose(ctx.toast, {
+          action: `判定为正常 · ${c.id}`,
+          obj: c.id,
+          before: c.status,
+          after: "cleared",
+          type: "acct",
+          amplifies: true,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K1",
+          command: def.buildCommand({ clusterId: c.id }),
+          target: def.buildTarget({ clusterId: c.id }),
+        });
+      },
     });
 
   const reviewNote = (c: K1Cluster) =>

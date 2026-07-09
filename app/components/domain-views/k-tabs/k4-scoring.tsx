@@ -3,6 +3,8 @@
 import { useEffect, useId, useState } from "react";
 import { DataListPager } from "../design-kit";
 import type { K4Distribution, K4User, K4UserOption } from "@/lib/admin/k-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -45,6 +47,7 @@ function BandDonut({ dist, totalUsers }: { dist: K4Distribution[]; totalUsers: n
 }
 
 export function K4Scoring({ ctx }: { ctx: KCtx }) {
+  const propose = usePropose();
   const overview = ctx.risk.scoring;
   const dimensions = overview?.dimensions ?? [];
   const config = overview?.config;
@@ -232,34 +235,53 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
       reason: true,
       input: { label: "覆盖分(0-100)", placeholder: "如 35" },
       okLabel: "确认覆盖",
-      run: (reason, val) => {
-        const score = Number(val);
-        if (!Number.isFinite(score) || score < 0 || score > 100) { ctx.toast("覆盖分须为 0-100 的数字"); return; }
-        ctx.actions.overrideK4Score(user.userNo, Math.round(score), reason)
-          .then(async (updated) => {
-            setLookupUser(updated);
-            await reloadCurrentScoring();
-            ctx.toast(`${user.userNo} 评分已人工覆盖`);
-          })
-          .catch((error) => ctx.toast(`K4 覆盖失败 · ${errorText(error)}`));
+      run: (reason, value) => {
+        const score = Math.round(Number(value));
+        if (!Number.isFinite(score) || score < 0 || score > 100) {
+          ctx.toast("覆盖分需在 0-100 之间");
+          return;
+        }
+        const def = findHighOp("k4_user_override")!;
+        void propose(ctx.toast, {
+          action: `人工覆盖评分 · ${user.userNo}`,
+          obj: user.userNo,
+          before: String(user.effectiveScore),
+          after: String(score),
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K4",
+          command: def.buildCommand({ userNo: user.userNo, score }),
+          target: def.buildTarget({ userNo: user.userNo }),
+        });
       },
     });
 
-  const recompute = (userNo: string) =>
+  const recompute = (target: { userNo: string; before: number; after: number }) =>
     ctx.openConfirm({
-      action: `重算回模型分 · ${userNo}`,
+      action: `重算回模型分 · ${target.userNo}`,
       detail: "丢弃人工覆盖值,按当前模型权重重新算一遍。",
       chips: [["回归模型计算", "done"], ["前后分留痕", "ready"]],
       reason: true,
       okLabel: "确认重算",
       run: (reason) => {
-        ctx.actions.recomputeK4Score(userNo, reason)
-          .then(async (updated) => {
-            setLookupUser(updated);
-            await reloadCurrentScoring();
-            ctx.toast(`${userNo} 已重算回模型分`);
-          })
-          .catch((error) => ctx.toast(`K4 重算失败 · ${errorText(error)}`));
+        const def = findHighOp("k4_user_recompute")!;
+        void propose(ctx.toast, {
+          action: `重算回模型分 · ${target.userNo}`,
+          obj: target.userNo,
+          before: String(target.before),
+          after: String(target.after),
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K4",
+          command: def.buildCommand({ userNo: target.userNo }),
+          target: def.buildTarget({ userNo: target.userNo }),
+        });
       },
     });
 
@@ -464,7 +486,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                     <button className="l-btn" onClick={() => overrideScore(lookupUser)}>人工覆盖评分</button>
-                    <button className="l-btn" onClick={() => recompute(lookupUser.userNo)}>重算回模型分</button>
+                    <button className="l-btn" onClick={() => recompute({ userNo: lookupUser.userNo, before: lookupUser.effectiveScore, after: lookupUser.modelScore })}>重算回模型分</button>
                   </div>
                 </div>
               </div>
@@ -503,7 +525,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                   <td style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{o.reason}</td>
                   <td className="mono" style={{ fontSize: 11.5 }}>{o.operator}</td>
                   <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{o.timeText}</td>
-                  <td style={{ textAlign: "right" }}>{o.active ? <button className="l-btn sm" onClick={() => recompute(o.userNo)}>回模型分</button> : <span className="bdg dim">已回模型分</span>}</td>
+                  <td style={{ textAlign: "right" }}>{o.active ? <button className="l-btn sm" onClick={() => recompute({ userNo: o.userNo, before: o.overrideScore, after: o.modelScore })}>回模型分</button> : <span className="bdg dim">已回模型分</span>}</td>
                 </tr>
               ))}
             </tbody>

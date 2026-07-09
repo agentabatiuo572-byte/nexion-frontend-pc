@@ -5,6 +5,8 @@ import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { K2Row, KRiskParam } from "@/lib/admin/k-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { KCtx } from "./types";
 
 function errorText(error: unknown) {
@@ -154,6 +156,7 @@ function K2ParamValue({ param }: { param: KRiskParam }) {
 }
 
 export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
+  const propose = usePropose();
   const overview = ctx.risk.arbitrage;
   const views = overview?.views ?? [];
   const [viewKey, setViewKey] = useState("trial");
@@ -176,7 +179,23 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       chips: [["仅标记 · 附证据链", "done"], ["后端审计", "ready"]],
       reason: true,
       okLabel: "确认标记",
-      run: (reason) => void runAction(() => ctx.actions.executeK2Action(r.rowId, "flag", reason), `${r.cells[0]} 已标记套利`),
+      run: (reason) => {
+        const def = findHighOp("k2_row_flag")!;
+        void propose(ctx.toast, {
+          action: `标记套利账户 · ${r.cells[0]}`,
+          obj: r.rowId,
+          before: "未标记",
+          after: "已标记套利",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K2",
+          command: def.buildCommand({ rowId: r.rowId }),
+          target: def.buildTarget({ rowId: r.rowId }),
+        });
+      },
     });
 
   const blockGift = (r: K2Row) =>
@@ -186,7 +205,23 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       chips: [["预防性阻断", "done"], ["台账留痕", "ready"]],
       reason: true,
       okLabel: "确认拦截",
-      run: (reason) => void runAction(() => ctx.actions.executeK2Action(r.rowId, "blockgift", reason), `${r.cells[0]} 后续新人礼已停发`),
+      run: (reason) => {
+        const def = findHighOp("k2_row_blockgift")!;
+        void propose(ctx.toast, {
+          action: `拦截新人礼 · ${r.cells[0]}`,
+          obj: r.rowId,
+          before: "未拦截",
+          after: "新人礼已拦截",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K2",
+          command: def.buildCommand({ rowId: r.rowId }),
+          target: def.buildTarget({ rowId: r.rowId }),
+        });
+      },
     });
 
   const boardFlag = (r: K2Row) =>
@@ -196,14 +231,46 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       chips: [["仅标记 + 产信号", "done"], ["后端审计", "ready"]],
       reason: true,
       okLabel: "确认标记",
-      run: (reason) => void runAction(() => ctx.actions.executeK2Action(r.rowId, "boardflag", reason), `${r.cells[0]} 刷榜信号已记录`),
+      run: (reason) => {
+        const def = findHighOp("k2_row_boardflag")!;
+        void propose(ctx.toast, {
+          action: `标记刷榜账户 · ${r.cells[0]}`,
+          obj: r.rowId,
+          before: "未标记",
+          after: "已标记刷榜",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K2",
+          command: def.buildCommand({ rowId: r.rowId }),
+          target: def.buildTarget({ rowId: r.rowId }),
+        });
+      },
     });
 
   const linkFreeze = (r: K2Row) =>
     ctx.openActionConfirm({
       action: `联动 K1 批量冻结 · ${r.cells[0]}`,
       detail: `复用 K1 冻结链路提交 ${r.cluster || r.rowId} 的冻结处置,并把套利证据链写入审计。`,
-      run: (reason) => void runAction(() => ctx.actions.executeK2Action(r.rowId, "freeze", reason), `${r.cells[0]} 已联动 K1 冻结`),
+      run: (reason) => {
+        const def = findHighOp("k2_row_freeze")!;
+        void propose(ctx.toast, {
+          action: `联动 K1 批量冻结 · ${r.cells[0]}`,
+          obj: r.rowId,
+          before: "未冻结",
+          after: "联动 K1 冻结",
+          type: "acct",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K2",
+          command: def.buildCommand({ rowId: r.rowId }),
+          target: def.buildTarget({ rowId: r.rowId }),
+        });
+      },
     });
 
   const adjParam = (p: KRiskParam) => {

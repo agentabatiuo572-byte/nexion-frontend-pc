@@ -3,6 +3,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { DataListPager, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import type { K3Dimension, K3Rule, RuleAction, RuleState } from "@/lib/admin/k-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -221,6 +223,7 @@ export function K3HeaderActions({ ctx }: { ctx: KCtx }) {
 }
 
 export function K3Rules({ ctx }: { ctx: KCtx }) {
+  const propose = usePropose();
   const [filter, setFilter] = useState<"all" | RuleAction>("all");
   const [rulePage, setRulePage] = useState(1);
   const [rulePageSize, setRulePageSize] = useState(5);
@@ -270,7 +273,23 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       action: `${to === "active" ? "启用规则" : "停用规则"} · ${r.ruleId}`,
       detail: `${r.ruleId}(${r.dimension} · ${r.conditionText} → ${RULE_ACT[r.action][0]})${to === "active" ? "重新生效" : "停用"}。改后下一笔提现校验生效。`,
       amplifies: to === "paused",
-      run: (reason) => void runAction(() => ctx.actions.updateK3RuleState(r.ruleId, to, reason), `${r.ruleId} 已${to === "active" ? "启用" : "停用"}`),
+      run: (reason) => {
+        const def = findHighOp("k3_rule_toggle")!;
+        void propose(ctx.toast, {
+          action: `${to === "active" ? "启用规则" : "停用规则"} · ${r.ruleId}`,
+          obj: r.ruleId,
+          before: r.state,
+          after: to,
+          type: "param",
+          amplifies: to === "paused",
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K3",
+          command: def.buildCommand({ ruleId: r.ruleId, state: to }),
+          target: def.buildTarget({ ruleId: r.ruleId }),
+        });
+      },
     });
 
   const archiveRule = (r: K3Rule) =>
@@ -280,7 +299,23 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
       chips: [["终态 · 不可再启用", "done"], ["复用须新建草稿", "ready"]],
       reason: true,
       okLabel: "确认归档",
-      run: (reason) => void runAction(() => ctx.actions.updateK3RuleState(r.ruleId, "archived", reason), `${r.ruleId} 已归档`),
+      run: (reason) => {
+        const def = findHighOp("k3_rule_archive")!;
+        void propose(ctx.toast, {
+          action: `归档规则 · ${r.ruleId}`,
+          obj: r.ruleId,
+          before: r.state,
+          after: "archived",
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K3",
+          command: def.buildCommand({ ruleId: r.ruleId }),
+          target: def.buildTarget({ ruleId: r.ruleId }),
+        });
+      },
     });
 
   const newRule = () =>
@@ -296,7 +331,22 @@ export function K3Rules({ ctx }: { ctx: KCtx }) {
           ctx.toast("K3 规则配置不完整");
           return;
         }
-        void runAction(() => ctx.actions.createK3Rule(dimension, condition, actionFromBusinessValue(businessValue), reason), "新规则已创建为草拟状态");
+        const action = actionFromBusinessValue(businessValue);
+        const def = findHighOp("k3_rule_create")!;
+        void propose(ctx.toast, {
+          action: `新建提现风控规则 · ${dimension}`,
+          obj: `${dimension}:${condition}`,
+          before: "—",
+          after: `${dimension} · ${condition} → ${ACTION_LABELS[action]}`,
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "K3",
+          command: def.buildCommand({ dimension, conditionText: condition, action }),
+          target: def.buildTarget({ dimension, conditionText: condition }),
+        });
       },
     });
 
