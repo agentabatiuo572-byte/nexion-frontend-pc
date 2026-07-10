@@ -24,11 +24,6 @@ import {
   fetchF2RatesOverview,
   fetchF1VRankOverview,
   removeF1VRankReward,
-  updateF3TeamConfig,
-  updateF4TeamConfig,
-  updateF5TeamConfig,
-  updateFTeamConfig,
-  updateF1TeamConfig,
   updateF1VRankReward,
   updateF1VRankThreshold,
   type F3BinaryOverview,
@@ -37,6 +32,8 @@ import {
   type F2RatesOverview,
   type F1VRankOverview,
 } from "@/lib/admin/f1-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { Mc, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { F2Rates } from "./f-tabs/f2-rates";
@@ -47,6 +44,20 @@ import "./f-domain.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
 const ADMIN_OPERATOR = currentAdminOperator;
+
+// F 域 polymorphic key→op 分发(对齐后端 OpsTeamService.updateConfig 分发逻辑,commit afe51f2)。
+// 4 replay op 全部 params {key,value},后端从 key 派生锁 target id(unilevel→L+layerNo,commission→eventId)。
+const F_ACTIVE_KEYS = new Set([
+  "directRoyaltyPct", "networkRoyaltyPct", "binaryPairRatePct",
+  "maxCombinedOutflowPct", "minPayoutUsdt", "rankWindowDays", "hardwareQuotaPerRank",
+]);
+
+function resolveFOp(key: string): string {
+  if (key.startsWith("F.commission.") && key.endsWith(".status")) return "f_commission_status";
+  if (/^F\.unilevel\.(?:nex\.)?L\d+/.test(key)) return "f_unilevel_rule";
+  if (F_ACTIVE_KEYS.has(key)) return "f_config";
+  return "f_ui_config";
+}
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
@@ -59,6 +70,7 @@ function f1ThresholdTarget(paramKey?: string) {
 
 export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
+  const propose = usePropose();
   const nav = useDomainNav();
   const router = useRouter();
   const routeTab = FOLD[meta.l2Id] ?? "F2";
@@ -163,6 +175,27 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab === "F5") void refreshF5();
   }, [refreshF5, tab]);
 
+  // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
+  const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string) => {
+    const op = resolveFOp(key);
+    const def = findHighOp(op);
+    if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
+    await propose((s: string) => setToast(s), {
+      action: `${def.action} · ${key}`,
+      obj: key,
+      before: "—",
+      after: value,
+      type: def.type === "fund" ? "fund" : "param",
+      amplifies: def.amplifies,
+      gate: { roles: [] },
+      gateLabel: def.gateLabel,
+      reason,
+      sourceDomain,
+      command: def.buildCommand({ key, value }),
+      target: def.buildTarget({ key, value }),
+    });
+  };
+
   const ctx: FViewCtx = {
     openActionConfirm: (m) => setActionConfirm(m),
     nav,
@@ -177,8 +210,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       setF1Error(null);
     },
     updateF1Config: async (key, value, reason) => {
-      setF1Overview(await updateF1TeamConfig(key, value, reason, ADMIN_OPERATOR()));
-      setF1Error(null);
+      await proposeFConfig("F1", key, value, reason);
     },
     rewards: f1Overview?.rewards ?? {},
     addReward: async (level, item, reason) => {
@@ -217,8 +249,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f2Error,
     refreshF2,
     updateF2Config: async (key, value, reason) => {
-      setF2Overview(await updateFTeamConfig(key, value, reason, ADMIN_OPERATOR()));
-      setF2Error(null);
+      await proposeFConfig("F2", key, value, reason);
     },
     f3Metrics: f3Overview?.metrics ?? [],
     f3Formula: f3Overview?.formula ?? null,
@@ -236,24 +267,21 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     f3Error,
     refreshF3,
     updateF3Config: async (key, value, reason) => {
-      setF3Overview(await updateF3TeamConfig(key, value, reason, ADMIN_OPERATOR()));
-      setF3Error(null);
+      await proposeFConfig("F3", key, value, reason);
     },
     f4Overview,
     f4Loading,
     f4Error,
     refreshF4,
     updateF4Config: async (key, value, reason) => {
-      setF4Overview(await updateF4TeamConfig(key, value, reason, ADMIN_OPERATOR()));
-      setF4Error(null);
+      await proposeFConfig("F4", key, value, reason);
     },
     f5Overview,
     f5Loading,
     f5Error,
     refreshF5,
     updateF5Config: async (key, value, reason) => {
-      setF5Overview(await updateF5TeamConfig(key, value, reason, ADMIN_OPERATOR()));
-      setF5Error(null);
+      await proposeFConfig("F5", key, value, reason);
     },
   };
 

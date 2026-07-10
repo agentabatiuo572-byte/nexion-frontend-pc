@@ -11,6 +11,8 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, num, rec, rows, str, strings } from "./live-data";
 import { fetchL5ExportTasks, type AdminPage, type LExportTask } from "@/lib/admin/l-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { LCtx } from "./types";
 
 const TPL_ICONS: Record<string, React.ReactNode> = {
@@ -73,6 +75,7 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
 
 export function L5Export({ ctx }: { ctx: LCtx }) {
   const { toast, openActionConfirm } = ctx;
+  const propose = usePropose();
   const [filter, setFilter] = useState(0);
   const [taskPageNum, setTaskPageNum] = useState(1);
   const [taskPage, setTaskPage] = useState<AdminPage<LExportTask> | null>(null);
@@ -146,9 +149,21 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     action: `操作确认放行 · ${t.id}`,
     detail: <><b>{t.type}</b> · 范围:{t.scope} · 行数 {t.rows} · 脱敏 <b>{t.mask}</b> · {effSt(t) === "PENDING_SPLIT_CONFIRM" && <><b>超 100 万行上限,按拆分批次放行(超管)</b> · </>}放行后进入 generating → ready(限时链接 24h)· 落 admin.report_exported(operator/scope/fields/row_count/contains_pii/masking_policy/operator / role_gate/ts)。</>,
     run: async (reason) => {
-      await ctx.biActions?.reportAction(t.id, "approve", reason, t.pii);
-      await ctx.reloadBi?.();
-      toast(`${t.id} 已提交放行 · 后端状态已刷新`);
+      const def = findHighOp("l5_task_approve")!;
+      void propose(toast, {
+        action: `审批放行 · ${t.id}`,
+        obj: t.id,
+        before: t.st,
+        after: "APPROVED",
+        type: "param",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "L5",
+        command: def.buildCommand({ reportId: t.id }),
+        target: def.buildTarget({ reportId: t.id }),
+      });
     },
   });
   const retryTask = async (t: LExportTask) => {

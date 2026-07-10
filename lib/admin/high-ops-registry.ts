@@ -1551,6 +1551,93 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { courseId: String(ctx.courseId), rewardNex: ctx.rewardNex } }),
     buildTarget: (ctx) => ({ domain: "I", type: "learning_course", id: String(ctx.courseId) }),
   },
+  // —— F 域网络(批 9) ——
+  // 4 polymorphic op:后端 OpsTeamService 单端点 /commissions/config/{key} 按 key 分发,
+  // replay switch 4 op 全部 params {key, value}(commit afe51f2)。锁 target id 从 key 派生(对齐后端查锁 countActiveByTarget)。
+  // f_config: ACTIVE_KEYS 数值政策(directRoyaltyPct/binary-rate/pool-ratio 等)。amplifies true(资金类政策放大佣金流出)。
+  {
+    op: "f_config",
+    domain: "F",
+    action: "网络佣金政策参数调整",
+    amplifies: true, // 资金类政策放大(royalty/match/pool)
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "team_config",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_config",
+      params: { key: String(ctx.key), value: String(ctx.value) } }),
+    // 后端查锁 countActiveByTarget("F","team_config",key) → id = key
+    buildTarget: (ctx) => ({ domain: "F", type: "team_config", id: String(ctx.key) }),
+  },
+  // f_ui_config: UI keys toggle/文案(F.vrank.permanent/F.binary.paused/F.leaderboard.paused 等)。amplifies false。
+  {
+    op: "f_ui_config",
+    domain: "F",
+    action: "网络 UI 开关/文案配置",
+    amplifies: false, // toggle/文案,不动资金
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "ui_config",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_ui_config",
+      params: { key: String(ctx.key), value: String(ctx.value) } }),
+    // 后端查锁 countActiveByTarget("F","ui_config",key) → id = key
+    buildTarget: (ctx) => ({ domain: "F", type: "ui_config", id: String(ctx.key) }),
+  },
+  // f_unilevel_rule: F.unilevel.L{n}(usdtRate) / F.unilevel.nex.L{n}(nexPerUsd)。amplifies true(费率放大佣金流出)。
+  {
+    op: "f_unilevel_rule",
+    domain: "F",
+    action: "层级费率调整",
+    amplifies: true, // 费率放大佣金流出
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "unilevel_rule",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_unilevel_rule",
+      params: { key: String(ctx.key), value: String(ctx.value) } }),
+    // 后端查锁 countActiveByTarget("F","unilevel_rule","L"+layerNo) → id 从 key 解析 L+layerNo
+    // F.unilevel.L3 → "L3", F.unilevel.nex.L3 → "L3"(对齐后端 unilevelLayerNo(key)+"L")
+    buildTarget: (ctx) => {
+      const m = String(ctx.key).match(/F\.unilevel\.(?:nex\.)?L(\d+)/);
+      return { domain: "F", type: "unilevel_rule", id: m ? "L" + m[1] : String(ctx.key) };
+    },
+  },
+  // f_commission_status: F.commission.{eventId}.status(state)。amplifies true ⚠ 动资金 postLedgerEntry(解锁放大可提余额)。
+  {
+    op: "f_commission_status",
+    domain: "F",
+    action: "佣金事件处置",
+    amplifies: true, // 硬=true,动资金 postLedgerEntry(解锁方向 IN/PENDING 放大可提余额)
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "commission_event",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_commission_status",
+      params: { key: String(ctx.key), value: String(ctx.value) } }),
+    // 后端查锁 countActiveByTarget("F","commission_event",eventId) → id 从 key 解析 eventId
+    // F.commission.{eventId}.status → eventId(对齐后端 commissionStatusEventId(key))
+    buildTarget: (ctx) => {
+      const key = String(ctx.key);
+      const prefix = "F.commission.";
+      const suffix = ".status";
+      let id = key;
+      if (key.startsWith(prefix) && key.endsWith(suffix)) {
+        id = key.substring(prefix.length, key.length - suffix.length);
+      }
+      return { domain: "F", type: "commission_event", id };
+    },
+  },
+  // —— L 域 BI(批 9) ——
+  // l5_task_approve: OpsBiService.reportAction(reportId,"APPROVE")。锁 report/reportId。amplifies false(状态推进非资金)。
+  {
+    op: "l5_task_approve",
+    domain: "L",
+    action: "审批放行导出/监管报告",
+    amplifies: false, // 状态推进非资金
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "report",
+    buildCommand: (ctx) => ({ domain: "L", op: "l5_task_approve",
+      params: { reportId: String(ctx.reportId) } }),
+    buildTarget: (ctx) => ({ domain: "L", type: "report", id: String(ctx.reportId) }),
+  },
 ];
 
 export function findHighOp(op: string): HighOpDef | undefined {
