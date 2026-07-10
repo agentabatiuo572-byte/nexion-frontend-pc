@@ -1407,6 +1407,70 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { paramKey: String(ctx.paramKey), value: String(ctx.value) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "e6_compute_config", id: String(ctx.paramKey) }),
   },
+  // —— H 域增长(批 7) ——
+  // H1 phase 控制(control/override)
+  {
+    op: "h1_phase_control",
+    domain: "H",
+    action: "Phase 切换控制",
+    amplifies: false, // 配置/状态变更,不动资金
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "growth_phase_control",
+    buildCommand: (ctx) => ({ domain: "H", op: "h1_phase_control",
+      params: { controlKey: String(ctx.controlKey), value: String(ctx.value) } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "growth_phase_control", id: String(ctx.controlKey) }),
+  },
+  {
+    op: "h1_phase_override",
+    domain: "H",
+    action: "撤销 Phase override",
+    amplifies: false, // 配置标记,不动资金
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "growth_phase_override",
+    buildCommand: (ctx) => ({ domain: "H", op: "h1_phase_override",
+      params: { overrideId: String(ctx.overrideId), disabled: Boolean(ctx.disabled) } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "growth_phase_override", id: String(ctx.overrideId) }),
+  },
+  // H2 trial 会话(cancel/charge 共享 trial_session:{sid} 互斥锁)
+  {
+    op: "h2_trial_cancel",
+    domain: "H",
+    action: "强制取消试用会话",
+    amplifies: false, // 状态变更,不动资金
+    type: "sos",
+    gateLabel: "门槛者",
+    targetType: "trial_session",
+    buildCommand: (ctx) => ({ domain: "H", op: "h2_trial_cancel",
+      params: { sid: String(ctx.sid) } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "trial_session", id: String(ctx.sid) }),
+  },
+  {
+    op: "h2_trial_charge",
+    domain: "H",
+    action: "强制触发试用扣款",
+    amplifies: true, // 硬=true,直接动 USDT 台账(postLedgerEntry OUT,金额由 trialChargeAmount() 实时算)
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "trial_session",
+    buildCommand: (ctx) => ({ domain: "H", op: "h2_trial_charge",
+      params: { sid: String(ctx.sid) } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "trial_session", id: String(ctx.sid) }),
+  },
+  // H5 checkin 规则(ruleKey 短形式:baseline/bonus7/p15/p2/broken;后端 raw=canonical,normalizeCheckInRuleKey 有别名但 op 表用短形式)
+  {
+    op: "h5_checkin_rule",
+    domain: "H",
+    action: "签到规则调整",
+    amplifies: false, // 配置变更,不动资金
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "checkin_rule",
+    buildCommand: (ctx) => ({ domain: "H", op: "h5_checkin_rule",
+      params: { ruleKey: String(ctx.ruleKey), value: String(ctx.value) } }),
+    buildTarget: (ctx) => ({ domain: "H", type: "checkin_rule", id: String(ctx.ruleKey) }),
+  },
 ];
 
 export function findHighOp(op: string): HighOpDef | undefined {

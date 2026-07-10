@@ -6,12 +6,12 @@ import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH1Phases,
-  updateH1Control,
   updateH1MonthDial,
-  updateH1Override,
   updateH1RhythmParam,
   type H1RhythmOverview,
 } from "@/lib/admin/h-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { HCtx } from "./types";
 
 type H1Model = {
@@ -64,6 +64,7 @@ function rowValue(row: H1Model["monthlyDials"][number], key: string) {
 
 export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [model, setModel] = useState<H1Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -188,10 +189,23 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       edit: CONTROL_OPTIONS[control.key]
         ? { kind: "select", current, options: CONTROL_OPTIONS[control.key] }
         : { kind: "text", current },
-      run: async (reason, value) => {
+      run: (reason, value) => {
         if (value == null) return;
-        applyPhaseResponse(await updateH1Control(control.key, value, reason));
-        toast(`H1 ${control.label} 已更新`);
+        const def = findHighOp("h1_phase_control")!;
+        void propose(ctx.toast, {
+          action: `Phase 切换控制 · ${control.label}`,
+          obj: control.key,
+          before: current || "未设置",
+          after: String(value),
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "H1",
+          command: def.buildCommand({ controlKey: control.key, value }),
+          target: def.buildTarget({ controlKey: control.key }),
+        });
       },
     });
   };
@@ -201,9 +215,22 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       action: `撤销 override · ${override.cohort}`,
       detail: <>{override.description || "撤销后该批次回归全局阶段时间表。"} 后端会写入 disabled 标记。</>,
       amplifies: false,
-      run: async (reason) => {
-        applyPhaseResponse(await updateH1Override(override.id, true, reason));
-        toast(`${override.cohort} override 已撤销`);
+      run: (reason) => {
+        const def = findHighOp("h1_phase_override")!;
+        void propose(ctx.toast, {
+          action: `撤销 override · ${override.cohort}`,
+          obj: override.id,
+          before: "生效中",
+          after: "已撤销",
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "H1",
+          command: def.buildCommand({ overrideId: override.id, disabled: true }),
+          target: def.buildTarget({ overrideId: override.id }),
+        });
       },
     });
   };

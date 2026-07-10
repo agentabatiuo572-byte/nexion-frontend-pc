@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import {
-  cancelH2TrialSession,
-  chargeH2TrialSession,
   fetchH2Trials,
   killH2AutoPush,
   updateH2TrialParam,
 } from "@/lib/admin/h-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { HCtx } from "./types";
 
 type TrialParam = {
@@ -142,6 +142,7 @@ function ParamRow({
 
 export function H2Trial({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [model, setModel] = useState<H2Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,9 +173,22 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       action: `强制取消试用 · ${session.sid}`,
       detail: <>会话会转为 <b>cancelled</b> 终态,由后端幂等处理并审计。</>,
       amplifies: false,
-      run: async (reason) => {
-        setModel((await cancelH2TrialSession(session.sid, reason)) as H2Model);
-        toast(`${session.sid} 已强制取消`);
+      run: (reason) => {
+        const def = findHighOp("h2_trial_cancel")!;
+        void propose(ctx.toast, {
+          action: `强制取消试用 · ${session.sid}`,
+          obj: session.sid,
+          before: session.state,
+          after: "cancelled",
+          type: "sos",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "H2",
+          command: def.buildCommand({ sid: session.sid }),
+          target: def.buildTarget({ sid: session.sid }),
+        });
       },
     });
   };
@@ -182,11 +196,24 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
   const openSessionCharge = (session: TrialSession) => {
     openActionConfirm({
       action: `强制触发扣款 · ${session.sid}`,
-      detail: <>后端会按当前试用结算规则重算,重复请求由 Idempotency-Key 去重。</>,
-      amplifies: false,
-      run: async (reason) => {
-        setModel((await chargeH2TrialSession(session.sid, reason)) as H2Model);
-        toast(`${session.sid} 扣款已触发`);
+      detail: <>后端会按当前试用结算规则重算,重复请求由 Idempotency-Key 去重。直接动 USDT 台账,入 A2 待门槛者执行。</>,
+      amplifies: true,
+      run: (reason) => {
+        const def = findHighOp("h2_trial_charge")!;
+        void propose(ctx.toast, {
+          action: `强制触发扣款 · ${session.sid}`,
+          obj: session.sid,
+          before: session.state,
+          after: "redeemed(扣款)",
+          type: "fund",
+          amplifies: true,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "H2",
+          command: def.buildCommand({ sid: session.sid }),
+          target: def.buildTarget({ sid: session.sid }),
+        });
       },
     });
   };

@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import {
   fetchH5CheckIn,
-  updateH5CheckInRule,
   updateH5EarnMilestone,
   updateH5EarnTickInterval,
   updateH5PowerUp,
   updateH5StreakMilestone,
 } from "@/lib/admin/h-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import type { HCtx } from "./types";
 
 type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean };
@@ -46,6 +47,7 @@ function numericText(value: unknown, fallback = "") {
 
 export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const propose = usePropose();
   const [model, setModel] = useState<H5Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,12 +73,25 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const openRule = (rule: CheckInRule) => {
     const current = text(rule.cur);
     const currentNumber = numericText(current);
-    const submit = async (reason: string, value?: string) => {
+    const submit = (reason: string, value?: string) => {
       if (!value) return;
       const nextValue = NUMERIC_RULE_KEYS.has(rule.key) ? numericText(value, currentNumber) : value;
       if (!nextValue) return;
-      apply(await updateH5CheckInRule(rule.key, nextValue, reason));
-      toast(`${rule.name} 已更新`);
+      const def = findHighOp("h5_checkin_rule")!;
+      void propose(ctx.toast, {
+        action: `签到规则 · ${rule.name}`,
+        obj: rule.key,
+        before: current,
+        after: String(nextValue),
+        type: "param",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "H5",
+        command: def.buildCommand({ ruleKey: rule.key, value: nextValue }),
+        target: def.buildTarget({ ruleKey: rule.key }),
+      });
     };
     if (rule.hot) {
       openActionConfirm({
