@@ -12,6 +12,8 @@
 import { useState } from "react";
 import type { ICtx } from "./types";
 import { Drawer, PaginationExemptionList } from "../design-kit";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 type NsFlt = "all" | "issues" | "mkt";
 type CatFlt = "all" | "Basics" | "Earn" | "Team" | "Wealth" | "Security";
@@ -52,6 +54,7 @@ const COURSE_ICON_BY_CAT: Record<string, string> = {
 
 export function I6I18n({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const propose = usePropose();
   const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
   const [nsDrawer, setNsDrawer] = useState<NsDrawer | null>(null);
@@ -233,7 +236,21 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
       edit: { kind: "text", current: String(c.reward), unit: "NEX/课" },
       run: (reason, v) => {
         if (!v) return;
-        runBackend(actions.updateI6CourseReward(c.id, Number(v), reason), `${c.title} 奖励已调整为 ${v} NEX/课`);
+        const def = findHighOp("i7_course_reward_adjust")!;
+        void propose(toast, {
+          action: `课程奖励调整 · ${c.title}`,
+          obj: c.id,
+          before: `${c.reward} NEX/课`,
+          after: `${v} NEX/课`,
+          type: "fund",
+          amplifies: true,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I7",
+          command: def.buildCommand({ courseId: c.id, rewardNex: Number(v) }),
+          target: def.buildTarget({ courseId: c.id }),
+        });
       },
     });
 

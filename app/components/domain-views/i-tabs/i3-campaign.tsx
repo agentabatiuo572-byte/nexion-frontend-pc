@@ -12,6 +12,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
 import type { NotificationCampaignRow } from "@/lib/admin/i-client";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft";
 const ST_FLT: [StFlt, string][] = [
@@ -64,6 +66,7 @@ const FORM_INIT: NewForm = {
 
 export function I3Campaign({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const propose = usePropose();
   const [stFlt, setStFlt] = useState<StFlt>("all");
   const [newOpen, setNewOpen] = useState(false);
   const [form, setForm] = useState<NewForm>(FORM_INIT);
@@ -197,7 +200,21 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     edit: { kind: "text", current: cap },
     run: (reason, v) => {
       if (!v) return;
-      runBackend(actions.updateI3Cap(tier, v, reason), `${tier} CAP 已更新为 ${v} · 理由留痕`);
+      const def = findHighOp("i3_cap_adjust")!;
+      void propose(toast, {
+        action: `调整 CAP · ${tier}`,
+        obj: tier,
+        before: cap,
+        after: v,
+        type: "param",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "I3",
+        command: def.buildCommand({ tier, cap: v }),
+        target: def.buildTarget({ tier }),
+      });
     },
   });
 

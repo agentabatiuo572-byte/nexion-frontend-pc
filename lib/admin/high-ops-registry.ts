@@ -1471,6 +1471,86 @@ export const HIGH_OPS: HighOpDef[] = [
       params: { ruleKey: String(ctx.ruleKey), value: String(ctx.value) } }),
     buildTarget: (ctx) => ({ domain: "H", type: "checkin_rule", id: String(ctx.ruleKey) }),
   },
+  // —— I 域内容(批 8) ——
+  // buildCommand params 严格对齐后端 OpsTrustDisclosureService.replay(委托架构:I3/I7 委托另 2 service)。
+  // I3 通知优先级 CAP(updateCapRule · tier 锁 · amplifies false)
+  {
+    op: "i3_cap_adjust",
+    domain: "I",
+    action: "调整通知优先级 CAP",
+    amplifies: false, // 容量配置,不动资金
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "notification_cap",
+    buildCommand: (ctx) => ({ domain: "I", op: "i3_cap_adjust",
+      params: { tier: String(ctx.tier), cap: String(ctx.cap) } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "notification_cap", id: String(ctx.tier) }),
+  },
+  // I4 信任版块 publish/rollback/archive 共享 trust_section:{sectionKey} 锁(1 op + action 分发,replay switch action)
+  {
+    op: "i4_trust_section_manage",
+    domain: "I",
+    action: "信任版块发布/回滚/下架",
+    amplifies: false, // 对外内容,不动账本
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "trust_section",
+    buildCommand: (ctx) => ({ domain: "I", op: "i4_trust_section_manage",
+      params: {
+        sectionKey: String(ctx.sectionKey),
+        action: String(ctx.action),
+        version: ctx.version != null ? String(ctx.version) : null, // publish 用
+        targetVersion: ctx.targetVersion != null ? String(ctx.targetVersion) : null, // rollback 用
+      } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "trust_section", id: String(ctx.sectionKey) }),
+  },
+  // I5 披露发布(publishDisclosure · 法域 jurisdiction 锁 · amplifies false)
+  {
+    op: "i4_disclosure_publish",
+    domain: "I",
+    action: "发布披露新版",
+    amplifies: false, // 条款重签非熔断,不动账本
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "disclosure_jurisdiction",
+    buildCommand: (ctx) => ({ domain: "I", op: "i4_disclosure_publish",
+      params: {
+        jurisdiction: String(ctx.jurisdiction),
+        version: String(ctx.version),
+        languageScope: String(ctx.languageScope ?? "en+zh"),
+        effectiveDate: String(ctx.effectiveDate ?? ""),
+        requiresReack: ctx.requiresReack ?? true,
+        zh: String(ctx.zh ?? ""),
+        en: String(ctx.en ?? ""),
+      } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdiction) }),
+  },
+  // I5 受限动作范围调整(updateGateScope · 全仓单例锁 restricted-actions · amplifies 放松资金类合规拦截)
+  {
+    op: "i4_gate_adjust",
+    domain: "I",
+    action: "调整披露受限动作范围",
+    amplifies: true, // 移出范围 = 放松合规拦截;前端按纳入方向可覆盖为 false
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "disclosure_gate",
+    buildCommand: (ctx) => ({ domain: "I", op: "i4_gate_adjust",
+      params: { scope: String(ctx.scope) } }),
+    buildTarget: () => ({ domain: "I", type: "disclosure_gate", id: "restricted-actions" }),
+  },
+  // I7 课程奖励调整(updateCourseReward · courseId 锁 · amplifies 放大未来 NEX 流出,B1 红线前置)
+  {
+    op: "i7_course_reward_adjust",
+    domain: "I",
+    action: "课程奖励调整",
+    amplifies: true, // rewardNex↑ 放大 NEX 流出
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "learning_course",
+    buildCommand: (ctx) => ({ domain: "I", op: "i7_course_reward_adjust",
+      params: { courseId: String(ctx.courseId), rewardNex: ctx.rewardNex } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "learning_course", id: String(ctx.courseId) }),
+  },
 ];
 
 export function findHighOp(op: string): HighOpDef | undefined {

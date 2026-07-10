@@ -12,6 +12,8 @@
 import { useState } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
+import { usePropose } from "@/lib/admin/use-propose";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 type TrustSection = {
   key: string; desc: string; struct: string; v: string; status: string; lastChange: string; roleGate: string; highSensitivity: boolean;
@@ -24,6 +26,7 @@ type TrustDetailKey = string;
 
 export function I4Trust({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const propose = usePropose();
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [chapNo, setChapNo] = useState<string | null>(null);
@@ -71,7 +74,21 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.publishI4TrustSection(s.key, s.v, reason), `${s.key} 已发布至 /trust`);
+        const def = findHighOp("i4_trust_section_manage")!;
+        void propose(toast, {
+          action: `发布信任版块 · ${s.key}`,
+          obj: s.key,
+          before: s.v,
+          after: s.v,
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I4",
+          command: def.buildCommand({ sectionKey: s.key, action: "publish", version: s.v }),
+          target: def.buildTarget({ sectionKey: s.key }),
+        });
       },
     });
 
@@ -87,7 +104,21 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       edit: { kind: "text", current: s.v },
       run: (reason, nv) => {
         if (!nv) return;
-        runBackend(actions.rollbackI4TrustSection(s.key, nv, reason), `${s.key} 回滚已确认生效`);
+        const def = findHighOp("i4_trust_section_manage")!;
+        void propose(toast, {
+          action: `回滚信任版块 · ${s.key}`,
+          obj: s.key,
+          before: s.v,
+          after: nv,
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I4",
+          command: def.buildCommand({ sectionKey: s.key, action: "rollback", targetVersion: nv }),
+          target: def.buildTarget({ sectionKey: s.key }),
+        });
       },
     });
 
@@ -101,7 +132,21 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       ),
       amplifies: false,
       run: (reason) => {
-        runBackend(actions.archiveI4TrustSection(s.key, reason), `${s.key} 下架已确认生效`);
+        const def = findHighOp("i4_trust_section_manage")!;
+        void propose(toast, {
+          action: `下架信任版块 · ${s.key}`,
+          obj: s.key,
+          before: s.v,
+          after: "archived",
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I4",
+          command: def.buildCommand({ sectionKey: s.key, action: "archive" }),
+          target: def.buildTarget({ sectionKey: s.key }),
+        });
       },
     });
 
@@ -181,15 +226,28 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       },
       run: (reason, v, form) => {
         if (!v) return;
-        runBackend(actions.publishI4Disclosure(j.code, {
-          version: v,
-          jurisdiction: form?.jurisdiction || j.code,
-          languageScope: form?.languageScope || "en+zh",
-          effectiveDate: form?.effectiveDate || disclosureDraft?.effectiveDate || "",
-          requiresReack: form?.requiresReack ?? true,
-          zh: form?.zh || CHAPTER_BODY_ZH,
-          en: form?.en || CHAPTER_BODY_EN,
-        }, reason), `${j.code} 披露新版已发布 · 目标 ${v}`);
+        const def = findHighOp("i4_disclosure_publish")!;
+        const version = v;
+        const jurisdiction = form?.jurisdiction || j.code;
+        const languageScope = form?.languageScope || "en+zh";
+        const effectiveDate = form?.effectiveDate || disclosureDraft?.effectiveDate || "";
+        const requiresReack = form?.requiresReack ?? true;
+        const zh = form?.zh || CHAPTER_BODY_ZH;
+        const en = form?.en || CHAPTER_BODY_EN;
+        void propose(toast, {
+          action: `发布披露新版 · ${j.code}`,
+          obj: j.code,
+          before: liveJurVersion(j),
+          after: version,
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I5",
+          command: def.buildCommand({ jurisdiction, version, languageScope, effectiveDate, requiresReack, zh, en }),
+          target: def.buildTarget({ jurisdiction }),
+        });
       },
     });
 
@@ -205,13 +263,27 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           {" "}风控提交,风控 / 超管执行。
         </>
       ),
-      amplifies: false,
+      amplifies: on, // 移出受限范围(on=true)= 放松合规拦截 → amplifies;纳入(on=false)= 收紧 → false
       run: (reason) => {
         const nextScope = GATED_ACTIONS
           .filter((item) => (item.key === g.key ? !on : item.active))
           .map((item) => item.name)
-          .join(" + ");
-        runBackend(actions.updateI4GateScope(nextScope || g.name, reason), `${g.name} 已${on ? "移出" : "纳入"}受限范围`);
+          .join(" + ") || g.name;
+        const def = findHighOp("i4_gate_adjust")!;
+        void propose(toast, {
+          action: `${on ? "移出" : "纳入"}受限动作 · ${g.name}`,
+          obj: g.name,
+          before: on ? "受限内" : "已移出",
+          after: on ? "已移出" : "受限内",
+          type: "param",
+          amplifies: on,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I5",
+          command: def.buildCommand({ scope: nextScope }),
+          target: def.buildTarget({}),
+        });
       },
     });
   };
