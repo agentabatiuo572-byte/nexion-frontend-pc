@@ -20,7 +20,11 @@ export type EOp =
   | "task-down"       // 下架任务(需破坏性理由 + 影响确认)
   | "task-price"      // 任务改单价(E2 后端 API,操作确认 出价格编辑框)
   | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API
+  | "task-create"     // 新增任务(原 submitTask 直调,批6 补 modal)→ E2 后端 API
   | "phone-tier"      // 手机算力档位收益 → E2 后端 API
+  | "review-save"     // 评价新增/编辑(原 submitReview 直调,批6 补 modal)→ E1 后端 API
+  | "review-delete"   // 评价删除(原 delReview 直调,批6 补 modal)→ E1 后端 API
+  | "review-status"   // 评价隐藏/恢复(原 toggleReview 直调,批6 补 modal)→ E1 后端 API
   | "param"           // 自由值调参 → E1/E3 后端配置接口;未接后端的 key 直接失败,不写本地 store
   | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];逐字段写后端 config
   | "param-fixed"     // 固定值写入 → E1/E3 后端配置接口;不出编辑框
@@ -62,6 +66,7 @@ export interface McSpec {
   hasImg?: boolean;         // sku-save:含商品媒体(商品主图或商品视频)
   status?: string;          // sku-status:"on"|"off";ops-pause:"on"|"off"
   taskId?: string;          // task-price:目标任务 id
+  reviewId?: string;        // review-delete/review-status:目标评价 id
   phoneTier?: number;
   phoneField?: "dailyUsdt" | "dailyNex";
   phaseId?: string;
