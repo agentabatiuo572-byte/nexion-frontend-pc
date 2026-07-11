@@ -118,7 +118,17 @@ export type SegCond = { field: string; op: string; value: string };
 
 // 坐席会话(字段镜像前端 Conversation/ConvMessage + 后台 owner/status)
 export type SessionStatus = "open" | "resolved" | "closed";
-export type SessionMsg = { ts: number; sender: "user" | "agent"; agentName?: string; text: string; ctaHref?: string };
+/** 坐席消息回执:sent=已送达用户未读,read=用户已读(仅 sender==="agent" 有意义;镜像前端 ConvMessageStatus) */
+export type SessionMsgStatus = "sent" | "read";
+export type SessionMsg = { ts: number; sender: "user" | "agent"; agentName?: string; status?: SessionMsgStatus; text: string; ctaHref?: string };
+
+// 用户短回执池(坐席回复后模拟用户已读→输入中→回执到达的会话闭环;按会话消息数轮询取用)
+export const USER_ACK_POOL: string[] = [
+  "好的,谢谢!",
+  "明白了,我试一下。",
+  "收到,麻烦你了 🙏",
+  "OK,那我等通知。",
+];
 
 /* 完整客户档案(设计稿 CustomerProfile 合并）—— 坐席接待时一眼看清价值 / 风险。只读快照,
  * 客户侧真实账户操作回 C/D 域;systemTags 派生只读,customTags / notes 持久化于后端(nx_customer_tag / nx_customer_note)。 */

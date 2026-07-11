@@ -8,7 +8,7 @@
  *
  * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/评价/代际门、E2 任务引擎、E3 生命周期&Trade-in、E4 订单状态机、E5 设备运维走后端 API。
+ * 真写落点:E1 SKU/评价/上架门、E2 任务引擎、E3 生命周期&Trade-in、E4 订单状态机、E5 设备运维走后端 API。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -238,7 +238,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e3Operations, setE3Operations] = useState<E3OperationMetric[]>([]);
   const [e3Loading, setE3Loading] = useState(false);
   const [e3Error, setE3Error] = useState<string | null>(null);
-  const isE3ParamKey = (k: string) => k.startsWith("E.device.") || k.startsWith("E.tradein.");
+  const isE3ParamKey = (k: string) =>
+    k.startsWith("E.device.") || k.startsWith("E.tradein.") || k.startsWith("E.release.earlyAccess.");
   const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : "—";
   const e3Ready = Object.keys(e3Params).length > 0;
 
@@ -315,7 +316,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE3Loading(false);
     }
   }, []);
-  useEffect(() => { if (tab === "E3") void refreshE3(); }, [tab, refreshE3]);
+  useEffect(() => { if (tab === "E1" || tab === "E3") void refreshE3(); }, [tab, refreshE3]);
 
   // ── E4 订单状态机:服务端数据为单一来源 ──
   const [orders, setOrders] = useState<EOrder[]>([]);
@@ -794,8 +795,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const openSkuSaveConfirm = () => {
     if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
     if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
-    if (!form.tier.trim() || !form.generation.trim() || !form.lifecycle.trim()) {
-      setToast("请补全档位 / 产品代际 / 生命周期");
+    if (!form.tier.trim() || !form.lifecycle.trim()) {
+      setToast("请补全档位 / 生命周期");
       return;
     }
     const datacenter = form.datacenter.trim();
@@ -827,6 +828,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // ── 批6 A2 propose 辅助(壳集中回调,被 onConfirm 复用)──
   // 取订单当前 live 态(基于 orderById),用于 propose 的 before 描述。
   const effOrderState = (orderId: string): string => orderState({ id: orderId } as EOrder);
+  const canonicalE3Value = (paramKey: string, value: string) => {
+    if (paramKey.includes("capacity.applyTo.")) {
+      if (value === "参与递减") return "true";
+      if (value === "免递减") return "false";
+    }
+    if (["E.tradein.enabled", "E.tradein.requireHigherPrice", "E.release.earlyAccess.enabled"].includes(paramKey)) {
+      if (value === "开") return "true";
+      if (value === "关") return "false";
+    }
+    return value;
+  };
   // 自由值/固定值/多字段调参统一入口:按 paramKey 路由到 e6_compute_config / e1_gate_field / e3_config。
   const proposeParam = (paramKey: string, value: string, before: string, reason: string, action: string, amplify: boolean) => {
     if (isE6ParamKey(paramKey)) {
@@ -855,10 +867,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     }
     if (isE3ParamKey(paramKey)) {
       const def = findHighOp("e3_config")!;
+      const canonicalValue = canonicalE3Value(paramKey, value);
       void propose(ctx.toast, {
         action, obj: paramKey, before, after: value, type: def.type, amplifies: amplify,
         gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E3",
-        command: def.buildCommand({ key: paramKey, value }),
+        command: def.buildCommand({ key: paramKey, value: canonicalValue }),
         target: def.buildTarget({ key: paramKey }),
       });
       return;
@@ -1046,25 +1059,14 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>
           </SkuFieldGroup>
 
-          <SkuFieldGroup n="⑥" title="代际 & 生命周期">
+          <SkuFieldGroup n="⑥" title="生命周期 & 上架">
             <div className="grid g-2" style={{ gap: 12 }}>
-              <label className="col" style={{ gap: 5 }}><span className="muted tiny">产品代际</span><select className="fld" value={form.generation} onChange={(e) => setForm({ ...form, generation: e.target.value })}><option value="">请选择代际</option>{["1", "2", "3"].map((x) => <option key={x} value={x}>第 {x} 代</option>)}</select></label>
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">生命周期</span><select className="fld" value={form.lifecycle} onChange={(e) => setForm({ ...form, lifecycle: e.target.value })}><option value="">请选择生命周期</option>{SKU_LIFECYCLE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             </div>
             {form.tier !== "Share" && <>
               <div className="grid g-2" style={{ gap: 12 }}>
-                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（代际发布门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}</option>)}</select></label>
-                <SkuFld label="以旧换新折扣 USD" type="number" value={form.tradeinDiscount} onChange={(v) => setForm({ ...form, tradeinDiscount: v })} placeholder="300" hint="可空" />
+                <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（上架节奏门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}</option>)}</select></label>
               </div>
-              <label className="col" style={{ gap: 5 }}>
-                <span className="muted tiny">被替代为 supersededBy<span style={{ color: "var(--ink-4)" }}> · 可空 · 选下一代 SKU</span></span>
-                <select className="fld" value={form.supersededBy} onChange={(e) => setForm({ ...form, supersededBy: e.target.value })}>
-                  <option value="">— 无(未被替代)—</option>
-                  {skus.filter((s) => (s.id || s.name) !== (form.id.trim() || editName)).map((s) => <option key={s.name} value={s.id || s.name}>{s.name} · {s.id || s.name}</option>)}
-                  {/* 陈旧值兜底:当前 supersededBy 指向已删/不在目录的 SKU 时补一项,防 select 回显空→提交误清。 */}
-                  {form.supersededBy.trim() && !skus.some((s) => (s.id || s.name) === form.supersededBy.trim()) && <option value={form.supersededBy}>{form.supersededBy}(已不在目录)</option>}
-                </select>
-              </label>
             </>}
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"Nexion 全托管\n99.9% 在线率 SLA\n免运费与安装"} /></label>
           </SkuFieldGroup>
@@ -1364,11 +1366,13 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               const before = typeof mc.edit?.current === "string" ? mc.edit.current : "—";
               proposeParam(mc.paramKey, v, before, reason, mc.name, !!mc.amplify);
             } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
-              // 批6 决策:每 key 一票(锁粒度细,符合 uk_target 一对象一锁)。逐 key propose 一张单 key 票。
-              for (const { key, paramKey } of mc.paramKeys) {
-                const v = (businessValue[key] ?? "").trim();
-                proposeParam(paramKey, v, "—", reason, mc.name, !!mc.amplify);
-              }
+              const def = findHighOp("e3_config_batch")!;
+              const values = Object.fromEntries(mc.paramKeys.map(({ key, paramKey }) => [paramKey, canonicalE3Value(paramKey, (businessValue[key] ?? "").trim())]));
+              void propose(ctx.toast, {
+                action: mc.name, obj: mc.paramKeys.map(({ paramKey }) => paramKey).join(","), before: "批量配置变更前", after: "批量配置待审批", type: def.type,
+                amplifies: !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E3",
+                command: def.buildCommand({ values }), targets: def.buildTargets?.({ values }),
+              });
             } else if (mc.op === "param-fixed" && mc.paramKey && mc.fixedVal != null) {
               proposeParam(mc.paramKey, mc.fixedVal, "—", reason, mc.name, !!mc.amplify);
             } else if (mc.op === "phase-save" && businessValue) {

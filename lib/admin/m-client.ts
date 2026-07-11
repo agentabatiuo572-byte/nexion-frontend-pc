@@ -91,6 +91,7 @@ type ContentConversationMessageView = {
   senderType?: string;
   senderName?: string;
   content?: string;
+  receiptStatus?: string;
   createdAt?: string;
 };
 
@@ -722,6 +723,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       ts: asTs(m.createdAt, updated),
       sender: agent ? ("agent" as const) : ("user" as const),
       agentName: agent ? str(m.senderName, base.ownerAgentName || "客服台") : undefined,
+      status: agent && str(m.receiptStatus, "sent").toLowerCase() === "read" ? ("read" as const) : agent ? ("sent" as const) : undefined,
       text: str(m.content, ""),
     };
   });
@@ -730,6 +732,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       ts: asTs(base.lastMessageAt, updated),
       sender: "agent",
       agentName: base.ownerAgentName || "客服台",
+      status: "sent",
       text: base.lastMessage,
     });
   }

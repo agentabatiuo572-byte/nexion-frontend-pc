@@ -185,7 +185,7 @@ export default function LiquidityPage() {
             <span className="h">未来 7 日到期兑付预测</span>
             <span className="sub">需准备的可兑付头寸 · 万 USDT</span>
             <div className="r">
-              <span className="b-tag">到期 = 提现冷却 + 利息 + 分红</span>
+              <span className="b-tag">到期 = 提现冷却 + 利息 + 排放</span>
             </div>
           </div>
           <div className="rwrap">

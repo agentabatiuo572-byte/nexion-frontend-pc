@@ -6,7 +6,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const UNI_BASE_URL = process.env.UNI_BASE_URL || "http://localhost:5173";
+// uniapp 本地 dev 首页默认套「手机壳舞台」iframe(index.html nx-device-stage),
+// 顶层 window 无 uni 全局;走查必须带 ?nx_device=off 直连应用本体
+//(同族坑:uniapp docs/PORT-PITFALLS P-058 —— eval 上下文与应用 frame 错位)。
+const UNI_BASE_URL = process.env.UNI_BASE_URL || "http://localhost:5173/?nx_device=off";
+// query 基址后直接拼 "/#/..." 会把斜杠吞进 query 值(nx_device=off/),须吃掉 hash 前导斜杠。
+const joinUniRoute = (base, hashRoute) => `${base}${base.includes("?") ? hashRoute.replace(/^\/(?=#)/, "") : hashRoute}`;
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL || process.env.ADMIN_BASE || "http://localhost:3002";
 const session = process.env.AGENT_BROWSER_SESSION || `nexion-feature-map-walkthrough-${Date.now()}-${process.pid}`;
 const OUT_FILE = path.join(ROOT, "docs", "audit", "shards", "feature-mapping-walkthrough-proof.ndjson");
@@ -186,7 +191,7 @@ function openUrl(url) {
 }
 
 function openUni(hashRoute) {
-  return openUrl(`${UNI_BASE_URL}${hashRoute}`);
+  return openUrl(joinUniRoute(UNI_BASE_URL, hashRoute));
 }
 
 function openAdmin(route) {
@@ -388,7 +393,7 @@ await step("FM-008", "unilevel-filter-and-how-route", () => {
     return {
       href: location.href,
       body,
-      ok: location.href.includes('/#/pages/team/unilevel-how') && (body.includes('Influence Network') || body.includes('Network Royalty')),
+      ok: location.href.includes('#/pages/team/unilevel-how') && (body.includes('Influence Network') || body.includes('Network Royalty')),
     };
   `);
   expect(how.ok, `unilevel how route failed: ${how.href}`);

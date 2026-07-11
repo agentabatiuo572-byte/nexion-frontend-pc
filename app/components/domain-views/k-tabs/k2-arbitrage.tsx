@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { K2Row, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { fetchE3Snapshot } from "@/lib/admin/e3-client";
 import type { KCtx } from "./types";
 
 function errorText(error: unknown) {
@@ -30,6 +31,25 @@ const K2_PARAM_HELP: Record<string, string> = {
   welcomeGiftAnomalyThreshold: "同一口径下重复领取新人礼的笔数阈值。",
   leaderboardVelocityMultiplier: "排行榜、邀请或佣金增长速度相对基线的倍数阈值。",
 };
+
+type ExtraParamDef = { key: string; label: string; unit: string; min?: number; options?: string[] };
+
+const REWARD_RISK_PARAMS: ExtraParamDef[] = [
+  { key: "rewardRisk.lockMode", label: "新人礼发放模式", unit: "模式", options: ["risk_bucket", "direct"] },
+  { key: "rewardRisk.usdtAmount", label: "新人礼 USDT 金额", unit: "USDT", min: 0 },
+  { key: "rewardRisk.nexAmount", label: "新人礼 NEX 金额", unit: "NEX", min: 0 },
+];
+
+const OTP_GATE_PARAMS: ExtraParamDef[] = [
+  { key: "otpGate.resendSeconds", label: "验证码重发冷却", unit: "秒", min: 0 },
+  { key: "otpGate.captchaAfterSends", label: "滑块验证触发次数", unit: "次/24h", min: 0 },
+  { key: "otpGate.otpTtlSeconds", label: "验证码有效期", unit: "秒", min: 60 },
+  { key: "otpGate.maxVerifyAttempts", label: "最多输错次数", unit: "次", min: 1 },
+  { key: "otpGate.captchaTicketTtlSeconds", label: "滑块票据有效期", unit: "秒", min: 30 },
+];
+
+const LOCK_MODE_LABELS: Record<string, string> = { risk_bucket: "按风险桶发放", direct: "直入可提余额" };
+const LOCK_MODE_VALUES = Object.fromEntries(Object.entries(LOCK_MODE_LABELS).map(([value, label]) => [label, value]));
 
 function parseK2Threshold(key: string, value: string): K2Threshold | null {
   const text = value.trim().replace(/X/g, "x");
@@ -161,6 +181,16 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const views = overview?.views ?? [];
   const [viewKey, setViewKey] = useState("trial");
   const current = views.find((item) => item.key === viewKey) ?? views[0];
+  const allParams = overview?.params ?? [];
+  const detectionParams = allParams.filter((param) => !param.key.startsWith("rewardRisk.") && !param.key.startsWith("otpGate."));
+  const [ladderTopCredit, setLadderTopCredit] = useState<string>("");
+  useEffect(() => {
+    let active = true;
+    void fetchE3Snapshot()
+      .then((snapshot) => { if (active) setLadderTopCredit(snapshot.params["E.tradein.ladder.credit1"] ?? ""); })
+      .catch(() => { if (active) setLadderTopCredit(""); });
+    return () => { active = false; };
+  }, []);
 
   const runAction = async (work: () => Promise<void>, ok: string) => {
     try {
@@ -295,6 +325,28 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     });
   };
 
+  const adjExtraParam = (definition: ExtraParamDef) => {
+    const param = allParams.find((item) => item.key === definition.key);
+    if (!param) {
+      ctx.toast(`${definition.label} 后端配置未返回`);
+      return;
+    }
+    const current = definition.key === "rewardRisk.lockMode" ? (LOCK_MODE_LABELS[param.value] ?? param.value) : param.value;
+    ctx.openActionConfirm({
+      action: `K2 配置调整 · ${definition.label}`,
+      detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。${param.sub}。调整后只影响后续判定并写入审计。`,
+      amplifies: definition.key.startsWith("rewardRisk."),
+      edit: definition.options
+        ? { kind: "select", current, options: definition.key === "rewardRisk.lockMode" ? Object.values(LOCK_MODE_LABELS) : definition.options }
+        : { kind: "number", current: param.value, unit: definition.unit, min: definition.min },
+      run: (reason, value) => {
+        if (value == null || value === "") return;
+        const backendValue = definition.key === "rewardRisk.lockMode" ? (LOCK_MODE_VALUES[value] ?? value) : value;
+        void runAction(() => ctx.actions.updateK2Param(definition.key, backendValue, reason), `${definition.label} 已更新为 ${value} ${definition.unit}`);
+      },
+    });
+  };
+
   if (ctx.contentLoading && !overview) {
     return <section className="l-card"><div className="l-h"><span className="ttl">K2 数据加载中</span><span className="sub">· 正在读取后端 risk 接口</span></div></section>;
   }
@@ -337,14 +389,14 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">检测阈值</span>
-          <span className="sub">· 换新最短持有月数归 E3 管,这里只读引用</span>
+          <span className="sub">· 置换抵扣阶梯归 E3 管,这里只读引用(随时可置换,抵扣随产出递减)</span>
           <div className="r">
-            <Link className="kcode lock" href="/devices/trade-in">换新门槛归 E3 · 只读 {overview?.minHoldingMonths ?? "6"} 个月</Link>
+            <Link className="kcode lock" href="/devices/trade-in" title="置换阶梯权威归 E3；最短持有闸门已删除">🔒 置换阶梯归 E3 · 首档抵扣 {ladderTopCredit ? `${ladderTopCredit}%` : "读取中"}</Link>
           </div>
         </div>
         <div className="l-b">
           <div className="param-grid">
-            {(overview?.params ?? []).map((p) => (
+            {detectionParams.map((p) => (
               <div className="p" key={p.key}>
                 <div className="k">{p.name}</div>
                 <div className="v">
@@ -358,6 +410,36 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           </div>
         </div>
       </section>
+
+      {[
+        { title: "新人礼发放配置", sub: "· 配置已持久化；发奖服务接入前不影响实际入账", params: REWARD_RISK_PARAMS, proof: "k2-welcome-gift-params" },
+        { title: "短信闸门参数", sub: "· 验证码发送限频与滑块人机验证", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
+      ].map((group) => (
+        <section className="l-card" key={group.title}>
+          <div className="l-h">
+            <span className="ttl">{group.title}</span>
+            <span className="sub">{group.sub}</span>
+            <div className="r"><span className="kcode electric">后端配置单源</span></div>
+          </div>
+          <div className="l-b">
+            <div className="param-grid" data-proof={group.proof}>
+              {group.params.map((definition) => {
+                const param = allParams.find((item) => item.key === definition.key);
+                return (
+                  <div className="p" key={definition.key}>
+                    <div className="k">{definition.label}</div>
+                    <div className="v">
+                      {definition.key === "rewardRisk.lockMode" && param ? (LOCK_MODE_LABELS[param.value] ?? param.value) : (param?.value ?? "—")} <span className="vu">{definition.unit}</span>
+                      <button className="l-btn sm mc" disabled={!param} onClick={() => adjExtraParam(definition)}>调整</button>
+                    </div>
+                    <div className="s">{param?.sub ?? "等待后端配置"}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      ))}
 
       <section className="l-card">
         <div className="l-h">

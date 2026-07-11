@@ -942,7 +942,7 @@ export const HIGH_OPS: HighOpDef[] = [
   {
     op: "g4_genesis_rerun_dividend",
     domain: "G",
-    action: "重跑创世分红批次",
+    action: "重跑创世排放批次",
     amplifies: true, // 硬=true,直接资金 postLedgerEntry
     type: "fund",
     gateLabel: "门槛者",
@@ -1257,6 +1257,25 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({ domain: "E", op: "e3_config",
       params: { key: String(ctx.key), value: String(ctx.value) } }),
     buildTarget: (ctx) => ({ domain: "E", type: "device_e3_config", id: String(ctx.key) }),
+  },
+  {
+    op: "e3_config_batch",
+    domain: "E",
+    action: "批量更新 E3 生命周期配置",
+    amplifies: false,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "device_e3_config",
+    buildCommand: (ctx) => ({ domain: "E", op: "e3_config_batch", params: { values: ctx.values } }),
+    buildTargets: (ctx) =>
+      Object.keys((ctx.values as Record<string, unknown>) ?? {})
+        .sort()
+        .map((key) => ({ domain: "E", type: "device_e3_config", id: key })),
+    buildTarget: (ctx) => ({
+      domain: "E",
+      type: "device_e3_config",
+      id: Object.keys((ctx.values as Record<string, unknown>) ?? {}).sort()[0] ?? "__E3_BATCH__",
+    }),
   },
   {
     op: "e3_tradein",

@@ -5,7 +5,7 @@
  * 缘起(2026-06-24):全 13 域审计发现两类坑:
  *   ① A2 审计页 a2-audit.tsx 只渲染静态种子 AUDIT_LOGS,从不订阅实时 usePlatformConfig().audit[],
  *      → 全后台高敏操作虽已 setParam/logAudit 落审计,却在 A2 页永远看不见(展示侧脱节)。
- *   ② 部分高敏写动作走后端 REST / 专用 CRUD(A 域账号治理、E 域订单/设备/E3 参数/代际门),
+ *   ② 部分高敏写动作走后端 REST / 专用 CRUD(A 域账号治理、E 域订单/设备/E3 参数/上架门),
  *      onConfirm 漏补相邻 logAudit/setParam → 平台 A2 审计零写入(写入侧漏)。
  * 典型「修一处≠修全部」+「声明≠实现」(manifest storeAction 标 setParam,实现却是 REST)。
  *
@@ -13,7 +13,7 @@
  *   A. a2-audit.tsx 必订阅实时 audit[](usePlatformConfig((s) => s.audit)),否则重连被回改回种子。
  *   B. a1-accounts.tsx:① 唯一写动作 chokepoint runMutation 内有集中 logAudit;
  *      ② 每个 runMutation 调用都传 audit 对象({ target: … })——防新增账号治理动作漏审计。
- *   C. e-view.tsx onConfirm 每个高敏 gap 分支(代际门 / 阶段 / 订单 / 设备 / E3 参数 / 派单 / 数据中心)必含 logAudit。
+ *   C. e-view.tsx onConfirm 每个高敏 gap 分支(上架门 / 阶段 / 订单 / 设备 / E3 参数 / 派单 / 数据中心)必含 logAudit。
  * 注:360 HUB 用户详情页冻结/解冻是轻量快捷动作(confirm + per-user 审计),不进平台 A2;权威
  *     reason-required 冻结/解冻在 C2 账户操作页(操作确认 + logAudit admin.user_frozen),已覆盖平台 A2。
  */

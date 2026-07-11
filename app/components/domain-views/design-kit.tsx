@@ -395,6 +395,7 @@ export interface ThreadMessage {
   vlevel?: string; // 用户 VIP chip
   scriptTag?: string; // 话术标记
   cta?: ThreadCta; // 富 CTA(产品卡 / 链接)
+  receipt?: string; // 送达回执(已读 / 未读)—— 仅最后一条坐席消息由调用方填,镜像前端 iMessage 惯例
 }
 
 // 真人头像(对齐设计稿 Avatar):按名字猜性别 → randomuser.me;name-hash 取固定编号;加载失败露首字母。
@@ -408,7 +409,7 @@ export function photoUrl(name?: string): string {
 // accentVar/role/senderName/vlevel/scriptTag 仍在 props 类型中(兼容旧调用),Telegram 样式不再每条显头像/名字/角色,故不读。
 // resetKey(会话 id)变 → 本次渲染不 pop(切会话时历史消息不飞入);同 key 下新增的消息(index ≥ 上次长度)才 msg-pop 飞入。
 // agentName 传入 → 顶部右侧显「接待{handlerRole} · {agentName}」(Telegram 式不每条显名字时,坐席身份在此一处呈现;handlerRole 区分顾问/客服,缺省客服)。
-export function MessageThread({ messages, relWhen, resetKey, agentName, agentAvatar, handlerRole = "客服" }: { messages: ThreadMessage[]; relWhen: (ts: number) => string; accentVar?: string; resetKey?: string; agentName?: string; agentAvatar?: ReactNode; handlerRole?: string }) {
+export function MessageThread({ messages, relWhen, resetKey, agentName, agentAvatar, handlerRole = "客服", typing = false, typingLabel = "对方正在输入…" }: { messages: ThreadMessage[]; relWhen: (ts: number) => string; accentVar?: string; resetKey?: string; agentName?: string; agentAvatar?: ReactNode; handlerRole?: string; typing?: boolean; typingLabel?: string }) {
   const prevLenRef = useRef(messages.length);
   const prevKeyRef = useRef(resetKey);
   let freshFrom = prevLenRef.current;
@@ -476,16 +477,30 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
               {!m.cta && m.ctaHref && m.ctaHref !== "—" && (
                 <span className="msg-script" style={{ marginTop: 6 }}>CTA → {m.ctaHref}</span>
               )}
+              {m.receipt && <span className="msg-receipt">{m.receipt}</span>}
             </div>
           </div>
         );
       })}
+      {typing && (
+        <div className="msg-in msg-tg from-left" role="status" aria-label={typingLabel}>
+          <div className="msg-col">
+            <div className="msg-bubble user msg-typing">
+              <span className="msg-typing-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[] };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; min?: number; max?: number; step?: number };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -521,7 +536,7 @@ export type BusinessFormSpec =
   | { kind: "copy-edit"; keyName?: string; version?: string; surface?: string; zh?: string; en?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; versionNote?: string }
   | { kind: "course-authoring"; rewardMin?: number; rewardMax?: number; categories?: string[]; durations?: string[]; publishStates?: string[] }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
-  | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; discount?: number; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
+  | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
   | { kind: "version-authoring"; version?: string; jurisdiction?: string; zh?: string; en?: string; chapters?: string[]; languageScopes?: string[]; effectiveDate?: string; requiresReack?: boolean }
   | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean }
@@ -531,7 +546,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; min?: number; max?: number; step?: number; wide?: boolean }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -741,7 +756,6 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       name: spec.name ?? "",
       releaseMonth: String(spec.releaseMonth ?? 1),
       phase: spec.phase ?? spec.phaseOptions[0] ?? "",
-      discount: String(spec.discount ?? 0),
       eligibility: spec.eligibility ? "true" : "false",
       phaseOffset: String(spec.phaseOffset ?? 0),
       forceUnlock: spec.forceUnlock ? "true" : "false",
@@ -917,12 +931,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("skuId", "SKU");
     needs("releaseMonth", "发布月");
     needs("phase", "发布阶段");
-    needs("discount", "折扣");
     const month = Number(state.releaseMonth);
-    const discount = Number(state.discount);
     const offset = Number(state.phaseOffset || "0");
     if (!Number.isInteger(month) || month < 1 || month > 12) missing.push("发布月 1-12");
-    if (!Number.isFinite(discount) || discount < 0) missing.push("折扣金额 ≥ 0");
     if (!Number.isInteger(offset) || offset < -12 || offset > 12) missing.push("发布偏移 -12 到 12");
   } else if (spec.kind === "phase-config") {
     needs("label", "阶段名称");
@@ -1184,6 +1195,11 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
               ) : (
                 <input className="fld" type={f.inputKind === "number" ? "number" : "text"} min={f.min} max={f.max} step={f.step} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
               )}
+              {f.warnAbove != null && Number(value[f.key]) > f.warnAbove && (
+                <span className="tiny" style={{ display: "block", marginTop: 4, color: "var(--v5-warning)", fontWeight: 600 }}>
+                  ⚠ {f.warnText ?? `已超过 ${f.warnAbove} 的建议上限`}
+                </span>
+              )}
             </label>
           ))}
         </div>
@@ -1352,7 +1368,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   if (spec.kind === "generation-gate") {
     return (
       <div className="field" data-business-form="generation-gate">
-        <label>业务表单 · E1 代际发布门</label>
+        <label>业务表单 · E1 上架节奏门</label>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.mode === "create"
             ? select("skuId", "目标 SKU", spec.skuOptions)
@@ -1360,7 +1376,6 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {input("name", "展示名称", "留空则使用 SKU 名称")}
           {input("releaseMonth", "计划发布月", "1-12", "number")}
           {select("phase", "发布阶段", spec.phaseOptions, spec.phaseLabels)}
-          {input("discount", "以旧换新折扣 USDT", "300", "number")}
           {input("phaseOffset", "发布偏移（月）", "0", "number")}
           {select("eligibility", "E5 资格配置", ["true", "false"], { true: "已补齐", false: "未补录" })}
           {select("forceUnlock", "强制提前开放", ["false", "true"], { false: "否", true: "是" })}
@@ -1377,7 +1392,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
       <div className="field" data-business-form="phase-config">
         <label>业务表单 · E1 阶段配置</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("label", "阶段名称", "如 代际第一代")}
+          {input("label", "阶段名称", "如 P3 Pro v2 首发")}
           {input("meta", "门槛说明", "如 L0+ / 完成 KYC")}
           {input("skus", "SKU 标签", "如 入门档 / Pro v2")}
           {input("sortOrder", "排序", "10", "number")}

@@ -108,6 +108,7 @@ interface BackendOverview {
   stats?: BackendStats | null;
   params?: BackendParam[] | null;
   dividend?: BackendDividend | null;
+  emissionGate?: { configKey?: string | null; open?: boolean | string | null; owner?: string | null } | null;
   market?: BackendMarket | null;
   geoBlocked?: BackendGeoBlocked[] | null;
   nodes?: BackendNode[] | null;
@@ -217,6 +218,7 @@ export interface G4Overview {
   stats: G4Stats;
   params: G4Param[];
   dividend: G4Dividend;
+  emissionGate: { configKey: string; open: boolean; owner: string };
   market: G4Market;
   geoBlocked: G4GeoBlocked[];
   nodes: G4Node[];
@@ -261,6 +263,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
   const stats = data?.stats ?? {};
   const secondary = stats.secondary ?? {};
   const dividend = data?.dividend ?? {};
+  const emissionGate = data?.emissionGate ?? {};
   const market = data?.market ?? {};
   const coverage = data?.coverage ?? {};
   const nodes = (data?.nodes ?? []).map((node) => ({
@@ -326,6 +329,11 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       payoutToday: toNumber(dividend.payoutToday),
       batchNo: asText(dividend.batchNo, ""),
       batchStatus: asText(dividend.batchStatus, "ready"),
+    },
+    emissionGate: {
+      configKey: asText(emissionGate.configKey, "growth.phase.genesis_emissions_open"),
+      open: toBool(emissionGate.open, false),
+      owner: asText(emissionGate.owner, "H1"),
     },
     market: {
       enabled: toBool(market.enabled, false),
