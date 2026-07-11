@@ -1,7 +1,7 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
-import { normalizeEffectiveMenus, normalizeSessionRole } from "@/lib/admin/session-role";
+import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "@/lib/admin/session-role";
 
 interface ApiResult<T> {
   code: number;
@@ -20,6 +20,7 @@ interface LoginPayload {
     authorities?: string[];
     effectiveMenus?: string[];
     menuCodes?: string[];
+    effectiveMenuNodes?: unknown[];
     passwordChangeRequired?: boolean;
   };
 }
@@ -89,6 +90,7 @@ function normalizeLoginPayload(payload: LoginPayload): LoginResult {
       role: normalizeAdminRole(payload.session.roleCode || payload.session.role),
       authorities: payload.session.authorities ?? [],
       menuCodes: normalizeEffectiveMenus(payload.session),
+      menuNodes: normalizeEffectiveMenuNodes(payload.session),
       passwordChangeRequired: Boolean(payload.session.passwordChangeRequired),
     },
   };

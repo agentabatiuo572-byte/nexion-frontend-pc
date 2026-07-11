@@ -280,6 +280,7 @@ export default function CommandCenter() {
   const domains = role ? resolveVisibleDomains({
     role,
     menuCodes: session?.menuCodes,
+    menuNodes: session?.menuNodes,
     authorities: session?.authorities ?? [],
   }) : [];
   const visibleModuleCount = domains.reduce((sum, domain) => sum + domain.l2.length, 0);

@@ -19,6 +19,7 @@ import { PageTransition } from "./page-transition";
 import { LoginGate } from "./login-gate";
 
 const SUPPORT_HOME_PATH = "/service/overview";
+const SESSION_REFRESH_MS = 60_000;
 
 function defaultPathForDomains(domains: NavDomain[]) {
   return domains[0]?.l2[0]?.path ?? "/";
@@ -66,6 +67,36 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     };
   }, [mounted, signIn, signOut]);
 
+  // A6/A7 changes must reach an already-open console without requiring a full reload.
+  // Focus refresh handles operators returning to the tab; the interval closes the long-open-tab gap.
+  useEffect(() => {
+    if (!mounted || !restoreChecked || !isAuthenticated) return;
+    let disposed = false;
+    let refreshing = false;
+    const refreshSession = async () => {
+      if (disposed || refreshing) return;
+      refreshing = true;
+      try {
+        const auth = await currentAdminSession();
+        if (disposed) return;
+        if (auth) signIn(auth);
+        else signOut();
+      } catch {
+        // Keep the current session on transient network errors; protected APIs remain server-authoritative.
+      } finally {
+        refreshing = false;
+      }
+    };
+    const onFocus = () => void refreshSession();
+    window.addEventListener("focus", onFocus);
+    const timer = window.setInterval(() => void refreshSession(), SESSION_REFRESH_MS);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(timer);
+    };
+  }, [isAuthenticated, mounted, restoreChecked, signIn, signOut]);
+
   const role = mounted ? authRole : "auditor";
   const operator = mounted ? operatorRaw : "总管理员";
   const collapsed = mounted ? collapsedRaw : false;
@@ -73,8 +104,9 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const domains = useMemo(() => resolveVisibleDomains({
     role,
     menuCodes: session?.menuCodes,
+    menuNodes: session?.menuNodes,
     authorities: session?.authorities ?? [],
-  }), [role, session?.authorities, session?.menuCodes]);
+  }), [role, session?.authorities, session?.menuCodes, session?.menuNodes]);
   const shouldRedirectHome = role === "support" && pathname === "/";
   const shouldRedirectForbidden = !canAccessResolvedPath(domains, pathname);
   const redirecting = isAuthenticated && (shouldRedirectHome || shouldRedirectForbidden);

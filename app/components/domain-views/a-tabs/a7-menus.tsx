@@ -54,7 +54,7 @@ export default function A7Menus() {
     <div className="dkpage adom">
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A7" l2Name="菜单管理"
-        summary={`数据库菜单状态与角色绑定（${overview?.domainCount ?? 0} 域 / ${overview?.pageCount ?? 0} 页）是授权可见性真源；页面名称、路由和排序仍由已注册的 console-nav IA 映射，未注册自定义节点不会进入导航。`}
+        summary={`A7 菜单状态、名称与排序（${overview?.domainCount ?? 0} 域 / ${overview?.pageCount ?? 0} 页）和 A6 角色绑定共同驱动侧栏；console-nav 仅保留已部署路由白名单，未注册或路由不匹配的节点不会进入导航。`}
         right={<Btn variant="primary" sm onClick={() => setMode({ kind: "create" })}>+ 新建顶级菜单</Btn>} />
       <Card>
         <CardH title="菜单树" />

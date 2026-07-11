@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 71 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;I5 并入 I4、I7 并入 I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5;+E6 算力与设备配置)。
+ * 取自 A7 菜单树的可执行页面注册表；A6 决定角色可见节点，A7 决定节点名称和顺序。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -216,7 +216,8 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "I2", name: "Nova 推送运营", path: "/content/nova", prdAnchor: "I2", batch: "V4", status: "flagship" },
       { id: "I3", name: "通知 Campaign", path: "/content/notifications", prdAnchor: "I3", batch: "V4", status: "flagship" },
       { id: "I4", name: "信任中心与披露", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
-      { id: "I6", name: "i18n 文案与教程", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
+      { id: "I6", name: "i18n 文案", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
+      { id: "I7", name: "教程中心", path: "/content/learn", prdAnchor: "I7", batch: "V4", status: "flagship" },
     ],
   },
   {
@@ -317,8 +318,18 @@ export interface NavAccessSnapshot {
   role: AdminRole;
   /** 后端 nx_admin_role_menu 的有效菜单码；存在时（即使为空）具有最高优先级。 */
   menuCodes?: string[];
+  /** A7 metadata already filtered by the authenticated admin's A6 grants. */
+  menuNodes?: EffectiveMenuNode[];
   /** session 的数据库权限码；旧后端没有 menuCodes 时用于校准静态角色表。 */
   authorities?: string[];
+}
+
+export interface EffectiveMenuNode {
+  menuCode: string;
+  menuName: string;
+  routePath?: string | null;
+  parentCode?: string | null;
+  sortOrder?: number | null;
 }
 
 /** 从细粒度权限码提取页面码，例如 platform_a6_read -> A6。 */
@@ -346,10 +357,38 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
 
   if (effectiveCodes === undefined) return visibleDomains(snapshot.role);
   const allowed = new Set(effectiveCodes.map((code) => code.trim().toUpperCase()).filter(Boolean));
-  return CONSOLE_NAV.flatMap((domain) => {
-    const l2 = domain.l2.filter((item) => allowed.has(item.id.toUpperCase()));
-    return l2.length > 0 ? [{ ...domain, l2 }] : [];
-  });
+  const nodes = new Map((snapshot.menuNodes ?? []).map((node) => [node.menuCode.trim().toUpperCase(), node]));
+  const hasMenuMetadata = snapshot.menuNodes !== undefined;
+  const order = (code: string, fallback: number) => {
+    const value = nodes.get(code)?.sortOrder;
+    return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  };
+  return CONSOLE_NAV.flatMap((domain, domainIndex) => {
+    const staticOrder = new Map(domain.l2.map((item, index) => [item.id, index]));
+    const l2 = domain.l2
+      .filter((item) => allowed.has(item.id.toUpperCase()))
+      .filter((item) => {
+        if (!hasMenuMetadata) return true;
+        const node = nodes.get(item.id.toUpperCase());
+        const parent = node?.parentCode?.trim().toUpperCase();
+        return Boolean(node && node.routePath === item.path && parent === domain.code);
+      })
+      .map((item) => {
+        const node = nodes.get(item.id.toUpperCase());
+        return node ? { ...item, name: node.menuName?.trim() || item.name } : item;
+      })
+      .sort((a, b) => order(a.id.toUpperCase(), staticOrder.get(a.id) ?? 0) - order(b.id.toUpperCase(), staticOrder.get(b.id) ?? 0));
+    if (l2.length === 0) return [];
+    const domainNode = nodes.get(domain.code);
+    return [{
+      ...domain,
+      name: domainNode?.menuName?.trim() || domain.name,
+      l2,
+      __sortOrder: order(domain.code, domainIndex),
+    }];
+  })
+    .sort((a, b) => a.__sortOrder - b.__sortOrder)
+    .map(({ __sortOrder: _ignored, ...domain }) => domain);
 }
 
 /** Enforce the resolved menu grant on every known console-domain URL. */
@@ -363,4 +402,4 @@ export function canAccessResolvedPath(domains: NavDomain[], pathname: string | n
 }
 
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
-export const L2_COUNT = ALL_L2.length; // 71(原 68 +A6 角色管理/A7 菜单管理/A8 权限字典,经典 RBAC 管理界面)
+export const L2_COUNT = ALL_L2.length;

@@ -30,3 +30,37 @@ export function normalizeEffectiveMenus(session: {
       : undefined;
   return raw?.map((code) => String(code).trim()).filter(Boolean);
 }
+
+export interface EffectiveMenuNodeWire {
+  menuCode?: unknown;
+  menuName?: unknown;
+  routePath?: unknown;
+  parentCode?: unknown;
+  sortOrder?: unknown;
+}
+
+export function normalizeEffectiveMenuNodes(session: { effectiveMenuNodes?: unknown }): Array<{
+  menuCode: string;
+  menuName: string;
+  routePath: string | null;
+  parentCode: string | null;
+  sortOrder: number | null;
+}> | undefined {
+  if (!Array.isArray(session.effectiveMenuNodes)) return undefined;
+  return session.effectiveMenuNodes.flatMap((raw) => {
+    if (!raw || typeof raw !== "object") return [];
+    const node = raw as EffectiveMenuNodeWire;
+    const menuCode = String(node.menuCode ?? "").trim().toUpperCase();
+    if (!menuCode) return [];
+    const hasOrder = (typeof node.sortOrder === "number")
+      || (typeof node.sortOrder === "string" && node.sortOrder.trim() !== "");
+    const parsedOrder = hasOrder ? Number(node.sortOrder) : Number.NaN;
+    return [{
+      menuCode,
+      menuName: String(node.menuName ?? menuCode).trim() || menuCode,
+      routePath: typeof node.routePath === "string" ? node.routePath.trim() || null : null,
+      parentCode: typeof node.parentCode === "string" ? node.parentCode.trim().toUpperCase() || null : null,
+      sortOrder: Number.isFinite(parsedOrder) ? parsedOrder : null,
+    }];
+  });
+}

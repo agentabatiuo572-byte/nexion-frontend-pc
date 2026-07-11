@@ -2,8 +2,8 @@
 
 /**
  * I 内容与合规 CMS — design_handoff_i_domain 设计稿 port(2026-06-11 重构;2026-06-15 客服 I8/I9 迁出至域 M 客服中心)。
- * 5 子页覆盖 7 PRD 子模块:I1 转化文案 A/B / I2 Nova 推送运营 / I3 通知 Campaign /
- *   I4 信任中心与披露(合并) / I6 i18n 与教程(合并)。
+ * 6 子页:I1 转化文案 A/B / I2 Nova 推送运营 / I3 通知 Campaign /
+ *   I4 信任中心与披露 / I6 i18n 文案 / I7 教程中心。
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)。
  * 真写统一走后端 /content/* 接口;概览为空时保持空态,不在前端补业务样例。
  * amplifies 唯一流出方向 = 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,B1 现行 403)。
@@ -18,7 +18,7 @@ import { I1CopyAb } from "./i-tabs/i1-copy-ab";
 import { I2Nova } from "./i-tabs/i2-nova";
 import { I3Campaign } from "./i-tabs/i3-campaign";
 import { I4Trust } from "./i-tabs/i4-trust";
-import { I6I18n } from "./i-tabs/i6-i18n";
+import { I6I18n, I7Learning } from "./i-tabs/i6-i18n";
 import type { ConfirmReq, ICtx, ActionConfirmReq } from "./i-tabs/types";
 
 const FOLD: Record<string, string> = {
@@ -27,6 +27,7 @@ const FOLD: Record<string, string> = {
   I3: "I3",
   I4: "I4",
   I6: "I6",
+  I7: "I7",
 };
 
 const RO_COPY: Record<string, string> = {
@@ -35,6 +36,7 @@ const RO_COPY: Record<string, string> = {
   I3: "通知唯一账本在服务器 · App 端只是显示窗口",
   I4: "条款和确认状态都在服务器 · 客户端篡改无效",
   I6: "词条以服务器为唯一来源 · 单语言发布闸不许关",
+  I7: "课程、推荐位与奖励以服务器为唯一来源 · 奖励上调走高敏审批",
 };
 
 function countText(value?: number) {
@@ -65,7 +67,11 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
   }
   if (tab === "I6") {
     const stats = content.i18nLearning?.stats;
-    return stats ? `完整性问题:${countText(stats.integrityIssues)} 处 · 在线课程:${countText(stats.coursesOnline)} 门` : "暂无后端业务数据";
+    return stats ? `受管词条:${countText(stats.managedKeys)} 条 · 完整性问题:${countText(stats.integrityIssues)} 处` : "暂无后端业务数据";
+  }
+  if (tab === "I7") {
+    const stats = content.i18nLearning?.stats;
+    return stats ? `在线课程:${countText(stats.coursesOnline)} 门 · 本周派发 ${stats.weeklyNexPayout}` : "暂无后端业务数据";
   }
   return "暂无后端业务数据";
 }
@@ -94,6 +100,11 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   useEffect(() => {
     void reloadIContent();
   }, [reloadIContent]);
+
+  useEffect(() => {
+    setActionConfirm(null);
+    setCf(null);
+  }, [tab]);
 
   const actions = useMemo(
     () => ({
@@ -141,6 +152,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "I3" && <I3Campaign ctx={ctx} />}
       {tab === "I4" && <I4Trust ctx={ctx} />}
       {tab === "I6" && <I6I18n ctx={ctx} />}
+      {tab === "I7" && <I7Learning ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal

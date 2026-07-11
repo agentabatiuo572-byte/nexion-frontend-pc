@@ -5,8 +5,9 @@ import {
   resolveVisibleDomains,
   menuCodesFromAuthorities,
   canAccessResolvedPath,
+  findByPath,
 } from "../lib/nav/console-nav.ts";
-import { normalizeEffectiveMenus, normalizeSessionRole } from "../lib/admin/session-role.ts";
+import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "../lib/admin/session-role.ts";
 import { buildRoleMetadataPayload, buildRoleStatusPayload, mutateThenReloadOverview, normalizeProposalTicket } from "../lib/admin/platform-contracts.ts";
 
 test("backend menu grants override the static role fallback", () => {
@@ -63,6 +64,45 @@ test("login wire consumes backend effectiveMenus and preserves explicit empty gr
   assert.deepEqual(normalizeEffectiveMenus({ effectiveMenus: [] }), []);
   assert.deepEqual(normalizeEffectiveMenus({ menuCodes: ["L5"] }), ["L5"]);
   assert.equal(normalizeEffectiveMenus({}), undefined);
+  assert.equal(normalizeEffectiveMenuNodes({
+    effectiveMenuNodes: [{ menuCode: "I7", menuName: "教程中心", routePath: "/content/learn", parentCode: "I", sortOrder: null }],
+  })?.[0].sortOrder, null);
+});
+
+test("I7 is an independently registered page and A6 grants decide whether it is visible", () => {
+  const domains = resolveVisibleDomains({ role: "content", menuCodes: ["I", "I7"] });
+  const content = domains.find((domain) => domain.code === "I");
+
+  assert.deepEqual(content?.l2.map((item) => [item.id, item.path]), [["I7", "/content/learn"]]);
+  assert.equal(findByPath("/content/learn")?.l2.id, "I7");
+  assert.equal(canAccessResolvedPath(domains, "/content/learn"), true);
+  assert.equal(canAccessResolvedPath(domains, "/content/i18n"), false);
+});
+
+test("A7 effective menu metadata controls labels and ordering without allowing unregistered routes", () => {
+  const menuNodes = normalizeEffectiveMenuNodes({
+    effectiveMenuNodes: [
+      { menuCode: "I7", menuName: "教程配置", routePath: "/content/learn", parentCode: "I", sortOrder: 1 },
+      { menuCode: "I1", menuName: "文案实验", routePath: "/content/copy-ab", parentCode: "I", sortOrder: 2 },
+      { menuCode: "UNKNOWN", menuName: "未部署页面", routePath: "/unknown", parentCode: "I", sortOrder: 0 },
+    ],
+  });
+  const domains = resolveVisibleDomains({ role: "content", menuCodes: ["I", "I1", "I7", "UNKNOWN"], menuNodes });
+  const content = domains.find((domain) => domain.code === "I");
+
+  assert.deepEqual(content?.l2.map((item) => [item.id, item.name, item.path]), [
+    ["I7", "教程配置", "/content/learn"],
+    ["I1", "文案实验", "/content/copy-ab"],
+  ]);
+});
+
+test("A6 grants and A7 metadata must agree before a new-session menu is rendered", () => {
+  assert.deepEqual(resolveVisibleDomains({ role: "content", menuCodes: ["I7"], menuNodes: [] }), []);
+  assert.deepEqual(resolveVisibleDomains({
+    role: "content",
+    menuCodes: ["I7"],
+    menuNodes: [{ menuCode: "I7", menuName: "教程中心", routePath: "/external", parentCode: "I", sortOrder: 1 }],
+  }), []);
 });
 
 test("A7 mutations reload the authoritative overview instead of normalizing node/void", async () => {

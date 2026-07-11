@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AdminRole } from "@/lib/nav/console-nav";
+import type { AdminRole, EffectiveMenuNode } from "@/lib/nav/console-nav";
 
 export interface AdminSession {
   adminId: number;
@@ -9,6 +9,7 @@ export interface AdminSession {
   authorities: string[];
   /** Effective nx_admin_role_menu codes from the authenticated session. */
   menuCodes?: string[];
+  menuNodes?: EffectiveMenuNode[];
   passwordChangeRequired?: boolean;
 }
 

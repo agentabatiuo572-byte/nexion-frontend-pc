@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * I6 i18n 文案与教程(合并页) — design_handoff_i_domain/I6 i18n与教程.html port。
+ * I6 i18n 文案 / I7 教程中心共享数据与动作实现，按路由只渲染各自业务区。
  * 单源:后端 /content/i18n-learning/overview;空库时后端写入 MySQL 种子后再查出。
  * 操作确认 显式 edit 契约:奖励调整 / 换推荐课 = 调参传 edit;
  *   课程发布 / 词条发布 / marketing 多版 / 课程下架 = 处置不传 edit。
@@ -14,6 +14,7 @@ import type { ICtx } from "./types";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type NsFlt = "all" | "issues" | "mkt";
 type CatFlt = "all" | "Basics" | "Earn" | "Team" | "Wealth" | "Security";
@@ -53,7 +54,20 @@ const COURSE_ICON_BY_CAT: Record<string, string> = {
 };
 
 export function I6I18n({ ctx }: { ctx: ICtx }) {
+  return <I18nLearningPage ctx={ctx} view="i18n" />;
+}
+
+export function I7Learning({ ctx }: { ctx: ICtx }) {
+  return <I18nLearningPage ctx={ctx} view="learn" />;
+}
+
+function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const session = useAdminAuth((state) => state.session);
+  const isSuperadmin = session?.role === "superadmin";
+  const canWriteI6 = isSuperadmin || !!session?.authorities.includes("content_i6_write");
+  const canWriteI7 = isSuperadmin || !!session?.authorities.includes("content_i7_write");
+  const canAdjustI7Reward = isSuperadmin || !!session?.authorities.includes("content_i7_course_reward_adjust");
   const propose = usePropose();
   const [nsFlt, setNsFlt] = useState<NsFlt>("all");
   const [catFlt, setCatFlt] = useState<CatFlt>("all");
@@ -107,6 +121,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
     return n.variants.includes("多版");
   });
   const filteredCrs = allCourses.filter((c) => catFlt === "all" || c.cat === catFlt);
+  const courseCategoryCount = new Set(allCourses.map((course) => course.cat).filter(Boolean)).size;
 
   /* ============ I6 actions ============ */
   const liveIntegrity = Math.max(0, I6_STATS.integrityIssues);
@@ -345,15 +360,16 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
   };
 
   if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">I6 数据加载中...</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint">{view === "i18n" ? "I6" : "I7"} 数据加载中...</div></div></section>;
   }
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">I6 暂无真实接口数据</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint danger">{view === "i18n" ? "I6" : "I7"} 暂无真实接口数据</div></div></section>;
   }
 
   /* ============ render ============ */
   return (
     <>
+      {view === "i18n" && <>
       <div className="f-stats">
         <div className="f-stat">
           <div className="k">受管词条</div>
@@ -366,16 +382,6 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
           <div className="k">完整性问题</div>
           <div className="v">{liveIntegrity} 处</div>
           <div className="sub">{liveIntegritySub}</div>
-        </div>
-        <div className="f-stat cyan">
-          <div className="k">课程在线</div>
-          <div className="v">{I6_STATS.coursesOnline} 门</div>
-          <div className="sub">5 分类 × 3 · 推荐位 1 个</div>
-        </div>
-        <div className="f-stat">
-          <div className="k">课程 NEX 派发(本周)</div>
-          <div className="v">{I6_STATS.weeklyNexPayout}</div>
-          <div className="sub">完成发奖 · 喂流出口径(B1)</div>
         </div>
       </div>
 
@@ -394,9 +400,9 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
                 {l}
               </button>
             ))}
-            <button className="l-btn sm" onClick={rescan}>
+            {canWriteI6 && <button className="l-btn sm" onClick={rescan}>
               重扫
-            </button>
+            </button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -478,6 +484,8 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
               词条详情 · <span className="icode electric">{HCB_KEY}</span>
             </span>
             <div className="r">
+              {!canWriteI6 && <span className="bdg dim">只读</span>}
+              {canWriteI6 && <>
               <button className="l-btn sm" onClick={editKeyDraft}>
                 编辑(中英同步)
               </button>
@@ -487,6 +495,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
               <button className="l-btn sm mc" onClick={mkAB}>
                 开 marketing 多版 A/B
               </button>
+              </>}
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 6 }}>
@@ -564,13 +573,13 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
                     · {s}
                   </div>
                 ))}
-                <button
+                {canWriteI6 && <button
                   className="l-btn sm mc"
                   style={{ marginTop: 6 }}
                   onClick={() => fixIntegrity(iss)}
                 >
                   修复
-                </button>
+                </button>}
               </div>
             ))}
             <button
@@ -584,12 +593,28 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
         </section>
       </div>
 
-      {/* I6 教程列表 */}
+      </>}
+
+      {view === "learn" && <>
+      <div className="f-stats">
+        <div className="f-stat cyan">
+          <div className="k">课程在线</div>
+          <div className="v">{I6_STATS.coursesOnline} 门</div>
+          <div className="sub">{courseCategoryCount} 分类 · 推荐位 {TUTORIAL_FEATURED_DEFAULT ? 1 : 0} 个</div>
+        </div>
+        <div className="f-stat">
+          <div className="k">课程 NEX 派发(本周)</div>
+          <div className="v">{I6_STATS.weeklyNexPayout}</div>
+          <div className="sub">完成发奖 · 喂流出口径(B1)</div>
+        </div>
+      </div>
+
+      {/* I7 教程列表 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">教程中心(I6 · 教程)· /learn · 5 分类 × 3 课</span>
+          <span className="ttl">教程中心(I7) · /learn · {allCourses.length} 课</span>
           <span className="sub">
-            · 15 课 + 推荐位 · 学完发 NEX · 涨奖励过 B1 红线
+            · {courseCategoryCount} 分类 · 学完发 NEX · 涨奖励过 B1 红线
           </span>
           <div className="r chips">
             {CAT_FLT.map(([k, l]) => (
@@ -601,9 +626,10 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
                 {l}
               </button>
             ))}
-            <button className="l-btn sm primary" onClick={newCrs}>
+            {!canWriteI7 && <span className="bdg dim">只读</span>}
+            {canWriteI7 && <button className="l-btn sm primary" onClick={newCrs}>
               + 新建课程
-            </button>
+            </button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -681,19 +707,13 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
                       )}
                     </td>
                     <td style={{ textAlign: "right" }}>
+                      {canWriteI7 && <>
                       <button
                         className="l-btn sm mc"
                         onClick={() => pubCrs(c)}
                         style={{ marginRight: 6 }}
                       >
                         发布
-                      </button>
-                      <button
-                        className="l-btn sm mc"
-                        onClick={() => adjRwd(c)}
-                        style={{ marginRight: 6 }}
-                      >
-                        调奖励
                       </button>
                       {!archived && (
                         <button
@@ -703,10 +723,27 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
                           下架
                         </button>
                       )}
+                      </>}
+                      {canAdjustI7Reward && (
+                        <button
+                          className="l-btn sm mc"
+                          onClick={() => adjRwd(c)}
+                          style={{ marginRight: 6 }}
+                        >
+                          调奖励
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
               })}
+              {!contentLoading && filteredCrs.length === 0 && (
+                <tr>
+                  <td colSpan={9} style={{ padding: 28, textAlign: "center", color: "var(--ink-4)" }}>
+                    暂无课程数据
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -728,9 +765,9 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
                 </small>
               </span>
               <span className="v">{liveFeatured()}</span>
-              <button className="l-btn sm mc" onClick={setFeat}>
+              {canWriteI7 && <button className="l-btn sm mc" onClick={setFeat}>
                 换推荐课
-              </button>
+              </button>}
             </div>
             <div className="in-vrow">
               <span className="nm">
@@ -744,7 +781,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
           </div>
         </section>
 
-        {/* I6 课程效果监控 */}
+        {/* I7 课程效果监控 */}
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">课程效果监控</span>
@@ -792,29 +829,30 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
         </section>
       </div>
 
+      </>}
+
       <p className="f-foot">
-        <b>执行门槛</b>:词条草稿、课程草稿随便存(保存即校验镜像 + 占位符,留审计);词条发布 / 回滚、课程发布 / 回滚 / 换推荐课 = 内容执行门槛:内容主管/超管;marketing 多版 A/B 启停增长也可发起;
-        <b>课程奖励上调</b> = 内容执行门槛:内容主管/超管 + 备付金红线前置(财务对覆盖率有知情职能,仅为知情职能)。
-        <b>底座地位</b>:转化文案(I1)、推送模板(I2)、信任内容与披露条款(I4)、课程文案都挂这里的词条——改文案必须经这页的镜像同步,别处没有旁路。教学引导文案归这页,任务本身的玩法归任务页(H3)。
+        {view === "i18n" ? <><b>执行门槛</b>:词条草稿保存即校验镜像与占位符并留审计；词条发布/回滚需内容主管或超管确认。<b>底座地位</b>:I1、I2、I4 与 I7 的可见文案都使用这里的双语词条。</> : <><b>执行门槛</b>:课程草稿可保存；发布、下架、换推荐课需内容主管或超管确认。<b>课程奖励上调</b>必须走高敏审批并通过 B1 备付金红线校验。</>}
       </p>
       <PaginationExemptionList
-        items={[
+        items={view === "i18n" ? [
           {
             label: "命名空间矩阵(I6 · a)",
             kind: "reference-catalog",
             maxRows: 13,
             reason: "命名空间固定十三组,需要同屏核对覆盖率和缺 key",
           },
+        ] : [
           {
-            label: "教程中心(I6 · 教程)· /learn · 5 分类 × 3 课",
+            label: `教程中心(I7) · /learn · ${allCourses.length} 课`,
             kind: "reference-catalog",
-            maxRows: 15,
-            reason: "教程中心固定五分类十五课种子目录,创建新课走草稿流",
+            maxRows: Math.max(1, allCourses.length),
+            reason: `课程目录来自真实接口,当前 ${allCourses.length} 门;创建新课走草稿流`,
           },
         ]}
       />
 
-      {nsDrawer && (
+      {view === "i18n" && nsDrawer && (
         <Drawer
           title={`命名空间 · ${nsDrawer.ns}`}
           onClose={() => setNsDrawer(null)}
@@ -885,7 +923,7 @@ export function I6I18n({ ctx }: { ctx: ICtx }) {
         </Drawer>
       )}
 
-      {hcDrawer && (
+      {view === "i18n" && hcDrawer && (
         <Drawer
           title="疑似硬编码清单(App 扫描)"
           onClose={() => setHcDrawer(false)}

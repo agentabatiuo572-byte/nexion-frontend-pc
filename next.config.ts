@@ -82,11 +82,6 @@ const nextConfig: NextConfig = {
         destination: "/content/trust",
         permanent: false,
       },
-      {
-        source: "/content/learn",
-        destination: "/content/i18n",
-        permanent: false,
-      },
     ];
   },
 };
