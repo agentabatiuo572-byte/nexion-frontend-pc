@@ -7,6 +7,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
 import { changeAdminPassword, loginAdmin, type LoginResult } from "@/lib/admin/auth-client";
+import { completeInteractiveLogin } from "@/lib/admin/login-completion";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 function strongPassword(value: string) {
@@ -48,8 +49,8 @@ export function LoginGate() {
         setConfirmPassword("");
         return;
       }
-      signIn(result);
       setPassword("");
+      completeInteractiveLogin(signIn, result);
     } catch {
       setError("账号或密码不正确");
     } finally {
@@ -77,12 +78,12 @@ export function LoginGate() {
     setError("");
     try {
       const result = await changeAdminPassword(currentPasswordForChange, newPassword);
-      signIn(result);
       setPendingLogin(null);
       setCurrentPasswordForChange("");
       setNewPassword("");
       setConfirmPassword("");
       setUsername("");
+      completeInteractiveLogin(signIn, result);
     } catch (err) {
       setError(errorMessage(err));
     } finally {

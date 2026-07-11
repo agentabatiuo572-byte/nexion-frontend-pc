@@ -8,6 +8,7 @@ import {
   findByPath,
 } from "../lib/nav/console-nav.ts";
 import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "../lib/admin/session-role.ts";
+import { completeInteractiveLogin } from "../lib/admin/login-completion.ts";
 import { buildRoleMetadataPayload, buildRoleStatusPayload, mutateThenReloadOverview, normalizeProposalTicket } from "../lib/admin/platform-contracts.ts";
 
 test("backend menu grants override the static role fallback", () => {
@@ -67,6 +68,19 @@ test("login wire consumes backend effectiveMenus and preserves explicit empty gr
   assert.equal(normalizeEffectiveMenuNodes({
     effectiveMenuNodes: [{ menuCode: "I7", menuName: "教程中心", routePath: "/content/learn", parentCode: "I", sortOrder: null }],
   })?.[0].sortOrder, null);
+});
+
+test("interactive login reloads the document after storing the new session", () => {
+  const calls = [];
+  const auth = { tokenType: "Bearer", session: { adminId: 1, username: "superadmin" } };
+
+  completeInteractiveLogin(
+    (result) => calls.push(["signIn", result]),
+    auth,
+    () => calls.push(["reload"]),
+  );
+
+  assert.deepEqual(calls, [["signIn", auth], ["reload"]]);
 });
 
 test("I7 is an independently registered page and A6 grants decide whether it is visible", () => {

@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 test("A6 grant and A7 metadata expose the independent I7 learning page", async ({ page }) => {
+  await page.route("**/api/admin/**", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ code: 0, data: {} }) });
+  });
   await page.route("**/api/admin/auth/session", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -76,4 +79,61 @@ test("A6 grant and A7 metadata expose the independent I7 learning page", async (
   await expect(page.getByText("教程中心(I7) · /learn · 1 课", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "重扫" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "编辑(中英同步)" })).toHaveCount(0);
+});
+
+test("a successful interactive login reloads the document before rendering I7", async ({ page }) => {
+  let authenticated = false;
+  const session = {
+    adminId: 1,
+    username: "superadmin",
+    operator: "总管理员",
+    role: "superadmin",
+    roleCode: "SUPER_ADMIN",
+    authorities: ["content_i7_read", "content_i7_write", "content_i7_course_reward_adjust"],
+    effectiveMenus: ["I", "I7"],
+    effectiveMenuNodes: [
+      { menuCode: "I", menuName: "内容与合规 CMS", routePath: "", parentCode: null, sortOrder: 9 },
+      { menuCode: "I7", menuName: "教程中心", routePath: "/content/learn", parentCode: "I", sortOrder: 6 },
+    ],
+    passwordChangeRequired: false,
+  };
+
+  await page.route("**/api/admin/**", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ code: 0, data: {} }) });
+  });
+  await page.route("**/api/admin/auth/session", async (route) => {
+    await route.fulfill(authenticated ? {
+      contentType: "application/json",
+      body: JSON.stringify({ code: 0, data: { tokenType: "Bearer", session } }),
+    } : {
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ code: 401, message: "ADMIN_SESSION_MISSING", data: null }),
+    });
+  });
+  await page.route("**/api/admin/auth/login", async (route) => {
+    authenticated = true;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ code: 0, data: { tokenType: "Bearer", session } }),
+    });
+  });
+  await page.route("**/api/admin/content/**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ code: 200, data: {} }),
+    });
+  });
+
+  await page.goto("/content/learn");
+  await page.getByLabel("账号").fill("superadmin");
+  await page.getByLabel("密码").fill("Admin@123456");
+  await Promise.all([
+    page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+    page.getByRole("button", { name: "登录" }).click(),
+  ]);
+
+  const domainToggle = page.getByRole("button", { name: /内容与合规 CMS/ });
+  if (await domainToggle.getAttribute("aria-expanded") === "false") await domainToggle.click();
+  await expect(page.getByRole("link", { name: /教程中心.*I7/ })).toBeVisible();
 });
