@@ -6,7 +6,7 @@
  * 也可以是发起人权限不足时的更高门槛执行者),不引入第二人会签。
  */
 import type { AdminRole } from "@/lib/nav/console-nav";
-import { ROLE_LABEL } from "@/lib/nav/console-nav";
+import { roleLabel } from "@/lib/nav/console-nav";
 
 export interface AuthPrincipal {
   name: string;
@@ -25,8 +25,8 @@ export function canExecute(principal: AuthPrincipal, gate: ExecGate): boolean {
 
 /** 门槛展示文案,如「财务 / 超管」。超管总在末尾(恒可执行)。 */
 export function gateLabel(gate: ExecGate): string {
-  const parts = gate.roles.filter((r) => r !== "superadmin").map((r) => ROLE_LABEL[r]);
-  return [...parts, ROLE_LABEL.superadmin].join(" / ");
+  const parts = gate.roles.filter((r) => r !== "superadmin").map(roleLabel);
+  return [...parts, roleLabel("superadmin")].join(" / ");
 }
 
 /** 统一门槛:拥有 A2 审批权即可确认 pending 票(superadmin 授全 265 权限,自然含)。 */

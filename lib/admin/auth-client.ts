@@ -1,17 +1,7 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
-
-const ADMIN_ROLES = new Set<AdminRole>([
-  "superadmin",
-  "config",
-  "finance",
-  "risk",
-  "growth",
-  "content",
-  "support",
-  "auditor",
-]);
+import { normalizeEffectiveMenus, normalizeSessionRole } from "@/lib/admin/session-role";
 
 interface ApiResult<T> {
   code: number;
@@ -26,7 +16,10 @@ interface LoginPayload {
     username: string;
     operator: string;
     role: string;
+    roleCode?: string;
     authorities?: string[];
+    effectiveMenus?: string[];
+    menuCodes?: string[];
     passwordChangeRequired?: boolean;
   };
 }
@@ -37,7 +30,7 @@ export interface LoginResult {
 }
 
 export function normalizeAdminRole(role: string | undefined): AdminRole {
-  return role && ADMIN_ROLES.has(role as AdminRole) ? (role as AdminRole) : "auditor";
+  return normalizeSessionRole(role);
 }
 
 export async function loginAdmin(username: string, password: string): Promise<LoginResult> {
@@ -93,8 +86,9 @@ function normalizeLoginPayload(payload: LoginPayload): LoginResult {
       adminId: payload.session.adminId,
       username: payload.session.username,
       operator: payload.session.operator || payload.session.username,
-      role: normalizeAdminRole(payload.session.role),
+      role: normalizeAdminRole(payload.session.roleCode || payload.session.role),
       authorities: payload.session.authorities ?? [],
+      menuCodes: normalizeEffectiveMenus(payload.session),
       passwordChangeRequired: Boolean(payload.session.passwordChangeRequired),
     },
   };

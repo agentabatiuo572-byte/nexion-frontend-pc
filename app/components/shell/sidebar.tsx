@@ -8,8 +8,7 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PanelLeftClose, PanelLeftOpen, LayoutDashboard } from "lucide-react";
-import type { AdminRole } from "@/lib/nav/console-nav";
-import { visibleDomains } from "@/lib/nav/console-nav";
+import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
 import { useAdminUi } from "@/lib/store/admin-ui";
 import { SidebarGroup } from "./sidebar-group";
 import { useNavBadges } from "./use-service-badges";
@@ -36,10 +35,12 @@ function LogoMark() {
 
 export function Sidebar({
   role,
+  domains,
   collapsed,
   expanded,
 }: {
   role: AdminRole;
+  domains: NavDomain[];
   collapsed: boolean;
   expanded: string[];
 }) {
@@ -90,7 +91,6 @@ export function Sidebar({
   const toggleGroup = useAdminUi((s) => s.toggleGroup);
   const setSidebar = useAdminUi((s) => s.setSidebar);
   const toggleSidebar = useAdminUi((s) => s.toggleSidebar);
-  const domains = visibleDomains(role);
   const visibleL2Count = domains.reduce((total, domain) => total + domain.l2.length, 0);
   const showHomeEntry = role !== "support";
   const badges = useNavBadges();

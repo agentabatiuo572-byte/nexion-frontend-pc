@@ -3,7 +3,7 @@
  * 前端不再直接回放本地 mutations 或写本地审计;所有高敏动作统一提交后端 A2 队列,
  * 由 A2 审批接口在服务端执行目标域动作与审计落库。
  */
-import { ROLE_LABEL } from "@/lib/nav/console-nav";
+import { roleLabel } from "@/lib/nav/console-nav";
 import type { AuthPrincipal, ExecGate } from "@/lib/admin/ops-authority";
 import type { A2OperationType } from "@/lib/admin/a2-client";
 import type { ReplayCommand, LockTarget } from "@/lib/admin/high-ops-registry";
@@ -51,7 +51,7 @@ export interface ProposeDeps {
 
 export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Promise<"proposed" | "failed"> {
   const { principal, createProposal, toast } = deps;
-  const proposerRole = ROLE_LABEL[principal.role];
+  const proposerRole = roleLabel(principal.role);
 
   try {
     await createProposal({

@@ -7,6 +7,8 @@ export interface AdminSession {
   operator: string;
   role: AdminRole;
   authorities: string[];
+  /** Effective nx_admin_role_menu codes from the authenticated session. */
+  menuCodes?: string[];
   passwordChangeRequired?: boolean;
 }
 

@@ -343,7 +343,7 @@ export function Modal({ title, icon, onClose, children, footer, wide }: { title:
 }
 
 /* Drawer — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-export function Drawer({ title, sub, onClose, children, footer }: { title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
+export function Drawer({ title, sub, onClose, children, footer, wide }: { title: ReactNode; sub?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -355,7 +355,7 @@ export function Drawer({ title, sub, onClose, children, footer }: { title: React
   return (
     <div className="dkpage">
       <div className="drawer-scrim" onClick={onClose} aria-hidden />
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" className="drawer" style={{ outline: "none" }}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" className="drawer" style={{ outline: "none", ...(wide ? { width: "min(1180px, 96vw)" } : {}) }}>
         <div className="drawer-h">
           <div><div style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{title}</div>{sub && <div className="muted tiny">{sub}</div>}</div>
           <div className="spacer" />

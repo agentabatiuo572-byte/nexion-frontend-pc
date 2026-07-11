@@ -1,7 +1,7 @@
 /**
  * 运营控制后台 — 信息架构唯一真源(Single Source of Truth)。
  *
- * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 68 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;I5 并入 I4、I7 并入 I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5;+E6 算力与设备配置)。
+ * 取自《Nexion 运营控制后台 PRD》Ch3 §3.2/§3.3 权威菜单树:13 域 × 71 个 L2 入口(E 7→5、F 8→5 收编;G Premium/NEXv2 下线 7→5;I5 并入 I4、I7 并入 I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5;+E6 算力与设备配置)。
  * 本文件驱动:侧边栏渲染 / 路由解析 / 面包屑 / 脚手架页 / verify 路由清单。
  * 改 IA 只改这一处。
  *
@@ -25,7 +25,7 @@ import {
   Headset,
 } from "lucide-react";
 
-export type AdminRole =
+export type BuiltinAdminRole =
   | "superadmin"
   | "finance"
   | "config"
@@ -35,7 +35,10 @@ export type AdminRole =
   | "support"
   | "auditor";
 
-export const ROLE_LABEL: Record<AdminRole, string> = {
+/** Custom role codes are database data and must not be coerced to auditor. */
+export type AdminRole = BuiltinAdminRole | (string & {});
+
+export const ROLE_LABEL: Record<BuiltinAdminRole, string> = {
   superadmin: "总管理员",
   config: "配置运营",
   finance: "财务",
@@ -46,7 +49,11 @@ export const ROLE_LABEL: Record<AdminRole, string> = {
   auditor: "审计",
 };
 
-export const SUPPORT_ADMIN_ROLES: AdminRole[] = ["support"];
+export function roleLabel(role: AdminRole): string {
+  return ROLE_LABEL[role as BuiltinAdminRole] ?? role;
+}
+
+export const SUPPORT_ADMIN_ROLES: BuiltinAdminRole[] = ["support"];
 
 export type L2Status = "flagship" | "scaffold" | "planned";
 
@@ -65,7 +72,7 @@ export interface NavDomain {
   slug: string; // "finance"
   icon: LucideIcon;
   accentVar: string; // "--admin-domain-d"
-  roles?: AdminRole[]; // 省略=所有角色可见;[]=仅 superadmin
+  roles?: BuiltinAdminRole[]; // 仅作为真实授权数据不可用时的静态 IA fallback
   l2: NavL2[];
 }
 
@@ -83,6 +90,9 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "A3", name: "系统配置", path: "/platform/config", prdAnchor: "A3", batch: "V1", status: "flagship" },
       { id: "A4", name: "埋点事件体系", path: "/platform/events", prdAnchor: "A4", batch: "V1", status: "flagship" },
       { id: "A5", name: "平台参数寄存器", path: "/platform/params-registry", prdAnchor: "A5", batch: "V1", status: "flagship" },
+      { id: "A6", name: "角色管理", path: "/platform/roles", prdAnchor: "A6", batch: "V1", status: "flagship" },
+      { id: "A7", name: "菜单管理", path: "/platform/menus", prdAnchor: "A7", batch: "V1", status: "flagship" },
+      { id: "A8", name: "权限字典", path: "/platform/permissions", prdAnchor: "A8", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -140,7 +150,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     // 设计稿收编 E1-E7 → 5 子模块并全系统统一连续编号 E1-E5:代际发布门(原 E2)并入 E1、
     // 设备生命周期(原 E4)并入 E5→现 E3。同 F 域 F1-F8→F1-F5。nav id == prdAnchor == PRD §10 章节(PRD 已同步重编号)。
     l2: [
-      { id: "E1", name: "商品目录 & 代际门", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
+      { id: "E1", name: "商品目录 & 上架门", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
       { id: "E2", name: "收益 & 任务引擎", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
       { id: "E3", name: "生命周期 & Trade-in", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单状态机", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },
@@ -293,7 +303,7 @@ export function findBySlugs(domainSlug: string, moduleSlug: string): { domain: N
 /** RBAC:superadmin 全可见;客服后台角色只看显式 support 域;roles 省略=其它角色可见;roles=[] 仅 superadmin。 */
 export function canSee(role: AdminRole, roles?: AdminRole[]): boolean {
   if (role === "superadmin") return true;
-  if (SUPPORT_ADMIN_ROLES.includes(role)) return roles?.includes("support") === true;
+  if (SUPPORT_ADMIN_ROLES.includes(role as BuiltinAdminRole)) return roles?.includes("support") === true;
   if (!roles) return true;
   return roles.includes(role);
 }
@@ -303,5 +313,54 @@ export function visibleDomains(role: AdminRole): NavDomain[] {
   return CONSOLE_NAV.filter((d) => canSee(role, d.roles));
 }
 
+export interface NavAccessSnapshot {
+  role: AdminRole;
+  /** 后端 nx_admin_role_menu 的有效菜单码；存在时（即使为空）具有最高优先级。 */
+  menuCodes?: string[];
+  /** session 的数据库权限码；旧后端没有 menuCodes 时用于校准静态角色表。 */
+  authorities?: string[];
+}
+
+/** 从细粒度权限码提取页面码，例如 platform_a6_read -> A6。 */
+export function menuCodesFromAuthorities(authorities: string[]): string[] {
+  const found = new Set<string>();
+  for (const authority of authorities) {
+    for (const match of authority.toUpperCase().matchAll(/(?:^|_)([A-M]\d+)(?:_|$)/g)) {
+      found.add(match[1]);
+    }
+  }
+  return [...found].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+}
+
+/**
+ * Navigation authorization single consumer:
+ * DB role-menu grant > DB permission codes > static IA fallback.
+ * Static IA never overrides an explicit empty backend grant set.
+ */
+export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] {
+  const explicit = snapshot.menuCodes;
+  const inferred = explicit === undefined
+    ? menuCodesFromAuthorities(snapshot.authorities ?? [])
+    : [];
+  const effectiveCodes = explicit ?? (inferred.length > 0 ? inferred : undefined);
+
+  if (effectiveCodes === undefined) return visibleDomains(snapshot.role);
+  const allowed = new Set(effectiveCodes.map((code) => code.trim().toUpperCase()).filter(Boolean));
+  return CONSOLE_NAV.flatMap((domain) => {
+    const l2 = domain.l2.filter((item) => allowed.has(item.id.toUpperCase()));
+    return l2.length > 0 ? [{ ...domain, l2 }] : [];
+  });
+}
+
+/** Enforce the resolved menu grant on every known console-domain URL. */
+export function canAccessResolvedPath(domains: NavDomain[], pathname: string | null): boolean {
+  const path = (pathname || "/").replace(/\/+$/, "") || "/";
+  if (path === "/") return true;
+  const knownDomain = CONSOLE_NAV.find((domain) => path === `/${domain.slug}` || path.startsWith(`/${domain.slug}/`));
+  if (!knownDomain) return true;
+  const grantedDomain = domains.find((domain) => domain.code === knownDomain.code);
+  return grantedDomain?.l2.some((item) => path === item.path || path.startsWith(`${item.path}/`)) ?? false;
+}
+
 export const DOMAIN_COUNT = CONSOLE_NAV.length; // 13
-export const L2_COUNT = ALL_L2.length; // 68(F 8→5;E 7→5;G Premium/NEXv2 下线 7→5;I5→I4;I7→I6;客服 I8/I9 迁出域 I → 独立域 M 客服中心 M1-M5;H 里程碑并入 H5;+E6 算力与设备配置)
+export const L2_COUNT = ALL_L2.length; // 71(原 68 +A6 角色管理/A7 菜单管理/A8 权限字典,经典 RBAC 管理界面)

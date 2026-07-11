@@ -31,6 +31,21 @@ export const DOMAIN_A: ModuleEntry[] = [
     summary: "平台参数总览(A5):把全平台运营能调的字段汇成索引,从服务端读取当前真实值;A1-A4 和各业务域改过的参数都能在这里反查、一键跳到所在页面、或发起确认修改。",
     content: PORTED_EMPTY_CONTENT,
   },
+  {
+    path: "/platform/roles",
+    summary: "角色管理(A6):经典 RBAC 角色配置面。管理角色(8 内置 + 自定义),为每个角色绑定权限码(操作权)与菜单(可见性)。改授权走操作确认 + 审计,并即时失效该角色下账号的权限缓存。",
+    content: PORTED_EMPTY_CONTENT,
+  },
+  {
+    path: "/platform/menus",
+    summary: "菜单管理(A7):运营后台导航菜单树(13 域 → 页)的增删改、排序、显隐。菜单主体以高保真 console-nav 为准,本页用于微调与补自定义菜单。",
+    content: PORTED_EMPTY_CONTENT,
+  },
+  {
+    path: "/platform/permissions",
+    summary: "权限字典(A8):全平台权限码(READ/WRITE/HIGH)只读浏览。按域/类型筛选 + 搜索 + 分页,查看每个权限点所属菜单、是否放大资金流出、已绑定角色数。权限码本身由 seed 维护,本页不增删。",
+    content: PORTED_EMPTY_CONTENT,
+  },
 ];
 
 export default DOMAIN_A;

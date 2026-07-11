@@ -8,8 +8,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 
-import type { AdminRole } from "@/lib/nav/console-nav";
-import { visibleDomains } from "@/lib/nav/console-nav";
+import type { NavDomain } from "@/lib/nav/console-nav";
 import {
   CommandDialog,
   CommandEmpty,
@@ -21,14 +20,13 @@ import {
 } from "@/app/components/ui/command";
 
 interface CommandPaletteProps {
-  role: AdminRole;
+  domains: NavDomain[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function CommandPalette({ role, open, onOpenChange }: CommandPaletteProps) {
+export function CommandPalette({ domains, open, onOpenChange }: CommandPaletteProps) {
   const router = useRouter();
-  const domains = React.useMemo(() => visibleDomains(role), [role]);
 
   const go = React.useCallback(
     (path: string) => {

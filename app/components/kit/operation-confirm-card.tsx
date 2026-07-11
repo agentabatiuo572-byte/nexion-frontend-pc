@@ -6,7 +6,7 @@
  */
 import { ArrowDown, Check, X, ShieldCheck } from "lucide-react";
 import type { AdminRole } from "@/lib/nav/console-nav";
-import { ROLE_LABEL } from "@/lib/nav/console-nav";
+import { roleLabel } from "@/lib/nav/console-nav";
 import { RoleBadge } from "./role-badge";
 
 export interface ConfirmParty {
@@ -37,7 +37,7 @@ export function OperationConfirmCard({
   const isSuper = currentRole === "superadmin";
   const roleOk = currentRole === requiredConfirmRole || isSuper;
   const canApprove = state === "pending" && roleOk;
-  const blockReason = !roleOk ? `需「${ROLE_LABEL[requiredConfirmRole]}」或总管理员执行` : "";
+  const blockReason = !roleOk ? `需「${roleLabel(requiredConfirmRole)}」或总管理员执行` : "";
 
   return (
     <div
@@ -94,7 +94,7 @@ export function OperationConfirmCard({
       ) : (
         <div>
           <p className="text-[12px]" style={{ color: isSuper ? "var(--v5-brand)" : "var(--v5-ink-3)" }}>
-            {isSuper ? "总管理员 · 仍需操作确认与理由留痕" : `待执行 · 需「${ROLE_LABEL[requiredConfirmRole]}」`}
+            {isSuper ? "总管理员 · 仍需操作确认与理由留痕" : `待执行 · 需「${roleLabel(requiredConfirmRole)}」`}
           </p>
           <div className="mt-2.5 flex items-center gap-2">
             <button

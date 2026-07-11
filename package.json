@@ -13,6 +13,7 @@
     "test:e2e:list": "playwright test --list",
     "verify": "node scripts/verify.mjs",
     "verify:auth": "node scripts/check-rbac-auth-source.mjs",
+    "test:rbac-platform": "node --experimental-strip-types --test tests/rbac-platform-contract.test.mjs",
     "verify:m-domain-config": "node scripts/check-m-domain-backend-config.mjs",
     "verify:owner-review": "node scripts/owner-review-readiness.mjs",
     "verify:owner-review:live": "node scripts/owner-review-readiness.mjs --check-live",

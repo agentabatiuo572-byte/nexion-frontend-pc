@@ -5,8 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { ChevronDown, Headset, LogOut, Search } from "lucide-react";
-import type { AdminRole } from "@/lib/nav/console-nav";
-import { canSee } from "@/lib/nav/console-nav";
+import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Breadcrumb } from "./breadcrumb";
 import { SyncChip } from "./sync-chip";
@@ -131,7 +130,7 @@ function CoveragePill() {
 
 // 全局命令面板触发器(设计稿顶栏签名元素)。点击或 ⌘K/Ctrl+K 打开 shadcn(cmdk)命令面板,
 // 跳转到任意运营模块(消费 IA 单源 visibleDomains)。真实可再接 A4 事件流 / userId 检索。
-function SearchBox({ role }: { role: AdminRole }) {
+function SearchBox({ domains }: { domains: NavDomain[] }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -164,7 +163,7 @@ function SearchBox({ role }: { role: AdminRole }) {
           ⌘K
         </kbd>
       </button>
-      <CommandPalette role={role} open={open} onOpenChange={setOpen} />
+      <CommandPalette domains={domains} open={open} onOpenChange={setOpen} />
     </>
   );
 }
@@ -198,7 +197,7 @@ function SupportInboxPill() {
   );
 }
 
-export function TopBar({ role, operator }: { role: AdminRole; operator: string }) {
+export function TopBar({ role, operator, domains }: { role: AdminRole; operator: string; domains: NavDomain[] }) {
   const supportOnly = role === "support";
   return (
     <header
@@ -211,7 +210,7 @@ export function TopBar({ role, operator }: { role: AdminRole; operator: string }
     >
       <div className="flex min-w-0 items-center gap-4">
         <Breadcrumb />
-        <SearchBox role={role} />
+        <SearchBox domains={domains} />
       </div>
       <div className="flex items-center gap-3">
         {!supportOnly && <CoveragePill />}
@@ -219,7 +218,7 @@ export function TopBar({ role, operator }: { role: AdminRole; operator: string }
         {!supportOnly && <span className="hidden md:block"><SyncChip /></span>}
         <span className="hidden lg:block"><UtcClock /></span>
         <span className="h-4 w-px" style={{ background: "var(--v5-border)" }} />
-        {canSee(role, ["support", "risk"]) && <SupportInboxPill />}
+        {domains.some((domain) => domain.code === "M") && <SupportInboxPill />}
         {!supportOnly && <NotificationBell />}
         <RoleSwitcher role={role} operator={operator} />
       </div>

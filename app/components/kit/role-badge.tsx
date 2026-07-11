@@ -3,9 +3,9 @@
  * 用于 TopBar、OperationConfirmCard(操作员 / 执行门槛 身份)、AuditTimeline。
  */
 import type { AdminRole } from "@/lib/nav/console-nav";
-import { ROLE_LABEL } from "@/lib/nav/console-nav";
+import { roleLabel, type BuiltinAdminRole } from "@/lib/nav/console-nav";
 
-const ROLE_ACCENT: Record<AdminRole, string> = {
+const ROLE_ACCENT: Record<BuiltinAdminRole, string> = {
   superadmin: "--admin-domain-b", // 柠檬绿
   config: "--admin-domain-a", // 靛蓝
   finance: "--admin-domain-d", // 翡翠绿
@@ -23,7 +23,7 @@ export function RoleBadge({
   role: AdminRole;
   size?: "sm" | "md";
 }) {
-  const accent = `var(${ROLE_ACCENT[role]})`;
+  const accent = `var(${ROLE_ACCENT[role as BuiltinAdminRole] ?? "--admin-domain-a"})`;
   const pad = size === "sm" ? "px-1.5 py-0.5 text-[10.5px]" : "px-2 py-1 text-[11.5px]";
   return (
     <span
@@ -38,7 +38,7 @@ export function RoleBadge({
         className="inline-block rounded-full"
         style={{ width: 6, height: 6, background: accent }}
       />
-      {ROLE_LABEL[role]}
+      {roleLabel(role)}
     </span>
   );
 }

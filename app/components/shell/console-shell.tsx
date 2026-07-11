@@ -7,10 +7,10 @@
  * mounted 门控:后台权限不从 localStorage 恢复,每次挂载先向服务端 session 端点校验。
  * mount 前只渲染登录壳,避免用客户端默认角色渲染后台内容。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { currentAdminSession } from "@/lib/admin/auth-client";
-import { canSee, CONSOLE_NAV, type AdminRole } from "@/lib/nav/console-nav";
+import { canAccessResolvedPath, resolveVisibleDomains, type NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useAdminUi } from "@/lib/store/admin-ui";
 import { Sidebar } from "./sidebar";
@@ -20,15 +20,8 @@ import { LoginGate } from "./login-gate";
 
 const SUPPORT_HOME_PATH = "/service/overview";
 
-function defaultPathForRole(role: AdminRole) {
-  return CONSOLE_NAV.find((domain) => canSee(role, domain.roles))?.l2[0]?.path ?? "/";
-}
-
-function canAccessConsolePath(role: AdminRole, pathname: string | null) {
-  const path = pathname || "/";
-  if (path === "/") return true;
-  const domain = CONSOLE_NAV.find((item) => path === `/${item.slug}` || path.startsWith(`/${item.slug}/`));
-  return !domain || canSee(role, domain.roles);
+function defaultPathForDomains(domains: NavDomain[]) {
+  return domains[0]?.l2[0]?.path ?? "/";
 }
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
@@ -40,6 +33,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = useAdminAuth((s) => s.isAuthenticated);
   const authRole = useAdminAuth((s) => s.role);
+  const session = useAdminAuth((s) => s.session);
   const operatorRaw = useAdminAuth((s) => s.operator);
   const signIn = useAdminAuth((s) => s.signIn);
   const signOut = useAdminAuth((s) => s.signOut);
@@ -76,8 +70,13 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const operator = mounted ? operatorRaw : "总管理员";
   const collapsed = mounted ? collapsedRaw : false;
   const expanded = mounted ? expandedRaw : ["B"];
+  const domains = useMemo(() => resolveVisibleDomains({
+    role,
+    menuCodes: session?.menuCodes,
+    authorities: session?.authorities ?? [],
+  }), [role, session?.authorities, session?.menuCodes]);
   const shouldRedirectHome = role === "support" && pathname === "/";
-  const shouldRedirectForbidden = !canAccessConsolePath(role, pathname);
+  const shouldRedirectForbidden = !canAccessResolvedPath(domains, pathname);
   const redirecting = isAuthenticated && (shouldRedirectHome || shouldRedirectForbidden);
 
   useEffect(() => {
@@ -87,12 +86,12 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       return;
     }
     if (shouldRedirectForbidden) {
-      router.replace(defaultPathForRole(role));
+      router.replace(defaultPathForDomains(domains));
     }
   }, [
     isAuthenticated,
     mounted,
-    role,
+    domains,
     router,
     shouldRedirectForbidden,
     shouldRedirectHome,
@@ -116,10 +115,10 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       }}
     >
       <div style={{ gridColumn: 1, gridRow: "1 / span 2", minWidth: 0 }}>
-        <Sidebar role={role} collapsed={collapsed} expanded={expanded} />
+        <Sidebar role={role} domains={domains} collapsed={collapsed} expanded={expanded} />
       </div>
       <div style={{ gridColumn: 2, gridRow: 1, minWidth: 0 }}>
-        <TopBar role={role} operator={operator} />
+        <TopBar role={role} operator={operator} domains={domains} />
       </div>
       <main
         style={{

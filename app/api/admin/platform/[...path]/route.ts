@@ -85,6 +85,33 @@ function backendPath(parts: string[]) {
       return `/api/admin/platform/audit/stats/${parts[2]}`;
     }
   }
+  if (parts.length === 2 && parts[0] === "roles" && parts[1] === "overview") {
+    return "/api/admin/platform/roles/overview";
+  }
+  if (parts.length === 1 && parts[0] === "roles") {
+    return "/api/admin/platform/roles";
+  }
+  if (parts.length === 2 && parts[0] === "roles" && isNonEmpty(parts[1])) {
+    return `/api/admin/platform/roles/${encodeURIComponent(parts[1])}`;
+  }
+  if (parts.length === 3 && parts[0] === "roles" && isNonEmpty(parts[1]) && parts[2] === "grants") {
+    return `/api/admin/platform/roles/${encodeURIComponent(parts[1])}/grants`;
+  }
+  if (parts.length === 2 && parts[0] === "menus" && parts[1] === "overview") {
+    return "/api/admin/platform/menus/overview";
+  }
+  if (parts.length === 1 && parts[0] === "menus") {
+    return "/api/admin/platform/menus";
+  }
+  if (parts.length === 2 && parts[0] === "menus" && isNonEmpty(parts[1])) {
+    return `/api/admin/platform/menus/${encodeURIComponent(parts[1])}`;
+  }
+  if (parts.length === 1 && parts[0] === "permissions") {
+    return "/api/admin/platform/permissions";
+  }
+  if (parts.length === 2 && parts[0] === "permissions" && isNonEmpty(parts[1])) {
+    return `/api/admin/platform/permissions/${encodeURIComponent(parts[1])}`;
+  }
   return null;
 }
 

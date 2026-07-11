@@ -11,7 +11,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AlertTriangle, Download, Loader2 } from "lucide-react";
 import type { NavDomain, AdminRole } from "@/lib/nav/console-nav";
-import { CONSOLE_NAV, visibleDomains, canSee, L2_COUNT } from "@/lib/nav/console-nav";
+import { canAccessResolvedPath, CONSOLE_NAV, resolveVisibleDomains } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchA2Overview, type A2OperationRow, type A2Overview } from "@/lib/admin/a2-client";
@@ -203,6 +203,7 @@ export default function CommandCenter() {
   useEffect(() => setMounted(true), []);
   const sessionRole = useAdminAuth((s) => s.role);
   const sessionOperator = useAdminAuth((s) => s.operator);
+  const session = useAdminAuth((s) => s.session);
   const [a2Overview, setA2Overview] = useState<A2Overview | null>(null);
   const [a2Error, setA2Error] = useState<string | null>(null);
   const [lBiData, setLBiData] = useState<LBiData | null>(null);
@@ -276,7 +277,12 @@ export default function CommandCenter() {
   const KILL_GATES: KillGate[] = riskRadar.gates.map((gate) => ({ key: gate.dom, on: gate.on, state: gate.state }));
   const flaggedAccounts = riskRadar.flaggedAccounts || riskRadar.rules.reduce((sum, rule) => sum + rule.ct, 0);
 
-  const domains = role ? visibleDomains(role) : [];
+  const domains = role ? resolveVisibleDomains({
+    role,
+    menuCodes: session?.menuCodes,
+    authorities: session?.authorities ?? [],
+  }) : [];
+  const visibleModuleCount = domains.reduce((sum, domain) => sum + domain.l2.length, 0);
 
   // ── 生命体征 / 实时派生 ──
   const cov = LEDGER.coverageRatio;
@@ -307,7 +313,7 @@ export default function CommandCenter() {
         role: operationRole,
       }];
     }),
-  ].filter((it) => role && canSee(role, [it.role]));
+  ].filter((it) => role && canAccessResolvedPath(domains, it.href));
 
   // ── 实时告警(喂给 RiskRadar)──
   const k5HoldCnt = riskRadar.rules.find((rule) => rule.dom === "K5" || rule.nm.includes("KYC"))?.ct ?? 0;
@@ -486,7 +492,7 @@ export default function CommandCenter() {
       <div className="mt-7">
         <div className="mb-2.5 flex items-center justify-between">
           <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "var(--v5-ink-4)" }}>域速览</p>
-          <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>{domains.length} 域 · 全平台 {L2_COUNT} 模块</span>
+          <span className="text-[11.5px]" style={{ color: "var(--v5-ink-4)" }}>{domains.length} 域 · 可见 {visibleModuleCount} 模块</span>
         </div>
         <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(248px,1fr))]">
           {domains.map((d) => (
