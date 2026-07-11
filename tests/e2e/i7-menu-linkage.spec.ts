@@ -44,7 +44,7 @@ test("A6 grant and A7 metadata expose the independent I7 learning page", async (
           rewardRange: { min: 10, max: 50 },
           featuredCourseId: "learn-1",
           metrics: [{ key: "完课率", value: "82%" }],
-          categories: ["Basics"],
+          categories: ["Basics", "Earn", "Team", "Wealth", "Security"],
           formats: ["Article"],
           levels: ["Beginner"],
           statuses: ["published"],
@@ -56,6 +56,7 @@ test("A6 grant and A7 metadata expose the independent I7 learning page", async (
 
   await page.goto("/content/learn");
   await expect(page.getByText("教程中心(I7) · /learn · 1 课", { exact: true })).toBeVisible();
+  await expect(page.getByText("· 5 分类 · 学完发 NEX · 涨奖励过 B1 红线", { exact: true })).toBeVisible();
   await expect(page.getByText("命名空间矩阵(I6 · a)")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "+ 新建课程" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "发布" })).toHaveCount(0);

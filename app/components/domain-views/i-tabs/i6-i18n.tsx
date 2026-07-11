@@ -17,22 +17,13 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type NsFlt = "all" | "issues" | "mkt";
-type CatFlt = "all" | "Basics" | "Earn" | "Team" | "Wealth" | "Security";
+type CatFlt = string;
 
 const NS_FLT: [NsFlt, string][] = [
   ["all", "全部"],
   ["issues", "有问题"],
   ["mkt", "marketing 多版"],
 ];
-const CAT_FLT: [CatFlt, string][] = [
-  ["all", "全部"],
-  ["Basics", "🚀 Basics"],
-  ["Earn", "⚡ Earn"],
-  ["Team", "🧬 Team"],
-  ["Wealth", "💎 Wealth"],
-  ["Security", "🛡 Security"],
-];
-
 const HCB_KEY = "milestones.earnCross";
 
 type NsDrawer = { ns: string; keys: number; cov: number; variants: string };
@@ -104,6 +95,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   };
 
   const allCourses = COURSES;
+  const configuredCategories = (data?.categories ?? []).map((category) => category.trim()).filter(Boolean);
+  const courseCategories = configuredCategories.length > 0
+    ? configuredCategories
+    : [...new Set(allCourses.map((course) => course.cat).filter(Boolean))];
+  const categoryFilters: [CatFlt, string][] = [
+    ["all", "全部"],
+    ...courseCategories.map((category) => [category, `${COURSE_ICON_BY_CAT[category] ?? "📘"} ${category}`] as [CatFlt, string]),
+  ];
   const liveReward = (c: Course): string => {
     return `${c.reward} NEX`;
   };
@@ -121,7 +120,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     return n.variants.includes("多版");
   });
   const filteredCrs = allCourses.filter((c) => catFlt === "all" || c.cat === catFlt);
-  const courseCategoryCount = new Set(allCourses.map((course) => course.cat).filter(Boolean)).size;
+  const courseCategoryCount = courseCategories.length;
 
   /* ============ I6 actions ============ */
   const liveIntegrity = Math.max(0, I6_STATS.integrityIssues);
@@ -296,12 +295,12 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
         kind: "course-authoring",
         rewardMin: TUTORIAL_REWARD_RANGE.min,
         rewardMax: TUTORIAL_REWARD_RANGE.max,
-        categories: ["Basics", "Earn", "Team", "Wealth", "Security"],
+        categories: courseCategories,
       },
       run: (reason, slug, form) => {
         const id = slug?.trim() || "new";
         const title = form?.titleZh?.trim() || id;
-        const category = form?.category || "Basics";
+        const category = form?.category || courseCategories[0] || "Basics";
         const reward = Number(form?.reward);
         runBackend(actions.createI6Course(id, {
           titleZh: form?.titleZh || title,
@@ -617,7 +616,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
             · {courseCategoryCount} 分类 · 学完发 NEX · 涨奖励过 B1 红线
           </span>
           <div className="r chips">
-            {CAT_FLT.map(([k, l]) => (
+            {categoryFilters.map(([k, l]) => (
               <button
                 key={k}
                 className={`chip${catFlt === k ? " sel" : ""}`}
