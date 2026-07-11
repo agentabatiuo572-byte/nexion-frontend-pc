@@ -819,7 +819,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           <span className="ttl">A/B 实验面板(c)</span>
           <span className="sub">· 曝光 / 转化 / CVR 全部由事件流结算(服务器口径),不是页面临时拼的数</span>
           <div className="r chips">
-            {canManageExperiments && <button type="button" className="l-btn sm mc" disabled={EXPERIMENT_COPY_OPTIONS.length === 0} title={EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : "创建 A/B 实验"} onClick={createExperiment}>+ 创建 A/B 实验</button>}
+            {canManageExperiments && <button type="button" className="l-btn sm mc" title={EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : "创建 A/B 实验"} onClick={createExperiment}>+ 创建 A/B 实验</button>}
             {EXP_FLT.map(([k, l]) => (
               <button type="button" key={k} className={`chip${expFlt === k ? " sel" : ""}`} aria-pressed={expFlt === k} onClick={() => setExpFlt(k)}>{l}</button>
             ))}

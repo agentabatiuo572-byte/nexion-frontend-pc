@@ -65,6 +65,10 @@ test("I1 用同一文案版本创建实验，并经确认启动 scheduled 实验
   const createWrite = writes.find((item) => item.pathname.endsWith("/copy-ab/experiments"));
   expect(createWrite?.body).toMatchObject({ copyKey: "home.hero", variants: [{ version: "v1", splitPct: 60 }, { version: "v2", splitPct: 40 }], reason: "验证首页主横幅转化提升" });
 
+  await expect(createButton).toBeEnabled();
+  await createButton.click();
+  await expect(page.getByText("暂无可创建实验的文案：符合条件的文案已有待启动或进行中的实验，请先完成或停止现有实验")).toBeVisible();
+
   await page.getByRole("button", { name: "启动实验" }).click();
   const startDialog = page.getByRole("dialog");
   const confirm = startDialog.getByRole("button", { name: "确认执行" });

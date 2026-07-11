@@ -331,6 +331,14 @@ test("I1 创建实验排除已有活动实验的文案，并限制备注长度",
   assert.match(designKit, /textArea\("note", "实验备注（可选）", "实验假设、观察指标或停止条件", 2, 255\)/);
 });
 
+test("I1 没有可用文案时创建实验按钮仍可点击并解释阻塞原因", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+
+  assert.doesNotMatch(component, /disabled=\{EXPERIMENT_COPY_OPTIONS\.length === 0\}/);
+  assert.match(component, /onClick=\{createExperiment\}>\+ 创建 A\/B 实验<\/button>/);
+  assert.match(component, /暂无可创建实验的文案：\$\{experimentUnavailableReason\}/);
+});
+
 test("I1 已结算和旧 stopped 状态实验保留采纳入口，弃用为终态且错误码有中文恢复指引", () => {
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
   const errors = read("lib/admin/error-messages.ts");
