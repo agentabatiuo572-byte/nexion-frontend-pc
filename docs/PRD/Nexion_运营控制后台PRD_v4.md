@@ -50,7 +50,7 @@
 2. **文案版本配置列表**:作为独立配置目录放在文案池上方，字段为 `[版本标识 / 版本名称 / 版本说明 / 状态(ACTIVE / INACTIVE)/ 排序 / 引用数]`。提供 Create / Read / Update / Delete：新增版本配置；读取完整目录；编辑名称、说明、状态和排序（版本标识创建后不可修改）；仅未被任何文案内容历史引用的配置允许删除。新增文案或基于发布版新增内容版本时，版本必须从 ACTIVE 目录项下拉选择，禁止展示或输入“首版版本号”，也不再由前端或 server 强制写死 `v1`。
 3. **(b) 文案内容历史**:跨全部文案位的内容版本历史 `[文案标识 / 文案位置 / 所选配置版本 / 文案体(en + zh + vi,引用 I6 i18n key)/ 受众(P 阶段范围 + 语言 + 注册时长)/ 状态(draft / published / archived)/ 操作者(operator)/ 发布理由(reason,引自审计)/ 发布时间]`;支持按文案、状态筛选,并支持三语预览 + 占位符校验(`{n}` `{amount}` 等 §14.2 `fmt` 占位符三语言一致性,与 I6 联动)。
    **内容历史 CRUD 口径**:Create=新增文案首版或基于现有版本新建 draft（均选择版本目录项）;Read=列表筛选并查看全部有效内容历史,已删除 draft 仅在不可改审计中查询;Update=仅当前 draft 可编辑并保存,发布版须另建 draft;Delete=仅当前且未被实验引用的 draft 可逻辑删除,请求必须携带页面读取到的草稿 revision 以防误删他人刚保存的内容,理由必填且审计写入失败时整笔删除回滚,删除后不可恢复。published / archived 为正式历史证据,禁止删除;实验变体使用结构化 copyVersion 引用,旧实验缺少该字段时按“可能引用”处理并禁止删除。
-4. **(c) A/B 实验面板**:进行中 / 已结实验 `[实验 ID / 文案位 / 变体集(A/B/C…)/ 分流比例 / 继承的文案受众快照(P 阶段范围 + 语言 + 注册时长)/ 曝光数 / 转化数 / CVR / 起止时间 / 状态]`;实验不重复配置受众定向,启动时从所选文案版本继承受众并只读回显;实验结果以 A4 事件流派生(见 ⑧),非临时查询;支持「采纳获胜变体为发布版」一键动作(走 ④ 发布审批)。
+4. **(c) A/B 实验面板**:提供「创建 A/B 实验」入口及进行中 / 已结实验列表 `[实验 ID / 文案位 / 变体集(A/B/C…)/ 分流比例 / 继承的文案受众快照(P 阶段范围 + 语言 + 注册时长)/ 曝光数 / 转化数 / CVR / 起止时间 / 状态]`;创建时选择同一文案位至少两个已发布或已归档内容版本,各版本受众必须一致,分流比例使用数字控件且总和必须为 100%;创建成功先进入 `scheduled`,不改变用户所见内容。实验不重复配置受众定向,创建与启动确认均从所选文案版本继承受众并只读回显;实验结果以 A4 事件流派生(见 ⑧),非临时查询;支持「采纳获胜变体为发布版」与「弃用实验」动作。**转化仅统计服务端确认的已支付/已完成订单事件;点击、加购、客户端自报不计入转化或 CVR。**
 
 **状态机**:文案版本 `draft → published → archived`;A/B 实验 `scheduled → running → concluded(adopted | discarded)`。
 
@@ -74,8 +74,10 @@
 | 发布文案版本(published) | 内容(lead)/ 超管 | I1-MD1(理由必填) | `admin.content_published`(文案位 / 版本 before→after / operator / reason) |
 | 下架 / 归档文案版本 | 内容(lead)/ 超管 | I1-MD2(理由必填) | `admin.content_archived`(文案位 / 版本 / operator / reason) |
 | 回滚到历史版本 | 内容(lead)/ 超管 | I1-MD3(理由必填;回滚即重新发布旧版,等价发布) | `admin.content_rolledback`(文案位 / from→to 版本 / operator / reason) |
-| 启动 / 停止 A/B 实验 | 内容(lead)/ 超管(增长限增长相关文案位,见 ⑥ 注) | I1-MD4(理由必填;实验改变用户所见文案分布) | `admin.content_experiment_toggled`(实验 ID / start\|stop / 分流 / 定向 / operator / reason) |
-| 采纳获胜变体为发布版 | 内容(lead)/ 超管 | I1-MD5(理由必填;等价发布动作) | `admin.content_published`(采纳来源实验 ID / operator / reason) |
+| 创建 A/B 实验排程 | 持有 `content_i1_experiment_manage` / 超管 | 标准操作确认(理由必填;仅创建排程,不对用户生效) | `admin.content_experiment_created`(实验 ID / 文案位 / 变体 / 分流 / 受众快照 / operator / reason) |
+| 启动 / 停止 A/B 实验 | 持有 `content_i1_experiment_manage` / 超管 | I1-MD4(理由必填;实验改变用户所见文案分布) | `admin.content_experiment_toggled`(实验 ID / start\|stop / 分流 / 定向 / operator / reason) |
+| 弃用 scheduled / concluded 实验 | 持有 `content_i1_experiment_manage` / 超管 | 标准操作确认(理由必填,8–200 字) | `admin.content_experiment_discarded`(实验 ID / from→discarded / operator / reason) |
+| 采纳获胜变体为发布版 | 持有 `content_i1_experiment_manage` / 超管 | I1-MD5(理由必填;等价发布动作) | `admin.content_published`(采纳来源实验 ID / operator / reason) |
 
 > 发布 / 下架 / 回滚 / 实验启停 / 采纳获胜变体五类动作均为高敏内容写操作(上线即对全体用户生效),按 2026-06 操作确认决议:**单人执行 + 业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`,8–200 字)+ A2 审计留痕(operator/before/after/reason/IP/ts)+ 即时生效**;高敏动作落审计的同时实时告警超管与内容 lead(§2.x A2 ⑦)。执行权就高至内容 lead 层级(原复核层级转为执行门槛,对齐 §A1 角色命名收口)。
 
@@ -90,8 +92,10 @@
 | 删除文案草稿 | ②(b)draft 版本行内「删除草稿」 | 危险次按钮 | 仅内容/超管渲染;仅 draft 态显示;published / archived 不显示删除 | 打开操作确认弹窗,理由必填;删除不可恢复但保留审计 |
 | 下架 / 归档文案版本 | ②(b)published 版本行内菜单「下架」 | 菜单项 | 仅内容 lead/超管渲染;仅 published 态显示 | 打开弹窗 I1-MD2 |
 | 回滚到历史版本 | ②(b)历史版本行内「回滚到此版」 | 行内按钮 | 仅内容 lead/超管渲染;archived/superseded 历史版本行显示 | 打开弹窗 I1-MD3 |
-| 启动 / 停止 A/B 实验 | ②(c)实验面板「启动实验」/ 行内「停止」 | 次按钮 / 行内按钮 | 内容 lead/超管渲染(增长限增长相关文案位);scheduled 态显「启动」、running 态显「停止」 | 打开弹窗 I1-MD4 |
-| 采纳获胜变体为发布版 | ②(c)已结实验详情「采纳获胜变体」 | 主按钮 | 仅内容 lead/超管渲染;仅 concluded 且有显著获胜变体的实验显示;样本未达最小样本时置灰 | 打开弹窗 I1-MD5 |
+| 创建 A/B 实验 | ②(c)实验面板右上「创建 A/B 实验」 | 主按钮 | 仅持有 `content_i1_experiment_manage` 或超管渲染;同一文案位至少存在两个非 draft 内容版本且没有 scheduled/running 实验 | 打开结构化创建表单;选择文案位与版本、调整各变体比例、只读核对继承受众;比例和=100%且理由 8–200 字后创建 scheduled 排程 |
+| 启动 / 停止 A/B 实验 | ②(c)实验面板「启动实验」/ 行内「停止」 | 次按钮 / 行内按钮 | 仅持有 `content_i1_experiment_manage` 或超管渲染;scheduled 态显「启动」、running 态显「停止」 | 打开弹窗 I1-MD4 |
+| 弃用 A/B 实验 | ②(c)scheduled / concluded 实验行「弃用实验」 | 危险次按钮 | 仅持有 `content_i1_experiment_manage` 或超管渲染;running 不显示,须先停止 | 打开确认弹窗;理由 8–200 字;调用 discard 接口 |
+| 采纳获胜变体为发布版 | ②(c)已结实验详情「采纳获胜变体」 | 主按钮 | 仅持有 `content_i1_experiment_manage` 或超管渲染;仅 concluded 且有显著获胜变体的实验显示;样本未达最小样本时置灰 | 打开弹窗 I1-MD5 |
 | 查看文案池 / 版本历史 / 实验面板 | ②(a)/(b)/(c) 导航 tab | 链接 | 恒可用(按角色裁剪) | 跳转对应视图,无弹窗 |
 
 **(2) 弹窗规格**
@@ -146,7 +150,8 @@
 - `GET /api/admin/content/pool` — 文案池列表(扩展:全 surface 文案位 + 当前版本 + 实验态)。
 - `GET /api/admin/content/:key/versions` — 单文案位版本历史。
 - `PUT /api/admin/content/:key`(操作者经确认弹窗 I1-MD1/MD3/MD5 直接调用,body 必携 `{reason}`,缺失 400 `REASON_REQUIRED`)— 发布 / 回滚文案版本,携 `Idempotency-Key`(§9.11e,防重复发布);写入与审计同事务落库,SSE / cursor 推 client 失效重拉。
-- `GET /api/admin/content/experiments` / `POST /api/admin/content/experiments/:id/{start|stop}`(经确认弹窗 I1-MD4,body 携 `{reason}`)— A/B 实验管理;**分组 assignment server 权威**(§9.11d.2:client 不可篡改实验分组),实验曝光/转化由 server emit 事件。
+- `POST /api/admin/content/copy-ab/experiments`(body 携 `{copyKey, variants:[{version,splitPct}], note?, operator, reason}` + `Idempotency-Key`)— 创建 `scheduled` 实验排程;server 强制至少两个不同版本、版本同属文案位且非 draft、受众快照一致、各分流 1–99 且总和=100%,同一文案位不得同时存在 scheduled/running 实验。
+- `GET /api/admin/content/experiments` / `POST /api/admin/content/copy-ab/experiments/:id/{start|stop|discard}`(经确认弹窗,body 携 `{operator,reason}`)— A/B 实验管理;启动仅允许 `scheduled→running`;弃用仅允许 `scheduled|concluded→discarded`,running 必须先停止;启动时重新校验版本、分流、受众和并发状态并锁定快照;以上写操作统一要求 `content_i1_experiment_manage`。**分组 assignment server 权威**(§9.11d.2:client 不可篡改实验分组);转化仅接受服务端已支付/已完成订单事件。
 
 **⑥ 权限 & 审计**
 
@@ -154,21 +159,21 @@
 |---|---|---|---|---|---|---|---|
 | 编辑文案版本(draft) | ✅ | — | — | — | ✅ | — | — |
 | 发布 / 下架 / 回滚 | ✅ | — | — | — | ✅(lead) | — | — |
-| A/B 实验启停 | ✅ | — | — | ✅(限增长相关文案位) | ✅(lead) | — | — |
+| A/B 实验创建 / 启停 / 弃用 / 采纳 | ✅ | — | — | 按角色授权 `content_i1_experiment_manage` | 按角色授权 `content_i1_experiment_manage` | — | — |
 | 审计追溯 | ✅ | — | — | — | ✅(内容域) | — | ✅(全量) |
 
 审计记录字段:统一 schema(§2.x A2 ⑥)`操作者(operator)/ 角色 / 动作 / 对象(文案位 + 版本号)/ 前值 / 后值 / 理由(reason)/ IP / 时间(ms)`。只读审计角色可全量追溯文案改版与实验启停历史。
 
-> **增长执行边界**:增长角色仅可对**增长活动/转化实验相关**的文案位执行 A/B 实验启停(与 A3 feature flag 执行分层逻辑一致);通用法务/品牌文案的发布执行权限内容(lead)/超管。服务端按文案位分类校验执行角色资质。
+> **独立权限口径**:I1 普通文案写操作使用 `content_i1_write`;实验框架参数与实验创建 / 启动 / 停止 / 弃用 / 采纳统一使用 `content_i1_experiment_manage`。角色仅通过 RBAC 被授予权限,不再声明当前实现中不存在的“增长文案范围”二次分类。
 
 **⑦ 风控 & 联动**
 - **版本 server-canonical**:文案发布版 server 单源,client 仅 UI cache 渲染当前版(§9.11d.2);client 无任何写文案/改版本能力。A/B 分组 assignment server 权威(§9.11d.3:A/B 实验值必须 server-driven),client 不可篡改自身分组绕过实验。
-- **跨模块联动**:文案体引用 I6 i18n key(双语镜像),改文案须保证 en/zh 同步(占位符词序两语言独立,§14.4 / I6);转化实验曝光/转化事件喂 B3 漏斗(L3→L4,§2.4.7)+ L2 漏斗 BI。与 H4 边界:活动卡内通用 copy 归 I1,活动结构归 H4(§3.14)。
+- **跨模块联动**:文案体引用 I6 i18n key(双语镜像),改文案须保证 en/zh 同步(占位符词序两语言独立,§14.4 / I6);转化实验曝光与服务端已支付/已完成订单转化事件喂 B3 漏斗(L3→L4,§2.4.7)+ L2 漏斗 BI。点击、加购、客户端自报仅可作为行为分析,不计入实验 CVR。与 H4 边界:活动卡内通用 copy 归 I1,活动结构归 H4(§3.14)。
 - **篡改防御(§9.11d)**:文案位为纯内容(不含费率/资格判定),无资金篡改面;但 A/B 分组若被 client 篡改会污染实验口径,故分组 server 权威 + 事件 `is_server_authoritative` 按 server emit 判定。
 
 **⑧ 埋点(事件)**
 对齐 A4(§2.4)。**domain `content` 须 A4 domain 扩展(blocking 工单)——见章首 domain 注,本处不复述占位规则**。
-- **产生(A/B 曝光/转化,client + server)**:`content.variant_exposed`(文案变体曝光;属性 `experiment_id / variant / 文案位 key / cohort / phase`,`is_server_authoritative=false` UI 事件)· `content.variant_converted`(该变体下用户达成目标转化,如点击 CTA → 后续 `checkout.completed`;归因 server 拼接,属性 `experiment_id / variant`)。
+- **产生(A/B 曝光/转化)**:`content.variant_exposed`(文案变体曝光;属性 `experiment_id / variant / 文案位 key / cohort / phase`,`is_server_authoritative=false` UI 事件)· `content.variant_converted`(仅由服务端在订单已支付或完成状态事件后生成,属性 `experiment_id / variant / order_id / paid_or_completed_at`,`is_server_authoritative=true`;点击 CTA、加购、客户端自报不得生成该事件)。
 - **产生(内容治理,admin)**:`admin.content_published` / `admin.content_archived` / `admin.content_rolledback` / `admin.content_experiment_toggled`(经 A4 schema registry 注册,归 §2.4.5 ⑥ admin family,经 A2 落 append-only 审计)。
 - **消费方**:`content.variant_exposed / converted` 喂 **B3 实时漏斗**(L3→L4 转化口径,§2.4.7)+ **L2 漏斗 cohort BI**(各变体 CVR 序列)+ A/B 实验面板(②c)结算 CVR。内容治理事件仅供审计追溯,不喂用户侧 KPI。
 

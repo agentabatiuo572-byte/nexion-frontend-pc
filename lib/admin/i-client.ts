@@ -106,6 +106,7 @@ export type CopyVersionRow = {
   audienceTarget?: CopyAudienceTarget;
   trafficSplit: string;
   versionNote: string;
+  estimatedAudience?: number;
 };
 
 export type CopyExperimentRow = {
@@ -391,6 +392,9 @@ export type IContentActions = {
   rollbackI1CopyVersion: (copyKey: string, version: string, reason: string) => Promise<void>;
   archiveI1Copy: (copyKey: string, expectedVersion: string, reason: string) => Promise<void>;
   updateI1Framework: (paramKey: string, value: string, reason: string) => Promise<void>;
+  createI1Experiment: (body: Record<string, unknown>, reason: string) => Promise<void>;
+  startI1Experiment: (experimentId: string, reason: string) => Promise<void>;
+  discardI1Experiment: (experimentId: string, reason: string) => Promise<void>;
   stopI1Experiment: (experimentId: string, reason: string) => Promise<void>;
   adoptI1Experiment: (experimentId: string, reason: string) => Promise<void>;
   createI2NovaChannel: (body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -450,6 +454,9 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   rollbackI1CopyVersion: (copyKey, version, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   archiveI1Copy: (copyKey, expectedVersion, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   updateI1Framework: (paramKey, value, reason) => apiRequest(`/copy-ab/framework/${encodeURIComponent(paramKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
+  createI1Experiment: (body, reason) => apiRequest("/copy-ab/experiments", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  startI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/start`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  discardI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/discard`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   stopI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/stop`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   adoptI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/adopt`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   createI2NovaChannel: (body, reason) => apiRequest("/nova/channels", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),

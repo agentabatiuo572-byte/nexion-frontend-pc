@@ -509,6 +509,14 @@ type SopActionOption = { value: string; label: string; domain: string; action: s
 type SopRollbackOption = { value: string; label: string; scene?: string; riskLevel?: string; plan: string; searchText?: string };
 type CopyPositionOption = { value: string; label: string; surface: string; status?: string };
 type CopyVersionOption = { value: string; label: string; status?: string };
+type CopyExperimentVersionOption = {
+  value: string;
+  label: string;
+  audience: string;
+  audienceTarget?: { tiers?: string[]; locales?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
+  estimatedAudience?: number;
+};
+type CopyExperimentCopyOption = { value: string; label: string; versions: CopyExperimentVersionOption[] };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
 function initEditValue(spec?: EditSpec | null): string {
@@ -539,6 +547,9 @@ export type BusinessFormSpec =
   | { kind: "copy-create"; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
   | { kind: "copy-position-create"; modules: { value: string; label: string }[] }
   | { kind: "copy-version-option"; mode: "create" | "edit"; versionKey?: string; name?: string; description?: string; status?: string; sortOrder?: number; revision?: number }
+  | { kind: "copy-experiment-create"; copies: CopyExperimentCopyOption[] }
+  | { kind: "copy-experiment-start"; experimentId: string }
+  | { kind: "copy-experiment-discard"; experimentId: string }
   | { kind: "course-authoring"; rewardMin?: number; rewardMax?: number; categories?: string[]; durations?: string[]; publishStates?: string[] }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
@@ -712,6 +723,22 @@ function parseCopyAudience(audience?: string): { phaseMin: string; phaseMax: str
   };
 }
 
+function copyExperimentAudienceSignature(version?: CopyExperimentVersionOption): string {
+  if (!version) return "";
+  const parsed = parseCopyAudience(version.audience);
+  const start = Number(parsed.phaseMin.slice(1));
+  const end = Number(parsed.phaseMax.slice(1));
+  const tiers = version.audienceTarget?.tiers?.length
+    ? [...version.audienceTarget.tiers].map((tier) => tier.toUpperCase()).sort()
+    : Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => `P${start + index}`);
+  const locales = version.audienceTarget
+    ? (version.audienceTarget.locales?.length ? [...version.audienceTarget.locales].map((locale) => locale.toLowerCase()).sort() : ["all"])
+    : [parsed.language.toLowerCase()];
+  const registrationDaysMin = version.audienceTarget?.registrationDaysMin ?? Number(parsed.registrationDaysGt) + 1;
+  const registrationDaysMax = version.audienceTarget?.registrationDaysMax ?? null;
+  return JSON.stringify({ tiers, locales, registrationDaysMin, registrationDaysMax });
+}
+
 function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (!spec) return {};
   if (spec.kind === "role-select") {
@@ -757,7 +784,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       registrationDaysGt: spec.registrationDaysGt ?? audience.registrationDaysGt,
       trafficSplit: spec.trafficSplits?.[0] ?? "",
       version: spec.version ?? spec.versionOptions?.[0]?.value ?? "",
-      versionNote: spec.versionNote ?? "新增文案首版",
+      versionNote: spec.versionNote ?? "新增文案初始内容",
       zh: spec.zh ?? "",
       en: spec.en ?? "",
       vi: spec.vi ?? "",
@@ -775,6 +802,24 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       sortOrder: String(spec.sortOrder ?? 0),
       revision: String(spec.revision ?? 0),
     };
+  }
+  if (spec.kind === "copy-experiment-create") {
+    const copy = spec.copies[0];
+    return {
+      copyKey: copy?.value ?? "",
+      variantCount: "2",
+      "variantVersion.0": copy?.versions[0]?.value ?? "",
+      "variantSplit.0": "50",
+      "variantVersion.1": copy?.versions[1]?.value ?? "",
+      "variantSplit.1": "50",
+      note: "",
+    };
+  }
+  if (spec.kind === "copy-experiment-start") {
+    return { ack: "false" };
+  }
+  if (spec.kind === "copy-experiment-discard") {
+    return {};
   }
   if (spec.kind === "course-authoring") {
     return {
@@ -1009,6 +1054,23 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("status", "状态");
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(state.versionKey ?? "")) missing.push("版本标识格式");
     if (!Number.isInteger(Number(state.sortOrder)) || Number(state.sortOrder) < 0) missing.push("排序非负整数");
+  } else if (spec.kind === "copy-experiment-create") {
+    needs("copyKey", "选择文案");
+    const count = Number(state.variantCount || 0);
+    const versions = Array.from({ length: count }, (_, index) => state[`variantVersion.${index}`]?.trim() ?? "");
+    const splits = Array.from({ length: count }, (_, index) => Number(state[`variantSplit.${index}`]));
+    if (!Number.isInteger(count) || count < 2) missing.push("至少选择 2 个不同的非草稿内容版本");
+    if (versions.some((version) => !version) || new Set(versions).size !== versions.length) missing.push("至少选择 2 个不同的非草稿内容版本");
+    const copy = spec.copies.find((item) => item.value === state.copyKey);
+    const audienceSignatures = versions
+      .map((version) => copyExperimentAudienceSignature(copy?.versions.find((item) => item.value === version)))
+      .filter(Boolean);
+    if (audienceSignatures.length === versions.length && new Set(audienceSignatures).size > 1) missing.push("所选版本的继承受众必须完全一致");
+    if (splits.some((split) => !Number.isInteger(split) || split <= 0 || split >= 100)) missing.push("每个分流比例必须为 1-99 的整数");
+    if (splits.reduce((sum, split) => sum + split, 0) !== 100) missing.push("分流比例合计必须为 100%");
+    if (state.note?.length > 255) missing.push("实验备注不能超过 255 字");
+  } else if (spec.kind === "copy-experiment-start") {
+    if (state.ack !== "true") missing.push("启动实验确认");
   } else if (spec.kind === "course-authoring") {
     ["slug", "category", "format", "difficulty", "duration", "reward", "publishState", "titleZh", "titleEn", "bodyZh", "bodyEn"].forEach((key) => needs(key, key));
     const reward = Number(state.reward);
@@ -1172,6 +1234,9 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "copy-create") return state.copyKey;
   if (spec.kind === "copy-position-create") return state.positionKey;
   if (spec.kind === "copy-version-option") return state.versionKey;
+  if (spec.kind === "copy-experiment-create") return state.copyKey;
+  if (spec.kind === "copy-experiment-start") return state.ack;
+  if (spec.kind === "copy-experiment-discard") return spec.experimentId;
   if (spec.kind === "version-authoring") return state.version;
   if (spec.kind === "course-authoring") return state.slug;
   if (spec.kind === "campaign-edit") return state.title;
@@ -1207,10 +1272,10 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
 
 function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void }) {
   const set = (key: string, v: string) => onChange({ ...value, [key]: v });
-  const textArea = (key: string, label: string, placeholder: string, rows = 3) => (
+  const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
-      <textarea rows={rows} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
+      <textarea rows={rows} maxLength={maxLength} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
   const input = (key: string, label: string, placeholder: string, type = "text") => (
@@ -1474,6 +1539,141 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {input("sortOrder", "排序", "0", "number")}
         </div>
         <div style={{ marginTop: 10 }}>{textArea("description", "版本说明", "说明该版本的使用范围和变更目标", 2)}</div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "copy-experiment-create") {
+    const copy = spec.copies.find((item) => item.value === value.copyKey) ?? spec.copies[0];
+    const count = Math.max(2, Number(value.variantCount || 2));
+    const selectedVersions = Array.from({ length: count }, (_, index) => value[`variantVersion.${index}`] ?? "");
+    const splitTotal = Array.from({ length: count }, (_, index) => Number(value[`variantSplit.${index}`] || 0))
+      .reduce((sum, split) => sum + split, 0);
+    const selectedVersion = copy?.versions.find((item) => item.value === selectedVersions[0]);
+    const selectedAudienceSignatures = selectedVersions
+      .map((version) => copyExperimentAudienceSignature(copy?.versions.find((item) => item.value === version)))
+      .filter(Boolean);
+    const audienceConsistent = selectedAudienceSignatures.length === selectedVersions.length && new Set(selectedAudienceSignatures).size <= 1;
+    const target = selectedVersion?.audienceTarget;
+    const parsed = parseCopyAudience(selectedVersion?.audience);
+    const tiers = target?.tiers?.length
+      ? `${target.tiers[0]}${target.tiers.length > 1 ? `-${target.tiers[target.tiers.length - 1]}` : ""}`
+      : `${parsed.phaseMin}${parsed.phaseMin === parsed.phaseMax ? "" : `-${parsed.phaseMax}`}`;
+    const languages = target?.locales?.length ? target.locales.map((item) => item.toUpperCase()).join(" / ") : parsed.language === "all" ? "全语言" : parsed.language.toUpperCase();
+    const registrationDays = target?.registrationDaysMin != null
+      ? Math.max(0, target.registrationDaysMin - 1)
+      : Number(parsed.registrationDaysGt || 0);
+    const changeCopy = (copyKey: string) => {
+      const nextCopy = spec.copies.find((item) => item.value === copyKey);
+      onChange({
+        ...value,
+        copyKey,
+        variantCount: "2",
+        "variantVersion.0": nextCopy?.versions[0]?.value ?? "",
+        "variantSplit.0": "50",
+        "variantVersion.1": nextCopy?.versions[1]?.value ?? "",
+        "variantSplit.1": "50",
+      });
+    };
+    const removeVariant = (removeIndex: number) => {
+      if (count <= 2) return;
+      const next: BusinessFormValue = { ...value, variantCount: String(count - 1) };
+      const remainingCount = count - 1;
+      const baseSplit = Math.floor(100 / remainingCount);
+      for (let index = 0; index < count - 1; index += 1) {
+        const sourceIndex = index >= removeIndex ? index + 1 : index;
+        next[`variantVersion.${index}`] = value[`variantVersion.${sourceIndex}`] ?? "";
+        next[`variantSplit.${index}`] = String(baseSplit + (index === 0 ? 100 - baseSplit * remainingCount : 0));
+      }
+      delete next[`variantVersion.${count - 1}`];
+      delete next[`variantSplit.${count - 1}`];
+      onChange(next);
+    };
+    const addVariant = () => {
+      if (!copy || count >= copy.versions.length) return;
+      const unused = copy.versions.find((item) => !selectedVersions.includes(item.value));
+      const nextCount = count + 1;
+      const baseSplit = Math.floor(100 / nextCount);
+      const next: BusinessFormValue = {
+        ...value,
+        variantCount: String(nextCount),
+        [`variantVersion.${count}`]: unused?.value ?? "",
+      };
+      for (let index = 0; index < nextCount; index += 1) {
+        next[`variantSplit.${index}`] = String(baseSplit + (index === 0 ? 100 - baseSplit * nextCount : 0));
+      }
+      onChange(next);
+    };
+    return (
+      <div className="field" data-business-form="copy-experiment-create">
+        <label>业务表单 · 创建 A/B 实验</label>
+        <label className="field" style={{ marginBottom: 10 }}>
+          <span>选择文案</span>
+          <select className="fld" aria-label="选择文案" value={copy?.value ?? ""} onChange={(event) => changeCopy(event.target.value)}>
+            {spec.copies.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </label>
+        <div className="itint" style={{ marginBottom: 10 }}>
+          只能选择同一文案下已有的非草稿内容版本；至少 2 个变体，分流比例合计必须为 100%。
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {Array.from({ length: count }, (_, index) => {
+            const currentVersion = selectedVersions[index];
+            const unavailable = new Set(selectedVersions.filter((_, selectedIndex) => selectedIndex !== index));
+            const options = copy?.versions ?? [];
+            const split = value[`variantSplit.${index}`] ?? "";
+            return (
+              <div key={index} className="tint" data-proof={`experiment-variant-${index}`} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, alignItems: "end" }}>
+                <label className="field" style={{ marginBottom: 0 }}>
+                  <span>变体 {String.fromCharCode(65 + index)} · 内容版本</span>
+                  <select className="fld" aria-label={`变体 ${String.fromCharCode(65 + index)} 内容版本`} value={currentVersion} onChange={(event) => set(`variantVersion.${index}`, event.target.value)}>
+                    {options.map((item) => <option key={item.value} value={item.value} disabled={item.value !== currentVersion && unavailable.has(item.value)}>{item.label}</option>)}
+                  </select>
+                </label>
+                <label className="field" style={{ marginBottom: 0 }}>
+                  <span>分流比例 · {split || 0}%</span>
+                  <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", gap: 8, alignItems: "center" }}>
+                    <input className="fld" aria-label={`变体 ${String.fromCharCode(65 + index)} 分流比例`} type="number" min={1} max={99} step={1} value={split} onChange={(event) => set(`variantSplit.${index}`, event.target.value)} />
+                    <input aria-label={`变体 ${String.fromCharCode(65 + index)} 分流滑块`} type="range" min={1} max={99} step={1} value={split || "1"} onChange={(event) => set(`variantSplit.${index}`, event.target.value)} />
+                  </div>
+                </label>
+                <button type="button" className="btn sm" disabled={count <= 2} onClick={() => removeVariant(index)}>移除</button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="row wrap" style={{ justifyContent: "space-between", gap: 8, marginTop: 10 }}>
+          <button type="button" className="btn sm" disabled={!copy || count >= copy.versions.length} onClick={addVariant}>+ 添加变体</button>
+          <span className="tiny" style={{ color: splitTotal === 100 ? "var(--success)" : "var(--warning)", fontWeight: 700 }}>分流合计 {splitTotal}% / 100%</span>
+        </div>
+        <div className="itint cyan" data-proof="experiment-inherited-audience" style={{ marginTop: 10 }}>
+          <b>继承的文案受众 · 只读继承</b>
+          <div style={{ marginTop: 5 }}>P 阶段 {tiers} · 语言 {languages} · 注册时长大于 {registrationDays} 天</div>
+          <div className="tiny" style={{ marginTop: 3 }}>预计覆盖 {selectedVersion?.estimatedAudience == null ? "待估算" : `${selectedVersion.estimatedAudience.toLocaleString()} 人`}</div>
+          {!audienceConsistent && <div className="tiny" style={{ marginTop: 5, color: "var(--danger)" }}>所选版本的继承受众不一致，请改选受众完全一致的版本。</div>}
+        </div>
+        <div style={{ marginTop: 10 }}>{textArea("note", "实验备注（可选）", "实验假设、观察指标或停止条件", 2, 255)}</div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "copy-experiment-start") {
+    return (
+      <div className="field" data-business-form="copy-experiment-start">
+        <label>业务表单 · 启动实验 {spec.experimentId}</label>
+        <label className="row" style={{ alignItems: "flex-start", gap: 8, marginBottom: 0 }}>
+          <input type="checkbox" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")} />
+          <span>我已确认实验版本、分流比例和继承受众；启动后按当前快照分流并写入审计。</span>
+        </label>
+      </div>
+    );
+  }
+
+  if (spec.kind === "copy-experiment-discard") {
+    return (
+      <div className="field" data-business-form="copy-experiment-discard">
+        <label>业务表单 · 弃用实验 {spec.experimentId}</label>
+        <div className="itint warn">弃用后实验不会再启动或被采纳；已产生的实验数据和审计记录继续保留。</div>
       </div>
     );
   }
@@ -2272,7 +2472,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   const covBlocked = Boolean(amplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   const reasonMin = 8;
-  const reasonOk = reason.trim().length >= reasonMin;
+  const reasonMax = businessForm?.kind === "copy-experiment-create" || businessForm?.kind === "copy-experiment-start" || businessForm?.kind === "copy-experiment-discard" ? 200 : undefined;
+  const reasonLength = reason.trim().length;
+  const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
   const businessMissing = missingBusinessFields(businessForm, businessValue);
   const derivedNewVal = businessNewValue(businessForm, businessValue);
   const canConfirm = !covBlocked && reasonOk && (!spec || newVal.trim().length > 0) && businessMissing.length === 0;
@@ -2344,13 +2546,16 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </div>
       )}
       <div className="field">
-        <label>操作理由(必填 · 8 字以上 · 写入 A2 不可改审计)</label>
-        <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例: 工单号 / 业务依据 / 影响面 / 回滚预案" />
+        <label>操作理由(必填 · {reasonMax ? `8-${reasonMax} 字` : "8 字以上"} · 写入 A2 不可改审计)</label>
+        <textarea rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例: 工单号 / 业务依据 / 影响面 / 回滚预案" />
         {!reasonOk && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-            还需补充 {Math.max(0, reasonMin - reason.trim().length)} 字,确认按钮才会启用。
+            {reasonLength < reasonMin
+              ? `还需补充 ${reasonMin - reasonLength} 字，确认按钮才会启用。`
+              : `操作理由不能超过 ${reasonMax} 字。`}
           </div>
         )}
+        {reasonMax && reasonOk && <div className="tiny" style={{ marginTop: 7, color: "var(--ink-4)" }}>已填写 {reasonLength}/{reasonMax} 字</div>}
         {businessMissing.length > 0 && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             业务表单还缺: {businessMissing.slice(0, 4).join(" / ")}{businessMissing.length > 4 ? "…" : ""}。

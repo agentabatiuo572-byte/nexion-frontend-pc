@@ -28,7 +28,7 @@ type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMi
 type VersionRow = {
   copyKey: string; v: string; st: string; chain: string; ts: string;
   zh: string; en: string; vi: string; copyPosition?: string; surface: string;
-  audience: string; audienceTarget?: AudienceTarget; trafficSplit: string; versionNote: string;
+  audience: string; audienceTarget?: AudienceTarget; estimatedAudience?: number; trafficSplit: string; versionNote: string;
 };
 type VersionOptionRow = {
   versionKey: string; name: string; description: string; status: string;
@@ -94,6 +94,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
   const canWrite = isSuperadmin || !!session?.authorities.includes("content_i1_write");
+  const canManageExperiments = isSuperadmin || !!session?.authorities.includes("content_i1_experiment_manage");
   const canCreateCopy = isSuperadmin || !!session?.authorities.includes("content_i1_copy_create");
   const [surf, setSurf] = useState<Surf>("all");
   const [expFlt, setExpFlt] = useState<ExpFlt>("all");
@@ -140,6 +141,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     surface: normalizeCopyModule(row.surface),
     audience: row.audience,
     audienceTarget: row.audienceTarget,
+    estimatedAudience: row.estimatedAudience,
     trafficSplit: row.trafficSplit,
     versionNote: row.versionNote,
   }));
@@ -152,6 +154,29 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const ACTIVE_VERSION_OPTIONS = VERSION_OPTIONS
     .filter((option) => option.status.toUpperCase() === "ACTIVE")
     .map((option) => ({ value: option.versionKey, label: `${option.versionKey} · ${option.name}`, status: option.status }));
+  const ACTIVE_EXPERIMENT_COPY_KEYS = new Set(
+    (data?.experiments ?? [])
+      .filter((experiment) => experiment.state.toLowerCase() === "scheduled" || experiment.state.toLowerCase() === "running")
+      .map((experiment) => experiment.copyKey),
+  );
+  const EXPERIMENT_COPY_CANDIDATES = COPY_POOL.map((copy) => ({
+    value: copy.key,
+    label: `${copy.desc} · ${copy.key}`,
+    versions: COPY_VERSIONS
+      .filter((version) => version.copyKey === copy.key && version.st.toLowerCase() !== "draft")
+      .map((version) => ({
+        value: version.v,
+        label: `${version.v} · ${version.st.toLowerCase() === "published" ? "已发布" : "已归档"}`,
+        audience: version.audience,
+        audienceTarget: version.audienceTarget,
+        estimatedAudience: version.estimatedAudience,
+      })),
+  })).filter((copy) => copy.versions.length >= 2);
+  const EXPERIMENT_COPY_OPTIONS = EXPERIMENT_COPY_CANDIDATES
+    .filter((copy) => !ACTIVE_EXPERIMENT_COPY_KEYS.has(copy.value));
+  const experimentUnavailableReason = EXPERIMENT_COPY_CANDIDATES.length === 0
+    ? "至少需要同一文案下存在 2 个非草稿内容版本"
+    : "符合条件的文案已有待启动或进行中的实验，请先完成或停止现有实验";
   const usedVersionsForCopy = (copy: CopyRow) => new Set(
     copy.usedVersionKeys ?? COPY_VERSIONS.filter((row) => row.copyKey === copy.key).map((row) => row.v),
   );
@@ -208,7 +233,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     if (expFlt === "all") return true;
     const st = liveExpState(e);
     if (expFlt === "running") return st === "running";
-    return st === "adopted" || st === "discarded" || st === "stopped";
+    return st === "concluded" || st === "adopted" || st === "discarded" || st === "stopped";
   });
 
   // 编辑文案(文案池每行通用) —— 默认存草稿,运营也可明确选择发布生效。
@@ -305,11 +330,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         language: form?.language,
         registrationDaysGt: Number(form?.registrationDaysGt || 0),
         trafficSplit: form.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "50",
-        versionNote: form.versionNote || "新增文案首版",
+        versionNote: form.versionNote || "新增文案初始内容",
         zh: form.zh || "",
         en: form.en || "",
         vi: form.vi || "",
-      }, reason), `文案 ${copyKey} 已新增 · 首版已发布`);
+      }, reason), `文案 ${copyKey} 已新增 · 初始内容已发布`);
     },
     });
   };
@@ -432,6 +457,58 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     },
   });
 
+  const createExperiment = () => {
+    if (EXPERIMENT_COPY_OPTIONS.length === 0) {
+      toast(`暂无可创建实验的文案：${experimentUnavailableReason}`);
+      return;
+    }
+    openActionConfirm({
+      action: <>创建 A/B 实验</>,
+      detail: <>选择同一文案下至少两个已有内容版本并配置分流。受众直接继承所选文案版本，只读展示，不在实验中重复编辑。</>,
+      amplifies: false,
+      businessForm: { kind: "copy-experiment-create", copies: EXPERIMENT_COPY_OPTIONS },
+      run: (reason, _value, form) => {
+        const count = Number(form?.variantCount || 0);
+        const variants = Array.from({ length: count }, (_, index) => ({
+          version: form?.[`variantVersion.${index}`]?.trim() || "",
+          splitPct: Number(form?.[`variantSplit.${index}`] || 0),
+        }));
+        const versions = variants.map((variant) => variant.version);
+        const valid = !!form?.copyKey
+          && variants.length >= 2
+          && variants.every((variant) => variant.version && Number.isInteger(variant.splitPct) && variant.splitPct >= 1 && variant.splitPct <= 99)
+          && new Set(versions).size === versions.length
+          && variants.reduce((sum, variant) => sum + variant.splitPct, 0) === 100;
+        if (!valid) {
+          toast("实验版本或分流比例无效，请确认至少 2 个不同版本且分流合计为 100%");
+          return;
+        }
+        const note = form?.note?.trim();
+        runBackend(actions.createI1Experiment({
+          copyKey: form!.copyKey,
+          variants,
+          ...(note ? { note } : {}),
+        }, reason), "A/B 实验已创建 · 等待启动");
+      },
+    });
+  };
+
+  const startExp = (id: string) => openActionConfirm({
+    action: <>启动实验 · {id}</>,
+    detail: <>启动后会按当前版本、分流比例和继承受众生成不可变快照。请先完成确认勾选，并填写 8-200 字操作理由。</>,
+    amplifies: false,
+    businessForm: { kind: "copy-experiment-start", experimentId: id },
+    run: (reason) => runBackend(actions.startI1Experiment(id, reason), `${id} 已启动`),
+  });
+
+  const discardExp = (id: string) => openActionConfirm({
+    action: <>弃用实验 · {id}</>,
+    detail: <>仅待启动或已结算实验可以弃用。弃用后不能再次启动或采纳，已产生的数据与审计记录仍会保留。</>,
+    amplifies: false,
+    businessForm: { kind: "copy-experiment-discard", experimentId: id },
+    run: (reason) => runBackend(actions.discardI1Experiment(id, reason), `${id} 已弃用`),
+  });
+
   const stopExp = (id: string) => openActionConfirm({
     action: <>停止实验 · {id}</>,
     detail: <>停止后<b>全部用户回到当前发布版</b>,实验转已结(可再选择采纳或弃用)。停止会改变用户所见文案分布,所以要操作确认。已收集的曝光/转化数据保留,结算页可查。</>,
@@ -466,9 +543,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const renderExpState = (e: ExpRow) => {
     const st = liveExpState(e);
-    if (st === "running") return <span className="bdg ok">running</span>;
+    if (st === "scheduled") return <span className="bdg warn">待启动</span>;
+    if (st === "running") return <span className="bdg ok">进行中</span>;
     if (st === "stopped") return <span className="bdg dim">已停止</span>;
     if (st === "adopted") return <span className="bdg cyan">已采纳</span>;
+    if (st === "concluded") return <span className="bdg warn">已结算</span>;
     return <span className="bdg dim">已弃用</span>;
   };
 
@@ -721,7 +800,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <div className="s">{p.sub}</div>
                   </div>
                   <span className="v">{cur}</span>
-                  {canWrite && <button type="button" className="l-btn sm" onClick={() => adjustFramework(p.key, p.name, cur)}>调整</button>}
+                  {canManageExperiments && <button type="button" className="l-btn sm" onClick={() => adjustFramework(p.key, p.name, cur)}>调整</button>}
                 </div>
               );
             })}
@@ -740,10 +819,14 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           <span className="ttl">A/B 实验面板(c)</span>
           <span className="sub">· 曝光 / 转化 / CVR 全部由事件流结算(服务器口径),不是页面临时拼的数</span>
           <div className="r chips">
+            {canManageExperiments && <button type="button" className="l-btn sm mc" disabled={EXPERIMENT_COPY_OPTIONS.length === 0} title={EXPERIMENT_COPY_OPTIONS.length === 0 ? experimentUnavailableReason : "创建 A/B 实验"} onClick={createExperiment}>+ 创建 A/B 实验</button>}
             {EXP_FLT.map(([k, l]) => (
               <button type="button" key={k} className={`chip${expFlt === k ? " sel" : ""}`} aria-pressed={expFlt === k} onClick={() => setExpFlt(k)}>{l}</button>
             ))}
           </div>
+        </div>
+        <div className="itint cyan" style={{ margin: "0 14px 12px" }}>
+          <b>转化统计口径</b> · 仅统计服务端已支付/已完成订单事件；点击、加购、客户端自报不计入转化。
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 980 }}>
@@ -764,6 +847,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
               {filteredExps.map((e) => {
                 const st = liveExpState(e);
                 const isRunning = st === "running";
+                const canDiscard = st === "scheduled" || st === "concluded";
                 const maxCvr = e.variants.reduce((m, v) => Math.max(m, v[2]), 0);
                 return (
                   <tr key={e.id}>
@@ -793,7 +877,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     </td>
                     <td style={{ fontSize: 12 }}>
                       {e.audience}
-                      <div className="tiny" style={{ color: "var(--ink-4)" }}>实验启动快照 · 预计覆盖 {e.estimatedAudience == null ? "待后端统计" : `${e.estimatedAudience.toLocaleString()} 人`}</div>
+                      <div className="tiny" style={{ color: "var(--ink-4)" }}>实验启动快照 · 预计覆盖 {e.estimatedAudience == null ? "待估算" : `${e.estimatedAudience.toLocaleString()} 人`}</div>
                     </td>
                     <td className="num mono">{e.impressions}</td>
                     <td className="num mono">{e.conversions}</td>
@@ -803,33 +887,42 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                       <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 2 }}>{e.note}</div>
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      {canWrite && isRunning ? (
+                      {canManageExperiments && st === "scheduled" ? (
+                        <>
+                          <button type="button" className="l-btn sm mc" onClick={() => startExp(e.id)}>启动实验</button>
+                          <button type="button" className="l-btn sm dgr" style={{ marginLeft: 6 }} onClick={() => discardExp(e.id)}>弃用实验</button>
+                        </>
+                      ) : canManageExperiments && isRunning ? (
                         <button type="button" className="l-btn sm mc" onClick={() => stopExp(e.id)}>停止</button>
-                      ) : canWrite && st === "discarded" ? (
-                        <button type="button" className="l-btn sm mc" onClick={() => adoptExp(e.id)}>采纳获胜</button>
+                      ) : canManageExperiments && (st === "concluded" || st === "stopped") ? (
+                        <>
+                          <button type="button" className="l-btn sm mc" onClick={() => adoptExp(e.id)}>采纳获胜</button>
+                          {canDiscard && <button type="button" className="l-btn sm dgr" style={{ marginLeft: 6 }} onClick={() => discardExp(e.id)}>弃用实验</button>}
+                        </>
                       ) : null}
                     </td>
                   </tr>
                 );
               })}
+              {filteredExps.length === 0 && <tr><td colSpan={9}><div className="itint warn">当前筛选条件下没有实验记录。</div></td></tr>}
             </tbody>
           </table>
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="ab-sm">
             <span style={{ fontSize: 12, color: "var(--ink-4)", marginRight: 6 }}>实验状态机:</span>
-            <span className="st">scheduled 待开始</span>
+            <span className="st">待启动</span>
             <span className="ar">到点开跑 →</span>
-            <span className="st ok">running 进行中</span>
+            <span className="st ok">进行中</span>
             <span className="ar">手动结算 / 到期 →</span>
-            <span className="st warn">concluded 已结</span>
-            <span className="ar">→ adopted 采纳获胜版(等于发布,走操作确认)或 discarded 弃用</span>
+            <span className="st warn">已结算</span>
+            <span className="ar">→ 采纳获胜版(等于发布,走操作确认)或弃用</span>
           </div>
         </div>
       </section>
 
       <p className="f-foot">
-        <b>执行门槛</b>:草稿随便存(留审计);发布 / 下架 / 回滚 / 实验启停 / 采纳获胜 = 内容执行门槛:内容主管或超管。增长角色只能给<b>增长类文案位</b>(转化横幅这类)当实验发起人,法务和品牌类文案只有内容角色能动——服务器按文案位分类校验发起资格。<b>事件去向</b>:变体曝光 / 转化喂实时漏斗(B3,购买段)和留存 BI(L2,各变体 CVR 曲线);这四类内容事件进入待归属登记清单,待 content 域上线后正式归类。
+        <b>执行门槛</b>:普通文案新增、编辑、发布、下架与回滚使用 <span className="mono">content_i1_write</span>；实验框架、创建、启停、弃用与采纳使用独立权限 <span className="mono">content_i1_experiment_manage</span>，无该权限不渲染实验写按钮。<b>事件去向</b>:变体曝光喂实时漏斗与 BI；转化仅统计服务端确认的已支付/已完成订单事件，点击、加购和客户端自报不计入 CVR。
         <b>边界</b>:活动卡里能独立做 A/B 的通用文案归这页;活动本身的玩法 / 奖励 / 时窗归活动页(H4),互不越界。
       </p>
       <PaginationExemptionList

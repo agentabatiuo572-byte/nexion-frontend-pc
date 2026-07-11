@@ -262,3 +262,128 @@ test("I1 写按钮按后端 authority 隐藏，并明确展示继承受众覆盖
   assert.match(component, /预计覆盖/);
   assert.match(component, /实验启动快照/);
 });
+
+test("I1 A/B 实验从同一文案的非草稿版本创建并走真实接口", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const designKit = read("app/components/domain-views/design-kit.tsx");
+  const client = read("lib/admin/i-client.ts");
+
+  assert.match(component, /创建 A\/B 实验/);
+  assert.match(component, /version\.st\.toLowerCase\(\) !== "draft"/);
+  assert.match(component, /kind: "copy-experiment-create"/);
+  assert.match(component, /actions\.createI1Experiment\(/);
+  assert.match(client, /createI1Experiment:/);
+  assert.match(client, /apiRequest\("\/copy-ab\/experiments", \{ method: "POST"/);
+  assert.match(client, /createI1Experiment:[\s\S]{0,240}JSON\.stringify\(withReason\(body, reason\)\)/);
+  assert.match(component, /variants,[\s\S]{0,120}note/);
+  assert.match(component, /splitPct:/);
+  assert.match(designKit, /data-business-form="copy-experiment-create"/);
+  assert.match(designKit, /选择文案/);
+  assert.match(designKit, /type="range"/);
+  assert.match(designKit, /分流合计/);
+  assert.match(designKit, /至少选择 2 个不同的非草稿内容版本/);
+  assert.match(designKit, /分流比例合计必须为 100%/);
+});
+
+test("I1 A/B 实验受众只读继承并明确显示预计覆盖人数", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const designKit = read("app/components/domain-views/design-kit.tsx");
+
+  assert.match(component, /estimatedAudience/);
+  assert.match(designKit, /继承的文案受众/);
+  assert.match(designKit, /只读继承/);
+  assert.match(designKit, /预计覆盖/);
+  assert.match(designKit, /待估算/);
+  assert.match(designKit, /所选版本的继承受众必须完全一致/);
+  assert.match(designKit, /copyExperimentAudienceSignature/);
+  assert.doesNotMatch(designKit, /copy-experiment-create[\s\S]{0,2500}copy-audience-builder/);
+});
+
+test("scheduled 实验通过勾选确认和 8-200 字理由后启动", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const designKit = read("app/components/domain-views/design-kit.tsx");
+  const client = read("lib/admin/i-client.ts");
+
+  assert.match(component, /st === "scheduled"/);
+  assert.match(component, />启动实验<\/button>/);
+  assert.match(component, /kind: "copy-experiment-start"/);
+  assert.match(component, /actions\.startI1Experiment\(id, reason\)/);
+  assert.match(client, /startI1Experiment:/);
+  assert.match(client, /\/copy-ab\/experiments\/\$\{encodeURIComponent\(experimentId\)\}\/start/);
+  assert.match(client, /startI1Experiment:[\s\S]{0,280}JSON\.stringify\(withReason\(\{\}, reason\)\)/);
+  assert.match(designKit, /data-business-form="copy-experiment-start"/);
+  assert.match(designKit, /我已确认实验版本、分流比例和继承受众/);
+  assert.match(designKit, /reasonMax = businessForm\?\.kind === "copy-experiment-create" \|\| businessForm\?\.kind === "copy-experiment-start" \|\| businessForm\?\.kind === "copy-experiment-discard" \? 200/);
+});
+
+test("I1 创建实验排除已有活动实验的文案，并限制备注长度", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const designKit = read("app/components/domain-views/design-kit.tsx");
+
+  assert.match(component, /ACTIVE_EXPERIMENT_COPY_KEYS/);
+  assert.match(component, /state\.toLowerCase\(\) === "scheduled"/);
+  assert.match(component, /state\.toLowerCase\(\) === "running"/);
+  assert.match(component, /!ACTIVE_EXPERIMENT_COPY_KEYS\.has\(copy\.value\)/);
+  assert.match(component, /EXPERIMENT_COPY_CANDIDATES\.length === 0/);
+  assert.match(component, /符合条件的文案已有待启动或进行中的实验/);
+  assert.match(designKit, /state\.note\?\.length > 255/);
+  assert.match(designKit, /实验备注不能超过 255 字/);
+  assert.match(designKit, /textArea\("note", "实验备注（可选）", "实验假设、观察指标或停止条件", 2, 255\)/);
+});
+
+test("I1 已结算和旧 stopped 状态实验保留采纳入口，弃用为终态且错误码有中文恢复指引", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const errors = read("lib/admin/error-messages.ts");
+
+  assert.match(component, /st === "concluded" \|\| st === "stopped"/);
+  assert.doesNotMatch(component, /st === "concluded" \|\| st === "discarded"/);
+  assert.match(errors, /COPY_EXPERIMENT_ACTIVE_EXISTS:/);
+  assert.match(errors, /COPY_EXPERIMENT_NOT_SCHEDULED:/);
+  assert.match(errors, /COPY_EXPERIMENT_AUDIENCE_MISMATCH:/);
+  assert.match(errors, /COPY_EXPERIMENT_SPLIT_TOTAL_INVALID:/);
+  assert.match(errors, /COPY_EXPERIMENT_METADATA_INVALID:/);
+  assert.match(errors, /COPY_EXPERIMENT_NO_EXPOSURE:/);
+  assert.match(errors, /COPY_EXPERIMENT_MIN_SAMPLE_NOT_MET:/);
+  assert.match(errors, /COPY_EXPERIMENT_WINNER_NOT_UNIQUE:/);
+  assert.match(errors, /COPY_EXPERIMENT_WINNER_VERSION_INVALID:/);
+});
+
+test("I1 实验写操作使用独立权限，普通文案仍使用 content_i1_write", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+
+  assert.match(component, /canWrite = isSuperadmin \|\| !!session\?\.authorities\.includes\("content_i1_write"\)/);
+  assert.match(component, /canManageExperiments = isSuperadmin \|\| !!session\?\.authorities\.includes\("content_i1_experiment_manage"\)/);
+  assert.match(component, /canManageExperiments && <button[\s\S]{0,300}创建 A\/B 实验/);
+  assert.match(component, /canManageExperiments && st === "scheduled"/);
+  assert.doesNotMatch(component, /canWrite && st === "scheduled"/);
+});
+
+test("I1 scheduled 和 concluded 可确认弃用实验并调用真实 discard 接口", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const designKit = read("app/components/domain-views/design-kit.tsx");
+  const client = read("lib/admin/i-client.ts");
+
+  assert.match(component, /const discardExp = \(id: string\)/);
+  assert.match(component, /st === "scheduled" \|\| st === "concluded"/);
+  assert.match(component, />弃用实验<\/button>/);
+  assert.match(component, /actions\.discardI1Experiment\(id, reason\)/);
+  assert.match(client, /discardI1Experiment:/);
+  assert.match(client, /\/copy-ab\/experiments\/\$\{encodeURIComponent\(experimentId\)\}\/discard/);
+  assert.match(client, /discardI1Experiment:[\s\S]{0,280}JSON\.stringify\(withReason\(\{\}, reason\)\)/);
+  assert.match(designKit, /kind: "copy-experiment-discard"/);
+  assert.match(designKit, /copy-experiment-discard" \? 200/);
+});
+
+test("I1 转化仅统计服务端已支付或完成订单事件，PRD 使用独立实验权限口径", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const errors = read("lib/admin/error-messages.ts");
+  const prd = read("docs/PRD/Nexion_运营控制后台PRD_v4.md");
+
+  assert.match(component, /仅统计服务端已支付\/已完成订单事件/);
+  assert.match(component, /点击、加购、客户端自报不计入转化/);
+  assert.match(errors, /COPY_EXPERIMENT_NOT_DISCARDABLE:/);
+  assert.match(errors, /CONTENT_EXPERIMENT_CONVERSION_INVALID:/);
+  assert.match(prd, /content_i1_experiment_manage/);
+  assert.match(prd, /仅统计服务端确认的已支付\/已完成订单事件/);
+  assert.doesNotMatch(prd, /增长限增长相关文案位/);
+});
