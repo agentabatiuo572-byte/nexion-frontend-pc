@@ -40,6 +40,7 @@ test("编辑表单复用已有草稿版本或交给服务器生成新版本，�
   const designKit = read("app/components/domain-views/design-kit.tsx");
 
   assert.match(component, /version: editingExistingDraft \? editableVersion\?\.v \|\| "" : ""/);
+  assert.match(designKit, /version: spec\.version \|\| spec\.versionOptions\?\.\[0\]\?\.value \|\| ""/);
   assert.doesNotMatch(component, /nextCopyVersion/);
   assert.match(component, /audience: editableVersion\?\.audience/);
   assert.match(component, /trafficSplit: editableVersion\?\.trafficSplit/);
@@ -150,10 +151,10 @@ test("I1 文案支持越南语，并固定投放到 App 四个顶级模块", () 
   assert.doesNotMatch(designKit, /input\("surface", "投放位置 surface"/);
 });
 
-test("版本详情升级为覆盖全部文案的版本列表，而不是固定展示单个文案位", () => {
+test("内容历史覆盖全部文案，而不是固定展示单个文案位", () => {
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
 
-  assert.match(component, /文案版本列表\(b\)/);
+  assert.match(component, /文案内容历史\(b\)/);
   assert.match(component, /data-proof="copy-version-list"/);
   assert.match(component, /pagedVersions\.map/);
   assert.match(component, /版本状态/);
@@ -163,18 +164,39 @@ test("版本详情升级为覆盖全部文案的版本列表，而不是固定�
   assert.doesNotMatch(component, /const HCB = "home\.conversionBanner"/);
 });
 
-test("新增和编辑文案的版本号由系统生成，运营表单不再输入版本号", () => {
+test("文案版本配置位于文案池之前，并提供真实 CRUD 接口", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const client = read("lib/admin/i-client.ts");
+
+  assert.ok(component.indexOf('data-proof="copy-version-catalog"') < component.indexOf('data-proof="copy-pool"'));
+  assert.match(component, /\+ 新增版本/);
+  assert.match(component, /actions\.createI1CopyVersionOption\(/);
+  assert.match(component, /actions\.updateI1CopyVersionOption\(/);
+  assert.match(component, /actions\.deleteI1CopyVersionOption\(/);
+  assert.match(client, /createI1CopyVersionOption:/);
+  assert.match(client, /updateI1CopyVersionOption:/);
+  assert.match(client, /deleteI1CopyVersionOption:/);
+  assert.match(client, /\/copy-ab\/version-options/);
+});
+
+test("新增文案和新增内容版本必须从启用的文案版本配置中选择", () => {
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
   const designKit = read("app/components/domain-views/design-kit.tsx");
+  const client = read("lib/admin/i-client.ts");
 
-  assert.match(designKit, /data-proof="copy-system-version"/);
-  assert.match(designKit, /系统自动生成/);
+  assert.match(component, /versionOptions: ACTIVE_VERSION_OPTIONS/);
+  assert.match(component, /version: form\.version/);
+  assert.match(designKit, /select\("version", "文案版本"/);
+  assert.match(designKit, /needs\("version", "文案版本"\)/);
   assert.doesNotMatch(designKit, /input\("version", "首版版本号"/);
-  assert.doesNotMatch(designKit, /input\("version", "变体\/版本号 variant id"/);
-  assert.doesNotMatch(designKit, /needs\("version", "首版版本号"\)/);
-  assert.doesNotMatch(designKit, /needs\("version", "版本号"\)/);
-  assert.doesNotMatch(component, /version: form\.version \|\| "v1"/);
-  assert.match(component, /首版版本号由服务器自动生成/);
+  assert.doesNotMatch(designKit, /首版版本号/);
+  assert.doesNotMatch(designKit, /系统自动生成/);
+  assert.doesNotMatch(component, /首版版本号/);
+  assert.match(component, /disabled=\{ACTIVE_VERSION_OPTIONS\.length === 0\}/);
+  assert.match(component, /disabled=\{!hasUnusedActiveVersion\}/);
+  assert.match(component, /请先新增或启用文案版本/);
+  assert.match(component, /copy\.usedVersionKeys \?\? COPY_VERSIONS/);
+  assert.match(client, /usedVersionKeys\?: string\[\]/);
 });
 
 test("版本列表上的回滚、下架和新增版本操作按实际文案标识执行", () => {

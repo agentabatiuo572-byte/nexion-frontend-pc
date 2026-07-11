@@ -22,13 +22,17 @@ type CopyRow = {
   key: string; desc: string; surface: string;
   version: string; status: string; i18nKey: string; expId: string; lastChange: string;
   draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget; draftTrafficSplit?: string; draftNote?: string;
-  revision?: number;
+  revision?: number; usedVersionKeys?: string[];
 };
 type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
 type VersionRow = {
   copyKey: string; v: string; st: string; chain: string; ts: string;
   zh: string; en: string; vi: string; copyPosition?: string; surface: string;
   audience: string; audienceTarget?: AudienceTarget; trafficSplit: string; versionNote: string;
+};
+type VersionOptionRow = {
+  versionKey: string; name: string; description: string; status: string;
+  sortOrder: number; revision: number; usageCount: number;
 };
 type ExpRow = {
   id: string; copyKey: string; variants: [name: string, split: number, cvr: number][];
@@ -121,6 +125,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     draftTrafficSplit: row.draftTrafficSplit,
     draftNote: row.draftNote,
     revision: row.revision,
+    usedVersionKeys: row.usedVersionKeys,
   }));
   const COPY_VERSIONS: VersionRow[] = (data?.versions ?? []).map((row) => ({
     copyKey: row.copyKey,
@@ -138,6 +143,18 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     trafficSplit: row.trafficSplit,
     versionNote: row.versionNote,
   }));
+  const VERSION_OPTIONS: VersionOptionRow[] = [...(data?.versionOptions ?? [])]
+    .map((option) => ({
+      ...option,
+      usageCount: option.usageCount ?? COPY_VERSIONS.filter((version) => version.v === option.versionKey).length,
+    }))
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.versionKey.localeCompare(right.versionKey));
+  const ACTIVE_VERSION_OPTIONS = VERSION_OPTIONS
+    .filter((option) => option.status.toUpperCase() === "ACTIVE")
+    .map((option) => ({ value: option.versionKey, label: `${option.versionKey} · ${option.name}`, status: option.status }));
+  const usedVersionsForCopy = (copy: CopyRow) => new Set(
+    copy.usedVersionKeys ?? COPY_VERSIONS.filter((row) => row.copyKey === copy.key).map((row) => row.v),
+  );
   const EXP_FRAMEWORK = (data?.frameworkParams ?? []).map((row) => ({
     key: row.key,
     name: row.name,
@@ -200,14 +217,21 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.draftVersion)
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.version);
     const editingExistingDraft = !forceNew && editableVersion?.st.toLowerCase() === "draft";
+    const usedVersions = usedVersionsForCopy(c);
+    const selectableVersions = ACTIVE_VERSION_OPTIONS.filter((option) => editingExistingDraft || !usedVersions.has(option.value));
+    if (forceNew && selectableVersions.length === 0) {
+      toast("请先在文案版本列表中新增或启用一个未被该文案使用的版本");
+      return;
+    }
     openActionConfirm({
       action: <>{forceNew ? "新增版本" : "编辑文案"} · {c.key}</>,
-      detail: <>基于 <b>{editableVersion?.v || c.version}</b> 编辑。{editingExistingDraft ? "保存会更新这个草稿。" : "目标版本号由服务器按历史版本自动生成。"}只有明确选择“发布生效”才会对用户生效。</>,
+      detail: <>基于 <b>{editableVersion?.v || c.version}</b> 编辑。{editingExistingDraft ? "保存会更新这个草稿。" : "请从启用的文案版本配置中选择一个尚未被该文案使用的版本。"}只有明确选择“发布生效”才会对用户生效。</>,
       amplifies: false,
       businessForm: {
         kind: "copy-edit",
         keyName: c.key,
         version: editingExistingDraft ? editableVersion?.v || "" : "",
+        versionOptions: selectableVersions,
         surface: editableVersion?.surface || c.surface,
         copyPosition: editableVersion?.copyPosition || c.copyPosition,
         audience: editableVersion?.audience,
@@ -224,7 +248,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       },
       run: (reason, _value, form) => {
         const payload = {
-          version: form?.version || undefined,
+          version: form?.version || editableVersion?.v,
           surface: form?.surface || editableVersion?.surface || c.surface,
           copyPosition: form?.copyPosition || editableVersion?.copyPosition || c.copyPosition || "",
           audience: composeAudience(form),
@@ -248,14 +272,20 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     });
   };
 
-  const createCopy = () => openActionConfirm({
+  const createCopy = () => {
+    if (ACTIVE_VERSION_OPTIONS.length === 0) {
+      toast("请先在文案版本列表中新增或启用文案版本");
+      return;
+    }
+    openActionConfirm({
     action: <>新增文案</>,
-    detail: <>在文案池中新建一条受管文案。提交后会创建首个版本并发布生效，首版版本号由服务器自动生成，文案标识必须全局唯一。</>,
+    detail: <>在文案池中新建一条受管文案。文案版本必须从上方“文案版本列表”的启用项中选择，文案标识必须全局唯一。</>,
     amplifies: false,
     businessForm: {
       kind: "copy-create",
       modules: COPY_MODULE_OPTIONS,
       positions: COPY_POSITIONS,
+      versionOptions: ACTIVE_VERSION_OPTIONS,
       trafficSplits: COPY_TRAFFIC_SPLITS,
     },
     run: (reason, _value, form) => {
@@ -263,6 +293,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       const copyKey = form.copyKey.trim();
       runBackend(actions.createI1Copy({
         copyKey,
+        version: form.version,
         description: form.description?.trim() || copyKey,
         surface: form.surface || "home",
         copyPosition: form.copyPosition || "",
@@ -280,6 +311,51 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         vi: form.vi || "",
       }, reason), `文案 ${copyKey} 已新增 · 首版已发布`);
     },
+    });
+  };
+
+  const createCopyVersionOption = () => openActionConfirm({
+    action: <>新增文案版本</>,
+    detail: <>新增后会出现在“新增文案”和“新增内容版本”的版本下拉框中；只有启用状态可被选择。</>,
+    amplifies: false,
+    businessForm: { kind: "copy-version-option", mode: "create" },
+    run: (reason, _value, form) => runBackend(actions.createI1CopyVersionOption({
+      versionKey: form?.versionKey?.trim(),
+      name: form?.name?.trim(),
+      description: form?.description?.trim() || "",
+      status: form?.status || "ACTIVE",
+      sortOrder: Number(form?.sortOrder || 0),
+    }, reason), `文案版本 ${form?.versionKey} 已新增`),
+  });
+
+  const editCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({
+    action: <>编辑文案版本 · {option.versionKey}</>,
+    detail: <>版本标识创建后不可修改；可调整名称、说明、排序和启停状态。停用后不会再出现在新建文案的下拉框中。</>,
+    amplifies: false,
+    businessForm: {
+      kind: "copy-version-option",
+      mode: "edit",
+      versionKey: option.versionKey,
+      name: option.name,
+      description: option.description,
+      status: option.status,
+      sortOrder: option.sortOrder,
+      revision: option.revision,
+    },
+    run: (reason, _value, form) => runBackend(actions.updateI1CopyVersionOption(option.versionKey, {
+      name: form?.name?.trim(),
+      description: form?.description?.trim() || "",
+      status: form?.status || option.status,
+      sortOrder: Number(form?.sortOrder || 0),
+      expectedRevision: option.revision,
+    }, reason), `文案版本 ${option.versionKey} 已更新`),
+  });
+
+  const deleteCopyVersionOption = (option: VersionOptionRow) => openActionConfirm({
+    action: <>删除文案版本 · {option.versionKey}</>,
+    detail: <>只有未被任何文案内容历史引用的版本配置可以删除；已引用版本必须保留，避免破坏发布历史和审计链。</>,
+    amplifies: false,
+    run: (reason) => runBackend(actions.deleteI1CopyVersionOption(option.versionKey, option.revision, reason), `文案版本 ${option.versionKey} 已删除`),
   });
 
   const createCopyPosition = () => openActionConfirm({
@@ -467,8 +543,41 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
+      <section className="l-card i-version-config" data-proof="copy-version-catalog">
+        <div className="l-h">
+          <span className="ttl">文案版本列表</span>
+          <span className="sub">· 独立版本配置目录；新增文案和新增内容版本只能从启用项中选择</span>
+          {canWrite && <div className="r"><button type="button" className="l-btn sm mc" onClick={createCopyVersionOption}>+ 新增版本</button></div>}
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 760 }}>
+            <thead><tr><th>版本标识</th><th>版本名称</th><th>版本说明</th><th>状态</th><th className="num">排序</th><th className="num">引用数</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+            <tbody>
+              {VERSION_OPTIONS.map((option) => {
+                const referenced = option.usageCount > 0;
+                return (
+                  <tr key={option.versionKey}>
+                    <td className="mono version-key">{option.versionKey}</td>
+                    <td style={{ fontWeight: 600 }}>{option.name}</td>
+                    <td className="version-description">{option.description || "—"}</td>
+                    <td>{option.status.toUpperCase() === "ACTIVE" ? <span className="bdg ok">启用</span> : <span className="bdg dim">停用</span>}</td>
+                    <td className="num mono">{option.sortOrder}</td>
+                    <td className="num mono">{option.usageCount}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      {canWrite && <button type="button" className="l-btn sm mc" onClick={() => editCopyVersionOption(option)}>编辑</button>}
+                      {canWrite && <button type="button" className="l-btn sm dgr" style={{ marginLeft: 6 }} disabled={referenced} title={referenced ? "已有文案历史引用，不能删除" : "删除未使用版本"} onClick={() => deleteCopyVersionOption(option)}>删除</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {VERSION_OPTIONS.length === 0 && <tr><td colSpan={7}><div className="itint warn">暂无文案版本配置，请先新增版本后再创建文案。</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* (a) 文案池 */}
-      <section className="l-card">
+      <section className="l-card" data-proof="copy-pool">
         <div className="l-h">
           <span className="ttl">文案池(a)</span>
           <span className="sub">· 每个文案位 = 一条受管内容线:当前发布版 + 版本历史 + 是否有进行中实验</span>
@@ -477,7 +586,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
             {SURF_FLT.map(([k, l]) => (
               <button type="button" key={k} className={`chip${surf === k ? " sel" : ""}`} aria-pressed={surf === k} onClick={() => setSurf(k)}>{l}</button>
             ))}
-            {canCreateCopy && <button type="button" className="l-btn sm mc" onClick={createCopy}>+ 新增文案</button>}
+            {canCreateCopy && <button type="button" className="l-btn sm mc" disabled={ACTIVE_VERSION_OPTIONS.length === 0} title={ACTIVE_VERSION_OPTIONS.length === 0 ? "请先新增或启用文案版本" : "新增文案"} onClick={createCopy}>+ 新增文案</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -530,11 +639,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      {/* (b) 覆盖所有文案位的版本列表 */}
+      {/* (b) 覆盖所有文案位的内容历史 */}
       <section className="l-card" data-proof="copy-version-list">
         <div className="l-h">
-          <span className="ttl">文案版本列表(b)</span>
-          <span className="sub">· 版本属于具体文案，历史版本不可覆盖；新版本号由服务器按该文案自动递增</span>
+          <span className="ttl">文案内容历史(b)</span>
+          <span className="sub">· 展示每条文案在各配置版本下的内容、发布状态与审计留痕</span>
           <div className="r chips">
             <label className="lb" htmlFor="copy-version-filter">文案</label>
             <select id="copy-version-filter" className="fld" style={{ width: 190, height: 32 }} value={versionCopyFlt} onChange={(event) => { setVersionCopyFlt(event.target.value); setVersionPage(1); }}>
@@ -557,6 +666,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                 const existingDraft = copy?.draftVersion
                   ? COPY_VERSIONS.find((item) => item.copyKey === copy.key && item.v === copy.draftVersion && item.st.toLowerCase() === "draft")
                   : undefined;
+                const usedVersionKeys = copy ? usedVersionsForCopy(copy) : new Set<string>();
+                const hasUnusedActiveVersion = ACTIVE_VERSION_OPTIONS.some((option) => !usedVersionKeys.has(option.value));
                 return (
                   <tr key={`${row.copyKey}:${row.v}`}>
                     <td><div style={{ fontWeight: 600 }}>{copy?.desc || row.copyKey}</div><span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{row.copyKey}</span></td>
@@ -575,7 +686,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                       {canWrite && status === "archived" && <button type="button" className="l-btn sm mc" onClick={() => rollbackTo(row.copyKey, row.v)}>回滚</button>}
                       {canWrite && status === "published" && copy && (existingDraft
                         ? <button type="button" className="l-btn sm" onClick={() => editCopy(copy, existingDraft)}>继续草稿 {existingDraft.v}</button>
-                        : <button type="button" className="l-btn sm" onClick={() => editCopy(copy, row, true)}>新增版本</button>)}
+                        : <button type="button" className="l-btn sm" disabled={!hasUnusedActiveVersion} title={!hasUnusedActiveVersion ? "请先新增或启用一个未被该文案使用的版本" : "新增内容版本"} onClick={() => editCopy(copy, row, true)}>新增版本</button>)}
                       {canWrite && status === "published" && copy?.version === row.v && <button type="button" className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => archiveCurrentVersion(row.copyKey, row.v)}>下架</button>}
                       {canWrite && status === "draft" && copy?.draftVersion === row.v && <button type="button" className="l-btn sm mc" onClick={() => editCopy(copy, row)}>编辑 / 发布</button>}
                       {canWrite && status === "draft" && copy?.draftVersion === row.v && copy.revision != null && <button type="button" className="l-btn sm dgr" disabled={deletingDraftKey !== null} style={{ marginLeft: 6 }} onClick={() => deleteDraftVersion(row.copyKey, row.v, copy.revision!)}>{deletingDraftKey === `${row.copyKey}:${row.v}` ? "删除中…" : "删除草稿"}</button>}
@@ -730,7 +841,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
             reason: "文案池为后端返回的当前文案位列表,通过界面/状态字段定位后编辑",
           },
           {
-            label: "文案版本列表(b)",
+            label: "文案内容历史(b)",
             maxRows: VERSION_PAGE_SIZE,
             reason: "版本列表按 20 条分页展示后端版本，并可按文案和状态筛选",
           },

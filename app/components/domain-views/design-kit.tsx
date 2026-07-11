@@ -508,6 +508,7 @@ type NotifyTemplateOption = { value: string; label: string; campaignNo?: string;
 type SopActionOption = { value: string; label: string; domain: string; action: string; ref?: string | null; approve?: boolean; description?: string; searchText?: string };
 type SopRollbackOption = { value: string; label: string; scene?: string; riskLevel?: string; plan: string; searchText?: string };
 type CopyPositionOption = { value: string; label: string; surface: string; status?: string };
+type CopyVersionOption = { value: string; label: string; status?: string };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
 function initEditValue(spec?: EditSpec | null): string {
@@ -534,9 +535,10 @@ export type BusinessFormSpec =
   | { kind: "export-wizard"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; keyName?: string; zh?: string; en?: string; placeholders?: string[] }
-  | { kind: "copy-edit"; keyName?: string; version?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
-  | { kind: "copy-create"; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
+  | { kind: "copy-edit"; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
+  | { kind: "copy-create"; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
   | { kind: "copy-position-create"; modules: { value: string; label: string }[] }
+  | { kind: "copy-version-option"; mode: "create" | "edit"; versionKey?: string; name?: string; description?: string; status?: string; sortOrder?: number; revision?: number }
   | { kind: "course-authoring"; rewardMin?: number; rewardMax?: number; categories?: string[]; durations?: string[]; publishStates?: string[] }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
@@ -727,7 +729,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       zh: spec.zh ?? "",
       en: spec.en ?? "",
       vi: spec.vi ?? "",
-      version: spec.version ?? "",
+      version: spec.version || spec.versionOptions?.[0]?.value || "",
       surface: spec.surface ?? "",
       copyPosition: spec.copyPosition ?? spec.positions?.find((item) => item.surface === spec.surface && item.status !== "disabled")?.value ?? "",
       audience: spec.audience ?? spec.audiences?.[0] ?? "",
@@ -754,7 +756,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       language: spec.language ?? audience.language,
       registrationDaysGt: spec.registrationDaysGt ?? audience.registrationDaysGt,
       trafficSplit: spec.trafficSplits?.[0] ?? "",
-      version: spec.version ?? "v1",
+      version: spec.version ?? spec.versionOptions?.[0]?.value ?? "",
       versionNote: spec.versionNote ?? "新增文案首版",
       zh: spec.zh ?? "",
       en: spec.en ?? "",
@@ -763,6 +765,16 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   }
   if (spec.kind === "copy-position-create") {
     return { positionKey: "", positionName: "", surface: spec.modules[0]?.value ?? "home" };
+  }
+  if (spec.kind === "copy-version-option") {
+    return {
+      versionKey: spec.versionKey ?? "",
+      name: spec.name ?? "",
+      description: spec.description ?? "",
+      status: spec.status ?? "ACTIVE",
+      sortOrder: String(spec.sortOrder ?? 0),
+      revision: String(spec.revision ?? 0),
+    };
   }
   if (spec.kind === "course-authoring") {
     return {
@@ -946,6 +958,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (!state.zh?.includes(ph) || !state.en?.includes(ph)) missing.push(`占位符 ${ph}`);
     });
   } else if (spec.kind === "copy-edit") {
+    needs("version", "文案版本");
     needs("surface", "投放模块");
     needs("copyPosition", "文案位置");
     needs("phaseMin", "最低 P 阶段");
@@ -974,6 +987,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("language", "语言");
     needs("registrationDaysGt", "注册天数");
     needs("trafficSplit", "分流比例");
+    needs("version", "文案版本");
     needs("versionNote", "版本说明");
     needs("zh", "中文文案");
     needs("en", "英文文案");
@@ -989,6 +1003,12 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("positionKey", "位置标识");
     needs("positionName", "位置名称");
     needs("surface", "投放模块");
+  } else if (spec.kind === "copy-version-option") {
+    needs("versionKey", "版本标识");
+    needs("name", "版本名称");
+    needs("status", "状态");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(state.versionKey ?? "")) missing.push("版本标识格式");
+    if (!Number.isInteger(Number(state.sortOrder)) || Number(state.sortOrder) < 0) missing.push("排序非负整数");
   } else if (spec.kind === "course-authoring") {
     ["slug", "category", "format", "difficulty", "duration", "reward", "publishState", "titleZh", "titleEn", "bodyZh", "bodyEn"].forEach((key) => needs(key, key));
     const reward = Number(state.reward);
@@ -1151,6 +1171,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "copy-edit") return state.version;
   if (spec.kind === "copy-create") return state.copyKey;
   if (spec.kind === "copy-position-create") return state.positionKey;
+  if (spec.kind === "copy-version-option") return state.versionKey;
   if (spec.kind === "version-authoring") return state.version;
   if (spec.kind === "course-authoring") return state.slug;
   if (spec.kind === "campaign-edit") return state.title;
@@ -1387,20 +1408,14 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
             {select("surface", "投放模块", modules.map((item) => item.value), moduleLabels, undefined, changeSurface)}
             {select("copyPosition", "文案位置", positions.map((item) => item.value), positionLabels)}
             {input("trafficSplit", "分流比例(%)", "50", "number")}
-            <div className="field" data-proof="copy-system-version" style={{ marginBottom: 0 }}>
-              <span>首版版本号</span>
-              <output className="fld" aria-label="首版版本号" style={{ display: "flex", alignItems: "center", color: "var(--ink-3)" }}>v1 · 系统自动生成</output>
-            </div>
+            {select("version", "文案版本", (spec.versionOptions ?? []).map((item) => item.value), Object.fromEntries((spec.versionOptions ?? []).map((item) => [item.value, item.label])))}
           </div>
         )}
         {spec.kind === "copy-edit" && (
           <div className="grid g-2" style={{ gap: 10, marginBottom: 10 }}>
-            <div className="field" data-proof="copy-system-version" style={{ marginBottom: 0 }}>
-              <span>目标版本号</span>
-              <output className="fld" aria-label="目标版本号" style={{ display: "flex", alignItems: "center", color: "var(--ink-3)" }}>
-                {value.version ? `${value.version} · 已有草稿` : "系统自动生成"}
-              </output>
-            </div>
+            {spec.version
+              ? <div className="field" data-proof="copy-selected-version" style={{ marginBottom: 0 }}><span>文案版本</span><output className="fld" aria-label="文案版本" style={{ display: "flex", alignItems: "center", color: "var(--ink-2)" }}>{spec.version} · 当前草稿</output></div>
+              : select("version", "文案版本", (spec.versionOptions ?? []).map((item) => item.value), Object.fromEntries((spec.versionOptions ?? []).map((item) => [item.value, item.label])))}
             {select("surface", "投放模块", modules.map((item) => item.value), moduleLabels, undefined, changeSurface)}
             {select("copyPosition", "文案位置", positions.map((item) => item.value), positionLabels)}
             {input("trafficSplit", "分流比例 traffic split(%)", "50", "number")}
@@ -1442,6 +1457,23 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           {input("positionName", "位置名称", "首页主横幅")}
           {select("surface", "投放模块", spec.modules.map((item) => item.value), labels)}
         </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "copy-version-option") {
+    return (
+      <div className="field" data-business-form={`copy-version-option-${spec.mode}`}>
+        <label>业务表单 · {spec.mode === "create" ? "新增文案版本" : "编辑文案版本"}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {spec.mode === "create"
+            ? input("versionKey", "版本标识", "v3")
+            : <div className="field" style={{ marginBottom: 0 }}><span>版本标识</span><output className="fld" aria-label="版本标识" style={{ display: "flex", alignItems: "center" }}>{value.versionKey}</output></div>}
+          {input("name", "版本名称", "转化优化版")}
+          {select("status", "状态", ["ACTIVE", "INACTIVE"], { ACTIVE: "启用", INACTIVE: "停用" })}
+          {input("sortOrder", "排序", "0", "number")}
+        </div>
+        <div style={{ marginTop: 10 }}>{textArea("description", "版本说明", "说明该版本的使用范围和变更目标", 2)}</div>
       </div>
     );
   }

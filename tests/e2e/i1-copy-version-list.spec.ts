@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("I1 管理全部文案版本并由系统生成版本号", async ({ page }) => {
+test("I1 先配置文案版本，再由新增文案选择启用版本", async ({ page }) => {
   let deleteRequest: { method: string; pathname: string; body: Record<string, unknown> } | undefined;
   let draftDeleted = false;
   let overviewRequests = 0;
@@ -50,7 +50,7 @@ test("I1 管理全部文案版本并由系统生成版本号", async ({ page }) 
         code: 200,
         data: {
           stats: { managedCopies: 1, runningExps: 1, weeklyExposures: "12,000", topLift: "+8%" },
-          copies: [{ key: "home.hero", desc: "首页主横幅", surface: "home", version: "v1", status: "published", i18nKey: "home.hero", expId: "", lastChange: "刚刚", copyPosition: "home.hero", draftVersion: draftDeleted ? undefined : "v2", revision: 7 }],
+          copies: [{ key: "home.hero", desc: "首页主横幅", surface: "home", version: "v1", status: "published", i18nKey: "home.hero", expId: "", lastChange: "刚刚", copyPosition: "home.hero", draftVersion: draftDeleted ? undefined : "v2", revision: 7, usedVersionKeys: ["v1", "v2"] }],
           versions: [
             { copyKey: "home.hero", version: "v1", status: "published", chain: "创建 → 发布", ts: "刚刚", zh: "欢迎回来", vi: "Chào mừng trở lại", en: "Welcome back", copyPosition: "home.hero", surface: "home", audience: "P1-P6 · 全语言 · 注册>0天", trafficSplit: "50", versionNote: "首版" },
             ...(!draftDeleted ? [{ copyKey: "home.hero", version: "v2", status: "draft", chain: "草稿保存", ts: "刚刚", zh: "欢迎回来 2", vi: "Chào mừng trở lại 2", en: "Welcome back 2", copyPosition: "home.hero", surface: "home", audience: "P1-P6 · 全语言 · 注册>0天", trafficSplit: "50", versionNote: "待发布" }] : []),
@@ -58,6 +58,11 @@ test("I1 管理全部文案版本并由系统生成版本号", async ({ page }) 
           experiments: [{ id: "EXP-1", copyKey: "other.copy", variants: [{ name: "A · v1", split: 50, cvr: 5.2 }, { name: "B · v2", split: 50, cvr: 5.6 }], audience: "P1-P6 · 全语言 · 注册>0天", estimatedAudience: 18420, impressions: "12,000", conversions: "648", state: "running", note: "进行中" }],
           frameworkParams: [],
           positions: [{ positionKey: "home.hero", name: "首页主横幅", surface: "home", status: "ACTIVE", sortOrder: 1 }],
+          versionOptions: [
+            { versionKey: "v1", name: "基础版本", description: "首轮投放", status: "ACTIVE", sortOrder: 1, revision: 1, usageCount: 1 },
+            { versionKey: "v2", name: "优化版本", description: "转化优化", status: "ACTIVE", sortOrder: 2, revision: 1, usageCount: 1 },
+            { versionKey: "v3", name: "待用版本", description: "下一轮投放", status: "ACTIVE", sortOrder: 3, revision: 1, usageCount: 0 },
+          ],
           surfaces: ["home", "store", "earn", "me"],
           audiences: [],
           trafficSplits: ["50"],
@@ -68,8 +73,15 @@ test("I1 管理全部文案版本并由系统生成版本号", async ({ page }) 
   });
 
   await page.goto("/content/copy-ab");
+  const versionCatalog = page.locator('[data-proof="copy-version-catalog"]');
+  await expect(versionCatalog.getByText("文案版本列表")).toBeVisible();
+  await expect(versionCatalog.locator("tbody tr")).toHaveCount(3);
+  await expect(versionCatalog.getByRole("button", { name: "+ 新增版本" })).toBeVisible();
+  await expect(versionCatalog.getByRole("button", { name: "编辑" }).first()).toBeVisible();
+  await expect(versionCatalog.getByRole("button", { name: "删除" }).last()).toBeVisible();
+  await expect(page.locator('[data-proof="copy-version-catalog"], [data-proof="copy-pool"]').first()).toHaveAttribute("data-proof", "copy-version-catalog");
   const versionList = page.locator('[data-proof="copy-version-list"]');
-  await expect(versionList.getByText("文案版本列表(b)")).toBeVisible();
+  await expect(versionList.getByText("文案内容历史(b)")).toBeVisible();
   await expect(versionList.locator("tbody tr")).toHaveCount(2);
   await expect(versionList.locator("tbody tr").first()).toContainText("首页主横幅");
   await expect(versionList.locator("tbody tr").first()).toContainText("home.hero");
@@ -101,10 +113,20 @@ test("I1 管理全部文案版本并由系统生成版本号", async ({ page }) 
   expect(overviewRequests).toBeGreaterThan(1);
   await versionList.getByRole("button", { name: "已发布", exact: true }).click();
   await expect(versionList.getByRole("button", { name: "删除草稿" })).toHaveCount(0);
+  await versionList.getByRole("button", { name: "新增版本" }).click();
+  const editForm = page.locator('[data-business-form="copy-edit"]');
+  const editVersionSelect = editForm.getByLabel("文案版本");
+  await expect(editVersionSelect).toBeVisible();
+  await expect(editVersionSelect).toHaveValue("v3");
+  await expect(editVersionSelect.locator("option")).toHaveCount(1);
+  await page.getByRole("dialog").getByRole("button", { name: "取消" }).click();
 
   await page.getByRole("button", { name: "+ 新增文案" }).click();
   const createForm = page.locator('[data-business-form="copy-create"]');
   await expect(createForm).toBeVisible();
-  await expect(createForm.locator('[data-proof="copy-system-version"]')).toContainText("v1 · 系统自动生成");
-  await expect(createForm.getByRole("textbox", { name: /首版版本号/ })).toHaveCount(0);
+  const versionSelect = createForm.getByLabel("文案版本");
+  await expect(versionSelect).toBeVisible();
+  await expect(versionSelect.locator("option")).toHaveCount(3);
+  await expect(versionSelect.locator("option").nth(2)).toContainText("v3 · 待用版本");
+  await expect(createForm.getByText("首版版本号")).toHaveCount(0);
 });

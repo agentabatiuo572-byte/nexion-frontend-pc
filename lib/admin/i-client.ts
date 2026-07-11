@@ -57,6 +57,16 @@ export type CopyPositionView = {
   status: string;
 };
 
+export type CopyVersionOptionView = {
+  versionKey: string;
+  name: string;
+  description: string;
+  status: string;
+  sortOrder: number;
+  revision: number;
+  usageCount?: number;
+};
+
 export type CopyContentRow = {
   key: string;
   desc: string;
@@ -78,6 +88,7 @@ export type CopyContentRow = {
   draftTrafficSplit?: string;
   draftNote?: string;
   revision?: number;
+  usedVersionKeys?: string[];
 };
 
 export type CopyVersionRow = {
@@ -123,6 +134,7 @@ export type CopyAbOverview = {
   experiments: CopyExperimentRow[];
   frameworkParams: CopyFrameworkParamView[];
   positions: CopyPositionView[];
+  versionOptions: CopyVersionOptionView[];
   surfaces: string[];
   audiences: string[];
   trafficSplits: string[];
@@ -370,6 +382,9 @@ export type IContentActions = {
   createI1Copy: (body: Record<string, unknown>, reason: string) => Promise<void>;
   createI1CopyPosition: (body: Record<string, unknown>, reason: string) => Promise<void>;
   deleteI1CopyPosition: (positionKey: string, reason: string) => Promise<void>;
+  createI1CopyVersionOption: (body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI1CopyVersionOption: (versionKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  deleteI1CopyVersionOption: (versionKey: string, revision: number, reason: string) => Promise<void>;
   saveI1CopyDraft: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI1CopyVersion: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   deleteI1CopyDraft: (copyKey: string, version: string, revision: number, reason: string) => Promise<void>;
@@ -426,6 +441,9 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   createI1Copy: (body, reason) => apiRequest("/copy-ab/copies", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI1CopyPosition: (body, reason) => apiRequest("/copy-ab/positions", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   deleteI1CopyPosition: (positionKey, reason) => apiRequest(`/copy-ab/positions/${encodeURIComponent(positionKey)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  createI1CopyVersionOption: (body, reason) => apiRequest("/copy-ab/version-options", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI1CopyVersionOption: (versionKey, body, reason) => apiRequest(`/copy-ab/version-options/${encodeURIComponent(versionKey)}`, { method: "PUT", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI1CopyVersionOption: (versionKey, revision, reason) => apiRequest(`/copy-ab/version-options/${encodeURIComponent(versionKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision: revision }, reason)) }).then(() => undefined),
   saveI1CopyDraft: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI1CopyVersion: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   deleteI1CopyDraft: (copyKey, version, revision, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion: version, expectedRevision: revision }, reason)) }).then(() => undefined),
