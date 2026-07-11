@@ -77,6 +77,7 @@ export type CopyContentRow = {
   draftAudienceTarget?: CopyAudienceTarget;
   draftTrafficSplit?: string;
   draftNote?: string;
+  revision?: number;
 };
 
 export type CopyVersionRow = {
@@ -371,6 +372,7 @@ export type IContentActions = {
   deleteI1CopyPosition: (positionKey: string, reason: string) => Promise<void>;
   saveI1CopyDraft: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI1CopyVersion: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  deleteI1CopyDraft: (copyKey: string, version: string, revision: number, reason: string) => Promise<void>;
   rollbackI1CopyVersion: (copyKey: string, version: string, reason: string) => Promise<void>;
   archiveI1Copy: (copyKey: string, expectedVersion: string, reason: string) => Promise<void>;
   updateI1Framework: (paramKey: string, value: string, reason: string) => Promise<void>;
@@ -426,6 +428,7 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   deleteI1CopyPosition: (positionKey, reason) => apiRequest(`/copy-ab/positions/${encodeURIComponent(positionKey)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   saveI1CopyDraft: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI1CopyVersion: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI1CopyDraft: (copyKey, version, revision, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion: version, expectedRevision: revision }, reason)) }).then(() => undefined),
   rollbackI1CopyVersion: (copyKey, version, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   archiveI1Copy: (copyKey, expectedVersion, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   updateI1Framework: (paramKey, value, reason) => apiRequest(`/copy-ab/framework/${encodeURIComponent(paramKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),

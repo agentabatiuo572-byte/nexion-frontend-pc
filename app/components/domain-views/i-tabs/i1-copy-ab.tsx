@@ -8,7 +8,7 @@
  * amplifies = false(I1 不碰 B1 红线 —— 只改措辞,不动费率/奖励/价格)。
  * 框架参数 = 运营设定(仍需操作确认 + 必填原因留痕)→ 走 openConfirm + input(ConfirmReq.input 已支持)。
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ICtx } from "./types";
@@ -22,6 +22,7 @@ type CopyRow = {
   key: string; desc: string; surface: string;
   version: string; status: string; i18nKey: string; expId: string; lastChange: string;
   draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget; draftTrafficSplit?: string; draftNote?: string;
+  revision?: number;
 };
 type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
 type VersionRow = {
@@ -95,6 +96,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const [versionCopyFlt, setVersionCopyFlt] = useState("all");
   const [versionStatusFlt, setVersionStatusFlt] = useState<VersionStatusFlt>("all");
   const [versionPage, setVersionPage] = useState(1);
+  const [deletingDraftKey, setDeletingDraftKey] = useState<string | null>(null);
+  const deleteInFlightRef = useRef(false);
   const data = content.copyAb;
   const I1_STATS = data?.stats ?? { managedCopies: 0, runningExps: 0, weeklyExposures: "—", topLift: "—" };
   const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
@@ -117,6 +120,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     draftAudienceTarget: row.draftAudienceTarget,
     draftTrafficSplit: row.draftTrafficSplit,
     draftNote: row.draftNote,
+    revision: row.revision,
   }));
   const COPY_VERSIONS: VersionRow[] = (data?.versions ?? []).map((row) => ({
     copyKey: row.copyKey,
@@ -316,6 +320,26 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     amplifies: false,
     run: (reason) => {
       runBackend(actions.archiveI1Copy(copyKey, version, reason), `${copyKey} ${version} 已下架`);
+    },
+  });
+
+  const deleteDraftVersion = (copyKey: string, version: string, revision: number) => openActionConfirm({
+    action: <>删除草稿 · {copyKey} {version}</>,
+    detail: <>只有草稿版本可以删除；删除后不可恢复，但操作理由和删除结果会保留审计。已发布或已归档版本必须保留完整历史，不能物理删除。</>,
+    amplifies: false,
+    run: (reason) => {
+      const mutationKey = `${copyKey}:${version}`;
+      if (deleteInFlightRef.current) return;
+      deleteInFlightRef.current = true;
+      setDeletingDraftKey(mutationKey);
+      actions.deleteI1CopyDraft(copyKey, version, revision, reason)
+        .then(() => actions.reloadIContent())
+        .then(() => toast(`${copyKey} ${version} 草稿已删除`))
+        .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`))
+        .finally(() => {
+          deleteInFlightRef.current = false;
+          setDeletingDraftKey(null);
+        });
     },
   });
 
@@ -553,7 +577,8 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                         ? <button type="button" className="l-btn sm" onClick={() => editCopy(copy, existingDraft)}>继续草稿 {existingDraft.v}</button>
                         : <button type="button" className="l-btn sm" onClick={() => editCopy(copy, row, true)}>新增版本</button>)}
                       {canWrite && status === "published" && copy?.version === row.v && <button type="button" className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => archiveCurrentVersion(row.copyKey, row.v)}>下架</button>}
-                      {canWrite && status === "draft" && copy && <button type="button" className="l-btn sm mc" onClick={() => editCopy(copy, row)}>编辑 / 发布</button>}
+                      {canWrite && status === "draft" && copy?.draftVersion === row.v && <button type="button" className="l-btn sm mc" onClick={() => editCopy(copy, row)}>编辑 / 发布</button>}
+                      {canWrite && status === "draft" && copy?.draftVersion === row.v && copy.revision != null && <button type="button" className="l-btn sm dgr" disabled={deletingDraftKey !== null} style={{ marginLeft: 6 }} onClick={() => deleteDraftVersion(row.copyKey, row.v, copy.revision!)}>{deletingDraftKey === `${row.copyKey}:${row.v}` ? "删除中…" : "删除草稿"}</button>}
                     </td>
                   </tr>
                 );

@@ -190,6 +190,24 @@ test("版本列表上的回滚、下架和新增版本操作按实际文案标�
   assert.match(component, /COPY_VERSIONS\.filter/);
 });
 
+test("版本列表只允许删除草稿版本，并通过独立 DELETE 接口保留理由审计", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const client = read("lib/admin/i-client.ts");
+
+  assert.match(client, /deleteI1CopyDraft: \(copyKey: string, version: string, revision: number, reason: string\) => Promise<void>/);
+  assert.match(client, /deleteI1CopyDraft: \(copyKey, version, revision, reason\) => apiRequest\(`\/copy-ab\/copies\/\$\{encodeURIComponent\(copyKey\)\}\/versions\/\$\{encodeURIComponent\(version\)\}`, \{ method: "DELETE", body: JSON\.stringify\(withReason\(\{ expectedVersion: version, expectedRevision: revision \}, reason\)\) \}\)/);
+  assert.match(component, /const deleteDraftVersion = \(copyKey: string, version: string, revision: number\) => openActionConfirm\(/);
+  assert.match(component, /只有草稿版本可以删除/);
+  assert.match(component, /删除后不可恢复/);
+  assert.match(component, /保留审计/);
+  assert.match(component, /actions\.deleteI1CopyDraft\(copyKey, version, revision, reason\)/);
+  assert.match(component, /deleteInFlightRef\.current/);
+  assert.match(component, /canWrite && status === "draft" && copy\?\.draftVersion === row\.v[\s\S]*?className="l-btn sm dgr"[\s\S]*?删除草稿/);
+  assert.match(component, /disabled=\{deletingDraftKey !== null\}/);
+  assert.doesNotMatch(component, /status === "published"[\s\S]{0,250}>删除草稿<\/button>/);
+  assert.doesNotMatch(component, /status === "archived"[\s\S]{0,250}>删除草稿<\/button>/);
+});
+
 test("版本列表提供真实分页、摘要展示和筛选可访问状态", () => {
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
 
