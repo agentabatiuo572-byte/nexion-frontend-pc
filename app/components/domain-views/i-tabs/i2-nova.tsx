@@ -3,16 +3,36 @@
 /**
  * I2 Nova 推送运营 — design_handoff_i_domain/I2 Nova推送运营.html port。
  * 单源:后端 /content/nova/overview;空库时保持后端空态,不补前端业务样例。
- * 操作确认 显式 edit 契约:调 cadence(tick/cd) / 调 CTR / 调概率分布 / 池条目数 = 调参传 edit;
+ * 操作确认 显式 edit 契约:调 cadence(tick/cd) / 调概率分布 / 池条目数 = 调参传 edit;
  *   kill 单频道 / 启停 / 发布 / 归档模板 = 处置不传 edit。
  * amplifies = false(I2 不碰 B1 红线 —— 只动推送节奏与文案出口,不动费率/奖励/价格)。
  */
 import { useState } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
+import {
+  formatNovaDuration,
+  NOVA_TIME_UNITS,
+  parseNovaDuration,
+  validateNovaCadence,
+  type NovaTimeUnit,
+} from "../../../../lib/admin/nova-cadence";
 import type { ICtx } from "./types";
 
-type NovaForm = { name: string; tick: string; cd: string; ctr: string };
-const EMPTY_FORM: NovaForm = { name: "", tick: "", cd: "", ctr: "" };
+type NovaForm = {
+  name: string;
+  tickValue: string;
+  tickUnit: NovaTimeUnit;
+  cooldownValue: string;
+  cooldownUnit: NovaTimeUnit;
+};
+const EMPTY_FORM: NovaForm = {
+  name: "",
+  tickValue: "",
+  tickUnit: "minutes",
+  cooldownValue: "",
+  cooldownUnit: "hours",
+};
+const DEFAULT_TRIGGER_DESCRIPTION = "周期扫描：满足该通道业务触发条件时推送";
 type OpsNova = { key: string; name: string; trigger: string; tick: string; cd: string; phaseKeyed: string; ctr: number; on: boolean };
 
 const normalizeNovaKey = (s: string) =>
@@ -58,26 +78,44 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
 
   const openNewNova = () => { setEditNovaKey(null); setForm(EMPTY_FORM); setNovaDrawer(true); };
   const openEditNova = (n: OpsNova) => {
+    const tick = parseNovaDuration(n.tick, "minutes");
+    const cooldown = parseNovaDuration(n.cd, "hours");
     setEditNovaKey(n.key);
-    setForm({ name: n.name, tick: n.tick, cd: n.cd, ctr: String(n.ctr ?? "") });
+    setForm({
+      name: n.name,
+      tickValue: tick.value,
+      tickUnit: tick.unit,
+      cooldownValue: cooldown.value,
+      cooldownUnit: cooldown.unit,
+    });
     setNovaDrawer(true);
   };
   const closeDrawer = () => { setNovaDrawer(false); setEditNovaKey(null); setForm(EMPTY_FORM); };
 
+  const cadenceError = validateNovaCadence(
+    form.tickValue,
+    form.tickUnit,
+    form.cooldownValue,
+    form.cooldownUnit,
+  );
+
   const submitDrawer = () => {
     const name = form.name.trim();
     if (!name) return;
-    const tick = form.tick.trim() || "—";
-    const cd = form.cd.trim() || "—";
-    const ctrNum = Number(form.ctr) || 0;
+    if (cadenceError) {
+      toast(cadenceError);
+      return;
+    }
+    const tick = formatNovaDuration(form.tickValue, form.tickUnit);
+    const cd = formatNovaDuration(form.cooldownValue, form.cooldownUnit);
     if (editNovaKey) {
       const prev = novas.find((x) => x.key === editNovaKey);
       runBackend(actions.updateI2NovaChannel(editNovaKey, {
         name,
-        trigger: prev?.trigger || "后台编辑 Nova 通道",
+        trigger: prev?.trigger || DEFAULT_TRIGGER_DESCRIPTION,
         tick,
         cooldown: cd,
-        ctr: ctrNum,
+        ctr: prev?.ctr ?? 0,
         enabled: prev?.on ?? true,
       }, "后台编辑 Nova 通道"), `Nova 通道已更新:${prev?.name ?? editNovaKey} → ${name}`);
     } else {
@@ -85,10 +123,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       runBackend(actions.createI2NovaChannel({
         key,
         name,
-        trigger: "后台新增 Nova 通道",
+        trigger: DEFAULT_TRIGGER_DESCRIPTION,
         tick,
         cooldown: cd,
-        ctr: ctrNum,
+        ctr: 0,
         enabled: true,
       }, "后台新增 Nova 通道"), `Nova 通道已新增:${name}`);
     }
@@ -237,7 +275,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">10 可调通道节奏表</span>
-          <span className="sub">· enabled kill 开关 + tick/cooldown + phase-keyed 分档(随 H1 只读)</span>
+          <span className="sub">· 启停 + 检查间隔 + 同一用户最短推送间隔 + P 阶段分档</span>
           <div className="r">
             <button className="l-btn sm primary" onClick={openNewNova}>+ 新增通道</button>
           </div>
@@ -249,8 +287,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 <th>开关</th>
                 <th>key / 名称</th>
                 <th>内容触发</th>
-                <th>tick</th>
-                <th>cooldown</th>
+                <th>检查间隔</th>
+                <th>同一用户最短推送间隔</th>
                 <th>phase-keyed</th>
                 <th>最近改动</th>
                 <th style={{ textAlign: "right" }}></th>
@@ -296,7 +334,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <b>这套开关不在熔断矩阵里</b> · 停某个 Nova 频道走这页的开关(操作确认),不占应急熔断矩阵(J1)的 6 个功能闸,也不是地区屏蔽(J2);只有「Nova 整体作为一种能力要平台级停掉」才轮到 J 域出手。别把频道停推误报成熔断。
           </div>
           <div className="itint" style={{ marginTop: 8 }}>
-            <b>两个随阶段变的频道</b> · 以旧换新(tradein)和月度任务锁定(taskLockMonthly)的歇息时长按运营阶段(P1–P6)分档,阶段切换时自动换档——<b>阶段由节奏调度页(H1)说了算,这页只读跟随</b>,想改分档值在这页改,想改当前是 P 几去 H1。
+            <b>两个随阶段变的频道</b> · 以旧换新(tradein)和月度任务锁定(taskLockMonthly)的同一用户最短推送间隔按运营阶段(P1–P6)分档,阶段切换时自动换档——<b>阶段由节奏调度页(H1)说了算,这页只读跟随</b>,想改分档值在这页改,想改当前是 P 几去 H1。
           </div>
         </div>
       </section>
@@ -477,7 +515,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       {novaDrawer && (
         <Drawer
           title={editNovaKey ? "编辑 Nova 推送通道" : "新增 Nova 推送通道"}
-          sub={editNovaKey ? "提交即对全体用户的该频道节奏生效" : "提交后即生效;后续可继续 kill / 编辑 / 删除"}
+          sub="系统按检查间隔扫描；仅向满足业务触发条件且已过个人冷却时间的用户推送"
           onClose={closeDrawer}
           footer={
             <>
@@ -485,7 +523,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               <button
                 className="l-btn primary"
                 style={{ flex: 1, justifyContent: "center" }}
-                disabled={!form.name.trim()}
+                disabled={!form.name.trim() || cadenceError !== null}
                 onClick={submitDrawer}
               >
                 {editNovaKey ? "保存" : "提交"}
@@ -494,42 +532,70 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           }
         >
           <div className="col" style={{ gap: 12 }}>
+            <div className="itint">
+              <b>触发方式：周期扫描</b> · 检查间隔只决定多久扫描一次；具体给谁推送由该通道的业务规则判断。
+            </div>
             <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">通道名(name)</span>
+              <span className="muted tiny">通道名称</span>
               <input
                 className="fld"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="如 weekly-recap"
+                placeholder="例如：每周回顾"
               />
             </label>
             <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">tick(检查节奏)</span>
-              <input
-                className="fld"
-                value={form.tick}
-                onChange={(e) => setForm({ ...form, tick: e.target.value })}
-                placeholder="如 15 min / 注册 8s / 每 25 任务"
-              />
+              <span className="muted tiny">检查间隔（多久执行一次扫描）</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 112px", gap: 8 }}>
+                <input
+                  className="fld"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={form.tickValue}
+                  onChange={(e) => setForm({ ...form, tickValue: e.target.value })}
+                  placeholder="输入正整数"
+                  aria-label="检查间隔数值"
+                />
+                <select
+                  className="fld"
+                  value={form.tickUnit}
+                  onChange={(e) => setForm({ ...form, tickUnit: e.target.value as NovaTimeUnit })}
+                  aria-label="检查间隔单位"
+                >
+                  {NOVA_TIME_UNITS.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
+                </select>
+              </div>
+              <span className="muted tiny">只控制系统多久检查一次，不包含触发条件。</span>
             </label>
             <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">cooldown(推完歇多久)</span>
-              <input
-                className="fld"
-                value={form.cd}
-                onChange={(e) => setForm({ ...form, cd: e.target.value })}
-                placeholder="如 60 min / 24h / 7d"
-              />
+              <span className="muted tiny">同一用户最短推送间隔</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 112px", gap: 8 }}>
+                <input
+                  className="fld"
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  value={form.cooldownValue}
+                  onChange={(e) => setForm({ ...form, cooldownValue: e.target.value })}
+                  placeholder="输入正整数"
+                  aria-label="同一用户最短推送间隔数值"
+                />
+                <select
+                  className="fld"
+                  value={form.cooldownUnit}
+                  onChange={(e) => setForm({ ...form, cooldownUnit: e.target.value as NovaTimeUnit })}
+                  aria-label="同一用户最短推送间隔单位"
+                >
+                  {NOVA_TIME_UNITS.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
+                </select>
+              </div>
+              <span className="muted tiny">同一用户收到本通道消息后，在此时间内不会再次收到。</span>
             </label>
-            <label className="col" style={{ gap: 5 }}>
-              <span className="muted tiny">CTR(%,可留空)</span>
-              <input
-                className="fld"
-                value={form.ctr}
-                onChange={(e) => setForm({ ...form, ctr: e.target.value })}
-                placeholder="输入接口返回的 CTR"
-              />
-            </label>
+            {(form.tickValue || form.cooldownValue) && cadenceError && <div className="itint danger">{cadenceError}</div>}
+            <div className="itint"><b>CTR 无需填写</b> · 新通道从 0% 开始，产生真实投递与点击后由系统自动统计。</div>
           </div>
         </Drawer>
       )}
