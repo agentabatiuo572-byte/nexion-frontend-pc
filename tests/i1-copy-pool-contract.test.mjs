@@ -35,15 +35,14 @@ test("编辑文案允许存草稿或发布生效，而不是把编辑动作强�
   assert.match(designKit, /select\("saveMode", "保存为", \["存草稿", "发布生效"\]\)/);
 });
 
-test("编辑表单使用独立草稿版本，并保留当前受众与分流条件", () => {
+test("编辑表单复用已有草稿版本或交给服务器生成新版本，并保留当前受众与分流条件", () => {
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
   const designKit = read("app/components/domain-views/design-kit.tsx");
 
-  assert.match(component, /version: c\.draftVersion \|\| nextCopyVersion\(c\.key, c\.version\)/);
-  assert.match(component, /row\.v\.toLowerCase\(\)/);
-  assert.match(component, /used\.has\(candidate\.toLowerCase\(\)\)/);
-  assert.match(component, /audience: c\.draftAudience \|\| editableVersion\?\.audience/);
-  assert.match(component, /trafficSplit: c\.draftTrafficSplit \|\| editableVersion\?\.trafficSplit/);
+  assert.match(component, /version: editingExistingDraft \? editableVersion\?\.v \|\| "" : ""/);
+  assert.doesNotMatch(component, /nextCopyVersion/);
+  assert.match(component, /audience: editableVersion\?\.audience/);
+  assert.match(component, /trafficSplit: editableVersion\?\.trafficSplit/);
   assert.match(designKit, /audience: spec\.audience \?\? spec\.audiences\?\.\[0\] \?\? ""/);
   assert.match(designKit, /trafficSplit: spec\.trafficSplit \?\? spec\.trafficSplits\?\.\[0\] \?\? ""/);
 });
@@ -105,7 +104,7 @@ test("越南语和文案位置贯穿 overview 类型、表单、草稿与发布�
   assert.match(designKit, /needs\("vi", "越南语文案"\)/);
   assert.match(component, /vi: form\?\.vi/);
   assert.match(component, /copyPosition: form\?\.copyPosition/);
-  assert.match(component, /VI ·/);
+  assert.match(component, /<b>VI<\/b> ·/);
 });
 
 test("I1 文案位置来自后端配置列表，并提供配置增删入口", () => {
@@ -149,4 +148,67 @@ test("I1 文案支持越南语，并固定投放到 App 四个顶级模块", () 
   assert.match(designKit, /textArea\("vi", "越南语 vi 文案"/);
   assert.match(designKit, /select\("surface", "投放模块"/);
   assert.doesNotMatch(designKit, /input\("surface", "投放位置 surface"/);
+});
+
+test("版本详情升级为覆盖全部文案的版本列表，而不是固定展示单个文案位", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+
+  assert.match(component, /文案版本列表\(b\)/);
+  assert.match(component, /data-proof="copy-version-list"/);
+  assert.match(component, /pagedVersions\.map/);
+  assert.match(component, /版本状态/);
+  assert.match(component, /文案位置/);
+  assert.match(component, /中英越文案/);
+  assert.doesNotMatch(component, /版本详情\(b\).*home\.conversionBanner/);
+  assert.doesNotMatch(component, /const HCB = "home\.conversionBanner"/);
+});
+
+test("新增和编辑文案的版本号由系统生成，运营表单不再输入版本号", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const designKit = read("app/components/domain-views/design-kit.tsx");
+
+  assert.match(designKit, /data-proof="copy-system-version"/);
+  assert.match(designKit, /系统自动生成/);
+  assert.doesNotMatch(designKit, /input\("version", "首版版本号"/);
+  assert.doesNotMatch(designKit, /input\("version", "变体\/版本号 variant id"/);
+  assert.doesNotMatch(designKit, /needs\("version", "首版版本号"\)/);
+  assert.doesNotMatch(designKit, /needs\("version", "版本号"\)/);
+  assert.doesNotMatch(component, /version: form\.version \|\| "v1"/);
+  assert.match(component, /首版版本号由服务器自动生成/);
+});
+
+test("版本列表上的回滚、下架和新增版本操作按实际文案标识执行", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const client = read("lib/admin/i-client.ts");
+
+  assert.match(component, /rollbackTo\(row\.copyKey, row\.v\)/);
+  assert.match(component, /archiveCurrentVersion\(row\.copyKey, row\.v\)/);
+  assert.match(component, /editCopy\(copy, row/);
+  assert.match(component, /copy\?\.version === row\.v/);
+  assert.match(client, /archiveI1Copy: \(copyKey: string, expectedVersion: string, reason: string\)/);
+  assert.match(client, /withReason\(\{ expectedVersion \}, reason\)/);
+  assert.match(component, /COPY_VERSIONS\.filter/);
+});
+
+test("版本列表提供真实分页、摘要展示和筛选可访问状态", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+
+  assert.match(component, /VERSION_PAGE_SIZE = 20/);
+  assert.match(component, /pagedVersions/);
+  assert.match(component, /上一页/);
+  assert.match(component, /下一页/);
+  assert.match(component, /aria-pressed=\{versionStatusFlt === key\}/);
+  assert.match(component, /textOverflow: "ellipsis"/);
+  assert.doesNotMatch(component, /maxRows: COPY_VERSIONS\.length/);
+});
+
+test("I1 写按钮按后端 authority 隐藏，并明确展示继承受众覆盖状态", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+
+  assert.match(component, /useAdminAuth/);
+  assert.match(component, /content_i1_write/);
+  assert.match(component, /content_i1_copy_create/);
+  assert.match(component, /canWrite &&/);
+  assert.match(component, /预计覆盖/);
+  assert.match(component, /实验启动快照/);
 });

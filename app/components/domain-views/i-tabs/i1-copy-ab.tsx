@@ -10,21 +10,28 @@
  */
 import { useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ICtx } from "./types";
 
 const COPY_MODULES = ["home", "store", "earn", "me"] as const;
 type CopyModule = (typeof COPY_MODULES)[number];
 type Surf = "all" | CopyModule;
 type ExpFlt = "all" | "running" | "concluded";
+type VersionStatusFlt = "all" | "draft" | "published" | "archived";
 type CopyRow = {
   key: string; desc: string; surface: string;
   version: string; status: string; i18nKey: string; expId: string; lastChange: string;
   draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget; draftTrafficSplit?: string; draftNote?: string;
 };
 type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
+type VersionRow = {
+  copyKey: string; v: string; st: string; chain: string; ts: string;
+  zh: string; en: string; vi: string; copyPosition?: string; surface: string;
+  audience: string; audienceTarget?: AudienceTarget; trafficSplit: string; versionNote: string;
+};
 type ExpRow = {
   id: string; copyKey: string; variants: [name: string, split: number, cvr: number][];
-  audience: string; impressions: string; conversions: string; state: string; note: string;
+  audience: string; estimatedAudience?: number; impressions: string; conversions: string; state: string; note: string;
 };
 
 const COPY_MODULE_LABELS: Record<CopyModule, string> = { home: "首页", store: "商城", earn: "赚取", me: "我的" };
@@ -32,6 +39,7 @@ const COPY_MODULE_OPTIONS = COPY_MODULES.map((value) => ({ value, label: COPY_MO
 const LEGACY_MODULES: Record<string, CopyModule> = { Home: "home", Store: "store", Earn: "earn", Me: "me", 商城: "store" };
 const SURF_FLT: [Surf, string][] = [["all", "全部"], ...COPY_MODULES.map((value) => [value, COPY_MODULE_LABELS[value]] as [Surf, string])];
 const EXP_FLT: [ExpFlt, string][] = [["all", "全部"], ["running", "进行中"], ["concluded", "已结"]];
+const VERSION_PAGE_SIZE = 20;
 
 const VAR_COLORS = ["var(--i-ac)", "var(--admin-cat-5)", "var(--admin-cat-3)"];
 
@@ -78,8 +86,15 @@ function audienceTargetFields(target?: AudienceTarget) {
 
 export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const session = useAdminAuth((state) => state.session);
+  const isSuperadmin = session?.role === "superadmin";
+  const canWrite = isSuperadmin || !!session?.authorities.includes("content_i1_write");
+  const canCreateCopy = isSuperadmin || !!session?.authorities.includes("content_i1_copy_create");
   const [surf, setSurf] = useState<Surf>("all");
   const [expFlt, setExpFlt] = useState<ExpFlt>("all");
+  const [versionCopyFlt, setVersionCopyFlt] = useState("all");
+  const [versionStatusFlt, setVersionStatusFlt] = useState<VersionStatusFlt>("all");
+  const [versionPage, setVersionPage] = useState(1);
   const data = content.copyAb;
   const I1_STATS = data?.stats ?? { managedCopies: 0, runningExps: 0, weeklyExposures: "—", topLift: "—" };
   const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
@@ -103,7 +118,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     draftTrafficSplit: row.draftTrafficSplit,
     draftNote: row.draftNote,
   }));
-  const COPY_VERSIONS = (data?.versions ?? []).map((row) => ({
+  const COPY_VERSIONS: VersionRow[] = (data?.versions ?? []).map((row) => ({
     copyKey: row.copyKey,
     v: row.version,
     st: row.status,
@@ -130,6 +145,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     copyKey: row.copyKey,
     variants: row.variants.map((v) => [v.name, v.split, Number(v.cvr)]),
     audience: row.audience,
+    estimatedAudience: row.estimatedAudience,
     impressions: row.impressions,
     conversions: row.conversions,
     state: row.state,
@@ -149,28 +165,6 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   })).filter((position) => position.status.toUpperCase() === "ACTIVE");
   const COPY_POSITION_OPTIONS = COPY_POSITIONS;
 
-  const nextCopyVersion = (copyKey: string, currentVersion: string): string => {
-    const used = new Set(COPY_VERSIONS.filter((row) => row.copyKey === copyKey).map((row) => row.v.toLowerCase()));
-    const match = /^(.*?)(\d+)$/.exec(currentVersion.trim());
-    if (match) {
-      const prefix = match[1];
-      let next = Number(match[2]) + 1;
-      let candidate = `${prefix}${next}`;
-      while (used.has(candidate.toLowerCase())) {
-        next += 1;
-        candidate = `${prefix}${next}`;
-      }
-      return candidate;
-    }
-    let suffix = 1;
-    let candidate = `${currentVersion}.draft${suffix}`;
-    while (used.has(candidate.toLowerCase())) {
-      suffix += 1;
-      candidate = `${currentVersion}.draft${suffix}`;
-    }
-    return candidate;
-  };
-
   const runBackend = (task: Promise<void>, ok: string) => {
     task
       .then(() => actions.reloadIContent())
@@ -179,17 +173,16 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   };
 
   const liveCopyStatus = (c: CopyRow): string => c.status;
-  const liveCopyDraftZh = (key: string): string | undefined => COPY_POOL.find((c) => c.key === key)?.draftZh;
-  const liveCopyDraftEn = (key: string): string | undefined => COPY_POOL.find((c) => c.key === key)?.draftEn;
-  const liveCopyDraftVi = (key: string): string | undefined => COPY_POOL.find((c) => c.key === key)?.draftVi;
-  const liveCopyDraftMeta = (key: string): { audience?: string; trafficSplit?: string; note?: string; surface?: string; copyPosition?: string } => {
-    const row = COPY_POOL.find((c) => c.key === key);
-    return { audience: row?.draftAudience, trafficSplit: row?.draftTrafficSplit, note: row?.draftNote, surface: row?.draftSurface, copyPosition: row?.draftCopyPosition };
-  };
   const liveExpState = (e: ExpRow): string => e.state;
   const liveFw = (_key: string, cur: string): string => cur;
 
   const filteredPool = COPY_POOL.filter((c) => surf === "all" || c.surface === surf);
+  const filteredVersions = COPY_VERSIONS.filter((row) =>
+    (versionCopyFlt === "all" || row.copyKey === versionCopyFlt)
+    && (versionStatusFlt === "all" || row.st.toLowerCase() === versionStatusFlt));
+  const versionPages = Math.max(1, Math.ceil(filteredVersions.length / VERSION_PAGE_SIZE));
+  const safeVersionPage = Math.min(versionPage, versionPages);
+  const pagedVersions = filteredVersions.slice((safeVersionPage - 1) * VERSION_PAGE_SIZE, safeVersionPage * VERSION_PAGE_SIZE);
   const filteredExps = EXPS.filter((e) => {
     if (expFlt === "all") return true;
     const st = liveExpState(e);
@@ -198,53 +191,54 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   });
 
   // 编辑文案(文案池每行通用) —— 默认存草稿,运营也可明确选择发布生效。
-  const editCopy = (c: CopyRow) => {
-    const editableVersion = COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.draftVersion)
+  const editCopy = (c: CopyRow, targetVersion?: VersionRow, forceNew = false) => {
+    const editableVersion = targetVersion
+      ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.draftVersion)
       ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.version);
+    const editingExistingDraft = !forceNew && editableVersion?.st.toLowerCase() === "draft";
     openActionConfirm({
-      action: <>编辑文案 · {c.key}</>,
-      detail: <>当前发布版 <b>{c.version}</b>。默认保存为草稿;只有明确选择“发布生效”才会对用户生效。服务器会校验中、英、越文案与变量令牌。</>,
+      action: <>{forceNew ? "新增版本" : "编辑文案"} · {c.key}</>,
+      detail: <>基于 <b>{editableVersion?.v || c.version}</b> 编辑。{editingExistingDraft ? "保存会更新这个草稿。" : "目标版本号由服务器按历史版本自动生成。"}只有明确选择“发布生效”才会对用户生效。</>,
       amplifies: false,
       businessForm: {
         kind: "copy-edit",
         keyName: c.key,
-        version: c.draftVersion || nextCopyVersion(c.key, c.version),
-        surface: c.draftSurface || c.surface,
-        copyPosition: c.draftCopyPosition || editableVersion?.copyPosition || c.copyPosition,
-        audience: c.draftAudience || editableVersion?.audience,
-        ...audienceTargetFields(c.draftAudienceTarget ?? editableVersion?.audienceTarget),
-        trafficSplit: c.draftTrafficSplit || editableVersion?.trafficSplit,
+        version: editingExistingDraft ? editableVersion?.v || "" : "",
+        surface: editableVersion?.surface || c.surface,
+        copyPosition: editableVersion?.copyPosition || c.copyPosition,
+        audience: editableVersion?.audience,
+        ...audienceTargetFields(editableVersion?.audienceTarget),
+        trafficSplit: editableVersion?.trafficSplit,
         trafficSplits: COPY_TRAFFIC_SPLITS,
         modules: COPY_MODULE_OPTIONS,
         positions: COPY_POSITION_OPTIONS,
-        zh: c.draftZh || editableVersion?.zh || "",
-        en: c.draftEn || editableVersion?.en || "",
-        vi: c.draftVi || editableVersion?.vi || "",
-        versionNote: c.draftNote || "后台编辑文案",
+        zh: editableVersion?.zh || "",
+        en: editableVersion?.en || "",
+        vi: editableVersion?.vi || "",
+        versionNote: editableVersion?.versionNote || "后台编辑文案",
         saveModeChoice: true,
       },
-      run: (reason, v, form) => {
-        if (!v) return;
+      run: (reason, _value, form) => {
         const payload = {
-          version: v,
-          surface: form?.surface || c.draftSurface || c.surface,
-          copyPosition: form?.copyPosition || c.draftCopyPosition || editableVersion?.copyPosition || c.copyPosition || "",
+          version: form?.version || undefined,
+          surface: form?.surface || editableVersion?.surface || c.surface,
+          copyPosition: form?.copyPosition || editableVersion?.copyPosition || c.copyPosition || "",
           audience: composeAudience(form),
           audienceTarget: composeAudienceTarget(form),
           phaseMin: form?.phaseMin,
           phaseMax: form?.phaseMax,
           language: form?.language,
           registrationDaysGt: Number(form?.registrationDaysGt || 0),
-          trafficSplit: form?.trafficSplit || c.draftTrafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
+          trafficSplit: form?.trafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
           versionNote: form?.versionNote || "后台编辑文案",
-          zh: form?.zh || c.draftZh || editableVersion?.zh || "",
-          en: form?.en || c.draftEn || editableVersion?.en || "",
-          vi: form?.vi || c.draftVi || editableVersion?.vi || "",
+          zh: form?.zh || editableVersion?.zh || "",
+          en: form?.en || editableVersion?.en || "",
+          vi: form?.vi || editableVersion?.vi || "",
         };
         if (form?.saveMode === "存草稿") {
           runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿已保存 · 尚未对用户生效`);
         } else {
-          runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} ${v} 已发布生效`);
+          runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} 新版本已发布生效`);
         }
       },
     });
@@ -252,7 +246,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const createCopy = () => openActionConfirm({
     action: <>新增文案</>,
-    detail: <>在文案池中新建一条受管文案。提交后会创建首个版本并发布生效,文案标识必须全局唯一。</>,
+    detail: <>在文案池中新建一条受管文案。提交后会创建首个版本并发布生效，首版版本号由服务器自动生成，文案标识必须全局唯一。</>,
     amplifies: false,
     businessForm: {
       kind: "copy-create",
@@ -269,7 +263,6 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         surface: form.surface || "home",
         copyPosition: form.copyPosition || "",
         i18nKey: copyKey,
-        version: form.version || "v1",
         audience: composeAudience(form),
         audienceTarget: composeAudienceTarget(form),
         phaseMin: form?.phaseMin,
@@ -308,114 +301,21 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     run: (reason) => runBackend(actions.deleteI1CopyPosition(positionKey, reason), `文案位置 ${positionKey} 已删除`),
   });
 
-  // 版本详情卡优先展示后端返回的主转化横幅;没有该键时使用第一条后端文案位。
-  const HCB = "home.conversionBanner";
-  const hcbRow = COPY_POOL.find((c) => c.key === HCB) ?? COPY_POOL[0];
-  const HCB_VERSIONS = COPY_VERSIONS.filter((row) => row.copyKey === HCB);
-  const hcbPublished = HCB_VERSIONS.find((row) => row.st === "published")
-    ?? HCB_VERSIONS.find((row) => row.v === hcbRow?.version)
-    ?? HCB_VERSIONS[0];
-  const hcbActiveVersion = hcbPublished?.v || hcbRow?.version || "";
-  const hcbDraftVersion = hcbRow?.draftVersion || "";
-  const hcbDraftVersionRow = HCB_VERSIONS.find((row) => row.v === hcbDraftVersion);
-
-  const pubDraftVersion = () => openActionConfirm({
-    action: <>发布新版 · {HCB}</>,
-    detail: <>当前发布版 <b>{hcbActiveVersion || "未设置"}</b>。发布即对全体用户下一次渲染生效;服务器先校验中英越三语与变量令牌,不齐直接拒。</>,
-    amplifies: false,
-    businessForm: {
-      kind: "copy-edit",
-      keyName: HCB,
-      version: hcbDraftVersion,
-      surface: hcbRow?.surface || "",
-      copyPosition: hcbDraftVersionRow?.copyPosition || hcbRow?.draftCopyPosition || hcbRow?.copyPosition,
-      audience: hcbRow?.draftAudience || hcbDraftVersionRow?.audience,
-      ...audienceTargetFields(hcbRow?.draftAudienceTarget ?? hcbDraftVersionRow?.audienceTarget),
-      modules: COPY_MODULE_OPTIONS,
-      positions: COPY_POSITION_OPTIONS,
-      trafficSplits: COPY_TRAFFIC_SPLITS,
-      zh: hcbRow?.draftZh || "",
-      en: hcbRow?.draftEn || "",
-      vi: hcbRow?.draftVi || hcbDraftVersionRow?.vi || "",
-      placeholders: [],
-    },
-    run: (reason, v, form) => {
-      if (!v) return;
-      runBackend(actions.publishI1CopyVersion(HCB, {
-        version: v,
-        surface: form?.surface || hcbRow?.surface || "",
-        copyPosition: form?.copyPosition || hcbDraftVersionRow?.copyPosition || hcbRow?.copyPosition || "",
-        audience: composeAudience(form),
-        audienceTarget: composeAudienceTarget(form),
-        phaseMin: form?.phaseMin,
-        phaseMax: form?.phaseMax,
-        language: form?.language,
-        registrationDaysGt: Number(form?.registrationDaysGt || 0),
-        trafficSplit: form?.trafficSplit || hcbRow?.draftTrafficSplit || "",
-        versionNote: form?.versionNote || "后台发布新版",
-        zh: form?.zh || "",
-        en: form?.en || "",
-        vi: form?.vi || hcbRow?.draftVi || hcbDraftVersionRow?.vi || "",
-      }, reason), `${HCB} 新版已确认生效 · 目标 ${v}`);
-    },
-  });
-
-  const editDraftVersion = () => openActionConfirm({
-    action: <>编辑草稿 · {HCB}</>,
-    detail: <>中英越三份一起改(词序可以不同,变量令牌必须三份都有);保存只存草稿、不对外,但会留审计记录。</>,
-    amplifies: false,
-    businessForm: {
-      kind: "copy-edit",
-      keyName: HCB,
-      version: hcbDraftVersion,
-      surface: hcbRow?.surface || "",
-      copyPosition: hcbDraftVersionRow?.copyPosition || hcbRow?.draftCopyPosition || hcbRow?.copyPosition,
-      audience: hcbRow?.draftAudience || hcbDraftVersionRow?.audience,
-      ...audienceTargetFields(hcbRow?.draftAudienceTarget ?? hcbDraftVersionRow?.audienceTarget),
-      modules: COPY_MODULE_OPTIONS,
-      positions: COPY_POSITION_OPTIONS,
-      trafficSplits: COPY_TRAFFIC_SPLITS,
-      zh: hcbRow?.draftZh || "",
-      en: hcbRow?.draftEn || "",
-      vi: hcbRow?.draftVi || hcbDraftVersionRow?.vi || "",
-      placeholders: [],
-    },
-    run: (reason, _v, form) => {
-      runBackend(actions.saveI1CopyDraft(HCB, {
-        version: form?.version || hcbDraftVersion,
-        surface: form?.surface || hcbRow?.surface || "",
-        copyPosition: form?.copyPosition || hcbDraftVersionRow?.copyPosition || hcbRow?.copyPosition || "",
-        audience: composeAudience(form),
-        audienceTarget: composeAudienceTarget(form),
-        phaseMin: form?.phaseMin,
-        phaseMax: form?.phaseMax,
-        language: form?.language,
-        registrationDaysGt: Number(form?.registrationDaysGt || 0),
-        trafficSplit: form?.trafficSplit || hcbRow?.draftTrafficSplit || "",
-        versionNote: form?.versionNote || "草稿保存",
-        zh: form?.zh || "",
-        en: form?.en || "",
-        vi: form?.vi || hcbRow?.draftVi || hcbDraftVersionRow?.vi || "",
-      }, reason), `${HCB} 草稿已保存 · 变量令牌校验通过 · 留审计`);
-    },
-  });
-
-  const rollbackTo = (v: string) => openActionConfirm({
-    action: <>回滚 · {HCB} 当前 {hcbActiveVersion || "当前版本"} → 重新发布 {v}</>,
+  const rollbackTo = (copyKey: string, v: string) => openActionConfirm({
+    action: <>回滚 · {copyKey} → 重新发布 {v}</>,
     detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对全体用户生效),所以同样走操作确认。仅完整满足中英越、受众和位置契约的归档版允许恢复。</>,
     amplifies: false,
-    // 处置类(回滚到已选历史版 v):目标版本由点击的归档版决定,run 不消费 v,按 MC 显式 edit 契约不传 edit,不强迫运营手输已确定的版本号。
     run: (reason) => {
-      runBackend(actions.rollbackI1CopyVersion(HCB, v, reason), `回滚 ${v} 已确认生效`);
+      runBackend(actions.rollbackI1CopyVersion(copyKey, v, reason), `${copyKey} 已回滚到 ${v}`);
     },
   });
 
-  const archiveCurrentVersion = () => openActionConfirm({
-    action: <>下架当前发布版 · {HCB}{hcbActiveVersion ? ` ${hcbActiveVersion}` : ""}</>,
+  const archiveCurrentVersion = (copyKey: string, version: string) => openActionConfirm({
+    action: <>下架当前发布版 · {copyKey} {version}</>,
     detail: <>下架后该文案位<b>没有生效版本</b>,App 端会退回内置兜底文案——一般只在文案出合规问题时才这么做;常规换版直接发新版即可。下架立即生效。</>,
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.archiveI1Copy(HCB, reason), "当前发布版下架已确认生效");
+      runBackend(actions.archiveI1Copy(copyKey, version, reason), `${copyKey} ${version} 已下架`);
     },
   });
 
@@ -472,10 +372,6 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     return <span className="bdg dim">已弃用</span>;
   };
 
-  const hcbDraftZh = liveCopyDraftZh(HCB);
-  const hcbDraftEn = liveCopyDraftEn(HCB);
-  const hcbDraftVi = liveCopyDraftVi(HCB) || hcbDraftVersionRow?.vi;
-  const hcbDraftMeta = liveCopyDraftMeta(HCB);
   const surfaceSummary = COPY_POOL.length
     ? Object.entries(COPY_POOL.reduce<Record<string, number>>((acc, copy) => {
         const key = copy.surface || "未设置";
@@ -521,7 +417,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         <div className="l-h">
           <span className="ttl">文案位置配置</span>
           <span className="sub">· 位置由后端统一管理，文案只能选择所属投放模块下的启用位置</span>
-          <div className="r"><button className="l-btn sm mc" onClick={createCopyPosition}>+ 新增位置</button></div>
+          {canWrite && <div className="r"><button type="button" className="l-btn sm mc" onClick={createCopyPosition}>+ 新增位置</button></div>}
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 660 }}>
@@ -537,7 +433,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <td>{position.status.toUpperCase() === "ACTIVE"
                       ? <span className="bdg ok">启用</span>
                       : <span className="bdg dim">停用</span>}</td>
-                    <td style={{ textAlign: "right" }}><button className="l-btn sm" onClick={() => deleteCopyPosition(position.positionKey)}>删除</button></td>
+                    <td style={{ textAlign: "right" }}>{canWrite && <button type="button" className="l-btn sm" onClick={() => deleteCopyPosition(position.positionKey)}>删除</button>}</td>
                   </tr>
                 );
               })}
@@ -555,9 +451,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           <div className="r chips">
             <span className="lb">投放模块</span>
             {SURF_FLT.map(([k, l]) => (
-              <button key={k} className={`chip${surf === k ? " sel" : ""}`} onClick={() => setSurf(k)}>{l}</button>
+              <button type="button" key={k} className={`chip${surf === k ? " sel" : ""}`} aria-pressed={surf === k} onClick={() => setSurf(k)}>{l}</button>
             ))}
-            <button className="l-btn sm mc" onClick={createCopy}>+ 新增文案</button>
+            {canCreateCopy && <button type="button" className="l-btn sm mc" onClick={createCopy}>+ 新增文案</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -590,7 +486,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                   <td>{c.expId === "—" ? <span style={{ color: "var(--ink-4)" }}>—</span> : <span className="bdg cyan">{c.expId}</span>}</td>
                   <td className="mono" style={{ fontSize: 11.5 }}>{c.lastChange}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button className="l-btn sm mc" onClick={() => editCopy(c)}>编辑文案</button>
+                    {canWrite && <button type="button" className="l-btn sm mc" onClick={() => editCopy(c)}>编辑文案</button>}
                   </td>
                 </tr>
               ))}
@@ -610,100 +506,71 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      <div className="two-col">
-        {/* (b) 版本详情 · home.conversionBanner */}
-        <section className="l-card">
-          <div className="l-h">
-            <span className="ttl">版本详情(b)· <span className="icode electric">{HCB}</span></span>
-            <span className="sub">· 主转化横幅</span>
-            <div className="r">
-              <button className="l-btn sm" onClick={editDraftVersion}>编辑草稿</button>
-              <button className="l-btn sm mc" onClick={pubDraftVersion}>发布草稿</button>
-            </div>
+      {/* (b) 覆盖所有文案位的版本列表 */}
+      <section className="l-card" data-proof="copy-version-list">
+        <div className="l-h">
+          <span className="ttl">文案版本列表(b)</span>
+          <span className="sub">· 版本属于具体文案，历史版本不可覆盖；新版本号由服务器按该文案自动递增</span>
+          <div className="r chips">
+            <label className="lb" htmlFor="copy-version-filter">文案</label>
+            <select id="copy-version-filter" className="fld" style={{ width: 190, height: 32 }} value={versionCopyFlt} onChange={(event) => { setVersionCopyFlt(event.target.value); setVersionPage(1); }}>
+              <option value="all">全部文案</option>
+              {COPY_POOL.map((copy) => <option key={copy.key} value={copy.key}>{copy.desc} · {copy.key}</option>)}
+            </select>
+            <span className="lb">版本状态</span>
+            {([['all', '全部'], ['draft', '草稿'], ['published', '已发布'], ['archived', '已归档']] as [VersionStatusFlt, string][]).map(([key, label]) => (
+              <button type="button" key={key} className={`chip${versionStatusFlt === key ? " sel" : ""}`} aria-pressed={versionStatusFlt === key} onClick={() => { setVersionStatusFlt(key); setVersionPage(1); }}>{label}</button>
+            ))}
           </div>
-          <div className="l-b" style={{ paddingTop: 6 }}>
-            {hcbPublished ? (
-              <div className="ab-grid">
-                <div className="ab-prev">
-                  <div className="lc">EN · {hcbActiveVersion || "published"}</div>
-                  <div className="tx">{hcbPublished.en || "—"}</div>
-                </div>
-                <div className="ab-prev">
-                  <div className="lc">ZH · {hcbActiveVersion || "published"}</div>
-                  <div className="tx">{hcbPublished.zh || "—"}</div>
-                </div>
-                <div className="ab-prev">
-                  <div className="lc">VI · {hcbActiveVersion || "published"}</div>
-                  <div className="tx">{hcbPublished.vi || "—"}</div>
-                </div>
-              </div>
-            ) : (
-              <div className="itint warn" style={{ marginBottom: 12 }}>暂无后端发布版详情</div>
-            )}
-            <div className="itint ok" style={{ marginBottom: 12 }}>
-              <b>变量令牌校验通过</b> · 中英越三份文案用到的变量令牌集合必须完全一致(词序可以不同);缺一个或多一个,发布会被服务器直接拦下。
-            </div>
-            {hcbDraftZh && hcbDraftEn && hcbDraftVi && (
-              <div className="itint cyan" data-proof="copy-draft-preview" style={{ marginBottom: 12 }}>
-                <b>当前草稿回显</b> · 受众 <span className="mono">{hcbDraftMeta.audience ?? "未设置"}</span>
-                {" "}· 分流 <span className="mono">{hcbDraftMeta.trafficSplit ?? "未设置"}%</span>
-                {" "}· 位置 <span className="mono">{hcbDraftMeta.surface ?? hcbRow?.surface ?? "未设置"}</span>
-                {" "}· 槽位 <span className="mono">{hcbDraftMeta.copyPosition ?? hcbDraftVersionRow?.copyPosition ?? hcbRow?.copyPosition ?? "未设置"}</span>
-                {hcbDraftMeta.note ? <> · 说明 <span className="mono">{hcbDraftMeta.note}</span></> : null}
-                <div className="ab-grid" style={{ marginTop: 8 }}>
-                  <div className="ab-prev">
-                    <div className="lc">ZH · draft</div>
-                    <div className="tx">{hcbDraftZh}</div>
-                  </div>
-                  <div className="ab-prev">
-                    <div className="lc">EN · draft</div>
-                    <div className="tx">{hcbDraftEn}</div>
-                  </div>
-                  <div className="ab-prev">
-                    <div className="lc">VI · draft</div>
-                    <div className="tx">{hcbDraftVi}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div style={{ overflowX: "auto" }}>
-              <table className="l-tbl" style={{ minWidth: 420 }}>
-                <thead>
-                  <tr>
-                    <th>版本</th>
-                    <th>状态</th>
-                    <th>操作 / 留痕</th>
-                    <th>时间</th>
-                    <th style={{ textAlign: "right" }}></th>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 1280 }}>
+            <thead><tr><th>文案标识</th><th>文案位置</th><th>版本</th><th>中英越文案</th><th>受众</th><th>状态</th><th>操作 / 留痕</th><th>时间</th><th style={{ textAlign: "right" }}></th></tr></thead>
+            <tbody>
+              {pagedVersions.map((row) => {
+                const copy = COPY_POOL.find((item) => item.key === row.copyKey);
+                const status = row.st.toLowerCase();
+                const existingDraft = copy?.draftVersion
+                  ? COPY_VERSIONS.find((item) => item.copyKey === copy.key && item.v === copy.draftVersion && item.st.toLowerCase() === "draft")
+                  : undefined;
+                return (
+                  <tr key={`${row.copyKey}:${row.v}`}>
+                    <td><div style={{ fontWeight: 600 }}>{copy?.desc || row.copyKey}</div><span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{row.copyKey}</span></td>
+                    <td><div className="mono" style={{ fontSize: 11.5 }}>{row.copyPosition || "—"}</div><span className="bdg dim">{COPY_MODULE_LABELS[row.surface as CopyModule] ?? row.surface}</span></td>
+                    <td className="mono" style={{ fontWeight: 700 }}>{row.v}</td>
+                    <td style={{ minWidth: 300 }}>
+                      <div className="tiny" title={row.zh} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>ZH</b> · {row.zh || "—"}</div>
+                      <div className="tiny" title={row.vi} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>VI</b> · {row.vi || "—"}</div>
+                      <div className="tiny" title={row.en} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><b>EN</b> · {row.en || "—"}</div>
+                    </td>
+                    <td style={{ minWidth: 170 }}><div className="tiny">{row.audience || "全量"}</div></td>
+                    <td>{renderVerStatus(status)}</td>
+                    <td><div className="tiny">{row.chain || "—"}</div>{row.versionNote && <div className="tiny" style={{ color: "var(--ink-4)" }}>{row.versionNote}</div>}</td>
+                    <td className="mono" style={{ fontSize: 11.5 }}>{row.ts}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      {canWrite && status === "archived" && <button type="button" className="l-btn sm mc" onClick={() => rollbackTo(row.copyKey, row.v)}>回滚</button>}
+                      {canWrite && status === "published" && copy && (existingDraft
+                        ? <button type="button" className="l-btn sm" onClick={() => editCopy(copy, existingDraft)}>继续草稿 {existingDraft.v}</button>
+                        : <button type="button" className="l-btn sm" onClick={() => editCopy(copy, row, true)}>新增版本</button>)}
+                      {canWrite && status === "published" && copy?.version === row.v && <button type="button" className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => archiveCurrentVersion(row.copyKey, row.v)}>下架</button>}
+                      {canWrite && status === "draft" && copy && <button type="button" className="l-btn sm mc" onClick={() => editCopy(copy, row)}>编辑 / 发布</button>}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {HCB_VERSIONS.map((row) => (
-                    <tr key={row.v}>
-                      <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{row.v}</td>
-                      <td>{renderVerStatus(row.st)}</td>
-                      <td style={{ fontSize: 12 }}>{row.chain}</td>
-                      <td className="mono" style={{ fontSize: 11.5 }}>{row.ts}</td>
-                      <td style={{ textAlign: "right" }}>
-                        {row.st === "archived" ? (
-                          <button className="l-btn sm mc" onClick={() => rollbackTo(row.v)}>回滚到此版</button>
-                        ) : (
-                          <button className="l-btn sm" onClick={() => toast(`版本对比 ${row.v} vs ${hcbActiveVersion || "当前版"} · 变量令牌一致`)}>对比</button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <button className="l-btn sm mc" style={{ marginTop: 10 }} onClick={archiveCurrentVersion}>下架当前发布版{hcbActiveVersion ? `(${hcbActiveVersion})` : ""}</button>
-            {/* 触摸 hcbRow 仅用于编译期完整性(确保 HCB 在 COPY_POOL 中存在,后续 audit 改文案位时强类型保证)。 */}
-            <span style={{ display: "none" }} data-hcb={hcbRow?.key ?? HCB} />
-          </div>
-        </section>
+                );
+              })}
+              {filteredVersions.length === 0 && <tr><td colSpan={9}><div className="itint warn">当前筛选条件下没有版本记录。</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="l-b" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, paddingTop: 10 }}>
+          <span className="tiny">共 {filteredVersions.length} 条 · 第 {safeVersionPage}/{versionPages} 页</span>
+          <button type="button" className="chip" disabled={safeVersionPage <= 1} onClick={() => setVersionPage(Math.max(1, safeVersionPage - 1))}>上一页</button>
+          <button type="button" className="chip" disabled={safeVersionPage >= versionPages} onClick={() => setVersionPage(Math.min(versionPages, safeVersionPage + 1))}>下一页</button>
+        </div>
+      </section>
 
-        {/* 实验框架默认参数 */}
-        <section className="l-card">
+      {/* 实验框架默认参数 */}
+      <section className="l-card">
           <div className="l-h">
             <span className="ttl">实验框架默认参数</span>
             <span className="sub">· 每个实验启动时按这套默认值锁定,启动后不再变</span>
@@ -718,7 +585,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <div className="s">{p.sub}</div>
                   </div>
                   <span className="v">{cur}</span>
-                  <button className="l-btn sm" onClick={() => adjustFramework(p.key, p.name, cur)}>调整</button>
+                  {canWrite && <button type="button" className="l-btn sm" onClick={() => adjustFramework(p.key, p.name, cur)}>调整</button>}
                 </div>
               );
             })}
@@ -729,8 +596,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
               <b>不碰钱</b> · 这页只改措辞,费率 / 奖励 / 价格一个都改不了——那些归各业务域,改之前要过备付金红线;文案发布没有这道约束。
             </div>
           </div>
-        </section>
-      </div>
+      </section>
 
       {/* (c) A/B 实验面板 */}
       <section className="l-card">
@@ -739,7 +605,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           <span className="sub">· 曝光 / 转化 / CVR 全部由事件流结算(服务器口径),不是页面临时拼的数</span>
           <div className="r chips">
             {EXP_FLT.map(([k, l]) => (
-              <button key={k} className={`chip${expFlt === k ? " sel" : ""}`} onClick={() => setExpFlt(k)}>{l}</button>
+              <button type="button" key={k} className={`chip${expFlt === k ? " sel" : ""}`} aria-pressed={expFlt === k} onClick={() => setExpFlt(k)}>{l}</button>
             ))}
           </div>
         </div>
@@ -750,7 +616,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                 <th>实验</th>
                 <th>文案位</th>
                 <th>变体 × 分流</th>
-                <th>定向</th>
+                <th>继承文案受众</th>
                 <th className="num">曝光</th>
                 <th className="num">转化</th>
                 <th className="num">CVR</th>
@@ -789,7 +655,10 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                         </div>
                       ))}
                     </td>
-                    <td style={{ fontSize: 12 }}>{e.audience}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {e.audience}
+                      <div className="tiny" style={{ color: "var(--ink-4)" }}>实验启动快照 · 预计覆盖 {e.estimatedAudience == null ? "待后端统计" : `${e.estimatedAudience.toLocaleString()} 人`}</div>
+                    </td>
                     <td className="num mono">{e.impressions}</td>
                     <td className="num mono">{e.conversions}</td>
                     <td className="num mono" style={{ fontWeight: 700 }}>{maxCvr}%</td>
@@ -798,10 +667,10 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                       <div style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 2 }}>{e.note}</div>
                     </td>
                     <td style={{ textAlign: "right" }}>
-                      {isRunning ? (
-                        <button className="l-btn sm mc" onClick={() => stopExp(e.id)}>停止</button>
-                      ) : st === "discarded" ? (
-                        <button className="l-btn sm mc" onClick={() => adoptExp(e.id)}>采纳获胜</button>
+                      {canWrite && isRunning ? (
+                        <button type="button" className="l-btn sm mc" onClick={() => stopExp(e.id)}>停止</button>
+                      ) : canWrite && st === "discarded" ? (
+                        <button type="button" className="l-btn sm mc" onClick={() => adoptExp(e.id)}>采纳获胜</button>
                       ) : null}
                     </td>
                   </tr>
@@ -836,9 +705,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
             reason: "文案池为后端返回的当前文案位列表,通过界面/状态字段定位后编辑",
           },
           {
-            label: "版本详情(b)· home.conversionBanner",
-            maxRows: HCB_VERSIONS.length,
-            reason: "版本详情展示后端返回的当前文案位版本记录",
+            label: "文案版本列表(b)",
+            maxRows: VERSION_PAGE_SIZE,
+            reason: "版本列表按 20 条分页展示后端版本，并可按文案和状态筛选",
           },
           {
             label: "A/B 实验面板(c)",

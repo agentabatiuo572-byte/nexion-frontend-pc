@@ -727,7 +727,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       zh: spec.zh ?? "",
       en: spec.en ?? "",
       vi: spec.vi ?? "",
-      version: spec.version ?? "vNext",
+      version: spec.version ?? "",
       surface: spec.surface ?? "",
       copyPosition: spec.copyPosition ?? spec.positions?.find((item) => item.surface === spec.surface && item.status !== "disabled")?.value ?? "",
       audience: spec.audience ?? spec.audiences?.[0] ?? "",
@@ -946,7 +946,6 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       if (!state.zh?.includes(ph) || !state.en?.includes(ph)) missing.push(`占位符 ${ph}`);
     });
   } else if (spec.kind === "copy-edit") {
-    needs("version", "版本号");
     needs("surface", "投放模块");
     needs("copyPosition", "文案位置");
     needs("phaseMin", "最低 P 阶段");
@@ -975,7 +974,6 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("language", "语言");
     needs("registrationDaysGt", "注册天数");
     needs("trafficSplit", "分流比例");
-    needs("version", "首版版本号");
     needs("versionNote", "版本说明");
     needs("zh", "中文文案");
     needs("en", "英文文案");
@@ -1389,12 +1387,20 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
             {select("surface", "投放模块", modules.map((item) => item.value), moduleLabels, undefined, changeSurface)}
             {select("copyPosition", "文案位置", positions.map((item) => item.value), positionLabels)}
             {input("trafficSplit", "分流比例(%)", "50", "number")}
-            {input("version", "首版版本号", "v1")}
+            <div className="field" data-proof="copy-system-version" style={{ marginBottom: 0 }}>
+              <span>首版版本号</span>
+              <output className="fld" aria-label="首版版本号" style={{ display: "flex", alignItems: "center", color: "var(--ink-3)" }}>v1 · 系统自动生成</output>
+            </div>
           </div>
         )}
         {spec.kind === "copy-edit" && (
           <div className="grid g-2" style={{ gap: 10, marginBottom: 10 }}>
-            {input("version", "变体/版本号 variant id", "v8")}
+            <div className="field" data-proof="copy-system-version" style={{ marginBottom: 0 }}>
+              <span>目标版本号</span>
+              <output className="fld" aria-label="目标版本号" style={{ display: "flex", alignItems: "center", color: "var(--ink-3)" }}>
+                {value.version ? `${value.version} · 已有草稿` : "系统自动生成"}
+              </output>
+            </div>
             {select("surface", "投放模块", modules.map((item) => item.value), moduleLabels, undefined, changeSurface)}
             {select("copyPosition", "文案位置", positions.map((item) => item.value), positionLabels)}
             {input("trafficSplit", "分流比例 traffic split(%)", "50", "number")}

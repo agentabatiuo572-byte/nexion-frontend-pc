@@ -101,6 +101,7 @@ export type CopyExperimentRow = {
   copyKey: string;
   variants: { name: string; split: number; cvr: number }[];
   audience: string;
+  estimatedAudience?: number;
   impressions: string;
   conversions: string;
   state: string;
@@ -371,7 +372,7 @@ export type IContentActions = {
   saveI1CopyDraft: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI1CopyVersion: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   rollbackI1CopyVersion: (copyKey: string, version: string, reason: string) => Promise<void>;
-  archiveI1Copy: (copyKey: string, reason: string) => Promise<void>;
+  archiveI1Copy: (copyKey: string, expectedVersion: string, reason: string) => Promise<void>;
   updateI1Framework: (paramKey: string, value: string, reason: string) => Promise<void>;
   stopI1Experiment: (experimentId: string, reason: string) => Promise<void>;
   adoptI1Experiment: (experimentId: string, reason: string) => Promise<void>;
@@ -426,7 +427,7 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   saveI1CopyDraft: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI1CopyVersion: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   rollbackI1CopyVersion: (copyKey, version, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  archiveI1Copy: (copyKey, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  archiveI1Copy: (copyKey, expectedVersion, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   updateI1Framework: (paramKey, value, reason) => apiRequest(`/copy-ab/framework/${encodeURIComponent(paramKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
   stopI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/stop`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   adoptI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/adopt`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
