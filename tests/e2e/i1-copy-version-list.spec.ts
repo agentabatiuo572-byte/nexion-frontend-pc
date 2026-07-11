@@ -93,7 +93,8 @@ test("I1 先配置文案版本，再由新增文案选择启用版本", async ({
   await versionList.getByRole("button", { name: "已发布" }).click();
   const publishedRows = versionList.locator("tbody tr");
   await expect(publishedRows).toHaveCount(1);
-  await expect(versionList.getByText("published", { exact: true })).toBeVisible();
+  await expect(publishedRows.first().locator(".bdg.ok")).toHaveText("已发布");
+  await expect(versionList.getByText("published", { exact: true })).toHaveCount(0);
   await expect(page.getByText("预计覆盖 18,420 人")).toBeVisible();
 
   await versionList.getByRole("button", { name: "草稿", exact: true }).click();

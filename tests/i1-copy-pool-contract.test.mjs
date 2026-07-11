@@ -164,6 +164,16 @@ test("内容历史覆盖全部文案，而不是固定展示单个文案位", ()
   assert.doesNotMatch(component, /const HCB = "home\.conversionBanner"/);
 });
 
+test("文案内容历史的状态徽标和状态机只展示中文", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+
+  assert.match(component, /st === "draft"[\s\S]{0,100}>草稿<\/span>/);
+  assert.match(component, /st === "published"[\s\S]{0,100}>已发布<\/span>/);
+  assert.match(component, /className="bdg dim">已归档<\/span>/);
+  assert.doesNotMatch(component, /className="bdg (?:warn|ok|dim)">(?:draft|published|archived)<\/span>/);
+  assert.doesNotMatch(component, /className="st(?: ok)?">(?:draft|published|archived)/);
+});
+
 test("文案版本配置位于文案池之前，并提供真实 CRUD 接口", () => {
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
   const client = read("lib/admin/i-client.ts");

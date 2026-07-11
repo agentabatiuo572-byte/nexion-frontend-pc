@@ -459,9 +459,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   };
 
   const renderVerStatus = (st: string) => {
-    if (st === "draft") return <span className="bdg warn">draft</span>;
-    if (st === "published") return <span className="bdg ok">published</span>;
-    return <span className="bdg dim">archived</span>;
+    if (st === "draft") return <span className="bdg warn">草稿</span>;
+    if (st === "published") return <span className="bdg ok">已发布</span>;
+    return <span className="bdg dim">已归档</span>;
   };
 
   const renderExpState = (e: ExpRow) => {
@@ -629,11 +629,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="ab-sm">
             <span style={{ fontSize: 12, color: "var(--ink-4)", marginRight: 6 }}>版本状态机:</span>
-            <span className="st">draft 草稿</span>
+            <span className="st">草稿</span>
             <span className="ar">发布(操作确认)→</span>
-            <span className="st ok">published 生效中</span>
+            <span className="st ok">生效中</span>
             <span className="ar">下架/被新版取代 →</span>
-            <span className="st">archived 归档</span>
+            <span className="st">已归档</span>
             <span className="ar" style={{ marginLeft: 10 }}>回滚 = 把历史版重新发布,同样走操作确认</span>
           </div>
         </div>
