@@ -23,7 +23,7 @@ export const DOMAIN_G: ModuleEntry[] = [
   },
   {
     path: "/finance-products/genesis",
-    summary: "Genesis 创世经济(G4)。节点、分红、转售版税、批量派发和持仓状态都从服务端读取。调高分红率要过 B1 红线并附业务决议出处;市场熔断和地区封锁由 J 域生效。",
+    summary: "Genesis 创世经济(G4)。节点、排放、转售版税、批量派发和持仓状态都从服务端读取。调高排放率要过 B1 红线并附业务决议出处;市场熔断和地区封锁由 J 域生效。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

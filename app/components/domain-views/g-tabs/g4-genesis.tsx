@@ -203,7 +203,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       action: marketOn ? "一二级市场熔断" : "恢复一二级市场",
       detail: marketOn
         ? <>立即停一二级市场交易，联动 {overview.market.linkedDomain} 开关 {overview.market.configKey}。</>
-        : <>恢复一二级市场会恢复 Genesis 节点流转与分红派发，提交前核验 B1 覆盖率，当前 {cov}%。</>,
+        : <>恢复一二级市场会恢复 Genesis 节点流转；排放仍受 H1 开阀控制。提交前核验 B1 覆盖率，当前 {cov}%。</>,
       amplifies: !marketOn,
       run: (reason) => {
         const def = findHighOp("g4_genesis_market_status")!;
@@ -227,12 +227,12 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   const runRerunBatch = () => {
     openActionConfirm({
-      action: `重跑今日分红批次 ${dividend.batchNo}`,
+      action: `重跑今日排放批次 ${dividend.batchNo}`,
       detail: "批次按日期带防重号:已发过的户不会重复发,只补发失败户。重跑结果落审计 · 入 A2 待门槛者执行。",
       run: (reason) => {
         const def = findHighOp("g4_genesis_rerun_dividend")!;
         void propose(ctx.toast, {
-          action: `重跑分红批次 · ${dividend.batchNo}`,
+          action: `重跑排放批次 · ${dividend.batchNo}`,
           obj: dividend.batchNo,
           before: "已派发(失败户待补)",
           after: "重跑完成 · 只补失败户",
@@ -254,13 +254,16 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   const dividendParam = paramByKey(overview, "dividend");
   const royaltyParam = paramByKey(overview, "royalty");
   const divBaseParam = paramByKey(overview, "divBase");
+  const airdropPctParam = paramByKey(overview, "airdropPct");
+  const emissionCurveParam = paramByKey(overview, "emissionCurve");
+  const airdropLockDaysParam = paramByKey(overview, "airdropLockDays");
 
   return (
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G4 操作提示 · {error}</div>}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div><div className="sub">{fmtUsd(stats.unitPrice, 0)} / 张 · 距售罄 {fmtNumber(stats.unsold, 0)} 张</div></div>
-        <div className="f-stat"><div className="k">分红承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">按真实 series + config 计算</div></div>
+        <div className="f-stat"><div className="k">排放承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">上所开阀后按真实策略计提</div></div>
         <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div><div className="sub">24h 量 {fmtUsdCompact(stats.secondary.vol24h)} · 在挂 {fmtNumber(stats.secondary.listed, 0)}</div></div>
         <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">联动 {overview.market.linkedDomain} · {overview.market.configKey}</div></div>
       </div>
@@ -278,15 +281,19 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             </div>
             {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{supplyParam.sub}</div></div><span className="v">{supplyParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(supplyParam)}>调整</button></div>}
             {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价</div><div className="s">{priceParam.sub}</div></div><span className="v">{priceParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(priceParam)}>调整</button></div>}
-            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日分红率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(dividendParam)}>调整</button></div>}
+            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日排放率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(dividendParam)}>调整</button></div>}
             {royaltyParam && <div className="p-row"><div className="txt"><div className="k">二级版税</div><div className="s">{royaltyParam.sub}</div></div><span className="v">{royaltyParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(royaltyParam)}>调整</button></div>}
+            <div className="p-row"><div className="txt"><div className="k">排放开阀 <span className="bdg ok" style={{ fontSize: 9 }}>H1 权威</span></div><div className="s">上所前关闭；由 H1 逐月节奏旋钮控制，本页只读</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
+            {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{airdropPctParam.sub}</div></div><span className="v">{airdropPctParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(airdropPctParam)}>调整</button></div>}
+            {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">排放曲线</div><div className="s">{emissionCurveParam.sub}</div></div><span className="v">{emissionCurveParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(emissionCurveParam)}>调整</button></div>}
+            {airdropLockDaysParam && <div className="p-row"><div className="txt"><div className="k">OG 倍率锁仓期</div><div className="s">{airdropLockDaysParam.sub}</div></div><span className="v">{airdropLockDaysParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(airdropLockDaysParam)}>调整</button></div>}
           </div>
         </section>
 
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">一二级市场</span>
-            <span className="sub">· 实时 stats · 分红跟随 NFT</span>
+            <span className="sub">· 实时 stats · 排放跟随 NFT</span>
             <div className="r">
               <button className="l-btn mc" disabled={busy} onClick={runMarketSwitch}>{marketOn ? "市场熔断" : "恢复市场"}</button>
               <Link href="/emergency/geo-block" className="l-btn">地域封锁(J2)→</Link>
@@ -305,28 +312,28 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
                 <span key={state} className={index <= 1 ? "st ok" : "st"}>{state}</span>
               ))}
             </div>
-            <div className="gtint" style={{ marginTop: 12 }}><b>分红与负债</b> · 当前地域封锁:{geoBlocked}(J2 只读)。二级转让后分红权跟随最新持有者，节点台账来自持有表。</div>
+            <div className="gtint" style={{ marginTop: 12 }}><b>排放与负债</b> · 当前地域封锁:{geoBlocked}(J2 只读)。二级转让后排放权益跟随最新持有者，节点台账来自持有表。</div>
           </div>
         </section>
       </div>
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">分红派发监控</span>
-          <span className="sub">· 派发池和批次来自后端计算</span>
+          <span className="ttl">排放派发监控</span>
+          <span className="sub">· H1 开阀后按服务端排放参数执行</span>
           <div className="r">
             {divBaseParam && <button className="l-btn mc" disabled={busy} onClick={() => adjustParam(divBaseParam)}>调整基数口径</button>}
-            <button className="l-btn" disabled={busy} onClick={runRerunBatch}>重跑今日批次{batchRerun ? "(已重跑)" : ""}</button>
+            <button className="l-btn" disabled={busy || !overview.emissionGate.open || !dividend.batchNo} onClick={runRerunBatch}>重跑今日批次{batchRerun ? "(已重跑)" : ""}</button>
           </div>
         </div>
         <div className="l-b">
           <div className="mk-tiles">
             <div className="t"><div className="k">平台日交易量基数(今日)</div><div className="v">{fmtUsdCompact(dividend.dailyVolumeBase)}</div></div>
-            <div className="t"><div className="k">今日分红池</div><div className="v" style={{ color: "var(--success)" }}>{fmtUsdCompact(dividend.poolToday)}</div></div>
+            <div className="t"><div className="k">今日排放池</div><div className="v" style={{ color: "var(--success)" }}>{fmtUsdCompact(dividend.poolToday)}</div></div>
             <div className="t"><div className="k">每 slot 均分</div><div className="v">{fmtUsd(dividend.perSlotPerDay)} / 天</div></div>
-            <div className="t"><div className="k">今日批次 {dividend.batchNo}</div><div className="v" style={{ color: "var(--success)" }}>已派 {fmtNumber(stats.sold, 0)} 户 · {fmtUsdCompact(dividend.payoutToday)}</div></div>
+            <div className="t"><div className="k">今日批次 {dividend.batchNo || "—"}</div><div className="v" style={{ color: "var(--success)" }}>{overview.emissionGate.open ? `已派 ${fmtNumber(stats.sold, 0)} 户 · ${fmtUsdCompact(dividend.payoutToday)}` : "未开阀 · 未派发"}</div></div>
           </div>
-          <div className="gtint" style={{ marginTop: 12 }}><b>两套口径</b> · 用户派发按配置基数均分；财务预提按节点价 × 持有量 × 分红率保底。改分红率或基数口径会触发 B1 覆盖率预检，当前覆盖率 {cov}%。</div>
+          <div className="gtint" style={{ marginTop: 12 }}><b>两套口径</b> · 用户排放按服务端配置参数计算；财务预提按节点价 × 持有量 × 排放率保底。曲线字段是运营策略说明，当前批次金额仍按服务端基数与排放率计算。改排放率、曲线或基数口径会触发 B1 覆盖率预检，当前覆盖率 {cov}%。</div>
         </div>
       </section>
 
@@ -337,7 +344,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 760 }}>
-            <thead><tr><th>节点</th><th>持有者(脱敏)</th><th>来源</th><th className="num">lifetime 分红</th><th>状态</th></tr></thead>
+            <thead><tr><th>节点</th><th>持有者(脱敏)</th><th>来源</th><th className="num">lifetime 排放</th><th>状态</th></tr></thead>
             <tbody>
               {overview.nodes.length === 0 ? (
                 <tr><td colSpan={5} style={{ color: "var(--ink-3)", padding: 16 }}>暂无节点持有记录</td></tr>
@@ -375,7 +382,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>持有、分红、二级成交全部服务器为准</b>:节点序号和分红服务端单源,客户端伪造持有/分红无效。数据源:{overview.sources.join(" / ")}。</p>
+      <p className="f-foot"><b>持有、排放、二级成交全部服务器为准</b>:节点序号和排放服务端单源,客户端伪造持有/排放无效。数据源:{overview.sources.join(" / ")}。</p>
 
       {selectedNode && <NodeDrawer node={selectedNode} onClose={() => setNodeDrawer(null)} />}
     </>
@@ -386,7 +393,7 @@ function NodeDrawer({ node, onClose }: { node: G4Node; onClose: () => void }) {
   return (
     <Drawer title={`Genesis 节点 · ${node.id}`} sub={`持有者 ${node.owner} · ${node.statusLabel} · 购入:${node.buy}`} onClose={onClose}
       footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={onClose}>关闭</button>}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>分红</div>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>排放</div>
       {node.dividends.map((item) => (
         <div className="kv2" key={item.label}><span className="k">{item.label}</span><span className="v">{item.value}</span></div>
       ))}
@@ -397,7 +404,7 @@ function NodeDrawer({ node, onClose }: { node: G4Node; onClose: () => void }) {
           <tr key={`${transfer.time}-${index}`}><td className="mono">{transfer.time}</td><td style={{ fontSize: 12 }}>{transfer.event}</td><td style={{ fontSize: 12, color: "var(--ink-3)" }}>{transfer.royalty}</td></tr>
         ))}</tbody>
       </table>
-      <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · 节点详情来自后端持有记录和分红口径计算。</div>
+      <div className="gtint" style={{ marginTop: 12 }}><b>只读监控</b> · 节点详情来自后端持有记录和排放口径计算。</div>
     </Drawer>
   );
 }

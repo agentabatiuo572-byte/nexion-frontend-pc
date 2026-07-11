@@ -140,7 +140,7 @@ export const CONSOLE_NAV: NavDomain[] = [
     // 设计稿收编 E1-E7 → 5 子模块并全系统统一连续编号 E1-E5:代际发布门(原 E2)并入 E1、
     // 设备生命周期(原 E4)并入 E5→现 E3。同 F 域 F1-F8→F1-F5。nav id == prdAnchor == PRD §10 章节(PRD 已同步重编号)。
     l2: [
-      { id: "E1", name: "商品目录 & 代际门", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
+      { id: "E1", name: "商品目录 & 上架门", path: "/devices/pricing", prdAnchor: "E1", batch: "V2", status: "flagship" },
       { id: "E2", name: "收益 & 任务引擎", path: "/devices/tasks", prdAnchor: "E2", batch: "V2", status: "flagship" },
       { id: "E3", name: "生命周期 & Trade-in", path: "/devices/trade-in", prdAnchor: "E3", batch: "V2", status: "flagship" },
       { id: "E4", name: "订单状态机", path: "/devices/orders", prdAnchor: "E4", batch: "V2", status: "flagship" },

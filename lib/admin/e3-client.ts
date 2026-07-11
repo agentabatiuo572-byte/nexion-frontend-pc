@@ -60,19 +60,39 @@ interface BackendTradeinTx {
 }
 
 const BACKEND_TO_FRONTEND_KEY: Record<string, string> = {
-  degradeEarly: "E.device.degradeEarly",
-  degradeMid: "E.device.degradeMid",
-  degradeLate: "E.device.degradeLate",
+  // FEAT-DEV01 任务产能节奏(键名 capacity 口径;数值与旧三段曲线等效)
+  capacityBand1DeltaPct: "E.device.capacity.band1DeltaPct",
+  capacityBand2DeltaPct: "E.device.capacity.band2DeltaPct",
+  capacityBand3DeltaPct: "E.device.capacity.band3DeltaPct",
   stageEarlyEnd: "E.device.stageEarlyEnd",
   stageMidEnd: "E.device.stageMidEnd",
   cycleMonths: "E.device.cycleMonths",
-  minEfficiency: "E.device.minEfficiency",
+  capacityFloorPct: "E.device.capacity.floorPct",
+  capacitySubsidyDays: "E.device.capacity.subsidyDays",
+  capacityApplyToPhone: "E.device.capacity.applyTo.phone",
+  capacityApplyToCloudShare: "E.device.capacity.applyTo.cloud-share",
+  capacityApplyToPcGpu: "E.device.capacity.applyTo.pc-gpu",
+  capacityApplyToS1: "E.device.capacity.applyTo.stellarbox-s1",
+  capacityApplyToPro: "E.device.capacity.applyTo.stellarbox-pro",
+  capacityApplyToProV2: "E.device.capacity.applyTo.stellarbox-pro-v2",
+  capacityApplyToRackP1: "E.device.capacity.applyTo.stellarrack-p1",
+  capacityApplyToRackP2: "E.device.capacity.applyTo.stellarrack-p2",
   taskLockS1: "E.device.taskLock.s1",
   taskLockPro: "E.device.taskLock.pro",
   taskLockRack: "E.device.taskLock.rack",
-  salvagePct: "E.tradein.salvagePct",
+  tradeinEnabled: "E.tradein.enabled",
+  tradeinLadderCut1: "E.tradein.ladder.cut1",
+  tradeinLadderCut2: "E.tradein.ladder.cut2",
+  tradeinLadderCut3: "E.tradein.ladder.cut3",
+  tradeinLadderCut4: "E.tradein.ladder.cut4",
+  tradeinLadderCredit1: "E.tradein.ladder.credit1",
+  tradeinLadderCredit2: "E.tradein.ladder.credit2",
+  tradeinLadderCredit3: "E.tradein.ladder.credit3",
+  tradeinLadderCredit4: "E.tradein.ladder.credit4",
+  tradeinLadderCredit5: "E.tradein.ladder.credit5",
+  tradeinRequireHigherPrice: "E.tradein.requireHigherPrice",
+  tradeinMaxDevicesPerOrder: "E.tradein.maxDevicesPerOrder",
   eligibility: "E.tradein.eligibility",
-  minHoldingMonths: "E.tradein.minHoldingMonths",
   promoMult: "E.tradein.promoMult",
   promoCooldownDays: "E.tradein.promo.cooldownDays",
   promoMaxPerSession: "E.tradein.promo.maxPerSession",
@@ -80,6 +100,8 @@ const BACKEND_TO_FRONTEND_KEY: Record<string, string> = {
   promoMinAgeDays: "E.tradein.promo.minAgeDays",
   promoRoutes: "E.tradein.promo.routes",
   inventorySoftMax: "E.tradein.inventorySoftMax",
+  earlyAccessEnabled: "E.release.earlyAccess.enabled",
+  earlyAccessLeadDays: "E.release.earlyAccess.leadDays",
 };
 
 const FRONTEND_TO_BACKEND_KEY = Object.entries(BACKEND_TO_FRONTEND_KEY).reduce<Record<string, string>>(
@@ -117,10 +139,31 @@ function toBackendKey(frontendKey: string) {
   return FRONTEND_TO_BACKEND_KEY[frontendKey] ?? frontendKey;
 }
 
+function toBackendValue(frontendKey: string, value: string) {
+  if (frontendKey.startsWith("E.device.capacity.applyTo.")) {
+    return value === "参与递减" ? "true" : value === "免递减" ? "false" : value;
+  }
+  if (["E.tradein.enabled", "E.tradein.requireHigherPrice", "E.release.earlyAccess.enabled"].includes(frontendKey)) {
+    return value === "开" ? "true" : value === "关" ? "false" : value;
+  }
+  return value;
+}
+
+function toFrontendValue(frontendKey: string, value: string | number | null) {
+  const normalized = text(value, "—");
+  if (frontendKey.startsWith("E.device.capacity.applyTo.")) {
+    return normalized === "true" || normalized === "1" ? "参与递减" : normalized === "false" || normalized === "0" ? "免递减" : normalized;
+  }
+  if (["E.tradein.enabled", "E.tradein.requireHigherPrice", "E.release.earlyAccess.enabled"].includes(frontendKey)) {
+    return normalized === "true" || normalized === "1" ? "开" : normalized === "false" || normalized === "0" ? "关" : normalized;
+  }
+  return normalized;
+}
+
 function frontendParams(config: Record<string, string | number | null> | null | undefined) {
   return Object.entries(config ?? {}).reduce<Record<string, string>>((acc, [key, value]) => {
     const frontendKey = BACKEND_TO_FRONTEND_KEY[key] ?? key;
-    acc[frontendKey] = text(value, "—");
+    acc[frontendKey] = toFrontendValue(frontendKey, value);
     return acc;
   }, {});
 }
@@ -196,7 +239,7 @@ export async function fetchE3Snapshot(): Promise<E3Snapshot> {
 export async function updateE3Param(key: string, value: string, reason: string, operator: string) {
   const overview = await e3Request<BackendE3Overview>("/e3/config", {
     method: "PATCH",
-    body: JSON.stringify({ key: toBackendKey(key), value, reason, operator }),
+    body: JSON.stringify({ key: toBackendKey(key), value: toBackendValue(key, value), reason, operator }),
     idempotencyPrefix: "e3-config",
   });
   return frontendParams(overview.config);

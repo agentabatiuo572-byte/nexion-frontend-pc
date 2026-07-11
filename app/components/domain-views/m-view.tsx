@@ -83,6 +83,11 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   // 增量合并进 mData.conversations —— 直接 setMData，绕开 runMWrite 写链（避免被 writeConversationRows
   // 当成「坐席新回复」二次回写后端，形成回环）。收到事件后 mergedParams 自动重算 → M3 / Dock 重渲。
   const handleStreamEvent = useCallback((event: ConversationStreamEvent) => {
+    if (event.eventType === "RECEIPT") {
+      // 回执携带明确 messageId；重新读取权威快照，避免把并发到达的新消息误标为已读。
+      void reloadMContent();
+      return;
+    }
     setMData((prev) => {
       if (!prev) return prev;
       const idx = prev.conversations.findIndex((c) => c.id === event.conversationNo);
@@ -133,7 +138,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       conversations[idx] = nextConvo;
       return { ...prev, conversations };
     });
-  }, []);
+  }, [reloadMContent]);
   // 鉴权：走同源 cookie（nexion_admin_token 由 Next route 转 Authorization 头）。
   // 当前 token 仅存 httpOnly cookie，JS 不可达，故不传 token（直连 + ?token 模式留作未来基础设施扩展）。
   useConversationStream({ onEvent: handleStreamEvent });

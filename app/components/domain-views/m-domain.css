@@ -567,10 +567,19 @@
 .mdom .msg-handler { align-self: flex-end; display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 500; color: var(--ink-2); background: var(--surface-2); border-radius: 999px; padding: 4px 15px 4px 4px; margin: 0 0 6px auto; }
 .mdom .msg-handler .ic, .mdom .msg-handler svg { color: var(--m-hd-2); }
 .mdom .msg-handler .av { box-shadow: 0 0 0 1px var(--border); }
+/* 送达回执(坐席消息底部「已读 / 未读」)+ 用户「正在输入」三点气泡 */
+.mdom .msg-receipt { margin-top: 3px; font-size: 10.5px; color: var(--ink-4); align-self: flex-end; }
+.mdom .msg-typing { padding: 11px 14px; display: inline-flex; }
+.mdom .msg-typing-dots { display: inline-flex; gap: 4px; }
+.mdom .msg-typing-dots span { width: 6px; height: 6px; border-radius: 999px; background: var(--ink-3); animation: m-typing-blink 1.2s ease-in-out infinite; }
+.mdom .msg-typing-dots span:nth-child(2) { animation-delay: .15s; }
+.mdom .msg-typing-dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes m-typing-blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
   .mdom .stat.active .dot, .mdom .stat.proc .dot, .mdom .cv-stat.active .live,
-  .mdom .chat-send.sending, .mdom .msg-in, .mdom .tk-drawer, .mdom .sku-pop, .mdom .hd-select-pop { animation: none !important; }
+  .mdom .chat-send.sending, .mdom .msg-in, .mdom .tk-drawer, .mdom .sku-pop, .mdom .hd-select-pop,
+  .mdom .msg-typing-dots span { animation: none !important; }
 }
 
 /* ---- 跨坐席转交:工作台超时回落开关 / 转入待处理横幅 / 锁定提示(浅紫 --m-wait 主调,零 hex)---- */

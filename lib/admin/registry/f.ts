@@ -28,7 +28,7 @@ export const DOMAIN_F: ModuleEntry[] = [
   },
   {
     path: "/network/commissions",
-    summary: "佣金事件审计流水。每笔佣金计提都按类型记一条(网络版税、平衡匹配、同级、培育、领导奖池、Genesis 分红、榜单奖金),含层级、金额、冷却、状态。冻结异常事件要风控确认 + A2 留痕。",
+    summary: "佣金事件审计流水。每笔佣金计提都按类型记一条(网络版税、平衡匹配、同级、培育、领导奖池、Genesis 排放、榜单奖金),含层级、金额、冷却、状态。冻结异常事件要风控确认 + A2 留痕。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

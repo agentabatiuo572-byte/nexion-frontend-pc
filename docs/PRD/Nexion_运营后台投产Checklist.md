@@ -29,7 +29,7 @@
 - [ ] 四卷 lint 全绿(中性运营语言 + 8 段结构)
 
 ### A.2 PM 决策闭环(PRD §17.6)
-- [ ] Genesis 日分红率 = **0.1%/日**(§A.1 row5;前端 §10.3=1.5% 笔误待订正)
+- [ ] Genesis 日排放率 = **0.1%/日**(§A.1 row5;前端 §10.3=1.5% 笔误待订正)
 - [ ] Lucky Spin 转盘奖池 + 概率已裁定(8 档 / 档位可增删 2–12 / server 校验和=100)(V3 Ch13 H4)
 - [ ] reinvestMultiplier 复投倍率消费面 = **G7**(V3 已订正)
 - [ ] B1 红线拒绝码全卷统一 = **422**(auth/authz 类 403 保持)
@@ -52,7 +52,7 @@
 - [ ] 双轨日封顶前端 §8.4 改为可变描述(月1-6=5000/月7+=2000)
 - [ ] 提现冷却前端补月8=35d 中间档
 - [ ] KPI 章节序号统一 §18.2
-- [ ] Genesis 分红率前端 §10.3=1.5% 订正为 0.1%
+- [ ] Genesis 排放率前端 §10.3=1.5% 订正为 0.1%
 - [ ] 前端文档编号瑕疵簇(§14/§15 子节号、§11.3 计数、§11.0A wrapped、§5.1.1 软锚)
 - [ ] `evt-spring-spin` subtitle 删「or a Genesis Node」(已在原型订正)
 
@@ -93,12 +93,12 @@
 - [ ] 兑付覆盖率 = 储备÷负债 由 B1 计算裁决;`withdraw.confirmed` 储备与负债同时核减
 
 ### D.2 兑付覆盖率红线前置(PRD §1.8 原则一 / §17.3b)
-- [ ] 🔴 所有"放大流出"写操作(降 cooldown/points、升 cap/APY/分红率/费率、kill 恢复、升活动/转盘奖励)提交即 server 核 B1 覆盖率
+- [ ] 🔴 所有"放大流出"写操作(降 cooldown/points、升 cap/APY/排放率/费率、kill 恢复、升活动/转盘奖励)提交即 server 核 B1 覆盖率
 - [ ] 🔴 覆盖率低于 `coverageRedLine`(默认 100%)server 拒绝提交(统一返 **422** + 当前覆盖率)
 - [ ] NEX 计价负债以拟生效新价重估(含锁仓本金 USDT 等值)后再判红线
 
 ### D.3 资金操作 credit/debit 原子性(PRD D 域 / nexion-audit 规则#6)
-- [ ] 提现放行 / 余额调整 / 各类派发(commission/trial/staking/genesis 分红/quest/milestone/event/转盘)实际 credit/debit + 账单 + 失败回滚 + 失败提示,非仅 toast
+- [ ] 提现放行 / 余额调整 / 各类派发(commission/trial/staking/genesis 排放/quest/milestone/event/转盘)实际 credit/debit + 账单 + 失败回滚 + 失败提示,非仅 toast
 - [ ] 全站同形 credit*/debit* 调用点逐个补全(grep 验证无遗漏)
 - [ ] 提现状态机(submitted→review→processing→sent→confirmed + 失败态)全 server canonical
 

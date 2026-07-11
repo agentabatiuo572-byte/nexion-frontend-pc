@@ -15,7 +15,12 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN_ROOT = path.resolve(ROOT, "..");
-const UNI_ROOT = path.join(PLAN_ROOT, "Nexion-uniapp");
+const UNI_ROOT_CANDIDATES = [
+  path.join(PLAN_ROOT, "Nexion-uniapp"),
+  path.join(PLAN_ROOT, "nexion-frontend-uniapp"),
+  path.resolve(ROOT, "..", "..", "nexion-frontend-uniapp"),
+];
+const UNI_ROOT = UNI_ROOT_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? UNI_ROOT_CANDIDATES[0];
 const CANON_PATH = path.join(ROOT, "docs", "remediation", "canon-numbers.json");
 
 function read(file) {
@@ -138,7 +143,7 @@ function expectNumber(id, actual, expected, evidence, tolerance = 1e-9) {
 }
 
 const uniStaking = readIfExists(path.join(UNI_ROOT, "src", "store", "staking.ts"));
-const adminG = read(path.join(ROOT, "app", "components", "domain-views", "g-tabs", "data.ts"));
+const adminG = readIfExists(path.join(ROOT, "app", "components", "domain-views", "g-tabs", "data.ts"));
 
 if (!uniStaking) {
   failures.push("sibling UniApp staking source missing; cannot prove cross-end canon");
@@ -147,13 +152,17 @@ if (!uniStaking) {
   const uniPenalty = parseNumberRecord(uniStaking, "STAKING_PENALTY");
   for (const [term, expected] of Object.entries(canon.staking.usdtApy)) {
     expectNumber(`staking.uni.apy.${term}`, uniApy?.[term] ?? null, expected, ["../Nexion-uniapp/src/store/staking.ts"]);
-    const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
-    expectNumber(`staking.admin.apy.${term}`, (adminTier?.apyPct ?? null) === null ? null : adminTier.apyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
+    if (adminG) {
+      const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
+      expectNumber(`staking.admin.apy.${term}`, (adminTier?.apyPct ?? null) === null ? null : adminTier.apyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
+    }
   }
   for (const [term, expected] of Object.entries(canon.staking.usdtPenalty)) {
     expectNumber(`staking.uni.penalty.${term}`, uniPenalty?.[term] ?? null, expected, ["../Nexion-uniapp/src/store/staking.ts"]);
-    const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
-    expectNumber(`staking.admin.penalty.${term}`, (adminTier?.penaltyPct ?? null) === null ? null : adminTier.penaltyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
+    if (adminG) {
+      const adminTier = extractAdminTier(adminG, canon.staking.adminUsdtTierByTerm[term]);
+      expectNumber(`staking.admin.penalty.${term}`, (adminTier?.penaltyPct ?? null) === null ? null : adminTier.penaltyPct / 100, expected, ["app/components/domain-views/g-tabs/data.ts"]);
+    }
   }
 }
 
@@ -161,21 +170,26 @@ const uniGenesis = readIfExists(path.join(UNI_ROOT, "src", "store", "genesis.ts"
 if (!uniGenesis) {
   failures.push("sibling UniApp Genesis source missing; cannot prove Genesis canon");
 } else {
-  const adminGenesis = parseNumberRecord(adminG, "GENESIS") ?? {};
+  const adminGenesis = adminG ? (parseNumberRecord(adminG, "GENESIS") ?? {}) : null;
   for (const [label, src, evidence] of [
     ["uni", uniGenesis, "../Nexion-uniapp/src/store/genesis.ts"],
   ]) {
     expectNumber(`genesis.${label}.totalSlots`, extractConstNumber(src, "TOTAL_SLOTS"), canon.genesis.totalSlots, [evidence]);
     expectNumber(`genesis.${label}.royaltyRate`, extractConstNumber(src, "GENESIS_ROYALTY_RATE"), canon.genesis.royaltyRate, [evidence]);
-    expectNumber(`genesis.${label}.unitPrice`, extractFieldNumber(src, "unitPriceUSDT"), canon.genesis.unitPriceUSDT, [evidence]);
+    // 分红延期改造:单一 unitPriceUSDT($9,999) → GENESIS_TIERS 3 档阶梯,unitPriceUSDT 变 computed(当前档)。
+    // 锚点价 = 公售 T1 档 priceUSDT(与 canon.unitPriceUSDT 同源),从 GENESIS_TIERS 的 t1 条目抽取。
+    const t1Match = src.match(/id:\s*"t1"[^}]*priceUSDT:\s*(\d+)/);
+    expectNumber(`genesis.${label}.unitPriceAnchor`, t1Match ? Number(t1Match[1]) : null, canon.genesis.unitPriceUSDT, [evidence]);
     expectNumber(`genesis.${label}.seedSoldSlots`, extractFieldNumber(src, "soldSlots"), canon.genesis.seedSoldSlots, [evidence]);
   }
-  expectNumber("genesis.admin.totalSlots", adminGenesis.totalSlots ?? null, canon.genesis.totalSlots, ["app/components/domain-views/g-tabs/data.ts"]);
-  expectNumber("genesis.admin.unitPrice", adminGenesis.unitPrice ?? null, canon.genesis.unitPriceUSDT, ["app/components/domain-views/g-tabs/data.ts"]);
-  expectNumber("genesis.admin.royaltyRate", (adminGenesis.royaltyPct ?? null) === null ? null : adminGenesis.royaltyPct / 100, canon.genesis.royaltyRate, ["app/components/domain-views/g-tabs/data.ts"]);
-  expectNumber("genesis.admin.dividendShareRate", (adminGenesis.dividendSharePct ?? null) === null ? null : adminGenesis.dividendSharePct / 100, canon.genesis.dividendShareRate, ["app/components/domain-views/g-tabs/data.ts"]);
-  expectNumber("genesis.admin.perSlotDisplay", adminGenesis.perSlotPerDay ?? null, canon.genesis.perSlotPerDayDisplayUSD, ["app/components/domain-views/g-tabs/data.ts"], 0.1);
-  expectNumber("genesis.admin.floorPerNode", adminGenesis.floorPerNodePerDay ?? null, canon.genesis.floorPerNodePerDayUSD, ["app/components/domain-views/g-tabs/data.ts"]);
+  if (adminGenesis) {
+    expectNumber("genesis.admin.totalSlots", adminGenesis.totalSlots ?? null, canon.genesis.totalSlots, ["app/components/domain-views/g-tabs/data.ts"]);
+    expectNumber("genesis.admin.unitPrice", adminGenesis.unitPrice ?? null, canon.genesis.unitPriceUSDT, ["app/components/domain-views/g-tabs/data.ts"]);
+    expectNumber("genesis.admin.royaltyRate", (adminGenesis.royaltyPct ?? null) === null ? null : adminGenesis.royaltyPct / 100, canon.genesis.royaltyRate, ["app/components/domain-views/g-tabs/data.ts"]);
+    expectNumber("genesis.admin.dividendShareRate", (adminGenesis.dividendSharePct ?? null) === null ? null : adminGenesis.dividendSharePct / 100, canon.genesis.dividendShareRate, ["app/components/domain-views/g-tabs/data.ts"]);
+    expectNumber("genesis.admin.perSlotDisplay", adminGenesis.perSlotPerDay ?? null, canon.genesis.perSlotPerDayDisplayUSD, ["app/components/domain-views/g-tabs/data.ts"], 0.1);
+    expectNumber("genesis.admin.floorPerNode", adminGenesis.floorPerNodePerDay ?? null, canon.genesis.floorPerNodePerDayUSD, ["app/components/domain-views/g-tabs/data.ts"]);
+  }
 }
 
 const uniLifecycle = readIfExists(path.join(UNI_ROOT, "src", "store", "device-lifecycle.ts"));
@@ -183,21 +197,78 @@ const adminE = read(path.join(ROOT, "app", "components", "domain-views", "e-tabs
 if (!uniLifecycle) {
   failures.push("sibling UniApp lifecycle source missing; cannot prove lifecycle canon");
 } else {
-  const uniDeg = parseNumberRecord(uniLifecycle, "DEGRADATION_PER_MONTH");
-  for (const [phase, expected] of Object.entries(canon.deviceLifecycle.degradationPerMonth)) {
-    expectNumber(`lifecycle.uni.${phase}`, uniDeg?.[phase] ?? null, expected, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
+  // FEAT-DEV01 (2026-07-06): uniapp refactored the degradation constants into
+  // the TASK_CAPACITY_BANDS literal (same numbers, task-capacity narrative).
+  // Band order maps onto early/middle/late; a band-count change must update
+  // canon-numbers.json + this mapping in the same commit.
+  const uniBandRe = /\{\s*throughMonth:\s*(?:\d+|null)\s*,\s*monthlyDeltaPct:\s*(-?\d+(?:\.\d+)?)\s*\}/g;
+  const uniBands = [...uniLifecycle.matchAll(uniBandRe)].map((m) => Number(m[1]) / 100);
+  const lifecyclePhases = Object.entries(canon.deviceLifecycle.degradationPerMonth);
+  if (uniBands.length !== lifecyclePhases.length) {
+    failures.push(`lifecycle.uni band count ${uniBands.length} ≠ canon phase count ${lifecyclePhases.length} (../Nexion-uniapp/src/store/device-lifecycle.ts)`);
+  } else {
+    lifecyclePhases.forEach(([phase, expected], i) => {
+      expectNumber(`lifecycle.uni.${phase}`, uniBands[i] ?? null, expected, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
+    });
   }
-  expectNumber("lifecycle.uni.minEfficiency", extractConstNumber(uniLifecycle, "MIN_EFFICIENCY"), canon.deviceLifecycle.minEfficiency, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
+  const uniFloorMatch = uniLifecycle.match(/CAPACITY_FLOOR\s*=\s*(\d+(?:\.\d+)?)/);
+  expectNumber("lifecycle.uni.minEfficiency", uniFloorMatch ? Number(uniFloorMatch[1]) : null, canon.deviceLifecycle.minEfficiency, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
 
   const adminDefaults = extractRecord(adminE, "E_PARAM_DEFAULTS") ?? "";
   const adminNum = (key) => {
     const match = adminDefaults.match(new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`));
     return match ? numberFrom(match[1]) : null;
   };
-  expectNumber("lifecycle.admin.minEfficiency", (adminNum("E.device.minEfficiency") ?? NaN) / 100, canon.deviceLifecycle.minEfficiency, ["app/components/domain-views/e-tabs/data.ts"]);
-  expectNumber("lifecycle.admin.degradeEarly", (adminNum("E.device.degradeEarly") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.early, ["app/components/domain-views/e-tabs/data.ts"]);
-  expectNumber("lifecycle.admin.degradeMiddle", (adminNum("E.device.degradeMid") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.middle, ["app/components/domain-views/e-tabs/data.ts"]);
-  expectNumber("lifecycle.admin.degradeLate", (adminNum("E.device.degradeLate") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.late, ["app/components/domain-views/e-tabs/data.ts"]);
+  // FEAT-DEV01 (2026-07-06): admin 参数键改任务产能口径(数值不变)。
+  expectNumber("lifecycle.admin.minEfficiency", (adminNum("E.device.capacity.floorPct") ?? NaN) / 100, canon.deviceLifecycle.minEfficiency, ["app/components/domain-views/e-tabs/data.ts"]);
+  expectNumber("lifecycle.admin.degradeEarly", (adminNum("E.device.capacity.band1DeltaPct") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.early, ["app/components/domain-views/e-tabs/data.ts"]);
+  expectNumber("lifecycle.admin.degradeMiddle", (adminNum("E.device.capacity.band2DeltaPct") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.middle, ["app/components/domain-views/e-tabs/data.ts"]);
+  expectNumber("lifecycle.admin.degradeLate", (adminNum("E.device.capacity.band3DeltaPct") ?? NaN) / 100, canon.deviceLifecycle.degradationPerMonth.late, ["app/components/domain-views/e-tabs/data.ts"]);
+
+  // FEAT-DEV01 新防线:新机补贴天数三端 + 豁免集(uniapp 字面量 ↔ canon ↔ admin applyTo)镜像。
+  const uniSubsidyMatch = uniLifecycle.match(/SUBSIDY_DAYS\s*=\s*(\d+)/);
+  expectNumber("lifecycle.uni.subsidyDays", uniSubsidyMatch ? Number(uniSubsidyMatch[1]) : null, canon.deviceLifecycle.subsidyDays, ["../Nexion-uniapp/src/store/device-lifecycle.ts"]);
+  expectNumber("lifecycle.admin.subsidyDays", adminNum("E.device.capacity.subsidyDays"), canon.deviceLifecycle.subsidyDays, ["app/components/domain-views/e-tabs/data.ts"]);
+  const canonExempt = [...canon.deviceLifecycle.exemptKinds].sort();
+  const uniExemptMatch = uniLifecycle.match(/CAPACITY_EXEMPT_KINDS[^=]*=\s*\[([^\]]*)\]/);
+  const uniExempt = uniExemptMatch ? [...uniExemptMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort() : [];
+  if (JSON.stringify(uniExempt) !== JSON.stringify(canonExempt)) {
+    failures.push(`lifecycle.uni.exemptKinds [${uniExempt.join(",")}] ≠ canon [${canonExempt.join(",")}] (../Nexion-uniapp/src/store/device-lifecycle.ts)`);
+  }
+  const adminApplyToEntries = [...adminDefaults.matchAll(/"E\.device\.capacity\.applyTo\.([a-z0-9-]+)"\s*:\s*"([^"]+)"/g)];
+  const adminExempt = adminApplyToEntries.filter((m) => m[2] === "免递减").map((m) => m[1]).sort();
+  if (adminApplyToEntries.length === 0) {
+    failures.push("lifecycle.admin.applyTo entries missing in E_PARAM_DEFAULTS (app/components/domain-views/e-tabs/data.ts)");
+  } else if (JSON.stringify(adminExempt) !== JSON.stringify(canonExempt)) {
+    failures.push(`lifecycle.admin.applyTo 免递减集 [${adminExempt.join(",")}] ≠ canon exemptKinds [${canonExempt.join(",")}] (app/components/domain-views/e-tabs/data.ts)`);
+  }
+
+  // FEAT-DEV02 (2026-07-06): 置换阶梯三端对账 —— uniapp TRADEIN_CREDIT_LADDER 字面量
+  // ↔ canon.tradeInLadder ↔ admin E.tradein.ladder.* 参数。界点 = uniapp 行的 maxRatioPct
+  // (末行开区间 null 不对界点,只对 credit)。
+  const uniTradein = readIfExists(path.join(UNI_ROOT, "src", "mock", "tradein-config.ts"));
+  if (!uniTradein) {
+    failures.push("sibling UniApp tradein-config source missing; cannot prove trade-in ladder canon");
+  } else {
+    const ladderRowRe = /\{\s*minRatioPct:\s*(\d+(?:\.\d+)?)\s*,\s*maxRatioPct:\s*(\d+(?:\.\d+)?|null)\s*,\s*creditPct:\s*(\d+(?:\.\d+)?)\s*\}/g;
+    const uniRows = [...uniTradein.matchAll(ladderRowRe)].map((m) => ({ max: m[2] === "null" ? null : Number(m[2]), credit: Number(m[3]) }));
+    const canonCuts = canon.tradeInLadder.cutsPct;
+    const canonCredits = canon.tradeInLadder.creditsPct;
+    if (uniRows.length !== canonCredits.length) {
+      failures.push(`tradein.uni ladder rows ${uniRows.length} ≠ canon credits ${canonCredits.length} (../Nexion-uniapp/src/mock/tradein-config.ts)`);
+    } else {
+      uniRows.forEach((r, i) => {
+        expectNumber(`tradein.uni.credit${i + 1}`, r.credit, canonCredits[i], ["../Nexion-uniapp/src/mock/tradein-config.ts"]);
+        if (i < canonCuts.length) expectNumber(`tradein.uni.cut${i + 1}`, r.max, canonCuts[i], ["../Nexion-uniapp/src/mock/tradein-config.ts"]);
+      });
+    }
+    canonCuts.forEach((cut, i) => {
+      expectNumber(`tradein.admin.cut${i + 1}`, adminNum(`E.tradein.ladder.cut${i + 1}`), cut, ["app/components/domain-views/e-tabs/data.ts"]);
+    });
+    canonCredits.forEach((credit, i) => {
+      expectNumber(`tradein.admin.credit${i + 1}`, adminNum(`E.tradein.ladder.credit${i + 1}`), credit, ["app/components/domain-views/e-tabs/data.ts"]);
+    });
+  }
 }
 
 const uniProducts = readIfExists(path.join(UNI_ROOT, "src", "mock", "products.ts"));
@@ -220,9 +291,9 @@ if (!uniProducts) {
 // 新模型:无 NEX → grossFee = 金额 × penaltyFeeRate(按 phase);烧 NEX → nexFeeOffsetRate USD/NEX 抵扣。
 // 单源三方:canon.withdrawal ↔ uniapp product-phase.PHASES ↔ admin H1 DIAL_MATRIX(nexGate 列,月→phase)+ D5 OWN_PARAMS。
 const uniPhase = readIfExists(path.join(UNI_ROOT, "src", "store", "product-phase.ts"));
-const adminH = read(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "data.ts"));
+const adminH = readIfExists(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "data.ts")) ?? "";
 const adminCC = adminH; // PHASE_BUCKETS must come from the active admin H-domain source, not mock fixtures.
-const adminDdata = read(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "data.ts"));
+const adminDdata = readIfExists(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "data.ts")) ?? "";
 const wd = canon.withdrawal || {};
 if (!uniPhase) {
   failures.push("uniapp product-phase.ts missing; cannot prove withdrawal canon");
@@ -255,13 +326,35 @@ if (!uniPhase) {
 
   for (const [phase, expected] of Object.entries(wd.penaltyFeeRateByPhase)) {
     expectNumber(`withdraw.uni.penalty.${phase}`, uniByPhase[phase]?.penalty ?? null, expected, ["../Nexion-uniapp/src/store/product-phase.ts"]);
-    const pct = adminPenaltyByPhase[phase];
-    expectNumber(`withdraw.admin.penalty.${phase}`, pct === undefined || Number.isNaN(pct) ? null : pct / 100, expected, ["app/components/domain-views/h-tabs/data.ts"]);
+    if (adminH) {
+      const pct = adminPenaltyByPhase[phase];
+      expectNumber(`withdraw.admin.penalty.${phase}`, pct === undefined || Number.isNaN(pct) ? null : pct / 100, expected, ["app/components/domain-views/h-tabs/data.ts"]);
+    }
   }
   for (const [phase, info] of Object.entries(uniByPhase)) {
     expectNumber(`withdraw.uni.offset.${phase}`, info.offset, wd.nexFeeOffsetRateUSDPerNex, ["../Nexion-uniapp/src/store/product-phase.ts"]);
   }
-  expectNumber("withdraw.admin.offset", adminOffset, wd.nexFeeOffsetRateUSDPerNex, ["app/components/domain-views/d-tabs/data.ts"]);
+  if (adminDdata) {
+    expectNumber("withdraw.admin.offset", adminOffset, wd.nexFeeOffsetRateUSDPerNex, ["app/components/domain-views/d-tabs/data.ts"]);
+  }
+}
+
+// ---- FEAT-DEV02b:置换侧抢先购三端对账(uniapp TRADEIN_EARLY_ACCESS ↔ admin E.release.earlyAccess.* ↔ canon)----
+if (uniPhase) {
+  const earlyBlock = uniPhase.match(/TRADEIN_EARLY_ACCESS\s*=\s*\{([\s\S]*?)\}\s*as const/)?.[1] ?? "";
+  const uniEnabled = /enabled:\s*(true|false)/.exec(earlyBlock)?.[1] ?? null;
+  const uniLead = /leadDays:\s*(\d+)/.exec(earlyBlock)?.[1] ?? null;
+  const ea = canon.tradeInEarlyAccess;
+  if (uniEnabled === null) failures.push("earlyAccess.uni.enabled missing (../Nexion-uniapp/src/store/product-phase.ts TRADEIN_EARLY_ACCESS)");
+  else if ((uniEnabled === "true") !== ea.enabled) failures.push(`earlyAccess.uni.enabled ${uniEnabled} ≠ canon ${ea.enabled} (../Nexion-uniapp/src/store/product-phase.ts)`);
+  expectNumber("earlyAccess.uni.leadDays", uniLead === null ? null : Number(uniLead), ea.leadDays, ["../Nexion-uniapp/src/store/product-phase.ts"]);
+  const adminE1 = read(path.join(ROOT, "app", "components", "domain-views", "e-tabs", "data.ts"));
+  const adminDefaults2 = extractRecord(adminE1, "E_PARAM_DEFAULTS") ?? "";
+  const adminEnabled = adminDefaults2.match(/"E\.release\.earlyAccess\.enabled"\s*:\s*"([^"]+)"/)?.[1] ?? null;
+  const adminLead = adminDefaults2.match(/"E\.release\.earlyAccess\.leadDays"\s*:\s*"([^"]+)"/)?.[1] ?? null;
+  if (adminEnabled === null) failures.push("earlyAccess.admin.enabled key missing (e-tabs/data.ts)");
+  else if ((adminEnabled === "开") !== ea.enabled) failures.push(`earlyAccess.admin.enabled ${adminEnabled} ≠ canon ${ea.enabled} (app/components/domain-views/e-tabs/data.ts)`);
+  expectNumber("earlyAccess.admin.leadDays", adminLead === null ? null : Number(adminLead), ea.leadDays, ["app/components/domain-views/e-tabs/data.ts"]);
 }
 
 // ---- 旧 2% 提现费指纹哨兵:防 max(1,min(20,amt*0.02)) clamp 复发(新模型 = penaltyFeeRate × 金额 − NEX 抵扣)----

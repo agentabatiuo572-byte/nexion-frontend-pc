@@ -33,6 +33,7 @@ const DIAL_COLUMNS = [
   ["campaignRewardNex", "活动奖励", "NEX"],
   ["withdrawNexMinBalance", "提现 NEX 门槛", "NEX"],
   ["withdrawNexHoldDays", "提现持有天数", "天"],
+  ["genesisEmissionsOpen", "创世排放开阀", ""],
 ] as const;
 
 const RHYTHM_PHASE_NAME: Record<string, string> = {
@@ -171,7 +172,9 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       action: `改旋钮 · 月 ${row.month} · ${label}`,
       detail: <>当前值 <b>{current}</b>。提交后写入后端配置并重新查询 H1 矩阵。</>,
       amplifies: ["trialOffsetCapUsdt", "campaignRewardNex", "withdrawNexMinBalance"].includes(key),
-      edit: { kind: "text", current },
+      edit: key === "genesisEmissionsOpen"
+        ? { kind: "select", current, options: ["否", "是"] }
+        : { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
         applyPhaseResponse(await updateH1MonthDial(row.month, key, value, reason));

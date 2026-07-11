@@ -90,7 +90,6 @@ export interface E1GenerationRelease {
   name: string;
   releaseMonth: number;
   phase: string;
-  discount: number;
   eligibility: boolean;
   phaseOffset?: number;
   forceUnlock?: boolean;
@@ -121,7 +120,6 @@ export interface E1GenerationGateInput {
   name?: string;
   releaseMonth?: number;
   phase?: string;
-  discount?: number;
   eligibility?: boolean;
   phaseOffset?: number;
   forceUnlock?: boolean;

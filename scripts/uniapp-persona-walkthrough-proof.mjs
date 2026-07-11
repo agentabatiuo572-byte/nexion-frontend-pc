@@ -7,7 +7,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const UNI_BASE_URL = process.env.UNI_BASE_URL || "http://localhost:5173";
+// uniapp 本地 dev 首页默认套「手机壳舞台」iframe(index.html nx-device-stage),
+// 顶层 window 无 uni 全局;走查必须带 ?nx_device=off 直连应用本体
+//(同族坑:uniapp docs/PORT-PITFALLS P-058 —— eval 上下文与应用 frame 错位)。
+const UNI_BASE_URL = process.env.UNI_BASE_URL || "http://localhost:5173/?nx_device=off";
+// query 基址后直接拼 "/#/..." 会把斜杠吞进 query 值(nx_device=off/),须吃掉 hash 前导斜杠。
+const joinUniRoute = (base, hashRoute) => `${base}${base.includes("?") ? hashRoute.replace(/^\/(?=#)/, "") : hashRoute}`;
 const session =
   process.env.AGENT_BROWSER_SESSION || `nexion-uni-persona-walkthrough-proof-${Date.now()}-${process.pid}`;
 const OUT_FILE = path.join(ROOT, "docs", "audit", "shards", "uniapp-persona-walkthrough-proof.ndjson");
@@ -152,7 +157,7 @@ function waitForEval(label, body, timeout = 10000, interval = 400) {
 }
 
 function open(hashRoute) {
-  const url = `${UNI_BASE_URL}${hashRoute}`;
+  const url = joinUniRoute(UNI_BASE_URL, hashRoute);
   run(["open", url], { timeout: 60000 });
   wait(900);
   const state = evalJson("return current();", 15000);
@@ -258,6 +263,9 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   expect(seeded.body.includes("fully waived"), "withdraw fully-waived message missing");
 
   clickSelector(".nx-withdraw-submit-cta");
+  // SPEC-7 R2(首提必审):全新账户首笔提现无条件进人工审核。提交仍建单并跳追踪页,
+  // 但 route=manual → USDT 账单文案是「additional review」(非 pass 的 network 文案),
+  // 追踪页渲染 first-withdrawal-review 命中原因。此断言证的是「首提必审」新行为。
   const proof = waitForEval("withdraw tracking route", `
     const bills = store('nexion-bills-v1');
     const bill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'USDT' && row.amount === -50 && row.status === 'pending');
@@ -271,20 +279,24 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
       hasTrackingId: /WD-\\d{8}-\\d{4}/.test(body),
       hasAddress: body.includes(${JSON.stringify(WITHDRAW_ADDRESS)}),
       hasAmount: body.includes('$50.00'),
-      ok: location.href.includes('/#/pages/me/wallet-withdraw-tracking') && /WD-\\d{8}-\\d{4}/.test(body),
+      firstWithdrawalReviewShown: body.includes('First withdrawal requires manual confirmation'),
+      ok: location.href.includes('#/pages/me/wallet-withdraw-tracking') && /WD-\\d{8}-\\d{4}/.test(body),
     };
   `, 15000);
-  expect(proof.href.includes("/#/pages/me/wallet-withdraw-tracking"), "withdraw did not route to tracking");
+  expect(proof.href.includes("#/pages/me/wallet-withdraw-tracking"), "withdraw did not route to tracking");
   expect(proof.hasTrackingId, "withdraw tracking id missing");
   expect(proof.hasAddress, "withdraw address missing on tracking page");
   expect(proof.hasAmount, "withdraw amount missing on tracking page");
   expect(proof.nexBill?.ref && /Fee offset|NEX used/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (25 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
-  expect(proof.bill?.ref && proof.bill.memo.includes("USDT-TRC20"), "withdraw bill missing or incomplete");
+  // R2: 首提建单走审核路由 —— 账单文案是审核态,追踪页显式列出「首提必审」命中原因。
+  expect(proof.bill?.ref && proof.bill.memo.includes("additional review"), `withdraw bill missing or not routed to review (SPEC-7 R2 首提必审): ${JSON.stringify(proof.bill)}`);
+  expect(proof.firstWithdrawalReviewShown, "tracking page did not surface first-withdrawal-review hold reason (SPEC-7 R2)");
   return {
     href: proof.href,
     nexBurned: proof.nexBill.amount,
     billRef: proof.bill.ref,
     trackingHasAddress: proof.hasAddress,
+    firstWithdrawalReview: proof.firstWithdrawalReviewShown,
   };
 });
 
@@ -394,7 +406,7 @@ async function teamNav(target) {
     const body = bodyText();
     return { href: location.href, body };
   `);
-  expect(proof.href.includes(target.route), `${target.id} did not navigate to ${target.route}: ${proof.href}`);
+  expect(proof.href.includes(target.route.replace(/^\/(?=#)/, "")), `${target.id} did not navigate to ${target.route}: ${proof.href}`);
   for (const needle of target.needles) {
     expect(proof.body.includes(needle), `${target.id} missing page needle: ${needle}`);
   }

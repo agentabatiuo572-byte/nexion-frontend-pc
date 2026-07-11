@@ -12,6 +12,7 @@ import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
   TRANSFER_TIMEOUT_MINS,
+  USER_ACK_POOL,
   transferTargetLabel,
   type AdvisorScript,
   type CustomerNote,
@@ -203,6 +204,15 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     };
   }, []);
 
+  // 坐席回复后的 typing/ack 仅用于高保真瞬态效果；已读事实只消费后端 receiptStatus。
+  const [echo, setEcho] = useState<{ cid: string; typing: boolean; ackTs?: number; ackText?: string }>({ cid: "", typing: false });
+  const echoTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearEchoTimers = () => {
+    echoTimers.current.forEach(clearTimeout);
+    echoTimers.current = [];
+  };
+  useEffect(() => () => clearEchoTimers(), []);
+
   // 续聊恢复:hydrate 后一次性恢复上次会话;手动选过即锁(restoredRef)。
   const restoredRef = useRef(false);
   useEffect(() => {
@@ -221,6 +231,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     restoredRef.current = true;
     setSelectedId(id);
     setReplyBody("");
+    clearEchoTimers();
+    setEcho({ cid: "", typing: false }); // 换会话不带上一条的模拟回执
     setParam(LAST_CONVO_KEY, id, { action: "记录坐席当前会话", reason: "ui-state" });
   };
 
@@ -289,13 +301,30 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         unread: 0,
         lastTs: now,
         status: c.status === "resolved" ? "open" : c.status,
-        messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, text: replyBody.trim() }],
+        messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, status: "sent", text: replyBody.trim() }],
       }),
       "坐席回复(正文已留档)",
       `坐席回复会话 ${selected.id} · admin.conversation_replied`,
     );
     setReplyBody("");
     toast(`${selected.id} 已回复`);
+    startEcho(selected.id);
+  };
+
+  // 把某会话最后一条坐席实质消息标记为「已读」并落库:读最新持久值避免 stale;已是已读则跳过;
+  // reason=ui-state → 不进 A2 高敏审计。落库后切走切回 / 刷新回执都不倒退。
+  // 高保真预览只模拟「正在输入 → 短回执」瞬态；已读状态只能消费后端真实 receiptStatus，禁止后台伪造用户已读。
+  const startEcho = (cid: string) => {
+    if (process.env.NEXT_PUBLIC_ENABLE_SUPPORT_ECHO_PREVIEW !== "true") return;
+    clearEchoTimers();
+    setEcho({ cid, typing: false });
+    echoTimers.current.push(setTimeout(() => setEcho((e) => (e.cid === cid ? { ...e, typing: true } : e)), 1500));
+    echoTimers.current.push(
+      setTimeout(() => {
+        const ackText = USER_ACK_POOL[Math.floor((Date.now() / 1000) % USER_ACK_POOL.length)];
+        setEcho((e) => (e.cid === cid ? { ...e, typing: false, ackTs: Date.now(), ackText } : e));
+      }, 3600),
+    );
   };
 
   // ── 跨坐席转交处置(全程例行内部交接:不弹 MC、不调 logAudit;转交/退回原因记入会话系统消息)──
@@ -385,7 +414,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const now = Date.now();
     const existing = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), []));
     const cid = `cv-out-${now}`;
-    const opening: SessionMsg = { ts: now, sender: "agent", agentName: p.identity.name, text: p.text };
+    const opening: SessionMsg = { ts: now, sender: "agent", agentName: p.identity.name, status: "sent", text: p.text };
     if (p.identity.type === "advisor" && p.ctaHref && p.ctaHref !== "—" && p.ctaHref !== "") opening.ctaHref = p.ctaHref;
     const newConvo: SessionConvo = {
       id: cid,
@@ -408,6 +437,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     writeConvos([...existing, newConvo], p.reason ? "主动发起会话(人群投放 · 理由已留档)" : "主动发起会话(单用户 · 例行)", `主动发起会话 ${cid} · admin.conversation_initiated`);
     setShowInitiate(false);
     selectConvo(cid);
+    if (!p.isSegment) startEcho(cid); // 单客户主动会话:开场白同享回执;人群群发无单一读者,不模拟已读
     toast(`已以「${p.identity.label}」向 ${p.targetLabel} 发起会话`);
   };
 
@@ -456,12 +486,13 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         unread: 0,
         lastTs: now,
         status: c.status === "resolved" ? "open" : c.status,
-        messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, text, ctaHref: sku.to }],
+        messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, status: "sent", text, ctaHref: sku.to }],
       }),
       "坐席推送商品卡(正文已留档)",
       `坐席推送商品卡 ${sku.id} → ${selected.id} · admin.conversation_sku_pushed`,
     );
     toast(`已推送「${sku.title}」`);
+    startEcho(selected.id); // 推送卡 = 坐席→客户消息,与文字回复同享已读 / 输入中回执
   };
 
   const archiveConvo = (id: string, on: boolean) => {
@@ -507,13 +538,23 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     setQuick(null);
   };
 
-  const threadMessages: ThreadMessage[] = (selected?.messages ?? []).map((m) => {
+  const echoOnThis = echo.cid === selected?.id;
+  // 最后一条坐席实质消息(排除系统消息)→ 唯一显示回执处(镜像前端 iMessage 惯例)。
+  const lastAgentIdx = (() => {
+    const msgs = selected?.messages ?? [];
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      if (msgs[i].sender === "agent" && msgs[i].agentName !== "系统") return i;
+    }
+    return -1;
+  })();
+  const baseThread: ThreadMessage[] = (selected?.messages ?? []).map((m, i) => {
     const isAgent = m.sender === "agent";
     const isSystem = isAgent && m.agentName === "系统";
     const role: "support" | "advisor" | "user" = isAgent ? (selected!.type === "advisor" ? "advisor" : "support") : "user";
     const cta = !isSystem && m.ctaHref && m.ctaHref !== "—"
       ? { kind: "link" as const, label: `打开 ${hrefLabel(m.ctaHref)}`, onClick: () => toast(`已在用户端打开「${hrefLabel(m.ctaHref!)}」`) }
       : undefined;
+    const receipt = i === lastAgentIdx ? (m.status === "read" ? "已读" : "未读") : undefined;
     return {
       ts: m.ts,
       fromAgent: isAgent,
@@ -524,8 +565,23 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       vlevel: !isAgent ? selected?.profile?.vlevel : undefined,
       body: m.text,
       cta,
+      receipt,
     };
   });
+  // 追加模拟用户短回执(瞬态,回执到达后坐席那条自然显「已读」)。
+  const threadMessages: ThreadMessage[] = echoOnThis && echo.ackTs && echo.ackText
+    ? [
+        ...baseThread,
+        {
+          ts: echo.ackTs,
+          fromAgent: false,
+          role: "user" as const,
+          senderName: selected?.profile?.nickname ?? selected?.customer ?? "用户",
+          vlevel: selected?.profile?.vlevel,
+          body: echo.ackText,
+        },
+      ]
+    : baseThread;
 
   return (
     <div className="m3-stage">
@@ -666,7 +722,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
             <TransferBanner transfer={selected.transfer} onAccept={acceptTransfer} onWait={waitTransfer} onReturn={() => setShowReturn(true)} />
           )}
           <div className="ChatBody">
-            <MessageThread messages={threadMessages} relWhen={relWhen} resetKey={selected.id} agentName={ownerLabel(selected.owner)} agentAvatar={selected.owner !== "Unassigned" ? <MAvatar name={selected.owner} size="sm" /> : undefined} handlerRole={selected.type === "advisor" ? "顾问" : "客服"} />
+            <MessageThread messages={threadMessages} relWhen={relWhen} resetKey={selected.id} agentName={ownerLabel(selected.owner)} agentAvatar={selected.owner !== "Unassigned" ? <MAvatar name={selected.owner} size="sm" /> : undefined} handlerRole={selected.type === "advisor" ? "顾问" : "客服"} typing={echoOnThis && echo.typing} typingLabel="用户正在输入…" />
           </div>
           {selected.transfer ? (
             <div className="m3-xfer-lock">

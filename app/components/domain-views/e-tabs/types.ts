@@ -96,7 +96,7 @@ export interface EViewCtx {
   pE: (k: string) => string;
   openActionConfirm: (m: McSpec) => void;
   toast: (msg: string) => void;
-  // E1 商品目录 & 代际门
+  // E1 商品目录 & 上架门
   skus: OpsSku[];
   reviews: OpsReview[];
   e1Loading: boolean;

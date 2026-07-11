@@ -59,10 +59,21 @@ async function proxy(request: Request, context: RouteContext) {
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
       cache: "no-store",
     });
+    const upstreamType = upstream.headers.get("Content-Type") || "application/json";
+    if (upstreamType.includes("text/event-stream") && upstream.body) {
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: {
+          "Content-Type": upstreamType,
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
+    }
     return new Response(await upstream.text(), {
       status: upstream.status,
       headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+        "Content-Type": upstreamType,
         "Cache-Control": "no-store",
       },
     });

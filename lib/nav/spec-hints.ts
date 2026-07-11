@@ -57,13 +57,13 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
     "admin.withdrawal_reviewed · payout.*",
   ],
   E: [
-    "商品 / 代际门 / 任务 / 生命周期 / Trade-in / 订单 / 运维",
-    "SKU 表 · 定价详情 · 代际时间线 · 订单态机",
+    "商品 / 上架门 / 任务 / 生命周期 / Trade-in / 订单 / 运维",
+    "SKU 表 · 定价详情 · 上架时间线 · 订单态机",
     "price / baseRate / stock · unlocksAtPhase · 衰减",
-    "上架/调价/发代际 · 操作确认 · 退款",
+    "上架/调价/放行上架 · 操作确认 · 退款",
     "/admin/products · /admin/orders · /admin/devices",
     "增长 + 客服 · 调价操作确认",
-    "调价覆盖率核验 · 联动 H1 代际门",
+    "调价覆盖率核验 · 联动 H1 上架门",
     "admin.price_changed · order.state_changed",
   ],
   F: [
@@ -79,8 +79,8 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
   G: [
     "Staking / 兑换 / 行情 / Genesis / 复投",
     "池配置 · 兑换风控 · 行情曲线 · Genesis 盘",
-    "APY / penalty / caps · 分红率 · gate Phase",
-    "调 APY/分红 · kill 开关 · 操作确认",
+    "APY / penalty / caps · 排放率 · gate Phase",
+    "调 APY/排放 · kill 开关 · 操作确认",
     "/admin/staking · /admin/exchange · /admin/genesis",
     "财务 + 增长 · APY / kill 操作确认",
     "放大流出红线前置 · 联动 B1 / J1",

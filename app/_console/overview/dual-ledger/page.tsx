@@ -321,11 +321,11 @@ export default function DualLedgerPage() {
                     </>
                   ) : zone === "danger" ? (
                     <>
-                      <b>已跌破红线:</b>立即冻结放大流出、暂停分红派发。放大资金流出动作须先核验本约束(§1.8 原则一)。
+                      <b>已跌破红线:</b>立即冻结放大流出、暂停排放派发。放大资金流出动作须先核验本约束(§1.8 原则一)。
                     </>
                   ) : (
                     <>
-                      <b>警戒区:</b>建议收紧大额提现、暂缓 Genesis 分红与高 APY 放大。覆盖率跌破健康线后,放大资金流出动作须先核验本约束(§1.8 原则一)。
+                      <b>警戒区:</b>建议收紧大额提现、暂缓 Genesis 排放与高 APY 放大。覆盖率跌破健康线后,放大资金流出动作须先核验本约束(§1.8 原则一)。
                     </>
                   )}
                 </div>
@@ -434,7 +434,7 @@ export default function DualLedgerPage() {
             <div className="dec-lbl">紧急熔断</div>
             <div className="fuse-row">
               {killActive ? (
-                <span className="fuse-active" title="全局熔断已生效:全平台放大流出(提现放行 / 分红派发 / 高 APY)已停摆。解除请前往 J1。">
+                <span className="fuse-active" title="全局熔断已生效:全平台放大流出(提现放行 / 排放派发 / 高 APY)已停摆。解除请前往 J1。">
                   <span className="dot red" /> 全局熔断已生效 · 放大流出停摆
                 </span>
               ) : (
@@ -492,7 +492,7 @@ export default function DualLedgerPage() {
           <div className="alertbar" style={{ marginTop: 14 }}>
             <span className="ico" style={{ color: "var(--warning)" }}><AlertTriangle size={16} /></span>
             <div style={{ fontSize: "12.5px" }}>
-              {netFlow24hUsd >= 0 ? "净流入为正" : "净流出放大"} + 覆盖率趋势联动 → 建议持续确认大额提现与分红节奏。
+              {netFlow24hUsd >= 0 ? "净流入为正" : "净流出放大"} + 覆盖率趋势联动 → 建议持续确认大额提现与排放节奏。
             </div>
           </div>
         </section>
@@ -561,11 +561,11 @@ export default function DualLedgerPage() {
           }
           detail={
             mc.kind === "redline"
-              ? "覆盖率低于该红线即冻结放大流出、暂停分红派发。调低将放宽放大流出约束。"
+              ? "覆盖率低于该红线即冻结放大流出、暂停排放派发。调低将放宽放大流出约束。"
               : mc.kind === "runRisk"
                 ? "24h 净流出 / 储备超过该红线即判定挤兑压力,触发收紧措施。"
                 : mc.kind === "kill"
-                  ? "立即停摆全平台放大流出(提现放行 / 分红派发 / 高 APY 放大),与 J1 全局闸同源。可在 J1 解除。"
+                  ? "立即停摆全平台放大流出(提现放行 / 排放派发 / 高 APY 放大),与 J1 全局闸同源。可在 J1 解除。"
                   : "确认该兑付红线告警已在本驾驶舱跟进处置 · 列表将置灰收起。"
           }
           amplifies={mc.kind === "redline" || mc.kind === "kill"}

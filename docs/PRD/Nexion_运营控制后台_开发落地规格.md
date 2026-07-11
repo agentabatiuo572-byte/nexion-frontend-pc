@@ -11,7 +11,7 @@
 > - 状态机 + 合法转移 → **第 5 章 状态机集**。
 > - 鉴权 / 审批门 → **第 6 章 RBAC 权限矩阵**。
 >
-> **权威性**:本文件为提炼视图,每行带「出处§」可回溯;与原 PRD 正文冲突时**以 PRD 正文为准**。标 **✅ PM 裁定** 的口径(如 Genesis 日分红 0.1%、B1 红线拒绝码 422)以裁定为准。标 **TBD / 未定义 / 待裁定** 的项见第 7 章,**开发不得自行硬编**。
+> **权威性**:本文件为提炼视图,每行带「出处§」可回溯;与原 PRD 正文冲突时**以 PRD 正文为准**。标 **✅ PM 裁定** 的口径(如 Genesis 日排放 0.1%、B1 红线拒绝码 422)以裁定为准。标 **TBD / 未定义 / 待裁定** 的项见第 7 章,**开发不得自行硬编**。
 >
 > **语言**:全文中性运营语言。
 >
@@ -57,7 +57,7 @@
 ### 0.5 接口硬校验(server 强制)
 - 业务规则前置失败 → **400 / 422**;状态机非法转移 → **409**。
 - 高敏写 `reason` 缺失 → **400 `REASON_REQUIRED`**(确认弹窗理由必填,server 强制非空,8–200 字)。
-- **放大资金流出方向**(上调 APY/费率/奖励/分红率/匹配比/cap、下调罚款/冷却/积分门、kill 恢复)提交时 server 前置核 **B1 覆盖率红线**,低于 `coverageRedLine`(默认 100%)**统一拒绝返 422**(✅ PM 2026-06-02;旧文 403 已废)。
+- **放大资金流出方向**(上调 APY/费率/奖励/排放率/匹配比/cap、下调罚款/冷却/积分门、kill 恢复)提交时 server 前置核 **B1 覆盖率红线**,低于 `coverageRedLine`(默认 100%)**统一拒绝返 422**(✅ PM 2026-06-02;旧文 403 已废)。
 - 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / salvage 月12归零 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序 / UNILEVEL_USDT 各层和≤25%。
 
 ### 0.6 ID 全 server mint
@@ -81,7 +81,7 @@
 - `cumulativeDepositUsdt` **仅 D1 真实充值确认链路写**(正向 recordDeposit / 负向 chargeback、E4 退款核减);earnings/salvage/KYC/quest/C3 纯余额补记**均不得触达**(trade-in 资格硬前提)。
 - **salvage credit 不入余额**(E3 不变量 M2:仅作置换扣减项,不写 creditBalance、不可提现、不可累加)。
 - **trial shadow 非硬负债**(Model A:`computeTrialOffset` 拆分,offsetUSD 抵购机款上限 `trialOffsetCapUSD`=$50、remainderUSD + 全额 NEX 购后入余额成应付)。
-- **Genesis 日分红 = 节点价 × 持有量 × 0.1%/日**(✅ PM 2026-06-01)。
+- **Genesis 日排放 = 节点价 × 持有量 × 0.1%/日**(✅ PM 2026-06-01)。
 
 ### 0.12 前端杠杆映射覆盖
 - `docs/FRONTEND-LEVER-MAP.md` 是 H5 / UniApp 前端业务杠杆与后台控制面的当前索引；三端改造增量 M1-M11 已在三端 SPEC-5 并入该表，三端 SPEC-6 已把 M8 更新为新 `entry-surfaces` 三端入口首页。
@@ -135,7 +135,7 @@
 | G1 | Staking 池配置 | USDT 锁仓+NEX 池 4 档 APY/罚款/最小额/单档 kill | G 金融 | V3·Ch12 | §9.6 / §13.3.1 / §9.11c.1 / §9.11d.1 |
 | G2 | 兑换风控 | NEX↔USDT 三阈值 caps/gate/排队(代币→可提现闸门) | G 金融 | V3·Ch12 | §9.4 / §9.11c.1 |
 | G3 | NEX 行情引擎 | 价格曲线/做市波动/预言机喂价源(G2/G7 定价源) | G 金融 | V3·Ch12 | §5.7 / §11.9 / §9.11c.1 |
-| G4 | Genesis 经济 | 节点总量/单价/日分红率/二级版税/pause/geo | G 金融 | V3·Ch12 | §10 / §9.11d.1 |
+| G4 | Genesis 经济 | 节点总量/单价/日排放率/二级版税/pause/geo | G 金融 | V3·Ch12 | §10 / §9.11d.1 |
 | G5 | Premium 订阅 | 月费/首月折扣/权益(gate 由 H1 派发) | G 金融 | V3·Ch12 | §9.5a / §13.4 / §9.11d.1 |
 | G6 | NEX v2 Founders Vault | NEX v2 锁仓(250% APY/24 月/min 1,000 NEX) | G 金融 | V3·Ch12 | §9.5b / §9.11d.1 |
 | G7 | 复投激励 | 复投锁仓 APY/期限/积分倍率/培育倍率/Genesis 抽奖券 | G 金融 | V3·Ch12 | §9.5 |
@@ -189,7 +189,7 @@
 
 | 实体 | 关键字段 | 权威源 | 出处§ |
 |---|---|---|---|
-| **TreasuryLedger·B1 应付负债账本** | 负债8科目[可提余额,USDT staking 本金,staking 应付利息,Genesis 日分红承诺,NEXv2 未来兑付,待提现 queue,佣金冷却未解锁,锁仓本息其他](均 number/USDT) · coverageRatio:number(派生=储备÷负债) · netExposureUsdt · redLine(默认100%) · yellowLine(默认110%);**yellowLine>redLine 否则 400;红线拒绝 422** | SC | §9.1 / Ch4 B1 / §17.1 |
+| **TreasuryLedger·B1 应付负债账本** | 负债8科目[可提余额,USDT staking 本金,staking 应付利息,Genesis 日排放承诺,NEXv2 未来兑付,待提现 queue,佣金冷却未解锁,锁仓本息其他](均 number/USDT) · coverageRatio:number(派生=储备÷负债) · netExposureUsdt · redLine(默认100%) · yellowLine(默认110%);**yellowLine>redLine 否则 400;红线拒绝 422** | SC | §9.1 / Ch4 B1 / §17.1 |
 | 风险雷达态势(B5) | 五维:挤兑比率(黄20/红40,red>yellow;红线=J1 R1 自动熔断引用线) · 出金压力比 e(t)(模型 §5.3,红线 0.7 固定,早期警戒不触发自动) · 异常账户 · 提现积压 · kill-switch 状态灯(5功能闸) · 覆盖率灯 | 派生视图 | Ch4 B5 |
 
 ### 域 C — 用户管理
@@ -240,7 +240,7 @@
 | **Staking position**(G1) | state:enum{pending_lock\|active\|mature_unclaimed\|claimed\|early_withdrawn\|slashed\|refunded} · product:enum{USDT锁仓\|NEX池} · 期限:enum{30\|90\|180\|365}d · 本金 · APY 锁定值 · 开锁/到期:ms-epoch;**APY(USDT 12/35/80/180%·NEX 5/12/20/35%)/penalty(USDT 5/15/30/50%)/minStake(NEX 1k/5k/10k/20k);改值仅新 position** | SC | §17.1 / Ch12 G1 |
 | **ExchangeConfig**(G2) | USER_DAILY_CAP_USD=50 · PLATFORM_DAILY_CAP_USD=20,000 · KYC_LIFETIME_THRESHOLD_USD=100 · queue;兑换单 state:enum{submitted\|gated\|queued\|swapped\|cancelled} | SC | §17.1 / Ch12 G2 |
 | **NEX price + oracle**(G3) | price($0.171) · isPump(0.08) · 做市波动±3% · costBasis($0.085) · oracleSource:enum{INTERNAL\|EXTERNAL} · oracleDeviationPct(5%) · 引擎:enum{running\|paused};**100% server-driven** | SC | §17.1 / Ch12 G3 |
-| **Genesis**(G4) | TOTAL_SLOTS(1,000) · unitPriceUSDT($9,999) · **dailyDividendShare(0.1%/日,✅PM)** · royalty(2.5%) · 节点 state:enum{minted\|held\|listed\|sold};日分红落 D4 bill,batchDate 幂等 | SC | §17.1 / Ch12 G4 |
+| **Genesis**(G4) | TOTAL_SLOTS(1,000) · unitPriceUSDT($9,999) · **dailyDividendShare(0.1%/日,✅PM)** · royalty(2.5%) · 节点 state:enum{minted\|held\|listed\|sold};日排放落 D4 bill,batchDate 幂等 | SC | §17.1 / Ch12 G4 |
 | **Premium**(G5) | MONTHLY_PRICE($99) · FIRST_MONTH_DISCOUNT(0.50) · +NEX yield(+2%) · 订阅 state:enum{none\|subscribed\|renewed\|cancelled};gate 月7(H1) | SC | §17.1 / Ch12 G5 |
 | **NEXv2 Vault**(G6) | LOCK_MONTHS(24) · APY(250%) · MIN_LOCK_NEX(1000) · matureValue=amount×6 · state:enum{pending_lock\|locked\|matured\|early_forfeit\|refunded};gate 月11(H1) | SC | §17.1 / Ch12 G6 |
 | 复投(G7) | APY(35%) · LOCK_DAYS(90) · 积分倍率(+50/$100) · 培育倍率(×1.5) · Genesis 抽奖券(每单+1) · preset[$100/200/500/1000];复用 staking 状态机(product=repurchase),早赎罚本金15%+forfeit | SC | §17.1 / Ch12 G7 |
@@ -437,7 +437,7 @@
 | `/api/config/market/nex` · `/api/market/nex`(WS) | GET/WS | (用户)NEX 行情参数 / 实时 price feed | — | G3 |
 | `/api/admin/market/nex/oracle-status` · `/market/nex/curve` · `/oracle` · `/{pause\|resume}` | GET/PUT/POST | 喂价健康 / 改曲线(拉升核 B1 422)/ 切源(仅超管)/ 暂停恢复(恢复仅超管+B1) | G3-MD1~MD4(写) | G3 |
 | `/api/genesis/state` · `/genesis/marketplace/stats`(SSE) | GET/SSE | (用户)节点经济 / 二级市场实时 | — | G4 |
-| `/api/admin/genesis/ownership` · `/genesis/economics` · `/dividend-rate` · `/pause` | GET/PUT/POST | ownership / 改总量单价版税 / 改分红率(仅超管,升核 B1 422)/ pause | G4-MD1~MD4(写) | G4 |
+| `/api/admin/genesis/ownership` · `/genesis/economics` · `/dividend-rate` · `/pause` | GET/PUT/POST | ownership / 改总量单价版税 / 改排放率(仅超管,升核 B1 422)/ pause | G4-MD1~MD4(写) | G4 |
 | `/api/config/premium` · `/admin/premium/{subscriptions,config,disable}` | GET/PUT/POST | (用户)价格权益 / 订阅监控 / 改配置(升 yield 核 B1)/ kill | G5-MD1~MD3(写) | G5 |
 | `/api/config/nex-v2-lock` · `/admin/nexv2/{locks,config}` · `/nex-v2-lock/disable` | GET/PUT/POST | (用户)APY/锁期 / 锁仓监控 / 改配置(仅超管,升 APY 核 B1)/ kill | G6-MD1/MD2(写) | G6 |
 | `/api/config/repurchase` · `/admin/repurchase/{orders,config}` | GET/PUT | (用户)复投配置 / 复投单监控 / 改参数(reinvestMultiplier 消费面归 G7;核 B1) | G7-MD1~MD3(PUT) | G7 |
@@ -651,6 +651,8 @@
 | `clusterFreezeSuggestThreshold` | 0.7 | 0–1 | K1 | K1 |
 | `trialCycleThreshold` | 同实体 ≥3 次/30 天 | 2–10 | K2(归属待定,见第7章) | K2 |
 | `welcomeGiftAnomalyThreshold` | 同实体 ≥2 笔 | 1–5 | K2 | K2 |
+| `rewards.welcomeGift.usdtAmount` / `.nexAmount` | $5 / 20 NEX | ≥0 | K2(新人礼发放配置) | K2 |
+| `rewards.welcomeGift.lockMode` | `risk_bucket` | risk_bucket/direct | K2 | K2 |
 | `leaderboardVelocityMultiplier` | >5× 基线→信号 | 2×–20× | **K2**(F4d 只读) | K2 |
 | `largeAmountUsdt`(提现路由) | ≥ $1,000 | $100–$50,000 | K3 | K3 |
 | `velocity24h` | 笔数>3 或 >$5,000/24h | 笔数 1–20 / $500–$50,000 | K3 | K3 |
@@ -659,6 +661,8 @@
 | `weight.{6维}` | multiAccount 0.25/arbitrage 0.2/kycStatus 0.2/withdrawVelocity 0.15/accountAge 0.1/anomalyBehavior 0.1 | 各 0–1(**和=1 强制**) | **K4** | K4 |
 | `scoreBand.{low,mid,high}` | <40 / 40–69 / ≥70 | 0–100(low<mid<high) | K4 | K4 |
 | `autoEscalateScore` | ≥ 85 | 70–100 | K4 | K4 |
+| `riskScore.dimensionWeights.{7维}`(SPEC-7 聚簇) | serverDeviceId 0.9 / ipBucket 0.8 / withdrawAddress 0.9 / paymentInstrument 0.5 / sponsor 0.4 / uaFingerprint 0.2 / signupTiming 0.3 + `weakSignalClusterThreshold` 0.6 | 各 0–1 | **K4**(聚簇维度权重面板;区别于上 6 维评分权重) | K4 |
+| SPEC-7 收益释放 / 提现前置全参数 | 见 SPEC-7 | — | `releaseMode` / `freeSlotRequiresBinding` / `appAttestationReleaseHours` / `firstWithdrawalManual` / `newAddressHoldHours` / `sameAddressRoute` 等全表在 `PRD/三端架构改造/specs/SPEC-7-H5风险簇与收益释放.md` §5,K1/K3 面板可调 | K1/K3 |
 | `largeWithdrawReviewUsdt`(KYC 复审) | ≥ $1,000 | $100–$50,000 | K5 | K5 |
 | `cumulativeKycThresholdUsdt` | $100 lifetime | $50–$1,000 | K5(V1)→G2(V3) | K5 |
 | `reviewSlaDays` / `reviewTriggerScore` | ≤7 工作日(大额≤15) / ≥85 | 1–15 天 / 70–100 | K5 | K5 |
@@ -730,7 +734,7 @@
 | `PERIOD_PRIZE`(4 周期奖池) | today $5,000/Top20 · week $50,000/Top50 · month $250,000/Top100 · all-time $1,000,000/Top100 | 奖池≥0/TopN≥1 | 仅新周期 | F4d |
 | `leaderboardMinUsd` / `snapshotIntervalMin` | ≥$1 / 5 分钟 | ≥0 / 1–60min | 实时 | F4d |
 
-### 4.10 域 G — 金融产品(出处 v3 §12 各 ③;升 APY/费率/分红/价格放大流出核 B1 422)
+### 4.10 域 G — 金融产品(出处 v3 §12 各 ③;升 APY/费率/排放/价格放大流出核 B1 422)
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 |
 |---|---|---|---|---|
@@ -898,7 +902,7 @@
 - **G6 NEX v2**:`pending_lock → locked`(24 月,月度结算入 bills)/ `→ refunded` / `locked → matured`(matureValue=amount×6)/ `locked → early_forfeit`(forfeit 100% accrued premium)。竞态以 server 终态为准(409)。
 - **G7 复投**:复用 G1 状态机 `pending_lock → active(90d)→ mature_unclaimed → claimed`;旁路 `early_withdrawn`(罚本金 15%+forfeit)。事件 `staking.opened(product=repurchase)`。
 - **G2 兑换单**:`submitted → {gated(子类 geo-blocked) | queued | swapped}` / `queued → {swapped | cancelled}`。新增 geo_block 对已 queued 单按锁定优先转 cancelled(本金不被单方面锁定)。
-- **G4 Genesis 节点**:`minted → held`(持有计分红)/ `held → listed`(二级挂单)/ `listed → sold`(扣 2.5% 版税,**分红跟随新持有者**);日分红 00:00 UTC 批次。一二级支持 pause(J1 genesis 闸)。
+- **G4 Genesis 节点**:`minted → held`(持有计排放)/ `held → listed`(二级挂单)/ `listed → sold`(扣 2.5% 版税,**排放权跟随新持有者**);排放 00:00 UTC 批次(上所后)。一二级支持 pause(J1 genesis 闸)。
 - **G5 Premium**:`none → subscribed`(首月折扣)/ `→ renewed` / `{subscribed,renewed} → cancelled`(7 天退款窗内退/窗外止续)。
 - **注**:G3 NEX 行情为连续值,仅引擎 `running ⇄ paused`(暂停时现价冻结),非用户对象状态机。
 
@@ -972,7 +976,7 @@
 | Trial 敏感参数 | ✅ | — | — | ✅(lead) | — | — | 是(理由必填) | H2 |
 | 兑换三阈值 caps/gate | ✅ | ✅(lead) | ✅(lead) | — | — | — | 是(理由必填;放宽方向 B1 预检) | G2 |
 | Staking APY/罚款/单档 kill | ✅ | ✅(lead,kill 止血) | ✅(lead,参数) | — | — | — | 是(理由必填;APY 调升 B1 预检;单档 disable 归 G1,不入 J1) | G1 |
-| Genesis 经济(单价/分红率/pause/geo) | ✅(分红率仅超管) | ✅(lead,pause/geo) | ✅(lead,其余参数) | — | — | — | 是(理由必填;分红率放大负债前置 B1) | G4 |
+| Genesis 经济(单价/排放率/pause/geo) | ✅(排放率仅超管) | ✅(lead,pause/geo) | ✅(lead,其余参数) | — | — | — | 是(理由必填;排放率放大负债前置 B1) | G4 |
 | 佣金事件撤销/补发/暂停 | ✅ | ✅(lead) | ✅(lead,联动 D 退回) | — | — | — | 是(理由必填;补发方向 B1 预检) | F5 |
 | 网络版税费率 / Partner Status | ✅ | ✅(lead) | ✅(lead) | ✅(增长侧) | — | — | 是(理由必填;调升 B1 预检,应付负债来源) | F2 |
 | 风险披露版本切换 + 强制 re-ack | ✅ | ✅(lead,合规) | — | — | — | — | 是(I5-MD1,理由必填;合规关键,非熔断闸) | I5 |
@@ -1014,7 +1018,7 @@
 | 1 | Phase dial 数量 | §13.4.1=7-dial;§9.11c.1/§9.11d.3=8-dial | 后台权威 **10-dial**(前端须补 newUserBonusMultiplier+questBonusMultiplier) | H1 / B4 | v1 附录 A.1 #1 / §1.7 |
 | 2 | 双轨日封顶 `binaryDailyCap` | 前端 §8.4 固定 $5,000 | Phase 派发:月1–6=$5,000 / 月7+=$2,000(权威 H1) | F3 / H1 | v1 附录 A.1 #2 |
 | 3 | 提现冷却 `withdrawCooldownDays` | §13.4.1 缺月 8=35d 中间档 | 月1–7=30d / **月8=35d** / 月9+=45d | D5 / H1 | v1 附录 A.1 #3 |
-| 4 | Genesis 每日分红率 | §10.1=0.1% vs §10.3=1.5%(15× 矛盾) | **✅ 0.1%/日**(PM 2026-06-01);前端 §10.3 笔误待订正 | G4 / B2 / D3 | v1 附录 A.1 #5 |
+| 4 | Genesis 每日排放率 | §10.1=0.1% vs §10.3=1.5%(15× 矛盾) | **✅ 0.1%/日**(PM 2026-06-01);前端 §10.3 笔误待订正 | G4 / B2 / D3 | v1 附录 A.1 #5 |
 | 5 | 抽奖转盘奖池文案 | events.ts 含「win $1–$500 或 a Genesis Node」 | **✅ Genesis 不进转盘**;删「or a Genesis Node」 | H4 | v1 附录 A.1 #8 |
 | 6 | KPI 章节序号引用 | 前端 §17/§18.2 混排;SKILL 写 §17.2 | 八项 KPI 统一引 **§18.2** | L1 / 全局 | v1 附录 A.1 #4 |
 | 7 | 前端文档编号/计数瑕疵簇 | §14 误编 §15.x;§11.3「14 section」vs 13 行;§11.0A 缺 wrapped 行 | 后台按逻辑号/正确计数落地(I2/I4/I6 已对齐) | I2/I4/I6 | v1 附录 A.1 #6 |
@@ -1200,7 +1204,7 @@
 | G3-MD3 | 行情引擎暂停 | — | v3 G3④a |
 | G3-MD4 | 行情引擎恢复 | 是 | v3 G3④a |
 | G4-MD1 | 节点经济参数变更 | — | v3 G4④a |
-| G4-MD2 | Genesis 每日分红率变更 | 是 | v3 G4④a |
+| G4-MD2 | Genesis 每日排放率变更 | 是 | v3 G4④a |
 | G4-MD3 | Genesis 一二级市场暂停 | 是 | v3 G4④a |
 | G4-MD4 | Genesis geo_block 配置 | 是 | v3 G4④a |
 | G5-MD1 | Premium 定价变更 | — | v3 G5④a |

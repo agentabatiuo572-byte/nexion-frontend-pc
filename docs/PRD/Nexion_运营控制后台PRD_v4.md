@@ -1163,11 +1163,11 @@ J1 是全平台 5 个功能闸 kill 开关的**统一权威矩阵面**,持有每
    |---|---|---|---|---|
    | `withdraw` | 全平台提现流出(应急一键冻结提现) | D 提现(D2 队列;server enforce 于提现 endpoint) | **停全部提现流出**,在途请求冻结(B1/B4 反映) | **是**(恢复即放大 USDT 即时流出) |
    | `staking` | Staking 整体能力(单档由 G1 原生 endpoint disable) | G1 staking | 停新开仓;影响未来到期兑付节奏(B4) | **是**(恢复新开仓→未来兑付负债增长) |
-   | `genesis` | Genesis 一级预售 + 二级市场全局 pause | G4 genesis | 停分红派发与一二级流转;影响 Genesis 持有人日分红 | **是**(涉即时兑付义务 + 流转,见 ⑦) |
+   | `genesis` | Genesis 一级预售 + 二级市场全局 pause | G4 genesis | 停排放派发与一二级流转;影响 Genesis 持有人日排放 | **是**(涉即时兑付义务 + 流转,见 ⑦) |
    | `exchange` | NEX↔USDT swap 全局 pause | G2 exchange | **停 NEX→USDT 流出**(资金流出侧关闭;B1/B4 反映) | **是**(恢复即放大 USDT 即时流出) |
    | `trial` | Free-trial entry kill(`phaseOpen=false`) | H2 trial | 停新试用领取;影响转化入口(B3) | 否(获客型,不放大兑付流出,见 ⑦) |
 
-2. **(b) 单闸详情**:单闸 `[闸 key / 被控能力描述 / 当前状态 / 状态变更史(熔断/恢复时间线 + 每次 operator/reason/触发依据/trigger(manual|auto))/ 联动处置清单(该闸熔断时建议同步执行的动作,如 kill exchange 时提示「检查在途 swap 订单」;kill staking/genesis 时提示「在锁 position / 分红处置方案随单」)/ 恢复前置核验结果(B1 覆盖率快照,仅前置 B1 的闸显示)]`。
+2. **(b) 单闸详情**:单闸 `[闸 key / 被控能力描述 / 当前状态 / 状态变更史(熔断/恢复时间线 + 每次 operator/reason/触发依据/trigger(manual|auto))/ 联动处置清单(该闸熔断时建议同步执行的动作,如 kill exchange 时提示「检查在途 swap 订单」;kill staking/genesis 时提示「在锁 position / 排放处置方案随单」)/ 恢复前置核验结果(B1 覆盖率快照,仅前置 B1 的闸显示)]`。
 3. **(c) 批量应急熔断面**:监管点名/重大合规事件下的批量熔断入口 `[选择闸(可多选批量熔断)/ 触发依据单选(监管点名 / 挤兑风险 / 安全事件 / 其他)/ 强制 reason(监管事由)/ 影响预览(每闸被控能力与在途量)]`;**仅熔断方向可用**(恢复恒为仅超管 + B1 前置的单闸动作,见 ④),授权角色(风控/财务/超管)单人经确认弹窗 J1-MD3 即时执行,执行后实时告警全体超管 + 全运营账号广播(§15.1 框架)。
 
 **状态机(覆盖失败/边界/并发,自洽设计)**:单闸 `enabled(正常开放)⇄ disabled(已熔断)`——**仅此二态,无审批中间态**(2026-06 操作确认决议:确认即生效)。**恢复(disabled→enabled)对前置 B1 的闸,server 在写入前校验 B1 覆盖率(判据见 ③/⑦),未达即拒绝 `422 COVERAGE_BELOW_REDLINE`(响应携覆盖率快照;弹窗不关、内联阻断提示;闸保持 disabled)**——覆盖率回约束内后由超管重新发起恢复(默认无 override,闭环见 ④/⑦)。并发与幂等:① 同闸切换经 `Idempotency-Key`(§9.11e,server 24h dedup)去重,重复提交同一 key 返回原始结果;② **批量熔断逐闸独立生效(非原子)**,部分失败返回每闸 `status[]`(成功闸独立生效,失败闸列明原因),不因单闸失败回滚已生效闸;③ 自动触发(R1/R2)与人工切换并发时,server 以闸状态写入序为准(后写读到已熔断态即幂等跳过)。
@@ -1188,7 +1188,7 @@ J1 是全平台 5 个功能闸 kill 开关的**统一权威矩阵面**,持有每
 
 | 动作 | 执行权 | 确认弹窗 | 审计点 |
 |---|---|---|---|
-| 功能闸熔断（enable→disable,止血方向） | 风控 / 财务 / 超管(单人执行) | J1-MD1(理由必填 + 触发依据单选;确认即时生效 + 广播) | `admin.killswitch_toggled`（闸 key / `action=disable` / operator / reason / 触发依据 / `disposition_plan`（staking/genesis 时携在锁/分红处置）） |
+| 功能闸熔断（enable→disable,止血方向） | 风控 / 财务 / 超管(单人执行) | J1-MD1(理由必填 + 触发依据单选;确认即时生效 + 广播) | `admin.killswitch_toggled`（闸 key / `action=disable` / operator / reason / 触发依据 / `disposition_plan`（staking/genesis 时携在锁/排放处置）） |
 | 功能闸恢复（disable→enable,放大流出方向） | **仅超管** | J1-MD2(理由必填 + **B1 红线预检**;对前置 B1 的闸 server 前置核验 `coverageRatio ≥ recoverGate`,未达 422) | `admin.killswitch_toggled`（闸 key / `action=enable` / operator / reason / `coverage_snapshot`（前置闸）） |
 | **批量应急熔断（多闸,监管点名/重大合规事件）** | 风控 / 超管(单人执行) | J1-MD3(理由必填 + 触发依据单选;仅熔断方向,确认即逐闸生效 + 广播) | `admin.killswitch_toggled`（每闸一条,`trigger=manual` / operator / reason / 触发依据）;**高亮审计 + 实时告警全体超管 + 全运营账号广播** |
 | 配置自动触发阈值（R2 对账缺口）/ 补确认时限 | **仅超管** | J1-MD4(理由必填;应急策略参数变更) | admin 审计事件（参数 / before / after / operator / reason） |
@@ -1229,13 +1229,13 @@ J1 是全平台 5 个功能闸 kill 开关的**统一权威矩阵面**,持有每
 
 ##### [J1-MD1] 功能闸熔断确认
 - **功能**:全局停用单个能力闸(withdraw/staking/genesis/exchange/trial),止血动作,确认即 server enforce + 广播。
-- **布局结构**:1. **信息区**:闸 key / 被控能力描述 / 当前态 enabled / 该能力当前活跃量(如在锁 position 数、24h 提现单量,server 派生)/ 最近一次该闸变更记录(引自审计)。2. **影响预览区**:警示条「熔断后该能力 endpoint 全局拒绝,影响全体用户;熔断即时生效并广播全运营账号」;`withdraw` 闸额外提示「全平台提现流出将冻结,在途请求转冻结」;staking/genesis 闸展示在锁 position / 分红处置提示(disposition_plan 随单)。3. **输入区**:见下表。4. **按钮区**:取消 / 确认熔断(警示色)。
+- **布局结构**:1. **信息区**:闸 key / 被控能力描述 / 当前态 enabled / 该能力当前活跃量(如在锁 position 数、24h 提现单量,server 派生)/ 最近一次该闸变更记录(引自审计)。2. **影响预览区**:警示条「熔断后该能力 endpoint 全局拒绝,影响全体用户;熔断即时生效并广播全运营账号」;`withdraw` 闸额外提示「全平台提现流出将冻结,在途请求转冻结」;staking/genesis 闸展示在锁 position / 排放处置提示(disposition_plan 随单)。3. **输入区**:见下表。4. **按钮区**:取消 / 确认熔断(警示色)。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
 | 触发依据 | 单选(监管点名 / 挤兑风险 / 安全事件 / 其他) | 是 | 未选确认钮置灰 | 未选 |
-| disposition_plan(staking/genesis 时) | 多行文本(在锁/分红处置方案) | 该二闸必填 | 非空 | 空 |
+| disposition_plan(staking/genesis 时) | 多行文本(在锁/排放处置方案) | 该二闸必填 | 非空 | 空 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
 - **按钮区**:`[取消]` · `[确认熔断]`(警示色主按钮;必填未过校验置灰;提交 loading 锁定,携 `Idempotency-Key`)。
@@ -1295,7 +1295,7 @@ server-canonical；闸状态服务端权威,**熔断后对应能力 endpoint 在
 **⑦ 风控 & 联动**
 - **kill 状态 server enforce（client 不可绕,核心约束）**：闸状态服务端权威,熔断后对应能力 endpoint 在服务端直接拒绝请求（§9.11d.2:killed 功能 server 拒绝,非仅 UI 隐藏；client localStorage 改 flag 无效）；J3 监控的「篡改尝试」本身即 client 试图绕过被 kill 的功能 / server 权威（J3⑦呼应）。
 - **kill 联动资金 & 兑付,闸资金语义分级(§3.14:兑付覆盖率权威归 B1)**:三类即时/时滞分级——
-  - **即时流出闸(恢复即放大即时兑付流出)**:`exchange`(恢复放开 NEX→USDT 即时流出);`genesis`(**恢复同时涉(a)恢复分红派发=即时兑付义务流出 +(b)恢复一级预售=募资流入**,恢复前置 B1 主要针对(a),按「即时流出」口径前置 B1)。
+  - **即时流出闸(恢复即放大即时兑付流出)**:`exchange`(恢复放开 NEX→USDT 即时流出);`genesis`(**恢复同时涉(a)恢复排放派发=即时兑付义务流出 +(b)恢复一级预售=募资流入**,恢复前置 B1 主要针对(a),按「即时流出」口径前置 B1)。
   - **时滞流出闸(恢复放开新开仓使未来兑付负债增长)**:`staking`(kill 停**新开仓**=减少未来兑付负债而非立即放大流出,其**恢复**放开新开仓使未来兑付负债增长——故恢复挂 B1 的依据是「时滞流出」逻辑,与 exchange/genesis 即时流出区分)。
   - **不挂 B1 闸**:`trial`(获客成本)——非兑付负债流出,不挂 B1,避免「覆盖率未达却拦住本应放开的获客型能力」反效果。
   统一口径:exchange/genesis 即时、staking 时滞,三闸恢复前置 `coverageRatio ≥ recoverGate`(③);trial 不前置。所有 kill/恢复动作在 B4 节奏反映熔断对运营态势的影响、在 B1/B2 反映对兑付覆盖率的影响。
@@ -1309,8 +1309,8 @@ server-canonical；闸状态服务端权威,**熔断后对应能力 endpoint 在
 **⑧ 埋点（事件）**
 对齐 A4（`admin` domain §2.4.3 / `admin` family §2.4.5 ⑥）。**复用 `admin.killswitch_toggled`,不新增 per-feature 事件(章首注 + #6)。**
 - **产生（admin family,§2.4.5 ⑥）**：
-  - `admin.killswitch_toggled` — 触发点:功能闸熔断/恢复确认执行（手动 J1-MD1/MD2、批量应急 J1-MD3 或自动触发 R1/R2）；属性(**含本章扩展**):`switch_key（区分 withdraw/staking/genesis/exchange/trial）/ action(enable|disable) / operator / reason / trigger(manual|auto) / trigger_basis(监管点名|挤兑风险|安全事件|其他) / rule(R1|R2,auto 时) / coverage_snapshot(前置闸恢复时) / target_ref(子粒度,如收敛矩阵承载 per-pool 时的 poolId) / disposition_plan(在锁 position / genesis 分红处置) / ts`;**事件名复用 V1 A3⑧ 已登记事件,但属性 schema 须扩展(新增 `trigger` / `trigger_basis` / `rule` / `coverage_snapshot` / `target_ref` / `disposition_plan`;原复核工作流属性已随 2026-06 操作确认决议废除注销,执行人统一记 operator)——属性集变更即 schema 变更,须走 A4 schema 变更操作确认(§2.4.8,仅超管经确认弹窗),blocking、BI cutover 前 must-finish,与 #6 同列为 schema 工单,不表述为「无需新增」**;消费方见下「kill 事件双源调和」+ 真实消费链。
-  - **kill 事件双源调和(权威段,blocking 收敛)**:同一次熔断,**由 J1 矩阵层统一 emit `admin.killswitch_toggled`(`switch_key` 区分闸,子粒度由 `target_ref` 承载)作为矩阵层权威审计事件**;V3 G 域既有 per-product kill 事件(`admin.staking_pool_killed`(poolId/处置方案)/ `admin.exchange_paused`(geo_block)/ `admin.genesis_paused`(geo_block/分红处置),各标「→同步 J1」)与 `admin.killswitch_toggled` **二者取单源**——**收口决策:保留 `admin.killswitch_toggled` 为矩阵层单源权威审计事件(扩展属性 `target_ref` + `disposition_plan` 承载原 per-product 事件的 poolId / 处置方案 / 分红处置载荷,避免收敛即丢审计字段、与 §1.8 原则二.2 审计可追溯冲突)**,V3 per-product kill 事件标注 V4 收敛废弃(各域 kill 改由读 J1 闸状态 enforce + J1 统一 emit);B5 状态灯 / A2 审计统一消费 `admin.killswitch_toggled`,避免双源审计与状态灯双写。
+  - `admin.killswitch_toggled` — 触发点:功能闸熔断/恢复确认执行（手动 J1-MD1/MD2、批量应急 J1-MD3 或自动触发 R1/R2）；属性(**含本章扩展**):`switch_key（区分 withdraw/staking/genesis/exchange/trial）/ action(enable|disable) / operator / reason / trigger(manual|auto) / trigger_basis(监管点名|挤兑风险|安全事件|其他) / rule(R1|R2,auto 时) / coverage_snapshot(前置闸恢复时) / target_ref(子粒度,如收敛矩阵承载 per-pool 时的 poolId) / disposition_plan(在锁 position / genesis 排放处置) / ts`;**事件名复用 V1 A3⑧ 已登记事件,但属性 schema 须扩展(新增 `trigger` / `trigger_basis` / `rule` / `coverage_snapshot` / `target_ref` / `disposition_plan`;原复核工作流属性已随 2026-06 操作确认决议废除注销,执行人统一记 operator)——属性集变更即 schema 变更,须走 A4 schema 变更操作确认(§2.4.8,仅超管经确认弹窗),blocking、BI cutover 前 must-finish,与 #6 同列为 schema 工单,不表述为「无需新增」**;消费方见下「kill 事件双源调和」+ 真实消费链。
+  - **kill 事件双源调和(权威段,blocking 收敛)**:同一次熔断,**由 J1 矩阵层统一 emit `admin.killswitch_toggled`(`switch_key` 区分闸,子粒度由 `target_ref` 承载)作为矩阵层权威审计事件**;V3 G 域既有 per-product kill 事件(`admin.staking_pool_killed`(poolId/处置方案)/ `admin.exchange_paused`(geo_block)/ `admin.genesis_paused`(geo_block/排放处置),各标「→同步 J1」)与 `admin.killswitch_toggled` **二者取单源**——**收口决策:保留 `admin.killswitch_toggled` 为矩阵层单源权威审计事件(扩展属性 `target_ref` + `disposition_plan` 承载原 per-product 事件的 poolId / 处置方案 / 排放处置载荷,避免收敛即丢审计字段、与 §1.8 原则二.2 审计可追溯冲突)**,V3 per-product kill 事件标注 V4 收敛废弃(各域 kill 改由读 J1 闸状态 enforce + J1 统一 emit);B5 状态灯 / A2 审计统一消费 `admin.killswitch_toggled`,避免双源审计与状态灯双写。
   - **矩阵整体熔断 vs per-pool 单档(粒度并存,不进矩阵)**:staking 二元 `staking` key 表达矩阵层**整体熔断**;单档级 disable 仍由 G1 原生 endpoint + `admin.staking_pool_enabled_changed` 承载、**不进 J1 矩阵收敛**(粒度审计不被单 key 抹平,见 ⑤)。
 - **消费**:无（J1 为应急处置面,不消费用户事件流;其产出的 kill 事件供 A2 审计 + B5 状态灯 + B1 恢复前置核验快照消费;B3/B4 归因为未接线开放项,见 ⑦ + #6）。
 
@@ -1937,7 +1937,7 @@ L3 是平台**只读财务聚合报表面**——把收入 / 兑付 / 敞口 / �
 1. **(a) 收入结构报表**:按 §1.4 四条收入流(设备销售 GMV / 团队分润佣金 / 代币经济 / 算力撮合服务费)的周期收入聚合 `[收入流 / 本期金额 USDT / 占比 / 环比 Δ]`;数据源:各域 money family 收入事件(`checkout.completed` 设备 GMV / `commission.paid` 佣金口径 / `exchange.swapped` 代币 / 服务费事件)。
 2. **(b) 兑付报表**:提现兑付健康——`[提现申请量 `withdraw.submitted` / 已兑付 `withdraw.confirmed` / 兑付率 / 平均兑付时延 / 驳回 `withdraw.rejected` / 延迟 `withdraw.delayed` / 冻结 `withdraw.frozen`]`(按周期 / cohort);兑付率 = `withdraw.confirmed ÷ withdraw.submitted`。**兑付率为 L3 净新运营指标(非 §2.4.6 八项 KPI)**——与 B2 科目6「待提现 queue 在途负债」(`withdraw.submitted − withdraw.confirmed`,v1.md B2②)**同源 `withdraw.submitted/confirmed`,但二者语义不同:本报表兑付率为比率口径(兑付健康度)、B2 科目6 为在途余额口径(负债额),非同一数,互不替代**;`withdraw.delayed / frozen` 仍计入兑付率分母(已提交未终态,口径与 B2 科目6 在途一致)。本报表承载 §2.4.6 KPI #5 之外的「提现兑付」资金安全运营关注点(L1 #5 为推广率,见 L1⑥注),L1 提现兑付下钻入此。**兑付率告警归属**:兑付率本身在 L 域**仅作周期核账观察指标,L3 不持独立告警线 / 订阅权**;**急性提现安全信号以 B5 雷达的覆盖率 breach + 挤兑比率 breach 为准**(`admin.coverage_threshold_breached` 覆盖率口径;`risk.bankrun_threshold_breached` 挤兑比率 = 24h 提现 ÷ 储备)——二者与兑付率(已兑付 ÷ 已提交)是不同口径的不同指标:兑付率反映**已提交提现的兑付完成度**(慢性核账),覆盖率/挤兑比率反映**储备对负债/短时流出的承压**(急性预警);(c) 敞口报表的破线标注即消费此二 breach 事件,兑付率不另立告警链。
 3. **(c) 净敞口报表**:净敞口(= 真实储备 − 应付负债)时间序列 + 兑付覆盖率走势——**引用 B1 `GET /api/admin/treasury/coverage`**(`reserveTotalUsdt / liabilityTotalUsdt / coverageRatio / netExposureUsdt`,§3.14 B1 权威);敞口转负 / 覆盖率破红黄线区段高亮(红黄线由 B1 持有,L3 只读展示)。**覆盖率 / 挤兑破线区段由 breach 事件流标注**——消费 `admin.coverage_threshold_breached`(B1/B2 产)+ `risk.bankrun_threshold_breached`(B5 产)在敞口曲线上打破线标记,而非仅轮询 coverage endpoint(§1.8 原则一兑付安全的核心预警信号入 L3 报表面)。
-4. **(d) 负债到期报表**:应付负债到期排程——**读引用 D3 权威实现 `GET /api/admin/treasury/maturity-forecast`**(三类到期:`withdrawDueUsdt` / `interestDueUsdt` / `genesisDividendUsdt`;Genesis 日分红到期 = 持有量 × **server `dailyDividendShare`**(当前裁定 0.1%/日,§A.1 #5;权威实现取 `GET /api/genesis/state` 返回的 server 字段,L3 不硬编码比例,与 D3 负债科目 #4 脚注 `[^genesisdiv]``dailyDividendShare` server-canonical 语义一致));8 类负债科目分解**引用 D3 权威实现 `GET /api/admin/treasury/liabilities`**(科目定义口径权威归 B2);`reserveCoverDays`(储备可覆盖到期天数)。
+4. **(d) 负债到期报表**:应付负债到期排程——**读引用 D3 权威实现 `GET /api/admin/treasury/maturity-forecast`**(三类到期:`withdrawDueUsdt` / `interestDueUsdt` / `genesisDividendUsdt`;Genesis 日排放到期 = 持有量 × **server `dailyDividendShare`**(当前裁定 0.1%/日,§A.1 #5;权威实现取 `GET /api/genesis/state` 返回的 server 字段,L3 不硬编码比例,与 D3 负债科目 #4 脚注 `[^genesisdiv]``dailyDividendShare` server-canonical 语义一致));8 类负债科目分解**引用 D3 权威实现 `GET /api/admin/treasury/liabilities`**(科目定义口径权威归 B2);`reserveCoverDays`(储备可覆盖到期天数)。
 
 **③ 可控参数**
 
@@ -1945,11 +1945,11 @@ L3 是平台**只读财务聚合报表面**——把收入 / 兑付 / 敞口 / �
 |---|---|---|---|---|
 | 财务口径（储备/负债/覆盖率/到期） | **锁定 B1/D3/B2（只读引用，不在 L3 改）** | 只读（口径变更走 B1/D3/B2 权威面经其操作确认门） | — | §3.14：覆盖率权威归 B1 / 水位归 D3 / 负债科目定义归 B2；L3 不重算（约束 §16.1 框架 2） |
 | 报表周期 | **月度（财务核账周期）** | 日 / 周 / 月 / 季 / 自定义 | 实时（仅视图） | 净新运营设计：财务按月核账，对齐 12 月运营周期月粒度（§6.4） |
-| Genesis 日分红到期口径 | **持有量 × server `dailyDividendShare`（当前裁定 0.1%/日，§A.1 #5）** | 只读（取 server 权威字段，L3 不硬编码比例） | — | D3 负债科目 #4 脚注 `[^genesisdiv]`：`dailyDividendShare` server-canonical，PRD 不锁死硬编码比例；与 D3⑤ / B2⑤ maturity-forecast 单一源 |
+| Genesis 日排放到期口径 | **持有量 × server `dailyDividendShare`（当前裁定 0.1%/日，§A.1 #5）** | 只读（取 server 权威字段，L3 不硬编码比例） | — | D3 负债科目 #4 脚注 `[^genesisdiv]`：`dailyDividendShare` server-canonical，PRD 不锁死硬编码比例；与 D3⑤ / B2⑤ maturity-forecast 单一源 |
 | 收入流口径 | **§1.4 四条收入流（设备/佣金/代币/服务费）** | 只读（收入定义由各域权威） | — | §1.4 商业模式四收入来源；各域 money family 事件 |
 | 净敞口告警线（展示用） | **引用 B1 redLine/yellowLine（只读展示）** | 只读（红黄线权威归 B1） | — | B1 `GET /api/admin/treasury/coverage` 返 redLine/yellowLine；L3 不持告警线 |
 
-> **默认值口径**:财务口径(储备/负债/覆盖率/到期/红黄线)全部锚定 B1/D3/B2 权威(§3.14,L3 只读引用不重设);报表周期为净新运营设计,按 12 月运营周期月粒度(§6.4)设月度默认。**Genesis 日分红率不在 L3 硬编码**——取 server `dailyDividendShare`(当前裁定 0.1%/日,§A.1 #5;权威实现为 D3 maturity-forecast 取 server 字段),与 D3 负债科目 #4 脚注 `[^genesisdiv]`措辞对齐;前端 §10.3 笔误 1.5% 的订正在 §A.1 #5 登记。12 月运营周期未覆盖充值费率 / 渠道阈值等——L3 不涉及该类参数(归 D1 充值对账)。
+> **默认值口径**:财务口径(储备/负债/覆盖率/到期/红黄线)全部锚定 B1/D3/B2 权威(§3.14,L3 只读引用不重设);报表周期为净新运营设计,按 12 月运营周期月粒度(§6.4)设月度默认。**Genesis 日排放率不在 L3 硬编码**——取 server `dailyDividendShare`(当前裁定 0.1%/日,§A.1 #5;权威实现为 D3 maturity-forecast 取 server 字段),与 D3 负债科目 #4 脚注 `[^genesisdiv]`措辞对齐;前端 §10.3 笔误 1.5% 的订正在 §A.1 #5 登记。12 月运营周期未覆盖充值费率 / 渠道阈值等——L3 不涉及该类参数(归 D1 充值对账)。
 
 **④ 操作动作**
 
@@ -2018,7 +2018,7 @@ L3 是平台**只读财务聚合报表面**——把收入 / 兑付 / 敞口 / �
 **⑧ 埋点(事件)**
 对齐 A4(§2.4.5 ③ money + ⑥ admin),L3 是**资金流 money family 的财务报表消费方**:
 
-- **消费(§2.4.5 ③ money,全部 `is_server_authoritative=true`)**:`checkout.completed`(设备 GMV)· `commission.paid`(佣金收入/负债)· `exchange.swapped`(代币经济)· `withdraw.submitted/confirmed/rejected/delayed/frozen`(兑付报表)· `genesis.purchased`(Genesis 收入 + 日分红负债,取 server `dailyDividendShare`)· `staking.opened/claimed`(锁仓本息负债,§9.6)· `earnings.credited`(应付负债)· `wallet.topup_confirmed`(储备流入);引用 D3/B1/B2 聚合(覆盖率/到期/科目)。**消费告警**:`admin.coverage_threshold_breached`(B1/B2 产)+ `risk.bankrun_threshold_breached`(B5 产)→ 敞口/兑付报表破线标注。消费 `admin.bill_adjusted`(账本调整对账)。
+- **消费(§2.4.5 ③ money,全部 `is_server_authoritative=true`)**:`checkout.completed`(设备 GMV)· `commission.paid`(佣金收入/负债)· `exchange.swapped`(代币经济)· `withdraw.submitted/confirmed/rejected/delayed/frozen`(兑付报表)· `genesis.purchased`(Genesis 收入 + 日排放负债,取 server `dailyDividendShare`)· `staking.opened/claimed`(锁仓本息负债,§9.6)· `earnings.credited`(应付负债)· `wallet.topup_confirmed`(储备流入);引用 D3/B1/B2 聚合(覆盖率/到期/科目)。**消费告警**:`admin.coverage_threshold_breached`(B1/B2 产)+ `risk.bankrun_threshold_breached`(B5 产)→ 敞口/兑付报表破线标注。消费 `admin.bill_adjusted`(账本调整对账)。
 - **产生(admin 审计,§2.4.5 ⑥)**:`admin.report_exported`(财务报表含资金明细导出,经确认弹窗 L3-MD1 + 理由必填)· `admin.bi_query_run`(可选);须经 A4 schema registry 注册(归 §2.4.5 ⑥)。
 - **占位 union 兜底(cutover 前)**:代币经济收入若涉 V3 G 域 `nex` domain(§A.2 #14)、服务费若涉净新事件,cutover 前暂记 admin family,L3 union 兜底按收入语义归入收入报表;`withdraw`/`commission`/`exchange`/`genesis`/`staking`/`earnings` 均 V1 既有 money family,无需占位。
 - **喂给**:L3 财务报表本身(终点消费面);喂 L5(监管财务报送)+ L1(#8 下钻)。
@@ -2417,7 +2417,7 @@ flowchart LR
 | I | Nova cadence config(10 channel) | I2 | server | per-channel kill(不入 J1 闸集) |
 | I | 会话中心(会话 / 话术 / AutoPushPolicy) | I9 | server | Conversation 字段镜像前端 §12.9a(+ owner/status);AutoPushPolicy 4 参;话术/模板发布态;`I.session.*` 单源 |
 | J | Kill-switch matrix(6 闸) | J1/J2 | server | 5 功能闸(含后台应急新增 withdraw)+ geo-block;V1 A3 存储 → V4 J1/J2 管理面 |
-| K | 风险评分模型 / 去重指纹 / 提现风控规则 / 大额 KYC 复审 | K4/K1/K3/K5 | server | 风险评分(K4,B5/D2/各域消费)· IP/设备/支付三层去重(K1)· 套利/刷量检测(K2,产 risk.arbitrage_suspected)· 大额 KYC 复审(K5) |
+| K | 风险评分模型 / 去重指纹 / 提现风控规则 | K4/K1/K3 | server | 风险评分(K4,B5/D2/各域消费)· IP/设备/支付三层去重(K1)· 套利/刷量检测(K2,产 risk.arbitrage_suspected)· 大额 KYC 复审(K5) |
 | L | KPI 口径(8 项)/ 漏斗口径 | §2.4.6 / §2.4.7(L 读) | server | L 域只读引用,不重定义 |
 
 ### 17.2 全局 API 总表
@@ -2450,14 +2450,14 @@ flowchart LR
 - **充值对账/退款类**:充值渠道侧 PSP 退款(D1);
 - **大额资金放行**:提现审核放行 / 冻结 / 退款(D2,放行前置 B1 覆盖率预检);
 - **参数批改**:兑付覆盖率红黄线(B1)、挤兑阈值(B5)、提现参数(D5)、注册登录风控参数(C6)、预测参数配置/口径配置(D3/B2)、充值渠道启停 / PSP 切换(D1)、Phase dial 改动 / pin / cohort override(H1:非放大流出方向执行=增长/超管;**放大流出方向 dial 执行=仅超管**)、Trial 敏感参数(H2);
-- **风险模型 / KYC 裁决(K 域)**:K4 风险模型权重/分档(**执行=仅超管**,风控可起草草稿)· K5 大额 KYC 复审裁决(执行=风控 lead/超管);
+- **风险模型 / KYC 裁决(K 域,两类分列)**:K4 风险模型权重/分档(**执行=仅超管**,风控可起草草稿)· K5 大额 KYC 复审裁决(执行=风控 lead/超管);
 - **kill-switch**:6 闸(5 个二元功能闸 + geo-block;V1 入口在 A3、V4 归 J1/J2;**恢复方向(disable→enable)执行=仅超管 + B1 红线前置,熔断方向为止血动作,执行=风控/财务/超管**);
 - **账户高敏处置**:账户冻结 / 解冻(C2)、impersonate 授权(C2)、人工标记/撤销 KYC(C4,执行=风控 lead/超管)、人工 disable 2FA / 密码重置 / 解除账户锁定(C5);
 - **批量账户簇冻结**:批量冻结关联账户簇(K1,执行=风控 lead/超管;单用户冻结→C2);
 - **后台账号治理**:运营账号创建 / 禁用 / 启用 / 角色变更 / 2FA 重置(A1,执行=仅超管);
 - **feature flag / 系统参数配置**(A3)。
 
-清单汇总权威在 A2③ 并**随各章新增高敏动作同步更新**——本卷 V4 据此同步入清单的新增动作:I 域内容/披露发布类(I1–I7 + I9,含「风险披露版本发布(I5),执行=风控 lead/超管」「I9 会话中心配置:类别启停 / 顾问推送策略 / 话术·模板发布,执行=内容 lead/客服 lead/超管」,v1 附录 A #17 已回填)· J 域闸切换/geo-block/应急剧本(J1/J2/J4)· L 域含 PII/资金/监管批量导出与解密导出(L3/L4/L5)。**放大资金流出方向**(降 cooldown/points、升 cap/APY/分红率/费率/奖励额、kill 恢复)**前置核验 B1 兑付覆盖率红线**(低于 `coverageRedLine` 默认 100% → server 拒绝,统一返 **422 `COVERAGE_BELOW_REDLINE`**);资金/资产写另携 `Idempotency-Key`(§9.11e)。应急熔断按 **2026-06 操作确认决议**:授权角色单人确认即时执行 + 实时告警全体超管 + 全运营账号广播(§17.6 #5);非高敏/即时止血动作(强制登出/标记/只读查看等)不入确认门,直接生效 + 留痕。
+清单汇总权威在 A2③ 并**随各章新增高敏动作同步更新**——本卷 V4 据此同步入清单的新增动作:I 域内容/披露发布类(I1–I7 + I9,含「风险披露版本发布(I5),执行=风控 lead/超管」「I9 会话中心配置:类别启停 / 顾问推送策略 / 话术·模板发布,执行=内容 lead/客服 lead/超管」,v1 附录 A #17 已回填)· J 域闸切换/geo-block/应急剧本(J1/J2/J4)· L 域含 PII/资金/监管批量导出与解密导出(L3/L4/L5)。**放大资金流出方向**(降 cooldown/points、升 cap/APY/排放率/费率/奖励额、kill 恢复)**前置核验 B1 兑付覆盖率红线**(低于 `coverageRedLine` 默认 100% → server 拒绝,统一返 **422 `COVERAGE_BELOW_REDLINE`**);资金/资产写另携 `Idempotency-Key`(§9.11e)。应急熔断按 **2026-06 操作确认决议**:授权角色单人确认即时执行 + 实时告警全体超管 + 全运营账号广播(§17.6 #5);非高敏/即时止血动作(强制登出/标记/只读查看等)不入确认门,直接生效 + 留痕。
 
 **(c) A4 埋点事件体系(§2.4)完整清单**:domain 枚举(§2.4.3,V1 现行 22 个)+ **跨批次 domain 扩展工单**(BI cutover 前 must-finish,§2.4.8):V3 批 `event`/`milestone`/`nex`/`market`/`repurchase`(附录 A.2 #14)· V4-I 批 `content`/`notification`/`disclosure`/`learn`/`conversation`(#16)· V4-J `risk.tamper_detected`/`admin.emergency_playbook_*` + `admin.killswitch_toggled` 属性扩展(#19)· V4-L `admin.report_exported`/`admin.bi_query_run`(#21)。扩展前各域事件暂记 admin family 占位,BI(L 域)union 兜底。所有看板/KPI/漏斗/资金口径派生自事件流,只认 `is_server_authoritative=true`(资金/状态类)+ §2.4.6/§2.4.7 已锁定口径事件。
 
@@ -2515,7 +2515,7 @@ flowchart LR
 
 | # | 决议项 | 现状 / 建议 | 影响 |
 |---|---|---|---|
-| 1 | Genesis 日分红率 | **✅ 已裁定 = 0.1%/日**(2026-06-01) | G4 + B2/D3 已据此落地 |
+| 1 | Genesis 日排放率 | **✅ 已裁定 = 0.1%/日**(2026-06-01) | G4 + B2/D3 已据此落地 |
 | 2 | Lucky Spin 转盘奖项池 + 中奖概率 | ✅ **已裁定(PM 2026-06-02)**:8 档 EV≈$0.73/spin($1×5% + $20×0.9% + $500×0.1% 逐项展开),Genesis 不进转盘,3 护栏 + B1 红线自动降级,票来源统一,已落 H4 ③ 奖池表 | H4/H5 转盘治理面已 finalize |
 | 3 | reinvestMultiplier 复投倍率消费面落点 | ✅ **已裁定 = G7**(PM 2026-06-02;复投机制在 G7,与 V1 §⑤ 一致,V3 已订正) | 复投奖励倍率生效面归 G7 |
 | 4 | B1 红线拒绝码 403/422 统一 | ✅ **已裁定 422**(PM 2026-06-02;V1 B1 403→422 已改;auth/authz 类 403 保持) | 全卷接口码统一 |

@@ -41,8 +41,7 @@ const MAP = {
   sold: ["sold"], stock: ["stock"], rating: ["rating"], reviews: ["reviews"],
   features: ["features"], shareYieldMin: ["shareYieldMin"], shareYieldMax: ["shareYieldMax"],
   ai: ["aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", "aiUnlocks"],
-  generation: ["generation"], status: ["lifecycle"], supersededBy: ["supersededBy"],
-  tradeinDiscount: ["tradeinDiscount"], unlocksAtPhase: ["unlock"],
+  status: ["lifecycle"], unlocksAtPhase: ["unlock"],
   // purchaseGate(per-user 购买门):uniapp Product 展示字段 → OpsSku.purchaseGate 镜像。
   // FE 源已 re-point 到 uniapp,本条已生效 —— 删 OpsSku.purchaseGate 会爆红(门真守住此字段)。
   purchaseGate: ["purchaseGate"],
@@ -58,6 +57,10 @@ const AI_MAP = {
 };
 const AI_IGNORE = new Set(["bestForCategory"]);
 
+if (!fs.existsSync(ADMIN_STORE)) {
+  console.log(`ℹ 旧静态后台 store 已删除(${ADMIN_STORE})— SKU 权威已迁至真实后端接口，跳过旧 store 镜像核对`);
+  process.exit(0);
+}
 const storeSrc = fs.readFileSync(ADMIN_STORE, "utf8");
 const opsList = extractInterfaceFields(storeSrc, "OpsSku");
 if (!opsList || opsList.length === 0) {

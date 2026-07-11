@@ -14,20 +14,17 @@
  * ## 自动重连
  *   onerror 后指数退避（5s → 10s → 20s → 30s 封顶），组件卸载时 EventSource.close() 并清定时器。
  *
- * ## 已知基础设施限制（TODO，非本 hook 职责）
- *   当前 Next route 用 `await upstream.text()` 缓冲整段响应体（route.ts 不在本任务可改文件边界内），
- *   会把 SSE 流攒到 SseEmitter 超时才一次性吐回，实时性失效。管理台在那之前仍依赖 reloadMContent 快照兜底。
- *   修法（出本任务范围）：把 /api/admin/content/conversations/stream 的 Next route 改为流式透传
- *   `new Response(upstream.body, { headers: { "Content-Type": "text/event-stream", ... } })`，
- *   或为 SSE 单独建一条 streaming route handler。
+ * ## 流式代理
+ *   Next route 对 text/event-stream 直接透传 upstream.body，不缓冲响应；普通 JSON 路由仍沿用统一错误处理。
  */
 import { useEffect, useRef, useState } from "react";
 
-export type ConversationEventType = "MESSAGE" | "TRANSFER" | "STATUS" | "INITIATE";
+export type ConversationEventType = "MESSAGE" | "TRANSFER" | "STATUS" | "INITIATE" | "RECEIPT";
 
 /** 后端 ConversationMessageEvent 的前端镜像（见 OpsConversationController 发布点）。 */
 export interface ConversationStreamEvent {
   conversationNo: string;
+  messageId?: number;
   eventType: ConversationEventType;
   senderType: "AGENT" | "USER" | "SYSTEM" | string;
   senderName?: string;
