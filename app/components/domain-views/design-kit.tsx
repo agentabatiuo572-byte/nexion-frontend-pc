@@ -507,6 +507,7 @@ type PermissionRole = { key: string; label: string; current: string };
 type NotifyTemplateOption = { value: string; label: string; campaignNo?: string; meta?: string; tier?: string; status?: string; audience?: string; searchText?: string };
 type SopActionOption = { value: string; label: string; domain: string; action: string; ref?: string | null; approve?: boolean; description?: string; searchText?: string };
 type SopRollbackOption = { value: string; label: string; scene?: string; riskLevel?: string; plan: string; searchText?: string };
+type CopyPositionOption = { value: string; label: string; surface: string; status?: string };
 export type SchemaPropertyDraft = { name: string; type: string; pii: boolean };
 
 function initEditValue(spec?: EditSpec | null): string {
@@ -533,7 +534,9 @@ export type BusinessFormSpec =
   | { kind: "export-wizard"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; keyName?: string; zh?: string; en?: string; placeholders?: string[] }
-  | { kind: "copy-edit"; keyName?: string; version?: string; surface?: string; zh?: string; en?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; versionNote?: string }
+  | { kind: "copy-edit"; keyName?: string; version?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
+  | { kind: "copy-create"; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
+  | { kind: "copy-position-create"; modules: { value: string; label: string }[] }
   | { kind: "course-authoring"; rewardMin?: number; rewardMax?: number; categories?: string[]; durations?: string[]; publishStates?: string[] }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
@@ -694,6 +697,19 @@ const DEFAULT_COURSE_PUBLISH_STATES = ["draft", "ready", "published"];
 const DEFAULT_CAMPAIGN_TIERS = ["critical", "high", "normal", "low"];
 const DEFAULT_LANGUAGE_SCOPES = ["en+zh", "zh", "en"];
 
+function parseCopyAudience(audience?: string): { phaseMin: string; phaseMax: string; language: string; registrationDaysGt: string } {
+  const raw = audience?.trim() ?? "";
+  const phaseRange = raw.match(/P([1-6])(?:\s*[-–]\s*P?([1-6]))?/i);
+  const language = raw.match(/(?:^|[·\s])(zh|en|vi)(?:$|[·\s])/i)?.[1]?.toLowerCase() ?? "all";
+  const days = raw.match(/注册\s*(?:>|≥)\s*(\d+)\s*天/)?.[1] ?? "0";
+  return {
+    phaseMin: phaseRange?.[1] ? `P${phaseRange[1]}` : "P1",
+    phaseMax: phaseRange?.[2] ? `P${phaseRange[2]}` : phaseRange?.[1] ? `P${phaseRange[1]}` : "P3",
+    language,
+    registrationDaysGt: days,
+  };
+}
+
 function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   if (!spec) return {};
   if (spec.kind === "role-select") {
@@ -706,15 +722,47 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return { zh: spec.zh ?? "", en: spec.en ?? "" };
   }
   if (spec.kind === "copy-edit") {
+    const audience = parseCopyAudience(spec.audience);
     return {
       zh: spec.zh ?? "",
       en: spec.en ?? "",
+      vi: spec.vi ?? "",
       version: spec.version ?? "vNext",
       surface: spec.surface ?? "",
-      audience: spec.audiences?.[0] ?? "",
-      trafficSplit: spec.trafficSplits?.[0] ?? "",
+      copyPosition: spec.copyPosition ?? spec.positions?.find((item) => item.surface === spec.surface && item.status !== "disabled")?.value ?? "",
+      audience: spec.audience ?? spec.audiences?.[0] ?? "",
+      phaseMin: spec.phaseMin ?? audience.phaseMin,
+      phaseMax: spec.phaseMax ?? audience.phaseMax,
+      language: spec.language ?? audience.language,
+      registrationDaysGt: spec.registrationDaysGt ?? audience.registrationDaysGt,
+      trafficSplit: spec.trafficSplit ?? spec.trafficSplits?.[0] ?? "",
       versionNote: spec.versionNote ?? "日常内容迭代",
+      saveMode: "存草稿",
     };
+  }
+  if (spec.kind === "copy-create") {
+    const surface = spec.surface ?? spec.modules?.[0]?.value ?? "home";
+    const audience = parseCopyAudience(spec.audience);
+    return {
+      copyKey: spec.copyKey ?? "",
+      description: spec.description ?? "",
+      surface,
+      copyPosition: spec.copyPosition ?? spec.positions?.find((item) => item.surface === surface && item.status !== "disabled")?.value ?? "",
+      audience: spec.audience ?? "",
+      phaseMin: spec.phaseMin ?? audience.phaseMin,
+      phaseMax: spec.phaseMax ?? audience.phaseMax,
+      language: spec.language ?? audience.language,
+      registrationDaysGt: spec.registrationDaysGt ?? audience.registrationDaysGt,
+      trafficSplit: spec.trafficSplits?.[0] ?? "",
+      version: spec.version ?? "v1",
+      versionNote: spec.versionNote ?? "新增文案首版",
+      zh: spec.zh ?? "",
+      en: spec.en ?? "",
+      vi: spec.vi ?? "",
+    };
+  }
+  if (spec.kind === "copy-position-create") {
+    return { positionKey: "", positionName: "", surface: spec.modules[0]?.value ?? "home" };
   }
   if (spec.kind === "course-authoring") {
     return {
@@ -899,17 +947,50 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     });
   } else if (spec.kind === "copy-edit") {
     needs("version", "版本号");
-    needs("surface", "投放位置");
-    needs("audience", "受众");
+    needs("surface", "投放模块");
+    needs("copyPosition", "文案位置");
+    needs("phaseMin", "最低 P 阶段");
+    needs("phaseMax", "最高 P 阶段");
+    needs("language", "语言");
+    needs("registrationDaysGt", "注册天数");
     needs("trafficSplit", "分流比例");
     needs("versionNote", "版本说明");
     needs("zh", "中文草稿");
     needs("en", "英文草稿");
+    needs("vi", "越南语文案");
+    if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("P 阶段范围");
+    if (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0) missing.push("注册天数非负整数");
     const split = Number(state.trafficSplit);
     if (!Number.isFinite(split) || split <= 0 || split > 100) missing.push("分流比例 1-100");
     (spec.placeholders ?? []).forEach((ph) => {
-      if (!state.zh?.includes(ph) || !state.en?.includes(ph)) missing.push(`占位符 ${ph}`);
+      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`三语占位符 ${ph}`);
     });
+  } else if (spec.kind === "copy-create") {
+    needs("copyKey", "文案标识");
+    needs("description", "文案名称");
+    needs("surface", "投放模块");
+    needs("copyPosition", "文案位置");
+    needs("phaseMin", "最低 P 阶段");
+    needs("phaseMax", "最高 P 阶段");
+    needs("language", "语言");
+    needs("registrationDaysGt", "注册天数");
+    needs("trafficSplit", "分流比例");
+    needs("version", "首版版本号");
+    needs("versionNote", "版本说明");
+    needs("zh", "中文文案");
+    needs("en", "英文文案");
+    needs("vi", "越南语文案");
+    if (Number(state.phaseMin?.replace("P", "")) > Number(state.phaseMax?.replace("P", ""))) missing.push("P 阶段范围");
+    if (!Number.isInteger(Number(state.registrationDaysGt)) || Number(state.registrationDaysGt) < 0) missing.push("注册天数非负整数");
+    const split = Number(state.trafficSplit);
+    if (!Number.isFinite(split) || split <= 0 || split > 100) missing.push("分流比例 1-100");
+    (spec.placeholders ?? []).forEach((ph) => {
+      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`三语占位符 ${ph}`);
+    });
+  } else if (spec.kind === "copy-position-create") {
+    needs("positionKey", "位置标识");
+    needs("positionName", "位置名称");
+    needs("surface", "投放模块");
   } else if (spec.kind === "course-authoring") {
     ["slug", "category", "format", "difficulty", "duration", "reward", "publishState", "titleZh", "titleEn", "bodyZh", "bodyEn"].forEach((key) => needs(key, key));
     const reward = Number(state.reward);
@@ -1070,6 +1151,8 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "role-select") return state.role;
   if (spec.kind === "permission-matrix") return spec.roles.map((r) => state[`grant.${r.key}`]).join("/");
   if (spec.kind === "copy-edit") return state.version;
+  if (spec.kind === "copy-create") return state.copyKey;
+  if (spec.kind === "copy-position-create") return state.positionKey;
   if (spec.kind === "version-authoring") return state.version;
   if (spec.kind === "course-authoring") return state.slug;
   if (spec.kind === "campaign-edit") return state.title;
@@ -1117,14 +1200,14 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
       <input className="fld" type={type} value={value[key] ?? ""} onChange={(e) => set(key, e.target.value)} placeholder={placeholder} />
     </label>
   );
-  const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>) => {
+  const select = (key: string, label: string, options: string[], proofOrLabels?: string | Record<string, ReactNode>, optionLabels?: Record<string, ReactNode>, onValueChange?: (next: string) => void) => {
     const proof = typeof proofOrLabels === "string" ? proofOrLabels : undefined;
     const labels = typeof proofOrLabels === "string" ? optionLabels : proofOrLabels;
     const current = value[key] ?? options[0] ?? "";
     return (
     <label className="field" style={{ marginBottom: 0 }}>
       <span>{label}</span>
-      <select className="fld" data-proof={proof} value={current} disabled={options.length === 0} onChange={(e) => set(key, e.target.value)}>
+      <select className="fld" data-proof={proof} value={current} disabled={options.length === 0} onChange={(e) => onValueChange ? onValueChange(e.target.value) : set(key, e.target.value)}>
         {options.length === 0 ? <option value="">无后端返回选项</option> : options.map((o) => <option key={o} value={o}>{labels?.[o] ?? o}</option>)}
       </select>
     </label>
@@ -1282,23 +1365,56 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
     );
   }
 
-  if (spec.kind === "localized-copy" || spec.kind === "copy-edit") {
+  if (spec.kind === "localized-copy" || spec.kind === "copy-edit" || spec.kind === "copy-create") {
+    const isManagedCopy = spec.kind === "copy-edit" || spec.kind === "copy-create";
+    const modules = isManagedCopy ? (spec.modules ?? []) : [];
+    const moduleLabels = Object.fromEntries(modules.map((item) => [item.value, item.label]));
+    const positions = isManagedCopy
+      ? (spec.positions ?? []).filter((item) => item.surface === value.surface && item.status !== "disabled")
+      : [];
+    const positionLabels = Object.fromEntries(positions.map((item) => [item.value, item.label]));
+    const changeSurface = (surface: string) => {
+      const nextPosition = isManagedCopy
+        ? (spec.positions ?? []).find((item) => item.surface === surface && item.status !== "disabled")?.value ?? ""
+        : "";
+      onChange({ ...value, surface, copyPosition: nextPosition });
+    };
     return (
       <div className="field" data-business-form={spec.kind}>
-        <label>业务表单 · 双语文案{spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</label>
+        <label>业务表单 · 中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</label>
+        {spec.kind === "copy-create" && (
+          <div className="grid g-2" style={{ gap: 10, marginBottom: 10 }}>
+            {input("copyKey", "文案标识", "home.newBanner")}
+            {input("description", "文案名称", "首页新横幅")}
+            {select("surface", "投放模块", modules.map((item) => item.value), moduleLabels, undefined, changeSurface)}
+            {select("copyPosition", "文案位置", positions.map((item) => item.value), positionLabels)}
+            {input("trafficSplit", "分流比例(%)", "50", "number")}
+            {input("version", "首版版本号", "v1")}
+          </div>
+        )}
         {spec.kind === "copy-edit" && (
           <div className="grid g-2" style={{ gap: 10, marginBottom: 10 }}>
             {input("version", "变体/版本号 variant id", "v8")}
-            {input("surface", "投放位置 surface", "Home / Me / Store")}
-            {select("audience", "受众 audience", spec.audiences ?? [])}
+            {select("surface", "投放模块", modules.map((item) => item.value), moduleLabels, undefined, changeSurface)}
+            {select("copyPosition", "文案位置", positions.map((item) => item.value), positionLabels)}
             {input("trafficSplit", "分流比例 traffic split(%)", "50", "number")}
+            {spec.saveModeChoice && select("saveMode", "保存为", ["存草稿", "发布生效"])}
+          </div>
+        )}
+        {isManagedCopy && (
+          <div className="grid g-2" data-proof="copy-audience-builder" style={{ gap: 10, marginBottom: 10 }}>
+            {select("phaseMin", "最低 P 阶段", ["P1", "P2", "P3", "P4", "P5", "P6"])}
+            {select("phaseMax", "最高 P 阶段", ["P1", "P2", "P3", "P4", "P5", "P6"])}
+            {select("language", "语言", ["all", "zh", "en", "vi"], { all: "全部语言", zh: "中文 zh", en: "英文 en", vi: "越南语 vi" })}
+            {input("registrationDaysGt", "注册时长大于(天)", "0", "number")}
           </div>
         )}
         <div className="grid g-2" style={{ gap: 10 }}>
           {textArea("zh", "中文 zh 文案", "填写中文草稿")}
           {textArea("en", "英文 en copy", "Fill English copy")}
+          {isManagedCopy && textArea("vi", "越南语 vi 文案", "Nhập nội dung tiếng Việt")}
         </div>
-        {spec.kind === "copy-edit" && (
+        {(spec.kind === "copy-edit" || spec.kind === "copy-create") && (
           <div style={{ marginTop: 10 }}>
             {textArea("versionNote", "版本说明 version note", "本次草稿变更原因、预期指标和回滚口径", 2)}
           </div>
@@ -1306,6 +1422,20 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
         {(spec.placeholders ?? []).length > 0 && (
           <div className="tint tiny" style={{ marginTop: 10 }}>必含占位符: {(spec.placeholders ?? []).map((ph) => <span key={ph} className="mono" style={{ marginRight: 6 }}>{ph}</span>)}</div>
         )}
+      </div>
+    );
+  }
+
+  if (spec.kind === "copy-position-create") {
+    const labels = Object.fromEntries(spec.modules.map((item) => [item.value, item.label]));
+    return (
+      <div className="field" data-business-form="copy-position-create">
+        <label>业务表单 · 新增文案位置</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("positionKey", "位置标识", "home.hero.banner")}
+          {input("positionName", "位置名称", "首页主横幅")}
+          {select("surface", "投放模块", spec.modules.map((item) => item.value), labels)}
+        </div>
       </div>
     );
   }

@@ -39,6 +39,24 @@ export type CopyAbStats = {
   topLift: string;
 };
 
+export type CopyModule = "home" | "store" | "earn" | "me";
+
+export type CopyAudienceTarget = {
+  mode: "structured";
+  locales: string[];
+  tiers: string[];
+  registrationDaysMin?: number | null;
+  registrationDaysMax?: number | null;
+};
+
+export type CopyPositionView = {
+  positionKey: string;
+  name: string;
+  surface: CopyModule;
+  sortOrder: number;
+  status: string;
+};
+
 export type CopyContentRow = {
   key: string;
   desc: string;
@@ -51,8 +69,12 @@ export type CopyContentRow = {
   draftVersion?: string;
   draftZh?: string;
   draftEn?: string;
+  draftVi?: string;
+  copyPosition?: string;
+  draftCopyPosition?: string;
   draftSurface?: string;
   draftAudience?: string;
+  draftAudienceTarget?: CopyAudienceTarget;
   draftTrafficSplit?: string;
   draftNote?: string;
 };
@@ -65,8 +87,11 @@ export type CopyVersionRow = {
   ts: string;
   zh: string;
   en: string;
+  vi: string;
+  copyPosition?: string;
   surface: string;
   audience: string;
+  audienceTarget?: CopyAudienceTarget;
   trafficSplit: string;
   versionNote: string;
 };
@@ -95,6 +120,7 @@ export type CopyAbOverview = {
   versions: CopyVersionRow[];
   experiments: CopyExperimentRow[];
   frameworkParams: CopyFrameworkParamView[];
+  positions: CopyPositionView[];
   surfaces: string[];
   audiences: string[];
   trafficSplits: string[];
@@ -339,6 +365,9 @@ export type IContentData = {
 
 export type IContentActions = {
   reloadIContent: () => Promise<void>;
+  createI1Copy: (body: Record<string, unknown>, reason: string) => Promise<void>;
+  createI1CopyPosition: (body: Record<string, unknown>, reason: string) => Promise<void>;
+  deleteI1CopyPosition: (positionKey: string, reason: string) => Promise<void>;
   saveI1CopyDraft: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI1CopyVersion: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   rollbackI1CopyVersion: (copyKey: string, version: string, reason: string) => Promise<void>;
@@ -391,6 +420,9 @@ export async function fetchIContentOverviews(): Promise<IContentData> {
 }
 
 export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
+  createI1Copy: (body, reason) => apiRequest("/copy-ab/copies", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  createI1CopyPosition: (body, reason) => apiRequest("/copy-ab/positions", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI1CopyPosition: (positionKey, reason) => apiRequest(`/copy-ab/positions/${encodeURIComponent(positionKey)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   saveI1CopyDraft: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI1CopyVersion: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   rollbackI1CopyVersion: (copyKey, version, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),

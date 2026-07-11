@@ -3,7 +3,7 @@
 /**
  * I1 转化文案 A/B — design_handoff_i_domain/I1 转化文案AB.html port。
  * 单源:后端 /content/copy-ab/overview;空库时以后端初始化结果为准。
- * 操作确认 显式 edit 契约:发布新版 / 回滚到历史版 / 调整框架参数 = 调参传 edit;
+ * 操作确认 显式 edit 契约:编辑文案 / 回滚到历史版 / 调整框架参数 = 调参传 edit;
  *   下架 / 停止实验 / 采纳获胜变体 = 处置不传 edit。
  * amplifies = false(I1 不碰 B1 红线 —— 只改措辞,不动费率/奖励/价格)。
  * 框架参数 = 运营设定(仍需操作确认 + 必填原因留痕)→ 走 openConfirm + input(ConfirmReq.input 已支持)。
@@ -12,22 +12,69 @@ import { useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
 
-type Surf = "all" | "Home" | "Me" | "商城";
+const COPY_MODULES = ["home", "store", "earn", "me"] as const;
+type CopyModule = (typeof COPY_MODULES)[number];
+type Surf = "all" | CopyModule;
 type ExpFlt = "all" | "running" | "concluded";
 type CopyRow = {
-  key: string; desc: string; surface: "Home" | "Me" | "商城";
+  key: string; desc: string; surface: string;
   version: string; status: string; i18nKey: string; expId: string; lastChange: string;
-  draftVersion?: string; draftZh?: string; draftEn?: string; draftSurface?: string; draftAudience?: string; draftTrafficSplit?: string; draftNote?: string;
+  draftVersion?: string; draftZh?: string; draftEn?: string; draftVi?: string; copyPosition?: string; draftCopyPosition?: string; draftSurface?: string; draftAudience?: string; draftAudienceTarget?: AudienceTarget; draftTrafficSplit?: string; draftNote?: string;
 };
+type AudienceTarget = { locales?: string[]; tiers?: string[]; registrationDaysMin?: number | null; registrationDaysMax?: number | null };
 type ExpRow = {
   id: string; copyKey: string; variants: [name: string, split: number, cvr: number][];
   audience: string; impressions: string; conversions: string; state: string; note: string;
 };
 
-const SURF_FLT: [Surf, string][] = [["all", "全部"], ["Home", "Home"], ["Me", "Me"], ["商城", "商城"]];
+const COPY_MODULE_LABELS: Record<CopyModule, string> = { home: "首页", store: "商城", earn: "赚取", me: "我的" };
+const COPY_MODULE_OPTIONS = COPY_MODULES.map((value) => ({ value, label: COPY_MODULE_LABELS[value] }));
+const LEGACY_MODULES: Record<string, CopyModule> = { Home: "home", Store: "store", Earn: "earn", Me: "me", 商城: "store" };
+const SURF_FLT: [Surf, string][] = [["all", "全部"], ...COPY_MODULES.map((value) => [value, COPY_MODULE_LABELS[value]] as [Surf, string])];
 const EXP_FLT: [ExpFlt, string][] = [["all", "全部"], ["running", "进行中"], ["concluded", "已结"]];
 
 const VAR_COLORS = ["var(--i-ac)", "var(--admin-cat-5)", "var(--admin-cat-3)"];
+
+function normalizeCopyModule(value?: string): string {
+  const raw = value?.trim() ?? "";
+  return LEGACY_MODULES[raw] ?? raw.toLowerCase();
+}
+
+function composeAudience(form?: Record<string, string>): string {
+  const phaseMin = form?.phaseMin || "P1";
+  const phaseMax = form?.phaseMax || "P3";
+  const phase = phaseMin === phaseMax ? phaseMin : `${phaseMin}-${phaseMax}`;
+  const language = !form?.language || form.language === "all" ? "全语言" : form.language;
+  const days = Math.max(0, Number(form?.registrationDaysGt || 0));
+  return `${phase} · ${language} · 注册>${days}天`;
+}
+
+function composeAudienceTarget(form?: Record<string, string>) {
+  const phaseMin = form?.phaseMin || "P1";
+  const phaseMax = form?.phaseMax || "P3";
+  const language = form?.language || "all";
+  const registrationDaysGt = Number(form?.registrationDaysGt || 0);
+  const start = Number(phaseMin.replace("P", ""));
+  const end = Number(phaseMax.replace("P", ""));
+  return {
+    mode: "structured",
+    tiers: Array.from({ length: Math.max(0, end - start + 1) }, (_, index) => `P${start + index}`),
+    locales: language === "all" ? [] : [language],
+    registrationDaysMin: registrationDaysGt + 1,
+    registrationDaysMax: null,
+  };
+}
+
+function audienceTargetFields(target?: AudienceTarget) {
+  if (!target) return {};
+  const tiers = (target.tiers ?? []).map((tier) => Number(tier.replace(/^P/i, ""))).filter(Number.isFinite).sort((a, b) => a - b);
+  return {
+    phaseMin: tiers.length ? `P${tiers[0]}` : "P1",
+    phaseMax: tiers.length ? `P${tiers[tiers.length - 1]}` : "P6",
+    language: target.locales?.[0] ?? "all",
+    registrationDaysGt: String(Math.max(0, (target.registrationDaysMin ?? 1) - 1)),
+  };
+}
 
 export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
@@ -38,7 +85,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const COPY_POOL: CopyRow[] = (data?.copies ?? []).map((row) => ({
     key: row.key,
     desc: row.desc,
-    surface: (row.surface === "Me" || row.surface === "商城" ? row.surface : "Home") as CopyRow["surface"],
+    surface: normalizeCopyModule(row.surface),
     version: row.version,
     status: row.status,
     i18nKey: row.i18nKey,
@@ -47,8 +94,12 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     draftVersion: row.draftVersion,
     draftZh: row.draftZh,
     draftEn: row.draftEn,
-    draftSurface: row.draftSurface,
+    draftVi: row.draftVi,
+    copyPosition: row.copyPosition,
+    draftCopyPosition: row.draftCopyPosition,
+    draftSurface: row.draftSurface ? normalizeCopyModule(row.draftSurface) : undefined,
     draftAudience: row.draftAudience,
+    draftAudienceTarget: row.draftAudienceTarget,
     draftTrafficSplit: row.draftTrafficSplit,
     draftNote: row.draftNote,
   }));
@@ -60,8 +111,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     ts: row.ts,
     zh: row.zh,
     en: row.en,
-    surface: row.surface,
+    vi: row.vi,
+    copyPosition: row.copyPosition,
+    surface: normalizeCopyModule(row.surface),
     audience: row.audience,
+    audienceTarget: row.audienceTarget,
     trafficSplit: row.trafficSplit,
     versionNote: row.versionNote,
   }));
@@ -81,15 +135,41 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     state: row.state,
     note: row.note,
   }));
-  const COPY_AUDIENCES = Array.from(new Set([
-    ...COPY_POOL.map((c) => c.draftAudience),
-    ...COPY_VERSIONS.map((v) => v.audience),
-    ...EXPS.map((e) => e.audience),
-  ].filter((item): item is string => !!item?.trim())));
   const COPY_TRAFFIC_SPLITS = Array.from(new Set([
+    ...(data?.trafficSplits ?? []),
     ...COPY_POOL.map((c) => c.draftTrafficSplit),
     ...COPY_VERSIONS.map((v) => v.trafficSplit),
   ].filter((item): item is string => !!item?.trim())));
+  const COPY_POSITION_ROWS = data?.positions ?? [];
+  const COPY_POSITIONS = COPY_POSITION_ROWS.map((position) => ({
+    value: position.positionKey,
+    label: `${position.name} · ${position.positionKey}`,
+    surface: normalizeCopyModule(position.surface),
+    status: position.status,
+  })).filter((position) => position.status.toUpperCase() === "ACTIVE");
+  const COPY_POSITION_OPTIONS = COPY_POSITIONS;
+
+  const nextCopyVersion = (copyKey: string, currentVersion: string): string => {
+    const used = new Set(COPY_VERSIONS.filter((row) => row.copyKey === copyKey).map((row) => row.v.toLowerCase()));
+    const match = /^(.*?)(\d+)$/.exec(currentVersion.trim());
+    if (match) {
+      const prefix = match[1];
+      let next = Number(match[2]) + 1;
+      let candidate = `${prefix}${next}`;
+      while (used.has(candidate.toLowerCase())) {
+        next += 1;
+        candidate = `${prefix}${next}`;
+      }
+      return candidate;
+    }
+    let suffix = 1;
+    let candidate = `${currentVersion}.draft${suffix}`;
+    while (used.has(candidate.toLowerCase())) {
+      suffix += 1;
+      candidate = `${currentVersion}.draft${suffix}`;
+    }
+    return candidate;
+  };
 
   const runBackend = (task: Promise<void>, ok: string) => {
     task
@@ -101,9 +181,10 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
   const liveCopyStatus = (c: CopyRow): string => c.status;
   const liveCopyDraftZh = (key: string): string | undefined => COPY_POOL.find((c) => c.key === key)?.draftZh;
   const liveCopyDraftEn = (key: string): string | undefined => COPY_POOL.find((c) => c.key === key)?.draftEn;
-  const liveCopyDraftMeta = (key: string): { audience?: string; trafficSplit?: string; note?: string; surface?: string } => {
+  const liveCopyDraftVi = (key: string): string | undefined => COPY_POOL.find((c) => c.key === key)?.draftVi;
+  const liveCopyDraftMeta = (key: string): { audience?: string; trafficSplit?: string; note?: string; surface?: string; copyPosition?: string } => {
     const row = COPY_POOL.find((c) => c.key === key);
-    return { audience: row?.draftAudience, trafficSplit: row?.draftTrafficSplit, note: row?.draftNote, surface: row?.draftSurface };
+    return { audience: row?.draftAudience, trafficSplit: row?.draftTrafficSplit, note: row?.draftNote, surface: row?.draftSurface, copyPosition: row?.draftCopyPosition };
   };
   const liveExpState = (e: ExpRow): string => e.state;
   const liveFw = (_key: string, cur: string): string => cur;
@@ -116,33 +197,115 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     return st === "adopted" || st === "discarded" || st === "stopped";
   });
 
-  // 发布新版(任一文案位通用) —— 操作确认 + 调参 edit。
-  const pubNewVersion = (c: CopyRow) => openActionConfirm({
-    action: <>发布新版 · {c.key}</>,
-    detail: <>当前发布版 <b>{c.version}</b>。发布即对全体用户下一次渲染生效;服务器先校验中英镜像与变量令牌,不齐直接拒。</>,
+  // 编辑文案(文案池每行通用) —— 默认存草稿,运营也可明确选择发布生效。
+  const editCopy = (c: CopyRow) => {
+    const editableVersion = COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.draftVersion)
+      ?? COPY_VERSIONS.find((row) => row.copyKey === c.key && row.v === c.version);
+    openActionConfirm({
+      action: <>编辑文案 · {c.key}</>,
+      detail: <>当前发布版 <b>{c.version}</b>。默认保存为草稿;只有明确选择“发布生效”才会对用户生效。服务器会校验中、英、越文案与变量令牌。</>,
+      amplifies: false,
+      businessForm: {
+        kind: "copy-edit",
+        keyName: c.key,
+        version: c.draftVersion || nextCopyVersion(c.key, c.version),
+        surface: c.draftSurface || c.surface,
+        copyPosition: c.draftCopyPosition || editableVersion?.copyPosition || c.copyPosition,
+        audience: c.draftAudience || editableVersion?.audience,
+        ...audienceTargetFields(c.draftAudienceTarget ?? editableVersion?.audienceTarget),
+        trafficSplit: c.draftTrafficSplit || editableVersion?.trafficSplit,
+        trafficSplits: COPY_TRAFFIC_SPLITS,
+        modules: COPY_MODULE_OPTIONS,
+        positions: COPY_POSITION_OPTIONS,
+        zh: c.draftZh || editableVersion?.zh || "",
+        en: c.draftEn || editableVersion?.en || "",
+        vi: c.draftVi || editableVersion?.vi || "",
+        versionNote: c.draftNote || "后台编辑文案",
+        saveModeChoice: true,
+      },
+      run: (reason, v, form) => {
+        if (!v) return;
+        const payload = {
+          version: v,
+          surface: form?.surface || c.draftSurface || c.surface,
+          copyPosition: form?.copyPosition || c.draftCopyPosition || editableVersion?.copyPosition || c.copyPosition || "",
+          audience: composeAudience(form),
+          audienceTarget: composeAudienceTarget(form),
+          phaseMin: form?.phaseMin,
+          phaseMax: form?.phaseMax,
+          language: form?.language,
+          registrationDaysGt: Number(form?.registrationDaysGt || 0),
+          trafficSplit: form?.trafficSplit || c.draftTrafficSplit || editableVersion?.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "",
+          versionNote: form?.versionNote || "后台编辑文案",
+          zh: form?.zh || c.draftZh || editableVersion?.zh || "",
+          en: form?.en || c.draftEn || editableVersion?.en || "",
+          vi: form?.vi || c.draftVi || editableVersion?.vi || "",
+        };
+        if (form?.saveMode === "存草稿") {
+          runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿已保存 · 尚未对用户生效`);
+        } else {
+          runBackend(actions.publishI1CopyVersion(c.key, payload, reason), `${c.key} ${v} 已发布生效`);
+        }
+      },
+    });
+  };
+
+  const createCopy = () => openActionConfirm({
+    action: <>新增文案</>,
+    detail: <>在文案池中新建一条受管文案。提交后会创建首个版本并发布生效,文案标识必须全局唯一。</>,
     amplifies: false,
     businessForm: {
-      kind: "copy-edit",
-      keyName: c.key,
-      version: c.version,
-      surface: c.surface,
-      audiences: COPY_AUDIENCES,
+      kind: "copy-create",
+      modules: COPY_MODULE_OPTIONS,
+      positions: COPY_POSITIONS,
       trafficSplits: COPY_TRAFFIC_SPLITS,
-      zh: "",
-      en: "",
     },
-    run: (reason, v, form) => {
-      if (!v) return;
-      runBackend(actions.publishI1CopyVersion(c.key, {
-        version: v,
-        surface: form?.surface || c.surface,
-        audience: form?.audience || c.draftAudience || "",
-        trafficSplit: form?.trafficSplit || c.draftTrafficSplit || "",
-        versionNote: form?.versionNote || "后台发布新版",
-        zh: form?.zh || c.draftZh || "",
-        en: form?.en || c.draftEn || "",
-      }, reason), `${c.key} 新版已确认生效 · 目标 ${v}`);
+    run: (reason, _value, form) => {
+      if (!form?.copyKey?.trim()) return;
+      const copyKey = form.copyKey.trim();
+      runBackend(actions.createI1Copy({
+        copyKey,
+        description: form.description?.trim() || copyKey,
+        surface: form.surface || "home",
+        copyPosition: form.copyPosition || "",
+        i18nKey: copyKey,
+        version: form.version || "v1",
+        audience: composeAudience(form),
+        audienceTarget: composeAudienceTarget(form),
+        phaseMin: form?.phaseMin,
+        phaseMax: form?.phaseMax,
+        language: form?.language,
+        registrationDaysGt: Number(form?.registrationDaysGt || 0),
+        trafficSplit: form.trafficSplit || COPY_TRAFFIC_SPLITS[0] || "50",
+        versionNote: form.versionNote || "新增文案首版",
+        zh: form.zh || "",
+        en: form.en || "",
+        vi: form.vi || "",
+      }, reason), `文案 ${copyKey} 已新增 · 首版已发布`);
     },
+  });
+
+  const createCopyPosition = () => openActionConfirm({
+    action: <>新增文案位置</>,
+    detail: <>新增可复用的文案位置。位置标识全局唯一，并固定绑定一个 App 顶级模块。</>,
+    amplifies: false,
+    businessForm: { kind: "copy-position-create", modules: COPY_MODULE_OPTIONS },
+    run: (reason, _value, form) => {
+      if (!form?.positionKey?.trim()) return;
+      runBackend(actions.createI1CopyPosition({
+        positionKey: form.positionKey.trim(),
+        name: form.positionName?.trim() || form.positionKey.trim(),
+        surface: form.surface || "home",
+        sortOrder: 0,
+      }, reason), `文案位置 ${form.positionKey.trim()} 已新增`);
+    },
+  });
+
+  const deleteCopyPosition = (positionKey: string) => openActionConfirm({
+    action: <>删除文案位置 · {positionKey}</>,
+    detail: <>仅未被任何文案版本引用的位置可删除；后端会执行引用完整性校验。</>,
+    amplifies: false,
+    run: (reason) => runBackend(actions.deleteI1CopyPosition(positionKey, reason), `文案位置 ${positionKey} 已删除`),
   });
 
   // 版本详情卡优先展示后端返回的主转化横幅;没有该键时使用第一条后端文案位。
@@ -154,20 +317,26 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     ?? HCB_VERSIONS[0];
   const hcbActiveVersion = hcbPublished?.v || hcbRow?.version || "";
   const hcbDraftVersion = hcbRow?.draftVersion || "";
+  const hcbDraftVersionRow = HCB_VERSIONS.find((row) => row.v === hcbDraftVersion);
 
   const pubDraftVersion = () => openActionConfirm({
     action: <>发布新版 · {HCB}</>,
-    detail: <>当前发布版 <b>{hcbActiveVersion || "未设置"}</b>。发布即对全体用户下一次渲染生效;服务器先校验中英镜像与变量令牌,不齐直接拒。</>,
+    detail: <>当前发布版 <b>{hcbActiveVersion || "未设置"}</b>。发布即对全体用户下一次渲染生效;服务器先校验中英越三语与变量令牌,不齐直接拒。</>,
     amplifies: false,
     businessForm: {
       kind: "copy-edit",
       keyName: HCB,
       version: hcbDraftVersion,
       surface: hcbRow?.surface || "",
-      audiences: COPY_AUDIENCES,
+      copyPosition: hcbDraftVersionRow?.copyPosition || hcbRow?.draftCopyPosition || hcbRow?.copyPosition,
+      audience: hcbRow?.draftAudience || hcbDraftVersionRow?.audience,
+      ...audienceTargetFields(hcbRow?.draftAudienceTarget ?? hcbDraftVersionRow?.audienceTarget),
+      modules: COPY_MODULE_OPTIONS,
+      positions: COPY_POSITION_OPTIONS,
       trafficSplits: COPY_TRAFFIC_SPLITS,
       zh: hcbRow?.draftZh || "",
       en: hcbRow?.draftEn || "",
+      vi: hcbRow?.draftVi || hcbDraftVersionRow?.vi || "",
       placeholders: [],
     },
     run: (reason, v, form) => {
@@ -175,46 +344,65 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       runBackend(actions.publishI1CopyVersion(HCB, {
         version: v,
         surface: form?.surface || hcbRow?.surface || "",
-        audience: form?.audience || hcbRow?.draftAudience || "",
+        copyPosition: form?.copyPosition || hcbDraftVersionRow?.copyPosition || hcbRow?.copyPosition || "",
+        audience: composeAudience(form),
+        audienceTarget: composeAudienceTarget(form),
+        phaseMin: form?.phaseMin,
+        phaseMax: form?.phaseMax,
+        language: form?.language,
+        registrationDaysGt: Number(form?.registrationDaysGt || 0),
         trafficSplit: form?.trafficSplit || hcbRow?.draftTrafficSplit || "",
         versionNote: form?.versionNote || "后台发布新版",
         zh: form?.zh || "",
         en: form?.en || "",
+        vi: form?.vi || hcbRow?.draftVi || hcbDraftVersionRow?.vi || "",
       }, reason), `${HCB} 新版已确认生效 · 目标 ${v}`);
     },
   });
 
   const editDraftVersion = () => openActionConfirm({
     action: <>编辑草稿 · {HCB}</>,
-    detail: <>中英两份一起改(词序可以不同,变量令牌必须两边都有);保存只存草稿、不对外,但会留审计记录。</>,
+    detail: <>中英越三份一起改(词序可以不同,变量令牌必须三份都有);保存只存草稿、不对外,但会留审计记录。</>,
     amplifies: false,
     businessForm: {
       kind: "copy-edit",
       keyName: HCB,
       version: hcbDraftVersion,
       surface: hcbRow?.surface || "",
-      audiences: COPY_AUDIENCES,
+      copyPosition: hcbDraftVersionRow?.copyPosition || hcbRow?.draftCopyPosition || hcbRow?.copyPosition,
+      audience: hcbRow?.draftAudience || hcbDraftVersionRow?.audience,
+      ...audienceTargetFields(hcbRow?.draftAudienceTarget ?? hcbDraftVersionRow?.audienceTarget),
+      modules: COPY_MODULE_OPTIONS,
+      positions: COPY_POSITION_OPTIONS,
       trafficSplits: COPY_TRAFFIC_SPLITS,
       zh: hcbRow?.draftZh || "",
       en: hcbRow?.draftEn || "",
+      vi: hcbRow?.draftVi || hcbDraftVersionRow?.vi || "",
       placeholders: [],
     },
     run: (reason, _v, form) => {
       runBackend(actions.saveI1CopyDraft(HCB, {
         version: form?.version || hcbDraftVersion,
         surface: form?.surface || hcbRow?.surface || "",
-        audience: form?.audience || hcbRow?.draftAudience || "",
+        copyPosition: form?.copyPosition || hcbDraftVersionRow?.copyPosition || hcbRow?.copyPosition || "",
+        audience: composeAudience(form),
+        audienceTarget: composeAudienceTarget(form),
+        phaseMin: form?.phaseMin,
+        phaseMax: form?.phaseMax,
+        language: form?.language,
+        registrationDaysGt: Number(form?.registrationDaysGt || 0),
         trafficSplit: form?.trafficSplit || hcbRow?.draftTrafficSplit || "",
         versionNote: form?.versionNote || "草稿保存",
         zh: form?.zh || "",
         en: form?.en || "",
+        vi: form?.vi || hcbRow?.draftVi || hcbDraftVersionRow?.vi || "",
       }, reason), `${HCB} 草稿已保存 · 变量令牌校验通过 · 留审计`);
     },
   });
 
   const rollbackTo = (v: string) => openActionConfirm({
     action: <>回滚 · {HCB} 当前 {hcbActiveVersion || "当前版本"} → 重新发布 {v}</>,
-    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对全体用户生效),所以同样走操作确认。归档版的双语文案体原样恢复,审计记录版本变更。</>,
+    detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对全体用户生效),所以同样走操作确认。仅完整满足中英越、受众和位置契约的归档版允许恢复。</>,
     amplifies: false,
     // 处置类(回滚到已选历史版 v):目标版本由点击的归档版决定,run 不消费 v,按 MC 显式 edit 契约不传 edit,不强迫运营手输已确定的版本号。
     run: (reason) => {
@@ -286,6 +474,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
 
   const hcbDraftZh = liveCopyDraftZh(HCB);
   const hcbDraftEn = liveCopyDraftEn(HCB);
+  const hcbDraftVi = liveCopyDraftVi(HCB) || hcbDraftVersionRow?.vi;
   const hcbDraftMeta = liveCopyDraftMeta(HCB);
   const surfaceSummary = COPY_POOL.length
     ? Object.entries(COPY_POOL.reduce<Record<string, number>>((acc, copy) => {
@@ -328,16 +517,47 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         </div>
       </div>
 
+      <section className="l-card" data-proof="copy-position-list">
+        <div className="l-h">
+          <span className="ttl">文案位置配置</span>
+          <span className="sub">· 位置由后端统一管理，文案只能选择所属投放模块下的启用位置</span>
+          <div className="r"><button className="l-btn sm mc" onClick={createCopyPosition}>+ 新增位置</button></div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 660 }}>
+            <thead><tr><th>位置名称</th><th>位置标识</th><th>投放模块</th><th>状态</th><th style={{ textAlign: "right" }}></th></tr></thead>
+            <tbody>
+              {COPY_POSITION_ROWS.map((position) => {
+                const module = normalizeCopyModule(position.surface) as CopyModule;
+                return (
+                  <tr key={position.positionKey}>
+                    <td style={{ fontWeight: 600 }}>{position.name}</td>
+                    <td className="mono">{position.positionKey}</td>
+                    <td><span className="bdg dim">{COPY_MODULE_LABELS[module] ?? position.surface}</span></td>
+                    <td>{position.status.toUpperCase() === "ACTIVE"
+                      ? <span className="bdg ok">启用</span>
+                      : <span className="bdg dim">停用</span>}</td>
+                    <td style={{ textAlign: "right" }}><button className="l-btn sm" onClick={() => deleteCopyPosition(position.positionKey)}>删除</button></td>
+                  </tr>
+                );
+              })}
+              {COPY_POSITION_ROWS.length === 0 && <tr><td colSpan={5}><div className="itint warn">暂无可用文案位置，请先新增位置。</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* (a) 文案池 */}
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">文案池(a)</span>
           <span className="sub">· 每个文案位 = 一条受管内容线:当前发布版 + 版本历史 + 是否有进行中实验</span>
           <div className="r chips">
-            <span className="lb">界面</span>
+            <span className="lb">投放模块</span>
             {SURF_FLT.map(([k, l]) => (
               <button key={k} className={`chip${surf === k ? " sel" : ""}`} onClick={() => setSurf(k)}>{l}</button>
             ))}
+            <button className="l-btn sm mc" onClick={createCopy}>+ 新增文案</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -345,10 +565,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
             <thead>
               <tr>
                 <th>文案位</th>
-                <th>界面</th>
+                <th>投放模块</th>
+                <th>文案位置</th>
                 <th>发布版</th>
                 <th>状态</th>
-                <th>双语词条</th>
+                <th>中英越词条</th>
                 <th>进行中实验</th>
                 <th>最近改版</th>
                 <th style={{ textAlign: "right" }}></th>
@@ -361,14 +582,15 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <div style={{ fontWeight: 600, color: "var(--ink)" }}>{c.desc}</div>
                     <span className="mono" style={{ fontSize: 11, color: "var(--ink-4)" }}>{c.key}</span>
                   </td>
-                  <td><span className="bdg dim">{c.surface}</span></td>
+                  <td><span className="bdg dim">{COPY_MODULE_LABELS[c.surface as CopyModule] ?? c.surface}</span></td>
+                  <td className="mono" style={{ fontSize: 11.5 }}>{c.copyPosition || "—"}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{c.version}</td>
                   <td>{renderCopyStatus(c)}</td>
                   <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{c.i18nKey}</td>
                   <td>{c.expId === "—" ? <span style={{ color: "var(--ink-4)" }}>—</span> : <span className="bdg cyan">{c.expId}</span>}</td>
                   <td className="mono" style={{ fontSize: 11.5 }}>{c.lastChange}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button className="l-btn sm mc" onClick={() => pubNewVersion(c)}>发布新版</button>
+                    <button className="l-btn sm mc" onClick={() => editCopy(c)}>编辑文案</button>
                   </td>
                 </tr>
               ))}
@@ -410,18 +632,23 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                   <div className="lc">ZH · {hcbActiveVersion || "published"}</div>
                   <div className="tx">{hcbPublished.zh || "—"}</div>
                 </div>
+                <div className="ab-prev">
+                  <div className="lc">VI · {hcbActiveVersion || "published"}</div>
+                  <div className="tx">{hcbPublished.vi || "—"}</div>
+                </div>
               </div>
             ) : (
               <div className="itint warn" style={{ marginBottom: 12 }}>暂无后端发布版详情</div>
             )}
             <div className="itint ok" style={{ marginBottom: 12 }}>
-              <b>变量令牌校验通过</b> · 中英两份文案用到的变量令牌集合完全一致(词序可以不同);缺一个或多一个,发布会被服务器直接拦下。
+              <b>变量令牌校验通过</b> · 中英越三份文案用到的变量令牌集合必须完全一致(词序可以不同);缺一个或多一个,发布会被服务器直接拦下。
             </div>
-            {hcbDraftZh && hcbDraftEn && (
+            {hcbDraftZh && hcbDraftEn && hcbDraftVi && (
               <div className="itint cyan" data-proof="copy-draft-preview" style={{ marginBottom: 12 }}>
                 <b>当前草稿回显</b> · 受众 <span className="mono">{hcbDraftMeta.audience ?? "未设置"}</span>
                 {" "}· 分流 <span className="mono">{hcbDraftMeta.trafficSplit ?? "未设置"}%</span>
                 {" "}· 位置 <span className="mono">{hcbDraftMeta.surface ?? hcbRow?.surface ?? "未设置"}</span>
+                {" "}· 槽位 <span className="mono">{hcbDraftMeta.copyPosition ?? hcbDraftVersionRow?.copyPosition ?? hcbRow?.copyPosition ?? "未设置"}</span>
                 {hcbDraftMeta.note ? <> · 说明 <span className="mono">{hcbDraftMeta.note}</span></> : null}
                 <div className="ab-grid" style={{ marginTop: 8 }}>
                   <div className="ab-prev">
@@ -431,6 +658,10 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                   <div className="ab-prev">
                     <div className="lc">EN · draft</div>
                     <div className="tx">{hcbDraftEn}</div>
+                  </div>
+                  <div className="ab-prev">
+                    <div className="lc">VI · draft</div>
+                    <div className="tx">{hcbDraftVi}</div>
                   </div>
                 </div>
               </div>
