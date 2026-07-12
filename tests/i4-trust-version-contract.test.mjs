@@ -66,14 +66,19 @@ test("I4 field key uniqueness follows MySQL case-insensitive collation", () => {
 });
 
 test("I4 field identifiers are inherited from the published schema and cannot be changed", () => {
+  const directFieldKeyBlock = view.match(/<label>字段标识（系统固定）<\/label>([\s\S]*?)(?=<\/div>\s*<div className="field"><label>字段名称<\/label>)/);
+  const genericFieldKeyBlock = designKit.match(/<span>字段标识（系统固定）<\/span>([\s\S]*?)(?=\{input\(`field\.\$\{index\}\.label`)/);
+
   assert.match(view, /字段标识由当前发布版字段模板固定，不可新增、删除或改名/);
-  assert.match(view, /data-trust-field-key="fixed"/);
-  assert.doesNotMatch(view, /字段标识（固定）<\/label><input/);
+  assert.ok(directFieldKeyBlock, "direct I4 draft editor must render the fixed-key block");
+  assert.match(directFieldKeyBlock[1], /<div[^>]*data-trust-field-key="fixed"/);
+  assert.doesNotMatch(directFieldKeyBlock[1], /<(?:input|textarea|select)\b/);
   assert.doesNotMatch(view, />添加字段</);
   assert.doesNotMatch(view, />移除字段</);
   assert.match(designKit, /字段标识由当前发布版固定/);
-  assert.match(designKit, /data-trust-field-key="fixed"/);
-  assert.doesNotMatch(designKit, /<input className="fld mono" readOnly/);
+  assert.ok(genericFieldKeyBlock, "generic I4 draft editor must render the fixed-key block");
+  assert.match(genericFieldKeyBlock[1], /<div[^>]*data-trust-field-key="fixed"/);
+  assert.doesNotMatch(genericFieldKeyBlock[1], /<(?:input|textarea|select)\b/);
   assert.doesNotMatch(designKit, />\+ 添加字段</);
   assert.doesNotMatch(designKit, />移除末项</);
   assert.doesNotMatch(view, /\?\?\s*\(SECTION_FIELDS\[section\.key\]/);
