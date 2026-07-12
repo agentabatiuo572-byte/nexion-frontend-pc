@@ -573,6 +573,9 @@ export type BusinessFormSpec =
   | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; versionOptions?: string[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
+  | { kind: "trust-section-publish"; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
+      currentFields: { key: string; label: string; value: string }[];
+      targetFields: { key: string; label: string; value: string }[] }
   | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean }
   | { kind: "task-edit"; subject?: string; currentName?: string; currentPath?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "day-one-window"; currentActiveHours?: string; currentGraceHours?: string }
@@ -959,6 +962,9 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     });
     return state;
   }
+  if (spec.kind === "trust-section-publish") {
+    return { dataSource: "", bilingualConfirmed: "false" };
+  }
   if (spec.kind === "identity-verify") {
     return { channel: spec.channels?.[0] ?? "视频核实", verifiedAt: "", ticket: "", ack: "false" };
   }
@@ -1221,6 +1227,9 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     }
     if (fieldKeys.some((key) => key && !/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(key))) missing.push("字段标识格式");
     if (fieldKeys.filter(Boolean).length !== new Set(fieldKeys.filter(Boolean)).size) missing.push("字段标识不能重复");
+  } else if (spec.kind === "trust-section-publish") {
+    if (spec.requireDataSource) needs("dataSource", "财务/NEX 数据来源");
+    if (state.bilingualConfirmed !== "true") missing.push("中越双语确认");
   } else if (spec.kind === "destructive-reason") {
     if ((spec.requireAck ?? true) && state.ack !== "true") missing.push("影响确认");
   } else if (spec.kind === "identity-verify") {
@@ -1355,6 +1364,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "copy-experiment-discard") return spec.experimentId;
   if (spec.kind === "version-authoring") return state.version;
   if (spec.kind === "trust-section-authoring") return `${spec.sectionKey}@${state.version}`;
+  if (spec.kind === "trust-section-publish") return `${spec.currentVersion}→${spec.targetVersion}`;
   if (spec.kind === "course-authoring") return state.slug;
   if (spec.kind === "campaign-edit") return state.title;
   if (spec.kind === "generation-gate") return `${state.skuId}@M${state.releaseMonth}`;
@@ -2052,6 +2062,37 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
             <button type="button" className="btn sm" disabled={fieldCount <= 1} onClick={() => set("fieldCount", String(fieldCount - 1))}>移除末项</button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "trust-section-publish") {
+    const currentByKey = new Map(spec.currentFields.map((field) => [field.key, field]));
+    const targetByKey = new Map(spec.targetFields.map((field) => [field.key, field]));
+    const fieldKeys = Array.from(new Set([...currentByKey.keys(), ...targetByKey.keys()]));
+    return (
+      <div className="field" data-business-form="trust-section-publish">
+        <label>发布核对</label>
+        <div className="itint" style={{ marginBottom: 10 }}>
+          <b>版本差异</b> · <span className="mono">{spec.currentVersion}</span> → <span className="mono">{spec.targetVersion}</span>
+          <div style={{ marginTop: 8 }}>
+            {fieldKeys.map((key) => {
+              const current = currentByKey.get(key);
+              const target = targetByKey.get(key);
+              const state = !current ? "新增字段" : !target ? "删除字段" : current.value === target.value && current.label === target.label ? "未变化" : "已变更";
+              return <div className="kv" key={key}>
+                <span className="k"><span className={`bdg ${state === "新增字段" ? "ok" : state === "未变化" ? "dim" : "warn"}`}>{state}</span> {target?.label || current?.label || key}</span>
+                <span className="v"><span className="tiny">旧值</span> {current?.value ?? "—"} <span className="mono">→</span> <span className="tiny">新值</span> {target?.value ?? "—"}</span>
+              </div>;
+            })}
+            {fieldKeys.length === 0 && <div className="tiny">当前版与待发布版均无结构化字段。</div>}
+          </div>
+        </div>
+        {input("dataSource", "财务/NEX 数据来源", spec.requireDataSource ? "必填：报表、账本快照或市场数据编号" : "可选：内容依据或工单编号")}
+        <label className="row" style={{ gap: 8, marginTop: 10 }}>
+          <input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
+          双语确认：中文与越南语已逐项核对，关键数字和 NEX 口径一致
+        </label>
       </div>
     );
   }

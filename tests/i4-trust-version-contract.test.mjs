@@ -24,7 +24,8 @@ test("I4 renders Chinese states and structured fields", () => {
   assert.match(view, /草稿/);
   assert.match(view, /已发布/);
   assert.match(view, /已取代/);
-  assert.match(view, /fieldCount/);
+  assert.match(view, /data-trust-draft-editor="direct-save"/);
+  assert.match(view, /draftEditor\.fields\.map/);
   assert.match(view, /fields:/);
   assert.doesNotMatch(view, /目标版本.*输入/);
 });

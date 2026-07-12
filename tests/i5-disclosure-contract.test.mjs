@@ -18,7 +18,7 @@ test("I5 jurisdiction mapping uses backend country and disclosure version catalo
 });
 
 test("I5 publish command identifies persisted draft and does not carry mutable bodies", () => {
-  const entry = highOps.slice(highOps.indexOf('op: "i4_disclosure_publish"'), highOps.indexOf('op: "i4_gate_adjust"'));
+  const entry = highOps.slice(highOps.indexOf('op: "i5_disclosure_publish"'), highOps.indexOf('op: "i5_gate_adjust"'));
   assert.match(view, /发布只读取服务器已经保存的草稿/);
   assert.match(entry, /jurisdiction:\s*String\(ctx\.jurisdiction\)/);
   assert.match(entry, /version:\s*String\(ctx\.version\)/);
@@ -31,9 +31,9 @@ test("I5 chapter authoring selects one backend version instead of mixing chapter
 });
 
 test("I5 operations are permission-gated and visible states are Chinese", () => {
-  assert.match(view, /content_i4_write/);
-  assert.match(view, /content_i4_disclosure_publish/);
-  assert.match(view, /content_i4_gate_adjust/);
+  assert.match(view, /content_i5_write/);
+  assert.match(view, /content_i5_disclosure_publish/);
+  assert.match(view, /content_i5_gate_adjust/);
   assert.match(view, /已被新版取代/);
   assert.doesNotMatch(view, />\s*superseded\s*</);
 });

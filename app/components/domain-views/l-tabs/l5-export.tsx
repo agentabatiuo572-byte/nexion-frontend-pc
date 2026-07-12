@@ -179,7 +179,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
   };
   const genReport = (nm: string) => openActionConfirm({
     action: `生成监管报告 · ${nm}`,
-    detail: <><b>监管报送 = 数据出境敏感</b> · 模板:{nm} · 数据范围按辖区要求 · <b>关联 I4 当前披露版本 × 司法辖区</b> · 法务确认状态随任务流转 · 操作链:风控(操作员,兼合规确认)→ 超管 / 风控(执行门槛)· 落 admin.report_exported(+ 披露版本 + 辖区)。</>,
+    detail: <><b>监管报送 = 数据出境敏感</b> · 模板:{nm} · 数据范围按辖区要求 · <b>关联 I5 当前披露版本 × 司法辖区</b> · 法务确认状态随任务流转 · 操作链:风控(操作员,兼合规确认)→ 超管 / 风控(执行门槛)· 落 admin.report_exported(+ 披露版本 + 辖区)。</>,
     run: async (reason) => {
       await ctx.biActions?.createReport({
         exportType: `监管报告 · ${nm}`,
@@ -253,7 +253,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <div className="f-stat"><div className="k">本月导出任务</div><div className="v">{L5_STATS.monthTotal}</div><div className="sub">聚合 {L5_STATS.aggCount} · 含敏感 {L5_STATS.sensitiveCount}</div></div>
         <div className="f-stat warn"><div className="k">待操作确认</div><div className="v">{pendingCount}</div><div className="sub">含 {splitCount} 个超限拆分待超管批</div></div>
         <div className="f-stat danger"><div className="k">解密导出(本季)</div><div className="v">{decryptedQ}</div><div className="sub">强操作确认 + 强制事由 · 全留痕</div></div>
-        <div className="f-stat cyan"><div className="k">监管报告(本季)</div><div className="v">{L5_STATS.regulatoryQ}</div><div className="sub">关联 I4 披露版本 × 司法辖区</div></div>
+        <div className="f-stat cyan"><div className="k">监管报告(本季)</div><div className="v">{L5_STATS.regulatoryQ}</div><div className="sub">关联 I5 披露版本 × 司法辖区</div></div>
       </div>
 
       {/* 导出安全参数 */}

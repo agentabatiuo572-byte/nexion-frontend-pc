@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * I4 信任中心与风险披露(合并页) — design_handoff_i_domain/I4 信任中心与披露.html port。
+ * I4 信任中心 / I5 风险披露复用视图 — 按独立路由与权限渲染。
  * 单源:后端 /content/trust-disclosure/overview;空库时保持空态,不补前端业务样例。
  * 操作确认 显式 edit 契约:
  *  - 调参传 edit:回滚(text/current=v)/ 发布披露新版(text/current=j.v)/ 调整受限动作范围(text/current);
@@ -33,19 +33,33 @@ const statusZh = (status?: string) => ({
 } as Record<string, string>)[status ?? ""] ?? status ?? "—";
 type GateAction = { key: string; name: string; sub: string; st: string; tone: string; active: boolean };
 type TrustDetailKey = string;
+type DraftEditor = {
+  mode: "create" | "edit";
+  sectionKey: string;
+  version: string;
+  description: string;
+  structure: string;
+  revision?: number;
+  reason: string;
+  fields: { key: string; label: string; value: string }[];
+};
 
-export function I4Trust({ ctx }: { ctx: ICtx }) {
-  const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures" }) {
+  const { toast, openActionConfirm, actions, content, contentLoading } = ctx;
+  const pageId = view === "trust" ? "I4" : "I5";
   const propose = usePropose();
   const session = useAdminAuth((state) => state.session);
   const isSuperadmin = session?.role === "superadmin";
-  const canManageTrust = isSuperadmin || !!session?.authorities.includes("content_i4_trust_section_manage");
-  const canDraftDisclosure = isSuperadmin || !!session?.authorities.includes("content_i4_write");
-  const canPublishDisclosure = isSuperadmin || !!session?.authorities.includes("content_i4_disclosure_publish");
-  const canAdjustGate = isSuperadmin || !!session?.authorities.includes("content_i4_gate_adjust");
+  const canDraftTrust = isSuperadmin || !!session?.authorities.includes("content_i4_write");
+  const canPublishStandard = isSuperadmin || !!session?.authorities.includes("content_i4_publish_standard");
+  const canPublishSensitive = isSuperadmin || !!session?.authorities.includes("content_i4_trust_section_manage");
+  const canDraftDisclosure = isSuperadmin || !!session?.authorities.includes("content_i5_write");
+  const canPublishDisclosure = isSuperadmin || !!session?.authorities.includes("content_i5_disclosure_publish");
+  const canAdjustGate = isSuperadmin || !!session?.authorities.includes("content_i5_gate_adjust");
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [chapNo, setChapNo] = useState<string | null>(null);
+  const [draftEditor, setDraftEditor] = useState<DraftEditor | null>(null);
   const data = content.trustDisclosure;
   const I4_STATS = data?.stats ?? { managedSections: 0, jurisdictions: 0, staleAckUsers: 0, weeklyGateBlocked: 0 };
   const TRUST_SECTIONS: TrustSection[] = (data?.trustSections ?? []).map((s) => ({ ...s, v: s.version }));
@@ -85,74 +99,82 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
     viBody: form?.[`chapter.${index}.viBody`] || chapter.viBody,
     enBody: form?.[`chapter.${index}.enBody`] || chapter.enBody,
   }));
-  const runBackend = (task: Promise<void>, ok: string) => {
-    task
-      .then(() => actions.reloadIContent())
-      .then(() => toast(ok))
-      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+  const runBackend = async (task: Promise<void>, ok: string): Promise<boolean> => {
+    try {
+      await task;
+      await actions.reloadIContent();
+      toast(ok);
+      return true;
+    } catch (error) {
+      toast(`操作失败:${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
   };
 
   const liveTrustStatus = (s: TrustSection): string => s.status;
   const liveJurVersion = (j: Jurisdiction): string => j.v;
   const gateOn = (k: string): boolean => GATED_ACTIONS.find((g) => g.key === k)?.active ?? false;
   const disclosureDraft = data?.draft;
+  const normalizedSectionKey = (key: string) => key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const DATA_SOURCE_REQUIRED_SECTIONS = new Set(["financials", "nexnarrative", "nexstory"]);
+  const SENSITIVE_TRUST_SECTIONS = new Set(["financials", "nexnarrative", "nexstory", "compliancebadges", "auditsreserves"]);
+  const requiresDataSource = (section: TrustSection) => DATA_SOURCE_REQUIRED_SECTIONS.has(normalizedSectionKey(section.key));
+  const isSensitiveTrustSection = (section: TrustSection) => section.highSensitivity || SENSITIVE_TRUST_SECTIONS.has(normalizedSectionKey(section.key));
+  const canPublishTrustSection = (section: TrustSection) => isSensitiveTrustSection(section) ? canPublishSensitive : canPublishStandard;
+  const currentSectionFields = (section: TrustSection) => TRUST_SECTION_VERSIONS
+    .find((version) => version.sectionKey === section.key && version.version === section.v)?.fields
+    ?? (SECTION_FIELDS[section.key] ?? []).map(([key, value]) => ({ key, label: key, value }));
 
   const openSecDetail = (s: TrustSection) => setSecKey(s.key);
   const openJurDetail = (j: Jurisdiction) => setJurCode(j.code);
   const openChap = (no: string) => setChapNo(no);
 
   // ---------- I4 信任版块动作 ----------
-  const sectionFieldsFromForm = (form?: Record<string, string>) => Array.from(
-    { length: Math.max(0, Number(form?.fieldCount || 0)) },
-    (_, index) => ({
-      key: form?.[`field.${index}.key`]?.trim() || "",
-      label: form?.[`field.${index}.label`]?.trim() || "",
-      value: form?.[`field.${index}.value`]?.trim() || "",
-    }),
-  );
-
-  const createSectionDraft = (s: TrustSection) => openActionConfirm({
-    action: <>新建信任版块草稿 · {s.key}</>,
-    detail: <>版本号与结构化字段全部保存到后端；草稿不会自动影响当前线上版。</>,
-    amplifies: false,
-    businessForm: {
-      kind: "trust-section-authoring",
-      mode: "create",
-      sectionKey: s.key,
-      description: s.desc,
-      structure: s.struct,
-      fields: (SECTION_FIELDS[s.key] ?? []).map(([key, value]) => ({ key, label: key, value })),
-    },
-    run: (reason, _value, form) => runBackend(actions.createI4TrustSectionDraft(s.key, {
-      version: form?.version || "",
-      description: form?.description || "",
-      structure: form?.structure || "",
-      fields: sectionFieldsFromForm(form),
-    }, reason), `${s.key} 草稿已创建`),
+  const createSectionDraft = (s: TrustSection) => setDraftEditor({
+    mode: "create",
+    sectionKey: s.key,
+    version: "",
+    description: s.desc,
+    structure: s.struct,
+    reason: "日常维护信任版块草稿",
+    fields: (SECTION_FIELDS[s.key] ?? []).map(([key, value]) => ({ key, label: key, value })).concat(
+      (SECTION_FIELDS[s.key] ?? []).length === 0 ? [{ key: "", label: "", value: "" }] : [],
+    ),
   });
 
-  const editSectionDraft = (draft: TrustSectionVersion) => openActionConfirm({
-    action: <>编辑信任版块草稿 · {draft.sectionKey} {draft.version}</>,
-    detail: <>仅草稿可编辑；保存时携带修订号，避免覆盖他人的并发修改。</>,
-    amplifies: false,
-    businessForm: {
-      kind: "trust-section-authoring",
-      mode: "edit",
-      sectionKey: draft.sectionKey,
-      version: draft.version,
-      description: draft.description,
-      structure: draft.structure,
-      revision: draft.revision,
-      fields: draft.fields,
-    },
-    run: (reason, _value, form) => runBackend(actions.updateI4TrustSectionDraft(draft.sectionKey, draft.version, {
-      version: draft.version,
-      description: form?.description || "",
-      structure: form?.structure || "",
-      fields: sectionFieldsFromForm(form),
-      expectedRevision: draft.revision,
-    }, reason), `${draft.sectionKey} ${draft.version} 草稿已更新`),
+  const editSectionDraft = (draft: TrustSectionVersion) => setDraftEditor({
+    mode: "edit",
+    sectionKey: draft.sectionKey,
+    version: draft.version,
+    description: draft.description,
+    structure: draft.structure,
+    revision: draft.revision,
+    reason: "日常维护信任版块草稿",
+    fields: draft.fields,
   });
+
+  const saveSectionDraft = () => {
+    if (!draftEditor) return;
+    if (!/^v[1-9][0-9]{0,8}$/.test(draftEditor.version) || !draftEditor.description.trim()
+      || !draftEditor.structure.trim() || !draftEditor.reason.trim() || draftEditor.fields.length === 0
+      || draftEditor.fields.some((field) => !field.key.trim() || !field.label.trim() || !field.value.trim())) {
+      toast("请完整填写版本、说明、结构、字段和保存说明");
+      return;
+    }
+    const payload = {
+      version: draftEditor.version,
+      description: draftEditor.description.trim(),
+      structure: draftEditor.structure.trim(),
+      fields: draftEditor.fields.map((field) => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() })),
+      ...(draftEditor.mode === "edit" ? { expectedRevision: draftEditor.revision ?? 0 } : {}),
+    };
+    const task = draftEditor.mode === "create"
+      ? actions.createI4TrustSectionDraft(draftEditor.sectionKey, payload, draftEditor.reason.trim())
+      : actions.updateI4TrustSectionDraft(draftEditor.sectionKey, draftEditor.version, payload, draftEditor.reason.trim());
+    void runBackend(task, `${draftEditor.sectionKey} ${draftEditor.version} 草稿已保存`).then((saved) => {
+      if (saved) setDraftEditor(null);
+    });
+  };
 
   const deleteSectionDraft = (draft: TrustSectionVersion) => openActionConfirm({
     action: <>删除信任版块草稿 · {draft.sectionKey} {draft.version}</>,
@@ -166,13 +188,25 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       action: <>发布信任版块 · {s.key} {draft.version}</>,
       detail: (
         <>
-          对外信任内容上线,发布后 /trust 页即时换新。<b>执行门槛:{s.roleGate}</b>
-          {s.highSensitivity && "(对外财务/代币叙事是高敏合规面,内容角色无权放行)"}。审计必须带「数据来源」与「对外披露(非内部账本)」标注;带防重号。
+          <b>版本差异</b>：当前线上 <span className="mono">{s.v}</span> → 待发布 <span className="mono">{draft.version}</span>；
+          发布后 /trust 页即时换新。<b>双语确认</b>必须核对中文与越南语语义一致。
+          {requiresDataSource(s) && <>财务数字 / NEX 叙事必须填写可追溯的<b>财务/NEX 数据来源</b>。</>}
+          <b>执行门槛:{s.roleGate}</b>
         </>
       ),
       amplifies: false,
-      run: (reason) => {
+      businessForm: {
+        kind: "trust-section-publish",
+        currentVersion: s.v,
+        targetVersion: draft.version,
+        currentFields: currentSectionFields(s),
+        targetFields: draft.fields,
+        requireDataSource: requiresDataSource(s),
+      },
+      run: (reason, _value, form) => {
         const def = findHighOp("i4_trust_section_manage")!;
+        const dataSource = form?.dataSource?.trim() || "";
+        const bilingualConfirmed = form?.bilingualConfirmed === "true";
         void propose(toast, {
           action: `发布信任版块 · ${s.key}`,
           obj: s.key,
@@ -184,7 +218,13 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I4",
-          command: def.buildCommand({ sectionKey: s.key, action: "publish", version: draft.version }),
+          command: def.buildCommand({
+            sectionKey: s.key,
+            action: "publish",
+            version: draft.version,
+            dataSourceStatement: dataSource,
+            bilingualConfirmed,
+          }),
           target: def.buildTarget({ sectionKey: s.key }),
         });
       },
@@ -248,7 +288,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       },
     });
 
-  // ---------- I4 披露动作 ----------
+  // ---------- I5 披露动作 ----------
   const draftDisclosure = () =>
     openActionConfirm({
       action: <>草拟披露新版 · 风控提交</>,
@@ -282,7 +322,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           toast("缺少后端披露版本/法域/正文,无法提交草稿");
           return;
         }
-        runBackend(actions.saveI4DisclosureDraft(jurisdiction, {
+        runBackend(actions.saveI5DisclosureDraft(jurisdiction, {
           version,
           jurisdiction,
           languageScope: form?.languageScope || disclosureDraft?.languageScope || "",
@@ -318,7 +358,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       run: (reason, _v, form) => {
         const jurisdictionCode = form?.jurisdictionCode?.trim().toUpperCase() || "";
         if (!jurisdictionCode) return;
-        runBackend(actions.configureI4Matrix(jurisdictionCode, {
+        runBackend(actions.configureI5Matrix(jurisdictionCode, {
           jurisdictionCode,
           jurisdictionName: form?.jurisdictionName || "",
           countryCodes: (form?.countryCodes || "").split(",").map((code) => code.trim()).filter(Boolean),
@@ -332,7 +372,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
     action: <>归档法域版本映射 · {j.code}</>,
     detail: <>归档后保留历史版本与审计记录，不再作为有效披露映射。</>,
     amplifies: false,
-    run: (reason) => runBackend(actions.archiveI4Matrix(j.code, reason), `${j.code} 映射已归档`),
+    run: (reason) => runBackend(actions.archiveI5Matrix(j.code, reason), `${j.code} 映射已归档`),
   });
 
   const publishDisclosure = (j: Jurisdiction) =>
@@ -347,7 +387,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       edit: { kind: "select", current: disclosureDraft?.jurisdiction === j.code ? disclosureDraft.version : "", options: disclosureDraft?.jurisdiction === j.code ? [disclosureDraft.version] : [] },
       run: (reason, v) => {
         if (!v) return;
-        const def = findHighOp("i4_disclosure_publish")!;
+        const def = findHighOp("i5_disclosure_publish")!;
         const version = v;
         const jurisdiction = j.code;
         void propose(toast, {
@@ -385,7 +425,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           .filter((item) => (item.key === g.key ? !on : item.active))
           .map((item) => item.name)
           .join(" + ") || g.name;
-        const def = findHighOp("i4_gate_adjust")!;
+        const def = findHighOp("i5_gate_adjust")!;
         void propose(toast, {
           action: `${on ? "移出" : "纳入"}受限动作 · ${g.name}`,
           obj: g.name,
@@ -413,21 +453,21 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
     : "";
 
   if (contentLoading && !data) {
-    return <section className="l-card"><div className="l-b"><div className="itint">I4 数据加载中...</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint">{pageId} 数据加载中...</div></div></section>;
   }
   if (!data) {
-    return <section className="l-card"><div className="l-b"><div className="itint danger">I4 暂无真实接口数据</div></div></section>;
+    return <section className="l-card"><div className="l-b"><div className="itint danger">{pageId} 暂无真实接口数据</div></div></section>;
   }
 
   return (
     <>
       <div className="f-stats">
-        <div className="f-stat">
+        {view === "trust" && <div className="f-stat">
           <div className="k">受管信任版块</div>
           <div className="v">{I4_STATS.managedSections} 个</div>
           <div className="sub">财务数字/团队/叙事/徽章/审计/外链</div>
-        </div>
-        <div className="f-stat cyan">
+        </div>}
+        {view === "disclosures" && <><div className="f-stat cyan">
           <div className="k">披露法域 × 版本</div>
           <div className="v">{I4_STATS.jurisdictions} 法域</div>
           <div className="sub">{JURISDICTIONS.map((j) => j.code).join(" · ") || "暂无后端法域"}</div>
@@ -441,11 +481,11 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           <div className="k">合规闸拦截(本周)</div>
           <div className="v">{I4_STATS.weeklyGateBlocked} 次</div>
           <div className="sub">未确认者发起提现被拦</div>
-        </div>
+        </div></>}
       </div>
 
       {/* (I4 · a) 信任中心 6 版块 */}
-      <section className="l-card">
+      {view === "trust" && <section className="l-card">
         <div className="l-h">
           <span className="ttl">信任中心(I4 · a)· /trust</span>
           <span className="sub">· 6 版块 · 财务数字/团队/叙事/徽章/审计/外链</span>
@@ -484,7 +524,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
                     <td style={{ fontSize: 12, color: "var(--ink-2)" }}>{s.struct}</td>
                     <td className="mono" style={{ fontWeight: 700 }}>{s.v}</td>
                     <td>
-                      {s.highSensitivity ? (
+                      {isSensitiveTrustSection(s) ? (
                         <span className="bdg warn">{s.roleGate}</span>
                       ) : (
                         <span className="bdg dim">{s.roleGate}</span>
@@ -499,9 +539,9 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
                     </td>
                     <td className="mono" style={{ fontSize: 11.5 }}>{s.lastChange}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canManageTrust && <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); createSectionDraft(s); }}>新建草稿</button>{" "}
-                      <button className="l-btn sm" disabled={sectionVersionOptions(s.key, s.v).length === 0} onClick={(e) => { e.stopPropagation(); rollbackSection(s); }}>回滚历史版</button></>}
-                      {canManageTrust && !isArchived && (
+                      {canDraftTrust && <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); createSectionDraft(s); }}>新建草稿</button>{" "}</>}
+                      {canPublishTrustSection(s) && <button className="l-btn sm" disabled={sectionVersionOptions(s.key, s.v).length === 0} onClick={(e) => { e.stopPropagation(); rollbackSection(s); }}>回滚历史版</button>}
+                      {canPublishTrustSection(s) && !isArchived && (
                         <>
                           {" "}
                           <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); archiveSection(s); }}>下架</button>
@@ -534,12 +574,12 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
                   <td><span className={`bdg ${isDraft ? "warn" : "ok"}`}>{statusZh(version.status)}</span></td>
                   <td className="mono">{version.updatedAt || "—"}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    {canManageTrust && isDraft && <>
+                    {isDraft && canDraftTrust && <>
                       <button className="l-btn sm" onClick={() => editSectionDraft(version)}>编辑草稿</button>{" "}
-                      <button className="l-btn sm mc" disabled={!section} onClick={() => section && pubSection(section, version)}>发布草稿</button>{" "}
-                      <button className="l-btn sm danger" onClick={() => deleteSectionDraft(version)}>删除草稿</button>
+                      <button className="l-btn sm danger" onClick={() => deleteSectionDraft(version)}>删除草稿</button>{" "}
                     </>}
-                    {(!canManageTrust || !isDraft) && <span className="tiny">只读{isDraft ? "（无编辑权限）" : "历史快照"}</span>}
+                    {isDraft && section && canPublishTrustSection(section) && <button className="l-btn sm mc" onClick={() => pubSection(section, version)}>发布草稿</button>}
+                    {(!isDraft || (!canDraftTrust && (!section || !canPublishTrustSection(section)))) && <span className="tiny">只读{isDraft ? "（无编辑或发布权限）" : "历史快照"}</span>}
                   </td>
                 </tr>;
               })}
@@ -547,12 +587,13 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
 
-      {/* I4 披露版本 × 法域矩阵 */}
+      {view === "disclosures" && <>
+      {/* I5 披露版本 × 法域矩阵 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">披露矩阵(I4 · 披露)· version × jurisdiction</span>
+          <span className="ttl">披露矩阵(I5)· version × jurisdiction</span>
           <span className="sub">· 风控提交 · 风控 / 超管执行</span>
           <div className="r">
             <span className="icode danger">合规关键 · 风控确认</span>
@@ -664,10 +705,10 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      {/* I4 re-ack 覆盖监控 */}
+      {/* I5 re-ack 覆盖监控 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">重确认覆盖监控(I4 · 披露)</span>
+          <span className="ttl">重确认覆盖监控(I5)</span>
           <span className="sub">· 改版后各法域确认进度 · 数字来自服务器确认事件</span>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -718,10 +759,10 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
       </section>
 
-      {/* I4 受限动作范围 */}
+      {/* I5 受限动作范围 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">受限动作范围(I4 · 披露)</span>
+          <span className="ttl">受限动作范围(I5)</span>
           <span className="sub">· 确认状态过期时,哪些动作会被拦 · 逐项启停(不再手打整串)</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
@@ -743,34 +784,64 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           </div>
         </div>
       </section>
+      </>}
 
       <p className="f-foot">
-        <b>执行门槛(两套,别混)</b>:信任中心(I4)= 内容执行门槛:一般版块内容角色,<b>财务数字 / NEX 叙事 / 对外合规声明类必须合规或超管执行</b>(财务角色对数字口径有知情确认职能,但仅为知情职能);风险披露(I4)= <b>风控执行门槛:风控 / 超管</b>,内容角色只能草拟、不能提交——条款是合规命脉,不给内容角色单独放行的口子。<b>事件去向</b>:版块曝光喂 BI(信任→转化间接归因);披露确认 / 重确认触发 / 拦截三类事件喂合规覆盖看板(L 域)和风控(K 域,拦截数是闸有效性信号)。披露类事件的归类登记(disclosure 域)是 BI 上线前必办工单,占位期按临时编号入库
+        {view === "trust" ? <><b>I4 执行门槛</b>:一般版块由内容角色维护；<b>财务数字 / NEX 叙事 / 对外合规声明必须由对应授权角色或超管发布</b>。版块曝光事件喂 BI 做信任到转化归因。</> : <><b>I5 执行门槛</b>:风险披露由风控起草、风控主管或超管发布；内容角色无发布权限。披露确认、重确认与拦截事件喂合规覆盖看板和风控域。</>}
         <span title="§2.4.3 domain 枚举扩展 · V4 内容批次 · blocking">。</span>
       </p>
       <PaginationExemptionList
-        items={[
+        items={view === "trust" ? [
           {
             label: "信任中心(I4 · a)· /trust",
             kind: "reference-catalog",
             maxRows: 6,
             reason: "信任中心固定六版块,需同屏核对版本与状态",
           },
+        ] : [
           {
-            label: "披露矩阵(I4 · 披露)· version × jurisdiction",
+            label: "披露矩阵(I5)· version × jurisdiction",
             maxRows: Math.max(JURISDICTIONS.length, 1),
             reason: "披露矩阵法域来自后端配置,发布关系需同屏对比",
           },
           {
-            label: "重确认覆盖监控(I4 · 披露)",
+            label: "重确认覆盖监控(I5)",
             maxRows: Math.max(JURISDICTIONS.length, 1),
             reason: "重确认监控法域来自后端配置,完整 ack 事件进 BI",
           },
         ]}
       />
 
+      {view === "trust" && draftEditor && (
+        <Drawer
+          title={`${draftEditor.mode === "create" ? "新建" : "编辑"}信任版块草稿 · ${draftEditor.sectionKey}`}
+          onClose={() => setDraftEditor(null)}
+          footer={<>
+            <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDraftEditor(null)}>取消</button>
+            <button className="l-btn mc" data-trust-draft-editor="direct-save" style={{ flex: 1, justifyContent: "center" }} onClick={saveSectionDraft}>直接保存草稿</button>
+          </>}
+        >
+          <div className="itint cyan" style={{ marginBottom: 12 }}>
+            草稿保存是普通内容编辑，不走高敏确认；只有发布、回滚和下架进入操作确认。
+          </div>
+          <div className="field"><label>版本号</label><input className="inp" disabled={draftEditor.mode === "edit"} value={draftEditor.version} placeholder="如 v6" onChange={(event) => setDraftEditor({ ...draftEditor, version: event.target.value })} /></div>
+          <div className="field"><label>版块说明</label><input className="inp" value={draftEditor.description} onChange={(event) => setDraftEditor({ ...draftEditor, description: event.target.value })} /></div>
+          <div className="field"><label>内容结构</label><input className="inp" value={draftEditor.structure} onChange={(event) => setDraftEditor({ ...draftEditor, structure: event.target.value })} /></div>
+          <div className="field"><label>保存说明</label><input className="inp" value={draftEditor.reason} onChange={(event) => setDraftEditor({ ...draftEditor, reason: event.target.value })} /></div>
+          <div className="row" style={{ justifyContent: "space-between", margin: "14px 0 8px" }}><b>结构化字段</b><button className="l-btn sm" type="button" onClick={() => setDraftEditor({ ...draftEditor, fields: [...draftEditor.fields, { key: "", label: "", value: "" }] })}>添加字段</button></div>
+          {draftEditor.fields.map((field, index) => <div className="itint" key={index} style={{ marginBottom: 10 }}>
+            <div className="grid g-2" style={{ gap: 8 }}>
+              <div className="field"><label>字段标识</label><input className="inp" value={field.key} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item) })} /></div>
+              <div className="field"><label>字段名称</label><input className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
+            </div>
+            <div className="field"><label>字段内容</label><textarea className="inp" rows={3} value={field.value} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
+            <button className="l-btn sm danger" type="button" disabled={draftEditor.fields.length <= 1} onClick={() => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.filter((_, itemIndex) => itemIndex !== index) })}>移除字段</button>
+          </div>)}
+        </Drawer>
+      )}
+
       {/* 版块详情 Drawer */}
-      {sec && (
+      {view === "trust" && sec && (
         <Drawer
           title={`版块 · ${sec.key}(${sec.desc})`}
           onClose={() => setSecKey(null)}
@@ -828,7 +899,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       )}
 
       {/* 法域详情 Drawer */}
-      {jur && (
+      {view === "disclosures" && jur && (
         <Drawer
           title={`法域 · ${jur.code}(${jur.name})`}
           onClose={() => setJurCode(null)}
@@ -868,7 +939,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       )}
 
       {/* 章节 Drawer */}
-      {chap && (
+      {view === "disclosures" && chap && (
         <Drawer
           title={`章节 ${chap.no} · ${chap.zh}(${chap.jurisdiction} ${chap.version})`}
           onClose={() => setChapNo(null)}

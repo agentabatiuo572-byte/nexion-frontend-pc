@@ -554,17 +554,17 @@ export type IContentActions = {
   cancelI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
   deleteI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
   updateI3Cap: (tier: string, cap: string, reason: string) => Promise<void>;
-  publishI4TrustSection: (sectionKey: string, version: string, reason: string) => Promise<void>;
+  publishI4TrustSection: (sectionKey: string, body: { version: string; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
   createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI4TrustSectionDraft: (sectionKey: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   deleteI4TrustSectionDraft: (sectionKey: string, version: string, reason: string) => Promise<void>;
   rollbackI4TrustSection: (sectionKey: string, targetVersion: string, reason: string) => Promise<void>;
   archiveI4TrustSection: (sectionKey: string, reason: string) => Promise<void>;
-  saveI4DisclosureDraft: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  publishI4Disclosure: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  configureI4Matrix: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  archiveI4Matrix: (jurisdiction: string, reason: string) => Promise<void>;
-  updateI4GateScope: (scope: string, reason: string) => Promise<void>;
+  saveI5DisclosureDraft: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  publishI5Disclosure: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  configureI5Matrix: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  archiveI5Matrix: (jurisdiction: string, reason: string) => Promise<void>;
+  updateI5GateScope: (scope: string, reason: string) => Promise<void>;
   rescanI6: (reason: string) => Promise<void>;
   saveI6LocalizedDraft: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI6LocalizedMessage: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -641,17 +641,17 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   cancelI3Campaign: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/cancel`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   deleteI3Campaign: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI3Cap: (tier, cap, reason) => apiRequest(`/campaigns/caps/${encodeURIComponent(tier)}`, { method: "PATCH", body: JSON.stringify(withReason({ cap }, reason)) }).then(() => undefined),
-  publishI4TrustSection: (sectionKey, version, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/publish`, { method: "POST", body: JSON.stringify(withReason({ version }, reason)) }).then(() => undefined),
+  publishI4TrustSection: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI4TrustSectionDraft: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI4TrustSectionDraft: (sectionKey, version, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   deleteI4TrustSectionDraft: (sectionKey, version, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   rollbackI4TrustSection: (sectionKey, targetVersion, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ targetVersion }, reason)) }).then(() => undefined),
   archiveI4TrustSection: (sectionKey, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  saveI4DisclosureDraft: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  publishI4Disclosure: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  configureI4Matrix: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "PUT", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  archiveI4Matrix: (jurisdiction, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  updateI4GateScope: (scope, reason) => apiRequest("/trust-disclosure/disclosures/gated-actions", { method: "PATCH", body: JSON.stringify(withReason({ scope }, reason)) }).then(() => undefined),
+  saveI5DisclosureDraft: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  publishI5Disclosure: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  configureI5Matrix: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "PUT", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  archiveI5Matrix: (jurisdiction, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  updateI5GateScope: (scope, reason) => apiRequest("/trust-disclosure/disclosures/gated-actions", { method: "PATCH", body: JSON.stringify(withReason({ scope }, reason)) }).then(() => undefined),
   rescanI6: (reason) => apiRequest("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   saveI6LocalizedDraft: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI6LocalizedMessage: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),

@@ -267,7 +267,7 @@ await step("copy-ab-draft-visible-after-reopen", () => {
 });
 
 await step("disclosure-draft-visible-after-reopen", () => {
-  open("/content/disclosure");
+  open("/content/disclosures");
   evalJson(`clickExact('草拟新版(SFC v13)'); return { opened: true };`);
   wait();
   evalJson(`
@@ -284,7 +284,7 @@ await step("disclosure-draft-visible-after-reopen", () => {
     return { submitted: true };
   `);
   wait();
-  const state = reopenAndRead("/content/disclosure");
+  const state = reopenAndRead("/content/disclosures");
   const page = evalJson(`
     const body = bodyText();
     const preview = document.querySelector('[data-proof="disclosure-draft-preview"]')?.innerText || '';
@@ -358,7 +358,7 @@ fs.writeFileSync(
     shardId: "AD-09",
     source: "SPEC-L2a02-runtime-proof",
     side: "admin",
-    routes: ["/content/i18n", "/content/learn", "/content/copy-ab", "/content/disclosure", "/content/notifications"],
+    routes: ["/content/i18n", "/content/learn", "/content/copy-ab", "/content/disclosures", "/content/notifications"],
     status: "captured",
     result: {
       classification: "state-persisted-and-visible",

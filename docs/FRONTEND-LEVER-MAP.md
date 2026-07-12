@@ -52,7 +52,7 @@
 |---|---|---|---|---|
 | /me/notifications | 收推送/通知 | /content/nova(I2)+ /content/notifications(I3) | Nova 渠道开关 + Campaign 新建/发送/停发 | ✅ |
 | /trust(+/nex) | 信任中心 | /content/trust(I4) | 条目发布/下架/新增(操作确认) | ✅ |
-| /me/risk-disclosure | 风险披露 | /content/disclosure(I5) | 发布新版/归档(操作确认) | ✅ |
+| /me/risk-disclosure | 风险披露 | /content/disclosures(I5) | 发布新版/归档(操作确认) | ✅ |
 | /learn | 教程 | /content/learn(I7) | 新建/发布/下架(操作确认) | ✅ |
 | /me/language | 多语言 | /content/i18n(I6) | 补全/发布 | ✅ |
 | (文案 A/B) | — | /content/copy-ab(I1) | 设为胜出/停止实验 | ✅ |

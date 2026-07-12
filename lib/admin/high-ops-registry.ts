@@ -1520,19 +1520,21 @@ export const HIGH_OPS: HighOpDef[] = [
         action: String(ctx.action),
         version: ctx.version != null ? String(ctx.version) : null, // publish 用
         targetVersion: ctx.targetVersion != null ? String(ctx.targetVersion) : null, // rollback 用
+        dataSourceStatement: String(ctx.dataSourceStatement ?? ""),
+        bilingualConfirmed: ctx.bilingualConfirmed === true,
       } }),
     buildTarget: (ctx) => ({ domain: "I", type: "trust_section", id: String(ctx.sectionKey) }),
   },
   // I5 披露发布(publishDisclosure · 法域 jurisdiction 锁 · amplifies false)
   {
-    op: "i4_disclosure_publish",
+    op: "i5_disclosure_publish",
     domain: "I",
     action: "发布披露新版",
     amplifies: false, // 条款重签非熔断,不动账本
     type: "param",
     gateLabel: "门槛者",
     targetType: "disclosure_jurisdiction",
-    buildCommand: (ctx) => ({ domain: "I", op: "i4_disclosure_publish",
+    buildCommand: (ctx) => ({ domain: "I", op: "i5_disclosure_publish",
       params: {
         jurisdiction: String(ctx.jurisdiction),
         version: String(ctx.version),
@@ -1541,14 +1543,14 @@ export const HIGH_OPS: HighOpDef[] = [
   },
   // I5 受限动作范围调整(updateGateScope · 全仓单例锁 restricted-actions · amplifies 放松资金类合规拦截)
   {
-    op: "i4_gate_adjust",
+    op: "i5_gate_adjust",
     domain: "I",
     action: "调整披露受限动作范围",
     amplifies: true, // 移出范围 = 放松合规拦截;前端按纳入方向可覆盖为 false
     type: "param",
     gateLabel: "门槛者",
     targetType: "disclosure_gate",
-    buildCommand: (ctx) => ({ domain: "I", op: "i4_gate_adjust",
+    buildCommand: (ctx) => ({ domain: "I", op: "i5_gate_adjust",
       params: { scope: String(ctx.scope) } }),
     buildTarget: () => ({ domain: "I", type: "disclosure_gate", id: "restricted-actions" }),
   },

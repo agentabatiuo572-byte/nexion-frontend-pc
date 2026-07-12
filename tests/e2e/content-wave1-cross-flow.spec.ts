@@ -47,6 +47,7 @@ const frontendRoutes = [
   "/content/nova",
   "/content/notifications",
   "/content/trust",
+  "/content/disclosures",
   "/content/i18n",
   "/emergency/kill-switch",
   "/emergency/geo-block",
@@ -246,7 +247,7 @@ test("Wave-1 content: I/J/K/L with D2/G1/G2 admission gates", async ({ page }, t
       emergencyTrack: true,
       actionSeq: [
         `I3·发送 ${PREFIX} 通知模板`,
-        "I4·披露门槛同步 D2 G1 G2",
+        "I5·披露门槛同步 D2 G1 G2",
         "K1·账户簇建档调查",
         "K2·套利监控复核",
         "K4·风险评分复算",
@@ -292,7 +293,7 @@ test("Wave-1 content: I/J/K/L with D2/G1/G2 admission gates", async ({ page }, t
     const gate = await apiOk(page, "PATCH", "/api/admin/content/trust-disclosure/disclosures/gated-actions", {
       scope: "withdraw staking exchange",
       operator: OPERATOR,
-      reason: `${REASON} I4 披露门槛覆盖 D2 G1 G2`,
+      reason: `${REASON} I5 披露门槛覆盖 D2 G1 G2`,
     }, "i4-valid-gate");
     const gateScope = String((gate as JsonMap).gateScope ?? "");
     expect(gateScope).toMatch(/提现|质押|兑换|withdraw|staking|exchange/i);

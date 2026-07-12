@@ -2,8 +2,8 @@
 
 /**
  * I 内容与合规 CMS — design_handoff_i_domain 设计稿 port(2026-06-11 重构;2026-06-15 客服 I8/I9 迁出至域 M 客服中心)。
- * 6 子页:I1 转化文案 A/B / I2 Nova 推送运营 / I3 通知 Campaign /
- *   I4 信任中心与披露 / I6 i18n 文案 / I7 教程中心。
+ * 7 子页:I1 转化文案 A/B / I2 Nova 推送运营 / I3 通知 Campaign /
+ *   I4 信任中心 / I5 风险披露 / I6 i18n 文案 / I7 教程中心。
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)。
  * 真写统一走后端 /content/* 接口;概览为空时保持空态,不在前端补业务样例。
  * amplifies 唯一流出方向 = 课程奖励上调(B1 红线核验,SPEC §4 注:拒绝码 V4 目标 422,B1 现行 403)。
@@ -26,6 +26,7 @@ const FOLD: Record<string, string> = {
   I2: "I2",
   I3: "I3",
   I4: "I4",
+  I5: "I5",
   I6: "I6",
   I7: "I7",
 };
@@ -34,7 +35,8 @@ const RO_COPY: Record<string, string> = {
   I1: "版本和实验分组都在服务器 · 用户侧改不了",
   I2: "通道节奏以服务器为准 · 整体停 Nova 才轮到 J 域",
   I3: "通知唯一账本在服务器 · App 端只是显示窗口",
-  I4: "条款和确认状态都在服务器 · 客户端篡改无效",
+  I4: "信任中心发布版与历史快照都在服务器 · 客户端篡改无效",
+  I5: "披露版本、法域与重新确认状态都在服务器 · 客户端篡改无效",
   I6: "词条以服务器为唯一来源 · 单语言发布闸不许关",
   I7: "课程、推荐位与奖励以服务器为唯一来源 · 奖励上调走高敏审批",
 };
@@ -59,6 +61,10 @@ function liveFromBackend(tab: string, content: IContentData, loading: boolean, e
     return stats ? `紧急通道:${countText(stats.criticalInflight)} 条在途 · 本月发送 ${stats.monthSent}` : "暂无后端业务数据";
   }
   if (tab === "I4") {
+    const stats = content.trustDisclosure?.stats;
+    return stats ? `受管信任版块:${countText(stats.managedSections)} 个` : "暂无后端业务数据";
+  }
+  if (tab === "I5") {
     const stats = content.trustDisclosure?.stats;
     if (!stats) return "暂无后端业务数据";
     return stats.reackPct !== undefined
@@ -150,7 +156,8 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "I1" && <I1CopyAb ctx={ctx} />}
       {tab === "I2" && <I2Nova ctx={ctx} />}
       {tab === "I3" && <I3Campaign ctx={ctx} />}
-      {tab === "I4" && <I4Trust ctx={ctx} />}
+      {tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
+      {tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
       {tab === "I6" && <I6I18n ctx={ctx} />}
       {tab === "I7" && <I7Learning ctx={ctx} />}
 

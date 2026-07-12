@@ -61,13 +61,36 @@ test("custom role codes survive session normalization", () => {
 });
 
 test("login wire consumes backend effectiveMenus and preserves explicit empty grants", () => {
-  assert.deepEqual(normalizeEffectiveMenus({ effectiveMenus: ["A6", " A8 "] }), ["A6", "A8"]);
+  assert.deepEqual(normalizeEffectiveMenus({ effectiveMenus: ["A6", " A8 ", "MENU_CONTENT_I4", "MENU_CONTENT_I5"] }), ["A6", "A8", "I4", "I5"]);
   assert.deepEqual(normalizeEffectiveMenus({ effectiveMenus: [] }), []);
   assert.deepEqual(normalizeEffectiveMenus({ menuCodes: ["L5"] }), ["L5"]);
   assert.equal(normalizeEffectiveMenus({}), undefined);
   assert.equal(normalizeEffectiveMenuNodes({
     effectiveMenuNodes: [{ menuCode: "I7", menuName: "教程中心", routePath: "/content/learn", parentCode: "I", sortOrder: null }],
   })?.[0].sortOrder, null);
+  assert.deepEqual(normalizeEffectiveMenuNodes({
+    effectiveMenuNodes: [
+      { menuCode: "MENU_CONTENT_I4", menuName: "信任中心 CMS", routePath: "/content/trust", parentCode: "I", sortOrder: 4 },
+      { menuCode: "MENU_CONTENT_I5", menuName: "风险披露版本", routePath: "/content/disclosures", parentCode: "I", sortOrder: 5 },
+    ],
+  })?.map((node) => node.menuCode), ["I4", "I5"]);
+});
+
+test("classic database menu aliases render the split I4 and I5 pages", () => {
+  const menuCodes = normalizeEffectiveMenus({ effectiveMenus: ["I", "MENU_CONTENT_I4", "MENU_CONTENT_I5"] });
+  const menuNodes = normalizeEffectiveMenuNodes({
+    effectiveMenuNodes: [
+      { menuCode: "I", menuName: "内容与合规 CMS", routePath: "", parentCode: null, sortOrder: 9 },
+      { menuCode: "MENU_CONTENT_I4", menuName: "信任中心 CMS", routePath: "/content/trust", parentCode: "I", sortOrder: 4 },
+      { menuCode: "MENU_CONTENT_I5", menuName: "风险披露版本", routePath: "/content/disclosures", parentCode: "I", sortOrder: 5 },
+    ],
+  });
+  const content = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes }).find((domain) => domain.code === "I");
+
+  assert.deepEqual(content?.l2.map((item) => [item.id, item.name, item.path]), [
+    ["I4", "信任中心 CMS", "/content/trust"],
+    ["I5", "风险披露版本", "/content/disclosures"],
+  ]);
 });
 
 test("interactive login reloads the document after storing the new session", () => {

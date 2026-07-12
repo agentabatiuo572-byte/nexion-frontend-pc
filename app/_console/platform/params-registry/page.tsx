@@ -97,7 +97,8 @@ function ownerFor(r: CgmRow): { path: string; label: string } {
     [/withdrawal|提现|min_withdrawal|fee|daily_cap|user_daily/, "/finance/params", "D5 提现参数"],
     [/billtype|账单/, "/finance/ledger", "D4 平台账本"],
     [/lesson|categor|learn|format_label/, "/content/learn", "I7 教程中心"],
-    [/disclos|risk.?disclosure|compliance|kyc.?express|trust/, "/content/trust", "I4 信任中心与披露"],
+    [/disclos|risk.?disclosure|compliance|kyc.?express/, "/content/disclosures", "I5 风险披露"],
+    [/trust/, "/content/trust", "I4 信任中心"],
     [/banner|copy|文案/, "/content/copy-ab", "I1 文案 AB"],
     [/killswitch|kill.?switch|neterror|congestion|coveragedegraded|realprize/, "/emergency/kill-switch", "J1 Kill-Switch"],
     [/confirm|toast|useui/, "/platform/config", "A3 系统配置"],
@@ -109,7 +110,7 @@ function ownerFor(r: CgmRow): { path: string; label: string } {
     A: ["/platform/config", "A3 系统配置"], C: ["/network/v-rank", "F1 V 级阶梯"],
     D: ["/finance/params", "D5 提现参数"], E: ["/devices/pricing", "E1 商品定价"],
     F: ["/network/royalty", "F2 佣金规则"], G: ["/finance-products/staking", "G1 Staking"],
-    H: ["/growth/phase", "H1 Phase 调度"], I: ["/content/trust", "I4 信任中心与披露"],
+    H: ["/growth/phase", "H1 Phase 调度"], I: ["/content/trust", "I4 信任中心"],
     J: ["/emergency/kill-switch", "J1 Kill-Switch"], K: ["/risk/withdrawal-rules", "K3 提现风控"],
     L: ["/analytics/operations", "L4 运营指标"], B: ["/overview/rhythm", "B3 节奏"],
   };

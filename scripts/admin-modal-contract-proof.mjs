@@ -274,7 +274,7 @@ await step("course-authoring", () => {
 });
 
 await step("version-authoring", () => {
-  open("/content/disclosure");
+  open("/content/disclosures");
   evalJson(`clickExact('草拟新版(SFC v13)'); return { opened: true };`);
   wait();
   evalJson(`

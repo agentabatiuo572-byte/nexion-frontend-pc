@@ -12,6 +12,16 @@ const BUILTIN_ROLE_ALIASES: Record<string, string> = {
   AUDIT: "auditor",
 };
 
+const CLASSIC_MENU_ALIASES: Record<string, string> = {
+  MENU_CONTENT_I4: "I4",
+  MENU_CONTENT_I5: "I5",
+};
+
+function normalizeMenuCode(code: unknown): string {
+  const value = String(code ?? "").trim().toUpperCase();
+  return CLASSIC_MENU_ALIASES[value] ?? value;
+}
+
 /** Keep custom database role codes intact; only collapse known built-in aliases. */
 export function normalizeSessionRole(role: string | undefined): string {
   const value = role?.trim();
@@ -28,7 +38,7 @@ export function normalizeEffectiveMenus(session: {
     : Array.isArray(session.menuCodes)
       ? session.menuCodes
       : undefined;
-  return raw?.map((code) => String(code).trim()).filter(Boolean);
+  return raw?.map(normalizeMenuCode).filter(Boolean);
 }
 
 export interface EffectiveMenuNodeWire {
@@ -50,7 +60,7 @@ export function normalizeEffectiveMenuNodes(session: { effectiveMenuNodes?: unkn
   return session.effectiveMenuNodes.flatMap((raw) => {
     if (!raw || typeof raw !== "object") return [];
     const node = raw as EffectiveMenuNodeWire;
-    const menuCode = String(node.menuCode ?? "").trim().toUpperCase();
+    const menuCode = normalizeMenuCode(node.menuCode);
     if (!menuCode) return [];
     const hasOrder = (typeof node.sortOrder === "number")
       || (typeof node.sortOrder === "string" && node.sortOrder.trim() !== "");
