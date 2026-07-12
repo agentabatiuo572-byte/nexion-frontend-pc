@@ -234,14 +234,21 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     action: <>调整 CAP · {tier}</>,
     detail: (
       <>
-        当前 <b>{cap}</b> · 对新通知的保留立即生效,已有通知不追溯删除。调小可能把未读的高档通知挤出显示窗,影响合规类可见性,所以操作确认;内容和风控都可发起。<b>紧急档锁死为无限保留,不在可调范围。</b>
+        当前 <b>{cap}</b> · 调整后立即按新上限清理已有通知。调小可能把未读的高档通知挤出显示窗,影响合规类可见性,所以操作确认;内容和风控都可发起。<b>紧急档锁死为无限保留,不在可调范围。</b>
         {tier === "low" && (
-          <>{` `}low 档可切到「24–48 小时自动过期」模式,数量上限就不用了。</>
+          <>{` `}低优先级除数量上限外,仍固定执行 48 小时自动过期清理。</>
         )}
       </>
     ),
     amplifies: false,
-    edit: { kind: "text", current: cap },
+    edit: {
+      kind: "number",
+      current: cap.replace(/\D/g, ""),
+      unit: "条",
+      min: 1,
+      max: 10000,
+      step: 1,
+    },
     run: (reason, v) => {
       if (!v) return;
       const def = findHighOp("i3_cap_adjust")!;

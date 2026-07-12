@@ -529,6 +529,18 @@ function initEditValue(spec?: EditSpec | null): string {
   return options.includes(current) ? current : "";
 }
 
+function isEditValueValid(spec: EditSpec | null, value: string): boolean {
+  if (!spec) return true;
+  if (!value.trim()) return false;
+  if ((spec.kind ?? "text") !== "number") return true;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return false;
+  if (spec.min !== undefined && numeric < spec.min) return false;
+  if (spec.max !== undefined && numeric > spec.max) return false;
+  if (spec.step === 1 && (!/^-?\d+$/.test(value.trim()) || !Number.isInteger(numeric))) return false;
+  return true;
+}
+
 export type BusinessFormSpec =
   | { kind: "role-select"; currentRole: string; roles: RoleOption[]; guardHint?: string;
       /** 可选:传入全域动作 + 各角色授权向量,启用「角色变更权限 diff 预览」(新增/移除/受影响域)。 */
@@ -2729,7 +2741,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
   const businessMissing = missingBusinessFields(businessForm, businessValue);
   const derivedNewVal = businessNewValue(businessForm, businessValue);
-  const canConfirm = !covBlocked && reasonOk && (!spec || newVal.trim().length > 0) && businessMissing.length === 0;
+  const editValueOk = isEditValueValid(spec, newVal);
+  const canConfirm = !covBlocked && reasonOk && editValueOk && businessMissing.length === 0;
   return (
     <Modal title={action} icon="shield" onClose={onClose}
       footer={<>
@@ -2781,6 +2794,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
             <div className="row" style={{ gap: 8, alignItems: "center" }}>
               <input
                 className="fld"
+                aria-label="目标新值"
                 type={kind === "number" ? "number" : "text"}
                 min={kind === "number" ? spec.min : undefined}
                 max={kind === "number" ? spec.max : undefined}
@@ -2791,6 +2805,11 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                 style={{ maxWidth: 240 }}
               />
               {spec.unit && <span className="muted tiny">{spec.unit}</span>}
+            </div>
+          )}
+          {!editValueOk && kind === "number" && newVal && (
+            <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
+              请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的{spec.step === 1 ? "整数" : "数字"}。
             </div>
           )}
           {newVal && spec.current && (
