@@ -1519,6 +1519,7 @@ export const HIGH_OPS: HighOpDef[] = [
         sectionKey: String(ctx.sectionKey),
         action: String(ctx.action),
         version: ctx.version != null ? String(ctx.version) : null, // publish 用
+        expectedRevision: ctx.expectedRevision != null ? Number(ctx.expectedRevision) : null,
         targetVersion: ctx.targetVersion != null ? String(ctx.targetVersion) : null, // rollback 用
         dataSourceStatement: String(ctx.dataSourceStatement ?? ""),
         bilingualConfirmed: ctx.bilingualConfirmed === true,

@@ -9,12 +9,14 @@
  * amplifies 全为 false —— I4 不碰 B1(条款重签不是熔断、不动账本)。
  * 凭据 / 合规铁律:披露全链 操作员 = 风控,执行门槛 = 风控 / 超管;详情文案体现这一点。
  */
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
 
 type TrustSection = {
   key: string; desc: string; struct: string; v: string; status: string; lastChange: string; roleGate: string; highSensitivity: boolean;
@@ -61,6 +63,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const [chapNo, setChapNo] = useState<string | null>(null);
   const [draftEditor, setDraftEditor] = useState<DraftEditor | null>(null);
   const data = content.trustDisclosure;
+  const pendingTrustSectionKeys = new Set(data?.pendingTrustSectionKeys ?? []);
   const I4_STATS = data?.stats ?? { managedSections: 0, jurisdictions: 0, staleAckUsers: 0, weeklyGateBlocked: 0 };
   const TRUST_SECTIONS: TrustSection[] = (data?.trustSections ?? []).map((s) => ({ ...s, v: s.version }));
   const TRUST_SECTION_VERSIONS: TrustSectionVersion[] = data?.trustSectionVersions ?? [];
@@ -111,6 +114,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     }
   };
 
+  useEffect(() => {
+    if (view !== "trust") return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void actions.reloadIContent();
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [actions, view]);
+
   const liveTrustStatus = (s: TrustSection): string => s.status;
   const liveJurVersion = (j: Jurisdiction): string => j.v;
   const gateOn = (k: string): boolean => GATED_ACTIONS.find((g) => g.key === k)?.active ?? false;
@@ -137,8 +148,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     description: s.desc,
     structure: s.struct,
     reason: "日常维护信任版块草稿",
-    fields: (SECTION_FIELDS[s.key] ?? []).map(([key, value]) => ({ key, label: key, value })).concat(
-      (SECTION_FIELDS[s.key] ?? []).length === 0 ? [{ key: "", label: "", value: "" }] : [],
+    fields: currentSectionFields(s).concat(
+      currentSectionFields(s).length === 0 ? [{ key: "", label: "", value: "" }] : [],
     ),
   });
 
@@ -157,7 +168,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     if (!draftEditor) return;
     if (!/^v[1-9][0-9]{0,8}$/.test(draftEditor.version) || !draftEditor.description.trim()
       || !draftEditor.structure.trim() || !draftEditor.reason.trim() || draftEditor.fields.length === 0
-      || draftEditor.fields.some((field) => !field.key.trim() || !field.label.trim() || !field.value.trim())) {
+      || draftEditor.fields.some((field) => !field.key.trim() || !field.label.trim()
+        || (!isOptionalTrustLinkField(field.key) && !field.value.trim()))) {
       toast("请完整填写版本、说明、结构、字段和保存说明");
       return;
     }
@@ -204,6 +216,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         requireDataSource: requiresDataSource(s),
       },
       run: (reason, _value, form) => {
+        const bilingual = validateTrustSectionBilingualFields(draft.fields);
+        if (!bilingual.valid) {
+          toast(`中越字段不完整：${bilingual.missing.join("、")}`);
+          return;
+        }
         const def = findHighOp("i4_trust_section_manage")!;
         const dataSource = form?.dataSource?.trim() || "";
         const bilingualConfirmed = form?.bilingualConfirmed === "true";
@@ -222,11 +239,12 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             sectionKey: s.key,
             action: "publish",
             version: draft.version,
+            expectedRevision: draft.revision,
             dataSourceStatement: dataSource,
             bilingualConfirmed,
           }),
           target: def.buildTarget({ sectionKey: s.key }),
-        });
+        }).then((result) => result === "proposed" ? actions.reloadIContent() : undefined);
       },
     });
 
@@ -256,7 +274,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           sourceDomain: "I4",
           command: def.buildCommand({ sectionKey: s.key, action: "rollback", targetVersion: nv }),
           target: def.buildTarget({ sectionKey: s.key }),
-        });
+        }).then((result) => result === "proposed" ? actions.reloadIContent() : undefined);
       },
     });
 
@@ -284,7 +302,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           sourceDomain: "I4",
           command: def.buildCommand({ sectionKey: s.key, action: "archive" }),
           target: def.buildTarget({ sectionKey: s.key }),
-        });
+        }).then((result) => result === "proposed" ? actions.reloadIContent() : undefined);
       },
     });
 
@@ -490,6 +508,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <span className="ttl">信任中心(I4 · a)· /trust</span>
           <span className="sub">· 6 版块 · 财务数字/团队/叙事/徽章/审计/外链</span>
           <div className="r">
+            {pendingTrustSectionKeys.size > 0 && <span className="bdg warn">A2待确认 {pendingTrustSectionKeys.size}</span>}
+            <button className="l-btn sm" onClick={() => void actions.reloadIContent()}>刷新状态</button>
+            {(isSuperadmin || session?.authorities.includes("platform_a2_read")) && <Link className="l-btn sm" href="/platform/audit">查看A2</Link>}
             <span className="icode danger">高敏合规</span>
           </div>
         </div>
@@ -510,6 +531,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
               {TRUST_SECTIONS.map((s) => {
                 const st = liveTrustStatus(s);
                 const isArchived = st === "archived" || st.includes("archived");
+                const isPending = pendingTrustSectionKeys.has(s.key);
                 return (
                   <tr
                     key={s.key}
@@ -531,6 +553,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                       )}
                     </td>
                     <td>
+                      {isPending && <span className="bdg warn" style={{ marginRight: 6 }}>A2待确认</span>}
                       {isArchived ? (
                         <span className="bdg dim">已下架</span>
                       ) : (
@@ -539,12 +562,12 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                     </td>
                     <td className="mono" style={{ fontSize: 11.5 }}>{s.lastChange}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canDraftTrust && <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); createSectionDraft(s); }}>新建草稿</button>{" "}</>}
-                      {canPublishTrustSection(s) && <button className="l-btn sm" disabled={sectionVersionOptions(s.key, s.v).length === 0} onClick={(e) => { e.stopPropagation(); rollbackSection(s); }}>回滚历史版</button>}
+                      {canDraftTrust && <><button className="l-btn sm mc" disabled={isPending} onClick={(e) => { e.stopPropagation(); createSectionDraft(s); }}>新建草稿</button>{" "}</>}
+                      {canPublishTrustSection(s) && <button className="l-btn sm" disabled={isPending || sectionVersionOptions(s.key, s.v).length === 0} onClick={(e) => { e.stopPropagation(); rollbackSection(s); }}>回滚历史版</button>}
                       {canPublishTrustSection(s) && !isArchived && (
                         <>
                           {" "}
-                          <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); archiveSection(s); }}>下架</button>
+                          <button className="l-btn sm mc" disabled={isPending} onClick={(e) => { e.stopPropagation(); archiveSection(s); }}>下架</button>
                         </>
                       )}
                     </td>
@@ -565,6 +588,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
               {TRUST_SECTION_VERSIONS.map((version) => {
                 const section = TRUST_SECTIONS.find((row) => row.key === version.sectionKey);
                 const isDraft = ["draft", "DRAFT"].includes(version.status);
+                const isPending = pendingTrustSectionKeys.has(version.sectionKey);
                 return <tr key={`${version.sectionKey}-${version.version}`}>
                   <td className="mono">{version.sectionKey}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{version.version}</td>
@@ -575,10 +599,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                   <td className="mono">{version.updatedAt || "—"}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     {isDraft && canDraftTrust && <>
-                      <button className="l-btn sm" onClick={() => editSectionDraft(version)}>编辑草稿</button>{" "}
-                      <button className="l-btn sm danger" onClick={() => deleteSectionDraft(version)}>删除草稿</button>{" "}
+                      <button className="l-btn sm" disabled={isPending} onClick={() => editSectionDraft(version)}>编辑草稿</button>{" "}
+                      <button className="l-btn sm danger" disabled={isPending} onClick={() => deleteSectionDraft(version)}>删除草稿</button>{" "}
                     </>}
-                    {isDraft && section && canPublishTrustSection(section) && <button className="l-btn sm mc" onClick={() => pubSection(section, version)}>发布草稿</button>}
+                    {isDraft && section && canPublishTrustSection(section) && <button className="l-btn sm mc" disabled={isPending} onClick={() => pubSection(section, version)}>{isPending ? "A2待确认" : "发布草稿"}</button>}
                     {(!isDraft || (!canDraftTrust && (!section || !canPublishTrustSection(section)))) && <span className="tiny">只读{isDraft ? "（无编辑或发布权限）" : "历史快照"}</span>}
                   </td>
                 </tr>;

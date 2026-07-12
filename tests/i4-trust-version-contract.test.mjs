@@ -4,6 +4,7 @@ import test from "node:test";
 
 const view = readFileSync(new URL("../app/components/domain-views/i-tabs/i4-trust.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/i-client.ts", import.meta.url), "utf8");
+const designKit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
 
 test("I4 trust sections expose real draft CRUD endpoints", () => {
   assert.match(client, /createI4TrustSectionDraft/);
@@ -28,4 +29,38 @@ test("I4 renders Chinese states and structured fields", () => {
   assert.match(view, /draftEditor\.fields\.map/);
   assert.match(view, /fields:/);
   assert.doesNotMatch(view, /目标版本.*输入/);
+});
+
+test("I4 draft validation allows optional URL fields to stay empty", () => {
+  assert.match(view, /isOptionalTrustLinkField/);
+  assert.match(view, /!isOptionalTrustLinkField\(field\.key\)\s*&&\s*!field\.value\.trim\(\)/);
+});
+
+test("I4 shows authoritative A2 pending state and refreshes content after status changes", () => {
+  assert.match(view, /pendingTrustSectionKeys/);
+  assert.match(view, /A2待确认/);
+  assert.match(view, /actions\.reloadIContent\(\)/);
+  assert.match(view, /setInterval/);
+  assert.match(view, /href="\/platform\/audit"/);
+});
+
+test("I4 publish validates real Chinese and Vietnamese field pairs", () => {
+  assert.match(view, /validateTrustSectionBilingualFields/);
+  assert.match(view, /中越字段不完整/);
+});
+
+test("I4 freezes all draft mutations while the A2 section lock is pending", () => {
+  assert.match(view, /disabled=\{isPending\}[\s\S]{0,160}新建草稿/);
+  assert.match(view, /disabled=\{isPending\}[\s\S]{0,160}编辑草稿/);
+  assert.match(view, /disabled=\{isPending\}[\s\S]{0,160}删除草稿/);
+});
+
+test("I4 A2 publish command binds the exact draft revision", () => {
+  assert.match(view, /expectedRevision:\s*draft\.revision/);
+  assert.match(client, /expectedRevision:\s*number/);
+});
+
+test("I4 field key uniqueness follows MySQL case-insensitive collation", () => {
+  assert.match(designKit, /map\(\(key\) => key\.toLowerCase\(\)\)/);
+  assert.match(designKit, /字段标识不能重复（不区分大小写）/);
 });

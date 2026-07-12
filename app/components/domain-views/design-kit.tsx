@@ -9,6 +9,7 @@
 import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
 export const DOMAIN_HOME: Record<string, string> = {
@@ -1222,13 +1223,17 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     for (let index = 0; index < fieldCount; index += 1) {
       needs(`field.${index}.key`, `字段 ${index + 1} 标识`);
       needs(`field.${index}.label`, `字段 ${index + 1} 名称`);
-      needs(`field.${index}.value`, `字段 ${index + 1} 内容`);
-      fieldKeys.push(state[`field.${index}.key`]?.trim() ?? "");
+      const fieldKey = state[`field.${index}.key`]?.trim() ?? "";
+      if (!isOptionalTrustLinkField(fieldKey)) needs(`field.${index}.value`, `字段 ${index + 1} 内容`);
+      fieldKeys.push(fieldKey);
     }
     if (fieldKeys.some((key) => key && !/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(key))) missing.push("字段标识格式");
-    if (fieldKeys.filter(Boolean).length !== new Set(fieldKeys.filter(Boolean)).size) missing.push("字段标识不能重复");
+    const normalizedFieldKeys = fieldKeys.filter(Boolean).map((key) => key.toLowerCase());
+    if (normalizedFieldKeys.length !== new Set(normalizedFieldKeys).size) missing.push("字段标识不能重复（不区分大小写）");
   } else if (spec.kind === "trust-section-publish") {
     if (spec.requireDataSource) needs("dataSource", "财务/NEX 数据来源");
+    const bilingual = validateTrustSectionBilingualFields(spec.targetFields);
+    if (!bilingual.valid) missing.push(`中越字段不完整：${bilingual.missing.join("、")}`);
     if (state.bilingualConfirmed !== "true") missing.push("中越双语确认");
   } else if (spec.kind === "destructive-reason") {
     if ((spec.requireAck ?? true) && state.ack !== "true") missing.push("影响确认");

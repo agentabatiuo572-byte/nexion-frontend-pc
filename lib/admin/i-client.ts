@@ -418,6 +418,7 @@ export type TrustDisclosureOverview = {
   stats: TrustDisclosureStats;
   trustSections: TrustSectionView[];
   trustSectionVersions: TrustSectionVersionView[];
+  pendingTrustSectionKeys: string[];
   financialFields: FinancialFieldView[];
   sectionFields: TrustSectionFieldView[];
   jurisdictions: DisclosureJurisdictionView[];
@@ -554,7 +555,7 @@ export type IContentActions = {
   cancelI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
   deleteI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
   updateI3Cap: (tier: string, cap: string, reason: string) => Promise<void>;
-  publishI4TrustSection: (sectionKey: string, body: { version: string; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
+  publishI4TrustSection: (sectionKey: string, body: { version: string; expectedRevision: number; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
   createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI4TrustSectionDraft: (sectionKey: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   deleteI4TrustSectionDraft: (sectionKey: string, version: string, reason: string) => Promise<void>;
