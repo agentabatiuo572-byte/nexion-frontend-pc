@@ -167,8 +167,26 @@ export type NovaTemplateView = {
   name: string;
   cta: string;
   version: string;
+  titleZh: string;
+  bodyZh: string;
+  titleVi: string;
+  bodyVi: string;
+  titleEn: string;
+  bodyEn: string;
   status: string;
 };
+
+export type LearningCourseVersionView = {
+  courseId: string;
+  version: string;
+  status: "DRAFT" | "PUBLISHED" | "SUPERSEDED";
+  payload: Record<string, unknown>;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NovaOptionView = { value: string; label: string };
 
 export type NovaEventDrivenView = {
   name: string;
@@ -200,6 +218,7 @@ export type NovaOverview = {
   socialDistribution: NovaSocialDistributionItem[];
   socialPools: NovaSocialPoolView[];
   templateStatuses: string[];
+  templateCtaOptions: NovaOptionView[];
   sources: string[];
 };
 
@@ -220,14 +239,37 @@ export type NotificationCampaignRow = {
   tier: "critical" | "high" | "normal" | "low";
   audience: string;
   reach: string;
-  status: "draft" | "scheduled" | "sending" | "sent" | "cancelled";
+  status: "draft" | "scheduled" | "sending" | "sent" | "failed" | "cancelled";
   schedule: string;
   sent: string;
   read: string;
   bodyEn: string;
   bodyZh: string;
+  bodyVi: string;
+  ctaLabel: string;
+  ctaHref: string;
   swipeTo: string;
   budget?: number;
+  audienceTarget: NotificationAudienceTarget;
+};
+
+export type NotificationAudienceTarget = {
+  phaseMin: string;
+  phaseMax: string;
+  language: "all" | "zh" | "vi" | "en";
+  registrationDaysMin: number;
+};
+
+export type NotificationAudienceOption = { value: string; label: string };
+export type NotificationAudienceCatalog = {
+  phases: NotificationAudienceOption[];
+  languages: NotificationAudienceOption[];
+  conditionLogic: "AND";
+};
+
+export type NotificationAudienceEstimateView = {
+  target: NotificationAudienceTarget;
+  estimatedUsers: number;
 };
 
 export type NotificationCapRuleView = {
@@ -251,6 +293,11 @@ export type NotificationCampaignOverview = {
   audiences: string[];
   statuses: string[];
   swipeRoutes: NotificationSwipeRouteView[];
+  audienceCatalog: NotificationAudienceCatalog;
+  deliveryCatalog: {
+    kinds: NotificationAudienceOption[];
+    ctaRoutes: NotificationAudienceOption[];
+  };
   sources: string[];
 };
 
@@ -276,9 +323,21 @@ export type TrustSectionView = {
 
 export type FinancialFieldView = { key: string; value: string; delta: string };
 export type TrustSectionFieldView = { sectionKey: string; key: string; value: string };
+export type TrustSectionVersionView = {
+  sectionKey: string;
+  version: string;
+  description: string;
+  structure: string;
+  fields: { key: string; label: string; value: string }[];
+  status: string;
+  revision: number;
+  operator: string;
+  updatedAt: string;
+};
 export type DisclosureJurisdictionView = {
   code: string;
   name: string;
+  countryCodes: string[];
   version: string;
   status: string;
   publishedAt: string;
@@ -286,7 +345,7 @@ export type DisclosureJurisdictionView = {
   ackProgress: number;
   blocked: number;
 };
-export type DisclosureChapterView = { jurisdiction: string; version: string; no: string; zh: string; en: string; zhBody: string; enBody: string };
+export type DisclosureChapterView = { jurisdiction: string; version: string; no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string };
 export type DisclosureGateActionView = {
   key: string;
   name: string;
@@ -302,20 +361,24 @@ export type DisclosureDraftView = {
   effectiveDate: string;
   requiresReack: boolean;
   zh: string;
+  vi: string;
   en: string;
   status: string;
 };
 export type TrustDisclosureOverview = {
   stats: TrustDisclosureStats;
   trustSections: TrustSectionView[];
+  trustSectionVersions: TrustSectionVersionView[];
   financialFields: FinancialFieldView[];
   sectionFields: TrustSectionFieldView[];
   jurisdictions: DisclosureJurisdictionView[];
+  countryOptions: { code: string; name: string }[];
   chapters: DisclosureChapterView[];
   gatedActions: DisclosureGateActionView[];
   draft?: DisclosureDraftView;
   roleGates: string[];
   languageScopes: string[];
+  disclosureVersions: string[];
   gateScope: string;
   sources: string[];
 };
@@ -332,8 +395,10 @@ export type I18nIntegrityIssueView = { code: string; kind: string; cnt: number; 
 export type I18nHardcodedFindingView = { location: string; rawCopy: string; suggestedKey: string; status: string };
 export type I18nMessagePairView = {
   messageKey: string;
+  namespace: string;
   en: string;
   zh: string;
+  vi: string;
   status: string;
   version: string;
   placeholders: string[];
@@ -350,6 +415,26 @@ export type LearningCourseView = {
   version: string;
   status: string;
   body: string;
+  titleZh: string;
+  titleEn: string;
+  titleVi: string;
+  bodyZh: string;
+  bodyEn: string;
+  bodyVi: string;
+  quizQuestions: LearningQuizQuestionView[];
+  passScore?: number;
+  retryLimit?: number;
+  completionCondition?: string;
+  rewardEvent?: string;
+  revision: number;
+};
+export type LearningQuizQuestionView = {
+  questionId: string;
+  questionZh: string;
+  questionEn: string;
+  optionsZh: string[];
+  optionsEn: string[];
+  correctOptionIndex: number;
 };
 export type TutorialRewardRange = { min: number; max: number };
 export type LearningMetricView = { key: string; value: string };
@@ -358,7 +443,8 @@ export type I18nLearningOverview = {
   namespaces: I18nNamespaceView[];
   integrityIssues: I18nIntegrityIssueView[];
   hardcodedFindings: I18nHardcodedFindingView[];
-  focusMessage: I18nMessagePairView;
+  focusMessage?: I18nMessagePairView;
+  messages: I18nMessagePairView[];
   courses: LearningCourseView[];
   rewardRange: TutorialRewardRange;
   featuredCourseId: string;
@@ -402,28 +488,44 @@ export type IContentActions = {
   updateI2NovaChannelStatus: (key: string, enabled: boolean, reason: string) => Promise<void>;
   deleteI2NovaChannel: (key: string, reason: string) => Promise<void>;
   createI2Template: (body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI2Template: (channel: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  deleteI2Template: (channel: string, reason: string) => Promise<void>;
   updateI2TemplateStatus: (channel: string, status: string, reason: string) => Promise<void>;
   updateI2Distribution: (items: { key: string; pct: number }[], reason: string) => Promise<void>;
   updateI2Pool: (poolKey: string, count: number, reason: string) => Promise<void>;
   createI3Campaign: (body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI3CampaignDraft: (campaignNo: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  scheduleI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
+  estimateI3Audience: (target: NotificationAudienceTarget) => Promise<NotificationAudienceEstimateView>;
+  scheduleI3Campaign: (campaignNo: string, scheduledAt: string, reason: string) => Promise<void>;
   sendI3CampaignNow: (campaignNo: string, reason: string) => Promise<void>;
   cancelI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
+  deleteI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
   updateI3Cap: (tier: string, cap: string, reason: string) => Promise<void>;
   publishI4TrustSection: (sectionKey: string, version: string, reason: string) => Promise<void>;
+  createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI4TrustSectionDraft: (sectionKey: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  deleteI4TrustSectionDraft: (sectionKey: string, version: string, reason: string) => Promise<void>;
   rollbackI4TrustSection: (sectionKey: string, targetVersion: string, reason: string) => Promise<void>;
   archiveI4TrustSection: (sectionKey: string, reason: string) => Promise<void>;
   saveI4DisclosureDraft: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI4Disclosure: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  configureI4Matrix: (reason: string) => Promise<void>;
+  configureI4Matrix: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  archiveI4Matrix: (jurisdiction: string, reason: string) => Promise<void>;
   updateI4GateScope: (scope: string, reason: string) => Promise<void>;
   rescanI6: (reason: string) => Promise<void>;
   saveI6LocalizedDraft: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI6LocalizedMessage: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  startI6MarketingExperiment: (messageKey: string, reason: string) => Promise<void>;
+  archiveI6LocalizedMessage: (messageKey: string, reason: string) => Promise<void>;
   fixI6Integrity: (issueCode: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   createI6Course: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI7CourseDraft: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  fetchI7CourseVersions: (courseId: string) => Promise<LearningCourseVersionView[]>;
+  createI7CourseVersion: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI7CourseVersion: (courseId: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  deleteI7CourseVersion: (courseId: string, version: string, reason: string) => Promise<void>;
+  publishI7CourseVersion: (courseId: string, version: string, reason: string) => Promise<void>;
+  rollbackI7CourseVersion: (courseId: string, version: string, reason: string) => Promise<void>;
+  deleteI7CourseDraft: (courseId: string, reason: string) => Promise<void>;
   publishI6Course: (courseId: string, reason: string) => Promise<void>;
   archiveI6Course: (courseId: string, reason: string) => Promise<void>;
   updateI6CourseReward: (courseId: string, rewardNex: number, reason: string) => Promise<void>;
@@ -464,28 +566,44 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   updateI2NovaChannelStatus: (key, enabled, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ enabled }, reason)) }).then(() => undefined),
   deleteI2NovaChannel: (key, reason) => apiRequest(`/nova/channels/${encodeURIComponent(key)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   createI2Template: (body, reason) => apiRequest("/nova/templates", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI2Template: (channel, body, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI2Template: (channel, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI2TemplateStatus: (channel, status, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   updateI2Distribution: (items, reason) => apiRequest("/nova/social-distribution", { method: "PATCH", body: JSON.stringify(withReason({ items }, reason)) }).then(() => undefined),
   updateI2Pool: (poolKey, count, reason) => apiRequest(`/nova/social-pools/${encodeURIComponent(poolKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ count }, reason)) }).then(() => undefined),
   createI3Campaign: (body, reason) => apiRequest("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI3CampaignDraft: (campaignNo, body, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  scheduleI3Campaign: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: "下一时段" }, reason)) }).then(() => undefined),
+  estimateI3Audience: (target) => apiRequest<NotificationAudienceEstimateView>("/campaigns/audience-estimate", { method: "POST", body: JSON.stringify({ target }) }),
+  scheduleI3Campaign: (campaignNo, scheduledAt, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: scheduledAt }, reason)) }).then(() => undefined),
   sendI3CampaignNow: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/send-now`, { method: "POST", body: JSON.stringify(withReason({ schedule: "now" }, reason)) }).then(() => undefined),
   cancelI3Campaign: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/cancel`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  deleteI3Campaign: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI3Cap: (tier, cap, reason) => apiRequest(`/campaigns/caps/${encodeURIComponent(tier)}`, { method: "PATCH", body: JSON.stringify(withReason({ cap }, reason)) }).then(() => undefined),
   publishI4TrustSection: (sectionKey, version, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/publish`, { method: "POST", body: JSON.stringify(withReason({ version }, reason)) }).then(() => undefined),
+  createI4TrustSectionDraft: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI4TrustSectionDraft: (sectionKey, version, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI4TrustSectionDraft: (sectionKey, version, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   rollbackI4TrustSection: (sectionKey, targetVersion, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ targetVersion }, reason)) }).then(() => undefined),
   archiveI4TrustSection: (sectionKey, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   saveI4DisclosureDraft: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI4Disclosure: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  configureI4Matrix: (reason) => apiRequest("/trust-disclosure/disclosures/matrix/configure", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  configureI4Matrix: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "PUT", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  archiveI4Matrix: (jurisdiction, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI4GateScope: (scope, reason) => apiRequest("/trust-disclosure/disclosures/gated-actions", { method: "PATCH", body: JSON.stringify(withReason({ scope }, reason)) }).then(() => undefined),
   rescanI6: (reason) => apiRequest("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   saveI6LocalizedDraft: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI6LocalizedMessage: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  startI6MarketingExperiment: (messageKey, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/marketing-experiment`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  archiveI6LocalizedMessage: (messageKey, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   fixI6Integrity: (issueCode, body, reason) => apiRequest(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI6Course: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI7CourseDraft: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  fetchI7CourseVersions: (courseId) => apiRequest<LearningCourseVersionView[]>(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`),
+  createI7CourseVersion: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI7CourseVersion: (courseId, version, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI7CourseVersion: (courseId, version, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  publishI7CourseVersion: (courseId, version, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  rollbackI7CourseVersion: (courseId, version, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  deleteI7CourseDraft: (courseId, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   publishI6Course: (courseId, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/publish`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   archiveI6Course: (courseId, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI6CourseReward: (courseId, rewardNex, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/reward`, { method: "PATCH", body: JSON.stringify(withReason({ rewardNex }, reason)) }).then(() => undefined),

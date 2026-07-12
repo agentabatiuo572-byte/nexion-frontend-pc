@@ -6,7 +6,7 @@
  * 适配:Modal/Drawer 补 ESC+聚焦+点遮罩关闭(a11y 铁律);OperationConfirmModal 负责高敏操作确认 + 理由留痕;
  * 跨域跳转用 next/navigation。导航/外壳仍沿用本项目 shell。
  */
-import { isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
 
@@ -500,7 +500,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; min?: number; max?: number; step?: number };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; min?: number; max?: number; step?: number };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -542,7 +542,7 @@ export type BusinessFormSpec =
       currentActionSeq?: string; currentNotifyCampaignNo?: string; currentNotifyTemplate?: string; currentRollback?: string; currentDrillRequired?: boolean }
   | { kind: "export-wizard"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
-  | { kind: "localized-copy"; keyName?: string; zh?: string; en?: string; placeholders?: string[] }
+  | { kind: "localized-copy"; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
   | { kind: "copy-edit"; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
   | { kind: "copy-create"; copyKey?: string; description?: string; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionOptions?: CopyVersionOption[]; trafficSplits?: string[]; version?: string; zh?: string; en?: string; vi?: string; versionNote?: string; placeholders?: string[] }
   | { kind: "copy-position-create"; modules: { value: string; label: string }[] }
@@ -550,11 +550,17 @@ export type BusinessFormSpec =
   | { kind: "copy-experiment-create"; copies: CopyExperimentCopyOption[] }
   | { kind: "copy-experiment-start"; experimentId: string }
   | { kind: "copy-experiment-discard"; experimentId: string }
-  | { kind: "course-authoring"; rewardMin?: number; rewardMax?: number; categories?: string[]; durations?: string[]; publishStates?: string[] }
+  | { kind: "course-authoring"; mode?: "create" | "edit" | "version-create" | "version-edit"; rewardMin?: number; rewardMax?: number; categories?: string[]; formats?: string[]; levels?: string[]; durations?: string[];
+      current?: { slug: string; version?: string; category: string; format: string; difficulty: string; duration: string; reward: number; titleZh: string; titleEn: string; titleVi: string; bodyZh: string; bodyEn: string; bodyVi: string;
+        quizQuestions?: { questionId: string; questionZh: string; questionEn: string; questionVi?: string; optionsZh: string[]; optionsEn: string[]; optionsVi?: string[]; correctOptionIndex: number }[];
+        passScore?: number; retryLimit?: number; completionCondition?: string; rewardEvent?: string } }
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
-  | { kind: "version-authoring"; version?: string; jurisdiction?: string; zh?: string; en?: string; chapters?: string[]; languageScopes?: string[]; effectiveDate?: string; requiresReack?: boolean }
+  | { kind: "version-authoring"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; versionOptions?: string[]; effectiveDate?: string; requiresReack?: boolean }
+  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; versionOptions?: string[] }
+  | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
+      fields?: { key: string; label: string; value: string }[] }
   | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean }
   | { kind: "task-edit"; subject?: string; currentName?: string; currentPath?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "day-one-window"; currentActiveHours?: string; currentGraceHours?: string }
@@ -706,9 +712,12 @@ export function OperatorBriefBlock({ action, detail, amplifies, hasEdit }: { act
 const DEFAULT_GRANTS = ["-", "R", "M", "C"];
 const DEFAULT_COURSE_CATEGORIES = ["Basics", "Earn", "Team", "Wealth", "Security"];
 const DEFAULT_COURSE_DURATIONS = ["5 min", "8 min", "12 min", "15 min"];
-const DEFAULT_COURSE_PUBLISH_STATES = ["draft", "ready", "published"];
+const COURSE_CATEGORY_LABELS: Record<string, string> = { Basics: "基础", Earn: "赚取", Team: "团队", Wealth: "财富", Security: "安全" };
+const COURSE_FORMAT_LABELS: Record<string, string> = { Article: "图文", Video: "视频", "Hands-on": "实操" };
+const COURSE_LEVEL_LABELS: Record<string, string> = { Beginner: "入门", Intermediate: "进阶", Advanced: "高级" };
+const COURSE_STATUS_LABELS: Record<string, string> = { draft: "草稿", published: "已发布", archived: "已归档" };
 const DEFAULT_CAMPAIGN_TIERS = ["critical", "high", "normal", "low"];
-const DEFAULT_LANGUAGE_SCOPES = ["en+zh", "zh", "en"];
+const DEFAULT_LANGUAGE_SCOPES = ["zh+vi", "zh+vi+en"];
 
 function parseCopyAudience(audience?: string): { phaseMin: string; phaseMax: string; language: string; registrationDaysGt: string } {
   const raw = audience?.trim() ?? "";
@@ -748,7 +757,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return Object.fromEntries(spec.roles.map((r) => [`grant.${r.key}`, r.current]));
   }
   if (spec.kind === "localized-copy") {
-    return { zh: spec.zh ?? "", en: spec.en ?? "" };
+    return { messageKey: spec.keyName ?? "", zh: spec.zh ?? "", en: spec.en ?? "", vi: spec.vi ?? "" };
   }
   if (spec.kind === "copy-edit") {
     const audience = parseCopyAudience(spec.audience);
@@ -822,28 +831,45 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return {};
   }
   if (spec.kind === "course-authoring") {
-    return {
-      slug: "",
-      category: spec.categories?.[0] ?? DEFAULT_COURSE_CATEGORIES[0],
-      format: "Article",
-      difficulty: "Beginner",
-      duration: spec.durations?.[0] ?? DEFAULT_COURSE_DURATIONS[0],
-      reward: String(spec.rewardMin ?? 5),
-      publishState: spec.publishStates?.[0] ?? DEFAULT_COURSE_PUBLISH_STATES[0],
-      titleZh: "",
-      titleEn: "",
-      bodyZh: "",
-      bodyEn: "",
-      // #39 quiz 与发奖触发(发布需配齐;草稿可空)
-      quizQuestion: "",
-      quizOptions: "",
-      correctAnswer: "",
-      passScore: "60",
-      retries: "3",
-      completionCond: "通过 quiz",
-      rewardEvent: "quiz.passed",
-      rewardIdem: "course_id + user_id",
+    const current = spec.current;
+    const questions = current?.quizQuestions?.length ? current.quizQuestions : [{
+      questionId: "q1", questionZh: "", questionEn: "", questionVi: "", optionsZh: ["", ""], optionsEn: ["", ""], optionsVi: ["", ""], correctOptionIndex: 0,
+    }];
+    const state: BusinessFormValue = {
+      slug: current?.slug ?? "",
+      version: current?.version ?? "v1",
+      category: current?.category ?? spec.categories?.[0] ?? DEFAULT_COURSE_CATEGORIES[0],
+      format: current?.format ?? spec.formats?.[0] ?? "Article",
+      difficulty: current?.difficulty ?? spec.levels?.[0] ?? "Beginner",
+      duration: current?.duration ?? spec.durations?.[0] ?? DEFAULT_COURSE_DURATIONS[0],
+      reward: String(current?.reward ?? spec.rewardMin ?? 5),
+      publishState: "draft",
+      titleZh: current?.titleZh ?? "",
+      titleEn: current?.titleEn ?? "",
+      titleVi: current?.titleVi ?? "",
+      bodyZh: current?.bodyZh ?? "",
+      bodyEn: current?.bodyEn ?? "",
+      bodyVi: current?.bodyVi ?? "",
+      quizCount: String(questions.length),
+      passScore: String(current?.passScore ?? 60),
+      retries: String(current?.retryLimit ?? 3),
+      completionCond: current?.completionCondition ?? "quiz_passed",
+      rewardEvent: current?.rewardEvent ?? "quiz.passed",
     };
+    questions.forEach((question, questionIndex) => {
+      state[`quiz.${questionIndex}.id`] = question.questionId || `q${questionIndex + 1}`;
+      state[`quiz.${questionIndex}.questionZh`] = question.questionZh;
+      state[`quiz.${questionIndex}.questionEn`] = question.questionEn;
+      state[`quiz.${questionIndex}.questionVi`] = question.questionVi ?? "";
+      state[`quiz.${questionIndex}.optionCount`] = String(Math.max(2, question.optionsZh.length, question.optionsEn.length, question.optionsVi?.length ?? 0));
+      for (let optionIndex = 0; optionIndex < Number(state[`quiz.${questionIndex}.optionCount`]); optionIndex += 1) {
+        state[`quiz.${questionIndex}.option.${optionIndex}.zh`] = question.optionsZh[optionIndex] ?? "";
+        state[`quiz.${questionIndex}.option.${optionIndex}.en`] = question.optionsEn[optionIndex] ?? "";
+        state[`quiz.${questionIndex}.option.${optionIndex}.vi`] = question.optionsVi?.[optionIndex] ?? "";
+      }
+      state[`quiz.${questionIndex}.correctOptionIndex`] = String(question.correctOptionIndex ?? 0);
+    });
+    return state;
   }
   if (spec.kind === "campaign-edit") {
     return {
@@ -877,14 +903,49 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   }
   if (spec.kind === "version-authoring") {
     return {
-      version: spec.version ?? "vNext",
+      version: spec.version ?? spec.versionOptions?.[0] ?? "",
       jurisdiction: spec.jurisdiction ?? "",
       languageScope: spec.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
       effectiveDate: spec.effectiveDate ?? "",
       requiresReack: spec.requiresReack === false ? "false" : "true",
       zh: spec.zh ?? "",
+      vi: spec.vi ?? "",
       en: spec.en ?? "",
+      ...Object.fromEntries((spec.chapters ?? []).flatMap((chapter, index) => [
+        [`chapter.${index}.no`, chapter.no],
+        [`chapter.${index}.zhTitle`, chapter.zh],
+        [`chapter.${index}.viTitle`, chapter.vi],
+        [`chapter.${index}.enTitle`, chapter.en],
+        [`chapter.${index}.zhBody`, chapter.zhBody],
+        [`chapter.${index}.viBody`, chapter.viBody],
+        [`chapter.${index}.enBody`, chapter.enBody],
+      ])),
     };
+  }
+  if (spec.kind === "disclosure-matrix") {
+    return {
+      jurisdictionCode: spec.jurisdictionCode ?? "",
+      jurisdictionName: spec.jurisdictionName ?? "",
+      countryCodes: (spec.countryCodes ?? []).join(","),
+      version: spec.version ?? "",
+    };
+  }
+  if (spec.kind === "trust-section-authoring") {
+    const fields = spec.fields?.length ? spec.fields : [{ key: "", label: "", value: "" }];
+    const state: BusinessFormValue = {
+      sectionKey: spec.sectionKey,
+      version: spec.version ?? "",
+      description: spec.description ?? "",
+      structure: spec.structure ?? "",
+      expectedRevision: String(spec.revision ?? 0),
+      fieldCount: String(fields.length),
+    };
+    fields.forEach((field, index) => {
+      state[`field.${index}.key`] = field.key;
+      state[`field.${index}.label`] = field.label;
+      state[`field.${index}.value`] = field.value;
+    });
+    return state;
   }
   if (spec.kind === "identity-verify") {
     return { channel: spec.channels?.[0] ?? "视频核实", verifiedAt: "", ticket: "", ack: "false" };
@@ -997,10 +1058,12 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       missing.push("至少一个授权变更");
     }
   } else if (spec.kind === "localized-copy") {
+    if (spec.mode === "create") needs("messageKey", "词条 key");
     needs("zh", "中文文案");
     needs("en", "英文文案");
+    needs("vi", "越南语文案");
     (spec.placeholders ?? []).forEach((ph) => {
-      if (!state.zh?.includes(ph) || !state.en?.includes(ph)) missing.push(`占位符 ${ph}`);
+      if (!state.zh?.includes(ph) || !state.en?.includes(ph) || !state.vi?.includes(ph)) missing.push(`占位符 ${ph}`);
     });
   } else if (spec.kind === "copy-edit") {
     needs("version", "文案版本");
@@ -1072,19 +1135,38 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   } else if (spec.kind === "copy-experiment-start") {
     if (state.ack !== "true") missing.push("启动实验确认");
   } else if (spec.kind === "course-authoring") {
-    ["slug", "category", "format", "difficulty", "duration", "reward", "publishState", "titleZh", "titleEn", "bodyZh", "bodyEn"].forEach((key) => needs(key, key));
+    ["slug", "category", "format", "difficulty", "duration", "reward", "titleZh", "titleEn", "titleVi", "bodyZh", "bodyEn", "bodyVi"].forEach((key) => needs(key, key));
+    if (spec.mode === "version-create" || spec.mode === "version-edit") {
+      needs("version", "课程版本号");
+      if (!/^v[1-9][0-9]{0,8}$/i.test(state.version || "")) missing.push("版本号格式 v1、v2…");
+    }
     const reward = Number(state.reward);
     if (!Number.isFinite(reward)) missing.push("奖励数值");
     if (spec.rewardMin != null && reward < spec.rewardMin) missing.push(`奖励 ≥ ${spec.rewardMin}`);
     if (spec.rewardMax != null && reward > spec.rewardMax) missing.push(`奖励 ≤ ${spec.rewardMax}`);
-    // #39 发布(非草稿)必须配齐 quiz 与完成条件 + 发奖触发;草稿允许留空
-    if (state.publishState && state.publishState !== "draft") {
-      if (!state.quizQuestion?.trim()) missing.push("Quiz 题目(发布前必填,或存草稿)");
-      if (!state.correctAnswer?.trim()) missing.push("正确答案");
-      if (!state.passScore?.trim()) missing.push("通过分数 / 题数");
-      if (!state.completionCond?.trim()) missing.push("完成条件");
-      if (!state.rewardEvent?.trim()) missing.push("发奖触发事件");
+    const quizCount = Number(state.quizCount || 0);
+    if (!Number.isInteger(quizCount) || quizCount < 1) missing.push("至少一道测验题");
+    for (let questionIndex = 0; questionIndex < quizCount; questionIndex += 1) {
+      needs(`quiz.${questionIndex}.id`, `第 ${questionIndex + 1} 题标识`);
+      needs(`quiz.${questionIndex}.questionZh`, `第 ${questionIndex + 1} 题中文题干`);
+      needs(`quiz.${questionIndex}.questionEn`, `第 ${questionIndex + 1} 题英文题干`);
+      needs(`quiz.${questionIndex}.questionVi`, `第 ${questionIndex + 1} 题越南语题干`);
+      const optionCount = Number(state[`quiz.${questionIndex}.optionCount`] || 0);
+      if (!Number.isInteger(optionCount) || optionCount < 2) missing.push(`第 ${questionIndex + 1} 题至少两个选项`);
+      for (let optionIndex = 0; optionIndex < optionCount; optionIndex += 1) {
+        needs(`quiz.${questionIndex}.option.${optionIndex}.zh`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 中文`);
+        needs(`quiz.${questionIndex}.option.${optionIndex}.en`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 英文`);
+        needs(`quiz.${questionIndex}.option.${optionIndex}.vi`, `第 ${questionIndex + 1} 题选项 ${optionIndex + 1} 越南语`);
+      }
+      const correct = Number(state[`quiz.${questionIndex}.correctOptionIndex`]);
+      if (!Number.isInteger(correct) || correct < 0 || correct >= optionCount) missing.push(`第 ${questionIndex + 1} 题正确选项`);
     }
+    const passScore = Number(state.passScore);
+    const retries = Number(state.retries);
+    if (!Number.isInteger(passScore) || passScore < 1 || passScore > 100) missing.push("通过分数 1-100");
+    if (!Number.isInteger(retries) || retries < 0 || retries > 10) missing.push("重试次数 0-10");
+    needs("completionCond", "完成条件");
+    needs("rewardEvent", "发奖触发事件");
   } else if (spec.kind === "campaign-edit") {
     ["title", "body", "tier", "audience", "schedule", "budget"].forEach((key) => needs(key, key));
     if (!Number.isFinite(Number(state.budget)) || Number(state.budget) < 0) missing.push("预算数值");
@@ -1104,7 +1186,29 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (!Number.isInteger(sort) || sort < 0 || sort > 9999) missing.push("排序 0-9999");
     if (state.status && !["active", "archived"].includes(state.status)) missing.push("状态只能为启用 / 已归档");
   } else if (spec.kind === "version-authoring") {
-    ["version", "jurisdiction", "languageScope", "effectiveDate", "requiresReack", "zh", "en"].forEach((key) => needs(key, key));
+    ["version", "jurisdiction", "languageScope", "effectiveDate", "requiresReack", "zh", "vi"].forEach((key) => needs(key, key));
+    if (state.languageScope?.includes("en")) needs("en", "英文正文");
+    if ((spec.chapters ?? []).length !== 7) missing.push("完整 7 章节");
+    (spec.chapters ?? []).forEach((_chapter, index) => {
+      ["no", "zhTitle", "viTitle", "zhBody", "viBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
+      if (state.languageScope?.includes("en")) ["enTitle", "enBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
+    });
+  } else if (spec.kind === "disclosure-matrix") {
+    ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
+  } else if (spec.kind === "trust-section-authoring") {
+    ["version", "description", "structure"].forEach((key) => needs(key, key));
+    if (!/^v[1-9][0-9]{0,8}$/.test(state.version ?? "")) missing.push("版本号格式（如 v6）");
+    const fieldCount = Number(state.fieldCount || 0);
+    if (!Number.isInteger(fieldCount) || fieldCount < 1 || fieldCount > 50) missing.push("结构化字段数量 1-50");
+    const fieldKeys: string[] = [];
+    for (let index = 0; index < fieldCount; index += 1) {
+      needs(`field.${index}.key`, `字段 ${index + 1} 标识`);
+      needs(`field.${index}.label`, `字段 ${index + 1} 名称`);
+      needs(`field.${index}.value`, `字段 ${index + 1} 内容`);
+      fieldKeys.push(state[`field.${index}.key`]?.trim() ?? "");
+    }
+    if (fieldKeys.some((key) => key && !/^[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(key))) missing.push("字段标识格式");
+    if (fieldKeys.filter(Boolean).length !== new Set(fieldKeys.filter(Boolean)).size) missing.push("字段标识不能重复");
   } else if (spec.kind === "destructive-reason") {
     if ((spec.requireAck ?? true) && state.ack !== "true") missing.push("影响确认");
   } else if (spec.kind === "identity-verify") {
@@ -1238,6 +1342,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   if (spec.kind === "copy-experiment-start") return state.ack;
   if (spec.kind === "copy-experiment-discard") return spec.experimentId;
   if (spec.kind === "version-authoring") return state.version;
+  if (spec.kind === "trust-section-authoring") return `${spec.sectionKey}@${state.version}`;
   if (spec.kind === "course-authoring") return state.slug;
   if (spec.kind === "campaign-edit") return state.title;
   if (spec.kind === "generation-gate") return `${state.skuId}@M${state.releaseMonth}`;
@@ -1466,6 +1571,9 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
     return (
       <div className="field" data-business-form={spec.kind}>
         <label>业务表单 · 中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</label>
+        {spec.kind === "localized-copy" && spec.mode === "create" && (
+          <div style={{ marginBottom: 10 }}>{input("messageKey", "词条 key", "如 home.hero.title")}</div>
+        )}
         {spec.kind === "copy-create" && (
           <div className="grid g-2" style={{ gap: 10, marginBottom: 10 }}>
             {input("copyKey", "文案标识", "home.newBanner")}
@@ -1498,6 +1606,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
         <div className="grid g-2" style={{ gap: 10 }}>
           {textArea("zh", "中文 zh 文案", "填写中文草稿")}
           {textArea("en", "英文 en copy", "Fill English copy")}
+          {spec.kind === "localized-copy" && textArea("vi", "越南语 vi 文案", "Nhập nội dung tiếng Việt")}
           {isManagedCopy && textArea("vi", "越南语 vi 文案", "Nhập nội dung tiếng Việt")}
         </div>
         {(spec.kind === "copy-edit" || spec.kind === "copy-create") && (
@@ -1679,37 +1788,85 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   }
 
   if (spec.kind === "course-authoring") {
+    const questionCount = Math.max(1, Number(value.quizCount || 1));
+    const addQuestion = () => {
+      const index = questionCount;
+      onChange({ ...value,
+        quizCount: String(questionCount + 1),
+        [`quiz.${index}.id`]: `q${index + 1}`,
+        [`quiz.${index}.questionZh`]: "",
+        [`quiz.${index}.questionEn`]: "",
+        [`quiz.${index}.questionVi`]: "",
+        [`quiz.${index}.optionCount`]: "2",
+        [`quiz.${index}.option.0.zh`]: "",
+        [`quiz.${index}.option.0.en`]: "",
+        [`quiz.${index}.option.0.vi`]: "",
+        [`quiz.${index}.option.1.zh`]: "",
+        [`quiz.${index}.option.1.en`]: "",
+        [`quiz.${index}.option.1.vi`]: "",
+        [`quiz.${index}.correctOptionIndex`]: "0",
+      });
+    };
     return (
       <div className="field" data-business-form="course-authoring">
         <label>业务表单 · 课程新建 / 编辑</label>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("slug", "课程 slug", "learn-earn-basics")}
-          {select("category", "分类 category", spec.categories ?? DEFAULT_COURSE_CATEGORIES)}
-          {select("format", "形式 format", ["Article", "Video", "Hands-on"])}
-          {select("difficulty", "难度 difficulty", ["Beginner", "Intermediate", "Advanced"])}
-          {select("duration", "时长 duration", spec.durations ?? DEFAULT_COURSE_DURATIONS)}
-          {input("reward", `奖励 reward(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} NEX)`, "5", "number")}
-          {select("publishState", "发布状态 publish state", spec.publishStates ?? DEFAULT_COURSE_PUBLISH_STATES)}
+          {(spec.mode === "version-create" || spec.mode === "version-edit") && input("version", "版本号", "v2")}
+          {select("category", "课程分类", spec.categories ?? DEFAULT_COURSE_CATEGORIES, COURSE_CATEGORY_LABELS)}
+          {select("format", "课程形式", spec.formats ?? ["Article", "Video", "Hands-on"], COURSE_FORMAT_LABELS)}
+          {select("difficulty", "课程难度", spec.levels ?? ["Beginner", "Intermediate", "Advanced"], COURSE_LEVEL_LABELS)}
+          {select("duration", "预计时长", spec.durations ?? DEFAULT_COURSE_DURATIONS)}
+          {input("reward", `完成奖励(${spec.rewardMin ?? 0}-${spec.rewardMax ?? 999} NEX)`, "5", "number")}
+          <div className="itint ok"><b>保存状态</b> · {COURSE_STATUS_LABELS.draft}；发布必须回到课程列表单独确认。</div>
           {input("titleZh", "中文标题", "课程标题")}
-          {input("titleEn", "English title", "Course title")}
+          {input("titleVi", "越南语标题", "Tiêu đề khóa học")}
+          {input("titleEn", "英语标题", "Course title")}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {textArea("bodyZh", "中文正文", "课程正文与完成条件", 4)}
-          {textArea("bodyEn", "English body", "Course body and completion criteria", 4)}
+          {textArea("bodyVi", "越南语正文", "Nội dung khóa học và điều kiện hoàn thành", 4)}
+          {textArea("bodyEn", "英语正文", "Course body and completion criteria", 4)}
         </div>
         <div data-proof="course-quiz" style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>Quiz 与发奖触发(发布前必填 · 存草稿可空)</div>
-          <div className="grid g-2" style={{ gap: 10 }}>
-            {input("quizQuestion", "Quiz 题目", "本课核心结论是?")}
-            {input("quizOptions", "选项(分号分隔)", "A;B;C;D")}
-            {input("correctAnswer", "正确答案", "如 A")}
-            {input("passScore", "通过分数 / 通过题数", "60")}
-            {input("retries", "重试次数", "3")}
-            {input("completionCond", "完成条件", "通过 quiz")}
-            {select("rewardEvent", "发奖触发事件", ["quiz.passed", "course.completed", "manual.grant"])}
-            {input("rewardIdem", "发奖幂等键", "course_id + user_id")}
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "var(--ink-2)" }}>结构化测验与发奖触发（发布前必须完整）</div>
+          {Array.from({ length: questionCount }, (_, questionIndex) => {
+            const optionCount = Math.max(2, Number(value[`quiz.${questionIndex}.optionCount`] || 2));
+            const addOption = () => onChange({ ...value,
+              [`quiz.${questionIndex}.optionCount`]: String(optionCount + 1),
+              [`quiz.${questionIndex}.option.${optionCount}.zh`]: "",
+              [`quiz.${questionIndex}.option.${optionCount}.en`]: "",
+              [`quiz.${questionIndex}.option.${optionCount}.vi`]: "",
+            });
+            return <div key={questionIndex} className="itint" style={{ marginBottom: 10 }}>
+              <div className="row wrap" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+                <b>第 {questionIndex + 1} 题</b>
+                <span className="tiny mono">{value[`quiz.${questionIndex}.id`] || `q${questionIndex + 1}`}</span>
+              </div>
+              <div className="grid g-2" style={{ gap: 10 }}>
+                {input(`quiz.${questionIndex}.id`, "题目标识", `q${questionIndex + 1}`)}
+                {select(`quiz.${questionIndex}.correctOptionIndex`, "正确选项", Array.from({ length: optionCount }, (_, i) => String(i)),
+                  Object.fromEntries(Array.from({ length: optionCount }, (_, i) => [String(i), `第 ${i + 1} 项`])))}
+                {input(`quiz.${questionIndex}.questionZh`, "中文题干", "本课核心结论是什么？")}
+                {input(`quiz.${questionIndex}.questionEn`, "英文题干", "What is the key takeaway?")}
+                {input(`quiz.${questionIndex}.questionVi`, "越南语题干", "Kết luận chính của bài học là gì?")}
+                {Array.from({ length: optionCount }, (_, optionIndex) => <Fragment key={optionIndex}>
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.zh`, `选项 ${optionIndex + 1}（中文）`, "请输入中文选项")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.en`, `选项 ${optionIndex + 1}（英文）`, "Enter English option")}
+                  {input(`quiz.${questionIndex}.option.${optionIndex}.vi`, `选项 ${optionIndex + 1}（越南语）`, "Nhập lựa chọn tiếng Việt")}
+                </Fragment>)}
+              </div>
+              <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={addOption}>+ 添加选项</button>
+            </div>;
+          })}
+          <button type="button" className="btn sm" onClick={addQuestion}>+ 添加题目</button>
+          <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
+            {input("passScore", "通过分数（1-100）", "60", "number")}
+            {input("retries", "最多重试次数（0-10）", "3", "number")}
+            {select("completionCond", "完成条件", ["quiz_passed", "all_questions_correct"], { quiz_passed: "达到通过分数", all_questions_correct: "全部答对" })}
+            {select("rewardEvent", "发奖触发事件", ["quiz.passed", "course.completed"], { "quiz.passed": "测验通过", "course.completed": "课程完成" })}
           </div>
-          <div className="tint tiny" style={{ marginTop: 8 }}>单课 NEX 奖励 = 上方「奖励 reward」(过 B1 红线);发奖失败自动重试,耗尽转人工工单。<b>未配齐 quiz / 完成条件时仅可存草稿(publishState=draft)</b>。</div>
+          <div className="tint tiny" style={{ marginTop: 8 }}>服务端按课程、用户和版本生成幂等键；发奖失败自动重试，耗尽后转人工工单。</div>
         </div>
       </div>
     );
@@ -1774,19 +1931,114 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   }
 
   if (spec.kind === "version-authoring") {
+    const jurisdictionLabels = Object.fromEntries((spec.jurisdictionOptions ?? []).map((item) => [item.value, item.label]));
     return (
       <div className="field" data-business-form="version-authoring">
         <label>业务表单 · 新版本草拟 / 发布</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("version", "版本号 version", "输入版本号")}
-          {input("jurisdiction", "法域 jurisdiction", "输入法域")}
-          {select("languageScope", "语言范围 language scope", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES)}
+          {select("version", "披露版本", spec.versionOptions ?? [])}
+          {select("jurisdiction", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels)}
+          {select("languageScope", "语言范围", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES, { "zh+vi": "中文 + 越南语", "zh+vi+en": "中文 + 越南语 + 英语" })}
           {input("effectiveDate", "生效日 effective date", "YYYY-MM-DD", "date")}
-          {select("requiresReack", "是否要求 re-ack", ["true", "false"])}
+          {select("requiresReack", "是否要求重新确认", ["true", "false"], { true: "是", false: "否" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
-          {textArea("en", "English version body", "Fill English disclosure body", 4)}
+          {textArea("vi", "越南语版本正文", "Nhập nội dung công bố bằng tiếng Việt", 4)}
+          {textArea("en", "英语版本正文（选择三语时必填）", "Fill English disclosure body", 4)}
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <label>结构化章节（固定 7 章）</label>
+          {(spec.chapters ?? []).map((chapter, index) => <div className="card" key={`${chapter.no}-${index}`} style={{ padding: 10, marginTop: 8 }}>
+            <b>第 {chapter.no} 章</b>
+            <div className="grid g-3" style={{ gap: 8, marginTop: 8 }}>
+              {input(`chapter.${index}.zhTitle`, "中文标题", "请输入中文标题")}
+              {input(`chapter.${index}.viTitle`, "越南语标题", "Nhập tiêu đề tiếng Việt")}
+              {input(`chapter.${index}.enTitle`, "英语标题（可选）", "English title")}
+              {textArea(`chapter.${index}.zhBody`, "中文正文", "请输入中文正文", 3)}
+              {textArea(`chapter.${index}.viBody`, "越南语正文", "Nhập nội dung tiếng Việt", 3)}
+              {textArea(`chapter.${index}.enBody`, "英语正文（可选）", "English body", 3)}
+            </div>
+          </div>)}
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "disclosure-matrix") {
+    const selectedCountries = new Set((value.countryCodes ?? "").split(",").map((code) => code.trim()).filter(Boolean));
+    const toggleCountry = (code: string) => {
+      const next = new Set(selectedCountries);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      onChange({ ...value, countryCodes: Array.from(next).sort().join(",") });
+    };
+    return (
+      <div className="field" data-business-form="disclosure-matrix">
+        <label>业务表单 · {spec.mode === "create" ? "新增法域版本映射" : "编辑法域版本映射"}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("jurisdictionCode", "法域代码", "如 SBV")}
+          {input("jurisdictionName", "法域名称", "如 越南")}
+          {select("version", "草稿版本", spec.versionOptions ?? [])}
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <label>适用国家/地区（可多选）</label>
+          <div className="seg-chips" style={{ marginTop: 6 }}>
+            {(spec.countryOptions ?? []).map((option) => <button
+              type="button"
+              key={option.value}
+              className={`seg-chip ${selectedCountries.has(option.value) ? "on" : ""}`}
+              onClick={() => toggleCountry(option.value)}
+            >{option.label}</button>)}
+          </div>
+          {(spec.countryOptions ?? []).length === 0 && <div className="tint tiny">暂无后端国家/地区目录</div>}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>映射保存后仅处于“草稿”；已发布状态只能通过“发布已存草稿”流程产生。</div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "trust-section-authoring") {
+    const fieldCount = Math.max(1, Number(value.fieldCount || 1));
+    const addField = () => {
+      const index = fieldCount;
+      onChange({
+        ...value,
+        fieldCount: String(fieldCount + 1),
+        [`field.${index}.key`]: "",
+        [`field.${index}.label`]: "",
+        [`field.${index}.value`]: "",
+      });
+    };
+    return (
+      <div className="field" data-business-form="trust-section-authoring">
+        <label>业务表单 · {spec.mode === "create" ? "新建信任版块草稿" : "编辑信任版块草稿"}</label>
+        <div className="itint" style={{ marginBottom: 10 }}>
+          版块 <span className="mono">{spec.sectionKey}</span> · 草稿保存后才能单独发布；已发布版本不可直接编辑或删除。
+        </div>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {input("version", "版本号", "如 v6")}
+          {input("description", "版块说明", "面向用户的版块说明")}
+          {input("structure", "内容结构", "例如 指标卡 + 趋势图")}
+        </div>
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)" }}>
+          <div className="row wrap" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+            <b>结构化内容字段</b>
+            <span className="tiny">当前 {fieldCount} 项</span>
+          </div>
+          {Array.from({ length: fieldCount }, (_, index) => (
+            <div key={index} className="itint" style={{ marginBottom: 10 }}>
+              <div className="tiny" style={{ marginBottom: 6 }}>字段 {index + 1}</div>
+              <div className="grid g-2" style={{ gap: 10 }}>
+                {input(`field.${index}.key`, "字段标识", "如 revenueYtd")}
+                {input(`field.${index}.label`, "中文名称", "如 年内收入")}
+                {textArea(`field.${index}.value`, "字段内容", "填写该字段的展示内容", 2)}
+              </div>
+            </div>
+          ))}
+          <div className="row wrap" style={{ gap: 8 }}>
+            <button type="button" className="btn sm" disabled={fieldCount >= 50} onClick={addField}>+ 添加字段</button>
+            <button type="button" className="btn sm" disabled={fieldCount <= 1} onClick={() => set("fieldCount", String(fieldCount - 1))}>移除末项</button>
+          </div>
         </div>
       </div>
     );
@@ -2523,13 +2775,16 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           <label>目标新值{spec.current ? <> · 当前 <span className="mono">{spec.current}</span></> : null}</label>
           {kind === "select" || kind === "toggle" ? (
             <div className="row wrap" style={{ gap: 8 }}>
-              {opts.map((o) => <Chip key={o} tab sel={newVal === o} onClick={() => setNewVal(o)}>{o}</Chip>)}
+              {opts.map((o) => <Chip key={o} tab sel={newVal === o} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
             </div>
           ) : (
             <div className="row" style={{ gap: 8, alignItems: "center" }}>
               <input
                 className="fld"
                 type={kind === "number" ? "number" : "text"}
+                min={kind === "number" ? spec.min : undefined}
+                max={kind === "number" ? spec.max : undefined}
+                step={kind === "number" ? spec.step : undefined}
                 value={newVal}
                 onChange={(e) => setNewVal(e.target.value)}
                 placeholder={spec.current ? `输入新值(当前 ${spec.current})` : "输入目标新值"}

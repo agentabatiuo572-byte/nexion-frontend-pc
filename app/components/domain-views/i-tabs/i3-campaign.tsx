@@ -8,23 +8,25 @@
  * amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
  * 新建 Campaign / 行点击详情 = 本地 Drawer 原语(design-kit 共享 Drawer);提交新建走后端 /content/campaigns。
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
-import type { NotificationCampaignRow } from "@/lib/admin/i-client";
+import type { NotificationAudienceTarget, NotificationCampaignRow } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 
-type StFlt = "all" | "scheduled" | "sent" | "draft";
+type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
   ["all", "全部"],
   ["scheduled", "排期中"],
   ["sent", "已下发"],
   ["draft", "草稿"],
+  ["failed", "下发失败"],
+  ["cancelled", "已取消"],
 ];
 
 type CampaignRow = Omit<NotificationCampaignRow, "status" | "kind"> & {
-  kind: "system";
+  kind: string;
   st: NotificationCampaignRow["status"];
   budget?: number;
 };
@@ -48,39 +50,78 @@ function slug(s: string): string {
 
 type NewForm = {
   name: string;
-  title: string;
-  content: string;
+  titleZh: string;
+  titleVi: string;
+  titleEn: string;
+  bodyZh: string;
+  bodyVi: string;
+  bodyEn: string;
+  kind: string;
+  ctaHref: string;
   tier: TierK;
-  audience: string;
+  phaseMin: string;
+  phaseMax: string;
+  language: NotificationAudienceTarget["language"];
+  registrationDaysMin: string;
   budget: string;
 };
 
 const FORM_INIT: NewForm = {
   name: "",
-  title: "",
-  content: "",
+  titleZh: "",
+  titleVi: "",
+  titleEn: "",
+  bodyZh: "",
+  bodyVi: "",
+  bodyEn: "",
+  kind: "system",
+  ctaHref: "",
   tier: "normal",
-  audience: "",
+  phaseMin: "P1",
+  phaseMax: "P6",
+  language: "all",
+  registrationDaysMin: "0",
   budget: "",
 };
+
+function splitNotificationBody(value: string): { title: string; body: string } {
+  const [title = "", ...body] = value.split("\n");
+  return { title, body: body.join("\n") };
+}
+
+function targetFromForm(form: NewForm): NotificationAudienceTarget {
+  return {
+    phaseMin: form.phaseMin,
+    phaseMax: form.phaseMax,
+    language: form.language,
+    registrationDaysMin: Math.max(0, Number(form.registrationDaysMin || 0)),
+  };
+}
 
 export function I3Campaign({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const propose = usePropose();
   const [stFlt, setStFlt] = useState<StFlt>("all");
   const [newOpen, setNewOpen] = useState(false);
+  const [editing, setEditing] = useState<CampaignRow | null>(null);
   const [form, setForm] = useState<NewForm>(FORM_INIT);
+  const [estimatedAudience, setEstimatedAudience] = useState<number | null>(null);
+  const [estimating, setEstimating] = useState(false);
+  const [scheduleRow, setScheduleRow] = useState<CampaignRow | null>(null);
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [scheduleReason, setScheduleReason] = useState("");
+  const [scheduleVerified, setScheduleVerified] = useState(false);
   const [detail, setDetail] = useState<CampaignRow | null>(null);
   const [newRows, setNewRows] = useState<CampaignRow[]>([]);
   const data = content.campaigns;
   const I3_STATS = data?.stats ?? { monthCampaigns: 0, monthSent: 0, monthScheduled: 0, monthDraft: 0, criticalInflight: 0, avgReadRate: "—", weeklySwipe: "—" };
   const CAMPAIGNS: CampaignRow[] = (data?.campaigns ?? []).map((row) => ({
     ...row,
-    kind: "system",
     st: row.status,
   }));
   const CAP_TIERS = data?.capRules ?? [];
-  const AUDIENCE_OPTS = (data?.audiences ?? []).filter(Boolean);
+  const AUDIENCE_CATALOG = data?.audienceCatalog;
+  const DELIVERY_CATALOG = data?.deliveryCatalog;
   const SWIPE_ROWS = data?.swipeRoutes ?? [];
   const runBackend = (task: Promise<void>, ok: string) => {
     task
@@ -88,6 +129,18 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       .then(() => toast(ok))
       .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
   };
+
+  useEffect(() => {
+    if (!newOpen) return;
+    const timer = window.setTimeout(() => {
+      setEstimating(true);
+      actions.estimateI3Audience(targetFromForm(form))
+        .then((result) => setEstimatedAudience(result.estimatedUsers))
+        .catch(() => setEstimatedAudience(null))
+        .finally(() => setEstimating(false));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [newOpen, form.phaseMin, form.phaseMax, form.language, form.registrationDaysMin, actions]);
 
   const liveSt = (c: CampaignRow): CampaignRow["st"] => {
     return c.st;
@@ -109,53 +162,44 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
 
   /* ---------- actions ---------- */
 
-  const sendCmp = (c: CampaignRow) => openActionConfirm({
-    action: <>调度下发 · {c.name}</>,
-    detail: (
-      <>
-        受众 <b>{c.audience}</b>(估算 {c.reach} 人)· 优先级 <b>{c.tier}</b>。批量触达属高敏动作:下发后服务器逐人写入通知流,带防重号(重复提交不会发两遍);排期到点自动转下发中。
-        {c.tier === "critical" ? (
-          <>
-            {" "}<b>critical 类执行门槛升合规/超管。</b>
-          </>
-        ) : (
-          <> 执行门槛 = 内容主管。</>
-        )}
-      </>
-    ),
-    amplifies: false,
-    run: (reason) => {
-      runBackend(actions.scheduleI3Campaign(c.id, reason), `${c.id} 调度下发已确认生效`);
-    },
-  });
+  const sendCmp = (c: CampaignRow) => {
+    setScheduleRow(c);
+    setScheduledAt("");
+    setScheduleReason("");
+    setScheduleVerified(false);
+  };
 
-  const editDraft = (c: CampaignRow) => openActionConfirm({
-    action: <>编辑草稿 · {c.id}</>,
-    detail: (
-      <>
-        草稿编辑保存即留痕(不对外):双语正文同改、变量令牌两边都得有;发出去另走操作确认。
-      </>
-    ),
-    amplifies: false,
-    businessForm: {
-      kind: "campaign-edit",
-      title: c.name,
-      body: `${c.name} · ${c.audience}`,
-      defaultTier: c.tier,
-      defaultAudience: c.audience,
-      tiers: TIER_OPTS,
-      audiences: AUDIENCE_OPTS,
-    },
-    run: (reason, _v, form) => {
-      runBackend(actions.updateI3CampaignDraft(c.id, {
-        title: form?.title || c.name,
-        body: form?.body || c.bodyZh,
-        tier: form?.tier || c.tier,
-        audience: form?.audience || c.audience,
-        schedule: form?.schedule || c.schedule,
-        budget: Number(form?.budget ?? c.budget ?? 0),
-      }, reason), `${c.id} 草稿已保存 · 留审计`);
-    },
+  const editDraft = (c: CampaignRow) => {
+    const zh = splitNotificationBody(c.bodyZh);
+    const vi = splitNotificationBody(c.bodyVi);
+    const en = splitNotificationBody(c.bodyEn);
+    setEditing(c);
+    setForm({
+      name: c.name,
+      titleZh: zh.title,
+      titleVi: vi.title,
+      titleEn: en.title,
+      bodyZh: zh.body,
+      bodyVi: vi.body,
+      bodyEn: en.body,
+      kind: c.kind || "system",
+      ctaHref: c.ctaHref || "",
+      tier: c.tier,
+      phaseMin: c.audienceTarget?.phaseMin ?? "P1",
+      phaseMax: c.audienceTarget?.phaseMax ?? "P6",
+      language: c.audienceTarget?.language ?? "all",
+      registrationDaysMin: String(c.audienceTarget?.registrationDaysMin ?? 0),
+      budget: c.budget === undefined ? "" : String(c.budget),
+    });
+    setNewOpen(true);
+  };
+
+  const deleteDraft = (c: CampaignRow) => openConfirm({
+    action: <>删除通知草稿 · {c.id}</>,
+    detail: <>仅草稿或已取消记录可删除；已下发记录保留审计，不允许删除。</>,
+    reason: true,
+    okLabel: "确认删除",
+    run: (reason) => runBackend(actions.deleteI3Campaign(c.id, reason), `${c.id} 已删除`),
   });
 
   const sendNow = (c: CampaignRow) => openActionConfirm({
@@ -163,7 +207,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     detail: (
       <>
         从排期改成<b>立即下发</b>:服务器即刻逐人写入通知流,带防重号(重复提交不会发两遍)。<b>优先级 {c.tier}</b>,受众 <b>{c.audience}</b>(估算 {c.reach} 人)。
-        {c.tier === "critical" ? <> <b>critical 类执行门槛升合规/超管。</b></> : <> 执行门槛 = 内容主管。</>}
+        {c.tier === "critical" ? <> <b>紧急级执行门槛升至合规/超管。</b></> : <> 执行门槛 = 内容主管。</>}
       </>
     ),
     amplifies: false,
@@ -190,7 +234,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     action: <>调整 CAP · {tier}</>,
     detail: (
       <>
-        当前 <b>{cap}</b> · 对新通知的保留立即生效,已有通知不追溯删除。调小可能把未读的高档通知挤出显示窗,影响合规类可见性,所以操作确认;内容和风控都可发起。<b>critical 档锁死 ∞,不在可调范围。</b>
+        当前 <b>{cap}</b> · 对新通知的保留立即生效,已有通知不追溯删除。调小可能把未读的高档通知挤出显示窗,影响合规类可见性,所以操作确认;内容和风控都可发起。<b>紧急档锁死为无限保留,不在可调范围。</b>
         {tier === "low" && (
           <>{` `}low 档可切到「24–48 小时自动过期」模式,数量上限就不用了。</>
         )}
@@ -225,34 +269,49 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       toast("请填写 Campaign 名称");
       return;
     }
-    if (!form.title.trim() || !form.content.trim()) {
-      toast("请填写标题与正文");
+    if (!form.titleZh.trim() || !form.titleVi.trim() || !form.bodyZh.trim() || !form.bodyVi.trim()) {
+      toast("请完整填写中文和越南语标题与正文");
       return;
     }
-    const audience = form.audience.trim();
-    if (!audience) {
-      toast("请先选择后端返回的受众");
+    const minIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMin) ?? -1;
+    const maxIndex = AUDIENCE_CATALOG?.phases.findIndex((item) => item.value === form.phaseMax) ?? -1;
+    if (minIndex < 0 || maxIndex < 0 || minIndex > maxIndex) {
+      toast("P 阶段范围不正确");
       return;
     }
-    const id = `CMP-N-${slug(trimmedName)}`;
-    runBackend(actions.createI3Campaign({
+    const selectedCta = DELIVERY_CATALOG?.ctaRoutes.find((option) => option.value === form.ctaHref);
+    const payload = {
       name: trimmedName,
-      title: form.title.trim(),
-      content: form.content.trim(),
+      titleZh: form.titleZh.trim(),
+      titleVi: form.titleVi.trim(),
+      titleEn: form.titleEn.trim(),
+      bodyZh: form.bodyZh.trim(),
+      bodyVi: form.bodyVi.trim(),
+      bodyEn: form.bodyEn.trim(),
+      kind: form.kind,
+      ctaHref: form.ctaHref,
+      ctaLabel: selectedCta?.label ?? "",
       tier: form.tier,
-      audience,
+      audienceTarget: targetFromForm(form),
       budget: Number(form.budget || 0),
-    }, `新建 Campaign 草稿 ${id}`), `Campaign 草稿已建 · ${id} · 下发需操作确认`);
+    };
+    const id = editing?.id ?? `CMP-N-${slug(trimmedName)}`;
+    const task = editing
+      ? actions.updateI3CampaignDraft(editing.id, payload, `编辑 Campaign 草稿 ${editing.id}`)
+      : actions.createI3Campaign(payload, `新建 Campaign 草稿 ${id}`);
+    runBackend(task, editing ? `${editing.id} 草稿已保存` : `Campaign 草稿已建 · ${id} · 下发需操作确认`);
     setNewOpen(false);
+    setEditing(null);
     setForm(FORM_INIT);
   };
 
   /* ---------- render helpers ---------- */
   const renderStBadge = (st: CampaignRow["st"]): ReactNode => {
-    if (st === "draft") return <span className="bdg dim">draft</span>;
-    if (st === "scheduled") return <span className="bdg warn">scheduled</span>;
-    if (st === "sending") return <span className="bdg cyan">sending</span>;
-    if (st === "sent") return <span className="bdg ok">sent</span>;
+    if (st === "draft") return <span className="bdg dim">草稿</span>;
+    if (st === "scheduled") return <span className="bdg warn">排期中</span>;
+    if (st === "sending") return <span className="bdg cyan">下发中</span>;
+    if (st === "sent") return <span className="bdg ok">已下发</span>;
+    if (st === "failed") return <span className="bdg danger">下发失败</span>;
     return <span className="bdg dim">已取消</span>;
   };
 
@@ -264,6 +323,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
           <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendCmp(c); }}>调度下发</button>
           {" "}
           <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); editDraft(c); }}>编辑</button>
+          {" "}
+          <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); deleteDraft(c); }}>删除</button>
         </>
       );
     }
@@ -278,6 +339,9 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     }
     if (st === "sent") {
       return <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); setDetail(c); }}>查看</button>;
+    }
+    if (st === "cancelled") {
+      return <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); deleteDraft(c); }}>删除</button>;
     }
     return null;
   };
@@ -299,7 +363,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
           <div className="sub">已发 {I3_STATS.monthSent} · 排期 {I3_STATS.monthScheduled} · 草稿 {I3_STATS.monthDraft}</div>
         </div>
         <div className="f-stat danger">
-          <div className="k">critical 在途</div>
+          <div className="k">紧急级在途</div>
           <div className="v">{I3_STATS.criticalInflight} 条</div>
           <div className="sub">披露重确认 + 风控异动 · 不淘汰</div>
         </div>
@@ -325,7 +389,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
             {ST_FLT.map(([k, l]) => (
               <button key={k} className={`chip${stFlt === k ? " sel" : ""}`} onClick={() => setStFlt(k)}>{l}</button>
             ))}
-            <button className="l-btn sm primary" onClick={() => setNewOpen(true)}>+ 新建 Campaign</button>
+            <button className="l-btn sm primary" onClick={() => { setEditing(null); setForm(FORM_INIT); setNewOpen(true); }}>+ 新建 Campaign</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -392,7 +456,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
               <div className="p-row" key={tier}>
                 <div className="txt">
                   <div className="k">
-                    <span className={`nc-pr ${tier}`}>{tier}</span>
+                    <span className={`nc-pr ${tier}`}>{I3_TIER_STATE[tier][0]}</span>
                   </div>
                   <div className="s" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{row.policy}</div>
                 </div>
@@ -411,10 +475,10 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
             );
           })}
           <div className="itint warn" style={{ marginTop: 10 }}>
-            <b>为什么动容量闸要操作确认</b> · 调小高档容量可能把还没读的合规通知挤掉——这影响 critical/high 类的可见性,所以内容和风控都能提交,但必须主管执行并填写理由。critical 档直接锁死不开口子。
+            <b>为什么动容量闸要操作确认</b> · 调小高档容量可能把还没读的合规通知挤掉——这影响紧急级和高级通知的可见性,所以内容和风控都能提交,但必须主管执行并填写理由。紧急档直接锁死不开口子。
           </div>
           <div className="itint cyan" style={{ marginTop: 8 }}>
-            <b>合规通道特例</b> · 风险披露改版触发的重确认提醒(I4 页)和 J 域监管应急公告,由对应域发起、借这页的通道按 <b>critical</b> 下发;这两类的执行门槛升到合规/超管级,常规运营公告执行门槛是内容主管。
+            <b>合规通道特例</b> · 风险披露改版触发的重新确认提醒(I4 页)和 J 域监管应急公告,由对应域发起、借这页的通道按<b>紧急级</b>下发;这两类的执行门槛升到合规/超管级,常规运营公告执行门槛是内容主管。
           </div>
         </div>
       </section>
@@ -423,14 +487,14 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">左滑直达表</span>
-          <span className="sub">· 通知 kind 决定 swipe 跳哪;system kind 无转化跳转,字段留空</span>
+          <span className="sub">· 通知类型决定左滑跳转位置;系统通知无转化跳转</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 540 }}>
             <thead>
               <tr>
-                <th>swipeTo</th>
-                <th>kind</th>
+                <th>跳转位置</th>
+                <th>通知类型</th>
                 <th>案例</th>
               </tr>
             </thead>
@@ -440,7 +504,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 return (
                   <tr key={r.kind}>
                     <td className="mono" style={empty ? { color: "var(--ink-4)" } : undefined}>{r.to}</td>
-                    <td><span className="bdg dim">{r.kind}</span></td>
+                    <td><span className="bdg dim">{DELIVERY_CATALOG?.kinds.find((option) => option.value === r.kind)?.label ?? r.kind}</span></td>
                     <td style={{ fontSize: 12 }}>{r.note}</td>
                   </tr>
                 );
@@ -450,14 +514,14 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="itint">
-            事件 <b>admin.notification_campaign_sent / _cancelled</b> + <b>notification.delivered / read / swipe_action_taken</b> — 待 A4 notification domain 工单上线后正式归类。
+            下发、取消、送达、已读和左滑动作均由服务器记录，供触达健康度与转化漏斗使用。
           </div>
         </div>
       </section>
 
       {/* ===== f-foot ===== */}
       <p className="f-foot">
-        <b>执行门槛</b>:草稿随便建(留审计);调度下发 / 取消 = 内容提交(风控合规类可由风控提交),内容主管/超管执行;容量闸调整 = 内容或风控执行门槛:主管。<b>事件去向</b>:送达 / 已读 / 滑动动作三类事件喂触达健康度看板和数据 BI(L 域:触达→已读→转化漏斗、各档送达率);有转化路径的滑动(佣金→复投)喂实时漏斗(B3)。<b>I4 re-ack 与 J 域监管应急</b>共用 critical 通道:由对应域提交、借这页的通道按 critical 下发,执行门槛升合规/超管级。通知类事件进入待归属登记清单,待 notification 域上线后正式归类。下发带防重号,重复点不会发两遍。
+        <b>执行门槛</b>:草稿随便建(留审计);调度下发 / 取消 = 内容提交(风控合规类可由风控提交),内容主管/超管执行;容量闸调整 = 内容或风控执行门槛:主管。<b>事件去向</b>:送达 / 已读 / 滑动动作三类事件喂触达健康度看板和数据 BI(L 域:触达→已读→转化漏斗、各档送达率);有转化路径的滑动(佣金→复投)喂实时漏斗(B3)。<b>I4 重新确认与 J 域监管应急</b>共用紧急级通道,执行门槛升至合规/超管。下发带防重号,重复点不会发两遍。
       </p>
       <PaginationExemptionList
         items={[
@@ -475,17 +539,23 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
         ]}
       />
 
-      {/* ===== Drawer · 新建 Campaign ===== */}
+      {/* ===== Drawer · 新建 / 编辑 Campaign ===== */}
       {newOpen && (
         <Drawer
-          title="新建 Campaign(存为草稿)"
-          sub="提交后保存为草稿 · 下发另走操作确认"
-          onClose={() => setNewOpen(false)}
+          title={editing ? `编辑 Campaign 草稿 · ${editing.id}` : "新建 Campaign（存为草稿）"}
+          sub="中文、越南语必填，英文可选 · 受众条件按 AND 组合 · 下发另走操作确认"
+          onClose={() => { setNewOpen(false); setEditing(null); }}
           footer={
             <>
-              <button className="l-btn sm" onClick={() => setNewOpen(false)}>取消</button>
+              <button className="l-btn sm" onClick={() => { setNewOpen(false); setEditing(null); }}>取消</button>
               {" "}
-              <button className="l-btn sm primary" disabled={!form.audience.trim()} onClick={submitNew}>保存草稿</button>
+              <button
+                className="l-btn sm primary"
+                disabled={!AUDIENCE_CATALOG || estimating}
+                onClick={submitNew}
+              >
+                {editing ? "保存修改" : "保存草稿"}
+              </button>
             </>
           }
         >
@@ -503,49 +573,159 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 </div>
               )}
             </FormField>
-            <FormField label="通知标题" required>
-              <input
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="标题(显示在通知流第一行)"
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+              <FormField label="中文标题" required>
+                <input
+                  value={form.titleZh}
+                  onChange={(e) => setForm({ ...form, titleZh: e.target.value })}
+                  placeholder="通知流第一行（中文）"
+                  style={INPUT_STYLE}
+                />
+              </FormField>
+              <FormField label="越南语标题" required>
+                <input
+                  value={form.titleVi}
+                  onChange={(e) => setForm({ ...form, titleVi: e.target.value })}
+                  placeholder="Dòng đầu tiên (VI)"
+                  style={INPUT_STYLE}
+                />
+              </FormField>
+              <FormField label="英文标题（可选）">
+                <input
+                  value={form.titleEn}
+                  onChange={(e) => setForm({ ...form, titleEn: e.target.value })}
+                  placeholder="通知流第一行（英文）"
+                  style={INPUT_STYLE}
+                />
+              </FormField>
+              <FormField label="中文正文" required>
+                <textarea
+                  rows={4}
+                  value={form.bodyZh}
+                  onChange={(e) => setForm({ ...form, bodyZh: e.target.value })}
+                  placeholder="填写中文正文"
+                  style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
+                />
+              </FormField>
+              <FormField label="越南语正文" required>
+                <textarea
+                  rows={4}
+                  value={form.bodyVi}
+                  onChange={(e) => setForm({ ...form, bodyVi: e.target.value })}
+                  placeholder="Nhập nội dung tiếng Việt"
+                  style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
+                />
+              </FormField>
+              <FormField label="英文正文（可选）">
+                <textarea
+                  rows={4}
+                  value={form.bodyEn}
+                  onChange={(e) => setForm({ ...form, bodyEn: e.target.value })}
+                  placeholder="填写英文正文"
+                  style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
+                />
+              </FormField>
+            </div>
+            <FormField label="优先级">
+              <select
+                value={form.tier}
+                onChange={(e) => setForm({ ...form, tier: e.target.value as TierK })}
                 style={INPUT_STYLE}
-              />
+              >
+                {TIER_OPTS.map((t) => (
+                  <option key={t} value={t}>{I3_TIER_STATE[t][0]}</option>
+                ))}
+              </select>
             </FormField>
-            <FormField label="通知正文(双语合并)" required>
-              <textarea
-                rows={4}
-                value={form.content}
-                onChange={(e) => setForm({ ...form, content: e.target.value })}
-                placeholder="填写正文,后续可由 I6 双语词条接管"
-                style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit", fontSize: 12.5 }}
-              />
-            </FormField>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <FormField label="优先级 tier">
+              <FormField label="通知类型" required>
                 <select
-                  value={form.tier}
-                  onChange={(e) => setForm({ ...form, tier: e.target.value as TierK })}
+                  value={form.kind}
+                  onChange={(e) => setForm({ ...form, kind: e.target.value })}
+                  disabled={!DELIVERY_CATALOG}
                   style={INPUT_STYLE}
                 >
-                  {TIER_OPTS.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                  {(DELIVERY_CATALOG?.kinds ?? []).map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </FormField>
-              <FormField label="受众定向">
+              <FormField label="点击后跳转位置">
                 <select
-                  value={form.audience}
-                  onChange={(e) => setForm({ ...form, audience: e.target.value })}
-                  disabled={AUDIENCE_OPTS.length === 0}
+                  value={form.ctaHref}
+                  onChange={(e) => setForm({ ...form, ctaHref: e.target.value })}
+                  disabled={!DELIVERY_CATALOG}
                   style={INPUT_STYLE}
                 >
-                  <option value="">请选择后端受众</option>
-                  {AUDIENCE_OPTS.map((a) => (
-                    <option key={a} value={a}>{a}</option>
+                  {(DELIVERY_CATALOG?.ctaRoutes ?? []).map((option) => (
+                    <option key={option.value || "none"} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </FormField>
             </div>
+
+            <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 4 }}>受众条件</div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>
+                以下条件同时满足（AND）才会进入受众范围，选项由后端配置提供。
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 24px 1fr", gap: 8, alignItems: "end" }}>
+                <FormField label="P 阶段起点" required>
+                  <select
+                    value={form.phaseMin}
+                    onChange={(e) => setForm({ ...form, phaseMin: e.target.value })}
+                    disabled={!AUDIENCE_CATALOG}
+                    style={INPUT_STYLE}
+                  >
+                    {(AUDIENCE_CATALOG?.phases ?? []).map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <div style={{ textAlign: "center", paddingBottom: 9, color: "var(--ink-4)" }}>至</div>
+                <FormField label="P 阶段终点" required>
+                  <select
+                    value={form.phaseMax}
+                    onChange={(e) => setForm({ ...form, phaseMax: e.target.value })}
+                    disabled={!AUDIENCE_CATALOG}
+                    style={INPUT_STYLE}
+                  >
+                    {(AUDIENCE_CATALOG?.phases ?? []).map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
+                <FormField label="语言" required>
+                  <select
+                    value={form.language}
+                    onChange={(e) => setForm({ ...form, language: e.target.value as NotificationAudienceTarget["language"] })}
+                    disabled={!AUDIENCE_CATALOG}
+                    style={INPUT_STYLE}
+                  >
+                    {(AUDIENCE_CATALOG?.languages ?? []).map((item) => (
+                      <option key={item.value} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="注册时长（大于 N 天）" required>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={form.registrationDaysMin}
+                    onChange={(e) => setForm({ ...form, registrationDaysMin: e.target.value })}
+                    style={INPUT_STYLE}
+                  />
+                </FormField>
+              </div>
+              <div className="itint cyan" style={{ marginTop: 10 }}>
+                <b>预计覆盖</b> · {estimating ? "计算中…" : estimatedAudience === null ? "暂不可用" : `${estimatedAudience.toLocaleString("zh-CN")} 人`}
+              </div>
+            </div>
+
             <FormField label="预算 USD · 可选">
               <input
                 type="number"
@@ -558,6 +738,67 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
             <div className="itint">
               <b>提交后</b> · 保存草稿并写入 A2 审计;之后从列表里走「调度下发」操作确认,服务器逐人写入通知流,带防重号。
             </div>
+          </div>
+        </Drawer>
+      )}
+
+      {/* ===== Drawer · 调度下发 ===== */}
+      {scheduleRow && (
+        <Drawer
+          title={`调度下发 · ${scheduleRow.id}`}
+          sub="选择明确的下发时间；服务端会再次校验必须晚于当前时间"
+          onClose={() => setScheduleRow(null)}
+          footer={
+            <>
+              <button className="l-btn sm" onClick={() => setScheduleRow(null)}>取消</button>
+              {" "}
+              <button
+                className="l-btn sm primary"
+                disabled={!scheduledAt || !scheduleVerified || scheduleReason.trim().length < 8 || scheduleReason.trim().length > 200}
+                onClick={() => {
+                  runBackend(
+                    actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleReason.trim()),
+                    `${scheduleRow.id} 已进入排期`,
+                  );
+                  setScheduleRow(null);
+                }}
+              >
+                确认排期
+              </button>
+            </>
+          }
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div className="itint">
+              <b>{scheduleRow.name}</b> · 优先级 {I3_TIER_STATE[scheduleRow.tier][0]} · {scheduleRow.audience} · 预计覆盖 {scheduleRow.reach} 人
+            </div>
+            <FormField label="计划下发时间" required>
+              <input
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+                style={INPUT_STYLE}
+              />
+            </FormField>
+            <FormField label="操作理由（8～200 个字）" required>
+              <textarea
+                rows={3}
+                maxLength={200}
+                value={scheduleReason}
+                onChange={(e) => setScheduleReason(e.target.value)}
+                placeholder="说明本次调度的业务目的"
+                style={{ ...INPUT_STYLE, resize: "vertical", fontFamily: "inherit" }}
+              />
+            </FormField>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "var(--ink-2)" }}>
+              <input
+                type="checkbox"
+                checked={scheduleVerified}
+                onChange={(e) => setScheduleVerified(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <span>我已核对中文、越南语、英文标题、正文和受众条件；排期后如需修改，应先取消排期再编辑草稿。</span>
+            </label>
           </div>
         </Drawer>
       )}
@@ -627,6 +868,14 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
       </div>
 
       <div>
+        <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>通知体(VI)</div>
+        <div className="ab-prev">
+          <div className="lc">VI</div>
+          <div className="tx">{c.bodyVi}</div>
+        </div>
+      </div>
+
+      <div>
         <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 6 }}>通知体(ZH)</div>
         <div className="ab-prev">
           <div className="lc">ZH</div>
@@ -674,7 +923,7 @@ function DetailBody({ c, liveStRender, budget }: { c: CampaignRow; liveStRender:
 
       {c.tier === "critical" && (
         <div className="itint warn">
-          <b>合规通道特例</b> · 风险披露重确认(I4)+ J 域监管应急公告借这页 critical 下发;执行门槛升合规/超管。
+          <b>合规通道特例</b> · 风险披露重新确认(I4)+ J 域监管应急公告借这页紧急级通道下发;执行门槛升至合规/超管。
         </div>
       )}
     </div>

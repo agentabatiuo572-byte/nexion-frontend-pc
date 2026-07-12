@@ -1536,11 +1536,6 @@ export const HIGH_OPS: HighOpDef[] = [
       params: {
         jurisdiction: String(ctx.jurisdiction),
         version: String(ctx.version),
-        languageScope: String(ctx.languageScope ?? "en+zh"),
-        effectiveDate: String(ctx.effectiveDate ?? ""),
-        requiresReack: ctx.requiresReack ?? true,
-        zh: String(ctx.zh ?? ""),
-        en: String(ctx.en ?? ""),
       } }),
     buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdiction) }),
   },

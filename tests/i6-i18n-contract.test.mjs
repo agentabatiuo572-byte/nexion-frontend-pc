@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const view = readFileSync(new URL("../app/components/domain-views/i-tabs/i6-i18n.tsx", import.meta.url), "utf8");
+const kit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
+const client = readFileSync(new URL("../lib/admin/i-client.ts", import.meta.url), "utf8");
+
+test("I6 uses a real selectable message catalog and complete CRUD actions", () => {
+  assert.match(client, /messages:\s*I18nMessagePairView\[\]/);
+  assert.match(client, /archiveI6LocalizedMessage/);
+  assert.match(view, /MESSAGES\.filter/);
+  assert.match(view, /actions\.saveI6LocalizedDraft/);
+  assert.match(view, /actions\.publishI6LocalizedMessage/);
+  assert.match(view, /actions\.archiveI6LocalizedMessage/);
+  assert.doesNotMatch(view, /\$\{nsDrawer\.ns\}\.title/);
+});
+
+test("I6 structured editor requires Chinese, English and Vietnamese", () => {
+  assert.match(kit, /中文 zh 文案/);
+  assert.match(kit, /英文 en copy/);
+  assert.match(kit, /越南语 vi 文案/);
+  assert.match(kit, /vi:\s*spec\.vi/);
+  assert.match(view, /message\.vi\s*\?\s*"越"\s*:\s*"缺越"/);
+});
+
+test("I6 surfaces Chinese status labels and selected-key integrity repair", () => {
+  assert.match(view, /published:\s*"已发布"/);
+  assert.match(view, /draft:\s*"草稿"/);
+  assert.match(view, /messageKey:\s*selectedMessage\.messageKey/);
+  assert.match(view, /actions\.rescanI6/);
+});

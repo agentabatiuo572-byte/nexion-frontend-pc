@@ -38,3 +38,17 @@ test("Nova channel drawer uses explicit cadence copy and structured time control
   assert.match(source, /CTR 无需填写/);
   assert.doesNotMatch(source, /推完歇多久|每 25 任务|CTR\(%,可留空\)/);
 });
+
+test("Nova template editor owns real multilingual content and backend-driven dropdowns", () => {
+  const source = readFileSync(new URL("../app/components/domain-views/i-tabs/i2-nova.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /推送通道（来自通道列表）/);
+  assert.match(source, /CTA 去向（来自后端路由目录）/);
+  assert.match(source, /中文、越南语必填，英语可选/);
+  assert.match(source, /actions\.updateI2Template/);
+  assert.match(source, /actions\.deleteI2Template/);
+  assert.match(source, /NOVA_PUBLISHED_TEMPLATE_REQUIRED|请先为该通道创建并发布完整的中越文模板/);
+  assert.doesNotMatch(source, />published</);
+  assert.doesNotMatch(source, />archived</);
+  assert.doesNotMatch(source, />draft</);
+});

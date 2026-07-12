@@ -14,25 +14,42 @@ import { Drawer, PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type TrustSection = {
   key: string; desc: string; struct: string; v: string; status: string; lastChange: string; roleGate: string; highSensitivity: boolean;
 };
-type Jurisdiction = {
-  code: string; name: string; v: string; status: string; publishedAt: string; affected: number; ackProgress: number; blocked: number;
+type TrustSectionVersion = {
+  sectionKey: string; version: string; description: string; structure: string;
+  fields: { key: string; label: string; value: string }[];
+  status: string; revision: number; operator: string; updatedAt: string;
 };
+type Jurisdiction = {
+  code: string; name: string; countryCodes: string[]; v: string; status: string; publishedAt: string; affected: number; ackProgress: number; blocked: number;
+};
+const statusZh = (status?: string) => ({
+  published: "已发布", draft: "草稿", archived: "已归档", superseded: "已取代",
+  PUBLISHED: "已发布", DRAFT: "草稿", ARCHIVED: "已归档", SUPERSEDED: "已取代",
+} as Record<string, string>)[status ?? ""] ?? status ?? "—";
 type GateAction = { key: string; name: string; sub: string; st: string; tone: string; active: boolean };
 type TrustDetailKey = string;
 
 export function I4Trust({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const propose = usePropose();
+  const session = useAdminAuth((state) => state.session);
+  const isSuperadmin = session?.role === "superadmin";
+  const canManageTrust = isSuperadmin || !!session?.authorities.includes("content_i4_trust_section_manage");
+  const canDraftDisclosure = isSuperadmin || !!session?.authorities.includes("content_i4_write");
+  const canPublishDisclosure = isSuperadmin || !!session?.authorities.includes("content_i4_disclosure_publish");
+  const canAdjustGate = isSuperadmin || !!session?.authorities.includes("content_i4_gate_adjust");
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [chapNo, setChapNo] = useState<string | null>(null);
   const data = content.trustDisclosure;
   const I4_STATS = data?.stats ?? { managedSections: 0, jurisdictions: 0, staleAckUsers: 0, weeklyGateBlocked: 0 };
   const TRUST_SECTIONS: TrustSection[] = (data?.trustSections ?? []).map((s) => ({ ...s, v: s.version }));
+  const TRUST_SECTION_VERSIONS: TrustSectionVersion[] = data?.trustSectionVersions ?? [];
   const FINANCIALS_FIELDS = (data?.financialFields ?? []).map((f) => ({ k: f.key, v: f.value, delta: f.delta }));
   const JURISDICTIONS: Jurisdiction[] = (data?.jurisdictions ?? []).map((j) => ({ ...j, v: j.version }));
   const DISCLOSURE_CHAPTERS = data?.chapters ?? [];
@@ -45,7 +62,29 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
   const activeJurisdictionCode = activeJurisdiction?.code ?? "";
   const activeChapter = DISCLOSURE_CHAPTERS.find((c) => c.jurisdiction === activeJurisdictionCode) ?? DISCLOSURE_CHAPTERS[0];
   const CHAPTER_BODY_ZH = activeChapter?.zhBody ?? "";
+  const CHAPTER_BODY_VI = activeChapter?.viBody ?? "";
   const CHAPTER_BODY_EN = activeChapter?.enBody ?? "";
+  const jurisdictionOptions = JURISDICTIONS.map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
+  const disclosureVersions = data?.disclosureVersions ?? [];
+  const countryOptions = (data?.countryOptions ?? []).map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
+  const sectionVersionOptions = (sectionKey: string, currentVersion: string) => TRUST_SECTION_VERSIONS
+    .filter((row) => row.sectionKey === sectionKey && ["published", "superseded", "PUBLISHED", "SUPERSEDED"].includes(row.status) && row.version !== currentVersion)
+    .map((row) => row.version);
+  const chaptersFor = (jurisdiction: string, version?: string) => {
+    const exact = DISCLOSURE_CHAPTERS.filter((chapter) => chapter.jurisdiction === jurisdiction && (!version || chapter.version === version));
+    if (exact.length) return exact;
+    const publishedVersion = JURISDICTIONS.find((row) => row.code === jurisdiction)?.v;
+    return DISCLOSURE_CHAPTERS.filter((chapter) => chapter.jurisdiction === jurisdiction && (!publishedVersion || chapter.version === publishedVersion));
+  };
+  const chapterPayload = (form: Record<string, string> | undefined, jurisdiction: string, version: string) => chaptersFor(jurisdiction, version).map((chapter, index) => ({
+    no: form?.[`chapter.${index}.no`] || chapter.no,
+    zhTitle: form?.[`chapter.${index}.zhTitle`] || chapter.zh,
+    viTitle: form?.[`chapter.${index}.viTitle`] || chapter.vi,
+    enTitle: form?.[`chapter.${index}.enTitle`] || chapter.en,
+    zhBody: form?.[`chapter.${index}.zhBody`] || chapter.zhBody,
+    viBody: form?.[`chapter.${index}.viBody`] || chapter.viBody,
+    enBody: form?.[`chapter.${index}.enBody`] || chapter.enBody,
+  }));
   const runBackend = (task: Promise<void>, ok: string) => {
     task
       .then(() => actions.reloadIContent())
@@ -63,9 +102,68 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
   const openChap = (no: string) => setChapNo(no);
 
   // ---------- I4 信任版块动作 ----------
-  const pubSection = (s: TrustSection) =>
+  const sectionFieldsFromForm = (form?: Record<string, string>) => Array.from(
+    { length: Math.max(0, Number(form?.fieldCount || 0)) },
+    (_, index) => ({
+      key: form?.[`field.${index}.key`]?.trim() || "",
+      label: form?.[`field.${index}.label`]?.trim() || "",
+      value: form?.[`field.${index}.value`]?.trim() || "",
+    }),
+  );
+
+  const createSectionDraft = (s: TrustSection) => openActionConfirm({
+    action: <>新建信任版块草稿 · {s.key}</>,
+    detail: <>版本号与结构化字段全部保存到后端；草稿不会自动影响当前线上版。</>,
+    amplifies: false,
+    businessForm: {
+      kind: "trust-section-authoring",
+      mode: "create",
+      sectionKey: s.key,
+      description: s.desc,
+      structure: s.struct,
+      fields: (SECTION_FIELDS[s.key] ?? []).map(([key, value]) => ({ key, label: key, value })),
+    },
+    run: (reason, _value, form) => runBackend(actions.createI4TrustSectionDraft(s.key, {
+      version: form?.version || "",
+      description: form?.description || "",
+      structure: form?.structure || "",
+      fields: sectionFieldsFromForm(form),
+    }, reason), `${s.key} 草稿已创建`),
+  });
+
+  const editSectionDraft = (draft: TrustSectionVersion) => openActionConfirm({
+    action: <>编辑信任版块草稿 · {draft.sectionKey} {draft.version}</>,
+    detail: <>仅草稿可编辑；保存时携带修订号，避免覆盖他人的并发修改。</>,
+    amplifies: false,
+    businessForm: {
+      kind: "trust-section-authoring",
+      mode: "edit",
+      sectionKey: draft.sectionKey,
+      version: draft.version,
+      description: draft.description,
+      structure: draft.structure,
+      revision: draft.revision,
+      fields: draft.fields,
+    },
+    run: (reason, _value, form) => runBackend(actions.updateI4TrustSectionDraft(draft.sectionKey, draft.version, {
+      version: draft.version,
+      description: form?.description || "",
+      structure: form?.structure || "",
+      fields: sectionFieldsFromForm(form),
+      expectedRevision: draft.revision,
+    }, reason), `${draft.sectionKey} ${draft.version} 草稿已更新`),
+  });
+
+  const deleteSectionDraft = (draft: TrustSectionVersion) => openActionConfirm({
+    action: <>删除信任版块草稿 · {draft.sectionKey} {draft.version}</>,
+    detail: <>仅删除尚未发布的草稿；线上版与历史已发布快照不受影响。</>,
+    amplifies: false,
+    run: (reason) => runBackend(actions.deleteI4TrustSectionDraft(draft.sectionKey, draft.version, reason), `${draft.sectionKey} ${draft.version} 草稿已删除`),
+  });
+
+  const pubSection = (s: TrustSection, draft: TrustSectionVersion) =>
     openActionConfirm({
-      action: <>发布信任版块 · {s.key}({s.desc})</>,
+      action: <>发布信任版块 · {s.key} {draft.version}</>,
       detail: (
         <>
           对外信任内容上线,发布后 /trust 页即时换新。<b>执行门槛:{s.roleGate}</b>
@@ -79,14 +177,14 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           action: `发布信任版块 · ${s.key}`,
           obj: s.key,
           before: s.v,
-          after: s.v,
+          after: draft.version,
           type: "param",
           amplifies: false,
           gate: { roles: [] },
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I4",
-          command: def.buildCommand({ sectionKey: s.key, action: "publish", version: s.v }),
+          command: def.buildCommand({ sectionKey: s.key, action: "publish", version: draft.version }),
           target: def.buildTarget({ sectionKey: s.key }),
         });
       },
@@ -101,7 +199,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: s.v },
+      edit: { kind: "select", current: sectionVersionOptions(s.key, s.v)[0] ?? "", options: sectionVersionOptions(s.key, s.v) },
       run: (reason, nv) => {
         if (!nv) return;
         const def = findHighOp("i4_trust_section_manage")!;
@@ -156,7 +254,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       action: <>草拟披露新版 · 风控提交</>,
       detail: (
         <>
-          7 章节逐章改;中英两份镜像同步(占位符一致)。草稿不生效;发布走「执行门槛:风控/超管」操作确认并触发该法域重确认。
+          披露正文按中文、越南语必填，英语可选维护(占位符一致)。草稿不生效;发布走「执行门槛:风控/超管」操作确认并触发该法域重确认。
         </>
       ),
       amplifies: false,
@@ -165,14 +263,22 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         version: disclosureDraft?.version ?? "",
         jurisdiction: disclosureDraft?.jurisdiction ?? activeJurisdictionCode,
         zh: CHAPTER_BODY_ZH,
+        vi: CHAPTER_BODY_VI,
         en: CHAPTER_BODY_EN,
+        chapters: chaptersFor(disclosureDraft?.jurisdiction ?? activeJurisdictionCode, disclosureDraft?.version),
+        jurisdictionOptions,
+        versionOptions: disclosureVersions,
+        languageScopes: data?.languageScopes,
+        effectiveDate: disclosureDraft?.effectiveDate,
+        requiresReack: disclosureDraft?.requiresReack,
       },
       run: (reason, _v, form) => {
         const version = form?.version?.trim() || disclosureDraft?.version?.trim() || "";
         const jurisdiction = form?.jurisdiction?.trim() || disclosureDraft?.jurisdiction?.trim() || activeJurisdictionCode;
         const zh = form?.zh?.trim() || CHAPTER_BODY_ZH;
+        const vi = form?.vi?.trim() || CHAPTER_BODY_VI;
         const en = form?.en?.trim() || CHAPTER_BODY_EN;
-        if (!version || !jurisdiction || !zh || !en) {
+        if (!version || !jurisdiction || !zh || !vi) {
           toast("缺少后端披露版本/法域/正文,无法提交草稿");
           return;
         }
@@ -183,57 +289,67 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           effectiveDate: form?.effectiveDate || disclosureDraft?.effectiveDate || "",
           requiresReack: form?.requiresReack ?? true,
           zh,
+          vi,
           en,
+          chapters: chapterPayload(form, jurisdiction, version),
         }, reason), "披露草稿已存 · 发布需风控操作确认");
       },
     });
 
-  const configMatrix = () =>
-    openConfirm({
-      action: <>配置法域 × 版本映射(风控提交 · 操作确认)</>,
+  const configMatrix = (current?: Jurisdiction) =>
+    openActionConfirm({
+      action: <>{current ? "编辑" : "新增"}法域 × 版本映射</>,
       detail: (
         <>
           增法域、改某法域的生效版本映射都在这里;版本号只增不减。改映射等同给该法域换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 / 超管</b>。
         </>
       ),
-      chips: [
-        ["风控提交 · 留痕", "done"],
-        ["发布另走风控操作确认", "ready"],
-      ],
-      reason: true,
-      okLabel: "保存配置",
-      run: (reason) => {
-        runBackend(actions.configureI4Matrix(reason), "法域矩阵配置已提交风控操作确认");
+      amplifies: false,
+      businessForm: {
+        kind: "disclosure-matrix",
+        mode: current ? "edit" : "create",
+        jurisdictionCode: current?.code,
+        jurisdictionName: current?.name,
+        version: current?.v,
+        countryCodes: current?.countryCodes ?? [],
+        countryOptions,
+        versionOptions: disclosureVersions,
+      },
+      run: (reason, _v, form) => {
+        const jurisdictionCode = form?.jurisdictionCode?.trim().toUpperCase() || "";
+        if (!jurisdictionCode) return;
+        runBackend(actions.configureI4Matrix(jurisdictionCode, {
+          jurisdictionCode,
+          jurisdictionName: form?.jurisdictionName || "",
+          countryCodes: (form?.countryCodes || "").split(",").map((code) => code.trim()).filter(Boolean),
+          version: form?.version || "",
+          status: "draft",
+        }, reason), "法域版本映射已保存到后端");
       },
     });
 
+  const archiveMatrix = (j: Jurisdiction) => openActionConfirm({
+    action: <>归档法域版本映射 · {j.code}</>,
+    detail: <>归档后保留历史版本与审计记录，不再作为有效披露映射。</>,
+    amplifies: false,
+    run: (reason) => runBackend(actions.archiveI4Matrix(j.code, reason), `${j.code} 映射已归档`),
+  });
+
   const publishDisclosure = (j: Jurisdiction) =>
     openActionConfirm({
-      action: <>发布披露新版 · {j.code} {j.v} → 新版</>,
+      action: <>发布已存披露草稿 · {j.code}</>,
       detail: (
         <>
-          <b>合规关键动作</b>:发布即把 {j.code} 法域全部用户的确认状态标成过期(stale),受限动作(提现等)在重确认前被服务器拦截;重确认提醒自动经通知页(I3)<b>critical</b> 通道下发。<b>发起人必须是风控,执行门槛 = 风控 / 超管</b>;内容角色草拟的文本由风控提交。中英镜像与占位符校验通过才能发;带防重号。监管点名当天可走此路径即时改条款。
+          <b>合规关键动作</b>:发布只读取服务器已经保存的草稿与固定 7 章快照，不接受确认框临时改正文。发布后 {j.code} 适用国家/地区用户的确认状态转为过期，受限动作在重确认前由服务器拦截。<b>执行门槛 = 风控 / 超管</b>。
         </>
       ),
       amplifies: false,
-      // audit P1 修:edit current 必须读实时态 liveJurVersion(j),否则第二次操作 modal 显示种子值(stale)。
-      businessForm: {
-        kind: "version-authoring",
-        version: liveJurVersion(j),
-        jurisdiction: j.code,
-        zh: CHAPTER_BODY_ZH,
-        en: CHAPTER_BODY_EN,
-      },
-      run: (reason, v, form) => {
+      edit: { kind: "select", current: disclosureDraft?.jurisdiction === j.code ? disclosureDraft.version : "", options: disclosureDraft?.jurisdiction === j.code ? [disclosureDraft.version] : [] },
+      run: (reason, v) => {
         if (!v) return;
         const def = findHighOp("i4_disclosure_publish")!;
         const version = v;
-        const jurisdiction = form?.jurisdiction || j.code;
-        const languageScope = form?.languageScope || "en+zh";
-        const effectiveDate = form?.effectiveDate || disclosureDraft?.effectiveDate || "";
-        const requiresReack = form?.requiresReack ?? true;
-        const zh = form?.zh || CHAPTER_BODY_ZH;
-        const en = form?.en || CHAPTER_BODY_EN;
+        const jurisdiction = j.code;
         void propose(toast, {
           action: `发布披露新版 · ${j.code}`,
           obj: j.code,
@@ -245,7 +361,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I5",
-          command: def.buildCommand({ jurisdiction, version, languageScope, effectiveDate, requiresReack, zh, en }),
+          command: def.buildCommand({ jurisdiction, version }),
           target: def.buildTarget({ jurisdiction }),
         });
       },
@@ -292,6 +408,9 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
   const sec = secKey ? TRUST_SECTIONS.find((s) => s.key === secKey) ?? null : null;
   const jur = jurCode ? JURISDICTIONS.find((j) => j.code === jurCode) ?? null : null;
   const chap = chapNo ? DISCLOSURE_CHAPTERS.find((c) => c.no === chapNo) ?? null : null;
+  const sectionExternalLink = sec
+    ? (SECTION_FIELDS[sec.key] ?? []).find(([key]) => /(^|[._-])(url|link|href)($|[._-])/i.test(key))?.[1] ?? ""
+    : "";
 
   if (contentLoading && !data) {
     return <section className="l-card"><div className="l-b"><div className="itint">I4 数据加载中...</div></div></section>;
@@ -338,7 +457,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           <table className="l-tbl" style={{ minWidth: 920 }}>
             <thead>
               <tr>
-                <th>section</th>
+                <th>版块</th>
                 <th>当前内容</th>
                 <th>版本</th>
                 <th>确认级</th>
@@ -375,14 +494,14 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
                       {isArchived ? (
                         <span className="bdg dim">已下架</span>
                       ) : (
-                        <span className="bdg ok">published</span>
+                        <span className="bdg ok">已发布</span>
                       )}
                     </td>
                     <td className="mono" style={{ fontSize: 11.5 }}>{s.lastChange}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); pubSection(s); }}>发布新版</button>{" "}
-                      <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); rollbackSection(s); }}>回滚</button>
-                      {!isArchived && (
+                      {canManageTrust && <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); createSectionDraft(s); }}>新建草稿</button>{" "}
+                      <button className="l-btn sm" disabled={sectionVersionOptions(s.key, s.v).length === 0} onClick={(e) => { e.stopPropagation(); rollbackSection(s); }}>回滚历史版</button></>}
+                      {canManageTrust && !isArchived && (
                         <>
                           {" "}
                           <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); archiveSection(s); }}>下架</button>
@@ -395,6 +514,39 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
             </tbody>
           </table>
         </div>
+        <div className="l-h" style={{ borderTop: "1px solid var(--border)" }}>
+          <span className="ttl">信任版块版本列表</span>
+          <span className="sub">· 草稿可编辑/删除 · 发布与回滚均基于后端快照</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 920 }}>
+            <thead><tr><th>版块</th><th>版本</th><th>说明</th><th>内容结构</th><th>字段数</th><th>状态</th><th>最近更新</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+            <tbody>
+              {TRUST_SECTION_VERSIONS.map((version) => {
+                const section = TRUST_SECTIONS.find((row) => row.key === version.sectionKey);
+                const isDraft = ["draft", "DRAFT"].includes(version.status);
+                return <tr key={`${version.sectionKey}-${version.version}`}>
+                  <td className="mono">{version.sectionKey}</td>
+                  <td className="mono" style={{ fontWeight: 700 }}>{version.version}</td>
+                  <td>{version.description}</td>
+                  <td>{version.structure}</td>
+                  <td className="num">{version.fields.length}</td>
+                  <td><span className={`bdg ${isDraft ? "warn" : "ok"}`}>{statusZh(version.status)}</span></td>
+                  <td className="mono">{version.updatedAt || "—"}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {canManageTrust && isDraft && <>
+                      <button className="l-btn sm" onClick={() => editSectionDraft(version)}>编辑草稿</button>{" "}
+                      <button className="l-btn sm mc" disabled={!section} onClick={() => section && pubSection(section, version)}>发布草稿</button>{" "}
+                      <button className="l-btn sm danger" onClick={() => deleteSectionDraft(version)}>删除草稿</button>
+                    </>}
+                    {(!canManageTrust || !isDraft) && <span className="tiny">只读{isDraft ? "（无编辑权限）" : "历史快照"}</span>}
+                  </td>
+                </tr>;
+              })}
+              {TRUST_SECTION_VERSIONS.length === 0 && <tr><td colSpan={8}><div className="itint">暂无后端版本快照，请先从版块行点击“新建草稿”。</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       {/* I4 披露版本 × 法域矩阵 */}
@@ -404,8 +556,8 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           <span className="sub">· 风控提交 · 风控 / 超管执行</span>
           <div className="r">
             <span className="icode danger">合规关键 · 风控确认</span>
-            <button className="l-btn sm mc" onClick={draftDisclosure}>草拟新版</button>
-            <button className="l-btn sm" onClick={configMatrix}>配置矩阵</button>
+            {canDraftDisclosure && <button className="l-btn sm mc" onClick={draftDisclosure}>草拟新版</button>}
+            {canDraftDisclosure && <button className="l-btn sm" onClick={() => configMatrix()}>新增映射</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -413,11 +565,12 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
             <thead>
               <tr>
                 <th>法域</th>
+                <th>适用国家/地区</th>
                 <th>当前版本</th>
                 <th>状态</th>
                 <th>发布日</th>
                 <th className="num">受影响</th>
-                <th>re-ack 进度</th>
+                <th>重新确认进度</th>
                 <th className="num">拦截数</th>
                 <th style={{ textAlign: "right" }}></th>
               </tr>
@@ -431,8 +584,9 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
                       <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{j.code}</span>
                       <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{j.name}</div>
                     </td>
+                    <td>{j.countryCodes?.join("、") || "未配置"}</td>
                     <td className="mono" style={{ fontWeight: 700 }}>{v}</td>
-                    <td><span className="bdg ok">{j.status}</span></td>
+                    <td><span className="bdg ok">{statusZh(j.status)}</span></td>
                     <td className="mono" style={{ fontSize: 11.5 }}>{j.publishedAt}</td>
                     <td className="num mono">{j.affected.toLocaleString("en-US")}</td>
                     <td>
@@ -447,8 +601,12 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
                     >
                       {j.blocked}
                     </td>
-                    <td style={{ textAlign: "right" }}>
-                      <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); publishDisclosure(j); }}>发新版</button>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      {canDraftDisclosure && j.status.toLowerCase() === "draft" && <><button className="l-btn sm" onClick={(e) => { e.stopPropagation(); configMatrix(j); }}>编辑草稿映射</button>{" "}</>}
+                      {canPublishDisclosure && <><button className="l-btn sm mc" disabled={disclosureDraft?.jurisdiction !== j.code} onClick={(e) => { e.stopPropagation(); publishDisclosure(j); }}>发布已存草稿</button>{" "}</>}
+                      {canDraftDisclosure && j.status.toLowerCase() !== "archived" && (
+                        <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); archiveMatrix(j); }}>归档</button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -458,35 +616,39 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="itint danger">
-            <b>披露全链 操作员 = 风控、执行门槛 = 风控 / 超管;内容仅草拟。re-ack 非熔断闸,不入 J1/J2。</b>
+            <b>披露全链 操作员 = 风控、执行门槛 = 风控 / 超管;内容仅草拟。重新确认不是熔断闸,不进入 J1/J2。</b>
           </div>
-          {disclosureDraft && disclosureDraft.version && disclosureDraft.zh && disclosureDraft.en && (
+          {disclosureDraft && disclosureDraft.version && disclosureDraft.zh && disclosureDraft.vi && (
             <div className="itint cyan" data-proof="disclosure-draft-preview" style={{ marginTop: 10 }}>
               <b>当前披露草稿回显</b> · 版本 <span className="mono">{disclosureDraft.version}</span>
               {" "}· 法域 <span className="mono">{disclosureDraft.jurisdiction ?? ""}</span>
-              {" "}· 语言 <span className="mono">{disclosureDraft.languageScope ?? "en+zh"}</span>
+              {" "}· 语言 <span className="mono">{disclosureDraft.languageScope ?? "zh+vi"}</span>
               {" "}· 生效日 <span className="mono">{disclosureDraft.effectiveDate ?? ""}</span>
-              {" "}· re-ack <span className="mono">{disclosureDraft.requiresReack ?? "true"}</span>
-              <div className="grid g-2" style={{ gap: 10, marginTop: 8 }}>
+              {" "}· 重新确认 <span className="mono">{disclosureDraft.requiresReack === false ? "否" : "是"}</span>
+              <div className="grid g-3" style={{ gap: 10, marginTop: 8 }}>
                 <div className="ab-prev">
-                  <div className="lc">ZH · draft</div>
+                  <div className="lc">中文 · 草稿</div>
                   <div className="tx">{disclosureDraft.zh}</div>
                 </div>
                 <div className="ab-prev">
-                  <div className="lc">EN · draft</div>
-                  <div className="tx">{disclosureDraft.en}</div>
+                  <div className="lc">越南语 · 草稿</div>
+                  <div className="tx">{disclosureDraft.vi}</div>
                 </div>
+                {disclosureDraft.en && <div className="ab-prev">
+                  <div className="lc">英语 · 草稿</div>
+                  <div className="tx">{disclosureDraft.en}</div>
+                </div>}
               </div>
             </div>
           )}
         </div>
       </section>
 
-      {/* I4 章节版本详情 */}
+      {/* I5 披露版本列表 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">版本详情(I4 · 披露)· {activeJurisdiction ? `${activeJurisdiction.code} ${activeJurisdiction.v}` : "暂无后端法域"}</span>
-          <span className="sub">· 中英镜像 + 占位符一致</span>
+          <span className="ttl">披露版本列表(I5)· {activeJurisdiction ? `${activeJurisdiction.code} ${activeJurisdiction.v}` : "暂无后端法域"}</span>
+          <span className="sub">· 中文、越南语必备，英语可选 · 占位符一致</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           {DISCLOSURE_CHAPTERS.map((c) => (
@@ -494,7 +656,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
               <span className="nm">
                 <span className="mono" style={{ color: "var(--ink-4)", marginRight: 8 }}>{c.no}</span>
                 <b style={{ fontWeight: 600, color: "var(--ink-2)" }}>{c.zh}</b>
-                <small style={{ marginLeft: 26, color: "var(--ink-4)" }}>{c.en}</small>
+                <small style={{ marginLeft: 26, color: "var(--ink-4)" }}>{c.vi || c.en}</small>
               </span>
               <button className="l-btn sm" onClick={() => openChap(c.no)}>查看</button>
             </div>
@@ -551,7 +713,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 8 }}>
           <div className="itint">
-            <b>没确认会怎样</b> · 确认状态过期(stale)的用户,发起受限动作时被服务器拦下并跳去披露页;拦截数持续偏高说明催办不够——重确认提醒走通知页(I3)的 critical 通道,永不被淘汰。
+            <b>没确认会怎样</b> · 确认状态已过期的用户,发起受限动作时被服务器拦下并跳去披露页;拦截数持续偏高说明催办不够——重新确认提醒走通知页(I3)的关键级通道,永不被淘汰。
           </div>
         </div>
       </section>
@@ -572,7 +734,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
                   <small style={{ color: "var(--ink-4)" }}>{g.sub}</small>
                 </span>
                 <span className={`bdg ${g.tone}`}>{g.st}</span>
-                <button className="l-btn sm mc" style={{ opacity: on ? 1 : 0.5 }} onClick={() => toggleGate(g)}>{on ? "受限内 · 移出" : "已移出 · 纳入"}</button>
+                {canAdjustGate ? <button className="l-btn sm mc" style={{ opacity: on ? 1 : 0.5 }} onClick={() => toggleGate(g)}>{on ? "受限内 · 移出" : "已移出 · 纳入"}</button> : <span className="tiny">只读</span>}
               </div>
             );
           })}
@@ -596,13 +758,13 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           },
           {
             label: "披露矩阵(I4 · 披露)· version × jurisdiction",
-            maxRows: 4,
-            reason: "披露矩阵固定四法域,发布关系必须同屏对比",
+            maxRows: Math.max(JURISDICTIONS.length, 1),
+            reason: "披露矩阵法域来自后端配置,发布关系需同屏对比",
           },
           {
             label: "重确认覆盖监控(I4 · 披露)",
-            maxRows: 4,
-            reason: "重确认监控固定四法域样本,完整 ack 事件进 BI",
+            maxRows: Math.max(JURISDICTIONS.length, 1),
+            reason: "重确认监控法域来自后端配置,完整 ack 事件进 BI",
           },
         ]}
       />
@@ -619,10 +781,10 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           }
         >
           <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>
-            当前 {sec.v} · {liveTrustStatus(sec)} · 执行门槛:{sec.roleGate}
+            当前 {sec.v} · {statusZh(liveTrustStatus(sec))} · 执行门槛:{sec.roleGate}
           </div>
           <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.6 }}>
-            结构化内容字段如下;文案部分挂双语词条(I6)。发布前可预览,发布走操作确认。
+            结构化内容字段如下；中文、越南语文案必填，英语文案可选。发布前可预览，发布走操作确认。
           </div>
           {sec.key === "financials" ? (
             <>
@@ -660,7 +822,7 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
             </>
           )}
           <div className="itint" style={{ marginTop: 12 }}>
-            所有外部链接目前都是占位(纯展示);版本由服务器单源持有,App 端只渲染当前发布版。
+            外部链接：{sectionExternalLink || "未配置"}；版本由服务器单源持有，App 端只渲染当前发布版。
           </div>
         </Drawer>
       )}
@@ -685,11 +847,11 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>版本与操作 / 留痕</div>
           <div className="kv">
             <span className="k">版本历史</span>
-            <span className="v">{liveJurVersion(jur)} 生效 · 此前版本已 superseded</span>
+            <span className="v">{liveJurVersion(jur)} 生效 · 此前版本已被新版取代</span>
           </div>
           <div className="kv">
-            <span className="k">locale</span>
-            <span className="v">en + zh 镜像(挂 I6 词条)</span>
+            <span className="k">语言</span>
+            <span className="v">中文 + 越南语(英语可选，挂 I6 词条)</span>
           </div>
           <div className="kv">
             <span className="k">操作 / 留痕</span>
@@ -697,10 +859,10 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
           </div>
           <div className="kv">
             <span className="k">法域判定输入</span>
-            <span className="v">用户 IP + KYC 辖区(C4 提供)</span>
+            <span className="v">按用户账号国家/地区代码与本法域配置匹配</span>
           </div>
           <div className="itint" style={{ marginTop: 12 }}>
-            给这个法域发新版 = 该法域全部用户确认状态转 stale,下次受限动作前强制重确认;重确认提醒经 I3 critical 通道下发。
+            给这个法域发新版 = 该法域全部用户确认状态转为已过期,下次受限动作前强制重新确认;提醒经 I3 关键级通道下发。
           </div>
         </Drawer>
       )}
@@ -731,23 +893,23 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>en</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 4px", color: "var(--ink)" }}>越南语</div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 360 }}>
               <thead>
                 <tr>
-                  <th>Body (excerpt)</th>
+                  <th>正文(节选)</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td style={{ fontSize: 12.5, lineHeight: 1.7 }}>{chap.enBody}</td>
+                  <td style={{ fontSize: 12.5, lineHeight: 1.7 }}>{chap.viBody}</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <div className="itint" style={{ marginTop: 12 }}>
-            中英镜像 ✓ 占位符一致 ✓ · 用户必须滚到底 + 勾选才能确认;确认记录(版本 + 法域)落在服务器。
+            中文、越南语镜像 ✓ 占位符一致 ✓ · 用户必须滚到底 + 勾选才能确认;确认记录(版本 + 法域)落在服务器。
           </div>
         </Drawer>
       )}

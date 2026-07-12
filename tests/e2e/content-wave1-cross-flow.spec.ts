@@ -193,8 +193,14 @@ test("Wave-1 content: I/J/K/L with D2/G1/G2 admission gates", async ({ page }, t
     const template = await apiOk(page, "POST", "/api/admin/content/nova/templates", {
       channel,
       name: `${PREFIX} Nova template`,
-      cta: "打开 App 消息中心",
+      cta: "/earn",
       version: "v1",
+      titleZh: "运营提醒",
+      bodyZh: "你有 {amount} NEX 待领取",
+      titleVi: "Thông báo vận hành",
+      bodyVi: "Bạn có {amount} NEX đang chờ nhận",
+      titleEn: "",
+      bodyEn: "",
       operator: OPERATOR,
       reason: `${REASON} I2 新增模板`,
     }, "i2-template");

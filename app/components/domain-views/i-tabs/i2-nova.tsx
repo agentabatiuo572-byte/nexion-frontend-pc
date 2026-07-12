@@ -17,6 +17,7 @@ import {
   type NovaTimeUnit,
 } from "../../../../lib/admin/nova-cadence";
 import type { ICtx } from "./types";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type NovaForm = {
   name: string;
@@ -24,6 +25,18 @@ type NovaForm = {
   tickUnit: NovaTimeUnit;
   cooldownValue: string;
   cooldownUnit: NovaTimeUnit;
+};
+type TemplateForm = {
+  channel: string;
+  name: string;
+  cta: string;
+  version: string;
+  titleZh: string;
+  bodyZh: string;
+  titleVi: string;
+  bodyVi: string;
+  titleEn: string;
+  bodyEn: string;
 };
 const EMPTY_FORM: NovaForm = {
   name: "",
@@ -33,6 +46,10 @@ const EMPTY_FORM: NovaForm = {
   cooldownUnit: "hours",
 };
 const DEFAULT_TRIGGER_DESCRIPTION = "周期扫描：满足该通道业务触发条件时推送";
+const EMPTY_TEMPLATE: TemplateForm = {
+  channel: "", name: "", cta: "", version: "v1",
+  titleZh: "", bodyZh: "", titleVi: "", bodyVi: "", titleEn: "", bodyEn: "",
+};
 type OpsNova = { key: string; name: string; trigger: string; tick: string; cd: string; phaseKeyed: string; ctr: number; on: boolean };
 
 const normalizeNovaKey = (s: string) =>
@@ -47,6 +64,8 @@ const slug = (s: string) => normalizeNovaKey(s) || "untitled";
 
 export function I2Nova({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
+  const session = useAdminAuth((state) => state.session);
+  const canWriteI2 = session?.role === "superadmin" || !!session?.authorities.includes("content_i2_write");
   const data = content.nova;
   const I2_STATS = data?.stats ?? { todayDelivered: "—", ctr: "—", ctrTarget: 0, onlineChannels: 0, totalChannels: 0, weeklySocial: "—" };
   const novas: OpsNova[] = (data?.channels ?? []).map((n) => ({
@@ -60,7 +79,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     on: n.enabled,
   }));
   const NOVA_EVENT_DRIVEN = (data?.eventDriven ?? []).map((r) => ({ name: r.name, why: r.reason, owner: r.owner, tone: r.tone, st: r.status }));
-  const NOVA_TPLS = (data?.templates ?? []).map((t) => ({ ch: t.channel, name: t.name, cta: t.cta, v: t.version, status: t.status }));
+  const NOVA_TPLS = (data?.templates ?? []).map((t) => ({
+    ch: t.channel, name: t.name, cta: t.cta, v: t.version, status: t.status,
+    titleZh: t.titleZh, bodyZh: t.bodyZh, titleVi: t.titleVi, bodyVi: t.bodyVi,
+    titleEn: t.titleEn, bodyEn: t.bodyEn,
+  }));
+  const CTA_OPTIONS = data?.templateCtaOptions ?? [];
   const SOCIAL_DIST = data?.socialDistribution ?? [];
   const SOCIAL_POOLS = (data?.socialPools ?? []).map((p) => ({ key: p.key, name: p.name, sub: p.description, cnt: p.count }));
 
@@ -119,7 +143,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         enabled: prev?.on ?? true,
       }, "后台编辑 Nova 通道"), `Nova 通道已更新:${prev?.name ?? editNovaKey} → ${name}`);
     } else {
-      const key = `${slug(name)}-${novas.length + 100}`;
+      const key = `${slug(name).slice(0, 50)}-${Date.now().toString(36).slice(-6)}`;
       runBackend(actions.createI2NovaChannel({
         key,
         name,
@@ -127,7 +151,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         tick,
         cooldown: cd,
         ctr: 0,
-        enabled: true,
+        enabled: false,
       }, "后台新增 Nova 通道"), `Nova 通道已新增:${name}`);
     }
     closeDrawer();
@@ -138,9 +162,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     action: <>{n.on ? "kill" : "恢复"} Nova 通道 · {n.name}</>,
     detail: n.on
       ? <>停推该频道。<b>操作确认防误杀</b> · 监管点名要快速止血时也走这条路径(内容/风控都能发起)。</>
-      : <>恢复投递。频道开启后下一次 cadence tick 自动推送。</>,
+      : <>恢复投递配置。只有对应业务事件满足触发条件时才会发出；检查间隔只决定扫描频率。</>,
     amplifies: false,
     run: (reason) => {
+      if (!n.on && tplStatus(n.key) !== "published") {
+        toast("请先为该通道创建并发布完整的中越文模板，再恢复通道");
+        return;
+      }
       runBackend(actions.updateI2NovaChannelStatus(n.key, !n.on, reason), `${n.name} 通道${n.on ? "已 kill" : "已恢复"}`);
     },
   });
@@ -156,11 +184,12 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  const tplStatus = (ch: string): string => NOVA_TPLS.find((t) => t.ch === ch)?.status?.toLowerCase() ?? "published";
+  const tplStatus = (ch: string): string => NOVA_TPLS.find((t) => t.ch === ch)?.status?.toLowerCase() ?? "missing";
   const renderTplBadge = (st: string) => {
-    if (st === "published") return <span className="bdg ok">published</span>;
-    if (st === "archived") return <span className="bdg dim">archived</span>;
-    if (st === "draft") return <span className="bdg warn">draft</span>;
+    if (st === "published") return <span className="bdg ok">已发布</span>;
+    if (st === "archived") return <span className="bdg dim">已归档</span>;
+    if (st === "draft") return <span className="bdg warn">草稿</span>;
+    if (st === "missing") return <span className="bdg danger">缺少模板</span>;
     return <span className="bdg dim">{st}</span>;
   };
 
@@ -181,29 +210,43 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     },
   });
 
-  // ── 新模板:走操作确认(传 edit 录模板 key) ──
-  const newTpl = () => openActionConfirm({
-    action: <>新增 Nova 推送模板</>,
-    detail: <>新建草稿后挂双语词条(I6);发布走操作确认。模板 key 仅支持字母、数字、短横线、下划线。</>,
-    amplifies: false,
-    edit: { kind: "text", current: "—", unit: "模板 key" },
-    run: (reason, v) => {
-      const raw = (v ?? "").trim();
-      const key = normalizeNovaKey(raw);
-      if (key.length < 2) {
-        toast("模板 key 至少 2 位,仅支持字母、数字、短横线、下划线");
-        return;
-      }
-      if (key !== raw) {
-        toast(`模板 key 已规范化为 ${key}`);
-      }
-      runBackend(actions.createI2Template({
-        channel: key,
-        name: key,
-        cta: "→ /content",
-        version: "v1",
-      }, reason), `模板 ${key} 已创建 · 待发布确认`);
+  const [tplDrawer, setTplDrawer] = useState(false);
+  const [editTplChannel, setEditTplChannel] = useState<string | null>(null);
+  const [tplForm, setTplForm] = useState<TemplateForm>(EMPTY_TEMPLATE);
+  const newTpl = () => {
+    const firstChannel = novas.find((n) => !NOVA_TPLS.some((t) => t.ch === n.key))?.key ?? "";
+    setEditTplChannel(null);
+    setTplForm({ ...EMPTY_TEMPLATE, channel: firstChannel, cta: CTA_OPTIONS[0]?.value ?? "" });
+    setTplDrawer(true);
+  };
+  const editTpl = (t: (typeof NOVA_TPLS)[number]) => {
+    setEditTplChannel(t.ch);
+    setTplForm({ channel: t.ch, name: t.name, cta: t.cta, version: t.v,
+      titleZh: t.titleZh, bodyZh: t.bodyZh, titleVi: t.titleVi, bodyVi: t.bodyVi,
+      titleEn: t.titleEn, bodyEn: t.bodyEn });
+    setTplDrawer(true);
+  };
+  const closeTplDrawer = () => { setTplDrawer(false); setEditTplChannel(null); setTplForm(EMPTY_TEMPLATE); };
+  const submitTpl = () => openConfirm({
+    action: <>{editTplChannel ? "编辑" : "新增"}推送模板 · {tplForm.name}</>,
+    detail: <>保存后状态为草稿；发布前服务器会再次校验中越文完整性和占位符一致性。</>,
+    reason: true,
+    okLabel: "保存草稿",
+    run: (reason) => {
+      const body = { ...tplForm };
+      runBackend(editTplChannel
+        ? actions.updateI2Template(editTplChannel, body, reason)
+        : actions.createI2Template(body, reason),
+      `模板 ${tplForm.name} 已保存为草稿`);
+      closeTplDrawer();
     },
+  });
+  const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({
+    action: <>删除推送模板 · {t.name}</>,
+    detail: <>已发布模板不能直接删除，请先归档。删除后对应通道无法启用。</>,
+    reason: true,
+    okLabel: "确认删除",
+    run: (reason) => runBackend(actions.deleteI2Template(t.ch, reason), `模板 ${t.name} 已删除`),
   });
 
   // ── social 概率分布:拆成 5 个单值(按序号 key,不再一个文本框手打「30/25/20/15/10」整串)──
@@ -274,10 +317,11 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       {/* (a) 10 可调通道节奏表 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">10 可调通道节奏表</span>
+          <span className="ttl">可调通道节奏表</span>
           <span className="sub">· 启停 + 检查间隔 + 同一用户最短推送间隔 + P 阶段分档</span>
           <div className="r">
-            <button className="l-btn sm primary" onClick={openNewNova}>+ 新增通道</button>
+            {!canWriteI2 && <span className="bdg dim">只读</span>}
+            {canWriteI2 && <button className="l-btn sm primary" onClick={openNewNova}>+ 新增通道</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -290,7 +334,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 <th>检查间隔</th>
                 <th>同一用户最短推送间隔</th>
                 <th>phase-keyed</th>
-                <th>最近改动</th>
+                <th>推送文案</th>
+                <th>真实 CTR</th>
                 <th style={{ textAlign: "right" }}></th>
               </tr>
             </thead>
@@ -298,17 +343,18 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
               {novas.map((n) => {
                 const phaseKeyed = n.phaseKeyed || "—";
                 const trigger = n.trigger || n.name;
+                const channelTemplate = NOVA_TPLS.find((t) => t.ch === n.key);
                 const phaseStyle = phaseKeyed === "—"
                   ? { fontSize: 11.5, color: "var(--ink-4)" }
                   : { fontSize: 11.5, color: "var(--warning)" };
                 return (
                   <tr key={n.key}>
                     <td>
-                      <button
+                      {canWriteI2 ? <button
                         className={`nv-sw${n.on ? " on" : ""}`}
                         onClick={() => toggleNova(n)}
                         aria-label={`${n.on ? "kill" : "恢复"} ${n.name}`}
-                      />
+                      /> : <span className={`bdg ${n.on ? "ok" : "dim"}`}>{n.on ? "开启" : "停推"}</span>}
                     </td>
                     <td>
                       <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{n.key}</span>
@@ -318,10 +364,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     <td className="mono" style={{ fontSize: 12 }}>{n.tick}</td>
                     <td className="mono" style={{ fontSize: 12 }}>{n.cd}</td>
                     <td style={phaseStyle}>{phaseKeyed}</td>
+                    <td>{renderTplBadge(tplStatus(n.key))}<div style={{ fontSize: 11, marginTop: 3, color: "var(--ink-4)" }}>{channelTemplate?.name ?? "请先新增模板"}</div></td>
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{`CTR ${n.ctr}%`}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <button className="l-btn sm" onClick={() => openEditNova(n)}>编辑</button>
-                      <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => removeNova(n)}>删除</button>
+                      {canWriteI2 && <>
+                        <button className="l-btn sm" onClick={() => openEditNova(n)}>编辑</button>
+                        <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => removeNova(n)}>删除</button>
+                      </>}
                     </td>
                   </tr>
                 );
@@ -334,7 +383,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <b>这套开关不在熔断矩阵里</b> · 停某个 Nova 频道走这页的开关(操作确认),不占应急熔断矩阵(J1)的 6 个功能闸,也不是地区屏蔽(J2);只有「Nova 整体作为一种能力要平台级停掉」才轮到 J 域出手。别把频道停推误报成熔断。
           </div>
           <div className="itint" style={{ marginTop: 8 }}>
-            <b>两个随阶段变的频道</b> · 以旧换新(tradein)和月度任务锁定(taskLockMonthly)的同一用户最短推送间隔按运营阶段(P1–P6)分档,阶段切换时自动换档——<b>阶段由节奏调度页(H1)说了算,这页只读跟随</b>,想改分档值在这页改,想改当前是 P 几去 H1。
+          <b>两个随阶段变的频道</b> · 以旧换新(tradein)和月度任务锁定(taskLockMonthly)的同一用户最短推送间隔按运营阶段(P1–P6)分档,阶段切换时自动换档——<b>阶段由节奏调度页(H1)说了算,这页只读跟随</b>,想改当前是 P 几去 H1。
           </div>
         </div>
       </section>
@@ -383,9 +432,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">推送模板池(b)</span>
-            <span className="sub">· 文案体挂双语词条(I6) · 发布操作确认</span>
+            <span className="sub">· 中文/越南语必填,英语可选 · 发布操作确认</span>
             <div className="r">
-              <button className="l-btn sm mc" onClick={newTpl}>+ 新模板</button>
+              {!canWriteI2 && <span className="bdg dim">只读</span>}
+              {canWriteI2 && <button className="l-btn sm mc" onClick={newTpl}>+ 新模板</button>}
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -395,6 +445,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                   <th>频道</th>
                   <th>模板</th>
                   <th>CTA 去向</th>
+                  <th>中/越文预览</th>
                   <th>版本</th>
                   <th>状态</th>
                   <th style={{ textAlign: "right" }}></th>
@@ -410,15 +461,24 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                       <td className="mono" style={{ fontSize: 11.5 }}>{t.ch}</td>
                       <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{t.name}</td>
                       <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{t.cta}</td>
+                      <td style={{ fontSize: 11.5, color: "var(--ink-3)", maxWidth: 260 }}>
+                        <div><b>中文：</b>{t.titleZh} · {t.bodyZh}</div>
+                        <div><b>越南语：</b>{t.titleVi} · {t.bodyVi}</div>
+                        {t.bodyEn && <div><b>英语：</b>{t.titleEn} · {t.bodyEn}</div>}
+                      </td>
                       <td className="mono" style={{ fontWeight: 700 }}>{t.v}</td>
                       <td>{renderTplBadge(st)}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        {canWriteI2 && <>
                         {canPublish && (
                           <button className="l-btn sm mc" onClick={() => publishTpl(t.ch, t.name)}>发布</button>
                         )}
                         {canArchive && (
                           <button className="l-btn sm" style={{ marginLeft: canPublish ? 6 : 0 }} onClick={() => archiveTpl(t.ch, t.name)}>归档</button>
                         )}
+                        <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => editTpl(t)}>编辑</button>
+                        {st !== "published" && <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => removeTpl(t)}>删除</button>}
+                        </>}
                       </td>
                     </tr>
                   );
@@ -428,7 +488,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="itint">
-              <b>CTA 接下游转化</b> · 团队类跳分销(F 域)、质押类跳金融产品(G 域)、买机类跳商城(E 域)——推送是入口,成交归各业务域结算。模板状态机:draft 草稿 → published 生效 → archived 归档。
+              <b>文案来源</b> · 模板中的中文、越南语和可选英语正文就是通道实际推送内容；通道、CTA 均从后端配置目录选择。状态机：草稿 → 已发布 → 已归档。
             </div>
           </div>
         </section>
@@ -460,7 +520,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                 <div className="s">5 类合计须 = 100%(当前合计 {SOCIAL_DIST.reduce((s, d, i) => s + distPct(d, i), 0)}%{SOCIAL_DIST.reduce((s, d, i) => s + distPct(d, i), 0) !== 100 ? " · ⚠ 不等于 100,服务器会拒" : ""});对新派发即时生效</div>
               </div>
               <span className="v" style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {SOCIAL_DIST.map((d, i) => (
+                {canWriteI2 && SOCIAL_DIST.map((d, i) => (
                   <button key={d.name} className="l-btn sm mc" onClick={() => editDistCat(d, i)} title={`调整 ${d.name} 概率`}>{d.name} {distPct(d, i)}%</button>
                 ))}
               </span>
@@ -473,7 +533,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                   <div className="s">{p.sub}</div>
                 </div>
                 <span className="v">{p.cnt} 个</span>
-                <button className="l-btn sm mc" onClick={() => editPool(p.key, p.name, p.sub, p.cnt)}>编辑</button>
+                {canWriteI2 && <button className="l-btn sm mc" onClick={() => editPool(p.key, p.name, p.sub, p.cnt)}>编辑</button>}
               </div>
             ))}
 
@@ -492,10 +552,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       <PaginationExemptionList
         items={[
           {
-            label: "10 可调通道节奏表",
+            label: "可调通道节奏表",
             kind: "reference-catalog",
             maxRows: 10,
-            reason: "Nova 可调通道固定十项,需要同屏校验 tick/cooldown",
+            reason: "首屏同屏校验通道的检查间隔与个人冷却时间",
           },
           {
             label: "不在 10 频道里的推送(口径闭合)",
@@ -596,6 +656,64 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             </label>
             {(form.tickValue || form.cooldownValue) && cadenceError && <div className="itint danger">{cadenceError}</div>}
             <div className="itint"><b>CTR 无需填写</b> · 新通道从 0% 开始，产生真实投递与点击后由系统自动统计。</div>
+            {!editNovaKey && <div className="itint warn"><b>新增后默认停用</b> · 请先在模板池填写并发布中越文模板，再开启通道。</div>}
+          </div>
+        </Drawer>
+      )}
+      {tplDrawer && (
+        <Drawer
+          title={editTplChannel ? "编辑 Nova 推送模板" : "新增 Nova 推送模板"}
+          sub="模板正文由 Nova 直接用于实际推送；中文、越南语必填，英语可选"
+          onClose={closeTplDrawer}
+          footer={
+            <>
+              <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={closeTplDrawer}>取消</button>
+              <button
+                className="l-btn primary"
+                style={{ flex: 1, justifyContent: "center" }}
+                disabled={!tplForm.channel || !tplForm.name.trim() || !tplForm.cta || !tplForm.version.trim()
+                  || !tplForm.titleZh.trim() || !tplForm.bodyZh.trim() || !tplForm.titleVi.trim() || !tplForm.bodyVi.trim()
+                  || (!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim())}
+                onClick={submitTpl}
+              >保存草稿</button>
+            </>
+          }
+        >
+          <div className="col" style={{ gap: 12 }}>
+            <div className="itint"><b>生效条件</b> · 保存后仍是草稿；内容主管发布成功后，通道才允许开启。各语言的 <span className="mono">{"{变量}"}</span> 必须完全一致。</div>
+            <label className="col" style={{ gap: 5 }}>
+              <span className="muted tiny">推送通道（来自通道列表）</span>
+              <select className="fld" value={tplForm.channel} disabled={!!editTplChannel}
+                onChange={(e) => setTplForm({ ...tplForm, channel: e.target.value })}>
+                <option value="">请选择通道</option>
+                {novas.filter((n) => editTplChannel === n.key || !NOVA_TPLS.some((t) => t.ch === n.key))
+                  .map((n) => <option key={n.key} value={n.key}>{n.name}（{n.key}）</option>)}
+              </select>
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: 8 }}>
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">模板名称</span>
+                <input className="fld" value={tplForm.name} onChange={(e) => setTplForm({ ...tplForm, name: e.target.value })} placeholder="例如：每周回顾提醒" /></label>
+              <label className="col" style={{ gap: 5 }}><span className="muted tiny">版本号</span>
+                <input className="fld" value={tplForm.version} onChange={(e) => setTplForm({ ...tplForm, version: e.target.value })} placeholder="v1" /></label>
+            </div>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">CTA 去向（来自后端路由目录）</span>
+              <select className="fld" value={tplForm.cta} onChange={(e) => setTplForm({ ...tplForm, cta: e.target.value })}>
+                <option value="">请选择投放去向</option>
+                {CTA_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}（{option.value}）</option>)}
+              </select></label>
+            {(["Zh", "Vi", "En"] as const).map((locale) => {
+              const label = locale === "Zh" ? "中文" : locale === "Vi" ? "越南语" : "英语（可选）";
+              const titleKey = `title${locale}` as const;
+              const bodyKey = `body${locale}` as const;
+              return <div className="col" style={{ gap: 6 }} key={locale}>
+                <b style={{ fontSize: 12 }}>{label}</b>
+                <input className="fld" value={tplForm[titleKey]}
+                  onChange={(e) => setTplForm({ ...tplForm, [titleKey]: e.target.value })} placeholder={`${label}标题`} />
+                <textarea className="fld" rows={3} value={tplForm[bodyKey]}
+                  onChange={(e) => setTplForm({ ...tplForm, [bodyKey]: e.target.value })} placeholder={`${label}正文，例如：你有 {amount} NEX 待领取`} />
+              </div>;
+            })}
+            {!!tplForm.titleEn.trim() !== !!tplForm.bodyEn.trim() && <div className="itint danger">英语标题和正文必须同时填写，或同时留空。</div>}
           </div>
         </Drawer>
       )}
