@@ -203,11 +203,58 @@ export type NovaSocialDistributionItem = {
   color: string;
 };
 
-export type NovaSocialPoolView = {
-  key: string;
-  name: string;
-  description: string;
-  count: number;
+export type NovaSocialEventStatus = "ACTIVE" | "DISABLED" | "EXPIRED";
+
+export type NovaSocialEventView = {
+  id: number;
+  eventType: string;
+  eventTypeLabel?: string;
+  sourceSystem: string;
+  sourceEventId: string;
+  actorDisplay: string;
+  cityDisplay: string;
+  amountDisplay: string;
+  sourceNote: string;
+  status: NovaSocialEventStatus;
+  eligible?: boolean;
+  occurredAt: string;
+  expiresAt: string;
+  verifiedAt?: string;
+  lastDispatchedAt?: string;
+  dispatchCount?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NovaSocialEventPage = {
+  items: NovaSocialEventView[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
+export type NovaSocialEventSampleView = {
+  id?: number;
+  eventType?: string;
+  sourceEventId?: string;
+  language: "ZH" | "VI" | "EN";
+  title?: string;
+  body: string;
+};
+
+export type NovaSocialSyncResult = {
+  discovered: number;
+  inserted: number;
+  duplicates: number;
+  sources: Array<{
+    sourceType: string;
+    sourceTable: string;
+    status: "AVAILABLE" | "UNAVAILABLE";
+    discovered: number;
+    inserted: number;
+    duplicates: number;
+    message: string;
+  }>;
 };
 
 export type NovaOverview = {
@@ -216,7 +263,9 @@ export type NovaOverview = {
   eventDriven: NovaEventDrivenView[];
   templates: NovaTemplateView[];
   socialDistribution: NovaSocialDistributionItem[];
-  socialPools: NovaSocialPoolView[];
+  socialEvents: NovaSocialEventView[];
+  socialEventTypes: NovaOptionView[];
+  socialEventStatuses: NovaOptionView[];
   templateStatuses: string[];
   templateCtaOptions: NovaOptionView[];
   sources: string[];
@@ -492,7 +541,11 @@ export type IContentActions = {
   deleteI2Template: (channel: string, reason: string) => Promise<void>;
   updateI2TemplateStatus: (channel: string, status: string, reason: string) => Promise<void>;
   updateI2Distribution: (items: { key: string; pct: number }[], reason: string) => Promise<void>;
-  updateI2Pool: (poolKey: string, count: number, reason: string) => Promise<void>;
+  syncI2SocialEvents: (reason: string) => Promise<NovaSocialSyncResult>;
+  listI2SocialEvents: (eventType: string, status: string, page: number, pageSize: number) => Promise<NovaSocialEventPage>;
+  previewI2SocialEvent: (language: "ZH" | "VI" | "EN") => Promise<NovaSocialEventSampleView | null>;
+  updateI2SocialEventStatus: (id: number, status: NovaSocialEventStatus, reason: string) => Promise<void>;
+  deleteI2SocialEvent: (id: number, reason: string) => Promise<void>;
   createI3Campaign: (body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI3CampaignDraft: (campaignNo: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   estimateI3Audience: (target: NotificationAudienceTarget) => Promise<NotificationAudienceEstimateView>;
@@ -570,7 +623,16 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   deleteI2Template: (channel, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI2TemplateStatus: (channel, status, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   updateI2Distribution: (items, reason) => apiRequest("/nova/social-distribution", { method: "PATCH", body: JSON.stringify(withReason({ items }, reason)) }).then(() => undefined),
-  updateI2Pool: (poolKey, count, reason) => apiRequest(`/nova/social-pools/${encodeURIComponent(poolKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ count }, reason)) }).then(() => undefined),
+  syncI2SocialEvents: (reason) => apiRequest<NovaSocialSyncResult>("/nova/social-events/sync", { method: "POST", body: JSON.stringify(withReason({}, reason)) }),
+  listI2SocialEvents: (eventType, status, page, pageSize) => {
+    const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (eventType) query.set("eventType", eventType);
+    if (status) query.set("status", status);
+    return apiRequest<NovaSocialEventPage>(`/nova/social-events?${query.toString()}`);
+  },
+  previewI2SocialEvent: (language) => apiRequest<NovaSocialEventSampleView | null>(`/nova/social-events/sample?language=${encodeURIComponent(language)}`),
+  updateI2SocialEventStatus: (id, status, reason) => apiRequest(`/nova/social-events/${id}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
+  deleteI2SocialEvent: (id, reason) => apiRequest(`/nova/social-events/${id}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   createI3Campaign: (body, reason) => apiRequest("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI3CampaignDraft: (campaignNo, body, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   estimateI3Audience: (target) => apiRequest<NotificationAudienceEstimateView>("/campaigns/audience-estimate", { method: "POST", body: JSON.stringify({ target }) }),

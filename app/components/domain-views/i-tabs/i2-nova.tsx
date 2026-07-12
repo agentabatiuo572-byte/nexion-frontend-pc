@@ -3,11 +3,11 @@
 /**
  * I2 Nova 推送运营 — design_handoff_i_domain/I2 Nova推送运营.html port。
  * 单源:后端 /content/nova/overview;空库时保持后端空态,不补前端业务样例。
- * 操作确认 显式 edit 契约:调 cadence(tick/cd) / 调概率分布 / 池条目数 = 调参传 edit;
+ * 操作确认 显式 edit 契约:调 cadence(tick/cd) / 调概率分布 = 调参传 edit;
  *   kill 单频道 / 启停 / 发布 / 归档模板 = 处置不传 edit。
  * amplifies = false(I2 不碰 B1 红线 —— 只动推送节奏与文案出口,不动费率/奖励/价格)。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import {
   formatNovaDuration,
@@ -86,14 +86,14 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   }));
   const CTA_OPTIONS = data?.templateCtaOptions ?? [];
   const SOCIAL_DIST = data?.socialDistribution ?? [];
-  const SOCIAL_POOLS = (data?.socialPools ?? []).map((p) => ({ key: p.key, name: p.name, sub: p.description, cnt: p.count }));
+  const INITIAL_SOCIAL_EVENTS = data?.socialEvents ?? [];
+  const SOCIAL_EVENT_TYPE_OPTIONS = data?.socialEventTypes ?? [];
+  const SOCIAL_EVENT_STATUS_OPTIONS = data?.socialEventStatuses ?? [];
 
-  const runBackend = (task: Promise<void>, ok: string) => {
-    task
+  const runBackend = (task: Promise<void>, ok: string, onSuccess?: () => void) => task
       .then(() => actions.reloadIContent())
-      .then(() => toast(ok))
+      .then(() => { toast(ok); onSuccess?.(); })
       .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
-  };
 
   // ── Drawer 表单(新增 / 编辑通道复用同一抽屉)──
   const [novaDrawer, setNovaDrawer] = useState(false);
@@ -249,34 +249,119 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     run: (reason) => runBackend(actions.deleteI2Template(t.ch, reason), `模板 ${t.name} 已删除`),
   });
 
-  // ── social 概率分布:拆成 5 个单值(按序号 key,不再一个文本框手打「30/25/20/15/10」整串)──
-  const distPct = (d: { pct: number }, _i: number): number => Number(d.pct);
-  const editDistCat = (d: { name: string; pct: number }, i: number) => openActionConfirm({
-    action: <>调整 social 概率 · {d.name}</>,
-    detail: <>{d.name} 当前 <b>{distPct(d, i)}%</b> · 5 类合计必须 = 100%,不足或超出服务器直接拒;对新派发即时生效。</>,
-    amplifies: false,
-    edit: { kind: "number", current: `${distPct(d, i)}%`, unit: "%" },
-    run: (reason, v) => {
-      const n = (v ?? "").replace(/[^\d.]/g, "").trim();
-      if (!n) return;
-      const target = Math.max(0, Math.min(100, Math.round(Number(n))));
-      const next = SOCIAL_DIST.map((item, idx) => ({ key: item.key, pct: idx === i ? target : item.pct }));
-      const delta = 100 - next.reduce((sum, item) => sum + item.pct, 0);
-      const adjustIdx = next.findIndex((_item, idx) => idx !== i);
-      if (adjustIdx >= 0) next[adjustIdx] = { ...next[adjustIdx], pct: Math.max(0, next[adjustIdx].pct + delta) };
-      runBackend(actions.updateI2Distribution(next, reason), `${d.name} 概率已改为 ${target}%`);
+  // ── social 概率分布:一次编辑全部类型，禁止静默篡改另一类别。──
+  const [distDrawer, setDistDrawer] = useState(false);
+  const [distDraft, setDistDraft] = useState<Record<string, string>>({});
+  const openDistDrawer = () => {
+    setDistDraft(Object.fromEntries(SOCIAL_DIST.map((item) => [item.key, String(item.pct)])));
+    setDistDrawer(true);
+  };
+  const distDraftTotal = SOCIAL_DIST.reduce((sum, item) => sum + Number(distDraft[item.key] ?? 0), 0);
+  const distDraftValid = SOCIAL_DIST.length > 0
+    && SOCIAL_DIST.every((item) => {
+      const value = Number(distDraft[item.key]);
+      return Number.isFinite(value) && Number.isInteger(value) && value >= 0 && value <= 100;
+    })
+    && distDraftTotal === 100;
+  const submitDistribution = () => openConfirm({
+    action: <>保存 social 事件概率分布</>,
+    detail: <>本次会整体替换 5 类真实事件权重；合计必须为 100%，不会自动改动任何其他类别。</>,
+    reason: true,
+    okLabel: "确认保存",
+    run: (reason) => {
+      const items = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(distDraft[item.key] ?? 0) }));
+      runBackend(actions.updateI2Distribution(items, reason), "真实事件概率分布已更新", () => setDistDrawer(false));
     },
   });
 
-  // ── social 池条目数编辑(传 edit) ──
-  const editPool = (key: string, name: string, sub: string, cnt: number) => openActionConfirm({
-    action: <>编辑 {name}</>,
-    detail: <>{sub}。<b>编辑提交即操作确认</b>(改变全体用户所见)。</>,
-    amplifies: false,
-    edit: { kind: "text", current: String(cnt), unit: "条数" },
-    run: (reason, v) => {
-      if (!v) return;
-      runBackend(actions.updateI2Pool(key, Math.max(0, Math.round(Number(v))), reason), `${name} 已更新 · 理由留痕`);
+  // ── 真实事件生命周期:事件只能从受信业务表同步，管理端不提供伪造入口。──
+  const [eventTypeFilter, setEventTypeFilter] = useState("");
+  const [eventStatusFilter, setEventStatusFilter] = useState("");
+  const [previewLanguage, setPreviewLanguage] = useState<"ZH" | "VI" | "EN">("VI");
+  const [eventPage, setEventPage] = useState(1);
+  const [eventBusy, setEventBusy] = useState<string | null>(null);
+  const [eventRefreshKey, setEventRefreshKey] = useState(0);
+  const [SOCIAL_EVENTS, setSocialEvents] = useState(INITIAL_SOCIAL_EVENTS);
+  const [eventTotal, setEventTotal] = useState(INITIAL_SOCIAL_EVENTS.length);
+  const [eventLoading, setEventLoading] = useState(false);
+  const EVENT_PAGE_SIZE = 20;
+  const eventPageCount = Math.max(1, Math.ceil(eventTotal / EVENT_PAGE_SIZE));
+  const visibleSocialEvents = SOCIAL_EVENTS;
+  useEffect(() => {
+    let active = true;
+    setEventLoading(true);
+    actions.listI2SocialEvents(eventTypeFilter, eventStatusFilter, eventPage, EVENT_PAGE_SIZE)
+      .then((result) => {
+        if (!active) return;
+        const lastPage = Math.max(1, Math.ceil(result.total / EVENT_PAGE_SIZE));
+        if (eventPage > lastPage) {
+          setEventPage(lastPage);
+          return;
+        }
+        setSocialEvents(result.items);
+        setEventTotal(result.total);
+      })
+      .catch((error) => active && toast(`事件列表加载失败:${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => active && setEventLoading(false));
+    return () => { active = false; };
+  }, [actions.listI2SocialEvents, eventPage, eventRefreshKey, eventStatusFilter, eventTypeFilter, toast]);
+  const optionLabel = (options: { value: string; label: string }[], value: string) =>
+    options.find((option) => option.value === value)?.label ?? value;
+  const statusLabel = (value: string) => SOCIAL_EVENT_STATUS_OPTIONS.find((option) => option.value === value)?.label
+    ?? ({ ACTIVE: "已验证", DISABLED: "已停用", EXPIRED: "已过期" } as Record<string, string>)[value]
+    ?? value;
+  const formatEventTime = (value?: string) => {
+    if (!value) return "—";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
+  };
+  const canRestoreEvent = (expiresAt: string) => new Date(expiresAt).getTime() > Date.now();
+  const syncSocialEvents = () => openConfirm({
+    action: <>同步真实业务事件</>,
+    detail: <>仅从提现、V 等级、Genesis 成交和整点新增用户等受信业务表采集；重复来源会幂等跳过，AI 客户消费在真实计费源接入前保持不可用。</>,
+    reason: true,
+    okLabel: "开始同步",
+    run: (reason) => {
+      setEventBusy("sync");
+      actions.syncI2SocialEvents(reason)
+        .then((result) => actions.reloadIContent().then(() => result))
+        .then((result) => {
+          setEventRefreshKey((key) => key + 1);
+          toast(`同步完成：发现 ${result.discovered} 条，新增 ${result.inserted} 条，重复 ${result.duplicates} 条`);
+        })
+        .catch((error) => toast(`同步失败:${error instanceof Error ? error.message : String(error)}`))
+        .finally(() => setEventBusy(null));
+    },
+  });
+  const previewSocialEvent = () => {
+    setEventBusy("preview");
+    actions.previewI2SocialEvent(previewLanguage)
+      .then((sample) => toast(sample ? `抽样预览：${sample.body}` : "当前没有可投放的真实事件，本轮不会推送"))
+      .catch((error) => toast(`抽样失败:${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => setEventBusy(null));
+  };
+  const changeSocialEventStatus = (event: (typeof SOCIAL_EVENTS)[number], status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({
+    action: <>{status === "ACTIVE" ? "恢复" : status === "DISABLED" ? "停用" : "立即过期"}真实事件 · #{event.id}</>,
+    detail: <>来源事件只允许改变投放资格，不允许修改来源、人物、金额或发生时间；全部操作保留审计记录。</>,
+    reason: true,
+    okLabel: "确认操作",
+    run: (reason) => {
+      setEventBusy(`status-${event.id}`);
+      runBackend(actions.updateI2SocialEventStatus(event.id, status, reason), "事件状态已更新",
+        () => setEventRefreshKey((key) => key + 1))
+        .finally(() => setEventBusy(null));
+    },
+  });
+  const deleteSocialEvent = (event: (typeof SOCIAL_EVENTS)[number]) => openConfirm({
+    action: <>删除真实事件 · #{event.id}</>,
+    detail: <>执行软删除并保留来源和审计链；已投递记录不会被物理抹除。</>,
+    reason: true,
+    okLabel: "确认删除",
+    run: (reason) => {
+      setEventBusy(`delete-${event.id}`);
+      runBackend(actions.deleteI2SocialEvent(event.id, reason), "事件已软删除",
+        () => setEventRefreshKey((key) => key + 1))
+        .finally(() => setEventBusy(null));
     },
   });
 
@@ -497,48 +582,102 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">全网真实事件池(c)· social 频道</span>
-            <span className="sub">· 5 类事件按概率抽一条推 · 概率合计必须 100%</span>
+            <span className="sub">· 只消费已核验、未过期的真实业务事件 · 无事件就跳过投放</span>
+            <div className="r">
+              {canWriteI2 && <button className="l-btn sm" onClick={openDistDrawer}>编辑全部概率</button>}
+              {canWriteI2 && <button className="l-btn sm mc" disabled={eventBusy !== null} onClick={syncSocialEvents}>{eventBusy === "sync" ? "同步中…" : "同步真实事件"}</button>}
+              <select className="fld" style={{ width: 112 }} value={previewLanguage} onChange={(event) => setPreviewLanguage(event.target.value as "ZH" | "VI" | "EN")} aria-label="预览语言">
+                <option value="VI">越南语</option><option value="ZH">中文</option><option value="EN">英语</option>
+              </select>
+              <button className="l-btn sm" disabled={eventBusy !== null} onClick={previewSocialEvent}>{eventBusy === "preview" ? "抽样中…" : "预览抽样"}</button>
+            </div>
           </div>
           <div className="l-b" style={{ paddingTop: 6 }}>
             <div className="nv-pb">
-              {SOCIAL_DIST.map((d, i) => (
-                <i key={d.name} style={{ width: `${distPct(d, i)}%`, background: d.color }} />
+              {SOCIAL_DIST.map((d) => (
+                <i key={d.name} style={{ width: `${Number(d.pct)}%`, background: d.color }} />
               ))}
             </div>
             <div className="nv-leg" style={{ marginBottom: 10 }}>
-              {SOCIAL_DIST.map((d, i) => (
+              {SOCIAL_DIST.map((d) => (
                 <span key={d.name}>
                   <span className="d" style={{ background: d.color }} />
-                  {d.name} {distPct(d, i)}%
+                  {d.name} {Number(d.pct)}%
                 </span>
               ))}
             </div>
 
             <div className="p-row">
               <div className="txt">
-                <div className="k">概率分布(逐类单独调)</div>
-                <div className="s">5 类合计须 = 100%(当前合计 {SOCIAL_DIST.reduce((s, d, i) => s + distPct(d, i), 0)}%{SOCIAL_DIST.reduce((s, d, i) => s + distPct(d, i), 0) !== 100 ? " · ⚠ 不等于 100,服务器会拒" : ""});对新派发即时生效</div>
+                <div className="k">概率分布（整体结构化保存）</div>
+                <div className="s">当前合计 {SOCIAL_DIST.reduce((sum, item) => sum + Number(item.pct), 0)}%；不会为了凑满 100% 静默调整其他类别。</div>
               </div>
-              <span className="v" style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {canWriteI2 && SOCIAL_DIST.map((d, i) => (
-                  <button key={d.name} className="l-btn sm mc" onClick={() => editDistCat(d, i)} title={`调整 ${d.name} 概率`}>{d.name} {distPct(d, i)}%</button>
-                ))}
+              <span className={`bdg ${SOCIAL_DIST.reduce((sum, item) => sum + Number(item.pct), 0) === 100 ? "ok" : "danger"}`}>
+                {SOCIAL_DIST.reduce((sum, item) => sum + Number(item.pct), 0) === 100 ? "合计正确" : "配置无效"}
               </span>
             </div>
 
-            {SOCIAL_POOLS.map((p) => (
-              <div className="p-row" key={p.key}>
-                <div className="txt">
-                  <div className="k">{p.name}</div>
-                  <div className="s">{p.sub}</div>
-                </div>
-                <span className="v">{p.cnt} 个</span>
-                {canWriteI2 && <button className="l-btn sm mc" onClick={() => editPool(p.key, p.name, p.sub, p.cnt)}>编辑</button>}
+            <div className="itint" style={{ marginTop: 10 }}>
+              <b>真实性边界</b> · 提现、等级、Genesis 与新增用户只从业务表同步；完整用户 ID、订单号、地址和交易哈希不会返回管理端。AI 客户消费在真实计费来源接入前不会进入线上抽样。
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 8px" }}>
+              <select className="fld" style={{ width: 190 }} value={eventTypeFilter} onChange={(event) => { setEventTypeFilter(event.target.value); setEventPage(1); }} aria-label="事件类型筛选">
+                <option value="">全部事件类型</option>
+                {SOCIAL_EVENT_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              <select className="fld" style={{ width: 160 }} value={eventStatusFilter} onChange={(event) => { setEventStatusFilter(event.target.value); setEventPage(1); }} aria-label="事件状态筛选">
+                <option value="">全部状态</option>
+                {SOCIAL_EVENT_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+              {(eventTypeFilter || eventStatusFilter) && <button className="l-btn sm" onClick={() => { setEventTypeFilter(""); setEventStatusFilter(""); setEventPage(1); }}>清除筛选</button>}
+            </div>
+
+            <div className="k" style={{ marginBottom: 8 }}>真实事件明细</div>
+            {eventLoading ? (
+              <div className="itint">正在读取真实事件...</div>
+            ) : eventTotal === 0 && !eventTypeFilter && !eventStatusFilter ? (
+              <div className="itint warn"><b>当前没有可投放的真实事件</b> · social 通道不会发送，系统不会生成虚假占位内容。等待真实业务数据产生后点击“同步真实事件”。</div>
+            ) : eventTotal === 0 ? (
+              <div className="itint">当前筛选条件下没有事件，请清除筛选后重试。</div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table className="l-tbl" style={{ minWidth: 1120 }}>
+                  <thead><tr><th>脱敏展示</th><th>事件类型</th><th>来源系统</th><th>来源事件ID</th><th>发生时间</th><th>到期时间</th><th>状态</th><th>投递</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+                  <tbody>
+                    {visibleSocialEvents.map((event) => (
+                      <tr key={event.id}>
+                        <td><b>{[event.actorDisplay, event.cityDisplay, event.amountDisplay].filter(Boolean).join(" · ") || "聚合事件"}</b><div className="muted tiny">{event.sourceNote || "来源已核验"}</div></td>
+                        <td>{event.eventTypeLabel || optionLabel(SOCIAL_EVENT_TYPE_OPTIONS, event.eventType)}</td>
+                        <td><span className="bdg ok">已验证</span><div className="muted tiny">{event.sourceSystem || "业务系统"}</div></td>
+                        <td><span className="mono">{event.sourceEventId || "已脱敏"}</span></td>
+                        <td>{formatEventTime(event.occurredAt)}</td>
+                        <td>{formatEventTime(event.expiresAt)}</td>
+                        <td><span className={`bdg ${event.status === "ACTIVE" ? "ok" : event.status === "EXPIRED" ? "warn" : "dim"}`}>{statusLabel(event.status)}</span></td>
+                        <td>{event.dispatchCount ?? 0} 次</td>
+                        <td><div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                          {canWriteI2 && event.status === "ACTIVE" && <button className="l-btn sm" disabled={eventBusy !== null} onClick={() => changeSocialEventStatus(event, "DISABLED")}>停用</button>}
+                          {canWriteI2 && event.status === "DISABLED" && canRestoreEvent(event.expiresAt) && <button className="l-btn sm mc" disabled={eventBusy !== null} onClick={() => changeSocialEventStatus(event, "ACTIVE")}>恢复</button>}
+                          {canWriteI2 && event.status === "DISABLED" && !canRestoreEvent(event.expiresAt) && <span className="muted tiny">已到期不可恢复</span>}
+                          {canWriteI2 && event.status !== "EXPIRED" && <button className="l-btn sm" disabled={eventBusy !== null} onClick={() => changeSocialEventStatus(event, "EXPIRED")}>立即过期</button>}
+                          {canWriteI2 && <button className="l-btn sm danger" disabled={eventBusy !== null} onClick={() => deleteSocialEvent(event)}>删除</button>}
+                        </div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            )}
+            {eventTotal > EVENT_PAGE_SIZE && (
+              <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 10 }}>
+                <button className="l-btn sm" disabled={eventPage <= 1} onClick={() => setEventPage((page) => Math.max(1, page - 1))}>上一页</button>
+                <span className="muted tiny">第 {eventPage} / {eventPageCount} 页 · 共 {eventTotal} 条</span>
+                <button className="l-btn sm" disabled={eventPage >= eventPageCount} onClick={() => setEventPage((page) => Math.min(eventPageCount, page + 1))}>下一页</button>
+              </div>
+            )}
 
             <div className="itint" style={{ marginTop: 10 }}>
-              <b>金额与轮换</b> · 每市场可单独换人名 / 城市 / 金额段位;同一事件模板按双语词条渲染。池子内容上线 = 改变全体用户所见,所以编辑提交即操作确认。
+              <b>运行时规则</b> · 只从“有效、已验证、未过期”的事件中按权重抽样；来源事件重复会被唯一键拦截；没有有效真实事件时不推送。
             </div>
           </div>
         </section>
@@ -570,6 +709,43 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           },
         ]}
       />
+
+      {distDrawer && (
+        <Drawer
+          title="编辑真实事件概率分布"
+          sub="一次提交全部事件类型；系统不会隐式修改任何其他类别"
+          onClose={() => setDistDrawer(false)}
+          footer={
+            <>
+              <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDistDrawer(false)}>取消</button>
+              <button className="l-btn primary" style={{ flex: 1, justifyContent: "center" }} disabled={!distDraftValid} onClick={submitDistribution}>保存概率</button>
+            </>
+          }
+        >
+          <div className="col" style={{ gap: 12 }}>
+            {SOCIAL_DIST.map((item) => (
+              <label key={item.key} className="col" style={{ gap: 5 }}>
+                <span className="muted tiny">{item.name}</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 64px", gap: 8, alignItems: "center" }}>
+                  <input
+                    className="fld"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={distDraft[item.key] ?? ""}
+                    onChange={(event) => setDistDraft({ ...distDraft, [item.key]: event.target.value })}
+                  />
+                  <span className="muted">%</span>
+                </div>
+              </label>
+            ))}
+            <div className={`itint ${distDraftValid ? "" : "danger"}`}>
+              <b>当前合计：{distDraftTotal}%</b> · {distDraftValid ? "可以保存" : "每项必须是 0～100 的整数，且总和为 100%"}
+            </div>
+          </div>
+        </Drawer>
+      )}
 
       {/* 新增 / 编辑通道 Drawer(复用) */}
       {novaDrawer && (

@@ -189,7 +189,7 @@
 
 1. **(a) channel cadence 配置表**:cadence 可调 channel 节奏清单(下方 channel 口径,对应 `StellaCadenceConfig` 10 个可调 key)`[channel key / enabled(kill 开关)/ tickMs / cooldownMs / phase-keyed 节奏(若有)/ 触发条件 / 最近改动]`;支持按 cohort / phase 维度的节奏 override 视图。
 2. **(b) 推送模板池**:各 channel 模板 `[channel / 模板 key / 文案体(引用 i18n)/ CTA 路由 / 变体集 / 版本号 / 状态]`;含 quick reply / cadence / quest / social / market event 模板族(§9.11c.2)——**含事件触发类 channel(见下方口径)的模板文案**。
-3. **(c) social-event 池**:全网"真实事件"派发池 `[SOCIAL_NAMES / CITIES / AI_CLIENTS + 5 variants 概率分布]`(§9.11c.2 / §11.0A.2a:5 类等概率事件);支持每市场轮换姓名/城市/金额。
+3. **(c) social-event 真实事件池**:展示经业务表终态校验后入池的事件明细 `[脱敏摘要 / 事件类型 / 来源系统 / 事件池行引用 / 发生时间 / 到期时间 / 状态 / 投递次数]`。提现到账、V 等级晋升、Genesis 成交、完整小时新增用户分别从业务表同步；AI 客户消费在真实 billing/usage 来源接入前标记“数据源未接入”，不得用 Mock 或算力收益替代。事件以 `(event_type, source_system, source_event_id)` 幂等入池，仅 `ACTIVE + 未过期` 事件参与抽样；无候选事件时跳过本轮 social 推送。管理端只接收与池内行绑定的 `evt_` 引用、化名、地区脱敏值和金额分档，不返回、派生或哈希原始用户 ID、订单号、地址或交易哈希。
 
 **状态机**:channel `enabled ⇄ disabled`(kill);模板版本 `draft → published → archived`。
 
@@ -204,7 +204,7 @@
 | 3 upgrade | 15 min tick / 60 min cd(§11.0A.1) | upgrade-nudge | 基于 fleet 推荐升级 |
 | 4 dailySummary | 每 25 任务 / 25 min cd(§11.0A.1) | daily-summary | 当日收益总结 |
 | 5 tradein | 15 min tick / 60 min cd(P3-P4)· 24h cd(P5-P6)· P1-P2 skip(§11.0A.2a) | tradein-nudge | Trade-in 升级钩子 |
-| 6 social | 20 min tick / 30 min cd(§11.0A.2a) | social-event | 5 类全网真实事件等概率派发 |
+| 6 social | 20 min tick / 30 min cd(§11.0A.2a) | social-event | 按配置权重抽取有候选的真实事件类型；无候选类型不进入本轮归一化 |
 | 7 eventClaim | 15 min tick / 60 min cd(§11.0A.2a) | event-claimable | 可领取 event 催领 |
 | 8 wrapped | 30d cd(effectively one-shot,§11.0A.2a prose) | (Wrapped Mini;§11.0A named 表未单列,见下注) | 半年/年度 Wrapped Mini 召回(§11.12.12) |
 | 9 taskLockMonthly | 30 min tick / 30d(P1-P2)· 7d(P3-P4)· 3.5d(P5-P6) cd(§11.0A.2a) | monthly-task-lock | 月度任务锁定累计召回 |
@@ -226,7 +226,7 @@
 | 各 channel `enabled`(kill 开关) | **现状值**:全 enabled(§11.0A.1 注:`enabled=false` = 单 channel kill) | true / false(per channel) | 实时(server enforce,SSE `/api/stella/config-invalidate` 推变更) | 对应 Nova channel 推送(§11.0A) |
 | 各 channel `tickMs` / `cooldownMs` | **现状值**(上表 10 key cadence) | 运营设定(per cohort/phase/risk regime) | 实时(对下一 tick 生效) | 对应 channel 触达频率 |
 | phase-keyed cadence(tradein / task-lock) | **现状值**(§11.0A.2a:tradein 15min tick / P3-P4 60min cd / P5-P6 24h cd;task-lock 30min tick / P1-P2 30d / P3-P4 7d / P5-P6 3.5d cd) | 随 Phase(H1 dial 联动) | 随 Phase 切换 | tradein-nudge / monthly-task-lock |
-| social-event 5 variant 概率分布 | **现状值**(§11.0A.2a:提现 30% / V 升级 25% / Genesis 成交 20% / AI 消费 15% / 小时新增 10%) | 各 0–100%,和 = 100% | 实时(对新派发生效) | social-event channel |
+| social-event 5 variant 概率分布 | **默认值**:提现 30% / V 升级 25% / Genesis 成交 25% / AI 消费 0% / 小时新增 20%（AI 真实源接入前保持 0） | 各 0–100%,和 = 100% | 实时(对新派发生效) | social-event channel |
 | 推送模板文案体 | **现状值**(§9.11c.2 模板池) | 文案模板(i18n key) | 实时(发布生效) | 对应 channel 推送文案 |
 
 > **默认值口径**:cadence 与模板取前端 §11.0A / §9.11c.2 现状值(标注「现状值」)。tradein-nudge / monthly-task-lock 的 phase-keyed 节奏(§11.0A.2a 已按 P1-P6 分档)与 Phase 拉新期相关,与 12 月节奏表 P1–P6 运营逻辑一致。客户端常量(`lib/v3/_config/stella-cadence.ts`)仅为真后台未接入前的 fallback,数值与本表一致(§11.0A.1 注)。推送文案不放大资金流出,不受 B1 约束;但**升频/升触达**间接放大召回强度,属转化运营范畴,不触发 B1 红线。
@@ -299,8 +299,8 @@
 - `GET /api/admin/stella/cadence-config` / `PUT /api/admin/stella/cadence-config`(对齐 §9.11c.1;**endpoint 路径保留 `/stella/*` 作为代码契约**)— per-channel `{enabled, tickMs, cooldownMs}` 拉取/改写(10 个可调 key);**server-canonical**(client 常量仅 fallback),`PUT` 由操作者经确认弹窗(I2-MD1/MD2)直接调用、body 必携 `{reason}`(缺失 400 `REASON_REQUIRED`)+ `Idempotency-Key`(§9.11e),写入与审计同事务,改后 SSE `/api/stella/config-invalidate` 推 client 失效重拉(§9.11c.1)。
 - `GET /admin/stella/channels?type=X`(对齐 §9.11c.2;**前端别名,规范化归 §9.2⑥**)— v3 频道推送模板拉取。
 - `GET /admin/stella/templates/{key}`(对齐 §9.11c.2;**前端别名,归 §9.2⑥**)— 模板池拉取。
-- `GET /admin/stella/social-event-pool`(对齐 §9.11c.2;**前端别名,归 §9.2⑥**)— social-event 池拉取。
-- 模板/池改写经 `PUT` 对应 endpoint,操作者经确认弹窗(I2-MD3/MD4)直接调用,body 携 `{reason}` + `Idempotency-Key`,server 权威发布版。
+- `GET /api/admin/content/nova/social-events?eventType=&status=&page=1&pageSize=20`— 在数据库端按类型/状态筛选、分页并返回 `items/page/pageSize/total`；`POST /api/admin/content/nova/social-events/sync`— 从可信业务表同步终态事件；`PATCH /api/admin/content/nova/social-events/{id}/status` / `DELETE`— 停用、恢复、立即过期和软删除；`GET /api/admin/content/nova/social-events/sample?language=ZH|VI|EN`— 仅在 social 通道启用且模板已发布时，按有效类型权重抽样，并与实际入队共用多语言模板渲染器；无候选时返回空。
+- 模板、概率分布和事件生命周期改写均携 `{reason}` + `Idempotency-Key`；管理端没有任意创建或修改“已验证真实事件”正文的接口。
 
 **⑥ 权限 & 审计**
 
@@ -308,7 +308,7 @@
 |---|---|---|---|---|---|---|---|
 | cadence 调整 | ✅ | — | — | ✅(lead,限增长相关 channel) | ✅(lead) | — | — |
 | channel kill | ✅ | — | ✅ | — | ✅(lead) | — | — |
-| 模板 / social 池发布 | ✅ | — | — | — | ✅(lead) | — | — |
+| 模板发布 / 真实事件同步与生命周期管理 | ✅ | — | — | — | ✅(lead) | — | — |
 | 审计追溯 | ✅ | — | — | — | ✅(内容域) | — | ✅(全量) |
 
 审计记录字段:统一 schema(§2.x A2 ⑥)`操作者(operator)/ 角色 / 动作 / 对象(channel / 模板 key)/ 前值 / 后值 / 理由(reason)/ IP / 时间(ms)`。
