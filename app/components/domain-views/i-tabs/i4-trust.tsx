@@ -133,36 +133,50 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const isSensitiveTrustSection = (section: TrustSection) => section.highSensitivity || SENSITIVE_TRUST_SECTIONS.has(normalizedSectionKey(section.key));
   const canPublishTrustSection = (section: TrustSection) => isSensitiveTrustSection(section) ? canPublishSensitive : canPublishStandard;
   const currentSectionFields = (section: TrustSection) => TRUST_SECTION_VERSIONS
-    .find((version) => version.sectionKey === section.key && version.version === section.v)?.fields
-    ?? (SECTION_FIELDS[section.key] ?? []).map(([key, value]) => ({ key, label: key, value }));
+    .find((version) => version.sectionKey === section.key && version.version === section.v)?.fields ?? [];
+  const sameFieldSchema = (left: { key: string }[], right: { key: string }[]) =>
+    left.map((field) => field.key).sort().join("\u0000") === right.map((field) => field.key).sort().join("\u0000");
 
   const openSecDetail = (s: TrustSection) => setSecKey(s.key);
   const openJurDetail = (j: Jurisdiction) => setJurCode(j.code);
   const openChap = (no: string) => setChapNo(no);
 
   // ---------- I4 信任版块动作 ----------
-  const createSectionDraft = (s: TrustSection) => setDraftEditor({
-    mode: "create",
-    sectionKey: s.key,
-    version: "",
-    description: s.desc,
-    structure: s.struct,
-    reason: "日常维护信任版块草稿",
-    fields: currentSectionFields(s).concat(
-      currentSectionFields(s).length === 0 ? [{ key: "", label: "", value: "" }] : [],
-    ),
-  });
+  const createSectionDraft = (s: TrustSection) => {
+    const fields = currentSectionFields(s);
+    if (fields.length === 0) {
+      toast("当前发布版缺少字段模板，无法新建草稿");
+      return;
+    }
+    setDraftEditor({
+      mode: "create",
+      sectionKey: s.key,
+      version: "",
+      description: s.desc,
+      structure: s.struct,
+      reason: "日常维护信任版块草稿",
+      fields,
+    });
+  };
 
-  const editSectionDraft = (draft: TrustSectionVersion) => setDraftEditor({
-    mode: "edit",
-    sectionKey: draft.sectionKey,
-    version: draft.version,
-    description: draft.description,
-    structure: draft.structure,
-    revision: draft.revision,
-    reason: "日常维护信任版块草稿",
-    fields: draft.fields,
-  });
+  const editSectionDraft = (draft: TrustSectionVersion) => {
+    const section = TRUST_SECTIONS.find((item) => item.key === draft.sectionKey);
+    const publishedFields = section ? currentSectionFields(section) : [];
+    if (publishedFields.length === 0 || !sameFieldSchema(draft.fields, publishedFields)) {
+      toast("草稿字段模板已过期，请删除后基于当前发布版新建");
+      return;
+    }
+    setDraftEditor({
+      mode: "edit",
+      sectionKey: draft.sectionKey,
+      version: draft.version,
+      description: draft.description,
+      structure: draft.structure,
+      revision: draft.revision,
+      reason: "日常维护信任版块草稿",
+      fields: draft.fields,
+    });
+  };
 
   const saveSectionDraft = () => {
     if (!draftEditor) return;
@@ -852,14 +866,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="field"><label>版块说明</label><input className="inp" value={draftEditor.description} onChange={(event) => setDraftEditor({ ...draftEditor, description: event.target.value })} /></div>
           <div className="field"><label>内容结构</label><input className="inp" value={draftEditor.structure} onChange={(event) => setDraftEditor({ ...draftEditor, structure: event.target.value })} /></div>
           <div className="field"><label>保存说明</label><input className="inp" value={draftEditor.reason} onChange={(event) => setDraftEditor({ ...draftEditor, reason: event.target.value })} /></div>
-          <div className="row" style={{ justifyContent: "space-between", margin: "14px 0 8px" }}><b>结构化字段</b><button className="l-btn sm" type="button" onClick={() => setDraftEditor({ ...draftEditor, fields: [...draftEditor.fields, { key: "", label: "", value: "" }] })}>添加字段</button></div>
+          <div className="row" style={{ justifyContent: "space-between", margin: "14px 0 8px" }}><b>结构化字段</b><span className="tiny">共 {draftEditor.fields.length} 项</span></div>
+          <div className="itint cyan" style={{ marginBottom: 10 }}>字段标识由当前发布版字段模板固定，不可新增、删除或改名；这里只编辑字段名称和内容。</div>
           {draftEditor.fields.map((field, index) => <div className="itint" key={index} style={{ marginBottom: 10 }}>
             <div className="grid g-2" style={{ gap: 8 }}>
-              <div className="field"><label>字段标识</label><input className="inp" value={field.key} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item) })} /></div>
+              <div className="field"><label>字段标识（固定）</label><input className="inp mono" readOnly aria-readonly="true" value={field.key} /></div>
               <div className="field"><label>字段名称</label><input className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
             </div>
             <div className="field"><label>字段内容</label><textarea className="inp" rows={3} value={field.value} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
-            <button className="l-btn sm danger" type="button" disabled={draftEditor.fields.length <= 1} onClick={() => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.filter((_, itemIndex) => itemIndex !== index) })}>移除字段</button>
           </div>)}
         </Drawer>
       )}

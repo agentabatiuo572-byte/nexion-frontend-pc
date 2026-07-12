@@ -947,7 +947,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     };
   }
   if (spec.kind === "trust-section-authoring") {
-    const fields = spec.fields?.length ? spec.fields : [{ key: "", label: "", value: "" }];
+    const fields = spec.fields ?? [];
     const state: BusinessFormValue = {
       sectionKey: spec.sectionKey,
       version: spec.version ?? "",
@@ -2025,17 +2025,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
   }
 
   if (spec.kind === "trust-section-authoring") {
-    const fieldCount = Math.max(1, Number(value.fieldCount || 1));
-    const addField = () => {
-      const index = fieldCount;
-      onChange({
-        ...value,
-        fieldCount: String(fieldCount + 1),
-        [`field.${index}.key`]: "",
-        [`field.${index}.label`]: "",
-        [`field.${index}.value`]: "",
-      });
-    };
+    const fieldCount = Math.max(0, Number(value.fieldCount || 0));
     return (
       <div className="field" data-business-form="trust-section-authoring">
         <label>业务表单 · {spec.mode === "create" ? "新建信任版块草稿" : "编辑信任版块草稿"}</label>
@@ -2052,20 +2042,21 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
             <b>结构化内容字段</b>
             <span className="tiny">当前 {fieldCount} 项</span>
           </div>
+          <div className="tint tiny" style={{ marginBottom: 10 }}>字段标识由当前发布版固定，不可新增、删除或改名。</div>
+          {fieldCount === 0 && <div className="itint warn">当前发布版缺少字段模板，不能保存草稿。</div>}
           {Array.from({ length: fieldCount }, (_, index) => (
             <div key={index} className="itint" style={{ marginBottom: 10 }}>
               <div className="tiny" style={{ marginBottom: 6 }}>字段 {index + 1}</div>
               <div className="grid g-2" style={{ gap: 10 }}>
-                {input(`field.${index}.key`, "字段标识", "如 revenueYtd")}
+                <label className="field" style={{ marginBottom: 0 }}>
+                  <span>字段标识（固定）</span>
+                  <input className="fld mono" readOnly aria-readonly="true" value={value[`field.${index}.key`] ?? ""} />
+                </label>
                 {input(`field.${index}.label`, "中文名称", "如 年内收入")}
                 {textArea(`field.${index}.value`, "字段内容", "填写该字段的展示内容", 2)}
               </div>
             </div>
           ))}
-          <div className="row wrap" style={{ gap: 8 }}>
-            <button type="button" className="btn sm" disabled={fieldCount >= 50} onClick={addField}>+ 添加字段</button>
-            <button type="button" className="btn sm" disabled={fieldCount <= 1} onClick={() => set("fieldCount", String(fieldCount - 1))}>移除末项</button>
-          </div>
         </div>
       </div>
     );

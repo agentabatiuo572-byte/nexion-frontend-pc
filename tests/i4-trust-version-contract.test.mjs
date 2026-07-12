@@ -64,3 +64,15 @@ test("I4 field key uniqueness follows MySQL case-insensitive collation", () => {
   assert.match(designKit, /map\(\(key\) => key\.toLowerCase\(\)\)/);
   assert.match(designKit, /字段标识不能重复（不区分大小写）/);
 });
+
+test("I4 field identifiers are inherited from the published schema and cannot be changed", () => {
+  assert.match(view, /字段标识由当前发布版字段模板固定，不可新增、删除或改名/);
+  assert.match(view, /aria-readonly="true"/);
+  assert.doesNotMatch(view, />添加字段</);
+  assert.doesNotMatch(view, />移除字段</);
+  assert.match(designKit, /字段标识由当前发布版固定/);
+  assert.doesNotMatch(designKit, />\+ 添加字段</);
+  assert.doesNotMatch(designKit, />移除末项</);
+  assert.doesNotMatch(view, /\?\?\s*\(SECTION_FIELDS\[section\.key\]/);
+  assert.match(view, /草稿字段模板已过期，请删除后基于当前发布版新建/);
+});
