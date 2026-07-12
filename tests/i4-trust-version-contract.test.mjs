@@ -67,10 +67,13 @@ test("I4 field key uniqueness follows MySQL case-insensitive collation", () => {
 
 test("I4 field identifiers are inherited from the published schema and cannot be changed", () => {
   assert.match(view, /字段标识由当前发布版字段模板固定，不可新增、删除或改名/);
-  assert.match(view, /aria-readonly="true"/);
+  assert.match(view, /data-trust-field-key="fixed"/);
+  assert.doesNotMatch(view, /字段标识（固定）<\/label><input/);
   assert.doesNotMatch(view, />添加字段</);
   assert.doesNotMatch(view, />移除字段</);
   assert.match(designKit, /字段标识由当前发布版固定/);
+  assert.match(designKit, /data-trust-field-key="fixed"/);
+  assert.doesNotMatch(designKit, /<input className="fld mono" readOnly/);
   assert.doesNotMatch(designKit, />\+ 添加字段</);
   assert.doesNotMatch(designKit, />移除末项</);
   assert.doesNotMatch(view, /\?\?\s*\(SECTION_FIELDS\[section\.key\]/);

@@ -2049,8 +2049,8 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
               <div className="tiny" style={{ marginBottom: 6 }}>字段 {index + 1}</div>
               <div className="grid g-2" style={{ gap: 10 }}>
                 <label className="field" style={{ marginBottom: 0 }}>
-                  <span>字段标识（固定）</span>
-                  <input className="fld mono" readOnly aria-readonly="true" value={value[`field.${index}.key`] ?? ""} />
+                  <span>字段标识（系统固定）</span>
+                  <div className="itint mono" data-trust-field-key="fixed">锁定 · {value[`field.${index}.key`] ?? ""}</div>
                 </label>
                 {input(`field.${index}.label`, "中文名称", "如 年内收入")}
                 {textArea(`field.${index}.value`, "字段内容", "填写该字段的展示内容", 2)}

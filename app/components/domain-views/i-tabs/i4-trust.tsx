@@ -870,7 +870,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="itint cyan" style={{ marginBottom: 10 }}>字段标识由当前发布版字段模板固定，不可新增、删除或改名；这里只编辑字段名称和内容。</div>
           {draftEditor.fields.map((field, index) => <div className="itint" key={index} style={{ marginBottom: 10 }}>
             <div className="grid g-2" style={{ gap: 8 }}>
-              <div className="field"><label>字段标识（固定）</label><input className="inp mono" readOnly aria-readonly="true" value={field.key} /></div>
+              <div className="field">
+                <label>字段标识（系统固定）</label>
+                <div className="itint mono" data-trust-field-key="fixed">锁定 · {field.key}</div>
+              </div>
               <div className="field"><label>字段名称</label><input className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
             </div>
             <div className="field"><label>字段内容</label><textarea className="inp" rows={3} value={field.value} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
