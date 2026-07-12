@@ -570,8 +570,9 @@ export type BusinessFormSpec =
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
-  | { kind: "version-authoring"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; versionOptions?: string[]; effectiveDate?: string; requiresReack?: boolean }
-  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; versionOptions?: string[] }
+  | { kind: "version-authoring"; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope?: string; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
+  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; versionOptions?: string[] }
+  | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; zhBody: string; viBody: string }[]; targetChapters: { no: string; zh: string; vi: string; zhBody: string; viBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
   | { kind: "trust-section-publish"; currentVersion: string; targetVersion: string; requireDataSource?: boolean;
@@ -919,11 +920,12 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
   }
   if (spec.kind === "version-authoring") {
     return {
-      version: spec.version ?? spec.versionOptions?.[0] ?? "",
+      version: spec.version ?? "",
       jurisdiction: spec.jurisdiction ?? "",
-      languageScope: spec.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
+      languageScope: spec.languageScope ?? spec.languageScopes?.[0] ?? DEFAULT_LANGUAGE_SCOPES[0],
       effectiveDate: spec.effectiveDate ?? "",
-      requiresReack: spec.requiresReack === false ? "false" : "true",
+      // I5 新版本发布必定触发重新确认；旧草稿即使曾保存 false，编辑时也强制纠正。
+      requiresReack: "true",
       zh: spec.zh ?? "",
       vi: spec.vi ?? "",
       en: spec.en ?? "",
@@ -936,6 +938,12 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
         [`chapter.${index}.viBody`, chapter.viBody],
         [`chapter.${index}.enBody`, chapter.enBody],
       ])),
+    };
+  }
+  if (spec.kind === "disclosure-publish-review") {
+    return {
+      jurisdictionConfirmed: "false",
+      bilingualConfirmed: "false",
     };
   }
   if (spec.kind === "disclosure-matrix") {
@@ -1212,6 +1220,11 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       ["no", "zhTitle", "viTitle", "zhBody", "viBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
       if (state.languageScope?.includes("en")) ["enTitle", "enBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
     });
+  } else if (spec.kind === "disclosure-publish-review") {
+    if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
+    if (spec.targetChapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim())) missing.push("七章中越双语完整内容");
+    if (state.jurisdictionConfirmed !== "true") missing.push("受众法域确认");
+    if (state.bilingualConfirmed !== "true") missing.push("七章中越双语核对");
   } else if (spec.kind === "disclosure-matrix") {
     ["jurisdictionCode", "jurisdictionName", "countryCodes", "version"].forEach((key) => needs(key, key));
   } else if (spec.kind === "trust-section-authoring") {
@@ -1402,7 +1415,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
   return undefined;
 }
 
-function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void }) {
+function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void }) {
   const set = (key: string, v: string) => onChange({ ...value, [key]: v });
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
@@ -1961,13 +1974,17 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
     const jurisdictionLabels = Object.fromEntries((spec.jurisdictionOptions ?? []).map((item) => [item.value, item.label]));
     return (
       <div className="field" data-business-form="version-authoring">
-        <label>业务表单 · 新版本草拟 / 发布</label>
+        <label>业务表单 · 新建 / 编辑披露草稿</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("version", "披露版本", spec.versionOptions ?? [])}
-          {select("jurisdiction", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels)}
+          {select("version", "披露版本（后端分配）", spec.version ? [spec.version] : [])}
+          {select("jurisdiction", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
+            const updated = { ...value, jurisdiction: next };
+            onChange(updated);
+            onSelectionChange?.(updated);
+          })}
           {select("languageScope", "语言范围", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES, { "zh+vi": "中文 + 越南语", "zh+vi+en": "中文 + 越南语 + 英语" })}
           {input("effectiveDate", "生效日 effective date", "YYYY-MM-DD", "date")}
-          {select("requiresReack", "是否要求重新确认", ["true", "false"], { true: "是", false: "否" })}
+          {select("requiresReack", "是否要求重新确认", ["true"], { true: "是（新版本发布后强制重新确认）" })}
         </div>
         <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
           {textArea("zh", "中文版本正文", "填写中文条款/披露正文", 4)}
@@ -1992,7 +2009,47 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
     );
   }
 
+  if (spec.kind === "disclosure-publish-review") {
+    const changed = spec.targetChapters.filter((target) => {
+      const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
+      return !current || current.zh !== target.zh || current.vi !== target.vi || current.zhBody !== target.zhBody || current.viBody !== target.viBody;
+    });
+    return (
+      <div className="field" data-business-form="disclosure-publish-review">
+        <label>发布前合规核对</label>
+        <div className="itint danger">
+          <b>{spec.jurisdiction} · {spec.currentVersion || "无生效版"} → {spec.targetVersion}</b>
+          <div style={{ marginTop: 6 }}>受影响用户 {spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 {spec.pendingAck.toLocaleString("zh-CN")} 人 · 当前拦截 {spec.blocked.toLocaleString("zh-CN")} 次</div>
+          <div style={{ marginTop: 4 }}>受限动作影响：{spec.gatedActions.join("、") || "暂无"}</div>
+        </div>
+        <div className="itint" style={{ marginTop: 10 }}>
+          <b>版本差异</b> · 共 {changed.length} / 7 章发生变化
+        </div>
+        <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
+          {spec.targetChapters.map((target) => {
+            const current = spec.currentChapters.find((chapter) => chapter.no === target.no);
+            const isChanged = !current || current.zh !== target.zh || current.vi !== target.vi || current.zhBody !== target.zhBody || current.viBody !== target.viBody;
+            return <div className="card" key={target.no} style={{ padding: 10, marginTop: 8, borderColor: isChanged ? "var(--warning)" : undefined }}>
+              <b>第 {target.no} 章 · {isChanged ? "有修改" : "无变化"}</b>
+              <div className="grid g-2" style={{ gap: 8, marginTop: 6 }}>
+                <div><span className="tiny">中文</span><div>{target.zh}</div><div className="tiny">{target.zhBody}</div></div>
+                <div><span className="tiny">越南语</span><div>{target.vi}</div><div className="tiny">{target.viBody}</div></div>
+              </div>
+            </div>;
+          })}
+        </div>
+        <label className="field" style={{ marginTop: 12 }}>
+          <span><input type="checkbox" checked={value.jurisdictionConfirmed === "true"} onChange={(event) => set("jurisdictionConfirmed", String(event.target.checked))} /> 确认发布法域为 {spec.jurisdiction}</span>
+        </label>
+        <label className="field" style={{ marginTop: 6 }}>
+          <span><input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} /> 七章中越双语核对完成，确认与监管口径一致</span>
+        </label>
+      </div>
+    );
+  }
+
   if (spec.kind === "disclosure-matrix") {
+    const jurisdictionLabels = Object.fromEntries((spec.jurisdictionOptions ?? []).map((item) => [item.value, item.label]));
     const selectedCountries = new Set((value.countryCodes ?? "").split(",").map((code) => code.trim()).filter(Boolean));
     const toggleCountry = (code: string) => {
       const next = new Set(selectedCountries);
@@ -2003,8 +2060,10 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
       <div className="field" data-business-form="disclosure-matrix">
         <label>业务表单 · {spec.mode === "create" ? "新增法域版本映射" : "编辑法域版本映射"}</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("jurisdictionCode", "法域代码", "如 SBV")}
-          {input("jurisdictionName", "法域名称", "如 越南")}
+          {select("jurisdictionCode", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
+            const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
+            onChange({ ...value, jurisdictionCode: next, jurisdictionName: selected?.label.replace(/^.*?·\s*/, "") ?? next });
+          })}
           {select("version", "草稿版本", spec.versionOptions ?? [])}
         </div>
         <div style={{ marginTop: 10 }}>
@@ -2019,7 +2078,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
           </div>
           {(spec.countryOptions ?? []).length === 0 && <div className="tint tiny">暂无后端国家/地区目录</div>}
         </div>
-        <div className="tint tiny" style={{ marginTop: 10 }}>映射保存后仅处于“草稿”；已发布状态只能通过“发布已存草稿”流程产生。</div>
+          <div className="tint tiny" style={{ marginTop: 10 }}>矩阵变更提交后进入 A2 审批，审批执行前不会修改当前生效映射。</div>
       </div>
     );
   }
@@ -2761,10 +2820,13 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void }) {
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
+  const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
+  const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
+  const selectionRequestRef = useRef(0);
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
@@ -2773,18 +2835,36 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   const covBlocked = Boolean(amplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   const reasonMin = 8;
-  const reasonMax = businessForm?.kind === "copy-experiment-create" || businessForm?.kind === "copy-experiment-start" || businessForm?.kind === "copy-experiment-discard" ? 200 : undefined;
+  const reasonMax = activeBusinessForm?.kind === "copy-experiment-create" || activeBusinessForm?.kind === "copy-experiment-start" || activeBusinessForm?.kind === "copy-experiment-discard" ? 200 : undefined;
   const reasonLength = reason.trim().length;
   const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
-  const businessMissing = missingBusinessFields(businessForm, businessValue);
-  const derivedNewVal = businessNewValue(businessForm, businessValue);
+  const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
+  const derivedNewVal = businessNewValue(activeBusinessForm, businessValue);
   const editValueOk = isEditValueValid(spec, newVal);
-  const canConfirm = !covBlocked && reasonOk && editValueOk && businessMissing.length === 0;
+  const canConfirm = !covBlocked && !businessSelectionLoading && reasonOk && editValueOk && businessMissing.length === 0;
+  const handleBusinessSelectionChange = async (next: BusinessFormValue) => {
+    setBusinessValue(next);
+    if (!onBusinessSelectionChange) return;
+    const requestId = selectionRequestRef.current + 1;
+    selectionRequestRef.current = requestId;
+    setBusinessSelectionLoading(true);
+    try {
+      const refreshed = await onBusinessSelectionChange(next);
+      if (refreshed && selectionRequestRef.current === requestId) {
+        setActiveBusinessForm(refreshed);
+        setBusinessValue(initBusinessForm(refreshed));
+      }
+    } catch {
+      // 调用方负责展示领域错误；这里保持原表单，不让异步异常逃逸到全局。
+    } finally {
+      if (selectionRequestRef.current === requestId) setBusinessSelectionLoading(false);
+    }
+  };
   return (
     <Modal title={action} icon="shield" onClose={onClose}
       footer={<>
         <Btn onClick={onClose}>取消</Btn>
-        <Btn variant="primary" disabled={!canConfirm} onClick={() => onConfirm(reason.trim(), (derivedNewVal ?? newVal) || undefined, businessForm ? businessValue : undefined)}>
+        <Btn variant="primary" disabled={!canConfirm} onClick={() => onConfirm(reason.trim(), (derivedNewVal ?? newVal) || undefined, activeBusinessForm ? businessValue : undefined)}>
           <Icon name="check" size={15} /> 确认执行
         </Btn>
       </>}>
@@ -2817,9 +2897,10 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </span>
         <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>确认后立即生效</span>
       </div>
-      {businessForm && (
-        <BusinessFormBlock spec={businessForm} value={businessValue} onChange={setBusinessValue} />
+      {activeBusinessForm && (
+        <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} />
       )}
+      {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载目标法域版本快照…</div>}
       {spec && (
         <div className="field">
           <label>目标新值{spec.current ? <> · 当前 <span className="mono">{spec.current}</span></> : null}</label>

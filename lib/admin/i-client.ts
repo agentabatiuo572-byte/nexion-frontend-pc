@@ -393,8 +393,23 @@ export type DisclosureJurisdictionView = {
   affected: number;
   ackProgress: number;
   blocked: number;
+  pendingAck?: number;
+  acked?: number;
 };
 export type DisclosureChapterView = { jurisdiction: string; version: string; no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string };
+export type DisclosureVersionItemView = DisclosureDraftView & {
+  chapters: DisclosureChapterView[];
+  operator?: string;
+  reason?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  publishedAt?: string;
+  affected?: number;
+  acked?: number;
+  pendingAck?: number;
+  blocked?: number;
+};
+export type DisclosureJurisdictionOption = { code: string; name: string };
 export type DisclosureGateActionView = {
   key: string;
   name: string;
@@ -413,6 +428,8 @@ export type DisclosureDraftView = {
   vi: string;
   en: string;
   status: string;
+  revision?: number;
+  contentHash?: string;
 };
 export type TrustDisclosureOverview = {
   stats: TrustDisclosureStats;
@@ -429,6 +446,11 @@ export type TrustDisclosureOverview = {
   roleGates: string[];
   languageScopes: string[];
   disclosureVersions: string[];
+  disclosureVersionItems?: DisclosureVersionItemView[];
+  nextDisclosureVersion?: string;
+  nextDisclosureVersionByJurisdiction?: Record<string, string>;
+  nextVersionByJurisdiction?: Record<string, string>;
+  jurisdictionCatalog?: DisclosureJurisdictionOption[];
   gateScope: string;
   sources: string[];
 };
@@ -566,6 +588,10 @@ export type IContentActions = {
   configureI5Matrix: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   archiveI5Matrix: (jurisdiction: string, reason: string) => Promise<void>;
   updateI5GateScope: (scope: string, reason: string) => Promise<void>;
+  fetchI5DisclosureVersion: (jurisdiction: string, version: string) => Promise<DisclosureVersionItemView>;
+  createI5DisclosureVersion: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI5DisclosureVersion: (jurisdiction: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  deleteI5DisclosureVersion: (jurisdiction: string, version: string, expectedRevision: number, expectedContentHash: string, reason: string) => Promise<void>;
   rescanI6: (reason: string) => Promise<void>;
   saveI6LocalizedDraft: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI6LocalizedMessage: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -587,14 +613,24 @@ export type IContentActions = {
 };
 
 export async function fetchIContentOverviews(): Promise<IContentData> {
-  const [copyAb, nova, campaigns, trustDisclosure, i18nLearning] = await Promise.all([
+  const [copyAb, nova, campaigns, trustDisclosure, i18nLearning] = await Promise.allSettled([
     apiRequest<CopyAbOverview>("/copy-ab/overview"),
     apiRequest<NovaOverview>("/nova/overview"),
     apiRequest<NotificationCampaignOverview>("/campaigns/overview"),
     apiRequest<TrustDisclosureOverview>("/trust-disclosure/overview"),
     apiRequest<I18nLearningOverview>("/i18n-learning/overview"),
   ]);
-  return { copyAb, nova, campaigns, trustDisclosure, i18nLearning };
+  const results = [copyAb, nova, campaigns, trustDisclosure, i18nLearning];
+  if (results.every((result) => result.status === "rejected")) {
+    throw (results[0] as PromiseRejectedResult).reason;
+  }
+  return {
+    copyAb: copyAb.status === "fulfilled" ? copyAb.value : undefined,
+    nova: nova.status === "fulfilled" ? nova.value : undefined,
+    campaigns: campaigns.status === "fulfilled" ? campaigns.value : undefined,
+    trustDisclosure: trustDisclosure.status === "fulfilled" ? trustDisclosure.value : undefined,
+    i18nLearning: i18nLearning.status === "fulfilled" ? i18nLearning.value : undefined,
+  };
 }
 
 export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
@@ -653,6 +689,10 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   configureI5Matrix: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "PUT", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   archiveI5Matrix: (jurisdiction, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI5GateScope: (scope, reason) => apiRequest("/trust-disclosure/disclosures/gated-actions", { method: "PATCH", body: JSON.stringify(withReason({ scope }, reason)) }).then(() => undefined),
+  fetchI5DisclosureVersion: (jurisdiction, version) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`),
+  createI5DisclosureVersion: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI5DisclosureVersion: (jurisdiction, version, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  deleteI5DisclosureVersion: (jurisdiction, version, expectedRevision, expectedContentHash, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision, expectedContentHash }, reason)) }).then(() => undefined),
   rescanI6: (reason) => apiRequest("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   saveI6LocalizedDraft: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI6LocalizedMessage: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),

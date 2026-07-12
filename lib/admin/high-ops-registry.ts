@@ -1539,8 +1539,40 @@ export const HIGH_OPS: HighOpDef[] = [
       params: {
         jurisdiction: String(ctx.jurisdiction),
         version: String(ctx.version),
+        expectedRevision: ctx.expectedRevision == null ? null : Number(ctx.expectedRevision),
+        expectedContentHash: String(ctx.contentHash ?? ""),
       } }),
     buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdiction) }),
+  },
+  {
+    op: "i5_matrix_configure",
+    domain: "I",
+    action: "配置披露法域版本矩阵",
+    amplifies: false,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "disclosure_matrix",
+    buildCommand: (ctx) => ({ domain: "I", op: "i5_matrix_configure", params: {
+      jurisdictionCode: String(ctx.jurisdictionCode),
+      jurisdictionName: String(ctx.jurisdictionName),
+      countryCodes: Array.isArray(ctx.countryCodes) ? ctx.countryCodes.map(String) : [],
+      version: String(ctx.version),
+      status: "DRAFT",
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_matrix", id: String(ctx.jurisdictionCode) }),
+  },
+  {
+    op: "i5_matrix_archive",
+    domain: "I",
+    action: "归档披露法域版本矩阵",
+    amplifies: false,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "disclosure_matrix",
+    buildCommand: (ctx) => ({ domain: "I", op: "i5_matrix_archive", params: {
+      jurisdiction: String(ctx.jurisdiction),
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_matrix", id: String(ctx.jurisdiction) }),
   },
   // I5 受限动作范围调整(updateGateScope · 全仓单例锁 restricted-actions · amplifies 放松资金类合规拦截)
   {

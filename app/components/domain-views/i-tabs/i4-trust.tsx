@@ -11,8 +11,9 @@
  */
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Drawer, PaginationExemptionList } from "../design-kit";
+import { Drawer, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import type { ICtx } from "./types";
+import type { DisclosureVersionItemView } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -27,12 +28,15 @@ type TrustSectionVersion = {
   status: string; revision: number; operator: string; updatedAt: string;
 };
 type Jurisdiction = {
-  code: string; name: string; countryCodes: string[]; v: string; status: string; publishedAt: string; affected: number; ackProgress: number; blocked: number;
+  code: string; name: string; countryCodes: string[]; v: string; status: string; publishedAt: string; affected: number; ackProgress: number; blocked: number; acked?: number; pendingAck?: number;
 };
 const statusZh = (status?: string) => ({
   published: "已发布", draft: "草稿", archived: "已归档", superseded: "已取代",
   PUBLISHED: "已发布", DRAFT: "草稿", ARCHIVED: "已归档", SUPERSEDED: "已取代",
-} as Record<string, string>)[status ?? ""] ?? status ?? "—";
+  pending: "待处理", active: "已启用", disabled: "已停用",
+  PENDING: "待处理", ACTIVE: "已启用", DISABLED: "已停用",
+  pending_review: "待发布复核", PENDING_REVIEW: "待发布复核",
+} as Record<string, string>)[status ?? ""] ?? "未知状态";
 type GateAction = { key: string; name: string; sub: string; st: string; tone: string; active: boolean };
 type TrustDetailKey = string;
 type DraftEditor = {
@@ -61,6 +65,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [chapNo, setChapNo] = useState<string | null>(null);
+  const [disclosureDetailKey, setDisclosureDetailKey] = useState<string | null>(null);
   const [draftEditor, setDraftEditor] = useState<DraftEditor | null>(null);
   const data = content.trustDisclosure;
   const pendingTrustSectionKeys = new Set(data?.pendingTrustSectionKeys ?? []);
@@ -77,11 +82,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   }, {});
   const activeJurisdiction = JURISDICTIONS[0];
   const activeJurisdictionCode = activeJurisdiction?.code ?? "";
-  const activeChapter = DISCLOSURE_CHAPTERS.find((c) => c.jurisdiction === activeJurisdictionCode) ?? DISCLOSURE_CHAPTERS[0];
-  const CHAPTER_BODY_ZH = activeChapter?.zhBody ?? "";
-  const CHAPTER_BODY_VI = activeChapter?.viBody ?? "";
-  const CHAPTER_BODY_EN = activeChapter?.enBody ?? "";
-  const jurisdictionOptions = JURISDICTIONS.map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
+  const jurisdictionCatalog = data?.jurisdictionCatalog?.length ? data.jurisdictionCatalog : JURISDICTIONS.map((item) => ({ code: item.code, name: item.name }));
+  const jurisdictionOptions = jurisdictionCatalog.map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
   const disclosureVersions = data?.disclosureVersions ?? [];
   const countryOptions = (data?.countryOptions ?? []).map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
   const sectionVersionOptions = (sectionKey: string, currentVersion: string) => TRUST_SECTION_VERSIONS
@@ -93,14 +95,39 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     const publishedVersion = JURISDICTIONS.find((row) => row.code === jurisdiction)?.v;
     return DISCLOSURE_CHAPTERS.filter((chapter) => chapter.jurisdiction === jurisdiction && (!publishedVersion || chapter.version === publishedVersion));
   };
-  const chapterPayload = (form: Record<string, string> | undefined, jurisdiction: string, version: string) => chaptersFor(jurisdiction, version).map((chapter, index) => ({
-    no: form?.[`chapter.${index}.no`] || chapter.no,
-    zhTitle: form?.[`chapter.${index}.zhTitle`] || chapter.zh,
-    viTitle: form?.[`chapter.${index}.viTitle`] || chapter.vi,
-    enTitle: form?.[`chapter.${index}.enTitle`] || chapter.en,
-    zhBody: form?.[`chapter.${index}.zhBody`] || chapter.zhBody,
-    viBody: form?.[`chapter.${index}.viBody`] || chapter.viBody,
-    enBody: form?.[`chapter.${index}.enBody`] || chapter.enBody,
+  const fallbackVersionRows = Array.from(new Set(DISCLOSURE_CHAPTERS.map((chapter) => `${chapter.jurisdiction}\u0000${chapter.version}`))).map((key): DisclosureVersionItemView => {
+    const [jurisdiction, version] = key.split("\u0000");
+    const chapters = chaptersFor(jurisdiction, version);
+    const matrix = JURISDICTIONS.find((row) => row.code === jurisdiction);
+    const draft = data?.draft?.jurisdiction === jurisdiction && data.draft.version === version ? data.draft : undefined;
+    const first = chapters[0];
+    return {
+      version,
+      jurisdiction,
+      languageScope: draft?.languageScope ?? (first?.enBody ? "zh+vi+en" : "zh+vi"),
+      effectiveDate: draft?.effectiveDate ?? matrix?.publishedAt ?? "",
+      requiresReack: draft?.requiresReack ?? true,
+      zh: draft?.zh ?? first?.zhBody ?? "",
+      vi: draft?.vi ?? first?.viBody ?? "",
+      en: draft?.en ?? first?.enBody ?? "",
+      status: draft?.status ?? (matrix?.v === version ? matrix.status : "superseded"),
+      chapters,
+      publishedAt: matrix?.v === version ? matrix.publishedAt : "",
+      affected: matrix?.affected ?? 0,
+      pendingAck: matrix?.pendingAck ?? Math.max(0, Math.round((matrix?.affected ?? 0) * (100 - (matrix?.ackProgress ?? 0)) / 100)),
+      blocked: matrix?.blocked ?? 0,
+    };
+  });
+  const I5_VERSION_ROWS: DisclosureVersionItemView[] = data?.disclosureVersionItems?.length ? data.disclosureVersionItems : fallbackVersionRows;
+  const nextVersionFor = (jurisdiction: string) => data?.nextVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersion ?? "";
+  const chapterPayload = (form: Record<string, string> | undefined) => Array.from({ length: 7 }, (_, index) => ({
+    no: form?.[`chapter.${index}.no`] ?? String(index + 1).padStart(2, "0"),
+    zhTitle: form?.[`chapter.${index}.zhTitle`] ?? "",
+    viTitle: form?.[`chapter.${index}.viTitle`] ?? "",
+    enTitle: form?.[`chapter.${index}.enTitle`] ?? "",
+    zhBody: form?.[`chapter.${index}.zhBody`] ?? "",
+    viBody: form?.[`chapter.${index}.viBody`] ?? "",
+    enBody: form?.[`chapter.${index}.enBody`] ?? "",
   }));
   const runBackend = async (task: Promise<void>, ok: string): Promise<boolean> => {
     try {
@@ -122,10 +149,47 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     return () => window.clearInterval(timer);
   }, [actions, view]);
 
+  useEffect(() => {
+    if (view !== "disclosures") return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void actions.reloadIContent();
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [actions, view]);
+
   const liveTrustStatus = (s: TrustSection): string => s.status;
   const liveJurVersion = (j: Jurisdiction): string => j.v;
   const gateOn = (k: string): boolean => GATED_ACTIONS.find((g) => g.key === k)?.active ?? false;
   const disclosureDraft = data?.draft;
+  const disclosureFormSpec = (snapshot: DisclosureVersionItemView | undefined, jurisdiction: string, version: string, mode: "create" | "edit"): BusinessFormSpec => ({
+    kind: "version-authoring",
+    mode,
+    version,
+    jurisdiction,
+    zh: snapshot?.zh ?? "",
+    vi: snapshot?.vi ?? "",
+    en: snapshot?.en ?? "",
+    chapters: snapshot?.chapters?.length === 7
+      ? snapshot.chapters
+      : Array.from({ length: 7 }, (_, index) => ({
+          jurisdiction,
+          version,
+          no: String(index + 1).padStart(2, "0"),
+          zh: "",
+          vi: "",
+          en: "",
+          zhBody: "",
+          viBody: "",
+          enBody: "",
+        })),
+    jurisdictionOptions: mode === "edit" ? jurisdictionOptions.filter((option) => option.value === jurisdiction) : jurisdictionOptions,
+    languageScope: snapshot?.languageScope,
+    languageScopes: data?.languageScopes,
+    effectiveDate: snapshot?.effectiveDate,
+    requiresReack: snapshot?.requiresReack,
+    versionReadonly: true,
+    jurisdictionReadonly: mode === "edit",
+  });
   const normalizedSectionKey = (key: string) => key.replace(/[^a-z0-9]/gi, "").toLowerCase();
   const DATA_SOURCE_REQUIRED_SECTIONS = new Set(["financials", "nexnarrative", "nexstory"]);
   const SENSITIVE_TRUST_SECTIONS = new Set(["financials", "nexnarrative", "nexstory", "compliancebadges", "auditsreserves"]);
@@ -321,52 +385,80 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     });
 
   // ---------- I5 披露动作 ----------
-  const draftDisclosure = () =>
+  const draftDisclosure = (editing?: DisclosureVersionItemView) => {
+    const initialJurisdiction = editing?.jurisdiction ?? jurisdictionOptions[0]?.value ?? "";
+    const version = editing?.version ?? nextVersionFor(initialJurisdiction);
+    if (!editing && !version) {
+      toast("后端尚未返回下一版本号，无法安全新建版本");
+      return;
+    }
+    const base = editing ?? I5_VERSION_ROWS.find((row) => row.jurisdiction === initialJurisdiction && row.status.toLowerCase() === "published");
     openActionConfirm({
-      action: <>草拟披露新版 · 风控提交</>,
+      action: <>{editing ? "编辑披露草稿" : "新建披露版本"} · 风控提交</>,
       detail: (
         <>
           披露正文按中文、越南语必填，英语可选维护(占位符一致)。草稿不生效;发布走「执行门槛:风控/超管」操作确认并触发该法域重确认。
         </>
       ),
       amplifies: false,
-      businessForm: {
-        kind: "version-authoring",
-        version: disclosureDraft?.version ?? "",
-        jurisdiction: disclosureDraft?.jurisdiction ?? activeJurisdictionCode,
-        zh: CHAPTER_BODY_ZH,
-        vi: CHAPTER_BODY_VI,
-        en: CHAPTER_BODY_EN,
-        chapters: chaptersFor(disclosureDraft?.jurisdiction ?? activeJurisdictionCode, disclosureDraft?.version),
-        jurisdictionOptions,
-        versionOptions: disclosureVersions,
-        languageScopes: data?.languageScopes,
-        effectiveDate: disclosureDraft?.effectiveDate,
-        requiresReack: disclosureDraft?.requiresReack,
+      businessForm: disclosureFormSpec(base, initialJurisdiction, version, editing ? "edit" : "create"),
+      onBusinessSelectionChange: async (form) => {
+        if (editing) return disclosureFormSpec(editing, editing.jurisdiction, editing.version, "edit");
+        const jurisdiction = form.jurisdiction;
+        const nextVersion = nextVersionFor(jurisdiction);
+        const currentVersion = JURISDICTIONS.find((row) => row.code === jurisdiction)?.v ?? "";
+        let snapshot = I5_VERSION_ROWS.find((row) => row.jurisdiction === jurisdiction && row.version === currentVersion);
+        if (!snapshot && currentVersion) {
+          try {
+            snapshot = await actions.fetchI5DisclosureVersion(jurisdiction, currentVersion);
+          } catch {
+            toast("目标法域快照加载失败，请刷新后重试");
+          }
+        }
+        return disclosureFormSpec(snapshot, jurisdiction, nextVersion, "create");
       },
       run: (reason, _v, form) => {
-        const version = form?.version?.trim() || disclosureDraft?.version?.trim() || "";
-        const jurisdiction = form?.jurisdiction?.trim() || disclosureDraft?.jurisdiction?.trim() || activeJurisdictionCode;
-        const zh = form?.zh?.trim() || CHAPTER_BODY_ZH;
-        const vi = form?.vi?.trim() || CHAPTER_BODY_VI;
-        const en = form?.en?.trim() || CHAPTER_BODY_EN;
-        if (!version || !jurisdiction || !zh || !vi) {
+        const targetVersion = form?.version?.trim() || "";
+        const jurisdiction = form?.jurisdiction?.trim() || "";
+        const zh = form?.zh?.trim() || "";
+        const vi = form?.vi?.trim() || "";
+        const en = form?.en?.trim() || "";
+        if (!targetVersion || !jurisdiction || !zh || !vi) {
           toast("缺少后端披露版本/法域/正文,无法提交草稿");
           return;
         }
-        runBackend(actions.saveI5DisclosureDraft(jurisdiction, {
-          version,
+        const payload = {
+          version: targetVersion,
           jurisdiction,
-          languageScope: form?.languageScope || disclosureDraft?.languageScope || "",
-          effectiveDate: form?.effectiveDate || disclosureDraft?.effectiveDate || "",
-          requiresReack: form?.requiresReack ?? true,
+          languageScope: form?.languageScope || "zh+vi",
+          effectiveDate: form?.effectiveDate || "",
+          requiresReack: form?.requiresReack !== "false",
           zh,
           vi,
           en,
-          chapters: chapterPayload(form, jurisdiction, version),
-        }, reason), "披露草稿已存 · 发布需风控操作确认");
+          chapters: chapterPayload(form),
+          ...(editing ? { expectedRevision: editing.revision, expectedContentHash: editing.contentHash } : {}),
+        };
+        const task = editing
+          ? actions.updateI5DisclosureVersion(jurisdiction, targetVersion, payload, reason)
+          : actions.createI5DisclosureVersion(jurisdiction, payload, reason);
+        runBackend(task, "披露草稿已存 · 发布需风控操作确认");
       },
     });
+  };
+
+  const deleteDisclosureDraft = (row: DisclosureVersionItemView) => openActionConfirm({
+    action: <>删除披露草稿 · {row.jurisdiction} {row.version}</>,
+    detail: <>仅删除未发布草稿；已发布与已取代版本保持不可变，删除动作写入审计。</>,
+    amplifies: false,
+    run: (reason) => {
+      if (row.revision == null || !row.contentHash) {
+        toast("草稿并发校验信息缺失，请刷新后重试");
+        return;
+      }
+      runBackend(actions.deleteI5DisclosureVersion(row.jurisdiction, row.version, row.revision, row.contentHash, reason), "披露草稿已删除");
+    },
+  });
 
   const configMatrix = (current?: Jurisdiction) =>
     openActionConfirm({
@@ -385,18 +477,30 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         version: current?.v,
         countryCodes: current?.countryCodes ?? [],
         countryOptions,
+        jurisdictionOptions,
         versionOptions: disclosureVersions,
       },
       run: (reason, _v, form) => {
         const jurisdictionCode = form?.jurisdictionCode?.trim().toUpperCase() || "";
         if (!jurisdictionCode) return;
-        runBackend(actions.configureI5Matrix(jurisdictionCode, {
-          jurisdictionCode,
-          jurisdictionName: form?.jurisdictionName || "",
-          countryCodes: (form?.countryCodes || "").split(",").map((code) => code.trim()).filter(Boolean),
-          version: form?.version || "",
-          status: "draft",
-        }, reason), "法域版本映射已保存到后端");
+        const jurisdictionName = jurisdictionCatalog.find((item) => item.code === jurisdictionCode)?.name ?? "";
+        const countryCodes = (form?.countryCodes || "").split(",").map((code) => code.trim()).filter(Boolean);
+        const version = form?.version || "";
+        const def = findHighOp("i5_matrix_configure")!;
+        void propose(toast, {
+          action: `${current ? "调整" : "新增"}披露法域版本矩阵 · ${jurisdictionCode}`,
+          obj: jurisdictionCode,
+          before: current ? `${current.v} · ${current.countryCodes.join("、")}` : "未配置",
+          after: `${version} · ${countryCodes.join("、")}`,
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I5",
+          command: def.buildCommand({ jurisdictionCode, jurisdictionName, countryCodes, version }),
+          target: def.buildTarget({ jurisdictionCode }),
+        });
       },
     });
 
@@ -404,28 +508,59 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     action: <>归档法域版本映射 · {j.code}</>,
     detail: <>归档后保留历史版本与审计记录，不再作为有效披露映射。</>,
     amplifies: false,
-    run: (reason) => runBackend(actions.archiveI5Matrix(j.code, reason), `${j.code} 映射已归档`),
+    run: (reason) => {
+      const def = findHighOp("i5_matrix_archive")!;
+      void propose(toast, {
+        action: `归档披露法域版本矩阵 · ${j.code}`,
+        obj: j.code,
+        before: `${j.v} · ${statusZh(j.status)}`,
+        after: "已归档",
+        type: "param",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "I5",
+        command: def.buildCommand({ jurisdiction: j.code }),
+        target: def.buildTarget({ jurisdiction: j.code }),
+      });
+    },
   });
 
-  const publishDisclosure = (j: Jurisdiction) =>
+  const publishDisclosure = (row: DisclosureVersionItemView) => {
+    const j = JURISDICTIONS.find((item) => item.code === row.jurisdiction);
+    const current = I5_VERSION_ROWS.find((item) => item.jurisdiction === row.jurisdiction && item.status.toLowerCase() === "published");
+    const affected = row.affected ?? j?.affected ?? 0;
+    const pendingAck = row.pendingAck ?? j?.pendingAck ?? Math.max(0, Math.round(affected * (100 - (j?.ackProgress ?? 0)) / 100));
+    const blocked = row.blocked ?? j?.blocked ?? 0;
     openActionConfirm({
-      action: <>发布已存披露草稿 · {j.code}</>,
+      action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       detail: (
         <>
-          <b>合规关键动作</b>:发布只读取服务器已经保存的草稿与固定 7 章快照，不接受确认框临时改正文。发布后 {j.code} 适用国家/地区用户的确认状态转为过期，受限动作在重确认前由服务器拦截。<b>执行门槛 = 风控 / 超管</b>。
+          <b>合规关键动作</b>:发布只读取服务器已经保存的草稿与固定 7 章快照，不接受确认框临时改正文。发布后 {row.jurisdiction} 适用国家/地区用户的确认状态转为过期，受限动作在重确认前由服务器拦截。<b>执行门槛 = 风控 / 超管</b>。
         </>
       ),
       amplifies: false,
-      edit: { kind: "select", current: disclosureDraft?.jurisdiction === j.code ? disclosureDraft.version : "", options: disclosureDraft?.jurisdiction === j.code ? [disclosureDraft.version] : [] },
-      run: (reason, v) => {
-        if (!v) return;
+      businessForm: {
+        kind: "disclosure-publish-review",
+        jurisdiction: row.jurisdiction,
+        currentVersion: current?.version ?? j?.v ?? "",
+        targetVersion: row.version,
+        affected,
+        pendingAck,
+        blocked,
+        gatedActions: GATED_ACTIONS.filter((action) => action.active).map((action) => action.name),
+        currentChapters: current?.chapters ?? [],
+        targetChapters: row.chapters,
+      },
+      run: (reason) => {
         const def = findHighOp("i5_disclosure_publish")!;
-        const version = v;
-        const jurisdiction = j.code;
+        const version = row.version;
+        const jurisdiction = row.jurisdiction;
         void propose(toast, {
-          action: `发布披露新版 · ${j.code}`,
-          obj: j.code,
-          before: liveJurVersion(j),
+          action: `发布披露新版 · ${jurisdiction}`,
+          obj: jurisdiction,
+          before: current?.version ?? j?.v ?? "无生效版",
           after: version,
           type: "param",
           amplifies: false,
@@ -433,11 +568,12 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I5",
-          command: def.buildCommand({ jurisdiction, version }),
+          command: def.buildCommand({ jurisdiction, version, expectedRevision: row.revision, contentHash: row.contentHash }),
           target: def.buildTarget({ jurisdiction }),
         });
       },
     });
+  };
 
   const toggleGate = (g: GateAction) => {
     const on = gateOn(g.key);
@@ -480,6 +616,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const sec = secKey ? TRUST_SECTIONS.find((s) => s.key === secKey) ?? null : null;
   const jur = jurCode ? JURISDICTIONS.find((j) => j.code === jurCode) ?? null : null;
   const chap = chapNo ? DISCLOSURE_CHAPTERS.find((c) => c.no === chapNo) ?? null : null;
+  const selectedDisclosureVersion = disclosureDetailKey
+    ? I5_VERSION_ROWS.find((row) => `${row.jurisdiction}\u0000${row.version}` === disclosureDetailKey) ?? null
+    : null;
   const sectionExternalLink = sec
     ? (SECTION_FIELDS[sec.key] ?? []).find(([key]) => /(^|[._-])(url|link|href)($|[._-])/i.test(key))?.[1] ?? ""
     : "";
@@ -635,8 +774,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <span className="sub">· 风控提交 · 风控 / 超管执行</span>
           <div className="r">
             <span className="icode danger">合规关键 · 风控确认</span>
-            {canDraftDisclosure && <button className="l-btn sm mc" onClick={draftDisclosure}>草拟新版</button>}
-            {canDraftDisclosure && <button className="l-btn sm" onClick={() => configMatrix()}>新增映射</button>}
+            {canDraftDisclosure && <button className="l-btn sm mc" onClick={() => draftDisclosure()}>新建版本</button>}
+            {canPublishDisclosure && <button className="l-btn sm" onClick={() => configMatrix()}>新增映射</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -681,9 +820,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                       {j.blocked}
                     </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canDraftDisclosure && j.status.toLowerCase() === "draft" && <><button className="l-btn sm" onClick={(e) => { e.stopPropagation(); configMatrix(j); }}>编辑草稿映射</button>{" "}</>}
-                      {canPublishDisclosure && <><button className="l-btn sm mc" disabled={disclosureDraft?.jurisdiction !== j.code} onClick={(e) => { e.stopPropagation(); publishDisclosure(j); }}>发布已存草稿</button>{" "}</>}
-                      {canDraftDisclosure && j.status.toLowerCase() !== "archived" && (
+                      {canPublishDisclosure && j.status.toLowerCase() !== "archived" && <><button className="l-btn sm" onClick={(e) => { e.stopPropagation(); configMatrix(j); }}>调整映射</button>{" "}</>}
+                      {canPublishDisclosure && j.status.toLowerCase() === "draft" && (
                         <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); archiveMatrix(j); }}>归档</button>
                       )}
                     </td>
@@ -726,20 +864,35 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       {/* I5 披露版本列表 */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">披露版本列表(I5)· {activeJurisdiction ? `${activeJurisdiction.code} ${activeJurisdiction.v}` : "暂无后端法域"}</span>
-          <span className="sub">· 中文、越南语必备，英语可选 · 占位符一致</span>
+          <span className="ttl">披露版本列表(I5) · 法域 × 版本</span>
+          <span className="sub">· 草稿可编辑/删除，发布后不可变</span>
+          <div className="r">{canDraftDisclosure && <button className="l-btn sm mc" onClick={() => draftDisclosure()}>新建版本</button>}</div>
         </div>
-        <div className="l-b" style={{ paddingTop: 4 }}>
-          {DISCLOSURE_CHAPTERS.map((c) => (
-            <div className="tr-vrow" key={c.no}>
-              <span className="nm">
-                <span className="mono" style={{ color: "var(--ink-4)", marginRight: 8 }}>{c.no}</span>
-                <b style={{ fontWeight: 600, color: "var(--ink-2)" }}>{c.zh}</b>
-                <small style={{ marginLeft: 26, color: "var(--ink-4)" }}>{c.vi || c.en}</small>
-              </span>
-              <button className="l-btn sm" onClick={() => openChap(c.no)}>查看</button>
-            </div>
-          ))}
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 860 }}>
+            <thead><tr><th>法域</th><th>版本</th><th>状态</th><th>语言</th><th>生效/更新</th><th>操作员</th><th>章节</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+            <tbody>
+              {I5_VERSION_ROWS.map((row) => {
+                const isDraft = row.status.toLowerCase() === "draft";
+                const hasConcurrencyToken = row.revision != null && Boolean(row.contentHash);
+                return <tr key={`${row.jurisdiction}-${row.version}`}>
+                  <td className="mono">{row.jurisdiction}</td>
+                  <td className="mono" style={{ fontWeight: 700 }}>{row.version}</td>
+                  <td><span className={`bdg ${isDraft ? "warn" : "ok"}`}>{statusZh(row.status)}</span></td>
+                  <td>{row.languageScope === "zh+vi+en" ? "中文 / 越南语 / 英语" : "中文 / 越南语"}</td>
+                  <td className="mono tiny">{row.publishedAt || row.updatedAt || row.effectiveDate || "—"}</td>
+                  <td>{row.operator || "—"}</td>
+                  <td>{row.chapters.length} / 7</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <button className="l-btn sm" onClick={() => setDisclosureDetailKey(`${row.jurisdiction}\u0000${row.version}`)}>查看七章</button>{" "}
+                    {isDraft && canDraftDisclosure && <><button className="l-btn sm" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => draftDisclosure(row)}>编辑版本</button>{" "}<button className="l-btn sm" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => deleteDisclosureDraft(row)}>删除草稿</button>{" "}</>}
+                    {isDraft && canPublishDisclosure && row.chapters.length === 7 && <button className="l-btn sm mc" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => publishDisclosure(row)}>发布</button>}
+                  </td>
+                </tr>;
+              })}
+              {I5_VERSION_ROWS.length === 0 && <tr><td colSpan={8}><div className="itint">暂无后端披露版本，请等待后端返回 nextVersion 后新建。</div></td></tr>}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -757,13 +910,15 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                 <th>目标版本</th>
                 <th className="num">受影响</th>
                 <th className="num">已确认</th>
+                <th className="num">待确认</th>
                 <th>进度</th>
                 <th className="num">拦截数</th>
               </tr>
             </thead>
             <tbody>
               {JURISDICTIONS.map((j) => {
-                const acked = Math.round((j.affected * j.ackProgress) / 100);
+                const pendingAck = j.pendingAck ?? Math.max(0, Math.round(j.affected * (100 - j.ackProgress) / 100));
+                const acked = j.acked ?? Math.max(0, j.affected - pendingAck);
                 return (
                   <tr key={j.code}>
                     <td>
@@ -772,6 +927,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                     <td className="mono" style={{ fontWeight: 700 }}>{liveJurVersion(j)}</td>
                     <td className="num mono">{j.affected.toLocaleString("en-US")}</td>
                     <td className="num mono">{acked.toLocaleString("en-US")}</td>
+                    <td className="num mono">{pendingAck.toLocaleString("en-US")}</td>
                     <td>
                       <span className="tr-prog">
                         <i style={{ width: `${j.ackProgress}%` }} />
@@ -980,6 +1136,24 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       )}
 
       {/* 章节 Drawer */}
+      {view === "disclosures" && selectedDisclosureVersion && (
+        <Drawer
+          title={`披露版本 · ${selectedDisclosureVersion.jurisdiction} ${selectedDisclosureVersion.version}`}
+          onClose={() => setDisclosureDetailKey(null)}
+          footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDisclosureDetailKey(null)}>关闭</button>}
+        >
+          <div className="itint" style={{ marginBottom: 10 }}>
+            状态：{statusZh(selectedDisclosureVersion.status)} · 语言：{selectedDisclosureVersion.languageScope === "zh+vi+en" ? "中文 / 越南语 / 英语" : "中文 / 越南语"} · 章节：{selectedDisclosureVersion.chapters.length} / 7
+          </div>
+          {selectedDisclosureVersion.chapters.map((chapter) => <div className="card" key={chapter.no} style={{ padding: 10, marginTop: 8 }}>
+            <b>第 {chapter.no} 章 · {chapter.zh}</b>
+            <div className="tiny" style={{ marginTop: 4 }}>{chapter.zhBody}</div>
+            <div style={{ marginTop: 8 }}><b>{chapter.vi}</b><div className="tiny">{chapter.viBody}</div></div>
+            {chapter.en && <div style={{ marginTop: 8 }}><b>{chapter.en}</b><div className="tiny">{chapter.enBody}</div></div>}
+          </div>)}
+        </Drawer>
+      )}
+
       {view === "disclosures" && chap && (
         <Drawer
           title={`章节 ${chap.no} · ${chap.zh}(${chap.jurisdiction} ${chap.version})`}

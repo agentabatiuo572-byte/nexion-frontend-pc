@@ -10,6 +10,7 @@ export type ActionConfirmReq = {
   coverage?: CoverageSnapshot;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
+  onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void;
 };
 

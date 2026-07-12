@@ -168,6 +168,7 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
           onConfirm={(reason, newValue, businessValue) => { mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
         />
