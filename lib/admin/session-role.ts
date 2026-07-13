@@ -15,6 +15,8 @@ const BUILTIN_ROLE_ALIASES: Record<string, string> = {
 const CLASSIC_MENU_ALIASES: Record<string, string> = {
   MENU_CONTENT_I4: "I4",
   MENU_CONTENT_I5: "I5",
+  MENU_RISK: "K",
+  MENU_RISK_K6: "K6",
 };
 
 function normalizeMenuCode(code: unknown): string {
@@ -57,20 +59,32 @@ export function normalizeEffectiveMenuNodes(session: { effectiveMenuNodes?: unkn
   sortOrder: number | null;
 }> | undefined {
   if (!Array.isArray(session.effectiveMenuNodes)) return undefined;
-  return session.effectiveMenuNodes.flatMap((raw) => {
-    if (!raw || typeof raw !== "object") return [];
+  const normalizedNodes: Array<{
+    menuCode: string;
+    menuName: string;
+    routePath: string | null;
+    parentCode: string | null;
+    sortOrder: number | null;
+  }> = [];
+
+  for (const raw of session.effectiveMenuNodes) {
+    if (!raw || typeof raw !== "object") continue;
     const node = raw as EffectiveMenuNodeWire;
     const menuCode = normalizeMenuCode(node.menuCode);
-    if (!menuCode) return [];
+    if (!menuCode) continue;
     const hasOrder = (typeof node.sortOrder === "number")
       || (typeof node.sortOrder === "string" && node.sortOrder.trim() !== "");
     const parsedOrder = hasOrder ? Number(node.sortOrder) : Number.NaN;
-    return [{
+    normalizedNodes.push({
       menuCode,
       menuName: String(node.menuName ?? menuCode).trim() || menuCode,
       routePath: typeof node.routePath === "string" ? node.routePath.trim() || null : null,
-      parentCode: typeof node.parentCode === "string" ? node.parentCode.trim().toUpperCase() || null : null,
+      parentCode: typeof node.parentCode === "string" ? normalizeMenuCode(node.parentCode) || null : null,
       sortOrder: Number.isFinite(parsedOrder) ? parsedOrder : null,
-    }];
-  });
+    });
+  }
+
+  // Keep alias collisions as candidates. The navigation registry knows the exact
+  // expected parent and route, so it is the only safe place to choose among them.
+  return normalizedNodes;
 }

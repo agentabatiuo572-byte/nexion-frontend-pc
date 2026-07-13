@@ -63,6 +63,7 @@ test("custom role codes survive session normalization", () => {
 test("login wire consumes backend effectiveMenus and preserves explicit empty grants", () => {
   assert.deepEqual(normalizeEffectiveMenus({ effectiveMenus: ["A6", " A8 ", "MENU_CONTENT_I4", "MENU_CONTENT_I5"] }), ["A6", "A8", "I4", "I5"]);
   assert.deepEqual(normalizeEffectiveMenus({ effectiveMenus: [] }), []);
+  assert.deepEqual(normalizeEffectiveMenus({ effectiveMenus: ["MENU_RISK", "MENU_RISK_K6"] }), ["K", "K6"]);
   assert.deepEqual(normalizeEffectiveMenus({ menuCodes: ["L5"] }), ["L5"]);
   assert.equal(normalizeEffectiveMenus({}), undefined);
   assert.equal(normalizeEffectiveMenuNodes({
@@ -91,6 +92,51 @@ test("classic database menu aliases render the split I4 and I5 pages", () => {
     ["I4", "信任中心 CMS", "/content/trust"],
     ["I5", "风险披露版本", "/content/disclosures"],
   ]);
+});
+
+test("a stale K6 alias row cannot overwrite the canonical K6 menu metadata", () => {
+  const menuCodes = normalizeEffectiveMenus({ effectiveMenus: ["K", "K6", "MENU_RISK_K6"] });
+  const menuNodes = normalizeEffectiveMenuNodes({
+    effectiveMenuNodes: [
+      { menuCode: "K", menuName: "风控与反作弊", routePath: "/risk", parentCode: null, sortOrder: 10 },
+      { menuCode: "K6", menuName: "Janus C2 控制台", routePath: "/risk/janus-c2", parentCode: "K", sortOrder: 6 },
+      { menuCode: "MENU_RISK_K6", menuName: "Janus C2 控制台", routePath: "/risk/janus-c2", parentCode: null, sortOrder: 2006 },
+    ],
+  });
+  const risk = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes })
+    .find((domain) => domain.code === "K");
+
+  assert.equal(risk?.l2.some((item) => item.id === "K6"), true);
+});
+
+test("a complete K6 alias row repairs incomplete canonical metadata", () => {
+  const menuCodes = normalizeEffectiveMenus({ effectiveMenus: ["K", "K6", "MENU_RISK_K6"] });
+  const menuNodes = normalizeEffectiveMenuNodes({
+    effectiveMenuNodes: [
+      { menuCode: "K", menuName: "风控与反作弊", routePath: "/risk", parentCode: null, sortOrder: 10 },
+      { menuCode: "K6", menuName: "Janus C2 控制台", routePath: null, parentCode: null, sortOrder: null },
+      { menuCode: "MENU_RISK_K6", menuName: "Janus C2 控制台", routePath: "/risk/janus-c2", parentCode: "MENU_RISK", sortOrder: 6 },
+    ],
+  });
+  const risk = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes })
+    .find((domain) => domain.code === "K");
+
+  assert.equal(risk?.l2.some((item) => item.id === "K6"), true);
+});
+
+test("K6 visibility ignores a more complete alias with a stale route", () => {
+  const menuCodes = normalizeEffectiveMenus({ effectiveMenus: ["K", "K6", "MENU_RISK_K6"] });
+  const menuNodes = normalizeEffectiveMenuNodes({
+    effectiveMenuNodes: [
+      { menuCode: "K", menuName: "风控与反作弊", routePath: "/risk", parentCode: null, sortOrder: 10 },
+      { menuCode: "K6", menuName: "Janus C2 控制台", routePath: "/risk/janus-c2", parentCode: "K", sortOrder: null },
+      { menuCode: "MENU_RISK_K6", menuName: "旧 Janus 页面", routePath: "/risk/old-janus", parentCode: "MENU_RISK", sortOrder: 6 },
+    ],
+  });
+  const risk = resolveVisibleDomains({ role: "superadmin", menuCodes, menuNodes })
+    .find((domain) => domain.code === "K");
+
+  assert.equal(risk?.l2.find((item) => item.id === "K6")?.path, "/risk/janus-c2");
 });
 
 test("interactive login reloads the document after storing the new session", () => {

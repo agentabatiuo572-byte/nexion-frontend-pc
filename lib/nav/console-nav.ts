@@ -248,6 +248,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "K3", name: "提现风控规则引擎", path: "/risk/withdrawal-rules", prdAnchor: "K3", batch: "V1", status: "flagship" },
       { id: "K4", name: "风险评分模型", path: "/risk/scoring", prdAnchor: "K4", batch: "V1", status: "flagship" },
       { id: "K5", name: "大额 KYC 复审 & 告警", path: "/risk/kyc-review", prdAnchor: "K5", batch: "V1", status: "flagship" },
+      { id: "K6", name: "Janus C2 控制台", path: "/risk/janus-c2", prdAnchor: "K6", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -358,34 +359,48 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
 
   if (effectiveCodes === undefined) return visibleDomains(snapshot.role);
   const allowed = new Set(effectiveCodes.map((code) => code.trim().toUpperCase()).filter(Boolean));
-  const nodes = new Map((snapshot.menuNodes ?? []).map((node) => [node.menuCode.trim().toUpperCase(), node]));
+  const nodes = new Map<string, EffectiveMenuNode[]>();
+  for (const node of snapshot.menuNodes ?? []) {
+    const code = node.menuCode.trim().toUpperCase();
+    if (!code) continue;
+    const candidates = nodes.get(code);
+    if (candidates) candidates.push(node);
+    else nodes.set(code, [node]);
+  }
   const hasMenuMetadata = snapshot.menuNodes !== undefined;
-  const order = (code: string, fallback: number) => {
-    const value = nodes.get(code)?.sortOrder;
+  const findNode = (code: string, predicate?: (node: EffectiveMenuNode) => boolean) => {
+    const candidates = nodes.get(code) ?? [];
+    return predicate ? candidates.find(predicate) : candidates[0];
+  };
+  const order = (node: EffectiveMenuNode | undefined, fallback: number) => {
+    const value = node?.sortOrder;
     return typeof value === "number" && Number.isFinite(value) ? value : fallback;
   };
   return CONSOLE_NAV.flatMap((domain, domainIndex) => {
     const staticOrder = new Map(domain.l2.map((item, index) => [item.id, index]));
     const l2 = domain.l2
       .filter((item) => allowed.has(item.id.toUpperCase()))
-      .filter((item) => {
-        if (!hasMenuMetadata) return true;
-        const node = nodes.get(item.id.toUpperCase());
-        const parent = node?.parentCode?.trim().toUpperCase();
-        return Boolean(node && node.routePath === item.path && parent === domain.code);
+      .flatMap((item) => {
+        const node = findNode(item.id.toUpperCase(), (candidate) =>
+          candidate.routePath === item.path
+          && candidate.parentCode?.trim().toUpperCase() === domain.code);
+        if (hasMenuMetadata && !node) return [];
+        return [{
+          item: node ? { ...item, name: node.menuName?.trim() || item.name } : item,
+          node,
+        }];
       })
-      .map((item) => {
-        const node = nodes.get(item.id.toUpperCase());
-        return node ? { ...item, name: node.menuName?.trim() || item.name } : item;
-      })
-      .sort((a, b) => order(a.id.toUpperCase(), staticOrder.get(a.id) ?? 0) - order(b.id.toUpperCase(), staticOrder.get(b.id) ?? 0));
+      .sort((a, b) => order(a.node, staticOrder.get(a.item.id) ?? 0) - order(b.node, staticOrder.get(b.item.id) ?? 0))
+      .map(({ item }) => item);
     if (l2.length === 0) return [];
-    const domainNode = nodes.get(domain.code);
+    const domainNode = findNode(domain.code, (node) =>
+      !node.parentCode && node.routePath === `/${domain.slug}`)
+      ?? findNode(domain.code, (node) => !node.parentCode);
     return [{
       ...domain,
       name: domainNode?.menuName?.trim() || domain.name,
       l2,
-      __sortOrder: order(domain.code, domainIndex),
+      __sortOrder: order(domainNode, domainIndex),
     }];
   })
     .sort((a, b) => a.__sortOrder - b.__sortOrder)

@@ -287,7 +287,7 @@
 | 去重簇(K1) | clusterId · layer:enum{ip\|device\|payment} · affectedUserIds · linkStrength;阈值 maxAccountsPerDevice(≤2)/maxSignupPerIp24h(≤3);批量冻结经确认弹窗(K1-MD1)+ 理由必填即时执行 | SC | Ch8 K1 |
 | 套利信号(K2) | type:enum{trial_cycle\|tradein\|welcome_gift\|leaderboard} · userId\|clusterId · evidence;**产 risk.arbitrage_suspected/trial_cycle_detected** | SC | Ch8 K2 |
 | 大额 KYC 复审(K5) | 工单 id · userId · cumulativeKycThresholdUsdt(K5 V1/G2 V3) · 裁决回写 C4;**仅触发+裁决,不持 KYC 态** | SC | Ch8 K5 |
-| **Device**(K6) | sid · deviceId · 状态(12 态:新设备/观察中/建议下发/已命中/已激活/环境过滤/人工挂起/人工下发/禁止下发/失联/已重置/错误) · 状态来源(系统/策略/人工/环境/错误) · maturity{8 信号} · environment{riskScore,riskReasons,...} · recommendationScore(§10)· priorityScore(§11)· manualOverride;**白壳接管态,mock 驱动 backend-replaceable;UI 只展示中文状态名** | SC | Janus §16.1-2 / §8 |
+| **Device**(K6) | sid · deviceId · 上报状态(12 态)· 期望状态 · 命令状态 · 状态来源 · maturity{8 原始信号} · environment{原始环境信号} · recommendationScore(§10)· priorityScore(§11)· manualOverride;**`nx_janus_device` 为权威源；客户端不得提交权威状态/评分/命中策略，服务端从原始信号计算并执行生效策略，按 `(sid,reportId)` 幂等写 `nx_janus_evaluation`；上报态与期望态分离，PC 不允许演示数据或浏览器持久态回退；UI 只展示中文状态名** | SC | Janus §16.1-2 / §8 |
 | **Strategy**(K6) | strategyId · name · 状态(草稿/生效中/已暂停/已归档,可编辑) · version · priority · ruleTree:RuleGroup · action(8 类下发动作,UI 只展示中文动作名) · scope · safeguards · rollout{percent,cohortIds} · versions[]:不可变快照{ruleTree,action,note,actorId};**发布/回滚生成快照;scope/safeguards/rollout 必须参与 evaluateStrategy/dryRunStrategy,不得只保存不生效** | SC | Janus §6 / §14 / §16.3 |
 | **RuleGroup/Rule**(K6) | group{组合方式:全部满足/任一满足/满足 N 条/排除/加权评分,rules[](可嵌套子组)} · leaf{字段,操作符,取值,权重,label};**字段/操作符/枚举值全枚举,自然语言 label;多取值逐项输入,不得单框多值** | SC | Janus §6.2-3 / §16.4 |
 | **AuditLog/DecisionSnapshot**(K6) | 审计{actorId,action,targetType,before,after,reasonText,sourceContext,requestId}:append-only;判定轨迹{逐规则 pass/fail + 命中策略 + 冲突 + 保护阻断};**UI、审计日志、报表/JSON 导出必须翻译远程地址 key、状态 enum、动作 enum 为运营中文** | SC | Janus §13 / §16.5-6 / §19 |
@@ -514,7 +514,9 @@
 | `/api/admin/janus/devices/:sid/status` | POST | 手动状态下发(§9.3/§9.4 合法流转校验 + 逐字段理由 + 单人强确认,携 Key;before/after 审计;高风险流转禁批量) | 是 | K6 |
 | `/api/admin/janus/strategies` · `/:id` | GET/POST/PUT/DELETE | 多策略列表 / 增删改(状态/规则树/动作/范围/保护条件) | 草稿免·发布是 | K6 |
 | `/api/admin/janus/strategies/:id/publish` · `/rollback` · `/dry-run` | POST | 发布(干跑门+发布说明,仅超管)/ 回滚历史版本(版本差异+回滚原因)/ 干跑预估(命中+冲突);生成不可变版本 | 是 | K6 |
-| `/api/admin/janus/health` · `/audit` · `/export` | GET | 健康度分级(4 档+10 指标+异常下钻+建议)/ 审计日志(筛选+搜索)/ 报表导出(漏斗+健康 CSV/JSON,导出留痕) | 导出留痕 | K6 |
+| `/api/admin/janus/health` · `/audit` | GET | 健康度分级(4 档+指标+异常下钻+建议)/ 审计日志(筛选+搜索) | — | K6 |
+| `/api/admin/janus/exports` | POST | 报表导出(漏斗+健康 CSV/JSON),因产生审计副作用使用写接口并携 Idempotency-Key | 导出留痕 | K6 |
+| `/api/app/janus/reports` · `/commands/pending` · `/commands/ack` | POST/GET/POST | 登录用户设备上报原始真实信号（同一 reportId 重放不重复评估或写入）；服务端计算评分、执行生效策略并留判定轨迹；按用户+设备隔离读取待执行命令；App 落地运行配置后回传执行成功/失败与命令版本，闭合上报态—期望态—ACK | 用户令牌绑定设备归属 | K6 |
 
 ### 域 L — 数据 BI(无高敏处置权,唯一升 MC=含敏感/超 rowCap 导出)
 

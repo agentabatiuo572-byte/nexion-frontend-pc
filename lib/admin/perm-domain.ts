@@ -3,7 +3,7 @@
  *
  * 权限码格式统一为 `前缀_页面_动作`(如 finprod_g1_apy_write = G域/G1/HIGH写)。
  * - 第一段(前缀)13 个取值与业务域 A-M 1:1 对齐(全样本验证)。
- * - 第二段(页面)2 类无 console-nav L2 对应(c1hub/k6),显式 fallback 收纳,其余全覆盖。
+ * - 第二段无 console-nav L2 对应的 c1hub 用显式 fallback 收纳,其余全覆盖。
  *
  * 数据源:CONSOLE_NAV(lib/nav/console-nav.ts)= 13 域元数据单源。
  * 不依赖后端 menuCodePath(seed 不保证 JOIN,可能"—"导致权限丢失)。
@@ -46,7 +46,6 @@ const FALLBACK_DOMAIN: NavDomain = {
 /** 第二段(页面)无 console-nav L2 对应的显式 fallback。 */
 const PAGE_FALLBACK: Record<string, { id: string; name: string }> = {
   c1hub: { id: "C1HUB", name: "C1 用户 360 画像" },
-  k6: { id: "K6", name: "K6 Janus C2(扩展)" },
 };
 
 /** 权限码 → 所属业务域(未识别返回兜底域)。 */
