@@ -6,7 +6,7 @@ export type Density = "normal" | "dense";
 
 interface AdminUiState {
   sidebarCollapsed: boolean;
-  expandedGroups: string[]; // 手动展开的域 code;当前路由所在域始终展开
+  expandedGroups: string[]; // 手风琴状态，始终只保存 0 或 1 个域 code
   density: Density;
   toggleSidebar: () => void;
   setSidebar: (collapsed: boolean) => void;
@@ -19,23 +19,26 @@ export const useAdminUi = create<AdminUiState>()(
   persist(
     (set) => ({
       sidebarCollapsed: false,
-      expandedGroups: ["B"], // 默认展开驾驶舱
+      expandedGroups: [], // 默认全部折叠
       density: "normal",
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       setSidebar: (collapsed) => set({ sidebarCollapsed: collapsed }),
       toggleGroup: (code) =>
         set((s) => ({
-          expandedGroups: s.expandedGroups.includes(code)
-            ? s.expandedGroups.filter((c) => c !== code)
-            : [...s.expandedGroups, code],
+          expandedGroups: s.expandedGroups[0] === code ? [] : [code],
         })),
-      setExpanded: (codes) => set({ expandedGroups: codes }),
+      setExpanded: (codes) => set({ expandedGroups: codes.length > 0 ? [codes[codes.length - 1]] : [] }),
       setDensity: (density) => set({ density }),
     }),
     {
       name: "nexion-admin-ui-v1",
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      migrate: (persistedState) => ({
+        ...(persistedState as Partial<AdminUiState>),
+        // v1 允许同时展开多个域；升级时清空，确保新默认和手风琴不变量立即生效。
+        expandedGroups: [],
+      }),
     },
   ),
 );

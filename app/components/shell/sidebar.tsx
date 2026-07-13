@@ -89,15 +89,24 @@ export function Sidebar({
     };
   }, [pathname]);
   const toggleGroup = useAdminUi((s) => s.toggleGroup);
+  const setExpanded = useAdminUi((s) => s.setExpanded);
   const setSidebar = useAdminUi((s) => s.setSidebar);
   const toggleSidebar = useAdminUi((s) => s.toggleSidebar);
   const visibleL2Count = domains.reduce((total, domain) => total + domain.l2.length, 0);
   const showHomeEntry = role !== "support";
   const badges = useNavBadges();
+  const activeDomainCode = domains.find((domain) =>
+    domain.l2.some((item) => item.path === pathname))?.code;
+
+  // 路由跳转、浏览器前进/后退和直接打开子页面时，只展开选中页面所属域。
+  // 首页不属于任何域，因此保持全部折叠。
+  useEffect(() => {
+    setExpanded(activeDomainCode ? [activeDomainCode] : []);
+  }, [activeDomainCode, setExpanded]);
 
   const onCollapsedOpen = (code: string) => {
     setSidebar(false);
-    if (!expanded.includes(code)) toggleGroup(code);
+    setExpanded([code]);
   };
 
   return (
@@ -112,6 +121,7 @@ export function Sidebar({
       <Link
         href="/"
         prefetch={false}
+        onClick={() => setExpanded([])}
         className="flex items-center gap-2.5 px-3.5"
         style={{ height: "var(--admin-topbar-h)", borderBottom: "1px solid var(--v5-border)" }}
       >
@@ -148,6 +158,7 @@ export function Sidebar({
               <Link
                 href="/"
                 prefetch={false}
+                onClick={() => setExpanded([])}
                 title="运营总览 · 指挥台"
                 aria-label="运营总览"
                 className="mx-auto flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors hover:bg-[var(--v5-surface-2)]"
@@ -161,6 +172,7 @@ export function Sidebar({
             <Link
               href="/"
               prefetch={false}
+              onClick={() => setExpanded([])}
               className="relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 transition-colors hover:bg-[var(--v5-surface-2)]"
               style={{ background: homeActive ? "var(--v5-surface-2)" : "transparent" }}
             >
@@ -177,8 +189,7 @@ export function Sidebar({
         })()}
         {showHomeEntry && <div className="my-1.5" style={{ height: 1, background: "var(--v5-border)" }} />}
         {domains.map((d) => {
-          const groupActive = d.l2.some((l2) => l2.path === pathname);
-          const isOpen = !collapsed && (expanded.includes(d.code) || groupActive);
+          const isOpen = !collapsed && expanded[0] === d.code;
           return (
             <SidebarGroup
               key={d.code}

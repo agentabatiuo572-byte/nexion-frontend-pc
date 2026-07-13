@@ -100,7 +100,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const role = mounted ? authRole : "auditor";
   const operator = mounted ? operatorRaw : "总管理员";
   const collapsed = mounted ? collapsedRaw : false;
-  const expanded = mounted ? expandedRaw : ["B"];
+  const expanded = mounted ? expandedRaw : [];
   const domains = useMemo(() => resolveVisibleDomains({
     role,
     menuCodes: session?.menuCodes,
