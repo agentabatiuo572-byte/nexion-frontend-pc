@@ -538,7 +538,7 @@ export type BusinessFormSpec =
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
-  | { kind: "version-authoring"; version?: string; jurisdiction?: string; zh?: string; en?: string; chapters?: string[]; languageScopes?: string[]; effectiveDate?: string; requiresReack?: boolean }
+  | { kind: "version-authoring"; version?: string; jurisdiction?: string; jurisdictionOptions?: string[]; jurisdictionLabels?: Record<string, ReactNode>; zh?: string; en?: string; chapters?: string[]; languageScopes?: string[]; effectiveDate?: string; requiresReack?: boolean }
   | { kind: "destructive-reason"; target: string; impact: string; requireAck?: boolean }
   | { kind: "task-edit"; subject?: string; currentName?: string; currentPath?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "day-one-window"; currentActiveHours?: string; currentGraceHours?: string }
@@ -1411,7 +1411,7 @@ function BusinessFormBlock({ spec, value, onChange }: { spec: BusinessFormSpec; 
         <label>业务表单 · 新版本草拟 / 发布</label>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("version", "版本号 version", "输入版本号")}
-          {input("jurisdiction", "法域 jurisdiction", "输入法域")}
+          {select("jurisdiction", "法域 jurisdiction", spec.jurisdictionOptions ?? [], spec.jurisdictionLabels)}
           {select("languageScope", "语言范围 language scope", spec.languageScopes ?? DEFAULT_LANGUAGE_SCOPES)}
           {input("effectiveDate", "生效日 effective date", "YYYY-MM-DD", "date")}
           {select("requiresReack", "是否要求 re-ack", ["true", "false"])}

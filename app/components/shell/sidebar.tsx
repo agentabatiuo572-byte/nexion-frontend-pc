@@ -177,8 +177,7 @@ export function Sidebar({
         })()}
         {showHomeEntry && <div className="my-1.5" style={{ height: 1, background: "var(--v5-border)" }} />}
         {domains.map((d) => {
-          const groupActive = d.l2.some((l2) => l2.path === pathname);
-          const isOpen = !collapsed && (expanded.includes(d.code) || groupActive);
+          const isOpen = !collapsed && expanded.includes(d.code);
           return (
             <SidebarGroup
               key={d.code}

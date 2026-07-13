@@ -12,7 +12,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { currentAdminSession } from "@/lib/admin/auth-client";
 import { canAccessResolvedPath, resolveVisibleDomains, type NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { useAdminUi } from "@/lib/store/admin-ui";
+import { DEFAULT_EXPANDED_GROUPS, useAdminUi } from "@/lib/store/admin-ui";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
 import { PageTransition } from "./page-transition";
@@ -69,7 +69,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const role = mounted ? authRole : "auditor";
   const operator = mounted ? operatorRaw : "总管理员";
   const collapsed = mounted ? collapsedRaw : false;
-  const expanded = mounted ? expandedRaw : ["B"];
+  const expanded = mounted ? expandedRaw : DEFAULT_EXPANDED_GROUPS;
   const domains = useMemo(() => resolveVisibleDomains({
     role,
     menuCodes: session?.menuCodes,

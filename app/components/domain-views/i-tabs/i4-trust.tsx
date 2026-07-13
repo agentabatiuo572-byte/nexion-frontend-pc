@@ -163,13 +163,19 @@ export function I4Trust({ ctx }: { ctx: ICtx }) {
       businessForm: {
         kind: "version-authoring",
         version: disclosureDraft?.version ?? "",
-        jurisdiction: disclosureDraft?.jurisdiction ?? activeJurisdictionCode,
+        jurisdiction: JURISDICTIONS.some((jurisdiction) => jurisdiction.code === disclosureDraft?.jurisdiction)
+          ? disclosureDraft?.jurisdiction
+          : activeJurisdictionCode,
+        jurisdictionOptions: JURISDICTIONS.map((jurisdiction) => jurisdiction.code),
+        jurisdictionLabels: Object.fromEntries(
+          JURISDICTIONS.map((jurisdiction) => [jurisdiction.code, `${jurisdiction.code} · ${jurisdiction.name}`]),
+        ),
         zh: CHAPTER_BODY_ZH,
         en: CHAPTER_BODY_EN,
       },
       run: (reason, _v, form) => {
         const version = form?.version?.trim() || disclosureDraft?.version?.trim() || "";
-        const jurisdiction = form?.jurisdiction?.trim() || disclosureDraft?.jurisdiction?.trim() || activeJurisdictionCode;
+        const jurisdiction = form?.jurisdiction?.trim() || activeJurisdictionCode;
         const zh = form?.zh?.trim() || CHAPTER_BODY_ZH;
         const en = form?.en?.trim() || CHAPTER_BODY_EN;
         if (!version || !jurisdiction || !zh || !en) {
