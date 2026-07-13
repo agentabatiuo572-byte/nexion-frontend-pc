@@ -30,3 +30,8 @@ test("I6 surfaces Chinese status labels and selected-key integrity repair", () =
   assert.match(view, /messageKey:\s*selectedMessage\.messageKey/);
   assert.match(view, /actions\.rescanI6/);
 });
+
+test("I6 only offers integrity repair when an issue count is positive", () => {
+  assert.match(view, /iss\.cnt > 0 && canWriteI6/);
+  assert.match(view, /iss\.cnt === 0 && <span className="tiny">无需修复<\/span>/);
+});

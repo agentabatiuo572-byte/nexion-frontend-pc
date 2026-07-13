@@ -727,15 +727,6 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
       text: str(m.content, ""),
     };
   });
-  if (!messages.length && base.lastMessage) {
-    messages.push({
-      ts: asTs(base.lastMessageAt, updated),
-      sender: "agent",
-      agentName: base.ownerAgentName || "客服台",
-      status: "sent",
-      text: base.lastMessage,
-    });
-  }
   const transfer = base.transferToType
     ? {
         from: str(base.transferFromAgentName, "客服台"),

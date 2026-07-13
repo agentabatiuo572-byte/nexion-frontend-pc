@@ -1899,12 +1899,21 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
               </div>
               <div className="grid g-2" style={{ gap: 10 }}>
                 {input(`quiz.${questionIndex}.id`, "题目标识", `q${questionIndex + 1}`)}
-                {select(`quiz.${questionIndex}.correctOptionIndex`, "正确选项", Array.from({ length: optionCount }, (_, i) => String(i)),
-                  Object.fromEntries(Array.from({ length: optionCount }, (_, i) => [String(i), `第 ${i + 1} 项`])))}
                 {input(`quiz.${questionIndex}.questionZh`, "中文题干", "本课核心结论是什么？")}
                 {input(`quiz.${questionIndex}.questionEn`, "英文题干", "What is the key takeaway?")}
                 {input(`quiz.${questionIndex}.questionVi`, "越南语题干", "Kết luận chính của bài học là gì?")}
                 {Array.from({ length: optionCount }, (_, optionIndex) => <Fragment key={optionIndex}>
+                  <div className="field" style={{ gridColumn: "1 / -1", marginBottom: -4 }}>
+                    <label className="row" style={{ gap: 8, cursor: "pointer", color: "var(--ink-2)" }}>
+                      <input
+                        type="radio"
+                        name={`quiz-${questionIndex}-correct-option`}
+                        checked={Number(value[`quiz.${questionIndex}.correctOptionIndex`] || 0) === optionIndex}
+                        onChange={() => onChange({ ...value, [`quiz.${questionIndex}.correctOptionIndex`]: String(optionIndex) })}
+                      />
+                      <b>设为正确答案：选项 {optionIndex + 1}</b>
+                    </label>
+                  </div>
                   {input(`quiz.${questionIndex}.option.${optionIndex}.zh`, `选项 ${optionIndex + 1}（中文）`, "请输入中文选项")}
                   {input(`quiz.${questionIndex}.option.${optionIndex}.en`, `选项 ${optionIndex + 1}（英文）`, "Enter English option")}
                   {input(`quiz.${questionIndex}.option.${optionIndex}.vi`, `选项 ${optionIndex + 1}（越南语）`, "Nhập lựa chọn tiếng Việt")}
@@ -1914,6 +1923,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
             </div>;
           })}
           <button type="button" className="btn sm" onClick={addQuestion}>+ 添加题目</button>
+          <div className="tint tiny" style={{ marginTop: 8 }}>计分规则：正确题数 ÷ 总题数 × 100，四舍五入为整数；达到下方通过分数才算测验通过。</div>
           <div className="grid g-2" style={{ gap: 10, marginTop: 10 }}>
             {input("passScore", "通过分数（1-100）", "60", "number")}
             {input("retries", "最多重试次数（0-10）", "3", "number")}

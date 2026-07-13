@@ -28,6 +28,13 @@ test("I7 quiz editor is structured and does not accept semicolon-packed options"
   assert.match(view, /quizQuestions:/);
 });
 
+test("I7 quiz editor marks the correct answer beside each option and explains scoring", () => {
+  assert.match(kit, /type="radio"/);
+  assert.match(kit, /设为正确答案：选项 \{optionIndex \+ 1\}/);
+  assert.match(kit, /正确题数 ÷ 总题数 × 100/);
+  assert.doesNotMatch(kit, /correctOptionIndex`, "正确选项"/);
+});
+
 test("I7 featured course is selected from published backend courses", () => {
   assert.match(view, /kind:\s*"select"/);
   assert.match(view, /publishedCourseOptions/);

@@ -890,7 +890,6 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <span className="sub">· 风控提交 · 风控 / 超管执行</span>
           <div className="r">
             <span className="icode danger">合规关键 · 风控确认</span>
-            {canDraftDisclosure && <button className="l-btn sm mc" onClick={() => draftDisclosure()}>新建版本</button>}
             {canPublishDisclosure && <button className="l-btn sm" onClick={() => configMatrix()}>新增映射</button>}
           </div>
         </div>

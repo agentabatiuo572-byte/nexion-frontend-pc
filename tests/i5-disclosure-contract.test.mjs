@@ -115,6 +115,21 @@ test("I5 renders real jurisdiction-version rows and complete draft CRUD controls
   assert.match(view, /须先启用法域/);
 });
 
+test("I5 exposes new-version creation only from the disclosure version list", () => {
+  const matrixSection = view.slice(
+    view.indexOf("{/* I5 披露版本 × 法域矩阵 */}"),
+    view.indexOf("{/* I5 披露版本列表 */}"),
+  );
+  const versionSection = view.slice(
+    view.indexOf("{/* I5 披露版本列表 */}"),
+    view.indexOf("{/* I5 re-ack 覆盖监控 */}"),
+  );
+
+  assert.doesNotMatch(matrixSection, />新建版本</);
+  assert.match(versionSection, />新建版本</);
+  assert.equal((view.match(/>新建版本</g) ?? []).length, 1);
+});
+
 test("I5 matrix and publish review use authoritative catalogs and structured safety checks", () => {
   assert.match(client, /jurisdictionCatalog/);
   assert.match(form, /select\("jurisdictionCode"/);

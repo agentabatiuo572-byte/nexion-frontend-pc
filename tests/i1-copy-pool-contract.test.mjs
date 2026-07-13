@@ -313,7 +313,7 @@ test("scheduled 实验通过勾选确认和 8-200 字理由后启动", () => {
   assert.match(client, /startI1Experiment:[\s\S]{0,280}JSON\.stringify\(withReason\(\{\}, reason\)\)/);
   assert.match(designKit, /data-business-form="copy-experiment-start"/);
   assert.match(designKit, /我已确认实验版本、分流比例和继承受众/);
-  assert.match(designKit, /reasonMax = businessForm\?\.kind === "copy-experiment-create" \|\| businessForm\?\.kind === "copy-experiment-start" \|\| businessForm\?\.kind === "copy-experiment-discard" \? 200/);
+  assert.match(designKit, /reasonMax = activeBusinessForm\?\.kind === "copy-experiment-create" \|\| activeBusinessForm\?\.kind === "copy-experiment-start" \|\| activeBusinessForm\?\.kind === "copy-experiment-discard" \? 200/);
 });
 
 test("I1 创建实验排除已有活动实验的文案，并限制备注长度", () => {

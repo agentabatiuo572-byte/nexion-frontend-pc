@@ -22,6 +22,10 @@ assertAbsent("app/components/domain-views/m-tabs/data.ts", "TRANSFER_QUEUES", "M
 assertAbsent("app/components/domain-views/m-tabs/m1-overview.tsx", "LOAD_CONFIG_DEFAULT", "M1 must not use local load-config defaults");
 assertAbsent("app/components/domain-views/m-tabs/m3-sessions.tsx", "SUPPORT_SLA", "M3 transfer queues must not use static SLA fixtures");
 assertAbsent("app/components/domain-views/m-tabs/m3-modals.tsx", "SUPPORT_SLA", "M3 transfer modal must not use static SLA fixtures");
+assertAbsent("app/components/domain-views/m-tabs/m3-sessions.tsx", "USER_ACK_POOL", "M3 user replies must come from backend conversation messages");
+assertAbsent("app/components/domain-views/m-tabs/m3-sessions.tsx", "NEXT_PUBLIC_ENABLE_SUPPORT_ECHO_PREVIEW", "real console must not enable simulated user receipts");
+assertAbsent("app/components/domain-views/m-tabs/data.ts", "USER_ACK_POOL", "M domain must not ship a static user reply fixture");
+assertAbsent("lib/admin/m-client.ts", 'agentName: base.ownerAgentName || "客服台"', "conversation summaries must not invent sender or receipt status when detail loading fails");
 assertAbsent("app/components/domain-views/m-view.tsx", "转人工备勤队列", "M writes must not synthesize overflowQueue");
 assertAbsent("lib/admin/m-client.ts", "DEFAULT_LOAD_CONFIG", "M client must not synthesize load-config defaults");
 assertAbsent("lib/admin/m-client.ts", "转人工备勤队列", "M client must only consume backend load-config values");

@@ -757,13 +757,14 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
                     · {s}
                   </div>
                 ))}
-                {canWriteI6 && <button
+                {iss.cnt > 0 && canWriteI6 && <button
                   className="l-btn sm mc"
                   style={{ marginTop: 6 }}
                   onClick={() => fixIntegrity(iss)}
                 >
                   修复
                 </button>}
+                {iss.cnt === 0 && <span className="tiny">无需修复</span>}
               </div>
             ))}
             <button
