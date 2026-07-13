@@ -570,8 +570,9 @@ export type BusinessFormSpec =
   | { kind: "campaign-edit"; tiers?: string[]; audiences?: string[]; title?: string; body?: string; defaultTier?: string; defaultAudience?: string; budget?: string }
   | { kind: "generation-gate"; mode: "create" | "edit"; skuOptions: string[]; phaseOptions: string[]; phaseLabels?: Record<string, ReactNode>; skuId?: string; name?: string; releaseMonth?: number; phase?: string; eligibility?: boolean; phaseOffset?: number; forceUnlock?: boolean }
   | { kind: "phase-config"; mode: "create" | "edit"; label?: string; meta?: string; skus?: string; sortOrder?: number; status?: string }
+  | { kind: "disclosure-jurisdiction"; mode: "create" | "edit"; code?: string; name?: string; revision?: number }
   | { kind: "version-authoring"; mode?: "create" | "edit"; version?: string; jurisdiction?: string; zh?: string; vi?: string; en?: string; chapters?: { no: string; zh: string; vi: string; en: string; zhBody: string; viBody: string; enBody: string }[]; languageScope?: string; languageScopes?: string[]; jurisdictionOptions?: { value: string; label: string }[]; effectiveDate?: string; requiresReack?: boolean; versionReadonly?: boolean; jurisdictionReadonly?: boolean }
-  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; versionOptions?: string[] }
+  | { kind: "disclosure-matrix"; mode: "create" | "edit"; jurisdictionCode?: string; jurisdictionName?: string; jurisdictionOptions?: { value: string; label: string }[]; countryCodes?: string[]; countryOptions?: { value: string; label: string }[]; version?: string; publishedVersionsByJurisdiction?: Record<string, string[]> }
   | { kind: "disclosure-publish-review"; jurisdiction: string; currentVersion: string; targetVersion: string; affected: number; pendingAck: number; blocked: number; gatedActions: string[]; currentChapters: { no: string; zh: string; vi: string; zhBody: string; viBody: string }[]; targetChapters: { no: string; zh: string; vi: string; zhBody: string; viBody: string }[] }
   | { kind: "trust-section-authoring"; mode: "create" | "edit"; sectionKey: string; version?: string; description?: string; structure?: string; revision?: number;
       fields?: { key: string; label: string; value: string }[] }
@@ -940,6 +941,13 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       ])),
     };
   }
+  if (spec.kind === "disclosure-jurisdiction") {
+    return {
+      code: spec.code ?? "",
+      name: spec.name ?? "",
+      expectedRevision: String(spec.revision ?? 0),
+    };
+  }
   if (spec.kind === "disclosure-publish-review") {
     return {
       jurisdictionConfirmed: "false",
@@ -947,11 +955,13 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     };
   }
   if (spec.kind === "disclosure-matrix") {
+    const jurisdictionCode = spec.jurisdictionCode ?? spec.jurisdictionOptions?.[0]?.value ?? "";
+    const jurisdictionLabel = spec.jurisdictionOptions?.find((item) => item.value === jurisdictionCode)?.label;
     return {
-      jurisdictionCode: spec.jurisdictionCode ?? "",
-      jurisdictionName: spec.jurisdictionName ?? "",
+      jurisdictionCode,
+      jurisdictionName: spec.jurisdictionName ?? jurisdictionLabel?.replace(/^.*?·\s*/, "") ?? "",
       countryCodes: (spec.countryCodes ?? []).join(","),
-      version: spec.version ?? "",
+      version: spec.version ?? spec.publishedVersionsByJurisdiction?.[jurisdictionCode]?.[0] ?? "",
     };
   }
   if (spec.kind === "trust-section-authoring") {
@@ -1220,6 +1230,10 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       ["no", "zhTitle", "viTitle", "zhBody", "viBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
       if (state.languageScope?.includes("en")) ["enTitle", "enBody"].forEach((field) => needs(`chapter.${index}.${field}`, `第 ${index + 1} 章 ${field}`));
     });
+  } else if (spec.kind === "disclosure-jurisdiction") {
+    needs("code", "法域代码");
+    needs("name", "法域名称");
+    if (!/^[A-Z][A-Z0-9_-]{1,15}$/.test((state.code ?? "").trim().toUpperCase())) missing.push("法域代码格式（2-16 位大写字母、数字、下划线或短横线）");
   } else if (spec.kind === "disclosure-publish-review") {
     if (spec.targetChapters.length !== 7) missing.push("完整 7 章节");
     if (spec.targetChapters.some((chapter) => !chapter.zh.trim() || !chapter.vi.trim() || !chapter.zhBody.trim() || !chapter.viBody.trim())) missing.push("七章中越双语完整内容");
@@ -1976,7 +1990,10 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
       <div className="field" data-business-form="version-authoring">
         <label>业务表单 · 新建 / 编辑披露草稿</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {select("version", "披露版本（后端分配）", spec.version ? [spec.version] : [])}
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>披露版本（后端原子分配）</span>
+            <input className="fld" value={value.version ?? ""} readOnly aria-readonly="true" />
+          </label>
           {select("jurisdiction", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const updated = { ...value, jurisdiction: next };
             onChange(updated);
@@ -2004,6 +2021,32 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
               {textArea(`chapter.${index}.enBody`, "英语正文（可选）", "English body", 3)}
             </div>
           </div>)}
+        </div>
+      </div>
+    );
+  }
+
+  if (spec.kind === "disclosure-jurisdiction") {
+    return (
+      <div className="field" data-business-form="disclosure-jurisdiction">
+        <label>业务表单 · {spec.mode === "create" ? "新增法域" : "编辑法域"}</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>法域代码</span>
+            <input
+              className="fld"
+              value={value.code ?? ""}
+              readOnly={spec.mode === "edit"}
+              aria-readonly={spec.mode === "edit"}
+              maxLength={16}
+              placeholder="如 VN、US-FINCEN"
+              onChange={(event) => set("code", event.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ""))}
+            />
+          </label>
+          {input("name", "法域名称", "如 越南司法辖区")}
+        </div>
+        <div className="tint tiny" style={{ marginTop: 10 }}>
+          法域代码创建后不可修改；启用、停用、归档和删除在列表中单独执行并保留审计记录。
         </div>
       </div>
     );
@@ -2062,9 +2105,15 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("jurisdictionCode", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
-            onChange({ ...value, jurisdictionCode: next, jurisdictionName: selected?.label.replace(/^.*?·\s*/, "") ?? next });
+            const nextVersions = spec.publishedVersionsByJurisdiction?.[next] ?? [];
+            onChange({
+              ...value,
+              jurisdictionCode: next,
+              jurisdictionName: selected?.label.replace(/^.*?·\s*/, "") ?? next,
+              version: nextVersions.includes(value.version ?? "") ? value.version : nextVersions[0] ?? "",
+            });
           })}
-          {select("version", "草稿版本", spec.versionOptions ?? [])}
+          {select("version", "已发布版本", spec.publishedVersionsByJurisdiction?.[value.jurisdictionCode ?? ""] ?? [])}
         </div>
         <div style={{ marginTop: 10 }}>
           <label>适用国家/地区（可多选）</label>

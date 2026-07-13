@@ -409,7 +409,16 @@ export type DisclosureVersionItemView = DisclosureDraftView & {
   pendingAck?: number;
   blocked?: number;
 };
-export type DisclosureJurisdictionOption = { code: string; name: string };
+export type DisclosureJurisdictionOption = {
+  code: string;
+  name: string;
+  status: string;
+  revision: number;
+  referencedVersionCount: number;
+  hasActiveMapping: boolean;
+  lastOperator: string;
+  updatedAt: string;
+};
 export type DisclosureGateActionView = {
   key: string;
   name: string;
@@ -592,6 +601,12 @@ export type IContentActions = {
   createI5DisclosureVersion: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI5DisclosureVersion: (jurisdiction: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   deleteI5DisclosureVersion: (jurisdiction: string, version: string, expectedRevision: number, expectedContentHash: string, reason: string) => Promise<void>;
+  createI5Jurisdiction: (body: { code: string; name: string }, reason: string) => Promise<void>;
+  updateI5Jurisdiction: (code: string, body: { name: string; expectedRevision: number }, reason: string) => Promise<void>;
+  enableI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
+  disableI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
+  archiveI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
+  deleteI5Jurisdiction: (code: string, expectedRevision: number, reason: string) => Promise<void>;
   rescanI6: (reason: string) => Promise<void>;
   saveI6LocalizedDraft: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI6LocalizedMessage: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -693,6 +708,12 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   createI5DisclosureVersion: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI5DisclosureVersion: (jurisdiction, version, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   deleteI5DisclosureVersion: (jurisdiction, version, expectedRevision, expectedContentHash, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision, expectedContentHash }, reason)) }).then(() => undefined),
+  createI5Jurisdiction: (body, reason) => apiRequest("/trust-disclosure/disclosures/jurisdictions", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI5Jurisdiction: (code, body, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  enableI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/enable`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
+  disableI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/disable`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
+  archiveI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
+  deleteI5Jurisdiction: (code, expectedRevision, reason) => apiRequest(`/trust-disclosure/disclosures/jurisdictions/${encodeURIComponent(code)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   rescanI6: (reason) => apiRequest("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   saveI6LocalizedDraft: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI6LocalizedMessage: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),

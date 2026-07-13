@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Drawer, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import type { ICtx } from "./types";
-import type { DisclosureVersionItemView } from "@/lib/admin/i-client";
+import type { DisclosureJurisdictionOption, DisclosureVersionItemView } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -82,9 +82,12 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   }, {});
   const activeJurisdiction = JURISDICTIONS[0];
   const activeJurisdictionCode = activeJurisdiction?.code ?? "";
-  const jurisdictionCatalog = data?.jurisdictionCatalog?.length ? data.jurisdictionCatalog : JURISDICTIONS.map((item) => ({ code: item.code, name: item.name }));
+  const jurisdictionCatalog: DisclosureJurisdictionOption[] = data?.jurisdictionCatalog ?? [];
   const jurisdictionOptions = jurisdictionCatalog.map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
-  const disclosureVersions = data?.disclosureVersions ?? [];
+  const activeJurisdictionOptions = jurisdictionCatalog
+    .filter((item) => item.status.toLowerCase() === "active")
+    .map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
+  const jurisdictionNameFor = (code: string, fallback = code) => jurisdictionCatalog.find((item) => item.code === code)?.name ?? fallback;
   const countryOptions = (data?.countryOptions ?? []).map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
   const sectionVersionOptions = (sectionKey: string, currentVersion: string) => TRUST_SECTION_VERSIONS
     .filter((row) => row.sectionKey === sectionKey && ["published", "superseded", "PUBLISHED", "SUPERSEDED"].includes(row.status) && row.version !== currentVersion)
@@ -95,30 +98,23 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     const publishedVersion = JURISDICTIONS.find((row) => row.code === jurisdiction)?.v;
     return DISCLOSURE_CHAPTERS.filter((chapter) => chapter.jurisdiction === jurisdiction && (!publishedVersion || chapter.version === publishedVersion));
   };
-  const fallbackVersionRows = Array.from(new Set(DISCLOSURE_CHAPTERS.map((chapter) => `${chapter.jurisdiction}\u0000${chapter.version}`))).map((key): DisclosureVersionItemView => {
-    const [jurisdiction, version] = key.split("\u0000");
-    const chapters = chaptersFor(jurisdiction, version);
-    const matrix = JURISDICTIONS.find((row) => row.code === jurisdiction);
-    const draft = data?.draft?.jurisdiction === jurisdiction && data.draft.version === version ? data.draft : undefined;
-    const first = chapters[0];
-    return {
-      version,
-      jurisdiction,
-      languageScope: draft?.languageScope ?? (first?.enBody ? "zh+vi+en" : "zh+vi"),
-      effectiveDate: draft?.effectiveDate ?? matrix?.publishedAt ?? "",
-      requiresReack: draft?.requiresReack ?? true,
-      zh: draft?.zh ?? first?.zhBody ?? "",
-      vi: draft?.vi ?? first?.viBody ?? "",
-      en: draft?.en ?? first?.enBody ?? "",
-      status: draft?.status ?? (matrix?.v === version ? matrix.status : "superseded"),
-      chapters,
-      publishedAt: matrix?.v === version ? matrix.publishedAt : "",
-      affected: matrix?.affected ?? 0,
-      pendingAck: matrix?.pendingAck ?? Math.max(0, Math.round((matrix?.affected ?? 0) * (100 - (matrix?.ackProgress ?? 0)) / 100)),
-      blocked: matrix?.blocked ?? 0,
-    };
-  });
-  const I5_VERSION_ROWS: DisclosureVersionItemView[] = data?.disclosureVersionItems?.length ? data.disclosureVersionItems : fallbackVersionRows;
+  const I5_VERSION_ROWS: DisclosureVersionItemView[] = data?.disclosureVersionItems ?? [];
+  const compareDisclosureVersionsDesc = (left: string, right: string): number => {
+    const leftParts = left.replace(/^v/i, "").split(".").map((part) => Number(part));
+    const rightParts = right.replace(/^v/i, "").split(".").map((part) => Number(part));
+    const width = Math.max(leftParts.length, rightParts.length);
+    for (let index = 0; index < width; index += 1) {
+      const delta = (rightParts[index] ?? 0) - (leftParts[index] ?? 0);
+      if (delta !== 0) return delta;
+    }
+    return right.localeCompare(left);
+  };
+  const publishedVersionsByJurisdiction = I5_VERSION_ROWS.reduce<Record<string, string[]>>((acc, row) => {
+    if (!["published", "superseded"].includes(row.status.toLowerCase())) return acc;
+    const versions = acc[row.jurisdiction] ?? [];
+    if (!versions.includes(row.version)) acc[row.jurisdiction] = [...versions, row.version].sort(compareDisclosureVersionsDesc);
+    return acc;
+  }, {});
   const nextVersionFor = (jurisdiction: string) => data?.nextVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersionByJurisdiction?.[jurisdiction] ?? data?.nextDisclosureVersion ?? "";
   const chapterPayload = (form: Record<string, string> | undefined) => Array.from({ length: 7 }, (_, index) => ({
     no: form?.[`chapter.${index}.no`] ?? String(index + 1).padStart(2, "0"),
@@ -182,7 +178,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           viBody: "",
           enBody: "",
         })),
-    jurisdictionOptions: mode === "edit" ? jurisdictionOptions.filter((option) => option.value === jurisdiction) : jurisdictionOptions,
+    jurisdictionOptions: mode === "edit" ? jurisdictionOptions.filter((option) => option.value === jurisdiction) : activeJurisdictionOptions,
     languageScope: snapshot?.languageScope,
     languageScopes: data?.languageScopes,
     effectiveDate: snapshot?.effectiveDate,
@@ -386,7 +382,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
 
   // ---------- I5 披露动作 ----------
   const draftDisclosure = (editing?: DisclosureVersionItemView) => {
-    const initialJurisdiction = editing?.jurisdiction ?? jurisdictionOptions[0]?.value ?? "";
+    const initialJurisdiction = editing?.jurisdiction ?? activeJurisdictionOptions[0]?.value ?? "";
+    if (!initialJurisdiction) {
+      toast("暂无启用法域，请先在法域配置中新增或启用法域");
+      return;
+    }
     const version = editing?.version ?? nextVersionFor(initialJurisdiction);
     if (!editing && !version) {
       toast("后端尚未返回下一版本号，无法安全新建版本");
@@ -428,7 +428,6 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           return;
         }
         const payload = {
-          version: targetVersion,
           jurisdiction,
           languageScope: form?.languageScope || "zh+vi",
           effectiveDate: form?.effectiveDate || "",
@@ -460,12 +459,88 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     },
   });
 
-  const configMatrix = (current?: Jurisdiction) =>
+  const editJurisdiction = (current?: DisclosureJurisdictionOption) => openActionConfirm({
+    action: <>{current ? "编辑" : "新增"}披露法域</>,
+    detail: <>法域代码创建后不可修改；名称与生命周期由法域配置统一维护，版本和国家映射在下方独立管理。</>,
+    amplifies: false,
+    businessForm: {
+      kind: "disclosure-jurisdiction",
+      mode: current ? "edit" : "create",
+      code: current?.code,
+      name: current?.name,
+      revision: current?.revision,
+    },
+    run: (reason, _v, form) => {
+      const code = form?.code?.trim().toUpperCase() || "";
+      const name = form?.name?.trim() || "";
+      if (!code || !name) return;
+      const task = current
+        ? actions.updateI5Jurisdiction(current.code, { name, expectedRevision: current.revision }, reason)
+        : actions.createI5Jurisdiction({ code, name }, reason);
+      runBackend(task, current ? "法域名称已更新" : "法域已新增");
+    },
+  });
+
+  const changeJurisdictionLifecycle = (item: DisclosureJurisdictionOption, action: "enable" | "disable" | "archive") => {
+    const labels = { enable: "启用", disable: "停用", archive: "归档" } as const;
+    const statuses = { enable: "ACTIVE", disable: "DISABLED", archive: "ARCHIVED" } as const;
     openActionConfirm({
+      action: <>{labels[action]}法域 · {item.code}</>,
+      detail: action === "disable"
+        ? <>停用后不能再为该法域新建披露版本或新增映射，历史版本与审计记录继续保留。</>
+        : action === "archive"
+          ? <>归档后法域退出可选目录，历史版本、映射和审计记录永久保留。</>
+          : <>启用后该法域可用于新建披露版本和法域版本映射。</>,
+      amplifies: false,
+      run: (reason) => {
+        const def = findHighOp("i5_jurisdiction_status")!;
+        void propose(toast, {
+          action: `${labels[action]}披露法域 · ${item.code}`,
+          obj: item.code,
+          before: item.status,
+          after: statuses[action],
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I5",
+          command: def.buildCommand({ jurisdiction: item.code, status: statuses[action], expectedRevision: item.revision }),
+          target: def.buildTarget({ jurisdiction: item.code }),
+        });
+      },
+    });
+  };
+
+  const deleteJurisdiction = (item: DisclosureJurisdictionOption) => openActionConfirm({
+    action: <>删除未使用法域 · {item.code}</>,
+    detail: <>仅未被披露版本和当前映射引用的已归档法域可以删除；法域代码保留为审计防重标识，不可重新占用。</>,
+    amplifies: false,
+    run: (reason) => {
+      const def = findHighOp("i5_jurisdiction_delete")!;
+      void propose(toast, {
+        action: `删除未使用披露法域 · ${item.code}`,
+        obj: item.code,
+        before: `${item.name} · ${item.status}`,
+        after: "删除",
+        type: "param",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "I5",
+        command: def.buildCommand({ jurisdiction: item.code, expectedRevision: item.revision }),
+        target: def.buildTarget({ jurisdiction: item.code }),
+      });
+    },
+  });
+
+  const configMatrix = (current?: Jurisdiction) =>
+    activeJurisdictionOptions.length === 0 ? toast("暂无启用法域，请先维护法域配置") : openActionConfirm({
       action: <>{current ? "编辑" : "新增"}法域 × 版本映射</>,
       detail: (
         <>
-          增法域、改某法域的生效版本映射都在这里;版本号只增不减。改映射等同给该法域换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 / 超管</b>。
+          这里仅维护启用法域的适用国家/地区与已发布版本映射。改映射等同给该法域换生效条款,会触发重确认;<b>发起人限风控,执行门槛 = 风控 / 超管</b>。
         </>
       ),
       amplifies: false,
@@ -477,8 +552,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         version: current?.v,
         countryCodes: current?.countryCodes ?? [],
         countryOptions,
-        jurisdictionOptions,
-        versionOptions: disclosureVersions,
+        jurisdictionOptions: current
+          ? activeJurisdictionOptions.filter((option) => option.value === current.code)
+          : activeJurisdictionOptions,
+        publishedVersionsByJurisdiction,
       },
       run: (reason, _v, form) => {
         const jurisdictionCode = form?.jurisdictionCode?.trim().toUpperCase() || "";
@@ -767,6 +844,45 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       </section>}
 
       {view === "disclosures" && <>
+      {/* I5 法域配置：只维护法域元数据和生命周期 */}
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">法域配置(I5)</span>
+          <span className="sub">· 代码 / 名称 / 生命周期 · 国家与版本在下方映射</span>
+          <div className="r">
+            {canDraftDisclosure && <button className="l-btn sm mc" onClick={() => editJurisdiction()}>新增法域</button>}
+          </div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 800 }}>
+            <thead><tr><th>法域代码</th><th>法域名称</th><th>状态</th><th className="num">引用版本</th><th>当前映射</th><th>最后操作人</th><th>更新时间</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+            <tbody>
+              {jurisdictionCatalog.map((item) => {
+                const status = item.status.toLowerCase();
+                const canDelete = status === "archived" && item.referencedVersionCount === 0 && !item.hasActiveMapping;
+                return <tr key={item.code}>
+                  <td className="mono" style={{ fontWeight: 700 }}>{item.code}</td>
+                  <td>{item.name}</td>
+                  <td><span className={`bdg ${status === "active" ? "ok" : status === "disabled" ? "warn" : ""}`}>{statusZh(item.status)}</span></td>
+                  <td className="num mono">{item.referencedVersionCount}</td>
+                  <td>{item.hasActiveMapping ? "已配置" : "未配置"}</td>
+                  <td>{item.lastOperator || "—"}</td>
+                  <td className="mono tiny">{item.updatedAt || "—"}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    {canDraftDisclosure && status !== "archived" && <><button className="l-btn sm" onClick={() => editJurisdiction(item)}>编辑</button>{" "}</>}
+                    {canPublishDisclosure && status === "active" && <><button className="l-btn sm" disabled={item.hasActiveMapping} title={item.hasActiveMapping ? "请先归档下方当前映射，再停用法域" : ""} onClick={() => changeJurisdictionLifecycle(item, "disable")}>停用</button>{" "}</>}
+                    {canPublishDisclosure && status === "disabled" && <><button className="l-btn sm" onClick={() => changeJurisdictionLifecycle(item, "enable")}>启用</button>{" "}</>}
+                    {canPublishDisclosure && status !== "archived" && <><button className="l-btn sm" disabled={item.hasActiveMapping} title={item.hasActiveMapping ? "请先归档下方当前映射，再归档法域" : ""} onClick={() => changeJurisdictionLifecycle(item, "archive")}>归档</button>{" "}</>}
+                    {canPublishDisclosure && <button className="l-btn sm" disabled={!canDelete} title={canDelete ? "" : "须先归档法域，且不能存在版本或当前映射"} onClick={() => deleteJurisdiction(item)}>删除</button>}
+                  </td>
+                </tr>;
+              })}
+              {jurisdictionCatalog.length === 0 && <tr><td colSpan={8}><div className="itint">暂无法域配置，请先新增法域。</div></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {/* I5 披露版本 × 法域矩阵 */}
       <section className="l-card">
         <div className="l-h">
@@ -796,11 +912,12 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             <tbody>
               {JURISDICTIONS.map((j) => {
                 const v = liveJurVersion(j);
+                const jurisdictionEnabled = jurisdictionCatalog.find((item) => item.code === j.code)?.status.toLowerCase() === "active";
                 return (
                   <tr key={j.code} className="click" onClick={() => openJurDetail(j)}>
                     <td>
                       <span className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{j.code}</span>
-                      <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{j.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--ink-4)" }}>{jurisdictionNameFor(j.code, j.name)}</div>
                     </td>
                     <td>{j.countryCodes?.join("、") || "未配置"}</td>
                     <td className="mono" style={{ fontWeight: 700 }}>{v}</td>
@@ -820,8 +937,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                       {j.blocked}
                     </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canPublishDisclosure && j.status.toLowerCase() !== "archived" && <><button className="l-btn sm" onClick={(e) => { e.stopPropagation(); configMatrix(j); }}>调整映射</button>{" "}</>}
-                      {canPublishDisclosure && j.status.toLowerCase() === "draft" && (
+                      {canPublishDisclosure && jurisdictionEnabled && j.status.toLowerCase() !== "archived" && <><button className="l-btn sm" onClick={(e) => { e.stopPropagation(); configMatrix(j); }}>调整映射</button>{" "}</>}
+                      {canPublishDisclosure && j.status.toLowerCase() !== "archived" && (
                         <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); archiveMatrix(j); }}>归档</button>
                       )}
                     </td>
@@ -875,6 +992,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
               {I5_VERSION_ROWS.map((row) => {
                 const isDraft = row.status.toLowerCase() === "draft";
                 const hasConcurrencyToken = row.revision != null && Boolean(row.contentHash);
+                const catalogStatus = jurisdictionCatalog.find((item) => item.code === row.jurisdiction)?.status.toLowerCase() ?? "";
+                const jurisdictionActive = catalogStatus === "active";
+                const jurisdictionArchived = catalogStatus === "archived";
                 return <tr key={`${row.jurisdiction}-${row.version}`}>
                   <td className="mono">{row.jurisdiction}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{row.version}</td>
@@ -885,8 +1005,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                   <td>{row.chapters.length} / 7</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     <button className="l-btn sm" onClick={() => setDisclosureDetailKey(`${row.jurisdiction}\u0000${row.version}`)}>查看七章</button>{" "}
-                    {isDraft && canDraftDisclosure && <><button className="l-btn sm" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => draftDisclosure(row)}>编辑版本</button>{" "}<button className="l-btn sm" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => deleteDisclosureDraft(row)}>删除草稿</button>{" "}</>}
-                    {isDraft && canPublishDisclosure && row.chapters.length === 7 && <button className="l-btn sm mc" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => publishDisclosure(row)}>发布</button>}
+                    {isDraft && canDraftDisclosure && <>{!jurisdictionArchived && <><button className="l-btn sm" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => draftDisclosure(row)}>编辑版本</button>{" "}</>}<button className="l-btn sm" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => deleteDisclosureDraft(row)}>删除草稿</button>{" "}</>}
+                    {isDraft && canPublishDisclosure && row.chapters.length === 7 && jurisdictionActive && <button className="l-btn sm mc" disabled={!hasConcurrencyToken} title={hasConcurrencyToken ? "" : "缺少后端并发校验信息，请刷新"} onClick={() => publishDisclosure(row)}>发布</button>}
+                    {isDraft && canPublishDisclosure && !jurisdictionActive && <span className="tiny" title="须先启用法域">须先启用法域</span>}
                   </td>
                 </tr>;
               })}
@@ -1098,7 +1219,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       {/* 法域详情 Drawer */}
       {view === "disclosures" && jur && (
         <Drawer
-          title={`法域 · ${jur.code}(${jur.name})`}
+          title={`法域 · ${jur.code}(${jurisdictionNameFor(jur.code, jur.name)})`}
           onClose={() => setJurCode(null)}
           footer={
             <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setJurCode(null)}>

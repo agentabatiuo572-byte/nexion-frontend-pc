@@ -10,9 +10,11 @@ const highOps = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import
 test("I5 jurisdiction mapping uses backend country and disclosure version catalogs", () => {
   assert.match(client, /countryOptions/);
   assert.match(view, /countryOptions/);
-  assert.match(view, /versionOptions:\s*disclosureVersions/);
+  assert.match(view, /publishedVersionsByJurisdiction/);
+  assert.match(view, /compareDisclosureVersionsDesc/);
+  assert.match(view, /\.sort\(compareDisclosureVersionsDesc\)/);
   assert.match(form, /spec\.countryOptions/);
-  assert.match(form, /spec\.versionOptions/);
+  assert.match(form, /spec\.publishedVersionsByJurisdiction/);
   assert.match(form, /type="checkbox"/);
   assert.doesNotMatch(form, /name="status"/);
 });
@@ -59,6 +61,46 @@ test("I5 draft authoring uses the server next version and loads the selected sna
   assert.doesNotMatch(view, /versionOptions:\s*disclosureVersions,\s*\n\s*languageScopes/);
 });
 
+test("I5 jurisdiction configuration has backend CRUD and lifecycle controls", () => {
+  assert.match(view, /data\?\.jurisdictionCatalog \?\? \[\]/);
+  assert.doesNotMatch(view, /jurisdictionCatalog[\s\S]{0,120}JURISDICTIONS\.map/);
+  assert.match(client, /status:\s*string;[\s\S]*revision:\s*number;[\s\S]*referencedVersionCount:\s*number;[\s\S]*hasActiveMapping:\s*boolean/);
+  assert.match(client, /createI5Jurisdiction/);
+  assert.match(client, /updateI5Jurisdiction/);
+  assert.match(client, /enableI5Jurisdiction/);
+  assert.match(client, /disableI5Jurisdiction/);
+  assert.match(client, /archiveI5Jurisdiction/);
+  assert.match(client, /deleteI5Jurisdiction/);
+  assert.match(client, /\/trust-disclosure\/disclosures\/jurisdictions/);
+  assert.match(view, />法域配置\(I5\)</);
+  assert.match(view, /disabled=\{item\.hasActiveMapping\}/);
+  assert.match(view, /请先归档下方当前映射/);
+  for (const label of ["新增法域", "编辑", "启用", "停用", "归档", "删除"]) assert.match(view, new RegExp(label));
+  assert.match(form, /kind === "disclosure-jurisdiction"/);
+});
+
+test("I5 new versions only use active jurisdictions and display a readonly server version", () => {
+  assert.match(view, /activeJurisdictionOptions/);
+  assert.match(view, /status\.toLowerCase\(\) === "active"/);
+  assert.match(view, /jurisdictionOptions:\s*mode === "edit"[\s\S]*activeJurisdictionOptions/);
+  assert.match(form, /readOnly/);
+  assert.match(form, /后端原子分配/);
+  assert.doesNotMatch(form, /select\("version", "披露版本（后端分配）"/);
+  const payload = view.slice(view.indexOf("const payload = {", view.indexOf("const draftDisclosure")), view.indexOf("const task =", view.indexOf("const draftDisclosure")));
+  assert.doesNotMatch(payload, /\bversion:\s*targetVersion/);
+});
+
+test("I5 matrix versions are scoped to the selected jurisdiction and published history", () => {
+  assert.match(view, /data\?\.disclosureVersionItems \?\? \[\]/);
+  assert.doesNotMatch(view, /fallbackVersionRows/);
+  assert.match(view, /publishedVersionsByJurisdiction/);
+  assert.match(view, /\["published",\s*"superseded"\]/);
+  assert.match(view, /row\.jurisdiction/);
+  assert.match(form, /spec\.publishedVersionsByJurisdiction\?\.\[next\]/);
+  assert.match(form, /version:\s*nextVersions\.includes/);
+  assert.doesNotMatch(view, /versionOptions:\s*disclosureVersions/);
+});
+
 test("I5 renders real jurisdiction-version rows and complete draft CRUD controls", () => {
   assert.match(client, /disclosureVersionItems/);
   assert.match(client, /createI5DisclosureVersion/);
@@ -68,6 +110,9 @@ test("I5 renders real jurisdiction-version rows and complete draft CRUD controls
   assert.match(view, /新建版本/);
   assert.match(view, /编辑版本/);
   assert.match(view, /删除草稿/);
+  assert.match(view, /const jurisdictionActive = catalogStatus === "active"/);
+  assert.match(view, /const jurisdictionArchived = catalogStatus === "archived"/);
+  assert.match(view, /须先启用法域/);
 });
 
 test("I5 matrix and publish review use authoritative catalogs and structured safety checks", () => {
@@ -94,17 +139,23 @@ test("I5 new jurisdictions get an editable seven-chapter scaffold and re-ack can
   assert.match(form, /languageScope:\s*spec\.languageScope\s*\?\?/);
 });
 
-test("I5 matrix mutations require publish-level permission and published mappings cannot be archived", () => {
+test("I5 matrix mutations require publish-level permission and active mappings can be archived through A2", () => {
   assert.match(view, /canPublishDisclosure && <button className="l-btn sm" onClick=\{\(\) => configMatrix\(\)\}>新增映射/);
-  assert.match(view, /canPublishDisclosure && j\.status\.toLowerCase\(\) === "draft"/);
-  assert.doesNotMatch(view, /canDraftDisclosure && j\.status\.toLowerCase\(\) !== "archived" && \(\s*<button[^>]*>归档/);
+  assert.match(view, /canPublishDisclosure && j\.status\.toLowerCase\(\) !== "archived"/);
 });
 
 test("I5 matrix mutations and publish concurrency checks go through A2", () => {
   assert.match(highOps, /op: "i5_matrix_configure"/);
   assert.match(highOps, /op: "i5_matrix_archive"/);
+  assert.match(highOps, /op: "i5_jurisdiction_status"/);
+  assert.match(highOps, /op: "i5_jurisdiction_delete"/);
   assert.match(view, /findHighOp\("i5_matrix_configure"\)/);
   assert.match(view, /findHighOp\("i5_matrix_archive"\)/);
+  assert.match(view, /findHighOp\("i5_jurisdiction_status"\)/);
+  assert.match(view, /findHighOp\("i5_jurisdiction_delete"\)/);
   assert.match(highOps, /expectedRevision/);
   assert.match(highOps, /contentHash/);
+  const matrixOps = highOps.slice(highOps.indexOf('op: "i5_matrix_configure"'), highOps.indexOf('op: "i5_jurisdiction_status"'));
+  assert.doesNotMatch(matrixOps, /type: "disclosure_matrix"/);
+  assert.match(matrixOps, /type: "disclosure_jurisdiction"/);
 });

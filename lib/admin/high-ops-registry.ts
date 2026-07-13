@@ -1551,7 +1551,7 @@ export const HIGH_OPS: HighOpDef[] = [
     amplifies: false,
     type: "param",
     gateLabel: "门槛者",
-    targetType: "disclosure_matrix",
+    targetType: "disclosure_jurisdiction",
     buildCommand: (ctx) => ({ domain: "I", op: "i5_matrix_configure", params: {
       jurisdictionCode: String(ctx.jurisdictionCode),
       jurisdictionName: String(ctx.jurisdictionName),
@@ -1559,7 +1559,7 @@ export const HIGH_OPS: HighOpDef[] = [
       version: String(ctx.version),
       status: "DRAFT",
     } }),
-    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_matrix", id: String(ctx.jurisdictionCode) }),
+    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdictionCode) }),
   },
   {
     op: "i5_matrix_archive",
@@ -1568,11 +1568,40 @@ export const HIGH_OPS: HighOpDef[] = [
     amplifies: false,
     type: "param",
     gateLabel: "门槛者",
-    targetType: "disclosure_matrix",
+    targetType: "disclosure_jurisdiction",
     buildCommand: (ctx) => ({ domain: "I", op: "i5_matrix_archive", params: {
       jurisdiction: String(ctx.jurisdiction),
     } }),
-    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_matrix", id: String(ctx.jurisdiction) }),
+    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdiction) }),
+  },
+  {
+    op: "i5_jurisdiction_status",
+    domain: "I",
+    action: "调整披露法域状态",
+    amplifies: false,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "disclosure_jurisdiction",
+    buildCommand: (ctx) => ({ domain: "I", op: "i5_jurisdiction_status", params: {
+      jurisdiction: String(ctx.jurisdiction),
+      status: String(ctx.status),
+      expectedRevision: Number(ctx.expectedRevision),
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdiction) }),
+  },
+  {
+    op: "i5_jurisdiction_delete",
+    domain: "I",
+    action: "删除未使用披露法域",
+    amplifies: false,
+    type: "param",
+    gateLabel: "门槛者",
+    targetType: "disclosure_jurisdiction",
+    buildCommand: (ctx) => ({ domain: "I", op: "i5_jurisdiction_delete", params: {
+      jurisdiction: String(ctx.jurisdiction),
+      expectedRevision: Number(ctx.expectedRevision),
+    } }),
+    buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdiction) }),
   },
   // I5 受限动作范围调整(updateGateScope · 全仓单例锁 restricted-actions · amplifies 放松资金类合规拦截)
   {
