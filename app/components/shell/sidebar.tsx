@@ -95,14 +95,6 @@ export function Sidebar({
   const visibleL2Count = domains.reduce((total, domain) => total + domain.l2.length, 0);
   const showHomeEntry = role !== "support";
   const badges = useNavBadges();
-  const activeDomainCode = domains.find((domain) =>
-    domain.l2.some((item) => item.path === pathname))?.code;
-
-  // 路由跳转、浏览器前进/后退和直接打开子页面时，只展开选中页面所属域。
-  // 首页不属于任何域，因此保持全部折叠。
-  useEffect(() => {
-    setExpanded(activeDomainCode ? [activeDomainCode] : []);
-  }, [activeDomainCode, setExpanded]);
 
   const onCollapsedOpen = (code: string) => {
     setSidebar(false);
