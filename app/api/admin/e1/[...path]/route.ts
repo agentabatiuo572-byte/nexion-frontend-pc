@@ -16,7 +16,7 @@ function backendPath(parts: string[]) {
   if (parts[0] === "generation-gates" || parts[0] === "phases") {
     return `/api/admin/devices/e1/${parts.map(encodeURIComponent).join("/")}`;
   }
-  if (parts[0] === "skus" || parts[0] === "reviews") {
+  if (parts[0] === "skus") {
     return `/api/admin/devices/${parts.map(encodeURIComponent).join("/")}`;
   }
   return null;

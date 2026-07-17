@@ -47,11 +47,15 @@ const COURSE_ICON_BY_CAT: Record<string, string> = {
 };
 
 export function I6I18n({ ctx }: { ctx: ICtx }) {
-  return <I18nLearningPage ctx={ctx} view="i18n" />;
-}
-
-export function I7Learning({ ctx }: { ctx: ICtx }) {
-  return <I18nLearningPage ctx={ctx} view="learn" />;
+  const session = useAdminAuth((state) => state.session);
+  const isSuperadmin = session?.role === "superadmin";
+  const authorities = session?.authorities ?? [];
+  const canReadI6 = isSuperadmin || authorities.includes("content_i6_read");
+  const canReadI7 = isSuperadmin || authorities.includes("content_i7_read");
+  if (!canReadI6 && !canReadI7) {
+    return <section className="l-card"><div className="l-b">当前角色没有 I6 文案或 I7 教程读取权限。</div></section>;
+  }
+  return <>{canReadI6 && <I18nLearningPage ctx={ctx} view="i18n" />}{canReadI7 && <I18nLearningPage ctx={ctx} view="learn" />}</>;
 }
 
 function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) {

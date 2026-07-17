@@ -6,10 +6,15 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, KeyRound, LogOut, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
+import { ArrowLeft, Bell, CreditCard, KeyRound, LogOut, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
 import {
   fetchUser360,
+  fetchUserPaymentMethods,
+  notifyUserPaymentMethodRebind,
+  resetUserNickname,
+  unbindUserPaymentMethod,
   type JsonRecord,
+  type UserPaymentMethodPage,
   type User360Detail,
   type User360Profile,
   type User360Section,
@@ -24,6 +29,7 @@ import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
 import { StatusPill, type PillTone } from "@/app/components/kit/status-pill";
 import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
 import type { AdminRole } from "@/lib/nav/console-nav";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type Column = {
   key: string;
@@ -298,12 +304,18 @@ function ActionButton({
 }
 
 export default function UserDetailPage() {
+  const session = useAdminAuth((state) => state.session);
+  const canWriteC1 = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
   const params = useParams<{ id: string }>();
   const userKey = params.id;
   const [detail, setDetail] = useState<User360Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState<string | null>(null);
+  const [paymentMethods, setPaymentMethods] = useState<UserPaymentMethodPage | null>(null);
+  const [includeUnbound, setIncludeUnbound] = useState(false);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const propose = usePropose();
   const [actionConfirm, setActionConfirm] = useState<null | {
     action: string;
@@ -346,6 +358,27 @@ export default function UserDetailPage() {
   const nonActive = status !== "ACTIVE" && status !== "UNKNOWN";
   const frozen = status === "FROZEN";
   const actionDisabled = !!actionPending || !userId;
+
+  const loadPaymentMethods = useCallback(async () => {
+    if (!userId) return;
+    try {
+      setPaymentMethods(await fetchUserPaymentMethods(userId, includeUnbound, paymentPage, 10));
+      setPaymentError(null);
+    } catch (err) {
+      setPaymentError(errorMessage(err));
+    }
+  }, [includeUnbound, paymentPage, userId]);
+
+  useEffect(() => { void loadPaymentMethods(); }, [loadPaymentMethods]);
+  useEffect(() => { setPaymentPage(1); }, [userId]);
+
+  useEffect(() => {
+    if (!detail || typeof window === "undefined" || window.location.hash !== "#hub-payment-methods") return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById("hub-payment-methods")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [detail, paymentMethods]);
 
   const sessions = useMemo(() => asArray(detail?.sessions), [detail?.sessions]);
   const auditEntries = useMemo(() => toAuditEntries(detail?.audit), [detail?.audit]);
@@ -592,6 +625,29 @@ export default function UserDetailPage() {
               >
                 <KeyRound size={14} style={{ color: "var(--v5-warning)" }} /> 重置密码
               </ActionButton>
+              {canWriteC1 && <ActionButton
+                onClick={() => openActionConfirmReq({
+                  action: `重置昵称 · ${nickname}`,
+                  detail: "服务器生成不暴露手机号等身份信息的新昵称；原昵称不再用于展示，操作写入审计。",
+                  amplifies: false,
+                  run: async (reason) => {
+                    if (!userId) return;
+                    setActionPending("重置昵称");
+                    try {
+                      const result = await resetUserNickname(userId, reason);
+                      toast.success(`昵称已重置为 ${result.nickname}`);
+                      await load();
+                    } catch (err) {
+                      toast.error("昵称重置失败", errorMessage(err));
+                    } finally {
+                      setActionPending(null);
+                    }
+                  },
+                })}
+                disabled={actionDisabled}
+              >
+                <UserCog size={14} style={{ color: "var(--v5-tech-cyan)" }} /> 重置昵称
+              </ActionButton>}
             </div>
             <p className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
               <ShieldAlert size={12} /> 高敏动作均需确认,由后端接口写入审计。{actionPending ? ` 当前执行: ${actionPending}` : ""}
@@ -620,6 +676,28 @@ export default function UserDetailPage() {
       </div>
 
       <div className="mt-4 flex flex-col gap-4">
+        <HubSection id="hub-payment-methods" title="支付方式" section={{ sourceStatus: paymentError ? "ERROR" : "READY" }}>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <label className="inline-flex items-center gap-2 text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+              <input type="checkbox" checked={includeUnbound} onChange={(event) => { setIncludeUnbound(event.target.checked); setPaymentPage(1); }} /> 显示已解绑
+            </label>
+            <button type="button" className="inline-flex items-center gap-1 rounded-[8px] px-2.5 py-1.5 text-[12px]" style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-3)" }} onClick={() => void loadPaymentMethods()}><RefreshCcw size={13} /> 刷新支付方式</button>
+          </div>
+          {paymentError && <p className="mb-3 rounded-[8px] px-3 py-2 text-[12px]" style={{ color: "var(--v5-danger)", background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)" }}>支付方式读取失败：{paymentError}</p>}
+          <div className="grid gap-3 md:grid-cols-2">
+            {(paymentMethods?.items ?? []).map((method) => (
+              <div key={method.id} className="rounded-[10px] p-3" style={{ border: "1px solid var(--v5-border)", background: method.status === "BOUND" ? "var(--v5-surface-2)" : "color-mix(in srgb, var(--v5-surface-2) 70%, var(--v5-ink-4) 30%)", opacity: method.status === "BOUND" ? 1 : 0.68, filter: method.status === "BOUND" ? "none" : "grayscale(0.85)" }}>
+                <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><CreditCard size={17} /><div><p className="text-[13px]" style={{ color: "var(--v5-ink)" }}>{method.brand} ···· {method.last4}</p><p className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{method.provider} · {method.expiryLabel || "无到期信息"}</p></div></div><StatusPill label={method.status === "BOUND" ? (method.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"} tone={method.status === "BOUND" ? "success" : "neutral"} size="sm" dot={false} /></div>
+                {method.trialGuard && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-warning)" }}>试用扣款占用中 · {method.trialRefId || "关联试用"}，禁止直接解绑</p>}
+                {method.status !== "BOUND" && method.unboundAt && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>解绑时间：{formatDate(method.unboundAt)}</p>}
+                {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason); toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { toast.error("换绑通知失败", errorMessage(err)); } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason); toast.success("支付方式已从 Nexion 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { toast.error("支付方式解绑失败", errorMessage(err)); } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
+              </div>
+            ))}
+          </div>
+          {!paymentError && !(paymentMethods?.items ?? []).length && <p className="rounded-[8px] px-3 py-3 text-[12px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-4)" }}>该用户暂无支付方式</p>}
+          {!!paymentMethods?.total && <div className="mt-3 flex items-center justify-between gap-3 text-[12px]" style={{ color: "var(--v5-ink-4)" }}><span>共 {paymentMethods.total} 条 · 第 {paymentMethods.page}/{Math.max(1, Math.ceil(paymentMethods.total / paymentMethods.pageSize))} 页</span><div className="flex gap-2"><button type="button" className="rounded-[8px] px-2.5 py-1.5 disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={paymentPage <= 1} onClick={() => setPaymentPage((page) => Math.max(1, page - 1))}>上一页</button><button type="button" className="rounded-[8px] px-2.5 py-1.5 disabled:opacity-40" style={{ border: "1px solid var(--v5-border)" }} disabled={paymentPage >= Math.ceil(paymentMethods.total / paymentMethods.pageSize)} onClick={() => setPaymentPage((page) => page + 1)}>下一页</button></div></div>}
+        </HubSection>
+
         <HubSection
           id="hub-deposit"
           title="充值记录"

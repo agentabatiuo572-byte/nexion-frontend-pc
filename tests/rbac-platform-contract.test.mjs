@@ -152,14 +152,14 @@ test("interactive login reloads the document after storing the new session", () 
   assert.deepEqual(calls, [["signIn", auth], ["reload"]]);
 });
 
-test("I7 is an independently registered page and A6 grants decide whether it is visible", () => {
+test("legacy I7 grants resolve to the merged I6 page", () => {
   const domains = resolveVisibleDomains({ role: "content", menuCodes: ["I", "I7"] });
   const content = domains.find((domain) => domain.code === "I");
 
-  assert.deepEqual(content?.l2.map((item) => [item.id, item.path]), [["I7", "/content/learn"]]);
-  assert.equal(findByPath("/content/learn")?.l2.id, "I7");
-  assert.equal(canAccessResolvedPath(domains, "/content/learn"), true);
-  assert.equal(canAccessResolvedPath(domains, "/content/i18n"), false);
+  assert.deepEqual(content?.l2.map((item) => [item.id, item.path]), [["I6", "/content/i18n"]]);
+  assert.equal(findByPath("/content/learn"), null);
+  assert.equal(canAccessResolvedPath(domains, "/content/learn"), false);
+  assert.equal(canAccessResolvedPath(domains, "/content/i18n"), true);
 });
 
 test("A7 effective menu metadata controls labels and ordering without allowing unregistered routes", () => {
@@ -174,18 +174,19 @@ test("A7 effective menu metadata controls labels and ordering without allowing u
   const content = domains.find((domain) => domain.code === "I");
 
   assert.deepEqual(content?.l2.map((item) => [item.id, item.name, item.path]), [
-    ["I7", "教程配置", "/content/learn"],
+    ["I6", "i18n 文案与课程", "/content/i18n"],
     ["I1", "文案实验", "/content/copy-ab"],
   ]);
 });
 
-test("A6 grants and A7 metadata must agree before a new-session menu is rendered", () => {
+test("legacy I7 metadata is accepted only as the registered I6 compatibility alias", () => {
   assert.deepEqual(resolveVisibleDomains({ role: "content", menuCodes: ["I7"], menuNodes: [] }), []);
-  assert.deepEqual(resolveVisibleDomains({
+  const domains = resolveVisibleDomains({
     role: "content",
     menuCodes: ["I7"],
     menuNodes: [{ menuCode: "I7", menuName: "教程中心", routePath: "/external", parentCode: "I", sortOrder: 1 }],
-  }), []);
+  });
+  assert.equal(domains[0]?.l2[0]?.path, "/content/i18n");
 });
 
 test("A7 mutations reload the authoritative overview instead of normalizing node/void", async () => {

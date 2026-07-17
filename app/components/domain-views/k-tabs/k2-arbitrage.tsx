@@ -36,12 +36,6 @@ const K2_PARAM_HELP: Record<string, string> = {
 
 type ExtraParamDef = { key: string; label: string; unit: string; min?: number; max?: number; step?: number; options?: string[] };
 
-const REWARD_RISK_PARAMS: ExtraParamDef[] = [
-  { key: "rewardRisk.lockMode", label: "新人礼发放模式", unit: "模式", options: ["risk_bucket", "direct"] },
-  { key: "rewardRisk.usdtAmount", label: "新人礼 USDT 金额", unit: "USDT", min: 0, max: 10_000, step: 1 },
-  { key: "rewardRisk.nexAmount", label: "新人礼 NEX 金额", unit: "NEX", min: 0, max: 1_000_000, step: 1 },
-];
-
 const OTP_GATE_PARAMS: ExtraParamDef[] = [
   { key: "otpGate.resendSeconds", label: "验证码重发冷却", unit: "秒", min: 30, max: 300, step: 1 },
   { key: "otpGate.captchaAfterSends", label: "滑块验证触发次数", unit: "次/24h", min: 1, max: 10, step: 1 },
@@ -49,9 +43,6 @@ const OTP_GATE_PARAMS: ExtraParamDef[] = [
   { key: "otpGate.maxVerifyAttempts", label: "最多输错次数", unit: "次", min: 1, max: 10, step: 1 },
   { key: "otpGate.captchaTicketTtlSeconds", label: "滑块票据有效期", unit: "秒", min: 30, max: 600, step: 1 },
 ];
-
-const LOCK_MODE_LABELS: Record<string, string> = { risk_bucket: "按风险桶发放", direct: "直入可提余额" };
-const LOCK_MODE_VALUES = Object.fromEntries(Object.entries(LOCK_MODE_LABELS).map(([value, label]) => [label, value]));
 
 function parseK2Threshold(key: string, value: string): K2Threshold | null {
   const text = value.trim().replace(/X/g, "x");
@@ -341,18 +332,17 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       ctx.toast(`${definition.label} 后端配置未返回`);
       return;
     }
-    const current = definition.key === "rewardRisk.lockMode" ? (LOCK_MODE_LABELS[param.value] ?? param.value) : param.value;
     ctx.openActionConfirm({
       action: `K2 配置调整 · ${definition.label}`,
       detail: `${definition.label} · 当前 ${param.value} ${definition.unit}。${param.sub}。调整后只影响后续判定并写入审计。`,
-      amplifies: definition.key.startsWith("rewardRisk."),
+      amplifies: false,
       edit: definition.options
-        ? { kind: "select", current, options: definition.key === "rewardRisk.lockMode" ? Object.values(LOCK_MODE_LABELS) : definition.options }
+        ? { kind: "select", current: param.value, options: definition.options }
         : { kind: "number", current: param.value, unit: definition.unit, min: definition.min, max: definition.max, step: definition.step },
       reasonMax: 200,
       run: (reason, value) => {
         if (value == null || value === "") return;
-        const backendValue = definition.key === "rewardRisk.lockMode" ? (LOCK_MODE_VALUES[value] ?? value) : value;
+        const backendValue = value;
         return runAction(
           `k2-param:${definition.key}:${param.version}:${param.value}`,
           (commandKey) => ctx.actions.updateK2Param(definition.key, backendValue, param.version, reason, commandKey),
@@ -423,6 +413,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
           <span className="sub">· 置换抵扣阶梯归 E3 管；K2 依据高频下架置换与礼金/返佣叠加证据判定</span>
           <div className="r">
             <Link className="kcode lock" href="/devices/trade-in" title="置换阶梯权威归 E3；K2 不维护置换价格参数">🔒 置换阶梯归 E3 · 首档抵扣 {ladderTopCredit ? `${ladderTopCredit}%` : "读取中"}</Link>
+            <Link className="kcode lock" href="/growth/referral-rewards" title="新人礼与邀请人奖励的金额、发放和结算统一在 H8">🔒 新人礼 / 邀请奖励配置归 H8</Link>
           </div>
         </div>
         <div className="l-b">
@@ -443,8 +434,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       </section>
 
       {[
-        { title: "新人礼发放配置", sub: "· 配置已持久化；发奖服务接入前不影响实际入账", params: REWARD_RISK_PARAMS, proof: "k2-welcome-gift-params" },
-        { title: "短信闸门参数", sub: "· 冷却 → 24h 限频（达到阈值后要求滑块票据）→ 放行；调整只影响后续发送，已签发验证码沿用签发时参数", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
+        { title: "短信闸门参数", sub: "· 冷却 → 24h 限频（完成 N 次发送后，第 N+1 次起要求滑块票据）→ 放行；调整只影响后续发送，已签发验证码沿用签发时参数", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
       ].map((group) => (
         <section className="l-card" key={group.title}>
           <div className="l-h">
@@ -460,7 +450,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                   <div className="p" key={definition.key}>
                     <div className="k">{definition.label}</div>
                     <div className="v">
-                      {definition.key === "rewardRisk.lockMode" && param ? (LOCK_MODE_LABELS[param.value] ?? param.value) : (param?.value ?? "—")} <span className="vu">{definition.unit}</span>
+                      {param?.value ?? "—"} <span className="vu">{definition.unit}</span>
                       {canWrite && <button className="l-btn sm mc" disabled={!param} onClick={() => adjExtraParam(definition)}>调整</button>}
                     </div>
                     <div className="s">{param?.sub ?? "等待后端配置"}</div>

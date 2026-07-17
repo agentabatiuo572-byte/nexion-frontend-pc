@@ -43,8 +43,6 @@ export interface OpsSku {
   baseRate?: string;
   sold?: number;
   stock: string | number;
-  rating?: number;
-  reviews?: number;
   aiImageGenPerMin?: number;
   aiLlmTokensPerSec?: number;
   aiVideoMinPerHour?: number;
@@ -102,16 +100,6 @@ export interface OpsVRankRewardItem {
 }
 
 export type VRankRewardMap = Record<string, OpsVRankRewardItem[]>;
-
-export interface OpsReview {
-  id: string;
-  productId: string;
-  author: string;
-  rating: number;
-  content: string;
-  date: string;
-  status: string;
-}
 
 export interface OpsNova {
   key: string;

@@ -36,4 +36,9 @@ export const DOMAIN_H: ModuleEntry[] = [
     summary: "代金券(领券促销)配置 · 满减 / 折扣两类。运营可配名称、面值、满减门槛 / 折扣封顶、适用 SKU(留空 = 全设备)、受众(新人 / 全部)、有效期、领取入口页面(首页 / 商城 / 我的 / 收益)、是否参与首页弹窗。前端进站自动弹窗领取 → 关闭后对应页面保留领券 banner;领取后「马上去使用」按适用范围跳 SKU 详情页或商城,结算自动套用满减 / 折扣。代金券是促销折扣、非 NEX 负债,不走 B1 兑付红线;上下架 / 改参即时对前端生效。",
     content: PORTED_EMPTY_CONTENT,
   },
+  {
+    path: "/growth/referral-rewards",
+    summary: "新人礼与邀请人奖励(H8)—— 金额配置、待结算邀请和真实发奖统一入口。结算直接写新人 / 邀请人钱包和资金台账，同一新人由唯一约束防重复发奖。",
+    content: PORTED_EMPTY_CONTENT,
+  },
 ];

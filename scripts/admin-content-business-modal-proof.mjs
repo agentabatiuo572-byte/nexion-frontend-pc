@@ -191,7 +191,7 @@ await step("i18n-repair-updates-integrity", () => {
 });
 
 await step("course-authoring-draft-visible-after-reopen", () => {
-  open("/content/learn");
+  open("/content/i18n");
   evalJson(`clickExact('+ 新建课程'); return { opened: true };`);
   wait();
   evalJson(`
@@ -212,7 +212,7 @@ await step("course-authoring-draft-visible-after-reopen", () => {
     return { submitted: true };
   `);
   wait();
-  const state = reopenAndRead("/content/learn");
+  const state = reopenAndRead("/content/i18n");
   const page = evalJson(`
     const body = bodyText();
     return {
@@ -358,7 +358,7 @@ fs.writeFileSync(
     shardId: "AD-09",
     source: "SPEC-L2a02-runtime-proof",
     side: "admin",
-    routes: ["/content/i18n", "/content/learn", "/content/copy-ab", "/content/disclosures", "/content/notifications"],
+    routes: ["/content/i18n", "/content/copy-ab", "/content/disclosures", "/content/notifications"],
     status: "captured",
     result: {
       classification: "state-persisted-and-visible",

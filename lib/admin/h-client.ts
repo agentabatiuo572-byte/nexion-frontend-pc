@@ -282,6 +282,47 @@ export async function deleteH7Voucher(id: string, reason: string) {
   );
 }
 
+export interface H8SettlementRow {
+  settlementNo?: string;
+  invitedUserId?: number;
+  inviterUserId?: number;
+  newcomerUsdt?: number | string;
+  newcomerNex?: number | string;
+  inviterNex?: number | string;
+  status?: string;
+  createdAt?: string;
+}
+
+export interface H8ReferralRewardOverview {
+  params: Record<string, number | string>;
+  pending: number;
+  settled: number;
+  blockedByK2: number;
+  recentSettlements: H8SettlementRow[];
+  source: string;
+  settlementMode: string;
+}
+
+export async function fetchH8ReferralRewards(): Promise<H8ReferralRewardOverview> {
+  return growthRequest<H8ReferralRewardOverview>("/referral-rewards");
+}
+
+export async function updateH8ReferralRewardParam(key: string, value: string, reason: string) {
+  return growthRequest<Record<string, unknown>>(
+    `/referral-rewards/params/${encodeURIComponent(key)}`,
+    { method: "PATCH", body: commandBody(key, value, reason) },
+    "h8-param",
+  );
+}
+
+export async function runH8ReferralSettlements(limit: number, reason: string) {
+  return growthRequest<{ settled: number; skipped: number; limit: number }>(
+    "/referral-rewards/settlements/run",
+    { method: "POST", body: JSON.stringify({ limit, reason, operator: currentAdminOperator() }) },
+    "h8-settlement",
+  );
+}
+
 // ===== H3/H4 业务实体创建(后端 POST /growth/quest-events/*) =====
 
 export async function createH3Mission(mission: Record<string, any>, reason: string) {

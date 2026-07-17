@@ -424,3 +424,53 @@ export async function rerunG4GenesisDividendBatch(batchNo: string, reason: strin
     idempotencyPrefix: `g4-rerun-${batchNo}`,
   }));
 }
+
+export interface G4AdminSimulation {
+  id: number;
+  simulationNo: string;
+  side: "BUY" | "SELL";
+  quantity: number | string;
+  unitPrice: number | string;
+  notional: number | string;
+  reason: string;
+  operator: string;
+  recordType: "SIMULATED";
+  status: string;
+  createdAt: string;
+}
+
+export interface G4AdminOperationsOverview {
+  config: Record<string, string | null>;
+  simulations: G4AdminSimulation[];
+  simulationScope: "ADMIN_ONLY";
+  ledgerImpact: "NONE";
+  includedInMarketStats: false;
+}
+
+export function fetchG4AdminOperations() {
+  return g4Request<G4AdminOperationsOverview>("/nex/genesis/operations");
+}
+
+export function updateG4AdminOperationConfig(key: string, value: string, reason: string, operator: string) {
+  return g4Request<Record<string, unknown>>(`/nex/genesis/operations/config/${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ value, reason, operator }),
+    idempotencyPrefix: `g4-ops-config-${key}`,
+  });
+}
+
+export function createG4AdminSimulation(side: "BUY" | "SELL", quantity: string, unitPrice: string, reason: string, operator: string) {
+  return g4Request<Record<string, unknown>>("/nex/genesis/operations/simulations", {
+    method: "POST",
+    body: JSON.stringify({ side, quantity, unitPrice, reason, operator }),
+    idempotencyPrefix: "g4-admin-simulation",
+  });
+}
+
+export function archiveG4AdminSimulation(id: number, reason: string, operator: string) {
+  return g4Request<Record<string, unknown>>(`/nex/genesis/operations/simulations/${id}`, {
+    method: "DELETE",
+    body: JSON.stringify({ value: "ARCHIVED", reason, operator }),
+    idempotencyPrefix: `g4-admin-simulation-archive-${id}`,
+  });
+}

@@ -44,6 +44,24 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "nex" && parts[1] === "genesis") {
     return "/api/admin/market/nex/genesis";
   }
+  if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "operations") {
+    return "/api/admin/market/nex/genesis/operations";
+  }
+  if (
+    parts.length === 5 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "operations" &&
+    parts[3] === "config" && isNonEmpty(parts[4])
+  ) {
+    return `/api/admin/market/nex/genesis/operations/config/${encodeURIComponent(parts[4])}`;
+  }
+  if (parts.length === 4 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "operations" && parts[3] === "simulations") {
+    return "/api/admin/market/nex/genesis/operations/simulations";
+  }
+  if (
+    parts.length === 5 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "operations" &&
+    parts[3] === "simulations" && isNonEmpty(parts[4])
+  ) {
+    return `/api/admin/market/nex/genesis/operations/simulations/${encodeURIComponent(parts[4])}`;
+  }
   if (
     parts.length === 4 &&
     parts[0] === "nex" &&
@@ -191,5 +209,9 @@ export async function POST(request: Request, context: RouteContext) {
 }
 
 export async function PUT(request: Request, context: RouteContext) {
+  return proxy(request, context);
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
   return proxy(request, context);
 }

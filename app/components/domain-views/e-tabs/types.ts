@@ -4,11 +4,11 @@ import type { E2PhoneTier } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
-import type { OpsSku, OpsReview, OpsTask } from "@/lib/admin/platform-types";
+import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
 
 /**
  * E 域子视图共享类型。
- * shell(e-view.tsx)持有全部 store 接线 + 抽屉(SKU/任务/评价/订单详情)+ OperationConfirmModal,
+ * shell(e-view.tsx)持有全部 store 接线 + 抽屉(SKU/任务/订单详情)+ OperationConfirmModal,
  * 子视图通过 ctx 回调触发写入 —— 真写落点单一来源在 shell,保证 store 接线不散。
  *
  * Mc 显式 edit 契约(2026-06 跨域硬化):调参传 edit{kind,current,unit};处置/纯动作不传 edit。
@@ -22,9 +22,6 @@ export type EOp =
   | "task-save"       // 任务全参数编辑(抽屉读 taskForm)→ E2 后端 API
   | "task-create"     // 新增任务(原 submitTask 直调,批6 补 modal)→ E2 后端 API
   | "phone-tier"      // 手机算力档位收益 → E2 后端 API
-  | "review-save"     // 评价新增/编辑(原 submitReview 直调,批6 补 modal)→ E1 后端 API
-  | "review-delete"   // 评价删除(原 delReview 直调,批6 补 modal)→ E1 后端 API
-  | "review-status"   // 评价隐藏/恢复(原 toggleReview 直调,批6 补 modal)→ E1 后端 API
   | "param"           // 自由值调参 → E1/E3 后端配置接口;未接后端的 key 直接失败,不写本地 store
   | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];逐字段写后端 config
   | "param-fixed"     // 固定值写入 → E1/E3 后端配置接口;不出编辑框
@@ -66,7 +63,6 @@ export interface McSpec {
   hasImg?: boolean;         // sku-save:含商品媒体(商品主图或商品视频)
   status?: string;          // sku-status:"on"|"off";ops-pause:"on"|"off"
   taskId?: string;          // task-price:目标任务 id
-  reviewId?: string;        // review-delete/review-status:目标评价 id
   phoneTier?: number;
   phoneField?: "dailyUsdt" | "dailyNex";
   phaseId?: string;
@@ -98,7 +94,6 @@ export interface EViewCtx {
   toast: (msg: string) => void;
   // E1 商品目录 & 上架门
   skus: OpsSku[];
-  reviews: OpsReview[];
   e1Loading: boolean;
   e1Error: string | null;
   e1Gates: E1GenerationGateData | null;
@@ -106,10 +101,6 @@ export interface EViewCtx {
   refreshE1: () => Promise<void>;
   openSku: (name?: string) => void;              // 打开 SKU 抽屉(无 name = 新增)
   delSku: (name: string) => void;
-  openAddReview: () => void;
-  openEditReview: (r: OpsReview) => void;
-  toggleReview: (r: OpsReview) => void;
-  delReview: (r: OpsReview) => void;
   // E2 收益 & 任务引擎(任务列表/新增/改单价/下架均走后端 API)
   tasks: OpsTask[];
   phoneTiers: E2PhoneTier[];

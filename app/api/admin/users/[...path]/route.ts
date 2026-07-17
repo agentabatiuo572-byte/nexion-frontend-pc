@@ -83,6 +83,18 @@ function backendPath(parts: string[]) {
   if (parts.length === 3 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "360") {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/360`;
   }
+  if (parts.length === 3 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "payment-methods") {
+    return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/payment-methods`;
+  }
+  if (
+    parts.length === 5 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "payment-methods" &&
+    isNonEmpty(parts[3]) && (parts[4] === "unbind" || parts[4] === "rebind-notification")
+  ) {
+    return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/payment-methods/${encodeURIComponent(parts[3])}/${parts[4]}`;
+  }
+  if (parts.length === 4 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "nickname" && parts[3] === "reset") {
+    return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/nickname/reset`;
+  }
   if (parts.length === 3 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "security") {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/security`;
   }

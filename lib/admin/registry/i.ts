@@ -33,12 +33,7 @@ export const DOMAIN_I: ModuleEntry[] = [
   },
   {
     path: "/content/i18n",
-    summary: "全站文案双语底座(I6):约 770 条词条 × 30 多个分类，I1 转化、I2 模板、I4 信任、I5 披露和 I7 课程文案都引用这里。改任何词条都必须中英文一起改，缺一边或占位符对不上就拒绝发布。",
-    content: PORTED_EMPTY_CONTENT,
-  },
-  {
-    path: "/content/learn",
-    summary: "学习赚钱教程中心(I7):课程目录、推荐位、发布状态、完成奖励与效果指标独立管理。课程奖励上调会放大 NEX 流出，必须进入高敏审批并通过 B1 备付金红线。",
+    summary: "全站文案双语底座(I6)与课程管理统一入口:词条、课程目录、推荐位、发布状态、完成奖励与效果指标都在同一服务端概览中管理。课程奖励上调会放大 NEX 流出，必须进入高敏审批并通过 B1 备付金红线。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

@@ -96,7 +96,7 @@ function ownerFor(r: CgmRow): { path: string; label: string } {
     [/leadership|currentweekpool|领导池/, "/network/leadership-pool", "F4 领导池"],
     [/withdrawal|提现|min_withdrawal|fee|daily_cap|user_daily/, "/finance/params", "D5 提现参数"],
     [/billtype|账单/, "/finance/ledger", "D4 平台账本"],
-    [/lesson|categor|learn|format_label/, "/content/learn", "I7 教程中心"],
+    [/lesson|categor|learn|format_label/, "/content/i18n", "I6 文案与课程"],
     [/disclos|risk.?disclosure|compliance|kyc.?express/, "/content/disclosures", "I5 风险披露"],
     [/trust/, "/content/trust", "I4 信任中心"],
     [/banner|copy|文案/, "/content/copy-ab", "I1 文案 AB"],

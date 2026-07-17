@@ -19,11 +19,12 @@ import H2Trial from "./h-tabs/h2-trial";
 import H3QuestEvents, { H4ActivityCenter } from "./h-tabs/h3-quest-events";
 import H5DailyMilestones from "./h-tabs/h5-daily-milestones";
 import H7VoucherConfig from "./h-tabs/h7-voucher-config";
+import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
 import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
 import { fetchH1Rhythm, type H1RhythmOverview } from "@/lib/admin/h-client";
 
 /** L2 映射:H3/H4 分别渲染高保真里的任务分段/活动分段;H5 承载签到与里程碑。 */
-const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H4", H5: "H5", H7: "H7" };
+const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H4", H5: "H5", H7: "H7", H8: "H8" };
 
 const RO_COPY: Record<string, [ro: string, live: string]> = {
   H1: ["阶段流转只能服务器推进 · 客户端不能改", ""],
@@ -32,6 +33,7 @@ const RO_COPY: Record<string, [ro: string, live: string]> = {
   H4: ["转盘抽奖在服务器跑 · 概率公开,但中没中不由前端定", "主推唯一性、活动状态、转盘护栏均由后端校验"],
   H5: ["签到/转盘的结果由服务器定 · 客户端只显示", "幸运两档概率之和 ≤100% · 里程碑阈值严格从低到高"],
   H7: ["代金券领取/核销在服务器裁决 · 客户端只展示与跳转", "改参即时对前端领券弹窗 + banner 生效 · 促销折扣非负债不走 B1"],
+  H8: ["邀请关系和是否已结算由服务器裁决", "真实钱包 + 资金台账 · 同一新人唯一结算"],
 };
 
 export function HDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -83,6 +85,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H4" && <H4ActivityCenter ctx={ctx} />}
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
+      {tab === "H8" && <H8ReferralRewards ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal

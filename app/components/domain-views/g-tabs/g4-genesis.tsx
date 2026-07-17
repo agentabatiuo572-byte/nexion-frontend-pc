@@ -19,6 +19,7 @@ import {
 import type { GCtx } from "./types";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import G4AdminOperations from "./g4-admin-operations";
 
 const OPERATOR = currentAdminOperator;
 
@@ -267,6 +268,8 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div><div className="sub">24h 量 {fmtUsdCompact(stats.secondary.vol24h)} · 在挂 {fmtNumber(stats.secondary.listed, 0)}</div></div>
         <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">联动 {overview.market.linkedDomain} · {overview.market.configKey}</div></div>
       </div>
+
+      <G4AdminOperations ctx={ctx} />
 
       <div className="two-col r11" style={{ marginBottom: 16 }}>
         <section className="l-card">

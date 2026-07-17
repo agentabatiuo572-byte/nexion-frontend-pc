@@ -202,6 +202,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "H4", name: "活动中心", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
       { id: "H5", name: "签到 & NEX", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
+      { id: "H8", name: "邀请奖励", path: "/growth/referral-rewards", prdAnchor: "H8", batch: "V3", status: "flagship" },
     ],
   },
   {
@@ -218,7 +219,6 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "I4", name: "信任中心", path: "/content/trust", prdAnchor: "I4", batch: "V4", status: "flagship" },
       { id: "I5", name: "风险披露", path: "/content/disclosures", prdAnchor: "I5", batch: "V4", status: "flagship" },
       { id: "I6", name: "i18n 文案", path: "/content/i18n", prdAnchor: "I6", batch: "V4", status: "flagship" },
-      { id: "I7", name: "教程中心", path: "/content/learn", prdAnchor: "I7", batch: "V4", status: "flagship" },
     ],
   },
   {
@@ -339,7 +339,7 @@ export function menuCodesFromAuthorities(authorities: string[]): string[] {
   const found = new Set<string>();
   for (const authority of authorities) {
     for (const match of authority.toUpperCase().matchAll(/(?:^|_)([A-M]\d+)(?:_|$)/g)) {
-      found.add(match[1]);
+      found.add(match[1] === "I7" ? "I6" : match[1]);
     }
   }
   return [...found].sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
@@ -358,14 +358,21 @@ export function resolveVisibleDomains(snapshot: NavAccessSnapshot): NavDomain[] 
   const effectiveCodes = explicit ?? (inferred.length > 0 ? inferred : undefined);
 
   if (effectiveCodes === undefined) return visibleDomains(snapshot.role);
-  const allowed = new Set(effectiveCodes.map((code) => code.trim().toUpperCase()).filter(Boolean));
+  const allowed = new Set(effectiveCodes
+    .map((code) => code.trim().toUpperCase())
+    .filter(Boolean)
+    .map((code) => code === "I7" ? "I6" : code));
   const nodes = new Map<string, EffectiveMenuNode[]>();
   for (const node of snapshot.menuNodes ?? []) {
-    const code = node.menuCode.trim().toUpperCase();
+    const rawCode = node.menuCode.trim().toUpperCase();
+    const code = rawCode === "I7" ? "I6" : rawCode;
     if (!code) continue;
+    const compatibleNode = rawCode === "I7"
+      ? { ...node, menuCode: "I6", menuName: "i18n 文案与课程", routePath: "/content/i18n" }
+      : node;
     const candidates = nodes.get(code);
-    if (candidates) candidates.push(node);
-    else nodes.set(code, [node]);
+    if (candidates) candidates.push(compatibleNode);
+    else nodes.set(code, [compatibleNode]);
   }
   const hasMenuMetadata = snapshot.menuNodes !== undefined;
   const findNode = (code: string, predicate?: (node: EffectiveMenuNode) => boolean) => {

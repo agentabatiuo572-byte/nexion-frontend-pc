@@ -1,5 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
-import type { OpsReview, OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 
 interface ApiResult<T> {
@@ -45,8 +45,6 @@ interface BackendSku {
   baseRate?: string | null;
   sold?: number | null;
   stock?: string | null;
-  rating?: number | string | null;
-  reviews?: number | null;
   aiImageGenPerMin?: number | null;
   aiLlmTokensPerSec?: number | null;
   aiVideoMinPerHour?: number | null;
@@ -64,16 +62,6 @@ interface BackendSku {
   imagePreviewUrl?: string | null;
   tag?: string | null;
   status?: string | null;
-}
-
-interface BackendReview {
-  reviewId: string;
-  skuId: string;
-  author: string;
-  rating: number;
-  content: string;
-  dateText: string;
-  status: string;
 }
 
 export interface E1Phase {
@@ -111,7 +99,6 @@ export interface E1GenerationGateData {
 
 export interface E1CatalogSnapshot {
   skus: OpsSku[];
-  reviews: OpsReview[];
   gates: E1GenerationGateData;
 }
 
@@ -241,8 +228,6 @@ function fromSku(sku: BackendSku): OpsSku {
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
     stock: sku.stock ?? "0",
-    rating: toOptionalNumber(sku.rating),
-    reviews: sku.reviews ?? undefined,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? undefined,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? undefined,
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? undefined,
@@ -283,8 +268,6 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     baseRate: sku.baseRate ?? null,
     sold: sku.sold ?? null,
     stock: String(sku.stock ?? "0"),
-    rating: sku.rating ?? null,
-    reviews: sku.reviews ?? null,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? null,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? null,
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? null,
@@ -302,31 +285,6 @@ function toSkuPayload(sku: OpsSku, reason: string, operator: string) {
     imagePreviewUrl: sku.imagePreviewUrl ?? null,
     tag: sku.tag ?? "",
     status: sku.status ?? "pending",
-    reason,
-    operator,
-  };
-}
-
-function fromReview(review: BackendReview): OpsReview {
-  return {
-    id: review.reviewId,
-    productId: review.skuId,
-    author: review.author,
-    rating: review.rating,
-    content: review.content,
-    date: review.dateText,
-    status: review.status,
-  };
-}
-
-function toReviewPayload(review: OpsReview, reason: string, operator: string) {
-  return {
-    skuId: review.productId,
-    author: review.author,
-    rating: review.rating,
-    content: review.content,
-    dateText: review.date,
-    status: review.status,
     reason,
     operator,
   };
@@ -350,18 +308,12 @@ async function withFreshSkuMediaPreview(sku: OpsSku): Promise<OpsSku> {
 }
 
 export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
-  const [skuPage, reviewPage, gates] = await Promise.all([
+  const [skuPage, gates] = await Promise.all([
     e1Request<PageResult<BackendSku>>("/skus?pageNum=1&pageSize=100"),
-    e1Request<PageResult<BackendReview>>("/reviews?pageNum=1&pageSize=100"),
     e1Request<E1GenerationGateData>("/generation-gates"),
   ]);
   const skus = await Promise.all((skuPage.records ?? []).map(fromSku).map(withFreshSkuMediaPreview));
-
-  return {
-    skus,
-    reviews: (reviewPage.records ?? []).map(fromReview),
-    gates,
-  };
+  return { skus, gates };
 }
 
 export async function saveE1Sku(sku: OpsSku, previousSkuId: string | undefined, reason: string, operator: string) {
@@ -394,41 +346,6 @@ export async function deleteE1Sku(skuId: string, reason: string, operator: strin
     method: "DELETE",
     body: JSON.stringify({ status: "off", reason, operator }),
     idempotencyPrefix: "e1-sku-delete",
-  });
-}
-
-export async function saveE1Review(review: OpsReview, reason: string, operator: string) {
-  const saved = await e1Request<BackendReview>("/reviews", {
-    method: "POST",
-    body: JSON.stringify(toReviewPayload(review, reason, operator)),
-    idempotencyPrefix: "e1-review-create",
-  });
-  return fromReview(saved);
-}
-
-export async function updateE1Review(review: OpsReview, reason: string, operator: string) {
-  const saved = await e1Request<BackendReview>(`/reviews/${encodeURIComponent(review.id)}`, {
-    method: "PUT",
-    body: JSON.stringify(toReviewPayload(review, reason, operator)),
-    idempotencyPrefix: "e1-review-update",
-  });
-  return fromReview(saved);
-}
-
-export async function updateE1ReviewStatus(reviewId: string, status: string, reason: string, operator: string) {
-  const saved = await e1Request<BackendReview>(`/reviews/${encodeURIComponent(reviewId)}/status`, {
-    method: "PATCH",
-    body: JSON.stringify({ status, reason, operator }),
-    idempotencyPrefix: "e1-review-status",
-  });
-  return fromReview(saved);
-}
-
-export async function deleteE1Review(reviewId: string, reason: string, operator: string) {
-  await e1Request<{ deleted: boolean }>(`/reviews/${encodeURIComponent(reviewId)}`, {
-    method: "DELETE",
-    body: JSON.stringify({ status: "hidden", reason, operator }),
-    idempotencyPrefix: "e1-review-delete",
   });
 }
 

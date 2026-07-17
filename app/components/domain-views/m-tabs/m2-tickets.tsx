@@ -7,6 +7,7 @@
  * 仅「升级为即时会话」这类跨载体处置走操作确认 + 理由。
  */
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Icon, MessageThread, Modal, type ThreadMessage } from "../design-kit";
 import {
   type SessionConvo,
@@ -545,6 +546,7 @@ function TicketDrawer({
             <MiniMenu label="状态" items={statusItems} />
             <MiniMenu label="优先级" items={priorityItems} />
             <MiniMenu label="转交" icon="users" items={ownerItems} />
+            {ticket.userId && <Link className="btn btn-sec btn-sm" href={`/users/search/${ticket.userId}#hub-payment-methods`}><Icon name="wallet" size={16} />用户支付方式</Link>}
             <div style={{ flex: 1 }} />
             <button type="button" data-proof="support-ticket-escalate" className="btn btn-cyan btn-sm" onClick={onEscalate}>
               <Icon name="arrow" size={16} />

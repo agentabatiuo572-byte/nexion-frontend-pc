@@ -6,9 +6,9 @@
  * E1 商品目录&代际门 / E2 收益&任务引擎 / E3 生命周期&Trade-in / E4 订单状态机 / E5 设备运维。
  * nav id == 视图 key == prdAnchor == PRD §10 章节(已全部重编号统一,FOLD 现为恒等映射)。
  *
- * 本 shell 持有全部共享 store 接线 + 4 个抽屉(SKU / 任务 / 评价 / 订单详情)+ OperationConfirmModal;
+ * 本 shell 持有全部共享 store 接线 + SKU / 任务 / 订单详情抽屉 + OperationConfirmModal;
  * 各 tab 视觉/布局拆到 e-tabs/*(复用 design-kit 原语 + e-domain.css 设计类),经 EViewCtx 注入派生读 + 回调。
- * 真写落点:E1 SKU/评价/上架门、E2 任务引擎、E3 生命周期&Trade-in、E4 订单状态机、E5 设备运维走后端 API。
+ * 真写落点:E1 SKU/上架门、E2 任务引擎、E3 生命周期&Trade-in、E4 订单状态机、E5 设备运维走后端 API。
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -16,7 +16,7 @@ import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } f
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { OpsSku, OpsReview, OpsTask } from "@/lib/admin/platform-types";
+import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
 import {
   fetchE1Catalog,
   type E1GenerationGateData,
@@ -50,8 +50,6 @@ import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
 import "./e-domain.css";
 
-let REVIEW_SEQ = 100; // 客户端新增评价临时 id 计数,提交后以后端 id 为准。
-
 type SkuMediaKind = "image" | "video";
 type SkuMedia = {
   kind: SkuMediaKind;
@@ -81,10 +79,6 @@ const SKU_TIER_OPTIONS = [
 const SKU_LIFECYCLE_OPTIONS = [
   { value: "active", label: "在产" },
   { value: "legacy", label: "停代" },
-] as const;
-const REVIEW_STATUS_OPTIONS = [
-  { value: "published", label: "展示中" },
-  { value: "hidden", label: "已隐藏" },
 ] as const;
 const DC_STATUS_OPTIONS: { value: DatacenterForm["status"]; label: string }[] = [
   { value: "active", label: "启用中" },
@@ -243,9 +237,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const pE = (k: string): string => isE3ParamKey(k) ? (e3Params[k] ?? "—") : "—";
   const e3Ready = Object.keys(e3Params).length > 0;
 
-  // ── E1 商品目录 / 评价 / 代际门:后端接口为单一来源 ──
+  // ── E1 商品目录 / 代际门:后端接口为单一来源 ──
   const [e1Skus, setE1Skus] = useState<OpsSku[]>([]);
-  const [e1Reviews, setE1Reviews] = useState<OpsReview[]>([]);
   const [e1Gates, setE1Gates] = useState<E1GenerationGateData | null>(null);
   const [e1Loading, setE1Loading] = useState(false);
   const [e1Error, setE1Error] = useState<string | null>(null);
@@ -255,7 +248,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       const snapshot = await fetchE1Catalog();
       setE1Skus(snapshot.skus);
-      setE1Reviews(snapshot.reviews);
       setE1Gates(snapshot.gates);
     } catch (error) {
       setE1Error(error instanceof Error ? error.message : "E1_SYNC_FAILED");
@@ -265,7 +257,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
   useEffect(() => { if (tab === "E1") void refreshE1(); }, [tab, refreshE1]);
   const skus = e1Skus;
-  const reviews = e1Reviews;
   const phaseCur = e1Gates?.phaseCurrent ?? "P3";
   const e1PhaseIds = e1Gates?.phaseOrder?.length
     ? e1Gates.phaseOrder
@@ -448,9 +439,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [taskDrawer, setTaskDrawer] = useState(false);
   const [editTaskId, setEditTaskId] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState<{ n: string; price: string; req: string; unit: string; sat: string; taskClass: string; model: string; minReward: string; maxReward: string; minVRAM: string; killInit: string }>({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" });
-  const [reviewDrawer, setReviewDrawer] = useState(false);
-  const [editReviewId, setEditReviewId] = useState<string | null>(null);
-  const [reviewForm, setReviewForm] = useState({ productId: "", author: "", rating: "5", content: "", date: "刚刚", status: "published" });
   const [dcDrawer, setDcDrawer] = useState(false);
   const [editDcLocation, setEditDcLocation] = useState<string | null>(null);
   const [dcForm, setDcForm] = useState<DatacenterForm>({ dcLocation: "", regionLabel: "", status: "active", sortOrder: "100" });
@@ -523,34 +511,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         target: name,
         impact: "商品目录与用户端购买入口会移除;已售设备订单和账本不回溯。",
       },
-    });
-  };
-  const openAddReview = () => { const firstSku = skus.find((s) => (s.status || "on") !== "off"); setReviewForm({ productId: firstSku?.id || firstSku?.name || "", author: "", rating: "5", content: "", date: "刚刚", status: "published" }); setEditReviewId(null); setReviewDrawer(true); };
-  const openEditReview = (r: OpsReview) => { setReviewForm({ productId: r.productId, author: r.author, rating: String(r.rating), content: r.content, date: r.date, status: r.status }); setEditReviewId(r.id); setReviewDrawer(true); };
-  const submitReview = () => {
-    if (!reviewForm.author.trim() || !reviewForm.content.trim()) { setToast("请填写评价人 + 内容"); return; }
-    setActionConfirm({ name: (editReviewId ? "编辑评价 · " : "新增评价 · ") + reviewForm.author.trim(), op: "review-save" });
-    setReviewDrawer(false);
-  };
-  const delReview = (r: OpsReview) => {
-    setActionConfirm({
-      name: "删除评价 · " + r.author,
-      op: "review-delete",
-      reviewId: r.id,
-      target: r.author,
-      detail: `删除「${r.author}」的评价?需审计留痕。批6 起走 A2 待确认队列。`,
-      businessForm: { kind: "destructive-reason", target: r.author, impact: "商品详情页评价区移除该条;已结算 / 派单不回溯。" },
-    });
-  };
-  const toggleReview = (r: OpsReview) => {
-    const ns = r.status === "published" ? "hidden" : "published";
-    setActionConfirm({
-      name: (ns === "hidden" ? "隐藏评价 · " : "恢复评价 · ") + r.author,
-      op: "review-status",
-      reviewId: r.id,
-      target: r.author,
-      status: ns,
-      detail: `${ns === "hidden" ? "隐藏" : "恢复"}「${r.author}」的评价 · 隐藏态不对用户展示 · 走 A2 待确认队列。`,
     });
   };
   const openDatacenter = (dc?: E5Datacenter) => {
@@ -817,7 +777,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const ctx: EViewCtx = {
     pE, openActionConfirm: (m) => setActionConfirm(m), toast: setToast,
-    skus, reviews, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku, openAddReview, openEditReview, toggleReview, delReview,
+    skus, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku,
     tasks, phoneTiers, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, setE4Page, setE4PageSize, setE4Filter, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder: (o) => setSelOrder(o),
@@ -1053,10 +1013,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             ) : (
               <SkuFld label="累计销量" type="number" value={form.sold} onChange={(v) => setForm({ ...form, sold: v })} placeholder="12483" hint="份额无限量,不设库存" />
             )}
-            <div className="grid g-2" style={{ gap: 12 }}>
-              <SkuFld label="评分" type="number" value={form.rating} onChange={(v) => setForm({ ...form, rating: v })} placeholder="4.8" />
-              <SkuFld label="评论数" type="number" value={form.reviews} onChange={(v) => setForm({ ...form, reviews: v })} placeholder="2847" />
-            </div>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑥" title="生命周期 & 上架">
@@ -1171,24 +1127,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         </div>
       </Drawer>}
 
-      {/* 评价新增 / 编辑 抽屉 */}
-      {reviewDrawer && <Drawer title={editReviewId ? "编辑评价" : "新增评价"} sub={<AutoGloss>用户评价 · 关联单个设备 · 增删改后对该商品详情页生效</AutoGloss>} onClose={() => { setReviewDrawer(false); setEditReviewId(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setReviewDrawer(false); setEditReviewId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!reviewForm.author.trim() || !reviewForm.content.trim()} onClick={submitReview}>{editReviewId ? "保存修改" : "提交新增"}</Btn></>}>
-        <div className="col" style={{ gap: 12 }}>
-          <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">关联商品(在售设备)</span><select className="fld" value={reviewForm.productId} onChange={(e) => setReviewForm({ ...reviewForm, productId: e.target.value })}>{skus.filter((s) => (s.status || "on") !== "off").map((s) => <option key={s.name} value={s.id || s.name}>{s.name}</option>)}</select></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">评分</span><select className="fld" value={reviewForm.rating} onChange={(e) => setReviewForm({ ...reviewForm, rating: e.target.value })}>{["5", "4", "3", "2", "1"].map((n) => <option key={n} value={n}>{n} ★</option>)}</select></label>
-          </div>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">评价人</span><input className="fld" value={reviewForm.author} onChange={(e) => setReviewForm({ ...reviewForm, author: e.target.value })} placeholder="张三 · ID" /></label>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">评价内容</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={reviewForm.content} onChange={(e) => setReviewForm({ ...reviewForm, content: e.target.value })} placeholder="约 11 个月回本,托管稳定。" /></label>
-          <div className="grid g-2" style={{ gap: 12 }}>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">时间文案</span><input className="fld" value={reviewForm.date} onChange={(e) => setReviewForm({ ...reviewForm, date: e.target.value })} placeholder="2 天前" /></label>
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">状态</span><select className="fld" value={reviewForm.status} onChange={(e) => setReviewForm({ ...reviewForm, status: e.target.value })}>{REVIEW_STATUS_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          </div>
-          <div className="tint tiny"><AutoGloss>评价为内容运营动作 · 提交即写审计 A2;隐藏态不对用户展示。</AutoGloss></div>
-        </div>
-      </Drawer>}
-
       {/* E5 数据中心新增 / 编辑抽屉 */}
       {dcDrawer && <Drawer title={editDcLocation ? "编辑数据中心" : "新增数据中心"} sub={<AutoGloss>数据中心卡片配置 · 写入后端 MySQL</AutoGloss>} onClose={() => { setDcDrawer(false); setEditDcLocation(null); }}
         footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setDcDrawer(false); setEditDcLocation(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={(!editDcLocation && !dcForm.dcLocation.trim()) || !dcForm.regionLabel.trim()} onClick={openDatacenterSaveConfirm}>{editDcLocation ? "保存修改" : "提交新增"}</Btn></>}>
@@ -1263,39 +1201,6 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
                 command: def.buildCommand({ skuId, status: String(mc.status ?? "") }),
                 target: def.buildTarget({ skuId }),
-              });
-            } else if (mc.op === "review-save") {
-              // 评价 create/update:create 的 reviewId 为客户端临时值,后端序列生成;锁粒度降级(create-id 已知缺口,可接受)。
-              const reviewId = editReviewId ?? ("rv-" + ++REVIEW_SEQ);
-              const def = findHighOp(editReviewId ? "e1_review_update" : "e1_review_create")!;
-              const reviewCtx = {
-                reviewId, skuId: reviewForm.productId.trim(), author: reviewForm.author.trim(),
-                rating: Number(reviewForm.rating) || 5, content: reviewForm.content.trim(),
-                dateText: reviewForm.date.trim() || "刚刚", status: reviewForm.status,
-              };
-              void propose(ctx.toast, {
-                action: mc.name, obj: reviewForm.author.trim(), before: editReviewId ? "编辑前评价" : "—", after: reviewForm.content.trim(),
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand(reviewCtx),
-                target: def.buildTarget(reviewCtx),
-              });
-              setEditReviewId(null);
-            } else if (mc.op === "review-delete" && mc.reviewId) {
-              const def = findHighOp("e1_review_delete")!;
-              void propose(ctx.toast, {
-                action: mc.name, obj: mc.reviewId, before: mc.target ?? mc.reviewId, after: "已删除",
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ reviewId: mc.reviewId }),
-                target: def.buildTarget({ reviewId: mc.reviewId }),
-              });
-            } else if (mc.op === "review-status" && mc.reviewId) {
-              const def = findHighOp("e1_review_status")!;
-              const ns = mc.status ?? "hidden";
-              void propose(ctx.toast, {
-                action: mc.name, obj: mc.reviewId, before: ns === "hidden" ? "展示中" : "已隐藏", after: ns === "hidden" ? "已隐藏" : "展示中",
-                type: def.type, amplifies: false, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: "E1",
-                command: def.buildCommand({ reviewId: mc.reviewId, status: ns }),
-                target: def.buildTarget({ reviewId: mc.reviewId }),
               });
             } else if (mc.op === "task-create") {
               // 任务 create:taskId 后端序列生成;propose 时未知,锁 id 暂空(create-id 已知缺口,可接受)。

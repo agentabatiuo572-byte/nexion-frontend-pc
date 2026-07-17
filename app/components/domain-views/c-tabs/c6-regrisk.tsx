@@ -7,6 +7,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
  */
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   fetchUserRegistrationRiskOverview,
   updateUserRegistrationRiskParam,
@@ -108,6 +109,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const lockParams = params.filter((param) => param.group === "lock");
   const otpMaxParam = params.find((param) => param.key === "otpMax24h");
   const otpMaxN = stripTimesUnit(otpMaxParam?.value);
+  const otpCaptchaStart = Number.isFinite(Number(otpMaxN)) ? String(Number(otpMaxN) + 1) : "N+1";
   const captchaOff = overview?.stats?.captchaTemporarilyDisabled ? text(overview.stats.captchaRestoreWindow, "") : "";
   const k1Guards = overview?.k1Guards ?? [];
   const k1RejectCode = text(overview?.k1RejectCode, K1_REJECT_CODE_FALLBACK);
@@ -149,6 +151,17 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       </div>
     );
   };
+
+  const otpMirrorRow = (param: UserRegistrationRiskParam) => (
+    <div className="p-row" key={rowKey(param)}>
+      <div className="txt">
+        <div className="k">{text(param.name)} <span className="bdg dim">K2 唯一入口</span></div>
+        <div className="s">{text(param.sub, text(param.note))}；C6 仅展示服务端当前值，避免两处配置打架。</div>
+      </div>
+      <span className="v">{text(param.value)}</span>
+      <Link className="l-btn sm" href="/risk/abuse">去 K2 调整</Link>
+    </div>
+  );
 
   const restoreCaptcha = () => openConfirm({
     action: "恢复人机验证",
@@ -208,7 +221,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         {captchaOff ? (
           <StatCard tone="danger" label="人机验证" value="临时关闭" sub={`恢复时限：${captchaOff} · 到点自动开回`} />
         ) : (
-          <StatCard tone="ok" label="人机验证" value="开启" sub={`同号 24h 大于等于 ${otpMaxN} 次发送触发`} />
+          <StatCard tone="ok" label="人机验证" value="开启" sub={`完成 ${otpMaxN} 次发送后，第 ${otpCaptchaStart} 次起要求滑块`} />
         )}
         <StatCard
           tone="cyan"
@@ -223,9 +236,9 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
 
       <div className="sec-grid">
         <section className="l-card">
-          <div className="l-h"><span className="ttl">验证码(OTP)</span><span className="sub">· 后端配置读取</span></div>
+          <div className="l-h"><span className="ttl">验证码(OTP)</span><span className="sub">· K2 短信闸门只读镜像</span></div>
           <div className="l-b" style={{ paddingTop: 4 }}>
-            {otpParams.map(adjustRow)}
+            {otpParams.map(otpMirrorRow)}
             {otpParams.length === 0 && <div className="ctint">暂无 OTP 参数</div>}
           </div>
         </section>
@@ -261,8 +274,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
             </div>
             <div className="p-row">
               <div className="txt">
-                <div className="k">触发阈值 <span className="bdg dim">同 OTP 卡 · 单一参数</span></div>
-                <div className="s">同号 24h 验证码发送次数过线就要先过验证；与「同号 24h 上限」是同一个后端参数</div>
+                <div className="k">触发阈值 <span className="bdg dim">K2 唯一入口</span></div>
+                <div className="s">同号完成 {otpMaxN} 次发送后，第 {otpCaptchaStart} 次起要求滑块；权威配置在 K2，C6 只读。</div>
               </div>
               <span className="v">&gt;= {otpMaxN} 次</span>
             </div>
@@ -272,10 +285,10 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">和 K1 的分工(接口层强制)</span><span className="sub">· 防参数配两套打架</span></div>
+        <div className="l-h"><span className="ttl">和 K1 / K2 的分工(接口层强制)</span><span className="sub">· 防参数配两套打架</span></div>
         <div className="l-b">
           <div className="split-grid">
-            <div className="ctint"><b>这页管(单号频率)</b> · 验证码有效期 / 重发冷却 / 24h 上限 · 连错锁定两档 · 人机验证开关。</div>
+            <div className="ctint"><b>这页管(登录安全)</b> · 连错锁定两档与人机验证紧急开关。验证码有效期、重发冷却、触发线由 K2 短信闸门统一配置，本页只读镜像。</div>
             <div className="ctint"><b>K1 管(多账户去重)</b> · 同 IP 24h 注册上限 / 同设备绑定上限 / 同支付工具绑定上限。本页提交那三个参数，服务器直接退回 422。</div>
           </div>
           {k1Guards.map((guard) => (

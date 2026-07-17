@@ -250,7 +250,7 @@ await step("campaign-edit", () => {
 });
 
 await step("course-authoring", () => {
-  open("/content/learn");
+  open("/content/i18n");
   evalJson(`clickExact('+ 新建课程'); return { opened: true };`);
   wait();
   evalJson(`

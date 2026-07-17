@@ -27,6 +27,7 @@ function backendPath(parts: string[]) {
     "earn-milestones",
     "withdraw-gate",
     "vouchers",
+    "referral-rewards",
   ]);
   if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isNonEmpty(part) || part.includes("..") || part.includes("/") || part.includes("\\"))) {

@@ -23,6 +23,7 @@ export type SupportTicketMessage = {
 
 export type SupportTicket = {
   id: string;
+  userId?: number;
   subject: string;
   category: SupportTicketCategory;
   status: SupportTicketStatus;

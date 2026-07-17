@@ -17,9 +17,6 @@ function backendPath(parts: string[]) {
   const isSkuCollection = parts[0] === "skus" && parts.length === 1;
   const isSku = parts[0] === "skus" && parts.length === 2 && !!parts[1];
   const isSkuStatus = parts[0] === "skus" && parts.length === 3 && !!parts[1] && parts[2] === "status";
-  const isReviewCollection = parts[0] === "reviews" && parts.length === 1;
-  const isReview = parts[0] === "reviews" && parts.length === 2 && !!parts[1];
-  const isReviewStatus = parts[0] === "reviews" && parts.length === 3 && !!parts[1] && parts[2] === "status";
   const isGenerationGateCollection = parts[0] === "generation-gates" && parts.length === 1;
   const isGenerationGate = parts[0] === "generation-gates" && parts.length === 2 && !!parts[1];
   const isTaskCollection = parts[0] === "tasks" && parts.length === 1;
@@ -45,9 +42,6 @@ function backendPath(parts: string[]) {
     && !isSkuCollection
     && !isSku
     && !isSkuStatus
-    && !isReviewCollection
-    && !isReview
-    && !isReviewStatus
     && !isGenerationGateCollection
     && !isGenerationGate
     && !isTaskCollection

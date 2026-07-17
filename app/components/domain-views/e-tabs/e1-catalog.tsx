@@ -2,26 +2,11 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
-import type { OpsSku, OpsReview } from "@/lib/admin/platform-types";
+import type { OpsSku } from "@/lib/admin/platform-types";
 import type { EViewCtx } from "./types";
 import { gateRemaining } from "./data";
 import { EStats } from "./stats";
 
-/* ── 评价筛选 + 翻页(港口增补:设计稿无此控件;server 分页/筛选参数预留)── */
-const RV_FILTERS = [
-  { k: "all", label: "全部" },
-  { k: "published", label: "展示中" },
-  { k: "hidden", label: "已隐藏" },
-] as const;
-const RV_RATINGS = [
-  { r: 0, label: "全部评分" },
-  { r: 5, label: "5★" },
-  { r: 4, label: "4★" },
-  { r: 3, label: "3★" },
-  { r: 2, label: "2★" },
-  { r: 1, label: "1★" },
-] as const;
-const RV_PAGE_SIZE = 6;
 const PHASE_STATUS_LABELS: Record<string, string> = {
   active: "启用",
   archived: "已归档",
@@ -87,7 +72,7 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
 }
 
 export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
-  const { skus, reviews, tasks } = ctx;
+  const { skus, tasks } = ctx;
   const taskNameById = new Map(tasks.map((task) => [task.id, task.n]));
   const unlockPoolName = (value?: string) => value ? (taskNameById.get(value) ?? value) : "—";
   const phaseOrder = ctx.e1Gates?.phaseOrder ?? [];
@@ -152,20 +137,6 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const genUnlocked = (g: E1GenerationRelease): boolean => gateReadiness(g).unlocked;
   const proV2 = releases.find((g) => g.id === "stellarbox-pro-v2");
   const proV2Label = proV2 ? `Pro v2 ${genUnlocked(proV2) ? "已开放" : `未开放 · ${gateBlockerLabel(gateReadiness(proV2))}`}` : "";
-
-  // 评价筛选(双轴 AND:状态 全部/展示中/已隐藏 × 评分 1-5★)+ 翻页(页大小 RV_PAGE_SIZE,rvCur clamp 防缩页越界)
-  const [rvFilter, setRvFilter] = useState<string>("all");
-  const [rvRating, setRvRating] = useState(0); // 0 = 全部评分
-  const [rvPage, setRvPage] = useState(1);
-  // facet 计数:各轴计数落在「另一轴当前选择」上 —— 点选所得即所见,不误导
-  const byRating = rvRating === 0 ? reviews : reviews.filter((r) => r.rating === rvRating);
-  const byStatus = rvFilter === "all" ? reviews : reviews.filter((r) => r.status === rvFilter);
-  const rvCount = (k: string): number => (k === "all" ? byRating.length : byRating.filter((r) => r.status === k).length);
-  const rvRateCount = (rr: number): number => (rr === 0 ? byStatus.length : byStatus.filter((r) => r.rating === rr).length);
-  const rvFiltered = reviews.filter((r) => (rvFilter === "all" || r.status === rvFilter) && (rvRating === 0 || r.rating === rvRating));
-  const rvTotalPages = Math.max(1, Math.ceil(rvFiltered.length / RV_PAGE_SIZE));
-  const rvCur = Math.min(rvPage, rvTotalPages);
-  const rvRows = rvFiltered.slice((rvCur - 1) * RV_PAGE_SIZE, rvCur * RV_PAGE_SIZE);
 
   // 真 store 派生 stat(改 SKU 即刷新)
   const onSale = skus.filter((s) => (s.status || "on") === "on").length;
@@ -517,9 +488,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
                   <div className="it"><span className="k">算力池</span><span className="v">{unlockPoolName(s.aiUnlocks)}</span></div>
                 </div>
                 <div className="meta">
-                  {s.rating != null && <span className="rt">★ {s.rating.toFixed(1)}</span>}
                   {s.sold != null && <span className="sold">{s.sold.toLocaleString()} 售</span>}
-                  {s.reviews != null && <><span>·</span><span>{s.reviews.toLocaleString()} 评价</span></>}
                   <span className={`gate ${open ? "open" : "gated"}`}>{phaseLabel(s.unlock)} · {open ? "已开放" : "门控"}</span>
                   {s.purchaseGate && (() => {
                     const g = s.purchaseGate;
@@ -545,59 +514,7 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         })}
       </div>
 
-      {/* 4. 用户评价表 */}
-      <div className="rv">
-        <div className="rv-h">
-          <span className="ttl">用户评价 · {reviews.length} 条</span>
-          <span style={{ fontSize: 12, color: "var(--ink-3)" }}>关联商品标识 · 商品详情页可见</span>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-            <CodeTag tone="electric">A2 审计</CodeTag>
-            <button className="f-cta" style={{ padding: "5px 11px", fontSize: 12 }} onClick={ctx.openAddReview}>+ 新增评价</button>
-          </div>
-        </div>
-        <div className="filter-bar">
-          {RV_FILTERS.map((f) => (
-            <span key={f.k} className={`fchip${rvFilter === f.k ? " on" : ""}`} onClick={() => { setRvFilter(f.k); setRvPage(1); }}>
-              {f.label} {rvCount(f.k)}
-            </span>
-          ))}
-          <span className="fdiv" aria-hidden />
-          {RV_RATINGS.map((rt) => (
-            <span key={rt.r} className={`fchip${rvRating === rt.r ? " on" : ""}`} onClick={() => { setRvRating(rt.r); setRvPage(1); }}>
-              {rt.label}{rt.r === 0 ? "" : ` ${rvRateCount(rt.r)}`}
-            </span>
-          ))}
-        </div>
-        <div className="rv-row head"><div>商品</div><div>评价人</div><div>评分</div><div>内容</div><div>时间</div><div>状态</div><div style={{ textAlign: "right" }}>动作</div></div>
-        {rvRows.length === 0 ? (
-          <div className="rv-empty">当前筛选无匹配评价</div>
-        ) : rvRows.map((r: OpsReview) => {
-          const pname = r.productId === "*" ? "通用" : (skus.find((x) => (x.id || x.name) === r.productId)?.name ?? r.productId);
-          return (
-            <div key={r.id} className={`rv-row${r.status === "hidden" ? " hidden" : ""}`}>
-              <div className="pid">{pname}</div>
-              <div className="author">{r.author}</div>
-              <div className="stars">{"★".repeat(r.rating)}<span className="e">{"★".repeat(Math.max(0, 5 - r.rating))}</span></div>
-              <div className="content">{r.content}</div>
-              <div className="date">{r.date}</div>
-              <div><Badge tone={r.status === "published" ? "ok" : "neutral"}>{r.status === "published" ? "展示中" : "已隐藏"}</Badge></div>
-              <div className="acts">
-                <button onClick={() => ctx.openEditReview(r)}>编辑</button>
-                <button onClick={() => ctx.toggleReview(r)}>{r.status === "published" ? "隐藏" : "恢复"}</button>
-                <button onClick={() => ctx.delReview(r)}>删除</button>
-              </div>
-            </div>
-          );
-        })}
-        {rvTotalPages > 1 && (
-          <div className="rv-pager">
-            <button className="step" disabled={rvCur <= 1} onClick={() => setRvPage(rvCur - 1)}>‹ 上一页</button>
-            <span className="ind">第 <b>{rvCur}</b> / {rvTotalPages} 页 · 共 {rvFiltered.length} 条</span>
-            <button className="step" disabled={rvCur >= rvTotalPages} onClick={() => setRvPage(rvCur + 1)}>下一页 ›</button>
-          </div>
-        )}
-      </div>
-      <p className="f-foot">SKU 卡片 = 前端商品卡片全字段镜像;前端商城与运营后台共享同一后端权威 SKU 配置,任何上下架/改价/库存调整<b>立即对前端商城生效</b>。每条评价关联商品标识 · 隐藏后前端立刻不再展示。</p>
+      <p className="f-foot">SKU 卡片 = 前端商品卡片全字段镜像；前端商城与运营后台共享同一后端权威 SKU 配置，任何上下架 / 改价 / 库存调整<b>立即对前端商城生效</b>。</p>
     </>
   );
 }

@@ -391,6 +391,29 @@ function toNumber(value: number | string | null | undefined, fallback = 0) {
   return fallback;
 }
 
+export interface UserPaymentMethod extends JsonRecord {
+  id: number;
+  userId: number;
+  brand: string;
+  last4: string;
+  expiryLabel?: string | null;
+  provider: string;
+  isDefault: boolean;
+  status: string;
+  trialGuard: boolean;
+  trialRefId?: string | null;
+  version: number;
+  unboundAt?: string | null;
+  pspRevokeStatus?: string | null;
+}
+
+export interface UserPaymentMethodPage {
+  items: UserPaymentMethod[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
 function requireNumber(value: number | string | null | undefined, field: string) {
   const parsed = toNumber(value, Number.NaN);
   if (!Number.isFinite(parsed)) {
@@ -465,6 +488,34 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
 
 export async function fetchUser360(userKey: string) {
   return usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
+}
+
+export async function fetchUserPaymentMethods(userId: number | string, includeUnbound = false, page = 1, pageSize = 20) {
+  return usersRequest<UserPaymentMethodPage>(`/profiles/${encodeURIComponent(String(userId))}/payment-methods${queryString({ includeUnbound, page, pageSize })}`);
+}
+
+export async function unbindUserPaymentMethod(userId: number | string, methodId: number, expectedVersion: number, reason: string, operator = currentAdminOperator()) {
+  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/payment-methods/${methodId}/unbind`, {
+    method: "POST",
+    body: JSON.stringify({ expectedVersion, reason, operator }),
+    idempotencyPrefix: "c1-payment-method-unbind",
+  });
+}
+
+export async function notifyUserPaymentMethodRebind(userId: number | string, methodId: number, expectedVersion: number, reason: string, operator = currentAdminOperator()) {
+  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/payment-methods/${methodId}/rebind-notification`, {
+    method: "POST",
+    body: JSON.stringify({ expectedVersion, reason, operator }),
+    idempotencyPrefix: "c1-payment-method-rebind-notice",
+  });
+}
+
+export async function resetUserNickname(userId: number | string, reason: string, operator = currentAdminOperator()) {
+  return usersRequest<{ userId: number; nickname: string; status: string }>(`/profiles/${encodeURIComponent(String(userId))}/nickname/reset`, {
+    method: "POST",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "c1-nickname-reset",
+  });
 }
 
 export async function fetchUserAccountActionOverview() {

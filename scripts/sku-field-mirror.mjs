@@ -11,8 +11,7 @@
  *
  * 🔴 真实现面 = uniapp(Nexion-uniapp,主人 2026-06-14 拍板:前端唯一实现面;
  * H5 工程已于 2026-06-26 退役删除)。
- * 评价(Review)镜像源已撤(原 H5 reviews.ts 已删);如 uniapp 后续补 Review 模型,
- * 在此 re-point 到 ../Nexion-uniapp/src/mock/reviews.ts 即可。
+ * E1-B 已下线用户评价展示与运营链，评分/评价字段不再属于后台 SKU 合同。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -38,7 +37,7 @@ const MAP = {
   id: ["id"], name: ["name"], tier: ["tier"], tagline: ["tagline"], badge: ["badge"],
   gpu: ["gpu"], vram: ["vram"], hashRate: ["hashRate"], power: ["power"],
   dailyEarn: ["dailyEarn"], dailyEarnNEX: ["dailyEarnNEX"], price: ["price"],
-  sold: ["sold"], stock: ["stock"], rating: ["rating"], reviews: ["reviews"],
+  sold: ["sold"], stock: ["stock"],
   features: ["features"], shareYieldMin: ["shareYieldMin"], shareYieldMax: ["shareYieldMax"],
   ai: ["aiImageGenPerMin", "aiLlmTokensPerSec", "aiVideoMinPerHour", "aiFineTuneMins", "aiUnlocks"],
   status: ["lifecycle"], unlocksAtPhase: ["unlock"],
@@ -49,7 +48,7 @@ const MAP = {
 // 前端 Product 接口里「非展示」字段:无组件消费,字段镜像门只守展示字段,故豁免。
 // monthlyPrice/installMonths 是 uniapp 休眠数据(grep 全 src 仅 products.ts 自身引用,无渲染);
 // 若将来上分期 UI 展示,须移出本集合并在 OpsSku 补镜像字段。
-const IGNORE_FE = new Set(["bestForCategory", "monthlyPrice", "installMonths"]);
+const IGNORE_FE = new Set(["bestForCategory", "monthlyPrice", "installMonths", "rating", "reviews"]);
 
 const AI_MAP = {
   imageGenPerMin: "aiImageGenPerMin", llmTokensPerSec: "aiLlmTokensPerSec",
@@ -91,16 +90,11 @@ for (const f of aiFields) {
   if (!opsFields.has(t)) missing.push(`AIPerformance.${f} → OpsSku.${t}(缺失)`);
 }
 
-// ── E1 评价 Review 镜像 ──
-// 2026-06-26 H5 退役后,Review canonical 源临时缺位;只统计 OpsReview 字段数,不做 ⊇ 比对。
-// 待 uniapp 补 Review 模型(src/mock/reviews.ts)后,re-point 即可恢复 ⊇ 镜像。
-const opsReviewFields = new Set(extractInterfaceFields(storeSrc, "OpsReview") ?? []);
-
 if (missing.length) {
   console.error("✗ E1 字段镜像 gate:后台未覆盖前端展示字段:");
   for (const m of missing) console.error("  · " + m);
-  console.error("  修复:platform-config-store.ts 的 OpsSku/OpsReview 补字段 + e-view 表单/seed 补录入。");
+  console.error("  修复:platform-config-store.ts 的 OpsSku 补字段 + e-view 表单补录入。");
   process.exit(1);
 }
-console.log(`✓ E1 字段镜像 gate:OpsSku(${opsFields.size})⊇ Product(${productFields.length}+AI ${aiFields.length}) · OpsReview(${opsReviewFields.size}) 无 canonical 源(H5 已退役) — 0 缺口`);
+console.log(`✓ E1 字段镜像 gate:OpsSku(${opsFields.size}) 覆盖仍在售的 Product/AI 字段；E1-B 用户评价字段已退役 — 0 缺口`);
 process.exit(0);

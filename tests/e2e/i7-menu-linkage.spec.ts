@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("A6 grant and A7 metadata expose the independent I7 learning page", async ({ page }) => {
+test("legacy I7 grants expose course management inside the merged I6 page", async ({ page }) => {
   await page.route("**/api/admin/**", async (route) => {
     await route.fulfill({ contentType: "application/json", body: JSON.stringify({ code: 0, data: {} }) });
   });
@@ -57,7 +57,7 @@ test("A6 grant and A7 metadata expose the independent I7 learning page", async (
     });
   });
 
-  await page.goto("/content/learn");
+  await page.goto("/content/i18n");
   await expect(page.getByText("教程中心(I7) · /learn · 1 课", { exact: true })).toBeVisible();
   await expect(page.getByText("· 5 分类 · 学完发 NEX · 涨奖励过 B1 红线", { exact: true })).toBeVisible();
   await expect(page.getByText("命名空间矩阵(I6 · a)")).toHaveCount(0);
@@ -69,19 +69,15 @@ test("A6 grant and A7 metadata expose the independent I7 learning page", async (
 
   const domainToggle = page.getByRole("button", { name: /内容与合规 CMS/ });
   if (await domainToggle.getAttribute("aria-expanded") === "false") await domainToggle.click();
-  const i7Link = page.getByRole("link", { name: /教程配置.*I7/ });
-  await expect(i7Link).toBeVisible();
-  await expect(i7Link).toHaveAttribute("href", "/content/learn");
-  await expect(page).toHaveURL(/\/content\/learn$/);
-
-  await page.goto("/content/i18n");
-  await expect(page.getByText("命名空间矩阵(I6 · a)", { exact: true })).toBeVisible();
-  await expect(page.getByText("教程中心(I7) · /learn · 1 课", { exact: true })).toHaveCount(0);
+  const i6Link = page.getByRole("link", { name: /国际化文案.*I6|i18n 文案.*I6/ });
+  await expect(i6Link).toBeVisible();
+  await expect(i6Link).toHaveAttribute("href", "/content/i18n");
+  await expect(page).toHaveURL(/\/content\/i18n$/);
   await expect(page.getByRole("button", { name: "重扫" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "编辑(中英同步)" })).toHaveCount(0);
 });
 
-test("a successful interactive login reloads the document before rendering I7", async ({ page }) => {
+test("a successful interactive login reloads before rendering merged I6 and I7 content", async ({ page }) => {
   let authenticated = false;
   const session = {
     adminId: 1,
@@ -125,15 +121,16 @@ test("a successful interactive login reloads the document before rendering I7", 
     });
   });
 
-  await page.goto("/content/learn");
+  await page.goto("/content/i18n");
   await page.getByLabel("账号").fill("superadmin");
   await page.getByLabel("密码").fill("Admin@123456");
   await Promise.all([
     page.waitForNavigation({ waitUntil: "domcontentloaded" }),
-    page.getByRole("button", { name: "登录" }).click(),
+    page.getByRole("button", { name: "继续" }).click(),
   ]);
 
   const domainToggle = page.getByRole("button", { name: /内容与合规 CMS/ });
   if (await domainToggle.getAttribute("aria-expanded") === "false") await domainToggle.click();
-  await expect(page.getByRole("link", { name: /教程中心.*I7/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /i18n 文案.*I6|国际化文案.*I6/ })).toBeVisible();
+  await expect(page.getByText(/^教程中心\(I7\) · \/learn · \d+ 课$/)).toBeVisible();
 });

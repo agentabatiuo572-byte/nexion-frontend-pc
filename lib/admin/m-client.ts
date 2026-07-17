@@ -243,8 +243,6 @@ type SupportWorkbenchSkuView = {
   baseRate?: string | null;
   sold?: number | null;
   stock?: string | null;
-  rating?: number | string | null;
-  reviews?: number | null;
   aiImageGenPerMin?: number | null;
   aiLlmTokensPerSec?: number | null;
   aiVideoMinPerHour?: number | null;
@@ -460,8 +458,6 @@ function adaptSupportWorkbenchSku(sku: SupportWorkbenchSkuView): OpsSku {
     baseRate: sku.baseRate ?? undefined,
     sold: sku.sold ?? undefined,
     stock: sku.stock ?? "0",
-    rating: optionalNum(sku.rating),
-    reviews: sku.reviews ?? undefined,
     aiImageGenPerMin: sku.aiImageGenPerMin ?? undefined,
     aiLlmTokensPerSec: sku.aiLlmTokensPerSec ?? undefined,
     aiVideoMinPerHour: sku.aiVideoMinPerHour ?? undefined,
@@ -700,6 +696,7 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
   }
   return {
     id: str(base.ticketNo, `TK-${base.id ?? "UNKNOWN"}`),
+    userId: base.userId,
     subject: str(base.title, "未命名工单"),
     category: ticketCategory(base.category),
     status: ticketStatus(base.status),
