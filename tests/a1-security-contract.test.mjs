@@ -98,6 +98,18 @@ test("A1 account details expose server-backed role history", () => {
   assert.match(page, /CURRENT_ASSIGNMENT/);
 });
 
+test("A1 single-session revocation is mapped through the platform BFF", () => {
+  const client = read("lib/admin/a1-client.ts");
+  const platformRoute = read("app/api/admin/platform/[...path]/route.ts");
+
+  assert.match(client, /accounts\/\$\{encodeURIComponent\(accountId\)\}\/sessions\/\$\{encodeURIComponent\(sessionId\)\}\/revoke/);
+  assert.match(platformRoute, /parts\.length\s*===\s*5/);
+  assert.match(platformRoute, /parts\[2\]\s*===\s*"sessions"/);
+  assert.match(platformRoute, /parts\[4\]\s*===\s*"revoke"/);
+  assert.match(platformRoute, /accounts\/\$\{encodeURIComponent\(parts\[1\]\)\}\/sessions\/revoke/);
+  assert.match(platformRoute, /accounts\/\$\{encodeURIComponent\(parts\[1\]\)\}\/sessions\/\$\{encodeURIComponent\(parts\[3\]\)\}\/revoke/);
+});
+
 test("MFA verification and first password change preserve browser session metadata", () => {
   const verify = read("app/api/admin/auth/mfa/verify/route.ts");
   const passwordChange = read("app/api/admin/auth/password/change/route.ts");

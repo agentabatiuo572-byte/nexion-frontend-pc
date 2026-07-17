@@ -59,6 +59,14 @@ function backendPath(parts: string[]) {
   if (parts.length === 4 && parts[0] === "accounts" && isNonEmpty(parts[1]) && parts[2] === "sessions" && parts[3] === "revoke") {
     return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/sessions/revoke`;
   }
+  if (parts.length === 5
+      && parts[0] === "accounts"
+      && isNonEmpty(parts[1])
+      && parts[2] === "sessions"
+      && isNonEmpty(parts[3])
+      && parts[4] === "revoke") {
+    return `/api/admin/platform/accounts/${encodeURIComponent(parts[1])}/sessions/${encodeURIComponent(parts[3])}/revoke`;
+  }
   if (parts.length === 3 && parts[0] === "accounts" && parts[1] === "security-baselines" && isNonEmpty(parts[2])) {
     return `/api/admin/platform/accounts/security-baselines/${encodeURIComponent(parts[2])}`;
   }
