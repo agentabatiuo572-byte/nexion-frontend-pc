@@ -4,7 +4,7 @@
 
 /**
  * K6 策略中心(SPEC 3 · PRD §6 / §14)。headline①:策略可增删改 + 状态编辑。
- * 列表展示全部策略(状态/版本/优先级/负责人/动作),支持新建 / 编辑 / 复制 / 发布 / 暂停 / 归档 / 删除。
+ * 列表展示全部策略(状态/版本/优先级/负责人/动作),支持新建 / 编辑 / 复制 / 发布 / 暂停 / 归档 / 草稿删除。
  * viewer 角色只读;删除走二次确认;所有写动作落 A2 审计(store)。规则编辑器 = SPEC 4 高级模式。
  */
 import { useState } from "react";
@@ -43,6 +43,9 @@ let newSeq = 0;
 
 export function K6StrategyCenter() {
   const strategies = useJanusC2Store((s) => s.strategies);
+  const status = useJanusC2Store((s) => s.strategiesStatus);
+  const loadError = useJanusC2Store((s) => s.strategiesError);
+  const retry = useJanusC2Store((s) => s.loadStrategies);
   const setStatus = useJanusC2Store((s) => s.setStrategyStatus);
   const del = useJanusC2Store((s) => s.deleteStrategy);
   const dup = useJanusC2Store((s) => s.duplicateStrategy);
@@ -76,10 +79,13 @@ export function K6StrategyCenter() {
     setEditing({ strategy: blankStrategy(`strat_${at.toString(36)}_${(newSeq += 1)}`, operator.id, at), isNew: true });
   };
 
+  if (status === "idle" || status === "loading") return <div className="k6-empty">正在读取策略列表…</div>;
+  if (status === "error") return <div className="k6-empty k6-error">策略列表读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
+
   return (
     <div className="k6-panel">
       <div className="k6-sec-head">
-        <div><div className="k6-kicker">策略中心</div><h3>多策略管理</h3><p>新建、编辑、发布、暂停、归档与删除决策策略;每条策略可独立配置状态、优先级、动作与适用范围。</p></div>
+        <div><div className="k6-kicker">策略中心</div><h3>多策略管理</h3><p>新建、编辑、发布、暂停、归档与删除草稿;已发布或归档记录将保留。每条策略可独立配置状态、优先级、动作与适用范围。</p></div>
         {canWrite
           ? <button className="k6-ovr-confirm" style={{ minHeight: 36 }} onClick={newStrategy}><Plus size={15} aria-hidden style={{ marginRight: 5 }} />新建策略</button>
           : <span className="k6-bdg dim">只读身份</span>}
@@ -100,11 +106,11 @@ export function K6StrategyCenter() {
               <div className="k6-strat-meta">负责人 {s.owner || "—"} · {scopeText(s)} · {guardText(s)}</div>
 
               {canWrite && (
-                pendingDel === s.strategyId ? (
+                pendingDel === s.strategyId && s.status === "draft" ? (
                   <div className="k6-strat-actions">
                     <span className="k6-strat-confirm">确认删除「{s.name}」?不可恢复。</span>
-                    <button className="k6-pgbtn" disabled={actionPending !== null} style={{ color: "var(--danger)", borderColor: "var(--danger)" }} onClick={() => void runAction(`delete:${s.strategyId}`, () => del(s.strategyId, operator.id)).then(() => setPendingDel(null)).catch(() => undefined)}>{actionPending === `delete:${s.strategyId}` ? "删除中…" : "确认删除"}</button>
-                    <button className="k6-pgbtn" onClick={() => setPendingDel(null)}>取消</button>
+                    <button aria-label={`确认删除草稿策略 ${s.name || "未命名策略"}`} className="k6-pgbtn" disabled={actionPending !== null} style={{ color: "var(--danger)", borderColor: "var(--danger)" }} onClick={() => void runAction(`delete:${s.strategyId}`, () => del(s.strategyId, operator.id)).then(() => setPendingDel(null)).catch(() => undefined)}>{actionPending === `delete:${s.strategyId}` ? "删除中…" : "确认删除"}</button>
+                    <button aria-label={`取消删除草稿策略 ${s.name || "未命名策略"}`} className="k6-pgbtn" onClick={() => setPendingDel(null)}>取消</button>
                   </div>
                 ) : (
                   <div className="k6-strat-actions">
@@ -114,7 +120,9 @@ export function K6StrategyCenter() {
                     {canPublish && (s.status === "draft" || s.status === "paused") && <button className="k6-pgbtn" onClick={() => setPublishing(s)}>发布</button>}
                     {s.status === "active" && <button className="k6-pgbtn" disabled={actionPending !== null} onClick={() => void runAction(`pause:${s.strategyId}`, () => setStatus(s.strategyId, "paused", operator.id)).catch(() => undefined)}>{actionPending === `pause:${s.strategyId}` ? "暂停中…" : "暂停"}</button>}
                     {s.status === "paused" && <button className="k6-pgbtn" disabled={actionPending !== null} onClick={() => void runAction(`archive:${s.strategyId}`, () => setStatus(s.strategyId, "archived", operator.id)).catch(() => undefined)}>{actionPending === `archive:${s.strategyId}` ? "归档中…" : "归档"}</button>}
-                    {(s.status === "draft" || s.status === "archived") && <button className="k6-pgbtn" style={{ color: "var(--danger)" }} onClick={() => setPendingDel(s.strategyId)}>删除</button>}
+                    {s.status === "draft"
+                      ? <button className="k6-pgbtn" style={{ color: "var(--danger)" }} onClick={() => setPendingDel(s.strategyId)}>删除草稿</button>
+                      : <span className="k6-bdg dim">已发布或归档记录保留，不可删除</span>}
                   </div>
                 )
               )}

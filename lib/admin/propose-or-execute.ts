@@ -5,7 +5,7 @@
  */
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AuthPrincipal, ExecGate } from "@/lib/admin/ops-authority";
-import type { A2OperationType } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, type A2OperationType } from "@/lib/admin/a2-client";
 import type { ReplayCommand, LockTarget } from "@/lib/admin/high-ops-registry";
 
 export type ProposalType = "fund" | "param" | "acct" | "sos";
@@ -23,6 +23,7 @@ export interface ProposeSpec {
   reason: string;
   sourceDomain: string;
   command: ReplayCommand;
+  commandKey?: string;
   target?: LockTarget; // 多锁 op 仅传 targets,不传 target(避免后端 uk_target 重复插锁)
   targets?: LockTarget[]; // 多锁(J 域 batch 用)
 }
@@ -45,11 +46,11 @@ export interface ProposeDeps {
     command: ReplayCommand;
     target?: LockTarget;
     targets?: LockTarget[];
-  }) => Promise<unknown>;
+  }, commandKey?: string) => Promise<unknown>;
   toast: (s: string) => void;
 }
 
-export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Promise<"proposed" | "failed"> {
+export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Promise<"proposed"> {
   const { principal, createProposal, toast } = deps;
   const proposerRole = roleLabel(principal.role);
 
@@ -70,11 +71,15 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
       command: spec.command,
       target: spec.target,
       targets: spec.targets,
-    });
+    }, spec.commandKey);
     toast(`已写入 A2 后端待确认队列,待 ${spec.gateLabel} 执行`);
     return "proposed";
   } catch (error) {
-    toast(`A2 提案提交失败:${error instanceof Error ? error.message : "A2_PROPOSAL_FAILED"}`);
-    return "failed";
+    if (error instanceof A2OutcomeUncertainError) {
+      toast(`A2 提案结果未知；当前弹窗已保留，请使用同一请求重试，或到 A2 队列核对 · ${error.commandKey}`);
+    } else {
+      toast(`A2 提案提交失败:${error instanceof Error ? error.message : "A2_PROPOSAL_FAILED"}`);
+    }
+    throw error;
   }
 }

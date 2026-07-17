@@ -11,7 +11,7 @@ interface ApiResult<T> {
 
 interface LoginPayload {
   tokenType: string;
-  session: {
+  session?: {
     adminId: number;
     username: string;
     operator: string;
@@ -23,6 +23,20 @@ interface LoginPayload {
     effectiveMenuNodes?: unknown[];
     passwordChangeRequired?: boolean;
   };
+  mfa?: AdminMfaChallenge;
+}
+
+export interface AdminMfaChallenge {
+  challengeId: string;
+  mode: "ENROLL" | "VERIFY";
+  expiresInSeconds: number;
+  provisioningUri?: string | null;
+  manualKey?: string | null;
+}
+
+export interface LoginStartResult {
+  mfaChallenge?: AdminMfaChallenge;
+  loginResult?: LoginResult;
 }
 
 export interface LoginResult {
@@ -34,7 +48,7 @@ export function normalizeAdminRole(role: string | undefined): AdminRole {
   return normalizeSessionRole(role);
 }
 
-export async function loginAdmin(username: string, password: string): Promise<LoginResult> {
+export async function loginAdmin(username: string, password: string): Promise<LoginStartResult> {
   const response = await fetch("/api/admin/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -43,10 +57,30 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
   });
   const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
 
-  if (!response.ok || !result || result.code !== 0 || !result.data?.session) {
+  if (!response.ok || !result || result.code !== 0 || !result.data) {
     throw new Error(formatAdminApiError(result?.message, "ADMIN_CREDENTIAL_INVALID"));
   }
 
+  if (result.data.session) {
+    return { loginResult: normalizeLoginPayload(result.data) };
+  }
+  if (result.data.mfa?.challengeId) {
+    return { mfaChallenge: result.data.mfa };
+  }
+  throw new Error(formatAdminApiError(result.message, "ADMIN_SESSION_INVALID"));
+}
+
+export async function verifyAdminMfa(challengeId: string, code: string): Promise<LoginResult> {
+  const response = await fetch("/api/admin/auth/mfa/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ challengeId, code: code.trim() }),
+    cache: "no-store",
+  });
+  const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
+  if (!response.ok || !result || result.code !== 0 || !result.data?.session) {
+    throw new Error(formatAdminApiError(result?.message, "ADMIN_MFA_CODE_INVALID"));
+  }
   return normalizeLoginPayload(result.data);
 }
 
@@ -81,6 +115,7 @@ export async function changeAdminPassword(currentPassword: string, newPassword: 
 }
 
 function normalizeLoginPayload(payload: LoginPayload): LoginResult {
+  if (!payload.session) throw new Error("ADMIN_SESSION_INVALID");
   return {
     tokenType: payload.tokenType || "Bearer",
     session: {

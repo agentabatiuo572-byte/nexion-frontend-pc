@@ -6,11 +6,11 @@
  * 策略状态由发布、暂停、归档动作驱动,编辑器只展示当前真实状态。
  * 规则树支持交互式增删改:字段 / 操作符 / 取值均使用运营可读控件,不暴露工程枚举。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
-import { REMOTE_URL_KEYS, effectiveDevices, useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
+import { REMOTE_URL_KEYS, useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { STRATEGY_TEMPLATES, strategyFromTemplate } from "@/lib/admin/janus-c2/strategies";
-import { dryRunStrategy, type DryRunResult } from "@/lib/admin/janus-c2/evaluate";
+import { strategyDraftIssues } from "@/lib/admin/k6-contract";
 import {
   ACTION_TYPE_LABEL,
   CHANNEL_LABEL,
@@ -26,9 +26,6 @@ const isReversal = (t: StrategyActionType): boolean => t === "REVERSAL_SESSION_E
 
 export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initial: Strategy; isNew: boolean; operatorId: string; onClose: () => void }) {
   const save = useJanusC2Store((st) => st.saveStrategy);
-  const overrides = useJanusC2Store((st) => st.overrides);
-  const allStrategies = useJanusC2Store((st) => st.strategies);
-  const devices = useMemo(() => effectiveDevices(overrides), [overrides]);
   const [s, setS] = useState<Strategy>(initial);
   const patch = (p: Partial<Strategy>) => setS((prev) => ({ ...prev, ...p }));
 
@@ -57,22 +54,38 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
     const next = inviteRows.filter((_, i) => i !== idx);
     patch({ scope: { ...s.scope, inviteCodes: next.length ? next : [] } });
   };
-  const normalizeInvites = (values?: string[]) => Array.from(new Set((values ?? []).map((x) => x.trim()).filter(Boolean)));
+  const scopeCohortRows = s.scope.cohortIds?.length ? s.scope.cohortIds : [""];
+  const setScopeCohortAt = (index: number, value: string) => {
+    const cohortIds = [...scopeCohortRows];
+    cohortIds[index] = value;
+    patch({ scope: { ...s.scope, cohortIds } });
+  };
+  const removeScopeCohortAt = (index: number) => patch({ scope: { ...s.scope, cohortIds: scopeCohortRows.filter((_, row) => row !== index) } });
+  const rolloutCohortRows = s.rollout?.cohortIds?.length ? s.rollout.cohortIds : [""];
+  const setRolloutCohortAt = (index: number, value: string) => {
+    const cohortIds = [...rolloutCohortRows];
+    cohortIds[index] = value;
+    patch({ rollout: { ...(s.rollout ?? { percent: 100 }), cohortIds } });
+  };
+  const removeRolloutCohortAt = (index: number) => patch({ rollout: { ...(s.rollout ?? { percent: 100 }), cohortIds: rolloutCohortRows.filter((_, row) => row !== index) } });
+  const normalizeList = (values?: string[]) => Array.from(new Set((values ?? []).map((x) => x.trim()).filter(Boolean)));
   const strategyForSubmit = (): Strategy => ({
     ...s,
     name: s.name.trim(),
-    scope: { ...s.scope, inviteCodes: normalizeInvites(s.scope.inviteCodes) },
+    owner: s.owner.trim(),
+    scope: { ...s.scope, inviteCodes: normalizeList(s.scope.inviteCodes), cohortIds: normalizeList(s.scope.cohortIds) },
+    rollout: { ...(s.rollout ?? { percent: 100 }), cohortIds: normalizeList(s.rollout?.cohortIds) },
   });
   const setGuard = (k: keyof Strategy["safeguards"], v: string) => {
     const n = v === "" ? undefined : Number(v);
     patch({ safeguards: { ...s.safeguards, [k]: n } });
   };
 
-  const [dry, setDry] = useState<DryRunResult | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const valid = s.name.trim().length >= 2;
+  const issues = strategyDraftIssues(strategyForSubmit());
+  const valid = issues.length === 0;
   const onSave = async () => {
     if (!valid || saving) return;
     setSaving(true);
@@ -172,6 +185,18 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
           </div>
 
           <div className="k6-ovr-field">
+            <label>适用人群队列</label>
+            <div className="k6-list-editor" aria-label="适用人群队列列表">
+              {scopeCohortRows.map((cohortId, index) => <div className="k6-list-row" key={index}>
+                <input className="k6-field" value={cohortId} onChange={(event) => setScopeCohortAt(index, event.target.value)} placeholder={`人群队列 ${index + 1}`} />
+                <button type="button" className="k6-rl-del" onClick={() => removeScopeCohortAt(index)} aria-label={`删除适用人群队列 ${index + 1}`}><Trash2 size={14} /></button>
+              </div>)}
+              <button type="button" className="k6-pgbtn" onClick={() => patch({ scope: { ...s.scope, cohortIds: [...scopeCohortRows, ""] } })}><Plus size={13} /> 添加人群队列</button>
+            </div>
+            <div className="k6-hint">适用人群队列仅匹配所列队列，并由服务端真实限制适用人群。</div>
+          </div>
+
+          <div className="k6-ovr-field">
             <label>保护条件(留空 = 不限)</label>
             <div className="k6-form-row">
               <input className="k6-field" type="number" placeholder="每日最大建议数" value={s.safeguards.maxDailyRecommendations ?? ""} onChange={(e) => setGuard("maxDailyRecommendations", e.target.value)} aria-label="每日最大建议数" />
@@ -188,6 +213,14 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
             <input id="st-rollout" className="k6-field" type="number" min={0} max={100} value={s.rollout?.percent ?? 100}
               onChange={(e) => patch({ rollout: { percent: Math.max(0, Math.min(100, Number(e.target.value || 0))), cohortIds: s.rollout?.cohortIds } })} />
             <div className="k6-hint">100% = 全量生效;小于 100% = 仅对该比例设备灰度放量(可配合上方适用范围的渠道 / 邀请码定向)。</div>
+            <div className="k6-list-editor" aria-label="灰度人群队列列表" style={{ marginTop: 8 }}>
+              {rolloutCohortRows.map((cohortId, index) => <div className="k6-list-row" key={index}>
+                <input className="k6-field" value={cohortId} onChange={(event) => setRolloutCohortAt(index, event.target.value)} placeholder={`灰度队列 ${index + 1}`} />
+                <button type="button" className="k6-rl-del" onClick={() => removeRolloutCohortAt(index)} aria-label={`删除灰度队列 ${index + 1}`}><Trash2 size={14} /></button>
+              </div>)}
+              <button type="button" className="k6-pgbtn" onClick={() => patch({ rollout: { ...(s.rollout ?? { percent: 100 }), cohortIds: [...rolloutCohortRows, ""] } })}><Plus size={13} /> 添加灰度队列</button>
+            </div>
+            <div className="k6-hint">灰度队列与灰度比例共同参与服务端命中判定。</div>
           </div>
 
           <div className="k6-ovr-field" style={{ marginBottom: 0 }}>
@@ -196,20 +229,7 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
             <div className="k6-hint">字段、操作符与枚举取值均下拉选择;组合方式支持全部 / 任一 / 满足 N 条 / 排除 / 加权评分,可嵌套子组。</div>
           </div>
 
-          <div className="k6-dryrun">
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <button className="k6-pgbtn" onClick={() => setDry(dryRunStrategy(strategyForSubmit(), devices, allStrategies))}>本地草稿预估</button>
-              <span className="k6-hint" style={{ marginTop: 0 }}>仅供未保存草稿编辑参考；正式发布以服务端真实干跑为准。当前 {devices.length} 台{dry ? ` · 命中率 ${dry.hitRate}% · 冲突 ${dry.conflicts} 台${dry.other > 0 ? ` · 其他动作 ${dry.other} 台` : ""}` : ""}。</span>
-            </div>
-            {dry && (
-              <div className="k6-dryrun-grid">
-                <div className="k6-dryrun-cell hit"><div className="v">{dry.hit}</div><div className="k">命中</div></div>
-                <div className="k6-dryrun-cell"><div className="v">{dry.recommend}</div><div className="k">进建议</div></div>
-                <div className="k6-dryrun-cell"><div className="v">{dry.takeover}</div><div className="k">接管</div></div>
-                <div className="k6-dryrun-cell"><div className="v">{dry.filtered}</div><div className="k">过滤</div></div>
-              </div>
-            )}
-          </div>
+          {issues.length > 0 && <div className="k6-empty k6-error"><b>保存前请修正：</b><ul>{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
         </div>
 
         <div className="k6-ovr-foot">

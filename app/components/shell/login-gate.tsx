@@ -6,12 +6,17 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
-import { changeAdminPassword, loginAdmin, type LoginResult } from "@/lib/admin/auth-client";
+import { changeAdminPassword, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
 import { completeInteractiveLogin } from "@/lib/admin/login-completion";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 function strongPassword(value: string) {
-  return value.trim().length >= 8;
+  const normalized = value.trim();
+  return normalized.length >= 16
+    && /[a-z]/.test(normalized)
+    && /[A-Z]/.test(normalized)
+    && /\d/.test(normalized)
+    && /[^A-Za-z0-9]/.test(normalized);
 }
 
 function errorMessage(error: unknown) {
@@ -22,6 +27,8 @@ export function LoginGate() {
   const signIn = useAdminAuth((s) => s.signIn);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaChallenge, setMfaChallenge] = useState<AdminMfaChallenge | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
   const [pendingLogin, setPendingLogin] = useState<LoginResult | null>(null);
   const [currentPasswordForChange, setCurrentPasswordForChange] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -41,18 +48,55 @@ export function LoginGate() {
     setError("");
     try {
       const result = await loginAdmin(normalizedUsername, password);
+      setCurrentPasswordForChange(password);
+      setPassword("");
+      setMfaCode("");
+      if (result.loginResult) {
+        if (result.loginResult.session.passwordChangeRequired) {
+          setPendingLogin(result.loginResult);
+          setNewPassword("");
+          setConfirmPassword("");
+          return;
+        }
+        setCurrentPasswordForChange("");
+        setUsername("");
+        completeInteractiveLogin(signIn, result.loginResult);
+        return;
+      }
+      if (!result.mfaChallenge) {
+        throw new Error("登录状态无效，请重试");
+      }
+      setMfaChallenge(result.mfaChallenge);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleMfaSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!mfaChallenge || !/^\d{6}$/.test(mfaCode.trim())) {
+      setError("请输入身份验证器中的 6 位一次性验证码");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      const result = await verifyAdminMfa(mfaChallenge.challengeId, mfaCode);
+      setMfaChallenge(null);
+      setMfaCode("");
       if (result.session.passwordChangeRequired) {
         setPendingLogin(result);
-        setCurrentPasswordForChange(password);
-        setPassword("");
         setNewPassword("");
         setConfirmPassword("");
         return;
       }
-      setPassword("");
+      setCurrentPasswordForChange("");
+      setUsername("");
       completeInteractiveLogin(signIn, result);
-    } catch {
-      setError("账号或密码不正确");
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -66,7 +110,7 @@ export function LoginGate() {
       return;
     }
     if (!strongPassword(newPassword)) {
-      setError("新密码至少 8 位");
+      setError("新密码至少 16 位，且必须包含大小写字母、数字和符号");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -92,6 +136,7 @@ export function LoginGate() {
   }
 
   const changingPassword = !!pendingLogin;
+  const verifyingMfa = !!mfaChallenge;
 
   return (
     <div
@@ -99,7 +144,7 @@ export function LoginGate() {
       style={{ background: "var(--v5-bg)" }}
     >
       <form
-        onSubmit={changingPassword ? handlePasswordChange : handleSubmit}
+        onSubmit={changingPassword ? handlePasswordChange : verifyingMfa ? handleMfaSubmit : handleSubmit}
         className="w-full max-w-sm rounded-[var(--admin-radius)] p-7"
         style={{
           background: "var(--v5-surface)",
@@ -114,13 +159,17 @@ export function LoginGate() {
           N
         </span>
         <h1 className="font-display mt-4 text-[20px]" style={{ color: "var(--v5-ink)" }}>
-          {changingPassword ? "首次登录修改密码" : "运营控制台登录"}
+          {changingPassword ? "首次登录修改密码" : verifyingMfa ? "双因素身份验证" : "运营控制台登录"}
         </h1>
         <p className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
-          {changingPassword ? `登录名 ${pendingLogin?.session.username ?? ""}` : "请输入后台账号和密码"}
+          {changingPassword
+            ? `登录名 ${pendingLogin?.session.username ?? ""}`
+            : verifyingMfa
+              ? mfaChallenge?.mode === "ENROLL" ? "首次登录，请先绑定身份验证器" : "请输入身份验证器生成的一次性验证码"
+              : "请输入后台账号和密码"}
         </p>
 
-        {!changingPassword ? (
+        {!changingPassword && !verifyingMfa ? (
           <>
             <label className="mt-5 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
               账号
@@ -164,6 +213,32 @@ export function LoginGate() {
                 aria-label="密码"
                 className="min-w-0 flex-1 bg-transparent py-2 text-[13px] outline-none"
                 style={{ color: "var(--v5-ink)" }}
+              />
+            </div>
+          </>
+        ) : verifyingMfa ? (
+          <>
+            {mfaChallenge?.mode === "ENROLL" && mfaChallenge.manualKey && (
+              <div className="mt-5 rounded-[9px] p-3 text-[12px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-2)" }}>
+                <p>在身份验证器中新增账号，并输入以下密钥：</p>
+                <code className="mt-2 block break-all select-all font-mono" style={{ color: "var(--v5-ink)" }}>{mfaChallenge.manualKey}</code>
+                <p className="mt-2" style={{ color: "var(--v5-ink-3)" }}>密钥只在本次绑定时显示，请勿发送给他人。</p>
+              </div>
+            )}
+            <label className="mt-5 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+              一次性验证码
+            </label>
+            <div className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3" style={{ background: "var(--v5-surface-3)", border: "1px solid var(--v5-border)", color: "var(--v5-ink)" }}>
+              <ShieldCheck size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+              <input
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                autoComplete="one-time-code"
+                aria-label="一次性验证码"
+                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[15px] tracking-[0.25em] outline-none"
               />
             </div>
           </>
@@ -229,7 +304,7 @@ export function LoginGate() {
           style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
         >
           {submitting ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <LogIn size={16} aria-hidden />}
-          {changingPassword ? "确认修改并进入" : "登录"}
+          {changingPassword ? "确认修改并进入" : verifyingMfa ? "验证并进入" : "继续"}
         </button>
       </form>
     </div>

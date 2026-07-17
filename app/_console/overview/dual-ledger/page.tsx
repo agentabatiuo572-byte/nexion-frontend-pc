@@ -218,7 +218,13 @@ export default function DualLedgerPage() {
           setToast(`挤兑压力红线已写入 D3 阈值接口: ${fmtPct(v, 0)}(A2 留痕)`);
         } else if (current.kind === "kill") {
           if (!killDomains.length) throw new Error("B_RISK_GATES_REQUIRED");
-          await jEmergencyActions.emergencyDisableJ1(killDomains, reason, operator);
+          await jEmergencyActions.emergencyDisableJ1(killDomains, reason, operator, {
+            triggerBasis: "挤兑风险",
+            regulatoryContext: "B1 双账本风险处置",
+            dispositionPlan: killDomains.some((key) => key === "staking" || key === "genesis")
+              ? "维持存量权益，停止新增业务，待备付金恢复后由超管评估恢复"
+              : undefined,
+          });
           await bDomain.reload();
           setToast("已调用 J1 应急批量熔断接口(A2 留痕)");
         } else {

@@ -16,6 +16,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchA2Overview, type A2OperationRow, type A2Overview } from "@/lib/admin/a2-client";
 import { fetchLBiOverviews, type LBiData } from "@/lib/admin/l-client";
+import { opsAlertHref, useJ1DutyAlerts } from "@/lib/admin/ops-dashboard-client";
 import { fmtPct, fmtUsdCompact, fmtNum } from "@/lib/format";
 import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -209,6 +210,8 @@ export default function CommandCenter() {
   const [lBiData, setLBiData] = useState<LBiData | null>(null);
   const [lBiError, setLBiError] = useState<string | null>(null);
   const [lBiLoading, setLBiLoading] = useState(true);
+  const canReadJ1 = session?.authorities.includes("emergency_j1_read") ?? false;
+  const { alerts: opsAlerts, error: opsAlertError } = useJ1DutyAlerts(canReadJ1);
   useEffect(() => {
     let alive = true;
     fetchA2Overview()
@@ -337,6 +340,18 @@ export default function CommandCenter() {
       ? `Kill-Switch ${killOnline}/${KILL_GATES.length} 在线${killMissing ? ` · ${killMissing} 未配置` : " · 功能闸全部正常"}`
       : `Kill-Switch ${killOnline}/${KILL_GATES.length} 在线 · ${killTripped} 熔断待确认`;
   const liveAlerts: AlertItem[] = [
+    ...opsAlerts.filter((alert) => alert.id === "J1-AUTO-CONFIRM").map((alert) => ({
+      id: `ops-${alert.id}`,
+      level: alert.level,
+      text: `${alert.title} · ${alert.hint}`,
+      href: opsAlertHref(alert),
+    })),
+    ...(opsAlertError ? [{
+      id: "ops-dashboard-sync",
+      level: "high" as AlertItem["level"],
+      text: `J1 值班告警同步失败: ${opsAlertError}`,
+      href: "/emergency/kill-switch",
+    }] : []),
     { id: "al-cov", level: covLevel, text: covText, href: "/overview/dual-ledger" },
     ...riskRadar.feed.slice(0, 4).map((item, index) => ({ id: `al-feed-${index}-${item.sev}`, level: sevLevel(item.sev), text: item.t, href: item.href })),
     ...(k5HoldCnt > 0 ? [{ id: "al-k5hold", level: "mid" as AlertItem["level"], text: `K5 复审 hold 提现单 ×${k5HoldCnt} · 复审未过不可放行`, href: "/finance/withdrawals" }] : []),

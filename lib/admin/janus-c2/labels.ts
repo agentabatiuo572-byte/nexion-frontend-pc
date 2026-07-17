@@ -92,7 +92,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   test: "测试包",
   internal: "内部包",
 };
-export const channelLabel = (c?: string): string => (c ? CHANNEL_LABEL[c] ?? c : "—");
+export const channelLabel = (c?: string): string => (c ? CHANNEL_LABEL[c] ?? "未知渠道" : "—");
 
 /** 远程地址配置键(PRD §9.2 remoteUrlKey):内部 key → 运营可读中文。 */
 export const REMOTE_URL_LABEL: Record<string, string> = {
@@ -220,6 +220,23 @@ export const HEALTH_LEVEL_TONE: Record<HealthLevel, Tone> = {
   RISK: "warning",
   CRITICAL: "danger",
 };
+
+export const AUDIT_ACTION_LABEL: Record<string, string> = {
+  K6_DEVICE_STATUS_REQUESTED: "请求修改设备状态",
+  K6_STRATEGY_CREATED: "创建策略",
+  K6_STRATEGY_UPDATED: "更新策略",
+  K6_STRATEGY_PUBLISH: "发布策略",
+  K6_STRATEGY_PAUSE: "暂停策略",
+  K6_STRATEGY_ARCHIVE: "归档策略",
+  K6_STRATEGY_ROLLED_BACK: "回滚策略",
+  K6_STRATEGY_DELETED: "删除策略",
+  K6_HEALTH_EXPORTED: "导出健康报表",
+  K6_AUDIT_EXPORTED: "导出审计报表",
+  K6_FUNNEL_EXPORTED: "导出漏斗报表",
+};
+
+/** 未知动作不猜测、不降级为误导性文案；调用方应隐藏空标签。 */
+export const auditActionLabel = (action: string): string => AUDIT_ACTION_LABEL[action] ?? "";
 
 /** 手动修改原因分类(PRD §9.2 reasonCategory,枚举值用下拉不让手输)。 */
 export const REASON_CATEGORIES: string[] = [

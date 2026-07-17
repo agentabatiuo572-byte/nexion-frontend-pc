@@ -244,47 +244,44 @@ V1 聚焦"看得见资金与用户态势、管得住资金流出、调得动运�
 #### [A1] 运营账号 & RBAC
 
 **① 目的 & 对齐**
-A1 是后台的**账号与权限地基**——定义运营账号体系、§1.1 的 7 角色 RBAC 模型、后台登录策略,并以一张**权限矩阵**汇总 A1 自身账号治理动作的角色×动作授权;**完整全域矩阵以后台界面 config-as-code 视图呈现(②b),并非在本段展开**(各章「⑥ 权限 & 审计」段为各域局部声明)。对齐前端 **§9.11d 整体**(Admin Kill Switch + Client-tamper Defense 父节的 server-canonical 设计原则——无权角色绕过前端调用 endpoint 仍由服务端 403)。§9.11d.2 承载 localStorage 篡改防御修复表;RBAC 的 server 授权依据见 §9.11d 整体(无权角色 endpoint 403 属父节 server-canonical 原则,非 §9.11d.2 子节范畴)。后台账号的角色与权限是这道边界的运营内部定义,**纯运营内部,用户端永不可见**,§1.2 边界铁律。服务的业务目标:最小权限隔离(财务不碰风控配置、增长不碰资金放行、客服受限单用户范围)、高敏动作的执行权门槛(操作确认机制的角色执行资质与 member/lead 层级由本矩阵界定)、运营内部操作可问责。**A1 定义"谁能做什么",A2(§2.2)记录"谁做了什么"**——二者构成后台一切写操作的授权与留痕地基。
+A1 是后台的**运营账号、登录安全与会话治理地基**。A1 负责账号创建/启停/资料/角色分配、强制 MFA、登录锁定、会话与安全基线；**A6 是角色定义及角色授权的唯一权威，A8 是权限码字典的唯一权威，A7 管理菜单节点**。A1 只读取 A6/A8 的实时结果做角色变更影响预览，不再维护第二份权限矩阵或 `member/lead` 层级。A2(§2.2)记录所有账号治理写操作，服务端在每次请求上按真实权限码判权，客户端角色只用于展示。
 
 > **运营账号 ≠ 用户账户(C 域)**:A1 管理的是**平台运营方内部员工**的后台登录账号(角色 / 2FA / session),与 C 域(§5 章)管理的**终端用户**账户是两套完全独立的实体与生命周期。后台账号不在用户事件流(A4)中,不持任何用户资产;C 域用户的冻结 / impersonate / 资产调整等动作,其**操作者**是 A1 运营账号、**对象**是 C 域用户账户。两者在本 PRD 中严格区分,不可混用。
 
 **② 后台界面**
-三视图:(a) 运营账号管理 + (b) 权限矩阵 + (c) 角色定义。
-
-1. **(a) 运营账号管理**:运营账号列表 `[账号 ID / 显示名 / 所属角色 / 2FA 状态(已绑定 / 未绑定)/ 账号状态(启用 / 已禁用)/ 最近登录时间 / 当前活跃 session 数]`;详情页可查看单账号的角色历史、2FA 绑定态、活跃 session 列表(设备 / IP / 起始时间,可强制登出某 session)。账号创建 / 禁用 / 角色分配 / 重置 2FA 等写操作均经 ④ 的确认弹窗执行(高敏项:仅超管可执行,理由必填,见 ④a)。
-2. **(b) 权限矩阵**:以**域 × 动作 × 角色**三维呈现的全后台授权总表——行 = 各子模块的关键动作(取自各章「⑥ 权限 & 审计」矩阵片段),列 = §1.1 的 7 角色(超管/财务/风控/增长/内容/客服/只读审计),单元格标注「✅ 可执行 / 只读 / —」,高敏动作单元格另标注执行层级门槛(member / lead / 仅超管)。矩阵是各章 ⑥ 段的**聚合权威视图**(各章 ⑥ 是局部声明,A1 矩阵是全局汇总),用于一屏核查权限是否最小化、是否有越权授予。矩阵为**配置即代码**的声明式呈现(运营内部可查,变更经服务端发布,见 ⑦);**本视图是完整全域矩阵的呈现处,A1 ⑥ 段仅展开 A1 自身账号治理动作子表**。标注 lead 的财务/风控单元格,指该角色的 **lead 层级**(财务主管 / 风控主管),与 ③ 角色命名收口对齐。
-3. **(c) 角色定义**:§1.1 的 7 角色的职责画像、可访问域、典型动作范围(对齐 §1.1 读者表);每个角色可下钻查看其在权限矩阵中被授予的全部动作。
+1. **运营账号列表**:`账号 ID / 登录名 / 显示名 / 当前角色或暂未分配 / MFA 绑定态 / 账号状态 / 最近登录 / 活跃 session 数`。列表提供新建、编辑、启停、变更角色、重置密码、重置 MFA 与强制登出入口；**没有删除账号入口，账号生命周期只允许禁用和重新启用**。
+2. **账号详情**:展示账号资料、真实 MFA 绑定态、服务端审计生成的角色变更记录，以及每条活跃 session 的`设备 / IP / 起始时间 / 最近活动时间`；超管可按单条 session 吊销，也可从列表吊销目标账号全部 session。不得吊销自己的当前账号或任何超管账号的 session。
+3. **角色影响预览**:角色选择项来自 A6；选择新角色时用 A6 返回的真实权限码集合显示“新增/失去”的差异，同角色选择必须禁用确认。A6 角色详情或权限差异不完整时必须显式报错并停用“改角色”，不得以空权限集继续提交。A1 顶部提供 A6“角色管理”和 A8“权限字典”的明确跳转，不复制其数据模型。
+4. **安全基线**:展示 MFA、session、登录锁定与最少有效超管数。系统进入“治理恢复模式”时显示阻断原因，并只开放恢复双超管所必需的创建超管、提升为超管或启用已绑定 MFA 超管动作。
 
 **③ 可控参数**
 
 | 参数 | 默认值 | 范围 | 生效时机 | 影响 / 依据 |
 |---|---|---|---|---|
-| 运营账号角色集 | §1.1 的 7 角色:超级管理员 / 财务 / 风控 / 增长 / 内容 / 客服 / 只读审计 | 固定枚举(§1.1) | 角色分配实时;新增角色须发布 | §1.1 RBAC 读者表;**V1 固定为 §1.1 的 7 角色,不引入未定义角色**(合规角色见下方说明;只读审计无任何写动作) |
+| 运营账号角色集 | A6 当前启用角色；内置 8 角色:`SUPER_ADMIN / CONFIG_ADMIN / FINANCE / RISK / CONTENT / GROWTH / SUPPORT / AUDITOR`，并允许 A6 中启用的自定义角色 | 以 A6 为准 | 角色分配实时 | A1 不维护固定七角色副本，不存在 `member/lead` 隐式层级 |
 | 后台强制 2FA | 强制开启(全角色) | 固定开启(不可关) | 实时(登录时校验) | 后台账号安全基线,§1.8 原则二;无 2FA 不得完成登录 |
-| 运营账号 session 时限 | 滑动过期 30min(无操作)/ 绝对上限 8h | 15min–60min(滑动)/ 4h–12h(绝对) | 实时(下一次 session 签发生效) | **后台运营账号 session 参数独立设定,数值不复用 §4.5 用户侧 session 值**(后台为高敏操盘台,时限须显著短于用户侧);纯运营内部能力,无前端 §锚点;技术实现参考 §9.11d.2(server-canonical session 体系)+ 行业安全基线(§1.8 原则二) |
-| 登录失败锁定 | 5 次失败锁定 15min(短锁档) | 3–10 次 / 5–60min | 实时 | 后台账号防撞库基线(与 C6 用户侧 OTP/锁定配置独立);**长锁档见下方说明** |
-| 最小权限默认 | 新建账号默认无任何域写权,须显式分配角色 | 固定(默认拒绝) | 实时 | 最小权限原则;未分配角色的账号仅能登录、无任何操作权 |
-| 最少有效超管数 | 强制保持 ≥ 2 个有效超管账号 | 固定下限 2 | 实时(禁用超管前校验) | 防超管单点(见下方说明);超管账号治理写操作前服务端校验 |
+| 运营账号 session 时限 | 无操作 30min / 绝对上限 8h | 滑动 15–60min / 绝对 4–12h | 每次请求实时校验 | Redis 保存 `issuedAt / lastSeen / IP / User-Agent`；首次强制改密换发 session 时继承本次请求真实 IP/User-Agent；调整后按新基线校验现有与后续会话，超过任一上限立即失效 |
+| 登录失败锁定 | 5 次失败锁定 15min；24h 累计 15 次锁定 24h | 固定安全基线 | 密码与 MFA 失败均计数 | 用户名哈希后写 Redis；错误文案不区分账号、密码或锁定态 |
+| 最小权限默认 | 新账号默认“暂不分配” | 固定默认拒绝 | 创建即生效 | 无角色关系、权限码为空、菜单为空；后续必须由超管显式分配 A6 角色 |
+| 最少有效超管数 | ≥ 2 | 固定下限 2 | 每次账号治理写操作前 | “有效超管”=账号启用 + 超管角色 + MFA 已真实绑定；不足 2 时进入治理恢复模式 |
 
-> **合规角色决策(V1 由风控承担,独立 Compliance 角色为 V2+ 选项)**:已落地章节(Ch5 C4 KYC 合规台账 / Ch8 K5 大额 KYC 复审)将「KYC 复审 / 合规审查 / 风险披露与法务文案审批」映射到**风控(Risk)角色**(高敏裁决的执行门槛为风控 lead / 超管)。A1 据此明确:**V1 角色集采用 §1.1 的 7 角色,合规审查职责(KYC 复审 / 风险披露 / 法务文案审批)在 V1 由风控角色承担,不单设独立合规角色**;专设独立「合规(Compliance)」角色为 **V2+ 选项**(待合规职能规模化后从风控角色拆出),以保持与 Ch5/Ch8 已写「风控 / 风控主管」一致、不引入未定义角色。**C4 人工标记 KYC verified 例外**:C4④ 已落地「人工标记 KYC verified 执行权=风控(lead)/超管(2026-06 操作确认决议后,原复核层级转为执行门槛);客服可在 C4 发起标记请求(请求单转风控处理,不具执行权)」,与 K5 纯风控角色裁决路径区分(K5 执行权=风控 lead/超管,客服不参与)。
+> **MFA 登录闭环**:密码校验成功只签发一次性 MFA challenge，绝不签发 JWT/session。challenge 在正确验证码路径中以 Redis 原子删除裁决，只允许一个并发请求消费；同一账号已接受的 TOTP 时间步以原子 `SET NX` 标记，换新 challenge 也不得在有效窗口内重放同一验证码。首次登录展示 TOTP 绑定信息，密钥经 AES-GCM 加密落库；完成正确 TOTP 后才建立 Redis session 并签发 8h 上限的 JWT/cookie。重置 MFA 会先校验双超管下限，再清除绑定并吊销该账号全部 session，下一次登录重新绑定。登出只有在服务端确认撤销 session(或确认 token 已无效)后才清除浏览器 HttpOnly cookie；后端/Redis 不可用时返回失败、保留凭据并提示重试，不得伪报成功。
 
-> **角色命名收口(member/lead 层级 + K1 旧命名)**:各章 ⑥ 段多处以「风控主管 / 财务主管」作高敏动作的执行门槛;§1.1 RBAC 枚举无「主管」独立角色——**「主管」是角色内的高权限层级**(承担高敏执行门槛),而非第 8/9 个角色。A1 RBAC 模型在角色之上引入**权限层级(member / lead)**:2026-06 操作确认决议后,原「lead 复核」语义统一迁移为「lead 执行门槛」——各章 ⑥ 段标 lead 的高敏动作仅该角色 lead 层级(及超管)可执行,member 不可执行。**现有章节中「财务主管」= 财务角色 lead 层级、「风控主管」= 风控角色 lead 层级**;权限矩阵(②b)中以「财务(lead)」「风控(lead)」标注对应执行门槛单元格,使开发侧有可实现的授权依据。此外 Ch8 K1⑥ 使用的旧命名「平台管理员 / 风控主管 / 风控运营 / 客服 / 财务 / 审计员」与 §1.1 7 角色体系不一致,统一映射:平台管理员→超级管理员、风控运营→风控(member)、审计员→只读审计;主管层级=角色内 lead 层级。上述映射为已知差异,**与已落地章节保持一致、不在本章回改各章正文**。
-
-> **登录失败长锁档 + 超管单点防护**:① 后台账号登录失败采用**双档锁定**——短锁(5 次/默认 15min,见上表)+ 长锁(**15 次/24h** 锁定并强制 2FA 重新认证)。**后台账号长锁 15 次,高于 C6 用户侧 10 次,因账号类型不同独立设定**(后台为高敏操盘台,撞库面与用户侧不同,阈值独立);V1 须实现长锁档。② 系统强制保持**至少 2 个有效超管账号**:禁用超管前 server 校验剩余有效超管 ≥ 2,否则拒绝并告警;若有效超管降至 1 人,server 拒绝所有后台账号治理类写操作直到恢复双超管——账号治理动作仅超管可执行且全程留痕+实时告警,唯一超管账号被盗即全平台失守,双超管下限是单人执行模式下的安全底线。V1 须实现此约束,作为运营安全基线。
+> **双超管恢复闭环**:有效超管不足 2 时，资料修改、非恢复性角色变更、启停、重置 MFA/密码和安全基线变更全部由服务端拒绝；只允许创建超管、把账号提升为超管、启用已绑定 MFA 的超管，以及会话止血。恢复到 2 个有效超管后自动解除。
 
 **④ 操作动作**
 
 | 动作 | 角色 | 确认弹窗 | 审计点 |
 |---|---|---|---|
-| 创建运营账号 | 仅超管 | A1-MD1(理由必填) | `admin.operator_account_created`(account_id / initial_role / operator) |
+| 创建运营账号 | 仅超管 | A1-MD1(理由必填) | `admin.operator_account_created`(account_id / initial_role / operator；不记录初始密码) |
 | 禁用运营账号 | 仅超管 | A1-MD2(理由必填;禁用前服务端校验剩余有效超管 ≥ 2) | `admin.operator_account_disabled`(account_id / reason / operator) |
 | 启用运营账号 | 仅超管 | A1-MD3(理由必填) | `admin.operator_account_enabled`(account_id / reason / operator) |
 | 分配 / 变更角色 | 仅超管 | A1-MD4(理由必填) | `admin.operator_role_changed`(account_id / before_role / after_role / operator) |
 | 重置运营账号 2FA(员工丢设备) | 仅超管 | A1-MD5(理由必填) | `admin.operator_2fa_reset`(account_id / reason / operator);留痕同 A2 |
-| 强制登出运营账号 session | 仅超管(任意账号 session) | A1-MD6(理由必填;止血动作,确认即生效) | admin 审计事件(目标账号 / session / reason / operator) |
-| 查看权限矩阵 / 账号列表 / 角色定义 | 全角色(各按可见性裁剪)/ 只读审计可全量 | 否(只读) | admin 审计事件(查看范围 / operator) |
+| 强制登出运营账号 session | 仅超管(非自己、非超管目标) | A1-MD6(理由必填;止血动作,确认即生效) | admin 审计事件(目标账号 / session / reason / operator) |
+| 查看账号列表 / 跳转 A6 角色管理 / A8 权限字典 | 由 `platform_a1_read / platform_a6_read / platform_a8_read` 分别判定 | 否(只读) | admin 审计事件(查看范围 / operator) |
 
-> 后台账号的创建 / 禁用 / 启用 / 角色变更 / 2FA 重置五类动作均为后台权限边界写操作,**执行权仅超级管理员**(后台账号治理是最高敏域;2026-06 操作确认决议后,原复核门槛统一就高为「仅超管可执行」),经确认弹窗 + 理由必填即时生效,落 A2 审计并实时告警全体超管(§2.2 ⑦)。**强制登出运营账号 session**:此能力**仅限超级管理员**——超管可强制登出任意运营账号的活跃 session(疑似账号被盗时快速止血),须记录 reason 供事后审查。
+> 后台账号的创建 / 禁用 / 启用 / 角色变更 / MFA 重置五类动作均为后台权限边界写操作,**执行权仅超级管理员**，经确认弹窗 + 理由必填即时生效并落 A2 审计。**强制登出运营账号 session**同样仅限超管，但为避免自锁和双超管互相踢出，服务端拒绝当前账号与超管目标；每次必须记录 reason。
 
 **④a 交互与弹窗规格**
 
@@ -298,22 +295,23 @@ A1 是后台的**账号与权限地基**——定义运营账号体系、§1.1 �
 | 禁用 / 启用账号 | ②(a)账号列表行内菜单 + 账号详情页操作区 | 菜单项 / 次按钮 | 启用态账号显示「禁用」,已禁用账号显示「启用」;仅超管渲染;目标为超管且剩余有效超管 < 3 时「禁用」置灰并提示双超管下限 | 打开弹窗 A1-MD2 / A1-MD3 |
 | 分配 / 变更角色 | ②(a)账号详情页角色卡「变更角色」 | 次按钮 | 仅超管渲染 | 打开弹窗 A1-MD4 |
 | 重置运营账号 2FA | ②(a)账号详情页安全卡「重置 2FA」 | 次按钮 | 仅超管渲染;目标账号 2FA 未绑定时置灰 | 打开弹窗 A1-MD5 |
-| 强制登出 session | ②(a)账号详情页 session 列表行内「强制登出」 | 行内按钮 | 仅超管渲染;仅活跃 session 行显示 | 打开弹窗 A1-MD6 |
-| 查看权限矩阵 / 角色定义 | ②(b)/(c) 导航 tab | 链接 | 恒可用(按角色裁剪可见域) | 跳转对应视图,无弹窗 |
+| 强制登出 session | ②(a)账号详情页 session 列表行内「强制登出」 | 行内按钮 | 仅超管可用；自己、超管目标或无活跃 session 时置灰并解释原因 | 打开弹窗 A1-MD6 |
+| 查看角色定义 / 权限字典 | A1 顶部“A6 角色管理”/“A8 权限字典” | 链接 | 按 A6/A8 read 权限展示 | 跳转权威视图,无弹窗 |
 
 **(2) 弹窗规格**
 
 ##### [A1-MD1] 创建运营账号
 - **功能**:开通一个新的后台运营账号(开通后台访问权 = 权限边界写操作),确认即创建并落审计。
-- **布局结构**:1. **信息区**:提示行「新账号默认无任何域写权,须在创建后显式分配角色;首次登录强制绑定 2FA」。2. **输入区**:见下表。3. **按钮区**:取消 / 确认创建。
+- **布局结构**:1. **信息区**:提示行「新账号默认零权限;首次登录强制绑定 MFA 并修改初始密码」。2. **输入区**:见下表。3. **按钮区**:取消 / 确认创建。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
 | 账号 ID(登录名) | 单行文本 | 是 | 3–32 字符,字母数字与 `.`/`_`;server 唯一性校验(重复返 409) | 空 |
 | 显示名 | 单行文本 | 是 | 2–32 字符 | 空 |
-| 初始角色 | 下拉单选(§1.1 七角色 + 「暂不分配」) | 是 | 仅可选 §1.1 枚举;选超管时弹内提示「超管账号请保持最小数量」 | 暂不分配 |
-| reason(创建理由) | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+| 初始角色 | A6 启用角色 + 「暂不分配」 | 否 | 恢复模式下只能选择超管；普通模式允许空角色 | 暂不分配 |
+| 初始密码 | 密码输入 + 安全随机生成 | 是 | ≥16 位，至少含大小写字母、数字、特殊字符；默认生成 20 位 | 随机强密码 |
+| reason(创建理由) | 多行文本 | 是 | server 空值返回 `REASON_REQUIRED`；初始密码不得进入审计/提案 payload | 空 |
 
 - **按钮区**:`[取消]` · `[确认创建]`(主按钮;必填未过校验置灰;提交 loading 锁定)。
 - **错误态**:409 账号 ID 已存在(弹窗不关,字段下内联错误)/ 400 `REASON_REQUIRED` / 403(非超管)。
@@ -333,25 +331,23 @@ A1 是后台的**账号与权限地基**——定义运营账号体系、§1.1 �
 - **成功反馈**:弹窗关闭;行内状态更新「启用」;toast「已启用 · 已记审计」;事件 `admin.operator_account_enabled`;实时告警全体超管。
 
 ##### [A1-MD4] 变更角色
-- **功能**:变更目标账号的角色授予(权限边界变更),确认即生效,新权限对下一次请求生效。
-- **布局结构**:1. **信息区**:目标账号 ID / 显示名 / 当前角色 / 最近角色变更记录(引自审计)。2. **影响预览区**:展示「before 角色 → after 角色」的权限差异摘要(新增可执行域 / 失去可执行域,由权限矩阵派生);授予超管时提示行「正在授予最高权限」。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
+- **功能**:把目标账号分配到 A6 的一个启用角色，或清空为“暂不分配”；确认即生效并清除权限缓存。权限缓存失效属于同一事务闭环：Redis 删除失败必须让角色/授权事务回滚，禁止 DB 已变更而旧权限缓存继续存活。
+- **布局结构**:1. **信息区**:目标账号 / 当前角色。2. **影响预览区**:用 A6 返回的权限码集合展示“新增/失去”；授予超管时提示最高权限。3. **输入区**:见下表。4. **按钮区**:取消 / 确认变更。
 - **输入与选择控件**:
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
-| 目标角色 | 下拉单选(§1.1 七角色) | 是 | 不得与当前角色相同;server 校验授予不破坏最小权限基线(违反 422) | 当前角色 |
-| 层级 | 单选(member / lead) | 是(角色支持层级时) | 仅财务/风控等含 lead 层级的角色显示 | member |
-| reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
+| 目标角色 | A6 启用角色 + 「暂不分配」 | 是 | 不得与当前角色相同；不存在 `member/lead` 字段 | 当前角色 |
+| reason | 多行文本 | 是 | server 空值返回 `REASON_REQUIRED` | 空 |
 
-- **错误态**:422 `RBAC_BASELINE_VIOLATION`(server 返回违反的基线条目,弹窗不关)/ 400 / 409(角色已被他人变更,提示刷新)/ 403。
+- **错误态**:422 `RBAC_BASELINE_VIOLATION`(server 返回违反的基线条目,弹窗不关)/ A6 权限差异加载不完整(前端停用提交)/ Redis 权限缓存失效失败(事务回滚、提示重试)/ 400 / 409(角色已被他人变更,提示刷新)/ 403。
 - **成功反馈**:弹窗关闭;详情页角色卡就地更新;toast「角色已变更 · 已记审计」;事件 `admin.operator_role_changed`;实时告警全体超管。
 
-##### [A1-MD5] 重置运营账号 2FA
-- **功能**:解绑目标账号的 2FA(员工丢设备场景),确认即解绑;目标账号下次登录强制重新绑定。
-- **布局结构**:1. **信息区**:目标账号 ID / 显示名 / 2FA 绑定时间 / 最近登录 IP 与时间(防社工核对)。2. **输入区**:**身份核验硬门槛(不可跳过)**——`核验渠道`(枚举单选:视频核实 / 当面核实 / 回拨预留工作号)+ `核验时间`(日期时间)+ `来源工单号`(文本,如 SEC-编号)+ 确认勾选「我已通过上述渠道核实本人身份,确认非社工冒名请求」(必勾);以及 reason(多行文本,必填,8–200 字)。**上述核验字段与勾选全部完成前,确认按钮置灰;server 二次校验核验字段非空,缺失返 400**。3. **按钮区**:取消 / 确认重置。
-- **③ 核验字段持久化**:核验渠道 / 时间 / 工单号随 `admin.operator_2fa_reset` 事件入 A2 审计(留作合规取证),non-canonical 字段不影响 2FA 解绑结果但作为问责锚字段强制留痕。
-- **错误态**:400 `REASON_REQUIRED` / 409(2FA 已为未绑定态)/ 403。
-- **成功反馈**:弹窗关闭;安全卡 2FA 态更新「未绑定(待重绑)」;toast「2FA 已重置 · 已记审计」;事件 `admin.operator_2fa_reset`;实时告警全体超管。
+##### [A1-MD5] 重置运营账号 MFA
+- **功能**:解绑目标账号的 TOTP(员工丢设备场景)，同时吊销其全部活跃 session；目标账号下次登录必须重新绑定。
+- **布局结构**:信息区展示目标账号、当前 MFA 态与最近登录；输入区要求 reason；按钮区为取消 / 确认重置。身份核验通过既有安全工单流程完成，工单号应写入 reason，A1 不虚构未落库的渠道/时间字段。
+- **错误态**:`REASON_REQUIRED` / MFA 未绑定 / 重置后有效超管少于 2 / 非超管或治理恢复模式阻断。
+- **成功反馈**:安全卡更新为“未绑定(待重绑)”，活跃 session 清零，A2 写入 `admin.operator_2fa_reset`。
 
 ##### [A1-MD6] 强制登出 session
 - **功能**:立即终止目标账号的指定活跃 session(疑似账号被盗时快速止血),确认即生效。
@@ -360,34 +356,34 @@ A1 是后台的**账号与权限地基**——定义运营账号体系、§1.1 �
 - **成功反馈**:弹窗关闭;session 行移除;toast「session 已终止 · 已记审计」;admin 审计事件落 A2。**草稿不为风控单方面赋予运营账号 session 踢出权**:已落地 §1.1 未授予风控此权,且 C2 的强制登出针对用户账号(与运营账号 session 踢出是两件不同的事);若后续确认风控需紧急止血路径,须在 §2.1 RBAC(T3)正式定义后方可引入,当前不在本章自定。
 
 **⑤ 接口**
-- `GET /api/admin/rbac/roles` — 返回 7 角色定义 + 全后台权限矩阵 `{ roles:[{ key, name, scope, description }], matrix:[{ domain, submodule, action, perRole:{ super, finance, risk, growth, content, support, auditor }:('write'|'read'|'none'), minLevel?:('member'|'lead'|'super') }] }`;矩阵为声明式权威源,各章 ⑥ 段为其投影。
-- `PUT /api/admin/rbac/roles` — 变更角色权限授予(高敏:仅超管,body 携 reason,server 校验非空 400;服务端校验授予不破坏最小权限基线,如不得给增长授予资金放行);写入产 `admin.operator_role_changed` 事件。
-- `GET /api/admin/accounts` — 运营账号列表 + 单账号详情(角色 / 2FA 态 / 活跃 session)。
-- `POST /api/admin/accounts`(创建,确认弹窗 A1-MD1,body 携 reason)/ `PUT /api/admin/accounts/:id`(禁用/启用/改角色/重置 2FA,确认弹窗 A1-MD2~MD5,body 携 reason)/ `POST /api/admin/accounts/:id/logout`(强制登出 session,确认弹窗 A1-MD6,body 携 reason)。上列写 endpoint 均仅超管可调用(其余角色 403),reason 缺失返 400 `REASON_REQUIRED`。
+- 登录:`POST /api/admin/auth/login` → MFA challenge；`POST /api/admin/auth/mfa/verify` → JWT/session；`POST /api/admin/auth/logout` → 服务端撤销当前 session；`GET /api/admin/auth/me`。
+- 账号:`GET /api/admin/platform/accounts/overview`；`POST /api/admin/platform/accounts`；`PATCH /api/admin/platform/accounts/:id/profile|role|status`；`POST /api/admin/platform/accounts/:id/reset-2fa|password/reset`。
+- 会话:`POST /api/admin/platform/accounts/:id/sessions/revoke`(全部)；`POST /api/admin/platform/accounts/:id/sessions/:sessionId/revoke`(单条)。
+- 基线:`PATCH /api/admin/platform/accounts/security-baselines/:baselineKey`。角色与权限权威接口分别位于 `/api/admin/platform/roles`(A6)和 `/api/admin/platform/permissions`(A8)。
 
-server-canonical;角色判定与权限校验在服务端每次请求执行(后台 endpoint auth middleware),客户端持有的角色信息仅用于 UI 渲染(隐藏无权菜单),**不作为授权依据**——无权角色即使绕过前端调用 endpoint 亦由服务端 403。**`POST /api/admin/accounts/:id/logout` 角色-scope 校验**:服务端按 caller 角色校验——**仅超级管理员可调用此 endpoint,登出任意 :id 账号的 session**(其他角色返回 403);须在请求体中携带 reason。
+所有写 endpoint 按专用权限码 + 服务端业务不变量双重校验，并要求 reason / `Idempotency-Key`。**A1 不提供 DELETE endpoint**；任何历史删除调用必须失败，账号只能禁用。
 
 **⑥ 权限 & 审计**
 
-> 本表为 A1 自身账号治理动作子表(完整全域矩阵见 ②b config-as-code 视图)。**全域矩阵中标注 lead 的财务/风控单元格,指该角色的 lead 层级(财务主管 / 风控主管);实现侧须在授权校验逻辑中区分 member 与 lead 的执行资质**,与 ③ 角色命名收口及 ②b config-as-code 视图的 lead 标注对齐(本子表内账号治理动作执行权均为超管,lead 层级标注主要见全域矩阵 ②b)。
+> 本表只描述 A1 自身账号治理动作；实际授权以 A6 角色授予和 A8 权限码为准，不再声明角色内隐式层级。
 
 | 动作 | 超管 | 财务 | 风控 | 增长 | 内容 | 客服 | 只读审计 |
 |---|---|---|---|---|---|---|---|
-| 查看权限矩阵 / 角色定义 | ✅ | ✅(只读) | ✅(只读) | ✅(只读) | ✅(只读) | ✅(只读) | ✅ |
+| 查看 A1 账号；跳转 A6/A8 | ✅ | 按实际 read 权限 | 按实际 read 权限 | 按实际 read 权限 | 按实际 read 权限 | 按实际 read 权限 | 按实际 read 权限 |
 | 查看运营账号列表 | ✅ | — | — | — | — | — | ✅(只读) |
 | 创建账号 | ✅ | — | — | — | — | — | — |
 | 禁用 / 启用账号 | ✅ | — | — | — | — | — | — |
 | 分配 / 变更角色 | ✅ | — | — | — | — | — | — |
 | 重置运营账号 2FA | ✅ | — | — | — | — | — | — |
-| 强制登出运营账号 session | ✅(任意账号) | — | — | — | — | — | — |
+| 强制登出运营账号 session | ✅(非自己、非超管目标) | — | — | — | — | — | — |
 
 审计记录字段:`操作者 / 角色 / 动作(operator_account_created|operator_account_disabled|operator_account_enabled|operator_role_changed|operator_2fa_reset|logout_session) / 目标账号 ID / 前角色 / 后角色(角色变更时)/ reason / 时间(ms)`。**运营账号体系的所有写操作落 A2 审计**(§2.2),只读审计角色可全量追溯谁在何时创建 / 禁用了运营账号、变更了谁的角色——这是后台内部权限滥用的取证地基。
 
 **⑦ 风控 & 联动**
-- **后台账号强制 2FA + 最小权限(核心约束)**:全角色强制 2FA(参数不可关),新建账号默认无任何域写权;角色授予不得破坏最小权限基线(增长不得获资金放行权、财务不得获风控配置写权,服务端 `PUT /roles` 校验)。这与各章 ⑥ 段一致——B/D/H/K 域均未授予增长安全/资金配置写权(如 §C6 注册风控、§D 提现参数)。
+- **后台账号强制 MFA + 最小权限**:全角色强制 MFA；新建账号默认无角色、无权限、无菜单。A6 角色授权负责跨域最小权限约束，A1 只消费其结果。
 - **运营账号 ≠ 用户账户(防混淆)**:A1 运营账号与 C 域用户账户是两套实体;后台对用户的处置(冻结 / impersonate / 调资产)的操作者是运营账号、对象是用户账户,二者绝不互通(运营账号不持用户资产、不入 A4 用户事件流)。
-- **角色变更经 A2 审计 + 操作确认(防内部越权)**:任何角色授予 / 撤销仅超管可执行,经确认弹窗 + 理由必填即时生效,全程留痕(A2)并实时告警全体超管(账号治理类变更不可静默发生);禁用超管前校验剩余有效超管 ≥ 2(防超管单点)。
-- **权限矩阵是各章 ⑥ 的聚合参照(V4 统一收口后为权威)**:各章 ⑥ 段的角色×动作矩阵片段是 A1 全局矩阵(②b 视图)的局部投影。A1 全局权限矩阵是 §1.1 RBAC 体系的权威聚合视图,目标是各章 ⑥ 的收口参照;但 K1⑥ 等已落地章节使用旧命名体系(平台管理员 / 风控运营 / 审计员等),**V4 前以各章已落地正文为准,V4 统一收口后以 A1 矩阵为准**。本卷已知各章存在「member/lead 层级 / K1 旧命名」差异(见 ③ 角色命名收口);V4 §3.14 增「权限矩阵 → A1 权威(V4 统一收口后生效)」行。
+- **角色变更经 A2 审计 + 操作确认**:角色授予/撤销仅超管可执行，理由必填、即时生效、清权限缓存并留痕；同角色操作在前后端均拒绝。
+- **双超管按“有效”而非账号行数计算**:只有启用、超管角色且 MFA 已绑定的账号计入；不足 2 即进入治理恢复模式，避免“账面双超管、实际单点”。
 
 **⑧ 埋点(事件)**
 对齐 A4(§2.4.5 ⑥ admin family):
@@ -2493,7 +2489,7 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 > - **C5④ 24h 长锁执行门槛前端补注**:前端 §4.6.2 异常解锁未区分锁定类型;本 PRD 对 24h 长锁设更高执行门槛(风控 lead/超管)属政策扩展,须在前端 §4.6.2 补注「管理员路径见运营后台 PRD C5」。
 > - **C6⑤ 422 拒绝 K1 参数双向对齐**:K1⑤ 须补「C6 `PUT /api/admin/auth/config` 会拒绝 `maxSignupPerIp24h` / `maxAccountsPerDevice` / `maxAccountsPerPaymentInstrument` 写入并返回 422 + `suggestedPath`;K1 是这三参数唯一配置入口」,形成 K1↔C6 双向文档链;422 body 的 `suggestedPath` 为 advisory-only(非 HTTP redirect),接口文档须注明。
 > - **K1⑥ 角色命名体系不对齐**:K1⑥ 使用「平台管理员 / 风控主管 / 风控运营 / 客服 / 财务 / 审计员」,与 §1.1(超管 / 财务 / 风控 / 增长 / 内容 / 客服 / 只读审计)及 C 域不一致;C 域草稿已用 §1.1 统一体系,无需改动,K1⑥ 命名修复归 V4 gate。
-> - **「风控主管 / 财务主管」非 §1.1 RBAC 枚举成员**:「主管」= 对应角色的 lead 权限层级(A1 已定义 member/lead 层级,2026-06 操作确认决议后承担高敏执行门槛),本章已统一以「风控(lead)/ 财务(lead)」表述。
+> - **「风控主管 / 财务主管」不是独立角色或隐式层级**:这是业务职责称谓；实际执行资格由 A6 对对应角色显式授予的动作权限码决定，A8 提供权限码定义。产品与接口不得再依赖 `member/lead` 字段。
 > - **admin.* 系列事件注册**:本章新增 `admin.user_profile_viewed` / `admin.user_list_exported` / `admin.user_frozen` / `admin.user_unfrozen` / `admin.user_impersonation_started` / `admin.user_impersonation_ended` / `admin.balance_adjusted` / `admin.bill_adjusted` / `admin.kyc_status_changed` / `admin.2fa_disabled` / `admin.session_revoked`(跨 C2/C5 共用、仅注册一次)/ `admin.auth_config_changed` 须经 A4 schema registry 注册(归 §2.4.5 ⑥ admin family / ③ money)。
 >
 > 核实要点(供 gate / 仲裁):① **C4 为 KYC 状态唯一权威**,`GET /api/kyc/status/:userId` 单源,引用方 = D2 / G2 / K5 三方,与 §3.14 + K5⑦「KYC 状态读自 C4」+ D2⑦「KYC 门槛来自 C4」一致;**D1 充值已从 KYC 引用方移除**(§3.14未列 D1);**C4 单用户 KYC 详情字段去除 complianceCheckId / Sumsub 材料引用**,仅列后台台账实际字段(kycStatus / walletPaired / pairedAddress / network / verifiedAt / 变更历史 / 关联 K5 工单)。② **C1 消费 K4 风险分**(展示,不重算),与 §3.14 + K4① 一致;C1 资产读经 admin 聚合端点、不调用户端 `GET /api/users/me`。③ **C3 USDT/NEX 写 D4 账本(adjustment BillType,不复用 refund)** + 加余额过 B1 覆盖率红线(执行时实时值,低于红线 422 即拒、无挂起队列);双事件 `admin.balance_adjusted`(发起层)+ `admin.bill_adjusted`(记账层)以 billId 关联防双计。④ **C2 冻结态权威落 C2**,impersonate 拆 `_started`/`_ended` 双事件 + 只读 claim 机制(A3/Ch9);账户级名单 vs K1 IP 名单分工明确。⑤ **账户解锁统一归 C5**(C6 不持解锁处置权,仅持锁定阈值;24h 长锁高执行门槛为政策扩展);密码重置端点 `invalidate-password` 对齐 §4.2.3 一次性 reset。⑥ **C6 CAPTCHA 默认 ON**(对齐前端既定限频规则,OFF 为高敏紧急维护 + 强制时限)、增长不持 auth 安全配置写权(对齐 §1.1)、422 拒绝 K1 参数用 `suggestedPath`(advisory-only)。⑦ 设备 kind 用 §12.2 实际枚举(phone / stellarbox-s1 / stellarbox-pro / stellarrack-p1 / cloud-share),MAX_DEVICES=6 锚 §9.11d.2 server enforce。⑧ 参数默认值忠实引用前端现状(§4.5.2 / §4.6.2 / §16.2.1),12 月 §6 未覆盖处已注明;BillType 全章口径统一为 7 类。
@@ -3218,7 +3214,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 - 改 dial、手动 pin phase(全局 / cohort)、cohort override、修改定时切换配置,均为**高敏写操作**(2026-06 操作确认决议):由具备执行权的单人经业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`,8–200 字)即时执行,落 A2 审计(operator / before / after / reason / IP / ts)并实时告警超管与增长 lead。**放大资金流出方向的 dial 改动执行权仅超管**,且 server 前置 B1 兑付覆盖率红线核验(低于红线 422 `COVERAGE_BELOW_REDLINE`),弹窗内强制展示覆盖率预检(与 A2③ 高敏动作清单对齐)。
 - 沙盒预览为只读推演,不写库,任何具备查看权限的角色均可运行;只读审计角色运行预览不得产生任何持久化副作用。
-- **角色命名归属**:本表角色名取自 §1.1 RBAC 权威角色表(超级管理员 / 财务 / 风控 / 增长);执行门槛与 member/lead 层级以 A1(§2.1)权限层级 + A2(§2.2)高敏动作清单为权威,本章以引用方式注明,不另立角色命名。
+- **角色命名归属**:本表角色取自 A6 当前启用角色；执行门槛以 A6 显式动作权限 + A2 高敏动作清单为权威，本章只引用，不另建角色或隐式层级。
 
 ##### ③ 界面与信息架构
 
@@ -3466,7 +3462,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 - 改 TrialConfig 敏感项(`trialPriceUSD`、`chargeFailRate`、`autoChargeAtEnd` 暂按敏感)、强制取消试用、强制触发扣款,均为**高敏写操作**(2026-06 操作确认决议):由具备执行权的单人经业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`,8–200 字)即时执行,落 A2 审计(operator / before / after / reason / IP / ts)并实时告警超管与对应域 lead。**敏感 TrialConfig 改动执行 = 增长(lead)/ 超管(原复核门槛就高迁移为执行门槛);强制取消 / 强制触发扣款执行 = 风控(lead)/ 超管**。
 - `chargeFailRate` 为 server-only 参数,后台可读可改(敏感项,确认弹窗 H2-MD1),但**前端永不可知**(§9.11d.3)。
-- **角色命名归属**:本表角色名取自 §1.1 RBAC 权威角色表;执行门槛与 member/lead 层级以 A1(§2.1)权限层级 + A2(§2.2)高敏动作清单为权威,本章以引用方式注明。
+- **角色命名归属**:本表角色取自 A6 当前启用角色；执行门槛由 A6 的显式动作权限码和 A2 高敏动作清单共同约束，本章只引用。
 
 ##### ③ 界面与信息架构
 
@@ -4210,7 +4206,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | 驳回 KYC 复审(回写 C4 + 维持 D2 冻结) | 风控主管 / 平台管理员 | K5-MD2(理由必填) | operator / userId / 驳回理由 / ts |
 | 告警订阅配置 | 风控运营 | 否(直接生效留痕) | 订阅条目 / 渠道 / operator |
 
-> **复审裁决的执行角色定义(确定性描述)**:K5 复审裁决执行权 = **风控主管(= 风控 lead)/ 平台管理员(= 超管)**(2026-06 操作确认决议:原「风控运营发起 + 风控主管复核」迁移为「风控 lead 执行门槛」,与 A2③ 清单 K5 行一致)。**本草稿不引入 §1.1 RBAC 枚举(超级管理员 / 财务 / 风控 / 增长 / 内容 / 客服 / 只读审计七类)之外的角色**——「风控主管」即风控角色的 lead 层级,A1(§2.1)已定义 member/lead 权限层级承载此执行门槛,本表与 ⑥ 矩阵据此声明,不另立角色命名。「KYC 复审」为业务词保留,指 C4 KYC 状态的增强复核业务流程,与操作确认机制无涉。
+> **复审裁决的执行资格(确定性描述)**:K5 复审裁决执行权 = **获 A6 显式授予 K5 裁决权限的风控角色账号 / 超级管理员**；“风控主管”只作业务职责称谓，不是新角色，也不对应 `member/lead` 隐式层级。A2③ 清单继续定义高敏动作门槛，服务端每次按权限码判定。「KYC 复审」为业务词，指 C4 KYC 状态的增强复核流程，与操作确认机制无涉。
 
 **④a 交互与弹窗规格**
 
@@ -4255,7 +4251,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 | 触发复审 / 告警订阅 | ✅ | ✅ | ✅ | — | — |
 | 通过 / 驳回复审(执行,确认弹窗) | ✅ | ✅(lead) | — | — | — |
 
-> **K5 复审裁决执行权一致性**:裁决执行权 = **风控主管(= 风控角色 lead 层级)/ 平台管理员(= 超级管理员)**,与 ④ 表及 A2③ 高敏动作清单 K5 行一致(2026-06 操作确认决议,原发起 + 复核两行合并为单一执行行,风控运营不具裁决执行权);§2.1 A1 已定义 member/lead 权限层级承载「风控主管」= 风控 lead 的执行资质。旧命名映射(A1③):平台管理员 = 超级管理员、风控运营 = 风控 member、审计员 = 只读审计。
+> **K5 复审裁决执行权一致性**:裁决执行权 = **获 A6 显式 K5 裁决权限的风控角色账号 / 超级管理员**，与 ④ 表及 A2③ 高敏动作清单 K5 行一致；普通风控账号是否可执行只看其服务端权限码，不再通过 `member/lead` 推断。旧称“平台管理员”映射超级管理员，“审计员”映射只读审计；“风控主管/风控运营”仅为职责称谓。
 
 审计字段(A2):`action / kycReviewId / userId / triggerType / amountUsdt / decision / reason / operator / ts`。
 
@@ -4297,7 +4293,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 | 实体 | 关键字段 | 来源章 / § 锚点 | 说明 |
 |---|---|---|---|
-| **OperatorAccount**(运营账号) | `accountId / displayName / role(super\|finance\|risk\|growth\|content\|support\|auditor)/ permissionTier(member\|lead)/ twoFactorBound(bool)/ status(enabled\|disabled\|locked)/ lastLoginAt / activeSessions[]{sessionId,device,ip,startedAt}` | Ch2 A1(§2.1) | 平台运营方内部员工后台登录账号,**与 C 域用户账户(`User`)是两套独立实体**;不持用户资产、不入 A4 用户事件流。强制 2FA;新建默认无写权;系统强制保持 ≥ 2 个有效超管。`role` 固定为 §1.1 七角色枚举,`permissionTier` 区分 member / lead(lead 承担高敏执行门槛资质)。`status` 含 `locked` 临时锁定态(对应 A1③ 双档锁定:短锁 15min / 长锁档,与 C5 用户侧 `status` 处理对称) |
+| **OperatorAccount**(运营账号) | `accountId / username / displayName / email? / roleCode?(A6 启用角色；空=暂未分配) / roleHistory[]{fromRole,toRole,changedAt,operator} / tfaSecretEncrypted? / tfaBoundAt? / status(enabled\|disabled) / lastLoginAt? / activeSessions[]{sessionId,device,ipAddress,issuedAt,lastSeenAt}` | Ch2 A1(§2.1) | 平台运营方内部员工后台登录账号,**与 C 域用户账户(`User`)是两套独立实体**;不持用户资产、不入 A4 用户事件流。新建默认无角色、零权限；角色及授权权威在 A6，A1 不再维护固定七角色或 `member/lead` 第二套身份模型。角色历史由 A2 审计事实派生，不维护可篡改副本。MFA 必须真实绑定后才计入有效超管；密码/MFA 双档失败锁由服务端独立状态记录；系统始终保持 ≥ 2 个“启用 + 超管角色 + MFA 已绑定”的有效超管。 |
 | **AuditLog**(审计日志) | `operator / role / action / object{domain,objectId} / before / after / reason / ip / ts(ms)` | Ch2 A2(§2.2) | **append-only,不可删改**(无更新 / 删除 endpoint);全域所有高敏写操作的统一留痕地基(§3.14:审计权威归 A2)。各章「⑥ 权限 & 审计」段的审计字段均为本统一 schema 的实例化。高敏动作记录(按 A2③ 高敏动作清单过滤)构成 A2②b 高敏操作流水视图并触发实时告警。`Idempotency-Key`(资金 / 资产类动作,可选字段)按 A2⑥ 源章 schema 一并留痕,与 endpoint 层 `Idempotency-Key` header 同源、非独立核心字段。保留期 ≥ 13 个月(对齐 §2.4.9) |
 | **SystemConfig**(系统配置) | 运营托管:`featureFlags[]{key,state(on\|off\|灰度%),scope(all\|cohort\|phase)} / health{pipeline,ledger,ntp,endpoints}`;**固定后端不变量(运营不可调、无配置面)**:`serverTime{ntpSource,currentTs,driftMs}` 单源 / `idempotency{ttlHours(24),dedupHitCount24h}` Idempotency-Key 去重 | Ch2 A3(§2.3) | 平台级横切配置托管模型;**运营面仅 feature flag 平台 + 系统健康**(kill-switch 子配置见 KillSwitchConfig)。server time 单源、Idempotency-Key 为**固定后端不变量**(约束见 A3⑦,运营无配置卡)。`featureFlags` 仅承接无明确业务域归属的横切 flag(PHASES 全表归 H1、chargeFailRate 归 H2) |
 | **KillSwitchConfig**(熔断闸配置) | `key(withdraw\|staking\|genesis\|exchange\|trial\|geo-block)/ enabled(bool;geo-block 为 activeCountries.length>0)/ activeCountries[](仅 geo-block)/ lastChangedAt / operator / reason` | Ch2 A3(§2.3,§9.11d.1 + 后台应急新增 withdraw) | **6 闸**(5 个二元功能闸〔4 源自前端 §9.11d.1 + 后台应急新增 withdraw〕 + 1 个 geo-block 国家列表闸);5 个功能闸默认 `enabled=true`、geo-block 默认 `activeCountries` 空。本实体为 A3 SystemConfig 下的子配置对象(A3 config store 的 kill-switch 子域,A3④d),**非独立 DB 表**。**每次闸切换(PUT)经确认弹窗 + 理由必填 + 幂等执行**(熔断方向执行=风控/财务/超管;恢复方向执行=仅超管 + B1 红线前置 422;与 §9.2 API 总表确认弹窗=是 及 A3④、§2.2 高敏动作清单一致;切换 `Idempotency-Key` 由 A3⑤ 正文明确,§1.8 原则二.3)。V1 由 A3 config store 托管为存储端权威,V4 切换面归 J1(功能闸)/ J2(geo-block);B5 风险雷达只读其状态灯 |
@@ -4327,12 +4323,16 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 | 域 | endpoint | method | 用途 | 来源章 | 确认弹窗 | 幂等 |
 |---|---|---|---|---|---|---|
-| A1 | `/api/admin/rbac/roles` | GET | 七角色定义 + 全后台权限矩阵(声明式权威源) | Ch2 A1 | — | — |
-| A1 | `/api/admin/rbac/roles` | PUT | 变更角色权限授予(校验不破坏最小权限基线) | Ch2 A1 | 是 | — |
-| A1 | `/api/admin/accounts` | GET | 运营账号列表 + 单账号详情(角色 / 2FA / 活跃 session) | Ch2 A1 | — | — |
-| A1 | `/api/admin/accounts` | POST | 创建运营账号 | Ch2 A1 | 是 | — |
-| A1 | `/api/admin/accounts/:id` | PUT | 禁用 / 启用 / 改角色 / 重置 2FA | Ch2 A1 | 是 | — |
-| A1 | `/api/admin/accounts/:id/logout` | POST | 强制登出运营账号 session(仅超管,须 reason) | Ch2 A1 | — | — |
+| A1 | `/api/admin/platform/accounts/overview` | GET | 运营账号列表、角色引用、安全基线与逐条活跃 session 详情 | Ch2 A1 | — | — |
+| A1 | `/api/admin/platform/accounts` | POST | 创建运营账号；角色可空，默认暂未分配、零权限 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/profile` | PATCH | 编辑登录名、显示名和邮箱 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/role` | PATCH | 从 A6 启用角色中变更或清空角色；提交前展示权限差异 | Ch2 A1 / A6 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/status` | PATCH | 禁用或重新启用；不得破坏有效双超管下限 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/reset-2fa` | POST | 身份核验后重置 MFA；未绑定账号不可执行 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/password/reset` | POST | 生成一次性临时强密码并吊销旧会话 | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/sessions/revoke` | POST | 吊销目标账号全部 session(仅超管、非自己、非超管目标、须 reason) | Ch2 A1 | 是 | 是 |
+| A1 | `/api/admin/platform/accounts/:id/sessions/:sessionId/revoke` | POST | 吊销目标账号指定 session，约束同上 | Ch2 A1 | 是 | 是 |
+| A6 / A8 | `/api/admin/platform/roles/*` / `/api/admin/platform/permissions/*` | GET / 写操作 | 角色定义及角色授权权威归 A6，权限码字典权威归 A8；A1 只读引用 | Ch2 A6 / A8 | 按对应写操作 | 按对应写操作 |
 | A2 | `/api/admin/audit?filter=` | GET | 审计日志查询(server 强制可见性 filter;append-only) | Ch2 A2 | — | — |
 | A2 | `/api/admin/audit?filter=&sensitive=true` | GET | 高敏操作流水(审计库按高敏动作清单过滤的子视图,A2②b) | Ch2 A2 | — | — |
 | A3 | `/api/admin/system/config` | GET | 系统健康(health;server time / idempotency 为固定后端不变量,不在配置面) | Ch2 A3 | — | — |
@@ -4485,7 +4485,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 > - **trial.\* 新增**:`trial.charge_attempted` · `trial.cancelled` · `trial.grace_entered` · `trial.extended`;
 > - `phase.*` family 须补 `operatingMonth` 具名属性。
 
-**⑤ RBAC enforcement(每请求服务端授权)**:角色判定与权限校验在服务端每次请求执行(后台 endpoint auth middleware);客户端持有的角色信息**仅用于 UI 渲染**(隐藏无权菜单),不作为授权依据——无权角色绕过前端调用 endpoint 由服务端返回 **403**。权威源为 A1 RBAC 模型(七角色 + member/lead 权限层级 + 声明式权限矩阵 `/api/admin/rbac/roles`);各章「⑥ 权限 & 审计」段为该矩阵的局部投影。审计日志可见性亦 server 强制 filter(如客服仅可查本次服务用户范围),非 UI 层可选。
+**⑤ RBAC enforcement(每请求服务端授权)**:角色判定与权限校验在服务端每次请求执行(后台 endpoint auth middleware);客户端持有的角色信息**仅用于 UI 渲染**(隐藏无权菜单),不作为授权依据——无权角色绕过前端调用 endpoint 由服务端返回 **403**。角色定义及角色授权权威在 A6，权限码字典权威在 A8；A1 只分配 A6 启用角色并展示权限差异，不维护第二份权限矩阵或 `member/lead` 层级。各章「⑥ 权限 & 审计」段是 A6/A8 权威的局部投影。审计日志可见性同样由服务端强制过滤。
 
 **⑥ 实时(SSE / WS)**:态势感知类视图采用服务端推送保证实时性——驾驶舱 B5 风险雷达(`/api/admin/risk/radar/stream`,SSE:挤兑比率 / kill-switch 状态 / 覆盖率灯实时变化)为 V1 已定义的实时端点;B1/B2 水位、B3 漏斗、D2 提现队列态势的实时刷新同采此模式(具体端点随对应域实现细化)。客户端订阅服务端权威状态变化,不本地推进状态。
 
@@ -4523,7 +4523,7 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 
 | # | 待补项 | 依赖 |
 |---|---|---|
-| 6 | 角色命名总收口(A1③):各章权限矩阵旧命名(平台管理员/风控主管/风控运营/审计员)统一映射 §1.1 七角色 + member/lead 层级 + 补齐缺列;**V4 前以各章已落地正文为准** | Ch2 A1 已定映射规则 |
+| 6 | 角色命名总收口:各章旧称“平台管理员/风控主管/风控运营/审计员”分别按业务职责映射到 A6 启用角色与显式动作权限；不再建立固定七角色或 `member/lead` 隐式层级 | Ch2 A1/A6/A8 已定权威边界 |
 | 7 | §3.14 推荐树节点 → F 域权威(C1 引用展示) | V2 F 域 |
 | 8 | §3.14 H1 Phase 行引用方补 H3–H6(四倍率生效面) | V3 H3–H6 |
 | 9 | §3.14 A4 埋点行引用方补 H1/H2 等具体消费域(完善性) | — |

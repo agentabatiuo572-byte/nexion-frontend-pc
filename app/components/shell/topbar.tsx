@@ -20,14 +20,24 @@ import { useServicePendingCount } from "./use-service-badges";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
   const [open, setOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const signOut = useAdminAuth((s) => s.signOut);
 
   async function handleSignOut() {
-    setOpen(false);
+    setLoggingOut(true);
+    setLogoutError(null);
     try {
-      await fetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" });
-    } finally {
+      const response = await fetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("服务端会话撤销失败，请重试");
+      }
       signOut();
+    } catch (error) {
+      setOpen(true);
+      setLogoutError(error instanceof Error ? error.message : "退出失败，请重试");
+    } finally {
+      setLoggingOut(false);
     }
   }
 
@@ -84,12 +94,18 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
             <button
               type="button"
               onClick={handleSignOut}
+              disabled={loggingOut}
               className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[var(--v5-surface-2)]"
               style={{ color: "var(--v5-ink-3)" }}
             >
               <LogOut size={13} />
-              退出登录
+              {loggingOut ? "正在撤销会话…" : "退出登录"}
             </button>
+            {logoutError && (
+              <p className="px-3 py-1.5 text-[11px]" role="alert" style={{ color: "var(--v5-danger)" }}>
+                {logoutError}；当前登录凭据已保留。
+              </p>
+            )}
           </div>
         </>
       )}

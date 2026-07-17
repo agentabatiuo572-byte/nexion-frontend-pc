@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { KRiskActions, KRiskData, KRiskOverviewQuery } from "@/lib/admin/k-client";
+import type { K4PaginationQuery, KRiskActions, KRiskData, KRiskOverviewQuery, MultiAccountOverview, ScoringOverview } from "@/lib/admin/k-client";
 import type { BusinessFormSpec, BusinessFormValue, CoverageSnapshot, EditSpec } from "../design-kit";
 
 export type ActionConfirmReq = {
@@ -10,8 +10,10 @@ export type ActionConfirmReq = {
   coverage?: CoverageSnapshot;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
+  /** 与服务端理由长度约束保持一致；未指定时沿用共享弹窗的领域默认值。 */
+  reasonMax?: number;
   onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>;
-  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void;
+  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => unknown | Promise<unknown>;
 };
 
 export type ConfirmChip = [text: string, tone: "done" | "ready"];
@@ -23,9 +25,17 @@ export type ConfirmReq = {
   /** true = 原因必填(标记类 / 白名单 / 手动补触发)。 */
   reason?: boolean;
   /** 可选输入框:传 options 时渲染 chips 勾选(枚举值不让手输,能勾选的不要手输铁律);不传则文本框(开放值如白名单网段 / 补触发 userId / 覆盖分)。 */
-  input?: { label: string; placeholder?: string; options?: string[] };
+  input?: {
+    label: string;
+    placeholder?: string;
+    options?: string[];
+    kind?: "text" | "number";
+    min?: number;
+    max?: number;
+    step?: number;
+  };
   okLabel?: string;
-  run: (reason: string, value?: string) => void;
+  run: (reason: string, value?: string) => unknown | Promise<unknown>;
 };
 
 export type KCtx = {
@@ -39,5 +49,6 @@ export type KCtx = {
   actions: KRiskActions;
   contentLoading: boolean;
   contentError: string | null;
-  reloadKRisk: (query?: KRiskOverviewQuery) => Promise<void>;
+  reloadKRisk: (query?: KRiskOverviewQuery) => Promise<MultiAccountOverview | void>;
+  refreshK4Scoring: (query?: K4PaginationQuery) => Promise<ScoringOverview | void>;
 };

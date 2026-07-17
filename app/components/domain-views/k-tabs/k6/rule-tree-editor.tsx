@@ -159,7 +159,7 @@ function RuleLeaf({ rule, onChange, onRemove, weighted }: { rule: Rule; onChange
   );
 }
 
-function GroupEditor({ group, onChange, onRemove, depth }: { group: RuleGroup; onChange: (g: RuleGroup) => void; onRemove?: () => void; depth: number }) {
+function GroupEditor({ group, onChange, onRemove, depth, weighted = false }: { group: RuleGroup; onChange: (g: RuleGroup) => void; onRemove?: () => void; depth: number; weighted?: boolean }) {
   const setChild = (i: number, child: Rule | RuleGroup) => onChange({ ...group, rules: group.rules.map((r, idx) => (idx === i ? child : r)) });
   const removeChild = (i: number) => onChange({ ...group, rules: group.rules.filter((_, idx) => idx !== i) });
   return (
@@ -174,12 +174,13 @@ function GroupEditor({ group, onChange, onRemove, depth }: { group: RuleGroup; o
         {group.mode === "WEIGHTED_SCORE" && (
           <label className="k6-rg-num">阈值≥<input className="k6-field" type="number" value={group.threshold ?? 0} onChange={(e) => onChange({ ...group, threshold: Number(e.target.value) })} aria-label="命中阈值" /></label>
         )}
+        {weighted && <label className="k6-rg-num">子组权重<input className="k6-field" type="number" min={0.01} value={group.weight ?? ""} onChange={(e) => onChange({ ...group, weight: Number(e.target.value) })} aria-label="子组权重" /></label>}
         {onRemove && <button className="k6-rl-del" onClick={onRemove} aria-label="删除规则组" style={{ marginLeft: "auto" }}><Trash2 size={14} aria-hidden /></button>}
       </div>
       <div className="k6-rg-body">
         {group.rules.length === 0 && <div className="k6-hint">空规则组,添加规则或子组。</div>}
         {group.rules.map((r, i) => isRuleGroup(r)
-          ? <GroupEditor key={i} group={r} onChange={(c) => setChild(i, c)} onRemove={() => removeChild(i)} depth={depth + 1} />
+          ? <GroupEditor key={i} group={r} onChange={(c) => setChild(i, c)} onRemove={() => removeChild(i)} depth={depth + 1} weighted={group.mode === "WEIGHTED_SCORE"} />
           : <RuleLeaf key={i} rule={r} onChange={(c) => setChild(i, c)} onRemove={() => removeChild(i)} weighted={group.mode === "WEIGHTED_SCORE"} />)}
       </div>
       <div className="k6-rg-add">

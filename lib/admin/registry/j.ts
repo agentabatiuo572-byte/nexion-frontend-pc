@@ -23,7 +23,7 @@ export const DOMAIN_J: ModuleEntry[] = [
   },
   {
     path: "/emergency/sop",
-    summary: "监管点名 / 突发事件的应急预案库。剧本、步骤与执行记录从 J4 真实接口读取后端业务表。",
+    summary: "监管点名 / 突发事件的应急预案库。统一维护剧本、演练结果与逐步执行记录。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

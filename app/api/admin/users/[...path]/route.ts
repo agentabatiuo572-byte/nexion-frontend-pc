@@ -20,6 +20,9 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "overview") {
     return "/api/admin/users/account-actions/overview";
   }
+  if (parts.length === 3 && parts[0] === "account-actions" && parts[1] === "accounts" && isNonEmpty(parts[2])) {
+    return `/api/admin/users/account-actions/accounts/${encodeURIComponent(parts[2])}`;
+  }
   if (parts.length === 2 && parts[0] === "kyc" && parts[1] === "overview") {
     return "/api/admin/users/kyc/overview";
   }

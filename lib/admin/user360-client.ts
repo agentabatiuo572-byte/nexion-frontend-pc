@@ -418,6 +418,21 @@ function normalizePage<T>(page: PageResult<T>, fallbackPageNum: number, fallback
   };
 }
 
+export class UsersRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string | undefined,
+    message: string,
+  ) {
+    super(message);
+    this.name = "UsersRequestError";
+  }
+}
+
+export function isUsersRequestNotFound(error: unknown) {
+  return error instanceof UsersRequestError && error.status === 404;
+}
+
 async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -438,7 +453,11 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `USERS_REQUEST_FAILED_${response.status}`));
+    throw new UsersRequestError(
+      response.status,
+      result?.message,
+      formatAdminApiError(result?.message, `USERS_REQUEST_FAILED_${response.status}`),
+    );
   }
 
   return result.data as T;
@@ -450,6 +469,10 @@ export async function fetchUser360(userKey: string) {
 
 export async function fetchUserAccountActionOverview() {
   return usersRequest<UserAccountActionOverview>("/account-actions/overview");
+}
+
+export async function fetchUserAccountActionAccount(userKey: string) {
+  return usersRequest<User360Profile>(`/account-actions/accounts/${encodeURIComponent(userKey)}`);
 }
 
 export async function fetchUserProfilesPage(query: UserProfileQuery = {}) {

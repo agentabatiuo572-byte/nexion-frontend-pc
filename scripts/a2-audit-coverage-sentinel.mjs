@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A2 审计覆盖哨兵 —— 防「高敏操作不落 A2 审计」复发 + 防「A2 审计页脱离实时 store」回退。
+ * A2 审计覆盖哨兵 —— 防「高敏操作不落真实后端 A2」及「J1 止血动作误入待审批队列」回退。
  *
  * 缘起(2026-06-24):全 13 域审计发现两类坑:
  *   ① A2 审计页 a2-audit.tsx 只渲染静态种子 AUDIT_LOGS,从不订阅实时 usePlatformConfig().audit[],
@@ -27,37 +27,35 @@ const read = (rel) => {
   if (!fs.existsSync(p)) return null;
   return fs.readFileSync(p, "utf8");
 };
-const count = (s, sub) => s.split(sub).length - 1;
-
+const count = (source, token) => source.split(token).length - 1;
 const failures = [];
 const A2 = "app/components/domain-views/a-tabs/a2-audit.tsx";
 const A1 = "app/components/domain-views/a-tabs/a1-accounts.tsx";
 const EVIEW = "app/components/domain-views/e-view.tsx";
 
-// ── A. A2 审计页订阅实时 store ──
+// ── A. A2 审计页必须读取并处置真实后端工单 ──
 const a2 = read(A2);
 if (a2 == null) failures.push(`${A2} 未找到`);
-else if (!/usePlatformConfig\(\s*\(s\)\s*=>\s*s\.audit\s*\)/.test(a2)) {
-  failures.push(`${A2}: 未订阅实时审计 usePlatformConfig((s) => s.audit) —— A2 页疑似回退为只读种子,实时操作将不可见`);
+else {
+  for (const api of ["fetchA2Overview", "approveA2Operation", "rejectA2Operation", "exportA2Audit"]) {
+    if (!a2.includes(api)) failures.push(`${A2}: 缺真实后端动作 ${api}`);
+  }
 }
 
-// ── B. A1 账号治理集中审计 chokepoint + 每个 runMutation 传 audit ──
+// ── B. A1 账号治理读取真实后端，并由统一提案/执行入口承接高敏动作 ──
 const a1 = read(A1);
 if (a1 == null) failures.push(`${A1} 未找到`);
 else {
-  if (!a1.includes("logAudit({ actor: operator, action, target: audit.target")) {
-    failures.push(`${A1}: runMutation 集中 logAudit chokepoint 缺失 —— A 域账号治理(建/停/启/改角色/2FA/强制登出/RBAC/安全基线)将不落 A2 审计`);
-  }
-  const rm = count(a1, "void runMutation(");
-  // 减去 runMutation 签名里的类型注解 `audit?: { target: …}`,只数真正传入的 audit 对象。
-  const auditArgs = count(a1, "{ target:") - count(a1, "audit?: { target:");
-  if (rm !== auditArgs) {
-    failures.push(`${A1}: runMutation 调用数 ${rm} ≠ 传 audit 对象({ target: … })数 ${auditArgs} —— 有账号治理动作漏传审计(高敏动作必落 A2)`);
+  if (!a1.includes("fetchA1Overview")) failures.push(`${A1}: 未读取真实后端账号总览`);
+  if (!a1.includes("usePropose")) failures.push(`${A1}: 高敏账号动作未接统一提案/执行入口`);
+  const proposalCalls = count(a1, "void propose(toast, {");
+  const proposalSources = count(a1, 'sourceDomain: "A1"');
+  if (proposalCalls < 9 || proposalCalls !== proposalSources) {
+    failures.push(`${A1}: A1 高敏提案数 ${proposalCalls} 与来源标记数 ${proposalSources} 不一致或少于 9,账号动作可能绕过 A2`);
   }
 }
 
-// ── C. e-view onConfirm 每个高敏 gap 分支必含 logAudit ──
-// 这些分支走后端 API / 专用 CRUD,不经 setParam 自动审计,必须显式 logAudit。op key 是稳定契约(非展示文案)。
+// ── C. E 域高敏分支仍存在，并统一经过后端 A2 提案入口 ──
 const GAP_OPS = [
   "param", "param-multi", "param-fixed",
   "phase-save", "phase-archive", "phase-current",
@@ -69,6 +67,7 @@ const GAP_OPS = [
 const ev = read(EVIEW);
 if (ev == null) failures.push(`${EVIEW} 未找到`);
 else {
+  if (!ev.includes("usePropose")) failures.push(`${EVIEW}: E 域高敏动作未接统一提案入口`);
   // 只取分支起点 `if (mc.op === "X"` / `} else if (mc.op === "X"`,排除 IS_PREVIEW 预览短路里的 (mc.op === …)。
   const branchRe = /(?:if|else if) \(mc\.op === "([^"]+)"/g;
   const marks = [];
@@ -84,23 +83,29 @@ else {
     const body = branchOf(op);
     if (body == null) {
       failures.push(`${EVIEW}: onConfirm 未找到 mc.op === "${op}" 分支(分支被删/改名?同步更新本哨兵 GAP_OPS)`);
-    } else if (!/logAudit\(/.test(body)) {
-      failures.push(`${EVIEW}: onConfirm 分支 "${op}" 缺 logAudit —— 该高敏动作走后端不落 A2 审计`);
+    } else if (!body.includes("propose(") && !body.includes("proposeParam(")) {
+      failures.push(`${EVIEW}: onConfirm 分支 "${op}" 未进入后端 A2 提案入口`);
     }
   }
 }
 
-// ── D. 高敏操作动态实时化:A2 订阅 pending store + 焦点动作接 proposeOrExecute(防回退种子/断链)──
+// ── D. 焦点动作接真实 A2；J1 止血动作直接执行并由后端审计 ──
+// J1 是止血开关:理由确认后由业务接口立即执行并写 A2 审计，不能排队等待审批。
+const J1_IMMEDIATE = "app/components/domain-views/j-tabs/j1-killswitch.tsx";
 const PENDING_FOCAL = [
-  "app/components/domain-views/j-tabs/j1-killswitch.tsx",
   "app/components/domain-views/g-tabs/g1-staking.tsx",
   "app/components/domain-views/h-tabs/h1-phase.tsx",
   "app/components/domain-views/i-tabs/i6-i18n.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
 ];
-if (a2 != null) {
-  if (!a2.includes("usePendingOps")) failures.push(`${A2}: 高敏操作动态未订阅实时 usePendingOps —— pending 队列疑似回退为静态种子`);
-  if (!a2.includes("resolveProposal")) failures.push(`${A2}: 缺 resolveProposal —— A2 执行/驳回未回写 pending 状态`);
+const j1 = read(J1_IMMEDIATE);
+if (j1 == null) {
+  failures.push(`${J1_IMMEDIATE} 未找到`);
+} else {
+  if (j1.includes("usePropose")) failures.push(`${J1_IMMEDIATE}: J1 止血动作错误回退到待审批队列`);
+  if (!j1.includes("actions.toggleJ1KillSwitch") || !j1.includes("actions.emergencyDisableJ1")) {
+    failures.push(`${J1_IMMEDIATE}: J1 熔断/批量熔断未直连业务接口`);
+  }
 }
 for (const f of PENDING_FOCAL) {
   const src = read(f);
@@ -110,27 +115,28 @@ for (const f of PENDING_FOCAL) {
     failures.push(`${f}: 焦点高敏动作未接 usePropose —— 该域动作不再按执行门槛分流入 pending`);
   }
 }
-// 焦点域内**同形** amplifying 动作必一并接 propose(防「修一处漏同类」回退,审计 Round1 P1):
-//   G1 = 4 个配置杠杆(APY / 罚款 / 停售恢复 / 单档熔断);D2 = 3 个资金流出动作(大额放行 / 解冻 / 退款覆盖)。
-//   每个 propose 提案带一行 sourceDomain:"<域>",据此计数。仅收紧动作(G1 最小额 / D2 拒绝·延迟·冻结)留直接执行。
-// 注:其余 ~11 域(D5/C2/C3/C4/G4/H3/H5/K1/K2/K3/K5)的 amplifying 动作仍「确认即执行 + 审计」,
-//     未接执行门槛分流 —— 这是主人「焦点动作集」范围选择(非全量),非缺陷;欲全量覆盖另开批次。
-const g1src = read("app/components/domain-views/g-tabs/g1-staking.tsx");
-if (g1src != null && count(g1src, 'sourceDomain: "G1"') < 4) {
-  failures.push(`g1-staking: propose 提案 < 4 —— G1 同形 amplifying 动作(APY/罚款/停售恢复/熔断)疑有回退为直接执行`);
-}
-const d2src = read("app/components/domain-views/d-tabs/d2-withdrawals.tsx");
-if (d2src != null && count(d2src, 'sourceDomain: "D2"') < 3) {
-  failures.push(`d2-withdrawals: propose 提案 < 3 —— D2 同形资金动作(大额放行/解冻/退款覆盖)疑有回退为直接执行`);
-}
 
+const g1 = read("app/components/domain-views/g-tabs/g1-staking.tsx");
+if (g1 != null && count(g1, 'sourceDomain: "G1"') < 4) {
+  failures.push("g1-staking: 高敏配置提案少于 4,同形放大动作可能回退为直接执行");
+}
+const d2 = read("app/components/domain-views/d-tabs/d2-withdrawals.tsx");
+if (d2 != null) {
+  if (!d2.includes('action === "APPROVE" || action === "UNFREEZE"')) {
+    failures.push("d2-withdrawals: 放行与解冻未共享资金流出提案门槛");
+  }
+  if (count(d2, 'sourceDomain: "D2"') < 1) {
+    failures.push("d2-withdrawals: 资金流出动作未标记 D2 提案来源");
+  }
+}
 const result = {
   status: failures.length === 0 ? "passed" : "failed",
   checked: {
-    a2Subscribe: A2,
-    a1Chokepoint: A1,
+    a2BackendWorkflow: A2,
+    a1BackendWorkflow: A1,
     eviewGapBranches: `${EVIEW} (${GAP_OPS.length} ops)`,
-    pendingRealtime: `${A2} usePendingOps + ${PENDING_FOCAL.length} 焦点域 usePropose`,
+    focalProposalCardinality: "A1 >= 9, G1 >= 4, D2 approve/unfreeze shared gate",
+    pendingRealtime: `${A2} backend tickets + J1 immediate + ${PENDING_FOCAL.length} 焦点域 usePropose`,
   },
   failureCount: failures.length,
   failures,

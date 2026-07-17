@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { DataListPager, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
-import type { K5Ticket, KRiskParam, TicketSt } from "@/lib/admin/k-client";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { K1OutcomeUncertainError, newK1CommandKey, type K5ManualResult, type K5Stats, type K5Ticket, type K5UserOption, type KRiskParam, type TicketSt } from "@/lib/admin/k-client";
+import type { K5KycStatus } from "@/lib/admin/k5-contract";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -26,11 +26,60 @@ function errorText(error: unknown) {
 }
 
 export function K5HeaderActions() {
-  return <span className="f-ro"><span className="d" />只触发复审 · 实名状态本身归用户域 C4 管</span>;
+  return <span className="f-ro"><span className="d" />触发与裁决均保留审计 · 实名状态权威归用户域 C4</span>;
 }
 
-type Filter = "all" | "大额提现" | "大额兑换" | "累计过线" | "overdue";
-const FILTERS: [Filter, string][] = [["all", "全部"], ["大额提现", "大额提现"], ["大额兑换", "大额兑换"], ["累计过线", "累计过线"], ["overdue", "已超时"]];
+type Filter = "all" | "大额提现" | "大额兑换" | "累计过线" | "手动触发" | "风险分触发" | "overdue";
+const FILTERS: [Filter, string][] = [["all", "全部"], ["大额提现", "大额提现"], ["大额兑换", "大额兑换"], ["累计过线", "累计过线"], ["手动触发", "手动触发"], ["风险分触发", "风险分触发"], ["overdue", "已超时"]];
+
+const REJECT_REASON_CODES = ["KYC_MATERIAL_INVALID", "IDENTITY_MISMATCH", "SANCTIONS_LIST_MATCH", "OTHER"];
+const REJECT_REASON_LABELS: Record<string, string> = {
+  KYC_MATERIAL_INVALID: "材料不符",
+  IDENTITY_MISMATCH: "身份存疑",
+  SANCTIONS_LIST_MATCH: "制裁名单关联",
+  OTHER: "其他",
+};
+const ALERT_TYPES = ["threshold-hit", "sla-breach", "large-withdraw-burst"];
+const ALERT_TYPE_LABELS: Record<string, string> = { "threshold-hit": "新复审命中", "sla-breach": "复审超时", "large-withdraw-burst": "短时大额集中" };
+const ALERT_CHANNELS = ["in-app"];
+const ALERT_CHANNEL_LABELS: Record<string, string> = { "in-app": "站内通知" };
+const K5_KYC_LABELS: Record<K5KycStatus, string> = {
+  APPROVED: "已通过",
+  PENDING: "复审中",
+  NONE: "未认证",
+  REJECTED: "已拒绝",
+  USER_UNAVAILABLE: "用户不可用",
+};
+const K5_INFO_LABELS: Record<string, string> = {
+  sourceDomain: "来源模块",
+  sourceNo: "来源单号",
+};
+const K5_DECISION_CODE_LABELS: Record<string, string> = {
+  KYC_REVIEW_PASSED: "复审通过",
+  KYC_MATERIAL_INVALID: "材料不符",
+  IDENTITY_MISMATCH: "身份存疑",
+  SANCTIONS_LIST_MATCH: "制裁名单关联",
+  OTHER: "其他",
+};
+
+function kycLabel(status: K5KycStatus) {
+  return K5_KYC_LABELS[status];
+}
+
+function displayK5Info(label: string, value: string): [string, string] {
+  const visibleLabel = K5_INFO_LABELS[label] ?? label;
+  const visibleValue = label === "实名状态" && value in K5_KYC_LABELS
+    ? kycLabel(value as K5KycStatus)
+    : value;
+  return [visibleLabel, visibleValue];
+}
+
+function displayK5History(value: string) {
+  return Object.entries(K5_DECISION_CODE_LABELS).reduce(
+    (text, [code, label]) => text.replaceAll(code, label),
+    value,
+  );
+}
 
 type LargeWithdrawLine = { kind: "large"; operator: string; amount: string };
 type CumulativeLine = { kind: "cumulative"; amount: string };
@@ -74,16 +123,8 @@ function parseK5Line(key: string, value: string): K5Line | null {
   return null;
 }
 
-function defaultK5Line(key: string): K5Line | null {
-  if (key === "largeWithdrawReviewUsdt") return { kind: "large", operator: ">=", amount: "1000" };
-  if (key === "cumulativeKycThresholdUsdt") return { kind: "cumulative", amount: "100" };
-  if (key === "reviewSlaDays") return { kind: "sla", days: "7" };
-  if (key === "reviewTriggerScore") return { kind: "score", operator: ">=", score: "85" };
-  return null;
-}
-
 function k5ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
-  const current = parseK5Line(p.key, p.value) ?? defaultK5Line(p.key);
+  const current = parseK5Line(p.key, p.value);
   if (!current) return null;
   if (current.kind === "large") {
     return {
@@ -125,6 +166,24 @@ function k5ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
       { key: "score", label: "K4 有效风险分", current: current.score, inputKind: "number", min: 70, max: 100, step: 1 },
     ],
   };
+}
+
+function decisionEvidence(ticket: K5Ticket) {
+  const information = ticket.info.map(([label, value]) => displayK5Info(label, value)).map(([label, value]) => `${label}：${value}`).join("；") || "后端未提供工单信息";
+  const triggerReasons = ticket.info
+    .filter(([label]) => label.includes("触发") || label === "来源")
+    .map(([, value]) => value)
+    .join("；") || ticket.type;
+  const materials = ticket.info
+    .filter(([label]) => label.includes("材料"))
+    .map(([, value]) => value)
+    .join("；") || "当前工单无单独材料引用";
+  const withdrawals = ticket.info
+    .filter(([label]) => label.includes("提现单") || label === "sourceNo")
+    .map(([, value]) => value)
+    .join("；") || "无关联记录（非提现触发）";
+  const history = ticket.hist.map(([time, event]) => `${time} ${displayK5History(event)}`).join("；") || "暂无历史事件";
+  return `工单 ID：${ticket.id}；账户：${ticket.user}；触发原因：${triggerReasons}；金额：${ticket.amt}；累计值：${ticket.cum}；C4 当前实名态：${kycLabel(ticket.kyc)}；提交材料：${materials}；SLA 剩余：${ticket.slaTxt}；关联 D2 提现单：${withdrawals}；完整工单信息：${information}；完整复审历史：${history}。`;
 }
 
 function buildK5ParamValue(key: string, value?: BusinessFormValue): string | null {
@@ -185,16 +244,36 @@ function K5ParamValue({ param }: { param: KRiskParam }) {
 }
 
 export function K5Kyc({ ctx }: { ctx: KCtx }) {
-  const propose = usePropose();
+  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const canRead = authorities.includes("risk_k5_read");
+  const canWrite = authorities.includes("risk_k5_write");
+  const canManual = authorities.includes("risk_k5_ticket_manual");
+  const canPass = authorities.includes("risk_k5_ticket_pass");
+  const canReject = authorities.includes("risk_k5_ticket_reject");
+  const commandAttempts = useRef(new Map<string, { fingerprint: string; commandKey: string }>());
   const overview = ctx.risk.kycReview;
-  const stats = overview?.stats ?? {};
+  const stats: Partial<K5Stats> = overview?.stats ?? {};
   const params = overview?.params ?? [];
   const [filter, setFilter] = useState<Filter>("all");
   const [ticketPage, setTicketPage] = useState(1);
   const [ticketPageSize, setTicketPageSize] = useState(5);
+  const [manualUserSearch, setManualUserSearch] = useState("");
+  const [manualUserOptions, setManualUserOptions] = useState<K5UserOption[]>([]);
+  const [manualUserOpen, setManualUserOpen] = useState(false);
+  const [manualUserLoading, setManualUserLoading] = useState(false);
+  const [manualUserError, setManualUserError] = useState<string | null>(null);
+  const [selectedManualUser, setSelectedManualUser] = useState<K5UserOption | null>(null);
+  const [manualTriggering, setManualTriggering] = useState(false);
+  const [lastManualResult, setLastManualResult] = useState<K5ManualResult | null>(null);
+  const pendingManualTicket = useRef<string | null>(null);
+  const manualUserOptionsId = useId();
   const ticketsPage = overview?.tickets;
   const tickets = ticketsPage?.records ?? [];
   const alerts = overview?.alerts ?? [];
+  const subscription = overview?.subscription;
+  const [draftAlertTypes, setDraftAlertTypes] = useState<string[]>([]);
+  const [draftAlertChannels, setDraftAlertChannels] = useState<string[]>([]);
+  const [subscriptionSaving, setSubscriptionSaving] = useState(false);
   const [sel, setSel] = useState("");
   const pageQuery = useMemo(() => ({
     ticketPageNum: ticketPage,
@@ -202,90 +281,153 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
     ticketFilter: filter === "all" ? undefined : filter,
   }), [filter, ticketPage, ticketPageSize]);
   const cur = tickets.find((t) => t.id === sel) ?? tickets[0];
-  const stat = (key: string) => Number(stats[key] ?? 0);
+  const stat = (key: keyof K5Stats) => Number(stats[key] ?? 0);
 
   useEffect(() => {
-    void ctx.reloadKRisk({ kycReview: pageQuery });
-  }, [ctx.reloadKRisk, pageQuery]);
+    if (canRead) void ctx.reloadKRisk({ kycReview: pageQuery }).catch(() => undefined);
+  }, [canRead, ctx.reloadKRisk, pageQuery]);
 
   useEffect(() => {
     setSel("");
   }, [filter, ticketPage, ticketPageSize]);
 
-  const runAction = async (work: () => Promise<void>, ok: string) => {
+  useEffect(() => {
+    const target = pendingManualTicket.current;
+    if (!target || !tickets.some((ticket) => ticket.id === target)) return;
+    setSel(target);
+    pendingManualTicket.current = null;
+  }, [tickets]);
+
+  useEffect(() => {
+    if (!subscription) return;
+    setDraftAlertTypes(subscription.alertTypes);
+    setDraftAlertChannels(subscription.channels);
+  }, [subscription?.version]);
+
+  useEffect(() => {
+    if (!canManual || !overview) return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      setManualUserLoading(true);
+      setManualUserError(null);
+      ctx.actions.searchK5Users(manualUserSearch)
+        .then((options) => { if (alive) setManualUserOptions(options); })
+        .catch((error) => {
+          if (!alive) return;
+          setManualUserOptions([]);
+          setManualUserError(errorText(error));
+        })
+        .finally(() => { if (alive) setManualUserLoading(false); });
+    }, 240);
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [canManual, ctx.actions, manualUserSearch, overview]);
+
+  const runAction = async (operation: string, fingerprint: string, work: (commandKey: string) => Promise<void>, ok: string) => {
+    const saved = commandAttempts.current.get(operation);
+    const commandKey = saved?.fingerprint === fingerprint ? saved.commandKey : newK1CommandKey();
+    commandAttempts.current.set(operation, { fingerprint, commandKey });
+    let writeConfirmed = false;
     try {
-      await work();
-      await ctx.reloadKRisk({ kycReview: pageQuery });
+      await work(commandKey);
+      writeConfirmed = true;
+      commandAttempts.current.delete(operation);
+      try {
+        await ctx.reloadKRisk({ kycReview: pageQuery });
+      } catch (error) {
+        ctx.toast(`操作已生效但最新状态读取失败，请勿重复提交；请仅重试 K5 读取 · ${errorText(error)}`);
+        return;
+      }
       ctx.toast(ok);
     } catch (error) {
-      ctx.toast(`K5 操作失败 · ${errorText(error)}`);
+      if (writeConfirmed) return;
+      if (error instanceof K1OutcomeUncertainError) {
+        ctx.toast(`K5 结果未知 · 请保留确认框并使用同一请求重试或先核对 · 请求号 ${commandKey}`);
+      } else {
+        commandAttempts.current.delete(operation);
+        ctx.toast(`K5 操作失败 · ${errorText(error)}`);
+      }
+      throw error;
     }
   };
 
   const decide = (t: K5Ticket, pass: boolean) =>
     ctx.openActionConfirm({
       action: `${pass ? "通过" : "驳回"} KYC 复审 · ${t.id}`,
-      detail: `${t.user} · ${t.type} · ${t.amt !== "—" ? t.amt : t.cum}。${pass ? "通过后回写实名和冻结单据的后续流转。" : "驳回后维持冻结并进入退回 / 驳回路径。"}裁决写后端并保留审计。`,
-      amplifies: pass,
-      run: (reason) => {
-        const def = findHighOp(pass ? "k5_ticket_pass" : "k5_ticket_reject")!;
-        void propose(ctx.toast, {
-          action: `${pass ? "通过" : "驳回"} KYC 复审 · ${t.id}`,
-          obj: t.id,
-          before: t.st,
-          after: pass ? "passed" : "rejected",
-          type: "acct",
-          amplifies: pass,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "K5",
-          command: def.buildCommand({ ticketId: t.id }),
-          target: def.buildTarget({ ticketId: t.id }),
-        });
+      detail: `${decisionEvidence(t)}${pass ? "通过后回写 C4，并将关联提现单回到 D2 人工审核队列、G2 兑换回到处理队列；不会直接放行资金。" : "驳回后回写 C4；关联 D2 提现单维持冻结并进入驳回路径，不自动冻结账户或改变 K3。"}当前工单版本 v${t.version}，裁决写入后端并保留审计。`,
+      reasonMax: 200,
+      businessForm: pass ? undefined : {
+        kind: "multi-field",
+        title: "业务表单 · 驳回原因",
+        fields: [{
+          key: "reasonCode",
+          label: "驳回原因",
+          current: REJECT_REASON_CODES[0],
+          inputKind: "select",
+          options: REJECT_REASON_CODES,
+          optionLabels: REJECT_REASON_LABELS,
+          required: true,
+        }],
+      },
+      run: (reason, _newValue, businessValue) => {
+        const reasonCode = pass ? undefined : businessValue?.reasonCode;
+        if (!pass && !reasonCode) throw new Error("请选择驳回原因");
+        const decision = pass ? "passed" : "rejected";
+        return runAction(
+          `decision:${t.id}`,
+          `${decision}:${t.version}:${reasonCode ?? "PASS"}:${reason}`,
+          (commandKey) => ctx.actions.decideK5Ticket(t.id, decision, t.version, reasonCode, reason, commandKey),
+          `${t.id} 已${pass ? "通过" : "驳回"}`,
+        );
       },
     });
 
-  const manualTrigger = () =>
-    ctx.openConfirm({
-      action: "手动补触发复审",
-      detail: "对没踩到自动线但有可疑迹象的账户,手动拉一单增强复审。账户存在性和落库由后端接口校验。",
-      chips: [["仅触发 · 不改状态", "done"], ["后端落库 + 审计", "ready"]],
-      reason: true,
-      input: { label: "用户编号", placeholder: "如 usr_31E8" },
-      okLabel: "确认触发",
-      run: (reason, value) => {
-        const userNo = (value || "").trim();
-        if (!userNo) {
-          ctx.toast("请输入用户编号");
-          return;
-        }
-        const def = findHighOp("k5_ticket_manual")!;
-        void propose(ctx.toast, {
-          action: `手动补触发复审 · ${userNo}`,
-          obj: userNo,
-          before: "—",
-          after: "已触发复审",
-          type: "acct",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "K5",
-          command: def.buildCommand({ userNo }),
-          target: def.buildTarget({ userNo }),
-        });
-      },
-    });
+  const directManualTrigger = async () => {
+    const userNo = selectedManualUser?.userNo ?? "";
+    if (!userNo) throw new Error("请先从真实用户候选中选择账户");
+    const reason = "运营从 K5 队列选择真实用户并手动补触发复审";
+    setManualTriggering(true);
+    try {
+      await runAction(
+        `manual:${userNo}`,
+        `${userNo}:${reason}`,
+        async (commandKey) => {
+          const result = await ctx.actions.createK5ManualTicket(userNo, reason, commandKey);
+          setLastManualResult(result);
+          pendingManualTicket.current = result.ticketId;
+        },
+        `${userNo} 已进入增强复审队列；已有开放工单时已合并原因`,
+      );
+      setFilter("all");
+      setTicketPage(1);
+      setTicketPageSize(50);
+      setSelectedManualUser(null);
+      setManualUserSearch("");
+    } finally {
+      setManualTriggering(false);
+    }
+  };
 
-  const subAlert = () =>
-    ctx.openConfirm({
-      action: "告警订阅配置",
-      detail: "选择接收哪些告警和接收渠道。只影响个人通知,不动业务数据。",
-      chips: [["个人订阅 · 不动业务", "done"]],
-      okLabel: "保存订阅",
-      run: () => ctx.toast("告警订阅已保存"),
-    });
+  const toggleSubscription = (value: string, selected: string[], setSelected: (next: string[]) => void) => {
+    setSelected(selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value]);
+  };
+
+  const saveAlertSubscription = async () => {
+    if (!subscription || !draftAlertTypes.length || !draftAlertChannels.length) {
+      throw new Error("至少选择一个告警类型和接收渠道");
+    }
+    const reason = "运营在 K5 异常告警区更新个人告警订阅配置";
+    setSubscriptionSaving(true);
+    try {
+      await runAction(
+        "alert-subscription",
+        `${draftAlertTypes.join(",")}:${draftAlertChannels.join(",")}:${subscription.version}:${reason}`,
+        (commandKey) => ctx.actions.updateK5AlertSubscription(draftAlertTypes, draftAlertChannels, subscription.version, reason, commandKey),
+        "告警订阅已保存到后端并按新选择生效",
+      );
+    } finally {
+      setSubscriptionSaving(false);
+    }
+  };
 
   const adjParam = (p: KRiskParam) => {
     const businessForm = k5ParamBusinessForm(p);
@@ -296,30 +438,43 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
     ctx.openActionConfirm({
       action: `触发线调整 · ${p.name}`,
       detail: `${p.name} · 当前 ${p.value}${p.unit ? ` ${p.unit}` : ""}。${p.note}`,
-      amplifies: true,
+      reasonMax: 200,
       businessForm,
       run: (reason, _newVal, businessValue) => {
         const value = buildK5ParamValue(p.key, businessValue);
         if (!value) {
-          ctx.toast("K5 触发线配置不完整");
-          return;
+          throw new Error("K5 触发线配置不完整");
         }
-        void runAction(() => ctx.actions.updateK5Param(p.key, value, reason), `${p.name} 已更新为 ${value}`);
+        return runAction(
+          `param:${p.key}`,
+          `${value}:${p.version}:${reason}`,
+          (commandKey) => ctx.actions.updateK5Param(p.key, value, p.version, reason, commandKey),
+          `${p.name} 已更新为 ${value}`,
+        );
       },
     });
   };
 
-  if (ctx.contentLoading && !overview) {
+  if (!canRead) {
+    return <section className="l-card"><div className="l-h"><span className="ttl">无权查看 KYC 复审</span><span className="sub">· 需要 risk_k5_read 权限</span></div></section>;
+  }
+  if (ctx.contentLoading) {
     return <section className="l-card"><div className="l-h"><span className="ttl">K5 数据加载中</span><span className="sub">· 正在读取后端 risk 接口</span></div></section>;
+  }
+  if (ctx.contentError) {
+    return <section className="l-card"><div className="l-h"><span className="ttl">K5 数据加载失败</span><span className="sub">· {ctx.contentError} · 已隐藏旧数据与写操作，避免误处置</span><div className="r"><button className="l-btn" onClick={() => void ctx.reloadKRisk({ kycReview: pageQuery }).catch(() => undefined)}>仅重试 K5</button></div></div></section>;
+  }
+  if (!overview) {
+    return <section className="l-card"><div className="l-h"><span className="ttl">K5 暂无可展示数据</span><span className="sub">· 请重试读取</span></div></section>;
   }
 
   return (
     <div>
       <div className="f-stats">
         <div className="f-stat warn"><div className="k">待复审工单</div><div className="v">{stat("openTickets")}</div><div className="sub">来自后端复审队列</div></div>
-        <div className="f-stat danger"><div className="k">超时工单</div><div className="v">{stat("reviewOverdue")}</div><div className="sub">已自动告警 + 升级</div></div>
+        <div className="f-stat danger"><div className="k">超时工单</div><div className="v">{stat("reviewOverdue")}</div><div className="sub">已自动告警 · 待人工处置</div></div>
         <div className="f-stat"><div className="k">本月已裁决</div><div className="v">{stat("reviewDecidedMonth")}</div><div className="sub">通过 {stat("reviewDecidedPass")} · 驳回 {stat("reviewDecidedMonth") - stat("reviewDecidedPass")}</div></div>
-        <div className="f-stat cyan"><div className="k">复审期冻结金额</div><div className="v">${fmt(stat("reviewFrozenUsd") / 1000)}K</div><div className="sub">对应提现单冻结中</div></div>
+        <div className="f-stat cyan"><div className="k">复审期冻结金额</div><div className="v">${fmt(stat("reviewFrozenUsd"))}</div><div className="sub">对应提现单冻结中</div></div>
       </div>
 
       <section className="l-card">
@@ -336,7 +491,7 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
                 <div className="v">
                   <K5ParamValue param={p} />
                   {p.unit ? <span className="vu">{p.unit}</span> : null}
-                  <button className="l-btn sm mc" onClick={() => adjParam(p)}>调整</button>
+                  {p.adjustable && canWrite ? <button className="l-btn sm mc" onClick={() => adjParam(p)}>调整</button> : null}
                 </div>
                 <div className="s">{p.sub}</div>
               </div>
@@ -364,23 +519,61 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
                 </button>
               ))}
             </div>
-            <button className="l-btn" onClick={manualTrigger}>手动补触发</button>
+            {canManual ? <>
+              <div style={{ position: "relative", minWidth: 230 }}>
+                <input
+                  className="fld"
+                  role="combobox"
+                  aria-label="搜索真实用户"
+                  aria-expanded={manualUserOpen}
+                  aria-controls={manualUserOptionsId}
+                  disabled={manualTriggering}
+                  value={manualUserSearch}
+                  placeholder="搜索真实用户，如 U00000052"
+                  onFocus={() => setManualUserOpen(true)}
+                  onChange={(event) => {
+                    setManualUserSearch(event.target.value);
+                    setSelectedManualUser(null);
+                    setManualUserOpen(true);
+                  }}
+                />
+                {manualUserOpen ? <div id={manualUserOptionsId} role="listbox" style={{ position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", zIndex: 20, display: "grid", gap: 5, padding: 8, border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", boxShadow: "var(--shadow-lg)" }}>
+                  {manualUserLoading ? <div className="note" style={{ padding: 8 }}>正在查询真实用户…</div> : null}
+                  {!manualUserLoading && manualUserError ? <div className="note" style={{ padding: 8, color: "var(--danger)" }}>{manualUserError}</div> : null}
+                  {!manualUserLoading && !manualUserError && !manualUserOptions.length ? <div className="note" style={{ padding: 8 }}>暂无匹配的可复审用户</div> : null}
+                  {!manualUserLoading && !manualUserError ? manualUserOptions.map((option) => <button
+                    type="button"
+                    role="option"
+                    aria-selected={selectedManualUser?.userNo === option.userNo}
+                    className="l-btn"
+                    key={option.userNo}
+                    style={{ justifyContent: "flex-start", textAlign: "left" }}
+                    onClick={() => {
+                      setSelectedManualUser(option);
+                      setManualUserSearch(option.userNo);
+                      setManualUserOpen(false);
+                    }}
+                  >{option.label} · {option.sub}</button>) : null}
+                </div> : null}
+              </div>
+              <button className="l-btn" disabled={manualTriggering || !selectedManualUser} title={!selectedManualUser ? "请先从真实用户候选中选择账户" : "直接建立复审工单并留审计；已有开放工单会合并原因"} onClick={() => directManualTrigger().catch(() => undefined)}>{manualTriggering ? "触发中…" : "手动补触发"}</button>
+              {lastManualResult ? <span className="sub" role="status">{lastManualResult.userNo} · {lastManualResult.merged ? "已并入工单" : "已新建工单"} {lastManualResult.ticketId}</span> : null}
+            </> : null}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1020 }}>
-            <thead><tr><th>工单</th><th>触发类型</th><th>账户</th><th className="num">金额 / 累计</th><th>实名状态(C4)</th><th>复审状态</th><th>时限</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <thead><tr><th>工单</th><th>触发类型</th><th>账户</th><th className="num">金额 / 累计</th><th>实名状态(C4)</th><th>复审状态</th><th>时限</th></tr></thead>
             <tbody>
               {tickets.map((t) => {
                 const [stLb, stTone] = TICKET_ST[t.st];
-                const open = t.st !== "passed" && t.st !== "rejected";
                 return (
                   <tr key={t.id} className="click" onClick={() => setSel(t.id)} style={t.st === "overdue" ? { background: "var(--danger-soft)" } : undefined}>
                     <td className="mono" style={{ color: "var(--ink)", fontWeight: 600 }}>{t.id}</td>
                     <td><span className="bdg dim">{t.type}</span></td>
                     <td className="mono">{t.user}</td>
                     <td className="num mono" style={{ fontWeight: 700 }}>{t.amt !== "—" ? t.amt : t.cum}</td>
-                    <td style={{ fontSize: 12 }}>{t.kyc}</td>
+                    <td style={{ fontSize: 12 }}>{kycLabel(t.kyc)}</td>
                     <td><span className={`bdg ${stTone}`}>{stLb}</span></td>
                     <td>
                       <span className="sla">
@@ -388,20 +581,10 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
                         <span className="t" style={{ color: slaColor(t.slaPct) }}>{t.slaTxt}</span>
                       </span>
                     </td>
-                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {open ? (
-                        <span style={{ display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                          <button className="l-btn sm mc" onClick={() => decide(t, true)}>通过</button>
-                          <button className="l-btn sm mc" onClick={() => decide(t, false)}>驳回</button>
-                        </span>
-                      ) : (
-                        <span className="bdg dim">已裁决</span>
-                      )}
-                    </td>
                   </tr>
                 );
               })}
-              {!tickets.length && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>暂无复审工单</td></tr>}
+              {!tickets.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>暂无复审工单</td></tr>}
             </tbody>
           </table>
         </div>
@@ -425,10 +608,10 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
             <span className="ttl">复审工单 · {cur?.id ?? "暂无"}</span>
             <span className="sub">· 材料引用自实名服务商 · 裁决回写用户域</span>
             <div className="r">
-              {cur && cur.st !== "passed" && cur.st !== "rejected" ? (
+              {cur && (cur.st === "in-review" || cur.st === "overdue") && (canPass || canReject) ? (
                 <>
-                  <button className="l-btn mc" onClick={() => decide(cur, true)}>通过</button>
-                  <button className="l-btn mc" onClick={() => decide(cur, false)}>驳回</button>
+                  {canPass ? <button className="l-btn mc" onClick={() => decide(cur, true)}>通过</button> : null}
+                  {canReject ? <button className="l-btn mc" onClick={() => decide(cur, false)}>驳回</button> : null}
                 </>
               ) : cur ? (
                 <span className={`bdg ${TICKET_ST[cur.st][1]}`}>{TICKET_ST[cur.st][0]}</span>
@@ -437,8 +620,8 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
           </div>
           <div className="tk-split">
             <div>
-              {(cur?.info ?? []).map((kv) => (
-                <div className="kv2" key={kv[0]}><span className="k">{kv[0]}</span><span className="v">{kv[1]}</span></div>
+              {(cur?.info ?? []).map((kv) => displayK5Info(kv[0], kv[1])).map((kv, index) => (
+                <div className="kv2" key={`${kv[0]}-${index}`}><span className="k">{kv[0]}</span><span className="v">{kv[1]}</span></div>
               ))}
             </div>
             <div>
@@ -446,7 +629,7 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
               {(cur?.hist ?? []).map((h, i) => (
                 <div className="alert-row" key={`${h[0]}-${i}`}>
                   <span className="d3" style={{ background: h[2] === "bad" ? "var(--danger)" : h[2] === "warn" ? "var(--warning)" : "var(--ink-4)" }} />
-                  <div className="tx">{h[1]}</div>
+                  <div className="tx">{displayK5History(h[1])}</div>
                   <span className="ts">{h[0]}</span>
                 </div>
               ))}
@@ -457,17 +640,33 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">异常告警</span>
-            <span className="sub">· 命中 / 超时 / 批量集中</span>
-            <div className="r"><button className="l-btn sm" onClick={subAlert}>订阅配置</button></div>
+            <span className="sub">· 新复审命中 / SLA 超时 / 短时大额集中</span>
           </div>
           <div className="l-b">
+            {canWrite && subscription ? <div style={{ display: "grid", gap: 10, padding: "0 0 14px", borderBottom: "1px solid var(--line)", marginBottom: 10 }}>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <b style={{ fontSize: 12 }}>告警类型</b>
+                {ALERT_TYPES.map((type) => <label key={type} className="chip" style={{ cursor: "pointer" }}>
+                  <input type="checkbox" checked={draftAlertTypes.includes(type)} onChange={() => toggleSubscription(type, draftAlertTypes, setDraftAlertTypes)} /> {ALERT_TYPE_LABELS[type]}
+                </label>)}
+              </div>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <b style={{ fontSize: 12 }}>接收渠道</b>
+                {ALERT_CHANNELS.map((channel) => <label key={channel} className="chip" style={{ cursor: "pointer" }}>
+                  <input type="checkbox" checked={draftAlertChannels.includes(channel)} onChange={() => toggleSubscription(channel, draftAlertChannels, setDraftAlertChannels)} /> {ALERT_CHANNEL_LABELS[channel]}
+                </label>)}
+                <button className="l-btn sm" disabled={subscriptionSaving || !draftAlertTypes.length || !draftAlertChannels.length} onClick={() => saveAlertSubscription().catch(() => undefined)}>{subscriptionSaving ? "保存中…" : "保存订阅"}</button>
+                <span className="note">当前账号配置 · v{subscription.version} · 保存后直接生效并留审计</span>
+              </div>
+            </div> : null}
             {alerts.map((a) => (
-              <div className="alert-row" key={a.title + a.timeText}>
+              <div className="alert-row" key={a.eventKey}>
                 <span className="d3" style={{ background: a.tone === "bad" ? "var(--danger)" : "var(--warning)" }} />
                 <div className="tx"><b>{a.title}</b> · {a.body}</div>
                 <span className="ts">{a.timeText}</span>
               </div>
             ))}
+            {!alerts.length ? <div style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>暂无异常告警 · 新命中、超时或短时大额集中后会显示在这里</div> : null}
           </div>
         </section>
       </div>

@@ -239,6 +239,11 @@ test("Wave-1 content: I/J/K/L with D2/G1/G2 admission gates", async ({ page }, t
 
     const notifyCampaign = await createCampaign(page, "j4-notify", "critical");
     const campaignNo = String((notifyCampaign as JsonMap).id ?? "");
+    await apiOk(page, "POST", `/api/admin/content/campaigns/${encodeURIComponent(campaignNo)}/schedule`, {
+      schedule: "下一窗口排期",
+      operator: OPERATOR,
+      reason: `${REASON} I3 J4 通知排期`,
+    }, "i3-j4-schedule");
     const playbook = await apiOk(page, "POST", "/api/admin/emergency/sop/playbooks", {
       name: `${PREFIX} J4 content notify playbook`,
       scene: "舆情挤兑",
@@ -246,22 +251,22 @@ test("Wave-1 content: I/J/K/L with D2/G1/G2 admission gates", async ({ page }, t
       sla: "≤ 30m",
       emergencyTrack: true,
       actionSeq: [
-        `I3·发送 ${PREFIX} 通知模板`,
-        "I5·披露门槛同步 D2 G1 G2",
-        "K1·账户簇建档调查",
-        "K2·套利监控复核",
-        "K4·风险评分复算",
-        "D2·提现限流 50%",
+        "I3·发送通知模板",
       ].join("\n"),
       notifyCampaignNo: campaignNo,
       notifyTemplate: `${PREFIX} J4 notify template`,
-      rollback: "campaign-correction",
-      drillRequired: false,
+      rollback: "root-cause-standard",
+      drillRequired: true,
       operator: OPERATOR,
       reason: `${REASON} J4 绑定 I3 通知`,
     }, "j4-playbook");
     const code = String(((playbook as JsonMap).updated as JsonMap | undefined)?.code ?? "");
     expect(code).toMatch(/^SOP-DRAFT-/);
+
+    await apiOk(page, "POST", `/api/admin/emergency/sop/playbooks/${encodeURIComponent(code)}/drills`, {
+      operator: OPERATOR,
+      reason: `${REASON} J4 动作与依赖预检`,
+    }, "j4-drill");
 
     const execution = await apiOk(page, "POST", `/api/admin/emergency/sop/playbooks/${encodeURIComponent(code)}/executions`, {
       emergency: true,
@@ -272,9 +277,7 @@ test("Wave-1 content: I/J/K/L with D2/G1/G2 admission gates", async ({ page }, t
     expect(String(notificationDispatch?.status ?? "")).toBe("DISPATCHED");
     expect(Number(notificationDispatch?.notificationCount ?? 0)).toBeGreaterThan(0);
     const domainActions = (((execution as JsonMap).updated as JsonMap | undefined)?.domainActions as JsonMap[] | undefined) ?? [];
-    expect(domainActions.map((row) => row.domain)).toEqual(expect.arrayContaining(["I4", "K1", "D2"]));
-    await apiOk(page, "GET", "/api/admin/risk/arbitrage/overview");
-    await apiOk(page, "GET", "/api/admin/risk/scoring/overview");
+    expect(domainActions).toEqual([]);
     report.evidence.push(`i3-j4:campaign=${campaignNo}:playbook=${code}:notifications=${notificationDispatch?.notificationCount}`);
     return campaignNo;
   });

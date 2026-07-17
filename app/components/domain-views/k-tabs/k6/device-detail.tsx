@@ -1,6 +1,6 @@
 "use client";
 
-// K6 client-only；设备详情来自已加载的后端设备行。
+// K6 client-only；打开详情后独立读取服务端设备详情。
 
 /**
  * K6 设备详情 modal(SPEC 1 · PRD §13)。
@@ -9,8 +9,7 @@
  */
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
-import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
-import { decisionTrace } from "@/lib/admin/janus-c2/evaluate";
+import { fetchK6Device } from "@/lib/admin/k6-client";
 import { isFresh, timeAgo } from "@/lib/admin/janus-c2/scoring";
 import {
   ACTION_TYPE_LABEL,
@@ -44,17 +43,39 @@ function KV({ rows }: { rows: [string, React.ReactNode][] }) {
 
 const yn = (b: boolean): string => (b ? "是" : "否");
 
-export function K6DeviceDetail({ device: d, onClose }: { device: Device; onClose: () => void }) {
+export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const operator = useK6Operator();
   const [pending, setPending] = useState<Transition | null>(null);
+  const [detail, setDetail] = useState<Device | null>(null);
+  const [detailStatus, setDetailStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const loadDetail = async () => {
+    setDetailStatus("loading");
+    setDetailError(null);
+    setDetail(null);
+    try {
+      setDetail(await fetchK6Device(device.sid));
+      setDetailStatus("ready");
+    } catch (error) {
+      setDetailStatus("error");
+      setDetailError(error instanceof Error ? error.message : "详情读取失败");
+    }
+  };
+  useEffect(() => { void loadDetail(); }, [device.sid]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") { if (pending) setPending(null); else onClose(); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, pending]);
-  const strategies = useJanusC2Store((s) => s.strategies);
-  const trace = d.latestDecision ?? decisionTrace(d, strategies);
+  const d = detail;
+  const trace = d?.latestDecision;
+  if (!d) {
+    return <div className="k6-modal-overlay" onClick={onClose}><div className="k6c2 k6-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`设备详情 ${device.sid}`}>
+      <div className="k6-modal-head"><code className="sid">{device.sid}</code><button className="k6-modal-close" onClick={onClose} aria-label="关闭"><X size={18} /></button></div>
+      <div className={`k6-empty${detailStatus === "error" ? " k6-error" : ""}`}>{detailStatus === "loading" ? "正在读取服务端设备详情…" : <>详情加载失败，未展示队列摘要代替详情。{detailError} <button className="k6-pgbtn" onClick={() => void loadDetail()}>重试</button></>}</div>
+    </div></div>;
+  }
   const allowed = allowedTransitions(d.status, operator.role);
   const gated = gatedTransitions(d.status, operator.role);
   const m = d.maturity;
@@ -150,7 +171,7 @@ export function K6DeviceDetail({ device: d, onClose }: { device: Device; onClose
             {trace ? (
               <>
                 <div className="k6-chips" style={{ marginBottom: 10 }}>
-                  <span className="k6-bdg dim">策略 · {trace.strategyName} v{trace.strategyVersion}</span>
+                  <span className="k6-bdg dim">策略 · {trace.strategyName ?? trace.strategyId ?? "无生效策略"}{trace.strategyVersion ? ` v${trace.strategyVersion}` : ""}</span>
                   <span className="k6-bdg good">动作 · {ACTION_TYPE_LABEL[trace.action]}</span>
                   <span className="k6-bdg dim">判定 · {timeAgo(trace.decidedAt)}</span>
                   {trace.conflicts?.map((c) => <span key={c} className="k6-bdg warning">冲突 · {c}</span>)}
@@ -169,7 +190,7 @@ export function K6DeviceDetail({ device: d, onClose }: { device: Device; onClose
                 </table>
               </>
             ) : (
-              <div className="k6-explain">当前无生效策略可评估,设备保持白壳继续观察。</div>
+              <div className="k6-explain">服务端尚无判定轨迹，当前不做浏览器侧补算。</div>
             )}
           </div>
 
@@ -204,7 +225,7 @@ export function K6DeviceDetail({ device: d, onClose }: { device: Device; onClose
         </div>
       </div>
     </div>
-    {pending && <ManualOverrideModal device={d} transition={pending} operatorId={operator.id} onClose={() => setPending(null)} />}
+    {pending && <ManualOverrideModal device={d} transition={pending} operatorId={operator.id} onApplied={setDetail} onClose={() => setPending(null)} />}
     </>
   );
 }

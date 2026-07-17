@@ -53,6 +53,8 @@ export interface Rule {
 
 export interface RuleGroup {
   mode: RuleMode;
+  /** 作为加权组的子节点时由服务端参与计算。 */
+  weight?: number;
   /** N_OF_M 模式下需满足的条数。 */
   required?: number;
   /** WEIGHTED_SCORE 模式下的命中阈值。 */
@@ -152,9 +154,9 @@ export interface DecisionRuleResult {
 }
 
 export interface DecisionSnapshot {
-  strategyId: string;
-  strategyName: string;
-  strategyVersion: number;
+  strategyId?: string;
+  strategyName?: string;
+  strategyVersion?: number;
   decidedAt: number;
   action: StrategyActionType;
   ruleResults: DecisionRuleResult[];
@@ -177,7 +179,7 @@ export interface ManualOverride {
   expireAt?: number;
   createdAt: number;
   confirmationMode: ConfirmationMode;
-  roleGate: Role;
+  roleGate?: Role;
   remoteUrlKey?: string;
 }
 
@@ -193,7 +195,7 @@ export interface AuditLog {
   reasonCategory?: string;
   reasonText?: string;
   /** 来源 IP / 后台登录上下文(PRD §19；由后端审计上下文注入)。 */
-  sourceContext?: string;
+  sourceContext?: unknown;
   createdAt: number;
   requestId?: string;
 }
@@ -201,7 +203,7 @@ export interface AuditLog {
 // ===== 会话与设备(PRD §16.1 / §16.2)=====
 export interface Session {
   sessionId: string;
-  sid: string;
+  sid?: string;
   startedAt: number;
   lastSeenAt: number;
   appPhase?: string;
@@ -258,9 +260,9 @@ export interface Device {
   priorityScore: number;
   ua?: string;
   platform: "iOS" | "Android";
-  model: string;
-  osName: string;
-  browser: string;
+  model?: string;
+  osName?: string;
+  browser?: string;
   maturity: MaturitySignals;
   environment: EnvironmentSignals;
   /** 最近命中的策略名 + 版本。 */
@@ -322,4 +324,25 @@ export interface C2Summary {
   manualHold: number;
   manualOverrides: number;
   hitRate: number;
+}
+
+export interface FunnelRow {
+  label: string;
+  count: number;
+  rate: number;
+}
+
+export interface K6DashboardSnapshot {
+  summary: C2Summary;
+  distribution: Record<DeviceStatus, number>;
+  funnel: FunnelRow[];
+  primaryStrategy?: Strategy;
+  health: HealthReport;
+  recentAudit: AuditLog[];
+}
+
+export interface K6ExportFile {
+  fileName: string;
+  format: "csv" | "json";
+  data: HealthReport | FunnelRow[] | AuditLog[];
 }

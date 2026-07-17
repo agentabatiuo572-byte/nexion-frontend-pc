@@ -1111,7 +1111,7 @@
 >
 > **跨域归属(§3.14)在本章的体现**:kill-switch 状态 V1 由 A3 config store 托管(存储端权威)、**V4 本章接管管理操作面**——非 geo-block 的 5 个功能闸由 **J1** 接管、geo-block 闸由 **J2** 接管(权威随之从 A3 迁移至 J1/J2,迁移前后 B5 始终只读单一源、不持开关);篡改防御本体(server-canonical enforcement,§9.11d.2)由各业务域 endpoint 落地,**J3 是其可观测面**(只读监控,不持防御逻辑);风险披露版本切换权威归 **I5**(J4 应急剧本调用 I5 触发 re-ack,不重复持有披露权威);账户冻结态权威归 **C2**、批量簇冻结触发归 **K1**、提现队列处置归 **D2**(J4 应急剧本编排这些域的组合动作,不重复持有其处置权)。**J 域是「统一控制面 + 应急编排」,处置的实际写入落各域权威面经各自操作确认门(确认弹窗 + 理由必填)。**
 >
-> **本章接口段命名总注(贯穿全章 ⑤ 接口段)**:本章净新 admin 端点一律采用规范形 `/api/admin/{domain}/{resource}`(§9.2 endpoint 命名规范①)。**kill-switch 切换端点的 V1→V4 迁移**:V1 由 A3 临时承载 `PUT /api/admin/killswitch?key=`(§2.3 A3⑤ 已标「V1 临时,V4 转 J 域」),**V4 本章落地后,功能闸切换面迁移至 J1 `/api/admin/killswitch/feature/*`、geo-block 切换面迁移至 J2 `/api/admin/killswitch/geo`**;迁移期 A3 `/killswitch` 端点保留为兼容别名(读路径不变,写路径 deprecate 转 J1/J2),统一收口归 §9.2⑥(同一资源读写路径唯一)。各子模块 ⑤ 不重复本注。**统一矩阵端点 vs 各域原生 kill endpoint**:§9.11d.1 各闸另有原生 kill endpoint(`staking/pool/:id/disable`、`genesis/pause`、`exchange/pause`、`trial/{open|close}`、`nex-v2-lock/disable`、`premium/disable` 共 6 个;+ 后台应急新增 `withdraw` 闸 enforce 于 D 域提现原生 endpoint `withdrawals/pause`,合计 7 个),与 J1 统一收口的 `/killswitch/feature/:key` 是「统一矩阵权威面 vs 各域原生 server-enforce 生效面」关系(非同一资源双 endpoint,§9.2⑥):矩阵切换写闸状态权威,各域原生 endpoint 读闸状态做 server enforce。其中 **staking 在矩阵层为单一二元 key(`staking`,整体熔断),而 §9.11d.1 原生 endpoint 为 per-pool `staking/pool/:id/disable`(单档 disable)**——二者粒度不同:矩阵层 `staking` key 表达「整体能力熔断」,单档级 disable 仍由 G1 原生 endpoint + `admin.staking_pool_enabled_changed` 承载、不进 J1 矩阵(见 J1⑤/⑧)。J1⑤ 就此显式点名,避免 Ch17 误判命名分叉或把 per-pool 粒度审计抹平。
+> **本章接口段命名总注(贯穿全章 ⑤ 接口段)**:本章净新 admin 端点一律采用规范形 `/api/admin/{domain}/{resource}`(§9.2 endpoint 命名规范①)。**kill-switch 切换端点的 V1→V4 迁移**:V1 由 A3 临时承载 `PUT /api/admin/killswitch?key=`(§2.3 A3⑤ 已标「V1 临时,V4 转 J 域」),**V4 本章落地后,功能闸切换面迁移至 J1 `/api/admin/emergency/kill-switches/:key`、geo-block 切换面迁移至 J2 `/api/admin/killswitch/geo`**;迁移期 A3 `/killswitch` 端点保留为兼容别名(读路径不变,写路径 deprecate 转 J1/J2),统一收口归 §9.2⑥(同一资源读写路径唯一)。各子模块 ⑤ 不重复本注。**统一矩阵端点 vs 各域原生 kill endpoint**:§9.11d.1 各闸另有原生 kill endpoint(`staking/pool/:id/disable`、`genesis/pause`、`exchange/pause`、`trial/{open|close}`、`nex-v2-lock/disable`、`premium/disable` 共 6 个;+ 后台应急新增 `withdraw` 闸 enforce 于 D 域提现原生 endpoint `withdrawals/pause`,合计 7 个),与 J1 统一收口的 `/api/admin/emergency/kill-switches/:key` 是「统一矩阵权威面 vs 各域原生 server-enforce 生效面」关系(非同一资源双 endpoint,§9.2⑥):矩阵切换写闸状态权威,各域原生 endpoint 读闸状态做 server enforce。其中 **staking 在矩阵层为单一二元 key(`staking`,整体熔断),而 §9.11d.1 原生 endpoint 为 per-pool `staking/pool/:id/disable`(单档 disable)**——二者粒度不同:矩阵层 `staking` key 表达「整体能力熔断」,单档级 disable 仍由 G1 原生 endpoint + `admin.staking_pool_enabled_changed` 承载、不进 J1 矩阵(见 J1⑤/⑧)。J1⑤ 就此显式点名,避免 Ch17 误判命名分叉或把 per-pool 粒度审计抹平。
 >
 > **本章 ⑧ 埋点的 A4 domain/family 状态(blocking 前置,贯穿全章——一句话总表)**:事件 **domain 权威枚举在 §2.4.3**(已含 `admin` 与 `risk`),**family 事件目录在 §2.4.5**(⑤ `risk` / ⑥ `admin`)。本章复用 vs 新增清单一句话表——**复用(无需新增 object_action)**:`admin.killswitch_toggled`(§2.4.5 ⑥,V1 A3④⑧ 已登记;J1/J2 熔断/恢复/geo-block 复用其 `action(enable|disable)` 与 `key` 形态,**但本章为应急触发/恢复核验/子粒度新增可选属性,属 schema 扩展,须走 A4 schema 变更操作确认(§2.4.8,仅超管经确认弹窗),见 ⑧ 与 #6**)、`risk.*` family(§2.4.5 ⑤,J3 复用既有 `risk.*` 信号);**须新增 object_action(blocking)**:`risk.tamper_detected`(J3)· `admin.emergency_playbook_executed` / `admin.emergency_playbook_edited`(J4)。**registry 注册流程、不单列 `admin.feature_killed`/`admin.geo_blocked` 的决策理由、`admin.killswitch_toggled` 属性 schema 扩展工单**;各子模块⑧ 仅回指本注,不再重复全量论证。
 
@@ -1178,7 +1178,7 @@ J1 是全平台 5 个功能闸 kill 开关的**统一权威矩阵面**,持有每
 2. **(b) 单闸详情**:单闸 `[闸 key / 被控能力描述 / 当前状态 / 状态变更史(熔断/恢复时间线 + 每次 operator/reason/触发依据/trigger(manual|auto))/ 联动处置清单(该闸熔断时建议同步执行的动作,如 kill exchange 时提示「检查在途 swap 订单」;kill staking/genesis 时提示「在锁 position / 排放处置方案随单」)/ 恢复前置核验结果(B1 覆盖率快照,仅前置 B1 的闸显示)]`。
 3. **(c) 批量应急熔断面**:监管点名/重大合规事件下的批量熔断入口 `[选择闸(可多选批量熔断)/ 触发依据单选(监管点名 / 挤兑风险 / 安全事件 / 其他)/ 强制 reason(监管事由)/ 影响预览(每闸被控能力与在途量)]`;**仅熔断方向可用**(恢复恒为仅超管 + B1 前置的单闸动作,见 ④),授权角色(风控/财务/超管)单人经确认弹窗 J1-MD3 即时执行,执行后实时告警全体超管 + 全运营账号广播(§15.1 框架)。
 
-**状态机(覆盖失败/边界/并发,自洽设计)**:单闸 `enabled(正常开放)⇄ disabled(已熔断)`——**仅此二态,无审批中间态**(2026-06 操作确认决议:确认即生效)。**恢复(disabled→enabled)对前置 B1 的闸,server 在写入前校验 B1 覆盖率(判据见 ③/⑦),未达即拒绝 `422 COVERAGE_BELOW_REDLINE`(响应携覆盖率快照;弹窗不关、内联阻断提示;闸保持 disabled)**——覆盖率回约束内后由超管重新发起恢复(默认无 override,闭环见 ④/⑦)。并发与幂等:① 同闸切换经 `Idempotency-Key`(§9.11e,server 24h dedup)去重,重复提交同一 key 返回原始结果;② **批量熔断逐闸独立生效(非原子)**,部分失败返回每闸 `status[]`(成功闸独立生效,失败闸列明原因),不因单闸失败回滚已生效闸;③ 自动触发(R1/R2)与人工切换并发时,server 以闸状态写入序为准(后写读到已熔断态即幂等跳过)。
+**状态机(覆盖失败/边界/并发,自洽设计)**:单闸 `enabled(正常开放)⇄ disabled(已熔断)`——**仅此二态,无审批中间态**(2026-06 操作确认决议:确认即生效)。**恢复(disabled→enabled)对前置 B1 的闸,server 在写入前校验 B1 覆盖率(判据见 ③/⑦),未达即拒绝 `422 COVERAGE_BELOW_REDLINE`(响应携覆盖率快照;弹窗不关、内联阻断提示;闸保持 disabled)**——覆盖率回约束内后由超管重新发起恢复(默认无 override,闭环见 ④/⑦)。并发与幂等:① 同闸切换经 `Idempotency-Key`(§9.11e,server 24h dedup)去重,重复提交同一 key 返回原始结果;② **批量熔断先全量预校验、再在同一事务原子执行**,任一闸已关停、待补录或参数非法即返回 409/422，整批不写入，避免运营误以为全部止血但实际只成功一部分;③ 自动触发(R1/R2)与人工切换并发时,server 使用条件更新与待补录状态阻断，后写方读到冲突即拒绝并要求刷新。
 
 **③ 可控参数**
 
@@ -1213,7 +1213,7 @@ J1 是全平台 5 个功能闸 kill 开关的**统一权威矩阵面**,持有每
 
 | 自动触发规则 | 信号源(A4 事件 / 派生指标) | 判据 / 阈值(默认) | 评估窗口 | 触发动作 | 触发的闸 | 补录确认 |
 |---|---|---|---|---|---|---|
-| **R1 提现激增 / 挤兑** | D 域 24h 提现申请额 ÷ 真实储备(**挤兑比率**,与 B5 挤兑预警同口径:分子 `withdraw.submitted` 24h 聚合 / 分母 B1/D3 储备) | > **B5 挤兑红线 `bankrunRed`(默认 40%,B5④ 经确认弹窗可调;J1 引用不另持,引用范式同 recoverGate→B1.redLine)** | 滑动 24h | **自动熔断 + 告警** | `withdraw`(+ 可选 `exchange`,按 disposition) | 30min 内值班补录(J1-MD5) |
+| **R1 提现激增 / 挤兑** | D 域 24h 提现申请额 ÷ 真实储备(**挤兑比率**,与 B5 挤兑预警同口径:分子 `withdraw.submitted` 24h 聚合 / 分母 B1/D3 储备) | ≥ **B5 挤兑红线 `bankrunRed`(默认 40%,B5④ 经确认弹窗可调;J1 引用不另持,引用范式同 recoverGate→B1.redLine)** | 滑动 24h | **自动熔断 + 告警** | `withdraw`(+ 可选 `exchange`,按 disposition) | 30min 内值班补录(J1-MD5) |
 | **R2 对账缺口** | D1 充值对账 / D4 账本 借贷不平差额 | 缺口 > **运营阈值**(默认 $50K,仅超管经 J1-MD4 可调) | 每对账周期 | **自动熔断 + 告警** | `exchange`(停 NEX↔USDT 流出,待对账平) | 30min 内值班补录(J1-MD5) |
 | **R3 篡改告警激增** | J3 `risk.tamper_detected` 全域突增 / 单账户高频 | 单账户 > **10 次/24h**(J3③)或全域环比突增 | 滑动 24h | **仅自动告警 → 人工研判后手动熔断**(J3 不持处置权,§J3⑦) | —(告警喂 B5/K4,人工决定 kill) | —(走手动轨) |
 | **R4 监管指令** | 外部监管点名 / 法务事件(人工录入事由) | 人工判定(监管事由必填) | 即时 | **人工经批量应急熔断发起**(非机器自动) | 相关闸(可多选批量) | —(J1-MD3 确认即留痕) |
@@ -1258,7 +1258,7 @@ J1 是全平台 5 个功能闸 kill 开关的**统一权威矩阵面**,持有每
 
 ##### [J1-MD3] 批量应急熔断确认
 - **功能**:监管点名/重大合规事件下对多闸一次性熔断(仅 disable 方向),确认即逐闸独立生效 + 广播。
-- **布局结构**:1. **信息区**:已选闸清单(每闸 key + 被控能力 + 当前活跃量)。2. **影响预览区**:警示条「N 个能力将同时全局停用并广播」;逐闸影响行(同 J1-MD1 影响项);批量非原子提示「逐闸独立生效,部分失败不回滚已生效闸」。3. **输入区**:触发依据单选(监管点名 / 挤兑风险 / 安全事件 / 其他,必选)+ regulatoryContext(监管事由/文号,单行文本,必填)+ disposition_plan(含 staking/genesis 时必填)+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认批量熔断(警示色)。
+- **布局结构**:1. **信息区**:已选闸清单(每闸 key + 被控能力 + 当前活跃量)。2. **影响预览区**:警示条「N 个能力将同时全局停用并广播」;逐闸影响行(同 J1-MD1 影响项);明确提示「系统先校验全部目标，任一冲突则整批不执行」。3. **输入区**:触发依据单选(监管点名 / 挤兑风险 / 安全事件 / 其他,必选)+ regulatoryContext(监管事由/文号,单行文本,必填)+ disposition_plan(含 staking/genesis 时必填)+ reason(多行文本,必填,8–200 字)。4. **按钮区**:取消 / 确认批量熔断(警示色)。
 - **错误态**:422(触发事由空)/ 400 `REASON_REQUIRED` / 409(部分闸已 disabled,返回每闸 `status[]`,弹窗内逐闸标注)/ 403(含 enable 方向请求拒绝)。
 - **成功反馈**:弹窗关闭;矩阵逐闸状态灯更新(部分失败逐闸标注原因);toast「N 闸已熔断 · 已广播 · 已记审计」;每闸产 `admin.killswitch_toggled`;实时告警全体超管 + 全运营账号广播;B5 同步。
 
@@ -1276,12 +1276,13 @@ J1 是全平台 5 个功能闸 kill 开关的**统一权威矩阵面**,持有每
 
 **⑤ 接口**
 - `POST /api/admin/killswitch/auto-rules/eval`(server 内部触发,非前端)— R1/R2 自动熔断由 server 定时/事件驱动评估命中后调用 feature 写入(`trigger=auto`、免预确认 + 30min 补录确认窗),产 `admin.killswitch_toggled`(`trigger=auto` / `rule=R1|R2`)。
-- `GET /api/admin/killswitch/matrix` — 返回 5 功能闸矩阵 `[{ key, controlledCapability, enabled, lastChangedTs, operator, triggerBasis, trigger(manual|auto), pendingAutoConfirm(bool,待补录标记), coveragePrecheckRequired, coverageImpactHint }]`，**server-canonical**（闸状态服务端权威,client 仅读状态灯渲染）。
-- `PUT /api/admin/killswitch/feature/:key` — 单功能闸熔断/恢复 `{ key, enabled, reason, triggerBasis(熔断时必填), disposition_plan? }`，`:key ∈ {withdraw, staking, genesis, exchange, trial}`（`withdraw` 为后台应急新增闸,enforce 于 D 域提现 endpoint）；**请求体须携 `Idempotency-Key`（server 24h dedup,§9.11e）与 reason（缺失 400 `REASON_REQUIRED`）；操作者经确认弹窗（J1-MD1/MD2）直接调用,server 按 key 与方向校验执行角色资质——熔断（→disabled）= 风控/财务/超管,恢复（→enabled）= 仅超管**(对齐 §1.8 原则二.4 + v1 A3④);恢复对前置 B1 的闸（withdraw/exchange/staking/genesis）server 前置校验 `coverageRatio ≥ recoverGate`（**未达返回 422 `COVERAGE_BELOW_REDLINE` + 覆盖率快照,闸保持 disabled**）;写入与审计同事务,熔断动作另触发全运营账号广播;产 `admin.killswitch_toggled`。**V4 接管 A3 `/killswitch` 功能闸写路径（§9.2⑥ 收口）。**
+- `GET /api/admin/emergency/kill-switches` — 返回 5 功能闸矩阵 `[{ key, controlledCapability, enabled, lastChangedTs, operator, triggerBasis, trigger(manual|auto), pendingAutoConfirm(bool,待补录标记), coveragePrecheckRequired, coverageImpactHint }]`，**server-canonical**（闸状态服务端权威,client 仅读状态灯渲染）。
+- `GET /api/admin/emergency/kill-switches/alerts` — 返回五闸最小状态（key/name/enabled/emergency/lastChange）与自动关停待补录，不含阈值、配置或控制权限，仅要求已登录。PC 对所有运营账号轮询该快照，使高敏动作广播不依赖 J1 页面读取权限。
+- `PUT /api/admin/emergency/kill-switches/:key` — 单功能闸熔断/恢复 `{ key, enabled, reason, triggerBasis(熔断时必填), disposition_plan? }`，`:key ∈ {withdraw, staking, genesis, exchange, trial}`（`withdraw` 为后台应急新增闸,enforce 于 D 域提现 endpoint）；**请求体须携 `Idempotency-Key`（server 24h dedup,§9.11e）与 reason（缺失 400 `REASON_REQUIRED`）；操作者经确认弹窗（J1-MD1/MD2）直接调用,server 按 key 与方向校验执行角色资质——熔断（→disabled）= 风控/财务/超管,恢复（→enabled）= 仅超管**(对齐 §1.8 原则二.4 + v1 A3④);恢复对前置 B1 的闸（withdraw/exchange/staking/genesis）server 前置校验 `coverageRatio ≥ recoverGate`（**未达返回 422 `COVERAGE_BELOW_REDLINE` + 覆盖率快照,闸保持 disabled**）;写入、持久事件与审计同事务,熔断动作生成全运营账号广播事件;产 `admin.killswitch_toggled`。
   > **staking 矩阵 key vs 原生 per-pool disable(§9.2⑥ 收口,非命名分叉)**:本 endpoint 的 `:key=staking` 为**矩阵层整体熔断**(写 `staking` 闸状态权威);§9.11d.1 原生 `POST /api/admin/staking/pool/:id/disable` 为**单档 disable**(per-pool 粒度),由 G1 承载 + 产 `admin.staking_pool_enabled_changed`(per-pool 审计)、**不进 J1 矩阵**。Ch17 单 key 收敛勿把 per-pool 粒度审计抹平——矩阵层 `staking` 闸与 G1 单档 disable 是「整体能力熔断 vs 单档治理」两粒度并存。
-- `POST /api/admin/killswitch/feature/emergency` — 批量应急熔断（可多闸批量,仅熔断方向）`{ keys:[...], reason, triggerBasis, regulatoryContext, disposition_plan? }`；**server 校验 caller 角色（风控/超管)+ 方向为熔断（仅 disable,enable 返回 403）+ 触发事由非空（事由空返回 422）+ reason 非空（400 `REASON_REQUIRED`）**;操作者经确认弹窗 J1-MD3 直接调用,**确认即逐闸独立生效（批量非原子,返回每闸 `status[]`),写入与审计同事务,执行后实时告警全体超管 + 全运营账号广播（经 I3 critical 通道,§11.2.4）**;每闸产 `admin.killswitch_toggled`。携 `Idempotency-Key`（同向重复发起去重）。
+- `POST /api/admin/emergency/kill-switches/emergency-disable` — 批量应急熔断（可多闸批量,仅熔断方向）`{ keys:[...], reason, triggerBasis, regulatoryContext, disposition_plan? }`；**server 校验 caller 角色（风控/超管)+ 方向为熔断 + 目标闸全部在线且无待补录 + 触发事由非空（事由空返回 422）+ reason 非空（400 `REASON_REQUIRED`）**;操作者经确认弹窗 J1-MD3 直接调用,**全量预校验后在一个事务中原子关停；任一冲突整批拒绝，写入、持久事件与审计同事务**;每闸产 `admin.killswitch_toggled`。携 `Idempotency-Key`（同向重复发起去重）。
 
-> **统一矩阵端点 vs 各域原生 kill endpoint(§9.2⑥ 收口,非双 endpoint)**:`/api/admin/killswitch/feature/:key` 是矩阵权威面;§9.11d.1 各域原生 kill endpoint(`staking/pool/:id/disable`、`genesis/pause`、`exchange/pause`、`trial/{open|close}` 共 4 个;+ 后台应急新增 `withdraw` 闸的 D 域 `withdrawals/pause`,合计 5 个)为**被控生效面 server enforce 入口**,矩阵切换后由各域 endpoint 读闸状态做 enforce。二者非同一资源双 endpoint(章首接口段命名总注已声明),Ch17 收口按此核对。
+> **统一矩阵端点 vs 各域原生 kill endpoint(§9.2⑥ 收口,非双 endpoint)**:`/api/admin/emergency/kill-switches/:key` 是矩阵权威面;§9.11d.1 各域原生 kill endpoint(`staking/pool/:id/disable`、`genesis/pause`、`exchange/pause`、`trial/{open|close}` 共 4 个;+ 后台应急新增 `withdraw` 闸的 D 域 `withdrawals/pause`,合计 5 个)为**被控生效面 server enforce 入口**,矩阵切换后由各域 endpoint 读闸状态做 enforce。二者非同一资源双 endpoint(章首接口段命名总注已声明),Ch17 收口按此核对。
 
 server-canonical；闸状态服务端权威,**熔断后对应能力 endpoint 在服务端直接拒绝请求**（§9.11d.2 篡改防御:client localStorage / DevTools 改 flag 无效,真值在 server,killed 功能 server 拒绝而非仅 UI 隐藏）；client 仅读 enabled 灯渲染。
 
@@ -1456,6 +1457,8 @@ server-canonical；geo-block 由 **server 边缘判 IP**（§9.11d.1,纯 IP 判�
 **① 目的 & 对齐**
 J3 是**纯运营内部监控看板**——监测 client 篡改尝试被 server-canonical 防御拦截的计数与告警,server-canonical enforcement 是防御本体、**J3 是其可观测面**。对齐前端 **§9.11d.2**(Client-tamper Defense:localStorage 篡改路径表——`useFreeTrial` 重置无限领试用 / `useWalletPairing` 跳过 KYC-Express / `useRiskDisclosure.accepted` 跳过强制阅读 / `useSecurity.twoFactorEnabled` 伪造已开 2FA / `useProductPhaseOverride.pinned`+`?dev=1` 解锁高 multiplier / `MAX_DEVICES` 改常量多设备 yield / `_devSeed*` 伪造老化设备 / OTP client 仅正则 / Bills client push 伪造账单 / Order·Withdrawal·Bill·Card ID client mint,共 **10 类**)+ **§9.11d.3**(Feature Flag/A-B 必须 server-driven,共 **5 类**:`chargeFailRate` client Math.random / Unilevel 周 multiplier / Sign-in lucky multiplier / PHASES 全表 / NEX 价格曲线)。服务的业务目标:把「server 已拦截的 client 篡改尝试」转为可观测信号——篡改频次/路径/账户分布的运营内部监控与告警,喂 K4 风险评分 + B5 雷达(§1.8 原则三:篡改尝试本身可观测)。**J3 不持任何防御逻辑**(防御本体在各业务域 server endpoint 的 canonical 校验),仅聚合篡改拦截事件做监控。
 
+> **当前采集覆盖（2026-07-15）**：A4 登记的 11 类 `tamper_path` 已全部在服务器权威边界完成真实拒绝事件接线，即 **11/11 已接线**。除既有风险披露入口外，试用资格、KYC/钱包配对、用户 2FA、产品阶段、设备槽位、设备开发种子/收益、OTP、客户端账单推送、客户端业务 ID 和试用扣款结果均由对应 `/api/*` 业务入口校验并 emit；客户端不能提交 `is_server_authoritative`。零事件只代表所选窗口内没有服务器拒绝记录，不代表客户端从未尝试篡改。
+
 **② 后台界面**
 篡改总览 + 路径分布 + 账户告警,三视图（**纯只读监控,无处置控件**）:
 
@@ -1489,18 +1492,18 @@ J3 是**纯运营内部监控看板**——监测 client 篡改尝试被 server-
 | 篡改告警喂 K4 风险评分 | **开启**（篡改信号作为 K4 风险评分输入） | on/off | 实时 | 无（K4 内部消费） |
 | 监控时间窗（`window`） | **`window ∈ {24h, 7d, 30d}`（固定窗集,非任意区间）** | 固定窗集 {24h, 7d, 30d} | 实时 | 无 |
 
-> **默认值口径**：J3 监控阈值（10 次/24h）为净新运营设计——12 月节奏表 §6 与前端 §9.11d.2 均未覆盖篡改告警阈值（§9.11d.2 仅定义防御本体、未定义监控阈值；§1.7 应急/监控参数空白），本表按「单账户高频篡改 = 异常信号」运营逻辑设默认并注明依据（§1.3 默认值口径）。**计数口径**：阈值按**单账户跨所有 tamper_path 合计拦截次数**计；窗口为**滑动 24h**；单 path 细分阈值如需另设,标 V5 扩展。**监控时间窗为固定窗集 `{24h, 7d, 30d}`**(非任意区间),使 J3⑤ 各 GET 接口 `?window=` 入参校验有据(合法值 ∈ {24h,7d,30d})。**J3 不改变任何防御行为**（防御阈值/逻辑在各业务域 server endpoint）,仅配置监控告警敏感度。
+> **默认值口径**：J3 监控阈值（10 次/24h）为净新运营设计——12 月节奏表 §6 与前端 §9.11d.2 均未覆盖篡改告警阈值（§9.11d.2 仅定义防御本体、未定义监控阈值；§1.7 应急/监控参数空白），本表按「单账户高频篡改 = 异常信号」运营逻辑设默认并注明依据（§1.3 默认值口径）。**计数口径**：阈值按**单账户跨所有 tamper_path 合计拦截次数**计；配置基准为**滑动 24h**，选择 7d / 30d 时按 7 / 30 倍等比例阈值重算，维持相同频率口径并让路径、账户、分页和导出服从同一筛选窗口；单 path 细分阈值如需另设,标 V5 扩展。**监控时间窗为固定窗集 `{24h, 7d, 30d}`**(非任意区间),使 J3⑤ GET 接口 `?window=` 入参校验有据(合法值 ∈ {24h,7d,30d})。所选时间窗、账户页码与页大小必须写入当前地址参数；刷新、重新登录及跨域返回后按该参数重新读取服务器权威数据。**J3 不改变任何防御行为**（防御阈值/逻辑在各业务域 server endpoint）,仅配置监控告警敏感度。
 
 **④ 操作动作**
 
 | 动作 | 执行权 | 确认弹窗 | 审计点 |
 |---|---|---|---|
 | 查看篡改总览 / 路径分布 / 账户告警 | 风控 / 超管 / 只读审计 | 否（只读监控） | admin 审计事件（查看范围 / operator） |
-| 配置篡改告警频次阈值 / 喂 K4 开关 | 风控(lead)/ 超管 | J3-MD1(理由必填;监控敏感度变更影响风控信号) | admin 审计事件（阈值 / before / after / operator / reason） |
+| 配置篡改告警频次阈值 / 喂 K4 开关 | 超管（当前 RBAC 尚无可验证的风控 lead 层级） | J3-MD1(理由必填;监控敏感度变更影响风控信号) | admin 审计事件（阈值 / before / after / operator / reason） |
 | 跳转 K（对高频篡改账户发起风控处置） | 风控（在 K 域执行处置） | （处置在 K 域经各自确认弹窗契约） | 处置审计落 K 域（C2 冻结 / K1 批量簇） |
 | 导出篡改监控报表 | 风控 / 只读审计（脱敏） | 否（只读脱敏导出,直接生效留痕） | admin 审计事件（导出范围 / operator） |
 
-> **J3 不持处置权（核心约束）**：J3 是纯只读监控看板——高频篡改账户的实际处置（冻结/批量簇）落 **C2/K1**（§3.14:账户冻结权威归 C2、批量簇触发归 K1）,在目标域经各自操作确认门(确认弹窗 + 理由必填)。J3 仅「监控 + 告警 + 跳转」,这是「驾驶舱/监控面不持处置权」在篡改防御域的体现（与 B5 风险雷达同构）。J3 自身可配置的仅监控敏感度（告警阈值）,执行权=风控(lead)/超管,经确认弹窗 J3-MD1(2026-06 操作确认决议:原风控 lead 复核层级转为执行门槛)。
+> **J3 不持处置权（核心约束）**：J3 的总览、分布和账户告警是纯只读监控——高频篡改账户的实际处置（冻结/批量簇）落 **C2/K1**（§3.14:账户冻结权威归 C2、批量簇触发归 K1）,在目标域经各自操作确认门(确认弹窗 + 理由必填)。J3 仅「监控 + 告警 + 跳转」,这是「驾驶舱/监控面不持处置权」在篡改防御域的体现（与 B5 风险雷达同构）。独立的监控敏感度配置不属于账户处置；当前 RBAC 没有可验证的 lead 子层级，因此只授予超管，待 A1 建立风控 lead 身份模型后再按评审结论扩权。
 
 **④a 交互与弹窗规格**
 
@@ -1509,8 +1512,8 @@ J3 是**纯运营内部监控看板**——监测 client 篡改尝试被 server-
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
 | 查看总览 / 路径分布 / 账户告警 | ②(a)/(b)/(c) 导航 tab + 筛选条 | 链接 / 筛选控件 | 风控/超管/只读审计可见(增长/内容/客服不可见) | 跳转/就地刷新,无弹窗 |
-| 配置告警阈值 / 喂 K4 开关 | ②(c)告警配置卡「编辑」 | 次按钮 | 仅风控 lead/超管渲染 | 打开弹窗 J3-MD1 |
-| 跳转 K 域处置 | ②(c)告警行内「去 K 域处置」 | 行内链接 | 风控渲染;仅 flagged/escalated 态告警行显示 | 跳转 C2/K1 对应处置面,无弹窗(处置确认在目标域) |
+| 配置告警阈值 / 喂 K4 开关 | ②(c)告警配置卡「编辑」 | 次按钮 | 当前仅超管渲染；风控 lead 待 A1 身份模型落地后扩权 | 打开弹窗 J3-MD1 |
+| 跳转 K 域处置 | ②(c)告警行内「去 K 域处置」 | 行内链接 | 具备目标页读取与对应动作权限时渲染;仅 flagged/escalated 态告警行显示 | 携用户编码/簇编码跳转 C2/K1；C2 以 `user_c2_read` 专用精确查询取得目标账户，K1 自动跨服务端分页定位目标簇；未找到或读取失败必须明示且不得默认选中其他对象。无弹窗(处置确认在目标域) |
 | 导出篡改监控报表 | ②(a)列表顶部「导出」 | 次按钮 | 风控/只读审计渲染;当前筛选结果为空时置灰 | 直接生效:按当前筛选范围生成脱敏导出 + toast + 留痕 |
 
 **(2) 弹窗规格**
@@ -1522,18 +1525,18 @@ J3 是**纯运营内部监控看板**——监测 client 篡改尝试被 server-
 
 | 字段 | 控件类型 | 必填 | 校验 | 默认值 |
 |---|---|---|---|---|
-| 告警频次阈值 | 数字输入(1–100 次/窗口) | 是 | ③ 表范围;与当前值相同且开关未动则置灰 | 当前值 |
+| 告警频次阈值 | 整数输入(1–100 次/窗口,步长 1) | 是 | 必须为整数且满足③表范围;与当前值相同且开关未动则置灰 | 当前值 |
 | 喂 K4 开关 | 开关(on/off) | — | — | 当前态 |
 | reason | 多行文本 | 是 | 8–200 字;server 空值 400 `REASON_REQUIRED` | 空 |
 
-- **错误态**:422(超 ③ 表范围,server 返回合法区间)/ 400 `REASON_REQUIRED` / 409(配置已被他人变更,提示刷新)/ 403(非风控 lead/超管)。
-- **成功反馈**:弹窗关闭;配置卡就地更新;toast「监控配置已生效 · 已记审计」;admin 审计事件落 A2;实时告警超管与风控 lead。
+- **错误态**:422(非整数或超 ③ 表范围,server 返回合法区间)/ 400 `REASON_REQUIRED` / 409(配置已被他人变更,提示刷新)/ 403(非超管)。网络中断或响应丢失时前端保留原幂等键，不宣称失败或成功，提示按同一请求重试或刷新后以服务端状态/审计为准。
+- **成功反馈**:弹窗关闭;配置卡就地更新;toast「监控配置已生效 · 已记审计」;admin 审计事件落 A2;持久 outbox 由专用消费者写成功回执后进入顶部铃铛的最近 24 小时超管告警源。当前不向整个 RISK 角色广播“lead 告警”，待 A1 建立 lead 身份模型后再扩展精确收件人。
 
 **⑤ 接口**
-- `GET /api/admin/tamper/overview?window=` — 返回篡改拦截总览 `{ window, totalBlocked, deltaPrev, topPaths:[...] }`，**server-canonical**（拦截计数派生自 server 拦截事件,§9.11d.2；`window ∈ {24h,7d,30d}`,非法值返回 400）。
-- `GET /api/admin/tamper/paths?window=` — 返回路径分布 `[{ path, attackEffect, blockedCount, accountCount }]`（path 枚举对齐 §9.11d.2 的 10 类 + §9.11d.3 的 chargeFailRate;`window ∈ {24h,7d,30d}`）。
-- `GET /api/admin/tamper/accounts?threshold=` — 返回账户级告警 `[{ userId, tamperPaths:[...], blockFreq, fedToK4(bool), b5Triggered(bool) }]`。
-- `PUT /api/admin/tamper/alert-config` — 配置告警频次阈值 / 喂 K4 开关（操作者经确认弹窗 J3-MD1 直接调用,body 必携 `{reason}`,缺失 400 `REASON_REQUIRED`;携 `Idempotency-Key`）。
+- `GET /api/admin/emergency/tamper/overview?window=&accountPage=&accountPageSize=` — 在同一服务端时间快照内返回总览、三窗口趋势、当前窗口路径分布、按等比例阈值重算的账户告警和数据库分页（总数与页数由独立 count 查询得出，不设 200 条静默截断），另返回登记/已接线/待接线路径覆盖，以及完整的候选阈值 1–100 近 7 天回放结果，供 J3-MD1 展示服务端真实影响预览；**server-canonical**（`window ∈ {24h,7d,30d}`,非法值返回 422）。
+- `GET /api/admin/emergency/tamper/config-alerts` — 仅超管配置权限可读；只返回最近 24 小时内已发布且专用消费者成功回执的配置变更 outbox，作为顶部铃铛的持久告警源。
+- `PUT /api/admin/emergency/tamper/alert-config` — 配置告警频次阈值 / 喂 K4 开关（操作者经确认弹窗 J3-MD1 直接调用；body 必携 `{threshold,feedK4,expectedThreshold,expectedFeedK4,reason}`，携 `Idempotency-Key`；缺少页面快照、原值提交或并发冲突均不写业务状态并留拒绝审计）。
+- `POST /api/admin/emergency/tamper/reports` — 按当前固定窗口生成后端脱敏 CSV；空窗口拒绝，导出与必达审计同事务，返回文件名、类型和 Base64 内容。
 
 server-canonical；**J3 所有数据派生自 server 拦截事件流（`risk.tamper_detected`）**,非临时 SQL；防御本体（server-canonical enforcement）在各业务域 endpoint,J3 只读其拦截信号。
 
@@ -1542,16 +1545,16 @@ server-canonical；**J3 所有数据派生自 server 拦截事件流（`risk.tam
 | 动作 | 超管 | 财务 | 风控 | 增长 | 内容 | 客服 | 只读审计 |
 |---|---|---|---|---|---|---|---|
 | 查看篡改总览 / 路径 / 账户告警 | ✅ | — | ✅ | — | — | — | ✅(只读) |
-| 配置告警阈值 / 喂 K4 开关 | ✅ | — | ✅(lead) | — | — | — | — |
+| 配置告警阈值 / 喂 K4 开关 | ✅ | — | —（待 A1 lead 身份模型落地后再评审扩权） | — | — | — | — |
 | 导出篡改监控报表 | ✅ | — | ✅ | — | — | — | ✅(脱敏) |
 
-> **可见性收敛**：篡改监控为风控敏感视图,仅风控 / 超管 / 只读审计可见（增长/内容/客服不可见）。配置告警阈值执行权=风控(lead)/超管(单人确认弹窗 + 理由必填)。
+> **可见性收敛**：篡改监控为风控敏感视图,仅风控 / 超管 / 只读审计可见（增长/内容/客服不可见）。配置告警阈值当前执行权=超管（单人确认弹窗 + 理由必填）；不得把整个 RISK 角色等同于 lead。
 
 审计记录字段：统一 schema（§2.x A2 ⑥）`操作者(operator) / 角色 / 动作(view|alert_config|export) / 对象(篡改路径/告警阈值) / 前值 / 后值 / 理由(reason) / IP / 时间(ms)`。只读审计可追溯篡改监控配置变更史 + 导出记录。
 
 **⑦ 风控 & 联动**
 - **server-canonical 是防御本体,J3 是可观测面（核心约束）**：J3 监控的篡改尝试**本身就是 client 试图绕过 server 权威**（§9.11d.2:localStorage/DevTools 改 state 试图绕过 server canonical）——这些尝试被各业务域 server endpoint 拦截（防御本体）,J3 聚合拦截事件做监控。**J3 不持防御逻辑**（不改变任何 enforce 行为）,与 J1 kill enforce / I5 ack 校验等防御本体协作而非竞争。
-- **篡改告警喂 K4 + B5,与 K4 提分口径不分叉(§1.8 原则三:篡改尝试可观测)**:高频篡改账户的 `risk.tamper_detected` 信号**喂 K4 风险评分**（§3.14:风险评分权威归 K4,K4 消费原始事件按其自有权重提分）+ **喂 B5 风险雷达**（异常账户维度）;处置由 K4/B5 路由至 C2/K1。**J3 告警阈值(10次/24h)仅用于运营监控看板视觉告警敏感度,不构成 K4 提分独立判据**——K4 消费原始 `risk.tamper_detected` 事件按其自有权重提分,J3 与 K4 共享同一事件源、各自口径不分叉（避免「J3 已告警但 K4 未提分」口径分叉）。
+- **篡改告警喂 K4 + B5,与 K4 提分口径不分叉(§1.8 原则三:篡改尝试可观测)**:`risk.tamper_detected` 消费事务实际写入 K4 用户风险分与贡献记录（K4 按自己的权重提分），并把同一结构化 `nx_risk_signal` 作为 B5 雷达数据源；J3 账户行的“已喂 K4 / 已触发 B5”来自这两个下游写入的逐事件回执，不按事件数或本地推断伪造。**J3 告警阈值(10次/24h)仅用于运营监控看板视觉告警敏感度,不构成 K4 提分独立判据**；关闭“喂 K4”只停止 K4 分值/贡献写入，B5 仍接收该权威篡改信号。
 - **与各业务域防御点协作**：J3 聚合的拦截事件来自各域 server endpoint（trial eligibility / kyc status / otp verify / devices activate / phase 决策 / charge / session 风控降级面 等,§9.11d.2/d.3）；**J3 不重复持有这些 endpoint 的防御逻辑**,仅消费其拦截信号。
 - **与 I5 / C 域安全设置联动**：`useRiskDisclosure.accepted` 篡改路径的拦截 = I5 disclosure ack server 重校验（I5⑦:gated action server 重校验 ack 态）,J3 监控该路径拦截计数、I5 持 ack 防御本体；`useSecurity.twoFactorEnabled` 篡改路径的拦截点在 session token claim / 认证降级面（**用户侧 C 域安全设置,非 A1 运营账号 2FA**,二者独立）,J3 监控该路径拦截计数、C 域/session 层持防御本体。
 - **篡改防御（§9.11d）**：J3 数据源（拦截事件）server 权威 + append-only 审计；J3 自身为只读监控,无篡改面。
@@ -1563,9 +1566,9 @@ server-canonical；**J3 所有数据派生自 server 拦截事件流（`risk.tam
     - **§9.11d.2 的 10 类逐条 emit**（含 `Bills` 与 `ID-mint` 为**两个独立 path 取值**,各自 `blocked_at_endpoint` 不同:`Bills` = 账本二次入账校验拒绝 client push、`ID-mint` = server 单源 ID mint;勿在 emit 时误并）;
     - **§9.11d.3 中仅 `chargeFailRate` 一类入 tamper 计数**（替换为拦截类 server-only `POST /trial/charge`,§9.11d.3 row1）;**其余 4 类（Unilevel 周 multiplier / Sign-in lucky multiplier / PHASES 全表 / NEX 价格曲线)归 A3 feature-flag 治理 / 各域 server-driven 迁移**（§9.11d.3 替换列为「server feature flag / server-driven price feed / phase-config override」迁移类——迁移完成即无 client 篡改面可观测）,**不强行登记为 J3 拦截事件**。
     - **2FA 路径采集稀疏注**:`useSecurity.twoFactorEnabled` 伪造的 emit 主体落 **session/认证降级面(用户侧 C 域安全设置,非 A1 运营账号)**;若该路径无 server-side hard-gate(2FA 仅影响风控降级、非资金 endpoint 硬门),则其 tamper 计数可能**稀疏/缺采**——J3 路径分布对该 path 不应期望恒有数据。
-    **须 A4 registry 新增 object_action（blocking 工单）**；**J3 消费此事件做总览/路径/账户聚合**。
+    **A4 registry 已登记 `risk.tamper_detected`**；**J3 消费此事件做总览/路径/账户聚合**。11 类登记路径均已在真实服务器业务边界接线并通过拒绝分支测试；覆盖状态由发布时注册表返回 `complete`，不得用手工补数或客户端自报事件替代。
   - 复用既有 `risk.*` 信号（§2.4.5 ⑤）:`risk.multi_account_flagged` / `risk.trial_cycle_detected` 等与篡改组合路径相关的信号（§9.11e.1 组合攻击）J3 可交叉呈现。
-- **产生**：仅 admin 监控配置审计事件（告警阈值变更 / 导出,落 A2）；**J3 不产生新业务事件**（其呈现的是各域产生的 `risk.tamper_detected`）。
+- **产生**：admin 监控配置/导出审计落 A2；配置成功另产生持久 `ADMIN_J3_TAMPER_CONFIG_CHANGED` outbox 告警事件，专用消费者成功回执后由 `/tamper/config-alerts` 提供给超管顶部铃铛。J3 不产生新的用户业务事件（其呈现的是各域产生的 `risk.tamper_detected`）。
 - **喂给**：J3 聚合后的篡改信号**喂 K4 风险评分**（篡改频次提分）+ **B5 风险雷达**（异常账户维度）+ **L 域 BI**（篡改趋势报表,BI cutover 后）。
 
 ---
@@ -2443,7 +2446,7 @@ flowchart LR
 | G | `PUT /api/admin/genesis/{economics\|dividend-rate}` · `POST /api/admin/genesis/pause` · `GET/PUT /api/admin/market/curve` · `POST /api/admin/market/advance` · staking/exchange config + kill | Ch12 |
 | H | `GET/PUT /api/admin/trial/config` · `POST /api/admin/trial/sessions/:userId/{cancel\|charge}` · quest/活动/签到/里程碑 config | Ch7/Ch13 |
 | I | `GET/PUT /api/admin/content/*` · `PUT /api/admin/stella/cadence-config` · `PUT /api/admin/legal/risk-disclosure` · `/api/admin/learn/*` · `/api/admin/conversation/*` | Ch14 |
-| J | `PUT /api/admin/killswitch/feature/:key` · `PUT /api/admin/killswitch/geo` · 篡改监控只读 · 应急 SOP 剧本 | Ch15 |
+| J | `GET/PUT /api/admin/emergency/kill-switches[/:key]` · `GET /api/admin/emergency/kill-switches/alerts` · `PUT /api/admin/killswitch/geo` · 篡改监控只读 · 应急 SOP 剧本 | Ch15 |
 | K | `GET /api/admin/risk/users/:id/score` · 提现风控规则引擎 config · 反多账户去重簇查询 · 套利检测信号 · 大额 KYC 复审队列 | Ch8 |
 | L | `/api/admin/bi/*`(KPI/漏斗/cohort/运营报表)· `GET /api/admin/bi/behavior[/click-heat/page-catalog]`(L6 行为热力)· `POST /api/admin/bi/export/request` · 财务报表读引用 `/api/admin/treasury/*` | Ch16 |
 

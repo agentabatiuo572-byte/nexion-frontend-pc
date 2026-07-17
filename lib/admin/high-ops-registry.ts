@@ -267,7 +267,7 @@ export const HIGH_OPS: HighOpDef[] = [
     op: "c2_account_unfreeze",
     domain: "C",
     action: "恢复账户",
-    amplifies: false,
+    amplifies: true,
     type: "acct",
     gateLabel: "门槛者",
     targetType: "user",
@@ -417,7 +417,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "K",
       op: "k1_cluster_freeze",
-      params: { clusterId: String(ctx.clusterId) },
+      params: { clusterId: String(ctx.clusterId), expectedVersion: Number(ctx.expectedVersion) },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "cluster", id: String(ctx.clusterId) }),
   },
@@ -432,7 +432,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "K",
       op: "k1_cluster_release",
-      params: { clusterId: String(ctx.clusterId) },
+      params: { clusterId: String(ctx.clusterId), expectedVersion: Number(ctx.expectedVersion) },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "cluster", id: String(ctx.clusterId) }),
   },
@@ -447,7 +447,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "K",
       op: "k1_cluster_cleared",
-      params: { clusterId: String(ctx.clusterId) },
+      params: { clusterId: String(ctx.clusterId), expectedVersion: Number(ctx.expectedVersion) },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "cluster", id: String(ctx.clusterId) }),
   },
@@ -462,7 +462,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "K",
       op: "k1_cluster_flag",
-      params: { clusterId: String(ctx.clusterId) },
+      params: { clusterId: String(ctx.clusterId), expectedVersion: Number(ctx.expectedVersion) },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "cluster", id: String(ctx.clusterId) }),
   },
@@ -477,7 +477,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "K",
       op: "k2_row_flag",
-      params: { rowId: String(ctx.rowId) },
+      params: { rowId: String(ctx.rowId), expectedVersion: Number(ctx.expectedVersion) },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "arbitrage_row", id: String(ctx.rowId) }),
   },
@@ -492,7 +492,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "K",
       op: "k2_row_blockgift",
-      params: { rowId: String(ctx.rowId) },
+      params: { rowId: String(ctx.rowId), expectedVersion: Number(ctx.expectedVersion) },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "arbitrage_row", id: String(ctx.rowId) }),
   },
@@ -507,7 +507,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "K",
       op: "k2_row_boardflag",
-      params: { rowId: String(ctx.rowId) },
+      params: { rowId: String(ctx.rowId), expectedVersion: Number(ctx.expectedVersion) },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "arbitrage_row", id: String(ctx.rowId) }),
   },
@@ -522,7 +522,11 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "K",
       op: "k2_row_freeze",
-      params: { rowId: String(ctx.rowId) },
+      params: {
+        rowId: String(ctx.rowId),
+        expectedVersion: Number(ctx.expectedVersion),
+        clusterExpectedVersion: Number(ctx.clusterExpectedVersion),
+      },
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "arbitrage_row", id: String(ctx.rowId) }),
   },
@@ -656,56 +660,7 @@ export const HIGH_OPS: HighOpDef[] = [
     }),
     buildTarget: (ctx) => ({ domain: "K", type: "user", id: String(ctx.userNo) }),
   },
-  // —— J 域紧急与合规控制(批 4) ——
-  {
-    op: "j1_gate_kill",
-    domain: "J",
-    action: "熔断功能闸",
-    amplifies: false,
-    type: "sos",
-    gateLabel: "门槛者",
-    targetType: "gate",
-    buildCommand: (ctx) => ({
-      domain: "J",
-      op: "j1_gate_kill",
-      params: { gateKey: String(ctx.gateKey) },
-    }),
-    buildTarget: (ctx) => ({ domain: "J", type: "gate", id: String(ctx.gateKey) }),
-  },
-  {
-    op: "j1_gate_resume",
-    domain: "J",
-    action: "恢复功能闸",
-    amplifies: true,
-    type: "sos",
-    gateLabel: "门槛者",
-    targetType: "gate",
-    buildCommand: (ctx) => ({
-      domain: "J",
-      op: "j1_gate_resume",
-      params: { gateKey: String(ctx.gateKey) },
-    }),
-    buildTarget: (ctx) => ({ domain: "J", type: "gate", id: String(ctx.gateKey) }),
-  },
-  {
-    op: "j1_batch_kill",
-    domain: "J",
-    action: "应急批量熔断",
-    amplifies: false,
-    type: "sos",
-    gateLabel: "门槛者",
-    targetType: "gate",
-    buildCommand: (ctx) => ({
-      domain: "J",
-      op: "j1_batch_kill",
-      params: { keys: (ctx.keys as string[]) ?? [] },
-    }),
-    // 多锁:per-gate 一锁(对齐 spec §4.7 业务对象单位)
-    buildTargets: (ctx) =>
-      ((ctx.keys as string[]) ?? []).map((k) => ({ domain: "J", type: "gate", id: String(k) })),
-    // 单锁兜底(若 usePropose 未支持 targets,用首个 gate;正常路径走 buildTargets)
-    buildTarget: (ctx) => ({ domain: "J", type: "gate", id: String(((ctx.keys as string[]) ?? [""])[0]) }),
-  },
+  // J1 为单人确认后立即执行，不进入 A2 提案 registry；A2 仅消费其审计记录。
   {
     op: "j2_country_manage",
     domain: "J",

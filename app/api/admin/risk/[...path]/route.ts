@@ -63,7 +63,11 @@ async function proxy(request: Request, context: RouteContext) {
       },
     });
   } catch {
-    return jsonError(503, "RISK_BACKEND_UNAVAILABLE");
+    const response = jsonError(503, "RISK_BACKEND_UNAVAILABLE");
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      response.headers.set("X-Nexion-Upstream-Outcome", "unknown");
+    }
+    return response;
   }
 }
 

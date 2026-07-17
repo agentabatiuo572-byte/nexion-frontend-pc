@@ -2,8 +2,8 @@
 
 /**
  * 顶栏消息入口(设计稿 admin-shell 的 bell → Drawer 侧滑抽屉,非下拉)。
- * 右侧滑入、整高;标题「告警 & 待办」,两段:风险雷达告警(B5)+ 操作确认 待确认(A2);
- * 底部 CTA「前往 A2 审计中心」。B5 告警取 B 域真实聚合接口;A2 待办取审计待确认队列。
+ * 右侧滑入、整高;标题「告警 & 待办」,两段:风险与应急告警 + 操作确认 待确认(A2);
+ * 底部 CTA「前往 A2 审计中心」。告警取 B 域与 J 域真实接口;A2 待办取审计待确认队列。
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -11,6 +11,8 @@ import { Bell, X, AlertTriangle, ChevronRight } from "lucide-react";
 import { RoleBadge } from "@/app/components/kit/role-badge";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
+import { opsAlertHref, useJ1DutyAlerts, useJ2GeoAlerts, useJ3TamperConfigAlerts } from "@/lib/admin/ops-dashboard-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { fmtPct } from "@/lib/format";
 
@@ -56,6 +58,12 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [pendingOperations, setPendingOperations] = useState<A2OperationRow[]>([]);
   const [a2Error, setA2Error] = useState<string | null>(null);
+  const hasAdminSession = useAdminAuth((state) => state.session != null);
+  const isSuperAdmin = useAdminAuth((state) => state.session?.role === "superadmin");
+  const canReadJ3Alerts = useAdminAuth((state) => state.session?.authorities?.includes("emergency_j3_alert_config") === true);
+  const { alerts: opsAlerts, error: opsAlertError } = useJ1DutyAlerts(hasAdminSession);
+  const { alerts: j2Alerts, error: j2AlertError } = useJ2GeoAlerts(isSuperAdmin);
+  const { alerts: j3Alerts, error: j3AlertError } = useJ3TamperConfigAlerts(canReadJ3Alerts);
   useEffect(() => {
     let alive = true;
     fetchA2Overview()
@@ -74,7 +82,7 @@ export function NotificationBell() {
     };
   }, []);
   const bDomain = useBDomainDashboard();
-  const alerts: ShellAlert[] = (() => {
+  const bAlerts: ShellAlert[] = (() => {
     if (bDomain.error) {
       return [{ id: "b-sync", level: "high", text: `B 域风险雷达同步失败: ${bDomain.error}`, href: "/overview/risk-radar" }];
     }
@@ -103,6 +111,38 @@ export function NotificationBell() {
       })),
     ];
   })();
+  const j1Alerts: ShellAlert[] = [...opsAlerts, ...j2Alerts, ...j3Alerts]
+    .map((alert) => ({
+      id: `ops-${alert.id}`,
+      level: alert.level,
+      text: `${alert.title} · ${alert.hint}`,
+      href: opsAlertHref(alert),
+    }));
+  if (opsAlertError) {
+    j1Alerts.push({
+      id: "ops-dashboard-sync",
+      level: "high",
+      text: `J1 值班告警同步失败: ${opsAlertError}`,
+      href: "/emergency/kill-switch",
+    });
+  }
+  if (j2AlertError) {
+    j1Alerts.push({
+      id: "j2-alert-sync",
+      level: "high",
+      text: `J2 超管告警同步失败: ${j2AlertError}`,
+      href: "/emergency/geo-block",
+    });
+  }
+  if (j3AlertError) {
+    j1Alerts.push({
+      id: "j3-alert-sync",
+      level: "high",
+      text: `J3 超管告警同步失败: ${j3AlertError}`,
+      href: "/emergency/tamper",
+    });
+  }
+  const alerts = [...j1Alerts, ...bAlerts];
   const badge = alerts.filter((a) => a.level !== "low").length;
   return (
     <>
@@ -194,8 +234,8 @@ function NotificationDrawer({
 
         {/* 主体(滚动)*/}
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          {/* 风险雷达告警 B5 */}
-          <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>风险雷达告警 · B5</p>
+          {/* 风险与应急告警 */}
+          <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--v5-ink-3)" }}>风险与应急告警</p>
           <div className="flex flex-col gap-2">
             {alerts.map((a) => {
               const lv = LEVEL[a.level];

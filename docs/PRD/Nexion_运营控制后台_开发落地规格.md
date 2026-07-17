@@ -97,7 +97,7 @@
 
 | 模块ID | 名称 | 一句话职责 | 所属域 | 卷·章 | 前端§锚点 |
 |---|---|---|---|---|---|
-| A1 | 运营账号 & RBAC | 后台账号体系与 7 角色 RBAC 权限地基 + 登录策略 | A 平台基础 | V1·Ch2 | §9.11d / §1.2 |
+| A1 | 运营账号 & RBAC | 运营账号、强制 MFA、登录锁定、会话与角色分配；角色/权限权威分别在 A6/A8 | A 平台基础 | V1·Ch2 | §9.11d / §1.2 |
 | A2 | 审计 & 操作确认 | 高敏写 append-only 审计留痕 + 高敏动作确认契约权威(确认弹窗 + 理由必填) | A 平台基础 | V1·Ch2 | §9.11d / §9.11e |
 | A3 | 系统配置 | feature flag / kill-switch config store / 系统健康(server time / Idempotency 为固定后端不变量,运营无配置面) | A 平台基础 | V1·Ch2 | §9.11a.4 / §9.11d.1 / §9.11e |
 | B1 | 双账本总览 | 真实储备 vs 应付负债并列 + 兑付覆盖率(资金安全最高水位) | B 总览 | V1·Ch4 | §5.14 / §9.6.3 |
@@ -178,7 +178,7 @@
 
 | 实体 | 关键字段(名:类型) | 权威源 | 出处§ |
 |---|---|---|---|
-| **OperatorAccount** | accountId:string · displayName:string · role:enum{super\|finance\|risk\|growth\|content\|support\|auditor} · permissionTier:enum{member\|lead} · twoFactorBound:bool · status:enum{enabled\|disabled\|locked} · lastLoginAt:ms-epoch · activeSessions:数组 | SC | §9.1 / Ch2 A1 |
+| **OperatorAccount** | accountId:string · username:string · displayName:string · email?:string · roleCode?:string(A6 启用角色，空=暂不分配) · roleHistory[]{fromRole,toRole,changedAt,operator}(A2 审计派生) · tfaSecretEncrypted?:string · tfaBoundAt?:datetime · status:enum{enabled\|disabled} · lastLoginAt?:datetime · activeSessions[]{sessionId,device,ipAddress,issuedAt,lastSeenAt} | SC | §9.1 / Ch2 A1 |
 | **AuditLog** | operator · role · action · object{domain,objectId} · before · after · reason · ip · ts:ms-epoch · (可选)Idempotency-Key;**append-only,保留 ≥13 月;高敏写与审计记录同事务落库** | SC | §9.1 / Ch2 A2 |
 | **SystemConfig** | 运营托管:featureFlags[]{key,state:enum{on\|off\|灰度%},scope:enum{all\|cohort\|phase}} · health{pipeline,ledger,ntp,endpoints}。**固定后端不变量(运营不可调、无配置面)**:serverTime{ntpSource,currentTs:ms-epoch,driftMs} 单源 · idempotency{ttlHours(24),dedupHitCount24h} Idempotency-Key 去重 | SC | §9.1 / Ch2 A3 |
 | **KillSwitchConfig** | key:enum{withdraw\|staking\|genesis\|exchange\|trial\|geo-block} · enabled:bool(geo-block=activeCountries.length>0) · activeCountries:数组(仅 geo-block) · lastChangedAt:ms-epoch · operator · reason;**6 闸(5 功能闸+geo-block);A3 子对象非独立表;V1 A3 托管→V4 J1/J2** | SC | §9.1 / Ch2 A3 / §9.11d.1 |
@@ -308,10 +308,12 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/rbac/roles` | GET / PUT | 七角色权限矩阵(声明式权威)/ 变更授予(仅超管) | 是(④a,PUT) | A1 |
-| `/api/admin/accounts` | GET / POST | 运营账号列表+详情 / 创建(仅超管) | A1-MD1(POST) | A1 |
-| `/api/admin/accounts/:id` | PUT | 禁用/启用/改角色/重置 2FA(仅超管) | A1-MD2~MD5 | A1 |
-| `/api/admin/accounts/:id/logout` | POST | 强制登出运营 session(仅超管,reason 必填) | A1-MD6 | A1 |
+| `/api/admin/auth/login` / `/api/admin/auth/mfa/verify` / `/api/admin/auth/logout` | POST | 密码阶段只发 MFA challenge；challenge 与 TOTP 时间步均防并发/跨 challenge 重放；TOTP 通过后发 JWT/session；登出确认撤销服务端 session 后才清 cookie，撤销不可用则保留凭据并失败重试 | — | A1 |
+| `/api/admin/platform/accounts/overview` / `/api/admin/platform/accounts` | GET / POST | 账号、安全基线与会话总览 / 创建(默认不分配角色) | A1-MD1(POST) | A1 |
+| `/api/admin/platform/accounts/:id/profile\|role\|status` | PATCH | 资料/角色/启停；角色来自 A6 | A1-MD2~MD4 | A1 |
+| `/api/admin/platform/accounts/:id/reset-2fa\|password/reset` | POST | 重置 MFA/密码并吊销旧会话；MFA 重置先校验有效超管下限 | A1-MD5 | A1 |
+| `/api/admin/platform/accounts/:id/sessions/revoke` / `.../sessions/:sessionId/revoke` | POST | 吊销全部/单条运营 session(仅超管、非自己、非超管目标) | A1-MD6 | A1 |
+| `/api/admin/platform/roles` / `/api/admin/platform/permissions` | GET | A6 角色授权 / A8 权限码字典权威视图 | — | A6/A8 |
 | `/api/admin/audit?filter=` | GET | 审计日志查询(append-only,server 强制可见性;含高敏动作流水监控面) | — | A2 |
 | `/api/admin/system/config` | GET | 系统健康(health;server time / idempotency 为固定后端不变量,不在配置面) | — | A3 |
 | `/api/admin/feature-flags` | GET / PUT | feature flag 查询/切换 | A3-MD1(PUT) | A3 |
@@ -484,10 +486,11 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/killswitch/matrix` | GET | 5 功能闸矩阵(server-canonical,client 仅读灯) | — | J1 |
-| `/api/admin/killswitch/feature/:key` | PUT | 单闸熔断/恢复(熔断=风控/财务/超管单人确认+全运营广播;恢复=仅超管,前置 B1 闸 `coverageRatio ≥ recoverGate` 未达 422 `COVERAGE_BELOW_REDLINE`;携 Key) | J1-MD1/MD2 | J1 |
-| `/api/admin/killswitch/feature/emergency` | POST | 批量应急熔断(可多闸;仅 disable,enable 返 403;触发事由空 422 / reason 空 400;风控/超管单人确认逐闸独立生效+全运营广播;携 Key) | J1-MD3 | J1 |
-| `/api/admin/killswitch/auto-rules/eval` | POST | (server 内部)R1/R2 自动熔断评估命中调 feature 写入(`trigger=auto`,30min 内值班补录 J1-MD5) | (自动+J1-MD5 补录) | J1 |
+| `/api/admin/emergency/kill-switches` | GET | 5 功能闸矩阵(server-canonical,client 仅读灯) | — | J1 |
+| `/api/admin/emergency/kill-switches/alerts` | GET | 已登录运营账号可读的五闸最小状态/待补录快照，不泄露阈值、配置与控制能力 | — | J1 |
+| `/api/admin/emergency/kill-switches/:key` | PUT | 单闸熔断/恢复(熔断=风控/财务/超管单人确认+持久广播事件;恢复=仅超管,前置 B1 闸 `coverageRatio ≥ recoverGate` 未达 422 `COVERAGE_BELOW_REDLINE`;携 Key) | J1-MD1/MD2 | J1 |
+| `/api/admin/emergency/kill-switches/emergency-disable` | POST | 批量应急熔断(可多闸;触发事由空 422 / reason 空 400;风控/超管单人确认;全量预校验后同事务原子关停+持久广播事件;携 Key) | J1-MD3 | J1 |
+| 服务端定时任务（无外部 endpoint） | — | R1/R2 自动熔断评估命中后走 J1 原子写边界(`trigger=auto`,30min 内值班补录 J1-MD5) | 自动+J1-MD5 补录 | J1 |
 | `/api/admin/killswitch/geo` | GET / PUT | geo-block 配置(server-canonical)/ 黑名单+受限名单(limitedCountries)+per-endpoint(拒绝财务执行 403;携 Key) | J2-MD1~MD3(PUT) | J2 |
 | `/api/admin/killswitch/geo/emergency` | POST | geo 应急即时封锁(仅加封锁,移除 403;事由空 422;单人确认即时生效+广播;携 Key) | 是(④a) | J2 |
 | `/api/admin/tamper/{overview,paths,accounts}?window=` | GET | 篡改拦截总览/路径分布/账户告警(window∈{24h,7d,30d} 非法 400) | — | J3 |
@@ -543,7 +546,7 @@
 
 1. **单源读端点(唯一权威)**:`/api/kyc/status/:userId`(KYC)· `/api/admin/treasury/coverage`(覆盖率口径)· `/api/admin/treasury/reserve`(储备)· `/api/admin/risk/score/:userId`(风险评分)· `/api/admin/phase/dials`(全 dial 读写)· `/api/config/staking/pools`(USDT-staking 4 披露面统一)· `/api/trial/eligibility`(试用资格)。
 2. **跨章共用 endpoint(实现权威 vs UI 调用方)**:`/api/admin/treasury/*` 实现权威唯一在 **D3**,B1/B2/L3 为调用方;`/api/admin/bills/export` 具名 **D4**,L5 引用;Lucky Spin 派奖 `/api/events/:id/spin` 唯一在 **H4**,H5 仅发 spin 票。
-3. **kill-switch 矩阵 vs 各域原生 kill(非双 endpoint)**:J1 `/api/admin/killswitch/feature/:key` 是矩阵权威写面;各域原生 kill(`staking/pool/:id/disable`、`genesis/pause`、`exchange/pause`、`premium/disable`、`nex-v2-lock/disable`、`market/nex/pause`、D 域 `withdrawals/pause`)为 server-enforce 生效面,读闸状态做 enforce。staking 矩阵层整体熔断 key 与 G1 per-pool disable 两粒度并存。A3 `/api/admin/killswitch` 为 V1 临时面,V4 写迁 J1/J2、读保留别名。
+3. **kill-switch 矩阵 vs 各域原生 kill(非双 endpoint)**:J1 `/api/admin/emergency/kill-switches/:key` 是矩阵权威写面;各域原生 kill(`staking/pool/:id/disable`、`genesis/pause`、`exchange/pause`、`premium/disable`、`nex-v2-lock/disable`、`market/nex/pause`、D 域 `withdrawals/pause`)为 server-enforce 生效面,读闸状态做 enforce。staking 矩阵层整体熔断 key 与 G1 per-pool disable 两粒度并存。A3 `/api/admin/killswitch` 为 V1 临时面,V4 写迁 J1/J2、读保留别名。
 4. **前端别名路径(规范化归 §9.2⑥)**:无 `/api/` 前缀的 `/admin/home/conversion-banner.copy`、`/admin/stella/{channels,templates,social-event-pool}`、`/admin/legal/risk-disclosure`、`/admin/onboarding/quest-tasks` 为前端现状别名。
 5. **B1 红线拒绝码统一 422**(✅ PM 2026-06-02;旧文 403 已废,auth/authz 类 403 保持)。
 
@@ -555,11 +558,11 @@
 
 | 参数(key) | 默认值 | 范围 | 生效时机 | 权威源 | 模块 |
 |---|---|---|---|---|---|
-| 运营账号角色集 | 七角色(超管/财务/风控/增长/内容/客服/只读审计) | 固定枚举 | 角色分配实时 | A1 | A1 |
+| 运营账号角色集 | A6 启用角色；内置 8 角色(SUPER_ADMIN/CONFIG_ADMIN/FINANCE/RISK/CONTENT/GROWTH/SUPPORT/AUDITOR) | A6 可扩展；A1 默认不分配 | 角色分配实时 | A6 | A1/A6 |
 | 后台强制 2FA | 强制开启(全角色) | 不可关 | 实时 | A1 | A1 |
-| 运营 session 时限 | 滑动 30min / 绝对 8h | 滑动 15–60min / 绝对 4–12h | 实时(下次签发) | A1 | A1 |
-| 后台登录短锁/长锁 | 5 次→15min / 15 次/24h→锁+强制2FA | 3–10 次/5–60min | 实时 | A1 | A1 |
-| 最少有效超管数 | ≥ 2 | 固定下限 2 | 实时(禁用超管前校验) | A1 | A1 |
+| 运营 session 时限 | 滑动 30min / 绝对 8h | 滑动 15–60min / 绝对 4–12h | 每次请求实时校验 | A1 | A1 |
+| 后台登录短锁/长锁 | 5 次→15min / 24h 累计 15 次→锁 24h | 固定安全基线 | 密码/MFA 失败实时计数 | A1 | A1 |
+| 最少有效超管数 | ≥ 2(启用+超管角色+MFA 已绑定) | 固定下限 2 | 每次账号治理写操作前 | A1 | A1 |
 | 审计日志保留期 | ≥ 13 个月 | 13–36 月 | 仅新对象 | A2 | A2 |
 | 理由最小长度 | 8 字 | 0–50 字 | 实时 | A2 | A2 |
 | kill-switch 闸清单/默认态(6闸) | 5 功能闸 enabled=true + geo-block 空 | 各 enabled/disabled | 实时(熔断即 enforce) | A3(V1)→J1/J2(V4) | A3 |
@@ -939,14 +942,14 @@
 
 ## 第 6 章 RBAC 权限矩阵(角色 × 高敏动作)
 
-> 七角色(§1.1 / A1③):**超管 / 风控 / 财务 / 增长 / 客服 / 只读审计**(第 7 角色「内容」仅 I 域内容 CMS 高敏发布动作,无资金/资产/规则/熔断高敏写,不列入本表)。**层级**:「财务(lead)」=财务主管、「风控(lead)」=风控主管——2026-06 操作确认决议后,原复核层级统一迁移为**执行门槛**:标 (lead) 的动作仅该角色 lead 层级(及超管)可执行,member 不可执行。**K 域旧命名映射**:平台管理员→超管、风控运营→风控(member)、审计员→只读审计。单元格 ✅=可执行(经该动作确认弹窗+理由必填即时生效)/ 读=只读 / —=无权。「确认弹窗」列=是否高敏(入 A2③ 清单:确认弹窗+reason 强制 400+高敏流水/实时告警;放大流出方向另前置 B1 红线 422);弹窗 ID 细则见各卷 PRD ④a 与本规格第 9 章总表。
+> 本表是高敏动作的产品投影，不是授权数据源。实际角色集合、角色-权限码关系分别以 A6/A8 服务端数据为准；内置 8 角色为超管/配置/财务/风控/内容/增长/客服/审计，本表因只列相关高敏动作而省略“配置、内容”两列。系统没有 `member/lead` 隐式层级；需要主管能力时必须在 A6 建立可审计角色或显式权限码。单元格 ✅=具备对应权限码后可执行，最终仍由 endpoint 服务端校验。
 
 | 高敏动作 | 超管 | 风控 | 财务 | 增长 | 客服 | 审计 | 确认弹窗 | 模块 |
 |---|---|---|---|---|---|---|---|---|
 | 创建/禁用/启用运营账号 | ✅(仅超管) | — | — | — | — | — | 是(理由必填;禁用超管前校验≥2) | A1 |
 | 分配/变更账号角色 / 变更 RBAC 授予 | ✅(仅超管) | — | — | — | — | — | 是(权限边界=最高敏,理由必填) | A1 |
-| 重置运营账号 2FA | ✅(仅超管) | — | — | — | — | — | 是(理由必填+身份核实勾选) | A1 |
-| 强制登出运营 session | ✅(仅超管) | — | — | — | — | — | 是(理由必填,止血即时) | A1 |
+| 重置运营账号 MFA | ✅(仅超管) | — | — | — | — | — | 是(理由必填；既有安全工单号写入 reason) | A1 |
+| 强制登出运营 session | ✅(仅超管；非自己/非超管目标) | — | — | — | — | — | 是(理由必填,止血即时) | A1 |
 | 审计/埋点 schema 变更 | ✅(仅超管) | — | — | — | — | — | 是(A2-MD1,理由必填) | A2 |
 | 审计日志查询/导出 | ✅(全) | 读(风控/账户) | 读(资金) | 读(增长) | 读(单用户) | ✅(全量脱敏) | 否(只读) | A2 |
 | feature flag 切换 | ✅(全部 flag) | — | — | ✅(限增长/AB 类) | — | — | 是(理由必填;server 按 flag 分类校验资质) | A3 |

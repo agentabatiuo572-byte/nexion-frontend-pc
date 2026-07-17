@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
-const ADMIN_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 12;
+const ADMIN_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 8;
 
 interface BackendPasswordChangeResult {
   code?: number;
@@ -37,6 +37,17 @@ function isSecureRequest(request: Request) {
   return new URL(request.url).protocol === "https:";
 }
 
+function sessionMetadataHeaders(request: Request) {
+  const headers: Record<string, string> = {};
+  const userAgent = request.headers.get("user-agent")?.trim().slice(0, 512);
+  const clientIp =
+    request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim().slice(0, 64) ||
+    request.headers.get("x-real-ip")?.trim().slice(0, 64);
+  if (userAgent) headers["User-Agent"] = userAgent;
+  if (clientIp) headers["X-Nexion-Client-IP"] = clientIp;
+  return headers;
+}
+
 export async function POST(request: Request) {
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
   if (!token) {
@@ -53,7 +64,11 @@ export async function POST(request: Request) {
   try {
     const upstream = await fetch(`${BACKEND_BASE_URL}/api/admin/auth/password/change`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...sessionMetadataHeaders(request),
+      },
       body: JSON.stringify({ currentPassword, newPassword }),
       cache: "no-store",
     });

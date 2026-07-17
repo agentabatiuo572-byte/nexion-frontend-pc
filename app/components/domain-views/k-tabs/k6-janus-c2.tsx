@@ -23,13 +23,17 @@ const TABS: { id: Tab; name: string; n: string }[] = [
 
 export function K6JanusC2() {
   const [tab, setTab] = useState<Tab>("dashboard");
-  const hydrate = useJanusC2Store((state) => state.hydrate);
-  const loading = useJanusC2Store((state) => state.loading);
-  const error = useJanusC2Store((state) => state.error);
+  const loadDashboard = useJanusC2Store((state) => state.loadDashboard);
+  const loadDevices = useJanusC2Store((state) => state.loadDevices);
+  const loadStrategies = useJanusC2Store((state) => state.loadStrategies);
+  const loadAudit = useJanusC2Store((state) => state.loadAudit);
 
   useEffect(() => {
-    void hydrate();
-  }, [hydrate]);
+    if (tab === "dashboard") void loadDashboard();
+    if (tab === "queue") void loadDevices();
+    if (tab === "strategy") void loadStrategies();
+    if (tab === "audit") void loadAudit();
+  }, [loadAudit, loadDashboard, loadDevices, loadStrategies, tab]);
 
   return (
     <div className="k6c2">
@@ -42,13 +46,10 @@ export function K6JanusC2() {
         ))}
       </nav>
 
-      {error && <div className="k6-empty k6-error">K6 数据加载失败：{error} <button className="k6-pgbtn" onClick={() => void hydrate()}>重试</button></div>}
-      {loading && <div className="k6-empty">正在从 Janus 业务表读取数据…</div>}
-
-      {!loading && tab === "dashboard" && <K6Dashboard />}
-      {!loading && tab === "queue" && <K6Queue />}
-      {!loading && tab === "strategy" && <K6StrategyCenter />}
-      {!loading && tab === "audit" && <K6AuditLog />}
+      {tab === "dashboard" && <K6Dashboard />}
+      {tab === "queue" && <K6Queue />}
+      {tab === "strategy" && <K6StrategyCenter />}
+      {tab === "audit" && <K6AuditLog />}
     </div>
   );
 }

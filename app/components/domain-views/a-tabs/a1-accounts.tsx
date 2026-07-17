@@ -9,11 +9,11 @@ import { findHighOp } from "@/lib/admin/high-ops-registry";
 import {
   changeA1AccountRole,
   createA1Account,
-  deleteA1Account,
   fetchA1Overview,
   resetA1Account2fa,
   resetA1AccountPassword,
   revokeA1AccountSessions,
+  revokeA1AccountSession,
   updateA1AccountProfile,
   updateA1AccountStatus,
   updateA1SecurityBaseline,
@@ -25,6 +25,7 @@ import {
   type A1SecurityBaseline,
   type A1UpdateAccountInput,
 } from "@/lib/admin/a1-client";
+import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
 import type { ACtx } from "./types";
 
 type SecurityBaselineMeta = {
@@ -47,6 +48,8 @@ const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
   session_abs: { key: "session_abs", name: "session 绝对上限", sub: "一次登录最长存活多久", unit: "小时", min: 4, max: 12 },
   lock_short_cnt: { key: "lock_short_cnt", name: "登录失败短锁 · 触发次数", sub: "连错几次触发短锁", unit: "次", min: 3, max: 10 },
   lock_short_min: { key: "lock_short_min", name: "登录失败短锁 · 锁定时长", sub: "触发短锁后锁定多久", unit: "分钟", min: 5, max: 60 },
+  lock_long_cnt: { key: "lock_long_cnt", name: "24 小时累计长锁 · 触发次数", sub: "一天内累计失败几次触发长锁", unit: "次" },
+  lock_long_hour: { key: "lock_long_hour", name: "24 小时累计长锁 · 锁定时长", sub: "触发长锁后锁定多久", unit: "小时" },
 };
 
 function errorMessage(error: unknown) {
@@ -54,7 +57,17 @@ function errorMessage(error: unknown) {
 }
 
 function roleName(roles: A1RoleDefinition[], role: string) {
+  if (!role || role === "unassigned") return "暂未分配";
   return roles.find((r) => r.key === role)?.name ?? role;
+}
+
+function roleKeyFromCode(roleCode: string) {
+  const normalized = roleCode.trim().toUpperCase();
+  const builtins: Record<string, string> = {
+    SUPER_ADMIN: "super", CONFIG_ADMIN: "config", FINANCE: "finance", RISK: "risk",
+    CONTENT: "content", GROWTH: "growth", SUPPORT: "support", AUDITOR: "audit",
+  };
+  return builtins[normalized] ?? normalized.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
 function firstMatch(value: string | undefined, pattern: RegExp) {
@@ -110,6 +123,9 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? null);
   const currentSessionRole = useAdminAuth((s) => s.session?.role ?? s.role);
   const [overview, setOverview] = useState<A1Overview | null>(null);
+  const [permissionCodesByRole, setPermissionCodesByRole] = useState<Record<string, string[]>>({});
+  const [permissionDiffReady, setPermissionDiffReady] = useState(false);
+  const [permissionDiffError, setPermissionDiffError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mutatingAction, setMutatingAction] = useState<string | null>(null);
@@ -125,8 +141,24 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       setLoading(true);
     }
     setLoadError(null);
+    setPermissionDiffReady(false);
+    setPermissionDiffError(null);
     try {
-      setOverview(await fetchA1Overview());
+      const data = await fetchA1Overview();
+      setOverview(data);
+      try {
+        const a6 = await fetchA6RolesOverview();
+        const details = await Promise.all(a6.roles.filter((role) => role.status === 1).map((role) => fetchA6RoleDetail(role.id)));
+        const codesByRole = Object.fromEntries(details.map((role) => [roleKeyFromCode(role.roleCode), role.permissionCodes]));
+        if (!data.roles.every((role) => Array.isArray(codesByRole[role.key]))) {
+          throw new Error("A6_ROLE_PERMISSION_DIFF_INCOMPLETE");
+        }
+        setPermissionCodesByRole(codesByRole);
+        setPermissionDiffReady(true);
+      } catch (error) {
+        setPermissionCodesByRole({});
+        setPermissionDiffError(`权限差异预览不可用：${errorMessage(error)}；改角色已停用`);
+      }
     } catch (error) {
       setLoadError(errorMessage(error));
     } finally {
@@ -161,6 +193,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   );
 
   const roles = overview?.roles ?? [];
+  const roleOptions = useMemo(() => [
+    { key: "unassigned", name: "暂未分配", scope: "默认零权限、零菜单；在 A6 明确授权后再分配" },
+    ...roles,
+  ], [roles]);
   const operators = overview?.operators ?? [];
   const currentOperator = useMemo(() => {
     const id = currentAdminId === null ? null : String(currentAdminId);
@@ -170,14 +206,27 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   const securityBaselines = overview?.securityBaselines ?? [];
   const stats = overview?.stats;
   const effectiveSupers = stats?.effectiveSupers ?? 0;
+  const governanceFrozen = effectiveSupers < 2;
+  const permissionActions = useMemo(() => {
+    const codes = [...new Set(Object.values(permissionCodesByRole).flat())].sort();
+    return codes.map((code) => ({ label: code, domainGroup: code.split("_")[0]?.toUpperCase() || "OTHER" }));
+  }, [permissionCodesByRole]);
+  const grantsByRole = useMemo(() => Object.fromEntries(
+    Object.entries(permissionCodesByRole).map(([role, codes]) => {
+      const owned = new Set(codes);
+      return [role, permissionActions.map((action) => owned.has(action.label) ? "R" : "-")];
+    }),
+  ), [permissionActions, permissionCodesByRole]);
   const supersTone = effectiveSupers <= 1 ? "danger" : effectiveSupers === 2 ? "warn" : "ok";
   const backendSessionBaseline = securityBaselines.find((b) => b.key === "session")?.value;
   const backendLockBaseline = securityBaselines.find((b) => b.key === "lock")?.value;
   const baselineCurrent = (key: string) => {
     if (key === "session_idle") return firstMatch(backendSessionBaseline, /(\d+(?:\.\d+)?)\s*min/i) ?? null;
     if (key === "session_abs") return firstMatch(backendSessionBaseline, /\/\s*(\d+(?:\.\d+)?)\s*h/i) ?? null;
-    if (key === "lock_short_cnt") return firstMatch(backendLockBaseline, /(\d+(?:\.\d+)?)\s*次/) ?? null;
+    if (key === "lock_short_cnt") return firstMatch(backendLockBaseline, /(\d+(?:\.\d+)?)\s*(?:times|次)/i) ?? null;
     if (key === "lock_short_min") return firstMatch(backendLockBaseline, /\/\s*(\d+(?:\.\d+)?)\s*min/i) ?? null;
+    if (key === "lock_long_cnt") return firstMatch(backendLockBaseline, /\+\s*(\d+(?:\.\d+)?)\s*(?:times|次)/i) ?? null;
+    if (key === "lock_long_hour") return firstMatch(backendLockBaseline, /\+\s*\d+(?:\.\d+)?\s*(?:times|次)\s*\/\s*(\d+(?:\.\d+)?)\s*h/i) ?? null;
     return null;
   };
   const registeredBaseline = (key: string): A1SecurityBaseline | undefined =>
@@ -193,6 +242,8 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     securityBaselineRows.push(
       { ...SECURITY_BASELINE_META.lock_short_cnt, sourceKey: "lock", current: baselineCurrent("lock_short_cnt"), locked: registeredBaseline("lock")?.locked ?? false },
       { ...SECURITY_BASELINE_META.lock_short_min, sourceKey: "lock", current: baselineCurrent("lock_short_min"), locked: registeredBaseline("lock")?.locked ?? false },
+      { ...SECURITY_BASELINE_META.lock_long_cnt, sourceKey: "lock", current: baselineCurrent("lock_long_cnt"), locked: true },
+      { ...SECURITY_BASELINE_META.lock_long_hour, sourceKey: "lock", current: baselineCurrent("lock_long_hour"), locked: true },
     );
   }
   const baselineDisplay = (baseline: SecurityBaselineRow) => (
@@ -211,7 +262,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     if (currentAdminId !== null && targetId !== null && targetId === currentAdminId) {
       return "不能强制登出自己的当前账号";
     }
-    if (!["super", "risk"].includes(currentForceLogoutRole)) {
+    if (currentForceLogoutRole !== "super") {
       return "只有超管可以强制登出运营账号";
     }
     if (op.role === "super") {
@@ -222,6 +273,25 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     }
     return null;
   };
+  const protectsEffectiveSuperFloor = (op: A1Operator) =>
+    op.role === "super" && op.status === "enabled" && op.tfa && effectiveSupers <= 2;
+  const changeRoleBlockReason = (op: A1Operator) => {
+    if (!permissionDiffReady) return permissionDiffError ?? "权限差异预览不可用，改角色已停用";
+    if (governanceFrozen) return "有效超管不足 2 个，治理写已冻结；请先创建并绑定恢复超管";
+    if (protectsEffectiveSuperFloor(op)) return "该操作会使有效超管少于 2 个";
+    return null;
+  };
+  const reset2faBlockReason = (op: A1Operator) => {
+    if (!op.tfa) return "该账号尚未绑定双因子，无需重置";
+    if (governanceFrozen) return "有效超管不足 2 个，治理写已冻结；请先恢复安全基线";
+    if (protectsEffectiveSuperFloor(op)) return "重置后有效超管将少于 2 个";
+    return null;
+  };
+  const disableAccountBlockReason = (op: A1Operator) => {
+    if (governanceFrozen) return "有效超管不足 2 个，治理写已冻结；请先恢复安全基线";
+    if (protectsEffectiveSuperFloor(op)) return "禁用后有效超管将少于 2 个";
+    return null;
+  };
 
   useEffect(() => {
     if (page > totalPages - 1) {
@@ -230,6 +300,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
   }, [page, totalPages]);
 
   const changeRole = (op: A1Operator) => {
+    if (!permissionDiffReady) {
+      toast(permissionDiffError ?? "权限差异预览不可用，改角色已停用");
+      return;
+    }
     const displayName = operatorDisplayName(op);
     const displayLabel = operatorDisplayLabel(op);
     openActionConfirm({
@@ -245,13 +319,19 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       businessForm: {
         kind: "role-select",
         currentRole: op.role,
-        roles: roles.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
+        roles: roleOptions.map((r) => ({ key: r.key, label: r.name, scope: r.scope })),
+        actions: permissionActions,
+        grantsByRole: { unassigned: permissionActions.map(() => "-"), ...grantsByRole },
         guardHint: `有效超管 ${effectiveSupers} 个;降级超管时仍需 ≥2`,
       },
       run: (reason, value) => {
         const roleStr = (value || "").trim();
-        if (!roles.some((r) => r.key === roleStr)) {
+        if (!roleOptions.some((r) => r.key === roleStr)) {
           toast(`拒绝:无效角色 key (${roleStr})`);
+          return;
+        }
+        if (roleStr === op.role) {
+          toast("未提交:目标角色与当前角色相同");
           return;
         }
         if (op.role === "super" && op.status === "enabled" && roleStr !== "super" && effectiveSupers - 1 < 2) {
@@ -454,49 +534,6 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
     },
   });
 
-  const deleteAcct = (op: A1Operator) => {
-    const targetId = operatorAccountId(op.id);
-    if (currentAdminId !== null && targetId !== null && targetId === currentAdminId) {
-      toast("拒绝:不能删除自己的当前账号");
-      return;
-    }
-    if (op.role === "super" && op.status === "enabled" && effectiveSupers - 1 < 2) {
-      toast("拒绝:剩余有效超管将不足 2 个");
-      return;
-    }
-    const displayName = operatorDisplayName(op);
-    openActionConfirm({
-      action: `删除账号 · ${displayName}`,
-      detail: (
-        <>
-          <div className="atint danger" style={{ marginBottom: 12 }}>
-            删除会把该运营账号从后端账号表软删除,并吊销该账号全部后台 session。该动作不可用前端状态恢复。
-          </div>
-          <b>{operatorDisplayLabel(op)}</b> · 角色 {roleName(roles, op.role)} · 当前状态 {op.status === "enabled" ? "启用" : "禁用"}。
-        </>
-      ),
-      amplifies: false,
-      run: (reason) => {
-        const def = findHighOp("a1_account_delete")!;
-        void propose(toast, {
-          action: `删除账号 · ${displayName}`,
-          obj: String(op.id),
-          before: op.status === "enabled" ? "启用" : "禁用",
-          after: "已删除",
-          type: "acct",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "A1",
-          command: def.buildCommand({ accountId: op.id }),
-          target: def.buildTarget({ accountId: op.id }),
-        });
-        setDetailAccount(null);
-      },
-    });
-  };
-
   const kickAllSessions = (op: A1Operator) => {
     const displayName = operatorDisplayName(op);
     const blocked = forceLogoutBlockReason(op);
@@ -629,27 +666,17 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       amplifies: false,
       run: (reason) => {
         const finalReason = `${form.reason}；${reason}`;
-        const def = findHighOp("a1_account_create")!;
-        void propose(toast, {
-          action: `新建运营账号 · ${form.displayName}`,
-          obj: form.username,
-          before: "—",
-          after: form.role,
-          type: "acct",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason: finalReason,
-          sourceDomain: "A1",
-          command: def.buildCommand({
+        void runMutation(
+          `新建账号 ${form.username}`,
+          () => createA1Account({
             username: form.username,
             displayName: form.displayName,
             email: form.email,
             role: form.role,
             initialPassword: form.initialPassword,
-          }),
-          target: def.buildTarget({ username: form.username }),
-        });
+          }, finalReason, operator),
+          `${form.displayName} 已创建，首次登录需绑定 2FA 并修改密码`,
+        );
         setNaOpen(false);
       },
     });
@@ -697,6 +724,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           正在提交后端操作:{mutatingAction}
         </div>
       )}
+      {governanceFrozen && (
+        <div className="atint danger" style={{ marginBottom: 12 }}>
+          <b>账号治理恢复模式</b> · 当前实际启用且已绑定 2FA 的超管不足 2 个。除“新建超管账号”和安全事件下的会话吊销外，其他治理写操作已由前后端冻结。
+        </div>
+      )}
 
       <div className="f-stats">
         <div className="f-stat">
@@ -712,7 +744,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <div className={`f-stat ${supersTone}`}>
           <div className="k">有效超管</div>
           <div className="v">{effectiveSupers} 个</div>
-          <div className="sub">后端约束 ≥2 · {effectiveSupers <= 2 ? "接近下限" : "健康"}</div>
+          <div className="sub">后端约束 ≥2 · {governanceFrozen ? "治理冻结" : effectiveSupers === 2 ? "位于下限" : "健康"}</div>
         </div>
         <div className="f-stat">
           <div className="k">账号治理待办</div>
@@ -726,12 +758,19 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">运营账号(a)</span>
-          <span className="sub">· 数据来自后端账号表与 A1 配置 · 所有处置写入真实接口</span>
+          <span className="sub">
+            · 账号归属在 A1；角色授权以 <Link href="/platform/roles">A6 角色管理</Link> 与 <Link href="/platform/permissions">A8 权限字典</Link> 为准
+          </span>
           <div className="r">
             <button className="l-btn sm" onClick={() => void refreshOverview(true)} disabled={!!mutatingAction}>刷新</button>
             <button className="l-btn sm mc" onClick={() => setNaOpen(true)} disabled={!roles.length || !!mutatingAction}>+ 新建账号</button>
           </div>
         </div>
+        {permissionDiffError && (
+          <div className="atint danger" style={{ margin: "0 12px 12px" }}>
+            {permissionDiffError}。请刷新重试；在恢复前仍可查看账号和执行不依赖权限差异的操作。
+          </div>
+        )}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1120 }}>
             <thead>
@@ -773,14 +812,14 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                     <td><span className="mono">{op.sessions}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!mutatingAction}>编辑</button>
-                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length}>改角色</button>
-                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction}>重置 2FA</button>
-                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!!mutatingAction}>重置密码</button>
+                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => setEditAccountTarget(op))} disabled={!!mutatingAction || governanceFrozen}>编辑</button>
+                        <button className="l-btn sm" title={changeRoleBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => changeRole(op))} disabled={!!mutatingAction || !roles.length || !!changeRoleBlockReason(op)}>改角色</button>
+                        <button className="l-btn sm" title={reset2faBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => reset2fa(op))} disabled={!!mutatingAction || !!reset2faBlockReason(op)}>重置 2FA</button>
+                        <button className="l-btn sm" onClick={(event) => stopRowAction(event, () => resetPassword(op))} disabled={!!mutatingAction || governanceFrozen}>重置密码</button>
                         <button
                           className="l-btn sm"
                           onClick={(event) => stopRowAction(event, () => kickAllSessions(op))}
-                          disabled={!!mutatingAction}
+                          disabled={!!mutatingAction || !!logoutBlock}
                           data-blocked={logoutBlock ? "true" : undefined}
                           title={logoutBlock ?? "强制吊销该账号全部 Redis 后台会话"}
                           style={logoutBlock ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
@@ -788,11 +827,10 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
                           强制登出
                         </button>
                         {op.status === "enabled" ? (
-                          <button className="l-btn sm dgr" onClick={(event) => stopRowAction(event, () => disableAcct(op))} disabled={!!mutatingAction}>禁用</button>
+                          <button className="l-btn sm dgr" title={disableAccountBlockReason(op) ?? undefined} onClick={(event) => stopRowAction(event, () => disableAcct(op))} disabled={!!mutatingAction || !!disableAccountBlockReason(op)}>禁用</button>
                         ) : (
-                          <button className="l-btn sm mc" onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!!mutatingAction}>启用</button>
+                          <button className="l-btn sm mc" onClick={(event) => stopRowAction(event, () => enableAcct(op))} disabled={!!mutatingAction || governanceFrozen}>启用</button>
                         )}
-                        <button className="l-btn sm dgr" onClick={(event) => stopRowAction(event, () => deleteAcct(op))} disabled={!!mutatingAction}>删除</button>
                       </div>
                     </td>
                   </tr>
@@ -827,7 +865,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
           <div className="l-h">
             <span className="ttl">登录与安全基线</span>
-            <span className="sub">· 四条锁死,四项可调(每项单独调)</span>
+            <span className="sub">· 服务端实时返回；锁定项只读，可调项逐项生效</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
             {securityBaselineRows.map((baseline) => (
@@ -857,6 +895,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       {naOpen && (
         <NewAccountDrawer
           roles={roles}
+          recoveryMode={governanceFrozen}
           disabled={!!mutatingAction}
           onClose={() => setNaOpen(false)}
           onSubmit={createAccount}
@@ -866,10 +905,30 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         <AccountDetailDrawer
           account={detailAccount}
           roles={roles}
+          sessionRevokeBlockReason={forceLogoutBlockReason(detailAccount)}
           onClose={() => setDetailAccount(null)}
           onEdit={() => {
             setEditAccountTarget(detailAccount);
             setDetailAccount(null);
+          }}
+          onRevokeSession={(sessionId) => {
+            const target = detailAccount;
+            openActionConfirm({
+              action: `吊销单个会话 · ${operatorDisplayName(target)}`,
+              detail: <>只吊销会话 <span className="acode">{sessionId}</span>，不会影响该账号的其他设备。</>,
+              amplifies: false,
+              run: (reason) => {
+                setMutatingAction(`吊销会话 ${target.username}`);
+                revokeA1AccountSession(target.id, sessionId, reason, operator)
+                  .then(async () => {
+                    await refreshOverview(true);
+                    setDetailAccount(null);
+                    toast("指定会话已吊销");
+                  })
+                  .catch((error) => toast(`提交失败:${errorMessage(error)}`))
+                  .finally(() => setMutatingAction(null));
+              },
+            });
           }}
         />
       )}
@@ -904,15 +963,13 @@ const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
 const DEFAULT_INITIAL_PASSWORD_CHARS = "23456789abcdefghjkmnpqrstuvwxyz";
 
 function generateDefaultInitialPassword() {
-  const bytes = new Uint8Array(8);
+  const bytes = new Uint8Array(16);
   const browserCrypto = globalThis.crypto;
   if (browserCrypto?.getRandomValues) {
     browserCrypto.getRandomValues(bytes);
-    return Array.from(bytes, (byte) => DEFAULT_INITIAL_PASSWORD_CHARS[byte % DEFAULT_INITIAL_PASSWORD_CHARS.length]).join("");
+    return `Aa1!${Array.from(bytes, (byte) => DEFAULT_INITIAL_PASSWORD_CHARS[byte % DEFAULT_INITIAL_PASSWORD_CHARS.length]).join("")}`;
   }
-  return Array.from({ length: 8 }, () => (
-    DEFAULT_INITIAL_PASSWORD_CHARS[Math.floor(Math.random() * DEFAULT_INITIAL_PASSWORD_CHARS.length)]
-  )).join("");
+  return "";
 }
 
 function isValidEmail(email: string) {
@@ -926,16 +983,22 @@ function isValidUsername(username: string) {
 
 function isStrongInitialPassword(password: string) {
   const normalized = password.trim();
-  return normalized.length >= 8;
+  return normalized.length >= 16
+    && /[a-z]/.test(normalized)
+    && /[A-Z]/.test(normalized)
+    && /\d/.test(normalized)
+    && /[^A-Za-z0-9]/.test(normalized);
 }
 
 function NewAccountDrawer({
   roles,
+  recoveryMode,
   disabled,
   onClose,
   onSubmit,
 }: {
   roles: A1RoleDefinition[];
+  recoveryMode: boolean;
   disabled?: boolean;
   onClose: () => void;
   onSubmit: (form: NaForm) => void;
@@ -950,10 +1013,12 @@ function NewAccountDrawer({
   const [reason, setReason] = useState("");
 
   useEffect(() => {
-    if (!roles.some((item) => item.key === role)) {
+    if (recoveryMode && roles.some((item) => item.key === "super")) {
+      setRole("super");
+    } else if (role && !roles.some((item) => item.key === role)) {
       setRole("");
     }
-  }, [role, roles]);
+  }, [recoveryMode, role, roles]);
 
   const emailOk = isValidEmail(email);
   const usernameOk = isValidUsername(username);
@@ -962,7 +1027,7 @@ function NewAccountDrawer({
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
     !displayName.trim() ? "显示名未填写" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
-    !role ? "初始角色未选择" : "",
+    recoveryMode && role !== "super" ? "恢复模式只能创建超管账号" : "",
     !initialPassword.trim() ? "初始密码未填写" : !passwordOk ? "初始密码强度不足" : "",
     !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
@@ -973,7 +1038,7 @@ function NewAccountDrawer({
   return (
     <Drawer
       title="新建运营账号"
-      sub="① 登录资料 → ② 初始角色 → ③ 初始密码 → 操作理由"
+      sub="① 登录资料 → ② 初始角色(可暂不分配) → ③ 初始密码 → 操作理由"
       onClose={onClose}
       footer={
         <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
@@ -1045,8 +1110,13 @@ function NewAccountDrawer({
         </label>
       </div>
 
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>② 初始角色 *</div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>② 初始角色(可暂不分配)</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+        <label className="l-btn" style={{ justifyContent: "flex-start", padding: "10px 12px", background: role === "" ? "var(--a-ac-soft)" : "var(--surface-2)", color: role === "" ? "var(--a-ac)" : "var(--ink-2)", cursor: recoveryMode ? "not-allowed" : "pointer" }}>
+          <input type="radio" name="operator-role" value="" checked={role === ""} disabled={recoveryMode} onChange={() => setRole("")} style={{ accentColor: "var(--a-ac)" }} />
+          <span style={{ fontSize: 13 }}>暂不分配</span>
+          <span style={{ fontSize: 11, color: "var(--ink-4)", marginLeft: 8 }}>默认零权限、零菜单</span>
+        </label>
         {roles.map((item) => (
           <label
             key={item.key}
@@ -1081,7 +1151,7 @@ function NewAccountDrawer({
             type={showPassword ? "text" : "password"}
             value={initialPassword}
             onChange={(e) => setInitialPassword(e.target.value)}
-            placeholder="至少 8 位"
+            placeholder="至少 16 位，含大小写、数字和符号"
             autoComplete="new-password"
             style={{ flex: "1 1 260px", minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
           />
@@ -1092,7 +1162,7 @@ function NewAccountDrawer({
             重新生成
           </button>
           <span style={{ fontSize: 12, color: passwordOk || !initialPassword.trim() ? "var(--ink-4)" : "var(--danger)" }}>
-            默认已生成 8 位初始密码,登录后必须修改。
+            默认已生成 20 位强初始密码，首次登录绑定 2FA 后必须修改。
           </span>
         </div>
       </div>
@@ -1118,13 +1188,17 @@ function NewAccountDrawer({
 function AccountDetailDrawer({
   account,
   roles,
+  sessionRevokeBlockReason,
   onClose,
   onEdit,
+  onRevokeSession,
 }: {
   account: A1Operator;
   roles: A1RoleDefinition[];
+  sessionRevokeBlockReason: string | null;
   onClose: () => void;
   onEdit: () => void;
+  onRevokeSession: (sessionId: string) => void;
 }) {
   const rows = [
     ["账号 ID", account.id],
@@ -1173,6 +1247,44 @@ function AccountDetailDrawer({
           ))}
         </tbody>
       </table>
+      <div className="dlg-sec" style={{ marginTop: 16 }}>角色变更记录</div>
+      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+        {(account.roleHistory ?? []).map((history, index) => (
+          <div key={`${history.changedAt || "current"}-${index}`} className="atint">
+            <div>
+              <b>{history.source === "CURRENT_ASSIGNMENT" ? "当前生效" : `${roleName(roles, history.fromRole)} → ${roleName(roles, history.toRole)}`}</b>
+              {history.source === "CURRENT_ASSIGNMENT" && <> · {roleName(roles, history.toRole)}</>}
+            </div>
+            <div style={{ marginTop: 3, color: "var(--ink-4)" }}>
+              {history.source === "CURRENT_ASSIGNMENT"
+                ? "暂无更早的角色变更审计记录"
+                : `${history.changedAt || "时间未返回"} · 操作者 ${history.operator || "system"}`}
+            </div>
+          </div>
+        ))}
+        {!(account.roleHistory ?? []).length && <div className="atint">服务端未返回角色变更记录。</div>}
+      </div>
+      <div className="dlg-sec" style={{ marginTop: 16 }}>活跃会话明细</div>
+      <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+        {(account.sessionDetails ?? []).map((session) => (
+          <div key={session.sessionId} className="atint" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div><b>{session.device || "未知设备"}</b> · <span className="mono">{session.ipAddress || "unknown"}</span></div>
+              <div style={{ marginTop: 3, color: "var(--ink-4)" }}>开始 {session.issuedAt || "—"} · 最近活动 {session.lastSeenAt || "—"}</div>
+            </div>
+            <button
+              className="l-btn sm dgr"
+              type="button"
+              disabled={!!sessionRevokeBlockReason}
+              title={sessionRevokeBlockReason || "只吊销这一条会话"}
+              onClick={() => onRevokeSession(session.sessionId)}
+            >
+              吊销此会话
+            </button>
+          </div>
+        ))}
+        {!(account.sessionDetails ?? []).length && <div className="atint">当前没有可展示的活跃会话。</div>}
+      </div>
     </Drawer>
   );
 }

@@ -1,19 +1,19 @@
 "use client";
 
 /**
- * B5 风险雷达(只读 · 全域风险面板)。
+ * B5 风险雷达(全域风险面板)。
  * UI 严格对齐设计稿 project/「B5 风险雷达.html」command / alert board:
  *   左栏 Kill-Switch 闸门灯 + 未处理告警 feed
  *   右栏 报警瓦片三联 + 出金压力比趋势(SVG area · 动态红线)+ 底部三联
  *        (异常账户命中规则 bars / 告警严重度 donut / 近 7 日告警量 mini-bars)
  * 顶部域标/标题由共享 BPageHeader 承载;布局端口设计稿(risk-radar.css · .radarpage 作用域)。
  * 数据从 /api/admin/treasury/b-domain 读取;B5 配置缺失时由后端写入 MySQL 种子再读出。
- * 只读看板:无写动作(熔断切换在 J1 · 经 操作确认);CTA 深链 Kill-Switch 矩阵。
+ * B5 维护挤兑黄/红线的单一权威配置,J1 R1 直接引用同一红线;熔断切换仍在 J1。
  */
 import "../b-domain.css";
 import "./risk-radar.css";
 import Link from "next/link";
-import { useId } from "react";
+import { useId, useState } from "react";
 import {
   ShieldCheck,
   AlertTriangle,
@@ -21,14 +21,23 @@ import {
   ShieldAlert,
   PieChart,
   ChevronRight,
+  SlidersHorizontal,
 } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
-import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { updateB5BankRunThresholds, useBDomainDashboard } from "@/lib/admin/b-client";
 import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
+import { OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 export default function RiskRadarPage() {
   const gradId = useId().replace(/:/g, "");
   const bDomain = useBDomainDashboard();
+  const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
+  const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
+  const canWriteBankRunThresholds = authorities.some((authority) =>
+    authority === "overview_b1_write" || authority === "overview_b1_runrisk_write");
+  const [editingBankRunThresholds, setEditingBankRunThresholds] = useState(false);
+  const [toastNode, setToast] = useToast();
   const { riskRadar } = bDomain;
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
     return (
@@ -63,6 +72,13 @@ export default function RiskRadarPage() {
   const p1Count = FEED.filter((item) => item.sev === "p1").length;
   const p2Count = FEED.filter((item) => item.sev === "p2").length;
   const bankRunRatio = riskRadar.bankRunRatio || 0;
+  const bankRunYellowPct = riskRadar.bankRunYellowPct;
+  const bankRunRedlinePct = riskRadar.bankRunRedlinePct;
+  const bankRunColor = bankRunRatio >= bankRunRedlinePct
+    ? "var(--danger)"
+    : bankRunRatio >= bankRunYellowPct
+      ? "var(--warning)"
+      : "var(--success)";
 
   // ---- 趋势 SVG 几何(端口自设计稿 <script>)----
   const W = 1180;
@@ -141,7 +157,7 @@ export default function RiskRadarPage() {
               {GATES_TRIPPED === 0
                 ? `${GATES.length - GATES_MISSING} 闸待命${GATES_MISSING ? ` · ${GATES_MISSING} 未配置` : ""}`
                 : `${GATES.length} 闸 · ${GATES_TRIPPED} 已熔断(详见 J1)`}
-              {" "}· 熔断 / 恢复需 J 域 风控主管 + 总管理员 操作确认
+              {" "}· 手动熔断 / 恢复按方向权限确认；R1 自动关停后须补录处置结论
             </div>
           </section>
 
@@ -281,14 +297,19 @@ export default function RiskRadarPage() {
                 暂无出金压力趋势样本
               </div>
             )}
-            {/* 挤兑比率副灯 — 储备生存度量,与出金压力比 e(t)(流量健康)两层防线;红线 40% = J1 R1 自动熔断引用线 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)", fontSize: 11.5 }}>
+            {/* 挤兑比率副灯 — B5 持有黄/红线,J1 R1 直接引用同一 redline 配置。 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)", fontSize: 11.5, flexWrap: "wrap" }}>
               <span style={{ color: "var(--ink-3)" }}>
                 挤兑比率(24h 提现申请 ÷ 储备){" "}
-                <span className="help" data-tip="储备生存度量,与出金压力比(流量健康,早期警戒)互补分层。黄 20% 预警 · 红 40% 为 J1 提现闸自动熔断引用线(R1,J1 引用不另持)。">?</span>
+                <span className="help" data-tip={`储备生存度量,与出金压力比(流量健康,早期警戒)互补分层。黄 ${bankRunYellowPct}% 预警 · 红 ${bankRunRedlinePct}% 为 J1 提现闸自动熔断引用线(R1,J1 引用不另持)。`}>?</span>
               </span>
-              <span style={{ marginLeft: "auto", fontFamily: "var(--font-jet-mono), monospace", fontWeight: 600, color: bankRunRatio < 20 ? "var(--success)" : "var(--warning)" }}>{bankRunRatio}%</span>
-              <span style={{ color: "var(--ink-4)" }}>黄 20% · 红 40%(J1 R1 引用)</span>
+              <span style={{ marginLeft: "auto", fontFamily: "var(--font-jet-mono), monospace", fontWeight: 600, color: bankRunColor }}>{bankRunRatio}%</span>
+              <span style={{ color: "var(--ink-4)" }}>黄 {bankRunYellowPct}% · 红 {bankRunRedlinePct}%(J1 R1 引用)</span>
+              {canWriteBankRunThresholds && (
+                <button type="button" className="btn ghost" onClick={() => setEditingBankRunThresholds(true)}>
+                  <SlidersHorizontal size={14} aria-hidden /> 调整阈值
+                </button>
+              )}
             </div>
           </section>
 
@@ -380,8 +401,41 @@ export default function RiskRadarPage() {
 
       <p className="b-foot">
         出金压力比 <b>{currentPressure}%</b>,红线 {BR_TIGHT}%;异常账户 {flaggedAccounts} 个,来自 {RULES.length} 类命中规则。
-        <b>{GATES_TRIPPED === 0 ? `Kill-Switch ${GATES.length - GATES_MISSING} 闸待命${GATES_MISSING ? `,${GATES_MISSING} 闸未配置` : ""}` : `Kill-Switch ${GATES_TRIPPED} / ${GATES.length} 闸已熔断`}</b>,P0 告警为覆盖率逼近健康线下方预警。熔断触发需 J 域 操作确认 + 全站广播。
+        <b>{GATES_TRIPPED === 0 ? `Kill-Switch ${GATES.length - GATES_MISSING} 闸待命${GATES_MISSING ? `,${GATES_MISSING} 闸未配置` : ""}` : `Kill-Switch ${GATES_TRIPPED} / ${GATES.length} 闸已熔断`}</b>,P0 告警表示挤兑比率达到当前动态红线。手动触发需操作确认；R1 自动关停后补录 + 全站广播。
       </p>
+      {editingBankRunThresholds && (
+        <OperationConfirmModal
+          action="调整 B5 挤兑分层阈值"
+          detail={`B5 是挤兑黄线和红线的唯一配置入口。保存后风险灯、告警分级与 J1 R1 提现闸自动熔断立即读取同一红线;红线必须严格高于黄线。`}
+          businessForm={{
+            kind: "multi-field",
+            title: "目标新值",
+            hint: "黄线范围 5%–50%,红线范围 10%–80%,且红线必须高于黄线。",
+            fields: [
+              { key: "yellowPct", label: "预警黄线(%)", current: String(bankRunYellowPct), inputKind: "number", min: 5, max: 50, step: 0.1 },
+              { key: "redlinePct", label: "自动熔断红线(%)", current: String(bankRunRedlinePct), inputKind: "number", min: 10, max: 80, step: 0.1 },
+            ],
+          }}
+          onClose={() => setEditingBankRunThresholds(false)}
+          onConfirm={async (reason, _newValue, businessValue) => {
+            const yellowPct = businessValue?.yellowPct ?? "";
+            const redlinePct = businessValue?.redlinePct ?? "";
+            if (Number(redlinePct) <= Number(yellowPct)) {
+              setToast("红线必须严格高于黄线");
+              return;
+            }
+            try {
+              await updateB5BankRunThresholds({ yellowPct, redlinePct }, reason, operator);
+              await bDomain.reload();
+              setEditingBankRunThresholds(false);
+              setToast(`B5 挤兑阈值已更新:黄线 ${yellowPct}% · 红线 ${redlinePct}%;J1 R1 已同步引用`);
+            } catch (error) {
+              setToast(error instanceof Error ? error.message : "B5_BANKRUN_THRESHOLD_UPDATE_FAILED");
+            }
+          }}
+        />
+      )}
+      {toastNode}
     </div>
   );
 }

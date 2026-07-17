@@ -3,10 +3,13 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DataListPager, Drawer, useDataListPager } from "../design-kit";
 import {
   fetchUser360,
+  fetchUserAccountActionAccount,
   fetchUserAccountActionOverview,
+  isUsersRequestNotFound,
   removeUserAccountList,
   revokeUserSessions,
   startUserImpersonation,
@@ -21,6 +24,7 @@ import {
 } from "@/lib/admin/user360-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
 
 const OPERATOR = currentAdminOperator;
@@ -115,6 +119,8 @@ function activeImpersonation(session: UserImpersonationSession) {
 
 export function C2Actions({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm } = ctx;
+  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const canStartImpersonation = authorities.includes("user_c2_impersonate_start");
   const propose = usePropose();
   const [overview, setOverview] = useState<UserAccountActionOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,6 +129,9 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const [version, setVersion] = useState(0);
   const [acct, setAcct] = useState<User360Profile | null>(null);
   const [trace, setTrace] = useState<UserImpersonationSession | null>(null);
+  const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "found" | "not-found" | "error">("idle");
+  const searchParams = useSearchParams();
+  const focusUserCode = (searchParams.get("userCode") ?? "").trim().toUpperCase();
 
   const loadOverview = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -151,6 +160,33 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         return asNumber(b.riskScore) - asNumber(a.riskScore);
       });
   }, [overview]);
+
+  useEffect(() => {
+    if (!focusUserCode) {
+      setFocusLookupState("idle");
+      return;
+    }
+    let active = true;
+    setAcct(null);
+    setFocusLookupState("loading");
+    void fetchUserAccountActionAccount(focusUserCode)
+      .then((target) => {
+        if (!active) return;
+        if (text(target.userNo).trim().toUpperCase() !== focusUserCode) {
+          setFocusLookupState("not-found");
+          return;
+        }
+        setAcct(target);
+        setFocusLookupState("found");
+      })
+      .catch((lookupError: unknown) => {
+        if (!active) return;
+        setFocusLookupState(isUsersRequestNotFound(lookupError) ? "not-found" : "error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [focusUserCode]);
 
   const sessions = useMemo(() => overview?.sessions ?? [], [overview]);
   const listRows = useMemo(() => {
@@ -268,7 +304,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         before: "FROZEN",
         after: "ACTIVE",
         type: "acct",
-        amplifies: false,
+        amplifies: true,
         gate: { roles: [] },
         gateLabel: def.gateLabel,
         reason,
@@ -414,6 +450,15 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
 
   return (
     <>
+      {focusUserCode && (
+        <div className="ctint" role="status" style={{ marginBottom: 12 }}>
+          已从 J3 带入用户 <b>{focusUserCode}</b>；
+          {focusLookupState === "loading" && "正在向服务器精确查询该账户…"}
+          {focusLookupState === "found" && "已按服务器查询结果打开该用户的 C2 处置上下文。"}
+          {focusLookupState === "not-found" && "服务器未找到该用户，因此没有预选处置对象；下方仍保留当前账户列表，请返回 J3 刷新后重试。"}
+          {focusLookupState === "error" && "账户查询失败，因此没有预选处置对象；下方仍保留当前账户列表，请检查网络后刷新重试。"}
+        </div>
+      )}
       <div className="f-stats">
         <div className="f-stat danger"><div className="k">冻结中账户</div><div className="v">{loading ? "…" : frozenUsers}</div><div className="sub">来自账户状态统计</div></div>
         <div className="f-stat warn"><div className="k">进行中的模拟登录</div><div className="v">{loading ? "…" : asNumber(overview?.activeImpersonations)}</div><div className="sub">{liveLeftMin > 0 ? `最长剩 ${liveLeftMin} 分钟` : "当前无进行中会话"}</div></div>
@@ -479,7 +524,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           <div className="l-h">
             <span className="ttl">模拟登录控制台</span>
             <span className="sub">· 后端 impersonation 会话</span>
-            <div className="r"><button disabled={busy} className="l-btn mc" onClick={startImp}>发起模拟登录</button></div>
+            <div className="r">{canStartImpersonation && <button disabled={busy} className="l-btn mc" onClick={startImp}>发起模拟登录</button>}</div>
           </div>
           <div className="l-b">
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>进行中 / 近期会话</div>

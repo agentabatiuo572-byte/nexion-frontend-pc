@@ -1,7 +1,26 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
-import type { AuditLog, Device, HealthReport, Strategy } from "@/lib/admin/janus-c2/types";
+import {
+  normalizeK6Audit,
+  normalizeK6Audits,
+  normalizeK6Dashboard,
+  normalizeK6Device,
+  normalizeK6DevicePage,
+  normalizeK6DryRun,
+  normalizeK6ExportFile,
+  normalizeK6Health,
+  normalizeK6Strategies,
+  normalizeK6Strategy,
+} from "@/lib/admin/k6-contract";
+import type {
+  AuditLog,
+  Device,
+  HealthReport,
+  K6DashboardSnapshot,
+  K6ExportFile,
+  Strategy,
+} from "@/lib/admin/janus-c2/types";
 
-type ApiResult<T> = { code?: number; message?: string; data?: T };
+type ApiResult = { code?: unknown; message?: unknown; data?: unknown };
 export type AdminPage<T> = { total: number; pageNum: number; pageSize: number; records: T[] };
 
 export type DeviceQuery = {
@@ -34,24 +53,32 @@ export type StrategyAction = {
   configHash?: string;
 };
 
-export type DryRun = {
-  evaluated: number;
-  hit: number;
-  recommend: number;
-  filtered: number;
-  takeover: number;
-  other: number;
-  conflicts: number;
-  hitRate: number;
-  dryRunId: string;
-  configHash: string;
-  expectedVersion: number;
-};
+export type DryRun = ReturnType<typeof normalizeK6DryRun>;
+type Normalizer<T> = (value: unknown) => T;
 
 const BASE = "/api/admin/janus";
+export const pendingWriteKeys = new Map<string, string>();
 
-function idempotencyKey() {
+function readInvalidResponseError() {
+  return new Error(formatAdminApiError("K6_RESPONSE_INVALID", "K6_RESPONSE_INVALID"));
+}
+
+export class K6OutcomeUncertainError extends Error {
+  readonly commandKey: string;
+
+  constructor(commandKey: string, detail?: string) {
+    super(`本次写入结果未知，请先刷新核对；若确需重试，请保持内容不变。请求号：${commandKey}${detail ? `（${detail}）` : ""}`);
+    this.name = "K6OutcomeUncertainError";
+    this.commandKey = commandKey;
+  }
+}
+
+export function newK6CommandKey() {
   return `k6-${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+}
+
+export function writeFingerprint(method: string, path: string, body?: BodyInit | null) {
+  return `${method.toUpperCase()} ${path}\n${typeof body === "string" ? body : ""}`;
 }
 
 function query(params: Record<string, unknown>) {
@@ -62,67 +89,93 @@ function query(params: Record<string, unknown>) {
   return search.size ? `?${search.toString()}` : "";
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function parseEnvelope(raw: string, status: number): ApiResult {
+  let payload: unknown;
+  try {
+    payload = raw ? JSON.parse(raw) : {};
+  } catch {
+    throw readInvalidResponseError();
+  }
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw readInvalidResponseError();
+  }
+  return payload as ApiResult;
+}
+
+async function request<T>(path: string, init: RequestInit | undefined, normalize: Normalizer<T>, commandKey?: string): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const isWrite = !["GET", "HEAD"].includes(method);
+  const fingerprint = writeFingerprint(method, path, init?.body);
+  const stableCommandKey = isWrite ? commandKey ?? pendingWriteKeys.get(fingerprint) ?? newK6CommandKey() : "";
+  if (isWrite) pendingWriteKeys.set(fingerprint, stableCommandKey);
+
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set("Content-Type", "application/json");
-  if (init?.method && !["GET", "HEAD"].includes(init.method)) headers.set("Idempotency-Key", idempotencyKey());
+  if (isWrite) headers.set("Idempotency-Key", stableCommandKey);
   const options = { ...init, headers, cache: "no-store" as const };
+
   let response: Response;
   try {
-    response = await fetch(`${BASE}${path}`, options);
+    try {
+      response = await fetch(`${BASE}${path}`, options);
+    } catch {
+      // A timed-out request may already have committed. The single transport
+      // retry deliberately reuses the exact same idempotency key.
+      response = await fetch(`${BASE}${path}`, options);
+    }
   } catch {
-    // A timed-out request may already have committed server-side. Retry once
-    // with the exact same Idempotency-Key so the stored first result is returned.
-    response = await fetch(`${BASE}${path}`, options);
+    if (isWrite) throw new K6OutcomeUncertainError(stableCommandKey, "网络中断");
+    throw new Error("K6 数据读取失败，数据未更新");
   }
-  const text = await response.text();
-  let payload: ApiResult<T> = {};
+
+  let raw: string;
   try {
-    payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
+    raw = await response.text();
   } catch {
-    throw new Error(`JANUS_API_INVALID_RESPONSE_${response.status}`);
+    if (isWrite) throw new K6OutcomeUncertainError(stableCommandKey, "响应传输中断");
+    throw new Error("K6 数据读取失败，响应未完整接收");
   }
-  if (!response.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `JANUS_API_${response.status}`));
+  let payload: ApiResult;
+  try {
+    payload = parseEnvelope(raw, response.status);
+  } catch (error) {
+    if (isWrite && response.ok) throw new K6OutcomeUncertainError(stableCommandKey, "服务端回包无法确认");
+    throw error;
   }
-  return payload.data as T;
+
+  if (!response.ok || (typeof payload.code === "number" && payload.code !== 0)) {
+    if (isWrite) pendingWriteKeys.delete(fingerprint);
+    const message = typeof payload.message === "string" ? payload.message : undefined;
+    throw new Error(formatAdminApiError(message, `JANUS_API_${response.status}`));
+  }
+
+  const hasData = Object.prototype.hasOwnProperty.call(payload, "data");
+  const validMessage = payload.message === undefined || typeof payload.message === "string";
+  if (payload.code !== 0 || !hasData || !validMessage) {
+    if (isWrite) throw new K6OutcomeUncertainError(stableCommandKey, "成功响应契约不完整");
+    throw readInvalidResponseError();
+  }
+
+  let result: T;
+  try {
+    result = normalize(payload.data);
+  } catch (error) {
+    if (isWrite) throw new K6OutcomeUncertainError(stableCommandKey, "响应字段不完整");
+    throw readInvalidResponseError();
+  }
+  if (isWrite) pendingWriteKeys.delete(fingerprint);
+  return result;
 }
 
-function device(row: Device & { lockVersion?: number }): Device {
-  const maturity = (row.maturity ?? {}) as Partial<Device["maturity"]>;
-  const environment = (row.environment ?? {}) as Partial<Device["environment"]>;
-  return {
-    ...row,
-    maturity: {
-      appOpenCount: 0, sessionCount: 0, repeatStreakDays: 0, foregroundDurationSeconds: 0,
-      benchmarkViewed: false, optimizeDone: false, marketViewed: false, walletViewed: false,
-      ...maturity,
-    },
-    environment: {
-      environmentRiskScore: row.environmentRiskScore ?? 0, riskReasons: [], isHeadless: false,
-      automationSignalCount: 0, fpBlocklistHit: false, screenAnomaly: false,
-      timezoneMismatch: false, languageMismatch: false,
-      ...environment,
-    },
-    tags: Array.isArray(row.tags) ? row.tags : [],
-    version: row.version ?? row.lockVersion ?? 0,
-  };
-}
-
-function strategy(row: Strategy): Strategy {
-  return { ...row, versions: Array.isArray(row.versions) ? row.versions : [] };
-}
+const acceptVoid = (value: unknown) => {
+  if (value !== undefined && value !== null) throw new Error("K6_RESPONSE_INVALID:janus.void");
+  return undefined;
+};
 
 export async function fetchK6Devices(params: DeviceQuery = {}): Promise<AdminPage<Device>> {
-  const page = await request<AdminPage<Device>>(`/devices${query({ pageNum: 1, pageSize: 200, ...params })}`);
-  return { ...page, records: (page.records ?? []).map(device) };
+  return request(`/devices${query({ pageNum: 1, pageSize: 200, ...params })}`, undefined, normalizeK6DevicePage);
 }
 
-/**
- * K6 dashboard and strategy preview need the whole authoritative device set.
- * The backend remains paginated; pages are drained in small batches instead of
- * silently treating the first 200 rows as the complete business table.
- */
 export async function fetchAllK6Devices(): Promise<Device[]> {
   const first = await fetchK6Devices({ pageNum: 1, pageSize: 200 });
   const pageCount = Math.ceil(first.total / first.pageSize);
@@ -135,39 +188,35 @@ export async function fetchAllK6Devices(): Promise<Device[]> {
     );
     pages.forEach((page) => records.push(...page.records));
   }
+  if (records.length !== first.total) throw readInvalidResponseError();
   return records;
 }
 
-export async function fetchK6Device(sid: string) {
-  return device(await request<Device>(`/devices/${encodeURIComponent(sid)}`));
+export function fetchK6Dashboard(): Promise<K6DashboardSnapshot> {
+  return request("/dashboard", undefined, normalizeK6Dashboard);
 }
 
-export async function fetchK6Strategies() {
-  return (await request<Strategy[]>("/strategies")).map(strategy);
+export function fetchK6Device(sid: string): Promise<Device> {
+  return request(`/devices/${encodeURIComponent(sid)}`, undefined, normalizeK6Device);
 }
 
-export async function fetchK6Audit(limit = 200) {
-  return request<AuditLog[]>(`/audit${query({ limit })}`);
+export function fetchK6Strategies(): Promise<Strategy[]> {
+  return request("/strategies", undefined, normalizeK6Strategies);
 }
 
-export async function fetchK6Health() {
-  const report = await request<HealthReport & { indicators?: Array<HealthReport["indicators"][number] & { value: unknown }> }>("/health");
-  return {
-    ...report,
-    indicators: (report.indicators ?? []).map((indicator) => ({
-      ...indicator,
-      value: `${String(indicator.value)}${indicator.note === "%" || indicator.note === "台" ? indicator.note : ""}`,
-    })),
-    reasons: Array.isArray(report.reasons) ? report.reasons : [],
-    suggestions: Array.isArray(report.suggestions) ? report.suggestions : [],
-  } satisfies HealthReport;
+export function fetchK6Audit(limit = 200): Promise<AuditLog[]> {
+  return request(`/audit${query({ limit })}`, undefined, normalizeK6Audits);
 }
 
-export async function updateK6DeviceStatus(sid: string, body: StatusChange) {
-  return device(await request<Device>(`/devices/${encodeURIComponent(sid)}/status`, {
+export function fetchK6Health(): Promise<HealthReport> {
+  return request("/health", undefined, normalizeK6Health);
+}
+
+export function updateK6DeviceStatus(sid: string, body: StatusChange): Promise<Device> {
+  return request(`/devices/${encodeURIComponent(sid)}/status`, {
     method: "POST",
     body: JSON.stringify(body),
-  }));
+  }, normalizeK6Device);
 }
 
 function strategyPayload(value: Strategy, reason: string) {
@@ -188,45 +237,47 @@ function strategyPayload(value: Strategy, reason: string) {
   };
 }
 
-export async function saveK6Strategy(value: Strategy, reason: string, forceCreate = false) {
+export function saveK6Strategy(value: Strategy, reason: string, forceCreate = false): Promise<Strategy> {
   const isNew = forceCreate || !value.strategyId || value.strategyId.startsWith("draft_");
-  return strategy(await request<Strategy>(isNew ? "/strategies" : `/strategies/${encodeURIComponent(value.strategyId)}`, {
+  return request(isNew ? "/strategies" : `/strategies/${encodeURIComponent(value.strategyId)}`, {
     method: isNew ? "POST" : "PUT",
     body: JSON.stringify(strategyPayload(value, reason)),
-  }));
+  }, normalizeK6Strategy);
 }
 
-export async function runK6DryRun(strategyId: string, expectedVersion: number, reason: string) {
-  return request<DryRun>(`/strategies/${encodeURIComponent(strategyId)}/dry-run`, {
+export function runK6DryRun(strategyId: string, expectedVersion: number, reason: string): Promise<DryRun> {
+  return request(`/strategies/${encodeURIComponent(strategyId)}/dry-run`, {
     method: "POST",
     body: JSON.stringify({ expectedVersion, reason, note: reason }),
-  });
+  }, normalizeK6DryRun);
 }
 
-export async function changeK6StrategyStatus(strategyId: string, action: "publish" | "pause" | "archive", body: StrategyAction) {
-  return strategy(await request<Strategy>(`/strategies/${encodeURIComponent(strategyId)}/${action}`, {
+export function changeK6StrategyStatus(strategyId: string, action: "publish" | "pause" | "archive", body: StrategyAction): Promise<Strategy> {
+  return request(`/strategies/${encodeURIComponent(strategyId)}/${action}`, {
     method: "POST",
     body: JSON.stringify(body),
-  }));
+  }, normalizeK6Strategy);
 }
 
-export async function rollbackK6Strategy(strategyId: string, body: StrategyAction) {
-  return strategy(await request<Strategy>(`/strategies/${encodeURIComponent(strategyId)}/rollback`, {
+export function rollbackK6Strategy(strategyId: string, body: StrategyAction): Promise<Strategy> {
+  return request(`/strategies/${encodeURIComponent(strategyId)}/rollback`, {
     method: "POST",
     body: JSON.stringify(body),
-  }));
+  }, normalizeK6Strategy);
 }
 
-export async function deleteK6Strategy(strategyId: string, expectedVersion: number, reason: string) {
-  await request<void>(`/strategies/${encodeURIComponent(strategyId)}`, {
+export function deleteK6Strategy(strategyId: string, expectedVersion: number, reason: string): Promise<void> {
+  return request(`/strategies/${encodeURIComponent(strategyId)}`, {
     method: "DELETE",
     body: JSON.stringify({ expectedVersion, reason, note: reason }),
-  });
+  }, acceptVoid);
 }
 
-export async function recordK6Export(reportType: "health" | "audit" | "funnel", format: "csv" | "json", filters: Record<string, unknown>) {
-  return request<{ fileName: string; format: string; data: unknown }>("/exports", {
+export function recordK6Export(reportType: "health" | "audit" | "funnel", format: "csv" | "json", filters: Record<string, unknown>): Promise<K6ExportFile> {
+  return request("/exports", {
     method: "POST",
     body: JSON.stringify({ reportType, format, filters }),
-  });
+  }, (value) => normalizeK6ExportFile(value, reportType, format));
 }
+
+export { normalizeK6Audit };

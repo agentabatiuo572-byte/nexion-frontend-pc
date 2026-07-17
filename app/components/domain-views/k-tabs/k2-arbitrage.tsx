@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
-import type { K2Row, KRiskParam } from "@/lib/admin/k-client";
+import { K1OutcomeUncertainError, newK1CommandKey, type K2Row, type KRiskParam } from "@/lib/admin/k-client";
+import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 
 function errorText(error: unknown) {
@@ -32,20 +34,20 @@ const K2_PARAM_HELP: Record<string, string> = {
   leaderboardVelocityMultiplier: "排行榜、邀请或佣金增长速度相对基线的倍数阈值。",
 };
 
-type ExtraParamDef = { key: string; label: string; unit: string; min?: number; options?: string[] };
+type ExtraParamDef = { key: string; label: string; unit: string; min?: number; max?: number; step?: number; options?: string[] };
 
 const REWARD_RISK_PARAMS: ExtraParamDef[] = [
   { key: "rewardRisk.lockMode", label: "新人礼发放模式", unit: "模式", options: ["risk_bucket", "direct"] },
-  { key: "rewardRisk.usdtAmount", label: "新人礼 USDT 金额", unit: "USDT", min: 0 },
-  { key: "rewardRisk.nexAmount", label: "新人礼 NEX 金额", unit: "NEX", min: 0 },
+  { key: "rewardRisk.usdtAmount", label: "新人礼 USDT 金额", unit: "USDT", min: 0, max: 10_000, step: 1 },
+  { key: "rewardRisk.nexAmount", label: "新人礼 NEX 金额", unit: "NEX", min: 0, max: 1_000_000, step: 1 },
 ];
 
 const OTP_GATE_PARAMS: ExtraParamDef[] = [
-  { key: "otpGate.resendSeconds", label: "验证码重发冷却", unit: "秒", min: 0 },
-  { key: "otpGate.captchaAfterSends", label: "滑块验证触发次数", unit: "次/24h", min: 0 },
-  { key: "otpGate.otpTtlSeconds", label: "验证码有效期", unit: "秒", min: 60 },
-  { key: "otpGate.maxVerifyAttempts", label: "最多输错次数", unit: "次", min: 1 },
-  { key: "otpGate.captchaTicketTtlSeconds", label: "滑块票据有效期", unit: "秒", min: 30 },
+  { key: "otpGate.resendSeconds", label: "验证码重发冷却", unit: "秒", min: 30, max: 300, step: 1 },
+  { key: "otpGate.captchaAfterSends", label: "滑块验证触发次数", unit: "次/24h", min: 1, max: 10, step: 1 },
+  { key: "otpGate.otpTtlSeconds", label: "验证码有效期", unit: "秒", min: 60, max: 900, step: 60 },
+  { key: "otpGate.maxVerifyAttempts", label: "最多输错次数", unit: "次", min: 1, max: 10, step: 1 },
+  { key: "otpGate.captchaTicketTtlSeconds", label: "滑块票据有效期", unit: "秒", min: 30, max: 600, step: 1 },
 ];
 
 const LOCK_MODE_LABELS: Record<string, string> = { risk_bucket: "按风险桶发放", direct: "直入可提余额" };
@@ -177,12 +179,20 @@ function K2ParamValue({ param }: { param: KRiskParam }) {
 
 export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const propose = usePropose();
+  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const hasAuthority = (authority: string) => authorities.includes(authority);
+  const canWrite = hasAuthority("risk_k2_write");
+  const canFlag = hasAuthority("risk_k2_row_flag");
+  const canFreeze = hasAuthority("risk_k2_row_freeze");
+  const canBlockGift = hasAuthority("risk_k2_row_blockgift");
+  const canBoardFlag = hasAuthority("risk_k2_row_boardflag");
   const overview = ctx.risk.arbitrage;
   const views = overview?.views ?? [];
   const [viewKey, setViewKey] = useState("trial");
   const current = views.find((item) => item.key === viewKey) ?? views[0];
   const allParams = overview?.params ?? [];
-  const detectionParams = allParams.filter((param) => !param.key.startsWith("rewardRisk.") && !param.key.startsWith("otpGate."));
+  const detectionParams = allParams.filter((param) => K2_PARAM_HELP[param.key]);
+  const commandAttempt = useRef(new Map<string, string>());
   const [ladderTopCredit, setLadderTopCredit] = useState<string>("");
   useEffect(() => {
     let active = true;
@@ -192,13 +202,59 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
     return () => { active = false; };
   }, []);
 
-  const runAction = async (work: () => Promise<void>, ok: string) => {
+  const runAction = async (scope: string, work: (commandKey: string) => Promise<void>, ok: string) => {
+    const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
+    commandAttempt.current.set(scope, commandKey);
     try {
-      await work();
+      await work(commandKey);
+      commandAttempt.current.delete(scope);
+    } catch (error) {
+      if (error instanceof K1OutcomeUncertainError) {
+        ctx.toast(`K2 结果未知 · 当前弹窗与命令键已保留，请用同一请求重试 · ${error.commandKey}`);
+      } else {
+        commandAttempt.current.delete(scope);
+        ctx.toast(`K2 操作失败 · 本次写入未生效，当前输入已保留 · ${errorText(error)}`);
+      }
+      throw error;
+    }
+    try {
       await ctx.reloadKRisk();
       ctx.toast(ok);
+    } catch {
+      ctx.toast(`${ok}，已写入，但 K2 最新数据回读失败；请点击“仅重试 K2”核对服务端状态`);
+    }
+  };
+
+  const proposeK2Freeze = async (r: K2Row, reason: string) => {
+    const scope = `k2-freeze:${r.rowId}:${r.version}:${r.clusterVersion ?? -1}`;
+    const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
+    commandAttempt.current.set(scope, commandKey);
+    const def = findHighOp("k2_row_freeze")!;
+    try {
+      const result = await propose(ctx.toast, {
+        action: `联动 K1 批量冻结 · ${r.cells[0]}`,
+        obj: r.rowId,
+        before: "K1 已标记可疑",
+        after: "联动 K1 冻结",
+        type: "acct",
+        amplifies: false,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "K2",
+        commandKey,
+        command: def.buildCommand({
+          rowId: r.rowId,
+          expectedVersion: r.version,
+          clusterExpectedVersion: r.clusterVersion,
+        }),
+        target: def.buildTarget({ rowId: r.rowId }),
+      });
+      commandAttempt.current.delete(scope);
+      return result;
     } catch (error) {
-      ctx.toast(`K2 操作失败 · ${errorText(error)}`);
+      if (!(error instanceof A2OutcomeUncertainError)) commandAttempt.current.delete(scope);
+      throw error;
     }
   };
 
@@ -209,23 +265,11 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       chips: [["仅标记 · 附证据链", "done"], ["后端审计", "ready"]],
       reason: true,
       okLabel: "确认标记",
-      run: (reason) => {
-        const def = findHighOp("k2_row_flag")!;
-        void propose(ctx.toast, {
-          action: `标记套利账户 · ${r.cells[0]}`,
-          obj: r.rowId,
-          before: "未标记",
-          after: "已标记套利",
-          type: "acct",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "K2",
-          command: def.buildCommand({ rowId: r.rowId }),
-          target: def.buildTarget({ rowId: r.rowId }),
-        });
-      },
+      run: (reason) => runAction(
+        `k2-flag:${r.rowId}:${r.version}`,
+        (commandKey) => ctx.actions.executeK2Action(r.rowId, "flag", r.version, undefined, reason, commandKey),
+        `${r.cells[0]} 已标记套利`,
+      ),
     });
 
   const blockGift = (r: K2Row) =>
@@ -235,23 +279,11 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       chips: [["预防性阻断", "done"], ["台账留痕", "ready"]],
       reason: true,
       okLabel: "确认拦截",
-      run: (reason) => {
-        const def = findHighOp("k2_row_blockgift")!;
-        void propose(ctx.toast, {
-          action: `拦截新人礼 · ${r.cells[0]}`,
-          obj: r.rowId,
-          before: "未拦截",
-          after: "新人礼已拦截",
-          type: "acct",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "K2",
-          command: def.buildCommand({ rowId: r.rowId }),
-          target: def.buildTarget({ rowId: r.rowId }),
-        });
-      },
+      run: (reason) => runAction(
+        `k2-blockgift:${r.rowId}:${r.version}`,
+        (commandKey) => ctx.actions.executeK2Action(r.rowId, "blockgift", r.version, undefined, reason, commandKey),
+        `${r.cells[0]} 的后续新人礼已拦截`,
+      ),
     });
 
   const boardFlag = (r: K2Row) =>
@@ -261,46 +293,19 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       chips: [["仅标记 + 产信号", "done"], ["后端审计", "ready"]],
       reason: true,
       okLabel: "确认标记",
-      run: (reason) => {
-        const def = findHighOp("k2_row_boardflag")!;
-        void propose(ctx.toast, {
-          action: `标记刷榜账户 · ${r.cells[0]}`,
-          obj: r.rowId,
-          before: "未标记",
-          after: "已标记刷榜",
-          type: "acct",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "K2",
-          command: def.buildCommand({ rowId: r.rowId }),
-          target: def.buildTarget({ rowId: r.rowId }),
-        });
-      },
+      run: (reason) => runAction(
+        `k2-boardflag:${r.rowId}:${r.version}`,
+        (commandKey) => ctx.actions.executeK2Action(r.rowId, "boardflag", r.version, undefined, reason, commandKey),
+        `${r.cells[0]} 已标记刷榜`,
+      ),
     });
 
   const linkFreeze = (r: K2Row) =>
     ctx.openActionConfirm({
       action: `联动 K1 批量冻结 · ${r.cells[0]}`,
       detail: `复用 K1 冻结链路提交 ${r.cluster || r.rowId} 的冻结处置,并把套利证据链写入审计。`,
-      run: (reason) => {
-        const def = findHighOp("k2_row_freeze")!;
-        void propose(ctx.toast, {
-          action: `联动 K1 批量冻结 · ${r.cells[0]}`,
-          obj: r.rowId,
-          before: "未冻结",
-          after: "联动 K1 冻结",
-          type: "acct",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "K2",
-          command: def.buildCommand({ rowId: r.rowId }),
-          target: def.buildTarget({ rowId: r.rowId }),
-        });
-      },
+      reasonMax: 200,
+      run: (reason) => proposeK2Freeze(r, reason),
     });
 
   const adjParam = (p: KRiskParam) => {
@@ -314,13 +319,18 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       detail: `${p.name} · 当前 ${p.value}。${K2_PARAM_HELP[p.key] ?? p.note}`,
       amplifies: true,
       businessForm,
+      reasonMax: 200,
       run: (reason, _newVal, businessValue) => {
         const nextValue = buildK2ThresholdValue(p.key, businessValue);
         if (!nextValue) {
           ctx.toast(`${p.name} 参数不完整或超出范围`);
           return;
         }
-        void runAction(() => ctx.actions.updateK2Param(p.key, nextValue, reason), `${p.name} 已更新为 ${nextValue}`);
+        return runAction(
+          `k2-param:${p.key}:${p.version}:${p.value}`,
+          (commandKey) => ctx.actions.updateK2Param(p.key, nextValue, p.version, reason, commandKey),
+          `${p.name} 已更新为 ${nextValue}`,
+        );
       },
     });
   };
@@ -338,17 +348,38 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       amplifies: definition.key.startsWith("rewardRisk."),
       edit: definition.options
         ? { kind: "select", current, options: definition.key === "rewardRisk.lockMode" ? Object.values(LOCK_MODE_LABELS) : definition.options }
-        : { kind: "number", current: param.value, unit: definition.unit, min: definition.min },
+        : { kind: "number", current: param.value, unit: definition.unit, min: definition.min, max: definition.max, step: definition.step },
+      reasonMax: 200,
       run: (reason, value) => {
         if (value == null || value === "") return;
         const backendValue = definition.key === "rewardRisk.lockMode" ? (LOCK_MODE_VALUES[value] ?? value) : value;
-        void runAction(() => ctx.actions.updateK2Param(definition.key, backendValue, reason), `${definition.label} 已更新为 ${value} ${definition.unit}`);
+        return runAction(
+          `k2-param:${definition.key}:${param.version}:${param.value}`,
+          (commandKey) => ctx.actions.updateK2Param(definition.key, backendValue, param.version, reason, commandKey),
+          `${definition.label} 已更新为 ${value} ${definition.unit}`,
+        );
       },
     });
   };
 
-  if (ctx.contentLoading && !overview) {
+  if (ctx.contentLoading) {
     return <section className="l-card"><div className="l-h"><span className="ttl">K2 数据加载中</span><span className="sub">· 正在读取后端 risk 接口</span></div></section>;
+  }
+
+  if (ctx.contentError) {
+    return (
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">K2 数据加载失败</span>
+          <span className="sub">· {errorText(ctx.contentError)} · 已隐藏旧数据与写操作，避免误处置</span>
+          <div className="r"><button className="l-btn" onClick={() => void ctx.reloadKRisk().catch(() => undefined)}>仅重试 K2</button></div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!overview) {
+    return <section className="l-card"><div className="l-h"><span className="ttl">K2 暂无可用数据</span></div></section>;
   }
 
   return (
@@ -389,9 +420,9 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">检测阈值</span>
-          <span className="sub">· 置换抵扣阶梯归 E3 管,这里只读引用(随时可置换,抵扣随产出递减)</span>
+          <span className="sub">· 置换抵扣阶梯归 E3 管；K2 依据高频下架置换与礼金/返佣叠加证据判定</span>
           <div className="r">
-            <Link className="kcode lock" href="/devices/trade-in" title="置换阶梯权威归 E3；最短持有闸门已删除">🔒 置换阶梯归 E3 · 首档抵扣 {ladderTopCredit ? `${ladderTopCredit}%` : "读取中"}</Link>
+            <Link className="kcode lock" href="/devices/trade-in" title="置换阶梯权威归 E3；K2 不维护置换价格参数">🔒 置换阶梯归 E3 · 首档抵扣 {ladderTopCredit ? `${ladderTopCredit}%` : "读取中"}</Link>
           </div>
         </div>
         <div className="l-b">
@@ -402,7 +433,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                 <div className="v">
                   <K2ParamValue param={p} />
                   {p.unit ? <span className="vu">{p.unit}</span> : null}
-                  <button className="l-btn sm mc" onClick={() => adjParam(p)}>调整</button>
+                  {canWrite && <button className="l-btn sm mc" onClick={() => adjParam(p)}>调整</button>}
                 </div>
                 <div className="s">{p.sub}</div>
               </div>
@@ -413,7 +444,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
       {[
         { title: "新人礼发放配置", sub: "· 配置已持久化；发奖服务接入前不影响实际入账", params: REWARD_RISK_PARAMS, proof: "k2-welcome-gift-params" },
-        { title: "短信闸门参数", sub: "· 验证码发送限频与滑块人机验证", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
+        { title: "短信闸门参数", sub: "· 冷却 → 24h 限频（达到阈值后要求滑块票据）→ 放行；调整只影响后续发送，已签发验证码沿用签发时参数", params: OTP_GATE_PARAMS, proof: "k2-otp-gate-params" },
       ].map((group) => (
         <section className="l-card" key={group.title}>
           <div className="l-h">
@@ -430,7 +461,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                     <div className="k">{definition.label}</div>
                     <div className="v">
                       {definition.key === "rewardRisk.lockMode" && param ? (LOCK_MODE_LABELS[param.value] ?? param.value) : (param?.value ?? "—")} <span className="vu">{definition.unit}</span>
-                      <button className="l-btn sm mc" disabled={!param} onClick={() => adjExtraParam(definition)}>调整</button>
+                      {canWrite && <button className="l-btn sm mc" disabled={!param} onClick={() => adjExtraParam(definition)}>调整</button>}
                     </div>
                     <div className="s">{param?.sub ?? "等待后端配置"}</div>
                   </div>
@@ -478,19 +509,24 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                         <span className="bdg dim">{disposed}</span>
                       ) : (
                         <span style={{ display: "inline-flex", gap: 6 }}>
-                          {r.actions.map((action) =>
-                            action === "flag" ? <button key={action} className="l-btn sm" onClick={() => markArb(r)}>标记套利</button>
-                            : action === "freeze" ? <button key={action} className="l-btn sm mc" onClick={() => linkFreeze(r)}>联动 K1 冻结</button>
-                            : action === "blockgift" ? <button key={action} className="l-btn sm" onClick={() => blockGift(r)}>拦截新人礼</button>
-                            : <button key={action} className="l-btn sm" onClick={() => boardFlag(r)}>标记刷榜</button>,
-                          )}
+                          {r.actions.map((action) => {
+                            if (action === "flag") return canFlag ? <button key={action} className="l-btn sm" onClick={() => markArb(r)}>标记套利</button> : null;
+                            if (action === "blockgift") return canBlockGift ? <button key={action} className="l-btn sm" onClick={() => blockGift(r)}>拦截新人礼</button> : null;
+                            if (action === "boardflag") return canBoardFlag ? <button key={action} className="l-btn sm" onClick={() => boardFlag(r)}>标记刷榜</button> : null;
+                            if (action === "freeze") {
+                              if (!canFreeze) return null;
+                              const ready = r.clusterStatus === "flagged" && r.clusterVersion !== undefined;
+                              return <button key={action} className="l-btn sm mc" disabled={!ready} title={ready ? "提交 A2 确认链" : "需先在 K1 将关联簇标记为可疑"} onClick={() => linkFreeze(r)}>{ready ? "联动 K1 冻结" : "先到 K1 标可疑"}</button>;
+                            }
+                            return <span key={action} className="bdg warn" title="服务端返回了前端不认识的动作，已失败关闭">未知动作</span>;
+                          })}
                         </span>
                       )}
                     </td>
                   </tr>
                 );
               })}
-              {!current?.rows?.length && <tr><td colSpan={(current?.head?.length ?? 0) + 3} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>暂无命中记录</td></tr>}
+              {!current?.rows?.length && <tr><td colSpan={(current?.head?.length ?? 0) + (current?.key === "trial" ? 3 : 2)} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>暂无命中记录</td></tr>}
             </tbody>
           </table>
         </div>

@@ -380,6 +380,7 @@
 .jdom .feed-strip .it .led { width: 8px; height: 8px; border-radius: 50%; background: var(--success);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent); }
 .jdom .feed-strip .it .led.warn { background: var(--warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 18%, transparent); }
+.jdom .feed-strip .it .led.dim { background: var(--ink-4); box-shadow: none; }
 .jdom .feed-strip .it b { font-family: var(--mono); color: var(--brand); font-weight: 600; }
 .jdom .feed-strip .sep { color: var(--ink-4); }
 
@@ -456,6 +457,8 @@
 .jdom .pb-ft .acts button.exec:hover { background: var(--danger); color: #fff; }
 .jdom .pb-ft .acts button.exec.emer { background: var(--danger); color: #fff; border-color: var(--danger); }
 .jdom .pb-ft .acts button.exec.emer:hover { background: #c9542a; }
+.jdom .pb-ft .acts button:disabled { opacity: .35; filter: grayscale(.65); cursor: not-allowed; }
+.jdom .pb-ft .acts button:disabled:hover { color: inherit; filter: grayscale(.65); }
 
 /* SLA / 执行框架 双卡 */
 .jdom .top-side { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }

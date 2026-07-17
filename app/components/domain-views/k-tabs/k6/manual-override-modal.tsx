@@ -16,8 +16,8 @@ import type { Transition } from "@/lib/admin/janus-c2/transitions";
 
 const EXPIRE_OPTIONS: [number, string][] = [[1, "1 小时"], [2, "2 小时"], [6, "6 小时"], [24, "24 小时"]];
 
-export function ManualOverrideModal({ device, transition: t, operatorId, onClose }: {
-  device: Device; transition: Transition; operatorId: string; onClose: () => void;
+export function ManualOverrideModal({ device, transition: t, operatorId, onClose, onApplied }: {
+  device: Device; transition: Transition; operatorId: string; onClose: () => void; onApplied?: (device: Device) => void;
 }) {
   const apply = useJanusC2Store((s) => s.applyOverride);
   const [reasonCategory, setReasonCategory] = useState("");
@@ -35,7 +35,8 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const reasonOk = reasonText.trim().length >= 8;
+  const reasonLength = reasonText.trim().length;
+  const reasonOk = reasonLength >= 8 && reasonLength <= 500;
   const valid = !!reasonCategory && reasonOk && (!t.needsRemoteUrl || !!remoteUrlKey) && (!t.strong || strong);
 
   const confirm = async () => {
@@ -51,7 +52,8 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
     setPending(true);
     setSubmitError(null);
     try {
-      await apply(device, t, form, operatorId);
+      const updated = await apply(device, t, form, operatorId);
+      onApplied?.(updated);
       onClose();
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "修改失败，请重试");
@@ -98,8 +100,9 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
           </div>
 
           <div className="k6-ovr-field">
-            <label htmlFor="ovr-reason">详细原因<i className={reasonOk ? "ok" : ""}>{reasonOk ? "已满足" : "必填 · 至少 8 字"}</i></label>
+            <label htmlFor="ovr-reason">详细原因<i className={reasonOk ? "ok" : ""}>{reasonOk ? `已满足 · ${reasonLength}/500` : `必填 · 8–500 字 · ${reasonLength}/500`}</i></label>
             <textarea id="ovr-reason" className="k6-field k6-ovr-textarea" value={reasonText} onChange={(e) => setReasonText(e.target.value)}
+              maxLength={500}
               placeholder="写清场景与依据,如:已知合作设备 / 客诉线索跟进 / 现场演示需要…" />
           </div>
 

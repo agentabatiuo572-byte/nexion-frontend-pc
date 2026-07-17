@@ -8,8 +8,8 @@ type RouteContext = {
   params: Promise<{ path?: string[] }>;
 };
 
-function jsonError(status: number, message: string) {
-  return Response.json({ code: status, message, data: null }, { status });
+function jsonError(status: number, message: string, headers?: HeadersInit) {
+  return Response.json({ code: status, message, data: null }, { status, headers });
 }
 
 function isNonEmpty(value: string | undefined) {
@@ -17,6 +17,9 @@ function isNonEmpty(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 2 && parts[0] === "ops-dashboard" && parts[1] === "summary") {
+    return "/api/admin/ops-dashboard/summary";
+  }
   if (parts.length === 2 && parts[0] === "config" && parts[1] === "overview") {
     return "/api/admin/platform/config/overview";
   }
@@ -167,7 +170,8 @@ async function proxy(request: Request, context: RouteContext) {
       headers: responseHeaders,
     });
   } catch {
-    return jsonError(503, "PLATFORM_BACKEND_UNAVAILABLE");
+    return jsonError(503, "PLATFORM_BACKEND_UNAVAILABLE",
+      hasBody ? { "X-Nexion-Upstream-Outcome": "unknown" } : undefined);
   }
 }
 

@@ -1,18 +1,32 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { DataListPager, Modal } from "../design-kit";
-import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
+import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, newK1CommandKey } from "@/lib/admin/k-client";
+import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 const CLUSTER_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const WHITELIST_PAGE_SIZE_OPTIONS = [5, 10, 20];
+const MAX_FOCUS_RELOCATIONS = 3;
 const EMPTY_CLUSTER_PAGE: AdminPage<K1Cluster> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
 const EMPTY_WHITELIST_PAGE: AdminPage<K1WhitelistRow> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
-type WeightDraft = { param: KRiskParam; device: string; payment: string; ip: string; reason: string };
+// if (ctx.contentError) the K1 component returns a dedicated retry state before rendering any stale business controls.
+type WeightDraft = { param: KRiskParam; device: string; payment: string; ip: string; reason: string; commandKey: string };
+type ParamDraft = { param: KRiskParam; value: string; reason: string; commandKey: string };
+type WhitelistDraft = { cidr: string; note: string; expireText: string; reason: string; commandKey: string };
+const PARAM_LIMITS: Record<string, { min: number; max: number; step: number; integer: boolean }> = {
+  maxSignupPerIp24h: { min: 1, max: 10, step: 1, integer: true },
+  maxAccountsPerDevice: { min: 1, max: 5, step: 1, integer: true },
+  maxAccountsPerPaymentInstrument: { min: 1, max: 5, step: 1, integer: true },
+  clusterFreezeSuggestThreshold: { min: 0, max: 1, step: 0.05, integer: false },
+};
 
 const CLUSTER_ST: Record<ClusterStatus, [string, string]> = {
   detected: ["待判定", "dim"],
@@ -27,7 +41,14 @@ function strengthColor(v: number) {
 }
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "UNKNOWN_ERROR";
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /failed to fetch|networkerror|backend_unavailable/i.test(message)
+    ? "暂时无法连接风险服务，请稍后重试"
+    : message || "暂时无法读取风险数据";
+}
+
+function confirmedK1FailureText(error: unknown) {
+  return `K1 操作失败 · 本次写入未生效 · 服务端数据未变化，当前输入已保留 · ${errorText(error)}`;
 }
 
 function parseNamedWeight(value: string, label: string, fallback: string) {
@@ -65,34 +86,32 @@ export function K1HeaderActions() {
 function ClusterGraph({ c }: { c: K1Cluster }) {
   const gid = useId();
   const W = 320, H = 272, cx = W / 2, cy = H / 2, R = 94;
-  const edgeColor = c.layer === "device" ? "var(--warning)" : c.layer === "payment" ? "var(--cyan)" : "var(--ink-4)";
-  const stColor: Record<ClusterStatus, string> = {
-    frozen: "var(--danger)", flagged: "var(--warning)", detected: "var(--ink-4)", released: "var(--success)", cleared: "var(--success)",
-  };
+  const edgeColor = (layer: string) => layer === "device" ? "var(--warning)" : layer === "payment" ? "var(--cyan)" : "var(--ink-4)";
+  const nodeColor = (status: string) => /FROZEN|BANNED|RESTRICTED/i.test(status) ? "var(--danger)" : "var(--success)";
   const k = Math.min(c.nodes.length, 8);
   const over = Math.max(c.n - k, 0);
   const total = Math.max(k + (over > 0 ? 1 : 0), 1);
-  const ew = 1.2 + c.strength * 2;
+  const positions = new Map(c.nodes.slice(0, k).map((node, index) => {
+    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / total;
+    return [node[0], { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle), angle }] as const;
+  }));
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 272, display: "block" }} aria-label={`簇 ${c.id} 关联图谱`}>
       <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--border)" strokeDasharray="3 6" />
+      {c.edges.map((edge, index) => {
+        const from = positions.get(edge[0]);
+        const to = positions.get(edge[1]);
+        if (!from || !to) return null;
+        return <line key={`${gid}-edge-${index}`} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={edgeColor(edge[2])} strokeWidth={1.2 + edge[3] * 3} opacity={0.68} />;
+      })}
       {Array.from({ length: total }, (_, i) => {
         const a = -Math.PI / 2 + (i * 2 * Math.PI) / total;
         const ux = Math.cos(a), uy = Math.sin(a);
         const x = cx + R * ux, y = cy + R * uy;
         const isOver = i >= k;
-        const line = (
-          <line
-            x1={(cx + ux * 28).toFixed(1)} y1={(cy + uy * 28).toFixed(1)}
-            x2={(x - ux * 16).toFixed(1)} y2={(y - uy * 16).toFixed(1)}
-            stroke={edgeColor} strokeWidth={isOver ? 1 : ew} opacity={isOver ? 0.3 : 0.55}
-            strokeDasharray={isOver ? "3 4" : undefined}
-          />
-        );
         if (isOver) {
           return (
             <g key={`${gid}-o`}>
-              {line}
               <circle cx={x} cy={y} r={13} fill="var(--surface-2)" stroke="var(--border-strong)" strokeWidth={1.3} strokeDasharray="3 3" />
               <text x={x} y={y + 4} fontSize={11} fontWeight={700} fill="var(--ink-4)" textAnchor="middle">{`+${over}`}</text>
               <text x={x} y={uy >= 0 ? y + 30 : y - 22} fontSize={10.5} fill="var(--ink-4)" textAnchor="middle">未列出</text>
@@ -100,10 +119,9 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
           );
         }
         const nd = c.nodes[i];
-        const col = stColor[nd?.[5] ?? "detected"] ?? "var(--ink-4)";
+        const col = nodeColor(nd?.[5] ?? "UNKNOWN");
         return (
           <g key={`${gid}-${nd?.[0] ?? i}`}>
-            {line}
             <circle cx={x} cy={y} r={18} fill={col} opacity={0.1} />
             <circle cx={x} cy={y} r={13} fill="var(--surface-2)" stroke={col} strokeWidth={1.6} />
             <circle cx={x} cy={y} r={3} fill={col} />
@@ -112,23 +130,52 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
           </g>
         );
       })}
-      <circle cx={cx} cy={cy} r={34} fill="var(--warning)" opacity={0.07} />
-      <circle cx={cx} cy={cy} r={24} fill="var(--surface-2)" stroke="var(--warning)" strokeWidth={1.6} />
-      <text x={cx} y={cy - 1} fontSize={11.5} fontWeight={700} fill="var(--warning)" textAnchor="middle">同一</text>
-      <text x={cx} y={cy + 12} fontSize={11.5} fontWeight={700} fill="var(--warning)" textAnchor="middle">实体</text>
+      {!c.edges.length && <text x={cx} y={cy + 4} fontSize={11} fill="var(--ink-4)" textAnchor="middle">暂无可展示关联边</text>}
     </svg>
   );
 }
 
+function isValidCidr(value: string) {
+  const match = value.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d|[12]\d|3[0-2])$/);
+  return !!match && match.slice(1, 5).every((part) => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255);
+}
+
+function futureIsoDate(value: string) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isFinite(parsed.getTime()) && parsed > today;
+}
+
 export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const propose = usePropose();
+  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const hasAuthority = (authority: string) => authorities.includes(authority);
+  const canWrite = hasAuthority("risk_k1_write");
+  const canFlag = hasAuthority("risk_k1_cluster_flag");
+  const canFreeze = hasAuthority("risk_k1_cluster_freeze");
+  const canRelease = hasAuthority("risk_k1_cluster_release");
+  const canClear = hasAuthority("risk_k1_cluster_cleared");
   const [layer, setLayer] = useState<K1ClusterLayer>("all");
+  const [clusterStatus, setClusterStatusFilter] = useState<K1ClusterStatusFilter>("all");
+  const [clusterSort, setClusterSort] = useState<K1ClusterSort>("strength_desc");
   const [clusterPage, setClusterPage] = useState(1);
   const [clusterPageSize, setClusterPageSize] = useState(5);
   const [whitelistPage, setWhitelistPage] = useState(1);
   const [whitelistPageSize, setWhitelistPageSize] = useState(5);
   const [sel, setSel] = useState(0);
   const [weightDraft, setWeightDraft] = useState<WeightDraft | null>(null);
+  const [paramDraft, setParamDraft] = useState<ParamDraft | null>(null);
+  const [whitelistDraft, setWhitelistDraft] = useState<WhitelistDraft | null>(null);
+  const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | null>(null);
+  const draftSubmitLock = useRef(false);
+  const formId = useId();
+  const commandAttempt = useRef(new Map<string, string>());
+  const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "positioning" | "found" | "not-found" | "error">("idle");
+  const focusPageLoad = useRef(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const focusClusterId = (searchParams.get("focusClusterId") ?? "").trim();
   const overview = ctx.risk.multiAccount;
   const stats = overview?.stats ?? {};
   const params = overview?.params ?? [];
@@ -140,32 +187,140 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     clusterPageNum: clusterPage,
     clusterPageSize,
     clusterLayer: layer,
+    clusterStatus,
+    clusterSort,
     whitelistPageNum: whitelistPage,
     whitelistPageSize,
-  }), [clusterPage, clusterPageSize, layer, whitelistPage, whitelistPageSize]);
-  const cur = clusters[sel] ?? clusters[0];
+  }), [clusterPage, clusterPageSize, layer, clusterStatus, clusterSort, whitelistPage, whitelistPageSize]);
+  const focusBlocksSelection = Boolean(focusClusterId) && focusLookupState !== "found";
+  const cur = focusBlocksSelection ? undefined : clusters[sel] ?? clusters[0];
+
+  const exitFocusMode = () => {
+    focusPageLoad.current = false;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("focusClusterId");
+    next.delete("source");
+    setFocusLookupState("idle");
+    setSel(0);
+    router.replace(next.size ? `?${next.toString()}` : "?");
+  };
 
   useEffect(() => {
-    void ctx.reloadKRisk({ multiAccount: pageQuery });
+    if (focusPageLoad.current) return;
+    void ctx.reloadKRisk({ multiAccount: pageQuery }).catch(() => undefined);
   }, [ctx.reloadKRisk, pageQuery]);
 
   useEffect(() => {
     setSel(0);
-  }, [clusterPage, clusterPageSize, layer]);
+  }, [clusterPage, clusterPageSize, layer, clusterStatus, clusterSort]);
 
-  const stat = (key: string) => Number(stats[key] ?? 0);
+  useEffect(() => {
+    if (!focusClusterId) {
+      setFocusLookupState("idle");
+      return;
+    }
+    let active = true;
+    focusPageLoad.current = true;
+    setFocusLookupState("loading");
+    setLayer("all");
+    setClusterStatusFilter("all");
+    setSel(0);
+    void (async () => {
+      const searchPageSize = 50;
+      for (let relocation = 0; active && relocation < MAX_FOCUS_RELOCATIONS; relocation += 1) {
+        let searchPage = 1;
+        let targetPage: number | null = null;
+        while (active) {
+          const result = await fetchK1MultiAccountOverview({
+            clusterPageNum: searchPage,
+            clusterPageSize: searchPageSize,
+            clusterLayer: "all",
+            clusterStatus: "all",
+            clusterSort,
+            whitelistPageNum: 1,
+            whitelistPageSize: 5,
+          });
+          const index = result.clusters.records.findIndex((cluster) => cluster.id === focusClusterId);
+          if (index >= 0) {
+            const absoluteIndex = (searchPage - 1) * searchPageSize + index;
+            targetPage = Math.floor(absoluteIndex / clusterPageSize) + 1;
+            break;
+          }
+          const totalPages = Math.max(1, Math.ceil(result.clusters.total / searchPageSize));
+          if (searchPage >= totalPages) break;
+          searchPage += 1;
+        }
+        if (!active) return;
+        if (targetPage === null) {
+          if (active) setFocusLookupState("not-found");
+          return;
+        }
+        setFocusLookupState("positioning");
+        setClusterPage(targetPage);
+        const positioned = await ctx.reloadKRisk({
+          multiAccount: {
+            clusterPageNum: targetPage,
+            clusterPageSize,
+            clusterLayer: "all",
+            clusterStatus: "all",
+            clusterSort,
+            whitelistPageNum: whitelistPage,
+            whitelistPageSize,
+          },
+        });
+        if (!active) return;
+        const positionedIndex = positioned?.clusters.records.findIndex((cluster) => cluster.id === focusClusterId) ?? -1;
+        if (positionedIndex >= 0) {
+          setSel(positionedIndex);
+          setFocusLookupState("found");
+          focusPageLoad.current = false;
+          return;
+        }
+        setFocusLookupState("loading");
+      }
+      if (active) setFocusLookupState("error");
+    })().catch(() => {
+      if (active) setFocusLookupState("error");
+    }).finally(() => {
+      focusPageLoad.current = false;
+    });
+    return () => {
+      active = false;
+      focusPageLoad.current = false;
+    };
+  }, [clusterPageSize, clusterSort, ctx.reloadKRisk, focusClusterId, whitelistPage, whitelistPageSize]);
+
+  const statKnown = (key: string) => stats[key] !== null && stats[key] !== undefined;
+  const statText = (key: string) => statKnown(key) ? fmt(Number(stats[key])) : "—";
   const runAction = async (work: () => Promise<void>, ok: string) => {
     try {
       await work();
+    } catch (error) {
+      ctx.toast(error instanceof K1OutcomeUncertainError
+        ? `K1 结果未知 · 请用同一命令键重试，不要重复新建操作 · ${error.commandKey}`
+        : confirmedK1FailureText(error));
+      throw error;
+    }
+    try {
       await ctx.reloadKRisk({ multiAccount: pageQuery });
       ctx.toast(ok);
-    } catch (error) {
-      ctx.toast(`K1 操作失败 · ${errorText(error)}`);
+    } catch {
+      ctx.toast(`${ok}，但最新数据回读失败；请点击“仅重试 K1”核对服务端状态`);
     }
   };
 
-  const setClusterStatus = (c: K1Cluster, status: ClusterStatus, reason: string, ok: string) =>
-    runAction(() => ctx.actions.updateK1ClusterStatus(c.id, status, reason), ok);
+  const proposeClusterAction = async (scope: string, spec: Parameters<typeof propose>[1]) => {
+    const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
+    commandAttempt.current.set(scope, commandKey);
+    try {
+      const result = await propose(ctx.toast, { ...spec, commandKey });
+      commandAttempt.current.delete(scope);
+      return result;
+    } catch (error) {
+      if (!(error instanceof A2OutcomeUncertainError)) commandAttempt.current.delete(scope);
+      throw error;
+    }
+  };
 
   const flagCluster = (c: K1Cluster) =>
     ctx.openConfirm({
@@ -176,7 +331,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       okLabel: "确认标记",
       run: (reason) => {
         const def = findHighOp("k1_cluster_flag")!;
-        void propose(ctx.toast, {
+        return proposeClusterAction(`cluster-flag:${c.id}:${c.version}`, {
           action: `标记可疑账户簇 · ${c.id}`,
           obj: c.id,
           before: c.status,
@@ -187,7 +342,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "K1",
-          command: def.buildCommand({ clusterId: c.id }),
+          command: def.buildCommand({ clusterId: c.id, expectedVersion: c.version }),
           target: def.buildTarget({ clusterId: c.id }),
         });
       },
@@ -197,9 +352,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     ctx.openActionConfirm({
       action: `批量冻结关联账户 · ${c.id}`,
       detail: `把簇内 ${c.n} 个账户置为冻结簇状态。冻结台账和账户执行仍由后端链路处理,本页只提交处置命令和原因。`,
+      reasonMax: 200,
       run: (reason) => {
         const def = findHighOp("k1_cluster_freeze")!;
-        void propose(ctx.toast, {
+        return proposeClusterAction(`cluster-freeze:${c.id}:${c.version}`, {
           action: `批量冻结关联账户 · ${c.id}`,
           obj: c.id,
           before: c.status,
@@ -210,7 +366,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "K1",
-          command: def.buildCommand({ clusterId: c.id }),
+          command: def.buildCommand({ clusterId: c.id, expectedVersion: c.version }),
           target: def.buildTarget({ clusterId: c.id }),
         });
       },
@@ -221,9 +377,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       action: `解除误判 · ${c.id}`,
       detail: "解冻/放行方向会放大资金流出,需要操作确认并写清原因。后端会保留审计记录。",
       amplifies: true,
+      reasonMax: 200,
       run: (reason) => {
         const def = findHighOp("k1_cluster_release")!;
-        void propose(ctx.toast, {
+        return proposeClusterAction(`cluster-release:${c.id}:${c.version}`, {
           action: `解除误判 · ${c.id}`,
           obj: c.id,
           before: c.status,
@@ -234,7 +391,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "K1",
-          command: def.buildCommand({ clusterId: c.id }),
+          command: def.buildCommand({ clusterId: c.id, expectedVersion: c.version }),
           target: def.buildTarget({ clusterId: c.id }),
         });
       },
@@ -245,9 +402,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       action: `判定为正常 · ${c.id}`,
       detail: "该动作会把账户簇移出监控队列,会减少后续风险评分输入,必须填写原因。",
       amplifies: true,
+      reasonMax: 200,
       run: (reason) => {
         const def = findHighOp("k1_cluster_cleared")!;
-        void propose(ctx.toast, {
+        return proposeClusterAction(`cluster-clear:${c.id}:${c.version}`, {
           action: `判定为正常 · ${c.id}`,
           obj: c.id,
           before: c.status,
@@ -258,65 +416,114 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "K1",
-          command: def.buildCommand({ clusterId: c.id }),
+          command: def.buildCommand({ clusterId: c.id, expectedVersion: c.version }),
           target: def.buildTarget({ clusterId: c.id }),
         });
       },
     });
 
-  const reviewNote = (c: K1Cluster) =>
+  const reviewNote = (c: K1Cluster) => {
+    const commandKey = newK1CommandKey();
     ctx.openConfirm({
       action: `人工复审备注 · ${c.id}`,
       detail: "记录复审备注并保持当前状态不变。",
       chips: [["仅备注 · 不改状态", "done"], ["后端审计", "ready"]],
       reason: true,
       okLabel: "保存备注",
-      run: (reason) => void setClusterStatus(c, c.status, reason, `${c.id} 复审备注已留痕`),
+      run: (reason) => runAction(() => ctx.actions.updateK1ClusterReviewNote(c.id, c.version, reason, commandKey), `${c.id} 复审备注已留痕`),
     });
+  };
 
   const adjParam = (p: KRiskParam) => {
     if (p.key === "linkWeight") {
-      setWeightDraft({ param: p, ...parseLinkWeight(p.value), reason: "" });
+      setWeightDraft({ param: p, ...parseLinkWeight(p.value), reason: "", commandKey: newK1CommandKey() });
       return;
     }
-    ctx.openActionConfirm({
-      action: `拦截阈值调整 · ${p.name}`,
-      detail: `${p.name} · 当前 ${p.value}。${p.note}。改后下一次服务端校验生效。`,
-      amplifies: true,
-      edit: { kind: "text", current: p.value },
-      run: (reason, newVal) => {
-        if (!newVal) return;
-        void runAction(() => ctx.actions.updateK1Param(p.key, newVal, reason), `${p.name} 已更新为 ${newVal}`);
-      },
-    });
+    if (!PARAM_LIMITS[p.key]) {
+      ctx.toast(`K1 参数 ${p.key} 不在允许编辑清单中`);
+      return;
+    }
+    setParamDraft({ param: p, value: p.value, reason: "", commandKey: newK1CommandKey() });
   };
 
   const saveWeightDraft = async () => {
-    if (!weightDraft) return;
+    if (!weightDraft || draftSubmitLock.current) return;
+    draftSubmitLock.current = true;
+    setDraftSubmitting("weight");
     const value = linkWeightValue(weightDraft);
     try {
-      await ctx.actions.updateK1Param(weightDraft.param.key, value, weightDraft.reason.trim());
+      await ctx.actions.updateK1Param(weightDraft.param.key, value, weightDraft.reason.trim(), weightDraft.commandKey);
+    } catch (error) {
+      ctx.toast(error instanceof K1OutcomeUncertainError
+        ? `K1 结果未知 · 请保留当前弹窗并重试 · ${error.commandKey}`
+        : confirmedK1FailureText(error));
+      if (!(error instanceof K1OutcomeUncertainError)) {
+        setWeightDraft((current) => current ? { ...current, commandKey: newK1CommandKey() } : current);
+      }
+      return;
+    } finally {
+      draftSubmitLock.current = false;
+      setDraftSubmitting(null);
+    }
+    setWeightDraft(null);
+    try {
       await ctx.reloadKRisk({ multiAccount: pageQuery });
       ctx.toast(`${weightDraft.param.name} 已更新为 ${value}`);
-      setWeightDraft(null);
-    } catch (error) {
-      ctx.toast(`K1 操作失败 · ${errorText(error)}`);
+    } catch {
+      ctx.toast(`${weightDraft.param.name} 已写入，但最新数据回读失败；请重试 K1 后核对`);
     }
   };
 
-  const addWl = () =>
-    ctx.openConfirm({
-      action: "添加 IP 白名单",
-      detail: "加白后该 IP / 网段不再触发同 IP 多账户报警,设备和支付维度照常检测。",
-      chips: [["只影响 IP 维度", "ready"], ["不解冻已冻结账户", "done"]],
-      reason: true,
-      input: { label: "IP / 网段", placeholder: "如 198.51.100.0/24" },
-      okLabel: "确认加白",
-      run: (reason, cidr) => {
-        if (!cidr) return;
-        void runAction(() => ctx.actions.upsertK1Whitelist(cidr, reason, reason), "白名单已写入后端");
-      },
-    });
+  const saveParamDraft = async () => {
+    if (!paramDraft || draftSubmitLock.current) return;
+    draftSubmitLock.current = true;
+    setDraftSubmitting("param");
+    try {
+      await ctx.actions.updateK1Param(paramDraft.param.key, paramDraft.value, paramDraft.reason.trim(), paramDraft.commandKey);
+    } catch (error) {
+      ctx.toast(error instanceof K1OutcomeUncertainError ? `K1 结果未知 · 请保留当前弹窗并重试 · ${error.commandKey}` : confirmedK1FailureText(error));
+      if (!(error instanceof K1OutcomeUncertainError)) setParamDraft((current) => current ? { ...current, commandKey: newK1CommandKey() } : current);
+      return;
+    } finally {
+      draftSubmitLock.current = false;
+      setDraftSubmitting(null);
+    }
+    setParamDraft(null);
+    try {
+      await ctx.reloadKRisk({ multiAccount: pageQuery });
+      ctx.toast(`${paramDraft.param.name} 已更新为 ${paramDraft.value}`);
+    } catch {
+      ctx.toast(`${paramDraft.param.name} 已写入，但最新数据回读失败；请重试 K1 后核对`);
+    }
+  };
+
+  const saveWhitelistDraft = async () => {
+    if (!whitelistDraft || draftSubmitLock.current) return;
+    draftSubmitLock.current = true;
+    setDraftSubmitting("whitelist");
+    try {
+      await ctx.actions.upsertK1Whitelist(
+        whitelistDraft.cidr.trim(), whitelistDraft.note.trim(), whitelistDraft.reason.trim(),
+        whitelistDraft.expireText, whitelistDraft.commandKey,
+      );
+    } catch (error) {
+      ctx.toast(error instanceof K1OutcomeUncertainError ? `K1 结果未知 · 请保留当前弹窗并重试 · ${error.commandKey}` : confirmedK1FailureText(error));
+      if (!(error instanceof K1OutcomeUncertainError)) setWhitelistDraft((current) => current ? { ...current, commandKey: newK1CommandKey() } : current);
+      return;
+    } finally {
+      draftSubmitLock.current = false;
+      setDraftSubmitting(null);
+    }
+    setWhitelistDraft(null);
+    try {
+      await ctx.reloadKRisk({ multiAccount: pageQuery });
+      ctx.toast("白名单已写入后端");
+    } catch {
+      ctx.toast("白名单已写入，但最新数据回读失败；请重试 K1 后核对");
+    }
+  };
+
+  const addWl = () => setWhitelistDraft({ cidr: "", note: "", expireText: "", reason: "", commandKey: newK1CommandKey() });
 
   const rmWl = (cidr: string) =>
     ctx.openConfirm({
@@ -325,8 +532,33 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       chips: [["恢复 IP 维度检测", "ready"]],
       reason: true,
       okLabel: "确认移除",
-      run: (reason) => void runAction(() => ctx.actions.disableK1Whitelist(cidr, reason), "白名单已移除"),
+      run: async (reason) => {
+        const scope = `whitelist-disable:${cidr}`;
+        const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
+        commandAttempt.current.set(scope, commandKey);
+        try {
+          await runAction(() => ctx.actions.disableK1Whitelist(cidr, reason, commandKey), "白名单已移除");
+          commandAttempt.current.delete(scope);
+        } catch (error) {
+          if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.current.delete(scope);
+          throw error;
+        }
+      },
     });
+
+  if (ctx.contentError) {
+    return (
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">K1 数据加载失败</span>
+          <span className="sub">· {errorText(ctx.contentError)} · 已隐藏旧数据与写操作，避免误处置</span>
+          <div className="r">
+            <button className="l-btn" onClick={() => void ctx.reloadKRisk({ multiAccount: pageQuery }).catch(() => undefined)}>仅重试 K1</button>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   if (ctx.contentLoading && !overview) {
     return <section className="l-card"><div className="l-h"><span className="ttl">K1 数据加载中</span><span className="sub">· 正在读取后端 risk 接口</span></div></section>;
@@ -334,17 +566,30 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   return (
     <div>
+      {focusClusterId && (
+        <div className="ctint" role="status" style={{ marginBottom: 12 }}>
+          已从 J3 带入账户簇 <b>{focusClusterId}</b>；
+          {focusLookupState === "loading" && "正在跨分页查询服务器账户簇…"}
+          {focusLookupState === "positioning" && "已找到该簇，正在切换到对应分页…"}
+          {focusLookupState === "found" && "已按服务器查询结果自动定位。"}
+          {focusLookupState === "not-found" && "服务器未找到该簇，未自动选择其他簇；请返回 J3 刷新后重试。"}
+          {focusLookupState === "error" && "网络异常或账户簇数据持续变化，未能稳定定位；未自动选择其他簇。"}
+          {focusLookupState !== "found" && (
+            <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={exitFocusMode}>退出定位后手动查看</button>
+          )}
+        </div>
+      )}
       <div className="f-stats">
-        <div className="f-stat"><div className="k">监控中账户簇</div><div className="v">{stat("activeClusters")}</div><div className="sub">三个维度去重合成 · 覆盖 {fmt(stat("flaggedAccounts"))} 个账户</div></div>
-        <div className="f-stat warn"><div className="k">高风险簇</div><div className="v">{stat("highClusters")}</div><div className="sub">强度达到建议冻结线</div></div>
-        <div className="f-stat danger"><div className="k">已冻结簇</div><div className="v">{stat("frozenClusters")}</div><div className="sub">共 {stat("frozenAccounts")} 个账户</div></div>
-        <div className="f-stat ok"><div className="k">新人礼拦截</div><div className="v">${fmt(stat("giftBlockedUsd"))}</div><div className="sub">{stat("giftBlockedCnt")} 笔重复领取被拦下</div></div>
+        <div className="f-stat"><div className="k">监控中账户簇</div><div className="v">{statText("activeClusters")}</div><div className="sub">按已接入权威维度合成 · 覆盖 {statText("flaggedAccounts")} 个账户</div></div>
+        <div className="f-stat warn"><div className="k">高风险簇</div><div className="v">{statText("highClusters")}</div><div className="sub">强度达到建议冻结线</div></div>
+        <div className="f-stat danger"><div className="k">已冻结簇</div><div className="v">{statText("frozenClusters")}</div><div className="sub">共 {statText("frozenAccounts")} 个账户</div></div>
+        <div className="f-stat ok"><div className="k">新人礼拦截</div><div className="v">{statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"}</div><div className="sub">{statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}</div></div>
       </div>
 
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">拦截阈值</span>
-          <span className="sub">· 注册 / 绑上级 / 绑卡入口由服务器执行</span>
+          <span className="sub">· K1 参数单源保存；各入口执行链在跨模块验收补齐</span>
           <div className="r"><span className="kcode electric">改后下一次校验生效</span></div>
         </div>
         <div className="l-b">
@@ -353,7 +598,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <div className="p" key={p.key}>
                 <div className="txt"><div className="k">{p.name}</div><div className="s">{p.sub}</div></div>
                 <span className="v" style={p.key === "linkWeight" ? { fontSize: 13 } : undefined}>{p.value}{p.unit ? ` ${p.unit}` : ""}</span>
-                <button className="l-btn sm mc" onClick={() => adjParam(p)}>调整</button>
+                {canWrite && <button className="l-btn sm mc" onClick={() => adjParam(p)}>调整</button>}
               </div>
             ))}
           </div>
@@ -367,9 +612,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
           <div className="r">
             <div className="chips">
               {([["all", "全部"], ["ip", "IP"], ["device", "设备指纹"], ["payment", "支付工具"]] as const).map(([v, lb]) => (
-                <button key={v} className={`chip${layer === v ? " sel" : ""}`} onClick={() => { setLayer(v); setClusterPage(1); }}>{lb}</button>
+                <button key={v} aria-pressed={layer === v} className={`chip${layer === v ? " sel" : ""}`} onClick={() => { setLayer(v); setClusterPage(1); }}>{lb}</button>
               ))}
             </div>
+            <select className="fld" aria-label="账户簇状态" value={clusterStatus} onChange={(event) => { setClusterStatusFilter(event.target.value as K1ClusterStatusFilter); setClusterPage(1); }} style={{ width: 120 }}>
+              <option value="all">全部状态</option><option value="detected">待判定</option><option value="flagged">可疑</option><option value="frozen">已冻结</option><option value="released">已解除</option><option value="cleared">正常</option>
+            </select>
+            <select className="fld" aria-label="账户簇排序" value={clusterSort} onChange={(event) => { setClusterSort(event.target.value as K1ClusterSort); setClusterPage(1); }} style={{ width: 140 }}>
+              <option value="strength_desc">关联强度</option><option value="account_desc">关联账户数</option>
+            </select>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -380,7 +631,20 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 const [stLb, stTone] = CLUSTER_ST[c.status];
                 const hot = c.strength >= 0.7 && c.status !== "frozen" && c.status !== "cleared" && c.status !== "released";
                 return (
-                  <tr key={c.id} className="click" onClick={() => setSel(index)} style={hot ? { background: "var(--danger-soft)" } : undefined}>
+                  <tr
+                    key={c.id}
+                    className={focusBlocksSelection ? "" : "click"}
+                    tabIndex={focusBlocksSelection ? undefined : 0}
+                    aria-label={focusBlocksSelection ? undefined : `查看账户簇 ${c.id} 详情`}
+                    onClick={() => { if (!focusBlocksSelection) setSel(index); }}
+                    onKeyDown={(event) => {
+                      if (!focusBlocksSelection && event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                        event.preventDefault();
+                        setSel(index);
+                      }
+                    }}
+                    style={hot ? { background: "var(--danger-soft)" } : undefined}
+                  >
                     <td className="mono" style={{ color: "var(--ink)" }}>{c.key}</td>
                     <td><span className="bdg dim">{c.layerLabel}</span></td>
                     <td className="num mono" style={{ fontWeight: 700 }}>{c.n}</td>
@@ -395,15 +659,15 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <td><span className={`bdg ${stTone}`}>{stLb}</span></td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       <span style={{ display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
-                        {c.status === "detected" && <><button className="l-btn sm" onClick={() => flagCluster(c)}>标可疑</button><button className="l-btn sm mc" onClick={() => clearCluster(c)}>判正常</button></>}
-                        {c.status === "flagged" && <button className="l-btn sm mc" onClick={() => freezeCluster(c)}>批量冻结</button>}
-                        {(c.status === "frozen" || c.status === "flagged") && <button className="l-btn sm mc" onClick={() => releaseCluster(c)}>解除误判</button>}
+                        {!focusBlocksSelection && c.status === "detected" && <>{canFlag && <button className="l-btn sm" onClick={() => flagCluster(c)}>标可疑</button>}{canClear && <button className="l-btn sm mc" onClick={() => clearCluster(c)}>判正常</button>}</>}
+                        {!focusBlocksSelection && c.status === "flagged" && canFreeze && <button className="l-btn sm mc" onClick={() => freezeCluster(c)}>批量冻结</button>}
+                        {!focusBlocksSelection && (c.status === "frozen" || c.status === "flagged") && canRelease && <button className="l-btn sm mc" onClick={() => releaseCluster(c)}>解除误判</button>}
                       </span>
                     </td>
                   </tr>
                 );
               })}
-              {!clusters.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>暂无命中簇</td></tr>}
+              {!clusters.length && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--ink-4)", padding: 24 }}>当前筛选条件下暂无命中簇。可切换维度/状态，或等待下一轮服务端聚类。</td></tr>}
             </tbody>
           </table>
         </div>
@@ -427,10 +691,10 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <span className="ttl">簇详情 · {cur.id}</span>
             <span className="sub">· 同一实体的账户群 · 连线标注共享维度</span>
             <div className="r">
-              <button className="l-btn" onClick={() => reviewNote(cur)}>人工复审备注</button>
-              {cur.status === "detected" && <button className="l-btn" onClick={() => flagCluster(cur)}>标可疑</button>}
-              {cur.status === "flagged" && <button className="l-btn mc" onClick={() => freezeCluster(cur)}>批量冻结</button>}
-              {cur.status === "frozen" && <button className="l-btn mc" onClick={() => releaseCluster(cur)}>解除误判</button>}
+              {canWrite && <button className="l-btn" onClick={() => reviewNote(cur)}>人工复审备注</button>}
+              {cur.status === "detected" && canFlag && <button className="l-btn" onClick={() => flagCluster(cur)}>标可疑</button>}
+              {cur.status === "flagged" && canFreeze && <button className="l-btn mc" onClick={() => freezeCluster(cur)}>批量冻结</button>}
+              {(cur.status === "frozen" || cur.status === "flagged") && canRelease && <button className="l-btn mc" onClick={() => releaseCluster(cur)}>解除误判</button>}
             </div>
           </div>
           <div className="cl-split">
@@ -443,13 +707,16 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 <thead><tr><th>账户</th><th>注册时间</th><th>上级</th><th>领过新人礼</th><th className="num">累计入金</th><th>状态</th></tr></thead>
                 <tbody>
                   {cur.nodes.map((n) => {
-                    const [lb, tone] = CLUSTER_ST[n[5]];
+                    const restricted = /FROZEN|BANNED|RESTRICTED/i.test(n[5]);
+                    const unknown = !n[5] || /UNKNOWN|未知/i.test(n[5]);
+                    const lb = restricted ? "受限" : unknown ? "未知" : n[5];
+                    const tone = restricted ? "bad" : unknown ? "dim" : "ok";
                     return (
                       <tr key={n[0]}>
                         <td className="mono" style={{ color: "var(--ink)" }}>{n[0]}</td>
                         <td className="mono" style={{ fontSize: 11.5 }}>{n[1]}</td>
                         <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n[2]}</td>
-                        <td>{n[3] === "是" ? <span className="bdg warn">已领</span> : <span className="bdg dim">未领</span>}</td>
+                        <td>{n[3] === "是" ? <span className="bdg warn">已领</span> : n[3] === "否" ? <span className="bdg dim">未领</span> : <span className="bdg dim">未接入</span>}</td>
                         <td className="num mono">{n[4]}</td>
                         <td><span className={`bdg ${tone}`}>{lb}</span></td>
                       </tr>
@@ -457,14 +724,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   })}
                 </tbody>
               </table>
-              <div style={{ fontSize: 13, fontWeight: 600, margin: "16px 0 8px", color: "var(--ink)" }}>新人礼重复发放记录</div>
+              <div style={{ fontSize: 13, fontWeight: 600, margin: "16px 0 8px", color: "var(--ink)" }}>新人礼重复发放检测</div>
               {cur.gifts.length ? cur.gifts.map((g) => (
                 <div className="gift-row" key={g[0]}>
                   <span className="gid">{g[0]}</span>
                   <span className="gtx">{g[1]}</span>
                   <span className={`bdg ${g[2].includes("拦截") || g[2].includes("处置") ? "ok" : "warn"}`}>{g[2]}</span>
                 </div>
-              )) : <div className="ktint" style={{ fontSize: 12 }}>本簇没有新人礼重复发放记录。</div>}
+              )) : <div className="ktint" style={{ fontSize: 12 }}>数据尚未接入，当前不能判定本簇重复发放次数为 0。</div>}
             </div>
           </div>
         </section>
@@ -474,7 +741,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         <div className="l-h">
           <span className="ttl">IP 白名单</span>
           <span className="sub">· 只影响 IP 维度,不影响设备和支付维度</span>
-          <div className="r"><button className="l-btn" onClick={addWl}>+ 添加白名单</button></div>
+          <div className="r">{canWrite && <button className="l-btn" onClick={addWl}>+ 添加白名单</button>}</div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 680 }}>
@@ -486,7 +753,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                   <td style={{ fontSize: 12.5 }}>{w.note}</td>
                   <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{w.operator}</td>
                   <td className="mono" style={{ fontSize: 11.5 }}>{w.expireText}</td>
-                  <td style={{ textAlign: "right" }}><button className="l-btn sm" onClick={() => rmWl(w.cidr)}>移除</button></td>
+                  <td style={{ textAlign: "right" }}>{canWrite && <button className="l-btn sm" onClick={() => rmWl(w.cidr)}>移除</button>}</td>
                 </tr>
               ))}
               {!whitelist.length && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--ink-4)", padding: 20 }}>暂无白名单</td></tr>}
@@ -507,6 +774,53 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         />
       </section>
 
+      {paramDraft && (() => {
+        const limits = PARAM_LIMITS[paramDraft.param.key];
+        const numeric = Number(paramDraft.value);
+        const valueOk = Number.isFinite(numeric) && numeric >= limits.min && numeric <= limits.max
+          && (!limits.integer || Number.isInteger(numeric));
+        const reasonOk = paramDraft.reason.trim().length >= 8 && paramDraft.reason.trim().length <= 200;
+        const update = (patch: Partial<ParamDraft>) => setParamDraft((current) => current ? { ...current, ...patch } : current);
+        return (
+          <Modal title={`拦截阈值调整 · ${paramDraft.param.name}`} icon="shield" busy={draftSubmitting === "param"} onClose={() => setParamDraft(null)} footer={<>
+            <button className="l-btn" disabled={draftSubmitting === "param"} onClick={() => setParamDraft(null)}>取消</button>
+            <button className="l-btn mc" disabled={!valueOk || !reasonOk || draftSubmitting === "param"} onClick={() => void saveParamDraft()}>{draftSubmitting === "param" ? "保存中…" : "确认保存"}</button>
+            </>}>
+            <div className="field">
+              <label htmlFor={`${formId}-param-value`}>目标值（{limits.min} - {limits.max}）</label>
+              <input id={`${formId}-param-value`} className="fld" type="number" min={limits.min} max={limits.max} step={limits.step} value={paramDraft.value} onChange={(event) => update({ value: event.target.value })} />
+              {!valueOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>{limits.integer ? "必须填写范围内的整数" : "必须填写范围内的数字"}</div>}
+            </div>
+            <div className="field">
+              <label htmlFor={`${formId}-param-reason`}>操作理由（必填 · 8-200 字）</label>
+              <textarea id={`${formId}-param-reason`} rows={3} maxLength={200} value={paramDraft.reason} onChange={(event) => update({ reason: event.target.value })} />
+            </div>
+            <div className="ctint">该参数只改变风险建议与聚类阈值，不会自动冻结账户。</div>
+          </Modal>
+        );
+      })()}
+
+      {whitelistDraft && (() => {
+        const cidrOk = isValidCidr(whitelistDraft.cidr);
+        const noteOk = whitelistDraft.note.trim().length >= 2 && whitelistDraft.note.trim().length <= 200;
+        const expiryOk = futureIsoDate(whitelistDraft.expireText);
+        const reasonOk = whitelistDraft.reason.trim().length >= 8 && whitelistDraft.reason.trim().length <= 200;
+        const canSave = cidrOk && noteOk && expiryOk && reasonOk;
+        const update = (patch: Partial<WhitelistDraft>) => setWhitelistDraft((current) => current ? { ...current, ...patch } : current);
+        return (
+          <Modal title="添加 IP 白名单" icon="shield" busy={draftSubmitting === "whitelist"} onClose={() => setWhitelistDraft(null)} footer={<>
+            <button className="l-btn" disabled={draftSubmitting === "whitelist"} onClick={() => setWhitelistDraft(null)}>取消</button>
+            <button className="l-btn mc" disabled={!canSave || draftSubmitting === "whitelist"} onClick={() => void saveWhitelistDraft()}>{draftSubmitting === "whitelist" ? "提交中…" : "确认加白"}</button>
+          </>}>
+            <div className="ctint" style={{ marginBottom: 12 }}>只排除 IP 维度；设备与支付关联仍继续检测，已冻结账户不会自动解冻。</div>
+            <div className="field"><label htmlFor={`${formId}-cidr`}>IP / CIDR 网段</label><input id={`${formId}-cidr`} className="fld" value={whitelistDraft.cidr} onChange={(event) => update({ cidr: event.target.value })} placeholder="198.51.100.0/24" />{whitelistDraft.cidr && !cidrOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>请输入合法 IPv4 CIDR（每段不使用前导零）</div>}</div>
+            <div className="field"><label htmlFor={`${formId}-whitelist-note`}>白名单备注</label><input id={`${formId}-whitelist-note`} className="fld" maxLength={200} value={whitelistDraft.note} onChange={(event) => update({ note: event.target.value })} placeholder="例如：已核验的办公出口网段" /></div>
+            <div className="field"><label htmlFor={`${formId}-whitelist-expiry`}>失效日期</label><input id={`${formId}-whitelist-expiry`} className="fld" type="date" value={whitelistDraft.expireText} onChange={(event) => update({ expireText: event.target.value })} />{whitelistDraft.expireText && !expiryOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>失效日期必须晚于今天</div>}</div>
+            <div className="field"><label htmlFor={`${formId}-whitelist-reason`}>操作理由（必填 · 8-200 字）</label><textarea id={`${formId}-whitelist-reason`} rows={3} maxLength={200} value={whitelistDraft.reason} onChange={(event) => update({ reason: event.target.value })} /></div>
+          </Modal>
+        );
+      })()}
+
       {weightDraft && (() => {
         const device = numberValue(weightDraft.device);
         const payment = numberValue(weightDraft.payment);
@@ -515,18 +829,20 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
         const validNumbers = weights.every((value) => Number.isFinite(value) && value >= 0 && value <= 1);
         const total = weights.reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
         const totalOk = Math.abs(total - 1) <= 0.001;
-        const reasonOk = weightDraft.reason.trim().length >= 8;
+        const reasonLength = weightDraft.reason.trim().length;
+        const reasonOk = reasonLength >= 8 && reasonLength <= 200;
         const canSave = validNumbers && totalOk && reasonOk;
         const updateDraft = (patch: Partial<WeightDraft>) => setWeightDraft((current) => current ? { ...current, ...patch } : current);
         return (
           <Modal
             title={`拦截阈值调整 · ${weightDraft.param.name}`}
             icon="shield"
+            busy={draftSubmitting === "weight"}
             onClose={() => setWeightDraft(null)}
             footer={
               <>
-                <button className="l-btn" onClick={() => setWeightDraft(null)}>取消</button>
-                <button className="l-btn mc" disabled={!canSave} onClick={() => void saveWeightDraft()}>确认保存</button>
+                <button className="l-btn" disabled={draftSubmitting === "weight"} onClick={() => setWeightDraft(null)}>取消</button>
+                <button className="l-btn mc" disabled={!canSave || draftSubmitting === "weight"} onClick={() => void saveWeightDraft()}>{draftSubmitting === "weight" ? "保存中…" : "确认保存"}</button>
               </>
             }
           >
@@ -540,8 +856,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 ["ip", "IP 权重", "同出口 IP / 网段"] as const,
               ].map(([key, label, help]) => (
                 <div className="field" key={key} style={{ marginBottom: 0 }}>
-                  <label>{label}</label>
+                  <label htmlFor={`${formId}-weight-${key}`}>{label}</label>
                   <input
+                    id={`${formId}-weight-${key}`}
                     className="fld"
                     type="number"
                     min={0}
@@ -556,9 +873,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               ))}
             </div>
             <div className="field" style={{ marginTop: 12 }}>
-              <label>操作理由(必填 · 8 字以上)</label>
+              <label htmlFor={`${formId}-weight-reason`}>操作理由（必填 · 8-200 字）</label>
               <textarea
+                id={`${formId}-weight-reason`}
                 rows={3}
+                maxLength={200}
                 value={weightDraft.reason}
                 onChange={(e) => updateDraft({ reason: e.target.value })}
                 placeholder="例: 根据误判样本回归,降低 IP 权重并提高设备指纹权重"
@@ -567,7 +886,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <div className={`ctint${validNumbers && totalOk ? "" : " danger"}`} style={{ marginTop: 10 }}>
               当前合计 <span className="mono">{total.toFixed(2)}</span>
               {!validNumbers ? " · 每项必须在 0 到 1 之间" : !totalOk ? " · 三项合计必须等于 1.00" : ` · 保存值 ${linkWeightValue(weightDraft)}`}
-              {!reasonOk && <span> · 理由还需 {Math.max(0, 8 - weightDraft.reason.trim().length)} 字</span>}
+              {!reasonOk && <span>{reasonLength < 8 ? ` · 理由还需 ${8 - reasonLength} 字` : " · 理由不能超过 200 字"}</span>}
             </div>
           </Modal>
         );

@@ -139,7 +139,7 @@
 
 ## H. 应急与 Kill-Switch(J 域)
 
-- [ ] Kill-Switch 矩阵 J1:6 闸(staking/genesis/exchange/trial/nexv2/premium)统一权威面,各域 endpoint server enforce kill 态
+- [ ] Kill-Switch 矩阵 J1:5 闸(withdraw/staking/genesis/exchange/trial)统一权威面,各域 endpoint server enforce kill 态
 - [ ] kill 默认 enabled=true(未熔断常态);熔断=单人确认弹窗(理由+触发依据)+ 广播 + 审计
 - [ ] kill 恢复(disable→enable)= 放大流出,仅超管 + 前置核 B1(低于红线 422)
 - [ ] kill 状态 V1 A3 存储 → V4 J1/J2 管理面迁移完成;B5 状态灯单一源

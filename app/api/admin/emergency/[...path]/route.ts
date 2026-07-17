@@ -8,8 +8,8 @@ type RouteContext = {
   params: Promise<{ path?: string[] }>;
 };
 
-function jsonError(status: number, message: string) {
-  return Response.json({ code: status, message, data: null }, { status });
+function jsonError(status: number, message: string, headers?: HeadersInit) {
+  return Response.json({ code: status, message, data: null }, { status, headers });
 }
 
 function isSafePart(value: string | undefined) {
@@ -54,7 +54,11 @@ async function proxy(request: Request, context: RouteContext) {
       },
     });
   } catch {
-    return jsonError(503, "EMERGENCY_BACKEND_UNAVAILABLE");
+    // The upstream may have committed a write before the connection broke.
+    // Mark this explicitly so mutating clients reuse the original idempotency key.
+    return jsonError(503, "EMERGENCY_BACKEND_UNAVAILABLE", {
+      "X-Nexion-Upstream-Outcome": "unknown",
+    });
   }
 }
 

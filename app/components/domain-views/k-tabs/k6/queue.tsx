@@ -63,6 +63,9 @@ export function K6Queue() {
   const [selected, setSelected] = useState<string | null>(null);
 
   const overrides = useJanusC2Store((s) => s.overrides);
+  const statusLoad = useJanusC2Store((s) => s.devicesStatus);
+  const loadError = useJanusC2Store((s) => s.devicesError);
+  const retry = useJanusC2Store((s) => s.loadDevices);
   const devices = useMemo(() => effectiveDevices(overrides), [overrides]);
   const channels = useMemo(() => [...new Set(devices.map((d) => d.channel).filter(Boolean))] as string[], [devices]);
   const strategies = useMemo(() => [...new Set(devices.map((d) => d.hitStrategy).filter(Boolean))] as string[], [devices]);
@@ -107,6 +110,10 @@ export function K6Queue() {
   const selectedDevice = selected ? devices.find((d) => d.sid === selected) : undefined;
 
   const reset = () => setPage(1);
+
+  if (statusLoad === "idle" || statusLoad === "loading") return <div className="k6-empty">正在读取设备队列…</div>;
+  if (statusLoad === "error") return <div className="k6-empty k6-error">设备队列读取失败，数据未更新。{loadError} <button className="k6-pgbtn" onClick={() => void retry()}>重试</button></div>;
+  if (devices.length === 0) return <div className="k6-empty">暂无设备上报。等待 App 真实上报后再重试。</div>;
 
   return (
     <div className="k6-panel">
@@ -175,7 +182,7 @@ export function K6Queue() {
             </thead>
             <tbody>
               {pageRows.length === 0 ? (
-                <tr><td colSpan={12} className="k6-empty-row">没有匹配的设备,试试放宽筛选条件。</td></tr>
+                <tr><td colSpan={12} className="k6-empty-row">没有符合筛选条件的设备，请放宽筛选条件。</td></tr>
               ) : pageRows.map((d) => (
                 <tr key={d.sid} className={`click${selected === d.sid ? " sel" : ""}`} onClick={() => setSelected(d.sid)}>
                   <td><code className="sid">{d.sid}</code><div className="mono dim">{d.platform} · {d.model}</div></td>

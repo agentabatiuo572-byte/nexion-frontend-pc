@@ -9,6 +9,13 @@ interface ApiResult<T> {
   data?: T;
 }
 
+export class A2OutcomeUncertainError extends Error {
+  constructor(message: string, public readonly commandKey: string) {
+    super(message);
+    this.name = "A2OutcomeUncertainError";
+  }
+}
+
 interface BackendStats {
   pendingTickets?: number | string | null;
   fundTickets?: number | string | null;
@@ -293,21 +300,40 @@ function normalizeOverview(data: BackendOverview | null | undefined): A2Overview
   };
 }
 
-async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; commandKey?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
+  if (init?.commandKey) {
+    headers.set("Idempotency-Key", init.commandKey);
+  } else if (init?.idempotencyPrefix) {
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/platform/audit${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/admin/platform/audit${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
+  } catch (error) {
+    if (init?.commandKey) {
+      throw new A2OutcomeUncertainError(error instanceof Error ? error.message : "A2_REQUEST_OUTCOME_UNKNOWN", init.commandKey);
+    }
+    throw error;
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+
+  if (init?.commandKey && !result) {
+    throw new A2OutcomeUncertainError("A2_RESPONSE_UNREADABLE", init.commandKey);
+  }
+
+  if (init?.commandKey && response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+    throw new A2OutcomeUncertainError(
+      formatAdminApiError(result?.message, "A2_REQUEST_OUTCOME_UNKNOWN"), init.commandKey);
+  }
 
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`));
@@ -379,11 +405,11 @@ export async function createA2OperationProposal(input: {
   command: { domain: string; op: string; params: Record<string, unknown> };
   target?: { domain: string; type: string; id: string };
   targets?: { domain: string; type: string; id: string }[];
-}) {
+}, commandKey?: string) {
   const row = await a2Request<BackendTicket>("/operations", {
     method: "POST",
     body: JSON.stringify(input),
-    idempotencyPrefix: "a2-operation-proposal",
+    ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-proposal" }),
   });
   return fromTicket(row);
 }

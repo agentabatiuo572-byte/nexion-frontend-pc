@@ -316,24 +316,25 @@ export const KV = ({ k, v }: { k: ReactNode; v: ReactNode }) => (
 );
 
 /* Modal — 补 ESC 关闭 + 打开聚焦(a11y 铁律) */
-export function Modal({ title, icon, onClose, children, footer, wide }: { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+export function Modal({ title, icon, onClose, children, footer, wide, busy = false }: { title: ReactNode; icon?: IconName; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; busy?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [busy, onClose]);
   // 仅在打开(mount)时聚焦一次:绝不放进 [onClose] effect,否则父组件每次渲染(输入框 onChange 改父 state → 新 inline onClose)都会重跑 focus() 抢回容器焦点 → 输入框打一个字就失焦。
   useEffect(() => { ref.current?.focus(); }, []);
   return (
     <div className="dkpage">
-    <div className="modal-scrim" onClick={onClose}>
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" className="modal" style={wide ? { maxWidth: 680, outline: "none" } : { outline: "none" }} onClick={(e) => e.stopPropagation()}>
+    <div className="modal-scrim" onClick={() => { if (!busy) onClose(); }}>
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby={titleId} className="modal" style={wide ? { maxWidth: 680, outline: "none" } : { outline: "none" }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
           {icon && <span className="icon-btn" style={{ border: 0, background: "var(--brand-soft)", color: "var(--brand)" }}><Icon name={icon} size={16} /></span>}
-          <span className="ttl">{title}</span>
+          <span id={titleId} className="ttl">{title}</span>
           <div className="spacer" />
-          <button className="icon-btn" onClick={onClose} aria-label="关闭"><Icon name="x" size={16} /></button>
+          <button className="icon-btn" disabled={busy} onClick={onClose} aria-label="关闭"><Icon name="x" size={16} /></button>
         </div>
         <div className="modal-b">{children}</div>
         {footer && <div className="modal-f">{footer}</div>}
@@ -538,7 +539,11 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!Number.isFinite(numeric)) return false;
   if (spec.min !== undefined && numeric < spec.min) return false;
   if (spec.max !== undefined && numeric > spec.max) return false;
-  if (spec.step === 1 && (!/^-?\d+$/.test(value.trim()) || !Number.isInteger(numeric))) return false;
+  if (spec.step !== undefined && spec.step > 0) {
+    const base = spec.min ?? 0;
+    const steps = (numeric - base) / spec.step;
+    if (Math.abs(steps - Math.round(steps)) > 1e-9) return false;
+  }
   return true;
 }
 
@@ -550,9 +555,11 @@ export type BusinessFormSpec =
   | { kind: "schema-authoring"; ownerDomains?: string[]; propertyTypes?: string[]; samplingPolicies?: string[]; versionHint?: string }
   | { kind: "disposition-lifecycle"; subject: string; periods?: string[]; ownerHint?: string }
   | { kind: "balance-adjust"; subject: string; currencies?: string[]; directions?: string[] }
-  | { kind: "sop-authoring"; scenes?: string[]; owners?: string[]; nameHint?: string; notifyTemplates?: NotifyTemplateOption[]; actionOptions?: SopActionOption[]; rollbackOptions?: SopRollbackOption[];
+  | { kind: "sop-authoring"; scenes?: string[]; owners?: string[]; nameHint?: string; notifyTemplates?: NotifyTemplateOption[]; notifyTemplatesError?: string; actionOptions?: SopActionOption[]; rollbackOptions?: SopRollbackOption[];
       currentName?: string; currentScene?: string; currentOwner?: string; currentSla?: string; currentEmergencyTrack?: boolean;
       currentActionSeq?: string; currentNotifyCampaignNo?: string; currentNotifyTemplate?: string; currentRollback?: string; currentDrillRequired?: boolean }
+  | { kind: "j4-execution-confirmation"; triggerBases: string[]; defaultTriggerBasis?: string;
+      steps: { domain: string; action: string; ref: string; approve: boolean }[] }
   | { kind: "export-wizard"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
@@ -586,7 +593,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -764,6 +771,19 @@ function copyExperimentAudienceSignature(version?: CopyExperimentVersionOption):
   const registrationDaysMin = version.audienceTarget?.registrationDaysMin ?? Number(parsed.registrationDaysGt) + 1;
   const registrationDaysMax = version.audienceTarget?.registrationDaysMax ?? null;
   return JSON.stringify({ tiers, locales, registrationDaysMin, registrationDaysMax });
+}
+
+function parseSopSlaMinutes(raw?: string): number | null {
+  const value = (raw ?? "").trim();
+  let match = value.match(/^(?:≤|<=)?\s*(\d{1,2})\s*h$/i);
+  if (match) {
+    const minutes = Number(match[1]) * 60;
+    return Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440 ? minutes : null;
+  }
+  match = value.match(/^(\d{1,4})\s*(?:分钟|m)$/i);
+  if (!match) return null;
+  const minutes = Number(match[1]);
+  return Number.isInteger(minutes) && minutes >= 1 && minutes <= 1440 ? minutes : null;
 }
 
 function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
@@ -1008,21 +1028,29 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return { direction: spec.directions?.[0] ?? "增加", amount: "", currency: spec.currencies?.[0] ?? "USDT", voucher: "" };
   }
   if (spec.kind === "sop-authoring") {
-    const notify = spec.notifyTemplates?.find((item) => item.value === spec.currentNotifyCampaignNo) ?? spec.notifyTemplates?.[0];
+    const currentSlaMinutes = parseSopSlaMinutes(spec.currentSla);
     return {
       name: spec.currentName ?? "",
       scene: spec.currentScene ?? spec.scenes?.[0] ?? "监管点名",
       owner: spec.currentOwner ?? spec.owners?.[0] ?? "风控",
-      sla: spec.currentSla ?? "15 分钟",
+      sla: currentSlaMinutes == null ? (spec.currentSla ? "" : "15 分钟") : `${currentSlaMinutes} 分钟`,
+      slaLegacyValue: spec.currentSla ?? "",
       emergencyTrack: spec.currentEmergencyTrack === false ? "false" : "true",
       actionSeq: spec.currentActionSeq ?? "",
       actionSearch: "",
-      notifyCampaignNo: spec.currentNotifyCampaignNo ?? notify?.value ?? "",
-      notifyTemplate: spec.currentNotifyTemplate ?? notify?.label ?? "",
+      notifyCampaignNo: spec.currentNotifyCampaignNo ?? "",
+      notifyTemplate: spec.currentNotifyTemplate ?? "",
       notifySearch: spec.currentNotifyTemplate ?? "",
       rollback: spec.currentRollback ?? "",
       rollbackSearch: "",
       drillRequired: spec.currentDrillRequired === false ? "false" : "true",
+    };
+  }
+  if (spec.kind === "j4-execution-confirmation") {
+    return {
+      triggerBasis: spec.defaultTriggerBasis ?? spec.triggerBases[0] ?? "",
+      triggerContext: "",
+      ...Object.fromEntries(spec.steps.map((_, index) => [`stepConfirm.${index}`, "false"])),
     };
   }
   if (spec.kind === "export-wizard") {
@@ -1089,6 +1117,7 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
   };
   if (spec.kind === "role-select") {
     needs("role", "目标角色");
+    if (state.role === spec.currentRole) missing.push("目标角色必须发生变化");
   } else if (spec.kind === "permission-matrix") {
     spec.roles.forEach((r) => needs(`grant.${r.key}`, `${r.label} 授权`));
     if (!spec.roles.some((r) => (state[`grant.${r.key}`] ?? r.current) !== r.current)) {
@@ -1284,8 +1313,22 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const amt = Number(state.amount);
     if (!Number.isFinite(amt) || amt <= 0) missing.push("调整金额(正数)");
   } else if (spec.kind === "sop-authoring") {
-    ["name", "scene", "owner", "sla", "actionSeq", "rollback"].forEach((k) => needs(k, k));
-    needs("notifyCampaignNo", "I3 通知模板");
+    ([
+      ["name", "剧本名称"], ["scene", "触发场景"], ["owner", "责任角色"],
+      ["sla", "响应时限"], ["actionSeq", "动作序列"], ["rollback", "回滚方案"],
+    ] as const).forEach(([key, label]) => needs(key, label));
+    if (parseSopSlaMinutes(state.sla) == null) missing.push("响应时限须为 1-1440 分钟整数");
+    if ((state.actionSeq ?? "").split("\n").some((line) => line.trim().startsWith("I3·"))) {
+      needs("notifyCampaignNo", "I3 通知活动");
+    }
+  } else if (spec.kind === "j4-execution-confirmation") {
+    needs("triggerBasis", "触发依据");
+    needs("triggerContext", "触发上下文");
+    const contextLength = state.triggerContext?.trim().length ?? 0;
+    if (contextLength > 0 && (contextLength < 8 || contextLength > 500)) missing.push("触发上下文须为 8-500 字");
+    spec.steps.forEach((_, index) => {
+      if (state[`stepConfirm.${index}`] !== "true") missing.push(`确认第 ${index + 1} 步`);
+    });
   } else if (spec.kind === "export-wizard") {
     ["exportType", "timeRange", "fields", "piiLevel", "maskPolicy", "recipient", "ticket"].forEach((k) => needs(k, k));
   } else if (spec.kind === "task-edit") {
@@ -1310,8 +1353,21 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     if (![a, g, e].every((n) => Number.isFinite(n) && n >= 0)) missing.push("三档须为非负数");
     else if (a < g || g < e) missing.push("须满额 ≥ 宽限 ≥ 过期");
   } else if (spec.kind === "multi-field") {
-    spec.fields.forEach((f) => needs(f.key, f.label));
-    const nums = spec.fields.filter((f) => f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
+    const isVisible = (field: (typeof spec.fields)[number]) =>
+      !field.visibleWhen || (state[field.visibleWhen.key] ?? "") === field.visibleWhen.equals;
+    spec.fields.filter((f) => isVisible(f) && f.required !== false).forEach((f) => needs(f.key, f.label));
+    spec.fields.filter((f) => f.requiredWhenAddedTo).forEach((f) => {
+      const target = spec.fields.find((candidate) => candidate.key === f.requiredWhenAddedTo);
+      if (!target) return;
+      const before = new Set((target.current ?? "").split(",").map((item) => item.trim()).filter(Boolean));
+      const after = (state[target.key] ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+      if (after.some((item) => !before.has(item))) needs(f.key, f.label);
+    });
+    spec.fields.filter((f) => f.showDiff).forEach((f) => {
+      const normalizeSet = (raw: string | undefined) => (raw ?? "").split(",").map((item) => item.trim()).filter(Boolean).sort().join(",");
+      if (normalizeSet(state[f.key]) === normalizeSet(f.current)) missing.push(`${f.label}须发生变化`);
+    });
+    const nums = spec.fields.filter((f) => isVisible(f) && f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
     const hasInvalidNumber = nums.some(({ n }) => !Number.isFinite(n));
     if (hasInvalidNumber) {
       missing.push("数值字段须为有效数字");
@@ -1319,6 +1375,10 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       nums.forEach(({ f, n }) => {
         if (f.min != null && n < f.min) missing.push(`${f.label} 须 ≥ ${f.min}`);
         if (f.max != null && n > f.max) missing.push(`${f.label} 须 ≤ ${f.max}`);
+        if (f.step != null && f.step > 0 && f.min != null) {
+          const quotient = (n - f.min) / f.step;
+          if (Math.abs(quotient - Math.round(quotient)) > 1e-9) missing.push(`${f.label} 须按 ${f.step} 递增`);
+        }
       });
     }
     if (!hasInvalidNumber && spec.ascending) {
@@ -1430,6 +1490,7 @@ function businessNewValue(spec: BusinessFormSpec | undefined, state: BusinessFor
 }
 
 function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec: BusinessFormSpec; value: BusinessFormValue; onChange: (next: BusinessFormValue) => void; onSelectionChange?: (next: BusinessFormValue) => void }) {
+  const [multiSelectSearch, setMultiSelectSearch] = useState<Record<string, string>>({});
   const set = (key: string, v: string) => onChange({ ...value, [key]: v });
   const textArea = (key: string, label: string, placeholder: string, rows = 3, maxLength?: number) => (
     <label className="field" style={{ marginBottom: 0 }}>
@@ -1461,8 +1522,16 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   // (Record<string,string>-compatible). Inline-styled with V5 tokens so it renders
   // regardless of modal scope/portal. Operators TAP options instead of typing
   // (less input, no typos — 多视角预置设计铁律).
-  const multiSelect = (key: string, label: string, options: string[], proof?: string, labels?: Record<string, ReactNode>) => {
+  const multiSelect = (key: string, label: string, options: string[], proof?: string, labels?: Record<string, ReactNode>, searchable = false, initialValue = "", showDiff = false) => {
     const sel = (value[key] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const initial = initialValue.split(",").map((s) => s.trim()).filter(Boolean);
+    const query = (multiSelectSearch[key] ?? "").trim().toLocaleLowerCase();
+    const matched = query
+      ? options.filter((o) => `${o} ${plainText(labels?.[o])}`.toLocaleLowerCase().includes(query))
+      : options;
+    const visible = searchable && !query && matched.length > 40
+      ? [...new Set([...sel, ...matched.slice(0, 40)])]
+      : matched;
     const toggle = (o: string) => {
       const next = sel.includes(o) ? sel.filter((x) => x !== o) : [...sel, o];
       set(key, next.join(","));
@@ -1470,11 +1539,24 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     return (
       <div className="field" style={{ marginBottom: 0 }}>
         <span>{label}</span>
-        <div data-proof={proof} style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+        {searchable && options.length > 0 && (
+          <input
+            className="fld"
+            type="search"
+            aria-label={`${label}搜索`}
+            value={multiSelectSearch[key] ?? ""}
+            onChange={(e) => setMultiSelectSearch((current) => ({ ...current, [key]: e.target.value }))}
+            placeholder="搜索国家代码或名称"
+            style={{ marginTop: 6 }}
+          />
+        )}
+        <div data-proof={proof} style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, maxHeight: searchable ? 220 : undefined, overflowY: searchable ? "auto" : undefined }}>
           {options.length === 0 ? (
-            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>无可选项(先在 E1 上架 SKU)</span>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>当前没有可选项</span>
+          ) : visible.length === 0 ? (
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>未找到匹配的国家或地区</span>
           ) : (
-            options.map((o) => {
+            visible.map((o) => {
               const on = sel.includes(o);
               return (
                 <button
@@ -1501,22 +1583,49 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
             })
           )}
         </div>
+        {searchable && !query && options.length > visible.length && (
+          <span className="tiny muted" style={{ display: "block", marginTop: 6 }}>当前显示 {visible.length} / {options.length} 项，输入代码或名称可继续筛选</span>
+        )}
+        {showDiff && (() => {
+          const added = sel.filter((item) => !initial.includes(item));
+          const removed = initial.filter((item) => !sel.includes(item));
+          const labelOf = (item: string) => plainText(labels?.[item]) || item;
+          return (
+            <div className="tiny" data-proof={`diff-${key}`} style={{ display: "grid", gap: 4, marginTop: 8 }}>
+              <span style={{ color: added.length ? "var(--v5-success)" : "var(--ink-4)" }}>新增：{added.length ? added.map(labelOf).join("、") : "无"}</span>
+              <span style={{ color: removed.length ? "var(--v5-warning)" : "var(--ink-4)" }}>移除：{removed.length ? removed.map(labelOf).join("、") : "无"}</span>
+            </div>
+          );
+        })()}
       </div>
     );
   };
 
   if (spec.kind === "multi-field") {
+    const visibleFields = spec.fields.filter((field) => {
+      if (field.visibleWhen && (value[field.visibleWhen.key] ?? "") !== field.visibleWhen.equals) return false;
+      if (!field.requiredWhenAddedTo) return true;
+      const target = spec.fields.find((candidate) => candidate.key === field.requiredWhenAddedTo);
+      if (!target) return false;
+      const initial = (target.current ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+      const next = (value[target.key] ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+      return next.some((item) => !initial.includes(item));
+    });
     return (
       <div className="field" data-business-form="multi-field">
         <label>{spec.title ?? "业务表单 · 多字段配置"}</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {spec.fields.map((f) => (
+          {visibleFields.map((f) => f.inputKind === "multi-select" ? (
+            <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>
+              {multiSelect(f.key, f.label, f.options ?? [], `multi-select-${f.key}`, f.optionLabels, f.searchable, f.current, f.showDiff)}
+            </div>
+          ) : (
             <label className="field" style={{ marginBottom: 0, ...(f.wide ? { gridColumn: "1 / -1" } : {}) }} key={f.key}>
               <span>{f.label}</span>
               {f.inputKind === "select" ? (
                 // 能枚举的值用下拉,不让运营手输(最高设计铁律:能勾选的不要输入)
                 <select className="fld" value={value[f.key] ?? f.options?.[0] ?? ""} onChange={(e) => set(f.key, e.target.value)}>
-                  {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                  {(f.options ?? []).map((o) => <option key={o} value={o}>{f.optionLabels?.[o] ?? o}</option>)}
                 </select>
               ) : (
                 <input className="fld" type={f.inputKind === "number" ? "number" : "text"} min={f.min} max={f.max} step={f.step} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
@@ -2568,6 +2677,56 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     );
   }
 
+  if (spec.kind === "j4-execution-confirmation") {
+    const contextLength = (value.triggerContext ?? "").trim().length;
+    return (
+      <div className="field" data-business-form="j4-execution-confirmation">
+        <label>业务表单 · J4 触发依据与逐步确认</label>
+        <div className="grid g-2" style={{ gap: 10 }}>
+          {select("triggerBasis", "触发依据", spec.triggerBases, "j4-trigger-basis")}
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>触发上下文（8–500 字）</span>
+            <textarea
+              rows={3}
+              maxLength={500}
+              data-proof="j4-trigger-context"
+              value={value.triggerContext ?? ""}
+              onChange={(event) => set("triggerContext", event.target.value)}
+              placeholder="说明本次事件、影响范围和处置必要性"
+            />
+            <span className="tiny" style={{ color: contextLength > 0 && contextLength < 8 ? "var(--danger)" : "var(--ink-4)" }}>
+              已输入 {contextLength} / 500 字
+            </span>
+          </label>
+        </div>
+        <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
+          <span>逐步确认（全部勾选后才可提交）</span>
+          <div style={{ display: "grid", gap: 7, marginTop: 6 }}>
+            {spec.steps.map((step, index) => {
+              const key = `stepConfirm.${index}`;
+              return (
+                <label key={`${step.domain}-${step.ref}-${index}`} className="tint tiny" style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    data-proof={`j4-step-confirm-${index + 1}`}
+                    checked={value[key] === "true"}
+                    onChange={(event) => set(key, event.target.checked ? "true" : "false")}
+                  />
+                  <span>
+                    <b>第 {index + 1} 步 · {step.domain}</b> · {step.action}
+                    <span style={{ display: "block", marginTop: 2 }}>
+                      契约 <span className="mono">{step.ref || "未提供"}</span>{step.approve ? " · 需要操作确认" : ""}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (spec.kind === "sop-authoring") {
     const notifyTemplates = spec.notifyTemplates ?? [];
     const notifyQuery = (value.notifySearch ?? "").trim().toLowerCase();
@@ -2591,12 +2750,12 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const actionLine = (item: SopActionOption) => `${item.domain}·${item.action}${item.ref ? `·${item.ref}` : ""}`;
     const addAction = (item: SopActionOption) => {
       const nextLine = actionLine(item);
-      setActionLines([...actionLines, nextLine]);
+      if (!actionLines.includes(nextLine)) setActionLines([...actionLines, nextLine]);
     };
     const removeAction = (idx: number) => setActionLines(actionLines.filter((_, i) => i !== idx));
     const splitAction = (line: string) => {
-      const [domain, ...rest] = line.split(/[·|｜]/).map((part) => part.trim()).filter(Boolean);
-      return { domain: domain || "J4", action: rest.join(" · ") || line };
+      const [domain, action] = line.split(/[·|｜]/).map((part) => part.trim()).filter(Boolean);
+      return { domain: domain || "J4", action: action || line };
     };
     const rollbackOptions = spec.rollbackOptions ?? [];
     const rollbackQuery = (value.rollbackSearch ?? "").trim().toLowerCase();
@@ -2610,17 +2769,39 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
       rollback: item.plan,
       rollbackSearch: item.label,
     });
+    const slaMinutes = parseSopSlaMinutes(value.sla)?.toString() ?? "";
     return (
       <div className="field" data-business-form="sop-authoring">
-        <label>业务表单 · 应急 SOP 剧本编排</label>
+        <label>应急 SOP 剧本编排</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("name", "剧本名称 name", spec.nameHint ?? "如 监管点名快速止血")}
-          {select("scene", "触发场景 scene", spec.scenes ?? ["监管点名", "对账缺口", "挤兑预警", "数据泄露", "制裁名单更新"])}
-          {select("owner", "责任角色 owner", spec.owners ?? ["风控", "合规审计", "超管", "财务"])}
-          {input("sla", "SLA(响应时限)", "15 分钟")}
+          {input("name", "剧本名称", spec.nameHint ?? "如 监管点名快速止血")}
+          {select("scene", "触发场景", spec.scenes ?? ["监管点名", "资金异常", "数据泄露", "舆情挤兑", "技术故障"])}
+          {select("owner", "责任角色", spec.owners ?? ["风控", "合规审计", "超管", "财务"])}
+          <label className="field" style={{ marginBottom: 0 }}>
+            <span>响应时限</span>
+            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+              <input
+                className="fld"
+                aria-label="响应时限（分钟）"
+                type="number"
+                min={1}
+                max={1440}
+                step={1}
+                value={slaMinutes}
+                onChange={(e) => set("sla", e.target.value ? `${e.target.value} 分钟` : "")}
+                placeholder="15"
+              />
+              <span className="muted tiny">分钟（1–1440）</span>
+            </div>
+            {value.slaLegacyValue && !slaMinutes && (
+              <span className="tiny" role="alert" style={{ color: "var(--warning)" }}>
+                旧响应时限“{value.slaLegacyValue}”格式异常，请重新输入 1–1440 分钟。
+              </span>
+            )}
+          </label>
         </div>
         <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
-          <span>通知模板 notify · 来自 I3</span>
+          <span>I3 通知活动（仅当动作包含 I3 时必选）</span>
           <input
             className="fld"
             value={value.notifySearch ?? ""}
@@ -2628,8 +2809,10 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
             placeholder="搜索通知标题 / 编号 / 优先级 / 受众"
           />
           <div data-proof="sop-i3-notify-template-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
-            {notifyTemplates.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>I3 暂无可选通知模板,请先确认 I3 Campaign 接口已返回数据。</div>
+            {spec.notifyTemplatesError ? (
+              <div className="tint tiny" role="alert" style={{ marginTop: 0 }}>通知活动列表读取失败或缺少 I3 查看权限（{spec.notifyTemplatesError}）。J4 仍可使用 J1 动作；如需 I3 通知，请联系管理员后重试。</div>
+            ) : notifyTemplates.length === 0 ? (
+              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可下发的通知活动。请先到 I3 将活动排期；如无 I3 查看权限，请联系管理员，或移除 I3 动作。</div>
             ) : shownNotifyTemplates.length === 0 ? (
               <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的通知模板,请换个关键词。</div>
             ) : shownNotifyTemplates.map((item) => {
@@ -2667,7 +2850,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           )}
         </div>
         <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
-          <span>动作序列 action sequence · 后端动作模板</span>
+          <span>动作序列 · 仅展示已接通动作</span>
           <input
             className="fld"
             value={value.actionSearch ?? ""}
@@ -2676,13 +2859,15 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           />
           <div data-proof="sop-action-option-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
             {actionOptions.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可选原子动作,请确认 J4 SOP 接口已返回 actionOptions。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>当前没有可编排动作，请重新读取；如仍为空请联系值班人员。</div>
             ) : shownActionOptions.length === 0 ? (
               <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的原子动作,请换个关键词。</div>
-            ) : shownActionOptions.map((item) => (
-              <button
+            ) : shownActionOptions.map((item) => {
+              const selected = actionLines.includes(actionLine(item));
+              return <button
                 key={item.value}
                 type="button"
+                disabled={selected}
                 onClick={() => addAction(item)}
                 style={{
                   display: "grid",
@@ -2695,7 +2880,8 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
                   border: "1px solid var(--border)",
                   background: "var(--surface-2)",
                   color: "var(--ink)",
-                  cursor: "pointer",
+                  cursor: selected ? "not-allowed" : "pointer",
+                  opacity: selected ? 0.55 : 1,
                 }}
               >
                 <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{item.domain}</span>
@@ -2706,8 +2892,8 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
                 <span className="tiny" style={{ color: item.approve === false ? "var(--ink-3)" : "var(--danger)" }}>
                   {item.approve === false ? "无需确认" : "需确认"}
                 </span>
-              </button>
-            ))}
+              </button>;
+            })}
           </div>
           <div data-proof="sop-action-sequence" style={{ display: "grid", gap: 6, marginTop: 10 }}>
             <span className="tiny" style={{ color: "var(--ink-3)" }}>已编排步骤</span>
@@ -2745,7 +2931,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           </div>
         </div>
         <div className="field" style={{ marginTop: 10, marginBottom: 0 }}>
-          <span>回滚方案 rollback · 后端模板</span>
+          <span>回滚方案</span>
           <input
             className="fld"
             value={value.rollbackSearch ?? ""}
@@ -2754,7 +2940,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           />
           <div data-proof="sop-rollback-template-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
             {rollbackOptions.length === 0 ? (
-              <div className="tint tiny" style={{ marginTop: 0 }}>暂无可选回滚模板,请确认 J4 SOP 接口已返回 rollbackOptions。</div>
+              <div className="tint tiny" style={{ marginTop: 0 }}>当前没有可用回滚方案，请重新读取后再试。</div>
             ) : shownRollbackOptions.length === 0 ? (
               <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的回滚模板,请换个关键词。</div>
             ) : shownRollbackOptions.map((item) => {
@@ -2796,11 +2982,11 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         <div className="row wrap" style={{ gap: 16, marginTop: 10 }}>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
             <input data-proof="sop-emergency" type="checkbox" checked={value.emergencyTrack === "true"} onChange={(e) => set("emergencyTrack", e.target.checked ? "true" : "false")} />
-            应急快速轨(确认理由 SLA 压至分钟级 · 仅止血方向)
+            应急轨(仅允许关停、暂停等止血方向)
           </label>
           <label className="row" style={{ gap: 8, color: "var(--ink-2)", fontSize: 12.5 }}>
-            <input data-proof="sop-drill" type="checkbox" checked={value.drillRequired === "true"} onChange={(e) => set("drillRequired", e.target.checked ? "true" : "false")} />
-            发布前要求沙箱演练通过
+            <input data-proof="sop-drill" type="checkbox" checked readOnly disabled />
+            发布前要求动作与依赖预检通过
           </label>
         </div>
       </div>
@@ -2879,28 +3065,56 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, reasonMax: requestedReasonMax, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; reasonMax?: number; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
   const [businessValue, setBusinessValue] = useState<BusinessFormValue>(() => initBusinessForm(businessForm));
   const [businessSelectionLoading, setBusinessSelectionLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const reasonFieldId = useId();
   const selectionRequestRef = useRef(0);
   // 配置型调整:仅当调用方显式传 edit 才提供「目标新值」编辑控件并要求 newVal;纯动作 / 处置(放行 / 冻结 / 驳回 / pause)不传 edit → 仅确认。
   // 去除按动作名猜测的启发式正则(原 isAdjust/select 正则):既防 dispose 名含「调整 / 规则 / 启停…」误弹字段,也防 adjust 名不含触发词漏判;改为 by edit 显式契约。全域调用点已逐一显式传 edit(2026-06 跨域硬化)。
   const spec: EditSpec | null = edit ?? null;
+  const actionText = typeof action === "string" ? action : "";
+  const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|启动演练|回滚剧本/.test(actionText);
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   const covBlocked = Boolean(amplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   const reasonMin = 8;
-  const reasonMax = activeBusinessForm?.kind === "copy-experiment-create" || activeBusinessForm?.kind === "copy-experiment-start" || activeBusinessForm?.kind === "copy-experiment-discard" ? 200 : undefined;
+  const reasonMax = requestedReasonMax ?? (isJ4Command
+    ? 200
+    : activeBusinessForm?.kind === "multi-field"
+      ? activeBusinessForm.reasonMax
+      : activeBusinessForm?.kind === "copy-experiment-create" || activeBusinessForm?.kind === "copy-experiment-start" || activeBusinessForm?.kind === "copy-experiment-discard"
+        ? 200
+        : undefined);
   const reasonLength = reason.trim().length;
   const reasonOk = reasonLength >= reasonMin && (reasonMax === undefined || reasonLength <= reasonMax);
   const businessMissing = missingBusinessFields(activeBusinessForm, businessValue);
   const derivedNewVal = businessNewValue(activeBusinessForm, businessValue);
   const editValueOk = isEditValueValid(spec, newVal);
-  const canConfirm = !covBlocked && !businessSelectionLoading && reasonOk && editValueOk && businessMissing.length === 0;
+  const canConfirm = !covBlocked && !businessSelectionLoading && !submitting && reasonOk && editValueOk && businessMissing.length === 0;
+  const handleConfirm = async () => {
+    if (!canConfirm) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onConfirm(reason.trim(), (derivedNewVal ?? newVal) || undefined, activeBusinessForm ? businessValue : undefined);
+    } catch {
+      // The domain callback owns the detailed toast. Keep the form open and
+      // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
+      setSubmitError("提交未完成，当前输入已保留，请根据页面提示处理后重试。");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const handleClose = () => {
+    if (!submitting) onClose();
+  };
   const handleBusinessSelectionChange = async (next: BusinessFormValue) => {
     setBusinessValue(next);
     if (!onBusinessSelectionChange) return;
@@ -2920,14 +3134,15 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     }
   };
   return (
-    <Modal title={action} icon="shield" onClose={onClose}
+    <Modal title={action} icon="shield" onClose={handleClose}
       footer={<>
-        <Btn onClick={onClose}>取消</Btn>
-        <Btn variant="primary" disabled={!canConfirm} onClick={() => onConfirm(reason.trim(), (derivedNewVal ?? newVal) || undefined, activeBusinessForm ? businessValue : undefined)}>
-          <Icon name="check" size={15} /> 确认执行
+        <Btn disabled={submitting} onClick={handleClose}>取消</Btn>
+        <Btn variant="primary" disabled={!canConfirm} onClick={() => void handleConfirm()}>
+          <Icon name="check" size={15} /> {submitting ? "提交中…" : "确认提交"}
         </Btn>
       </>}>
       <OperatorBriefBlock action={action} detail={detail} amplifies={amplifies} hasEdit={!!spec || !!businessForm} />
+      {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {amplifies && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
           <span className="ico"><Icon name="alert" size={16} /></span>
@@ -2952,9 +3167,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         <span className="mc"><Icon name="check" size={12} /> 操作者确认</span>
         <Icon name="arrow" size={14} />
         <span className="mc" style={{ background: "var(--brand-soft)", color: "var(--brand)" }}>
-          操作理由必填 · 写入 A2 审计
+          操作理由必填 · {isJ4Command ? "写入审计记录" : "写入 A2 审计"}
         </span>
-        <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>确认后立即生效</span>
+        <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>{isJ4Command ? "提交后等待服务端确认" : "确认后立即生效"}</span>
       </div>
       {activeBusinessForm && (
         <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} />
@@ -2986,7 +3201,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           )}
           {!editValueOk && kind === "number" && newVal && (
             <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
-              请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的{spec.step === 1 ? "整数" : "数字"}。
+              请输入 {spec.min ?? "允许范围"}～{spec.max ?? "允许上限"} 的有效数字{spec.step ? `（步长 ${spec.step}）` : ""}。
             </div>
           )}
           {newVal && spec.current && (
@@ -2997,8 +3212,8 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </div>
       )}
       <div className="field">
-        <label>操作理由(必填 · {reasonMax ? `8-${reasonMax} 字` : "8 字以上"} · 写入 A2 不可改审计)</label>
-        <textarea rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例: 工单号 / 业务依据 / 影响面 / 回滚预案" />
+        <label htmlFor={reasonFieldId}>操作理由(必填 · {reasonMax ? `8-${reasonMax} 字` : "8 字以上"} · {isJ4Command ? "写入不可修改的审计记录" : "写入 A2 不可改审计"})</label>
+        <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例: 工单号 / 业务依据 / 影响面 / 回滚预案" />
         {!reasonOk && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>
             {reasonLength < reasonMin

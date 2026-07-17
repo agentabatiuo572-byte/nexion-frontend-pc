@@ -38,6 +38,24 @@ export interface A1Operator {
   sessions: number;
   tfaResetAt?: string | null;
   credentialDeliveryStatus?: string | null;
+  sessionDetails?: A1SessionDetail[];
+  roleHistory?: A1RoleHistory[];
+}
+
+export interface A1SessionDetail {
+  sessionId: string;
+  ipAddress: string;
+  device: string;
+  issuedAt: string;
+  lastSeenAt: string;
+}
+
+export interface A1RoleHistory {
+  fromRole: string;
+  toRole: string;
+  changedAt: string;
+  operator: string;
+  source: "AUDIT" | "CURRENT_ASSIGNMENT";
 }
 
 export interface A1RbacAction {
@@ -163,14 +181,6 @@ export function updateA1AccountStatus(
   });
 }
 
-export function deleteA1Account(accountId: string, reason: string, operator: string) {
-  return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}`, {
-    method: "DELETE",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "a1-account-delete",
-  });
-}
-
 export function resetA1Account2fa(accountId: string, reason: string, operator: string) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/reset-2fa`, {
     method: "POST",
@@ -192,6 +202,19 @@ export function revokeA1AccountSessions(accountId: string, reason: string, opera
     method: "POST",
     body: JSON.stringify({ reason, operator }),
     idempotencyPrefix: "a1-session-revoke",
+  });
+}
+
+export function revokeA1AccountSession(
+  accountId: string,
+  sessionId: string,
+  reason: string,
+  operator: string,
+) {
+  return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/sessions/${encodeURIComponent(sessionId)}/revoke`, {
+    method: "POST",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyPrefix: "a1-session-revoke-one",
   });
 }
 

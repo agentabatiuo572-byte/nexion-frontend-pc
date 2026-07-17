@@ -99,6 +99,8 @@ export interface BRiskRadar {
   severity: Array<{ nm: string; count: number; c: string }>;
   volume: Array<{ label: string; count: number }>;
   bankRunRatio: number;
+  bankRunYellowPct: number;
+  bankRunRedlinePct: number;
 }
 
 export interface BDomainDashboard {
@@ -195,6 +197,8 @@ export const EMPTY_B_DOMAIN: BDomainDashboard = {
     severity: [],
     volume: [],
     bankRunRatio: 0,
+    bankRunYellowPct: 20,
+    bankRunRedlinePct: 40,
   },
 };
 
@@ -204,7 +208,11 @@ function num(value: unknown, fallback = 0) {
 }
 
 function requiredNum(value: unknown, field: string) {
-  const n = Number(value);
+  const n = typeof value === "number"
+    ? value
+    : typeof value === "string" && /^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value.trim())
+      ? Number(value.trim())
+      : Number.NaN;
   if (!Number.isFinite(n)) {
     throw new Error(`B_DOMAIN_FIELD_REQUIRED:${field}`);
   }
@@ -413,7 +421,7 @@ function normalizeRhythm(raw: Record<string, unknown>): BRhythm {
 }
 
 function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
-  return {
+  const risk = {
     gates: requiredArr<Record<string, unknown>>(raw.gates, "riskRadar.gates").map((item, index) => {
       const rawState = text(item.state);
       const state = (["on", "off", "missing"].includes(rawState)
@@ -456,7 +464,29 @@ function normalizeRisk(raw: Record<string, unknown>): BRiskRadar {
       count: requiredNum(item.count ?? item.v, `riskRadar.volume.${index}.count`),
     })),
     bankRunRatio: requiredNum(raw.bankRunRatio, "riskRadar.bankRunRatio"),
+    bankRunYellowPct: requiredNum(raw.bankRunYellowPct, "riskRadar.bankRunYellowPct"),
+    bankRunRedlinePct: requiredNum(raw.bankRunRedlinePct, "riskRadar.bankRunRedlinePct"),
   };
+  const expectedGateKeys = ["withdraw", "staking", "genesis", "exchange", "trial"];
+  const actualGateKeys = risk.gates.map((gate) => gate.dom);
+  if (actualGateKeys.length !== expectedGateKeys.length
+      || new Set(actualGateKeys).size !== expectedGateKeys.length
+      || expectedGateKeys.some((key) => !actualGateKeys.includes(key))) {
+    throw new Error("B_DOMAIN_FIELD_INVALID:riskRadar.gates");
+  }
+  const trippedGateCount = risk.gates.filter((gate) => !gate.on).length;
+  if (!Number.isInteger(risk.trippedGateCount) || risk.trippedGateCount !== trippedGateCount) {
+    throw new Error("B_DOMAIN_FIELD_INVALID:riskRadar.trippedGateCount");
+  }
+  if (risk.bankRunRatio < 0
+      || risk.bankRunYellowPct < 5
+      || risk.bankRunYellowPct > 50
+      || risk.bankRunRedlinePct < 10
+      || risk.bankRunRedlinePct > 80
+      || risk.bankRunRedlinePct <= risk.bankRunYellowPct) {
+    throw new Error("B_DOMAIN_FIELD_INVALID:riskRadar.bankRunThresholds");
+  }
+  return risk;
 }
 
 export function normalizeBDomainDashboard(raw: Record<string, unknown> | null | undefined): BDomainDashboard {
@@ -529,6 +559,31 @@ export async function acknowledgeBDomainAlert(alertId: string, reason: string, o
   if (!result.data) {
     throw new Error("B_ALERT_ACK_EMPTY_RESPONSE");
   }
+  const dashboard = normalizeBDomainDashboard(result.data);
+  publishDashboard(dashboard);
+  return dashboard;
+}
+
+export async function updateB5BankRunThresholds(
+  values: { yellowPct?: string; redlinePct?: string },
+  reason: string,
+  operator: string,
+) {
+  const response = await fetch("/api/admin/treasury/b-domain/bankrun-thresholds", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": nextId("b5-bankrun-threshold"),
+    },
+    body: JSON.stringify({ ...values, reason, operator }),
+    cache: "no-store",
+  });
+  const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  if (!response.ok || !result || result.code !== 0) {
+    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    throw new Error(formatAdminApiError(result?.message, `B5_BANKRUN_${response.status}`));
+  }
+  if (!result.data) throw new Error("B5_BANKRUN_EMPTY_RESPONSE");
   const dashboard = normalizeBDomainDashboard(result.data);
   publishDashboard(dashboard);
   return dashboard;
