@@ -8,6 +8,7 @@
  * 主动发起会话 / 转工单走真实后端写链。续聊恢复后刷新仍回上次会话。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -114,6 +115,32 @@ function toPushSku(sku: PushSkuSource): PushSku {
   };
 }
 
+/* ============ 跨域直达路由映射(C/D/E 域处置页)============
+ * 客服在 M3/M2 发起的账户/资金/设备/实名类动作,真实处置回 C/D/E 域;
+ * 这里提供直达路由,避免只靠 toast + 手工导航。uid 为用户编码,留空跳域首页队列。
+ */
+const ACCOUNT_ACTION_ROUTES: Array<{ label: string; domain: string; path: (uid: string) => string }> = [
+  { label: "临时冻结账户", domain: "C2 账户操作", path: () => "/users/actions" },
+  { label: "提现限额下调", domain: "D 域提现", path: (uid) => `/users/search/${encodeURIComponent(uid)}#hub-withdrawal` },
+  { label: "补资料指令", domain: "C4 实名台账", path: () => "/users/kyc" },
+  { label: "解绑并重装设备", domain: "E 域设备", path: (uid) => `/users/search/${encodeURIComponent(uid)}#hub-devices` },
+];
+function accountActionPath(label: string, uid: string): string | null {
+  const found = ACCOUNT_ACTION_ROUTES.find((item) => item.label === label);
+  return found ? found.path(uid) : null;
+}
+
+/* 会话内 SKU/商品卡 cta 是面向用户的应用路由(/store /staking /genesis);
+ * 客服点击应跳到对应管理域页面核对商品,而不是只弹 toast。 */
+const CTA_HREF_TO_ADMIN: Record<string, string> = {
+  "/store": "/devices/pricing",
+  "/staking": "/finance-products/staking",
+  "/genesis": "/finance-products/genesis",
+};
+function ctaHrefToAdminPath(href: string): string | null {
+  return CTA_HREF_TO_ADMIN[href] ?? null;
+}
+
 function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
   const rawId = textOf(user.id).trim();
   const uid = textOf(user.userNo).trim() || (rawId ? `U${rawId.padStart(8, "0")}` : "");
@@ -157,6 +184,7 @@ function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
 
 export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
+  const router = useRouter();
   const authorities = useAdminAuth((state) => state.session?.authorities);
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
@@ -631,10 +659,17 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     if (!selected?.profile || !canWriteM3 || !conversationsAvailable) return false;
     return ctx.removeCustomerTag(selected.id, tag);
   };
-  // QuickAction 账户类:客服侧只发起 + 提示,真实处置回 C/D 域;按主人指令 QuickAction 不写审计。
+  // QuickAction 账户类:客服侧只发起,真实处置回 C/D/E 域。直达路由跳到对应域处置页,
+  // toast 仅作辅助提示(不再作唯一途径);按主人指令 QuickAction 不写审计。
   const runAccountAction = (label: string) => {
     if (!selected?.profile) return;
-    toast(`请前往 C/D 域完成「${label}」;M3 不会代为提交`);
+    const path = accountActionPath(label, selected.profile.uid);
+    if (path) {
+      router.push(path);
+      toast(`已跳转「${label}」处置页 · M3 不代为提交`);
+    } else {
+      toast(`请前往 C/D 域完成「${label}」;M3 不会代为提交`);
+    }
     setQuick(null);
   };
 
@@ -651,7 +686,19 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const isSystem = isAgent && m.agentName === "系统";
     const role: "support" | "advisor" | "user" = isAgent ? (selected!.type === "advisor" ? "advisor" : "support") : "user";
     const cta = !isSystem && m.ctaHref && m.ctaHref !== "—"
-      ? { kind: "link" as const, label: `查看 ${hrefLabel(m.ctaHref)}`, onClick: () => toast(`请在对应业务页面核对「${hrefLabel(m.ctaHref!)}」`) }
+      ? {
+          kind: "link" as const,
+          label: `查看 ${hrefLabel(m.ctaHref)}`,
+          onClick: () => {
+            const adminPath = ctaHrefToAdminPath(m.ctaHref!);
+            if (adminPath) {
+              router.push(adminPath);
+              toast(`已跳转「${hrefLabel(m.ctaHref!)}」对应管理页核对`);
+            } else {
+              toast(`请在对应业务页面核对「${hrefLabel(m.ctaHref!)}」`);
+            }
+          },
+        }
       : undefined;
     const receipt = i === lastAgentIdx ? (m.status === "read" ? "已读" : "未读") : undefined;
     return {

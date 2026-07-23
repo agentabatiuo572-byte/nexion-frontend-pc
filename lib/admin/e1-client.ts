@@ -395,11 +395,3 @@ export async function archiveE1Phase(phaseId: string, reason: string, operator: 
     idempotencyPrefix: "e1-phase-archive",
   });
 }
-
-export async function setE1CurrentPhase(phaseId: string, reason: string, operator: string) {
-  return e1Request<E1GenerationGateData>(`/phases/${encodeURIComponent(phaseId)}/current`, {
-    method: "PATCH",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "e1-phase-current",
-  });
-}

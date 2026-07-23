@@ -51,6 +51,21 @@ const STATUS_ACTION_CN: Record<SupportTicketStatus, string> = {
 };
 const CATEGORY_LIST: SupportTicketCategory[] = ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"];
 const PRIORITY_LIST: SupportTicketPriority[] = ["urgent", "high", "normal", "low"];
+
+/* 工单分类 → 跨域处置直达链接(C/D/E 域)。按工单分类匹配一条直达路由,
+ * 让坐席从工单详情一步跳到真正的处置流程,而不是只靠 toast + 手工导航。
+ * href 接收 userId(已由工单详情保证为真实用户绑定)。 */
+const CATEGORY_CROSS_LINKS: Array<{ category: SupportTicketCategory; href: (userId: number) => string; label: string; icon: "wallet" | "users" | "shield" | "box" | "coin" }> = [
+  { category: "withdrawal", href: (uid) => `/users/search/${uid}#hub-withdrawal`, label: "去提现记录", icon: "wallet" },
+  { category: "deposit", href: (uid) => `/users/search/${uid}#hub-deposit`, label: "去充值记录", icon: "wallet" },
+  { category: "kyc", href: () => `/users/kyc`, label: "去实名台账", icon: "shield" },
+  { category: "account", href: () => `/users/actions`, label: "去账户处置", icon: "users" },
+  { category: "hardware", href: (uid) => `/users/search/${uid}#hub-devices`, label: "去设备明细", icon: "box" },
+  { category: "earnings", href: (uid) => `/users/search/${uid}#hub-deposit`, label: "去收益明细", icon: "coin" },
+];
+function findCategoryCrossLink(category: SupportTicketCategory): typeof CATEGORY_CROSS_LINKS[number] | null {
+  return CATEGORY_CROSS_LINKS.find((link) => link.category === category) ?? null;
+}
 const PAGE_SIZE_OPTIONS = ["8", "15", "30"];
 const WHO_CN: Record<"user" | "agent" | "system", string> = { user: "用户", agent: "坐席", system: "系统" };
 type CreateTicketForm = {
@@ -671,6 +686,7 @@ function TicketDrawer({
 }) {
   const isTerminal = ticket.status === "resolved" || ticket.status === "closed";
   const conversation = linkedConversation(ticket);
+  const categoryCrossLink = findCategoryCrossLink(ticket.category);
   const statusItems: MenuItem[] = STATUS_TRANSITIONS[ticket.status].map((status) => ({ label: STATUS_ACTION_CN[status], onClick: () => onStatus(status) }));
   const priorityItems: MenuItem[] = PRIORITY_LIST.map((p) => ({ label: PRIO_CN[p], cur: ticket.priority === p, onClick: () => onPriority(p) }));
   const ownerItems: MenuItem[] = ownerOptions.map((n) => ({ label: ownerLabel(n), cur: ticket.owner === n, onClick: () => onOwner(n) }));
@@ -703,6 +719,11 @@ function TicketDrawer({
             {canWrite && !ticket.archived && !isTerminal && <MiniMenu label="优先级" items={priorityItems} />}
             {canWrite && !ticket.archived && ticket.status !== "closed" && <MiniMenu label="转交" icon="users" items={ownerItems} />}
             {ticket.userId && <Link className="btn btn-sec btn-sm" href={`/users/search/${ticket.userId}#hub-payment-methods`}><Icon name="wallet" size={16} />用户支付方式</Link>}
+            {ticket.userId && categoryCrossLink && (
+              <Link className="btn btn-cyan btn-sm" href={categoryCrossLink.href(ticket.userId)}>
+                <Icon name={categoryCrossLink.icon} size={16} />{categoryCrossLink.label}
+              </Link>
+            )}
             <div style={{ flex: 1 }} />
             {conversation ? (
               <Link className="btn btn-cyan btn-sm" href={conversation.archived

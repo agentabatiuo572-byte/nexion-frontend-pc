@@ -1,10 +1,24 @@
 "use client";
 
 /** F5 · 佣金事件审计 —— 数据源为后端 /api/admin/teams/commissions。 */
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Badge, DataListPager, useDataListPager } from "../design-kit";
 import type { F5CommissionEvent } from "@/lib/admin/f1-client";
 import type { FViewCtx } from "./types";
+
+// F5 → D4/B1/L4 跨域追踪链接样式(对齐 console-nav 真路由,验收 5.12 缺口 ①)。
+// inline 样式:不改 f-domain.css(域根 CSS 出本任务允许集)。
+const XD_LINK_STYLE: React.CSSProperties = {
+  color: "var(--ink-4)",
+  textDecoration: "none",
+  fontSize: 10.5,
+  padding: "2px 6px",
+  borderRadius: 5,
+  border: "1px solid var(--border)",
+  background: "var(--surface-2)",
+  whiteSpace: "nowrap",
+};
 
 type Row = F5CommissionEvent;
 
@@ -152,6 +166,12 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         {eff === "异常回退" && <button className="reject" onClick={() => dispose("reject", c)}>驳回</button>}
                         {eff === "frozen" && <button className="unlock" onClick={() => dispose("unfreeze", c)}>解冻</button>}
                         {(eff === "可提" || eff === "unlocked" || eff === "rejected") && <span className="none">--</span>}
+                      </div>
+                      {/* 跨域追踪(验收 5.12 缺口 ①):佣金事件 → D4 账本/B1 双账本/L4 网络报表 */}
+                      <div className="xd-trace" style={{ display: "flex", gap: 4, marginTop: 4, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                        <Link href={`/finance/ledger?bizNo=${encodeURIComponent(c.id)}`} style={XD_LINK_STYLE} title={`在 D4 账本查看 ${c.id} 的资金流水与余额断点`}>D4 账本</Link>
+                        <Link href="/overview/dual-ledger" style={XD_LINK_STYLE} title="在 B1 双账本核对备付金覆盖率红线(§1.8)">B1 双账本</Link>
+                        <Link href="/analytics/operations" style={XD_LINK_STYLE} title="在 L4 设备/任务/网络报表看佣金支出趋势">L4 报表</Link>
                       </div>
                     </td>
                   </tr>

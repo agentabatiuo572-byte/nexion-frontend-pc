@@ -1776,3 +1776,32 @@ export const HIGH_OPS: HighOpDef[] = [
 export function findHighOp(op: string): HighOpDef | undefined {
   return HIGH_OPS.find((o) => o.op === op);
 }
+
+/**
+ * F 域 UI key 资金放大判定(对齐后端 OpsTeamService.loosensPayoutControlUiKey 的 key 白名单)。
+ *
+ * 后端 loosensPayoutControlUiKey 运行时按 old/new 值方向性兜底(费率/比例上调=放大;threshold 下调=放大);
+ * 前端 A2 提案按 key 标记 amplifies=true,使 A2 队列行与 OperationConfirmModal 一致显「🔥 放大流出」,
+ * 避免「弹窗显 🔥 但 A2 队列丢 🔥」的前后端映射分裂(验收 5.12 缺口 ②)。
+ *
+ * F.unilevel.L{n} / F.unilevel.nex.L{n}(版税费率)由 resolveFOp 路由到 f_unilevel_rule(amplifies=true),不在此静态集,
+ * 但 isFFundAmplifyingKey 一并覆盖,保单源真值。
+ */
+export const F_FUND_AMPLIFYING_UI_KEYS: ReadonlySet<string> = new Set([
+  "F.binary.matchRate",      // F3 平衡匹配比例上调 → 放大佣金流出
+  "F.binary.threshold",      // F3 两轨结算门槛下调 → 放大(更低门槛触发更多结算)
+  "F.pool.ratio",            // F4 领导池比例上调 → 放大池子流出
+  "F.pool.top1MaxPct",       // F4 Top1 集中度上限上调 → 放大头部虹吸
+  "F.pool.top5MaxPct",       // F4 Top5 集中度上限上调 → 放大头部虹吸
+  "F.pool.periodPrize",      // F4 4 周期榜单奖池上调 → 放大奖池流出
+  "F.promo.weekMultiplier",  // F2 promo 周倍率上调 → 放大佣金
+  "F.peer.rate",             // F2 peer 平级比例上调 → 放大佣金
+]);
+
+/** 给定 F 域 config key,返回是否为「资金放大」类(对齐后端 loosensPayoutControlUiKey)。 */
+export function isFFundAmplifyingKey(key: string): boolean {
+  if (!key) return false;
+  if (F_FUND_AMPLIFYING_UI_KEYS.has(key)) return true;
+  // F.unilevel.L{n} / F.unilevel.nex.L{n}(版税费率,放大佣金流出)→ resolveFOp 路由到 f_unilevel_rule(amplifies=true)
+  return /^F\.unilevel\.(?:nex\.)?L\d+$/.test(key);
+}

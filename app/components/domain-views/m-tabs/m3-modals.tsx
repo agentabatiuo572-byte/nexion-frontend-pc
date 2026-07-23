@@ -199,24 +199,27 @@ export function QuickActionModal({
     );
   }
   if (kind === "account") {
-    const acts: Array<[string, string]> = [
-      ["临时冻结账户", "限制登录与交易 24h"],
-      ["提现限额下调", "单日上限调至默认 50%"],
-      ["补资料指令", "推送实名重传提醒"],
-      ["解绑并重装设备", "重新生成设备令牌"],
+    const acts: Array<[string, string, string]> = [
+      ["临时冻结账户", "限制登录与交易 24h", "C2 账户操作"],
+      ["提现限额下调", "单日上限调至默认 50%", "D 域提现记录"],
+      ["补资料指令", "推送实名重传提醒", "C4 实名台账"],
+      ["解绑并重装设备", "重新生成设备令牌", "E 域设备明细"],
     ];
     return (
       <Modal title="账户操作" icon="wallet" onClose={onClose} footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button></>}>
-        <div className="sub" style={{ marginBottom: 10 }}>{profile.nickname} · {profile.uid} · 选择一项权限内动作(交 C/D 域复核)</div>
+        <div className="sub" style={{ marginBottom: 10 }}>{profile.nickname} · {profile.uid} · 选择一项将直达对应域处置页(真实写操作在 C/D/E 域完成)</div>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {acts.map(([k, d]) => (
+          {acts.map(([k, d, domain]) => (
             <button key={k} type="button" className="itint" style={{ textAlign: "left", cursor: "pointer", border: "1px solid var(--border)" }} onClick={() => onAccount(k)}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{k}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{k}</span>
+                <span className="bdg dim" style={{ fontSize: 10.5 }}>→ {domain}</span>
+              </div>
               <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3 }}>{d}</div>
             </button>
           ))}
         </div>
-        <div className="itint" style={{ marginTop: 10 }}>账户类动作客服侧仅发起,真实处置在 C 账户 / D 资金 / 风控域复核执行。</div>
+        <div className="itint" style={{ marginTop: 10 }}>点击即跳转对应域处置页 · 客服侧不代为提交,真实处置在 C 账户 / D 资金 / E 设备域复核执行。</div>
       </Modal>
     );
   }
