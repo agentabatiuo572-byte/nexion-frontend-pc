@@ -648,11 +648,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       name: "删除数据中心 · " + dc.dcLocation,
       op: "dc-delete",
       dc: dc.dcLocation,
-      detail: `软删除 ${dc.dcLocation} 数据中心卡片配置。不会删除设备库存,但该数据中心不再出现在 E5 卡片列表。需填写操作理由 + 审计留痕。`,
+      detail: `软删除 ${dc.dcLocation} 数据中心卡片配置。不会删除设备库存,但该数据中心不再出现在 E5 卡片列表。系统不做跨域硬阻断,提交前请按 5.3 流程人工核对:E5 该 DC 绑定设备=0(含派单/告警)、E4 无待履约订单、E1 无 SKU 引用此展示名、A2 无相关待确认申请。需填写操作理由 + 审计留痕。`,
       businessForm: {
         kind: "destructive-reason",
         target: dc.dcLocation,
-        impact: "E5 数据中心卡片列表会移除该配置;设备库存数据不回溯删除。",
+        impact: "E5 数据中心卡片列表会移除该配置;设备库存数据不回溯删除。设备表 dc_location 字段会保留为历史值(孤儿引用),故人工跨域检查为必做步骤。",
       },
     });
   };
