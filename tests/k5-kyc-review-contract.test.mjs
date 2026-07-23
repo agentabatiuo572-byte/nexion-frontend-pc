@@ -8,6 +8,7 @@ const contract = readFileSync(new URL("../lib/admin/k5-contract.ts", import.meta
 const kView = readFileSync(new URL("../app/components/domain-views/k-view.tsx", import.meta.url), "utf8");
 const errors = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
 const verify = readFileSync(new URL("../scripts/verify.mjs", import.meta.url), "utf8");
+const registry = readFileSync(new URL("../lib/admin/registry/k.ts", import.meta.url), "utf8");
 
 test("K5 reads only its own overview and fails closed on load or payload errors", () => {
   assert.match(client, /export async function fetchK5KycReviewOverview/);
@@ -173,6 +174,19 @@ test("K5 translates authoritative C4 KYC states for operators", () => {
   assert.match(component, /\["风险分触发", "风险分触发"\]/);
   assert.match(component, /已自动告警 · 待人工处置/);
   assert.doesNotMatch(component, /已自动告警 \+ 升级/);
+});
+
+test("K5 detail and decision controls fail closed on authoritative C4 user absence", () => {
+  assert.match(component, /authoritativeK5Info/);
+  assert.match(component, /ticket\.kyc/);
+  assert.match(component, /cur\?\.kyc === "USER_UNAVAILABLE"/);
+  assert.match(component, /用户不存在，无法裁决/);
+  assert.match(component, /请先核对 C4 账户状态/);
+});
+
+test("K5 summary names the cumulative exchange trigger precisely", () => {
+  assert.match(registry, /累计兑换达 \$100/);
+  assert.doesNotMatch(registry, /累计提现达 \$100/);
 });
 
 test("K5 localized errors participate in the repository verify gate", () => {

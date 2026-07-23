@@ -27,6 +27,9 @@ function backendPath(parts: string[]) {
     "arbitrage",
     "scoring",
     "kyc-review",
+    "radar",
+    "bankrun-thresholds",
+    "alert-subscription",
   ]);
   if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isSafePart(part))) return null;
@@ -55,10 +58,21 @@ async function proxy(request: Request, context: RouteContext) {
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
       cache: "no-store",
     });
+    const upstreamContentType = upstream.headers.get("Content-Type") || "application/json";
+    if (upstreamContentType.includes("text/event-stream")) {
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: {
+          "Content-Type": upstreamContentType,
+          "Cache-Control": "no-cache, no-transform",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
     return new Response(await upstream.text(), {
       status: upstream.status,
       headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+        "Content-Type": upstreamContentType,
         "Cache-Control": "no-store",
       },
     });

@@ -90,6 +90,12 @@ test("I1 先配置文案版本，再由新增文案选择启用版本", async ({
   await expect(versionList.getByRole("columnheader", { name: "文案位置" })).toBeVisible();
   await expect(versionList.getByRole("columnheader", { name: "中英越文案" })).toBeVisible();
 
+  const copyPool = page.locator('[data-proof="copy-pool"]');
+  await copyPool.getByRole("button", { name: "我的", exact: true }).click();
+  await expect(copyPool.getByText("当前投放模块下没有文案记录。", { exact: true })).toBeVisible();
+  await copyPool.getByRole("button", { name: "全部", exact: true }).click();
+  await expect(copyPool.getByText("home.hero", { exact: true })).toBeVisible();
+
   await versionList.getByRole("button", { name: "已发布" }).click();
   const publishedRows = versionList.locator("tbody tr");
   await expect(publishedRows).toHaveCount(1);

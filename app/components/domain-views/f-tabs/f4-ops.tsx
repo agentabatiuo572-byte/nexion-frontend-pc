@@ -202,7 +202,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           </div>
           <div className="kv-row"><span className="k">本期奖池</span><span className="v">{lbPool}</span></div>
           <div className="kv-row"><span className="k">参赛人数</span><span className="v">{data.leaderboardParticipantCount.toLocaleString("en-US")}</span></div>
-          <div className="kv-row"><span className="k">刷榜命中 · K2</span><span className="v" style={{ color: "var(--danger)" }}>{lbDq ? "已处置" : `${data.leaderboardFraudHitCount} 账户`}</span></div>
+          <div className="kv-row"><span className="k">刷榜命中 · K2</span><span className="v" style={{ color: "var(--danger)" }}>{`${data.leaderboardFraudHitCount} 账户${lbDq ? " · 含已处置" : ""}`}</span></div>
           <div className="sect-foot">
             <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "本期榜单奖池调整", amplify: true, op: "param", paramKey: "F.leaderboard.poolUsd", edit: { kind: "text", current: data.leaderboardPoolLabel }, detail: `本期榜单奖池总额 · 当前 ${lbPool} · 放大奖池流出,受 B1 约束。` })}>调整奖池</button>
             <button onClick={() => ctx.openActionConfirm({ name: "榜单最小额调整", op: "param", paramKey: "F.leaderboard.minUsd", edit: { kind: "number", current: lbMinUsd, unit: "USD" }, detail: `上榜最低佣金门槛 · 当前 $${lbMinUsd} · 低于此额不计入榜单排名。` })}>榜单最小额</button>

@@ -21,9 +21,16 @@ export function ConfirmDialog() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={() => !top.hideCancel && resolve(top.id, false)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !top.hideCancel) resolve(top.id, false);
+          }}
         >
           <motion.div
             className="w-full max-w-[400px] rounded-[14px] p-5"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`${top.id}-title`}
+            aria-describedby={top.message ? `${top.id}-message` : undefined}
             style={{
               background: "var(--v5-surface)",
               border: "1px solid var(--v5-border-strong)",
@@ -35,11 +42,11 @@ export function ConfirmDialog() {
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="font-display text-[16px]" style={{ color: "var(--v5-ink)" }}>
+            <h2 id={`${top.id}-title`} className="font-display text-[16px]" style={{ color: "var(--v5-ink)" }}>
               {top.title}
             </h2>
             {top.message && (
-              <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--v5-ink-2)" }}>
+              <p id={`${top.id}-message`} className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--v5-ink-2)" }}>
                 {top.message}
               </p>
             )}

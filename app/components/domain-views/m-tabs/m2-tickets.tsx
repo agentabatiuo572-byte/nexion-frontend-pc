@@ -6,11 +6,10 @@
  * 例行坐席操作(回复/改状态/改优先级/转交/关闭重开)直接执行 + 自动 A2 审计;
  * 仅「升级为即时会话」这类跨载体处置走操作确认 + 理由。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Icon, MessageThread, Modal, type ThreadMessage } from "../design-kit";
 import {
-  type SessionConvo,
   type SessionReplyTpl,
   type SupportSla,
   type SupportTicket,
@@ -20,37 +19,53 @@ import {
 } from "./data";
 import { catCN, Empty, HDSelect, MAvatar, MiniMenu, ownerLabel, PRIO_CN, Prio, relWhen, TicketStatus, TK_STATUS_CN, type HDOption, type MenuItem } from "./hd-ui";
 import type { MCtx } from "./types";
-import type { MSupportAgent } from "@/lib/admin/m-client";
+import { type MSupportAgent } from "@/lib/admin/m-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const TICKET_KEY = "I.support.tickets";
-const CONVO_KEY = "I.session.convos";
 const SLA_KEY = "I.support.sla";
 const REPLY_TEMPLATE_KEY = "I.session.replyTemplates";
 const AGENT_LIST_KEY = "I.support.agents";
 
-type Scope = "active" | "archived" | "all";
+type Scope = "active" | "resolved" | "archived" | "all";
 const SCOPES: Array<[Scope, string]> = [
   ["active", "活跃"],
-  ["archived", "归档"],
+  ["resolved", "已解决"],
+  ["archived", "已归档"],
   ["all", "全部"],
 ];
 const ACTIVE_STATUSES: SupportTicketStatus[] = ["open", "in_progress", "pending_user"];
-const STATUS_MENU: Array<[SupportTicketStatus, string]> = [
-  ["in_progress", "标记处理中"],
-  ["pending_user", "待用户补充"],
-  ["resolved", "标记已解决"],
-];
+const STATUS_TRANSITIONS: Record<SupportTicketStatus, SupportTicketStatus[]> = {
+  open: ["in_progress", "pending_user", "resolved", "closed"],
+  in_progress: ["open", "pending_user", "resolved", "closed"],
+  pending_user: ["open", "in_progress", "resolved", "closed"],
+  resolved: ["open", "pending_user", "closed"],
+  closed: ["open"],
+};
+const STATUS_ACTION_CN: Record<SupportTicketStatus, string> = {
+  open: "重新打开",
+  in_progress: "标记处理中",
+  pending_user: "待用户补充",
+  resolved: "标记已解决",
+  closed: "关闭工单",
+};
 const CATEGORY_LIST: SupportTicketCategory[] = ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"];
 const PRIORITY_LIST: SupportTicketPriority[] = ["urgent", "high", "normal", "low"];
 const PAGE_SIZE_OPTIONS = ["8", "15", "30"];
-const WHO_CN: Record<"user" | "agent", string> = { user: "用户", agent: "坐席" };
+const WHO_CN: Record<"user" | "agent" | "system", string> = { user: "用户", agent: "坐席", system: "系统" };
 type CreateTicketForm = {
+  userId: string;
   category: SupportTicketCategory;
   priority: SupportTicketPriority;
   owner: string;
   title: string;
   body: string;
-  reason: string;
+};
+
+type PendingCreatedTicket = {
+  subject: string;
+  userId?: number;
+  existingIds: string[];
 };
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
@@ -66,12 +81,32 @@ function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
 function cloneTickets(rows: SupportTicket[]): SupportTicket[] {
   return rows.map((ticket) => ({ ...ticket, messages: ticket.messages.map((m) => ({ ...m })) }));
 }
-function cloneConvos(rows: SessionConvo[]): SessionConvo[] {
-  return rows.map((convo) => ({ ...convo, messages: convo.messages.map((m) => ({ ...m })) }));
+
+type LinkedConversation = { no: string; archived: boolean };
+
+function linkedConversation(ticket: SupportTicket): LinkedConversation | null {
+  for (const message of ticket.messages) {
+    // M3→M2 转单会关闭源会话，因此返回链接必须直接进入“归档”；否则 q 搜索会落到空列表。
+    const converted = message.body.match(/会话号[:：]\s*(CV-[^，。\s]+)/);
+    if (converted?.[1]) return { no: converted[1], archived: true };
+    // M2→M3 升级产生的是仍在处理的即时会话，继续进入默认活跃范围。
+    const escalated = message.body.match(/即时会话\s+(CV-[^，。\s]+)/);
+    if (escalated?.[1]) return { no: escalated[1], archived: false };
+  }
+  return null;
+}
+
+function isAssignableSupportAgent(agent: MSupportAgent): boolean {
+  return agent.enabled && agent.transferable && agent.serviceTypes.includes("support");
 }
 
 export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
+  const authorities = useAdminAuth((state) => state.session?.authorities);
+  const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
+  const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
+  const canWriteM2 = isSuperAdmin || Boolean(authorities?.includes("service_m2_write"));
+  const ticketsAvailable = pget("I.support.ticketsAvailable") !== "0";
   const tickets = useMemo(() => cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), [])), [ctx.params, pget]);
   const replyTemplates = useMemo(
     () =>
@@ -83,13 +118,12 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const slaRows = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
   const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
   const ownerOptions = useMemo(() => {
-    const activeAgentNames = supportAgents
-      .filter((agent) => agent.enabled)
+    const assignableAgentNames = supportAgents
+      .filter(isAssignableSupportAgent)
       .map((agent) => agent.name.trim())
       .filter(Boolean);
-    const ticketOwners = tickets.map((ticket) => ticket.owner).filter((owner) => owner && owner !== "Unassigned");
-    return Array.from(new Set([...activeAgentNames, ...ticketOwners, "Unassigned"]));
-  }, [supportAgents, tickets]);
+    return Array.from(new Set(assignableAgentNames));
+  }, [supportAgents]);
   const ticketCategoryOptions = useMemo(() => {
     const cats = new Set<SupportTicketCategory>(CATEGORY_LIST);
     slaRows.forEach((row) => cats.add(row.category));
@@ -98,6 +132,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
 
   const [scope, setScope] = useState<Scope>("active");
   const [categoryFilter, setCategoryFilter] = useState<"all" | SupportTicketCategory>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | SupportTicketStatus>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -105,33 +140,70 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const [replyBody, setReplyBody] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
+  const [writePending, setWritePending] = useState(false);
+  const [pendingCreatedTicket, setPendingCreatedTicket] = useState<PendingCreatedTicket | null>(null);
+  const writeInFlight = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedScope = params.get("scope");
+    const requestedStatus = params.get("status");
+    if (requestedScope === "active" || requestedScope === "resolved" || requestedScope === "archived" || requestedScope === "all") {
+      setScope(requestedScope);
+    }
+    if (requestedStatus && (["open", "in_progress", "pending_user", "resolved", "closed"] as string[]).includes(requestedStatus)) {
+      setStatusFilter(requestedStatus as SupportTicketStatus);
+    }
+  }, []);
 
   const selected = tickets.find((t) => t.id === selectedId) ?? null;
 
-  const archivedCount = tickets.filter((t) => t.status === "resolved" || t.status === "closed").length;
+  useEffect(() => {
+    const pending = pendingCreatedTicket;
+    if (!pending) return;
+    const authoritative = tickets.find((ticket) =>
+      ticket.subject === pending.subject
+      && ticket.userId === pending.userId
+      && !pending.existingIds.includes(ticket.id));
+    if (!authoritative) return;
+    setPendingCreatedTicket(null);
+    setSelectedId(authoritative.id);
+    setDrawerOpen(true);
+  }, [pendingCreatedTicket, tickets]);
+
+  const resolvedCount = tickets.filter((t) => !t.archived && (t.status === "resolved" || t.status === "closed")).length;
+  const archivedCount = tickets.filter((t) => t.archived).length;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tickets
       .filter((t) => {
         if (scope === "all") return true;
-        if (scope === "archived") return t.status === "resolved" || t.status === "closed";
-        return ACTIVE_STATUSES.includes(t.status);
+        if (scope === "archived") return t.archived;
+        if (scope === "resolved") return !t.archived && (t.status === "resolved" || t.status === "closed");
+        return !t.archived && ACTIVE_STATUSES.includes(t.status);
       })
+      .filter((t) => statusFilter === "all" || t.status === statusFilter)
       .filter((t) => categoryFilter === "all" || t.category === categoryFilter)
       .filter((t) => {
         if (!q) return true;
         return [t.id, t.subject, t.owner, catCN(t.category)].some((text) => text.toLowerCase().includes(q));
       })
       .sort((a, b) => b.lastReplyAt - a.lastReplyAt);
-  }, [tickets, scope, categoryFilter, query]);
+  }, [tickets, scope, statusFilter, categoryFilter, query]);
+
+  useEffect(() => {
+    if (drawerOpen && selectedId && !filtered.some((ticket) => ticket.id === selectedId)) {
+      setDrawerOpen(false);
+    }
+  }, [drawerOpen, filtered, selectedId]);
 
   // 本地 page state 渲染设计稿 tk-pager(数字 + data-list-pager 供运行时分页门计数)。
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const curPage = Math.min(page, pageCount);
   useEffect(() => {
     setPage(1);
-  }, [scope, categoryFilter, query, pageSize]);
+  }, [scope, statusFilter, categoryFilter, query, pageSize]);
   const start = (curPage - 1) * pageSize;
   const paged = filtered.slice(start, start + pageSize);
 
@@ -154,26 +226,49 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     setDrawerOpen(true);
   };
 
-  const updateTicket = (id: string, updater: (t: SupportTicket) => SupportTicket, reason: string, action: string) => {
-    const next = tickets.map((t) => (t.id === id ? updater(t) : t));
-    setParam(TICKET_KEY, JSON.stringify(next), { action, reason });
+  const commitTicketWrite = async (write: () => Promise<boolean>, successMessage: string): Promise<boolean> => {
+    if (writeInFlight.current) {
+      toast("操作正在提交,请稍候");
+      return false;
+    }
+    writeInFlight.current = true;
+    setWritePending(true);
+    try {
+      const succeeded = await write();
+      if (succeeded) toast(successMessage);
+      return succeeded;
+    } finally {
+      writeInFlight.current = false;
+      setWritePending(false);
+    }
   };
 
-  const createTicket = (form: CreateTicketForm) => {
+  const updateTicket = async (id: string, updater: (t: SupportTicket) => SupportTicket, reason: string, action: string): Promise<boolean> => {
+    const next = tickets.map((t) => (t.id === id ? updater(t) : t));
+    return setParam(TICKET_KEY, JSON.stringify(next), { action, reason });
+  };
+
+  const createTicket = async (form: CreateTicketForm) => {
+    if (!canWriteM2 || !ticketsAvailable) return;
     const title = form.title.trim();
     const body = form.body.trim();
-    const reason = form.reason.trim();
-    if (!title || !body || reason.length < 8) {
-      toast("新建工单需要标题 / 正文 / 8 字以上审计理由");
+    const userId = form.userId.trim() ? Number(form.userId) : undefined;
+    if (!title || !body) {
+      toast("新建工单需要标题和问题描述");
       return;
     }
-    if (!form.owner || form.owner === "Unassigned") {
+    if (userId !== undefined && (!Number.isSafeInteger(userId) || userId <= 0)) {
+      toast("用户 ID 必须是正整数,也可以留空");
+      return;
+    }
+    if (!form.owner || !ownerOptions.includes(form.owner)) {
       toast("新建工单需要选择真实客服负责人");
       return;
     }
     const now = Date.now();
     const row: SupportTicket = {
       id: `TK-${now}`,
+      userId,
       subject: title,
       category: form.category,
       status: "open",
@@ -183,132 +278,148 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       lastReplyAt: now,
       unread: 1,
       owner: form.owner,
+      archived: false,
       messages: [{ ts: now, author: "user", body }],
     };
-    setParam(TICKET_KEY, JSON.stringify([row, ...tickets]), { action: `新建客服工单 ${row.id} · admin.support_ticket_created`, reason });
-    setSelectedId(row.id);
-    setDrawerOpen(true);
-    setShowCreate(false);
-    toast(`${row.id} 已创建并进入 ${ownerLabel(form.owner)} 队列`);
+    setPendingCreatedTicket({ subject: title, userId, existingIds: tickets.map((ticket) => ticket.id) });
+    const succeeded = await commitTicketWrite(
+      () => setParam(TICKET_KEY, JSON.stringify([row, ...tickets]), { action: "新建客服工单 · admin.support_ticket_created", reason: "客服人工新建工单并自动留档" }),
+      `工单已创建并进入 ${ownerLabel(form.owner)} 队列`,
+    );
+    if (succeeded) {
+      setShowCreate(false);
+    } else {
+      setPendingCreatedTicket(null);
+    }
   };
 
   // 例行:回复(正文本身即留档)
-  const sendReply = (body: string) => {
-    if (!selected) return;
+  const sendReply = async (body: string) => {
+    if (!selected || !canWriteM2 || !ticketsAvailable || selected.archived) return;
     if (!body.trim()) {
       toast("回复需要正文");
       return;
     }
     const now = Date.now();
-    updateTicket(
-      selected.id,
-      (t) => ({
-        ...t,
-        status: "pending_user",
-        updatedAt: now,
-        lastReplyAt: now,
-        unread: 0,
-        messages: [...t.messages, { ts: now, author: "agent", agentName: t.owner === "Unassigned" ? "客服台" : t.owner, body: body.trim() }],
-      }),
-      "坐席回复(正文已留档)",
-      `工单回复 ${selected.id} · admin.support_ticket_replied`,
+    const succeeded = await commitTicketWrite(
+      () => updateTicket(
+        selected.id,
+        (t) => ({
+          ...t,
+          status: "pending_user",
+          updatedAt: now,
+          lastReplyAt: now,
+          unread: 0,
+          messages: [...t.messages, { ts: now, author: "agent", agentName: t.owner === "Unassigned" ? "客服台" : t.owner, body: body.trim() }],
+        }),
+        "坐席回复(正文已留档)",
+        `工单回复 ${selected.id} · admin.support_ticket_replied`,
+      ),
+      `${selected.id} 已回复并转待用户`,
     );
-    setReplyBody("");
-    toast(`${selected.id} 已回复并转待用户`);
+    if (succeeded) setReplyBody("");
   };
 
   // 例行:直接流转状态(状态菜单 + 关闭/重开)。closeOrReopen 保留关闭↔重开翻转。
-  const setTicketStatusDirect = (id: string, status: SupportTicketStatus) => {
+  const setTicketStatusDirect = async (id: string, status: SupportTicketStatus) => {
+    if (!canWriteM2 || !ticketsAvailable) return;
     const t = tickets.find((x) => x.id === id);
-    if (!t || t.status === status) return;
+    if (!t || t.archived || t.status === status) return;
     const now = Date.now();
-    updateTicket(id, (x) => ({ ...x, status, updatedAt: now }), `状态流转「${TK_STATUS_CN[status]}」(例行,自动留档)`, `工单状态流转 ${id} · admin.support_ticket_status`);
-    toast(`${id} → ${TK_STATUS_CN[status]}`);
-  };
-  const closeOrReopen = () => {
-    if (!selected) return;
-    const now = Date.now();
-    const nextStatus: SupportTicketStatus = selected.status === "closed" ? "open" : "closed";
-    updateTicket(
-      selected.id,
-      (t) => ({ ...t, status: nextStatus, updatedAt: now }),
-      `坐席${nextStatus === "closed" ? "关闭" : "重开"}工单(例行,自动留档)`,
-      `${nextStatus === "closed" ? "关闭" : "重开"}工单 ${selected.id} · admin.support_ticket_${nextStatus === "closed" ? "closed" : "reopened"}`,
+    await commitTicketWrite(
+      () => updateTicket(id, (x) => ({ ...x, status, updatedAt: now }), `状态流转「${TK_STATUS_CN[status]}」(例行,自动留档)`, `工单状态流转 ${id} · admin.support_ticket_status`),
+      `${id} → ${TK_STATUS_CN[status]}`,
     );
-    toast(`${selected.id} 已${nextStatus === "closed" ? "关闭" : "重开"}`);
+  };
+  const closeOrReopen = async () => {
+    if (!selected || !canWriteM2 || !ticketsAvailable || selected.archived) return;
+    const now = Date.now();
+    const nextStatus: SupportTicketStatus = selected.status === "closed" || selected.status === "resolved" ? "open" : "closed";
+    await commitTicketWrite(
+      () => updateTicket(
+        selected.id,
+        (t) => ({ ...t, status: nextStatus, updatedAt: now }),
+        `坐席${nextStatus === "closed" ? "关闭" : "重开"}工单(例行,自动留档)`,
+        `${nextStatus === "closed" ? "关闭" : "重开"}工单 ${selected.id} · admin.support_ticket_${nextStatus === "closed" ? "closed" : "reopened"}`,
+      ),
+      `${selected.id} 已${nextStatus === "closed" ? "关闭" : "重开"}`,
+    );
   };
 
   // 例行:改优先级 / 转交 owner
-  const setPriorityDirect = (id: string, priority: SupportTicketPriority) => {
+  const setPriorityDirect = async (id: string, priority: SupportTicketPriority) => {
+    if (!canWriteM2 || !ticketsAvailable) return;
     const now = Date.now();
-    updateTicket(id, (t) => ({ ...t, priority, updatedAt: now }), `调整优先级「${PRIO_CN[priority]}」(例行,自动留档)`, `工单优先级 ${id} · admin.support_ticket_priority`);
-    toast(`${id} 优先级 → ${PRIO_CN[priority]}`);
+    await commitTicketWrite(
+      () => updateTicket(id, (t) => ({ ...t, priority, updatedAt: now }), `调整优先级「${PRIO_CN[priority]}」(例行,自动留档)`, `工单优先级 ${id} · admin.support_ticket_priority`),
+      `${id} 优先级 → ${PRIO_CN[priority]}`,
+    );
   };
-  const setOwnerDirect = (id: string, owner: string) => {
+  const setOwnerDirect = async (id: string, owner: string) => {
+    if (!canWriteM2 || !ticketsAvailable) return;
+    if (!ownerOptions.includes(owner)) {
+      toast("只能转交给当前可接单的客服坐席");
+      return;
+    }
     const now = Date.now();
-    updateTicket(id, (t) => ({ ...t, owner, updatedAt: now }), `转交坐席「${owner}」(例行,自动留档)`, `工单转交 ${id} · admin.support_ticket_owner`);
-    toast(`${id} 已转交 ${owner}`);
+    await commitTicketWrite(
+      () => updateTicket(id, (t) => ({ ...t, owner, updatedAt: now }), `转交坐席「${owner}」(例行,自动留档)`, `工单转交 ${id} · admin.support_ticket_owner`),
+      `${id} 已转交 ${owner}`,
+    );
+  };
+
+  const setArchivedDirect = async (id: string, archived: boolean) => {
+    if (!canWriteM2 || !ticketsAvailable) return;
+    const ticket = tickets.find((item) => item.id === id);
+    if (!ticket || Boolean(ticket.archived) === archived) return;
+    if (archived && ticket.status !== "resolved" && ticket.status !== "closed") {
+      toast("只有已解决或已关闭的工单可以归档");
+      return;
+    }
+    const now = Date.now();
+    await commitTicketWrite(
+      () => updateTicket(
+        id,
+        (item) => ({ ...item, archived, archivedAt: archived ? now : undefined, updatedAt: now }),
+        archived ? "已解决工单例行归档并自动留档" : "归档工单恢复到已解决队列并自动留档",
+        `${archived ? "归档" : "恢复"}工单 ${id} · admin.support_ticket_${archived ? "archived" : "unarchived"}`,
+      ),
+      `${id} 已${archived ? "归档" : "恢复到已解决队列"}`,
+    );
   };
 
   // 处置:升级为即时会话(不传 edit;真写对方真写键 I.session.convos + 工单 thread 留系统标注)
   const escalateToConversation = () => {
-    if (!selected) return;
+    if (!selected || !canWriteM2 || !ticketsAvailable || selected.archived) return;
     const ticket = selected;
+    if (!ticket.userId || ticket.userId <= 0) {
+      toast("该工单未关联真实用户,请先核对用户后再升级会话");
+      return;
+    }
+    const assignedAgent = supportAgents.find((agent) => isAssignableSupportAgent(agent) && agent.name === ticket.owner);
+    if (!assignedAgent) {
+      toast("当前负责人不在可接单客服名册,请先转交后再升级会话");
+      return;
+    }
     openActionConfirm({
       action: <>升级为即时会话 · {ticket.id}</>,
       detail: (
         <>
-          把工单 <b>{ticket.subject}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;会话写入 <span className="mono">I.session.convos</span>,本工单 thread 同时留一条升级标注。仅迁移接待载体,资金放行仍回 D2。
+          把工单 <b>{ticket.subject}</b> 升级为即时会话,坐席 <b>{ticket.owner}</b> 在会话中心继续实时接待;系统会保留真实用户关联,并在本工单同步记录会话编号。仅迁移接待载体,资金放行仍回 D2。
         </>
       ),
       amplifies: false,
       run: (reason: string) => {
-        const now = Date.now();
-        const existingConvos = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), []));
-        const newConvo: SessionConvo = {
-          id: `cv-from-${ticket.id}`,
-          type: "support",
-          agentName: ticket.owner,
-          roleKey: "conversations.roleSupport",
-          unread: 0,
-          lastTs: now,
-          status: "open",
-          owner: ticket.owner,
-          customer: `工单 ${ticket.id} 用户`,
-          origin: "support",
-          profile: {
-            uid: "—",
-            nickname: `工单 ${ticket.id} 用户`,
-            phone: "—",
-            vlevel: "—",
-            kyc: "待核对",
-            systemTags: [catCN(ticket.category)],
-            customTags: [],
-            risk: "中",
-            riskNote: `由工单 ${ticket.id}(${catCN(ticket.category)})升级转入 · 完整客户档案待客服在用户系统补全。`,
-            recharge: "—",
-            withdraw: "—",
-            balance: "—",
-            tickets: 1,
-            device: "—",
-            hashrate: "—",
-            region: "—",
-            joined: "—",
-            lastActive: "刚刚",
-            ledger: [],
-            notes: [],
-          },
-          messages: [{ ts: now, sender: "agent", agentName: ticket.owner, text: `(由工单 ${ticket.subject} 升级)` }],
-        };
-        setParam(CONVO_KEY, JSON.stringify([...existingConvos, newConvo]), { action: `工单升级为即时会话 ${ticket.id} · admin.conversation_from_ticket`, reason });
-        updateTicket(
-          ticket.id,
-          (t) => ({ ...t, updatedAt: now, messages: [...t.messages, { ts: now, author: "agent", agentName: t.owner, body: `已升级为即时会话 ${newConvo.id},坐席在会话中心继续接待。` }] }),
-          reason,
-          `工单升级为即时会话 ${ticket.id} · admin.conversation_from_ticket`,
-        );
-        toast(`${ticket.id} 已升级为即时会话 ${newConvo.id}`);
-        setDrawerOpen(false);
+        void commitTicketWrite(
+          () => setParam("I.support.ticketEscalation.__create", JSON.stringify({
+            ticketNo: ticket.id,
+            ownerAgentId: assignedAgent.id,
+            ownerAgentName: assignedAgent.name,
+          }), { action: `工单升级为即时会话 ${ticket.id} · admin.conversation_from_ticket`, reason }),
+          `${ticket.id} 已升级为即时会话`,
+        ).then((succeeded) => {
+          if (succeeded) setDrawerOpen(false);
+        });
       },
     });
   };
@@ -319,8 +430,9 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     ts: m.ts,
     fromAgent: m.author === "agent",
     agentName: m.agentName,
-    senderName: m.author === "agent" ? m.agentName ?? "客服台" : "用户",
-    role: m.author === "agent" ? "support" : "user",
+    senderName: m.author === "system" ? "系统" : m.author === "agent" ? m.agentName ?? "客服台" : "用户",
+    system: m.author === "system",
+    role: m.author === "user" ? "user" : "support",
     body: m.body,
   }));
 
@@ -329,27 +441,54 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       <p className="dim" style={{ margin: "0 0 12px", fontSize: 13 }}>
         用户提的问题在这排队 · 点一行打开<b style={{ color: "var(--ink-2)", fontWeight: 500 }}>工单详情与处理</b>:回复 / 改状态 / 转交 / 关单 / 升级为即时会话。
       </p>
+      {!ticketsAvailable && (
+        <div className="itint" role="alert" style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13 }}>工单数据暂时无法同步,当前不展示空队列,也不会开放写操作。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请稍后刷新页面;若持续失败,联系平台管理员检查客服工单服务。</div>
+        </div>
+      )}
+      {ticketsAvailable && !canWriteM2 && (
+        <div className="itint" role="status" style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13 }}>当前账号为只读模式。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>可以筛选和查看工单,回复、流转、归档及升级会话需要 M2 写权限。</div>
+        </div>
+      )}
+      {ticketsAvailable && canWriteM2 && ownerOptions.length === 0 && (
+        <div className="itint" role="alert" style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13 }}>当前没有可接单的客服坐席。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请先在 M1 启用具备客服服务类型且允许转交的坐席。</div>
+        </div>
+      )}
       <div className="tk-toolbar">
         <div className="seg">
           {SCOPES.map(([k, lab]) => (
             <button key={k} className={scope === k ? "on" : ""} onClick={() => setScope(k)}>
               {k === "archived" && <Icon name="box" size={14} />}
               {lab}
-              {k === "archived" ? ` ${archivedCount}` : ""}
+              {k === "resolved" ? ` ${resolvedCount}` : k === "archived" ? ` ${archivedCount}` : ""}
             </button>
           ))}
         </div>
         <div style={{ width: 188 }}>
           <HDSelect value={categoryFilter} onChange={(v) => setCategoryFilter(v as "all" | SupportTicketCategory)} options={categoryOptions} />
         </div>
+        <div style={{ width: 150 }}>
+          <HDSelect
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v as "all" | SupportTicketStatus)}
+            options={[{ value: "all", label: "全部状态" }, ...Object.entries(TK_STATUS_CN).map(([value, label]) => ({ value, label }))]}
+          />
+        </div>
         <div className="inp" style={{ flex: 1, maxWidth: 320 }}>
           <Icon name="search" size={15} />
           <input data-proof="support-ticket-search" placeholder="搜索主题 / 单号 / 负责人 / 分类" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
-        <button type="button" data-proof="support-ticket-create" className="btn btn-pri btn-sm" onClick={() => setShowCreate(true)}>
-          <Icon name="plus" size={16} />
-          新建工单
-        </button>
+        {canWriteM2 && ticketsAvailable && ownerOptions.length > 0 && (
+          <button type="button" data-proof="support-ticket-create" className="btn btn-pri btn-sm" disabled={writePending} onClick={() => setShowCreate(true)}>
+            <Icon name="plus" size={16} />
+            新建工单
+          </button>
+        )}
         <span className="mono dim2" style={{ marginLeft: "auto", fontSize: 12.5 }}>共 {filtered.length} 条</span>
       </div>
 
@@ -398,20 +537,29 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div className="tk-acts">
-                      {!done && (
+                      {canWriteM2 && ticketsAvailable && !t.archived && !done && (
                         <button type="button" className="tk-iact ok" title="标记已解决" onClick={() => setTicketStatusDirect(t.id, "resolved")}>
                           <Icon name="check" size={16} />
                         </button>
                       )}
-                      {t.status === "closed" ? (
-                        <button type="button" className="tk-iact" title="重开" onClick={() => setTicketStatusDirect(t.id, "open")}>
+                      {canWriteM2 && ticketsAvailable && t.archived ? (
+                        <button type="button" className="tk-iact" title="恢复到已解决队列" onClick={() => setArchivedDirect(t.id, false)}>
                           <Icon name="arrow" size={16} />
                         </button>
-                      ) : (
+                      ) : canWriteM2 && ticketsAvailable && done ? (
+                        <>
+                          <button type="button" className="tk-iact" title="归档" onClick={() => setArchivedDirect(t.id, true)}>
+                            <Icon name="box" size={16} />
+                          </button>
+                          <button type="button" className="tk-iact" title="重新打开" onClick={() => setTicketStatusDirect(t.id, "open")}>
+                            <Icon name="arrow" size={16} />
+                          </button>
+                        </>
+                      ) : canWriteM2 && ticketsAvailable ? (
                         <button type="button" className="tk-iact" title="关闭" onClick={() => setTicketStatusDirect(t.id, "closed")}>
                           <Icon name="x" size={16} />
                         </button>
-                      )}
+                      ) : null}
                       <button type="button" className="btn btn-sec btn-sm" title="打开处理" onClick={() => openTicket(t.id)}>
                         <Icon name="eye" size={16} />
                         处理
@@ -423,7 +571,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
             })}
           </tbody>
         </table>
-        {!filtered.length && <Empty icon="search">没有匹配的工单</Empty>}
+        {ticketsAvailable && !filtered.length && <Empty icon="search">没有匹配的工单;可以调整筛选条件{canWriteM2 ? "或新建工单" : ""}</Empty>}
       </div>
 
       {filtered.length > 0 && (
@@ -466,10 +614,12 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           onPriority={(p) => setPriorityDirect(selected.id, p)}
           onOwner={(o) => setOwnerDirect(selected.id, o)}
           onCloseReopen={closeOrReopen}
+          onArchive={(archived) => setArchivedDirect(selected.id, archived)}
           onEscalate={escalateToConversation}
           thread={threadMessages}
           replyTemplates={replyTemplates}
           ownerOptions={ownerOptions}
+          canWrite={canWriteM2 && ticketsAvailable && !writePending}
         />
       )}
 
@@ -477,6 +627,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
         <CreateTicketModal
           categoryOptions={ticketCategoryOptions}
           ownerOptions={ownerOptions}
+          submitting={writePending}
           onClose={() => setShowCreate(false)}
           onSave={createTicket}
         />
@@ -495,10 +646,12 @@ function TicketDrawer({
   onPriority,
   onOwner,
   onCloseReopen,
+  onArchive,
   onEscalate,
   thread,
   replyTemplates,
   ownerOptions,
+  canWrite,
 }: {
   ticket: SupportTicket;
   replyBody: string;
@@ -509,13 +662,16 @@ function TicketDrawer({
   onPriority: (p: SupportTicketPriority) => void;
   onOwner: (o: string) => void;
   onCloseReopen: () => void;
+  onArchive: (archived: boolean) => void;
   onEscalate: () => void;
   thread: ThreadMessage[];
   replyTemplates: string[];
   ownerOptions: string[];
+  canWrite: boolean;
 }) {
-  const isClosed = ticket.status === "closed";
-  const statusItems: MenuItem[] = STATUS_MENU.map(([s, label]) => ({ label, cur: ticket.status === s, onClick: () => onStatus(s) }));
+  const isTerminal = ticket.status === "resolved" || ticket.status === "closed";
+  const conversation = linkedConversation(ticket);
+  const statusItems: MenuItem[] = STATUS_TRANSITIONS[ticket.status].map((status) => ({ label: STATUS_ACTION_CN[status], onClick: () => onStatus(status) }));
   const priorityItems: MenuItem[] = PRIORITY_LIST.map((p) => ({ label: PRIO_CN[p], cur: ticket.priority === p, onClick: () => onPriority(p) }));
   const ownerItems: MenuItem[] = ownerOptions.map((n) => ({ label: ownerLabel(n), cur: ticket.owner === n, onClick: () => onOwner(n) }));
 
@@ -543,19 +699,46 @@ function TicketDrawer({
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 13, flexWrap: "wrap" }}>
-            <MiniMenu label="状态" items={statusItems} />
-            <MiniMenu label="优先级" items={priorityItems} />
-            <MiniMenu label="转交" icon="users" items={ownerItems} />
+            {canWrite && !ticket.archived && <MiniMenu label="状态" items={statusItems} />}
+            {canWrite && !ticket.archived && !isTerminal && <MiniMenu label="优先级" items={priorityItems} />}
+            {canWrite && !ticket.archived && ticket.status !== "closed" && <MiniMenu label="转交" icon="users" items={ownerItems} />}
             {ticket.userId && <Link className="btn btn-sec btn-sm" href={`/users/search/${ticket.userId}#hub-payment-methods`}><Icon name="wallet" size={16} />用户支付方式</Link>}
             <div style={{ flex: 1 }} />
-            <button type="button" data-proof="support-ticket-escalate" className="btn btn-cyan btn-sm" onClick={onEscalate}>
-              <Icon name="arrow" size={16} />
-              升级会话
-            </button>
-            <button type="button" data-proof="support-ticket-close" className={`btn btn-sm ${isClosed ? "btn-sec" : "btn-danger"}`} onClick={onCloseReopen}>
-              <Icon name={isClosed ? "arrow" : "x"} size={16} />
-              {isClosed ? "重开" : "关闭"}
-            </button>
+            {conversation ? (
+              <Link className="btn btn-cyan btn-sm" href={conversation.archived
+                ? `/service/sessions?seg=archived&q=${encodeURIComponent(conversation.no)}`
+                : `/service/sessions?q=${encodeURIComponent(conversation.no)}`}>
+                <Icon name="arrow" size={16} />查看会话 {conversation.no}
+              </Link>
+            ) : canWrite && !ticket.archived && !isTerminal && (
+              <button
+                type="button"
+                data-proof="support-ticket-escalate"
+                className="btn btn-cyan btn-sm"
+                onClick={onEscalate}
+                disabled={!ticket.userId || ticket.userId <= 0}
+                title={ticket.userId && ticket.userId > 0 ? "升级为与该用户的即时会话" : "该工单未关联真实用户,无法升级会话"}
+              >
+                <Icon name="arrow" size={16} />
+                升级会话
+              </button>
+            )}
+            {canWrite && !ticket.archived && (
+              <button type="button" data-proof="support-ticket-close" className={`btn btn-sm ${isTerminal ? "btn-sec" : "btn-danger"}`} onClick={onCloseReopen}>
+                <Icon name={isTerminal ? "arrow" : "x"} size={16} />
+                {isTerminal ? "重新打开" : "关闭"}
+              </button>
+            )}
+            {canWrite && !ticket.archived && isTerminal && (
+              <button type="button" className="btn btn-sec btn-sm" onClick={() => onArchive(true)} title="移入可查询的已归档队列">
+                <Icon name="box" size={16} />归档
+              </button>
+            )}
+            {canWrite && ticket.archived && (
+              <button type="button" className="btn btn-sec btn-sm" onClick={() => onArchive(false)} title="恢复到已解决队列">
+                <Icon name="arrow" size={16} />恢复
+              </button>
+            )}
           </div>
         </div>
 
@@ -563,7 +746,7 @@ function TicketDrawer({
           <MessageThread messages={thread} relWhen={relWhen} />
         </div>
 
-        {!isClosed && (
+        {canWrite && ticket.status !== "closed" && !ticket.archived && (
           <div className="ChatComposer">
             <div style={{ display: "flex", gap: 7, marginBottom: 9, flexWrap: "wrap", alignItems: "center" }}>
               <span className="dim2" style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -605,21 +788,23 @@ function TicketDrawer({
 function CreateTicketModal({
   categoryOptions,
   ownerOptions,
+  submitting,
   onClose,
   onSave,
 }: {
   categoryOptions: Array<{ value: SupportTicketCategory; label: string }>;
   ownerOptions: string[];
+  submitting: boolean;
   onClose: () => void;
   onSave: (form: CreateTicketForm) => void;
 }) {
-  const firstOwner = ownerOptions.find((owner) => owner !== "Unassigned") ?? ownerOptions[0] ?? "Unassigned";
+  const firstOwner = ownerOptions[0] ?? "";
+  const [userId, setUserId] = useState("");
   const [category, setCategory] = useState<SupportTicketCategory>(categoryOptions[0]?.value ?? "account");
   const [priority, setPriority] = useState<SupportTicketPriority>("normal");
   const [owner, setOwner] = useState(firstOwner);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [reason, setReason] = useState("");
   return (
     <Modal
       title="新建客服工单"
@@ -628,16 +813,17 @@ function CreateTicketModal({
       onClose={onClose}
       footer={
         <>
-          <span className="dim2" style={{ fontSize: 11.5 }}>负责人来自 M5 客服岗位列表</span>
+          <span className="dim2" style={{ fontSize: 11.5 }}>负责人来自客服坐席名册;新建会自动留档,无需填写理由</span>
           <span style={{ flex: 1 }} />
-          <button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button>
+          <button type="button" className="btn btn-sec btn-sm" disabled={submitting} onClick={onClose}>取消</button>
           <button
             type="button"
             data-proof="support-ticket-create-save"
             className="btn btn-pri btn-sm"
-            onClick={() => onSave({ category, priority, owner, title, body, reason })}
+            disabled={submitting || !owner || !title.trim() || !body.trim()}
+            onClick={() => onSave({ userId, category, priority, owner, title, body })}
           >
-            保存工单
+            {submitting ? "保存中…" : "保存工单"}
           </button>
         </>
       }
@@ -664,16 +850,16 @@ function CreateTicketModal({
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         <label className="field">
+          <label>用户 ID(可选)</label>
+          <input className="fld" inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="关联真实用户后才可升级即时会话" />
+        </label>
+        <label className="field">
           <label>标题</label>
           <input className="fld" data-proof="support-ticket-create-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例:提现审核进度咨询" />
         </label>
         <label className="field">
           <label>问题描述</label>
           <textarea className="fld" data-proof="support-ticket-create-body" rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder="写清用户诉求、截图/订单号/交易号等关键信息" style={{ resize: "vertical" }} />
-        </label>
-        <label className="field">
-          <label>审计理由(≥8 字)</label>
-          <input className="fld" data-proof="support-ticket-create-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管人工补建用户反馈工单" />
         </label>
       </div>
     </Modal>

@@ -11,7 +11,7 @@ import { Bell, X, AlertTriangle, ChevronRight } from "lucide-react";
 import { RoleBadge } from "@/app/components/kit/role-badge";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
 import { fetchA2Overview, type A2OperationRow } from "@/lib/admin/a2-client";
-import { opsAlertHref, useJ1DutyAlerts, useJ2GeoAlerts, useJ3TamperConfigAlerts } from "@/lib/admin/ops-dashboard-client";
+import { opsAlertHref, useC2HighRiskAlerts, useJ1DutyAlerts, useJ2GeoAlerts, useJ3TamperConfigAlerts } from "@/lib/admin/ops-dashboard-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { fmtPct } from "@/lib/format";
@@ -60,10 +60,12 @@ export function NotificationBell() {
   const [a2Error, setA2Error] = useState<string | null>(null);
   const hasAdminSession = useAdminAuth((state) => state.session != null);
   const isSuperAdmin = useAdminAuth((state) => state.session?.role === "superadmin");
+  const canReadC2Alerts = useAdminAuth((state) => state.session?.role === "superadmin" || state.session?.role === "risk");
   const canReadJ3Alerts = useAdminAuth((state) => state.session?.authorities?.includes("emergency_j3_alert_config") === true);
   const { alerts: opsAlerts, error: opsAlertError } = useJ1DutyAlerts(hasAdminSession);
   const { alerts: j2Alerts, error: j2AlertError } = useJ2GeoAlerts(isSuperAdmin);
   const { alerts: j3Alerts, error: j3AlertError } = useJ3TamperConfigAlerts(canReadJ3Alerts);
+  const { alerts: c2Alerts, error: c2AlertError } = useC2HighRiskAlerts(canReadC2Alerts);
   useEffect(() => {
     let alive = true;
     fetchA2Overview()
@@ -111,7 +113,7 @@ export function NotificationBell() {
       })),
     ];
   })();
-  const j1Alerts: ShellAlert[] = [...opsAlerts, ...j2Alerts, ...j3Alerts]
+  const j1Alerts: ShellAlert[] = [...c2Alerts, ...opsAlerts, ...j2Alerts, ...j3Alerts]
     .map((alert) => ({
       id: `ops-${alert.id}`,
       level: alert.level,
@@ -140,6 +142,14 @@ export function NotificationBell() {
       level: "high",
       text: `J3 超管告警同步失败: ${j3AlertError}`,
       href: "/emergency/tamper",
+    });
+  }
+  if (c2AlertError) {
+    j1Alerts.push({
+      id: "c2-alert-sync",
+      level: "high",
+      text: `C2 高风险账户告警同步失败: ${c2AlertError}`,
+      href: "/users/actions",
     });
   }
   const alerts = [...j1Alerts, ...bAlerts];

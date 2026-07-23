@@ -7,9 +7,9 @@
  * 粒度可设:全部 / 一级 / 二级 / 三级(按 UX 层级上卷,即「统计到哪个层级的页面」)。
  * 只读报表域:无任何写业务规则动作;唯一写动作=聚合导出(confirm + BI export task)。
  */
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { confirm } from "@/lib/store/ui";
+import { downloadL6Behavior, fetchL6Behavior, fetchL6ClickHeat } from "@/lib/admin/l-client";
 import {
   aggregateByDepth,
   activityForWindow,
@@ -69,25 +69,25 @@ function bounceCell(rate: number): React.CSSProperties {
 }
 
 export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
-  const exportHeat = async () => {
-    const ok = await confirm({
-      title: "导出行为热力序列 CSV",
-      message:
-        "内容:当前粒度与时间窗下每页(或上卷节点)的 PV/UV/点击/平均停留/跳出率,以及单页点击区分布。全部为聚合计数,不含手机号、设备号等明文。仍需操作确认。",
-      confirmLabel: "导出",
-    });
-    if (!ok) return;
-    await ctx.biActions?.createReport({
-      exportType: "行为热力图",
-      timeRange: "当前时间窗",
-      fields: "页面 PV/UV/点击/平均停留/跳出率/点击区分布",
-      piiLevel: "无 PII",
-      maskPolicy: "NONE",
-      recipient: "BI 管理员",
-      ticket: "L6-BEHAVIOR-HEATMAP",
-    }, "导出 L6 行为热力聚合序列用于产品分析");
-    await ctx.reloadBi?.();
-    ctx.toast("行为热力导出任务已提交 · 数据来自后端 BI/export");
+  const available = ctx.biData?.l6?.available === true;
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = async () => {
+    if (!available || !ctx.canExport || exporting) return;
+    setExporting(true);
+    try {
+      const file = await downloadL6Behavior({ window: "7d", device: "ALL", locale: "ALL" });
+      const href = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = file.fileName;
+      link.click();
+      URL.revokeObjectURL(href);
+      ctx.toast("行为热力聚合 CSV 已导出 · 不含 PII");
+    } catch (error) {
+      ctx.toast(error instanceof Error ? error.message : "行为热力导出失败");
+    } finally {
+      setExporting(false);
+    }
   };
   return (
     <>
@@ -95,8 +95,9 @@ export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
         <span className="d" />
         只读报表域 · 不改任何业务规则
       </span>
-      <button className="f-cta" onClick={exportHeat}>
-        导出行为热力序列
+      <button className="f-cta" onClick={() => void exportCsv()} disabled={!available || !ctx.canExport || exporting}
+        title={!ctx.canExport ? "当前角色只有查看权限" : !available ? "行为数据尚不可用" : undefined}>
+        {exporting ? "导出中…" : available ? "导出近 7 天全端" : "行为数据未接入"}
       </button>
     </>
   );
@@ -108,13 +109,36 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const [sort, setSort] = useState<SortKey>("pv");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [sel, setSel] = useState<string | null>(null);
+  const [device, setDevice] = useState<"ALL" | "APP" | "H5" | "MP">("ALL");
+  const [locale, setLocale] = useState("ALL");
+  const [liveRaw, setLiveRaw] = useState<Record<string, unknown> | null>(ctx.biData?.l6 ?? null);
+  const [liveHeat, setLiveHeat] = useState<Record<string, unknown> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [liveError, setLiveError] = useState("");
+  const [exporting, setExporting] = useState(false);
   const gradId = "l6heat-" + useId().replace(/:/g, "");
-  const heatmapData = useMemo(() => normalizeL6BehaviorHeatmap(ctx.biData?.l6), [ctx.biData?.l6]);
+  useEffect(() => {
+    if (ctx.biData?.l6) setLiveRaw(ctx.biData.l6);
+  }, [ctx.biData?.l6]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRefreshing(true);
+    setLiveError("");
+    setSel(null);
+    void fetchL6Behavior({ window: win, device, locale, depth, sort })
+      .then((data) => { if (!cancelled) setLiveRaw(data); })
+      .catch((error) => { if (!cancelled) setLiveError(error instanceof Error ? error.message : "L6_DATA_LOAD_FAILED"); })
+      .finally(() => { if (!cancelled) setRefreshing(false); });
+    return () => { cancelled = true; };
+  }, [depth, device, locale, sort, win]);
+
+  const heatmapData = useMemo(() => normalizeL6BehaviorHeatmap(liveRaw), [liveRaw]);
 
   const stats = useMemo(() => activityForWindow(heatmapData, win), [heatmapData, win]);
   const summary = useMemo(() => summarize(stats), [stats]);
   const rows = useMemo<HeatRow[]>(() => {
-    const r = aggregateByDepth(heatmapData.pageTree, stats, depth);
+    const r = aggregateByDepth(heatmapData.pageTree, stats, "all");
     const dir = sortDir === "desc" ? 1 : -1;
     return [...r].sort((a, b) => (b[sort] - a[sort]) * dir);
   }, [heatmapData.pageTree, stats, depth, sort, sortDir]);
@@ -127,9 +151,78 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   // 下钻:默认选最热行,可点切换
   const activeKey = sel ?? rows[0]?.key ?? null;
   const activeRow = rows.find((r) => r.key === activeKey) ?? null;
-  const heat = useMemo(() => (activeKey ? clickHeatForRoute(heatmapData, activeKey) : null), [activeKey, heatmapData]);
+  useEffect(() => {
+    let cancelled = false;
+    setLiveHeat(null);
+    if (!activeKey || !activeRow || activeRow.pageCount > 1 || depth === "L1" || depth === "L2") return;
+    void fetchL6ClickHeat(activeKey, { window: win, device, locale, depth, sort })
+      .then((data) => { if (!cancelled) setLiveHeat(data); })
+      .catch((error) => { if (!cancelled) setLiveError(error instanceof Error ? error.message : "L6_CLICK_HEAT_FAILED"); });
+    return () => { cancelled = true; };
+  }, [activeKey, activeRow, depth, device, locale, sort, win]);
+  const heat = useMemo(() => {
+    if (!activeKey) return null;
+    if (!liveHeat) return clickHeatForRoute(heatmapData, activeKey);
+    const withHeat = normalizeL6BehaviorHeatmap({ ...liveRaw, clickHeatByRoute: { [activeKey]: liveHeat } });
+    return clickHeatForRoute(withHeat, activeKey);
+  }, [activeKey, heatmapData, liveHeat, liveRaw]);
+  const aggregateSelection = depth === "L1" || depth === "L2" || (activeRow?.pageCount ?? 0) > 1;
 
   const depthLb = DEPTHS.find((d) => d.v === depth)?.lb ?? "全部";
+
+  const exportCurrent = async () => {
+    if (!ctx.canExport || exporting) return;
+    setExporting(true);
+    try {
+      const file = await downloadL6Behavior({ window: win, device, locale, depth, sort });
+      const href = URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = file.fileName;
+      link.click();
+      URL.revokeObjectURL(href);
+      ctx.toast("当前筛选的聚合 CSV 已导出 · 不含 PII");
+    } catch (error) {
+      ctx.toast(error instanceof Error ? error.message : "行为热力导出失败");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  if (!ctx.biData?.l6) {
+    return <LDataState ctx={ctx} label="L6" />;
+  }
+
+  if (!heatmapData.available && heatmapData.status === "BLOCKED_CROSS_MODULE") {
+    return (
+      <div>
+        <section className="l-card">
+          <div className="l-h">
+            <span className="ttl">用户行为热力图 · 数据接入状态</span>
+            <div className="r"><span className="bdg warn">跨模块验收</span></div>
+          </div>
+          <div className="l-b">
+            <div className="ltint warn" style={{ fontSize: 12.5 }}>
+              <b>当前状态：等待跨模块接入</b> · <AutoGloss>{heatmapData.message || "行为热力数据源尚未接入，页面不会用业务表行数冒充用户行为事件。"}</AutoGloss>
+            </div>
+            <div className="liab-split" style={{ marginTop: 14 }}>
+              <div className="rev-row" style={{ gridTemplateColumns: "1fr auto" }}>
+                <span className="nm">页面浏览事件<span className="src">APP 埋点</span></span>
+                <span className="lcode">app.page_viewed</span>
+              </div>
+              <div className="rev-row" style={{ gridTemplateColumns: "1fr auto" }}>
+                <span className="nm">元素点击事件<span className="src">APP 埋点</span></span>
+                <span className="lcode">app.element_clicked</span>
+              </div>
+            </div>
+            <div className="ltint" style={{ marginTop: 14, fontSize: 12 }}>
+              <b>验收边界</b> · 等 APP 端产生上述两个真实事件、A4 提供埋点目录和字段字典后，再联调 24h / 7d / 30d 窗口、页面层级、坐标热区与聚合导出。当前不展示热力数值、不开放导出，也不使用 mock 数据补齐。
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   if (!heatmapData.pageTree.length) {
     return <LDataState ctx={ctx} label="L6" />;
@@ -144,6 +237,11 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   return (
     <div>
       {/* stat strip */}
+      {(refreshing || liveError) && (
+        <div className={`ltint ${liveError ? "warn" : "cyan"}`} style={{ marginBottom: 12, fontSize: 12 }}>
+          {liveError || "正在读取服务端行为聚合…"}
+        </div>
+      )}
       <div className="f-stats">
         <div className="f-stat cyan">
           <div className="k">总页面浏览 PV</div>
@@ -187,6 +285,20 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="sep" />
         <div className="chips">
+          <span className="lb">设备</span>
+          <select aria-label="设备筛选" value={device} onChange={(event) => setDevice(event.target.value as typeof device)}>
+            <option value="ALL">全部</option><option value="H5">H5</option><option value="APP">APP</option><option value="MP">小程序</option>
+          </select>
+          <span className="lb">Locale</span>
+          <select aria-label="Locale 筛选" value={locale} onChange={(event) => setLocale(event.target.value)}>
+            <option value="ALL">全部</option><option value="zh-CN">zh-CN</option><option value="en-US">en-US</option><option value="vi-VN">vi-VN</option>
+          </select>
+          <button className="chip" disabled={!ctx.canExport || exporting} onClick={() => void exportCurrent()}>
+            {exporting ? "导出中…" : ctx.canExport ? "导出当前筛选" : "无导出权限"}
+          </button>
+        </div>
+        <div className="sep" />
+        <div className="chips">
           <span className="lb">时间窗</span>
           {WINDOWS.map((w) => (
             <button
@@ -221,6 +333,22 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
           ))}
         </div>
       </div>
+
+      <section className="l-card">
+        <div className="l-h"><span className="ttl">访问趋势</span><span className="sub">· 日趋势 / 周趋势均由服务端聚合</span></div>
+        <div className="l-b" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 16 }}>
+          {[{ label: "按日", values: heatmapData.dailyTrend }, { label: "按周", values: heatmapData.weeklyTrend }].map((series) => (
+            <div key={series.label}>
+              <div className="zone-h">{series.label}</div>
+              {series.values.length ? series.values.slice(-8).map((point) => (
+                <div className="rev-row" key={point.bucket} style={{ gridTemplateColumns: "1fr auto auto" }}>
+                  <span className="nm">{point.bucket}</span><span className="lcode">PV {n(point.pv)}</span><span className="lcode">点击 {n(point.clicks)}</span>
+                </div>
+              )) : <div className="ltint" style={{ fontSize: 12 }}>当前筛选暂无事件</div>}
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* (a) 页面活跃热力矩阵 */}
       <section className="l-card">
@@ -312,13 +440,13 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
             <span className="sub">
               ·{" "}
               <AutoGloss>
-                {activeRow.pageCount > 1
+                {aggregateSelection
                   ? `聚合行(含 ${activeRow.pageCount} 页)· 坐标热力按单页统计`
                   : `在手机界面线框上叠加点击密度热区 · 看用户在该页具体点哪`}
               </AutoGloss>
             </span>
           </div>
-          {activeRow.pageCount > 1 ? (
+          {aggregateSelection ? (
             <div className="l-b">
               <div className="ltint warn" style={{ fontSize: 12.5 }}>
                 <b>聚合行不提供单页坐标热力</b> ·{" "}

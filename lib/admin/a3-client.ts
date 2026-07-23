@@ -15,6 +15,10 @@ interface BackendA3FeatureFlag {
   scope?: string | null;
   lastChange?: string | null;
   resourceOwner?: string | null;
+  allowedValues?: string[] | null;
+  writable?: boolean | null;
+  category?: string | null;
+  consumer?: string | null;
 }
 
 interface BackendA3KillSwitch {
@@ -30,11 +34,14 @@ interface BackendA3SystemHealth {
   name?: string | null;
   tone?: string | null;
   metric?: string | null;
+  observedAt?: string | null;
+  source?: string | null;
+  stale?: boolean | null;
 }
 
 interface BackendA3Stats {
   flagCount?: number | string | null;
-  flagGrayCount?: number | string | null;
+  flagOnCount?: number | string | null;
   killGates?: number | string | null;
   killGatesUp?: number | string | null;
 }
@@ -54,6 +61,10 @@ export interface A3FeatureFlag {
   scope: string;
   lastChange: string;
   resourceOwner: string;
+  allowedValues: string[];
+  writable: boolean;
+  category: string;
+  consumer: string;
 }
 
 export interface A3KillSwitch {
@@ -69,11 +80,14 @@ export interface A3SystemHealth {
   name: string;
   tone: "ok" | "warn" | "bad";
   metric: string;
+  observedAt: string;
+  source: string;
+  stale: boolean;
 }
 
 export interface A3Stats {
   flagCount: number;
-  flagGrayCount: number;
+  flagOnCount: number;
   killGates: number;
   killGatesUp: number;
 }
@@ -83,6 +97,14 @@ export interface A3Overview {
   killSwitches: A3KillSwitch[];
   systemHealth: A3SystemHealth[];
   stats: A3Stats;
+}
+
+export interface A3RuntimeFlags {
+  maintenanceBanner: boolean;
+  configured: boolean;
+  value: string;
+  source: string;
+  observedAt: string;
 }
 
 let requestSeq = 0;
@@ -107,7 +129,7 @@ function toNumber(value: number | string | null | undefined, fallback = 0) {
 
 function normalizeTone(value: string | null | undefined): A3SystemHealth["tone"] {
   const normalized = value?.trim().toLowerCase();
-  return normalized === "warn" || normalized === "bad" ? normalized : "ok";
+  return normalized === "ok" || normalized === "warn" || normalized === "bad" ? normalized : "bad";
 }
 
 function normalizeGateUp(row: BackendA3KillSwitch) {
@@ -117,15 +139,24 @@ function normalizeGateUp(row: BackendA3KillSwitch) {
 }
 
 function normalizeFeature(row: BackendA3FeatureFlag): A3FeatureFlag {
-  const key = asText(row.key, "unknown");
+  const key = asText(row.key, "");
+  const status = asText(row.status, "");
+  const allowedValues = (row.allowedValues ?? []).filter((value) => typeof value === "string" && value.trim());
+  if (!key || !status || !allowedValues.includes(status)) {
+    throw new Error("A3_RESPONSE_INVALID");
+  }
   return {
     key,
     name: asText(row.name, key),
     desc: asText(row.desc, "—"),
-    status: asText(row.status, "off"),
+    status,
     scope: asText(row.scope, "全量"),
     lastChange: asText(row.lastChange, "—"),
     resourceOwner: asText(row.resourceOwner, "超管"),
+    allowedValues,
+    writable: row.writable === true,
+    category: asText(row.category, "UNKNOWN"),
+    consumer: asText(row.consumer, "未声明"),
   };
 }
 
@@ -148,6 +179,9 @@ function normalizeOverview(data: BackendA3Overview | null | undefined): A3Overvi
     name: asText(row.name),
     tone: normalizeTone(row.tone),
     metric: asText(row.metric),
+    observedAt: asText(row.observedAt, "未知"),
+    source: asText(row.source, "未声明"),
+    stale: row.stale !== false,
   }));
   const stats = data?.stats ?? {};
   return {
@@ -156,7 +190,7 @@ function normalizeOverview(data: BackendA3Overview | null | undefined): A3Overvi
     systemHealth,
     stats: {
       flagCount: toNumber(stats.flagCount, featureFlags.length),
-      flagGrayCount: toNumber(stats.flagGrayCount, featureFlags.filter((flag) => flag.status.includes("灰度")).length),
+      flagOnCount: toNumber(stats.flagOnCount, featureFlags.filter((flag) => flag.status === "on").length),
       killGates: toNumber(stats.killGates, killSwitches.length),
       killGatesUp: toNumber(stats.killGatesUp, killSwitches.filter((gate) => gate.up).length),
     },
@@ -172,11 +206,19 @@ async function a3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/platform${path}`, {
+  const request = () => fetch(`/api/admin/platform${path}`, {
     ...init,
     headers,
     cache: "no-store",
   });
+  let response: Response;
+  try {
+    response = await request();
+  } catch (error) {
+    if (!init?.idempotencyPrefix) throw error;
+    // The same header value is reused so a lost mutation response cannot create a second write/audit row.
+    response = await request();
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
@@ -193,17 +235,29 @@ export async function fetchA3Overview() {
   return normalizeOverview(await a3Request<BackendA3Overview>("/config/overview"));
 }
 
-export async function updateA3FeatureFlag(flagKey: string, value: string, reason: string, operator: string) {
+export async function updateA3FeatureFlag(flagKey: string, value: string, expectedValue: string, reason: string, operator: string) {
   await a3Request("/config", {
     method: "PUT",
     body: JSON.stringify({
       kind: "flag",
       flagKey,
       value,
+      expectedValue,
       reason,
       operator,
     }),
     idempotencyPrefix: "a3-flag",
   });
   return fetchA3Overview();
+}
+
+export async function fetchA3RuntimeFlags(): Promise<A3RuntimeFlags> {
+  const data = await a3Request<Partial<A3RuntimeFlags>>("/flags/runtime");
+  return {
+    maintenanceBanner: data?.maintenanceBanner === true,
+    configured: data?.configured === true,
+    value: asText(data?.value, ""),
+    source: asText(data?.source, "未声明"),
+    observedAt: asText(data?.observedAt, "未知"),
+  };
 }

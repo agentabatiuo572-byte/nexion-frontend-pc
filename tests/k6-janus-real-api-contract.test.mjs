@@ -25,6 +25,22 @@ test("K6 reads and writes through the authenticated Janus proxy", () => {
   assert.match(proxy, /DELETE/);
 });
 
+test("K6 maps writer, senior operator and administrator authorities exactly", () => {
+  const operator = read("app/components/domain-views/k-tabs/k6/use-operator.ts");
+  assert.match(operator, /role === "superadmin" \|\| authorities\.includes\("risk_k6_admin"\)[\s\S]*return "admin"/);
+  assert.match(operator, /authorities\.includes\("risk_k6_senior"\)[\s\S]*return "senior_operator"/);
+  assert.match(operator, /authorities\.includes\("risk_k6_write"\)[\s\S]*return "operator"/);
+  assert.doesNotMatch(operator, /authorities\.includes\("risk_k6_write"\)\) return "senior_operator"/);
+});
+
+test("K6 strategy action switches keep the submitted remote target contract consistent", () => {
+  const editor = read("app/components/domain-views/k-tabs/k6/strategy-editor.tsx");
+  assert.match(editor, /function actionForType[\s\S]*isReversal\(type\)[\s\S]*remoteUrlKey:\s*action\.remoteUrlKey\s*\?\?\s*REMOTE_URL_KEYS\[0\]\?\.key/);
+  assert.match(editor, /return \{ type \};/);
+  assert.match(editor, /onChange=\{\(e\) => patch\(\{ action: actionForType\(s\.action, e\.target\.value as StrategyActionType\) \}\)\}/);
+  assert.doesNotMatch(editor, /onChange=\{\(e\) => patch\(\{ action: \{ \.\.\.s\.action, type:/);
+});
+
 test("K6 validates every authoritative response and rejects unknown enums instead of inventing defaults", async () => {
   const client = read("lib/admin/k6-client.ts");
   const errors = read("lib/admin/error-messages.ts");
@@ -59,7 +75,32 @@ test("K6 validates every authoritative response and rejects unknown enums instea
   const normalized = contract.normalizeK6Device(validDevice);
   assert.equal(normalized.status, "OBSERVING");
   assert.equal(normalized.latestDecision, undefined);
+  const noActiveDecision = {
+    decidedAt: 2,
+    action: "BENIGN",
+    ruleResults: { passed: false, trace: ["NO_ACTIVE_STRATEGY_MATCH"] },
+  };
+  assert.deepEqual(
+    contract.normalizeK6Device({ ...validDevice, latestDecision: noActiveDecision }).latestDecision.ruleResults,
+    [{ label: "无生效策略命中", passed: false, detail: "保持观察" }],
+  );
+  for (const ruleResults of [
+    { passed: false, trace: [], passedLeaves: 0 },
+    { passed: false, trace: [], totalLeaves: 0 },
+    { passed: false, trace: [], passedLeaves: -1, totalLeaves: 1 },
+    { passed: true, trace: [], passedLeaves: 2, totalLeaves: 1 },
+  ]) {
+    assert.throws(
+      () => contract.normalizeK6Device({ ...validDevice, latestDecision: { ...noActiveDecision, ruleResults } }),
+      /K6_RESPONSE_INVALID:janus\.device\.latestDecision\.ruleResults/,
+    );
+  }
   assert.equal(contract.normalizeK6Device({ ...validDevice, priorityScore: -80 }).priorityScore, -80);
+  for (const platform of ["iOS", "Android", "windows", "mac", "linux", "unknown"]) {
+    assert.equal(contract.normalizeK6Device({ ...validDevice, platform }).platform, platform);
+  }
+  assert.throws(() => contract.normalizeK6Device({ ...validDevice, platform: "future-os" }), /K6_RESPONSE_INVALID:janus\.device\.platform/);
+  assert.throws(() => contract.normalizeK6Device({ ...validDevice, platform: "x".repeat(65) }), /K6_RESPONSE_INVALID:janus\.device\.platform/);
   assert.throws(() => contract.normalizeK6Device({ ...validDevice, status: "UNKNOWN" }), /K6_RESPONSE_INVALID/);
   assert.throws(() => contract.normalizeK6Device({ ...validDevice, maturity: {} }), /K6_RESPONSE_INVALID/);
   const draft = {
@@ -168,6 +209,7 @@ test("K6 visible status, audit and export values are localized and strictly shap
     latestDecision: { blockedReason: "INTERNAL_BLOCK_CODE" },
   });
   assert.equal(unknown, "—");
+  assert.match(presenter.auditSnapshotText({ platform: "windows" }), /设备平台 Windows/);
   const exported = JSON.stringify(presenter.auditExportRows([{ auditId: "1", actorId: "ops", action: "K6_STRATEGY_CREATED", targetType: "strategy", targetId: "maturity_recommend", beforeSnapshot: null, afterSnapshot: snapshot, sourceContext: snapshot, createdAt: 1720000000000, requestId: "request-secret" }]));
   assert.match(exported, /创建策略/);
   assert.match(exported, /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);

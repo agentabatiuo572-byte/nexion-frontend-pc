@@ -29,6 +29,7 @@ export const K6_DEVICE_STATUSES = [
   "MANUAL_HOLD", "MANUAL_FORCED", "BLOCKED", "STALE", "RESET", "ERROR",
 ] as const;
 export const K6_STATUS_SOURCES = ["system", "strategy", "environment", "manual", "error"] as const;
+export const K6_DEVICE_PLATFORMS = ["iOS", "Android", "windows", "mac", "linux", "unknown"] as const;
 export const K6_COMMAND_STATES = ["PENDING", "PUBLISHED", "ACKED", "FAILED", "EXPIRED"] as const;
 export const K6_STRATEGY_STATUSES = ["draft", "active", "paused", "archived"] as const;
 export const K6_ACTION_TYPES = [
@@ -143,8 +144,14 @@ function decisionRuleResult(value: unknown, path: string): DecisionRuleResult {
 function serverTrace(value: unknown, path: string): DecisionRuleResult[] {
   const details = record(value, path);
   const passed = flag(details.passed, `${path}.passed`);
-  integer(details.passedLeaves, `${path}.passedLeaves`);
-  integer(details.totalLeaves, `${path}.totalLeaves`);
+  const hasPassedLeaves = Object.prototype.hasOwnProperty.call(details, "passedLeaves");
+  const hasTotalLeaves = Object.prototype.hasOwnProperty.call(details, "totalLeaves");
+  if (hasPassedLeaves !== hasTotalLeaves) invalid(path);
+  if (hasPassedLeaves) {
+    const passedLeaves = integer(details.passedLeaves, `${path}.passedLeaves`);
+    const totalLeaves = integer(details.totalLeaves, `${path}.totalLeaves`);
+    if (passedLeaves > totalLeaves) invalid(path);
+  }
   const traces = stringArray(details.trace, `${path}.trace`, undefined, false);
   if (!traces.length) return [{ label: "服务端规则判定", passed, detail: passed ? "已命中" : "未命中" }];
   return traces.map((entry) => {
@@ -217,7 +224,7 @@ export function normalizeK6Device(value: unknown, path = "janus.device"): Device
   const environmentRiskScore = integer(row.environmentRiskScore, `${path}.environmentRiskScore`, 0, 100);
   const maturity = record(row.maturity, `${path}.maturity`);
   const environment = record(row.environment, `${path}.environment`);
-  const platform = oneOf(row.platform, ["iOS", "Android"] as const, `${path}.platform`);
+  const platform = oneOf(row.platform, K6_DEVICE_PLATFORMS, `${path}.platform`);
   return {
     sid: text(row.sid, `${path}.sid`),
     deviceId: optionalText(row.deviceId, `${path}.deviceId`),

@@ -4,6 +4,7 @@
 > **跨卷 §锚点**:§1.x–§9.x 指向 **V1 文件**;§10.x–§11.x 指向 **V2 文件**;§12.x–§13.x 指向 **V3 文件**;前端 PRD v3.5 / 12 月节奏表锚点照引。参数默认值锚 12 月节奏表 §6,前端为现状参考。撰写遵循 `nexion-admin-prd` skill 流水线。
 > **本卷主题**:I 内容与合规 CMS(转化文案 / Nova 推送 / 通知 / 信任中心 / 风险披露版本 / i18n / 教程)· J 紧急与合规控制(Kill-Switch 矩阵 / Geo-block / 篡改防御监控 / 应急 SOP)· L 数据与分析 BI(KPI / 漏斗 cohort / 财务报表 / 运营报表 / 导出)· **Ch17 全局总收口**(全局数据模型总表 / API 总表 / 技术架构总表 / 跨文档一致性最终处置——含 V1-V3 各卷记录的前端 PRD 内部矛盾与后台跨批次待补项的统一上报)。
 > **边界**:I 域通用内容 CMS 与 V3 H4 活动运营 CMS 的边界已定(§3.14:H4 活动运营 / I 通用 CMS,V1 附录 A.2 #12);J1 Kill-Switch 矩阵是 G/E/H2 等各域 kill 开关的统一生效面(各域子模块是 kill 的被控面);L1 KPI 看板的八项 KPI 口径以前端 §18.2 + V1 §2.4.6 为权威。
+> **E3 全局收口更正（2026-07-21）**：Ch17 中 `TradeInConfig=minHoldingMonths/salvage`、旧衰减模型及“K2 读取最短持有期”的汇总行已被 `specs/FEAT-DEV01-task-capacity-schedule.md`、`specs/FEAT-DEV02-tradein-ladder.md` 后发裁定取代。E3 当前为三段复利产能曲线 + 累计产出/实付换新阶梯；K2 使用已完成置换与正向资金事实。
 
 ## 目录(V4 卷)
 

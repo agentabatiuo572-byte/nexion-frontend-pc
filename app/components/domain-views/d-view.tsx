@@ -19,7 +19,7 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
   D1: ["到账以服务器处理完回调为准 · 客户端记的账不算", "对账实时比对"],
   D2: ["状态只能服务器推进 · 客户端只能看", "到账承诺 48 小时 · 审核 ≤ 2 个工作日"],
   D3: ["储备的底账在这里 · 覆盖率由总账(B1)裁定", "每天 UTC 00:00 批量对账"],
-  D4: ["服务器是唯一账本 · 客户端报的账一律不认", "每笔资金动作必落账"],
+  D4: ["账单与余额以系统记录为准", "每笔资金变动均可追溯"],
   D5: ["节奏类参数由 H1 统一派发 · 这页只是生效的地方", "D5 参数写 finance 接口 · H1 节奏只读"],
 };
 
@@ -61,8 +61,15 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           coverage={mc.coverage}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          completionCopy={mc.completionCopy}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
+          onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => { void mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
+          onConfirm={async (reason, newValue, businessValue) => {
+            await mc.run(reason, newValue, businessValue);
+            setActionConfirm(null);
+          }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}

@@ -50,6 +50,51 @@ export interface E4OrderPage {
   records: E4Order[];
 }
 
+export interface E4OrderHistory {
+  fromState: string;
+  toState: string;
+  reason: string;
+  operator: string;
+  createdAt: string;
+}
+
+export interface E4OrderFunding {
+  source: string;
+  bizNo: string;
+  status: string;
+  direction: string;
+  amount: number;
+  occurredAt: string;
+}
+
+export interface E4OrderDetail {
+  order: E4Order;
+  userId: number;
+  quantity: number;
+  orderType: string;
+  subtotalUsdt: number;
+  discountUsdt: number;
+  paymentNo?: string | null;
+  paymentMethod: string;
+  paymentStatus: string;
+  orderStatus: string;
+  activationStatus: string;
+  deviceId?: number | null;
+  deviceInstanceNo?: string | null;
+  history: E4OrderHistory[];
+  funding: E4OrderFunding[];
+  coverageCurrent?: number | null;
+  coverageRedline?: number | null;
+  coverageProjected?: number | null;
+  refundAllowed: boolean;
+  refundChannels: string[];
+}
+
+interface BackendOrderDetail extends Omit<E4OrderDetail, "order" | "funding"> {
+  order: BackendOrder;
+  funding?: Array<Omit<E4OrderFunding, "amount"> & { amount?: number | string | null }>;
+}
+
 let requestSeq = 0;
 
 function idempotencyKey(prefix: string) {
@@ -69,7 +114,7 @@ function toNumber(value: number | string | null | undefined, fallback = 0) {
 }
 
 function normalizeState(value: string | null | undefined) {
-  return value?.trim().toLowerCase() || "created";
+  return value?.trim().toLowerCase() || "placed";
 }
 
 async function e4Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
@@ -132,10 +177,28 @@ export async function fetchE4Orders(query: E4OrderQuery = {}) {
   return page.records;
 }
 
-export async function refundE4Order(orderId: string, reason: string, operator: string) {
+export async function fetchE4OrderDetail(orderId: string): Promise<E4OrderDetail> {
+  const detail = await e4Request<BackendOrderDetail>(`/orders/${encodeURIComponent(orderId)}`);
+  return {
+    ...detail,
+    order: fromOrder(detail.order),
+    userId: toNumber(detail.userId),
+    quantity: toNumber(detail.quantity, 1),
+    subtotalUsdt: toNumber(detail.subtotalUsdt),
+    discountUsdt: toNumber(detail.discountUsdt),
+    coverageCurrent: detail.coverageCurrent == null ? null : toNumber(detail.coverageCurrent),
+    coverageRedline: detail.coverageRedline == null ? null : toNumber(detail.coverageRedline),
+    coverageProjected: detail.coverageProjected == null ? null : toNumber(detail.coverageProjected),
+    history: detail.history ?? [],
+    funding: (detail.funding ?? []).map((row) => ({ ...row, amount: toNumber(row.amount) })),
+    refundChannels: detail.refundChannels ?? [],
+  };
+}
+
+export async function refundE4Order(orderId: string, refundChannel: string, reason: string, operator: string) {
   const saved = await e4Request<BackendOrder>(`/orders/${encodeURIComponent(orderId)}/refund`, {
     method: "PATCH",
-    body: JSON.stringify({ reason, operator }),
+    body: JSON.stringify({ refundChannel, reason, operator }),
     idempotencyPrefix: "e4-order-refund",
   });
   return fromOrder(saved);

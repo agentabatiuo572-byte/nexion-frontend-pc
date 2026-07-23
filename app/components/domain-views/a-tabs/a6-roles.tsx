@@ -2,7 +2,7 @@
 import "../a-domain.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  fetchA6RolesOverview, fetchA6RoleDetail, createA6Role, updateA6Role, deleteA6Role, proposeA6RoleGrants, proposeA6RoleStatus,
+  fetchA6RolesOverview, fetchA6RoleDetail, createA6Role, updateA6Role, deleteA6Role, proposeA6RoleGrants, proposeA6RoleStatus, newA6IdempotencyKey,
   type A6RoleOverview, type A6RoleDetail, type A6RoleCreateInput, type A6RoleUpdateInput, type A6GrantsPayload,
 } from "@/lib/admin/a6-client";
 import { fetchA7MenusOverview, type A7MenuTreeNode } from "@/lib/admin/a7-client";
@@ -14,7 +14,7 @@ import { Card, CardH, CodeTag, Badge, Btn, Drawer, OperationConfirmModal, useToa
 import { DomainHeader } from "../domain-header";
 import { buildRoleMetadataPayload } from "@/lib/admin/platform-contracts";
 
-type ConfirmReq = { action: React.ReactNode; detail: React.ReactNode; amplifies?: boolean; run: (reason: string) => void };
+type ConfirmReq = { action: React.ReactNode; detail: React.ReactNode; completionCopy?: string; run: (reason: string) => Promise<unknown> };
 
 /** 域代号 → 域色 var(用于菜单树节点圆点)。 */
 const DOMAIN_ACCENT: Record<string, string> = Object.fromEntries(CONSOLE_NAV.map((d) => [d.code, `var(${d.accentVar})`]));
@@ -23,10 +23,16 @@ const DOMAIN_ACCENT: Record<string, string> = Object.fromEntries(CONSOLE_NAV.map
 export default function A6Roles() {
   const [toast, setToast] = useToast();
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
+  const role = useAdminAuth((s) => s.session?.role ?? s.role);
+  const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
+  const isSuper = role === "super" || role === "superadmin";
+  const canWrite = isSuper || authorities.includes("platform_a6_write");
+  const canGrant = isSuper || authorities.includes("platform_a6_role_grants_update");
   const [overview, setOverview] = useState<A6RoleOverview | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<A6RoleDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [menuTree, setMenuTree] = useState<A7MenuTreeNode[]>([]);
   const [allPerms, setAllPerms] = useState<A8Permission[]>([]);
   const [menuCatalogReady, setMenuCatalogReady] = useState(false);
@@ -37,13 +43,26 @@ export default function A6Roles() {
 
   const refreshOverview = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try { setOverview(await fetchA6RolesOverview()); }
-    catch (e) { setToast(e instanceof Error ? e.message : String(e)); }
+    catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setOverview(null);
+      setLoadError(message);
+      setToast(message);
+    }
     finally { setLoading(false); }
   }, [setToast]);
 
   useEffect(() => {
     void refreshOverview();
+    if (!canGrant) {
+      setMenuTree([]);
+      setAllPerms([]);
+      setMenuCatalogReady(false);
+      setPermissionCatalogReady(false);
+      return;
+    }
     void fetchA7MenusOverview()
       .then((o) => { setMenuTree(o.tree); setMenuCatalogReady(true); })
       .catch((error) => setToast(`菜单目录加载失败，授权编辑已锁定：${error instanceof Error ? error.message : String(error)}`));
@@ -53,20 +72,27 @@ export default function A6Roles() {
         const all: A8Permission[] = [];
         let pageNum = 1;
         let total = Infinity;
-        while (all.length < total && pageNum < 10) {
+        const seen = new Set<string>();
+        while (all.length < total) {
           const p = await fetchA8Permissions({ pageNum, pageSize: 100 });
           total = p.total;
+          if (p.records.length === 0 && all.length < total) throw new Error("A8_CATALOG_TRUNCATED");
+          for (const permission of p.records) {
+            if (seen.has(permission.permissionCode)) throw new Error("A8_CATALOG_DUPLICATE_PAGE");
+            seen.add(permission.permissionCode);
+          }
           all.push(...p.records);
-          if (p.records.length < 100) break;
+          if (pageNum >= 1000) throw new Error("A8_CATALOG_TOO_LARGE");
           pageNum++;
         }
+        if (all.length !== total) throw new Error("A8_CATALOG_INCOMPLETE");
         setAllPerms(all);
         setPermissionCatalogReady(true);
       } catch (error) {
         setToast(`权限目录加载失败，授权编辑已锁定：${error instanceof Error ? error.message : String(error)}`);
       }
     })();
-  }, [refreshOverview]);
+  }, [canGrant, refreshOverview, setToast]);
 
   useEffect(() => {
     if (selectedId == null) { setDetail(null); return; }
@@ -82,12 +108,16 @@ export default function A6Roles() {
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A6" l2Name="角色管理"
         summary="数据库角色授权唯一真源：权限码控制操作权，菜单绑定控制侧栏、路由守卫与命令面板可见性。HIGH 变更统一进入 A2 待确认队列。"
-        right={<Btn variant="primary" sm onClick={() => setFormMode({ kind: "create" })}>+ 新建角色</Btn>} />
+        right={canWrite ? <Btn variant="primary" sm onClick={() => setFormMode({ kind: "create" })}>+ 新建角色</Btn> : <Badge tone="neutral">只读</Badge>} />
 
       <div className="two-col" style={{ alignItems: "flex-start" }}>
         <Card>
           <CardH title="角色" sub={`${roles.length} 个（8 内置 + 自定义）`} />
-          {loading ? <div style={{ padding: 24, color: "var(--ink-3)" }}>加载中…</div> : (
+          {loading ? <div style={{ padding: 24, color: "var(--ink-3)" }}>加载中…</div> : loadError ? (
+            <div className="alertbar warn" role="alert" style={{ margin: 16 }}>
+              角色目录加载失败，当前数据不可确认。<Btn sm onClick={() => void refreshOverview()}>重试</Btn>
+            </div>
+          ) : (
             <div style={{ padding: "4px 8px" }}>
               {roles.map((r) => (
                 <div key={r.id} onClick={() => setSelectedId(r.id)}
@@ -123,40 +153,53 @@ export default function A6Roles() {
               <Row label="已绑权限">{detail.permissionCodes.length} 个权限码</Row>
               <Row label="可见菜单">{detail.menuIds.length} 个菜单</Row>
               <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                <Btn sm onClick={() => setFormMode({ kind: "update" })}>编辑基本信息</Btn>
-                <Btn sm disabled={detail.roleCode === "SUPER_ADMIN"} onClick={() => {
+                {canWrite && <Btn sm onClick={() => setFormMode({ kind: "update" })}>编辑基本信息</Btn>}
+                {canWrite && <Btn sm disabled={detail.roleCode === "SUPER_ADMIN"} onClick={() => {
                   const nextStatus = detail.status === 1 ? 0 : 1;
                   const actionLabel = nextStatus === 1 ? "启用" : "停用";
+                  const stableKey = newA6IdempotencyKey("a6-role-status");
                   setConfirmReq({
                     action: `${actionLabel}角色 · ${detail.roleName}`,
-                    amplifies: true,
-                    detail: <>{actionLabel}角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）只提交 A2 双人审批，批准回放后才改变状态和恢复/失效对应权限。</>,
-                    run: (reason) => {
-                      proposeA6RoleStatus(detail.id, nextStatus, reason, operator)
-                        .then((ticket) => setToast(`角色${actionLabel}已提交 A2 双人审批 · ${ticket.id}`))
-                        .catch((e: unknown) => setToast(e instanceof Error ? e.message : String(e)));
+                    completionCopy: "本次只创建 A2 待确认票；由具备对应 A6 权限的操作者确认后才执行。",
+                    detail: <>{actionLabel}角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）只提交 A2 单人确认，具备执行权限的操作者确认后才改变状态和恢复/失效对应权限。</>,
+                    run: async (reason) => {
+                      try {
+                        const ticket = await proposeA6RoleStatus(detail.id, nextStatus, reason, operator, stableKey);
+                        setToast(`角色${actionLabel}已提交 A2 单人确认 · ${ticket.id}`);
+                        return ticket;
+                      } catch (error) {
+                        setToast(error instanceof Error ? error.message : String(error));
+                        throw error;
+                      }
                     },
                   });
-                }}>{detail.status === 1 ? "停用角色" : "启用角色"}</Btn>
-                <Btn
+                }}>{detail.status === 1 ? "停用角色" : "启用角色"}</Btn>}
+                {canGrant && <Btn
                   sm
                   variant="primary"
                   disabled={!menuCatalogReady || !permissionCatalogReady}
                   title={!menuCatalogReady || !permissionCatalogReady ? "菜单/权限目录尚未完整加载" : undefined}
                   onClick={() => setGrantsOpen(true)}
-                >编辑授权（权限/菜单）</Btn>
-                <Btn sm onClick={() => {
+                >编辑授权（权限/菜单）</Btn>}
+                {canWrite && <Btn sm onClick={() => {
                   if (detail.builtin) { setToast("内置角色不可删除"); return; }
+                  const stableKey = newA6IdempotencyKey("a6-role-delete");
                   setConfirmReq({
                     action: `删除角色 · ${detail.roleName}`,
-                    detail: <>删除角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。提交后仅创建 A2 双人审批票；批准回放时该角色下 {roles.find((x) => x.id === detail.id)?.adminCount ?? 0} 个账号才会失去此角色，并软删 role_menu/role_permission 绑定。</>,
-                    run: (reason) => {
-                      deleteA6Role(detail.id, reason, operator)
-                        .then((ticket) => { setToast(`已提交 A2 双人审批 · ${ticket.id}`); })
-                        .catch((e: unknown) => setToast(e instanceof Error ? e.message : String(e)));
+                    completionCopy: "本次只创建 A2 待确认票；确认执行前角色和账号权限不会变化。",
+                    detail: <>删除角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）。提交后仅创建 A2 单人确认票；具备执行权限的操作者确认后，该角色下 {roles.find((x) => x.id === detail.id)?.adminCount ?? 0} 个账号才会失去此角色，并停用对应菜单和权限绑定。</>,
+                    run: async (reason) => {
+                      try {
+                        const ticket = await deleteA6Role(detail.id, reason, operator, stableKey);
+                        setToast(`已提交 A2 单人确认 · ${ticket.id}`);
+                        return ticket;
+                      } catch (error) {
+                        setToast(error instanceof Error ? error.message : String(error));
+                        throw error;
+                      }
                     },
                   });
-                }}>删除角色</Btn>
+                }}>删除角色</Btn>}
               </div>
             </div>
           )}
@@ -167,23 +210,29 @@ export default function A6Roles() {
         <RoleFormDrawer mode={formMode} detail={detail} onClose={() => setFormMode(null)}
           onSubmit={(payload, action, detailNode) => {
             setFormMode(null);
+            const stableKey = newA6IdempotencyKey(formMode.kind === "create" ? "a6-role-create" : "a6-role-update");
             setConfirmReq({
               action, detail: detailNode,
-              run: (reason) => {
-                if (formMode.kind === "create") {
-                  createA6Role(payload as A6RoleCreateInput, reason, operator)
-                    .then((d) => { setDetail(d); void refreshOverview(); setSelectedId(d.id); setToast("空角色已创建 · 后端留痕"); })
-                    .catch((e: unknown) => setToast(e instanceof Error ? e.message : String(e)));
-                  return;
+              run: async (reason) => {
+                try {
+                  if (formMode.kind === "create") {
+                    const created = await createA6Role(payload as A6RoleCreateInput, reason, operator, stableKey);
+                    setDetail(created);
+                    await refreshOverview();
+                    setSelectedId(created.id);
+                    setToast("空角色已创建 · 后端留痕");
+                    return created;
+                  }
+                  const updated = await updateA6Role(detail!.id, payload as A6RoleUpdateInput, reason, operator, stableKey);
+                  setDetail(updated);
+                  await refreshOverview();
+                  setSelectedId(updated.id);
+                  setToast("角色名称/备注已保存 · 后端留痕");
+                  return updated;
+                } catch (error) {
+                  setToast(error instanceof Error ? error.message : String(error));
+                  throw error;
                 }
-                updateA6Role(detail!.id, payload as A6RoleUpdateInput, reason, operator)
-                  .then((updated) => {
-                    setDetail(updated);
-                    void refreshOverview();
-                    setSelectedId(updated.id);
-                    setToast("角色名称/备注已保存 · 后端留痕");
-                  })
-                  .catch((e: unknown) => setToast(e instanceof Error ? e.message : String(e)));
               },
             });
           }} />
@@ -193,13 +242,20 @@ export default function A6Roles() {
         <GrantsEditorDrawer detail={detail} menuTree={menuTree} allPerms={allPerms} onClose={() => setGrantsOpen(false)}
           onSubmit={(payload, permBefore, menuBefore) => {
             setGrantsOpen(false);
+            const stableKey = newA6IdempotencyKey("a6-role-grants");
             setConfirmReq({
-               action: `改角色授权 · ${detail.roleName}`, amplifies: true,
-               detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。该 HIGH 操作只提交 A2 待确认票,审批执行后才由服务器同步白名单并失效缓存。</>,
-               run: (reason) => {
-                 proposeA6RoleGrants(detail.id, payload, reason, operator)
-                   .then((ticket) => setToast(`授权变更已提交 A2 双人审批 · ${ticket.id}`))
-                   .catch((e: unknown) => setToast(e instanceof Error ? e.message : String(e)));
+               action: `改角色授权 · ${detail.roleName}`,
+               completionCopy: "本次只创建 A2 待确认票；确认执行后才同步角色白名单并失效权限缓存。",
+               detail: <>改角色 <b>{detail.roleName}</b>（<span className="mono">{detail.roleCode}</span>）的权限/菜单绑定。权限 {permBefore}→{payload.permissionCodes.length} · 菜单 {menuBefore}→{payload.menuIds.length}。该 HIGH 操作只提交 A2 待确认票，具备执行权限的操作者确认后才由服务器同步白名单并失效缓存。</>,
+               run: async (reason) => {
+                 try {
+                   const ticket = await proposeA6RoleGrants(detail.id, payload, reason, operator, stableKey);
+                   setToast(`授权变更已提交 A2 单人确认 · ${ticket.id}`);
+                   return ticket;
+                 } catch (error) {
+                   setToast(error instanceof Error ? error.message : String(error));
+                   throw error;
+                 }
                },
             });
           }} />
@@ -207,9 +263,9 @@ export default function A6Roles() {
 
       {confirmReq && (
         <OperationConfirmModal
-          action={confirmReq.action} detail={confirmReq.detail} amplifies={confirmReq.amplifies}
+          action={confirmReq.action} detail={confirmReq.detail} completionCopy={confirmReq.completionCopy}
           onClose={() => setConfirmReq(null)}
-          onConfirm={(reason) => { confirmReq.run(reason); setConfirmReq(null); }} />
+          onConfirm={async (reason) => { await confirmReq.run(reason); setConfirmReq(null); }} />
       )}
       {toast}
     </div>
@@ -243,7 +299,7 @@ function RoleFormDrawer({ mode, detail, onClose, onSubmit }: {
     } else {
       onSubmit(buildRoleMetadataPayload(roleName, remark),
         `编辑角色 · ${roleName}`,
-        <>编辑角色 <b>{roleName}</b>（<span className="mono">{detail?.roleCode}</span>,code 不可改）。本表单只保存名称与备注；启用/停用使用详情页独立审批动作。</>);
+        <>编辑角色 <b>{roleName}</b>（<span className="mono">{detail?.roleCode}</span>,code 不可改）。本表单只保存名称与备注；启用/停用使用详情页独立确认动作。</>);
     }
   };
 

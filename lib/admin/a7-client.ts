@@ -1,6 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { mutateThenReloadOverview } from "@/lib/admin/platform-contracts";
+import { normalizeA7Overview as strictA7Overview } from "@/lib/admin/rbac-contracts";
 
 interface ApiResult<T> {
   code: number;
@@ -49,46 +50,8 @@ export type A7MenuUpdateInput = {
   status?: number;
 };
 
-function rec(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function str(value: unknown, fallback = ""): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function num(value: unknown, fallback = 0): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function normalizeNode(raw: Record<string, unknown>): A7MenuTreeNode {
-  const node = rec(raw.node);
-  return {
-    id: num(node.id),
-    menuCode: str(node.menuCode),
-    menuName: str(node.menuName),
-    menuNameZh: str(node.menuNameZh),
-    parentId: node.parentId == null ? null : num(node.parentId),
-    routePath: str(node.routePath),
-    icon: str(node.icon),
-    sortOrder: num(node.sortOrder),
-    status: num(node.status, 1),
-    children: Array.isArray(raw.children)
-      ? raw.children.filter((c) => c && typeof c === "object").map((c) => normalizeNode(c as Record<string, unknown>))
-      : [],
-  };
-}
-
 function normalizeOverview(raw: unknown): A7MenuOverview {
-  const data = rec(raw);
-  return {
-    tree: Array.isArray(data.tree) ? data.tree.filter((t) => t && typeof t === "object").map((t) => normalizeNode(t as Record<string, unknown>)) : [],
-    domainCount: num(data.domainCount),
-    pageCount: num(data.pageCount),
-    activeCount: num(data.activeCount),
-  };
+  return strictA7Overview(raw) as A7MenuOverview;
 }
 
 let requestSeq = 0;
@@ -97,15 +60,25 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-async function a7Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }): Promise<T> {
+export function newA7IdempotencyKey(prefix: string) {
+  return idempotencyKey(prefix);
+}
+
+async function a7Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string }): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+  if (init?.idempotencyKey) headers.set("Idempotency-Key", init.idempotencyKey);
+  else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
 
-  const response = await fetch(`/api/admin/platform${path}`, { ...init, headers, cache: "no-store" });
+  const response = await fetch(`/api/admin/platform${path}`, {
+    ...init, headers, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(12_000),
+  });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    if (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+      throw new Error("请求结果尚未确认，当前输入已保留；请直接重试，系统会沿用同一幂等键核对结果。");
+    }
     throw new Error(formatAdminApiError(result?.message, `A7_REQUEST_FAILED_${response.status}`));
   }
   return result.data as T;
@@ -115,34 +88,37 @@ export async function fetchA7MenusOverview(): Promise<A7MenuOverview> {
   return normalizeOverview(await a7Request<unknown>("/menus/overview"));
 }
 
-export async function createA7Menu(input: A7MenuCreateInput, reason: string, operator: string): Promise<A7MenuOverview> {
+export async function createA7Menu(input: A7MenuCreateInput, reason: string, operator: string, stableKey?: string): Promise<A7MenuOverview> {
   return mutateThenReloadOverview(
     () => a7Request<A7MenuNode>("/menus", {
       method: "POST",
       body: JSON.stringify({ ...input, reason, operator }),
       idempotencyPrefix: "a7-menu-create",
+      idempotencyKey: stableKey,
     }),
     fetchA7MenusOverview,
   );
 }
 
-export async function updateA7Menu(menuId: number, input: A7MenuUpdateInput, reason: string, operator: string): Promise<A7MenuOverview> {
+export async function updateA7Menu(menuId: number, input: A7MenuUpdateInput, reason: string, operator: string, stableKey?: string): Promise<A7MenuOverview> {
   return mutateThenReloadOverview(
     () => a7Request<A7MenuNode>(`/menus/${encodeURIComponent(menuId)}`, {
       method: "PATCH",
       body: JSON.stringify({ ...input, reason, operator }),
       idempotencyPrefix: "a7-menu-update",
+      idempotencyKey: stableKey,
     }),
     fetchA7MenusOverview,
   );
 }
 
-export async function deleteA7Menu(menuId: number, reason: string, operator: string): Promise<A7MenuOverview> {
+export async function deleteA7Menu(menuId: number, reason: string, operator: string, stableKey?: string): Promise<A7MenuOverview> {
   return mutateThenReloadOverview(
     () => a7Request<void>(`/menus/${encodeURIComponent(menuId)}`, {
       method: "DELETE",
       body: JSON.stringify({ reason, operator }),
       idempotencyPrefix: "a7-menu-delete",
+      idempotencyKey: stableKey,
     }),
     fetchA7MenusOverview,
   );

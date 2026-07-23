@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_M: ModuleEntry[] = [
   {
     path: "/service/overview",
-    summary: "客服工作的实时概况:多少工单在处理、多少会话在接待、哪类工单快超时、坐席忙不忙。只看不改;要动手去工单台 / 会话台。",
+    summary: "客服工作的实时概况:多少工单在处理、多少会话在接待、哪类工单快超时、坐席忙不忙。指标本身只读;授权主管可维护客服坐席与负载策略。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

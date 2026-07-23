@@ -73,6 +73,34 @@ function toSat(value: number | string | null | undefined) {
   return Math.max(0, Math.min(1, parsed > 1 ? parsed / 100 : parsed));
 }
 
+export interface E2TaskPricingClass {
+  taskId: string;
+  taskClass: "IG" | "VG" | "LL" | "FT" | "EM" | "SP";
+  taskName: string;
+  models: string[];
+  minReward: number;
+  maxReward: number;
+  minVRAM: number;
+  enabled: boolean;
+  activeAssignments: number;
+  avgSec: number;
+  dailyPotential: number;
+}
+
+export interface E2TeaserRow {
+  deviceClass: "cloud-share" | "phone" | "S1" | "Pro" | "Rack";
+  vram: number;
+  lockedTasks: string[];
+  dailyPotential: number;
+}
+
+export interface E2TaskPricingSnapshot {
+  taskClasses: E2TaskPricingClass[];
+  queueSaturation: number;
+  teaser: E2TeaserRow[];
+  effectiveAt?: string;
+}
+
 function text(value: string | null | undefined) {
   return value == null ? "" : String(value).trim();
 }
@@ -117,6 +145,47 @@ function fromTask(task: BackendTask): OpsTask {
   };
 }
 
+async function e2ConfigRequest<T>(path: "task-pricing" | "phone-tiers", init?: RequestInit & { idempotencyPrefix?: string }) {
+  const headers = new Headers(init?.headers);
+  if (init?.body) headers.set("Content-Type", "application/json");
+  if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+  const response = await fetch(`/api/admin/config/${path}`, { ...init, headers, cache: "no-store" });
+  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  if (!response.ok || !result || result.code !== 0) {
+    throw new Error(formatAdminApiError(result?.message, `E2_CONFIG_REQUEST_FAILED_${response.status}`));
+  }
+  return result.data as T;
+}
+
+export async function fetchE2TaskPricing(): Promise<E2TaskPricingSnapshot> {
+  const raw = await e2ConfigRequest<E2TaskPricingSnapshot>("task-pricing");
+  return {
+    ...raw,
+    queueSaturation: toNumber(raw.queueSaturation, 0.35),
+    taskClasses: (raw.taskClasses ?? []).map((row) => ({
+      ...row,
+      minReward: toNumber(row.minReward),
+      maxReward: toNumber(row.maxReward),
+      minVRAM: toNumber(row.minVRAM),
+      avgSec: toNumber(row.avgSec),
+      dailyPotential: toNumber(row.dailyPotential),
+    })),
+    teaser: (raw.teaser ?? []).map((row) => ({ ...row, vram: toNumber(row.vram), dailyPotential: toNumber(row.dailyPotential) })),
+  };
+}
+
+export async function updateE2TaskPricing(
+  patch: Partial<Pick<E2TaskPricingClass, "taskClass" | "minReward" | "maxReward" | "minVRAM" | "enabled">> & { queueSaturation?: number },
+  reason: string,
+  operator: string,
+) {
+  return e2ConfigRequest<{ effectiveAt: string; taskPricing: E2TaskPricingSnapshot }>("task-pricing", {
+    method: "PUT",
+    body: JSON.stringify({ ...patch, minVram: patch.minVRAM, minVRAM: undefined, reason, operator }),
+    idempotencyPrefix: "e2-task-pricing",
+  });
+}
+
 function toTaskPayload(task: OpsTask, reason: string, operator: string) {
   return {
     name: task.n,
@@ -148,8 +217,19 @@ function fromPhoneTier(tier: BackendPhoneTier): E2PhoneTier {
 }
 
 export async function fetchE2Tasks() {
-  const page = await e2Request<PageResult<BackendTask>>("/tasks?pageNum=1&pageSize=100");
-  return (page.records ?? []).map(fromTask);
+  const pageSize = 100;
+  let pageNum = 1;
+  let total = Number.POSITIVE_INFINITY;
+  const records: BackendTask[] = [];
+  while (records.length < total) {
+    const page = await e2Request<PageResult<BackendTask>>(`/tasks?pageNum=${pageNum}&pageSize=${pageSize}`);
+    const current = page.records ?? [];
+    records.push(...current);
+    total = Math.max(0, Number(page.total ?? records.length));
+    if (current.length === 0 || current.length < pageSize) break;
+    pageNum += 1;
+  }
+  return records.map(fromTask);
 }
 
 export async function createE2Task(task: OpsTask, reason: string, operator: string) {

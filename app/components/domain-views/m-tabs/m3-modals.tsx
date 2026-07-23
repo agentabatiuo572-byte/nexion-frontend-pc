@@ -2,7 +2,7 @@
 
 /**
  * M3 会话台 modal 群(从 m3-sessions 抽出,逻辑不变):
- *  - InitiateModal: 主动发起会话(身份 + 单人/固定档/自定义圈选 + 撰写 + 预览)
+ *  - InitiateModal: 主动发起会话(真实单用户 + 撰写 + 预览)
  *  - CustomerProfileModal: 完整客户档案(只读快照)
  *  - QuickActionModal: 历史会话 / 关联工单 / 重置密码 / 账户操作 / 客户备注(不写审计,交 C/D 域复核)
  * 均渲染于 design-kit Modal;合规(运营可读中文 · 数字不自曝)。
@@ -14,8 +14,6 @@ import {
   type AdvisorScript,
   type CustomerProfile,
   type InitiateIdentity,
-  type SegCond,
-  type SegField,
   type SessionReplyTpl,
   type TransferTarget,
 } from "./data";
@@ -154,8 +152,8 @@ export function QuickActionModal({
   kind: "history" | "tickets" | "resetpw" | "account" | "note";
   profile: CustomerProfile;
   onClose: () => void;
-  onAddNote: (text: string) => void;
-  onRemoveNote: (id: string) => void;
+  onAddNote: (text: string) => Promise<boolean>;
+  onRemoveNote: (id: string) => Promise<boolean>;
   onAccount: (label: string) => void;
 }) {
   const [noteText, setNoteText] = useState("");
@@ -228,7 +226,7 @@ export function QuickActionModal({
       title="客户备注"
       icon="doc"
       onClose={onClose}
-      footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button><button type="button" className="btn btn-pri btn-sm" disabled={!noteText.trim()} onClick={() => { onAddNote(noteText); setNoteText(""); }}>保存备注</button></>}
+      footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>关闭</button><button type="button" className="btn btn-pri btn-sm" disabled={!noteText.trim()} onClick={async () => { if (await onAddNote(noteText)) setNoteText(""); }}>保存备注</button></>}
     >
       <div className="sub" style={{ marginBottom: 6 }}>{profile.nickname} · {profile.uid} · 备注仅后台可见,随会话持久</div>
       <textarea className="fld" rows={3} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="例:机构账户,提现需重点复核;上次沟通约定 7 日后回访。" style={{ resize: "vertical" }} />
@@ -253,73 +251,8 @@ export function QuickActionModal({
   );
 }
 
-/* ============ 自定义圈选构建器(字段 × 运算符 × 值,多条件「且」)============ */
-export function segSummary(conds: SegCond[], fields: readonly SegField[] = []): string {
-  return conds
-    .filter((c) => String(c.value).trim() !== "")
-    .map((c) => {
-      const f = fields.find((x) => x.id === c.field);
-      const tail = f?.unit ? (f.unit === "USDT" ? ` ${f.unit}` : f.unit) : "";
-      return `${f?.label ?? c.field} ${c.op} ${c.value}${tail}`;
-    })
-    .join(" 且 ");
-}
-export function segValid(conds: SegCond[]): boolean {
-  return conds.length > 0 && conds.every((c) => String(c.value).trim() !== "");
-}
-function CustomSegment({ conds, setConds, fields = [] }: { conds: SegCond[]; setConds: (c: SegCond[]) => void; fields?: readonly SegField[] }) {
-  const availableFields = fields;
-  const fieldOf = (id: string) => availableFields.find((f) => f.id === id);
-  const add = () => {
-    const f = availableFields[0];
-    if (!f) return;
-    setConds([...conds, { field: f.id, op: f.ops[0], value: f.vals ? f.vals[0] : "" }]);
-  };
-  const upd = (i: number, patch: Partial<SegCond>) => setConds(conds.map((c, j) => (j === i ? { ...c, ...patch } : c)));
-  const del = (i: number) => setConds(conds.filter((_, j) => j !== i));
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {conds.map((c, i) => {
-        const f = fieldOf(c.field);
-        if (!f) return null;
-        return (
-          <div key={i} className="row" style={{ gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            {i > 0 && <span className="sub" style={{ fontWeight: 600 }}>且</span>}
-            <select
-              className="fld"
-              style={{ width: "auto" }}
-              value={c.field}
-              onChange={(e) => { const nf = fieldOf(e.target.value); if (nf) upd(i, { field: nf.id, op: nf.ops[0], value: nf.vals ? nf.vals[0] : "" }); }}
-            >
-              {availableFields.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-            </select>
-            <select className="fld" style={{ width: 64 }} value={c.op} onChange={(e) => upd(i, { op: e.target.value })}>
-              {f.ops.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
-            {f.vals ? (
-              <select className="fld" style={{ width: "auto" }} value={c.value} onChange={(e) => upd(i, { value: e.target.value })}>
-                {f.vals.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            ) : (
-              <span className="row" style={{ gap: 4, alignItems: "center" }}>
-                <input className="fld mono" type="number" value={c.value} placeholder="数值" onChange={(e) => upd(i, { value: e.target.value })} style={{ width: 96 }} />
-                {f.unit && <span className="sub">{f.unit}</span>}
-              </span>
-            )}
-            <button type="button" className="btn btn-sec btn-sm" onClick={() => del(i)} title="删除条件"><Icon name="x" size={13} /></button>
-          </div>
-        );
-      })}
-      <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" className="btn btn-sec btn-sm" onClick={add} disabled={availableFields.length === 0}><Icon name="plus" size={13} /> 添加条件</button>
-        {conds.length === 0 && <span className="sub">按 V 等级 / 余额 / 提现 / 持仓 / 注册天数 … 多条件「且」组合</span>}
-      </div>
-    </div>
-  );
-}
-
-/* ============ 主动发起会话(身份 + 单人/固定档/自定义圈选 + 内容源 + 撰写 + 预览)============ */
-export type InitiatePayload = { identity: InitiateIdentity; targetLabel: string; targetDesc: string; text: string; ctaHref?: string; reason?: string; profile?: CustomerProfile; isSegment?: boolean };
+/* ============ 主动发起会话(真实单用户 + 内容源 + 撰写 + 预览)============ */
+export type InitiatePayload = { identity: InitiateIdentity; targetLabel: string; targetDesc: string; text: string; ctaHref?: string; profile?: CustomerProfile };
 export function InitiateModal({
   onClose,
   onSend,
@@ -327,34 +260,31 @@ export function InitiateModal({
   advisorScripts = [],
   replyTemplates = [],
   customers = [],
-  audiencePresets = [],
-  segmentFields = [],
+  customerLoading = false,
+  customerError = "",
+  onCustomerQueryChange,
 }: {
   onClose: () => void;
-  onSend: (p: InitiatePayload) => void;
+  onSend: (p: InitiatePayload) => Promise<void>;
   identities?: InitiateIdentity[];
   advisorScripts?: AdvisorScript[];
   replyTemplates?: SessionReplyTpl[];
   customers?: CustomerProfile[];
-  audiencePresets?: readonly string[];
-  segmentFields?: readonly SegField[];
+  customerLoading?: boolean;
+  customerError?: string;
+  onCustomerQueryChange?: (query: string) => void;
 }) {
-  const presets = audiencePresets;
   const [identId, setIdentId] = useState(identities[0]?.id ?? "");
   const identity = identities.find((i) => i.id === identId) ?? identities[0];
   const isAdvisor = identity?.type === "advisor";
-  const [mode, setMode] = useState<"user" | "audience">("user");
   const [custUid, setCustUid] = useState("");
   const [custQuery, setCustQuery] = useState("");
-  const [audMode, setAudMode] = useState<"preset" | "custom">("preset");
-  const [preset, setPreset] = useState<string>(presets[0] ?? "");
-  const [conds, setConds] = useState<SegCond[]>([]);
-  const pubScripts = advisorScripts.filter((s) => s.status === "published");
-  const [scriptId, setScriptId] = useState(pubScripts[0]?.id ?? advisorScripts[0]?.id ?? "");
   const supportTpls = replyTemplates.filter((t) => t.type === "support" && t.status === "published");
-  const [tplId, setTplId] = useState(supportTpls[0]?.id ?? "");
+  // 发起会话默认使用空白自定义文案，避免把历史模板（尤其测试/草稿内容）误发给真实用户。
+  const [scriptId, setScriptId] = useState("");
+  const [tplId, setTplId] = useState("");
   const [text, setText] = useState("");
-  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const script = advisorScripts.find((s) => s.id === scriptId) ?? null;
   useEffect(() => {
@@ -368,19 +298,22 @@ export function InitiateModal({
     if (custUid && !customers.some((c) => c.uid === custUid)) setCustUid("");
   }, [custUid, customers]);
   useEffect(() => {
-    if (!presets.includes(preset)) setPreset(presets[0] ?? "");
-  }, [preset, presets]);
+    onCustomerQueryChange?.(custQuery);
+  }, [custQuery, onCustomerQueryChange]);
   useEffect(() => {
     if (isAdvisor) { const s = advisorScripts.find((x) => x.id === scriptId); setText(s ? s.text : ""); }
     else { const t = replyTemplates.find((x) => x.id === tplId); setText(t ? t.text : ""); }
   }, [advisorScripts, isAdvisor, replyTemplates, scriptId, tplId]);
 
   const selectedCust = customers.find((c) => c.uid === custUid) ?? null;
-  const targetLabel = mode === "user" ? selectedCust?.nickname ?? "" : audMode === "preset" ? preset : segValid(conds) ? "自定义人群" : "";
-  const targetDesc = mode === "user" ? `单个客户 ${selectedCust?.nickname ?? ""}(${selectedCust?.uid ?? ""})` : audMode === "preset" ? `人群 · ${preset}` : `自定义人群 · ${segSummary(conds, segmentFields)}`;
-  const needReason = mode === "audience";
-  const targetOk = mode === "user" ? !!selectedCust : audMode === "preset" ? !!preset : segValid(conds);
-  const ok = !!identity && text.trim() !== "" && targetOk && (!needReason || reason.trim().length >= 6);
+  const targetLabel = selectedCust?.nickname ?? "";
+  const targetDesc = `单个客户 ${selectedCust?.nickname ?? ""}(${selectedCust?.uid ?? ""})`;
+  const ok = !!identity && text.trim() !== "" && !!selectedCust;
+  const normalizedCustomerQuery = custQuery.trim().toLowerCase();
+  const matchingCustomers = customers.filter((customer) => (
+    !normalizedCustomerQuery
+    || `${customer.nickname}${customer.uid}${customer.region}`.toLowerCase().includes(normalizedCustomerQuery)
+  ));
 
   return (
     <Modal
@@ -391,20 +324,25 @@ export function InitiateModal({
       footer={
         <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
           <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="shield" size={13} />发起写入审计 · 身份 / 目标 / 话术{needReason ? " / 理由" : ""}留档
+            <Icon name="shield" size={13} />发起写入审计 · 身份 / 目标 / 话术留档
           </span>
           <span style={{ flex: 1 }} />
           <button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button>
           <button
             type="button"
             className="btn btn-pri btn-sm"
-            disabled={!ok}
-            onClick={() => {
+            disabled={!ok || submitting}
+            onClick={async () => {
               if (!identity) return;
-              onSend({ identity, targetLabel, targetDesc, text: text.trim(), ctaHref: isAdvisor && script ? script.ctaHref : "—", reason: needReason ? reason.trim() : undefined, profile: mode === "user" ? selectedCust ?? undefined : undefined, isSegment: mode === "audience" });
+              setSubmitting(true);
+              try {
+                await onSend({ identity, targetLabel, targetDesc, text: text.trim(), ctaHref: isAdvisor && script ? script.ctaHref : "—", profile: selectedCust ?? undefined });
+              } finally {
+                setSubmitting(false);
+              }
             }}
           >
-            发起会话{!ok ? " · 待补全" : ""}
+            {submitting ? "正在发起..." : `发起会话${!ok ? " · 待补全" : ""}`}
           </button>
         </div>
       }
@@ -423,83 +361,42 @@ export function InitiateModal({
 
           <div className="field">
             <label>发起对象</label>
-            <div className="row" style={{ gap: 6 }}>
-              <button type="button" className={`chip${mode === "user" ? " sel" : ""}`} onClick={() => setMode("user")}>指定用户</button>
-              <button type="button" className={`chip${mode === "audience" ? " sel" : ""}`} onClick={() => setMode("audience")}>圈选人群</button>
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="inp">
+                <Icon name="search" size={15} />
+                <input value={custQuery} onChange={(e) => setCustQuery(e.target.value)} placeholder="搜索客户 昵称 / 用户编码 / 地区" />
+              </div>
+              <div className="tiny" style={{ color: "var(--ink-4)" }}>从真实用户库搜索；无历史会话也可主动发起。</div>
+              <div style={{ maxHeight: 224, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+                {customerLoading && <div className="itint"><div style={{ fontSize: 13 }}>正在查询真实用户…</div></div>}
+                {!customerLoading && customerError && <div className="itint"><div style={{ fontSize: 13 }}>用户查询失败</div><div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>请检查网络后重试搜索；错误：{customerError}</div></div>}
+                {!customerLoading && !customerError && matchingCustomers.length === 0 && <div className="itint"><div style={{ fontSize: 13 }}>未找到匹配客户</div><div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>可按昵称、用户编码或地区重新搜索。</div></div>}
+                {!customerLoading && matchingCustomers.map((c) => (
+                  <button key={c.uid} type="button" onClick={() => setCustUid(c.uid)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: `1px solid ${custUid === c.uid ? "var(--m-hd-border)" : "var(--border)"}`, background: custUid === c.uid ? "var(--m-hd-soft)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}>
+                    <MAvatar name={c.nickname} size="sm" />
+                    <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{c.nickname}</span><span className="cvp-vchip" style={{ height: 17, fontSize: 10.5, padding: "0 5px" }}>{c.vlevel}</span></span><span className="mono dim2" style={{ fontSize: 11 }}>{c.uid} · {c.region}</span></span>
+                    <span style={{ fontSize: 11.5, flex: "none", color: c.risk === "低" ? "var(--m-ok)" : c.risk === "中" ? "var(--m-high)" : "var(--m-urgent)" }}>风险 {c.risk}</span>
+                    {custUid === c.uid && <Icon name="check" size={15} />}
+                  </button>
+                ))}
+              </div>
             </div>
-            {mode === "user" ? (
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-                <div className="inp">
-                  <Icon name="search" size={15} />
-                  <input value={custQuery} onChange={(e) => setCustQuery(e.target.value)} placeholder="搜索客户 昵称 / 用户编码 / 地区" />
-                </div>
-                <div style={{ maxHeight: 224, overflow: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                  {customers.length === 0 && (
-                    <div className="itint">
-                      <div style={{ fontSize: 13 }}>暂无可选客户</div>
-                      <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>请先确认 M3 会话接口已返回客户档案。</div>
-                    </div>
-                  )}
-                  {customers.filter((c) => {
-                    const q = custQuery.trim().toLowerCase();
-                    return !q || (c.nickname + c.uid + c.region).toLowerCase().includes(q);
-                  }).map((c) => (
-                    <button
-                      key={c.uid}
-                      type="button"
-                      onClick={() => setCustUid(c.uid)}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: `1px solid ${custUid === c.uid ? "var(--m-hd-border)" : "var(--border)"}`, background: custUid === c.uid ? "var(--m-hd-soft)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
-                    >
-                      <MAvatar name={c.nickname} size="sm" />
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{c.nickname}</span>
-                          <span className="cvp-vchip" style={{ height: 17, fontSize: 10.5, padding: "0 5px" }}>{c.vlevel}</span>
-                        </span>
-                        <span className="mono dim2" style={{ fontSize: 11 }}>{c.uid} · {c.region}</span>
-                      </span>
-                      <span style={{ fontSize: 11.5, flex: "none", color: c.risk === "低" ? "var(--m-ok)" : c.risk === "中" ? "var(--m-high)" : "var(--m-urgent)" }}>风险 {c.risk}</span>
-                      {custUid === c.uid && <Icon name="check" size={15} />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-                <div className="row" style={{ gap: 6 }}>
-                  <button type="button" className={`chip${audMode === "preset" ? " sel" : ""}`} onClick={() => setAudMode("preset")}>固定档</button>
-                  <button type="button" className={`chip${audMode === "custom" ? " sel" : ""}`} onClick={() => setAudMode("custom")}>自定义圈选</button>
-                </div>
-                {audMode === "preset" ? (
-                  <select className="fld" value={preset} onChange={(e) => setPreset(e.target.value)}>
-                    {presets.length === 0 && <option value="">暂无可选人群</option>}
-                    {presets.map((a) => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                ) : (
-                  <CustomSegment conds={conds} setConds={setConds} fields={segmentFields} />
-                )}
-              </div>
-            )}
           </div>
 
           <Field label={isAdvisor ? "选择话术" : "选择回复模板"}>
             {isAdvisor ? (
               <select className="fld" value={scriptId} onChange={(e) => setScriptId(e.target.value)}>
+                <option value="">自定义开场消息</option>
                 {advisorScripts.map((s) => <option key={s.id} value={s.id}>{s.id} · {s.group}{s.ctaHref !== "—" ? `（${s.ctaHref}）` : ""}</option>)}
               </select>
             ) : (
               <select className="fld" value={tplId} onChange={(e) => setTplId(e.target.value)}>
+                <option value="">自定义开场消息</option>
                 {supportTpls.map((t) => <option key={t.id} value={t.id}>{t.id} · {t.text.slice(0, 14)}…</option>)}
               </select>
             )}
           </Field>
 
-          {needReason && (
-            <Field label="投放理由" required>
-              <span className="hint">人群批量触达属高敏 · ≥6 字 · 留档</span>
-              <textarea className="fld" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:针对设备闲置户的复投唤醒批次,本批限顾问 Mia 触达。" style={{ resize: "vertical" }} />
-            </Field>
-          )}
         </div>
 
         <div className="pa-col">
@@ -509,7 +406,7 @@ export function InitiateModal({
           <div className="pa-sech" style={{ fontSize: 12.5 }}>预览 · 用户将收到</div>
           <div className="pa-prev">
             <div className="pa-prev-to">
-              发送至 <b>{targetLabel || (mode === "user" ? "(待填写用户)" : "(待选受众)")}</b>
+              发送至 <b>{targetLabel || "(待填写用户)"}</b>
             </div>
             <div className="pa-bubble-row">
               <div className="pa-bubble">
@@ -549,7 +446,8 @@ export function TransferModal({
   const [agent, setAgent] = useState(agentOptions[0]?.name ?? "");
   const [queue, setQueue] = useState(queues[0] ?? "");
   const [reason, setReason] = useState("");
-  const reasonOk = reason.trim().length >= 6;
+  const reasonLength = reason.trim().length;
+  const reasonOk = reasonLength >= 8 && reasonLength <= 200;
   const targetOk = kind === "agent" ? !!agent : kind === "queue" ? !!queue : true;
   const to: TransferTarget = kind === "agent" ? { kind: "agent", name: agent } : kind === "queue" ? { kind: "queue", queue } : { kind: "standby" };
   const ok = reasonOk && targetOk;
@@ -615,8 +513,8 @@ export function TransferModal({
           )}
         </div>
         <Field label="转交原因" required>
-          <span className="hint">≥6 字 · 接手坐席能看到,记入会话留档(不写 A2 审计)</span>
-          <textarea className="fld" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客户是设备掉线＋固件问题,转给硬件支持跟进更对口。" style={{ resize: "vertical" }} />
+          <span className="hint">8-200 字 · 接手坐席能看到,记入会话留档(不写 A2 审计)</span>
+          <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客户是设备掉线＋固件问题,转给硬件支持跟进更对口。" style={{ resize: "vertical" }} />
         </Field>
       </div>
     </Modal>
@@ -629,7 +527,8 @@ export type ReturnPayload = { target: "from" | "standby"; reason: string };
 export function ReturnModal({ fromAgent, onClose, onSubmit }: { fromAgent: string; onClose: () => void; onSubmit: (p: ReturnPayload) => void }) {
   const [target, setTarget] = useState<"from" | "standby">("from");
   const [reason, setReason] = useState("");
-  const ok = reason.trim().length >= 6;
+  const reasonLength = reason.trim().length;
+  const ok = reasonLength >= 8 && reasonLength <= 200;
   return (
     <Modal
       title="退回会话"
@@ -657,8 +556,8 @@ export function ReturnModal({ fromAgent, onClose, onSubmit }: { fromAgent: strin
           </div>
         </div>
         <Field label="退回原因" required>
-          <span className="hint">≥6 字 · 必填 · 记入会话系统消息(不写 A2 审计)</span>
-          <textarea className="fld" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:此问题属硬件范畴,我这边无法处理,退回原坐席重新分派。" style={{ resize: "vertical" }} />
+          <span className="hint">8-200 字 · 必填 · 记入会话系统消息(不写 A2 审计)</span>
+          <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:此问题属硬件范畴,我这边无法处理,退回原坐席重新分派。" style={{ resize: "vertical" }} />
         </Field>
       </div>
     </Modal>

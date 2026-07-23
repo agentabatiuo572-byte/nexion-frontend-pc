@@ -1,36 +1,39 @@
 "use client";
 
 /**
- * B1 双账本总览(旗舰 · 只读驾驶舱)。
+ * B1 双账本总览(旗舰驾驶舱)。
  * UI 严格对齐设计稿 project/「B1 双账本总览.html」3 段式:
  *   BAND1 兑付覆盖率 hero + 双账本对照卡(B-01)
  *   BAND2 运营决策卡(B-02/B-03)+ 风险雷达卡(B-05)
  *   BAND3 应付负债结构(下钻 B2)
  * 顶部域标保留本项目外壳风格;其下布局端口设计稿(dual-ledger.css · .dlpage 作用域)。
- * 决策动作保留真实接线:阈值写 D3,熔断写 J1,告警确认写 B1 告警接口并进入 A2 审计。
+ * 决策动作保留真实接线:阈值写 B1、储备注入写 D3、告警确认写 B1 告警接口并进入 A2 审计。
  * 数据从 /api/admin/treasury/b-domain 读取;后端无 B 域配置时先写入 MySQL 种子再读出。
  */
 import "./dual-ledger.css";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
   Gauge,
   Layers,
-  Power,
   Radar,
   Scale,
   SlidersHorizontal,
   TrendingDown,
 } from "lucide-react";
 import { acknowledgeBDomainAlert, useBDomainDashboard } from "@/lib/admin/b-client";
-import { updateD3Thresholds } from "@/lib/admin/d-client";
-import { jEmergencyActions } from "@/lib/admin/j-client";
+import { createD3Injection, downloadD3Csv, updateD3Thresholds } from "@/lib/admin/d-client";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
-import { Sparkline } from "@/app/components/kit/kpi-stat-card";
-import { OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
+import { Sparkline as MiniSparkline } from "@/app/components/kit/kpi-stat-card";
+import {
+  OperationConfirmModal,
+  Sparkline as TrendSparkline,
+  useToast,
+  type BusinessFormValue,
+} from "@/app/components/domain-views/design-kit";
 import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -39,16 +42,57 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const ALERT_ID = "coverage-redline"; // 当前唯一 P0:覆盖率跌破/逼近红线
 const SCALE_MAX = 120; // 仪表标尺上限
 
-  // 驾驶舱决策动作(高敏,均走操作确认)。
-type Mc = { kind: "redline" } | { kind: "runRisk" } | { kind: "kill" } | { kind: "ack" };
+// 驾驶舱决策动作(高敏,均走操作确认)。
+type Mc = { kind: "threshold" | "injection" | "ack"; idempotencyKey: string };
+
+type ExposurePoint = { date: string; netExposureUsdt: number };
+
+function command(kind: Mc["kind"]): Mc {
+  return { kind, idempotencyKey: `b1-${kind}-${crypto.randomUUID()}` };
+}
 
 export default function DualLedgerPage() {
   const bDomain = useBDomainDashboard();
   const { ledger: LEDGER, riskRadar, alerts } = bDomain;
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
+  const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
+  const canConfigureThresholds = authorities.includes("overview_b1_redline_write");
+  const canInjectReserve = authorities.includes("finance_d3_injection_create");
+  const canExport = authorities.includes("finance_d3_export");
+  const canAcknowledge = authorities.includes("overview_b1_write");
   const [toastNode, setToast] = useToast();
   const [mc, setActionConfirm] = useState<Mc | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [exposureWindow, setExposureWindow] = useState<"7d" | "30d" | "90d">("30d");
+  const [exposureSeries, setExposureSeries] = useState<ExposurePoint[]>([]);
+  const [exposureError, setExposureError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        setExposureError("");
+        const response = await fetch(`/api/admin/treasury/net-exposure?window=${exposureWindow}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = await response.json() as {
+          code?: number;
+          message?: string;
+          data?: { series?: ExposurePoint[] };
+        };
+        if (!response.ok || payload.code !== 0 || !Array.isArray(payload.data?.series)) {
+          throw new Error(payload.message || `B1_NET_EXPOSURE_FAILED_${response.status}`);
+        }
+        setExposureSeries(payload.data.series);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setExposureSeries([]);
+        setExposureError(err instanceof Error ? err.message : "B1_NET_EXPOSURE_FAILED");
+      }
+    })();
+    return () => controller.abort();
+  }, [exposureWindow]);
 
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
     return (
@@ -118,9 +162,6 @@ export default function DualLedgerPage() {
 
   // 派生:阈值和熔断态均以后端接口为准。
   const effRedline = Number(redlinePct);
-  const effRunRisk = Number(LEDGER.runRiskPct);
-  const killDomains = riskRadar.gates.map((gate) => gate.dom).filter(Boolean);
-  const killActive = killDomains.length > 0 && riskRadar.gates.every((gate) => (gate.state ? gate.state === "off" : !gate.on));
   const alertAcked = alerts.coverageRedlineAcked;
 
   // 覆盖率 zone(以生效红线判定)
@@ -198,44 +239,50 @@ export default function DualLedgerPage() {
   // 应付负债科目(占比派生)
   const liabRows = accounts.map((a) => ({ ...a, pct: liabilitiesUsd > 0 ? round2((a.amount / liabilitiesUsd) * 100) : 0 }));
 
-  const onMcConfirm = (reason: string, newValue?: string) => {
+  const onMcConfirm = async (reason: string, _newValue?: string, businessValue?: BusinessFormValue) => {
     if (!mc) return;
     const current = mc;
-    setActionConfirm(null);
-    void (async () => {
-      try {
-        if (current.kind === "redline") {
-          const v = round2(Number(newValue));
-          if (!Number.isFinite(v)) throw new Error("THRESHOLD_VALUE_INVALID");
-          await updateD3Thresholds({ redlinePct: String(v) }, reason, operator);
-          await bDomain.reload();
-          setToast(`兑付覆盖率红线已写入 D3 阈值接口: ${fmtPct(v, 0)}(A2 留痕)`);
-        } else if (current.kind === "runRisk") {
-          const v = round2(Number(newValue));
-          if (!Number.isFinite(v)) throw new Error("THRESHOLD_VALUE_INVALID");
-          await updateD3Thresholds({ runRiskPct: String(v) }, reason, operator);
-          await bDomain.reload();
-          setToast(`挤兑压力红线已写入 D3 阈值接口: ${fmtPct(v, 0)}(A2 留痕)`);
-        } else if (current.kind === "kill") {
-          if (!killDomains.length) throw new Error("B_RISK_GATES_REQUIRED");
-          await jEmergencyActions.emergencyDisableJ1(killDomains, reason, operator, {
-            triggerBasis: "挤兑风险",
-            regulatoryContext: "B1 双账本风险处置",
-            dispositionPlan: killDomains.some((key) => key === "staking" || key === "genesis")
-              ? "维持存量权益，停止新增业务，待备付金恢复后由超管评估恢复"
-              : undefined,
-          });
-          await bDomain.reload();
-          setToast("已调用 J1 应急批量熔断接口(A2 留痕)");
-        } else {
-          await acknowledgeBDomainAlert(ALERT_ID, reason, operator);
-          await bDomain.reload();
-          setToast("告警已写入 B1 告警确认接口(A2 留痕)");
-        }
-      } catch (err) {
-        setToast(err instanceof Error ? err.message : "B_DOMAIN_OPERATION_FAILED");
+    try {
+      if (current.kind === "threshold") {
+        const redline = round2(Number(businessValue?.redlinePct));
+        const healthy = round2(Number(businessValue?.healthyPct));
+        if (!Number.isFinite(redline) || redline < 80 || redline > 150) throw new Error("红线必须在 80%–150%");
+        if (!Number.isFinite(healthy) || healthy < 100 || healthy > 200) throw new Error("黄线必须在 100%–200%");
+        if (healthy <= redline) throw new Error("黄线必须高于红线");
+        await updateD3Thresholds(
+          { redlinePct: String(redline), healthyPct: String(healthy) },
+          reason,
+          operator,
+          current.idempotencyKey,
+        );
+        await bDomain.reload();
+        setToast(`阈值已更新 · 红线 ${fmtPct(redline, 0)} / 黄线 ${fmtPct(healthy, 0)} · 已记审计`);
+      } else if (current.kind === "injection") {
+        const amount = Number(businessValue?.amount);
+        const voucherType = businessValue?.voucherType;
+        const voucher = businessValue?.voucher?.trim();
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error("请输入有效注资金额");
+        if (!["CHAIN", "BANK"].includes(voucherType || "")) throw new Error("请选择来源凭证类型");
+        if (!voucher) throw new Error("请输入凭证编号或哈希");
+        await createD3Injection(
+          String(amount),
+          `${voucherType}:${voucher}`,
+          reason,
+          operator,
+          current.idempotencyKey,
+        );
+        await bDomain.reload();
+        setToast("注入已登记 · D3 储备权威账本已更新 · 已记审计");
+      } else {
+        await acknowledgeBDomainAlert(ALERT_ID, reason, operator, current.idempotencyKey);
+        await bDomain.reload();
+        setToast("告警已写入 B1 告警确认接口(A2 留痕)");
       }
-    })();
+      setActionConfirm(null);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "B_DOMAIN_OPERATION_FAILED");
+      throw err;
+    }
   };
 
   return (
@@ -309,7 +356,7 @@ export default function DualLedgerPage() {
               <div className="v" style={{ color: trendColor }}>{trendMsg}</div>
             </div>
             <div className="spark-wrap">
-              <Sparkline data={coverageSeries} color={zoneColor} />
+              <MiniSparkline data={coverageSeries} color={zoneColor} />
             </div>
           </div>
 
@@ -346,9 +393,11 @@ export default function DualLedgerPage() {
                     <Link href="/finance/withdrawals" prefetch={false} className="btn primary">
                       去确认提现 <ArrowRight size={15} />
                     </Link>
-                    <button type="button" className="btn" onClick={() => setActionConfirm({ kind: "ack" })}>
-                      <CheckCircle2 size={15} /> 标记已处置
-                    </button>
+                    {canAcknowledge && (
+                      <button type="button" className="btn" onClick={() => setActionConfirm(command("ack"))}>
+                        <CheckCircle2 size={15} /> 标记已处置
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -396,7 +445,7 @@ export default function DualLedgerPage() {
               <span className="gap-tag" style={{ color: netExposure < 0 ? "var(--danger)" : "var(--success)" }}>
                 <TrendingDown size={13} /> {netExposure < 0 ? "缺口" : "盈余"}
               </span>
-              <span className="muted">覆盖差额 · {fmtUsdCompact(liabilitiesUsd)} − {fmtUsdCompact(reserveUsd)}</span>
+              <span className="muted">覆盖差额 · {fmtUsdCompact(reserveUsd)} − {fmtUsdCompact(liabilitiesUsd)}</span>
             </div>
           </div>
         </section>
@@ -413,47 +462,40 @@ export default function DualLedgerPage() {
           </div>
 
           <div className="dec-block">
-            <div className="dec-lbl">红线阈值</div>
+            <div className="dec-lbl">资金安全操作</div>
             <div className="thresh">
-              <button
-                type="button"
-                className="thr"
-                onClick={() => setActionConfirm({ kind: "redline" })}
-                title="兑付覆盖率红线:储备覆盖率跌破此线即收紧 / 停止放大流出。点击调整,确认后生效"
-              >
-                <span className="ic"><SlidersHorizontal size={14} /></span>
-                <span className="nm">兑付覆盖率红线</span><span className="vl">{fmtPct(effRedline, 0)}</span>
-              </button>
-              <button
-                type="button"
-                className="thr"
-                onClick={() => setActionConfirm({ kind: "runRisk" })}
-                title="挤兑压力红线:24h 净流出 / 储备比率超此线即触发挤兑预警。点击调整,确认后生效"
-              >
-                <span className="ic"><SlidersHorizontal size={14} /></span>
-                <span className="nm">挤兑压力红线</span><span className="vl">{fmtPct(effRunRisk, 0)}</span>
-              </button>
+              {canConfigureThresholds && (
+                <button
+                  type="button"
+                  className="thr"
+                  onClick={() => setActionConfirm(command("threshold"))}
+                  title="同时调整兑付覆盖率红线与黄线，服务端强制校验黄线高于红线"
+                >
+                  <span className="ic"><SlidersHorizontal size={14} /></span>
+                  <span className="nm">阈值配置</span><span className="vl">{fmtPct(effRedline, 0)} / {fmtPct(healthyPct, 0)}</span>
+                </button>
+              )}
+              {canInjectReserve && (
+                <button type="button" className="thr" onClick={() => setActionConfirm(command("injection"))}>
+                  <span className="ic"><Layers size={14} /></span>
+                  <span className="nm">登记储备注入</span><span className="vl">D3 权威</span>
+                </button>
+              )}
             </div>
+            {!canConfigureThresholds && !canInjectReserve && (
+              <div className="muted tiny">当前账号仅可查看；阈值与储备注入仅财务负责人 / 超管可执行。</div>
+            )}
           </div>
 
           <div className="dec-block">
-            <div className="dec-lbl">紧急熔断</div>
+            <div className="dec-lbl">处置边界</div>
             <div className="fuse-row">
-              {killActive ? (
-                <span className="fuse-active" title="全局熔断已生效:全平台放大流出(提现放行 / 排放派发 / 高 APY)已停摆。解除请前往 J1。">
-                  <span className="dot red" /> 全局熔断已生效 · 放大流出停摆
-                </span>
-              ) : (
-                <button type="button" className="btn danger" onClick={() => setActionConfirm({ kind: "kill" })}>
-                  <Power size={15} /> 触发全局熔断
-                </button>
-              )}
               <Link href="/emergency/kill-switch" prefetch={false} className="btn ghost">
-                {killActive ? "前往 J1 解除" : "管理全套业务闸"} <ArrowRight size={14} />
+                前往 J1 管理业务闸 <ArrowRight size={14} />
               </Link>
             </div>
             <div className="muted tiny" style={{ marginTop: 11 }}>
-              熔断与阈值调整均为放大资金安全级动作,须填写操作理由并写入 A2 审计后生效。
+              B1 只给出水位、告警与建议，不自动执行提现收紧或全局熔断。
             </div>
           </div>
 
@@ -504,7 +546,74 @@ export default function DualLedgerPage() {
         </section>
       </div>
 
-      {/* BAND 3: 应付负债结构(下钻 B2) */}
+      {/* BAND 3: 净敞口趋势与对账导出 */}
+      <section className="card">
+        <div className="ttl-row">
+          <span className="ttl-ic"><TrendingDown size={17} /></span>
+          <span className="h">净敞口趋势</span>
+          <span className="sub">储备 − 负债 · 服务端权威序列</span>
+          <div className="r" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {(["7d", "30d", "90d"] as const).map((window) => (
+              <button
+                key={window}
+                type="button"
+                className={exposureWindow === window ? "btn primary" : "btn ghost"}
+                aria-pressed={exposureWindow === window}
+                onClick={() => setExposureWindow(window)}
+              >
+                {window.slice(0, -1)} 天
+              </button>
+            ))}
+            {canExport && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  void downloadD3Csv("reconciliation")
+                    .then(() => setToast("对账 CSV 已生成并下载"))
+                    .catch((err) => setToast(err instanceof Error ? err.message : "D3_EXPORT_FAILED"));
+                }}
+              >
+                导出对账 CSV
+              </button>
+            )}
+          </div>
+        </div>
+        {exposureError ? (
+          <BDomainDataState
+            title="净敞口趋势暂不可用"
+            error={`${exposureError} · 已停止展示旧值或推测值。`}
+          />
+        ) : exposureSeries.length === 0 ? (
+          <div className="alertbar">
+            <AlertTriangle size={16} />
+            暂无净敞口序列 · 当前窗口没有服务端数据，不使用前端模拟序列。
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 24, alignItems: "end" }}>
+            <div aria-label={`${exposureWindow} 净敞口趋势图`}>
+              <TrendSparkline
+                data={exposureSeries.map((point) => point.netExposureUsdt)}
+                color={exposureSeries.at(-1)!.netExposureUsdt < 0 ? "var(--danger)" : "var(--success)"}
+                fill
+                h={92}
+              />
+            </div>
+            <div style={{ minWidth: 210 }}>
+              <div className="muted tiny">窗口末日 · {exposureSeries.at(-1)!.date}</div>
+              <div
+                className="mono dec-foot-v"
+                style={{ color: exposureSeries.at(-1)!.netExposureUsdt < 0 ? "var(--danger)" : "var(--success)" }}
+              >
+                {fmtUsd(exposureSeries.at(-1)!.netExposureUsdt)}
+              </div>
+              <div className="muted tiny">共 {exposureSeries.length} 个服务端日点</div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* BAND 4: 应付负债结构(下钻 B2) */}
       <section className="card">
         <div className="ttl-row">
           <span className="ttl-ic"><Layers size={17} /></span>
@@ -557,31 +666,54 @@ export default function DualLedgerPage() {
       {mc && (
         <OperationConfirmModal
           action={
-            mc.kind === "redline"
-              ? "调整兑付覆盖率红线阈值"
-              : mc.kind === "runRisk"
-                ? "调整挤兑压力红线阈值"
-                : mc.kind === "kill"
-                  ? "驾驶舱触发全局熔断"
-                  : "标记兑付红线告警已处置"
+            mc.kind === "threshold"
+              ? "配置兑付覆盖率红线与黄线"
+              : mc.kind === "injection"
+                ? "登记储备注入"
+                : "标记兑付红线告警已处置"
           }
           detail={
-            mc.kind === "redline"
-              ? "覆盖率低于该红线即冻结放大流出、暂停排放派发。调低将放宽放大流出约束。"
-              : mc.kind === "runRisk"
-                ? "24h 净流出 / 储备超过该红线即判定挤兑压力,触发收紧措施。"
-                : mc.kind === "kill"
-                  ? "立即停摆全平台放大流出(提现放行 / 排放派发 / 高 APY 放大),与 J1 全局闸同源。可在 J1 解除。"
-                  : "确认该兑付红线告警已在本驾驶舱跟进处置 · 列表将置灰收起。"
+            mc.kind === "threshold"
+              ? "红线触发高风险告警，黄线定义恢复健康水位；黄线必须严格高于红线。B1 只做建议与告警，不自动执行资金处置。"
+              : mc.kind === "injection"
+                ? "输入真实到账金额与链上交易哈希或银行流水号。提交后写入 D3 储备权威账本并刷新 B1 覆盖率。"
+                : "仅在覆盖率仍处于红线或黄线告警区间时确认已跟进；健康态服务端拒绝伪处置。"
           }
-          amplifies={mc.kind === "redline" || mc.kind === "kill"}
-          edit={
-            mc.kind === "redline"
-              ? { kind: "number", current: fmtPct(effRedline, 0), unit: "%" }
-              : mc.kind === "runRisk"
-                ? { kind: "number", current: fmtPct(effRunRisk, 0), unit: "%" }
+          amplifies={mc.kind === "threshold"}
+          businessForm={
+            mc.kind === "threshold"
+              ? {
+                  kind: "multi-field",
+                  title: "覆盖率阈值",
+                  hint: "范围由服务端同样强制校验：红线 80%–150%，黄线 100%–200%，且黄线 > 红线。",
+                  requireAnyChange: true,
+                  fields: [
+                    { key: "redlinePct", label: "红线 (%)", current: String(effRedline), inputKind: "number", min: 80, max: 150, step: 0.1, required: true, showDiff: true },
+                    { key: "healthyPct", label: "黄线 (%)", current: String(healthyPct), inputKind: "number", min: 100, max: 200, step: 0.1, required: true, showDiff: true },
+                  ],
+                }
+              : mc.kind === "injection"
+                ? {
+                    kind: "multi-field",
+                    title: "真实到账凭证",
+                    hint: "凭证必须可回查；同一提交使用固定幂等键，结果未知时可安全重试。",
+                    fields: [
+                      { key: "amount", label: "注资金额 (USDT)", inputKind: "number", min: 0.01, step: 0.01, required: true },
+                      {
+                        key: "voucherType",
+                        label: "凭证类型",
+                        inputKind: "select",
+                        options: ["CHAIN", "BANK"],
+                        optionLabels: { CHAIN: "链上交易哈希", BANK: "银行流水号" },
+                        required: true,
+                      },
+                      { key: "voucher", label: "凭证编号 / 哈希", inputKind: "text", required: true, placeholder: "至少 6 位，可回查" },
+                    ],
+                  }
                 : undefined
           }
+          reasonMin={8}
+          reasonMax={200}
           onClose={() => setActionConfirm(null)}
           onConfirm={onMcConfirm}
         />

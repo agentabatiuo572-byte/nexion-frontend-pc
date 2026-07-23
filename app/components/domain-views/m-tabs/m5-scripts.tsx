@@ -6,7 +6,7 @@
  * I.session.* 为 M 容器传入的视图适配键。
  * ai(Nova)类别推送/模板归 I2,本页只渲染只读「I2 管」。高敏配置:变更走确认 + 理由。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, Modal, Toggle, type IconName } from "../design-kit";
 import type { User360Profile } from "@/lib/admin/user360-client";
 import {
@@ -43,7 +43,7 @@ const SUPPORT_AGENT_PAGE_SIZE = 5;
 const SCRIPT_PAGE_SIZE = 5;
 const REPLY_TEMPLATE_PAGE_SIZE = 5;
 
-const DEFAULT_ADVISOR_POLICY = { enabled: "off", delayMs: 0, cooldownHours: 0, maxPerSession: 0 };
+const DEFAULT_ADVISOR_POLICY = { enabled: "on", delayMs: 1500, cooldownHours: 24, maxPerSession: 1 };
 
 const CAT_ICON: Record<SessionType, IconName> = { advisor: "users", support: "bell", ai: "power" };
 
@@ -55,8 +55,8 @@ function SensTag() {
     </span>
   );
 }
-function Sw({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
-  return <button type="button" className={`sw${on ? " on" : ""}`} role="switch" aria-checked={on} aria-label={label} onClick={onClick} />;
+function Sw({ on, onClick, label, disabled = false }: { on: boolean; onClick: () => void; label: string; disabled?: boolean }) {
+  return <button type="button" className={`sw${on ? " on" : ""}`} role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={onClick} />;
 }
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -123,6 +123,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const currentRole = useAdminAuth((s) => s.session?.role ?? s.role);
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? 0);
+  const authorities = useAdminAuth((s) => s.session?.authorities);
   const currentRoleKey = String(currentRole);
   const categories = parseParamArray<SessionCategory>(pget(CATEGORY_LIST_KEY), []);
   const scripts = parseParamArray<AdvisorScript>(pget(SCRIPT_LIST_KEY), []);
@@ -148,6 +149,8 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   const [agentPageError, setAgentPageError] = useState("");
   const [scriptPageError, setScriptPageError] = useState("");
   const [replyTemplatePageError, setReplyTemplatePageError] = useState("");
+  const [writePending, setWritePending] = useState(false);
+  const pendingReplyTemplateDraftIds = useRef(new Map<string, string>());
 
   const catEnabled = (cat: { type: SessionType; enabled: boolean }): boolean => (pget(CAT_KEY(cat.type)) ?? (cat.enabled ? "on" : "off")) === "on";
   const policyVal = (field: string, def: string | number): string => pget(POLICY_KEY(field)) ?? String(def);
@@ -177,7 +180,12 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
     () => supportAgents.find((agent) => agent.adminId === currentAdminId) ?? null,
     [currentAdminId, supportAgents],
   );
-  const canManageSupportSeats = currentRoleKey === "superadmin" || currentRoleKey === "super" || isSupportSupervisor(currentSupportAgent);
+  const isSuperAdmin = currentRoleKey === "superadmin" || currentRoleKey === "super";
+  const hasM5WriteAuthority = isSuperAdmin || Boolean(authorities?.includes("service_m5_write"));
+  const canWriteM5 = hasM5WriteAuthority && (isSuperAdmin || isSupportSupervisor(currentSupportAgent));
+  const canManageSupportSeats = (isSuperAdmin || Boolean(authorities?.includes("service_m1_write")))
+    && (isSuperAdmin || isSupportSupervisor(currentSupportAgent));
+  const sessionTemplatesAvailable = pget("I.session.templatesAvailable") === "1";
   const visibleScripts = useMemo(
     () => scriptPageData?.records ?? pageSlice(scripts, scriptPage, SCRIPT_PAGE_SIZE),
     [scriptPageData, scripts, scriptPage],
@@ -186,6 +194,23 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
     () => replyTemplatePageData?.records ?? pageSlice(replyTemplates, replyTemplatePage, REPLY_TEMPLATE_PAGE_SIZE),
     [replyTemplatePageData, replyTemplates, replyTemplatePage],
   );
+
+  const commitM5Write = async (
+    key: string,
+    value: string,
+    meta: { action: string; reason: string; commandKey?: string },
+    successMessage: string,
+  ): Promise<boolean> => {
+    if (writePending) return false;
+    setWritePending(true);
+    try {
+      const succeeded = await setParam(key, value, meta);
+      if (succeeded) toast(successMessage);
+      return succeeded;
+    } finally {
+      setWritePending(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -258,133 +283,177 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   }, [replyTemplateTotal]);
 
   const unbindAdvisor = (agent: MSupportAgent, row: MAdvisorAssignment) => {
+    if (!canManageSupportSeats || writePending) return;
     openActionConfirm({
       action: <>解绑专属客服 · {row.nickname}</>,
       detail: <>解除 <b>{agent.name}</b> 与用户 <span className="mono">{row.userNo}</span> 的专属客服服务关系。解绑后该用户不再固定分配给该客服。</>,
       amplifies: false,
-      run: (reason: string) => {
-        setParam("I.support.advisorAssignment.__delete", JSON.stringify({ adminId: agent.adminId, assignmentId: row.id }), {
+      reasonMin: 8,
+      reasonMax: 200,
+      run: (reason: string) => commitM5Write("I.support.advisorAssignment.__delete", JSON.stringify({ adminId: agent.adminId, assignmentId: row.id }), {
           action: "M5 专属客服解绑",
           reason,
-        });
-        toast(`${row.userNo} 已提交解绑`);
-      },
+        }, `${row.userNo} 已解绑`),
     });
   };
 
   // ── 类别启停:处置(不传 edit)──
   const toggleCat = (cat: { type: SessionType; name: string; enabled: boolean }) => {
+    if (!canWriteM5 || !sessionTemplatesAvailable || writePending) return;
     const on = catEnabled(cat);
     openActionConfirm({
       action: <>{on ? "禁用" : "启用"}会话类别 · {cat.name}</>,
       detail: on ? <>该类别从会话中心入口移除;<b>进行中会话保持 open,不强制关闭</b>。仅入口动作,不是 J1 熔断。</> : <>恢复后新用户可在会话中心选择该类别。</>,
       amplifies: false,
-      run: (reason: string) => {
-        setParam(CAT_KEY(cat.type), on ? "off" : "on", { action: `${on ? "禁用" : "启用"}会话类别 ${cat.name} · admin.conversation_category_toggled`, reason });
-        toast(`${cat.name} 类别${on ? "已禁用" : "已启用"}`);
-      },
+      reasonMin: 8,
+      reasonMax: 200,
+      run: (reason: string) => commitM5Write(
+        CAT_KEY(cat.type),
+        on ? "off" : "on",
+        { action: `${on ? "禁用" : "启用"}会话类别 ${cat.name} · admin.conversation_category_toggled`, reason },
+        `${cat.name} 类别${on ? "已禁用" : "已启用"}`,
+      ),
     });
   };
 
   const toggleAdvisorPush = () => {
+    if (!canWriteM5 || !sessionTemplatesAvailable || writePending) return;
     openActionConfirm({
       action: <>{masterOn ? "停用" : "启用"}顾问主动推送</>,
       detail: masterOn ? <>停用后顾问不再主动触达,只在用户发起时回复。引导转化触点暂停。</> : <>启用后顾问按下方 AutoPushPolicy 主动触达用户(引导购机 / 锁仓 / 复投)。</>,
       amplifies: false,
-      run: (reason: string) => {
-        setParam(POLICY_KEY("enabled"), masterOn ? "off" : "on", { action: `${masterOn ? "停用" : "启用"}顾问主动推送 · admin.conversation_autopush_toggled`, reason });
-        toast(`顾问主动推送${masterOn ? "已停用" : "已启用"}`);
-      },
+      reasonMin: 8,
+      reasonMax: 200,
+      run: (reason: string) => commitM5Write(
+        POLICY_KEY("enabled"),
+        masterOn ? "off" : "on",
+        { action: `${masterOn ? "停用" : "启用"}顾问主动推送 · admin.conversation_autopush_toggled`, reason },
+        `顾问主动推送${masterOn ? "已停用" : "已启用"}`,
+      ),
     });
   };
 
   // ── AutoPushPolicy 调参:传 edit ──
   const editPolicy = (field: string, label: string, current: string, unit: string) =>
-    openActionConfirm({
+    canWriteM5 && sessionTemplatesAvailable && !writePending && openActionConfirm({
       action: <>调整顾问推送 · {label}</>,
       detail: <>影响全体进入会话中心用户的顾问主动触达频率/时机。对新会话即时生效。</>,
       amplifies: false,
       edit: { kind: "text", current, unit },
-      run: (reason: string, v?: string) => {
-        if (!v) return;
-        setParam(POLICY_KEY(field), v, { action: `调整顾问推送 ${label} · admin.conversation_autopush_changed`, reason });
-        toast(`${label} 已更新 · ${v}${unit}`);
-      },
+      reasonMin: 8,
+      reasonMax: 200,
+      run: (reason: string, v?: string) => v
+        ? commitM5Write(
+          POLICY_KEY(field),
+          v,
+          { action: `调整顾问推送 ${label} · admin.conversation_autopush_changed`, reason },
+          `${label} 已更新 · ${v}${unit}`,
+        )
+        : false,
     });
 
   // ── 受众圈定:调参(select edit)──
   const editAudience = () =>
-    openActionConfirm({
+    canWriteM5 && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
       action: <>圈定顾问推送受众</>,
       detail: <>限定顾问主动触达的人群范围;对新会话即时生效,已在会话中的用户不受影响。</>,
       amplifies: false,
       edit: { kind: "select", current: currentAudience, options: audienceOptions },
-      run: (reason: string, v?: string) => {
-        if (!v) return;
-        setParam(POLICY_KEY("audience"), v, { action: `圈定顾问推送受众 · admin.conversation_autopush_changed`, reason });
-        toast(`推送受众已更新 · ${v}`);
-      },
+      reasonMin: 8,
+      reasonMax: 200,
+      run: (reason: string, v?: string) => v
+        ? commitM5Write(
+          POLICY_KEY("audience"),
+          v,
+          { action: "圈定顾问推送受众 · admin.conversation_autopush_changed", reason },
+          `推送受众已更新 · ${v}`,
+        )
+        : false,
     });
 
   // ── 话术发布 / 下架 / 新增:处置(新增传 edit 录 key)──
-  const publishScript = (id: string, on: boolean) =>
-    openActionConfirm({
-      action: <>{on ? "下架" : "发布"}顾问话术 · {id}</>,
-      detail: on ? <>下架后从坐席可选话术池移除。</> : <>发布即对坐席快捷话术菜单生效;话术挂双语词条(I6),服务器校验中英镜像。</>,
+  const publishScript = (id: string, currentStatus: AdvisorScript["status"]) =>
+    canWriteM5 && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
+      action: <>{currentStatus === "published" ? "归档" : "发布"}顾问话术 · {id}</>,
+      detail: currentStatus === "published" ? <>归档后从坐席可选话术池移除,归档为终态。</> : <>发布即对坐席快捷话术菜单生效;话术挂双语词条(I6),服务器校验中英镜像。</>,
       amplifies: false,
-      run: (reason: string) => {
-        setParam(SCRIPT_KEY(id), on ? "archived" : "published", { action: `${on ? "下架" : "发布"}顾问话术 ${id} · admin.conversation_script_published`, reason });
-        toast(`${id} ${on ? "已下架" : "发布已生效"}`);
-      },
+      reasonMin: 8,
+      reasonMax: 200,
+      run: (reason: string) => commitM5Write(
+        SCRIPT_KEY(id),
+        currentStatus === "published" ? "archived" : "published",
+        { action: `${currentStatus === "published" ? "归档" : "发布"}顾问话术 ${id} · admin.conversation_script_published`, reason },
+        `${id} ${currentStatus === "published" ? "已归档" : "发布已生效"}`,
+      ),
     });
   const newScript = () =>
-    openActionConfirm({
+    canWriteM5 && sessionTemplatesAvailable && !writePending && audienceOptions.length > 0 && openActionConfirm({
       action: <>新增顾问话术</>,
       detail: <>新建草稿后进入坐席可选话术库;发布走操作确认。</>,
       amplifies: false,
       edit: { kind: "text", current: "", unit: "话术文案" },
-      run: (reason: string, v?: string) => {
+      reasonMin: 8,
+      reasonMax: 200,
+      run: async (reason: string, v?: string) => {
         const text = v?.trim();
-        if (!text) return;
-        setParam("I.session.script.__create", JSON.stringify({ scriptGroup: "开场", text, ctaPath: "—", audience: currentAudience || defaultAudience, status: "draft" }), {
+        if (!text) return false;
+        const audience = currentAudience || defaultAudience;
+        const succeeded = await commitM5Write("I.session.script.__create", JSON.stringify({ scriptGroup: "开场", text, ctaPath: "—", audience, status: "draft" }), {
           action: "新增顾问话术 · admin.conversation_script_created",
           reason,
-        });
-        toast("话术已创建 · 待发布确认");
+          commandKey: `m5:create-script:${text}:${audience}`,
+        }, "话术已创建 · 待发布确认");
+        if (succeeded) setScriptPage(totalPages(scriptTotal + 1, SCRIPT_PAGE_SIZE));
+        return succeeded;
       },
     });
 
   // ── 模板发布 / 归档:处置(不传 edit)──
-  const toggleTpl = (id: string, on: boolean) =>
-    openActionConfirm({
-      action: <>{on ? "归档" : "发布"}回复模板 · {id}</>,
-      detail: on ? <>归档后从快捷回复池移除。</> : <>发布后进入坐席快捷回复池。</>,
+  const toggleTpl = (id: string, currentStatus: SessionReplyTpl["status"]) =>
+    canWriteM5 && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
+      action: <>{currentStatus === "published" ? "归档" : "发布"}回复模板 · {id}</>,
+      detail: currentStatus === "published" ? <>归档后从快捷回复池移除,归档为终态。</> : <>发布后进入坐席快捷回复池。</>,
       amplifies: false,
-      run: (reason: string) => {
-        setParam(TPL_KEY(id), on ? "archived" : "published", { action: `${on ? "归档" : "发布"}回复模板 ${id} · admin.conversation_template_published`, reason });
-        toast(`${id} ${on ? "已归档" : "发布已生效"}`);
-      },
+      reasonMin: 8,
+      reasonMax: 200,
+      run: (reason: string) => commitM5Write(
+        TPL_KEY(id),
+        currentStatus === "published" ? "archived" : "published",
+        { action: `${currentStatus === "published" ? "归档" : "发布"}回复模板 ${id} · admin.conversation_template_published`, reason },
+        `${id} ${currentStatus === "published" ? "已归档" : "发布已生效"}`,
+      ),
     });
   const newReplyTemplate = () =>
-    openActionConfirm({
+    canWriteM5 && sessionTemplatesAvailable && !writePending && openActionConfirm({
       action: <>新增即时回复模板</>,
       detail: <>新增草稿后进入坐席快捷回复模板库,发布后可在 M2/M3 回复框中选用。</>,
       amplifies: false,
       edit: { kind: "text", current: "", unit: "模板文案" },
-      run: (reason: string, v?: string) => {
+      reasonMin: 8,
+      reasonMax: 200,
+      run: async (reason: string, v?: string) => {
         const text = v?.trim();
-        if (!text) return;
+        if (!text) return false;
+        const commandKey = `m5:create-reply-template:${text}`;
+        const draftId = pendingReplyTemplateDraftIds.current.get(commandKey)
+          ?? `RT-TEMP-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+        pendingReplyTemplateDraftIds.current.set(commandKey, draftId);
         const row: SessionReplyTpl = {
-          id: `RT-${Date.now()}`,
+          id: draftId,
           type: "support",
           text,
           status: "draft",
         };
-        setParam(REPLY_TEMPLATE_LIST_KEY, JSON.stringify([row, ...replyTemplates]), {
+        const succeeded = await commitM5Write(REPLY_TEMPLATE_LIST_KEY, JSON.stringify([row, ...replyTemplates]), {
           action: "新增即时回复模板 · admin.conversation_template_created",
           reason,
-        });
-        toast("即时回复模板已创建 · 待发布确认");
+          commandKey: `m5:create-reply-template:${text}`,
+        }, "即时回复模板已创建 · 待发布确认");
+        if (succeeded) {
+          pendingReplyTemplateDraftIds.current.delete(commandKey);
+          setReplyTemplatePage(totalPages(replyTemplateTotal + 1, REPLY_TEMPLATE_PAGE_SIZE));
+        }
+        return succeeded;
       },
     });
 
@@ -401,6 +470,12 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <p className="dim" style={{ margin: 0, fontSize: 13 }}>管会话类别、顾问主动推送、话术和回复模板。改动要确认 + 填理由。</p>
+      {!sessionTemplatesAvailable && (
+        <div className="itint">话术与模板后端当前不可用，页面已进入只读保护；恢复同步后才能修改。</div>
+      )}
+      {sessionTemplatesAvailable && !canWriteM5 && (
+        <div className="itint">当前账号只有查看权限；仅超级管理员或客服主管可维护 M5 配置。</div>
+      )}
 
       <div className="card">
         <div className="card-pad" style={{ paddingBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
@@ -451,7 +526,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                     <div className="row wrap" style={{ gap: 5, marginTop: 6 }}>
                       {assignments.slice(0, 4).map((row) => (
                         canManageSupportSeats ? (
-                          <button key={row.id} type="button" className="chip" title="解绑专属客服" onClick={() => unbindAdvisor(agent, row)}>
+                          <button key={row.id} type="button" className="chip" disabled={writePending} title="解绑专属客服" onClick={() => unbindAdvisor(agent, row)}>
                             {row.nickname} · <span className="mono">{row.userNo}</span>
                             <Icon name="x" size={11} />
                           </button>
@@ -468,11 +543,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                 <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
                   {canManageSupportSeats && (
                     <>
-                      <button type="button" className="btn btn-sec btn-sm" onClick={() => setProfileAgent(agent)}>
+                      <button type="button" className="btn btn-sec btn-sm" disabled={writePending} onClick={() => setProfileAgent(agent)}>
                         <Icon name="gauge" size={15} />
                         配置岗位
                       </button>
-                      <button type="button" className="btn btn-pri btn-sm" disabled={!advisorEnabled || !isDedicatedSupportAgent(agent)} onClick={() => setAssignAgent(agent)} title={advisorEnabled && isDedicatedSupportAgent(agent) ? "绑定服务用户" : "先在 M1 分配为专属客服并开启专属客服服务"}>
+                      <button type="button" className="btn btn-pri btn-sm" disabled={writePending || !advisorEnabled || !isDedicatedSupportAgent(agent)} onClick={() => setAssignAgent(agent)} title={advisorEnabled && isDedicatedSupportAgent(agent) ? "绑定服务用户" : "先在 M1 分配为专属客服并开启专属客服服务"}>
                         <Icon name="users" size={15} />
                         绑定用户
                       </button>
@@ -518,7 +593,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                     <span className="chip" style={{ color: on ? "var(--m-ok)" : "var(--ink-3)", border: "none" }}>{on ? "已启用(只读)" : "已停用(只读)"}</span>
                   ) : (
                     <span data-proof={`session-cat-toggle-${c.type}`}>
-                      <Sw on={on} onClick={() => toggleCat(c)} label={`${on ? "禁用" : "启用"} ${c.name}`} />
+                      <Sw on={on} disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} onClick={() => toggleCat(c)} label={`${on ? "禁用" : "启用"} ${c.name}`} />
                     </span>
                   )}
                 </div>
@@ -531,7 +606,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           <div className="sec-h">
             <span className="t">顾问主动推送策略</span>
             <span className="sp" />
-            <button type="button" data-proof="session-policy-enabled" className="btn btn-sec btn-sm" onClick={toggleAdvisorPush}>
+            <button type="button" data-proof="session-policy-enabled" className="btn btn-sec btn-sm" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} onClick={toggleAdvisorPush}>
               <Icon name="gauge" size={16} />
               {masterOn ? "停用" : "启用"}总开关
             </button>
@@ -543,21 +618,21 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             <span className={`stat ${masterOn ? "active" : "closed"}`}>{masterOn ? "ON" : "OFF"}</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <button type="button" data-proof="session-policy-delay" style={tileStyle} onClick={() => editPolicy("delayMs", "首推延迟", policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs), " ms")}>
+            <button type="button" data-proof="session-policy-delay" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("delayMs", "首推延迟", policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs), " ms")}>
               {tileHead("首推延迟")}
               {tileVal(`${policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs)} ms`)}
             </button>
-            <button type="button" data-proof="session-policy-cooldown" style={tileStyle} onClick={() => editPolicy("cooldownHours", "冷却", policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours), " h")}>
+            <button type="button" data-proof="session-policy-cooldown" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("cooldownHours", "冷却", policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours), " h")}>
               {tileHead("冷却时间")}
               {tileVal(`${policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours)} h`)}
             </button>
-            <button type="button" data-proof="session-policy-max" style={tileStyle} onClick={() => editPolicy("maxPerSession", "单会话上限", policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession), " 条")}>
+            <button type="button" data-proof="session-policy-max" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("maxPerSession", "单会话上限", policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession), " 条")}>
               {tileHead("单会话上限")}
               {tileVal(`${policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession)} 条`)}
             </button>
-            <button type="button" data-proof="session-policy-audience" style={tileStyle} onClick={editAudience}>
+            <button type="button" data-proof="session-policy-audience" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || audienceOptions.length === 0} style={tileStyle} onClick={editAudience}>
               {tileHead("受众圈定")}
-              {tileVal(currentAudience)}
+              {tileVal(audienceOptions.length > 0 ? currentAudience : "暂无可用受众")}
             </button>
           </div>
         </div>
@@ -571,7 +646,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           </div>
           <SensTag />
           <span className="sp" style={{ flex: 1 }} />
-          <button type="button" data-proof="session-script-new" className="btn btn-pri btn-sm" onClick={newScript}>
+          <button type="button" data-proof="session-script-new" className="btn btn-pri btn-sm" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || audienceOptions.length === 0} onClick={newScript}>
             <Icon name="plus" size={16} />
             新增话术
           </button>
@@ -595,7 +670,9 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             </div>
           )}
           {visibleScripts.map((a) => {
-            const published = scriptStatus(a.id, a.status) === "published";
+            const currentStatus = scriptStatus(a.id, a.status) as AdvisorScript["status"];
+            const published = currentStatus === "published";
+            const archived = currentStatus === "archived";
             return (
               <div key={a.id} style={{ display: "grid", gridTemplateColumns: "92px 1fr 120px 88px 96px", gap: 10, alignItems: "center", padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <div>
@@ -606,9 +683,9 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                 <span className="dim" style={{ fontSize: 12 }}>{scriptAudience(a.id)}</span>
                 <span style={{ fontSize: 12, color: a.ctaHref !== "—" ? "var(--m-hd-2)" : "var(--ink-4)" }}>{a.ctaHref}</span>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
-                  <span className="dim2" style={{ fontSize: 11 }}>{published ? "已发布" : "草稿"}</span>
+                  <span className="dim2" style={{ fontSize: 11 }}>{archived ? "已归档" : published ? "已发布" : "草稿"}</span>
                   <span data-proof={`session-script-publish-${a.id}`}>
-                    <Sw on={published} onClick={() => publishScript(a.id, published)} label={`${published ? "下架" : "发布"} ${a.id}`} />
+                    <Sw on={published} disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || archived} onClick={() => publishScript(a.id, currentStatus)} label={`${published ? "归档" : archived ? "已归档" : "发布"} ${a.id}`} />
                   </span>
                 </div>
               </div>
@@ -626,7 +703,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           </div>
           <span className="dim2" style={{ fontSize: 11.5 }}>坐席快捷回复 · 例行维护</span>
           <span className="sp" style={{ flex: 1 }} />
-          <button type="button" data-proof="session-tpl-new" className="btn btn-pri btn-sm" onClick={newReplyTemplate}>
+          <button type="button" data-proof="session-tpl-new" className="btn btn-pri btn-sm" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} onClick={newReplyTemplate}>
             <Icon name="plus" size={16} />
             新增模板
           </button>
@@ -643,15 +720,17 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             </div>
           )}
           {visibleReplyTemplates.map((t) => {
-            const published = tplStatus(t.id, t.status) === "published";
+            const currentStatus = tplStatus(t.id, t.status) as SessionReplyTpl["status"];
+            const published = currentStatus === "published";
+            const archived = currentStatus === "archived";
             return (
               <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <span className="idtag" style={{ fontSize: 11.5, minWidth: 48 }}>{t.id}</span>
                 <span className="chip" style={{ height: 20, border: "none" }}>{t.type === "advisor" ? "专属客服" : "普通客服"}</span>
                 <span className="dim" style={{ fontSize: 12.5, flex: 1, minWidth: 0 }}>{t.text}</span>
-                <span className="dim2" style={{ fontSize: 11 }}>{published ? "已发布" : "草稿"}</span>
+                <span className="dim2" style={{ fontSize: 11 }}>{archived ? "已归档" : published ? "已发布" : "草稿"}</span>
                 <span data-proof={`session-tpl-publish-${t.id}`}>
-                  <Sw on={published} onClick={() => toggleTpl(t.id, published)} label={`${published ? "归档" : "发布"} ${t.id}`} />
+                  <Sw on={published} disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || archived} onClick={() => toggleTpl(t.id, currentStatus)} label={`${published ? "归档" : archived ? "已归档" : "发布"} ${t.id}`} />
                 </span>
               </div>
             );
@@ -690,25 +769,33 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
   const [transferable, setTransferable] = useState(agent.transferable);
   const [busy, setBusy] = useState(agent.busy);
   const [reason, setReason] = useState("");
-  const reasonOk = reason.trim().length >= 6;
-  const canSave = reasonOk && serviceTypes.length > 0 && Number(maxConcurrent) >= 0;
+  const [saving, setSaving] = useState(false);
+  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const canSave = !saving && reasonOk && serviceTypes.length > 0 && Number(maxConcurrent) >= 0;
 
-  const save = () => {
+  const save = async () => {
     if (!canSave) return;
-    ctx.setParam("I.support.agentProfile.__update", JSON.stringify({
-      adminId: agent.adminId,
-      serviceTypes,
-      tags,
-      maxConcurrent: Math.max(0, Math.min(40, Math.round(Number(maxConcurrent) || 0))),
-      enabled,
-      transferable,
-      busy,
-    }), {
-      action: "M5 客服接派单配置",
-      reason: reason.trim(),
-    });
-    ctx.toast(`${agent.name} 接派单配置已提交`);
-    onClose();
+    setSaving(true);
+    try {
+      const succeeded = await ctx.setParam("I.support.agentProfile.__update", JSON.stringify({
+        adminId: agent.adminId,
+        serviceTypes,
+        tags,
+        maxConcurrent: Math.max(0, Math.min(40, Math.round(Number(maxConcurrent) || 0))),
+        enabled,
+        transferable,
+        busy,
+      }), {
+        action: "M5 客服接派单配置",
+        reason: reason.trim(),
+      });
+      if (succeeded) {
+        ctx.toast(`${agent.name} 接派单配置已保存`);
+        onClose();
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -717,7 +804,7 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
       icon="gauge"
       wide
       onClose={onClose}
-      footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>保存{!canSave ? " · 待补全" : ""}</button></>}
+      footer={<><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={onClose}>取消</button><button type="button" className="btn btn-pri btn-sm" disabled={!canSave} onClick={() => void save()}>{saving ? "保存中..." : `保存${!canSave ? " · 待补全" : ""}`}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -736,7 +823,8 @@ function AgentProfileModal({ agent, agents, ctx, onClose }: { agent: MSupportAge
           </label>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>变更理由 <b style={{ color: "var(--danger)" }}>*</b></span>
-            <textarea className="fld" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管调整岗位分工,该坐席本周负责高价值用户。" style={{ resize: "vertical" }} />
+            <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管调整岗位分工,该坐席本周负责高价值用户。" style={{ resize: "vertical" }} />
+            <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>理由需填写 8-200 字。</span>
           </label>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -820,6 +908,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
   const allActiveAssignments = useMemo(
     () => parseParamArray<MAdvisorAssignment>(ctx.pget(ASSIGNMENT_LIST_KEY), [])
       .filter((row) => row.status === "ACTIVE"),
@@ -846,8 +935,8 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
     const userId = userIdOf(user);
     return userId > 0 && !boundUserIds.has(userId);
   });
-  const reasonOk = reason.trim().length >= 6;
-  const canSave = bindableSelectedUsers.length > 0 && reasonOk;
+  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const canSave = !saving && bindableSelectedUsers.length > 0 && reasonOk;
 
   useEffect(() => {
     let alive = true;
@@ -883,19 +972,26 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
     });
   };
 
-  const save = () => {
+  const save = async () => {
     if (!canSave) return;
     const userIds = Array.from(new Set(bindableSelectedUsers.map(userIdOf).filter((userId) => userId > 0)));
     if (userIds.length === 0) return;
-    ctx.setParam("I.support.advisorAssignment.__create", JSON.stringify({
-      adminId: agent.adminId,
-      userIds,
-    }), {
-      action: "M5 专属客服绑定",
-      reason: reason.trim(),
-    });
-    ctx.toast(`${agent.name} 已提交绑定 ${userIds.length} 个用户`);
-    onClose();
+    setSaving(true);
+    try {
+      const succeeded = await ctx.setParam("I.support.advisorAssignment.__create", JSON.stringify({
+        adminId: agent.adminId,
+        userIds,
+      }), {
+        action: "M5 专属客服绑定",
+        reason: reason.trim(),
+      });
+      if (succeeded) {
+        ctx.toast(`${agent.name} 已绑定 ${userIds.length} 个用户`);
+        onClose();
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -904,7 +1000,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
       icon="users"
       wide
       onClose={onClose}
-      footer={<><span className="sub">用户来自客服工作台查询 · 已选 {bindableSelectedUsers.length} 人</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="advisor-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>绑定{canSave ? ` ${bindableSelectedUsers.length} 人` : " · 待补全"}</button></>}
+      footer={<><span className="sub">用户来自客服工作台查询 · 已选 {bindableSelectedUsers.length} 人</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" disabled={saving} onClick={onClose}>取消</button><button type="button" data-proof="advisor-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={() => void save()}>{saving ? "绑定中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : " · 待补全"}`}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -943,7 +1039,8 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>绑定理由 <b style={{ color: "var(--danger)" }}>*</b></span>
-            <textarea className="fld" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:高价值用户进入专属客服服务名单,由客服主管分配跟进。" style={{ resize: "vertical" }} />
+            <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:高价值用户进入专属客服服务名单,由客服主管分配跟进。" style={{ resize: "vertical" }} />
+            <span className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>理由需填写 8-200 字。</span>
           </label>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>

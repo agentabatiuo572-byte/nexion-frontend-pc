@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+const OPERATION_REASON_HEADER = "X-Operation-Reason";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -18,7 +19,7 @@ function isSafePart(value: string | undefined) {
 
 function backendPath(parts: string[]) {
   if (!parts.length) return null;
-  const allowedHeads = new Set(["overview", "kpi", "funnel", "finance", "operations", "export", "behavior-heatmap", "reports", "regulatory", "exports"]);
+  const allowedHeads = new Set(["overview", "kpi", "funnel", "retention", "finance", "operations", "devices", "tasks", "network", "phase-effect", "export", "behavior", "behavior-heatmap", "reports", "regulatory", "exports"]);
   if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isSafePart(part))) return null;
   return `/api/admin/bi/${parts.map((part) => encodeURIComponent(part)).join("/")}`;
@@ -36,8 +37,10 @@ async function proxy(request: Request, context: RouteContext) {
   const headers = new Headers({ Authorization: `Bearer ${token}` });
   const contentType = request.headers.get("Content-Type");
   const idempotencyKey = request.headers.get(IDEMPOTENCY_KEY_HEADER);
+  const operationReason = request.headers.get(OPERATION_REASON_HEADER);
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set(IDEMPOTENCY_KEY_HEADER, idempotencyKey);
+  if (operationReason) headers.set(OPERATION_REASON_HEADER, operationReason);
 
   try {
     const upstream = await fetch(`${BACKEND_BASE_URL}${targetPath}${sourceUrl.search}`, {

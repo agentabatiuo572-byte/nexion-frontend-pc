@@ -26,11 +26,6 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { fetchA3Overview, updateA3FeatureFlag, type A3FeatureFlag, type A3Overview } from "@/lib/admin/a3-client";
 import type { ACtx } from "./types";
 
-/* ────────────────── helpers ────────────────── */
-
-// feature flag 合法目标态枚举(on / off / 灰度百分比)—— 杜绝自由文本误填(如 "abc")。
-const FLAG_STATUS_OPTIONS = ["on", "off", "灰度 10%", "灰度 20%", "灰度 50%", "灰度 90%"];
-
 /* ────────────────── 组件 ────────────────── */
 
 export function A3Config({ ctx }: { ctx: ACtx }) {
@@ -48,6 +43,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
     try {
       setOverview(await fetchA3Overview());
     } catch (error) {
+      if (!quiet) setOverview(null);
       setLoadError(error instanceof Error ? error.message : String(error));
     } finally {
       if (!quiet) setLoading(false);
@@ -74,27 +70,31 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       detail: (
         <>
           <b>{f.name}</b>(<span className="mono">{f.key}</span>)· {f.desc}。
-          当前 <b>{cur}</b> · 范围 {f.scope}。切换即由服务器向命中范围派发新值(客户端只读结果,
-          本地改无效);灰度百分比可分级拉升。<b>发起资格</b>:{f.resourceOwner};确认 = 超管。
-          线上行为变更,审计记前后值。
+          当前 <b>{cur}</b> · 范围 {f.scope} · 运行时消费者 <b>{f.consumer}</b>。
+          服务端允许值为 {f.allowedValues.join(" / ")}；<b>写入资格</b>:{f.resourceOwner}。
+          生效后会立即刷新后台外壳，审计记录保留前后值。
         </>
       ),
       amplifies: false,
-      edit: { kind: "select", current: cur, options: FLAG_STATUS_OPTIONS },
+      reasonMax: 200,
+      edit: { kind: "select", current: cur, options: f.allowedValues, disallowCurrent: true },
       run: (reason, v) => {
         const val = (v || "").trim();
-        if (!FLAG_STATUS_OPTIONS.includes(val)) {
-          toast("拒绝:功能开关目标态须为 on / off / 灰度档,非法值未写入");
-          return;
+        if (!f.allowedValues.includes(val)) {
+          const error = new Error("目标状态不在服务端允许范围内，请刷新页面后重试。");
+          toast(error.message);
+          throw error;
         }
         setMutating(f.key);
-        updateA3FeatureFlag(f.key, val, reason, operator)
+        return updateA3FeatureFlag(f.key, val, cur, reason, operator)
           .then((next) => {
             setOverview(next);
-            toast(`「${f.name}」已切换为 ${val} · 后端留痕`);
+            window.dispatchEvent(new CustomEvent("a3:runtime-flags-changed"));
+            toast(`「${f.name}」已切换为 ${val}，审计记录已写入。`);
           })
           .catch((error: unknown) => {
             toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
+            throw error;
           })
           .finally(() => setMutating(null));
       },
@@ -118,7 +118,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       {loading && !overview && (
         <section className="l-card">
           <div className="l-b">
-            <div className="atint" style={{ fontSize: 12 }}>正在读取 /api/admin/platform/config/overview。</div>
+            <div className="atint" style={{ fontSize: 12 }}>正在读取系统配置与应急状态。</div>
           </div>
         </section>
       )}
@@ -127,12 +127,12 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         <div className="f-stat cyan">
           <div className="k">功能开关</div>
           <div className="v">{overview?.stats.flagCount ?? featureFlags.length} 个</div>
-          <div className="sub">{overview?.stats.flagGrayCount ?? featureFlags.filter((flag) => flag.status.includes("灰度")).length} 个灰度中 · 切换走操作确认</div>
+          <div className="sub">{overview?.stats.flagOnCount ?? featureFlags.filter((flag) => flag.status === "on").length} 个已开启 · 切换走操作确认</div>
         </div>
         <div className="f-stat ok">
           <div className="k">熔断闸</div>
-          <div className="v">{upGates} / {gates.length} 开</div>
-          <div className="sub">功能闸 + 地区屏蔽(空列表)</div>
+          <div className="v">{upGates} / {gates.length} 正常</div>
+          <div className="sub">J1 功能闸 + J2 地区屏蔽</div>
         </div>
       </div>
 
@@ -140,7 +140,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">功能开关平台(a)</span>
-          <span className="sub">· 灰度和实验的值由服务器派发,客户端只读结果 · 切换操作确认</span>
+          <span className="sub">· 仅展示已有真实消费者的服务端开关 · 切换需要操作确认</span>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 860 }}>
@@ -170,7 +170,12 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
                     <td className="mono" style={{ fontSize: 11.5 }}>{f.lastChange}</td>
                     <td style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{f.resourceOwner}</td>
                     <td style={{ textAlign: "right" }}>
-                      <button className="l-btn sm mc" onClick={() => flagChg(f)} disabled={mutating === f.key}>{mutating === f.key ? "提交中" : "切换"}</button>
+                      {f.writable && (
+                        <button className="l-btn sm mc" onClick={() => flagChg(f)} disabled={mutating === f.key}>
+                          {mutating === f.key ? "提交中" : "切换"}
+                        </button>
+                      )}
+                      {!f.writable && <span style={{ color: "var(--ink-4)", fontSize: 11.5 }}>只读</span>}
                     </td>
                   </tr>
                 );
@@ -187,10 +192,8 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="atint">
-            <b>这里只放横切开关</b> · 跨域通用的实验开关、灰度百分比、平台能力开关归这页;
-            <b>有业务主的参数不进来</b>——阶段全表归节奏调度(H1)、试用扣款参数归试用引擎(H2)、
-            各业务倍率归各业务域。增长角色只能发起增长类开关(实验/活动相关),
-            动资金或风控行为的开关仅风控或超管可提交;超管执行门槛统一拦截。
+            <b>这里只放有真实消费者的横切开关</b> · 每一行都声明允许值、消费者和写入角色；
+            没有运行时消费方的实验或参数不会在此伪装成可用开关。有业务主的参数仍归各业务域维护。
           </div>
         </div>
       </section>
@@ -200,8 +203,8 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
         {/* (b) 熔断闸状态存储 · 只读兼容视图 */}
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">熔断闸状态存储(b)· 只读兼容视图</span>
-            <span className="sub">· 开关本体存这里 · 操作面已迁应急域</span>
+            <span className="ttl">应急状态(b)· 只读兼容视图</span>
+            <span className="sub">· 状态真值来自 J1 / J2 · 操作仍在应急域</span>
             <div className="r">
               <button className="l-btn sm" onClick={() => router.push("/emergency/kill-switch")}>
                 去 J1 操作功能闸 →
@@ -248,8 +251,8 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
           </div>
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="atint">
-              <b>分工</b> · 闸状态存这里(单一真值源),驾驶舱风险雷达(B5)的状态灯也读这里;
-              <b>切换操作在 J1(5 功能闸)/ J2(地区屏蔽)</b>,这页早期的切换入口已经退役成只读。
+              <b>分工</b> · 本表直接读取 J1 的五个功能闸和 J2 的地区策略，不保存第二份状态；
+              <b>切换操作仍在 J1 / J2</b>，这页只负责跨域核对和跳转。
               地区屏蔽不是开关而是国家列表:列表非空才算「生效」。<b>注意</b>:
               披露重确认机制不是闸,不在这张表里——它归内容域(I4–I5 页)。
             </div>
@@ -276,6 +279,9 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
                 >
                   {h.metric}
                 </span>
+                <span style={{ fontSize: 10.5, color: "var(--ink-4)" }} title={h.source}>
+                  {h.stale ? "状态不可确认" : `采样 ${h.observedAt}`}
+                </span>
               </div>
             ))}
             {!systemHealth.length && (
@@ -292,20 +298,18 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       </div>
 
       <p className="f-foot">
-        <b>执行门槛</b>:功能开关切换 = 增长(限增长类)发起 / 超管确认;熔断闸与地区屏蔽的操作面在 J1/J2
-        (功能闸财务/风控可发起、地区屏蔽财务不能发起,确认都是超管)。
-        <b>事件去向</b>:开关切换、闸切换都产 admin 审计事件,统一落审计中心(A2);
-        闸状态变更同时点亮驾驶舱风险雷达(B5)的状态灯。
+        <b>执行门槛</b>:当前登记的平台维护开关仅超管可切换；其他角色只读。熔断闸与地区屏蔽的操作权限由 J1 / J2 独立控制。
+        <b>事件去向</b>:A3 开关切换写入 A2 审计；J1 / J2 继续维护自己的状态与操作留痕。
       </p>
       <PaginationExemptionList
         items={[
           {
             label: "功能开关平台(a)",
             maxRows: 5,
-            reason: "横切开关 V1 固定五项,切换靠筛选/操作确认而非翻页",
+            reason: "仅展示后端登记且已有真实运行时消费者的少量横切开关",
           },
           {
-            label: "熔断闸状态存储(b)· 只读兼容视图",
+            label: "应急状态(b)· 只读兼容视图",
             kind: "reference-catalog",
             maxRows: 8,
             reason: "五个熔断闸加地区屏蔽为固定目录,只读跳转到 J 域处置",

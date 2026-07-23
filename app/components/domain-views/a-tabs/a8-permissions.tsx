@@ -2,11 +2,11 @@
 import "../a-domain.css";
 import { useEffect, useState } from "react";
 import { fetchA8Permissions, fetchA8PermissionDetail, type A8Permission, type A8PermissionPage } from "@/lib/admin/a8-client";
-import { Card, CardH, CodeTag, Chip, Badge, Drawer, DataListPager, useToast } from "@/app/components/domain-views/design-kit";
+import { Card, CardH, CodeTag, Chip, Badge, Btn, Drawer, DataListPager, useToast } from "@/app/components/domain-views/design-kit";
 import { DomainHeader } from "../domain-header";
 import { CONSOLE_NAV } from "@/lib/nav/console-nav";
 
-const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` }))];
+const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` })), { code: "UNMAPPED", label: "未归类" }];
 const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
 const TONE_BY_TYPE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ: "ok" };
 
@@ -21,18 +21,27 @@ export default function A8Permissions() {
   const [permType, setPermType] = useState("ALL");
   const [result, setResult] = useState<A8PermissionPage | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [detail, setDetail] = useState<A8Permission | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
+    setResult(null);
     fetchA8Permissions({ pageNum, pageSize, keyword, domain, permType })
       .then((data) => { if (!cancelled) setResult(data); })
-      .catch((err) => { if (!cancelled) setToast(err.message || "加载失败"); })
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "A8_REQUEST_FAILED");
+          setToast("权限目录加载失败，当前数据不可确认，请重试");
+        }
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [pageNum, pageSize, keyword, domain, permType, setToast]);
+  }, [pageNum, pageSize, keyword, domain, permType, reloadKey, setToast]);
 
   // keyword debounce 350ms
   useEffect(() => {
@@ -97,6 +106,12 @@ export default function A8Permissions() {
           <tbody>
             {loading ? (
               <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--ink-3)" }}>加载中…</td></tr>
+            ) : loadError ? (
+              <tr><td colSpan={6} style={{ padding: 24, textAlign: "center" }}>
+                <div className="alertbar warn" role="alert" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                  权限目录加载失败，当前没有可确认的数据。<Btn sm onClick={() => setReloadKey((value) => value + 1)}>重试</Btn>
+                </div>
+              </td></tr>
             ) : records.length === 0 ? (
               <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "var(--ink-3)" }}>无匹配权限</td></tr>
             ) : records.map((p) => (
@@ -111,14 +126,14 @@ export default function A8Permissions() {
             ))}
           </tbody>
         </table>
-        <DataListPager
+        {!loadError && <DataListPager
           label="权限字典"
           page={pageNum}
           pageSize={pageSize}
           total={total}
           onPageChange={setPageNum}
           onPageSizeChange={(s) => { setPageSize(s); setPageNum(1); }}
-        />
+        />}
       </Card>
       {(detail || detailLoading) && (
         <Drawer

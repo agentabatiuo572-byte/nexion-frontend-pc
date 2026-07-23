@@ -1,6 +1,6 @@
 import type { BusinessFormSpec, EditSpec } from "../design-kit";
 import type { E1GenerationGateData, E1GenerationGateInput } from "@/lib/admin/e1-client";
-import type { E2PhoneTier } from "@/lib/admin/e2-client";
+import type { E2PhoneTier, E2TaskPricingSnapshot } from "@/lib/admin/e2-client";
 import type { E3OperationMetric, E3Stats } from "@/lib/admin/e3-client";
 import type { E5Datacenter, E5DatacenterStatus, E5Device, E5Overview } from "@/lib/admin/e5-client";
 import type { E6ComputeConfigView } from "@/lib/admin/e6-client";
@@ -24,9 +24,9 @@ export type EOp =
   | "phone-tier"      // 手机算力档位收益 → E2 后端 API
   | "param"           // 自由值调参 → E1/E3 后端配置接口;未接后端的 key 直接失败,不写本地 store
   | "param-multi"     // 多字段调参 → businessForm:{kind:"multi-field"} + paramKeys[];逐字段写后端 config
+  | "early-access"    // E1 置换侧抢先购专用命令（权限/审计归 E1）
   | "param-fixed"     // 固定值写入 → E1/E3 后端配置接口;不出编辑框
   | "phase-save"      // E1 阶段新增/编辑
-  | "phase-current"   // E1 当前阶段切换
   | "phase-archive"   // E1 阶段归档
   | "generation-gate-save"    // E1 代际门新增/编辑
   | "generation-gate-force"   // E1 代际门强制提前开放/撤销
@@ -37,6 +37,7 @@ export type EOp =
   | "order-terminal"  // 补建终态(select)
   | "device-activate" // E5 设备激活
   | "device-deactivate" // E5 设备取消激活/解绑
+  | "device-batch"    // E5 按用户批量暂停/恢复
   | "ops-pause"       // DC 批量 pause / 恢复
   | "dc-save"         // 数据中心新增/编辑(businessForm multi-field:id/location/displayName)→ store CRUD
   | "dc-delete";      // 数据中心删除(需破坏性理由)
@@ -44,6 +45,8 @@ export type EOp =
 export interface DatacenterForm {
   dcLocation: string;
   regionLabel: string;
+  location: string;
+  displayName: string;
   status: E5DatacenterStatus;
   sortOrder: string;
 }
@@ -55,6 +58,7 @@ export interface McSpec {
   amplify?: boolean;        // 放大资金流出 → OperationConfirmModal amplifies={true} → B1 覆盖率护栏
   edit?: EditSpec;          // 显式 edit 契约:仅自由值/select 调参传
   businessForm?: BusinessFormSpec;
+  commandKey?: string;        // 弹窗生命周期内稳定；失败重试复用同一幂等键
   paramKey?: string;
   paramKeys?: { key: string; paramKey: string }[];  // param-multi:businessForm 字段 key → param key 映射
   fixedVal?: string;        // param-fixed / 处置固定写入值
@@ -71,6 +75,8 @@ export interface McSpec {
   orderId?: string;         // 退款 / 取消 / 补建终态目标订单
   deviceId?: number;        // E5 后端设备主键
   deviceNo?: string;        // E5 展示编号(instanceNo)
+  deviceAction?: "activate" | "force-activate" | "deactivate" | "unbind";
+  userId?: number;
   dc?: string;              // 运维处置目标数据中心
   dcForm?: DatacenterForm;
 }
@@ -93,6 +99,7 @@ export interface EViewCtx {
   openActionConfirm: (m: McSpec) => void;
   toast: (msg: string) => void;
   // E1 商品目录 & 上架门
+  canWriteE1: boolean;
   skus: OpsSku[];
   e1Loading: boolean;
   e1Error: string | null;
@@ -102,8 +109,10 @@ export interface EViewCtx {
   openSku: (name?: string) => void;              // 打开 SKU 抽屉(无 name = 新增)
   delSku: (name: string) => void;
   // E2 收益 & 任务引擎(任务列表/新增/改单价/下架均走后端 API)
+  canWriteE2: boolean;
   tasks: OpsTask[];
   phoneTiers: E2PhoneTier[];
+  e2Pricing: E2TaskPricingSnapshot | null;
   e2Loading: boolean;
   e2Error: string | null;
   refreshE2: () => Promise<void>;
@@ -118,6 +127,8 @@ export interface EViewCtx {
   e3Operations: E3OperationMetric[];
   refreshE3: () => Promise<void>;
   // E4 订单状态机
+  canWriteE4: boolean;
+  canRefundE4: boolean;
   orders: EOrder[];
   e4Loading: boolean;
   e4Error: string | null;
@@ -135,6 +146,12 @@ export interface EViewCtx {
   terminalOf: (id: string) => string | undefined;
   openOrder: (o: EOrder) => void;
   // E5 设备运维(设备列表/激活/解绑/DC pause 均走后端 API)
+  canWriteE5: boolean;
+  canForceActivateE5: boolean;
+  canUnbindE5: boolean;
+  canPauseDcE5: boolean;
+  runE5DeviceAction: (deviceId: number, action: "activate" | "deactivate", reason: string) => Promise<void>;
+  runE5UserBatch: (userId: number, paused: boolean, reason: string) => Promise<void>;
   e5Devices: E5Device[];
   e5Overview: E5Overview | null;
   e5Datacenters: E5Datacenter[];
@@ -143,6 +160,14 @@ export interface EViewCtx {
   e5Page: number;
   e5PageSize: number;
   e5Total: number;
+  e5Keyword: string;
+  e5StateFilter: string;
+  e5KindFilter: string;
+  e5HeartbeatFilter: string;
+  setE5Keyword: (value: string) => void;
+  setE5StateFilter: (value: string) => void;
+  setE5KindFilter: (value: string) => void;
+  setE5HeartbeatFilter: (value: string) => void;
   setE5Page: (page: number) => void;
   setE5PageSize: (pageSize: number) => void;
   refreshE5: () => Promise<void>;
@@ -150,6 +175,8 @@ export interface EViewCtx {
   openDatacenter: (dc?: E5Datacenter) => void;
   deleteDatacenter: (dc: E5Datacenter) => void;
   // E6 算力与设备配置(开关/系数/显卡映射/下载内容均走后端 config API,聚合视图)
+  canWriteE6: boolean;
+  canToggleE6: boolean;
   e6Config: E6ComputeConfigView | null;
   e6Loading: boolean;
   e6Error: string | null;

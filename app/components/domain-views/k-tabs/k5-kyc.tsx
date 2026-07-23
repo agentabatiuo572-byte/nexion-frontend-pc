@@ -74,6 +74,15 @@ function displayK5Info(label: string, value: string): [string, string] {
   return [visibleLabel, visibleValue];
 }
 
+function authoritativeK5Info(ticket: K5Ticket): [string, string][] {
+  return [
+    ["实名状态(C4)", kycLabel(ticket.kyc)],
+    ...ticket.info
+      .filter(([label]) => label !== "实名状态")
+      .map(([label, value]) => displayK5Info(label, value)),
+  ];
+}
+
 function displayK5History(value: string) {
   return Object.entries(K5_DECISION_CODE_LABELS).reduce(
     (text, [code, label]) => text.replaceAll(code, label),
@@ -169,7 +178,7 @@ function k5ParamBusinessForm(p: KRiskParam): BusinessFormSpec | null {
 }
 
 function decisionEvidence(ticket: K5Ticket) {
-  const information = ticket.info.map(([label, value]) => displayK5Info(label, value)).map(([label, value]) => `${label}：${value}`).join("；") || "后端未提供工单信息";
+  const information = authoritativeK5Info(ticket).map(([label, value]) => `${label}：${value}`).join("；") || "后端未提供工单信息";
   const triggerReasons = ticket.info
     .filter(([label]) => label.includes("触发") || label === "来源")
     .map(([, value]) => value)
@@ -608,7 +617,9 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
             <span className="ttl">复审工单 · {cur?.id ?? "暂无"}</span>
             <span className="sub">· 材料引用自实名服务商 · 裁决回写用户域</span>
             <div className="r">
-              {cur && (cur.st === "in-review" || cur.st === "overdue") && (canPass || canReject) ? (
+              {cur?.kyc === "USER_UNAVAILABLE" ? (
+                <span className="sub">用户不存在，无法裁决；请先核对 C4 账户状态</span>
+              ) : cur && (cur.st === "in-review" || cur.st === "overdue") && (canPass || canReject) ? (
                 <>
                   {canPass ? <button className="l-btn mc" onClick={() => decide(cur, true)}>通过</button> : null}
                   {canReject ? <button className="l-btn mc" onClick={() => decide(cur, false)}>驳回</button> : null}
@@ -620,7 +631,7 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
           </div>
           <div className="tk-split">
             <div>
-              {(cur?.info ?? []).map((kv) => displayK5Info(kv[0], kv[1])).map((kv, index) => (
+              {(cur ? authoritativeK5Info(cur) : []).map((kv, index) => (
                 <div className="kv2" key={`${kv[0]}-${index}`}><span className="k">{kv[0]}</span><span className="v">{kv[1]}</span></div>
               ))}
             </div>

@@ -37,8 +37,8 @@ export function KConfirmModal({ req, onClose }: { req: ConfirmReq; onClose: () =
               if (!can || submitting) return;
               setSubmitting(true);
               try {
-                await req.run(reason.trim(), req.input ? value.trim() : undefined);
-                onClose();
+                const succeeded = await req.run(reason.trim(), req.input ? value.trim() : undefined);
+                if (succeeded !== false) onClose();
               } catch {
                 // 请求实现负责展示面向用户的错误；弹窗只需保留输入并消费已处理的拒绝。
               } finally {

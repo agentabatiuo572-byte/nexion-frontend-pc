@@ -6,6 +6,12 @@ const view = readFileSync(new URL("../app/components/domain-views/i-tabs/i4-trus
 const form = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/i-client.ts", import.meta.url), "utf8");
 const highOps = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
+const registry = readFileSync(new URL("../lib/admin/registry/i.ts", import.meta.url), "utf8");
+
+test("I5 summary follows the backend jurisdiction catalog instead of a stale fixed count", () => {
+  assert.match(registry, /按法域 × 7 章节/);
+  assert.doesNotMatch(registry, /4 个法域/);
+});
 
 test("I5 jurisdiction mapping uses backend country and disclosure version catalogs", () => {
   assert.match(client, /countryOptions/);

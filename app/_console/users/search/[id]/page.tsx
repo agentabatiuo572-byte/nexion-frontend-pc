@@ -5,8 +5,8 @@
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { ArrowLeft, Bell, CreditCard, KeyRound, LogOut, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
+import { useParams, useSearchParams } from "next/navigation";
+import { ArrowLeft, Bell, CreditCard, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
 import {
   fetchUser360,
   fetchUserPaymentMethods,
@@ -20,8 +20,6 @@ import {
   type User360Section,
   type User360Summary,
 } from "@/lib/admin/user360-client";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { OperationConfirmModal } from "@/app/components/domain-views/design-kit";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { toast } from "@/lib/store/ui";
@@ -154,7 +152,14 @@ function errorMessage(error: unknown) {
 }
 
 function sectionStatus(section: User360Section | null | undefined) {
-  return asText(section?.sourceStatus, "READY");
+  const status = asText(section?.sourceStatus, "READY").toUpperCase();
+  if (status === "READY") return "数据正常";
+  if (status === "ERROR") return "数据读取失败";
+  return "数据状态待确认";
+}
+
+function sectionFailed(section: User360Section | null | undefined) {
+  return asText(section?.sourceStatus, "READY").toUpperCase() === "ERROR";
 }
 
 function auditDetail(row: JsonRecord) {
@@ -266,10 +271,17 @@ function HubSection({
   children?: ReactNode;
   emptyText?: string;
 }) {
+  if (!section) return null;
   const dataRows = rows(section);
   return (
     <div id={id} style={{ scrollMarginTop: 76 }}>
-      <Section title={title} tag={`source ${sectionStatus(section)}`}>
+      <Section title={title} tag={`数据源 · ${sectionStatus(section)}`}>
+        {sectionFailed(section) && (
+          <div className="ctint warn mb-3 flex flex-wrap items-center justify-between gap-2">
+            <span>本卡片数据读取失败，其他画像卡片不受影响。请稍后刷新；若持续失败，请联系值班人员并说明卡片名称。</span>
+            <button className="btn btn-sec btn-sm" onClick={() => window.location.reload()}>刷新页面重试</button>
+          </div>
+        )}
         {children}
         {columns && (
           <div className={children ? "mt-3" : ""}>
@@ -306,8 +318,15 @@ function ActionButton({
 export default function UserDetailPage() {
   const session = useAdminAuth((state) => state.session);
   const canWriteC1 = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
+  const canReadC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_read");
+  const canReadC5 = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_read");
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const userKey = params.id;
+  const requestedReturnTo = searchParams.get("returnTo") ?? "";
+  const returnTo = requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
+    ? requestedReturnTo
+    : "/users/search";
   const [detail, setDetail] = useState<User360Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -316,7 +335,6 @@ export default function UserDetailPage() {
   const [includeUnbound, setIncludeUnbound] = useState(false);
   const [paymentPage, setPaymentPage] = useState(1);
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const propose = usePropose();
   const [actionConfirm, setActionConfirm] = useState<null | {
     action: string;
     detail: string;
@@ -353,10 +371,14 @@ export default function UserDetailPage() {
   const userNo = asText(profile?.userNo ?? summary.userNo, "-");
   const nickname = asText(profile?.nickname, "用户详情");
   const status = asText(profile?.status ?? summary.status, "UNKNOWN").toUpperCase();
-  const riskScore = asNumber(summary.riskScore ?? profile?.riskScore);
-  const riskBand = asText(summary.riskBand ?? profile?.riskBand, riskScore >= 70 ? "高风险" : riskScore >= 40 ? "中风险" : "低风险");
+  const riskAuthorityReady = detail?.risk?.sourceStatus === "READY";
+  const rawRiskScore = riskAuthorityReady ? detail?.risk?.effectiveScore : null;
+  const hasRiskScore = rawRiskScore !== null && rawRiskScore !== undefined && rawRiskScore !== "";
+  const riskScore = asNumber(rawRiskScore);
+  const riskBand = riskAuthorityReady
+    ? asText(detail?.risk?.bandLabel, hasRiskScore ? (riskScore >= 70 ? "高风险" : riskScore >= 40 ? "中风险" : "低风险") : "风险评分不可用")
+    : "风险评分不可用";
   const nonActive = status !== "ACTIVE" && status !== "UNKNOWN";
-  const frozen = status === "FROZEN";
   const actionDisabled = !!actionPending || !userId;
 
   const loadPaymentMethods = useCallback(async () => {
@@ -387,50 +409,18 @@ export default function UserDetailPage() {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function doFreeze() {
-    if (!userId) {
-      toast.error("缺少用户主键", "请刷新后重试");
-      return;
-    }
-    const opKey = frozen ? "c2_account_unfreeze" : "c2_account_freeze";
-    const def = findHighOp(opKey)!;
-    openActionConfirmReq({
-      action: frozen ? `解冻账户 · ${nickname}` : `冻结账户 · ${nickname}`,
-      detail: frozen
-        ? `恢复 ${nickname} 的提现与交易能力。提交后进入 A2 待确认队列。`
-        : `冻结 ${nickname} 的提现与交易,转合规核查。提交后进入 A2 待确认队列。`,
-      amplifies: !frozen,
-      run: (reason) => {
-        void propose((s: string) => toast.success(s), {
-          action: `${frozen ? "恢复账户" : "冻结账户"} · ${nickname}`,
-          obj: String(userId),
-          before: frozen ? "FROZEN" : "ACTIVE",
-          after: frozen ? "ACTIVE" : "FROZEN",
-          type: "acct",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "C1",
-          command: def.buildCommand({ userId: String(userId) }),
-          target: def.buildTarget({ userId: String(userId) }),
-        });
-      },
-    });
-  }
-
   const kpis = [
-    { label: "可提余额", value: money(summary.walletUsdt ?? profile?.walletUsdt), accent: "var(--admin-domain-d)", anchor: "hub-deposit" },
-    { label: "累计充值", value: money(summary.depositedUsd), accent: "var(--admin-domain-c)", anchor: "hub-deposit" },
-    { label: "累计提现", value: money(summary.withdrawnUsd), accent: "var(--v5-warning)", anchor: "hub-withdrawal" },
-    { label: "团队规模", value: `${numberLabel(summary.teamSize)} 人`, accent: "var(--admin-domain-f)", anchor: "hub-referral" },
-    { label: "设备数", value: `${numberLabel(summary.deviceCount)} 台`, accent: "var(--admin-domain-e)", anchor: "hub-devices" },
-  ];
+    detail?.financial && { label: "可提余额", value: money(summary.walletUsdt ?? profile?.walletUsdt), accent: "var(--admin-domain-d)", anchor: "hub-deposit" },
+    detail?.deposits && { label: "累计充值", value: money(summary.depositedUsd), accent: "var(--admin-domain-c)", anchor: "hub-deposit" },
+    detail?.withdrawals && { label: "累计提现", value: money(summary.withdrawnUsd), accent: "var(--v5-warning)", anchor: "hub-withdrawal" },
+    detail?.referral && { label: "团队规模", value: `${numberLabel(summary.teamSize)} 人`, accent: "var(--admin-domain-f)", anchor: "hub-referral" },
+    detail?.devices && { label: "设备数", value: `${numberLabel(summary.deviceCount)} 台`, accent: "var(--admin-domain-e)", anchor: "hub-devices" },
+  ].filter((value): value is { label: string; value: string; accent: string; anchor: string } => Boolean(value));
 
   if (loading && !detail) {
     return (
       <div className="w-full">
-        <Link href="/users/search" prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
+        <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           <ArrowLeft size={14} /> 返回检索
         </Link>
         <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>正在加载用户详情...</p>
@@ -441,7 +431,7 @@ export default function UserDetailPage() {
   if (error && !detail) {
     return (
       <div className="w-full">
-        <Link href="/users/search" prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
+        <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           <ArrowLeft size={14} /> 返回检索
         </Link>
         <div className="mt-6 rounded-[12px] p-4" style={{ background: "var(--v5-surface)", border: "1px solid var(--v5-border)" }}>
@@ -457,7 +447,7 @@ export default function UserDetailPage() {
   if (!profile || !detail) {
     return (
       <div className="w-full">
-        <Link href="/users/search" prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
+        <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px]" style={{ color: "var(--v5-ink-3)" }}>
           <ArrowLeft size={14} /> 返回检索
         </Link>
         <p className="mt-6 text-[14px]" style={{ color: "var(--v5-ink-3)" }}>后端未返回用户详情。</p>
@@ -467,7 +457,7 @@ export default function UserDetailPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1100px]">
-      <Link href="/users/search" prefetch={false} className="inline-flex items-center gap-1 text-[12.5px] transition-colors hover:opacity-80" style={{ color: "var(--v5-ink-3)" }}>
+      <Link href={returnTo} prefetch={false} className="inline-flex items-center gap-1 text-[12.5px] transition-colors hover:opacity-80" style={{ color: "var(--v5-ink-3)" }}>
         <ArrowLeft size={14} /> 返回检索
       </Link>
 
@@ -483,7 +473,7 @@ export default function UserDetailPage() {
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" />
             <StatusPill label={`KYC ${kycLabel(summary.kycStatus ?? profile.kycStatus)}`} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} />
-            <StatusPill label={`${riskBand} ${riskScore}`} tone={riskTone(riskScore)} size="sm" />
+            {(detail.risk || profile.riskBand) && <StatusPill label={`${riskBand}${hasRiskScore ? ` ${riskScore}` : ""}`} tone={hasRiskScore ? riskTone(riskScore) : "neutral"} size="sm" />}
             <span className="font-mono-tabular rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-3)" }}>
               分层 {asText(profile.userLevel)} · {asText(profile.vRank)}
             </span>
@@ -515,116 +505,50 @@ export default function UserDetailPage() {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-4">
-          <Section title="风险画像" tag="K4 风险评分 · C4 KYC">
+          {detail.risk && <Section title="风险画像" tag="K4 风险评分 · C4 KYC">
             <div className="flex items-center gap-4">
               <div>
-                <p className="font-mono-tabular text-[32px] leading-none" style={{ color: riskColor(riskScore) }}>{riskScore}</p>
+                <p className="font-mono-tabular text-[32px] leading-none" style={{ color: hasRiskScore ? riskColor(riskScore) : "var(--v5-ink-3)" }}>{hasRiskScore ? riskScore : "不可用"}</p>
                 <p className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>{riskBand}</p>
               </div>
               <div className="flex-1">
                 <Row label="KYC 状态"><StatusPill label={kycLabel(summary.kycStatus ?? profile.kycStatus)} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} /></Row>
-                <Row label="风险标记">{asList(detail.risk?.flags).map(displayValue).join(" · ") || "无"}</Row>
-                <Row label="风险案件">{numberLabel(detail.risk?.openCaseCount)} 个未关闭</Row>
+                {detail.risk?.flags !== undefined && <Row label="风险标记">{asList(detail.risk.flags).map(displayValue).join(" · ") || "无"}</Row>}
+                {detail.risk?.cases !== undefined && <Row label="风险案件">{numberLabel(detail.risk?.openCaseCount)} 个未关闭</Row>}
               </div>
             </div>
-          </Section>
+          </Section>}
 
-          <Section title="资产 & 账户" tag="C3 余额资产 · 双币 USDT/NEX">
+          {detail.financial && <Section title="资产 & 账户" tag="C3 余额资产 · 双币 USDT/NEX">
             <Row label="可提余额 · USDT"><span className="font-mono-tabular">{money(summary.walletUsdt ?? profile.walletUsdt)}</span></Row>
             <Row label="NEX 余额"><span className="font-mono-tabular">{fmtNum(asNumber(summary.walletNex ?? profile.walletNex))} NEX</span></Row>
             <Row label="累计充值"><span className="font-mono-tabular">{money(summary.depositedUsd)}</span></Row>
             <Row label="累计提现"><span className="font-mono-tabular">{money(summary.withdrawnUsd)}</span></Row>
             <Row label="提现申请额"><span className="font-mono-tabular">{money(summary.withdrawRequestedUsd)}</span></Row>
-          </Section>
+          </Section>}
         </div>
 
         <div className="flex flex-col gap-4">
-          <Section title="账户操作" tag="C2 · 真实接口 · 审计留痕">
+          <Section title="关联处置入口" tag="C1 只读 · 到业务页处理">
             <div className="flex flex-wrap gap-2">
-              <ActionButton onClick={() => void doFreeze()} disabled={actionDisabled}>
-                <Snowflake size={14} style={{ color: frozen ? "var(--v5-success)" : "var(--v5-danger)" }} /> {frozen ? "解冻账户" : "冻结账户"}
-              </ActionButton>
-              <ActionButton
-                onClick={() => openActionConfirmReq({
-                  action: `强制登出 · ${nickname}`,
-                  detail: `使 ${nickname} 的全部会话失效。提交后进入 A2 待确认队列。`,
-                  amplifies: false,
-                  run: (reason) => {
-                    const def = findHighOp("c2_session_revoke_all")!;
-                    void propose((s: string) => toast.success(s), {
-                      action: `强制登出 · ${nickname}`,
-                      obj: String(userId),
-                      before: "多会话",
-                      after: "0 会话",
-                      type: "acct",
-                      amplifies: false,
-                      gate: { roles: [] },
-                      gateLabel: def.gateLabel,
-                      reason,
-                      sourceDomain: "C1",
-                      command: def.buildCommand({ userId: String(userId) }),
-                      target: def.buildTarget({ userId: String(userId) }),
-                    });
-                  },
-                })}
-                disabled={actionDisabled}
-              >
-                <LogOut size={14} style={{ color: "var(--v5-warning)" }} /> 强制登出
-              </ActionButton>
-              <ActionButton
-                onClick={() => openActionConfirmReq({
-                  action: `模拟登录 · ${nickname}`,
-                  detail: `${nickname} 的 impersonate 会话有效期 15 分钟,全程审计留痕。提交后进入 A2 待确认队列。`,
-                  amplifies: false,
-                  run: (reason) => {
-                    const def = findHighOp("c2_impersonate_start")!;
-                    void propose((s: string) => toast.success(s), {
-                      action: `发起模拟登录 · ${nickname}`,
-                      obj: String(userId),
-                      before: "—",
-                      after: "只读 15min",
-                      type: "acct",
-                      amplifies: false,
-                      gate: { roles: [] },
-                      gateLabel: def.gateLabel,
-                      reason,
-                      sourceDomain: "C1",
-                      command: def.buildCommand({ userId: String(userId), ttlMinutes: 15 }),
-                      target: def.buildTarget({ userId: String(userId) }),
-                    });
-                  },
-                })}
-                disabled={actionDisabled}
-              >
-                <UserCog size={14} style={{ color: "var(--v5-tech-cyan)" }} /> impersonate
-              </ActionButton>
-              <ActionButton
-                onClick={() => openActionConfirmReq({
-                  action: `密码重置 · ${nickname}`,
-                  detail: `失效 ${nickname} 的当前密码并要求重新设置。提交后进入 A2 待确认队列。`,
-                  amplifies: false,
-                  run: (reason) => {
-                    const def = findHighOp("c5_password_reset")!;
-                    void propose((s: string) => toast.success(s), {
-                      action: `密码重置 · ${nickname}`,
-                      obj: String(userId),
-                      before: "旧密码有效",
-                      after: "旧密码已作废",
-                      type: "acct",
-                      amplifies: false,
-                      gate: { roles: [] },
-                      gateLabel: def.gateLabel,
-                      reason,
-                      sourceDomain: "C1",
-                      command: def.buildCommand({ userId: String(userId) }),
-                      target: def.buildTarget({ userId: String(userId) }),
-                    });
-                  },
-                })}
-                disabled={actionDisabled}
-              >
-                <KeyRound size={14} style={{ color: "var(--v5-warning)" }} /> 重置密码
-              </ActionButton>
+              {canReadC2 && (
+                <Link
+                  href={{ pathname: "/users/actions", query: { userCode: userNo, returnTo } }}
+                  className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
+                  style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
+                >
+                  <Snowflake size={14} style={{ color: "var(--v5-danger)" }} /> 去 C2 账户操作
+                </Link>
+              )}
+              {canReadC5 && (
+                <Link
+                  href={{ pathname: "/users/security", query: { userCode: userNo, returnTo } }}
+                  className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
+                  style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
+                >
+                  <ShieldAlert size={14} style={{ color: "var(--v5-warning)" }} /> 去 C5 安全会话
+                </Link>
+              )}
               {canWriteC1 && <ActionButton
                 onClick={() => openActionConfirmReq({
                   action: `重置昵称 · ${nickname}`,
@@ -650,11 +574,11 @@ export default function UserDetailPage() {
               </ActionButton>}
             </div>
             <p className="mt-2.5 flex items-center gap-1 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>
-              <ShieldAlert size={12} /> 高敏动作均需确认,由后端接口写入审计。{actionPending ? ` 当前执行: ${actionPending}` : ""}
+              <ShieldAlert size={12} /> C1 仅保留产品更新日志明确批准的昵称与支付方式操作；其他处置在 C2/C5 完成。{actionPending ? ` 当前执行: ${actionPending}` : ""}
             </p>
           </Section>
 
-          <Section title="安全 & 会话" tag="C5 安全会话">
+          {detail.sessions && <Section title="安全 & 会话" tag="C5 安全会话">
             <div className="mb-2 grid grid-cols-3 gap-2">
               <KpiStatCard label="活跃会话" value={numberLabel(summary.activeSessionCount)} accent="var(--admin-domain-c)" />
               <KpiStatCard label="2FA" value={summary.twoFactorEnabled ? "开启" : "关闭"} accent="var(--admin-domain-e)" />
@@ -671,7 +595,7 @@ export default function UserDetailPage() {
               ]}
               emptyText="暂无会话"
             />
-          </Section>
+          </Section>}
         </div>
       </div>
 
@@ -752,7 +676,7 @@ export default function UserDetailPage() {
 
         <HubSection
           title="收益明细"
-          section={{ records: asArray(detail.earnings?.records), sourceStatus: asText(detail.earnings?.sourceStatus, "READY") }}
+          section={detail.earnings ? { records: asArray(detail.earnings.records), sourceStatus: asText(detail.earnings.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "bizNo", label: "业务单号" },
             { key: "bizType", label: "类型" },
@@ -770,7 +694,7 @@ export default function UserDetailPage() {
         <HubSection
           id="hub-referral"
           title="推荐团队"
-          section={{ records: asArray(detail.referral?.members), sourceStatus: asText(detail.referral?.sourceStatus, "READY") }}
+          section={detail.referral ? { records: asArray(detail.referral.members), sourceStatus: asText(detail.referral.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "memberNo", label: "成员编码" },
             { key: "nickname", label: "昵称" },
@@ -786,26 +710,26 @@ export default function UserDetailPage() {
         </HubSection>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <Section title="V-Rank" tag={`source ${sectionStatus(detail.vrank)}`}>
+          {detail.vrank && <Section title="V-Rank" tag={`数据源 · ${sectionStatus(detail.vrank)}`}>
             <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
             <Row label="用户层级">{asText(detail.vrank?.userLevel)}</Row>
             <Row label="团队规模">{numberLabel(detail.vrank?.teamSize)} 人</Row>
             <Row label="直推人数">{numberLabel(detail.vrank?.directCount)} 人</Row>
             <Row label="团队业绩">{money(detail.vrank?.teamVolumeUsd)}</Row>
-          </Section>
+          </Section>}
 
-          <Section title="账户合规" tag={`source ${sectionStatus(detail.account)}`}>
+          {detail.account && <Section title="账户合规" tag={`数据源 · ${sectionStatus(detail.account)}`}>
             <Row label="用户编码">{userNo}</Row>
             <Row label="账户状态"><StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" /></Row>
             <Row label="KYC"><StatusPill label={kycLabel(summary.kycStatus ?? profile.kycStatus)} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} /></Row>
             <Row label="2FA">{summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
             <Row label="需重置密码">{summary.passwordResetRequired ? "是" : "否"}</Row>
-          </Section>
+          </Section>}
         </div>
 
         <HubSection
           title="财务轨迹"
-          section={{ records: asArray(detail.financial?.exchangeRows), sourceStatus: asText(detail.financial?.sourceStatus, "READY") }}
+          section={detail.financial ? { records: asArray(detail.financial.exchangeRows), sourceStatus: asText(detail.financial.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "bizNo", label: "业务单号" },
             { key: "bizType", label: "类型" },
@@ -839,7 +763,7 @@ export default function UserDetailPage() {
 
         <HubSection
           title="商城订单"
-          section={{ records: asArray(detail.commerce?.orders), sourceStatus: asText(detail.commerce?.sourceStatus, "READY") }}
+          section={detail.commerce ? { records: asArray(detail.commerce.orders), sourceStatus: asText(detail.commerce.sourceStatus, "READY") } : undefined}
           columns={[
             { key: "orderNo", label: "订单号" },
             { key: "skuName", label: "商品" },
@@ -854,17 +778,18 @@ export default function UserDetailPage() {
         </HubSection>
       </div>
 
-      <div className="mt-4">
+      {detail.audit && <div className="mt-4">
         <Section title="审计时间线" tag="A2 全程留痕">
           <AuditTimeline entries={auditEntries} />
         </Section>
-      </div>
+      </div>}
 
       {actionConfirm && (
         <OperationConfirmModal
           action={actionConfirm.action}
           detail={actionConfirm.detail}
           amplifies={actionConfirm.amplifies ?? false}
+          reasonMax={200}
           onClose={() => setActionConfirm(null)}
           onConfirm={(reason) => {
             const fn = actionConfirm.run;

@@ -15,6 +15,7 @@ interface BackendStats {
   matureUsd?: RawNumber;
   ticketsMonth?: RawNumber;
   reinvestRate?: RawNumber;
+  reinvestRateAvailable?: boolean | string | null;
   lockDays?: RawNumber;
 }
 
@@ -66,6 +67,29 @@ interface BackendOverview {
   coverage?: BackendCoverage | null;
   serverCanonical?: boolean | null;
   sources?: string[] | null;
+  g4Capacity?: { monthlyCapacity?: RawNumber; ticketsIssuedThisMonth?: RawNumber; source?: string | null } | null;
+}
+
+interface BackendOrder {
+  orderNo?: string | null;
+  userId?: RawNumber;
+  userNo?: string | null;
+  nickname?: string | null;
+  amountUsdt?: RawNumber;
+  apyPct?: RawNumber;
+  lockDays?: RawNumber;
+  lockedAt?: string | null;
+  unlockAt?: string | null;
+  estimatedInterestUsdt?: RawNumber;
+  status?: string | null;
+  billCorrelationPrefix?: string | null;
+}
+
+interface BackendOrderPage {
+  orders?: BackendOrder[] | null;
+  nextCursor?: RawNumber;
+  hasMore?: boolean | string | null;
+  serverCanonical?: boolean | null;
 }
 
 export interface G7Stats {
@@ -74,6 +98,7 @@ export interface G7Stats {
   matureUsd: number;
   ticketsMonth: number;
   reinvestRate: number;
+  reinvestRateAvailable: boolean;
   lockDays: number;
 }
 
@@ -125,9 +150,33 @@ export interface G7Overview {
   coverage: G7Coverage;
   serverCanonical: boolean;
   sources: string[];
+  g4Capacity: { monthlyCapacity: number; ticketsIssuedThisMonth: number; source: string };
+}
+
+export interface G7Order {
+  orderNo: string;
+  userId: number;
+  userNo: string;
+  nickname: string;
+  amountUsdt: number;
+  apyPct: number;
+  lockDays: number;
+  lockedAt: string;
+  unlockAt: string;
+  estimatedInterestUsdt: number;
+  status: string;
+  billCorrelationPrefix: string;
+}
+
+export interface G7OrderPage {
+  orders: G7Order[];
+  nextCursor: number | null;
+  hasMore: boolean;
+  serverCanonical: boolean;
 }
 
 let requestSeq = 0;
+const pendingMutationKeys = new Map<string, string>();
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -169,6 +218,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): G7Overview
       matureUsd: toNumber(stats.matureUsd),
       ticketsMonth: toNumber(stats.ticketsMonth),
       reinvestRate: toNumber(stats.reinvestRate),
+      reinvestRateAvailable: toBool(stats.reinvestRateAvailable, false),
       lockDays: toNumber(stats.lockDays),
     },
     params: (data?.params ?? []).map((param) => ({
@@ -208,6 +258,11 @@ function normalizeOverview(data: BackendOverview | null | undefined): G7Overview
     },
     serverCanonical: data?.serverCanonical === true,
     sources: data?.sources ?? [],
+    g4Capacity: {
+      monthlyCapacity: toNumber(data?.g4Capacity?.monthlyCapacity),
+      ticketsIssuedThisMonth: toNumber(data?.g4Capacity?.ticketsIssuedThisMonth),
+      source: asText(data?.g4Capacity?.source),
+    },
   };
 }
 
@@ -241,10 +296,39 @@ export async function fetchG7RepurchaseOverview() {
   return normalizeOverview(await g7Request<BackendOverview>("/nex/repurchase"));
 }
 
-export async function updateG7RepurchaseParam(paramKey: string, value: string, reason: string, operator: string) {
-  return normalizeOverview(await g7Request<BackendOverview>(`/nex/repurchase/params/${encodeURIComponent(paramKey)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `g7-param-${paramKey}`,
-  }));
+export async function fetchG7RepurchaseOrders(status = "") {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const data = await g7Request<BackendOrderPage>(`/nex/repurchase/orders${query}`);
+  return {
+    orders: (data?.orders ?? []).map((order) => ({
+      orderNo: asText(order.orderNo),
+      userId: toNumber(order.userId),
+      userNo: asText(order.userNo),
+      nickname: asText(order.nickname),
+      amountUsdt: toNumber(order.amountUsdt),
+      apyPct: toNumber(order.apyPct),
+      lockDays: toNumber(order.lockDays),
+      lockedAt: asText(order.lockedAt),
+      unlockAt: asText(order.unlockAt),
+      estimatedInterestUsdt: toNumber(order.estimatedInterestUsdt),
+      status: asText(order.status, "UNKNOWN"),
+      billCorrelationPrefix: asText(order.billCorrelationPrefix),
+    })),
+    nextCursor: data?.nextCursor == null ? null : toNumber(data.nextCursor),
+    hasMore: toBool(data?.hasMore, false),
+    serverCanonical: data?.serverCanonical === true,
+  } satisfies G7OrderPage;
+}
+
+export async function updateG7RepurchaseParam(paramKey: string, value: string, reason: string, operator: string, g4Ref = "") {
+  const scope = JSON.stringify([paramKey, value, reason, operator, g4Ref]);
+  const mutationKey = pendingMutationKeys.get(scope) ?? idempotencyKey(`g7-param-${paramKey}`);
+  pendingMutationKeys.set(scope, mutationKey);
+  await g7Request<Record<string, unknown>>(`/nex/repurchase/config/${encodeURIComponent(paramKey)}`, {
+    method: "PUT",
+    headers: { "Idempotency-Key": mutationKey },
+    body: JSON.stringify({ value, reason, operator, g4Ref }),
+  });
+  pendingMutationKeys.delete(scope);
+  return fetchG7RepurchaseOverview();
 }

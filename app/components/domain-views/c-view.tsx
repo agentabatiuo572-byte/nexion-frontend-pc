@@ -73,8 +73,14 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          completionCopy={mc.completionCopy}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => { mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
+          onConfirm={async (reason, newValue, businessValue) => {
+            const succeeded = await mc.run(reason, newValue, businessValue);
+            if (succeeded !== false) setActionConfirm(null);
+          }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}

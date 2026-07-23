@@ -6,7 +6,7 @@
  * 业务数据读写后端 content 接口;I.support.* / I.session.* 仅作为子组件视图态适配键。
  * MC 显式 edit 契约:调参传 edit、处置不传。MessageThread 共享组件复用于 M2/M3。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./m-domain.css";
 import { Icon, MessageThread, OperationConfirmModal, useToast, type ThreadMessage } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -45,12 +45,16 @@ const FOLD: Record<string, string> = {
 };
 
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
-  M1: ["只看不改 · 数字来自工单和会话", "工单 + 会话实时汇总"],
+  M1: ["指标只读 · 授权主管可维护坐席与负载", "工单 + 会话实时汇总"],
   M2: ["回复 / 关单自动留痕 · 放钱去 D2", "处理中工单实时计数"],
   M3: ["会话不断线 · 坐席回复自动留痕", "进行中会话 + 待回复实时计数"],
   M4: ["改常见问答 / 响应时限要填理由留痕", "帮助内容 + 各类响应时限"],
   M5: ["改推送 / 话术要确认留痕", "顾问推送 + 话术模板"],
 };
+
+function templateStatus(value: string | undefined): AdvisorScript["status"] {
+  return value === "published" ? "published" : value === "archived" ? "archived" : "draft";
+}
 
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
@@ -148,45 +152,102 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     () => ({ ...uiParams, ...legacyParams }),
     [uiParams, legacyParams],
   );
+  // Preserve the key for the same logical command until the backend confirms success.
+  const pendingIdempotencyKeys = useRef(new Map<string, string>());
+  const pendingMCommandAttempts = useRef(new Map<string, { value: string; idempotencyKey: string }>());
+  const pendingMCommandMetadata = useRef(new Map<string, { action?: string; reason?: string }>());
+  const pendingMCommandBaselines = useRef(new Map<string, { legacyParams: Record<string, string>; data: MContentData | null }>());
+  const pendingMDirectWriteKeys = useRef(new Map<string, string>());
 
   const runMWrite = useCallback(
-    (key: string, value: string, meta?: { action?: string; reason?: string }) => {
+    async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string }): Promise<boolean> => {
       if (isMUiKey(key)) {
         setUiParams((prev) => ({ ...prev, [key]: value }));
-        return;
+        return true;
       }
-      void applyMBackendWrite(key, value, legacyParams, mData, meta)
-        .then(() => reloadMContent())
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : "M_CONTENT_WRITE_FAILED";
-          setToast(`M 接口写入失败 · ${message}`);
-        });
+      const fingerprint = `${key}\u0000${value}\u0000${meta?.reason?.trim() ?? ""}`;
+      const commandFingerprint = meta?.commandKey ?? fingerprint;
+      const attempt = pendingMCommandAttempts.current.get(commandFingerprint);
+      const idempotencyKey = meta?.idempotencyKey
+        ?? attempt?.idempotencyKey
+        ?? pendingIdempotencyKeys.current.get(fingerprint)
+        ?? `m-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+      const stableValue = attempt?.value ?? value;
+      const stableMetadata = pendingMCommandMetadata.current.get(commandFingerprint)
+        ?? { action: meta?.action, reason: meta?.reason };
+      const stableBaseline = pendingMCommandBaselines.current.get(commandFingerprint)
+        ?? { legacyParams, data: mData };
+      pendingIdempotencyKeys.current.set(fingerprint, idempotencyKey);
+      pendingMCommandAttempts.current.set(commandFingerprint, { value: stableValue, idempotencyKey });
+      pendingMCommandMetadata.current.set(commandFingerprint, stableMetadata);
+      pendingMCommandBaselines.current.set(commandFingerprint, stableBaseline);
+      try {
+        await applyMBackendWrite(key, stableValue, stableBaseline.legacyParams, stableBaseline.data, { ...meta, ...stableMetadata, idempotencyKey });
+        await reloadMContent();
+        pendingIdempotencyKeys.current.delete(fingerprint);
+        pendingMCommandAttempts.current.delete(commandFingerprint);
+        pendingMCommandMetadata.current.delete(commandFingerprint);
+        pendingMCommandBaselines.current.delete(commandFingerprint);
+        return true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "M_CONTENT_WRITE_FAILED";
+        const detail = /failed to fetch|networkerror|load failed/i.test(message) ? "" : ` · ${message}`;
+        setToast(`写入失败或结果未知,请保留当前输入并重试${detail}`);
+        return false;
+      }
     },
     [legacyParams, mData, reloadMContent, setToast],
   );
 
+  const runM3DirectWrite = useCallback(async (
+    fingerprint: string,
+    write: (idempotencyKey: string) => Promise<unknown>,
+    failureMessage: string,
+  ): Promise<boolean> => {
+    const idempotencyKey = pendingMDirectWriteKeys.current.get(fingerprint)
+      ?? `m3-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+    pendingMDirectWriteKeys.current.set(fingerprint, idempotencyKey);
+    try {
+      await write(idempotencyKey);
+      await reloadMContent();
+      pendingMDirectWriteKeys.current.delete(fingerprint);
+      return true;
+    } catch (error) {
+      setToast(`${failureMessage}或结果未知,请重试 · ${error instanceof Error ? error.message : ""}`);
+      return false;
+    }
+  }, [reloadMContent, setToast]);
+
   // 客户标签(customTags)/备注(notes)走后端专用端点持久化,调完 reload 同步;失败 toast 报错。
-  // reason 固定为描述性 ≥6 字(满足后端 requireReasonCommand;标签/备注为即时编辑,无独立理由框)。
-  const addCustomerTag = useCallback((convoId: string, tag: string) => {
-    void mContentActions.addCustomerTag(convoId, tag, "客服添加客户标签")
-      .then(() => reloadMContent())
-      .catch((error) => setToast(`客户标签保存失败 · ${error instanceof Error ? error.message : ""}`));
-  }, [reloadMContent, setToast]);
-  const removeCustomerTag = useCallback((convoId: string, tag: string) => {
-    void mContentActions.removeCustomerTag(convoId, tag, "客服移除客户标签")
-      .then(() => reloadMContent())
-      .catch((error) => setToast(`客户标签移除失败 · ${error instanceof Error ? error.message : ""}`));
-  }, [reloadMContent, setToast]);
-  const addCustomerNote = useCallback((convoId: string, text: string) => {
-    void mContentActions.addCustomerNote(convoId, text, "客服新增客户备注")
-      .then(() => reloadMContent())
-      .catch((error) => setToast(`客户备注保存失败 · ${error instanceof Error ? error.message : ""}`));
-  }, [reloadMContent, setToast]);
-  const removeCustomerNote = useCallback((convoId: string, noteId: string) => {
-    void mContentActions.removeCustomerNote(convoId, noteId, "客服删除客户备注")
-      .then(() => reloadMContent())
-      .catch((error) => setToast(`客户备注删除失败 · ${error instanceof Error ? error.message : ""}`));
-  }, [reloadMContent, setToast]);
+  // reason 固定为描述性 8-200 字(满足后端 requireReasonCommand;标签/备注为即时编辑,无独立理由框)。
+  const addCustomerTag = useCallback(async (convoId: string, tag: string): Promise<boolean> => {
+    return runM3DirectWrite(
+      `m3:add-tag:${convoId}:${tag}`,
+      (idempotencyKey) => mContentActions.addCustomerTag(convoId, tag, "客服添加客户标签", idempotencyKey),
+      "客户标签保存失败",
+    );
+  }, [runM3DirectWrite]);
+  const removeCustomerTag = useCallback(async (convoId: string, tag: string): Promise<boolean> => {
+    return runM3DirectWrite(
+      `m3:remove-tag:${convoId}:${tag}`,
+      (idempotencyKey) => mContentActions.removeCustomerTag(convoId, tag, "客服移除客户标签", idempotencyKey),
+      "客户标签移除失败",
+    );
+  }, [runM3DirectWrite]);
+  const addCustomerNote = useCallback(async (convoId: string, text: string): Promise<boolean> => {
+    return runM3DirectWrite(
+      `m3:add-note:${convoId}:${text}`,
+      (idempotencyKey) => mContentActions.addCustomerNote(convoId, text, "客服新增客户备注", idempotencyKey),
+      "客户备注保存失败",
+    );
+  }, [runM3DirectWrite]);
+  const removeCustomerNote = useCallback(async (convoId: string, noteId: string): Promise<boolean> => {
+    return runM3DirectWrite(
+      `m3:remove-note:${convoId}:${noteId}`,
+      (idempotencyKey) => mContentActions.removeCustomerNote(convoId, noteId, "客服删除客户备注", idempotencyKey),
+      "客户备注删除失败",
+    );
+  }, [runM3DirectWrite]);
   const ctx: MCtx = {
     pget: (k) => mergedParams[k] as string | undefined,
     params: mergedParams,
@@ -229,7 +290,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       {mError && (
         <div className="card card-pad" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Icon name="bell" size={16} />
-          <span className="dim" style={{ fontSize: 13 }}>M 数据加载失败 · {mError}</span>
+          <span className="dim" style={{ fontSize: 13 }}>客服中心暂时无法同步数据,请稍后重试。</span>
           <span className="sp" />
           <button type="button" className="btn btn-sec btn-sm" onClick={() => void reloadMContent()}>
             <Icon name="arrow" size={16} />
@@ -259,8 +320,13 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => { mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
+          onConfirm={async (reason, newValue, businessValue) => {
+            const succeeded = await mc.run(reason, newValue, businessValue);
+            if (succeeded !== false) setActionConfirm(null);
+          }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}
@@ -314,7 +380,7 @@ function isMUiKey(key: string) {
   return key === DOCK_LAST_KEY || key === DOCK_OPEN_KEY || key === DOCK_OFF_KEY;
 }
 
-function reasonOf(meta?: { action?: string; reason?: string }) {
+function reasonOf(meta?: { action?: string; reason?: string; idempotencyKey?: string }) {
   const r = meta?.reason?.trim();
   return r && r !== "ui-state" && r.length >= 2 ? r : "M 客服中心后台操作留档";
 }
@@ -364,6 +430,7 @@ async function writeTicketRows(prev: SupportTicket[], next: SupportTicket[], rea
     }
     await mContentActions.createTicket(
       {
+        userId: added.userId,
         category: added.category,
         priority: added.priority,
         title: added.subject,
@@ -397,11 +464,15 @@ async function writeTicketRows(prev: SupportTicket[], next: SupportTicket[], rea
     await mContentActions.assignTicket(row.id, row.owner, adminIdForAgent(row.owner, data), reason);
     return;
   }
+  if (Boolean(row.archived) !== Boolean(before.archived)) {
+    await mContentActions.archiveTicket(row.id, Boolean(row.archived), reason);
+    return;
+  }
   if (action?.includes("conversation_from_ticket")) return;
   await mContentActions.replyTicket(row.id, "工单信息已同步更新", reason);
 }
 
-async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[], reason: string, action?: string, data?: MContentData | null) {
+async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[], reason: string, action?: string, data?: MContentData | null, idempotencyKey?: string) {
   const added = addedRow(prev, next);
   if (added) {
     const ownerAgentName = added.owner === "Unassigned" ? added.agentName : added.owner;
@@ -414,6 +485,7 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
         openingText: firstAgentText(added),
       },
       reason,
+      idempotencyKey,
     );
     return;
   }
@@ -425,19 +497,19 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
 
   if (!before.transfer && row.transfer) {
     const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
-    await mContentActions.transferConversation(row.id, row.transfer, row.transfer.reason || reason, targetId);
+    await mContentActions.transferConversation(row.id, row.transfer, row.transfer.reason || reason, targetId, idempotencyKey);
     return;
   }
   if (before.transfer && !row.transfer) {
-    if (action?.includes("退回") || action?.includes("return")) await mContentActions.returnTransfer(row.id, reason);
-    else await mContentActions.acceptTransfer(row.id, reason);
+    if (action?.includes("退回") || action?.includes("return")) await mContentActions.returnTransfer(row.id, reason, idempotencyKey);
+    else await mContentActions.acceptTransfer(row.id, reason, idempotencyKey);
     return;
   }
   if (before.transfer && row.transfer && JSON.stringify(before.transfer) !== JSON.stringify(row.transfer)) {
-    if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, reason);
+    if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, reason, idempotencyKey);
     else {
       const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
-      await mContentActions.transferConversation(row.id, row.transfer, row.transfer.reason || reason, targetId);
+      await mContentActions.transferConversation(row.id, row.transfer, row.transfer.reason || reason, targetId, idempotencyKey);
     }
     return;
   }
@@ -445,26 +517,26 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
   if (newMessage?.sender === "agent") {
     if (action?.includes("transfer_wait")) {
-      await mContentActions.waitTransfer(row.id, reason);
+      await mContentActions.waitTransfer(row.id, reason, idempotencyKey);
     } else {
       const body = newMessage.ctaHref ? `${newMessage.text} ${newMessage.ctaHref}` : newMessage.text;
-      await mContentActions.replyConversation(row.id, body, reason);
+      await mContentActions.replyConversation(row.id, body, reason, idempotencyKey);
     }
     return;
   }
   if (row.status !== before.status) {
-    await mContentActions.updateConversationStatus(row.id, row.status, reason);
+    await mContentActions.updateConversationStatus(row.id, row.status, before.status, reason, idempotencyKey);
     return;
   }
   if (Boolean(row.archived) !== Boolean(before.archived)) {
-    await mContentActions.archiveConversation(row.id, Boolean(row.archived), reason);
+    await mContentActions.archiveConversation(row.id, Boolean(row.archived), before.status, reason, idempotencyKey);
     return;
   }
   // 客户标签(customTags)与备注(notes)走 ctx.addCustomerTag/addCustomerNote 专用端点持久化,
   // 不经会话写链,不污染会话消息流。此处无需处理 profile 字段变化。
 }
 
-async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: string) {
+async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: string, idempotencyKey?: string) {
   const added = addedRow(prev, next);
   if (added) {
     await mContentActions.createFaq(
@@ -474,24 +546,27 @@ async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: stri
         answer: added.answer,
         status: added.status,
         surface: added.surface,
+        language: added.language,
+        sortOrder: added.sortOrder,
       },
       reason,
+      idempotencyKey,
     );
     return;
   }
   const row = changedRow(prev, next);
   if (!row) return;
   const before = prev.find((item) => item.id === row.id);
-  if (before && row.status !== before.status) await mContentActions.updateFaqStatus(row.id, row.status, reason);
-  else await mContentActions.updateFaq(row, reason);
+  if (before && row.status !== before.status) await mContentActions.updateFaqStatus(row.id, row.status, reason, idempotencyKey);
+  else await mContentActions.updateFaq(row, reason, idempotencyKey);
 }
 
-async function writeSlaRows(prev: SupportSla[], next: SupportSla[], reason: string) {
+async function writeSlaRows(prev: SupportSla[], next: SupportSla[], reason: string, idempotencyKey?: string) {
   const row = next.find((item) => {
     const before = prev.find((old) => old.category === item.category);
     return before && JSON.stringify(before) !== JSON.stringify(item);
   }) ?? next.find((item) => !prev.some((old) => old.category === item.category));
-  if (row) await mContentActions.updateSla(row, reason);
+  if (row) await mContentActions.updateSla(row, reason, idempotencyKey);
 }
 
 function currentLoadPayload(data: MContentData | null): MLoadConfigWrite {
@@ -509,16 +584,48 @@ async function applyMBackendWrite(
   value: string,
   legacyParams: Record<string, string>,
   data: MContentData | null,
-  meta?: { action?: string; reason?: string },
+  meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string },
 ) {
   const reason = reasonOf(meta);
+  const idempotencyKey = meta?.idempotencyKey;
+  if (key === "I.session.ticket.__create") {
+    const payload = parseRecord<{
+      conversationNo?: string;
+      category?: SupportTicket["category"];
+      priority?: SupportTicket["priority"];
+      title?: string;
+      assignedAdminId?: number;
+      assignedAdminName?: string;
+    }>(value);
+    if (!payload?.conversationNo || !payload.category || !payload.priority || !payload.title) throw new Error("M3_TICKET_CONVERSION_PAYLOAD_INVALID");
+    await mContentActions.convertConversationToTicket(payload.conversationNo, {
+      category: payload.category,
+      priority: payload.priority,
+      title: payload.title,
+      assignedAdminId: payload.assignedAdminId,
+      assignedAdminName: payload.assignedAdminName || "Unassigned",
+    }, reason, idempotencyKey);
+    return;
+  }
+  if (key === "I.session.archiveBatch.__create") {
+    const payload = parseRecord<{ conversationNos?: string[] }>(value);
+    if (!payload?.conversationNos?.length) throw new Error("M3_ARCHIVE_BATCH_PAYLOAD_INVALID");
+    await mContentActions.archiveConversations(payload.conversationNos, reason, idempotencyKey);
+    return;
+  }
+  if (key === "I.support.faq.__delete") {
+    const payload = parseRecord<{ faqId?: string }>(value);
+    if (!payload?.faqId) throw new Error("M4_FAQ_DELETE_PAYLOAD_INVALID");
+    await mContentActions.deleteFaq(payload.faqId, reason, idempotencyKey);
+    return;
+  }
   if (key === "I.support.load.__bulk") {
     const payload = parseRecord<MLoadConfigWrite>(value);
-    if (payload) await mContentActions.updateLoadConfig(payload, reason);
+    if (payload) await mContentActions.updateLoadConfig(payload, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.load.__rebalance") {
-    await mContentActions.rebalanceLoad(parseRows<Record<string, unknown>>(value), reason);
+    await mContentActions.rebalanceLoad(parseRows<Record<string, unknown>>(value), reason, idempotencyKey);
     return;
   }
   if (key === "I.support.agentProfile.__update") {
@@ -531,7 +638,7 @@ async function applyMBackendWrite(
       transferable?: boolean;
       busy?: boolean;
     }>(value);
-    if (payload?.adminId) await mContentActions.updateSupportAgentProfile(payload.adminId, payload, reason);
+    if (payload?.adminId) await mContentActions.updateSupportAgentProfile(payload.adminId, payload, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.seatAssignment.__update") {
@@ -546,7 +653,7 @@ async function applyMBackendWrite(
       busy?: boolean;
       userIds?: number[];
     }>(value);
-    if (payload?.adminId && payload.position) await mContentActions.assignSupportSeat(payload.adminId, { ...payload, position: payload.position }, reason);
+    if (payload?.adminId && payload.position) await mContentActions.assignSupportSeat(payload.adminId, { ...payload, position: payload.position }, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.advisorAssignment.__create") {
@@ -556,12 +663,12 @@ async function applyMBackendWrite(
       : payload?.userId
         ? [payload.userId]
         : [];
-    if (payload?.adminId && userIds.length > 0) await mContentActions.assignAdvisorUsers(payload.adminId, userIds, reason);
+    if (payload?.adminId && userIds.length > 0) await mContentActions.assignAdvisorUsers(payload.adminId, userIds, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.advisorAssignment.__delete") {
     const payload = parseRecord<{ adminId?: number; assignmentId?: number }>(value);
-    if (payload?.adminId && payload.assignmentId) await mContentActions.deactivateAdvisorAssignment(payload.adminId, payload.assignmentId, reason);
+    if (payload?.adminId && payload.assignmentId) await mContentActions.deactivateAdvisorAssignment(payload.adminId, payload.assignmentId, reason, idempotencyKey);
     return;
   }
   if (key.startsWith("I.support.load.")) {
@@ -570,7 +677,7 @@ async function applyMBackendWrite(
     if (field === "autoBalance" || field === "quietHourBalance") (payload[field] as boolean) = value === "1";
     else if (field === "defaultCap" || field === "burstCap" || field === "warnPct") (payload[field] as number) = Number(value);
     else if (field === "overflowQueue") payload.overflowQueue = value;
-    await mContentActions.updateLoadConfig(payload, reason);
+    await mContentActions.updateLoadConfig(payload, reason, idempotencyKey);
     return;
   }
   const agentMatch = key.match(/^I\.support\.agent\.(.+)\.(cap|busy)$/);
@@ -581,38 +688,48 @@ async function applyMBackendWrite(
     payload.agentState = { ...payload.agentState, [id]: { ...(payload.agentState[id] ?? { cap: payload.defaultCap, busy: false }) } };
     if (field === "cap") payload.agentState[id].cap = Number(value);
     else payload.agentState[id].busy = value === "1";
-    await mContentActions.updateLoadConfig(payload, reason);
+    await mContentActions.updateLoadConfig(payload, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.tickets") {
     await writeTicketRows(parseRows<SupportTicket>(legacyParams[key]), parseRows<SupportTicket>(value), reason, meta?.action, data);
     return;
   }
+  if (key === "I.support.ticketEscalation.__create") {
+    const payload = parseRecord<{ ticketNo?: string; ownerAgentId?: string; ownerAgentName?: string }>(value);
+    if (!payload?.ticketNo || !payload.ownerAgentId) throw new Error("M2_TICKET_ESCALATION_PAYLOAD_INVALID");
+    await mContentActions.escalateTicket(
+      payload.ticketNo,
+      { ownerAgentId: payload.ownerAgentId, ownerAgentName: payload.ownerAgentName || "客服台" },
+      reason,
+    );
+    return;
+  }
   if (key === "I.session.convos") {
-    await writeConversationRows(parseRows<SessionConvo>(legacyParams[key]), parseRows<SessionConvo>(value), reason, meta?.action, data);
+    await writeConversationRows(parseRows<SessionConvo>(legacyParams[key]), parseRows<SessionConvo>(value), reason, meta?.action, data, idempotencyKey);
     return;
   }
   if (key === "I.support.faqs") {
-    await writeFaqRows(parseRows<SupportFaq>(legacyParams[key]), parseRows<SupportFaq>(value), reason);
+    await writeFaqRows(parseRows<SupportFaq>(legacyParams[key]), parseRows<SupportFaq>(value), reason, idempotencyKey);
     return;
   }
   if (key === "I.support.sla") {
-    await writeSlaRows(parseRows<SupportSla>(legacyParams[key]), parseRows<SupportSla>(value), reason);
+    await writeSlaRows(parseRows<SupportSla>(legacyParams[key]), parseRows<SupportSla>(value), reason, idempotencyKey);
     return;
   }
   const catMatch = key.match(/^I\.session\.cat\.(.+)\.enabled$/);
   if (catMatch) {
-    await mContentActions.updateCategory(catMatch[1] as SessionType, value === "on", reason);
+    await mContentActions.updateCategory(catMatch[1] as SessionType, value === "on", legacyParams[key] === "on", reason, idempotencyKey);
     return;
   }
   const policyMatch = key.match(/^I\.session\.advisor\.policy\.(.+)$/);
   if (policyMatch) {
-    await mContentActions.updateAdvisorPolicy(policyMatch[1], value, reason);
+    await mContentActions.updateAdvisorPolicy(policyMatch[1], value, legacyParams[key] ?? "", reason, idempotencyKey);
     return;
   }
   const workbenchPolicyMatch = key.match(/^I\.session\.workbench\.(.+)$/);
   if (workbenchPolicyMatch) {
-    await mContentActions.updateWorkbenchPolicy(workbenchPolicyMatch[1], value, reason);
+    await mContentActions.updateWorkbenchPolicy(workbenchPolicyMatch[1], value, legacyParams[key] ?? "", reason, idempotencyKey);
     return;
   }
   if (key === "I.session.script.__create") {
@@ -631,30 +748,35 @@ async function applyMBackendWrite(
           status: payload.status || "draft",
         },
         reason,
+        idempotencyKey,
       );
     }
     return;
   }
   const scriptStatusMatch = key.match(/^I\.session\.script\.(.+)\.status$/);
   if (scriptStatusMatch) {
-    await mContentActions.updateScriptStatus(scriptStatusMatch[1], value === "published" ? "published" : "draft", reason);
+    const nextStatus = value === "archived" ? "archived" : value === "published" ? "published" : "draft";
+    const expectedStatus = templateStatus(legacyParams[key]);
+    await mContentActions.updateScriptStatus(scriptStatusMatch[1], nextStatus, expectedStatus, reason, idempotencyKey);
     return;
   }
   const scriptAudienceMatch = key.match(/^I\.session\.script\.(.+)\.audience$/);
   if (scriptAudienceMatch) {
-    await mContentActions.updateScriptAudience(scriptAudienceMatch[1], value, reason);
+    await mContentActions.updateScriptAudience(scriptAudienceMatch[1], value, legacyParams[key] ?? "", reason, idempotencyKey);
     return;
   }
   const tplStatusMatch = key.match(/^I\.session\.tpl\.(.+)\.status$/);
   if (tplStatusMatch) {
-    await mContentActions.updateReplyTemplateStatus(tplStatusMatch[1], value === "published" ? "published" : "draft", reason);
+    const nextStatus = value === "archived" ? "archived" : value === "published" ? "published" : "draft";
+    const expectedStatus = templateStatus(legacyParams[key]);
+    await mContentActions.updateReplyTemplateStatus(tplStatusMatch[1], nextStatus, expectedStatus, reason, idempotencyKey);
     return;
   }
   if (key === "I.session.replyTemplates") {
     const prev = parseRows<SessionReplyTpl>(legacyParams[key]);
     const next = parseRows<SessionReplyTpl>(value);
     const added = addedRow(prev, next);
-    if (added) await mContentActions.createReplyTemplate({ type: added.type, text: added.text, status: added.status }, reason);
+    if (added) await mContentActions.createReplyTemplate({ type: added.type, text: added.text, status: added.status }, reason, idempotencyKey);
     return;
   }
   throw new Error(`M_BACKEND_ROUTE_MISSING:${key}`);

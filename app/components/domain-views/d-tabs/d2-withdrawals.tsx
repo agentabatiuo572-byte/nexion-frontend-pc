@@ -1,344 +1,363 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
+  fetchD2WithdrawalDetail,
   fetchD2Withdrawals,
   fetchD5WithdrawalParams,
   reviewD2Withdrawal,
+  reviewD2WithdrawalsBatch,
+  type D2BatchResult,
+  type D2ReviewAction,
+  type D2ReviewInput,
   type D2Withdrawal,
-  type D5Params as D5ParamData,
+  type D5Params,
   type PageResult,
 } from "@/lib/admin/d-client";
+import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { DCtx } from "./types";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const OPERATOR = currentAdminOperator;
 const STATUS_TABS = [
-  ["", "全部"],
-  ["REVIEWING", "待审核"],
-  ["DELAYED", "延迟"],
-  ["FROZEN", "冻结"],
-  ["PENDING_CHAIN", "待链上"],
-  ["SUCCESS", "成功"],
-  ["REJECTED", "驳回"],
+  ["", "全部"], ["SUBMITTED", "已提交"], ["REVIEW_PENDING", "待审核"], ["EXTENDED_HOLD", "延长持有"], ["FROZEN", "冻结"],
+  ["REVIEW_PASSED", "已放行"], ["PROCESSING", "处理中"], ["SENT", "已广播"], ["CONFIRMED", "已确认"],
+  ["REVIEW_REJECTED", "审核拒绝"], ["ADDRESS_INVALID", "地址无效"], ["TX_FAILED", "链上失败"], ["TX_ORPHANED", "孤块/死亡信件"], ["REFUNDED", "已退款"],
 ] as const;
+
+const ACTION_AUTHORITY: Record<D2ReviewAction, string> = {
+  APPROVE: "finance_d2_withdrawal_approve",
+  DELAY: "finance_d2_withdrawal_delay",
+  FREEZE: "finance_d2_withdrawal_freeze",
+  UNFREEZE: "finance_d2_withdrawal_unfreeze",
+  REJECT: "finance_d2_withdrawal_reject",
+  REFUND: "finance_d2_withdrawal_refund",
+};
 
 function money(value: number) {
   return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 }
 
 function timeText(value?: string) {
-  if (!value) return "—";
-  return value.replace("T", " ").slice(0, 19);
+  return value ? value.replace("T", " ").slice(0, 19) : "—";
 }
 
-function statusTone(status: string) {
-  const s = status.toUpperCase();
-  if (["SUCCESS", "CHAIN_SUBMITTED"].includes(s)) return "ok";
-  if (["REJECTED", "FAILED", "DEAD"].includes(s)) return "bad";
-  if (["FROZEN", "DELAYED"].includes(s)) return "warn";
-  return "dim";
+function reviewAtAfter(days: number) {
+  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 16);
 }
 
 function statusLabel(status: string) {
   return ({
-    REVIEWING: "待审核",
-    DELAYED: "延迟",
-    FROZEN: "冻结",
-    PENDING_CHAIN: "待链上",
-    CHAIN_SUBMITTED: "链上已提交",
-    SUCCESS: "成功",
-    REJECTED: "驳回",
-    FAILED: "失败",
-    DEAD: "死亡信件",
+    SUBMITTED: "已提交(submitted)", PENDING: "已提交(submitted)",
+    REVIEW_PENDING: "待审核(review-pending)", REVIEWING: "待审核(review-pending)",
+    EXTENDED_HOLD: "延长持有(extended-hold)", DELAYED: "延长持有(extended-hold)", FROZEN: "冻结(frozen)",
+    REVIEW_PASSED: "已放行(review-passed)", PENDING_CHAIN: "已放行(review-passed)", PROCESSING: "处理中(processing)",
+    SENT: "已广播(sent)", CHAIN_SUBMITTED: "已广播(sent)", CONFIRMED: "已确认(confirmed)", SUCCESS: "已确认(confirmed)",
+    REVIEW_REJECTED: "审核拒绝(review-rejected)", REJECTED: "审核拒绝(review-rejected)", ADDRESS_INVALID: "地址无效(address-invalid)",
+    TX_FAILED: "链上失败(tx-failed)", FAILED: "链上失败(tx-failed)", TX_ORPHANED: "孤块/死亡信件(tx-orphaned)", DEAD: "孤块/死亡信件(tx-orphaned)",
+    REFUNDED: "已退款(refunded)",
   } as Record<string, string>)[status.toUpperCase()] ?? status;
 }
 
-function actionLabel(action: string) {
-  return ({
-    APPROVE: "放行",
-    DELAY: "延迟",
-    FREEZE: "冻结",
-    UNFREEZE: "解冻",
-    REJECT: "驳回",
-  } as Record<string, string>)[action] ?? action;
+function statusTone(status: string) {
+  const value = status.toUpperCase();
+  if (["CONFIRMED", "SUCCESS", "REFUNDED"].includes(value)) return "ok";
+  if (["REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID", "TX_FAILED", "FAILED", "TX_ORPHANED", "DEAD"].includes(value)) return "bad";
+  if (["FROZEN", "EXTENDED_HOLD", "DELAYED"].includes(value)) return "warn";
+  return "dim";
 }
 
-function isDailyLimitExceeded(row: D2Withdrawal, dailyLimitCount: number) {
-  return Number(row.withdrawalCount24h || 0) > dailyLimitCount;
+function actionLabel(action: D2ReviewAction) {
+  return ({ APPROVE: "放行", DELAY: "延迟", FREEZE: "冻结", UNFREEZE: "解冻", REJECT: "拒绝并退款", REFUND: "手动退款" } as const)[action];
 }
 
-function isKycApproved(row: D2Withdrawal) {
-  const status = row.kycStatus.toUpperCase();
-  return status === "VERIFIED" || status === "APPROVED";
-}
-
-function isUserActive(row: D2Withdrawal) {
-  return row.userStatus.toUpperCase() === "ACTIVE";
-}
-
-function isMeaningfulRiskText(value: string) {
-  const text = value.trim().toUpperCase();
-  return text !== "" && !["[]", "{}", "NULL", "NONE", "-", "—"].includes(text);
-}
-
-function hasBlockingRisk(row: D2Withdrawal) {
-  return row.riskScore >= 70 || isMeaningfulRiskText(row.hitRules) || isMeaningfulRiskText(row.riskReason);
-}
-
-function riskReasonText(row: D2Withdrawal) {
-  const reason = row.riskReason.trim();
-  const rules = row.hitRules.trim();
-  if (reason && rules) return `${rules} · ${reason}`;
-  return reason || rules || "无";
-}
-
-function approveBlockReason(row: D2Withdrawal, dailyLimitCount: number) {
-  if (isDailyLimitExceeded(row, dailyLimitCount)) return "超日限";
-  if (!isKycApproved(row)) return "KYC未通过";
-  if (!isUserActive(row)) return "账户受限";
-  if (hasBlockingRisk(row)) return "风险待处理";
-  return "";
-}
-
-function errorText(err: unknown) {
-  const message = err instanceof Error ? err.message : "D2 审核失败";
-  if (message === "WITHDRAWAL_DAILY_LIMIT_EXCEEDED") {
-    return "已超过 D5 每日提现次数，请先调整 D5 日限或延迟处理";
-  }
-  if (message === "WITHDRAWAL_KYC_NOT_APPROVED") {
-    return "KYC 未通过，不能直接放行提现";
-  }
-  if (message === "WITHDRAWAL_USER_STATUS_BLOCKED") {
-    return "用户账户不是 ACTIVE 状态，不能直接放行提现";
-  }
-  if (message === "WITHDRAWAL_RISK_HIT_BLOCKED") {
-    return "提现命中高风险或风险规则，不能直接放行提现";
-  }
-  return message;
-}
-
-function availableActions(row: D2Withdrawal): Array<"APPROVE" | "DELAY" | "FREEZE" | "UNFREEZE" | "REJECT"> {
+function actionCandidates(row: D2Withdrawal): D2ReviewAction[] {
   const status = row.status.toUpperCase();
-  const actions: Array<"APPROVE" | "DELAY" | "FREEZE" | "UNFREEZE" | "REJECT"> = [];
-  if (["REVIEWING", "DELAYED"].includes(status)) actions.push("APPROVE", "DELAY");
-  if (!["SUCCESS", "FAILED", "REJECTED"].includes(status)) actions.push("FREEZE");
-  if (status === "FROZEN") actions.push("UNFREEZE");
-  if (["REVIEWING", "DELAYED", "FROZEN", "PENDING_CHAIN", "CHAIN_SUBMITTED", "DEAD"].includes(status)) actions.push("REJECT");
-  return Array.from(new Set(actions));
+  if (["REVIEW_PENDING", "REVIEWING"].includes(status)) return ["APPROVE", "DELAY", "FREEZE", "REJECT"];
+  if (["EXTENDED_HOLD", "DELAYED"].includes(status)) return [];
+  if (["REVIEW_PASSED", "PENDING_CHAIN", "PROCESSING"].includes(status)) return ["FREEZE"];
+  if (status === "FROZEN") return ["UNFREEZE"];
+  if (["REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID", "TX_FAILED", "FAILED", "TX_ORPHANED", "DEAD"].includes(status)) return ["REFUND"];
+  return [];
+}
+
+function k4RiskText(row: D2Withdrawal) {
+  return row.riskScore === null ? "K4 风险评分不可用" : `K4 ${row.riskScore}`;
+}
+
+function routingPriority(row: D2Withdrawal) {
+  return row.routingPriority || "UNAVAILABLE";
+}
+
+function routingPriorityLabel(row: D2Withdrawal) {
+  return ({
+    ESCALATED: "升级处置", HIGH: "高优先", NORMAL: "常规", LOW: "低优先", UNAVAILABLE: "事实不可用",
+  } as const)[routingPriority(row)] ?? routingPriority(row);
+}
+
+function routingPriorityTone(row: D2Withdrawal) {
+  const priority = routingPriority(row);
+  if (priority === "ESCALATED" || priority === "HIGH") return "bad";
+  if (priority === "UNAVAILABLE") return "warn";
+  return "ok";
+}
+
+function routingUnavailable(row: D2Withdrawal) {
+  return row.riskScore === null || routingPriority(row) === "UNAVAILABLE";
+}
+
+function actionBusinessForm(action: D2ReviewAction, row?: D2Withdrawal): BusinessFormSpec | undefined {
+  if (action === "REJECT") return {
+    kind: "multi-field", title: "拒绝与退款依据", fields: [
+      { key: "reasonCode", label: "拒绝原因码", inputKind: "select", required: true, options: ["RISK_HIT", "ADDRESS_RISK", "DATA_MISMATCH", "USER_CANCELLED", "OTHER"], optionLabels: { RISK_HIT: "风控命中", ADDRESS_RISK: "地址风险", DATA_MISMATCH: "资料不符", USER_CANCELLED: "用户申诉撤回", OTHER: "其他" } },
+    ],
+  };
+  if (action === "DELAY") return {
+    kind: "multi-field", title: "延长持有生命周期", fields: [
+      { key: "holdDays", label: "持有天数", inputKind: "number", required: true, min: 1, max: 45, current: "7" },
+      { key: "owner", label: "责任人", required: true, current: OPERATOR() },
+      { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7) },
+    ],
+  };
+  if (action === "FREEZE") return {
+    kind: "multi-field", title: "冻结生命周期", fields: [
+      { key: "period", label: "冻结期限", inputKind: "select", required: true, options: ["7d", "14d", "30d", "45d", "LONG_TERM"], optionLabels: { "7d": "7 天", "14d": "14 天", "30d": "30 天", "45d": "45 天", LONG_TERM: "长期需复查" } },
+      { key: "owner", label: "责任人", required: true, current: OPERATOR() },
+      { key: "reviewAt", label: "复查时间", inputKind: "datetime-local", required: true, current: reviewAtAfter(7) },
+    ],
+  };
+  if (action === "REFUND") return {
+    kind: "multi-field", title: "退款资金核验", fields: [
+      { key: "fundsVerified", label: "链上未出金 / 资金未离开平台", inputKind: "select", required: true, options: ["true"], optionLabels: { true: "已核实" } },
+    ],
+  };
+  if (action === "APPROVE" && (row?.amount ?? 0) >= 1000) return {
+    kind: "multi-field", title: "大额放行核验", fields: [
+      { key: "addressVerified", label: "地址与风险信息", inputKind: "select", required: true, options: ["true"], optionLabels: { true: "已核对" } },
+    ],
+  };
+  return undefined;
+}
+
+function businessInput(value?: BusinessFormValue): D2ReviewInput {
+  const raw = (value ?? {}) as Record<string, unknown>;
+  return {
+    reason: "",
+    reasonCode: typeof raw.reasonCode === "string" ? raw.reasonCode : undefined,
+    holdDays: raw.holdDays === undefined ? undefined : Number(raw.holdDays),
+    period: typeof raw.period === "string" ? raw.period : undefined,
+    owner: typeof raw.owner === "string" ? raw.owner : undefined,
+    reviewAt: typeof raw.reviewAt === "string" ? raw.reviewAt : undefined,
+    fundsVerified: raw.fundsVerified === true || raw.fundsVerified === "true",
+    addressVerified: raw.addressVerified === true || raw.addressVerified === "true",
+  };
+}
+
+function operationKey(scope: string) {
+  const compactScope = scope.replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 12);
+  const uuid = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `d2-${compactScope}-${uuid.replaceAll("-", "").slice(0, 16)}`;
 }
 
 export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
-  const { toast, openActionConfirm, openConfirm } = ctx;
-  const propose = usePropose();
+  const { toast, openActionConfirm } = ctx;
+  const session = useAdminAuth((state) => state.session);
+  const authorities = session?.authorities ?? [];
   const [rows, setRows] = useState<PageResult<D2Withdrawal>>({ total: 0, pageNum: 1, pageSize: 10, records: [] });
+  const [d5, setD5] = useState<D5Params | null>(null);
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [minAmount, setMinAmount] = useState("");
+  const [maxAmount, setMaxAmount] = useState("");
+  const [minRiskScore, setMinRiskScore] = useState("");
+  const [ruleFilter, setRuleFilter] = useState("");
+  const [ipSegment, setIpSegment] = useState("");
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortDirection, setSortDirection] = useState("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [d5Params, setD5Params] = useState<D5ParamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [writesEnabled, setWritesEnabled] = useState(false);
+  const [submitting, setSubmitting] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchAction, setBatchAction] = useState<"APPROVE" | "REJECT" | "DELAY" | "FREEZE">("APPROVE");
+  const [detail, setDetail] = useState<D2Withdrawal | null>(null);
+  const pendingKeys = useRef(new Map<string, string>());
+
+  const hasAuthority = (authority: string) => authorities.includes(authority);
+  const dailyLimit = d5?.dailyLimitCount ?? 0;
 
   const load = async (nextPage = page) => {
     setLoading(true);
     setError("");
+    setWritesEnabled(false);
     try {
-      const [next, nextD5Params] = await Promise.all([
+      const [nextRows, nextD5] = await Promise.all([
         fetchD2Withdrawals({
-          status,
-          keyword,
-          pageNum: nextPage,
-          pageSize,
+          status, keyword, minAmount, maxAmount, minRiskScore, ipSegment, sortBy, sortDirection,
+          pageNum: nextPage, pageSize,
         }),
-        fetchD5WithdrawalParams().catch(() => null),
+        fetchD5WithdrawalParams(),
       ]);
-      setRows(next);
-      if (nextD5Params) {
-        setD5Params(nextD5Params);
-      }
-    } catch (err) {
-      setError(errorText(err));
+      setRows(nextRows);
+      setD5(nextD5);
+      setSelected(new Set());
+      setWritesEnabled(true);
+    } catch (cause) {
+      setRows({ total: 0, pageNum: 1, pageSize, records: [] });
+      setD5(null);
+      setError(cause instanceof Error ? cause.message : "D2 数据加载失败");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, page, pageSize]);
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [status, page, pageSize]);
 
-  const dailyLimitCount = Math.max(1, Math.min(10, Math.trunc(d5Params?.dailyLimitCount ?? 1)));
-  const stats = useMemo(() => {
-    const totalAmount = rows.records.reduce((sum, row) => sum + row.amount, 0);
-    const highRisk = rows.records.filter((row) => row.riskScore >= 70).length;
-    const overDailyLimit = rows.records.filter((row) => isDailyLimitExceeded(row, dailyLimitCount)).length;
-    return { totalAmount, highRisk, overDailyLimit };
-  }, [dailyLimitCount, rows.records]);
-  const pages = Math.max(1, Math.ceil(rows.total / rows.pageSize));
+  const visibleRows = useMemo(() => {
+    const rule = ruleFilter.trim().toLowerCase();
+    return rule ? rows.records.filter((row) => `${row.hitRules} ${row.riskReason}`.toLowerCase().includes(rule)) : rows.records;
+  }, [rows.records, ruleFilter]);
+  const pages = Math.max(1, Math.ceil(rows.total / Math.max(1, rows.pageSize)));
 
-  const runFilterQuery = () => {
-    if (page === 1) {
-      void load(1);
-      return;
-    }
-    setPage(1);
-  };
-
-  const runReview = async (row: D2Withdrawal, action: "APPROVE" | "DELAY" | "FREEZE" | "UNFREEZE" | "REJECT", reason: string) => {
+  const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue) => {
+    const scope = `${row.withdrawalNo}-${action}`;
+    const key = pendingKeys.current.get(scope) ?? operationKey(scope);
+    pendingKeys.current.set(scope, key);
+    setSubmitting(scope);
     try {
-      const updated = await reviewD2Withdrawal(row.withdrawalNo, action, reason, OPERATOR());
-      toast(`${row.withdrawalNo} 已${actionLabel(action)} · 当前 ${statusLabel(updated.status)}`);
+      const updated = await reviewD2Withdrawal(row.withdrawalNo, action, { ...businessInput(form), reason }, OPERATOR(), key);
+      pendingKeys.current.delete(scope);
+      toast(`${row.withdrawalNo} 已${actionLabel(action)} · ${statusLabel(updated.status)} · 已记账/审计`);
+      setDetail(updated);
       await load();
-    } catch (err) {
-      const message = errorText(err);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "D2 审核失败";
       setError(message);
       toast(message);
+      await load();
+    } finally {
+      setSubmitting("");
     }
   };
 
-  const confirmReview = (row: D2Withdrawal, action: "APPROVE" | "DELAY" | "FREEZE" | "UNFREEZE" | "REJECT") => {
-    const label = actionLabel(action);
-    if (action === "APPROVE" || action === "UNFREEZE") {
-      const limitHint = `24h 次数 ${row.withdrawalCount24h}/${dailyLimitCount}`;
-      const blockedHint = action === "APPROVE" ? approveBlockReason(row, dailyLimitCount) : "";
-      const opKey = action === "APPROVE" ? "d2_withdraw_approve" : "d2_withdraw_unfreeze";
-      const def = findHighOp(opKey)!;
-      openActionConfirm({
-        action: `${label}提现 · ${row.withdrawalNo}`,
-        detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，${limitHint}；命中原因：${riskReasonText(row)}${blockedHint ? `；当前阻断：${blockedHint}` : ""}；放大资金流出方向会走覆盖率预检。提交后进入 A2 待确认队列,由门槛者确认执行。`,
-        amplifies: true,
-        coverage: d5Params ? { coverageRatio: d5Params.coverageRatio, redlinePct: d5Params.redlinePct } : undefined,
-        run: async (reason) => {
-          await propose(toast, {
-            action: `${label}提现 · ${row.withdrawalNo}`,
-            obj: row.withdrawalNo,
-            before: statusLabel(row.status),
-            after: label,
-            type: "fund",
-            amplifies: true,
-            gate: { roles: [] }, // 统一门槛,roles 不再判定
-            gateLabel: def.gateLabel,
-            reason,
-            sourceDomain: "D2",
-            command: def.buildCommand({ withdrawalNo: row.withdrawalNo }),
-            target: def.buildTarget({ withdrawalNo: row.withdrawalNo }),
-          });
-        },
-      });
+  const confirmReview = (row: D2Withdrawal, action: D2ReviewAction) => {
+    if (action === "APPROVE" && routingUnavailable(row)) {
+      toast("K4 路由事实不可用，已关闭放行操作");
       return;
     }
-    openConfirm({
+    const label = actionLabel(action);
+    openActionConfirm({
       action: `${label}提现 · ${row.withdrawalNo}`,
-      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}，命中原因：${riskReasonText(row)}；保存后重新查询提现队列。`,
-      reason: true,
-      okLabel: label,
-      run: (reason) => void runReview(row, action, reason),
+      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；K3 命中 ${row.hitRules || "无"}；C4 KYC ${row.kycStatus}；C2 账户 ${row.userStatus}。${action === "APPROVE" ? `B1 当前覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后即时执行并核减 D3 储备。` : "确认后即时执行，结果写入审计与 A4 事件。"}`,
+      amplifies: action === "APPROVE",
+      coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
+      businessForm: actionBusinessForm(action, row),
+      reasonMin: 8,
+      reasonMax: 200,
+      completionCopy: `${label}完成`,
+      run: (reason, _newValue, businessValue) => runReview(row, action, reason, businessValue),
     });
   };
 
-  if (loading && rows.records.length === 0) {
-    return <section className="l-card"><div className="l-b">D2 数据加载中...</div></section>;
-  }
+  const openDetail = async (row: D2Withdrawal) => {
+    try { setDetail(await fetchD2WithdrawalDetail(row.withdrawalNo)); }
+    catch (cause) { toast(cause instanceof Error ? cause.message : "单笔详情加载失败"); }
+  };
 
-  return (
-    <>
-      {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D2 数据加载失败 · {error}</div>}
+  const confirmBatch = () => {
+    const ids = Array.from(selected);
+    openActionConfirm({
+      action: `批量执行 · ${actionLabel(batchAction)}`,
+      detail: `已选择 ${ids.length} 笔。批量放行会由服务端自动分拣：小额执行，大额转单笔人工审核，不会整批失败；每笔单独审计并记录批次号。`,
+      amplifies: batchAction === "APPROVE",
+      coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
+      businessForm: actionBusinessForm(batchAction),
+      reasonMin: 8,
+      reasonMax: 200,
+      run: async (reason, _newValue, businessValue) => {
+        const scope = `batch-${batchAction}-${ids.join("-")}`;
+        const key = pendingKeys.current.get(scope) ?? operationKey(scope);
+        pendingKeys.current.set(scope, key);
+        setSubmitting(scope);
+        try {
+          const result: D2BatchResult = await reviewD2WithdrawalsBatch(batchAction, ids, { ...businessInput(businessValue), reason }, OPERATOR(), key);
+          pendingKeys.current.delete(scope);
+          toast(`批次 ${result.batchId} 已执行：${result.accepted.length} 成功 / ${result.rejected.length} 笔大额转单笔 / ${result.conflicts.length} 冲突`);
+          await load();
+        } finally { setSubmitting(""); }
+      },
+    });
+  };
 
-      <div className="f-stats">
-        <div className="f-stat"><div className="k">当前筛选</div><div className="v">{rows.total}</div><div className="sub">分页返回总数</div></div>
-        <div className="f-stat cyan"><div className="k">本页金额</div><div className="v">{money(stats.totalAmount)}</div><div className="sub">当前页 {rows.records.length} 笔提现</div></div>
-        <div className="f-stat warn"><div className="k">高风险</div><div className="v">{stats.highRisk}</div><div className="sub">风险分 ≥ 70</div></div>
-        <div className="f-stat danger"><div className="k">超出日限</div><div className="v">{stats.overDailyLimit}</div><div className="sub">当前日限 {dailyLimitCount} 次</div></div>
+  if (loading && rows.records.length === 0) return <section className="l-card"><div className="l-b">D2 数据加载中...</div></section>;
+
+  return <>
+    {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D2 数据加载失败 · {error} · 写操作已关闭，请重试。 <button className="l-btn sm" onClick={() => void load(1)}>重试</button></div>}
+    <div className="f-stats">
+      <div className="f-stat"><div className="k">当前筛选</div><div className="v">{rows.total}</div><div className="sub">服务端分页总数</div></div>
+      <div className="f-stat cyan"><div className="k">本页金额</div><div className="v">{money(visibleRows.reduce((sum, row) => sum + row.amount, 0))}</div><div className="sub">{visibleRows.length} 笔</div></div>
+      <div className="f-stat warn"><div className="k">高优先队列</div><div className="v">{visibleRows.filter((row) => ["HIGH", "ESCALATED"].includes(routingPriority(row))).length}</div><div className="sub">按当前生效 K4 模型动态路由</div></div>
+      <div className="f-stat danger"><div className="k">D5 日限</div><div className="v">{dailyLimit || "—"}</div><div className="sub">依赖事实读取失败时关闭写操作</div></div>
+    </div>
+
+    <section className="l-card">
+      <div className="l-h"><span className="ttl">提现审核队列</span><span className="sub">· 服务端权威状态 · 逐笔 / 批量</span></div>
+      <div className="l-b d2-filter-grid">
+        <label className="d2-filter-field"><span>提现单 / 用户</span><input value={keyword} onChange={(event) => setKeyword(event.target.value)} /></label>
+        <label className="d2-filter-field"><span>状态</span><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>{STATUS_TABS.map(([value, label]) => <option key={value || "all"} value={value}>{label}</option>)}</select></label>
+        <label className="d2-filter-field"><span>最低金额</span><input type="number" min="0" value={minAmount} onChange={(event) => setMinAmount(event.target.value)} /></label>
+        <label className="d2-filter-field"><span>最高金额</span><input type="number" min="0" value={maxAmount} onChange={(event) => setMaxAmount(event.target.value)} /></label>
+        <label className="d2-filter-field"><span>最低风险分</span><input type="number" min="0" max="100" value={minRiskScore} onChange={(event) => setMinRiskScore(event.target.value)} /></label>
+        <label className="d2-filter-field"><span>命中规则</span><input value={ruleFilter} onChange={(event) => setRuleFilter(event.target.value)} /></label>
+        <label className="d2-filter-field"><span>IP 段</span><input placeholder="例如 192.168.1" value={ipSegment} onChange={(event) => setIpSegment(event.target.value)} /></label>
+        <label className="d2-filter-field"><span>排序字段</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="createdAt">提交时间</option><option value="amount">金额</option><option value="riskScore">风险分</option><option value="status">状态</option></select></label>
+        <label className="d2-filter-field"><span>排序方向</span><select value={sortDirection} onChange={(event) => setSortDirection(event.target.value)}><option value="desc">降序</option><option value="asc">升序</option></select></label>
+        <button className="l-btn primary" onClick={() => { setPage(1); void load(1); }}>查询</button>
       </div>
+      {hasAuthority("finance_d2_withdrawal_batch") && <div className="l-b" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <strong>批量操作面</strong>
+        <select value={batchAction} onChange={(event) => setBatchAction(event.target.value as typeof batchAction)}>
+          {(["APPROVE", "REJECT", "DELAY", "FREEZE"] as const).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <option key={action} value={action}>{actionLabel(action)}</option>)}
+        </select>
+        <span>已选 {selected.size} 笔</span>
+        <button className="l-btn primary" disabled={!writesEnabled || selected.size === 0 || !!submitting} onClick={confirmBatch}>批量执行</button>
+      </div>}
+      <div style={{ overflowX: "auto" }}><table className="l-tbl" style={{ minWidth: 1360 }}>
+        <thead><tr><th>选择</th><th>提现单</th><th>用户</th><th>资产/链</th><th className="num">金额/手续费</th><th>审核依据</th><th>24h</th><th>状态</th><th>生命周期/异常</th><th>提交时间</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+        <tbody>{visibleRows.length === 0 ? <tr><td colSpan={11} style={{ textAlign: "center", padding: 28 }}>暂无提现记录</td></tr> : visibleRows.map((row) => {
+          const selectable = actionCandidates(row).includes(batchAction) && !(batchAction === "APPROVE" && routingUnavailable(row));
+          return <tr key={row.withdrawalNo}>
+            <td><input aria-label={`选择 ${row.withdrawalNo}`} type="checkbox" disabled={!selectable} checked={selected.has(row.withdrawalNo)} onChange={(event) => setSelected((current) => { const next = new Set(current); event.target.checked ? next.add(row.withdrawalNo) : next.delete(row.withdrawalNo); return next; })} /></td>
+            <td><button className="l-btn sm" onClick={() => void openDetail(row)}>{row.withdrawalNo}</button></td>
+            <td>{row.userNo}<div className="sub">{row.nickname}</div></td>
+            <td>{row.asset} / {row.chain}<div className="mono sub">{row.targetAddress}</div></td>
+            <td className="num"><strong>{money(row.amount)}</strong><div className="sub">毛手续费 {money(row.grossFee)} · 惩罚率 {row.penaltyFeeRate}%</div><div className="sub">NEX抵扣 {row.nexBurned} × ${row.nexFeeOffsetRate}/NEX · 费用减免 {money(row.feeWaived)}</div><div className="sub">实际手续费 {money(row.actualFee)} · 实际到账 {money(row.netReceive)}</div></td>
+            <td><span className={`bdg ${routingPriorityTone(row)}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">当前模型阈值 {row.k4BandLowMax ?? "—"} / {row.k4BandHighMin ?? "—"} / 升级 {row.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 {row.k3RiskRoute || "—"} · {row.hitRules || "无"}</div><div className="sub">C4 {row.kycStatus} · C2 {row.userStatus}</div></td>
+            <td>{row.withdrawalCount24h}/{dailyLimit || "—"}</td>
+            <td><span className={`bdg ${statusTone(row.status)}`}>{statusLabel(row.status)}</span></td>
+            <td className="sub">{row.failureReason || "—"}</td>
+            <td>{timeText(row.createdAt)}</td>
+            <td style={{ textAlign: "right" }}><div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "flex-end" }}>
+              <button className="l-btn sm" onClick={() => void openDetail(row)}>单笔详情</button>
+              {actionCandidates(row).filter((action) => hasAuthority(ACTION_AUTHORITY[action])).map((action) => <button key={action} className="l-btn sm" disabled={!writesEnabled || !!submitting || (action === "APPROVE" && routingUnavailable(row))} onClick={() => confirmReview(row, action)}>{actionLabel(action)}</button>)}
+            </div></td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+      <div className="l-b" style={{ display: "flex", justifyContent: "space-between" }}><span>共 {rows.total} 条 · 第 {rows.pageNum}/{pages} 页</span><div className="chips">{[10, 20, 50].map((size) => <button key={size} className={`chip${pageSize === size ? " sel" : ""}`} onClick={() => { setPageSize(size); setPage(1); }}>{size}/页</button>)}<button className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</button><button className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>下一页</button></div></div>
+    </section>
 
-      <section className="l-card">
-        <div className="l-h">
-          <span className="ttl">提现审核队列</span>
-          <span className="sub">· 分页查询 · 状态实时推进</span>
-        </div>
-        <div className="l-b" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <div className="d2-filter-grid">
-            <label className="d2-filter-field d2-keyword-field">
-              <span>提现单号查询</span>
-              <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="提现单号 / 用户编码" />
-            </label>
-            <label className="d2-filter-field">
-              <span>状态</span>
-              <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
-                {STATUS_TABS.map(([key, label]) => (
-                  <option key={key || "all"} value={key}>{label}</option>
-                ))}
-              </select>
-            </label>
-            <button className="l-btn primary" onClick={runFilterQuery}>查询</button>
-          </div>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 1260 }}>
-            <thead>
-              <tr>
-                <th>提现单</th><th>用户编码</th><th>用户</th><th>资产/链</th><th className="num">金额</th><th className="num">手续费</th><th>风险/命中原因</th><th>24h次数</th><th>状态</th><th>地址</th><th>创建时间</th><th style={{ textAlign: "right" }}>动作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.records.length === 0 ? (
-                <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--ink-4)", padding: "30px 12px" }}>暂无提现记录</td></tr>
-              ) : rows.records.map((row) => {
-                const dailyBlocked = isDailyLimitExceeded(row, dailyLimitCount);
-                return (
-                  <tr key={row.withdrawalNo}>
-                    <td className="mono" style={{ color: "var(--ink)" }}>{row.withdrawalNo}</td>
-                    <td className="mono">{row.userNo}</td>
-                    <td>{row.nickname}<div className="mono" style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.userStatus} · KYC {row.kycStatus}</div></td>
-                    <td>{row.asset} / {row.chain}</td>
-                    <td className="num mono" style={{ color: "var(--ink)", fontWeight: 700 }}>{money(row.amount)}</td>
-                    <td className="num mono">{money(row.fee)}</td>
-                    <td style={{ maxWidth: 270 }}>
-                      <span className={`bdg ${row.riskScore >= 70 ? "bad" : row.riskScore >= 45 ? "warn" : "ok"}`}>{row.riskScore}</span>
-                      <div className="mono" style={{ color: "var(--ink-4)", fontSize: 11 }}>{row.hitRules || "—"}</div>
-                      <div title={row.riskReason || undefined} style={{ color: "var(--ink-2)", fontSize: 12, lineHeight: 1.35, marginTop: 3 }}>{row.riskReason || "—"}</div>
-                    </td>
-                    <td><span className={`bdg ${dailyBlocked ? "bad" : row.withdrawalCount24h >= dailyLimitCount ? "warn" : "ok"}`}>{row.withdrawalCount24h}/{dailyLimitCount}</span></td>
-                    <td><span className={`bdg ${statusTone(row.status)}`}>{statusLabel(row.status)}</span></td>
-                    <td className="mono" style={{ maxWidth: 190, overflow: "hidden", textOverflow: "ellipsis" }}>{row.targetAddress}</td>
-                    <td className="mono" style={{ color: "var(--ink-4)" }}>{timeText(row.createdAt)}</td>
-                    <td style={{ textAlign: "right" }}>
-                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                        {availableActions(row).map((action) => {
-                          const approveReason = action === "APPROVE" ? approveBlockReason(row, dailyLimitCount) : "";
-                          const disabled = action === "APPROVE" && approveReason !== "";
-                          return (
-                            <button
-                              key={action}
-                              className={`l-btn sm ${action === "APPROVE" || action === "UNFREEZE" ? "mc" : ""}`}
-                              disabled={disabled}
-                              title={disabled ? approveReason : undefined}
-                              onClick={() => confirmReview(row, action)}>
-                              {disabled ? approveReason : actionLabel(action)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="l-b" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-          <span className="sub">共 {rows.total} 条 · 第 {rows.pageNum}/{pages} 页</span>
-          <div className="chips">
-            {[10, 20, 50].map((size) => <button key={size} className={`chip${pageSize === size ? " sel" : ""}`} onClick={() => { setPageSize(size); setPage(1); }}>{size}/页</button>)}
-            <button className="chip" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>上一页</button>
-            <button className="chip" disabled={page >= pages} onClick={() => setPage((p) => Math.min(pages, p + 1))}>下一页</button>
-          </div>
-        </div>
-      </section>
-    </>
-  );
+    {detail && <section className="l-card" aria-label="D2 单笔详情">
+      <div className="l-h"><span className="ttl">单笔详情 · {detail.withdrawalNo}</span><button className="l-btn sm" onClick={() => setDetail(null)}>关闭</button></div>
+      <div className="l-b"><div className="f-stats">
+        <div className="f-stat"><div className="k">C1 用户画像</div><div className="v">{detail.userNo} · {detail.userLevel}</div><div className="sub">{detail.nickname} · {detail.phoneMasked || "未展示手机号"} · IP 段 {detail.ipSegment}</div></div>
+        <div className="f-stat warn"><div className="k">K4 / K3</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">当前模型阈值 {detail.k4BandLowMax ?? "—"} / {detail.k4BandHighMin ?? "—"} / 升级 {detail.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 路由 {detail.k3RiskRoute || "—"} · {detail.hitRules || "无命中"} · {detail.riskReason || "无补充原因"}</div><div className="sub">K4 评分明细：{detail.riskScoreBreakdown}</div></div>
+        <div className="f-stat cyan"><div className="k">C4 / C2</div><div className="v">{detail.kycStatus}</div><div className="sub">账户 {detail.userStatus} · 24h 第 {detail.withdrawalCount24h} 笔</div></div>
+        <div className="f-stat"><div className="k">当前状态</div><div className="v">{statusLabel(detail.status)}</div><div className="sub">{detail.failureReason || "无异常/生命周期备注"}</div><div className="sub">复查 {timeText(detail.holdUntil)} · 责任人 {detail.lifecycleOwner || "—"} · 期限 {detail.freezePeriod || "—"}</div></div>
+      </div><p><strong>设备事实：</strong>{detail.deviceSummary}</p><p><strong>推荐位置：</strong>{detail.referralPosition}</p><p><strong>费用明细：</strong>毛手续费 {money(detail.grossFee)}；惩罚率 {detail.penaltyFeeRate}%；NEX抵扣 {detail.nexBurned}；NEX抵扣率 ${detail.nexFeeOffsetRate}/NEX；费用减免 {money(detail.feeWaived)}；实际手续费 {money(detail.actualFee)}；实际到账 {money(detail.netReceive)}</p><p><strong>全部提现历史：</strong>{detail.withdrawalHistory}</p><p><strong>状态历史：</strong>{detail.statusHistory || "暂无"}</p><p><strong>审计轨迹：</strong>{detail.auditTrail || "暂无"}</p></div>
+    </section>}
+  </>;
 }

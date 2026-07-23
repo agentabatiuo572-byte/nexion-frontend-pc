@@ -1,6 +1,7 @@
 # CGM-D · 资金与财务(字段级控制矩阵)
 
 > 自动生成于 Batch 0 全运营面 inventory。完整 serverCanonical/source/querySurface 见 `cgm.manifest.json`。coverage 默认 gap,per-batch 回源后升级 built/spec_only。
+> **历史快照告警**：D/E 交叉的旧 `salvage/minHoldingMonths` 置换行已退役；当前原子换新与 D4 落账口径见 `../PRD/specs/FEAT-DEV02-tradein-ladder.md`。
 
 本域 22 行。
 

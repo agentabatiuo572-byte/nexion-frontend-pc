@@ -1,4 +1,32 @@
-import { bool, num, rec, rows, str } from "./live-data";
+type UnknownRecord = Record<string, unknown>;
+
+function rec(value: unknown): UnknownRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
+}
+
+function rows<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
+function str(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : value == null ? fallback : String(value);
+}
+
+function num(value: unknown, fallback = 0): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function bool(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") return ["true", "1", "yes"].includes(value.toLowerCase());
+  return fallback;
+}
+
+function strings(value: unknown): string[] {
+  return rows<unknown>(value).map((item) => str(item)).filter(Boolean);
+}
 
 export type PageLevel = 1 | 2 | 3;
 export type DepthFilter = "all" | "L1" | "L2" | "L3";
@@ -20,6 +48,7 @@ export type PageActivityStat = {
   clicks: number;
   dwellMs: number;
   bounceRate: number;
+  pageCount: number;
 };
 
 export type HeatRow = {
@@ -63,12 +92,18 @@ export type HeatSummary = {
 };
 
 export type L6BehaviorHeatmapData = {
+  available: boolean;
+  status: string;
+  message: string;
+  requiredEvents: string[];
   totalPages: number;
   trackedCount: number;
   pageTree: UxPageNode[];
   excludedPages: UxPageNode[];
   activityByWindow: Record<TimeWindow, PageActivityStat[]>;
   clickHeatByRoute: Record<string, PageClickHeat>;
+  dailyTrend: { bucket: string; pv: number; clicks: number }[];
+  weeklyTrend: { bucket: string; pv: number; clicks: number }[];
 };
 
 const WINDOWS: TimeWindow[] = ["24h", "7d", "30d"];
@@ -84,6 +119,10 @@ export function normalizeL6BehaviorHeatmap(raw: unknown): L6BehaviorHeatmapData 
     clickHeatByRoute[route] = normalizeClickHeat(route, value);
   }
   return {
+    available: bool(data.available),
+    status: str(data.status),
+    message: str(data.message),
+    requiredEvents: strings(data.requiredEvents),
     totalPages: num(data.totalPages, pageTree.length),
     trackedCount: num(data.trackedCount, pageTree.filter((node) => node.tracked).length),
     pageTree,
@@ -94,7 +133,16 @@ export function normalizeL6BehaviorHeatmap(raw: unknown): L6BehaviorHeatmapData 
       "30d": normalizeActivityRows(activityRoot["30d"]),
     },
     clickHeatByRoute,
+    dailyTrend: normalizeTrend(data.dailyTrend),
+    weeklyTrend: normalizeTrend(data.weeklyTrend),
   };
+}
+
+function normalizeTrend(value: unknown) {
+  return rows<unknown>(value).map((row) => {
+    const data = rec(row);
+    return { bucket: str(data.bucket), pv: num(data.pv), clicks: num(data.clicks) };
+  }).filter((row) => row.bucket);
 }
 
 export function activityForWindow(data: L6BehaviorHeatmapData, window: TimeWindow) {
@@ -121,7 +169,7 @@ export function aggregateByDepth(pageTree: UxPageNode[], stats: PageActivityStat
     acc.clicks += stat.clicks;
     acc.dwellNum += stat.dwellMs * stat.pv;
     acc.bounceNum += stat.bounceRate * stat.pv;
-    acc.pages += 1;
+    acc.pages += Math.max(1, stat.pageCount);
     buckets.set(key, acc);
   }
   return [...buckets.entries()].map(([key, acc]) => {
@@ -162,7 +210,7 @@ export function summarize(stats: PageActivityStat[]): HeatSummary {
 
 function normalizePageNode(value: unknown): UxPageNode {
   const data = rec(value);
-  const level = num(data.level, 3);
+  const level = num(data.level, num(data.pageLevel, 3));
   return {
     route: str(data.route),
     titleZh: str(data.titleZh, str(data.route)),
@@ -183,6 +231,7 @@ function normalizeActivityRows(value: unknown): PageActivityStat[] {
       clicks: num(data.clicks),
       dwellMs: num(data.dwellMs),
       bounceRate: num(data.bounceRate),
+      pageCount: num(data.pageCount, 1),
     };
   }).filter((row) => row.route);
 }

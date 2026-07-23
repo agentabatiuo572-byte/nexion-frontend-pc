@@ -9,6 +9,7 @@ import {
   STATUS_SOURCE_LABEL,
   STRATEGY_STATUS_LABEL,
   remoteUrlLabel,
+  platformLabel,
 } from "./janus-c2/labels.ts";
 import type { AuditLog } from "./janus-c2/types";
 
@@ -240,7 +241,8 @@ function snapshotEntries(snapshot: unknown): Array<[string, string]> {
     ["建议分", finiteNumber(data.recommendationScore) === null ? null : String(data.recommendationScore)],
     ["环境风险分", finiteNumber(data.environmentRiskScore) === null ? null : String(data.environmentRiskScore)],
     ["队列优先级分", finiteNumber(data.priorityScore) === null ? null : String(data.priorityScore)],
-    ["设备平台", knownLabel({ iOS: "iOS", Android: "Android" }, data.platform)],
+    ["设备平台", typeof data.platform === "string" && ["iOS", "Android", "windows", "mac", "linux", "unknown"].includes(data.platform)
+      ? platformLabel(data.platform as "iOS" | "Android" | "windows" | "mac" | "linux" | "unknown") : null],
     ["设备型号", nonEmptyText(data.model)],
     ["渠道", knownLabel(CHANNEL_LABEL, data.channel)],
     ["成熟信号", maturityText(data.maturity)],

@@ -50,7 +50,7 @@ test("J4 hides all write entry points while loading or after an overview failure
 });
 
 test("J4 keeps the confirmation modal open when a backend command fails", () => {
-  assert.match(jView, /await mc\.run[\s\S]*catch \{[\s\S]*保留确认弹窗/);
+  assert.match(jView, /await mc\.run[\s\S]*catch(?:\s*\([^)]*\))?\s*\{[\s\S]*保留确认弹窗/);
   assert.equal((component.match(/throw error;/g) ?? []).length, 2);
   assert.equal((component.match(/return runBackend\(/g) ?? []).length, 5);
   assert.equal((component.match(/toast\(`操作失败/g) ?? []).length, 2);

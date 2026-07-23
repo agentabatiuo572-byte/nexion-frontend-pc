@@ -191,9 +191,13 @@ test("J3 contextual actions carry the selected account or cluster into C2 and K1
   assert.match(component, /userCode: a\.userCode/);
   assert.match(component, /source: "J3"/);
   assert.match(component, /authorities\.includes\("user_c2_read"\)[\s\S]{0,100}user_c2_account_freeze/);
-  assert.match(c2Component, /fetchUserAccountActionAccount\(focusUserCode\)/);
+  // C2 now opens the server-authoritative action context in one request so the
+  // deep link cannot render a stale account with mismatched sessions/lists.
+  assert.match(c2Component, /fetchUserAccountActionContext\(focusUserCode\)/);
   assert.match(usersProxy, /account-actions" && parts\[1\] === "accounts"/);
   assert.match(usersProxy, /account-actions\/accounts\/\$\{encodeURIComponent\(parts\[2\]\)\}/);
+  assert.match(usersProxy, /account-actions\/accounts\/\$\{encodeURIComponent\(parts\[2\]\)\}\/context/);
+  assert.match(usersClient, /fetchUserAccountActionContext/);
   assert.match(usersClient, /class UsersRequestError extends Error/);
   assert.match(usersClient, /isUsersRequestNotFound/);
   assert.match(c2Component, /isUsersRequestNotFound\(lookupError\) \? "not-found" : "error"/);
@@ -222,7 +226,9 @@ test("J3 contextual actions carry the selected account or cluster into C2 and K1
   assert.match(kView, /const sequence = \+\+requestSequence\.current/);
   assert.match(kView, /sequence === requestSequence\.current/);
   assert.match(kView, /tab !== "K6" && tab !== "K1"/);
-  assert.match(kView, /tab !== "K6" && tab !== "K1" && contentError/);
+  // K1 owns its focused deep-link error state, so the shell-level error branch
+  // must exclude K1 even as the other K pages move to their own local states.
+  assert.match(kView, /tab !== "K6" && tab !== "K1"[\s\S]{0,180}contentError/);
   assert.match(k1Component, /仅重试 K1/);
   assert.match(k1Component, /reloadKRisk\(\{ multiAccount: pageQuery \}\)\.catch/);
 });

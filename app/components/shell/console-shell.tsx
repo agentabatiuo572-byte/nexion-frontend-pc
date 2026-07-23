@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { currentAdminSession } from "@/lib/admin/auth-client";
+import { fetchA3RuntimeFlags } from "@/lib/admin/a3-client";
 import { canAccessResolvedPath, resolveVisibleDomains, type NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { DEFAULT_EXPANDED_GROUPS, useAdminUi } from "@/lib/store/admin-ui";
@@ -28,6 +29,7 @@ function defaultPathForDomains(domains: NavDomain[]) {
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [restoreChecked, setRestoreChecked] = useState(false);
+  const [maintenanceBanner, setMaintenanceBanner] = useState(false);
   useEffect(() => setMounted(true), []);
   const pathname = usePathname();
   const router = useRouter();
@@ -97,6 +99,29 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
     };
   }, [isAuthenticated, mounted, restoreChecked, signIn, signOut]);
 
+  useEffect(() => {
+    if (!mounted || !restoreChecked || !isAuthenticated) {
+      setMaintenanceBanner(false);
+      return;
+    }
+    let disposed = false;
+    const refreshRuntimeFlags = async () => {
+      try {
+        const flags = await fetchA3RuntimeFlags();
+        if (!disposed) setMaintenanceBanner(flags.configured && flags.maintenanceBanner);
+      } catch {
+        if (!disposed) setMaintenanceBanner(false);
+      }
+    };
+    const onChanged = () => void refreshRuntimeFlags();
+    void refreshRuntimeFlags();
+    window.addEventListener("a3:runtime-flags-changed", onChanged);
+    return () => {
+      disposed = true;
+      window.removeEventListener("a3:runtime-flags-changed", onChanged);
+    };
+  }, [isAuthenticated, mounted, restoreChecked]);
+
   const role = mounted ? authRole : "auditor";
   const operator = mounted ? operatorRaw : "总管理员";
   const collapsed = mounted ? collapsedRaw : false;
@@ -162,6 +187,22 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
         }}
       >
         <div className="content-shell">
+          {maintenanceBanner && (
+            <div
+              role="status"
+              style={{
+                marginBottom: 12,
+                padding: "10px 14px",
+                border: "1px solid color-mix(in srgb, var(--warning) 52%, transparent)",
+                borderRadius: 8,
+                background: "color-mix(in srgb, var(--warning) 10%, var(--surface))",
+                color: "var(--ink)",
+                fontSize: 12.5,
+              }}
+            >
+              <b>平台维护提示已开启</b> · 当前后台可能正在进行维护操作，请谨慎提交高风险变更。
+            </div>
+          )}
           <PageTransition>{redirecting ? null : children}</PageTransition>
         </div>
       </main>

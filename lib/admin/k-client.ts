@@ -436,6 +436,26 @@ export type ScoringOverview = {
   overrideActive: number;
 };
 
+export type K4WithdrawalAlert = {
+  id: string;
+  domain: "K4";
+  level: "critical";
+  title: string;
+  hint: string;
+  withdrawalNo: string;
+  riskScore: number;
+  priority: string;
+  modelVersion: string;
+  scoreAsOf: string;
+  read: boolean;
+  createdAt: string;
+};
+
+export type K4WithdrawalAlertOverview = {
+  alerts: K4WithdrawalAlert[];
+  source: string;
+};
+
 export type K5Ticket = {
   id: string;
   type: K5TicketType;
@@ -1258,6 +1278,14 @@ export async function fetchK4ScoringOverview(query: K4PaginationQuery = {}): Pro
     overridePageNum: query.overridePageNum ?? 1,
     overridePageSize: query.overridePageSize ?? 5,
   })}`).then(normalizeK4);
+}
+
+export async function fetchK4WithdrawalAlerts(): Promise<K4WithdrawalAlertOverview> {
+  return apiRequest("/scoring/withdrawal-alerts");
+}
+
+export async function markK4WithdrawalAlertRead(eventId: string): Promise<void> {
+  await apiRequest(`/scoring/withdrawal-alerts/${encodeURIComponent(eventId)}/read`, { method: "POST" });
 }
 
 export async function fetchK5KycReviewOverview(query: K5PaginationQuery = {}): Promise<KycReviewOverview> {

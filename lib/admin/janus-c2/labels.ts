@@ -6,6 +6,7 @@
  */
 import type {
   ConfirmationMode,
+  DevicePlatform,
   DeviceStatus,
   EffectiveTiming,
   HealthLevel,
@@ -20,6 +21,19 @@ import type {
 
 /** 视觉色调键 → k6 css 的 .k6-bdg / .k6-status 修饰类。 */
 export type Tone = "good" | "warning" | "danger" | "cyan" | "dim";
+
+export const PLATFORM_LABEL: Record<DevicePlatform, string> = {
+  iOS: "iOS",
+  Android: "Android",
+  windows: "Windows",
+  mac: "macOS",
+  linux: "Linux",
+  unknown: "未知平台",
+};
+
+export function platformLabel(platform: DevicePlatform): string {
+  return PLATFORM_LABEL[platform];
+}
 
 // ===== 设备状态(PRD §8.1 / §8.2)=====
 export const STATUS_LABEL: Record<DeviceStatus, string> = {

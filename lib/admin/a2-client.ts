@@ -1,7 +1,14 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import {
+  buildA2FilterQuery,
+  resolveA2AuditDomain,
+  type A2AuditDomain,
+  type A2AuditFilter,
+} from "@/lib/admin/a2-policy";
+
+export type { A2AuditDomain, A2AuditFilter } from "@/lib/admin/a2-policy";
 
 export type A2OperationType = "fund" | "param" | "acct" | "sos";
-export type A2AuditDomain = "D" | "C" | "H" | "I" | "A" | "K" | "B";
 
 interface ApiResult<T> {
   code: number;
@@ -147,6 +154,7 @@ export interface A2ConfirmCategory {
 export interface A2AuditLogRow {
   id: string;
   ts: string;
+  createdAt: string;
   actor: string;
   role: string;
   action: string;
@@ -213,19 +221,8 @@ function normalizeStatus(value: string | null | undefined): A2OperationRow["stat
     : "pending";
 }
 
-function normalizeDomain(value: unknown, action: string, obj: string): A2AuditDomain {
-  if (typeof value === "string") {
-    const upper = value.trim().toUpperCase();
-    if (upper === "D" || upper === "C" || upper === "H" || upper === "I" || upper === "A" || upper === "K" || upper === "B") {
-      return upper;
-    }
-  }
-  const source = `${action} ${obj}`.toUpperCase();
-  if (source.includes("D2") || source.includes("WITHDRAW") || source.includes("提现") || source.includes("账单")) return "D";
-  if (source.includes("C2") || source.includes("C3") || source.includes("USER") || source.includes("账户") || source.includes("余额")) return "C";
-  if (source.includes("H1") || source.includes("PHASE")) return "H";
-  if (source.includes("I1") || source.includes("I5") || source.includes("I7") || source.includes("CONTENT") || source.includes("披露")) return "I";
-  return "A";
+export function createA2CommandKey(prefix: string) {
+  return idempotencyKey(prefix);
 }
 
 function formatTime(value: string | null | undefined) {
@@ -265,12 +262,13 @@ function fromLog(log: BackendAuditLog): A2AuditLogRow {
   return {
     id: String(log.id ?? `${action}-${log.createdAt ?? Date.now()}`),
     ts: asText(detail.tsLabel, formatTime(log.createdAt)),
+    createdAt: log.createdAt?.trim() || "",
     actor: asText(detail.actor ?? log.actorUsername, "系统"),
     role: asText(detail.role ?? log.actorType, "ADMIN"),
     action,
     obj,
     delta,
-    domain: normalizeDomain(detail.domain, action, obj),
+    domain: resolveA2AuditDomain(detail.sourceDomain, detail.domain, action, log.resourceType?.trim() || ""),
     ip: log.clientIp?.trim() || "—",
     result: log.result?.trim() || "SUCCESS",
     riskLevel: log.riskLevel?.trim() || "INFO",
@@ -367,24 +365,25 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function fetchA2Overview() {
-  return normalizeOverview(await a2Request<BackendOverview>("/overview"));
+export async function fetchA2Overview(filter: A2AuditFilter = {}) {
+  const query = buildA2FilterQuery(filter).toString();
+  return normalizeOverview(await a2Request<BackendOverview>(`/overview${query ? `?${query}` : ""}`));
 }
 
-export async function approveA2Operation(operationId: string, reason: string, operator: string) {
+export async function approveA2Operation(operationId: string, reason: string, commandKey?: string) {
   const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/approve`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "a2-operation-approve",
+    body: JSON.stringify({ reason }),
+    ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-approve" }),
   });
   return fromTicket(row);
 }
 
-export async function rejectA2Operation(operationId: string, reason: string, operator: string) {
+export async function rejectA2Operation(operationId: string, reason: string, commandKey?: string) {
   const row = await a2Request<BackendTicket>(`/operations/${encodeURIComponent(operationId)}/reject`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "a2-operation-reject",
+    body: JSON.stringify({ reason }),
+    ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-operation-reject" }),
   });
   return fromTicket(row);
 }
@@ -414,12 +413,12 @@ export async function createA2OperationProposal(input: {
   return fromTicket(row);
 }
 
-export async function exportA2Audit(reason: string, filter: Record<string, unknown>) {
+export async function exportA2Audit(reason: string, filter: Record<string, unknown>, commandKey?: string) {
   const response = await fetch("/api/admin/platform/audit/exports", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": idempotencyKey("a2-audit-export"),
+      "Idempotency-Key": commandKey ?? idempotencyKey("a2-audit-export"),
     },
     body: JSON.stringify({ reason, filter }),
     cache: "no-store",
@@ -437,10 +436,10 @@ export async function exportA2Audit(reason: string, filter: Record<string, unkno
   return { fileName, size: blob.size };
 }
 
-export async function updateA2MechanismParam(paramKey: string, value: string, reason: string, operator: string) {
+export async function updateA2MechanismParam(paramKey: string, value: string, reason: string, commandKey?: string) {
   return a2Request<BackendMechanismParam>(`/mechanism-params/${encodeURIComponent(paramKey)}`, {
     method: "POST",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: "a2-mechanism-param",
+    body: JSON.stringify({ value, reason }),
+    ...(commandKey ? { commandKey } : { idempotencyPrefix: "a2-mechanism-param" }),
   });
 }

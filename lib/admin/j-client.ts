@@ -514,11 +514,11 @@ export type JEmergencyData = {
 
 export type JEmergencyActions = {
   reloadJEmergency: () => Promise<void>;
-  toggleJ1KillSwitch: (key: string, enabled: boolean, reason: string, context?: { triggerBasis?: string; dispositionPlan?: string }) => Promise<void>;
-  emergencyDisableJ1: (keys: string[], reason: string, operator?: string, context?: { triggerBasis: string; regulatoryContext: string; dispositionPlan?: string }) => Promise<void>;
-  updateJ1Sla: (paramKey: string, value: string, reason: string) => Promise<void>;
-  updateJ1AutoRule: (ruleId: string, value: string, reason: string) => Promise<void>;
-  confirmJ1AutoTrigger: (key: string, incidentId: string, decision: "keep_disabled" | "recommend_restore", reason: string) => Promise<void>;
+  toggleJ1KillSwitch: (key: string, enabled: boolean, reason: string, context?: { triggerBasis?: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
+  emergencyDisableJ1: (keys: string[], reason: string, operator?: string, context?: { triggerBasis: string; regulatoryContext: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
+  updateJ1Sla: (paramKey: string, value: string, reason: string, commandKey?: string) => Promise<void>;
+  updateJ1AutoRule: (ruleId: string, value: string, reason: string, commandKey?: string) => Promise<void>;
+  confirmJ1AutoTrigger: (key: string, incidentId: string, decision: "keep_disabled" | "recommend_restore", reason: string, commandKey?: string) => Promise<void>;
   updateJ2Country: (countryCode: string, status: "blocked" | "limited" | "allowed", expectedStatus: "blocked" | "limited" | "allowed", triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
   replaceJ2CountryList: (status: "blocked" | "limited", countries: string[], expectedCountries: string[], triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
   updateJ2Endpoint: (endpointKey: string, mode: "explicit" | "derived", countries: string[], expectedMode: "explicit" | "derived", expectedCountries: string[], reason: string, commandKey?: string) => Promise<void>;
@@ -1145,11 +1145,11 @@ export async function fetchJEmergencyOverviews(tab: "J1" | "J2" | "J3" | "J4",
 }
 
 export const jEmergencyActions: Omit<JEmergencyActions, "reloadJEmergency"> = {
-  toggleJ1KillSwitch: (key, enabled, reason, context) => apiRequest(`/kill-switches/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify(withReason({ enabled: enabled ? "enabled" : "disabled", ...context }, reason)) }).then(() => undefined),
-  emergencyDisableJ1: (keys, reason, operator, context) => apiRequest("/kill-switches/emergency-disable", { method: "POST", body: JSON.stringify(withReason({ keys, ...context }, reason, operator)) }).then(() => undefined),
-  updateJ1Sla: (paramKey, value, reason) => apiRequest(`/kill-switches/emergency-sla/${encodeURIComponent(paramKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
-  updateJ1AutoRule: (ruleId, value, reason) => apiRequest(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, { method: "PATCH", body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
-  confirmJ1AutoTrigger: (key, incidentId, decision, reason) => apiRequest(`/kill-switches/auto-confirmations/${encodeURIComponent(key)}`, { method: "POST", body: JSON.stringify(withReason({ incidentId, decision }, reason)) }).then(() => undefined),
+  toggleJ1KillSwitch: (key, enabled, reason, context, commandKey) => apiRequest(`/kill-switches/${encodeURIComponent(key)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ enabled: enabled ? "enabled" : "disabled", ...context }, reason)) }).then(() => undefined),
+  emergencyDisableJ1: (keys, reason, operator, context, commandKey) => apiRequest("/kill-switches/emergency-disable", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ keys, ...context }, reason, operator)) }).then(() => undefined),
+  updateJ1Sla: (paramKey, value, reason, commandKey) => apiRequest(`/kill-switches/emergency-sla/${encodeURIComponent(paramKey)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
+  updateJ1AutoRule: (ruleId, value, reason, commandKey) => apiRequest(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
+  confirmJ1AutoTrigger: (key, incidentId, decision, reason, commandKey) => apiRequest(`/kill-switches/auto-confirmations/${encodeURIComponent(key)}`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ incidentId, decision }, reason)) }).then(() => undefined),
   updateJ2Country: (countryCode, status, expectedStatus, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/countries/${encodeURIComponent(countryCode)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, expectedStatus, triggerBasis }, reason)) }).then(() => undefined),
   replaceJ2CountryList: (status, countries, expectedCountries, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/country-lists/${encodeURIComponent(status)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, countries, expectedCountries, triggerBasis }, reason)) }).then(() => undefined),
   updateJ2Endpoint: (endpointKey, mode, countries, expectedMode, expectedCountries, reason, commandKey) => apiRequest(`/geo-block/endpoints/${encodeURIComponent(endpointKey)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ mode, countries, expectedMode, expectedCountries }, reason)) }).then(() => undefined),

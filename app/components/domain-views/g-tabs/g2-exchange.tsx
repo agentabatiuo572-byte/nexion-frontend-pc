@@ -10,6 +10,7 @@ import { Drawer } from "../design-kit";
 import {
   cancelG2ExchangeQueueOrder,
   fetchG2ExchangeOverview,
+  processG2ExchangeQueue,
   triggerG2ExchangeKycReview,
   updateG2ExchangeParam,
   updateG2ExchangeSwapStatus,
@@ -18,8 +19,7 @@ import {
   type G2Overview,
 } from "@/lib/admin/g2-client";
 import type { GCtx } from "./types";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const OPERATOR = currentAdminOperator;
 type GateKey = "kyc" | "user" | "platform" | "geo";
@@ -58,8 +58,14 @@ function toneClass(tone: string) {
 }
 
 export function G2Exchange({ ctx }: { ctx: GCtx }) {
-  const { toast, openActionConfirm, openConfirm } = ctx;
-  const propose = usePropose();
+  const { toast, openActionConfirm } = ctx;
+  const session = useAdminAuth((state) => state.session);
+  const authorities = session?.authorities ?? [];
+  const isSuper = session?.role === "super" || session?.role === "superadmin";
+  const allowed = (authority: string) => isSuper || authorities.includes(authority);
+  const capAuthority = (key: string) => key === "userDailyCap" ? "finprod_g2_cap_user_write"
+    : key === "platformDailyCap" ? "finprod_g2_cap_platform_write"
+      : key === "fee" || key === "feeMin" ? "finprod_g2_fee_rate_write" : "finprod_g2_write";
   const [overview, setOverview] = useState<G2Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -109,6 +115,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       const message = messageOf(err);
       setError(message);
       toast(`G2 操作失败 · ${message}`);
+      throw err;
     } finally {
       setBusyKey(null);
     }
@@ -168,53 +175,34 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
             : "随费率启用生效。"}
       </>,
       amplifies: cap.loosen,
-      edit: isQueueMode ? { kind: "select", current: cap.displayValue, options: ["排队", "拒绝"] } : { kind: "text", current: capEditValue(cap) },
-      run: (reason, value) => {
+      edit: isQueueMode
+        ? { kind: "select", current: cap.displayValue, options: ["排队", "拒绝"] }
+        : { kind: "number", current: capEditValue(cap), min: cap.key === "kycThreshold" ? 1 : 0,
+            max: cap.key === "userDailyCap" ? 10000 : cap.key === "platformDailyCap" ? 10000000 : cap.key === "fee" ? 10 : cap.key === "feeMin" ? 5 : 1000000,
+            step: cap.key === "fee" ? 0.01 : 0.1 },
+      run: async (reason, value) => {
         const nextValue = normalizeCapSubmitValue(cap, value);
         if (!nextValue) return;
-        const def = findHighOp("g2_exchange_param")!;
-        void propose(ctx.toast, {
-          action: `兑换参数调整 · ${cap.name}`,
-          obj: cap.key,
-          before: cap.displayValue,
-          after: String(value),
-          type: "fund",
-          amplifies: cap.loosen,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G2",
-          command: def.buildCommand({ paramKey: cap.key, value: nextValue }),
-          target: def.buildTarget({ paramKey: cap.key }),
-        });
+        await mutate(`param:${cap.key}`, () => updateG2ExchangeParam(cap.key, nextValue, reason, OPERATOR()), `${cap.name}已立即生效`);
       },
     });
   };
 
   const toggleSwap = () => {
-    const nextEnabled = !swap.enabled;
+    if (!swap.enabled) return;
     openActionConfirm({
-      action: swap.enabled ? "swap 全局熔断" : "恢复 swap 兑换",
-      detail: swap.enabled
-        ? <>立即停止全平台所有 NEX↔USDT 兑换,用于监管点名/合规事件止血。风控/合规执行门槛:超管,同步紧急开关矩阵(J1 exchange 闸)。</>
-        : <>恢复全平台兑换 = 恢复 NEX→USDT 流出,确认放行时核验 B1 覆盖率(当前 {cov}%,红线 {redline}%),同步 J1。</>,
-      amplifies: nextEnabled,
-      run: (reason) => {
-        const def = findHighOp("g2_exchange_swap_status")!;
-        void propose(ctx.toast, {
-          action: nextEnabled ? "恢复 swap 兑换" : "swap 全局熔断",
-          obj: "exchange",
-          before: swap.enabled ? "运行" : "熔断",
-          after: nextEnabled ? "运行" : "熔断",
-          type: "sos",
-          amplifies: nextEnabled,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G2",
-          command: def.buildCommand({ enabled: nextEnabled }),
-          target: def.buildTarget({}),
-        });
+      action: "swap 全局熔断",
+      detail: <>立即停止全平台所有 NEX↔USDT 兑换并同步 J1。G2 只提供止血入口;恢复必须前往 J1 完成跨域前置核验。</>,
+      amplifies: false,
+      businessForm: { kind: "multi-field", title: "结构化暂停上下文", fields: [
+        { key: "triggerBasis", label: "触发依据", current: "PRICE_ANOMALY", inputKind: "select", options: ["REGULATORY", "PRICE_ANOMALY", "SECURITY_INCIDENT", "OTHER"], required: true },
+        { key: "geoBlock", label: "涉及国家(可选,逗号分隔)", current: "", inputKind: "text", required: false },
+      ] },
+      run: async (reason, _value, businessValue) => {
+        const countries = (businessValue?.geoBlock ?? "").split(",").map((value) => value.trim()).filter(Boolean);
+        await mutate("swap:pause", () => updateG2ExchangeSwapStatus(false, reason, OPERATOR(), {
+          geoBlock: countries, triggerBasis: businessValue?.triggerBasis,
+        }), "swap 已立即熔断");
       },
     });
   };
@@ -223,23 +211,9 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     setQueueDrawer(null);
     openActionConfirm({
       action: `强制取消排队单 · ${order.exchangeNo}`,
-      detail: <>取消该兑换排队单,{order.exchangeAmountDisplay} 退回用户余额。常用于地域封锁/风控命中,写原因留痕 · 入 A2 待门槛者执行。</>,
-      run: (reason) => {
-        const def = findHighOp("g2_exchange_cancel_queue")!;
-        void propose(ctx.toast, {
-          action: `取消排队单 · ${order.exchangeNo}`,
-          obj: order.exchangeNo,
-          before: "排队中",
-          after: "已取消 · 退回余额",
-          type: "fund",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G2",
-          command: def.buildCommand({ exchangeNo: order.exchangeNo }),
-          target: def.buildTarget({ exchangeNo: order.exchangeNo }),
-        });
+      detail: <>取消该兑换排队单,{order.exchangeAmountDisplay} 退回用户余额。常用于地域封锁/风控命中;确认后立即执行并写入 A2 审计。</>,
+      run: async (reason) => {
+        await mutate(`cancel:${order.exchangeNo}`, () => cancelG2ExchangeQueueOrder(order.exchangeNo, reason, OPERATOR()), "排队单已立即取消");
       },
     });
   };
@@ -248,23 +222,9 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     setQueueDrawer(null);
     openActionConfirm({
       action: `提交 KYC 复审 · ${order.exchangeNo}`,
-      detail: <>将该兑换单送入 K5 大额/KYC 复审,服务端会更新兑换状态并写入复审票据。适用于实名状态、累计兑换或人工风控需要复核的排队单 · 入 A2 待门槛者执行。</>,
-      run: (reason) => {
-        const def = findHighOp("g2_exchange_trigger_kyc_review")!;
-        void propose(ctx.toast, {
-          action: `提交 KYC 复审 · ${order.exchangeNo}`,
-          obj: order.exchangeNo,
-          before: "排队中",
-          after: "KYC 复审中 · 同步 K5",
-          type: "fund",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G2",
-          command: def.buildCommand({ exchangeNo: order.exchangeNo }),
-          target: def.buildTarget({ exchangeNo: order.exchangeNo }),
-        });
+      detail: <>将该兑换单送入 K5 大额/KYC 复审,服务端会更新兑换状态并写入复审票据。适用于实名状态、累计兑换或人工风控需要复核的排队单;确认后立即执行。</>,
+      run: async (reason) => {
+        await mutate(`kyc:${order.exchangeNo}`, () => triggerG2ExchangeKycReview(order.exchangeNo, reason, OPERATOR()), "KYC 复审已立即提交");
       },
     });
   };
@@ -294,17 +254,11 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
                   {cap.meterPct !== undefined && <div className="meter"><i style={{ width: meterWidth(cap.meterPct), background: "var(--warning)" }} /></div>}
                 </div>
                 <span className="v">{cap.displayValue}</span>
-                <button className="l-btn sm mc" disabled={busy} onClick={() => adjCap(cap)}>调整</button>
+                {allowed(capAuthority(cap.key)) && <button className="l-btn sm mc" disabled={busy || (!swap.enabled && !["fee", "feeMin"].includes(cap.key))}
+                  title={!swap.enabled && !["fee", "feeMin"].includes(cap.key) ? "swap 已熔断；额度与队列策略暂不可调整" : undefined}
+                  onClick={() => adjCap(cap)}>调整 {cap.name}</button>}
               </div>
             ))}
-            <div className="cap-row">
-              <div className="txt">
-                <div className="k">累计实名触发线 <span className="bdg dim">K5 权威(V1)</span></div>
-                <div className="s">终身累计兑换过线就要实名 · V1 阶段在大额复审(K5)配,这里只读;V3 落地后移交 G2</div>
-              </div>
-              <span className="v">$100</span>
-              <Link href="/risk/kyc-review" className="l-btn sm">去 K5 调整 →</Link>
-            </div>
             <div className="gtint" style={{ marginTop: 10 }}><b>手续费去向</b> · 当前推广期取后端配置;开费后兑换抽成里 30% 进 NEX 回购销毁池(G3),70% 进 fee_buffer 备付金(D1)。降费 = 放大流出,改动操作确认并留痕。</div>
             <div className="gtint" style={{ marginTop: 10 }}><b>实名触发线的归属</b> · 命中后联动实名台账(C4)升级复审;拦截单进「需实名」清单,过实名后自动放行。</div>
           </div>
@@ -324,7 +278,15 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>次日队列(超 cap 排队)</div>
+            <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span>次日队列(超 cap 排队)</span>
+              {allowed("finprod_g2_write") && <button className="l-btn sm mc" disabled={busy || queue.length === 0} onClick={() => openActionConfirm({
+                action: "处理今日兑换队列批次",
+                detail: <>按服务器实时 G3 价格、G2 caps、C4 KYC、J2 地域和钱包余额逐单重新校验;同一事务写订单、钱包、D4 账本及 exchange.swapped 事件。</>,
+                edit: { kind: "number", current: String(Math.min(queue.length, 50)), min: 1, max: 100, step: 1 },
+                run: async (reason, value) => mutate("queue:batch", () => processG2ExchangeQueue(Number(value || 50), reason, OPERATOR()), "今日队列批次处理完成"),
+              })}>处理今日批次</button>}
+            </div>
             {queue.length === 0 && <div className="gtint">暂无排队兑换单。</div>}
             {queue.map((order) => (
               <div className="q-row click" key={order.exchangeNo} onClick={() => setQueueDrawer(order.exchangeNo)} style={busy ? { pointerEvents: "none", opacity: 0.65 } : undefined}>
@@ -345,7 +307,8 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
           <span className="ttl">全局熔断与地域封锁</span>
           <span className="sub">· 监管点名 / 合规事件时止血 · 联动 J1 矩阵</span>
           <div className="r">
-            <button className="l-btn mc" disabled={busy} onClick={toggleSwap}>{swap.enabled ? "swap 全局熔断(操作确认)" : "恢复 swap(操作确认)"}</button>
+            {swap.enabled && allowed("finprod_g2_swap_toggle") && <button className="l-btn mc" disabled={busy} onClick={toggleSwap}>swap 全局熔断(立即执行)</button>}
+            {!swap.enabled && <Link href="/emergency/kill-switch" className="l-btn mc">前往 J1 核验并恢复 →</Link>}
             <Link href="/emergency/geo-block" className="l-btn">地域封锁(J2 权威)→</Link>
           </div>
         </div>
@@ -383,8 +346,8 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       {selectedQueue && (
         <Drawer title={`次日队列单 · ${selectedQueue.exchangeNo}`} sub={`${selectedQueue.userNo} · ${selectedQueue.exchangeAmountDisplay} · ${selectedQueue.etaLabel} 自动出队成交`} onClose={() => setQueueDrawer(null)}
           footer={<>
-            <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => triggerKycReview(selectedQueue)}>提交 KYC 复审</button>
-            <button className="l-btn mc" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => cancelQueue(selectedQueue)}>强制取消此单 →</button>
+            {allowed("finprod_g2_write") && <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => triggerKycReview(selectedQueue)}>提交 KYC 复审</button>}
+            {allowed("finprod_g2_queue_cancel") && <button className="l-btn mc" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => cancelQueue(selectedQueue)}>强制取消此单 →</button>}
           </>}>
           <div className="kv2"><span className="k">用户编码</span><span className="v mono">{selectedQueue.userNo}</span></div>
           <div className="kv2"><span className="k">用户名</span><span className="v">{selectedQueue.nickname}</span></div>

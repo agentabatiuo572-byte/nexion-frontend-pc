@@ -16,7 +16,7 @@ export type SupportTicketPriority = "low" | "normal" | "high" | "urgent";
 
 export type SupportTicketMessage = {
   ts: number;
-  author: "user" | "agent";
+  author: "user" | "agent" | "system";
   agentName?: string;
   body: string;
 };
@@ -33,6 +33,8 @@ export type SupportTicket = {
   lastReplyAt: number;
   unread: number;
   owner: string;
+  archived: boolean;
+  archivedAt?: number;
   messages: SupportTicketMessage[];
 };
 
@@ -43,6 +45,9 @@ export type SupportFaq = {
   answer: string;
   status: "published" | "draft";
   surface: "Help Center" | "Ticket Create" | "Nova";
+  language: "zh-CN" | "en-US" | "vi-VN";
+  sortOrder: number;
+  version: number;
   updatedAt: string;
 };
 
@@ -104,11 +109,11 @@ export type AdvisorScript = {
   group: "开场" | "升级" | "锁仓" | "复投";
   text: string;
   ctaHref: string;
-  status: "published" | "draft";
+  status: "published" | "draft" | "archived";
 };
 
 // 即时回复模板类型;运行态列表由后端 session-template 接口提供。
-export type SessionReplyTpl = { id: string; type: "advisor" | "support"; text: string; status: "published" | "draft" };
+export type SessionReplyTpl = { id: string; type: "advisor" | "support"; text: string; status: "published" | "draft" | "archived" };
 
 /* ============ 主动发起会话(融合:设计稿身份+撰写+预览 ⊕ v3 单人/固定档/自定义圈选)============ */
 // 一个后台客服账号可挂的客服 / 顾问身份;发起会话时从后端坐席列表派生。

@@ -513,17 +513,6 @@
    "batch": "P0"
   },
   {
-   "id": "OPS-D-05",
-   "domain": "D",
-   "object": "账本",
-   "action": "手动调账(唯一合法写账路径;操作确认+幂等+凭证)",
-   "status": "built",
-   "view": "d-tabs/d4-ledger.tsx",
-   "storeAction": "setParam",
-   "batch": "P0",
-   "note": "D.adjust.<ref>;流水行+断点告警两入口同链;产 admin.bill_adjusted 喂 L3/L5"
-  },
-  {
    "id": "OPS-D-06",
    "domain": "D",
    "object": "账本",

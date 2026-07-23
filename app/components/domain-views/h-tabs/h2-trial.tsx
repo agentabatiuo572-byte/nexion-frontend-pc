@@ -19,6 +19,7 @@ type TrialParam = {
   hot?: boolean;
   section?: "newonly" | "live";
   serverOnly?: boolean;
+  readOnly?: boolean;
 };
 
 type TrialSession = {
@@ -59,12 +60,13 @@ function nextStateLabel(states: Map<string, TrialState>, key: string) {
 }
 
 function isTrialDayParam(key: string) {
-  return key === "trialDays" || key === "graceDays" || key === "extensionDays";
+  return ["trialDays", "graceDays", "extensionDays", "cooldownDays"].includes(key);
 }
 
 function dayLimitHint(key: string) {
   if (key === "trialDays") return "1-90 天";
   if (key === "graceDays" || key === "extensionDays") return "0-30 天";
+  if (key === "cooldownDays") return "0-365 天";
   return "";
 }
 
@@ -81,7 +83,10 @@ function ParamRow({
   const current = text(param.cur);
   const isDay = isTrialDayParam(param.key);
   const displayCurrent = isDay ? `${current} 天` : current;
-  const options = param.key === "autoCharge" ? ["开", "关"] : param.key === "trialOpen" ? ["开放", "关闭"] : undefined;
+  const readOnly = ["phaseOpen", "trialProductId"].includes(param.key);
+  const options = ["autoChargeAtEnd", "autoPushEnabled"].includes(param.key)
+    ? ["开", "关"]
+    : param.key === "phaseOpen" ? ["开放", "关闭"] : undefined;
   const detail = (
     <>
       <b>{param.name}</b> · 当前 <span className="mono">{displayCurrent}</span>。
@@ -112,6 +117,8 @@ function ParamRow({
       <span className="v">{displayCurrent}</span>
       <button
         className={`l-btn sm${param.hot ? " mc" : ""}`}
+        disabled={readOnly}
+        title={readOnly ? (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读" : "产品标识仅通过版本治理变更") : undefined}
         onClick={() => {
           if (param.hot || isDay) {
             openActionConfirm({
@@ -134,7 +141,7 @@ function ParamRow({
           });
         }}
       >
-        调整
+        {readOnly ? "只读" : "调整"}
       </button>
     </div>
   );
@@ -260,7 +267,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="f-stat cyan">
           <div className="k">抵扣上限</div>
-          <div className="v">{text(model.params.find((param) => param.key === "offsetCap")?.cur)}</div>
+          <div className="v">${text(model.params.find((param) => param.key === "discountCapUSD")?.cur)}</div>
           <div className="sub">Model A 抵扣由服务端重算</div>
         </div>
         <div className="f-stat danger">
@@ -383,13 +390,20 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                   </tr>
                 );
               })}
+              {model.sessions.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: 24 }}>
+                    暂无试用会话；用户完成绑卡并开始试用后将在此出现
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </section>
 
       <div className="htint warn">
-        <b>server-canonical</b> · H2 参数、会话处置、auto-push 急停都通过后端接口写入;接口无数据时后端先插入默认配置再查询。
+        <b>服务端权威</b> · H2 参数、会话处置和自动推送急停均由服务端执行；当前没有会话时保持明确空态，不生成示例用户。
       </div>
 
       <PaginationExemptionList

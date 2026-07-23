@@ -702,6 +702,9 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                   </td>
                 </tr>
               ))}
+              {filteredPool.length === 0 && (
+                <tr><td colSpan={9}><div className="itint warn">当前投放模块下没有文案记录。</div></td></tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -68,8 +68,12 @@ export function GDomainView({ meta }: { meta: DomainViewMeta }) {
           detail={mc.detail}
           amplifies={mc.amplifies}
           edit={mc.edit}
+          businessForm={mc.businessForm}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue) => { mc.run(reason, newValue); setActionConfirm(null); }}
+          onConfirm={async (reason, newValue, businessValue) => {
+            await mc.run(reason, newValue, businessValue);
+            setActionConfirm(null);
+          }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}

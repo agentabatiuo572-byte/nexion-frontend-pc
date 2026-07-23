@@ -6,6 +6,8 @@ import {
   K1OutcomeUncertainError,
   K4_DIMENSION_KEYS,
   K4_SCORE_MAPPING_KEYS,
+  fetchK4WithdrawalAlerts,
+  markK4WithdrawalAlertRead,
   newK1CommandKey,
   type K4DimensionKey,
   type K4Distribution,
@@ -16,6 +18,7 @@ import {
   type K4ScoreMappings,
   type K4User,
   type K4UserOption,
+  type K4WithdrawalAlert,
 } from "@/lib/admin/k-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
@@ -147,10 +150,11 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const isSuperAdmin = session?.role === "superadmin";
-  const canModelWrite = isSuperAdmin && authorities.includes("risk_k4_write");
-  const canPublish = canModelWrite;
-  const canOverride = isSuperAdmin && authorities.includes("risk_k4_user_override");
+  const canModelWrite = authorities.includes("risk_k4_write");
+  const canPublish = isSuperAdmin && authorities.includes("risk_k4_write");
+  const canOverride = authorities.includes("risk_k4_user_override");
   const canRecompute = authorities.includes("risk_k4_user_recompute");
+  const canReadWithdrawalAlerts = canOverride || isSuperAdmin;
   const overview = ctx.risk.scoring;
   const [modelDraft, setModelDraft] = useState<EditableModel | null>(null);
   const [userSearch, setUserSearch] = useState("");
@@ -163,6 +167,8 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [overridePage, setOverridePage] = useState(1);
   const [overridePageSize, setOverridePageSize] = useState(5);
+  const [withdrawalAlerts, setWithdrawalAlerts] = useState<K4WithdrawalAlert[]>([]);
+  const [withdrawalAlertError, setWithdrawalAlertError] = useState<string | null>(null);
   const userOptionsId = useId();
   const pageEffectMounted = useRef(false);
   const lookupSequence = useRef(0);
@@ -192,6 +198,23 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     void reloadCurrentScoring();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overridePage, overridePageSize]);
+
+  useEffect(() => {
+    if (!canReadWithdrawalAlerts) return;
+    let alive = true;
+    fetchK4WithdrawalAlerts()
+      .then((data) => {
+        if (!alive) return;
+        setWithdrawalAlerts(data.alerts);
+        setWithdrawalAlertError(null);
+      })
+      .catch((error) => {
+        if (!alive) return;
+        setWithdrawalAlerts([]);
+        setWithdrawalAlertError(errorText(error));
+      });
+    return () => { alive = false; };
+  }, [canReadWithdrawalAlerts]);
 
   useEffect(() => {
     if (!overview) return;
@@ -492,6 +515,25 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
         <div className={`f-stat ${overview.recomputePending > 0 ? "warn" : "good"}`}><div className="k">模型重算队列</div><div className="v">{overview.recomputePending}</div><div className="sub">{overview.recomputePending > 0 ? "后台按 200 人分片推进，每秒续跑" : "全部用户已对齐当前模型"}</div></div>
       </div>
 
+      {canReadWithdrawalAlerts && <section className="l-card" aria-label="K4 提现升级告警">
+        <div className="l-h"><span className="ttl">K4 提现升级告警</span><span className="sub">· A6 权限 risk_k4_user_override / 超管 · 持久化逐人送达</span><div className="r"><span className={`bdg ${withdrawalAlerts.some((alert) => !alert.read) ? "bad" : "done"}`}>{withdrawalAlerts.filter((alert) => !alert.read).length} 条未读</span></div></div>
+        <div className="l-b">
+          {withdrawalAlertError && <div className="dtint warn">告警读取失败 · {withdrawalAlertError} · 未展示缓存值</div>}
+          {!withdrawalAlertError && withdrawalAlerts.length === 0 && <div className="note">暂无提现升级告警。</div>}
+          {!withdrawalAlertError && withdrawalAlerts.map((alert) => <div key={alert.id} className="dtint warn" style={{ marginBottom: 8 }}>
+            <strong>{alert.title} · {alert.withdrawalNo}</strong> · {alert.hint} · 模型 {alert.modelVersion} · {alert.createdAt.replace("T", " ").slice(0, 19)}
+            {!alert.read && <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={async () => {
+              try {
+                await markK4WithdrawalAlertRead(alert.id);
+                setWithdrawalAlerts((current) => current.map((item) => item.id === alert.id ? { ...item, read: true } : item));
+              } catch (error) {
+                ctx.toast(`K4 告警确认失败 · ${errorText(error)}`);
+              }
+            }}>标为已读</button>}
+          </div>)}
+        </div>
+      </section>}
+
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">K4 评分模型</span>
@@ -587,7 +629,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
             {canPublish && overview.draft && <button className="l-btn danger" disabled={modelDirty} onClick={publishModel}>发布模型草稿</button>}
             {canPublish && overview.draft && modelDirty && <span className="note">当前有未保存修改，请先保存草稿后再发布。</span>}
             <button className="l-btn" onClick={() => setModelDraft(editableModel(sourceModel))}>还原当前{overview.draft ? "草稿" : "生效模型"}</button>
-            {!canModelWrite && <span className="note">K4 模型写入当前按服务端边界仅向超级管理员开放；专用风控主管角色待 A6 建立后再授权。</span>}
+            {!canModelWrite && <span className="note">当前账号没有 K4 模型草稿写入权限；请由权限管理员在 A6 授予对应能力。</span>}
           </div>
         </div>
       </section>
@@ -598,7 +640,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
           {overview.modelHistory.map((model) => (
             <div className="ktint" key={`${model.version}-${model.state}`} style={{ marginBottom: 8 }}>
               <span className="tx"><b>v{model.version}</b> · {model.state} · {model.createdBy} · {model.createdAt} · {model.reason}</span>
-              {canPublish && model.state === "archived" && (
+              {canModelWrite && model.state === "archived" && (
                 <button className="l-btn" disabled={modelDirty} onClick={() => ctx.openActionConfirm({
                   action: `恢复 K4 历史模型 v${model.version} 为草稿`,
                   detail: `将用历史 v${model.version} 完整覆盖当前待发布草稿，但不改变线上 v${overview.model.version}；恢复后仍须另行核对差异并发布。`,

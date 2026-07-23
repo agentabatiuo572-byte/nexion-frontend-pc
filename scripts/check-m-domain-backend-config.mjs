@@ -28,14 +28,15 @@ assertAbsent("app/components/domain-views/m-tabs/data.ts", "USER_ACK_POOL", "M d
 assertAbsent("lib/admin/m-client.ts", 'agentName: base.ownerAgentName || "客服台"', "conversation summaries must not invent sender or receipt status when detail loading fails");
 assertAbsent("app/components/domain-views/m-view.tsx", "转人工备勤队列", "M writes must not synthesize overflowQueue");
 assertAbsent("lib/admin/m-client.ts", "DEFAULT_LOAD_CONFIG", "M client must not synthesize load-config defaults");
-assertAbsent("lib/admin/m-client.ts", "转人工备勤队列", "M client must only consume backend load-config values");
 
 assertContains("lib/admin/m-client.ts", 'apiRequest<Record<string, unknown>>("/tickets/load-config")', "load config backend endpoint");
 assertContains("lib/admin/m-client.ts", 'apiRequest<SupportAgentOverview>("/support-agents")', "transfer targets backend endpoint");
 assertContains("lib/admin/m-client.ts", '"I.session.transferTargets": JSON.stringify(data.transferTargets)', "backend transfer targets materialized for M3");
 assertContains("lib/admin/m-client.ts", "M_LOAD_CONFIG_FIELD_MISSING", "missing backend load-config fields fail closed");
+assertContains("lib/admin/m-client.ts", 'const loadConfigAvailable = results[1].status === "fulfilled"', "fallback display values must never enable M1 load writes");
+assertContains("lib/admin/m-client.ts", "if (data.loadConfigAvailable)", "load config params are materialized only from a successful backend response");
 assertContains("app/components/domain-views/m-tabs/m1-overview.tsx", "loadConfigFromBackendParams", "M1 derives load config from backend params");
-assertContains("app/components/domain-views/m-tabs/m1-overview.tsx", "后端配置未返回", "M1 blocks editing when backend config is absent");
+assertContains("app/components/domain-views/m-tabs/m1-overview.tsx", "负载策略暂不可用", "M1 blocks editing with an operator-readable recovery message when backend config is absent");
 assertContains("app/components/domain-views/m-tabs/m3-sessions.tsx", 'const TRANSFER_TARGETS_KEY = "I.session.transferTargets"', "M3 reads backend transfer target list");
 assertContains("app/components/domain-views/m-tabs/m3-sessions.tsx", "const transferQueues = useMemo(() => {", "M3 computes queue options locally from backend transferTargets");
 assertContains("app/components/domain-views/m-tabs/m3-sessions.tsx", '.filter((target) => textOf(target.targetType).toLowerCase() === "queue")', "M3 queue options filter backend transferTargets by targetType");

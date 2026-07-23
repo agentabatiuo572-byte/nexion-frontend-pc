@@ -161,9 +161,14 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={mc.amplifies}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => { mc.run(reason, newValue, businessValue); setActionConfirm(null); }}
+          onConfirm={async (reason, newValue, businessValue) => {
+            await mc.run(reason, newValue, businessValue);
+            setActionConfirm(null);
+          }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}

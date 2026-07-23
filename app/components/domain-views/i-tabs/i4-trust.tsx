@@ -69,6 +69,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const [draftEditor, setDraftEditor] = useState<DraftEditor | null>(null);
   const data = content.trustDisclosure;
   const pendingTrustSectionKeys = new Set(data?.pendingTrustSectionKeys ?? []);
+  const pendingTrustSectionList = [...pendingTrustSectionKeys];
+  const pendingA2Href = pendingTrustSectionList.length === 1
+    ? `/platform/audit?domain=I&object=${encodeURIComponent(pendingTrustSectionList[0])}`
+    : "/platform/audit?domain=I";
   const I4_STATS = data?.stats ?? { managedSections: 0, jurisdictions: 0, staleAckUsers: 0, weeklyGateBlocked: 0 };
   const TRUST_SECTIONS: TrustSection[] = (data?.trustSections ?? []).map((s) => ({ ...s, v: s.version }));
   const TRUST_SECTION_VERSIONS: TrustSectionVersion[] = data?.trustSectionVersions ?? [];
@@ -740,7 +744,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="r">
             {pendingTrustSectionKeys.size > 0 && <span className="bdg warn">A2待确认 {pendingTrustSectionKeys.size}</span>}
             <button className="l-btn sm" onClick={() => void actions.reloadIContent()}>刷新状态</button>
-            {(isSuperadmin || session?.authorities.includes("platform_a2_read")) && <Link className="l-btn sm" href="/platform/audit">查看A2</Link>}
+            {(isSuperadmin || session?.authorities.includes("platform_a2_read")) && <Link className="l-btn sm" href={pendingA2Href}>查看A2</Link>}
             <span className="icode danger">高敏合规</span>
           </div>
         </div>
@@ -783,11 +787,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                       )}
                     </td>
                     <td>
-                      {isPending && <span className="bdg warn" style={{ marginRight: 6 }}>A2待确认</span>}
+                      {isPending && <span className="bdg warn" style={{ marginRight: 6 }}>有新版 A2 待确认</span>}
                       {isArchived ? (
                         <span className="bdg dim">已下架</span>
                       ) : (
-                        <span className="bdg ok">已发布</span>
+                        <span className="bdg ok">{isPending ? "当前版仍生效" : "已发布"}</span>
                       )}
                     </td>
                     <td className="mono" style={{ fontSize: 11.5 }}>{s.lastChange}</td>

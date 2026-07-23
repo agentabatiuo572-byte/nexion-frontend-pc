@@ -37,6 +37,8 @@ test("Nova channel drawer uses explicit cadence copy and structured time control
   assert.match(source, /NOVA_TIME_UNITS\.map/);
   assert.match(source, /CTR 无需填写/);
   assert.doesNotMatch(source, /推完歇多久|每 25 任务|CTR\(%,可留空\)/);
+  assert.match(source, /n\.key === "tradein" \|\| n\.key === "taskLockMonthly"/);
+  assert.match(source, /H1 节奏只读/);
 });
 
 test("Nova template editor owns real multilingual content and backend-driven dropdowns", () => {
@@ -51,4 +53,15 @@ test("Nova template editor owns real multilingual content and backend-driven dro
   assert.doesNotMatch(source, />published</);
   assert.doesNotMatch(source, />archived</);
   assert.doesNotMatch(source, />draft</);
+});
+
+test("I2 operation confirmation preserves the modal and reason when the backend rejects", () => {
+  const nova = readFileSync(new URL("../app/components/domain-views/i-tabs/i2-nova.tsx", import.meta.url), "utf8");
+  const view = readFileSync(new URL("../app/components/domain-views/i-view.tsx", import.meta.url), "utf8");
+
+  assert.match(nova, /toast\(`操作失败:[^`]+`\);\s*throw error;/s);
+  assert.match(nova, /reasonMax:\s*200/);
+  assert.match(view, /reasonMin=\{mc\.reasonMin\}/);
+  assert.match(view, /reasonMax=\{mc\.reasonMax\}/);
+  assert.match(view, /onConfirm=\{async[\s\S]*await mc\.run\([\s\S]*setActionConfirm\(null\)/);
 });

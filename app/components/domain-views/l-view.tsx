@@ -18,7 +18,9 @@ import { L4HeaderActions, L4Ops } from "./l-tabs/l4-ops";
 import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
 import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
-import { fetchLBiOverviews, lBiActions, type LBiData } from "@/lib/admin/l-client";
+import { allowedAggregateExportOptions, canAccessBiReportType, canExportBiReports } from "./l-tabs/l1-l2-live-data";
+import { fetchLBiOverview, lBiActions, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const FOLD: Record<string, string> = { L1: "L1", L2: "L2", L3: "L3", L4: "L4", L5: "L5", L6: "L6" };
 
@@ -29,18 +31,30 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   const [biData, setBiData] = useState<LBiData | null>(null);
   const [biLoading, setBiLoading] = useState(true);
   const [biError, setBiError] = useState<string | null>(null);
+  const [l3Query, setL3Query] = useState<L3FinanceQuery>({ period: "month" });
+  const [l4Query, setL4Query] = useState<L4OperationsQuery>({ period: "week", phase: "ALL" });
+  const session = useAdminAuth((state) => state.session);
+  const aggregateExportOptions = useMemo(
+    () => allowedAggregateExportOptions(session?.role, session?.authorities ?? []),
+    [session?.role, session?.authorities],
+  );
 
   const reloadBi = useCallback(async () => {
     setBiLoading(true);
     setBiError(null);
+    setBiData(null);
     try {
-      setBiData(await fetchLBiOverviews());
+      setBiData(await fetchLBiOverview(
+        tab as LModuleCode,
+        tab === "L3" ? l3Query : undefined,
+        tab === "L4" ? l4Query : undefined,
+      ));
     } catch (error) {
       setBiError(error instanceof Error ? error.message : "BI_DATA_LOAD_FAILED");
     } finally {
       setBiLoading(false);
     }
-  }, []);
+  }, [l3Query, l4Query, tab]);
 
   useEffect(() => {
     void reloadBi();
@@ -54,6 +68,17 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     biError,
     reloadBi,
     biActions: lBiActions,
+    canExport: canExportBiReports(session?.role, session?.authorities ?? [], tab),
+    canExportNetworkTree: session?.role?.toLowerCase() === "superadmin"
+      || (session?.authorities ?? []).includes("bi_l4_export_tree"),
+    canGenerateRegulatory: session?.role?.toLowerCase() === "superadmin"
+      || (session?.authorities ?? []).includes("bi_l5_regulatory_generate"),
+    availableAggregateExportTypes: aggregateExportOptions.map((option) => option.label),
+    canAccessReportType: (reportType) => canAccessBiReportType(session?.role, session?.authorities ?? [], reportType),
+    l3Query,
+    setL3Query,
+    l4Query,
+    setL4Query,
   };
 
   const right =
@@ -80,6 +105,8 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           action={mc.action}
           detail={mc.detail}
           amplifies={mc.amplifies}
+          reasonMin={mc.reasonMin}
+          reasonMax={mc.reasonMax}
           edit={mc.edit}
           businessForm={mc.businessForm}
           onClose={() => setActionConfirm(null)}

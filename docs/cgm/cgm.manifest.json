@@ -1,5 +1,7 @@
 {
   "schemaVersion": 1,
+  "snapshotStatus": "historical-batch0",
+  "authorityNotice": "E3 salvage/minHoldingMonths/degrade rows are retired; use PRD specs FEAT-DEV01 and FEAT-DEV02 for implementation and acceptance.",
   "frontendPrd": "Nexion_产品功能架构设计文档_v3.7.md",
   "opsPrdVolumes": {
     "A": "v1",

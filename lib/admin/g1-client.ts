@@ -61,6 +61,11 @@ interface BackendPositionRow {
   nickname?: string | null;
   tier?: string | null;
   amount?: string | null;
+  lockedApy?: string | null;
+  earlyPenalty?: string | null;
+  lockedAt?: string | null;
+  unlockAt?: string | null;
+  estimatedInterest?: string | null;
   status?: string | null;
   statusLabel?: string | null;
   statusTone?: string | null;
@@ -140,6 +145,11 @@ export interface G1PositionRow {
   nickname: string;
   tier: string;
   amount: string;
+  lockedApy: string;
+  earlyPenalty: string;
+  lockedAt: string;
+  unlockAt: string;
+  estimatedInterest: string;
   status: string;
   statusLabel: string;
   statusTone: string;
@@ -239,6 +249,11 @@ function normalizePositionRow(row: BackendPositionRow): G1PositionRow {
     nickname: asText(row.nickname, "—"),
     tier: asText(row.tier),
     amount: asText(row.amount),
+    lockedApy: asText(row.lockedApy),
+    earlyPenalty: asText(row.earlyPenalty),
+    lockedAt: asText(row.lockedAt),
+    unlockAt: asText(row.unlockAt),
+    estimatedInterest: asText(row.estimatedInterest),
     status: asText(row.status),
     statusLabel: asText(row.statusLabel),
     statusTone: asText(row.statusTone, "dim"),
@@ -342,10 +357,17 @@ export async function updateG1StakingPoolSaleStatus(tierKey: string, enabled: bo
   }));
 }
 
-export async function updateG1StakingPoolKillStatus(tierKey: string, killed: boolean, reason: string, operator: string) {
+export async function updateG1StakingPoolKillStatus(
+  tierKey: string,
+  killed: boolean,
+  reason: string,
+  operator: string,
+  triggerBasis: string,
+  dispositionPlan: string,
+) {
   return normalizeOverview(await g1Request<BackendOverview>(`/staking/pools/${encodeURIComponent(tierKey)}/kill-status`, {
     method: "PATCH",
-    body: JSON.stringify({ value: String(killed), reason, operator }),
+    body: JSON.stringify({ value: String(killed), reason, operator, triggerBasis, dispositionPlan }),
     idempotencyPrefix: "g1-kill",
   }));
 }

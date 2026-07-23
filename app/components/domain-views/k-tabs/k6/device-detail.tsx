@@ -21,6 +21,7 @@ import {
   STATUS_TONE,
   SUGGESTED_ACTION,
   channelLabel,
+  platformLabel,
   remoteUrlLabel,
 } from "@/lib/admin/janus-c2/labels";
 import { allowedTransitions, gatedTransitions, type Transition } from "@/lib/admin/janus-c2/transitions";
@@ -127,7 +128,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
               ["白壳阶段", d.latestSession?.appPhase === "finance" ? "真盘" : "审核态(白壳)"],
               ["模拟业务日", d.latestSession?.simDay != null ? `第 ${d.latestSession.simDay} 天` : "—"],
               ["前后台", isFresh(d.lastSeenAt) ? "前台活跃" : "后台 / 已离开"],
-              ["设备型号", `${d.platform} · ${d.model}`],
+              ["设备型号", `${platformLabel(d.platform)} · ${d.model}`],
               ["系统", d.osName],
               ["浏览器", d.browser],
               ["环境风险摘要", `${e.environmentRiskScore} 分${e.riskReasons.length ? ` · ${e.riskReasons.join(" / ")}` : ""}`],

@@ -167,8 +167,8 @@ export async function killH2AutoPush(reason: string) {
   );
 }
 
-export async function fetchH3QuestEvents(): Promise<Record<string, any>> {
-  return growthRequest<Record<string, any>>("/quest-events");
+export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"): Promise<Record<string, any>> {
+  return growthRequest<Record<string, any>>(section === "events" ? "/quest-events/events-overview" : "/quest-events/tasks");
 }
 
 export async function updateH3QuestConfig(key: string, value: string, reason: string) {
@@ -295,6 +295,10 @@ export interface H8SettlementRow {
 
 export interface H8ReferralRewardOverview {
   params: Record<string, number | string>;
+  effectiveRewards: Record<string, number | string>;
+  rhythmMonth: number;
+  newcomerMultiplier: number | string;
+  inviterMultiplier: number | string;
   pending: number;
   settled: number;
   blockedByK2: number;
@@ -354,6 +358,30 @@ export async function createH4WheelTier(tier: Record<string, any>, reason: strin
     "/quest-events/wheel-tiers",
     { method: "POST", body: JSON.stringify({ ...tier, reason, operator: currentAdminOperator() }) },
     "h4-tier-create",
+  );
+}
+
+export async function updateH4WheelProbabilities(probabilities: Record<string, number>, reason: string) {
+  return growthRequest<Record<string, any>>(
+    "/quest-events/wheel-tiers/probabilities",
+    { method: "PATCH", body: JSON.stringify({ probabilities, reason, operator: currentAdminOperator() }) },
+    "h4-tier-probabilities",
+  );
+}
+
+export async function updateH4WheelTier(tierName: string, tier: Record<string, any>, reason: string) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
+    { method: "PATCH", body: JSON.stringify({ ...tier, reason, operator: currentAdminOperator() }) },
+    "h4-tier-update",
+  );
+}
+
+export async function deleteH4WheelTier(tierName: string, reason: string) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
+    { method: "DELETE", body: JSON.stringify({ reason, operator: currentAdminOperator() }) },
+    "h4-tier-delete",
   );
 }
 

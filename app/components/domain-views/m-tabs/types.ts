@@ -11,11 +11,11 @@ export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types"
 export type MCtx = {
   pget: (k: string) => string | undefined;
   params: Record<string, string>;
-  setParam: (k: string, v: string, meta: { action: string; reason: string }) => void;
-  addCustomerTag: (convoId: string, tag: string) => void;
-  removeCustomerTag: (convoId: string, tag: string) => void;
-  addCustomerNote: (convoId: string, text: string) => void;
-  removeCustomerNote: (convoId: string, noteId: string) => void;
+  setParam: (k: string, v: string, meta: { action: string; reason: string; idempotencyKey?: string; commandKey?: string }) => Promise<boolean>;
+  addCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
+  removeCustomerTag: (convoId: string, tag: string) => Promise<boolean>;
+  addCustomerNote: (convoId: string, text: string) => Promise<boolean>;
+  removeCustomerNote: (convoId: string, noteId: string) => Promise<boolean>;
   toast: (s: string) => void;
   openActionConfirm: (req: import("../k-tabs/types").ActionConfirmReq) => void;
   openConfirm: (req: import("../k-tabs/types").ConfirmReq) => void;

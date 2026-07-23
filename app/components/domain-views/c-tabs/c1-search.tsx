@@ -5,17 +5,18 @@
  * 用户列表、分组筛选与搜索均走 /api/admin/users/profiles;接口在种子用户缺失时由后端先写入真实表再分页返回。
  * 本页只读:行点击深链 /users/search/<userNo> 进 360 画像;处置去 C2/C3/C4/C5。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { DataListPager } from "../design-kit";
 import {
-  exportUserProfilesExcel,
+  exportUserProfilesCsv,
   fetchUserProfilesPage,
   type User360Profile,
   type UserPage,
   type UserProfileQuery,
 } from "@/lib/admin/user360-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
 
 type Seg = "all" | "frozen" | "highrisk" | "kyc";
@@ -25,10 +26,40 @@ type C1Stats = {
   frozen: number;
   kycPending: number;
 };
-export type C1ExportQuery = Pick<UserProfileQuery, "keyword" | "status" | "kycStatus" | "riskMin">;
+export type C1ExportQuery = Omit<UserProfileQuery, "pageNum" | "pageSize">;
 
 const SEGS: [Seg, string][] = [["all", "全部"], ["frozen", "冻结"], ["highrisk", "高风险"], ["kyc", "KYC 待确认"]];
-const EMPTY_PAGE: UserPage<User360Profile> = { total: 0, pageNum: 1, pageSize: 5, records: [] };
+const EMPTY_PAGE: UserPage<User360Profile> = { total: 0, pageNum: 1, pageSize: 50, records: [] };
+
+type AdvancedFilters = {
+  tier: string;
+  vRank: string;
+  referralCode: string;
+  depositMin: string;
+  depositMax: string;
+  usdtMin: string;
+  usdtMax: string;
+  nexMin: string;
+  nexMax: string;
+  riskBand: string;
+  joinedFrom: string;
+  joinedTo: string;
+};
+
+const EMPTY_FILTERS: AdvancedFilters = {
+  tier: "",
+  vRank: "",
+  referralCode: "",
+  depositMin: "",
+  depositMax: "",
+  usdtMin: "",
+  usdtMax: "",
+  nexMin: "",
+  nexMax: "",
+  riskBand: "",
+  joinedFrom: "",
+  joinedTo: "",
+};
 
 const STATUS_META: Record<string, [label: string, tone: string]> = {
   ACTIVE: ["正常", "ok"],
@@ -95,13 +126,56 @@ function profileKey(profile: User360Profile) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "C1_REQUEST_FAILED";
+  const message = error instanceof Error ? error.message : "C1_REQUEST_FAILED";
+  if (message === "C1_RAW_PHONE_SEARCH_FORBIDDEN") {
+    return "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希";
+  }
+  return message;
 }
 
-function currentExportQuery(seg: Seg, keyword: string): C1ExportQuery {
+function optionalNumber(value: string) {
+  if (!value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function keywordQuery(value: string): Pick<UserProfileQuery, "keyword" | "userId" | "phoneHash" | "phoneMasked"> {
+  const keyword = value.trim();
+  if (!keyword) return {};
+  if (/^[+0-9()\s-]+$/.test(keyword)) {
+    const digits = keyword.replace(/\D/g, "");
+    if (digits.length >= 10 && digits.length <= 15) {
+      throw new Error("C1_RAW_PHONE_SEARCH_FORBIDDEN");
+    }
+  }
+  if (/^[0-9]{1,9}$/.test(keyword)) return { userId: keyword };
+  if (/^[0-9a-f]{64}$/i.test(keyword)) return { phoneHash: keyword.toLowerCase() };
+  if (/^[0-9]{3}\*{4}[0-9]{4}$/.test(keyword)) return { phoneMasked: keyword };
+  return { keyword };
+}
+
+function filterQuery(filters: AdvancedFilters): C1ExportQuery {
+  return {
+    tier: filters.tier || undefined,
+    vRank: filters.vRank || undefined,
+    referralCode: filters.referralCode.trim() || undefined,
+    depositMin: optionalNumber(filters.depositMin),
+    depositMax: optionalNumber(filters.depositMax),
+    usdtMin: optionalNumber(filters.usdtMin),
+    usdtMax: optionalNumber(filters.usdtMax),
+    nexMin: optionalNumber(filters.nexMin),
+    nexMax: optionalNumber(filters.nexMax),
+    riskBand: filters.riskBand || undefined,
+    joinedFrom: filters.joinedFrom || undefined,
+    joinedTo: filters.joinedTo || undefined,
+  };
+}
+
+function currentExportQuery(seg: Seg, keyword: string, filters: AdvancedFilters): C1ExportQuery {
   return {
     ...queryForSeg(seg),
-    keyword: keyword.trim() || undefined,
+    ...keywordQuery(keyword),
+    ...filterQuery(filters),
   };
 }
 
@@ -128,19 +202,33 @@ export function C1Search({
   const [seg, setSeg] = useState<Seg>("all");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
+  const [pageSize, setPageSize] = useState(50);
+  const [filters, setFilters] = useState<AdvancedFilters>(EMPTY_FILTERS);
   const [pageData, setPageData] = useState<UserPage<User360Profile>>(EMPTY_PAGE);
   const [stats, setStats] = useState<C1Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const savedSeg = params.get("seg") as Seg | null;
+    if (savedSeg && SEGS.some(([value]) => value === savedSeg)) setSeg(savedSeg);
+    setQ(params.get("q") ?? "");
+    setPage(Math.max(1, Number(params.get("page")) || 1));
+    const requestedPageSize = Number(params.get("pageSize"));
+    setPageSize([20, 50, 100, 200].includes(requestedPageSize) ? requestedPageSize : 50);
+    setFilters(Object.fromEntries(Object.keys(EMPTY_FILTERS).map((key) => [key, params.get(key) ?? ""])) as AdvancedFilters);
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     let alive = true;
     Promise.all([
-      fetchUserProfilesPage({ pageNum: 1, pageSize: 1 }),
-      fetchUserProfilesPage({ riskMin: 70, pageNum: 1, pageSize: 1 }),
-      fetchUserProfilesPage({ status: "FROZEN,BANNED,RESTRICTED", pageNum: 1, pageSize: 1 }),
-      fetchUserProfilesPage({ kycStatus: "PENDING", pageNum: 1, pageSize: 1 }),
+      fetchUserProfilesPage({ pageNum: 1, pageSize: 20 }),
+      fetchUserProfilesPage({ riskMin: 70, pageNum: 1, pageSize: 20 }),
+      fetchUserProfilesPage({ status: "FROZEN,BANNED,RESTRICTED", pageNum: 1, pageSize: 20 }),
+      fetchUserProfilesPage({ kycStatus: "PENDING", pageNum: 1, pageSize: 20 }),
     ])
       .then(([all, highRisk, frozen, kycPending]) => {
         if (!alive) return;
@@ -161,12 +249,21 @@ export function C1Search({
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     let alive = true;
     setLoading(true);
     setError(null);
+    let query: C1ExportQuery;
+    try {
+      query = currentExportQuery(seg, q, filters);
+    } catch (err) {
+      setPageData({ ...EMPTY_PAGE, pageNum: page, pageSize });
+      setError(errorMessage(err));
+      setLoading(false);
+      return;
+    }
     fetchUserProfilesPage({
-      ...queryForSeg(seg),
-      keyword: q.trim() || undefined,
+      ...query,
       pageNum: page,
       pageSize,
     })
@@ -185,11 +282,35 @@ export function C1Search({
     return () => {
       alive = false;
     };
-  }, [seg, q, page, pageSize]);
+  }, [filters, hydrated, page, pageSize, q, seg]);
 
   useEffect(() => {
-    onExportQueryChange?.(currentExportQuery(seg, q));
-  }, [onExportQueryChange, seg, q]);
+    if (!hydrated) return;
+    try {
+      onExportQueryChange?.(currentExportQuery(seg, q, filters));
+    } catch {
+      onExportQueryChange?.({});
+    }
+  }, [filters, hydrated, onExportQueryChange, q, seg]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const params = new URLSearchParams();
+    if (seg !== "all") params.set("seg", seg);
+    try {
+      keywordQuery(q);
+      if (q.trim()) params.set("q", q.trim());
+    } catch {
+      // A raw phone number is rejected locally and must never enter browser history or a request URL.
+    }
+    if (page !== 1) params.set("page", String(page));
+    if (pageSize !== 50) params.set("pageSize", String(pageSize));
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    const search = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
+  }, [filters, hydrated, page, pageSize, q, seg]);
 
   const changeSeg = (next: Seg) => {
     setSeg(next);
@@ -201,13 +322,19 @@ export function C1Search({
     setPage(1);
   };
 
+  const changeFilter = (key: keyof AdvancedFilters, value: string) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setPage(1);
+  };
+
   const openProfile = (profile: User360Profile) => {
     const key = profileKey(profile);
     if (!key) {
       ctx.toast("该用户缺少用户编码,无法打开详情");
       return;
     }
-    router.push(`/users/search/${encodeURIComponent(key)}`);
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    router.push(`/users/search/${encodeURIComponent(key)}?returnTo=${encodeURIComponent(returnTo)}`);
   };
 
   const rows = pageData.records ?? [];
@@ -227,7 +354,7 @@ export function C1Search({
           <span className="sub">· 用户分层口径 L0-L5 / V0-V12 · 手机号仅脱敏展示</span>
           <div className="r">
             <div className="search-bar">
-              <input placeholder="用户编码 / 昵称 / 推荐码 / 手机号" value={q} onChange={(e) => changeKeyword(e.target.value)} />
+              <input placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号 / 手机哈希" value={q} onChange={(e) => changeKeyword(e.target.value)} />
             </div>
             <div className="chips">
               {SEGS.map(([v, lb]) => (
@@ -235,6 +362,26 @@ export function C1Search({
               ))}
             </div>
           </div>
+        </div>
+        <div className="grid gap-2 px-3 pb-3 pt-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6" style={{ borderBottom: "1px solid var(--line)" }}>
+          <select aria-label="生命周期" value={filters.tier} onChange={(event) => changeFilter("tier", event.target.value)}>
+            <option value="">全部生命周期</option>{[0, 1, 2, 3, 4, 5].map((value) => <option key={value} value={`L${value}`}>L{value}</option>)}
+          </select>
+          <select aria-label="V-Rank" value={filters.vRank} onChange={(event) => changeFilter("vRank", event.target.value)}>
+            <option value="">全部 V-Rank</option>{Array.from({ length: 13 }, (_, value) => <option key={value} value={`V${value}`}>V{value}</option>)}
+          </select>
+          <input aria-label="推荐码" placeholder="推荐码" value={filters.referralCode} onChange={(event) => changeFilter("referralCode", event.target.value)} />
+          <select aria-label="风险档" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
+            <option value="">全部风险档</option><option value="LOW">低风险</option><option value="MEDIUM">中风险</option><option value="HIGH">高风险</option>
+          </select>
+          <input aria-label="累计充值下限" type="number" min="0" placeholder="累计充值 ≥" value={filters.depositMin} onChange={(event) => changeFilter("depositMin", event.target.value)} />
+          <input aria-label="累计充值上限" type="number" min="0" placeholder="累计充值 ≤" value={filters.depositMax} onChange={(event) => changeFilter("depositMax", event.target.value)} />
+          <input aria-label="USDT 余额下限" type="number" min="0" placeholder="USDT ≥" value={filters.usdtMin} onChange={(event) => changeFilter("usdtMin", event.target.value)} />
+          <input aria-label="USDT 余额上限" type="number" min="0" placeholder="USDT ≤" value={filters.usdtMax} onChange={(event) => changeFilter("usdtMax", event.target.value)} />
+          <input aria-label="NEX 余额下限" type="number" min="0" placeholder="NEX ≥" value={filters.nexMin} onChange={(event) => changeFilter("nexMin", event.target.value)} />
+          <input aria-label="NEX 余额上限" type="number" min="0" placeholder="NEX ≤" value={filters.nexMax} onChange={(event) => changeFilter("nexMax", event.target.value)} />
+          <input aria-label="加入日期起" type="date" value={filters.joinedFrom} onChange={(event) => changeFilter("joinedFrom", event.target.value)} />
+          <input aria-label="加入日期止" type="date" value={filters.joinedTo} onChange={(event) => changeFilter("joinedTo", event.target.value)} />
         </div>
         {error && <div className="ctint warn" style={{ margin: 12 }}>{error}</div>}
         <div style={{ overflowX: "auto" }}>
@@ -245,7 +392,13 @@ export function C1Search({
                 const [statusLabel, statusTone] = statusMeta(u.status);
                 const [kycLabel, kycTone] = kycMeta(u.kycStatus);
                 return (
-                  <tr key={profileKey(u)} className="click" onClick={() => openProfile(u)}>
+                  <tr
+                    key={profileKey(u)}
+                    className={loading ? "" : "click"}
+                    aria-disabled={loading}
+                    style={loading ? { opacity: 0.56, cursor: "wait", pointerEvents: "none" } : undefined}
+                    onClick={loading ? undefined : () => openProfile(u)}
+                  >
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{text(u.userNo, "未生成")} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
                     <td>{text(u.nickname)}</td>
                     <td><span className="bdg dim">{text(u.userLevel)}</span></td>
@@ -278,7 +431,7 @@ export function C1Search({
             setPageSize(next);
             setPage(1);
           }}
-          pageSizeOptions={[5, 10, 20]}
+          pageSizeOptions={[20, 50, 100, 200]}
         />
         <div className="l-b" style={{ paddingTop: 12 }}>
           <div className="ctint"><b>检索结果只读</b> · 本页只定位与展示;冻结/解冻去 C2,资产调整去 C3,实名裁决去 C4,安全处置去 C5,各自走操作确认。</div>
@@ -291,39 +444,46 @@ export function C1Search({
 
 export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuery }) {
   const [exporting, setExporting] = useState(false);
+  const exportingRef = useRef(false);
+  const exportCooldownUntilRef = useRef(0);
+  const exportKeyRef = useRef<string | null>(null);
+  const session = useAdminAuth((state) => state.session);
+  const canExport = session?.role === "superadmin" || session?.authorities.includes("user_c1_write") === true;
 
-  const runExport = useCallback(async (reason: string) => {
-    if (exporting) {
+  const runExport = useCallback(async () => {
+    if (exportingRef.current || Date.now() < exportCooldownUntilRef.current) {
       ctx.toast("C1 用户名单正在生成,请稍候");
       return;
     }
+    exportingRef.current = true;
     setExporting(true);
+    exportKeyRef.current ??= `c1-user-profile-export-${crypto.randomUUID()}`;
     try {
-      const file = await exportUserProfilesExcel(reason, query);
+      const file = await exportUserProfilesCsv(query, exportKeyRef.current);
       const fileName = downloadBlob(file.blob, file.fileName);
+      exportKeyRef.current = null;
       ctx.toast(`已下载脱敏用户名单 · ${fileName}`);
     } catch (err) {
       ctx.toast(`C1 导出失败 · ${errorMessage(err)}`);
     } finally {
+      exportCooldownUntilRef.current = Date.now() + 1_000;
+      exportingRef.current = false;
       setExporting(false);
     }
-  }, [ctx, exporting, query]);
+  }, [ctx, query]);
+
+  if (!canExport) return null;
 
   return (
     <button
       className="f-cta"
       disabled={exporting}
       style={exporting ? { opacity: 0.62, cursor: "wait" } : undefined}
-      onClick={() => ctx.openConfirm({
-        action: "导出用户名单(脱敏 Excel)",
-        detail: "按当前 C1 检索条件导出用户编码、昵称、脱敏手机号、账户状态、KYC、层级、V-Rank、设备、风险分、余额和时间字段;不包含数据库 userId。",
-        okLabel: "确认导出",
-        reason: true,
-        run: (reason) => { void runExport(reason); },
-      })}
+      title="按当前安全筛选条件直接下载脱敏 CSV；服务端记录筛选哈希与导出审计"
+      onClick={() => { void runExport(); }}
     >
       <Download size={14} />
-      {exporting ? "生成中..." : "导出用户名单(脱敏)"}
+      {exporting ? "生成中..." : "导出脱敏 CSV"}
     </button>
   );
 }

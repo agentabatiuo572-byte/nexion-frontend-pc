@@ -1,126 +1,76 @@
 "use client";
 
-/**
- * B3 转化漏斗(只读 · 增长运营驾驶舱)。
- * UI 严格对齐设计稿 project/「B3 转化漏斗.html」:
- *   HERO  生命周期漏斗 L1→L5(真锥形 clip-path)+ 阶段转化轨 + 瓶颈提示
- *   ROW2  首购周 Cohort 留存(面积曲线)+ 首购渠道来源(环图)
- *   STRIP 每日首购转化率(面积 + 目标参照线)
- * 顶部域标 / 控制入口由共享 BPageHeader 承载(去设计稿 B1-B5 分段导航与 server-canonical pill)。
- * 数据从 /api/admin/treasury/b-domain 读取;B3 配置缺失时由后端写入 MySQL 种子再读出。
- * 色彩走 globals bare-token 别名(--brand/--cyan/--success/--admin-cat-N…),双主题安全,无硬编码 hex。
- */
 import "../b-domain.css";
 import "./funnel.css";
-import { useId, useState, type CSSProperties } from "react";
-import { Filter, Users, PieChart, TrendingUp, AlertTriangle } from "lucide-react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { Download, RefreshCw, Save, TrendingUp } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
-import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
+import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
+import { exportB3Cohort, saveB3View, useB3Funnel, type B3Filters } from "@/lib/admin/b3-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
-const r1 = (n: number) => Math.round(n * 10) / 10;
+const ALL = "ALL";
 
-type Stage = { key: string; nm: string; ct: number; lc: string; conv: string | null; bad?: boolean; color: string };
-
-type Trans = { nm: string; from: string; to: string; v: string; vColor?: string; flow: string; note: string; noteKind: "muted" | "up" | "dn"; bad?: boolean };
-type Ch = { nm: string; pc: number; catVar: string };
-
-// ---- SVG 面积图路径(确定性四舍五入,防水合) ----
-function buildArea(data: number[], W: number, H: number, pad: number, min: number, max: number) {
-  const n = data.length;
-  const rng = max - min || 1;
-  const yTop = H - 8; // 底部基线内缩
-  const span = H - 26;
-  const denom = Math.max(n - 1, 1);
-  const pts = data.map((v, i) => [
-    r1((i / denom) * (W - 2 * pad) + pad),
-    r1(yTop - ((v - min) / rng) * span),
-  ] as [number, number]);
-  const line = pts.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1]}`).join(" ");
-  const area = `${line} L${pts[n - 1][0]} ${H} L${pts[0][0]} ${H} Z`;
-  return { pts, line, area };
+function pct(value: number | null) {
+  return value == null ? "不可计算" : `${value.toFixed(1)}%`;
 }
 
 export default function FunnelPage() {
-  const gradId = useId().replace(/:/g, ""); // SVG gradient id 唯一化(避免提取为组件后碰撞,与 B5 一致)
-  const bDomain = useBDomainDashboard();
-  const [focus, setFocus] = useState<{ type: "stage" | "trans"; id: string } | null>(null);
-  const { funnel } = bDomain;
-  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
-    return (
-      <div className="dkpage bpage funnelpage">
-        <BPageHeader
-          id="B3"
-          title="转化漏斗"
-          desc="读取 B 域真实漏斗阶段、转化轨迹、渠道和每日转化率。"
-          ctaLabel="调 Phase dial"
-          ctaHref="/growth/phase"
-        />
-        <BDomainDataState title="B3 转化漏斗" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
-      </div>
-    );
+  const [filters, setFilters] = useState<B3Filters>({ cohort: ALL, phase: ALL, ref: ALL });
+  const [stage, setStage] = useState("purchase");
+  const [viewName, setViewName] = useState("B3 当前视图");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState<"save" | "export" | "">("");
+  const auth = useAdminAuth((state) => state.session);
+  const { data, loading, error, reload } = useB3Funnel(filters, stage);
+  const authorities = auth?.authorities ?? [];
+  const superAdmin = auth?.role === "superadmin";
+  const canSave = superAdmin || authorities.includes("overview_b3_view_write");
+  const canExport = superAdmin || authorities.includes("overview_b3_export");
+
+  const options = data?.filterOptions ?? { cohorts: [], phases: [], refs: [] };
+  const selectedStage = data?.stages.find((item) => item.key === stage);
+  const biggestDrop = useMemo(() => {
+    if (!data) return null;
+    return data.stages.slice(1).reduce<(typeof data.stages)[number] | null>((worst, item) => {
+      if (item.cvrFromPrev == null) return worst;
+      return !worst || (worst.cvrFromPrev ?? 101) > item.cvrFromPrev ? item : worst;
+    }, null);
+  }, [data]);
+
+  async function saveView() {
+    setBusy("save");
+    setNotice("");
+    try {
+      const result = await saveB3View(viewName, filters);
+      setNotice(result.replayed ? "相同视图已存在，未重复写入。" : "视图已保存到服务端，刷新或重登后仍可回读。");
+      await reload();
+    } catch (value) {
+      setNotice(value instanceof Error ? value.message : "保存视图失败，请重试。");
+    } finally {
+      setBusy("");
+    }
   }
-  if (!funnel.stages.length || !funnel.transitions.length || funnel.cohort.length < 2 || !funnel.channels.length || funnel.daily.length < 2) {
-    return (
-      <div className="dkpage bpage funnelpage">
-        <BPageHeader
-          id="B3"
-          title="转化漏斗"
-          desc="B3 需要漏斗阶段、转化轨、cohort、渠道和每日转化率序列。"
-          ctaLabel="调 Phase dial"
-          ctaHref="/growth/phase"
-        />
-        <BDomainWarnings warnings={bDomain.warnings} />
-        <BDomainDataState title="B3 转化漏斗" error="B3_REQUIRED_DATA_EMPTY" onRetry={bDomain.reload} />
-      </div>
-    );
+
+  async function exportCohort() {
+    setBusy("export");
+    setNotice("");
+    try {
+      const file = await exportB3Cohort(filters);
+      const url = URL.createObjectURL(file.blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.fileName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setNotice("聚合 CSV 已生成并留痕；文件不含用户标识或原始 PII。");
+    } catch (value) {
+      setNotice(value instanceof Error ? value.message : "导出失败，请重试。");
+    } finally {
+      setBusy("");
+    }
   }
-  const STAGES: Stage[] = funnel.stages;
-  const TRANS: Trans[] = funnel.transitions;
-  const COH = funnel.cohort;
-  const CH: Ch[] = funnel.channels;
-  const DAILY = funnel.daily;
-  const DAILY_TARGET = funnel.dailyTarget;
-  const maxCt = Math.max(...STAGES.map((stage) => stage.ct), 1);
-  const entryCt = Math.max(STAGES[0]?.ct ?? maxCt, 1);
-  const firstBuyCt = STAGES.find((stage) => stage.key === "buy" || stage.nm.includes("首购"))?.ct ?? 0;
-  const latestCohort = COH[COH.length - 1] ?? 0;
-  const wpct = (ct: number) => 16 + (ct / maxCt) * 84; // 16%..100% 宽度区间
-  const bottleneck = TRANS.find((item) => item.bad) ?? TRANS[0];
-
-  // 漏斗段 ↔ 阶段转化卡片 双向联动焦点(hover 段亮其相关转化卡片,反之亦然)
-  const isStageActive = (key: string) => {
-    if (!focus) return false;
-    if (focus.type === "stage") return focus.id === key;
-    const t = TRANS.find((x) => x.nm === focus.id);
-    return !!t && (t.from === key || t.to === key);
-  };
-  const isTransActive = (t: Trans) => {
-    if (!focus) return false;
-    if (focus.type === "trans") return focus.id === t.nm;
-    return t.from === focus.id || t.to === focus.id;
-  };
-  // Cohort:0..100 归一(min 0 ~ max 100)
-  const cohW = 600, cohH = 170;
-  const coh = buildArea(COH, cohW, cohH, 6, 0, 100);
-
-  // Daily:按接口数据和目标线动态取刻度,避免配置变更后曲线溢出。
-  const dW = 1400, dH = 150;
-  const dMin = Math.floor(Math.min(...DAILY, DAILY_TARGET, 14));
-  const dMax = Math.ceil(Math.max(...DAILY, DAILY_TARGET, 22));
-  const daily = buildArea(DAILY, dW, dH, 8, dMin, dMax);
-  const dailyRange = dMax - dMin || 1;
-  const dailyTargetY = r1(dH - 8 - ((DAILY_TARGET - dMin) / dailyRange) * (dH - 26));
-  const todayVal = DAILY[DAILY.length - 1];
-
-  // 渠道环图:conic-gradient 拼段
-  let acc = 0;
-  const conicStops = CH.map((c) => {
-    const seg = `var(${c.catVar}) ${acc}% ${acc + c.pc}%`;
-    acc += c.pc;
-    return seg;
-  }).join(", ");
-  const donutBg = conicStops ? `conic-gradient(${conicStops})` : "var(--surface-3)";
 
   return (
     <div className="dkpage bpage funnelpage">
@@ -129,262 +79,208 @@ export default function FunnelPage() {
         title="转化漏斗"
         desc={
           <>
-            用户从注册(L1)一路走到提现(L5),每一步留住多少、流失多少,再叠加首次购机那批人的逐周留存。数据都来自 <b>A4 事件流</b>(以服务端为准),帮增长团队找出漏斗卡在哪一环。
+            从注册到提现的五级转化只读取 <b>A4 已登记事件</b>，并要求同一用户按时间顺序逐级进入。
+            空分母与未成熟 Day7 窗口显示“不可计算”，不会用 0 冒充经营事实。
           </>
         }
-        ctaLabel="调 Phase dial"
-        ctaHref="/growth/phase"
       />
-      <BDomainWarnings warnings={bDomain.warnings} />
 
-      {/* HERO: 漏斗 + 阶段转化 */}
-      <div className="b3-hero">
-        {/* 生命周期漏斗 */}
-        <section className="card">
-          <div className="ttl-row">
-            <span className="ic"><Filter size={15} /></span>
-            <span className="h">生命周期漏斗 L1 → L5</span>
-            <span className="sub">近 30 日新增用户口径</span>
-            <div className="r"><span className="b-tag">整体 {funnel.overallConversionPct.toFixed(1)}%</span></div>
-          </div>
-
-          <div className="funnel-list">
-            {STAGES.map((s, i) => {
-              const top = wpct(s.ct);
-              const bot = i < STAGES.length - 1 ? wpct(STAGES[i + 1].ct) : top * 0.82;
-              const tl = r1((100 - top) / 2), tr = r1((100 + top) / 2);
-              const bl = r1((100 - bot) / 2), br = r1((100 + bot) / 2);
-              const prevCt = i > 0 ? STAGES[i - 1].ct : null;
-              const lost = prevCt != null ? prevCt - s.ct : null;
-              const shareL1 = r1((s.ct / entryCt) * 100); // 占注册(L1)渗透率,确定性派生
-              const active = isStageActive(s.key);
-              const showTip = focus?.type === "stage" && focus.id === s.key;
-              // 详情浮层垂直锚定:首段向下展开、末段向上展开、中段居中,避免溢出卡片上下沿
-              const tipPos: CSSProperties =
-                i === 0 ? { top: 6, bottom: "auto", transform: "none" }
-                : i === STAGES.length - 1 ? { top: "auto", bottom: 6, transform: "none" }
-                : { top: "50%", transform: "translateY(-50%)" };
-              return (
-                <div key={s.key}>
-                  {s.conv && (
-                    <div className="conv-mark">
-                      <span className={`conv-pill${s.bad ? " bad" : ""}`}>
-                        {s.bad ? "▼ " : ""}
-                        {s.conv}
-                      </span>
-                    </div>
-                  )}
-                  <div className="stage-anchor">
-                    <div
-                      className={`funnel-stage${active ? " is-active" : ""}`}
-                      style={{
-                        background: `linear-gradient(180deg, ${s.color}, color-mix(in srgb, ${s.color} 80%, #000))`,
-                        clipPath: `polygon(${tl}% 0, ${tr}% 0, ${br}% 100%, ${bl}% 100%)`,
-                        "--stage-color": s.color,
-                      } as CSSProperties}
-                      onMouseEnter={() => setFocus({ type: "stage", id: s.key })}
-                      onMouseLeave={() => setFocus(null)}
-                    >
-                      <span className="nm">{s.nm}</span>
-                      <span className="ct">{s.ct.toLocaleString()}</span>
-                      <span className="lc">{s.lc}</span>
-                    </div>
-                    {showTip && (
-                      <div className="stage-tip" role="tooltip" style={tipPos}>
-                        <div className="st-h">
-                          <span className="st-nm">{s.nm}</span>
-                          <span className="st-lc">{s.lc}</span>
-                          {s.bad && <span className="st-flag">瓶颈</span>}
-                        </div>
-                        <dl className="st-rows">
-                          <div><dt>人数</dt><dd className="nowrap">{s.ct.toLocaleString()}</dd></div>
-                          <div><dt>占注册 L1</dt><dd className="nowrap">{shareL1}%</dd></div>
-                          <div><dt>自上阶段转化</dt><dd className="nowrap">{s.conv ? `${s.bad ? "▼ " : ""}${s.conv}` : "漏斗入口"}</dd></div>
-                          <div><dt>较上阶段流失</dt><dd className="nowrap">{lost != null ? `−${lost.toLocaleString()} 人` : "—"}</dd></div>
-                        </dl>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* 阶段转化 + 瓶颈 */}
-        <section className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div className="ttl-row" style={{ marginBottom: 4 }}>
-            <span className="h">阶段转化</span>
-            <span className="sub">环比上窗口</span>
-          </div>
-          <div className="trans">
-            {TRANS.map((t) => (
-              <div
-                key={t.nm}
-                className={`t${t.bad ? " bad" : ""}${isTransActive(t) ? " is-active" : ""}`}
-                onMouseEnter={() => setFocus({ type: "trans", id: t.nm })}
-                onMouseLeave={() => setFocus(null)}
-              >
-                <div className="tr1">
-                  <span className="nm">{t.nm}</span>
-                  <span className="v" style={t.vColor ? { color: t.vColor } : undefined}>{t.v}</span>
-                </div>
-                <div className="tr2">
-                  <span className="flow">{t.flow}</span>
-                  <span
-                    className={t.noteKind === "up" ? "delta-up" : t.noteKind === "dn" ? "delta-dn" : "muted"}
-                    style={{ marginLeft: "auto" }}
-                  >
-                    {t.note}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="bottleneck" style={{ marginTop: "auto" }}>
-            <span className="bn-ic"><AlertTriangle size={17} /></span>
-            <div>
-              <b>{bottleneck?.nm ?? "暂无瓶颈"}</b> 为当前最大流失环节;建议联动 <b>H 域试用</b> / 首购促销定向干预。
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* ROW 2: cohort + 渠道 */}
-      <div className="b3-row2">
-        <section className="card">
-          <div className="ttl-row">
-            <span className="ic"><Users size={15} /></span>
-            <span className="h">首购周 Cohort 留存</span>
-            <span className="sub">首购后第 N 周仍有活跃产出</span>
-            <div className="r"><span className="b-tag">W{COH.length - 1} 稳定 {latestCohort}%</span></div>
-          </div>
-          <svg className="chart-svg" viewBox={`0 0 ${cohW} ${cohH}`} preserveAspectRatio="none" style={{ height: 170 }} aria-hidden>
-            <defs>
-              <linearGradient id={`${gradId}-cohort`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="var(--success)" stopOpacity="0.34" />
-                <stop offset="1" stopColor="var(--success)" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <path d={coh.area} fill={`url(#${gradId}-cohort)`} />
-            <path
-              d={coh.line}
-              fill="none"
-              stroke="var(--success)"
-              strokeWidth={2.4}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
+      <section className="card b3-controls" aria-label="漏斗筛选与操作">
+        <div className="b3-filter-grid">
+          <label>
+            <span>注册 cohort</span>
+            <select
+              aria-label="注册 cohort"
+              value={filters.cohort}
+              onChange={(event) => setFilters((current) => ({ ...current, cohort: event.target.value }))}
+            >
+              <option value={ALL}>全部 cohort</option>
+              {options.cohorts.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Phase</span>
+            <select
+              aria-label="Phase"
+              value={filters.phase}
+              onChange={(event) => setFilters((current) => ({ ...current, phase: event.target.value }))}
+            >
+              <option value={ALL}>全部 Phase</option>
+              {options.phases.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>推荐码 / 渠道</span>
+            <select
+              aria-label="推荐码 / 渠道"
+              value={filters.ref}
+              onChange={(event) => setFilters((current) => ({ ...current, ref: event.target.value }))}
+            >
+              <option value={ALL}>全部渠道</option>
+              {options.refs.map((value) => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label>
+          <label className="b3-view-name">
+            <span>视图名称</span>
+            <input
+              aria-label="视图名称"
+              maxLength={80}
+              value={viewName}
+              onChange={(event) => setViewName(event.target.value)}
             />
-            {coh.pts.map((p, i) => {
-              const anchor = i === 0 ? "start" : i === coh.pts.length - 1 ? "end" : "middle";
-              const tx = i === 0 ? p[0] + 1 : i === coh.pts.length - 1 ? p[0] - 1 : p[0];
-              return (
-                <g key={i}>
-                  <circle cx={p[0]} cy={p[1]} r={3} fill="var(--surface)" stroke="var(--success)" strokeWidth={2} />
-                  <text x={tx} y={r1(p[1] - 9)} fill="var(--ink-3)" fontSize={12} fontFamily="var(--font-jet-mono), monospace" textAnchor={anchor}>
-                    {COH[i]}%
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-          <div className="cohort-axis">
-            {COH.map((_, i) => (
-              <span key={i}>W{i}</span>
-            ))}
-          </div>
-        </section>
-
-        <section className="card">
-          <div className="ttl-row">
-            <span className="ic"><PieChart size={15} /></span>
-            <span className="h">首购渠道来源</span>
-            <span className="sub">{firstBuyCt.toLocaleString()} 首购用户归因</span>
-          </div>
-          <div className="donut-wrap">
-            <div className="donut" style={{ width: 140, height: 140, background: donutBg }}>
-              <div className="hole">
-                <div>
-                  <div className="big">{firstBuyCt.toLocaleString()}</div>
-                  <div className="sm">首购用户</div>
-                </div>
-              </div>
-            </div>
-            <div className="legend" style={{ flex: 1 }}>
-              {CH.map((c) => (
-                <div key={c.nm} className="lg">
-                  <span className="d" style={{ background: `var(${c.catVar})` }} />
-                  <span className="nm">{c.nm}</span>
-                  <span className="pc">{c.pc}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* 每日首购转化率 */}
-      <section className="card daily-strip">
-        <div className="ttl-row">
-          <span className="ic"><TrendingUp size={15} /></span>
-          <span className="h">每日首购转化率</span>
-          <span className="sub">近 {DAILY.length} 日 · 目标 {DAILY_TARGET}%</span>
-          <div className="r"><span className="b-tag">今日 {r1(todayVal)}%</span></div>
+          </label>
         </div>
-        <svg className="chart-svg" viewBox={`0 0 ${dW} ${dH}`} preserveAspectRatio="none" style={{ height: 150 }} aria-hidden>
-          <defs>
-            <linearGradient id={`${gradId}-daily`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="var(--brand)" stopOpacity="0.30" />
-              <stop offset="1" stopColor="var(--brand)" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path d={daily.area} fill={`url(#${gradId}-daily)`} />
-          <line
-            x1="0"
-            y1={dailyTargetY}
-            x2={dW}
-            y2={dailyTargetY}
-            stroke="var(--brand-2)"
-            strokeWidth={1.5}
-            strokeDasharray="7 6"
-            vectorEffect="non-scaling-stroke"
-          />
-          <text x="6" y={r1(dailyTargetY - 7)} fill="var(--brand-2)" fontSize={12} fontFamily="var(--font-jet-mono), monospace">
-            目标 {DAILY_TARGET}%
-          </text>
-          <path
-            d={daily.line}
-            fill="none"
-            stroke="var(--brand)"
-            strokeWidth={2.4}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-          />
-          {daily.pts.map((p, i) => {
-            const anchor = i === 0 ? "start" : i === daily.pts.length - 1 ? "end" : "middle";
-            const tx = i === 0 ? p[0] + 1 : i === daily.pts.length - 1 ? p[0] - 1 : p[0];
-            return (
-              <g key={i}>
-                <circle cx={p[0]} cy={p[1]} r={3.4} fill="var(--surface)" stroke="var(--brand)" strokeWidth={2} />
-                <text x={tx} y={r1(p[1] - 10)} fill="var(--ink-3)" fontSize={12} fontFamily="var(--font-jet-mono), monospace" textAnchor={anchor}>
-                  {DAILY[i]}%
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-        <div className="cohort-axis">
-          {DAILY.map((_, i) => (
-            <span key={i}>{i === DAILY.length - 1 ? "今日" : `D-${7 - i}`}</span>
-          ))}
+        <div className="b3-actions">
+          <button type="button" className="b3-btn" onClick={() => void reload()} disabled={loading}>
+            <RefreshCw size={14} aria-hidden /> 重新读取
+          </button>
+          {canSave && (
+            <button type="button" className="b3-btn" onClick={() => void saveView()} disabled={busy !== "" || !viewName.trim()}>
+              <Save size={14} aria-hidden /> 保存为视图
+            </button>
+          )}
+          {canExport && (
+            <button
+              type="button"
+              className="b3-btn primary"
+              onClick={() => void exportCohort()}
+              disabled={busy !== "" || !data?.stages.length}
+            >
+              <Download size={14} aria-hidden /> 导出 cohort
+            </button>
+          )}
         </div>
+        {notice && <p className="b3-notice" role="status">{notice}</p>}
       </section>
 
-      <p className="b-foot">
-        <b>{bottleneck?.nm ?? "暂无瓶颈"}</b>{bottleneck ? `(${bottleneck.v})` : ""} 为当前重点环节,建议联动 H 域试用 / 首购促销定向干预。所有阶段口径来自服务端 B 域聚合接口。
-      </p>
+      {loading && !data && <BDomainDataState title="B3 转化漏斗" loading />}
+      {error && <BDomainDataState title="B3 转化漏斗" error={error} onRetry={reload} />}
+
+      {data && !error && (
+        <>
+          {!data.available && (
+            <section className="card b3-unavailable" role="alert">
+              <b>当前漏斗不可安全计算</b>
+              <span>{data.message || data.reason || "A4 主漏斗事实缺少可靠用户标识。"}</span>
+            </section>
+          )}
+
+          <section className="b3-aux-grid" aria-label="核心辅助指标">
+            <article className="card">
+              <span className="b3-kicker">Day0 接入率</span>
+              <strong>{pct(data.auxMetrics.day0AccessRate)}</strong>
+              <small>
+                90 秒内首笔收益 {data.auxMetrics.day0Numerator} ÷ 注册 {data.auxMetrics.day0Denominator}
+                · 目标 &gt; {data.auxMetrics.day0Target}%
+              </small>
+            </article>
+            <article className="card">
+              <span className="b3-kicker">Day7 留存率</span>
+              <strong>{pct(data.auxMetrics.day7Retention)}</strong>
+              <small>
+                Day7 活跃 {data.auxMetrics.day7Numerator} ÷ 已成熟 cohort {data.auxMetrics.day7Denominator}
+                · 目标 &gt; {data.auxMetrics.day7Target}%
+              </small>
+            </article>
+          </section>
+
+          <section className="card b3-stage-card">
+            <div className="ttl-row">
+              <span className="h">五级同用户漏斗</span>
+              <span className="sub">注册 → 绑卡 → 首购 → 复投 → 提现 · L2–L5 生命周期参照</span>
+            </div>
+            <div className="b3-stage-grid">
+              {data.stages.map((item, index) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  data-testid="b3-stage"
+                  className={`b3-stage${stage === item.key ? " selected" : ""}`}
+                  onClick={() => setStage(item.key)}
+                  aria-pressed={stage === item.key}
+                >
+                  <span className="b3-stage-index">{index + 1}</span>
+                  <span className="b3-stage-name">{item.stage}</span>
+                  <span className="b3-stage-life">{item.lifecycleLabel}</span>
+                  <strong>{item.distinctUsers.toLocaleString()}</strong>
+                  <small>{index === 0 ? "漏斗入口" : `自上级 ${pct(item.cvrFromPrev)}`}</small>
+                  <code>{item.event}</code>
+                </button>
+              ))}
+            </div>
+            {biggestDrop && (
+              <p className="b3-bottleneck">
+                当前最大流失环节：<b>{biggestDrop.stage}</b>（自上级 {pct(biggestDrop.cvrFromPrev)}）。
+                请结合 H1 Phase 与 L2 cohort 下钻判断原因，页面不自动推断因果。
+              </p>
+            )}
+          </section>
+
+          <section className="card b3-table-card">
+            <div className="ttl-row">
+              <span className="h">级间指标表</span>
+              <span className="sub">去重用户数、上级分母、CVR、A4 权威事件</span>
+            </div>
+            <div className="b3-table-wrap">
+              <table>
+                <thead>
+                  <tr><th>阶段</th><th>生命周期</th><th>去重用户</th><th>上级</th><th>CVR</th><th>环比</th><th>事件口径</th></tr>
+                </thead>
+                <tbody>
+                  {data.stages.map((item) => (
+                    <tr key={item.key}>
+                      <td>{item.stage}</td><td>{item.lifecycleLabel}</td><td>{item.distinctUsers}</td>
+                      <td>{item.previousUsers}</td><td>{pct(item.cvrFromPrev)}</td>
+                      <td>{item.momDelta == null ? "无可比 cohort" : pct(item.momDelta)}</td>
+                      <td><code>{item.event}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="card b3-trend-card">
+            <div className="ttl-row">
+              <TrendingUp size={15} aria-hidden />
+              <span className="h">cohort 趋势 · {selectedStage?.stage ?? "首购"}</span>
+              <span className="sub">最近 13 个注册周；未命中筛选时明确为空</span>
+            </div>
+            {data.trend.length ? (
+              <div className="b3-trend-list">
+                {data.trend.map((point) => (
+                  <div key={point.cohort}>
+                    <span>{point.cohort}</span>
+                    <i style={{ width: `${Math.max(point.cvrFromPrev ?? 0, 2)}%` }} />
+                    <b>{pct(point.cvrFromPrev)}</b>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="b3-empty">当前切片没有可比较 cohort，不推算趋势。</p>
+            )}
+          </section>
+
+          <section className="card b3-links" aria-label="跨域下钻">
+            <div>
+              <b>归因与数据源</b>
+              <span>{data.sourceStatement}</span>
+            </div>
+            <nav>
+              <Link href="/analytics/funnel-cohort" prefetch={false}>L2 完整下钻 →</Link>
+              <Link href="/growth/phase" prefetch={false}>H1 Phase 归因 →</Link>
+              <Link href="/platform/events" prefetch={false}>A4 事件治理 →</Link>
+            </nav>
+          </section>
+
+          {!!data.savedViews.length && (
+            <section className="card b3-saved">
+              <b>我的已保存视图</b>
+              <span>最近 {data.savedViews.length} 个，来自服务端持久化；刷新和重登后仍可见。</span>
+            </section>
+          )}
+        </>
+      )}
     </div>
   );
 }

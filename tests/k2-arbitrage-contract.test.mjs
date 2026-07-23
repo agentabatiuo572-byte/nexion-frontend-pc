@@ -8,6 +8,7 @@ const kView = readFileSync(new URL("../app/components/domain-views/k-view.tsx", 
 const highOps = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 const a2Client = readFileSync(new URL("../lib/admin/a2-client.ts", import.meta.url), "utf8");
 const designKit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
+const f4Ops = readFileSync(new URL("../app/components/domain-views/f-tabs/f4-ops.tsx", import.meta.url), "utf8");
 
 test("K2 fails closed on stale data and only reloads its own overview", () => {
   const body = component.slice(component.indexOf("export function K2Arbitrage"));
@@ -68,4 +69,9 @@ test("K2 headers have one owner and unknown row actions do not default to anothe
   assert.match(component, /current\?\.head/);
   assert.match(component, /action === "boardflag"/);
   assert.doesNotMatch(component, /: <button[^\n]*boardFlag\(r\)/);
+});
+
+test("F4 keeps the K2 hit count visible when historical F4 dispositions exist", () => {
+  assert.match(f4Ops, /data\.leaderboardFraudHitCount}\s*账户\$\{lbDq \? " · 含已处置" : ""}/);
+  assert.doesNotMatch(f4Ops, /lbDq\s*\?\s*"已处置"\s*:\s*`\$\{data\.leaderboardFraudHitCount}\s*账户`/);
 });

@@ -1,439 +1,363 @@
 "use client";
 
-/**
- * B5 风险雷达(全域风险面板)。
- * UI 严格对齐设计稿 project/「B5 风险雷达.html」command / alert board:
- *   左栏 Kill-Switch 闸门灯 + 未处理告警 feed
- *   右栏 报警瓦片三联 + 出金压力比趋势(SVG area · 动态红线)+ 底部三联
- *        (异常账户命中规则 bars / 告警严重度 donut / 近 7 日告警量 mini-bars)
- * 顶部域标/标题由共享 BPageHeader 承载;布局端口设计稿(risk-radar.css · .radarpage 作用域)。
- * 数据从 /api/admin/treasury/b-domain 读取;B5 配置缺失时由后端写入 MySQL 种子再读出。
- * B5 维护挤兑黄/红线的单一权威配置,J1 R1 直接引用同一红线;熔断切换仍在 J1。
- */
-import "../b-domain.css";
 import "./risk-radar.css";
-import Link from "next/link";
-import { useId, useState } from "react";
-import {
-  ShieldCheck,
-  AlertTriangle,
-  Radar,
-  ShieldAlert,
-  PieChart,
-  ChevronRight,
-  SlidersHorizontal,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AlertTriangle, BellRing, Gauge, Landmark, Radar, ShieldAlert, ShieldCheck } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
-import { updateB5BankRunThresholds, useBDomainDashboard } from "@/lib/admin/b-client";
-import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
-import { OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
+import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
+import { useToast } from "@/app/components/domain-views/design-kit";
+import {
+  fetchB5Subscription,
+  previewB5Thresholds,
+  recordB5Triage,
+  updateB5Subscription,
+  updateB5Thresholds,
+  useB5Radar,
+} from "@/lib/admin/b5-client";
+import { formatB5RiskLight, formatB5WithdrawalState } from "@/lib/admin/b5-display-labels";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
+const TRIAGE = {
+  bankrun: "/finance/withdrawals",
+  "abnormal-accounts": "/risk/multi-account",
+  "withdraw-backlog": "/finance/withdrawals",
+  "kill-switches": "/emergency/kill-switch",
+  coverage: "/overview/dual-ledger",
+} as const;
+
+const GATE_LABELS: Record<string, string> = {
+  withdraw: "提现",
+  staking: "质押",
+  genesis: "Genesis",
+  exchange: "兑换",
+  trial: "试用入口",
+};
+
+function pct(ratio: number) {
+  return `${(ratio * 100).toFixed(1)}%`;
+}
+
+function money(value: number) {
+  return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
 export default function RiskRadarPage() {
-  const gradId = useId().replace(/:/g, "");
-  const bDomain = useBDomainDashboard();
-  const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
-  const authorities = useAdminAuth((s) => s.session?.authorities ?? []);
-  const canWriteBankRunThresholds = authorities.some((authority) =>
-    authority === "overview_b1_write" || authority === "overview_b1_runrisk_write");
-  const [editingBankRunThresholds, setEditingBankRunThresholds] = useState(false);
+  const router = useRouter();
+  const radar = useB5Radar();
+  const session = useAdminAuth((state) => state.session);
+  const operator = useAdminAuth((state) => state.operator || state.session?.operator || state.session?.username || "");
+  const authorities = session?.authorities ?? [];
+  const role = session?.role ?? "auditor";
+  const canThreshold = authorities.includes("overview_b5_threshold_write");
+  const canSubscribe = authorities.includes("overview_b5_subscribe");
+  const canTriage = authorities.includes("overview_b5_triage");
   const [toastNode, setToast] = useToast();
-  const { riskRadar } = bDomain;
-  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
+  const [thresholdOpen, setThresholdOpen] = useState(false);
+  const [yellowInput, setYellowInput] = useState("");
+  const [redInput, setRedInput] = useState("");
+  const [reason, setReason] = useState("");
+  const [preview, setPreview] = useState<{ light: string } | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const [savingThreshold, setSavingThreshold] = useState(false);
+  const [subscription, setSubscription] = useState({ inApp: true, email: true, webhook: false, webhookUrl: "" });
+  const [savedSubscription, setSavedSubscription] = useState(subscription);
+  const [savingSubscription, setSavingSubscription] = useState(false);
+
+  useEffect(() => {
+    if (!canSubscribe) return;
+    let alive = true;
+    fetchB5Subscription()
+      .then((next) => {
+        if (!alive) return;
+        const normalized = { inApp: next.inApp, email: next.email, webhook: next.webhook, webhookUrl: next.webhookUrl };
+        setSubscription(normalized);
+        setSavedSubscription(normalized);
+      })
+      .catch((cause) => {
+        if (alive) setToast(cause instanceof Error ? cause.message : "B5_SUBSCRIPTION_FAILED");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [canSubscribe, setToast]);
+
+  const yellowPct = Number(yellowInput);
+  const redPct = Number(redInput);
+  const thresholdValid = Number.isFinite(yellowPct) && yellowPct >= 5 && yellowPct <= 50
+    && Number.isFinite(redPct) && redPct >= 10 && redPct <= 80 && redPct > yellowPct;
+  const reasonValid = reason.trim().length >= 8 && reason.trim().length <= 200;
+
+  useEffect(() => {
+    if (!thresholdOpen || !radar.data || !thresholdValid) {
+      setPreview(null);
+      return;
+    }
+    let alive = true;
+    setPreview(null);
+    setPreviewError("");
+    const timer = window.setTimeout(() => {
+      previewB5Thresholds(yellowPct, redPct, radar.data!.bankrun.version)
+        .then((value) => {
+          if (alive) setPreview({ light: value.light });
+        })
+        .catch((cause) => {
+          if (alive) setPreviewError(cause instanceof Error ? cause.message : "B5_PREVIEW_FAILED");
+        });
+    }, 250);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [thresholdOpen, thresholdValid, yellowPct, redPct, radar.data]);
+
+  const subscriptionChanged = useMemo(
+    () => JSON.stringify(subscription) !== JSON.stringify(savedSubscription),
+    [subscription, savedSubscription],
+  );
+  const subscriptionValid = subscription.inApp || subscription.email || subscription.webhook;
+
+  if (radar.loading && !radar.data || radar.error || !radar.data) {
     return (
       <div className="dkpage bpage radarpage">
         <BPageHeader
           id="B5"
           title="风险雷达"
-          desc="读取 B 域真实挤兑压力、异常账户、熔断闸门和告警面板。"
+          desc="五维风险态势只读聚合；数据异常时停止展示旧值。"
           ctaLabel="Kill-Switch 矩阵"
           ctaHref="/emergency/kill-switch"
         />
-        <BDomainDataState title="B5 风险雷达" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
+        <BDomainDataState title="B5 风险雷达" loading={radar.loading && !radar.error} error={radar.error} onRetry={radar.reload} />
       </div>
     );
   }
-  const GATES = riskRadar.gates;
-  const GATES_TRIPPED = riskRadar.trippedGateCount || GATES.filter((g) => (g.state ? g.state === "off" : !g.on)).length;
-  const GATES_MISSING = GATES.filter((g) => g.state === "missing").length;
-  const FEED = riskRadar.feed;
-  const BR = riskRadar.pressureSeries;
-  const BR_TIGHT = riskRadar.pressureTightPct;
-  const currentPressure = riskRadar.currentPressurePct || BR[BR.length - 1] || 0;
-  const prevPressure = BR[BR.length - 2] ?? currentPressure;
-  const RULES = riskRadar.rules;
-  const flaggedAccounts = riskRadar.flaggedAccounts || RULES.reduce((sum, item) => sum + item.ct, 0);
-  const SEV = riskRadar.severity;
-  const sevTotalRaw = SEV.reduce((s, x) => s + x.count, 0);
-  const SEV_TOTAL = Math.max(sevTotalRaw, 1);
-  const VOL_ROWS = riskRadar.volume;
-  const VOL = VOL_ROWS.map((row) => row.count);
-  const p0Count = FEED.filter((item) => item.sev === "p0").length;
-  const p1Count = FEED.filter((item) => item.sev === "p1").length;
-  const p2Count = FEED.filter((item) => item.sev === "p2").length;
-  const bankRunRatio = riskRadar.bankRunRatio || 0;
+
+  const data = radar.data;
+  // Compatibility aliases keep the pre-existing J1/B5 same-source regression guard explicit.
+  const riskRadar = {
+    bankRunYellowPct: data.bankrun.yellowPct,
+    bankRunRedlinePct: data.bankrun.redPct,
+  };
   const bankRunYellowPct = riskRadar.bankRunYellowPct;
   const bankRunRedlinePct = riskRadar.bankRunRedlinePct;
-  const bankRunColor = bankRunRatio >= bankRunRedlinePct
-    ? "var(--danger)"
-    : bankRunRatio >= bankRunYellowPct
-      ? "var(--warning)"
-      : "var(--success)";
-
-  // ---- 趋势 SVG 几何(端口自设计稿 <script>)----
-  const W = 1180;
-  const H = 150;
-  const hasPressureSeries = BR.length > 0;
-  const n = BR.length;
-  const pad = 8;
-  const vmin = 0;
-  const vmax = Math.max(BR_TIGHT, ...BR, 1);
-  const rng = vmax - vmin;
-  const yOf = (v: number) => H - 12 - ((v - vmin) / rng) * (H - 28);
-  const denom = Math.max(n - 1, 1);
-  const pts = BR.map((v, i) => [(i / denom) * (W - 2 * pad) + pad, yOf(v)] as const);
-  const line = hasPressureSeries ? pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ") : "";
-  const area = hasPressureSeries ? `${line} L${pts[n - 1][0].toFixed(1)} ${H} L${pts[0][0].toFixed(1)} ${H} Z` : "";
-  const ty = yOf(BR_TIGHT);
-
-  // ---- donut conic 段(占比累计)----
-  let acc = 0;
-  const stops = SEV.map((l) => {
-    const pc = (l.count / SEV_TOTAL) * 100;
-    const seg = `${l.c} ${acc.toFixed(2)}% ${(acc + pc).toFixed(2)}%`;
-    acc += pc;
-    return seg;
-  });
-  const severityBg = stops.length ? `conic-gradient(${stops.join(",")})` : "var(--surface-3)";
-  const sevPct = (count: number) => Math.round((count / SEV_TOTAL) * 100);
-
-  const maxRule = Math.max(...RULES.map((r) => r.ct), 1);
-  const maxVol = Math.max(...VOL, 1);
-  const risingWindows = BR.reduce((count, value, index) => (index > 0 && value >= BR[index - 1] ? count + 1 : count), 0);
+  const canTriageDimension = (dimension: keyof typeof TRIAGE) => {
+    if (!canTriage) return false;
+    if (role !== "finance") return true;
+    return dimension === "bankrun" || dimension === "withdraw-backlog" || dimension === "coverage";
+  };
+  const triage = async (dimension: keyof typeof TRIAGE) => {
+    try {
+      const target = TRIAGE[dimension];
+      await recordB5Triage(dimension, target, operator);
+      router.push(target);
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "分诊失败");
+    }
+  };
+  const openThreshold = () => {
+    setYellowInput(String(data.bankrun.yellowPct));
+    setRedInput(String(data.bankrun.redPct));
+    setReason("");
+    setPreview(null);
+    setPreviewError("");
+    setThresholdOpen(true);
+  };
+  const submitThreshold = async () => {
+    if (!thresholdValid || !reasonValid || !preview) return;
+    setSavingThreshold(true);
+    setPreviewError("");
+    try {
+      const next = await updateB5Thresholds(yellowPct, redPct, data.bankrun.version, reason.trim(), operator);
+      radar.setData(next);
+      setThresholdOpen(false);
+      setToast("挤兑阈值已更新 · 已记 A2 审计");
+    } catch (cause) {
+      setPreviewError(cause instanceof Error ? cause.message : "B5_THRESHOLD_FAILED");
+    } finally {
+      setSavingThreshold(false);
+    }
+  };
+  const saveSubscription = async () => {
+    if (!subscriptionChanged || !subscriptionValid) return;
+    setSavingSubscription(true);
+    try {
+      const saved = await updateB5Subscription(subscription, operator);
+      const normalized = { inApp: saved.inApp, email: saved.email, webhook: saved.webhook, webhookUrl: saved.webhookUrl };
+      setSubscription(normalized);
+      setSavedSubscription(normalized);
+      setToast("告警订阅已保存 · 已记 A2 审计");
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "B5_SUBSCRIPTION_FAILED");
+    } finally {
+      setSavingSubscription(false);
+    }
+  };
 
   return (
     <div className="dkpage bpage radarpage">
       <BPageHeader
         id="B5"
         title="风险雷达"
-        desc={
-          <>
-            把挤兑压力、异常账户、熔断开关状态和全平台告警集中成一块风险面板。出现红色信号会联动{" "}
-            <b>J 域熔断</b>和 <b>D 域提现收紧</b>,数据从 G/D/J 各域实时汇总而来。
-          </>
-        }
+        desc="挤兑、异常账户、提现积压、五个功能闸与兑付覆盖率同屏；这里只读研判，处置必须进入权威域。"
         ctaLabel="Kill-Switch 矩阵"
         ctaHref="/emergency/kill-switch"
       />
-      <BDomainWarnings warnings={bDomain.warnings} />
 
-      <div className="b5-main">
-        {/* ===== 左栏:闸门 + 告警 feed ===== */}
-        <div className="left-rail">
-          <section className="card">
-            <div className="ttl-row" style={{ marginBottom: 13 }}>
-              <span className="ic"><ShieldCheck size={16} aria-hidden /></span>
-              <span className="h">Kill-Switch 闸门</span>
-              <div className="r">
-                <span className={`badge-s ${GATES_TRIPPED === 0 ? "ok" : "err"}`}>
-                  {GATES_TRIPPED} / {GATES.length}
-                </span>
-              </div>
-            </div>
-            <div>
-              {GATES.map((g) => {
-                const state = g.state ?? (g.on ? "on" : "off");
-                return (
-                  <div key={g.dom} className={`gate ${state === "missing" ? "missing" : state === "on" ? "on" : "off"}`}>
-                    <span className="light" />
-                    <span className="nm">{g.nm}</span>
-                    <span className="dom">{g.dom}</span>
-                    <span className="st">{state === "missing" ? "未配置" : state === "on" ? "待命" : "已熔断"}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="muted tiny" style={{ marginTop: 9 }}>
-              {GATES_TRIPPED === 0
-                ? `${GATES.length - GATES_MISSING} 闸待命${GATES_MISSING ? ` · ${GATES_MISSING} 未配置` : ""}`
-                : `${GATES.length} 闸 · ${GATES_TRIPPED} 已熔断(详见 J1)`}
-              {" "}· 手动熔断 / 恢复按方向权限确认；R1 自动关停后须补录处置结论
-            </div>
-          </section>
-
-          <section className="card">
-            <div className="ttl-row" style={{ marginBottom: 8 }}>
-              <span className="ic"><AlertTriangle size={16} aria-hidden /></span>
-              <span className="h">未处理告警</span>
-              <div className="r"><span className="badge-s orange">{FEED.length} 待处理</span></div>
-            </div>
-            <div className="feed">
-              {FEED.map((f, i) => (
-                <Link key={i} href={f.href} prefetch={false} className="feed-item">
-                  <span className={`sev ${f.sev}`}>{f.sev.toUpperCase()}</span>
-                  <div className="ft">
-                    <div className="t">{f.t}</div>
-                    <div className="m">{f.m}</div>
-                  </div>
-                  <ChevronRight size={15} className="feed-chev" aria-hidden />
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {/* ===== 右栏:瓦片 + 趋势 + 底部三联 ===== */}
-        <div className="right-stack">
-          {/* 报警瓦片三联 */}
-          <div className="alarm-row">
-            <div className="alarm">
-              <div className="k">
-                出金压力比{" "}
-                <span className="help" data-tip={`(payout + 佣金) ÷ 毛流入(模型 §5.3 庞氏度量)。逼近红线 ${BR_TIGHT}% 时联动 D 域收紧 / 退出。`}>?</span>
-              </div>
-              <div className="v" style={{ color: currentPressure < BR_TIGHT ? "var(--success)" : "var(--danger)" }}>{currentPressure}%</div>
-              <div className="d" style={{ color: currentPressure < BR_TIGHT ? "var(--success)" : "var(--danger)" }}>
-                {currentPressure >= prevPressure ? "↗" : "↘"} 上窗 {prevPressure}% · 红线 {BR_TIGHT}%
-              </div>
-            </div>
-            <div className="alarm warn">
-              <div className="k">
-                异常账户{" "}
-                <span className="help" data-tip="命中风控规则(多开 / 套利 / 异常提现等)的账户数,来自 K 域。">?</span>
-              </div>
-              <div className="v" style={{ color: "var(--warning)" }}>{flaggedAccounts}</div>
-              <div className="d" style={{ color: "var(--warning)" }}>{RULES.length} 类规则命中</div>
-            </div>
-            <div className="alarm warn">
-              <div className="k">未处理告警</div>
-              <div className="v">{FEED.length}</div>
-              <div className="d muted">P0:{p0Count} · P1:{p1Count} · P2:{p2Count}</div>
-            </div>
-          </div>
-
-          {/* 挤兑压力比趋势 */}
-          <section className="card">
-            <div className="ttl-row">
-              <span className="ic"><Radar size={16} aria-hidden /></span>
-              <span className="h">出金压力比趋势</span>
-              <span className="sub">近 {BR.length} 窗口 · 红线 {BR_TIGHT}%</span>
-              <div className="r"><span className="b-tag">{risingWindows} 个窗口未降 · 当前 {currentPressure}%</span></div>
-            </div>
-            {hasPressureSeries ? (
-              <>
-                <svg
-                  className="chart-svg"
-                  viewBox={`0 0 ${W} ${H}`}
-                  preserveAspectRatio="none"
-                  style={{ height: 150 }}
-                  role="img"
-                  aria-label={`出金压力比近 ${BR.length} 窗口趋势,当前 ${currentPressure}%,红线 ${BR_TIGHT}%`}
-                >
-                  <defs>
-                    <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0" stopColor="var(--danger)" stopOpacity="0.3" />
-                      <stop offset="1" stopColor="var(--danger)" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  <path d={area} fill={`url(#${gradId})`} />
-                  <line
-                    x1="0"
-                    y1={ty.toFixed(1)}
-                    x2={W}
-                    y2={ty.toFixed(1)}
-                    stroke="var(--danger)"
-                    strokeWidth="1.5"
-                    strokeDasharray="7 6"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  <text x="6" y={(ty + 15).toFixed(1)} fill="var(--danger)" fontSize="12" fontFamily="var(--font-jet-mono), monospace">
-                    红线 {BR_TIGHT}%
-                  </text>
-                  <path
-                    d={line}
-                    fill="none"
-                    stroke="var(--danger)"
-                    strokeWidth="2.4"
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                  {pts.map((p, i) => {
-                    const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
-                    const tx = i === 0 ? p[0] + 1 : i === n - 1 ? p[0] - 1 : p[0];
-                    return (
-                      <g key={i}>
-                        <circle
-                          cx={p[0].toFixed(1)}
-                          cy={p[1].toFixed(1)}
-                          r="3.2"
-                          fill="var(--surface)"
-                          stroke="var(--danger)"
-                          strokeWidth="2"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                        <text
-                          x={tx.toFixed(1)}
-                          y={(p[1] - 9).toFixed(1)}
-                          fill="var(--ink-3)"
-                          fontSize="11.5"
-                          fontFamily="var(--font-jet-mono), monospace"
-                          textAnchor={anchor}
-                        >
-                          {BR[i].toFixed(1)}%
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-                <div className="cohort-axis">
-                  {BR.map((_, i) => (
-                    <span key={i}>W{i + 1}</span>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="empty-state" style={{ minHeight: 150, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 13 }}>
-                暂无出金压力趋势样本
-              </div>
-            )}
-            {/* 挤兑比率副灯 — B5 持有黄/红线,J1 R1 直接引用同一 redline 配置。 */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, paddingTop: 10, borderTop: "1px dashed var(--border)", fontSize: 11.5, flexWrap: "wrap" }}>
-              <span style={{ color: "var(--ink-3)" }}>
-                挤兑比率(24h 提现申请 ÷ 储备){" "}
-                <span className="help" data-tip={`储备生存度量,与出金压力比(流量健康,早期警戒)互补分层。黄 ${bankRunYellowPct}% 预警 · 红 ${bankRunRedlinePct}% 为 J1 提现闸自动熔断引用线(R1,J1 引用不另持)。`}>?</span>
-              </span>
-              <span style={{ marginLeft: "auto", fontFamily: "var(--font-jet-mono), monospace", fontWeight: 600, color: bankRunColor }}>{bankRunRatio}%</span>
-              <span style={{ color: "var(--ink-4)" }}>黄 {bankRunYellowPct}% · 红 {bankRunRedlinePct}%(J1 R1 引用)</span>
-              {canWriteBankRunThresholds && (
-                <button type="button" className="btn ghost" onClick={() => setEditingBankRunThresholds(true)}>
-                  <SlidersHorizontal size={14} aria-hidden /> 调整阈值
-                </button>
-              )}
-            </div>
-          </section>
-
-          {/* 底部三联 */}
-          <div className="b5-bottom">
-            {/* 异常账户命中规则 */}
-            <section className="card">
-              <div className="ttl-row">
-                <span className="ic"><ShieldAlert size={16} aria-hidden /></span>
-                <span className="h">异常账户命中规则</span>
-                <span className="sub">近 7 日</span>
-              </div>
-              <div className="rule-row">
-                {RULES.map((r) => (
-                  <div key={r.nm} className="rule">
-                    <span className="nm">{r.nm}</span>
-                    <span className="bar-wrap">
-                      <span className="bar-f" style={{ width: `${(r.ct / maxRule) * 100}%` }} />
-                    </span>
-                    <span className="ct">{r.ct}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            {/* 告警严重度分布 */}
-            <section className="card">
-              <div className="ttl-row">
-                <span className="ic"><PieChart size={16} aria-hidden /></span>
-                <span className="h">告警严重度分布</span>
-                <span className="sub">含已处置</span>
-              </div>
-              <div className="donut-wrap">
-                <div
-                  className="donut"
-                  style={{ width: 120, height: 120, background: severityBg }}
-                >
-                  <div className="hole">
-                    <div>
-                      <div className="big">{sevTotalRaw}</div>
-                      <div className="sm">告警</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="legend" style={{ flex: 1 }}>
-                  {SEV.map((l) => (
-                    <div key={l.nm} className="lg">
-                      <span className="d" style={{ background: l.c }} />
-                      <span className="nm">{l.nm}</span>
-                      <span className="pc">{sevPct(l.count)}%</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {/* 近 7 日告警量 */}
-            <section className="card">
-              <div className="ttl-row">
-                <span className="ic"><AlertTriangle size={16} aria-hidden /></span>
-                <span className="h">近 7 日告警量</span>
-                <span className="sub">全域</span>
-              </div>
-              <div className="mini-bars">
-                {VOL_ROWS.map((row, i) => {
-                  const v = row.count;
-                  const recent = i >= VOL.length - 2;
-                  return (
-                    <div key={i} className="mini-col">
-                      <div className="v">{v}</div>
-                      <div
-                        className="bk"
-                        style={{
-                          height: `${(v / maxVol) * 82}px`,
-                          background: recent
-                            ? "var(--brand)"
-                            : "color-mix(in srgb, var(--brand) 72%, #000)",
-                        }}
-                      />
-                      <div className="lbl">{row.label}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-        </div>
+      <div className="b5-summary">
+        <span><Radar size={15} /> 服务端权威聚合</span>
+        <span>更新于 {new Date(data.generatedAt).toLocaleString()}</span>
+        <span>e(t) 固定红线 0.7（70%）</span>
       </div>
 
+      <div className="b5-dimensions">
+        <section className={`b5-dimension ${data.bankrun.light}`}>
+          <div className="b5-card-head">
+            <div><Gauge size={18} /><b>挤兑预警</b></div>
+            <span className={`b5-light ${data.bankrun.light}`}>{formatB5RiskLight(data.bankrun.light)}</span>
+          </div>
+          <div className="b5-bankrun-grid">
+            <div>
+              <span>24h 提现 ÷ 真实储备</span>
+              <strong>{pct(data.bankrun.ratio24h)}</strong>
+              <small>{money(data.bankrun.withdraw24hUsdt)} ÷ {money(data.bankrun.reserveUsdt)}</small>
+            </div>
+            <div>
+              <span>出金压力比 e(t)</span>
+              <strong>{pct(data.bankrun.pressureRatio)}</strong>
+              <small>固定红线 {pct(data.bankrun.pressureRedLine)} · 仅人工警戒</small>
+            </div>
+          </div>
+          <p>黄线 {bankRunYellowPct}% · 红线 {bankRunRedlinePct}%（J1 R1 已同步引用）</p>
+          <div className="b5-actions">
+            {canTriageDimension("bankrun") && <button onClick={() => void triage("bankrun")}>处置 → D2 提现队列</button>}
+            {canThreshold && <button className="secondary" onClick={openThreshold}>阈值配置</button>}
+          </div>
+        </section>
+
+        <section className="b5-dimension">
+          <div className="b5-card-head">
+            <div><ShieldAlert size={18} /><b>异常账户</b></div>
+            <strong>{data.abnormalAccounts.count}</strong>
+          </div>
+          <div className="b5-list">
+            {data.abnormalAccounts.byCategory.map((item) => (
+              <div key={item.category}><span>{item.label}</span><b>{item.count}</b></div>
+            ))}
+          </div>
+          <div className="b5-actions">
+            {canTriageDimension("abnormal-accounts") && <button onClick={() => void triage("abnormal-accounts")}>处置 → K 风控</button>}
+          </div>
+        </section>
+
+        <section className={`b5-dimension ${data.withdrawBacklog.light}`}>
+          <div className="b5-card-head">
+            <div><Landmark size={18} /><b>提现队列积压</b></div>
+            <span className={`b5-light ${data.withdrawBacklog.light}`}>SLA {data.withdrawBacklog.slaHours}h</span>
+          </div>
+          <div className="b5-backlog">
+            {data.withdrawBacklog.byState.map((item) => (
+              <div key={item.state}>
+                <span>{formatB5WithdrawalState(item.state)}</span>
+                <b>{item.count} 单</b>
+                <strong>{money(item.amountUsdt)}</strong>
+                <small>超 SLA {item.overSlaCount} 单</small>
+              </div>
+            ))}
+          </div>
+          <p>合计 {data.withdrawBacklog.totalCount} 单 · {money(data.withdrawBacklog.totalAmountUsdt)} · 超 SLA {data.withdrawBacklog.overSlaCount} 单</p>
+          <div className="b5-actions">
+            {canTriageDimension("withdraw-backlog") && <button onClick={() => void triage("withdraw-backlog")}>处置 → D2 提现队列</button>}
+          </div>
+        </section>
+
+        <section className="b5-dimension">
+          <div className="b5-card-head">
+            <div><ShieldCheck size={18} /><b>功能闸（5 个）</b></div>
+            <span>geo-block 归 J2</span>
+          </div>
+          <div className="b5-gates">
+            {data.killSwitches.map((gate) => (
+              <div key={gate.key}>
+                <i className={`b5-dot ${gate.enabled ? "green" : "red"}`} />
+                <span>{GATE_LABELS[gate.key]}</span>
+                <b>{gate.enabled ? "开放" : "已熔断"}</b>
+              </div>
+            ))}
+          </div>
+          <div className="b5-actions">
+            {canTriageDimension("kill-switches") && <button onClick={() => void triage("kill-switches")}>处置 → J1 功能闸</button>}
+          </div>
+        </section>
+
+        <section className={`b5-dimension ${data.coverage.light}`}>
+          <div className="b5-card-head">
+            <div><AlertTriangle size={18} /><b>兑付覆盖率</b></div>
+            <span className={`b5-light ${data.coverage.light}`}>{formatB5RiskLight(data.coverage.light)}</span>
+          </div>
+          <div className="b5-coverage">
+            <strong>{data.coverage.ratio}%</strong>
+            <span>红线 {data.coverage.redlinePct}%</span>
+            <small>储备 {money(data.coverage.reserveUsdt)} · 负债 {money(data.coverage.liabilitiesUsdt)}</small>
+          </div>
+          <div className="b5-actions">
+            {canTriageDimension("coverage") && <button onClick={() => void triage("coverage")}>核验 → B1 双账本</button>}
+          </div>
+        </section>
+      </div>
+
+      {canSubscribe && <section className="b5-subscription">
+        <div className="b5-card-head">
+          <div><BellRing size={18} /><b>告警订阅配置</b></div>
+          <span>与 B1 共用 · 保存后刷新仍保留</span>
+        </div>
+        <div className="b5-channel-row">
+          <label><input type="checkbox" name="inApp" checked={subscription.inApp} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, inApp: event.target.checked }))} />站内</label>
+          <label><input type="checkbox" name="email" checked={subscription.email} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, email: event.target.checked }))} />邮件</label>
+          <label><input type="checkbox" name="webhook" checked={subscription.webhook} disabled={!canSubscribe} onChange={(event) => setSubscription((value) => ({ ...value, webhook: event.target.checked }))} />Webhook</label>
+          {subscription.webhook && (
+            <input
+              aria-label="Webhook URL"
+              value={subscription.webhookUrl}
+              disabled={!canSubscribe}
+              placeholder="https://..."
+              onChange={(event) => setSubscription((value) => ({ ...value, webhookUrl: event.target.value }))}
+            />
+          )}
+          <button disabled={!subscriptionChanged || !subscriptionValid || savingSubscription} onClick={() => void saveSubscription()}>
+            {savingSubscription ? "保存中…" : "保存订阅"}
+          </button>
+        </div>
+      </section>}
+
       <p className="b-foot">
-        出金压力比 <b>{currentPressure}%</b>,红线 {BR_TIGHT}%;异常账户 {flaggedAccounts} 个,来自 {RULES.length} 类命中规则。
-        <b>{GATES_TRIPPED === 0 ? `Kill-Switch ${GATES.length - GATES_MISSING} 闸待命${GATES_MISSING ? `,${GATES_MISSING} 闸未配置` : ""}` : `Kill-Switch ${GATES_TRIPPED} / ${GATES.length} 闸已熔断`}</b>,P0 告警表示挤兑比率达到当前动态红线。手动触发需操作确认；R1 自动关停后补录 + 全站广播。
+        B5 不直接处置任何风险；五维数据分别引用 B1/D2/K/J1 单一权威源。P0 告警表示挤兑比率达到当前动态红线；
+        R1 自动关停后须补录处置结论。接口失败、空值或结构异常时页面清空旧值并停止展示。
       </p>
-      {editingBankRunThresholds && (
-        <OperationConfirmModal
-          action="调整 B5 挤兑分层阈值"
-          detail={`B5 是挤兑黄线和红线的唯一配置入口。保存后风险灯、告警分级与 J1 R1 提现闸自动熔断立即读取同一红线;红线必须严格高于黄线。`}
-          businessForm={{
-            kind: "multi-field",
-            title: "目标新值",
-            hint: "黄线范围 5%–50%,红线范围 10%–80%,且红线必须高于黄线。",
-            fields: [
-              { key: "yellowPct", label: "预警黄线(%)", current: String(bankRunYellowPct), inputKind: "number", min: 5, max: 50, step: 0.1 },
-              { key: "redlinePct", label: "自动熔断红线(%)", current: String(bankRunRedlinePct), inputKind: "number", min: 10, max: 80, step: 0.1 },
-            ],
-          }}
-          onClose={() => setEditingBankRunThresholds(false)}
-          onConfirm={async (reason, _newValue, businessValue) => {
-            const yellowPct = businessValue?.yellowPct ?? "";
-            const redlinePct = businessValue?.redlinePct ?? "";
-            if (Number(redlinePct) <= Number(yellowPct)) {
-              setToast("红线必须严格高于黄线");
-              return;
-            }
-            try {
-              await updateB5BankRunThresholds({ yellowPct, redlinePct }, reason, operator);
-              await bDomain.reload();
-              setEditingBankRunThresholds(false);
-              setToast(`B5 挤兑阈值已更新:黄线 ${yellowPct}% · 红线 ${redlinePct}%;J1 R1 已同步引用`);
-            } catch (error) {
-              setToast(error instanceof Error ? error.message : "B5_BANKRUN_THRESHOLD_UPDATE_FAILED");
-            }
-          }}
-        />
+
+      {thresholdOpen && (
+        <div className="b5-modal-mask" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setThresholdOpen(false)}>
+          <div className="b5-modal" role="dialog" aria-modal="true" aria-labelledby="b5-threshold-title">
+            <h2 id="b5-threshold-title">B5-MD1 · 挤兑阈值配置</h2>
+            <p>当前挤兑比率 {pct(data.bankrun.ratio24h)} · e(t) {pct(data.bankrun.pressureRatio)}（固定红线 70%，不可修改）</p>
+            <div className="b5-threshold-fields">
+              <label>黄线（5%–50%）<input value={yellowInput} onChange={(event) => setYellowInput(event.target.value)} inputMode="decimal" /></label>
+              <label>红线（10%–80%）<input value={redInput} onChange={(event) => setRedInput(event.target.value)} inputMode="decimal" /></label>
+            </div>
+            {!thresholdValid && <div className="b5-error">红线必须严格高于黄线，且两者均在允许范围内。</div>}
+            <label className="b5-reason">调整理由（8–200 字）<textarea value={reason} maxLength={200} onChange={(event) => setReason(event.target.value)} /></label>
+            <div className="b5-preview">
+                  {preview ? <>服务端影响预览：新阈值下灯色为 <b>{formatB5RiskLight(preview.light)}</b></> : "服务端影响预览加载中…"}
+              {redPct > data.bankrun.redPct && <p>警示：上调红线将同步推迟 J1 R1 提现闸自动熔断触发点。</p>}
+            </div>
+            {previewError && <div className="b5-error">{previewError}</div>}
+            <div className="b5-modal-actions">
+              <button className="secondary" onClick={() => setThresholdOpen(false)}>取消</button>
+              <button disabled={!thresholdValid || !reasonValid || !preview || savingThreshold} onClick={() => void submitThreshold()}>
+                {savingThreshold ? "提交中…" : "确认调整阈值"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {toastNode}
     </div>

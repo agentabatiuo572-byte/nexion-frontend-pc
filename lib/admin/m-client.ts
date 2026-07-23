@@ -48,6 +48,8 @@ type SupportTicketView = {
   closedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+  archived?: boolean;
+  archivedAt?: string;
 };
 
 type SupportTicketMessageView = {
@@ -133,6 +135,9 @@ type SupportFaqView = {
   answer?: string;
   status?: string;
   surface?: string;
+  language?: string;
+  sortOrder?: number;
+  version?: number;
   updatedAt?: string;
 };
 
@@ -338,6 +343,12 @@ export type MContentData = {
   scriptAudience: Record<string, string>;
   replyTemplates: SessionReplyTpl[];
   transferTargets: Array<Record<string, unknown>>;
+  loadConfigAvailable: boolean;
+  ticketsAvailable: boolean;
+  conversationsAvailable: boolean;
+  knowledgeAvailable: boolean;
+  sessionTemplatesAvailable: boolean;
+  loadWarnings: string[];
 };
 
 export type MLoadConfigWrite = MLoadConfig & {
@@ -582,6 +593,11 @@ function status(value: string | undefined): "published" | "draft" {
   return (value || "").toLowerCase() === "published" ? "published" : "draft";
 }
 
+function templateStatus(value: string | undefined): "published" | "draft" | "archived" {
+  const normalized = (value || "").toLowerCase();
+  return value === "archived" ? "archived" : normalized === "published" ? "published" : normalized === "archived" ? "archived" : "draft";
+}
+
 function conversationStatus(value: string | undefined): SessionConvo["status"] {
   const v = upper(value, "OPEN");
   if (v === "RESOLVED") return "resolved";
@@ -680,20 +696,15 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
   const base = "ticket" in detail && detail.ticket ? detail.ticket : (detail as SupportTicketView);
   const created = asTs(base.createdAt);
   const updated = asTs(base.updatedAt, created);
-  const messages = asArray<SupportTicketMessageView>("messages" in detail ? detail.messages : []).map((m) => ({
-    ts: asTs(m.createdAt, updated),
-    author: upper(m.senderType, "USER") === "USER" ? ("user" as const) : ("agent" as const),
-    agentName: upper(m.senderType, "USER") === "USER" ? undefined : str(m.senderName, base.assignedAdminName || "客服台"),
-    body: str(m.content, ""),
-  }));
-  if (!messages.length && base.lastMessage) {
-    messages.push({
-      ts: asTs(base.lastMessageAt, updated),
-      author: "agent",
-      agentName: base.assignedAdminName || "客服台",
-      body: base.lastMessage,
-    });
-  }
+  const messages = asArray<SupportTicketMessageView>("messages" in detail ? detail.messages : []).map((m) => {
+    const senderType = upper(m.senderType, "USER");
+    return {
+      ts: asTs(m.createdAt, updated),
+      author: senderType === "USER" ? ("user" as const) : senderType === "SYSTEM" ? ("system" as const) : ("agent" as const),
+      agentName: senderType === "USER" ? undefined : str(m.senderName, senderType === "SYSTEM" ? "系统" : base.assignedAdminName || "客服台"),
+      body: str(m.content, ""),
+    };
+  });
   return {
     id: str(base.ticketNo, `TK-${base.id ?? "UNKNOWN"}`),
     userId: base.userId,
@@ -706,8 +717,42 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
     lastReplyAt: asTs(base.lastMessageAt, updated),
     unread: num(base.opsUnreadCount, 0),
     owner: str(base.assignedAdminName, "Unassigned"),
+    archived: Boolean(base.archived),
+    archivedAt: base.archivedAt ? asTs(base.archivedAt) : undefined,
     messages,
   };
+}
+
+async function fetchAllSupportTickets(): Promise<AdminPage<SupportTicketView>> {
+  const pageSize = 100;
+  const first = await apiRequest<AdminPage<SupportTicketView>>(`/tickets?pageNum=1&pageSize=${pageSize}`);
+  const records = [...asArray<SupportTicketView>(first.records)];
+  const total = Math.max(num(first.total, records.length), records.length);
+  let pageNum = 2;
+  while (records.length < total) {
+    const page = await apiRequest<AdminPage<SupportTicketView>>(`/tickets?pageNum=${pageNum}&pageSize=${pageSize}`);
+    const next = asArray<SupportTicketView>(page.records);
+    if (next.length === 0) break;
+    records.push(...next);
+    pageNum += 1;
+  }
+  return { total, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
+}
+
+async function fetchAllSupportConversations(): Promise<AdminPage<ContentConversationView>> {
+  const pageSize = 100;
+  const first = await apiRequest<AdminPage<ContentConversationView>>(`/conversations?pageNum=1&pageSize=${pageSize}`);
+  const records = [...asArray<ContentConversationView>(first.records)];
+  const total = Math.max(num(first.total, records.length), records.length);
+  let pageNum = 2;
+  while (records.length < total) {
+    const page = await apiRequest<AdminPage<ContentConversationView>>(`/conversations?pageNum=${pageNum}&pageSize=${pageSize}`);
+    const next = asArray<ContentConversationView>(page.records);
+    if (next.length === 0) break;
+    records.push(...next);
+    pageNum += 1;
+  }
+  return { total, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
 }
 
 function adaptConversation(detail: ContentConversationDetail | ContentConversationView): SessionConvo {
@@ -764,6 +809,9 @@ function adaptFaq(row: SupportFaqView): SupportFaq {
     answer: str(row.answer, ""),
     status: status(row.status),
     surface: surface(row.surface),
+    language: (["zh-CN", "en-US", "vi-VN"].includes(str(row.language)) ? row.language : "zh-CN") as SupportFaq["language"],
+    sortOrder: num(row.sortOrder, 0),
+    version: num(row.version, 1),
     updatedAt: asDate(row.updatedAt),
   };
 }
@@ -800,7 +848,7 @@ function adaptScript(row: SessionScriptView): AdvisorScript {
     group: scriptGroup(row.scriptGroup),
     text: str(row.text, ""),
     ctaHref: str(row.ctaPath, "—") || "—",
-    status: status(row.status),
+    status: templateStatus(row.status),
   };
 }
 
@@ -810,7 +858,7 @@ function adaptReplyTemplate(row: SessionReplyTemplateView): SessionReplyTpl {
     id: str(row.id, `RT-${Date.now()}`),
     type,
     text: str(row.text, ""),
-    status: status(row.status),
+    status: templateStatus(row.status),
   };
 }
 
@@ -882,7 +930,7 @@ function adaptLoadConfig(raw: Record<string, unknown> | undefined, agents: MSupp
     quietHourBalance: loadBoolean(loadRaw, "quietHourBalance"),
     overflowQueue: loadText(loadRaw, "overflowQueue"),
   };
-  const agentRaw = loadRaw.agentState && typeof loadRaw.agentState === "object" ? (loadRaw.agentState as Record<string, unknown>) : {};
+  const agentRaw = raw?.agentState && typeof raw.agentState === "object" ? (raw.agentState as Record<string, unknown>) : {};
   const agentState: MAgentState = {};
   agents.forEach((agent) => {
     agentState[agent.id] = {
@@ -921,19 +969,55 @@ async function detailOrRow<T extends { id?: string }>(
   return details;
 }
 
+async function detailOrUnavailable<T extends { id?: string }>(
+  rows: T[],
+  loader: (id: string) => Promise<unknown>,
+  adapt: (value: unknown) => T,
+): Promise<{ rows: T[]; complete: boolean }> {
+  const details = await Promise.allSettled(
+    rows.map(async (row) => (row.id ? adapt(await loader(row.id)) : row)),
+  );
+  const complete = details.every((detail) => detail.status === "fulfilled");
+  return {
+    rows: complete ? details.map((detail) => (detail as PromiseFulfilledResult<T>).value) : [],
+    complete,
+  };
+}
+
 export async function fetchMContentData(): Promise<MContentData> {
-  const [ticketPage, loadRaw, convoPage, supportAgentOverview, knowledge, sessionTemplates] = await Promise.all([
-    apiRequest<AdminPage<SupportTicketView>>("/tickets?pageNum=1&pageSize=100"),
+  const results = await Promise.allSettled([
+    fetchAllSupportTickets(),
     apiRequest<Record<string, unknown>>("/tickets/load-config"),
-    apiRequest<AdminPage<ContentConversationView>>("/conversations?pageNum=1&pageSize=100"),
+    fetchAllSupportConversations(),
     apiRequest<SupportAgentOverview>("/support-agents"),
     apiRequest<SupportKnowledgeOverview>("/knowledge/overview"),
     apiRequest<SessionTemplateOverview>("/session-templates/overview"),
   ]);
+  const loadWarnings: string[] = [];
+  const valueOr = <T,>(result: PromiseSettledResult<unknown>, fallback: T, label: string): T => {
+    if (result.status === "fulfilled") return result.value as T;
+    loadWarnings.push(label);
+    return fallback;
+  };
+  const ticketPage = valueOr<AdminPage<SupportTicketView>>(results[0], { records: [], total: 0, pageNum: 1, pageSize: 100 }, "工单数据");
+  const loadRaw = valueOr<Record<string, unknown>>(results[1], {
+    loadConfig: { autoBalance: false, defaultCap: 8, burstCap: 12, warnPct: 80, quietHourBalance: false, overflowQueue: "转人工备勤队列" },
+    agentState: {},
+  }, "负载策略");
+  const convoPage = valueOr<AdminPage<ContentConversationView>>(results[2], { records: [], total: 0, pageNum: 1, pageSize: 100 }, "会话数据");
+  const supportAgentOverview = valueOr<SupportAgentOverview>(results[3], {}, "坐席名单");
+  const knowledge = valueOr<SupportKnowledgeOverview>(results[4], {}, "响应时限");
+  const sessionTemplates = valueOr<SessionTemplateOverview>(results[5], {}, "客服话术");
+  const loadConfigAvailable = results[1].status === "fulfilled";
+  const conversationsAvailable = results[2].status === "fulfilled";
+  const knowledgeAvailable = results[4].status === "fulfilled";
+  const sessionTemplatesAvailable = results[5].status === "fulfilled";
 
   const ticketRows = asArray<SupportTicketView>(ticketPage.records).map((row) => adaptTicket(row));
   const convoRows = asArray<ContentConversationView>(convoPage.records).map((row) => adaptConversation(row));
-  const tickets = await detailOrRow(ticketRows, (id) => apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(id)}`), (value) => adaptTicket(value as SupportTicketDetail));
+  const ticketDetails = await detailOrUnavailable(ticketRows, (id) => apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(id)}`), (value) => adaptTicket(value as SupportTicketDetail));
+  const ticketsAvailable = results[0].status === "fulfilled" && ticketDetails.complete;
+  if (!ticketDetails.complete) loadWarnings.push("工单明细");
   const conversations = await detailOrRow(convoRows, (id) => apiRequest<ContentConversationDetail>(`/conversations/${encodeURIComponent(id)}`), (value) => adaptConversation(value as ContentConversationDetail));
   const supportAgents = asArray<Record<string, unknown>>(supportAgentOverview.agents).map(adaptSupportAgent);
   const advisorAssignments = asArray<Record<string, unknown>>(supportAgentOverview.advisorAssignments).map(adaptAdvisorAssignment);
@@ -942,7 +1026,7 @@ export async function fetchMContentData(): Promise<MContentData> {
   const scriptAudience = Object.fromEntries(asArray<SessionScriptView>(sessionTemplates.scripts).map((row) => [str(row.id), str(row.audience)]));
 
   return {
-    tickets,
+    tickets: ticketDetails.rows,
     conversations,
     faqs: asArray<SupportFaqView>(knowledge.faqs).map(adaptFaq),
     sla: asArray<SupportSlaView>(knowledge.sla).map(adaptSla),
@@ -974,6 +1058,12 @@ export async function fetchMContentData(): Promise<MContentData> {
     scriptAudience,
     replyTemplates: asArray<SessionReplyTemplateView>(sessionTemplates.replyTemplates).map(adaptReplyTemplate),
     transferTargets,
+    loadConfigAvailable,
+    ticketsAvailable,
+    conversationsAvailable,
+    knowledgeAvailable,
+    sessionTemplatesAvailable,
+    loadWarnings,
   };
 }
 
@@ -1041,20 +1131,28 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.session.scripts": JSON.stringify(data.scripts),
     "I.session.replyTemplates": JSON.stringify(data.replyTemplates),
     "I.session.transferTargets": JSON.stringify(data.transferTargets),
-    "I.support.load.autoBalance": data.loadConfig.autoBalance ? "1" : "0",
-    "I.support.load.defaultCap": String(data.loadConfig.defaultCap),
-    "I.support.load.burstCap": String(data.loadConfig.burstCap),
-    "I.support.load.warnPct": String(data.loadConfig.warnPct),
-    "I.support.load.quietHourBalance": data.loadConfig.quietHourBalance ? "1" : "0",
-    "I.support.load.overflowQueue": data.loadConfig.overflowQueue,
+    "I.support.loadWarnings": JSON.stringify(data.loadWarnings),
+    "I.support.ticketsAvailable": data.ticketsAvailable ? "1" : "0",
+    "I.session.conversationsAvailable": data.conversationsAvailable ? "1" : "0",
+    "I.support.knowledgeAvailable": data.knowledgeAvailable ? "1" : "0",
+    "I.session.templatesAvailable": data.sessionTemplatesAvailable ? "1" : "0",
     "I.session.advisor.policy.enabled": data.advisorPolicy.enabled,
     "I.session.advisor.policy.delayMs": String(data.advisorPolicy.delayMs),
     "I.session.advisor.policy.cooldownHours": String(data.advisorPolicy.cooldownHours),
     "I.session.advisor.policy.maxPerSession": String(data.advisorPolicy.maxPerSession),
+    "I.session.advisor.policy.audience": data.advisorPolicy.audience,
     "I.session.workbench.timeoutFallback": data.workbenchPolicy.timeoutFallback,
     "I.session.audienceOptions": JSON.stringify(data.audienceOptions),
     "I.session.segmentFields": JSON.stringify(data.segmentFields),
   };
+  if (data.loadConfigAvailable) {
+    params["I.support.load.autoBalance"] = data.loadConfig.autoBalance ? "1" : "0";
+    params["I.support.load.defaultCap"] = String(data.loadConfig.defaultCap);
+    params["I.support.load.burstCap"] = String(data.loadConfig.burstCap);
+    params["I.support.load.warnPct"] = String(data.loadConfig.warnPct);
+    params["I.support.load.quietHourBalance"] = data.loadConfig.quietHourBalance ? "1" : "0";
+    params["I.support.load.overflowQueue"] = data.loadConfig.overflowQueue;
+  }
   data.categories.forEach((cat) => {
     params[`I.session.cat.${cat.type}.enabled`] = cat.enabled ? "on" : "off";
   });
@@ -1095,15 +1193,17 @@ export function agentIdForName(name: string, data?: MContentData | null) {
 }
 
 export const mContentActions = {
-  updateLoadConfig(payload: MLoadConfigWrite, reason: string) {
+  updateLoadConfig(payload: MLoadConfigWrite, reason: string, idempotencyKey?: string) {
     return apiRequest<Record<string, unknown>>("/tickets/load-config", {
       method: "PATCH",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason(payload, reason)),
     });
   },
-  rebalanceLoad(agents: Array<Record<string, unknown>>, reason: string) {
+  rebalanceLoad(agents: Array<Record<string, unknown>>, reason: string, idempotencyKey?: string) {
     return apiRequest<Record<string, unknown>>("/tickets/load-config/rebalance", {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ agents }, reason)),
     });
   },
@@ -1145,49 +1245,78 @@ export const mContentActions = {
       body: JSON.stringify(withReason({ assignedAdminId, assignedAdminName }, reason)),
     });
   },
-  replyConversation(conversationNo: string, body: string, reason: string) {
-    return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/replies`, {
-      method: "POST",
-      body: JSON.stringify(withReason({ body }, reason)),
-    });
-  },
-  updateConversationStatus(conversationNo: string, statusValue: SessionConvo["status"], reason: string) {
-    return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/status`, {
-      method: "PATCH",
-      body: JSON.stringify(withReason({ status: toBackendConversationStatus(statusValue) }, reason)),
-    });
-  },
-  archiveConversation(conversationNo: string, archived: boolean, reason: string) {
-    return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/archive`, {
+  archiveTicket(ticketNo: string, archived: boolean, reason: string) {
+    return apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(ticketNo)}/archive`, {
       method: "PATCH",
       body: JSON.stringify(withReason({ archived }, reason)),
     });
   },
-  addCustomerTag(conversationNo: string, tag: string, reason: string) {
+  escalateTicket(ticketNo: string, owner: { ownerAgentId: string; ownerAgentName: string }, reason: string) {
+    return apiRequest<{ ticket?: SupportTicketDetail; conversation?: ContentConversationView }>(`/tickets/${encodeURIComponent(ticketNo)}/escalate`, {
+      method: "POST",
+      body: JSON.stringify(withReason(owner, reason)),
+    });
+  },
+  replyConversation(conversationNo: string, body: string, reason: string, idempotencyKey?: string) {
+    return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/replies`, {
+      method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ body }, reason)),
+    });
+  },
+  updateConversationStatus(conversationNo: string, statusValue: SessionConvo["status"], expectedStatus: SessionConvo["status"], reason: string, idempotencyKey?: string) {
+    return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/status`, {
+      method: "PATCH",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({
+        status: toBackendConversationStatus(statusValue),
+        expectedStatus: toBackendConversationStatus(expectedStatus),
+      }, reason)),
+    });
+  },
+  archiveConversation(conversationNo: string, archived: boolean, expectedStatus: SessionConvo["status"], reason: string, idempotencyKey?: string) {
+    return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/archive`, {
+      method: "PATCH",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ archived, expectedStatus: toBackendConversationStatus(expectedStatus) }, reason)),
+    });
+  },
+  archiveConversations(conversationNos: string[], reason: string, idempotencyKey?: string) {
+    return apiRequest<ContentConversationView[]>("/conversations/archive/batch", {
+      method: "PATCH",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ conversationNos }, reason)),
+    });
+  },
+  addCustomerTag(conversationNo: string, tag: string, reason: string, idempotencyKey?: string) {
     return apiRequest<string[]>(`/conversations/${encodeURIComponent(conversationNo)}/customer-tags`, {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ tag }, reason)),
     });
   },
-  removeCustomerTag(conversationNo: string, tag: string, reason: string) {
+  removeCustomerTag(conversationNo: string, tag: string, reason: string, idempotencyKey?: string) {
     return apiRequest<string[]>(`/conversations/${encodeURIComponent(conversationNo)}/customer-tags`, {
       method: "DELETE",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ tag }, reason)),
     });
   },
-  addCustomerNote(conversationNo: string, text: string, reason: string) {
+  addCustomerNote(conversationNo: string, text: string, reason: string, idempotencyKey?: string) {
     return apiRequest<{ id?: string; ts?: number; author?: string; text?: string }>(`/conversations/${encodeURIComponent(conversationNo)}/customer-notes`, {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ text }, reason)),
     });
   },
-  removeCustomerNote(conversationNo: string, noteId: string, reason: string) {
+  removeCustomerNote(conversationNo: string, noteId: string, reason: string, idempotencyKey?: string) {
     return apiRequest<unknown>(`/conversations/${encodeURIComponent(conversationNo)}/customer-notes/${encodeURIComponent(noteId)}`, {
       method: "DELETE",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({}, reason)),
     });
   },
-  transferConversation(conversationNo: string, transfer: SessionConvo["transfer"], reason: string, targetIdOverride?: string) {
+  transferConversation(conversationNo: string, transfer: SessionConvo["transfer"], reason: string, targetIdOverride?: string, idempotencyKey?: string) {
     const target = transfer?.to;
     const body =
       target?.kind === "agent"
@@ -1197,30 +1326,35 @@ export const mContentActions = {
           : { targetType: "standby", targetId: "standby-pool", targetName: "备勤池" };
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer`, {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason(body, transfer?.reason || reason)),
     });
   },
-  acceptTransfer(conversationNo: string, reason: string) {
+  acceptTransfer(conversationNo: string, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/accept`, {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({}, reason)),
     });
   },
-  returnTransfer(conversationNo: string, reason: string) {
+  returnTransfer(conversationNo: string, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/return`, {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({}, reason)),
     });
   },
-  waitTransfer(conversationNo: string, reason: string) {
+  waitTransfer(conversationNo: string, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/wait`, {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({}, reason)),
     });
   },
-  fallbackTransfer(conversationNo: string, reason: string) {
+  fallbackTransfer(conversationNo: string, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/fallback`, {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({}, reason)),
     });
   },
@@ -1230,9 +1364,10 @@ export const mContentActions = {
     ownerAgentId?: string;
     ownerAgentName: string;
     openingText: string;
-  }, reason: string) {
+  }, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>("/conversations", {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ ...convo, ownerAgentId: convo.ownerAgentId || agentIdForName(convo.ownerAgentName), conversationType: convo.conversationType.toUpperCase() }, reason)),
     });
   },
@@ -1240,11 +1375,12 @@ export const mContentActions = {
     category: SupportTicketCategory;
     priority: SupportTicketPriority;
     title: string;
-    assignedAdminId: number;
+    assignedAdminId?: number;
     assignedAdminName: string;
-  }, reason: string) {
+  }, reason: string, idempotencyKey?: string) {
     return apiRequest<unknown>(`/conversations/${encodeURIComponent(conversationNo)}/ticket`, {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ ...ticket, category: ticket.category.toUpperCase(), priority: toBackendTicketPriority(ticket.priority) }, reason)),
     });
   },
@@ -1255,9 +1391,10 @@ export const mContentActions = {
     enabled?: boolean;
     transferable?: boolean;
     busy?: boolean;
-  }, reason: string) {
+  }, reason: string, idempotencyKey?: string) {
     return apiRequest<MSupportAgent>(`/support-agents/${encodeURIComponent(String(adminId))}/profile`, {
       method: "PATCH",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason(profile, reason)),
     });
   },
@@ -1270,9 +1407,10 @@ export const mContentActions = {
     transferable?: boolean;
     busy?: boolean;
     userIds?: number[];
-  }, reason: string) {
+  }, reason: string, idempotencyKey?: string) {
     return apiRequest<MSupportAgent>(`/support-agents/${encodeURIComponent(String(adminId))}/seat-assignment`, {
       method: "PATCH",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason(seat, reason)),
     });
   },
@@ -1282,7 +1420,7 @@ export const mContentActions = {
       body: JSON.stringify(withReason({ userId }, reason)),
     });
   },
-  async assignAdvisorUsers(adminId: number, userIds: number[], reason: string) {
+  async assignAdvisorUsers(adminId: number, userIds: number[], reason: string, idempotencyKey?: string) {
     const normalizedUserIds = Array.from(new Set(userIds
       .map((userId) => Number(userId))
       .filter((userId) => Number.isFinite(userId) && userId > 0)));
@@ -1290,87 +1428,110 @@ export const mContentActions = {
     for (const userId of normalizedUserIds) {
       assignments.push(await apiRequest<MAdvisorAssignment>(`/support-agents/${encodeURIComponent(String(adminId))}/assignments`, {
         method: "POST",
+        headers: idempotencyKey ? { "Idempotency-Key": `${idempotencyKey}:${userId}` } : undefined,
         body: JSON.stringify(withReason({ userId }, reason)),
       }));
     }
     return assignments;
   },
-  deactivateAdvisorAssignment(adminId: number, assignmentId: number, reason: string) {
+  deactivateAdvisorAssignment(adminId: number, assignmentId: number, reason: string, idempotencyKey?: string) {
     return apiRequest<MAdvisorAssignment>(`/support-agents/${encodeURIComponent(String(adminId))}/assignments/${encodeURIComponent(String(assignmentId))}`, {
       method: "DELETE",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({}, reason)),
     });
   },
-  createFaq(faq: Omit<SupportFaq, "id" | "updatedAt">, reason: string) {
+  createFaq(faq: Omit<SupportFaq, "id" | "updatedAt" | "version">, reason: string, idempotencyKey?: string) {
+    const { version: _version, ...payload } = faq as Omit<SupportFaq, "id" | "updatedAt">;
     return apiRequest<SupportFaqView>("/knowledge/faqs", {
       method: "POST",
-      body: JSON.stringify(withReason(faq, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason(payload, reason)),
     });
   },
-  updateFaq(faq: SupportFaq, reason: string) {
+  updateFaq(faq: SupportFaq, reason: string, idempotencyKey?: string) {
+    const { id, updatedAt: _updatedAt, version: _version, ...payload } = faq;
     return apiRequest<SupportFaqView>(`/knowledge/faqs/${encodeURIComponent(faq.id)}`, {
       method: "PATCH",
-      body: JSON.stringify(withReason(faq, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason(payload, reason)),
     });
   },
-  updateFaqStatus(id: string, nextStatus: SupportFaq["status"], reason: string) {
+  updateFaqStatus(id: string, nextStatus: SupportFaq["status"], reason: string, idempotencyKey?: string) {
     return apiRequest<SupportFaqView>(`/knowledge/faqs/${encodeURIComponent(id)}/status`, {
       method: "PATCH",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ status: nextStatus }, reason)),
     });
   },
-  updateSla(row: SupportSla, reason: string) {
+  deleteFaq(id: string, reason: string, idempotencyKey?: string) {
+    return apiRequest<void>(`/knowledge/faqs/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({}, reason)),
+    });
+  },
+  updateSla(row: SupportSla, reason: string, idempotencyKey?: string) {
     return apiRequest<SupportSlaView>(`/knowledge/sla/${encodeURIComponent(row.category)}`, {
       method: "PATCH",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason(row, reason)),
     });
   },
-  updateCategory(type: SessionType, enabled: boolean, reason: string) {
+  updateCategory(type: SessionType, enabled: boolean, expectedEnabled: boolean, reason: string, idempotencyKey?: string) {
     return apiRequest<SessionCategoryView>(`/session-templates/categories/${encodeURIComponent(type)}`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ enabled }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ enabled, expectedEnabled }, reason)),
     });
   },
-  updateAdvisorPolicy(field: string, value: string, reason: string) {
+  updateAdvisorPolicy(field: string, value: string, expectedValue: string, reason: string, idempotencyKey?: string) {
     return apiRequest<SessionAdvisorPolicyView>(`/session-templates/advisor-policy/${encodeURIComponent(field)}`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ value }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ value, expectedValue }, reason)),
     });
   },
-  updateWorkbenchPolicy(field: string, value: string, reason: string) {
+  updateWorkbenchPolicy(field: string, value: string, expectedValue: string, reason: string, idempotencyKey?: string) {
     return apiRequest<SessionWorkbenchPolicyView>(`/session-templates/workbench-policy/${encodeURIComponent(field)}`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ value }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ value, expectedValue }, reason)),
     });
   },
-  createScript(script: { scriptGroup: AdvisorScript["group"]; text: string; ctaPath: string; audience: string; status: AdvisorScript["status"] }, reason: string) {
+  createScript(script: { scriptGroup: AdvisorScript["group"]; text: string; ctaPath: string; audience: string; status: AdvisorScript["status"] }, reason: string, idempotencyKey?: string) {
     return apiRequest<SessionScriptView>("/session-templates/scripts", {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason(script, reason)),
     });
   },
-  updateScriptStatus(scriptId: string, nextStatus: AdvisorScript["status"], reason: string) {
+  updateScriptStatus(scriptId: string, nextStatus: AdvisorScript["status"], expectedStatus: AdvisorScript["status"], reason: string, idempotencyKey?: string) {
     return apiRequest<SessionScriptView>(`/session-templates/scripts/${encodeURIComponent(scriptId)}/status`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ status: nextStatus }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ status: nextStatus, expectedStatus }, reason)),
     });
   },
-  updateScriptAudience(scriptId: string, audience: string, reason: string) {
+  updateScriptAudience(scriptId: string, audience: string, expectedAudience: string, reason: string, idempotencyKey?: string) {
     return apiRequest<SessionScriptView>(`/session-templates/scripts/${encodeURIComponent(scriptId)}/audience`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ audience }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ audience, expectedAudience }, reason)),
     });
   },
-  createReplyTemplate(template: { type: SessionReplyTpl["type"]; text: string; status: SessionReplyTpl["status"] }, reason: string) {
+  createReplyTemplate(template: { type: SessionReplyTpl["type"]; text: string; status: SessionReplyTpl["status"] }, reason: string, idempotencyKey?: string) {
     return apiRequest<SessionReplyTemplateView>("/session-templates/reply-templates", {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason(template, reason)),
     });
   },
-  updateReplyTemplateStatus(templateId: string, nextStatus: SessionReplyTpl["status"], reason: string) {
+  updateReplyTemplateStatus(templateId: string, nextStatus: SessionReplyTpl["status"], expectedStatus: SessionReplyTpl["status"], reason: string, idempotencyKey?: string) {
     return apiRequest<SessionReplyTemplateView>(`/session-templates/reply-templates/${encodeURIComponent(templateId)}/status`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ status: nextStatus }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({ status: nextStatus, expectedStatus }, reason)),
     });
   },
 };

@@ -68,8 +68,9 @@ test("L1-L6 BI 人工路径: 报表创建、导出参数、监管模板、下载
   await test.step("L1 KPI: 点击聚合导出并写入 BI/export", async () => {
     await openModuleFromSidebar(page, moduleById("L1"));
     await expectPageHealthy(page, "L1");
+    await expect(page.getByText(/实时业务事实 · 后端累计快照|单 KPI 下钻/).first()).toBeVisible({ timeout: 12_000 });
     await waitForBiMutation(page, "POST", /\/api\/admin\/bi\/reports$/, async () => {
-      await clickButtonAndConfirmInline(page, /导出 KPI 序列 CSV/, /导出/);
+      await clickButtonAndConfirmInline(page, /导出 KPI (?:序列|当前汇总) CSV/, /导出/);
     });
     await expectTransientSuccess(page);
   });
@@ -77,8 +78,9 @@ test("L1-L6 BI 人工路径: 报表创建、导出参数、监管模板、下载
   await test.step("L2 漏斗: 点击 cohort 导出并写入 BI/export", async () => {
     await openModuleFromSidebar(page, moduleById("L2"));
     await expectPageHealthy(page, "L2");
+    await expect(page.getByText(/生命周期事实计数|完整漏斗下钻/).first()).toBeVisible({ timeout: 12_000 });
     await waitForBiMutation(page, "POST", /\/api\/admin\/bi\/reports$/, async () => {
-      await clickButtonAndConfirmInline(page, /导出 cohort \/ 漏斗序列/, /导出/);
+      await clickButtonAndConfirmInline(page, /导出 (?:cohort \/ 漏斗序列|生命周期计数 CSV)/, /导出/);
     });
     await expectTransientSuccess(page);
   });

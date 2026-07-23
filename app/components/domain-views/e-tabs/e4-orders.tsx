@@ -9,12 +9,12 @@ const Chevron = () => <svg width={14} height={14} viewBox="0 0 24 24" fill="none
 
 const CONNECTORS = [{ cls: "start", ln: "a" }, { cls: "mid", ln: "b" }, { cls: "end", ln: "c" }];
 // 筛选值 s 是后端订单状态机契约(backend-canonical,不可改);label 运营可读中文,复用 data.ts 的 stateLabel 单一真源。
-const ORDER_STATES = ["created", "paid", "allocating", "active", "failed", "payment_failed", "expired", "provisioning_failed", "refunded", "cancelled"] as const;
+const ORDER_STATES = ["placed", "paid", "provisioning", "activated", "payment_failed", "expired", "provisioning_failed", "refunded", "chargeback", "cancelled"] as const;
 const FILTERS = [
   { s: "all", label: "全部" },
   ...ORDER_STATES.map((s) => ({ s, label: stateLabel(s) })),
 ];
-const IN_FLIGHT_STATES = new Set(["created", "paid", "allocating", "failed"]);
+const IN_FLIGHT_STATES = new Set(["placed", "paid", "provisioning"]);
 const money = (value: number) => `$${Math.round(value).toLocaleString()}`;
 
 export function E4Orders({ ctx }: { ctx: EViewCtx }) {
@@ -29,25 +29,24 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     return counts;
   }, [ctx.orderState, orders]);
   const activeAmount = orders
-    .filter((o) => ctx.orderState(o) === "active")
+    .filter((o) => ctx.orderState(o) === "activated")
     .reduce((sum, o) => sum + o.amt, 0);
   const inFlight = orders.filter((o) => IN_FLIGHT_STATES.has(ctx.orderState(o))).length;
-  const missingTerminal = orders.filter((o) => ctx.orderState(o) === "failed").length;
   // 状态机主路径节点:nm 中文主标(运营可读);ct 计数补全语义(原"X 在"语意残缺)。
   const nodes = [
-    { cls: "start", nm: "已创建", ct: `${stateCounts.get("created") ?? 0} 单` },
+    { cls: "start", nm: "已下单", ct: `${stateCounts.get("placed") ?? 0} 单` },
     { cls: "flow", nm: "已支付", ct: `${stateCounts.get("paid") ?? 0} 单` },
-    { cls: "flow", nm: "分配中", ct: `${stateCounts.get("allocating") ?? 0} 单 · DC 分配` },
-    { cls: "end", nm: "运行中 ✓", ct: `${stateCounts.get("active") ?? 0} 单` },
+    { cls: "flow", nm: "开通中", ct: `${stateCounts.get("provisioning") ?? 0} 单 · DC 分配` },
+    { cls: "end", nm: "已激活 ✓", ct: `${stateCounts.get("activated") ?? 0} 单` },
   ];
   // 终态分支:nm 中文主标;desc 补因果(去状态码裸用,与 nm 不重复)。
   const branches = [
     { cls: "err", nm: "支付失败", ct: `${stateCounts.get("payment_failed") ?? 0} 单`, desc: "下单后未成功扣款" },
     { cls: "warn", nm: "已过期", ct: `${stateCounts.get("expired") ?? 0} 单`, desc: "订单超时未支付" },
     { cls: "err", nm: "开通失败", ct: `${stateCounts.get("provisioning_failed") ?? 0} 单`, desc: "DC 分配超时" },
-    { cls: "warn", nm: "已退款", ct: `${stateCounts.get("refunded") ?? 0} 单`, desc: "人工退款 · D4 账单联动" },
-    { cls: "neutral", nm: "已取消", ct: `${stateCounts.get("cancelled") ?? 0} 单`, desc: "已创建 / 已支付阶段可取消" },
-    { cls: "warn", nm: "缺失终态", ct: `${missingTerminal} 单待处置`, desc: "失败订单待补建终态" },
+    { cls: "warn", nm: "已退款", ct: `${stateCounts.get("refunded") ?? 0} 单`, desc: "人工退款 · D1/D4 资金闭环" },
+    { cls: "err", nm: "拒付", ct: `${stateCounts.get("chargeback") ?? 0} 单`, desc: "支付渠道拒付 / 争议" },
+    { cls: "neutral", nm: "已取消", ct: `${stateCounts.get("cancelled") ?? 0} 单`, desc: "仅未支付订单可取消" },
   ];
   const rows = orders;
 
@@ -55,9 +54,9 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
     <>
       <EStats items={[
         { k: "后端订单", v: ctx.e4Total, sub: ctx.e4Loading ? "同步中" : ctx.e4Error ? "同步异常" : `第 ${ctx.e4Page} 页 ${orders.length} 条`, tone: "ok" },
-        { k: "运行中金额", v: money(activeAmount), sub: `当前页 ${stateCounts.get("active") ?? 0} 笔运行中` },
-        { k: "流转中订单", v: inFlight, sub: "当前页 已创建 / 已支付 / 分配中 / 失败", tone: inFlight ? "cyan" : "" },
-        { k: "缺失终态", v: missingTerminal, sub: "当前页失败订单需补建终态", tone: missingTerminal ? "danger" : "ok" },
+        { k: "已激活金额", v: money(activeAmount), sub: `当前页 ${stateCounts.get("activated") ?? 0} 笔已激活` },
+        { k: "流转中订单", v: inFlight, sub: "当前页 已下单 / 已支付 / 开通中", tone: inFlight ? "cyan" : "" },
+        { k: "失败终态", v: (stateCounts.get("payment_failed") ?? 0) + (stateCounts.get("provisioning_failed") ?? 0) + (stateCounts.get("chargeback") ?? 0), sub: "支付失败 / 开通失败 / 拒付", tone: "danger" },
       ]} />
 
       {/* 状态机流转图 */}
@@ -143,7 +142,7 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           pageSizeOptions={[10, 20, 50, 100]}
         />
       </section>
-      <p className="f-foot">补建终态 = 对账兜底:状态机偶发缺失终态时,运营手动落定 <span style={{ fontFamily: "var(--mono)" }}>payment_failed / expired / refunded / provisioning_failed</span> 之一。退款 / 取消 / 主路径流转均按订单状态机处理。</p>
+      <p className="f-foot">订单状态以后端订单主数据为准。退款仅允许已支付 / 开通中 / 已激活,并在提交前校验 B1 覆盖率;补建失败终态不包含退款。</p>
     </>
   );
 }

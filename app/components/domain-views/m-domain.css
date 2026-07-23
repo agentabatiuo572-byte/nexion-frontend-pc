@@ -605,7 +605,9 @@
 .mdom .seg-n { display: inline-grid; place-items: center; min-width: 15px; height: 15px; margin-left: 5px; padding: 0 4px; border-radius: 999px; background: var(--surface-3); color: var(--ink-3); font-family: var(--m-mono); font-size: 10px; line-height: 1; }
 .mdom .seg button.on .seg-n { background: color-mix(in srgb, var(--m-hd) 24%, transparent); color: var(--m-hd-2); }
 
-.mdom .m3-pager { flex: none; display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-top: 1px solid var(--border); }
+.mdom .m3-pager { flex: none; display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-top: 1px solid var(--border); overflow: hidden; }
+.mdom .m3-pager-controls { margin-left: auto; display: flex; align-items: center; gap: 5px; max-width: 100%; overflow: hidden; flex: none; }
+.mdom .m3-page-gap { width: 18px; flex: none; color: var(--ink-4); text-align: center; font-family: var(--m-mono); font-size: 12px; }
 
 .mdom .composer-tools { display: flex; gap: 8px; margin-bottom: 9px; }
 .mdom .composer-tool { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: var(--m-r-ctl); border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; font-weight: 500; font-family: inherit; cursor: pointer; transition: background .12s, border-color .12s, color .12s; }

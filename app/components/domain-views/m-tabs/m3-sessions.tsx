@@ -5,7 +5,7 @@
  * 会话 / 工单读写走后端 content 接口;I.session.* / I.support.* 为 M 容器传入的视图适配键。
  * I.session.ui.lastConvo 仅保留为坐席续聊 UI 态。
  * 例行坐席操作(回复/转交/改状态/推送/归档/标签/备注)直接执行 + 自动 A2 审计;
- * 主动发起会话(人群投放) / 转工单 走操作确认 + 理由。续聊恢复后刷新仍回上次会话。
+ * 主动发起会话 / 转工单走真实后端写链。续聊恢复后刷新仍回上次会话。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
@@ -17,37 +17,50 @@ import {
   type CustomerNote,
   type CustomerProfile,
   type InitiateIdentity,
-  type SegField,
   type SessionConvo,
   type SessionMsg,
   type SessionReplyTpl,
   type SessionStatus,
   type SessionTransfer,
-  type SupportTicket,
 } from "./data";
 import { ConvStat, Empty, MAvatar, ownerLabel, relWhen } from "./hd-ui";
 import { InitiateModal, QuickActionModal, ReturnModal, TransferModal, type InitiatePayload, type ReturnPayload, type TransferPayload } from "./m3-modals";
 import type { MCtx } from "./types";
-import { fetchMSupportWorkbenchSkus, type MSupportAgent } from "@/lib/admin/m-client";
+import { fetchMSupportWorkbenchSkus, fetchMSupportWorkbenchUsers, type MSupportAgent } from "@/lib/admin/m-client";
+import type { User360Profile } from "@/lib/admin/user360-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const CONVO_KEY = "I.session.convos";
-const TICKET_KEY = "I.support.tickets";
 const SCRIPT_LIST_KEY = "I.session.scripts";
 const REPLY_TEMPLATE_LIST_KEY = "I.session.replyTemplates";
 const AGENT_LIST_KEY = "I.support.agents";
 const TRANSFER_TARGETS_KEY = "I.session.transferTargets";
-const AUDIENCE_OPTIONS_KEY = "I.session.audienceOptions";
-const SEGMENT_FIELDS_KEY = "I.session.segmentFields";
 const LAST_CONVO_KEY = "I.session.ui.lastConvo";
 const FALLBACK_KEY = "I.session.workbench.timeoutFallback"; // 工作台「转入待处理超时回落备勤池」开关("on"=启用)
 const INBOX_PAGE_SIZE = 8; // 会话收件箱每页条数(翻页器)
+
+type InboxPageToken = number | "gap-left" | "gap-right";
+
+function visibleInboxPages(pageCount: number, currentPage: number): InboxPageToken[] {
+  if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1);
+  const pages = Array.from(new Set([1, pageCount, currentPage - 1, currentPage, currentPage + 1]
+    .filter((page) => page >= 1 && page <= pageCount)))
+    .sort((left, right) => left - right);
+  const tokens: InboxPageToken[] = [];
+  pages.forEach((page, index) => {
+    const previous = pages[index - 1];
+    if (previous && page - previous > 1) tokens.push(index === 1 ? "gap-left" : "gap-right");
+    tokens.push(page);
+  });
+  return tokens;
+}
 
 type PushSku = { id: string; title: string; subtitle: string; to: string };
 type PushSkuSource = OpsSku;
 
 type ConvSeg = "all" | "unread" | "incoming" | "active" | "resolved" | "archived";
+type ConvCategory = "all" | "advisor" | "support";
 const SEGS: Array<[ConvSeg, string]> = [
   ["all", "全部"],
   ["unread", "未读"],
@@ -84,18 +97,8 @@ function textOf(value: unknown, fallback = ""): string {
 function cloneConvos(rows: SessionConvo[]): SessionConvo[] {
   return rows.map((c) => ({ ...c, messages: c.messages.map((m) => ({ ...m })) }));
 }
-function cloneTickets(rows: SupportTicket[]): SupportTicket[] {
-  return rows.map((t) => ({ ...t, messages: t.messages.map((m) => ({ ...m })) }));
-}
 function statusLabel(status: SessionStatus): string {
   return status === "open" ? "进行中" : status === "resolved" ? "已解决" : "已关闭";
-}
-function nextTicketId(rows: SupportTicket[]): string {
-  const max = rows.reduce((acc, row) => {
-    const n = Number(row.id.replace(/^TK-/, ""));
-    return Number.isFinite(n) ? Math.max(acc, n) : acc;
-  }, 1024);
-  return `TK-${max + 1}`;
 }
 const HREF_CN: Record<string, string> = { "/store": "商城", "/staking": "锁仓", "/genesis": "创世节点" };
 function hrefLabel(href: string): string {
@@ -111,8 +114,54 @@ function toPushSku(sku: PushSkuSource): PushSku {
   };
 }
 
+function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
+  const rawId = textOf(user.id).trim();
+  const uid = textOf(user.userNo).trim() || (rawId ? `U${rawId.padStart(8, "0")}` : "");
+  const riskBand = textOf(user.riskBand).trim().toUpperCase();
+  const risk: CustomerProfile["risk"] = riskBand === "HIGH" || riskBand === "高"
+    ? "高"
+    : riskBand === "LOW" || riskBand === "低"
+      ? "低"
+      : "中";
+  const systemTags = [textOf(user.status).trim(), textOf(user.vRank || user.userLevel).trim(), textOf(user.kycStatus).trim()]
+    .filter(Boolean);
+  const balances = [
+    user.walletUsdt == null ? "" : `${textOf(user.walletUsdt)} USDT`,
+    user.walletNex == null ? "" : `${textOf(user.walletNex)} NEX`,
+  ].filter(Boolean);
+  const deviceCount = textOf(user.deviceCount).trim();
+  const activeDeviceCount = textOf(user.activeDeviceCount).trim();
+  return {
+    uid,
+    nickname: textOf(user.nickname).trim() || uid,
+    phone: textOf(user.phoneMasked, "—"),
+    vlevel: textOf(user.vRank || user.userLevel, "—"),
+    kyc: textOf(user.kycStatus, "待核对"),
+    systemTags,
+    customTags: [],
+    risk,
+    riskNote: user.riskScore == null ? "来自真实用户风险档案" : `风险评分 ${textOf(user.riskScore)}`,
+    recharge: "—",
+    withdraw: "—",
+    balance: balances.join(" / ") || "—",
+    tickets: 0,
+    device: deviceCount ? `${deviceCount} 台${activeDeviceCount ? ` · ${activeDeviceCount} 台活跃` : ""}` : "—",
+    hashrate: "—",
+    region: textOf(user.countryCode, "—"),
+    joined: textOf(user.registeredAt, "—"),
+    lastActive: textOf(user.lastLoginAt, "—"),
+    ledger: [],
+    notes: [],
+  };
+}
+
 export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
+  const authorities = useAdminAuth((state) => state.session?.authorities);
+  const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
+  const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
+  const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
+  const conversationsAvailable = pget("I.session.conversationsAvailable") !== "0";
 
   const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), [])), [ctx.params, pget]);
   const advisorScripts = useMemo(() => parseParamArray<AdvisorScript>(pget(SCRIPT_LIST_KEY), []), [ctx.params, pget]);
@@ -146,15 +195,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       .filter(Boolean);
     return Array.from(new Set(rows));
   }, [transferTargets]);
-  const audiencePresets = useMemo(() => {
-    const rows = parseParamArray<string>(pget(AUDIENCE_OPTIONS_KEY), []);
-    return rows;
-  }, [ctx.params, pget]);
-  const segmentFields = useMemo(() => {
-    const rows = parseParamArray<SegField>(pget(SEGMENT_FIELDS_KEY), []);
-    return rows;
-  }, [ctx.params, pget]);
-  const initiateCustomers = useMemo(() => {
+  const conversationCustomers = useMemo(() => {
     const rows = new Map<string, CustomerProfile>();
     convos.forEach((convo) => {
       const profile = convo.profile;
@@ -164,12 +205,17 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   }, [convos]);
 
   const [seg, setSeg] = useState<ConvSeg>("all");
+  const [typeFilter, setTypeFilter] = useState<ConvCategory>("all");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState(() => pget(LAST_CONVO_KEY) ?? convos[0]?.id ?? "cv-advisor-1");
   const [replyBody, setReplyBody] = useState("");
   const [quick, setQuick] = useState<"history" | "tickets" | "resetpw" | "account" | "note" | null>(null);
   const [showInitiate, setShowInitiate] = useState(false);
+  const [initiateCustomerQuery, setInitiateCustomerQuery] = useState("");
+  const [directoryCustomers, setDirectoryCustomers] = useState<CustomerProfile[]>([]);
+  const [initiateCustomerLoading, setInitiateCustomerLoading] = useState(false);
+  const [initiateCustomerError, setInitiateCustomerError] = useState("");
   const [showTransfer, setShowTransfer] = useState(false); // 转交弹窗
   const [showReturn, setShowReturn] = useState(false);     // 手动退回弹窗
   const [profilePeek, setProfilePeek] = useState(false); // 窄屏右栏抽屉开关
@@ -180,6 +226,52 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [pushSkus, setPushSkus] = useState<PushSku[]>([]);
   const [pushSkuLoading, setPushSkuLoading] = useState(true);
   const [pushSkuError, setPushSkuError] = useState<string | null>(null);
+  const [writePending, setWritePending] = useState(false);
+  const writeInFlight = useRef(false);
+
+  const initiateCustomers = useMemo(() => {
+    const rows = new Map<string, CustomerProfile>();
+    [...directoryCustomers, ...conversationCustomers].forEach((profile) => {
+      if (profile.uid && !rows.has(profile.uid)) rows.set(profile.uid, profile);
+    });
+    return Array.from(rows.values());
+  }, [conversationCustomers, directoryCustomers]);
+
+  useEffect(() => {
+    if (!showInitiate) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setInitiateCustomerLoading(true);
+      setInitiateCustomerError("");
+      fetchMSupportWorkbenchUsers({ keyword: initiateCustomerQuery.trim(), pageNum: 1, pageSize: 8 })
+        .then((result) => {
+          if (!active) return;
+          setDirectoryCustomers(result.records.map(workbenchUserToCustomerProfile).filter((profile) => profile.uid));
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          setDirectoryCustomers([]);
+          setInitiateCustomerError(error instanceof Error ? error.message : "USERS_LOAD_FAILED");
+        })
+        .finally(() => {
+          if (active) setInitiateCustomerLoading(false);
+        });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [showInitiate, initiateCustomerQuery]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("seg");
+    const requestedQuery = params.get("q");
+    if (requested && SEGS.some(([value]) => value === requested)) {
+      setSeg(requested as ConvSeg);
+    }
+    if (requestedQuery) setQuery(requestedQuery);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -214,20 +306,11 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     }
   }, [pget, convos]);
 
-  const selected = convos.find((c) => c.id === selectedId) ?? convos[0] ?? null;
-  const ownerName = selected?.owner ?? "Unassigned";
-
-  const selectConvo = (id: string) => {
-    restoredRef.current = true;
-    setSelectedId(id);
-    setReplyBody("");
-    setParam(LAST_CONVO_KEY, id, { action: "记录坐席当前会话", reason: "ui-state" });
-  };
-
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return convos
       .filter((c) => (seg === "archived" ? c.archived === true : !c.archived))
+      .filter((c) => typeFilter === "all" || c.type === typeFilter)
       .filter((c) => {
         if (seg === "unread") return c.unread > 0;
         if (seg === "incoming") return c.transfer != null;
@@ -241,7 +324,24 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         return [c.id, c.agentName, c.owner, c.customer ?? "", c.profile?.nickname ?? "", typeLab].some((t) => t.toLowerCase().includes(q));
       })
       .sort((a, b) => b.lastTs - a.lastTs);
-  }, [convos, query, seg]);
+  }, [convos, query, seg, typeFilter]);
+
+  // 详情必须属于当前筛选结果。筛选为 0 条时清空详情和写入口，避免误操作旧会话。
+  const selected = filtered.find((c) => c.id === selectedId) ?? filtered[0] ?? null;
+  const ownerName = selected?.owner ?? "Unassigned";
+  const currentAgentNames = useMemo(() => supportAgents.filter((agent) => agent.adminId === currentAdminId).map((agent) => agent.name), [supportAgents, currentAdminId]);
+  const canAcceptSelectedTransfer = Boolean(selected?.transfer) && (
+    selected?.transfer?.to.kind === "agent"
+      ? currentAgentNames.includes(selected.transfer.to.name)
+      : currentAgentNames.length > 0
+  );
+
+  const selectConvo = (id: string) => {
+    restoredRef.current = true;
+    setSelectedId(id);
+    setReplyBody("");
+    setParam(LAST_CONVO_KEY, id, { action: "记录坐席当前会话", reason: "ui-state" });
+  };
 
   const resolvedOpen = convos.filter((c) => c.status === "resolved" && !c.archived).length;
 
@@ -263,48 +363,74 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const curPage = Math.min(page, pageCount);
   useEffect(() => {
     setPage(1);
-  }, [seg, query]);
+  }, [seg, typeFilter, query]);
   const pageStart = (curPage - 1) * INBOX_PAGE_SIZE;
   const paged = filtered.slice(pageStart, pageStart + INBOX_PAGE_SIZE);
 
-  const writeConvos = (next: SessionConvo[], reason: string, action: string) => setParam(CONVO_KEY, JSON.stringify(next), { action, reason });
-  const updateConvo = (id: string, updater: (c: SessionConvo) => SessionConvo, reason: string, action: string) =>
-    writeConvos(convos.map((c) => (c.id === id ? updater(c) : c)), reason, action);
+  const commitM3Write = async (write: () => Promise<boolean>, successMessage: string): Promise<boolean> => {
+    if (writeInFlight.current) {
+      toast("操作正在提交,请稍候");
+      return false;
+    }
+    if (!canWriteM3 || !conversationsAvailable) return false;
+    writeInFlight.current = true;
+    setWritePending(true);
+    try {
+      const succeeded = await write();
+      if (succeeded) toast(successMessage);
+      return succeeded;
+    } finally {
+      writeInFlight.current = false;
+      setWritePending(false);
+    }
+  };
+  const writeConvos = (next: SessionConvo[], reason: string, action: string, commandKey: string) =>
+    setParam(CONVO_KEY, JSON.stringify(next), { action, reason, commandKey });
+  const updateConvo = (id: string, updater: (c: SessionConvo) => SessionConvo, reason: string, action: string, commandKey: string) =>
+    writeConvos(convos.map((c) => (c.id === id ? updater(c) : c)), reason, action, commandKey);
 
   // ── 转入待处理:工作台「超时回落备勤池」策略由后端定时任务执行;前端只保存策略与展示状态──
   const fallbackOn = pget(FALLBACK_KEY) === "on";
-  const setFallback = (on: boolean) => setParam(FALLBACK_KEY, on ? "on" : "off", { action: "工作台·转入待处理超时回落备勤池开关", reason: "调整 M3 会话转入待处理超时回落策略" });
+  const setFallback = async (on: boolean) => {
+    await commitM3Write(
+      () => setParam(FALLBACK_KEY, on ? "on" : "off", { action: "工作台·转入待处理超时回落备勤池开关", reason: "调整 M3 会话转入待处理超时回落策略", commandKey: `m3:fallback-policy:${on}` }),
+      on ? "已启用超时回落备勤池" : "已停用超时回落备勤池",
+    );
+  };
 
-  const sendReply = () => {
+  const sendReply = async () => {
     if (!selected) return;
     if (!replyBody.trim()) {
       toast("回复需要正文");
       return;
     }
     const now = Date.now();
-    updateConvo(
-      selected.id,
-      (c) => ({
-        ...c,
-        unread: 0,
-        lastTs: now,
-        status: c.status === "resolved" ? "open" : c.status,
-        messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, status: "sent", text: replyBody.trim() }],
-      }),
-      "坐席回复(正文已留档)",
-      `坐席回复会话 ${selected.id} · admin.conversation_replied`,
+    const succeeded = await commitM3Write(
+      () => updateConvo(
+        selected.id,
+        (c) => ({
+          ...c,
+          unread: 0,
+          lastTs: now,
+          status: c.status === "resolved" ? "open" : c.status,
+          messages: [...c.messages, { ts: now, sender: "agent", agentName: c.owner === "Unassigned" ? "客服台" : c.owner, status: "sent", text: replyBody.trim() }],
+        }),
+        "坐席回复(正文已留档)",
+        `坐席回复会话 ${selected.id} · admin.conversation_replied`,
+        `m3:reply:${selected.id}:${replyBody.trim()}`,
+      ),
+      `${selected.id} 已回复`,
     );
-    setReplyBody("");
-    toast(`${selected.id} 已回复`);
+    if (succeeded) setReplyBody("");
   };
 
   // ── 跨坐席转交处置(全程例行内部交接:不弹 MC、不调 logAudit;转交/退回原因记入会话系统消息)──
-  const runTransfer = (p: TransferPayload) => {
+  const runTransfer = async (p: TransferPayload) => {
     if (!selected) return;
     const now = Date.now();
     const fromOwner = selected.owner === "Unassigned" ? "客服台" : selected.owner;
     const toLabel = transferTargetLabel(p.to);
-    updateConvo(
+    const succeeded = await commitM3Write(() => updateConvo(
       selected.id,
       (c) => ({
         ...c,
@@ -315,16 +441,16 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       }),
       "跨坐席转交(例行,自动留档 · 不触发审计弹窗)",
       `会话转交 ${selected.id} → ${toLabel} · admin.conversation_transfer`,
-    );
-    setShowTransfer(false);
-    toast(`${selected.id} 已转交 ${toLabel} · 转入待处理`);
+      `m3:transfer:${selected.id}:${JSON.stringify(p.to)}:${p.reason}`,
+    ), `${selected.id} 已转交 ${toLabel} · 转入待处理`);
+    if (succeeded) setShowTransfer(false);
   };
-  const acceptTransfer = () => {
+  const acceptTransfer = async () => {
     if (!selected?.transfer) return;
     const now = Date.now();
     const t = selected.transfer;
     const newOwner = t.to.kind === "agent" ? t.to.name : selected.owner !== "Unassigned" ? selected.owner : transferTargetLabel(t.to);
-    updateConvo(
+    await commitM3Write(() => updateConvo(
       selected.id,
       (c) => ({
         ...c,
@@ -337,14 +463,14 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       }),
       "接收转入会话(例行,自动留档)",
       `会话接收接入 ${selected.id} · admin.conversation_transfer_accept`,
-    );
-    toast(`${selected.id} 已接入 · ${newOwner} 接待`);
+      `m3:transfer-accept:${selected.id}`,
+    ), `${selected.id} 已接入 · ${newOwner} 接待`);
   };
-  const waitTransfer = () => {
+  const waitTransfer = async () => {
     if (!selected?.transfer) return;
     const now = Date.now();
     const t = selected.transfer;
-    updateConvo(
+    await commitM3Write(() => updateConvo(
       selected.id,
       (c) => ({
         ...c,
@@ -353,15 +479,15 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       }),
       "转入待处理继续等待(例行,自动留档)",
       `会话等待处理 ${selected.id} · admin.conversation_transfer_wait`,
-    );
-    toast(`${selected.id} 保持转入待处理 · 继续等待接入`);
+      `m3:transfer-wait:${selected.id}`,
+    ), `${selected.id} 保持转入待处理 · 继续等待接入`);
   };
-  const runReturn = (p: ReturnPayload) => {
+  const runReturn = async (p: ReturnPayload) => {
     if (!selected?.transfer) return;
     const now = Date.now();
     const t = selected.transfer;
     const back = p.target === "from" ? t.from : STANDBY_POOL_LABEL;
-    updateConvo(
+    const succeeded = await commitM3Write(() => updateConvo(
       selected.id,
       (c) => ({
         ...c,
@@ -370,18 +496,20 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         lastTs: now,
         messages: [...c.messages, { ts: now, sender: "agent", agentName: "系统", text: `已退回${p.target === "from" ? `原坐席 ${back}` : back} · 退回原因:${p.reason}` }],
       }),
-      "退回转入会话(例行,自动留档 · 原因入会话消息)",
+      p.reason,
       `会话退回 ${selected.id} → ${back} · admin.conversation_transfer_return`,
-    );
-    setShowReturn(false);
-    toast(`${selected.id} 已退回 ${back}`);
+      `m3:transfer-return:${selected.id}:${p.target}:${p.reason}`,
+    ), `${selected.id} 已退回 ${back}`);
+    if (succeeded) setShowReturn(false);
   };
-  const setStatusDirect = (id: string, status: SessionStatus) => {
-    updateConvo(id, (c) => ({ ...c, status, lastTs: Date.now() }), `会话状态「${statusLabel(status)}」(例行,自动留档)`, `会话状态 ${id} · admin.conversation_status`);
-    toast(`${id} → ${statusLabel(status)}`);
+  const setStatusDirect = async (id: string, status: SessionStatus) => {
+    await commitM3Write(
+      () => updateConvo(id, (c) => ({ ...c, status, lastTs: Date.now() }), `会话状态「${statusLabel(status)}」(例行,自动留档)`, `会话状态 ${id} · admin.conversation_status`, `m3:status:${id}:${status}`),
+      `${id} → ${statusLabel(status)}`,
+    );
   };
 
-  const runInitiate = (p: InitiatePayload) => {
+  const runInitiate = async (p: InitiatePayload) => {
     const now = Date.now();
     const existing = cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), []));
     const cid = `cv-out-${now}`;
@@ -398,17 +526,25 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       owner: p.identity.name,
       customer: p.profile?.nickname ?? p.targetLabel,
       origin: p.identity.type === "advisor" ? "advisor" : "support",
-      profile: p.profile, // 单用户 → 选中的真实客户档案;人群群发 → undefined(走 batchInfo)
-      batchInfo: p.isSegment ? { audienceDesc: p.targetDesc, identity: `${p.identity.label} · ${p.identity.name}`, script: p.text } : undefined,
+      profile: p.profile,
       messages: [
-        { ts: now, sender: "agent", agentName: "系统", text: `由「${p.identity.label} · ${p.identity.id}」主动发起 · 目标:${p.targetDesc}${p.reason ? ` · 理由:${p.reason}` : ""}` },
+        { ts: now, sender: "agent", agentName: "系统", text: `由「${p.identity.label} · ${p.identity.id}」主动发起 · 目标:${p.targetDesc}` },
         opening,
       ],
     };
-    writeConvos([...existing, newConvo], p.reason ? "主动发起会话(人群投放 · 理由已留档)" : "主动发起会话(单用户 · 例行)", `主动发起会话 ${cid} · admin.conversation_initiated`);
-    setShowInitiate(false);
-    selectConvo(cid);
-    toast(`已以「${p.identity.label}」向 ${p.targetLabel} 发起会话`);
+    const succeeded = await commitM3Write(
+      () => writeConvos(
+        [...existing, newConvo],
+        "主动发起会话(单用户 · 例行)",
+        `主动发起会话 ${cid} · admin.conversation_initiated`,
+        `m3:initiate:${p.identity.id}:${p.profile?.uid ?? p.targetLabel}:${p.text}:${p.ctaHref ?? ""}`,
+      ),
+      `已以「${p.identity.label}」向 ${p.targetLabel} 发起会话`,
+    );
+    if (succeeded) {
+      setShowInitiate(false);
+      selectConvo(cid);
+    }
   };
 
   const convertToTicket = () => {
@@ -416,40 +552,29 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const convo = selected;
     openActionConfirm({
       action: <>转工单 · {convo.id}</>,
-      detail: (
-        <>
-          把会话 <b>{convo.agentName}</b>(<span className="mono">{convo.id}</span>)转为可追踪工单,进入 SLA 队列与 D2/C4/E5 升级路径;工单写入 <span className="mono">I.support.tickets</span>。适用于需要跨班次跟进的提现 / KYC / 设备问题。
-        </>
-      ),
+      detail: <>把会话 <b>{convo.agentName}</b>(<span className="mono">{convo.id}</span>)转为可追踪工单并进入 SLA 队列。适用于需要跨班次跟进的提现、KYC 或设备问题。</>,
       amplifies: false,
-      run: (reason: string) => {
-        const now = Date.now();
-        const existingTickets = cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), []));
-        const id = nextTicketId(existingTickets);
-        const newTicket: SupportTicket = {
-          id,
-          subject: `由会话 ${convo.id} 转入 · ${convo.agentName}`,
+      reasonMin: 8,
+      reasonMax: 200,
+      run: (reason: string) => commitM3Write(
+        () => setParam("I.session.ticket.__create", JSON.stringify({
+          conversationNo: convo.id,
           category: "account",
-          status: "open",
           priority: "normal",
-          createdAt: now,
-          updatedAt: now,
-          lastReplyAt: now,
-          unread: 0,
-          owner: convo.owner === "Unassigned" ? "Unassigned" : convo.owner,
-          messages: convo.messages.map((m) => ({ ts: m.ts, author: m.sender, agentName: m.agentName, body: m.text })),
-        };
-        setParam(TICKET_KEY, JSON.stringify([newTicket, ...existingTickets]), { action: `会话转工单 ${convo.id} → ${id} · admin.support_ticket_from_conversation`, reason });
-        toast(`${convo.id} 已转工单 ${id}`);
-      },
+          title: `由会话 ${convo.id} 转入 · ${convo.profile?.nickname ?? convo.customer ?? convo.agentName}`,
+          assignedAdminId: supportAgents.find((agent) => agent.name === convo.owner)?.adminId,
+          assignedAdminName: supportAgents.some((agent) => agent.name === convo.owner) ? convo.owner : "Unassigned",
+        }), { action: `会话转工单 ${convo.id} · admin.support_ticket_from_conversation`, reason, commandKey: `m3:convert-ticket:${convo.id}` }),
+        `${convo.id} 已转工单`,
+      ),
     });
   };
 
-  const pushSku = (sku: PushSku) => {
+  const pushSku = async (sku: PushSku) => {
     if (!selected) return;
     const now = Date.now();
     const text = `帮你整理了一份「${sku.title}」详情(${sku.subtitle}),方便对照看看:`;
-    updateConvo(
+    await commitM3Write(() => updateConvo(
       selected.id,
       (c) => ({
         ...c,
@@ -460,50 +585,56 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       }),
       "坐席推送商品卡(正文已留档)",
       `坐席推送商品卡 ${sku.id} → ${selected.id} · admin.conversation_sku_pushed`,
-    );
-    toast(`已推送「${sku.title}」`);
+      `m3:push-sku:${selected.id}:${sku.id}`,
+    ), `已推送「${sku.title}」`);
   };
 
-  const archiveConvo = (id: string, on: boolean) => {
-    updateConvo(id, (c) => ({ ...c, archived: on }), on ? "会话归档(例行)" : "撤销归档(例行)", `${on ? "会话归档" : "撤销归档"} ${id} · admin.conversation_archive`);
-    toast(on ? `${id} 已归档` : `${id} 已撤销归档`);
+  const archiveConvo = async (id: string, on: boolean) => {
+    await commitM3Write(
+      () => updateConvo(id, (c) => ({ ...c, archived: on }), on ? "会话归档(例行)" : "撤销归档(例行)", `${on ? "会话归档" : "撤销归档"} ${id} · admin.conversation_archive`, `m3:archive:${id}:${on}`),
+      on ? `${id} 已归档` : `${id} 已撤销归档`,
+    );
   };
-  const archiveAllResolved = () => {
+  const archiveAllResolved = async () => {
     const targets = convos.filter((c) => c.status === "resolved" && !c.archived);
     if (targets.length === 0) {
       toast("没有可归档的已解决会话");
       return;
     }
-    const ids = new Set(targets.map((c) => c.id));
-    writeConvos(convos.map((c) => (ids.has(c.id) ? { ...c, archived: true } : c)), "批量归档已解决会话(例行)", `批量归档已解决会话 ${targets.length} 个 · admin.conversation_archive_batch`);
-    toast(`已批量归档 ${targets.length} 个已解决会话`);
+    await commitM3Write(
+      () => setParam("I.session.archiveBatch.__create", JSON.stringify({ conversationNos: targets.map((c) => c.id) }), { action: `批量归档已解决会话 ${targets.length} 个 · admin.conversation_archive_batch`, reason: "批量归档已解决会话", commandKey: `m3:archive-batch:${targets.map((c) => c.id).sort().join(",")}` }),
+      `已批量归档 ${targets.length} 个已解决会话`,
+    );
   };
 
-  const addNote = (text: string) => {
-    if (!selected?.profile || !text.trim()) return;
-    ctx.addCustomerNote(selected.id, text.trim());
-    toast("客户备注已保存");
+  const addNote = async (text: string): Promise<boolean> => {
+    if (!selected?.profile || !text.trim() || !canWriteM3 || !conversationsAvailable) return false;
+    const succeeded = await ctx.addCustomerNote(selected.id, text.trim());
+    if (succeeded) toast("客户备注已保存");
+    return succeeded;
   };
-  const removeNote = (noteId: string) => {
-    if (!selected?.profile) return;
-    ctx.removeCustomerNote(selected.id, noteId);
-    toast("客户备注已删除");
+  const removeNote = async (noteId: string): Promise<boolean> => {
+    if (!selected?.profile || !canWriteM3 || !conversationsAvailable) return false;
+    const succeeded = await ctx.removeCustomerNote(selected.id, noteId);
+    if (succeeded) toast("客户备注已删除");
+    return succeeded;
   };
-  const addCustomerTag = (tag: string) => {
-    if (!selected?.profile || !tag.trim()) return;
+  const addCustomerTag = async (tag: string): Promise<boolean> => {
+    if (!selected?.profile || !tag.trim() || !canWriteM3 || !conversationsAvailable) return false;
     const t = tag.trim();
-    if (selected.profile.customTags.includes(t)) return;
-    ctx.addCustomerTag(selected.id, t);
-    toast(`已加标签「${t}」`);
+    if (selected.profile.customTags.includes(t)) return false;
+    const succeeded = await ctx.addCustomerTag(selected.id, t);
+    if (succeeded) toast(`已加标签「${t}」`);
+    return succeeded;
   };
-  const removeCustomerTag = (tag: string) => {
-    if (!selected?.profile) return;
-    ctx.removeCustomerTag(selected.id, tag);
+  const removeCustomerTag = async (tag: string): Promise<boolean> => {
+    if (!selected?.profile || !canWriteM3 || !conversationsAvailable) return false;
+    return ctx.removeCustomerTag(selected.id, tag);
   };
   // QuickAction 账户类:客服侧只发起 + 提示,真实处置回 C/D 域;按主人指令 QuickAction 不写审计。
   const runAccountAction = (label: string) => {
     if (!selected?.profile) return;
-    toast(`已发起「${label}」· 交 C/D 域复核`);
+    toast(`请前往 C/D 域完成「${label}」;M3 不会代为提交`);
     setQuick(null);
   };
 
@@ -520,7 +651,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const isSystem = isAgent && m.agentName === "系统";
     const role: "support" | "advisor" | "user" = isAgent ? (selected!.type === "advisor" ? "advisor" : "support") : "user";
     const cta = !isSystem && m.ctaHref && m.ctaHref !== "—"
-      ? { kind: "link" as const, label: `打开 ${hrefLabel(m.ctaHref)}`, onClick: () => toast(`已在用户端打开「${hrefLabel(m.ctaHref!)}」`) }
+      ? { kind: "link" as const, label: `查看 ${hrefLabel(m.ctaHref)}`, onClick: () => toast(`请在对应业务页面核对「${hrefLabel(m.ctaHref!)}」`) }
       : undefined;
     const receipt = i === lastAgentIdx ? (m.status === "read" ? "已读" : "未读") : undefined;
     return {
@@ -538,6 +669,16 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   });
   return (
     <div className="m3-stage">
+      {!conversationsAvailable && (
+        <div className="itint" role="alert" style={{ gridColumn: "1 / -1", margin: 10 }}>
+          会话数据暂时无法同步,当前不会把空列表当作真实结果,写操作也已关闭。
+        </div>
+      )}
+      {conversationsAvailable && !canWriteM3 && (
+        <div className="itint" role="status" style={{ gridColumn: "1 / -1", margin: 10 }}>
+          当前账号为只读模式;查看与筛选可用,回复、转交、发起、归档及客户资料修改需要 M3 写权限。
+        </div>
+      )}
       {/* 左:会话收件箱 */}
       <div className="m3-col-list">
         <div style={{ padding: "14px 14px 10px", display: "flex", flexDirection: "column", gap: 9 }}>
@@ -545,16 +686,16 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
             <h2 style={{ fontSize: 15, fontWeight: 500 }}>会话收件箱</h2>
             <span className="mono dim2" style={{ fontSize: 11.5 }}>{filtered.length}</span>
             <div style={{ marginLeft: "auto", display: "flex", gap: 7 }}>
-              {resolvedOpen > 0 && (
-                <button type="button" data-proof="session-archive-batch" className="btn btn-sec btn-sm" title={`归档已解决 ${resolvedOpen} 个`} onClick={archiveAllResolved}>
+              {canWriteM3 && conversationsAvailable && resolvedOpen > 0 && (
+                <button type="button" data-proof="session-archive-batch" className="btn btn-sec btn-sm" disabled={writePending} title={`归档已解决 ${resolvedOpen} 个`} onClick={archiveAllResolved}>
                   <Icon name="box" size={16} />
                   {resolvedOpen}
                 </button>
               )}
-              <button type="button" data-proof="session-initiate" className="btn btn-pri btn-sm" onClick={() => setShowInitiate(true)}>
+              {canWriteM3 && conversationsAvailable && <button type="button" data-proof="session-initiate" className="btn btn-pri btn-sm" disabled={writePending} onClick={() => setShowInitiate(true)}>
                 <Icon name="plus" size={16} />
                 主动发起会话
-              </button>
+              </button>}
             </div>
           </div>
           <div className="inp">
@@ -569,10 +710,15 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
               </button>
             ))}
           </div>
+          <select className="inp" aria-label="会话类别" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as ConvCategory)}>
+            <option value="all">全部类别</option>
+            <option value="advisor">专属顾问</option>
+            <option value="support">客服会话</option>
+          </select>
           <div className="m3-fallback-bar">
             <span className="m3-fallback-lab"><Icon name="clock" size={13} />转入超时回落备勤池</span>
             <span className="dim2" style={{ fontSize: 11, marginLeft: "auto", marginRight: 8 }}>{fallbackOn ? "超时自动回落" : "关 · 持续等待"}</span>
-            <button type="button" data-proof="session-transfer-fallback" className={`sw${fallbackOn ? " on" : ""}`} role="switch" aria-checked={fallbackOn} title="转入待处理超时是否自动回落备勤池重新分配" onClick={() => setFallback(!fallbackOn)} />
+            <button type="button" data-proof="session-transfer-fallback" className={`sw${fallbackOn ? " on" : ""}`} role="switch" aria-checked={fallbackOn} disabled={!canWriteM3 || !conversationsAvailable || writePending} title="转入待处理超时是否自动回落备勤池重新分配" onClick={() => setFallback(!fallbackOn)} />
           </div>
         </div>
         <div className="cv-list">
@@ -625,12 +771,12 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
                     </>
                   )}
                   {c.archived && <span className="cv-archived-tag"><Icon name="box" size={12} />已归档</span>}
-                  {c.status === "resolved" && !c.archived && (
+                  {canWriteM3 && conversationsAvailable && c.status === "resolved" && !c.archived && (
                     <span className="cv-arch" role="button" data-proof="session-archive" title="归档此会话" onClick={(e) => { e.stopPropagation(); archiveConvo(c.id, true); }}>
                       <Icon name="box" size={15} />
                     </span>
                   )}
-                  {c.archived && (
+                  {canWriteM3 && conversationsAvailable && c.archived && (
                     <span className="cv-arch" role="button" data-proof="session-unarchive" title="撤销归档" onClick={(e) => { e.stopPropagation(); archiveConvo(c.id, false); }}>
                       <Icon name="arrow" size={15} />
                     </span>
@@ -644,15 +790,15 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         {filtered.length > 0 && (
           <div className="m3-pager" data-list-pager="true">
             <span className="dim2" style={{ fontSize: 11.5 }}>{pageStart + 1}–{Math.min(pageStart + INBOX_PAGE_SIZE, filtered.length)} / {filtered.length}</span>
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }}>
+            <div className="m3-pager-controls">
               <button type="button" className="btn btn-sec btn-sm btn-icon" disabled={curPage <= 1} title="上一页" onClick={() => setPage(curPage - 1)}>
                 <span style={{ display: "inline-flex", transform: "rotate(180deg)" }}><Icon name="chevron" size={15} /></span>
               </button>
-              {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-                <button key={p} type="button" className={`tk-pageno${p === curPage ? " on" : ""}`} onClick={() => setPage(p)}>
-                  {p}
+              {visibleInboxPages(pageCount, curPage).map((token) => typeof token === "number" ? (
+                <button key={token} type="button" className={`tk-pageno${token === curPage ? " on" : ""}`} onClick={() => setPage(token)}>
+                  {token}
                 </button>
-              ))}
+              ) : <span key={token} className="m3-page-gap" aria-hidden="true">…</span>)}
               <button type="button" className="btn btn-sec btn-sm btn-icon" disabled={curPage >= pageCount} title="下一页" onClick={() => setPage(curPage + 1)}>
                 <Icon name="chevron" size={15} />
               </button>
@@ -666,13 +812,14 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         <div className="m3-col-chat">
           <ChatHeader
             convo={selected}
+            canWrite={canWriteM3 && conversationsAvailable && !writePending}
             onTransfer={() => setShowTransfer(true)}
             onStatus={(s) => setStatusDirect(selected.id, s)}
             onToTicket={convertToTicket}
             onToggleProfile={() => setProfilePeek((v) => !v)}
           />
           {selected.transfer && (
-            <TransferBanner transfer={selected.transfer} onAccept={acceptTransfer} onWait={waitTransfer} onReturn={() => setShowReturn(true)} />
+            <TransferBanner transfer={selected.transfer} canWrite={canWriteM3 && conversationsAvailable && !writePending} canAccept={canAcceptSelectedTransfer} onAccept={acceptTransfer} onWait={waitTransfer} onReturn={() => setShowReturn(true)} />
           )}
           <div className="ChatBody">
             <MessageThread messages={threadMessages} relWhen={relWhen} resetKey={selected.id} agentName={ownerLabel(selected.owner)} agentAvatar={selected.owner !== "Unassigned" ? <MAvatar name={selected.owner} size="sm" /> : undefined} handlerRole={selected.type === "advisor" ? "顾问" : "客服"} />
@@ -694,6 +841,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
               pushSkuError={pushSkuError}
               advisorScripts={advisorScripts}
               replyTemplates={replyTemplates}
+              canWrite={canWriteM3 && conversationsAvailable && !writePending}
             />
           )}
         </div>
@@ -708,7 +856,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         convo={selected}
         open={profilePeek}
         onOpenProfile={openFullProfile}
-        onQuick={(k) => setQuick(k)}
+        onQuick={(k) => canWriteM3 && conversationsAvailable && setQuick(k)}
         onAddTag={addCustomerTag}
         onRemoveTag={removeCustomerTag}
       />
@@ -721,8 +869,9 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
           advisorScripts={advisorScripts}
           replyTemplates={replyTemplates}
           customers={initiateCustomers}
-          audiencePresets={audiencePresets}
-          segmentFields={segmentFields}
+          customerLoading={initiateCustomerLoading}
+          customerError={initiateCustomerError}
+          onCustomerQueryChange={setInitiateCustomerQuery}
         />
       )}
       {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}
@@ -737,12 +886,14 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
 /* ---- 对话头 ---- */
 function ChatHeader({
   convo,
+  canWrite,
   onTransfer,
   onStatus,
   onToTicket,
   onToggleProfile,
 }: {
   convo: SessionConvo;
+  canWrite: boolean;
   onTransfer: () => void;
   onStatus: (s: SessionStatus) => void;
   onToTicket: () => void;
@@ -761,6 +912,7 @@ function ChatHeader({
         </div>
         <div className="dim2" style={{ fontSize: 11.5, marginTop: 3, display: "flex", gap: 10, alignItems: "center" }}>
           {convo.profile && <span className="mono">{convo.profile.uid}</span>}
+          <span className="mono" data-proof="session-conversation-no">{convo.id}</span>
           <span>当前对话用户</span>
         </div>
       </div>
@@ -769,19 +921,19 @@ function ChatHeader({
       ) : (
         <>
           <ConvStat active={active} />
-          {active && !closed && (
+          {canWrite && active && !closed && (
             <button type="button" data-proof="session-transfer" className="btn btn-sec btn-sm" onClick={onTransfer}>
               <Icon name="users" size={16} />
               转交
             </button>
           )}
-          {!closed && (
+          {canWrite && !closed && (
             <button type="button" data-proof="session-status" className="btn btn-sec btn-sm" onClick={() => onStatus(active ? "resolved" : "open")}>
               <Icon name={active ? "check" : "arrow"} size={16} />
               {active ? "标记已解决" : "重新激活"}
             </button>
           )}
-          {!closed && (
+          {canWrite && !closed && (
             <button type="button" data-proof="session-to-ticket" className="btn btn-cyan btn-sm" onClick={onToTicket}>
               <Icon name="doc" size={16} />
               转工单
@@ -797,7 +949,7 @@ function ChatHeader({
 }
 
 /* ---- 转入待处理横幅(目标坐席 B 侧处置:接收接入 / 等待处理 / 手动退回)---- */
-function TransferBanner({ transfer, onAccept, onWait, onReturn }: { transfer: SessionTransfer; onAccept: () => void; onWait: () => void; onReturn: () => void }) {
+function TransferBanner({ transfer, canWrite, canAccept, onAccept, onWait, onReturn }: { transfer: SessionTransfer; canWrite: boolean; canAccept: boolean; onAccept: () => void; onWait: () => void; onReturn: () => void }) {
   const toLabel = transferTargetLabel(transfer.to);
   const overdue = isTransferOverdue(transfer);
   return (
@@ -815,13 +967,13 @@ function TransferBanner({ transfer, onAccept, onWait, onReturn }: { transfer: Se
       <div className="m3-xfer-meta">来自 <b>{ownerLabel(transfer.from)}</b> · 转交至 <b>{toLabel}</b></div>
       <div className="m3-xfer-reason">转交原因:{transfer.reason}</div>
       <div className="m3-xfer-acts">
-        <button type="button" data-proof="session-transfer-accept" className="btn btn-pri btn-sm" onClick={onAccept}>
+        <button type="button" data-proof="session-transfer-accept" className="btn btn-pri btn-sm" disabled={!canWrite || !canAccept} title={canAccept ? "接收接入" : "仅目标坐席可接收"} onClick={onAccept}>
           <Icon name="check" size={15} />接收接入
         </button>
-        <button type="button" data-proof="session-transfer-wait" className="btn btn-sec btn-sm" onClick={onWait}>
+        <button type="button" data-proof="session-transfer-wait" className="btn btn-sec btn-sm" disabled={!canWrite} onClick={onWait}>
           <Icon name="clock" size={15} />等待处理
         </button>
-        <button type="button" data-proof="session-transfer-return" className="btn btn-danger btn-sm" onClick={onReturn}>
+        <button type="button" data-proof="session-transfer-return" className="btn btn-danger btn-sm" disabled={!canWrite} onClick={onReturn}>
           <Icon name="arrow" size={15} />手动退回
         </button>
       </div>
@@ -841,17 +993,19 @@ function ChatComposer({
   pushSkuError,
   advisorScripts,
   replyTemplates,
+  canWrite,
 }: {
   convo: SessionConvo;
   replyBody: string;
   onReplyChange: (v: string) => void;
-  onSend: () => void;
+  onSend: () => Promise<void>;
   onPushSku: (sku: PushSku) => void;
   pushSkus: PushSku[];
   pushSkuLoading: boolean;
   pushSkuError: string | null;
   advisorScripts: AdvisorScript[];
   replyTemplates: SessionReplyTpl[];
+  canWrite: boolean;
 }) {
   const [pickOpen, setPickOpen] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
@@ -861,23 +1015,26 @@ function ChatComposer({
     ? advisorScripts.filter((s) => s.status === "published").map((s) => ({ id: s.id, group: s.group, text: s.text }))
     : replyTemplates.filter((t) => t.type === "support" && t.status === "published").map((t) => ({ id: t.id, group: "客服", text: t.text }));
   const fill = (text: string) => onReplyChange(replyBody ? `${replyBody} ${text}` : text);
-  const doSend = () => {
-    if (!replyBody.trim() || sending) return;
+  const doSend = async () => {
+    if (!canWrite || !replyBody.trim() || sending) return;
     setSending(true);
-    onSend();
-    setTimeout(() => setSending(false), 550);
+    try {
+      await onSend();
+    } finally {
+      setSending(false);
+    }
   };
   return (
     <div className="ChatComposer">
       {pickOpen && <SkuPicker skus={pushSkus} loading={pushSkuLoading} error={pushSkuError} onClose={() => setPickOpen(false)} onPick={(sku) => { onPushSku(sku); setPickOpen(false); }} />}
       {tplOpen && <TemplatePicker title={isAdvisor ? "快捷话术回复" : "回复模板"} items={quick} onClose={() => setTplOpen(false)} onPick={(text) => { fill(text); setTplOpen(false); }} />}
       <div className="composer-tools">
-        <button type="button" className={`composer-tool${tplOpen ? " on" : ""}`} aria-expanded={tplOpen} onClick={() => { setTplOpen((v) => !v); setPickOpen(false); }}>
+        <button type="button" className={`composer-tool${tplOpen ? " on" : ""}`} disabled={!canWrite} aria-expanded={tplOpen} onClick={() => { setTplOpen((v) => !v); setPickOpen(false); }}>
           <Icon name="doc" size={15} />
           <span>{isAdvisor ? "快捷话术回复" : "回复模板"}</span>
           <span className="composer-tool-n">{quick.length}</span>
         </button>
-        <button type="button" data-proof="session-push-sku" className={`composer-tool${pickOpen ? " on" : ""}`} aria-expanded={pickOpen} onClick={() => { setPickOpen((v) => !v); setTplOpen(false); }}>
+        <button type="button" data-proof="session-push-sku" className={`composer-tool${pickOpen ? " on" : ""}`} disabled={!canWrite} aria-expanded={pickOpen} onClick={() => { setPickOpen((v) => !v); setTplOpen(false); }}>
           <Icon name="box" size={15} />
           <span>推送商品</span>
           <span className="composer-tool-n">{pushSkuLoading ? "..." : pushSkus.length}</span>
@@ -890,12 +1047,13 @@ function ChatComposer({
           rows={2}
           placeholder="输入回复,⌘/Ctrl+Enter 发送"
           value={replyBody}
+          disabled={!canWrite}
           onChange={(e) => onReplyChange(e.target.value)}
           onKeyDown={(e) => {
             if ((e.metaKey || e.ctrlKey) && e.key === "Enter") doSend();
           }}
         />
-        <button type="button" data-proof="session-reply-save" className={`chat-send${sending ? " sending" : ""}`} disabled={!replyBody.trim()} onClick={doSend}>
+        <button type="button" data-proof="session-reply-save" className={`chat-send${sending ? " sending" : ""}`} disabled={!canWrite || !replyBody.trim() || sending} onClick={doSend}>
           <Icon name="arrow" size={18} />
           发送
         </button>
@@ -1131,9 +1289,9 @@ function UserPanel({
 
         <div className="cvp-sec">资金概览</div>
         <div className="cvp-grid">
-          <div className="cvp-cell"><div className="k">累计充值</div><div className="v">{p.recharge}<small>USDT</small></div></div>
-          <div className="cvp-cell"><div className="k">累计提现</div><div className="v">{p.withdraw}<small>USDT</small></div></div>
-          <div className="cvp-cell"><div className="k">当前余额</div><div className="v">{p.balance}<small>USDT</small></div></div>
+          <div className="cvp-cell"><div className="k">累计充值</div><div className="v">{p.recharge}</div></div>
+          <div className="cvp-cell"><div className="k">累计提现</div><div className="v">{p.withdraw}</div></div>
+          <div className="cvp-cell"><div className="k">当前余额</div><div className="v">{p.balance}</div></div>
           <div className="cvp-cell"><div className="k">关联工单</div><div className="v">{p.tickets}<small>张</small></div></div>
         </div>
 

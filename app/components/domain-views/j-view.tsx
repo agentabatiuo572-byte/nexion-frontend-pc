@@ -137,8 +137,9 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
             try {
               await mc.run(reason, newValue, businessValue);
               setActionConfirm(null);
-            } catch {
+            } catch (error) {
               // 操作失败时保留确认弹窗，便于修正条件或重试。
+              throw error;
             }
           }}
         />

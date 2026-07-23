@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+const UPSTREAM_TIMEOUT_MS = Math.min(30_000, Math.max(1_000, Number(process.env.NEXION_BACKEND_TIMEOUT_MS) || 10_000));
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -23,8 +24,14 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "config" && parts[1] === "overview") {
     return "/api/admin/platform/config/overview";
   }
+  if (parts.length === 1 && parts[0] === "params-registry") {
+    return "/api/admin/platform/params-registry";
+  }
   if (parts.length === 1 && parts[0] === "config") {
     return "/api/admin/platform/config";
+  }
+  if (parts.length === 2 && parts[0] === "flags" && parts[1] === "runtime") {
+    return "/api/admin/platform/flags/runtime";
   }
   if (parts.length === 2 && parts[0] === "events" && parts[1] === "overview") {
     return "/api/admin/platform/events/overview";
@@ -160,6 +167,7 @@ async function proxy(request: Request, context: RouteContext) {
       headers,
       body: hasBody ? await request.text() : undefined,
       cache: "no-store",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     const responseHeaders = new Headers({
       "Content-Type": upstream.headers.get("Content-Type") || "application/json",
@@ -177,8 +185,9 @@ async function proxy(request: Request, context: RouteContext) {
       status: upstream.status,
       headers: responseHeaders,
     });
-  } catch {
-    return jsonError(503, "PLATFORM_BACKEND_UNAVAILABLE",
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    return jsonError(503, timedOut ? "PLATFORM_BACKEND_TIMEOUT" : "PLATFORM_BACKEND_UNAVAILABLE",
       hasBody ? { "X-Nexion-Upstream-Outcome": "unknown" } : undefined);
   }
 }

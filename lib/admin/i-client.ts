@@ -300,6 +300,7 @@ export type NotificationCampaignRow = {
   swipeTo: string;
   budget?: number;
   audienceTarget: NotificationAudienceTarget;
+  revision: number;
 };
 
 export type NotificationAudienceTarget = {
@@ -579,12 +580,12 @@ export type IContentActions = {
   updateI2SocialEventStatus: (id: number, status: NovaSocialEventStatus, reason: string) => Promise<void>;
   deleteI2SocialEvent: (id: number, reason: string) => Promise<void>;
   createI3Campaign: (body: Record<string, unknown>, reason: string) => Promise<void>;
-  updateI3CampaignDraft: (campaignNo: string, body: Record<string, unknown>, reason: string) => Promise<void>;
+  updateI3CampaignDraft: (campaignNo: string, body: Record<string, unknown>, expectedRevision: number, reason: string) => Promise<void>;
   estimateI3Audience: (target: NotificationAudienceTarget) => Promise<NotificationAudienceEstimateView>;
-  scheduleI3Campaign: (campaignNo: string, scheduledAt: string, reason: string) => Promise<void>;
-  sendI3CampaignNow: (campaignNo: string, reason: string) => Promise<void>;
-  cancelI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
-  deleteI3Campaign: (campaignNo: string, reason: string) => Promise<void>;
+  scheduleI3Campaign: (campaignNo: string, scheduledAt: string, expectedRevision: number, reason: string) => Promise<void>;
+  sendI3CampaignNow: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
+  cancelI3Campaign: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
+  deleteI3Campaign: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
   updateI3Cap: (tier: string, cap: string, reason: string) => Promise<void>;
   publishI4TrustSection: (sectionKey: string, body: { version: string; expectedRevision: number; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
   createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -686,12 +687,12 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   updateI2SocialEventStatus: (id, status, reason) => apiRequest(`/nova/social-events/${id}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
   deleteI2SocialEvent: (id, reason) => apiRequest(`/nova/social-events/${id}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   createI3Campaign: (body, reason) => apiRequest("/campaigns", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  updateI3CampaignDraft: (campaignNo, body, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
+  updateI3CampaignDraft: (campaignNo, body, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/draft`, { method: "PATCH", body: JSON.stringify(withReason({ ...body, expectedRevision }, reason)) }).then(() => undefined),
   estimateI3Audience: (target) => apiRequest<NotificationAudienceEstimateView>("/campaigns/audience-estimate", { method: "POST", body: JSON.stringify({ target }) }),
-  scheduleI3Campaign: (campaignNo, scheduledAt, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: scheduledAt }, reason)) }).then(() => undefined),
-  sendI3CampaignNow: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/send-now`, { method: "POST", body: JSON.stringify(withReason({ schedule: "now" }, reason)) }).then(() => undefined),
-  cancelI3Campaign: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/cancel`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  deleteI3Campaign: (campaignNo, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  scheduleI3Campaign: (campaignNo, scheduledAt, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/schedule`, { method: "POST", body: JSON.stringify(withReason({ schedule: scheduledAt, expectedRevision }, reason)) }).then(() => undefined),
+  sendI3CampaignNow: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/send-now`, { method: "POST", body: JSON.stringify(withReason({ schedule: "now", expectedRevision }, reason)) }).then(() => undefined),
+  cancelI3Campaign: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/cancel`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
+  deleteI3Campaign: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   updateI3Cap: (tier, cap, reason) => apiRequest(`/campaigns/caps/${encodeURIComponent(tier)}`, { method: "PATCH", body: JSON.stringify(withReason({ cap }, reason)) }).then(() => undefined),
   publishI4TrustSection: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI4TrustSectionDraft: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),

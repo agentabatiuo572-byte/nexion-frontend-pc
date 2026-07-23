@@ -83,3 +83,362 @@
 .liqpage .flow-bar { position: absolute; left: 50%; transform: translateX(-50%); width: 26px; }
 .liqpage .flow-col .lbl { font-family: var(--font-jet-mono), monospace; font-size: 11px; color: var(--ink-4);
   height: 18px; line-height: 18px; }
+
+/* ---- 2026-07 B2 authoritative acceptance closure ---- */
+.liqpage .b2-state {
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+.liqpage .b2-state-error b { color: var(--danger); }
+.liqpage .b2-state-error span { max-width: 720px; overflow-wrap: anywhere; }
+.liqpage .b2-state .b2-button { justify-self: center; }
+
+.liqpage .b2-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.liqpage .b2-window {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+.liqpage .b2-window button {
+  appearance: none;
+  min-width: 66px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.liqpage .b2-window button.active {
+  background: var(--brand-2-soft);
+  color: var(--brand-2);
+  font-weight: 700;
+}
+.liqpage .b2-window button:disabled,
+.liqpage .b2-button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+.liqpage .b2-asof {
+  margin-right: auto;
+  color: var(--ink-4);
+  font: 11px var(--font-jet-mono), monospace;
+}
+.liqpage .b2-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+}
+.liqpage .b2-button:hover { border-color: var(--brand-2-border); color: var(--brand-2); }
+.liqpage .b2-button.primary {
+  border-color: var(--brand-2);
+  background: var(--brand-2);
+  color: #fff;
+}
+.liqpage .b2-readonly { color: var(--ink-4); font-size: 11px; }
+.liqpage .spin { animation: b2-spin .75s linear infinite; }
+@keyframes b2-spin { to { transform: rotate(360deg); } }
+
+.liqpage .b2-alert {
+  margin: 0 0 12px;
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.liqpage .b2-alert.error { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); }
+.liqpage .b2-alert.success { border-color: var(--success-border); background: var(--success-soft); color: var(--success); }
+
+.liqpage .b2-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.liqpage .b2-kpi { min-width: 0; padding: 17px 18px; }
+.liqpage .b2-kpi > span { display: block; color: var(--ink-3); font-size: 12px; }
+.liqpage .b2-kpi > strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--ink);
+  font: 600 24px var(--font-jet-mono), monospace;
+  letter-spacing: -.03em;
+  text-overflow: ellipsis;
+}
+.liqpage .b2-kpi > small { display: block; margin-top: 7px; color: var(--ink-4); line-height: 1.45; }
+.liqpage .b2-kpi.tier-warning > strong,
+.liqpage .b2-kpi.tier-watch > strong { color: var(--warning); }
+.liqpage .b2-kpi.tier-danger > strong { color: var(--danger); }
+.liqpage .b2-kpi.tier-normal > strong { color: var(--success); }
+
+.liqpage .b2-coverage {
+  display: grid;
+  grid-template-columns: 180px minmax(220px, 1fr);
+  align-items: center;
+  gap: 15px 24px;
+  margin-top: 14px;
+}
+.liqpage .b2-coverage .eyebrow { display: block; color: var(--ink-3); font-size: 12px; }
+.liqpage .b2-coverage strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--cyan);
+  font: 600 27px var(--font-jet-mono), monospace;
+}
+.liqpage .b2-meter {
+  height: 24px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-3);
+}
+.liqpage .b2-meter > div {
+  height: 100%;
+  min-width: 3px;
+  background: linear-gradient(90deg, var(--cyan), var(--success));
+}
+.liqpage .b2-cover-copy {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.liqpage .b2-cover-copy svg { flex: 0 0 auto; color: var(--success); }
+
+.liqpage .b2-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, .75fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+.liqpage .b2-maturity,
+.liqpage .b2-config-summary,
+.liqpage .b2-liabilities { min-width: 0; }
+.liqpage .b2-maturity > header,
+.liqpage .b2-config-summary > header,
+.liqpage .b2-liabilities > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -18px -18px 0;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.liqpage .b2-maturity > header > div,
+.liqpage .b2-liabilities > header > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.liqpage .b2-maturity > header span,
+.liqpage .b2-config-summary > header span,
+.liqpage .b2-liabilities > header span { color: var(--ink-4); font-size: 11px; }
+.liqpage .b2-maturity-list {
+  max-height: 455px;
+  margin: 0 -18px;
+  overflow-y: auto;
+}
+.liqpage .b2-maturity-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.liqpage .b2-maturity-row > div:first-child { min-width: 0; }
+.liqpage .b2-maturity-row b { font: 600 12px var(--font-jet-mono), monospace; }
+.liqpage .b2-maturity-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-4);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.liqpage .b2-maturity-row .amount { flex: 0 0 auto; text-align: right; }
+.liqpage .b2-maturity > footer {
+  display: grid;
+  gap: 4px;
+  margin: 12px -6px -5px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-size: 11px;
+}
+.liqpage .b2-maturity > footer span { color: var(--warning); }
+
+.liqpage .b2-config-summary dl { margin: 8px 0 0; }
+.liqpage .b2-config-summary dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.liqpage .b2-config-summary dt { color: var(--ink-3); font-size: 12px; }
+.liqpage .b2-config-summary dd { margin: 0; color: var(--ink); font: 600 11px var(--font-jet-mono), monospace; }
+.liqpage .b2-config-summary > p {
+  margin: 12px 0;
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.liqpage .b2-pending {
+  padding: 9px;
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+}
+.liqpage .b2-cross-links { display: grid; gap: 7px; margin-top: 13px; }
+.liqpage .b2-cross-links a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--cyan);
+  font-size: 12px;
+  text-decoration: none;
+}
+.liqpage .b2-cross-links a:hover { border-color: var(--cyan); }
+
+.liqpage .b2-liabilities { margin-top: 14px; }
+.liqpage .b2-table-wrap { margin: 0 -18px; overflow-x: auto; }
+.liqpage .b2-liabilities table { width: 100%; min-width: 860px; border-collapse: collapse; }
+.liqpage .b2-liabilities th,
+.liqpage .b2-liabilities td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-2);
+  font-size: 11px;
+  text-align: left;
+}
+.liqpage .b2-liabilities th { color: var(--ink-4); font-weight: 600; }
+.liqpage .b2-liabilities .num { text-align: right; }
+.liqpage .b2-liabilities .mono { font-family: var(--font-jet-mono), monospace; }
+.liqpage .b2-liabilities .source { max-width: 330px; color: var(--ink-4); overflow-wrap: anywhere; }
+.liqpage .b2-liabilities > footer { padding-top: 11px; color: var(--ink-4); font-size: 10px; overflow-wrap: anywhere; }
+
+.liqpage .b2-dialog-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(4, 8, 18, .64);
+}
+.liqpage .b2-dialog {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 72px rgba(0, 0, 0, .35);
+  padding: 20px;
+}
+.liqpage .b2-dialog > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin: -20px -20px 18px;
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.liqpage .b2-dialog > header b { display: block; }
+.liqpage .b2-dialog > header span { display: block; margin-top: 4px; color: var(--ink-4); font-size: 11px; }
+.liqpage .b2-dialog > header button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 24px;
+}
+.liqpage .b2-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.liqpage .b2-dialog label,
+.liqpage .b2-dialog legend { color: var(--ink-3); font-size: 11px; }
+.liqpage .b2-dialog select,
+.liqpage .b2-dialog textarea {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+}
+.liqpage .b2-dialog select { min-height: 38px; padding: 0 10px; }
+.liqpage .b2-dialog textarea { min-height: 82px; padding: 9px 10px; resize: vertical; }
+.liqpage .b2-dialog fieldset {
+  margin: 16px 0 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.liqpage .b2-check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; }
+.liqpage .b2-check-grid.compact { margin-top: 13px; }
+.liqpage .b2-check-grid label { display: flex; align-items: center; gap: 7px; }
+.liqpage .b2-check-grid input { accent-color: var(--brand-2); }
+.liqpage .b2-reason { position: relative; display: block; margin-top: 16px; }
+.liqpage .b2-reason > span { position: absolute; right: 8px; bottom: 7px; color: var(--ink-4); font-size: 10px; }
+.liqpage .b2-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.liqpage .b2-confirm {
+  padding: 14px;
+  border: 1px solid var(--warning-border);
+  border-radius: 10px;
+  background: var(--warning-soft);
+}
+.liqpage .b2-confirm > b { color: var(--warning); }
+.liqpage .b2-confirm p { margin: 9px 0 0; color: var(--ink-2); font-size: 12px; line-height: 1.5; }
+
+@container bpage (max-width: 1040px) {
+  .liqpage .b2-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .liqpage .b2-main { grid-template-columns: 1fr; }
+}
+@container bpage (max-width: 640px) {
+  .liqpage .b2-kpis { grid-template-columns: 1fr; }
+  .liqpage .b2-coverage { grid-template-columns: 1fr; }
+  .liqpage .b2-form-grid,
+  .liqpage .b2-check-grid { grid-template-columns: 1fr; }
+  .liqpage .b2-maturity-row { align-items: flex-start; flex-direction: column; }
+  .liqpage .b2-maturity-row .amount { text-align: left; }
+}

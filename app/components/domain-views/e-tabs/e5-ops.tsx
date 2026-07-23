@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Badge, DataListPager } from "../design-kit";
-import type { E5Device, E5DeviceState, E5Overview } from "@/lib/admin/e5-client";
+import { fetchE5Devices, type E5Device, type E5DeviceState } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
 import { EStats } from "./stats";
 
@@ -53,8 +54,28 @@ function dcStatusLabel(status: string) {
   return "启用";
 }
 
+function heartbeatLagMinutes(value: string) {
+  if (!value || value === "—") return null;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return null;
+  return Math.max(0, Math.round((Date.now() - time) / 60_000));
+}
+
+function percentile95(values: number[]) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)];
+}
+
 export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const devices = ctx.e5Devices;
+  const [actionReason, setActionReason] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+  const [selectedDc, setSelectedDc] = useState<string | null>(null);
+  const [healthDevices, setHealthDevices] = useState<E5Device[]>([]);
+  const [healthTotal, setHealthTotal] = useState(0);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState("");
   const overview = ctx.e5Overview;
   const maxDevicesPerUser = overview?.maxDevicesPerUser ?? null;
   const maxDevicesLabel = maxDevicesPerUser ? String(maxDevicesPerUser) : "—";
@@ -68,8 +89,39 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
   const recycledDevices = overview?.recycledDevices ?? devices.filter((d) => d.state === "unbound").length;
   const dcStats = new Map((overview?.datacenters ?? []).map((dc) => [dc.dcLocation, dc]));
   const dcRows = ctx.e5Datacenters.length ? ctx.e5Datacenters : overview?.datacenters ?? [];
-  const devAct = (d: E5Device, op: "device-activate" | "device-deactivate", name: string, detail: string, amplify = false) =>
-    ctx.openActionConfirm({ name: `${name} · ${d.serial}`, op, deviceId: d.deviceId, deviceNo: d.serial, amplify, detail });
+  const filteredDevices = devices;
+  const devAct = (d: E5Device, op: "device-activate" | "device-deactivate", action: NonNullable<import("./types").McSpec["deviceAction"]>, name: string, detail: string, amplify = false) =>
+    ctx.openActionConfirm({ name: `${name} · ${d.serial}`, op, deviceAction: action, deviceId: d.deviceId, deviceNo: d.serial, amplify, detail });
+  const reasonReady = actionReason.trim().length >= 8 && actionReason.trim().length <= 200;
+  const runDirect = async (work: () => Promise<void>) => {
+    if (!reasonReady || actionBusy) return;
+    setActionBusy(true);
+    try { await work(); }
+    catch (error) { ctx.toast(error instanceof Error ? error.message : "E5 操作失败"); }
+    finally { setActionBusy(false); }
+  };
+  const batchUser = (d: E5Device) => {
+    const paused = !!d.pausedReason;
+    const userId = Number(d.userId);
+    if (!Number.isSafeInteger(userId) || userId <= 0) return;
+    void runDirect(() => ctx.runE5UserBatch(userId, !paused, actionReason.trim()));
+  };
+  const openHealth = async (dcId: string) => {
+    setSelectedDc(dcId);
+    setHealthDevices([]);
+    setHealthTotal(0);
+    setHealthError("");
+    setHealthLoading(true);
+    try {
+      const page = await fetchE5Devices({ dcLocation: dcId, pageNum: 1, pageSize: 200 });
+      setHealthDevices(page.records);
+      setHealthTotal(page.total);
+    } catch (error) {
+      setHealthError(error instanceof Error ? error.message : "数据中心健康详情读取失败");
+    } finally {
+      setHealthLoading(false);
+    }
+  };
 
   const toggle = (dcId: string) => {
     const paused = ctx.isDcPaused(dcId);
@@ -87,7 +139,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       <EStats items={[
         { k: "在线设备(全网)", v: fmtCount(onlineDevices), sub: "全网设备概览", tone: "ok" },
         { k: "离线 / 异常", v: fmtCount(abnormalDevices), sub: "运行状态汇总", tone: "warn" },
-        { k: "单户设备上限", v: maxDevicesLabel, sub: "后端配置" },
+        { k: "单户设备上限", v: maxDevicesLabel, sub: "服务端固定上限(V2=6)" },
         { k: "回收 / 停用", v: fmtCount(recycledDevices), sub: "可恢复设备", tone: "cyan" },
       ]} />
 
@@ -117,32 +169,48 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           <span className="ttl">设备库存 & 激活</span>
           <span className="sub">激活 / 取消激活 / 强制激活 / 解绑 · 校验订单关系 + 用户槽位 + 单户上限({maxDevicesLabel})</span>
         </div>
+        <div className="row" style={{ gap: 8, padding: "8px 10px", flexWrap: "wrap" }} data-proof="e5-device-filters">
+          <input className="fld" style={{ maxWidth: 280 }} value={ctx.e5Keyword} onChange={(event) => ctx.setE5Keyword(event.target.value)} placeholder="搜索用户 / 设备 / SKU" aria-label="搜索用户设备" />
+          <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5StateFilter} onChange={(event) => ctx.setE5StateFilter(event.target.value)} aria-label="设备状态筛选">
+            <option value="all">全部状态</option><option value="active">在线</option><option value="busy">任务中</option><option value="offline">离线</option><option value="inventory">库存</option><option value="unbound">已解绑</option><option value="abnormal">异常</option>
+          </select>
+          <select className="fld" style={{ maxWidth: 160 }} value={ctx.e5KindFilter} onChange={(event) => ctx.setE5KindFilter(event.target.value)} aria-label="设备类型筛选">
+            <option value="all">全部类型</option><option value="MOBILE">手机</option><option value="S1">S1</option><option value="PRO">Pro</option><option value="RACK">Rack</option>
+          </select>
+          <select className="fld" style={{ maxWidth: 180 }} value={ctx.e5HeartbeatFilter} onChange={(event) => ctx.setE5HeartbeatFilter(event.target.value)} aria-label="心跳筛选">
+            <option value="all">全部心跳</option><option value="fresh">10 分钟内</option><option value="stale">失联 / 未采集</option>
+          </select>
+          <span className="muted tiny">当前页命中 {filteredDevices.length} 台</span>
+          {ctx.canWriteE5 && <input className="fld" style={{ minWidth: 300 }} maxLength={200} value={actionReason} onChange={(event) => setActionReason(event.target.value)} placeholder="直接操作理由(8–200 字)" aria-label="E5 直接操作理由" />}
+          {ctx.canWriteE5 && <span className="muted tiny">{actionReason.trim().length}/200{reasonReady ? " · 可执行" : " · 需 8–200 字"}</span>}
+        </div>
         <div style={{ overflowX: "auto", padding: "4px 4px 0" }}>
-          <table style={{ width: "100%", minWidth: 1020, borderCollapse: "collapse", fontSize: 12.5 }}>
+          <table style={{ width: "100%", minWidth: 1480, borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ textAlign: "left", color: "var(--ink-4)", fontSize: 11.5 }}>
                 <th style={{ padding: "8px 10px" }}>设备编号</th><th style={{ padding: "8px 10px" }}>设备名称</th><th style={{ padding: "8px 10px" }}>用户</th>
                 <th style={{ padding: "8px 10px" }}>SKU / 产品</th><th style={{ padding: "8px 10px" }}>DC</th><th style={{ padding: "8px 10px" }}>用户槽位</th>
-                <th style={{ padding: "8px 10px" }}>状态</th><th style={{ padding: "8px 10px", textAlign: "right" }}>动作</th>
+                <th style={{ padding: "8px 10px" }}>购入 / 激活</th><th style={{ padding: "8px 10px" }}>基础收益 / 效率</th>
+                <th style={{ padding: "8px 10px" }}>心跳与任务</th><th style={{ padding: "8px 10px" }}>状态</th><th style={{ padding: "8px 10px", textAlign: "right" }}>动作</th>
               </tr>
             </thead>
             <tbody>
               {ctx.e5Loading && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在加载第 {ctx.e5Page} 页设备库存...</td>
+                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>正在加载第 {ctx.e5Page} 页设备库存...</td>
                 </tr>
               )}
               {!ctx.e5Loading && ctx.e5Error && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存读取异常:{ctx.e5Error}</td>
+                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--danger)" }}>设备库存读取异常:{ctx.e5Error}</td>
                 </tr>
               )}
-              {!ctx.e5Loading && !ctx.e5Error && devices.length === 0 && (
+              {!ctx.e5Loading && !ctx.e5Error && filteredDevices.length === 0 && (
                 <tr style={{ borderTop: "1px solid var(--border)" }}>
-                  <td colSpan={8} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>暂无设备库存数据</td>
+                  <td colSpan={11} style={{ padding: "18px 10px", color: "var(--ink-3)" }}>当前筛选无设备数据</td>
                 </tr>
               )}
-              {!ctx.e5Loading && !ctx.e5Error && devices.map((d) => {
+              {!ctx.e5Loading && !ctx.e5Error && filteredDevices.map((d) => {
                 const skuMain = d.productCode || d.sku;
                 const skuSub = d.productTier && d.productTier !== skuMain ? d.productTier : "";
                 return (
@@ -162,18 +230,27 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                     </td>
                     <td style={{ padding: "9px 10px", fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{d.dc}</td>
                     <td style={{ padding: "9px 10px", fontFamily: "var(--mono)" }}>{slotLabel(d)}</td>
+                    <td style={{ padding: "9px 10px" }}><div className="mono">购 {d.purchasedAt}</div><div className="mono" style={{ marginTop: 2 }}>激 {d.activatedAt}</div></td>
+                    <td style={{ padding: "9px 10px" }}><div>{d.baseRate}</div><div style={{ marginTop: 2 }}>{(d.currentEfficiency * 100).toFixed(1)}%</div></td>
+                    <td style={{ padding: "9px 10px" }}>
+                      <div className="mono">{d.heartbeatAt}</div>
+                      <div className="muted tiny" style={{ marginTop: 2 }}>电量 {d.batteryLevel == null ? "未采集" : `${d.batteryLevel}%`} · {d.isCharging == null ? "充电未采集" : d.isCharging ? "充电中" : "未充电"} · {d.isWifiConnected == null ? "网络未采集" : d.isWifiConnected ? "网络可达" : "网络断开"}</div>
+                      <div className="muted tiny" style={{ marginTop: 2 }}>温控 {d.thermalState} · 任务 {d.activeTaskNo}{d.pausedReason ? ` · 暂停:${d.pausedReason}` : ""}</div>
+                    </td>
                     <td style={{ padding: "9px 10px" }}><Badge tone={DEV_STATE_TONE[d.state]}>{DEV_STATE_LABEL[d.state]}</Badge></td>
                     <td style={{ padding: "9px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                      {isActivatable(d.state) && (
+                      {isActivatable(d.state) && (ctx.canWriteE5 || ctx.canForceActivateE5) && (
                         <>
-                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "激活设备", `激活 ${d.serial}(用户 ${d.user} 槽位 ${slotLabel(d)})· 校验设备状态 + 单户上限(${maxDevicesLabel})`)}>激活</button>{" "}
-                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-activate", "强制激活设备", `强制激活 ${d.serial} · 运维异常补救 · 强制不绕过单户上限(${maxDevicesLabel}) · 理由必填`, true)}>强制激活</button>
+                          {ctx.canWriteE5 && d.state === "inventory" && <><button className="l-btn sm mc" disabled={!reasonReady || actionBusy || d.activeDevicesForUser >= 6} title={d.activeDevicesForUser >= 6 ? "该用户已占满 6 个激活槽位" : undefined} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "activate", actionReason.trim()))}>激活</button>{" "}</>}
+                          {ctx.canForceActivateE5 && <button className="l-btn sm mc" disabled={d.activeDevicesForUser >= 6} title={d.activeDevicesForUser >= 6 ? "强制激活也不能绕过 6 台上限" : undefined} onClick={() => devAct(d, "device-activate", "force-activate", "强制激活设备", `设备 ${d.deviceId} / 用户 ${d.userNo} / 类型 ${d.productTier || d.deviceName} / 购入 ${d.purchasedAt} / 已激活 ${d.activeDevicesForUser}/${maxDevicesLabel} · 强制激活不绕过固定上限 · 非资金动作`, false)}>强制激活</button>}
+                          {d.activeDevicesForUser >= 6 && <div className="tiny" style={{ color: "var(--danger)", marginTop: 4 }}>槽位已满 {d.activeDevicesForUser}/6</div>}
                         </>
                       )}
-                      {isDeactivatable(d.state) && (
+                      {isDeactivatable(d.state) && (ctx.canWriteE5 || ctx.canUnbindE5) && (
                         <>
-                          <button className="l-btn sm mc" onClick={() => devAct(d, "device-deactivate", "取消激活设备", `取消激活 ${d.serial} · 停止派单与计提`)}>取消激活</button>{" "}
-                          <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "解绑设备", `解绑 ${d.serial} · 与用户 ${d.user} 槽位解除关联(异常设备处置)· 理由必填`, true)}>解绑</button>
+                          {ctx.canWriteE5 && <button className="l-btn sm mc" disabled={!reasonReady || actionBusy} onClick={() => void runDirect(() => ctx.runE5DeviceAction(d.deviceId, "deactivate", actionReason.trim()))}>取消激活</button>}{" "}
+                          {ctx.canUnbindE5 && <button className="l-btn sm dgr" onClick={() => devAct(d, "device-deactivate", "unbind", "解绑设备", `解绑 ${d.serial} · 解除资产关系但不退款、不改写购入时间 · 理由 8–200 字`, false)}>解绑</button>}{" "}
+                          {ctx.canWriteE5 && <button className="l-btn sm" disabled={!reasonReady || actionBusy} onClick={() => batchUser(d)}>{d.pausedReason ? "恢复该用户" : "暂停该用户"}</button>}
                         </>
                       )}
                     </td>
@@ -200,7 +277,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
           <div className="ttl">数据中心</div>
           <div className="sub">区域、状态与派单控制</div>
         </div>
-        <button className="l-btn sm mc" onClick={() => ctx.openDatacenter()}>+ 新增数据中心</button>
+        {ctx.canWriteE5 && <button className="l-btn sm mc" onClick={() => ctx.openDatacenter()}>+ 新增数据中心</button>}
       </div>
       <div className="dc-grid">
         {!ctx.e5Loading && !ctx.e5Error && dcRows.length === 0 && (
@@ -223,7 +300,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
             <div className={`dc-card ${cls}`} key={dc.dcLocation}>
               <div className="dc-h">
                 <span className="ic"><RackIcon /></span>
-                <div className="t"><div className="nm">{dc.dcLocation}</div><div className="reg">{dc.regionLabel} · {dcStatusLabel(dc.status)}</div></div>
+                <div className="t"><div className="nm">{dc.displayName}</div><div className="reg">ID {dc.dcLocation} · {dc.regionLabel} · {dc.location} · {dcStatusLabel(dc.status)}</div></div>
                 <span className="state"><span className="d" />{stateLbl}</span>
               </div>
               <div className="dc-body">
@@ -238,17 +315,55 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
                 </div>
               </div>
               <div className="dc-foot">
-                <button onClick={() => ctx.toast(`${dc.dcLocation} · 健康详情已打开`)}>健康详情</button>
-                <button onClick={() => ctx.openDatacenter(dc)}>编辑</button>
-                <button className="dgr" onClick={() => ctx.deleteDatacenter(dc)}>删除</button>
-                {paused
+                <button onClick={() => void openHealth(dc.dcLocation)}>健康详情</button>
+                {ctx.canWriteE5 && <button onClick={() => ctx.openDatacenter(dc)}>编辑</button>}
+                {ctx.canWriteE5 && <button className="dgr" onClick={() => ctx.deleteDatacenter(dc)}>删除</button>}
+                {(paused ? ctx.canWriteE5 : ctx.canPauseDcE5) && (paused
                   ? <button className="resume" onClick={() => toggle(dc.dcLocation)}>恢复派单</button>
-                  : <button className="pause" onClick={() => toggle(dc.dcLocation)}><PauseIcon /> 批量 pause</button>}
+                  : <button className="pause" onClick={() => toggle(dc.dcLocation)}><PauseIcon /> 批量 pause</button>)}
               </div>
             </div>
           );
         })}
       </div>
+
+      {selectedDc && (() => {
+        const dc = dcRows.find((item) => item.dcLocation === selectedDc);
+        const live = dcStats.get(selectedDc) ?? dc;
+        if (!dc || !live) return null;
+        const heartbeatLags = healthDevices.map((device) => heartbeatLagMinutes(device.heartbeatAt)).filter((value): value is number => value != null);
+        const heartbeatP95 = percentile95(heartbeatLags);
+        const freshHeartbeats = heartbeatLags.filter((value) => value <= 10).length;
+        const activeTasks = healthDevices.filter((device) => device.activeTaskNo && device.activeTaskNo !== "—").length;
+        return <section className="feed-card" role="dialog" aria-label={`${selectedDc} 健康详情`} data-proof="e5-dc-health-detail" style={{ marginTop: 14 }}>
+          <div className="feed-h"><span className="ttl">{selectedDc} · 健康详情</span><button className="l-btn sm" onClick={() => setSelectedDc(null)}>关闭</button></div>
+          <div className="row" style={{ gap: 18, padding: 14, flexWrap: "wrap" }}>
+            <span>绑定设备 <b>{fmtCount(live.totalDevices)}</b></span><span>在线 <b>{fmtCount(live.onlineDevices)}</b></span><span>异常 <b>{fmtCount(live.abnormalDevices)}</b></span>
+            <span>GPU 平均 <b>{Math.round(live.avgGpuUsage)}%</b></span><span>GPU 温度 <b>{Math.round(live.avgGpuTempC)}℃</b></span><span>GPU 功耗 <b>{Math.round(live.avgGpuPowerW)}W</b></span>
+            <span>派单 <b>{live.dispatchPaused ? `已暂停:${live.pausedReason || "未填写"}` : "正常"}</b></span><span>当前任务设备 <b>{healthLoading ? "读取中" : fmtCount(activeTasks)}</b></span>
+            <span>心跳延迟 P95 <b>{healthLoading ? "读取中" : heartbeatP95 == null ? "未采集" : `${heartbeatP95} 分钟`}</b></span><span>CPU 平均 <b>未采集</b></span>
+          </div>
+          <div style={{ margin: "0 14px 14px", padding: 12, border: "1px solid var(--border)", borderRadius: 10 }} data-proof="e5-dc-heartbeat-samples">
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}><b>心跳新鲜度样本</b><span className="muted tiny">10 分钟内 {freshHeartbeats}/{heartbeatLags.length} · 取该 DC 当前最新心跳，不伪造历史时序</span></div>
+            <div style={{ display: "flex", gap: 3, minHeight: 28, alignItems: "end" }}>
+              {heartbeatLags.length === 0 ? <span className="muted tiny">暂无可用心跳样本</span> : heartbeatLags.slice(0, 80).map((lag, index) => <span key={`${lag}-${index}`} title={`延迟 ${lag} 分钟`} style={{ width: 6, height: `${Math.max(4, Math.min(28, lag + 4))}px`, background: lag <= 10 ? "var(--success)" : "var(--warning)", borderRadius: 2 }} />)}
+            </div>
+          </div>
+          <div style={{ overflowX: "auto", margin: "0 14px 14px" }} data-proof="e5-dc-bound-devices">
+            <table style={{ width: "100%", minWidth: 860, borderCollapse: "collapse", fontSize: 12 }}>
+              <thead><tr style={{ textAlign: "left", color: "var(--ink-4)" }}><th style={{ padding: 7 }}>设备</th><th style={{ padding: 7 }}>用户</th><th style={{ padding: 7 }}>状态</th><th style={{ padding: 7 }}>当前任务</th><th style={{ padding: 7 }}>最新心跳</th><th style={{ padding: 7 }}>暂停原因</th></tr></thead>
+              <tbody>
+                {healthLoading && <tr><td colSpan={6} style={{ padding: 10 }}>正在读取该数据中心绑定设备...</td></tr>}
+                {!healthLoading && healthError && <tr><td colSpan={6} style={{ padding: 10, color: "var(--danger)" }}>{healthError}</td></tr>}
+                {!healthLoading && !healthError && healthDevices.length === 0 && <tr><td colSpan={6} style={{ padding: 10 }}>该数据中心暂无绑定设备</td></tr>}
+                {!healthLoading && !healthError && healthDevices.map((device) => <tr key={device.deviceId} style={{ borderTop: "1px solid var(--border)" }}><td style={{ padding: 7 }} className="mono">{device.serial}</td><td style={{ padding: 7 }}>{device.userNo || device.userId || "—"}</td><td style={{ padding: 7 }}>{DEV_STATE_LABEL[device.state]}</td><td style={{ padding: 7 }}>{device.activeTaskNo}</td><td style={{ padding: 7 }} className="mono">{device.heartbeatAt}</td><td style={{ padding: 7 }}>{device.pausedReason || "—"}</td></tr>)}
+              </tbody>
+            </table>
+            {!healthLoading && healthTotal > healthDevices.length && <div className="muted tiny" style={{ marginTop: 8 }}>当前显示前 {healthDevices.length} / {healthTotal} 台；完整吞吐与历史心跳曲线需 fleet 遥测接口继续提供。</div>}
+          </div>
+          <div className="tint tiny" style={{ margin: "0 14px 14px" }}>任务吞吐、派单 P95、CPU 与历史心跳曲线尚无 fleet 遥测字段；当前任务数、心跳延迟 P95、GPU 与设备清单均来自实时服务端数据，未使用估算值。</div>
+        </section>;
+      })()}
 
       {/* 运维活动 feed */}
       <section className="feed-card">

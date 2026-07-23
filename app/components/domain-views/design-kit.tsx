@@ -84,9 +84,14 @@ export const CodeTag = ({ tone, title, children }: { tone?: string; title?: stri
   <span className={"code-tag " + (tone || "") + (title ? " has-tip" : "")} data-tip={title || undefined}>{children}</span>
 );
 
-export const Chip = ({ sel, tab, onClick, children }: { sel?: boolean; tab?: boolean; onClick?: () => void; children: ReactNode }) => (
-  <span className={"chip " + (tab ? "tab " : "") + (sel ? "sel" : "")} onClick={onClick}>{children}</span>
-);
+export const Chip = ({ sel, tab, onClick, children }: { sel?: boolean; tab?: boolean; onClick?: () => void; children: ReactNode }) => {
+  const className = "chip " + (tab ? "tab " : "") + (sel ? "sel" : "");
+  return tab ? (
+    <button type="button" className={className} aria-pressed={!!sel} onClick={onClick}>{children}</button>
+  ) : (
+    <span className={className}>{children}</span>
+  );
+};
 
 export const Badge = ({ tone = "neutral", children }: { tone?: string; children: ReactNode }) => (
   <span className={"badge-s " + tone}>{children}</span>
@@ -255,6 +260,12 @@ export function PaginationExemption({
   maxRows: number;
   kind?: PaginationExemptionKind;
 }) {
+  const kindLabel: Record<PaginationExemptionKind, string> = {
+    "static-small": "固定小列表",
+    "sample-ledger": "摘要台账",
+    "reference-catalog": "参考目录",
+    "fixed-matrix": "固定对照矩阵",
+  };
   return (
     <div
       data-pagination-exempt="true"
@@ -271,7 +282,7 @@ export function PaginationExemption({
         padding: "9px 12px",
       }}
     >
-      <span className="mono">paginationExempt</span> · {label} · {kind} · 最多 {maxRows} 行 · {reason}
+      <b>同屏展示</b> · {label} · {kindLabel[kind]} · 最多 {maxRows} 行 · {reason}
     </div>
   );
 }
@@ -502,7 +513,7 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; min?: number; max?: number; step?: number };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; min?: number; max?: number; step?: number; disallowCurrent?: boolean };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
@@ -534,6 +545,7 @@ function initEditValue(spec?: EditSpec | null): string {
 function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!spec) return true;
   if (!value.trim()) return false;
+  if (spec.disallowCurrent && value.trim() === (spec.current ?? "").trim()) return false;
   if ((spec.kind ?? "text") !== "number") return true;
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return false;
@@ -551,7 +563,19 @@ export type BusinessFormSpec =
   | { kind: "role-select"; currentRole: string; roles: RoleOption[]; guardHint?: string;
       /** 可选:传入全域动作 + 各角色授权向量,启用「角色变更权限 diff 预览」(新增/移除/受影响域)。 */
       actions?: { label: string; domainGroup?: string }[]; grantsByRole?: Record<string, string[]> }
-  | { kind: "identity-verify"; subject: string; channels?: string[]; ticketHint?: string }
+  | {
+      kind: "identity-verify";
+      subject: string;
+      channels?: string[];
+      ticketHint?: string;
+      serverVerification?: {
+        channel: string;
+        ticket: string;
+        verifiedAt: string;
+        verifiedBy?: string;
+        expiresAt?: string;
+      };
+    }
   | { kind: "schema-authoring"; ownerDomains?: string[]; propertyTypes?: string[]; samplingPolicies?: string[]; versionHint?: string }
   | { kind: "disposition-lifecycle"; subject: string; periods?: string[]; ownerHint?: string }
   | { kind: "balance-adjust"; subject: string; currencies?: string[]; directions?: string[] }
@@ -560,7 +584,7 @@ export type BusinessFormSpec =
       currentActionSeq?: string; currentNotifyCampaignNo?: string; currentNotifyTemplate?: string; currentRollback?: string; currentDrillRequired?: boolean }
   | { kind: "j4-execution-confirmation"; triggerBases: string[]; defaultTriggerBasis?: string;
       steps: { domain: string; action: string; ref: string; approve: boolean }[] }
-  | { kind: "export-wizard"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
+  | { kind: "export-wizard"; mode?: "aggregate-only"; exportTypes?: string[]; piiLevels?: string[]; maskPolicies?: string[] }
   | { kind: "permission-matrix"; roles: PermissionRole[]; actionLabel?: string; guardHint?: string; grantOptions?: string[] }
   | { kind: "localized-copy"; mode?: "create" | "edit"; keyName?: string; zh?: string; en?: string; vi?: string; placeholders?: string[] }
   | { kind: "copy-edit"; keyName?: string; version?: string; versionOptions?: CopyVersionOption[]; surface?: string; copyPosition?: string; audience?: string; phaseMin?: string; phaseMax?: string; language?: string; registrationDaysGt?: string; trafficSplit?: string; zh?: string; en?: string; vi?: string; placeholders?: string[]; audiences?: string[]; trafficSplits?: string[]; modules?: { value: string; label: string }[]; positions?: CopyPositionOption[]; versionNote?: string; saveModeChoice?: boolean }
@@ -593,7 +617,7 @@ export type BusinessFormSpec =
   // 通用多字段配置:一个「调整」按钮 → 一个弹窗里编辑 N 个带标签的值(各值独立 backend-replaceable,
   // 配合 EOp "param-multi" + McSpec.paramKeys 把每字段写到自己的 param key)。
   // ascending=true 时校验 number 字段严格递增(如 分段月界 早末<中末<总月数)。
-  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string }[] }
+  | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
@@ -691,10 +715,11 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
   ];
 }
 
-export function OperatorBriefBlock({ action, detail, amplifies, hasEdit }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean }) {
+export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
-  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit);
+  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit)
+    .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
   const detailText = compactText(plainText(detail));
   return (
     <div className="tint brand" style={{ marginBottom: 16, border: 0 }}>
@@ -1005,7 +1030,12 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
     return { dataSource: "", bilingualConfirmed: "false" };
   }
   if (spec.kind === "identity-verify") {
-    return { channel: spec.channels?.[0] ?? "视频核实", verifiedAt: "", ticket: "", ack: "false" };
+    return {
+      channel: spec.serverVerification?.channel ?? spec.channels?.[0] ?? "视频核实",
+      verifiedAt: spec.serverVerification?.verifiedAt ?? "",
+      ticket: spec.serverVerification?.ticket ?? "",
+      ack: "false",
+    };
   }
   if (spec.kind === "schema-authoring") {
     return {
@@ -1299,8 +1329,10 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     needs("ticket", "来源工单号");
     if (state.ack !== "true") missing.push("已核实本人身份确认");
   } else if (spec.kind === "schema-authoring") {
-    ["eventName", "ownerDomain", "producer", "propName", "propType", "samplingPolicy", "version"].forEach((key) => needs(key, key));
-    if (state.eventName && !/^[a-z0-9]+\.[a-z0-9_]+$/i.test(state.eventName.trim())) missing.push("事件名须为 域.对象_动作");
+    ["eventName", "ownerDomain", "producer", "consumer", "propName", "propType", "samplingPolicy", "version"].forEach((key) => needs(key, key));
+    if (state.eventName && !/^[a-z][a-z0-9_]*\.[a-z0-9]+(?:_[a-z0-9]+)*$/.test(state.eventName.trim())) {
+      missing.push("事件名须为 domain.object_action（小写 snake_case）");
+    }
     if (state.isPII === "true") missing.push("PII 禁入(隐私明文不可注册)");
   } else if (spec.kind === "disposition-lifecycle") {
     needs("period", "期限");
@@ -1363,10 +1395,16 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
       const after = (state[target.key] ?? "").split(",").map((item) => item.trim()).filter(Boolean);
       if (after.some((item) => !before.has(item))) needs(f.key, f.label);
     });
-    spec.fields.filter((f) => f.showDiff).forEach((f) => {
-      const normalizeSet = (raw: string | undefined) => (raw ?? "").split(",").map((item) => item.trim()).filter(Boolean).sort().join(",");
-      if (normalizeSet(state[f.key]) === normalizeSet(f.current)) missing.push(`${f.label}须发生变化`);
-    });
+    if (spec.requireAnyChange) {
+      const normalize = (field: (typeof spec.fields)[number], raw: string | undefined) => {
+        const value = (raw ?? "").trim();
+        if (field.inputKind === "number" && value && Number.isFinite(Number(value))) return String(Number(value));
+        return value;
+      };
+      const changed = spec.fields.filter(isVisible).some((field) =>
+        normalize(field, state[field.key]) !== normalize(field, field.current));
+      if (!changed) missing.push("至少一个字段须发生变化");
+    }
     const nums = spec.fields.filter((f) => isVisible(f) && f.inputKind === "number").map((f) => ({ f, n: Number(state[f.key]) }));
     const hasInvalidNumber = nums.some(({ n }) => !Number.isFinite(n));
     if (hasInvalidNumber) {
@@ -1628,7 +1666,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
                   {(f.options ?? []).map((o) => <option key={o} value={o}>{f.optionLabels?.[o] ?? o}</option>)}
                 </select>
               ) : (
-                <input className="fld" type={f.inputKind === "number" ? "number" : "text"} min={f.min} max={f.max} step={f.step} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
+                <input className="fld" type={f.inputKind === "number" ? "number" : f.inputKind === "datetime-local" ? "datetime-local" : "text"} min={f.min} max={f.max} step={f.step} value={value[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder ?? ""} />
               )}
               {f.warnAbove != null && Number(value[f.key]) > f.warnAbove && (
                 <span className="tiny" style={{ display: "block", marginTop: 4, color: "var(--v5-warning)", fontWeight: 600 }}>
@@ -2311,7 +2349,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
             {fieldKeys.length === 0 && <div className="tiny">当前版与待发布版均无结构化字段。</div>}
           </div>
         </div>
-        {input("dataSource", "财务/NEX 数据来源", spec.requireDataSource ? "必填：报表、账本快照或市场数据编号" : "可选：内容依据或工单编号")}
+        {spec.requireDataSource && input("dataSource", "财务/NEX 数据来源", "必填：报表、账本快照或市场数据编号")}
         <label className="row" style={{ gap: 8, marginTop: 10 }}>
           <input type="checkbox" checked={value.bilingualConfirmed === "true"} onChange={(event) => set("bilingualConfirmed", String(event.target.checked))} />
           双语确认：中文与越南语已逐项核对，关键数字和 NEX 口径一致
@@ -2321,19 +2359,36 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   }
 
   if (spec.kind === "identity-verify") {
+    const verified = spec.serverVerification;
     return (
       <div className="field" data-business-form="identity-verify">
         <label>业务表单 · 身份核验(高敏安全动作前置)</label>
         <div className="tint danger tiny" style={{ marginBottom: 10 }}>
           目标 <span className="mono">{spec.subject}</span> · 未完成全部核验项前,确认按钮保持禁用。
         </div>
-        <div className="grid g-2" style={{ gap: 10 }}>
-          {select("channel", "核验渠道 channel", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
-          {input("verifiedAt", "核验时间 verified at", "2026-06-18 14:30", "datetime-local")}
-        </div>
-        <div style={{ marginTop: 10 }}>
-          {input("ticket", "来源工单号 ticket", spec.ticketHint ?? "如 SEC-20260618-001")}
-        </div>
+        {verified ? (
+          <div className="tint ok tiny" style={{ marginBottom: 10 }} data-proof="server-kyc-verification">
+            <b>服务端 K5 复审已通过</b> · 工单 <span className="mono">{verified.ticket}</span><br />
+            复审人 {verified.verifiedBy || "—"} · 通过时间 {verified.verifiedAt} · 有效至 {verified.expiresAt || "—"}
+          </div>
+        ) : null}
+        {verified ? <>
+          <div className="grid g-2" style={{ gap: 10 }}>
+            <label className="field"><span>核验来源</span><input className="fld" value={value.channel ?? ""} readOnly aria-readonly="true" /></label>
+            <label className="field"><span>核验时间</span><input className="fld" value={value.verifiedAt ?? ""} readOnly aria-readonly="true" /></label>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <label className="field"><span>来源工单号</span><input className="fld" value={value.ticket ?? ""} readOnly aria-readonly="true" /></label>
+          </div>
+        </> : <>
+          <div className="grid g-2" style={{ gap: 10 }}>
+            {select("channel", "核验渠道 channel", spec.channels ?? ["视频核实", "当面核实", "回拨预留号码"], "identity-channel")}
+            {input("verifiedAt", "核验时间 verified at", "2026-06-18 14:30", "datetime-local")}
+          </div>
+          <div style={{ marginTop: 10 }}>
+            {input("ticket", "来源工单号 ticket", spec.ticketHint ?? "如 SEC-20260618-001")}
+          </div>
+        </>}
         <label className="row" style={{ gap: 8, marginTop: 10, color: "var(--ink-2)", fontSize: 12.5 }}>
           <input data-proof="identity-ack" type="checkbox" checked={value.ack === "true"} onChange={(e) => set("ack", e.target.checked ? "true" : "false")} />
           我已通过上述渠道核实本人身份,确认这不是社工冒名请求
@@ -2565,7 +2620,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {input("rewardName", "奖励展示", "如 100 NEX")}
           {input("probabilityPct", "概率%", "如 5(0-100)", "number")}
           {select("realOutflow", "真实出金", ["0", "1"], "tier-real-outflow", { "0": "否(体验分/无流出)", "1": "是(真实出金)" })}
-          {select("rewardKind", "奖励类型", ["nex", "usdt", "voucher", "none"], "tier-reward-kind", { nex: "NEX", usdt: "USDT", voucher: "代金券", none: "无" })}
+          {select("rewardKind", "奖励类型", ["nex", "points", "usdt", "coupon"], "tier-reward-kind", { nex: "NEX", points: "积分", usdt: "USDT", coupon: "代金券" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
           所有档位概率之和应 = 100;真实出金档位放大资金流出,过 B1 红线。
@@ -2598,8 +2653,8 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("id", "活动 id(英文唯一)", "如 evt-summer")}
           {input("name", "活动名", "如 夏日狂欢")}
-          {select("kind", "类型", ["EVENT_ACTIONS", "QUEST"], "event-kind", { EVENT_ACTIONS: "行为活动", QUEST: "任务活动" })}
-          {select("state", "状态", ["ongoing", "scheduled", "ended"], "event-state", { ongoing: "进行中", scheduled: "待开始", ended: "已结束" })}
+          {select("kind", "类型", ["discount", "referral", "wheel", "regional", "boost", "seasonal", "holding", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", wheel: "幸运转盘", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", holding: "持币活动", onboarding: "新手活动" })}
+          {select("state", "状态", ["ongoing", "upcoming", "ended"], "event-state", { ongoing: "进行中", upcoming: "待开始", ended: "已结束" })}
           {input("reward", "奖励", "如 100 NEX")}
           {input("condition", "完成条件", "如 order.paid")}
           {select("featured", "主推", ["false", "true"], "event-featured", { "false": "否", "true": "是(唯一)" })}
@@ -2994,8 +3049,9 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   }
 
   if (spec.kind === "export-wizard") {
-    // 预估为占位估算(真后台以任务实际行数为准):明细级 = 含 PII 或逐条明细类(账单/CSV);聚合级 = 漏斗/报表类。
-    const hasPII = value.piiLevel !== "无 PII";
+    const aggregateOnly = spec.mode === "aggregate-only";
+    // 仅用于通用导出向导的界面提示；最终敏感性判定必须由服务端按字段复核。
+    const hasPII = !/^(无 PII|无隐私信息|NONE)$/i.test(value.piiLevel || "");
     const detail = hasPII || /账单|明细|CSV/.test(value.exportType || "");
     const estRows = !value.timeRange.trim()
       ? "填时间范围后按范围估算"
@@ -3008,16 +3064,18 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("exportType", "导出类型", spec.exportTypes ?? ["账单 CSV", "漏斗序列", "财务报表", "运营报表", "监管报告"])}
           {input("timeRange", "时间范围", "如 2026-W17 ~ W22 / 2026-05")}
-          {input("fields", "字段范围", "如 user_id, amount, ts(留空=全字段)")}
-          {select("piiLevel", "PII 范围", spec.piiLevels ?? ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"])}
-          {select("maskPolicy", "脱敏策略", spec.maskPolicies ?? ["默认脱敏", "字段掩码", "解密(强操作确认)"])}
-          {input("recipient", "接收人 / 用途", "如 合规-王 / 监管报送")}
+          {input("fields", aggregateOnly ? "聚合字段" : "字段范围", aggregateOnly ? "如 用户数、订单数、完成率" : "如 user_id, amount, ts(留空=全字段)")}
+          {select("piiLevel", aggregateOnly ? "数据范围" : "PII 范围", spec.piiLevels ?? ["无 PII", "低(脱敏 ID)", "高(含手机 / 地址)"])}
+          {select("maskPolicy", aggregateOnly ? "保护策略" : "脱敏策略", spec.maskPolicies ?? ["默认脱敏", "字段掩码", "解密(强操作确认)"])}
+          {input("recipient", "接收人 / 用途", aggregateOnly ? "如 BI 周报分析" : "如 合规-王 / 监管报送")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {input("ticket", "工单依据 ticket", "如 REG-20260618-001")}
+          {input("ticket", aggregateOnly ? "业务依据 / 工单" : "工单依据 ticket", aggregateOnly ? "如 BI-WEEKLY-202607" : "如 REG-20260618-001")}
         </div>
         <div className="tint tiny" data-proof="export-est" style={{ marginTop: 8 }}>
-          预估行数(占位估算,以服务端任务实际为准):{estRows} · 超 100 万行自动拆分多任务 · 含 PII({hasPII ? "是" : "否"})或超限 → 进 <span className="mono">pending_confirm</span>;否则 <span className="mono">generating → ready(24h)→ expired</span>。提交即登记任务并落 admin.report_exported。
+          {aggregateOnly
+            ? <>仅导出服务端聚合快照，不包含用户明细；确认后直接生成可下载任务，创建理由和快照范围会进入统一审计。</>
+            : <>预估行数(占位估算,以服务端任务实际为准):{estRows} · 超 100 万行需由服务端拒绝或拆分 · 含敏感字段({hasPII ? "是" : "否"})需额外确认。最终状态与下载有效期以服务端返回为准。</>}
         </div>
       </div>
     );
@@ -3065,7 +3123,7 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, reasonMax: requestedReasonMax, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; reasonMax?: number; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
@@ -3084,7 +3142,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
   const covBlocked = Boolean(amplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
-  const reasonMin = 8;
+  const reasonMin = Number.isFinite(requestedReasonMin)
+    ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
+    : 8;
   const reasonMax = requestedReasonMax ?? (isJ4Command
     ? 200
     : activeBusinessForm?.kind === "multi-field"
@@ -3141,7 +3201,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           <Icon name="check" size={15} /> {submitting ? "提交中…" : "确认提交"}
         </Btn>
       </>}>
-      <OperatorBriefBlock action={action} detail={detail} amplifies={amplifies} hasEdit={!!spec || !!businessForm} />
+      <OperatorBriefBlock action={action} detail={detail} amplifies={amplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} />
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {amplifies && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
@@ -3169,7 +3229,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         <span className="mc" style={{ background: "var(--brand-soft)", color: "var(--brand)" }}>
           操作理由必填 · {isJ4Command ? "写入审计记录" : "写入 A2 审计"}
         </span>
-        <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>{isJ4Command ? "提交后等待服务端确认" : "确认后立即生效"}</span>
+        <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>{completionCopy ?? (isJ4Command ? "提交后等待服务端确认" : "确认后立即生效")}</span>
       </div>
       {activeBusinessForm && (
         <BusinessFormBlock spec={activeBusinessForm} value={businessValue} onChange={setBusinessValue} onSelectionChange={(next) => void handleBusinessSelectionChange(next)} />
@@ -3212,7 +3272,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </div>
       )}
       <div className="field">
-        <label htmlFor={reasonFieldId}>操作理由(必填 · {reasonMax ? `8-${reasonMax} 字` : "8 字以上"} · {isJ4Command ? "写入不可修改的审计记录" : "写入 A2 不可改审计"})</label>
+        <label htmlFor={reasonFieldId}>操作理由(必填 · {reasonMax ? `${reasonMin}-${reasonMax} 字` : `${reasonMin} 字以上`} · {isJ4Command ? "写入不可修改的审计记录" : "写入 A2 不可改审计"})</label>
         <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例: 工单号 / 业务依据 / 影响面 / 回滚预案" />
         {!reasonOk && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>

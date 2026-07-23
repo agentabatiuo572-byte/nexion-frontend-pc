@@ -9,7 +9,8 @@ const designKit = readFileSync(new URL("../app/components/domain-views/design-ki
 const highOps = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/i-client.ts", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/registry/i.ts", import.meta.url), "utf8");
-const paramsRegistry = readFileSync(new URL("../app/_console/platform/params-registry/page.tsx", import.meta.url), "utf8");
+const paramsRegistryPage = readFileSync(new URL("../app/_console/platform/params-registry/page.tsx", import.meta.url), "utf8");
+const paramsRegistryClient = readFileSync(new URL("../app/_console/platform/params-registry/params-registry-client.tsx", import.meta.url), "utf8");
 
 test("I4 and I5 have independent routes and render modes", () => {
   assert.match(nav, /id:\s*"I4",\s*name:\s*"信任中心",\s*path:\s*"\/content\/trust"/);
@@ -69,6 +70,8 @@ test("I4 draft and publishing controls use distinct least-privilege authorities"
 test("registry and parameter ownership keep I4 trust and I5 disclosure separate", () => {
   assert.match(registry, /path:\s*"\/content\/trust"[\s\S]*?I4/);
   assert.match(registry, /path:\s*"\/content\/disclosures"[\s\S]*?I5/);
-  assert.match(paramsRegistry, /\/content\/disclosures",\s*"I5 风险披露"/);
-  assert.doesNotMatch(paramsRegistry, /I4 信任中心与披露/);
+  assert.match(paramsRegistryPage, /<PlatformParamsRegistry\s*\/>/);
+  assert.match(paramsRegistryClient, /href=\{row\.ownerRoute\}/);
+  assert.match(paramsRegistryClient, /\{row\.ownerLabel\}/);
+  assert.doesNotMatch(`${paramsRegistryPage}\n${paramsRegistryClient}`, /I4 信任中心与披露/);
 });

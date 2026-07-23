@@ -1,93 +1,327 @@
-/* ============================================================================
-   B5 风险雷达 — 设计稿专属布局类(端口自 project/「B5 风险雷达.html」<style>)。
-   作用域 .radarpage,与 b-domain.css(.bpage)+ globals(.dkpage)共享类组合。
-   token 全走 globals bare-token 别名(--brand/--danger/--ink-3/--surface…→ --v5-*),双主题安全。
-   去除设计稿的 B1-B5 分段导航(.b-nav)与 server-canonical pill(.b-live)——由外壳承载。
-   仅本页引用;page.tsx 以 `import "./risk-radar.css"` 装载。
-   ============================================================================ */
+.radarpage {
+  --b5-green: #35d58b;
+  --b5-yellow: #f3b341;
+  --b5-red: #ff5c68;
+}
 
-/* ===== command / alert board 主栅格 ===== */
-.radarpage .b5-main { display: grid; grid-template-columns: 304px 1fr; gap: 16px; align-items: start; }
-@container bpage (max-width: 1080px) { .radarpage .b5-main { grid-template-columns: 1fr; } }
+.radarpage .b5-summary,
+.radarpage .b5-card-head,
+.radarpage .b5-actions,
+.radarpage .b5-channel-row {
+  display: flex;
+  align-items: center;
+}
 
-/* 左栏纵向堆叠 */
-.radarpage .left-rail { display: flex; flex-direction: column; gap: 16px; }
+.radarpage .b5-summary {
+  gap: 18px;
+  margin: 12px 0 16px;
+  color: var(--ink-3);
+  font-size: 12px;
+}
 
-/* ---- 左栏:Kill-Switch 闸门灯 ---- */
-.radarpage .gate { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 9px;
-  background: var(--surface-2); margin-bottom: 7px; }
-.radarpage .gate:last-child { margin-bottom: 0; }
-.radarpage .gate .light { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
-.radarpage .gate.on .light { background: var(--success);
-  box-shadow: 0 0 0 3px var(--success-soft), 0 0 10px color-mix(in srgb, var(--success) 50%, transparent); }
-.radarpage .gate.off .light { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
-.radarpage .gate.missing .light { background: var(--ink-4); box-shadow: 0 0 0 3px var(--surface-3); }
-.radarpage .gate .nm { font-size: 13px; font-weight: 500; white-space: nowrap; color: var(--ink); }
-.radarpage .gate .dom { font-family: var(--font-jet-mono), monospace; font-size: 10px; color: var(--ink-4); margin-left: auto; }
-.radarpage .gate .st { font-family: var(--font-jet-mono), monospace; font-size: 11px; font-weight: 600; }
-.radarpage .gate.on .st { color: var(--success); }
-.radarpage .gate.off .st { color: var(--danger); }
-.radarpage .gate.missing .st { color: var(--ink-4); }
+.radarpage .b5-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 
-/* ---- 左栏:告警 feed ---- */
-.radarpage .feed { display: flex; flex-direction: column; }
-.radarpage .feed-item { display: flex; align-items: center; gap: 11px; padding: 11px 8px; margin: 0 -8px;
-  border-bottom: 1px solid var(--border); color: inherit; text-decoration: none; cursor: pointer;
-  border-radius: 8px; transition: background .14s; }
-.radarpage .feed-item:hover { background: var(--surface-2); }
-.radarpage .feed-item:last-child { border-bottom: 0; }
-.radarpage .feed-chev { color: var(--ink-4); flex-shrink: 0; opacity: .35; transition: opacity .14s, transform .14s; }
-.radarpage .feed-item:hover .feed-chev { opacity: 1; transform: translateX(2px); }
-.radarpage .sev { width: 30px; height: 20px; border-radius: 6px; display: grid; place-items: center; flex-shrink: 0;
-  font-family: var(--font-jet-mono), monospace; font-size: 10.5px; font-weight: 700; }
-.radarpage .sev.p0 { background: var(--danger-soft); color: var(--danger); }
-.radarpage .sev.p1 { background: var(--warning-soft); color: var(--warning); }
-.radarpage .sev.p2 { background: var(--cyan-soft); color: var(--cyan); }
-.radarpage .feed-item .ft { flex: 1; min-width: 0; }
-.radarpage .feed-item .ft .t { font-size: 12.5px; line-height: 1.4; color: var(--ink); }
-.radarpage .feed-item .ft .m { font-family: var(--font-jet-mono), monospace; font-size: 10.5px; color: var(--ink-4); margin-top: 3px; }
+.radarpage .b5-dimensions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
 
-/* ---- 右栏纵向堆叠 ---- */
-.radarpage .right-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.radarpage .b5-dimension,
+.radarpage .b5-subscription {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 9%);
+}
 
-/* ---- 右栏:报警瓦片 ---- */
-.radarpage .alarm-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; min-width: 0; }
-@container bpage (max-width: 720px) { .radarpage .alarm-row { grid-template-columns: 1fr; } }
-.radarpage .alarm { position: relative; border: 1px solid var(--border); border-radius: var(--r-card);
-  background: var(--surface); padding: 16px 18px; overflow: hidden; min-width: 0; }
-.radarpage .alarm::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
-.radarpage .alarm.danger::before { background: var(--danger); }
-.radarpage .alarm.warn::before { background: var(--warning); }
-.radarpage .alarm.ok::before { background: var(--success); }
-.radarpage .alarm .k { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 6px; }
-.radarpage .alarm .v { font-size: 32px; font-weight: 600; letter-spacing: -.02em; margin-top: 6px;
-  font-variant-numeric: tabular-nums; color: var(--ink); }
-.radarpage .alarm .d { font-size: 11.5px; font-weight: 600; margin-top: 5px; white-space: nowrap; }
-.radarpage .alarm .d.muted { color: var(--ink-4); font-weight: 500; }
+.radarpage .b5-dimension:last-child {
+  grid-column: 1 / -1;
+}
 
-/* ---- 右栏:挤兑压力比趋势(SVG area) ---- */
-.radarpage .chart-svg { width: 100%; display: block; }
+.radarpage .b5-dimension.yellow {
+  border-color: color-mix(in srgb, var(--b5-yellow) 55%, var(--border));
+}
 
-/* ---- 右栏底部三联 ---- */
-.radarpage .b5-bottom { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 16px; min-width: 0; }
-.radarpage .b5-bottom > .card { min-width: 0; }
-@container bpage (max-width: 1240px) { .radarpage .b5-bottom { grid-template-columns: 1fr; } }
+.radarpage .b5-dimension.red {
+  border-color: color-mix(in srgb, var(--b5-red) 65%, var(--border));
+}
 
-/* 异常账户命中规则:横向 bar 行 */
-.radarpage .rule-row { display: flex; flex-direction: column; gap: 9px; }
-.radarpage .rule { display: flex; align-items: center; gap: 11px; }
-.radarpage .rule .nm { font-size: 12.5px; color: var(--ink-2); width: 78px; flex-shrink: 0; white-space: nowrap; }
-.radarpage .rule .bar-wrap { flex: 1; height: 16px; border-radius: 5px; background: var(--surface-3); overflow: hidden; }
-.radarpage .rule .bar-f { height: 100%; border-radius: 5px;
-  background: linear-gradient(90deg, var(--warning), color-mix(in srgb, var(--warning) 78%, #000)); }
-.radarpage .rule .ct { font-family: var(--font-jet-mono), monospace; font-size: 13px; font-weight: 600; width: 24px; text-align: right; color: var(--ink); }
+.radarpage .b5-card-head {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--ink-2);
+}
 
-/* 告警严重度分布:donut + legend */
-.radarpage .donut-wrap { display: flex; align-items: center; gap: 16px; }
+.radarpage .b5-card-head > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 
-/* 近 7 日告警量:迷你竖柱 */
-.radarpage .mini-bars { display: flex; align-items: flex-end; gap: 7px; height: 110px; }
-.radarpage .mini-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; }
-.radarpage .mini-col .v { font-family: var(--font-jet-mono), monospace; font-size: 11px; font-weight: 600; color: var(--ink-3); }
-.radarpage .mini-col .bk { width: 100%; max-width: 26px; border-radius: 4px 4px 1px 1px; min-height: 3px; }
-.radarpage .mini-col .lbl { font-family: var(--font-jet-mono), monospace; font-size: 9.5px; color: var(--ink-4); white-space: nowrap; }
+.radarpage .b5-card-head > span {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.radarpage .b5-light {
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  font: 700 10px/1.2 var(--font-jet-mono), monospace;
+}
+
+.radarpage .b5-light.green { color: var(--b5-green); background: color-mix(in srgb, var(--b5-green) 12%, transparent); }
+.radarpage .b5-light.yellow { color: var(--b5-yellow); background: color-mix(in srgb, var(--b5-yellow) 12%, transparent); }
+.radarpage .b5-light.red { color: var(--b5-red); background: color-mix(in srgb, var(--b5-red) 12%, transparent); }
+
+.radarpage .b5-bankrun-grid,
+.radarpage .b5-backlog,
+.radarpage .b5-gates {
+  display: grid;
+  gap: 10px;
+}
+
+.radarpage .b5-bankrun-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.radarpage .b5-bankrun-grid > div,
+.radarpage .b5-backlog > div,
+.radarpage .b5-gates > div {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.radarpage .b5-bankrun-grid span,
+.radarpage .b5-bankrun-grid small,
+.radarpage .b5-backlog span,
+.radarpage .b5-backlog small,
+.radarpage .b5-coverage span,
+.radarpage .b5-coverage small {
+  display: block;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.radarpage .b5-bankrun-grid strong {
+  display: block;
+  margin: 5px 0;
+  color: var(--ink);
+  font: 700 30px/1 var(--font-jet-mono), monospace;
+}
+
+.radarpage .b5-dimension > p {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.radarpage .b5-list > div,
+.radarpage .b5-gates > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.radarpage .b5-list > div:last-child,
+.radarpage .b5-gates > div:last-child {
+  border-bottom: 0;
+}
+
+.radarpage .b5-backlog {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.radarpage .b5-backlog b,
+.radarpage .b5-backlog strong {
+  display: block;
+  margin-top: 6px;
+}
+
+.radarpage .b5-gates {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.radarpage .b5-gates > div {
+  justify-content: flex-start;
+  border-bottom: 0;
+}
+
+.radarpage .b5-gates b {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.radarpage .b5-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.radarpage .b5-dot.green { background: var(--b5-green); box-shadow: 0 0 9px color-mix(in srgb, var(--b5-green) 65%, transparent); }
+.radarpage .b5-dot.red { background: var(--b5-red); box-shadow: 0 0 9px color-mix(in srgb, var(--b5-red) 65%, transparent); }
+
+.radarpage .b5-coverage strong {
+  display: block;
+  margin-bottom: 4px;
+  font: 700 34px/1 var(--font-jet-mono), monospace;
+}
+
+.radarpage .b5-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.radarpage button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid color-mix(in srgb, var(--brand) 65%, var(--border));
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  cursor: pointer;
+}
+
+.radarpage button.secondary {
+  background: transparent;
+  color: var(--ink-2);
+  border-color: var(--border);
+}
+
+.radarpage button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.radarpage .b5-subscription {
+  margin-top: 14px;
+}
+
+.radarpage .b5-channel-row {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.radarpage .b5-channel-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.radarpage .b5-channel-row > input {
+  min-width: 300px;
+  flex: 1;
+}
+
+.radarpage input,
+.radarpage textarea {
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.radarpage .b5-channel-row button {
+  margin-left: auto;
+}
+
+.radarpage .b5-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 62%);
+}
+
+.radarpage .b5-modal {
+  width: min(610px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.radarpage .b5-modal h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.radarpage .b5-modal > p,
+.radarpage .b5-preview {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.radarpage .b5-threshold-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.radarpage .b5-threshold-fields label,
+.radarpage .b5-reason {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.radarpage .b5-reason textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.radarpage .b5-preview {
+  margin-top: 12px;
+  padding: 11px;
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+
+.radarpage .b5-preview p,
+.radarpage .b5-error {
+  color: var(--b5-red);
+}
+
+.radarpage .b5-error {
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.radarpage .b5-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+@media (max-width: 900px) {
+  .radarpage .b5-dimensions,
+  .radarpage .b5-bankrun-grid,
+  .radarpage .b5-backlog,
+  .radarpage .b5-gates {
+    grid-template-columns: 1fr;
+  }
+
+  .radarpage .b5-dimension:last-child {
+    grid-column: auto;
+  }
+}

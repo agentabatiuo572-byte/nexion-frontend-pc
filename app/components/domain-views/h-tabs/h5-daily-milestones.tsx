@@ -33,6 +33,16 @@ function text(value: unknown, fallback = "-") {
   return String(value);
 }
 
+function rewardDestination(value: unknown) {
+  const path = text(value, "");
+  return ({
+    "/team": "团队成长页",
+    "/me/rewards": "我的奖励页",
+    "/wallet/staking": "质押活动页",
+    "/market/genesis": "Genesis 资格页",
+  } as Record<string, string>)[path] ?? "相关权益页";
+}
+
 function numericInput(value: unknown, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -207,7 +217,10 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
     return (
       <section className="l-card">
         <div className="l-h"><span className="ttl">H5 数据加载失败</span></div>
-        <div className="l-b">{error ?? "UNKNOWN_ERROR"}</div>
+        <div className="l-b">
+          {error ?? "UNKNOWN_ERROR"}
+          <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button>
+        </div>
       </section>
     );
   }
@@ -313,8 +326,8 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
 
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">Power-Ups</span>
-          <span className="sub">· 触发天数和备注写后端</span>
+          <span className="ttl">连签成长奖励</span>
+          <span className="sub">· 触发天数和奖励说明由服务端保存</span>
         </div>
         <div className="l-b" style={{ paddingTop: 4 }}>
           {model.powerUps.map((powerUp) => (
@@ -322,7 +335,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
               <span style={{ flex: 1 }}>
                 <b>{powerUp.label}</b>
                 <br />
-                <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(powerUp.sub)} · {text(powerUp.downstream)}</span>
+                <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(powerUp.sub)} · 前往{rewardDestination(powerUp.downstream)}</span>
               </span>
               <span className="bdg">{powerUp.day} 天</span>
               <button className="l-btn sm mc" onClick={() => openPowerUp(powerUp)}>调整</button>
@@ -368,7 +381,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       </section>
 
       <div className="htint warn">
-        <b>server-canonical</b> · H5 页面只展示后端读模型返回结果;接口为空时保持空态,前端不提供本地数据源。
+        <b>服务端权威</b> · H5 页面只展示服务端返回的签到规则与里程碑；接口为空时保持空态，不使用本地示例数据。
       </div>
 
       <PaginationExemptionList

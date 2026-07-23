@@ -11,7 +11,7 @@
 > - 状态机 + 合法转移 → **第 5 章 状态机集**。
 > - 鉴权 / 审批门 → **第 6 章 RBAC 权限矩阵**。
 >
-> **权威性**:本文件为提炼视图,每行带「出处§」可回溯;与原 PRD 正文冲突时**以 PRD 正文为准**。标 **✅ PM 裁定** 的口径(如 Genesis 日排放 0.1%、B1 红线拒绝码 422)以裁定为准。标 **TBD / 未定义 / 待裁定** 的项见第 7 章,**开发不得自行硬编**。
+> **权威性**:本文件为提炼视图,每行带「出处§」可回溯。一般冲突以原 PRD 正文为准；但带编号的已验收实现决策 `specs/FEAT-*.md` 是对应功能的后发裁定，**优先于旧 PRD 与历史 CGM 快照中的同功能字段、公式、接口和检测口径**。标 **✅ PM 裁定** 的口径(如 Genesis 日排放 0.1%、B1 红线拒绝码 422)以裁定为准。标 **TBD / 未定义 / 待裁定** 的项见第 7 章,**开发不得自行硬编**。
 >
 > **语言**:全文中性运营语言。
 >
@@ -19,7 +19,7 @@
 
 ## 第 0 章 全局铁律(开发实现前必读)
 
-> 这 11 条贯穿所有 68 模块。任一模块实现与本章冲突,以本章为准(本章再与 PRD 正文冲突,以 PRD 正文为准)。
+> 这 11 条贯穿所有 68 模块。任一模块实现与本章冲突,以本章为准；若已有对应 `specs/FEAT-*.md` 后发裁定则以该裁定为准，其余冲突再回溯 PRD 正文。
 
 ### 0.1 单一权威源(SSOT,不重算/不另立)
 
@@ -35,7 +35,7 @@
 | server 唯一账本 Bill | **D4** | C3 调整 / L5 导出 |
 | 账户冻结态 | **C2** | D2 提现 frozen 联动 |
 | Kill-Switch 功能闸 / geo-block | **J1 / J2**(V4;V1 临时在 A3) | B5 只读状态灯 / 各域 enforce 生效面 |
-| Trade-in `minHoldingMonths` | **E3** | K2 套利检测只读 |
+| Trade-in 已完成置换事实与折抵阶梯 | **E3** | K2 仅消费近 30 天 COMPLETED 置换及正向返佣/礼金入账 |
 
 ### 0.2 server-canonical
 所有状态机、资金值、风控值、闸状态 **server 权威**,client 仅 UI cache、**绝不本地推进**(§9.11d.2 / §9.11f)。client 上报的资金/状态不作权威口径。
@@ -58,7 +58,7 @@
 - 业务规则前置失败 → **400 / 422**;状态机非法转移 → **409**。
 - 高敏写 `reason` 缺失 → **400 `REASON_REQUIRED`**(确认弹窗理由必填,server 强制非空,8–200 字)。
 - **放大资金流出方向**(上调 APY/费率/奖励/排放率/匹配比/cap、下调罚款/冷却/积分门、kill 恢复)提交时 server 前置核 **B1 覆盖率红线**,低于 `coverageRedLine`(默认 100%)**统一拒绝返 422**(✅ PM 2026-06-02;旧文 403 已废)。
-- 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / salvage 月12归零 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序 / UNILEVEL_USDT 各层和≤25%。
+- 互锁校验:覆盖率 `yellow>red` / 挤兑 `bankrunRed>bankrunYellow` / K4 六维权重和=1 / staking APY 跨档保序 / E3 产能分段保序与换新阶梯严格保序 / V_RANKS 门槛保序 / Lucky 概率和≤100% / 转盘各档 weight 和=100 且档位∈[2,12] / 里程碑阈值保序 / UNILEVEL_USDT 各层和≤25%。
 
 ### 0.6 ID 全 server mint
 `withdrawalId / topupId / orderId / billId / commissionId / 通知 id / Genesis tokenId` 全部 server 单源生成,client 不可 mint / 枚举 / 撞 ID(§9.11d.2)。
@@ -78,8 +78,8 @@
 10 个 dial(`newUserBonusMultiplier / inviteRewardMultiplier / reinvestMultiplier / withdrawPointsRatio / withdrawCooldownDays / binaryDailyCap / premiumSubAvailable / nexV2LockAvailable / questBonusMultiplier / complianceHoldEnabled`)**全部权威归 H1**;D5/F3/G5/G6/H3/E1 等生效面 `PUT` 收到这些参数返 **422 `PHASE_PARAM_READONLY`**(+ `redirect:/admin/phase/h1`)。
 
 ### 0.11 关键业务不变量
-- `cumulativeDepositUsdt` **仅 D1 真实充值确认链路写**(正向 recordDeposit / 负向 chargeback、E4 退款核减);earnings/salvage/KYC/quest/C3 纯余额补记**均不得触达**(trade-in 资格硬前提)。
-- **salvage credit 不入余额**(E3 不变量 M2:仅作置换扣减项,不写 creditBalance、不可提现、不可累加)。
+- `cumulativeDepositUsdt` **仅 D1 真实充值确认链路写**(正向 recordDeposit / 负向 chargeback、E4 退款核减);earnings/trade-in 折抵/KYC/quest/C3 纯余额补记**均不得触达**(trade-in 资格硬前提)。
+- **trade-in 折抵不入余额**(E3 不变量 M2:只减少本次置换应付,不写 creditBalance、不可提现、不可累加)。
 - **trial shadow 非硬负债**(Model A:`computeTrialOffset` 拆分,offsetUSD 抵购机款上限 `trialOffsetCapUSD`=$50、remainderUSD + 全额 NEX 购后入余额成应付)。
 - **Genesis 日排放 = 节点价 × 持有量 × 0.1%/日**(✅ PM 2026-06-01)。
 
@@ -119,8 +119,8 @@
 | E1 | 商品目录 & 定价 | 设备 SKU 目录/定价/上下架/库存 + 设备规格唯一权威 | E 设备 | V2·Ch10 | §7.1 / §9.11c.1 |
 | E1 | 代际发布门 | 控制 Gen-2 发布时点 + trade-in 折扣 | E 设备 | V2·Ch10 | §7.1 / 节奏表§6.2 |
 | E2 | 收益 & 任务引擎 | AI 任务定价与路由门槛(设备每日产出"任务侧") | E 设备 | V2·Ch10 | §6.3 / §6.5 / §9.11c.1 |
-| E3 | 设备生命周期 | 效率衰减曲线(12 月自然失效 → 驱动 trade-in/升级/锁仓) | E 设备 | V2·Ch10 | §6.8 / §9.11c.1 / 节奏表§6.1 |
-| E3 | Trade-in 配置 | 残值参数/购买资格/promo/原子换机 tx(minHoldingMonths 权威) | E 设备 | V2·Ch10 | §7.5 / §9.11c.1 |
+| E3 | 设备生命周期 | 三段复利任务产能曲线 + 产能下限 + SKU 开关；`cycleMonths` 仅为图表视窗，段 3 开区间持续至下限 | E 设备 | V2·Ch10 | FEAT-DEV01 / §6.8 / §9.11c.1 |
+| E3 | Trade-in 配置 | 累计产出/实付比例阶梯 + 购买资格/promo/原子换机 tx；不再运行 `salvagePct/minHoldingMonths` | E 设备 | V2·Ch10 | FEAT-DEV02 / §7.5 / §9.11c.1 |
 | E4 | 订单状态机 | 设备订单全生命周期:列表/状态推进/DC 分配/退款 | E 设备 | V2·Ch10 | §7.4 / §9.11f |
 | E5 | 设备运维 | fleet heartbeat 监控/批量操作/库存激活/强制激活解绑 | E 设备 | V2·Ch10 | §6.1 / §11.1 / §9.11d.2 |
 | E6 | 算力与设备配置 | PC 算力备用模块入口开关、在线系数、显卡档位映射、下载内容配置 | E 设备 | V2·Ch10 | 三端改造 SPEC-0~2 |
@@ -217,8 +217,8 @@
 |---|---|---|---|
 | **SKU / Device specs**(E1) | skuKey · price:number/USDT(S1 1,299·Pro 2,399·Pro v2 2,639·Rack P1 8,999·Rack P2 14,999·Cloud Share 199·Genesis 9,999) · baseRate/日(S1 38.50·Pro 76.00·Pro v2 96.00·Rack P1 142.60·Rack P2 248.00·Cloud Share 0.073) · baseRateNEX/日(S1 65·Pro 215·Pro v2 280·Rack P1 950·Rack P2 1,820·Cloud Share 30) · installMonths · stock(<50告警) · status:enum{active\|legacy\|coming-soon};**回本天数/首年净利为派生** | SC | §17.1 / Ch10 E1 |
 | **GENERATION_RELEASES**(E1) | skuKey · releaseMonth(绝对月,Pro v2 月5/Rack P2 月10) · status · tradeinDiscount/USDT · 提前/延迟/强制解锁 | SC | Ch10 E1 |
-| **DecayModel**(E3) | month_1_3=−4%/month_4_8=−6%/month_9_12=−10% · MIN_EFFICIENCY=0.22 · 豁免 kind{phone,cloud-share} | SC | §17.1 / Ch10 E3 |
-| **TradeInConfig**(E3) | minHoldingMonths(权威 E3,K2 只读) · salvage{rate 0.30,monthlyDecay 0.025,floor 0}(月12归零) · TRADEIN_UPGRADE_MAP · promo{...};**salvage credit 仅置换扣减,不入余额(M2)** | SC | §17.1 / Ch10 E3 |
+| **CapacitySchedule**(E3) | `capacityBand1/2/3DeltaPct` 按月复利 · `stageEarlyEnd/stageMidEnd` 分段 · `capacityFloorPct` 下限 · `cycleMonths` 仅图表视窗 · 8 个 SKU 参与开关 · `capacitySubsidyDays` 仅标注 · `taskLockS1/Pro/Rack` | SC | FEAT-DEV01 / Ch10 E3 |
+| **TradeInConfig**(E3) | `tradeinEnabled/eligibility` · `tradeinLadderCut1..4` · `tradeinLadderCredit1..5` · `tradeinRequireHigherPrice/tradeinMaxDevicesPerOrder` · promo{...}；**折抵只减少本单应付，不入余额；`salvagePct/minHoldingMonths` 已退役** | SC | FEAT-DEV02 / Ch10 E3 |
 | **Order 状态机**(E4) | orderId(server mint) · state:enum{placed\|paid\|provisioning\|activated\|payment_failed\|expired\|refunded\|chargeback\|provisioning_failed} · relatedOrderId(server 校验) · DC · skuKey · userId;**payment_failed 不计 GMV** | SC | §17.1 / Ch10 E4 |
 | AI 任务定价(E2) | taskClass:enum{IG\|VG\|LL\|FT\|EM\|SP} · minReward/maxReward(热更) · QUEUE_SATURATION=0.35 · minVRAM · 紧急下架 kill | SC | Ch10 E2 |
 | **ComputeShareConfig**(E6) | 入口开关(default false) · 在线加成{H5 基础托管系数,App 连续在线满额时长} · 显卡档位[G1-G6]{展示名称,算力 TOPS,6 个独立识别词槽位} · 下载配置{客户端下载地址,中文标题,中文说明,英文标题,英文说明};**PC 算力备用模块配置单源,E5 仍持 MAX_DEVICES** | SC | Ch10 E6 / 三端 SPEC-0~2 |
@@ -362,9 +362,10 @@
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
 |---|---|---|---|---|
-| `/api/admin/topup/reconciliation` · `/topup/flows` | GET | 对账 / 充值流水 | — | D1 |
-| `/api/admin/topup/channel/:id/{enable\|disable}` · `/topup/psp/switch` | POST | 渠道启停 / 主备 PSP 切换(PSP 切换执行=仅超管) | D1-MD1/MD2 | D1 |
-| `/api/admin/topup/chargeback/:topupId/refund` · `/topup/reconcile` | POST | chargeback 退款 / 对账核销(携 Key) | D1-MD3/MD4 | D1 |
+| `/api/admin/finance/topup/overview` · `/topup/flows` | GET | 独立源对账概览 / 服务端分页充值流水 | — | D1 |
+| `/api/admin/finance/topup/channels/:channel/{enabled\|fee\|min-amount}` · `/topup/psp/primary` · `/topup/card-risk/:key` | PATCH | 渠道结构化参数 / 主备 PSP / Card 风控配置(PSP 切换执行=仅超管) | D1-MD1/MD2 | D1 |
+| `/api/admin/finance/topup/chargebacks/:caseNo/refund` · `/topup/reconciliation/:channel/writeoff` · `/topup/bin-locks/**` | POST/PATCH | chargeback 原子追回 / 差异凭证挂账 / 真实定时风控锁(均携 Key) | D1-MD3/MD4 | D1 |
+| `/openapi/v1/topups/card/{admission\|settlements\|failures\|chargebacks}` · `/openapi/v1/topups/provider-statements` | POST | 原始请求体 HMAC-SHA256 签名的 Card 生命周期 / 独立 PSP 或链上账单接入；5 分钟防重放窗口，渠道-provider 白名单 | — | D1 |
 | `/api/admin/withdrawals?status=&cursor=` · `/withdrawals/:id` | GET | 提现队列 / 单笔详情 | — | D2 |
 | `/api/admin/withdrawals/:id/{approve\|reject\|delay\|freeze\|unfreeze\|refund}` | POST | 单笔状态推进(单一 URL 覆盖所有金额,server 按金额校验执行资质——大额 ≥$1,000 放行=财务 lead/超管;非法 409;携 Key) | D2-MD1~MD6 | D2 |
 | `/api/admin/withdrawals/batch` | POST | 批量(含大额单自动分拣转人工逐笔确认,不整体失败) | D2-MD7 | D2 |
@@ -377,6 +378,12 @@
 | `/api/admin/bills/export?type=&userId=` | GET | 账单 CSV 导出(单源;L5 引用) | —(含明细经 L5 导出确认门) | D4 |
 | `/api/admin/withdraw/limits` | GET / PUT | 提现参数现值 / 非 Phase 参数配置(携 Phase 参数返 422) | D5-MD1(PUT) | D5 |
 
+**D1 落地约束**：
+- settlement 的支付记录、钱包、D4、`cumulativeDepositUsdt`、D3、`fee_buffer`、审计和 Outbox 必须在同一事务；chargeback 追回同样原子反向写入。持久幂等查询必须先于终态校验，使超时后的相同恢复请求可回放第一次成功且不产生第二组分录。
+- provider statement 是独立事实表，只参与对账，不允许通过接入接口直接改钱包。无差异聚合允许 `diff=null`；PC 只把 null 规范化为空文案，其他缺字段、错误类型、未知单位或畸形成功响应继续 fail-closed。
+- MyBatis 注解动态 SQL 必须由启动解析测试逐条解析，禁止原始 `<` / `<=` 破坏 XML language driver；生产连接创建时执行 `SET time_zone='+08:00'`，与业务 `Asia/Shanghai` 时间比较一致。
+- D1 增量迁移先把历史展示格式配置规范成数值+单位，再仅按精确 D4 业务类型和业务号回填累计充值、D3 与费率缓冲；不确定来源写异常表。迁移必须可连续执行且第二次不新增、不重复、不改余额。
+
 ### 域 E — 设备商城
 
 | Endpoint | Method | 用途 | 确认 | 模块 |
@@ -384,10 +391,9 @@
 | `/api/admin/products/specs` · `/products/specs/:skuKey` | GET / PUT | 全 SKU 规格(server-canonical)/ 改单 SKU(stock:0 经确认弹窗转下架;返 effectiveAt+lockedInFlightOrders) | E1a-MD1/MD2(price/baseRate/status/stock=0) | E1 |
 | `/api/config/cart/bundle-discount` | PUT | 套餐折扣 ladder(4件12%/3件8%/2件5%) | E1a-MD3 | E1 |
 | `/api/admin/config/task-pricing` | GET / PUT | 6 类任务定价(热更,仅新派发生效) | E2-MD1~MD4(PUT) | E2 |
-| `/api/admin/config/lifecycle` | GET / PUT | 衰减曲线/floor/豁免(对存量+新次次快照,不追溯历史) | E3a-MD1~MD4(PUT) | E3 |
-| `/api/admin/config/tradein` | GET / PUT | trade-in 配置(校验 salvage 月12 归零,违反 400) | E3b-MD1~MD7(高敏字段) | E3 |
-| `/api/config/tradein` | GET | trade-in 配置**只读投影**(checkout/K2 消费) | — | E3/K2 |
-| `/api/devices/{recycle\|replace\|deactivate}` | POST | (用户)回收/置换/出槽(salvage 不入余额;单事务) | — | E3 |
+| `/api/admin/devices/e3/config` | GET / PATCH | E3 产能曲线 + 换新阶梯统一配置；拒绝退役键、未知键、无变化与非法保序 | E3-MD1(高敏字段) | E3 |
+| `/api/app/trade-in/config` | GET | 用户端换新开关、资格和 4/5 阶梯只读投影 | — | E3 |
+| `/api/app/trade-in/{config\|quote\|submit}` | GET / POST | 用户换新配置、报价与原子提交；submit 携 Idempotency-Key，折抵不入余额 | — | E3 |
 | `/api/admin/orders?status=&failState=` · `/orders/:id` | GET | 订单列表 / 详情 | — | E4 |
 | `/api/admin/orders/:id` · `/orders/:id/cancel` | PUT/POST | 手动推进回滚改派 DC / 取消(携 Key) | 是(④a,运维/可取消态) | E4 |
 | `/api/orders` | POST | (用户)下单(relatedOrderId server 强校原单 payment_failed+userId 一致否则 400) | — | E4 |
@@ -507,7 +513,7 @@
 | `/api/admin/risk/multi-account?layer=` · `/risk/cluster/:id` | GET | 三层去重命中 / 簇详情+图谱 | — | K1 |
 | `/api/admin/risk/cluster/:id/freeze` · `/release` | POST | 批量冻结执行(确认弹窗+理由必填,携 Key,server 原子置各账户 frozen;执行=风控 lead/超管)/ 解除误判 | 是 | K1 |
 | `/api/admin/risk/ip-whitelist` | GET/POST/DELETE | IP 白名单列表 / 添加 / 移除(仅 IP 维度共享网络豁免,不解冻账户;移除强制 reason;与 C2 账户级名单不重叠) | 否(免MC+审计) | K1 |
-| `/api/admin/risk/arbitrage?type=` · `/risk/welcome-gift/block` | GET/POST | 套利刷量检测列表(消费 minHoldingMonths 只读)/ 拦截 gift 发放 | 否(预防性) | K2 |
+| `/api/admin/risk/arbitrage?type=` · `/risk/welcome-gift/block` | GET/POST | 套利刷量检测列表(近 30 天 ≥3 笔 COMPLETED 置换 + 正向返佣或 IN 礼金入账)/ 拦截 gift 发放 | 否(预防性) | K2 |
 | `/api/admin/risk/withdraw-rules` | GET/PUT | 规则列表+命中日志 / CRUD 启停(archived→active 返 409;启停经确认弹窗,执行=风控 lead/超管) | 是 | K3 |
 | `/api/admin/risk/score/:userId` · `/risk/model` | GET | 单用户评分+可解释(唯一评分源)/ 模型配置+分布 | — | K4 |
 | `/api/admin/risk/model` | PUT | 权重/分档/开关(六维和=1 违反 422;执行=仅超管,风控 lead 起草草稿) | 是 | K4 |
@@ -687,12 +693,12 @@
 | `QUEUE_SATURATION` | 0.35 | 0–1 | 实时 | E2 |
 | `GENERATION_RELEASES.releaseMonth` | Pro v2 月5 / Rack P2 月10(绝对月) | 月1–12 | 仅新对象(月龄门) | E1 |
 | `tradeinDiscount` | Pro v2 $300 / Rack P2 $800 | ≥ 0 | 仅新置换单 | E1 |
-| `DEGRADATION_CURVE` | −4% / −6% / −10% /月(month_1_3/4_8/9_12) | 各 −0.20–0 | 仅新计算(不追溯历史) | **E3** |
-| `MIN_EFFICIENCY`(效率 floor) | 0.22 | 0–1 | 仅新计算 | E3 |
-| 衰减豁免类型 | phone / cloud-share | kind 集合 | 实时 | E3 |
-| 任务锁定月度损失阈值 | 月1–3=$40 / 月4–8=$140 / 月9–12=$450 | ≥ 0 | 仅新对象 | E3 |
-| `salvage.rate / monthlyDecay / floor` | 0.30 / 0.025(月12归零) / 0 | 满足月12归零约束 | 实时(仅新置换) | E3 |
-| `minHoldingMonths`(最短持有) | 1 月 | ≥ 0 | 实时(server 守卫) | **E3**(K2 只读) |
+| `capacityBand1/2/3DeltaPct` | −3% / −6% / −23.7% /月 | −100%–100%；按月复利 | 新投影即时生效 | **E3** |
+| `stageEarlyEnd / stageMidEnd / cycleMonths` | 3 / 8 / 12 | 正整数且前两者递增；cycle 仅图表视窗 | 新投影即时生效 | E3 |
+| `capacityFloorPct` + 8 个 SKU 参与开关 | 22% + SKU 分别开关 | floor 0%–100% | 实时 | E3 |
+| `capacitySubsidyDays` | 30 天 | ≥ 0；仅以 server 时钟控制标注，不进入收益公式 | 实时 | E3 |
+| 任务锁定月度损失阈值 | S1 / Pro / Rack 三档，以 E3 当前持久值为准 | ≥ 0 USDT；0 表示不展示 | 实时 | E3 |
+| `salvagePct / minHoldingMonths / degrade* / minEfficiency` | **退役** | 禁止运行时读取或写入 | — | E3 |
 | `eligibility[kind]`(购买资格) | S1=open;Pro=any-of(own S1/V≥2/累计≥$1000/trade-in S1);Rack P1=any-of(own Pro/V≥4/≥$5000/trade-in Pro) | 9 类规则组 | 实时(仅新购买判定) | E3 |
 | `eligibility[Gen-2]`(Pro v2/Rack P2) | **待补录**(空值兜底 deny-all,见第7章 #9) | 9 类规则组 | 实时 | E3 |
 | `promo.{enabled,cooldownHours,maxPerSession,delayMs}` | true / 24 / 1 / 1500 | — | 实时 | E3 |
@@ -839,13 +845,15 @@
 
 ### 4.15 平台参数寄存器 owner-link
 
-平台参数寄存器只做索引和导航,不复制 owner module 的权威配置表。每个参数必须有 owner domain、owner module、canonical field、read source、write route 与 owner-link。用户从参数寄存器点击 owner-link 后,必须能进入 owner 页面完成真实业务操作;例如 G1 staking APY/penalty/minStake 的写入口归 G1 owner module,寄存器只展示并跳转。
+平台参数寄存器只做索引和导航,不复制 owner module 的权威配置表。每个参数必须有 owner domain、owner module、canonical field、当前服务端值、read source、write route 与 owner-link。用户从参数寄存器点击 owner-link 后,必须能进入 owner 页面完成真实业务操作;例如 G1 staking APY/penalty/minStake 的写入口归 G1 owner module,寄存器只展示并跳转。
+
+A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` 中启用且未删除的配置，以及 J1/J2 实时权威状态；owner domain / module / route 由后端显式登记，前端不得按参数名正则猜测。`docs/cgm/cgm.manifest.json` 仅用于规划覆盖审计，其中 TBD、mock 或前端常量项不得伪装成已上线参数。A5 读取权限固定为 `platform_a5_read`，不得复用 A3 权限。401、403、服务不可用、数据一致性失败与真实空寄存器必须分别呈现；重复 canonical key、统计不一致或来源部分失败时失败关闭，不展示可疑值。
 
 ### 4.X 易混淆 / 校验铁律(开发实现必读)
 
 1. **同名不同域参数严格区分**(详见第 0 章 §0.9):提现冷却 `withdrawCooldownDays`(D5,权威 H1)≠ 试用冷却 H2 `cooldownDays` ≠ 佣金冷却 `commission/cooling-days`(F2);大额 $1,000 三处独立(D2 人工审核 / K3 `largeAmountUsdt` / K5 `largeWithdrawReviewUsdt`);兑换三阈值权威 G2(V3),K5 仅消费。
 2. **Phase 派发参数权威唯一性**(详见 §0.10):10 dial 全归 H1,生效面 PUT 收到返 422 `PHASE_PARAM_READONLY`。
-3. **接口侧硬校验**(详见 §0.5):覆盖率/挤兑红黄线互锁、K4 六维和=1、staking APY 保序、salvage 月12归零、V_RANKS 保序、Lucky 概率和≤100%、转盘 weight 和=100、里程碑保序、UNILEVEL_USDT 和≤25%。
+3. **接口侧硬校验**(详见 §0.5):覆盖率/挤兑红黄线互锁、K4 六维和=1、staking APY 保序、E3 分段与换新阶梯严格保序、V_RANKS 保序、Lucky 概率和≤100%、转盘 weight 和=100、里程碑保序、UNILEVEL_USDT 和≤25%。
 4. **server-only**:`chargeFailRate`;所有 RNG(Lucky/转盘/分红)server 裁决 + NODE_ENV guard。
 
 ## 第 5 章 状态机集(合法转移 + 守卫)
@@ -1027,7 +1035,7 @@
 | 5 | 抽奖转盘奖池文案 | events.ts 含「win $1–$500 或 a Genesis Node」 | **✅ Genesis 不进转盘**;删「or a Genesis Node」 | H4 | v1 附录 A.1 #8 |
 | 6 | KPI 章节序号引用 | 前端 §17/§18.2 混排;SKILL 写 §17.2 | 八项 KPI 统一引 **§18.2** | L1 / 全局 | v1 附录 A.1 #4 |
 | 7 | 前端文档编号/计数瑕疵簇 | §14 误编 §15.x;§11.3「14 section」vs 13 行;§11.0A 缺 wrapped 行 | 后台按逻辑号/正确计数落地(I2/I4/I6 已对齐) | I2/I4/I6 | v1 附录 A.1 #6 |
-| 8 | Pro 设备 salvage 计算基价 | 原型 `DEVICE_PRICE_USDT["stellarbox-pro"]=2639`(salvage 偏高约 $240) | salvage 须以 Pro Gen-1 权威定价 **$2,399** 为基价 | E3 / E1 | v2 §E3③ |
+| 8 | Pro 设备旧 salvage 基价冲突 | 历史原型曾用 `DEVICE_PRICE_USDT["stellarbox-pro"]=2639` | **已随 salvage 模型退役关闭**；当前换新按旧机真实实付价 + 累计已结算产出计算，目标商品价仍以 E1 权威价为准 | E3 / E1 | FEAT-DEV02 |
 | 9 | SKU 数量口径 | V1 §3.2 E1「6 SKU」 | **7 个管理对象**(补 Pro v2 / Genesis 目录位) | E1 | v2 §E1① |
 | 10 | 风险披露 ack 数据模型 | 前端纯布尔 `{accepted,acceptedAt}` | version × jurisdiction 双维矩阵,发布触发 re-ack | I5 | v4 §I5③ |
 | 11 | 披露页 gated action 拦截范围 | /me/wallet/withdraw 已实装;staking/nex-v2-lock 为规划集成点 | 三类 gated action 全部前置守卫接线 | I5 / G1 / G6 | v4 §I5③ |
@@ -1135,17 +1143,15 @@
 | E2-MD2 | 调 QUEUE_SATURATION 确认 | — | v2 E2④a |
 | E2-MD3 | 调 minVRAM 路由门槛确认 | — | v2 E2④a |
 | E2-MD4 | 紧急下架 / 恢复任务类确认 | — | v2 E2④a |
-| E3a-MD1 | 调衰减曲线确认 | — | v2 E3a④a |
-| E3a-MD2 | 调 MIN_EFFICIENCY floor 确认 | — | v2 E3a④a |
-| E3a-MD3 | 调豁免类型确认 | — | v2 E3a④a |
+| E3a-MD1 | 调三段任务产能复利曲线确认 | — | FEAT-DEV01 |
+| E3a-MD2 | 调产能下限确认 | — | FEAT-DEV01 |
+| E3a-MD3 | 调 SKU 产能参与开关确认 | — | FEAT-DEV01 |
 | E3a-MD4 | 调任务锁定损失阈值确认 | — | v2 E3a④a |
 | E3b-MD1 | Trade-in 全局开关确认 | — | v2 E3b④a |
-| E3b-MD2 | 调 salvage 残值参数确认 | — | v2 E3b④a |
-| E3b-MD3 | 调 minHoldingMonths 确认 | — | v2 E3b④a |
-| E3b-MD4 | 调 eligibility 规则确认 | — | v2 E3b④a |
-| E3b-MD5 | 补录 Gen-2 eligibility 确认 | — | v2 E3b④a |
-| E3b-MD6 | 调 promo 节奏确认 | — | v2 E3b④a |
-| E3b-MD7 | 调 inventory.softMax 确认 | — | v2 E3b④a |
+| E3b-MD2 | 调累计产出/实付比例折抵阶梯确认 | — | FEAT-DEV02 |
+| E3b-MD3 | 调单笔置换数量/目标高价限制确认 | — | FEAT-DEV02 |
+| E3b-MD4 | 调 eligibility 规则确认 | — | FEAT-DEV02 |
+| E3b-MD5 | 调 promo 节奏确认 | — | FEAT-DEV02 |
 | E4-MD1 | 取消并退款确认 | 是 | v2 E4④a |
 | E5-MD1 | 强制激活设备确认 | — | v2 E5④a |
 | E5-MD2 | 强制解绑设备确认 | 是 | v2 E5④a |
@@ -1343,6 +1349,6 @@
 ## 附:与原 4 卷 PRD 的关系 + 维护约定
 
 - **本文件 vs 原 PRD**:本文件是**开发落地契约速查**(建表/接口/参数/状态机/权限),从 4 卷需求 PRD 提炼;原 4 卷保留为**需求背景档案**(为什么做、业务叙事、运营意图)。两者并存,本文件每行带「出处§」可回溯。
-- **冲突裁决**:本文件与原 PRD 正文冲突 → 以 PRD 正文为准;PM 已裁定项(✅ 标注)以裁定为准。
+- **冲突裁决**:一般冲突以原 PRD 正文为准；编号 `specs/FEAT-*.md` 是对应功能的后发实现裁定，优先于旧 PRD/CGM 的同功能口径；PM 已裁定项(✅ 标注)以裁定为准。
 - **维护**:原 PRD 改动后,对应契约项同步更新本文件;新增模块/接口/参数时本文件对应章追加 + 更新第 1 章索引。
 - **A.x 收口台账**:v1 附录 A 是全库已成形的收口登记(A.1 前端矛盾、A.2 跨批次待补),与本文件第 7/8 章互为补充。

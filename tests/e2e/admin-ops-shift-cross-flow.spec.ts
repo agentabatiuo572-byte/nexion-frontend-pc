@@ -244,7 +244,7 @@ async function deviceGrowthShift(page: Page, account: ShiftAccount, report: Shif
 
   await recordOptionalStep(report, "SKU/任务/券/通知/售后闭环安全操作", ["E1", "E2", "E5", "H3", "H7", "I3", "M2", "A2"], async (evidence) => {
     await openAndAssertModule(page, "E1", evidence);
-    const e1 = await tryPerformDialogAction(page, [/\+ 新增阶段/, /\+ 新增代际门/, /\+ 新增评价/, /隐藏|恢复|调整/], evidence);
+    const e1 = await tryPerformDialogAction(page, [/\+ 新增阶段/, /\+ 新增上架门/, /置换侧抢先购|调整/], evidence);
     await openAndAssertModule(page, "E5", evidence);
     const e5 = await tryPerformDialogAction(page, [/\+ 新增数据中心/, /恢复派单|批量 pause/], evidence);
     await openAndAssertModule(page, "H3", evidence);

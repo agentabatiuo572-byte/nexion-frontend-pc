@@ -5,21 +5,21 @@
  */
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 
-// 全系统统一连续编号 E1-E5(代际门原 E2 并入 E1、设备生命周期原 E4 并入 E5→现 E3)。
+// 全系统统一连续编号 E1-E5(上架节奏门并入 E1、设备生命周期归 E3)。
 // nav id == 视图 key == 组件名 == prdAnchor == PRD §10 章节,FOLD 恒等映射。
 export const FOLD: Record<string, string> = { E1: "E1", E2: "E2", E3: "E3", E4: "E4", E5: "E5", E6: "E6" };
 
-export const ORDER_FLOW = ["created", "paid", "allocating", "active"];
+export const ORDER_FLOW = ["placed", "paid", "provisioning", "activated"];
 // design-kit Badge tone 映射(订单状态)。
-export const ostate: Record<string, string> = { created: "neutral", paid: "info", allocating: "cyan", active: "ok", failed: "err", refunded: "warn", cancelled: "neutral", payment_failed: "err", expired: "warn", provisioning_failed: "err" };
+export const ostate: Record<string, string> = { placed: "neutral", paid: "info", provisioning: "cyan", activated: "ok", refunded: "warn", cancelled: "neutral", payment_failed: "err", expired: "warn", provisioning_failed: "err", chargeback: "err" };
 // 终态中文标签。
-const STATE_LABEL: Record<string, string> = { created: "已创建", paid: "已支付", allocating: "分配中", active: "运行中", failed: "失败", cancelled: "已取消", payment_failed: "支付失败", expired: "已过期", refunded: "已退款", provisioning_failed: "开通失败" };
+const STATE_LABEL: Record<string, string> = { placed: "已下单", paid: "已支付", provisioning: "开通中", activated: "已激活", cancelled: "已取消", payment_failed: "支付失败", expired: "已过期", refunded: "已退款", provisioning_failed: "开通失败", chargeback: "拒付" };
 export const stateLabel = (s: string): string => STATE_LABEL[s] ?? s;
 
 // E-13 补建终态可选值(为缺失终态的订单手动落定;真后台由订单状态机校验后写入)。
-export const TERMINAL_STATES = ["payment_failed", "expired", "refunded", "provisioning_failed"] as const;
-// 非终态(仍流转,允许补建终态);created/paid 另允许「取消订单」。
-export const NON_TERMINAL = new Set(["created", "paid", "allocating"]);
+export const TERMINAL_STATES = ["payment_failed", "expired", "provisioning_failed", "chargeback"] as const;
+// 非终态(仍流转,允许按状态机落定失败终态);placed 另允许「取消订单」。
+export const NON_TERMINAL = new Set(["placed", "paid", "provisioning"]);
 
 // E3 衰减曲线引擎 — 镜像产品 device-lifecycle.ts getEfficiency(三段复利 + floor)。
 // 参数从后台配置(pE)读,使后台为 server-canonical 配置源、曲线真实反映产品衰减。
@@ -43,7 +43,7 @@ export const EMPTY_SKU_FORM = {
   sold: "", stock: "",
   aiImageGenPerMin: "", aiLlmTokensPerSec: "", aiVideoMinPerHour: "", aiFineTuneMins: "", aiUnlocks: "",
   features: "",
-  generation: "", lifecycle: "", supersededBy: "", tradeinDiscount: "", unlock: "", tag: "",
+  lifecycle: "", unlock: "", tag: "",
   // ⑦ 购买限制(扁平表单字段 → formToSku 组装为结构化 OpsSku.purchaseGate)。
   // gateType = 条件门形态:none(无门)/ activeDirect(单活跃直推)/ rank(单 V 级)/ combo(组合)。
   // 锁额(quota)与条件门正交,任意门类型下均可设。
@@ -79,7 +79,7 @@ export function skuToForm(s: OpsSku): SkuForm {
     sold: str(s.sold), stock: str(s.stock),
     aiImageGenPerMin: str(s.aiImageGenPerMin), aiLlmTokensPerSec: str(s.aiLlmTokensPerSec), aiVideoMinPerHour: str(s.aiVideoMinPerHour), aiFineTuneMins: str(s.aiFineTuneMins), aiUnlocks: s.aiUnlocks ?? "",
     features: (s.features ?? []).join("\n"),
-    generation: str(s.generation), lifecycle: s.lifecycle ?? "", supersededBy: s.supersededBy ?? "", tradeinDiscount: str(s.tradeinDiscount), unlock: s.unlock ?? "", tag: s.tag ?? "",
+    lifecycle: s.lifecycle ?? "", unlock: s.unlock ?? "", tag: s.tag ?? "",
     gateType: gateToType(g),
     gateRankMin: str(g?.rankMin), gateActiveDirectMin: str(g?.activeDirectMin), gateTeamVolumeMin: str(g?.teamVolumeMin),
     gateMode: g?.mode === "either" ? "either" : "all",
@@ -115,6 +115,19 @@ export function formToGate(f: SkuForm): PurchaseGate | undefined {
 // 杜绝公式在多处重复(对齐前端 evaluatePurchaseGate 的 remaining 口径)。无 cap = null(不限量)。
 export function gateRemaining(g: PurchaseGate): number | null {
   return g.quotaCap != null ? Math.max(0, g.quotaCap - (g.quotaSold ?? 0)) : null;
+}
+
+export const effectiveReleaseMonth = (releaseMonth: number, phaseOffset = 0): number => releaseMonth + phaseOffset;
+
+export function releaseMonthPresentation(releaseMonth: number, phaseOffset = 0): {
+  effectiveLabel: string;
+  adjustmentLabel: string;
+} {
+  const effectiveMonth = effectiveReleaseMonth(releaseMonth, phaseOffset);
+  const adjustmentLabel = phaseOffset === 0
+    ? "按原计划"
+    : `基准 M${releaseMonth} · ${phaseOffset > 0 ? "延后" : "提前"} ${Math.abs(phaseOffset)}M`;
+  return { effectiveLabel: `M${effectiveMonth}`, adjustmentLabel };
 }
 
 // 购买门表单校验(提交前调;返回错误串 = 拦截,null = 通过)。

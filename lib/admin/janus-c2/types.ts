@@ -23,6 +23,9 @@ export type DeviceStatus =
 /** 状态来源(PRD §4 状态来源 / §7.2)。 */
 export type StatusSource = "system" | "strategy" | "environment" | "manual" | "error";
 
+/** App / H5 producer 可上报的平台值。 */
+export type DevicePlatform = "iOS" | "Android" | "windows" | "mac" | "linux" | "unknown";
+
 /** 角色(PRD §15)。 */
 export type Role = "viewer" | "operator" | "senior_operator" | "admin";
 
@@ -259,7 +262,7 @@ export interface Device {
   environmentRiskScore: number;
   priorityScore: number;
   ua?: string;
-  platform: "iOS" | "Android";
+  platform: DevicePlatform;
   model?: string;
   osName?: string;
   browser?: string;

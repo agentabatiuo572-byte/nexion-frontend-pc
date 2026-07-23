@@ -182,6 +182,7 @@ export interface G2Overview {
 }
 
 let requestSeq = 0;
+const pendingMutationKeys = new Map<string, string>();
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -326,11 +327,14 @@ function normalizeOverview(data: BackendOverview | null | undefined): G2Overview
 
 async function g2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
   const headers = new Headers(init?.headers);
+  const intent = init?.idempotencyPrefix ? `${init.idempotencyPrefix}:${String(init.body ?? "")}` : null;
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+    const key = pendingMutationKeys.get(intent!) ?? idempotencyKey(init.idempotencyPrefix);
+    pendingMutationKeys.set(intent!, key);
+    headers.set("Idempotency-Key", key);
   }
 
   const response = await fetch(`/api/admin/market${path}`, {
@@ -347,6 +351,8 @@ async function g2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     throw new Error(formatAdminApiError(result?.message, `G2_REQUEST_FAILED_${response.status}`));
   }
 
+  if (intent) pendingMutationKeys.delete(intent);
+
   return result.data as T;
 }
 
@@ -362,11 +368,24 @@ export async function updateG2ExchangeParam(paramKey: string, value: string, rea
   }));
 }
 
-export async function updateG2ExchangeSwapStatus(enabled: boolean, reason: string, operator: string) {
+export async function updateG2ExchangeSwapStatus(
+  enabled: boolean,
+  reason: string,
+  operator: string,
+  context: { geoBlock?: string[]; triggerBasis?: string } = {},
+) {
   return normalizeOverview(await g2Request<BackendOverview>("/exchange/swap", {
     method: "PATCH",
-    body: JSON.stringify({ enabled, reason, operator }),
+    body: JSON.stringify({ enabled, reason, operator, geoBlock: context.geoBlock ?? [], triggerBasis: context.triggerBasis ?? "OTHER" }),
     idempotencyPrefix: "g2-swap",
+  }));
+}
+
+export async function processG2ExchangeQueue(limit: number, reason: string, operator: string) {
+  return normalizeOverview(await g2Request<BackendOverview>("/exchange/queue/process", {
+    method: "POST",
+    body: JSON.stringify({ limit, reason, operator }),
+    idempotencyPrefix: "g2-queue-batch",
   }));
 }
 

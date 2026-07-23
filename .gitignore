@@ -51,3 +51,14 @@ frontend-restart-latest*.log
 codex-*.log
 /.codex-*.log
 /logs/
+
+# 联调/验收运行时产物与临时日志（勿入库）
+/.next-m2-acceptance/
+/artifacts/
+/.runtime-*
+/c4-runtime.err.log
+/c4-runtime.out.log
+/runtime-evidence.json
+/after-login-ui.txt
+/entry-ui.txt
+/c5-acceptance.playwright.config.ts

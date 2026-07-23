@@ -38,7 +38,13 @@ const ACTION_BY_LABEL: Record<string, RuleAction> = {
 };
 const DIMENSION_OPTIONS: K3RuleDimensionName[] = ["金额", "速度", "新账户", "地址信誉"];
 const ACTION_OPTIONS = [ACTION_LABELS.delay, ACTION_LABELS.manual, ACTION_LABELS.freeze];
-const ADDRESS_SOURCE_OPTIONS = ["黑名单 / 低信誉地址", "内部黑名单 + 链上信誉", "内部黑名单", "链上信誉", "第三方链上信誉", "内部 + 第三方信誉"];
+const ADDRESS_SOURCE_OPTIONS = ["内部", "第三方", "组合"];
+const ADDRESS_SOURCE_VALUE: Record<string, "internal" | "third-party" | "combined"> = {
+  内部: "internal", 第三方: "third-party", 组合: "combined",
+};
+const ADDRESS_SOURCE_LABEL: Record<string, string> = {
+  internal: "内部", "third-party": "第三方", combined: "组合",
+};
 
 const DIM_ICONS: Record<string, ReactNode> = {
   card: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="6" width="18" height="13" rx="2.5" /><path d="M3 10h18" /></svg>,
@@ -69,6 +75,32 @@ function dimensionFromForm(value: string | undefined): K3RuleDimensionName {
   return DIMENSION_OPTIONS.includes(value as K3RuleDimensionName) ? value as K3RuleDimensionName : "金额";
 }
 
+function parseAddressCondition(core: string): BusinessFormValue | null {
+  const canonical = core.match(/^addressReputationSource=(internal|third-party|combined)\s*;\s*addressReputationLowThreshold=(\d+(?:\.\d+)?)$/i);
+  if (canonical) {
+    const threshold = Number(canonical[2]);
+    if (threshold < 0 || threshold > 1) return null;
+    return { addressSource: ADDRESS_SOURCE_LABEL[canonical[1].toLowerCase()], addressThreshold: canonical[2] };
+  }
+  const legacyInternal = /^(?:内部|内部黑名单|黑名单\s*\/\s*低信誉地址)$/;
+  const legacyThirdParty = /^(?:第三方|链上信誉|第三方链上信誉)$/;
+  const legacyCombined = /^(?:组合|内部黑名单\s*\+\s*链上信誉|内部\s*\+\s*第三方信誉)$/;
+  const addressSource = legacyInternal.test(core) ? "内部"
+    : legacyThirdParty.test(core) ? "第三方"
+      : legacyCombined.test(core) ? "组合" : null;
+  return addressSource ? { addressSource, addressThreshold: "0.4" } : null;
+}
+
+function addressConditionCopy(text: string) {
+  const parsed = parseAddressCondition(conditionCore(text));
+  if (!parsed) return text;
+  const source = parsed.addressSource;
+  const threshold = parsed.addressThreshold;
+  return source === "内部"
+    ? `来源：内部 · 仅使用内部黑名单（第三方阈值 ${threshold} 不参与）`
+    : `来源：${source} · 第三方评分 < ${threshold} 判为低信誉`;
+}
+
 function parseK3Condition(kind: K3RuleKind, text: string): ParsedCondition {
   const core = conditionCore(text).replace("，", ",");
   if (kind === "amount") {
@@ -89,8 +121,9 @@ function parseK3Condition(kind: K3RuleKind, text: string): ParsedCondition {
       ? { value: { accountOp: matched[1], days: matched[2] }, conditionParseError: null }
       : { value: null, conditionParseError: "当前条件格式无法安全编辑" };
   }
-  return ADDRESS_SOURCE_OPTIONS.includes(core)
-    ? { value: { addressSource: core }, conditionParseError: null }
+  const address = parseAddressCondition(core);
+  return address
+    ? { value: address, conditionParseError: null }
     : { value: null, conditionParseError: "当前条件格式无法安全编辑" };
 }
 
@@ -115,8 +148,9 @@ function k3RuleBusinessForm(kind: K3RuleKind, current: string, action: RuleActio
     { key: "accountOp", label: "注册天数比较符", current: parsed.value.accountOp, inputKind: "select", options: ["<", "<="] },
     { key: "days", label: "注册天数", current: parsed.value.days, inputKind: "number", min: 0, max: 30, step: 1 }, ...common,
   ] };
-  return { kind: "multi-field", title: "地址信誉源", hint: "地址信誉源必须从已支持的枚举项选择。", fields: [
+  return { kind: "multi-field", title: "地址信誉源", hint: "内部不调用外部服务；第三方或组合使用真实链上信誉服务，服务不可用时提现失败关闭。", fields: [
     { key: "addressSource", label: "信誉来源", current: parsed.value.addressSource, inputKind: "select", options: ADDRESS_SOURCE_OPTIONS, wide: true }, ...common,
+    { key: "addressThreshold", label: "低信誉阈值", current: parsed.value.addressThreshold, inputKind: "number", min: 0, max: 1, step: 0.01 },
   ] };
 }
 
@@ -134,6 +168,7 @@ function newK3RuleBusinessForm(): BusinessFormSpec {
     { key: "accountOp", label: "注册天数比较符", current: "<", inputKind: "select", options: ["<", "<="], visibleWhen: { key: "dimension", equals: "新账户" } },
     { key: "days", label: "注册天数", current: "7", inputKind: "number", min: 0, max: 30, step: 1, visibleWhen: { key: "dimension", equals: "新账户" } },
     { key: "addressSource", label: "地址信誉来源", current: ADDRESS_SOURCE_OPTIONS[0], inputKind: "select", options: ADDRESS_SOURCE_OPTIONS, wide: true, visibleWhen: { key: "dimension", equals: "地址信誉" } },
+    { key: "addressThreshold", label: "低信誉阈值", current: "0.4", inputKind: "number", min: 0, max: 1, step: 0.01, visibleWhen: { key: "dimension", equals: "地址信誉" } },
   ] };
 }
 
@@ -142,7 +177,10 @@ function buildK3Condition(kind: K3RuleKind, value?: BusinessFormValue) {
   if (kind === "amount") return `单笔 ${value.amountOp} $${formatMoney(value.amount)}`;
   if (kind === "velocity") return `24h ${value.countOp} ${value.count} 笔 或 ${value.velocityAmountOp} $${formatMoney(value.velocityAmount)}`;
   if (kind === "newAccount") return `注册 ${value.accountOp} ${value.days} 天`;
-  return value.addressSource ?? "";
+  const source = ADDRESS_SOURCE_VALUE[value.addressSource ?? ""];
+  const threshold = Number(value.addressThreshold);
+  if (!source || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) return "";
+  return `addressReputationSource=${source}; addressReputationLowThreshold=${threshold}`;
 }
 function actionFromBusinessValue(value?: BusinessFormValue): RuleAction | null { return ACTION_BY_LABEL[value?.action ?? ""] ?? null; }
 function priorityFromBusinessValue(value?: BusinessFormValue) {
@@ -289,7 +327,9 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
         } : null);
         const editable = canWrite && !!dimension.ruleId && !parsed.conditionParseError && dimension.action !== "pass" && !!editableRule;
         const unavailableReason = !projectionComplete && !matchingRule ? "当前规则版本未完整加载，请在规则总表定位后编辑" : undefined;
-        return <div className="dim" key={dimension.ruleKey}><div className="top"><span className="ic">{DIM_ICONS[dimension.icon] ?? DIM_ICONS.shield}</span><div className="nm">{dimensionLabel(dimension.name)}</div></div><div className="cond">{dimension.conditionText}</div><div className="why">{operatorCopy(dimension.why, "用于评估该维度的提现风险")}</div>{parsed.conditionParseError && <div className="sub" style={{ color: "var(--danger)" }}>当前条件格式无法安全编辑</div>}<div className="ft"><span className={`act ${dimension.action}`}>{RULE_ACT[dimension.action][0]}</span><span className="mono">{dimension.priority == null ? "优先级未加载" : `P${dimension.priority}`}</span><button className="l-btn sm mc" disabled={!editable} title={!canWrite ? "缺少 risk_k3_write 权限" : parsed.conditionParseError ?? unavailableReason} onClick={() => editableRule && editRule(editableRule)}>调整</button></div></div>;
+        const conditionCopy = k3KindFromDimension(dimension.name, dimension.ruleKey) === "address"
+          ? addressConditionCopy(dimension.conditionText) : dimension.conditionText;
+        return <div className="dim" key={`${dimension.ruleKey}-${dimension.ruleId}`}><div className="top"><span className="ic">{DIM_ICONS[dimension.icon] ?? DIM_ICONS.shield}</span><div className="nm">{dimensionLabel(dimension.name)}</div></div><div className="cond">{conditionCopy}</div><div className="why">{operatorCopy(dimension.why, "用于评估该维度的提现风险")}</div>{parsed.conditionParseError && <div className="sub" style={{ color: "var(--danger)" }}>当前条件格式无法安全编辑</div>}<div className="ft"><span className={`act ${dimension.action}`}>{RULE_ACT[dimension.action][0]}</span><span className="mono">{dimension.priority == null ? "优先级未加载" : `P${dimension.priority}`}</span><button className="l-btn sm mc" disabled={!editable} title={!canWrite ? "缺少 risk_k3_write 权限" : parsed.conditionParseError ?? unavailableReason} onClick={() => editableRule && editRule(editableRule)}>调整</button></div></div>;
       })}
     </div></div></section>
 

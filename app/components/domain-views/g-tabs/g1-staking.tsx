@@ -16,10 +16,8 @@ import {
   type G1PositionGroup,
 } from "@/lib/admin/g1-client";
 import type { GCtx } from "./types";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
-const OPERATOR = currentAdminOperator;
 const CANONICAL_USDT_TIERS = ["usdt30d", "usdt90d", "usdt180d", "usdt365d"] as const;
 const CANONICAL_USDT_TIER_SET = new Set<string>(CANONICAL_USDT_TIERS);
 
@@ -42,7 +40,14 @@ function messageOf(error: unknown) {
 
 export function G1Staking({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm } = ctx;
-  const propose = usePropose();
+  const session = useAdminAuth((state) => state.session);
+  const isSuperAdmin = session?.role === "superadmin" || session?.role === "super";
+  const authorities = session?.authorities ?? [];
+  const canAdjustApy = isSuperAdmin || authorities.includes("finprod_g1_apy_write");
+  const canAdjustPenalty = isSuperAdmin || authorities.includes("finprod_g1_penalty_write");
+  const canAdjustMin = isSuperAdmin || authorities.includes("finprod_g1_min_write");
+  const canToggleSale = isSuperAdmin || authorities.includes("finprod_g1_write");
+  const canKill = isSuperAdmin || authorities.includes("finprod_g1_kill_toggle");
   const [overview, setOverview] = useState<G1Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -105,6 +110,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       const message = messageOf(err);
       setError(message);
       toast(`G1 操作失败 · ${message}`);
+      throw err;
     } finally {
       setBusyKey(null);
     }
@@ -138,7 +144,10 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
   const pendingGroup = groupByStatus.get("pending_lock");
   const activeGroup = groupByStatus.get("active");
   const matureGroup = groupByStatus.get("mature_unclaimed");
+  const claimedGroup = groupByStatus.get("claimed");
   const earlyGroup = groupByStatus.get("early_withdrawn");
+  const slashedGroup = groupByStatus.get("slashed");
+  const refundedGroup = groupByStatus.get("refunded");
 
   const adjApy = (pool: G1Pool) => {
     openActionConfirm({
@@ -153,24 +162,12 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
           <div>升 APY 是放大流出,提交后由后端重新验覆盖率红线与跨档 APY 保序。</div>
         </div>
       </>,
-      edit: { kind: "text", current: pool.apy },
-      run: (reason, value) => {
+      edit: { kind: "number", current: pool.apy, unit: "%", min: 0, max: 300, step: 0.01 },
+      run: async (reason, value) => {
         if (!value) return;
-        const def = findHighOp("g1_staking_pool_param")!;
-        void propose(ctx.toast, {
-          action: `APY 调整 · ${pool.product} · ${displayTerm(pool)}`,
-          obj: pool.tierKey,
-          before: pool.apyDisplay,
-          after: String(value),
-          type: "param",
-          amplifies: true,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G1",
-          command: def.buildCommand({ tierKey: pool.tierKey, paramKey: "apy", value }),
-          target: def.buildTarget({ tierKey: pool.tierKey }),
-        });
+        await mutate(`apy:${pool.tierKey}`, () => updateG1StakingPoolParam(
+          pool.tierKey, "apy", value, reason, currentAdminOperator(),
+        ), `APY 已调整 · ${pool.product} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -179,24 +176,12 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `Staking 提前赎回罚款调整 · ${pool.product} · ${displayTerm(pool)}`,
       detail: <>当前罚款 {pool.penaltyDisplay}。降罚款是放大流出,提交后端会按真实 B1 覆盖率红线校验(当前 {cov}%,红线 {redline}%)。只对新单生效。</>,
-      edit: { kind: "text", current: pool.penalty },
-      run: (reason, value) => {
+      edit: { kind: "number", current: pool.penalty, unit: "%", min: 0, max: 100, step: 0.01 },
+      run: async (reason, value) => {
         if (!value) return;
-        const def = findHighOp("g1_staking_pool_param")!;
-        void propose(ctx.toast, {
-          action: `罚款调整 · ${pool.product} · ${displayTerm(pool)}`,
-          obj: pool.tierKey,
-          before: pool.penaltyDisplay,
-          after: String(value),
-          type: "param",
-          amplifies: true,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G1",
-          command: def.buildCommand({ tierKey: pool.tierKey, paramKey: "penalty", value }),
-          target: def.buildTarget({ tierKey: pool.tierKey }),
-        });
+        await mutate(`penalty:${pool.tierKey}`, () => updateG1StakingPoolParam(
+          pool.tierKey, "penalty", value, reason, currentAdminOperator(),
+        ), `提前赎回罚款已调整 · ${pool.product} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -205,24 +190,12 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `Staking 最小额调整 · ${pool.product} · ${displayTerm(pool)}`,
       detail: <>当前最小额 {pool.minDisplayValue}。最小额收紧不影响在锁单,只对新单生效。</>,
-      edit: { kind: "text", current: pool.minStake },
-      run: (reason, value) => {
+      edit: { kind: "number", current: pool.minStake, unit: "USDT", min: 0, max: 1_000_000_000, step: 0.01 },
+      run: async (reason, value) => {
         if (!value) return;
-        const def = findHighOp("g1_staking_pool_param")!;
-        void propose(ctx.toast, {
-          action: `最小额调整 · ${pool.product} · ${displayTerm(pool)}`,
-          obj: pool.tierKey,
-          before: pool.minDisplayValue,
-          after: String(value),
-          type: "param",
-          amplifies: false,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G1",
-          command: def.buildCommand({ tierKey: pool.tierKey, paramKey: "min", value }),
-          target: def.buildTarget({ tierKey: pool.tierKey }),
-        });
+        await mutate(`min:${pool.tierKey}`, () => updateG1StakingPoolParam(
+          pool.tierKey, "min", value, reason, currentAdminOperator(),
+        ), `最小锁仓额已调整 · ${pool.product} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -232,49 +205,37 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `${pool.enabled ? "停售" : "恢复开售"}档位 · ${pool.product} · ${displayTerm(pool)}`,
       detail: <>{pool.enabled ? "停售只停新锁,在锁单照常计息到期。" : `恢复该档新锁仓开放,后端会按真实 B1 覆盖率红线校验(当前 ${cov}%,红线 ${redline}%)。`}操作确认。</>,
-      run: (reason) => {
-        const def = findHighOp("g1_staking_pool_sale_status")!;
-        void propose(ctx.toast, {
-          action: `${nextEnabled ? "恢复开售" : "停售"} · ${pool.product} · ${displayTerm(pool)}`,
-          obj: pool.tierKey,
-          before: pool.enabled ? "开售" : "停售",
-          after: nextEnabled ? "开售" : "停售",
-          type: "fund",
-          amplifies: nextEnabled,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G1",
-          command: def.buildCommand({ tierKey: pool.tierKey, enabled: nextEnabled }),
-          target: def.buildTarget({ tierKey: pool.tierKey }),
-        });
+      run: async (reason) => {
+        await mutate(`sale:${pool.tierKey}`, () => updateG1StakingPoolSaleStatus(
+          pool.tierKey, nextEnabled, reason, currentAdminOperator(),
+        ), `${nextEnabled ? "已恢复开售" : "已停售"} · ${pool.product} · ${displayTerm(pool)}`);
       },
     });
   };
 
   const killTier = (pool: G1Pool) => {
-    const nextKilled = !pool.killed;
+    if (pool.killed) return;
     openActionConfirm({
-      action: `${pool.killed ? "解除" : ""}单档熔断 · ${pool.product} · ${displayTerm(pool)}`,
-      detail: pool.killed
-        ? <>解除熔断:该档恢复新锁开放,在锁单回正常计息;后端会按真实 B1 覆盖率红线校验(当前 {cov}%,红线 {redline}%)。</>
-        : <>熔断该档:立即停新锁 + 在锁单按处置方案走(slashed)。处置方案写进操作理由,同步 J1 staking 闸编排。</>,
-      run: (reason) => {
-        const def = findHighOp("g1_staking_pool_kill_status")!;
-        void propose(ctx.toast, {
-          action: `${nextKilled ? "熔断" : "解除熔断"} · ${pool.product} · ${displayTerm(pool)}`,
-          obj: pool.tierKey,
-          before: pool.killed ? "已熔断" : "正常",
-          after: nextKilled ? "已熔断" : "正常",
-          type: "sos",
-          amplifies: !nextKilled,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
+      action: `单档熔断 · ${pool.product} · ${displayTerm(pool)}`,
+      detail: <>熔断该档会立即停止新锁,并由后端原子执行在锁单处置、A2 审计与事件发件箱。恢复只能从 J1 Kill-Switch 矩阵执行。</>,
+      businessForm: {
+        kind: "multi-field",
+        title: "熔断依据与持仓处置",
+        hint: "两项都将写入审计和事件;操作理由需独立说明本次判断。",
+        fields: [
+          { key: "triggerBasis", label: "触发依据", inputKind: "select", current: "MANUAL_RISK_REVIEW", options: ["MANUAL_RISK_REVIEW", "B1_COVERAGE_BREACH", "INCIDENT_RESPONSE", "COMPLIANCE_HOLD"], optionLabels: { MANUAL_RISK_REVIEW: "人工风险复核", B1_COVERAGE_BREACH: "B1 覆盖率破线", INCIDENT_RESPONSE: "事故响应", COMPLIANCE_HOLD: "合规冻结" }, required: true, showDiff: true },
+          { key: "dispositionPlan", label: "在锁单处置方案", inputKind: "text", placeholder: "说明本金、利息与用户通知安排", required: true, wide: true },
+        ],
+      },
+      run: async (reason, _value, businessValue) => {
+        await mutate(`kill:${pool.tierKey}`, () => updateG1StakingPoolKillStatus(
+          pool.tierKey,
+          true,
           reason,
-          sourceDomain: "G1",
-          command: def.buildCommand({ tierKey: pool.tierKey, killed: nextKilled }),
-          target: def.buildTarget({ tierKey: pool.tierKey }),
-        });
+          currentAdminOperator(),
+          businessValue?.triggerBasis ?? "",
+          businessValue?.dispositionPlan ?? "",
+        ), `已熔断 · ${pool.product} · ${displayTerm(pool)}`);
       },
     });
   };
@@ -295,19 +256,19 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                 <td className="num mono" style={{ fontWeight: 700, color: pool.highYield ? "var(--warning)" : undefined }}>
                   <span className="row" style={{ gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
                     <span>{pool.apyDisplay}{pool.highYield && <span className="bdg warn" style={{ fontSize: 9, marginLeft: 5 }}>高息</span>}</span>
-                    <button className="l-btn sm mc" disabled={busy} onClick={() => adjApy(pool)}>调</button>
+                    <button className="l-btn sm mc" disabled={busy || !canAdjustApy} title={canAdjustApy ? "调整 APY" : "缺少 finprod_g1_apy_write 权限"} onClick={() => adjApy(pool)}>调整 APY</button>
                   </span>
                 </td>
                 <td className="num mono">
                   <span className="row" style={{ gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
                     <span>{pool.penalty}%</span>
-                    <button className="l-btn sm mc" disabled={busy} onClick={() => adjPenalty(pool)}>调</button>
+                    <button className="l-btn sm mc" disabled={busy || !canAdjustPenalty} title={canAdjustPenalty ? "调整提前赎回罚款" : "缺少 finprod_g1_penalty_write 权限"} onClick={() => adjPenalty(pool)}>调整罚款</button>
                   </span>
                 </td>
                 <td className="num mono" style={{ color: "var(--ink-3)" }}>
                   <span className="row" style={{ gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
                     <span>{pool.minDisplayValue}</span>
-                    <button className="l-btn sm" disabled={busy} onClick={() => adjMin(pool)}>调</button>
+                    <button className="l-btn sm" disabled={busy || !canAdjustMin} title={canAdjustMin ? "调整最小锁仓额" : "缺少 finprod_g1_min_write 权限"} onClick={() => adjMin(pool)}>调整最小额</button>
                   </span>
                 </td>
                 <td className="num mono">{pool.lockedDisplay}</td>
@@ -316,13 +277,15 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                   <button
                     className={`l-btn sm${pool.enabled && !pool.killed ? " mc" : ""}`}
                     onClick={() => togglePool(pool)}
-                    disabled={busy || pool.killed}
+                    disabled={busy || pool.killed || !canToggleSale}
                     style={pool.killed ? { opacity: 0.4, cursor: "not-allowed" } : undefined}
                   >
                     {pool.enabled ? "停售" : "恢复开售"}
                   </button>
                   {" "}
-                  <button className="l-btn sm mc" disabled={busy} onClick={() => killTier(pool)}>{pool.killed ? "解除熔断" : "熔断"}</button>
+                  {pool.killed
+                    ? <a className="l-btn sm" href="/emergency/kill-switch" title="G1 不允许解除;请前往 J1">前往 J1 恢复</a>
+                    : <button className="l-btn sm mc" disabled={busy || !canKill} title={canKill ? "熔断该档" : "缺少 finprod_g1_kill_toggle 权限"} onClick={() => killTier(pool)}>熔断</button>}
                 </td>
               </tr>
             );
@@ -377,6 +340,9 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
             <div className="p click" onClick={() => setDrawer("active")}><div className="k">active 计息中 <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--success)" }}>{fmtCount(activeGroup?.count ?? stats.activeCount)}</div></div>
             <div className="p click" onClick={() => setDrawer("mature_unclaimed")}><div className="k">mature_unclaimed 到期未领 <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--warning)" }}>{fmtCount(matureGroup?.count ?? stats.matureCount)}</div></div>
             <div className="p click" onClick={() => setDrawer("early_withdrawn")}><div className="k">本月 early_withdrawn 提前赎回 <span className="more">看清单›</span></div><div className="v">{fmtCount(earlyGroup?.count ?? stats.earlyWithdrawnMonth)}</div></div>
+            <div className="p click" onClick={() => setDrawer("claimed")}><div className="k">claimed 已领取 <span className="more">看清单›</span></div><div className="v">{fmtCount(claimedGroup?.count ?? 0)}</div></div>
+            <div className="p click" onClick={() => setDrawer("slashed")}><div className="k">slashed 熔断处置 <span className="more">看清单›</span></div><div className="v" style={{ color: "var(--danger)" }}>{fmtCount(slashedGroup?.count ?? 0)}</div></div>
+            <div className="p click" onClick={() => setDrawer("refunded")}><div className="k">refunded 已退款 <span className="more">看清单›</span></div><div className="v">{fmtCount(refundedGroup?.count ?? 0)}</div></div>
           </div>
           <div className="sm-strip">
             <span className="st">pending_lock</span><span className="ar">确认 →</span>
@@ -398,15 +364,18 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         <Drawer title={`锁仓单清单 · ${dd.label}`} sub={dd.note} onClose={() => setDrawer(null)}
           footer={<button className="l-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => setDrawer(null)}>关闭</button>}>
           <table className="l-tbl">
-            <thead><tr><th>position</th><th>用户</th><th>产品档</th><th>金额</th><th>备注</th></tr></thead>
+            <thead><tr><th>position</th><th>用户</th><th>产品档</th><th>本金</th><th>锁定 APY / 罚款</th><th>锁定 / 解锁</th><th>预计利息</th><th>备注</th></tr></thead>
             <tbody>
-              {dd.rows.length === 0 && <tr><td colSpan={5} style={{ color: "var(--ink-3)", textAlign: "center", padding: 18 }}>暂无该状态锁仓单</td></tr>}
+              {dd.rows.length === 0 && <tr><td colSpan={8} style={{ color: "var(--ink-3)", textAlign: "center", padding: 18 }}>暂无该状态锁仓单</td></tr>}
               {dd.rows.map((row) => (
                 <tr key={row.positionNo}>
                   <td className="mono" style={{ color: "var(--ink)" }}>{row.positionNo}</td>
                   <td><span className="mono">{row.userNo}</span><div className="tiny" style={{ color: "var(--ink-3)" }}>{row.nickname}</div></td>
                   <td>{row.tier}</td>
                   <td className="mono" style={{ fontWeight: 700 }}>{row.amount}</td>
+                  <td className="mono">{row.lockedApy}<div className="tiny" style={{ color: "var(--ink-3)" }}>{row.earlyPenalty}</div></td>
+                  <td className="mono" style={{ fontSize: 11 }}>{row.lockedAt}<div className="tiny" style={{ color: "var(--ink-3)" }}>{row.unlockAt}</div></td>
+                  <td className="mono">{row.estimatedInterest}</td>
                   <td style={{ fontSize: 12, color: "var(--ink-3)" }}>{row.note}</td>
                 </tr>
               ))}

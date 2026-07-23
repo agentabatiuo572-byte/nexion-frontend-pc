@@ -147,7 +147,7 @@ export const GLOSSARY: Record<string, string> = {
   "折抵": "用旧设备的折价金额抵扣新机款",
   "salvage": "旧设备回收时的剩余价值(残值)",
   "残值": "旧设备折抵时按比例计算的剩余价值",
-  "minHoldingMonths": "设备买后必须持有的最短月数(防套利倒机)",
+  "minHoldingMonths": "已退役字段；现行置换不再按持有月数拦截，K2 改读已完成置换事实",
   "Proof-of-Compute": "算力工作量证明 —— 证明设备真在干活的收据",
   "heartbeat": "设备定时上报「我还在线」的信号",
   "心跳": "设备定时上报在线状态的信号",

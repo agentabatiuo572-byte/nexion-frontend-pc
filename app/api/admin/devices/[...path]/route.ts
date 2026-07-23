@@ -25,17 +25,23 @@ function backendPath(parts: string[]) {
   const isPhoneTierCollection = parts[0] === "phone-tiers" && parts.length === 1;
   const isPhoneTier = parts[0] === "phone-tiers" && parts.length === 2 && !!parts[1];
   const isOrderCollection = parts[0] === "orders" && parts.length === 1;
+  const isOrderItem = parts[0] === "orders" && parts.length === 2 && !!parts[1];
   const isOrderAction = parts[0] === "orders" && parts.length === 3 && !!parts[1] && (parts[2] === "refund" || parts[2] === "cancel" || parts[2] === "terminal" || parts[2] === "state");
   const isE3Overview = parts[0] === "e3" && parts[1] === "overview" && parts.length === 2;
   const isE3Config = parts[0] === "e3" && parts[1] === "config" && parts.length === 2;
   const isE3TradeinOverview = parts[0] === "e3" && parts[1] === "tradein" && parts[2] === "overview" && parts.length === 3;
   const isE3TradeinAction = parts[0] === "e3" && parts[1] === "tradein" && parts.length === 3 && ["recycle", "replace", "deactivate"].includes(parts[2]);
   const isDeviceRestore = parts.length === 2 && /^[1-9]\d*$/.test(parts[0]) && parts[1] === "restore";
+  const isE5DeviceAction = parts.length === 2 && /^[1-9]\d*$/.test(parts[0])
+    && ["activate", "force-activate", "deactivate", "unbind"].includes(parts[1]);
+  const isE5BatchAction = parts[0] === "batch" && parts.length === 2
+    && (parts[1] === "pause" || parts[1] === "resume");
   const isDatacenterCollection = parts[0] === "datacenters" && parts.length === 1;
   const isDatacenterItem = parts[0] === "datacenters" && parts.length === 2 && !!parts[1];
   const isDatacenterAction = parts[0] === "datacenters" && parts.length === 3 && !!parts[1] && (parts[2] === "pause" || parts[2] === "resume");
-  // E6 算力与设备配置:GET 聚合视图(compute-config)+ PATCH 单参数(compute-config/params/{paramKey})。
+  // E6 算力与设备配置:GET 聚合视图 + PATCH 原子批量参数 + 兼容单参数入口。
   const isComputeConfig = parts[0] === "compute-config" && parts.length === 1;
+  const isComputeConfigParamsBatch = parts[0] === "compute-config" && parts[1] === "params" && parts.length === 2;
   const isComputeConfigParam = parts[0] === "compute-config" && parts[1] === "params" && parts.length === 3 && !!parts[2];
   if (
     !isOverview
@@ -50,16 +56,20 @@ function backendPath(parts: string[]) {
     && !isPhoneTierCollection
     && !isPhoneTier
     && !isOrderCollection
+    && !isOrderItem
     && !isOrderAction
     && !isE3Overview
     && !isE3Config
     && !isE3TradeinOverview
     && !isE3TradeinAction
     && !isDeviceRestore
+    && !isE5DeviceAction
+    && !isE5BatchAction
     && !isDatacenterCollection
     && !isDatacenterItem
     && !isDatacenterAction
     && !isComputeConfig
+    && !isComputeConfigParamsBatch
     && !isComputeConfigParam
   ) {
     return null;

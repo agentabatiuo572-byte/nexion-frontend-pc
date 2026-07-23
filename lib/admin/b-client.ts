@@ -539,12 +539,17 @@ export async function fetchBDomainDashboard() {
   return dashboard;
 }
 
-export async function acknowledgeBDomainAlert(alertId: string, reason: string, operator: string) {
+export async function acknowledgeBDomainAlert(
+  alertId: string,
+  reason: string,
+  operator: string,
+  idempotencyKey?: string,
+) {
   const response = await fetch(`/api/admin/treasury/b-domain/alerts/${encodeURIComponent(alertId)}/ack`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": nextId("b-alert-ack"),
+      "Idempotency-Key": idempotencyKey || nextId("b-alert-ack"),
     },
     body: JSON.stringify({ reason, operator }),
     cache: "no-store",

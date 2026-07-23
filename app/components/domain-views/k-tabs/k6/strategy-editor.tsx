@@ -24,6 +24,13 @@ const ACTION_TYPES: StrategyActionType[] = ["BENIGN", "RECOMMEND", "REVERSAL_SES
 const CHANNEL_OPTIONS = ["official", "invite", "ad", "test", "internal"];
 const isReversal = (t: StrategyActionType): boolean => t === "REVERSAL_SESSION_EDGE" || t === "REVERSAL_IMMEDIATE";
 
+function actionForType(action: Strategy["action"], type: StrategyActionType): Strategy["action"] {
+  if (isReversal(type)) {
+    return { type, remoteUrlKey: action.remoteUrlKey ?? REMOTE_URL_KEYS[0]?.key };
+  }
+  return { type };
+}
+
 export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initial: Strategy; isNew: boolean; operatorId: string; onClose: () => void }) {
   const save = useJanusC2Store((st) => st.saveStrategy);
   const [s, setS] = useState<Strategy>(initial);
@@ -147,7 +154,7 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
           <div className="k6-form-row">
             <div className="k6-ovr-field" style={{ marginBottom: 0 }}>
               <label htmlFor="st-action">命中后动作</label>
-              <select id="st-action" className="k6-field" value={s.action.type} onChange={(e) => patch({ action: { ...s.action, type: e.target.value as StrategyActionType } })}>
+              <select id="st-action" className="k6-field" value={s.action.type} onChange={(e) => patch({ action: actionForType(s.action, e.target.value as StrategyActionType) })}>
                 {ACTION_TYPES.map((a) => <option key={a} value={a}>{ACTION_TYPE_LABEL[a]}</option>)}
               </select>
             </div>

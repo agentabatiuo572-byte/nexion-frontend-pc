@@ -151,6 +151,18 @@ export async function fetchJ3TamperConfigAlerts(): Promise<OpsDashboardAlert[]> 
   return payload.data.alerts.map((value, index) => normalizeAlert(value, index));
 }
 
+export async function fetchC2HighRiskAlerts(): Promise<OpsDashboardAlert[]> {
+  const response = await fetch("/api/admin/users/account-actions/alerts", { cache: "no-store" });
+  const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
+  if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
+    throw new Error(formatAdminApiError(payload?.message, `C2_ALERTS_${response.status}`));
+  }
+  if (!Array.isArray(payload.data.alerts)) {
+    throw new Error("C2_ALERTS_FIELD_REQUIRED:alerts");
+  }
+  return payload.data.alerts.map((value, index) => normalizeAlert(value, index));
+}
+
 type J1DutyAlertSnapshot = {
   alerts: OpsDashboardAlert[];
   error: string | null;
@@ -274,7 +286,36 @@ export function useJ3TamperConfigAlerts(enabled: boolean) {
   return snapshot;
 }
 
+export function useC2HighRiskAlerts(enabled: boolean) {
+  const [snapshot, setSnapshot] = useState<J1DutyAlertSnapshot>(EMPTY_J1_DUTY_ALERT_SNAPSHOT);
+  useEffect(() => {
+    if (!enabled) {
+      setSnapshot(EMPTY_J1_DUTY_ALERT_SNAPSHOT);
+      return undefined;
+    }
+    let alive = true;
+    const refresh = async () => {
+      try {
+        const alerts = await fetchC2HighRiskAlerts();
+        if (alive) setSnapshot({ alerts, error: null });
+      } catch {
+        if (alive) setSnapshot({ alerts: [], error: "C2 高风险账户告警暂时无法读取，请稍后重试" });
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [enabled]);
+  return snapshot;
+}
+
 export function opsAlertHref(alert: Pick<OpsDashboardAlert, "id" | "domain">) {
+  if (alert.domain === "C2" || alert.id.startsWith("C2-")) return "/users/actions";
   if (alert.domain === "J2" || alert.id.startsWith("J2-")) return "/emergency/geo-block";
   if (alert.domain === "J3" || alert.id.startsWith("J3-")) return "/emergency/tamper";
   if (alert.domain === "J") return "/emergency/kill-switch";

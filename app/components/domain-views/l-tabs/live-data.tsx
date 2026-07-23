@@ -73,14 +73,24 @@ export function kpiState(kpi: KpiRow, offset: number): "g" | "y" | "r" {
 export function dataState(ctx: LCtx, label: string) {
   if (ctx.biLoading) return `${label} 数据加载中...`;
   if (ctx.biError) return `${label} 数据加载失败 · ${ctx.biError}`;
-  return `${label} 暂无后端数据`;
+  return `${label} 后端已响应，但当前没有可展示的数据`;
 }
 
 export function LDataState({ ctx, label }: { ctx: LCtx; label: string }) {
+  const nextStep = ctx.biLoading
+    ? "请稍候，页面会在读取完成后自动更新。"
+    : ctx.biError
+      ? "请先重试；若仍失败，请根据错误信息检查后端服务与当前账号权限。"
+      : "请先刷新数据；若仍为空，说明对应权威数据源尚未产生记录或尚未接入本模块。";
   return (
     <section className="l-card">
       <div className="l-b">
-        <div className="ltint warn" style={{ fontSize: 12 }}>{dataState(ctx, label)}</div>
+        <div className="ltint warn" style={{ fontSize: 12 }}>
+          <b>{dataState(ctx, label)}</b> · {nextStep}
+          {!ctx.biLoading && ctx.reloadBi && (
+            <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void ctx.reloadBi?.()}>重新读取</button>
+          )}
+        </div>
       </div>
     </section>
   );

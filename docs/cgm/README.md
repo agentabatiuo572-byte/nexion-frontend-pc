@@ -1,6 +1,6 @@
 # CGM — Control Granularity Matrix(字段级控制矩阵)
 
-运营后台「最细 1:1」控制的**驱动 + 验收**单一真源。三层控制文档中的**字段级第三层**:
+运营后台「最细 1:1」控制的字段级历史清单。**本目录是 2026-06 Batch 0 生成快照，不再是 E3 的实现或验收权威**；E3 当前口径必须读取 `../PRD/specs/FEAT-DEV01-task-capacity-schedule.md` 与 `../PRD/specs/FEAT-DEV02-tradein-ladder.md`，快照中的 `salvage/minHoldingMonths/degrade*` 行均视为退役，等待下一次全量再生成。
 
 | 层 | 文档 | 粒度 |
 |---|---|---|

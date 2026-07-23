@@ -8,7 +8,7 @@
  * A 域三铁律(A2 实装,server-canonical 镜像):
  *  ① append-only — 审计日志只导出不改/删,导出按钮仍需操作确认(强制留痕)。无 endpoint = 无 UI;
  *  ② reason-required — 所有高敏动作提交前必须填操作理由,弹窗校验不通过不写 store;
- *  ③ 确认即执行 + 幂等 — 确认成功 toast 含「Idempotency-Key 24h dedup」提示,失败回 pending 零副作用。
+ *  ③ 确认即执行 + 幂等 — 同一命令 24 小时内重复提交不重复生效，失败时保持待处理且目标域零副作用。
  *
  * 真写键(A.*):
  *  A.appr.<id>.status(approved / rejected / withdrawn)·
@@ -26,15 +26,30 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataListPager, Drawer, useDataListPager } from "../design-kit";
 import {
   approveA2Operation,
+  createA2CommandKey,
   exportA2Audit,
   fetchA2Overview,
   rejectA2Operation,
   updateA2MechanismParam,
   type A2AuditDomain,
+  type A2AuditFilter,
   type A2OperationRow,
   type A2OperationType,
   type A2Overview,
 } from "@/lib/admin/a2-client";
+import {
+  A2_AUDIT_DOMAINS,
+  canAccessA2Export,
+  canAccessA2Write,
+  matchesA2AuditFilter,
+  matchesA2OperationRole,
+  normalizeA2AuditFilter,
+  parseA2FilterQuery,
+  parseA2ReasonMin,
+  parseA2SchemaVersion,
+  validateA2MechanismValue,
+  validateA2AuditFilterRange,
+} from "@/lib/admin/a2-policy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
 import type { ACtx } from "./types";
@@ -63,13 +78,14 @@ const OPERATOR_CHIPS: { key: QOperator; label: string }[] = [
   { key: "超管", label: "超管" },
 ];
 
+const DOMAIN_NAMES: Record<A2AuditDomain, string> = {
+  A: "平台", B: "总览", C: "用户", D: "资金", E: "设备", F: "分销",
+  G: "金融产品", H: "增长", I: "内容", J: "应急", K: "风控", L: "数据", M: "客服",
+};
+
 const DOMAIN_CHIPS: { key: DomainFilter; label: string }[] = [
   { key: "all", label: "全部" },
-  { key: "D", label: "资金 D" },
-  { key: "C", label: "用户 C" },
-  { key: "H", label: "节奏 H" },
-  { key: "I", label: "内容 I" },
-  { key: "A", label: "基座 A" },
+  ...A2_AUDIT_DOMAINS.map((domain) => ({ key: domain, label: `${domain} ${DOMAIN_NAMES[domain]}` })),
 ];
 
 const HIST_TONE: Record<string, "ok" | "bad" | "dim" | "warn"> = {
@@ -80,20 +96,11 @@ const HIST_TONE: Record<string, "ok" | "bad" | "dim" | "warn"> = {
 };
 
 const HIST_LABEL: Record<string, string> = {
-  approved: "approved",
-  rejected: "rejected",
-  withdrawn: "withdrawn",
-  expired: "expired",
+  approved: "已执行",
+  rejected: "已取消",
+  withdrawn: "已撤回",
+  expired: "已过期",
 };
-
-function pad2(n: number): string {
-  return String(Math.max(0, Math.floor(n))).padStart(2, "0");
-}
-
-function fmtHMS(seconds: number): string {
-  const s = Math.max(0, seconds);
-  return `${pad2(Math.floor(s / 3600))}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
-}
 
 type OperationMarker = {
   key: string;
@@ -127,7 +134,7 @@ function operationMarkers(w: A2OperationRow): OperationMarker[] {
 /* ────────────────── 主组件 ────────────────── */
 
 export function A2Audit({ ctx }: { ctx: ACtx }) {
-  const { toast, openActionConfirm, openConfirm } = ctx;
+  const { toast, openActionConfirm } = ctx;
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const session = useAdminAuth((s) => s.session);
   const principal = {
@@ -136,25 +143,48 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
     authorities: session?.authorities ?? [],
   } as AuthPrincipal;
   const canApprove = canApprovePending(principal);
+  const canExport = canAccessA2Export(principal.authorities);
+  const canWrite = canAccessA2Write(principal.authorities);
   const [overview, setOverview] = useState<A2Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [filterDraft, setFilterDraft] = useState<A2AuditFilter>({ domain: "all" });
+  const [appliedFilter, setAppliedFilter] = useState<A2AuditFilter>({});
+  const [routeFilterReady, setRouteFilterReady] = useState(false);
 
-  const refreshOverview = useCallback(async () => {
+  const loadOverview = useCallback(async (filter: A2AuditFilter) => {
+    setLoading(true);
     try {
       setLoadError(null);
-      const next = await fetchA2Overview();
+      const next = await fetchA2Overview(filter);
       setOverview(next);
+      return next;
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "A2_OVERVIEW_LOAD_FAILED");
+      setOverview(null);
+      const message = error instanceof Error ? error.message : "A2_OVERVIEW_LOAD_FAILED";
+      setLoadError(message);
+      throw error;
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void refreshOverview();
-  }, [refreshOverview]);
+    const routeFilter = parseA2FilterQuery(window.location.search);
+    setFilterDraft({ domain: routeFilter.domain ?? "all", ...routeFilter });
+    setAppliedFilter(routeFilter);
+    setRouteFilterReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!routeFilterReady) return;
+    void loadOverview(appliedFilter).catch(() => undefined);
+  }, [appliedFilter, loadOverview, routeFilterReady]);
+
+  const refreshOverview = useCallback(
+    () => loadOverview(appliedFilter),
+    [appliedFilter, loadOverview],
+  );
 
   const stats = overview?.stats ?? {
     pendingTickets: 0,
@@ -171,22 +201,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const operationHistory = overview?.operationHistory ?? [];
   const mechanismParams = overview?.mechanismParams ?? [];
   const confirmCategories = overview?.confirmCategories ?? [];
-
-  /* 应急 SLA 倒计时(初始 42:10,每秒 -1) */
-  const [sosSec, setSosSec] = useState<number>(42 * 60 + 10);
-  useEffect(() => {
-    const id = setInterval(() => setSosSec((s) => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, []);
+  const reasonMin = parseA2ReasonMin(mechanismParams.find((p) => p.key === "ttl")?.value);
 
   /* 高敏动作过滤 + 分页 */
   const [qType, setQType] = useState<QType>("all");
   const [qOperator, setQOperator] = useState<QOperator>("all");
   const [qPage, setQPage] = useState(0);
   const [qPerPage, setQPerPage] = useState(10);
-
-  /* 审计日志域筛 */
-  const [dFlt, setDFlt] = useState<DomainFilter>("all");
 
   /* drawers */
   const [woIdx, setWoIdx] = useState<number | null>(null);
@@ -200,6 +221,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   /* ────────────────── 高敏动作 ────────────────── */
 
   const approveWo = (w: A2OperationRow) => {
+    const commandKey = createA2CommandKey(`a2-approve-${w.id}`);
     openActionConfirm({
       action: <>确认执行 · {w.id}({w.action})</>,
       detail: (
@@ -207,51 +229,61 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           对象 <b>{w.obj}</b> · 提案 <b>{w.before} → {w.after}</b> · 发起人 {w.operator}。
           操作理由必填,确认后一次性事务写入目标域并落审计
           {w.sos ? (<>,<b> 应急轨:确认后立即生效并通知 J 域值班</b></>) : null}。<br />
-          执行门槛:<b>{w.roleGate}</b> · 防重号 Idempotency-Key 24h dedup。
+          执行门槛:<b>{w.roleGate}</b> · 同一次提交在 24 小时内不会重复生效。
         </>
       ),
       amplifies: w.amplifies,
+      reasonMin,
+      reasonMax: 200,
       run: async (reason) => {
         try {
-          await approveA2Operation(w.id, reason, operator);
-          toast(`${w.id} 已执行 · 后端接口已写入工单状态 + 审计留痕 · idempotency 24h dedup`);
-          await refreshOverview();
+          await approveA2Operation(w.id, reason, commandKey);
+          const next = await refreshOverview();
+          const confirmed = next.operationQueue.some((item) => item.id === w.id && item.status === "approved")
+            || next.operationHistory.some((item) => item.id === w.id && item.st === "approved");
+          if (!confirmed) throw new Error("A2_OPERATION_WRITE_NOT_CONFIRMED");
+          toast(`${w.id} 已执行 · 已重新读取服务端状态与审计记录`);
         } catch (error) {
           toast(`执行失败:${error instanceof Error ? error.message : "A2_OPERATION_APPROVE_FAILED"}`);
+          throw error;
         }
       },
     });
   };
 
   const rejectWo = (w: A2OperationRow) => {
-    openConfirm({
+    const commandKey = createA2CommandKey(`a2-reject-${w.id}`);
+    openActionConfirm({
       action: <>取消执行 · {w.id} · {w.action}</>,
       detail: (
         <>
-          取消后该动作转 <b>rejected</b>(终态),原因必填并随审计永久留痕。需要再做只能重新发起新的操作确认。
+          取消后该动作进入<b>已取消</b>终态，原因必填并随审计永久留痕。需要再做只能重新发起新的操作确认。
         </>
       ),
-      chips: [
-        ["取消 = 终态 · 不可逆", "ready"],
-        ["原因必填 · 写入审计", "ready"],
-      ],
-      reason: true,
-      okLabel: "确认取消",
+      amplifies: false,
+      reasonMin,
+      reasonMax: 200,
       run: async (reason) => {
         try {
-          await rejectA2Operation(w.id, reason, operator);
-          toast(`${w.id} 已取消 · 后端接口已写入工单状态 + 原因留痕`);
-          await refreshOverview();
+          await rejectA2Operation(w.id, reason, commandKey);
+          const next = await refreshOverview();
+          const confirmed = next.operationQueue.some((item) => item.id === w.id && item.status === "rejected")
+            || next.operationHistory.some((item) => item.id === w.id && item.st === "rejected");
+          if (!confirmed) throw new Error("A2_OPERATION_WRITE_NOT_CONFIRMED");
+          toast(`${w.id} 已取消 · 已重新读取服务端状态与审计记录`);
         } catch (error) {
           toast(`取消失败:${error instanceof Error ? error.message : "A2_OPERATION_REJECT_FAILED"}`);
+          throw error;
         }
       },
     });
   };
 
   /* ────────────────── 审计日志:导出(仍需操作确认 · 强制留痕) ────────────────── */
-  const exportAudit = () =>
-    openConfirm({
+  const exportAudit = () => {
+    if (!canExport || filteredLogRows.length === 0) return;
+    const commandKey = createA2CommandKey("a2-audit-export");
+    openActionConfirm({
       action: "导出审计日志",
       detail: (
         <>
@@ -259,25 +291,26 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           可导角色:只读审计(全量)/ 财务·风控(本域)。
         </>
       ),
-      chips: [
-        ["脱敏导出 · 仍需操作确认", "done"],
-        ["导出动作留审计", "ready"],
-      ],
-      okLabel: "导出",
+      amplifies: false,
+      reasonMin,
+      reasonMax: 200,
       run: async (reason) => {
         try {
-          const file = await exportA2Audit(reason, { domain: dFlt });
-          toast(`已下载 ${file.fileName} · 导出动作已由后端留痕`);
+          const file = await exportA2Audit(reason, appliedFilter, commandKey);
           await refreshOverview();
+          toast(`已下载 ${file.fileName} · 导出动作已留痕并重新读取服务端记录`);
         } catch (error) {
           toast(`导出失败:${error instanceof Error ? error.message : "A2_AUDIT_EXPORT_FAILED"}`);
+          throw error;
         }
       },
     });
+  };
 
   /* ────────────────── 机制参数:理由最短长度 / 保留期 / schema 调整 ────────────────── */
   const adjReasonMin = () => {
     const cur = mechanismParams.find((p) => p.key === "ttl")?.value ?? "8 字";
+    const commandKey = createA2CommandKey("a2-mechanism-ttl");
     openActionConfirm({
       action: "操作理由最短长度",
       detail: (
@@ -287,19 +320,24 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: cur, unit: "字" },
+      reasonMin,
+      reasonMax: 200,
+      edit: { kind: "number", current: cur, unit: "字", min: 8, max: 200, step: 1 },
       run: async (reason, v) => {
-        const val = (v || "").trim();
-        if (!val) {
-          toast("拒绝:理由最短长度不能为空");
-          return;
+        const validation = validateA2MechanismValue("ttl", v ?? "");
+        if (!validation.ok) {
+          toast(`拒绝:${validation.message}`);
+          throw new Error(validation.message);
         }
         try {
-          await updateA2MechanismParam("ttl", val, reason, operator);
-          toast(`理由最短长度已更新为 ${val}`);
-          await refreshOverview();
+          await updateA2MechanismParam("ttl", validation.value, reason, commandKey);
+          const next = await refreshOverview();
+          const readback = next.mechanismParams.find((item) => item.key === "ttl")?.value.match(/\d+/)?.[0];
+          if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
+          toast(`理由最短长度已更新为 ${validation.value} 字，并完成服务端回读`);
         } catch (error) {
           toast(`调整失败:${error instanceof Error ? error.message : "A2_MECHANISM_PARAM_UPDATE_FAILED"}`);
+          throw error;
         }
       },
     });
@@ -307,6 +345,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   const adjRet = () => {
     const cur = mechanismParams.find((p) => p.key === "retention")?.value ?? "13 个月";
+    const commandKey = createA2CommandKey("a2-mechanism-retention");
     openActionConfirm({
       action: "审计日志保留期",
       detail: (
@@ -316,26 +355,32 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </>
       ),
       amplifies: false,
-      edit: { kind: "text", current: cur, unit: "月" },
+      reasonMin,
+      reasonMax: 200,
+      edit: { kind: "number", current: cur, unit: "月", min: 13, max: 36, step: 1 },
       run: async (reason, v) => {
-        const val = (v || "").trim();
-        if (!val) {
-          toast("拒绝:保留期不能为空");
-          return;
+        const validation = validateA2MechanismValue("retention", v ?? "");
+        if (!validation.ok) {
+          toast(`拒绝:${validation.message}`);
+          throw new Error(validation.message);
         }
         try {
-          await updateA2MechanismParam("retention", val, reason, operator);
-          toast(`日志保留期已更新为 ${val}`);
-          await refreshOverview();
+          await updateA2MechanismParam("retention", validation.value, reason, commandKey);
+          const next = await refreshOverview();
+          const readback = next.mechanismParams.find((item) => item.key === "retention")?.value.match(/\d+/)?.[0];
+          if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
+          toast(`日志保留期已更新为 ${validation.value} 个月，并完成服务端回读`);
         } catch (error) {
           toast(`调整失败:${error instanceof Error ? error.message : "A2_MECHANISM_PARAM_UPDATE_FAILED"}`);
+          throw error;
         }
       },
     });
   };
 
   const adjSchema = () => {
-    const cur = mechanismParams.find((p) => p.key === "schema")?.value ?? "统一 schema · v3";
+    const cur = parseA2SchemaVersion(mechanismParams.find((p) => p.key === "schema")?.value) || "v3";
+    const commandKey = createA2CommandKey("a2-mechanism-schema");
     openActionConfirm({
       action: "审计/事件字段结构变更",
       detail: (
@@ -345,19 +390,24 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         </>
       ),
       amplifies: false,
+      reasonMin,
+      reasonMax: 200,
       edit: { kind: "text", current: cur, unit: "" },
       run: async (reason, v) => {
-        const val = (v || "").trim();
-        if (!val) {
-          toast("拒绝:schema 版本不能为空");
-          return;
+        const validation = validateA2MechanismValue("schema", v ?? "");
+        if (!validation.ok) {
+          toast(`拒绝:${validation.message}`);
+          throw new Error(validation.message);
         }
         try {
-          await updateA2MechanismParam("schema", val, reason, operator);
-          toast(`schema 变更已提交注册确认:${val}`);
-          await refreshOverview();
+          await updateA2MechanismParam("schema", validation.value, reason, commandKey);
+          const next = await refreshOverview();
+          const readback = parseA2SchemaVersion(next.mechanismParams.find((item) => item.key === "schema")?.value);
+          if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
+          toast(`字段结构版本已更新为 ${validation.value}，并完成服务端回读`);
         } catch (error) {
           toast(`变更失败:${error instanceof Error ? error.message : "A2_MECHANISM_PARAM_UPDATE_FAILED"}`);
+          throw error;
         }
       },
     });
@@ -365,9 +415,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
   /* ────────────────── 工单过滤 + 排序(fund 置顶 · stable) ────────────────── */
   const filteredQ = useMemo(() => {
-    const arr = operationQueue.filter((w) => {
+    const arr = operationQueue.filter((w) => w.status === "pending").filter((w) => {
       const tOk = qType === "all" || w.type === qType || (qType === "sos" && w.sos);
-      const mOk = qOperator === "all" || w.operator.includes(qOperator);
+      const mOk = qOperator === "all" || matchesA2OperationRole(w.operatorRole, qOperator);
       return tOk && mOk;
     });
     // fund 置顶 stable:用 indexOf 锚定原序,fund 排前
@@ -390,15 +440,25 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
   const qRows = filteredQ.slice(qStart, qEnd);
 
   /* ────────────────── 审计日志过滤 ────────────────── */
-  const logRows = useMemo(
-    () => auditLogs.filter((l) => dFlt === "all" || l.domain === dFlt),
-    [auditLogs, dFlt],
+  const filteredLogRows = useMemo(
+    () => auditLogs.filter((l) => matchesA2AuditFilter(l, appliedFilter)),
+    [appliedFilter, auditLogs],
   );
-  const auditLogPager = useDataListPager(logRows, { initialPageSize: 10, resetKey: dFlt });
+  const auditFilterKey = JSON.stringify(appliedFilter);
+  const auditLogPager = useDataListPager(filteredLogRows, { initialPageSize: 10, resetKey: auditFilterKey });
   const historyPager = useDataListPager(operationHistory, {
     initialPageSize: 4,
     resetKey: operationHistory.length,
   });
+  const applyAuditFilters = () => {
+    const next = normalizeA2AuditFilter(filterDraft);
+    const rangeError = validateA2AuditFilterRange(next);
+    if (rangeError) {
+      toast(rangeError);
+      return;
+    }
+    setAppliedFilter(next);
+  };
 
   /* ────────────────── 渲染 ────────────────── */
 
@@ -414,12 +474,12 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <div className="f-stat danger">
           <div className="k">应急快速轨</div>
           <div className="v">{stats.sosTickets} 件</div>
-          <div className="sub">J 域熔断恢复 · SLA <span className="mono">{fmtHMS(sosSec)}</span></div>
+          <div className="sub">J 域熔断恢复 · 时限以服务端工单记录为准</div>
         </div>
         <div className="f-stat">
           <div className="k">今日审计事件</div>
           <div className="v">{stats.todayAuditEvents.toLocaleString()} 条</div>
-          <div className="sub">全部 admin.* 动作统一落这里</div>
+          <div className="sub">后台操作统一进入不可修改的审计记录</div>
         </div>
         <div className="f-stat cyan">
           <div className="k">本周执行 / 取消</div>
@@ -430,14 +490,19 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
 
       {(loading || loadError) && (
         <div className={`atint${loadError ? " warn" : ""}`} style={{ margin: "12px 0" }}>
-          {loadError ? `A2 接口读取失败:${loadError}` : "正在读取 /api/admin/platform/audit/overview。"}
+          {loadError ? (
+            <>
+              审计中心读取失败，旧数据已清空，所有操作均已停用：{loadError}
+              <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void refreshOverview().catch(() => undefined)}>重新读取</button>
+            </>
+          ) : "正在读取审计中心服务端数据。"}
         </div>
       )}
 
       {/* ───── (b) 高敏操作动态 ───── */}
       <section className="l-card">
         <div className="l-h">
-          <span className="ttl">高敏操作动态(b)· pending</span>
+          <span className="ttl">高敏操作动态(b)· 待处理</span>
           <span className="sub">· 大额/资金类置顶 · 点击执行会打开独立操作确认弹窗,理由必填后立即生效</span>
           <div className="r chips">
             <span className="lb">筛</span>
@@ -468,7 +533,13 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               </tr>
             </thead>
             <tbody>
-              {qRows.map((w) => {
+              {qRows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ color: "var(--ink-4)", fontSize: 12, textAlign: "center" }}>
+                    当前筛选条件下没有高敏操作
+                  </td>
+                </tr>
+              ) : qRows.map((w) => {
                 const idx = operationQueue.indexOf(w);
                 const status = effStatus(w);
                 const isFinal = status !== "pending";
@@ -561,21 +632,55 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">审计日志(a)· 只追加</span>
-            <span className="sub">· 按域/操作者/动作/时间筛 · 点行看全字段</span>
+            <span className="sub">· 域、操作者、动作、对象与时间使用同一服务端筛选 · 点行看全字段</span>
             <div className="r">
-              <button className="l-btn sm" onClick={exportAudit}>导出(脱敏)</button>
+              {canExport && (
+                <button
+                  className="l-btn sm"
+                  disabled={loading || !!loadError || filteredLogRows.length === 0}
+                  title={filteredLogRows.length === 0 ? "当前筛选没有可导出的记录" : undefined}
+                  onClick={exportAudit}
+                >导出（脱敏）</button>
+              )}
             </div>
           </div>
           <div className="l-b" style={{ padding: "10px 20px 0" }}>
-            <div className="chips" style={{ marginBottom: 4 }}>
-              <span className="lb">域</span>
-              {DOMAIN_CHIPS.map((c) => (
-                <button
-                  key={c.key}
-                  className={`chip${dFlt === c.key ? " sel" : ""}`}
-                  onClick={() => setDFlt(c.key)}
-                >{c.label}</button>
-              ))}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(150px, 1fr))", gap: 8, marginBottom: 8 }}>
+              <label className="field" style={{ margin: 0 }}>
+                <span>业务域</span>
+                <select
+                  className="fld"
+                  aria-label="审计业务域"
+                  value={filterDraft.domain ?? "all"}
+                  onChange={(event) => setFilterDraft((current) => ({ ...current, domain: event.target.value as DomainFilter }))}
+                >
+                  {DOMAIN_CHIPS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="field" style={{ margin: 0 }}>
+                <span>操作者</span>
+                <input className="fld" aria-label="审计操作者" value={filterDraft.operator ?? ""} onChange={(event) => setFilterDraft((current) => ({ ...current, operator: event.target.value }))} placeholder="账号或姓名" />
+              </label>
+              <label className="field" style={{ margin: 0 }}>
+                <span>动作</span>
+                <input className="fld" aria-label="审计动作" value={filterDraft.action ?? ""} onChange={(event) => setFilterDraft((current) => ({ ...current, action: event.target.value }))} placeholder="动作关键词" />
+              </label>
+              <label className="field" style={{ margin: 0 }}>
+                <span>对象</span>
+                <input className="fld" aria-label="审计对象" value={filterDraft.object ?? ""} onChange={(event) => setFilterDraft((current) => ({ ...current, object: event.target.value }))} placeholder="对象编号或类型" />
+              </label>
+              <label className="field" style={{ margin: 0 }}>
+                <span>开始时间</span>
+                <input className="fld" type="datetime-local" aria-label="审计开始时间" value={filterDraft.startTime ?? ""} onChange={(event) => setFilterDraft((current) => ({ ...current, startTime: event.target.value }))} />
+              </label>
+              <label className="field" style={{ margin: 0 }}>
+                <span>结束时间</span>
+                <input className="fld" type="datetime-local" aria-label="审计结束时间" value={filterDraft.endTime ?? ""} onChange={(event) => setFilterDraft((current) => ({ ...current, endTime: event.target.value }))} />
+              </label>
+            </div>
+            <div className="row" style={{ gap: 8, justifyContent: "flex-end", marginBottom: 8 }}>
+              <button className="l-btn sm" disabled={loading} onClick={() => { setFilterDraft({ domain: "all" }); setAppliedFilter({}); }}>重置</button>
+              <button className="l-btn sm mc" disabled={loading} onClick={applyAuditFilters}>查询</button>
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -618,8 +723,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           />
           <div className="l-b" style={{ paddingTop: 8 }}>
             <div className="atint">
-              可见性按角色自动裁剪:客服仅看自己操作过或当前服务的用户;财务看资金域、风控看风控域;
-              只读审计可全量查询并脱敏导出。日志只能看不能改、不能删。
+              可见性按角色自动裁剪:客服仅看自己的操作记录;财务看资金域、风控看风控域;
+              只读审计可全量查询并脱敏导出。页面最多展示当前筛选最近 500 条;导出超过 5000 条时需缩小筛选范围。
+              日志只能看不能改、不能删。
             </div>
           </div>
         </section>
@@ -685,7 +791,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   <div className="a-vrow" key={p.key}>
                     <span className="nm">{p.name}<small>{p.sub}</small></span>
                     <span className="v">{p.value}</span>
-                    <button className="l-btn sm mc" onClick={adjReasonMin}>调整</button>
+                    {canWrite && <button className="l-btn sm mc" onClick={adjReasonMin}>调整</button>}
                   </div>
                 );
               }
@@ -694,7 +800,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   <div className="a-vrow" key={p.key}>
                     <span className="nm">{p.name}<small>{p.sub}</small></span>
                     <span className="v">{p.value}</span>
-                    <button className="l-btn sm mc" onClick={adjRet}>调整</button>
+                    {canWrite && <button className="l-btn sm mc" onClick={adjRet}>调整</button>}
                   </div>
                 );
               }
@@ -712,7 +818,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                 <div className="a-vrow" key={p.key}>
                   <span className="nm">{p.name}<small>{p.sub}</small></span>
                   <span className="v">{p.value}</span>
-                  <button className="l-btn sm mc" onClick={adjSchema}>变更(注册)</button>
+                  {canWrite && <button className="l-btn sm mc" onClick={adjSchema}>变更（注册）</button>}
                 </div>
               );
             })}
@@ -726,7 +832,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
         事件叫什么名、带什么字段归事件中台(A4)定义,这页负责落库与可查。
         <b> 执行门槛</b>:资金类 = 财务/超管;风控与账户类 = 风控/超管;
         内容类 = 内容/超管;账号治理与系统参数 = 仅超管。
-        应急轨动作(J 域熔断/恢复)按 SLA 倒计时置顶,超时升级告警到超管。
+        应急轨动作（J 域熔断/恢复）按服务端记录的处理时限置顶，超时升级告警到超管。
       </p>
 
       {/* ───── 高敏动作详情 Drawer ───── */}
@@ -771,8 +877,8 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
               <div className="kv"><span className="k">操作理由</span><span className="v" style={{ maxWidth: 360, textAlign: "right" }}>{w.reason}</span></div>
               <div className="kv"><span className="k">记录时间</span><span className="v">{w.ts}{w.sos ? "(应急 SLA)" : "(理由必填留痕)"}</span></div>
               <div className="kv"><span className="k">执行门槛</span><span className="v">{w.roleGate}</span></div>
-              <div className="kv"><span className="k">防重</span><span className="v">执行携 Idempotency-Key · 24h dedup · 重复提交不重复生效</span></div>
-              <div className="kv"><span className="k">原子性</span><span className="v" style={{ maxWidth: 320, textAlign: "right" }}>确认执行 = 一次事务写目标域;失败则动作保持 pending,目标域零副作用</span></div>
+              <div className="kv"><span className="k">防止重复执行</span><span className="v">同一次提交在 24 小时内重复发送也只会生效一次</span></div>
+              <div className="kv"><span className="k">原子性</span><span className="v" style={{ maxWidth: 320, textAlign: "right" }}>确认执行使用一次事务写入目标域；失败则动作保持待处理，目标域不会产生部分结果</span></div>
             </div>
             <div className="atint" style={{ marginTop: 14 }}>
               {w.amplifies ? (

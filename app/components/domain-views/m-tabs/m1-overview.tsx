@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * M1 客服中心总览 — 全派生只读看板(helpdesk 设计稿布局),零新 mock。
+ * M1 客服中心总览 — 指标只读、坐席与负载授权维护(helpdesk 设计稿布局),零新 mock。
  * 数字单源派生自 pget(I.support.* / I.session.*),与 M2/M3/M4 写的真写键同源。
  * 4 KPI(可点进台)+ 分类 SLA 达成与超时风险 + 坐席负载;调整负载 = 高敏配置(必填理由 → setParam + logAudit)。
  */
@@ -12,7 +12,6 @@ import {
   type SessionConvo,
   type SupportSla,
   type SupportTicket,
-  type SupportTicketCategory,
 } from "./data";
 import { Icon, type IconName, Modal, Toggle } from "../design-kit";
 import { catCN, MAvatar } from "./hd-ui";
@@ -26,6 +25,7 @@ const SLA_KEY = "I.support.sla";
 const CONVO_KEY = "I.session.convos";
 const AGENT_LIST_KEY = "I.support.agents";
 const ASSIGNMENT_LIST_KEY = "I.support.advisorAssignments";
+const LOAD_WARNINGS_KEY = "I.support.loadWarnings";
 const LOAD_KEY = (f: string) => `I.support.load.${f}`;
 const AGENT_CAP_KEY = (name: string) => `I.support.agent.${name}.cap`;
 const AGENT_BUSY_KEY = (name: string) => `I.support.agent.${name}.busy`;
@@ -78,12 +78,24 @@ function loadConfigFromBackendParams(pget: (key: string) => string | undefined):
   return { autoBalance, defaultCap, burstCap, warnPct, quietHourBalance, overflowQueue };
 }
 
-function catRisk(tickets: SupportTicket[], cat: SupportTicketCategory): { lvl: string; pct: number; n: number } {
-  const open = tickets.filter((t) => t.category === cat && (t.status === "open" || t.status === "in_progress" || t.status === "pending_user"));
-  if (open.some((t) => t.priority === "urgent")) return { lvl: "超时风险", pct: 105, n: open.length };
-  if (open.some((t) => t.priority === "high")) return { lvl: "临近", pct: 82, n: open.length };
-  if (open.length) return { lvl: "达成", pct: 40, n: open.length };
-  return { lvl: "达成", pct: 12, n: 0 };
+function isActiveTicket(ticket: SupportTicket): boolean {
+  return ticket.status === "open" || ticket.status === "in_progress" || ticket.status === "pending_user";
+}
+
+function slaRisk(tickets: SupportTicket[], rule: SupportSla, now = Date.now()): { lvl: string; pct: number; n: number } {
+  const active = tickets.filter((ticket) => ticket.category === rule.category && isActiveTicket(ticket));
+  if (active.length === 0) return { lvl: "无在途", pct: 0, n: 0 };
+  const maxRatio = active.reduce((highest, ticket) => {
+    const createdAt = Number(ticket.createdAt) || now;
+    const firstAgentReplyAt = ticket.messages.find((message) => message.author === "agent")?.ts;
+    const firstResponseElapsed = Math.max(0, (firstAgentReplyAt || now) - createdAt);
+    const resolutionElapsed = Math.max(0, now - createdAt);
+    const firstResponseRatio = firstResponseElapsed / Math.max(1, rule.firstResponseMins * 60_000);
+    const resolutionRatio = resolutionElapsed / Math.max(1, rule.resolutionHours * 3_600_000);
+    return Math.max(highest, firstResponseRatio, resolutionRatio);
+  }, 0);
+  const pct = Math.round(maxRatio * 100);
+  return { lvl: pct >= 100 ? "已超时" : pct >= 80 ? "临近" : "达成", pct, n: active.length };
 }
 
 function SlaBar({ pct, tone }: { pct: number; tone: string }) {
@@ -134,6 +146,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const operatorName = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const currentRole = useAdminAuth((s) => s.session?.role ?? s.role);
   const currentAdminId = useAdminAuth((s) => s.session?.adminId ?? 0);
+  const authorities = useAdminAuth((s) => s.session?.authorities);
   const currentRoleKey = String(currentRole);
 
   const tickets = useMemo(() => parseParamArray<SupportTicket>(pget(TICKET_KEY), []), [ctx.params, pget]);
@@ -141,11 +154,14 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const convos = useMemo(() => parseParamArray<SessionConvo>(pget(CONVO_KEY), []), [ctx.params, pget]);
   const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
   const advisorAssignments = useMemo(() => parseParamArray<MAdvisorAssignment>(pget(ASSIGNMENT_LIST_KEY), []), [ctx.params, pget]);
+  const loadWarnings = useMemo(() => parseParamArray<string>(pget(LOAD_WARNINGS_KEY), []), [ctx.params, pget]);
   const currentSupportAgent = useMemo(
     () => supportAgents.find((agent) => agent.adminId === currentAdminId) ?? null,
     [currentAdminId, supportAgents],
   );
-  const canManageSupportSeats = currentRoleKey === "superadmin" || currentRoleKey === "super" || isSupportSupervisor(currentSupportAgent);
+  const isSuperAdmin = currentRoleKey === "superadmin" || currentRoleKey === "super";
+  const canWriteM1 = isSuperAdmin || Boolean(authorities?.includes("service_m1_write"));
+  const canManageSupportSeats = canWriteM1 && (isSuperAdmin || isSupportSupervisor(currentSupportAgent));
   const seatAssignmentAgents = useMemo(
     () => supportAgents.filter((agent) => agent.adminId > 0 && agent.enabled),
     [supportAgents],
@@ -163,8 +179,11 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
 
   const loadCfg = useMemo(() => loadConfigFromBackendParams(pget), [ctx.params, pget]);
 
+  const knownAgentNames = new Set(supportAgents.map((agent) => agent.name));
+  const unassignedLoadCount = tickets.filter((ticket) => isActiveTicket(ticket) && !knownAgentNames.has(ticket.owner)).length
+    + convos.filter((convo) => convo.status === "open" && !knownAgentNames.has(convo.owner)).length;
   const loadRows = supportAgents.map((a) => {
-    const openTk = tickets.filter((t) => t.owner === a.name && (t.status === "open" || t.status === "in_progress")).length;
+    const openTk = tickets.filter((t) => t.owner === a.name && isActiveTicket(t)).length;
     const openCv = convos.filter((c) => c.owner === a.name && c.status === "open").length;
     const assignments = advisorAssignments.filter((row) => row.agentAdminId === a.adminId && row.status === "ACTIVE").length;
     const total = openTk + openCv;
@@ -177,10 +196,10 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const maxLoad = Math.max(1, ...loadRows.map((l) => Math.max(l.total, l.cap)));
 
   const kpis: Array<{ label: string; val: number; sub: string; icon: IconName; tone: boolean; to: string }> = [
-    { label: "进行中工单", val: openTickets, sub: "待处理 + 处理中", icon: "doc", tone: true, to: "/service/tickets" },
-    { label: "待用户补充", val: pendingUser, sub: "等待用户回传", icon: "clock", tone: false, to: "/service/tickets" },
-    { label: "进行中会话", val: liveSessions, sub: "实时接待中", icon: "users", tone: true, to: "/service/sessions" },
-    { label: "待坐席回复", val: pendingReplies, sub: "用户已发待回", icon: "bell", tone: false, to: "/service/sessions" },
+    { label: "进行中工单", val: openTickets, sub: "待处理 + 处理中", icon: "doc", tone: true, to: "/service/tickets?scope=active" },
+    { label: "待用户补充", val: pendingUser, sub: "等待用户回传", icon: "clock", tone: false, to: "/service/tickets?scope=active&status=pending_user" },
+    { label: "进行中会话", val: liveSessions, sub: "实时接待中", icon: "users", tone: true, to: "/service/sessions?seg=active" },
+    { label: "待坐席回复", val: pendingReplies, sub: "用户已发待回", icon: "bell", tone: false, to: "/service/sessions?seg=unread" },
   ];
 
   return (
@@ -208,6 +227,13 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
           进会话台
         </Link>
       </div>
+
+      {loadWarnings.length > 0 && (
+        <div className="itint" role="status">
+          <div style={{ fontSize: 13 }}>部分信息暂未同步:{loadWarnings.join("、")}</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>其余可用信息仍会正常显示;请稍后刷新重试。</div>
+        </div>
+      )}
 
       <div className="m1-kpis">
         {kpis.map((k) => (
@@ -237,20 +263,20 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
           </div>
           <div style={{ padding: "0 18px 14px" }}>
             {sla.map((row) => {
-              const r = catRisk(tickets, row.category);
-              const tone = r.lvl === "超时风险" ? "var(--m-urgent)" : r.lvl === "临近" ? "var(--m-high)" : "var(--m-ok)";
+              const r = slaRisk(tickets, row);
+              const tone = r.lvl === "已超时" ? "var(--m-urgent)" : r.lvl === "临近" ? "var(--m-high)" : "var(--m-ok)";
               return (
                 <div key={row.category} className="m1-sla-row">
                   <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>
-                      {catCN(row.category)} <span className="dim2 mono" style={{ fontWeight: 400, fontSize: 11 }}>{row.category}</span>
+                      {catCN(row.category)}
                     </span>
-                    <span className="dim2" style={{ fontSize: 11.5 }}>在途 {r.n} · {row.queue}</span>
+                    <span className="dim2" style={{ fontSize: 11.5 }}>在途 {r.n}</span>
                   </div>
                   <SlaBar pct={r.pct} tone={tone} />
                   <div style={{ textAlign: "right" }}>
                     <span style={{ fontSize: 12, color: tone, fontWeight: 500 }}>{r.lvl}</span>
-                    <div className="mono dim2" style={{ fontSize: 11 }}>{row.firstResponseMins}m / {row.resolutionHours}h</div>
+                    <div className="dim2" style={{ fontSize: 11 }}>首响 {row.firstResponseMins} 分钟 / 解决 {row.resolutionHours} 小时</div>
                   </div>
                 </div>
               );
@@ -271,15 +297,16 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
               )}
               {!loadCfg && (
                 <span className="chip" style={{ height: 18, fontSize: 11.5, color: "var(--m-high)", background: "var(--m-high-soft)", border: "none" }}>
-                  后端配置未返回
+                  负载策略暂不可用 · 请刷新重试
                 </span>
               )}
               <span className="sp" />
               <button
                 type="button"
                 className="btn btn-sec btn-sm"
-                onClick={() => (loadCfg ? setShowLoad(true) : ctx.toast("M1 负载配置未从后端返回,请先检查 /content/tickets/load-config"))}
-                disabled={!loadCfg}
+                onClick={() => (loadCfg && canManageSupportSeats ? setShowLoad(true) : ctx.toast(loadCfg ? "当前账号无权调整坐席负载" : "负载策略暂不可用,请刷新页面后重试"))}
+                disabled={!loadCfg || !canManageSupportSeats}
+                title={!loadCfg ? "负载策略暂不可用,请刷新页面后重试" : canManageSupportSeats ? "调整坐席容量与自动平衡策略" : "只有总管理员或客服主管可以调整"}
               >
                 <Icon name="gauge" size={16} />
                 调整负载
@@ -287,6 +314,12 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
             </div>
           </div>
           <div style={{ padding: "0 18px 16px" }}>
+            {unassignedLoadCount > 0 && (
+              <div className="itint" style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 13 }}>待归属或名册外工作 {unassignedLoadCount} 项</div>
+                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>这些在途工单或会话不会计入具体坐席利用率;请到工单台或会话台分配负责人。</div>
+              </div>
+            )}
             {loadRows.length === 0 ? (
               <div className="itint" style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 13 }}>暂无客服坐席</div>
@@ -342,7 +375,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
       </div>
 
       <p className="dim2" style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>
-        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>口径</b>:本页数字来自后端工单、会话、SLA 与坐席负载配置。坐席名单来自 A1 客服角色管理员,客服主管 / 专属客服 / 通用客服在 M1 业务表配置;负载从工单 / 会话 owner 派生,负载调度策略经「调整负载」高敏弹窗落库。
+        <b style={{ color: "var(--ink-3)", fontWeight: 500 }}>使用说明</b>:概况数字和 SLA 进度仅用于查看;进入工单台或会话台处理用户问题。只有总管理员或客服主管能调整坐席与负载策略,所有调整都会记录操作人和理由。
       </p>
 
       {showLoad && loadCfg && <LoadConfigModal ctx={ctx} loadCfg={loadCfg} rows={loadRows} onClose={() => setShowLoad(false)} />}
@@ -384,12 +417,20 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   const [caps, setCaps] = useState<Record<string, string>>(() => Object.fromEntries(rows.map((r) => [r.id, String(r.cap)])));
   const [busyMap, setBusyMap] = useState<Record<string, boolean>>(() => Object.fromEntries(rows.map((r) => [r.id, r.busy])));
   const [reason, setReason] = useState("");
+  const [noChangeMessage, setNoChangeMessage] = useState("");
+  const [writeOutcomeUnknown, setWriteOutcomeUnknown] = useState(false);
+  const [saving, setSaving] = useState<"config" | "rebalance" | null>(null);
   const reasonOk = reason.trim().length >= 6;
+
+  useEffect(() => {
+    setNoChangeMessage("");
+    setWriteOutcomeUnknown(false);
+  }, [autoBalance, defaultCap, burstCap, warnPct, quietHour, overflow, caps, busyMap]);
 
   const clamp = (v: string, lo: number, hi: number) => String(Math.max(lo, Math.min(hi, Math.round(Number(v) || 0))));
 
-  function save() {
-    if (!reasonOk) return;
+  async function save() {
+    if (!reasonOk || saving) return;
     const r = reason.trim();
     let changed = autoBalance !== loadCfg.autoBalance
       || quietHour !== loadCfg.quietHourBalance
@@ -404,38 +445,59 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       if (Number(nc) !== r2.cap || busyMap[r2.id] !== r2.busy) changed = true;
     }
     if (!changed) {
-      ctx.toast("负载调度未变更");
-      onClose();
+      setNoChangeMessage("当前配置没有变化,无需保存。");
+      ctx.toast("当前配置没有变化,无需保存");
       return;
     }
-    ctx.setParam("I.support.load.__bulk", JSON.stringify({
-      autoBalance,
-      defaultCap: Number(clamp(defaultCap, 0, 40)),
-      burstCap: Number(clamp(burstCap, 0, 40)),
-      warnPct: Number(clamp(warnPct, 50, 100)),
-      quietHourBalance: quietHour,
-      overflowQueue: overflow.trim(),
-      agentState,
-    }), { action: "M1 坐席负载调度", reason: r });
-    ctx.toast("负载调度已提交 · 后端留档");
-    onClose();
+    setSaving("config");
+    setWriteOutcomeUnknown(false);
+    try {
+      const ok = await ctx.setParam("I.support.load.__bulk", JSON.stringify({
+        autoBalance,
+        defaultCap: Number(clamp(defaultCap, 0, 40)),
+        burstCap: Number(clamp(burstCap, 0, 40)),
+        warnPct: Number(clamp(warnPct, 50, 100)),
+        quietHourBalance: quietHour,
+        overflowQueue: overflow.trim(),
+        agentState,
+      }), { action: "M1 坐席负载调度", reason: r });
+      if (!ok) {
+        setWriteOutcomeUnknown(true);
+        return;
+      }
+      ctx.toast("负载调度已提交 · 后端留档");
+      onClose();
+    } finally {
+      setSaving(null);
+    }
   }
 
-  function rebalance() {
+  async function rebalance() {
+    if (saving) return;
     if (!reasonOk) {
       ctx.toast("手动均衡需先填变更理由(≥6 字)");
       return;
     }
-    ctx.setParam("I.support.load.__rebalance", JSON.stringify(rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      cap: r.cap,
-      busy: r.busy,
-      total: r.total,
-      util: r.util,
-    }))), { action: "M1 坐席负载手动均衡", reason: reason.trim() });
-    ctx.toast("已触发一次手动均衡 · 后端留档");
-    onClose();
+    setSaving("rebalance");
+    setWriteOutcomeUnknown(false);
+    try {
+      const ok = await ctx.setParam("I.support.load.__rebalance", JSON.stringify(rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        cap: r.cap,
+        busy: r.busy,
+        total: r.total,
+        util: r.util,
+      }))), { action: "M1 坐席负载手动均衡", reason: reason.trim() });
+      if (!ok) {
+        setWriteOutcomeUnknown(true);
+        return;
+      }
+      ctx.toast("已触发一次手动均衡 · 后端留档");
+      onClose();
+    } finally {
+      setSaving(null);
+    }
   }
 
   const numField = (label: string, hint: string, val: string, set: (v: string) => void, min: number, max: number) => (
@@ -457,12 +519,24 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
             <Icon name="shield" size={13} />负载调度影响所有新单分配 · 变更与手动均衡均记入 A2 审计
           </span>
           <div className="spacer" style={{ flex: 1 }} />
-          <button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button>
-          <button type="button" className="btn btn-sec btn-sm" onClick={rebalance}>立即手动均衡</button>
-          <button type="button" className="btn btn-pri btn-sm" onClick={save} disabled={!reasonOk}>保存{!reasonOk ? " · 需填理由" : ""}</button>
+          <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={Boolean(saving)}>取消</button>
+          <button type="button" className="btn btn-sec btn-sm" onClick={rebalance} disabled={Boolean(saving)}>{saving === "rebalance" ? "提交中..." : "立即手动均衡"}</button>
+          <button type="button" className="btn btn-pri btn-sm" onClick={save} disabled={!reasonOk || Boolean(saving)}>{saving === "config" ? "提交中..." : writeOutcomeUnknown ? "使用同一命令重试" : `保存${!reasonOk ? " · 需填理由" : ""}`}</button>
         </div>
       }
     >
+      {noChangeMessage && (
+        <div className="itint" role="status" style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13 }}>{noChangeMessage}</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请修改至少一项配置后再保存,或点击取消返回。</div>
+        </div>
+      )}
+      {writeOutcomeUnknown && (
+        <div className="itint" role="alert" style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13 }}>写入失败或结果未知,输入已保留。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请使用同一命令重试;若仍失败,可取消后刷新核对服务器状态。</div>
+        </div>
+      )}
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div className="col" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div className="sub" style={{ fontWeight: 600 }}>全局策略</div>
@@ -646,7 +720,7 @@ function SupportSeatRoleModal({
       const userIds = assigningDedicated
         ? Array.from(new Set(bindableSelectedUsers.map(userIdOf).filter((userId) => userId > 0)))
         : [];
-      ctx.setParam("I.support.seatAssignment.__update", JSON.stringify({
+      const ok = await ctx.setParam("I.support.seatAssignment.__update", JSON.stringify({
         adminId: selected.adminId,
         position: targetPosition,
         serviceTypes: assigningDedicated ? ["advisor"] : ["support"],
@@ -659,6 +733,7 @@ function SupportSeatRoleModal({
         action: "M1 分配客服坐席",
         reason: reason.trim(),
       });
+      if (!ok) return;
       ctx.toast(`${selected.name} 已提交分配为 ${seatLabel(targetPosition)}${userIds.length ? `,绑定 ${userIds.length} 个用户` : ""}`);
       onClose();
     } catch (err) {
@@ -822,6 +897,8 @@ function SeatAssignmentModal({
   const [users, setUsers] = useState<User360Profile[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<User360Profile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [unbindingId, setUnbindingId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
   const agent = agents.find((row) => String(row.adminId) === agentAdminId) ?? agents[0] ?? null;
@@ -873,7 +950,7 @@ function SeatAssignmentModal({
     return userId > 0 && !boundUserIds.has(userId);
   });
   const reasonOk = reason.trim().length >= 6;
-  const canSave = Boolean(agent && agent.adminId > 0 && agentCanAssign && bindableSelectedUsers.length > 0 && reasonOk);
+  const canSave = Boolean(agent && agent.adminId > 0 && agentCanAssign && bindableSelectedUsers.length > 0 && reasonOk && !saving && unbindingId === null);
 
   useEffect(() => {
     let alive = true;
@@ -917,35 +994,47 @@ function SeatAssignmentModal({
     });
   };
 
-  const save = () => {
+  const save = async () => {
     if (!canSave || !agent) return;
     const userIds = Array.from(new Set(bindableSelectedUsers.map(userIdOf).filter((userId) => userId > 0)));
     if (userIds.length === 0) return;
-    ctx.setParam("I.support.advisorAssignment.__create", JSON.stringify({
-      adminId: agent.adminId,
-      userIds,
-    }), {
-      action: "M1 绑定专属客服服务用户",
-      reason: reason.trim(),
-    });
-    ctx.toast(`${agent.name} 已提交绑定 ${userIds.length} 个用户`);
-    onClose();
+    setSaving(true);
+    try {
+      const ok = await ctx.setParam("I.support.advisorAssignment.__create", JSON.stringify({
+        adminId: agent.adminId,
+        userIds,
+      }), {
+        action: "M1 绑定专属客服服务用户",
+        reason: reason.trim(),
+      });
+      if (!ok) return;
+      ctx.toast(`${agent.name} 已提交绑定 ${userIds.length} 个用户`);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const unbind = (assignment: MAdvisorAssignment) => {
-    if (!agent) return;
+  const unbind = async (assignment: MAdvisorAssignment) => {
+    if (!agent || saving || unbindingId !== null) return;
     if (!reasonOk) {
       ctx.toast("解绑需先填写变更理由(≥6 字)");
       return;
     }
-    ctx.setParam("I.support.advisorAssignment.__delete", JSON.stringify({
-      adminId: agent.adminId,
-      assignmentId: assignment.id,
-    }), {
-      action: "M1 解绑专属客服服务用户",
-      reason: reason.trim(),
-    });
-    ctx.toast(`${assignment.userNo || assignment.userId} 已提交解绑`);
+    setUnbindingId(assignment.id);
+    try {
+      const ok = await ctx.setParam("I.support.advisorAssignment.__delete", JSON.stringify({
+        adminId: agent.adminId,
+        assignmentId: assignment.id,
+      }), {
+        action: "M1 解绑专属客服服务用户",
+        reason: reason.trim(),
+      });
+      if (!ok) return;
+      ctx.toast(`${assignment.userNo || assignment.userId} 已提交解绑`);
+    } finally {
+      setUnbindingId(null);
+    }
   };
 
   return (
@@ -954,7 +1043,7 @@ function SeatAssignmentModal({
       icon="users"
       wide
       onClose={onClose}
-      footer={<><span className="sub">{agents.length === 0 ? "暂无专属客服,请先在 M1 分配专属客服坐席" : agentCanAssign ? `用户来自客服工作台查询 · 已选 ${bindableSelectedUsers.length} 人 · 已绑定 ${activeAssignments.length} 人` : `当前坐席未开启专属客服服务 · 可解绑已绑定 ${activeAssignments.length} 人`}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>绑定{canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启服务类型"}</button></>}
+      footer={<><span className="sub">{agents.length === 0 ? "暂无专属客服,请先在 M1 分配专属客服坐席" : agentCanAssign ? `用户来自客服工作台查询 · 已选 ${bindableSelectedUsers.length} 人 · 已绑定 ${activeAssignments.length} 人` : `当前坐席未开启专属客服服务 · 可解绑已绑定 ${activeAssignments.length} 人`}</span><span style={{ flex: 1 }} /><button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving || unbindingId !== null}>取消</button><button type="button" data-proof="m1-seat-assignment-save" className="btn btn-pri btn-sm" disabled={!canSave} onClick={save}>{saving ? "提交中..." : `绑定${canSave ? ` ${bindableSelectedUsers.length} 人` : agents.length === 0 ? " · 无专属客服" : agentCanAssign ? " · 待补全" : " · 需开启服务类型"}`}</button></>}
     >
       <div className="mcol" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 22 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1011,10 +1100,11 @@ function SeatAssignmentModal({
                           type="button"
                           data-proof="m1-seat-assignment-unbind"
                           className="btn btn-sec btn-sm"
+                          disabled={saving || unbindingId !== null}
                           title={reasonOk ? "解除此用户与当前专属客服的绑定" : "先填写变更理由(≥6 字)"}
                           onClick={() => unbind(row)}
                         >
-                          解绑
+                          {unbindingId === row.id ? "解绑中..." : "解绑"}
                         </button>
                       </div>
                     ))}

@@ -133,6 +133,7 @@ export interface G3History {
 }
 
 let requestSeq = 0;
+const pendingMutationKeys = new Map<string, string>();
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -249,11 +250,14 @@ function normalizeHistory(data: BackendHistory | null | undefined): G3History {
 
 async function g3Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
   const headers = new Headers(init?.headers);
+  const intent = init?.idempotencyPrefix ? `${init.idempotencyPrefix}:${String(init.body ?? "")}` : null;
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+    const key = pendingMutationKeys.get(intent!) ?? idempotencyKey(init.idempotencyPrefix);
+    pendingMutationKeys.set(intent!, key);
+    headers.set("Idempotency-Key", key);
   }
 
   const response = await fetch(`/api/admin/market${path}`, {
@@ -269,6 +273,8 @@ async function g3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     }
     throw new Error(formatAdminApiError(result?.message, `G3_REQUEST_FAILED_${response.status}`));
   }
+
+  if (intent) pendingMutationKeys.delete(intent);
 
   return result.data as T;
 }

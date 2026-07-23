@@ -3,6 +3,7 @@
 > 本文档是 Nexion 平台**运营控制后台**的产品需求文档。它是独立于前端用户产品 PRD(`Nexion_产品功能架构设计文档_v3.7.md`)的新建文档,只读引用后者、不修改后者。
 > 撰写/续写遵循 `nexion-admin-prd` skill 的「编写 → 审查 → 仲裁 → 修订 → 验收」多-agent 流水线。术语、边界与三条贯穿设计原则(双账本 / server-canonical / 埋点优先)见第 1 章。
 > §锚点(如 §9.11d、§13.4.1)均指向前端 PRD v3.7;**参数默认值以 `NEXION_12月节奏表.md` 12 月运营周期为权威,前端值仅作现状参考**(详见 §1.3「参数默认值锚定」)。
+> **E3/K2 后发裁定（2026-07-21）**：`specs/FEAT-DEV01-task-capacity-schedule.md` 与 `specs/FEAT-DEV02-tradein-ladder.md` 优先于本卷所有 `minHoldingMonths/salvage/degrade*` 旧口径。旧文字仅是历史方案，不再构成实现、验收或 K2 判定依据；K2 当前以 30 天内已完成置换次数叠加正数佣金/IN 向正数赠送事实识别置换套利簇。
 
 ## 目录(V1 核心批次)
 
@@ -410,7 +411,7 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 2. **(b) 高敏操作动态(实时 pending 队列 + 监控)**:高敏动作按**执行门槛分流**的实时视图——`[提案 ID / 动作类型 / 操作者(+角色) / 对象 / before → after / 理由 / 执行门槛 / 状态(pending / 已执行 / 已驳回) / 时间]`,pending 优先、资金类 / 大额置顶。两条路径:
    - **够权 → 确认即执行**:操作者对自己达到执行门槛的动作,在业务域经确认弹窗即时执行(不变),落审计并在本视图记为「已执行」;本视图对超管 / 各角色 lead 提供事后监督。
    - **不够权 → 入 pending 提案**:操作者发起超出自己执行门槛的高敏动作时不直接生效,而是携**可序列化的目标域写入描述符**入此队列(提案)+ 审计留痕;具备该动作执行门槛者(对应域 lead / 超管)在本视图**执行**(回放写回目标域 + 落审计 + 提案转「已执行」)或**驳回**(终态,理由必填)。**仍单人确认**——执行者一人(可为发起人本人若够权,或更高门槛执行者),不引入第二人会签。
-   每条高敏动作(直接执行或提案执行)落审计的同时向超管与对应域角色 lead **实时告警推送**(站内,可选邮件)。**应急轨(SOS)动作**(单档熔断恢复、kill-switch 恢复)额外进 SOS 计数与 SLA 倒计时视图。
+   每条高敏动作(直接执行或提案执行)落审计的同时向超管与对应域角色 lead **实时告警推送**(站内,可选邮件)。**应急轨(SOS)动作**(单档熔断恢复、kill-switch 恢复)额外进入 SOS 计数并置顶;A2 不自行推算或展示 SLA 倒计时,只有目标业务返回服务端权威处理时限时才可展示该时限。
 
 > **执行门槛分流业务流程(状态机)**:
 > `发起高敏动作` → server 判定发起人角色是否达该动作执行门槛(③ 清单逐动作门槛;超管恒达)
@@ -430,7 +431,7 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 |---|---|---|---|---|
 | 审计日志保留期 | **≥ 13 个月**(完整 12 月运营周期 + 1 月缓冲) | 13–36 个月 | 仅新对象(改后对新日志生效,不回溯清理) | 对齐 §2.4.9 事件留存期(13 个月);合规取证须覆盖整个运营周期 |
 | 高敏动作清单 | 见下方「高敏动作清单」 | 配置级(增删动作须发布) | 实时(改后对新动作生效) | 汇总各章标「确认弹窗」的动作;清单是确认弹窗 + 理由必填 + 高敏流水/告警的触发集 |
-| 理由最小长度 | **8 字** | 0–50 字 | 实时 | 高敏动作 reason 的 server 校验下限(空值 400 `REASON_REQUIRED`);过短理由削弱问责价值 |
+| 理由最小长度 | **8 字** | 8–200 字 | 实时 | 高敏动作 reason 的 server 动态校验下限(空值或短于当前下限返回 400 `REASON_REQUIRED`);过短理由削弱问责价值 |
 | 审计字段 schema | 统一 schema(见 ②a / ⑥) | 固定结构(扩展须 registry 注册) | 仅新对象 | 各章 ⑥ 段审计字段引用本结构;schema 变更经超管确认弹窗(A2-MD1,§2.4.8) |
 
 > **高敏动作清单(汇总各章标「确认弹窗」的动作)**:下列动作一律经业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`)执行,落 A2 审计并入高敏操作流水/实时告警;放大资金流出方向的动作额外前置 B1 覆盖率红线核验(低于红线 422)——
@@ -456,7 +457,7 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 | 动作 | 角色 | 确认弹窗 | 审计点 |
 |---|---|---|---|
 | 审计日志查询 | 全角色(各按可见性裁剪)/ 只读审计可全量 | 否(只读) | 元操作;查询本身留痕(operator / 查询范围) |
-| 审计日志导出 | 只读审计 / 财务 / 风控(按域裁剪) | 否(只读脱敏导出,直接生效留痕) | admin 审计事件(导出范围 / operator);PII 脱敏(§2.4.3) |
+| 审计日志导出 | 超管 / 只读审计 / 财务 / 风控(按域裁剪) | 是(理由 8–200 字) | admin 审计事件(导出范围 / operator / reason / Idempotency-Key);PII 脱敏(§2.4.3) |
 | 审计/埋点 schema 变更(新增事件/属性) | 仅超管 | A2-MD1(理由必填) | admin 审计事件(schema 前后版本 / operator / reason);呼应 §2.4.8 与 A4 |
 | 执行 pending 提案(②b) | 该动作执行门槛者(canExecute;对应域 lead / 超管;超管恒可) | A2-MD2(理由必填;放大流出前置 B1 红线 422) | `admin.proposal_executed` + 回放目标域写入审计(原动作 `admin.*` 事件) |
 | 驳回 pending 提案(②b) | 同上(该动作执行门槛者) | A2-MD3(理由必填) | `admin.proposal_rejected`(终态) |
@@ -472,7 +473,7 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 | 动作(同④) | 触发控件 + 位置 | 形态 | 可用态规则 | 点击行为 |
 |---|---|---|---|---|
 | 审计日志查询 | ②(a)筛选条 + 检索表 | 筛选控件 | 恒可用(可见域 server 裁剪) | 就地刷新列表,无弹窗 |
-| 审计日志导出 | ②(a)列表顶部「导出」 | 次按钮 | 仅只读审计/财务/风控渲染;当前筛选结果为空时置灰 | 直接生效:按当前筛选范围生成脱敏导出文件 + toast + 留痕 |
+| 审计日志导出 | ②(a)列表顶部「导出」 | 次按钮 | 仅超管/只读审计/财务/风控渲染;当前筛选结果为空时置灰 | 打开操作确认弹窗,理由按当前 A2 下限校验;确认后按当前筛选范围生成脱敏导出文件 + toast + 必达留痕 |
 | 高敏操作流水查看 | ②(b)导航 tab | 链接 | 超管/各角色 lead/只读审计可见 | 跳转流水视图,无弹窗 |
 | schema 变更 | A4 schema registry 视图(§2.4.8)「新增事件/属性」 | 次按钮 | 仅超管渲染 | 打开弹窗 A2-MD1 |
 | 执行 pending 提案 | ②(b)pending 行「执行」按钮 / 提案抽屉 footer | 主按钮 | 仅达该动作执行门槛者渲染;不够权显「待 <门槛>」徽标(无按钮) | 打开弹窗 A2-MD2 |
@@ -526,13 +527,14 @@ A2 是后台**一切高敏写操作的留痕与确认契约地基**——提供 
 - **成功反馈**:弹窗关闭;提案行转「已驳回」并移出 pending;目标域不变更;toast「已驳回 · 原因留痕」;`admin.proposal_rejected` 落 A2;实时告警发起人与超管。
 
 **⑤ 接口**
-- `GET /api/admin/audit?filter=` — 审计日志查询,`filter` 支持 `{ domain, operator, action, object_id, from_ts, to_ts, sensitive }`(`sensitive=true` 按高敏动作清单过滤,即 ②b 高敏操作流水的数据源);返回统一 schema 记录列表(见 ⑥);**各角色可见性由 server 强制 filter(非 UI 层可选)**——客服只能查 `{operator: self}` 或 `{object_id: 本次服务的用户 ID}` 的记录,其余角色按 domain 枚举做 server 强制白名单过滤,只读审计角色可全量查询无过滤限制;append-only,无写/删 endpoint。
+- `GET /api/admin/platform/audit/overview` / `GET /api/admin/platform/audit/logs` — A2 总览与审计日志查询;query 支持 `{ domain, operator, action, object, startTime, endTime }`,总览、列表、统计均使用同一组过滤条件;返回统一 schema 记录列表(见 ⑥)。**各角色可见性由 server 强制裁剪(非 UI 层可选)**——客服只能查 `{operator: self}` 的记录;财务=`D`、风控=`C/K`、增长=`H`、内容=`I`;超管与只读审计可全量查询。日志 append-only,不提供写/删 endpoint。
+- `POST /api/admin/platform/audit/exports` — 按与页面完全相同的当前过滤条件导出脱敏日志;仅超管/只读审计/财务/风控可用,body 携 `{ reason, filter }` 且 header 必携 `Idempotency-Key`;空结果返回 422,生成文件、必达审计与幂等结果处于同一事务,重试同一命令返回原文件且不重复审计。
 - **高敏动作端点说明**:高敏动作即各业务域的原执行 endpoint(无审批中转层)——各域写 endpoint 按 ④ 的执行契约统一约束:body 携 `{reason}`(server 校验非空 400 `REASON_REQUIRED`)、资金/资产类携 `Idempotency-Key`(server 24h dedup,重复提交同一 key 返回 200 + 原始结果)、放大流出方向前置 B1 红线核验(低于红线 422)、写入与审计同事务。
 - **执行门槛分流 pending 队列**(②b,backend-replaceable;原型以可序列化描述符在本地回放,真后台落库):
-  - `GET /api/admin/audit/pending` — pending 提案列表(发起人 / 对象 / before→after / 执行门槛 / 状态 / 可序列化 mutation 描述符);可见性同审计查询(server 强制 filter)。
-  - `POST /api/admin/audit/pending` — 发起入队(发起人未达执行门槛时由各域写动作触发;body 携 `{action, obj, before, after, mutations[], gate, reason}`;server 落库 + 实时告警具门槛者)。
-  - `POST /api/admin/audit/pending/:id/execute` — 具门槛者执行:server 复核 `canExecute`(否则 403 `EXEC_FORBIDDEN`)+ 仅 pending 态(否则 409 `PROPOSAL_NOT_PENDING`)+ 放大流出 B1 红线(否则 422);回放 mutations 写目标域 + 落审计,与目标域写入同事务、携 `Idempotency-Key`,提案转「已执行」。
-  - `POST /api/admin/audit/pending/:id/reject` — 具门槛者驳回(终态,body 携 `{reason}`,400 `REASON_REQUIRED`)。
+  - `GET /api/admin/platform/audit/overview` — 返回经服务端角色裁剪的 pending 提案、历史、审计日志与机制参数。
+  - `POST /api/admin/platform/audit/operations` — 发起入队(发起人未达执行门槛时由各域写动作触发;body 携 `{action, obj, beforeValue, afterValue, command, target(s), sourceDomain, reason}`;header 必携 `Idempotency-Key`;server 落库 + 实时告警具门槛者)。
+  - `POST /api/admin/platform/audit/operations/:id/approve` — 具门槛者执行:server 复核执行权限 + 仅 pending 态 + 放大流出 B1 红线;回放目标域写入 + 必达审计,与状态变更及 24 小时幂等结果同事务,提案转「已执行」。
+  - `POST /api/admin/platform/audit/operations/:id/reject` — 具门槛者驳回(终态,理由按当前 A2 动态下限校验,header 必携 `Idempotency-Key`)。
 
 server-canonical;审计写入服务端权威。**审计日志为 append-only**,服务端不提供任何更新 / 删除审计记录的 endpoint(§⑦)。
 
@@ -544,16 +546,16 @@ server-canonical;审计写入服务端权威。**审计日志为 append-only**,�
 | 审计日志导出 | ✅ | ✅(资金域脱敏) | ✅(风控域脱敏) | — | — | — | ✅(全量脱敏) |
 | 高敏操作流水查看 | ✅(全域) | ✅(资金类) | ✅(风控/账户类) | — | — | — | ✅(全量) |
 | schema 变更 | ✅ | — | — | — | — | — | — |
-| 执行 / 驳回 pending 提案(②b) | ✅(全域) | ✅(达门槛的资金/参数类) | ✅(达门槛的风控/账户类) | ✅(达门槛的节奏类) | ✅(达门槛的内容类) | — | — |
+| 执行 / 驳回 pending 提案(②b) | ✅(全域) | —(当前未落 lead 身份模型) | —(当前未落 lead 身份模型) | —(当前未落 lead 身份模型) | —(当前未落 lead 身份模型) | — | — |
 
-> **审计日志可见性 server-enforce**:各角色的审计日志可见性由 server 在 `GET /api/admin/audit` 强制 filter(非 UI 层可选)——客服只能查 `{operator: self}` 或 `{object_id: 本次服务的用户 ID}` 的记录;其余角色按 domain 枚举做 server 强制白名单过滤;只读审计角色可全量查询无过滤限制。高敏操作流水(②b)对各角色 lead 层级额外开放本域高敏动作的监督视图。
+> **审计日志可见性 server-enforce**:各角色的审计日志可见性由 server 在 `/api/admin/platform/audit/**` 强制裁剪(非 UI 层可选)——客服只能查 `{operator: self}` 的记录;财务=`D`、风控=`C/K`、增长=`H`、内容=`I`;只读审计与超管可全量查询。高敏操作流水沿用同一裁剪。当前 RBAC 尚无可验证的 lead/member 层级,因此执行/驳回权限暂只授予超管;完成 lead 身份模型与逐动作门槛校验前,不得把固定 A2 审批权扩给整个业务角色。
 
 **审计记录统一 schema(各章 ⑥ 段引用本结构)**:`操作者(operator)/ 角色(role)/ 动作(action)/ 对象(object:域 + 对象 ID)/ 前值(before)/ 后值(after)/ 理由(reason)/ IP / 时间(ts, ms)/ Idempotency-Key(资金/资产类动作)`。各功能子模块「⑥ 权限 & 审计」段声明的审计字段均为本 schema 的实例化(按动作补 action 枚举与对象类型)。只读审计角色可全量追溯本 schema 的所有记录(PII 字段脱敏,§2.4.3)。
 
 **⑦ 风控 & 联动**
 - **审计 append-only 不可删改(核心约束)**:审计日志服务端只追加、不更新、不删除;无任何角色(含超管)具备改写审计记录的能力(无对应 endpoint),保证取证链不可抵赖。这是 §1.8 原则二.2「审计可追溯」的服务端兑现。
 - **理由强制 + 即时审计(核心约束)**:所有高敏写 endpoint 由 server 强制 reason 非空(400 `REASON_REQUIRED`),动作与理由同事务落审计(§9.11d:授权与校验服务端权威,客户端不可绕);执行人、前后值、理由全量可追溯,问责链不依赖第二人复核。
-- **高敏写入的原子性 + 幂等(§9.11e)**:高敏动作触发的目标域写入(资金 / 资产 / 参数)经事务边界一次性提交、携 `Idempotency-Key` 去重,网络 retry 不致重复执行 / 重复扣款 / 重复入账;写入失败则目标域无副作用(§9.11e 原子性)。
+- **高敏写入的原子性 + 幂等(§9.11e)**:高敏动作触发的目标域写入(资金 / 资产 / 参数)以及 A2 的提案执行、驳回、机制调参与导出均经事务边界一次性提交、携 `Idempotency-Key` 做 24 小时去重并重放原结果;幂等请求哈希绑定已认证操作者、操作类型、目标与 payload,跨人或跨操作复用同一 key 返回冲突。网络 retry 不致重复执行 / 重复审计 / 重复导出;写入失败则目标域无副作用。
 - **审计字段统一 schema(各章 ⑥ 引用)**:各域审计字段以 A2 schema 为单源,避免各章自定义字段导致取证口径分裂;新动作的 action 枚举与对象类型在 A2 登记。
 - **高敏动作实时告警(单人执行的事后监督补偿)**:高敏动作落审计的同时,server 向超管与对应域角色 lead 推送实时告警(站内,可选邮件),并进入 ②b 高敏操作流水置顶;异常执行(高频/大额/非工作时段)可被快速发现与追责。
 - **执行门槛分流(单人确认,非双人会签)**:高敏动作发起人未达该动作执行门槛时,server 不直接执行而入 ②b pending 队列(提案);具门槛者(对应域 lead / 超管)执行回写或驳回。执行 / 驳回前 server **实时复核执行者门槛**(`canExecute`,超管恒可)+ 校验提案仍 pending(幂等:重复执行不二次回放 / 不重复审计)。这是「单人确认」在权限不足时的**路由补偿**——执行者仍一人,非双签;`pending 提案执行/驳回权 = 该动作执行门槛`(逐提案动态判定,非 A2 固定角色权)。**即时止血方向**(单档熔断、kill-switch 熔断、案件级拒绝 / 延迟 / 冻结)不入队,直接执行 + 留痕(止血不排队)。
@@ -563,7 +565,7 @@ server-canonical;审计写入服务端权威。**审计日志为 append-only**,�
 对齐 A4(§2.4.5 ⑥ admin family;审计为元事件):
 - **承载(元事件,非新增 KPI 事件)**:A2 是各域 `admin.*` 审计事件的**统一落库管道**——各章产生的 `admin.*` 审计事件(如 `admin.balance_adjusted` / `admin.user_frozen` / `admin.kyc_status_changed` / `admin.withdraw_*` / `admin.treasury_threshold_changed` / `admin.feature_flag_changed` / `admin.killswitch_toggled` 等)全部经 A2 落 append-only 审计库;**事件命名归 A4 §2.4.5 ⑥ admin family,A2 负责落库与可查询**,二者分工:A4 定义命名/属性 schema、A2 是这些事件的审计存储与高敏流水监控面。
 - **产生**:高敏操作流水(②b)与实时告警均为审计库的派生视图/推送,不产生新事件。(原复核工作流元事件 `admin.approval_expired` 已随 2026-06 操作确认决议废除注销,A4 registry 同步移除。)
-- **执行门槛分流元事件(新增)**:`admin.proposal_submitted`(发起人未达门槛,动作入 ②b pending 队列)/ `admin.proposal_executed`(具门槛者执行,携回放的目标域 `admin.*` 子事件)/ `admin.proposal_rejected`(驳回终态)——经 A4 §2.4.5 ⑥ admin family 注册、A2 落库;供高敏动作分流监督与 SOS SLA 看板派生。
+- **执行门槛分流元事件(新增)**:`admin.proposal_submitted`(发起人未达门槛,动作入 ②b pending 队列)/ `admin.proposal_executed`(具门槛者执行,携回放的目标域 `admin.*` 子事件)/ `admin.proposal_rejected`(驳回终态)——经 A4 §2.4.5 ⑥ admin family 注册、A2 落库;供高敏动作分流监督与 SOS 置顶计数派生,不在 A2 伪造 SLA 倒计时。
 - **注**:所有各章声明「须经 A4 schema registry 注册」的 `admin.*` 事件,其**注册命名空间归 A4(§2.4.5 ⑥)、审计落库与高敏流水归 A2**。
 
 ---
@@ -2519,13 +2521,13 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 **② 后台界面**
 五区:充值流水 + 渠道 PSP 对账 + fee_buffer 余额 + BIN attack 监控 + chargeback 处置。
 
-1. **充值流水列表**:全平台充值单 `[topupId / userId / 渠道(USDT-TRC20/USDT-ERC20/BTC/ETH/Card)/ 金额(USDT 到账额)/ 渠道实收(链上 amount 或 Card charged 含 fee)/ 状态 / PSP/链上 txHash / 提交时间 / 确认时间]`;状态分三类 tab——**待确认**(链上未达确认数 / Card processing/3ds 中)、**已确认**(入账完成、已写 bill + 更 `cumulativeDepositUsdt`)、**异常**(对账差异 / Card declined / chargeback / 超时未入账)。
+1. **充值流水列表**:全平台充值单 `[topupId / userId / 渠道(USDT-TRC20/USDT-ERC20/BTC/ETH/Card)/ 金额(USDT 到账额)/ 渠道实收(链上 amount 或 Card charged 含 fee)/ 状态 / PSP/链上 txHash / 提交时间 / 确认时间 / 入账时间]`;三个时间必须分列，未发生时分别展示「尚未确认 / 尚未入账」，不得用提交时间回填。状态分三类 tab——**待确认**(链上未达确认数 / Card processing/3ds 中)、**已确认**(入账完成、已写 bill + 更 `cumulativeDepositUsdt`)、**异常**(对账差异 / Card declined / chargeback / 超时未入账)。
 2. **各渠道 PSP 报表 vs 平台入账对账面**:按渠道(Card 走 Checkout.com/Stripe PSP 报表;链上走链上浏览器入账)对齐——左列 PSP/链上侧金额与笔数,右列平台入账侧金额与笔数,中间高亮**对账差异**(金额差 / 笔数差 / 单边挂账)。差异项进入异常 tab 待人工核销。
 3. **`fee_buffer` 余额卡**:Card 渠道 3.5% 手续费累计进入的风控备付金余额(§9.2.4:fee 进 `fee_buffer`,非利润口径)+ 流入流出明细(退款 / chargeback 从此扣)。
-4. **BIN attack 监控**:卡渠道失败重试热力——按 BIN 段 / IP / 设备指纹聚合的 24h 失败次数,命中"同卡 24h 内 ≥ 5 次失败"(§9.2.4)即标红、自动锁卡 24h;支持手动 BIN 锁卡 / 解锁。
-5. **chargeback 处置面**:已发生拒付的 Card 充值单列表 `[topupId / 金额 / chargeback 原因码 / 是否已入账 / 处置状态]`,触发余额追回 / fee_buffer 扣回 / 用户标记。
+4. **BIN attack 监控**:卡渠道失败重试热力——按 BIN 段 / IP / 设备指纹分别聚合 24h 失败次数,达到服务端阈值后创建带到期时间的真实风控锁;支持手动 BIN 锁定及对已有 BIN/IP/设备锁执行释放或重新锁定。页面显示服务端锁定到期时间,不以浏览器状态代替实际门禁。
+5. **chargeback 处置面**:已发生拒付的 Card 充值单列表 `[案件号 / userId / 金额 / chargeback 原因码 / 原始 D4 入账证据 / 处置状态]`,仅允许处置已找到原始入账分录的案件;处置在同一事务中完成余额追回、`cumulativeDepositUsdt` 核减、D4 追回分录、`fee_buffer` 扣回与不足额风险信号。用户与案件可分别深链 K 域和 D4 核对。
 
-数据来源:充值流水 / 入账由 A4 资金事件(§2.4.5 ③ `wallet.topup_initiated/topup_confirmed`)聚合,**server-canonical**(PSP webhook → server 入账,见 ⑦);对账差异由 PSP/链上报表与入账事件流比对得出。
+数据来源:充值业务事实由服务端充值单、支付记录、D4 钱包分录、D3 储备分录和独立 `fee_buffer` 分录共同闭环；PSP/链上侧事实通过独立签名接入的支付商账单保存，不从平台入账记录反推。A4 的 `wallet.topup_initiated/topup_confirmed` 仅用于事件治理和消费通知，不替代账务表。对账差异由支付商/链上独立记录与 D4 入账聚合比对得出，**server-canonical**(PSP webhook → server 原子入账,见 ⑦)。
 
 > **channel 枚举值口径**:界面展示采用前端 id 格式(USDT-TRC20 / USDT-ERC20 / BTC / ETH / Card)作可读标签;**枚举值实际定义以 A4 schema 为权威**(§2.4.8 schema registry),不混用缩写与全称。
 
@@ -2558,11 +2560,13 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 |---|---|---|---|
 | 渠道启停(per-channel kill:停用某充值渠道) | 财务(lead)/ 超管 | D1-MD1(理由必填) | `admin.topup_channel_toggled`(渠道 / enable\|disable / operator / reason) |
 | 主备 PSP 切换(Checkout.com ↔ Stripe) | 仅超管 | D1-MD2(理由必填) | `admin.topup_psp_switched`(from_psp / to_psp / operator / reason) |
-| BIN 锁卡 / 解锁 | 风控 / 财务 | 否(直接生效留痕;风控即时止血,解锁需附原因) | `admin.topup_bin_locked` / `admin.topup_bin_unlocked`(bin / fingerprint / reason / operator) |
-| 手动退款 chargeback(追回已入账 + fee_buffer 扣回) | 财务(lead)/ 超管 | D1-MD3(理由必填) | `admin.topup_chargeback_refunded`(topupId / amount / chargebackCode / operator / reason) |
-| 对账差异核销(单边挂账冲销 / 差异确认) | 财务(lead)/ 超管 | D1-MD4(理由必填) | `admin.deposit_reconciled`(差异额 / 核销方式 / operator / reason) |
+| 渠道费率 / 最小额调整 | 财务(lead)/ 超管 | D1-MD1(结构化数字+固定单位+理由必填) | `D1_TOPUP_CHANNEL_FEE_CHANGED` / `D1_TOPUP_CHANNEL_MIN_CHANGED` |
+| Card 风控参数调整 | 财务(lead)/ 超管 | D1-MD1(结构化数字+固定单位+理由必填) | `D1_TOPUP_CARD_RISK_PARAM_CHANGED` |
+| BIN / IP / 设备锁定或释放 | 风控 / 财务(lead)/ 超管 | 轻量确认(理由必填) | `D1_TOPUP_BIN_LOCKED` / `D1_TOPUP_BIN_UNLOCKED`(targetType / targetValue / expiresAt / reason / operator) |
+| chargeback 追回(追回已入账 + fee_buffer 扣回) | 财务(lead)/ 超管 | D1-MD3(凭证+勾选+理由必填) | `D1_TOPUP_CHARGEBACK_RECOVERED`(caseNo / amount / recovered / shortfall / evidence / operator / reason) |
+| 对账差异确认挂账 | 财务(lead)/ 超管 | D1-MD4(方式+凭证+理由必填) | `D1_TOPUP_RECONCILIATION_WRITEOFF`(差异额 / 核销方式 / evidence / operator / reason) |
 
-> **渠道启停 / PSP 切换 / chargeback 退款 / 差异核销 = 高敏动作**(§1.8 原则二.4,2026-06 操作确认决议):四类动作分别影响资金流入通道、全部 Card 入账路由、已入账资金追回与账本冲销,一律经业务专属确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`,8–200 字)由具备执行权的单人即时执行,落 A2 审计并实时告警超管 / 财务 lead;执行权按动作敏感度就高——渠道启停 / chargeback 退款 / 差异核销 = 财务(lead)/ 超管,主备 PSP 切换(影响全部 Card 入账路由,最高敏)= 仅超管。BIN 锁卡 / 解锁为风控即时止血动作,不入确认门(直接生效 + 留痕,解锁须附 reason)。
+> **D1 所有写动作均为高敏动作**:统一要求持久 `Idempotency-Key`、8–200 字理由、认证会话操作者与必达 A2 审计;相同键同载荷回放原结果,不同载荷拒绝。服务端执行精确动作权限,页面隐藏按钮不能替代后端门禁。渠道启停 / 费率 / 最小额 / Card 风控参数 / chargeback 追回 / 差异确认 = 财务(lead)/ 超管,主备 PSP 切换 = 仅超管,BIN/IP/设备锁 = 风控 / 财务(lead)/ 超管。任一资金、审计或幂等写入失败均整体回滚并失败关闭。
 
 **④a 交互与弹窗规格**
 
@@ -2572,9 +2576,9 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 |---|---|---|---|---|
 | 渠道启停 | ②2 渠道对账面各渠道卡「停用」/「启用」 | 警示按钮 / 次按钮 | 财务(lead)/超管渲染;按渠道当前态显示对向动作 | 打开弹窗 D1-MD1 |
 | 主备 PSP 切换 | ②2 Card 渠道卡「主备切换」 | 警示按钮 | 仅超管渲染 | 打开弹窗 D1-MD2 |
-| BIN 锁卡 / 解锁 | ②4 BIN attack 监控行内「锁卡」/「解锁」 | 行内按钮 | 风控/财务渲染;按 BIN 当前锁态显示对向动作 | 直接生效(解锁须轻量输入 reason;toast + 留痕,产 `admin.topup_bin_locked/unlocked`) |
-| chargeback 手动退款 | ②5 chargeback 处置面行内「退款追回」 | 行内警示按钮 | 财务(lead)/超管渲染;仅「已入账 + 未处置」单可用 | 打开弹窗 D1-MD3 |
-| 对账差异核销 | ②2 对账差异项 / ②1 异常 tab 行内「核销」 | 行内按钮 | 财务(lead)/超管渲染;仅差异 / 单边挂账项可用 | 打开弹窗 D1-MD4 |
+| BIN / IP / 设备锁定或释放 | ②4 风控锁监控行内「锁定」/「解锁」 | 行内按钮 | 按 `finance_d1_bin_lock` / `finance_d1_bin_unlock` 分别渲染;手动新增仅接受 6–8 位 BIN | 轻量确认 reason 后写服务端真实锁与到期时间 |
+| chargeback 追回 | ②5 chargeback 处置面行内「追回」 | 行内警示按钮 | `finance_d1_chargeback_refund`;仅「已入账 + 未处置」案件可用 | 打开弹窗 D1-MD3 |
+| 对账差异确认 | ②2 对账差异项行内「核销」 | 行内按钮 | `finance_d1_reconcile`;仅真实独立源存在差异且未确认项可用 | 打开弹窗 D1-MD4 |
 | 查看流水 / 对账 / fee_buffer | ②1–③ 导航 | 链接 | 按角色裁剪 | 跳转视图,无弹窗 |
 
 **(2) 弹窗规格**
@@ -2593,26 +2597,29 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 
 ##### [D1-MD3] chargeback 退款确认
 - **功能**:对已发生拒付的 Card 充值单执行余额追回 + fee_buffer 扣回 + 同事务核减 `cumulativeDepositUsdt`,确认即时生效。
-- **布局结构**:1. **信息区**:topupId / userId(链 C1)/ 金额 / chargeback 原因码 / 是否已入账 / 该用户 `cumulativeDepositUsdt` 现值与核减后值 / fee_buffer 现余额。2. **影响预览区**:server 预检该用户当前余额是否足额追回——不足额时警示「余额不足全额追回,差额转异常挂账(列差额)」;提示行「追回 / fee_buffer 扣回 / cumulative 核减为同一事务,原子完成(§9.11e)」。3. **输入区**:reason(必填,8–200 字)+ 确认勾选「我已核对 PSP chargeback 凭证」(未勾置灰)。4. **按钮区**:`[取消]` · `[确认退款追回]`(警示色;置灰条件 / loading;携 `Idempotency-Key`)。
+- **布局结构**:1. **信息区**:caseNo / userId(链 K1)/ 金额 / chargeback 原因码 / 原始 D4 入账状态 / fee_buffer 余额。2. **影响预览区**:说明「余额追回 / D4 追回分录 / fee_buffer 扣回 / cumulative 核减为同一事务」;余额或缓冲不足时,服务端按实际可追回额落 `PARTIAL_ANOMALY` 并向 K 域写风险信号,余额与累计充值不允许扣为负数。3. **输入区**:reason(必填,8–200 字)+ `evidenceRef`(PSP 拒付凭证,必填)+ 确认勾选「我已核对 PSP chargeback 凭证」(未勾置灰)。4. **按钮区**:`[取消]` · `[确认追回]`(警示色;loading 防双击;携 `Idempotency-Key`)。
 - **错误态**:409(该单已处置)/ 400 `REASON_REQUIRED` / 403 / 422(状态不满足追回条件,如未入账单)。
 - **成功反馈**:弹窗关闭;处置状态就地更新;toast「已追回 · 已记审计」;事件 `admin.topup_chargeback_refunded`;实时告警超管 / 财务 lead;联动用户标记(喂 K 域)。
 
 ##### [D1-MD4] 对账差异核销确认
-- **功能**:对单笔对账差异(金额差 / 笔数差 / 单边挂账)执行冲销或差异确认,确认即时生效并落账。
-- **布局结构**:1. **信息区**:差异项标识 / 渠道 / PSP(链上)侧金额 vs 平台入账侧金额 / 差异额与方向 / 关联 topupId(如有)。2. **影响预览区**:按核销方式预览账本影响——补记入账方向提示「将写入对应 bill 并更新 `cumulativeDepositUsdt`」,冲销方向提示「单边挂账将被冲销,不影响用户余额」。3. **输入区**:核销方式(下拉单选:补记入账 / 单边冲销 / 差异确认挂账)+ reason(必填,8–200 字)+ evidenceRef(凭证引用,必填)。4. **按钮区**:`[取消]` · `[确认核销]`(置灰条件 / loading;携 `Idempotency-Key`)。
+- **功能**:对渠道日聚合的真实差异执行「确认异常并挂账」,记录处理方式、凭证和幂等键;本动作不擅自补记用户余额或冲销 D4 历史。需要真实补记 / 冲正时必须进入对应业务单与 D4 专用记账闭环。
+- **布局结构**:1. **信息区**:渠道 / PSP 或链上独立报表侧金额与笔数 / D4 平台入账侧金额与笔数 / 差异额与方向。2. **影响预览区**:明确「本动作只确认异常挂账,不会改余额」,避免把核销标签误解为资金已修复。3. **输入区**:核销方式固定为 `CONFIRM_EXCEPTION` + reason(必填,8–200 字)+ evidenceRef(支付商账单 / 工单凭证,必填)。4. **按钮区**:`[取消]` · `[确认异常挂账]`(loading 防双击;携 `Idempotency-Key`)。
 - **错误态**:409(差异项已被他人核销)/ 400 `REASON_REQUIRED` / 403 / 422(核销方式与差异类型不匹配)。
 - **成功反馈**:弹窗关闭;差异项闭环并移出异常 tab;toast;事件 `admin.deposit_reconciled`;实时告警财务 lead;喂 L3 / L5。
 
 **⑤ 接口**
-- `GET /api/admin/topup/reconciliation` — 返回各渠道 PSP/链上侧 vs 平台入账侧对账 `{ byChannel:[{ channel, pspCount, pspAmountUsdt, ledgerCount, ledgerAmountUsdt, diffCount, diffAmountUsdt }], feeBufferUsdt, asOf }`,**server-canonical**(入账由事件流聚合);`channel` 枚举值以 A4 schema 为准。
-- `GET /api/admin/topup/flows?status=pending|confirmed|abnormal&channel=&cursor=` — 充值流水列表(游标分页)。
-- `POST /api/admin/topup/channel/:id/{enable|disable}`(渠道启停,确认弹窗 D1-MD1:body 携 `{reason}`,空值 400 `REASON_REQUIRED`,确认即生效)。
-- `POST /api/admin/topup/psp/switch`(主备 PSP 切换,确认弹窗 D1-MD2:body 携 reason;仅超管可调用,其余角色 403)。
-- `POST /api/admin/topup/bin/{lock|unlock}`(BIN 锁卡 / 解锁,`{ bin, fingerprint, reason }`;直接生效留痕,解锁 reason 必填)。
-- `POST /api/admin/topup/chargeback/:topupId/refund`(chargeback 退款,确认弹窗 D1-MD3:body 携 reason;`Idempotency-Key` 必带,防重复追回同一笔;追回 + fee_buffer 扣回 + cumulative 核减同一事务)。
-- `POST /api/admin/topup/reconcile`(对账差异核销,确认弹窗 D1-MD4:body 携 `{method, reason, evidenceRef}`;`Idempotency-Key` 必带)。
+- `GET /api/admin/finance/topup/overview` — 返回渠道结构化费率 / 最小额、Card 风控参数、独立支付商流水 vs D4 入账聚合、真实 fee buffer 账户、BIN/IP/设备锁与 chargeback 案件;空数据保持为空,不补造对平行。
+- `GET /api/admin/finance/topup/flows?status=pending|confirmed|abnormal&userId=&keyword=&pageNum=&pageSize=` — 服务端分页充值流水;`status` 空值表示全部,不得隐式映射为已确认。
+- `PATCH /api/admin/finance/topup/channels/:channel/{enabled|fee|min-amount}` — 渠道启停及结构化数值调整,body 分别携 `{enabled}` 或 `{numericValue,unit}` + reason。
+- `PATCH /api/admin/finance/topup/psp/primary` — 主备 PSP 切换,仅 `finance_d1_psp_switch`。
+- `PATCH /api/admin/finance/topup/card-risk/:key` — Card 风控参数结构化数字与固定单位更新。
+- `POST /api/admin/finance/topup/bin-locks` / `PATCH /api/admin/finance/topup/bin-locks/:target` — 新建手动 BIN 锁 / 按 BIN、IP、设备目标锁定或释放。
+- `POST /api/admin/finance/topup/chargebacks/:caseNo/refund` — chargeback 原子追回,body 携 `{evidenceRef,evidenceConfirmed:true,reason}`;`Idempotency-Key` 必带。
+- `POST /api/admin/finance/topup/reconciliation/:channel/writeoff` — 独立源差异确认,body 携 `{method:"CONFIRM_EXCEPTION",evidenceRef,reason}`;`Idempotency-Key` 必带。
+- `POST /openapi/v1/topups/card/{admission|settlements|failures|chargebacks}` — 支付网关 Card 生命周期接入；原始请求体必须使用 `X-Nexion-Payment-Timestamp` 与 `X-Nexion-Payment-Signature` 做 HMAC-SHA256 验签，时间偏差超过 5 分钟、签名缺失/错误或密钥未配置均在业务解析前失败关闭。
+- `POST /openapi/v1/topups/provider-statements` — PSP/链上独立账单接入；同样要求精确原始请求体签名，只接受渠道与 provider 白名单匹配、可核对凭证和 31 日内观察时间。接入只写独立对账记录，不得直接改变用户余额、累计充值或 D4/D3 分录。
 
-所有金额字段明示币种,时间戳为 ms epoch 服务端权威(§2.4.4 `ts`)。`topupId` 等业务 ID 由 server mint(§9.11d.2:client mint ID 可伪造);`channel` 枚举值采用 A4 schema 权威定义。
+所有金额字段同时返回结构化数字和单位；业务时间统一按 `Asia/Shanghai(+08:00)` 生成和比较，数据库连接会话固定同一时区，外部签名时间戳使用 Unix epoch。列表分别返回提交、确认、入账时间。`topupId` 等业务 ID 由 server mint；D1 成功响应必须通过字段、类型、枚举与单位校验；「无差异」的 `diff=null` 是合法空语义，页面规范化为空展示值，其他错误类型仍失败关闭。500 或畸形 200 时页面清空旧权威数据、禁用写动作并提供重试，不得以默认零值伪装成功。
 
 **⑥ 权限 & 审计**
 
@@ -2621,7 +2628,7 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 | 查看充值流水 / 对账 / fee_buffer | ✅ | ✅ | ✅ | — | — | ✅ |
 | 渠道启停 | ✅ | ✅(lead) | — | — | — | — |
 | 主备 PSP 切换 | ✅ | — | — | — | — | — |
-| BIN 锁卡 / 解锁 | ✅ | ✅ | ✅ | — | — | — |
+| BIN / IP / 设备锁定 / 解锁 | ✅ | ✅(lead) | ✅ | — | — | — |
 | chargeback 退款 | ✅ | ✅(lead) | — | — | — | — |
 | 对账差异核销 | ✅ | ✅(lead) | — | — | — | — |
 
@@ -2629,9 +2636,12 @@ C6 是**注册登录侧风控参数配置面**——OTP 配置、登录锁定配
 
 **⑦ 风控 & 联动**
 - **PSP webhook → server 入账(server-canonical)**:充值入账以**服务端处理 PSP webhook / 链上确认**为唯一真相源(§9.11c.1 Deposit write path:`POST /api/wallet/topup`,PSP webhook → server tx 写 bill + 更 `cumulativeDepositUsdt`)。客户端 `creditBalance` 仅 UI 渲染,**不作为入账权威**;`Bills 客户端 push 无 server 二次入账 = 伪造账单`(§9.11d.2),故入账与账单一律 server 记。
+- **Card 单事务闭环**:签名 settlement 在一个数据库事务内完成 admission 消费、支付记录、钱包余额、D4 入账分录、`cumulativeDepositUsdt`、D3 储备、`fee_buffer` 与必达审计/Outbox；任一环节失败整体回滚。同一事件和相同载荷只回放原结果，不得重复加钱。
 - **更新 `user.cumulativeDepositUsdt`(trade-in 资格源)**:每笔已确认充值由 server 经 `recordDeposit` 路径累加 `cumulativeDepositUsdt`(§9.11c.1;前端 `lib/store/index.ts` 该字段仅由 `recordDeposit` 写入,终身已确认 USDT 入金累计),该值是 E 域 trade-in 资格门槛源(§9.11c.1)。chargeback 退款须同步核减(核减须与 chargeback refund bill 在同一 server 事务内原子完成,§9.11e transaction boundary;`Idempotency-Key` 覆盖整笔事务,防止退款成功但 cumulative 未核减的半状态),避免拒付后仍保留 trade-in 资格。
+- **终态重试仍幂等**:chargeback 追回必须先按 `Idempotency-Key + 请求哈希` 查询已完成结果，再判断当前案件终态；因此网络超时后的相同请求即使案件已经成为 `CHARGEBACK_RECOVERED`，仍返回第一次成功结果且不重复写钱包、D4、D3、费率缓冲或恢复记录。不同载荷复用同键仍返回冲突。
+- **历史迁移只认可证明来源**:`cumulativeDepositUsdt`、D3 和 `fee_buffer` 的回填只使用能与原始 D4 `CARD_TOPUP`/链上充值分录精确绑定的支付记录；状态相似、EARNING/ADJUSTMENT 等错误业务类型或缺少分录证据的记录进入异常表，不猜测补账。历史 `$10`、`3.5%`、`1 USDT 固定` 等展示格式配置先规范为数值与固定单位；迁移连续执行结果必须一致。
 - **入账喂 D3 储备**:已确认充值额是 D3 真实储备账本的流入来源(§3.14:储备底层账本权威归 D3),D1 不另立储备账本,只产生 `wallet.topup_confirmed` 供 D3 聚合。
-- **BIN attack 防御**:同卡 24h ≥ 5 次失败自动锁卡(§9.2.4),server 侧 enforce 重试上限(client 校验仅 UI);锁卡热力喂 K 域反作弊(K1 支付工具去重维度,§9.11e.1)。
+- **BIN attack 防御**:支付失败按 BIN / IP / 设备指纹三个维度独立聚合;达到阈值后调度器写 `nx_topup_risk_lock` 并设置服务端到期时间,手动锁同样写真实锁表。server 侧 enforce 重试与锁状态(client 校验仅 UI);锁定证据喂 K 域反作弊。
 - **PCI 边界**:卡号 / CVV 经 Checkout.com Frames 直送 acquirer,Nexion 后端永不持有 PAN(§9.2.4 / §9.2.3 E);后台对账面**只见 PSP token / 末四位 / BIN 段**,绝不展示完整卡号。
 
 **⑧ 埋点(事件)**
@@ -3774,6 +3784,8 @@ D5 是**提现摩擦的运营杠杆**生效面——提现参数的后台展示�
 ---
 
 #### [K2] 套利与刷量检测
+> **当前执行口径（覆盖本小节旧 trade-in 守卫描述）**：K2 不再读取 `minHoldingMonths`，也不把被拒绝的置换尝试当成套利完成事实。置换簇必须来自近 30 天 `status=COMPLETED` 且 `completed_at` 落窗的申请，并同时存在正数佣金或 `direction=IN` 且金额大于 0 的赠送类钱包入账；pending/failed、负数和 OUT 向记录一律不计。详见 `specs/FEAT-DEV02-tradein-ladder.md`。
+
 **① 目的 & 对齐**: 检测套利与刷量的**闭环**——单维度看不到、多维度叠加才显现的行为链路(trial 循环养号 / minHoldingMonths trade-in 套利 / welcome gift 刷取 / 排行榜刷榜),并以 K1 多账户信号为基底联动处置。对齐前端 §9.11e.1(组合攻击闭环:主账号生邀请 → 子账号注册 → sponsor bind 拿 gift → 开试用拿 shadow → 取消 → localStorage reset → 循环,单维度 manageable、叠加才闭合)+ §7.5(`minHoldingMonths` 防「买入立即 trade-in 套利」)+ §8.11(排行榜刷榜)。服务的业务目标:保护 trial / gift / 佣金 / 奖池预算,维持拉新与转化漏斗(B3)及排行榜社会证明的真实性,为 K4 供「套利」维度。
 
 **② 后台界面**:四类检测视图 + 统一可疑账户处置区。

@@ -24,8 +24,17 @@ export interface E5Device {
   dailyNex: number;
   activeTaskNo: string;
   heartbeatAt: string;
+  purchasedAt: string;
   activatedAt: string;
   deactivatedAt: string;
+  baseRate: string;
+  currentEfficiency: number;
+  batteryLevel: number | null;
+  isCharging: boolean | null;
+  isWifiConnected: boolean | null;
+  thermalState: string;
+  pausedReason: string;
+  activeDevicesForUser: number;
   pendingDeactivate: boolean;
   slotNo: number | null;
   slot: string;
@@ -34,6 +43,8 @@ export interface E5Device {
 export interface E5Datacenter {
   dcLocation: string;
   regionLabel: string;
+  location: string;
+  displayName: string;
   status: E5DatacenterStatus;
   sortOrder: number;
   totalDevices: number;
@@ -51,6 +62,8 @@ export interface E5Datacenter {
 export interface E5DatacenterInput {
   dcLocation: string;
   regionLabel: string;
+  location: string;
+  displayName: string;
   status: E5DatacenterStatus;
   sortOrder: number;
 }
@@ -70,6 +83,9 @@ export interface E5DeviceQuery {
   status?: string;
   dcLocation?: string;
   keyword?: string;
+  userId?: number;
+  kind?: string;
+  heartbeat?: string;
   pageNum?: number;
   pageSize?: number;
 }
@@ -109,8 +125,11 @@ interface BackendDevice {
   dailyUsdt?: number | string | null;
   dailyNex?: number | string | null;
   lastSeenAt?: string | null;
+  purchasedAt?: string | null;
   activatedAt?: string | null;
   deactivatedAt?: string | null;
+  baseRate?: string | null;
+  currentEfficiency?: number | string | null;
   pendingDeactivate?: number | string | boolean | null;
   runtimeStatus?: string | null;
   gpuUsage?: number | string | null;
@@ -119,12 +138,19 @@ interface BackendDevice {
   pausedReason?: string | null;
   activeTaskNo?: string | null;
   heartbeatAt?: string | null;
+  batteryLevel?: number | string | null;
+  isCharging?: number | string | boolean | null;
+  networkReachable?: number | string | boolean | null;
+  thermalState?: string | null;
+  activeDevicesForUser?: number | string | null;
   userDeviceSlotNo?: number | string | null;
 }
 
 interface BackendDatacenter {
   dcLocation?: string | null;
   regionLabel?: string | null;
+  location?: string | null;
+  displayName?: string | null;
   status?: string | null;
   sortOrder?: number | string | null;
   totalDevices?: number | string | null;
@@ -186,7 +212,7 @@ function text(value: string | number | null | undefined, fallback = "") {
 function normalizeState(statusRaw: string | null | undefined, runtimeRaw: string | null | undefined, pendingDeactivate: boolean): E5DeviceState {
   const status = text(statusRaw).toUpperCase();
   const runtime = text(runtimeRaw).toUpperCase();
-  if (["RECYCLED", "DEACTIVATED", "RETIRED"].includes(status) || pendingDeactivate) return "unbound";
+  if (["RECYCLED", "DEACTIVATED", "RETIRED", "UNBOUND"].includes(status) || pendingDeactivate) return "unbound";
   if (["INVENTORY", "PENDING", "PENDING_ACTIVATION", "INACTIVE"].includes(status)) return "inventory";
   if (["ERROR", "ABNORMAL", "LOST"].includes(runtime)) return "abnormal";
   if (status === "BUSY") return "busy";
@@ -223,6 +249,9 @@ function queryString(query: E5DeviceQuery) {
   if (query.status && query.status !== "all") params.set("status", query.status);
   if (query.dcLocation && query.dcLocation !== "all") params.set("dcLocation", query.dcLocation);
   if (query.keyword?.trim()) params.set("keyword", query.keyword.trim());
+  if (query.userId && query.userId > 0) params.set("userId", String(query.userId));
+  if (query.kind && query.kind !== "all") params.set("kind", query.kind);
+  if (query.heartbeat && query.heartbeat !== "all") params.set("heartbeat", query.heartbeat);
   params.set("pageNum", String(query.pageNum ?? 1));
   params.set("pageSize", String(query.pageSize ?? 10));
   const raw = params.toString();
@@ -237,6 +266,8 @@ function fromDatacenter(row: BackendDatacenter): E5Datacenter {
   return {
     dcLocation: text(row.dcLocation, "UNASSIGNED"),
     regionLabel: text(row.regionLabel, "未配置区域"),
+    location: text(row.location || row.regionLabel, "未配置所在地"),
+    displayName: text(row.displayName || row.regionLabel, "未配置展示名"),
     status: status === "maintenance" || status === "disabled" ? status : "active",
     sortOrder: toNumber(row.sortOrder, 100),
     totalDevices: toNumber(row.totalDevices),
@@ -285,8 +316,17 @@ function fromDevice(row: BackendDevice): E5Device {
     dailyNex: toNumber(row.dailyNex),
     activeTaskNo: text(row.activeTaskNo, "—"),
     heartbeatAt: text(row.heartbeatAt || row.lastSeenAt, "—"),
+    purchasedAt: text(row.purchasedAt, "—"),
     activatedAt: text(row.activatedAt, "—"),
     deactivatedAt: text(row.deactivatedAt, ""),
+    baseRate: text(row.baseRate, "—"),
+    currentEfficiency: toNumber(row.currentEfficiency, 1),
+    batteryLevel: row.batteryLevel == null ? null : toNumber(row.batteryLevel),
+    isCharging: row.isCharging == null ? null : toBool(row.isCharging),
+    isWifiConnected: row.networkReachable == null ? null : toBool(row.networkReachable),
+    thermalState: text(row.thermalState, "未采集"),
+    pausedReason: text(row.pausedReason, ""),
+    activeDevicesForUser: toNumber(row.activeDevicesForUser),
     pendingDeactivate,
     slotNo: slotNo > 0 ? slotNo : null,
     slot: slotNo > 0 ? String(slotNo) : "—",
@@ -326,8 +366,9 @@ export async function fetchE5Datacenters(): Promise<E5Datacenter[]> {
   return (rows ?? []).map(fromDatacenter);
 }
 
-export async function activateE5Device(deviceId: number, reason: string, operator: string) {
-  const saved = await e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/restore`, {
+export async function activateE5Device(deviceId: number, force: boolean, reason: string, operator: string) {
+  const action = force ? "force-activate" : "activate";
+  const saved = await e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
     idempotencyPrefix: "e5-device-activate",
@@ -335,13 +376,22 @@ export async function activateE5Device(deviceId: number, reason: string, operato
   return mapDevices([saved])[0];
 }
 
-export async function deactivateE5Device(deviceId: number, reason: string, operator: string) {
-  const saved = await e5Request<BackendDevice>("/e3/tradein/deactivate", {
+export async function deactivateE5Device(deviceId: number, unbind: boolean, reason: string, operator: string) {
+  const action = unbind ? "unbind" : "deactivate";
+  const saved = await e5Request<BackendDevice>(`/${encodeURIComponent(String(deviceId))}/${action}`, {
     method: "POST",
-    body: JSON.stringify({ deviceId, reason, operator }),
+    body: JSON.stringify({ reason, operator }),
     idempotencyPrefix: "e5-device-deactivate",
   });
   return mapDevices([saved])[0];
+}
+
+export async function setE5UserDevicesPaused(userId: number, paused: boolean, reason: string, operator: string) {
+  return e5Request<{ userId: number; changedCount: number; paused: boolean }>(`/batch/${paused ? "pause" : "resume"}`, {
+    method: "POST",
+    body: JSON.stringify({ userId, reason, operator }),
+    idempotencyPrefix: paused ? "e5-user-pause" : "e5-user-resume",
+  });
 }
 
 export async function setE5DatacenterPaused(dcLocation: string, paused: boolean, reason: string, operator: string) {

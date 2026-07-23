@@ -11,7 +11,9 @@ export type ActionConfirmReq = {
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
   /** 与服务端理由长度约束保持一致；未指定时沿用共享弹窗的领域默认值。 */
+  reasonMin?: number;
   reasonMax?: number;
+  completionCopy?: string;
   onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => unknown | Promise<unknown>;
 };

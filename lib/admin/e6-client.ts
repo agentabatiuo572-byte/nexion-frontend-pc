@@ -17,9 +17,27 @@ export const e6YieldKey = (key: string): string => `${E6_PARAM_PREFIX}yieldEstim
 export const e6GpuTierKey = (id: string, field: string): string => `${E6_PARAM_PREFIX}gpuTier.${id}.${field}`;
 export const e6DownloadKey = (field: string): string => `${E6_PARAM_PREFIX}download.${field}`;
 
+export const E6_GPU_TIER_IDS = ["G1", "G2", "G3", "G4", "G5", "G6"] as const;
+const E6_KEYWORD_FIELDS = ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6"] as const;
+const exactKeys = [
+  e6FlagKey("computeShareEnabled"),
+  e6CoeffKey("h5BaseFactor"),
+  e6CoeffKey("continuityFullHours"),
+  e6YieldKey("topsBaseline"),
+  e6YieldKey("dailyUsdtPerBaseline"),
+  e6YieldKey("nexPerUsdt"),
+  ...E6_GPU_TIER_IDS.flatMap((id) => [
+    e6GpuTierKey(id, "label"),
+    e6GpuTierKey(id, "tops"),
+    ...E6_KEYWORD_FIELDS.map((field) => e6GpuTierKey(id, field)),
+  ]),
+  ...["url", "zhTitle", "zhGuide", "enTitle", "enGuide"].map(e6DownloadKey),
+];
+export const E6_EXACT_PARAM_KEYS = new Set<string>(exactKeys);
+
 /** PATCH 白名单判断(防越权改其他域 config);与后端 ComputeConfigRegistry.isComputeParamKey 同口径。 */
 export function isE6ParamKey(key: string | null | undefined): boolean {
-  return !!key && key.startsWith(E6_PARAM_PREFIX);
+  return !!key && E6_EXACT_PARAM_KEYS.has(key);
 }
 
 // ── 视图类型(镜像后端 ComputeConfigView)─────────────────────────────────
@@ -50,7 +68,11 @@ export interface E6GpuTierView {
   desc: string;
   defaultModel: string;
   tops: string;
-  keywords: string[];
+  keywords: E6KeywordView[];
+}
+export interface E6KeywordView {
+  slot: string;
+  value: string;
 }
 export interface E6DownloadView {
   url: string;
@@ -120,16 +142,18 @@ export async function updateE6Param(
   );
 }
 
-/**
- * 多字段批量写入:后端只支持单 key PATCH,这里顺序逐个写。
- * 任一字段失败即抛错(已写入的保留,调用方刷新视图后可见真实剩余态)。
- */
+/** 多字段批量写入由后端单事务处理，任一字段非法时不会产生部分提交。 */
 export async function updateE6Params(
   values: Record<string, string>,
   reason: string,
   operator: string,
-): Promise<void> {
-  for (const [paramKey, value] of Object.entries(values)) {
-    await updateE6Param(paramKey, value, reason, operator);
-  }
+): Promise<{ values: Record<string, string>; updatedAt: string }> {
+  return e6Request<{ values: Record<string, string>; updatedAt: string }>(
+    "/compute-config/params",
+    {
+      method: "PATCH",
+      body: JSON.stringify({ values, reason, operator }),
+      idempotencyPrefix: "e6-param-batch",
+    },
+  );
 }

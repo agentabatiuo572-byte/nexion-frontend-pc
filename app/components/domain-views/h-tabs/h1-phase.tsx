@@ -25,15 +25,14 @@ type H1Model = {
 };
 
 const DIAL_COLUMNS = [
+  ["newUserBonusMultiplier", "新用户加成", "x"],
   ["inviteRewardMultiplier", "邀请加成", "x"],
-  ["questRewardMultiplier", "任务加成", "x"],
-  ["trialOffsetCapUsdt", "试用抵扣上限", "USDT"],
-  ["deviceReleasePacingPct", "设备放量", "%"],
-  ["commissionTighteningPct", "佣金收紧", "%"],
-  ["campaignRewardNex", "活动奖励", "NEX"],
-  ["withdrawNexMinBalance", "提现 NEX 门槛", "NEX"],
-  ["withdrawNexHoldDays", "提现持有天数", "天"],
-  ["genesisEmissionsOpen", "创世排放开阀", ""],
+  ["reinvestMultiplier", "复投加成", "x"],
+  ["withdrawCooldownDays", "提现冷却天数", "天"],
+  ["withdrawPenaltyFeeRate", "提现惩罚费率", "%"],
+  ["binaryDailyCap", "双轨日封顶", "USD"],
+  ["questBonusMultiplier", "任务加成", "x"],
+  ["complianceHoldEnabled", "增强合规审查", ""],
 ] as const;
 
 const RHYTHM_PHASE_NAME: Record<string, string> = {
@@ -61,6 +60,15 @@ function phaseName(code?: string) {
 
 function rowValue(row: H1Model["monthlyDials"][number], key: string) {
   return text(row.dials?.[key], "-");
+}
+
+function dialAmplifies(key: string, before: string, after: string) {
+  if (key === "complianceHoldEnabled") return before === "是" && after === "否";
+  const current = Number(before.replace(/[^\d.-]/g, ""));
+  const next = Number(after.replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(current) || !Number.isFinite(next)) return true;
+  if (["withdrawCooldownDays", "withdrawPenaltyFeeRate"].includes(key)) return next < current;
+  return next > current;
 }
 
 export default function H1Phase({ ctx }: { ctx: HCtx }) {
@@ -98,8 +106,8 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     const current = currentMonth == null ? undefined : monthlyRows.find((row) => row.month === currentMonth);
     return {
       invite: current ? rowValue(current, "inviteRewardMultiplier") : "-",
-      quest: current ? rowValue(current, "questRewardMultiplier") : "-",
-      withdraw: current ? rowValue(current, "withdrawNexMinBalance") : "-",
+      quest: current ? rowValue(current, "questBonusMultiplier") : "-",
+      withdraw: current ? rowValue(current, "withdrawPenaltyFeeRate") : "-",
     };
   }, [currentMonth, monthlyRows]);
 
@@ -171,12 +179,30 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     openActionConfirm({
       action: `改旋钮 · 月 ${row.month} · ${label}`,
       detail: <>当前值 <b>{current}</b>。提交后写入后端配置并重新查询 H1 矩阵。</>,
-      amplifies: ["trialOffsetCapUsdt", "campaignRewardNex", "withdrawNexMinBalance"].includes(key),
-      edit: key === "genesisEmissionsOpen"
+      amplifies: true,
+      edit: key === "complianceHoldEnabled"
         ? { kind: "select", current, options: ["否", "是"] }
         : { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
+        if (dialAmplifies(key, current, value)) {
+          const def = findHighOp("h1_phase_dial")!;
+          void propose(ctx.toast, {
+            action: `改旋钮 · 月 ${row.month} · ${label}`,
+            obj: `${row.month}:${key}`,
+            before: current,
+            after: value,
+            type: "param",
+            amplifies: true,
+            gate: { roles: ["superadmin"] },
+            gateLabel: def.gateLabel,
+            reason,
+            sourceDomain: "H1",
+            command: def.buildCommand({ month: row.month, dialKey: key, value }),
+            target: def.buildTarget({ month: row.month, dialKey: key }),
+          });
+          return;
+        }
         applyPhaseResponse(await updateH1MonthDial(row.month, key, value, reason));
         toast(`H1 月 ${row.month} · ${label} 已更新`);
       },
@@ -259,7 +285,10 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     return (
       <section className="l-card">
         <div className="l-h"><span className="ttl">H1 数据加载失败</span></div>
-        <div className="l-b">{error ?? "UNKNOWN_ERROR"}</div>
+        <div className="l-b">
+          {error ?? "UNKNOWN_ERROR"}
+          <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button>
+        </div>
       </section>
     );
   }
@@ -283,9 +312,9 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
           <div className="sub">来源: 服务端阶段节奏数据</div>
         </div>
         <div className="f-stat warn">
-          <div className="k">当月提现 NEX 门槛</div>
-          <div className="v">{stats.withdraw}</div>
-          <div className="sub">同步 D5 提现参数镜像</div>
+          <div className="k">当月提现惩罚费率</div>
+          <div className="v">{stats.withdraw}{stats.withdraw === "-" || String(stats.withdraw).includes("%") ? "" : "%"}</div>
+          <div className="sub">来源: 服务端当月阶段派发值</div>
         </div>
       </div>
 
@@ -404,7 +433,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
             <span className="ttl">Phase 效果归因</span>
             <span className="sub">· 从后端 H1 读模型返回</span>
             <div className="r">
-              <Link href="/risk/health-monitor" className="l-btn">去 B4 节奏看板 →</Link>
+              <Link href="/overview/rhythm" className="l-btn">去 B4 节奏看板 →</Link>
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -412,10 +441,11 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
               <thead>
                 <tr>
                   <th>阶段</th>
-                  <th className="num">首购转化</th>
-                  <th className="num">复投率</th>
-                  <th className="num">周提现</th>
-                  <th className="num">Day7 留存</th>
+                  <th>阶段名称</th>
+                  <th>主要驱动</th>
+                  <th>权威旋钮</th>
+                  <th className="num">当前值</th>
+                  <th>责任域</th>
                 </tr>
               </thead>
               <tbody>
@@ -424,13 +454,17 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                   return (
                     <tr key={phase} style={currentPhase && phase.includes(currentPhase) ? { background: "rgba(255,107,53,.08)" } : undefined}>
                       <td style={{ fontWeight: 600, color: "var(--ink)" }}>{phase}{currentPhase && phase.includes(currentPhase) ? " · 当前" : ""}</td>
-                      <td className="num mono">{text(row.first)}</td>
-                      <td className="num mono">{text(row.reinvest)}</td>
-                      <td className="num mono">{text(row.weekly)}</td>
-                      <td className="num mono">{text(row.d7)}</td>
+                      <td>{text(row.name, "—")}</td>
+                      <td>{text(row.driver, "暂无归因说明")}</td>
+                      <td className="mono">{text(row.paramKey, "—")}</td>
+                      <td className="num mono">{text(row.value, "—")}</td>
+                      <td>{text(row.owner, "—")}</td>
                     </tr>
                   );
                 })}
+                {model.attribution.length === 0 && (
+                  <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>暂无阶段归因数据；可先查看当前旋钮矩阵，归因指标将在产生业务样本后展示</td></tr>
+                )}
               </tbody>
             </table>
           </div>

@@ -93,7 +93,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
   const runBackend = (task: Promise<void>, ok: string, onSuccess?: () => void) => task
       .then(() => actions.reloadIContent())
       .then(() => { toast(ok); onSuccess?.(); })
-      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+      .catch((error) => {
+        toast(`操作失败:${error instanceof Error ? error.message : String(error)}`);
+        throw error;
+      });
 
   // ── Drawer 表单(新增 / 编辑通道复用同一抽屉)──
   const [novaDrawer, setNovaDrawer] = useState(false);
@@ -141,7 +144,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         cooldown: cd,
         ctr: prev?.ctr ?? 0,
         enabled: prev?.on ?? true,
-      }, "后台编辑 Nova 通道"), `Nova 通道已更新:${prev?.name ?? editNovaKey} → ${name}`);
+      }, "后台编辑 Nova 通道"), `Nova 通道已更新:${prev?.name ?? editNovaKey} → ${name}`, closeDrawer);
     } else {
       const key = `${slug(name).slice(0, 50)}-${Date.now().toString(36).slice(-6)}`;
       runBackend(actions.createI2NovaChannel({
@@ -152,9 +155,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         cooldown: cd,
         ctr: 0,
         enabled: false,
-      }, "后台新增 Nova 通道"), `Nova 通道已新增:${name}`);
+      }, "后台新增 Nova 通道"), `Nova 通道已新增:${name}`, closeDrawer);
     }
-    closeDrawer();
   };
 
   // ── 单通道 kill / 恢复:走操作确认(操作确认 不传 edit) ──
@@ -164,12 +166,13 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       ? <>停推该频道。<b>操作确认防误杀</b> · 监管点名要快速止血时也走这条路径(内容/风控都能发起)。</>
       : <>恢复投递配置。只有对应业务事件满足触发条件时才会发出；检查间隔只决定扫描频率。</>,
     amplifies: false,
+    reasonMax: 200,
     run: (reason) => {
       if (!n.on && tplStatus(n.key) !== "published") {
         toast("请先为该通道创建并发布完整的中越文模板，再恢复通道");
-        return;
+        throw new Error("NOVA_PUBLISHED_TEMPLATE_REQUIRED");
       }
-      runBackend(actions.updateI2NovaChannelStatus(n.key, !n.on, reason), `${n.name} 通道${n.on ? "已 kill" : "已恢复"}`);
+      return runBackend(actions.updateI2NovaChannelStatus(n.key, !n.on, reason), `${n.name} 通道${n.on ? "已 kill" : "已恢复"}`);
     },
   });
 
@@ -180,7 +183,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     reason: true,
     okLabel: "确认删除",
     run: (reason) => {
-      runBackend(actions.deleteI2NovaChannel(n.key, reason), `Nova 通道已删除:${n.name}`);
+      return runBackend(actions.deleteI2NovaChannel(n.key, reason), `Nova 通道已删除:${n.name}`);
     },
   });
 
@@ -197,16 +200,18 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     action: <>发布模板 · {name}</>,
     detail: <>频道 <b>{ch}</b>。发布即对该频道下一条推送生效;服务器侧校验中英镜像 + 占位符一致,不齐直接拒。</>,
     amplifies: false,
+    reasonMax: 200,
     run: (reason) => {
-      runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 发布已确认生效`);
+      return runBackend(actions.updateI2TemplateStatus(ch, "PUBLISHED", reason), `${name} 发布已确认生效`);
     },
   });
   const archiveTpl = (ch: string, name: string) => openActionConfirm({
     action: <>归档模板 · {name}</>,
     detail: <>归档后该模板从频道可选池移除,已在投递队列里的不撤回。</>,
     amplifies: false,
+    reasonMax: 200,
     run: (reason) => {
-      runBackend(actions.updateI2TemplateStatus(ch, "ARCHIVED", reason), `${name} 归档已确认生效`);
+      return runBackend(actions.updateI2TemplateStatus(ch, "ARCHIVED", reason), `${name} 归档已确认生效`);
     },
   });
 
@@ -234,11 +239,10 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     okLabel: "保存草稿",
     run: (reason) => {
       const body = { ...tplForm };
-      runBackend(editTplChannel
+      return runBackend(editTplChannel
         ? actions.updateI2Template(editTplChannel, body, reason)
         : actions.createI2Template(body, reason),
-      `模板 ${tplForm.name} 已保存为草稿`);
-      closeTplDrawer();
+      `模板 ${tplForm.name} 已保存为草稿`, closeTplDrawer);
     },
   });
   const removeTpl = (t: (typeof NOVA_TPLS)[number]) => openConfirm({
@@ -270,7 +274,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     okLabel: "确认保存",
     run: (reason) => {
       const items = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(distDraft[item.key] ?? 0) }));
-      runBackend(actions.updateI2Distribution(items, reason), "真实事件概率分布已更新", () => setDistDrawer(false));
+      return runBackend(actions.updateI2Distribution(items, reason), "真实事件概率分布已更新", () => setDistDrawer(false));
     },
   });
 
@@ -323,13 +327,16 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     okLabel: "开始同步",
     run: (reason) => {
       setEventBusy("sync");
-      actions.syncI2SocialEvents(reason)
+      return actions.syncI2SocialEvents(reason)
         .then((result) => actions.reloadIContent().then(() => result))
         .then((result) => {
           setEventRefreshKey((key) => key + 1);
           toast(`同步完成：发现 ${result.discovered} 条，新增 ${result.inserted} 条，重复 ${result.duplicates} 条`);
         })
-        .catch((error) => toast(`同步失败:${error instanceof Error ? error.message : String(error)}`))
+        .catch((error) => {
+          toast(`同步失败:${error instanceof Error ? error.message : String(error)}`);
+          throw error;
+        })
         .finally(() => setEventBusy(null));
     },
   });
@@ -347,7 +354,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     okLabel: "确认操作",
     run: (reason) => {
       setEventBusy(`status-${event.id}`);
-      runBackend(actions.updateI2SocialEventStatus(event.id, status, reason), "事件状态已更新",
+      return runBackend(actions.updateI2SocialEventStatus(event.id, status, reason), "事件状态已更新",
         () => setEventRefreshKey((key) => key + 1))
         .finally(() => setEventBusy(null));
     },
@@ -359,7 +366,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     okLabel: "确认删除",
     run: (reason) => {
       setEventBusy(`delete-${event.id}`);
-      runBackend(actions.deleteI2SocialEvent(event.id, reason), "事件已软删除",
+      return runBackend(actions.deleteI2SocialEvent(event.id, reason), "事件已软删除",
         () => setEventRefreshKey((key) => key + 1))
         .finally(() => setEventBusy(null));
     },
@@ -427,6 +434,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
             <tbody>
               {novas.map((n) => {
                 const phaseKeyed = n.phaseKeyed || "—";
+                const h1CadenceReadOnly = n.key === "tradein" || n.key === "taskLockMonthly";
                 const trigger = n.trigger || n.name;
                 const channelTemplate = NOVA_TPLS.find((t) => t.ch === n.key);
                 const phaseStyle = phaseKeyed === "—"
@@ -453,7 +461,9 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{`CTR ${n.ctr}%`}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {canWriteI2 && <>
-                        <button className="l-btn sm" onClick={() => openEditNova(n)}>编辑</button>
+                        {h1CadenceReadOnly
+                          ? <button className="l-btn sm" disabled title="当前节奏由 H1 阶段权威派发">H1 节奏只读</button>
+                          : <button className="l-btn sm" onClick={() => openEditNova(n)}>编辑</button>}
                         <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => removeNova(n)}>删除</button>
                       </>}
                     </td>

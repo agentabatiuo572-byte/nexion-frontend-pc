@@ -90,6 +90,7 @@
 
 #### A5 · 平台参数寄存器（`/platform/params-registry`）
 - 无后台配置项（纯只读索引 + 跳转各 owner 域）。
+- 运行时索引只读聚合服务端启用配置与 J1/J2 实时态；展示当前值、来源健康、更新时间和后端明确给出的 owner-link。CGM 是规划盘点，不作为运行时值源。
 
 > **域 A 小计：基础类 24 项（16✅ / 8❌）· 业务类 0 项**
 
@@ -181,8 +182,9 @@
   - ❌仅PRD：QUEUE_SATURATION 全局饱和因子 / Locked teaser VRAM 档预览区
 
 #### E3 · 生命周期 & Trade-in（`/devices/trade-in`）
-- **基础类（6 项全 ✅，衰减曲线 `PATCH /e3/config`）**：早期/中期/晚期衰减率（E.device.degradeEarly/Mid/Late）/ 最低效能下限 minEfficiency / 衰减分段周期 stageEarlyEnd/stageMidEnd/cycleMonths / 任务锁定月度损失阈 taskLock.s1/pro/rack
-- **业务类（6 项全 ✅，trade-in 折抵）**：残值率 salvagePct（B1 红线）/ 最短持有月数 minHoldingMonths（套利闸）/ 置换资格门槛 eligibility / 置换活动倍率 promoMult（B1 红线）/ 弹窗节奏 5 参（cooldownDays/maxPerSession/delaySec/minAgeDays/routes）/ 库存软上限 inventorySoftMax
+- **任务产能类（全 ✅，`PATCH /e3/config`）**：三段按月复利变化率 capacityBand1/2/3DeltaPct / 分段 stageEarlyEnd、stageMidEnd / 图表视窗 cycleMonths / 产能下限 capacityFloorPct / 补贴标注天数 capacitySubsidyDays / 8 个 SKU 参与开关 / 任务锁定月度损失阈 taskLock.s1/pro/rack。`cycleMonths` 不截断运行曲线，段 3 持续到下限。
+- **Trade-in 类（全 ✅）**：开关 tradeinEnabled / 资格 eligibility / 累计产出-实付比例界点 tradeinLadderCut1..4 / 五档折抵率 tradeinLadderCredit1..5 / 目标高价限制 / 单笔数量上限 / promo 倍率与弹窗节奏。
+- **已退役（运行时禁读写）**：degradeEarly/Mid/Late、minEfficiency、salvagePct、minHoldingMonths；K2 改读已完成置换事实及正向返佣/礼金入账。
 
 #### E4 · 订单状态机（`/devices/orders`）
 - 无配置项（PC 纯状态机展示 + 单笔订单操作）。PRD 列 3 项业务类全 ❌仅PRD：DC 分配规则 / 各阶段推进策略 / 订单过期时窗（placed→expired，建议 15–30min）。

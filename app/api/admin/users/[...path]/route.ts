@@ -20,8 +20,14 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "overview") {
     return "/api/admin/users/account-actions/overview";
   }
+  if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "alerts") {
+    return "/api/admin/users/account-actions/alerts";
+  }
   if (parts.length === 3 && parts[0] === "account-actions" && parts[1] === "accounts" && isNonEmpty(parts[2])) {
     return `/api/admin/users/account-actions/accounts/${encodeURIComponent(parts[2])}`;
+  }
+  if (parts.length === 4 && parts[0] === "account-actions" && parts[1] === "accounts" && isNonEmpty(parts[2]) && parts[3] === "context") {
+    return `/api/admin/users/account-actions/accounts/${encodeURIComponent(parts[2])}/context`;
   }
   if (parts.length === 2 && parts[0] === "kyc" && parts[1] === "overview") {
     return "/api/admin/users/kyc/overview";
@@ -47,8 +53,17 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "kyc" && parts[1] === "exports") {
     return "/api/admin/users/kyc/exports";
   }
-  if (parts.length === 4 && parts[0] === "kyc" && parts[1] === "users" && isNonEmpty(parts[2]) && parts[3] === "status") {
-    return `/api/admin/users/kyc/users/${encodeURIComponent(parts[2])}/status`;
+  if (parts.length === 4 && parts[0] === "kyc" && parts[1] === "exports" && isNonEmpty(parts[2]) && parts[3] === "download") {
+    return `/api/admin/users/kyc/exports/${encodeURIComponent(parts[2])}/download`;
+  }
+  if (parts.length === 3 && parts[0] === "kyc" && parts[1] === "users" && isNonEmpty(parts[2])) {
+    return `/api/admin/users/kyc/users/${encodeURIComponent(parts[2])}`;
+  }
+  if (
+    parts.length === 4 && parts[0] === "kyc" && parts[1] === "users" && isNonEmpty(parts[2]) &&
+    (parts[3] === "verify" || parts[3] === "revoke" || parts[3] === "trigger-review")
+  ) {
+    return `/api/admin/users/kyc/users/${encodeURIComponent(parts[2])}/${parts[3]}`;
   }
   if (parts.length === 1 && parts[0] === "account-lists") {
     return "/api/admin/users/account-lists";
@@ -68,10 +83,13 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "asset-adjustments" && parts[1] === "overview") {
     return "/api/admin/users/asset-adjustments/overview";
   }
+  if (parts.length === 2 && parts[0] === "asset-adjustments" && parts[1] === "accounts") {
+    return "/api/admin/users/asset-adjustments/accounts";
+  }
   if (parts.length === 2 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1])) {
     return `/api/admin/users/asset-adjustments/${encodeURIComponent(parts[1])}`;
   }
-  if (parts.length === 3 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1]) && (parts[2] === "approve" || parts[2] === "reject")) {
+  if (parts.length === 3 && parts[0] === "asset-adjustments" && isNonEmpty(parts[1]) && (parts[2] === "approve" || parts[2] === "reject" || parts[2] === "reverse")) {
     return `/api/admin/users/asset-adjustments/${encodeURIComponent(parts[1])}/${parts[2]}`;
   }
   if (parts.length === 3 && parts[0] === "account-lists" && isNonEmpty(parts[1]) && parts[2] === "remove") {
@@ -95,9 +113,6 @@ function backendPath(parts: string[]) {
   if (parts.length === 4 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "nickname" && parts[3] === "reset") {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/nickname/reset`;
   }
-  if (parts.length === 3 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "security") {
-    return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/security`;
-  }
   if (parts.length === 3 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "status") {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/status`;
   }
@@ -107,13 +122,28 @@ function backendPath(parts: string[]) {
   if (parts.length === 3 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "asset-adjustments") {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/asset-adjustments`;
   }
+  if (parts.length === 3 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "asset-adjustment-requests") {
+    return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/asset-adjustment-requests`;
+  }
+  if (parts.length === 3 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "asset-adjustment-context") {
+    return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/asset-adjustment-context`;
+  }
   if (parts.length === 4 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "sessions" && parts[3] === "revoke-all") {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/sessions/revoke-all`;
+  }
+  if (
+    parts.length === 5 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "security" &&
+    parts[3] === "sessions" && parts[4] === "revoke-all"
+  ) {
+    return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/security/sessions/revoke-all`;
   }
   if (parts.length === 4 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "security" && parts[3] === "password-reset") {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/security/password-reset`;
   }
-  if (parts.length === 4 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "security" && (parts[3] === "disable-2fa" || parts[3] === "unlock")) {
+  if (
+    parts.length === 4 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "security" &&
+    (parts[3] === "disable-2fa" || parts[3] === "unlock" || parts[3] === "kyc-reverification")
+  ) {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/security/${parts[3]}`;
   }
   if (parts.length === 3 && parts[0] === "sessions" && isNonEmpty(parts[1]) && parts[2] === "revoke") {

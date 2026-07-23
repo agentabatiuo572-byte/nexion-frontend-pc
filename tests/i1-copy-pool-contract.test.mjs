@@ -313,7 +313,11 @@ test("scheduled 实验通过勾选确认和 8-200 字理由后启动", () => {
   assert.match(client, /startI1Experiment:[\s\S]{0,280}JSON\.stringify\(withReason\(\{\}, reason\)\)/);
   assert.match(designKit, /data-business-form="copy-experiment-start"/);
   assert.match(designKit, /我已确认实验版本、分流比例和继承受众/);
-  assert.match(designKit, /reasonMax = activeBusinessForm\?\.kind === "copy-experiment-create" \|\| activeBusinessForm\?\.kind === "copy-experiment-start" \|\| activeBusinessForm\?\.kind === "copy-experiment-discard" \? 200/);
+  assert.match(designKit, /activeBusinessForm\?\.kind === "copy-experiment-create"/);
+  assert.match(designKit, /activeBusinessForm\?\.kind === "copy-experiment-start"/);
+  assert.match(designKit, /activeBusinessForm\?\.kind === "copy-experiment-discard"/);
+  assert.match(designKit, /reasonLength <= reasonMax/);
+  assert.match(designKit, /maxLength=\{reasonMax\}/);
 });
 
 test("I1 创建实验排除已有活动实验的文案，并限制备注长度", () => {
@@ -379,7 +383,9 @@ test("I1 scheduled 和 concluded 可确认弃用实验并调用真实 discard �
   assert.match(client, /\/copy-ab\/experiments\/\$\{encodeURIComponent\(experimentId\)\}\/discard/);
   assert.match(client, /discardI1Experiment:[\s\S]{0,280}JSON\.stringify\(withReason\(\{\}, reason\)\)/);
   assert.match(designKit, /kind: "copy-experiment-discard"/);
-  assert.match(designKit, /copy-experiment-discard" \? 200/);
+  assert.match(designKit, /activeBusinessForm\?\.kind === "copy-experiment-discard"/);
+  assert.match(designKit, /reasonLength <= reasonMax/);
+  assert.match(designKit, /maxLength=\{reasonMax\}/);
 });
 
 test("I1 转化仅统计服务端已支付或完成订单事件，PRD 使用独立实验权限口径", () => {

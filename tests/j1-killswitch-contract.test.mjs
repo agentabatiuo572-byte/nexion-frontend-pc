@@ -97,6 +97,20 @@ test("B5 owns structured bank-run bands and displays the same redline referenced
   assert.match(b5RiskRadar, /P0 告警表示挤兑比率达到当前动态红线/);
 });
 
+test("J1 R3 renders the backend-provided J3 canonical alert threshold", () => {
+  assert.match(component, /const effThr = \(r: AutoRuleRow\) => r\.thr/);
+  assert.doesNotMatch(component, /emergency\.tamper\?\.alertConfig/);
+  assert.doesNotMatch(component, /10 次 \/ 24h/);
+});
+
+test("J1 retries an uncertain command with the same idempotency key", () => {
+  assert.match(component, /createJEmergencyCommandKey/);
+  assert.match(client, /toggleJ1KillSwitch: \(key, enabled, reason, context, commandKey\)/);
+  assert.match(client, /emergencyDisableJ1: \(keys, reason, operator, context, commandKey\)/);
+  assert.match(client, /confirmJ1AutoTrigger: \(key, incidentId, decision, reason, commandKey\)/);
+  assert.match(view, /catch \(error\)[\s\S]*?throw error/);
+});
+
 test("J1 fails closed on refresh errors and keeps failed confirmations open", () => {
   assert.match(view, /setEmergency\(\{\}\)/);
   assert.match(view, /await mc\.run/);

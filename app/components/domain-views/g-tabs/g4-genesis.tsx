@@ -17,8 +17,7 @@ import {
   type G4Param,
 } from "@/lib/admin/g4-client";
 import type { GCtx } from "./types";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import G4AdminOperations from "./g4-admin-operations";
 
 const OPERATOR = currentAdminOperator;
@@ -56,8 +55,17 @@ function paramByKey(overview: G4Overview, key: string) {
 }
 
 export function G4Genesis({ ctx }: { ctx: GCtx }) {
-  const { toast, openActionConfirm, openConfirm } = ctx;
-  const propose = usePropose();
+  const { toast, openActionConfirm } = ctx;
+  const session = useAdminAuth((state) => state.session);
+  const authorities = session?.authorities ?? [];
+  const isSuper = session?.role === "super" || session?.role === "superadmin";
+  const allowed = (authority: string) => isSuper || authorities.includes(authority);
+  const paramAuthority = (key: string) => key === "price" ? "finprod_g4_price_write"
+    : key === "dividend" ? "finprod_g4_dividend_rate_write"
+      : key === "royalty" ? "finprod_g4_royalty_write"
+        : key === "airdropPct" ? "finprod_g4_airdrop_pct_write"
+          : key === "emissionCurve" ? "finprod_g4_emission_curve_write"
+            : key === "airdropLockDays" ? "finprod_g4_airdrop_lock_days_write" : "finprod_g4_write";
   const [overview, setOverview] = useState<G4Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -119,6 +127,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       const message = messageOf(err);
       setError(message);
       toast(`G4 操作失败 · ${message}`);
+      throw err;
     } finally {
       setBusyKey(null);
     }
@@ -173,79 +182,62 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   };
 
   const adjustParam = (param: G4Param) => {
+    if (!allowed(paramAuthority(param.key))) return;
+    const numeric = !["divBase", "emissionCurve"].includes(param.key);
+    const bounds = param.key === "supply" ? { min: stats.sold, max: 100000, step: 1 }
+      : param.key === "price" ? { min: 0.01, max: 1000000, step: 0.01 }
+        : param.key === "royalty" ? { min: 0, max: 20, step: 0.01 }
+          : param.key === "airdropPct" ? { min: 0, max: 100, step: 0.01 }
+            : param.key === "airdropLockDays" ? { min: 0, max: 3650, step: 1 }
+              : { min: 0, max: 5, step: 0.001 };
+    const needsDecision = ["dividend", "divBase", "airdropPct", "emissionCurve"].includes(param.key);
     openActionConfirm({
       action: `Genesis 经济参数 · ${param.name}`,
-      detail: <><b>{param.name}</b> · 当前 {param.displayValue} · {param.note}</>,
+      detail: <><b>{param.name}</b> · 当前 {param.displayValue} · {param.note}<br />B1 当前覆盖率 {cov}%，提交时后端重新预检增量负债。</>,
       amplifies: param.b1RedlineTriggered,
-      edit: { kind: "text", current: paramEditValue(param) },
-      run: (reason, value) => {
+      edit: numeric ? { kind: "number", current: paramEditValue(param), ...bounds } : { kind: "text", current: paramEditValue(param) },
+      businessForm: needsDecision ? { kind: "multi-field", title: "产品决议与负债依据", fields: [
+        { key: "decisionRef", label: "PM/财务决议编号", current: "", inputKind: "text", required: true },
+      ] } : undefined,
+      run: async (reason, value, businessValue) => {
         if (!value) return;
-        const def = findHighOp("g4_genesis_param")!;
-        void propose(ctx.toast, {
-          action: `Genesis 经济参数 · ${param.name}`,
-          obj: param.key,
-          before: param.displayValue,
-          after: String(value),
-          type: "fund",
-          amplifies: param.b1RedlineTriggered,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G4",
-          command: def.buildCommand({ paramKey: param.key, value }),
-          target: def.buildTarget({ paramKey: param.key }),
-        });
+        await mutate(`param:${param.key}`, () => updateG4GenesisParam(
+          param.key, String(value), reason, OPERATOR(), businessValue?.decisionRef,
+        ), `${param.name}已立即生效`);
       },
     });
   };
 
   const runMarketSwitch = () => {
+    if (!marketOn || !allowed("finprod_g4_market_toggle")) return;
     openActionConfirm({
-      action: marketOn ? "一二级市场熔断" : "恢复一二级市场",
-      detail: marketOn
-        ? <>立即停一二级市场交易，联动 {overview.market.linkedDomain} 开关 {overview.market.configKey}。</>
-        : <>恢复一二级市场会恢复 Genesis 节点流转；排放仍受 H1 开阀控制。提交前核验 B1 覆盖率，当前 {cov}%。</>,
-      amplifies: !marketOn,
-      run: (reason) => {
-        const def = findHighOp("g4_genesis_market_status")!;
-        void propose(ctx.toast, {
-          action: marketOn ? "一二级市场熔断" : "恢复一二级市场",
-          obj: "genesis",
-          before: marketOn ? "开市" : "熔断",
-          after: marketOn ? "熔断" : "开市",
-          type: "sos",
-          amplifies: !marketOn,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G4",
-          command: def.buildCommand({ enabled: !marketOn }),
-          target: def.buildTarget({}),
-        });
+      action: "一二级市场熔断",
+      detail: <>立即停止一级购买、挂单与内部 P2P 成交，联动 {overview.market.linkedDomain}。恢复只能前往 J1。</>,
+      amplifies: false,
+      businessForm: { kind: "multi-field", title: "熔断上下文", fields: [
+        { key: "triggerBasis", label: "触发依据", current: "", inputKind: "text", required: true },
+        { key: "dispositionPlan", label: "存量权益处置计划", current: "", inputKind: "text", required: true },
+      ] },
+      run: async (reason, _value, businessValue) => {
+        await mutate("market:pause", () => updateG4GenesisMarketStatus(false, reason, OPERATOR(), {
+          triggerBasis: businessValue?.triggerBasis, dispositionPlan: businessValue?.dispositionPlan,
+        }), "Genesis 市场已立即熔断；恢复入口仅在 J1");
       },
     });
   };
 
   const runRerunBatch = () => {
+    if (!allowed("finprod_g4_write")) return;
     openActionConfirm({
       action: `重跑今日排放批次 ${dividend.batchNo}`,
-      detail: "批次按日期带防重号:已发过的户不会重复发,只补发失败户。重跑结果落审计 · 入 A2 待门槛者执行。",
-      run: (reason) => {
-        const def = findHighOp("g4_genesis_rerun_dividend")!;
-        void propose(ctx.toast, {
-          action: `重跑排放批次 · ${dividend.batchNo}`,
-          obj: dividend.batchNo,
-          before: "已派发(失败户待补)",
-          after: "重跑完成 · 只补失败户",
-          type: "fund",
-          amplifies: true,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G4",
-          command: def.buildCommand({ batchNo: dividend.batchNo }),
-          target: def.buildTarget({ batchNo: dividend.batchNo }),
-        });
+      detail: "批次按日期带持久防重号；已成功户不会重复发，只补失败项。服务端逐持有人写 D4 账单。",
+      businessForm: { kind: "multi-field", title: "批次决议", fields: [
+        { key: "decisionRef", label: "财务/PM 决议编号", current: "", inputKind: "text", required: true },
+      ] },
+      run: async (reason, _value, businessValue) => {
+        await mutate(`batch:${dividend.batchNo}`, () => rerunG4GenesisDividendBatch(
+          dividend.batchNo, reason, OPERATOR(), businessValue?.decisionRef,
+        ), "排放批次已立即重跑，仅补失败项");
       },
     });
   };
@@ -266,7 +258,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         <div className="f-stat ok"><div className="k">一级售出</div><div className="v">{fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div><div className="sub">{fmtUsd(stats.unitPrice, 0)} / 张 · 距售罄 {fmtNumber(stats.unsold, 0)} 张</div></div>
         <div className="f-stat"><div className="k">排放承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">上所开阀后按真实策略计提</div></div>
         <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div><div className="sub">24h 量 {fmtUsdCompact(stats.secondary.vol24h)} · 在挂 {fmtNumber(stats.secondary.listed, 0)}</div></div>
-        <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">联动 {overview.market.linkedDomain} · {overview.market.configKey}</div></div>
+        <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">联动 {overview.market.linkedDomain} · 恢复统一由 J1 执行</div></div>
       </div>
 
       <G4AdminOperations ctx={ctx} />
@@ -282,14 +274,14 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               <div style={{ fontSize: 12, color: "var(--ink-4)", marginBottom: 2 }}>一级售出进度 {fmtNumber(stats.sold, 0)} / {fmtNumber(stats.totalSlots, 0)}</div>
               <div className="sold"><i style={{ width: `${soldPct}%` }} /></div>
             </div>
-            {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{supplyParam.sub}</div></div><span className="v">{supplyParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(supplyParam)}>调整</button></div>}
-            {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价</div><div className="s">{priceParam.sub}</div></div><span className="v">{priceParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(priceParam)}>调整</button></div>}
-            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日排放率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(dividendParam)}>调整</button></div>}
-            {royaltyParam && <div className="p-row"><div className="txt"><div className="k">二级版税</div><div className="s">{royaltyParam.sub}</div></div><span className="v">{royaltyParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(royaltyParam)}>调整</button></div>}
+            {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{supplyParam.sub}</div></div><span className="v">{supplyParam.displayValue}</span>{allowed(paramAuthority(supplyParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
+            {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价</div><div className="s">{priceParam.sub}</div></div><span className="v">{priceParam.displayValue}</span>{allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
+            {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日排放率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
+            {royaltyParam && <div className="p-row"><div className="txt"><div className="k">二级版税</div><div className="s">{royaltyParam.sub}</div></div><span className="v">{royaltyParam.displayValue}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
             <div className="p-row"><div className="txt"><div className="k">排放开阀 <span className="bdg ok" style={{ fontSize: 9 }}>H1 权威</span></div><div className="s">上所前关闭；由 H1 逐月节奏旋钮控制，本页只读</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>
-            {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{airdropPctParam.sub}</div></div><span className="v">{airdropPctParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(airdropPctParam)}>调整</button></div>}
-            {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">排放曲线</div><div className="s">{emissionCurveParam.sub}</div></div><span className="v">{emissionCurveParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(emissionCurveParam)}>调整</button></div>}
-            {airdropLockDaysParam && <div className="p-row"><div className="txt"><div className="k">OG 倍率锁仓期</div><div className="s">{airdropLockDaysParam.sub}</div></div><span className="v">{airdropLockDaysParam.displayValue}</span><button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(airdropLockDaysParam)}>调整</button></div>}
+            {airdropPctParam && <div className="p-row"><div className="txt"><div className="k">空投占比</div><div className="s">{airdropPctParam.sub}</div></div><span className="v">{airdropPctParam.displayValue}</span>{allowed(paramAuthority(airdropPctParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(airdropPctParam)}>调整</button>}</div>}
+            {emissionCurveParam && <div className="p-row"><div className="txt"><div className="k">排放曲线</div><div className="s">{emissionCurveParam.sub}</div></div><span className="v">{emissionCurveParam.displayValue}</span>{allowed(paramAuthority(emissionCurveParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(emissionCurveParam)}>调整</button>}</div>}
+            {airdropLockDaysParam && <div className="p-row"><div className="txt"><div className="k">OG 倍率锁仓期</div><div className="s">{airdropLockDaysParam.sub}</div></div><span className="v">{airdropLockDaysParam.displayValue}</span>{allowed(paramAuthority(airdropLockDaysParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(airdropLockDaysParam)}>调整</button>}</div>}
           </div>
         </section>
 
@@ -298,7 +290,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             <span className="ttl">一二级市场</span>
             <span className="sub">· 实时 stats · 排放跟随 NFT</span>
             <div className="r">
-              <button className="l-btn mc" disabled={busy} onClick={runMarketSwitch}>{marketOn ? "市场熔断" : "恢复市场"}</button>
+              {marketOn && allowed("finprod_g4_market_toggle")
+                ? <button className="l-btn mc" disabled={busy} onClick={runMarketSwitch}>市场熔断</button>
+                : !marketOn ? <Link href="/emergency/kill-switch" className="l-btn">前往 J1 申请恢复</Link> : null}
               <Link href="/emergency/geo-block" className="l-btn">地域封锁(J2)→</Link>
             </div>
           </div>
@@ -325,8 +319,8 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           <span className="ttl">排放派发监控</span>
           <span className="sub">· H1 开阀后按服务端排放参数执行</span>
           <div className="r">
-            {divBaseParam && <button className="l-btn mc" disabled={busy} onClick={() => adjustParam(divBaseParam)}>调整基数口径</button>}
-            <button className="l-btn" disabled={busy || !overview.emissionGate.open || !dividend.batchNo} onClick={runRerunBatch}>重跑今日批次{batchRerun ? "(已重跑)" : ""}</button>
+            {divBaseParam && allowed(paramAuthority(divBaseParam.key)) && <button className="l-btn mc" disabled={busy} onClick={() => adjustParam(divBaseParam)}>调整基数口径</button>}
+            {allowed("finprod_g4_write") && <button className="l-btn" disabled={busy || !overview.emissionGate.open || !dividend.batchNo} onClick={runRerunBatch}>重跑今日批次{batchRerun ? "(已重跑)" : ""}</button>}
           </div>
         </div>
         <div className="l-b">
@@ -385,7 +379,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>持有、排放、二级成交全部服务器为准</b>:节点序号和排放服务端单源,客户端伪造持有/排放无效。数据源:{overview.sources.join(" / ")}。</p>
+      <p className="f-foot"><b>持有、排放、二级成交全部以服务器为准</b>:节点序号、钱包和排放由权威台账统一核算，客户端伪造持有或排放无效。</p>
 
       {selectedNode && <NodeDrawer node={selectedNode} onClose={() => setNodeDrawer(null)} />}
     </>

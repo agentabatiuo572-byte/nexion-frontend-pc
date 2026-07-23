@@ -143,6 +143,18 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     return () => { alive = false; };
   }, []);
 
+  const reload = async () => {
+    setLoading(true);
+    try {
+      applyResponse(await fetchH7Vouchers());
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "H7_VOUCHER_LOAD_FAILED");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const list = data.vouchers;
   // 适用 SKU 下拉选项 = 后端返回的在售 SKU;value=产品 id(对齐前端 applicableSkus),label=中文名(运营友好)。
   const skuList = data.skus;
@@ -261,11 +273,17 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
     });
   };
 
+  if (loading) return <section className="l-card"><div className="l-b">H7 数据加载中...</div></section>;
+  if (error) return (
+    <section className="l-card">
+      <div className="l-h"><span className="ttl">H7 数据加载失败</span></div>
+      <div className="l-b">{error} · 为避免误操作，新增和编辑功能已关闭。<button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button></div>
+    </section>
+  );
+
   return (
     <>
       {/* 顶部 KPI */}
-      {error ? <div className="l-card bad">H7 数据加载失败 · {error}</div> : null}
-      {loading ? <div className="l-card">H7 数据加载中...</div> : null}
       <div className="f-stats">
         <div className="f-stat">
           <div className="k">代金券总数</div>
@@ -342,7 +360,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="l-b" style={{ paddingTop: 10 }}>
           <div className="htint" style={{ fontSize: 12 }}>
-            <b>前后端同契约</b> · 本表的 OpsVoucher 是前端 VoucherDef 的结构化超集,任何上下架 / 改参 <b>立即对前端领券弹窗与 banner 生效</b>。代金券是促销折扣、非 NEX 负债,不走 B1 兑付红线。
+            <b>全端同一规则</b> · 代金券上下架或改参后，领取入口和首页活动位会按同一服务端配置生效。代金券属于促销折扣，不计入 NEX 兑付负债。
           </div>
         </div>
       </section>

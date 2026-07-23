@@ -7,7 +7,7 @@ export type ActionConfirmReq = {
   amplifies?: boolean;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
-  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void;
+  run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
 export type ConfirmReq = {

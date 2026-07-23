@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   resolveVisibleDomains,
@@ -10,6 +12,13 @@ import {
 import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "../lib/admin/session-role.ts";
 import { completeInteractiveLogin } from "../lib/admin/login-completion.ts";
 import { buildRoleMetadataPayload, buildRoleStatusPayload, mutateThenReloadOverview, normalizeProposalTicket } from "../lib/admin/platform-contracts.ts";
+import {
+  normalizeA6Overview,
+  normalizeA6Detail,
+  normalizeA7Overview,
+  normalizeA8Page,
+  normalizeA8Permission,
+} from "../lib/admin/rbac-contracts.ts";
 
 test("backend menu grants override the static role fallback", () => {
   const domains = resolveVisibleDomains({
@@ -226,4 +235,40 @@ test("A6 metadata save and status approval use disjoint payloads", () => {
   assert.deepEqual(buildRoleStatusPayload(1), { status: 1 });
   assert.deepEqual(buildRoleStatusPayload(0), { status: 0 });
   assert.throws(() => buildRoleStatusPayload(2), /A6_ROLE_STATUS_INVALID/);
+});
+
+test("A6 A7 and A8 reject malformed success payloads instead of showing false empty state", () => {
+  assert.throws(() => normalizeA6Overview({ total: 2 }), /A6_OVERVIEW_CONTRACT_INVALID/);
+  assert.throws(() => normalizeA6Detail({ id: 0, roleCode: "", roleName: "" }), /A6_DETAIL_CONTRACT_INVALID/);
+  assert.throws(() => normalizeA7Overview({ tree: [], domainCount: 1, pageCount: 0, activeCount: 0 }), /A7_OVERVIEW_CONTRACT_INVALID/);
+  assert.throws(() => normalizeA8Page({ total: 1, pageNum: 1, pageSize: 20 }), /A8_PAGE_CONTRACT_INVALID/);
+  assert.throws(() => normalizeA8Permission({ permissionCode: "", permType: "READ" }), /A8_PERMISSION_CONTRACT_INVALID/);
+});
+
+test("RBAC screens keep read-only users non-mutating and preserve retry identity/input", () => {
+  const here = fileURLToPath(new URL(".", import.meta.url));
+  const a6 = readFileSync(`${here}/../app/components/domain-views/a-tabs/a6-roles.tsx`, "utf8");
+  const a7 = readFileSync(`${here}/../app/components/domain-views/a-tabs/a7-menus.tsx`, "utf8");
+  const a8 = readFileSync(`${here}/../app/components/domain-views/a-tabs/a8-permissions.tsx`, "utf8");
+
+  assert.match(a6, /authorities\.includes\("platform_a6_write"\)/);
+  assert.match(a6, /authorities\.includes\("platform_a6_role_grants_update"\)/);
+  assert.match(a7, /authorities\.includes\("platform_a7_write"\)/);
+  assert.match(a7, /const stableKey = newA7IdempotencyKey/);
+  assert.match(a7, /await confirmReq\.run\(reason\); setConfirmReq\(null\)/);
+  assert.doesNotMatch(a7, /setMode\(null\);\s*setConfirmReq/);
+  assert.match(a8, /setResult\(null\)/);
+  assert.match(a8, /权限目录加载失败，当前没有可确认的数据/);
+});
+
+test("A7 relationship constraint failures have actionable operator messages", () => {
+  const here = fileURLToPath(new URL(".", import.meta.url));
+  const errors = readFileSync(`${here}/../lib/admin/error-messages.ts`, "utf8");
+  const a7 = readFileSync(`${here}/../app/components/domain-views/a-tabs/a7-menus.tsx`, "utf8");
+
+  assert.match(errors, /MENU_NODE_HAS_ACTIVE_CHILDREN:[\s\S]*先停用或迁移启用中的子菜单/);
+  assert.match(errors, /MENU_NODE_HAS_ROLE_BINDINGS:[\s\S]*先在角色管理中解除菜单授权/);
+  assert.match(errors, /PARENT_MENU_NOT_ACTIVE:[\s\S]*先启用父菜单/);
+  assert.match(a7, /角色菜单授权[\s\S]*角色管理中解除菜单授权/);
+  assert.doesNotMatch(a7, /删除成功后，角色侧栏入口会同步收回/);
 });

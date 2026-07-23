@@ -58,7 +58,7 @@ export const COMPUTE_COEFFICIENTS: ComputeCoefficientDef[] = [
     key: "h5BaseFactor",
     label: "H5 基础托管系数",
     defaultVal: 0.6,
-    unit: "× 基线 · 取值 0–1",
+    unit: "× 基线 · 取值 >0 且 ≤1",
     placeholder: "0.6",
     desc: "H5(网页非常驻载体)按基准产出 × 此系数计算基础托管产出,不叠加充电 / 散热 / 连续在线在线加成。",
     frontendEffect: "调高=H5 基础托管产出更高(与 App 差距缩小);调低=放大 App 在线加成优势,强化「升级 App」转化。",

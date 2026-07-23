@@ -9,6 +9,7 @@ import { useState } from "react";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
+import { createJEmergencyCommandKey } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate } from "@/lib/admin/j-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -76,9 +77,8 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const effOn = (g: Gate): boolean => g.enabled;
   const effEmer = (g: Gate): boolean => g.emergency;
   const effChange = (g: Gate): string => g.lastChange;
-  // R3 阈值与 J3 告警阈值同源(PRD J1④ R3 判据引用 J3③,不另立 key);R1/R2 走 J.autorule.* 可操作确认调。
-  const tamperThr = (emergency.tamper?.alertConfig.label ?? "10 次 / 24h").split("·")[0].trim();
-  const effThr = (r: AutoRuleRow) => (r.id === "tamperCluster" ? tamperThr : r.thr);
+  // R3 阈值由 J1 矩阵响应直接返回 J3 的权威配置值；J1 不再跨标签取数或持有默认副本。
+  const effThr = (r: AutoRuleRow) => r.thr;
   const autoRuleDisplayName = (ruleId: string) => AUTO_RULES.find((rule) => rule.id === ruleId)?.nm ?? "未知自动规则";
   // recoverGate 跟随 B1 红线单源(LEDGER),J 域只读引用不持有;其余应急参数 store 可调。
   const effSla = (row: EmergencySlaRow) => row.v;
@@ -90,7 +90,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
   const coverageBlockedCount = data.stats.coverageBlockedCount;
   const pendingAutoConfirmationKeys = new Set(AUTO_CONFIRMATIONS.map((row) => row.key));
 
-  const killGate = (g: Gate) => openActionConfirm({
+  const killGate = (g: Gate) => {
+    const commandKey = createJEmergencyCommandKey();
+    openActionConfirm({
     action: `关停业务闸 · ${g.name}`,
     detail: (
       <><b>{g.name}</b>控制{g.cap}。确认后服务器立即拒绝对应业务请求，并记录操作人、理由、变更前后状态和时间。关停不会增加资金流出，不需要先检查备付金。</>
@@ -109,11 +111,14 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       return runBackend(actions.toggleJ1KillSwitch(g.key, false, reason, {
         triggerBasis: businessValue?.triggerBasis,
         dispositionPlan: businessValue?.dispositionPlan,
-      }), `${g.name}已立即关停`);
+      }, commandKey), `${g.name}已立即关停`);
     },
-  });
+    });
+  };
 
-  const resumeGate = (g: Gate) => openActionConfirm({
+  const resumeGate = (g: Gate) => {
+    const commandKey = createJEmergencyCommandKey();
+    openActionConfirm({
     action: `恢复业务闸 · ${g.name}`,
     amplifies: g.amplifies,
     coverage: g.coveragePrecheckRequired && coverageReady
@@ -125,14 +130,16 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         : <>该业务不会直接增加资金流出，可在填写理由后立即恢复。</>}确认后由服务器立即执行并记录审计。</>
     ),
     run: (reason) => {
-      return runBackend(actions.toggleJ1KillSwitch(g.key, true, reason), `${g.name}已立即恢复`);
+      return runBackend(actions.toggleJ1KillSwitch(g.key, true, reason, undefined, commandKey), `${g.name}已立即恢复`);
     },
-  });
+    });
+  };
 
   const launchBatch = () => {
     // #28:用运营勾选的在线闸作为批量关停目标(替代旧固定「立即出钱」闸);未选任何闸禁止确认。
     const targets = gates.filter((g) => sel[g.key] && effOn(g));
     if (!targets.length) { toast("请先在上方闸卡勾选要批量关停的在线功能闸(至少一个)"); return; }
+    const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
       action: "应急批量熔断 · 监管点名场景",
       detail: (
@@ -156,7 +163,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           triggerBasis: businessValue?.triggerBasis ?? "",
           regulatoryContext: businessValue?.regulatoryContext ?? "",
           dispositionPlan: businessValue?.dispositionPlan,
-        }), `已立即关停 ${targets.length} 个业务闸`)
+        }, commandKey), `已立即关停 ${targets.length} 个业务闸`)
           .then(() => setSel({}));
       },
     });
@@ -165,29 +172,33 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
 
   const adjEmer = (row: EmergencySlaRow) => {
     const cur = effSla(row);
+    const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
       action: `应急参数调整 · ${row.k}`,
       detail: <><b>{row.k}</b> · {row.d}。自动关停即时生效，补录只补全审计信息，不会自动恢复业务闸。</>,
       edit: { kind: row.kind, current: cur, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1 },
       run: (reason, newValue) => {
-        return runBackend(actions.updateJ1Sla(row.id, newValue ?? cur, reason), `${row.k} 已调整`);
+        return runBackend(actions.updateJ1Sla(row.id, newValue ?? cur, reason, commandKey), `${row.k} 已调整`);
       },
     });
   };
 
   const adjRule = (r: AutoRuleRow) => {
     const cur = effThr(r);
+    const commandKey = createJEmergencyCommandKey();
     openActionConfirm({
       action: `自动触发规则调整 · ${r.nm}`,
       detail: <><b>{r.nm}</b>当前阈值为 {cur} {r.unit}。保存后服务器定时读取真实业务指标；超过阈值时自动关停对应业务闸并写入审计记录。</>,
       edit: { kind: "number", current: cur, unit: r.unit, min: 1, max: 1_000_000_000, step: 1 },
       run: (reason, newValue) => {
-        return runBackend(actions.updateJ1AutoRule(r.id, newValue ?? cur, reason), `${r.nm} 已确认生效`);
+        return runBackend(actions.updateJ1AutoRule(r.id, newValue ?? cur, reason, commandKey), `${r.nm} 已确认生效`);
       },
     });
   };
 
-  const confirmAutoTrigger = (row: AutoConfirmationRow) => openActionConfirm({
+  const confirmAutoTrigger = (row: AutoConfirmationRow) => {
+    const commandKey = createJEmergencyCommandKey();
+    openActionConfirm({
     action: `补录自动关停结论 · ${row.name}`,
     detail: <><b>{row.name}</b>由 {autoRuleDisplayName(row.ruleId)} 自动关停，触发值 {row.signalValue}，阈值 {row.threshold}。本操作只补全处置结论，不会自动恢复业务；如建议恢复，仍需超管单独发起恢复并通过备付金检查。</>,
     businessForm: {
@@ -208,10 +219,12 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
         row.incidentId,
         businessValue?.decision as "keep_disabled" | "recommend_restore",
         reason,
+        commandKey,
       ),
       `${row.name}自动关停结论已补录`,
     ),
-  });
+    });
+  };
 
   return (
     <div>
@@ -380,7 +393,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
               </div>
               <div className="cond">{r.cond.map((part, i) => {
                 if (!part) return null;
-                const text = r.id === "tamperCluster" && i === 1 ? tamperThr : part;
+                const text = r.id === "tamperCluster" && i === 1 ? `${effThr(r)} ${r.unit}` : part;
                 return i % 2 ? <b key={i}>{text}</b> : <AutoGloss key={i}>{text}</AutoGloss>;
               })}</div>
               <div className="row">

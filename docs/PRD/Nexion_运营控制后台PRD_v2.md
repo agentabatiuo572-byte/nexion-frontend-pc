@@ -2,6 +2,7 @@
 
 > 本卷是运营控制后台 PRD 的 **V2 分卷**,承接 V1 卷(`Nexion_运营控制后台PRD_v1.md`)的横切地基:§1.8 三原则(双账本 / server-canonical / 埋点优先)· A2 审计 & 操作确认(Confirm-with-Reason,2026-06 操作确认决议)· A4 埋点事件体系(§2.4)· §3.14 跨域归属 · H1 Phase 10-dial 权威(§1.7)。章节编号续 V1(Ch10 起)。
 > **跨卷 §锚点**:§1.x–§9.x(本后台)指向 **V1 文件**;§13.4 / §9.11x / §6.x / §7.x 指向前端 PRD v3.5 与 12 月节奏表。参数默认值锚 12 月节奏表 §6,前端为现状参考。撰写遵循 `nexion-admin-prd` skill 流水线。
+> **E3 后发裁定（2026-07-21）**：`specs/FEAT-DEV01-task-capacity-schedule.md` 与 `specs/FEAT-DEV02-tradein-ladder.md` 是 E3 当前唯一执行规格，优先于本卷中全部 `degradeEarly/degradeMid/degradeLate/minEfficiency/minHoldingMonths/salvage` 旧字段、旧公式、旧接口与旧 K2 联动描述。旧段落只保留为历史设计背景，不得进入代码、配置、页面、CGM 或验收口径。
 
 ## 目录(V2 卷)
 
@@ -21,7 +22,7 @@
 > 本章承接 V1 已落地的横切地基:**审计 / 操作确认权威归 A2**(§3.14;全章高敏写操作复用 A2 操作确认契约——确认弹窗 + 理由必填(server 强制非空 400 `REASON_REQUIRED`)+ 审计 schema,2026-06 操作确认决议,E 域不另立确认机制)、**埋点命名 / 身份 / 通用属性权威归 A4**(§2.4;本章所有 `device.*` / `store.*` / `checkout.*` / `admin.*` 事件均在 A4 schema registry 注册,⑧ 段不另立命名)、**资金动作权威归 D 域**(订单支付走 D1 充值 / PSP、paid 写 D4 账本,见 E4)。
 >
 > 跨域归属(§3.14)在本章的体现 / 须补登条目:
-> - **E3 `minHoldingMonths` 配置权威归 E3**,**K2 套利检测(Ch8 §Ch8 K2)只读消费**——K2 已在 §Ch8 明确声明该值「权威归 E3 Trade-in 配置(§3.3 E3,V2),K2 以只读方式消费 `GET /api/config/tradein` 热改值」;E3 是该阈值的唯一配置面,K2 不持配置权。
+> - **E3 换新阶梯权威归 E3**，K2 只读消费已完成置换、正数佣金与 IN 向正数赠送事实；K2 不持有换新配置，也不再读取 `minHoldingMonths`。
 > - **E1 设备规格(baseRate / baseRateNEX / price)被 C1 用户画像 fleet 卡引用**(§Ch5 C1 展示用户持有设备的日产基准),E1 为规格权威源,C1 只读展示。
 > - **E1 代际发布门由 H1 Phase 月龄派发驱动**(§1.7 Phase 引擎权威归 H1),E1 调整的是「代际发布时点 / trade-in 折扣」,Phase 月龄判定本身归 H1;E1 联动 H1 但不持 Phase 权威。
 > - **E4 订单支付链路依赖 D 域**:支付走 **D1 充值对账中心 / PSP**,paid 状态写 **D4 账本 / 账单审计**,退款联动 D 资金回退 + `cumulativeDepositUsdt` 核减(原子)。E4 持订单状态机权威,资金侧动作归 D。
@@ -455,6 +456,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 ---
 
 #### [E3a] 设备生命周期
+> **当前执行口径**：本小节凡出现旧衰减字段、加法衰减、总周期截断、旧 `/api/admin/config/lifecycle` 接口，均由 `specs/FEAT-DEV01-task-capacity-schedule.md` 覆盖。运行时使用三段逐月复利产能曲线，`cycleMonths` 只作图表视窗，第三段开区间持续至 floor；8 类 SKU 开关、补贴标注和任务锁定阈值均来自 `/api/admin/devices/e3/config`。
+
 
 **① 目的 & 对齐**
 设备效率衰减曲线的运营面,是「设备 12 月内自然失效 → 驱动 trade-in / 升级 / 锁仓」的核心机制控制点。对齐前端 §6.8(DeviceLifecycleBanner / `/earn` 入口,`lib/store/device-lifecycle.ts`)+ §9.11c.1(lifecycle,`GET /api/config/lifecycle`)+ **12 月节奏表 §6.1 衰减曲线**。服务的业务目标:LTV 与资金沉淀(设备衰减 → 持续升级消费,§1.4 硬件 GMV 复购 + 12 月节奏软退场)、损失感驱动的 trade-in 漏斗(联动 E3)。
@@ -618,6 +621,8 @@ AI 任务定价与任务路由门槛的运营面,决定设备每日产出的「�
 ---
 
 #### [E3b] Trade-in 配置
+> **当前执行口径**：本小节凡出现 `salvage/minHoldingMonths`、按设备月龄拒绝或旧 `/api/config/tradein` 接口，均由 `specs/FEAT-DEV02-tradein-ladder.md` 覆盖。现行模型按累计已结算产出/旧机实付比例选择 4 个界点、5 个折抵率；用户只走 `/api/app/trade-in/config|quote|submit`，submit 在单事务内扣钱包、写 D4、回收旧机并交付新机。
+
 
 **① 目的 & 对齐**
 旧机置换升级的核心漏斗配置面——残值参数、购买资格规则、promo banner 节奏、原子换机 tx 监控。对齐前端 §7.5(Trade-in,`lib/v3/_config/tradein-config.ts`)+ §9.11c.1(tradein-config,`GET /api/config/tradein`)。服务的业务目标:代际升级转化(§1.4 硬件 GMV 复购,12 月节奏 P3/P5 升级窗口的核心承接)、防套利(minHoldingMonths,联动 K2)。**E3 是 `minHoldingMonths` 等 trade-in 参数的唯一配置权威源**,K2 套利检测只读消费(§3.14 / §Ch8 K2)。

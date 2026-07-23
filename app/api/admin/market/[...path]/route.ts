@@ -32,6 +32,18 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "nex" && parts[1] === "repurchase") {
     return "/api/admin/market/nex/repurchase";
   }
+  if (parts.length === 3 && parts[0] === "nex" && parts[1] === "repurchase" && parts[2] === "orders") {
+    return "/api/admin/repurchase/orders";
+  }
+  if (
+    parts.length === 4 &&
+    parts[0] === "nex" &&
+    parts[1] === "repurchase" &&
+    parts[2] === "config" &&
+    isNonEmpty(parts[3])
+  ) {
+    return `/api/admin/repurchase/config/${encodeURIComponent(parts[3])}`;
+  }
   if (
     parts.length === 4 &&
     parts[0] === "nex" &&
@@ -136,6 +148,9 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 2 && parts[0] === "exchange" && parts[1] === "swap") {
     return "/api/admin/market/exchange/swap";
+  }
+  if (parts.length === 3 && parts[0] === "exchange" && parts[1] === "queue" && parts[2] === "process") {
+    return "/api/admin/market/exchange/queue/process";
   }
   if (
     parts.length === 4 &&

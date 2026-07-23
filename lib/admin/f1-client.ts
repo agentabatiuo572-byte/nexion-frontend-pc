@@ -55,7 +55,13 @@ interface BackendOverview {
   skuLabels?: Record<string, string> | null;
   leadership?: BackendLeadership | null;
   configValues?: Record<string, string> | null;
+  coverage?: BackendCoverage | null;
   sources?: string[] | null;
+}
+
+interface BackendCoverage {
+  coverageRatio?: number | string | null;
+  redlinePct?: number | string | null;
 }
 
 interface BackendF2Metric {
@@ -108,6 +114,7 @@ interface BackendF2Overview {
   commissionPolicy?: Record<string, unknown> | null;
   guardrails?: string[] | null;
   configValues?: Record<string, string> | null;
+  coverage?: BackendCoverage | null;
   sources?: string[] | null;
 }
 
@@ -176,6 +183,7 @@ interface BackendF3Overview {
   commissionPolicy?: Record<string, unknown> | null;
   guardrails?: string[] | null;
   configValues?: Record<string, string> | null;
+  coverage?: BackendCoverage | null;
   sources?: string[] | null;
 }
 
@@ -263,6 +271,7 @@ interface BackendF4LeadershipPoolOverview {
   commissionPolicy?: Record<string, unknown> | null;
   guardrails?: string[] | null;
   configValues?: Record<string, string> | null;
+  coverage?: BackendCoverage | null;
   sources?: string[] | null;
 }
 
@@ -330,6 +339,7 @@ interface BackendF5CommissionAuditOverview {
   commissionPolicy?: Record<string, unknown> | null;
   guardrails?: string[] | null;
   configValues?: Record<string, string> | null;
+  coverage?: BackendCoverage | null;
   sources?: string[] | null;
 }
 
@@ -371,6 +381,7 @@ export interface F1VRankOverview {
   skuLabels: Record<string, string>;
   leadership: F1Leadership;
   configValues: Record<string, string>;
+  coverage?: { coverageRatio: number; redlinePct: number };
   sources: string[];
 }
 
@@ -423,6 +434,7 @@ export interface F2RatesOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
+  coverage?: { coverageRatio: number; redlinePct: number };
   sources: string[];
 }
 
@@ -491,6 +503,7 @@ export interface F3BinaryOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
+  coverage?: { coverageRatio: number; redlinePct: number };
   sources: string[];
 }
 
@@ -578,6 +591,7 @@ export interface F4LeadershipPoolOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
+  coverage?: { coverageRatio: number; redlinePct: number };
   sources: string[];
 }
 
@@ -645,6 +659,7 @@ export interface F5CommissionAuditOverview {
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
+  coverage?: { coverageRatio: number; redlinePct: number };
   sources: string[];
 }
 
@@ -753,6 +768,14 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
   }
   const voucherOptions = data?.voucherOptions ?? [];
   const skuOptions = data?.skuOptions ?? [];
+  // coverage 可选:后端 ranks() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验)。
+  const rawCoverage = data?.coverage;
+  const coverage = rawCoverage
+    ? {
+        coverageRatio: toNumber(rawCoverage.coverageRatio),
+        redlinePct: toNumber(rawCoverage.redlinePct),
+      }
+    : undefined;
   return {
     rows,
     rewards,
@@ -762,6 +785,7 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     skuLabels: normalizeLabels(skuOptions, data?.skuLabels),
     leadership: normalizeLeadership(data?.leadership),
     configValues: data?.configValues ?? {},
+    coverage,
     sources: data?.sources ?? [],
   };
 }
@@ -815,6 +839,10 @@ function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2Rate
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
+    // coverage 可选:后端 rates() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
+    coverage: data?.coverage
+      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+      : undefined,
     sources: data?.sources ?? [],
   };
 }
@@ -880,6 +908,10 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
+    // coverage 可选:后端 binary() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
+    coverage: data?.coverage
+      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+      : undefined,
     sources: data?.sources ?? [],
   };
 }
@@ -957,6 +989,10 @@ function normalizeF4Overview(data: BackendF4LeadershipPoolOverview | null | unde
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
+    // coverage 可选:后端 leadershipPool() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
+    coverage: data?.coverage
+      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+      : undefined,
     sources: data?.sources ?? [],
   };
 }
@@ -1020,6 +1056,10 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
+    // coverage 可选:后端 commissions() 注入 B1 备付金覆盖率快照;无则不传(OperationConfirmModal 退化为提交时由后端实时校验),范式同 normalizeOverview。
+    coverage: data?.coverage
+      ? { coverageRatio: toNumber(data.coverage.coverageRatio), redlinePct: toNumber(data.coverage.redlinePct) }
+      : undefined,
     sources: data?.sources ?? [],
   };
 }

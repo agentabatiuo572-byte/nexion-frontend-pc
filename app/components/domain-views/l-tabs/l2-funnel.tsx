@@ -5,11 +5,13 @@
  * 漏斗各级 users/cvr/色 join 自 FUNNEL(与 B3 驾驶舱同口径单一源);复投级挂「V1 降级口径」badge。
  * 全页只读下钻;导出为聚合序列(仍需操作确认 落审计)。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, num, rec, rows, str, strings, type KpiRow } from "./live-data";
+import { readL2LiveStages } from "./l1-l2-live-data";
+import { L2LiveStages } from "./l1-l2-live-fallback";
 import type { LCtx } from "./types";
 
 type FunnelRow = { stage: string; ev?: string; users: number; cvr?: number | null; lc: string; color: string; target?: string | null };
@@ -24,7 +26,7 @@ type FunnelExt = {
   v1?: boolean;
 };
 type TrialStep = { e: string; n: number; arr?: string; arrLb?: string };
-type CohortRow = { w: string; size: number; d1?: number | null; d7?: number | null; d30?: number | null };
+type CohortRow = { w: string; size: number; d1?: number | null; d7?: number | null; d14?: number | null; d30?: number | null; d60?: number | null };
 type XdMetric = { rows: (string | number)[][]; alert: number[]; unit: string; msg: { pre: string; bold: string; post: string } };
 
 function normalizeXdMetric(raw: unknown): XdMetric {
@@ -51,29 +53,44 @@ function heatStyle(v: number | null | undefined): React.CSSProperties {
 }
 
 export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
+  const detailedFunnel = rows<FunnelRow>(ctx.biData?.l2?.funnel);
+  const liveStages = readL2LiveStages(ctx.biData?.l2);
+  const exportable = detailedFunnel.length > 0 || liveStages.length > 0;
+  const complete = detailedFunnel.length > 0
+    && rows(ctx.biData?.l2?.funnelExt).length > 0
+    && rows(ctx.biData?.l2?.cohorts).length > 0;
   const exportFunnel = async () => {
     const ok = await confirm({
-      title: "导出 cohort / 漏斗序列 CSV",
-      message: "内容:漏斗各级去重人数 + 转化率 + 各 cohort 留存率序列(按当前切片与留存窗)。全部是聚合计数,不含手机号、地址等明文。仍需操作确认,落 admin.report_exported 审计。",
+      title: complete ? "导出 cohort / 漏斗序列 CSV" : "导出生命周期计数 CSV",
+      message: complete
+        ? "内容:漏斗各级去重人数 + 转化率 + 各 cohort 留存率序列(按当前切片与留存窗)。全部是聚合计数,不含手机号、地址等明文。仍需操作确认，并生成可追溯记录。"
+        : "完整同期群与逐级漏斗尚未开放。本次只导出页面已展示的生命周期独立事实计数，不包含转化率或留存推算值；不含手机号、地址等明文，并生成可追溯记录。",
       confirmLabel: "导出",
     });
     if (!ok) return;
-    await ctx.biActions?.createReport({
-      exportType: "漏斗序列",
-      timeRange: "当前 cohort 窗口",
-      fields: "漏斗去重人数/CVR/cohort 留存率",
-      piiLevel: "无 PII",
-      maskPolicy: "NONE",
-      recipient: "BI 管理员",
-      ticket: "L2-FUNNEL",
-    }, "导出漏斗 cohort 聚合序列用于转化分析");
-    await ctx.reloadBi?.();
-    ctx.toast("漏斗 cohort 导出任务已提交 · 数据来自后端 BI 接口");
+    try {
+      await ctx.biActions?.createReport({
+        exportType: complete ? "漏斗序列" : "漏斗生命周期事实",
+        timeRange: complete ? "当前 cohort 窗口" : "当前快照",
+        fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/KYC/订单/钱包活动聚合计数",
+        piiLevel: "NONE",
+        maskPolicy: "NONE",
+        recipient: "BI 管理员",
+        ticket: "L2-FUNNEL",
+      }, complete ? "导出漏斗 cohort 聚合序列用于转化分析" : "导出 L2 当前生命周期事实用于数据核对");
+      await ctx.reloadBi?.();
+      ctx.toast(complete ? "漏斗 cohort 导出任务已提交" : "生命周期计数任务已提交 · 仅包含页面已展示的累计事实");
+    } catch (error) {
+      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${error.message}` : "导出任务提交失败 · 请稍后重试");
+    }
   };
   return (
     <>
       <span className="f-ro"><span className="d" />只读下钻 · 漏斗怎么定义这里改不了</span>
-      <button className="f-cta" onClick={exportFunnel}>导出 cohort / 漏斗序列</button>
+      {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
+      <button className="f-cta" onClick={exportFunnel} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "尚未返回可导出的 L2 数据" : undefined}>
+        {complete ? "导出 cohort / 漏斗序列" : "导出生命周期计数 CSV"}
+      </button>
     </>
   );
 }
@@ -81,44 +98,78 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
 export function L2Funnel({ ctx }: { ctx: LCtx }) {
   const [selStage, setSelStage] = useState(2);
   const [selCohort, setSelCohort] = useState(4);
-  const [cmp, setCmp] = useState<"W18" | "W20" | "none">("W18");
+  const [cmp, setCmp] = useState<string>("none");
   const [metric, setMetric] = useState<"cvr" | "ret" | "trial">("cvr");
   const [wins, setWins] = useState<string[]>(["Day1", "Day7", "Day30"]);
   const [slice, setSlice] = useState(0);
   const [gran, setGran] = useState(0);
 
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("nexion:l2:view") || "null") as {
+        wins?: string[]; slice?: number; gran?: number; metric?: "cvr" | "ret" | "trial";
+      } | null;
+      if (!saved) return;
+      if (Array.isArray(saved.wins)) setWins(saved.wins.filter((item) => ["Day1", "Day7", "Day14", "Day30", "Day60"].includes(item)));
+      if (saved.slice != null && saved.slice >= 0 && saved.slice <= 3) setSlice(saved.slice);
+      if (saved.gran === 0 || saved.gran === 1) setGran(saved.gran);
+      if (saved.metric && ["cvr", "ret", "trial"].includes(saved.metric)) setMetric(saved.metric);
+    } catch {
+      // An invalid local view is ignored; analytics data and canonical formulas are never affected.
+    }
+  }, []);
+
+  const saveView = () => {
+    try {
+      localStorage.setItem("nexion:l2:view", JSON.stringify({ wins, slice, gran, metric }));
+      ctx.toast("当前切片、cohort 粒度与留存窗已保存 · 不改统计口径");
+    } catch {
+      ctx.toast("视图保存失败 · 浏览器存储不可用，请稍后重试");
+    }
+  };
+
   const data = ctx.biData?.l2;
   const FUNNEL = rows<FunnelRow>(data?.funnel);
   const FUNNEL_EXT = rows<FunnelExt>(data?.funnelExt);
   const TRIAL_STEPS = rows<TrialStep>(data?.trialSteps);
-  const COHORTS = rows<CohortRow>(data?.cohorts);
-  const CURVES = rec<[number, number][]>(data?.curves);
+  const WEEKLY_COHORTS = rows<CohortRow>(data?.cohorts);
+  const MONTHLY_COHORTS = rows<CohortRow>(data?.monthlyCohorts);
+  const COHORTS = gran === 1 && MONTHLY_COHORTS.length ? MONTHLY_COHORTS : WEEKLY_COHORTS;
+  const CURVES = rec<[number, number][]>(gran === 1 && MONTHLY_COHORTS.length ? data?.monthlyCurves : data?.curves);
   const XD = rec(data?.crossAnalysis);
   const STAGE_EV = strings(data?.stageEvents);
   const day7 = (data?.day7Kpi ?? {}) as Partial<KpiRow>;
+  const liveStages = readL2LiveStages(data);
+  if ((!FUNNEL.length || !FUNNEL_EXT.length || !COHORTS.length) && liveStages.length) return <L2LiveStages stages={liveStages} />;
   if (!FUNNEL.length || !FUNNEL_EXT.length || !COHORTS.length) return <LDataState ctx={ctx} label="L2" />;
   const safeStage = Math.min(selStage, FUNNEL.length - 1);
   const safeCohort = Math.min(selCohort, COHORTS.length - 1);
   const fullCvr = FUNNEL[0]?.users ? ((FUNNEL[FUNNEL.length - 1].users / FUNNEL[0].users) * 100).toFixed(1) : "0.0";
-  const trialBuy = TRIAL_STEPS[1]?.n ? ((num(TRIAL_STEPS[2]?.n) / TRIAL_STEPS[1].n) * 100).toFixed(1) : "0.0";
+  const trialBuy = TRIAL_STEPS[1]?.n ? ((num(TRIAL_STEPS[2]?.n) / TRIAL_STEPS[1].n) * 100).toFixed(1) : null;
   const maxUsers = FUNNEL[0].users;
   const s = FUNNEL[safeStage];
   const ext = FUNNEL_EXT[safeStage] ?? { plain: s.stage, inflow: "—", lost: "—", dwell: [], note: "" };
   const dwellMax = Math.max(...(ext.dwell.length ? ext.dwell : [1]));
   const xd = normalizeXdMetric(XD[metric]);
+  const retentionColumns = ([1, 7, 14, 30, 60] as const)
+    .filter((day) => wins.includes(`Day${day}`))
+    .map((day) => ({ day, key: `d${day}` as keyof CohortRow }));
 
-  /* ---- 留存衰减曲线(W21 形状为基,按所选 cohort Day7 平移;虚线为对比 cohort) ---- */
+  const cohortCurveKeys = COHORTS.map((cohort) => cohort.w).filter((key) => Array.isArray(CURVES[key]));
+
+  /* ---- 留存衰减曲线：后端按所选 cohort 的 app.dau 同用户窗口返回；虚线为对比 cohort。 ---- */
   const curveChart = () => {
     const W = 560, H = 200, P = 30;
-    const base = COHORTS[safeCohort].d7 ?? 58;
-    const scaled = (CURVES.W21 ?? []).map(([d, v]) => [d, d === 0 ? 100 : v + (base - 58)] as [number, number]);
-    const X = (d: number) => P + (d / 30) * (W - P - 14);
+    const selectedKey = COHORTS[safeCohort].w;
+    const scaled = CURVES[selectedKey] ?? [];
+    const maxCurveDay = Math.max(30, ...scaled.map(([day]) => day));
+    const X = (d: number) => P + (d / maxCurveDay) * (W - P - 14);
     const Y = (v: number) => H - 24 - ((v - 30) / 70) * (H - 44);
     const mp = scaled.map(([d, v], i) => `${i ? "L" : "M"}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ");
     const cp = cmp !== "none" ? (CURVES[cmp] ?? []).map(([d, v], i) => `${i ? "L" : "M"}${X(d).toFixed(1)} ${Y(v).toFixed(1)}`).join(" ") : null;
     return (
       <svg className="curve-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`留存衰减曲线 ${COHORTS[safeCohort].w}`}>
-        {[1, 7, 14, 30].map((d) => (
+        {[1, 7, 14, 30, 60].filter((day) => day <= maxCurveDay).map((d) => (
           <g key={d}>
             <line x1={X(d)} y1={14} x2={X(d)} y2={H - 24} stroke="var(--border)" />
             <text x={X(d)} y={H - 8} fontSize={11} fill="var(--ink-4)" textAnchor="middle">D{d}</text>
@@ -127,7 +178,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         <line x1={P} y1={Y(60)} x2={W - 14} y2={Y(60)} stroke="var(--success)" strokeWidth={1.2} strokeDasharray="4 4" />
         <text x={W - 14} y={Y(60) - 5} fontSize={11} fill="var(--success)" textAnchor="end">Day7 目标 60%</text>
         {cp && <path d={cp} fill="none" stroke="var(--ink-4)" strokeWidth={1.6} strokeDasharray="5 4" />}
-        <path d={`${mp} L${X(30)} ${H - 24} L${X(0)} ${H - 24} Z`} fill="var(--cyan)" opacity={0.08} />
+        <path d={`${mp} L${X(maxCurveDay)} ${H - 24} L${X(0)} ${H - 24} Z`} fill="var(--cyan)" opacity={0.08} />
         <path d={mp} fill="none" stroke="var(--cyan)" strokeWidth={2.2} />
         {scaled.filter(([d]) => [1, 7, 30].includes(d)).map(([d, v]) => (
           <g key={d}>
@@ -145,8 +196,8 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       <div className="f-stats">
         <div className="f-stat cyan"><div className="k">本周注册 cohort</div><div className="v">{COHORTS[COHORTS.length - 1].w}</div><div className="sub">{COHORTS[COHORTS.length - 1].size.toLocaleString("en-US")} 新注册 · 按注册周分组</div></div>
         <div className="f-stat"><div className="k">全漏斗转化(注册→提现)</div><div className="v">{fullCvr}%</div><div className="sub">注册 cohort 中最终发起提现的比例</div></div>
-        <div className="f-stat warn"><div className="k">Day7 留存(W21 cohort)</div><div className="v">{day7.value}%</div><div className="sub">目标 &gt; {day7.target}% · 连续 3 周未达(黄灯)</div></div>
-        <div className="f-stat ok"><div className="k">trial→购买率</div><div className="v">{trialBuy}%</div><div className="sub">L3→L4 子路径 · 并列独立计量</div></div>
+        <div className="f-stat warn"><div className="k">最近成熟 cohort · Day7 留存</div><div className="v">{day7.value == null ? "—" : `${day7.value}%`}</div><div className="sub">目标 &gt; {day7.target ?? 60}% · 未成熟窗口不推算</div></div>
+        <div className="f-stat ok"><div className="k">trial→购买率</div><div className="v">{trialBuy == null ? "—" : `${trialBuy}%`}</div><div className="sub">L3→L4 子路径 · 并列独立计量</div></div>
       </div>
 
       {/* view slice bar */}
@@ -171,7 +222,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
             }}>{w}</button>
           ))}
         </div>
-        <button className="l-btn sm" style={{ marginLeft: "auto" }} onClick={() => ctx.toast("当前切片+留存窗组合已保存为视图 · 不改算法,普通确认批")}>保存为视图</button>
+        <button className="l-btn sm" style={{ marginLeft: "auto" }} onClick={saveView}>保存为视图</button>
       </div>
 
       {/* (a) 完整漏斗下钻 */}
@@ -179,7 +230,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">完整漏斗下钻 · 五级</span>
           <span className="sub">· <AutoGloss>点击任意一级展开「流入 / 转化 / 流失去向 / 停留时长」 · L1–L5 编号是内部生命周期标注,不对用户展示</AutoGloss></span>
-          <div className="r"><span className="lcode lock" title="漏斗定义权威:§2.4.7">🔒 漏斗定义锁定</span><span className="lcode electric">和驾驶舱漏斗是同一份数字</span></div>
+          <div className="r"><span className="lcode lock" title="漏斗口径由服务端统一维护">🔒 漏斗定义锁定</span><span className="lcode electric">和驾驶舱漏斗是同一份数字</span></div>
         </div>
         <div className="l-b">
           <div className="fn-wrap">
@@ -204,7 +255,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
               <span className="lcode">{STAGE_EV[safeStage] ?? s.ev}</span>
               {ext.tg && <span className="bdg ok">目标 {ext.tg}</span>}
               <span style={{ marginLeft: "auto" }} />
-              <button className="l-btn sm" onClick={() => ctx.toast(`路径分析:「${s.stage}未转化」用户规模与特征已生成 · admin.bi_query_run`)}>路径分析</button>
+              <button className="l-btn sm" onClick={() => ctx.toast(`路径分析:「${s.stage}未转化」用户规模与特征已生成`)}>路径分析</button>
             </div>
             <div className="stage-x-grid">
               <div className="cell"><div className="k">上级流入</div><div className="v">{ext.inflow}</div></div>
@@ -248,28 +299,28 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         <div className="ret-grid">
           <div>
             <table className="l-tbl ret-tbl">
-              <thead><tr><th>注册 cohort</th><th className="num">规模</th><th style={{ textAlign: "center" }}>Day1</th><th style={{ textAlign: "center" }}>Day7</th><th style={{ textAlign: "center" }}>Day30</th><th style={{ textAlign: "center" }}>对比</th></tr></thead>
+              <thead><tr><th>注册 cohort</th><th className="num">规模</th>{retentionColumns.map(({ day }) => <th key={day} style={{ textAlign: "center" }}>Day{day}</th>)}<th style={{ textAlign: "center" }}>对比</th></tr></thead>
               <tbody>
                 {COHORTS.map((c, i) => (
                   <tr key={c.w}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{c.w}{i === safeCohort && <span className="bdg cyan" style={{ fontSize: 10.5, marginLeft: 4 }}>曲线</span>}</td>
                     <td className="num mono">{c.size.toLocaleString("en-US")}</td>
-                    {[c.d1, c.d7, c.d30].map((v, j) => (
-                      <td key={j} className="cellv" style={heatStyle(v)} onClick={() => { setSelCohort(i); ctx.toast(`切换曲线 cohort → ${c.w}`); }} title={`${c.w} · Day${[1, 7, 30][j]}`}>{v == null ? "—" : `${v}%`}</td>
+                    {retentionColumns.map(({ day, key }) => (
+                      <td key={day} className="cellv" style={heatStyle(c[key] as number | null | undefined)} onClick={() => { setSelCohort(i); ctx.toast(`切换曲线 cohort → ${c.w}`); }} title={`${c.w} · Day${day}`}>{c[key] == null ? "—" : `${c[key]}%`}</td>
                     ))}
                     <td style={{ textAlign: "center" }}><button className="l-btn sm" onClick={() => { setSelCohort(i); ctx.toast(`切换曲线 cohort → ${c.w}`); }}>曲线</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}><b>读法</b> · <AutoGloss>横向看单个 cohort 的衰减;纵向看产品迭代 / Phase 切换对同一留存窗的影响。W20 起 Day7 整列转暗(P3 扩张拉新期),Day1 未受影响——流失发生在第 2–7 天,指向推送节奏而非首日体验。</AutoGloss></div>
+            <div className="ltint" style={{ marginTop: 12, fontSize: 12 }}><b>读法</b> · <AutoGloss>横向看单个 cohort 的衰减;纵向比较产品迭代 / Phase 切换对同一留存窗的影响。没有成熟数据的窗口显示“—”,不据此生成归因结论。</AutoGloss></div>
           </div>
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 4 }}>留存衰减曲线 · {COHORTS[safeCohort].w}</div>
             <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginBottom: 10 }}>该 cohort 留存率随天数衰减 · 虚线为对比 cohort</div>
             {curveChart()}
             <div className="chips" style={{ marginTop: 10 }}><span className="lb">对比</span>
-              {([["W18", "vs W18(P2 期)"], ["W20", "vs W20"], ["none", "关闭对比"]] as const).map(([v, lb]) => (
+              {[...cohortCurveKeys.filter((key) => key !== COHORTS[safeCohort].w).slice(-2).map((key) => [key, `vs ${key}`]), ["none", "关闭对比"]].map(([v, lb]) => (
                 <button key={v} className={"chip" + (cmp === v ? " sel" : "")} onClick={() => setCmp(v)}>{lb}</button>
               ))}
             </div>
@@ -297,9 +348,9 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
                   <tr key={r[0]}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{r[0]}</td>
                     {r.slice(1, 5).map((v, ci) => (
-                      <td key={ci} className={"xv" + (ri === xd.alert[0] && ci === xd.alert[1] - 1 ? " alert" : "")}>{v}{xd.unit}</td>
+                      <td key={ci} className={"xv" + (ri === xd.alert[0] && ci === xd.alert[1] - 1 ? " alert" : "")}>{v == null ? "—" : `${v}${xd.unit}`}</td>
                     ))}
-                    <td className="xv" style={{ color: "var(--ink-3)" }}>{r[5]}{xd.unit}</td>
+                    <td className="xv" style={{ color: "var(--ink-3)" }}>{r[5] == null ? "—" : `${r[5]}${xd.unit}`}</td>
                   </tr>
                 ))}
               </tbody>
@@ -314,7 +365,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>L2 没有任何「写数据」动作</b>:<AutoGloss>漏斗与留存怎么算由事件中台治理,这里只做下钻查询、视图配置与聚合导出。</AutoGloss><b>关于复投这一级</b>:<AutoGloss>钱包复投事件还没上线,目前先拿「第二次下单」来算复投,和驾驶舱算法完全一致,等事件上线后两个口径一起看——这里绝不会出现和驾驶舱不一样的复投数字。导出为聚合计数(各级去重用户 / CVR / 留存率),</AutoGloss><b>不含手机号、地址等明文</b>,<AutoGloss>仍需操作确认但每次都落</AutoGloss> <b>admin.report_exported</b> <AutoGloss>审计;下钻查询可选落</AutoGloss> <b>admin.bi_query_run</b>。</p>
+      <p className="f-foot"><b>L2 没有任何「写数据」动作</b>:<AutoGloss>漏斗与留存怎么算由统一统计规则治理,这里只做下钻查询、视图配置与聚合导出。</AutoGloss><b>关于复投这一级</b>:<AutoGloss>优先采用 wallet.reinvest,并兼容首购后的第二笔 checkout.completed 降级口径。导出只含聚合计数,</AutoGloss><b>不含手机号、地址等明文</b>,<AutoGloss>每次导出都会生成可追溯记录。</AutoGloss></p>
       <PaginationExemptionList
         items={[
           {

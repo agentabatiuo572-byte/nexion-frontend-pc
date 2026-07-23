@@ -1,6 +1,7 @@
 # CGM-E · 设备与商城(字段级控制矩阵)
 
 > 自动生成于 Batch 0 全运营面 inventory。完整 serverCanonical/source/querySurface 见 `cgm.manifest.json`。coverage 默认 gap,per-batch 回源后升级 built/spec_only。
+> **历史快照告警**：E3 相关 `salvage/minHoldingMonths/DEGRADATION_PER_MONTH` 行已退役，不得用于实现或验收；当前权威见 `../PRD/specs/FEAT-DEV01-task-capacity-schedule.md` 与 `../PRD/specs/FEAT-DEV02-tradein-ladder.md`。
 
 本域 24 行。
 

@@ -9,7 +9,8 @@ import type { Role } from "@/lib/admin/janus-c2/types";
 
 export function mapRole(role: string, authorities: string[]): Role {
   if (role === "superadmin" || authorities.includes("risk_k6_admin")) return "admin";
-  if (authorities.includes("risk_k6_write")) return "senior_operator";
+  if (authorities.includes("risk_k6_senior")) return "senior_operator";
+  if (authorities.includes("risk_k6_write")) return "operator";
   return "viewer";
 }
 

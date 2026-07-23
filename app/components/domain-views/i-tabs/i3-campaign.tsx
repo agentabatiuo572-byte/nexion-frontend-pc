@@ -199,7 +199,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     detail: <>仅草稿或已取消记录可删除；已下发记录保留审计，不允许删除。</>,
     reason: true,
     okLabel: "确认删除",
-    run: (reason) => runBackend(actions.deleteI3Campaign(c.id, reason), `${c.id} 已删除`),
+    run: (reason) => runBackend(actions.deleteI3Campaign(c.id, c.revision, reason), `${c.id} 已删除`),
   });
 
   const sendNow = (c: CampaignRow) => openActionConfirm({
@@ -212,7 +212,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     ),
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.sendI3CampaignNow(c.id, reason), `${c.id} 立即下发已确认生效`);
+      runBackend(actions.sendI3CampaignNow(c.id, c.revision, reason), `${c.id} 立即下发已确认生效`);
     },
   });
 
@@ -226,7 +226,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     reason: true,
     okLabel: "确认取消",
     run: (reason) => {
-      runBackend(actions.cancelI3Campaign(c.id, reason), `${c.id} 已取消`);
+      runBackend(actions.cancelI3Campaign(c.id, c.revision, reason), `${c.id} 已取消`);
     },
   });
 
@@ -304,7 +304,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     };
     const id = editing?.id ?? `CMP-N-${slug(trimmedName)}`;
     const task = editing
-      ? actions.updateI3CampaignDraft(editing.id, payload, `编辑 Campaign 草稿 ${editing.id}`)
+      ? actions.updateI3CampaignDraft(editing.id, payload, editing.revision, `编辑 Campaign 草稿 ${editing.id}`)
       : actions.createI3Campaign(payload, `新建 Campaign 草稿 ${id}`);
     runBackend(task, editing ? `${editing.id} 草稿已保存` : `Campaign 草稿已建 · ${id} · 下发需操作确认`);
     setNewOpen(false);
@@ -764,7 +764,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 disabled={!scheduledAt || !scheduleVerified || scheduleReason.trim().length < 8 || scheduleReason.trim().length > 200}
                 onClick={() => {
                   runBackend(
-                    actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleReason.trim()),
+                    actions.scheduleI3Campaign(scheduleRow.id, scheduledAt, scheduleRow.revision, scheduleReason.trim()),
                     `${scheduleRow.id} 已进入排期`,
                   );
                   setScheduleRow(null);

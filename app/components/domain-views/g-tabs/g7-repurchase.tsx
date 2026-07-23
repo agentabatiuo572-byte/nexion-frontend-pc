@@ -8,18 +8,18 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   fetchG7RepurchaseOverview,
+  fetchG7RepurchaseOrders,
   updateG7RepurchaseParam,
+  type G7Order,
   type G7Overview,
   type G7Param,
 } from "@/lib/admin/g7-client";
 import type { GCtx } from "./types";
-import { usePropose } from "@/lib/admin/use-propose";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
-
-const OPERATOR = currentAdminOperator;
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const PARAM_COPY: Record<string, { name: string; sub: string }> = {
   apy: { name: "年化 APY", sub: "90 天锁仓 · 只对新单生效" },
+  lockDays: { name: "锁仓期限", sub: "整数天 · 只对新单生效" },
   nurture: { name: "培育奖倍率", sub: "复投者培育奖计算即用" },
   lottery: { name: "Genesis 抽奖券", sub: "每复投单发放 · 改规则核对 G4 奖池容量" },
   penalty: { name: "早赎罚款", sub: "本金罚款 + 没收利息/券" },
@@ -50,6 +50,16 @@ function toneClass(tone: string) {
   return "dim";
 }
 
+function orderStatusLabel(status: string) {
+  return ({
+    PENDING_LOCK: "待锁定",
+    ACTIVE: "锁仓中",
+    MATURE_UNCLAIMED: "到期未领取",
+    CLAIMED: "已领取",
+    EARLY_WITHDRAWN: "已提前赎回",
+  } as Record<string, string>)[status] ?? "未知状态";
+}
+
 function paramName(param: G7Param) {
   return PARAM_COPY[param.key]?.name || param.name;
 }
@@ -64,8 +74,11 @@ function paramEditValue(param: G7Param) {
 
 export function G7Repurchase({ ctx }: { ctx: GCtx }) {
   const { toast, openActionConfirm } = ctx;
-  const propose = usePropose();
+  const session = useAdminAuth((state) => state.session);
+  const isSuperAdmin = session?.role === "superadmin" || session?.role === "super";
+  const authorities = session?.authorities ?? [];
   const [overview, setOverview] = useState<G7Overview | null>(null);
+  const [orders, setOrders] = useState<G7Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -74,7 +87,11 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
     if (!silent) setLoading(true);
     setError("");
     try {
-      setOverview(await fetchG7RepurchaseOverview());
+      const [nextOverview, nextOrders] = await Promise.all([
+        fetchG7RepurchaseOverview(), fetchG7RepurchaseOrders(),
+      ]);
+      setOverview(nextOverview);
+      setOrders(nextOrders.orders);
     } catch (err) {
       setError(messageOf(err));
     } finally {
@@ -88,8 +105,13 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       setLoading(true);
       setError("");
       try {
-        const next = await fetchG7RepurchaseOverview();
-        if (!cancelled) setOverview(next);
+        const [next, nextOrders] = await Promise.all([
+          fetchG7RepurchaseOverview(), fetchG7RepurchaseOrders(),
+        ]);
+        if (!cancelled) {
+          setOverview(next);
+          setOrders(nextOrders.orders);
+        }
       } catch (err) {
         if (!cancelled) setError(messageOf(err));
       } finally {
@@ -113,6 +135,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       const message = messageOf(err);
       setError(message);
       toast(`G7 操作失败 · ${message}`);
+      throw err;
     } finally {
       setBusyKey(null);
     }
@@ -155,26 +178,33 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         </>
       ),
       amplifies: param.b1RedlineTriggered,
-      edit: { kind: "text", current: paramEditValue(param) },
-      run: (reason, value) => {
+      edit: param.key === "presets"
+        ? { kind: "text", current: paramEditValue(param) }
+        : { kind: "number", current: paramEditValue(param),
+            unit: param.key === "apy" || param.key === "penalty" ? "%" : param.key === "lockDays" ? "天" : undefined,
+            min: param.key === "apy" || param.key === "penalty" || param.key === "lottery" ? 0 : 1,
+            max: param.key === "apy" ? 300 : param.key === "penalty" || param.key === "lottery" ? 100 : param.key === "lockDays" ? 3650 : 10,
+            step: param.key === "lockDays" || param.key === "lottery" ? 1 : 0.01 },
+      businessForm: param.key === "lottery" ? {
+        kind: "multi-field",
+        title: "G4 奖池容量核对",
+        hint: `本月容量 ${fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 已发 ${fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张`,
+        fields: [{ key: "g4Ref", label: "G4 核对 ref", inputKind: "text", placeholder: "例如 G4-POOL-2026-07", required: true, wide: true }],
+      } : undefined,
+      run: async (reason, value, businessValue) => {
         if (!value) return;
-        const def = findHighOp("g7_repurchase_param")!;
-        void propose(ctx.toast, {
-          action: `产品参数调整 · ${label}`,
-          obj: param.key,
-          before: param.displayValue,
-          after: String(value),
-          type: "fund",
-          amplifies: param.b1RedlineTriggered,
-          gate: { roles: [] },
-          gateLabel: def.gateLabel,
-          reason,
-          sourceDomain: "G7",
-          command: def.buildCommand({ paramKey: param.key, value }),
-          target: def.buildTarget({ paramKey: param.key }),
-        });
+        await mutate(param.key, () => updateG7RepurchaseParam(
+          param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? "",
+        ), `${label} 已立即生效 · 已记审计`);
       },
     });
+  };
+
+  const canEdit = (key: string) => {
+    if (isSuperAdmin) return true;
+    if (key === "apy" || key === "lockDays") return authorities.includes("finprod_g7_apy_write");
+    if (key === "nurture") return authorities.includes("finprod_g7_nurture_write");
+    return authorities.includes("finprod_g7_write");
   };
 
   return (
@@ -184,7 +214,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         <div className="f-stat ok"><div className="k">本月复投单</div><div className="v">{fmtNumber(stats.ordersMonth)}</div><div className="sub">在锁本金 {fmtUsdCompact(stats.principalUsd)} · 来自复投锁仓行</div></div>
         <div className="f-stat"><div className="k">{stats.lockDays} 天后到期本息</div><div className="v">{fmtUsdCompact(stats.matureUsd)}</div><div className="sub">喂 B2 到期预测</div></div>
         <div className="f-stat cyan"><div className="k">发放 Genesis 抽奖券</div><div className="v">{fmtNumber(stats.ticketsMonth)} 张</div><div className="sub">每月开奖 · 联动 G4</div></div>
-        <div className="f-stat"><div className="k">复投率</div><div className="v">{stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%</div><div className="sub">漏斗复投级 · 非八项 KPI</div></div>
+        <div className="f-stat"><div className="k">复投率</div><div className="v">{stats.reinvestRateAvailable ? `${stats.reinvestRate.toFixed(1).replace(/\.0$/, "")}%` : "—"}</div><div className="sub">{stats.reinvestRateAvailable ? "真实漏斗复投级" : "缺少漏斗分母，不用奖励倍率伪造"}</div></div>
       </div>
 
       <section className="l-card">
@@ -194,7 +224,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             <div className="p-row" key={param.key}>
               <div className="txt"><div className="k">{paramName(param)}</div><div className="s">{paramSub(param)}</div></div>
               <span className="v">{param.displayValue}</span>
-              <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(param)}>调整</button>
+              {canEdit(param.key) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(param)}>编辑 {paramName(param)}</button>}
             </div>
           ))}
           <div className="p-row">
@@ -206,6 +236,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             <Link href="/growth/phase" className="l-btn sm">去 H1 →</Link>
           </div>
           <div className="gtint" style={{ marginTop: 10 }}><b>复投是原子组合</b> · 一次复投 = 扣余额 + 锁仓，两步在服务端单事务里一起成，中途崩了不会只成一半。限时倍率在复投那一刻套用，这页只展示生效面。</div>
+          <div className="gtint" style={{ marginTop: 10 }}><b>G4 奖池容量</b> · 月容量 {fmtNumber(overview.g4Capacity.monthlyCapacity)} 张 · 本月已发 {fmtNumber(overview.g4Capacity.ticketsIssuedThisMonth)} 张 · 改券规则必须提交 G4 核对 ref。</div>
 
           <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 8px" }}>复投单状态机与金额分布</div>
           <div className="sm-strip">
@@ -225,6 +256,30 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
             ))}
           </div>
           <div className="gtint" style={{ marginTop: 10 }}><b>金额分布(本月 {fmtNumber(stats.ordersMonth)} 单)</b> · {overview.amountDistribution} · 到期本息 {fmtUsdCompact(stats.matureUsd)} 喂驾驶舱到期预测(B2)。</div>
+        </div>
+      </section>
+
+      <section className="l-card">
+        <div className="l-h"><span className="ttl">真实复投单</span><span className="sub">· 服务端订单与账单关联</span></div>
+        <div className="l-b" style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 1040 }}>
+            <thead><tr><th>订单号</th><th>用户</th><th>本金</th><th>快照 APY / 锁期</th><th>预计利息</th><th>状态</th><th>锁定 / 到期</th><th>账单关联</th></tr></thead>
+            <tbody>
+              {orders.map((order) => (
+                <tr key={order.orderNo}>
+                  <td className="mono">{order.orderNo}</td>
+                  <td>{order.nickname}<div className="mono" style={{ opacity: 0.65 }}>{order.userNo}</div></td>
+                  <td>{fmtUsd(order.amountUsdt)}</td>
+                  <td>{fmtNumber(order.apyPct, 2)}% / {order.lockDays} 天</td>
+                  <td>{fmtUsd(order.estimatedInterestUsdt)}</td>
+                  <td><span className={`bdg ${order.status === "EARLY_WITHDRAWN" ? "bad" : order.status === "CLAIMED" ? "ok" : "warn"}`}>{orderStatusLabel(order.status)}</span></td>
+                  <td className="mono">{order.lockedAt}<br />{order.unlockAt}</td>
+                  <td className="mono">{order.billCorrelationPrefix}-*</td>
+                </tr>
+              ))}
+              {!orders.length && <tr><td colSpan={8} style={{ textAlign: "center", padding: 20 }}>暂无真实复投单</td></tr>}
+            </tbody>
+          </table>
         </div>
       </section>
 

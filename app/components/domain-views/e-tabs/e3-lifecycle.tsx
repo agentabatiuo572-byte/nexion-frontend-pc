@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
@@ -33,11 +34,37 @@ const REQUIRED_E3_KEYS = [
   "E.device.cycleMonths",
   "E.device.capacity.floorPct",
   "E.device.capacity.subsidyDays",
+  "E.device.capacity.applyTo.phone",
+  "E.device.capacity.applyTo.cloud-share",
+  "E.device.capacity.applyTo.pc-gpu",
+  "E.device.capacity.applyTo.stellarbox-s1",
+  "E.device.capacity.applyTo.stellarbox-pro",
+  "E.device.capacity.applyTo.stellarbox-pro-v2",
+  "E.device.capacity.applyTo.stellarrack-p1",
+  "E.device.capacity.applyTo.stellarrack-p2",
+  "E.device.taskLock.s1",
+  "E.device.taskLock.pro",
+  "E.device.taskLock.rack",
   "E.tradein.enabled",
   "E.tradein.ladder.cut1",
+  "E.tradein.ladder.cut2",
+  "E.tradein.ladder.cut3",
+  "E.tradein.ladder.cut4",
   "E.tradein.ladder.credit1",
+  "E.tradein.ladder.credit2",
+  "E.tradein.ladder.credit3",
+  "E.tradein.ladder.credit4",
+  "E.tradein.ladder.credit5",
   "E.tradein.requireHigherPrice",
+  "E.tradein.maxDevicesPerOrder",
+  "E.tradein.eligibility",
   "E.tradein.promoMult",
+  "E.tradein.promo.cooldownDays",
+  "E.tradein.promo.maxPerSession",
+  "E.tradein.promo.delaySec",
+  "E.tradein.promo.minAgeDays",
+  "E.tradein.promo.routes",
+  "E.tradein.inventorySoftMax",
 ];
 
 // FEAT-DEV01: 参与任务递减(每 SKU 开关)· 值=参与递减/免递减 · 与 uniapp CAPACITY_EXEMPT_KINDS 镜像(canon 哨兵对账)
@@ -66,7 +93,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   if (!e3Ready || !hasRequiredConfig) {
     return (
       <section className="param-card">
-        <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">E3 后端配置</div><div className="s">{e3Loading ? "正在读取 MySQL 配置" : e3Error || "后端配置未完整返回"}</div></div></div>
+        <div className="param-h"><span className="ic life"><LifeIcon /></span><div className="t"><div className="nm">E3 配置不完整</div><div className="s">{e3Loading ? "正在读取 MySQL 配置" : e3Error || "后端配置未完整返回"}</div></div></div>
         <div className="param-foot"><span className="ic"><AlertIcon /></span><span>{e3Error ? `接口读取失败:${e3Error}` : "等待 /api/admin/devices/e3/overview 返回生命周期与 Trade-in 配置。"}</span></div>
         <button className="adj" onClick={() => void ctx.refreshE3()}>刷新</button>
       </section>
@@ -98,10 +125,17 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const dotColor = (i: number) => (i <= s1 ? "var(--success)" : i <= s2 ? "var(--warning)" : "var(--brand-2)");
 
   // 调参按钮:走 操作确认 param(显式 edit 契约),真写后端 E3 配置接口 → 曲线/估值器据 pE 重算
+  const numericBounds = (key: string): { min?: number; max?: number; step?: number } => {
+    if (/capacity\.band\dDeltaPct$/.test(key)) return { min: -100, max: 100, step: 0.01 };
+    if (/capacity\.floorPct$|ladder\.(cut|credit)\d$/.test(key)) return { min: 0, max: 100, step: 0.01 };
+    if (key === "E.tradein.promoMult") return { min: 0, max: 10, step: 0.01 };
+    if (/stageEarlyEnd|stageMidEnd|cycleMonths|maxDevicesPerOrder|promo\.maxPerSession/.test(key)) return { min: 1, max: 1000000, step: 1 };
+    return { min: 0, max: 1000000, step: 1 };
+  };
   const adj = (label: string, key: string, unit: string, amplify: boolean, editKind: "number" | "text" | "select" = "number", detail?: string, options?: string[]) =>
     ctx.openActionConfirm({
       name: `${label} 调整`, op: "param", paramKey: key, amplify,
-      edit: { kind: editKind, current: `${pE(key)}${editKind === "number" ? unit : ""}`, unit, options },
+      edit: { kind: editKind, current: pE(key), unit, options, disallowCurrent: true, ...(editKind === "number" ? numericBounds(key) : {}) },
       detail: detail ?? `${label} · server-canonical,改后对全网任务产能曲线 / 估值器生效,不回溯已生效报价`,
     });
   // editKind="select" 时传 options → 弹窗渲染勾选 chips(能枚举的值不让手输,最高设计铁律)
@@ -110,13 +144,16 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
 
   // 多字段调参:一个「调整」按钮 → 操作确认弹窗里 N 个带标签输入,每字段写各自的 param key
   // (各值独立 backend-replaceable,不挤一个框)。current 实时从 pE(paramKey) 预填。
-  type MFField = { key: string; paramKey: string; label: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; wide?: boolean; warnAbove?: number; warnText?: string };
+  type MFField = { key: string; paramKey: string; label: string; placeholder?: string; inputKind?: "number" | "text" | "select"; options?: string[]; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string };
   const adjMulti = (title: string, fields: MFField[], opts: { ascending?: boolean; hint?: string; amplify?: boolean; detail?: string } = {}) =>
     ctx.openActionConfirm({
       name: `${title} 调整`, op: "param-multi", amplify: opts.amplify,
       businessForm: {
-        kind: "multi-field", title: `目标新值 · ${title}`, ascending: opts.ascending, hint: opts.hint,
-        fields: fields.map((f) => ({ key: f.key, label: f.label, current: pE(f.paramKey), placeholder: f.placeholder, inputKind: f.inputKind, options: f.options, wide: f.wide, warnAbove: f.warnAbove, warnText: f.warnText })),
+        kind: "multi-field", title: `目标新值 · ${title}`, ascending: opts.ascending, hint: opts.hint, requireAnyChange: true,
+        fields: fields.map((f) => {
+          const bounds = f.inputKind === "number" ? numericBounds(f.paramKey) : {};
+          return { key: f.key, label: f.label, current: pE(f.paramKey), placeholder: f.placeholder, inputKind: f.inputKind, options: f.options, min: f.min ?? bounds.min, max: f.max ?? bounds.max, step: f.step ?? bounds.step, wide: f.wide, warnAbove: f.warnAbove, warnText: f.warnText };
+        }),
       },
       paramKeys: fields.map((f) => ({ key: f.key, paramKey: f.paramKey })),
       detail: opts.detail ?? `${title} · server-canonical,改后对全网生效,不回溯已生效报价`,
@@ -277,7 +314,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <span className="sep">·</span>
           <span><b>generation lineage</b> 由 server 在 replace 原子事务内写入 · 不受 client 控制</span>
           <span className="sep">·</span>
-          <span>失败样本 → <a style={{ color: "var(--cyan)", cursor: "pointer" }} onClick={() => ctx.toast("打开 D4 bill · 跳转失败 tx 详情")}>查 D4 bill · 轨迹</a></span>
+          <span>失败样本 → <Link href="/finance/ledger?keyword=tradein&status=FAILED" style={{ color: "var(--cyan)", cursor: "pointer" }}>查 D4 bill · 轨迹</Link></span>
         </div>
       </section>
       <p className="f-foot">任务产能节奏 + Trade-in 折抵定价<b>共同构成用户升级节奏</b>:段3 深降把用户推向置换决策点,折抵力度决定置换吸引力。两者改动会影响:① 硬件 GMV(置换新单)② D4 资金应付(置换补差)③ K2 套利风险。任一参数调整后<b>立即对前端 / 估值器生效</b>(不回溯已生效报价)。</p>

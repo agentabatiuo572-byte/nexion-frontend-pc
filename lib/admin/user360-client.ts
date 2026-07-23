@@ -29,12 +29,28 @@ export interface UserProfileQuery {
   status?: string;
   kycStatus?: string;
   riskMin?: number;
+  userId?: number | string;
+  phoneHash?: string;
+  phoneMasked?: string;
+  tier?: string;
+  vRank?: string;
+  referralCode?: string;
+  depositMin?: number;
+  depositMax?: number;
+  usdtMin?: number;
+  usdtMax?: number;
+  nexMin?: number;
+  nexMax?: number;
+  riskBand?: string;
+  joinedFrom?: string;
+  joinedTo?: string;
   pageNum?: number;
   pageSize?: number;
 }
 
 export interface User360Profile extends JsonRecord {
   id?: number | string | null;
+  userId?: number | string | null;
   userNo?: string | null;
   nickname?: string | null;
   phoneMasked?: string | null;
@@ -63,6 +79,7 @@ export interface UserSession extends JsonRecord {
   clientIpMasked?: string | null;
   status?: string | null;
   issuedAt?: string | null;
+  lastActiveAt?: string | null;
   expiresAt?: string | null;
   revokedAt?: string | null;
 }
@@ -116,6 +133,8 @@ export interface UserSecurityOverview extends JsonRecord {
   credentialParams?: UserCredentialParam[] | null;
   selectedUser?: UserSecurityUserRow | null;
   sessions?: UserPage<UserSession> | null;
+  selectedActiveSessionCount?: number | string | null;
+  kycReverifications?: UserKycReverification[] | null;
   lockedUsers?: UserSecurityUserRow[] | null;
   sources?: string[] | null;
   redlines?: string[] | null;
@@ -129,7 +148,8 @@ export interface UserRegistrationRiskStats extends JsonRecord {
   locked?: number | string | null;
   stuffingClusters7d?: number | string | null;
   captchaTemporarilyDisabled?: boolean | null;
-  captchaRestoreWindow?: string | null;
+  captchaRestoreAt?: string | null;
+  captchaRemainingSeconds?: number | string | null;
 }
 
 export interface UserRegistrationRiskParam extends JsonRecord {
@@ -141,6 +161,10 @@ export interface UserRegistrationRiskParam extends JsonRecord {
   unit?: string | null;
   min?: number | string | null;
   max?: number | string | null;
+  secondaryMin?: number | string | null;
+  secondaryMax?: number | string | null;
+  secondaryUnit?: string | null;
+  version?: number | string | null;
   readOnly?: boolean | null;
   note?: string | null;
   configKey?: string | null;
@@ -157,6 +181,7 @@ export interface UserRegistrationRiskOverview extends JsonRecord {
   stats?: UserRegistrationRiskStats | null;
   params?: UserRegistrationRiskParam[] | null;
   k1Guards?: UserRegistrationRiskK1Guard[] | null;
+  configVersion?: number | string | null;
   k1RejectCode?: string | null;
   k1Path?: string | null;
   sources?: string[] | null;
@@ -168,6 +193,23 @@ export interface UserSecurityQuery {
   userId?: number | string;
   pageNum?: number;
   pageSize?: number;
+}
+
+export interface UserKycReverification extends JsonRecord {
+  action?: "DISABLE_2FA" | "PASSWORD_RESET" | "UNLOCK_SHORT" | "UNLOCK_LONG" | string | null;
+  ticketId?: string | null;
+  status?: string | null;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+  expiresAt?: string | null;
+}
+
+export interface UserSecurityActionEvidence {
+  kycVerificationChannel: string;
+  kycVerificationTicket: string;
+  kycVerifiedAt: string;
+  identityConfirmed: boolean;
+  lockKind?: "SHORT" | "LONG" | null;
 }
 
 export interface UserAccountListEntry extends JsonRecord {
@@ -202,18 +244,46 @@ export interface UserImpersonationSession extends JsonRecord {
   leftMinutes?: number | string | null;
 }
 
+export interface UserAccountControlFact extends JsonRecord {
+  userId?: number | string | null;
+  freezeSource?: string | null;
+  freezeSourceRef?: string | null;
+  freezeReason?: string | null;
+  freezeOperator?: string | null;
+  frozenAt?: string | null;
+  d2FrozenWithdrawalCount?: number | string | null;
+}
+
 export interface UserAccountActionOverview extends JsonRecord {
   accounts?: User360Profile[] | null;
   accountLists?: UserAccountListEntry[] | null;
   sessions?: UserSession[] | null;
   impersonations?: UserImpersonationSession[] | null;
+  controlFacts?: UserAccountControlFact[] | null;
   frozenUsers?: number | string | null;
   activeSessions?: number | string | null;
   trustListCount?: number | string | null;
   blockedListCount?: number | string | null;
   activeImpersonations?: number | string | null;
+  totalAccounts?: number | string | null;
+  totalAccountLists?: number | string | null;
+  totalSessions?: number | string | null;
+  totalImpersonations?: number | string | null;
   sources?: string[] | null;
   redlines?: string[] | null;
+}
+
+export interface UserAccountActionContext extends JsonRecord {
+  account?: User360Profile | null;
+  accountList?: UserAccountListEntry | null;
+  sessions?: UserSession[] | null;
+  impersonations?: UserImpersonationSession[] | null;
+  controlFact?: UserAccountControlFact | null;
+  totalSessions?: number | string | null;
+  activeSessions?: number | string | null;
+  totalImpersonations?: number | string | null;
+  sessionsTruncated?: boolean | null;
+  impersonationsTruncated?: boolean | null;
 }
 
 export interface UserAssetAdjustment extends JsonRecord {
@@ -224,9 +294,14 @@ export interface UserAssetAdjustment extends JsonRecord {
   asset?: string | null;
   direction?: string | null;
   amount?: number | string | null;
+  amountUsd?: number | string | null;
   amountLabel?: string | null;
   reasonCode?: string | null;
   reason?: string | null;
+  evidenceRef?: string | null;
+  idempotencyKey?: string | null;
+  reversalOf?: string | null;
+  reversedBy?: string | null;
   maker?: string | null;
   checker?: string | null;
   status?: string | null;
@@ -235,6 +310,7 @@ export interface UserAssetAdjustment extends JsonRecord {
   credit?: boolean | null;
   escalated?: boolean | null;
   ledgerId?: number | string | null;
+  balanceAfter?: number | string | null;
   sink?: string | null;
   reviewReason?: string | null;
   reviewedAt?: string | null;
@@ -250,6 +326,8 @@ export interface UserAssetAdjustmentOverview extends JsonRecord {
   suspended?: number | string | null;
   redline?: boolean | null;
   singleCreditReviewCapUsd?: number | string | null;
+  maxAdjustmentAmount?: number | string | null;
+  nexUsdRate?: number | string | null;
   sources?: string[] | null;
   sunsetCompatibility?: string[] | null;
 }
@@ -391,6 +469,53 @@ function toNumber(value: number | string | null | undefined, fallback = 0) {
   return fallback;
 }
 
+export interface UserKycExportJob extends JsonRecord {
+  jobNo?: string | null;
+  status?: string | null;
+  scope?: string | null;
+  rowCount?: number | string | null;
+  masked?: boolean | null;
+  downloadPath?: string | null;
+  createdAt?: string | null;
+}
+
+export interface UserKycStatusActionInput {
+  expectedState: string;
+  reasonCode: string;
+  reason: string;
+  evidenceRef: string;
+  operator: string;
+  idempotencyKey: string;
+}
+
+export interface UserKycReviewTriggerInput {
+  reasonCode: string;
+  reason: string;
+  evidenceRef: string;
+  operator: string;
+  idempotencyKey: string;
+}
+
+export interface UserAssetAdjustmentContext extends JsonRecord {
+  account?: User360Profile | null;
+  pendingWithdraw?: number | string | null;
+  coverage?: JsonRecord | null;
+  nexUsdRate?: number | string | null;
+  largeThresholdUsd?: number | string | null;
+  maxAdjustmentAmount?: number | string | null;
+}
+
+export interface CreateUserAssetAdjustmentInput {
+  asset: "USDT" | "NEX";
+  direction: "CREDIT" | "DEBIT";
+  amount: string;
+  reasonCode: string;
+  reason: string;
+  evidenceRef: string;
+  operator: string;
+  idempotencyKey: string;
+}
+
 export interface UserPaymentMethod extends JsonRecord {
   id: number;
   userId: number;
@@ -420,6 +545,71 @@ function requireNumber(value: number | string | null | undefined, field: string)
     throw new Error(`USER360_FIELD_REQUIRED:${field}`);
   }
   return parsed;
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function c4ResponseInvalid(): never {
+  throw new Error(formatAdminApiError("C4_RESPONSE_INVALID", "C4_RESPONSE_INVALID"));
+}
+
+function requireC4LedgerRow(value: unknown): UserKycLedgerRow {
+  if (!isJsonRecord(value)
+    || (typeof value.userId !== "number" && typeof value.userId !== "string")
+    || typeof value.displayId !== "string"
+    || typeof value.backendStatus !== "string"
+    || typeof value.statusLabel !== "string"
+    || !Array.isArray(value.info)
+    || !Array.isArray(value.history)) {
+    return c4ResponseInvalid();
+  }
+  return value as UserKycLedgerRow;
+}
+
+function requireC4Overview(value: unknown): UserKycOverview {
+  if (!isJsonRecord(value)
+    || !isJsonRecord(value.stats)
+    || typeof value.networkWhitelist !== "string"
+    || !Array.isArray(value.rows)
+    || !Array.isArray(value.sources)
+    || !Array.isArray(value.redlines)) {
+    return c4ResponseInvalid();
+  }
+  for (const field of ["total", "verified", "unverified", "inReview", "rejected", "verifiedPct", "feeUsd"] as const) {
+    if (!Number.isFinite(toNumber(value.stats[field] as number | string | null | undefined, Number.NaN))) {
+      return c4ResponseInvalid();
+    }
+  }
+  value.rows.forEach(requireC4LedgerRow);
+  return value as UserKycOverview;
+}
+
+function requireC4ReviewResult(value: unknown): JsonRecord {
+  if (!isJsonRecord(value)
+    || typeof value.ticketId !== "string"
+    || !/^KR-/.test(value.ticketId)
+    || (value.status !== "CREATED" && value.status !== "MERGED")
+    || typeof value.kycStatus !== "string") {
+    return c4ResponseInvalid();
+  }
+  return value;
+}
+
+function requireC4ExportJob(value: unknown): UserKycExportJob {
+  if (!isJsonRecord(value)
+    || typeof value.jobNo !== "string"
+    || !/^KYC-EXP-/.test(value.jobNo)
+    || typeof value.status !== "string"
+    || typeof value.scope !== "string"
+    || !Number.isFinite(toNumber(value.rowCount as number | string | null | undefined, Number.NaN))
+    || typeof value.masked !== "boolean"
+    || typeof value.downloadPath !== "string"
+    || typeof value.createdAt !== "string") {
+    return c4ResponseInvalid();
+  }
+  return value as UserKycExportJob;
 }
 
 function queryString(query: Record<string, string | number | boolean | null | undefined>) {
@@ -456,12 +646,14 @@ export function isUsersRequestNotFound(error: unknown) {
   return error instanceof UsersRequestError && error.status === 404;
 }
 
-async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; idempotencyKey?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
+  if (init?.idempotencyKey) {
+    headers.set("Idempotency-Key", init.idempotencyKey);
+  } else if (init?.idempotencyPrefix) {
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
@@ -476,10 +668,11 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
+    const serverMessage = response.status >= 500 ? "INTERNAL_SERVER_ERROR" : result?.message;
     throw new UsersRequestError(
       response.status,
-      result?.message,
-      formatAdminApiError(result?.message, `USERS_REQUEST_FAILED_${response.status}`),
+      serverMessage,
+      formatAdminApiError(serverMessage, `USERS_REQUEST_FAILED_${response.status}`),
     );
   }
 
@@ -526,10 +719,23 @@ export async function fetchUserAccountActionAccount(userKey: string) {
   return usersRequest<User360Profile>(`/account-actions/accounts/${encodeURIComponent(userKey)}`);
 }
 
+export async function fetchUserAccountActionContext(userKey: string) {
+  return usersRequest<UserAccountActionContext>(`/account-actions/accounts/${encodeURIComponent(userKey)}/context`);
+}
+
 export async function fetchUserProfilesPage(query: UserProfileQuery = {}) {
   const pageNum = query.pageNum ?? 1;
-  const pageSize = query.pageSize ?? 10;
-  const page = await usersRequest<PageResult<User360Profile>>(`/profiles${queryString({ ...query, pageNum, pageSize })}`);
+  const pageSize = query.pageSize ?? 50;
+  const { usdtMin, usdtMax, nexMin, nexMax, ...rest } = query;
+  const page = await usersRequest<PageResult<User360Profile>>(`/profiles${queryString({
+    ...rest,
+    walletUsdtMin: usdtMin,
+    walletUsdtMax: usdtMax,
+    walletNexMin: nexMin,
+    walletNexMax: nexMax,
+    pageNum,
+    pageSize,
+  })}`);
   return normalizePage(page, pageNum, pageSize);
 }
 
@@ -546,23 +752,24 @@ function filenameFromDisposition(disposition: string | null, fallback: string) {
   return disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? fallback;
 }
 
-export async function exportUserProfilesExcel(
-  reason: string,
+export async function exportUserProfilesCsv(
   query: UserProfileQuery = {},
+  exportKey: string,
   operator = currentAdminOperator(),
 ) {
+  const { usdtMin, usdtMax, nexMin, nexMax, ...rest } = query;
   const response = await fetch("/api/admin/users/profiles/export", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Idempotency-Key": idempotencyKey("c1-user-profile-export"),
+      "Idempotency-Key": exportKey,
     },
     body: JSON.stringify({
-      keyword: query.keyword,
-      status: query.status,
-      kycStatus: query.kycStatus,
-      riskMin: query.riskMin,
-      reason,
+      ...rest,
+      walletUsdtMin: usdtMin,
+      walletUsdtMax: usdtMax,
+      walletNexMin: nexMin,
+      walletNexMax: nexMax,
       operator,
     }),
     cache: "no-store",
@@ -581,7 +788,7 @@ export async function exportUserProfilesExcel(
     blob: await response.blob(),
     fileName: filenameFromDisposition(
       response.headers.get("Content-Disposition"),
-      `c1-masked-users-${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-")}.xls`,
+      `c1-masked-users-${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-")}.csv`,
     ),
   };
 }
@@ -601,27 +808,116 @@ export async function fetchUserAssetAdjustmentDetail(adjustmentNo: string) {
   return usersRequest<UserAssetAdjustmentDetail>(`/asset-adjustments/${encodeURIComponent(adjustmentNo)}`);
 }
 
+export async function fetchUserAssetAdjustmentAccounts(keyword?: string) {
+  const page = await usersRequest<PageResult<User360Profile>>(
+    `/asset-adjustments/accounts${queryString({ keyword, pageNum: 1, pageSize: 8 })}`,
+  );
+  return normalizePage(page, 1, 8);
+}
+
+export async function fetchUserAssetAdjustmentContext(userId: number | string) {
+  return usersRequest<UserAssetAdjustmentContext>(
+    `/profiles/${encodeURIComponent(String(userId))}/asset-adjustment-context`,
+  );
+}
+
 export async function fetchUserKycOverview(query: UserKycQuery = {}) {
   const pageNum = query.pageNum ?? 1;
   const pageSize = query.pageSize ?? 10;
-  return usersRequest<UserKycOverview>(`/kyc/overview${queryString({ ...query, pageNum, pageSize })}`);
+  const result = await usersRequest<unknown>(`/kyc/overview${queryString({ ...query, pageNum, pageSize })}`);
+  return requireC4Overview(result);
 }
 
 export async function fetchUserSecurityOverview(query: UserSecurityQuery = {}) {
   const pageNum = query.pageNum ?? 1;
   const pageSize = query.pageSize ?? 10;
-  return usersRequest<UserSecurityOverview>(`/security/overview${queryString({ ...query, pageNum, pageSize })}`);
+  const result = await usersRequest<unknown>(`/security/overview${queryString({ ...query, pageNum, pageSize })}`);
+  return requireC5Overview(result);
+}
+
+function c5ResponseInvalid(): never {
+  throw new Error(formatAdminApiError("C5_RESPONSE_INVALID", "C5_RESPONSE_INVALID"));
+}
+
+function requireC5Overview(value: unknown): UserSecurityOverview {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return c5ResponseInvalid();
+  const overview = value as UserSecurityOverview;
+  if (!overview.stats || typeof overview.stats !== "object"
+    || !Array.isArray(overview.credentialParams)
+    || !Array.isArray(overview.kycReverifications)
+    || !Array.isArray(overview.lockedUsers)
+    || !overview.sessions || typeof overview.sessions !== "object"
+    || !Array.isArray(overview.sessions.records)) {
+    return c5ResponseInvalid();
+  }
+  if (overview.selectedUser !== null && overview.selectedUser !== undefined
+    && typeof overview.selectedUser !== "object") {
+    return c5ResponseInvalid();
+  }
+  return overview;
+}
+
+function c6ResponseInvalid(): never {
+  throw new Error(formatAdminApiError("C6_RESPONSE_INVALID", "C6_RESPONSE_INVALID"));
+}
+
+function c6Numeric(value: unknown) {
+  return (typeof value === "number" && Number.isFinite(value))
+    || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+}
+
+function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
+  if (!isJsonRecord(value)
+    || !isJsonRecord(value.stats)
+    || !Array.isArray(value.params)
+    || !Array.isArray(value.k1Guards)
+    || !Array.isArray(value.sources)
+    || !Array.isArray(value.redlines)
+    || !c6Numeric(value.configVersion)) return c6ResponseInvalid();
+  const stats = value.stats;
+  for (const key of ["otpToday", "captchaTriggeredToday", "lockedShort", "lockedLong", "locked", "stuffingClusters7d", "captchaRemainingSeconds"]) {
+    if (!c6Numeric(stats[key])) return c6ResponseInvalid();
+  }
+  if (typeof stats.captchaTemporarilyDisabled !== "boolean" || typeof stats.captchaRestoreAt !== "string") {
+    return c6ResponseInvalid();
+  }
+  if (!value.params.every((param) => isJsonRecord(param)
+    && typeof param.group === "string"
+    && typeof param.key === "string"
+    && typeof param.name === "string"
+    && typeof param.value === "string"
+    && c6Numeric(param.min)
+    && c6Numeric(param.max)
+    && c6Numeric(param.secondaryMin)
+    && c6Numeric(param.secondaryMax)
+    && c6Numeric(param.version)
+    && typeof param.readOnly === "boolean")) return c6ResponseInvalid();
+  if (!value.k1Guards.every((guard) => isJsonRecord(guard)
+    && typeof guard.name === "string"
+    && typeof guard.k1Key === "string"
+    && typeof guard.rejectCode === "string"
+    && typeof guard.suggestedPath === "string")) return c6ResponseInvalid();
+  return value as UserRegistrationRiskOverview;
 }
 
 export async function fetchUserRegistrationRiskOverview() {
-  return usersRequest<UserRegistrationRiskOverview>("/registration-risk/overview");
+  const result = await usersRequest<unknown>("/registration-risk/overview");
+  return requireC6Overview(result);
 }
 
-export async function updateUserRegistrationRiskParam(paramKey: string, value: string, reason: string, operator: string) {
+export async function updateUserRegistrationRiskParam(
+  paramKey: string,
+  value: string,
+  reason: string,
+  operator: string,
+  expectedVersion: number,
+  commandKey?: string,
+) {
+  const stableIdempotencyKey = commandKey ?? idempotencyKey("c6-registration-risk-param");
   return usersRequest<UserRegistrationRiskParam>(`/registration-risk/params/${encodeURIComponent(paramKey)}`, {
     method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: "c6-registration-risk-param",
+    body: JSON.stringify({ value, reason, operator, expectedVersion }),
+    idempotencyKey: stableIdempotencyKey,
   });
 }
 
@@ -641,58 +937,193 @@ export async function revokeUserSession(refreshTokenId: string, reason: string, 
   });
 }
 
-export async function disableUserTwoFactor(userId: number | string, reason: string, operator: string) {
+export async function disableUserTwoFactor(
+  userId: number | string,
+  reason: string,
+  operator: string,
+  evidence: UserSecurityActionEvidence,
+) {
   return usersRequest<UserSecurityStatus>(`/profiles/${encodeURIComponent(String(userId))}/security/disable-2fa`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
+    body: JSON.stringify({ reason, operator, ...evidence, lockKind: null }),
     idempotencyPrefix: "c5-user-disable-2fa",
   });
 }
 
-export async function unlockUserSecurity(userId: number | string, reason: string, operator: string) {
+export async function unlockUserSecurity(
+  userId: number | string,
+  reason: string,
+  operator: string,
+  evidence: UserSecurityActionEvidence,
+) {
   return usersRequest<UserSecurityStatus>(`/profiles/${encodeURIComponent(String(userId))}/security/unlock`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
+    body: JSON.stringify({ reason, operator, ...evidence }),
     idempotencyPrefix: "c5-user-unlock",
   });
 }
 
-export async function updateUserKycStatus(userId: number | string, status: string, reason: string, operator: string) {
-  return usersRequest<UserKycLedgerRow>(`/kyc/users/${encodeURIComponent(String(userId))}/status`, {
-    method: "PATCH",
-    body: JSON.stringify({ status, reason, operator }),
-    idempotencyPrefix: "c4-kyc-status",
+export async function verifyUserKyc(userId: number | string, input: UserKycStatusActionInput) {
+  const result = await usersRequest<unknown>(`/kyc/users/${encodeURIComponent(String(userId))}/verify`, {
+    method: "POST",
+    body: JSON.stringify({
+      status: "APPROVED",
+      expectedState: input.expectedState,
+      reasonCode: input.reasonCode,
+      reason: input.reason,
+      evidenceRef: input.evidenceRef,
+      operator: input.operator,
+    }),
+    idempotencyKey: input.idempotencyKey,
+  });
+  return requireC4LedgerRow(result);
+}
+
+export async function requestUserKycReverification(
+  userId: number | string,
+  action: "DISABLE_2FA" | "PASSWORD_RESET" | "UNLOCK_SHORT" | "UNLOCK_LONG",
+  reason: string,
+  operator: string,
+) {
+  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/kyc-reverification`, {
+    method: "POST",
+    body: JSON.stringify({ action, reason, operator }),
+    idempotencyPrefix: "c5-user-kyc-reverification",
   });
 }
 
-export async function updateUserKycNetworkWhitelist(value: string, reason: string, operator: string) {
+export async function revokeUserKyc(userId: number | string, input: UserKycStatusActionInput) {
+  const result = await usersRequest<unknown>(`/kyc/users/${encodeURIComponent(String(userId))}/revoke`, {
+    method: "POST",
+    body: JSON.stringify({
+      status: "NONE",
+      expectedState: input.expectedState,
+      reasonCode: input.reasonCode,
+      reason: input.reason,
+      evidenceRef: input.evidenceRef,
+      operator: input.operator,
+    }),
+    idempotencyKey: input.idempotencyKey,
+  });
+  return requireC4LedgerRow(result);
+}
+
+export async function triggerUserKycReview(userId: number | string, input: UserKycReviewTriggerInput) {
+  const result = await usersRequest<unknown>(`/kyc/users/${encodeURIComponent(String(userId))}/trigger-review`, {
+    method: "POST",
+    body: JSON.stringify({
+      reasonCode: input.reasonCode,
+      reason: input.reason,
+      evidenceRef: input.evidenceRef,
+      operator: input.operator,
+    }),
+    idempotencyKey: input.idempotencyKey,
+  });
+  return requireC4ReviewResult(result);
+}
+
+export async function updateUserKycNetworkWhitelist(
+  value: string,
+  reason: string,
+  operator: string,
+  commandKey = idempotencyKey("c4-kyc-network"),
+) {
   return usersRequest<JsonRecord>("/kyc/network-whitelist", {
     method: "PATCH",
     body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: "c4-kyc-network",
+    idempotencyKey: commandKey,
   });
 }
 
-export async function createUserKycExport(scope: string, reason: string, operator: string) {
-  return usersRequest<JsonRecord>("/kyc/exports", {
+export async function createUserKycExport(
+  scope: string,
+  reason: string,
+  operator: string,
+  exportKey = idempotencyKey("c4-kyc-export"),
+) {
+  const result = await usersRequest<unknown>("/kyc/exports", {
     method: "POST",
     body: JSON.stringify({ scope, reason, operator }),
-    idempotencyPrefix: "c4-kyc-export",
+    idempotencyKey: exportKey,
   });
+  return requireC4ExportJob(result);
+}
+
+export async function fetchUserKycExports(limit = 10) {
+  const result = await usersRequest<unknown>(`/kyc/exports${queryString({ limit })}`);
+  if (!Array.isArray(result)) return c4ResponseInvalid();
+  return result.map(requireC4ExportJob);
+}
+
+export async function downloadUserKycExport(jobNo: string) {
+  const response = await fetch(`/api/admin/users/kyc/exports/${encodeURIComponent(jobNo)}/download`, {
+    cache: "no-store",
+  });
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!response.ok || contentType.includes("application/json")) {
+    const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
+    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    throw new Error(formatAdminApiError(result?.message, `C4_EXPORT_DOWNLOAD_FAILED_${response.status}`));
+  }
+  return {
+    blob: await response.blob(),
+    fileName: filenameFromDisposition(response.headers.get("Content-Disposition"), `${jobNo}.csv`),
+  };
 }
 
 export async function createUserAssetAdjustment(
   userId: number | string,
-  asset: string,
-  direction: "CREDIT" | "DEBIT",
-  amount: string,
-  reason: string,
-  operator: string,
+  input: CreateUserAssetAdjustmentInput,
 ) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/asset-adjustments`, {
     method: "POST",
-    body: JSON.stringify({ asset, direction, amount, reason, operator }),
-    idempotencyPrefix: "c3-asset-adjustment-create",
+    body: JSON.stringify({
+      asset: input.asset,
+      direction: input.direction,
+      amount: input.amount,
+      reasonCode: input.reasonCode,
+      reason: input.reason,
+      evidenceRef: input.evidenceRef,
+      operator: input.operator,
+    }),
+    idempotencyKey: input.idempotencyKey,
+  });
+}
+
+export async function fetchUserKycDetail(userId: number | string) {
+  const result = await usersRequest<unknown>(`/kyc/users/${encodeURIComponent(String(userId))}`);
+  return requireC4LedgerRow(result);
+}
+
+export async function requestLargeUserAssetAdjustment(
+  userId: number | string,
+  input: CreateUserAssetAdjustmentInput,
+) {
+  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/asset-adjustment-requests`, {
+    method: "POST",
+    body: JSON.stringify({
+      asset: input.asset,
+      direction: input.direction,
+      amount: input.amount,
+      reasonCode: input.reasonCode,
+      reason: input.reason,
+      evidenceRef: input.evidenceRef,
+      operator: input.operator,
+    }),
+    idempotencyKey: input.idempotencyKey,
+  });
+}
+
+export async function reverseUserAssetAdjustment(
+  adjustmentNo: string,
+  reason: string,
+  operator: string,
+  idempotencyKey: string,
+) {
+  return usersRequest<JsonRecord>(`/asset-adjustments/${encodeURIComponent(adjustmentNo)}/reverse`, {
+    method: "POST",
+    body: JSON.stringify({ reason, operator }),
+    idempotencyKey,
   });
 }
 
@@ -712,28 +1143,40 @@ export async function rejectUserAssetAdjustment(adjustmentNo: string, reason: st
   });
 }
 
-export async function updateUserStatus(userId: number | string, status: UserStatus, reason: string, operator: string) {
+export async function updateUserStatus(userId: number | string, status: UserStatus, reasonCode: string | null, reason: string, operator: string) {
   return usersRequest<User360Profile>(`/profiles/${encodeURIComponent(String(userId))}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status, reason, operator }),
+    body: JSON.stringify({ status, reasonCode, reason, operator }),
     idempotencyPrefix: "c2-user-status",
   });
 }
 
 export async function revokeUserSessions(userId: number | string, reason: string, operator: string) {
-  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/sessions/revoke-all`, {
+  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c2-user-revoke-sessions",
+    idempotencyPrefix: "c5-user-revoke-sessions",
   });
 }
 
-export async function startUserImpersonation(userId: number | string, reason: string, operator: string, ttlMinutes = 15) {
+export async function startUserImpersonation(userId: number | string, reasonCode: string, reason: string, operator: string, ttlMinutes = 15) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/impersonations`, {
     method: "POST",
-    body: JSON.stringify({ ttlMinutes, reason, operator }),
+    body: JSON.stringify({ ttlMinutes, reasonCode, reason, operator }),
     idempotencyPrefix: "c2-user-impersonation-start",
   });
+}
+
+export async function fetchImpersonationReadonlyView(accessToken: string, page = "HOME") {
+  const response = await fetch(`/api/impersonation/view?page=${encodeURIComponent(page)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  const result = (await response.json().catch(() => null)) as ApiResult<JsonRecord> | null;
+  if (!response.ok || !result || result.code !== 0 || !result.data) {
+    throw new Error(formatAdminApiError(result?.message, `IMPERSONATION_VIEW_FAILED_${response.status}`));
+  }
+  return result.data as JsonRecord;
 }
 
 export async function terminateUserImpersonation(sessionNo: string, reason: string, operator: string) {
@@ -760,10 +1203,15 @@ export async function removeUserAccountList(userId: number | string, reason: str
   });
 }
 
-export async function requestUserPasswordReset(userId: number | string, reason: string, operator: string) {
+export async function requestUserPasswordReset(
+  userId: number | string,
+  reason: string,
+  operator: string,
+  evidence: UserSecurityActionEvidence,
+) {
   return usersRequest<UserSecurityStatus>(`/profiles/${encodeURIComponent(String(userId))}/security/password-reset`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
+    body: JSON.stringify({ reason, operator, ...evidence, lockKind: null }),
     idempotencyPrefix: "c5-user-password-reset",
   });
 }

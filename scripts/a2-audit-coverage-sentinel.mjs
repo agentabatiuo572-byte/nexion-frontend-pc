@@ -93,7 +93,6 @@ else {
 // J1 是止血开关:理由确认后由业务接口立即执行并写 A2 审计，不能排队等待审批。
 const J1_IMMEDIATE = "app/components/domain-views/j-tabs/j1-killswitch.tsx";
 const PENDING_FOCAL = [
-  "app/components/domain-views/g-tabs/g1-staking.tsx",
   "app/components/domain-views/h-tabs/h1-phase.tsx",
   "app/components/domain-views/i-tabs/i6-i18n.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
@@ -117,8 +116,13 @@ for (const f of PENDING_FOCAL) {
 }
 
 const g1 = read("app/components/domain-views/g-tabs/g1-staking.tsx");
-if (g1 != null && count(g1, 'sourceDomain: "G1"') < 4) {
-  failures.push("g1-staking: 高敏配置提案少于 4,同形放大动作可能回退为直接执行");
+if (g1 != null) {
+  if (g1.includes("usePropose")) {
+    failures.push("g1-staking: 当前 G1 PRD 要求理由确认后立即执行并由后端原子写 A2,不得进入待审批队列");
+  }
+  for (const command of ["updateG1StakingPoolParam", "updateG1StakingPoolSaleStatus", "updateG1StakingPoolKillStatus"]) {
+    if (!g1.includes(command)) failures.push(`g1-staking: 缺少直接业务命令 ${command}`);
+  }
 }
 const d2 = read("app/components/domain-views/d-tabs/d2-withdrawals.tsx");
 if (d2 != null) {
@@ -135,7 +139,7 @@ const result = {
     a2BackendWorkflow: A2,
     a1BackendWorkflow: A1,
     eviewGapBranches: `${EVIEW} (${GAP_OPS.length} ops)`,
-    focalProposalCardinality: "A1 >= 9, G1 >= 4, D2 approve/unfreeze shared gate",
+    focalProposalCardinality: "A1 >= 9, G1 immediate-with-required-audit, D2 approve/unfreeze shared gate",
     pendingRealtime: `${A2} backend tickets + J1 immediate + ${PENDING_FOCAL.length} 焦点域 usePropose`,
   },
   failureCount: failures.length,

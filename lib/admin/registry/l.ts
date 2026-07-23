@@ -8,12 +8,12 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_L: ModuleEntry[] = [
   {
     path: "/analytics/kpi",
-    summary: "KPI 看板 —— 八项验收指标的当期值、是否达标和趋势。所有指标都来自 A4 事件流(以服务器为准),是决策层判断核心健康度的统一口径,和 B 域驾驶舱一致。",
+    summary: "KPI 看板 —— 目标是承载八项经营指标的当期值、达标状态与趋势。完整统计序列尚未开放时，只展示可核验的累计事实并明确标出降级范围。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/analytics/funnel-cohort",
-    summary: "漏斗 / 同期群 / 留存 —— 用户从注册(L1)到提现(L5)每一步的转化与流失,再叠加首次购机那批人的多周留存矩阵。指标来自 A4 事件流,帮增长团队找出漏斗瓶颈和留存下滑的拐点。",
+    summary: "漏斗 / 同期群 / 留存 —— 用同一用户口径分析逐级转化、同期群与多周留存；只有数据不足时才安全降级为独立事实计数，不把不同口径强行换算为转化率。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
@@ -28,12 +28,12 @@ export const DOMAIN_L: ModuleEntry[] = [
   },
   {
     path: "/analytics/export",
-    summary: "导出 & 监管报告 —— 标准报表和监管报送的生成、周期和下载管理。报告内容是从 A4 事件流和结算账本截取的快照;导出敏感报告要经 A2 审计留痕,生成任务不可篡改。",
+    summary: "导出 & 监管报告 —— 当前可创建和下载 KPI、漏斗、财务、运营四类只读聚合快照。账单明细、监管报告与敏感字段导出会明确显示接入状态，不用模拟数据补齐。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
     path: "/analytics/behavior-heatmap",
-    summary: "用户行为热力图 —— 前端各页面的浏览、点击、停留与跳出按页面级别聚合成热力矩阵,可设置统计粒度(全部 / 一级 / 二级 / 三级页面),并点页下钻到单页点击坐标热力,帮产品/运营定位「哪些页面最热、用户在页内点哪、哪些页面留不住人」。只读报表域,不改任何业务规则。",
+    summary: "用户行为热力图 —— 需要 APP 页面浏览与元素点击事件及埋点目录共同支撑。数据源未接入前只展示真实接入状态，不生成热力数值，也不开放导出。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

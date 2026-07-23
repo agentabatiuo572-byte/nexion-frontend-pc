@@ -12,6 +12,9 @@ import {
   createH3MonthlyMission,
   createH4QuestEvent,
   createH4WheelTier,
+  updateH4WheelProbabilities,
+  updateH4WheelTier,
+  deleteH4WheelTier,
   createH4WheelGuard,
 } from "@/lib/admin/h-client";
 import type { HCtx } from "./types";
@@ -132,7 +135,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
   const reload = async () => {
     setLoading(true);
     try {
-      setModel((await fetchH3QuestEvents()) as H3Model);
+      setModel((await fetchH3QuestEvents(section)) as H3Model);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "UNKNOWN_ERROR");
@@ -143,7 +146,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   useEffect(() => {
     void reload();
-  }, []);
+  }, [section]);
 
   const stateTone = useMemo(() => {
     const pairs: Array<[EventState, [string, string]]> = (model?.eventStates ?? []).map((item) => [
@@ -286,7 +289,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         const payload = {
           id: String(bv.id || "").trim(),
           name: String(bv.name || "").trim(),
-          kind: bv.kind || "EVENT_ACTIONS",
+          kind: bv.kind || "discount",
           state: bv.state || "ongoing",
           reward: String(bv.reward || "").trim(),
           condition: String(bv.condition || "").trim(),
@@ -338,6 +341,91 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         if (!payload.guardKey || !payload.guardLabel) return;
         apply(await createH4WheelGuard(payload, reason));
         toast(`· 护栏「${payload.guardLabel}」已新建`);
+      },
+    });
+  };
+
+  const openWheelProbabilities = () => {
+    const tiers = model?.wheelTiers ?? [];
+    openActionConfirm({
+      action: "调整转盘档位概率",
+      detail: <>一次提交整张奖池概率,服务端锁定奖池并强制合计等于 100%;提高真实流出档概率需通过 B1 红线。</>,
+      amplifies: true,
+      businessForm: {
+        kind: "multi-field",
+        title: "转盘档位概率",
+        hint: "所有档位必须同时提交,合计必须等于 100%。",
+        requireAnyChange: true,
+        fields: tiers.map((tier) => ({
+          key: text(tier.tier),
+          label: `${text(tier.tier)} · ${text(tier.reward)}`,
+          current: String(numericValue(tier.prob)),
+          inputKind: "number" as const,
+          min: 0,
+          max: 100,
+          step: 0.0001,
+          required: true,
+          showDiff: true,
+        })),
+      },
+      run: async (reason, _value, businessValue) => {
+        if (!businessValue) return;
+        const probabilities = Object.fromEntries(tiers.map((tier) => [
+          text(tier.tier),
+          Number(businessValue[text(tier.tier)]),
+        ]));
+        const total = Object.values(probabilities).reduce((sum, value) => sum + value, 0);
+        if (Math.abs(total - 100) > 0.0001) {
+          throw new Error("转盘档位概率合计必须等于 100%");
+        }
+        apply(await updateH4WheelProbabilities(probabilities, reason));
+        toast("· 转盘档位概率已更新并重新计算奖池签名");
+      },
+    });
+  };
+
+  const openEditWheelTier = (tier: Record<string, any>) => {
+    const tierName = text(tier.tier);
+    openActionConfirm({
+      action: `编辑转盘档位 · ${tierName}`,
+      detail: <>编辑奖项展示、奖励类型和真实流出属性；概率统一在“改奖池 / 概率”中调整，保证提交始终合计 100%。</>,
+      amplifies: true,
+      businessForm: {
+        kind: "multi-field",
+        title: `档位配置 · ${tierName}`,
+        requireAnyChange: true,
+        fields: [
+          { key: "rewardName", label: "奖项展示", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
+          { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "nex"), inputKind: "select", options: ["nex", "points", "usdt", "coupon"], optionLabels: { nex: "NEX", points: "积分", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
+          { key: "realOutflow", label: "真实流出", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true },
+        ],
+      },
+      run: async (reason, _value, bv) => {
+        if (!bv) return;
+        apply(await updateH4WheelTier(tierName, {
+          tierName,
+          rewardName: String(bv.rewardName || "").trim(),
+          probabilityPct: numericValue(tier.prob),
+          realOutflow: bv.realOutflow === "1" ? 1 : 0,
+          rewardKind: bv.rewardKind || "nex",
+        }, reason));
+        toast(`· 档位「${tierName}」已更新并记审计`);
+      },
+    });
+  };
+
+  const openDeleteWheelTier = (tier: Record<string, any>) => {
+    const tierName = text(tier.tier);
+    const probability = numericValue(tier.prob);
+    openActionConfirm({
+      action: `删除转盘档位 · ${tierName}`,
+      detail: probability === 0
+        ? <>删除后仍至少保留 2 个档位；服务端在奖池互斥锁内复核。</>
+        : <>为避免概率总和失真，请先在“改奖池 / 概率”把该档概率调为 0%，再删除。</>,
+      run: async (reason) => {
+        if (probability !== 0) throw new Error("删除档位前必须先将概率调整为 0%");
+        apply(await deleteH4WheelTier(tierName, reason));
+        toast(`· 档位「${tierName}」已删除并记审计`);
       },
     });
   };
@@ -689,6 +777,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               </tr>
             </thead>
             <tbody>
+              {model.monthlyMissions.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center", padding: 24, color: "var(--ink-4)" }}>
+                    当前没有月度挑战。可点击右上角“+ 新建月度挑战”，按用户账龄配置主题、子目标与奖励。
+                  </td>
+                </tr>
+              )}
               {model.monthlyMissions.map((mission) => {
                 const [statusLabel, statusTone] = statusMeta(mission.status);
                 return (
@@ -875,7 +970,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <span className="ttl">抽奖转盘治理</span>
             <span className="sub">· 一个转盘一张奖池表(日免费 + 签到满 30 天加抽票共用)</span>
             <div className="r">
-              <button className="l-btn mc" onClick={() => openSimpleConfig("wheel.pool", "转盘奖池签名", text(model.wheelSignature), true)}>
+              <button className="l-btn mc" onClick={openWheelProbabilities}>
                 改奖池 / 概率
               </button>
               <button className="l-btn sm mc" onClick={() => openCreateWheelTier()}>+ 新建档位</button>
@@ -898,7 +993,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span className="mono">{text(tier.reward)}</span>
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
                   <span>{real ? <span className="bdg bad">真实流出</span> : <span className="bdg dim">{text(tier.kind)}</span>}</span>
-                  <span />
+                  <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    <button className="l-btn sm mc" onClick={() => openEditWheelTier(tier)}>编辑</button>
+                    <button className="l-btn sm" onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
+                  </span>
                 </div>
               );
             })}

@@ -68,6 +68,19 @@ export type A4DomainExtensionBatch = {
   details: A4EventDetailRow[];
 };
 
+export type A4SchemaRegistration = {
+  eventName: string;
+  ownerDomain: string;
+  familyKey: string;
+  producer: string;
+  consumers: string;
+  properties: string;
+  serverAuthoritative: boolean;
+  samplingPolicy: string;
+  version: string;
+  updatedAt: string;
+};
+
 export type A4Overview = {
   stats: A4Stats;
   eventFamilies: A4EventFamily[];
@@ -77,104 +90,154 @@ export type A4Overview = {
   commonFields: A4CommonField[];
   dimensionParams: A4DimensionParam[];
   kpiFormulas: A4KpiFormula[];
+  schemaRegistrations: A4SchemaRegistration[];
   domainExtensions: A4DomainExtensionBatch[];
   guardrails: string[];
 };
 
 let requestSeq = 0;
 
-function idempotencyKey(prefix: string) {
+export function createA4IdempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
   return `${prefix}-${Date.now()}-${requestSeq}`;
-}
-
-function text(value: unknown, fallback = "—") {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function num(value: unknown, fallback = 0) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function rows<T>(value: unknown, normalize: (row: Record<string, unknown>) => T): T[] {
-  return Array.isArray(value)
-    ? value.filter((item) => item && typeof item === "object").map((item) => normalize(item as Record<string, unknown>))
-    : [];
 }
 
 function rec(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function invalid(field: string): never {
+  throw new Error(`A4_OVERVIEW_INVALID:${field}`);
+}
+
+function requiredText(value: unknown, field: string) {
+  if (typeof value !== "string" || !value.trim()) invalid(field);
+  return value.trim();
+}
+
+function requiredNumber(value: unknown, field: string) {
+  if (typeof value !== "number" || !Number.isFinite(value)) invalid(field);
+  return value;
+}
+
+function requiredBoolean(value: unknown, field: string) {
+  if (typeof value !== "boolean") invalid(field);
+  return value;
+}
+
+function requiredRows<T>(value: unknown, field: string, normalize: (row: Record<string, unknown>) => T): T[] {
+  if (!Array.isArray(value)) invalid(field);
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) invalid(`${field}[${index}]`);
+    return normalize(item as Record<string, unknown>);
+  });
+}
+
+function requiredStrings(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) invalid(field);
+  return value.map((item, index) => requiredText(item, `${field}[${index}]`));
+}
+
+function requiredNonEmptyRows<T>(value: unknown, field: string, normalize: (row: Record<string, unknown>) => T): T[] {
+  const rows = requiredRows(value, field, normalize);
+  if (!rows.length) invalid(`${field}.empty`);
+  return rows;
+}
+
+function requiredNonEmptyStrings(value: unknown, field: string): string[] {
+  const rows = requiredStrings(value, field);
+  if (!rows.length) invalid(`${field}.empty`);
+  return rows;
+}
+
 function normalizeDetail(row: Record<string, unknown>): A4EventDetailRow {
   return {
-    item: text(row.item),
-    desc: text(row.desc),
+    item: requiredText(row.item, "eventDetail.item"),
+    desc: requiredText(row.desc, "eventDetail.desc"),
   };
 }
 
 function normalizeFamily(row: Record<string, unknown>): A4EventFamily {
   return {
-    key: text(row.key),
-    title: text(row.title),
-    sub: text(row.sub),
-    sample: text(row.sample),
-    serverAuth: text(row.serverAuth),
-    todayCount: text(row.todayCount, "0"),
-    events: rows(row.events, normalizeDetail),
+    key: requiredText(row.key, "eventFamily.key"),
+    title: requiredText(row.title, "eventFamily.title"),
+    sub: requiredText(row.sub, "eventFamily.sub"),
+    sample: requiredText(row.sample, "eventFamily.sample"),
+    serverAuth: requiredText(row.serverAuth, "eventFamily.serverAuth"),
+    todayCount: requiredText(row.todayCount, "eventFamily.todayCount"),
+    events: requiredRows(row.events, "eventFamily.events", normalizeDetail),
   };
 }
 
 function normalizeBatchState(value: unknown): A4DomainExtensionBatch["state"] {
-  const normalized = text(value, "pending").toLowerCase();
-  return normalized === "done" || normalized === "inprogress" || normalized === "scheduled" || normalized === "registered"
+  const normalized = requiredText(value, "domainExtension.state").toLowerCase();
+  return normalized === "done" || normalized === "inprogress" || normalized === "pending" || normalized === "scheduled" || normalized === "registered"
     ? normalized
-    : "pending";
+    : invalid("domainExtension.state");
 }
 
 function normalizeBatch(row: Record<string, unknown>): A4DomainExtensionBatch {
   return {
-    id: text(row.id),
-    title: text(row.title),
+    id: requiredText(row.id, "domainExtension.id"),
+    title: requiredText(row.title, "domainExtension.title"),
     state: normalizeBatchState(row.state),
-    proposer: text(row.proposer),
-    impact: text(row.impact),
-    newDomains: rows(row.newDomains, (item) => ({ name: text(item.name), n: !!item.n })),
-    details: rows(row.details, normalizeDetail),
+    proposer: requiredText(row.proposer, "domainExtension.proposer"),
+    impact: requiredText(row.impact, "domainExtension.impact"),
+    newDomains: requiredRows(row.newDomains, "domainExtension.newDomains", (item) => ({ name: requiredText(item.name, "domainExtension.domain"), n: requiredBoolean(item.n, "domainExtension.newDomainFlag") })),
+    details: requiredRows(row.details, "domainExtension.details", normalizeDetail),
   };
 }
 
 function normalizeOverview(raw: unknown): A4Overview {
   const data = rec(raw);
+  if (!Object.keys(data).length) invalid("root");
   const stats = rec(data.stats);
-  return {
+  if (!Object.keys(stats).length) invalid("stats");
+  const overview: A4Overview = {
     stats: {
-      todayEvents: text(stats.todayEvents, "0"),
-      todayAuditEvents: num(stats.todayAuditEvents),
-      registeredDomains: num(stats.registeredDomains),
-      pendingDomains: num(stats.pendingDomains),
-      batchDone: num(stats.batchDone),
-      batchTotal: num(stats.batchTotal),
-      schemaVersion: text(stats.schemaVersion, "v3"),
+      todayEvents: requiredText(stats.todayEvents, "stats.todayEvents"),
+      todayAuditEvents: requiredNumber(stats.todayAuditEvents, "stats.todayAuditEvents"),
+      registeredDomains: requiredNumber(stats.registeredDomains, "stats.registeredDomains"),
+      pendingDomains: requiredNumber(stats.pendingDomains, "stats.pendingDomains"),
+      batchDone: requiredNumber(stats.batchDone, "stats.batchDone"),
+      batchTotal: requiredNumber(stats.batchTotal, "stats.batchTotal"),
+      schemaVersion: requiredText(stats.schemaVersion, "stats.schemaVersion"),
     },
-    eventFamilies: rows(data.eventFamilies, normalizeFamily),
-    registeredDomains: Array.isArray(data.registeredDomains) ? data.registeredDomains.map((item) => text(item)).filter(Boolean) : [],
-    pendingDomains: Array.isArray(data.pendingDomains) ? data.pendingDomains.map((item) => text(item)).filter(Boolean) : [],
-    sunsetDomains: Array.isArray(data.sunsetDomains) ? data.sunsetDomains.map((item) => text(item)).filter(Boolean) : [],
-    commonFields: rows(data.commonFields, (row) => ({ key: text(row.key), name: text(row.name), sub: text(row.sub), value: text(row.value) })),
-    dimensionParams: rows(data.dimensionParams, (row) => ({ key: text(row.key), name: text(row.name), sub: text(row.sub), value: text(row.value), locked: !!row.locked })),
-    kpiFormulas: rows(data.kpiFormulas, (row) => ({ n: num(row.n), kpi: text(row.kpi), formula: text(row.formula) })),
-    domainExtensions: rows(data.domainExtensions, normalizeBatch),
-    guardrails: Array.isArray(data.guardrails) ? data.guardrails.map((item) => text(item)).filter(Boolean) : [],
+    eventFamilies: requiredNonEmptyRows(data.eventFamilies, "eventFamilies", normalizeFamily),
+    registeredDomains: requiredNonEmptyStrings(data.registeredDomains, "registeredDomains"),
+    pendingDomains: requiredStrings(data.pendingDomains, "pendingDomains"),
+    sunsetDomains: requiredStrings(data.sunsetDomains, "sunsetDomains"),
+    commonFields: requiredNonEmptyRows(data.commonFields, "commonFields", (row) => ({ key: requiredText(row.key, "commonFields.key"), name: requiredText(row.name, "commonFields.name"), sub: requiredText(row.sub, "commonFields.sub"), value: requiredText(row.value, "commonFields.value") })),
+    dimensionParams: requiredNonEmptyRows(data.dimensionParams, "dimensionParams", (row) => ({ key: requiredText(row.key, "dimensionParams.key"), name: requiredText(row.name, "dimensionParams.name"), sub: requiredText(row.sub, "dimensionParams.sub"), value: requiredText(row.value, "dimensionParams.value"), locked: requiredBoolean(row.locked, "dimensionParams.locked") })),
+    kpiFormulas: requiredNonEmptyRows(data.kpiFormulas, "kpiFormulas", (row) => ({ n: requiredNumber(row.n, "kpiFormulas.n"), kpi: requiredText(row.kpi, "kpiFormulas.kpi"), formula: requiredText(row.formula, "kpiFormulas.formula") })),
+    schemaRegistrations: requiredNonEmptyRows(data.schemaRegistrations, "schemaRegistrations", (row) => ({
+      eventName: requiredText(row.eventName, "schemaRegistrations.eventName"),
+      ownerDomain: requiredText(row.ownerDomain, "schemaRegistrations.ownerDomain"),
+      familyKey: requiredText(row.familyKey, "schemaRegistrations.familyKey"),
+      producer: requiredText(row.producer, "schemaRegistrations.producer"),
+      consumers: requiredText(row.consumers, "schemaRegistrations.consumers"),
+      properties: requiredText(row.properties, "schemaRegistrations.properties"),
+      serverAuthoritative: requiredBoolean(row.serverAuthoritative, "schemaRegistrations.serverAuthoritative"),
+      samplingPolicy: requiredText(row.samplingPolicy, "schemaRegistrations.samplingPolicy"),
+      version: requiredText(row.version, "schemaRegistrations.version"),
+      updatedAt: requiredText(row.updatedAt, "schemaRegistrations.updatedAt"),
+    })),
+    domainExtensions: requiredNonEmptyRows(data.domainExtensions, "domainExtensions", normalizeBatch),
+    guardrails: requiredNonEmptyStrings(data.guardrails, "guardrails"),
   };
+  if (overview.stats.registeredDomains !== overview.registeredDomains.length
+      || overview.stats.pendingDomains !== overview.pendingDomains.length
+      || overview.stats.batchTotal !== overview.domainExtensions.length) {
+    invalid("stats.businessCounts");
+  }
+  return overview;
 }
 
-async function a4Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function a4Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string; stableIdempotencyKey?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+  if (init?.stableIdempotencyKey) headers.set("Idempotency-Key", init.stableIdempotencyKey);
+  else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", createA4IdempotencyKey(init.idempotencyPrefix));
 
   const response = await fetch(`/api/admin/platform${path}`, {
     ...init,
@@ -195,27 +258,62 @@ export async function fetchA4Overview() {
   return normalizeOverview(await a4Request<unknown>("/events/overview"));
 }
 
-export async function updateA4DimensionParam(paramKey: string, value: string, reason: string, operator: string) {
+export async function updateA4DimensionParam(paramKey: string, value: string, reason: string, stableIdempotencyKey?: string) {
   await a4Request(`/events/params/${encodeURIComponent(paramKey)}`, {
     method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
+    body: JSON.stringify({ value, reason }),
     idempotencyPrefix: "a4-param",
+    stableIdempotencyKey,
   });
   return fetchA4Overview();
 }
 
-export async function registerA4Schema(value: string, reason: string, operator: string) {
+export type A4SchemaRegistrationInput = {
+  eventName: string;
+  ownerDomain: string;
+  producer: string;
+  consumer: string;
+  propertyName: string;
+  propertyType: string;
+  pii: boolean;
+  isServerAuthoritative: boolean;
+  samplingPolicy: string;
+  expectedVersion: string;
+  reason: string;
+};
+
+export async function registerA4Schema(input: A4SchemaRegistrationInput, stableIdempotencyKey?: string) {
   return a4Request<unknown>("/events/schema-registrations", {
     method: "POST",
-    body: JSON.stringify({ value, reason, operator }),
+    body: JSON.stringify({
+      eventName: input.eventName,
+      ownerDomain: input.ownerDomain,
+      producer: input.producer,
+      consumer: input.consumer,
+      propertyName: input.propertyName,
+      propertyType: input.propertyType,
+      pii: input.pii,
+      serverAuthoritative: input.isServerAuthoritative,
+      samplingPolicy: input.samplingPolicy,
+      expectedVersion: input.expectedVersion,
+      reason: input.reason,
+    }),
     idempotencyPrefix: "a4-schema",
+    stableIdempotencyKey,
   }).then(normalizeOverview);
 }
 
-export async function registerA4DomainExtension(value: string, reason: string, operator: string) {
+export async function registerA4DomainExtension(input: {
+  domainName: string;
+  eventName: string;
+  producer: string;
+  consumer: string;
+  reason: string;
+}, stableIdempotencyKey?: string) {
   return a4Request<unknown>("/events/domain-extension-batches", {
     method: "POST",
-    body: JSON.stringify({ value, reason, operator }),
+    body: JSON.stringify(input),
     idempotencyPrefix: "a4-domain-extension",
+    stableIdempotencyKey,
   });
 }

@@ -10,7 +10,7 @@
 import { useMemo, useState } from "react";
 import { effectiveDevices, useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { timeAgo } from "@/lib/admin/janus-c2/scoring";
-import { STATUS_LABEL, STATUS_SOURCE_LABEL, STATUS_TONE, SUGGESTED_ACTION, channelLabel } from "@/lib/admin/janus-c2/labels";
+import { STATUS_LABEL, STATUS_SOURCE_LABEL, STATUS_TONE, SUGGESTED_ACTION, channelLabel, platformLabel } from "@/lib/admin/janus-c2/labels";
 import type { Device, DeviceStatus } from "@/lib/admin/janus-c2/types";
 import { K6DeviceDetail } from "./device-detail";
 
@@ -185,7 +185,7 @@ export function K6Queue() {
                 <tr><td colSpan={12} className="k6-empty-row">没有符合筛选条件的设备，请放宽筛选条件。</td></tr>
               ) : pageRows.map((d) => (
                 <tr key={d.sid} className={`click${selected === d.sid ? " sel" : ""}`} onClick={() => setSelected(d.sid)}>
-                  <td><code className="sid">{d.sid}</code><div className="mono dim">{d.platform} · {d.model}</div></td>
+                  <td><code className="sid">{d.sid}</code><div className="mono dim">{platformLabel(d.platform)} · {d.model}</div></td>
                   <td>
                     <span className={`k6-bdg ${STATUS_TONE[d.status]}`}>{STATUS_LABEL[d.status]}</span>
                     {d.desiredStatus && d.desiredStatus !== d.status && (

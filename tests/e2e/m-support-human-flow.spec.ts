@@ -263,7 +263,7 @@ async function loginFromUi(page: Page) {
   if (await usernameInput.isVisible({ timeout: 10_000 }).catch(() => false)) {
     await usernameInput.fill(USERNAME);
     await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-    await page.getByRole("button", { name: "登录" }).click();
+    await page.getByRole("button", { name: /继续|登录/ }).click();
   }
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
 }

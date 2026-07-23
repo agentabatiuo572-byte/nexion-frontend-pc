@@ -71,7 +71,7 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
         if (tab === "A3") {
           const overview = await fetchA3Overview();
           if (!cancelled) {
-            setLive(`熔断开关 ${overview.stats?.killGatesUp ?? 0}/${overview.stats?.killGates ?? 0} · 灰度 ${overview.stats?.flagGrayCount ?? 0}`);
+            setLive(`应急状态正常 ${overview.stats?.killGatesUp ?? 0}/${overview.stats?.killGates ?? 0} · 平台开关开启 ${overview.stats?.flagOnCount ?? 0}`);
           }
           return;
         }
@@ -113,8 +113,13 @@ export function ADomainView({ meta }: { meta: DomainViewMeta }) {
           amplifies={actionConfirmReq.amplifies}
           edit={actionConfirmReq.edit}
           businessForm={actionConfirmReq.businessForm}
+          reasonMin={actionConfirmReq.reasonMin}
+          reasonMax={actionConfirmReq.reasonMax}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => { actionConfirmReq.run(reason, newValue, businessValue); setActionConfirm(null); }}
+          onConfirm={async (reason, newValue, businessValue) => {
+            await actionConfirmReq.run(reason, newValue, businessValue);
+            setActionConfirm(null);
+          }}
         />
       )}
       {cf && <KConfirmModal req={cf} onClose={() => setCf(null)} />}

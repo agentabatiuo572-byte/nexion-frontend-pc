@@ -63,6 +63,17 @@ test("K3 structured create form reveals only the selected dimension and never co
   assert.match(component, /优先级/);
 });
 
+test("K3 exposes only the exact address source enum and the server-authoritative low threshold", () => {
+  assert.match(component, /ADDRESS_SOURCE_OPTIONS\s*=\s*\["内部",\s*"第三方",\s*"组合"\]/);
+  assert.match(component, /addressReputationSource=/);
+  assert.match(component, /addressReputationLowThreshold=/);
+  assert.match(component, /label:\s*"低信誉阈值"/);
+  assert.match(component, /min:\s*0/);
+  assert.match(component, /max:\s*1/);
+  assert.match(component, /内部不调用外部服务/);
+  assert.match(component, /第三方或组合使用真实链上信誉服务/);
+});
+
 test("K3 dry-run returns an operator-visible batch result", () => {
   assert.match(client, /export type K3DryRunResult/);
   assert.match(client, /batchNo/);
@@ -85,4 +96,9 @@ test("K3 has truthful empty states, localized failures and a verify gate", () =>
   assert.match(errorMessages, /RULE_CONDITION_INVALID/);
   assert.match(errorMessages, /K3_RULE_TRANSITION_INVALID/);
   assert.match(verify, /K3 contract/);
+});
+
+test("K3 dimension cards keep unique React identity when multiple rules share one dimension", () => {
+  assert.match(component, /key=\{`\$\{dimension\.ruleKey\}-\$\{dimension\.ruleId\}`\}/);
+  assert.doesNotMatch(component, /key=\{dimension\.ruleKey\}/);
 });

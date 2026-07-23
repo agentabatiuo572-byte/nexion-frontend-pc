@@ -194,13 +194,24 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const v3plusPct = totalMembers > 0 ? ((v3plus / totalMembers) * 100).toFixed(2) : "0.00";
   const unlockRank = ctx.leadership?.unlockRank ?? 3;
   const topN = ctx.leadership?.topN ?? 10;
+  // 人口金字塔底注的真实顶部分布(取代历史硬编码 "V8+ 仅 10 人;V12 仅 1 人")。
+  const v8plusPop = rows.filter((r) => Number(r.v.replace("V", "")) >= 8).reduce((s, r) => s + r.pop, 0);
+  const v12Pop = rows.find((r) => r.v === "V12")?.pop ?? 0;
+  // 等级票权串:从 leadership.ranks 真实 votes 派生(取代硬编码 "V3=1 票 … V12=512 票")。
+  const voteRanks = ctx.leadership?.ranks ?? [];
+  const voteWeightLabel = voteRanks.length > 0
+    ? voteRanks
+        .filter((r) => r.votes > 0)
+        .map((r) => `V${r.v}=${r.votes} 票`)
+        .join(" · ")
+    : "";
 
   return (
     <>
       <div className="f-stats">
         <div className="f-stat"><div className="k">总会员</div><div className="v">{totalMembers.toLocaleString()}</div><div className="sub">含 V0 {v0Pop.toLocaleString()}</div></div>
         <div className="f-stat ok"><div className="k">V3+ 高价值</div><div className="v">{v3plus}</div><div className="sub">≈ {v3plusPct}% · 顶部漏斗</div></div>
-        <div className="f-stat cyan"><div className="k">本月晋升</div><div className="v">+217</div><div className="sub">V1 +148 · V2 +43 · V3+ +26</div></div>
+        <div className="f-stat cyan"><div className="k">本月晋升</div><div className="v">—</div><div className="sub">数据待晋升引擎接入</div></div>
         <div className="f-stat cyan"><div className="k">已配奖励等级</div><div className="v">{configuredLevels}</div><div className="sub">全 13 阶 · 运营可增删</div></div>
       </div>
 
@@ -260,7 +271,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 );
               })}
             </div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, lineHeight: 1.5 }}>log 标尺以可视化顶部稀薄分布 · V8+ 仅 10 人;V12 仅 1 人。</div>
+            <div style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 6, lineHeight: 1.5 }}>log 标尺可视化顶部稀薄分布 · 真实在册 V8+ {v8plusPop.toLocaleString()} 人 · V12 {v12Pop.toLocaleString()} 人。</div>
           </div>
 
           <div className="rail-card">
@@ -276,7 +287,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               </div>
               <div className="gov-grp">
                 <div className="gov-grp-h">等级权力</div>
-                <div className="gov-list"><div className="it">等级越高,领导奖池投票权越大(<b>V3=1 票 … V12=512 票</b>)。</div></div>
+                <div className="gov-list"><div className="it">等级越高,领导奖池投票权越大{voteWeightLabel ? <>(<b>{voteWeightLabel}</b>)</> : "(票权数据待领导池配置接入)"}。</div></div>
               </div>
               <div className="gov-grp">
                 <div className="gov-grp-h">奖励派发</div>

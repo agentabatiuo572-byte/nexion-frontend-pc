@@ -401,26 +401,26 @@ export async function fetchG4GenesisOverview(page = 1, pageSize = 10) {
   return normalizeOverview(await g4Request<BackendOverview>(`/nex/genesis?${query.toString()}`));
 }
 
-export async function updateG4GenesisParam(paramKey: string, value: string, reason: string, operator: string) {
+export async function updateG4GenesisParam(paramKey: string, value: string, reason: string, operator: string, decisionRef?: string) {
   return normalizeOverview(await g4Request<BackendOverview>(`/nex/genesis/params/${encodeURIComponent(paramKey)}`, {
     method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
+    body: JSON.stringify({ value, reason, operator, decisionRef }),
     idempotencyPrefix: `g4-param-${paramKey}`,
   }));
 }
 
-export async function updateG4GenesisMarketStatus(enabled: boolean, reason: string, operator: string) {
+export async function updateG4GenesisMarketStatus(enabled: boolean, reason: string, operator: string, context?: { dispositionPlan?: string; triggerBasis?: string }) {
   return normalizeOverview(await g4Request<BackendOverview>("/nex/genesis/market-status", {
     method: "PATCH",
-    body: JSON.stringify({ value: String(enabled), reason, operator }),
+    body: JSON.stringify({ value: String(enabled), reason, operator, dispositionPlan: context?.dispositionPlan, triggerBasis: context?.triggerBasis }),
     idempotencyPrefix: "g4-market-status",
   }));
 }
 
-export async function rerunG4GenesisDividendBatch(batchNo: string, reason: string, operator: string) {
+export async function rerunG4GenesisDividendBatch(batchNo: string, reason: string, operator: string, decisionRef?: string) {
   return normalizeOverview(await g4Request<BackendOverview>(`/nex/genesis/dividend-batches/${encodeURIComponent(batchNo)}/rerun`, {
     method: "POST",
-    body: JSON.stringify({ value: "rerun", reason, operator }),
+    body: JSON.stringify({ value: "rerun", reason, operator, decisionRef }),
     idempotencyPrefix: `g4-rerun-${batchNo}`,
   }));
 }

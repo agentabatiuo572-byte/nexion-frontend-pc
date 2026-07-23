@@ -3,18 +3,20 @@
 /**
  * L1 · KPI 看板 — 8 KPI 卡矩阵 + 单 KPI 下钻 + 趋势/阈值叠加 + 口径锁定表。
  * 数值/目标/spark 全部 join 自 KPIS(B 域同口径单一源);口径与目标只读锁定,页面无修改入口。
- * 视图参数(时间窗/粒度/Phase 叠加/黄灯偏移)普通确认批实时生效;导出为聚合 CSV(仍需操作确认,落审计)。
+ * 视图参数(时间窗/粒度/Phase 叠加/黄灯偏移)实时生效;聚合 CSV 无 PII,免确认并落审计。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
-import { confirm } from "@/lib/store/ui";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
+import { readL1LiveTotals } from "./l1-l2-live-data";
+import { L1LiveTotals } from "./l1-l2-live-fallback";
 import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
+import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, type L1KpiQuery } from "@/lib/admin/l-client";
 
-type Kpi = KpiRow;
+type Kpi = KpiRow & { available?: boolean; unavailableReason?: string; status?: string; momDelta?: number | null };
 type KpiExt = {
   fx: string;
   fxBold: string[];
@@ -27,6 +29,7 @@ type KpiExt = {
 const LED_COLOR = { g: "var(--success)", y: "var(--warning)", r: "var(--danger)" } as const;
 
 function sparkPath(series: readonly number[], w: number, h: number): string {
+  if (series.length < 2) return "";
   const min = Math.min(...series), max = Math.max(...series), rng = max - min || 1;
   return series.map((v, i) => `${i ? "L" : "M"}${((i / (series.length - 1)) * w).toFixed(1)} ${(h - 3 - ((v - min) / rng) * (h - 6)).toFixed(1)}`).join(" ");
 }
@@ -37,29 +40,34 @@ const tgtLabel = (k: Kpi) => {
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
 export function L1HeaderActions({ ctx }: { ctx: LCtx }) {
+  const fullSeries = rows<Kpi>(ctx.biData?.l1?.kpis);
+  const liveTotals = readL1LiveTotals(ctx.biData?.l1);
+  const exportable = fullSeries.length > 0 || liveTotals.length > 0;
+  const complete = fullSeries.length > 0;
   const exportKpi = async () => {
-    const ok = await confirm({
-      title: "导出 KPI 序列 CSV",
-      message: "内容:8 项 KPI 的当前值 + 目标 + 环比序列(按当前时间窗与 cohort 粒度)。全部是聚合比率,不含任何用户个人信息。仍需操作确认,导出落 admin.report_exported 审计。",
-      confirmLabel: "导出",
-    });
-    if (!ok) return;
-    await ctx.biActions?.createReport({
-      exportType: "KPI 序列",
-      timeRange: "当前时间窗",
-      fields: "8 KPI 当前值/目标/环比序列",
-      piiLevel: "无 PII",
-      maskPolicy: "NONE",
-      recipient: "BI 管理员",
-      ticket: "L1-KPI",
-    }, "导出 KPI 聚合序列用于经营复盘");
-    await ctx.reloadBi?.();
-    ctx.toast("KPI 序列导出任务已提交 · 数据来自后端 BI 接口");
+    try {
+      await ctx.biActions?.createReport({
+        exportType: complete ? "KPI 序列" : "KPI 当前汇总",
+        timeRange: complete ? "当前时间窗" : "当前快照",
+        fields: complete ? "8 KPI 当前值/目标/环比序列" : "用户/订单/提现/兑换/质押/钱包流水/工单/审计聚合计数",
+        piiLevel: "NONE",
+        maskPolicy: "NONE",
+        recipient: "BI 管理员",
+        ticket: "L1-KPI",
+      }, complete ? "导出 KPI 聚合序列用于经营复盘" : "导出 L1 当前累计事实用于经营核对");
+      await ctx.reloadBi?.();
+      ctx.toast(complete ? "KPI 序列已导出 · 已记审计" : "KPI 当前汇总已导出 · 已记审计");
+    } catch (error) {
+      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${error.message}` : "导出任务提交失败 · 请稍后重试");
+    }
   };
   return (
     <>
       <span className="f-ro"><span className="d" />只读报表域 · 不改任何业务规则</span>
-      <button className="f-cta" onClick={exportKpi}>导出 KPI 序列 CSV</button>
+      {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
+      <button className="f-cta" onClick={exportKpi} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "尚未返回可导出的 L1 数据" : undefined}>
+        {complete ? "导出 KPI 序列 CSV" : "导出 KPI 当前汇总 CSV"}
+      </button>
     </>
   );
 }
@@ -80,25 +88,55 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   const [win, setWin] = useState("7d");
   const [gran, setGran] = useState("week");
   const [slice, setSlice] = useState(0);
+  const [localData, setLocalData] = useState<Record<string, unknown> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const data = ctx.biData?.l1;
+  useEffect(() => setLocalData(null), [ctx.biData?.l1]);
+
+  const data = localData ?? ctx.biData?.l1;
   const KPIS = rows<Kpi>(data?.kpis);
+  const liveTotals = readL1LiveTotals(data);
+  if (!KPIS.length && liveTotals.length) return <L1LiveTotals metrics={liveTotals} />;
   if (!KPIS.length) return <LDataState ctx={ctx} label="L1" />;
   const WEEKS = strings(data?.weeks);
-  const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, 3);
+  const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, -1);
   const KPI_COLORS = strings(data?.kpiColors);
   const KPI_PLAIN = rec<string>(data?.kpiPlain);
   const KPI_EXT = rec<KpiExt>(data?.kpiExt);
   const safeSelKpi = Math.min(selKpi, KPIS.length - 1);
-  const states = KPIS.map((k) => kpiState(k, ylOffset));
+  const states = KPIS.map((item) => item.available === false || item.value == null ? "na" : kpiState(item, ylOffset));
   const green = states.filter((s) => s === "g").length;
   const yellow = states.filter((s) => s === "y").length;
   const red = states.filter((s) => s === "r").length;
+  const unavailable = states.filter((s) => s === "na").length;
+  const attention = red + unavailable;
   const redNames = KPIS.filter((_, i) => states[i] === "r").map((k) => `#${k.n}`).join(" ");
   const k = KPIS[safeSelKpi];
-  const ext = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "后端暂未返回该 KPI 解释", jump: [] };
+  const ext = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该 KPI 解释", jump: [] };
   const phase = rec(ctx.biData?.currentPhase);
-  const rs = { currentPhase: String(phase.code ?? "P3"), currentMonth: num(phase.month, 0) };
+  const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
+  const rs = { currentPhase: phaseKnown ? String(phase.code) : "未返回", currentMonth: phaseKnown ? num(phase.month, 0) : "—" };
+
+  const reloadKpi = async (nextWindow = win) => {
+    setRefreshing(true);
+    try {
+      setLocalData(await fetchL1Kpi({ window: nextWindow === "1d" || nextWindow === "30d" ? nextWindow : "7d" }));
+      ctx.toast(`KPI 已按${nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
+    } catch (error) {
+      ctx.toast(error instanceof Error ? `KPI 刷新失败 · ${error.message}` : "KPI 刷新失败");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const selectKpi = (index: number) => {
+    setSelKpi(index);
+    const kpiId = KPIS[index]?.n;
+    if (!kpiId) return;
+    const query: L1KpiQuery = { window: win === "1d" || win === "30d" ? win : "7d" };
+    void Promise.all([fetchL1KpiDrilldown(kpiId, query), fetchL1KpiTrend(kpiId, query)])
+      .catch((error) => ctx.toast(error instanceof Error ? `KPI 下钻读取失败 · ${error.message}` : "KPI 下钻读取失败"));
+  };
 
   const toggleOvl = (i: number) => setOvlSel((p) => (p.includes(i) ? (p.length > 1 ? p.filter((x) => x !== i) : p) : [...p, i]));
 
@@ -106,6 +144,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   const drillChart = () => {
     const W = 860, H = 260, P = 36;
     const s = [...k.spark];
+    if (s.length < 2) return <div className="empty">当前筛选范围没有可绘制的趋势点；不会用 0 补齐缺失周。</div>;
     const tgt = tgtValue(k);
     const yl = k.dir === "lte" ? k.target * (1 + ylOffset / 100) : tgt * (1 - ylOffset / 100);
     const all = [...s, tgt, yl];
@@ -121,10 +160,10 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
             <text x={X(i)} y={H - 8} fontSize={11} fill="var(--ink-4)" textAnchor="middle">{WEEKS[i]}</text>
           </g>
         ))}
-        {phaseOn && (
+        {phaseOn && PHASE_SWITCH_IDX >= 0 && (
           <g>
             <rect x={X(PHASE_SWITCH_IDX) - 1} y={18} width={2} height={H - 44} fill="var(--cyan)" opacity={0.45} />
-            <text x={X(PHASE_SWITCH_IDX) + 5} y={30} fontSize={11} fill="var(--cyan)">P2 → P3</text>
+            <text x={X(PHASE_SWITCH_IDX) + 5} y={30} fontSize={11} fill="var(--cyan)">Phase 切换</text>
           </g>
         )}
         <line x1={P} y1={Y(tgt)} x2={W - P} y2={Y(tgt)} stroke="var(--success)" strokeWidth={1.4} strokeDasharray="5 4" />
@@ -145,6 +184,8 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
 
   /* ---- 趋势叠加(指数化:实际 ÷ 目标 → 达标线 100) ---- */
   const ovlChart = () => {
+    const drawable = ovlSel.filter((index) => KPIS[index]?.available !== false && (KPIS[index]?.spark?.length ?? 0) >= 2);
+    if (!drawable.length) return <div className="empty">当前所选 KPI 没有完整趋势点，暂不绘制叠加线。</div>;
     const W = 1240, H = 230, P = 40, min = 80, max = 125;
     const X = (i: number) => P + (i / (WEEKS.length - 1)) * (W - 2 * P);
     const y100 = H - 24 - ((100 - min) / (max - min)) * (H - 44);
@@ -156,13 +197,13 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
             <text x={X(i)} y={H - 6} fontSize={11} fill="var(--ink-4)" textAnchor="middle">{w}</text>
           </g>
         ))}
-        {phaseOn && (
+        {phaseOn && PHASE_SWITCH_IDX >= 0 && (
           <g>
             <rect x={X(PHASE_SWITCH_IDX) - 1} y={14} width={2} height={H - 38} fill="var(--cyan)" opacity={0.45} />
-            <text x={X(PHASE_SWITCH_IDX) + 5} y={26} fontSize={11} fill="var(--cyan)">P2 → P3 切换</text>
+            <text x={X(PHASE_SWITCH_IDX) + 5} y={26} fontSize={11} fill="var(--cyan)">Phase 切换</text>
           </g>
         )}
-        {ovlSel.map((i) => {
+        {drawable.map((i) => {
           const kk = KPIS[i];
           const tgt = tgtValue(kk);
           const idx = kk.spark.map((v) => (kk.dir === "lte" ? (tgt / v) * 100 : (v / tgt) * 100));
@@ -184,15 +225,15 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">达标 KPI</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 高于目标线</div></div>
         <div className="f-stat warn"><div className="k">预警 KPI</div><div className="v">{yellow}</div><div className="sub">黄灯 · 距目标 −{ylOffset}% 区间内</div></div>
-        <div className="f-stat danger"><div className="k">未达 KPI</div><div className="v">{red}</div><div className="sub">红灯 · {redNames || "—"}</div></div>
-        <div className="f-stat cyan"><div className="k">当前 Phase</div><div className="v">{rs.currentPhase} · 月 {rs.currentMonth}</div><div className="sub">趋势图已叠加 Phase 切换标记</div></div>
+        <div className="f-stat danger"><div className="k">未达 + 不可计算</div><div className="v">{attention} / {KPIS.length}</div><div className="sub">未达 {red} 项{redNames ? ` (${redNames})` : ""} · 不可计算 {unavailable} 项 · 缺分母不判 0%</div></div>
+        <div className="f-stat cyan"><div className="k">当前 Phase</div><div className="v">{rs.currentPhase}{phaseKnown ? ` · 月 ${rs.currentMonth}` : ""}</div><div className="sub">{PHASE_SWITCH_IDX >= 0 ? "趋势图已叠加事件 Phase 切换标记" : "当前窗口未识别到 Phase 切换"}</div></div>
       </div>
 
       {/* view params bar(全部仅视图 · 实时生效 · 普通确认批) */}
       <div className="view-bar">
         <div className="chips"><span className="lb">时间窗</span>
           {[["1d", "当日"], ["7d", "滚动 7d"], ["30d", "滚动 30d"], ["custom", "自定义"]].map(([v, lb]) => (
-            <button key={v} className={"chip" + (win === v ? " sel" : "")} onClick={() => { setWin(v); ctx.toast(`视图已切换:${lb} · 仅视图参数,实时生效`); }}>{lb}</button>
+            <button key={v} className={"chip" + (win === v ? " sel" : "")} onClick={() => { setWin(v); void reloadKpi(v); }}>{lb}</button>
           ))}
         </div>
         <div className="sep" />
@@ -215,6 +256,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
             onApply: (n) => { setYlOffset(n); ctx.toast(`黄灯预警偏移 → 目标 −${n}% · 仅视图参数`); },
           })}>调整</button>
         </div>
+        <button className="l-btn sm" onClick={() => void reloadKpi()} disabled={refreshing}>{refreshing ? "刷新中…" : "刷新 KPI"}</button>
         <button className="l-btn sm" style={{ marginLeft: "auto" }} onClick={() => ctx.toast("当前时间窗+粒度+叠加组合已保存为视图 · 不改算法,普通确认批")}>保存为视图</button>
         <span className="lcode lock" title="口径与目标值只读;以上仅为视图参数,实时生效不落确认">视图参数 · 实时生效 · 普通确认批</span>
       </div>
@@ -227,15 +269,15 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
           const dUp = !ex.delta.startsWith("-");
           const goodUp = kk.dir !== "lte";
           return (
-            <button key={kk.n} className={"kpi-card" + (i === selKpi ? " sel" : "")} onClick={() => setSelKpi(i)} title="点击下钻">
+            <button key={kk.n} className={"kpi-card" + (i === selKpi ? " sel" : "")} onClick={() => selectKpi(i)} title="点击下钻">
               <div className="top"><span className="n">#{kk.n}</span><span className="nm"><AutoGloss>{kk.name}</AutoGloss></span><span className={"led " + st} /></div>
               <div className="vrow">
-                <span className="v">{kk.value}<span className="u">{kk.unit}</span></span>
+                <span className="v">{kk.available === false || kk.value == null ? "不可计算" : kk.value}<span className="u">{kk.available === false || kk.value == null ? "" : kk.unit}</span></span>
                 <span className="tgt">{tgtLabel(kk)}</span>
-                <span className={"delta " + (dUp === goodUp ? "up" : "dn")}>{dUp ? "▲" : "▼"} {ex.delta.replace("-", "")}</span>
+                <span className={"delta " + (dUp === goodUp ? "up" : "dn")}>{ex.delta === "—" ? "环比 —" : `${dUp ? "▲" : "▼"} ${ex.delta.replace("-", "")}`}</span>
               </div>
               <svg className="spark" viewBox="0 0 150 30" preserveAspectRatio="none" aria-hidden>
-                <path d={sparkPath(kk.spark, 150, 30)} fill="none" stroke={LED_COLOR[st]} strokeWidth={1.8} />
+                {kk.spark.length >= 2 && <path d={sparkPath(kk.spark, 150, 30)} fill="none" stroke={st === "na" ? "var(--ink-4)" : LED_COLOR[st]} strokeWidth={1.8} />}
               </svg>
               <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{rs.currentPhase}</span><span className="lat">~2min</span></div>
             </button>
@@ -257,7 +299,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
         <div className="drill">
           <div className="meta">
             <div className="formula">
-              <div className="lb" title="口径锚点:PRD §2.4.6"><AutoGloss>这项指标怎么算 · 算法锁定在事件中台,这里只能看不能改</AutoGloss></div>
+              <div className="lb" title="指标口径已锁定"><AutoGloss>这项指标怎么算 · 统计规则统一管理,这里只能看不能改</AutoGloss></div>
               <div className="plain"><AutoGloss>{KPI_PLAIN[k.n]}</AutoGloss></div>
               <div className="fx">{renderFx(ext.fx, ext.fxBold)}</div>
               <div className="anchor">口径编号 #{k.n} · 数据批次 {k.vis}</div>
@@ -265,7 +307,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
             <div className="nd">
               <div className="it"><div className="k">分子(实时)</div><div className="v" style={{ color: "var(--cyan)" }}>{ext.num}</div></div>
               <div className="it"><div className="k">分母(实时)</div><div className="v">{ext.den}</div></div>
-              <div className="it"><div className="k">当前值</div><div className="v" style={{ color: "var(--success)" }}>{k.value}{k.unit}</div></div>
+              <div className="it"><div className="k">当前值</div><div className="v" style={{ color: k.available === false || k.value == null ? "var(--ink-4)" : "var(--success)" }}>{k.available === false || k.value == null ? "不可计算" : `${k.value}${k.unit}`}</div></div>
               <div className="it"><div className="k">目标值</div><div className="v" style={{ color: "var(--ink-3)" }}>{tgtLabel(k).replace("目标 ", "").replace("健康带 ", "")}</div></div>
             </div>
             <div className="ltint" style={{ fontSize: 12 }}><b>解读</b> · <AutoGloss>{ext.note}</AutoGloss></div>
@@ -281,7 +323,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
               <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />cohort 周序列</span>
               <span className="it" style={{ color: "var(--success)" }}><span className="lsw dash" />目标线</span>
               <span className="it" style={{ color: "var(--warning)" }}><span className="lsw dash" />黄灯预警线(目标 −{ylOffset}%)</span>
-              <span className="it" style={{ color: "var(--ink-4)" }}><span className="lsw" style={{ width: 8, height: 10 }} />Phase 切换标记(P2→P3)</span>
+              <span className="it" style={{ color: "var(--ink-4)" }}><span className="lsw" style={{ width: 8, height: 10 }} />事件 Phase 切换标记</span>
             </div>
           </div>
         </div>
@@ -292,7 +334,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">趋势 &amp; 阈值视图</span>
           <span className="sub">· <AutoGloss>多 KPI cohort 周序列叠加 · 观察 Phase 切换对 KPI 的影响 · 归因跳 B4 / H1</AutoGloss></span>
-          <div className="r"><span className="lcode electric" title="事件通用属性 §2.4.4">按事件自带的 Phase 标记聚合</span></div>
+          <div className="r"><span className="lcode electric" title="按每条业务事件携带的阶段标记聚合">按事件自带的 Phase 标记聚合</span></div>
         </div>
         <div className="l-b">
           <div className="ovl-picks">
@@ -314,7 +356,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">KPI 口径锁定表</span>
           <span className="sub">· <AutoGloss>每项 KPI 怎么算一目了然 · 要改算法须走事件中台治理 + 操作确认,本页改不了</AutoGloss></span>
-          <div className="r"><span className="lcode lock" title="口径权威:§2.4.6">🔒 算法锁定</span><span className="lcode lock" title="目标权威:§18.2">🔒 目标锁定</span></div>
+          <div className="r"><span className="lcode lock" title="指标口径已锁定">🔒 算法锁定</span><span className="lcode lock" title="经营目标已锁定">🔒 目标锁定</span></div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 900 }}>
@@ -329,7 +371,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
                     <td><div style={{ color: "var(--ink-2)" }}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></div><div className="mono fx" style={{ color: "var(--ink-4)", fontSize: 11.5, marginTop: 3 }}>{renderFx(KPI_EXT[kk.n].fx, KPI_EXT[kk.n].fxBold)}</div></td>
                     <td className="num mono" style={{ color: "var(--ink)" }}>{tgtLabel(kk).replace("目标 ", "").replace("健康带 ", "")}</td>
                     <td><span className="lcode">{kk.vis}</span></td>
-                    <td>{st === "g" ? <span className="bdg ok">达标</span> : st === "y" ? <span className="bdg warn">预警</span> : <span className="bdg bad">未达</span>}</td>
+                    <td>{st === "g" ? <span className="bdg ok">达标</span> : st === "y" ? <span className="bdg warn">预警</span> : st === "na" ? <span className="bdg">不可计算</span> : <span className="bdg bad">未达</span>}</td>
                   </tr>
                 );
               })}
@@ -341,7 +383,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>L1 没有任何「写数据」动作</b>:<AutoGloss>KPI 怎么算由事件中台治理,目标值由验收表持有,这里只配置呈现、下钻查询与聚合导出。导出内容为 8 项 KPI 的比率序列(聚合计数,</AutoGloss><b>不含任何用户隐私明文</b>),<AutoGloss>仍需操作确认但每次导出都落</AutoGloss> <b>admin.report_exported</b> <AutoGloss>审计。异常 KPI 的归因下钻:转化类(#1–#4)跳 L2 漏斗,财务类(#8 / 提现兑付)跳 L3 报表,团队类(#5/#7)跳 L4 网络报表。</AutoGloss></p>
+      <p className="f-foot"><b>L1 没有任何「写数据」动作</b>:<AutoGloss>KPI 怎么算由事件统计规则统一治理,这里只配置呈现、下钻查询与聚合导出。导出内容为 8 项 KPI 的聚合序列,</AutoGloss><b>不含任何用户隐私明文</b>,<AutoGloss>每次导出都会生成可追溯记录。异常 KPI 的归因下钻:转化类(#1–#4)跳 L2 漏斗,财务类(#8 / 提现兑付)跳 L3 报表,团队类(#5/#7)跳 L4 网络报表。</AutoGloss></p>
       <PaginationExemptionList
         items={[
           {

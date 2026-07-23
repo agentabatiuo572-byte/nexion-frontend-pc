@@ -1,299 +1,475 @@
 "use client";
 
-/**
- * B2 资金池水位(只读 · 总览驾驶舱)。
- * UI 严格对齐设计稿 project/「B2 资金池水位.html」:
- *   HERO   兑付覆盖率 + 储备/盈余 水位条 meter + 24h 净流
- *   MAIN   未来 7 日到期兑付预测(柱图 + 累计虚线 + 峰值高亮) | 应付负债构成环图
- *   FLOW   近 8 窗口净流入 / 流出(发散柱)
- * 顶部域标 / 标题 / 控制入口复用 BPageHeader(去设计稿 B1-B5 分段导航与 server-canonical pill)。
- * 数据从 /api/admin/treasury/b-domain 读取;B2 趋势配置缺失时由后端写入 MySQL 种子再读出。
- * 设计稿的 3 段 <script>(donut conic-gradient / runway 累计虚线 / flow 发散柱)在此用 React 计算。
- */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+  CalendarClock,
+  Download,
+  ExternalLink,
+  RefreshCw,
+  Settings2,
+  ShieldCheck,
+} from "lucide-react";
+import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { useAdminAuth } from "@/lib/store/admin-auth";
+import {
+  B2_LIABILITY_KEYS,
+  downloadB2LiabilitiesCsv,
+  fetchB2Dashboard,
+  updateB2ForecastConfig,
+  type B2Dashboard,
+  type B2ForecastConfig,
+  type B2ForecastValues,
+  type B2MaturityWindow,
+  type B2WaterLevel,
+} from "@/lib/admin/b2-client";
+import { BPageHeader } from "../b-page-header";
 import "../b-domain.css";
 import "./liquidity.css";
-import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { CalendarClock, PieChart, ArrowDownUp, ShieldCheck } from "lucide-react";
-import { BPageHeader } from "../b-page-header";
-import { BDomainDataState, BDomainWarnings } from "@/app/components/dashboard/b-domain-state";
 
-const RW_BAR_H = 150; // 柱区最大像素高
+const WATER_LABEL: Record<B2WaterLevel["tier"], string> = {
+  NORMAL: "正常",
+  WATCH: "关注",
+  WARNING: "预警",
+  DANGER: "危险",
+};
 
-const FLOW_BAR_H = 60; // 半轴最大像素高
+const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = {
+  withdrawable_balance: "可提现余额",
+  usdt_staking_principal: "USDT 质押本金",
+  staking_interest: "质押利息",
+  genesis_daily_emission: "Genesis 每日分红",
+  nex_v2_future: "NEX v2 远期权益",
+  withdrawal_queue: "提现队列",
+  commission_cooling: "冷却期佣金",
+  lock_other: "其他锁仓",
+};
+
+function money(value: number) {
+  return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function activeConfig(config: B2ForecastConfig): B2ForecastValues {
+  return config.pendingConfig
+    ? { ...config, ...config.pendingConfig }
+    : {
+        reserveCategories: config.reserveCategories,
+        liabilityCategories: config.liabilityCategories,
+        forecastWindow: config.forecastWindow,
+        genesisIncluded: config.genesisIncluded,
+        includeFarLiabilities: config.includeFarLiabilities,
+        stakingInterestMode: config.stakingInterestMode,
+        trialStressEnabled: config.trialStressEnabled,
+      };
+}
 
 export default function LiquidityPage() {
-  const bDomain = useBDomainDashboard();
-  const { ledger: LEDGER, liquidity } = bDomain;
-  if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
-    return (
-      <div className="dkpage bpage liqpage">
-        <BPageHeader
-          id="B2"
-          title="资金池水位"
-          desc="读取 B 域真实资金池水位、到期兑付预测和应付负债构成。"
-          ctaLabel="调资金 / 提现参数"
-          ctaHref="/finance/params"
-        />
-        <BDomainDataState title="B2 资金池水位" loading={bDomain.loading && !bDomain.error} error={bDomain.error} onRetry={bDomain.reload} />
-      </div>
-    );
-  }
-  if (!liquidity.liabilities.length || !liquidity.runway.length || !liquidity.flow.length || LEDGER.coverageSeries.length < 2) {
-    return (
-      <div className="dkpage bpage liqpage">
-        <BPageHeader
-          id="B2"
-          title="资金池水位"
-          desc="B2 需要负债构成、到期预测、净流和覆盖率趋势。"
-          ctaLabel="调资金 / 提现参数"
-          ctaHref="/finance/params"
-        />
-        <BDomainWarnings warnings={bDomain.warnings} />
-        <BDomainDataState title="B2 资金池水位" error="B2_REQUIRED_DATA_EMPTY" onRetry={bDomain.reload} />
-      </div>
-    );
-  }
-  const LIAB = liquidity.liabilities;
-  const RW_ROWS = liquidity.runway;
-  const RW = RW_ROWS.map((row) => row.valueWan);
-  const RW_TOTAL = liquidity.runwayTotalWan || RW.reduce((sum, value) => sum + value, 0);
-  const peak = RW_ROWS.reduce(
-    (best, row) => (row.valueWan > best.valueWan ? row : best),
-    RW_ROWS[0],
+  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const canConfig = authorities.includes("overview_b2_write") || authorities.includes("finance_d3_write");
+  const canExport = authorities.includes("overview_b2_export") || authorities.includes("finance_d3_export");
+  const [data, setData] = useState<B2Dashboard | null>(null);
+  const [draft, setDraft] = useState<B2ForecastValues | null>(null);
+  const [window, setWindow] = useState<B2MaturityWindow>("7d");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [dialogStep, setDialogStep] = useState<"closed" | "edit" | "confirm">("closed");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async (nextWindow: B2MaturityWindow) => {
+    setLoading(true);
+    setError("");
+    try {
+      const next = await fetchB2Dashboard(nextWindow);
+      setData(next);
+      setDraft(activeConfig(next.config));
+      setWindow(next.maturity.window);
+    } catch (caught) {
+      setData(null);
+      setDraft(null);
+      setError(caught instanceof Error ? caught.message : "B2 服务端响应异常");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load("7d");
+  }, [load]);
+
+  const sourceText = useMemo(
+    () => Array.from(new Set([...(data?.reserve.sources ?? []), ...(data?.liabilities.sources ?? [])])).join(" / "),
+    [data],
   );
-  const FLOW_ROWS = liquidity.flow;
-  const FLOW = FLOW_ROWS.map((row) => row.valueWan);
-  const coverageSeries = LEDGER.coverageSeries;
-  const covDelta = coverageSeries[coverageSeries.length - 1] - coverageSeries[coverageSeries.length - 2];
-  const netFlowM = LEDGER.netFlow24hUsd / 1e6;
-  const netFlowLabel = `${netFlowM >= 0 ? "+" : "-"}$${Math.abs(netFlowM).toFixed(2)}M`;
-  const tailInflowCount = [...FLOW].reverse().findIndex((value) => value <= 0);
-  const inflowStreak = tailInflowCount === -1 ? FLOW.length : tailInflowCount;
-  const flowTag = inflowStreak > 1 ? `连续 ${inflowStreak} 窗口净流入` : "按接口窗口同步";
-  // 环图:由占比累计算 conic-gradient 色标(每段 起% 止%)。
-  let acc = 0;
-  const donutStops = LIAB.map((l) => {
-    const seg = `var(${l.cat}) ${acc.toFixed(2)}% ${(acc + l.pc).toFixed(2)}%`;
-    acc += l.pc;
-    return seg;
-  }).join(", ");
-  const donutBg = donutStops ? `conic-gradient(${donutStops})` : "var(--surface-3)";
 
-  // runway:柱高按峰值归一;累计虚线点位(x 居中、y 自累计占 RW_TOTAL 的比例反推)。
-  const maxR = Math.max(...RW, 1);
-  let cum = 0;
-  const cumPts = RW.map((v, i) => {
-    cum += v;
-    const x = ((i + 0.5) / RW.length) * 100;
-    const y = 100 - (cum / Math.max(RW_TOTAL, 1)) * 70 - 8;
-    return [x, y] as const;
-  });
-  const cumPath = cumPts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+  const selectWindow = (value: B2MaturityWindow) => {
+    setNotice("");
+    void load(value);
+  };
 
-  // flow:发散柱(正=净流入向上、负=流出向下),半轴按 |最大| 归一。
-  const maxF = Math.max(...FLOW.map(Math.abs), 1);
+  const exportLiabilities = () => {
+    setError("");
+    void downloadB2LiabilitiesCsv()
+      .then(() => setNotice("负债明细 CSV 已导出"))
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "B2 导出失败"));
+  };
 
-  // 覆盖率水位:派生自后端 B 聚合账本(与 D3 / B 驾驶舱一致)。0-120% 标尺,红线/健康线按阈值定位。
-  const cov = LEDGER.coverageRatio;
-  const reserveM = (LEDGER.reserveUsd / 1e6).toFixed(2);
-  const liabM = (LEDGER.liabilitiesUsd / 1e6).toFixed(2);
-  const netRaw = LEDGER.reserveUsd - LEDGER.liabilitiesUsd;
-  const netM = (Math.abs(netRaw) / 1e6).toFixed(2);
-  const isSurplus = netRaw >= 0;
-  const COV_SCALE = 120; // 水位条满标 = 1.2× 应付,给健康线 110% 留头寸
-  const resW = ((Math.min(cov, COV_SCALE) / COV_SCALE) * 100).toFixed(1);
-  const redL = ((LEDGER.redlinePct / COV_SCALE) * 100).toFixed(1);
-  const healthL = ((LEDGER.healthyPct / COV_SCALE) * 100).toFixed(1);
+  const openConfig = () => {
+    if (!data || !canConfig) return;
+    setDraft(activeConfig(data.config));
+    setReason("");
+    setDialogStep("edit");
+  };
+
+  const proceedToConfirm = () => {
+    const length = reason.trim().length;
+    if (length < 8 || length > 200) {
+      setError("操作原因需为 8-200 个字符");
+      return;
+    }
+    setError("");
+    setDialogStep("confirm");
+  };
+
+  const saveConfig = () => {
+    if (!data || !draft || saving) return;
+    setSaving(true);
+    setError("");
+    void updateB2ForecastConfig(draft, data.config.version, reason.trim(), currentAdminOperator())
+      .then(async () => {
+        setDialogStep("closed");
+        setNotice("预测配置已保存，配置于下一 UTC 日 00:00 生效；刷新后可核对待生效版本");
+        await load(window);
+      })
+      .catch((caught) => {
+        setDialogStep("edit");
+        setError(caught instanceof Error ? caught.message : "B2 配置保存失败");
+      })
+      .finally(() => setSaving(false));
+  };
+
+  if (loading && !data) {
+    return (
+      <div className="dkpage bpage liqpage">
+        <BPageHeader
+          id="B2"
+          title="资金池水位"
+          desc="正在从 D3 权威资金口径读取储备、8 类应付负债与到期预测。"
+          ctaLabel="D3 资金池深页"
+          ctaHref="/finance/pool"
+        />
+        <section className="card b2-state" aria-live="polite">B2 资金水位加载中...</section>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="dkpage bpage liqpage">
+        <BPageHeader
+          id="B2"
+          title="资金池水位"
+          desc="D3 是 B2 负债与到期预测的唯一权威来源。"
+          ctaLabel="D3 资金池深页"
+          ctaHref="/finance/pool"
+        />
+        <section className="card b2-state b2-state-error" aria-live="assertive">
+          <b>服务端响应异常，已停止展示旧财务数据</b>
+          <span>{error || "B2 服务端响应异常"}</span>
+          <button type="button" className="b2-button primary" onClick={() => void load(window)}>
+            <RefreshCw size={15} />重新加载
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  const { reserve, liabilities, maturity, config } = data;
+  const coverageRatio = liabilities.totalUsdt > 0
+    ? (reserve.reserveTotalUsdt / liabilities.totalUsdt) * 100
+    : null;
+  const noDue = maturity.cumulativeUsdt === 0;
+  const peak = maturity.daily.reduce(
+    (best, row) => (row.totalDueUsdt > best.totalDueUsdt ? row : best),
+    maturity.daily[0],
+  );
+  const meterWidth = coverageRatio === null ? 100 : Math.min(100, (coverageRatio / 120) * 100);
 
   return (
     <div className="dkpage bpage liqpage">
       <BPageHeader
         id="B2"
         title="资金池水位"
-        desc={
-          <>
-            真实能拿出来的钱(储备)和该还给用户的钱({LIAB.length} 类应付)之间,实时还差多少、什么时候到期。这里的覆盖率是 <b>B5 风险雷达</b>和 <b>J 域熔断开关</b>的关键依据。
-          </>
-        }
-        ctaLabel="调资金 / 提现参数"
-        ctaHref="/finance/params"
+        desc="以 D3 权威口径回答：当前可动用储备够不够、8 类负债来自哪里、未来 7/30 天何时到期。"
+        ctaLabel="D3 资金池深页"
+        ctaHref="/finance/pool"
       />
-      <BDomainWarnings warnings={bDomain.warnings} />
 
-      {/* HERO: 覆盖率 + 水位条 + 24h 净流出 */}
-      <section className="card liq-hero">
-        <div className="liq-cov">
-          <div className="k">
-            兑付覆盖率{" "}
-            <span className="help" data-tip={`兑付覆盖率 = 可用储备 ÷ 应付负债。跌破健康线 ${LEDGER.healthyPct}% 进入黄区警戒、跌破红线 ${LEDGER.redlinePct}% 触发流出收紧。`}>?</span>
-          </div>
-          <div className="v">
-            {cov.toFixed(1)}<small>%</small>
-          </div>
-          <div className="d">{covDelta >= 0 ? "↗" : "↘"} {Math.abs(covDelta).toFixed(1)}pt / 窗口</div>
-        </div>
-
-        <div className="liq-meter">
-          <div className="mhead">
-            <div className="l">
-              可用储备 <b>${reserveM}M</b>
-            </div>
-            <div className="r">
-              应付负债 <b>${liabM}M</b>
-            </div>
-          </div>
-          <div className="liq-bar">
-            <div className="res" style={{ width: `${resW}%` }}>
-              <span>储备 {cov.toFixed(1)}%</span>
-            </div>
-            <div
-              className="gap"
-              style={isSurplus ? { background: "var(--surface-3)", borderLeft: "2px solid var(--success)" } : undefined}
+      <div className="b2-toolbar" aria-label="B2 操作栏">
+        <div className="b2-window" role="group" aria-label="到期预测窗口">
+          {(["7d", "30d"] as const).map((item) => (
+            <button
+              type="button"
+              key={item}
+              className={window === item ? "active" : ""}
+              aria-pressed={window === item}
+              disabled={loading}
+              onClick={() => selectWindow(item)}
             >
-              <span style={isSurplus ? { color: "var(--success)" } : undefined}>
-                {isSurplus ? `盈余 $${netM}M` : `缺口 $${netM}M`}
-              </span>
-            </div>
-            <div className="redline" style={{ left: `${redL}%` }} title={`红线 ${LEDGER.redlinePct}%`} />
-            <div className="redline" style={{ left: `${healthL}%`, opacity: 0.3 }} title={`健康 ${LEDGER.healthyPct}%`} />
-          </div>
-          <div className="liq-scale">
-            <span>0</span>
-            <span>红线 {LEDGER.redlinePct}%</span>
-            <span>健康 {LEDGER.healthyPct}% · 满 120%</span>
-          </div>
+              {item === "7d" ? "7 天" : "30 天"}
+            </button>
+          ))}
         </div>
-
-        <div className="liq-out">
-          <div className="k">
-            24h 净流{" "}
-            <span className="help" data-tip="近 24 小时资金净流(流入 − 流出)。正值=扩张期储备累积,m7 毛流入 ≫ payout。">?</span>
-          </div>
-          <div className="v" style={{ color: netFlowM >= 0 ? "var(--success)" : "var(--negative)" }}>{netFlowLabel}</div>
-          <div className="d">{netFlowM >= 0 ? "↗ 净流入" : "↘ 净流出"}</div>
-        </div>
-      </section>
-
-      {/* MAIN: runway + donut */}
-      <div className="b2-main">
-        {/* runway */}
-        <section className="card runway">
-          <div className="ttl-row">
-            <span className="ic">
-              <CalendarClock size={16} />
-            </span>
-            <span className="h">未来 7 日到期兑付预测</span>
-            <span className="sub">需准备的可兑付头寸 · 万 USDT</span>
-            <div className="r">
-              <span className="b-tag">到期 = 提现冷却 + 利息 + 排放</span>
-            </div>
-          </div>
-          <div className="rwrap">
-            <svg className="cum" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-              <path
-                d={cumPath}
-                fill="none"
-                stroke="var(--cyan)"
-                strokeWidth={1.4}
-                strokeDasharray="2 2"
-                vectorEffect="non-scaling-stroke"
-                strokeLinecap="round"
-              />
-            </svg>
-            <div className="rbars">
-              {RW_ROWS.map((row) => (
-                <div key={row.day} className={`rc${row.valueWan === maxR ? " peak" : ""}`}>
-                  <div className="v">{row.valueWan}万</div>
-                  <div className="bk" style={{ height: `${(row.valueWan / maxR) * RW_BAR_H}px` }} />
-                  <div className="lbl">{row.day}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="cover-note">
-            <span className="ic">
-              <ShieldCheck size={17} />
-            </span>
-            <div>
-              7 日累计到期 <b>{RW_TOTAL} 万</b>,储备 {Math.round(LEDGER.reserveUsd / 1e4)} 万 ≈ 可覆盖 <b>{Math.round(LEDGER.reserveUsd / 1e4 / Math.max(RW_TOTAL / 7, 1))} 个日均到期</b>;<b>{peak.day}</b> 单日 {peak.valueWan} 万需提前调度储备。
-            </div>
-          </div>
-        </section>
-
-        {/* donut */}
-        <section className="card donut-card">
-          <div className="ttl-row">
-            <span className="ic">
-              <PieChart size={16} />
-            </span>
-            <span className="h">应付负债构成</span>
-            <span className="sub">{LIAB.length} 科目 · 合计 ${liabM}M</span>
-          </div>
-          <div className="donut-wrap">
-            <div className="donut" style={{ width: 152, height: 152, background: donutBg }}>
-              <div className="hole">
-                <div>
-                  <div className="big">
-                    {Math.round(LEDGER.liabilitiesUsd / 1e4)}<small style={{ fontSize: 12 }}>万</small>
-                  </div>
-                  <div className="sm">USDT 应付</div>
-                </div>
-              </div>
-            </div>
-            <div className="legend" style={{ flex: 1 }}>
-              {LIAB.map((l) => (
-                <div key={l.nm} className="lg">
-                  <span className="d" style={{ background: `var(${l.cat})` }} />
-                  <span className="nm">{l.nm}</span>
-                  <span className="pc">{l.pc.toFixed(1)}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
+        <span className="b2-asof">口径时点：{reserve.asOf}</span>
+        <button type="button" className="b2-button" disabled={loading} onClick={() => void load(window)}>
+          <RefreshCw size={14} className={loading ? "spin" : ""} />刷新
+        </button>
+        {canExport ? (
+          <button type="button" className="b2-button" onClick={exportLiabilities}>
+            <Download size={14} />导出负债 CSV
+          </button>
+        ) : (
+          <span className="b2-readonly">当前账号无导出权限</span>
+        )}
+        {canConfig ? (
+          <button type="button" className="b2-button primary" onClick={openConfig}>
+            <Settings2 size={14} />调整预测配置
+          </button>
+        ) : (
+          <span className="b2-readonly">当前账号只有查看权限</span>
+        )}
       </div>
 
-      {/* flow strip */}
-      <section className="card flow-strip">
-        <div className="ttl-row">
-          <span className="ic">
-            <ArrowDownUp size={16} />
-          </span>
-          <span className="h">近 8 窗口净流入 / 流出</span>
-          <span className="sub">正 = 净流入 · 万 USDT</span>
-          <div className="r">
-            <span className="b-tag">{flowTag}</span>
-          </div>
+      {error && <div className="b2-alert error" role="alert">服务端响应异常 · {error}</div>}
+      {notice && <div className="b2-alert success" role="status">{notice}</div>}
+
+      <section className="b2-kpis" aria-label="资金池水位摘要">
+        <article className="card b2-kpi">
+          <span>真实可动用储备</span>
+          <strong>{money(reserve.reserveTotalUsdt)}</strong>
+          <small>USDT + 其他高流动资产，已扣锁定本金</small>
+        </article>
+        <article className="card b2-kpi">
+          <span>应付负债</span>
+          <strong>{money(liabilities.totalUsdt)}</strong>
+          <small>{liabilities.hardLiabilityCategoryCount}/8 类服务端科目</small>
+        </article>
+        <article className={`card b2-kpi tier-${reserve.waterLevel.tier.toLowerCase()}`}>
+          <span>当前资金水位</span>
+          <strong>{WATER_LABEL[reserve.waterLevel.tier]}</strong>
+          <small>
+            {noDue
+              ? "当前窗口无到期兑付，不计算覆盖天数"
+              : `按日均到期可覆盖 ${reserve.waterLevel.reserveCoverDays} 天`}
+          </small>
+        </article>
+        <article className="card b2-kpi">
+          <span>{window} 累计到期</span>
+          <strong>{money(maturity.cumulativeUsdt)}</strong>
+          <small>提现 + 利息 + Genesis{maturity.trialStressIncluded ? " + Trial 压测" : ""}</small>
+        </article>
+      </section>
+
+      <section className="card b2-coverage">
+        <div>
+          <span className="eyebrow">兑付覆盖率</span>
+          <strong>{coverageRatio === null ? "无应付负债" : `${coverageRatio.toFixed(1)}%`}</strong>
         </div>
-        <div className="flow-row">
-          {FLOW_ROWS.map((row, i) => {
-            const v = row.valueWan;
-            const pos = v >= 0;
-            const h = Math.round((Math.abs(v) / maxF) * FLOW_BAR_H);
-            const clr = pos ? "var(--success)" : "var(--negative)";
-            const barStyle = pos
-              ? { bottom: "50%", height: h, borderRadius: "5px 5px 0 0", background: clr }
-              : { top: "50%", height: h, borderRadius: "0 0 5px 5px", background: clr };
-            return (
-              <div key={i} className="flow-col">
-                <div className="v" style={{ color: clr }}>
-                  {pos ? "+" : ""}
-                  {v}万
-                </div>
-                <div className="flow-plot">
-                  <div className="flow-zero" />
-                  <div className="flow-bar" style={barStyle} />
-                </div>
-                <div className="lbl">{row.label}</div>
-              </div>
-            );
-          })}
+        <div className="b2-meter" aria-label="储备相对负债覆盖率">
+          <div style={{ width: `${meterWidth}%` }} />
+        </div>
+        <div className="b2-cover-copy">
+          <ShieldCheck size={18} />
+          {noDue ? (
+            <span>
+              当前窗口无到期兑付；不虚构“可覆盖天数”，也无需对 0 USDT 安排调度。
+            </span>
+          ) : (
+            <span>
+              峰值日 <b>{peak.date}</b> 到期 <b>{money(peak.totalDueUsdt)}</b>；
+              服务端建议：{reserve.waterLevel.suggestedAction}。
+            </span>
+          )}
         </div>
       </section>
 
-      <p className="b-foot">
-        覆盖率当前 <b>{cov.toFixed(1)}%</b>,健康线 {LEDGER.healthyPct}%,红线 {LEDGER.redlinePct}%;<b>{peak.day}</b> 到期峰值 {peak.valueWan} 万。储备 / 负债口径与 <b>B1 双账本</b>一致,数据源为 server 端结算账本。
-      </p>
+      <div className="b2-main">
+        <section className="card b2-maturity">
+          <header>
+            <div>
+              <CalendarClock size={17} />
+              <b>未来 {window === "7d" ? "7" : "30"} 日到期负债</b>
+            </div>
+            <span>每日构成与累计 · USDT</span>
+          </header>
+          <div className="b2-maturity-list">
+            {maturity.daily.map((row, index) => (
+              <div className="b2-maturity-row" key={row.date}>
+                <div>
+                  <b>{row.date}</b>
+                  <small>
+                    提现 {money(row.withdrawDueUsdt)} · 利息 {money(row.interestDueUsdt)} · Genesis {money(row.genesisDividendUsdt)}
+                    {maturity.trialStressIncluded ? ` · Trial 压测 ${money(row.trialShadowStressUsdt)}` : ""}
+                  </small>
+                </div>
+                <div className="amount">
+                  <b>{money(row.totalDueUsdt)}</b>
+                  <small>累计 {money(maturity.cumulative[index].amountUsdt)}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+          <footer>
+            {maturity.farLiabilityNote}
+            <span>NEX v2 远期权益默认不作为当前硬负债。</span>
+          </footer>
+        </section>
+
+        <aside className="card b2-config-summary">
+          <header><b>当前预测口径</b><span>版本 {config.version}</span></header>
+          <dl>
+            <div><dt>默认窗口</dt><dd>{config.forecastWindow}</dd></div>
+            <div><dt>质押利息</dt><dd>{config.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</dd></div>
+            <div><dt>Genesis</dt><dd>{config.genesisIncluded ? "纳入" : "不纳入"}</dd></div>
+            <div><dt>Trial 压测</dt><dd>{config.trialStressEnabled ? "启用（非硬负债）" : "关闭"}</dd></div>
+            <div><dt>远期负债</dt><dd>{config.includeFarLiabilities ? "纳入" : "排除"}</dd></div>
+          </dl>
+          <p>{config.effectiveRule}</p>
+          {config.pendingConfig && (
+            <div className="b2-pending">
+              待生效版本 {config.pendingVersion} · {config.pendingEffectiveAt}
+            </div>
+          )}
+          <div className="b2-cross-links">
+            <Link href="/overview/dual-ledger">B1 双账本总览<ExternalLink size={13} /></Link>
+            <Link href="/finance/pool">D3 资金池深页<ExternalLink size={13} /></Link>
+            <Link href="/overview/risk-radar">B5 风险雷达<ExternalLink size={13} /></Link>
+          </div>
+        </aside>
+      </div>
+
+      <section className="card b2-liabilities">
+        <header>
+          <div><b>应付负债 · 8 类科目</b><span>{liabilities.hardLiabilityCategoryCount}/8 · 合计 {money(liabilities.totalUsdt)}</span></div>
+          <span>Trial 仅为压力测试：{liabilities.trialShadowIncluded ? "当前展示" : "未计入硬负债"}</span>
+        </header>
+        <div className="b2-table-wrap">
+          <table>
+            <thead>
+              <tr><th>科目</th><th>说明</th><th className="num">金额</th><th className="num">占比</th><th>事实来源</th></tr>
+            </thead>
+            <tbody>
+              {liabilities.breakdown.map((row) => (
+                <tr key={row.category}>
+                  <td className="mono">{row.category}</td>
+                  <td>{row.label}</td>
+                  <td className="num mono">{money(row.amountUsdt)}</td>
+                  <td className="num mono">{(row.share * 100).toFixed(2)}%</td>
+                  <td className="mono source">{row.source}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <footer>权威事实来源：{sourceText || "服务端未返回来源"}</footer>
+      </section>
+
+      {dialogStep !== "closed" && draft && (
+        <div className="b2-dialog-backdrop" role="presentation">
+          <section className="b2-dialog" role="dialog" aria-modal="true" aria-labelledby="b2-config-title">
+            <header>
+              <div>
+                <b id="b2-config-title">{dialogStep === "edit" ? "调整预测配置" : "确认资金预测配置"}</b>
+                <span>仅财务负责人 / 超级管理员可提交</span>
+              </div>
+              <button type="button" aria-label="关闭配置弹窗" onClick={() => setDialogStep("closed")}>×</button>
+            </header>
+
+            {dialogStep === "edit" ? (
+              <>
+                <div className="b2-form-grid">
+                  <label>
+                    默认预测窗口
+                    <select
+                      value={draft.forecastWindow}
+                      onChange={(event) => setDraft({ ...draft, forecastWindow: event.target.value as B2ForecastValues["forecastWindow"] })}
+                    >
+                      <option value="7d">7 天</option>
+                      <option value="30d">30 天</option>
+                      <option value="90d">90 天</option>
+                    </select>
+                  </label>
+                  <label>
+                    质押利息模式
+                    <select
+                      value={draft.stakingInterestMode}
+                      onChange={(event) => setDraft({ ...draft, stakingInterestMode: event.target.value as B2ForecastValues["stakingInterestMode"] })}
+                    >
+                      <option value="LINEAR">线性摊提</option>
+                      <option value="AT_MATURITY">到期计提</option>
+                    </select>
+                  </label>
+                </div>
+                <fieldset>
+                  <legend>8 类负债口径</legend>
+                  <div className="b2-check-grid">
+                    {B2_LIABILITY_KEYS.map((key) => (
+                      <label key={key}>
+                        <input
+                          type="checkbox"
+                          checked={draft.liabilityCategories[key]}
+                          onChange={(event) => setDraft({
+                            ...draft,
+                            liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked },
+                          })}
+                        />
+                        {LIABILITY_LABELS[key]}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="b2-check-grid compact">
+                  <label><input type="checkbox" checked={draft.genesisIncluded} onChange={(event) => setDraft({ ...draft, genesisIncluded: event.target.checked })} />纳入 Genesis 每日分红</label>
+                  <label><input type="checkbox" checked={draft.trialStressEnabled} onChange={(event) => setDraft({ ...draft, trialStressEnabled: event.target.checked })} />展示 Trial 压力测试</label>
+                  <label><input type="checkbox" checked={draft.includeFarLiabilities} onChange={(event) => setDraft({ ...draft, includeFarLiabilities: event.target.checked })} />纳入远期负债</label>
+                </div>
+                <label className="b2-reason">
+                  操作原因（8-200 字符）
+                  <textarea
+                    value={reason}
+                    maxLength={200}
+                    placeholder="说明本次口径调整的业务原因"
+                    onChange={(event) => setReason(event.target.value)}
+                  />
+                  <span>{reason.trim().length}/200</span>
+                </label>
+                <div className="b2-dialog-actions">
+                  <button type="button" className="b2-button" onClick={() => setDialogStep("closed")}>取消</button>
+                  <button type="button" className="b2-button primary" onClick={proceedToConfirm}>保存并进入确认</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="b2-confirm">
+                  <b>请核对不可省略的写入信息</b>
+                  <p>预测窗口：{draft.forecastWindow}</p>
+                  <p>质押利息：{draft.stakingInterestMode === "LINEAR" ? "线性摊提" : "到期计提"}</p>
+                  <p>Genesis：{draft.genesisIncluded ? "纳入" : "不纳入"}；Trial 压测：{draft.trialStressEnabled ? "启用" : "关闭"}</p>
+                  <p>原因：{reason.trim()}</p>
+                  <p>基于版本 {config.version} 提交；配置于下一 UTC 日 00:00 生效，不追溯历史。版本过期将返回 409，请刷新后重试。</p>
+                </div>
+                <div className="b2-dialog-actions">
+                  <button type="button" className="b2-button" disabled={saving} onClick={() => setDialogStep("edit")}>返回修改</button>
+                  <button type="button" className="b2-button primary" disabled={saving} onClick={saveConfig}>
+                    {saving ? "提交中..." : "确认提交配置"}
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }

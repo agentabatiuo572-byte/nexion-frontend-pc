@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createHmac } from "node:crypto";
 
 const BASE_URL = process.env.K2_BASE_URL ?? "http://127.0.0.1:3002";
 
@@ -9,11 +10,50 @@ function requiredAdminPassword() {
 }
 
 async function loginAndOpenK2(page) {
-  await page.goto(`${BASE_URL}/risk/abuse`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("textbox", { name: "账号", exact: true }).fill("superadmin");
-  await page.getByRole("textbox", { name: "密码", exact: true }).fill(requiredAdminPassword());
-  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForLoadState("networkidle");
+  const account = page.getByRole("textbox", { name: "账号", exact: true });
+  const password = page.getByRole("textbox", { name: "密码", exact: true });
+  await account.fill("superadmin");
+  await password.fill(requiredAdminPassword());
+  await expect(account).toHaveValue("superadmin");
+  await expect(password).toHaveValue(requiredAdminPassword());
+  await page.getByRole("button", { name: /登录|继续/ }).click();
+  for (let step = 0; step < 30; step += 1) {
+    if (await page.locator("aside").isVisible().catch(() => false)) break;
+    if (await page.getByRole("heading", { name: "双因素身份验证" }).isVisible().catch(() => false)) {
+      const secret = (await page.locator("code").textContent())?.trim();
+      if (!secret) throw new Error("K2_MFA_SECRET_NOT_AVAILABLE");
+      await page.getByLabel("一次性验证码").fill(totp(secret));
+      await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    }
+    await page.waitForTimeout(250);
+  }
+  await expect(page.locator("aside")).toBeVisible();
+  const link = page.locator('a[href="/risk/abuse"]').first();
+  if (!await link.isVisible().catch(() => false)) {
+    await page.getByRole("button", { name: /风控与反作弊/ }).first().click();
+  }
+  await expect(link).toBeVisible();
+  await link.click();
+  await expect(page).toHaveURL(/\/risk\/abuse$/);
   await expect(page.getByRole("heading", { name: "套利 & 刷量检测", exact: true })).toBeVisible();
+}
+
+function totp(secret) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/[^A-Z2-7]/gi, "").toUpperCase();
+  let bits = "";
+  for (const char of normalized) bits += alphabet.indexOf(char).toString(2).padStart(5, "0");
+  const bytes = [];
+  for (let index = 0; index + 8 <= bits.length; index += 8) {
+    bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+  }
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
 }
 
 function parameterCard(page, label) {
@@ -52,8 +92,8 @@ test("K2 current model, views and all parameter entries are coherent", async ({ 
   }
 
   const params = [
-    "试用循环异常线", "新人礼异常发放线", "刷榜增速异常倍数", "新人礼发放模式",
-    "新人礼 USDT 金额", "新人礼 NEX 金额", "验证码重发冷却", "滑块验证触发次数",
+    "试用循环异常线", "新人礼异常发放线", "刷榜增速异常倍数",
+    "验证码重发冷却", "滑块验证触发次数",
     "验证码有效期", "最多输错次数", "滑块票据有效期",
   ];
   for (const label of params) {
@@ -86,5 +126,5 @@ test("K2 overview failure hides stale data and only retries K2", async ({ page }
   await page.unroute("**/api/admin/risk/arbitrage/overview");
   await page.getByRole("button", { name: "仅重试 K2", exact: true }).click();
   await expect(page.getByRole("heading", { name: "套利 & 刷量检测", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "调整", exact: true })).toHaveCount(11);
+  await expect(page.getByRole("button", { name: "调整", exact: true })).toHaveCount(8);
 });

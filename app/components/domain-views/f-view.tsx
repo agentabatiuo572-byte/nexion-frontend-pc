@@ -309,6 +309,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         action={mc.name}
         detail={mc.detail ?? "server-canonical · 改后对下一笔结算生效,不回溯已计提"}
         amplifies={!!mc.amplify}
+        // coverage 按当前 tab 选源(A1 批1b 修复):原硬编码 f1Overview?.coverage → 切到 F2-F5 时仍显示 F1 覆盖率(跨域误用)。
+        // 现按 tab 路由到对应 overview 的 coverage,与后端 rates()/binary()/leadershipPool()/commissions() 注入的 B1 快照一致。
+        coverage={(tab === "F1" ? f1Overview?.coverage
+          : tab === "F2" ? f2Overview?.coverage
+          : tab === "F3" ? f3Overview?.coverage
+          : tab === "F4" ? f4Overview?.coverage
+          : tab === "F5" ? f5Overview?.coverage
+          : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         edit={mc.edit}
         businessForm={mc.businessForm}
         onClose={() => setActionConfirm(null)}

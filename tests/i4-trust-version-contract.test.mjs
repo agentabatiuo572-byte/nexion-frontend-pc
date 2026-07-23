@@ -41,7 +41,9 @@ test("I4 shows authoritative A2 pending state and refreshes content after status
   assert.match(view, /A2待确认/);
   assert.match(view, /actions\.reloadIContent\(\)/);
   assert.match(view, /setInterval/);
-  assert.match(view, /href="\/platform\/audit"/);
+  assert.match(view, /const pendingA2Href = pendingTrustSectionList\.length === 1/);
+  assert.match(view, /`\/platform\/audit\?domain=I&object=\$\{encodeURIComponent\(pendingTrustSectionList\[0\]\)\}`/);
+  assert.match(view, /<Link[^>]+href=\{pendingA2Href\}/);
 });
 
 test("I4 publish validates real Chinese and Vietnamese field pairs", () => {

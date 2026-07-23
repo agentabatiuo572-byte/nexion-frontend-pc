@@ -28,7 +28,7 @@ test("K4 rejects malformed authoritative payloads instead of inventing defaults"
   assert.doesNotMatch(client, /effectiveScore:\s*num\(data\.effectiveScore,\s*num\(data\.modelScore\)\)/);
 });
 
-test("K4 model changes use a versioned draft and superadmin publication", () => {
+test("K4 model changes honor A6 draft authority but keep publication superadmin-only", () => {
   assert.match(client, /export type K4ModelState = "draft" \| "active" \| "archived"/);
   assert.match(client, /model: K4Model/);
   assert.match(client, /draft: K4Model \| null/);
@@ -59,6 +59,10 @@ test("K4 model changes use a versioned draft and superadmin publication", () => 
   assert.match(component, /overview\.model\.version, reason, commandKey/);
   assert.match(client, /expectedModelVersion/);
   assert.match(client, /weights: Object\.fromEntries\(K4_DIMENSION_KEYS\.map\(\(key\) => \[key, input\.weights\[key\] \/ 100\]\)\)/);
+  assert.match(component, /const canModelWrite = authorities\.includes\("risk_k4_write"\)/);
+  assert.match(component, /const canPublish = isSuperAdmin && authorities\.includes\("risk_k4_write"\)/);
+  assert.match(component, /\{canModelWrite && model\.state === "archived"/);
+  assert.doesNotMatch(component, /K4 模型写入当前按服务端边界仅向超级管理员开放/);
 });
 
 test("K4 actions are permission-gated direct writes that return their promises", () => {
@@ -67,8 +71,8 @@ test("K4 actions are permission-gated direct writes that return their promises",
   assert.match(component, /risk_k4_user_override/);
   assert.match(component, /risk_k4_user_recompute/);
   assert.match(component, /const isSuperAdmin = session\?\.role === "superadmin"/);
-  assert.match(component, /const canModelWrite = isSuperAdmin && authorities\.includes\("risk_k4_write"\)/);
-  assert.match(component, /const canOverride = isSuperAdmin && authorities\.includes\("risk_k4_user_override"\)/);
+  assert.match(component, /const canModelWrite = authorities\.includes\("risk_k4_write"\)/);
+  assert.match(component, /const canOverride = authorities\.includes\("risk_k4_user_override"\)/);
   assert.doesNotMatch(component, /usePropose|findHighOp|void propose|void runAction/);
   assert.match(component, /ctx\.actions\.overrideK4Score/);
   assert.match(component, /ctx\.actions\.recomputeK4Score/);
@@ -123,6 +127,18 @@ test("K4 score color follows the active model's configurable bands", () => {
   assert.match(component, /function scoreColor\(score: number, lowMax: number, highMin: number\)/);
   assert.match(component, /scoreColor\(shown, overview\.model\.bandLowMax, overview\.model\.bandHighMin\)/);
   assert.doesNotMatch(component, /score >= 70[^\n]*score >= 40/);
+});
+
+test("K4 withdrawal escalation alerts are durable, A6-permission scoped and human visible", () => {
+  assert.match(client, /export async function fetchK4WithdrawalAlerts/);
+  assert.match(client, /\/scoring\/withdrawal-alerts/);
+  assert.match(client, /export async function markK4WithdrawalAlertRead/);
+  assert.match(component, /const canReadWithdrawalAlerts = canOverride \|\| isSuperAdmin/);
+  assert.match(component, /risk_k4_user_override \/ 超管/);
+  assert.doesNotMatch(component, /RISK_LEAD/);
+  assert.match(component, /K4 提现升级告警/);
+  assert.match(component, /持久化逐人送达/);
+  assert.match(component, /markK4WithdrawalAlertRead/);
 });
 
 test("K4 band editor describes the backend's exclusive low boundary", () => {
