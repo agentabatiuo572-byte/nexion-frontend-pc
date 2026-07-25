@@ -17,6 +17,20 @@ function isText(value: string | undefined) {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 2 && parts[0] === "vietqr" && ["overview", "accounts", "config"].includes(parts[1])) {
+    return `/api/admin/finance/vietqr/${parts[1]}`;
+  }
+  if (parts.length === 3 && parts[0] === "vietqr" && parts[1] === "accounts" && /^\d+$/.test(parts[2])) {
+    return `/api/admin/finance/vietqr/accounts/${parts[2]}`;
+  }
+  if (parts.length === 5 && parts[0] === "vietqr" && parts[1] === "reconciliations"
+      && /^\d+$/.test(parts[2]) && parts[3] === "actions"
+      && ["match-credit", "write-off", "return"].includes(parts[4])) {
+    return `/api/admin/finance/vietqr/reconciliations/${parts[2]}/actions/${parts[4]}`;
+  }
+  if (parts.length === 1 && parts[0] === "fx-quote") {
+    return "/api/admin/finance/fx-quote";
+  }
   if (parts.length === 2 && parts[0] === "topup" && ["overview", "flows"].includes(parts[1])) {
     return `/api/admin/finance/topup/${parts[1]}`;
   }

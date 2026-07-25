@@ -3,7 +3,7 @@
 import { Download, HeartPulse } from "lucide-react";
 import { useState } from "react";
 import { recordK6Export } from "@/lib/admin/k6-client";
-import { ACTION_TYPE_LABEL, HEALTH_LEVEL_LABEL, auditActionLabel, remoteUrlLabel } from "@/lib/admin/janus-c2/labels";
+import { ACTION_TYPE_LABEL, HEALTH_LEVEL_LABEL, auditActionLabel, remoteTargetBindingLabel } from "@/lib/admin/janus-c2/labels";
 import { auditExportRows, auditTargetLabel, formatAuditTime } from "@/lib/admin/k6-audit-presenter";
 import type { AuditLog, HealthLevel, K6ExportFile } from "@/lib/admin/janus-c2/types";
 import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
@@ -110,7 +110,7 @@ export function K6Dashboard() {
 
     {primaryStrategy && <div className="k6-panel">
       <div className="k6-sec-head"><div><div className="k6-kicker">当前生效策略</div><h3>{primaryStrategy.name}</h3><p>{primaryStrategy.description}</p></div><span className="k6-bdg good">优先级 {primaryStrategy.priority}</span></div>
-      <div className="k6-body">动作：{ACTION_TYPE_LABEL[primaryStrategy.action.type]}{primaryStrategy.action.remoteUrlKey ? ` · ${remoteUrlLabel(primaryStrategy.action.remoteUrlKey)}` : ""} · 灰度 {primaryStrategy.rollout?.percent ?? 100}%</div>
+      <div className="k6-body">动作：{ACTION_TYPE_LABEL[primaryStrategy.action.type]}{primaryStrategy.action.remoteUrlKey ? ` · ${remoteTargetBindingLabel(primaryStrategy.action.remoteUrlKey, primaryStrategy.action.remoteTargetVersion, primaryStrategy.action.remoteTargetCatalogVersion)}` : ""} · 灰度 {primaryStrategy.rollout?.percent ?? 100}%</div>
     </div>}
 
     <div className="k6-panel">

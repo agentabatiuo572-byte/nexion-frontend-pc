@@ -103,6 +103,29 @@ test("classic database menu aliases render the split I4 and I5 pages", () => {
   ]);
 });
 
+test("D6 is a registered RBAC-controlled FX rate page", () => {
+  assert.deepEqual(findByPath("/finance/fx-rate")?.l2, {
+    id: "D6",
+    name: "汇率牌价",
+    path: "/finance/fx-rate",
+    prdAnchor: "D6",
+    batch: "V1",
+    status: "flagship",
+  });
+
+  const finance = resolveVisibleDomains({
+    role: "finance",
+    menuCodes: ["D", "D6"],
+    menuNodes: [
+      { menuCode: "D", menuName: "资金与财务", routePath: "/finance", parentCode: null, sortOrder: 4 },
+      { menuCode: "D6", menuName: "汇率牌价", routePath: "/finance/fx-rate", parentCode: "D", sortOrder: 6 },
+    ],
+  }).find((domain) => domain.code === "D");
+
+  assert.deepEqual(finance?.l2.map((item) => item.id), ["D6"]);
+  assert.equal(canAccessResolvedPath(finance ? [finance] : [], "/finance/fx-rate"), true);
+});
+
 test("a stale K6 alias row cannot overwrite the canonical K6 menu metadata", () => {
   const menuCodes = normalizeEffectiveMenus({ effectiveMenus: ["K", "K6", "MENU_RISK_K6"] });
   const menuNodes = normalizeEffectiveMenuNodes({

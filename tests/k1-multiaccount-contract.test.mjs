@@ -13,6 +13,7 @@ const proposer = readFileSync(new URL("../lib/admin/propose-or-execute.ts", impo
 const highOps = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 const designKit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
 const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
+const registry = readFileSync(new URL("../lib/admin/registry/k.ts", import.meta.url), "utf8");
 
 test("K1 uses canonical parameters and structured numeric controls without automatic freeze", () => {
   assert.match(component, /maxSignupPerIp24h/);
@@ -23,6 +24,17 @@ test("K1 uses canonical parameters and structured numeric controls without autom
   assert.match(component, /Number\.isInteger/);
   assert.doesNotMatch(component, /autoFreezeHighCluster/);
   assert.doesNotMatch(component, /edit:\s*\{\s*kind:\s*"text"/);
+});
+
+test("K1 uses the current backend freeze-suggestion threshold instead of a display constant", () => {
+  assert.match(component, /params\.find\(\(param\) => param\.key === "clusterFreezeSuggestThreshold"\)/);
+  assert.match(component, /const freezeSuggestThreshold/);
+  assert.match(component, /c\.strength >= freezeSuggestThreshold/);
+  assert.doesNotMatch(component, /c\.strength >= 0\.7/);
+  assert.doesNotMatch(component, /(?:0\.7|70%)[^0-9]/);
+  assert.match(component, /formatThreshold\(freezeSuggestThreshold\)/);
+  assert.match(registry, /达到当前服务端冻结建议阈值时标红/);
+  assert.doesNotMatch(registry, /(?:≥\s*0\.7|70%)/);
 });
 
 test("K1 renders write actions only when the authenticated session has the exact authority", () => {

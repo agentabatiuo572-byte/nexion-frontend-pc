@@ -8,7 +8,9 @@
  */
 import { useEffect, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
-import { REMOTE_URL_KEYS, useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
+import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
+import { fetchK6RemoteTargets } from "@/lib/admin/k6-client";
+import type { K6RemoteTarget } from "@/lib/admin/k6-remote-target-contract";
 import { STRATEGY_TEMPLATES, strategyFromTemplate } from "@/lib/admin/janus-c2/strategies";
 import { strategyDraftIssues } from "@/lib/admin/k6-contract";
 import {
@@ -26,7 +28,14 @@ const isReversal = (t: StrategyActionType): boolean => t === "REVERSAL_SESSION_E
 
 function actionForType(action: Strategy["action"], type: StrategyActionType): Strategy["action"] {
   if (isReversal(type)) {
-    return { type, remoteUrlKey: action.remoteUrlKey ?? REMOTE_URL_KEYS[0]?.key };
+    return action.remoteUrlKey && action.remoteTargetVersion && action.remoteTargetCatalogVersion
+      ? {
+          type,
+          remoteUrlKey: action.remoteUrlKey,
+          remoteTargetVersion: action.remoteTargetVersion,
+          remoteTargetCatalogVersion: action.remoteTargetCatalogVersion,
+        }
+      : { type };
   }
   return { type };
 }
@@ -34,6 +43,8 @@ function actionForType(action: Strategy["action"], type: StrategyActionType): St
 export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initial: Strategy; isNew: boolean; operatorId: string; onClose: () => void }) {
   const save = useJanusC2Store((st) => st.saveStrategy);
   const [s, setS] = useState<Strategy>(initial);
+  const [remoteTargets, setRemoteTargets] = useState<K6RemoteTarget[]>([]);
+  const [targetLoadError, setTargetLoadError] = useState<string | null>(null);
   const patch = (p: Partial<Strategy>) => setS((prev) => ({ ...prev, ...p }));
 
   useEffect(() => {
@@ -41,6 +52,22 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    let active = true;
+    setTargetLoadError(null);
+    void fetchK6RemoteTargets()
+      .then((rows) => {
+        if (active) setRemoteTargets(rows.filter((target) => target.status === "ACTIVE"));
+      })
+      .catch((error) => {
+        if (active) {
+          setRemoteTargets([]);
+          setTargetLoadError(error instanceof Error ? error.message : "批准目标读取失败");
+        }
+      });
+    return () => { active = false; };
+  }, []);
 
   const applyTemplate = (key: string) => {
     const t = STRATEGY_TEMPLATES.find((x) => x.key === key);
@@ -92,7 +119,11 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const issues = strategyDraftIssues(strategyForSubmit());
-  const valid = issues.length === 0;
+  const selectedTargetAvailable = !isReversal(s.action.type) || remoteTargets.some((target) =>
+    target.remoteTargetKey === s.action.remoteUrlKey
+    && target.remoteTargetVersion === s.action.remoteTargetVersion
+    && target.catalogVersion === s.action.remoteTargetCatalogVersion);
+  const valid = issues.length === 0 && selectedTargetAvailable && !targetLoadError;
   const onSave = async () => {
     if (!valid || saving) return;
     setSaving(true);
@@ -161,9 +192,42 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
             {isReversal(s.action.type) && (
               <div className="k6-ovr-field" style={{ marginBottom: 0 }}>
                 <label htmlFor="st-url">远程地址</label>
-                <select id="st-url" className="k6-field" value={s.action.remoteUrlKey ?? "default"} onChange={(e) => patch({ action: { ...s.action, remoteUrlKey: e.target.value } })}>
-                  {REMOTE_URL_KEYS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+                <select
+                  id="st-url"
+                  className="k6-field"
+                  value={s.action.remoteUrlKey
+                    ? `${s.action.remoteUrlKey}:${s.action.remoteTargetVersion}:${s.action.remoteTargetCatalogVersion}`
+                    : ""}
+                  onChange={(e) => {
+                    const selected = remoteTargets.find((target) =>
+                      `${target.remoteTargetKey}:${target.remoteTargetVersion}:${target.catalogVersion}` === e.target.value);
+                    patch({
+                      action: selected
+                        ? {
+                            ...s.action,
+                            remoteUrlKey: selected.remoteTargetKey,
+                            remoteTargetVersion: selected.remoteTargetVersion,
+                            remoteTargetCatalogVersion: selected.catalogVersion,
+                          }
+                        : { type: s.action.type },
+                    });
+                  }}
+                  disabled={!remoteTargets.length}
+                >
+                  <option value="">{remoteTargets.length ? "请选择批准目标" : "尚无可用批准目标"}</option>
+                  {remoteTargets.map((target) => (
+                    <option
+                      key={target.catalogVersion}
+                      value={`${target.remoteTargetKey}:${target.remoteTargetVersion}:${target.catalogVersion}`}
+                    >
+                      {target.label} · v{target.remoteTargetVersion}
+                    </option>
+                  ))}
                 </select>
+                {!targetLoadError && !selectedTargetAvailable && (
+                  <div className="k6-hint k6-error">当前策略绑定的批准目标不可用，请重新选择后再保存。</div>
+                )}
+                {targetLoadError && <div className="k6-hint k6-error">{targetLoadError}，接管策略已禁止保存。</div>}
               </div>
             )}
           </div>

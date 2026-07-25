@@ -22,7 +22,7 @@ import {
   SUGGESTED_ACTION,
   channelLabel,
   platformLabel,
-  remoteUrlLabel,
+  remoteTargetBindingLabel,
 } from "@/lib/admin/janus-c2/labels";
 import { allowedTransitions, gatedTransitions, type Transition } from "@/lib/admin/janus-c2/transitions";
 import type { Device } from "@/lib/admin/janus-c2/types";
@@ -114,7 +114,11 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
               ["安装天数", `${d.installDays} 天`],
               ["邀请码", d.inviteCode ?? "—"],
               ["渠道", channelLabel(d.channel)],
-              ["远程地址", remoteUrlLabel(d.remoteUrlKey)],
+              ["批准目标", remoteTargetBindingLabel(
+                d.remoteUrlKey,
+                d.remoteTargetVersion,
+                d.remoteTargetCatalogVersion,
+              )],
               ["最近操作人", d.lastOperatorId ? `${d.lastOperatorId} · ${d.lastOperationReason ?? ""}` : "—"],
             ]} />
           </div>

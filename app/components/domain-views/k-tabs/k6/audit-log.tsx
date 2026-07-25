@@ -49,7 +49,7 @@ export function K6AuditLog() {
   const loadError = useJanusC2Store((s) => s.auditError);
   const retry = useJanusC2Store((s) => s.loadAudit);
   const operator = useK6Operator();
-  const [targetType, setTargetType] = useState<"all" | "device" | "strategy">("all");
+  const [targetType, setTargetType] = useState<"all" | "device" | "strategy" | "config">("all");
   const [q, setQ] = useState("");
   const [exporting, setExporting] = useState<"csv" | "json" | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export function K6AuditLog() {
       <div className="k6-body">
         <div className="k6-audit-filters">
           <div className="k6-seg-tabs" role="tablist" aria-label="对象类型筛选">
-            {([["all", "全部"], ["strategy", "策略"], ["device", "设备"]] as const).map(([k, lbl]) => (
+            {([["all", "全部"], ["strategy", "策略"], ["device", "设备"], ["config", "批准目标"]] as const).map(([k, lbl]) => (
               <button key={k} role="tab" aria-selected={targetType === k} className={`k6-seg-tab${targetType === k ? " active" : ""}`} onClick={() => setTargetType(k)}>{lbl}</button>
             ))}
           </div>

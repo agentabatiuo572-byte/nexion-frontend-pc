@@ -29,11 +29,11 @@ const N = EXPECTED_KEYS.length;
 
 // ---- 扫描 app/ lib/ 的断言式闸计数,必 == N ----
 const ARABIC = [
-  /(\d+)\s*道熔断闸/g,
-  /(\d+)\s*个?熔断闸/g,
-  /(\d+)\s*功能闸/g,
-  /(\d+)\s*大业务闸门/g,
-  /(\d+)\s*闸(?:全开|全部在线|矩阵|只读|在线)/g,
+  /(?<![A-Za-z])(\d+)\s*道熔断闸/g,
+  /(?<![A-Za-z])(\d+)\s*个?熔断闸/g,
+  /(?<![A-Za-z])(\d+)\s*功能闸/g,
+  /(?<![A-Za-z])(\d+)\s*大业务闸门/g,
+  /(?<![A-Za-z])(\d+)\s*闸(?:全开|全部在线|矩阵|只读|在线)/g,
   /Kill-?Switch\s*(\d+)\s*闸/g,
 ];
 const KILL_RATIO = /Kill[-\s]?(?:Switch)?\s*(\d+)\s*\/\s*(\d+)/gi; // 在线 X<=N、总数 Y==N

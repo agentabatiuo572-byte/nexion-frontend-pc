@@ -25,6 +25,10 @@ function nextIdempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
+export function createH8CommandKey(prefix: "h8-param" | "h8-settlement") {
+  return nextIdempotencyKey(prefix);
+}
+
 function numberValue(value: unknown) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -294,6 +298,7 @@ export interface H8SettlementRow {
 }
 
 export interface H8ReferralRewardOverview {
+  version: number;
   params: Record<string, number | string>;
   effectiveRewards: Record<string, number | string>;
   rhythmMonth: number;
@@ -311,11 +316,26 @@ export async function fetchH8ReferralRewards(): Promise<H8ReferralRewardOverview
   return growthRequest<H8ReferralRewardOverview>("/referral-rewards");
 }
 
-export async function updateH8ReferralRewardParam(key: string, value: string, reason: string) {
+export async function updateH8ReferralRewardParam(
+  key: string,
+  value: string,
+  reason: string,
+  expectedVersion: number,
+  idempotencyKey: string,
+) {
   return growthRequest<Record<string, unknown>>(
     `/referral-rewards/params/${encodeURIComponent(key)}`,
-    { method: "PATCH", body: commandBody(key, value, reason) },
-    "h8-param",
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        key,
+        value,
+        expectedVersion,
+        reason,
+        operator: currentAdminOperator(),
+      }),
+      headers: { "Idempotency-Key": idempotencyKey },
+    },
   );
 }
 

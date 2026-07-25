@@ -123,28 +123,14 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     void fetchD4Bills(query).then((next) => {
       if (requestId !== billsRequest.current) return;
       setBills(next);
-      if (next.records.length === 0) {
-        setSelectedUserId(null);
-        setUserInput("");
-        setUserLedger(null);
-        setRunningBalance(null);
-      } else if (!selectedUserId && next.records[0]?.userId) {
-        setSelectedUserId(next.records[0].userId);
-        setUserInput(String(next.records[0].userId));
-      }
     }).catch((reason) => {
       if (requestId !== billsRequest.current) return;
       setBills(EMPTY_PAGE);
-      ++userRequest.current;
-      setSelectedUserId(null);
-      setUserInput("");
-      setUserLedger(null);
-      setRunningBalance(null);
       setError(reason instanceof Error ? reason.message : "资金账单加载失败");
     }).finally(() => {
       if (requestId === billsRequest.current) setLoading(false);
     });
-  }, [applied, canGlobalRead, deepBizNo, page, pageSize, reloadKey, selectedUserId, type]);
+  }, [applied, canGlobalRead, deepBizNo, page, pageSize, reloadKey, type]);
 
   useEffect(() => {
     if (!selectedUserId || !canUserRead) {

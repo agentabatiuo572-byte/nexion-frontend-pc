@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  createH8CommandKey,
   fetchH8ReferralRewards,
   updateH8ReferralRewardParam,
   type H8ReferralRewardOverview,
@@ -12,10 +13,10 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 
 const PARAMS = [
-  { key: "newcomer.usdt", label: "新人 USDT", unit: "USDT", kind: "number", max: 50 },
-  { key: "newcomer.nex", label: "新人 NEX", unit: "NEX", kind: "number", max: 500 },
+  { key: "newcomer.usdt", label: "新人 USDT", unit: "USDT", kind: "number", max: 50, step: 0.000001 },
+  { key: "newcomer.nex", label: "新人 NEX", unit: "NEX", kind: "number", max: 500, step: 0.000001 },
   { key: "newcomer.lockMode", label: "新人礼发放模式", unit: "", kind: "select", options: ["risk_bucket", "direct"] },
-  { key: "inviter.nex", label: "邀请人 NEX", unit: "NEX", kind: "number", max: 999_999_999 },
+  { key: "inviter.nex", label: "邀请人 NEX", unit: "NEX", kind: "number", max: 999_999_999, step: 0.000001 },
 ] as const;
 
 const LOCK_MODE_LABELS: Record<string, string> = {
@@ -50,6 +51,8 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
   useEffect(() => { void load(); }, [load]);
 
   const editParam = (param: (typeof PARAMS)[number]) => {
+    if (!data) return;
+    const commandKey = createH8CommandKey("h8-param");
     const rawCurrent = String(data?.params?.[param.key] ?? (param.kind === "select" ? "risk_bucket" : "0"));
     const current = param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
     ctx.openActionConfirm({
@@ -58,11 +61,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       amplifies: true,
       edit: param.kind === "select"
         ? { kind: "select", current, options: Object.values(LOCK_MODE_LABELS) }
-        : { kind: "number", current, unit: param.unit, min: 0, max: param.max, step: 1 },
+        : { kind: "number", current, unit: param.unit, min: 0, max: param.max, step: param.step },
       run: async (reason, value) => {
         if (value == null || value === "") return;
         const storedValue = param.kind === "select" ? LOCK_MODE_VALUES[value] ?? value : value;
-        await updateH8ReferralRewardParam(param.key, storedValue, reason);
+        await updateH8ReferralRewardParam(param.key, storedValue, reason, data.version, commandKey);
         await load();
         ctx.toast(`${param.label} 已更新为 ${value} ${param.unit}`);
       },
@@ -126,7 +129,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           {!data?.recentSettlements?.length && <tr><td colSpan={6} style={{ textAlign: "center", padding: 24 }}>{Number(data?.pending ?? 0) > 0 ? "当前尚无结算记录，可从上方执行待结算邀请" : "暂无结算记录，当前也没有待结算邀请"}</td></tr>}
         </tbody></table></div>
       </section>
-      <p className="f-foot"><b>真实发奖链</b>：邀请关系 → 唯一结算记录 → 新人 / 邀请人钱包入账 → USDT / NEX 资金台账 → A2 审计。页面不含 mock、样例账户或本地发奖状态。</p>
+      <p className="f-foot"><b>真实发奖链</b>：邀请关系 → 唯一结算记录 → 新人 / 邀请人钱包入账 → USDT / NEX 资金台账 → A2 审计。结算结果以服务端邀请关系、唯一结算记录、钱包与资金台账为准。</p>
     </>
   );
 }

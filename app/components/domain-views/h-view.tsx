@@ -95,16 +95,13 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
           edit={mc.edit}
           businessForm={mc.businessForm}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason, newValue, businessValue) => {
+          onConfirm={async (reason, newValue, businessValue) => {
             try {
-              const result = mc.run(reason, newValue, businessValue) as unknown;
-              if (result && typeof (result as Promise<unknown>).then === "function") {
-                void (result as Promise<unknown>).catch((error) => {
-                  setToast(error instanceof Error ? error.message : "操作失败");
-                });
-              }
-            } finally {
+              await mc.run(reason, newValue, businessValue);
               setActionConfirm(null);
+            } catch (error) {
+              setToast(error instanceof Error ? error.message : "操作失败");
+              throw error;
             }
           }}
         />

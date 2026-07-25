@@ -108,13 +108,21 @@ export const CHANNEL_LABEL: Record<string, string> = {
 };
 export const channelLabel = (c?: string): string => (c ? CHANNEL_LABEL[c] ?? "未知渠道" : "—");
 
-/** 远程地址配置键(PRD §9.2 remoteUrlKey):内部 key → 运营可读中文。 */
-export const REMOTE_URL_LABEL: Record<string, string> = {
-  default: "正盘默认首页",
-  backup: "备用接管线路",
-  promo: "活动接管线路",
+/**
+ * 目标名称以服务端批准目录的 label 为准。这里只在目录上下文不可用的
+ * 历史审计/设备摘要里诚实展示 key，不再猜测 default/backup/promo。
+ */
+export const remoteUrlLabel = (key?: string | null): string => (key ? `批准目标（${key}）` : "—");
+
+export const remoteTargetBindingLabel = (
+  key?: string | null,
+  targetVersion?: number | null,
+  catalogVersion?: number | null,
+): string => {
+  if (!key) return "—";
+  if (!targetVersion || !catalogVersion) return `${remoteUrlLabel(key)} · 精确版本缺失（不可执行）`;
+  return `${remoteUrlLabel(key)} · 目标 v${targetVersion} · 目录 v${catalogVersion}`;
 };
-export const remoteUrlLabel = (key?: string | null): string => (key ? REMOTE_URL_LABEL[key] ?? "未知接管线路" : "—");
 
 // ===== 状态来源(PRD §4 状态来源 / §7.2)=====
 export const STATUS_SOURCE_LABEL: Record<StatusSource, string> = {
@@ -244,6 +252,8 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   K6_STRATEGY_ARCHIVE: "归档策略",
   K6_STRATEGY_ROLLED_BACK: "回滚策略",
   K6_STRATEGY_DELETED: "删除策略",
+  K6_REMOTE_TARGET_VERSION_CREATED: "新增批准目标版本",
+  K6_REMOTE_TARGET_DISABLED: "停用批准目标版本",
   K6_HEALTH_EXPORTED: "导出健康报表",
   K6_AUDIT_EXPORTED: "导出审计报表",
   K6_FUNNEL_EXPORTED: "导出漏斗报表",

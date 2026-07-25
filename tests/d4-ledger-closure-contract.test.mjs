@@ -22,10 +22,18 @@ test("D4 contains user-wide category totals, running-balance breaks, masked expo
   assert.match(page, /setBills\(EMPTY_PAGE\)/);
   assert.match(page, /setUserLedger\(null\)/);
   assert.match(page, /setRunningBalance\(null\)/);
-  assert.match(page, /setSelectedUserId\(null\)/);
   assert.match(page, /setLoading\(true\);\s*setBills\(\{ total: 0, pageNum: page, pageSize, records: \[\] \}\)/s);
   assert.match(page, /disabled=\{!canExport \|\| loading \|\| Boolean\(error\)\}/);
   assert.match(page, /重试/);
+});
+
+test("D4 global bill results cannot overwrite the independent user-ledger selection", () => {
+  const globalEffectStart = page.indexOf("  useEffect(() => {");
+  const userEffectStart = page.indexOf("  useEffect(() => {", globalEffectStart + 1);
+  assert.ok(globalEffectStart >= 0 && userEffectStart > globalEffectStart);
+  const globalEffect = page.slice(globalEffectStart, userEffectStart);
+  assert.doesNotMatch(globalEffect, /setSelectedUserId|setUserInput|setUserLedger|setRunningBalance|userRequest/);
+  assert.match(globalEffect, /\[applied, canGlobalRead, deepBizNo, page, pageSize, reloadKey, type\]/);
 });
 
 test("D4 client rejects malformed financial facts and uses the canonical read-only proxy", () => {

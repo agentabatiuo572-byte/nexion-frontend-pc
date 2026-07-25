@@ -1,10 +1,10 @@
 # Nexion 运营控制后台 — 开发落地规格(Dev-Ready Spec)
 
-> **本文件是什么**:从 4 卷需求 PRD(`Nexion_运营控制后台PRD_v1~v4.md`,共 17 章 70 子模块 7000+ 行)提炼的**开发落地契约速查**。需求 PRD 回答「为什么做、业务背景」;本文件回答「建什么表、实现什么接口、配什么参数、状态怎么流转、谁能操作」——开发按本文件即可落地,业务背景再查原 PRD 对应 §锚点。
+> **本文件是什么**:从 4 卷需求 PRD(`Nexion_运营控制后台PRD_v1~v4.md`,共 17 章 70 个核心子模块 7000+ 行)提炼，并持续吸收已验收高保真增量的**开发落地契约速查**。需求 PRD 回答「为什么做、业务背景」;本文件回答「建什么表、实现什么接口、配什么参数、状态怎么流转、谁能操作」——开发按本文件即可落地,业务背景再查原 PRD 对应 §锚点。
 >
 > **怎么用(按角色/阶段)**:
 > - 开工前必读 → **第 0 章 全局铁律**(贯穿所有模块的硬约束)+ **第 7 章 未决项清单**(开发/上线阻塞点)+ **第 8 章 现状↔目标差异表**(相对前端现状要改什么)。
-> - 总览导航 → **第 1 章 70 模块功能索引**。
+> - 总览导航 → **第 1 章 核心模块与已验收增量功能索引**。
 > - 建表 / 定义类型 → **第 2 章 数据模型总表**。
 > - 实现 API → **第 3 章 API 契约总表**。
 > - 配置项 + 校验规则 → **第 4 章 参数配置总表**。
@@ -91,7 +91,7 @@
 - 三端 SPEC-4 M10 当前为前台同源 `account-cloud` mock 阶段：已覆盖 stale snapshot 对余额、设备、任务身份、`currentTask` object/null、同 id 任务时间回退、`recentTasks` 与 `latestWithdrawal` 单调状态的合并边界；后台不新增页面，仍由 C1/C2/C3/C5/E5/D4 既有账户查询、处置、会话下线、设备运维与账本审计承接。真实跨物理设备账户云另走后续 SPEC。
 - 三端首页撤回态不得被解释为保留隐藏入口；旧三条首页仍必须删除。SPEC-6 新三端入口首页当前只作评审入口与静态首页，不开放后台改文案；静态评审路由启动阶段不得写账户云、会话、设备身份、账单或里程碑状态；若进入运营化再接 I1 / I6。
 
-## 第 1 章 70 子模块功能索引(总览导航)
+## 第 1 章 核心模块与已验收增量功能索引(总览导航)
 
 > 卷·章:V1=Ch1-9 / V2=Ch10-11 / V3=Ch12-13 / V4=Ch14-17。职责一句话取自各模块「① 目的」。前端§锚点指向前端 PRD v3.7。
 
@@ -116,6 +116,7 @@
 | D3 | 资金池水位仪表盘 | 储备/负债/到期底层账本权威(储备明细+8科目+净敞口) | D 资金 | V1·Ch6 | §9.6 / §9.6.3 / §9.2 / §10 |
 | D4 | 账本 / 账单审计 | server 唯一账本审计面:账单流水/Running Balance/对账导出 | D 资金 | V1·Ch6 | §9.7 / §12 |
 | D5 | 提现参数配置 | 日限额/余额上限/网络费(cooldown/积分门由 H1 派发只读) | D 资金 | V1·Ch6 | §9.3.2 / §13.4.1 / §9.11c.1 |
+| D6 | 汇率与锁价参数 | VND/USDT 基础汇率、点差、锁价时长与不可变变更历史；报价由服务端单源计算 | D 资金 | 2026-07 高保真增量 | 高保真 `finance/fx-rate` |
 | E1 | 商品目录 & 定价 | 设备 SKU 目录/定价/上下架/库存 + 设备规格唯一权威 | E 设备 | V2·Ch10 | §7.1 / §9.11c.1 |
 | E1 | 代际发布门 | 控制 Gen-2 发布时点 + trade-in 折扣 | E 设备 | V2·Ch10 | §7.1 / 节奏表§6.2 |
 | E2 | 收益 & 任务引擎 | AI 任务定价与路由门槛(设备每日产出"任务侧") | E 设备 | V2·Ch10 | §6.3 / §6.5 / §9.11c.1 |
@@ -168,7 +169,7 @@
 | L4 | 设备/任务/网络报表 | 只读运营指标(设备产出衰减/任务/网络结构/Phase 效果) | L 数据 | V4·Ch16 | §5.4 / §5.5 / §6.8 / §9.11c.1 |
 | L5 | 导出 & 监管报告 | 数据导出/监管报告统一管控(脱敏+审计+操作确认) | L 数据 | V4·Ch16 | §9.7 |
 
-> 各域 8 段功能规格数:A 3 · B 5 · C 6 · D 5 · E 8 · F 8 · G 7 · H 6(H1/H2 在 V1·Ch7,H3-H6 在 V3·Ch13)· I 7 · J 4 · K 6 · L 5 = **70**(E = E1a/E1b/E2/E3a/E3b/E4/E5/E6 共 8,F = F1/F2/F3/F4/F4b/F4c/F4d/F5 共 8;K6 Janus C2 控制台 = 白壳设备接管决策中枢,出处 Janus C2 PRD v1.0)。
+> 原四卷核心功能规格仍为 **70**；2026-07-25 已验收增量新增 **D6**，因此本索引当前为 **70 个核心模块 + 1 个增量模块**。D 域现为 D1–D6；K6 Janus C2 控制台出处 Janus C2 PRD v1.0。
 
 ## 第 2 章 数据模型总表(建表 / 定义类型)
 
@@ -208,6 +209,8 @@
 | **Withdrawal 扩展态**(本体属 §12) | state:enum{正常5态 submitted\|review-passed\|processing\|sent\|confirmed · 异常6态 review-rejected\|address-invalid\|tx-failed\|tx-orphaned\|refunded\|frozen · 后台扩展 review-pending} · withdrawalId(server mint) · userId · amountUsdt · address(hash)+chain · riskScore(K4) · kycStatus(C4) · pointsOk · count24h · hitRules(K3);**共12态;非法转移 409** | SC | §9.1 / Ch6 D2 / §9.3.6 / §9.11f |
 | **WithdrawConfig**(Phase 派发) | withdrawCooldownDays(月8=35d/月9=45d) · withdrawPointsRatio(月9=20) · 日限/上限/fee(source:'d5' 可写) · complianceHold(只读 source:'phase-h1') | SC | §17.1 / Ch6 D5 |
 | **Bill / BillType**(§12/§9.7) | type:enum{swap\|topup\|withdraw\|earning\|commission\|refund\|bonus}(**7类**) · billId(server mint) · userId · amount · currency · ts:ms-epoch;**server 唯一账本;积分调整不落 bill** | SC | §9.1 / Ch6 D4 |
+| **VietQrBankAccount / VietQrReconciliation / VietQrConfig** | 银行账户仅持久化 AES-GCM 密文，读接口只回传尾号；对账动作 enum{match\|writeoff\|return} 携 expectedVersion、reason、evidence 与 Idempotency-Key。match/writeoff 原子更新钱包、`cumulativeDepositUsdt`、D4 与 D3；return 不入钱包 | SC | 2026-07-25 D1 高保真落地 |
+| **FxQuoteConfig / FxQuoteHistory** | baseVndPerUsdt · spreadPct · lockMinutes · version；服务端派生 effectiveVndPerUsdt，更新使用 CAS + Idempotency-Key，历史 append-only | SC | 2026-07-25 D6 高保真落地 |
 | **TreasuryLedger·D3 储备账本** | usdtReserveUsdt · otherLiquidUsdt · injectedCumulativeUsdt · reserveTotalUsdt;**储备=topup累计+注入−withdraw.confirmed−未到期 USDT staking 本金;唯一储备源;日批 UTC00:00** | SC | §9.1 / Ch6 D3 |
 | 充值流水/对账(D1) | topupId(server mint) · channel · psp · bin · status · chargeback · reconcile;**cumulativeDepositUsdt 正向 recordDeposit/负向 chargeback** | SC | Ch6 D1 |
 
@@ -287,8 +290,8 @@
 | 去重簇(K1) | clusterId · layer:enum{ip\|device\|payment} · affectedUserIds · linkStrength;阈值 maxAccountsPerDevice(≤2)/maxSignupPerIp24h(≤3);批量冻结经确认弹窗(K1-MD1)+ 理由必填即时执行 | SC | Ch8 K1 |
 | 套利信号(K2) | type:enum{trial_cycle\|tradein\|welcome_gift\|leaderboard} · userId\|clusterId · evidence;**产 risk.arbitrage_suspected/trial_cycle_detected** | SC | Ch8 K2 |
 | 大额 KYC 复审(K5) | 工单 id · userId · cumulativeKycThresholdUsdt(K5 V1/G2 V3) · 裁决回写 C4;**仅触发+裁决,不持 KYC 态** | SC | Ch8 K5 |
-| **Device**(K6) | sid · deviceId · 上报状态(12 态)· 期望状态 · 命令状态 · 状态来源 · maturity{8 原始信号} · environment{原始环境信号} · recommendationScore(§10)· priorityScore(§11)· manualOverride;**`nx_janus_device` 为权威源；客户端不得提交权威状态/评分/命中策略，服务端从原始信号计算并执行生效策略，按 `(sid,reportId)` 幂等写 `nx_janus_evaluation`；上报态与期望态分离，PC 不允许演示数据或浏览器持久态回退；UI 只展示中文状态名** | SC | Janus §16.1-2 / §8 |
-| **Strategy**(K6) | strategyId · name · 状态(草稿/生效中/已暂停/已归档,可编辑) · version · priority · ruleTree:RuleGroup · action(8 类下发动作,UI 只展示中文动作名) · scope · safeguards · rollout{percent,cohortIds} · versions[]:不可变快照{ruleTree,action,note,actorId};**发布/回滚生成快照;scope/safeguards/rollout 必须参与 evaluateStrategy/dryRunStrategy,不得只保存不生效** | SC | Janus §6 / §14 / §16.3 |
+| **Device**(K6) | sid · deviceId · 上报状态(12 态)· 期望状态 · 命令状态 · 状态来源 · maturity{8 原始信号} · environment{原始环境信号} · recommendationScore(§10)· priorityScore(§11)· manualOverride · remoteTargetKey · remoteTargetVersion · remoteTargetCatalogVersion;**`nx_janus_device` 为权威源；客户端不得提交权威状态/评分/命中策略，服务端从原始信号计算并执行生效策略，按 `(sid,reportId)` 幂等写 `nx_janus_evaluation`；上报态与期望态分离；接管目标三元组须从策略判定贯穿命令与设备期望态，旧 key-only 数据不得猜测 default/backup/promo，必须失败关闭；PC 不允许演示数据或浏览器持久态回退；UI 只展示中文状态名** | SC | Janus §16.1-2 / §8 |
+| **Strategy**(K6) | strategyId · name · 状态(草稿/生效中/已暂停/已归档,可编辑) · version · priority · ruleTree:RuleGroup · action(8 类下发动作,UI 只展示中文动作名；接管动作必须携 remoteTargetKey + remoteTargetVersion + remoteTargetCatalogVersion) · scope · safeguards · rollout{percent,cohortIds} · versions[]:不可变快照{ruleTree,action,note,actorId};**发布/回滚生成快照;scope/safeguards/rollout 必须参与 evaluateStrategy/dryRunStrategy,不得只保存不生效；接管动作缺任一目标标识即拒绝保存/发布/执行** | SC | Janus §6 / §14 / §16.3 |
 | **RuleGroup/Rule**(K6) | group{组合方式:全部满足/任一满足/满足 N 条/排除/加权评分,rules[](可嵌套子组)} · leaf{字段,操作符,取值,权重,label};**字段/操作符/枚举值全枚举,自然语言 label;多取值逐项输入,不得单框多值** | SC | Janus §6.2-3 / §16.4 |
 | **AuditLog/DecisionSnapshot**(K6) | 审计{actorId,action,targetType,before,after,reasonText,sourceContext,requestId}:append-only;判定轨迹{逐规则 pass/fail + 命中策略 + 冲突 + 保护阻断};**UI、审计日志、报表/JSON 导出必须翻译远程地址 key、状态 enum、动作 enum 为运营中文** | SC | Janus §13 / §16.5-6 / §19 |
 
@@ -366,6 +369,9 @@
 | `/api/admin/finance/topup/channels/:channel/{enabled\|fee\|min-amount}` · `/topup/psp/primary` · `/topup/card-risk/:key` | PATCH | 渠道结构化参数 / 主备 PSP / Card 风控配置(PSP 切换执行=仅超管) | D1-MD1/MD2 | D1 |
 | `/api/admin/finance/topup/chargebacks/:caseNo/refund` · `/topup/reconciliation/:channel/writeoff` · `/topup/bin-locks/**` | POST/PATCH | chargeback 原子追回 / 差异凭证挂账 / 真实定时风控锁(均携 Key) | D1-MD3/MD4 | D1 |
 | `/openapi/v1/topups/card/{admission\|settlements\|failures\|chargebacks}` · `/openapi/v1/topups/provider-statements` | POST | 原始请求体 HMAC-SHA256 签名的 Card 生命周期 / 独立 PSP 或链上账单接入；5 分钟防重放窗口，渠道-provider 白名单 | — | D1 |
+| `/api/admin/finance/vietqr/overview?view=&pageNum=&pageSize=` | GET | 银行流水、实时到账、人工匹配、异常复核、手动退款五视图；无数据返回真实空态，不生成演示行 | — | D1 |
+| `/api/admin/finance/vietqr/reconciliations/:id/actions/{match\|writeoff\|return}` | POST | match/writeoff/return 对账处置；携 Key、CAS、理由与证据，前两者原子联动钱包、累计入金、D4、D3，return 不入钱包 | 是 | D1 |
+| `/api/admin/finance/vietqr/accounts` · `/vietqr/accounts/:id` · `/vietqr/config` | POST/PATCH | 银行账户池新增/轮转/熔断与额度参数；账号密文落库、前端只见尾号；携 Key + CAS | 是 | D1 |
 | `/api/admin/withdrawals?status=&cursor=` · `/withdrawals/:id` | GET | 提现队列 / 单笔详情 | — | D2 |
 | `/api/admin/withdrawals/:id/{approve\|reject\|delay\|freeze\|unfreeze\|refund}` | POST | 单笔状态推进(单一 URL 覆盖所有金额,server 按金额校验执行资质——大额 ≥$1,000 放行=财务 lead/超管;非法 409;携 Key) | D2-MD1~MD6 | D2 |
 | `/api/admin/withdrawals/batch` | POST | 批量(含大额单自动分拣转人工逐笔确认,不整体失败) | D2-MD7 | D2 |
@@ -377,6 +383,7 @@
 | `/api/admin/bills/:id/adjust` | POST | 手动 refund/调整(**账本唯一合法写入**;携 Key) | D4-MD1 | D4 |
 | `/api/admin/bills/export?type=&userId=` | GET | 账单 CSV 导出(单源;L5 引用) | —(含明细经 L5 导出确认门) | D4 |
 | `/api/admin/withdraw/limits` | GET / PUT | 提现参数现值 / 非 Phase 参数配置(携 Phase 参数返 422) | D5-MD1(PUT) | D5 |
+| `/api/admin/finance/fx-quote` | GET / PATCH | VND/USDT 基础汇率、点差、锁价时长、服务端派生报价与不可变历史；PATCH 携 Key + expectedVersion | 是 | D6 |
 
 **D1 落地约束**：
 - settlement 的支付记录、钱包、D4、`cumulativeDepositUsdt`、D3、`fee_buffer`、审计和 Outbox 必须在同一事务；chargeback 追回同样原子反向写入。持久幂等查询必须先于终态校验，使超时后的相同恢复请求可回放第一次成功且不产生第二组分录。
@@ -520,12 +527,13 @@
 | `/api/admin/risk/score/:userId/override` · `/score/recompute` | POST | 单用户评分覆盖(**不走 MC**,强制 reason+审计)/ 重算 | 否 | K4 |
 | `/api/admin/risk/kyc-review` · `/:id/decide` | GET/POST | 复审队列+复审单 / 通过驳回(回写 C4;携 Key;执行=风控 lead/超管) | 是 | K5 |
 | `/api/admin/janus/devices?status=&channel=&op=` · `/janus/devices/:sid` | GET | 设备队列(12 态/来源/成熟度/环境/优先级,筛选排序分页)/ 详情(会话+成熟度+环境+判定轨迹) | — | K6 |
-| `/api/admin/janus/devices/:sid/status` | POST | 手动状态下发(§9.3/§9.4 合法流转校验 + 逐字段理由 + 单人强确认,携 Key;before/after 审计;高风险流转禁批量) | 是 | K6 |
+| `/api/admin/janus/devices/:sid/status` | POST | 手动状态下发(§9.3/§9.4 合法流转校验 + 逐字段理由 + 单人强确认,携 Key;before/after 审计;高风险流转禁批量)；接管状态必须携 `remoteTargetKey + remoteTargetVersion + remoteTargetCatalogVersion` 精确绑定，key-only 请求失败关闭 | 是 | K6 |
 | `/api/admin/janus/strategies` · `/:id` | GET/POST/PUT/DELETE | 多策略列表 / 增删改(状态/规则树/动作/范围/保护条件) | 草稿免·发布是 | K6 |
 | `/api/admin/janus/strategies/:id/publish` · `/rollback` · `/dry-run` | POST | 发布(干跑门+发布说明,仅超管)/ 回滚历史版本(版本差异+回滚原因)/ 干跑预估(命中+冲突);生成不可变版本 | 是 | K6 |
 | `/api/admin/janus/health` · `/audit` | GET | 健康度分级(4 档+指标+异常下钻+建议)/ 审计日志(筛选+搜索) | — | K6 |
 | `/api/admin/janus/exports` | POST | 报表导出(漏斗+健康 CSV/JSON),因产生审计副作用使用写接口并携 Idempotency-Key | 导出留痕 | K6 |
-| `/api/app/janus/reports` · `/commands/pending` · `/commands/ack` | POST/GET/POST | 登录用户设备上报原始真实信号（同一 reportId 重放不重复评估或写入）；服务端计算评分、执行生效策略并留判定轨迹；按用户+设备隔离读取待执行命令；App 落地运行配置后回传执行成功/失败与命令版本，闭合上报态—期望态—ACK | 用户令牌绑定设备归属 | K6 |
+| `/api/admin/janus/remote-targets` · `/remote-targets/origins` · `/:key/:version/disable` | GET/POST | 服务端批准 RemoteTarget 目录与部署白名单；只允许精确 HTTPS origin，拒绝私网、userinfo、query、fragment，并在创建与每次消费前重新解析 DNS、任一地址非公网即失败关闭；URL 变化只能新增不可变版本；停用请求须携 `expectedCatalogVersion`，只按 `(remoteTargetKey, remoteTargetVersion, remoteTargetCatalogVersion)` 精确 CAS 停用并取消该版本未领取命令，不扩大到同 key 的其他版本且不冒充设备已执行 | 是(写仅超管) | K6 |
+| `/api/app/janus/reports` · `/commands/pending` · `/commands/ack` | POST/GET/POST | 登录用户设备上报原始真实信号（同一 reportId 重放不重复评估或写入）；服务端计算评分、执行生效策略并留判定轨迹；策略、`nx_janus_command`、`nx_janus_device` 与 App 待执行载荷必须贯穿同一 `remoteTargetKey + remoteTargetVersion + remoteTargetCatalogVersion`；旧 key-only 或目录不匹配记录不得自动补默认值，必须失败关闭；按用户+设备隔离读取待执行命令；App 落地运行配置后回传执行成功/失败与命令版本，闭合上报态—期望态—ACK | 用户令牌绑定设备归属 | K6 |
 
 ### 域 L — 数据 BI(无高敏处置权,唯一升 MC=含敏感/超 rowCap 导出)
 
@@ -540,6 +548,12 @@
 | `/api/admin/bills/export?type=&userId=` | GET | 账单导出**复用 D4 endpoint**(L5 叠加管控/脱敏) | 是(含明细) | L5→D4 |
 | `/api/admin/bi/export/request` · `/:exportId` | POST/GET | 发起导出(经确认弹窗+理由必填;含敏感 OR row>rowCap 执行权升仅超管;携 Key)/ 状态+限时下载(TTL 24h) | 条件 | L5 |
 | `/api/admin/regulatory/report` · `/bi/export/audit` | POST/GET | 生成监管报告(关联 I5)/ 导出审计台 | 是(report) | L5 |
+
+### 域 M — 客服中心
+
+| Endpoint | Method | 用途 | 确认 | 模块 |
+|---|---|---|---|---|
+| `/api/admin/content/conversations/timeout-policy` | GET / PUT | 读取/更新全局会话空闲提醒与自动关闭时长；PUT 携 Key + expectedVersion，定时器先提醒后自动关闭，并写审计 | 是(写仅超管) | M3 |
 
 ### 域 C6/K1 用户侧 server-enforce 端点(配置阈值,写权非 admin)
 
@@ -967,11 +981,13 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 覆盖率红黄线 / 挤兑阈值 | ✅ | ✅(lead,挤兑阈值) | ✅(lead,覆盖率阈值) | — | — | — | 是(理由必填;放松方向警示) | B1/B5 |
 | 储备注入 / 对账核销 | ✅ | — | ✅(lead) | — | — | — | 是(理由必填+Idempotency-Key) | B1/D3/D1 |
 | **充值 PSP 退款 / chargeback / 渠道启停** | ✅ | — | ✅(lead) | — | — | — | 是(理由必填) | D1 |
+| **VietQR 银行账户池/参数/人工匹配核销** | ✅ | — | ✅(lead) | — | — | 读(仅尾号) | 是(理由+证据+Key+CAS；账号密文不回传) | D1 |
 | **提现放行(小额 <$1,000)** | ✅ | — | ✅ | — | 读(受限) | 读 | 是(D2-MD1,理由必填+B1 红线预检) | D2 |
 | **提现放行(大额 ≥$1,000)** | ✅ | — | ✅(lead) | — | — | — | 是(D2-MD1+大额确认勾选;超阈不可批量自动放行) | D2 |
 | 提现 reject / delay | ✅ | ✅ | ✅ | — | — | — | 是(理由必填) | D2 |
 | 提现 freeze / unfreeze / manual-refund-override | ✅ | ✅(lead) | ✅(lead) | — | — | — | 是(理由必填) | D2 |
 | 提现参数(日限/上限/网络费) | ✅ | — | ✅(lead) | — | — | — | 是(理由必填;放宽方向 B1 预检) | D5 |
+| VND/USDT 汇率、点差、锁价时长 | ✅ | 读 | ✅(lead) | — | — | 读 | 是(理由必填+Key+CAS) | D6 |
 | **余额调整 ≤$500 / >$500** | ✅ | — | ✅(>$500 用 lead) | — | ✅(≤$500) | — | 是(理由必填;加余额方向 B1 预检) | C3 |
 | 积分调整 | ✅ | — | ✅(lead) | ✅ | ✅ | — | 是(理由必填;走 points 字段,不入 D4) | C3 |
 | **账户冻结/解冻(单用户)** | ✅ | ✅(lead) | ✅ | — | — | — | 是(理由必填;联动 D2 frozen) | C2 |
@@ -985,6 +1001,8 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 单用户风险评分覆盖 | ✅ | ✅ | — | — | — | — | 是(K4-MD2,理由必填;非高敏不入流水告警) | K4 |
 | 大额 KYC 复审裁决 | ✅ | ✅(lead) | — | — | — | — | 是(理由必填;态落 C4) | K5 |
 | 提现风控规则引擎配置 | ✅ | ✅(lead) | — | — | — | — | 是(理由必填) | K3 |
+| K6 RemoteTarget 新增版本/停用 | ✅(仅超管) | 读 | — | — | — | 读 | 是(理由+影响+Key+CAS；HTTPS 精确白名单) | K6 |
+| M3 会话空闲提醒/自动关闭策略 | ✅(仅超管) | — | — | — | 读 | 读 | 是(理由+Key+CAS) | M3 |
 | **Phase dial 改动/pin/cohort override** | ✅(全部;放大流出方向 dial 仅超管) | — | — | ✅(非放大方向) | — | — | 是(理由必填;放大方向弹窗强制覆盖率预检) | H1 |
 | Trial 敏感参数 | ✅ | — | — | ✅(lead) | — | — | 是(理由必填) | H2 |
 | 兑换三阈值 caps/gate | ✅ | ✅(lead) | ✅(lead) | — | — | — | 是(理由必填;放宽方向 B1 预检) | G2 |

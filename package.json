@@ -14,6 +14,7 @@
     "verify": "node scripts/verify.mjs",
     "verify:auth": "node scripts/check-rbac-auth-source.mjs",
     "test:rbac-platform": "node --experimental-strip-types --test tests/rbac-platform-contract.test.mjs",
+    "test:high-fidelity-rbac": "node --test tests/high-fidelity-rbac-sync-contract.test.mjs",
     "test:a5-contract": "node --experimental-strip-types --test tests/a5-params-registry-contract.test.mjs",
     "test:e2e:a5": "playwright test tests/e2e/a5-live-reacceptance.spec.ts --project=chromium --workers=1",
     "test:e2e:a6-a8": "playwright test tests/e2e/a6-a8-live-reacceptance.spec.ts --project=chromium --workers=1",

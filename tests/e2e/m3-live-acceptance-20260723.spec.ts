@@ -443,14 +443,31 @@ async function login(page: Page, username: string, password: string, changedPass
   const loginResponse = await responsePromise;
   expect(loginResponse.status()).toBeLessThan(400);
   const payload = await loginResponse.json().catch(() => ({})) as { data?: { mfa?: { manualKey?: string | null } } };
+  let passwordChangeSubmitted = false;
 
   for (let attempt = 0; attempt < 50; attempt += 1) {
     if (await page.locator("aside").isVisible().catch(() => false)) return;
     if (await page.getByRole("heading", { name: "首次登录修改密码" }).isVisible().catch(() => false)) {
       if (!changedPassword) throw new Error(`${username} requires a first-login password change`);
-      await page.getByLabel("新密码", { exact: true }).fill(changedPassword);
-      await page.getByLabel("确认新密码", { exact: true }).fill(changedPassword);
-      await page.getByRole("button", { name: "确认修改并进入", exact: true }).click();
+      if (!passwordChangeSubmitted) {
+        await page.getByLabel("新密码", { exact: true }).fill(changedPassword);
+        await page.getByLabel("确认新密码", { exact: true }).fill(changedPassword);
+        const submit = page.getByRole("button", { name: "确认修改并进入", exact: true });
+        await expect(submit).toBeEnabled();
+        const changedResponsePromise = page.waitForResponse((response) => response.request().method() === "POST"
+          && new URL(response.url()).pathname === "/api/admin/auth/password/change");
+        passwordChangeSubmitted = true;
+        await submit.click();
+        const changedResponse = await changedResponsePromise;
+        const changedStatus = changedResponse.status();
+        const changedBody = changedStatus >= 400
+          ? await changedResponse.text().catch(() => "<unavailable>")
+          : "";
+        expect(
+          changedStatus,
+          `password change failed for ${username}: ${changedBody}`,
+        ).toBeLessThan(400);
+      }
     }
     const otp = page.getByLabel("一次性验证码");
     if (await otp.isVisible().catch(() => false)) {

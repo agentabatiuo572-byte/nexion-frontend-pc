@@ -137,3 +137,52 @@ test("M2 recognizes the canonical M3 transcript header and links back to the sou
   assert.match(tickets, /seg=archived/);
   assert.match(tickets, /\/service\/sessions\?q=/);
 });
+
+test("M3 idle timeout policy is loaded and saved through a real CAS backend contract", () => {
+  const sessions = read("app/components/domain-views/m-tabs/m3-sessions.tsx");
+  const modals = read("app/components/domain-views/m-tabs/m3-modals.tsx");
+  const client = read("lib/admin/m-client.ts");
+
+  assert.match(client, /export type ConversationTimeoutPolicy/);
+  assert.match(client, /\/conversations\/timeout-policy/);
+  assert.match(client, /expectedVersion:\s*policy\.version/);
+  assert.match(sessions, /service_m3_timeout_manage/);
+  assert.match(sessions, /fetchMConversationTimeoutPolicy/);
+  assert.match(sessions, /updateMConversationTimeoutPolicy/);
+  assert.match(sessions, /data-proof="session-idle-policy"/);
+  assert.match(modals, /data-proof="session-idle-policy-save"/);
+  assert.match(modals, /自动结束时长必须大于提醒时长/);
+  assert.doesNotMatch(modals, /ctx\.setParam/);
+  assert.doesNotMatch(modals, /ctx\.logAudit/);
+});
+
+test("M3 reloads the current timeout-policy version whenever the editor is reopened", () => {
+  const sessions = read("app/components/domain-views/m-tabs/m3-sessions.tsx");
+
+  assert.match(
+    sessions,
+    /const openIdlePolicy = async \(\) => \{[\s\S]{0,180}const loaded = await loadIdlePolicy\(\)/,
+  );
+  assert.doesNotMatch(sessions, /const loaded = idlePolicy \?\? await loadIdlePolicy\(\)/);
+});
+
+test("M3 treats scheduler SYSTEM and STATUS events as reload signals instead of guessing local state", () => {
+  const view = read("app/components/domain-views/m-view.tsx");
+
+  assert.match(
+    view,
+    /event\.eventType === "RECEIPT"[\s\S]{0,120}event\.eventType === "STATUS"[\s\S]{0,120}event\.senderType === "SYSTEM"/,
+  );
+  assert.match(view, /void reloadMContent\(\);\s*return;/);
+  assert.doesNotMatch(view, /const lower = \(event\.body \?\? ""\)\.toLowerCase\(\)/);
+});
+
+test("M3 rejects fractional timeout minutes instead of silently rounding them", () => {
+  const modals = read("app/components/domain-views/m-tabs/m3-modals.tsx");
+
+  assert.doesNotMatch(modals, /Math\.round\(Number\((warn|close)\)\)/);
+  assert.match(modals, /Number\.isInteger\(warnN\)/);
+  assert.match(modals, /Number\.isInteger\(closeN\)/);
+  assert.match(modals, /step=\{1\}/);
+  assert.match(modals, /请输入整数分钟/);
+});

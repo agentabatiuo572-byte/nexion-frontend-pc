@@ -17,16 +17,20 @@ function safe(value: string | undefined) {
 function target(parts: string[], method: string) {
   if (!parts.length || parts.some((part) => !safe(part))) return null;
   const joined = parts.join("/");
-  const readOnly = new Set(["metadata", "dashboard", "devices", "strategies", "health", "audit"]);
+  const readOnly = new Set([
+    "metadata", "dashboard", "devices", "strategies", "health", "audit",
+    "remote-targets", "remote-targets/origins",
+  ]);
   if (method === "GET") {
     if (readOnly.has(joined)) return joined;
     if (/^(devices|strategies)\/[A-Za-z0-9_.:-]{1,128}$/.test(joined)) return joined;
     return null;
   }
   if (method === "POST") {
-    if (joined === "strategies" || joined === "exports") return joined;
+    if (joined === "strategies" || joined === "exports" || joined === "remote-targets") return joined;
     if (/^devices\/[A-Za-z0-9_.:-]{1,128}\/status$/.test(joined)) return joined;
     if (/^strategies\/[A-Za-z0-9_.:-]{1,128}\/(dry-run|publish|pause|archive|rollback)$/.test(joined)) return joined;
+    if (/^remote-targets\/[A-Za-z0-9_.:-]{1,128}\/\d+\/disable$/.test(joined)) return joined;
     return null;
   }
   if (method === "PUT" && /^strategies\/[A-Za-z0-9_.:-]{1,128}$/.test(joined)) return joined;
@@ -59,10 +63,18 @@ async function proxy(request: Request, context: RouteContext) {
       "Content-Type": upstream.headers.get("Content-Type") || "application/json",
       "Cache-Control": "no-store",
     });
+    const upstreamOutcome = upstream.headers.get("X-Nexion-Upstream-Outcome");
+    if (upstreamOutcome) responseHeaders.set("X-Nexion-Upstream-Outcome", upstreamOutcome);
     const disposition = upstream.headers.get("Content-Disposition");
     if (disposition) responseHeaders.set("Content-Disposition", disposition);
     return new Response(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders });
   } catch {
+    if (!["GET", "HEAD"].includes(request.method)) {
+      return Response.json(
+        { code: 503, message: "JANUS_BACKEND_UNAVAILABLE", data: null },
+        { status: 503, headers: { "X-Nexion-Upstream-Outcome": "unknown" } },
+      );
+    }
     return jsonError(503, "JANUS_BACKEND_UNAVAILABLE");
   }
 }

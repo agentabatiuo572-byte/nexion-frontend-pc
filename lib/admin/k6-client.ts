@@ -19,6 +19,12 @@ import type {
   K6ExportFile,
   Strategy,
 } from "@/lib/admin/janus-c2/types";
+import {
+  normalizeK6RemoteTarget,
+  normalizeK6RemoteTargetOrigins,
+  normalizeK6RemoteTargets,
+  type K6RemoteTarget,
+} from "@/lib/admin/k6-remote-target-contract";
 
 type ApiResult = { code?: unknown; message?: unknown; data?: unknown };
 export type AdminPage<T> = { total: number; pageNum: number; pageSize: number; records: T[] };
@@ -40,6 +46,8 @@ export type StatusChange = {
   effectiveTiming: "immediate" | "session_edge";
   expireAt?: number;
   remoteUrlKey?: string;
+  remoteTargetVersion?: number;
+  remoteTargetCatalogVersion?: number;
   confirmationMode: "standard" | "strong_single";
   expectedDeviceVersion: number;
 };
@@ -54,6 +62,21 @@ export type StrategyAction = {
 };
 
 export type DryRun = ReturnType<typeof normalizeK6DryRun>;
+export type K6RemoteTargetCreate = {
+  remoteTargetKey: string;
+  label: string;
+  url: string;
+  ownerId: string;
+  expectedLatestVersion: number;
+  reason: string;
+  impact: string;
+};
+export type K6RemoteTargetDisable = {
+  expectedVersion: number;
+  expectedCatalogVersion: number;
+  reason: string;
+  impact: string;
+};
 type Normalizer<T> = (value: unknown) => T;
 
 const BASE = "/api/admin/janus";
@@ -126,6 +149,10 @@ async function request<T>(path: string, init: RequestInit | undefined, normalize
   } catch {
     if (isWrite) throw new K6OutcomeUncertainError(stableCommandKey, "网络中断");
     throw new Error("K6 数据读取失败，数据未更新");
+  }
+
+  if (isWrite && response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+    throw new K6OutcomeUncertainError(stableCommandKey, "上游结果未知");
   }
 
   let raw: string;
@@ -210,6 +237,32 @@ export function fetchK6Audit(limit = 200): Promise<AuditLog[]> {
 
 export function fetchK6Health(): Promise<HealthReport> {
   return request("/health", undefined, normalizeK6Health);
+}
+
+export function fetchK6RemoteTargets(): Promise<K6RemoteTarget[]> {
+  return request("/remote-targets", undefined, normalizeK6RemoteTargets);
+}
+
+export function fetchK6RemoteTargetOrigins(): Promise<string[]> {
+  return request("/remote-targets/origins", undefined, normalizeK6RemoteTargetOrigins);
+}
+
+export function createK6RemoteTargetVersion(body: K6RemoteTargetCreate): Promise<K6RemoteTarget> {
+  return request("/remote-targets", {
+    method: "POST",
+    body: JSON.stringify(body),
+  }, normalizeK6RemoteTarget);
+}
+
+export function disableK6RemoteTarget(
+  key: string,
+  version: number,
+  body: K6RemoteTargetDisable,
+): Promise<K6RemoteTarget> {
+  return request(`/remote-targets/${encodeURIComponent(key)}/${version}/disable`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }, normalizeK6RemoteTarget);
 }
 
 export function updateK6DeviceStatus(sid: string, body: StatusChange): Promise<Device> {

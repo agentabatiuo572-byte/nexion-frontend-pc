@@ -13,7 +13,6 @@ import {
   updateK6DeviceStatus,
   type DryRun,
 } from "@/lib/admin/k6-client";
-import { REMOTE_URL_LABEL } from "@/lib/admin/janus-c2/labels";
 import { deepClone } from "@/lib/admin/janus-c2/strategies";
 import type {
   AuditLog,
@@ -26,18 +25,14 @@ import type {
 } from "@/lib/admin/janus-c2/types";
 import type { Transition } from "@/lib/admin/janus-c2/transitions";
 
-export const REMOTE_URL_KEYS = [
-  { key: "default", label: REMOTE_URL_LABEL.default },
-  { key: "backup", label: REMOTE_URL_LABEL.backup },
-  { key: "promo", label: REMOTE_URL_LABEL.promo },
-];
-
 export interface OverrideForm {
   reasonCategory: string;
   reasonText: string;
   effectiveTiming: EffectiveTiming;
   expireAt?: number;
   remoteUrlKey?: string;
+  remoteTargetVersion?: number;
+  remoteTargetCatalogVersion?: number;
   confirmationMode: ConfirmationMode;
 }
 
@@ -139,6 +134,8 @@ export const useJanusC2Store = create<JanusC2State>((set, get) => ({
       effectiveTiming: form.effectiveTiming,
       expireAt: form.expireAt,
       remoteUrlKey: form.remoteUrlKey,
+      remoteTargetVersion: form.remoteTargetVersion,
+      remoteTargetCatalogVersion: form.remoteTargetCatalogVersion,
       confirmationMode: form.confirmationMode,
       expectedDeviceVersion: device.version ?? 0,
     });

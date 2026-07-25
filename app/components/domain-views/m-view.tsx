@@ -87,8 +87,13 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   // 增量合并进 mData.conversations —— 直接 setMData，绕开 runMWrite 写链（避免被 writeConversationRows
   // 当成「坐席新回复」二次回写后端，形成回环）。收到事件后 mergedParams 自动重算 → M3 / Dock 重渲。
   const handleStreamEvent = useCallback((event: ConversationStreamEvent) => {
-    if (event.eventType === "RECEIPT") {
-      // 回执携带明确 messageId；重新读取权威快照，避免把并发到达的新消息误标为已读。
+    if (
+      event.eventType === "RECEIPT"
+      || event.eventType === "STATUS"
+      || event.senderType === "SYSTEM"
+    ) {
+      // 回执、终态和系统定时任务统一回读权威快照：不靠正文猜状态，也不把
+      // 系统提醒当作坐席消息推进前端 lastTs。
       void reloadMContent();
       return;
     }
@@ -125,16 +130,6 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         // 转交态（from/to/reason）由后端快照权威表达；此处仅扰动 lastTs 让 UI 重渲，
         // 具体 transfer 字段等下一次 reloadMContent 同步，避免本地推断错位。
         nextConvo = { ...convo, lastTs: eventTs };
-      } else if (event.eventType === "STATUS") {
-        const lower = (event.body ?? "").toLowerCase();
-        const archived = lower.includes("archive");
-        const closed = lower.includes("close") || lower.includes("resolve") || lower.includes("ticket");
-        nextConvo = {
-          ...convo,
-          lastTs: eventTs,
-          status: closed ? "closed" : convo.status,
-          archived: archived || closed ? true : convo.archived,
-        };
       }
 
       if (nextConvo === convo) return prev;

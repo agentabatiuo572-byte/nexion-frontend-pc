@@ -24,7 +24,7 @@ export interface AuditObjectReference {
 const TARGET_LABEL: Record<AuditLog["targetType"], string> = {
   device: "设备",
   strategy: "策略",
-  config: "配置",
+  config: "批准目标",
 };
 
 const asRecord = (value: unknown): JsonRecord | null =>
@@ -109,7 +109,7 @@ function actionText(value: unknown): string | null {
     const type = knownLabel(ACTION_TYPE_LABEL, action.type);
     if (!type) return null;
     const remoteKey = nonEmptyText(action.remoteUrlKey);
-    const remote = remoteKey && remoteUrlLabel(remoteKey) !== "未知接管线路" ? remoteUrlLabel(remoteKey) : null;
+    const remote = remoteKey ? remoteUrlLabel(remoteKey) : null;
     return remote ? `${type} · ${remote}` : type;
   }
   return knownLabel(ACTION_TYPE_LABEL, value);
@@ -236,7 +236,7 @@ function snapshotEntries(snapshot: unknown): Array<[string, string]> {
     ["灰度范围", rolloutText(data.rollout)],
     ["回滚来源版本", finiteNumber(data.rolledBackFrom) === null ? null : String(data.rolledBackFrom)],
     ["是否激活", yesNo(data.activated)],
-    ["远程线路", nonEmptyText(data.remoteUrlKey) && remoteUrlLabel(nonEmptyText(data.remoteUrlKey)) !== "未知接管线路" ? remoteUrlLabel(nonEmptyText(data.remoteUrlKey)) : null],
+    ["远程线路", nonEmptyText(data.remoteUrlKey) ? remoteUrlLabel(nonEmptyText(data.remoteUrlKey)) : null],
     ["成熟度分", finiteNumber(data.maturityScore) === null ? null : String(data.maturityScore)],
     ["建议分", finiteNumber(data.recommendationScore) === null ? null : String(data.recommendationScore)],
     ["环境风险分", finiteNumber(data.environmentRiskScore) === null ? null : String(data.environmentRiskScore)],

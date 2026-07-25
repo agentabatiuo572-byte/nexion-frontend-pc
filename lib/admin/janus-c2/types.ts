@@ -85,6 +85,8 @@ export interface StrategyAction {
   type: StrategyActionType;
   /** 接管类动作的远程地址配置键。 */
   remoteUrlKey?: string;
+  remoteTargetVersion?: number;
+  remoteTargetCatalogVersion?: number;
 }
 
 export interface StrategyScope {
@@ -184,6 +186,8 @@ export interface ManualOverride {
   confirmationMode: ConfirmationMode;
   roleGate?: Role;
   remoteUrlKey?: string;
+  remoteTargetVersion?: number;
+  remoteTargetCatalogVersion?: number;
 }
 
 // ===== 审计日志(PRD §16.6 / §19)=====
@@ -257,6 +261,8 @@ export interface Device {
   statusSource: StatusSource;
   activated: boolean;
   remoteUrlKey?: string;
+  remoteTargetVersion?: number;
+  remoteTargetCatalogVersion?: number;
   maturityScore: number;
   recommendationScore: number;
   environmentRiskScore: number;
@@ -281,7 +287,7 @@ export interface Device {
   tags: string[];
   /** 设备上报态与待下发命令分离,避免把数据库写成功误显示成设备已执行。 */
   desiredStatus?: DeviceStatus;
-  commandState?: "PENDING" | "PUBLISHED" | "ACKED" | "FAILED" | "EXPIRED";
+  commandState?: "PENDING" | "PUBLISHED" | "ACKED" | "FAILED" | "EXPIRED" | "CANCELLED";
   version?: number;
 }
 

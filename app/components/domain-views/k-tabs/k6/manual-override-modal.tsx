@@ -9,7 +9,9 @@
  */
 import { useEffect, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
-import { REMOTE_URL_KEYS, useJanusC2Store, type OverrideForm } from "@/lib/store/admin/janus-c2-store";
+import { useJanusC2Store, type OverrideForm } from "@/lib/store/admin/janus-c2-store";
+import { fetchK6RemoteTargets } from "@/lib/admin/k6-client";
+import type { K6RemoteTarget } from "@/lib/admin/k6-remote-target-contract";
 import { EFFECTIVE_TIMING_LABEL, REASON_CATEGORIES, STATUS_LABEL, STATUS_TONE } from "@/lib/admin/janus-c2/labels";
 import type { Device, EffectiveTiming } from "@/lib/admin/janus-c2/types";
 import type { Transition } from "@/lib/admin/janus-c2/transitions";
@@ -24,7 +26,9 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
   const [reasonText, setReasonText] = useState("");
   const [effectiveTiming, setEffectiveTiming] = useState<EffectiveTiming>("session_edge");
   const [expireHours, setExpireHours] = useState(2);
-  const [remoteUrlKey, setRemoteUrlKey] = useState("default");
+  const [remoteTargets, setRemoteTargets] = useState<K6RemoteTarget[]>([]);
+  const [remoteTargetCatalogVersion, setRemoteTargetCatalogVersion] = useState<number | null>(null);
+  const [targetLoadError, setTargetLoadError] = useState<string | null>(null);
   const [strong, setStrong] = useState(false);
   const [pending, setPending] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -35,9 +39,31 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    if (!t.needsRemoteUrl) return;
+    let active = true;
+    setTargetLoadError(null);
+    void fetchK6RemoteTargets()
+      .then((rows) => {
+        if (active) setRemoteTargets(rows.filter((target) => target.status === "ACTIVE"));
+      })
+      .catch((error) => {
+        if (active) {
+          setRemoteTargets([]);
+          setTargetLoadError(error instanceof Error ? error.message : "批准目标读取失败");
+        }
+      });
+    return () => { active = false; };
+  }, [t.needsRemoteUrl]);
+
   const reasonLength = reasonText.trim().length;
   const reasonOk = reasonLength >= 8 && reasonLength <= 500;
-  const valid = !!reasonCategory && reasonOk && (!t.needsRemoteUrl || !!remoteUrlKey) && (!t.strong || strong);
+  const selectedRemoteTarget = remoteTargets.find(
+    (target) => target.catalogVersion === remoteTargetCatalogVersion,
+  );
+  const valid = !!reasonCategory && reasonOk
+    && (!t.needsRemoteUrl || !!selectedRemoteTarget)
+    && (!t.strong || strong);
 
   const confirm = async () => {
     if (!valid || pending) return;
@@ -46,7 +72,9 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
       reasonText: reasonText.trim(),
       effectiveTiming,
       expireAt: t.needsExpire ? Date.now() + expireHours * 3600_000 : undefined,
-      remoteUrlKey: t.needsRemoteUrl ? remoteUrlKey : undefined,
+      remoteUrlKey: t.needsRemoteUrl ? selectedRemoteTarget?.remoteTargetKey : undefined,
+      remoteTargetVersion: t.needsRemoteUrl ? selectedRemoteTarget?.remoteTargetVersion : undefined,
+      remoteTargetCatalogVersion: t.needsRemoteUrl ? selectedRemoteTarget?.catalogVersion : undefined,
       confirmationMode: t.strong ? "strong_single" : "standard",
     };
     setPending(true);
@@ -126,9 +154,23 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
           {t.needsRemoteUrl && (
             <div className="k6-ovr-field">
               <label htmlFor="ovr-url">远程地址<i>必填</i></label>
-              <select id="ovr-url" className="k6-field" value={remoteUrlKey} onChange={(e) => setRemoteUrlKey(e.target.value)}>
-                {REMOTE_URL_KEYS.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+              <select
+                id="ovr-url"
+                className="k6-field"
+                value={remoteTargetCatalogVersion ?? ""}
+                onChange={(e) => setRemoteTargetCatalogVersion(
+                  e.target.value ? Number(e.target.value) : null,
+                )}
+                disabled={!remoteTargets.length}
+              >
+                <option value="">{remoteTargets.length ? "请选择批准目标" : "尚无可用批准目标"}</option>
+                {remoteTargets.map((target) => (
+                  <option key={target.catalogVersion} value={target.catalogVersion}>
+                    {target.label} · v{target.remoteTargetVersion}
+                  </option>
+                ))}
               </select>
+              {targetLoadError && <div className="k6-hint k6-error">{targetLoadError}，人工接管已禁止提交。</div>}
             </div>
           )}
 

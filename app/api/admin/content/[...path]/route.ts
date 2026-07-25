@@ -94,6 +94,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   return proxy(request, context);
 }
 
+export async function PUT(request: Request, context: RouteContext) {
+  return proxy(request, context);
+}
+
 export async function DELETE(request: Request, context: RouteContext) {
   return proxy(request, context);
 }

@@ -18,6 +18,7 @@ import {
   type TransferTarget,
 } from "./data";
 import { MAvatar, ownerLabel, relWhen } from "./hd-ui";
+import type { ConversationTimeoutPolicy } from "@/lib/admin/m-client";
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
@@ -28,6 +29,132 @@ function Field({ label, required, children }: { label: string; required?: boolea
       </span>
       {children}
     </label>
+  );
+}
+
+export function IdlePolicyModal({
+  policy,
+  canSave,
+  saving,
+  error,
+  onClose,
+  onSave,
+}: {
+  policy: ConversationTimeoutPolicy;
+  canSave: boolean;
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onSave: (input: { warnMinutes: number; closeMinutes: number; reason: string }) => Promise<boolean>;
+}) {
+  const [warn, setWarn] = useState(String(policy.warnMinutes));
+  const [close, setClose] = useState(String(policy.closeMinutes));
+  const [reason, setReason] = useState("");
+  const warnN = Number(warn);
+  const closeN = Number(close);
+  const warnOk = Number.isInteger(warnN) && warnN >= 1 && warnN <= 30;
+  const closeOk = Number.isInteger(closeN) && closeN >= 2 && closeN <= 120;
+  const orderOk = warnOk && closeOk && closeN > warnN;
+  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
+  const unchanged = warnN === policy.warnMinutes && closeN === policy.closeMinutes;
+
+  async function save() {
+    if (!canSave || saving || !orderOk || !reasonOk || unchanged) return;
+    const succeeded = await onSave({
+      warnMinutes: warnN,
+      closeMinutes: closeN,
+      reason: reason.trim(),
+    });
+    if (succeeded) onClose();
+  }
+
+  const numField = (
+    label: string,
+    hint: string,
+    value: string,
+    setValue: (value: string) => void,
+    min: number,
+    max: number,
+  ) => (
+    <label className="row" style={{ justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+      <span>
+        <span style={{ fontSize: 13 }}>{label}</span>
+        <span className="sub" style={{ display: "block" }}>{hint}</span>
+      </span>
+      <input
+        className="fld mono"
+        type="number"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        disabled={!canSave || saving}
+        onChange={(event) => setValue(event.target.value)}
+        style={{ width: 88, textAlign: "right" }}
+        aria-label={label}
+      />
+    </label>
+  );
+
+  return (
+    <Modal
+      title="会话超时策略"
+      icon="clock"
+      onClose={onClose}
+      footer={(
+        <div className="row" style={{ gap: 10, alignItems: "center", width: "100%" }}>
+          <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <Icon name="shield" size={13} />
+            作用于真实会话 · 版本 {policy.version} · 变更记入审计
+          </span>
+          <div className="spacer" style={{ flex: 1 }} />
+          <button type="button" className="btn btn-sec btn-sm" onClick={onClose} disabled={saving}>取消</button>
+          <button
+            type="button"
+            data-proof="session-idle-policy-save"
+            className="btn btn-pri btn-sm"
+            onClick={save}
+            disabled={!canSave || saving || !reasonOk || !orderOk || unchanged}
+          >
+            {saving ? "保存中…" : !canSave ? "无策略管理权限" : unchanged ? "策略未变更" : "确认并保存"}
+          </button>
+        </div>
+      )}
+    >
+      <div className="col" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {numField("闲置提醒时长(分钟)", "用户静默满该时长,会话内写入系统预告", warn, setWarn, 1, 30)}
+        {numField("闲置自动结束时长(分钟)", "用户静默满该时长,服务端自动结束会话", close, setClose, 2, 120)}
+        {!orderOk && (
+          <div className="sub" style={{ color: "var(--danger)" }}>
+            {!warnOk || !closeOk ? "请输入整数分钟并满足允许范围。" : "自动结束时长必须大于提醒时长。"}
+          </div>
+        )}
+        <div className="itint" style={{ padding: "11px 13px", lineHeight: 1.7, fontSize: 12.5 }}>
+          服务端实际效果:静默 {warnOk ? warnN : "—"} 分钟写入提醒;静默 {closeOk ? closeN : "—"} 分钟后以 CAS 校验最后活动时间并自动结束。期间有新消息则本轮任务失效,不会误关会话。
+        </div>
+        <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontSize: 13 }}>
+            变更理由 <span style={{ color: "var(--danger)" }}>*</span>
+            <span className="sub">(8–200 字 · 后端审计必填)</span>
+          </span>
+          <textarea
+            className="fld"
+            rows={2}
+            value={reason}
+            disabled={!canSave || saving}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="例:根据当前接待量调整闲置策略,释放长期无响应会话"
+            style={{ resize: "vertical" }}
+          />
+        </label>
+        {error && (
+          <div className="itint" role="alert" style={{ color: "var(--danger)", padding: "10px 12px" }}>
+            保存失败或结果未知,页面数据未更新。请保留当前输入并重试;若提示版本过期,关闭弹窗后重新打开。
+            <div className="mono" style={{ marginTop: 4, fontSize: 11 }}>{error}</div>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

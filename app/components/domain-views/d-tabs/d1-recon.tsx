@@ -4,9 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
+  createD1VietQrAccount,
   createD1BinLock,
   fetchD1TopupFlows,
   fetchD1TopupOverview,
+  loadD1VietQrOverview,
+  reconcileD1VietQr,
   refundD1Chargeback,
   setD1BinLock,
   switchD1Psp,
@@ -14,9 +17,13 @@ import {
   updateD1TopupChannelEnabled,
   updateD1TopupChannelFee,
   updateD1TopupChannelMin,
+  updateD1VietQrAccount,
+  updateD1VietQrConfig,
   writeoffD1Reconciliation,
   type D1DepositFlow,
   type D1Overview,
+  type D1VietQrOverview,
+  type D1VietQrView,
   type PageResult,
 } from "@/lib/admin/d-client";
 import type { DCtx } from "./types";
@@ -28,6 +35,13 @@ const FLOW_TABS = [
   ["confirmed", "已入账"],
   ["abnormal", "异常"],
 ] as const;
+const BANK_VIEW_TABS: Array<[D1VietQrView, string]> = [
+  ["inflight", "在途意向单"],
+  ["matched", "已匹配"],
+  ["orphan", "孤儿队列"],
+  ["mismatch", "差额队列"],
+  ["late", "过期后到账"],
+];
 
 function money(value: number, digits = 2) {
   return `$${Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits })}`;
@@ -43,6 +57,10 @@ function statusTone(status: string) {
   if (["SUCCESS", "CONFIRMED", "CREDITED", "CHARGEBACK_RECOVERED", "RECOVERED"].includes(s)) return "ok";
   if (["FAILED", "EXPIRED", "REJECTED", "ABNORMAL", "CHARGEBACK_ENTERED", "CHARGEBACK_PARTIAL", "PARTIAL_ANOMALY"].includes(s)) return "bad";
   return "warn";
+}
+
+function vnd(value: number | null) {
+  return value === null ? "—" : `${Number(value).toLocaleString("en-US")}₫`;
 }
 
 const D1_STATUS_LABELS: Record<string, string> = {
@@ -95,7 +113,12 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   const canLockBin = isSuper || authorities.includes("finance_d1_bin_lock");
   const canUnlockBin = isSuper || authorities.includes("finance_d1_bin_unlock");
   const canRecoverChargeback = isSuper || authorities.includes("finance_d1_chargeback_refund");
+  const canBankReconcile = isSuper || authorities.includes("finance_d1_bank_reconcile");
+  const canManageBankAccounts = isSuper || authorities.includes("finance_d1_bank_account_manage");
+  const canManageBankConfig = isSuper || authorities.includes("finance_d1_bank_config_manage");
   const [overview, setOverview] = useState<D1Overview | null>(null);
+  const [vietQr, setVietQr] = useState<D1VietQrOverview | null>(null);
+  const [bankView, setBankView] = useState<D1VietQrView>("inflight");
   const [flows, setFlows] = useState<PageResult<D1DepositFlow>>(EMPTY_D1_FLOWS);
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -112,15 +135,18 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     setError("");
     setNotice("");
     try {
-      const [nextOverview, nextFlows] = await Promise.all([
+      const [nextOverview, nextFlows, nextVietQr] = await Promise.all([
         fetchD1TopupOverview(),
         fetchD1TopupFlows({ status, keyword, pageNum: page, pageSize }),
+        loadD1VietQrOverview(bankView, 1, 20),
       ]);
       setOverview(nextOverview);
       setFlows(nextFlows);
+      setVietQr(nextVietQr);
     } catch (err) {
       setOverview(null);
       setFlows(EMPTY_D1_FLOWS);
+      setVietQr(null);
       setError(err instanceof Error ? err.message : "D1 数据加载失败");
     } finally {
       setLoading(false);
@@ -130,7 +156,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   useEffect(() => {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, page, pageSize]);
+  }, [status, page, pageSize, bankView]);
 
   const pages = useMemo(() => Math.max(1, Math.ceil(flows.total / flows.pageSize)), [flows.total, flows.pageSize]);
 
@@ -159,6 +185,23 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     }
   };
 
+  const applyBankWrite = async (task: () => Promise<unknown>, ok: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      await task();
+      const next = await loadD1VietQrOverview(bankView, 1, 20);
+      setVietQr(next);
+      toast(ok);
+    } catch (err) {
+      setVietQr(null);
+      setError(`银行轨操作结果未确认，已停止展示旧数据；请重新读取后再判断 · ${err instanceof Error ? err.message : "银行轨操作失败"}`);
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const updateChannelNumber = (channel: D1Overview["channels"][number], kind: "fee" | "min") => {
     const current = kind === "fee" ? channel.feeValue : channel.minAmountValue;
     const unitLabel = kind === "fee" ? (channel.feeUnit === "PERCENT" ? "%" : "USDT 固定手续费") : "USD";
@@ -177,6 +220,46 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
             ? updateD1TopupChannelFee(channel.code, numericValue, channel.feeUnit, current, reason, operator)
             : updateD1TopupChannelMin(channel.code, numericValue, current, reason, operator),
           `${channel.id} 已更新`,
+        );
+      },
+    });
+  };
+
+  const bankConfigPayload = (
+    patch: Partial<Pick<D1VietQrOverview["config"], "toleranceVnd" | "graceMinutes" | "perTxLimitUsd" | "trc20Confirmations" | "erc20Confirmations" | "bep20Confirmations" | "rotationStrategy">>,
+  ) => {
+    if (!vietQr) throw new Error("银行轨配置尚未加载");
+    return {
+      toleranceVnd: patch.toleranceVnd ?? vietQr.config.toleranceVnd,
+      graceMinutes: patch.graceMinutes ?? vietQr.config.graceMinutes,
+      perTxLimitUsd: patch.perTxLimitUsd ?? vietQr.config.perTxLimitUsd,
+      trc20Confirmations: patch.trc20Confirmations ?? vietQr.config.trc20Confirmations,
+      erc20Confirmations: patch.erc20Confirmations ?? vietQr.config.erc20Confirmations,
+      bep20Confirmations: patch.bep20Confirmations ?? vietQr.config.bep20Confirmations,
+      rotationStrategy: patch.rotationStrategy ?? vietQr.config.rotationStrategy,
+      version: vietQr.config.version,
+    };
+  };
+
+  const editBankNumber = (
+    key: "toleranceVnd" | "graceMinutes" | "perTxLimitUsd" | "trc20Confirmations" | "erc20Confirmations" | "bep20Confirmations",
+    label: string,
+    unit: string,
+    min: number,
+    max: number,
+  ) => {
+    if (!vietQr) return;
+    const current = vietQr.config[key];
+    openActionConfirm({
+      action: `银行轨参数调整 · ${label}`,
+      detail: `${label}当前为 ${current} ${unit}，合法范围 ${min.toLocaleString("en-US")}–${max.toLocaleString("en-US")}。仅对新回单或新付款单生效。`,
+      edit: { kind: "number", current: String(current), unit, min, max, step: 1 },
+      run: (reason, value) => {
+        const next = Number(value);
+        if (!Number.isInteger(next) || next < min || next > max) throw new Error(`${label}必须是合法整数`);
+        return applyBankWrite(
+          () => updateD1VietQrConfig(bankConfigPayload({ [key]: next }), reason, operator),
+          `${label}已更新`,
         );
       },
     });
@@ -277,6 +360,183 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 })}>调整</button>}
               </div>
             ))}
+          </div>
+        </section>
+      </div>
+
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">银行转账（VietQR）对账</span>
+          <span className="sub">· 五视图 · 单据锁价快照 · 挂账与 D3 第 9 科目同源</span>
+          <div className="r"><span className="dcode electric">待核实入金 {money(vietQr?.pendingUnverifiedDepositUsdt ?? 0)}</span></div>
+        </div>
+        <div className="l-b" style={{ paddingBottom: 8 }}>
+          <div className="chips">
+            {BANK_VIEW_TABS.map(([key, label]) => (
+              <button key={key} className={`chip${bankView === key ? " sel" : ""}`} disabled={loading || busy} onClick={() => setBankView(key)}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="l-tbl" style={{ minWidth: 1120 }}>
+            <thead><tr><th>回单 / 意向单</th><th>用户 / 意向单</th><th className="num">应付 VND</th><th className="num">实收 VND</th><th className="num">锁定牌价</th><th className="num">折算 USDT</th><th>状态</th><th>说明</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <tbody>
+              {(vietQr?.page.items ?? []).length === 0 ? (
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "26px 12px" }}>当前视图暂无银行轨记录</td></tr>
+              ) : vietQr?.page.items.map((row) => {
+                const amount = row.receivedVnd === null ? row.creditedUsdt : row.receivedVnd / row.lockedFxRateVndPerUsdt;
+                return (
+                  <tr key={row.id}>
+                    <td className="mono">{row.reconciliationNo}</td>
+                    <td><span className="mono">{row.userId ?? "—"}</span><div className="sub">{row.intentNo || "未匹配意向单"}</div></td>
+                    <td className="num mono">{vnd(row.payableVnd)}</td>
+                    <td className="num mono">{vnd(row.receivedVnd)}</td>
+                    <td className="num mono">{vnd(row.lockedFxRateVndPerUsdt)}</td>
+                    <td className="num mono">{money(amount)}</td>
+                    <td><span className={`bdg ${row.status === "CREDITED" ? "ok" : row.status === "RETURNED" ? "dim" : "warn"}`}>{row.status === "OPEN" ? "待处置" : row.status === "CREDITED" ? "已入账" : row.status === "RETURNED" ? "已退回" : "退回处理中"}</span></td>
+                    <td>{row.note || "—"}</td>
+                    <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      {canBankReconcile && row.status === "OPEN" && row.viewType === "ORPHAN" && (
+                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                          action: `手动匹配入账 · ${row.reconciliationNo}`,
+                          detail: `实收 ${vnd(row.receivedVnd)} 将按该回单锁定牌价入账，并把第 9 科目等额转为用户可提负债。用户与意向单必须来自已核验凭证。`,
+                          businessForm: { kind: "multi-field", fields: [
+                            { key: "userId", label: "目标用户 ID", inputKind: "text", required: true },
+                            { key: "intentNo", label: "目标意向单号", inputKind: "text", required: true },
+                          ] },
+                          run: (reason, _value, business) => {
+                            const userId = Number(business?.userId);
+                            const intentNo = business?.intentNo?.trim() ?? "";
+                            if (!Number.isInteger(userId) || userId <= 0 || !intentNo) throw new Error("请选择有效用户与意向单");
+                            return applyBankWrite(() => reconcileD1VietQr(row.id, "match-credit", {
+                              expectedVersion: row.version, userId, intentNo, reason, operator,
+                            }), "孤儿回单已匹配入账");
+                          },
+                        })}>手动匹配入账</button>
+                      )}
+                      {canBankReconcile && row.status === "OPEN" && row.viewType === "MISMATCH" && (
+                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                          action: `按实收核销 · ${row.reconciliationNo}`,
+                          detail: `按实收 ${vnd(row.receivedVnd)} 折算入账；第 9 科目等额转为用户可提负债，原应付金额不覆盖实收事实。`,
+                          run: (reason) => applyBankWrite(() => reconcileD1VietQr(row.id, "write-off", {
+                            expectedVersion: row.version, reason, operator,
+                          }), "差额回单已按实收核销"),
+                        })}>按实收核销</button>
+                      )}
+                      {canBankReconcile && row.status === "OPEN" && row.viewType === "LATE" && (
+                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                          action: `补入账 · ${row.reconciliationNo}`,
+                          detail: "按付款单锁定牌价补入账；调价不会重算该笔在途快照。",
+                          run: (reason) => applyBankWrite(() => reconcileD1VietQr(row.id, "match-credit", {
+                            expectedVersion: row.version, userId: row.userId ?? undefined, intentNo: row.intentNo, reason, operator,
+                          }), "过期后到账已补入账"),
+                        })}>补入账</button>
+                      )}
+                      {canBankReconcile && row.status === "OPEN" && ["ORPHAN", "MISMATCH", "LATE"].includes(row.viewType) && (
+                        <button className="l-btn sm mc" style={{ marginLeft: 6 }} disabled={busy} onClick={() => openActionConfirm({
+                          action: `登记退回 · ${row.reconciliationNo}`,
+                          detail: "登记退回会同时冲减真实储备与第 9 科目；终态回单不可重复处置。",
+                          run: (reason) => applyBankWrite(() => reconcileD1VietQr(row.id, "return", {
+                            expectedVersion: row.version, reason, operator,
+                          }), "回单已登记退回"),
+                        })}>登记退回</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div className="two-col r11">
+        <section className="l-card">
+          <div className="l-h">
+            <span className="ttl">收款账户池</span>
+            <span className="sub">· 账号只展示尾四位 · 全号加密落库</span>
+            {canManageBankAccounts && <div className="r"><button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+              action: "新增 VietQR 收款账户",
+              detail: "账户全号只提交给后端加密保存，列表和审计均不得回显全号。",
+              businessForm: { kind: "multi-field", fields: [
+                { key: "bankCode", label: "银行代码", inputKind: "text", required: true },
+                { key: "bankName", label: "银行名称", inputKind: "text", required: true },
+                { key: "accountHolder", label: "账户户名", inputKind: "text", required: true },
+                { key: "accountNumber", label: "银行账号", inputKind: "text", required: true },
+                { key: "dailyCapVnd", label: "日收上限（VND）", inputKind: "text", required: true },
+              ] },
+              run: (reason, _value, business) => {
+                const dailyCapVnd = Number(business?.dailyCapVnd);
+                return applyBankWrite(() => createD1VietQrAccount({
+                  bankCode: business?.bankCode?.trim() ?? "",
+                  bankName: business?.bankName?.trim() ?? "",
+                  accountHolder: business?.accountHolder?.trim() ?? "",
+                  accountNumber: business?.accountNumber?.trim() ?? "",
+                  dailyCapVnd, reason, operator,
+                }), "收款账户已新增");
+              },
+            })}>新增账户</button></div>}
+          </div>
+          <div className="l-b">
+            {(vietQr?.accounts ?? []).length === 0 ? (
+              <div className="dtint">当前没有收款账户。空账户池会使 VietQR 新付款单不可分配，请由具备权限的财务管理员新增真实银行账户。</div>
+            ) : vietQr?.accounts.map((account) => (
+              <div className="p-row" key={account.id}>
+                <div className="txt"><div className="k">{account.bankName} · 尾号 {account.accountLast4}</div><div className="s">{account.holderMasked} · 今日 {vnd(account.receivedTodayVnd)} / 上限 {vnd(account.dailyCapVnd)}{account.fuseReason ? ` · ${account.fuseReason}` : ""}</div></div>
+                <span className={`bdg ${account.status === "ACTIVE" ? "ok" : account.status === "FUSED" ? "bad" : "dim"}`}>{account.status === "ACTIVE" ? "启用" : account.status === "FUSED" ? "已熔断" : "停用"}</span>
+                {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                  action: `调整日收上限 · ${account.bankName} 尾号 ${account.accountLast4}`,
+                  detail: "日收上限仅影响后续新单分配，不改变已收款事实。",
+                  edit: { kind: "number", current: String(account.dailyCapVnd), unit: "VND", min: 1_000_000, max: 10_000_000_000, step: 1 },
+                  run: (reason, value) => applyBankWrite(() => updateD1VietQrAccount(account.id, {
+                    action: "UPDATE_CAP", dailyCapVnd: Number(value), expectedVersion: account.version, reason, operator,
+                  }), "账户日收上限已更新"),
+                })}>调上限</button>}
+                {canManageBankAccounts && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                  action: `${account.status === "ACTIVE" ? "停用" : account.status === "FUSED" ? "恢复" : "启用"}收款账户 · ${account.bankName} 尾号 ${account.accountLast4}`,
+                  detail: "状态通过服务端版本号比较后更新；熔断账户只能走恢复动作。",
+                  run: (reason) => applyBankWrite(() => updateD1VietQrAccount(account.id, {
+                    action: account.status === "ACTIVE" ? "DISABLE" : account.status === "FUSED" ? "RECOVER" : "ENABLE",
+                    expectedVersion: account.version, reason, operator,
+                  }), "账户状态已更新"),
+                })}>{account.status === "ACTIVE" ? "停用" : account.status === "FUSED" ? "恢复" : "启用"}</button>}
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="l-card">
+          <div className="l-h"><span className="ttl">银行轨参数</span><span className="sub">· 服务端范围校验 · 仅新单/新回单生效</span></div>
+          <div className="l-b">
+            {vietQr && [
+              ["toleranceVnd", "金额容差", vietQr.config.toleranceVnd, "VND", 0, 5_000],
+              ["graceMinutes", "回单宽限", vietQr.config.graceMinutes, "分钟", 0, 60],
+              ["perTxLimitUsd", "VietQR 单笔上限", vietQr.config.perTxLimitUsd, "USD", 100, 10_000],
+              ["trc20Confirmations", "TRC20 入账确认数", vietQr.config.trc20Confirmations, "确认", 1, 64],
+              ["erc20Confirmations", "ERC20 入账确认数", vietQr.config.erc20Confirmations, "确认", 1, 64],
+              ["bep20Confirmations", "BEP20 入账确认数", vietQr.config.bep20Confirmations, "确认", 1, 64],
+            ].map(([key, label, value, unit, min, max]) => (
+              <div className="p-row" key={String(key)}>
+                <div className="txt"><div className="k">{label}</div><div className="s">当前服务端版本 v{vietQr.config.version}</div></div>
+                <span className="v">{Number(value).toLocaleString("en-US")} {unit}</span>
+                {canManageBankConfig && <button className="l-btn sm mc" disabled={busy} onClick={() => editBankNumber(
+                  key as "toleranceVnd" | "graceMinutes" | "perTxLimitUsd" | "trc20Confirmations" | "erc20Confirmations" | "bep20Confirmations",
+                  String(label), String(unit), Number(min), Number(max),
+                )}>调整</button>}
+              </div>
+            ))}
+            {vietQr && <div className="p-row">
+              <div className="txt"><div className="k">账户轮换策略</div><div className="s">仅新付款单选择账户时使用</div></div>
+              <span className="v">{vietQr.config.rotationStrategy === "ROUND_ROBIN" ? "轮询均匀派发" : "剩余额度优先"}</span>
+              {canManageBankConfig && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                action: "收款账户池轮换策略调整",
+                detail: "切换后仅影响新付款单，不迁移在途单。",
+                run: (reason) => applyBankWrite(() => updateD1VietQrConfig(
+                  bankConfigPayload({ rotationStrategy: vietQr.config.rotationStrategy === "ROUND_ROBIN" ? "REMAINING_CAPACITY" : "ROUND_ROBIN" }),
+                  reason, operator,
+                ), "账户轮换策略已更新"),
+              })}>切换策略</button>}
+            </div>}
           </div>
         </section>
       </div>

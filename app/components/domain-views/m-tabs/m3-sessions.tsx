@@ -7,7 +7,7 @@
  * 例行坐席操作(回复/转交/改状态/推送/归档/标签/备注)直接执行 + 自动 A2 审计;
  * 主动发起会话 / 转工单走真实后端写链。续聊恢复后刷新仍回上次会话。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
@@ -25,9 +25,16 @@ import {
   type SessionTransfer,
 } from "./data";
 import { ConvStat, Empty, MAvatar, ownerLabel, relWhen } from "./hd-ui";
-import { InitiateModal, QuickActionModal, ReturnModal, TransferModal, type InitiatePayload, type ReturnPayload, type TransferPayload } from "./m3-modals";
+import { IdlePolicyModal, InitiateModal, QuickActionModal, ReturnModal, TransferModal, type InitiatePayload, type ReturnPayload, type TransferPayload } from "./m3-modals";
 import type { MCtx } from "./types";
-import { fetchMSupportWorkbenchSkus, fetchMSupportWorkbenchUsers, type MSupportAgent } from "@/lib/admin/m-client";
+import {
+  fetchMConversationTimeoutPolicy,
+  fetchMSupportWorkbenchSkus,
+  fetchMSupportWorkbenchUsers,
+  updateMConversationTimeoutPolicy,
+  type ConversationTimeoutPolicy,
+  type MSupportAgent,
+} from "@/lib/admin/m-client";
 import type { User360Profile } from "@/lib/admin/user360-client";
 import type { OpsSku } from "@/lib/admin/platform-types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -189,6 +196,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
+  const canManageTimeoutPolicy = isSuperAdmin || Boolean(authorities?.includes("service_m3_timeout_manage"));
   const conversationsAvailable = pget("I.session.conversationsAvailable") !== "0";
 
   const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), [])), [ctx.params, pget]);
@@ -240,6 +248,11 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [replyBody, setReplyBody] = useState("");
   const [quick, setQuick] = useState<"history" | "tickets" | "resetpw" | "account" | "note" | null>(null);
   const [showInitiate, setShowInitiate] = useState(false);
+  const [showIdlePolicy, setShowIdlePolicy] = useState(false);
+  const [idlePolicy, setIdlePolicy] = useState<ConversationTimeoutPolicy | null>(null);
+  const [idlePolicyLoading, setIdlePolicyLoading] = useState(true);
+  const [idlePolicySaving, setIdlePolicySaving] = useState(false);
+  const [idlePolicyError, setIdlePolicyError] = useState("");
   const [initiateCustomerQuery, setInitiateCustomerQuery] = useState("");
   const [directoryCustomers, setDirectoryCustomers] = useState<CustomerProfile[]>([]);
   const [initiateCustomerLoading, setInitiateCustomerLoading] = useState(false);
@@ -256,6 +269,58 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const [pushSkuError, setPushSkuError] = useState<string | null>(null);
   const [writePending, setWritePending] = useState(false);
   const writeInFlight = useRef(false);
+
+  const loadIdlePolicy = useCallback(async (): Promise<ConversationTimeoutPolicy | null> => {
+    setIdlePolicyLoading(true);
+    setIdlePolicyError("");
+    try {
+      const loaded = await fetchMConversationTimeoutPolicy();
+      setIdlePolicy(loaded);
+      return loaded;
+    } catch (error) {
+      setIdlePolicy(null);
+      setIdlePolicyError(error instanceof Error ? error.message : "M3_TIMEOUT_POLICY_LOAD_FAILED");
+      return null;
+    } finally {
+      setIdlePolicyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadIdlePolicy();
+  }, [loadIdlePolicy]);
+
+  const openIdlePolicy = async () => {
+    setIdlePolicyError("");
+    const loaded = await loadIdlePolicy();
+    if (loaded) {
+      setShowIdlePolicy(true);
+    } else {
+      toast("超时策略加载失败,未使用本地默认值;请检查后端后重试");
+    }
+  };
+
+  const saveIdlePolicy = async (input: { warnMinutes: number; closeMinutes: number; reason: string }) => {
+    if (!idlePolicy || !canManageTimeoutPolicy || idlePolicySaving) return false;
+    setIdlePolicySaving(true);
+    setIdlePolicyError("");
+    const reasonFingerprint = Array.from(input.reason).reduce(
+      (hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0,
+      2166136261,
+    ).toString(36);
+    const commandKey = `m3-timeout-policy:${idlePolicy.version}:${input.warnMinutes}:${input.closeMinutes}:${reasonFingerprint}`;
+    try {
+      const updated = await updateMConversationTimeoutPolicy(idlePolicy, input, commandKey);
+      setIdlePolicy(updated);
+      toast("会话超时策略已更新,服务端调度立即按新版本执行");
+      return true;
+    } catch (error) {
+      setIdlePolicyError(error instanceof Error ? error.message : "M3_TIMEOUT_POLICY_UPDATE_FAILED");
+      return false;
+    } finally {
+      setIdlePolicySaving(false);
+    }
+  };
 
   const initiateCustomers = useMemo(() => {
     const rows = new Map<string, CustomerProfile>();
@@ -739,6 +804,19 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
                   {resolvedOpen}
                 </button>
               )}
+              <button
+                type="button"
+                data-proof="session-idle-policy"
+                className="btn btn-sec btn-sm"
+                disabled={idlePolicyLoading}
+                title={idlePolicy
+                  ? `超时策略:静默 ${idlePolicy.warnMinutes} 分钟提醒 · ${idlePolicy.closeMinutes} 分钟自动结束`
+                  : idlePolicyError || "正在读取真实超时策略"}
+                onClick={() => void openIdlePolicy()}
+              >
+                <Icon name="clock" size={16} />
+                {idlePolicyLoading ? "策略读取中" : "超时策略"}
+              </button>
               {canWriteM3 && conversationsAvailable && <button type="button" data-proof="session-initiate" className="btn btn-pri btn-sm" disabled={writePending} onClick={() => setShowInitiate(true)}>
                 <Icon name="plus" size={16} />
                 主动发起会话
@@ -919,6 +997,21 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
           customerLoading={initiateCustomerLoading}
           customerError={initiateCustomerError}
           onCustomerQueryChange={setInitiateCustomerQuery}
+        />
+      )}
+      {showIdlePolicy && idlePolicy && (
+        <IdlePolicyModal
+          policy={idlePolicy}
+          canSave={canManageTimeoutPolicy}
+          saving={idlePolicySaving}
+          error={idlePolicyError}
+          onClose={() => {
+            if (!idlePolicySaving) {
+              setShowIdlePolicy(false);
+              setIdlePolicyError("");
+            }
+          }}
+          onSave={saveIdlePolicy}
         />
       )}
       {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}

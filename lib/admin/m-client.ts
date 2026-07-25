@@ -30,6 +30,16 @@ export type AdminPage<T> = {
   records: T[];
 };
 
+export type ConversationTimeoutPolicy = {
+  policyKey: string;
+  warnMinutes: number;
+  closeMinutes: number;
+  version: number;
+  updatedBy?: string;
+  reason?: string;
+  updatedAt?: string;
+};
+
 type SupportTicketView = {
   id?: number;
   ticketNo?: string;
@@ -396,6 +406,28 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
   }
   return payload.data as T;
+}
+
+export function fetchMConversationTimeoutPolicy() {
+  return apiRequest<ConversationTimeoutPolicy>("/conversations/timeout-policy");
+}
+
+export function updateMConversationTimeoutPolicy(
+  policy: ConversationTimeoutPolicy,
+  input: { warnMinutes: number; closeMinutes: number; reason: string },
+  stableIdempotencyKey?: string,
+) {
+  return apiRequest<ConversationTimeoutPolicy>("/conversations/timeout-policy", {
+    method: "PUT",
+    headers: stableIdempotencyKey ? { "Idempotency-Key": stableIdempotencyKey } : undefined,
+    body: JSON.stringify({
+      warnMinutes: input.warnMinutes,
+      closeMinutes: input.closeMinutes,
+      expectedVersion: policy.version,
+      operator: currentAdminOperator(),
+      reason: input.reason,
+    }),
+  });
 }
 
 function withReason<T extends Record<string, unknown>>(body: T, reason: string) {

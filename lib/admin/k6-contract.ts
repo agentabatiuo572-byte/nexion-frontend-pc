@@ -30,7 +30,7 @@ export const K6_DEVICE_STATUSES = [
 ] as const;
 export const K6_STATUS_SOURCES = ["system", "strategy", "environment", "manual", "error"] as const;
 export const K6_DEVICE_PLATFORMS = ["iOS", "Android", "windows", "mac", "linux", "unknown"] as const;
-export const K6_COMMAND_STATES = ["PENDING", "PUBLISHED", "ACKED", "FAILED", "EXPIRED"] as const;
+export const K6_COMMAND_STATES = ["PENDING", "PUBLISHED", "ACKED", "FAILED", "EXPIRED", "CANCELLED"] as const;
 export const K6_STRATEGY_STATUSES = ["draft", "active", "paused", "archived"] as const;
 export const K6_ACTION_TYPES = [
   "BENIGN", "RECOMMEND", "REVERSAL_IMMEDIATE", "REVERSAL_SESSION_EDGE",
@@ -39,7 +39,6 @@ export const K6_ACTION_TYPES = [
 export const K6_RULE_MODES = ["ALL", "ANY", "N_OF_M", "NOT", "WEIGHTED_SCORE"] as const;
 export const K6_RULE_OPS = ["=", "!=", ">", ">=", "<", "<=", "in", "notIn", "between", "contains"] as const;
 export const K6_HEALTH_LEVELS = ["HEALTHY", "WARNING", "RISK", "CRITICAL"] as const;
-export const K6_REMOTE_TARGETS = ["default", "backup", "promo"] as const;
 export const K6_CHANNELS = ["official", "invite", "ad", "test", "internal"] as const;
 export const K6_RULE_FIELDS = [
   "installDays", "maturityScore", "environmentRiskScore", "inviteCode", "channel",
@@ -54,6 +53,12 @@ const FUNNEL_LABELS = ["总设备", "在线活跃", "环境通过", "成熟达�
 
 function invalid(path: string): never {
   throw new Error(`K6_RESPONSE_INVALID:${path}`);
+}
+
+function optionalRemoteTargetKey(value: unknown, path: string): string | undefined {
+  const result = optionalText(value, path);
+  if (result !== undefined && !/^[a-z][a-z0-9-]{1,63}$/.test(result)) invalid(path);
+  return result;
 }
 
 function record(value: unknown, path: string): Record<string, unknown> {
@@ -215,7 +220,13 @@ function normalizeOverride(value: unknown, path: string): ManualOverride | undef
     expireAt: optionalInteger(row.expireAt, `${path}.expireAt`, 1),
     createdAt: integer(row.createdAt, `${path}.createdAt`, 1),
     confirmationMode: oneOf(row.confirmationMode, ["standard", "strong_single"] as const, `${path}.confirmationMode`),
-    remoteUrlKey: optionalOneOf(row.remoteUrlKey, K6_REMOTE_TARGETS, `${path}.remoteUrlKey`),
+    remoteUrlKey: optionalRemoteTargetKey(row.remoteUrlKey, `${path}.remoteUrlKey`),
+    remoteTargetVersion: optionalInteger(row.remoteTargetVersion, `${path}.remoteTargetVersion`, 1),
+    remoteTargetCatalogVersion: optionalInteger(
+      row.remoteTargetCatalogVersion,
+      `${path}.remoteTargetCatalogVersion`,
+      1,
+    ),
   };
 }
 
@@ -240,7 +251,13 @@ export function normalizeK6Device(value: unknown, path = "janus.device"): Device
     commandState: optionalOneOf(row.commandState, K6_COMMAND_STATES, `${path}.commandState`),
     statusSource: oneOf(row.statusSource, K6_STATUS_SOURCES, `${path}.statusSource`),
     activated: flag(row.activated, `${path}.activated`),
-    remoteUrlKey: optionalOneOf(row.remoteUrlKey, K6_REMOTE_TARGETS, `${path}.remoteUrlKey`),
+    remoteUrlKey: optionalRemoteTargetKey(row.remoteUrlKey, `${path}.remoteUrlKey`),
+    remoteTargetVersion: optionalInteger(row.remoteTargetVersion, `${path}.remoteTargetVersion`, 1),
+    remoteTargetCatalogVersion: optionalInteger(
+      row.remoteTargetCatalogVersion,
+      `${path}.remoteTargetCatalogVersion`,
+      1,
+    ),
     maturityScore: integer(row.maturityScore, `${path}.maturityScore`, 0, 100),
     recommendationScore: integer(row.recommendationScore, `${path}.recommendationScore`, 0, 100),
     environmentRiskScore,
@@ -346,9 +363,21 @@ function normalizeRuleGroup(value: unknown, path: string): RuleGroup {
 function normalizeAction(value: unknown, path: string): StrategyAction {
   const row = record(value, path);
   const type = oneOf(row.type, K6_ACTION_TYPES, `${path}.type`) as StrategyActionType;
-  const remoteUrlKey = optionalOneOf(row.remoteUrlKey, K6_REMOTE_TARGETS, `${path}.remoteUrlKey`);
-  if ((type === "REVERSAL_IMMEDIATE" || type === "REVERSAL_SESSION_EDGE") && !remoteUrlKey) invalid(`${path}.remoteUrlKey`);
-  return { type, remoteUrlKey };
+  const remoteUrlKey = optionalRemoteTargetKey(row.remoteUrlKey, `${path}.remoteUrlKey`);
+  const remoteTargetVersion = optionalInteger(row.remoteTargetVersion, `${path}.remoteTargetVersion`, 1);
+  const remoteTargetCatalogVersion = optionalInteger(
+    row.remoteTargetCatalogVersion,
+    `${path}.remoteTargetCatalogVersion`,
+    1,
+  );
+  const reversal = type === "REVERSAL_IMMEDIATE" || type === "REVERSAL_SESSION_EDGE";
+  if (reversal && (!remoteUrlKey || !remoteTargetVersion || !remoteTargetCatalogVersion)) {
+    invalid(`${path}.remoteTargetBinding`);
+  }
+  if (!reversal && (remoteUrlKey || remoteTargetVersion || remoteTargetCatalogVersion)) {
+    invalid(`${path}.remoteTargetBinding`);
+  }
+  return { type, remoteUrlKey, remoteTargetVersion, remoteTargetCatalogVersion };
 }
 
 function normalizeScope(value: unknown, path: string): StrategyScope {
@@ -574,7 +603,10 @@ export function strategyDraftIssues(strategy: Strategy): string[] {
   try { normalizeRuleGroup(strategy.ruleTree, "strategy.ruleTree"); } catch { issues.push("规则树存在空组、非法取值或组合条件"); }
   if (containsEmptyRule(strategy.ruleTree)) issues.push("规则组不能为空");
   if ((strategy.action.type === "REVERSAL_IMMEDIATE" || strategy.action.type === "REVERSAL_SESSION_EDGE")
-      && !(K6_REMOTE_TARGETS as readonly string[]).includes(strategy.action.remoteUrlKey ?? "")) issues.push("接管动作必须选择远程地址");
+      && (!strategy.action.remoteUrlKey || !strategy.action.remoteTargetVersion
+        || !strategy.action.remoteTargetCatalogVersion)) {
+    issues.push("接管动作必须选择批准目标的精确版本");
+  }
   const lists = [strategy.scope.channels, strategy.scope.inviteCodes, strategy.scope.cohortIds, strategy.rollout?.cohortIds];
   if (lists.some((items) => items?.some((item) => !item.trim()) || (items && new Set(items).size !== items.length))) issues.push("适用范围与灰度队列不能包含空值或重复值");
   if (strategy.scope.channels?.some((channel) => !(K6_CHANNELS as readonly string[]).includes(channel))) issues.push("适用渠道包含未知值");

@@ -138,6 +138,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "D3", name: "资金池水位仪表盘", path: "/finance/pool", prdAnchor: "D3", batch: "V1", status: "flagship" },
       { id: "D4", name: "账本/账单审计", path: "/finance/ledger", prdAnchor: "D4", batch: "V1", status: "flagship" },
       { id: "D5", name: "提现参数配置", path: "/finance/params", prdAnchor: "D5", batch: "V1", status: "flagship" },
+      { id: "D6", name: "汇率牌价", path: "/finance/fx-rate", prdAnchor: "D6", batch: "V1", status: "flagship" },
     ],
   },
   {
@@ -202,7 +203,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "H4", name: "活动中心", path: "/growth/events", prdAnchor: "H4", batch: "V3", status: "flagship" },
       { id: "H5", name: "签到 & NEX", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
-      { id: "H8", name: "邀请奖励", path: "/growth/referral-rewards", prdAnchor: "H8", batch: "V3", status: "flagship" },
+      { id: "H8", name: "新人礼与邀请奖励", path: "/growth/referral-rewards", prdAnchor: "H8", batch: "V3", status: "flagship" },
     ],
   },
   {

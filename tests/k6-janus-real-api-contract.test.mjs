@@ -35,10 +35,36 @@ test("K6 maps writer, senior operator and administrator authorities exactly", ()
 
 test("K6 strategy action switches keep the submitted remote target contract consistent", () => {
   const editor = read("app/components/domain-views/k-tabs/k6/strategy-editor.tsx");
-  assert.match(editor, /function actionForType[\s\S]*isReversal\(type\)[\s\S]*remoteUrlKey:\s*action\.remoteUrlKey\s*\?\?\s*REMOTE_URL_KEYS\[0\]\?\.key/);
+  assert.match(editor, /fetchK6RemoteTargets/);
+  assert.match(editor, /remoteTargetVersion/);
+  assert.match(editor, /remoteTargetCatalogVersion/);
+  assert.doesNotMatch(editor, /REMOTE_URL_KEYS|["']default["']/);
   assert.match(editor, /return \{ type \};/);
   assert.match(editor, /onChange=\{\(e\) => patch\(\{ action: actionForType\(s\.action, e\.target\.value as StrategyActionType\) \}\)\}/);
   assert.doesNotMatch(editor, /onChange=\{\(e\) => patch\(\{ action: \{ \.\.\.s\.action, type:/);
+});
+
+test("K6 approved target catalog is the only runtime source and carries an exact immutable binding", () => {
+  const client = read("lib/admin/k6-client.ts");
+  const editor = read("app/components/domain-views/k-tabs/k6/strategy-editor.tsx");
+  const manual = read("app/components/domain-views/k-tabs/k6/manual-override-modal.tsx");
+  const store = read("lib/store/admin/janus-c2-store.ts");
+  const types = read("lib/admin/janus-c2/types.ts");
+  const contract = read("lib/admin/k6-contract.ts");
+  for (const source of [client, editor, manual, store, types, contract]) {
+    assert.match(source, /remoteTargetVersion/);
+    assert.match(source, /remoteTargetCatalogVersion/);
+  }
+  assert.match(manual, /fetchK6RemoteTargets/);
+  assert.match(manual, /尚无可用批准目标/);
+  assert.doesNotMatch(editor + manual + store, /REMOTE_URL_KEYS|["']default["']/);
+  assert.match(client, /expectedCatalogVersion/);
+  const detail = read("app/components/domain-views/k-tabs/k6/device-detail.tsx");
+  const dashboard = read("app/components/domain-views/k-tabs/k6/dashboard.tsx");
+  const labels = read("lib/admin/janus-c2/labels.ts");
+  assert.match(detail, /remoteTargetBindingLabel\([\s\S]*remoteTargetVersion[\s\S]*remoteTargetCatalogVersion/);
+  assert.match(dashboard, /remoteTargetBindingLabel\([\s\S]*remoteTargetVersion[\s\S]*remoteTargetCatalogVersion/);
+  assert.match(labels, /目标 v\$\{targetVersion\} · 目录 v\$\{catalogVersion\}/);
 });
 
 test("K6 validates every authoritative response and rejects unknown enums instead of inventing defaults", async () => {
@@ -113,13 +139,14 @@ test("K6 validates every authoritative response and rejects unknown enums instea
   assert.match(contract.strategyDraftIssues({ ...draft, ruleTree: { mode: "WEIGHTED_SCORE", threshold: 10, rules: [{ ...draft.ruleTree.rules[0] }] } }).join(";"), /规则树/);
 });
 
-test("K6 four tabs load and fail independently without rendering zero-value conclusions", () => {
+test("K6 five tabs load and fail independently without rendering zero-value conclusions", () => {
   const shell = read("app/components/domain-views/k-tabs/k6-janus-c2.tsx");
   const store = read("lib/store/admin/janus-c2-store.ts");
   const dashboard = read("app/components/domain-views/k-tabs/k6/dashboard.tsx");
   const queue = read("app/components/domain-views/k-tabs/k6/queue.tsx");
   const strategy = read("app/components/domain-views/k-tabs/k6/strategy-center.tsx");
   const audit = read("app/components/domain-views/k-tabs/k6/audit-log.tsx");
+  const targets = read("app/components/domain-views/k-tabs/k6/remote-target-manager.tsx");
   for (const loader of ["loadDashboard", "loadDevices", "loadStrategies", "loadAudit"]) {
     assert.match(shell + store, new RegExp(loader));
   }
@@ -130,17 +157,51 @@ test("K6 four tabs load and fail independently without rendering zero-value conc
     assert.match(source, /=== "error"/);
     assert.match(source, /重试/);
   }
+  assert.match(shell, /id:\s*"targets"[\s\S]*批准目标/);
+  assert.match(shell, /K6RemoteTargetManager/);
+  assert.match(targets, /fetchK6RemoteTargets/);
+  assert.match(targets, /risk_k6_target_manage/);
+  assert.match(targets, /新增不可变版本/);
+  assert.match(targets, /停用只会取消/);
+  assert.doesNotMatch(targets, /lib\/mock|useJanusC2Store|localStorage|persist\s*\(/);
   assert.match(dashboard, /暂无设备样本/);
   assert.doesNotMatch(dashboard, /computeHealth/);
 });
 
+test("K6 approved targets use strict real API contracts, stable idempotency and CAS", () => {
+  const client = read("lib/admin/k6-client.ts");
+  const contract = read("lib/admin/k6-remote-target-contract.ts");
+  const proxy = read("app/api/admin/janus/[...path]/route.ts");
+  const targetUi = read("app/components/domain-views/k-tabs/k6/remote-target-manager.tsx");
+  assert.match(client, /fetchK6RemoteTargets/);
+  assert.match(client, /createK6RemoteTargetVersion/);
+  assert.match(client, /disableK6RemoteTarget/);
+  assert.match(client, /expectedLatestVersion/);
+  assert.match(client, /expectedVersion/);
+  assert.match(client, /expectedCatalogVersion/);
+  assert.match(contract, /normalizeK6RemoteTargets/);
+  assert.match(contract, /https:/);
+  assert.match(targetUi, /K6OutcomeUncertainError/);
+  assert.match(targetUi, /最新数据回读失败/);
+  assert.match(targetUi, /pendingCommandCount/);
+  assert.match(targetUi, /允许来源/);
+  assert.match(proxy, /readOnly = new Set\(\[[\s\S]*"remote-targets"/);
+  assert.match(proxy, /joined === "remote-targets"/);
+  assert.match(proxy, /remote-targets\\\/\[A-Za-z0-9_.:-\][\s\S]*\\\/disable/);
+});
+
 test("K6 writes preserve a stable key for unknown outcomes and do not conflate committed writes with refresh failures", () => {
   const client = read("lib/admin/k6-client.ts");
+  const proxy = read("app/api/admin/janus/[...path]/route.ts");
   const store = read("lib/store/admin/janus-c2-store.ts");
   assert.match(client, /class K6OutcomeUncertainError/);
   assert.match(client, /pendingWriteKeys/);
   assert.match(client, /writeFingerprint/);
   assert.match(client, /throw new K6OutcomeUncertainError/);
+  assert.match(client, /response\.headers\.get\("X-Nexion-Upstream-Outcome"\) === "unknown"/);
+  assert.match(client, /K6OutcomeUncertainError\(stableCommandKey, "上游结果未知"\)/);
+  assert.match(proxy, /upstream\.headers\.get\("X-Nexion-Upstream-Outcome"\)/);
+  assert.match(proxy, /"X-Nexion-Upstream-Outcome": "unknown"/);
   assert.match(client, /normalize[\s\S]*K6OutcomeUncertainError/);
   assert.match(store, /K6OutcomeUncertainError/);
   assert.doesNotMatch(store, /await get\(\)\.hydrate\(\)/);
@@ -227,6 +288,7 @@ test("K6 production page has no mock or browser-persistence source of truth", ()
     "app/components/domain-views/k-tabs/k6/queue.tsx",
     "app/components/domain-views/k-tabs/k6/strategy-center.tsx",
     "app/components/domain-views/k-tabs/k6/audit-log.tsx",
+    "app/components/domain-views/k-tabs/k6/remote-target-manager.tsx",
     "lib/store/admin/janus-c2-store.ts",
   ].map(read).join("\n");
   assert.doesNotMatch(files, /lib\/mock\/admin\/janus-c2/);

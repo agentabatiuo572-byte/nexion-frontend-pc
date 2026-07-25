@@ -22,6 +22,31 @@ const WATER_LABEL: Record<D3WaterLevel["tier"], string> = {
   WARNING: "预警",
   DANGER: "危险",
 };
+const TREASURY_SOURCE_LABELS: Record<string, string> = {
+  "nx_treasury_reserve_ledger": "储备资金账本",
+  "nx_staking_position.amount_usdt": "生效中的质押本金",
+  "nx_user_wallet": "用户钱包余额",
+  "nx_user_wallet.usdt_available": "用户可提余额",
+  "nx_staking_position": "质押本金与利息",
+  "nx_staking_position.estimated_interest_usdt": "待付质押利息",
+  "nx_genesis_holding": "Genesis 持仓承诺",
+  "nx_genesis_holding × nx_genesis_series.daily_dividend_rate_pct": "Genesis 持仓与每日排放规则",
+  "nx_nex_lock_order": "NEX 锁仓订单",
+  "nx_nex_lock_order active maturity": "生效中的 NEX 锁仓到期额",
+  "nx_withdrawal_order": "提现订单",
+  "nx_withdrawal_order active queue": "待处理提现订单",
+  "nx_wallet_ledger": "钱包资金流水",
+  "nx_wallet_ledger pending commission": "待解锁佣金流水",
+  "nx_treasury_legacy_lock_liability": "存量锁仓本息",
+  "nx_treasury_legacy_lock_liability active principal + accrued interest": "生效中的存量锁仓本息",
+  "nx_vietqr_reconciliation": "VietQR 银行回单",
+  "nx_vietqr_reconciliation open suspense rows": "待处置 VietQR 银行回单",
+};
+
+function treasurySourceLabel(source: string) {
+  const value = source.trim();
+  return TREASURY_SOURCE_LABELS[value] ?? (value.startsWith("nx_") ? "服务端业务账本" : value || "服务端业务账本");
+}
 
 function money(value: number) {
   return `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
@@ -163,7 +188,9 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   }
 
   const water = data?.reserve.waterLevel;
-  const sourceText = Array.from(new Set([...(data?.reserve.sources ?? []), ...(data?.liabilities.sources ?? [])])).join(" / ");
+  const sourceText = Array.from(new Set(
+    [...(data?.reserve.sources ?? []), ...(data?.liabilities.sources ?? [])].map(treasurySourceLabel),
+  )).join(" / ");
 
   return (
     <>
@@ -171,7 +198,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
 
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">真实储备</div><div className="v">{money(data?.reserve.reserveTotalUsdt ?? 0)}</div><div className="sub">已扣除质押锁定本金</div></div>
-        <div className="f-stat"><div className="k">应付负债</div><div className="v">{money(data?.liabilities.totalUsdt ?? 0)}</div><div className="sub">固定 8 类服务端科目</div></div>
+        <div className="f-stat"><div className="k">应付负债</div><div className="v">{money(data?.liabilities.totalUsdt ?? 0)}</div><div className="sub">固定 9 类服务端科目 · 银行轨挂账入科目 #9</div></div>
         <div className={`f-stat ${water?.tier === "DANGER" ? "danger" : water?.tier === "WARNING" ? "warn" : "cyan"}`}><div className="k">当前资金水位</div><div className="v">{water ? WATER_LABEL[water.tier] : "—"}</div><div className="sub">{formatReserveCoverDays(data.maturity.cumulativeUsdt, water?.reserveCoverDays ?? 0)}</div></div>
         <div className="f-stat warn"><div className="k">{data?.maturity.window ?? maturityWindow} 到期负债</div><div className="v">{money(data?.maturity.cumulativeUsdt ?? 0)}</div><div className="sub">提现 + 利息 + Genesis</div></div>
       </div>
@@ -221,11 +248,11 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       </div>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">应付负债 · 8 类科目</span><span className="sub">· {data?.liabilities.hardLiabilityCategoryCount ?? 0}/8</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("liabilities")}>导出负债 CSV</button></div>}</div>
+        <div className="l-h"><span className="ttl">应付负债 · 9 类科目</span><span className="sub">· {data?.liabilities.hardLiabilityCategoryCount ?? 0}/9</span>{canExport && <div className="r"><button className="l-btn sm" onClick={() => exportCsv("liabilities")}>导出负债 CSV</button></div>}</div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 920 }}>
             <thead><tr><th>科目</th><th>说明</th><th className="num">金额</th><th className="num">占比</th><th>事实来源</th></tr></thead>
-            <tbody>{(data?.liabilities.breakdown ?? []).map((row) => <tr key={row.category}><td className="mono">{row.category}</td><td>{row.label}</td><td className="num mono">{money(row.amountUsdt)}</td><td className="num mono">{(row.share * 100).toFixed(2)}%</td><td className="mono" style={{ color: "var(--ink-4)" }}>{row.source}</td></tr>)}</tbody>
+            <tbody>{(data?.liabilities.breakdown ?? []).map((row) => <tr key={row.category}><td className="mono">{row.category}</td><td>{row.label}</td><td className="num mono">{money(row.amountUsdt)}</td><td className="num mono">{(row.share * 100).toFixed(2)}%</td><td style={{ color: "var(--ink-4)" }}>{treasurySourceLabel(row.source)}</td></tr>)}</tbody>
           </table>
         </div>
       </section>

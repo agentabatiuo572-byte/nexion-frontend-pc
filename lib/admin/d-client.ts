@@ -109,6 +109,92 @@ export interface D1DepositFlow {
   creditedAt: string;
 }
 
+export type D1VietQrView = "inflight" | "matched" | "orphan" | "mismatch" | "late";
+
+export interface D1VietQrConfig {
+  id: number;
+  toleranceVnd: number;
+  graceMinutes: number;
+  perTxLimitUsd: number;
+  trc20Confirmations: number;
+  erc20Confirmations: number;
+  bep20Confirmations: number;
+  rotationStrategy: "ROUND_ROBIN" | "REMAINING_CAPACITY";
+  version: number;
+}
+
+export interface D1VietQrAccount {
+  id: number;
+  bankCode: string;
+  bankName: string;
+  holderMasked: string;
+  accountLast4: string;
+  dailyCapVnd: number;
+  receivedTodayVnd: number;
+  status: "ACTIVE" | "DISABLED" | "FUSED";
+  fuseReason: string;
+  version: number;
+  updatedAt: string;
+}
+
+export interface D1VietQrRow {
+  id: number;
+  reconciliationNo: string;
+  intentNo: string;
+  userId: number | null;
+  bankAccountId: number | null;
+  viewType: "INFLIGHT" | "MATCHED" | "ORPHAN" | "MISMATCH" | "LATE";
+  status: "OPEN" | "CREDITED" | "RETURN_PENDING" | "RETURNED";
+  payableVnd: number | null;
+  receivedVnd: number | null;
+  lockedFxRateVndPerUsdt: number;
+  creditedUsdt: number;
+  paymentReference: string;
+  note: string;
+  expiresAt: string;
+  receivedAt: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface D1VietQrOverview {
+  view: D1VietQrView | "all";
+  config: D1VietQrConfig;
+  accounts: D1VietQrAccount[];
+  page: { items: D1VietQrRow[]; pageNum: number; pageSize: number; total: number };
+  pendingUnverifiedDepositUsdt: number;
+  source: "nx_vietqr_reconciliation";
+  asOf: string;
+}
+
+export interface D6FxQuote {
+  configCode: "VND_USDT";
+  baseRateVndPerUsdt: number;
+  buySpreadPct: number;
+  lockWindowMinutes: number;
+  quoteRateVndPerUsdt: number;
+  quoteDerived: true;
+  version: number;
+  updatedBy: string;
+  updateReason: string;
+  updatedAt: string;
+  history: Array<{
+    id: number;
+    beforeBaseRateVndPerUsdt: number;
+    baseRateVndPerUsdt: number;
+    beforeBuySpreadPct: number;
+    buySpreadPct: number;
+    beforeLockWindowMinutes: number;
+    lockWindowMinutes: number;
+    operator: string;
+    reason: string;
+    createdAt: string;
+  }>;
+  source: "nx_finance_fx_quote_config";
+  asOf: string;
+}
+
 export interface D2Withdrawal {
   id: number;
   userId: number;
@@ -635,6 +721,141 @@ function requireD1FlowsPage(raw: unknown): PageResult<D1DepositFlow> {
   };
 }
 
+function d1OptionalText(value: unknown, field: string): string {
+  if (value === null || value === undefined || value === "") return "";
+  return d1String(value, field);
+}
+
+function d1NullableNumber(value: unknown, field: string): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  return d1Number(value, field);
+}
+
+function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
+  const root = d1Object(raw, "vietqr");
+  const configRaw = d1Object(root.config, "vietqr.config");
+  const rotationStrategy = d1String(configRaw.rotationStrategy, "vietqr.config.rotationStrategy");
+  if (!["ROUND_ROBIN", "REMAINING_CAPACITY"].includes(rotationStrategy)) d1Invalid("vietqr.config.rotationStrategy");
+  const view = d1String(root.view, "vietqr.view");
+  if (!["all", "inflight", "matched", "orphan", "mismatch", "late"].includes(view)) d1Invalid("vietqr.view");
+  const pageRaw = d1Object(root.page, "vietqr.page");
+  const page = {
+    pageNum: d1Number(pageRaw.pageNum, "vietqr.page.pageNum"),
+    pageSize: d1Number(pageRaw.pageSize, "vietqr.page.pageSize"),
+    total: d1Number(pageRaw.total, "vietqr.page.total"),
+    items: d1Array(pageRaw.items, "vietqr.page.items").map((item, index): D1VietQrRow => {
+      const row = d1Object(item, `vietqr.page.items[${index}]`);
+      const viewType = d1String(row.viewType, `vietqr.page.items[${index}].viewType`);
+      const status = d1String(row.status, `vietqr.page.items[${index}].status`);
+      if (!["INFLIGHT", "MATCHED", "ORPHAN", "MISMATCH", "LATE"].includes(viewType)
+          || !["OPEN", "CREDITED", "RETURN_PENDING", "RETURNED"].includes(status)) {
+        d1Invalid(`vietqr.page.items[${index}].lifecycle`);
+      }
+      return {
+        id: d1Number(row.id, `vietqr.page.items[${index}].id`),
+        reconciliationNo: d1String(row.reconciliationNo, `vietqr.page.items[${index}].reconciliationNo`),
+        intentNo: d1OptionalText(row.intentNo, `vietqr.page.items[${index}].intentNo`),
+        userId: d1NullableNumber(row.userId, `vietqr.page.items[${index}].userId`),
+        bankAccountId: d1NullableNumber(row.bankAccountId, `vietqr.page.items[${index}].bankAccountId`),
+        viewType: viewType as D1VietQrRow["viewType"],
+        status: status as D1VietQrRow["status"],
+        payableVnd: d1NullableNumber(row.payableVnd, `vietqr.page.items[${index}].payableVnd`),
+        receivedVnd: d1NullableNumber(row.receivedVnd, `vietqr.page.items[${index}].receivedVnd`),
+        lockedFxRateVndPerUsdt: d1Number(row.lockedFxRateVndPerUsdt, `vietqr.page.items[${index}].lockedFxRateVndPerUsdt`),
+        creditedUsdt: d1Number(row.creditedUsdt, `vietqr.page.items[${index}].creditedUsdt`),
+        paymentReference: d1OptionalText(row.paymentReference, `vietqr.page.items[${index}].paymentReference`),
+        note: d1OptionalText(row.note, `vietqr.page.items[${index}].note`),
+        expiresAt: d1OptionalText(row.expiresAt, `vietqr.page.items[${index}].expiresAt`),
+        receivedAt: d1OptionalText(row.receivedAt, `vietqr.page.items[${index}].receivedAt`),
+        version: d1Number(row.version, `vietqr.page.items[${index}].version`),
+        createdAt: d1String(row.createdAt, `vietqr.page.items[${index}].createdAt`),
+        updatedAt: d1String(row.updatedAt, `vietqr.page.items[${index}].updatedAt`),
+      };
+    }),
+  };
+  if (page.pageNum < 1 || page.pageSize < 1 || page.total < 0 || page.items.length > page.pageSize) d1Invalid("vietqr.page.invariants");
+  return {
+    view: view as D1VietQrOverview["view"],
+    config: {
+      id: d1Number(configRaw.id, "vietqr.config.id"),
+      toleranceVnd: d1Number(configRaw.toleranceVnd, "vietqr.config.toleranceVnd"),
+      graceMinutes: d1Number(configRaw.graceMinutes, "vietqr.config.graceMinutes"),
+      perTxLimitUsd: d1Number(configRaw.perTxLimitUsd, "vietqr.config.perTxLimitUsd"),
+      trc20Confirmations: d1Number(configRaw.trc20Confirmations, "vietqr.config.trc20Confirmations"),
+      erc20Confirmations: d1Number(configRaw.erc20Confirmations, "vietqr.config.erc20Confirmations"),
+      bep20Confirmations: d1Number(configRaw.bep20Confirmations, "vietqr.config.bep20Confirmations"),
+      rotationStrategy: rotationStrategy as D1VietQrConfig["rotationStrategy"],
+      version: d1Number(configRaw.version, "vietqr.config.version"),
+    },
+    accounts: d1Array(root.accounts, "vietqr.accounts").map((item, index): D1VietQrAccount => {
+      const row = d1Object(item, `vietqr.accounts[${index}]`);
+      const status = d1String(row.status, `vietqr.accounts[${index}].status`);
+      if (!["ACTIVE", "DISABLED", "FUSED"].includes(status)) d1Invalid(`vietqr.accounts[${index}].status`);
+      return {
+        id: d1Number(row.id, `vietqr.accounts[${index}].id`),
+        bankCode: d1String(row.bankCode, `vietqr.accounts[${index}].bankCode`),
+        bankName: d1String(row.bankName, `vietqr.accounts[${index}].bankName`),
+        holderMasked: d1String(row.holderMasked, `vietqr.accounts[${index}].holderMasked`),
+        accountLast4: d1String(row.accountLast4, `vietqr.accounts[${index}].accountLast4`),
+        dailyCapVnd: d1Number(row.dailyCapVnd, `vietqr.accounts[${index}].dailyCapVnd`),
+        receivedTodayVnd: d1Number(row.receivedTodayVnd, `vietqr.accounts[${index}].receivedTodayVnd`),
+        status: status as D1VietQrAccount["status"],
+        fuseReason: d1OptionalText(row.fuseReason, `vietqr.accounts[${index}].fuseReason`),
+        version: d1Number(row.version, `vietqr.accounts[${index}].version`),
+        updatedAt: d1String(row.updatedAt, `vietqr.accounts[${index}].updatedAt`),
+      };
+    }),
+    page,
+    pendingUnverifiedDepositUsdt: d1Number(root.pendingUnverifiedDepositUsdt, "vietqr.pendingUnverifiedDepositUsdt"),
+    source: d1String(root.source, "vietqr.source") as "nx_vietqr_reconciliation",
+    asOf: d1String(root.asOf, "vietqr.asOf"),
+  };
+}
+
+function normalizeD6FxQuote(raw: unknown): D6FxQuote {
+  const root = d1Object(raw, "fxQuote");
+  const configCode = d1String(root.configCode, "fxQuote.configCode");
+  const source = d1String(root.source, "fxQuote.source");
+  if (configCode !== "VND_USDT" || source !== "nx_finance_fx_quote_config" || root.quoteDerived !== true) {
+    d1Invalid("fxQuote.invariants");
+  }
+  const history = d1Array(root.history, "fxQuote.history").map((item, index) => {
+    const row = d1Object(item, `fxQuote.history[${index}]`);
+    return {
+      id: d1Number(row.id, `fxQuote.history[${index}].id`),
+      beforeBaseRateVndPerUsdt: d1Number(row.beforeBaseRateVndPerUsdt, `fxQuote.history[${index}].beforeBaseRateVndPerUsdt`),
+      baseRateVndPerUsdt: d1Number(row.baseRateVndPerUsdt, `fxQuote.history[${index}].baseRateVndPerUsdt`),
+      beforeBuySpreadPct: d1Number(row.beforeBuySpreadPct, `fxQuote.history[${index}].beforeBuySpreadPct`),
+      buySpreadPct: d1Number(row.buySpreadPct, `fxQuote.history[${index}].buySpreadPct`),
+      beforeLockWindowMinutes: d1Number(row.beforeLockWindowMinutes, `fxQuote.history[${index}].beforeLockWindowMinutes`),
+      lockWindowMinutes: d1Number(row.lockWindowMinutes, `fxQuote.history[${index}].lockWindowMinutes`),
+      operator: d1String(row.operator, `fxQuote.history[${index}].operator`),
+      reason: d1String(row.reason, `fxQuote.history[${index}].reason`),
+      createdAt: d1String(row.createdAt, `fxQuote.history[${index}].createdAt`),
+    };
+  });
+  const result: D6FxQuote = {
+    configCode: "VND_USDT",
+    baseRateVndPerUsdt: d1Number(root.baseRateVndPerUsdt, "fxQuote.baseRateVndPerUsdt"),
+    buySpreadPct: d1Number(root.buySpreadPct, "fxQuote.buySpreadPct"),
+    lockWindowMinutes: d1Number(root.lockWindowMinutes, "fxQuote.lockWindowMinutes"),
+    quoteRateVndPerUsdt: d1Number(root.quoteRateVndPerUsdt, "fxQuote.quoteRateVndPerUsdt"),
+    quoteDerived: true,
+    version: d1Number(root.version, "fxQuote.version"),
+    updatedBy: d1OptionalText(root.updatedBy, "fxQuote.updatedBy"),
+    updateReason: d1OptionalText(root.updateReason, "fxQuote.updateReason"),
+    updatedAt: d1String(root.updatedAt, "fxQuote.updatedAt"),
+    history,
+    source: "nx_finance_fx_quote_config",
+    asOf: d1String(root.asOf, "fxQuote.asOf"),
+  };
+  if (result.baseRateVndPerUsdt < 20_000 || result.baseRateVndPerUsdt > 35_000
+      || result.buySpreadPct < 0 || result.buySpreadPct > 3
+      || result.lockWindowMinutes < 5 || result.lockWindowMinutes > 120
+      || result.quoteRateVndPerUsdt <= 0) d1Invalid("fxQuote.range");
+  return result;
+}
+
 function normalizeWithdrawal(row: D2Withdrawal): D2Withdrawal {
   return {
     ...row,
@@ -723,7 +944,7 @@ function d3StringArray(value: unknown, field: string): string[] {
 const D3_RESERVE_KEYS = ["usdt", "otherLiquid"] as const;
 const D3_LIABILITY_KEYS = [
   "withdrawable_balance", "usdt_staking_principal", "staking_interest", "genesis_daily_emission",
-  "nex_v2_future", "withdrawal_queue", "commission_cooling", "lock_other",
+  "nex_v2_future", "withdrawal_queue", "commission_cooling", "lock_other", "unverified_deposit",
 ] as const;
 const D3_WATER_TIERS = ["NORMAL", "WATCH", "WARNING", "DANGER"] as const;
 
@@ -808,8 +1029,8 @@ function normalizeD3Liabilities(raw: Record<string, unknown>): D3Liabilities {
   const categories = breakdown.map((row) => row.category);
   const amountTotal = breakdown.reduce((sum, row) => sum + row.amountUsdt, 0);
   const shareTotal = breakdown.reduce((sum, row) => sum + row.share, 0);
-  if (totalUsdt < 0 || hardLiabilityCategoryCount !== 8 || breakdown.length !== 8
-      || new Set(categories).size !== 8 || D3_LIABILITY_KEYS.some((key) => !categories.includes(key))
+  if (totalUsdt < 0 || hardLiabilityCategoryCount !== 9 || breakdown.length !== 9
+      || D3_LIABILITY_KEYS.length !== 9 || new Set(categories).size !== 9 || D3_LIABILITY_KEYS.some((key) => !categories.includes(key))
       || !d3Near(amountTotal, totalUsdt)
       || (totalUsdt > 0 && Math.abs(shareTotal - 1) > 0.001)) d3Invalid("liabilities.invariants");
   return {
@@ -1075,6 +1296,75 @@ export async function fetchD1TopupFlows(params: { status?: string; keyword?: str
   return requireD1FlowsPage(await apiRequest<PageResult<D1DepositFlow>>("finance", `/topup/flows${buildQuery(params)}`));
 }
 
+export async function loadD1VietQrOverview(
+  view: D1VietQrView,
+  pageNum = 1,
+  pageSize = 20,
+) {
+  return normalizeD1VietQrOverview(await apiRequest<Record<string, unknown>>(
+    "finance", `/vietqr/overview${buildQuery({ view, pageNum, pageSize })}`,
+  ));
+}
+
+export async function reconcileD1VietQr(
+  id: number,
+  action: "match-credit" | "write-off" | "return",
+  input: { expectedVersion: number; userId?: number; intentNo?: string; reason: string; operator: string },
+) {
+  return apiRequest<Record<string, unknown>>(
+    "finance", `/vietqr/reconciliations/${id}/actions/${action}`, {
+      method: "POST",
+      body: JSON.stringify(input),
+      idempotencyPrefix: "d1-vietqr-reconcile",
+    },
+  );
+}
+
+export async function createD1VietQrAccount(input: {
+  bankCode: string;
+  bankName: string;
+  accountHolder: string;
+  accountNumber: string;
+  dailyCapVnd: number;
+  reason: string;
+  operator: string;
+}) {
+  return apiRequest<Record<string, unknown>>("finance", "/vietqr/accounts", {
+    method: "POST",
+    body: JSON.stringify(input),
+    idempotencyPrefix: "d1-vietqr-account-create",
+  });
+}
+
+export async function updateD1VietQrAccount(
+  id: number,
+  input: {
+    action: "ENABLE" | "DISABLE" | "RECOVER" | "UPDATE_CAP";
+    dailyCapVnd?: number;
+    expectedVersion: number;
+    reason: string;
+    operator: string;
+  },
+) {
+  return apiRequest<Record<string, unknown>>("finance", `/vietqr/accounts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+    idempotencyPrefix: "d1-vietqr-account-update",
+  });
+}
+
+export async function updateD1VietQrConfig(
+  config: Omit<D1VietQrConfig, "id">,
+  reason: string,
+  operator: string,
+) {
+  return apiRequest<Record<string, unknown>>("finance", "/vietqr/config", {
+    method: "PATCH",
+    body: JSON.stringify({ ...config, expectedVersion: config.version, reason, operator }),
+    idempotencyPrefix: "d1-vietqr-config",
+  });
+}
+
 export async function updateD1TopupChannelEnabled(channelCode: string, enabled: boolean, expectedValue: boolean, reason: string, operator: string) {
   return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/channels/${encodeURIComponent(channelCode)}/enabled`, {
     method: "PATCH",
@@ -1228,6 +1518,23 @@ export async function updateD3ForecastConfig(
     body: JSON.stringify({ ...values, expectedVersion, reason, operator }),
     idempotencyPrefix: "d3-forecast-config",
   });
+}
+
+export async function loadD6FxQuote() {
+  return normalizeD6FxQuote(await apiRequest<Record<string, unknown>>("finance", "/fx-quote"));
+}
+
+export async function updateD6FxQuote(
+  values: Pick<D6FxQuote, "baseRateVndPerUsdt" | "buySpreadPct" | "lockWindowMinutes">,
+  expectedVersion: number,
+  reason: string,
+  operator: string,
+) {
+  return normalizeD6FxQuote(await apiRequest<Record<string, unknown>>("finance", "/fx-quote", {
+    method: "PATCH",
+    body: JSON.stringify({ ...values, expectedVersion, reason, operator }),
+    idempotencyPrefix: "d6-fx-quote",
+  }));
 }
 
 /** Legacy name retained for B1 callers; the authority and endpoint are owned by B1. */

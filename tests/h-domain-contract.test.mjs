@@ -12,10 +12,13 @@ const root = process.cwd();
 const read = (relative) => readFileSync(join(root, relative), "utf8");
 
 const hClient = read("lib/admin/h-client.ts");
+const hView = read("app/components/domain-views/h-view.tsx");
+const errorMessages = read("lib/admin/error-messages.ts");
 const growthRoute = read("app/api/admin/growth/[...path]/route.ts");
 const registry = read("lib/admin/high-ops-registry.ts");
 const controller = read("../nexion-backend/src/main/java/ffdd/opsconsole/growth/web/OpsGrowthController.java");
 const referralController = read("../nexion-backend/src/main/java/ffdd/opsconsole/growth/web/OpsReferralRewardController.java");
+const referralService = read("../nexion-backend/src/main/java/ffdd/opsconsole/growth/application/OpsReferralRewardService.java");
 
 const tab = (name) => read(`app/components/domain-views/h-tabs/${name}`);
 
@@ -311,8 +314,42 @@ test("H8 前端真实结算与发奖参数受 growth_h8_write / growth_h8_settle
   // 写与结算两道权限分离:canWrite 门控调参,canSettle 门控真实结算。
   assert.match(h8, /canWrite = isSuperadmin \|\| !!session\?\.authorities\.includes\("growth_h8_write"\)/);
   assert.match(h8, /canSettle = isSuperadmin \|\| !!session\?\.authorities\.includes\("growth_h8_settle"\)/);
-  // 真实发奖链不含 mock/样例账户。
-  assert.match(h8, /页面不含 mock、样例账户或本地发奖状态/);
+  // 运营人员只看到服务端裁决口径，不暴露 mock / 本地状态等实现术语。
+  assert.match(h8, /结算结果以服务端邀请关系、唯一结算记录、钱包与资金台账为准/);
+  assert.doesNotMatch(h8, /页面不含 mock、样例账户或本地发奖状态/);
+});
+
+test("H8 金额编辑精度与后端六位小数契约一致", () => {
+  const h8 = tab("h8-referral-rewards.tsx");
+  for (const key of ["newcomer.usdt", "newcomer.nex", "inviter.nex"]) {
+    assert.match(
+      h8,
+      new RegExp(`key: "${key.replace(".", "\\.")}"[^\\n]*step: 0\\.000001`),
+      `${key} 必须允许后端支持的六位小数`,
+    );
+  }
+});
+
+test("H8 未知结果保留弹窗并使用打开弹窗时生成的同一幂等键", () => {
+  const h8 = tab("h8-referral-rewards.tsx");
+  assert.match(h8, /const commandKey = createH8CommandKey\("h8-param"\)/);
+  assert.match(h8, /updateH8ReferralRewardParam\(param\.key, storedValue, reason, data\.version, commandKey\)/);
+  assert.match(hClient, /headers: \{ "Idempotency-Key": idempotencyKey \}/);
+  assert.match(hView, /onConfirm=\{async \(reason, newValue, businessValue\) =>/);
+  assert.match(hView, /await mc\.run\(reason, newValue, businessValue\)/);
+  assert.doesNotMatch(hView, /finally\s*\{\s*setActionConfirm\(null\)/);
+  assert.match(errorMessages, /H8_UPSTREAM_OUTCOME_UNKNOWN:[^\n]*结果未知[^\n]*可能已经生效[^\n]*刷新[^\n]*核对[^\n]*当前表单/);
+});
+
+test("H8 参数写入使用服务端版本与 CAS,拒绝路径单独留痕", () => {
+  const h8 = tab("h8-referral-rewards.tsx");
+  assert.match(hClient, /version: number/);
+  assert.match(hClient, /expectedVersion/);
+  assert.match(h8, /data\.version/);
+  assert.match(referralService, /VERSION_KEY/);
+  assert.match(referralService, /H8_CONFIG_VERSION_CONFLICT/);
+  assert.match(referralService, /recordRequiredInNewTransaction/);
+  assert.match(referralService, /\.result\("REJECTED"\)/);
 });
 
 test("H8 client 端点对齐后端 referral-rewards 路径", () => {

@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_K: ModuleEntry[] = [
   {
     path: "/risk/multi-account",
-    summary: "反多账户引擎(K1)。从 IP、设备指纹、支付工具三层去重,把疑似同一人的账户聚成「关联群」(关联强度 ≥0.7 标红、建议冻结);批量冻结、解除误判、判为正常都要确认,冻结记录落到 C2;IP 白名单以 K1 为准。",
+    summary: "反多账户引擎(K1)。从 IP、设备指纹、支付工具三层去重,把疑似同一人的账户聚成「关联群」；关联强度达到当前服务端冻结建议阈值时标红。批量冻结、解除误判、判为正常都要确认,冻结记录落到 C2;IP 白名单以 K1 为准。",
     content: PORTED_EMPTY_CONTENT,
   },
   {

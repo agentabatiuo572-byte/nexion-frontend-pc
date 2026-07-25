@@ -36,8 +36,15 @@ const CLUSTER_ST: Record<ClusterStatus, [string, string]> = {
   cleared: ["正常", "ok"],
 };
 
-function strengthColor(v: number) {
-  return v >= 0.75 ? "var(--danger)" : v >= 0.55 ? "var(--warning)" : "var(--success)";
+function formatThreshold(value: number) {
+  return Number.isFinite(value) ? value.toFixed(2) : "未配置";
+}
+
+function strengthColor(v: number, threshold: number) {
+  if (!Number.isFinite(threshold)) return "var(--ink-4)";
+  return v >= threshold
+    ? "var(--danger)"
+    : v >= threshold * 0.8 ? "var(--warning)" : "var(--success)";
 }
 
 function errorText(error: unknown) {
@@ -179,6 +186,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const overview = ctx.risk.multiAccount;
   const stats = overview?.stats ?? {};
   const params = overview?.params ?? [];
+  const freezeThresholdParam = params.find((param) => param.key === "clusterFreezeSuggestThreshold");
+  const parsedFreezeSuggestThreshold = Number(freezeThresholdParam?.value);
+  const freezeSuggestThreshold = Number.isFinite(parsedFreezeSuggestThreshold)
+    && parsedFreezeSuggestThreshold >= 0
+    && parsedFreezeSuggestThreshold <= 1
+    ? parsedFreezeSuggestThreshold
+    : Number.POSITIVE_INFINITY;
   const clusterPageData = overview?.clusters ?? EMPTY_CLUSTER_PAGE;
   const whitelistPageData = overview?.whitelist ?? EMPTY_WHITELIST_PAGE;
   const clusters = clusterPageData.records;
@@ -581,7 +595,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       )}
       <div className="f-stats">
         <div className="f-stat"><div className="k">监控中账户簇</div><div className="v">{statText("activeClusters")}</div><div className="sub">按已接入权威维度合成 · 覆盖 {statText("flaggedAccounts")} 个账户</div></div>
-        <div className="f-stat warn"><div className="k">高风险簇</div><div className="v">{statText("highClusters")}</div><div className="sub">强度达到建议冻结线</div></div>
+        <div className="f-stat warn"><div className="k">高风险簇</div><div className="v">{statText("highClusters")}</div><div className="sub">建议冻结线 {formatThreshold(freezeSuggestThreshold)}</div></div>
         <div className="f-stat danger"><div className="k">已冻结簇</div><div className="v">{statText("frozenClusters")}</div><div className="sub">共 {statText("frozenAccounts")} 个账户</div></div>
         <div className="f-stat ok"><div className="k">新人礼拦截</div><div className="v">{statKnown("giftBlockedUsd") ? `$${statText("giftBlockedUsd")}` : "—"}</div><div className="sub">{statKnown("giftBlockedCnt") ? `${statText("giftBlockedCnt")} 笔重复领取被拦下` : "数据尚未接入，不能判定为 0"}</div></div>
       </div>
@@ -629,7 +643,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <tbody>
               {clusters.map((c, index) => {
                 const [stLb, stTone] = CLUSTER_ST[c.status];
-                const hot = c.strength >= 0.7 && c.status !== "frozen" && c.status !== "cleared" && c.status !== "released";
+                const hot = c.strength >= freezeSuggestThreshold && c.status !== "frozen" && c.status !== "cleared" && c.status !== "released";
                 return (
                   <tr
                     key={c.id}
@@ -650,8 +664,8 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                     <td className="num mono" style={{ fontWeight: 700 }}>{c.n}</td>
                     <td>
                       <span className="meter">
-                        <span className="track"><i style={{ width: `${c.strength * 100}%`, background: strengthColor(c.strength) }} /></span>
-                        <span className="n" style={{ color: strengthColor(c.strength) }}>{c.strength.toFixed(2)}</span>
+                        <span className="track"><i style={{ width: `${c.strength * 100}%`, background: strengthColor(c.strength, freezeSuggestThreshold) }} /></span>
+                        <span className="n" style={{ color: strengthColor(c.strength, freezeSuggestThreshold) }}>{c.strength.toFixed(2)}</span>
                       </span>
                       {hot && <span className="bdg bad" style={{ marginLeft: 9, verticalAlign: "middle" }}>建议冻结</span>}
                     </td>
