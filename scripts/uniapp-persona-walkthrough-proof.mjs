@@ -16,7 +16,7 @@ const joinUniRoute = (base, hashRoute) => `${base}${base.includes("?") ? hashRou
 const session =
   process.env.AGENT_BROWSER_SESSION || `nexion-uni-persona-walkthrough-proof-${Date.now()}-${process.pid}`;
 const OUT_FILE = path.join(ROOT, "docs", "audit", "shards", "uniapp-persona-walkthrough-proof.ndjson");
-const WITHDRAW_ADDRESS = "TVALIDWITHDRAWADDRESS1234567890ABCDE";
+const PAIRED_ADDRESS = "TTESTWITHDRAWADDRESS1234567890ABCDE";
 const AGENT_BROWSER_BIN = process.env.AGENT_BROWSER_BIN || "agent-browser";
 const results = [];
 
@@ -116,15 +116,21 @@ function evalJson(body, timeout = 30000) {
       return { index, value, hostText: text(host) };
     };
     const store = (key) => uni.getStorageSync(key);
+    const acctRow = (key) => {
+      const table = store(key);
+      return table && typeof table === 'object' && table.default && typeof table.default === 'object'
+        ? table.default
+        : {};
+    };
     const clearNexionStorage = () => {
       for (const storage of [localStorage, sessionStorage]) {
         for (const key of Object.keys(storage)) {
-          if (/^nexion-/i.test(key)) storage.removeItem(key);
+          if (/^(nexion|nexgrid)-/i.test(key)) storage.removeItem(key);
         }
       }
       return {
-        localKeys: Object.keys(localStorage).filter((key) => /^nexion-/i.test(key)),
-        sessionKeys: Object.keys(sessionStorage).filter((key) => /^nexion-/i.test(key)),
+        localKeys: Object.keys(localStorage).filter((key) => /^(nexion|nexgrid)-/i.test(key)),
+        sessionKeys: Object.keys(sessionStorage).filter((key) => /^(nexion|nexgrid)-/i.test(key)),
       };
     };
   `;
@@ -211,20 +217,23 @@ open("/#/pages/onboarding/intro");
 const seedState = evalJson(`
   clearNexionStorage();
   const now = Date.now();
-  uni.setStorageSync('nexion-wallet-pairing-v1', {
-    walletPaired: true,
-    pairedWalletAddress: 'TTESTWITHDRAWADDRESS1234567890ABCDE',
-    pairedNetwork: 'USDT-TRC20',
-    complianceCheckId: 'KYC-2026-A99999',
-    pairedAt: now,
+  uni.setStorageSync('nexgrid-wallet-pairing-accounts-v1', {
+    default: {
+      walletPaired: true,
+      pairedWalletAddress: '${PAIRED_ADDRESS}',
+      pairedNetwork: 'USDT-TRC20',
+      complianceCheckId: 'KYC-2026-A99999',
+      pairedAt: now,
+    },
   });
-  uni.setStorageSync('nexion-risk-disclosure-v1', { accepted: true, acceptedAt: now });
+  uni.setStorageSync('nexgrid-risk-disclosure-v1', { accepted: true, acceptedAt: now });
+  uni.setStorageSync('nexgrid-locale-v1', { code: 'en', userSet: true });
   // NEX 抵扣手续费取代旧积分/硬燃烧门槛:提现页读 app.user.nexBalance(默认 1240,app store 不持久化、reload 回默认),
   // 1240 NEX 远超 $50 提现全抵所需 25 NEX → 手续费全免,无需 seed NEX。
   return {
     seeded: true,
-    pairing: store('nexion-wallet-pairing-v1'),
-    risk: store('nexion-risk-disclosure-v1'),
+    pairing: acctRow('nexgrid-wallet-pairing-accounts-v1'),
+    risk: store('nexgrid-risk-disclosure-v1'),
   };
 `);
 expect(seedState.pairing?.walletPaired === true, `seed pairing not written: ${JSON.stringify(seedState.pairing)}`);
@@ -243,31 +252,51 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
     return current();
   `);
   fill("input.uni-input-input", "50");
-  fill(".nx-withdraw-address-input input.uni-input-input", WITHDRAW_ADDRESS);
   wait(300);
   const seeded = evalJson(`
     return {
       ...current(),
       inputValues: Array.from(document.querySelectorAll('input.uni-input-input')).map((input) => input.value),
-      activeClass: document.activeElement?.closest('uni-input')?.className || '',
+      hasRebindEntry: !!document.querySelector('.nx-withdraw-rebind-entry'),
+      addressInputGone: !document.querySelector('.nx-withdraw-address-input'),
     };
   `);
   expect(initial.body.includes("KYC-Express verified"), "withdraw initial KYC state missing");
   expect(seeded.inputValues[0] === "50", `withdraw amount input value mismatch: ${seeded.inputValues[0]}`);
-  expect(seeded.inputValues[1] === WITHDRAW_ADDRESS, "withdraw address input value mismatch");
-  expect(/nx-withdraw-address-input/.test(seeded.activeClass), "withdraw address input did not receive focus");
+  expect(
+    seeded.body.includes(`${PAIRED_ADDRESS.slice(0, 10)}…${PAIRED_ADDRESS.slice(-6)}`),
+    "withdraw page did not render the bound read-only wallet address",
+  );
+  expect(seeded.hasRebindEntry, "withdraw rebind entry missing");
+  expect(seeded.addressInputGone, "withdraw address is still a free-text input");
   expect(seeded.body.includes("You receive\n$50.00"), "withdraw receive amount did not recalculate to $50.00 (NEX fully offsets fee)");
   // NEX 抵扣手续费(取代旧硬燃烧闸):默认 nexBalance 1240,$50 提现 grossFee $10、requiredNex 25 → 1240 远超 → 全抵、fee $0、到账 $50。
   expect(seeded.body.includes("Offset the fee with NEX"), "withdraw NEX fee-offset panel label missing");
   expect(/\d[\d,]*\s*\/\s*25\b/.test(seeded.body), `withdraw NEX requirement not shown as <balance> / 25 · panel slice: ${(seeded.body.match(/Offset the fee with NEX[\s\S]{0,60}/) || ["<no offset panel slice>"])[0]}`);
   expect(seeded.body.includes("fully waived"), "withdraw fully-waived message missing");
 
+  clickSelector(".nx-withdraw-rebind-entry");
+  const rebind = waitForEval("withdraw address rebind route", `
+    const body = bodyText();
+    return {
+      href: location.href,
+      body,
+      ok: location.href.includes('#/pages/me/wallet-address-rebind')
+        && body.includes('TRC20')
+        && body.includes('ERC20'),
+    };
+  `, 10000);
+  expect(rebind.ok, `withdraw rebind route did not render: ${rebind.href}`);
+
+  open("/#/pages/me/wallet-withdraw");
+  fill("input.uni-input-input", "50");
+  wait(300);
   clickSelector(".nx-withdraw-submit-cta");
   // SPEC-7 R2(首提必审):全新账户首笔提现无条件进人工审核。提交仍建单并跳追踪页,
   // 但 route=manual → USDT 账单文案是「additional review」(非 pass 的 network 文案),
   // 追踪页渲染 first-withdrawal-review 命中原因。此断言证的是「首提必审」新行为。
   const proof = waitForEval("withdraw tracking route", `
-    const bills = store('nexion-bills-v1');
+    const bills = acctRow('nexgrid-bills-accounts-v1');
     const bill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'USDT' && row.amount === -50 && row.status === 'pending');
     const nexBill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'NEX' && row.amount === -25);
     const body = bodyText();
@@ -277,7 +306,7 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
       bill,
       nexBill,
       hasTrackingId: /WD-\\d{8}-\\d{4}/.test(body),
-      hasAddress: body.includes(${JSON.stringify(WITHDRAW_ADDRESS)}),
+      hasAddress: body.includes(${JSON.stringify(PAIRED_ADDRESS)}),
       hasAmount: body.includes('$50.00'),
       firstWithdrawalReviewShown: body.includes('First withdrawal requires manual confirmation'),
       ok: location.href.includes('#/pages/me/wallet-withdraw-tracking') && /WD-\\d{8}-\\d{4}/.test(body),
@@ -293,6 +322,7 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   expect(proof.firstWithdrawalReviewShown, "tracking page did not surface first-withdrawal-review hold reason (SPEC-7 R2)");
   return {
     href: proof.href,
+    rebindHref: rebind.href,
     nexBurned: proof.nexBill.amount,
     billRef: proof.bill.ref,
     trackingHasAddress: proof.hasAddress,
@@ -303,8 +333,8 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
 await step("FT-014A", "exchange-nex-to-usdt-confirm-modal", () => {
   open("/#/pages/me/wallet-exchange");
   evalJson(`
-    uni.removeStorageSync('nexion-exchange-v1');
-    uni.removeStorageSync('nexion-exchange-v3');
+    uni.removeStorageSync('nexgrid-exchange-accounts-v1');
+    uni.removeStorageSync('nexgrid-exchange-v3-accounts-v1');
     location.reload();
     return { resetExchange: true };
   `);
@@ -332,9 +362,9 @@ await step("FT-014A", "exchange-nex-to-usdt-confirm-modal", () => {
   `);
   wait(1600);
   const proof = evalJson(`
-    const exchange = store('nexion-exchange-v1');
-    const v3 = store('nexion-exchange-v3');
-    const bills = store('nexion-bills-v1');
+    const exchange = acctRow('nexgrid-exchange-accounts-v1');
+    const v3 = acctRow('nexgrid-exchange-v3-accounts-v1');
+    const bills = acctRow('nexgrid-bills-accounts-v1');
     const history = exchange.history || [];
     const swap = history[0];
     const swapBills = (bills.bills || []).filter((row) => row.type === 'swap' && row.ref === swap?.id);
@@ -364,37 +394,35 @@ await step("FT-014A", "exchange-nex-to-usdt-confirm-modal", () => {
 await step("FT-014B", "repurchase-writes-staking-bill", () => {
   open("/#/pages/me/wallet-repurchase");
   const before = evalJson(`
-    const staking = store('nexion-v3-staking-v1');
-    const bills = store('nexion-bills-v1');
     return {
       body: bodyText(),
-      stakeCountBefore: (staking.positions || []).length,
-      billCountBefore: (bills.bills || []).length,
+      orderCountBefore: document.querySelectorAll('.nx-repurchase-order-row').length,
     };
   `);
   expect(before.body.includes("Re-invest $200.00"), "repurchase CTA missing");
   clickSelector(".nx-repurchase-submit-cta");
-  wait(900);
-  const proof = evalJson(`
-    const staking = store('nexion-v3-staking-v1');
-    const bills = store('nexion-bills-v1');
-    const position = (staking.positions || []).find((row) => row.amountUSDT === 200 && row.termDays === 90 && row.status === 'active');
-    const bill = (bills.bills || []).find((row) => row.type === 'stake' && row.amount === -200 && /Re-invest/.test(row.memo || ''));
+  wait(300);
+  const modal = evalJson(`
+    const root = document.querySelector('.nx-modal');
+    expect(!!root && visible(root), 'repurchase confirmation modal missing');
+    const primary = root.querySelector('.nx-btn--primary');
+    expect(!!primary && visible(primary), 'repurchase confirmation CTA missing');
+    primary.click();
+    return { text: text(root) };
+  `);
+  const proof = waitForEval("repurchase server order rendered", `
+    const rows = Array.from(document.querySelectorAll('.nx-repurchase-order-row')).map(text);
     return {
       href: location.href,
       body: bodyText(),
-      position,
-      bill,
-      stakeCountAfter: (staking.positions || []).length,
+      rows,
+      ok: rows.length > ${before.orderCountBefore} && rows.some((row) => /\\$200(\\.00)?/.test(row) && /ACTIVE/i.test(row)),
     };
-  `);
-  // 复投积分奖励已下线:re-invest 只锁仓(不再发积分/NEX),断言新增 $200/90d active 锁仓 position + stake 账单。
-  expect(!!proof.position, "repurchase staking position ($200 / 90d / active) missing");
-  expect(!!proof.bill, "repurchase stake bill (Re-invest) missing");
+  `, 15000);
   return {
     href: proof.href,
-    positionId: proof.position.id,
-    billRef: proof.bill.ref,
+    modal: modal.text,
+    order: proof.rows.find((row) => /\$200(\.00)?/.test(row)),
   };
 });
 

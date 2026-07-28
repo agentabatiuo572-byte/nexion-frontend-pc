@@ -147,11 +147,11 @@ function seedAuditState(side) {
     const uniAuth = { isAuthenticated: true, email, onboardingComplete: true };
     const uniOrders = { orders: [auditOrder] };
     if (window.uni && typeof window.uni.setStorageSync === 'function') {
-      window.uni.setStorageSync('nexion-auth-v1', uniAuth);
-      window.uni.setStorageSync('nexion-orders-v4', uniOrders);
+      window.uni.setStorageSync('nexgrid-auth-v1', uniAuth);
+      window.uni.setStorageSync('nexgrid-orders-accounts-v1', { default: uniOrders });
     }
-    localStorage.setItem('nexion-auth-v1', JSON.stringify(uniAuth));
-    localStorage.setItem('nexion-orders-v4', JSON.stringify(uniOrders));
+    localStorage.setItem('nexgrid-auth-v1', JSON.stringify(uniAuth));
+    localStorage.setItem('nexgrid-orders-accounts-v1', JSON.stringify({ default: uniOrders }));
     return { ok: true, side: ${JSON.stringify(side)} };
   })())`);
 }

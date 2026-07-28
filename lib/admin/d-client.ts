@@ -25,6 +25,9 @@ export interface D1Channel {
   feeUnit: "PERCENT" | "USDT_FIXED";
   minAmountValue: number;
   minAmountUnit: "USD";
+  maxAmount: string;
+  maxAmountValue: number | null;
+  maxAmountUnit: "USD" | null;
 }
 
 export interface D1CardParam {
@@ -439,6 +442,116 @@ export interface D5Params {
 
 let requestSeq = 0;
 const pendingMutationKeys = new Map<string, string>();
+const PENDING_MUTATION_STORAGE_KEY = "nexgrid-admin-d1-uncertain-commands-v1";
+const PENDING_MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface PersistedPendingMutation {
+  fingerprint: string;
+  commandKey: string;
+  base: "finance" | "treasury" | "bills" | "withdraw";
+  path: string;
+  method: string;
+  body: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+function readPersistedPendingMutations(): Record<string, PersistedPendingMutation> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(PENDING_MUTATION_STORAGE_KEY) ?? "{}") as Record<string, PersistedPendingMutation>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const now = Date.now();
+    const current = Object.fromEntries(Object.entries(parsed).filter(([commandKey, value]) =>
+      value
+      && value.commandKey === commandKey
+      && typeof value.fingerprint === "string"
+      && value.fingerprint.length > 0
+      && typeof value.commandKey === "string"
+      && value.commandKey.length > 0
+      && ["finance", "treasury", "bills", "withdraw"].includes(value.base)
+      && typeof value.path === "string"
+      && value.path.startsWith("/")
+      && typeof value.method === "string"
+      && value.method !== "GET"
+      && typeof value.body === "string"
+      && Number.isFinite(value.createdAt)
+      && Number.isFinite(value.expiresAt)
+      && value.expiresAt > now));
+    if (Object.keys(current).length !== Object.keys(parsed).length) {
+      writePersistedPendingMutations(current);
+    }
+    return current;
+  } catch {
+    return {};
+  }
+}
+
+function writePersistedPendingMutations(value: Record<string, PersistedPendingMutation>) {
+  if (typeof window === "undefined") return;
+  try {
+    if (Object.keys(value).length === 0) window.sessionStorage.removeItem(PENDING_MUTATION_STORAGE_KEY);
+    else window.sessionStorage.setItem(PENDING_MUTATION_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // Memory fallback remains available when storage is blocked or exhausted.
+  }
+}
+
+function pendingMutationKey(fingerprint: string): string | undefined {
+  const inMemory = pendingMutationKeys.get(fingerprint);
+  if (inMemory) return inMemory;
+  const persisted = Object.values(readPersistedPendingMutations())
+    .find((value) => value.fingerprint === fingerprint);
+  if (persisted) pendingMutationKeys.set(fingerprint, persisted.commandKey);
+  return persisted?.commandKey;
+}
+
+function rememberPendingMutation(
+  fingerprint: string,
+  commandKey: string,
+  base: "finance" | "treasury" | "bills" | "withdraw",
+  path: string,
+  method: string,
+  body: string,
+) {
+  pendingMutationKeys.set(fingerprint, commandKey);
+  const persisted = readPersistedPendingMutations();
+  const previous = persisted[commandKey];
+  persisted[commandKey] = {
+    fingerprint,
+    commandKey,
+    base,
+    path,
+    method,
+    body,
+    createdAt: previous?.createdAt ?? Date.now(),
+    expiresAt: Date.now() + PENDING_MUTATION_TTL_MS,
+  };
+  writePersistedPendingMutations(persisted);
+}
+
+function forgetPendingMutation(fingerprint: string) {
+  pendingMutationKeys.delete(fingerprint);
+  const persisted = readPersistedPendingMutations();
+  Object.entries(persisted).forEach(([commandKey, value]) => {
+    if (value.fingerprint === fingerprint) delete persisted[commandKey];
+  });
+  writePersistedPendingMutations(persisted);
+}
+
+export interface D1PendingTopupCommand {
+  commandKey: string;
+  path: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export function listD1PendingTopupCommands(): D1PendingTopupCommand[] {
+  return Object.values(readPersistedPendingMutations())
+    .filter((value) => value.base === "finance" && value.path.startsWith("/topup/"))
+    .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
 
 function nextId(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -493,12 +606,24 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   const mutationFingerprint = init?.idempotencyPrefix && method !== "GET"
     ? `${method}|${base}|${path}|${typeof init.body === "string" ? init.body : ""}`
     : null;
+  const pendingKeyBeforeRequest = mutationFingerprint
+    ? pendingMutationKey(mutationFingerprint)
+    : undefined;
   if (init?.idempotencyKey || init?.idempotencyPrefix) {
     const commandKey = init.idempotencyKey
-      || (mutationFingerprint ? pendingMutationKeys.get(mutationFingerprint) : undefined)
+      || pendingKeyBeforeRequest
       || nextId(init.idempotencyPrefix!);
     headers.set("Idempotency-Key", commandKey);
-    if (mutationFingerprint) pendingMutationKeys.set(mutationFingerprint, commandKey);
+    if (mutationFingerprint) {
+      rememberPendingMutation(
+        mutationFingerprint,
+        commandKey,
+        base,
+        path,
+        method,
+        typeof init?.body === "string" ? init.body : "",
+      );
+    }
   }
   let response: Response;
   try {
@@ -524,10 +649,16 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
       throw new Error(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
     }
-    if (mutationFingerprint) pendingMutationKeys.delete(mutationFingerprint);
+    // A deterministic error can close a brand-new attempt, but it cannot prove
+    // that an earlier unknown attempt reached a terminal state. Keep the exact
+    // command capsule so auth failures, in-progress replies, and other retry
+    // errors never force the operator to create a second command key.
+    if (mutationFingerprint && !pendingKeyBeforeRequest) {
+      forgetPendingMutation(mutationFingerprint);
+    }
     throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));
   }
-  if (mutationFingerprint) pendingMutationKeys.delete(mutationFingerprint);
+  if (mutationFingerprint) forgetPendingMutation(mutationFingerprint);
   return result.data as T;
 }
 
@@ -664,16 +795,41 @@ function requireD1Overview(raw: Record<string, unknown> | null | undefined): D1O
       const feeUnit = d1String(row.feeUnit, `channels[${index}].feeUnit`);
       const minUnit = d1String(row.minAmountUnit, `channels[${index}].minAmountUnit`);
       if (!(["PERCENT", "USDT_FIXED"] as string[]).includes(feeUnit) || minUnit !== "USD") d1Invalid(`channels[${index}].unit`);
+      const minAmount = d1String(row.minAmount, `channels[${index}].minAmount`);
+      const minAmountValue = d1Number(row.minAmountValue, `channels[${index}].minAmountValue`);
+      const maxAmount = d1OptionalText(row.maxAmount, `channels[${index}].maxAmount`);
+      const maxAmountValue = d1NullableNumber(row.maxAmountValue, `channels[${index}].maxAmountValue`);
+      const maxAmountUnit = row.maxAmountUnit === null || row.maxAmountUnit === undefined
+        ? null
+        : d1String(row.maxAmountUnit, `channels[${index}].maxAmountUnit`);
+      if (minAmountValue <= 0 || d1UsdDisplay(minAmount, `channels[${index}].minAmount`) !== minAmountValue) {
+        d1Invalid(`channels[${index}].minAmount`);
+      }
+      if (
+        (maxAmountValue === null) !== (maxAmountUnit === null)
+        || (maxAmountValue === null) !== (maxAmount === "")
+        || (maxAmountUnit !== null && maxAmountUnit !== "USD")
+        || (maxAmountValue !== null && (
+          maxAmountValue <= 0
+          || maxAmountValue < minAmountValue
+          || d1UsdDisplay(maxAmount, `channels[${index}].maxAmount`) !== maxAmountValue
+        ))
+      ) {
+        d1Invalid(`channels[${index}].maxAmount`);
+      }
       return {
       id: d1String(row.id, `channels[${index}].id`),
       code: d1String(row.code, `channels[${index}].code`),
       fee: d1String(row.fee, `channels[${index}].fee`),
-      minAmount: d1String(row.minAmount, `channels[${index}].minAmount`),
+      minAmount,
       enabled: d1Boolean(row.enabled, `channels[${index}].enabled`),
       feeValue: d1Number(row.feeValue, `channels[${index}].feeValue`),
       feeUnit: feeUnit as D1Channel["feeUnit"],
-      minAmountValue: d1Number(row.minAmountValue, `channels[${index}].minAmountValue`),
+      minAmountValue,
       minAmountUnit: minUnit as "USD",
+      maxAmount,
+      maxAmountValue,
+      maxAmountUnit: maxAmountUnit as "USD" | null,
     };
     }),
     primaryPsp: d1String(root.primaryPsp, "primaryPsp"),
@@ -787,6 +943,14 @@ function d1OptionalText(value: unknown, field: string): string {
 function d1NullableNumber(value: unknown, field: string): number | null {
   if (value === null || value === undefined || value === "") return null;
   return d1Number(value, field);
+}
+
+function d1UsdDisplay(value: string, field: string): number {
+  const normalized = value.trim().replace(/,/g, "");
+  if (!/^\$\d+(?:\.\d+)?$/.test(normalized)) d1Invalid(field);
+  const parsed = Number(normalized.slice(1));
+  if (!Number.isFinite(parsed)) d1Invalid(field);
+  return parsed;
 }
 
 function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
@@ -1435,6 +1599,28 @@ export async function fetchD1TopupOverview() {
   return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", "/topup/overview"));
 }
 
+export async function retryD1PendingTopupCommand(commandKey: string) {
+  const pending = readPersistedPendingMutations()[commandKey];
+  if (
+    !pending
+    || pending.base !== "finance"
+    || !pending.path.startsWith("/topup/")
+    || pending.method === "GET"
+  ) {
+    throw new Error("待重试请求不存在或已过期，请重新读取服务端真值");
+  }
+  return requireD1Overview(await apiRequest<Record<string, unknown>>(
+    pending.base,
+    pending.path,
+    {
+      method: pending.method,
+      body: pending.body || undefined,
+      idempotencyPrefix: "d1-retry",
+      idempotencyKey: pending.commandKey,
+    },
+  ));
+}
+
 export async function fetchD1TopupFlows(params: { status?: string; keyword?: string; pageNum?: number; pageSize?: number }) {
   return requireD1FlowsPage(await apiRequest<PageResult<D1DepositFlow>>("finance", `/topup/flows${buildQuery(params)}`));
 }
@@ -1623,6 +1809,14 @@ export async function reviewD2Withdrawal(
     method: "POST",
     body: JSON.stringify({ action, operator, ...input }),
     idempotencyKey,
+  }));
+}
+
+export async function updateD1TopupChannelMax(channelCode: string, numericValue: number, expectedValue: number, reason: string, operator: string) {
+  return requireD1Overview(await apiRequest<Record<string, unknown>>("finance", `/topup/channels/${encodeURIComponent(channelCode)}/max-amount`, {
+    method: "PATCH",
+    body: JSON.stringify({ numericValue, unit: "USD", expectedValue: String(expectedValue), reason, operator }),
+    idempotencyPrefix: "d1-channel-max",
   }));
 }
 

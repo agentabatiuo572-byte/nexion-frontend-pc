@@ -18,17 +18,23 @@ function run(label, command, args) {
   }
 }
 
-run("[1/12] typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]);
-run("[2/12] runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]);
-run("[3/12] kill-switch sentinel", "node", ["scripts/kill-switch-count-sentinel.mjs"]);
-run("[4/12] rhythm sentinel", "node", ["scripts/rhythm-single-source-sentinel.mjs"]);
-run("[5/12] J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]);
-run("[6/12] J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]);
-run("[7/12] K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]);
-run("[8/12] K3 contract", "node", ["--test", "tests/k3-withdraw-rules-contract.test.mjs"]);
-run("[9/12] K4 contract", "node", ["--test", "tests/k4-scoring-contract.test.mjs"]);
-run("[10/12] K5 contract", "node", ["--test", "tests/k5-kyc-review-contract.test.mjs"]);
-run("[11/12] A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]);
-run("[12/12] production build", npmCmd, ["run", "build"]);
+run("[1/18] typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]);
+run("[2/18] runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]);
+run("[3/18] workspace path resolver", "node", ["--test", "scripts/nexion-workspace-paths.test.mjs"]);
+run("[4/18] real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]);
+run("[5/18] App storage-key parity", "node", ["scripts/uni-storage-key-sentinel.mjs"]);
+run("[6/18] D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs"]);
+run("[7/18] B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs"]);
+run("[8/18] FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]);
+run("[9/18] kill-switch sentinel", "node", ["scripts/kill-switch-count-sentinel.mjs"]);
+run("[10/18] rhythm sentinel", "node", ["scripts/rhythm-single-source-sentinel.mjs"]);
+run("[11/18] J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]);
+run("[12/18] J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]);
+run("[13/18] K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]);
+run("[14/18] K3 contract", "node", ["--test", "tests/k3-withdraw-rules-contract.test.mjs"]);
+run("[15/18] K4 contract", "node", ["--test", "tests/k4-scoring-contract.test.mjs"]);
+run("[16/18] K5 contract", "node", ["--test", "tests/k5-kyc-review-contract.test.mjs"]);
+run("[17/18] A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]);
+run("[18/18] production build", npmCmd, ["run", "build"]);
 
 console.log("verify OK");

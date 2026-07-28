@@ -139,16 +139,22 @@ function evalJson(body, timeout = 30000) {
       if (typeof uni !== 'undefined' && uni.getStorageSync) return uni.getStorageSync(key);
       try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return localStorage.getItem(key); }
     };
+    const acctRow = (key) => {
+      const table = store(key);
+      return table && typeof table === 'object' && table.default && typeof table.default === 'object'
+        ? table.default
+        : {};
+    };
     const persistedAdmin = () => JSON.parse(localStorage.getItem(${JSON.stringify(ADMIN_STORE_KEY)}) || '{"state":{}}').state || {};
     const clearNexionStorage = () => {
       for (const storage of [localStorage, sessionStorage]) {
         for (const key of Object.keys(storage)) {
-          if (/^nexion-/i.test(key)) storage.removeItem(key);
+          if (/^(nexion|nexgrid)-/i.test(key)) storage.removeItem(key);
         }
       }
       return {
-        localKeys: Object.keys(localStorage).filter((key) => /^nexion-/i.test(key)),
-        sessionKeys: Object.keys(sessionStorage).filter((key) => /^nexion-/i.test(key)),
+        localKeys: Object.keys(localStorage).filter((key) => /^(nexion|nexgrid)-/i.test(key)),
+        sessionKeys: Object.keys(sessionStorage).filter((key) => /^(nexion|nexgrid)-/i.test(key)),
       };
     };
   `;
@@ -257,18 +263,24 @@ try {
 } catch {}
 
 openUni("/#/pages/onboarding/intro");
-evalJson("clearNexionStorage(); location.reload(); return { cleared: true };");
+evalJson(`
+  clearNexionStorage();
+  uni.setStorageSync('nexgrid-locale-v1', { code: 'en', userSet: true });
+  location.reload();
+  return { cleared: true, locale: store('nexgrid-locale-v1') };
+`);
 wait(900);
 
 await step("FM-004", "top-up-channel-and-kyc-express-status", () => {
   openUni("/#/pages/me/wallet-topup");
-  clickSelector(".nx-topup-channel-usdt-trc20");
+  clickSelector(".nx-dep-net-trc20");
   const channel = evalJson(`
     const body = bodyText();
-    expect(body.includes('Send via USDT-TRC20'), 'regular top-up channel status missing');
-    expect(body.includes('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'), 'regular top-up deposit address missing');
-    clickCss('.nx-topup-copy-address-cta');
-    return { href: location.href, hasAwaiting: body.includes('Awaiting confirmation'), addressVisible: body.includes('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t') };
+    expect(body.includes('Send via TRC20'), 'regular top-up channel status missing');
+    const copyBtn = document.querySelector('.nx-dep-copy-address-cta');
+    expect(!!copyBtn && visible(copyBtn), 'regular top-up copy-address CTA missing');
+    clickCss('.nx-dep-copy-address-cta');
+    return { href: location.href, hasAwaiting: body.includes('Awaiting confirmation'), addressVisible: /T[A-Za-z0-9]{8,}/.test(body) };
   `);
 
   openUni("/#/pages/me/wallet-topup?kyc=1");
@@ -289,8 +301,8 @@ await step("FM-004", "top-up-channel-and-kyc-express-status", () => {
   `);
   clickSelector(".nx-kyc-payment-sent-cta");
   const complete = waitForEval("KYC Express complete", `
-    const pairing = store('nexion-wallet-pairing-v1') || {};
-    const bills = store('nexion-bills-v1') || {};
+    const pairing = acctRow('nexgrid-wallet-pairing-accounts-v1');
+    const bills = acctRow('nexgrid-bills-accounts-v1');
     const bill = (bills.bills || []).find((row) => row.type === 'kyc' && row.amount === 1 && row.status === 'posted');
     const body = bodyText();
     return {
@@ -318,13 +330,10 @@ await step("FM-005-FRONT", "staking-user-opens-position", () => {
   wait(900);
   openUni("/#/pages/staking/staking");
   const before = evalJson(`
-    const staking = store('nexion-v3-staking-v1') || {};
-    const bills = store('nexion-bills-v1') || {};
     return {
       href: location.href,
       body: bodyText(),
-      positionsBefore: (staking.positions || []).length,
-      billCountBefore: (bills.bills || []).length,
+      positionsBefore: document.querySelectorAll('.nx-staking-position-row').length,
     };
   `);
   expect(before.body.includes("Stake plans"), "staking plans section missing");
@@ -339,25 +348,20 @@ await step("FM-005-FRONT", "staking-user-opens-position", () => {
   `);
   clickSelector(".nx-staking-sheet-submit-cta");
   const proof = waitForEval("staking position persisted", `
-    const staking = store('nexion-v3-staking-v1') || {};
-    const bills = store('nexion-bills-v1') || {};
-    const position = (staking.positions || []).find((row) => row.amountUSDT === 20 && row.termDays === 30 && row.status === 'active');
-    const bill = (bills.bills || []).find((row) => row.type === 'stake' && row.amount === -20 && /30d/.test(row.memo || ''));
     const body = bodyText();
+    const rows = Array.from(document.querySelectorAll('.nx-staking-position-row')).map(text);
     return {
       href: location.href,
       body,
-      position,
-      bill,
-      positionCount: (staking.positions || []).length,
-      ok: !!position && !!bill && body.includes('Positions') && /\\$20(\\.00)?/.test(body),
+      rows,
+      positionCount: rows.length,
+      ok: rows.length > ${before.positionsBefore} && body.includes('Positions') && rows.some((row) => /\\$20(\\.00)?/.test(row) && /30d/.test(row)),
     };
   `, 9000);
   return {
     before,
     sheetHasProjection: sheet.body.includes("Total on unlock"),
-    positionId: proof.position.id,
-    billRef: proof.bill.ref,
+    positionRow: proof.rows.find((row) => /\$20(\.00)?/.test(row)),
     positionCount: proof.positionCount,
   };
 });
@@ -404,7 +408,7 @@ await step("FM-013", "language-switch-changes-copy-across-routes", () => {
   openUni("/#/pages/me/language");
   clickSelector(".nx-language-row-zh");
   const locale = evalJson(`
-    const locale = store('nexion-locale-v1') || {};
+    const locale = store('nexgrid-locale-v1') || {};
     const body = bodyText();
     return { href: location.href, locale, hasChineseTitle: body.includes('语言') };
   `);

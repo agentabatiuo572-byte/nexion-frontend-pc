@@ -34,7 +34,7 @@ function backendPath(parts: string[]) {
   if (parts.length === 2 && parts[0] === "topup" && ["overview", "flows"].includes(parts[1])) {
     return `/api/admin/finance/topup/${parts[1]}`;
   }
-  if (parts.length === 4 && parts[0] === "topup" && parts[1] === "channels" && isText(parts[2]) && ["enabled", "fee", "min-amount"].includes(parts[3])) {
+  if (parts.length === 4 && parts[0] === "topup" && parts[1] === "channels" && isText(parts[2]) && ["enabled", "fee", "min-amount", "max-amount"].includes(parts[3])) {
     return `/api/admin/finance/topup/channels/${encodeURIComponent(parts[2])}/${parts[3]}`;
   }
   if (parts.length === 3 && parts[0] === "topup" && parts[1] === "psp" && parts[2] === "primary") {

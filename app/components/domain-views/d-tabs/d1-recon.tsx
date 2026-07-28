@@ -8,21 +8,25 @@ import {
   createD1BinLock,
   fetchD1TopupFlows,
   fetchD1TopupOverview,
+  listD1PendingTopupCommands,
   loadD1VietQrOverview,
   registerD1VietQrReceipt,
   reconcileD1VietQr,
   refundD1Chargeback,
+  retryD1PendingTopupCommand,
   setD1BinLock,
   switchD1Psp,
   updateD1CardRisk,
   updateD1TopupChannelEnabled,
   updateD1TopupChannelFee,
+  updateD1TopupChannelMax,
   updateD1TopupChannelMin,
   updateD1VietQrAccount,
   updateD1VietQrConfig,
   writeoffD1Reconciliation,
   type D1DepositFlow,
   type D1Overview,
+  type D1PendingTopupCommand,
   type D1VietQrOverview,
   type D1VietQrView,
   type PageResult,
@@ -169,11 +173,17 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [pendingCommands, setPendingCommands] = useState<D1PendingTopupCommand[]>([]);
+
+  const refreshPendingCommands = () => {
+    setPendingCommands(listD1PendingTopupCommands());
+  };
 
   const refresh = async () => {
     setLoading(true);
     setError("");
     setNotice("");
+    refreshPendingCommands();
     try {
       const [nextOverview, nextFlows, nextVietQr] = await Promise.all([
         fetchD1TopupOverview(),
@@ -207,6 +217,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     try {
       const next = await task();
       setOverview(next);
+      refreshPendingCommands();
       toast(ok);
       try {
         const nextFlows = await fetchD1TopupFlows({ status, keyword, pageNum: page, pageSize });
@@ -216,6 +227,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         setNotice(`操作已生效并写入审计，但充值流水刷新失败；请使用“刷新”重新读取 · ${flowError instanceof Error ? flowError.message : "流水读取失败"}`);
       }
     } catch (err) {
+      refreshPendingCommands();
       setOverview(null);
       setFlows(EMPTY_D1_FLOWS);
       setError(`操作结果未确认，已停止展示旧数据；请先重新读取，勿用新请求重复提交 · ${err instanceof Error ? err.message : "D1 操作失败"}`);
@@ -247,13 +259,32 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     }
   };
 
-  const updateChannelNumber = (channel: D1Overview["channels"][number], kind: "fee" | "min") => {
-    const current = kind === "fee" ? channel.feeValue : channel.minAmountValue;
+  const updateChannelNumber = (channel: D1Overview["channels"][number], kind: "fee" | "min" | "max") => {
+    const current = kind === "fee"
+      ? channel.feeValue
+      : kind === "min"
+        ? channel.minAmountValue
+        : channel.maxAmountValue;
+    if (current === null) {
+      toast("该通道没有独立单笔上限；银行轨上限请在 VietQR 参数区调整");
+      return;
+    }
     const unitLabel = kind === "fee" ? (channel.feeUnit === "PERCENT" ? "%" : "USDT 固定手续费") : "USD";
     openActionConfirm({
-      action: kind === "fee" ? `充值费率调整 · ${channel.id}` : `最小充值额调整 · ${channel.id}`,
+      action: kind === "fee"
+        ? `充值费率调整 · ${channel.id}`
+        : kind === "min"
+          ? `最小充值额调整 · ${channel.id}`
+          : `单笔上限调整 · ${channel.id}`,
       detail: `仅接受数字，单位固定为 ${unitLabel}；保存后只影响新交易。`,
-      edit: { kind: "number", current: String(current), unit: unitLabel, min: 0, max: kind === "fee" ? (channel.feeUnit === "PERCENT" ? 10 : 100) : 100000, step: 0.01 },
+      edit: {
+        kind: "number",
+        current: String(current),
+        unit: unitLabel,
+        min: kind === "fee" ? 0 : 0.01,
+        max: kind === "fee" ? (channel.feeUnit === "PERCENT" ? 10 : 100) : 100000,
+        step: 0.01,
+      },
       run: (reason, value) => {
         const numericValue = Number(value);
         if (!Number.isFinite(numericValue)) {
@@ -263,7 +294,9 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         return applyOverview(
           () => kind === "fee"
             ? updateD1TopupChannelFee(channel.code, numericValue, channel.feeUnit, current, reason, operator)
-            : updateD1TopupChannelMin(channel.code, numericValue, current, reason, operator),
+            : kind === "min"
+              ? updateD1TopupChannelMin(channel.code, numericValue, current, reason, operator)
+              : updateD1TopupChannelMax(channel.code, numericValue, current, reason, operator),
           `${channel.id} 已更新`,
         );
       },
@@ -310,16 +343,64 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     });
   };
 
+  const retryPendingCommand = async (commandKey: string) => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const next = await retryD1PendingTopupCommand(commandKey);
+      setOverview(next);
+      refreshPendingCommands();
+      toast(`请求号 ${commandKey} 已按原始参数完成幂等重试`);
+      const nextFlows = await fetchD1TopupFlows({ status, keyword, pageNum: page, pageSize });
+      setFlows(nextFlows);
+    } catch (err) {
+      refreshPendingCommands();
+      setOverview(null);
+      setFlows(EMPTY_D1_FLOWS);
+      setError(`原请求号重试结果仍未确认，已停止展示旧数据 · ${err instanceof Error ? err.message : "D1 重试失败"}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pendingCommandPanel = pendingCommands.length > 0 ? (
+    <section className="l-card" data-testid="d1-pending-command-panel">
+      <div className="l-h"><span className="ttl">待核对的未知结果请求</span></div>
+      <div className="l-b">
+        <div className="dtint warn">
+          以下请求可能已在服务端生效。先刷新核对真值；仍需重发时只能使用原请求号，禁止生成新请求。记录在当前标签页会话内保留 24 小时，可跨刷新与重新登录恢复。
+        </div>
+        {pendingCommands.map((command) => (
+          <div className="p-row" key={command.commandKey}>
+            <div className="txt">
+              <div className="k">请求号 {command.commandKey}</div>
+              <div className="s">{command.path} · {timeText(new Date(command.createdAt).toISOString())}</div>
+            </div>
+            <button
+              className="l-btn sm mc"
+              disabled={busy}
+              onClick={() => void retryPendingCommand(command.commandKey)}
+            >
+              核对后使用原请求号重试
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  ) : null;
+
   if (loading && !overview) {
     return <section className="l-card"><div className="l-b">D1 数据加载中...</div></section>;
   }
 
   if (error && !overview) {
-    return <section className="l-card"><div className="l-b"><div className="dtint warn">D1 已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试读取</button></div></section>;
+    return <>{pendingCommandPanel}<section className="l-card"><div className="l-b"><div className="dtint warn">D1 已停止展示旧数据 · {error}</div><button className="l-btn primary" disabled={loading || busy} style={{ marginTop: 12 }} onClick={() => void refresh()}>重试读取</button></div></section></>;
   }
 
   return (
     <>
+      {pendingCommandPanel}
       {error && <div className="dtint warn" style={{ marginBottom: 12 }}>D1 数据加载失败 · {error}</div>}
       {notice && <div className="dtint warn" style={{ marginBottom: 12 }}>{notice}</div>}
       {overview && !overview.historicalBackfillComplete && (
@@ -351,11 +432,16 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
               <div className="p-row" key={channel.code}>
                 <div className="txt">
                   <div className="k">{channel.id}</div>
-                  <div className="s">费率 {channel.fee} · 最小充值 {channel.minAmount}</div>
+                  <div className="s">
+                    费率 {channel.fee} · 最小充值 {channel.minAmount}
+                    {channel.code === "vietqr" && vietQr ? ` · 单笔上限 $${vietQr.config.perTxLimitUsd.toLocaleString("en-US")}` : ""}
+                    {channel.maxAmountValue !== null ? ` · 单笔上限 $${channel.maxAmountValue.toLocaleString("en-US")}` : ""}
+                  </div>
                 </div>
                 <span className={`bdg ${channel.enabled ? "ok" : "bad"}`}>{channel.enabled ? "启用" : "停用"}</span>
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "min")}>最小额</button>}
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "fee")}>费率</button>}
+                {canManageChannels && channel.maxAmountValue !== null && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => updateChannelNumber(channel, "max")}>单笔上限</button>}
                 {canManageChannels && <button className="l-btn sm mc" disabled={loading || busy} onClick={() => openActionConfirm({
                   action: `${channel.enabled ? "停用" : "启用"}充值渠道 · ${channel.id}`,
                   detail: "渠道状态由后端配置控制，保存后只影响新交易。",

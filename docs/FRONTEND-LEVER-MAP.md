@@ -77,7 +77,7 @@
 
 ## 三端架构改造增量映射（SPEC-5 并表）
 
-> 本节并入 `PRD/三端架构改造/D_后台可控映射.md` 的 M1-M11。机器门：`scripts/fe-be-mapping-coverage.mjs`，已接入 `scripts/verify.sh`。SPEC-6 新三端入口首页已走新路由；旧三条首页维持删除态，不得恢复为验收入口。
+> 本节是 M1-M11 的现行单一映射表。机器门：`scripts/fe-be-mapping-coverage.mjs`，已接入 `scripts/verify.mjs`；历史上未闭环的 M9/M10 已锁定为关闭态，重新打开会直接阻断验证。SPEC-6 新三端入口首页已走新路由；旧三条首页维持删除态，不得恢复为验收入口。
 
 | ID | 三端改造业务 | 前端证据 | 后台控制 / 承接 | 状态 |
 |---|---|---|---|---|
@@ -89,14 +89,14 @@
 | M6 | G1-G6 显卡算力档位与识别词 | UniApp `gpu-tiers` 与 pc-gpu 设备派生 | E6 显卡算力映射表，档位名称 / TOPS / 单个识别词逐项增删改，禁止单框多值 | ✅ |
 | M7 | pc-gpu 槽位与设备生命周期 | UniApp 6 槽位、pc-gpu 连接 / 下架 / 预留槽位逻辑 | E6 控制入口与映射，E5 继续承接设备运维和槽位上限口径 | ✅ |
 | M8 | 三端入口首页新方案 | 新 `entry-surfaces` 三条首页 + 完整链接索引；旧签名版 APP / H5 / 白壳接管三条旧首页继续删除 | 当前为评审入口与静态首页，不开放后台改文案；若进入运营化，标题 / CTA / 多语言接 I1 文案 A/B 与 I6 i18n | ✅ |
-| M9 | 白壳变脸触发与远程接管地址 | Janus 白壳服务 remoteUrl 当前回正盘默认首页 | K6 `/risk/janus-c2` 策略中心、规则树、手动状态、远程地址选择、审计 | ✅ |
-| M10 | 账户数据聚合 | UniApp `account-cloud` mock + `bindAccount` / `persistAccountSnapshot`；stale merge 覆盖余额、设备、任务身份、`currentTask` object/null、同 id 任务时间回退、`recentTasks`、`latestWithdrawal` 单调状态 | C1/C2/C3/C5/E5/D4 既有账户查询、处置、会话下线、设备运维、账本审计承接 | ✅ |
+| M9 | 白壳变脸触发与远程接管地址 | App `janus-c2` 通过真实 `/api/app/janus/reports → commands/pending → commands/ack` 上报、拉取并回执；远程地址只接受服务端批准的 HTTPS 版本 | K6 `/risk/janus-c2` 经 PC 代理和后端 `/api/admin/janus` 管理策略、命令与审计，App ACK 回写同一 `nx_janus_command` 调用链 | ✅ |
+| M10 | 账户数据聚合 | App `account-cloud` 仅为兼容快照；密码、2FA、会话和 KYC 分别读取真实 `/api/app/security`、`/api/kyc/status`，写操作携带幂等键 | C1/C2/C3/C5/E5/D4 通过 PC `/api/admin/users` 代理和真实后端账户投影承接查询、处置、会话下线、设备运维、账本审计 | ✅ |
 | M11 | 三端入口与构建变体识别 | UniApp `entry-surface` 识别签名 App / H5 / 白 App | 载体识别本身无直接业务开关；白 App 接管归 K6，电脑入口归 E6 | ✅ |
 
 ## 核对结论
 - H5 ~70 个用户页/杠杆,**绝大多数都已映射到 admin 控制面且可操作**(操作确认 角色感知)。
 - **缺口处置:**
-  1. ✅ **支付渠道 / PSP 配置**(2026-06-03 初补;2026-06-10 随 D 域设计稿 port 收敛口径):D1 充值对账中心「充值渠道与费率」—— 五渠道(USDT-TRC20/ERC20/BTC/ETH/Card)启停 + 费率/最小充值额 per-channel + 主备 PSP(Checkout.com/Stripe)切换 + 卡风控三参数,全部 操作确认。旧 MoonPay/Banxa/OnChain 三通道为早期发明,已按前端 topup 页与 PRD D1③ 收敛。对应 H5 /me/wallet/cards · /topup 入金通道。
+  1. ✅ **支付渠道 / PSP 配置**：D1 充值对账中心已收敛为 USDT-TRC20、USDT-BEP20、USDT-ERC20、VietQR、国际卡五条真实运营轨；支持启停、费率、最低额、国际卡单笔上限、主备 PSP 与卡风控参数。国际卡在 App 真实模式下仅当托管收银台接通后开放，未接通时失败关闭，禁止本地模拟入账。
   2. (轻)/developer 开发者中心 — 偏内部技术页,无对应资金/运营杠杆,无需 admin 控制。
 - **最终:H5 全部资金/收益/分销/增长/内容/账户类用户杠杆 → admin 控制面 100% 覆盖且可操作(操作确认 角色感知)。**
 
