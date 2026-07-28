@@ -57,11 +57,42 @@ test("M1 writes await the real result and reuse the same idempotency key after a
   assert.match(overview, /if \(!ok\)[\s\S]{0,240}return;/);
   assert.match(overview, /结果未知[\s\S]{0,240}保留/);
   assert.match(view, /updateLoadConfig\(payload, reason, idempotencyKey\)/);
-  assert.match(view, /rebalanceLoad\([^;]+reason, idempotencyKey\)/);
+  assert.match(view, /rebalanceLoad\([^;]+loadConfig\.version, reason, idempotencyKey\)/);
   assert.match(view, /assignSupportSeat\([^;]+reason, idempotencyKey\)/);
   assert.match(view, /assignAdvisorUsers\([^;]+reason, idempotencyKey\)/);
   assert.match(view, /deactivateAdvisorAssignment\([^;]+reason, idempotencyKey\)/);
   assert.match(client, /updateLoadConfig\(payload: MLoadConfigWrite, reason: string, idempotencyKey\?: string\)/);
-  assert.match(client, /rebalanceLoad\(agents: Array<Record<string, unknown>>, reason: string, idempotencyKey\?: string\)/);
+  assert.match(client, /rebalanceLoad\(agents: Array<Record<string, unknown>>, expectedVersion: number, reason: string, idempotencyKey\?: string\)/);
   assert.match(client, /headers: idempotencyKey \? \{ "Idempotency-Key": idempotencyKey \} : undefined/);
+});
+
+test("M1 load writes carry a visible-snapshot version and enforce the 8-200 audit reason boundary", () => {
+  const overview = read("app/components/domain-views/m-tabs/m1-overview.tsx");
+  const view = read("app/components/domain-views/m-view.tsx");
+  const client = read("lib/admin/m-client.ts");
+  const updateRequest = read("../nexion-backend/src/main/java/ffdd/opsconsole/content/dto/SupportLoadConfigUpdateRequest.java");
+  const rebalanceRequest = read("../nexion-backend/src/main/java/ffdd/opsconsole/content/dto/SupportLoadRebalanceRequest.java");
+  const service = read("../nexion-backend/src/main/java/ffdd/opsconsole/content/application/OpsSupportTicketService.java");
+
+  assert.match(overview, /reason\.trim\(\)\.length >= 8[\s\S]{0,80}reason\.trim\(\)\.length <= 200/);
+  assert.match(overview, /maxLength=\{200\}/);
+  assert.match(client, /version: loadNumber\(loadRaw, "version"\)/);
+  assert.match(view, /expectedVersion: version/);
+  assert.match(updateRequest, /Long expectedVersion/);
+  assert.match(rebalanceRequest, /Long expectedVersion/);
+  assert.match(service, /activeValueForUpdate\(LOAD_VERSION_KEY\)/);
+  assert.match(service, /SUPPORT_LOAD_VERSION_CONFLICT/);
+  assert.match(service, /auditLogService\.recordRequired/);
+});
+
+test("M1 KPI links match their target queues and conversation detail failures fail closed", () => {
+  const overview = read("app/components/domain-views/m-tabs/m1-overview.tsx");
+  const client = read("lib/admin/m-client.ts");
+
+  assert.match(overview, /ACTIVE_TICKET_STATUSES\.has\(t\.status\)/);
+  assert.match(overview, /c\.unread > 0/);
+  assert.match(client, /const conversationDetails = await detailOrUnavailable/);
+  assert.match(client, /loadWarnings\.push\("会话明细"\)/);
+  assert.match(client, /conversations: conversationDetails\.rows/);
+  assert.doesNotMatch(client, /async function detailOrRow/);
 });

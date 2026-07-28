@@ -3,7 +3,7 @@
 import "../b-domain.css";
 import "./funnel.css";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, RefreshCw, Save, TrendingUp } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
@@ -28,6 +28,14 @@ export default function FunnelPage() {
   const superAdmin = auth?.role === "superadmin";
   const canSave = superAdmin || authorities.includes("overview_b3_view_write");
   const canExport = superAdmin || authorities.includes("overview_b3_export");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const phase = params.get("phase")?.toUpperCase() ?? ALL;
+    if (/^P[1-6]$/.test(phase)) {
+      setFilters((current) => ({ ...current, phase }));
+    }
+  }, []);
 
   const options = data?.filterOptions ?? { cohorts: [], phases: [], refs: [] };
   const selectedStage = data?.stages.find((item) => item.key === stage);
@@ -135,7 +143,7 @@ export default function FunnelPage() {
             <RefreshCw size={14} aria-hidden /> 重新读取
           </button>
           {canSave && (
-            <button type="button" className="b3-btn" onClick={() => void saveView()} disabled={busy !== "" || !viewName.trim()}>
+            <button type="button" className="b3-btn" onClick={() => void saveView()} disabled={busy !== "" || !viewName.trim() || !data?.available}>
               <Save size={14} aria-hidden /> 保存为视图
             </button>
           )}
@@ -144,7 +152,7 @@ export default function FunnelPage() {
               type="button"
               className="b3-btn primary"
               onClick={() => void exportCohort()}
-              disabled={busy !== "" || !data?.stages.length}
+              disabled={busy !== "" || !data?.available || !data.stages.length}
             >
               <Download size={14} aria-hidden /> 导出 cohort
             </button>
@@ -165,7 +173,23 @@ export default function FunnelPage() {
             </section>
           )}
 
+          {data.available && (
+            <>
           <section className="b3-aux-grid" aria-label="核心辅助指标">
+            <article className="card">
+              <span className="b3-kicker">商店访问率</span>
+              <strong>{pct(data.auxMetrics.storeViewRate)}</strong>
+              <small>
+                商店访问 {data.auxMetrics.storeViewNumerator} ÷ 注册 {data.auxMetrics.storeViewDenominator}
+              </small>
+            </article>
+            <article className="card">
+              <span className="b3-kicker">商店到首购转化</span>
+              <strong>{pct(data.auxMetrics.purchaseFromStoreRate)}</strong>
+              <small>
+                首购 {data.auxMetrics.purchaseFromStoreNumerator} ÷ 商店访问 {data.auxMetrics.purchaseFromStoreDenominator}
+              </small>
+            </article>
             <article className="card">
               <span className="b3-kicker">Day0 接入率</span>
               <strong>{pct(data.auxMetrics.day0AccessRate)}</strong>
@@ -278,6 +302,8 @@ export default function FunnelPage() {
               <b>我的已保存视图</b>
               <span>最近 {data.savedViews.length} 个，来自服务端持久化；刷新和重登后仍可见。</span>
             </section>
+          )}
+            </>
           )}
         </>
       )}

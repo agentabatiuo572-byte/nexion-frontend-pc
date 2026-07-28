@@ -26,7 +26,7 @@ import { M2Tickets } from "./m-tabs/m2-tickets";
 import { M3Sessions } from "./m-tabs/m3-sessions";
 import { M4KbSla } from "./m-tabs/m4-kb-sla";
 import { M5Scripts } from "./m-tabs/m5-scripts";
-import type { AdvisorScript, SessionConvo, SessionMsg, SessionReplyTpl, SessionType, SupportFaq, SupportSla, SupportTicket, SupportTicketCategory, SupportTicketPriority } from "./m-tabs/data";
+import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
 
@@ -405,11 +405,20 @@ function ticketBody(ticket: SupportTicket) {
   return ticket.messages[0]?.body || ticket.subject || "客服工单已创建";
 }
 
-async function writeTicketRows(prev: SupportTicket[], next: SupportTicket[], reason: string, action?: string, data?: MContentData | null) {
+async function writeTicketRows(
+  prev: SupportTicket[],
+  next: SupportTicket[],
+  reason: string,
+  action?: string,
+  data?: MContentData | null,
+  idempotencyKey?: string,
+) {
   const added = addedRow(prev, next);
   if (added) {
     const fromConvo = added.subject.match(/由会话\s+([^\s]+)\s+转入/);
     if (fromConvo?.[1]) {
+      const sourceConversation = data?.conversations.find((conversation) => conversation.id === fromConvo[1]);
+      if (!sourceConversation) throw new Error("M3_TICKET_CONVERSION_SNAPSHOT_MISSING");
       await mContentActions.convertConversationToTicket(
         fromConvo[1],
         {
@@ -418,8 +427,11 @@ async function writeTicketRows(prev: SupportTicket[], next: SupportTicket[], rea
           title: added.subject,
           assignedAdminId: adminIdForAgent(added.owner, data),
           assignedAdminName: added.owner || "Unassigned",
+          expectedStatus: sourceConversation.status,
+          expectedVersion: sourceConversation.version,
         },
         reason,
+        idempotencyKey,
       );
       return;
     }
@@ -434,6 +446,7 @@ async function writeTicketRows(prev: SupportTicket[], next: SupportTicket[], rea
         assignedAdminName: added.owner || "Unassigned",
       },
       reason,
+      idempotencyKey,
     );
     return;
   }
@@ -444,27 +457,49 @@ async function writeTicketRows(prev: SupportTicket[], next: SupportTicket[], rea
   if (!before) return;
   const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
   if (newMessage?.author === "agent") {
-    await mContentActions.replyTicket(row.id, newMessage.body, reason);
+    await mContentActions.replyTicket(row.id, newMessage.body, before.status, before.version, reason, idempotencyKey);
     return;
   }
   if (row.status !== before.status) {
-    await mContentActions.updateTicketStatus(row.id, row.status, reason);
+    await mContentActions.updateTicketStatus(row.id, row.status, before.status, before.version, reason, idempotencyKey);
     return;
   }
   if (row.priority !== before.priority) {
-    await mContentActions.updateTicketPriority(row.id, row.priority, reason);
+    await mContentActions.updateTicketPriority(row.id, row.priority, before.status, before.version, reason, idempotencyKey);
     return;
   }
   if (row.owner !== before.owner) {
-    await mContentActions.assignTicket(row.id, row.owner, adminIdForAgent(row.owner, data), reason);
+    await mContentActions.assignTicket(
+      row.id,
+      row.owner,
+      adminIdForAgent(row.owner, data),
+      before.status,
+      before.version,
+      reason,
+      idempotencyKey,
+    );
     return;
   }
   if (Boolean(row.archived) !== Boolean(before.archived)) {
-    await mContentActions.archiveTicket(row.id, Boolean(row.archived), reason);
+    await mContentActions.archiveTicket(
+      row.id,
+      Boolean(row.archived),
+      before.status,
+      before.version,
+      reason,
+      idempotencyKey,
+    );
     return;
   }
   if (action?.includes("conversation_from_ticket")) return;
-  await mContentActions.replyTicket(row.id, "工单信息已同步更新", reason);
+  await mContentActions.replyTicket(
+    row.id,
+    "工单信息已同步更新",
+    before.status,
+    before.version,
+    reason,
+    idempotencyKey,
+  );
 }
 
 async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[], reason: string, action?: string, data?: MContentData | null, idempotencyKey?: string) {
@@ -492,19 +527,21 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
 
   if (!before.transfer && row.transfer) {
     const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
-    await mContentActions.transferConversation(row.id, row.transfer, row.transfer.reason || reason, targetId, idempotencyKey);
+    await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, targetId, idempotencyKey);
     return;
   }
   if (before.transfer && !row.transfer) {
-    if (action?.includes("退回") || action?.includes("return")) await mContentActions.returnTransfer(row.id, reason, idempotencyKey);
-    else await mContentActions.acceptTransfer(row.id, reason, idempotencyKey);
+    if (action?.includes("退回") || action?.includes("return")) {
+      const target: "from" | "standby" = row.owner === STANDBY_POOL_LABEL ? "standby" : "from";
+      await mContentActions.returnTransfer(row.id, target, before.status, before.version, reason, idempotencyKey);
+    } else await mContentActions.acceptTransfer(row.id, before.status, before.version, reason, idempotencyKey);
     return;
   }
   if (before.transfer && row.transfer && JSON.stringify(before.transfer) !== JSON.stringify(row.transfer)) {
-    if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, reason, idempotencyKey);
+    if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, before.status, before.version, reason, idempotencyKey);
     else {
       const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
-      await mContentActions.transferConversation(row.id, row.transfer, row.transfer.reason || reason, targetId, idempotencyKey);
+      await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, targetId, idempotencyKey);
     }
     return;
   }
@@ -512,19 +549,19 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
   if (newMessage?.sender === "agent") {
     if (action?.includes("transfer_wait")) {
-      await mContentActions.waitTransfer(row.id, reason, idempotencyKey);
+      await mContentActions.waitTransfer(row.id, before.status, before.version, reason, idempotencyKey);
     } else {
       const body = newMessage.ctaHref ? `${newMessage.text} ${newMessage.ctaHref}` : newMessage.text;
-      await mContentActions.replyConversation(row.id, body, reason, idempotencyKey);
+      await mContentActions.replyConversation(row.id, body, before.status, before.version, reason, idempotencyKey);
     }
     return;
   }
   if (row.status !== before.status) {
-    await mContentActions.updateConversationStatus(row.id, row.status, before.status, reason, idempotencyKey);
+    await mContentActions.updateConversationStatus(row.id, row.status, before.status, before.version, reason, idempotencyKey);
     return;
   }
   if (Boolean(row.archived) !== Boolean(before.archived)) {
-    await mContentActions.archiveConversation(row.id, Boolean(row.archived), before.status, reason, idempotencyKey);
+    await mContentActions.archiveConversation(row.id, Boolean(row.archived), before.status, before.version, reason, idempotencyKey);
     return;
   }
   // 客户标签(customTags)与备注(notes)走 ctx.addCustomerTag/addCustomerNote 专用端点持久化,
@@ -552,8 +589,9 @@ async function writeFaqRows(prev: SupportFaq[], next: SupportFaq[], reason: stri
   const row = changedRow(prev, next);
   if (!row) return;
   const before = prev.find((item) => item.id === row.id);
-  if (before && row.status !== before.status) await mContentActions.updateFaqStatus(row.id, row.status, reason, idempotencyKey);
-  else await mContentActions.updateFaq(row, reason, idempotencyKey);
+  if (!before) return;
+  if (row.status !== before.status) await mContentActions.updateFaqStatus(row.id, row.status, before.status, before.version, reason, idempotencyKey);
+  else await mContentActions.updateFaq(row, before, reason, idempotencyKey);
 }
 
 async function writeSlaRows(prev: SupportSla[], next: SupportSla[], reason: string, idempotencyKey?: string) {
@@ -561,15 +599,18 @@ async function writeSlaRows(prev: SupportSla[], next: SupportSla[], reason: stri
     const before = prev.find((old) => old.category === item.category);
     return before && JSON.stringify(before) !== JSON.stringify(item);
   }) ?? next.find((item) => !prev.some((old) => old.category === item.category));
-  if (row) await mContentActions.updateSla(row, reason, idempotencyKey);
+  const before = row ? prev.find((old) => old.category === row.category) : undefined;
+  if (row && before) await mContentActions.updateSla(row, before.version, reason, idempotencyKey);
 }
 
 function currentLoadPayload(data: MContentData | null): MLoadConfigWrite {
   if (!data) {
     throw new Error("M_LOAD_CONFIG_BACKEND_SNAPSHOT_MISSING");
   }
+  const { version, ...loadConfig } = data.loadConfig;
   return {
-    ...data.loadConfig,
+    ...loadConfig,
+    expectedVersion: version,
     agentState: data.agentState,
   };
 }
@@ -591,27 +632,31 @@ async function applyMBackendWrite(
       title?: string;
       assignedAdminId?: number;
       assignedAdminName?: string;
+      expectedStatus?: SessionConvo["status"];
+      expectedVersion?: number;
     }>(value);
-    if (!payload?.conversationNo || !payload.category || !payload.priority || !payload.title) throw new Error("M3_TICKET_CONVERSION_PAYLOAD_INVALID");
+    if (!payload?.conversationNo || !payload.category || !payload.priority || !payload.title || !payload.expectedStatus || !Number.isSafeInteger(payload.expectedVersion)) throw new Error("M3_TICKET_CONVERSION_PAYLOAD_INVALID");
     await mContentActions.convertConversationToTicket(payload.conversationNo, {
       category: payload.category,
       priority: payload.priority,
       title: payload.title,
       assignedAdminId: payload.assignedAdminId,
       assignedAdminName: payload.assignedAdminName || "Unassigned",
+      expectedStatus: payload.expectedStatus,
+      expectedVersion: payload.expectedVersion!,
     }, reason, idempotencyKey);
     return;
   }
   if (key === "I.session.archiveBatch.__create") {
-    const payload = parseRecord<{ conversationNos?: string[] }>(value);
-    if (!payload?.conversationNos?.length) throw new Error("M3_ARCHIVE_BATCH_PAYLOAD_INVALID");
-    await mContentActions.archiveConversations(payload.conversationNos, reason, idempotencyKey);
+    const payload = parseRecord<{ conversationNos?: string[]; expectedVersions?: Record<string, number> }>(value);
+    if (!payload?.conversationNos?.length || !payload.expectedVersions || payload.conversationNos.some((id) => !Number.isSafeInteger(payload.expectedVersions?.[id]))) throw new Error("M3_ARCHIVE_BATCH_PAYLOAD_INVALID");
+    await mContentActions.archiveConversations(payload.conversationNos, payload.expectedVersions, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.faq.__delete") {
-    const payload = parseRecord<{ faqId?: string }>(value);
-    if (!payload?.faqId) throw new Error("M4_FAQ_DELETE_PAYLOAD_INVALID");
-    await mContentActions.deleteFaq(payload.faqId, reason, idempotencyKey);
+    const payload = parseRecord<{ faqId?: string; expectedStatus?: SupportFaq["status"]; expectedVersion?: number }>(value);
+    if (!payload?.faqId || !payload.expectedStatus || !Number.isSafeInteger(payload.expectedVersion)) throw new Error("M4_FAQ_DELETE_PAYLOAD_INVALID");
+    await mContentActions.deleteFaq(payload.faqId, payload.expectedStatus, payload.expectedVersion!, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.load.__bulk") {
@@ -620,7 +665,8 @@ async function applyMBackendWrite(
     return;
   }
   if (key === "I.support.load.__rebalance") {
-    await mContentActions.rebalanceLoad(parseRows<Record<string, unknown>>(value), reason, idempotencyKey);
+    if (!data?.loadConfig) throw new Error("M_LOAD_CONFIG_BACKEND_SNAPSHOT_MISSING");
+    await mContentActions.rebalanceLoad(parseRows<Record<string, unknown>>(value), data.loadConfig.version, reason, idempotencyKey);
     return;
   }
   if (key === "I.support.agentProfile.__update") {
@@ -687,16 +733,62 @@ async function applyMBackendWrite(
     return;
   }
   if (key === "I.support.tickets") {
-    await writeTicketRows(parseRows<SupportTicket>(legacyParams[key]), parseRows<SupportTicket>(value), reason, meta?.action, data);
+    await writeTicketRows(
+      parseRows<SupportTicket>(legacyParams[key]),
+      parseRows<SupportTicket>(value),
+      reason,
+      meta?.action,
+      data,
+      idempotencyKey,
+    );
     return;
   }
   if (key === "I.support.ticketEscalation.__create") {
-    const payload = parseRecord<{ ticketNo?: string; ownerAgentId?: string; ownerAgentName?: string }>(value);
-    if (!payload?.ticketNo || !payload.ownerAgentId) throw new Error("M2_TICKET_ESCALATION_PAYLOAD_INVALID");
+    const payload = parseRecord<{
+      ticketNo?: string;
+      ownerAgentId?: string;
+      ownerAgentName?: string;
+      expectedStatus?: SupportTicket["status"];
+      expectedVersion?: number;
+    }>(value);
+    if (
+      !payload?.ticketNo
+      || !payload.ownerAgentId
+      || !payload.expectedStatus
+      || !Number.isSafeInteger(payload.expectedVersion)
+      || Number(payload.expectedVersion) < 0
+    ) throw new Error("M2_TICKET_ESCALATION_PAYLOAD_INVALID");
     await mContentActions.escalateTicket(
       payload.ticketNo,
       { ownerAgentId: payload.ownerAgentId, ownerAgentName: payload.ownerAgentName || "客服台" },
+      payload.expectedStatus,
+      Number(payload.expectedVersion),
       reason,
+      idempotencyKey,
+    );
+    return;
+  }
+  if (key === "I.support.ticketInternalNote.__create") {
+    const payload = parseRecord<{
+      ticketNo?: string;
+      body?: string;
+      expectedStatus?: SupportTicket["status"];
+      expectedVersion?: number;
+    }>(value);
+    if (
+      !payload?.ticketNo
+      || !payload.body?.trim()
+      || !payload.expectedStatus
+      || !Number.isSafeInteger(payload.expectedVersion)
+      || Number(payload.expectedVersion) < 0
+    ) throw new Error("M2_TICKET_INTERNAL_NOTE_PAYLOAD_INVALID");
+    await mContentActions.addInternalNote(
+      payload.ticketNo,
+      payload.body.trim(),
+      payload.expectedStatus,
+      Number(payload.expectedVersion),
+      reason,
+      idempotencyKey,
     );
     return;
   }
@@ -786,6 +878,7 @@ function dockRelWhen(ts: number): string {
 
 function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
   const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
   const lastId = ctx.pget(DOCK_LAST_KEY);
   const convos = useMemo(() => dockParseConvos(ctx.pget(DOCK_CONVO_KEY)), [ctx.params]);
   const conv = convos.find((c) => c.id === lastId) ?? null;
@@ -797,9 +890,9 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
 
   const setOpen = (v: boolean) => ctx.setParam(DOCK_OPEN_KEY, v ? "1" : "0", { action: "持续接待 dock 展开/收起", reason: "ui-state" });
   const closeDock = () => ctx.setParam(DOCK_OFF_KEY, conv.id, { action: "持续接待 dock 关闭", reason: "ui-state" });
-  const send = () => {
+  const send = async () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || sending) return;
     const now = Date.now();
     const next = convos.map((c) =>
       c.id === conv.id
@@ -811,12 +904,19 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
           }
         : c,
     );
-    ctx.setParam(DOCK_CONVO_KEY, JSON.stringify(next), {
-      action: `坐席回复会话 ${conv.id} · admin.conversation_replied`,
-      reason: "持续接待 dock 回复(正文已留档)",
-    });
-    setDraft("");
-    ctx.toast(`${conv.id} 已回复`);
+    setSending(true);
+    try {
+      const succeeded = await ctx.setParam(DOCK_CONVO_KEY, JSON.stringify(next), {
+        action: `坐席回复会话 ${conv.id} · admin.conversation_replied`,
+        reason: "持续接待 dock 回复(正文已留档)",
+      });
+      if (succeeded) {
+        setDraft("");
+        ctx.toast(`${conv.id} 已回复`);
+      }
+    } finally {
+      setSending(false);
+    }
   };
 
   const customer = conv.customer ?? conv.agentName;
@@ -892,7 +992,7 @@ function SessionDock({ ctx, hidden }: { ctx: MCtx; hidden: boolean }) {
           placeholder="边处理边回复… ⌘/Ctrl+Enter"
           style={{ maxHeight: 80 }}
         />
-        <button type="button" className="btn btn-pri btn-sm" disabled={!draft.trim()} onClick={send}><Icon name="arrow" size={16} /></button>
+        <button type="button" className="btn btn-pri btn-sm" disabled={!draft.trim() || sending} onClick={() => void send()}><Icon name="arrow" size={16} /></button>
       </div>
     </div>
   );

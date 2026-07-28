@@ -18,6 +18,14 @@ test("D4 exposes the exact seven canonical BillTypes and all four filters", () =
 test("D4 contains user-wide category totals, running-balance breaks, masked export and fail-closed resets", () => {
   assert.match(page, /categoryTotals/);
   assert.match(page, /breakDetected/);
+  assert.match(page, /未结算流水不参与钱包核对/);
+  assert.match(client, /settlementBucket/);
+  assert.match(client, /unsettledCount/);
+  assert.match(client, /reconciliationScope/);
+  assert.match(client, /reconciliationNote/);
+  assert.match(client, /reconciliation:\s*Record<"USDT" \| "NEX", number> \| null/);
+  assert.match(page, /历史截止区间/);
+  assert.match(page, /不使用当前钱包/);
   assert.match(page, /downloadD4BillsCsv/);
   assert.match(page, /setBills\(EMPTY_PAGE\)/);
   assert.match(page, /setUserLedger\(null\)/);

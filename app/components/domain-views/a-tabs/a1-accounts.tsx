@@ -10,6 +10,7 @@ import {
   changeA1AccountRole,
   createA1Account,
   fetchA1Overview,
+  isA1OutcomeUncertainError,
   resetA1Account2fa,
   resetA1AccountPassword,
   revokeA1AccountSessions,
@@ -184,7 +185,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         await refreshOverview(true);
         toast(success);
       } catch (error) {
-        toast(`提交失败:${errorMessage(error)}`);
+        if (isA1OutcomeUncertainError(error)) {
+          toast(`提交结果未知（命令号 ${error.commandKey}）；请先刷新并核对 A2 审计，禁止重复提交。`);
+        } else {
+          toast(`提交失败:${errorMessage(error)}`);
+        }
       } finally {
         setMutatingAction(null);
       }
@@ -350,7 +355,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "A1",
-          command: def.buildCommand({ accountId: op.id, role: roleStr }),
+          command: def.buildCommand({ accountId: op.id, role: roleStr, expectedVersion: op.version }),
           target: def.buildTarget({ accountId: op.id }),
         });
       },
@@ -393,7 +398,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         gateLabel: def.gateLabel,
         reason: `${reason}；${verify}`,
         sourceDomain: "A1",
-        command: def.buildCommand({ accountId: op.id }),
+        command: def.buildCommand({ accountId: op.id, expectedVersion: op.version }),
         target: def.buildTarget({ accountId: op.id }),
       });
     },
@@ -420,7 +425,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
       const verify = `核验 ${businessValue?.channel ?? "—"} · ${businessValue?.verifiedAt || "—"} · 工单 ${businessValue?.ticket || "—"}`;
       const action = `重置密码 ${operatorDisplayName(op)}`;
       setMutatingAction(action);
-      resetA1AccountPassword(op.id, `${reason}；${verify}`, operator)
+      resetA1AccountPassword(op.id, `${reason}；${verify}`, operator, op.version)
         .then(async (result) => {
           setPasswordReset(result);
           await refreshOverview(true);
@@ -462,6 +467,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
             username: form.username,
             displayName: form.displayName,
             email: form.email,
+            expectedVersion: op.version,
           }),
           target: def.buildTarget({ accountId: op.id }),
         });
@@ -499,7 +505,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         gateLabel: def.gateLabel,
         reason,
         sourceDomain: "A1",
-        command: def.buildCommand({ accountId: op.id, status: "disabled" }),
+        command: def.buildCommand({ accountId: op.id, status: "disabled", expectedVersion: op.version }),
         target: def.buildTarget({ accountId: op.id }),
       });
     },
@@ -528,7 +534,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         gateLabel: def.gateLabel,
         reason,
         sourceDomain: "A1",
-        command: def.buildCommand({ accountId: op.id, status: "enabled" }),
+        command: def.buildCommand({ accountId: op.id, status: "enabled", expectedVersion: op.version }),
         target: def.buildTarget({ accountId: op.id }),
       });
     },
@@ -566,7 +572,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "A1",
-          command: def.buildCommand({ accountId: op.id }),
+          command: def.buildCommand({ accountId: op.id, expectedVersion: op.version }),
           target: def.buildTarget({ accountId: op.id }),
         });
       },
@@ -645,7 +651,11 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "A1",
-          command: def.buildCommand({ baselineKey: backendKey, value: backendValue }),
+          command: def.buildCommand({
+            baselineKey: backendKey,
+            value: backendValue,
+            expectedValue: registeredBaseline(backendKey)?.value ?? "",
+          }),
           target: def.buildTarget({ baselineKey: backendKey }),
         });
       },
@@ -668,13 +678,19 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
         const finalReason = `${form.reason}；${reason}`;
         void runMutation(
           `新建账号 ${form.username}`,
-          () => createA1Account({
+          async () => {
+            const created = await createA1Account({
             username: form.username,
             displayName: form.displayName,
             email: form.email,
             role: form.role,
-            initialPassword: form.initialPassword,
-          }, finalReason, operator),
+            }, finalReason, operator);
+            if (!created.temporaryPassword) {
+              throw new Error("A1_CREATE_TEMPORARY_PASSWORD_MISSING");
+            }
+            setPasswordReset({ account: created, temporaryPassword: created.temporaryPassword });
+            return created;
+          },
           `${form.displayName} 已创建，首次登录需绑定 2FA 并修改密码`,
         );
         setNaOpen(false);
@@ -919,7 +935,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
               amplifies: false,
               run: (reason) => {
                 setMutatingAction(`吊销会话 ${target.username}`);
-                revokeA1AccountSession(target.id, sessionId, reason, operator)
+                revokeA1AccountSession(target.id, sessionId, reason, operator, target.version)
                   .then(async () => {
                     await refreshOverview(true);
                     setDetailAccount(null);
@@ -960,18 +976,6 @@ type EditAccountForm = A1UpdateAccountInput & {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
-const DEFAULT_INITIAL_PASSWORD_CHARS = "23456789abcdefghjkmnpqrstuvwxyz";
-
-function generateDefaultInitialPassword() {
-  const bytes = new Uint8Array(16);
-  const browserCrypto = globalThis.crypto;
-  if (browserCrypto?.getRandomValues) {
-    browserCrypto.getRandomValues(bytes);
-    return `Aa1!${Array.from(bytes, (byte) => DEFAULT_INITIAL_PASSWORD_CHARS[byte % DEFAULT_INITIAL_PASSWORD_CHARS.length]).join("")}`;
-  }
-  return "";
-}
-
 function isValidEmail(email: string) {
   const normalized = email.trim();
   return !normalized || EMAIL_PATTERN.test(normalized);
@@ -979,15 +983,6 @@ function isValidEmail(email: string) {
 
 function isValidUsername(username: string) {
   return USERNAME_PATTERN.test(username.trim());
-}
-
-function isStrongInitialPassword(password: string) {
-  const normalized = password.trim();
-  return normalized.length >= 16
-    && /[a-z]/.test(normalized)
-    && /[A-Z]/.test(normalized)
-    && /\d/.test(normalized)
-    && /[^A-Za-z0-9]/.test(normalized);
 }
 
 function NewAccountDrawer({
@@ -1008,8 +1003,6 @@ function NewAccountDrawer({
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState(defaultRole);
-  const [initialPassword, setInitialPassword] = useState(() => generateDefaultInitialPassword());
-  const [showPassword, setShowPassword] = useState(true);
   const [reason, setReason] = useState("");
 
   useEffect(() => {
@@ -1022,13 +1015,11 @@ function NewAccountDrawer({
 
   const emailOk = isValidEmail(email);
   const usernameOk = isValidUsername(username);
-  const passwordOk = isStrongInitialPassword(initialPassword);
   const missingItems = [
     !username.trim() ? "登录名未填写" : !usernameOk ? "登录名格式不正确" : "",
     !displayName.trim() ? "显示名未填写" : "",
     email.trim() && !emailOk ? "工作邮箱格式不正确" : "",
     recoveryMode && role !== "super" ? "恢复模式只能创建超管账号" : "",
-    !initialPassword.trim() ? "初始密码未填写" : !passwordOk ? "初始密码强度不足" : "",
     !reason.trim() ? "操作理由未填写" : "",
   ].filter(Boolean);
   const disabledReason = disabled ? "权限或数据仍在加载,暂不能创建" : "";
@@ -1038,7 +1029,7 @@ function NewAccountDrawer({
   return (
     <Drawer
       title="新建运营账号"
-      sub="① 登录资料 → ② 初始角色(可暂不分配) → ③ 初始密码 → 操作理由"
+      sub="① 登录资料 → ② 初始角色(可暂不分配) → ③ 服务端临时凭据 → 操作理由"
       onClose={onClose}
       footer={
         <div style={{ padding: "10px 16px 12px", borderTop: "1px solid var(--border)" }}>
@@ -1059,7 +1050,6 @@ function NewAccountDrawer({
                 displayName: displayName.trim(),
                 email: email.trim() || undefined,
                 role,
-                initialPassword: initialPassword.trim(),
                 reason: reason.trim(),
               })}
             >确认创建账号</button>
@@ -1144,27 +1134,9 @@ function NewAccountDrawer({
         ))}
       </div>
 
-      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>③ 初始密码 *</div>
-      <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <input
-            type={showPassword ? "text" : "password"}
-            value={initialPassword}
-            onChange={(e) => setInitialPassword(e.target.value)}
-            placeholder="至少 16 位，含大小写、数字和符号"
-            autoComplete="new-password"
-            style={{ flex: "1 1 260px", minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--ink)", fontFamily: "var(--mono)", fontSize: 13 }}
-          />
-          <button className="l-btn sm" onClick={() => setShowPassword((value) => !value)} type="button">
-            {showPassword ? "隐藏" : "显示"}
-          </button>
-          <button className="l-btn sm" onClick={() => setInitialPassword(generateDefaultInitialPassword())} type="button">
-            重新生成
-          </button>
-          <span style={{ fontSize: 12, color: passwordOk || !initialPassword.trim() ? "var(--ink-4)" : "var(--danger)" }}>
-            默认已生成 20 位强初始密码，首次登录绑定 2FA 后必须修改。
-          </span>
-        </div>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)", marginBottom: 8 }}>③ 服务端临时凭据</div>
+      <div className="atint" style={{ marginBottom: 10 }}>
+        账号创建成功后由服务端生成 20 位四类强临时密码，并且只展示一次；浏览器不会生成、编辑或提前持有账号密码。
       </div>
 
       <div className="atint" style={{ marginBottom: 14 }}>

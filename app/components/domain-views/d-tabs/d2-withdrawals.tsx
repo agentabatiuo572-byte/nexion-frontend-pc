@@ -235,9 +235,10 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       await load();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "D2 审核失败";
+      await load();
       setError(message);
       toast(message);
-      await load();
+      throw cause;
     } finally {
       setSubmitting("");
     }
@@ -334,7 +335,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
             <td><button className="l-btn sm" onClick={() => void openDetail(row)}>{row.withdrawalNo}</button></td>
             <td>{row.userNo}<div className="sub">{row.nickname}</div></td>
             <td>{row.asset} / {row.chain}<div className="mono sub">{row.targetAddress}</div></td>
-            <td className="num"><strong>{money(row.amount)}</strong><div className="sub">毛手续费 {money(row.grossFee)} · 惩罚率 {row.penaltyFeeRate}%</div><div className="sub">NEX抵扣 {row.nexBurned} × ${row.nexFeeOffsetRate}/NEX · 费用减免 {money(row.feeWaived)}</div><div className="sub">实际手续费 {money(row.actualFee)} · 实际到账 {money(row.netReceive)}</div></td>
+            <td className="num"><strong>{money(row.amount)}</strong><div className="sub">网络费 {money(row.networkFee)} · 费率 {row.networkFeeRate} · 区间 {money(row.networkFeeMin)}–{money(row.networkFeeMax)}</div><div className="sub">毛手续费 {money(row.grossFee)} · 惩罚率 {row.penaltyFeeRate}%</div><div className="sub">NEX抵扣 {row.nexBurned} × ${row.nexFeeOffsetRate}/NEX · 费用减免 {money(row.feeWaived)}</div><div className="sub">实际手续费 {money(row.actualFee)} · 实际到账 {money(row.netReceive)}</div></td>
             <td><span className={`bdg ${routingPriorityTone(row)}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">当前模型阈值 {row.k4BandLowMax ?? "—"} / {row.k4BandHighMin ?? "—"} / 升级 {row.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 {row.k3RiskRoute || "—"} · {row.hitRules || "无"}</div><div className="sub">C4 {row.kycStatus} · C2 {row.userStatus}</div></td>
             <td>{row.withdrawalCount24h}/{dailyLimit || "—"}</td>
             <td><span className={`bdg ${statusTone(row.status)}`}>{statusLabel(row.status)}</span></td>
@@ -357,7 +358,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
         <div className="f-stat warn"><div className="k">K4 / K3</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">当前模型阈值 {detail.k4BandLowMax ?? "—"} / {detail.k4BandHighMin ?? "—"} / 升级 {detail.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 路由 {detail.k3RiskRoute || "—"} · {detail.hitRules || "无命中"} · {detail.riskReason || "无补充原因"}</div><div className="sub">K4 评分明细：{detail.riskScoreBreakdown}</div></div>
         <div className="f-stat cyan"><div className="k">C4 / C2</div><div className="v">{detail.kycStatus}</div><div className="sub">账户 {detail.userStatus} · 24h 第 {detail.withdrawalCount24h} 笔</div></div>
         <div className="f-stat"><div className="k">当前状态</div><div className="v">{statusLabel(detail.status)}</div><div className="sub">{detail.failureReason || "无异常/生命周期备注"}</div><div className="sub">复查 {timeText(detail.holdUntil)} · 责任人 {detail.lifecycleOwner || "—"} · 期限 {detail.freezePeriod || "—"}</div></div>
-      </div><p><strong>设备事实：</strong>{detail.deviceSummary}</p><p><strong>推荐位置：</strong>{detail.referralPosition}</p><p><strong>费用明细：</strong>毛手续费 {money(detail.grossFee)}；惩罚率 {detail.penaltyFeeRate}%；NEX抵扣 {detail.nexBurned}；NEX抵扣率 ${detail.nexFeeOffsetRate}/NEX；费用减免 {money(detail.feeWaived)}；实际手续费 {money(detail.actualFee)}；实际到账 {money(detail.netReceive)}</p><p><strong>全部提现历史：</strong>{detail.withdrawalHistory}</p><p><strong>状态历史：</strong>{detail.statusHistory || "暂无"}</p><p><strong>审计轨迹：</strong>{detail.auditTrail || "暂无"}</p></div>
+      </div><p><strong>设备事实：</strong>{detail.deviceSummary}</p><p><strong>推荐位置：</strong>{detail.referralPosition}</p><p><strong>费用明细：</strong>网络费 {money(detail.networkFee)}（费率 {detail.networkFeeRate}，区间 {money(detail.networkFeeMin)}–{money(detail.networkFeeMax)}）；毛手续费 {money(detail.grossFee)}；惩罚率 {detail.penaltyFeeRate}%；NEX抵扣 {detail.nexBurned}；NEX抵扣率 ${detail.nexFeeOffsetRate}/NEX；费用减免 {money(detail.feeWaived)}；实际手续费 {money(detail.actualFee)}；实际到账 {money(detail.netReceive)}</p><p><strong>全部提现历史：</strong>{detail.withdrawalHistory}</p><p><strong>状态历史：</strong>{detail.statusHistory || "暂无"}</p><p><strong>审计轨迹：</strong>{detail.auditTrail || "暂无"}</p></div>
     </section>}
   </>;
 }

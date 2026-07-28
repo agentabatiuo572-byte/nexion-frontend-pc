@@ -17,6 +17,14 @@ const controller = readFileSync(
   new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/web/OpsEmergencyControlController.java", import.meta.url),
   "utf8",
 );
+const canonicalBoundaryController = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/shared/canonical/AppCanonicalBoundaryController.java", import.meta.url),
+  "utf8",
+);
+const canonicalBoundaryService = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/shared/canonical/AppCanonicalBoundaryService.java", import.meta.url),
+  "utf8",
+);
 const c2Component = readFileSync(
   new URL("../app/components/domain-views/c-tabs/c2-actions.tsx", import.meta.url),
   "utf8",
@@ -278,4 +286,14 @@ test("J3 preserves the selected window and account page across refresh and retur
   assert.match(jView, /fetchJEmergencyOverviews\(tab, j3State\.window, j3State\.page, j3State\.pageSize\)/);
   assert.match(jView, /persistJ3LocationState\(window, tamper\.accountPage\.page, tamper\.accountPage\.pageSize\)/);
   assert.doesNotMatch(component, /ctx\.emergency\.tamper!\.window !== "24h"/);
+});
+
+test("J3 records H2 trial state and charge tamper at the live controller boundary", () => {
+  assert.match(canonicalBoundaryController, /return service\.rejectTrialStateTamper\(userId\)/);
+  assert.match(canonicalBoundaryController, /return service\.chargeTrial\(\s*userId,\s*body\.chargeSucceeded\(\),\s*body\.chargeFailRate\(\),\s*idempotencyKey\)/);
+  assert.match(canonicalBoundaryService, /rejectTrialStateTamper\(Long userId\)[\s\S]{0,280}"free_trial_state"/);
+  assert.match(canonicalBoundaryService, /chargeTrial\([\s\S]{0,400}executeOnce\("TRIAL_CHARGE"/);
+  assert.match(canonicalBoundaryService, /chargeTrialInternal\([\s\S]{0,400}"charge_fail_rate"/);
+  assert.match(canonicalBoundaryService, /"\/api\/trial\/eligibility"/);
+  assert.match(canonicalBoundaryService, /"\/api\/trial\/charge"/);
 });

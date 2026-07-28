@@ -11,20 +11,42 @@ function idempotencyKey() {
   return `i-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// A transport failure has an unknown outcome: the backend may already have
+// committed. Keep the key by exact command fingerprint so a manual retry
+// replays the same command instead of creating a second write.
+const uncertainCommandKeys = new Map<string, string>();
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
+  const isWrite = !!init?.method && init.method !== "GET";
+  const commandFingerprint = isWrite
+    ? `${init?.method}:${path}:${typeof init?.body === "string" ? init.body : ""}`
+    : "";
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
-  const res = await fetch(`/api/admin/content${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  if (isWrite && !headers.has("Idempotency-Key")) {
+    const stableKey = uncertainCommandKeys.get(commandFingerprint) ?? idempotencyKey();
+    uncertainCommandKeys.set(commandFingerprint, stableKey);
+    headers.set("Idempotency-Key", stableKey);
+  }
+  let res: Response;
+  try {
+    res = await fetch(`/api/admin/content${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
+  } catch (error) {
+    // Preserve the fingerprint/key pair. The next identical operator retry is
+    // a durable idempotent replay, never a fresh mutation.
+    throw error;
+  }
   const text = await res.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
+    if (res.status < 500 && isWrite) uncertainCommandKeys.delete(commandFingerprint);
     throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
   }
+  if (isWrite) uncertainCommandKeys.delete(commandFingerprint);
   return payload.data as T;
 }
 
@@ -557,9 +579,9 @@ export type IContentActions = {
   saveI1CopyDraft: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI1CopyVersion: (copyKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   deleteI1CopyDraft: (copyKey: string, version: string, revision: number, reason: string) => Promise<void>;
-  rollbackI1CopyVersion: (copyKey: string, version: string, reason: string) => Promise<void>;
-  archiveI1Copy: (copyKey: string, expectedVersion: string, reason: string) => Promise<void>;
-  updateI1Framework: (paramKey: string, value: string, reason: string) => Promise<void>;
+  rollbackI1CopyVersion: (copyKey: string, version: string, expectedVersion: string, expectedRevision: number, reason: string) => Promise<void>;
+  archiveI1Copy: (copyKey: string, expectedVersion: string, expectedRevision: number, reason: string) => Promise<void>;
+  updateI1Framework: (paramKey: string, value: string, expectedValue: string, reason: string) => Promise<void>;
   createI1Experiment: (body: Record<string, unknown>, reason: string) => Promise<void>;
   startI1Experiment: (experimentId: string, reason: string) => Promise<void>;
   discardI1Experiment: (experimentId: string, reason: string) => Promise<void>;
@@ -573,7 +595,7 @@ export type IContentActions = {
   updateI2Template: (channel: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   deleteI2Template: (channel: string, reason: string) => Promise<void>;
   updateI2TemplateStatus: (channel: string, status: string, reason: string) => Promise<void>;
-  updateI2Distribution: (items: { key: string; pct: number }[], reason: string) => Promise<void>;
+  updateI2Distribution: (items: { key: string; pct: number }[], expectedItems: { key: string; pct: number }[], reason: string) => Promise<void>;
   syncI2SocialEvents: (reason: string) => Promise<NovaSocialSyncResult>;
   listI2SocialEvents: (eventType: string, status: string, page: number, pageSize: number) => Promise<NovaSocialEventPage>;
   previewI2SocialEvent: (language: "ZH" | "VI" | "EN") => Promise<NovaSocialEventSampleView | null>;
@@ -586,13 +608,13 @@ export type IContentActions = {
   sendI3CampaignNow: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
   cancelI3Campaign: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
   deleteI3Campaign: (campaignNo: string, expectedRevision: number, reason: string) => Promise<void>;
-  updateI3Cap: (tier: string, cap: string, reason: string) => Promise<void>;
-  publishI4TrustSection: (sectionKey: string, body: { version: string; expectedRevision: number; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
+  updateI3Cap: (tier: string, cap: string, expectedCap: string, reason: string) => Promise<void>;
+  publishI4TrustSection: (sectionKey: string, body: { version: string; expectedRevision: number; expectedVersion: string; expectedStatus: string; dataSourceStatement: string; bilingualConfirmed: true }, reason: string) => Promise<void>;
   createI4TrustSectionDraft: (sectionKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI4TrustSectionDraft: (sectionKey: string, version: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  deleteI4TrustSectionDraft: (sectionKey: string, version: string, reason: string) => Promise<void>;
-  rollbackI4TrustSection: (sectionKey: string, targetVersion: string, reason: string) => Promise<void>;
-  archiveI4TrustSection: (sectionKey: string, reason: string) => Promise<void>;
+  deleteI4TrustSectionDraft: (sectionKey: string, version: string, expectedRevision: number, reason: string) => Promise<void>;
+  rollbackI4TrustSection: (sectionKey: string, targetVersion: string, expectedVersion: string, expectedStatus: string, reason: string) => Promise<void>;
+  archiveI4TrustSection: (sectionKey: string, expectedVersion: string, expectedStatus: string, reason: string) => Promise<void>;
   saveI5DisclosureDraft: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI5Disclosure: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   configureI5Matrix: (jurisdiction: string, body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -611,7 +633,9 @@ export type IContentActions = {
   rescanI6: (reason: string) => Promise<void>;
   saveI6LocalizedDraft: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   publishI6LocalizedMessage: (messageKey: string, body: Record<string, unknown>, reason: string) => Promise<void>;
-  archiveI6LocalizedMessage: (messageKey: string, reason: string) => Promise<void>;
+  archiveI6LocalizedMessage: (messageKey: string, expectedVersion: string, reason: string) => Promise<void>;
+  fetchI6MessageVersions: (messageKey: string) => Promise<I18nMessagePairView[]>;
+  rollbackI6LocalizedMessage: (messageKey: string, targetVersion: string, expectedVersion: string, reason: string) => Promise<void>;
   fixI6Integrity: (issueCode: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   createI6Course: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
   updateI7CourseDraft: (courseId: string, body: Record<string, unknown>, reason: string) => Promise<void>;
@@ -659,9 +683,9 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   saveI1CopyDraft: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI1CopyVersion: (copyKey, body, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   deleteI1CopyDraft: (copyKey, version, revision, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion: version, expectedRevision: revision }, reason)) }).then(() => undefined),
-  rollbackI1CopyVersion: (copyKey, version, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  archiveI1Copy: (copyKey, expectedVersion, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
-  updateI1Framework: (paramKey, value, reason) => apiRequest(`/copy-ab/framework/${encodeURIComponent(paramKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
+  rollbackI1CopyVersion: (copyKey, version, expectedVersion, expectedRevision, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/versions/${encodeURIComponent(version)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion, expectedRevision }, reason)) }).then(() => undefined),
+  archiveI1Copy: (copyKey, expectedVersion, expectedRevision, reason) => apiRequest(`/copy-ab/copies/${encodeURIComponent(copyKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion, expectedRevision }, reason)) }).then(() => undefined),
+  updateI1Framework: (paramKey, value, expectedValue, reason) => apiRequest(`/copy-ab/framework/${encodeURIComponent(paramKey)}`, { method: "PATCH", body: JSON.stringify(withReason({ value, expectedValue }, reason)) }).then(() => undefined),
   createI1Experiment: (body, reason) => apiRequest("/copy-ab/experiments", { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   startI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/start`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   discardI1Experiment: (experimentId, reason) => apiRequest(`/copy-ab/experiments/${encodeURIComponent(experimentId)}/discard`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
@@ -675,7 +699,7 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   updateI2Template: (channel, body, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   deleteI2Template: (channel, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   updateI2TemplateStatus: (channel, status, reason) => apiRequest(`/nova/templates/${encodeURIComponent(channel)}/status`, { method: "PATCH", body: JSON.stringify(withReason({ status }, reason)) }).then(() => undefined),
-  updateI2Distribution: (items, reason) => apiRequest("/nova/social-distribution", { method: "PATCH", body: JSON.stringify(withReason({ items }, reason)) }).then(() => undefined),
+  updateI2Distribution: (items, expectedItems, reason) => apiRequest("/nova/social-distribution", { method: "PATCH", body: JSON.stringify(withReason({ items, expectedItems }, reason)) }).then(() => undefined),
   syncI2SocialEvents: (reason) => apiRequest<NovaSocialSyncResult>("/nova/social-events/sync", { method: "POST", body: JSON.stringify(withReason({}, reason)) }),
   listI2SocialEvents: (eventType, status, page, pageSize) => {
     const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
@@ -693,13 +717,13 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   sendI3CampaignNow: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/send-now`, { method: "POST", body: JSON.stringify(withReason({ schedule: "now", expectedRevision }, reason)) }).then(() => undefined),
   cancelI3Campaign: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}/cancel`, { method: "POST", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
   deleteI3Campaign: (campaignNo, expectedRevision, reason) => apiRequest(`/campaigns/${encodeURIComponent(campaignNo)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
-  updateI3Cap: (tier, cap, reason) => apiRequest(`/campaigns/caps/${encodeURIComponent(tier)}`, { method: "PATCH", body: JSON.stringify(withReason({ cap }, reason)) }).then(() => undefined),
+  updateI3Cap: (tier, cap, expectedCap, reason) => apiRequest(`/campaigns/caps/${encodeURIComponent(tier)}`, { method: "PATCH", body: JSON.stringify(withReason({ cap, expectedCap }, reason)) }).then(() => undefined),
   publishI4TrustSection: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI4TrustSectionDraft: (sectionKey, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI4TrustSectionDraft: (sectionKey, version, body, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  deleteI4TrustSectionDraft: (sectionKey, version, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
-  rollbackI4TrustSection: (sectionKey, targetVersion, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ targetVersion }, reason)) }).then(() => undefined),
-  archiveI4TrustSection: (sectionKey, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  deleteI4TrustSectionDraft: (sectionKey, version, expectedRevision, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/versions/${encodeURIComponent(version)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedRevision }, reason)) }).then(() => undefined),
+  rollbackI4TrustSection: (sectionKey, targetVersion, expectedVersion, expectedStatus, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ targetVersion, expectedVersion, expectedStatus }, reason)) }).then(() => undefined),
+  archiveI4TrustSection: (sectionKey, expectedVersion, expectedStatus, reason) => apiRequest(`/trust-disclosure/trust-sections/${encodeURIComponent(sectionKey)}/archive`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion, expectedStatus }, reason)) }).then(() => undefined),
   saveI5DisclosureDraft: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI5Disclosure: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/${encodeURIComponent(jurisdiction)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   configureI5Matrix: (jurisdiction, body, reason) => apiRequest(`/trust-disclosure/disclosures/matrix/${encodeURIComponent(jurisdiction)}`, { method: "PUT", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
@@ -718,7 +742,9 @@ export const iContentActions: Omit<IContentActions, "reloadIContent"> = {
   rescanI6: (reason) => apiRequest("/i18n-learning/rescan", { method: "POST", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   saveI6LocalizedDraft: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   publishI6LocalizedMessage: (messageKey, body, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
-  archiveI6LocalizedMessage: (messageKey, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
+  archiveI6LocalizedMessage: (messageKey, expectedVersion, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}`, { method: "DELETE", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
+  fetchI6MessageVersions: (messageKey) => apiRequest<I18nMessagePairView[]>(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions`),
+  rollbackI6LocalizedMessage: (messageKey, targetVersion, expectedVersion, reason) => apiRequest(`/i18n-learning/messages/${encodeURIComponent(messageKey)}/versions/${encodeURIComponent(targetVersion)}/rollback`, { method: "POST", body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   fixI6Integrity: (issueCode, body, reason) => apiRequest(`/i18n-learning/integrity/${encodeURIComponent(issueCode)}/fix`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   createI6Course: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}`, { method: "POST", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   updateI7CourseDraft: (courseId, body, reason) => apiRequest(`/i18n-learning/courses/${encodeURIComponent(courseId)}/draft`, { method: "PATCH", body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),

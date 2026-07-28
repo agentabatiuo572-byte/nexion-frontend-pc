@@ -10,12 +10,14 @@
  * 凭据 / 合规铁律:披露全链 操作员 = 风控,执行门槛 = 风控 / 超管;详情文案体现这一点。
  */
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Drawer, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import type { ICtx } from "./types";
 import type { DisclosureJurisdictionOption, DisclosureVersionItemView } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
 
@@ -62,6 +64,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const canDraftDisclosure = isSuperadmin || !!session?.authorities.includes("content_i5_write");
   const canPublishDisclosure = isSuperadmin || !!session?.authorities.includes("content_i5_disclosure_publish");
   const canAdjustGate = isSuperadmin || !!session?.authorities.includes("content_i5_gate_adjust");
+  const trustCommandAttempts = useRef(new Map<string, { fingerprint: string; commandKey: string }>());
+  const disclosureCommandAttempts = useRef(new Map<string, { fingerprint: string; commandKey: string }>());
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [chapNo, setChapNo] = useState<string | null>(null);
@@ -93,8 +97,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     .map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
   const jurisdictionNameFor = (code: string, fallback = code) => jurisdictionCatalog.find((item) => item.code === code)?.name ?? fallback;
   const countryOptions = (data?.countryOptions ?? []).map((item) => ({ value: item.code, label: `${item.code} · ${item.name}` }));
-  const sectionVersionOptions = (sectionKey: string, currentVersion: string) => TRUST_SECTION_VERSIONS
-    .filter((row) => row.sectionKey === sectionKey && ["published", "superseded", "PUBLISHED", "SUPERSEDED"].includes(row.status) && row.version !== currentVersion)
+  const sectionVersionOptions = (section: TrustSection) => TRUST_SECTION_VERSIONS
+    .filter((row) => row.sectionKey === section.key
+      && ["published", "superseded", "PUBLISHED", "SUPERSEDED"].includes(row.status)
+      && (row.version !== section.v || section.status.toLowerCase() === "archived"))
     .map((row) => row.version);
   const chaptersFor = (jurisdiction: string, version?: string) => {
     const exact = DISCLOSURE_CHAPTERS.filter((chapter) => chapter.jurisdiction === jurisdiction && (!version || chapter.version === version));
@@ -138,6 +144,42 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     } catch (error) {
       toast(`操作失败:${error instanceof Error ? error.message : String(error)}`);
       return false;
+    }
+  };
+  const proposeTrustSection = async (attemptKey: string, fingerprint: string, spec: ProposeSpec) => {
+    const saved = trustCommandAttempts.current.get(attemptKey);
+    const commandKey = saved?.fingerprint === fingerprint
+      ? saved.commandKey
+      : createA2CommandKey("i4-trust-section");
+    trustCommandAttempts.current.set(attemptKey, { fingerprint, commandKey });
+    try {
+      const result = await propose(toast, { ...spec, commandKey });
+      trustCommandAttempts.current.delete(attemptKey);
+      if (result === "proposed") await actions.reloadIContent();
+      return result;
+    } catch (error) {
+      if (!(error instanceof A2OutcomeUncertainError)) {
+        trustCommandAttempts.current.delete(attemptKey);
+      }
+      throw error;
+    }
+  };
+  const proposeDisclosure = async (attemptKey: string, fingerprint: string, spec: ProposeSpec) => {
+    const saved = disclosureCommandAttempts.current.get(attemptKey);
+    const commandKey = saved?.fingerprint === fingerprint
+      ? saved.commandKey
+      : createA2CommandKey("i5-disclosure");
+    disclosureCommandAttempts.current.set(attemptKey, { fingerprint, commandKey });
+    try {
+      const result = await propose(toast, { ...spec, commandKey });
+      disclosureCommandAttempts.current.delete(attemptKey);
+      if (result === "proposed") await actions.reloadIContent();
+      return result;
+    } catch (error) {
+      if (!(error instanceof A2OutcomeUncertainError)) {
+        disclosureCommandAttempts.current.delete(attemptKey);
+      }
+      throw error;
     }
   };
 
@@ -244,6 +286,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
 
   const saveSectionDraft = () => {
     if (!draftEditor) return;
+    const sectionSnapshot = TRUST_SECTIONS.find((item) => item.key === draftEditor.sectionKey);
+    if (!sectionSnapshot) {
+      toast("版块快照已失效，请刷新后重试");
+      return;
+    }
     if (!/^v[1-9][0-9]{0,8}$/.test(draftEditor.version) || !draftEditor.description.trim()
       || !draftEditor.structure.trim() || !draftEditor.reason.trim() || draftEditor.fields.length === 0
       || draftEditor.fields.some((field) => !field.key.trim() || !field.label.trim()
@@ -256,6 +303,8 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       description: draftEditor.description.trim(),
       structure: draftEditor.structure.trim(),
       fields: draftEditor.fields.map((field) => ({ key: field.key.trim(), label: field.label.trim(), value: field.value.trim() })),
+      expectedSectionVersion: sectionSnapshot.v,
+      expectedSectionStatus: sectionSnapshot.status,
       ...(draftEditor.mode === "edit" ? { expectedRevision: draftEditor.revision ?? 0 } : {}),
     };
     const task = draftEditor.mode === "create"
@@ -270,7 +319,9 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     action: <>删除信任版块草稿 · {draft.sectionKey} {draft.version}</>,
     detail: <>仅删除尚未发布的草稿；线上版与历史已发布快照不受影响。</>,
     amplifies: false,
-    run: (reason) => runBackend(actions.deleteI4TrustSectionDraft(draft.sectionKey, draft.version, reason), `${draft.sectionKey} ${draft.version} 草稿已删除`),
+    run: (reason) => runBackend(actions.deleteI4TrustSectionDraft(
+      draft.sectionKey, draft.version, draft.revision, reason,
+    ), `${draft.sectionKey} ${draft.version} 草稿已删除`),
   });
 
   const pubSection = (s: TrustSection, draft: TrustSectionVersion) =>
@@ -293,7 +344,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         targetFields: draft.fields,
         requireDataSource: requiresDataSource(s),
       },
-      run: (reason, _value, form) => {
+      run: async (reason, _value, form) => {
         const bilingual = validateTrustSectionBilingualFields(draft.fields);
         if (!bilingual.valid) {
           toast(`中越字段不完整：${bilingual.missing.join("、")}`);
@@ -302,7 +353,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const def = findHighOp("i4_trust_section_manage")!;
         const dataSource = form?.dataSource?.trim() || "";
         const bilingualConfirmed = form?.bilingualConfirmed === "true";
-        void propose(toast, {
+        const fingerprint = JSON.stringify([
+          "publish", s.key, s.v, s.status, draft.version, draft.revision,
+          dataSource, bilingualConfirmed, reason,
+        ]);
+        return proposeTrustSection(`${s.key}:publish`, fingerprint, {
           action: `发布信任版块 · ${s.key}`,
           obj: s.key,
           before: s.v,
@@ -318,11 +373,13 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
             action: "publish",
             version: draft.version,
             expectedRevision: draft.revision,
+            expectedVersion: s.v,
+            expectedStatus: s.status,
             dataSourceStatement: dataSource,
             bilingualConfirmed,
           }),
           target: def.buildTarget({ sectionKey: s.key }),
-        }).then((result) => result === "proposed" ? actions.reloadIContent() : undefined);
+        });
       },
     });
 
@@ -335,11 +392,12 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         </>
       ),
       amplifies: false,
-      edit: { kind: "select", current: sectionVersionOptions(s.key, s.v)[0] ?? "", options: sectionVersionOptions(s.key, s.v) },
-      run: (reason, nv) => {
+      edit: { kind: "select", current: sectionVersionOptions(s)[0] ?? "", options: sectionVersionOptions(s) },
+      run: async (reason, nv) => {
         if (!nv) return;
         const def = findHighOp("i4_trust_section_manage")!;
-        void propose(toast, {
+        const fingerprint = JSON.stringify(["rollback", s.key, s.v, s.status, nv, reason]);
+        return proposeTrustSection(`${s.key}:rollback`, fingerprint, {
           action: `回滚信任版块 · ${s.key}`,
           obj: s.key,
           before: s.v,
@@ -350,9 +408,15 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I4",
-          command: def.buildCommand({ sectionKey: s.key, action: "rollback", targetVersion: nv }),
+          command: def.buildCommand({
+            sectionKey: s.key,
+            action: "rollback",
+            targetVersion: nv,
+            expectedVersion: s.v,
+            expectedStatus: s.status,
+          }),
           target: def.buildTarget({ sectionKey: s.key }),
-        }).then((result) => result === "proposed" ? actions.reloadIContent() : undefined);
+        });
       },
     });
 
@@ -365,9 +429,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         </>
       ),
       amplifies: false,
-      run: (reason) => {
+      run: async (reason) => {
         const def = findHighOp("i4_trust_section_manage")!;
-        void propose(toast, {
+        const fingerprint = JSON.stringify(["archive", s.key, s.v, s.status, reason]);
+        return proposeTrustSection(`${s.key}:archive`, fingerprint, {
           action: `下架信任版块 · ${s.key}`,
           obj: s.key,
           before: s.v,
@@ -378,9 +443,14 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I4",
-          command: def.buildCommand({ sectionKey: s.key, action: "archive" }),
+          command: def.buildCommand({
+            sectionKey: s.key,
+            action: "archive",
+            expectedVersion: s.v,
+            expectedStatus: s.status,
+          }),
           target: def.buildTarget({ sectionKey: s.key }),
-        }).then((result) => result === "proposed" ? actions.reloadIContent() : undefined);
+        });
       },
     });
 
@@ -498,7 +568,15 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       amplifies: false,
       run: (reason) => {
         const def = findHighOp("i5_jurisdiction_status")!;
-        void propose(toast, {
+        const command = def.buildCommand({
+          jurisdiction: item.code,
+          status: statuses[action],
+          expectedRevision: item.revision,
+        });
+        return proposeDisclosure(
+          `${item.code}:jurisdiction-status`,
+          JSON.stringify({ command, reason }),
+          {
           action: `${labels[action]}披露法域 · ${item.code}`,
           obj: item.code,
           before: item.status,
@@ -509,9 +587,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I5",
-          command: def.buildCommand({ jurisdiction: item.code, status: statuses[action], expectedRevision: item.revision }),
+          command,
           target: def.buildTarget({ jurisdiction: item.code }),
-        });
+          },
+        );
       },
     });
   };
@@ -522,7 +601,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     amplifies: false,
     run: (reason) => {
       const def = findHighOp("i5_jurisdiction_delete")!;
-      void propose(toast, {
+      const command = def.buildCommand({ jurisdiction: item.code, expectedRevision: item.revision });
+      return proposeDisclosure(
+        `${item.code}:jurisdiction-delete`,
+        JSON.stringify({ command, reason }),
+        {
         action: `删除未使用披露法域 · ${item.code}`,
         obj: item.code,
         before: `${item.name} · ${item.status}`,
@@ -533,9 +616,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         gateLabel: def.gateLabel,
         reason,
         sourceDomain: "I5",
-        command: def.buildCommand({ jurisdiction: item.code, expectedRevision: item.revision }),
+        command,
         target: def.buildTarget({ jurisdiction: item.code }),
-      });
+        },
+      );
     },
   });
 
@@ -568,7 +652,20 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const countryCodes = (form?.countryCodes || "").split(",").map((code) => code.trim()).filter(Boolean);
         const version = form?.version || "";
         const def = findHighOp("i5_matrix_configure")!;
-        void propose(toast, {
+        const currentSnapshot = JURISDICTIONS.find((item) => item.code === jurisdictionCode);
+        const command = def.buildCommand({
+          jurisdictionCode,
+          jurisdictionName,
+          countryCodes,
+          version,
+          expectedVersion: currentSnapshot?.v ?? "",
+          expectedStatus: currentSnapshot?.status ?? "ABSENT",
+          expectedCountryCodes: currentSnapshot?.countryCodes ?? [],
+        });
+        return proposeDisclosure(
+          `${jurisdictionCode}:matrix-configure`,
+          JSON.stringify({ command, reason }),
+          {
           action: `${current ? "调整" : "新增"}披露法域版本矩阵 · ${jurisdictionCode}`,
           obj: jurisdictionCode,
           before: current ? `${current.v} · ${current.countryCodes.join("、")}` : "未配置",
@@ -579,9 +676,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I5",
-          command: def.buildCommand({ jurisdictionCode, jurisdictionName, countryCodes, version }),
+          command,
           target: def.buildTarget({ jurisdictionCode }),
-        });
+          },
+        );
       },
     });
 
@@ -591,7 +689,15 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     amplifies: false,
     run: (reason) => {
       const def = findHighOp("i5_matrix_archive")!;
-      void propose(toast, {
+      const command = def.buildCommand({
+        jurisdiction: j.code,
+        expectedVersion: j.v,
+        expectedStatus: j.status,
+      });
+      return proposeDisclosure(
+        `${j.code}:matrix-archive`,
+        JSON.stringify({ command, reason }),
+        {
         action: `归档披露法域版本矩阵 · ${j.code}`,
         obj: j.code,
         before: `${j.v} · ${statusZh(j.status)}`,
@@ -602,9 +708,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         gateLabel: def.gateLabel,
         reason,
         sourceDomain: "I5",
-        command: def.buildCommand({ jurisdiction: j.code }),
+        command,
         target: def.buildTarget({ jurisdiction: j.code }),
-      });
+        },
+      );
     },
   });
 
@@ -618,7 +725,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       action: <>发布已存披露草稿 · {row.jurisdiction}</>,
       detail: (
         <>
-          <b>合规关键动作</b>:发布只读取服务器已经保存的草稿与固定 7 章快照，不接受确认框临时改正文。发布后 {row.jurisdiction} 适用国家/地区用户的确认状态转为过期，受限动作在重确认前由服务器拦截。<b>执行门槛 = 风控 / 超管</b>。
+          <b>合规关键动作</b>:发布只审批服务器已经保存的草稿并形成不可变 7 章快照，不接受确认框临时改正文，也不会改变 App 当前投放或用户确认状态。后续切换法域映射时才触发重新确认与服务器受限动作拦截。<b>执行门槛 = 风控 / 超管</b>。
         </>
       ),
       amplifies: false,
@@ -638,7 +745,16 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
         const def = findHighOp("i5_disclosure_publish")!;
         const version = row.version;
         const jurisdiction = row.jurisdiction;
-        void propose(toast, {
+        const command = def.buildCommand({
+          jurisdiction,
+          version,
+          expectedRevision: row.revision,
+          contentHash: row.contentHash,
+        });
+        return proposeDisclosure(
+          `${jurisdiction}:${version}:publish`,
+          JSON.stringify({ command, reason }),
+          {
           action: `发布披露新版 · ${jurisdiction}`,
           obj: jurisdiction,
           before: current?.version ?? j?.v ?? "无生效版",
@@ -649,9 +765,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I5",
-          command: def.buildCommand({ jurisdiction, version, expectedRevision: row.revision, contentHash: row.contentHash }),
+          command,
           target: def.buildTarget({ jurisdiction }),
-        });
+          },
+        );
       },
     });
   };
@@ -675,7 +792,11 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           .map((item) => item.name)
           .join(" + ") || g.name;
         const def = findHighOp("i5_gate_adjust")!;
-        void propose(toast, {
+        const command = def.buildCommand({ scope: nextScope, expectedScope: data?.gateScope ?? "" });
+        return proposeDisclosure(
+          `restricted-actions:${g.key}`,
+          JSON.stringify({ command, reason }),
+          {
           action: `${on ? "移出" : "纳入"}受限动作 · ${g.name}`,
           obj: g.name,
           before: on ? "受限内" : "已移出",
@@ -686,9 +807,10 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           gateLabel: def.gateLabel,
           reason,
           sourceDomain: "I5",
-          command: def.buildCommand({ scope: nextScope }),
+          command,
           target: def.buildTarget({}),
-        });
+          },
+        );
       },
     });
   };
@@ -797,7 +919,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
                     <td className="mono" style={{ fontSize: 11.5 }}>{s.lastChange}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {canDraftTrust && <><button className="l-btn sm mc" disabled={isPending} onClick={(e) => { e.stopPropagation(); createSectionDraft(s); }}>新建草稿</button>{" "}</>}
-                      {canPublishTrustSection(s) && <button className="l-btn sm" disabled={isPending || sectionVersionOptions(s.key, s.v).length === 0} onClick={(e) => { e.stopPropagation(); rollbackSection(s); }}>回滚历史版</button>}
+                      {canPublishTrustSection(s) && <button className="l-btn sm" disabled={isPending || sectionVersionOptions(s).length === 0} onClick={(e) => { e.stopPropagation(); rollbackSection(s); }}>{isArchived ? "恢复上线" : "回滚历史版"}</button>}
                       {canPublishTrustSection(s) && !isArchived && (
                         <>
                           {" "}

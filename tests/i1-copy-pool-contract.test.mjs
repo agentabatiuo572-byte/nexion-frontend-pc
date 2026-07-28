@@ -213,13 +213,26 @@ test("版本列表上的回滚、下架和新增版本操作按实际文案标�
   const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
   const client = read("lib/admin/i-client.ts");
 
-  assert.match(component, /rollbackTo\(row\.copyKey, row\.v\)/);
-  assert.match(component, /archiveCurrentVersion\(row\.copyKey, row\.v\)/);
+  assert.match(component, /rollbackTo\(copy, row\.v\)/);
+  assert.match(component, /archiveCurrentVersion\(copy, row\.v\)/);
   assert.match(component, /editCopy\(copy, row/);
   assert.match(component, /copy\?\.version === row\.v/);
-  assert.match(client, /archiveI1Copy: \(copyKey: string, expectedVersion: string, reason: string\)/);
-  assert.match(client, /withReason\(\{ expectedVersion \}, reason\)/);
+  assert.match(client, /archiveI1Copy: \(copyKey: string, expectedVersion: string, expectedRevision: number, reason: string\)/);
+  assert.match(client, /withReason\(\{ expectedVersion, expectedRevision \}, reason\)/);
   assert.match(component, /COPY_VERSIONS\.filter/);
+});
+
+test("I1 草稿、发布、回滚、下架和框架参数都携带当前快照做并发保护", () => {
+  const component = read("app/components/domain-views/i-tabs/i1-copy-ab.tsx");
+  const client = read("lib/admin/i-client.ts");
+
+  assert.match(component, /expectedRevision: c\.revision/);
+  assert.match(component, /rollbackI1CopyVersion\(copy\.key, v, copy\.version, copy\.revision, reason\)/);
+  assert.match(component, /archiveI1Copy\(copy\.key, version, copy\.revision, reason\)/);
+  assert.match(component, /updateI1Framework\(key, v, cur, reason\)/);
+  assert.match(client, /rollbackI1CopyVersion: \(copyKey: string, version: string, expectedVersion: string, expectedRevision: number, reason: string\)/);
+  assert.match(client, /withReason\(\{ expectedVersion, expectedRevision \}, reason\)/);
+  assert.match(client, /withReason\(\{ value, expectedValue \}, reason\)/);
 });
 
 test("版本列表只允许删除草稿版本，并通过独立 DELETE 接口保留理由审计", () => {

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+const UNKNOWN_OUTCOME_HEADER = "X-Nexion-Upstream-Outcome";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -80,6 +81,7 @@ async function proxy(request: Request, context: RouteContext) {
       method: request.method,
       headers,
       body: hasBody ? await request.text() : undefined,
+      signal: AbortSignal.timeout(20_000),
       cache: "no-store",
     });
     const responseHeaders = new Headers({
@@ -93,7 +95,11 @@ async function proxy(request: Request, context: RouteContext) {
       headers: responseHeaders,
     });
   } catch {
-    return jsonError(503, "TREASURY_BACKEND_UNAVAILABLE");
+    const response = jsonError(503, "TREASURY_BACKEND_UNAVAILABLE");
+    if (hasBody && idempotencyKey) {
+      response.headers.set(UNKNOWN_OUTCOME_HEADER, "unknown");
+    }
+    return response;
   }
 }
 

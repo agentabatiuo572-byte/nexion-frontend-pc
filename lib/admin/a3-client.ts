@@ -99,6 +99,28 @@ export interface A3Overview {
   stats: A3Stats;
 }
 
+export class A3OutcomeUncertainError extends Error {
+  constructor(message: string, public readonly commandKey: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "A3OutcomeUncertainError";
+  }
+}
+
+export class A3ReadbackFailedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "A3ReadbackFailedError";
+  }
+}
+
+export function isA3OutcomeUncertainError(error: unknown): error is A3OutcomeUncertainError {
+  return error instanceof A3OutcomeUncertainError;
+}
+
+export function isA3ReadbackFailedError(error: unknown): error is A3ReadbackFailedError {
+  return error instanceof A3ReadbackFailedError;
+}
+
 export interface A3RuntimeFlags {
   maintenanceBanner: boolean;
   configured: boolean;
@@ -199,11 +221,13 @@ function normalizeOverview(data: BackendA3Overview | null | undefined): A3Overvi
 
 async function a3Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
   const headers = new Headers(init?.headers);
+  let commandKey = "";
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+    commandKey = idempotencyKey(init.idempotencyPrefix);
+    headers.set("Idempotency-Key", commandKey);
   }
 
   const request = () => fetch(`/api/admin/platform${path}`, {
@@ -217,11 +241,22 @@ async function a3Request<T>(path: string, init?: RequestInit & { idempotencyPref
   } catch (error) {
     if (!init?.idempotencyPrefix) throw error;
     // The same header value is reused so a lost mutation response cannot create a second write/audit row.
-    response = await request();
+    try {
+      response = await request();
+    } catch (retryError) {
+      throw new A3OutcomeUncertainError("A3_MUTATION_OUTCOME_UNCERTAIN", commandKey, { cause: retryError });
+    }
+  }
+  if (init?.idempotencyPrefix
+    && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
+    throw new A3OutcomeUncertainError("A3_MUTATION_OUTCOME_UNCERTAIN", commandKey);
   }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
+    if (init?.idempotencyPrefix && response.ok && !result) {
+      throw new A3OutcomeUncertainError("A3_MUTATION_RESPONSE_UNREADABLE", commandKey);
+    }
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
@@ -248,7 +283,11 @@ export async function updateA3FeatureFlag(flagKey: string, value: string, expect
     }),
     idempotencyPrefix: "a3-flag",
   });
-  return fetchA3Overview();
+  try {
+    return await fetchA3Overview();
+  } catch (error) {
+    throw new A3ReadbackFailedError("A3_WRITE_COMMITTED_READBACK_FAILED", { cause: error });
+  }
 }
 
 export async function fetchA3RuntimeFlags(): Promise<A3RuntimeFlags> {

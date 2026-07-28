@@ -1,5 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -21,6 +21,13 @@ const PENDING_USER_ID = USER_ID + 2;
 const USER_NO = `U${String(USER_ID).padStart(8, "0")}`;
 const CLUSTER_ID = `K2ACC${SUFFIX}`;
 const H8_CLUSTER_ID = `K2H8${SUFFIX}`;
+const clusterProjectionRowId = (prefix: "K2-H2-C" | "K2-GIFT-C", clusterId: string) =>
+  `${prefix}${createHash("sha256").update(clusterId).digest("hex").slice(0, 40)}`;
+const H2_PROJECTION_ROW_ID = clusterProjectionRowId("K2-H2-C", CLUSTER_ID);
+const GIFT_PROJECTION_ROW_IDS = [
+  clusterProjectionRowId("K2-GIFT-C", CLUSTER_ID),
+  clusterProjectionRowId("K2-GIFT-C", H8_CLUSTER_ID),
+];
 const USER_SESSION_ID = `K2ACC-${SUFFIX}-USER-SESSION`;
 const ROWS = {
   trial: `K2-ACC-${SUFFIX}-TRIAL`,
@@ -100,7 +107,18 @@ function setupFixtures() {
 
 function cleanupFixtures() {
   mysql(`
-    DELETE FROM nx_admin_risk_arbitrage_row WHERE row_id IN ('${ROWS.trial}','${ROWS.permission}','${ROWS.gift}','${ROWS.board}','${ROWS.tradein}','K2-E3-U${NEGATIVE_USER_ID}','K2-E3-U${PENDING_USER_ID}','K2-H2-U${USER_ID}');
+    DELETE FROM nx_event_outbox
+     WHERE aggregate_id IN ('${ROWS.trial}','${ROWS.permission}','${ROWS.gift}','${ROWS.board}','${ROWS.tradein}','${H2_PROJECTION_ROW_ID}')
+        OR (event_name='trial.started'
+            AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.user_id')) IN ('${USER_ID}','${NEGATIVE_USER_ID}','${PENDING_USER_ID}'));
+    DELETE FROM nx_admin_risk_arbitrage_row
+     WHERE row_id IN ('${ROWS.trial}','${ROWS.permission}','${ROWS.gift}','${ROWS.board}','${ROWS.tradein}',
+                      'K2-E3-U${NEGATIVE_USER_ID}','K2-E3-U${PENDING_USER_ID}','K2-H2-U${USER_ID}',
+                      '${H2_PROJECTION_ROW_ID}','${GIFT_PROJECTION_ROW_IDS[0]}','${GIFT_PROJECTION_ROW_IDS[1]}')
+        OR row_id LIKE 'K2-LB-%-U${USER_ID}'
+        OR row_id LIKE 'K2-LB-%-U${NEGATIVE_USER_ID}'
+        OR row_id LIKE 'K2-LB-%-U${PENDING_USER_ID}';
+    DELETE FROM nx_risk_k2_leaderboard_snapshot WHERE user_id IN (${USER_ID},${NEGATIVE_USER_ID},${PENDING_USER_ID});
     DELETE FROM nx_commission_event WHERE order_no LIKE 'K2ACC-${SUFFIX}-%';
     DELETE FROM nx_wallet_ledger WHERE biz_no LIKE 'K2ACC-${SUFFIX}-%';
     DELETE FROM nx_tradein_application WHERE tradein_no LIKE 'K2ACC-${SUFFIX}-%';
@@ -526,7 +544,7 @@ test.describe.serial("K2 套利与刷量检测独立验收", () => {
     expect(signalTypes).toContain("risk.arbitrage_suspected");
     expect(signalTypes).toContain("risk.leaderboard_velocity_flagged");
     const crossDomainOutboxCount = await waitForMysqlCountAtLeast(
-      `SELECT COUNT(*) FROM nx_event_outbox WHERE aggregate_type='RISK_ARBITRAGE_ROW' AND aggregate_id IN ('${ROWS.tradein}','${ROWS.gift}','${ROWS.board}','K2-H2-U${USER_ID}') AND event_name IN ('risk.arbitrage_suspected','risk.trial_cycle_detected','risk.leaderboard_velocity_flagged') AND schema_registered=1 AND is_server_authoritative=1;`,
+      `SELECT COUNT(*) FROM nx_event_outbox WHERE aggregate_type='RISK_ARBITRAGE_ROW' AND aggregate_id IN ('${ROWS.tradein}','${ROWS.gift}','${ROWS.board}','${H2_PROJECTION_ROW_ID}') AND event_name IN ('risk.arbitrage_suspected','risk.trial_cycle_detected','risk.leaderboard_velocity_flagged') AND schema_registered=1 AND is_server_authoritative=1;`,
       4,
     );
     expect(crossDomainOutboxCount).toBeGreaterThanOrEqual(4);

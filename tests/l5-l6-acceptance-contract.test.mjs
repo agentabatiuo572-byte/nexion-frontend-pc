@@ -39,9 +39,17 @@ test("L6 normalizes canonical server aggregates without exposing raw identities"
   const data = normalizeL6BehaviorHeatmap({
     available: true,
     status: "AVAILABLE",
+    businessTimeZone: "UTC+08:00",
+    lateArrivalPolicy: "included_on_next_query",
+    quality: { clientEventIdDeduplicated: true, outOfOrderRejected: true, ctrDenominator: "page_viewed_pv" },
+    totalPages: 1,
+    trackedCount: 1,
     pageTree: [{ route: "/pages/store/store", titleZh: "商城", pageLevel: 1, parentL1: "/pages/store/store", parentL2: "/pages/store/store", tracked: true }],
+    excludedPages: [],
     activityByWindow: { "24h": [], "7d": [{ route: "/pages/store/store", pv: 4, uv: 3, clicks: 2, dwellMs: 800, bounceRate: 0.25, pageCount: 1 }], "30d": [] },
     clickHeatByRoute: {},
+    dailyTrend: [],
+    weeklyTrend: [],
   });
 
   assert.equal(data.available, true);
@@ -50,6 +58,35 @@ test("L6 normalizes canonical server aggregates without exposing raw identities"
   assert.equal(data.activityByWindow["7d"][0].pageCount, 1);
   assert.equal(canExportBiReports("risk", ["bi_l6_read"], "L6"), false);
   assert.equal(canExportBiReports("auditor", ["bi_l6_export"], "L6"), true);
+});
+
+test("L6 rejects dirty HTTP 200 aggregates as a whole instead of manufacturing zeroes", () => {
+  const valid = {
+    available: true,
+    status: "AVAILABLE",
+    window: "7d",
+    businessTimeZone: "UTC+08:00",
+    lateArrivalPolicy: "included_on_next_query",
+    quality: { clientEventIdDeduplicated: true, outOfOrderRejected: true, ctrDenominator: "page_viewed_pv" },
+    totalPages: 1,
+    trackedCount: 1,
+    pageTree: [{ route: "/pages/store/store", titleZh: "商城", pageLevel: 1, parentL1: "/pages/store/store", parentL2: "/pages/store/store", tracked: true }],
+    excludedPages: [],
+    activityByWindow: { "24h": [], "7d": [{ route: "/pages/store/store", pv: 4, uv: 3, clicks: 2, dwellMs: 800, bounceRate: 0.25, pageCount: 1 }], "30d": [] },
+    clickHeatByRoute: {},
+    dailyTrend: [],
+    weeklyTrend: [],
+  };
+  assert.equal(normalizeL6BehaviorHeatmap(valid).activityByWindow["7d"][0].pv, 4);
+  for (const dirty of [
+    { ...valid, available: "yes" },
+    { ...valid, trackedCount: 2 },
+    { ...valid, activityByWindow: { ...valid.activityByWindow, "7d": [{ ...valid.activityByWindow["7d"][0], pv: -1 }] } },
+    { ...valid, activityByWindow: { ...valid.activityByWindow, "7d": [{ ...valid.activityByWindow["7d"][0], uv: 5 }] } },
+    { ...valid, activityByWindow: { ...valid.activityByWindow, "7d": [{ ...valid.activityByWindow["7d"][0], bounceRate: 1.1 }] } },
+  ]) {
+    assert.throws(() => normalizeL6BehaviorHeatmap(dirty), /L6_RESPONSE_INVALID/);
+  }
 });
 
 test("L5 exposes only implemented actions and L6 uses canonical filtered endpoints", async () => {
@@ -92,5 +129,7 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.match(l6, /downloadL6Behavior/);
   assert.match(l6, /设备筛选/);
   assert.match(l6, /Locale 筛选/);
+  assert.match(l6, /重新加载/);
+  assert.match(l6, /setLiveRaw\(null\)/);
   assert.doesNotMatch(l6, /ctx\.biActions\?\.createReport/);
 });

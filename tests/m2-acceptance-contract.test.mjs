@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 
 const root = process.cwd();
 const read = (path) => readFileSync(resolve(root, path), "utf8");
+const readBackend = (path) => readFileSync(resolve(root, "..", "nexion-backend", path), "utf8");
 
 test("M2 keeps resolution and archive as separate, reversible states", () => {
   const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
@@ -20,7 +21,7 @@ test("M2 escalation is one backend command and preserves the real user binding",
   const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
   const view = read("app/components/domain-views/m-view.tsx");
 
-  assert.match(tickets, /该工单未关联真实用户/);
+  assert.match(tickets, /该工单没有后端确认的真实用户/);
   assert.match(tickets, /I\.support\.ticketEscalation\.__create/);
   assert.match(view, /mContentActions\.escalateTicket/);
   assert.doesNotMatch(tickets, /localStorage/);
@@ -40,6 +41,10 @@ test("M2 fails closed when any authoritative ticket detail cannot be loaded", ()
   const client = read("lib/admin/m-client.ts");
 
   assert.match(client, /detailOrUnavailable/);
+  assert.match(client, /assertSupportTicketPage/);
+  assert.match(client, /assertSupportTicketDetail/);
+  assert.match(client, /M2_TICKET_DETAIL_MALFORMED/);
+  assert.match(client, /M2_TICKET_PAGE_INCOMPLETE/);
   assert.match(client, /ticketsAvailable = results\[0\]\.status === "fulfilled" && ticketDetails\.complete/);
   assert.match(client, /tickets: ticketDetails\.rows/);
   assert.doesNotMatch(client, /if \(!messages\.length && base\.lastMessage\)/);
@@ -110,4 +115,55 @@ test("M2 opens a newly-created ticket by the authoritative backend ticket number
   assert.match(tickets, /setSelectedId\(authoritative\.id\)/);
   assert.doesNotMatch(tickets, /setSelectedId\(row\.id\)/);
   assert.doesNotMatch(tickets, /useRef<PendingCreatedTicket \| null>/);
+});
+
+test("M2 reuses the operation idempotency key through every ticket write and retry", () => {
+  const view = read("app/components/domain-views/m-view.tsx");
+  const client = read("lib/admin/m-client.ts");
+  const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
+
+  assert.match(view, /async function writeTicketRows\([\s\S]*?idempotencyKey\?: string/);
+  assert.match(view, /writeTicketRows\([\s\S]*?idempotencyKey,[\s\S]*?\);/);
+  assert.match(view, /replyTicket\(row\.id, newMessage\.body, before\.status, before\.version, reason, idempotencyKey\)/);
+  assert.match(view, /updateTicketStatus\(row\.id, row\.status, before\.status, before\.version, reason, idempotencyKey\)/);
+  assert.match(tickets, /commandKey: `m2:ticket:\$\{ticket\.id\}:escalate:\$\{ticket\.version\}`/);
+  assert.match(client, /createTicket\([\s\S]*?idempotencyKey\?: string\)/);
+  assert.match(client, /headers: idempotencyKey \? \{ "Idempotency-Key": idempotencyKey \} : undefined/);
+});
+
+test("M2 ticket mutations carry expected status/version and backend enforces atomic CAS", () => {
+  const client = read("lib/admin/m-client.ts");
+  const service = readBackend("src/main/java/ffdd/opsconsole/content/application/OpsSupportTicketService.java");
+  const mapper = readBackend("src/main/java/ffdd/opsconsole/content/mapper/SupportTicketMapper.java");
+
+  assert.match(client, /expectedStatus: toBackendTicketStatus\(expectedStatus\)/);
+  assert.match(client, /expectedVersion/);
+  assert.match(service, /SUPPORT_TICKET_PRECONDITION_REQUIRED/);
+  assert.match(service, /SUPPORT_TICKET_CONFLICT/);
+  assert.match(mapper, /version=version\+1/);
+  assert.match(mapper, /status=#\{expectedStatus\} AND version=#\{expectedVersion\}/);
+});
+
+test("M2 internal notes are private timeline entries with their own audited endpoint", () => {
+  const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
+  const view = read("app/components/domain-views/m-view.tsx");
+  const controller = readBackend("src/main/java/ffdd/opsconsole/content/web/OpsSupportTicketController.java");
+  const repository = readBackend("src/main/java/ffdd/opsconsole/content/infrastructure/MybatisSupportTicketRepository.java");
+
+  assert.match(tickets, /内部备注仅客服可见，不会作为回复发送给用户/);
+  assert.match(tickets, /I\.support\.ticketInternalNote\.__create/);
+  assert.match(view, /mContentActions\.addInternalNote/);
+  assert.match(controller, /@PostMapping\("\/\{ticketNo\}\/internal-notes"\)/);
+  assert.match(repository, /"internal", operator, body/);
+});
+
+test("M2 only exposes C1 and cross-domain user links after backend user verification", () => {
+  const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
+  const client = read("lib/admin/m-client.ts");
+  const mapper = readBackend("src/main/java/ffdd/opsconsole/content/mapper/SupportTicketMapper.java");
+
+  assert.match(client, /userVerified: Boolean\(base\.userExists\)/);
+  assert.match(tickets, /ticket\.userId && ticket\.userVerified/);
+  assert.match(tickets, /!ticket\.userVerified/);
+  assert.match(mapper, /EXISTS\(SELECT 1 FROM nx_user/);
 });

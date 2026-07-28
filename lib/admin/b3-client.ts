@@ -27,6 +27,12 @@ export interface B3Stage {
 }
 
 export interface B3AuxMetrics {
+  storeViewRate: number | null;
+  storeViewNumerator: number;
+  storeViewDenominator: number;
+  purchaseFromStoreRate: number | null;
+  purchaseFromStoreNumerator: number;
+  purchaseFromStoreDenominator: number;
   day0AccessRate: number | null;
   day0Numerator: number;
   day0Denominator: number;
@@ -79,17 +85,8 @@ async function json<T>(response: Response, fallback: string): Promise<T> {
 }
 
 export async function fetchB3Dashboard(filters: B3Filters, stage = "purchase") {
-  const suffix = query(filters);
-  const [overview, aux, trend] = await Promise.all([
-    fetch(`/api/admin/funnel${suffix}`, { cache: "no-store" }).then((response) =>
-      json<B3Dashboard>(response, "B3_FUNNEL_LOAD_FAILED")),
-    fetch(`/api/admin/funnel/aux-metrics${suffix}`, { cache: "no-store" }).then((response) =>
-      json<{ auxMetrics: B3AuxMetrics }>(response, "B3_AUX_LOAD_FAILED")),
-    fetch(`/api/admin/funnel/cohort-trend${query(filters, { stage, cohortRange: "13w" })}`, {
-      cache: "no-store",
-    }).then((response) => json<{ points: B3TrendPoint[] }>(response, "B3_TREND_LOAD_FAILED")),
-  ]);
-  return { ...overview, auxMetrics: aux.auxMetrics, trend: trend.points };
+  return fetch(`/api/admin/funnel${query(filters, { stage })}`, { cache: "no-store" }).then((response) =>
+    json<B3Dashboard>(response, "B3_FUNNEL_LOAD_FAILED"));
 }
 
 export async function saveB3View(

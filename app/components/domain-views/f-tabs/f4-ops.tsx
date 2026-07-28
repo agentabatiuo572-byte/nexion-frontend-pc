@@ -136,6 +136,14 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
           <div className="kv-row"><span className="k">{topLabel}</span><span className="v warn">{topShareLabel}</span></div>
           <div className="kv-row"><span className="k">分配口径</span><span className="v dim">按 V_VOTES 权重</span></div>
           <div className="sect-foot">
+            <button className="primary amp" onClick={() => ctx.openActionConfirm({
+              name: "提前结算本周领导奖池",
+              amplify: true,
+              detail: "按服务端当前周已支付 GMV、F.pool.ratio、月度 cap、解锁等级与 V_VOTES 生成 F5 佣金事件和 D4 台账。资金动作先提交 A2 双人审批；同周 CAS 防止重复派发。",
+              run: async (reason) => {
+                await ctx.proposeF4Settlement(reason);
+              },
+            })}>提前结算本周池</button>
             <button className="primary amp" onClick={() => ctx.openActionConfirm({ name: "领导池比例调整(周 GMV)", amplify: true, op: "param", paramKey: "F.pool.ratio", edit: { kind: "text", current: data.poolRatio, unit: "%" }, detail: `每周 GMV 注入领导池的比例 · 当前 ${ratioEff} · 放大池子流出,受 B1 约束。` })}>调整池比例</button>
             <button onClick={() => ctx.openActionConfirm({ name: "领导池月度 cap 调整", op: "param", paramKey: "F.pool.monthlyCap", edit: { kind: "text", current: data.monthlyCapLabel }, detail: `领导池月度预留护栏 · 当前 ${capEff} · 当前月池约 ${usdM(monthPoolUsd)}。` })}>调整月度 cap</button>
             <button onClick={() => ctx.openActionConfirm({ name: "池结算周期调整", op: "param", paramKey: "F.pool.settleCron", edit: { kind: "text", current: settleCron, unit: "cron 表达式" }, detail: `领导奖池自动结算的 cron 周期 · 当前 ${settleCron} · 改后对下一周期派发生效。` })}>结算周期</button>
@@ -263,7 +271,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
         <div className="f4-warn"><b>权重一动则虹吸放大</b> · 调高高 V 级权重会进一步放大头部分润,{voteSummary}。<b>每一项调整均视为「放大资金流出」</b>,须先核验 B1 兑付覆盖率(§1.8)。</div>
       </section>
 
-      <p className="f-foot">4 个子模块共用一条 server 评估总线:<b>{settlementEff}</b> 时,server 依据 V_VOTES、配额库存、大使预算、榜单结果一次性派发。运营侧调参均经 操作确认;放大流出项前置 B1 覆盖率核验。</p>
+      <p className="f-foot">领导奖池闭环:<b>{settlementEff}</b> 时按真实已支付订单 GMV、月度 cap、解锁等级和 V_VOTES 结算；提前结算先进入 A2，成功后同步写 F5 佣金事件、D4 台账与 A4 commission.paid。同周 CAS 防重复；补发、冲正、冻结在 F5 按佣金事件处置。配额、大使、排行榜各自按其配置和状态独立生效，放大流出项前置 B1 覆盖率核验。</p>
     </>
   );
 }

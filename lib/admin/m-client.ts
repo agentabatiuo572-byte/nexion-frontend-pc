@@ -60,6 +60,8 @@ type SupportTicketView = {
   updatedAt?: string;
   archived?: boolean;
   archivedAt?: string;
+  version?: number;
+  userExists?: boolean;
 };
 
 type SupportTicketMessageView = {
@@ -74,6 +76,20 @@ type SupportTicketMessageView = {
 type SupportTicketDetail = {
   ticket?: SupportTicketView;
   messages?: SupportTicketMessageView[];
+  slaTarget?: {
+    ruleVersion?: number;
+    firstResponseMins?: number;
+    resolutionHours?: number;
+    queue?: string;
+    escalation?: string;
+    firstResponseDeadlineAt?: string;
+    resolutionDeadlineAt?: string;
+    firstResponseAt?: string;
+    resolvedAt?: string;
+    firstResponseOverdue?: boolean;
+    resolutionOverdue?: boolean;
+    evaluatedAt?: string;
+  };
 };
 
 type ContentConversationView = {
@@ -95,6 +111,7 @@ type ContentConversationView = {
   transferReason?: string;
   transferredAt?: string;
   updatedAt?: string;
+  version?: number;
 };
 
 type ContentConversationMessageView = {
@@ -157,13 +174,70 @@ type SupportSlaView = {
   resolutionHours?: number;
   queue?: string;
   escalation?: string;
+  version?: number;
   updatedAt?: string;
 };
 
 type SupportKnowledgeOverview = {
   faqs?: SupportFaqView[];
   sla?: SupportSlaView[];
+  categories?: string[];
+  surfaces?: string[];
+  statuses?: string[];
+  queues?: string[];
+  escalations?: string[];
+  sources?: string[];
 };
+
+const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"] as const;
+
+function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOverview {
+  const malformed = () => {
+    throw new Error("M4_KNOWLEDGE_OVERVIEW_MALFORMED");
+  };
+  if (!value || typeof value !== "object" || Array.isArray(value)) malformed();
+  const overview = value as SupportKnowledgeOverview;
+  const arrays = [
+    overview.faqs,
+    overview.sla,
+    overview.categories,
+    overview.surfaces,
+    overview.statuses,
+    overview.queues,
+    overview.escalations,
+    overview.sources,
+  ];
+  if (!arrays.every(Array.isArray)) malformed();
+  const faqs = overview.faqs as SupportFaqView[];
+  const sla = overview.sla as SupportSlaView[];
+  if (!faqs.every((faq) =>
+    typeof faq.id === "string" && faq.id.trim().length > 0
+    && typeof faq.question === "string" && faq.question.trim().length > 0
+    && typeof faq.answer === "string" && faq.answer.trim().length > 0
+    && typeof faq.category === "string"
+    && typeof faq.surface === "string"
+    && typeof faq.language === "string"
+    && typeof faq.status === "string"
+    && Number.isSafeInteger(faq.sortOrder)
+    && Number.isSafeInteger(faq.version) && Number(faq.version) >= 1
+    && typeof faq.updatedAt === "string" && !Number.isNaN(Date.parse(faq.updatedAt))
+  )) malformed();
+  if (new Set(faqs.map((faq) => faq.id)).size !== faqs.length) {
+    throw new Error("M4_KNOWLEDGE_FAQ_ID_COLLISION");
+  }
+  if (!sla.every((row) =>
+    typeof row.category === "string"
+    && Number.isSafeInteger(row.firstResponseMins) && Number(row.firstResponseMins) > 0
+    && Number.isSafeInteger(row.resolutionHours) && Number(row.resolutionHours) > 0
+    && typeof row.queue === "string" && row.queue.trim().length > 0
+    && typeof row.escalation === "string" && row.escalation.trim().length > 0
+    && Number.isSafeInteger(row.version) && Number(row.version) >= 1
+    && typeof row.updatedAt === "string" && !Number.isNaN(Date.parse(row.updatedAt))
+  )) malformed();
+  if (new Set(sla.map((row) => row.category)).size !== sla.length
+    || !SLA_CATEGORIES.every((category) => sla.some((row) => row.category === category))) malformed();
+  return overview;
+}
 
 type SessionCategoryView = {
   type?: string;
@@ -278,6 +352,7 @@ type SupportWorkbenchSkuView = {
 };
 
 export type MLoadConfig = {
+  version: number;
   autoBalance: boolean;
   defaultCap: number;
   burstCap: number;
@@ -361,7 +436,8 @@ export type MContentData = {
   loadWarnings: string[];
 };
 
-export type MLoadConfigWrite = MLoadConfig & {
+export type MLoadConfigWrite = Omit<MLoadConfig, "version"> & {
+  expectedVersion: number;
   agentState: MAgentState;
 };
 
@@ -567,6 +643,75 @@ function asStringArray(value: unknown): string[] {
   return asArray<unknown>(value).map((item) => str(item).trim()).filter(Boolean);
 }
 
+function requireSessionTemplateOverview(value: unknown): SessionTemplateOverview {
+  const invalid = () => {
+    throw new Error("M5_SESSION_TEMPLATE_PROTOCOL_INVALID");
+  };
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
+  const overview = value as SessionTemplateOverview;
+  if (!Array.isArray(overview.categories)
+    || !overview.advisorPolicy || typeof overview.advisorPolicy !== "object"
+    || !overview.workbenchPolicy || typeof overview.workbenchPolicy !== "object"
+    || !Array.isArray(overview.audienceOptions)
+    || !Array.isArray(overview.segmentFields)
+    || !Array.isArray(overview.scripts)
+    || !Array.isArray(overview.replyTemplates)) {
+    invalid();
+  }
+
+  const categories = overview.categories ?? [];
+  const categoryTypes = new Set(categories.map((row) => row.type));
+  if (categories.length !== 3
+    || categoryTypes.size !== 3
+    || !["advisor", "support", "ai"].every((type) => categoryTypes.has(type))
+    || categories.some((row) => !row.name?.trim()
+      || !row.roleKey?.trim()
+      || !row.managedBy?.trim()
+      || typeof row.enabled !== "boolean"
+      || typeof row.readOnly !== "boolean")
+    || categories.some((row) => row.type === "ai" ? row.readOnly !== true : row.readOnly !== false)) {
+    invalid();
+  }
+
+  const audienceOptions = overview.audienceOptions ?? [];
+  if (audienceOptions.length === 0
+    || audienceOptions.some((item) => typeof item !== "string" || !item.trim())
+    || new Set(audienceOptions).size !== audienceOptions.length) {
+    invalid();
+  }
+  const advisorPolicy = overview.advisorPolicy ?? {};
+  if (typeof advisorPolicy.enabled !== "boolean"
+    || !Number.isSafeInteger(advisorPolicy.delayMs) || (advisorPolicy.delayMs ?? -1) < 0
+    || !Number.isSafeInteger(advisorPolicy.cooldownHours) || (advisorPolicy.cooldownHours ?? 0) < 1
+    || !Number.isSafeInteger(advisorPolicy.maxPerSession) || (advisorPolicy.maxPerSession ?? -1) < 0
+    || typeof advisorPolicy.audience !== "string"
+    || !audienceOptions.includes(advisorPolicy.audience)) {
+    invalid();
+  }
+  if (typeof overview.workbenchPolicy?.timeoutFallback !== "boolean") invalid();
+
+  const statuses = new Set(["draft", "published", "archived"]);
+  const scripts = overview.scripts ?? [];
+  if (new Set(scripts.map((row) => row.id)).size !== scripts.length
+    || scripts.some((row) => !row.id?.trim()
+      || !row.scriptGroup?.trim()
+      || !row.text?.trim()
+      || typeof row.ctaPath !== "string"
+      || !statuses.has(row.status ?? "")
+      || !audienceOptions.includes(row.audience ?? ""))) {
+    invalid();
+  }
+  const replyTemplates = overview.replyTemplates ?? [];
+  if (new Set(replyTemplates.map((row) => row.id)).size !== replyTemplates.length
+    || replyTemplates.some((row) => !row.id?.trim()
+      || !["advisor", "support"].includes(row.type ?? "")
+      || !row.text?.trim()
+      || !statuses.has(row.status ?? ""))) {
+    invalid();
+  }
+  return overview;
+}
+
 function asTs(value: string | undefined, fallback = Date.now()) {
   if (!value) return fallback;
   const ts = new Date(value).getTime();
@@ -726,20 +871,30 @@ function adaptCustomerProfile(
 
 function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTicket {
   const base = "ticket" in detail && detail.ticket ? detail.ticket : (detail as SupportTicketView);
+  const slaTarget = "ticket" in detail ? detail.slaTarget : undefined;
   const created = asTs(base.createdAt);
   const updated = asTs(base.updatedAt, created);
   const messages = asArray<SupportTicketMessageView>("messages" in detail ? detail.messages : []).map((m) => {
     const senderType = upper(m.senderType, "USER");
     return {
       ts: asTs(m.createdAt, updated),
-      author: senderType === "USER" ? ("user" as const) : senderType === "SYSTEM" ? ("system" as const) : ("agent" as const),
-      agentName: senderType === "USER" ? undefined : str(m.senderName, senderType === "SYSTEM" ? "系统" : base.assignedAdminName || "客服台"),
+      author: senderType === "USER"
+        ? ("user" as const)
+        : senderType === "SYSTEM"
+          ? ("system" as const)
+          : senderType === "INTERNAL"
+            ? ("internal" as const)
+            : ("agent" as const),
+      agentName: senderType === "USER"
+        ? undefined
+        : str(m.senderName, senderType === "SYSTEM" ? "系统" : base.assignedAdminName || "客服台"),
       body: str(m.content, ""),
     };
   });
   return {
     id: str(base.ticketNo, `TK-${base.id ?? "UNKNOWN"}`),
     userId: base.userId,
+    userVerified: Boolean(base.userExists),
     subject: str(base.title, "未命名工单"),
     category: ticketCategory(base.category),
     status: ticketStatus(base.status),
@@ -751,20 +906,165 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
     owner: str(base.assignedAdminName, "Unassigned"),
     archived: Boolean(base.archived),
     archivedAt: base.archivedAt ? asTs(base.archivedAt) : undefined,
+    version: num(base.version, 0),
+    slaTarget: {
+      ruleVersion: num(slaTarget?.ruleVersion, 0),
+      firstResponseMins: num(slaTarget?.firstResponseMins, 0),
+      resolutionHours: num(slaTarget?.resolutionHours, 0),
+      queue: str(slaTarget?.queue, ""),
+      escalation: str(slaTarget?.escalation, ""),
+      firstResponseDeadlineAt: asTs(slaTarget?.firstResponseDeadlineAt),
+      resolutionDeadlineAt: asTs(slaTarget?.resolutionDeadlineAt),
+      firstResponseAt: slaTarget?.firstResponseAt ? asTs(slaTarget.firstResponseAt) : undefined,
+      resolvedAt: slaTarget?.resolvedAt ? asTs(slaTarget.resolvedAt) : undefined,
+      firstResponseOverdue: Boolean(slaTarget?.firstResponseOverdue),
+      resolutionOverdue: Boolean(slaTarget?.resolutionOverdue),
+      evaluatedAt: asTs(slaTarget?.evaluatedAt),
+    },
     messages,
   };
 }
 
+function assertSupportTicketPage(value: unknown): AdminPage<SupportTicketView> {
+  if (!value || typeof value !== "object") throw new Error("M2_TICKET_PAGE_MALFORMED");
+  const page = value as Partial<AdminPage<SupportTicketView>>;
+  if (
+    !Array.isArray(page.records)
+    || !Number.isSafeInteger(page.total)
+    || Number(page.total) < 0
+    || !Number.isSafeInteger(page.pageNum)
+    || !Number.isSafeInteger(page.pageSize)
+  ) {
+    throw new Error("M2_TICKET_PAGE_MALFORMED");
+  }
+  return page as AdminPage<SupportTicketView>;
+}
+
+function assertSupportTicketDetail(value: unknown): SupportTicketDetail {
+  if (!value || typeof value !== "object") throw new Error("M2_TICKET_DETAIL_MALFORMED");
+  const detail = value as SupportTicketDetail;
+  const ticket = detail.ticket;
+  const slaTarget = detail.slaTarget;
+  const allowedStatuses = new Set(["OPEN", "IN_PROGRESS", "PENDING_USER", "RESOLVED", "CLOSED"]);
+  const allowedPriorities = new Set(["LOW", "NORMAL", "HIGH", "URGENT"]);
+  const allowedCategories = new Set(["ACCOUNT", "WITHDRAWAL", "DEPOSIT", "KYC", "HARDWARE", "EARNINGS", "GENESIS", "TECHNICAL", "OTHER"]);
+  if (
+    !ticket
+    || typeof ticket.ticketNo !== "string"
+    || !ticket.ticketNo.trim()
+    || !allowedStatuses.has(upper(ticket.status, ""))
+    || !allowedPriorities.has(upper(ticket.priority, ""))
+    || !allowedCategories.has(upper(ticket.category, ""))
+    || typeof ticket.title !== "string"
+    || !Number.isSafeInteger(ticket.version)
+    || Number(ticket.version) < 0
+    || typeof ticket.userExists !== "boolean"
+    || !slaTarget
+    || !Number.isSafeInteger(slaTarget.ruleVersion)
+    || Number(slaTarget.ruleVersion) < 1
+    || !Number.isSafeInteger(slaTarget.firstResponseMins)
+    || Number(slaTarget.firstResponseMins) < 1
+    || !Number.isSafeInteger(slaTarget.resolutionHours)
+    || Number(slaTarget.resolutionHours) < 1
+    || typeof slaTarget.queue !== "string"
+    || !slaTarget.queue.trim()
+    || typeof slaTarget.escalation !== "string"
+    || !slaTarget.escalation.trim()
+    || typeof slaTarget.firstResponseDeadlineAt !== "string"
+    || Number.isNaN(Date.parse(slaTarget.firstResponseDeadlineAt))
+    || typeof slaTarget.resolutionDeadlineAt !== "string"
+    || Number.isNaN(Date.parse(slaTarget.resolutionDeadlineAt))
+    || typeof slaTarget.firstResponseOverdue !== "boolean"
+    || typeof slaTarget.resolutionOverdue !== "boolean"
+    || typeof slaTarget.evaluatedAt !== "string"
+    || Number.isNaN(Date.parse(slaTarget.evaluatedAt))
+    || !Array.isArray(detail.messages)
+  ) {
+    throw new Error("M2_TICKET_DETAIL_MALFORMED");
+  }
+  const validMessages = detail.messages.every((message) =>
+    message
+    && typeof message === "object"
+    && ["USER", "AGENT", "SYSTEM", "INTERNAL"].includes(upper(message.senderType, ""))
+    && typeof message.content === "string"
+    && typeof message.createdAt === "string"
+    && Boolean(message.createdAt.trim()));
+  if (!validMessages) throw new Error("M2_TICKET_DETAIL_MALFORMED");
+  return detail;
+}
+
+function assertConversationRow(value: unknown): ContentConversationView {
+  if (!value || typeof value !== "object") throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  const row = value as ContentConversationView;
+  const transferType = row.transferToType?.toLowerCase();
+  if (
+    !Number.isSafeInteger(row.id)
+    || typeof row.conversationNo !== "string"
+    || !row.conversationNo.trim()
+    || !["ADVISOR", "SUPPORT"].includes(upper(row.conversationType, ""))
+    || !["OPEN", "TRANSFERRED", "RESOLVED", "CLOSED"].includes(upper(row.status, ""))
+    || !Number.isSafeInteger(row.unreadCount)
+    || Number(row.unreadCount) < 0
+    || !Number.isSafeInteger(row.version)
+    || Number(row.version) < 0
+    || typeof row.updatedAt !== "string"
+    || Number.isNaN(Date.parse(row.updatedAt))
+    || (upper(row.status, "") === "TRANSFERRED" && !["agent", "queue", "standby"].includes(transferType || ""))
+  ) {
+    throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  }
+  return row;
+}
+
+function assertConversationPage(value: unknown): AdminPage<ContentConversationView> {
+  if (!value || typeof value !== "object") throw new Error("M3_CONVERSATION_PAGE_MALFORMED");
+  const page = value as Partial<AdminPage<ContentConversationView>>;
+  if (
+    !Array.isArray(page.records)
+    || !Number.isSafeInteger(page.total)
+    || Number(page.total) < 0
+    || !Number.isSafeInteger(page.pageNum)
+    || Number(page.pageNum) < 1
+    || !Number.isSafeInteger(page.pageSize)
+    || Number(page.pageSize) < 1
+  ) {
+    throw new Error("M3_CONVERSATION_PAGE_MALFORMED");
+  }
+  page.records.forEach(assertConversationRow);
+  return page as AdminPage<ContentConversationView>;
+}
+
+function assertConversationDetail(value: unknown): ContentConversationDetail {
+  if (!value || typeof value !== "object") throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  const detail = value as ContentConversationDetail;
+  assertConversationRow(detail.conversation);
+  if (!Array.isArray(detail.messages) || !detail.messages.every((message) =>
+    message
+    && typeof message === "object"
+    && Number.isSafeInteger(message.id)
+    && ["USER", "AGENT", "SYSTEM"].includes(upper(message.senderType, ""))
+    && typeof message.content === "string"
+    && typeof message.createdAt === "string"
+    && !Number.isNaN(Date.parse(message.createdAt)))) {
+    throw new Error("M3_CONVERSATION_DETAIL_INVALID");
+  }
+  return detail;
+}
+
 async function fetchAllSupportTickets(): Promise<AdminPage<SupportTicketView>> {
   const pageSize = 100;
-  const first = await apiRequest<AdminPage<SupportTicketView>>(`/tickets?pageNum=1&pageSize=${pageSize}`);
+  const first = assertSupportTicketPage(
+    await apiRequest<unknown>(`/tickets?pageNum=1&pageSize=${pageSize}`),
+  );
   const records = [...asArray<SupportTicketView>(first.records)];
   const total = Math.max(num(first.total, records.length), records.length);
   let pageNum = 2;
   while (records.length < total) {
-    const page = await apiRequest<AdminPage<SupportTicketView>>(`/tickets?pageNum=${pageNum}&pageSize=${pageSize}`);
+    const page = assertSupportTicketPage(
+      await apiRequest<unknown>(`/tickets?pageNum=${pageNum}&pageSize=${pageSize}`),
+    );
     const next = asArray<SupportTicketView>(page.records);
-    if (next.length === 0) break;
+    if (next.length === 0) throw new Error("M2_TICKET_PAGE_INCOMPLETE");
     records.push(...next);
     pageNum += 1;
   }
@@ -773,16 +1073,19 @@ async function fetchAllSupportTickets(): Promise<AdminPage<SupportTicketView>> {
 
 async function fetchAllSupportConversations(): Promise<AdminPage<ContentConversationView>> {
   const pageSize = 100;
-  const first = await apiRequest<AdminPage<ContentConversationView>>(`/conversations?pageNum=1&pageSize=${pageSize}`);
-  const records = [...asArray<ContentConversationView>(first.records)];
-  const total = Math.max(num(first.total, records.length), records.length);
+  const first = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=1&pageSize=${pageSize}`));
+  const records = [...first.records];
+  const total = first.total;
   let pageNum = 2;
   while (records.length < total) {
-    const page = await apiRequest<AdminPage<ContentConversationView>>(`/conversations?pageNum=${pageNum}&pageSize=${pageSize}`);
-    const next = asArray<ContentConversationView>(page.records);
-    if (next.length === 0) break;
+    const page = assertConversationPage(await apiRequest<unknown>(`/conversations?pageNum=${pageNum}&pageSize=${pageSize}`));
+    const next = page.records;
+    if (next.length === 0) throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
     records.push(...next);
     pageNum += 1;
+  }
+  if (records.length !== total || new Set(records.map((row) => row.conversationNo)).size !== records.length) {
+    throw new Error("M3_CONVERSATION_PAGE_INCOMPLETE");
   }
   return { total, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
 }
@@ -817,6 +1120,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
   const profile = adaptCustomerProfile(detail, base);
   return {
     id: str(base.conversationNo, `CV-${base.id ?? "UNKNOWN"}`),
+    version: num(base.version, -1),
     type,
     agentName: str(base.ownerAgentName, type === "advisor" ? "Mia" : "客服台"),
     roleKey: roleKey(type),
@@ -855,6 +1159,7 @@ function adaptSla(row: SupportSlaView): SupportSla {
     resolutionHours: num(row.resolutionHours, 24),
     queue: str(row.queue, "客服队列"),
     escalation: str(row.escalation, "客服主管"),
+    version: num(row.version, 1),
   };
 }
 
@@ -952,9 +1257,10 @@ function adaptAdvisorAssignment(row: Record<string, unknown>): MAdvisorAssignmen
   };
 }
 
-function adaptLoadConfig(raw: Record<string, unknown> | undefined, agents: MSupportAgent[]): MLoadConfigWrite {
+function adaptLoadConfig(raw: Record<string, unknown> | undefined, agents: MSupportAgent[]): MLoadConfig & { agentState: MAgentState } {
   const loadRaw = requireLoadRaw(raw);
   const base: MLoadConfig = {
+    version: loadNumber(loadRaw, "version"),
     autoBalance: loadBoolean(loadRaw, "autoBalance"),
     defaultCap: loadNumber(loadRaw, "defaultCap"),
     burstCap: loadNumber(loadRaw, "burstCap"),
@@ -983,24 +1289,6 @@ function adaptLoadConfig(raw: Record<string, unknown> | undefined, agents: MSupp
   };
 }
 
-async function detailOrRow<T extends { id?: string }>(
-  rows: T[],
-  loader: (id: string) => Promise<unknown>,
-  adapt: (value: unknown) => T,
-) {
-  const details = await Promise.all(
-    rows.map(async (row) => {
-      if (!row.id) return row;
-      try {
-        return adapt(await loader(row.id));
-      } catch {
-        return row;
-      }
-    }),
-  );
-  return details;
-}
-
 async function detailOrUnavailable<T extends { id?: string }>(
   rows: T[],
   loader: (id: string) => Promise<unknown>,
@@ -1022,7 +1310,7 @@ export async function fetchMContentData(): Promise<MContentData> {
     apiRequest<Record<string, unknown>>("/tickets/load-config"),
     fetchAllSupportConversations(),
     apiRequest<SupportAgentOverview>("/support-agents"),
-    apiRequest<SupportKnowledgeOverview>("/knowledge/overview"),
+    apiRequest<unknown>("/knowledge/overview").then(assertSupportKnowledgeOverview),
     apiRequest<SessionTemplateOverview>("/session-templates/overview"),
   ]);
   const loadWarnings: string[] = [];
@@ -1033,36 +1321,56 @@ export async function fetchMContentData(): Promise<MContentData> {
   };
   const ticketPage = valueOr<AdminPage<SupportTicketView>>(results[0], { records: [], total: 0, pageNum: 1, pageSize: 100 }, "工单数据");
   const loadRaw = valueOr<Record<string, unknown>>(results[1], {
-    loadConfig: { autoBalance: false, defaultCap: 8, burstCap: 12, warnPct: 80, quietHourBalance: false, overflowQueue: "转人工备勤队列" },
+    loadConfig: { version: 1, autoBalance: false, defaultCap: 8, burstCap: 12, warnPct: 80, quietHourBalance: false, overflowQueue: "转人工备勤队列" },
     agentState: {},
   }, "负载策略");
   const convoPage = valueOr<AdminPage<ContentConversationView>>(results[2], { records: [], total: 0, pageNum: 1, pageSize: 100 }, "会话数据");
   const supportAgentOverview = valueOr<SupportAgentOverview>(results[3], {}, "坐席名单");
   const knowledge = valueOr<SupportKnowledgeOverview>(results[4], {}, "响应时限");
-  const sessionTemplates = valueOr<SessionTemplateOverview>(results[5], {}, "客服话术");
+  let sessionTemplates: SessionTemplateOverview | null = null;
+  if (results[5].status === "fulfilled") {
+    try {
+      sessionTemplates = requireSessionTemplateOverview(results[5].value);
+    } catch {
+      loadWarnings.push("客服话术协议");
+    }
+  } else {
+    loadWarnings.push("客服话术");
+  }
+  const safeSessionTemplates = sessionTemplates ?? {};
   const loadConfigAvailable = results[1].status === "fulfilled";
-  const conversationsAvailable = results[2].status === "fulfilled";
   const knowledgeAvailable = results[4].status === "fulfilled";
-  const sessionTemplatesAvailable = results[5].status === "fulfilled";
+  const sessionTemplatesAvailable = sessionTemplates !== null;
 
   const ticketRows = asArray<SupportTicketView>(ticketPage.records).map((row) => adaptTicket(row));
   const convoRows = asArray<ContentConversationView>(convoPage.records).map((row) => adaptConversation(row));
-  const ticketDetails = await detailOrUnavailable(ticketRows, (id) => apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(id)}`), (value) => adaptTicket(value as SupportTicketDetail));
+  const ticketDetails = await detailOrUnavailable(
+    ticketRows,
+    (id) => apiRequest<unknown>(`/tickets/${encodeURIComponent(id)}`),
+    (value) => adaptTicket(assertSupportTicketDetail(value)),
+  );
   const ticketsAvailable = results[0].status === "fulfilled" && ticketDetails.complete;
   if (!ticketDetails.complete) loadWarnings.push("工单明细");
-  const conversations = await detailOrRow(convoRows, (id) => apiRequest<ContentConversationDetail>(`/conversations/${encodeURIComponent(id)}`), (value) => adaptConversation(value as ContentConversationDetail));
+  const conversationDetails = await detailOrUnavailable(
+    convoRows,
+    (id) => apiRequest<unknown>(`/conversations/${encodeURIComponent(id)}`),
+    (value) => adaptConversation(assertConversationDetail(value)),
+  );
+  const conversationsAvailable = results[2].status === "fulfilled" && conversationDetails.complete;
+  if (!conversationDetails.complete) loadWarnings.push("会话明细");
   const supportAgents = asArray<Record<string, unknown>>(supportAgentOverview.agents).map(adaptSupportAgent);
   const advisorAssignments = asArray<Record<string, unknown>>(supportAgentOverview.advisorAssignments).map(adaptAdvisorAssignment);
   const transferTargets = asArray<Record<string, unknown>>(supportAgentOverview.transferTargets);
   const loadConfig = adaptLoadConfig(loadRaw, supportAgents);
-  const scriptAudience = Object.fromEntries(asArray<SessionScriptView>(sessionTemplates.scripts).map((row) => [str(row.id), str(row.audience)]));
+  const scriptAudience = Object.fromEntries(asArray<SessionScriptView>(safeSessionTemplates.scripts).map((row) => [str(row.id), str(row.audience)]));
 
   return {
     tickets: ticketDetails.rows,
-    conversations,
+    conversations: conversationDetails.rows,
     faqs: asArray<SupportFaqView>(knowledge.faqs).map(adaptFaq),
     sla: asArray<SupportSlaView>(knowledge.sla).map(adaptSla),
     loadConfig: {
+      version: loadConfig.version,
       autoBalance: loadConfig.autoBalance,
       defaultCap: loadConfig.defaultCap,
       burstCap: loadConfig.burstCap,
@@ -1073,22 +1381,22 @@ export async function fetchMContentData(): Promise<MContentData> {
     agentState: loadConfig.agentState,
     supportAgents,
     advisorAssignments,
-    categories: asArray<SessionCategoryView>(sessionTemplates.categories).map(adaptCategory),
+    categories: asArray<SessionCategoryView>(safeSessionTemplates.categories).map(adaptCategory),
     advisorPolicy: {
-      enabled: bool(sessionTemplates.advisorPolicy?.enabled, true) ? "on" : "off",
-      delayMs: num(sessionTemplates.advisorPolicy?.delayMs, 1500),
-      cooldownHours: num(sessionTemplates.advisorPolicy?.cooldownHours, 24),
-      maxPerSession: num(sessionTemplates.advisorPolicy?.maxPerSession, 1),
-      audience: str(sessionTemplates.advisorPolicy?.audience),
+      enabled: bool(safeSessionTemplates.advisorPolicy?.enabled, true) ? "on" : "off",
+      delayMs: num(safeSessionTemplates.advisorPolicy?.delayMs, 1500),
+      cooldownHours: num(safeSessionTemplates.advisorPolicy?.cooldownHours, 24),
+      maxPerSession: num(safeSessionTemplates.advisorPolicy?.maxPerSession, 1),
+      audience: str(safeSessionTemplates.advisorPolicy?.audience),
     },
     workbenchPolicy: {
-      timeoutFallback: bool(sessionTemplates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
+      timeoutFallback: bool(safeSessionTemplates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
     },
-    audienceOptions: asArray<string>(sessionTemplates.audienceOptions).map((item) => str(item)).filter(Boolean),
-    segmentFields: asArray<Record<string, unknown>>(sessionTemplates.segmentFields),
-    scripts: asArray<SessionScriptView>(sessionTemplates.scripts).map(adaptScript),
+    audienceOptions: asArray<string>(safeSessionTemplates.audienceOptions).map((item) => str(item)).filter(Boolean),
+    segmentFields: asArray<Record<string, unknown>>(safeSessionTemplates.segmentFields),
+    scripts: asArray<SessionScriptView>(safeSessionTemplates.scripts).map(adaptScript),
     scriptAudience,
-    replyTemplates: asArray<SessionReplyTemplateView>(sessionTemplates.replyTemplates).map(adaptReplyTemplate),
+    replyTemplates: asArray<SessionReplyTemplateView>(safeSessionTemplates.replyTemplates).map(adaptReplyTemplate),
     transferTargets,
     loadConfigAvailable,
     ticketsAvailable,
@@ -1178,6 +1486,7 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.session.segmentFields": JSON.stringify(data.segmentFields),
   };
   if (data.loadConfigAvailable) {
+    params["I.support.load.version"] = String(data.loadConfig.version);
     params["I.support.load.autoBalance"] = data.loadConfig.autoBalance ? "1" : "0";
     params["I.support.load.defaultCap"] = String(data.loadConfig.defaultCap);
     params["I.support.load.burstCap"] = String(data.loadConfig.burstCap);
@@ -1232,11 +1541,11 @@ export const mContentActions = {
       body: JSON.stringify(withReason(payload, reason)),
     });
   },
-  rebalanceLoad(agents: Array<Record<string, unknown>>, reason: string, idempotencyKey?: string) {
+  rebalanceLoad(agents: Array<Record<string, unknown>>, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<Record<string, unknown>>("/tickets/load-config/rebalance", {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({ agents }, reason)),
+      body: JSON.stringify(withReason({ agents, expectedVersion }, reason)),
     });
   },
   createTicket(ticket: {
@@ -1247,77 +1556,128 @@ export const mContentActions = {
     body: string;
     assignedAdminId: number;
     assignedAdminName: string;
-  }, reason: string) {
+  }, reason: string, idempotencyKey?: string) {
     return apiRequest<SupportTicketDetail>("/tickets", {
       method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ ...ticket, category: ticket.category.toUpperCase(), priority: toBackendTicketPriority(ticket.priority) }, reason)),
     });
   },
-  replyTicket(ticketNo: string, body: string, reason: string) {
+  replyTicket(ticketNo: string, body: string, expectedStatus: SupportTicketStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(ticketNo)}/replies`, {
       method: "POST",
-      body: JSON.stringify(withReason({ body }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({
+        body,
+        expectedStatus: toBackendTicketStatus(expectedStatus),
+        expectedVersion,
+      }, reason)),
     });
   },
-  updateTicketStatus(ticketNo: string, statusValue: SupportTicketStatus, reason: string) {
+  updateTicketStatus(ticketNo: string, statusValue: SupportTicketStatus, expectedStatus: SupportTicketStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(ticketNo)}/status`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ status: toBackendTicketStatus(statusValue) }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({
+        status: toBackendTicketStatus(statusValue),
+        expectedStatus: toBackendTicketStatus(expectedStatus),
+        expectedVersion,
+      }, reason)),
     });
   },
-  updateTicketPriority(ticketNo: string, priority: SupportTicketPriority, reason: string) {
+  updateTicketPriority(ticketNo: string, priority: SupportTicketPriority, expectedStatus: SupportTicketStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(ticketNo)}/priority`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ priority: toBackendTicketPriority(priority) }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({
+        priority: toBackendTicketPriority(priority),
+        expectedStatus: toBackendTicketStatus(expectedStatus),
+        expectedVersion,
+      }, reason)),
     });
   },
-  assignTicket(ticketNo: string, assignedAdminName: string, assignedAdminId: number, reason: string) {
+  assignTicket(ticketNo: string, assignedAdminName: string, assignedAdminId: number, expectedStatus: SupportTicketStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(ticketNo)}/assignee`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ assignedAdminId, assignedAdminName }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({
+        assignedAdminId,
+        assignedAdminName,
+        expectedStatus: toBackendTicketStatus(expectedStatus),
+        expectedVersion,
+      }, reason)),
     });
   },
-  archiveTicket(ticketNo: string, archived: boolean, reason: string) {
+  archiveTicket(ticketNo: string, archived: boolean, expectedStatus: SupportTicketStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(ticketNo)}/archive`, {
       method: "PATCH",
-      body: JSON.stringify(withReason({ archived }, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({
+        archived,
+        expectedStatus: toBackendTicketStatus(expectedStatus),
+        expectedVersion,
+      }, reason)),
     });
   },
-  escalateTicket(ticketNo: string, owner: { ownerAgentId: string; ownerAgentName: string }, reason: string) {
+  escalateTicket(
+    ticketNo: string,
+    owner: { ownerAgentId: string; ownerAgentName: string },
+    expectedStatus: SupportTicketStatus,
+    expectedVersion: number,
+    reason: string,
+    idempotencyKey?: string,
+  ) {
     return apiRequest<{ ticket?: SupportTicketDetail; conversation?: ContentConversationView }>(`/tickets/${encodeURIComponent(ticketNo)}/escalate`, {
       method: "POST",
-      body: JSON.stringify(withReason(owner, reason)),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({
+        ...owner,
+        expectedStatus: toBackendTicketStatus(expectedStatus),
+        expectedVersion,
+      }, reason)),
     });
   },
-  replyConversation(conversationNo: string, body: string, reason: string, idempotencyKey?: string) {
+  addInternalNote(ticketNo: string, body: string, expectedStatus: SupportTicketStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
+    return apiRequest<SupportTicketDetail>(`/tickets/${encodeURIComponent(ticketNo)}/internal-notes`, {
+      method: "POST",
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      body: JSON.stringify(withReason({
+        body,
+        expectedStatus: toBackendTicketStatus(expectedStatus),
+        expectedVersion,
+      }, reason)),
+    });
+  },
+  replyConversation(conversationNo: string, body: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/replies`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({ body }, reason)),
+      body: JSON.stringify(withReason({ body, expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  updateConversationStatus(conversationNo: string, statusValue: SessionConvo["status"], expectedStatus: SessionConvo["status"], reason: string, idempotencyKey?: string) {
+  updateConversationStatus(conversationNo: string, statusValue: SessionConvo["status"], expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/status`, {
       method: "PATCH",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({
         status: toBackendConversationStatus(statusValue),
         expectedStatus: toBackendConversationStatus(expectedStatus),
+        expectedVersion,
       }, reason)),
     });
   },
-  archiveConversation(conversationNo: string, archived: boolean, expectedStatus: SessionConvo["status"], reason: string, idempotencyKey?: string) {
+  archiveConversation(conversationNo: string, archived: boolean, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/archive`, {
       method: "PATCH",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({ archived, expectedStatus: toBackendConversationStatus(expectedStatus) }, reason)),
+      body: JSON.stringify(withReason({ archived, expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  archiveConversations(conversationNos: string[], reason: string, idempotencyKey?: string) {
+  archiveConversations(conversationNos: string[], expectedVersions: Record<string, number>, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView[]>("/conversations/archive/batch", {
       method: "PATCH",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({ conversationNos }, reason)),
+      body: JSON.stringify(withReason({ conversationNos, expectedVersions }, reason)),
     });
   },
   addCustomerTag(conversationNo: string, tag: string, reason: string, idempotencyKey?: string) {
@@ -1348,7 +1708,7 @@ export const mContentActions = {
       body: JSON.stringify(withReason({}, reason)),
     });
   },
-  transferConversation(conversationNo: string, transfer: SessionConvo["transfer"], reason: string, targetIdOverride?: string, idempotencyKey?: string) {
+  transferConversation(conversationNo: string, transfer: SessionConvo["transfer"], expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, targetIdOverride?: string, idempotencyKey?: string) {
     const target = transfer?.to;
     const body =
       target?.kind === "agent"
@@ -1359,35 +1719,35 @@ export const mContentActions = {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason(body, transfer?.reason || reason)),
+      body: JSON.stringify(withReason({ ...body, expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, transfer?.reason || reason)),
     });
   },
-  acceptTransfer(conversationNo: string, reason: string, idempotencyKey?: string) {
+  acceptTransfer(conversationNo: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/accept`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({}, reason)),
+      body: JSON.stringify(withReason({ expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  returnTransfer(conversationNo: string, reason: string, idempotencyKey?: string) {
+  returnTransfer(conversationNo: string, target: "from" | "standby", expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/return`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({}, reason)),
+      body: JSON.stringify(withReason({ target, expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  waitTransfer(conversationNo: string, reason: string, idempotencyKey?: string) {
+  waitTransfer(conversationNo: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/wait`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({}, reason)),
+      body: JSON.stringify(withReason({ expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  fallbackTransfer(conversationNo: string, reason: string, idempotencyKey?: string) {
+  fallbackTransfer(conversationNo: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/fallback`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({}, reason)),
+      body: JSON.stringify(withReason({ expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
   initiateConversation(convo: {
@@ -1409,11 +1769,13 @@ export const mContentActions = {
     title: string;
     assignedAdminId?: number;
     assignedAdminName: string;
+    expectedStatus: SessionConvo["status"];
+    expectedVersion: number;
   }, reason: string, idempotencyKey?: string) {
     return apiRequest<unknown>(`/conversations/${encodeURIComponent(conversationNo)}/ticket`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({ ...ticket, category: ticket.category.toUpperCase(), priority: toBackendTicketPriority(ticket.priority) }, reason)),
+      body: JSON.stringify(withReason({ ...ticket, expectedStatus: toBackendConversationStatus(ticket.expectedStatus), category: ticket.category.toUpperCase(), priority: toBackendTicketPriority(ticket.priority) }, reason)),
     });
   },
   updateSupportAgentProfile(adminId: number, profile: {
@@ -1481,33 +1843,34 @@ export const mContentActions = {
       body: JSON.stringify(withReason(payload, reason)),
     });
   },
-  updateFaq(faq: SupportFaq, reason: string, idempotencyKey?: string) {
+  updateFaq(faq: SupportFaq, before: SupportFaq, reason: string, idempotencyKey?: string) {
     const { id, updatedAt: _updatedAt, version: _version, ...payload } = faq;
     return apiRequest<SupportFaqView>(`/knowledge/faqs/${encodeURIComponent(faq.id)}`, {
       method: "PATCH",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason(payload, reason)),
+      body: JSON.stringify(withReason({ ...payload, expectedStatus: before.status, expectedVersion: before.version }, reason)),
     });
   },
-  updateFaqStatus(id: string, nextStatus: SupportFaq["status"], reason: string, idempotencyKey?: string) {
+  updateFaqStatus(id: string, nextStatus: SupportFaq["status"], expectedStatus: SupportFaq["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<SupportFaqView>(`/knowledge/faqs/${encodeURIComponent(id)}/status`, {
       method: "PATCH",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({ status: nextStatus }, reason)),
+      body: JSON.stringify(withReason({ status: nextStatus, expectedStatus, expectedVersion }, reason)),
     });
   },
-  deleteFaq(id: string, reason: string, idempotencyKey?: string) {
+  deleteFaq(id: string, expectedStatus: SupportFaq["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<void>(`/knowledge/faqs/${encodeURIComponent(id)}`, {
       method: "DELETE",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason({}, reason)),
+      body: JSON.stringify(withReason({ expectedStatus, expectedVersion }, reason)),
     });
   },
-  updateSla(row: SupportSla, reason: string, idempotencyKey?: string) {
+  updateSla(row: SupportSla, expectedVersion: number, reason: string, idempotencyKey?: string) {
+    const { version: _version, ...payload } = row;
     return apiRequest<SupportSlaView>(`/knowledge/sla/${encodeURIComponent(row.category)}`, {
       method: "PATCH",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
-      body: JSON.stringify(withReason(row, reason)),
+      body: JSON.stringify(withReason({ ...payload, expectedVersion }, reason)),
     });
   },
   updateCategory(type: SessionType, enabled: boolean, expectedEnabled: boolean, reason: string, idempotencyKey?: string) {

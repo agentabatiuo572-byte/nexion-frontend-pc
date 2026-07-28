@@ -43,6 +43,7 @@ const LIABILITY_LABELS: Record<(typeof B2_LIABILITY_KEYS)[number], string> = {
   withdrawal_queue: "提现队列",
   commission_cooling: "冷却期佣金",
   lock_other: "其他锁仓",
+  unverified_deposit: "待核实入金",
 };
 
 function money(value: number) {
@@ -253,7 +254,7 @@ export default function LiquidityPage() {
         <article className="card b2-kpi">
           <span>应付负债</span>
           <strong>{money(liabilities.totalUsdt)}</strong>
-          <small>{liabilities.hardLiabilityCategoryCount}/8 类服务端科目</small>
+          <small>{liabilities.hardLiabilityCategoryCount}/{B2_LIABILITY_KEYS.length} 类服务端科目</small>
         </article>
         <article className={`card b2-kpi tier-${reserve.waterLevel.tier.toLowerCase()}`}>
           <span>当前资金水位</span>
@@ -351,7 +352,7 @@ export default function LiquidityPage() {
 
       <section className="card b2-liabilities">
         <header>
-          <div><b>应付负债 · 8 类科目</b><span>{liabilities.hardLiabilityCategoryCount}/8 · 合计 {money(liabilities.totalUsdt)}</span></div>
+          <div><b>应付负债 · {B2_LIABILITY_KEYS.length} 类科目</b><span>{liabilities.hardLiabilityCategoryCount}/{B2_LIABILITY_KEYS.length} · 合计 {money(liabilities.totalUsdt)}</span></div>
           <span>Trial 仅为压力测试：{liabilities.trialShadowIncluded ? "当前展示" : "未计入硬负债"}</span>
         </header>
         <div className="b2-table-wrap">
@@ -412,7 +413,7 @@ export default function LiquidityPage() {
                   </label>
                 </div>
                 <fieldset>
-                  <legend>8 类负债口径</legend>
+                  <legend>{B2_LIABILITY_KEYS.length} 类负债口径</legend>
                   <div className="b2-check-grid">
                     {B2_LIABILITY_KEYS.map((key) => (
                       <label key={key}>

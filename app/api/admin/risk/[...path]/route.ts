@@ -69,12 +69,15 @@ async function proxy(request: Request, context: RouteContext) {
         },
       });
     }
+    const outcome = upstream.headers.get("X-Nexion-Upstream-Outcome");
+    const responseHeaders = new Headers({
+      "Content-Type": upstreamContentType,
+      "Cache-Control": "no-store",
+    });
+    if (outcome) responseHeaders.set("X-Nexion-Upstream-Outcome", outcome);
     return new Response(await upstream.text(), {
       status: upstream.status,
-      headers: {
-        "Content-Type": upstreamContentType,
-        "Cache-Control": "no-store",
-      },
+      headers: responseHeaders,
     });
   } catch {
     const response = jsonError(503, "RISK_BACKEND_UNAVAILABLE");

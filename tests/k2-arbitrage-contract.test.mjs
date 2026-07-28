@@ -62,7 +62,7 @@ test("K2 removes retired holding gates and declares exact OTP boundaries", () =>
   assert.match(component, /updateK2Param\(definition\.key, backendValue, param\.version/);
   assert.match(client, /withReason\(\{ value, expectedVersion \}, reason\)/);
   assert.match(designKit, /\(numeric - base\) \/ spec\.step/);
-  assert.match(designKit, /catch \{[\s\S]*当前输入已保留/);
+  assert.match(designKit, /catch \(error\)[\s\S]*operationConfirmErrorMessage\(error\)/);
 });
 
 test("K2 headers have one owner and unknown row actions do not default to another action", () => {
@@ -74,4 +74,14 @@ test("K2 headers have one owner and unknown row actions do not default to anothe
 test("F4 keeps the K2 hit count visible when historical F4 dispositions exist", () => {
   assert.match(f4Ops, /data\.leaderboardFraudHitCount}\s*账户\$\{lbDq \? " · 含已处置" : ""}/);
   assert.doesNotMatch(f4Ops, /lbDq\s*\?\s*"已处置"\s*:\s*`\$\{data\.leaderboardFraudHitCount}\s*账户`/);
+});
+
+test("K2 renders canonical backend disposition codes as business labels", () => {
+  assert.match(component, /K2_DISPOSITION_LABELS/);
+  assert.match(component, /account_flagged:\s*"已标记套利"/);
+  assert.match(component, /gift_blocked:\s*"新人礼已拦截"/);
+  assert.match(component, /leaderboard_flagged:\s*"已标记刷榜"/);
+  assert.match(component, /cluster_frozen:\s*"已联动 K1 冻结"/);
+  assert.match(component, /K2_DISPOSITION_LABELS\[disposed\]\s*\?\?\s*"已处置"/);
+  assert.doesNotMatch(component, />\{disposed\}</);
 });

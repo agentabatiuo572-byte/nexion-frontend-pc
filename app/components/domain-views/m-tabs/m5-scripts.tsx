@@ -42,6 +42,8 @@ const ASSIGNMENT_LIST_KEY = "I.support.advisorAssignments";
 const SUPPORT_AGENT_PAGE_SIZE = 5;
 const SCRIPT_PAGE_SIZE = 5;
 const REPLY_TEMPLATE_PAGE_SIZE = 5;
+const scriptI18nKey = (id: string) => `conversation.script.${id.toLowerCase()}`;
+const templateI18nKey = (id: string) => `conversation.template.${id.toLowerCase()}`;
 
 const DEFAULT_ADVISOR_POLICY = { enabled: "on", delayMs: 1500, cooldownHours: 24, maxPerSession: 1 };
 
@@ -412,7 +414,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
   const toggleTpl = (id: string, currentStatus: SessionReplyTpl["status"]) =>
     canWriteM5 && sessionTemplatesAvailable && !writePending && currentStatus !== "archived" && openActionConfirm({
       action: <>{currentStatus === "published" ? "归档" : "发布"}回复模板 · {id}</>,
-      detail: currentStatus === "published" ? <>归档后从快捷回复池移除,归档为终态。</> : <>发布后进入坐席快捷回复池。</>,
+      detail: currentStatus === "published" ? <>归档后从快捷回复池移除,归档为终态。</> : <>发布后进入坐席快捷回复池;服务器会校验对应 I6 中英越镜像已发布且中文正文一致。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -679,7 +681,14 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                   <div className="idtag" style={{ fontSize: 11.5 }}>{a.id}</div>
                   <div className="dim2" style={{ fontSize: 11 }}>{a.group}</div>
                 </div>
-                <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>{a.text}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>{a.text}</div>
+                  <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    I6 · <span className="mono">{scriptI18nKey(a.id)}</span>
+                    {" · "}
+                    <a href="/content/i18n" style={{ color: "var(--m-hd-2)" }}>维护双语镜像</a>
+                  </div>
+                </div>
                 <span className="dim" style={{ fontSize: 12 }}>{scriptAudience(a.id)}</span>
                 <span style={{ fontSize: 12, color: a.ctaHref !== "—" ? "var(--m-hd-2)" : "var(--ink-4)" }}>{a.ctaHref}</span>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
@@ -727,7 +736,14 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
               <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderTop: "1px solid var(--border)" }}>
                 <span className="idtag" style={{ fontSize: 11.5, minWidth: 48 }}>{t.id}</span>
                 <span className="chip" style={{ height: 20, border: "none" }}>{t.type === "advisor" ? "专属客服" : "普通客服"}</span>
-                <span className="dim" style={{ fontSize: 12.5, flex: 1, minWidth: 0 }}>{t.text}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="dim" style={{ fontSize: 12.5 }}>{t.text}</div>
+                  <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    I6 · <span className="mono">{templateI18nKey(t.id)}</span>
+                    {" · "}
+                    <a href="/content/i18n" style={{ color: "var(--m-hd-2)" }}>维护双语镜像</a>
+                  </div>
+                </div>
                 <span className="dim2" style={{ fontSize: 11 }}>{archived ? "已归档" : published ? "已发布" : "草稿"}</span>
                 <span data-proof={`session-tpl-publish-${t.id}`}>
                   <Sw on={published} disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || archived} onClick={() => toggleTpl(t.id, currentStatus)} label={`${published ? "归档" : archived ? "已归档" : "发布"} ${t.id}`} />

@@ -30,3 +30,11 @@ test("G7 exposes typed lock-days, correct RBAC split, G4 evidence and honest rat
   assert.match(client, /pendingMutationKeys\.get\(scope\)/);
   assert.match(client, /pendingMutationKeys\.delete\(scope\)/);
 });
+
+test("G7 edit form rejects no-op changes while preserving valid zero-valued controls", async () => {
+  const ui = await readFile(uiPath, "utf8");
+  assert.match(ui, /disallowCurrent:\s*true/);
+  assert.match(ui, /value === undefined \|\| value === null \|\| String\(value\)\.trim\(\) === ""/);
+  assert.match(ui, /param\.key === "penalty" \? "decrease"/);
+  assert.match(ui, /param\.key === "apy" \|\| param\.key === "nurture" \|\| param\.key === "lottery" \? "increase"/);
+});

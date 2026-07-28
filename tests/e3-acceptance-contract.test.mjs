@@ -3,22 +3,33 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const e3 = readFileSync(new URL("../app/components/domain-views/e-tabs/e3-lifecycle.tsx", import.meta.url), "utf8");
+const manual = readFileSync(new URL("../app/components/domain-views/e-tabs/e3-manual.tsx", import.meta.url), "utf8");
 const designKit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/e3-client.ts", import.meta.url), "utf8");
 const l4 = readFileSync(new URL("../app/components/domain-views/l-tabs/l4-live-data.ts", import.meta.url), "utf8");
 
-test("E3 treats every current trade-in control as required server-canonical data", () => {
+test("E3 treats every FEAT-DEV02 trade-in control as required server-canonical data", () => {
   for (const key of [
     "E.tradein.eligibility",
-    "E.tradein.promo.delaySec",
-    "E.tradein.promo.minAgeDays",
-    "E.tradein.promo.routes",
-    "E.tradein.inventorySoftMax",
+    "E.tradein.enabled",
+    "E.tradein.ladder.cut1",
+    "E.tradein.ladder.credit5",
+    "E.tradein.requireHigherPrice",
+    "E.tradein.maxDevicesPerOrder",
   ]) {
     assert.match(e3, new RegExp(`REQUIRED_E3_KEYS[\\s\\S]*${key.replaceAll(".", "\\.")}`));
   }
   assert.match(e3, /E3 配置不完整/);
-  assert.match(client, /promoDelaySeconds: "E\.tradein\.promo\.delaySec"/);
+  assert.match(client, /tradeinLadderCredit5: "E\.tradein\.ladder\.credit5"/);
+});
+
+test("E3 does not expose retired promotion controls as if they changed canonical quotes", () => {
+  for (const staleLabel of ["置换活动倍率", "置换弹窗节奏", "库存软上限告警"]) {
+    assert.doesNotMatch(e3, new RegExp(staleLabel));
+    assert.doesNotMatch(manual, new RegExp(staleLabel));
+  }
+  assert.doesNotMatch(e3, /E\.tradein\.promo/);
+  assert.doesNotMatch(e3, /E\.tradein\.inventorySoftMax/);
 });
 
 test("E3 scalar and grouped editors reject no-op and invalid boundary input", () => {

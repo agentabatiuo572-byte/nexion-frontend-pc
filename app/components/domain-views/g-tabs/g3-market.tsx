@@ -27,9 +27,9 @@ const CURVE_LABELS: Record<G3CurveField, { name: string; unit: string }> = {
   pumpProbability: { name: "上行概率", unit: "0-1" },
   volatilityPct: { name: "波动", unit: "+/-%" },
 };
-const CURVE_LOOSEN_DIR: Partial<Record<G3CurveField, "up">> = {
-  targetPrice: "up",
-  pumpProbability: "up",
+const CURVE_LOOSEN_DIR: Partial<Record<G3CurveField, "increase">> = {
+  targetPrice: "increase",
+  pumpProbability: "increase",
 };
 
 function messageOf(error: unknown) {
@@ -206,6 +206,10 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     : "—";
   const pinV = controlValue(overview, "pin");
   const loopV = controlValue(overview, "loop");
+  const coverageSnapshot = {
+    coverageRatio: overview.coverage.coverageRatio,
+    redlinePct: overview.coverage.redlinePct,
+  };
   const ctlVals: Record<string, string> = { schedule: schedV, pin: pinV, loop: loopV };
   const ctlOptions: Record<string, string[]> = {
     pin: ["未钉住", ...overview.frames.map((_, index) => `D${index + 1}`)],
@@ -218,28 +222,28 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
     const label = CURVE_LABELS[field];
     const current = frameValue(frame, field);
     const amp = !!CURVE_LOOSEN_DIR[field];
-    const isCurrentDay = dayIndex === overview.activeDayIndex;
     openActionConfirm({
       action: `周曲线关键帧 · D${dayIndex + 1} · ${label.name}`,
       detail: <>
         <b>D{dayIndex + 1} {label.name}</b> · 当前 {fmtCurveVal(field, current)}({label.unit})。
         {amp
-          ? <><b>属放大流出</b>:确认放行时以<b>周峰值价 {fmtPrice(peak)}</b> 重估全部 NEX 计价负债后验备付金红线(当前 {cov}%,红线 {redline}%),低于红线拒(422)。server 收到新值后按实际方向二次精算。</>
+          ? <><b>属放大流出</b>:确认放行时以<b>周峰值价 {fmtPrice(peak)}</b> 重估全部 NEX 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%),低于红线拒(422)。server 收到新值后按实际方向二次精算。</>
           : "做市波动不直接放大流出。"}
-        {isCurrentDay && field === "targetPrice" && <> 改当日帧会同步写入全站现价单源,约 60 秒内全网生效。</>}
+        曲线修改只保存未来排程参数，不改写当前现价；到对应排程推进时才写入全站现价单源。
         运营执行门槛:财务主管 / 超管。
       </>,
       amplifies: amp,
+      coverage: amp ? coverageSnapshot : undefined,
       edit: field === "pumpProbability"
-        ? { kind: "number", current: rawValue(current), min: 0, max: 1, step: 0.01 }
+        ? { kind: "number", current: rawValue(current), min: 0, max: 1, step: 0.01, disallowCurrent: true, amplifiesWhen: "increase" }
         : field === "volatilityPct"
-          ? { kind: "number", current: rawValue(current), min: 0, max: 20, step: 0.01 }
-          : { kind: "number", current: rawValue(current), min: 0.00000001, max: 1000000, step: 0.00000001 },
+          ? { kind: "number", current: rawValue(current), min: 0, max: 20, step: 0.01, disallowCurrent: true }
+          : { kind: "number", current: rawValue(current), min: 0.00000001, max: 1000000, step: 0.00000001, disallowCurrent: true, amplifiesWhen: "increase" },
       run: async (reason, value) => {
         if (!value) return;
         await mutate(`curve:${dayIndex}:${field}`, () => updateG3CurveFrame(
           overview, dayIndex, field, value, reason, OPERATOR(),
-        ), `D${dayIndex + 1} ${label.name}已立即生效`);
+        ), `D${dayIndex + 1} ${label.name}已保存，将在对应排程推进时生效`);
       },
     });
   };
@@ -251,10 +255,12 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       action: `行情排程控制 · ${name}`,
       detail: <><b>{name}</b> · 当前:{current}。{isSchedule ? <>请输入 <span className="mono">每日 HH:mm [ZoneId] 自动推进</span>,例如 <span className="mono">每日 08:30 Asia/Shanghai 自动推进</span>;后端会解析为动态 cron,当前有效值 {scheduleMeta}。</> : <>排程按 server 时间表推进当日生效帧;钉住 / 暂停推进不影响已配置的曲线本身。</>} 改排程产 <span className="mono">market.curve_advanced</span> / <span className="mono">market.schedule_changed</span> 审计。运营执行门槛:财务主管 / 超管。</>,
       amplifies: false,
-      edit: ctlOptions[key] ? { kind: "select", current, options: ctlOptions[key] } : { kind: "text", current: editCurrent },
+      edit: ctlOptions[key]
+        ? { kind: "select", current, options: ctlOptions[key], disallowCurrent: true }
+        : { kind: "text", current: editCurrent, disallowCurrent: true },
       run: async (reason, value) => {
         if (value == null) return;
-        await mutate(`control:${key}`, () => updateG3Control(key, value, reason, OPERATOR()), `${name}已立即生效`);
+        await mutate(`control:${key}`, () => updateG3Control(key, value, editCurrent, reason, OPERATOR()), `${name}已立即生效`);
       },
     });
   };
@@ -262,16 +268,17 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
   const adj = (overrideKey: G3OverrideKey, label: string, current: string, note: string, amp?: boolean) => {
     openActionConfirm({
       action: `手动 override · ${label}`,
-      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>属放大流出</b>:确认放行时以周峰值价 {fmtPrice(peak)} 重估全部 NEX 计价负债后验备付金红线(当前 {cov}%,红线 {redline}%,422)。</>}手动直写 = 临时压过自动排程,下次排程推进会以曲线值覆盖。</>,
+      detail: <><b>{label}</b> · 当前 {current} · {note}。{amp && <><b>属放大流出</b>:确认放行时以周峰值价 {fmtPrice(peak)} 重估全部 NEX 计价负债后核验 <b>B1 备付金覆盖率</b>(当前 {cov}%,红线 {redline}%,低于红线拒绝 422)。</>}手动直写 = 临时压过自动排程,下次排程推进会以曲线值覆盖。</>,
       amplifies: !!amp,
+      coverage: amp ? coverageSnapshot : undefined,
       edit: overrideKey === "volatilityPct"
-        ? { kind: "number", current, min: 0, max: 20, step: 0.01 }
+        ? { kind: "number", current, min: 0, max: 20, step: 0.01, disallowCurrent: true }
         : overrideKey === "deviationPct"
-          ? { kind: "number", current, min: 0, max: 50, step: 0.01 }
-          : { kind: "number", current, min: 0.00000001, max: 1000000, step: 0.00000001 },
+          ? { kind: "number", current, min: 0, max: 50, step: 0.01, disallowCurrent: true }
+          : { kind: "number", current, min: 0.00000001, max: 1000000, step: 0.00000001, disallowCurrent: true, amplifiesWhen: amp ? "increase" : undefined },
       run: async (reason, value) => {
         if (!value) return;
-        await mutate(`override:${overrideKey}`, () => updateG3Override(overrideKey, value, reason, OPERATOR()), `${label}已立即生效`);
+        await mutate(`override:${overrideKey}`, () => updateG3Override(overrideKey, value, current, reason, OPERATOR()), `${label}已立即生效`);
       },
     });
   };
@@ -282,8 +289,9 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       ? <>恢复后现价继续按曲线排程推进。恢复 = 价格继续上行预期,确认放行时核验 B1 覆盖率(当前 {cov}%,红线 {redline}%)。行情不在 J1 五闸内,作独立 pause 通知 J1 编排面联动。</>
       : <>暂停后现价冻结在最后值、曲线自动推进暂停,全站 NEX 价格停止更新。执行门槛:风控主管 / 超管。行情不在 J1 五闸内,作独立 pause 通知 J1 编排面联动。</>,
     amplifies: paused,
+    coverage: paused ? coverageSnapshot : undefined,
     run: async (reason) => {
-      await mutate("override:paused", () => updateG3Override("paused", String(!paused), reason, OPERATOR()), paused ? "行情引擎已立即恢复" : "行情引擎已立即暂停");
+      await mutate("override:paused", () => updateG3Override("paused", String(!paused), String(paused), reason, OPERATOR()), paused ? "行情引擎已立即恢复" : "行情引擎已立即暂停");
     },
   });
 
@@ -314,7 +322,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">周曲线关键帧(7 天 × 3 项 · 逐值权威)</span>
-          <span className="sub">· 点有权限的单元格改值并立即执行 · 当前生效日高亮 · 黄色 = 与昨日不同 · ★ 周峰值</span>
+          <span className="sub">· 点有权限的单元格保存排程参数 · 当前生效日高亮 · 黄色 = 与昨日不同 · ★ 周峰值</span>
           <div className="r">
             <span className="bdg ok">自动按日推进 · 可调时间</span>
           </div>
@@ -343,7 +351,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
                       return (
                         <td key={field} className={isPeak ? "peak" : changed ? "chg" : undefined}
                           onClick={allowed(curveAuthority(field)) ? () => openCurveCellMc(dayIndex, field) : undefined}
-                          title={allowed(curveAuthority(field)) ? "点击改值(立即执行)" : "当前账号无此字段的修改权限"}>
+                          title={allowed(curveAuthority(field)) ? "点击修改排程参数" : "当前账号无此字段的修改权限"}>
                           {fmtCurveVal(field, current)}{isPeak && " ★"}
                         </td>
                       );
@@ -401,10 +409,10 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
             <div className="p-row"><div className="txt"><div className="k">喂价源</div><div className="s">内部做市源 / 外部喂价源 · 外部源 1 tick/4s 同频</div></div><span className="v">{oracle}</span>{isSuper && <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
               action: "切换喂价源",
               detail: <>内部做市源 / 外部喂价源切换。基础设施操作,RBAC 细分前由超管代理执行门槛:超管。</>,
-              edit: { kind: "select", current: oracle, options: ["内部做市", "外部喂价"] },
+              edit: { kind: "select", current: oracle, options: ["内部做市", "外部喂价"], disallowCurrent: true },
               run: async (reason, value) => {
                 if (!value) return;
-                await mutate("override:oracle", () => updateG3Override("oracle", value, reason, OPERATOR()), "喂价源已立即切换");
+                await mutate("override:oracle", () => updateG3Override("oracle", value, oracle, reason, OPERATOR()), "喂价源已立即切换");
               },
             })}>切换源(立即执行)</button>}</div>
             <div className="p-row"><div className="txt"><div className="k">偏离告警阈值</div><div className="s">现价与喂价源偏离超此即告警</div></div><span className="v">{deviation}</span>{allowed("finprod_g3_write") && <button className="l-btn sm mc" disabled={busy} onClick={() => adj("deviationPct", "偏离告警阈值", rawValue(overview.overrides.deviationPct), "范围 0-50%")}>调整(立即执行)</button>}</div>

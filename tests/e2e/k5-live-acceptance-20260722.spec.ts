@@ -334,16 +334,34 @@ test.afterAll(async ({ browser }) => {
     try {
       await login(page, ROOT_USERNAME);
       for (const account of temporaryAccounts) {
+        const overview = await envelope<{
+          operators: Array<{ id: string; version: string }>;
+        }>(await page.request.get("/api/admin/platform/accounts/overview"));
+        const current = overview.data.operators.find((operator) => operator.id === account.id);
+        if (!current) throw new Error(`K5 temporary ${account.label} account ${account.id} was not found for cleanup`);
         const disabled = await page.request.patch(`/api/admin/platform/accounts/${account.id}/status`, {
           headers: { "Idempotency-Key": `${RUN_ID}-TEMP-${account.id}-DISABLE` },
-          data: { status: "disabled", reason: `${REASON} 清理独立复审${account.label}账号`, operator: "ignored" },
+          data: {
+            status: "disabled",
+            expectedVersion: current.version,
+            reason: `${REASON} 清理独立复审${account.label}账号`,
+            operator: "ignored",
+          },
         });
-        expect(disabled.status()).toBeLessThan(400);
+        const disabledRaw = await disabled.text();
+        expect(disabled.status(), disabledRaw).toBeLessThan(400);
+        const disabledPayload = JSON.parse(disabledRaw) as Envelope<{ version: string }>;
+        expect(disabledPayload.code).toBe(0);
         const unassigned = await page.request.patch(`/api/admin/platform/accounts/${account.id}/role`, {
           headers: { "Idempotency-Key": `${RUN_ID}-TEMP-${account.id}-UNASSIGN` },
-          data: { role: "unassigned", reason: `${REASON} 移除独立复审${account.label}角色`, operator: "ignored" },
+          data: {
+            role: "unassigned",
+            expectedVersion: disabledPayload.data.version,
+            reason: `${REASON} 移除独立复审${account.label}角色`,
+            operator: "ignored",
+          },
         });
-        expect(unassigned.status()).toBeLessThan(400);
+        expect(unassigned.status(), await unassigned.text()).toBeLessThan(400);
       }
     } finally {
       await context.close();
@@ -466,11 +484,17 @@ async function createTemporaryRoleAndOpenK5(
     },
   });
   expect(created.status(), await created.text()).toBeLessThan(400);
-  const createdPayload = await envelope<{ id?: string | number; accountId?: string | number }>(created);
+  const createdPayload = await envelope<{
+    id?: string | number;
+    accountId?: string | number;
+    temporaryPassword?: string | null;
+  }>(created);
   const accountId = String(createdPayload.data.id ?? createdPayload.data.accountId ?? "");
   expect(accountId).toBeTruthy();
+  const issuedPassword = createdPayload.data.temporaryPassword;
+  if (!issuedPassword) throw new Error(`K5 temporary ${label} credential was not returned`);
   await logout(page);
-  await login(page, username, initialPassword, finalPassword);
+  await login(page, username, issuedPassword, finalPassword);
   await openK5FromSidebar(page);
   return accountId;
 }
@@ -513,7 +537,7 @@ function decision(page: Page, ticketId: string, decisionValue: "passed" | "rejec
     data: {
       decision: decisionValue,
       expectedVersion,
-      reasonCode: decisionValue === "rejected" ? "DOCUMENT_INVALID" : undefined,
+      reasonCode: decisionValue === "rejected" ? "KYC_MATERIAL_INVALID" : undefined,
       reason,
       operator: "forged-browser-operator",
     },

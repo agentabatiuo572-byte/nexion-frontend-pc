@@ -61,7 +61,7 @@ test("J1 keeps the confirmation open and reuses the idempotency key when the out
   const dialog = page.getByRole("dialog");
   await fillKillConfirmation(dialog, "J1验收-未知结果重试保持同一命令键");
   await dialog.getByRole("button", { name: "确认提交" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("提交未完成");
+  await expect(dialog.getByRole("alert")).toContainText(/结果暂未确认|提交未完成/);
   await expect(dialog.getByLabel(/操作理由/)).toHaveValue("J1验收-未知结果重试保持同一命令键");
   await dialog.getByRole("button", { name: "确认提交" }).click();
   await expect.poll(() => commandKeys.length).toBe(2);

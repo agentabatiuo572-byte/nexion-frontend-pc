@@ -3,6 +3,7 @@
 /** F3 · 双轨结算引擎。
  * 页面读模型来自后端 teams/binary。 */
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Badge, CodeTag, DataListPager, useDataListPager } from "../design-kit";
 import type { FViewCtx } from "./types";
 
@@ -16,6 +17,8 @@ function metricClass(tone: string) {
 export function F3Binary({ ctx }: { ctx: FViewCtx }) {
   const [lookupText, setLookupText] = useState("");
   const [selectedUser, setSelectedUser] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [cohortFilter, setCohortFilter] = useState("");
   const [lookupOpen, setLookupOpen] = useState(false);
   const rows = ctx.f3Settlements;
   const lookupKw = lookupText.trim().toLowerCase();
@@ -25,8 +28,19 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       : rows;
     return source.slice(0, 12);
   }, [lookupKw, rows]);
-  const filtered = selectedUser ? rows.filter((row) => row.user === selectedUser) : rows;
-  const pager = useDataListPager(filtered, { initialPageSize: 10, resetKey: selectedUser || "all" });
+  const cohorts = useMemo(
+    () => Array.from(new Set(rows.map((row) => row.cohort).filter(Boolean))).sort().reverse(),
+    [rows],
+  );
+  const filtered = rows.filter((row) =>
+    (!selectedUser || row.user === selectedUser)
+    && (!statusFilter || row.state === statusFilter)
+    && (!cohortFilter || row.cohort === cohortFilter),
+  );
+  const pager = useDataListPager(filtered, {
+    initialPageSize: 10,
+    resetKey: `${selectedUser || "all"}:${statusFilter || "all"}:${cohortFilter || "all"}`,
+  });
   const cfg = ctx.f3Config;
   const formula = ctx.f3Formula;
   const dailyCap = ctx.f3DailyCap;
@@ -95,13 +109,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         <section className="pane">
           <div className="pane-h"><span className="ph-ttl">平衡匹配公式</span><span className="ph-sub">服务端权威 · {text(periodEff)}结算窗口</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="electric">双轨结算</CodeTag></span></div>
           <div className="formula">
-            <div className="track a"><div className="nm">TRACK A · 左轨</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">较大侧 · 自动安置流入<br />本期累计 GV(月初归零)</div></div>
+            <div className="track a"><div className="nm">TRACK A · A 轨</div><div className="gv">{formula ? usd(formula.trackA) : "—"}</div><div className="meta">较大侧 · 自动安置流入<br />本期累计 GV(月初归零)</div></div>
             <div className="balance">
               <div className="op">min</div>
               <div className="fx"><div className="l">MATCH {text(formula?.matchRate)}</div><div className="v">{formula ? usd(formula.matchAmount) : "—"}</div><div className="u">today · {text(formula?.user)}</div></div>
               <div className="op">× {text(formula?.matchRate)}</div>
             </div>
-            <div className="track b"><div className="nm">TRACK B · 右轨</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">较小侧 · <b>结算基数</b><br />min(A,B) 决定匹配上限</div></div>
+            <div className="track b"><div className="nm">TRACK B · B 轨</div><div className="gv">{formula ? usd(formula.trackB) : "—"}</div><div className="meta">较小侧 · <b>结算基数</b><br />min(A,B) 决定匹配上限</div></div>
           </div>
           <div className="formula-foot">
             <span className="mono">balanceMatch = min(A, B) × <b>matchRate</b></span>
@@ -115,7 +129,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
         </section>
 
         <section className="pane cap-card">
-          <div className="pane-h"><span className="ph-ttl">双轨日封顶</span><span className="ph-sub">左右两轨每日计酬上限</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">H1 派发 · 只读</CodeTag></span></div>
+          <div className="pane-h"><span className="ph-ttl">双轨日封顶</span><span className="ph-sub">A/B 两轨每日计酬上限</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag tone="cyan">H1 派发 · 只读</CodeTag></span></div>
           <div className="cap-body"><div className="vv" data-proof="f3-cap-h1">{text(dailyCap?.currentLabel)}</div><div className="lbl">{text(dailyCap?.windowLabel)}</div></div>
           <div className="next-step">只读镜像 H1 当前月(<b>月 {dailyCap?.currentMonth ?? "—"} · {text(dailyCap?.currentPhase)}</b>)派发值;Phase 推进后随 H1 自动收紧,改值去 H1。</div>
           <div className="cap-action"><button onClick={() => ctx.nav("H")}>前往 H1 调整 →</button></div>
@@ -123,7 +137,40 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
       </div>
 
       <section className="pane bin-table">
-        <div className="pane-h"><span className="ph-ttl">用户结算视图 · 当日</span><span className="ph-sub">A/B 轨 GV · Balance Match · 状态</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag>F.binary.engine</CodeTag></span></div>
+        <div className="pane-h">
+          <span className="ph-ttl">用户结算视图 · 当日</span>
+          <span className="ph-sub">A/B 轨 GV · Balance Match · 状态</span>
+          <span className="ph-r" style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <Link className="fbtn" href="/network/commissions">前往 F5 补发 / 冲正</Link>
+            <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
+              name: "执行双轨结算",
+              businessForm: {
+                kind: "multi-field",
+                title: "目标用户与结算日",
+                hint: "仅执行服务端权威结算。系统会复核轨道归属、已支付业绩、结算周期、H1 封顶、B1 覆盖率、重复结算与退款冲正状态。",
+                fields: [
+                  { key: "ownerUserId", label: "用户 ID", inputKind: "number", min: 1, required: true },
+                  { key: "settlementDate", label: "结算日(YYYY-MM-DD)", inputKind: "text", placeholder: "例如 2026-07-31", required: true },
+                ],
+              },
+              detail: "执行后产生 F3 结算记录、佣金冷却事件、D4 不可变资金流水、A2 审计和 A4 佣金事件；同一用户与结算日重复提交会安全重放。",
+              run: async (reason, businessValue) => {
+                const ownerUserId = Number(businessValue?.ownerUserId);
+                const settlementDate = String(businessValue?.settlementDate ?? "").trim();
+                if (!Number.isSafeInteger(ownerUserId) || ownerUserId <= 0) throw new Error("请输入有效用户 ID");
+                if (!/^\d{4}-\d{2}-\d{2}$/.test(settlementDate)) throw new Error("结算日格式应为 YYYY-MM-DD");
+                const result = await ctx.executeF3Settlement(ownerUserId, settlementDate, reason);
+                if (result.status === "BLOCKED") {
+                  ctx.toast(`结算未执行 · ${result.reason || "未满足结算条件"} · 未产生资金变动`);
+                  return;
+                }
+                ctx.toast(result.replayed
+                  ? `结算已存在 · 已安全重放 · 佣金事件 ${result.commissionEventId ?? "—"}`
+                  : `结算已提交 · ${usd(result.amountUsdt)} 进入冷却 · D4/A2/A4 已联动`);
+              },
+            })}>执行结算</button>
+          </span>
+        </div>
         <div className="bin-search">
           <div className="bin-user-select">
             <input
@@ -167,10 +214,30 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             )}
           </div>
           {(lookupText || selectedUser) && <button className="fbtn" onClick={clearLookup}>清除</button>}
+          <select
+            className="fld"
+            aria-label="按结算状态筛选"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="">全部状态</option>
+            {Array.from(new Set(rows.map((row) => row.state).filter(Boolean))).sort().map((state) => (
+              <option key={state} value={state}>{state}</option>
+            ))}
+          </select>
+          <select
+            className="fld"
+            aria-label="按用户群筛选"
+            value={cohortFilter}
+            onChange={(event) => setCohortFilter(event.target.value)}
+          >
+            <option value="">全部用户群</option>
+            {cohorts.map((cohort) => <option key={cohort} value={cohort}>{cohort}</option>)}
+          </select>
           <span className="muted tiny">{selectedUser ? `已选择 ${selectedUser}` : "未选择时展示全部"}</span>
           <span className="muted tiny" style={{ marginLeft: "auto" }}>{pager.total} 名用户</span>
         </div>
-        <div className="bin-row head"><span>用户</span><span>Track A · 左轨</span><span /><span>Track B · 右轨</span><span style={{ textAlign: "right" }}>Balance Match</span><span style={{ textAlign: "right" }}>当日已发</span><span style={{ textAlign: "right" }}>状态</span></div>
+        <div className="bin-row head"><span>用户</span><span>Track A · A 轨</span><span /><span>Track B · B 轨</span><span style={{ textAlign: "right" }}>Balance Match</span><span style={{ textAlign: "right" }}>当日已发</span><span style={{ textAlign: "right" }}>状态</span></div>
         {pager.pageRows.map((row) => (
           <div key={row.user} className="bin-row">
             <span className="uid">{row.user}</span>
@@ -211,18 +278,25 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">当前比例</span><span className="v" style={{ color: "var(--brand)" }}>{text(rateEff)}</span></div>
           <div className="ckv"><span className="k">今日匹配总额</span><span className="v">{usd(ctx.f3DailyMatchUsd)}</span></div>
           <div className="ckv"><span className="k">月累计匹配</span><span className="v">{usd(ctx.f3MonthlyMatchedUsd)}</span></div>
-          <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({ name: "平衡匹配比例调整", amplify: true, op: "param", paramKey: "F.binary.matchRate", edit: { kind: "text", current: rateEff, unit: "%" }, detail: `min(A,B) × 该比例日结算 · 当前 ${text(rateEff)} · 放大佣金流出,受 B1 覆盖率约束。` })}>调整比例</button></div>
+          <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
+            name: "平衡匹配比例调整",
+            amplify: true,
+            op: "param",
+            paramKey: "F.binary.matchRate",
+            edit: { kind: "text", current: rateEff, unit: "%" },
+            detail: `min(A,B) × 该比例日结算 · 当前 ${text(rateEff)} · 放大佣金流出,受 B1 覆盖率约束。改后对下一周期结算生效,不回溯已计提。`,
+            completionCopy: "保存后只影响下一周期结算，不回溯已计提。",
+          })}>调整比例</button></div>
         </div>
 
         <div className="cfg-card">
           <div className="ch">自动安置 & 归零<span className="tag">F.binary.placement</span></div>
-          <div className="cs">自动安置 + 月度 GV reset · server cron</div>
+          <div className="cs">自动安置 + 自然月 GV 归零</div>
           <div className="ckv"><span className="k">自动安置</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
           <div className="ckv"><span className="k">近 7d 自动分配</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
-          <div className="ckv"><span className="k">gvResetCron</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
+          <div className="ckv"><span className="k">归零时间</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
           <div className="cfg-foot">
             <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "自动安置策略调整", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "自动安置开关 · 关闭后新成员需手动安置(运营压力↑)。" })}>分配策略</button>
-            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "GV 归零口径调整", op: "param", paramKey: "F.binary.gvResetCron", edit: { kind: "text", current: resetEff }, detail: "GV 月度归零 cron · 改为「保留」会拉大利息负债(科目 #3)与佣金应付,须严格 操作确认。" })}>归零口径</button>
           </div>
         </div>
 
@@ -249,6 +323,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
               { key: "residual", paramKey: "F.binary.residualPolicy" },
             ],
             detail: "结算周期(每日/每周/每月) + 沉淀处置(每月清零/每次对碰清零/转结) · server-canonical · 改后对下一周期结算生效,不回溯已计提;「转结」放大负债须 B1 覆盖率评估。",
+            completionCopy: "保存后只影响下一周期结算，不回溯已计提。",
           })}>调整周期 &amp; 策略</button></div>
         </div>
 

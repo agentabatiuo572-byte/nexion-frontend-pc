@@ -37,7 +37,7 @@ export function CDomainView({ meta }: { meta: DomainViewMeta }) {
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "C1", [meta.l2Id]);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
-  const [c1ExportQuery, setC1ExportQuery] = useState<C1ExportQuery>({});
+  const [c1ExportQuery, setC1ExportQuery] = useState<C1ExportQuery | null>(null);
 
   const ctx: CCtx = {
     toast: setToast,

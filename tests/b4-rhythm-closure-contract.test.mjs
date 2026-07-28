@@ -58,8 +58,8 @@ test("B4 backend contract is H1-canonical, audited and exact-RBAC", () => {
   assert.match(service, /admin\.report_exported/);
   assert.match(service, /recordRequired/);
   assert.match(service, /B3 转化归因/);
-  assert.match(service, /B1 资金归因/);
-  assert.match(service, /B2 到期与资金池归因/);
+  assert.match(service, /B1 全局资金健康/);
+  assert.match(service, /B2 全局到期与资金池/);
   assert.doesNotMatch(service, /Premium|NEXv2|NEX v2/);
   assert.match(migration, /SUPER_ADMIN/);
   assert.match(migration, /GROWTH/);
@@ -72,4 +72,6 @@ test("H1 attribution returns to the canonical B4 rhythm route", () => {
 
   assert.match(h1, /href="\/overview\/rhythm"[^>]*>去 B4 节奏看板/);
   assert.doesNotMatch(h1, /href="\/risk\/health-monitor"[^>]*>去 B4 节奏看板/);
+  assert.match(h1, /params\.get\("from"\) === "B4"/);
+  assert.match(h1, /B4 定位/);
 });

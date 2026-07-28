@@ -55,3 +55,17 @@ test("E6 copy distinguishes saved server config from future carrier UI work", ()
   assert.match(moduleRegistry, /下载地址与中英文标题、引导文案/);
   assert.match(errorMessages, /H5 基础托管系数须 >0 且 ≤1/);
 });
+
+test("E6 exposes version rollback, phase boundary, structural and B1 failure contracts", () => {
+  assert.match(tab, /data-proof="e6-version-rollback"/);
+  assert.match(tab, /A2 操作单 \+ A4 事件构成不可变版本链/);
+  assert.match(tab, /回滚本身会生成新版本/);
+  assert.match(tab, /\/platform\/audit\?domain=E&object=E\.compute/);
+  assert.match(tab, /data-proof="e6-effective-boundary"/);
+  assert.match(tab, /不等待 H1 的阶段\/月度切换/);
+  assert.match(tab, /App\/H5 最迟在下一次 60 秒配置刷新后读取新值/);
+  assert.match(tab, /B1 覆盖率低于红线时服务端失败关闭/);
+  assert.match(errorMessages, /COMPUTE_GPU_TOPS_ORDER_INVALID/);
+  assert.match(errorMessages, /COMPUTE_GPU_KEYWORD_DUPLICATE/);
+  assert.match(errorMessages, /COVERAGE_BELOW_REDLINE/);
+});

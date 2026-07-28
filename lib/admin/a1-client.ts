@@ -40,6 +40,8 @@ export interface A1Operator {
   credentialDeliveryStatus?: string | null;
   sessionDetails?: A1SessionDetail[];
   roleHistory?: A1RoleHistory[];
+  version: string;
+  temporaryPassword?: string | null;
 }
 
 export interface A1SessionDetail {
@@ -85,7 +87,6 @@ export interface A1CreateAccountInput {
   username: string;
   displayName: string;
   role: string;
-  initialPassword: string;
   email?: string;
 }
 
@@ -107,23 +108,54 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
+export class A1OutcomeUncertainError extends Error {
+  constructor(message: string, public readonly commandKey: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "A1OutcomeUncertainError";
+  }
+}
+
+export function isA1OutcomeUncertainError(error: unknown): error is A1OutcomeUncertainError {
+  return error instanceof A1OutcomeUncertainError;
+}
+
 async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
   const headers = new Headers(init?.headers);
+  let commandKey = "";
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+    commandKey = idempotencyKey(init.idempotencyPrefix);
+    headers.set("Idempotency-Key", commandKey);
   }
 
-  const response = await fetch(`/api/admin/platform${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  const request = () => fetch(`/api/admin/platform${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
+  let response: Response;
+  try {
+    response = await request();
+  } catch (error) {
+    if (!init?.idempotencyPrefix) throw error;
+    try {
+      response = await request();
+    } catch (retryError) {
+      throw new A1OutcomeUncertainError("A1_MUTATION_OUTCOME_UNCERTAIN", commandKey, { cause: retryError });
+    }
+  }
+  if (init?.idempotencyPrefix
+    && response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown") {
+    throw new A1OutcomeUncertainError("A1_MUTATION_OUTCOME_UNCERTAIN", commandKey);
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
+    if (init?.idempotencyPrefix && response.ok && !result) {
+      throw new A1OutcomeUncertainError("A1_MUTATION_RESPONSE_UNREADABLE", commandKey);
+    }
     throw new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`));
   }
 
@@ -147,10 +179,11 @@ export function changeA1AccountRole(
   role: string,
   reason: string,
   operator: string,
+  expectedVersion: string,
 ) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/role`, {
     method: "PATCH",
-    body: JSON.stringify({ role, reason, operator }),
+    body: JSON.stringify({ role, reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-account-role",
   });
 }
@@ -160,10 +193,11 @@ export function updateA1AccountProfile(
   input: A1UpdateAccountInput,
   reason: string,
   operator: string,
+  expectedVersion: string,
 ) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/profile`, {
     method: "PATCH",
-    body: JSON.stringify({ ...input, reason, operator }),
+    body: JSON.stringify({ ...input, reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-account-profile",
   });
 }
@@ -173,34 +207,35 @@ export function updateA1AccountStatus(
   status: "enabled" | "disabled",
   reason: string,
   operator: string,
+  expectedVersion: string,
 ) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status, reason, operator }),
+    body: JSON.stringify({ status, reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-account-status",
   });
 }
 
-export function resetA1Account2fa(accountId: string, reason: string, operator: string) {
+export function resetA1Account2fa(accountId: string, reason: string, operator: string, expectedVersion: string) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/reset-2fa`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
+    body: JSON.stringify({ reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-reset-2fa",
   });
 }
 
-export function resetA1AccountPassword(accountId: string, reason: string, operator: string) {
+export function resetA1AccountPassword(accountId: string, reason: string, operator: string, expectedVersion: string) {
   return a1Request<A1PasswordResetResult>(`/accounts/${encodeURIComponent(accountId)}/password/reset`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
+    body: JSON.stringify({ reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-reset-password",
   });
 }
 
-export function revokeA1AccountSessions(accountId: string, reason: string, operator: string) {
+export function revokeA1AccountSessions(accountId: string, reason: string, operator: string, expectedVersion: string) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/sessions/revoke`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
+    body: JSON.stringify({ reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-session-revoke",
   });
 }
@@ -210,18 +245,25 @@ export function revokeA1AccountSession(
   sessionId: string,
   reason: string,
   operator: string,
+  expectedVersion: string,
 ) {
   return a1Request<A1Operator>(`/accounts/${encodeURIComponent(accountId)}/sessions/${encodeURIComponent(sessionId)}/revoke`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
+    body: JSON.stringify({ reason, operator, expectedVersion }),
     idempotencyPrefix: "a1-session-revoke-one",
   });
 }
 
-export function updateA1SecurityBaseline(baselineKey: string, value: string, reason: string, operator: string) {
+export function updateA1SecurityBaseline(
+  baselineKey: string,
+  value: string,
+  expectedValue: string,
+  reason: string,
+  operator: string,
+) {
   return a1Request<A1SecurityBaseline>(`/accounts/security-baselines/${encodeURIComponent(baselineKey)}`, {
     method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
+    body: JSON.stringify({ value, expectedValue, reason, operator }),
     idempotencyPrefix: "a1-security-baseline",
   });
 }

@@ -48,9 +48,15 @@ test("logout fails closed and preserves the retry token when server revocation i
 
 test("A1 creation defaults to no role and destructive delete is absent", () => {
   const page = read("app/components/domain-views/a-tabs/a1-accounts.tsx");
+  const client = read("lib/admin/a1-client.ts");
 
   assert.match(page, /暂不分配/);
   assert.match(page, /const defaultRole\s*=\s*""/);
+  assert.doesNotMatch(page, /generateDefaultInitialPassword/);
+  assert.doesNotMatch(page, /setInitialPassword/);
+  assert.match(page, /服务端生成 20 位四类强临时密码/);
+  assert.match(client, /A1OutcomeUncertainError/);
+  assert.match(client, /X-Nexion-Upstream-Outcome/);
   assert.doesNotMatch(page, /deleteAccount\(/);
   assert.doesNotMatch(page, /删除账号/);
 });

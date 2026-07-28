@@ -5,6 +5,7 @@ export type ActionConfirmReq = {
   action: ReactNode;
   detail: ReactNode;
   amplifies?: boolean;
+  coverage?: { coverageRatio: number; redlinePct: number };
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;

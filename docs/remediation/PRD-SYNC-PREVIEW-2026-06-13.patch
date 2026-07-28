@@ -1,1 +1,151 @@
+diff --git a/PRD/Nexion_运营控制后台_开发落地规格.md b/PRD/Nexion_运营控制后台_开发落地规格.md
+index b9f37c5..ca03869 100644
+--- a/PRD/Nexion_运营控制后台_开发落地规格.md
++++ b/PRD/Nexion_运营控制后台_开发落地规格.md
+@@ -51,6 +51,14 @@
+ - 纯展示弹窗必须显式标 readonly,不得出现可执行主按钮。
+ - 高敏动作仍使用 confirm-with-reason 外壳,但业务表单体必须在确认外壳内可操作。
+ 
++### 0.3a 业务弹窗契约
++
++- 每个弹窗必须声明 trigger、business target、required input、validation、write action、audit reason、success feedback、persisted echo。
++- 弹窗内容必须匹配按钮语义:改角色必须有 role selector;改授权必须有 permission diff;编辑文案必须有 zh/en 字段;创建课程必须有 title/body/category/duration;提现处置必须有 approve/reject/delay/freeze 业务选项。
++- 只有 reason textarea 的 edit/create/repair/role/permission/action 弹窗视为 business-incomplete-modal。
++- 纯展示弹窗必须显式标 readonly,不得出现可执行主按钮。
++- 高敏动作仍使用 confirm-with-reason 外壳,但业务表单体必须在确认外壳内可操作。
++
+ ### 0.4 Idempotency-Key
+ 所有资金/资产/状态写操作携 `Idempotency-Key` header,server 24h dedup(**固定 24h 后端不变量,运营不可调**),网络抖动 retry 返 200 + 原结果,**不重复生效**。
+ 
+@@ -863,6 +871,10 @@
+ 
+ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` 中启用且未删除的配置，以及 J1/J2 实时权威状态；owner domain / module / route 由后端显式登记，前端不得按参数名正则猜测。`docs/cgm/cgm.manifest.json` 仅用于规划覆盖审计，其中 TBD、mock 或前端常量项不得伪装成已上线参数。A5 读取权限固定为 `platform_a5_read`，不得复用 A3 权限。401、403、服务不可用、数据一致性失败与真实空寄存器必须分别呈现；重复 canonical key、统计不一致或来源部分失败时失败关闭，不展示可疑值。
+ 
++### 4.15 平台参数寄存器 owner-link
++
++平台参数寄存器只做索引和导航,不复制 owner module 的权威配置表。每个参数必须有 owner domain、owner module、canonical field、read source、write route 与 owner-link。用户从参数寄存器点击 owner-link 后,必须能进入 owner 页面完成真实业务操作;例如 G1 staking APY/penalty/minStake 的写入口归 G1 owner module,寄存器只展示并跳转。
++
+ ### 4.X 易混淆 / 校验铁律(开发实现必读)
+ 
+ 1. **同名不同域参数严格区分**(详见第 0 章 §0.9):提现冷却 `withdrawCooldownDays`(D5,权威 H1)≠ 试用冷却 H2 `cooldownDays` ≠ 佣金冷却 `commission/cooling-days`(F2);大额 $1,000 三处独立(D2 人工审核 / K3 `largeAmountUsdt` / K5 `largeWithdrawReviewUsdt`);兑换三阈值权威 G2(V3),K5 仅消费。
+@@ -1073,6 +1085,13 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` 
+ - 小表豁免只允许用于固定短列表、配置摘要、KPI 摘要;豁免必须在页面或规格中声明理由。
+ - 资金、提现、账单、工单、用户、审计、内容记录类列表不得豁免分页。
+ 
++## 第 8A 章 全后台列表能力基线
++
++- 数据列表必须提供分页或显式小表豁免。
++- 默认五件套:pagination、search、filter、sort/status、empty state。
++- 小表豁免只允许用于固定短列表、配置摘要、KPI 摘要;豁免必须在页面或规格中声明理由。
++- 资金、提现、账单、工单、用户、审计、内容记录类列表不得豁免分页。
++
+ ## 第 9 章 弹窗交互规格总表(开发索引)
+ 
+ > 2026-06 操作确认决议产物。全后台高敏动作的确认弹窗清单——**细则权威在各卷 PRD 对应模块的「④a 交互与弹窗规格」段**(触发控件/布局分区/输入控件表/错误态/成功反馈),本表仅作开发索引与完整性对账。弹窗 ID = `{模块ID}-MD{n}`,全 PRD 唯一。
+@@ -1311,6 +1330,14 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` 
+ - 工单列表必须支持分页、搜索、状态筛选、owner/priority 筛选和空态。
+ - 所有写动作必须刷新后仍可见,并写入 audit feed。
+ 
++### 9.9a /content/support 支持后台
++
++- FAQ 管理:创建、编辑、发布、下架、排序、分类。
++- Ticket 分类/SLA:category、priority、owner、SLA target。
++- 工单处理:回复、关闭、重开、改 owner、改 priority、写 audit reason。
++- 工单列表必须支持分页、搜索、状态筛选、owner/priority 筛选和空态。
++- 所有写动作必须刷新后仍可见,并写入 audit feed。
++
+ ### 9.10 J 紧急与合规控制
+ 
+ | 弹窗 ID | 标题 | B1 红线预检 | 细则 |
+@@ -1364,6 +1391,13 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` 
+ - `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
+ - hook、verify gate 与同步流程只认 canonical 文件。
+ 
++## 第 10 章 PRD canonical 治理
++
++- 产品 PRD canonical 路径固定为 `D:\WORKS\PLAN\PRD\Nexion_产品功能架构设计文档_v3.7.md`。
++- 运营后台 canonical 文档固定为 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台PRD_v4.md` 与 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台_开发落地规格.md`。
++- `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
++- hook、verify gate 与同步流程只认 canonical 文件。
++
+ ## 附:与原 4 卷 PRD 的关系 + 维护约定
+ 
+ - **本文件 vs 原 PRD**:本文件是**开发落地契约速查**(建表/接口/参数/状态机/权限),从 4 卷需求 PRD 提炼;原 4 卷保留为**需求背景档案**(为什么做、业务叙事、运营意图)。两者并存,本文件每行带「出处§」可回溯。
 
+diff --git a/PRD/Nexion_运营控制后台PRD_v4.md b/PRD/Nexion_运营控制后台PRD_v4.md
+index b3f5950..826abb6 100644
+--- a/PRD/Nexion_运营控制后台PRD_v4.md
++++ b/PRD/Nexion_运营控制后台PRD_v4.md
+@@ -808,6 +808,42 @@
+ **⑧ 埋点(事件)**
+ `admin.support_faq_updated`、`admin.support_ticket_replied`、`admin.support_ticket_closed`、`admin.support_ticket_owner_changed`。
+ 
++#### [I6a] Support CMS / Ticket Ops
++
++**① 目的 & 对齐**
++管理 `/content/support` 的 FAQ 与工单运营面,覆盖 FAQ 内容、Ticket 分类/SLA、回复、关闭、重开、owner/priority 调整与审计理由。用户端对应 `/me/help`、`/me/support`、`/me/support/tickets`。
++
++**② 后台界面**
++- FAQ 列表与详情:标题、分类、语言、状态、排序、版本。
++- Ticket 列表:ticketId、用户、category、priority、owner、SLA、状态、最近回复。
++- Ticket 详情:会话历史、内部备注、owner/priority 操作区、关闭/重开操作区。
++
++**③ 可控参数**
++- FAQ category、排序、发布状态。
++- Ticket category、priority、owner、SLA target。
++
++**④ 操作动作**
++- FAQ 创建/编辑/发布/下架/排序。
++- 工单回复、关闭、重开、改 owner、改 priority,均写 audit reason。
++
++**⑤ 接口**
++- `GET /api/admin/support/faqs`
++- `PUT /api/admin/support/faqs/:id`
++- `GET /api/admin/support/tickets`
++- `POST /api/admin/support/tickets/:id/reply`
++- `PUT /api/admin/support/tickets/:id/status`
++- `PUT /api/admin/support/tickets/:id/owner`
++- `PUT /api/admin/support/tickets/:id/priority`
++
++**⑥ 权限 & 审计**
++内容/客服可处理 FAQ 与工单;内容 lead/客服 lead/超管可关闭、重开、改 owner/priority。所有写动作落 A2 审计。
++
++**⑦ 风控 & 联动**
++工单 owner/priority/SLA 只影响客服运营,不改变资金或风控判定;涉及提现/KYC 的工单需跳转 D2/K5 owner module 处理。
++
++**⑧ 埋点(事件)**
++`admin.support_faq_updated`、`admin.support_ticket_replied`、`admin.support_ticket_closed`、`admin.support_ticket_owner_changed`。
++
+ #### [I7] 教程中心
+ 
+ **① 目的 & 对齐**
+@@ -2521,6 +2557,13 @@ flowchart LR
+ - `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
+ - hook、verify gate 与同步流程只认 canonical 文件。
+ 
++### 17.5a PRD canonical 治理
++
++- 产品 PRD canonical 路径固定为 `D:\WORKS\PLAN\PRD\Nexion_产品功能架构设计文档_v3.7.md`。
++- 运营后台 canonical 文档固定为 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台PRD_v4.md` 与 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台_开发落地规格.md`。
++- `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
++- hook、verify gate 与同步流程只认 canonical 文件。
++
+ ### 17.6 开放 PM 决议清单
+ 
+ > 投产前须 PM 拍板的业务决议;除已裁定项外,均不阻断文档结构定稿,但影响对应模块落地实现。
+
+diff --git a/PRD/Nexion_运营后台_交互与确认机制改写SPEC.md b/PRD/Nexion_运营后台_交互与确认机制改写SPEC.md
+index 846ea3b..f5965ac 100644
+--- a/PRD/Nexion_运营后台_交互与确认机制改写SPEC.md
++++ b/PRD/Nexion_运营后台_交互与确认机制改写SPEC.md
+@@ -102,6 +102,10 @@
+ 
+ 弹窗内容必须匹配触发按钮的业务语义。改角色必须有角色选择;改授权必须有权限 diff;编辑文案必须有 en/zh 或对应业务字段;创建课程必须有 title/body/category/duration;提现处置必须有 approve/reject/delay/freeze 业务选项。只有 reason textarea 的 edit/create/repair/role/permission/action 弹窗视为 business-incomplete-modal。纯展示弹窗必须显式 readonly,不得出现可执行主按钮。
+ 
++### 2.2a 业务弹窗契约
++
++弹窗内容必须匹配触发按钮的业务语义。改角色必须有角色选择;改授权必须有权限 diff;编辑文案必须有 en/zh 或对应业务字段;创建课程必须有 title/body/category/duration;提现处置必须有 approve/reject/delay/freeze 业务选项。只有 reason textarea 的 edit/create/repair/role/permission/action 弹窗视为 business-incomplete-modal。纯展示弹窗必须显式 readonly,不得出现可执行主按钮。
++
+ ### 2.3 完整范本(D2 提现放行,B2 批落入 v1 D2 模块)
+ 
+ ```markdown

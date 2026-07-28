@@ -3,7 +3,7 @@
 /**
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft, Bell, CreditCard, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
@@ -13,6 +13,7 @@ import {
   notifyUserPaymentMethodRebind,
   resetUserNickname,
   unbindUserPaymentMethod,
+  UsersOutcomeUnknownError,
   type JsonRecord,
   type UserPaymentMethodPage,
   type User360Detail,
@@ -319,7 +320,14 @@ export default function UserDetailPage() {
   const session = useAdminAuth((state) => state.session);
   const canWriteC1 = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
   const canReadC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_read");
+  const canReadC3 = session?.role === "superadmin" || !!session?.authorities.includes("user_c3_read");
+  const canReadC4 = session?.role === "superadmin" || !!session?.authorities.includes("user_c4_read");
   const canReadC5 = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_read");
+  const canReadC6 = session?.role === "superadmin" || !!session?.authorities.includes("user_c6_read");
+  const canReadD2 = session?.role === "superadmin" || !!session?.authorities.includes("finance_d2_read");
+  const canReadD4 = session?.role === "superadmin" || !!session?.authorities.includes("finance_d4_read");
+  const canReadK4 = session?.role === "superadmin" || !!session?.authorities.includes("risk_k4_read");
+  const canReadA2 = session?.role === "superadmin" || !!session?.authorities.includes("platform_a2_read");
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const userKey = params.id;
@@ -339,14 +347,16 @@ export default function UserDetailPage() {
     action: string;
     detail: string;
     amplifies?: boolean;
-    run: (reason: string) => void;
+    run: (reason: string) => Promise<boolean | void> | boolean | void;
   }>(null);
+  const nicknameCommandKey = useRef<string | null>(null);
+  const paymentCommandKeys = useRef<Record<string, string>>({});
   // c1hub 无 CCtx:就近挂载本地 OperationConfirmModal,简化签名(只取 action/detail/amplifies/run)
   const openActionConfirmReq = (req: {
     action: string;
     detail: string;
     amplifies?: boolean;
-    run: (reason: string) => void;
+    run: (reason: string) => Promise<boolean | void> | boolean | void;
   }) => setActionConfirm(req);
 
   const load = useCallback(async () => {
@@ -549,6 +559,24 @@ export default function UserDetailPage() {
                   <ShieldAlert size={14} style={{ color: "var(--v5-warning)" }} /> 去 C5 安全会话
                 </Link>
               )}
+              {[
+                canReadC3 && ["C3 余额与资产", "/users/assets"],
+                canReadC4 && ["C4 KYC 台账", "/users/kyc"],
+                canReadC6 && ["C6 注册登录风控", "/users/reg-risk"],
+                canReadD2 && ["D2 提现队列", "/finance/withdrawals"],
+                canReadD4 && ["D4 全账本", "/finance/ledger"],
+                canReadK4 && ["K4 风险评分", "/risk/scoring"],
+                canReadA2 && ["A2 审计中心", "/platform/audit"],
+              ].filter((item): item is [string, string] => Array.isArray(item)).map(([label, pathname]) => (
+                <Link
+                  key={pathname}
+                  href={{ pathname, query: { userCode: userNo, returnTo } }}
+                  className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[12.5px]"
+                  style={{ border: "1px solid var(--v5-border)", color: "var(--v5-ink-2)" }}
+                >
+                  {label}
+                </Link>
+              ))}
               {canWriteC1 && <ActionButton
                 onClick={() => openActionConfirmReq({
                   action: `重置昵称 · ${nickname}`,
@@ -556,13 +584,19 @@ export default function UserDetailPage() {
                   amplifies: false,
                   run: async (reason) => {
                     if (!userId) return;
+                    const commandKey = nicknameCommandKey.current
+                      ?? `c1-nickname-reset-${crypto.randomUUID()}`;
+                    nicknameCommandKey.current = commandKey;
                     setActionPending("重置昵称");
                     try {
-                      const result = await resetUserNickname(userId, reason);
+                      const result = await resetUserNickname(userId, nickname, reason, undefined, commandKey);
+                      nicknameCommandKey.current = null;
                       toast.success(`昵称已重置为 ${result.nickname}`);
                       await load();
                     } catch (err) {
+                      if (!(err instanceof UsersOutcomeUnknownError)) nicknameCommandKey.current = null;
                       toast.error("昵称重置失败", errorMessage(err));
+                      return false;
                     } finally {
                       setActionPending(null);
                     }
@@ -614,7 +648,7 @@ export default function UserDetailPage() {
                 <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><CreditCard size={17} /><div><p className="text-[13px]" style={{ color: "var(--v5-ink)" }}>{method.brand} ···· {method.last4}</p><p className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{method.provider} · {method.expiryLabel || "无到期信息"}</p></div></div><StatusPill label={method.status === "BOUND" ? (method.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"} tone={method.status === "BOUND" ? "success" : "neutral"} size="sm" dot={false} /></div>
                 {method.trialGuard && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-warning)" }}>试用扣款占用中 · {method.trialRefId || "关联试用"}，禁止直接解绑</p>}
                 {method.status !== "BOUND" && method.unboundAt && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>解绑时间：{formatDate(method.unboundAt)}</p>}
-                {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason); toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { toast.error("换绑通知失败", errorMessage(err)); } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason); toast.success("支付方式已从 Nexion 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { toast.error("支付方式解绑失败", errorMessage(err)); } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
+                {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; const keyName = `rebind-${method.id}`; const commandKey = paymentCommandKeys.current[keyName] ?? `c1-payment-rebind-${crypto.randomUUID()}`; paymentCommandKeys.current[keyName] = commandKey; setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason, undefined, commandKey); delete paymentCommandKeys.current[keyName]; toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) delete paymentCommandKeys.current[keyName]; toast.error("换绑通知失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; const keyName = `unbind-${method.id}`; const commandKey = paymentCommandKeys.current[keyName] ?? `c1-payment-unbind-${crypto.randomUUID()}`; paymentCommandKeys.current[keyName] = commandKey; setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason, undefined, commandKey); delete paymentCommandKeys.current[keyName]; toast.success("支付方式已从 Nexion 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) delete paymentCommandKeys.current[keyName]; toast.error("支付方式解绑失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
               </div>
             ))}
           </div>
@@ -791,10 +825,10 @@ export default function UserDetailPage() {
           amplifies={actionConfirm.amplifies ?? false}
           reasonMax={200}
           onClose={() => setActionConfirm(null)}
-          onConfirm={(reason) => {
+          onConfirm={async (reason) => {
             const fn = actionConfirm.run;
-            setActionConfirm(null);
-            fn(reason);
+            const succeeded = await fn(reason);
+            if (succeeded !== false) setActionConfirm(null);
           }}
         />
       )}

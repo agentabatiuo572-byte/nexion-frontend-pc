@@ -113,7 +113,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       coverage: { coverageRatio: params.coverageRatio, redlinePct: params.redlinePct },
       reasonMin: 8,
       reasonMax: 200,
-      completionCopy: "已生效 · 已记审计",
+      completionCopy: "提交成功后生效并写入审计",
       run: async (reason) => {
         try {
           const next = await updateD5WithdrawalLimits(changes, params.version, reason, OPERATOR());

@@ -203,8 +203,9 @@ test("H7 首次用户创建、刷新、编辑、暂停、重登与删除清理",
   });
   await page.reload();
   await expect(page.getByText(/H7 数据加载失败/)).toBeVisible();
-  const addEnabledOnReadFailure = await page.getByRole("button", { name: "+ 新增代金券", exact: true }).isEnabled();
-  await page.screenshot({ path: path.join(evidenceDir, "H7-04-read-failure-write-still-enabled.png"), fullPage: true });
+  const addButtonCountOnReadFailure = await page.getByRole("button", { name: "+ 新增代金券", exact: true }).count();
+  expect(addButtonCountOnReadFailure).toBe(0);
+  await page.screenshot({ path: path.join(evidenceDir, "H7-04-read-failure-fail-closed.png"), fullPage: true });
   await page.unroute("**/api/admin/growth/vouchers");
   await page.reload();
   await expect(page.getByText("H7 数据加载中...", { exact: true })).toHaveCount(0);
@@ -216,7 +217,7 @@ test("H7 首次用户创建、刷新、编辑、暂停、重登与删除清理",
     pauseStatus: pauseResponse.status(),
     deleteStatus: deleteResponse.status(),
     cleanedAfterRefresh: await page.getByRole("row").filter({ hasText: voucherName }).count() === 0,
-    addEnabledOnReadFailure,
+    addButtonCountOnReadFailure,
     responses,
     pageErrors,
     consoleErrors,

@@ -150,8 +150,11 @@ test("管理员从可见策略中心创建、真实预演发布，App 再上报�
   await editor.locator("#st-tpl").selectOption("manual_pilot");
   await editor.locator("#st-name").fill(`K6闭环策略-${RUN}`);
   await editor.locator("#st-desc").fill("真实App上报、服务端判定、命令下发与确认闭环");
-  await editor.locator("#st-action").selectOption("REVERSAL_IMMEDIATE");
-  await editor.locator("#st-url").selectOption("promo");
+  // The approved remote-target catalogue may legitimately be empty. Use a
+  // non-remote server-owned action for the always-runnable acceptance chain;
+  // exact remote-target consumption is covered by the K6 contract tests.
+  await editor.locator("#st-action").selectOption("MANUAL_HOLD");
+  await editor.locator("#st-prio").fill("1000");
   const official = editor.locator("button").filter({ hasText: /^官网$/ }).first();
   if (!((await official.getAttribute("class")) ?? "").includes("active")) await official.click();
   await editor.getByLabel("每日最大命中数").fill("20");
@@ -227,7 +230,7 @@ test("管理员从可见策略中心创建、真实预演发布，App 再上报�
 
   const secondPayload = reportPayload(`k6-report-hit-${RUN}`, Date.now());
   const second = await appEnvelope<Device>(page, "POST", "/api/app/janus/reports", secondPayload);
-  expect(second.data.status).toBe("HIT");
+  expect(second.data.status).toBe("MANUAL_HOLD");
   const replay = await appEnvelope<Device>(page, "POST", "/api/app/janus/reports", secondPayload);
   expect(replay.data.sid).toBe(second.data.sid);
   summary.appReportReplay = "same-payload-acked";
@@ -250,15 +253,15 @@ test("管理员从可见策略中心创建、真实预演发布，App 再上报�
   const pending = await appEnvelope<Record<string, unknown>>(page, "GET",
     `/api/app/janus/commands/pending?deviceId=${encodeURIComponent(APP_DEVICE_ID)}`);
   expect(pending.data.hasCommand).toBe(true);
-  expect(pending.data.desiredStatus).toBe("HIT");
-  expect(pending.data.remoteUrlKey).toBe("promo");
+  expect(pending.data.desiredStatus).toBe("MANUAL_HOLD");
+  expect(pending.data.remoteUrlKey).toBeUndefined();
   const revision = Number(pending.data.revision);
   expect(revision).toBeGreaterThan(0);
   const ack = await appEnvelope<Record<string, unknown>>(page, "POST", "/api/app/janus/commands/ack", {
     deviceId: APP_DEVICE_ID,
     revision,
     success: true,
-    appliedStatus: "HIT",
+    appliedStatus: "MANUAL_HOLD",
     message: "K6 acceptance applied",
   });
   expect(ack.data.state).toBe("ACKED");
@@ -266,7 +269,7 @@ test("管理员从可见策略中心创建、真实预演发布，App 再上报�
     deviceId: APP_DEVICE_ID,
     revision,
     success: true,
-    appliedStatus: "HIT",
+    appliedStatus: "MANUAL_HOLD",
     message: "K6 acceptance retry",
   });
   expect(ackReplay.data.state).toBe("ACKED");
@@ -283,7 +286,7 @@ test("管理员从可见策略中心创建、真实预演发布，App 再上报�
   await expect(page.getByText(sid, { exact: true })).toBeVisible();
   await page.getByText(sid, { exact: true }).click();
   const detail = page.getByRole("dialog", { name: `设备详情 ${sid}` });
-  await expect(detail).toContainText("已命中");
+  await expect(detail).toContainText("人工挂起");
   await expect(detail).toContainText(strategyId);
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "02-strategy-report-command-app-ack.png"), fullPage: true });
   await detail.getByRole("button", { name: "关闭" }).click();
@@ -302,8 +305,8 @@ test("权限、高风险门禁、409/422 与 503 失败关闭均由真实链路�
   const missingRemote = await page.request.post(`/api/admin/janus/devices/${sid}/status`, {
     headers: { "Idempotency-Key": `k6-e2e-remote-required-${RUN}` },
     data: {
-      targetStatus: "ACTIVATED", reasonCategory: "现场演示需要", reasonText: `${REASON}缺少远程地址`,
-      effectiveTiming: "immediate", confirmationMode: "standard", expectedDeviceVersion: device!.version,
+      targetStatus: "MANUAL_FORCED", reasonCategory: "现场演示需要", reasonText: `${REASON}缺少远程地址`,
+      effectiveTiming: "immediate", confirmationMode: "strong_single", expectedDeviceVersion: device!.version,
     },
   });
   expect(missingRemote.status()).toBe(409);
@@ -311,8 +314,8 @@ test("权限、高风险门禁、409/422 与 503 失败关闭均由真实链路�
   const stale = await page.request.post(`/api/admin/janus/devices/${sid}/status`, {
     headers: { "Idempotency-Key": `k6-e2e-stale-${RUN}` },
     data: {
-      targetStatus: "ACTIVATED", reasonCategory: "现场演示需要", reasonText: `${REASON}并发旧版本`,
-      effectiveTiming: "immediate", remoteUrlKey: "promo", confirmationMode: "standard",
+      targetStatus: "OBSERVING", reasonCategory: "复核环境信号", reasonText: `${REASON}并发旧版本`,
+      effectiveTiming: "immediate", confirmationMode: "standard",
       expectedDeviceVersion: Math.max(0, device!.version - 1),
     },
   });

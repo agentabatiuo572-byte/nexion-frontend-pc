@@ -136,9 +136,11 @@ export interface EViewCtx {
   e4PageSize: number;
   e4Total: number;
   e4Filter: string;
+  e4Keyword: string;
   setE4Page: (page: number) => void;
   setE4PageSize: (pageSize: number) => void;
   setE4Filter: (filter: string) => void;
+  setE4Keyword: (keyword: string) => void;
   refreshE4: () => Promise<void>;
   orderState: (o: EOrder) => string;
   isCancelled: (id: string) => boolean;

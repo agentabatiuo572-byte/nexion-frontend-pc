@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-13T09:02:36.207Z",
+  "generatedAt": "2026-07-27T12:52:12.929Z",
   "status": "passed",
   "checksPassed": 8,
   "checksFailed": 0,
@@ -48,7 +48,7 @@
       "id": "OR-03",
       "title": "L5 route and blocker counters match closure target",
       "status": "passed",
-      "details": "admin=66; next=80; uniapp=81",
+      "details": "admin=66; uniapp=81",
       "evidence": [
         "docs/audit/l5-final-sweep-report.json"
       ]
@@ -67,7 +67,7 @@
       "id": "OR-05",
       "title": "PRD sync dry-run and apply-check pass",
       "status": "passed",
-      "details": "status=passed; operations=23; planned=0; alreadyPresent=23; missingAnchors=0; applyCheck=not-needed; patchBytes=0",
+      "details": "status=passed; operations=23; planned=8; alreadyPresent=15; missingAnchors=0; applyCheck=passed; patchBytes=10139",
       "evidence": [
         "scripts/prd-sync-l5-draft.mjs",
         "docs/remediation/PRD-SYNC-PREVIEW-2026-06-13.patch",
@@ -115,11 +115,11 @@
     "exitCode": 0,
     "summary": {
       "operations": 23,
-      "planned": 0,
-      "alreadyPresent": 23,
+      "planned": 8,
+      "alreadyPresent": 15,
       "missingAnchors": 0,
-      "applyCheck": "not-needed",
-      "patchBytes": 0
+      "applyCheck": "passed",
+      "patchBytes": 10139
     }
   },
   "liveTargets": []

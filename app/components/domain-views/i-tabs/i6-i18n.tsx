@@ -10,7 +10,7 @@
  * 完整性扫描 / 新建课程 / 编辑草稿 = 运营设定(仍需操作确认 + 留痕)→ openConfirm。
  */
 import { useEffect, useState } from "react";
-import type { LearningCourseVersionView } from "@/lib/admin/i-client";
+import type { I18nMessagePairView, LearningCourseVersionView } from "@/lib/admin/i-client";
 import type { ICtx } from "./types";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -72,6 +72,8 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const [hcDrawer, setHcDrawer] = useState(false);
   const [messageSearch, setMessageSearch] = useState("");
   const [selectedMessageKey, setSelectedMessageKey] = useState("");
+  const [messageVersions, setMessageVersions] = useState<I18nMessagePairView[]>([]);
+  const [messageVersionsLoading, setMessageVersionsLoading] = useState(false);
   const [versionCourseId, setVersionCourseId] = useState("");
   const [courseVersions, setCourseVersions] = useState<LearningCourseVersionView[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
@@ -119,10 +121,13 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const TUTORIAL_FEATURED_DEFAULT = data?.featuredCourseId ?? "";
   const TUTORIAL_METRICS = (data?.metrics ?? []).map((m) => ({ k: m.key, v: m.value }));
   const runBackend = (task: Promise<void>, ok: string) => {
-    task
+    return task
       .then(() => actions.reloadIContent())
       .then(() => toast(ok))
-      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+      .catch((error) => {
+        toast(`操作失败:${error instanceof Error ? error.message : String(error)}`);
+        throw error;
+      });
   };
 
   const allCourses = COURSES;
@@ -142,6 +147,25 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
   const liveFeatured = (): string =>
     TUTORIAL_FEATURED_DEFAULT;
   const selectedMessage = MESSAGES.find((message) => message.messageKey === selectedMessageKey) ?? MESSAGES[0];
+  useEffect(() => {
+    const messageKey = selectedMessage?.messageKey;
+    if (!messageKey) {
+      setMessageVersions([]);
+      return;
+    }
+    let active = true;
+    setMessageVersionsLoading(true);
+    actions.fetchI6MessageVersions(messageKey)
+      .then((versions) => { if (active) setMessageVersions(versions); })
+      .catch((error) => {
+        if (active) {
+          setMessageVersions([]);
+          toast(`词条版本加载失败:${error instanceof Error ? error.message : String(error)}`);
+        }
+      })
+      .finally(() => { if (active) setMessageVersionsLoading(false); });
+    return () => { active = false; };
+  }, [actions, toast, selectedMessage?.messageKey, content.i18nLearning]);
   const filteredMessages = MESSAGES.filter((message) => {
     const query = messageSearch.trim().toLowerCase();
     return !query || message.messageKey.toLowerCase().includes(query) || message.namespace.toLowerCase().includes(query);
@@ -201,10 +225,11 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
           return;
         }
         setSelectedMessageKey(messageKey);
-        runBackend(actions.saveI6LocalizedDraft(messageKey, {
+        return runBackend(actions.saveI6LocalizedDraft(messageKey, {
           zh: form?.zh || "",
           en: form?.en || "",
           vi: form?.vi || "",
+          expectedVersion: mode === "edit" ? selectedMessage?.version : undefined,
         }, reason), `${messageKey} 草稿已保存 · 当前发布版未被覆盖`);
       },
     });
@@ -222,7 +247,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       amplifies: false,
       run: (reason) => {
         if (!selectedMessage) return;
-        runBackend(actions.publishI6LocalizedMessage(selectedMessage.messageKey, {
+        return runBackend(actions.publishI6LocalizedMessage(selectedMessage.messageKey, {
           zh: selectedMessage.zh,
           en: selectedMessage.en,
           vi: selectedMessage.vi,
@@ -235,8 +260,28 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     action: <>归档词条 · {selectedMessage.messageKey}</>,
     detail: <>归档后不再作为当前发布内容；历史版本和审计记录继续保留。</>,
     amplifies: false,
-    run: (reason) => runBackend(actions.archiveI6LocalizedMessage(selectedMessage.messageKey, reason), `${selectedMessage.messageKey} 已归档`),
+    run: (reason) => runBackend(actions.archiveI6LocalizedMessage(
+      selectedMessage.messageKey,
+      selectedMessage.version,
+      reason,
+    ), `${selectedMessage.messageKey} 已归档`),
   });
+
+  const rollbackMessageVersion = (target: I18nMessagePairView) =>
+    selectedMessage && openActionConfirm({
+      action: <>回滚词条 · {selectedMessage.messageKey} → {target.version}</>,
+      detail: <>
+        服务器将历史三语快照复制为新的单调递增发布版本，不改写历史记录。
+        当前版本 <b>{selectedMessage.version}</b> 与目标版本 <b>{target.version}</b> 均会写入审计和 A4 事件。
+      </>,
+      amplifies: false,
+      run: (reason) => runBackend(actions.rollbackI6LocalizedMessage(
+        selectedMessage.messageKey,
+        target.version,
+        selectedMessage.version,
+        reason,
+      ), `${selectedMessage.messageKey} 已从 ${target.version} 恢复为新发布版本`),
+    });
 
   const fixIntegrity = (issue: IntegrityIssue) =>
     openActionConfirm({
@@ -258,7 +303,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       },
       run: (reason, _v, form) => {
         if (!selectedMessage) return;
-        runBackend(actions.fixI6Integrity(issue.code, {
+        return runBackend(actions.fixI6Integrity(issue.code, {
           messageKey: selectedMessage.messageKey,
           zh: form?.zh || "",
           en: form?.en || "",
@@ -707,7 +752,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               {selectedMessage.status === "draft" && <button className="l-btn sm mc" onClick={pubKey}>
                 发布
               </button>}
-              {selectedMessage.status !== "archived" && <button className="l-btn sm" onClick={archiveKey}>归档</button>}
+              {selectedMessage.status === "published" && <button className="l-btn sm" onClick={archiveKey}>归档</button>}
               </>}
             </div>
           </div>
@@ -720,6 +765,30 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
               </div>
               <div className={`itint ${selectedMessage.zh && selectedMessage.en && selectedMessage.vi ? "ok" : "warn"}`} style={{ marginTop: 8 }}>
                 <b>三语镜像</b> · 版本 {selectedMessage.version} · 占位符 {selectedMessage.placeholders.length ? selectedMessage.placeholders.join("、") : "无"}。草稿保存不会覆盖当前发布版。
+              </div>
+              <div style={{ overflowX: "auto", marginTop: 12 }}>
+                <table className="l-tbl" style={{ minWidth: 520 }}>
+                  <thead><tr><th>历史版本</th><th>状态</th><th>三语完整度</th><th style={{ textAlign: "right" }}>操作</th></tr></thead>
+                  <tbody>
+                    {messageVersions.map((row) => {
+                      const complete = [row.zh, row.en, row.vi].filter(Boolean).length;
+                      return <tr key={`${row.messageKey}-${row.version}`}>
+                        <td className="mono">{row.version}</td>
+                        <td>{statusLabel(row.status)}</td>
+                        <td>{complete}/3</td>
+                        <td style={{ textAlign: "right" }}>
+                          {canWriteI6 && row.status === "archived" && selectedMessage.status !== "draft"
+                            ? <button className="l-btn sm mc" onClick={() => rollbackMessageVersion(row)}>回滚到此版本</button>
+                            : row.version === selectedMessage.version
+                              ? <span className="muted">当前版本</span>
+                              : <span className="muted">仅保留</span>}
+                        </td>
+                      </tr>;
+                    })}
+                    {!messageVersionsLoading && messageVersions.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--ink-4)" }}>暂无版本快照</td></tr>}
+                    {messageVersionsLoading && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--ink-4)" }}>版本加载中…</td></tr>}
+                  </tbody>
+                </table>
               </div>
             </> : <div className="itint">暂无真实词条，请先新增词条草稿。</div>}
           </div>

@@ -16,14 +16,30 @@ export type SupportTicketPriority = "low" | "normal" | "high" | "urgent";
 
 export type SupportTicketMessage = {
   ts: number;
-  author: "user" | "agent" | "system";
+  author: "user" | "agent" | "system" | "internal";
   agentName?: string;
   body: string;
+};
+
+export type SupportTicketSlaTarget = {
+  ruleVersion: number;
+  firstResponseMins: number;
+  resolutionHours: number;
+  queue: string;
+  escalation: string;
+  firstResponseDeadlineAt: number;
+  resolutionDeadlineAt: number;
+  firstResponseAt?: number;
+  resolvedAt?: number;
+  firstResponseOverdue: boolean;
+  resolutionOverdue: boolean;
+  evaluatedAt: number;
 };
 
 export type SupportTicket = {
   id: string;
   userId?: number;
+  userVerified: boolean;
   subject: string;
   category: SupportTicketCategory;
   status: SupportTicketStatus;
@@ -35,6 +51,8 @@ export type SupportTicket = {
   owner: string;
   archived: boolean;
   archivedAt?: number;
+  version: number;
+  slaTarget: SupportTicketSlaTarget;
   messages: SupportTicketMessage[];
 };
 
@@ -57,6 +75,7 @@ export type SupportSla = {
   resolutionHours: number;
   queue: string;
   escalation: string;
+  version: number;
 };
 
 export const SUPPORT_STATUS_LABEL: Record<SupportTicketStatus, string> = {
@@ -181,6 +200,7 @@ export function transferTargetLabel(t: TransferTarget): string {
 
 export type SessionConvo = {
   id: string;          // 镜像前端 Conversation.id
+  version: number;     // 后端会话头版本,所有核心写入必须携带 CAS
   type: "advisor" | "support";
   agentName: string;   // 镜像前端 agentName
   roleKey: string;     // 镜像前端 roleKey
@@ -204,6 +224,7 @@ export const SESSION_CONVOS: SessionConvo[] = [];
 
 /* M1 负载配置的当前值必须来自后端 /content/tickets/load-config。这里仅保留类型。 */
 export type LoadConfig = {
+  version: number;
   autoBalance: boolean;
   defaultCap: number;
   burstCap: number;

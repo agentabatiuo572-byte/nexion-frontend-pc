@@ -12,6 +12,7 @@
  * 操作确认 显式 edit 契约:调参(param / task-price)传 edit{kind,current,unit};处置/纯动作(sku-status / param-fixed / order-* / ops-pause)不传 edit。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -353,6 +354,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e4PageSize, setE4PageSizeState] = useState(10);
   const [e4Total, setE4Total] = useState(0);
   const [e4Filter, setE4FilterState] = useState("all");
+  const [e4Keyword, setE4KeywordState] = useState("");
   const setE4PageSize = useCallback((pageSize: number) => {
     setE4PageSizeState(pageSize);
     setE4Page(1);
@@ -361,12 +363,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setE4FilterState(filter);
     setE4Page(1);
   }, []);
+  const setE4Keyword = useCallback((keyword: string) => {
+    setE4KeywordState(keyword);
+    setE4Page(1);
+  }, []);
   const refreshE4 = useCallback(async () => {
     setE4Loading(true);
     setE4Error(null);
     try {
       const nextPage = await fetchE4OrderPage({
         state: e4Filter === "all" ? undefined : e4Filter,
+        keyword: e4Keyword,
         pageNum: e4Page,
         pageSize: e4PageSize,
       });
@@ -381,7 +388,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } finally {
       setE4Loading(false);
     }
-  }, [e4Filter, e4Page, e4PageSize]);
+  }, [e4Filter, e4Keyword, e4Page, e4PageSize]);
   useEffect(() => { if (tab === "E4") void refreshE4(); }, [tab, refreshE4]);
   useEffect(() => {
     if (tab !== "E4") return;
@@ -648,11 +655,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       name: "删除数据中心 · " + dc.dcLocation,
       op: "dc-delete",
       dc: dc.dcLocation,
-      detail: `软删除 ${dc.dcLocation} 数据中心卡片配置。不会删除设备库存,但该数据中心不再出现在 E5 卡片列表。系统不做跨域硬阻断,提交前请按 5.3 流程人工核对:E5 该 DC 绑定设备=0(含派单/告警)、E4 无待履约订单、E1 无 SKU 引用此展示名、A2 无相关待确认申请。需填写操作理由 + 审计留痕。`,
+      detail: `软删除 ${dc.dcLocation} 数据中心卡片配置。服务端会硬阻断仍被 E5 设备、E4 待履约订单或 E1 SKU 引用的数据中心；三类引用计数全部为 0 后才允许删除。提交前还需核对 A2 无相关待确认申请，并填写操作理由完成审计留痕。`,
       businessForm: {
         kind: "destructive-reason",
         target: dc.dcLocation,
-        impact: "E5 数据中心卡片列表会移除该配置;设备库存数据不回溯删除。设备表 dc_location 字段会保留为历史值(孤儿引用),故人工跨域检查为必做步骤。",
+        impact: "E5 数据中心卡片列表会移除该配置。服务端确认无跨域引用后才执行软删除，并同步清理数据中心运营状态；不会删除设备库存。",
       },
     });
   };
@@ -886,7 +893,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     canWriteE1, skus, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku,
     canWriteE2, tasks, phoneTiers, e2Pricing, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
     e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
-    canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, setE4Page, setE4PageSize, setE4Filter, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
+    canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
     e5Devices, e5Overview, e5Datacenters, e5Loading, e5Error, e5Page, e5PageSize, e5Total,
@@ -979,8 +986,30 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
           : eff === "paid" ? ["chargeback"]
             : eff === "provisioning" ? ["provisioning_failed"] : [];
         const idx = ORDER_FLOW.indexOf(eff);
-        const flowIdx = ORDER_FLOW.indexOf(eff);
-        const nextState = canWriteE4 && !finalized && flowIdx >= 0 && flowIdx < ORDER_FLOW.length - 1 ? ORDER_FLOW[flowIdx + 1] : undefined;
+        const hasSettledFunding = e4Detail?.funding.some((item) => {
+          const source = item.source.toUpperCase();
+          const status = item.status.toUpperCase();
+          return ["PAID", "SUCCESS", "POSTED", "COMPLETED"].includes(status)
+            && (source === "D1_PAYMENT"
+              || ((source === "D4_LEDGER" || source === "D4_BILL") && item.direction.toUpperCase() === "OUT"));
+        }) === true;
+        const hasAllocatedDevice = !!e4Detail?.deviceId
+          && !!e4Detail.deviceInstanceNo
+          && !!o.dc && o.dc !== "—";
+        const nextState = canWriteE4 && !finalized
+          ? eff === "paid" && hasSettledFunding && hasAllocatedDevice
+            ? "provisioning"
+            : eff === "provisioning" && !!e4Detail?.deviceActivatedAt
+              ? "activated"
+              : undefined
+          : undefined;
+        const progressBlock = eff === "placed"
+          ? { code: "ORDER_PAYMENT_CONFIRMATION_REQUIRED", text: "等待 D1 / PSP 或 D4 确认真实支付，后台不能手工伪造已支付。" }
+          : eff === "paid" && (!hasSettledFunding || !hasAllocatedDevice)
+            ? { code: "ORDER_PROVISIONING_EVIDENCE_REQUIRED", text: "须先存在已结算资金证据，并由 E5 绑定设备与数据中心。" }
+            : eff === "provisioning" && !e4Detail?.deviceActivatedAt
+              ? { code: "ORDER_DEVICE_ACTIVATION_REQUIRED", text: "须先由 E5 真正激活设备，E4 才能确认订单完成。" }
+              : null;
         const refundableState = ["paid", "provisioning", "activated"].includes(eff);
         const refundReady = canRefundE4 && refundableState && e4Detail?.refundAllowed === true;
         const closeOrder = () => { setSelOrder(null); setE4Detail(null); setE4DetailError(null); };
@@ -1007,6 +1036,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <div className="tint" style={{ marginBottom: 14, textAlign: "center" }}><div className="muted tiny">订单金额</div><div style={{ fontSize: 30, fontWeight: 600, color: "var(--ink)" }} className="tnum">${o.amt.toLocaleString()}</div></div>
             <KV k="状态" v={<Badge tone={ostate[eff] ?? "neutral"}>{stateLabel(eff)}</Badge>} />
             {!finalized && <KV k="可达下一态" v={nextState ? stateLabel(nextState) : <span style={{ color: "var(--ink-4)" }}>无可用主路径推进</span>} />}
+            {progressBlock && <div className="tint warn tiny" style={{ marginBottom: 10 }} title={progressBlock.code}>{progressBlock.text}</div>}
             <KV k="DC 分配" v={o.dc} />
             <KV k="用户" v={o.user} />
             <KV k="下单时间" v={o.age + " 前"} />
@@ -1032,6 +1062,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             {e4Detail && <><div style={{ fontSize: 12.5, fontWeight: 600, margin: "14px 0 8px", color: "var(--ink)" }}>资金证据</div>
               {e4Detail.funding.length === 0 ? <div className="muted tiny">暂无支付 / D4 流水</div> : e4Detail.funding.map((item, index) => <KV key={`${item.source}-${item.bizNo}-${index}`} k={item.source} v={`${item.direction} ${item.amount.toLocaleString()} USDT · ${item.status} · ${item.bizNo}`} />)}
             </>}
+            <div className="chips" style={{ marginTop: 14 }}>
+              <Link className="chip" href={`/platform/audit?domain=E&object=${encodeURIComponent(o.id)}`}>A2 审计追踪</Link>
+              <Link className="chip" href="/platform/events">A4 订单事件</Link>
+              <Link className="chip" href={`/finance/ledger?bizNo=${encodeURIComponent(o.id)}`}>D4 资金流水</Link>
+            </div>
           </Drawer>
         );
       })()}

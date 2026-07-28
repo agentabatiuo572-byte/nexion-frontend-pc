@@ -10,6 +10,11 @@ const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", imp
 
 test("K3 reads only its own overview and fails closed instead of exposing stale rules", () => {
   assert.match(client, /export async function fetchK3WithdrawRuleOverview/);
+  assert.match(client, /K3_RESPONSE_INVALID/);
+  assert.match(client, /requiredK3Record/);
+  assert.match(client, /requiredK3Array/);
+  assert.match(client, /requiredK3RuleAction/);
+  assert.match(client, /requiredK3RuleState/);
   assert.match(kView, /tab === "K3"[\s\S]*fetchK3WithdrawRuleOverview/);
   assert.match(component, /if \(ctx\.contentLoading\)/);
   assert.match(component, /if \(ctx\.contentError\)/);
@@ -86,6 +91,8 @@ test("K3 dry-run returns an operator-visible batch result", () => {
   assert.match(component, /COMPLETED:\s*"已完成"/);
   assert.match(component, /dryRunStatusLabel\(dryRunResult\.status\)/);
   assert.doesNotMatch(component, /· \{dryRunResult\.status\}/);
+  assert.match(client, /normalizeK3DryRunForWrite/);
+  assert.match(client, /new K1OutcomeUncertainError/);
 });
 
 test("K3 has truthful empty states, localized failures and a verify gate", () => {
@@ -93,6 +100,7 @@ test("K3 has truthful empty states, localized failures and a verify gate", () =>
   assert.match(component, /暂无命中日志/);
   assert.match(component, /暂无路由结果数据/);
   assert.match(errorMessages, /K3_RULE_CONCURRENT_UPDATE/);
+  assert.match(errorMessages, /K3_RESPONSE_INVALID/);
   assert.match(errorMessages, /RULE_CONDITION_INVALID/);
   assert.match(errorMessages, /K3_RULE_TRANSITION_INVALID/);
   assert.match(verify, /K3 contract/);

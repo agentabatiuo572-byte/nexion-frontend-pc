@@ -5,7 +5,7 @@
  */
 import type { ReactNode } from "react";
 import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-kit";
-import type { L3FinanceQuery, L4OperationsQuery, LBiActions, LBiData } from "@/lib/admin/l-client";
+import type { L2FunnelQuery, L3FinanceQuery, L4OperationsQuery, LBiActions, LBiData } from "@/lib/admin/l-client";
 
 export type ActionConfirmReq = {
   action: ReactNode;
@@ -15,6 +15,7 @@ export type ActionConfirmReq = {
   reasonMax?: number;
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
+  completionCopy?: string;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 
@@ -27,10 +28,16 @@ export type LCtx = {
   reloadBi?: () => Promise<void>;
   biActions?: LBiActions;
   canExport?: boolean;
+  canExportFinanceDetail?: boolean;
+  canApproveExportTasks?: boolean;
   canExportNetworkTree?: boolean;
   canGenerateRegulatory?: boolean;
   availableAggregateExportTypes?: readonly string[];
   canAccessReportType?: (reportType: string) => boolean;
+  l2Query?: L2FunnelQuery;
+  setL2Query?: (query: L2FunnelQuery) => void;
+  l2SliceExportable?: boolean;
+  setL2SliceExportable?: (value: boolean) => void;
   l3Query?: L3FinanceQuery;
   setL3Query?: (query: L3FinanceQuery) => void;
   l4Query?: L4OperationsQuery;

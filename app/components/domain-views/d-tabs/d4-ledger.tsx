@@ -141,7 +141,11 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     const requestId = ++userRequest.current;
     setUserLoading(true);
     setUserError("");
-    void Promise.all([fetchD4UserLedger(selectedUserId), fetchD4RunningBalance(selectedUserId)]).then(([ledger, running]) => {
+    const range = { from: applied.from || undefined, to: applied.to || undefined };
+    void Promise.all([
+      fetchD4UserLedger(selectedUserId, range),
+      fetchD4RunningBalance(selectedUserId, range),
+    ]).then(([ledger, running]) => {
       if (requestId !== userRequest.current) return;
       setUserLedger(ledger);
       setRunningBalance(running);
@@ -153,13 +157,13 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     }).finally(() => {
       if (requestId === userRequest.current) setUserLoading(false);
     });
-  }, [canUserRead, reloadKey, selectedUserId]);
+  }, [applied.from, applied.to, canUserRead, reloadKey, selectedUserId]);
 
   const pages = Math.max(1, Math.ceil(bills.total / bills.pageSize));
   const stats = useMemo(() => {
     const inflow = bills.records.filter((row) => row.direction === "IN" || row.direction === "CREDIT").length;
     const outflow = bills.records.length - inflow;
-    const pending = bills.records.filter((row) => !["SUCCESS", "POSTED", "COMPLETED"].includes(row.status.toUpperCase())).length;
+    const pending = bills.records.filter((row) => ["PENDING", "PROCESSING"].includes(row.status.toUpperCase())).length;
     return { inflow, outflow, pending };
   }, [bills.records]);
 
@@ -272,7 +276,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">单用户全部账本与分类汇总</span><span className="sub">· 独立输入，不受当前页限制</span><div className="r"><div className="lookup"><input aria-label="单用户账本用户 ID" value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="输入用户 ID" /><button className="l-btn primary" disabled={!canUserRead} onClick={() => openUser()}>加载账户</button></div></div></div>
+        <div className="l-h"><span className="ttl">单用户账本与分类汇总</span><span className="sub">· 独立用户输入 · 沿用上方时间范围，超大账本可收窄后重试</span><div className="r"><div className="lookup"><input aria-label="单用户账本用户 ID" value={userInput} onChange={(event) => setUserInput(event.target.value)} placeholder="输入用户 ID" /><button className="l-btn primary" disabled={!canUserRead} onClick={() => openUser()}>加载账户</button></div></div></div>
         <div className="l-b">
           {userLoading ? <div className="dtint">正在核对用户账本与钱包余额...</div> : userLedger ? <>
             <div className="dtint cyan">{userLabel(userLedger)} · 全量 {userLedger.total} 笔；当前余额独立读取用户钱包</div>
@@ -287,19 +291,28 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       </section>
 
       <section className="l-card">
-        <div className="l-h"><span className="ttl">Running Balance 断点核对</span><span className="sub">· 每笔余额连续性 + 最新账本与钱包差额</span></div>
+        <div className="l-h"><span className="ttl">Running Balance 断点核对</span><span className="sub">· 每笔余额连续性；仅当前区间核对最新账本与钱包差额</span></div>
         <div className="l-b">
           {runningBalance ? <>
-            <div className={`dtint ${runningBalance.balanced ? "cyan" : "warn"}`} data-proof="d4-running-balance">{runningBalance.balanced ? "账本连续，且最新余额与钱包一致" : `发现 ${runningBalance.breakCount} 个账实断点，请回到对应业务单核查；D4 不提供调账入口`}</div>
-            <div className="sum-grid"><div className="s"><div className="k">USDT 钱包差额</div><div className="v">{runningBalance.reconciliation.USDT}</div></div><div className="s"><div className="k">NEX 钱包差额</div><div className="v">{runningBalance.reconciliation.NEX}</div></div></div>
-            {runningBalance.rows.map((item) => <div className={`rb-row${item.breakDetected ? " warn" : ""}`} key={item.bill.id}><span className="mono">{timeText(item.bill.createdAt)}</span><span>{item.breakDetected ? "⚠ 断点" : "连续"} · {item.bill.bizNo}</span><span className="mono">期望 {item.expectedBalanceAfter}</span><span className="mono">实际 {item.bill.balanceAfter} · 差 {item.difference}</span></div>)}
+            {runningBalance.reconciliationScope === "HISTORICAL_RANGE" ? (
+              <div className={`dtint ${runningBalance.balanced ? "cyan" : "warn"}`} data-proof="d4-running-balance">
+                {runningBalance.balanced
+                  ? `历史截止区间内已入账流水连续${runningBalance.unsettledCount > 0 ? `；另有 ${runningBalance.unsettledCount} 条未结算流水不参与连续性核对` : ""}`
+                  : `历史截止区间发现 ${runningBalance.breakCount} 个流水断点，请回到对应业务单核查`}
+                ；不使用当前钱包核对。{runningBalance.reconciliationNote}
+              </div>
+            ) : <>
+              <div className={`dtint ${runningBalance.balanced ? "cyan" : "warn"}`} data-proof="d4-running-balance">{runningBalance.balanced ? `已入账流水连续，且最新余额与钱包一致${runningBalance.unsettledCount > 0 ? `；另有 ${runningBalance.unsettledCount} 条未结算流水不参与钱包核对` : ""}` : `发现 ${runningBalance.breakCount} 个账实断点，请回到对应业务单核查；D4 不提供调账入口`}</div>
+              {runningBalance.reconciliation && <div className="sum-grid"><div className="s"><div className="k">USDT 钱包差额</div><div className="v">{runningBalance.reconciliation.USDT}</div></div><div className="s"><div className="k">NEX 钱包差额</div><div className="v">{runningBalance.reconciliation.NEX}</div></div></div>}
+            </>}
+            {runningBalance.rows.map((item) => <div className={`rb-row${item.breakDetected ? " warn" : ""}`} key={item.bill.id}><span className="mono">{timeText(item.bill.createdAt)}</span><span>{item.settlementBucket === "UNSETTLED" ? "未结算 · 不参与钱包核对" : item.breakDetected ? "⚠ 断点" : "连续"} · {item.bill.bizNo}</span><span className="mono">期望 {item.expectedBalanceAfter ?? "—"}</span><span className="mono">实际 {item.bill.balanceAfter} · 差 {item.difference}</span></div>)}
           </> : <div className="dtint">先加载单用户账本，即可检查时间轴断点与钱包最终余额。</div>}
         </div>
       </section>
 
       <section className="l-card">
         <div className="l-h"><span className="ttl">脱敏对账导出</span><span className="sub">· 沿用当前七类 / 用户 / 时间 / 状态筛选</span><div className="r"><button className="l-btn primary" disabled={!canExport || loading || Boolean(error)} title={error ? "账单事实加载失败，恢复前禁止导出" : undefined} onClick={requestExport}>{canExport ? "导出脱敏 CSV" : "当前角色不可导出"}</button></div></div>
-        <div className="l-b"><div className="dtint">固定隐藏昵称等个人信息，用户编码仅保留首尾；导出动作写审计。需要纠正余额时唯一入口为 C3。</div><div className="chips" style={{ marginTop: 10 }}><Link className="chip" href="/users/assets">C3 余额调整</Link><Link className="chip" href="/finance/recon">D1 充值对账</Link><Link className="chip" href="/finance/withdrawals">D2 提现审核</Link><Link className="chip" href="/finance/pool">D3 资金池</Link><Link className="chip" href="/platform/events">A4 资金事件</Link><Link className="chip" href="/analytics/export">L5 监管导出</Link></div></div>
+        <div className="l-b"><div className="dtint">固定隐藏昵称等个人信息，用户编码仅保留首尾；导出动作写审计。需要纠正余额时唯一入口为 C3。</div><div className="chips" style={{ marginTop: 10 }}><Link className="chip" href="/users/assets">C3 余额调整</Link><Link className="chip" href="/finance/recon">D1 充值对账</Link><Link className="chip" href="/finance/withdrawals">D2 提现审核</Link><Link className="chip" href="/finance/pool">D3 资金池</Link><Link className="chip" href="/platform/audit">A2 操作审计</Link><Link className="chip" href="/platform/events">A4 资金事件</Link><Link className="chip" href="/analytics/export">L5 监管导出</Link></div></div>
       </section>
     </>
   );

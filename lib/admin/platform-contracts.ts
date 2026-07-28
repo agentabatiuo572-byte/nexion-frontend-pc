@@ -2,12 +2,26 @@
  * Mutation responses are resource-shaped (node/void), not overview-shaped.
  * Always re-read the authoritative overview after the write succeeds.
  */
+export class PlatformMutationReadbackError extends Error {
+  readonly cause: unknown;
+
+  constructor(cause: unknown) {
+    super("操作已提交成功，但最新数据读取失败。请不要重复提交；请刷新页面核对最终状态。");
+    this.name = "PlatformMutationReadbackError";
+    this.cause = cause;
+  }
+}
+
 export async function mutateThenReloadOverview<TMutation, TOverview>(
   mutate: () => Promise<TMutation>,
   reload: () => Promise<TOverview>,
 ): Promise<TOverview> {
   await mutate();
-  return reload();
+  try {
+    return await reload();
+  } catch (error) {
+    throw new PlatformMutationReadbackError(error);
+  }
 }
 
 export interface A2ProposalTicket {

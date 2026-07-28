@@ -3,7 +3,7 @@
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataListPager, Drawer, type BusinessFormValue } from "../design-kit";
 import {
   disableUserTwoFactor,
@@ -22,6 +22,7 @@ import {
   type UserKycReverification,
   type UserSecurityUserRow,
   type UserSession,
+  UsersOutcomeUnknownError,
 } from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
@@ -143,6 +144,13 @@ function errorMessage(error: unknown) {
   return message;
 }
 
+function newCommandKey(prefix: string) {
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${suffix}`;
+}
+
 function clearSelectedUserFromOverview(current: UserSecurityOverview | null): UserSecurityOverview | null {
   if (!current) return current;
   return {
@@ -216,6 +224,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const [error, setError] = useState<string | null>(null);
   const [ssId, setSsId] = useState<string | null>(null);
   const [lockId, setLockId] = useState<string | null>(null);
+  const pendingCommandKeys = useRef(new Map<string, string>());
 
   const replaceFocusUserCode = useCallback((userCode?: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -243,9 +252,11 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       const data = await fetchUserSecurityOverview({ userKey: key || undefined, pageNum: page, pageSize });
       setOverview(key ? data : clearSelectedUserFromOverview(data));
       setError(null);
+      return true;
     } catch (err) {
       setOverview(null);
       setError(`C5 数据加载失败 · ${errorMessage(err)}`);
+      return false;
     } finally {
       if (!silent) setLoading(false);
     }
@@ -304,15 +315,29 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     };
   }, [focusUserCode, replaceFocusUserCode, selectedLookupUser, userLookup]);
 
-  const perform = useCallback(async (work: () => Promise<string>, fallback: string) => {
+  const perform = useCallback(async (
+    fingerprint: string,
+    work: (commandKey: string) => Promise<string>,
+    fallback: string,
+  ) => {
     setBusy(true);
+    const commandKey = pendingCommandKeys.current.get(fingerprint) ?? newCommandKey("c5-command");
+    pendingCommandKeys.current.set(fingerprint, commandKey);
+    let writeReturned = false;
     try {
-      const message = await work();
-      await loadData(true);
+      const message = await work(commandKey);
+      writeReturned = true;
+      if (!await loadData(true)) {
+        throw new Error("操作可能已生效，但结果回读失败；请刷新核对，重试将继续使用同一请求号");
+      }
+      pendingCommandKeys.current.delete(fingerprint);
       toast(message || fallback);
       setError(null);
       return true;
     } catch (err) {
+      if (!writeReturned && !(err instanceof UsersOutcomeUnknownError)) {
+        pendingCommandKeys.current.delete(fingerprint);
+      }
       const message = errorMessage(err);
       setError(`C5 操作失败 · ${message}`);
       toast(`C5 操作失败 · ${message}`);
@@ -347,8 +372,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       chips: [["提交 K5 独立复审", "ready"], ["通过后仅可执行一次", "done"]],
       reason: true,
       okLabel: "提交复审申请",
-      run: (reason) => perform(async () => {
-        const result = await requestUserKycReverification(selectedUserId, action, reason, OPERATOR());
+      run: (reason) => perform(`kyc-review|${selectedUserId}|${action}|${reason}`, async (commandKey) => {
+        const result = await requestUserKycReverification(selectedUserId, action, reason, OPERATOR(), commandKey);
         return `实名二验已提交 · ${text(result.ticketId, "等待 K5 处理")}`;
       }, "实名二验已提交"),
     });
@@ -387,8 +412,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       reason: true,
       okLabel: "确认踢线",
       run: (reason) => {
-        return perform(async () => {
-          await revokeUserSession(id, reason, OPERATOR());
+        return perform(`revoke-one|${id}|${reason}`, async (commandKey) => {
+          await revokeUserSession(id, reason, OPERATOR(), commandKey);
           return "会话已立即吊销";
         }, "会话已立即吊销");
       },
@@ -404,8 +429,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       okLabel: "确认全部踢线",
       run: (reason) => {
         if (!selectedUserId) return;
-        return perform(async () => {
-          await revokeUserSessions(selectedUserId, reason, OPERATOR());
+        return perform(`revoke-all|${selectedUserId}|${reason}`, async (commandKey) => {
+          await revokeUserSessions(selectedUserId, reason, OPERATOR(), commandKey);
           return "全部活跃会话已立即吊销";
         }, "全部活跃会话已立即吊销");
       },
@@ -433,8 +458,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
         if (!selectedUserId) return;
-        return perform(async () => {
-          await disableUserTwoFactor(selectedUserId, reason, OPERATOR(), identityEvidence(businessValue, verification));
+        return perform(`disable-2fa|${selectedUserId}|${text(verification.ticketId)}|${reason}`, async (commandKey) => {
+          await disableUserTwoFactor(selectedUserId, reason, OPERATOR(), identityEvidence(businessValue, verification), commandKey);
           return "2FA 已立即关闭";
         }, "2FA 已立即关闭");
       },
@@ -462,8 +487,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
         if (!selectedUserId) return;
-        return perform(async () => {
-          await requestUserPasswordReset(selectedUserId, reason, OPERATOR(), identityEvidence(businessValue, verification));
+        return perform(`password-reset|${selectedUserId}|${text(verification.ticketId)}|${reason}`, async (commandKey) => {
+          await requestUserPasswordReset(selectedUserId, reason, OPERATOR(), identityEvidence(businessValue, verification), commandKey);
           return "已要求用户下次登录完成密码重设";
         }, "密码重设要求已生效");
       },
@@ -496,8 +521,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
         },
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
-        return perform(async () => {
-          await unlockUserSecurity(userId, reason, OPERATOR(), identityEvidence(businessValue, verification, lockKind));
+        return perform(`unlock|${userId}|${lockKind}|${text(verification.ticketId)}|${reason}`, async (commandKey) => {
+          await unlockUserSecurity(userId, reason, OPERATOR(), identityEvidence(businessValue, verification, lockKind), commandKey);
           return `${longLock ? "长" : "短"}锁已立即解除`;
         }, "账户锁定已解除");
       },
@@ -508,7 +533,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!param.key || param.readOnly || !canWriteConfig) return;
     openActionConfirm({
       action: `凭证参数调整 · ${text(param.name)}`,
-      detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · {text(param.note)}。只对新签发凭证生效。</>,
+      detail: <><b>{text(param.name)}</b> · 当前 {text(param.value)} · {text(param.note)}。会话空闲阈值会立即影响活跃判定，其余凭证时长对新签发凭证生效。</>,
       amplifies: false,
       edit: {
         kind: "number",
@@ -522,8 +547,13 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       run: (reason, nextValue) => {
         const value = (nextValue ?? "").trim();
         if (!value) return;
-        return perform(async () => {
-          await updateUserCredentialParam(param.key as string, value, reason, OPERATOR());
+        const expectedVersion = toNumber(param.version, Number.NaN);
+        if (!Number.isFinite(expectedVersion)) {
+          toast("当前配置版本不可用，请重新加载后再操作");
+          return false;
+        }
+        return perform(`credential|${param.key}|${value}|${expectedVersion}|${reason}`, async (commandKey) => {
+          await updateUserCredentialParam(param.key as string, value, reason, OPERATOR(), expectedVersion, commandKey);
           return `${text(param.name)} 已更新为 ${value}`;
         }, "凭证参数已更新");
       },
@@ -683,17 +713,17 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
               <tbody>
                 {sessions.map((session) => {
                   const id = sessionId(session);
-                  const revoked = text(session.status, "").toUpperCase() === "REVOKED";
+                  const active = text(session.status, "").toUpperCase() === "ACTIVE";
                   return (
-                    <tr key={id} className="click" style={revoked ? { opacity: 0.62 } : undefined} onClick={() => setSsId(id)}>
+                    <tr key={id} className="click" style={!active ? { opacity: 0.62 } : undefined} onClick={() => setSsId(id)}>
                       <td className="mono" style={{ color: "var(--ink)" }}>{maskSessionId(id)} <span style={{ fontSize: 10.5, color: "var(--c-ac)" }}>详情›</span></td>
                       <td className="mono" style={{ fontSize: 11.5 }}>{text(session.clientIpMasked)}</td>
                       <td style={{ fontSize: 12 }}>{text(session.deviceName)}</td>
                       <td><span className={`bdg ${sessionTone(session.status)}`}>{sessionStatusLabel(session.status)}</span></td>
                       <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{formatDateTime(session.lastActiveAt ?? session.issuedAt)}</td>
                       <td style={{ textAlign: "right" }}>
-                        {revoked ? (
-                          <span className="bdg dim">已踢线</span>
+                        {!active ? (
+                          <span className="bdg dim">{sessionStatusLabel(session.status)}</span>
                         ) : (
                           <button className="l-btn sm" disabled={busy || !canRevokeOne} onClick={(event) => { event.stopPropagation(); revokeOne(id); }}>
                             {canRevokeOne ? "踢线" : "无权限"}
@@ -776,7 +806,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
       {selectedSession && (
         <Drawer title={`会话详情 · ${maskSessionId(sessionId(selectedSession))}`} sub={`${userLabel(selectedUser)} · ${sessionStatusLabel(selectedSession.status)}`} onClose={() => setSsId(null)}
-          footer={<button className="l-btn danger" disabled={busy || !canRevokeOne || text(selectedSession.status, "").toUpperCase() === "REVOKED"} onClick={() => revokeOne(sessionId(selectedSession))}>踢线</button>}>
+          footer={<button className="l-btn danger" disabled={busy || !canRevokeOne || text(selectedSession.status, "").toUpperCase() !== "ACTIVE"} onClick={() => revokeOne(sessionId(selectedSession))}>踢线</button>}>
           <SecLabel>服务器会话</SecLabel>
           <div className="kv"><span className="k">刷新凭证</span><span className="v mono">{maskSessionId(sessionId(selectedSession))}</span></div>
           <div className="kv"><span className="k">设备</span><span className="v">{text(selectedSession.deviceName)}</span></div>

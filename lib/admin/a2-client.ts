@@ -1,6 +1,7 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   buildA2FilterQuery,
+  resolveA2AuditObject,
   resolveA2AuditDomain,
   type A2AuditDomain,
   type A2AuditFilter,
@@ -244,7 +245,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
     type: normalizeType(ticket.type),
     amplifies: !!ticket.amplifies,
     sos: !!ticket.sos,
-    ts: ticket.ts?.trim() || "—",
+    ts: formatTime(ticket.ts),
     mine: !!ticket.mine,
     roleGate: ticket.roleGate?.trim() || "超管",
     reason: ticket.reason?.trim() || "—",
@@ -255,7 +256,7 @@ function fromTicket(ticket: BackendTicket): A2OperationRow {
 function fromLog(log: BackendAuditLog): A2AuditLogRow {
   const detail = parseDetail(log.detailJson);
   const action = asText(log.action, "UNKNOWN");
-  const obj = asText(detail.obj ?? detail.resource ?? log.resourceId ?? log.resourceType, "—");
+  const obj = resolveA2AuditObject(detail.obj, detail.resource, log.resourceType, log.resourceId);
   const beforeVal = detail.before ?? detail.oldValue ?? detail.beforePrice ?? detail.fromStatus ?? detail.from;
   const afterVal = detail.after ?? detail.newValue ?? detail.afterPrice ?? detail.toStatus ?? detail.to;
   const delta = asText(detail.delta, beforeVal != null || afterVal != null ? `${asText(beforeVal)} → ${asText(afterVal)}` : "—");

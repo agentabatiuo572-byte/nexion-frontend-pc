@@ -5,6 +5,7 @@ import test from "node:test";
 const search = readFileSync(new URL("../app/components/domain-views/c-tabs/c1-search.tsx", import.meta.url), "utf8");
 const detail = readFileSync(new URL("../app/_console/users/search/[id]/page.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/user360-client.ts", import.meta.url), "utf8");
+const usersProxy = readFileSync(new URL("../app/api/admin/users/[...path]/route.ts", import.meta.url), "utf8");
 
 test("C1 preserves safe search context and disables stale rows while loading", () => {
   assert.match(search, /window\.history\.replaceState/);
@@ -47,4 +48,11 @@ test("C1 renders unavailable when the current K4 score authority is absent", () 
   assert.match(detail, /risk\?\.sourceStatus === "READY"/);
   assert.match(detail, /风险评分不可用/);
   assert.doesNotMatch(detail, /summary\.riskScore \?\? profile\?\.riskScore/);
+});
+
+test("C1 proxy fails closed when upstream phone masking violates the public contract", () => {
+  assert.match(usersProxy, /MASKED_PHONE_PATTERN = \/\^\[0-9\]\{3\}\\\*\{4\}\[0-9\]\{4\}\$\//);
+  assert.match(usersProxy, /key === "phoneMasked"/);
+  assert.match(usersProxy, /sanitizePhoneMasked\(JSON\.parse/);
+  assert.match(usersProxy, /USERS_RESPONSE_INVALID/);
 });

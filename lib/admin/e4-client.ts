@@ -81,6 +81,7 @@ export interface E4OrderDetail {
   activationStatus: string;
   deviceId?: number | null;
   deviceInstanceNo?: string | null;
+  deviceActivatedAt?: string | null;
   history: E4OrderHistory[];
   funding: E4OrderFunding[];
   coverageCurrent?: number | null;

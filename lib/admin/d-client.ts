@@ -226,6 +226,10 @@ export interface D2Withdrawal {
   referralPosition: string;
   riskScoreBreakdown: string;
   withdrawalHistory: string;
+  networkFeeRate: number;
+  networkFeeMin: number;
+  networkFeeMax: number;
+  networkFee: number;
   penaltyFeeRate: number;
   grossFee: number;
   nexBurned: number;
@@ -394,9 +398,10 @@ export type D4BillType = "swap" | "topup" | "withdraw" | "earning" | "commission
 
 export interface D4RunningBalanceRow {
   bill: D4Bill;
-  expectedBalanceAfter: number;
+  expectedBalanceAfter: number | null;
   difference: number;
   breakDetected: boolean;
+  settlementBucket: "SETTLED" | "UNSETTLED";
 }
 
 export interface D4RunningBalance {
@@ -404,7 +409,10 @@ export interface D4RunningBalance {
   total: number;
   rows: D4RunningBalanceRow[];
   breakCount: number;
-  reconciliation: Record<"USDT" | "NEX", number>;
+  unsettledCount: number;
+  reconciliationScope: "CURRENT_WALLET" | "HISTORICAL_RANGE";
+  reconciliationNote: string;
+  reconciliation: Record<"USDT" | "NEX", number> | null;
   balanced: boolean;
   sources: string[];
 }
@@ -430,6 +438,7 @@ export interface D5Params {
 }
 
 let requestSeq = 0;
+const pendingMutationKeys = new Map<string, string>();
 
 function nextId(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -480,21 +489,45 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const method = (init?.method ?? "GET").toUpperCase();
+  const mutationFingerprint = init?.idempotencyPrefix && method !== "GET"
+    ? `${method}|${base}|${path}|${typeof init.body === "string" ? init.body : ""}`
+    : null;
   if (init?.idempotencyKey || init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", init.idempotencyKey || nextId(init.idempotencyPrefix!));
+    const commandKey = init.idempotencyKey
+      || (mutationFingerprint ? pendingMutationKeys.get(mutationFingerprint) : undefined)
+      || nextId(init.idempotencyPrefix!);
+    headers.set("Idempotency-Key", commandKey);
+    if (mutationFingerprint) pendingMutationKeys.set(mutationFingerprint, commandKey);
   }
-  const response = await fetch(`/api/admin/${base}${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/admin/${base}${path}`, {
+      ...init,
+      headers,
+      signal: init?.signal ?? AbortSignal.timeout(30_000),
+      cache: "no-store",
+    });
+  } catch {
+    const commandKey = headers.get("Idempotency-Key");
+    if (commandKey && method !== "GET") {
+      throw new Error(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+    }
+    throw new Error("财务服务请求超时，请检查连接后重试");
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
+    const commandKey = headers.get("Idempotency-Key");
+    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+      throw new Error(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+    }
+    if (mutationFingerprint) pendingMutationKeys.delete(mutationFingerprint);
     throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));
   }
+  if (mutationFingerprint) pendingMutationKeys.delete(mutationFingerprint);
   return result.data as T;
 }
 
@@ -559,6 +592,31 @@ function d2RoutingPriority(value: unknown): D2Withdrawal["routingPriority"] {
     throw new Error(formatAdminApiError("D2_RESPONSE_INVALID", "D2_RESPONSE_INVALID:routingPriority"));
   }
   return priority as D2Withdrawal["routingPriority"];
+}
+
+function d2Invalid(field: string): never {
+  throw new Error(formatAdminApiError("D2_RESPONSE_INVALID", `D2_RESPONSE_INVALID:${field}`));
+}
+
+function d2Object(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) d2Invalid(field);
+  return value as Record<string, unknown>;
+}
+
+function d2String(value: unknown, field: string, allowEmpty = false): string {
+  if (typeof value !== "string" || (!allowEmpty && !value.trim())) d2Invalid(field);
+  return value.trim();
+}
+
+function d2Integer(value: unknown, field: string, min = 0): number {
+  const parsed = d2Number(value, field);
+  if (!Number.isSafeInteger(parsed) || parsed < min) d2Invalid(field);
+  return parsed;
+}
+
+function d2OptionalString(value: unknown, field: string): string {
+  if (value === null || value === undefined) return "";
+  return d2String(value, field, true);
 }
 
 function d5Number(value: unknown, field: string): number {
@@ -751,62 +809,96 @@ function normalizeD1VietQrOverview(raw: unknown): D1VietQrOverview {
           || !["OPEN", "CREDITED", "RETURN_PENDING", "RETURNED"].includes(status)) {
         d1Invalid(`vietqr.page.items[${index}].lifecycle`);
       }
+      const id = d1Number(row.id, `vietqr.page.items[${index}].id`);
+      const payableVnd = d1NullableNumber(row.payableVnd, `vietqr.page.items[${index}].payableVnd`);
+      const receivedVnd = d1NullableNumber(row.receivedVnd, `vietqr.page.items[${index}].receivedVnd`);
+      const lockedFxRateVndPerUsdt = d1Number(row.lockedFxRateVndPerUsdt, `vietqr.page.items[${index}].lockedFxRateVndPerUsdt`);
+      const creditedUsdt = d1Number(row.creditedUsdt, `vietqr.page.items[${index}].creditedUsdt`);
+      const version = d1Number(row.version, `vietqr.page.items[${index}].version`);
+      if (!Number.isSafeInteger(id) || id <= 0
+          || (payableVnd !== null && payableVnd < 0)
+          || (receivedVnd !== null && receivedVnd < 0)
+          || lockedFxRateVndPerUsdt <= 0
+          || creditedUsdt < 0
+          || !Number.isSafeInteger(version) || version < 0) {
+        d1Invalid(`vietqr.page.items[${index}].businessRange`);
+      }
       return {
-        id: d1Number(row.id, `vietqr.page.items[${index}].id`),
+        id,
         reconciliationNo: d1String(row.reconciliationNo, `vietqr.page.items[${index}].reconciliationNo`),
         intentNo: d1OptionalText(row.intentNo, `vietqr.page.items[${index}].intentNo`),
         userId: d1NullableNumber(row.userId, `vietqr.page.items[${index}].userId`),
         bankAccountId: d1NullableNumber(row.bankAccountId, `vietqr.page.items[${index}].bankAccountId`),
         viewType: viewType as D1VietQrRow["viewType"],
         status: status as D1VietQrRow["status"],
-        payableVnd: d1NullableNumber(row.payableVnd, `vietqr.page.items[${index}].payableVnd`),
-        receivedVnd: d1NullableNumber(row.receivedVnd, `vietqr.page.items[${index}].receivedVnd`),
-        lockedFxRateVndPerUsdt: d1Number(row.lockedFxRateVndPerUsdt, `vietqr.page.items[${index}].lockedFxRateVndPerUsdt`),
-        creditedUsdt: d1Number(row.creditedUsdt, `vietqr.page.items[${index}].creditedUsdt`),
+        payableVnd,
+        receivedVnd,
+        lockedFxRateVndPerUsdt,
+        creditedUsdt,
         paymentReference: d1OptionalText(row.paymentReference, `vietqr.page.items[${index}].paymentReference`),
         note: d1OptionalText(row.note, `vietqr.page.items[${index}].note`),
         expiresAt: d1OptionalText(row.expiresAt, `vietqr.page.items[${index}].expiresAt`),
         receivedAt: d1OptionalText(row.receivedAt, `vietqr.page.items[${index}].receivedAt`),
-        version: d1Number(row.version, `vietqr.page.items[${index}].version`),
+        version,
         createdAt: d1String(row.createdAt, `vietqr.page.items[${index}].createdAt`),
         updatedAt: d1String(row.updatedAt, `vietqr.page.items[${index}].updatedAt`),
       };
     }),
   };
   if (page.pageNum < 1 || page.pageSize < 1 || page.total < 0 || page.items.length > page.pageSize) d1Invalid("vietqr.page.invariants");
+  const configValues = {
+    id: d1Number(configRaw.id, "vietqr.config.id"),
+    toleranceVnd: d1Number(configRaw.toleranceVnd, "vietqr.config.toleranceVnd"),
+    graceMinutes: d1Number(configRaw.graceMinutes, "vietqr.config.graceMinutes"),
+    perTxLimitUsd: d1Number(configRaw.perTxLimitUsd, "vietqr.config.perTxLimitUsd"),
+    trc20Confirmations: d1Number(configRaw.trc20Confirmations, "vietqr.config.trc20Confirmations"),
+    erc20Confirmations: d1Number(configRaw.erc20Confirmations, "vietqr.config.erc20Confirmations"),
+    bep20Confirmations: d1Number(configRaw.bep20Confirmations, "vietqr.config.bep20Confirmations"),
+    version: d1Number(configRaw.version, "vietqr.config.version"),
+  };
+  if (!Number.isSafeInteger(configValues.id) || configValues.id <= 0
+      || configValues.toleranceVnd < 0
+      || !Number.isSafeInteger(configValues.graceMinutes) || configValues.graceMinutes < 1 || configValues.graceMinutes > 1440
+      || configValues.perTxLimitUsd <= 0
+      || [configValues.trc20Confirmations, configValues.erc20Confirmations, configValues.bep20Confirmations]
+        .some((count) => !Number.isSafeInteger(count) || count < 1 || count > 100)
+      || !Number.isSafeInteger(configValues.version) || configValues.version < 0) d1Invalid("vietqr.config.businessRange");
   return {
     view: view as D1VietQrOverview["view"],
     config: {
-      id: d1Number(configRaw.id, "vietqr.config.id"),
-      toleranceVnd: d1Number(configRaw.toleranceVnd, "vietqr.config.toleranceVnd"),
-      graceMinutes: d1Number(configRaw.graceMinutes, "vietqr.config.graceMinutes"),
-      perTxLimitUsd: d1Number(configRaw.perTxLimitUsd, "vietqr.config.perTxLimitUsd"),
-      trc20Confirmations: d1Number(configRaw.trc20Confirmations, "vietqr.config.trc20Confirmations"),
-      erc20Confirmations: d1Number(configRaw.erc20Confirmations, "vietqr.config.erc20Confirmations"),
-      bep20Confirmations: d1Number(configRaw.bep20Confirmations, "vietqr.config.bep20Confirmations"),
+      ...configValues,
       rotationStrategy: rotationStrategy as D1VietQrConfig["rotationStrategy"],
-      version: d1Number(configRaw.version, "vietqr.config.version"),
     },
     accounts: d1Array(root.accounts, "vietqr.accounts").map((item, index): D1VietQrAccount => {
       const row = d1Object(item, `vietqr.accounts[${index}]`);
       const status = d1String(row.status, `vietqr.accounts[${index}].status`);
       if (!["ACTIVE", "DISABLED", "FUSED"].includes(status)) d1Invalid(`vietqr.accounts[${index}].status`);
+      const id = d1Number(row.id, `vietqr.accounts[${index}].id`);
+      const dailyCapVnd = d1Number(row.dailyCapVnd, `vietqr.accounts[${index}].dailyCapVnd`);
+      const receivedTodayVnd = d1Number(row.receivedTodayVnd, `vietqr.accounts[${index}].receivedTodayVnd`);
+      const version = d1Number(row.version, `vietqr.accounts[${index}].version`);
+      if (!Number.isSafeInteger(id) || id <= 0 || dailyCapVnd <= 0 || receivedTodayVnd < 0
+          || !Number.isSafeInteger(version) || version < 0) d1Invalid(`vietqr.accounts[${index}].businessRange`);
       return {
-        id: d1Number(row.id, `vietqr.accounts[${index}].id`),
+        id,
         bankCode: d1String(row.bankCode, `vietqr.accounts[${index}].bankCode`),
         bankName: d1String(row.bankName, `vietqr.accounts[${index}].bankName`),
         holderMasked: d1String(row.holderMasked, `vietqr.accounts[${index}].holderMasked`),
         accountLast4: d1String(row.accountLast4, `vietqr.accounts[${index}].accountLast4`),
-        dailyCapVnd: d1Number(row.dailyCapVnd, `vietqr.accounts[${index}].dailyCapVnd`),
-        receivedTodayVnd: d1Number(row.receivedTodayVnd, `vietqr.accounts[${index}].receivedTodayVnd`),
+        dailyCapVnd,
+        receivedTodayVnd,
         status: status as D1VietQrAccount["status"],
         fuseReason: d1OptionalText(row.fuseReason, `vietqr.accounts[${index}].fuseReason`),
-        version: d1Number(row.version, `vietqr.accounts[${index}].version`),
+        version,
         updatedAt: d1String(row.updatedAt, `vietqr.accounts[${index}].updatedAt`),
       };
     }),
     page,
-    pendingUnverifiedDepositUsdt: d1Number(root.pendingUnverifiedDepositUsdt, "vietqr.pendingUnverifiedDepositUsdt"),
+    pendingUnverifiedDepositUsdt: (() => {
+      const value = d1Number(root.pendingUnverifiedDepositUsdt, "vietqr.pendingUnverifiedDepositUsdt");
+      if (value < 0) d1Invalid("vietqr.pendingUnverifiedDepositUsdt");
+      return value;
+    })(),
     source: d1String(root.source, "vietqr.source") as "nx_vietqr_reconciliation",
     asOf: d1String(root.asOf, "vietqr.asOf"),
   };
@@ -852,41 +944,65 @@ function normalizeD6FxQuote(raw: unknown): D6FxQuote {
   if (result.baseRateVndPerUsdt < 20_000 || result.baseRateVndPerUsdt > 35_000
       || result.buySpreadPct < 0 || result.buySpreadPct > 3
       || result.lockWindowMinutes < 5 || result.lockWindowMinutes > 120
-      || result.quoteRateVndPerUsdt <= 0) d1Invalid("fxQuote.range");
+      || !Number.isInteger(result.baseRateVndPerUsdt)
+      || Math.abs(result.buySpreadPct * 100 - Math.round(result.buySpreadPct * 100)) > 1e-8
+      || !Number.isInteger(result.lockWindowMinutes)
+      || result.quoteRateVndPerUsdt !== Math.round(
+        (result.baseRateVndPerUsdt * (10_000 + Math.round(result.buySpreadPct * 100))) / 10_000 / 10,
+      ) * 10) d1Invalid("fxQuote.rangeOrDerivedQuote");
   return result;
 }
 
-function normalizeWithdrawal(row: D2Withdrawal): D2Withdrawal {
-  return {
-    ...row,
-    id: num(row.id),
-    userId: num(row.userId),
-    amount: num(row.amount),
-    fee: num(row.fee),
-    withdrawalNo: text(row.withdrawalNo),
-    asset: text(row.asset),
-    chain: text(row.chain),
-    targetAddress: text(row.targetAddress),
-    status: text(row.status),
-    createdAt: text(row.createdAt),
-    updatedAt: text(row.updatedAt),
-    userNo: text(row.userNo, userNoOf(row.userId)),
-    nickname: text(row.nickname),
-    phoneMasked: text(row.phoneMasked, ""),
-    kycStatus: text(row.kycStatus),
-    userStatus: text(row.userStatus, "UNKNOWN"),
+function normalizeWithdrawal(value: unknown): D2Withdrawal {
+  const row = d2Object(value, "withdrawal");
+  const id = d2Integer(row.id, "withdrawal.id", 1);
+  const userId = d2Integer(row.userId, "withdrawal.userId", 1);
+  const amount = d2Number(row.amount, "withdrawal.amount");
+  const fee = d2Number(row.fee, "withdrawal.fee");
+  const status = d2String(row.status, "withdrawal.status").toUpperCase();
+  const allowedStatuses = new Set([
+    "SUBMITTED", "PENDING", "REVIEW_PENDING", "REVIEWING", "EXTENDED_HOLD", "DELAYED",
+    "FROZEN", "REVIEW_PASSED", "PENDING_CHAIN", "PROCESSING", "SENT", "CHAIN_SUBMITTED",
+    "CONFIRMED", "SUCCESS", "REVIEW_REJECTED", "REJECTED", "ADDRESS_INVALID",
+    "TX_FAILED", "FAILED", "TX_ORPHANED", "DEAD", "REFUNDED",
+  ]);
+  if (amount <= 0 || fee < 0 || !allowedStatuses.has(status)) d2Invalid("withdrawal.businessRange");
+  const result: D2Withdrawal = {
+    id,
+    userId,
+    amount,
+    fee,
+    withdrawalNo: d2String(row.withdrawalNo, "withdrawal.withdrawalNo"),
+    asset: d2String(row.asset, "withdrawal.asset"),
+    chain: d2String(row.chain, "withdrawal.chain"),
+    targetAddress: d2String(row.targetAddress, "withdrawal.targetAddress"),
+    riskDecisionId: d2NullableNumber(row.riskDecisionId, "withdrawal.riskDecisionId"),
+    chainTxHash: row.chainTxHash === null || row.chainTxHash === undefined
+      ? null : d2String(row.chainTxHash, "withdrawal.chainTxHash", true),
+    status,
+    createdAt: d2String(row.createdAt, "withdrawal.createdAt"),
+    updatedAt: d2String(row.updatedAt, "withdrawal.updatedAt"),
+    userNo: d2String(row.userNo, "withdrawal.userNo"),
+    nickname: d2OptionalString(row.nickname, "withdrawal.nickname"),
+    phoneMasked: d2OptionalString(row.phoneMasked, "withdrawal.phoneMasked"),
+    kycStatus: d2String(row.kycStatus, "withdrawal.kycStatus"),
+    userStatus: d2String(row.userStatus, "withdrawal.userStatus"),
     riskScore: d2NullableNumber(row.riskScore),
-    hitRules: text(row.hitRules, ""),
-    riskReason: text(row.riskReason, ""),
-    withdrawalCount24h: num(row.withdrawalCount24h),
-    statusHistory: text(row.statusHistory, ""),
-    auditTrail: text(row.auditTrail, ""),
-    failureReason: text(row.failureReason, ""),
-    userLevel: text(row.userLevel, "—"),
-    deviceSummary: text(row.deviceSummary, "无设备事实"),
-    referralPosition: text(row.referralPosition, "无推荐关系"),
-    riskScoreBreakdown: text(row.riskScoreBreakdown, "无评分明细"),
-    withdrawalHistory: text(row.withdrawalHistory, "无历史提现"),
+    hitRules: d2OptionalString(row.hitRules, "withdrawal.hitRules"),
+    riskReason: d2OptionalString(row.riskReason, "withdrawal.riskReason"),
+    withdrawalCount24h: d2Integer(row.withdrawalCount24h, "withdrawal.withdrawalCount24h"),
+    statusHistory: d2OptionalString(row.statusHistory, "withdrawal.statusHistory"),
+    auditTrail: d2OptionalString(row.auditTrail, "withdrawal.auditTrail"),
+    failureReason: d2OptionalString(row.failureReason, "withdrawal.failureReason"),
+    userLevel: d2OptionalString(row.userLevel, "withdrawal.userLevel"),
+    deviceSummary: d2OptionalString(row.deviceSummary, "withdrawal.deviceSummary"),
+    referralPosition: d2OptionalString(row.referralPosition, "withdrawal.referralPosition"),
+    riskScoreBreakdown: d2OptionalString(row.riskScoreBreakdown, "withdrawal.riskScoreBreakdown"),
+    withdrawalHistory: d2OptionalString(row.withdrawalHistory, "withdrawal.withdrawalHistory"),
+    networkFeeRate: d2Number(row.networkFeeRate, "withdrawal.networkFeeRate"),
+    networkFeeMin: d2Number(row.networkFeeMin, "withdrawal.networkFeeMin"),
+    networkFeeMax: d2Number(row.networkFeeMax, "withdrawal.networkFeeMax"),
+    networkFee: d2Number(row.networkFee, "withdrawal.networkFee"),
     penaltyFeeRate: d2Number(row.penaltyFeeRate, "withdrawal.penaltyFeeRate"),
     grossFee: d2Number(row.grossFee, "withdrawal.grossFee"),
     nexBurned: d2Number(row.nexBurned, "withdrawal.nexBurned"),
@@ -894,17 +1010,40 @@ function normalizeWithdrawal(row: D2Withdrawal): D2Withdrawal {
     feeWaived: d2Number(row.feeWaived, "withdrawal.feeWaived"),
     actualFee: d2Number(row.actualFee, "withdrawal.actualFee"),
     netReceive: d2Number(row.netReceive, "withdrawal.netReceive"),
-    ipSegment: text(row.ipSegment, "—"),
-    holdUntil: text(row.holdUntil, ""),
-    lifecycleOwner: text(row.lifecycleOwner, ""),
-    freezePeriod: text(row.freezePeriod, ""),
-    previousStatus: text(row.previousStatus, ""),
+    ipSegment: d2OptionalString(row.ipSegment, "withdrawal.ipSegment"),
+    holdUntil: d2OptionalString(row.holdUntil, "withdrawal.holdUntil"),
+    lifecycleOwner: d2OptionalString(row.lifecycleOwner, "withdrawal.lifecycleOwner"),
+    freezePeriod: d2OptionalString(row.freezePeriod, "withdrawal.freezePeriod"),
+    previousStatus: d2OptionalString(row.previousStatus, "withdrawal.previousStatus"),
     routingPriority: d2RoutingPriority(row.routingPriority),
     k4BandLowMax: d2NullableNumber(row.k4BandLowMax, "k4BandLowMax"),
     k4BandHighMin: d2NullableNumber(row.k4BandHighMin, "k4BandHighMin"),
     k4AutoEscalateScore: d2NullableNumber(row.k4AutoEscalateScore, "k4AutoEscalateScore"),
-    k3RiskRoute: text(row.k3RiskRoute, ""),
+    k3RiskRoute: d2OptionalString(row.k3RiskRoute, "withdrawal.k3RiskRoute"),
   };
+  if (result.riskScore !== null && (result.riskScore < 0 || result.riskScore > 100)
+      || result.networkFeeRate < 0 || result.networkFeeMin < 0
+      || result.networkFeeMax < result.networkFeeMin
+      || result.networkFee < result.networkFeeMin || result.networkFee > result.networkFeeMax
+      || result.penaltyFeeRate < 0 || result.grossFee < 0 || result.nexBurned < 0
+      || result.nexFeeOffsetRate < 0 || result.feeWaived < 0 || result.actualFee < 0
+      || result.netReceive < 0 || result.netReceive > result.amount
+      || Math.abs(result.grossFee - result.networkFee
+        - result.amount * (result.penaltyFeeRate > 1 ? result.penaltyFeeRate / 100 : result.penaltyFeeRate)) > 0.0001) {
+    d2Invalid("withdrawal.financialInvariants");
+  }
+  return result;
+}
+
+function normalizeD2Page(value: unknown): PageResult<D2Withdrawal> {
+  const raw = d2Object(value, "withdrawals");
+  const total = d2Integer(raw.total, "withdrawals.total");
+  const pageNum = d2Integer(raw.pageNum, "withdrawals.pageNum", 1);
+  const pageSize = d2Integer(raw.pageSize, "withdrawals.pageSize", 1);
+  if (!Array.isArray(raw.records)) d2Invalid("withdrawals.records");
+  const records = raw.records.map((row) => normalizeWithdrawal(row));
+  if (records.length > pageSize || (total === 0 && records.length > 0)) d2Invalid("withdrawals.pagination");
+  return { total, pageNum, pageSize, records };
 }
 
 function d3Invalid(field: string): never {
@@ -1187,6 +1326,10 @@ function d4Number(value: unknown, field: string): number {
   return parsed;
 }
 
+function d4OptionalNumber(value: unknown, field: string): number | null {
+  return value === null || value === undefined ? null : d4Number(value, field);
+}
+
 function d4Integer(value: unknown, field: string, min = 0): number {
   const parsed = d4Number(value, field);
   if (!Number.isInteger(parsed) || parsed < min) d4Invalid(field);
@@ -1309,7 +1452,14 @@ export async function loadD1VietQrOverview(
 export async function reconcileD1VietQr(
   id: number,
   action: "match-credit" | "write-off" | "return",
-  input: { expectedVersion: number; userId?: number; intentNo?: string; reason: string; operator: string },
+  input: {
+    expectedVersion: number;
+    userId?: number;
+    intentNo?: string;
+    evidenceRef: string;
+    reason: string;
+    operator: string;
+  },
 ) {
   return apiRequest<Record<string, unknown>>(
     "finance", `/vietqr/reconciliations/${id}/actions/${action}`, {
@@ -1318,6 +1468,23 @@ export async function reconcileD1VietQr(
       idempotencyPrefix: "d1-vietqr-reconcile",
     },
   );
+}
+
+export async function registerD1VietQrReceipt(input: {
+  bankAccountId: number;
+  paymentReference: string;
+  memoCode?: string;
+  receivedVnd: number;
+  receivedAt: string;
+  evidenceRef: string;
+  reason: string;
+  operator: string;
+}) {
+  return apiRequest<Record<string, unknown>>("finance", "/vietqr/receipts", {
+    method: "POST",
+    body: JSON.stringify(input),
+    idempotencyPrefix: "d1-vietqr-receipt-register",
+  });
 }
 
 export async function createD1VietQrAccount(input: {
@@ -1438,11 +1605,11 @@ export async function refundD1Chargeback(caseNo: string, evidenceRef: string, re
 }
 
 export async function fetchD2Withdrawals(params: { status?: string; keyword?: string; minAmount?: string; maxAmount?: string; minRiskScore?: string; ipSegment?: string; sortBy?: string; sortDirection?: string; pageNum?: number; pageSize?: number }) {
-  return normalizePage(await apiRequest<PageResult<D2Withdrawal>>("finance", `/withdrawals${buildQuery(params)}`), normalizeWithdrawal);
+  return normalizeD2Page(await apiRequest<unknown>("finance", `/withdrawals${buildQuery(params)}`));
 }
 
 export async function fetchD2WithdrawalDetail(withdrawalNo: string) {
-  return normalizeWithdrawal(await apiRequest<D2Withdrawal>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}`));
+  return normalizeWithdrawal(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}`));
 }
 
 export async function reviewD2Withdrawal(
@@ -1452,7 +1619,7 @@ export async function reviewD2Withdrawal(
   operator: string,
   idempotencyKey: string,
 ) {
-  return normalizeWithdrawal(await apiRequest<D2Withdrawal>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/review`, {
+  return normalizeWithdrawal(await apiRequest<unknown>("finance", `/withdrawals/${encodeURIComponent(withdrawalNo)}/review`, {
     method: "POST",
     body: JSON.stringify({ action, operator, ...input }),
     idempotencyKey,
@@ -1587,8 +1754,11 @@ export async function fetchD4Bills(params: D4BillQuery) {
   return normalizeD4Page(await apiRequest<unknown>("bills", `${buildQuery({ ...params })}`));
 }
 
-export async function fetchD4UserLedger(userId: number) {
-  const raw = d4Object(await apiRequest<unknown>("bills", `/users/${encodeURIComponent(String(userId))}`), "userLedger");
+export async function fetchD4UserLedger(userId: number, range?: Pick<D4BillQuery, "from" | "to">) {
+  const raw = d4Object(await apiRequest<unknown>(
+    "bills",
+    `/users/${encodeURIComponent(String(userId))}${buildQuery(range ?? {})}`,
+  ), "userLedger");
   if (!Array.isArray(raw.rows)) d4Invalid("userLedger.rows");
   const rawSums = d4Object(raw.sums, "userLedger.sums");
   const rawCategories = d4Object(raw.categorySums, "userLedger.categorySums");
@@ -1611,27 +1781,57 @@ export async function fetchD4UserLedger(userId: number) {
   } satisfies D4UserLedger;
 }
 
-export async function fetchD4RunningBalance(userId: number): Promise<D4RunningBalance> {
-  const raw = d4Object(await apiRequest<unknown>("bills", `/running-balance${buildQuery({ userId })}`), "runningBalance");
+export async function fetchD4RunningBalance(
+  userId: number,
+  range?: Pick<D4BillQuery, "from" | "to">,
+): Promise<D4RunningBalance> {
+  const raw = d4Object(await apiRequest<unknown>(
+    "bills",
+    `/running-balance${buildQuery({ userId, ...(range ?? {}) })}`,
+  ), "runningBalance");
   if (!Array.isArray(raw.rows)) d4Invalid("runningBalance.rows");
-  const reconciliation = d4Object(raw.reconciliation, "runningBalance.reconciliation");
+  const reconciliationScope = d4String(
+    raw.reconciliationScope,
+    "runningBalance.reconciliationScope",
+  ).toUpperCase();
+  if (!["CURRENT_WALLET", "HISTORICAL_RANGE"].includes(reconciliationScope)) {
+    d4Invalid("runningBalance.reconciliationScope");
+  }
+  let reconciliation: D4RunningBalance["reconciliation"] = null;
+  if (reconciliationScope === "CURRENT_WALLET") {
+    const values = d4Object(raw.reconciliation, "runningBalance.reconciliation");
+    reconciliation = {
+      USDT: d4Number(values.USDT, "runningBalance.reconciliation.USDT"),
+      NEX: d4Number(values.NEX, "runningBalance.reconciliation.NEX"),
+    };
+  } else if (raw.reconciliation !== null) {
+    d4Invalid("runningBalance.reconciliation");
+  }
   return {
     userId: d4Integer(raw.userId, "runningBalance.userId", 1),
     total: d4Integer(raw.total, "runningBalance.total"),
     rows: raw.rows.map((value, index) => {
       const row = d4Object(value, `runningBalance.rows.${index}`);
+      const settlementBucket = d4String(
+        row.settlementBucket,
+        `runningBalance.rows.${index}.settlementBucket`,
+      ).toUpperCase();
+      if (!["SETTLED", "UNSETTLED"].includes(settlementBucket)) {
+        d4Invalid(`runningBalance.rows.${index}.settlementBucket`);
+      }
       return {
         bill: normalizeBill(row.bill),
-        expectedBalanceAfter: d4Number(row.expectedBalanceAfter, `runningBalance.rows.${index}.expectedBalanceAfter`),
+        expectedBalanceAfter: d4OptionalNumber(row.expectedBalanceAfter, `runningBalance.rows.${index}.expectedBalanceAfter`),
         difference: d4Number(row.difference, `runningBalance.rows.${index}.difference`),
         breakDetected: d4Boolean(row.breakDetected, `runningBalance.rows.${index}.breakDetected`),
+        settlementBucket: settlementBucket as D4RunningBalanceRow["settlementBucket"],
       };
     }),
     breakCount: d4Integer(raw.breakCount, "runningBalance.breakCount"),
-    reconciliation: {
-      USDT: d4Number(reconciliation.USDT, "runningBalance.reconciliation.USDT"),
-      NEX: d4Number(reconciliation.NEX, "runningBalance.reconciliation.NEX"),
-    },
+    unsettledCount: d4Integer(raw.unsettledCount, "runningBalance.unsettledCount"),
+    reconciliationScope: reconciliationScope as D4RunningBalance["reconciliationScope"],
+    reconciliationNote: d4String(raw.reconciliationNote, "runningBalance.reconciliationNote"),
+    reconciliation,
     balanced: d4Boolean(raw.balanced, "runningBalance.balanced"),
     sources: Array.isArray(raw.sources) ? raw.sources.map((item, index) => d4String(item, `runningBalance.sources.${index}`)) : d4Invalid("runningBalance.sources"),
   };

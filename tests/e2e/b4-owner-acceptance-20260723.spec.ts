@@ -25,8 +25,8 @@ test("B4 visible-entry journey exposes the complete H1-canonical read-only workf
   await expect(page.getByText("本月被推动的杠杆组合", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /导出 Phase 分布/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /B3 转化归因/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /B1/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /B2/ })).toBeVisible();
+  await expect(page.locator('.b4-attribution-links a[href="/overview/dual-ledger"]')).toBeVisible();
+  await expect(page.locator('.b4-attribution-links a[href="/overview/liquidity"]')).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/Premium|NEXv2|NEX v2|NaN|Infinity|undefined/);
   await page.screenshot({ path: `${PUBLIC}/01-visible-entry-b4-workflow.png`, fullPage: true });
 });

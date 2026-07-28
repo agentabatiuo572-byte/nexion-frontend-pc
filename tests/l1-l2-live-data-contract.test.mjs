@@ -77,7 +77,7 @@ test("L2 rejects incomplete rows rather than fabricating a funnel stage", () => 
     ],
   });
 
-  assert.deepEqual(result.map(({ key, count }) => [key, count]), [["registered", 4]]);
+  assert.deepEqual(result, []);
 });
 
 test("L1-L5 aggregate export requires the matching source-domain write authority", () => {

@@ -23,10 +23,30 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import { fetchA3Overview, updateA3FeatureFlag, type A3FeatureFlag, type A3Overview } from "@/lib/admin/a3-client";
+import {
+  fetchA3Overview,
+  isA3OutcomeUncertainError,
+  isA3ReadbackFailedError,
+  updateA3FeatureFlag,
+  type A3FeatureFlag,
+  type A3Overview,
+  type A3SystemHealth,
+} from "@/lib/admin/a3-client";
 import type { ACtx } from "./types";
 
 /* ────────────────── 组件 ────────────────── */
+
+function healthToneColor(tone: A3SystemHealth["tone"]) {
+  if (tone === "ok") return "var(--success)";
+  if (tone === "warn") return "var(--warning)";
+  return "var(--danger)";
+}
+
+function healthToneLabel(tone: A3SystemHealth["tone"]) {
+  if (tone === "ok") return "正常";
+  if (tone === "warn") return "警告";
+  return "严重异常";
+}
 
 export function A3Config({ ctx }: { ctx: ACtx }) {
   const { toast, openActionConfirm } = ctx;
@@ -93,6 +113,15 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
             toast(`「${f.name}」已切换为 ${val}，审计记录已写入。`);
           })
           .catch((error: unknown) => {
+            if (isA3ReadbackFailedError(error)) {
+              toast(`写入已成功，但权威状态刷新失败；页面将重新读取，请勿重复提交。`);
+              void refreshOverview(true);
+              return;
+            }
+            if (isA3OutcomeUncertainError(error)) {
+              toast(`提交结果未知（命令号 ${error.commandKey}）；请先刷新并核对 A2 审计，禁止重复提交。`);
+              throw error;
+            }
             toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
             throw error;
           })
@@ -270,12 +299,15 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
               <div className="a3-hl" key={h.name}>
                 <span
                   className="d"
-                  style={{ background: h.tone === "ok" ? "var(--success)" : "var(--warning)" }}
+                  style={{ background: healthToneColor(h.tone) }}
                 />
                 <span style={{ flex: 1 }}>{h.name}</span>
+                <span className={`bdg ${h.tone === "ok" ? "ok" : h.tone === "warn" ? "warn" : "bad"}`}>
+                  {healthToneLabel(h.tone)}
+                </span>
                 <span
                   className="mono"
-                  style={{ fontSize: 11.5, color: h.tone === "ok" ? "var(--success)" : "var(--warning)" }}
+                  style={{ fontSize: 11.5, color: healthToneColor(h.tone) }}
                 >
                   {h.metric}
                 </span>

@@ -75,8 +75,8 @@ test("M3 retries an unknown-result write with the same payload and idempotency k
   assert.match(client, /headers: idempotencyKey \? \{ "Idempotency-Key": idempotencyKey \} : undefined/);
   assert.match(view, /writeConversationRows\([^;]+idempotencyKey\)/);
   assert.match(client, /expectedStatus: toBackendConversationStatus\(expectedStatus\)/);
-  assert.match(view, /updateConversationStatus\(row\.id, row\.status, before\.status, reason, idempotencyKey\)/);
-  assert.match(view, /archiveConversation\(row\.id, Boolean\(row\.archived\), before\.status, reason, idempotencyKey\)/);
+  assert.match(view, /updateConversationStatus\(row\.id, row\.status, before\.status, before\.version, reason, idempotencyKey\)/);
+  assert.match(view, /archiveConversation\(row\.id, Boolean\(row\.archived\), before\.status, before\.version, reason, idempotencyKey\)/);
 });
 
 test("M3 does not expose a fake audience broadcast or fake cross-domain success", () => {

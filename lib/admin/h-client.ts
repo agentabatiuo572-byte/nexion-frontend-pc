@@ -25,7 +25,7 @@ function nextIdempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-export function createH8CommandKey(prefix: "h8-param" | "h8-settlement") {
+export function createH8CommandKey(prefix: "h8-param") {
   return nextIdempotencyKey(prefix);
 }
 
@@ -86,8 +86,20 @@ async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPre
   return result.data as T;
 }
 
-function commandBody(key: string, value: string | number | boolean, reason: string, operator = currentAdminOperator()) {
-  return JSON.stringify({ key, value: String(value), reason, operator: operator || currentAdminOperator() });
+function commandBody(
+  key: string,
+  value: string | number | boolean,
+  reason: string,
+  operator = currentAdminOperator(),
+  expectedValue?: string | number | boolean,
+) {
+  return JSON.stringify({
+    key,
+    value: String(value),
+    reason,
+    operator: operator || currentAdminOperator(),
+    ...(expectedValue === undefined ? {} : { expectedValue: String(expectedValue) }),
+  });
 }
 
 export async function fetchH1Rhythm(): Promise<H1RhythmOverview> {
@@ -175,30 +187,36 @@ export async function fetchH3QuestEvents(section: "tasks" | "events" = "tasks"):
   return growthRequest<Record<string, any>>(section === "events" ? "/quest-events/events-overview" : "/quest-events/tasks");
 }
 
-export async function updateH3QuestConfig(key: string, value: string, reason: string) {
+export async function updateH3QuestConfig(key: string, value: string, reason: string, expectedValue: string) {
   return growthRequest<Record<string, any>>(
     `/quest-events/config/${encodeURIComponent(key)}`,
-    { method: "PATCH", body: commandBody(key, value, reason) },
+    { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },
     "h3-config",
   );
 }
 
-export async function updateH4EventReward(eventId: string, value: string, reason: string) {
-  return h4EventMutation(eventId, "reward", value, reason);
+export async function updateH4EventReward(eventId: string, value: string, expectedValue: string, reason: string) {
+  return h4EventMutation(eventId, "reward", value, expectedValue, reason);
 }
 
-export async function updateH4EventStatus(eventId: string, value: string, reason: string) {
-  return h4EventMutation(eventId, "status", value, reason);
+export async function updateH4EventStatus(eventId: string, value: string, expectedValue: string, reason: string) {
+  return h4EventMutation(eventId, "status", value, expectedValue, reason);
 }
 
-export async function updateH4EventFeatured(eventId: string, value: boolean, reason: string) {
-  return h4EventMutation(eventId, "featured", value, reason);
+export async function updateH4EventFeatured(eventId: string, value: boolean, expectedValue: boolean, reason: string) {
+  return h4EventMutation(eventId, "featured", value, expectedValue, reason);
 }
 
-async function h4EventMutation(eventId: string, field: string, value: string | boolean, reason: string) {
+async function h4EventMutation(
+  eventId: string,
+  field: string,
+  value: string | boolean,
+  expectedValue: string | boolean,
+  reason: string,
+) {
   return growthRequest<Record<string, any>>(
     `/quest-events/events/${encodeURIComponent(eventId)}/${field}`,
-    { method: "PATCH", body: commandBody(field, value, reason) },
+    { method: "PATCH", body: commandBody(field, value, reason, currentAdminOperator(), expectedValue) },
     `h4-${field}`,
   );
 }
@@ -207,26 +225,43 @@ export async function fetchH5CheckIn(): Promise<Record<string, any>> {
   return growthRequest<Record<string, any>>("/check-in");
 }
 
-export async function updateH5CheckInRule(key: string, value: string, reason: string) {
+export async function updateH5CheckInRule(key: string, value: string, expectedValue: string, reason: string) {
   return growthRequest<Record<string, any>>(
     `/check-in/rules/${encodeURIComponent(key)}`,
-    { method: "PATCH", body: commandBody(key, value, reason) },
+    { method: "PATCH", body: commandBody(key, value, reason, currentAdminOperator(), expectedValue) },
     "h5-rule",
   );
 }
 
-export async function updateH5StreakMilestone(id: number, value: string, reason: string) {
+export async function updateH5StreakMilestone(id: number, value: string, expectedValue: string, reason: string) {
   return growthRequest<Record<string, any>>(
     `/check-in/streak-milestones/${id}`,
-    { method: "PATCH", body: commandBody("reward", value, reason) },
+    { method: "PATCH", body: commandBody("reward", value, reason, currentAdminOperator(), expectedValue) },
     "h5-streak",
   );
 }
 
-export async function updateH5PowerUp(id: number, key: "day" | "note", value: string, reason: string) {
+export async function updateH5PowerUp(
+  id: number,
+  day: string | number,
+  note: string,
+  expectedDay: string | number,
+  expectedNote: string,
+  reason: string,
+) {
   return growthRequest<Record<string, any>>(
-    `/check-in/power-ups/${id}`,
-    { method: "PATCH", body: commandBody(key, value, reason) },
+    `/check-in/power-ups/${id}/config`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        day: Number(day),
+        note,
+        expectedDay: Number(expectedDay),
+        expectedNote,
+        reason,
+        operator: currentAdminOperator(),
+      }),
+    },
     "h5-power",
   );
 }
@@ -262,27 +297,45 @@ export async function createH7Voucher(voucher: Record<string, any>, reason: stri
   );
 }
 
-export async function updateH7Voucher(id: string, voucher: Record<string, any>, reason: string) {
+export async function updateH7Voucher(
+  id: string,
+  voucher: Record<string, any>,
+  reason: string,
+  expectedVersion: number,
+) {
   return growthRequest<Record<string, any>>(
     `/vouchers/${encodeURIComponent(id)}`,
-    { method: "PATCH", body: JSON.stringify({ ...voucher, id, reason, operator: currentAdminOperator() }) },
+    { method: "PATCH", body: JSON.stringify({ ...voucher, id, expectedVersion, reason, operator: currentAdminOperator() }) },
     "h7-update",
   );
 }
 
-export async function updateH7VoucherStatus(id: string, status: "active" | "paused", reason: string) {
+export async function updateH7VoucherStatus(
+  id: string,
+  status: "active" | "paused",
+  reason: string,
+  expectedVersion: number,
+) {
   return growthRequest<Record<string, any>>(
     `/vouchers/${encodeURIComponent(id)}/status`,
-    { method: "PATCH", body: commandBody("status", status, reason) },
+    { method: "PATCH", body: commandBody("status", status, reason, currentAdminOperator(), expectedVersion) },
     "h7-status",
   );
 }
 
-export async function deleteH7Voucher(id: string, reason: string) {
+export async function deleteH7Voucher(id: string, reason: string, expectedVersion: number) {
   return growthRequest<Record<string, any>>(
     `/vouchers/${encodeURIComponent(id)}`,
-    { method: "DELETE", body: commandBody("delete", "delete", reason) },
+    { method: "DELETE", body: commandBody("delete", "delete", reason, currentAdminOperator(), expectedVersion) },
     "h7-delete",
+  );
+}
+
+export async function revokeH7VoucherAvailableGrants(id: string, reason: string, expectedVersion: number) {
+  return growthRequest<Record<string, any>>(
+    `/vouchers/${encodeURIComponent(id)}/grants/revoke-available`,
+    { method: "PATCH", body: commandBody("grants", "revoke-available", reason, currentAdminOperator(), expectedVersion) },
+    "h7-revoke-available",
   );
 }
 
@@ -299,6 +352,8 @@ export interface H8SettlementRow {
 
 export interface H8ReferralRewardOverview {
   version: number;
+  rewardSnapshotHash: string;
+  effectiveAt: string;
   params: Record<string, number | string>;
   effectiveRewards: Record<string, number | string>;
   rhythmMonth: number;
@@ -312,8 +367,117 @@ export interface H8ReferralRewardOverview {
   settlementMode: string;
 }
 
+function h8Invalid(field: string): never {
+  throw new Error(`H8_RESPONSE_INVALID:${field}`);
+}
+
+function h8Record(value: unknown, field: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) h8Invalid(field);
+  return value as Record<string, unknown>;
+}
+
+function h8NonNegativeCount(value: unknown, field: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) h8Invalid(field);
+  return parsed;
+}
+
+function h8PositiveCount(value: unknown, field: string): number {
+  const parsed = h8NonNegativeCount(value, field);
+  if (parsed < 1) h8Invalid(field);
+  return parsed;
+}
+
+function h8Decimal(value: unknown, field: string): number | string {
+  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(text)) h8Invalid(field);
+  const parsed = Number(text);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 999_999_999) h8Invalid(field);
+  return typeof value === "string" ? text : parsed;
+}
+
+function h8PositiveDecimal(value: unknown, field: string): number | string {
+  const parsed = h8Decimal(value, field);
+  if (Number(parsed) <= 0) h8Invalid(field);
+  return parsed;
+}
+
+function h8String(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) h8Invalid(field);
+  return value.trim();
+}
+
+function h8IsoInstant(value: unknown, field: string): string {
+  const text = h8String(value, field);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(text)
+      || Number.isNaN(Date.parse(text))) {
+    h8Invalid(field);
+  }
+  return text;
+}
+
+export function parseH8ReferralRewardOverview(value: unknown): H8ReferralRewardOverview {
+  const root = h8Record(value, "root");
+  const params = h8Record(root.params, "params");
+  const effective = h8Record(root.effectiveRewards, "effectiveRewards");
+  const expectedParams = ["newcomer.usdt", "newcomer.nex", "newcomer.lockMode", "inviter.nex"];
+  if (expectedParams.some((key) => !(key in params))) h8Invalid("params.keys");
+  const lockMode = h8String(params["newcomer.lockMode"], "params.newcomer.lockMode");
+  if (lockMode !== "risk_bucket" && lockMode !== "direct") h8Invalid("params.newcomer.lockMode");
+  const rows = Array.isArray(root.recentSettlements)
+    ? root.recentSettlements.map((value, index): H8SettlementRow => {
+        const row = h8Record(value, `recentSettlements.${index}`);
+        const status = h8String(row.status, `recentSettlements.${index}.status`);
+        if (status !== "SETTLED") h8Invalid(`recentSettlements.${index}.status`);
+        return {
+          settlementNo: h8String(row.settlementNo, `recentSettlements.${index}.settlementNo`),
+          invitedUserId: h8PositiveCount(row.invitedUserId, `recentSettlements.${index}.invitedUserId`),
+          inviterUserId: h8PositiveCount(row.inviterUserId, `recentSettlements.${index}.inviterUserId`),
+          newcomerUsdt: h8Decimal(row.newcomerUsdt, `recentSettlements.${index}.newcomerUsdt`),
+          newcomerNex: h8Decimal(row.newcomerNex, `recentSettlements.${index}.newcomerNex`),
+          inviterNex: h8Decimal(row.inviterNex, `recentSettlements.${index}.inviterNex`),
+          status,
+          createdAt: row.createdAt == null ? undefined : h8String(row.createdAt, `recentSettlements.${index}.createdAt`),
+        };
+      })
+    : h8Invalid("recentSettlements");
+  const source = h8String(root.source, "source");
+  const settlementMode = h8String(root.settlementMode, "settlementMode");
+  if (source !== "nx_user.sponsor_user_id") h8Invalid("source");
+  if (settlementMode !== "REAL_WALLET_LEDGER") h8Invalid("settlementMode");
+  return {
+    version: h8PositiveCount(root.version, "version"),
+    rewardSnapshotHash: (() => {
+      const value = h8String(root.rewardSnapshotHash, "rewardSnapshotHash");
+      if (!/^[a-f0-9]{64}$/i.test(value)) h8Invalid("rewardSnapshotHash");
+      return value.toLowerCase();
+    })(),
+    effectiveAt: h8IsoInstant(root.effectiveAt, "effectiveAt"),
+    params: {
+      "newcomer.usdt": h8Decimal(params["newcomer.usdt"], "params.newcomer.usdt"),
+      "newcomer.nex": h8Decimal(params["newcomer.nex"], "params.newcomer.nex"),
+      "newcomer.lockMode": lockMode,
+      "inviter.nex": h8Decimal(params["inviter.nex"], "params.inviter.nex"),
+    },
+    effectiveRewards: {
+      "newcomer.usdt": h8Decimal(effective["newcomer.usdt"], "effectiveRewards.newcomer.usdt"),
+      "newcomer.nex": h8Decimal(effective["newcomer.nex"], "effectiveRewards.newcomer.nex"),
+      "inviter.nex": h8Decimal(effective["inviter.nex"], "effectiveRewards.inviter.nex"),
+    },
+    rhythmMonth: h8PositiveCount(root.rhythmMonth, "rhythmMonth"),
+    newcomerMultiplier: h8PositiveDecimal(root.newcomerMultiplier, "newcomerMultiplier"),
+    inviterMultiplier: h8PositiveDecimal(root.inviterMultiplier, "inviterMultiplier"),
+    pending: h8NonNegativeCount(root.pending, "pending"),
+    settled: h8NonNegativeCount(root.settled, "settled"),
+    blockedByK2: h8NonNegativeCount(root.blockedByK2, "blockedByK2"),
+    recentSettlements: rows,
+    source,
+    settlementMode,
+  };
+}
+
 export async function fetchH8ReferralRewards(): Promise<H8ReferralRewardOverview> {
-  return growthRequest<H8ReferralRewardOverview>("/referral-rewards");
+  return parseH8ReferralRewardOverview(await growthRequest<unknown>("/referral-rewards"));
 }
 
 export async function updateH8ReferralRewardParam(
@@ -339,13 +503,6 @@ export async function updateH8ReferralRewardParam(
   );
 }
 
-export async function runH8ReferralSettlements(limit: number, reason: string) {
-  return growthRequest<{ settled: number; skipped: number; limit: number }>(
-    "/referral-rewards/settlements/run",
-    { method: "POST", body: JSON.stringify({ limit, reason, operator: currentAdminOperator() }) },
-    "h8-settlement",
-  );
-}
 
 // ===== H3/H4 业务实体创建(后端 POST /growth/quest-events/*) =====
 
@@ -373,34 +530,46 @@ export async function createH4QuestEvent(event: Record<string, any>, reason: str
   );
 }
 
-export async function createH4WheelTier(tier: Record<string, any>, reason: string) {
+export async function createH4WheelTier(tier: Record<string, any>, expectedSignature: string, reason: string) {
   return growthRequest<Record<string, any>>(
     "/quest-events/wheel-tiers",
-    { method: "POST", body: JSON.stringify({ ...tier, reason, operator: currentAdminOperator() }) },
+    { method: "POST", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
     "h4-tier-create",
   );
 }
 
-export async function updateH4WheelProbabilities(probabilities: Record<string, number>, reason: string) {
+export async function updateH4WheelProbabilities(
+  probabilities: Record<string, number>,
+  expectedSignature: string,
+  reason: string,
+) {
   return growthRequest<Record<string, any>>(
     "/quest-events/wheel-tiers/probabilities",
-    { method: "PATCH", body: JSON.stringify({ probabilities, reason, operator: currentAdminOperator() }) },
+    { method: "PATCH", body: JSON.stringify({ probabilities, expectedSignature, reason, operator: currentAdminOperator() }) },
     "h4-tier-probabilities",
   );
 }
 
-export async function updateH4WheelTier(tierName: string, tier: Record<string, any>, reason: string) {
+export async function updateH4WheelTier(
+  tierName: string,
+  tier: Record<string, any>,
+  expectedSignature: string,
+  reason: string,
+) {
   return growthRequest<Record<string, any>>(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
-    { method: "PATCH", body: JSON.stringify({ ...tier, reason, operator: currentAdminOperator() }) },
+    { method: "PATCH", body: JSON.stringify({ ...tier, expectedSignature, reason, operator: currentAdminOperator() }) },
     "h4-tier-update",
   );
 }
 
-export async function deleteH4WheelTier(tierName: string, reason: string) {
+export async function deleteH4WheelTier(tierName: string, expectedSignature: string, reason: string) {
   return growthRequest<Record<string, any>>(
     `/quest-events/wheel-tiers/${encodeURIComponent(tierName)}`,
-    { method: "DELETE", body: JSON.stringify({ reason, operator: currentAdminOperator() }) },
+    {
+      method: "DELETE",
+      body: commandBody("delete", "delete", reason, currentAdminOperator(), expectedSignature),
+    },
     "h4-tier-delete",
   );
 }
@@ -410,5 +579,21 @@ export async function createH4WheelGuard(guard: Record<string, any>, reason: str
     "/quest-events/wheel-guards",
     { method: "POST", body: JSON.stringify({ ...guard, reason, operator: currentAdminOperator() }) },
     "h4-guard-create",
+  );
+}
+
+export async function updateH4WheelGuard(
+  guardKey: string,
+  value: string,
+  expectedValue: string,
+  reason: string,
+) {
+  return growthRequest<Record<string, any>>(
+    `/quest-events/wheel-guards/${encodeURIComponent(guardKey)}`,
+    {
+      method: "PATCH",
+      body: commandBody(guardKey, value, reason, currentAdminOperator(), expectedValue),
+    },
+    "h4-guard-update",
   );
 }

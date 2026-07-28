@@ -16,7 +16,7 @@ test("I3 通知容量使用受约束的整数输入，而不是自由文本", as
             { tier: "critical", cap: "无限", policy: "永不淘汰", locked: true },
             { tier: "high", cap: "50", policy: "超出后清理最早记录", locked: false },
             { tier: "normal", cap: "200", policy: "超出后清理最早记录", locked: false },
-            { tier: "low", cap: "30", policy: "超出后清理最早记录", locked: false },
+            { tier: "low", cap: "30 条 · TTL 24-48h", policy: "超出后清理最早记录", locked: false },
           ],
           tiers: ["critical", "high", "normal", "low"],
           audiences: [],
@@ -47,7 +47,7 @@ test("I3 通知容量使用受约束的整数输入，而不是自由文本", as
   await expect(dialog).toContainText("调整后立即按新上限清理已有通知");
 
   const reason = dialog.locator("textarea");
-  const confirm = dialog.getByRole("button", { name: "确认执行" });
+  const confirm = dialog.getByRole("button", { name: /确认提交|确认执行/ });
   await reason.fill("验证通知容量整数边界条件");
   await capInput.fill("0");
   await expect(confirm).toBeDisabled();
@@ -59,4 +59,9 @@ test("I3 通知容量使用受约束的整数输入，而不是自由文本", as
   await expect(confirm).toBeDisabled();
   await capInput.fill("80");
   await expect(confirm).toBeEnabled();
+
+  await dialog.getByRole("button", { name: "关闭" }).click();
+  await page.getByRole("button", { name: "调整" }).last().click();
+  await expect(page.getByRole("dialog").getByRole("spinbutton", { name: /目标新值/ }))
+    .toHaveValue("30");
 });

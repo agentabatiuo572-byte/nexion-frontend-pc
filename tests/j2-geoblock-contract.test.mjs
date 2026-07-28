@@ -9,6 +9,35 @@ const alertClient = readFileSync(new URL("../lib/admin/ops-dashboard-client.ts",
 const notificationBell = readFileSync(new URL("../app/components/shell/notification-bell.tsx", import.meta.url), "utf8");
 const jView = readFileSync(new URL("../app/components/domain-views/j-view.tsx", import.meta.url), "utf8");
 const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
+const geoRouteRegistry = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/application/GeoProtectedRouteRegistry.java", import.meta.url),
+  "utf8",
+);
+const geoPolicyTests = readFileSync(
+  new URL("../../nexion-backend/src/test/java/ffdd/opsconsole/emergency/application/GeoBlockPolicyServiceTest.java", import.meta.url),
+  "utf8",
+);
+const appGeoErrors = readFileSync(
+  new URL("../../NX1.0/src/api/geo-policy-error.ts", import.meta.url),
+  "utf8",
+);
+const appGeoErrorTests = readFileSync(
+  new URL("../../NX1.0/src/api/geo-policy-error.test.ts", import.meta.url),
+  "utf8",
+);
+const appUserSurfaces = [
+  "../../NX1.0/src/pages/login/login.vue",
+  "../../NX1.0/src/pages/register/register.vue",
+  "../../NX1.0/src/pages/me/wallet-withdraw.vue",
+  "../../NX1.0/src/pages/me/wallet-exchange.vue",
+  "../../NX1.0/src/pages/me/wallet-repurchase.vue",
+  "../../NX1.0/src/pages/me/trial.vue",
+  "../../NX1.0/src/pages/staking/staking.vue",
+  "../../NX1.0/src/pages/genesis/genesis.vue",
+  "../../NX1.0/src/pages/genesis/marketplace.vue",
+  "../../NX1.0/src/pages/daily/daily.vue",
+  "../../NX1.0/src/pages/events/events.vue",
+].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
 
 test("J2 writes execute the dedicated backend APIs instead of the A2 proposal queue", () => {
   assert.doesNotMatch(view, /usePropose|\bpropose\s*\(/);
@@ -139,4 +168,52 @@ test("J pages explain authorization and service load failures", () => {
   assert.match(errorMessages, /EMERGENCY_BACKEND_UNAVAILABLE/);
   assert.match(errorMessages, /EMERGENCY_API_503/);
   assert.match(client, /useAdminAuth\.getState\(\)\.signOut\(\)/);
+});
+
+test("J2 limited-region enforcement covers the real App funds and reward mutation routes", () => {
+  for (const route of [
+    "/api/stakes",
+    "/api/repurchase",
+    "/api/trial",
+    "/api/quests",
+    "/api/events",
+    "/api/points",
+    "/api/earnings/milestones/evaluate",
+    "/api/vouchers",
+  ]) {
+    assert.match(geoRouteRegistry, new RegExp(route.replaceAll("/", "\\/")));
+  }
+  for (const route of [
+    "/api/stakes/STK-1/claim",
+    "/api/repurchase/orders/RPS-1/early-withdraw",
+    "/api/trial/start",
+    "/api/quests/DAILY-1/claim",
+    "/api/events/EVENT-1/spin",
+    "/api/points/sign-in",
+    "/api/vouchers/VCH-1/claim",
+  ]) {
+    assert.match(geoPolicyTests, new RegExp(route.replaceAll("/", "\\/")));
+  }
+  assert.match(geoPolicyTests, /\/api\/events\/EVENT-1\/join"\)\.blocked\(\)\)\.isFalse/);
+  assert.match(geoPolicyTests, /\/api\/trial\/cancel"\)\.blocked\(\)\)\.isFalse/);
+});
+
+test("J2 App surfaces translate policy failures without leaking GEO technical codes", () => {
+  for (const code of [
+    "GEO_BLOCKED",
+    "GEO_LIMITED",
+    "GEO_ENDPOINT_BLOCKED",
+    "GEO_COUNTRY_UNRESOLVED",
+    "GEO_EDGE_TRUST_REQUIRED",
+  ]) {
+    assert.match(appGeoErrors, new RegExp(code));
+    assert.match(appGeoErrorTests, new RegExp(code));
+  }
+  for (const surface of appUserSurfaces) {
+    assert.match(surface, /geoPolicyUserMessage/);
+  }
+  assert.doesNotMatch(
+    appUserSurfaces.join("\n"),
+    /toast\.(?:error|info)\([^;\n]*instanceof Error \? (?:error|cause)\.message/,
+  );
 });

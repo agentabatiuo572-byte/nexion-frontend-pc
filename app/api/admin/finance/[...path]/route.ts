@@ -97,17 +97,23 @@ async function proxy(request: Request, context: RouteContext) {
       method: request.method,
       headers,
       body: hasBody ? await request.text() : undefined,
+      signal: AbortSignal.timeout(20_000),
       cache: "no-store",
     });
+    const responseHeaders = new Headers({
+      "Content-Type": upstream.headers.get("Content-Type") || "application/json",
+      "Cache-Control": "no-store",
+    });
+    const outcome = upstream.headers.get("X-Nexion-Upstream-Outcome");
+    if (outcome) responseHeaders.set("X-Nexion-Upstream-Outcome", outcome);
     return new Response(await upstream.text(), {
       status: upstream.status,
-      headers: {
-        "Content-Type": upstream.headers.get("Content-Type") || "application/json",
-        "Cache-Control": "no-store",
-      },
+      headers: responseHeaders,
     });
   } catch {
-    return jsonError(503, "FINANCE_BACKEND_UNAVAILABLE");
+    const response = jsonError(503, "FINANCE_BACKEND_UNAVAILABLE");
+    if (hasBody) response.headers.set("X-Nexion-Upstream-Outcome", "unknown");
+    return response;
   }
 }
 

@@ -94,6 +94,7 @@ export interface UserCredentialParam extends JsonRecord {
   readOnly?: boolean | null;
   note?: string | null;
   configKey?: string | null;
+  version?: number | string | null;
 }
 
 export interface UserSecurityStats extends JsonRecord {
@@ -452,6 +453,7 @@ export interface User360Detail extends JsonRecord {
 }
 
 let requestSeq = 0;
+const pendingUserMutationKeys = new Map<string, string>();
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -623,10 +625,13 @@ function queryString(query: Record<string, string | number | boolean | null | un
 }
 
 function normalizePage<T>(page: PageResult<T>, fallbackPageNum: number, fallbackPageSize: number): UserPage<T> {
+  if (!isJsonRecord(page) || !Array.isArray(page.records)) {
+    throw new Error("USER360_RESPONSE_INVALID:page.records");
+  }
   return {
-    total: requireNumber(page.total, "page.total"),
-    pageNum: toNumber(page.pageNum, fallbackPageNum),
-    pageSize: toNumber(page.pageSize, fallbackPageSize),
+    total: requireNumber(page.total as number | string | null | undefined, "page.total"),
+    pageNum: toNumber(page.pageNum as number | string | null | undefined, fallbackPageNum),
+    pageSize: toNumber(page.pageSize as number | string | null | undefined, fallbackPageSize),
     records: page.records ?? [],
   };
 }
@@ -642,6 +647,78 @@ export class UsersRequestError extends Error {
   }
 }
 
+function c3ResponseInvalid(): never {
+  throw new Error(formatAdminApiError("C3_RESPONSE_INVALID", "C3_RESPONSE_INVALID"));
+}
+
+function c3Numeric(value: unknown) {
+  return (typeof value === "number" && Number.isFinite(value))
+    || (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+}
+
+function requireC3Adjustment(value: unknown): UserAssetAdjustment {
+  if (!isJsonRecord(value)
+    || typeof value.adjustmentNo !== "string"
+    || (typeof value.userId !== "number" && typeof value.userId !== "string")
+    || typeof value.asset !== "string"
+    || typeof value.direction !== "string"
+    || !c3Numeric(value.amount)
+    || typeof value.status !== "string") {
+    return c3ResponseInvalid();
+  }
+  return value as UserAssetAdjustment;
+}
+
+function requireC3Overview(value: unknown): UserAssetAdjustmentOverview {
+  if (!isJsonRecord(value)
+    || !isJsonRecord(value.coverage)
+    || !Array.isArray(value.sources)
+    || !Array.isArray(value.sunsetCompatibility)) return c3ResponseInvalid();
+  for (const field of ["pending", "approved", "rejected", "suspended", "singleCreditReviewCapUsd", "maxAdjustmentAmount", "nexUsdRate"] as const) {
+    if (!c3Numeric(value[field])) return c3ResponseInvalid();
+  }
+  if (typeof value.redline !== "boolean"
+    || typeof value.coverage.reliable !== "boolean"
+    || !c3Numeric(value.coverage.coverageRatio)
+    || !c3Numeric(value.coverage.redlinePct)
+    || !c3Numeric(value.coverage.reserveUsd)
+    || !c3Numeric(value.coverage.liabilitiesUsd)) return c3ResponseInvalid();
+  return value as UserAssetAdjustmentOverview;
+}
+
+function requireC3Context(value: unknown): UserAssetAdjustmentContext {
+  if (!isJsonRecord(value)
+    || !isJsonRecord(value.account)
+    || !isJsonRecord(value.coverage)
+    || (typeof value.account.userId !== "number" && typeof value.account.userId !== "string")
+    || typeof value.coverage.reliable !== "boolean"
+    || !c3Numeric(value.coverage.coverageRatio)
+    || !c3Numeric(value.coverage.redlinePct)
+    || !c3Numeric(value.nexUsdRate)
+    || !c3Numeric(value.largeThresholdUsd)
+    || !c3Numeric(value.maxAdjustmentAmount)) return c3ResponseInvalid();
+  return value as UserAssetAdjustmentContext;
+}
+
+function requireC3Detail(value: unknown): UserAssetAdjustmentDetail {
+  if (!isJsonRecord(value)
+    || !isJsonRecord(value.adjustment)
+    || !isJsonRecord(value.user)
+    || !isJsonRecord(value.coverage)
+    || !Array.isArray(value.reviewTrail)
+    || !Array.isArray(value.redlines)
+    || !Array.isArray(value.sources)) return c3ResponseInvalid();
+  requireC3Adjustment(value.adjustment);
+  return value as UserAssetAdjustmentDetail;
+}
+
+export class UsersOutcomeUnknownError extends Error {
+  constructor(public readonly commandKey: string) {
+    super(`本次操作结果未知，可能已经生效。请先刷新核对；如需重试，请保持当前表单并使用同一操作重试。请求号：${commandKey}`);
+    this.name = "UsersOutcomeUnknownError";
+  }
+}
+
 export function isUsersRequestNotFound(error: unknown) {
   return error instanceof UsersRequestError && error.status === 404;
 }
@@ -651,23 +728,45 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  const method = (init?.method ?? "GET").toUpperCase();
+  const mutationFingerprint = init?.idempotencyPrefix && method !== "GET"
+    ? `${method}|${path}|${typeof init.body === "string" ? init.body : ""}`
+    : null;
   if (init?.idempotencyKey) {
     headers.set("Idempotency-Key", init.idempotencyKey);
   } else if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+    const commandKey = (mutationFingerprint ? pendingUserMutationKeys.get(mutationFingerprint) : undefined)
+      ?? idempotencyKey(init.idempotencyPrefix);
+    headers.set("Idempotency-Key", commandKey);
+    if (mutationFingerprint) pendingUserMutationKeys.set(mutationFingerprint, commandKey);
   }
 
-  const response = await fetch(`/api/admin/users${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/admin/users${path}`, {
+      ...init,
+      headers,
+      signal: init?.signal ?? AbortSignal.timeout(30_000),
+      cache: "no-store",
+    });
+  } catch (error) {
+    const commandKey = headers.get("Idempotency-Key");
+    if (commandKey && method !== "GET") {
+      throw new UsersOutcomeUnknownError(commandKey);
+    }
+    throw error;
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
 
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
+    const commandKey = headers.get("Idempotency-Key");
+    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+      throw new UsersOutcomeUnknownError(commandKey);
+    }
+    if (mutationFingerprint) pendingUserMutationKeys.delete(mutationFingerprint);
     const serverMessage = response.status >= 500 ? "INTERNAL_SERVER_ERROR" : result?.message;
     throw new UsersRequestError(
       response.status,
@@ -676,6 +775,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     );
   }
 
+  if (mutationFingerprint) pendingUserMutationKeys.delete(mutationFingerprint);
   return result.data as T;
 }
 
@@ -683,31 +783,77 @@ export async function fetchUser360(userKey: string) {
   return usersRequest<User360Detail>(`/profiles/${encodeURIComponent(userKey)}/360`);
 }
 
-export async function fetchUserPaymentMethods(userId: number | string, includeUnbound = false, page = 1, pageSize = 20) {
-  return usersRequest<UserPaymentMethodPage>(`/profiles/${encodeURIComponent(String(userId))}/payment-methods${queryString({ includeUnbound, page, pageSize })}`);
+export async function fetchC1Overview() {
+  const value = await usersRequest<unknown>("/overview");
+  if (!isJsonRecord(value)) throw new Error("USER360_RESPONSE_INVALID:c1Overview");
+  return {
+    totalUsers: requireNumber(value.totalUsers as number | string | null | undefined, "c1Overview.totalUsers"),
+    kycPending: requireNumber(value.kycPending as number | string | null | undefined, "c1Overview.kycPending"),
+    frozen: requireNumber(value.frozenUsers as number | string | null | undefined, "c1Overview.frozenUsers"),
+    riskAuthorityAvailable: value.riskAuthorityAvailable === true,
+    highRisk: value.highRiskUsers == null
+      ? null
+      : requireNumber(value.highRiskUsers as number | string, "c1Overview.highRiskUsers"),
+    highRiskThreshold: value.highRiskThreshold == null
+      ? null
+      : requireNumber(value.highRiskThreshold as number | string, "c1Overview.highRiskThreshold"),
+  };
 }
 
-export async function unbindUserPaymentMethod(userId: number | string, methodId: number, expectedVersion: number, reason: string, operator = currentAdminOperator()) {
+export async function fetchUserPaymentMethods(userId: number | string, includeUnbound = false, page = 1, pageSize = 20) {
+  const value = await usersRequest<unknown>(`/profiles/${encodeURIComponent(String(userId))}/payment-methods${queryString({ includeUnbound, page, pageSize })}`);
+  if (!isJsonRecord(value) || !Array.isArray(value.items)) {
+    throw new Error("USER360_RESPONSE_INVALID:paymentMethods.items");
+  }
+  return {
+    items: value.items as UserPaymentMethod[],
+    page: requireNumber(value.page as number | string | null | undefined, "paymentMethods.page"),
+    pageSize: requireNumber(value.pageSize as number | string | null | undefined, "paymentMethods.pageSize"),
+    total: requireNumber(value.total as number | string | null | undefined, "paymentMethods.total"),
+  };
+}
+
+export async function unbindUserPaymentMethod(
+  userId: number | string,
+  methodId: number,
+  expectedVersion: number,
+  reason: string,
+  operator = currentAdminOperator(),
+  commandKey = idempotencyKey("c1-payment-method-unbind"),
+) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/payment-methods/${methodId}/unbind`, {
     method: "POST",
     body: JSON.stringify({ expectedVersion, reason, operator }),
-    idempotencyPrefix: "c1-payment-method-unbind",
+    idempotencyKey: commandKey,
   });
 }
 
-export async function notifyUserPaymentMethodRebind(userId: number | string, methodId: number, expectedVersion: number, reason: string, operator = currentAdminOperator()) {
+export async function notifyUserPaymentMethodRebind(
+  userId: number | string,
+  methodId: number,
+  expectedVersion: number,
+  reason: string,
+  operator = currentAdminOperator(),
+  commandKey = idempotencyKey("c1-payment-method-rebind-notice"),
+) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/payment-methods/${methodId}/rebind-notification`, {
     method: "POST",
     body: JSON.stringify({ expectedVersion, reason, operator }),
-    idempotencyPrefix: "c1-payment-method-rebind-notice",
+    idempotencyKey: commandKey,
   });
 }
 
-export async function resetUserNickname(userId: number | string, reason: string, operator = currentAdminOperator()) {
+export async function resetUserNickname(
+  userId: number | string,
+  expectedNickname: string,
+  reason: string,
+  operator = currentAdminOperator(),
+  commandKey = idempotencyKey("c1-nickname-reset"),
+) {
   return usersRequest<{ userId: number; nickname: string; status: string }>(`/profiles/${encodeURIComponent(String(userId))}/nickname/reset`, {
     method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c1-nickname-reset",
+    body: JSON.stringify({ reason, expectedValue: expectedNickname, operator }),
+    idempotencyKey: commandKey,
   });
 }
 
@@ -794,18 +940,20 @@ export async function exportUserProfilesCsv(
 }
 
 export async function fetchUserAssetAdjustmentOverview() {
-  return usersRequest<UserAssetAdjustmentOverview>("/asset-adjustments/overview");
+  return requireC3Overview(await usersRequest<unknown>("/asset-adjustments/overview"));
 }
 
 export async function fetchUserAssetAdjustments(query: UserAssetAdjustmentQuery = {}) {
   const pageNum = query.pageNum ?? 1;
   const pageSize = query.pageSize ?? 10;
   const page = await usersRequest<PageResult<UserAssetAdjustment>>(`/asset-adjustments${queryString({ ...query, pageNum, pageSize })}`);
-  return normalizePage(page, pageNum, pageSize);
+  const normalized = normalizePage(page, pageNum, pageSize);
+  normalized.records.forEach(requireC3Adjustment);
+  return normalized;
 }
 
 export async function fetchUserAssetAdjustmentDetail(adjustmentNo: string) {
-  return usersRequest<UserAssetAdjustmentDetail>(`/asset-adjustments/${encodeURIComponent(adjustmentNo)}`);
+  return requireC3Detail(await usersRequest<unknown>(`/asset-adjustments/${encodeURIComponent(adjustmentNo)}`));
 }
 
 export async function fetchUserAssetAdjustmentAccounts(keyword?: string) {
@@ -816,9 +964,9 @@ export async function fetchUserAssetAdjustmentAccounts(keyword?: string) {
 }
 
 export async function fetchUserAssetAdjustmentContext(userId: number | string) {
-  return usersRequest<UserAssetAdjustmentContext>(
+  return requireC3Context(await usersRequest<unknown>(
     `/profiles/${encodeURIComponent(String(userId))}/asset-adjustment-context`,
-  );
+  ));
 }
 
 export async function fetchUserKycOverview(query: UserKycQuery = {}) {
@@ -850,10 +998,45 @@ function requireC5Overview(value: unknown): UserSecurityOverview {
     || !Array.isArray(overview.sessions.records)) {
     return c5ResponseInvalid();
   }
-  if (overview.selectedUser !== null && overview.selectedUser !== undefined
-    && typeof overview.selectedUser !== "object") {
+  const numeric = (candidate: unknown) => c3Numeric(candidate);
+  for (const field of ["activeSessions", "twoFactorRatePct", "lockedShort", "lockedLong", "tokenReuseToday"] as const) {
+    if (!numeric(overview.stats?.[field])) return c5ResponseInvalid();
+  }
+  const validUser = (candidate: unknown) => isJsonRecord(candidate)
+    && (typeof candidate.userId === "number" || typeof candidate.userId === "string")
+    && typeof candidate.userNo === "string"
+    && typeof candidate.nickname === "string"
+    && typeof candidate.twoFactorEnabled === "boolean"
+    && numeric(candidate.loginFailCount)
+    && typeof candidate.locked === "boolean"
+    && typeof candidate.passwordResetRequired === "boolean";
+  if (overview.selectedUser !== null && overview.selectedUser !== undefined && !validUser(overview.selectedUser)) {
     return c5ResponseInvalid();
   }
+  if (!overview.credentialParams.every((param) => isJsonRecord(param)
+    && typeof param.key === "string"
+    && typeof param.name === "string"
+    && typeof param.value === "string"
+    && typeof param.unit === "string"
+    && numeric(param.min)
+    && numeric(param.max)
+    && typeof param.readOnly === "boolean"
+    && typeof param.note === "string"
+    && typeof param.configKey === "string"
+    && numeric(param.version))) return c5ResponseInvalid();
+  if (!overview.sessions.records.every((session) => isJsonRecord(session)
+    && typeof session.refreshTokenId === "string"
+    && typeof session.deviceName === "string"
+    && typeof session.status === "string"
+    && ["ACTIVE", "REVOKED", "EXPIRED"].includes(session.status.toUpperCase())
+    && typeof session.issuedAt === "string"
+    && typeof session.expiresAt === "string")) return c5ResponseInvalid();
+  if (!numeric(overview.sessions.total)
+    || !numeric(overview.sessions.pageNum)
+    || !numeric(overview.sessions.pageSize)
+    || !overview.lockedUsers.every(validUser)
+    || !Array.isArray(overview.sources)
+    || !Array.isArray(overview.redlines)) return c5ResponseInvalid();
   return overview;
 }
 
@@ -897,6 +1080,18 @@ function requireC6Overview(value: unknown): UserRegistrationRiskOverview {
     && typeof guard.k1Key === "string"
     && typeof guard.rejectCode === "string"
     && typeof guard.suggestedPath === "string")) return c6ResponseInvalid();
+  const paramKeys = value.params.map((param) => String((param as JsonRecord).key));
+  const guardKeys = value.k1Guards.map((guard) => String((guard as JsonRecord).k1Key));
+  const requiredParamKeys = ["otpTtl", "otpCooldown", "otpMax24h", "lockShort", "lockLong"];
+  const requiredGuardKeys = ["maxSignupPerIp24h", "maxAccountsPerDevice", "maxAccountsPerPaymentInstrument"];
+  if (new Set(paramKeys).size !== requiredParamKeys.length
+    || !requiredParamKeys.every((key) => paramKeys.includes(key))
+    || new Set(guardKeys).size !== requiredGuardKeys.length
+    || !requiredGuardKeys.every((key) => guardKeys.includes(key))
+    || value.sources.length < 5
+    || value.redlines.length < 3
+    || value.sources.some((source) => typeof source !== "string" || !source.trim())
+    || value.redlines.some((redline) => typeof redline !== "string" || !redline.trim())) return c6ResponseInvalid();
   return value as UserRegistrationRiskOverview;
 }
 
@@ -921,19 +1116,26 @@ export async function updateUserRegistrationRiskParam(
   });
 }
 
-export async function updateUserCredentialParam(paramKey: string, value: string, reason: string, operator: string) {
+export async function updateUserCredentialParam(
+  paramKey: string,
+  value: string,
+  reason: string,
+  operator: string,
+  expectedVersion: number,
+  commandKey = idempotencyKey("c5-credential-param"),
+) {
   return usersRequest<UserCredentialParam>(`/security/credential-params/${encodeURIComponent(paramKey)}`, {
     method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: "c5-credential-param",
+    body: JSON.stringify({ value, reason, operator, expectedVersion }),
+    idempotencyKey: commandKey,
   });
 }
 
-export async function revokeUserSession(refreshTokenId: string, reason: string, operator: string) {
+export async function revokeUserSession(refreshTokenId: string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<UserSession>(`/sessions/${encodeURIComponent(refreshTokenId)}/revoke`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c5-user-session-revoke",
+    idempotencyKey: commandKey ?? idempotencyKey("c5-user-session-revoke"),
   });
 }
 
@@ -942,11 +1144,12 @@ export async function disableUserTwoFactor(
   reason: string,
   operator: string,
   evidence: UserSecurityActionEvidence,
+  commandKey?: string,
 ) {
   return usersRequest<UserSecurityStatus>(`/profiles/${encodeURIComponent(String(userId))}/security/disable-2fa`, {
     method: "POST",
     body: JSON.stringify({ reason, operator, ...evidence, lockKind: null }),
-    idempotencyPrefix: "c5-user-disable-2fa",
+    idempotencyKey: commandKey ?? idempotencyKey("c5-user-disable-2fa"),
   });
 }
 
@@ -955,11 +1158,12 @@ export async function unlockUserSecurity(
   reason: string,
   operator: string,
   evidence: UserSecurityActionEvidence,
+  commandKey?: string,
 ) {
   return usersRequest<UserSecurityStatus>(`/profiles/${encodeURIComponent(String(userId))}/security/unlock`, {
     method: "POST",
     body: JSON.stringify({ reason, operator, ...evidence }),
-    idempotencyPrefix: "c5-user-unlock",
+    idempotencyKey: commandKey ?? idempotencyKey("c5-user-unlock"),
   });
 }
 
@@ -984,11 +1188,12 @@ export async function requestUserKycReverification(
   action: "DISABLE_2FA" | "PASSWORD_RESET" | "UNLOCK_SHORT" | "UNLOCK_LONG",
   reason: string,
   operator: string,
+  commandKey?: string,
 ) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/kyc-reverification`, {
     method: "POST",
     body: JSON.stringify({ action, reason, operator }),
-    idempotencyPrefix: "c5-user-kyc-reverification",
+    idempotencyKey: commandKey ?? idempotencyKey("c5-user-kyc-reverification"),
   });
 }
 
@@ -1127,19 +1332,29 @@ export async function reverseUserAssetAdjustment(
   });
 }
 
-export async function approveUserAssetAdjustment(adjustmentNo: string, reason: string, operator: string) {
+export async function approveUserAssetAdjustment(
+  adjustmentNo: string,
+  reason: string,
+  operator: string,
+  commandKey = idempotencyKey("c3-asset-adjustment-approve"),
+) {
   return usersRequest<UserAssetAdjustmentDetail>(`/asset-adjustments/${encodeURIComponent(adjustmentNo)}/approve`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c3-asset-adjustment-approve",
+    idempotencyKey: commandKey,
   });
 }
 
-export async function rejectUserAssetAdjustment(adjustmentNo: string, reason: string, operator: string) {
+export async function rejectUserAssetAdjustment(
+  adjustmentNo: string,
+  reason: string,
+  operator: string,
+  commandKey = idempotencyKey("c3-asset-adjustment-reject"),
+) {
   return usersRequest<UserAssetAdjustmentDetail>(`/asset-adjustments/${encodeURIComponent(adjustmentNo)}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c3-asset-adjustment-reject",
+    idempotencyKey: commandKey,
   });
 }
 
@@ -1151,11 +1366,11 @@ export async function updateUserStatus(userId: number | string, status: UserStat
   });
 }
 
-export async function revokeUserSessions(userId: number | string, reason: string, operator: string) {
+export async function revokeUserSessions(userId: number | string, reason: string, operator: string, commandKey?: string) {
   return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/sessions/revoke-all`, {
     method: "POST",
     body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "c5-user-revoke-sessions",
+    idempotencyKey: commandKey ?? idempotencyKey("c5-user-revoke-sessions"),
   });
 }
 
@@ -1208,10 +1423,11 @@ export async function requestUserPasswordReset(
   reason: string,
   operator: string,
   evidence: UserSecurityActionEvidence,
+  commandKey?: string,
 ) {
   return usersRequest<UserSecurityStatus>(`/profiles/${encodeURIComponent(String(userId))}/security/password-reset`, {
     method: "POST",
     body: JSON.stringify({ reason, operator, ...evidence, lockKind: null }),
-    idempotencyPrefix: "c5-user-password-reset",
+    idempotencyKey: commandKey ?? idempotencyKey("c5-user-password-reset"),
   });
 }

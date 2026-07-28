@@ -95,3 +95,33 @@ test("M5 reveals newly created rows when a paged list grows", () => {
   assert.match(page, /setScriptPage\(totalPages\(scriptTotal \+ 1, SCRIPT_PAGE_SIZE\)\)/);
   assert.match(page, /setReplyTemplatePage\(totalPages\(replyTemplateTotal \+ 1, REPLY_TEMPLATE_PAGE_SIZE\)\)/);
 });
+
+test("M5 rejects malformed successful responses instead of enabling writes against fallback data", () => {
+  const client = read("lib/admin/m-client.ts");
+
+  assert.match(client, /requireSessionTemplateOverview/);
+  assert.match(client, /M5_SESSION_TEMPLATE_PROTOCOL_INVALID/);
+  assert.match(client, /new Set\(categories\.map\(\(row\) => row\.type\)\)/);
+  assert.match(client, /sessionTemplatesAvailable = sessionTemplates !== null/);
+});
+
+test("M5 publication is gated by published I6 locale mirrors and emits A4 governance facts", () => {
+  const service = read("../nexion-backend/src/main/java/ffdd/opsconsole/content/application/OpsSessionTemplateService.java");
+  const page = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
+  const migration = read("../nexion-backend/scripts/migrations/20260727_m5_conversation_governance_closure.sql");
+
+  assert.match(service, /I18nLearningRepository/);
+  assert.match(service, /requirePublishedLocalizedCopy/);
+  assert.match(service, /SESSION_TEMPLATE_I18N_NOT_PUBLISHED/);
+  assert.match(service, /EventOutboxService/);
+  assert.match(service, /admin\.conversation_script_published/);
+  assert.match(service, /admin\.conversation_template_published/);
+  assert.match(page, /conversation\.script\./);
+  assert.match(page, /conversation\.template\./);
+  assert.match(page, /href="\/content\/i18n"/);
+  assert.match(migration, /admin\.conversation_category_toggled/);
+  assert.match(migration, /admin\.conversation_autopush_toggled/);
+  assert.match(migration, /admin\.conversation_autopush_changed/);
+  assert.match(migration, /admin\.conversation_script_published/);
+  assert.match(migration, /admin\.conversation_template_published/);
+});

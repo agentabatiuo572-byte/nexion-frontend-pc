@@ -35,3 +35,18 @@ test("E4 removes reverse transitions and illegal refund terminal", async () => {
   assert.doesNotMatch(shell, /failed 重新置为 allocating/);
   assert.doesNotMatch(data, /TERMINAL_STATES = \[[^\]]*"refunded"/);
 });
+
+test("E4 search and manual progress fail closed around D1 D4 and E5 evidence", async () => {
+  const view = await read("app/components/domain-views/e-tabs/e4-orders.tsx");
+  const shell = await read("app/components/domain-views/e-view.tsx");
+  const types = await read("app/components/domain-views/e-tabs/types.ts");
+
+  assert.match(view, /aria-label="搜索订单"/);
+  assert.match(types, /e4Keyword: string/);
+  assert.match(shell, /keyword: e4Keyword/);
+  assert.match(shell, /ORDER_PAYMENT_CONFIRMATION_REQUIRED/);
+  assert.match(shell, /ORDER_PROVISIONING_EVIDENCE_REQUIRED/);
+  assert.match(shell, /deviceActivatedAt/);
+  assert.match(shell, /\/platform\/audit\?domain=E&object=/);
+  assert.match(shell, /\/platform\/events/);
+});

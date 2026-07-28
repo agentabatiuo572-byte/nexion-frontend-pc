@@ -122,15 +122,22 @@ export function readL1LiveTotals(raw: unknown): L1LiveMetric[] {
 
 export function readL2LiveStages(raw: unknown): L2LiveStage[] {
   const stages = record(raw).stages;
-  if (!Array.isArray(stages)) return [];
-  return stages.flatMap((item) => {
+  if (!Array.isArray(stages) || stages.length !== Object.keys(L2_STAGE_META).length) return [];
+  const parsed: L2LiveStage[] = [];
+  const seen = new Set<string>();
+  for (const item of stages) {
     const row = record(item);
     const key = typeof row.key === "string" ? row.key.trim() : "";
     const source = typeof row.source === "string" ? row.source.trim() : "";
     const count = finiteNumber(row.count);
-    if (!key || !source || count === null) return [];
-    const meta = L2_STAGE_META[key] ?? { label: key, description: "后端返回的生命周期事实计数" };
+    const meta = L2_STAGE_META[key];
+    if (!meta || seen.has(key) || (!source.startsWith("nx_event_outbox:") && !SOURCE_LABELS[source])
+      || count === null || !Number.isSafeInteger(count) || count < 0) {
+      return [];
+    }
+    seen.add(key);
     const sourceLabel = source.startsWith("nx_event_outbox:") ? "A4 统一事件流" : (SOURCE_LABELS[source] ?? "业务统计");
-    return [{ key, label: meta.label, count, source, sourceLabel, description: meta.description }];
-  });
+    parsed.push({ key, label: meta.label, count, source, sourceLabel, description: meta.description });
+  }
+  return parsed;
 }

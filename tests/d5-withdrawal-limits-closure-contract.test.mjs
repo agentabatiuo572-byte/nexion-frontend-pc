@@ -51,4 +51,6 @@ test("D domain preserves D5 reason limits at the shared confirmation boundary", 
   assert.match(dView, /reasonMin=\{mc\.reasonMin\}/);
   assert.match(dView, /reasonMax=\{mc\.reasonMax\}/);
   assert.match(dView, /completionCopy=\{mc\.completionCopy\}/);
+  assert.match(d5Page, /提交成功后生效并写入审计/);
+  assert.doesNotMatch(d5Page, /completionCopy:\s*"已生效 · 已记审计"/);
 });

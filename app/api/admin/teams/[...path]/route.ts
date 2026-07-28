@@ -26,11 +26,70 @@ function backendPath(parts: string[]) {
   if (parts.length === 1 && parts[0] === "binary") {
     return "/api/admin/teams/binary";
   }
+  if (
+    parts.length === 2
+    && parts[0] === "binary"
+    && (parts[1] === "assignments" || parts[1] === "settlements")
+  ) {
+    return `/api/admin/teams/binary/${parts[1]}`;
+  }
   if (parts.length === 1 && parts[0] === "leadership-pool") {
     return "/api/admin/teams/leadership-pool";
   }
+  if (parts.length === 2 && parts[0] === "leadership-pool" && parts[1] === "settle") {
+    return "/api/admin/teams/leadership-pool/settle";
+  }
   if (parts.length === 1 && parts[0] === "commissions") {
-    return "/api/admin/teams/commissions";
+    return "/api/admin/commissions";
+  }
+  if (
+    parts.length === 2
+    && parts[0] === "commissions"
+    && (parts[1] === "anomalies" || parts[1] === "reissue" || parts[1] === "anomaly-config")
+  ) {
+    // canonical F5: /commissions/reissue and the read/config companion routes.
+    return `/api/admin/commissions/${parts[1]}`;
+  }
+  if (
+    parts.length === 3
+    && parts[0] === "commissions"
+    && isNonEmpty(parts[1])
+    && parts[2] === "reverse"
+  ) {
+    return `/api/admin/commissions/${encodeURIComponent(parts[1])}/reverse`;
+  }
+  if (
+    parts.length === 4
+    && parts[0] === "commissions"
+    && parts[1] === "users"
+    && /^\d+$/.test(parts[2])
+    && parts[3] === "suspend"
+  ) {
+    // canonical backend suffix: /users/{userId}/commission/suspend
+    return `/api/admin/users/${parts[2]}/commission/suspend`;
+  }
+  if (parts.length === 1 && parts[0] === "promotion-log") {
+    return "/api/admin/teams/promotion-log";
+  }
+  if (parts.length === 1 && parts[0] === "reward-payouts") {
+    return "/api/admin/teams/reward-payouts";
+  }
+  if (
+    parts.length === 4 &&
+    parts[0] === "users" &&
+    /^\d+$/.test(parts[1]) &&
+    parts[2] === "vrank" &&
+    parts[3] === "override"
+  ) {
+    return `/api/admin/teams/users/${parts[1]}/vrank/override`;
+  }
+  if (
+    parts.length === 3 &&
+    parts[0] === "reward-payouts" &&
+    isNonEmpty(parts[1]) &&
+    (parts[2] === "reissue" || parts[2] === "reverse")
+  ) {
+    return `/api/admin/teams/reward-payouts/${encodeURIComponent(parts[1])}/${parts[2]}`;
   }
   if (
     parts.length === 3 &&

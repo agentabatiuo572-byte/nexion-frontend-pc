@@ -162,7 +162,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
           <div>升 APY 是放大流出,提交后由后端重新验覆盖率红线与跨档 APY 保序。</div>
         </div>
       </>,
-      edit: { kind: "number", current: pool.apy, unit: "%", min: 0, max: 300, step: 0.01 },
+      coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
+      edit: { kind: "number", current: pool.apy, unit: "%", min: 0, max: 300, step: 0.01, disallowCurrent: true, amplifiesWhen: "increase" },
       run: async (reason, value) => {
         if (!value) return;
         await mutate(`apy:${pool.tierKey}`, () => updateG1StakingPoolParam(
@@ -176,7 +177,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `Staking 提前赎回罚款调整 · ${pool.product} · ${displayTerm(pool)}`,
       detail: <>当前罚款 {pool.penaltyDisplay}。降罚款是放大流出,提交后端会按真实 B1 覆盖率红线校验(当前 {cov}%,红线 {redline}%)。只对新单生效。</>,
-      edit: { kind: "number", current: pool.penalty, unit: "%", min: 0, max: 100, step: 0.01 },
+      coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
+      edit: { kind: "number", current: pool.penalty, unit: "%", min: 0, max: 100, step: 0.01, disallowCurrent: true, amplifiesWhen: "decrease" },
       run: async (reason, value) => {
         if (!value) return;
         await mutate(`penalty:${pool.tierKey}`, () => updateG1StakingPoolParam(
@@ -190,7 +192,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `Staking 最小额调整 · ${pool.product} · ${displayTerm(pool)}`,
       detail: <>当前最小额 {pool.minDisplayValue}。最小额收紧不影响在锁单,只对新单生效。</>,
-      edit: { kind: "number", current: pool.minStake, unit: "USDT", min: 0, max: 1_000_000_000, step: 0.01 },
+      coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
+      edit: { kind: "number", current: pool.minStake, unit: "USDT", min: 0, max: 1_000_000_000, step: 0.01, disallowCurrent: true, amplifiesWhen: "decrease" },
       run: async (reason, value) => {
         if (!value) return;
         await mutate(`min:${pool.tierKey}`, () => updateG1StakingPoolParam(
@@ -205,6 +208,8 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     openActionConfirm({
       action: `${pool.enabled ? "停售" : "恢复开售"}档位 · ${pool.product} · ${displayTerm(pool)}`,
       detail: <>{pool.enabled ? "停售只停新锁,在锁单照常计息到期。" : `恢复该档新锁仓开放,后端会按真实 B1 覆盖率红线校验(当前 ${cov}%,红线 ${redline}%)。`}操作确认。</>,
+      amplifies: nextEnabled,
+      coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
       run: async (reason) => {
         await mutate(`sale:${pool.tierKey}`, () => updateG1StakingPoolSaleStatus(
           pool.tierKey, nextEnabled, reason, currentAdminOperator(),

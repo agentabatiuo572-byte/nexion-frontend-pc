@@ -19,7 +19,7 @@ import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
 import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
 import { allowedAggregateExportOptions, canAccessBiReportType, canExportBiReports } from "./l-tabs/l1-l2-live-data";
-import { fetchLBiOverview, lBiActions, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
+import { fetchLBiOverview, lBiActions, type L2FunnelQuery, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const FOLD: Record<string, string> = { L1: "L1", L2: "L2", L3: "L3", L4: "L4", L5: "L5", L6: "L6" };
@@ -31,6 +31,8 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   const [biData, setBiData] = useState<LBiData | null>(null);
   const [biLoading, setBiLoading] = useState(true);
   const [biError, setBiError] = useState<string | null>(null);
+  const [l2Query, setL2Query] = useState<L2FunnelQuery>({});
+  const [l2SliceExportable, setL2SliceExportable] = useState(true);
   const [l3Query, setL3Query] = useState<L3FinanceQuery>({ period: "month" });
   const [l4Query, setL4Query] = useState<L4OperationsQuery>({ period: "week", phase: "ALL" });
   const session = useAdminAuth((state) => state.session);
@@ -69,12 +71,20 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
     reloadBi,
     biActions: lBiActions,
     canExport: canExportBiReports(session?.role, session?.authorities ?? [], tab),
+    canExportFinanceDetail: session?.role?.toLowerCase() === "superadmin"
+      || (session?.authorities ?? []).includes("bi_l3_export_detail"),
+    canApproveExportTasks: session?.role?.toLowerCase() === "superadmin"
+      || (session?.authorities ?? []).includes("bi_l5_task_approve"),
     canExportNetworkTree: session?.role?.toLowerCase() === "superadmin"
       || (session?.authorities ?? []).includes("bi_l4_export_tree"),
     canGenerateRegulatory: session?.role?.toLowerCase() === "superadmin"
       || (session?.authorities ?? []).includes("bi_l5_regulatory_generate"),
     availableAggregateExportTypes: aggregateExportOptions.map((option) => option.label),
     canAccessReportType: (reportType) => canAccessBiReportType(session?.role, session?.authorities ?? [], reportType),
+    l2Query,
+    setL2Query,
+    l2SliceExportable,
+    setL2SliceExportable,
     l3Query,
     setL3Query,
     l4Query,
@@ -109,6 +119,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
           reasonMax={mc.reasonMax}
           edit={mc.edit}
           businessForm={mc.businessForm}
+          completionCopy={mc.completionCopy}
           onClose={() => setActionConfirm(null)}
           onConfirm={(reason, newValue, businessValue) => {
             const req = mc;

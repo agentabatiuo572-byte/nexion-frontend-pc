@@ -32,14 +32,27 @@ const designKit = readFileSync(
   new URL("../app/components/domain-views/design-kit.tsx", import.meta.url),
   "utf8",
 );
+const gateway = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/application/J4DomainActionGatewayAdapter.java", import.meta.url),
+  "utf8",
+);
+const a2Guard = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/platform/application/AuditReplayBusinessPermissionGuard.java", import.meta.url),
+  "utf8",
+);
 const j4OverviewBackend = backend.slice(
   backend.indexOf("sopOverview()"),
   backend.indexOf("createPlaybook(", backend.indexOf("sopOverview()")),
 );
 
-test("J4 executes the business command directly instead of creating a misleading A2 proposal", () => {
+test("J4 execution creates a real A2 replay proposal before cross-domain side effects", () => {
   assert.doesNotMatch(component, /usePropose|findHighOp|\bpropose\s*\(/);
-  assert.match(component, /actions\.executeJ4Playbook/);
+  assert.match(component, /createA2OperationProposal/);
+  assert.match(component, /op: "j4_playbook_execute"/);
+  assert.match(component, /target: \{ domain: "J", type: "playbook", id: p\.code \}/);
+  assert.match(component, /A2 双人复核/);
+  assert.match(a2Guard, /case "j4_playbook_execute" -> "emergency_j4_playbook_execute"/);
+  assert.match(backend, /if \(!A2ReplayContext\.isReplaying\(\)\) \{[\s\S]*J4_A2_CONFIRMATION_REQUIRED/);
   assert.doesNotMatch(component, /后续 server|占位|立即生效 · 记入草稿位/);
 });
 
@@ -66,7 +79,7 @@ test("J4 only offers notification campaigns that can actually be dispatched", ()
 
 test("J4 retries the same confirmation with a stable command key and always requires preflight", () => {
   assert.match(component, /createJEmergencyCommandKey/);
-  assert.equal((component.match(/commandKey\)/g) ?? []).length, 5);
+  assert.equal((component.match(/commandKey\)/g) ?? []).length, 7);
   assert.match(component, /drillRequired: true/);
   assert.match(backend, /"drillRequired", true/);
   assert.match(backend, /SOP_I3_NOTIFY_ACTION\.equals\(action\)/);
@@ -79,14 +92,20 @@ test("J4 removes retired escalation SLA fields and implementation-facing copy", 
 });
 
 test("J4 backend exposes only actions with real target-domain executors", () => {
-  assert.match(backend, /actionOption\("J1", "熔断提现通道"/);
-  assert.match(backend, /actionOption\("I3", "发送通知模板"/);
-  assert.doesNotMatch(backend, /actionOption\("(?:D2|B1|C2|K1|J2|I5)"/);
+  assert.match(backend, /parameterizedActionOption\("J2"/);
+  assert.match(backend, /parameterizedActionOption\("C2"/);
+  assert.match(backend, /parameterizedActionOption\("K1"/);
+  assert.match(backend, /parameterizedActionOption\("I5"/);
+  assert.match(backend, /executeJ2Action/);
+  assert.match(backend, /j4DomainActionGateway\.execute/);
+  assert.match(gateway, /userService\.updateStatus/);
+  assert.match(gateway, /riskService\.updateMultiAccountClusterStatus/);
+  assert.match(gateway, /trustDisclosureService\.publishDisclosure/);
   assert.match(backend, /J4_ACTION_NOT_EXECUTABLE/);
 });
 
 test("J4 quarantines legacy playbooks that still contain retired actions", () => {
-  assert.match(component, /supportedActionKeys/);
+  assert.match(component, /isSupportedStep/);
   assert.match(component, /unsupportedStepCount/);
   assert.match(component, /历史剧本 · 需迁移/);
   assert.match(component, /禁止演练/);
@@ -98,8 +117,8 @@ test("J4 quarantines legacy playbooks that still contain retired actions", () =>
 
 test("J4 uses the versioned safe-execution contract and degrades old backends to read-only", () => {
   assert.match(client, /contractVersion/);
-  assert.match(backend, /J4_REAL_EXECUTION_V3/);
-  assert.match(component, /const contractReady = data\.contractVersion === "J4_REAL_EXECUTION_V3"/);
+  assert.match(backend, /J4_REAL_EXECUTION_V4/);
+  assert.match(component, /const contractReady = data\.contractVersion === "J4_REAL_EXECUTION_V4"/);
   assert.match(component, /后端 J4 安全执行契约未就绪/);
 });
 
@@ -107,12 +126,30 @@ test("J4 serializes canonical action refs and rejects duplicate side effects", (
   assert.match(backend, /parts\[1\]\.trim\(\)/);
   assert.match(backend, /J4_ACTION_DUPLICATED/);
   assert.match(backend, /expectedActionRef/);
+  assert.match(backend, /isExecutableActionReference/);
+  assert.match(designKit, /normalizedActionTarget/);
+  assert.match(designKit, /item\.ref\.replace\("\{target\}", target\)/);
+});
+
+test("J4 publishes the two PRD A4 event contracts from authoritative writes", () => {
+  assert.match(backend, /admin\.emergency_playbook_edited/);
+  assert.match(backend, /admin\.emergency_playbook_executed/);
+  assert.match(backend, /publishJ4Event/);
+  assert.match(backend, /ensureJ4ExecutionOutcomeEvent/);
+  assert.match(backend, /outboxService\.listByAggregate\(\s*"EMERGENCY_PLAYBOOK"/);
+  assert.match(backend, /"outcome", "partial"/);
+  assert.match(backend, /"outcome", "completed"/);
 });
 
 test("J4 never offers rollback while an execution is pending or running", () => {
   assert.match(component, /e\.steps\.some\(\(step\) => step === "pending" \|\| step === "running" \|\| step === "recovering"\)/);
   assert.match(backend, /J4_EXECUTION_RECOVERY_LEASE/);
   assert.match(backend, /findEmergencyDispatch/);
+  assert.match(component, /cancelJ4Playbook/);
+  assert.match(component, /resumeJ4Playbook/);
+  assert.match(backend, /cancelPlaybookExecution/);
+  assert.match(backend, /resumePlaybookExecution/);
+  assert.match(emergencyMapper, /cancelRequested/);
 });
 
 test("J4 requires structured trigger evidence and every target-domain confirmation before execution", () => {

@@ -15,6 +15,9 @@ import {
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const ALL = "ALL";
+const B4_REASON_MESSAGES: Record<string, string> = {
+  B4_PHASE_DISTRIBUTION_EMPTY: "当前没有可确认的账户月龄分布；请检查用户创建时间事实后重试。",
+};
 
 function dialValue(value: string | number | boolean, unit: string) {
   if (typeof value === "boolean") return value ? "已开启" : "未开启";
@@ -153,7 +156,7 @@ export default function RhythmPage() {
           {!data.available && (
             <section className="card b4-alert" role="alert">
               <b>当前 Phase 分布不可用于决策</b>
-              <span>{data.reason || "账户月龄事实为空；已禁用导出，不以旧值或演示值替代。"}</span>
+              <span>{B4_REASON_MESSAGES[data.reason ?? ""] || "账户月龄事实不可确认；已禁用导出，不以旧值或演示值替代。"}</span>
             </section>
           )}
 
@@ -181,7 +184,7 @@ export default function RhythmPage() {
                 <h2>各 Phase 用户数分布</h2>
                 <p>账户月龄事实由服务端映射到 H1 P1–P6；筛选只改变观察范围，不改变权威总数。</p>
               </div>
-              <span className="b4-source">server-canonical</span>
+              <span className="b4-source">H1 权威数据</span>
             </div>
             <div className="b4-bars">
               {data.distribution.map((row) => (
@@ -314,7 +317,10 @@ export default function RhythmPage() {
                   )
                 ) : (
                   <Link key={item.key} href={item.href} className="b4-link-card">
-                    <b>{item.label}</b><span>按 {filters.phase === ALL ? "全部 Phase" : filters.phase} 查看</span>
+                    <b>{item.label}</b>
+                    <span>{item.key === "B3"
+                      ? `按 ${filters.phase === ALL ? "全部 Phase" : filters.phase} 查看`
+                      : "查看全局资金事实"}</span>
                   </Link>
                 )
               ))}

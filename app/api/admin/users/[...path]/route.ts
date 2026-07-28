@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
+const MASKED_PHONE_PATTERN = /^[0-9]{3}\*{4}[0-9]{4}$/;
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -14,6 +15,23 @@ function jsonError(status: number, message: string) {
 
 function isNonEmpty(value: string | undefined) {
   return !!value && value.trim().length > 0;
+}
+
+function sanitizePhoneMasked(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizePhoneMasked);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      key,
+      key === "phoneMasked"
+        ? typeof entry === "string" && MASKED_PHONE_PATTERN.test(entry) ? entry : null
+        : sanitizePhoneMasked(entry),
+    ]),
+  );
 }
 
 function backendPath(parts: string[]) {
@@ -185,6 +203,7 @@ async function proxy(request: Request, context: RouteContext) {
       method: request.method,
       headers,
       body: hasBody ? await request.text() : undefined,
+      signal: AbortSignal.timeout(20_000),
       cache: "no-store",
     });
     const responseHeaders = new Headers({
@@ -195,12 +214,32 @@ async function proxy(request: Request, context: RouteContext) {
     if (disposition) {
       responseHeaders.set("Content-Disposition", disposition);
     }
-    return new Response(await upstream.arrayBuffer(), {
+    const outcome = upstream.headers.get("X-Nexion-Upstream-Outcome");
+    if (outcome) responseHeaders.set("X-Nexion-Upstream-Outcome", outcome);
+    const body = await upstream.arrayBuffer();
+    if (
+      upstream.ok &&
+      responseHeaders.get("Content-Type")?.includes("application/json") &&
+      targetPath.startsWith("/api/admin/users/")
+    ) {
+      try {
+        const sanitized = sanitizePhoneMasked(JSON.parse(new TextDecoder().decode(body)));
+        return new Response(JSON.stringify(sanitized), {
+          status: upstream.status,
+          headers: responseHeaders,
+        });
+      } catch {
+        return jsonError(502, "USERS_RESPONSE_INVALID");
+      }
+    }
+    return new Response(body, {
       status: upstream.status,
       headers: responseHeaders,
     });
   } catch {
-    return jsonError(503, "USERS_BACKEND_UNAVAILABLE");
+    const response = jsonError(503, "USERS_BACKEND_UNAVAILABLE");
+    if (hasBody) response.headers.set("X-Nexion-Upstream-Outcome", "unknown");
+    return response;
   }
 }
 

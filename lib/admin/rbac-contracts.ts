@@ -94,6 +94,7 @@ function normalizeA7Node(raw: unknown): Record<string, unknown> & { children: Re
     icon: optionalString(node.icon, message),
     sortOrder: integer(node.sortOrder, message),
     status,
+    version: string(node.version, message),
     children: wrapper.children.map(normalizeA7Node),
   };
 }
@@ -121,10 +122,12 @@ export function normalizeA8Permission(raw: unknown) {
   const row = object(raw, message);
   const amplifies = integer(row.amplifies, message);
   if (amplifies !== 0 && amplifies !== 1) throw new Error(message);
+  const permType = string(row.permType, message);
+  if (!["READ", "WRITE", "HIGH"].includes(permType)) throw new Error(message);
   return {
     permissionCode: string(row.permissionCode, message),
     permissionName: optionalString(row.permissionName, message),
-    permType: string(row.permType, message),
+    permType,
     menuId: row.menuId == null ? null : integer(row.menuId, message, 1),
     menuCodePath: string(row.menuCodePath, message),
     amplifies,
@@ -141,7 +144,10 @@ export function normalizeA8Page(raw: unknown) {
   const pageNum = integer(data.pageNum, message, 1);
   const pageSize = integer(data.pageSize, message, 1);
   const records = data.records.map(normalizeA8Permission);
-  if (records.length > pageSize || new Set(records.map((row) => row.permissionCode)).size !== records.length) {
+  if (records.length > pageSize
+      || records.length > total
+      || (total === 0 && records.length !== 0)
+      || new Set(records.map((row) => row.permissionCode)).size !== records.length) {
     throw new Error(message);
   }
   return { total, pageNum, pageSize, records };

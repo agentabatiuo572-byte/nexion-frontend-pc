@@ -12,6 +12,7 @@ import {
   matchesA2OperationRole,
   parseA2ReasonMin,
   parseA2SchemaVersion,
+  resolveA2AuditObject,
   resolveA2AuditDomain,
   validateA2MechanismValue,
   validateA2AuditFilterRange,
@@ -51,6 +52,8 @@ test("A2 audit list matching uses the same six filter fields as export", () => {
   ), true);
   assert.equal(resolveA2AuditDomain("D", "A", "A2_OPERATION_EXECUTED", "ticket-1"), "D");
   assert.equal(resolveA2AuditDomain(null, null, "USER_NICKNAME_RESET", "USER_PROFILE"), "C");
+  assert.equal(resolveA2AuditObject(undefined, undefined, "D4_BILLS", "all"), "D4_BILLS · all");
+  assert.equal(resolveA2AuditObject("detail-target", undefined, "D4_BILLS", "all"), "detail-target");
 });
 
 test("A2 authority helpers fail closed for read-only sessions", () => {
@@ -78,9 +81,12 @@ test("A2 mechanism boundaries and dynamic reason minimum reject malformed values
 
 test("A2 page is fail-closed, permission-aware and uses one applied filter for list and export", () => {
   const page = read("app/components/domain-views/a-tabs/a2-audit.tsx");
+  const client = read("lib/admin/a2-client.ts");
   assert.match(page, /setOverview\(null\)/);
   assert.match(page, /canAccessA2Export/);
   assert.match(page, /canAccessA2Write/);
+  assert.match(page, /isCurrentOperator\(w,\s*principal\)/);
+  assert.match(page, /需其他具权人员执行/);
   assert.match(page, /matchesA2AuditFilter\(l, appliedFilter\)/);
   assert.match(page, /exportA2Audit\(reason, appliedFilter, commandKey\)/);
   assert.match(page, /filteredLogRows\.length === 0/);
@@ -90,6 +96,7 @@ test("A2 page is fail-closed, permission-aware and uses one applied filter for l
   assert.match(page, /reasonMax:\s*200/);
   assert.match(page, /parseA2SchemaVersion/);
   assert.match(page, /matchesA2OperationRole\(w\.operatorRole, qOperator\)/);
+  assert.match(client, /ts:\s*formatTime\(ticket\.ts\)/);
   assert.doesNotMatch(page, /当前服务的用户/);
   assert.match(page, /最近 500 条/);
   assert.doesNotMatch(page, /42 \* 60 \+ 10/);

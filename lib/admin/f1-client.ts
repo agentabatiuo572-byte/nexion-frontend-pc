@@ -10,11 +10,16 @@ interface ApiResult<T> {
 
 interface BackendVRankRow {
   v?: string | null;
+  label?: string | null;
   selfBuy?: string | null;
   directRefs?: string | null;
   teamGv?: string | null;
   legCount?: string | null;
   legRank?: string | null;
+  unilevelDepth?: string | null;
+  peerBonusRate?: number | string | null;
+  votes?: number | string | null;
+  visible?: boolean | number | string | null;
   pop?: number | string | null;
   rewards?: BackendReward[] | null;
 }
@@ -128,7 +133,10 @@ interface BackendF3Metric {
 }
 
 interface BackendF3Settlement {
+  ownerUserId?: number | string | null;
   user?: string | null;
+  settlementDate?: string | null;
+  cohort?: string | null;
   trackA?: number | string | null;
   trackB?: number | string | null;
   matchAmount?: number | string | null;
@@ -299,10 +307,18 @@ interface BackendF5Filter {
 
 interface BackendF5CommissionEvent {
   id?: string | null;
+  commissionId?: string | null;
+  eventId?: number | string | null;
   kind?: string | null;
   user?: string | null;
+  userId?: number | string | null;
   amount?: number | string | null;
   currency?: string | null;
+  sourceUserId?: number | string | null;
+  layer?: number | string | null;
+  settledAt?: string | null;
+  coolingDaysLeft?: number | string | null;
+  status?: string | null;
   cooldownPercent?: number | string | null;
   cooldownLabel?: string | null;
   state?: string | null;
@@ -336,6 +352,12 @@ interface BackendF5CommissionAuditOverview {
   statusDistribution?: BackendF5StatusItem[] | null;
   recentAuditFeed?: BackendF5AuditFeedItem[] | null;
   pagination?: BackendF5Pagination | null;
+  nextCursor?: string | number | null;
+  total?: number | string | null;
+  anomalies?: Record<string, unknown>[] | null;
+  coolingPolicy?: Record<string, unknown>[] | null;
+  operationHistory?: Record<string, unknown>[] | null;
+  activeSuspensions?: Record<string, unknown>[] | null;
   commissionPolicy?: Record<string, unknown> | null;
   guardrails?: string[] | null;
   configValues?: Record<string, string> | null;
@@ -345,11 +367,16 @@ interface BackendF5CommissionAuditOverview {
 
 export interface F1VRankRow {
   v: string;
+  label: string;
   selfBuy?: string;
   directRefs?: string;
   teamGv?: string;
   legCount?: string;
   legRank?: string;
+  unilevelDepth: string;
+  peerBonusRate: number;
+  votes: number;
+  visible: boolean;
   pop: number;
   rewards: OpsVRankRewardItem[];
 }
@@ -383,6 +410,65 @@ export interface F1VRankOverview {
   configValues: Record<string, string>;
   coverage?: { coverageRatio: number; redlinePct: number };
   sources: string[];
+}
+
+export interface F1PromotionRecord {
+  id: string;
+  userId: string;
+  nickname: string;
+  fromCode: string;
+  toCode: string;
+  reason: string;
+  operator: string;
+  isManual: boolean;
+  cohort: string;
+  snapshot: unknown;
+  triggerEventId: string;
+  auditNo: string;
+  createdAt: string;
+}
+
+export interface F1PromotionFilters {
+  userId?: string;
+  v?: string;
+  cohort?: string;
+  from?: string;
+  to?: string;
+}
+
+export interface F1RewardPayout {
+  payoutId: string;
+  userId: string;
+  rankCode: string;
+  rewardType: string;
+  amount: number;
+  voucherId: string;
+  skuId: string;
+  customLabel: string;
+  sponsorUserId: string;
+  status: string;
+  commissionEventId: string;
+  billId: string;
+  triggerEventId: string;
+  operator: string;
+  reason: string;
+  grantedAt: string;
+  reversedAt: string;
+}
+
+export interface F1PayoutFilters {
+  type?: string;
+  v?: string;
+  status?: string;
+  userId?: string;
+  cursor?: string;
+}
+
+export interface F1Page<T> {
+  total: number;
+  limit: number;
+  nextCursor: string;
+  items: T[];
 }
 
 export interface F2Metric {
@@ -448,7 +534,10 @@ export interface F3Metric {
 }
 
 export interface F3Settlement {
+  ownerUserId: number;
   user: string;
+  settlementDate: string;
+  cohort: string;
   a: number;
   b: number;
   match: number;
@@ -619,14 +708,62 @@ export interface F5CommissionFilter {
 
 export interface F5CommissionEvent {
   id: string;
+  eventId: number;
   kind: string;
   user: string;
+  userId: number;
   amt: number;
   cur: string;
+  sourceUserId?: number;
+  layer?: number;
+  settledAt: string;
+  coolingDaysLeft: number;
+  status: string;
   coolPct: number;
   coolLb: string;
   state: string;
   auditKey: string;
+}
+
+export interface F5CommissionQuery {
+  kind?: string;
+  currency?: string;
+  userId?: string;
+  cohort?: string;
+  status?: string;
+  cursor?: string;
+  limit?: string;
+}
+
+export interface F5Anomaly {
+  id: string;
+  type: string;
+  commissionId: string;
+  userId: string;
+  evidence: string;
+  relatedKCluster: string;
+  status: string;
+}
+
+export interface F5CoolingPolicy {
+  kind: string;
+  days: number;
+  policy: string;
+}
+
+export interface F5OperationHistory {
+  operationNo: string;
+  operationType: string;
+  sourceCommissionId: string;
+  resultCommissionId: string;
+  userId: string;
+  kinds: string;
+  amount: number;
+  currency: string;
+  evidenceRef: string;
+  reason: string;
+  operator: string;
+  createdAt: string;
 }
 
 export interface F5StatusDistribution {
@@ -656,6 +793,12 @@ export interface F5CommissionAuditOverview {
   statusDistribution: F5StatusDistribution[];
   recentAuditFeed: F5AuditFeedItem[];
   pagination: F5CommissionPagination;
+  nextCursor: string;
+  total: number;
+  anomalies: F5Anomaly[];
+  coolingPolicy: F5CoolingPolicy[];
+  operationHistory: F5OperationHistory[];
+  activeSuspensions: Array<{ userId: string; kind: string; reason: string; operator: string; updatedAt: string }>;
   commissionPolicy: Record<string, unknown>;
   guardrails: string[];
   configValues: Record<string, string>;
@@ -670,7 +813,7 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-function toNumber(value: number | string | null | undefined, fallback = 0) {
+function toNumber(value: unknown, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
   if (typeof value === "string" && value.trim()) {
     const parsed = Number(value.replace(/,/g, ""));
@@ -683,11 +826,30 @@ function asText(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+export interface F3SettlementExecution {
+  ownerUserId: number;
+  settlementDate: string;
+  status: string;
+  reason: string;
+  leftVolume: number;
+  rightVolume: number;
+  matchedVolume: number;
+  amountUsdt: number;
+  dailyCapUsdt: number;
+  commissionEventId: number | null;
+  replayed: boolean;
+}
+
+function asScalarText(value: unknown, fallback = "") {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return asText(value, fallback);
+}
+
 function optionalText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function toBoolean(value: boolean | string | null | undefined, fallback = false) {
+function toBoolean(value: unknown, fallback = false) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string" && value.trim()) {
     const normalized = value.trim().toLowerCase();
@@ -754,11 +916,16 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     rewards[v] = rowRewards;
     return {
       v,
+      label: asText(row.label, v),
       selfBuy: optionalText(row.selfBuy),
       directRefs: row.directRefs == null ? undefined : String(row.directRefs),
       teamGv: optionalText(row.teamGv),
       legCount: row.legCount == null ? undefined : String(row.legCount),
       legRank: optionalText(row.legRank),
+      unilevelDepth: asText(row.unilevelDepth),
+      peerBonusRate: toNumber(row.peerBonusRate),
+      votes: toNumber(row.votes),
+      visible: toBoolean(row.visible, true),
       pop: toNumber(row.pop),
       rewards: rowRewards,
     };
@@ -788,6 +955,73 @@ function normalizeOverview(data: BackendOverview | null | undefined): F1VRankOve
     coverage,
     sources: data?.sources ?? [],
   };
+}
+
+function normalizePromotionPage(data: Record<string, unknown> | null | undefined): F1Page<F1PromotionRecord> {
+  const rawItems = Array.isArray(data?.items) ? data.items : [];
+  return {
+    total: toNumber(data?.total),
+    limit: toNumber(data?.limit, 100),
+    nextCursor: "",
+    items: rawItems.map((item) => {
+      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      return {
+        id: asScalarText(row.id),
+        userId: asScalarText(row.userId),
+        nickname: asText(row.nickname),
+        fromCode: asText(row.fromCode),
+        toCode: asText(row.toCode),
+        reason: asText(row.reason),
+        operator: asText(row.operator),
+        isManual: toBoolean(row.isManual),
+        cohort: asText(row.cohort),
+        snapshot: row.snapshot ?? null,
+        triggerEventId: asText(row.triggerEventId),
+        auditNo: asText(row.auditNo),
+        createdAt: asText(row.createdAt),
+      };
+    }),
+  };
+}
+
+function normalizePayoutPage(data: Record<string, unknown> | null | undefined): F1Page<F1RewardPayout> {
+  const rawItems = Array.isArray(data?.items) ? data.items : [];
+  return {
+    total: toNumber(data?.total),
+    limit: toNumber(data?.limit, 100),
+    nextCursor: asText(data?.nextCursor),
+    items: rawItems.map((item) => {
+      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      return {
+        payoutId: asScalarText(row.payoutId),
+        userId: asScalarText(row.userId),
+        rankCode: asText(row.rankCode),
+        rewardType: asText(row.rewardType),
+        amount: toNumber(row.amount),
+        voucherId: asText(row.voucherId),
+        skuId: asText(row.skuId),
+        customLabel: asText(row.customLabel),
+        sponsorUserId: asScalarText(row.sponsorUserId),
+        status: asText(row.status).toUpperCase(),
+        commissionEventId: asScalarText(row.commissionEventId),
+        billId: asText(row.billId),
+        triggerEventId: asText(row.triggerEventId),
+        operator: asText(row.operator),
+        reason: asText(row.reason),
+        grantedAt: asText(row.grantedAt),
+        reversedAt: asText(row.reversedAt),
+      };
+    }),
+  };
+}
+
+function queryString(params: object) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params) as [string, string | undefined][]) {
+    if (value?.trim()) query.set(key, value.trim());
+  }
+  const text = query.toString();
+  return text ? `?${text}` : "";
 }
 
 function normalizeF2Overview(data: BackendF2Overview | null | undefined): F2RatesOverview {
@@ -857,7 +1091,10 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     configKey: asText(item.configKey, ""),
   }));
   const settlements = (data?.settlements ?? []).map((item) => ({
+    ownerUserId: toNumber(item.ownerUserId),
     user: asText(item.user, "usr_unknown"),
+    settlementDate: asText(item.settlementDate, ""),
+    cohort: asText(item.cohort, ""),
     a: toNumber(item.trackA),
     b: toNumber(item.trackB),
     match: toNumber(item.matchAmount),
@@ -871,13 +1108,13 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
   return {
     metrics,
     formula: {
-      user: asText(formula.user, "usr_31E8"),
+      user: asText(formula.user),
       trackA: toNumber(formula.trackA),
       trackB: toNumber(formula.trackB),
       matchAmount: toNumber(formula.matchAmount),
-      matchRate: asText(formula.matchRate, "10%"),
-      threshold: asText(formula.threshold, "$1,000 / 轨"),
-      settlePeriod: asText(formula.settlePeriod, "每月"),
+      matchRate: asText(formula.matchRate),
+      threshold: asText(formula.threshold),
+      settlePeriod: asText(formula.settlePeriod),
     },
     settlements,
     maxTrackGmv: toNumber(data?.maxTrackGmv, Math.max(1, ...settlements.flatMap((row) => [row.a, row.b]))),
@@ -887,23 +1124,23 @@ function normalizeF3Overview(data: BackendF3Overview | null | undefined): F3Bina
     autoPlacement7dCount: toNumber(data?.autoPlacement7dCount),
     dailyMatchUsd: toNumber(data?.dailyMatchUsd),
     dailyCap: {
-      currentLabel: asText(dailyCap.currentLabel, "$5,000"),
-      windowLabel: asText(dailyCap.windowLabel, "月 1-6 现值 · 全局统一"),
-      nextTrigger: asText(dailyCap.nextTrigger, "月 7"),
-      nextLabel: asText(dailyCap.nextLabel, "$2,000"),
-      currentMonth: toNumber(dailyCap.currentMonth, 6),
-      currentPhase: asText(dailyCap.currentPhase, "收缩期"),
+      currentLabel: asText(dailyCap.currentLabel),
+      windowLabel: asText(dailyCap.windowLabel),
+      nextTrigger: asText(dailyCap.nextTrigger),
+      nextLabel: asText(dailyCap.nextLabel),
+      currentMonth: toNumber(dailyCap.currentMonth),
+      currentPhase: asText(dailyCap.currentPhase),
     },
     config: {
-      threshold: asText(config.threshold, "$1,000 / 轨"),
-      matchRate: asText(config.matchRate, "10%"),
-      spillover: asText(config.spillover, "已启用"),
-      spilloverEnabled: toBoolean(config.spilloverEnabled, asText(config.spillover, "已启用") !== "已关闭"),
-      gvResetCron: asText(config.gvResetCron, "每月 1 日 00:00 UTC"),
-      settlePeriod: asText(config.settlePeriod, "每月"),
-      residualPolicy: asText(config.residualPolicy, "每月清零"),
-      residualPool: asText(config.residualPool, "$1.2M"),
-      residualSub: asText(config.residualSub, "月底归零 · 不结转"),
+      threshold: asText(config.threshold),
+      matchRate: asText(config.matchRate),
+      spillover: asText(config.spillover),
+      spilloverEnabled: toBoolean(config.spilloverEnabled),
+      gvResetCron: asText(config.gvResetCron),
+      settlePeriod: asText(config.settlePeriod),
+      residualPolicy: asText(config.residualPolicy),
+      residualPool: asText(config.residualPool),
+      residualSub: asText(config.residualSub),
     },
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
@@ -1013,13 +1250,21 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
     lbl: asText(item.label, "全部状态"),
   }));
   const commissionEvents = (data?.commissionEvents ?? []).map((item) => {
-    const id = asText(item.id, "CM-UNKNOWN");
+    const id = asText(item.commissionId ?? item.id, "CM-UNKNOWN");
+    const userId = toNumber(item.userId);
     return {
       id,
+      eventId: toNumber(item.eventId, toNumber(id.replace(/^CM-/, ""))),
       kind: asText(item.kind, "network"),
-      user: asText(item.user, "usr_unknown"),
+      user: asText(item.user, userId > 0 ? `U${String(userId).padStart(8, "0")}` : "usr_unknown"),
+      userId,
       amt: toNumber(item.amount),
       cur: asText(item.currency, "USDT"),
+      sourceUserId: item.sourceUserId == null ? undefined : toNumber(item.sourceUserId),
+      layer: item.layer == null ? undefined : toNumber(item.layer),
+      settledAt: asText(item.settledAt, "-"),
+      coolingDaysLeft: toNumber(item.coolingDaysLeft),
+      status: asText(item.status, "cooling"),
       coolPct: toNumber(item.cooldownPercent),
       coolLb: asText(item.cooldownLabel, "冷却中"),
       state: asText(item.state, "计提"),
@@ -1053,6 +1298,43 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
       defaultPageSize: toNumber(pagination.defaultPageSize, 20),
       maxPageSize: toNumber(pagination.maxPageSize, 100),
     },
+    nextCursor: asText(data?.nextCursor, ""),
+    total: toNumber(data?.total, commissionEvents.length),
+    anomalies: (data?.anomalies ?? []).map((item) => ({
+      id: asText(item.id, "AN-UNKNOWN"),
+      type: asText(item.type, "unknown"),
+      commissionId: asText(item.commissionId, ""),
+      userId: asText(item.userId, ""),
+      evidence: asText(item.evidence, ""),
+      relatedKCluster: asText(item.relatedKCluster, ""),
+      status: asText(item.status, "open"),
+    })),
+    coolingPolicy: (data?.coolingPolicy ?? []).map((item) => ({
+      kind: asText(item.kind, ""),
+      days: toNumber(item.days),
+      policy: asText(item.policy, ""),
+    })),
+    operationHistory: (data?.operationHistory ?? []).map((item) => ({
+      operationNo: asText(item.operationNo, ""),
+      operationType: asText(item.operationType, ""),
+      sourceCommissionId: asText(item.sourceCommissionId, ""),
+      resultCommissionId: asText(item.resultCommissionId, ""),
+      userId: asText(item.userId, ""),
+      kinds: asText(item.kinds, ""),
+      amount: toNumber(item.amount),
+      currency: asText(item.currency, ""),
+      evidenceRef: asText(item.evidenceRef, ""),
+      reason: asText(item.reason, ""),
+      operator: asText(item.operator, ""),
+      createdAt: asText(item.createdAt, ""),
+    })),
+    activeSuspensions: (data?.activeSuspensions ?? []).map((item) => ({
+      userId: asText(item.userId, ""),
+      kind: asText(item.kind, ""),
+      reason: asText(item.reason, ""),
+      operator: asText(item.operator, ""),
+      updatedAt: asText(item.updatedAt, ""),
+    })),
     commissionPolicy: data?.commissionPolicy ?? {},
     guardrails: data?.guardrails ?? [],
     configValues: data?.configValues ?? {},
@@ -1094,6 +1376,18 @@ export async function fetchF1VRankOverview() {
   return normalizeOverview(await f1Request<BackendOverview>("/ranks"));
 }
 
+export async function fetchF1PromotionLog(filters: F1PromotionFilters = {}) {
+  return normalizePromotionPage(await f1Request<Record<string, unknown>>(
+    `/promotion-log${queryString(filters)}`,
+  ));
+}
+
+export async function fetchF1RewardPayouts(filters: F1PayoutFilters = {}) {
+  return normalizePayoutPage(await f1Request<Record<string, unknown>>(
+    `/reward-payouts${queryString(filters)}`,
+  ));
+}
+
 export async function fetchF2RatesOverview() {
   return normalizeF2Overview(await f1Request<BackendF2Overview>("/rates"));
 }
@@ -1106,8 +1400,70 @@ export async function fetchF4LeadershipPoolOverview() {
   return normalizeF4Overview(await f1Request<BackendF4LeadershipPoolOverview>("/leadership-pool"));
 }
 
-export async function fetchF5CommissionAuditOverview() {
-  return normalizeF5Overview(await f1Request<BackendF5CommissionAuditOverview>("/commissions"));
+export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = {}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value?.trim()) search.set(key, value.trim());
+  }
+  const suffix = search.size ? `?${search.toString()}` : "";
+  return normalizeF5Overview(
+    await f1Request<BackendF5CommissionAuditOverview>(`/commissions${suffix}`),
+  );
+}
+
+export async function reverseF5Commission(
+  commissionId: string,
+  refundRef: string,
+  reason: string,
+  operator: string,
+) {
+  return f1Request<Record<string, unknown>>(
+    `/commissions/${encodeURIComponent(commissionId)}/reverse`,
+    {
+      method: "POST",
+      body: JSON.stringify({ refundRef, reason, operator }),
+      idempotencyPrefix: `f5-reverse-${commissionId}`,
+    },
+  );
+}
+
+export async function reissueF5Commissions(
+  commissionIds: string[],
+  reason: string,
+  operator: string,
+) {
+  return f1Request<Record<string, unknown>>("/commissions/reissue", {
+    method: "POST",
+    body: JSON.stringify({ commissionIds, reason, operator }),
+    idempotencyPrefix: `f5-reissue-${commissionIds.join("-")}`,
+  });
+}
+
+export async function suspendF5UserCommissions(
+  userId: number,
+  kinds: string[],
+  suspended: boolean,
+  reason: string,
+  operator: string,
+) {
+  return f1Request<Record<string, unknown>>(`/commissions/users/${userId}/suspend`, {
+    method: "POST",
+    body: JSON.stringify({ kinds, suspended, reason, operator }),
+    idempotencyPrefix: `f5-suspend-${userId}-${suspended}`,
+  });
+}
+
+export async function updateF5AnomalyConfig(
+  commissionAnomalySigma: number,
+  layerRatioAnomalyPct: number,
+  reason: string,
+  operator: string,
+) {
+  return f1Request<Record<string, unknown>>("/commissions/anomaly-config", {
+    method: "PUT",
+    body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
+    idempotencyPrefix: "f5-anomaly-config",
+  });
 }
 
 export async function updateFTeamConfig(key: string, value: string, reason: string, operator: string) {
@@ -1136,6 +1492,27 @@ export async function updateF3TeamConfig(key: string, value: string, reason: str
     idempotencyPrefix: `f3-config-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
   });
   return fetchF3BinaryOverview();
+}
+
+export async function executeF3Settlement(ownerUserId: number, settlementDate: string, reason: string) {
+  const data = await f1Request<Record<string, unknown>>("/binary/settlements", {
+    method: "POST",
+    body: JSON.stringify({ ownerUserId, settlementDate, reason }),
+    idempotencyPrefix: `f3-settlement-${ownerUserId}-${settlementDate}`,
+  });
+  return {
+    ownerUserId: toNumber(data.ownerUserId),
+    settlementDate: asText(data.settlementDate, settlementDate),
+    status: asText(data.status, ""),
+    reason: asText(data.reason, ""),
+    leftVolume: toNumber(data.leftVolume),
+    rightVolume: toNumber(data.rightVolume),
+    matchedVolume: toNumber(data.matchedVolume),
+    amountUsdt: toNumber(data.amountUsdt),
+    dailyCapUsdt: toNumber(data.dailyCapUsdt),
+    commissionEventId: data.commissionEventId == null ? null : toNumber(data.commissionEventId),
+    replayed: toBoolean(data.replayed),
+  } satisfies F3SettlementExecution;
 }
 
 export async function updateF4TeamConfig(key: string, value: string, reason: string, operator: string) {

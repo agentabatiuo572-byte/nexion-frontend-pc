@@ -80,7 +80,7 @@ test("L3 reads the canonical treasury snapshot, liabilities and seven-day maturi
   assert.equal(readL3FinanceSnapshot({ ledgerLive: { totalBills: 1 } }), null);
 });
 
-test("L3 degraded view and export avoid fake periods, technical event names and unsupported detail export", async () => {
+test("L3 degraded view and export avoid fake periods and expose only governed masked detail", async () => {
   const source = await readFile(
     new URL("../app/components/domain-views/l-tabs/l3-finance.tsx", import.meta.url),
     "utf8",
@@ -97,11 +97,18 @@ test("L3 degraded view and export avoid fake periods, technical event names and 
   assert.match(source, /readL3LiveFacts/);
   assert.match(source, /disabled=\{exporting \|\| !ctx\.canExport/);
   assert.match(source, /if \(exportingRef\.current\) return/);
+  assert.match(source, /bi_l3_export_detail|canExportFinanceDetail/);
+  assert.match(source, /申请导出脱敏资金明细/);
+  assert.match(source, /maskPolicy: "MASKED"/);
+  assert.match(source, /piiLevel: "HIGH_PII"/);
+  assert.match(source, /reasonMin: 8/);
+  assert.match(source, /reasonMax: 200/);
   assert.match(client, /网络连接已中断，未收到任务创建成功确认/);
   assert.match(client, /同一请求会自动防重/);
   assert.doesNotMatch(source, /2026-05|48,210|admin\.report_exported/);
   assert.doesNotMatch(fallback, /withdraw\.|confirmed\s*[÷→]|nx_|\bPII\b/);
   assert.match(fallback, /不展示推算值/);
+  assert.match(fallback, /字段白名单、行数上限、L5 审批与限时下载令牌/);
 });
 
 test("L3 reuses treasury no-due semantics instead of presenting the 999 sentinel as an exact day count", async () => {

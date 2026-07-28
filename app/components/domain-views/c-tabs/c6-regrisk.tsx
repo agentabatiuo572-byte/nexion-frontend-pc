@@ -5,7 +5,7 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
  * C6 注册/登录风控配置。
  * 数据源为后端 /registration-risk/overview；调参写 /registration-risk/params/{paramKey}。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -15,6 +15,7 @@ import {
   type UserRegistrationRiskK1Guard,
   type UserRegistrationRiskOverview,
   type UserRegistrationRiskParam,
+  UsersOutcomeUnknownError,
 } from "@/lib/admin/user360-client";
 import type { CCtx } from "./types";
 
@@ -45,6 +46,13 @@ function errorMessage(error: unknown) {
 
 function stripTimesUnit(value: unknown) {
   return text(value, "3 次").replace(/\s*次\s*$/, "");
+}
+
+function newCommandKey(prefix: string) {
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${suffix}`;
 }
 
 function numericParts(value: unknown) {
@@ -98,6 +106,7 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pendingCommandKeys = useRef(new Map<string, string>());
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -119,15 +128,29 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     void loadData();
   }, [loadData]);
 
-  const perform = useCallback(async (work: () => Promise<string>, fallback: string) => {
+  const perform = useCallback(async (
+    fingerprint: string,
+    work: (commandKey: string) => Promise<string>,
+    fallback: string,
+  ) => {
     setBusy(true);
+    const commandKey = pendingCommandKeys.current.get(fingerprint) ?? newCommandKey("c6-command");
+    pendingCommandKeys.current.set(fingerprint, commandKey);
+    let writeReturned = false;
     try {
-      const message = await work();
+      const message = await work(commandKey);
+      writeReturned = true;
       const refreshed = await loadData(true);
-      if (!refreshed) return false;
+      if (!refreshed) {
+        throw new Error("操作可能已生效，但结果回读失败；请刷新核对，重试将继续使用同一请求号");
+      }
+      pendingCommandKeys.current.delete(fingerprint);
       toast(message || fallback);
       return true;
     } catch (err) {
+      if (!writeReturned && !(err instanceof UsersOutcomeUnknownError)) {
+        pendingCommandKeys.current.delete(fingerprint);
+      }
       const message = errorMessage(err);
       setOverview(null);
       setError(`C6 操作失败 · ${message}`);
@@ -212,8 +235,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
                 return false;
               }
               const value = `${attempts} 次 / ${duration} ${durationUnit}`;
-              return perform(async () => {
-                await updateUserRegistrationRiskParam(key, value, reason, OPERATOR(), configVersion);
+              return perform(`lock|${key}|${value}|${configVersion}|${reason}`, async (commandKey) => {
+                await updateUserRegistrationRiskParam(key, value, reason, OPERATOR(), configVersion, commandKey);
                 return `${text(param.name)} 已更新为 ${value}`;
               }, "登录风控参数已更新");
             },
@@ -247,8 +270,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     reason: true,
     okLabel: "确认恢复",
     run: (reason) => {
-      return perform(async () => {
-        await updateUserRegistrationRiskParam("captchaOff", "", reason, OPERATOR(), configVersion);
+      return perform(`captcha-restore|${configVersion}|${reason}`, async (commandKey) => {
+        await updateUserRegistrationRiskParam("captchaOff", "", reason, OPERATOR(), configVersion, commandKey);
         return "人机验证已恢复";
       }, "人机验证已恢复");
     },
@@ -271,8 +294,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
         toast("必须选择有效恢复时限，未执行");
         return false;
       }
-      return perform(async () => {
-        await updateUserRegistrationRiskParam("captchaOff", value, reason, OPERATOR(), configVersion);
+      return perform(`captcha-disable|${value}|${configVersion}|${reason}`, async (commandKey) => {
+        await updateUserRegistrationRiskParam("captchaOff", value, reason, OPERATOR(), configVersion, commandKey);
         return `人机验证已临时关闭 · ${value}`;
       }, "人机验证已临时关闭");
     },

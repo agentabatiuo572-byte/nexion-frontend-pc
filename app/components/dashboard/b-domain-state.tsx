@@ -39,7 +39,7 @@ export function BDomainDataState({
             {isLoading ? `${title}加载中` : `${title}加载失败`}
           </div>
           <div className="mt-1 text-[12.5px]" style={{ color: "var(--v5-ink-3, var(--ink-3))" }}>
-            {isLoading ? "正在读取 /api/admin/treasury/b-domain。" : error || "B_DOMAIN_LOAD_FAILED"}
+            {isLoading ? "正在读取服务端权威数据。" : error || "当前数据暂不可用，请重试。"}
           </div>
           {!isLoading && onRetry && (
             <button

@@ -1,7 +1,7 @@
 "use client";
 
 import "./risk-radar.css";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BellRing, Gauge, Landmark, Radar, ShieldAlert, ShieldCheck } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
@@ -14,6 +14,7 @@ import {
   updateB5Subscription,
   updateB5Thresholds,
   useB5Radar,
+  B5OutcomeUnknownError,
 } from "@/lib/admin/b5-client";
 import { formatB5RiskLight, formatB5WithdrawalState } from "@/lib/admin/b5-display-labels";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -63,6 +64,10 @@ export default function RiskRadarPage() {
   const [subscription, setSubscription] = useState({ inApp: true, email: true, webhook: false, webhookUrl: "" });
   const [savedSubscription, setSavedSubscription] = useState(subscription);
   const [savingSubscription, setSavingSubscription] = useState(false);
+  const [subscriptionVersion, setSubscriptionVersion] = useState(0);
+  const thresholdCommandKey = useRef<string | null>(null);
+  const subscriptionCommandKey = useRef<string | null>(null);
+  const triageCommandKeys = useRef<Record<string, string>>({});
 
   useEffect(() => {
     if (!canSubscribe) return;
@@ -73,6 +78,7 @@ export default function RiskRadarPage() {
         const normalized = { inApp: next.inApp, email: next.email, webhook: next.webhook, webhookUrl: next.webhookUrl };
         setSubscription(normalized);
         setSavedSubscription(normalized);
+        setSubscriptionVersion(next.version);
       })
       .catch((cause) => {
         if (alive) setToast(cause instanceof Error ? cause.message : "B5_SUBSCRIPTION_FAILED");
@@ -146,11 +152,16 @@ export default function RiskRadarPage() {
     return dimension === "bankrun" || dimension === "withdraw-backlog" || dimension === "coverage";
   };
   const triage = async (dimension: keyof typeof TRIAGE) => {
+    const commandKey = triageCommandKeys.current[dimension]
+      ?? `b5-triage-${crypto.randomUUID()}`;
+    triageCommandKeys.current[dimension] = commandKey;
     try {
       const target = TRIAGE[dimension];
-      await recordB5Triage(dimension, target, operator);
+      await recordB5Triage(dimension, target, operator, commandKey);
+      delete triageCommandKeys.current[dimension];
       router.push(target);
     } catch (cause) {
+      if (!(cause instanceof B5OutcomeUnknownError)) delete triageCommandKeys.current[dimension];
       setToast(cause instanceof Error ? cause.message : "分诊失败");
     }
   };
@@ -166,12 +177,18 @@ export default function RiskRadarPage() {
     if (!thresholdValid || !reasonValid || !preview) return;
     setSavingThreshold(true);
     setPreviewError("");
+    const commandKey = thresholdCommandKey.current ?? `b5-threshold-${crypto.randomUUID()}`;
+    thresholdCommandKey.current = commandKey;
     try {
-      const next = await updateB5Thresholds(yellowPct, redPct, data.bankrun.version, reason.trim(), operator);
+      const next = await updateB5Thresholds(
+        yellowPct, redPct, data.bankrun.version, reason.trim(), operator, commandKey,
+      );
+      thresholdCommandKey.current = null;
       radar.setData(next);
       setThresholdOpen(false);
       setToast("挤兑阈值已更新 · 已记 A2 审计");
     } catch (cause) {
+      if (!(cause instanceof B5OutcomeUnknownError)) thresholdCommandKey.current = null;
       setPreviewError(cause instanceof Error ? cause.message : "B5_THRESHOLD_FAILED");
     } finally {
       setSavingThreshold(false);
@@ -180,13 +197,18 @@ export default function RiskRadarPage() {
   const saveSubscription = async () => {
     if (!subscriptionChanged || !subscriptionValid) return;
     setSavingSubscription(true);
+    const commandKey = subscriptionCommandKey.current ?? `b5-subscription-${crypto.randomUUID()}`;
+    subscriptionCommandKey.current = commandKey;
     try {
-      const saved = await updateB5Subscription(subscription, operator);
+      const saved = await updateB5Subscription(subscription, subscriptionVersion, operator, commandKey);
+      subscriptionCommandKey.current = null;
       const normalized = { inApp: saved.inApp, email: saved.email, webhook: saved.webhook, webhookUrl: saved.webhookUrl };
       setSubscription(normalized);
       setSavedSubscription(normalized);
+      setSubscriptionVersion(saved.version);
       setToast("告警订阅已保存 · 已记 A2 审计");
     } catch (cause) {
+      if (!(cause instanceof B5OutcomeUnknownError)) subscriptionCommandKey.current = null;
       setToast(cause instanceof Error ? cause.message : "B5_SUBSCRIPTION_FAILED");
     } finally {
       setSavingSubscription(false);
@@ -208,6 +230,7 @@ export default function RiskRadarPage() {
         <span>更新于 {new Date(data.generatedAt).toLocaleString()}</span>
         <span>e(t) 固定红线 0.7（70%）</span>
       </div>
+      {radar.streamWarning && <div className="b5-error" role="status">{radar.streamWarning}</div>}
 
       <div className="b5-dimensions">
         <section className={`b5-dimension ${data.bankrun.light}`}>

@@ -24,6 +24,8 @@ test("B2 owns a strict client for the D3 canonical reserve, liability, maturity 
   }
   assert.match(client, /B2_RESPONSE_INVALID/);
   assert.match(client, /B2_LIABILITY_KEYS/);
+  assert.match(client, /unverified_deposit/);
+  assert.match(page, /B2_LIABILITY_KEYS\.length/);
   assert.match(client, /liabilities\.invariants/);
   assert.match(client, /maturity\.cumulativeUsdt/);
 });
@@ -36,11 +38,11 @@ test("B2 page uses its own authoritative client and clears stale financial facts
   assert.match(page, /重新加载/);
 });
 
-test("B2 exposes the locked 7/30 day forecast, eight-source liability detail and D3 deep link", () => {
+test("B2 exposes the locked 7/30 day forecast, nine-source liability detail and D3 deep link", () => {
   for (const copy of [
     "7 天",
     "30 天",
-    "应付负债 · 8 类科目",
+    "B2_LIABILITY_KEYS.length",
     "事实来源",
     "提现",
     "利息",

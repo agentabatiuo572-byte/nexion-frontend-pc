@@ -31,7 +31,6 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
   const ladderCuts = [1, 2, 3, 4].map((i) => pE(`E.tradein.ladder.cut${i}`));
   const ladderCredits = [1, 2, 3, 4, 5].map((i) => pE(`E.tradein.ladder.credit${i}`));
   const requireHigher = pE("E.tradein.requireHigherPrice");
-  const promoMult = pE("E.tradein.promoMult");
   const exemptCount = ["phone", "cloud-share", "pc-gpu", "stellarbox-s1", "stellarbox-pro", "stellarbox-pro-v2", "stellarrack-p1", "stellarrack-p2"]
     .filter((kind) => pE(`E.device.capacity.applyTo.${kind}`) === "免递减").length;
 
@@ -47,7 +46,6 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
     { zh: "阶梯分档界点", code: "ladder.cut1–4", cur: `${ladderCuts.join("/")}%`, up: "界点后移 → 高抵扣档覆盖更久,升级激励更持久(放大资金流出)", down: "界点前移 → 抵扣更快滑向低档,升级紧迫感更强" },
     { zh: "各档抵扣率", code: "ladder.credit1–5", cur: `${ladderCredits.join("/")}%`, up: "任一档上调 → 置换更划算、渗透率升,但新机净收款降(放大资金流出)", down: "下调 → 净收款高,置换吸引力下降", hot: true },
     { zh: "仅限升级更高价设备", code: "requireHigherPrice", cur: requireHigher, up: "开 → 抵扣只服务升级,每笔置换平台净收新款(默认)", down: "关 → 允许平换,抵扣可能逼近应付款,须先核 B1 覆盖率" },
-    { zh: "置换活动倍率", code: "promoMult", cur: `${promoMult}×`, up: "活动加成更高 → 置换冲动更强(放大资金流出)", down: "加成回落 → 置换回归常态" },
   ];
 
   // 换机 术语中英对照(呼应右栏「置换配置」中文化)。
@@ -58,9 +56,6 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
     { code: "requireHigherPrice", zh: "仅限升级更高价设备", note: "置换目标必须严格高于本机实付价(抵扣只服务升级)" },
     { code: "maxDevicesPerOrder", zh: "单笔最多抵扣台数", note: "一笔升级订单最多可用几台旧机抵扣" },
     { code: "eligibility", zh: "置换资格门槛", note: "谁可发起置换(持有等级门槛)" },
-    { code: "promoMult", zh: "置换活动倍率", note: "置换活动的加成倍率,改后对新报价生效" },
-    { code: "promo.* (5 参)", zh: "置换弹窗节奏", note: "弹窗冷却天 / 每会话上限 / 延迟秒 / 设备最低龄天 / 入口路由(只控推送节奏,不限制用户随时主动置换)" },
-    { code: "inventory.softMax", zh: "库存软上限告警", note: "回收旧机库存软上限,超过即告警(0 = 禁用)" },
   ];
 
   return (
@@ -100,10 +95,10 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
         <Sec n="3" title="怎么调整一个参数(单值 / 多字段 · 月份在哪改)">
           <ul className="e3man-ul">
             <li>点该行右侧 <b>「调整」</b> → 弹「<AutoGloss>操作确认</AutoGloss>」→ 填<b>目标新值</b> + <b>操作理由(≥8 字)</b> → 确认即生效并写入 <AutoGloss>A2 审计</AutoGloss>。</li>
-            <li><b>单值 / 多字段</b>:单个标量的参数(各段产能变化 / 补贴天数 / 倍率…)弹<b>单值输入</b>;<b>一组相关的多个值</b>——产能分段周期、任务锁定阈、参与任务递减、阶梯界点 / 抵扣率或置换弹窗节奏——弹<b>多字段输入</b>,以一张 A2 审批单原子校验并整组写入,不会留下半套配置。</li>
+            <li><b>单值 / 多字段</b>:单个标量的参数(各段产能变化 / 补贴天数…)弹<b>单值输入</b>;<b>一组相关的多个值</b>——产能分段周期、任务锁定阈、参与任务递减、阶梯界点 / 抵扣率——弹<b>多字段输入</b>,以一张 A2 审批单原子校验并整组写入,不会留下半套配置。</li>
             <li><b>月份怎么改</b>:三段的起止<b>月份在「产能分段周期」一行一次调齐</b> —— <code>stageEarlyEnd / stageMidEnd / cycleMonths</code> 三字段(当前 段1末 m{s1} · 段2末 m{s2} · 视窗 {cyc} 月)。改后各段范围与曲线<b>自动重算</b>(须 段1末 &lt; 段2末 &lt; 视窗月数);各段产能行只改每月变化幅度%。
             </li>
-            <li>带 <b>⚡</b> 的「调整」是<AutoGloss>放大流出</AutoGloss>动作(段3 深降 / 各档抵扣率 / 置换活动倍率),确认前会先校验 <b>B1 备付金<AutoGloss>覆盖率</AutoGloss></b>,低于<AutoGloss>红线</AutoGloss>会被拒绝。</li>
+            <li>带 <b>⚡</b> 的「调整」是<AutoGloss>放大流出</AutoGloss>动作(段3 深降 / 各档抵扣率),确认前会先校验 <b>B1 备付金<AutoGloss>覆盖率</AutoGloss></b>,低于<AutoGloss>红线</AutoGloss>会被拒绝。</li>
           </ul>
         </Sec>
 

@@ -610,6 +610,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     if (p.identity.type === "advisor" && p.ctaHref && p.ctaHref !== "—" && p.ctaHref !== "") opening.ctaHref = p.ctaHref;
     const newConvo: SessionConvo = {
       id: cid,
+      version: 0,
       type: p.identity.type,
       agentName: p.identity.name,
       roleKey: p.identity.type === "advisor" ? "conversations.roleAdvisor" : "conversations.roleSupport",
@@ -657,6 +658,8 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
           title: `由会话 ${convo.id} 转入 · ${convo.profile?.nickname ?? convo.customer ?? convo.agentName}`,
           assignedAdminId: supportAgents.find((agent) => agent.name === convo.owner)?.adminId,
           assignedAdminName: supportAgents.some((agent) => agent.name === convo.owner) ? convo.owner : "Unassigned",
+          expectedStatus: convo.status,
+          expectedVersion: convo.version,
         }), { action: `会话转工单 ${convo.id} · admin.support_ticket_from_conversation`, reason, commandKey: `m3:convert-ticket:${convo.id}` }),
         `${convo.id} 已转工单`,
       ),
@@ -695,7 +698,10 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       return;
     }
     await commitM3Write(
-      () => setParam("I.session.archiveBatch.__create", JSON.stringify({ conversationNos: targets.map((c) => c.id) }), { action: `批量归档已解决会话 ${targets.length} 个 · admin.conversation_archive_batch`, reason: "批量归档已解决会话", commandKey: `m3:archive-batch:${targets.map((c) => c.id).sort().join(",")}` }),
+      () => setParam("I.session.archiveBatch.__create", JSON.stringify({
+        conversationNos: targets.map((c) => c.id),
+        expectedVersions: Object.fromEntries(targets.map((c) => [c.id, c.version])),
+      }), { action: `批量归档已解决会话 ${targets.length} 个 · admin.conversation_archive_batch`, reason: "批量归档已解决会话", commandKey: `m3:archive-batch:${targets.map((c) => c.id).sort().join(",")}` }),
       `已批量归档 ${targets.length} 个已解决会话`,
     );
   };

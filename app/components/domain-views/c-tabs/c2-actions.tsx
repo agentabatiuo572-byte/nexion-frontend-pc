@@ -535,9 +535,15 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     },
   });
 
-  const logoutAll = (account: User360Profile) => openActionConfirm({
+  const logoutAll = (account: User360Profile) => {
+    const activeCount = sessionCounts.get(accountId(account)) ?? 0;
+    if (activeCount <= 0) {
+      toast("该账户没有活跃会话，无需强制登出");
+      return;
+    }
+    openActionConfirm({
     action: `强制登出 · ${displayAccount(account)}`,
-    detail: `确认后立即吊销当前 ${sessionCounts.get(accountId(account)) ?? 0} 个活跃会话；这是止血动作，财务/风控/客服/超管均直接执行，重复提交同一幂等键不会二次执行。`,
+    detail: `确认后立即吊销当前 ${activeCount} 个活跃会话；这是止血动作，财务/风控/客服/超管均直接执行，重复提交同一幂等键不会二次执行。`,
     amplifies: false,
     completionCopy: "确认后立即执行，并写必达审计与事件。",
     reasonMin: 8,
@@ -550,7 +556,8 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
         "会话已吊销",
       );
     },
-  });
+    });
+  };
 
   const startImp = () => openActionConfirm({
     action: "发起只读模拟登录",
@@ -750,7 +757,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                         {status === "ACTIVE" && canFreeze && <button disabled={busy} className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); freeze(account); }}>冻结</button>}
                         {status === "FROZEN" && canUnfreeze && <button disabled={busy} className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); unfreeze(account); }}>恢复</button>}
-                        {canLogout && <button disabled={busy} className="l-btn sm" style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
+                        {canLogout && <button disabled={busy || (sessionCounts.get(accountId(account)) ?? 0) <= 0} className="l-btn sm" style={{ marginLeft: 6 }} onClick={(e) => { e.stopPropagation(); logoutAll(account); }}>强制登出</button>}
                         {!canFreeze && !canUnfreeze && !canLogout && <span className="tiny">只读</span>}
                       </td>
                     </tr>
@@ -914,7 +921,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div className="row wrap" style={{ gap: 8 }}>
               {status === "ACTIVE" && canFreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" onClick={() => freeze(selectedAccount)}>冻结</button>}
               {status === "FROZEN" && canUnfreeze && <button disabled={busy || !!accountContextError} className="l-btn sm mc" onClick={() => unfreeze(selectedAccount)}>恢复</button>}
-              {canLogout && <button disabled={busy || !!accountContextError} className="l-btn sm" onClick={() => logoutAll(selectedAccount)}>强制登出</button>}
+              {canLogout && <button disabled={busy || !!accountContextError || (accountContext?.account && accountId(accountContext.account) === accountId(selectedAccount) ? asNumber(accountContext.activeSessions) : accountSessions.filter(activeSession).length) <= 0} className="l-btn sm" onClick={() => logoutAll(selectedAccount)}>强制登出</button>}
             </div>
           </Drawer>
         );

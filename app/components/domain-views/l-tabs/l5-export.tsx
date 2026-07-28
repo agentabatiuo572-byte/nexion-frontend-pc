@@ -178,6 +178,18 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     await ctx.reloadBi?.();
     toast(`${t.id} 已重新发起 · 后端状态已刷新${t.pii ? " · 含敏感重走操作确认" : ""}`);
   };
+  const requestApproveTask = (t: LExportTask) => ctx.openActionConfirm({
+    action: "审批脱敏资金明细",
+    detail: <>任务 <span className="mono">{t.id}</span> 的创建时快照将保持脱敏；审批不会解密任何字段。通过后任务进入可下载状态，后续仍须签发 24 小时令牌并写入下载审计。</>,
+    reasonMin: 8,
+    reasonMax: 200,
+    completionCopy: "通过后可签发限时下载令牌",
+    run: async (reason) => {
+      await ctx.biActions?.reportAction(t.id, "approve", reason, true);
+      await ctx.reloadBi?.();
+      toast(`${t.id} 脱敏明细审批通过 · 可签发 24 小时下载令牌`);
+    },
+  });
   const downloadTask = async (t: LExportTask) => {
     const file = await ctx.biActions?.downloadReport(t.id);
     if (file) downloadBlob(file.blob, file.fileName);
@@ -317,7 +329,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                       {!t.supported && <span className="bdg warn">当前版本已关闭此历史类型</span>}
                       {t.supported && acts.length === 0 && (t.snapshotAvailable || !["READY", "EXPIRED", "FAILED"].includes(effSt(t))) && <span className="mono" style={{ color: "var(--ink-4)" }}>—</span>}
                       {t.supported && ["READY", "EXPIRED", "FAILED"].includes(effSt(t)) && !t.snapshotAvailable && <span className="bdg warn">历史无快照不可下载</span>}
-                      {acts.includes("approve") && <span className="bdg warn">历史敏感任务已冻结</span>}
+                      {acts.includes("approve") && !ctx.canApproveExportTasks && <span className="bdg dim">无 L5 敏感任务审批权限</span>}
+                      {acts.includes("approve") && ctx.canApproveExportTasks && <button className="l-btn sm" onClick={() => requestApproveTask(t)}>审批脱敏明细</button>}
                       {(acts.includes("download") || acts.includes("retry")) && !canAccessTask && <span className="bdg dim">无此报表导出权限</span>}
                       {acts.includes("download") && canAccessTask && <button className="l-btn sm" onClick={() => { void downloadTask(t).catch((error) => toast(error instanceof Error ? error.message : "下载失败")); }}>下载</button>}
                       {acts.includes("retry") && canAccessTask && <button className="l-btn sm" onClick={() => { void retryTask(t).catch((error) => toast(error instanceof Error ? error.message : "重新发起失败")); }}>重新发起</button>}

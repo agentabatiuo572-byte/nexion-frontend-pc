@@ -1,5 +1,6 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { assertL3FinanceContract } from "@/lib/admin/l3-finance-contract";
 
 type ApiResult<T> = {
   code?: number;
@@ -71,6 +72,10 @@ export type LReportCreateInput = {
   maskPolicy?: string;
   recipient?: string;
   ticket?: string;
+  cohort?: string;
+  phase?: string;
+  locale?: string;
+  ref?: string;
 };
 
 export type LRegulatoryReportInput = {
@@ -335,6 +340,64 @@ export type L4OperationsQuery = {
   to?: string;
 };
 
+export type L2FunnelQuery = {
+  stage?: "auth.register_completed" | "kyc.express_verified" | "checkout.completed" | "wallet.reinvest" | "withdraw.submitted";
+  cohort?: string;
+  phase?: "" | "P1" | "P2" | "P3" | "P4" | "P5" | "P6";
+  locale?: string;
+  ref?: string;
+};
+
+function l2FunnelQuery(input: L2FunnelQuery = {}) {
+  const query = new URLSearchParams();
+  if (input.stage) query.set("stage", input.stage);
+  if (input.cohort?.trim()) query.set("cohort", input.cohort.trim());
+  if (input.phase) query.set("phase", input.phase);
+  if (input.locale?.trim()) query.set("locale", input.locale.trim());
+  if (input.ref?.trim()) query.set("ref", input.ref.trim());
+  return query;
+}
+
+export async function fetchL2FunnelDrilldown(input: L2FunnelQuery = {}): Promise<Record<string, unknown>> {
+  const query = l2FunnelQuery(input);
+  return apiRequest<Record<string, unknown>>(`/funnel/drilldown?${query.toString()}`);
+}
+
+export async function fetchL2RetentionMatrix(
+  input: L2FunnelQuery,
+  windows: readonly string[],
+): Promise<Record<string, unknown>> {
+  const query = new URLSearchParams({ window: windows.join(",") });
+  if (input.cohort?.trim()) query.set("cohortRange", input.cohort.trim());
+  if (input.phase) query.set("phase", input.phase);
+  if (input.locale?.trim()) query.set("locale", input.locale.trim());
+  if (input.ref?.trim()) query.set("ref", input.ref.trim());
+  return apiRequest<Record<string, unknown>>(`/retention/cohort-matrix?${query.toString()}`);
+}
+
+export async function fetchL2RetentionCurve(
+  cohort: string,
+  input: L2FunnelQuery = {},
+): Promise<Record<string, unknown>> {
+  const query = new URLSearchParams({ cohort });
+  if (input.phase) query.set("phase", input.phase);
+  if (input.locale?.trim()) query.set("locale", input.locale.trim());
+  if (input.ref?.trim()) query.set("ref", input.ref.trim());
+  return apiRequest<Record<string, unknown>>(`/retention/curve?${query.toString()}`);
+}
+
+export async function fetchL2Cross(
+  metric: "cvr" | "retention" | "trial",
+  input: L2FunnelQuery = {},
+): Promise<Record<string, unknown>> {
+  const query = new URLSearchParams({ dim1: "ref", dim2: "locale", metric });
+  if (input.cohort?.trim()) query.set("cohort", input.cohort.trim());
+  if (input.phase) query.set("phase", input.phase);
+  if (input.locale?.trim()) query.set("locale", input.locale.trim());
+  if (input.ref?.trim()) query.set("ref", input.ref.trim());
+  return apiRequest<Record<string, unknown>>(`/funnel/cross?${query.toString()}`);
+}
+
 const MODULE_OVERVIEW_PATH: Record<LModuleCode, string> = {
   L1: "/kpi?window=7d",
   L2: "/funnel/overview",
@@ -402,7 +465,9 @@ export async function downloadL6Behavior(input: L6BehaviorQuery = {}) {
 }
 
 export type L1KpiQuery = {
-  window?: "1d" | "7d" | "30d";
+  window?: "1d" | "7d" | "30d" | "custom";
+  from?: string;
+  to?: string;
   cohort?: string;
   phase?: string;
   locale?: string;
@@ -411,6 +476,10 @@ export type L1KpiQuery = {
 
 function l1Query(input: L1KpiQuery = {}) {
   const query = new URLSearchParams({ window: input.window || "7d" });
+  if (input.window === "custom" && input.from?.trim() && input.to?.trim()) {
+    query.set("from", input.from.trim());
+    query.set("to", input.to.trim());
+  }
   if (input.cohort?.trim()) query.set("cohort", input.cohort.trim());
   if (input.phase?.trim()) query.set("phase", input.phase.trim());
   if (input.locale?.trim()) query.set("locale", input.locale.trim());
@@ -471,13 +540,16 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
     treasuryRequest<unknown>("/maturity-forecast?window=7d"),
     treasuryRequest<unknown>("/maturity-forecast?window=30d"),
   ]);
-  const overview = rec(overviewRaw);
-  const revenue = rec(revenueRaw);
-  const redemption = rec(redemptionRaw);
-  const coverage = rec(coverageRaw);
-  const liabilities = rec(liabilitiesRaw);
-  const maturity7 = rec(maturity7Raw);
-  const maturity30 = rec(maturity30Raw);
+  const checked = assertL3FinanceContract({
+    overview: rec(overviewRaw),
+    revenue: rec(revenueRaw),
+    redemption: rec(redemptionRaw),
+    coverage: rec(coverageRaw),
+    liabilities: rec(liabilitiesRaw),
+    maturity7: rec(maturity7Raw),
+    maturity30: rec(maturity30Raw),
+  });
+  const { overview, revenue, redemption, coverage, liabilities, maturity7, maturity30 } = checked;
   const period = rec(revenue.period);
   const revenueColors = ["var(--cyan)", "var(--brand)", "var(--warning)", "var(--success)"];
   const liabilityColors = ["var(--cyan)", "var(--brand)", "var(--warning)", "var(--success)", "#a78bfa", "#fb7185", "#60a5fa", "#94a3b8"];

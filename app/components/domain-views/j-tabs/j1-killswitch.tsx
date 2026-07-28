@@ -176,9 +176,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     openActionConfirm({
       action: `应急参数调整 · ${row.k}`,
       detail: <><b>{row.k}</b> · {row.d}。自动关停即时生效，补录只补全审计信息，不会自动恢复业务闸。</>,
-      edit: { kind: row.kind, current: cur, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1 },
+      edit: { kind: row.kind, current: cur, unit: row.unit, min: row.id === "autoConfirmMins" ? 10 : undefined, max: row.id === "autoConfirmMins" ? 120 : undefined, step: 1, disallowCurrent: true },
       run: (reason, newValue) => {
-        return runBackend(actions.updateJ1Sla(row.id, newValue ?? cur, reason, commandKey), `${row.k} 已调整`);
+        return runBackend(actions.updateJ1Sla(row.id, newValue ?? cur, cur, reason, commandKey), `${row.k} 已调整`);
       },
     });
   };
@@ -189,9 +189,9 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     openActionConfirm({
       action: `自动触发规则调整 · ${r.nm}`,
       detail: <><b>{r.nm}</b>当前阈值为 {cur} {r.unit}。保存后服务器定时读取真实业务指标；超过阈值时自动关停对应业务闸并写入审计记录。</>,
-      edit: { kind: "number", current: cur, unit: r.unit, min: 1, max: 1_000_000_000, step: 1 },
+      edit: { kind: "number", current: cur, unit: r.unit, min: 1, max: 1_000_000_000, step: 1, disallowCurrent: true },
       run: (reason, newValue) => {
-        return runBackend(actions.updateJ1AutoRule(r.id, newValue ?? cur, reason, commandKey), `${r.nm} 已确认生效`);
+        return runBackend(actions.updateJ1AutoRule(r.id, newValue ?? cur, cur, reason, commandKey), `${r.nm} 已确认生效`);
       },
     });
   };

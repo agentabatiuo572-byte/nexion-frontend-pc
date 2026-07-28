@@ -603,7 +603,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">拦截阈值</span>
-          <span className="sub">· K1 参数单源保存；各入口执行链在跨模块验收补齐</span>
+          <span className="sub">· K1 参数单源保存；注册 IP、设备指纹、支付工具与邀请奖励均按服务端事实裁决</span>
           <div className="r"><span className="kcode electric">改后下一次校验生效</span></div>
         </div>
         <div className="l-b">

@@ -10,6 +10,7 @@ import { CodeTag, Modal } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
 import { createJEmergencyCommandKey, type J4PlaybookCreateInput, type Playbook, type SopExecution } from "@/lib/admin/j-client";
+import { createA2OperationProposal } from "@/lib/admin/a2-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /* 域 badge → 色族(danger=J 域 / warning=D2 / brand=I5 / cyan=I3,I2 / brand-2=C2,K1 / success=B1) */
@@ -61,7 +62,7 @@ function executionModeLabel(mode: string) {
 export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency } = ctx;
   const canWrite = useAdminAuth((state) => state.session?.authorities.includes("emergency_j4_write") ?? false);
-  const contractReady = emergency.sop?.contractVersion === "J4_REAL_EXECUTION_V3";
+  const contractReady = emergency.sop?.contractVersion === "J4_REAL_EXECUTION_V4";
   const runBackend = async (task: Promise<void>, ok: string) => {
     try {
       await task;
@@ -105,9 +106,12 @@ export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
 
 export function J4Sop({ ctx }: { ctx: JCtx }) {
   const { toast, openActionConfirm, actions, emergency, contentLoading } = ctx;
-  const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
+  const session = useAdminAuth((state) => state.session);
+  const authorities = session?.authorities ?? [];
   const canWrite = authorities.includes("emergency_j4_write");
   const canRun = authorities.includes("emergency_j4_playbook_execute");
+  const canPropose = authorities.includes("platform_a2_write")
+    || authorities.includes("platform_a2_proposal_create");
   const [scene, setScene] = useState("全部");
   const [traceExecution, setTraceExecution] = useState<SopExecution | null>(null);
   const sceneLocationReady = useRef(false);
@@ -131,10 +135,14 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     return <section className="pb-grid"><div className="pb-card"><div className="pb-top"><span className="pb-code">J4</span><div className="nm">暂无 SOP 数据</div></div></div></section>;
   }
   const PLAYBOOKS = data.playbooks;
-  const supportedActionKeys = new Set((data.actionOptions ?? []).map((option) => `${option.domain}:${option.ref ?? ""}`));
-  const isSupportedStep = (step: Playbook["seq"][number]) => supportedActionKeys.has(`${step.dom}:${step.ref ?? ""}`);
+  const isSupportedStep = (step: Playbook["seq"][number]) => (data.actionOptions ?? []).some((option) => {
+    if (option.domain !== step.dom || !option.ref || !step.ref) return false;
+    if (!option.ref.includes("{target}")) return option.ref === step.ref;
+    const [prefix] = option.ref.split("{target}");
+    return step.ref.startsWith(prefix) && step.ref.length > prefix.length;
+  });
   const unsupportedStepCount = (playbook: Playbook) => playbook.seq.filter((step) => !isSupportedStep(step)).length;
-  const contractReady = data.contractVersion === "J4_REAL_EXECUTION_V3";
+  const contractReady = data.contractVersion === "J4_REAL_EXECUTION_V4";
   const PB_SCENES = data.scenes;
   const EXECS = data.executions;
   const statNumber = (...keys: string[]) => {
@@ -232,7 +240,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         {isEmer
           ? <><b style={{ color: "var(--danger)" }}>应急轨</b> — 仅允许关停/暂停等止血方向，仍需填写原因并保留完整执行记录。</>
           : <><b>常规轨</b> — 按动作序列调用每个已接通的处置入口。</>}
-        <br />本次原因将作为触发上下文；提交后立即调用以下已接通动作
+        <br />本次原因将作为触发上下文；提交后先进入 A2 双人复核，批准时调用以下已接通动作
         <span style={{ display: "block", marginTop: 4 }}>
           <b>动作序列({p.seq.length} 步)</b>:
           {p.seq.map((s, i) => (
@@ -267,11 +275,34 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         ref: step.ref || "",
         confirmed: true as const,
       }));
-      return runBackend(actions.executeJ4Playbook(p.code, isEmer, reason, {
-        triggerBasis: businessValue?.triggerBasis ?? "",
-        triggerContext: businessValue?.triggerContext ?? "",
-        stepConfirmations,
-      }, commandKey), `${p.code} 已执行，逐步结果已写入追溯记录`);
+      const triggerBasis = businessValue?.triggerBasis ?? "";
+      const triggerContext = businessValue?.triggerContext ?? "";
+      return runBackend(createA2OperationProposal({
+        action: `执行应急剧本 · ${p.code}`,
+        obj: p.code,
+        beforeValue: "演练就绪",
+        afterValue: "批准后逐步执行",
+        operator: session?.operator ?? session?.username ?? "",
+        operatorRole: session?.role ?? "superadmin",
+        type: "sos",
+        amplifies: false,
+        sos: true,
+        roleGate: "双人复核",
+        reason,
+        sourceDomain: "J4",
+        command: {
+          domain: "J",
+          op: "j4_playbook_execute",
+          params: {
+            code: p.code,
+            emergency: isEmer,
+            triggerBasis,
+            triggerContext,
+            stepConfirmations,
+          },
+        },
+        target: { domain: "J", type: "playbook", id: p.code },
+      }, commandKey).then(() => undefined), `${p.code} 已提交 A2 双人复核；批准后才会逐步执行`);
     },
   });
   };
@@ -287,6 +318,30 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
       run: (reason) => {
         return runBackend(actions.rollbackJ4Playbook(exec.code, exec.executionId, reason, commandKey), `${exec.executionId} 已按执行快照完成回滚`);
       },
+    });
+  };
+
+  const cancelExecution = (exec: { executionId: string; code: string }) => {
+    const commandKey = createJEmergencyCommandKey();
+    openActionConfirm({
+      action: `取消执行 · ${exec.executionId}`,
+      detail: <>取消请求会在下一个步骤边界生效：已经完成的止血动作保持生效，尚未开始的步骤标记为跳过，整次执行以「部分完成」终止并保留审计。正在调用中的目标域动作不会被伪装成已取消。</>,
+      run: (reason) => runBackend(
+        actions.cancelJ4Playbook(exec.code, exec.executionId, reason, commandKey),
+        `${exec.executionId} 已登记取消请求，请刷新核对最终逐步状态`,
+      ),
+    });
+  };
+
+  const resumeExecution = (exec: { executionId: string; code: string }) => {
+    const commandKey = createJEmergencyCommandKey();
+    openActionConfirm({
+      action: `恢复核对 · ${exec.executionId}`,
+      detail: <>仅对超过恢复租约、仍停在待执行/执行中的记录生效。服务端只核对目标域持久化事实：已确认的动作记成功，未知结果记失败并终止剩余步骤；不会盲目重复跨域副作用。</>,
+      run: (reason) => runBackend(
+        actions.resumeJ4Playbook(exec.code, exec.executionId, reason, commandKey),
+        `${exec.executionId} 已完成恢复核对`,
+      ),
     });
   };
 
@@ -324,9 +379,10 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             <span className="ic b"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></span>
             <div><div className="t">当前可执行范围</div><div className="s">· <AutoGloss>只展示已经接通真实处置入口的动作</AutoGloss></div></div>
           </div>
-          <div className="sla-kv"><span className="k">J1</span><span className="v">提现 / Genesis 关停</span></div>
-          <div className="sla-kv"><span className="k">I3</span><span className="v">已排期通知活动下发</span></div>
-          <div className="sla-kv"><span className="k">其他领域</span><span className="v warn">接通前不可加入剧本</span></div>
+          <div className="sla-kv"><span className="k">J1 / D2</span><span className="v">提现 / Genesis 关停</span></div>
+          <div className="sla-kv"><span className="k">J2 / C2 / K1</span><span className="v">地域、用户与账户簇止血</span></div>
+          <div className="sla-kv"><span className="k">I3 / I5</span><span className="v">通知下发 / 披露发布</span></div>
+          <div className="sla-kv"><span className="k">执行审批</span><span className="v warn">A2 双人复核后执行</span></div>
           <div className="sla-kv"><span className="k">演练失败</span><span className="v">保持待演练，不可执行</span></div>
           <div className="sla-kv"><span className="k">步骤失败</span><span className="v danger">明确失败，不伪报成功</span></div>
         </section>
@@ -355,11 +411,18 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           const state = effDrillState(p);
           const legacyStepCount = unsupportedStepCount(p);
           const supportedSteps = p.seq.filter(isSupportedStep);
-          const hasTargetAuthorities = p.seq.every((step) => step.dom === "J1"
-            ? authorities.includes("emergency_j1_gate_kill")
-            : step.dom === "I3" ? authorities.includes("content_i3_write") : false);
-          const canExecute = contractReady && !contentLoading && canRun && legacyStepCount === 0 && state === "active" && p.executionReady === true && hasTargetAuthorities;
-          const executionHint = !contractReady ? "后端 J4 安全执行契约未就绪，请先升级后端" : contentLoading ? "正在重新读取" : legacyStepCount > 0 ? "历史剧本包含尚未接通的动作，请先编辑并替换后重新演练" : p.executionReady !== true || state !== "active" ? (p.readinessReason || "先完成演练") : !canRun ? "缺少 J4 执行权限" : !hasTargetAuthorities ? "缺少对应处置权限" : undefined;
+          const targetAuthority: Record<string, string> = {
+            J1: "emergency_j1_gate_kill",
+            J2: "emergency_j2_emergency_block",
+            C2: "user_c2_account_freeze",
+            K1: "risk_k1_cluster_freeze",
+            I3: "content_i3_write",
+            I5: "content_i5_disclosure_publish",
+          };
+          const hasTargetAuthorities = p.seq.every((step) => Boolean(targetAuthority[step.dom])
+            && authorities.includes(targetAuthority[step.dom]));
+          const canExecute = contractReady && !contentLoading && canRun && canPropose && legacyStepCount === 0 && state === "active" && p.executionReady === true && hasTargetAuthorities;
+          const executionHint = !contractReady ? "后端 J4 安全执行契约未就绪，请先升级后端" : contentLoading ? "正在重新读取" : legacyStepCount > 0 ? "历史剧本包含尚未接通的动作，请先编辑并替换后重新演练" : p.executionReady !== true || state !== "active" ? (p.readinessReason || "先完成演练") : !canRun ? "缺少 J4 执行权限" : !canPropose ? "缺少 A2 提案权限" : !hasTargetAuthorities ? "缺少对应处置权限" : undefined;
           return (
           <div key={p.code} className={"pb-card" + (p.emer ? " emer" : "")} role="article" aria-label={`${p.code} ${p.name}`} data-testid={`j4-playbook-${p.code}`}>
             <div className="pb-top">
@@ -400,8 +463,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
                 {canWrite && <button className="edit" disabled={!contractReady || contentLoading || !p.version} title={!contractReady || !p.version ? "服务端版本较旧，升级后才能安全编辑" : undefined} onClick={() => editPb(p)}>编辑</button>}
                 {canWrite && <button className="drill" disabled={!contractReady || contentLoading || legacyStepCount > 0} title={!contractReady ? "后端 J4 安全执行契约未就绪，请先升级后端" : legacyStepCount > 0 ? "历史剧本包含尚未接通的动作，请先编辑并替换" : undefined} onClick={() => drillPb(p)}>演练</button>}
                 {p.emer
-                  ? <button className="exec emer" disabled={!canExecute} title={executionHint} onClick={() => execPb(p, true)}>应急执行</button>
-                  : <button className="exec" disabled={!canExecute} title={executionHint} onClick={() => execPb(p, false)}>执行</button>}
+                  ? <button className="exec emer" disabled={!canExecute} title={executionHint} onClick={() => execPb(p, true)}>提交应急复核</button>
+                  : <button className="exec" disabled={!canExecute} title={executionHint} onClick={() => execPb(p, false)}>提交执行复核</button>}
               </div>
             </div>
           </div>
@@ -441,6 +504,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
               </div>
               <div className="c acts">
                  <button onClick={() => setTraceExecution(e)}>查看追溯</button>
+                {contractReady && canRun && Boolean(e.executionId) && e.mode !== "drill" && e.steps.some((step) => step === "pending" || step === "running") && (
+                  <>
+                    <button className="rollback" disabled={contentLoading} onClick={() => cancelExecution({ executionId: e.executionId!, code: e.code })}>取消</button>
+                    <button disabled={contentLoading} title="仅超过 2 分钟恢复租约的执行可核对" onClick={() => resumeExecution({ executionId: e.executionId!, code: e.code })}>恢复核对</button>
+                  </>
+                )}
                 {contractReady && canRun && authorities.includes("emergency_j1_gate_resume") && Boolean(e.executionId) && e.reversible && !e.steps.some((step) => step === "pending" || step === "running" || step === "recovering") && e.mode !== "drill" && e.rollbackStatus !== "ROLLED_BACK" && (
                   <button
                     className="rollback"
@@ -500,7 +569,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         </Modal>
       )}
 
-      <p className="f-foot"><b>页面只允许编排已经接通的动作</b>。演练只校验动作和通知活动，不改变生产状态；正式执行会调用对应入口并保存每步结果。任何未接通、未演练或恢复方向的动作都会被服务端拒绝，不会以“已完成”掩盖失败。</p>
+      <p className="f-foot"><b>页面只允许编排已经接通的动作</b>。演练只校验动作和通知活动，不改变生产状态；实战先进入 A2 双人复核，批准后再按顺序调用 J1/J2/C2/K1/I3/I5 真实入口并保存每步结果。J1 提现关停会直接阻断 D2 新提现，C2/K1 还会联动冻结相关 D2 待处理提现。任何未接通、未演练、并发失效或恢复方向的动作都会被服务端拒绝，不会以“已完成”掩盖失败。</p>
     </div>
   );
 }

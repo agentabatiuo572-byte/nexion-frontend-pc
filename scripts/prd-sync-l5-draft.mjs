@@ -22,11 +22,13 @@ if (apply && applyCheck) {
 }
 
 const adminRoot = process.cwd();
-const planRoot = path.resolve(adminRoot, "..");
-const prdRoot = path.join(planRoot, "PRD");
+const prdRoot = path.join(adminRoot, "docs", "PRD");
+const productPrdRoot = process.env.NEXION_PRODUCT_PRD_ROOT
+  ? path.resolve(process.env.NEXION_PRODUCT_PRD_ROOT)
+  : path.resolve(adminRoot, "..", "..", "nexion", "PRD文档");
 
 const targets = {
-  product: path.join(prdRoot, "Nexion_产品功能架构设计文档_v3.7.md"),
+  product: path.join(productPrdRoot, "Nexion_产品功能架构设计文档_v3.7.md"),
   opsDev: path.join(prdRoot, "Nexion_运营控制后台_开发落地规格.md"),
   opsV4: path.join(prdRoot, "Nexion_运营控制后台PRD_v4.md"),
   opsConfirm: path.join(prdRoot, "Nexion_运营后台_交互与确认机制改写SPEC.md"),

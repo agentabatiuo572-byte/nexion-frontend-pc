@@ -16,6 +16,26 @@ const commandCenter = readFileSync(new URL("../app/_console/page.tsx", import.me
 const bClient = readFileSync(new URL("../lib/admin/b-client.ts", import.meta.url), "utf8");
 const b5RiskRadar = readFileSync(new URL("../app/_console/overview/risk-radar/page.tsx", import.meta.url), "utf8");
 const syncChip = readFileSync(new URL("../app/components/shell/sync-chip.tsx", import.meta.url), "utf8");
+const backendKillSwitch = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/application/OpsKillSwitchService.java", import.meta.url),
+  "utf8",
+);
+const backendWithdrawal = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/finance/application/AppWithdrawalService.java", import.meta.url),
+  "utf8",
+);
+const backendTrial = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/growth/application/AppTrialLifecycleService.java", import.meta.url),
+  "utf8",
+);
+const appWithdrawalApi = readFileSync(
+  new URL("../../NX1.0/src/api/withdrawal-api.ts", import.meta.url),
+  "utf8",
+);
+const appTrialApi = readFileSync(
+  new URL("../../NX1.0/src/api/trial-api.ts", import.meta.url),
+  "utf8",
+);
 
 test("J1 executes kill, resume and batch kill through the immediate business API", () => {
   assert.match(component, /actions\.toggleJ1KillSwitch/);
@@ -109,6 +129,37 @@ test("J1 retries an uncertain command with the same idempotency key", () => {
   assert.match(client, /emergencyDisableJ1: \(keys, reason, operator, context, commandKey\)/);
   assert.match(client, /confirmJ1AutoTrigger: \(key, incidentId, decision, reason, commandKey\)/);
   assert.match(view, /catch \(error\)[\s\S]*?throw error/);
+});
+
+test("J1 configuration writes carry the visible baseline and reject no-op edits", () => {
+  assert.match(client, /updateJ1Sla:\s*\(paramKey,\s*value,\s*expectedValue,\s*reason,\s*commandKey\)/);
+  assert.match(client, /updateJ1AutoRule:\s*\(ruleId,\s*value,\s*expectedValue,\s*reason,\s*commandKey\)/);
+  assert.match(client, /withReason\(\{ value, expectedValue \}, reason\)/);
+  assert.match(component, /actions\.updateJ1Sla\(row\.id,\s*newValue \?\? cur,\s*cur,\s*reason,\s*commandKey\)/);
+  assert.match(component, /actions\.updateJ1AutoRule\(r\.id,\s*newValue \?\? cur,\s*cur,\s*reason,\s*commandKey\)/);
+  assert.match(component, /disallowCurrent:\s*true/);
+  assert.match(backendKillSwitch, /request\.expectedValue\(\)/);
+  assert.match(backendKillSwitch, /compareAndSetSetting/);
+  assert.match(backendKillSwitch, /J1_CONFIG_STALE_VERSION/);
+  assert.match(backendKillSwitch, /J1_CONFIG_NO_CHANGES/);
+});
+
+test("J1 classifies Genesis restore as an immediate B1 cashflow impact", () => {
+  assert.match(client, /genesis:\s*\{\s*coveragePrecheckRequired:\s*true,\s*coverageImpactCategory:\s*"immediate"\s*\}/);
+  assert.match(backendKillSwitch, /new GateSeed\("genesis"[\s\S]*?"immediate"/);
+});
+
+test("J1 withdraw and trial gates are enforced at real App command boundaries and propagated", () => {
+  assert.match(backendWithdrawal, /WITHDRAWAL_KILL_SWITCH_DISABLED/);
+  assert.match(backendWithdrawal, /submitOnce[\s\S]*?withdrawGateEnabled\(\)/);
+  assert.match(backendWithdrawal, /"withdrawalEnabled", withdrawalEnabled/);
+  assert.match(appWithdrawalApi, /withdrawalEnabled:\s*boolean/);
+  assert.match(appWithdrawalApi, /row\.gateSource !== "J1"/);
+  assert.match(backendTrial, /TRIAL_KILL_SWITCH_DISABLED/);
+  assert.match(backendTrial, /startOnce[\s\S]*?trialGateEnabled\(\)/);
+  assert.match(backendTrial, /result\.put\("trialGateEnabled", trialGateEnabled\)/);
+  assert.match(appTrialApi, /trialGateEnabled:\s*boolean/);
+  assert.match(appTrialApi, /source\.canStart && !source\.trialGateEnabled/);
 });
 
 test("J1 fails closed on refresh errors and keeps failed confirmations open", () => {

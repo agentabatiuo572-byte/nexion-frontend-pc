@@ -247,7 +247,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
     return (
       <section className="l-card">
         <div className="l-h"><span className="ttl">H2 数据加载失败</span></div>
-        <div className="l-b">{error ?? "UNKNOWN_ERROR"}</div>
+        <div className="l-b">
+          <div style={{ marginBottom: 12 }}>{error ?? "UNKNOWN_ERROR"}</div>
+          <button className="l-btn sm mc" onClick={() => void reload()}>重试</button>
+        </div>
       </section>
     );
   }
@@ -267,7 +270,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
         </div>
         <div className="f-stat cyan">
           <div className="k">抵扣上限</div>
-          <div className="v">${text(model.params.find((param) => param.key === "discountCapUSD")?.cur)}</div>
+          <div className="v">${text(model.params.find((param) => param.key === "trialOffsetCapUSD")?.cur)}</div>
           <div className="sub">Model A 抵扣由服务端重算</div>
         </div>
         <div className="f-stat danger">
@@ -359,14 +362,14 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                 <th>账户</th>
                 <th>状态</th>
                 <th className="num">影子累计</th>
-                <th>卡 token</th>
+                <th>试用业务号</th>
                 <th style={{ textAlign: "right" }}>强制介入</th>
               </tr>
             </thead>
             <tbody>
               {model.sessions.map((session) => {
                 const [label, tone] = nextStateLabel(states, session.state);
-                const terminal = ["cancelled", "redeemed"].includes(session.state);
+                const terminal = ["cancelled", "redeemed", "failed"].includes(session.state);
                 return (
                   <tr key={session.sid}>
                     <td className="mono" style={{ fontWeight: 600, color: "var(--ink)" }}>{session.sid}</td>

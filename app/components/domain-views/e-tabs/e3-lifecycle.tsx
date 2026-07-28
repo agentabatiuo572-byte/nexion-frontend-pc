@@ -58,13 +58,6 @@ const REQUIRED_E3_KEYS = [
   "E.tradein.requireHigherPrice",
   "E.tradein.maxDevicesPerOrder",
   "E.tradein.eligibility",
-  "E.tradein.promoMult",
-  "E.tradein.promo.cooldownDays",
-  "E.tradein.promo.maxPerSession",
-  "E.tradein.promo.delaySec",
-  "E.tradein.promo.minAgeDays",
-  "E.tradein.promo.routes",
-  "E.tradein.inventorySoftMax",
 ];
 
 // FEAT-DEV01: 参与任务递减(每 SKU 开关)· 值=参与递减/免递减 · 与 uniapp CAPACITY_EXEMPT_KINDS 镜像(canon 哨兵对账)
@@ -128,8 +121,7 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
   const numericBounds = (key: string): { min?: number; max?: number; step?: number } => {
     if (/capacity\.band\dDeltaPct$/.test(key)) return { min: -100, max: 100, step: 0.01 };
     if (/capacity\.floorPct$|ladder\.(cut|credit)\d$/.test(key)) return { min: 0, max: 100, step: 0.01 };
-    if (key === "E.tradein.promoMult") return { min: 0, max: 10, step: 0.01 };
-    if (/stageEarlyEnd|stageMidEnd|cycleMonths|maxDevicesPerOrder|promo\.maxPerSession/.test(key)) return { min: 1, max: 1000000, step: 1 };
+    if (/stageEarlyEnd|stageMidEnd|cycleMonths|maxDevicesPerOrder/.test(key)) return { min: 1, max: 1000000, step: 1 };
     return { min: 0, max: 1000000, step: 1 };
   };
   const adj = (label: string, key: string, unit: string, amplify: boolean, editKind: "number" | "text" | "select" = "number", detail?: string, options?: string[]) =>
@@ -264,20 +256,9 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <div className="pkv"><Lbl zh="仅限升级更高价设备" code="requireHigherPrice" desc="开=置换目标必须严格高于本机实付价(抵扣只服务升级,不做平换/降换)" /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.requireHigherPrice")}</span><Adj label="仅限升级更高价设备" k="E.tradein.requireHigherPrice" unit="" editKind="select" options={["开", "关"]} detail="仅限升级更高价设备 · 关闭后允许平换(抵扣可能逼近应付款,请先核 B1 覆盖率) · 改后对新置换请求生效" /></div>
           <div className="pkv"><Lbl zh="单笔最多抵扣台数" code="maxDevicesPerOrder" desc="一笔升级订单最多可用几台旧机抵扣" /><span className="v">{pE("E.tradein.maxDevicesPerOrder")} 台</span><Adj label="单笔最多抵扣台数" k="E.tradein.maxDevicesPerOrder" unit="台" detail="单笔最多抵扣台数 · 改后对新置换请求生效" /></div>
           <div className="pkv"><Lbl zh="置换资格门槛" code="eligibility" desc="谁可发起置换(持有等级门槛)· 运营可调" /><span className="v" style={{ fontSize: 13, fontFamily: "var(--font-v5)", fontWeight: 500 }}>{pE("E.tradein.eligibility")}</span><Adj label="置换资格门槛" k="E.tradein.eligibility" unit="" editKind="select" options={["全部用户", "L2+ 持有者", "L3+ 持有者", "L4+ 持有者", "L5+ 持有者", "L6+ 持有者"]} detail="置换资格门槛 · 谁可发起置换(持有等级)· 勾选目标等级 · 改后对新置换请求生效" /></div>
-          <div className="pkv"><Lbl zh="置换活动倍率" code="promoMult" desc="置换活动加成倍率 · 改后对新报价生效" /><span className="v">{pE("E.tradein.promoMult")}×</span><AdjMulti title="置换活动倍率" amplify detail="置换活动倍率 · 放大资金流出须操作确认 + B1 覆盖率 · 改后对新报价生效" fields={[
-            { key: "promoMult", paramKey: "E.tradein.promoMult", label: "促销乘数(×)", inputKind: "number", placeholder: "1.0", warnAbove: 1.45, warnText: "超过 1.45×:抵扣额可能触及目标价封顶(首档 75% × ≈1.47 即达最低升级价),且显著放大让利,确认前请核 B1 覆盖率" },
-          ]} /></div>
-          <div className="pkv"><Lbl zh="置换弹窗节奏(5 参)" code="promo.cooldownDays / maxPerSession / delaySec / minAgeDays / routes" desc="置换升级弹窗的 冷却 / 频次 / 延迟 / 设备最低龄 / 入口路由" /><span className="v" style={{ fontSize: 13, color: "var(--ink-3)" }}>冷却{pE("E.tradein.promo.cooldownDays")}d · {pE("E.tradein.promo.maxPerSession")}/会话 · 延迟{pE("E.tradein.promo.delaySec")}s · 龄≥{pE("E.tradein.promo.minAgeDays")}d</span><AdjMulti title="置换弹窗节奏(5 参)" hint="设备龄 ≥ 最低龄后,弹窗按 冷却天数 + 每会话上限 节流,延迟 N 秒于指定入口路由展示。改后对新弹窗节奏生效。" detail="置换弹窗节奏 5 参 · server-canonical · 改后对新弹窗节奏生效" fields={[
-            { key: "cooldownDays", paramKey: "E.tradein.promo.cooldownDays", label: "冷却天数(d)", inputKind: "number", placeholder: "14" },
-            { key: "maxPerSession", paramKey: "E.tradein.promo.maxPerSession", label: "每会话上限(次)", inputKind: "number", placeholder: "1" },
-            { key: "delaySec", paramKey: "E.tradein.promo.delaySec", label: "延迟(秒)", inputKind: "number", placeholder: "6" },
-            { key: "minAgeDays", paramKey: "E.tradein.promo.minAgeDays", label: "设备最低龄(d)", inputKind: "number", placeholder: "30" },
-            { key: "routes", paramKey: "E.tradein.promo.routes", label: "入口路由(勾选页面)", inputKind: "select", options: ["/me/devices", "/me", "/store", "/earn", "全部页面"], wide: true },
-          ]} /></div>
-          <div className="pkv"><Lbl zh="库存软上限告警" code="inventory.softMax" desc="回收旧机库存软上限 · 超过即告警 · 0 = 禁用" /><span className="v">{pE("E.tradein.inventorySoftMax")} 台</span><Adj label="库存软上限告警" k="E.tradein.inventorySoftMax" unit="台" /></div>
           <div className="pkv"><Lbl zh="本月置换笔数" desc={`折抵总额 ${moneyText(stats.tradeinDiscountUsdt)}`} /><span className="v cyan">{countText(stats.tradeinMonthCount)}</span><span /></div>
           <div className="pkv"><Lbl zh="K2 套利簇命中" desc="风险簇拦截" /><span className="v warn">{countText(stats.k2ArbitrageHits)}</span><span /></div>
-          <div className="param-foot cyan"><span className="ic"><ShieldIcon /></span><span><b>阶梯天然抗套利</b>:抵扣仅在结算时抵减升级应付款、<b>永不进入余额</b>,且默认仅限升级更高价设备 — 每笔置换平台都净收新款,「随时下架」无需最短持有闸门。高抵扣档(新设备早升级)正是运营期望的行为。「各档抵扣率」与「置换活动倍率」为<b>放大资金流出</b>动作(带 ⚡),须操作确认 + B1 覆盖率核验;K2 风险簇监控保留(异常批量置换仍会命中)。</span></div>
+          <div className="param-foot cyan"><span className="ic"><ShieldIcon /></span><span><b>阶梯天然抗套利</b>:抵扣仅在结算时抵减升级应付款、<b>永不进入余额</b>,且默认仅限升级更高价设备 — 每笔置换平台都净收新款,「随时下架」无需最短持有闸门。高抵扣档(新设备早升级)正是运营期望的行为。「各档抵扣率」为<b>放大资金流出</b>动作(带 ⚡),须操作确认 + B1 覆盖率核验;K2 风险簇监控保留(异常批量置换仍会命中)。</span></div>
         </section>
       </div>
 

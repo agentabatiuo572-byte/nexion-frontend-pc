@@ -8,12 +8,13 @@
  * amplifies = false(I3 通知体系不动钱,不碰 B1 红线)。
  * 新建 Campaign / 行点击详情 = 本地 Drawer 原语(design-kit 共享 Drawer);提交新建走后端 /content/campaigns。
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import type { ICtx } from "./types";
 import type { NotificationAudienceTarget, NotificationCampaignRow } from "@/lib/admin/i-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -113,6 +114,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
   const [scheduleVerified, setScheduleVerified] = useState(false);
   const [detail, setDetail] = useState<CampaignRow | null>(null);
   const [newRows, setNewRows] = useState<CampaignRow[]>([]);
+  const capCommandAttempts = useRef(new Map<TierK, { fingerprint: string; commandKey: string }>());
   const data = content.campaigns;
   const I3_STATS = data?.stats ?? { monthCampaigns: 0, monthSent: 0, monthScheduled: 0, monthDraft: 0, criticalInflight: 0, avgReadRate: "—", weeklySwipe: "—" };
   const CAMPAIGNS: CampaignRow[] = (data?.campaigns ?? []).map((row) => ({
@@ -243,29 +245,45 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     amplifies: false,
     edit: {
       kind: "number",
-      current: cap.replace(/\D/g, ""),
+      current: cap.match(/\d+/)?.[0] ?? "",
       unit: "条",
       min: 1,
       max: 10000,
       step: 1,
     },
-    run: (reason, v) => {
+    run: async (reason, v) => {
       if (!v) return;
       const def = findHighOp("i3_cap_adjust")!;
-      void propose(toast, {
-        action: `调整 CAP · ${tier}`,
-        obj: tier,
-        before: cap,
-        after: v,
-        type: "param",
-        amplifies: false,
-        gate: { roles: [] },
-        gateLabel: def.gateLabel,
-        reason,
-        sourceDomain: "I3",
-        command: def.buildCommand({ tier, cap: v }),
-        target: def.buildTarget({ tier }),
-      });
+      const fingerprint = JSON.stringify([tier, cap, v, reason]);
+      const saved = capCommandAttempts.current.get(tier);
+      const commandKey = saved?.fingerprint === fingerprint
+        ? saved.commandKey
+        : createA2CommandKey("i3-cap-adjust");
+      capCommandAttempts.current.set(tier, { fingerprint, commandKey });
+      try {
+        const result = await propose(toast, {
+          action: `调整 CAP · ${tier}`,
+          obj: tier,
+          before: cap,
+          after: v,
+          type: "param",
+          amplifies: false,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "I3",
+          commandKey,
+          command: def.buildCommand({ tier, cap: v, expectedCap: cap }),
+          target: def.buildTarget({ tier }),
+        });
+        capCommandAttempts.current.delete(tier);
+        return result;
+      } catch (error) {
+        if (!(error instanceof A2OutcomeUncertainError)) {
+          capCommandAttempts.current.delete(tier);
+        }
+        throw error;
+      }
     },
   });
 

@@ -15,8 +15,16 @@ import { L1LiveTotals } from "./l1-l2-live-fallback";
 import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, type L1KpiQuery } from "@/lib/admin/l-client";
+import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
 
-type Kpi = KpiRow & { available?: boolean; unavailableReason?: string; status?: string; momDelta?: number | null };
+type Kpi = KpiRow & {
+  available?: boolean;
+  unavailableReason?: string;
+  status?: string;
+  momDelta?: number | null;
+  numerator?: number;
+  denominator?: number;
+};
 type KpiExt = {
   fx: string;
   fxBold: string[];
@@ -85,19 +93,57 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   const [phaseOn, setPhaseOn] = useState(true);
   const [ovlSel, setOvlSel] = useState<number[]>([1, 2, 3]);
   const [vp, setVp] = useState<ViewParamReq | null>(null);
-  const [win, setWin] = useState("7d");
+  const [win, setWin] = useState<L1KpiQuery["window"]>("7d");
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
   const [gran, setGran] = useState("week");
-  const [slice, setSlice] = useState(0);
+  const [cohortFilter, setCohortFilter] = useState("");
+  const [phaseFilter, setPhaseFilter] = useState("");
+  const [localeFilter, setLocaleFilter] = useState("");
+  const [refFilter, setRefFilter] = useState("");
   const [localData, setLocalData] = useState<Record<string, unknown> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const [drillKpi, setDrillKpi] = useState<Kpi | null>(null);
+  const [drillTrend, setDrillTrend] = useState<number[] | null>(null);
+  const [drillError, setDrillError] = useState("");
 
-  useEffect(() => setLocalData(null), [ctx.biData?.l1]);
+  useEffect(() => {
+    setLocalData(null);
+    setDrillKpi(null);
+    setDrillTrend(null);
+    setDrillError("");
+    setRefreshError("");
+  }, [ctx.biData?.l1]);
 
   const data = localData ?? ctx.biData?.l1;
-  const KPIS = rows<Kpi>(data?.kpis);
+  const rawKpis = rows<Kpi>(data?.kpis);
   const liveTotals = readL1LiveTotals(data);
-  if (!KPIS.length && liveTotals.length) return <L1LiveTotals metrics={liveTotals} />;
-  if (!KPIS.length) return <LDataState ctx={ctx} label="L1" />;
+  let protocolError = "";
+  if (rawKpis.length) {
+    try {
+      validateL1Dashboard(data);
+    } catch (error) {
+      protocolError = error instanceof Error ? error.message : "L1_DATA_PROTOCOL_INVALID";
+    }
+  }
+  if (!rawKpis.length && liveTotals.length) return <L1LiveTotals metrics={liveTotals} />;
+  if (!rawKpis.length) return <LDataState ctx={ctx} label="L1" />;
+  if (protocolError) {
+    return (
+      <section className="l-card">
+        <div className="l-b">
+          <div className="ltint warn" style={{ fontSize: 12 }}>
+            <b>L1 权威响应协议校验失败</b> · 已停止渲染可疑 KPI，未把缺项或畸形值当成经营事实。
+            {ctx.reloadBi && <button className="l-btn sm" style={{ marginLeft: 10 }} onClick={() => void ctx.reloadBi?.()}>重新读取</button>}
+            <span className="lcode" style={{ marginLeft: 8 }}>{protocolError}</span>
+          </div>
+        </div>
+      </section>
+    );
+  }
+  const KPIS = rawKpis;
   const WEEKS = strings(data?.weeks);
   const PHASE_SWITCH_IDX = num(data?.phaseSwitchIndex, -1);
   const KPI_COLORS = strings(data?.kpiColors);
@@ -111,31 +157,81 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
   const unavailable = states.filter((s) => s === "na").length;
   const attention = red + unavailable;
   const redNames = KPIS.filter((_, i) => states[i] === "r").map((k) => `#${k.n}`).join(" ");
-  const k = KPIS[safeSelKpi];
-  const ext = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该 KPI 解释", jump: [] };
+  const baseKpi = KPIS[safeSelKpi];
+  const k = drillKpi?.n === baseKpi.n
+    ? { ...baseKpi, ...drillKpi, spark: drillTrend ?? drillKpi.spark ?? baseKpi.spark }
+    : baseKpi;
+  const baseExt = KPI_EXT[String(k.n)] ?? { fx: k.name, fxBold: [], num: "—", den: "—", delta: "0", note: "暂未返回该 KPI 解释", jump: [] };
+  const ext = {
+    ...baseExt,
+    num: k.numerator == null ? baseExt.num : String(k.numerator),
+    den: k.denominator == null ? baseExt.den : String(k.denominator),
+  };
   const phase = rec(ctx.biData?.currentPhase);
   const phaseKnown = typeof phase.code === "string" && phase.code.length > 0;
   const rs = { currentPhase: phaseKnown ? String(phase.code) : "未返回", currentMonth: phaseKnown ? num(phase.month, 0) : "—" };
 
-  const reloadKpi = async (nextWindow = win) => {
+  const activeQuery = (
+    nextWindow: L1KpiQuery["window"] = win,
+    filters: Partial<L1KpiQuery> = {},
+  ): L1KpiQuery => ({
+    ...(nextWindow === "custom"
+      ? { window: "custom", from: customFrom, to: customTo }
+      : { window: nextWindow }),
+    cohort: cohortFilter || undefined,
+    phase: phaseFilter || undefined,
+    locale: localeFilter || undefined,
+    ref: refFilter || undefined,
+    ...filters,
+  });
+
+  const reloadKpi = async (
+    nextWindow: L1KpiQuery["window"] = win,
+    filters: Partial<L1KpiQuery> = {},
+  ) => {
     setRefreshing(true);
     try {
-      setLocalData(await fetchL1Kpi({ window: nextWindow === "1d" || nextWindow === "30d" ? nextWindow : "7d" }));
-      ctx.toast(`KPI 已按${nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
+      const next = await fetchL1Kpi(activeQuery(nextWindow, filters));
+      validateL1Dashboard(next);
+      setLocalData(next);
+      setDrillKpi(null);
+      setDrillTrend(null);
+      setDrillError("");
+      setRefreshError("");
+      setWin(nextWindow);
+      setCustomOpen(false);
+      ctx.toast(`KPI 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
     } catch (error) {
-      ctx.toast(error instanceof Error ? `KPI 刷新失败 · ${error.message}` : "KPI 刷新失败");
+      const message = error instanceof Error ? error.message : "L1_REFRESH_FAILED";
+      setRefreshError(message);
+      ctx.toast(`KPI 刷新失败 · ${message}`);
     } finally {
       setRefreshing(false);
     }
   };
 
-  const selectKpi = (index: number) => {
+  const selectKpi = async (index: number) => {
     setSelKpi(index);
     const kpiId = KPIS[index]?.n;
     if (!kpiId) return;
-    const query: L1KpiQuery = { window: win === "1d" || win === "30d" ? win : "7d" };
-    void Promise.all([fetchL1KpiDrilldown(kpiId, query), fetchL1KpiTrend(kpiId, query)])
-      .catch((error) => ctx.toast(error instanceof Error ? `KPI 下钻读取失败 · ${error.message}` : "KPI 下钻读取失败"));
+    setDrillKpi(null);
+    setDrillTrend(null);
+    setDrillError("");
+    const query = activeQuery();
+    try {
+      const [drilldown, trend] = await Promise.all([
+        fetchL1KpiDrilldown(kpiId, query),
+        fetchL1KpiTrend(kpiId, query),
+      ]);
+      const checkedDrilldown = validateL1Drilldown(drilldown, kpiId);
+      const checkedTrend = validateL1Trend(trend, kpiId);
+      setDrillKpi(checkedDrilldown.selected as Kpi);
+      setDrillTrend(checkedTrend.values as number[]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "L1_DRILLDOWN_FAILED";
+      setDrillError(message);
+      ctx.toast(`KPI 下钻读取失败 · ${message}`);
+    }
   };
 
   const toggleOvl = (i: number) => setOvlSel((p) => (p.includes(i) ? (p.length > 1 ? p.filter((x) => x !== i) : p) : [...p, i]));
@@ -221,6 +317,11 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
 
   return (
     <div>
+      {refreshError && (
+        <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>
+          <b>KPI 刷新未成功</b> · 当前仍显示上一次已校验快照，时间窗未切换。{refreshError}
+        </div>
+      )}
       {/* stat strip */}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">达标 KPI</div><div className="v">{green} / {KPIS.length}</div><div className="sub">绿灯 · 高于目标线</div></div>
@@ -233,9 +334,28 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
       <div className="view-bar">
         <div className="chips"><span className="lb">时间窗</span>
           {[["1d", "当日"], ["7d", "滚动 7d"], ["30d", "滚动 30d"], ["custom", "自定义"]].map(([v, lb]) => (
-            <button key={v} className={"chip" + (win === v ? " sel" : "")} onClick={() => { setWin(v); void reloadKpi(v); }}>{lb}</button>
+            <button
+              key={v}
+              className={"chip" + (win === v ? " sel" : "")}
+              onClick={() => {
+                if (v === "custom") {
+                  setCustomOpen(true);
+                  return;
+                }
+                void reloadKpi(v as L1KpiQuery["window"]);
+              }}
+            >{lb}</button>
           ))}
         </div>
+        {customOpen && (
+          <div className="chips">
+            <label className="lb" htmlFor="l1-custom-from">起</label>
+            <input id="l1-custom-from" type="date" value={customFrom} onChange={(event) => setCustomFrom(event.target.value)} />
+            <label className="lb" htmlFor="l1-custom-to">止</label>
+            <input id="l1-custom-to" type="date" value={customTo} onChange={(event) => setCustomTo(event.target.value)} />
+            <button className="l-btn sm" disabled={!customFrom || !customTo || customFrom > customTo || refreshing} onClick={() => void reloadKpi("custom")}>应用自定义</button>
+          </div>
+        )}
         <div className="sep" />
         <div className="chips"><span className="lb">cohort 粒度</span>
           {[["week", "注册周 YYYY-Www"], ["month", "注册月"]].map(([v, lb]) => (
@@ -290,11 +410,25 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
         <div className="l-h">
           <span className="ttl">单 KPI 下钻 · #{k.n} {k.name}</span>
           <span className="sub">· 口径公式 / 分子分母 / 切片 / 趋势</span>
-          <div className="r"><div className="chips"><span className="lb">切片</span>
-            {["全量", "cohort 2026-W22", "Phase P3", "locale en", "渠道 ref NX-*"].map((s, i) => (
-              <button key={s} className={"chip" + (i === slice ? " sel" : "")} onClick={() => { setSlice(i); ctx.toast(`切片已切换:${s} · 仅视图,实时生效`); }}>{s}</button>
-            ))}
-          </div></div>
+          <div className="r">
+            <div className="chips"><span className="lb">真实切片</span>
+              <input aria-label="cohort 筛选" placeholder="YYYY-Www" value={cohortFilter} onChange={(event) => setCohortFilter(event.target.value)} />
+              <select aria-label="Phase 筛选" value={phaseFilter} onChange={(event) => setPhaseFilter(event.target.value)}>
+                <option value="">全部 Phase</option>
+                {["P1", "P2", "P3", "P4", "P5", "P6"].map((value) => <option key={value} value={value}>{value}</option>)}
+              </select>
+              <input aria-label="locale 筛选" placeholder="locale" value={localeFilter} onChange={(event) => setLocaleFilter(event.target.value)} />
+              <input aria-label="渠道筛选" placeholder="ref" value={refFilter} onChange={(event) => setRefFilter(event.target.value)} />
+              <button className="l-btn sm" disabled={refreshing} onClick={() => void reloadKpi()}>应用切片</button>
+              <button className="l-btn sm" disabled={refreshing} onClick={() => {
+                setCohortFilter("");
+                setPhaseFilter("");
+                setLocaleFilter("");
+                setRefFilter("");
+                void reloadKpi(win, { cohort: "", phase: "", locale: "", ref: "" });
+              }}>清除切片</button>
+            </div>
+          </div>
         </div>
         <div className="drill">
           <div className="meta">
@@ -318,6 +452,11 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
             </div>
           </div>
           <div className="chart-pane">
+            {drillError && (
+              <div className="ltint warn" style={{ fontSize: 12, marginBottom: 10 }}>
+                <b>下钻/趋势权威响应不可用</b> · 已保留概览卡，不使用异常响应覆盖明细。{drillError}
+              </div>
+            )}
             {drillChart()}
             <div className="legend">
               <span className="it"><span className="lsw" style={{ background: "var(--cyan)" }} />cohort 周序列</span>

@@ -52,8 +52,16 @@ export type B5Subscription = {
   email: boolean;
   webhook: boolean;
   webhookUrl: string;
+  version: number;
   sharedWith: string;
 };
+
+export class B5OutcomeUnknownError extends Error {
+  constructor(public readonly commandKey: string) {
+    super(`本次操作结果未知，可能已经生效。请先刷新核对；如需重试，请保持输入不变并使用当前操作重试。请求号：${commandKey}`);
+    this.name = "B5OutcomeUnknownError";
+  }
+}
 
 function row(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid(field);
@@ -191,12 +199,13 @@ function normalizeSubscription(value: unknown): B5Subscription {
     email: bool(subscription.email, "subscription.email"),
     webhook: bool(subscription.webhook, "subscription.webhook"),
     webhookUrl: typeof subscription.webhookUrl === "string" ? subscription.webhookUrl : invalid("subscription.webhookUrl"),
+    version: num(subscription.version, "subscription.version"),
     sharedWith: text(subscription.sharedWith, "subscription.sharedWith"),
   };
 }
 
 function idempotencyKey(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
@@ -204,6 +213,10 @@ async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0 || result.data === undefined) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    const commandKey = new Headers(init?.headers).get("Idempotency-Key");
+    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+      throw new B5OutcomeUnknownError(commandKey);
+    }
     throw new Error(formatAdminApiError(result?.message, `B5_REQUEST_FAILED_${response.status}`));
   }
   return result.data;
@@ -231,29 +244,37 @@ export async function updateB5Thresholds(
   expectedVersion: number,
   reason: string,
   operator: string,
+  commandKey = idempotencyKey("b5-threshold"),
 ) {
   return normalizeB5Radar(await request<unknown>(B5_THRESHOLD_ENDPOINT, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey("b5-threshold") },
+    headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ yellowPct, redPct, expectedVersion, reason, operator }),
   }));
 }
 
 export async function updateB5Subscription(
   value: { inApp: boolean; email: boolean; webhook: boolean; webhookUrl: string },
+  expectedVersion: number,
   operator: string,
+  commandKey = idempotencyKey("b5-subscription"),
 ) {
   return normalizeSubscription(await request<unknown>(B5_SUBSCRIPTION_ENDPOINT, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey("b5-subscription") },
-    body: JSON.stringify({ ...value, operator }),
+    headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
+    body: JSON.stringify({ ...value, expectedVersion, operator }),
   }));
 }
 
-export async function recordB5Triage(dimension: string, target: string, operator: string) {
+export async function recordB5Triage(
+  dimension: string,
+  target: string,
+  operator: string,
+  commandKey = idempotencyKey("b5-triage"),
+) {
   return request<{ dimension: string; target: string }>(B5_TRIAGE_ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey("b5-triage") },
+    headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ dimension, target, operator }),
   });
 }
@@ -262,6 +283,7 @@ export function useB5Radar() {
   const [data, setData] = useState<B5Radar | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [streamWarning, setStreamWarning] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -284,6 +306,7 @@ export function useB5Radar() {
         const next = normalizeB5Radar(JSON.parse((event as MessageEvent<string>).data));
         setData(next);
         setError(null);
+        setStreamWarning(null);
         setLoading(false);
       } catch (cause) {
         setData(null);
@@ -292,8 +315,7 @@ export function useB5Radar() {
     };
     stream.addEventListener("radar", onRadar);
     stream.onerror = () => {
-      setData(null);
-      setError("B5_STREAM_DISCONNECTED");
+      setStreamWarning("实时通道正在重连；页面保留最近一次已确认数据，并继续每 30 秒从服务端核对。");
     };
     const timer = window.setInterval(() => void reload(), 30_000);
     return () => {
@@ -303,5 +325,5 @@ export function useB5Radar() {
     };
   }, [reload]);
 
-  return { data, loading, error, reload, setData };
+  return { data, loading, error, streamWarning, reload, setData };
 }

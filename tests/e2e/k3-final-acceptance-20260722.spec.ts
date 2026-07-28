@@ -280,6 +280,61 @@ test("风控角色完成四维表单、只读 dry-run、422 校验、创建启�
   runSummary.fixtures = { ...(runSummary.fixtures as object), fixtureRuleId };
 });
 
+test("K3 对 HTTP 200 畸形读写响应失败关闭，并以同一命令键恢复", async ({ page }) => {
+  const errors = collectRuntimeErrors(page);
+  await loginAndOpenK3(page, RISK_RESILIENCE_USERNAME);
+  const overviewApi = "**/api/admin/risk/withdraw-rules/overview*";
+  await page.route(overviewApi, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ code: 0, data: {} }),
+  }));
+  await page.reload();
+  await expect(page.getByText("K3 数据加载失败", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ 新建规则", exact: true })).toHaveCount(0);
+  await page.unroute(overviewApi);
+  await page.getByRole("button", { name: "仅重试 K3", exact: true }).click();
+  await expect(page.getByText("四道关 · 规则配置", { exact: true })).toBeVisible();
+
+  const commandKeys: string[] = [];
+  let attempts = 0;
+  const dryRunApi = "**/api/admin/risk/withdraw-rules/dry-runs";
+  await page.route(dryRunApi, async (route) => {
+    attempts += 1;
+    commandKeys.push(await route.request().headerValue("idempotency-key") ?? "");
+    if (attempts === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ code: 0, data: {} }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+  await page.getByRole("button", { name: /沙盒模拟/ }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel(/操作理由/).fill(`${REASON}畸形成功响应失败关闭`);
+  await dialog.getByRole("button", { name: /开始模拟/ }).click();
+  await expect(dialog).toBeVisible();
+  await expect(page.getByText(/结果暂不确定/).last()).toBeVisible();
+  await dialog.getByRole("button", { name: /开始模拟/ }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(commandKeys).toHaveLength(2);
+  expect(commandKeys[0]).toBeTruthy();
+  expect(commandKeys[1]).toBe(commandKeys[0]);
+  await page.unroute(dryRunApi);
+
+  await page.screenshot({
+    path: path.join(EVIDENCE_DIR, "04-malformed-200-fail-closed-and-same-key-recovery.png"),
+    fullPage: true,
+  });
+  await logout(page);
+  await loginAndOpenK3(page, RISK_RESILIENCE_USERNAME);
+  await expect(page.getByText("规则总表", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审并发叠加", async ({ page }) => {
   const errors = collectRuntimeErrors(page);
   await loginAndOpenK3(page, RISK_FLOW_USERNAME);

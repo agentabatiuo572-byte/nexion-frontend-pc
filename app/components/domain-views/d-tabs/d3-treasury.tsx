@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import {
   createD3Injection,
@@ -75,6 +75,16 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   const [voucherNo, setVoucherNo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const pendingKeys = useRef(new Map<string, string>());
+
+  const operationKey = (scope: string) => {
+    const existing = pendingKeys.current.get(scope);
+    if (existing) return existing;
+    const uuid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+    const key = `d3-${scope}-${uuid.replaceAll("-", "").replace(".", "").slice(0, 18)}`;
+    pendingKeys.current.set(scope, key);
+    return key;
+  };
 
   const load = async (nextMaturity?: "7d" | "30d", nextExposure?: "7d" | "30d" | "90d") => {
     setLoading(true);
@@ -131,16 +141,21 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       detail: `登记 ${money(Number(nextAmount))}，凭证号 ${nextVoucher}。凭证号不可重复。`,
       reason: true,
       okLabel: "确认登记",
-      run: (reason) => {
-        if (!reasonValid(reason, toast)) return;
-        void createD3Injection(nextAmount, nextVoucher, reason.trim(), OPERATOR())
-          .then(async () => {
-            setAmount("");
-            setVoucherNo("");
-            toast("储备注入已登记");
-            await load();
-          })
-          .catch((err) => setError(err instanceof Error ? err.message : "储备注入失败"));
+      run: async (reason) => {
+        if (!reasonValid(reason, toast)) return false;
+        const scope = `injection-${nextVoucher}-${nextAmount}`;
+        try {
+          await createD3Injection(nextAmount, nextVoucher, reason.trim(), OPERATOR(), operationKey(scope));
+          pendingKeys.current.delete(scope);
+          setAmount("");
+          setVoucherNo("");
+          toast("储备注入已登记");
+          await load();
+          return true;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "储备注入失败");
+          throw err;
+        }
       },
     });
   };
@@ -152,8 +167,8 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       detail: `预测窗口 ${draft.forecastWindow}，Genesis ${draft.genesisIncluded ? "纳入" : "不纳入"}；配置于下一 UTC 日 00:00 生效，不追溯历史。`,
       reason: true,
       okLabel: "保存配置",
-      run: (reason) => {
-        if (!reasonValid(reason, toast)) return;
+      run: async (reason) => {
+        if (!reasonValid(reason, toast)) return false;
         const values = {
           reserveCategories: draft.reserveCategories,
           liabilityCategories: draft.liabilityCategories,
@@ -163,12 +178,15 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           stakingInterestMode: draft.stakingInterestMode,
           trialStressEnabled: draft.trialStressEnabled,
         };
-        void updateD3ForecastConfig(values, draft.version, reason.trim(), OPERATOR())
-          .then(async () => {
-            toast("预测配置已保存，将于下一 UTC 日 00:00 生效");
-            await load();
-          })
-          .catch((err) => setError(err instanceof Error ? err.message : "预测配置保存失败"));
+        try {
+          await updateD3ForecastConfig(values, draft.version, reason.trim(), OPERATOR());
+          toast("预测配置已保存，将于下一 UTC 日 00:00 生效");
+          await load();
+          return true;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "预测配置保存失败");
+          throw err;
+        }
       },
     });
   };
@@ -299,7 +317,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
               <div className="lookup">{Object.entries(draft.liabilityCategories).map(([key, enabled]) => <label key={key}><input type="checkbox" disabled={!canConfig} checked={enabled} onChange={(event) => setDraft({ ...draft, liabilityCategories: { ...draft.liabilityCategories, [key]: event.target.checked } })} /> {key}</label>)}</div>
             </div>
             <div className="dtint" style={{ marginBottom: 12 }}>当前修订 v{draft.version}（已生效 v{draft.effectiveVersion}）；储备科目 {Object.values(draft.reserveCategories).filter(Boolean).length}/{Object.keys(draft.reserveCategories).length} 开启；负债科目 {Object.values(draft.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.liabilityCategories).length} 开启。</div>
-            {draft.pendingConfig && <div className="dtint warn" style={{ marginBottom: 12 }}>待生效 v{draft.pendingVersion}：窗口 {draft.pendingConfig.forecastWindow}，储备科目 {Object.values(draft.pendingConfig.reserveCategories).filter(Boolean).length}/2，负债科目 {Object.values(draft.pendingConfig.liabilityCategories).filter(Boolean).length}/8，Genesis {draft.pendingConfig.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {draft.pendingEffectiveAt}。</div>}
+            {draft.pendingConfig && <div className="dtint warn" style={{ marginBottom: 12 }}>待生效 v{draft.pendingVersion}：窗口 {draft.pendingConfig.forecastWindow}，储备科目 {Object.values(draft.pendingConfig.reserveCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.reserveCategories).length}，负债科目 {Object.values(draft.pendingConfig.liabilityCategories).filter(Boolean).length}/{Object.keys(draft.pendingConfig.liabilityCategories).length}，Genesis {draft.pendingConfig.genesisIncluded ? "纳入" : "不纳入"}，生效时间 {draft.pendingEffectiveAt}。</div>}
             {canConfig ? <button className="l-btn primary" onClick={saveConfig}>保存预测配置</button> : <div className="dtint">当前账号只有查看权限；仅财务负责人可调整预测口径。</div>}
           </>}
         </div>

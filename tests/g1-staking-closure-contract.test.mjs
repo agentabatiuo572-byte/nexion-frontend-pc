@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const OPS_ROOT = path.resolve(import.meta.dirname, "..");
-const APP_ROOT = path.resolve(OPS_ROOT, "..", "nexion-frontend-uniapp");
+const APP_ROOT = path.resolve(OPS_ROOT, "..", "NX1.0");
 const BACKEND_ROOT = path.resolve(OPS_ROOT, "..", "nexion-backend");
 
 function read(root, relative) {
@@ -22,6 +22,10 @@ test("G1 admin writes are immediate server commands with least-privilege control
   assert.match(page, /finprod_g1_min_write/);
   assert.match(page, /finprod_g1_kill_toggle/);
   assert.match(page, /kind:\s*"number"[\s\S]*min:\s*0[\s\S]*max:\s*300/);
+  assert.match(page, /amplifiesWhen:\s*"increase"/);
+  assert.match(page, /amplifiesWhen:\s*"decrease"/);
+  assert.match(page, /coverage:\s*\{\s*coverageRatio:\s*coverage\.coverageRatio,\s*redlinePct:\s*coverage\.redlinePct\s*\}/);
+  assert.match(page, /disallowCurrent:\s*true/);
   assert.match(page, /triggerBasis/);
   assert.match(page, /dispositionPlan/);
   assert.match(page, /href="\/emergency\/kill-switch"/);
@@ -31,7 +35,10 @@ test("G1 admin writes are immediate server commands with least-privilege control
 
 test("G1 app state is a projection of authenticated server APIs", () => {
   const store = read(APP_ROOT, "src/store/staking.ts");
-  const service = read(APP_ROOT, "src/services/staking.ts");
+  const service = read(APP_ROOT, "src/api/staking-api.ts");
+  const page = read(APP_ROOT, "src/pages/staking/staking.vue");
+  const sheet = read(APP_ROOT, "src/components/staking/stake-sheet.vue");
+  const repurchase = read(APP_ROOT, "src/pages/me/wallet-repurchase.vue");
 
   assert.doesNotMatch(store, /localStorage|uni\.setStorage|Math\.random/);
   assert.match(store, /fetchStakingPools/);
@@ -41,7 +48,15 @@ test("G1 app state is a projection of authenticated server APIs", () => {
   assert.match(store, /earlyWithdrawStakingPosition/);
   assert.match(service, /\/api\/config\/staking\/pools/);
   assert.match(service, /\/api\/stakes/);
-  assert.match(service, /Idempotency-Key/);
+  assert.match(service, /idempotencyKey/);
+  assert.doesNotMatch(page, /creditBalance|bills\.add|markMatured/);
+  assert.doesNotMatch(sheet, /debitBalance|bills\.add|STAKING_APY|STAKING_PENALTY|STAKING_MIN/);
+  assert.match(page, /staking\.refreshAll/);
+  assert.match(sheet, /staking\.openStakingPosition/);
+  assert.doesNotMatch(repurchase, /debitBalance|bills\.add|staking\.stake|openStakingPosition/);
+  assert.match(repurchase, /useRepurchase/);
+  assert.match(repurchase, /repurchase\.open/);
+  assert.doesNotMatch(repurchase, /useStaking|staking\.stake|openStakingPosition/);
 });
 
 test("G1 user mutations are transactional, idempotent and emit durable evidence", () => {
@@ -76,4 +91,19 @@ test("G1 admin commands are durable and recovery remains owned by J1", () => {
   assert.match(mapper, /status='SLASHED'/);
   assert.match(migration, /'100%',94/);
   assert.match(migration, /'100%',96/);
+});
+
+test("G1 open-position KPI excludes closed terminal states", () => {
+  const market = read(BACKEND_ROOT, "src/main/java/ffdd/opsconsole/market/application/OpsNexMarketService.java");
+  assert.match(market, /"positionCount",\s*pendingCount\s*\+\s*activeCount\s*\+\s*matureCount/);
+  assert.doesNotMatch(market, /"positionCount",[\s\S]{0,100}claimedCount/);
+});
+
+test("G1 operation confirmation mirrors directional B1 blocking without blocking tightening", () => {
+  const modal = read(OPS_ROOT, "app/components/domain-views/design-kit.tsx");
+  const shell = read(OPS_ROOT, "app/components/domain-views/g-view.tsx");
+  assert.match(modal, /amplifiesWhen\?:\s*"increase"\s*\|\s*"decrease"/);
+  assert.match(modal, /effectiveAmplifies/);
+  assert.match(modal, /effectiveAmplifies\s*&&\s*coverage\s*&&\s*coverage\.coverageRatio\s*<\s*coverage\.redlinePct/);
+  assert.match(shell, /coverage=\{mc\.coverage\}/);
 });

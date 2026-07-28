@@ -44,7 +44,7 @@ function nextFaqId(): string {
   // timestamp-shaped and exceed Number.MAX_SAFE_INTEGER, so never do arithmetic on them.
   return `FAQ-TMP-${crypto.randomUUID()}`;
 }
-const minReason = (r: string) => r.trim().length >= 8;
+const minReason = (r: string) => r.trim().length >= 8 && r.trim().length <= 200;
 
 export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
@@ -138,7 +138,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
 
   const changeFaqStatus = async (id: string, status: SupportFaq["status"]) => {
     await commitM4Write(
-      () => setParam(FAQ_KEY, JSON.stringify(faqs.map((faq) => (faq.id === id ? { ...faq, status, updatedAt: new Date().toISOString().slice(0, 10) } : faq))), {
+      () => setParam(FAQ_KEY, JSON.stringify(faqs.map((faq) => (faq.id === id ? { ...faq, status, version: faq.version + 1, updatedAt: new Date().toISOString().slice(0, 10) } : faq))), {
         action: `${status === "published" ? "发布" : "下架"}支持 FAQ ${id} · admin.support_faq_${status === "published" ? "published" : "unpublished"}`,
         reason: status === "published" ? "FAQ 发布例行审核留档" : "FAQ 下架例行审核留档",
       }),
@@ -151,7 +151,7 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
       detail: <>删除后将从帮助中心内容池移除“{faq.question}”,且不可在本页恢复。</>,
       reasonMin: 8,
       run: (reason) => commitM4Write(
-        () => setParam("I.support.faq.__delete", JSON.stringify({ faqId: faq.id }), { action: `删除支持 FAQ ${faq.id} · admin.support_faq_deleted`, reason }),
+        () => setParam("I.support.faq.__delete", JSON.stringify({ faqId: faq.id, expectedStatus: faq.status, expectedVersion: faq.version }), { action: `删除支持 FAQ ${faq.id} · admin.support_faq_deleted`, reason }),
         `${faq.id} 已删除`,
       ),
     });
@@ -168,7 +168,11 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
       toast("SLA 需要队列 / 升级路径 / 8 字以上审计理由");
       return false;
     }
-    const row: SupportSla = { category: cat, firstResponseMins, resolutionHours, queue: form.queue.trim(), escalation: form.escalation.trim() };
+    if (!editRow) {
+      toast("SLA 权威版本不可用,请刷新后重试");
+      return false;
+    }
+    const row: SupportSla = { category: cat, firstResponseMins, resolutionHours, queue: form.queue.trim(), escalation: form.escalation.trim(), version: editRow.version + 1 };
     const succeeded = await commitM4Write(
       () => setParam(SLA_KEY, JSON.stringify([row, ...sla.filter((x) => x.category !== cat)]), { action: `更新支持 SLA ${cat} · admin.support_sla_changed`, reason: form.reason.trim() }),
       `${catCN(cat)} SLA 已更新`,

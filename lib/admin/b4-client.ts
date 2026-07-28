@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 
@@ -81,8 +81,8 @@ async function json<T>(response: Response, fallback: string): Promise<T> {
   return result.data;
 }
 
-export async function fetchB4PhaseOverview(filters: B4Filters) {
-  return fetch(`/api/admin/phase/overview${query(filters)}`, { cache: "no-store" })
+export async function fetchB4PhaseOverview(filters: B4Filters, signal?: AbortSignal) {
+  return fetch(`/api/admin/phase/overview${query(filters)}`, { cache: "no-store", signal })
     .then((response) => json<B4PhaseOverview>(response, "B4_PHASE_LOAD_FAILED"));
 }
 
@@ -111,22 +111,31 @@ export function useB4PhaseOverview(filters: B4Filters) {
   const [data, setData] = useState<B4PhaseOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
+  const activeController = useRef<AbortController | null>(null);
 
   const reload = useCallback(async () => {
+    const requestId = ++requestSeq.current;
+    activeController.current?.abort();
+    const controller = new AbortController();
+    activeController.current = controller;
     setLoading(true);
     setError(null);
     try {
-      setData(await fetchB4PhaseOverview(filters));
+      const next = await fetchB4PhaseOverview(filters, controller.signal);
+      if (requestId === requestSeq.current) setData(next);
     } catch (value) {
+      if (controller.signal.aborted || requestId !== requestSeq.current) return;
       setData(null);
       setError(value instanceof Error ? value.message : "B4_BACKEND_UNAVAILABLE");
     } finally {
-      setLoading(false);
+      if (requestId === requestSeq.current) setLoading(false);
     }
   }, [filters.granularity, filters.month, filters.phase]);
 
   useEffect(() => {
     void reload();
+    return () => activeController.current?.abort();
   }, [reload]);
 
   return { data, loading, error, reload };

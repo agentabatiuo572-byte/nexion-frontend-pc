@@ -77,6 +77,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const [model, setModel] = useState<H1Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deepLink, setDeepLink] = useState<{ phase: string; dial: string } | null>(null);
 
   const reload = async () => {
     setLoading(true);
@@ -93,6 +94,18 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
 
   useEffect(() => {
     void reload();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedPhase = params.get("phase")?.toUpperCase() ?? "";
+    const requestedDial = params.get("dial") ?? "";
+    if (params.get("from") === "B4" && (/^P[1-6]$/.test(requestedPhase) || requestedDial)) {
+      setDeepLink({
+        phase: /^P[1-6]$/.test(requestedPhase) ? requestedPhase : "",
+        dial: requestedDial,
+      });
+    }
   }, []);
 
   const rhythm = model?.rhythm;
@@ -160,11 +173,16 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       },
       run: async (reason, _value, form) => {
         if (!form) return;
+        const currentMonthChanged = form.currentMonth !== "" && Number(form.currentMonth) !== rhythm.currentMonth;
+        const progressChanged = form.phaseProgressPct !== "" && Number(form.phaseProgressPct) !== rhythm.phaseProgressPct;
+        if (!currentMonthChanged && !progressChanged) {
+          throw new Error("当前节奏位置未变化，本次未提交");
+        }
         let overview = rhythm;
-        if (form.currentMonth) {
+        if (currentMonthChanged) {
           overview = await updateH1RhythmParam("currentMonth", form.currentMonth, reason, currentAdminOperator());
         }
-        if (form.phaseProgressPct) {
+        if (progressChanged) {
           overview = await updateH1RhythmParam("phaseProgressPct", form.phaseProgressPct, reason, currentAdminOperator());
         }
         const phases = await fetchH1Phases();
@@ -176,13 +194,17 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
 
   const openDial = (row: H1Model["monthlyDials"][number], key: string, label: string) => {
     const current = rowValue(row, key);
+    const isComplianceToggle = key === "complianceHoldEnabled";
+    const amplifiesWhen: "decrease" | "increase" = ["withdrawCooldownDays", "withdrawPenaltyFeeRate"].includes(key)
+      ? "decrease"
+      : "increase";
     openActionConfirm({
       action: `改旋钮 · 月 ${row.month} · ${label}`,
       detail: <>当前值 <b>{current}</b>。提交后写入后端配置并重新查询 H1 矩阵。</>,
-      amplifies: true,
-      edit: key === "complianceHoldEnabled"
+      amplifies: isComplianceToggle && current === "是",
+      edit: isComplianceToggle
         ? { kind: "select", current, options: ["否", "是"] }
-        : { kind: "text", current },
+        : { kind: "text", current, amplifiesWhen },
       run: async (reason, value) => {
         if (!value) return;
         if (dialAmplifies(key, current, value)) {
@@ -295,6 +317,17 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
 
   return (
     <>
+      {deepLink && (
+        <section className="l-card" role="status" style={{ marginBottom: 16, borderColor: "var(--cyan)" }}>
+          <div className="l-b">
+            <b>已从 B4 节奏看板定位</b>
+            <span style={{ marginLeft: 8, color: "var(--ink-3)" }}>
+              {deepLink.phase ? `${phaseName(deepLink.phase)} · ` : ""}
+              {deepLink.dial === "phaseAttribution" ? "Phase 效果归因" : deepLink.dial || "H1 节奏详情"}
+            </span>
+          </div>
+        </section>
+      )}
       <div className="f-stats">
         <div className="f-stat">
           <div className="k">当前运营月 / 阶段</div>
@@ -451,9 +484,20 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
               <tbody>
                 {model.attribution.map((row) => {
                   const phase = text(row.phase);
+                  const deepLinked = !!deepLink?.phase && phase === deepLink.phase;
                   return (
-                    <tr key={phase} style={currentPhase && phase.includes(currentPhase) ? { background: "rgba(255,107,53,.08)" } : undefined}>
-                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>{phase}{currentPhase && phase.includes(currentPhase) ? " · 当前" : ""}</td>
+                    <tr
+                      key={phase}
+                      id={`h1-attribution-${phase}`}
+                      style={deepLinked
+                        ? { background: "rgba(0,191,255,.14)", outline: "1px solid var(--cyan)" }
+                        : currentPhase && phase === currentPhase
+                          ? { background: "rgba(255,107,53,.08)" }
+                          : undefined}
+                    >
+                      <td style={{ fontWeight: 600, color: "var(--ink)" }}>
+                        {phase}{currentPhase && phase === currentPhase ? " · 当前" : ""}{deepLinked ? " · B4 定位" : ""}
+                      </td>
                       <td>{text(row.name, "—")}</td>
                       <td>{text(row.driver, "暂无归因说明")}</td>
                       <td className="mono">{text(row.paramKey, "—")}</td>

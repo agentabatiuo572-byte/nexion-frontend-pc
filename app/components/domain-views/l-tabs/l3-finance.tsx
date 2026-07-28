@@ -2,7 +2,7 @@
 
 /**
  * L3 · 财务报表 — 收入结构 / 兑付 / 净敞口 / 负债到期 四类周期核账报表。
- * 不另立财务账本:覆盖率/红黄线/储备/负债 = LEDGER·TREASURY 单源,8 科目 = LIABILITIES(B2 定义),
+ * 不另立财务账本:覆盖率/红黄线/储备/负债 = LEDGER·TREASURY 单源,9 科目 = LIABILITIES(B2 定义),
  * 7d 到期 = MATURITY 聚合;收入金额 = REVENUE。本页只读聚合;含资金明细导出 = 操作确认。
  */
 import { useRef, useState } from "react";
@@ -16,6 +16,17 @@ import type { LCtx } from "./types";
 type LiabilityRow = { id: number; name: string; amount: number; color: string };
 type RevenueExtRow = { nm: string; src: string; amt: number; mom: string; up: boolean; color: string };
 type BreachRow = { i: number; type: string; label: string };
+const FINANCE_DETAIL_FIELDS = [
+  "交易时间",
+  "用户编码（脱敏）",
+  "业务编号",
+  "账单类型",
+  "资产",
+  "方向",
+  "金额",
+  "余额",
+  "状态",
+] as const;
 
 function currentMonthRange() {
   const today = new Date();
@@ -30,10 +41,17 @@ function currentMonthRange() {
 
 export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
   const exportingRef = useRef(false);
+  const detailExportingRef = useRef(false);
+  const detailIntentRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [detailExporting, setDetailExporting] = useState(false);
   const liveFacts = readL3LiveFacts(ctx.biData?.l3);
   const financeSnapshot = readL3FinanceSnapshot(ctx.biData?.l3);
   const exportable = liveFacts.length > 0 || financeSnapshot !== null;
+  const period = rec(ctx.biData?.l3?.period);
+  const periodFrom = typeof period.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period.from) ? period.from : "";
+  const periodTo = typeof period.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(period.to) ? period.to : "";
+  const detailExportable = Boolean(periodFrom && periodTo && periodFrom <= periodTo);
   const exportAgg = async () => {
     if (exportingRef.current) return;
     exportingRef.current = true;
@@ -57,6 +75,85 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
       setExporting(false);
     }
   };
+  const openDetailExport = () => {
+    if (!ctx.canExportFinanceDetail || !detailExportable || detailExportingRef.current) return;
+    const allFields = FINANCE_DETAIL_FIELDS.join(",");
+    ctx.openActionConfirm({
+      action: "申请导出脱敏资金明细",
+      detail: (
+        <div>
+          导出范围锁定为当前报表周期 <b>{periodFrom} 至 {periodTo}</b>，最多 100,000 行。文件只包含所选账单字段，用户编码始终脱敏，不提供手机号、昵称、备注或任何明文身份字段；提交后进入 L5 审批，审批、下载及 24 小时令牌均会留痕。
+        </div>
+      ),
+      reasonMin: 8,
+      reasonMax: 200,
+      completionCopy: "提交后进入 L5 审批",
+      businessForm: {
+        kind: "multi-field",
+        title: "脱敏资金明细范围",
+        hint: "至少选择一个字段；服务端会再次校验周期、字段白名单、权限和 100,000 行上限，任一来源异常都会拒绝创建任务。",
+        fields: [
+          {
+            key: "fields",
+            label: "导出字段",
+            current: allFields,
+            inputKind: "multi-select",
+            options: [...FINANCE_DETAIL_FIELDS],
+            required: true,
+            wide: true,
+          },
+          {
+            key: "recipient",
+            label: "使用人",
+            current: "财务管理员",
+            inputKind: "text",
+            required: true,
+          },
+          {
+            key: "ticket",
+            label: "审批工单",
+            current: "L3-FINANCE-DETAIL",
+            inputKind: "text",
+            required: true,
+          },
+        ],
+      },
+      run: async (reason, _newValue, businessValue) => {
+        if (detailExportingRef.current || !ctx.biActions) return;
+        const fields = String(businessValue?.fields ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+        if (fields.length === 0 || fields.some((field) => !FINANCE_DETAIL_FIELDS.includes(field as (typeof FINANCE_DETAIL_FIELDS)[number]))) {
+          throw new Error("至少选择一个允许导出的脱敏资金字段");
+        }
+        const input = {
+          exportType: "财务资金明细",
+          timeRange: `${periodFrom}/${periodTo}`,
+          fields: fields.join(","),
+          piiLevel: "HIGH_PII",
+          maskPolicy: "MASKED",
+          recipient: String(businessValue?.recipient ?? "").trim(),
+          ticket: String(businessValue?.ticket ?? "").trim(),
+        };
+        const fingerprint = JSON.stringify({ ...input, reason: reason.trim() });
+        if (!detailIntentRef.current || detailIntentRef.current.fingerprint !== fingerprint) {
+          const entropy = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+          detailIntentRef.current = { fingerprint, key: `l3-finance-detail-${entropy}` };
+        }
+        detailExportingRef.current = true;
+        setDetailExporting(true);
+        try {
+          await ctx.biActions.createReport(input, reason, detailIntentRef.current.key);
+          detailIntentRef.current = null;
+          await ctx.reloadBi?.();
+          ctx.toast("脱敏资金明细申请已提交 · 请在 L5 完成审批后下载");
+        } catch (error) {
+          ctx.toast(error instanceof Error ? `脱敏资金明细申请失败 · ${error.message}` : "脱敏资金明细申请失败 · 请稍后重试");
+        } finally {
+          detailExportingRef.current = false;
+          setDetailExporting(false);
+        }
+      },
+    });
+  };
   return (
     <>
       <span className="f-ro"><span className="d" />只读财务事实 · 不修改账本</span>
@@ -70,7 +167,19 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
       >
         {exporting ? "正在生成财务汇总..." : "导出财务当前汇总 CSV"}
       </button>
-      <span className="f-ro" title="用户级资金明细数据源和审批链尚未接入本页">用户级资金明细暂不可导出</span>
+      {ctx.canExportFinanceDetail ? (
+        <button
+          className="f-cta"
+          onClick={openDetailExport}
+          disabled={detailExporting || !detailExportable || ctx.biLoading || Boolean(ctx.biError)}
+          aria-busy={detailExporting}
+          title={!detailExportable ? "当前周期缺少服务端起止日期，不能创建明细导出" : ctx.biError ? "财务来源读取失败，不能导出旧快照" : "脱敏明细需填写原因并进入 L5 审批"}
+        >
+          {detailExporting ? "正在提交明细申请..." : "申请导出脱敏资金明细"}
+        </button>
+      ) : (
+        <span className="f-ro">当前角色仅可导出聚合报表 · 明细需财务明细权限</span>
+      )}
     </>
   );
 }
@@ -403,7 +512,7 @@ export function L3Finance({ ctx }: { ctx: LCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>L3 没有任何写账动作</b>：<AutoGloss>财务数字由服务器权威账本和资金池统一计算，本页只读展示与导出。聚合汇总不含用户明细，导出会生成可追溯记录；用户级资金明细只有在真实数据源和审批链接入后才会开放。</AutoGloss></p>
+      <p className="f-foot"><b>L3 没有任何写账动作</b>：<AutoGloss>财务数字由服务器权威账本和资金池统一计算，本页只读展示与导出。聚合汇总不含用户明细；脱敏资金明细仅向有权限的角色开放，并强制经过范围校验、操作原因、L5 审批、限时下载令牌与审计留痕。</AutoGloss></p>
     </div>
   );
 }

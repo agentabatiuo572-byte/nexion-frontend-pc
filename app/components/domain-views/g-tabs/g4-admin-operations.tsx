@@ -67,7 +67,13 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
             if (Date.parse(start) >= Date.parse(end)) throw new Error("预售开始时间必须早于结束时间");
           }
         }
-        await updateG4AdminOperationConfig(definition.key, normalized, reason, currentAdminOperator());
+        await updateG4AdminOperationConfig(
+          definition.key,
+          normalized,
+          reason,
+          currentAdminOperator(),
+          String(current),
+        );
         await load();
         ctx.toast(`${definition.label} 已更新`);
       },

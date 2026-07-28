@@ -99,7 +99,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
         gateLabel: def.gateLabel,
         reason,
         sourceDomain: "H5",
-        command: def.buildCommand({ ruleKey: rule.key, value: nextValue }),
+        command: def.buildCommand({ ruleKey: rule.key, value: nextValue, expectedValue: currentNumber || current }),
         target: def.buildTarget({ ruleKey: rule.key }),
       });
     };
@@ -132,7 +132,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       edit: { kind: "text", current: milestone.reward },
       run: async (reason, value) => {
         if (!value) return;
-        apply(await updateH5StreakMilestone(milestone.id, value, reason));
+        apply(await updateH5StreakMilestone(milestone.id, value, milestone.reward, reason));
         toast(`连签 ${milestone.day} 奖励已更新`);
       },
     });
@@ -153,14 +153,16 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       },
       run: async (reason, _value, form) => {
         if (!form) return;
-        let next: Record<string, any> | null = null;
-        if (form.day) {
-          next = await updateH5PowerUp(powerUp.id, "day", form.day, reason);
-        }
-        if (form.note != null) {
-          next = await updateH5PowerUp(powerUp.id, "note", form.note, reason);
-        }
-        if (next) apply(next);
+        if (!form.day) return;
+        const next = await updateH5PowerUp(
+          powerUp.id,
+          form.day,
+          form.note ?? "",
+          powerUp.day,
+          text(powerUp.note, ""),
+          reason,
+        );
+        apply(next);
         toast(`${powerUp.label} 已更新`);
       },
     });

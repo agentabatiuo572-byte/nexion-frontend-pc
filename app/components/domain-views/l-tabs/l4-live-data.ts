@@ -95,7 +95,15 @@ export type L4OperationsData = {
   };
   phaseEffect: L4PhaseRow[];
   history: L4HistoryRow[];
-  quality: { serverCanonical: boolean; sameActorRates: boolean; actorCoveragePct: number; incompleteRatesAreNull: boolean; eventCount: number };
+  quality: {
+    serverCanonical: boolean;
+    sameActorRates: boolean;
+    actorCoveragePct: number;
+    incompleteRatesAreNull: boolean;
+    eventCount: number;
+    duplicateEventsIgnored: number;
+    businessTimeZone: string;
+  };
   liveFacts: Record<string, number>;
   degraded?: { code: string; message: string };
 };
@@ -104,32 +112,62 @@ function list(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((row) => row && typeof row === "object") as Record<string, unknown>[] : [];
 }
 
-function text(value: unknown, fallback = "") {
-  return typeof value === "string" ? value : value == null ? fallback : String(value);
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
-function finite(value: unknown, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+function number(value: unknown, options: { integer?: boolean; percent?: boolean } = {}) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  if (options.integer && !Number.isSafeInteger(value)) return null;
+  if (options.percent && value > 100) return null;
+  return value;
 }
 
-function nullable(value: unknown) {
-  if (value === null || value === undefined || value === "") return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+function nullableNumber(value: unknown, options: { percent?: boolean } = {}) {
+  if (value === null) return null;
+  return number(value, options);
 }
 
-function summary(value: unknown) {
-  return Object.fromEntries(Object.entries(record(value)).map(([key, item]) => [key, nullable(item)]));
+function isoDate(value: unknown) {
+  const parsed = text(value);
+  return /^\d{4}-\d{2}-\d{2}$/.test(parsed) && !Number.isNaN(Date.parse(`${parsed}T00:00:00Z`)) ? parsed : "";
 }
 
-function dist(value: unknown): L4DistRow[] {
-  return list(value).map((row) => ({ key: text(row.key, "未标注"), count: finite(row.count) }));
+function exactNumberSummary(
+  value: unknown,
+  required: ReadonlyArray<[string, { integer?: boolean; percent?: boolean; nullable?: boolean }]>,
+) {
+  const input = record(value);
+  const result: Record<string, number | null> = {};
+  for (const [key, options] of required) {
+    if (!Object.prototype.hasOwnProperty.call(input, key)) return null;
+    const parsed = options.nullable
+      ? nullableNumber(input[key], { percent: options.percent })
+      : number(input[key], options);
+    if (parsed === null && !options.nullable) return null;
+    if (parsed === null && input[key] !== null) return null;
+    result[key] = parsed;
+  }
+  return result;
+}
+
+function dist(value: unknown): L4DistRow[] | null {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set<string>();
+  const result: L4DistRow[] = [];
+  for (const row of list(value)) {
+    const key = text(row.key);
+    const count = number(row.count, { integer: true });
+    if (!key || count === null || seen.has(key)) return null;
+    seen.add(key);
+    result.push({ key, count });
+  }
+  return result;
 }
 
 export function readL4Operations(value: unknown): L4OperationsData | null {
   const root = record(value);
-  if (!Object.prototype.hasOwnProperty.call(root, "available")) return null;
+  if (typeof root.available !== "boolean") return null;
   const period = record(root.period);
   const device = record(root.device);
   const tasks = record(root.tasks);
@@ -137,52 +175,150 @@ export function readL4Operations(value: unknown): L4OperationsData | null {
   const quality = record(root.quality);
   const live = record(root.liveFacts);
   const degraded = record(root.degraded);
+  const periodKey = text(period.key);
+  const periodLabel = text(period.label);
+  const periodFrom = isoDate(period.from);
+  const periodTo = isoDate(period.to);
+  const phaseFilter = text(root.phaseFilter);
+  if (!["day", "week", "month", "custom"].includes(periodKey)
+      || !periodLabel || !periodFrom || !periodTo || periodFrom > periodTo
+      || !/^(ALL|P[1-6])$/.test(phaseFilter)) return null;
+
+  const deviceSummary = exactNumberSummary(device.summary, [
+    ["periodPurchasedDevices", { integer: true }],
+    ["periodRetiredDevices", { integer: true }],
+    ["periodLockedDevices", { integer: true }],
+    ["periodFirstYieldDevices", { integer: true }],
+    ["dailyYieldUsdt", {}],
+    ["dailyYieldNex", {}],
+    ["degradationLossUsdt", {}],
+    ["activeDevices", { integer: true }],
+  ]);
+  const taskSummary = exactNumberSummary(tasks.summary, [
+    ["dispatched", { integer: true }],
+    ["completed", { integer: true }],
+    ["acceptanceRate", { percent: true, nullable: true }],
+    ["queueSaturation", { percent: true, nullable: true }],
+    ["checkinActive", { integer: true }],
+  ]);
+  const networkSummary = exactNumberSummary(network.summary, [
+    ["directRefs", { integer: true }],
+    ["commissionEvents", { integer: true }],
+    ["commissionPaidUsdt", {}],
+    ["teamGmvUsdt", {}],
+    ["promotionRate", { percent: true, nullable: true }],
+    ["commissionTriggerRate", { percent: true, nullable: true }],
+  ]);
+  if (!deviceSummary || !taskSummary || !networkSummary
+      || typeof record(tasks.summary).orderedTaskJoin !== "boolean"
+      || (taskSummary.completed ?? 0) > (taskSummary.dispatched ?? 0)) return null;
+
+  const byGeneration = dist(device.byGeneration);
+  const byModel = dist(device.byModel);
+  const byTier = dist(tasks.byTier);
+  const teamSizeDist = dist(network.teamSizeDist);
+  const vRankDist = dist(network.vRankDist);
+  const commissionStructure = dist(network.commissionStructure);
+  if (!byGeneration || !byModel || !byTier || !teamSizeDist || !vRankDist || !commissionStructure
+      || !Array.isArray(device.degradation) || !Array.isArray(root.phaseEffect) || !Array.isArray(root.history)) return null;
+
+  const degradation = list(device.degradation).map((row) => ({
+    band: text(row.band),
+    events: number(row.events, { integer: true }),
+    actualUsdt: number(row.actualUsdt),
+    lossUsdt: number(row.lossUsdt),
+  }));
+  if (degradation.some((row) => !row.band || row.events === null || row.actualUsdt === null || row.lossUsdt === null)) return null;
+
+  const expectedPhases = phaseFilter === "ALL" ? ["P1", "P2", "P3", "P4", "P5", "P6"] : [phaseFilter];
+  const phaseEffect = list(root.phaseEffect).map((row) => ({
+    phase: text(row.phase),
+    activeUsers: number(row.activeUsers, { integer: true }),
+    retentionRate: nullableNumber(row.retentionRate, { percent: true }),
+    conversionRate: nullableNumber(row.conversionRate, { percent: true }),
+    yieldUsdt: number(row.yieldUsdt),
+    transitionCount: number(row.transitionCount, { integer: true }),
+    dialChangeCount: number(row.dialChangeCount, { integer: true }),
+    conversionStepPct: row.conversionStepPct === null
+      ? null
+      : typeof row.conversionStepPct === "number" && Number.isFinite(row.conversionStepPct)
+        && row.conversionStepPct >= -100 && row.conversionStepPct <= 100 ? row.conversionStepPct : undefined,
+  }));
+  if (phaseEffect.length !== expectedPhases.length
+      || phaseEffect.some((row, index) => row.phase !== expectedPhases[index]
+        || row.activeUsers === null || row.retentionRate === undefined || row.conversionRate === undefined
+        || row.yieldUsdt === null || row.transitionCount === null || row.dialChangeCount === null
+        || row.conversionStepPct === undefined)) return null;
+
+  const seenBuckets = new Set<string>();
+  const history = list(root.history).map((row) => ({
+    bucket: isoDate(row.bucket),
+    devicePurchases: number(row.devicePurchases, { integer: true }),
+    deviceRetirements: number(row.deviceRetirements, { integer: true }),
+    yieldUsdt: number(row.yieldUsdt),
+    tasksCompleted: number(row.tasksCompleted, { integer: true }),
+    directRefs: number(row.directRefs, { integer: true }),
+    commissionPaidUsdt: number(row.commissionPaidUsdt),
+  }));
+  if (history.some((row) => !row.bucket || seenBuckets.has(row.bucket)
+      || (seenBuckets.add(row.bucket), false)
+      || row.devicePurchases === null || row.deviceRetirements === null || row.yieldUsdt === null
+      || row.tasksCompleted === null || row.directRefs === null || row.commissionPaidUsdt === null)) return null;
+
+  const actorCoveragePct = number(quality.actorCoveragePct, { percent: true });
+  const eventCount = number(quality.eventCount, { integer: true });
+  const duplicateEventsIgnored = number(quality.duplicateEventsIgnored, { integer: true });
+  const businessTimeZone = text(quality.businessTimeZone);
+  if (quality.serverCanonical !== true || typeof quality.sameActorRates !== "boolean"
+      || quality.incompleteRatesAreNull !== true || actorCoveragePct === null || eventCount === null
+      || duplicateEventsIgnored === null || businessTimeZone !== "UTC+08:00"
+      || root.available !== (eventCount > 0)) return null;
+  const rateValues = [
+    taskSummary.acceptanceRate,
+    networkSummary.promotionRate,
+    networkSummary.commissionTriggerRate,
+    ...phaseEffect.flatMap((row) => [row.retentionRate, row.conversionRate]),
+  ];
+  if (!quality.sameActorRates && rateValues.some((item) => item !== null)) return null;
+
+  const liveFacts: Record<string, number> = {};
+  for (const [key, item] of Object.entries(live)) {
+    const parsed = number(item, { integer: true });
+    if (parsed === null) return null;
+    liveFacts[key] = parsed;
+  }
+  if (!Object.prototype.hasOwnProperty.call(liveFacts, "activeUserDevices")
+      || !Object.prototype.hasOwnProperty.call(liveFacts, "teamRelationships")) return null;
+
+  const degradedValue = Object.keys(degraded).length
+    ? { code: text(degraded.code), message: text(degraded.message) } : undefined;
+  if ((!root.available && (!degradedValue?.code || !degradedValue.message))
+      || (root.available && degradedValue)) return null;
+
   return {
-    available: root.available === true,
-    period: {
-      key: (["day", "week", "month", "custom"].includes(text(period.key)) ? text(period.key) : "week") as L4Period,
-      label: text(period.label, "近 7 天"),
-      from: text(period.from),
-      to: text(period.to),
-    },
-    phaseFilter: (/^(ALL|P[1-6])$/.test(text(root.phaseFilter)) ? text(root.phaseFilter) : "ALL") as L4Phase,
+    available: root.available,
+    period: { key: periodKey as L4Period, label: periodLabel, from: periodFrom, to: periodTo },
+    phaseFilter: phaseFilter as L4Phase,
     device: {
-      summary: summary(device.summary),
-      byGeneration: dist(device.byGeneration),
-      byModel: dist(device.byModel),
-      degradation: list(device.degradation).map((row) => ({
-        band: text(row.band, "未标注"), events: finite(row.events), actualUsdt: finite(row.actualUsdt), lossUsdt: finite(row.lossUsdt),
-      })),
+      summary: deviceSummary,
+      byGeneration,
+      byModel,
+      degradation: degradation as Array<{ band: string; events: number; actualUsdt: number; lossUsdt: number }>,
     },
-    tasks: { summary: summary(tasks.summary), byTier: dist(tasks.byTier) },
-    network: {
-      summary: summary(network.summary),
-      teamSizeDist: dist(network.teamSizeDist),
-      vRankDist: dist(network.vRankDist),
-      commissionStructure: dist(network.commissionStructure),
-    },
-    phaseEffect: list(root.phaseEffect).map((row) => ({
-      phase: text(row.phase), activeUsers: finite(row.activeUsers), retentionRate: nullable(row.retentionRate),
-      conversionRate: nullable(row.conversionRate), yieldUsdt: finite(row.yieldUsdt),
-      transitionCount: finite(row.transitionCount), dialChangeCount: finite(row.dialChangeCount),
-      conversionStepPct: nullable(row.conversionStepPct),
-    })),
-    history: list(root.history).map((row) => ({
-      bucket: text(row.bucket), devicePurchases: finite(row.devicePurchases), deviceRetirements: finite(row.deviceRetirements),
-      yieldUsdt: finite(row.yieldUsdt), tasksCompleted: finite(row.tasksCompleted), directRefs: finite(row.directRefs),
-      commissionPaidUsdt: finite(row.commissionPaidUsdt),
-    })),
+    tasks: { summary: taskSummary, byTier },
+    network: { summary: networkSummary, teamSizeDist, vRankDist, commissionStructure },
+    phaseEffect: phaseEffect as L4PhaseRow[],
+    history: history as L4HistoryRow[],
     quality: {
-      serverCanonical: quality.serverCanonical === true,
-      sameActorRates: quality.sameActorRates === true,
-      actorCoveragePct: finite(quality.actorCoveragePct),
-      incompleteRatesAreNull: quality.incompleteRatesAreNull === true,
-      eventCount: finite(quality.eventCount),
+      serverCanonical: true,
+      sameActorRates: quality.sameActorRates,
+      actorCoveragePct,
+      incompleteRatesAreNull: true,
+      eventCount,
+      duplicateEventsIgnored,
+      businessTimeZone,
     },
-    liveFacts: Object.fromEntries(Object.entries(live).flatMap(([key, item]) => {
-      const parsed = Number(item);
-      return Number.isFinite(parsed) && parsed >= 0 ? [[key, parsed]] : [];
-    })),
-    degraded: Object.keys(degraded).length ? { code: text(degraded.code), message: text(degraded.message) } : undefined,
+    liveFacts,
+    degraded: degradedValue,
   };
 }

@@ -131,6 +131,15 @@ function operationMarkers(w: A2OperationRow): OperationMarker[] {
   return [{ key: "general", label: "高敏动作", className: "a2-sensitive" }];
 }
 
+function normalizeOperatorIdentity(value: string | null | undefined) {
+  return (value ?? "").trim().toLocaleLowerCase();
+}
+
+function isCurrentOperator(w: A2OperationRow, principal: AuthPrincipal) {
+  const current = normalizeOperatorIdentity(principal.name);
+  return w.mine || (!!current && current === normalizeOperatorIdentity(w.operator));
+}
+
 /* ────────────────── 主组件 ────────────────── */
 
 export function A2Audit({ ctx }: { ctx: ACtx }) {
@@ -569,7 +578,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {isFinal ? (
                         <span className={`bdg ${HIST_TONE[status] ?? "dim"}`}>{HIST_LABEL[status] ?? status}</span>
-                      ) : canApprove ? (
+                      ) : canApprove && !isCurrentOperator(w, principal) ? (
                         <>
                           <button
                             className="l-btn sm mc"
@@ -581,7 +590,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                           >取消</button>
                         </>
                       ) : (
-                        <span className="bdg dim">待门槛者执行</span>
+                        <span className="bdg dim">
+                          {isCurrentOperator(w, principal) ? "需其他具权人员执行" : "待门槛者执行"}
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -852,7 +863,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
             onClose={() => setWoIdx(null)}
             footer={
               !isFinal ? (
-                canApprove ? (
+                canApprove && !isCurrentOperator(w, principal) ? (
                   <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid var(--border)" }}>
                     <button
                       className="l-btn mc"
@@ -867,7 +878,9 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
                   </div>
                 ) : (
                   <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
-                    <span className="bdg dim">待门槛者执行</span>
+                    <span className="bdg dim">
+                      {isCurrentOperator(w, principal) ? "需其他具权人员执行" : "待门槛者执行"}
+                    </span>
                   </div>
                 )
               ) : null

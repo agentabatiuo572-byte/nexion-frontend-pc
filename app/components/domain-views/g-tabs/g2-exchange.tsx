@@ -211,7 +211,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     setQueueDrawer(null);
     openActionConfirm({
       action: `强制取消排队单 · ${order.exchangeNo}`,
-      detail: <>取消该兑换排队单,{order.exchangeAmountDisplay} 退回用户余额。常用于地域封锁/风控命中;确认后立即执行并写入 A2 审计。</>,
+      detail: <>取消该兑换排队单,{order.exchangeAmountDisplay} 排队阶段未扣余额,取消只终止后续成交。常用于地域封锁/风控命中;确认后立即执行并写入 A2 审计。</>,
       run: async (reason) => {
         await mutate(`cancel:${order.exchangeNo}`, () => cancelG2ExchangeQueueOrder(order.exchangeNo, reason, OPERATOR()), "排队单已立即取消");
       },
@@ -297,7 +297,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
                 <span className="bdg warn">{order.etaLabel} 处理</span>
               </div>
             ))}
-            <div className="gtint" style={{ marginTop: 10 }}><b>排队 vs 拒绝</b> · 默认超 cap 进次日队列(用户可在到期前取消),也可改成直接拒绝。地域封锁后,该国已在队列里的单子转取消,钱退回不锁死。</div>
+            <div className="gtint" style={{ marginTop: 10 }}><b>排队 vs 拒绝</b> · 默认超 cap 进次日队列(用户可在到期前取消),也可改成直接拒绝。排队阶段不扣用户余额;地域封锁后,该国已在队列里的单子转取消,不会发生后续成交。</div>
           </div>
         </section>
       </div>
@@ -313,7 +313,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
           </div>
         </div>
         <div className="l-b">
-          <div className="gtint"><b>地域封锁现状</b> · 当前封锁 {geoBlocked.length ? geoBlocked.map((row) => row.cc).join(" / ") : "无"}(J2 权威下发,本页只读)。封锁按边缘 IP 判定,命中的兑换归「被拦」(子类 geo-blocked),不另立终态;该国已在队列的单子转取消、退回不锁死。</div>
+          <div className="gtint"><b>地域封锁现状</b> · 当前封锁 {geoBlocked.length ? geoBlocked.map((row) => row.cc).join(" / ") : "无"}(J2 权威下发,本页只读)。封锁按边缘 IP 判定,命中的兑换归「被拦」(子类 geo-blocked),不另立终态;该国已在队列的单子转取消,且排队阶段本就不扣用户余额。</div>
         </div>
       </section>
 

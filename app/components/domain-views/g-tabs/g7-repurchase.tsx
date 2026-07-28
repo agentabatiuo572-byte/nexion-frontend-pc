@@ -179,12 +179,15 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       ),
       amplifies: param.b1RedlineTriggered,
       edit: param.key === "presets"
-        ? { kind: "text", current: paramEditValue(param) }
+        ? { kind: "text", current: paramEditValue(param), disallowCurrent: true }
         : { kind: "number", current: paramEditValue(param),
             unit: param.key === "apy" || param.key === "penalty" ? "%" : param.key === "lockDays" ? "天" : undefined,
             min: param.key === "apy" || param.key === "penalty" || param.key === "lottery" ? 0 : 1,
             max: param.key === "apy" ? 300 : param.key === "penalty" || param.key === "lottery" ? 100 : param.key === "lockDays" ? 3650 : 10,
-            step: param.key === "lockDays" || param.key === "lottery" ? 1 : 0.01 },
+            step: param.key === "lockDays" || param.key === "lottery" ? 1 : 0.01,
+            disallowCurrent: true,
+            amplifiesWhen: param.key === "penalty" ? "decrease"
+              : param.key === "apy" || param.key === "nurture" || param.key === "lottery" ? "increase" : undefined },
       businessForm: param.key === "lottery" ? {
         kind: "multi-field",
         title: "G4 奖池容量核对",
@@ -192,7 +195,7 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
         fields: [{ key: "g4Ref", label: "G4 核对 ref", inputKind: "text", placeholder: "例如 G4-POOL-2026-07", required: true, wide: true }],
       } : undefined,
       run: async (reason, value, businessValue) => {
-        if (!value) return;
+        if (value === undefined || value === null || String(value).trim() === "") return;
         await mutate(param.key, () => updateG7RepurchaseParam(
           param.key, String(value), reason, currentAdminOperator(), businessValue?.g4Ref ?? "",
         ), `${label} 已立即生效 · 已记审计`);

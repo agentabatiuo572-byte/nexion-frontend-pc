@@ -14,6 +14,26 @@ const highOps = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import
 const designKit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
 const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/registry/k.ts", import.meta.url), "utf8");
+const backendMapper = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/risk/mapper/RiskOpsMapper.java", import.meta.url),
+  "utf8",
+);
+const registrationService = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/auth/application/AppUserRegistrationService.java", import.meta.url),
+  "utf8",
+);
+const referralMapper = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/growth/mapper/ReferralRewardMapper.java", import.meta.url),
+  "utf8",
+);
+const riskService = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/risk/application/OpsRiskService.java", import.meta.url),
+  "utf8",
+);
+const clusterBatch = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/risk/application/MultiAccountClusterBatchService.java", import.meta.url),
+  "utf8",
+);
 
 test("K1 uses canonical parameters and structured numeric controls without automatic freeze", () => {
   assert.match(component, /maxSignupPerIp24h/);
@@ -149,4 +169,36 @@ test("K1 translates network failures and lets keyboard users open a cluster", ()
   assert.match(errorMessages, /旧数据与写操作已隐藏/);
   assert.match(component, /event\.key === "Enter" \|\| event\.key === " "/);
   assert.match(component, /tabIndex=\{focusBlocksSelection \? undefined : 0\}/);
+});
+
+test("K1 consumes all three authoritative evidence layers and real account context", () => {
+  assert.match(backendMapper, /'ip'\s+AS layer/);
+  assert.match(backendMapper, /nx_user_registration_otp/);
+  assert.match(backendMapper, /'device'\s+AS layer/);
+  assert.match(backendMapper, /nx_risk_decision/);
+  assert.match(backendMapper, /'payment'\s+AS layer/);
+  assert.match(backendMapper, /nx_wallet_bank_card/);
+  assert.match(backendMapper, /sponsor_user_id AS sponsorUserId/);
+  assert.match(backendMapper, /nx_referral_reward_settlement/);
+  assert.match(backendMapper, /nx_wallet_ledger/);
+  assert.match(backendMapper, /nx_user_wallet/);
+  assert.doesNotMatch(backendMapper, /COALESCE\(u\.status,'ACTIVE'\)/);
+  assert.doesNotMatch(component, /各入口执行链在跨模块验收补齐/);
+});
+
+test("K1 registration and reward-money entries fail closed on current server facts", () => {
+  assert.match(registrationService, /maxSignupPerIp24h/);
+  assert.match(registrationService, /countRegisteredAccountsByClientIp24h/);
+  assert.match(registrationService, /USER_REGISTRATION_K1_IP_LIMIT/);
+  assert.match(referralMapper, /nx_admin_risk_multi_account_cluster/);
+  assert.match(referralMapper, /status IN \('detected','flagged','frozen'\)/);
+});
+
+test("K1 actions keep A2, C2, K4, J3, H8 and A4 on server-authoritative contracts", () => {
+  assert.match(riskService, /delegatedDirectExecutionGuard/);
+  assert.match(riskService, /userAccountControlFacade\.freezeActiveUsersByUserNos/);
+  assert.match(riskService, /userAccountControlFacade\.restoreUsersFrozenBySource/);
+  assert.match(clusterBatch, /RISK_MULTI_ACCOUNT_FLAGGED/);
+  assert.match(clusterBatch, /EVENT_TYPE/);
+  assert.match(referralMapper, /risk_cluster/);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-/** F2 · 网络版税费率 —— L1-L7 Unilevel cascade(direct lemon / extended purple)+ Rate Tier 升档 + 8 参数卡 + 合并出口护栏。 */
+/** F2 · 网络版税费率 —— L1-L7 单一费率源 + Partner Status 权益档 + 结算参数/护栏。 */
 import { CodeTag } from "../design-kit";
 import type { FViewCtx } from "./types";
 
@@ -14,28 +14,25 @@ function percentLabel(value: number) {
   return `${formatNumber(value)}%`;
 }
 
-function policyText(policy: Record<string, unknown>, key: string, fallback = "-") {
-  const value = policy[key];
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return fallback;
-}
-
 export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   const hasUnilevelRows = ctx.f2Unilevel.length > 0;
-  const maxCombinedOutflow = policyText(ctx.f2CommissionPolicy, "maxCombinedOutflowPct", "-");
-  // Partner Status 4 档门槛(JSON bronze/silver/gold/diamond)回填解析 · 无记录用默认 0/5K/50K/500K。
+  const totalUnilevelPct = ctx.f2Unilevel.reduce((sum, row) => sum + row.usdt, 0);
+  // Partner Status 是权益档，不改变 L1-L7 费率。兼容读取旧 bronze/silver/gold，
+  // 提交时只写当前 Standard/Verified/Premium/Diamond schema。
   const partnerTiersRaw = ctx.f2ConfigValues["F.partner.tiers"] ?? "";
-  let ptBronze = "0";
-  let ptSilver = "5000";
-  let ptGold = "50000";
+  let ptStandard = "0";
+  let ptVerified = "5000";
+  let ptPremium = "50000";
   let ptDiamond = "500000";
   if (partnerTiersRaw) {
     try {
       const parsed = JSON.parse(partnerTiersRaw);
-      if (typeof parsed.bronze === "number") ptBronze = String(parsed.bronze);
-      if (typeof parsed.silver === "number") ptSilver = String(parsed.silver);
-      if (typeof parsed.gold === "number") ptGold = String(parsed.gold);
+      if (typeof parsed.standard === "number") ptStandard = String(parsed.standard);
+      else if (typeof parsed.bronze === "number") ptStandard = String(parsed.bronze);
+      if (typeof parsed.verified === "number") ptVerified = String(parsed.verified);
+      else if (typeof parsed.silver === "number") ptVerified = String(parsed.silver);
+      if (typeof parsed.premium === "number") ptPremium = String(parsed.premium);
+      else if (typeof parsed.gold === "number") ptPremium = String(parsed.gold);
       if (typeof parsed.diamond === "number") ptDiamond = String(parsed.diamond);
     } catch { /* schema 异常用默认,提交时后端 validatePartnerTiers 兜底 */ }
   }
@@ -105,11 +102,15 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                       edit: { kind: "text", current: nv }, detail: `${u.l} NEX 奖励/$1 当前 ${nv} · NEX 派发为资金流出,受 B1 覆盖率约束`,
                     })}>{nv}<small>NEX/$1</small></button>
                   <div style={{ fontSize: 11.5, fontWeight: u.direct ? 600 : 400, color: u.direct ? "var(--brand)" : "var(--ink-4)" }}>{u.ui}</div>
-                  <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
-                    name: `网络版税 ${u.l} 费率调整`, amplify: true, op: "param", paramKey: `F.unilevel.${u.l}`,
-                    edit: { kind: "text", current: eff, unit: "%" },
-                    detail: `${u.l} 当前 USDT ${eff} · NEX ${nv}/$1 · 改后对下一笔结算生效,不回溯已计提`,
-                  })}>调整</button>
+                  {u.direct ? (
+                    <span className="tag" style={{ justifySelf: "end" }}>固定 10%</span>
+                  ) : (
+                    <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
+                      name: `网络版税 ${u.l} 费率调整`, amplify: true, op: "param", paramKey: `F.unilevel.${u.l}`,
+                      edit: { kind: "number", current: formatNumber(u.usdt), unit: "%" },
+                      detail: `${u.l} 当前 USDT ${eff} · NEX ${nv}/$1 · 改后对下一笔结算生效,不回溯已计提`,
+                    })}>调整</button>
+                  )}
                 </div>
               );
             })}
@@ -118,14 +119,6 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
             <span className="lg">直推 DIRECT(L1)</span>
             <span className="lg ext">扩展 EXTENDED(L2–L7)</span>
             <span className="mono" style={{ marginLeft: "auto", fontFamily: "var(--mono)" }}>改后对下一笔结算生效 · 不回溯</span>
-          </div>
-          <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
-            <span>Unilevel 层级深度 · 当前 <b style={{ color: "var(--ink-2)" }}>{ctx.f2ConfigValues["F.unilevel.depth"] ?? "7"}</b> 层(L1–L{ctx.f2ConfigValues["F.unilevel.depth"] ?? "7"})</span>
-            <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
-              name: "Unilevel 层级深度调整", op: "param", paramKey: "F.unilevel.depth",
-              edit: { kind: "number", current: ctx.f2ConfigValues["F.unilevel.depth"] ?? "7", unit: "层" },
-              detail: `Unilevel 网络版税结算层级深度 · 当前 ${ctx.f2ConfigValues["F.unilevel.depth"] ?? "7"} 层 · 范围 1-10 · 改后对下一笔结算生效,不影响已计提层级。`,
-            })}>调整深度</button>
           </div>
           <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
             <span>单层暂停 · L1–L7 各层独立暂停网络版税派发</span>
@@ -159,55 +152,60 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
         </section>
 
         <section className="pane">
-          <div className="pane-h"><span className="ph-ttl">Rate Tier 升档</span><span className="ph-sub">按 30d 网络活跃度</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag>费率升档</CodeTag></span></div>
+          <div className="pane-h"><span className="ph-ttl">Partner Status 权益档</span><span className="ph-sub">不改变版税费率</span><span className="ph-r" style={{ marginLeft: "auto" }}><CodeTag>非资金倍率</CodeTag></span></div>
           <div className="tier-list">
-            {ctx.f2RateTiers.map((t) => (
-              <div key={t.nm} className={`tier ${t.cls}`}>
-                <div className="nm">{t.nm}<span className="req">{t.req}</span></div>
-                <span className="tier-rate">{t.rate}</span>
-                <span className="dist">{t.dist}</span>
+            {[
+              { name: "Standard", threshold: ptStandard, perk: "基础权益", cls: "" },
+              { name: "Verified", threshold: ptVerified, perk: "优先客服支持", cls: "t1" },
+              { name: "Premium", threshold: ptPremium, perk: "新品优先", cls: "t2" },
+              { name: "Diamond", threshold: ptDiamond, perk: "AMA + VIP", cls: "t3" },
+            ].map((tier) => (
+              <div key={tier.name} className={`tier ${tier.cls}`}>
+                <div className="nm">{tier.name}<span className="req">${tier.threshold}+</span></div>
+                <span className="tier-rate">权益</span>
+                <span className="dist">{tier.perk}</span>
               </div>
             ))}
           </div>
-          <div style={{ padding: "0 18px 14px", fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.55 }}>Tier 按 30d 网络贡献 GMV 自动判定 · 派生直接版税(Direct Royalty)的基础费率。</div>
+          <div style={{ padding: "0 18px 14px", fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.55 }}>按月度网络活跃度判定并解锁权益；L1 固定 10%，Partner Status 不叠加、不升档任何版税费率。</div>
           <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
-            <span>Partner Status · 当前 <b style={{ color: "var(--ink-2)" }}>${ptBronze}/${ptSilver}/${ptGold}/${ptDiamond}</b>(bronze/silver/gold/diamond)</span>
-            <button className="fbtn primary amp" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
-              name: "Partner Status 4 档门槛调整", amplify: true,
+            <span>门槛 · 当前 <b style={{ color: "var(--ink-2)" }}>${ptStandard}/${ptVerified}/${ptPremium}/${ptDiamond}</b>(Standard/Verified/Premium/Diamond)</span>
+            <button className="fbtn primary" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
+              name: "Partner Status 4 档权益门槛调整", amplify: false,
               businessForm: {
                 kind: "multi-field",
-                title: "Partner Status 4 档门槛(USD)",
-                hint: "bronze/silver/gold/diamond 4 档晋升门槛 · 须为非负数字且非递减(bronze ≤ silver ≤ gold ≤ diamond)。",
+                title: "Partner Status 4 档权益门槛(USD)",
+                hint: "Standard/Verified/Premium/Diamond 仅决定权益 · 须为非负数字且非递减。",
                 fields: [
-                  { key: "bronze", label: "Bronze 门槛(USD)", current: ptBronze, inputKind: "number", min: 0 },
-                  { key: "silver", label: "Silver 门槛(USD)", current: ptSilver, inputKind: "number", min: 0 },
-                  { key: "gold", label: "Gold 门槛(USD)", current: ptGold, inputKind: "number", min: 0 },
+                  { key: "standard", label: "Standard 门槛(USD)", current: ptStandard, inputKind: "number", min: 0 },
+                  { key: "verified", label: "Verified 门槛(USD)", current: ptVerified, inputKind: "number", min: 0 },
+                  { key: "premium", label: "Premium 门槛(USD)", current: ptPremium, inputKind: "number", min: 0 },
                   { key: "diamond", label: "Diamond 门槛(USD)", current: ptDiamond, inputKind: "number", min: 0 },
                 ],
               },
-              detail: `Partner Status 4 档晋升门槛 · 当前 $${ptBronze}/$${ptSilver}/$${ptGold}/$${ptDiamond} · 调低门槛放大权益发放,受 B1 约束。`,
+              detail: `Partner Status 权益门槛 · 当前 $${ptStandard}/$${ptVerified}/$${ptPremium}/$${ptDiamond} · 不改变佣金、版税或 B1 资金口径。`,
               run: async (reason, bv) => {
                 if (!bv) throw new Error("请填写全部 4 档");
-                const bronze = Number(bv.bronze);
-                const silver = Number(bv.silver);
-                const gold = Number(bv.gold);
+                const standard = Number(bv.standard);
+                const verified = Number(bv.verified);
+                const premium = Number(bv.premium);
                 const diamond = Number(bv.diamond);
-                if (![bronze, silver, gold, diamond].every(Number.isFinite) || [bronze, silver, gold, diamond].some((n) => n < 0)) {
+                if (![standard, verified, premium, diamond].every(Number.isFinite) || [standard, verified, premium, diamond].some((n) => n < 0)) {
                   throw new Error("4 档门槛均须为非负数字");
                 }
-                if (bronze > silver || silver > gold || gold > diamond) {
-                  throw new Error("4 档门槛须非递减(bronze ≤ silver ≤ gold ≤ diamond)");
+                if (standard > verified || verified > premium || premium > diamond) {
+                  throw new Error("4 档门槛须非递减(Standard ≤ Verified ≤ Premium ≤ Diamond)");
                 }
-                await ctx.updateF2Config("F.partner.tiers", JSON.stringify({ bronze, silver, gold, diamond }), reason);
-                ctx.toast(`Partner 4 档门槛已确认生效 · $${bronze}/$${silver}/$${gold}/$${diamond}`);
+                await ctx.updateF2Config("F.partner.tiers", JSON.stringify({ standard, verified, premium, diamond }), reason);
+                ctx.toast(`已提交 A2 审批 · Partner Status 门槛 $${standard}/$${verified}/$${premium}/$${diamond}`);
               },
-            })}>Partner 4 档</button>
+            })}>调整权益门槛</button>
           </div>
         </section>
       </div>
 
       <div className="params">
-        {ctx.f2Params.map((p) => {
+        {ctx.f2Params.filter((p) => ["clampMin", "clampMax", "cool", "promo"].includes(p.id)).map((p) => {
           const eff = p.value || p.def;
           return (
             <div key={p.id} className="param">
@@ -227,7 +225,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
       <div className="guard">
         <span className="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg></span>
         <div>
-          <b>合并出口护栏 §1.8</b> · 用户侧总版税由 Direct Royalty 与 Network L1 叠加判定,当前最大出口 <b>{maxCombinedOutflow}</b>。所有调整经 <b>操作确认</b>后写入审计,改后对下一笔结算生效,不回溯已计提。
+          <b>版税出口护栏</b> · L1 是唯一 10% 直推来源，不与另一条 Direct 费率重复叠加；当前 L1–L7 名义费率合计 <b>{percentLabel(totalUnilevelPct)}</b>。资金放大调整经 <b>A2 审批 + B1 预检</b>后对下一笔结算生效，不回溯已计提。
           {ctx.f2Guardrails.length > 0 && (
             <div style={{ marginTop: 6, display: "grid", gap: 3 }}>
               {ctx.f2Guardrails.map((item) => <span key={item} className="mono">{item}</span>)}
@@ -236,7 +234,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
         </div>
       </div>
 
-      <p className="f-foot">L1 直推 10% 是承载招募奖励的「钩子层」;L4–L7 微薄费率主要做关系网保持。<b>peer 平级奖</b> 与 <b>promo 周倍率</b> 是仅有的两个会显著放大佣金流出的杠杆;两者同步上调时必须先核验 B1 覆盖率。</p>
+      <p className="f-foot">L1 直推恒定 10%；L2–L7 才应用 InfluenceScore。Partner Status 只解锁权益。费率、NEX/$1 与 promo 倍率上调会放大资金流出，必须经 A2 审批并通过 B1 覆盖率预检。</p>
     </>
   );
 }

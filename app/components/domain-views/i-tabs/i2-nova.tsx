@@ -274,7 +274,8 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     okLabel: "确认保存",
     run: (reason) => {
       const items = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(distDraft[item.key] ?? 0) }));
-      return runBackend(actions.updateI2Distribution(items, reason), "真实事件概率分布已更新", () => setDistDrawer(false));
+      const expectedItems = SOCIAL_DIST.map((item) => ({ key: item.key, pct: Number(item.pct) }));
+      return runBackend(actions.updateI2Distribution(items, expectedItems, reason), "真实事件概率分布已更新", () => setDistDrawer(false));
     },
   });
 
@@ -571,7 +572,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
                         {canArchive && (
                           <button className="l-btn sm" style={{ marginLeft: canPublish ? 6 : 0 }} onClick={() => archiveTpl(t.ch, t.name)}>归档</button>
                         )}
-                        <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => editTpl(t)}>编辑</button>
+                        {st === "draft" && <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => editTpl(t)}>编辑</button>}
                         {st !== "published" && <button className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => removeTpl(t)}>删除</button>}
                         </>}
                       </td>

@@ -33,7 +33,7 @@ test("L3 真实财务事实可核验，聚合导出可在 L5 使用限时令牌�
     await expect(page.getByText(heading, { exact: true })).toBeVisible();
   }
   await expect(page.getByText(/部分周期统计尚未接入/)).toHaveCount(0);
-  await expect(page.getByText("用户级资金明细暂不可导出", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "申请导出脱敏资金明细", exact: true })).toBeEnabled();
   await expect(page.locator("body")).not.toContainText(/nx_wallet|nx_admin|LEDGER·TREASURY|MATURITY 聚合|REVENUE/);
 
   let createRequestCount = 0;

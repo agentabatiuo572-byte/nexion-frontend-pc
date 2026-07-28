@@ -16,6 +16,7 @@ import {
   updateH4WheelTier,
   deleteH4WheelTier,
   createH4WheelGuard,
+  updateH4WheelGuard,
 } from "@/lib/admin/h-client";
 import type { HCtx } from "./types";
 
@@ -107,7 +108,9 @@ function contractForTask(task: QuestTask, contracts: Array<Record<string, any>> 
 }
 
 function statusOptions(current: EventState) {
-  return [current, ...(["upcoming", "ongoing", "ended"] as EventState[]).filter((item) => item !== current)];
+  if (current === "upcoming") return ["ongoing", "ended"] as EventState[];
+  if (current === "ongoing") return ["ended"] as EventState[];
+  return [] as EventState[];
 }
 
 function numericValue(value: unknown) {
@@ -123,6 +126,11 @@ function boolValue(value: unknown) {
 function percentText(value: unknown) {
   const amount = numericValue(value);
   return Number.isInteger(amount) ? String(amount) : amount.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function casExpected(value: string) {
+  const normalized = value.trim();
+  return !normalized || normalized === "-" ? "__MISSING__" : normalized;
 }
 
 export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?: HSection }) {
@@ -158,8 +166,14 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
 
   const apply = (next: Record<string, any>) => setModel(next as H3Model);
 
-  const updateConfig = async (key: string, value: string, reason: string, label: string) => {
-    apply(await updateH3QuestConfig(key, value, reason));
+  const updateConfigWithExpected = async (
+    key: string,
+    value: string,
+    expectedValue: string,
+    reason: string,
+    label: string,
+  ) => {
+    apply(await updateH3QuestConfig(key, value, reason, expectedValue));
     toast(`${label} 已更新`);
   };
 
@@ -171,7 +185,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       edit: { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
-        await updateConfig(key, value, reason, label);
+        await updateConfigWithExpected(key, value, casExpected(current), reason, label);
       },
     });
   };
@@ -180,11 +194,18 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     openActionConfirm({
       action: `调整奖励 · ${label}`,
       detail: <>当前奖励 <b>{current}</b>。升奖励可能放大流出,后端会做覆盖率红线校验。</>,
-      amplifies: true,
-      edit: { kind: "text", current },
+      edit: {
+        kind: "number",
+        current: String(numericValue(current)),
+        min: 0,
+        max: 100000,
+        step: 1,
+        disallowCurrent: true,
+        amplifiesWhen: "increase",
+      },
       run: async (reason, value) => {
         if (!value) return;
-        await updateConfig(key, value, reason, `奖励 ${label}`);
+        await updateConfigWithExpected(key, value, String(numericValue(current)), reason, `奖励 ${label}`);
       },
     });
   };
@@ -198,7 +219,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       edit: { kind: "text", current },
       run: async (reason, value) => {
         if (!value) return;
-        apply(await updateH4EventReward(event.id, value, reason));
+        apply(await updateH4EventReward(event.id, value, current, reason));
         toast(`${event.name} 奖励已更新`);
       },
     });
@@ -214,7 +235,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       okLabel: "确认修改",
       run: async (reason, value) => {
         if (!value) return;
-        apply(await updateH4EventStatus(event.id, value, reason));
+        apply(await updateH4EventStatus(event.id, value, event.state, reason));
         toast(`${event.name} 状态已更新`);
       },
     });
@@ -228,7 +249,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       reason: true,
       okLabel: event.featured ? "取消主推" : "设为主推",
       run: async (reason) => {
-        apply(await updateH4EventFeatured(event.id, !event.featured, reason));
+        apply(await updateH4EventFeatured(event.id, !Boolean(event.featured), Boolean(event.featured), reason));
         toast(`${event.name} 主推状态已更新`);
       },
     });
@@ -293,6 +314,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           state: bv.state || "ongoing",
           reward: String(bv.reward || "").trim(),
           condition: String(bv.condition || "").trim(),
+          targetValue: Number(bv.targetValue) || 1,
+          geo: String(bv.geo || "").trim(),
+          href: String(bv.href || "").trim(),
+          startsAt: String(bv.startsAt || "").trim() || null,
+          endsAt: String(bv.endsAt || "").trim() || null,
           featured: bv.featured === "true",
           trackable: bv.trackable === "true",
         };
@@ -317,9 +343,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           probabilityPct: Number(bv.probabilityPct) || 0,
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
           rewardKind: bv.rewardKind || "nex",
+          rewardAmount: Number(bv.rewardAmount) || 0,
+          voucherId: String(bv.voucherId || "").trim() || null,
+          dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
         };
         if (!payload.tierName || !payload.rewardName) return;
-        apply(await createH4WheelTier(payload, reason));
+        apply(await createH4WheelTier(payload, text(model?.wheelSignature, "__EMPTY__"), reason));
         toast(`· 档位「${payload.tierName}」已新建`);
       },
     });
@@ -341,6 +370,21 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         if (!payload.guardKey || !payload.guardLabel) return;
         apply(await createH4WheelGuard(payload, reason));
         toast(`· 护栏「${payload.guardLabel}」已新建`);
+      },
+    });
+  };
+
+  const openWheelGuard = (guard: { key: string; label: string; value: string }) => {
+    const current = text(guard.value);
+    openActionConfirm({
+      action: `转盘护栏 · ${guard.label}`,
+      detail: <>当前值 <b>{current}</b>；提交直接更新服务端抽奖裁决读取的 H4 护栏行，并做陈旧值比较。</>,
+      amplifies: guard.key !== "kill",
+      edit: { kind: "text", current },
+      run: async (reason, value) => {
+        if (!value) return;
+        apply(await updateH4WheelGuard(guard.key, value, current, reason));
+        toast(`· 转盘护栏「${guard.label}」已更新`);
       },
     });
   };
@@ -378,8 +422,46 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         if (Math.abs(total - 100) > 0.0001) {
           throw new Error("转盘档位概率合计必须等于 100%");
         }
-        apply(await updateH4WheelProbabilities(probabilities, reason));
+        apply(await updateH4WheelProbabilities(
+          probabilities,
+          text(model?.wheelSignature, "__EMPTY__"),
+          reason,
+        ));
         toast("· 转盘档位概率已更新并重新计算奖池签名");
+      },
+    });
+  };
+
+  const openNumericConfig = (
+    key: string,
+    label: string,
+    current: string,
+    min: number,
+    max: number,
+    step: number,
+    amplifiesWhen?: "increase" | "decrease",
+  ) => {
+    const expected = String(numericValue(current));
+    openActionConfirm({
+      action: label,
+      detail: <>当前值 <b>{current}</b>，提交使用当前值比较，若其他管理员已修改则拒绝覆盖。</>,
+      edit: { kind: "number", current: expected, min, max, step, disallowCurrent: true, amplifiesWhen },
+      run: async (reason, value) => {
+        if (!value) return;
+        await updateConfigWithExpected(key, value, expected, reason, label);
+      },
+    });
+  };
+
+  const openPromoStatus = () => {
+    const current = text(model?.promoBanner?.status, "paused").toLowerCase();
+    const next = current === "active" ? "paused" : "active";
+    openActionConfirm({
+      action: next === "active" ? "上架本周转化卡" : "下架本周转化卡",
+      detail: <>当前状态 <b>{current === "active" ? "上架中" : "已下架"}</b>，提交后用户端按服务端状态显示；并发变更会被拒绝。</>,
+      amplifies: next === "active",
+      run: async (reason) => {
+        await updateConfigWithExpected("promoBanner.status", next, current, reason, "转化卡上下架");
       },
     });
   };
@@ -398,6 +480,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           { key: "rewardName", label: "奖项展示", current: text(tier.reward), inputKind: "text", required: true, showDiff: true },
           { key: "rewardKind", label: "奖励类型", current: text(tier.kind, "nex"), inputKind: "select", options: ["nex", "points", "usdt", "coupon"], optionLabels: { nex: "NEX", points: "积分", usdt: "USDT", coupon: "代金券" }, required: true, showDiff: true },
           { key: "realOutflow", label: "真实流出", current: boolValue(tier.real) ? "1" : "0", inputKind: "select", options: ["0", "1"], optionLabels: { "0": "否", "1": "是" }, required: true, showDiff: true },
+          { key: "rewardAmount", label: "实际派奖数量", current: String(numericValue(tier.amount)), inputKind: "number", min: 0.000001, max: 1000000, step: 0.000001, required: true, showDiff: true },
+          { key: "voucherId", label: "代金券 ID", current: text(tier.voucherId, ""), inputKind: "text", showDiff: true },
+          { key: "dailyStock", label: "每日全局库存(0=不限)", current: String(numericValue(tier.dailyStock)), inputKind: "number", min: 0, max: 1000000, step: 1, required: true, showDiff: true },
         ],
       },
       run: async (reason, _value, bv) => {
@@ -408,7 +493,10 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           probabilityPct: numericValue(tier.prob),
           realOutflow: bv.realOutflow === "1" ? 1 : 0,
           rewardKind: bv.rewardKind || "nex",
-        }, reason));
+          rewardAmount: Number(bv.rewardAmount),
+          voucherId: String(bv.voucherId || "").trim() || null,
+          dailyStock: Math.max(0, Number(bv.dailyStock) || 0),
+        }, text(model?.wheelSignature, "__EMPTY__"), reason));
         toast(`· 档位「${tierName}」已更新并记审计`);
       },
     });
@@ -424,7 +512,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
         : <>为避免概率总和失真，请先在“改奖池 / 概率”把该档概率调为 0%，再删除。</>,
       run: async (reason) => {
         if (probability !== 0) throw new Error("删除档位前必须先将概率调整为 0%");
-        apply(await deleteH4WheelTier(tierName, reason));
+        apply(await deleteH4WheelTier(
+          tierName,
+          text(model?.wheelSignature, "__EMPTY__"),
+          reason,
+        ));
         toast(`· 档位「${tierName}」已删除并记审计`);
       },
     });
@@ -438,7 +530,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
     return (
       <section className="l-card">
         <div className="l-h"><span className="ttl">{moduleLabel} 数据加载失败</span></div>
-        <div className="l-b">{error ?? "UNKNOWN_ERROR"}</div>
+        <div className="l-b">
+          <div>{error ?? "UNKNOWN_ERROR"}</div>
+          <button className="l-btn sm mc" style={{ marginTop: 12 }} onClick={() => void reload()}>
+            重试加载
+          </button>
+        </div>
       </section>
     );
   }
@@ -570,7 +667,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                          <button className="l-btn sm mc" onClick={() => openTaskReward(`dayOne.tasks.${id}.reward`, text(task.task), text(task.reward))}>改奖励</button>
+                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.task), text(task.reward))}>改奖励</button>
                         </td>
                       </tr>
                     );
@@ -630,7 +727,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openTaskReward(`weekly.tier1.${index}.reward`, text(task.cond), text(task.reward))}>改奖励</button>
+                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))}>改奖励</button>
                         </td>
                       </tr>
                     );
@@ -666,7 +763,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openTaskReward(`weekly.tier2.${index}.reward`, text(task.cond), text(task.reward))}>改奖励</button>
+                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))}>改奖励</button>
                         </td>
                       </tr>
                     );
@@ -854,27 +951,27 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <small>对应用户端首页促销卡展示。</small>
             </span>
             <span className="v">{text(promoBanner.baseReward)} × {text(promoBanner.multiplier)} = {promoFinalReward(promoBanner.baseReward, promoBanner.multiplier)} NEX</span>
-            <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.baseReward", "转化卡基础奖励", text(promoBanner.baseReward), true)}>改基础</button>
-            <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.multiplier", "转化卡倍率", text(promoBanner.multiplier), true)}>改倍率</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promoBanner.baseReward), 0, 100000, 1, "increase")}>改基础</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.multiplier", "转化卡倍率", text(promoBanner.multiplier), 0.1, 5, 0.1, "increase")}>改倍率</button>
           </div>
           <div className="p-row">
             <span className="k">倒计时窗口</span>
             <span className="v">{text(promoBanner.countdownDays)}d {text(promoBanner.countdownHours)}h</span>
-            <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promoBanner.countdownDays), false)}>改天数</button>
-            <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promoBanner.countdownHours), false)}>改小时</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promoBanner.countdownDays), 0, 365, 1)}>改天数</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promoBanner.countdownHours), 0, 23, 1)}>改小时</button>
           </div>
           <div className="p-row">
             <span className="k">目标设备 / 日产展示</span>
             <span className="v">{text(promoBanner.targetDevice)} · ${text(promoBanner.targetDaily)}/d</span>
             <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promoBanner.targetDevice), false)}>改设备</button>
-            <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.targetDaily", "转化卡日产展示", text(promoBanner.targetDaily), false)}>改日产</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡日产展示", text(promoBanner.targetDaily), 0, 1000000, 0.01)}>改日产</button>
           </div>
           <div className="p-row">
             <span className="k">首页上下架</span>
             <span className="v">{text(promoBanner.status, "") === "active" ? "上架中" : "已下架"}</span>
             <button
               className="l-btn sm mc"
-              onClick={() => openSimpleConfig("promoBanner.status", "转化卡上下架", text(promoBanner.status, "") === "active" ? "paused" : "active", false)}
+              onClick={openPromoStatus}
             >
               {text(promoBanner.status, "") === "active" ? "下架" : "上架"}
             </button>
@@ -892,8 +989,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <div className="two-col">
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">活动列表(玩法闭集 8 种 · 当前演示 {model.events.length} 条)</span>
-            <span className="sub">· 主推位同时只能有一个 · 时间全按 UTC</span>
+            <span className="ttl">活动列表(玩法闭集 8 种 · 当前 {model.events.length} 条)</span>
+            <span className="sub">· 主推位同时只能有一个 · 陈旧页面提交会被拒绝</span>
             <div className="r">
               <button className="l-btn sm mc" onClick={() => openCreateEvent()}>+ 新建活动</button>
             </div>
@@ -914,6 +1011,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 {model.events.map((event) => {
                   const [label, tone] = stateTone.get(event.state) ?? EVENT_LABEL[event.state] ?? [event.state, "dim"];
                   const ended = event.state === "ended";
+                  const wheelEvent = text(event.kind).toLowerCase() === "wheel";
                   return (
                     <tr key={event.id}>
                       <td style={{ fontWeight: 600, color: "var(--ink)" }}>{event.name}</td>
@@ -922,7 +1020,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                       <td className="num mono">{text(event.reward)}</td>
                       <td>{event.featured ? <span className="bdg warn">主推</span> : <span style={{ color: "var(--ink-4)" }}>-</span>}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <button className="l-btn sm mc" onClick={() => openEventReward(event)} disabled={ended} style={{ marginRight: 6 }}>编辑</button>
+                        {wheelEvent ? (
+                          <span className="bdg dim" title="转盘实际奖励由下方奖池档位统一管理" style={{ marginRight: 6 }}>
+                            奖池管理
+                          </span>
+                        ) : (
+                          <button className="l-btn sm mc" onClick={() => openEventReward(event)} disabled={ended} style={{ marginRight: 6 }}>编辑</button>
+                        )}
                         {!ended && (
                           <button className="l-btn sm mc" onClick={() => openEventStatus(event)} style={{ marginRight: 6 }}>
                             {event.state === "ongoing" ? "下架" : "上架"}
@@ -1020,9 +1124,15 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                       </>
                     )}
                   </span>
-                  <button className="l-btn sm mc" onClick={() => openSimpleConfig(`wheel.guards.${guard.key}`, `转盘护栏 · ${guard.label}`, guard.value, guard.key !== "kill")}>
-                    {guard.key === "kill" ? "切" : "调"}
-                  </button>
+                  {guard.key === "cap" ? (
+                    <span className="bdg dim" title="真实上限由每个奖池档位的 dailyStock 执行">
+                      历史只读
+                    </span>
+                  ) : (
+                    <button className="l-btn sm mc" onClick={() => openWheelGuard(guard)}>
+                      {guard.key === "kill" ? "切" : "调"}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

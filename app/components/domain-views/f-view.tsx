@@ -18,10 +18,17 @@ import { OperationConfirmModal, useToast, useDomainNav } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
   addF1VRankReward,
+  executeF3Settlement,
   fetchF3BinaryOverview,
   fetchF4LeadershipPoolOverview,
   fetchF5CommissionAuditOverview,
+  reissueF5Commissions,
+  reverseF5Commission,
+  suspendF5UserCommissions,
+  updateF5AnomalyConfig,
   fetchF2RatesOverview,
+  fetchF1PromotionLog,
+  fetchF1RewardPayouts,
   fetchF1VRankOverview,
   removeF1VRankReward,
   updateF1VRankReward,
@@ -30,6 +37,11 @@ import {
   type F4LeadershipPoolOverview,
   type F5CommissionAuditOverview,
   type F2RatesOverview,
+  type F1Page,
+  type F1PayoutFilters,
+  type F1PromotionFilters,
+  type F1PromotionRecord,
+  type F1RewardPayout,
   type F1VRankOverview,
 } from "@/lib/admin/f1-client";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -68,6 +80,11 @@ function f1ThresholdTarget(paramKey?: string) {
   return match ? { rank: match[1], field: match[2] } : null;
 }
 
+function currentMonthStart() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
 export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const propose = usePropose();
@@ -79,6 +96,10 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [f1Overview, setF1Overview] = useState<F1VRankOverview | null>(null);
   const [f1Loading, setF1Loading] = useState(tab === "F1");
   const [f1Error, setF1Error] = useState<string | null>(null);
+  const [f1Promotions, setF1Promotions] = useState<F1Page<F1PromotionRecord>>({ items: [], total: 0, limit: 100, nextCursor: "" });
+  const [f1Payouts, setF1Payouts] = useState<F1Page<F1RewardPayout>>({ items: [], total: 0, limit: 100, nextCursor: "" });
+  const [f1FlowLoading, setF1FlowLoading] = useState(tab === "F1");
+  const [f1FlowError, setF1FlowError] = useState<string | null>(null);
   const [f2Overview, setF2Overview] = useState<F2RatesOverview | null>(null);
   const [f2Loading, setF2Loading] = useState(tab === "F2");
   const [f2Error, setF2Error] = useState<string | null>(null);
@@ -97,13 +118,53 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const refreshF1 = useCallback(async () => {
     setF1Loading(true);
+    setF1FlowLoading(true);
     setF1Error(null);
+    setF1FlowError(null);
     try {
-      setF1Overview(await fetchF1VRankOverview());
+      const [overview, promotions, payouts] = await Promise.allSettled([
+        fetchF1VRankOverview(),
+        fetchF1PromotionLog({ from: currentMonthStart() }),
+        fetchF1RewardPayouts(),
+      ]);
+      if (overview.status === "fulfilled") setF1Overview(overview.value);
+      else setF1Error(errorMessage(overview.reason));
+      if (promotions.status === "fulfilled") setF1Promotions(promotions.value);
+      if (payouts.status === "fulfilled") setF1Payouts(payouts.value);
+      const flowFailures = [promotions, payouts]
+        .filter((result) => result.status === "rejected")
+        .map((result) => errorMessage((result as PromiseRejectedResult).reason));
+      if (flowFailures.length) setF1FlowError(flowFailures.join(" / "));
     } catch (error) {
       setF1Error(errorMessage(error));
+      setF1FlowError(errorMessage(error));
     } finally {
       setF1Loading(false);
+      setF1FlowLoading(false);
+    }
+  }, []);
+
+  const queryF1Promotions = useCallback(async (filters: F1PromotionFilters = {}) => {
+    setF1FlowLoading(true);
+    setF1FlowError(null);
+    try {
+      setF1Promotions(await fetchF1PromotionLog(filters));
+    } catch (error) {
+      setF1FlowError(errorMessage(error));
+    } finally {
+      setF1FlowLoading(false);
+    }
+  }, []);
+
+  const queryF1Payouts = useCallback(async (filters: F1PayoutFilters = {}) => {
+    setF1FlowLoading(true);
+    setF1FlowError(null);
+    try {
+      setF1Payouts(await fetchF1RewardPayouts(filters));
+    } catch (error) {
+      setF1FlowError(errorMessage(error));
+    } finally {
+      setF1FlowLoading(false);
     }
   }, []);
 
@@ -159,11 +220,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab === "F4") void refreshF4();
   }, [refreshF4, tab]);
 
-  const refreshF5 = useCallback(async () => {
+  const refreshF5 = useCallback(async (query = {}) => {
     setF5Loading(true);
     setF5Error(null);
     try {
-      setF5Overview(await fetchF5CommissionAuditOverview());
+      setF5Overview(await fetchF5CommissionAuditOverview(query));
     } catch (error) {
       setF5Error(errorMessage(error));
     } finally {
@@ -241,6 +302,50 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     skuOptions: f1Overview?.skuOptions ?? [],
     skuLabels: f1Overview?.skuLabels ?? {},
     f1ConfigValues: f1Overview?.configValues ?? {},
+    promotionRecords: f1Promotions.items,
+    promotionTotal: f1Promotions.total,
+    payoutRecords: f1Payouts.items,
+    payoutTotal: f1Payouts.total,
+    f1FlowLoading,
+    f1FlowError,
+    queryPromotions: queryF1Promotions,
+    queryPayouts: queryF1Payouts,
+    proposeVRankOverride: async (userId, targetV, direction, reason) => {
+      const def = findHighOp("f_vrank_override");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f_vrank_override");
+      await propose((s: string) => setToast(s), {
+        action: `${def.action} · ${direction === "promote" ? "晋升" : "降级"}至 ${targetV}`,
+        obj: `用户 ${userId}`,
+        before: "以服务端当前等级为准",
+        after: targetV,
+        type: "fund",
+        amplifies: direction === "promote",
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "F1",
+        command: def.buildCommand({ userId, targetV, direction }),
+        target: def.buildTarget({ userId, targetV, direction }),
+      });
+    },
+    proposePayoutAction: async (payoutId, action, reason) => {
+      const def = findHighOp("f_reward_payout_action");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f_reward_payout_action");
+      await propose((s: string) => setToast(s), {
+        action: `${def.action} · ${action === "reissue" ? "重发" : "冲正"}`,
+        obj: `派发单 ${payoutId}`,
+        before: "以服务端当前状态为准",
+        after: action === "reissue" ? "REISSUED" : "REVERSED",
+        type: "fund",
+        amplifies: action === "reissue",
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "F1",
+        command: def.buildCommand({ payoutId, action }),
+        target: def.buildTarget({ payoutId, action }),
+      });
+    },
     f2Metrics: f2Overview?.metrics ?? [],
     f2Unilevel: f2Overview?.unilevel ?? [],
     f2RateTiers: f2Overview?.rateTiers ?? [],
@@ -272,6 +377,11 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     updateF3Config: async (key, value, reason) => {
       await proposeFConfig("F3", key, value, reason);
     },
+    executeF3Settlement: async (ownerUserId, settlementDate, reason) => {
+      const result = await executeF3Settlement(ownerUserId, settlementDate, reason);
+      await refreshF3();
+      return result;
+    },
     f4Overview,
     f4Loading,
     f4Error,
@@ -279,12 +389,46 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     updateF4Config: async (key, value, reason) => {
       await proposeFConfig("F4", key, value, reason);
     },
+    proposeF4Settlement: async (reason) => {
+      const def = findHighOp("f4_pool_settle");
+      if (!def) throw new Error("F_OP_NOT_FOUND:f4_pool_settle");
+      await propose((s: string) => setToast(s), {
+        action: def.action,
+        obj: "F4 当前周领导奖池",
+        before: "待结算",
+        after: "按实时周 GMV、门槛、票权及月度 cap 结算",
+        type: "fund",
+        amplifies: true,
+        gate: { roles: [] },
+        gateLabel: def.gateLabel,
+        reason,
+        sourceDomain: "F4",
+        command: def.buildCommand({}),
+        target: def.buildTarget({ weekKey: "current-week" }),
+      });
+    },
     f5Overview,
     f5Loading,
     f5Error,
     refreshF5,
     updateF5Config: async (key, value, reason) => {
       await proposeFConfig("F5", key, value, reason);
+    },
+    reverseF5Commission: async (commissionId, refundRef, reason) => {
+      await reverseF5Commission(commissionId, refundRef, reason, ADMIN_OPERATOR());
+      await refreshF5();
+    },
+    reissueF5Commissions: async (commissionIds, reason) => {
+      await reissueF5Commissions(commissionIds, reason, ADMIN_OPERATOR());
+      await refreshF5();
+    },
+    suspendF5UserCommissions: async (userId, kinds, suspended, reason) => {
+      await suspendF5UserCommissions(userId, kinds, suspended, reason, ADMIN_OPERATOR());
+      await refreshF5();
+    },
+    updateF5AnomalyConfig: async (sigma, layerRatio, reason) => {
+      await updateF5AnomalyConfig(sigma, layerRatio, reason, ADMIN_OPERATOR());
+      await refreshF5();
     },
   };
 
@@ -322,6 +466,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           : undefined) as { coverageRatio: number; redlinePct: number } | undefined}
         edit={mc.edit}
         businessForm={mc.businessForm}
+        completionCopy={mc.completionCopy}
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newVal, businessValue) => {
           try {

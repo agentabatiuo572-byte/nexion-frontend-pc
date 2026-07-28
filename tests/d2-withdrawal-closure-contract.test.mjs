@@ -50,7 +50,7 @@ test("D2 blocks SENT freeze and keeps idempotency keys below the server limit", 
 
 test("D2 fails closed when persisted fee snapshot facts are absent", () => {
   assert.match(client, /function d2Number\(/);
-  for (const field of ["penaltyFeeRate", "grossFee", "nexBurned", "nexFeeOffsetRate", "feeWaived", "actualFee", "netReceive"]) {
+  for (const field of ["networkFeeRate", "networkFeeMin", "networkFeeMax", "networkFee", "penaltyFeeRate", "grossFee", "nexBurned", "nexFeeOffsetRate", "feeWaived", "actualFee", "netReceive"]) {
     assert.match(client, new RegExp(`${field}: d2Number\\(row\\.${field}`));
   }
 });

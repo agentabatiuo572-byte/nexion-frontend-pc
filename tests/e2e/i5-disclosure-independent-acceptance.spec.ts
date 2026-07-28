@@ -153,20 +153,110 @@ test("I5 disclosure first-user visible-entry walkthrough", async ({ page }) => {
   expect(network.some((item) => item.url.includes("/api/admin/content/trust-disclosure/overview") && item.status === 200)).toBeTruthy();
 });
 
+test("I5 refresh, relogin and authoritative-read failure stay fail closed and recoverable", async ({ page }) => {
+  await visibleLogin(page);
+  await openI5FromVisibleEntry(page);
+  await expectI5Ready(page);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expectI5Ready(page);
+  await logout(page);
+  await visibleLogin(page);
+  await openI5FromVisibleEntry(page);
+  await expectI5Ready(page);
+  await screenshot(page, "06-refresh-relogin.png");
+
+  await page.route("**/api/admin/content/trust-disclosure/overview", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ code: 503, message: "I5_TEST_UNAVAILABLE", data: null }),
+    }),
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByText("I5 暂无真实接口数据")).toBeVisible();
+  await expect(page.getByText("法域配置(I5)", { exact: true })).toHaveCount(0);
+  await screenshot(page, "07-authoritative-read-failure-closed.png");
+
+  await page.unroute("**/api/admin/content/trust-disclosure/overview");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expectI5Ready(page);
+  await screenshot(page, "08-authoritative-read-recovered.png");
+});
+
 function section(page: Page, title: string) {
   return page.getByText(title, { exact: true }).locator("xpath=ancestor::section[1]");
 }
 
+async function openI5FromVisibleEntry(page: Page) {
+  const contentMenu = page.getByRole("button", { name: /内容与合规/ });
+  await expect(contentMenu).toBeVisible();
+  await contentMenu.click();
+  const entry = page.locator("a[href='/content/disclosures']");
+  await expect(entry).toBeVisible();
+  await entry.click();
+  await expect(page).toHaveURL(/\/content\/disclosures$/);
+}
+
+async function expectI5Ready(page: Page) {
+  await expect(page.getByText("I5 数据加载中...")).toHaveCount(0);
+  await expect(page.getByText("I5 暂无真实接口数据")).toHaveCount(0);
+  await expect(section(page, "法域配置(I5)")).toBeVisible();
+  await expect(section(page, "披露版本列表(I5) · 法域 × 版本").locator("tbody tr")).toHaveCount(5);
+}
+
 async function visibleLogin(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  const username = page.getByLabel("账号", { exact: true });
-  if (await username.isVisible().catch(() => false)) {
-    const passwordInput = page.getByLabel("密码", { exact: true });
-    await username.fill(USERNAME);
-    await passwordInput.fill(password());
+  const shell = page.locator("aside");
+  const username = page.locator('input[autocomplete="username"]');
+  await Promise.race([
+    shell.waitFor({ state: "visible", timeout: 8_000 }),
+    username.waitFor({ state: "visible", timeout: 8_000 }),
+  ]).catch(() => undefined);
+  if (await shell.isVisible()) return;
+  if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
+    await fillUnlessShellRecovered(username, USERNAME, shell);
+    if (await shell.isVisible()) return;
+    await fillUnlessShellRecovered(
+      page.locator('input[autocomplete="current-password"]'),
+      password(),
+      shell,
+    );
+    if (await shell.isVisible()) return;
     await page.getByRole("button", { name: /继续/ }).click();
   }
+  await expect(shell).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("heading", { name: "运营总览" })).toBeVisible();
+}
+
+async function logout(page: Page) {
+  const direct = page.getByRole("button", { name: /退出登录|登出/ }).first();
+  if (await direct.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await direct.click();
+    await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
+    return;
+  }
+  const account = page
+    .locator('header button[aria-haspopup="menu"], [role="banner"] button[aria-haspopup="menu"]')
+    .first();
+  await account.click();
+  const menuLogout = page.getByText(/退出登录|登出/, { exact: true }).first();
+  await expect(menuLogout).toBeVisible();
+  await menuLogout.click();
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
+}
+
+async function fillUnlessShellRecovered(
+  field: ReturnType<Page["locator"]>,
+  value: string,
+  shell: ReturnType<Page["locator"]>,
+) {
+  try {
+    await field.fill(value);
+  } catch (error) {
+    if (await shell.isVisible()) return;
+    throw error;
+  }
 }
 
 async function screenshot(page: Page, fileName: string) {

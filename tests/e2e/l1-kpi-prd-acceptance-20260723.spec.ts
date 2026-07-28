@@ -105,7 +105,7 @@ test("L1 聚合导出：无多余确认弹窗、任务无 PII 且可追溯", asy
   await page.screenshot({ path: evidence("real-export-success.png"), fullPage: true });
 });
 
-test("L1 空数据：八项口径仍可见且不把不可计算冒充 0%", async ({ page }) => {
+test("L1 空数据：明确空态且不把不可计算冒充 0%", async ({ page }) => {
   await page.route(/\/api\/admin\/bi\/kpi(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -125,8 +125,74 @@ test("L1 空数据：八项口径仍可见且不把不可计算冒充 0%", async
   });
   await openFromSidebar(page);
   await expect(page.getByText(/当前没有可展示的数据/)).toBeVisible();
-  await expect(page.locator("body")).not.toContainText(/0\.0%|0% 达标/);
+  await expect(page.locator("main")).not.toContainText(/0\.0%|0% 达标/);
   await page.screenshot({ path: evidence("injected-empty-state.png"), fullPage: true });
+});
+
+test("L1 畸形权威响应：七项或非法值必须失败关闭", async ({ page }) => {
+  const live = await page.request.get("/api/admin/bi/kpi?window=7d");
+  expect(live.status()).toBe(200);
+  const payload = await live.json();
+  payload.data.kpis = payload.data.kpis.slice(0, 7);
+  await page.route(/\/api\/admin\/bi\/kpi(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(payload),
+  }));
+
+  await openFromSidebar(page);
+  await expect(page.getByText("L1 权威响应协议校验失败", { exact: true })).toBeVisible();
+  await expect(page.locator("button.kpi-card")).toHaveCount(0);
+  await page.screenshot({ path: evidence("injected-malformed-fail-closed.png"), fullPage: true });
+});
+
+test("L1 下钻真值：页面使用下钻与趋势响应，不沿用概览伪装成功", async ({ page }) => {
+  const live = await page.request.get("/api/admin/bi/kpi?window=7d");
+  expect(live.status()).toBe(200);
+  const payload = await live.json();
+  const selected = {
+    ...payload.data.kpis[1],
+    numerator: 987,
+    denominator: 1234,
+    spark: [11, 12, 13, 14, 15, 16],
+  };
+  await page.route(/\/api\/admin\/bi\/kpi\/2\/drilldown(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      code: 0,
+      data: {
+        module: "L1",
+        kpiId: 2,
+        selected,
+        weeks: payload.data.weeks,
+        filters: payload.data.filters,
+        sources: payload.data.sources,
+      },
+    }),
+  }));
+  await page.route(/\/api\/admin\/bi\/kpi\/trend(?:\?.*)?$/, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      code: 0,
+      data: {
+        module: "L1",
+        kpiId: 2,
+        labels: payload.data.weeks,
+        values: [11, 12, 13, 14, 15, 16],
+        filters: payload.data.filters,
+        sources: payload.data.sources,
+      },
+    }),
+  }));
+
+  await openFromSidebar(page);
+  await page.locator("button.kpi-card").nth(1).click();
+  const detail = page.locator(".nd");
+  await expect(detail).toContainText("987");
+  await expect(detail).toContainText("1234");
+  await expect(page.locator('svg[aria-label*="KPI #2"]')).toContainText("16");
 });
 
 test("L1 故障路径：失败有解释、可重试，恢复后回到完整八项", async ({ page }) => {

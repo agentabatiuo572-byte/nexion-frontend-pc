@@ -9,11 +9,27 @@ const client = readFileSync(new URL("../lib/admin/i-client.ts", import.meta.url)
 test("I6 uses a real selectable message catalog and complete CRUD actions", () => {
   assert.match(client, /messages:\s*I18nMessagePairView\[\]/);
   assert.match(client, /archiveI6LocalizedMessage/);
+  assert.match(client, /fetchI6MessageVersions/);
+  assert.match(client, /rollbackI6LocalizedMessage/);
   assert.match(view, /MESSAGES\.filter/);
   assert.match(view, /actions\.saveI6LocalizedDraft/);
   assert.match(view, /actions\.publishI6LocalizedMessage/);
   assert.match(view, /actions\.archiveI6LocalizedMessage/);
+  assert.match(view, /actions\.fetchI6MessageVersions/);
+  assert.match(view, /actions\.rollbackI6LocalizedMessage/);
+  assert.match(view, /expectedVersion:\s*mode === "edit"/);
+  assert.match(view, /selectedMessage\.version,\s*\n\s*reason/);
+  assert.match(view, /row\.status === "archived"/);
+  assert.match(view, /selectedMessage\.status === "published"/);
   assert.doesNotMatch(view, /\$\{nsDrawer\.ns\}\.title/);
+});
+
+test("I6 confirmation commands stay open until the write and canonical reload settle", () => {
+  assert.match(view, /const runBackend = \(task: Promise<void>, ok: string\) => \{\s*return task/s);
+  assert.match(view, /catch\(\(error\) => \{\s*toast\([\s\S]*throw error;/);
+  assert.match(view, /return runBackend\(actions\.saveI6LocalizedDraft/);
+  assert.match(view, /return runBackend\(actions\.publishI6LocalizedMessage/);
+  assert.match(view, /return runBackend\(actions\.fixI6Integrity/);
 });
 
 test("I6 structured editor requires Chinese, English and Vietnamese", () => {

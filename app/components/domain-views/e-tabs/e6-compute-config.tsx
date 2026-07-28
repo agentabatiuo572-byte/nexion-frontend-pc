@@ -8,6 +8,7 @@
  * 写入:paramKey 由 e6-client 生成函数产出(与后端 ComputeConfigRegistry 1:1),
  * 值规则权威校验在后端 validateComputeValue。
  */
+import Link from "next/link";
 import { CodeTag } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
@@ -296,7 +297,7 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
           </div>
         </div>
         <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
-          <AutoGloss>H5 基础托管系数决定网页登录态的保守产出;连续在线满额时长决定 App 稳定性加成爬满需要多久。两个值都不回溯已结算收益。</AutoGloss>
+          <AutoGloss>H5 基础托管系数决定网页登录态的保守产出;连续在线满额时长决定 App 稳定性加成爬满需要多久。提高 H5 系数或缩短满额时长属于资金放大方向,B1 覆盖率低于红线时服务端失败关闭;收紧与回滚方向保持可用。两个值都不回溯已结算收益。</AutoGloss>
         </div>
       </section>
 
@@ -399,6 +400,31 @@ export function E6ComputeConfig({ ctx }: { ctx: EViewCtx }) {
             </div>
           </div>
           {canWriteE6 && <button type="button" className="adj" onClick={editDownloadCopy}>编辑双语文案</button>}
+        </div>
+      </section>
+
+      <section className="pane" style={{ marginTop: 14 }} data-proof="e6-version-rollback">
+        <div className="pane-h">
+          <span className="ttl">版本记录与回滚</span>
+          <span className="sub">A2 操作单 + A4 事件构成不可变版本链</span>
+          <span className="r"><CodeTag tone="electric">可追溯</CodeTag><CodeTag>可回滚</CodeTag></span>
+        </div>
+        <div className="tint cyan tiny" style={{ margin: "12px 16px" }}>
+          <AutoGloss>每次批准都记录参数键、变更前值、变更后值、理由、操作人、幂等键和时间,同一幂等键重复提交不会产生第二个版本。需要回滚时,在 A2 审计中找到目标版本的变更前值,回到本页填入该值并重新提交理由与审批;回滚本身会生成新版本,不会删除或篡改旧记录。</AutoGloss>
+        </div>
+        <div className="row" style={{ margin: "0 16px 14px", gap: 10, flexWrap: "wrap" }}>
+          <Link className="adj" href="/platform/audit?domain=E&object=E.compute">查看 E6 版本记录</Link>
+          <span className="sub">并发写由 A2 目标锁、配置行锁和幂等键串行化;批量修改要么全部成功,要么全部不写。</span>
+        </div>
+      </section>
+
+      <section className="pane" style={{ marginTop: 14 }} data-proof="e6-effective-boundary">
+        <div className="pane-h">
+          <span className="ttl">生效阶段与调用链边界</span>
+          <span className="sub">全局配置,不跟随 H1 阶段切换</span>
+        </div>
+        <div className="tint cyan tiny" style={{ margin: "12px 16px 14px" }}>
+          <AutoGloss>A2 批准并写入后立即成为服务端当前版本,不等待 H1 的阶段/月度切换。App/H5 最迟在下一次 60 秒配置刷新后读取新值;E1 目录、E2 任务、E3 生命周期与 E5 运维状态仍各自按本域规则运行,E6 不绕过它们的上架、路由、容量或设备状态保护。新值只参与后续算力展示与收益计算,不重算历史已结算记录。</AutoGloss>
         </div>
       </section>
 

@@ -87,6 +87,22 @@ export function matchesA2AuditFilter(row: FilterableAuditRow, filter: A2AuditFil
   return true;
 }
 
+export function resolveA2AuditObject(
+  detailObject: unknown,
+  detailResource: unknown,
+  resourceType: unknown,
+  resourceId: unknown,
+): string {
+  for (const explicit of [detailObject, detailResource]) {
+    if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+  }
+  const backendParts = [resourceType, resourceId]
+    .filter((value): value is string => typeof value === "string" && !!value.trim())
+    .map((value) => value.trim())
+    .filter((value, index, values) => values.indexOf(value) === index);
+  return backendParts.length > 0 ? backendParts.join(" · ") : "—";
+}
+
 export function canAccessA2Export(authorities: readonly string[]): boolean {
   return authorities.includes("platform_a2_export");
 }

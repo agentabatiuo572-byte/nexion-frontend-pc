@@ -34,6 +34,13 @@ const K2_PARAM_HELP: Record<string, string> = {
   leaderboardVelocityMultiplier: "排行榜、邀请或佣金增长速度相对基线的倍数阈值。",
 };
 
+const K2_DISPOSITION_LABELS: Record<string, string> = {
+  account_flagged: "已标记套利",
+  gift_blocked: "新人礼已拦截",
+  leaderboard_flagged: "已标记刷榜",
+  cluster_frozen: "已联动 K1 冻结",
+};
+
 type ExtraParamDef = { key: string; label: string; unit: string; min?: number; max?: number; step?: number; options?: string[] };
 
 const OTP_GATE_PARAMS: ExtraParamDef[] = [
@@ -496,7 +503,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
                     {(current?.key === "trial" || current?.key === "board") && (() => { const [label, tone] = judge(r.level); return <td><span className={`bdg ${tone}`}>{label}</span></td>; })()}
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {disposed ? (
-                        <span className="bdg dim">{disposed}</span>
+                        <span className="bdg dim">{K2_DISPOSITION_LABELS[disposed] ?? "已处置"}</span>
                       ) : (
                         <span style={{ display: "inline-flex", gap: 6 }}>
                           {r.actions.map((action) => {

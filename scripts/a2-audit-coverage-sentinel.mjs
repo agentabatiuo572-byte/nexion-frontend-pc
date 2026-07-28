@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * A2 审计覆盖哨兵 —— 防「高敏操作不落真实后端 A2」及「J1 止血动作误入待审批队列」回退。
+ * A2 审计覆盖哨兵 —— 防「高敏操作不落真实后端 A2」及「即时执行动作误入待审批队列」回退。
  *
  * 缘起(2026-06-24):全 13 域审计发现两类坑:
  *   ① A2 审计页 a2-audit.tsx 只渲染静态种子 AUDIT_LOGS,从不订阅实时 usePlatformConfig().audit[],
@@ -42,23 +42,23 @@ else {
   }
 }
 
-// ── B. A1 账号治理读取真实后端，并由统一提案/执行入口承接高敏动作 ──
+// ── B. A1 账号治理读取真实后端，并由统一执行入口承接高敏动作 ──
 const a1 = read(A1);
 if (a1 == null) failures.push(`${A1} 未找到`);
 else {
   if (!a1.includes("fetchA1Overview")) failures.push(`${A1}: 未读取真实后端账号总览`);
-  if (!a1.includes("usePropose")) failures.push(`${A1}: 高敏账号动作未接统一提案/执行入口`);
+  if (!a1.includes("usePropose")) failures.push(`${A1}: 高敏账号动作未接统一执行入口`);
   const proposalCalls = count(a1, "void propose(toast, {");
   const proposalSources = count(a1, 'sourceDomain: "A1"');
-  if (proposalCalls < 9 || proposalCalls !== proposalSources) {
-    failures.push(`${A1}: A1 高敏提案数 ${proposalCalls} 与来源标记数 ${proposalSources} 不一致或少于 9,账号动作可能绕过 A2`);
+  if (proposalCalls < 7 || proposalCalls !== proposalSources) {
+    failures.push(`${A1}: A1 高敏动作数 ${proposalCalls} 与来源标记数 ${proposalSources} 不一致或少于 7,账号动作可能绕过 A2`);
   }
 }
 
 // ── C. E 域高敏分支仍存在，并统一经过后端 A2 提案入口 ──
 const GAP_OPS = [
   "param", "param-multi", "param-fixed",
-  "phase-save", "phase-archive", "phase-current",
+  "phase-save", "phase-archive",
   "generation-gate-save", "generation-gate-force", "generation-gate-archive",
   "order-state", "order-refund", "order-cancel", "order-terminal",
   "device-activate", "device-deactivate", "ops-pause",
@@ -95,7 +95,6 @@ const J1_IMMEDIATE = "app/components/domain-views/j-tabs/j1-killswitch.tsx";
 const PENDING_FOCAL = [
   "app/components/domain-views/h-tabs/h1-phase.tsx",
   "app/components/domain-views/i-tabs/i6-i18n.tsx",
-  "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
 ];
 const j1 = read(J1_IMMEDIATE);
 if (j1 == null) {
@@ -126,11 +125,17 @@ if (g1 != null) {
 }
 const d2 = read("app/components/domain-views/d-tabs/d2-withdrawals.tsx");
 if (d2 != null) {
-  if (!d2.includes('action === "APPROVE" || action === "UNFREEZE"')) {
-    failures.push("d2-withdrawals: 放行与解冻未共享资金流出提案门槛");
+  if (d2.includes("usePropose")) {
+    failures.push("d2-withdrawals: 当前 D2 PRD 要求理由确认后即时执行,不得回退到待审批队列");
   }
-  if (count(d2, 'sourceDomain: "D2"') < 1) {
-    failures.push("d2-withdrawals: 资金流出动作未标记 D2 提案来源");
+  for (const command of ["openActionConfirm", "reviewD2Withdrawal", "reviewD2WithdrawalsBatch"]) {
+    if (!d2.includes(command)) failures.push(`d2-withdrawals: 缺少确认或直接业务命令 ${command}`);
+  }
+  for (const gate of ['amplifies: action === "APPROVE"', 'amplifies: batchAction === "APPROVE"']) {
+    if (!d2.includes(gate)) failures.push(`d2-withdrawals: 放行资金流出未经过 B1 覆盖率确认门 ${gate}`);
+  }
+  for (const idempotency of ["pendingKeys", "operationKey"]) {
+    if (!d2.includes(idempotency)) failures.push(`d2-withdrawals: 缺少稳定幂等保护 ${idempotency}`);
   }
 }
 const result = {
@@ -139,7 +144,7 @@ const result = {
     a2BackendWorkflow: A2,
     a1BackendWorkflow: A1,
     eviewGapBranches: `${EVIEW} (${GAP_OPS.length} ops)`,
-    focalProposalCardinality: "A1 >= 9, G1 immediate-with-required-audit, D2 approve/unfreeze shared gate",
+    focalProposalCardinality: "A1 >= 7, G1/D2 immediate-with-required-audit, D2 approve coverage gate",
     pendingRealtime: `${A2} backend tickets + J1 immediate + ${PENDING_FOCAL.length} 焦点域 usePropose`,
   },
   failureCount: failures.length,

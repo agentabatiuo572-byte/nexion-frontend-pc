@@ -412,3 +412,28 @@
 .fdom .f-titlerow .f-desc b { color: var(--ink-2); font-weight: 600; }
 .fdom .f-cta { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .fdom .f-cta:hover { background: var(--surface-3); color: var(--ink); border-color: var(--ink-4); }
+
+/* ===== F1 · 晋升 / 派发闭环 ===== */
+.fdom .f1-flow-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 16px; }
+.fdom .f1-flow { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; }
+.fdom .f1-flow-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px 10px; }
+.fdom .f1-flow-h .ph-ttl { font-size: 14.5px; font-weight: 600; }
+.fdom .f1-flow-h .ph-sub { margin-top: 2px; font-size: 11.5px; color: var(--ink-3); }
+.fdom .f1-filter { display: flex; gap: 7px; flex-wrap: wrap; padding: 0 18px 12px; }
+.fdom .f1-filter input,
+.fdom .f1-filter select { min-width: 118px; height: 34px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink); font-size: 12px; }
+.fdom .f1-filter input:focus,
+.fdom .f1-filter select:focus { outline: 1px solid var(--brand); border-color: var(--brand); }
+.fdom .f1-table-wrap { width: 100%; overflow-x: auto; }
+.fdom .f1-table-wrap .ctbl { min-width: 900px; }
+.fdom .f1-table-wrap details { max-width: 260px; }
+.fdom .f1-table-wrap summary { color: var(--brand); cursor: pointer; font-size: 11.5px; }
+.fdom .f1-snapshot { display: block; max-width: 260px; max-height: 90px; margin-top: 5px; padding: 6px; overflow: auto; border-radius: 6px; background: var(--surface-2); color: var(--ink-3); font-size: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fdom .f1-flow-foot { padding: 9px 18px 12px; border-top: 1px solid var(--border); color: var(--ink-3); font-size: 11.5px; line-height: 1.5; }
+.fdom .f1-state { display: inline-flex; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; font: 600 10px/1.2 var(--mono); color: var(--ink-2); }
+.fdom .f1-state.st-granted,
+.fdom .f1-state.st-reissued { border-color: var(--success-border); background: var(--success-soft); color: var(--success); }
+.fdom .f1-state.st-reversed { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); }
+.fdom .f1-state.st-pending_grant { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); }
+.fdom .f1-chain-note { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--cyan-border); border-radius: 10px; background: var(--cyan-soft); color: var(--ink-2); font-size: 11.5px; line-height: 1.65; }
+.fdom .f1-chain-note b { color: var(--cyan); }

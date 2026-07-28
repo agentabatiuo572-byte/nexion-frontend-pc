@@ -20,6 +20,7 @@ export type A7MenuNode = {
   icon: string;
   sortOrder: number;
   status: number;
+  version: string;
 };
 
 export type A7MenuTreeNode = A7MenuNode & { children: A7MenuTreeNode[] };
@@ -48,16 +49,18 @@ export type A7MenuUpdateInput = {
   icon?: string;
   sortOrder?: number;
   status?: number;
+  expectedVersion: string;
 };
 
 function normalizeOverview(raw: unknown): A7MenuOverview {
   return strictA7Overview(raw) as A7MenuOverview;
 }
 
-let requestSeq = 0;
 function idempotencyKey(prefix: string) {
-  requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
+  const uuid = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}-${uuid}`;
 }
 
 export function newA7IdempotencyKey(prefix: string) {
@@ -112,11 +115,11 @@ export async function updateA7Menu(menuId: number, input: A7MenuUpdateInput, rea
   );
 }
 
-export async function deleteA7Menu(menuId: number, reason: string, operator: string, stableKey?: string): Promise<A7MenuOverview> {
+export async function deleteA7Menu(menuId: number, expectedVersion: string, reason: string, operator: string, stableKey?: string): Promise<A7MenuOverview> {
   return mutateThenReloadOverview(
     () => a7Request<void>(`/menus/${encodeURIComponent(menuId)}`, {
       method: "DELETE",
-      body: JSON.stringify({ reason, operator }),
+      body: JSON.stringify({ reason, operator, expectedVersion }),
       idempotencyPrefix: "a7-menu-delete",
       idempotencyKey: stableKey,
     }),

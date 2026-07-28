@@ -666,58 +666,149 @@ function normalizeK2(raw: unknown): ArbitrageOverview {
   };
 }
 
-function normalizeK3(raw: unknown): WithdrawRuleOverview {
-  const data = rec(raw);
-  const normalizeRule = (row: Record<string, unknown>): K3Rule => ({
-    ruleId: str(row.ruleId),
-    id: str(row.ruleId),
-    dimension: str(row.dimension),
-    dim: str(row.dimension),
-    conditionText: str(row.conditionText),
-    cond: str(row.conditionText),
-    action: normalizeRuleAction(row.action),
-    act: normalizeRuleAction(row.action),
-    state: normalizeRuleState(row.state),
-    builtIn: bool(row.builtIn),
-    priority: num(row.priority),
-    version: num(row.version),
-  });
-  const normalizeHit = (row: Record<string, unknown>): K3Hit => ({
-    withdrawalNo: str(row.withdrawalNo),
-    userNo: str(row.userNo),
-    amount: str(row.amount, str(row.amountText)),
-    ruleId: str(row.ruleId),
-    dimension: str(row.dimension),
-    action: normalizeRuleAction(row.action),
-    reason: str(row.reason),
-    timeText: str(row.timeText),
-  });
-  return {
-    dimensions: rows<Record<string, unknown>>(data.dimensions).map((row) => ({
-      ruleKey: str(row.ruleKey),
-      ruleId: str(row.ruleId),
-      name: str(row.name),
-      conditionText: str(row.conditionText),
-      conditionDefault: str(row.conditionDefault),
-      why: str(row.why),
-      action: normalizeRuleAction(row.action),
-      note: str(row.note),
-      icon: str(row.icon),
-      priority: row.priority == null ? undefined : num(row.priority),
-      version: row.version == null ? undefined : num(row.version),
-    })),
-    rules: normalizePage(data.rules, normalizeRule, 1, 5),
-    routeCounts: rows<Record<string, unknown>>(data.routeCounts).map((row) => ({
-      key: normalizeRuleAction(row.key ?? row.routeKey),
-      label: str(row.label),
-      count: num(row.count),
-      n: num(row.count),
-      color: str(row.color),
-    })),
-    routeTotal: num(data.routeTotal),
-    hits: normalizePage(data.hits, normalizeHit, 1, 5),
-    sources: strArray(data.sources),
+const K3_RESPONSE_INVALID = "K3_RESPONSE_INVALID";
+
+function invalidK3Response(path: string): never {
+  void path;
+  throw new Error(formatAdminApiError(K3_RESPONSE_INVALID, K3_RESPONSE_INVALID));
+}
+
+function requiredK3Record(value: unknown, path: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalidK3Response(path);
+  return value as Record<string, unknown>;
+}
+
+function requiredK3Array(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) invalidK3Response(path);
+  return value;
+}
+
+function requiredK3String(value: unknown, path: string, allowEmpty = false): string {
+  if (typeof value !== "string" || (!allowEmpty && !value.trim())) invalidK3Response(path);
+  return value.trim();
+}
+
+function requiredK3DisplayText(value: unknown, path: string): string {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return requiredK3String(value, path);
+}
+
+function requiredK3Integer(
+  value: unknown,
+  path: string,
+  min = Number.MIN_SAFE_INTEGER,
+  max = Number.MAX_SAFE_INTEGER,
+): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) invalidK3Response(path);
+  return value;
+}
+
+function requiredK3Boolean(value: unknown, path: string): boolean {
+  if (typeof value !== "boolean") invalidK3Response(path);
+  return value;
+}
+
+function requiredK3RuleAction(value: unknown, path: string): RuleAction {
+  const action = requiredK3String(value, path).toLowerCase();
+  if (!["pass", "delay", "freeze", "manual"].includes(action)) invalidK3Response(path);
+  return action as RuleAction;
+}
+
+function requiredK3RuleState(value: unknown, path: string): RuleState {
+  const state = requiredK3String(value, path).toLowerCase();
+  if (!["draft", "active", "paused", "archived"].includes(state)) invalidK3Response(path);
+  return state as RuleState;
+}
+
+function requiredK3Page<T>(
+  value: unknown,
+  path: string,
+  normalizeRow: (row: Record<string, unknown>, path: string) => T,
+): AdminPage<T> {
+  const page = requiredK3Record(value, path);
+  const rawRecords = requiredK3Array(page.records, `${path}.records`);
+  const total = requiredK3Integer(page.total, `${path}.total`, 0);
+  const normalized: AdminPage<T> = {
+    total,
+    pageNum: requiredK3Integer(page.pageNum, `${path}.pageNum`, 1),
+    pageSize: requiredK3Integer(page.pageSize, `${path}.pageSize`, 1, 200),
+    records: rawRecords.map((item, index) =>
+      normalizeRow(requiredK3Record(item, `${path}.records[${index}]`), `${path}.records[${index}]`)),
   };
+  if (normalized.records.length > total) invalidK3Response(`${path}.records`);
+  return normalized;
+}
+
+function normalizeK3(raw: unknown): WithdrawRuleOverview {
+  const data = requiredK3Record(raw, "withdrawRules");
+  const dimensions = requiredK3Array(data.dimensions, "withdrawRules.dimensions").map((item, index) => {
+    const path = `withdrawRules.dimensions[${index}]`;
+    const row = requiredK3Record(item, path);
+    return {
+      ruleKey: requiredK3String(row.ruleKey, `${path}.ruleKey`),
+      ruleId: requiredK3String(row.ruleId, `${path}.ruleId`),
+      name: requiredK3String(row.name, `${path}.name`),
+      conditionText: requiredK3String(row.conditionText, `${path}.conditionText`),
+      conditionDefault: requiredK3String(row.conditionDefault, `${path}.conditionDefault`, true),
+      why: requiredK3String(row.why, `${path}.why`),
+      action: requiredK3RuleAction(row.action, `${path}.action`),
+      note: requiredK3String(row.note, `${path}.note`, true),
+      icon: requiredK3String(row.icon, `${path}.icon`),
+      priority: requiredK3Integer(row.priority, `${path}.priority`, 1, 100),
+      version: requiredK3Integer(row.version, `${path}.version`, 0),
+    };
+  });
+  const rules = requiredK3Page(data.rules, "withdrawRules.rules", (row, path): K3Rule => {
+    const ruleId = requiredK3String(row.ruleId, `${path}.ruleId`);
+    const dimension = requiredK3String(row.dimension, `${path}.dimension`);
+    const conditionText = requiredK3String(row.conditionText, `${path}.conditionText`);
+    const action = requiredK3RuleAction(row.action, `${path}.action`);
+    return {
+      ruleId,
+      id: ruleId,
+      dimension,
+      dim: dimension,
+      conditionText,
+      cond: conditionText,
+      action,
+      act: action,
+      state: requiredK3RuleState(row.state, `${path}.state`),
+      builtIn: requiredK3Boolean(row.builtIn, `${path}.builtIn`),
+      priority: requiredK3Integer(row.priority, `${path}.priority`, 1, 100),
+      version: requiredK3Integer(row.version, `${path}.version`, 0),
+    };
+  });
+  const routeCounts = requiredK3Array(data.routeCounts, "withdrawRules.routeCounts").map((item, index) => {
+    const path = `withdrawRules.routeCounts[${index}]`;
+    const row = requiredK3Record(item, path);
+    const count = requiredK3Integer(row.count, `${path}.count`, 0);
+    return {
+      key: requiredK3RuleAction(row.key ?? row.routeKey, `${path}.key`),
+      label: requiredK3String(row.label, `${path}.label`),
+      count,
+      n: count,
+      color: requiredK3String(row.color, `${path}.color`),
+    };
+  });
+  const routeTotal = requiredK3Integer(data.routeTotal, "withdrawRules.routeTotal", 0);
+  if (routeCounts.reduce((sum, row) => sum + row.count, 0) !== routeTotal) {
+    invalidK3Response("withdrawRules.routeTotal");
+  }
+  const hits = requiredK3Page(data.hits, "withdrawRules.hits", (row, path): K3Hit => ({
+    withdrawalNo: requiredK3String(row.withdrawalNo, `${path}.withdrawalNo`),
+    userNo: requiredK3String(row.userNo, `${path}.userNo`),
+    amount: requiredK3DisplayText(row.amount ?? row.amountText, `${path}.amount`),
+    ruleId: requiredK3String(row.ruleId, `${path}.ruleId`),
+    dimension: requiredK3String(row.dimension, `${path}.dimension`),
+    action: requiredK3RuleAction(row.action, `${path}.action`),
+    reason: requiredK3String(row.reason, `${path}.reason`, true),
+    timeText: requiredK3String(row.timeText, `${path}.timeText`),
+  }));
+  const sources = data.sources === undefined
+    ? undefined
+    : requiredK3Array(data.sources, "withdrawRules.sources").map((value, index) =>
+      requiredK3String(value, `withdrawRules.sources[${index}]`));
+  return { dimensions, rules, routeCounts, routeTotal, hits, sources };
 }
 
 const K4_RESPONSE_INVALID = "K4_RESPONSE_INVALID";
@@ -820,6 +911,8 @@ function normalizeK4Model(value: unknown, path: string, expectedState?: K4ModelS
   const bandLowMax = requiredK4Integer(model.bandLowMax, `${path}.bandLowMax`, 0, 99);
   const bandHighMin = requiredK4Integer(model.bandHighMin, `${path}.bandHighMin`, 1, 100);
   if (bandLowMax >= bandHighMin) invalidK4Response(`${path}.bands`);
+  const autoEscalateScore = requiredK4Integer(model.autoEscalateScore, `${path}.autoEscalateScore`, 70, 100);
+  if (autoEscalateScore < bandHighMin) invalidK4Response(`${path}.autoEscalateScore`);
   return {
     version: requiredK4Integer(model.version, `${path}.version`, 1),
     rowVersion: requiredK4Integer(model.rowVersion, `${path}.rowVersion`, 0),
@@ -829,7 +922,7 @@ function normalizeK4Model(value: unknown, path: string, expectedState?: K4ModelS
     inputSources: normalizeK4BooleanMap(model.inputSources, `${path}.inputSources`),
     bandLowMax,
     bandHighMin,
-    autoEscalateScore: requiredK4Integer(model.autoEscalateScore, `${path}.autoEscalateScore`, 70, 100),
+    autoEscalateScore,
     reason: requiredK4String(model.reason, `${path}.reason`),
     createdBy: requiredK4String(model.createdBy, `${path}.createdBy`),
     publishedBy: nullableK4String(model.publishedBy, `${path}.publishedBy`),
@@ -1238,25 +1331,45 @@ export async function fetchKRiskOverviews(query: KRiskOverviewQuery = {}): Promi
 }
 
 function normalizeK3DryRun(raw: unknown): K3DryRunResult {
-  const data = rec(raw);
-  const rawHitCounts = rec(data.hitCountsByRule);
+  const data = requiredK3Record(raw, "withdrawRules.dryRun");
+  const rawHitCounts = requiredK3Record(data.hitCountsByRule, "withdrawRules.dryRun.hitCountsByRule");
+  const routeCounts = requiredK3Array(data.routeCounts, "withdrawRules.dryRun.routeCounts").map((item, index) => {
+    const path = `withdrawRules.dryRun.routeCounts[${index}]`;
+    const row = requiredK3Record(item, path);
+    const count = requiredK3Integer(row.count, `${path}.count`, 0);
+    return {
+      key: requiredK3RuleAction(row.key ?? row.routeKey, `${path}.key`),
+      label: requiredK3String(row.label, `${path}.label`),
+      count,
+      n: count,
+      color: requiredK3String(row.color, `${path}.color`),
+    };
+  });
   return {
-    batchNo: str(data.batchNo),
-    status: str(data.status, "COMPLETED"),
-    sampleWindowDays: num(data.sampleWindowDays),
-    evaluatedWithdrawals: num(data.evaluatedWithdrawals),
-    activeRules: num(data.activeRules),
-    hitCount: num(data.hitCount),
-    hitCountsByRule: Object.fromEntries(Object.entries(rawHitCounts).map(([key, value]) => [key, num(value)])),
-    routeCounts: rows<Record<string, unknown>>(data.routeCounts).map((row) => ({
-      key: normalizeRuleAction(row.key ?? row.routeKey),
-      label: str(row.label),
-      count: num(row.count),
-      n: num(row.count),
-      color: str(row.color),
-    })),
-    completedAt: str(data.completedAt),
+    batchNo: requiredK3String(data.batchNo, "withdrawRules.dryRun.batchNo"),
+    status: requiredK3String(data.status, "withdrawRules.dryRun.status"),
+    sampleWindowDays: requiredK3Integer(data.sampleWindowDays, "withdrawRules.dryRun.sampleWindowDays", 1),
+    evaluatedWithdrawals: requiredK3Integer(data.evaluatedWithdrawals, "withdrawRules.dryRun.evaluatedWithdrawals", 0),
+    activeRules: requiredK3Integer(data.activeRules, "withdrawRules.dryRun.activeRules", 0),
+    hitCount: requiredK3Integer(data.hitCount, "withdrawRules.dryRun.hitCount", 0),
+    hitCountsByRule: Object.fromEntries(Object.entries(rawHitCounts).map(([key, value]) => [
+      key,
+      requiredK3Integer(value, `withdrawRules.dryRun.hitCountsByRule.${key}`, 0),
+    ])),
+    routeCounts,
+    completedAt: requiredK3String(data.completedAt, "withdrawRules.dryRun.completedAt"),
   };
+}
+
+function normalizeK3DryRunForWrite(raw: unknown, commandKey: string): K3DryRunResult {
+  try {
+    return normalizeK3DryRun(raw);
+  } catch (error) {
+    throw new K1OutcomeUncertainError(
+      error instanceof Error ? error.message : "K3_DRY_RUN_RESULT_INVALID",
+      commandKey,
+    );
+  }
 }
 
 export async function fetchK2ArbitrageOverview(): Promise<ArbitrageOverview> {
@@ -1326,7 +1439,14 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
   updateK3RuleState: (ruleId, state, expectedVersion, reason, commandKey) => apiRequest(`/withdraw-rules/${encodeURIComponent(ruleId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ state, expectedVersion }, reason)) }).then(() => undefined),
   updateK3Rule: (ruleId, conditionText, action, priority, expectedVersion, reason, commandKey) => apiRequest(`/withdraw-rules/${encodeURIComponent(ruleId)}/condition`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ conditionText, action, priority, expectedVersion }, reason)) }).then(() => undefined),
   archiveK3Rule: (ruleId, expectedVersion, reason, commandKey) => apiRequest(`/withdraw-rules/${encodeURIComponent(ruleId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ state: "archived", expectedVersion }, reason)) }).then(() => undefined),
-  dryRunK3: (reason, commandKey) => apiRequest("/withdraw-rules/dry-runs", { method: "POST", commandKey, body: JSON.stringify(withReason({}, reason)) }).then(normalizeK3DryRun),
+  dryRunK3: (reason, commandKey) => {
+    const stableCommandKey = commandKey ?? newK1CommandKey();
+    return apiRequest("/withdraw-rules/dry-runs", {
+      method: "POST",
+      commandKey: stableCommandKey,
+      body: JSON.stringify(withReason({}, reason)),
+    }).then((value) => normalizeK3DryRunForWrite(value, stableCommandKey));
+  },
   saveK4ModelDraft: (input, reason, commandKey) => apiRequest("/scoring/model/draft", {
     method: "PUT",
     commandKey,

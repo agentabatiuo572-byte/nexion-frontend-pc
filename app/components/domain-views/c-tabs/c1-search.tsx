@@ -11,6 +11,7 @@ import { Download } from "lucide-react";
 import { DataListPager } from "../design-kit";
 import {
   exportUserProfilesCsv,
+  fetchC1Overview,
   fetchUserProfilesPage,
   type User360Profile,
   type UserPage,
@@ -22,7 +23,9 @@ import type { CCtx } from "./types";
 type Seg = "all" | "frozen" | "highrisk" | "kyc";
 type C1Stats = {
   totalUsers: number;
-  highRisk: number;
+  highRisk: number | null;
+  highRiskThreshold: number | null;
+  riskAuthorityAvailable: boolean;
   frozen: number;
   kycPending: number;
 };
@@ -87,10 +90,10 @@ function asNumber(value: unknown) {
 }
 
 function riskTone(value: unknown) {
-  const score = asNumber(value);
-  if (score == null) return "dim";
-  if (score >= 70) return "bad";
-  if (score >= 40) return "warn";
+  const band = text(value, "").toUpperCase();
+  if (!band) return "dim";
+  if (band === "HIGH" || band.includes("高")) return "bad";
+  if (band === "MEDIUM" || band.includes("中")) return "warn";
   return "ok";
 }
 
@@ -114,9 +117,9 @@ function countText(value: unknown) {
   return count == null ? "—" : count.toLocaleString("en-US");
 }
 
-function queryForSeg(seg: Seg): Pick<UserProfileQuery, "status" | "kycStatus" | "riskMin"> {
+function queryForSeg(seg: Seg): Pick<UserProfileQuery, "status" | "kycStatus" | "riskMin" | "riskBand"> {
   if (seg === "frozen") return { status: "FROZEN,BANNED,RESTRICTED" };
-  if (seg === "highrisk") return { riskMin: 70 };
+  if (seg === "highrisk") return { riskBand: "HIGH" };
   if (seg === "kyc") return { kycStatus: "PENDING" };
   return {};
 }
@@ -196,9 +199,12 @@ export function C1Search({
   onExportQueryChange,
 }: {
   ctx: CCtx;
-  onExportQueryChange?: (query: C1ExportQuery) => void;
+  onExportQueryChange?: (query: C1ExportQuery | null) => void;
 }) {
   const router = useRouter();
+  const session = useAdminAuth((state) => state.session);
+  const canReadRisk = session?.role === "superadmin"
+    || session?.authorities.includes("risk_k4_read") === true;
   const [seg, setSeg] = useState<Seg>("all");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -224,20 +230,10 @@ export function C1Search({
 
   useEffect(() => {
     let alive = true;
-    Promise.all([
-      fetchUserProfilesPage({ pageNum: 1, pageSize: 20 }),
-      fetchUserProfilesPage({ riskMin: 70, pageNum: 1, pageSize: 20 }),
-      fetchUserProfilesPage({ status: "FROZEN,BANNED,RESTRICTED", pageNum: 1, pageSize: 20 }),
-      fetchUserProfilesPage({ kycStatus: "PENDING", pageNum: 1, pageSize: 20 }),
-    ])
-      .then(([all, highRisk, frozen, kycPending]) => {
+    fetchC1Overview()
+      .then((overview) => {
         if (!alive) return;
-        setStats({
-          totalUsers: all.total,
-          highRisk: highRisk.total,
-          frozen: frozen.total,
-          kycPending: kycPending.total,
-        });
+        setStats(overview);
       })
       .catch((err) => {
         if (!alive) return;
@@ -246,7 +242,7 @@ export function C1Search({
     return () => {
       alive = false;
     };
-  }, []);
+  }, [canReadRisk]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -289,7 +285,7 @@ export function C1Search({
     try {
       onExportQueryChange?.(currentExportQuery(seg, q, filters));
     } catch {
-      onExportQueryChange?.({});
+      onExportQueryChange?.(null);
     }
   }, [filters, hydrated, onExportQueryChange, q, seg]);
 
@@ -344,7 +340,7 @@ export function C1Search({
       <div className="f-stats">
         <div className="f-stat"><div className="k">注册用户</div><div className="v">{countText(stats?.totalUsers ?? pageData.total)}</div><div className="sub">真实账户表分页查询</div></div>
         <div className="f-stat ok"><div className="k">KYC 待确认</div><div className="v">{countText(stats?.kycPending)}</div><div className="sub">状态来自用户实名字段</div></div>
-        <div className="f-stat warn"><div className="k">高风险档(K4)</div><div className="v">{countText(stats?.highRisk)}</div><div className="sub">风险分 ≥ 70</div></div>
+        {canReadRisk && <div className="f-stat warn"><div className="k">高风险档(K4)</div><div className="v">{stats?.riskAuthorityAvailable ? countText(stats.highRisk) : "不可用"}</div><div className="sub">{stats?.highRiskThreshold == null ? "K4 权威阈值不可用" : `K4 动态阈值 ≥ ${stats.highRiskThreshold}`}</div></div>}
         <div className="f-stat cyan"><div className="k">冻结/受限账户</div><div className="v">{countText(stats?.frozen)}</div><div className="sub">冻结、禁用、受限合计</div></div>
       </div>
 
@@ -357,7 +353,7 @@ export function C1Search({
               <input placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号 / 手机哈希" value={q} onChange={(e) => changeKeyword(e.target.value)} />
             </div>
             <div className="chips">
-              {SEGS.map(([v, lb]) => (
+              {SEGS.filter(([value]) => value !== "highrisk" || canReadRisk).map(([v, lb]) => (
                 <button key={v} className={`chip${seg === v ? " sel" : ""}`} onClick={() => changeSeg(v)}>{lb}</button>
               ))}
             </div>
@@ -371,9 +367,9 @@ export function C1Search({
             <option value="">全部 V-Rank</option>{Array.from({ length: 13 }, (_, value) => <option key={value} value={`V${value}`}>V{value}</option>)}
           </select>
           <input aria-label="推荐码" placeholder="推荐码" value={filters.referralCode} onChange={(event) => changeFilter("referralCode", event.target.value)} />
-          <select aria-label="风险档" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
+          {canReadRisk && <select aria-label="风险档" value={filters.riskBand} onChange={(event) => changeFilter("riskBand", event.target.value)}>
             <option value="">全部风险档</option><option value="LOW">低风险</option><option value="MEDIUM">中风险</option><option value="HIGH">高风险</option>
-          </select>
+          </select>}
           <input aria-label="累计充值下限" type="number" min="0" placeholder="累计充值 ≥" value={filters.depositMin} onChange={(event) => changeFilter("depositMin", event.target.value)} />
           <input aria-label="累计充值上限" type="number" min="0" placeholder="累计充值 ≤" value={filters.depositMax} onChange={(event) => changeFilter("depositMax", event.target.value)} />
           <input aria-label="USDT 余额下限" type="number" min="0" placeholder="USDT ≥" value={filters.usdtMin} onChange={(event) => changeFilter("usdtMin", event.target.value)} />
@@ -405,7 +401,7 @@ export function C1Search({
                     <td><span className="bdg dim">{text(u.vRank)}</span></td>
                     <td className="num mono">{text(u.deviceCount)} / {text(u.activeDeviceCount)}</td>
                     <td><span className={`bdg ${kycTone}`}>{kycLabel}</span></td>
-                    <td><span className={`bdg ${riskTone(u.riskScore)}`}>{text(u.riskScore)}</span></td>
+                    <td><span className={`bdg ${riskTone(u.riskBand)}`}>{canReadRisk ? text(u.riskScore, "不可用") : "无权限"}</span></td>
                     <td className="num mono" style={{ fontWeight: 600 }}>{formatUsd(u.walletUsdt)}</td>
                     <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                   </tr>
@@ -442,7 +438,7 @@ export function C1Search({
   );
 }
 
-export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuery }) {
+export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuery | null }) {
   const [exporting, setExporting] = useState(false);
   const exportingRef = useRef(false);
   const exportCooldownUntilRef = useRef(0);
@@ -451,6 +447,10 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
   const canExport = session?.role === "superadmin" || session?.authorities.includes("user_c1_write") === true;
 
   const runExport = useCallback(async () => {
+    if (!query) {
+      ctx.toast("当前筛选条件无效，已禁止导出；请修正检索条件后重试");
+      return;
+    }
     if (exportingRef.current || Date.now() < exportCooldownUntilRef.current) {
       ctx.toast("C1 用户名单正在生成,请稍候");
       return;
@@ -477,8 +477,8 @@ export function C1HeaderActions({ ctx, query }: { ctx: CCtx; query: C1ExportQuer
   return (
     <button
       className="f-cta"
-      disabled={exporting}
-      style={exporting ? { opacity: 0.62, cursor: "wait" } : undefined}
+      disabled={exporting || !query}
+      style={exporting || !query ? { opacity: 0.62, cursor: "not-allowed" } : undefined}
       title="按当前安全筛选条件直接下载脱敏 CSV；服务端记录筛选哈希与导出审计"
       onClick={() => { void runExport(); }}
     >

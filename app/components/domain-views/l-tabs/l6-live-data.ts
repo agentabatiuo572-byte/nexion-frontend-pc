@@ -4,28 +4,24 @@ function rec(value: unknown): UnknownRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
 }
 
-function rows<T>(value: unknown): T[] {
-  return Array.isArray(value) ? value as T[] : [];
+function invalid(): never { throw new Error("L6_RESPONSE_INVALID"); }
+function array(value: unknown): unknown[] { return Array.isArray(value) ? value : invalid(); }
+function text(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : invalid();
 }
-
-function str(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : value == null ? fallback : String(value);
+function optionalText(value: unknown): string { return value == null ? "" : typeof value === "string" ? value : invalid(); }
+function flag(value: unknown): boolean { return typeof value === "boolean" ? value : invalid(); }
+function amount(value: unknown, integer = false): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || (integer && !Number.isSafeInteger(value))) invalid();
+  return value;
 }
-
-function num(value: unknown, fallback = 0): number {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+function ratio(value: unknown): number {
+  const result = amount(value);
+  return result <= 1 ? result : invalid();
 }
-
-function bool(value: unknown, fallback = false): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value !== 0;
-  if (typeof value === "string") return ["true", "1", "yes"].includes(value.toLowerCase());
-  return fallback;
-}
-
-function strings(value: unknown): string[] {
-  return rows<unknown>(value).map((item) => str(item)).filter(Boolean);
+function route(value: unknown): string {
+  const result = text(value);
+  return /^\/pages\/[a-z0-9-]+\/[a-z0-9-]+$/.test(result) ? result : invalid();
 }
 
 export type PageLevel = 1 | 2 | 3;
@@ -104,27 +100,47 @@ export type L6BehaviorHeatmapData = {
   clickHeatByRoute: Record<string, PageClickHeat>;
   dailyTrend: { bucket: string; pv: number; clicks: number }[];
   weeklyTrend: { bucket: string; pv: number; clicks: number }[];
+  businessTimeZone: "UTC+08:00";
+  lateArrivalPolicy: "included_on_next_query";
+  deduplication: "clientEventId";
 };
 
 const WINDOWS: TimeWindow[] = ["24h", "7d", "30d"];
 
 export function normalizeL6BehaviorHeatmap(raw: unknown): L6BehaviorHeatmapData {
+  if (raw == null) return emptyL6("LOADING", "");
   const data = rec(raw);
-  const pageTree = rows<unknown>(data.pageTree).map(normalizePageNode).filter((node) => node.route);
-  const excludedPages = rows<unknown>(data.excludedPages).map(normalizePageNode).filter((node) => node.route);
+  if (!Object.keys(data).length) invalid();
+  const available = flag(data.available);
+  const status = text(data.status);
+  if (!available) return emptyL6(status, optionalText(data.message));
+  if (status !== "AVAILABLE" || data.businessTimeZone !== "UTC+08:00"
+      || data.lateArrivalPolicy !== "included_on_next_query") invalid();
+  const quality = rec(data.quality);
+  if (quality.clientEventIdDeduplicated !== true || quality.outOfOrderRejected !== true
+      || quality.ctrDenominator !== "page_viewed_pv") invalid();
+  const pageTree = array(data.pageTree).map((node) => normalizePageNode(node, true));
+  const excludedPages = array(data.excludedPages).map((node) => normalizePageNode(node, false));
+  const allRoutes = [...pageTree, ...excludedPages].map((node) => node.route);
+  if (new Set(allRoutes).size !== allRoutes.length) invalid();
   const activityRoot = rec(data.activityByWindow);
+  if (!Object.keys(activityRoot).length) invalid();
   const clickRoot = rec(data.clickHeatByRoute);
   const clickHeatByRoute: Record<string, PageClickHeat> = {};
   for (const [route, value] of Object.entries(clickRoot)) {
-    clickHeatByRoute[route] = normalizeClickHeat(route, value);
+    const normalizedRoute = /^\/pages\/[a-z0-9-]+\/[a-z0-9-]+$/.test(route) ? route : invalid();
+    clickHeatByRoute[normalizedRoute] = normalizeClickHeat(normalizedRoute, value);
   }
+  const totalPages = amount(data.totalPages, true);
+  const trackedCount = amount(data.trackedCount, true);
+  if (trackedCount !== pageTree.length || totalPages !== pageTree.length + excludedPages.length) invalid();
   return {
-    available: bool(data.available),
-    status: str(data.status),
-    message: str(data.message),
-    requiredEvents: strings(data.requiredEvents),
-    totalPages: num(data.totalPages, pageTree.length),
-    trackedCount: num(data.trackedCount, pageTree.filter((node) => node.tracked).length),
+    available,
+    status,
+    message: optionalText(data.message),
+    requiredEvents: data.requiredEvents === undefined ? [] : array(data.requiredEvents).map(text),
+    totalPages,
+    trackedCount,
     pageTree,
     excludedPages,
     activityByWindow: {
@@ -135,14 +151,28 @@ export function normalizeL6BehaviorHeatmap(raw: unknown): L6BehaviorHeatmapData 
     clickHeatByRoute,
     dailyTrend: normalizeTrend(data.dailyTrend),
     weeklyTrend: normalizeTrend(data.weeklyTrend),
+    businessTimeZone: "UTC+08:00",
+    lateArrivalPolicy: "included_on_next_query",
+    deduplication: "clientEventId",
   };
 }
 
 function normalizeTrend(value: unknown) {
-  return rows<unknown>(value).map((row) => {
+  return array(value).map((row) => {
     const data = rec(row);
-    return { bucket: str(data.bucket), pv: num(data.pv), clicks: num(data.clicks) };
-  }).filter((row) => row.bucket);
+    return { bucket: text(data.bucket), pv: amount(data.pv, true), clicks: amount(data.clicks, true) };
+  });
+}
+
+function emptyL6(status: string, message: string): L6BehaviorHeatmapData {
+  return {
+    available: false, status, message, requiredEvents: [], totalPages: 0, trackedCount: 0,
+    pageTree: [], excludedPages: [],
+    activityByWindow: { "24h": [], "7d": [], "30d": [] },
+    clickHeatByRoute: {}, dailyTrend: [], weeklyTrend: [],
+    businessTimeZone: "UTC+08:00", lateArrivalPolicy: "included_on_next_query",
+    deduplication: "clientEventId",
+  };
 }
 
 export function activityForWindow(data: L6BehaviorHeatmapData, window: TimeWindow) {
@@ -208,57 +238,66 @@ export function summarize(stats: PageActivityStat[]): HeatSummary {
   };
 }
 
-function normalizePageNode(value: unknown): UxPageNode {
+function normalizePageNode(value: unknown, expectedTracked: boolean): UxPageNode {
   const data = rec(value);
-  const level = num(data.level, num(data.pageLevel, 3));
+  const level = amount(data.level ?? data.pageLevel, true);
+  if (![1, 2, 3].includes(level) || flag(data.tracked) !== expectedTracked) invalid();
   return {
-    route: str(data.route),
-    titleZh: str(data.titleZh, str(data.route)),
-    level: level === 1 || level === 2 ? level : 3,
-    parentL1: str(data.parentL1, str(data.route)),
-    parentL2: str(data.parentL2, str(data.route)),
-    tracked: bool(data.tracked, true),
+    route: route(data.route),
+    titleZh: text(data.titleZh),
+    level: level as PageLevel,
+    parentL1: route(data.parentL1),
+    parentL2: route(data.parentL2),
+    tracked: expectedTracked,
   };
 }
 
 function normalizeActivityRows(value: unknown): PageActivityStat[] {
-  return rows<unknown>(value).map((row) => {
+  const result = array(value).map((row) => {
     const data = rec(row);
+    const pv = amount(data.pv, true);
+    const uv = amount(data.uv, true);
+    if (uv > pv) invalid();
     return {
-      route: str(data.route),
-      pv: num(data.pv),
-      uv: num(data.uv),
-      clicks: num(data.clicks),
-      dwellMs: num(data.dwellMs),
-      bounceRate: num(data.bounceRate),
-      pageCount: num(data.pageCount, 1),
+      route: route(data.route), pv, uv,
+      clicks: amount(data.clicks, true),
+      dwellMs: amount(data.dwellMs, true),
+      bounceRate: ratio(data.bounceRate),
+      pageCount: amount(data.pageCount, true),
     };
-  }).filter((row) => row.route);
+  });
+  if (result.some((row) => row.pageCount < 1) || new Set(result.map((row) => row.route)).size !== result.length) invalid();
+  return result;
 }
 
 function normalizeClickHeat(route: string, value: unknown): PageClickHeat {
   const data = rec(value);
   return {
-    route: str(data.route, route),
-    titleZh: str(data.titleZh, route),
-    zones: rows<unknown>(data.zones).map((zone) => {
+    route: data.route === undefined ? route : routeOnly(data.route, route),
+    titleZh: text(data.titleZh),
+    zones: array(data.zones).map((zone) => {
       const item = rec(zone);
       return {
-        label: str(item.label),
-        cx: num(item.cx),
-        cy: num(item.cy),
-        share: num(item.share),
+        label: text(item.label),
+        cx: ratio(item.cx),
+        cy: ratio(item.cy),
+        share: ratio(item.share),
       };
     }),
-    points: rows<unknown>(data.points).map((point) => {
+    points: array(data.points).map((point) => {
       const item = rec(point);
       return {
-        x: num(item.x),
-        y: num(item.y),
-        weight: num(item.weight),
+        x: ratio(item.x),
+        y: ratio(item.y),
+        weight: ratio(item.weight),
       };
     }),
   };
+}
+
+function routeOnly(value: unknown, expected: string): string {
+  const result = route(value);
+  return result === expected ? result : invalid();
 }
 
 export function availableWindows() {

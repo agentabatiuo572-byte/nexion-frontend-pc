@@ -16,6 +16,7 @@ type Envelope<T> = { code: number; message?: string; data: T };
 type LoadView = {
   loadConfig: {
     autoBalance: boolean;
+    version: number;
     defaultCap: number;
     burstCap: number;
     warnPct: number;
@@ -111,15 +112,31 @@ test("M1 结果未知保留表单并以同一幂等键安全重试", async ({ pa
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "03-same-key-replay-refresh.png"), fullPage: true });
   } finally {
     await page.unroute(LOAD_API).catch(() => undefined);
-    const restore = await page.request.patch("/api/admin/content/tickets/load-config", {
-      headers: { "Idempotency-Key": `${PREFIX}-cleanup-${Date.now()}` },
-      data: {
-        ...original,
-        agentState: baseline.data.agentState,
-        reason: `${PREFIX}-恢复原负载配置`,
-      },
-    });
-    expect(restore.ok(), `M1 cleanup ${restore.status()}: ${await restore.text()}`).toBeTruthy();
+    const cleanupBaseline = await envelope<LoadView>(
+      await page.request.get("/api/admin/content/tickets/load-config"),
+    );
+    const current = cleanupBaseline.data.loadConfig;
+    if (current.defaultCap !== original.defaultCap) {
+      expect(
+        {
+          ...current,
+          version: original.version,
+          defaultCap: original.defaultCap,
+        },
+        "清理前除本用例修改的默认负载与服务端递增版本外，不得覆盖并发配置变更",
+      ).toEqual(original);
+      expect(current.defaultCap, "清理只能回滚本用例写入的目标值").toBe(nextDefaultCap);
+      const restore = await page.request.patch("/api/admin/content/tickets/load-config", {
+        headers: { "Idempotency-Key": `${PREFIX}-cleanup-${Date.now()}` },
+        data: {
+          ...original,
+          agentState: baseline.data.agentState,
+          expectedVersion: current.version,
+          reason: `${PREFIX}-恢复原负载配置`,
+        },
+      });
+      expect(restore.ok(), `M1 cleanup ${restore.status()}: ${await restore.text()}`).toBeTruthy();
+    }
   }
 
   const siblingApi = "**/api/admin/content/session-templates/overview";

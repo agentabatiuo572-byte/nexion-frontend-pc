@@ -9,6 +9,7 @@ import {
   fetchD1TopupFlows,
   fetchD1TopupOverview,
   loadD1VietQrOverview,
+  registerD1VietQrReceipt,
   reconcileD1VietQr,
   refundD1Chargeback,
   setD1BinLock,
@@ -40,7 +41,7 @@ const BANK_VIEW_TABS: Array<[D1VietQrView, string]> = [
   ["matched", "已匹配"],
   ["orphan", "孤儿队列"],
   ["mismatch", "差额队列"],
-  ["late", "过期后到账"],
+  ["late", "迟到 / 补充回单"],
 ];
 
 function money(value: number, digits = 2) {
@@ -57,6 +58,43 @@ function statusTone(status: string) {
   if (["SUCCESS", "CONFIRMED", "CREDITED", "CHARGEBACK_RECOVERED", "RECOVERED"].includes(s)) return "ok";
   if (["FAILED", "EXPIRED", "REJECTED", "ABNORMAL", "CHARGEBACK_ENTERED", "CHARGEBACK_PARTIAL", "PARTIAL_ANOMALY"].includes(s)) return "bad";
   return "warn";
+}
+
+function vietnamLocalDateTimeNow() {
+  return new Date(Date.now() + 7 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 19);
+}
+
+function vietQrReceivedAtInstant(value: string) {
+  const normalized = value.trim().replace(" ", "T");
+  const parts = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:Z|[+-]\d{2}:\d{2})?$/);
+  if (!parts) {
+    throw new Error("银行到账时间格式无效，请输入 YYYY-MM-DDTHH:mm:ss；未填写时区时按越南 UTC+7 解释");
+  }
+  const [, year, month, day, hour, minute, second = "00"] = parts;
+  const calendarCheck = new Date(Date.UTC(
+    Number(year), Number(month) - 1, Number(day),
+    Number(hour), Number(minute), Number(second),
+  ));
+  if (
+    calendarCheck.getUTCFullYear() !== Number(year)
+    || calendarCheck.getUTCMonth() !== Number(month) - 1
+    || calendarCheck.getUTCDate() !== Number(day)
+    || calendarCheck.getUTCHours() !== Number(hour)
+    || calendarCheck.getUTCMinutes() !== Number(minute)
+    || calendarCheck.getUTCSeconds() !== Number(second)
+  ) {
+    throw new Error("银行到账时间包含不存在的日期或时间，请按银行回单重新填写");
+  }
+  const absolute = /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized)
+    ? normalized
+    : `${normalized}+07:00`;
+  const instant = new Date(absolute);
+  if (Number.isNaN(instant.getTime())) {
+    throw new Error("银行到账时间无效，请核对日期和时间");
+  }
+  return instant.toISOString();
 }
 
 function vnd(value: number | null) {
@@ -119,6 +157,8 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   const [overview, setOverview] = useState<D1Overview | null>(null);
   const [vietQr, setVietQr] = useState<D1VietQrOverview | null>(null);
   const [bankView, setBankView] = useState<D1VietQrView>("inflight");
+  const [bankPage, setBankPage] = useState(1);
+  const [bankPageSize, setBankPageSize] = useState(20);
   const [flows, setFlows] = useState<PageResult<D1DepositFlow>>(EMPTY_D1_FLOWS);
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -138,7 +178,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
       const [nextOverview, nextFlows, nextVietQr] = await Promise.all([
         fetchD1TopupOverview(),
         fetchD1TopupFlows({ status, keyword, pageNum: page, pageSize }),
-        loadD1VietQrOverview(bankView, 1, 20),
+        loadD1VietQrOverview(bankView, bankPage, bankPageSize),
       ]);
       setOverview(nextOverview);
       setFlows(nextFlows);
@@ -156,7 +196,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
   useEffect(() => {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, page, pageSize, bankView]);
+  }, [status, page, pageSize, bankView, bankPage, bankPageSize]);
 
   const pages = useMemo(() => Math.max(1, Math.ceil(flows.total / flows.pageSize)), [flows.total, flows.pageSize]);
 
@@ -190,7 +230,12 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
     setError("");
     try {
       await task();
-      const next = await loadD1VietQrOverview(bankView, 1, 20);
+      let next = await loadD1VietQrOverview(bankView, bankPage, bankPageSize);
+      if (next.page.items.length === 0 && bankPage > 1 && next.page.total > 0) {
+        const fallbackPage = Math.max(1, Math.ceil(next.page.total / bankPageSize));
+        next = await loadD1VietQrOverview(bankView, fallbackPage, bankPageSize);
+        setBankPage(fallbackPage);
+      }
       setVietQr(next);
       toast(ok);
     } catch (err) {
@@ -368,18 +413,55 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
         <div className="l-h">
           <span className="ttl">银行转账（VietQR）对账</span>
           <span className="sub">· 五视图 · 单据锁价快照 · 挂账与 D3 第 9 科目同源</span>
-          <div className="r"><span className="dcode electric">待核实入金 {money(vietQr?.pendingUnverifiedDepositUsdt ?? 0)}</span></div>
+          <div className="r">
+            <span className="dcode electric">待核实入金 {money(vietQr?.pendingUnverifiedDepositUsdt ?? 0)}</span>
+            {canBankReconcile && <button className="l-btn sm mc" disabled={busy || !vietQr?.accounts.length} onClick={() => openActionConfirm({
+              action: "登记真实银行回单",
+              detail: "银行流水号全局唯一；系统按附言码、收款账户、实收金额和到账时间分类到已匹配、孤儿、差额或迟到队列，不允许页面直接指定用户。",
+              businessForm: { kind: "multi-field", fields: [
+                {
+                  key: "bankAccountId", label: "实际收款账户", inputKind: "select",
+                  current: String(vietQr?.accounts[0]?.id ?? ""),
+                  options: (vietQr?.accounts ?? []).map((account) => String(account.id)),
+                  optionLabels: Object.fromEntries((vietQr?.accounts ?? []).map((account) => [
+                    String(account.id), `${account.bankName} · 尾号 ${account.accountLast4}`,
+                  ])),
+                },
+                { key: "paymentReference", label: "银行流水号", inputKind: "text", required: true },
+                { key: "memoCode", label: "转账附言码（可空）", inputKind: "text" },
+                { key: "receivedVnd", label: "实收金额（VND）", inputKind: "text", required: true },
+                { key: "receivedAt", label: "越南银行到账时间（UTC+7）", inputKind: "text", current: vietnamLocalDateTimeNow(), required: true },
+                { key: "evidenceRef", label: "银行回单 / 工单凭证", inputKind: "text", required: true },
+              ] },
+              run: (reason, _value, business) => {
+                const bankAccountId = Number(business?.bankAccountId);
+                const receivedVnd = Number(business?.receivedVnd);
+                if (!Number.isSafeInteger(bankAccountId) || bankAccountId <= 0) throw new Error("请选择真实收款账户");
+                if (!Number.isSafeInteger(receivedVnd) || receivedVnd <= 0) throw new Error("实收金额必须是正整数 VND");
+                return applyBankWrite(() => registerD1VietQrReceipt({
+                  bankAccountId,
+                  paymentReference: business?.paymentReference?.trim() ?? "",
+                  memoCode: business?.memoCode?.trim() || undefined,
+                  receivedVnd,
+                  receivedAt: vietQrReceivedAtInstant(business?.receivedAt ?? ""),
+                  evidenceRef: business?.evidenceRef?.trim() ?? "",
+                  reason,
+                  operator,
+                }), "银行回单已登记；请切换相应队列完成复核");
+              },
+            })}>登记银行回单</button>}
+          </div>
         </div>
         <div className="l-b" style={{ paddingBottom: 8 }}>
           <div className="chips">
             {BANK_VIEW_TABS.map(([key, label]) => (
-              <button key={key} className={`chip${bankView === key ? " sel" : ""}`} disabled={loading || busy} onClick={() => setBankView(key)}>{label}</button>
+              <button key={key} className={`chip${bankView === key ? " sel" : ""}`} disabled={loading || busy} onClick={() => { setBankView(key); setBankPage(1); }}>{label}</button>
             ))}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1120 }}>
-            <thead><tr><th>回单 / 意向单</th><th>用户 / 意向单</th><th className="num">应付 VND</th><th className="num">实收 VND</th><th className="num">锁定牌价</th><th className="num">折算 USDT</th><th>状态</th><th>说明</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
+            <thead><tr><th>回单 / 银行流水 / 到账时间</th><th>用户 / 意向单</th><th className="num">应付 VND</th><th className="num">实收 VND</th><th className="num">锁定牌价</th><th className="num">折算 USDT</th><th>状态</th><th>说明</th><th style={{ textAlign: "right" }}>动作</th></tr></thead>
             <tbody>
               {(vietQr?.page.items ?? []).length === 0 ? (
                 <tr><td colSpan={9} style={{ textAlign: "center", color: "var(--ink-4)", padding: "26px 12px" }}>当前视图暂无银行轨记录</td></tr>
@@ -387,7 +469,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                 const amount = row.receivedVnd === null ? row.creditedUsdt : row.receivedVnd / row.lockedFxRateVndPerUsdt;
                 return (
                   <tr key={row.id}>
-                    <td className="mono">{row.reconciliationNo}</td>
+                    <td><span className="mono">{row.reconciliationNo}</span><div className="sub mono">{row.paymentReference || "无银行流水号"}</div><div className="sub">{timeText(row.receivedAt)}</div></td>
                     <td><span className="mono">{row.userId ?? "—"}</span><div className="sub">{row.intentNo || "未匹配意向单"}</div></td>
                     <td className="num mono">{vnd(row.payableVnd)}</td>
                     <td className="num mono">{vnd(row.receivedVnd)}</td>
@@ -399,45 +481,57 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
                       {canBankReconcile && row.status === "OPEN" && row.viewType === "ORPHAN" && (
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                           action: `手动匹配入账 · ${row.reconciliationNo}`,
-                          detail: `实收 ${vnd(row.receivedVnd)} 将按该回单锁定牌价入账，并把第 9 科目等额转为用户可提负债。用户与意向单必须来自已核验凭证。`,
+                          detail: `实收 ${vnd(row.receivedVnd)} 将按该回单锁定牌价入账，并把第 9 科目等额转为用户可提负债。用户归属由服务端意向单唯一确定，页面不能手工指定入账用户。`,
                           businessForm: { kind: "multi-field", fields: [
-                            { key: "userId", label: "目标用户 ID", inputKind: "text", required: true },
                             { key: "intentNo", label: "目标意向单号", inputKind: "text", required: true },
+                            { key: "evidenceRef", label: "银行回单 / 工单凭证", inputKind: "text", required: true },
                           ] },
                           run: (reason, _value, business) => {
-                            const userId = Number(business?.userId);
                             const intentNo = business?.intentNo?.trim() ?? "";
-                            if (!Number.isInteger(userId) || userId <= 0 || !intentNo) throw new Error("请选择有效用户与意向单");
+                            const evidenceRef = business?.evidenceRef?.trim() ?? "";
+                            if (!intentNo) throw new Error("请输入真实付款意向单号");
                             return applyBankWrite(() => reconcileD1VietQr(row.id, "match-credit", {
-                              expectedVersion: row.version, userId, intentNo, reason, operator,
+                              expectedVersion: row.version, intentNo, evidenceRef, reason, operator,
                             }), "孤儿回单已匹配入账");
                           },
                         })}>手动匹配入账</button>
+                      )}
+                      {canBankReconcile && row.status === "OPEN" && row.viewType === "MATCHED" && (
+                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
+                          action: `确认匹配入账 · ${row.reconciliationNo}`,
+                          detail: "服务端以回单登记时冻结的匹配分类为准，再次核对意向单用户、收款账户和锁价快照，并在同一事务中入账；后续调参不会反向卡死已匹配回单，已到账资金也不会因账户日上限被拒绝。",
+                          businessForm: { kind: "multi-field", fields: [
+                            { key: "evidenceRef", label: "银行回单 / 工单凭证", inputKind: "text", required: true },
+                          ] },
+                          run: (reason, _value, business) => applyBankWrite(() => reconcileD1VietQr(row.id, "match-credit", {
+                            expectedVersion: row.version, intentNo: row.intentNo,
+                            evidenceRef: business?.evidenceRef?.trim() ?? "", reason, operator,
+                          }), "匹配回单已确认入账"),
+                        })}>确认入账</button>
                       )}
                       {canBankReconcile && row.status === "OPEN" && row.viewType === "MISMATCH" && (
                         <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
                           action: `按实收核销 · ${row.reconciliationNo}`,
                           detail: `按实收 ${vnd(row.receivedVnd)} 折算入账；第 9 科目等额转为用户可提负债，原应付金额不覆盖实收事实。`,
-                          run: (reason) => applyBankWrite(() => reconcileD1VietQr(row.id, "write-off", {
-                            expectedVersion: row.version, reason, operator,
+                          businessForm: { kind: "multi-field", fields: [
+                            { key: "evidenceRef", label: "银行回单 / 工单凭证", inputKind: "text", required: true },
+                          ] },
+                          run: (reason, _value, business) => applyBankWrite(() => reconcileD1VietQr(row.id, "write-off", {
+                            expectedVersion: row.version, evidenceRef: business?.evidenceRef?.trim() ?? "", reason, operator,
                           }), "差额回单已按实收核销"),
                         })}>按实收核销</button>
-                      )}
-                      {canBankReconcile && row.status === "OPEN" && row.viewType === "LATE" && (
-                        <button className="l-btn sm mc" disabled={busy} onClick={() => openActionConfirm({
-                          action: `补入账 · ${row.reconciliationNo}`,
-                          detail: "按付款单锁定牌价补入账；调价不会重算该笔在途快照。",
-                          run: (reason) => applyBankWrite(() => reconcileD1VietQr(row.id, "match-credit", {
-                            expectedVersion: row.version, userId: row.userId ?? undefined, intentNo: row.intentNo, reason, operator,
-                          }), "过期后到账已补入账"),
-                        })}>补入账</button>
                       )}
                       {canBankReconcile && row.status === "OPEN" && ["ORPHAN", "MISMATCH", "LATE"].includes(row.viewType) && (
                         <button className="l-btn sm mc" style={{ marginLeft: 6 }} disabled={busy} onClick={() => openActionConfirm({
                           action: `登记退回 · ${row.reconciliationNo}`,
-                          detail: "登记退回会同时冲减真实储备与第 9 科目；终态回单不可重复处置。",
-                          run: (reason) => applyBankWrite(() => reconcileD1VietQr(row.id, "return", {
-                            expectedVersion: row.version, reason, operator,
+                          detail: row.viewType === "LATE"
+                            ? "迟到或补充回单不复用原付款单的过期锁价，只允许登记退回；终态回单不可重复处置。"
+                            : "登记退回会同时冲减真实储备与第 9 科目；终态回单不可重复处置。",
+                          businessForm: { kind: "multi-field", fields: [
+                            { key: "evidenceRef", label: "退款凭证 / 工单凭证", inputKind: "text", required: true },
+                          ] },
+                          run: (reason, _value, business) => applyBankWrite(() => reconcileD1VietQr(row.id, "return", {
+                            expectedVersion: row.version, evidenceRef: business?.evidenceRef?.trim() ?? "", reason, operator,
                           }), "回单已登记退回"),
                         })}>登记退回</button>
                       )}
@@ -447,6 +541,21 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
               })}
             </tbody>
           </table>
+        </div>
+        <div className="l-b" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span className="sub">共 {(vietQr?.page.total ?? 0).toLocaleString("en-US")} 条 · 第 {bankPage} / {Math.max(1, Math.ceil((vietQr?.page.total ?? 0) / bankPageSize))} 页</span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <select
+              value={bankPageSize}
+              disabled={loading || busy}
+              onChange={(event) => { setBankPageSize(Number(event.target.value)); setBankPage(1); }}
+              aria-label="VietQR 每页数量"
+            >
+              {[10, 20, 50, 100].map((size) => <option key={size} value={size}>{size} 条/页</option>)}
+            </select>
+            <button className="l-btn sm" disabled={loading || busy || bankPage <= 1} onClick={() => setBankPage((value) => Math.max(1, value - 1))}>上一页</button>
+            <button className="l-btn sm" disabled={loading || busy || bankPage >= Math.max(1, Math.ceil((vietQr?.page.total ?? 0) / bankPageSize))} onClick={() => setBankPage((value) => value + 1)}>下一页</button>
+          </div>
         </div>
       </section>
 

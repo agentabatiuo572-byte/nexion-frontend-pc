@@ -7,6 +7,16 @@ const form = readFileSync(new URL("../app/components/domain-views/design-kit.tsx
 const client = readFileSync(new URL("../lib/admin/i-client.ts", import.meta.url), "utf8");
 const highOps = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/registry/i.ts", import.meta.url), "utf8");
+const backendService = readFileSync(
+  "D:/workspace/nexion-backend/src/main/java/ffdd/opsconsole/content/application/OpsTrustDisclosureService.java",
+  "utf8",
+);
+const backendGateMapper = readFileSync(
+  "D:/workspace/nexion-backend/src/main/java/ffdd/opsconsole/content/mapper/DisclosureGateActionMapper.java",
+  "utf8",
+);
+const appApi = readFileSync("D:/workspace/NX1.0/src/api/risk-disclosure-api.ts", "utf8");
+const appPage = readFileSync("D:/workspace/NX1.0/src/pages/me/risk-disclosure.vue", "utf8");
 
 test("I5 summary follows the backend jurisdiction catalog instead of a stale fixed count", () => {
   assert.match(registry, /按法域 × 7 章节/);
@@ -27,7 +37,9 @@ test("I5 jurisdiction mapping uses backend country and disclosure version catalo
 
 test("I5 publish command identifies persisted draft and does not carry mutable bodies", () => {
   const entry = highOps.slice(highOps.indexOf('op: "i5_disclosure_publish"'), highOps.indexOf('op: "i5_gate_adjust"'));
-  assert.match(view, /发布只读取服务器已经保存的草稿/);
+  assert.match(view, /发布只审批服务器已经保存的草稿并形成不可变 7 章快照/);
+  assert.match(view, /不会改变 App 当前投放或用户确认状态/);
+  assert.match(view, /后续切换法域映射时才触发重新确认/);
   assert.match(entry, /jurisdiction:\s*String\(ctx\.jurisdiction\)/);
   assert.match(entry, /version:\s*String\(ctx\.version\)/);
   assert.doesNotMatch(entry, /\b(?:zh|vi|en|chapters):/);
@@ -141,8 +153,9 @@ test("I5 matrix and publish review use authoritative catalogs and structured saf
   assert.match(form, /select\("jurisdictionCode"/);
   assert.match(form, /data-business-form="disclosure-publish-review"/);
   assert.match(form, /七章中越双语核对/);
-  assert.match(form, /受影响用户/);
-  assert.match(form, /受限动作影响/);
+  assert.match(form, /当前映射统计/);
+  assert.match(form, /本次仅审批不可变版本，不改变 App 投放/);
+  assert.match(form, /受限动作/);
 });
 
 test("I5 refreshes independently and shows canonical pending re-ack counts", () => {
@@ -179,4 +192,47 @@ test("I5 matrix mutations and publish concurrency checks go through A2", () => {
   const matrixOps = highOps.slice(highOps.indexOf('op: "i5_matrix_configure"'), highOps.indexOf('op: "i5_jurisdiction_status"'));
   assert.doesNotMatch(matrixOps, /type: "disclosure_matrix"/);
   assert.match(matrixOps, /type: "disclosure_jurisdiction"/);
+});
+
+test("I5 A2 commands await a stable command key and retain it only for an unknown outcome", () => {
+  assert.match(view, /const proposeDisclosure = async/);
+  assert.match(view, /createA2CommandKey\("i5-disclosure"\)/);
+  assert.match(view, /error instanceof A2OutcomeUncertainError/);
+  assert.match(view, /return proposeDisclosure\(/);
+  assert.doesNotMatch(view, /void propose\(toast,\s*\{[\s\S]{0,240}sourceDomain:\s*"I5"/);
+});
+
+test("I5 matrix, archive and gate commands carry visible-snapshot CAS through A2 replay", () => {
+  const matrixOps = highOps.slice(highOps.indexOf('op: "i5_matrix_configure"'), highOps.indexOf('op: "i5_jurisdiction_status"'));
+  const gateOps = highOps.slice(highOps.indexOf('op: "i5_gate_adjust"'), highOps.indexOf('op: "i7_course_reward_adjust"'));
+  assert.match(matrixOps, /jurisdictionCode:\s*String\(ctx\.jurisdictionCode\)/);
+  assert.match(matrixOps, /expectedVersion/);
+  assert.match(matrixOps, /expectedStatus/);
+  assert.match(matrixOps, /expectedCountryCodes/);
+  assert.match(gateOps, /expectedScope/);
+  assert.match(backendService, /String jurisdiction = str\(p, "jurisdictionCode"\)/);
+  assert.match(backendService, /DISCLOSURE_MATRIX_SNAPSHOT_REQUIRED/);
+  assert.match(backendService, /DISCLOSURE_MATRIX_SNAPSHOT_CONFLICT/);
+  assert.match(backendService, /DISCLOSURE_GATE_SCOPE_SNAPSHOT_REQUIRED/);
+  assert.match(backendService, /DISCLOSURE_GATE_SCOPE_SNAPSHOT_CONFLICT/);
+  assert.match(backendService, /trustDisclosureRepository\.lockGateActions\(\)/);
+  assert.match(backendGateMapper, /FOR UPDATE/);
+});
+
+test("I5 App requires exact 01-07 chapters, fail-closed scroll proof and same-version ack recovery", () => {
+  assert.match(appApi, /chapters\.length !== 7/);
+  assert.match(appApi, /"01,02,03,04,05,06,07"/);
+  assert.match(appApi, /languageScope !== "zh\+vi"/);
+  assert.match(appApi, /chapter\(entry, languageScope\.includes\("en"\)\)/);
+  assert.match(appApi, /recovered\.jurisdiction === disclosure\.jurisdiction/);
+  assert.match(appApi, /recovered\.version === disclosure\.version/);
+  assert.match(appApi, /recovered\.acknowledged/);
+  assert.match(appPage, /onReachBottom\(\(\) =>/);
+  assert.match(appPage, /scrolledToBottom\.value = true/);
+  assert.doesNotMatch(
+    appPage,
+    /if \(typeof IntersectionObserver === "undefined"\) \{\s*scrolledToBottom\.value = true/,
+  );
+  assert.doesNotMatch(appPage, /if \(!el\) \{\s*scrolledToBottom\.value = true/);
+  assert.match(backendService, /DISCLOSURE_CHAPTER_NUMBERS_INVALID/);
 });

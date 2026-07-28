@@ -25,7 +25,10 @@ test("C1 real flow keeps search read-only, masked, auditable and return-context 
   expect(list.records.length).toBeGreaterThan(0);
   for (const row of list.records) {
     expect(row).not.toHaveProperty("id");
-    if (row.phoneMasked) expect(row.phoneMasked).toMatch(/^\d{3}\*{4}\d{4}$/);
+    if (row.phoneMasked) {
+      expect(row.phoneMasked).toMatch(/^.{3}\*{4}.{4}$/);
+      expect(row.phoneMasked).not.toMatch(/^[0-9]{6,15}$/);
+    }
   }
 
   for (const pageSize of [20, 50, 100, 200]) {

@@ -9,6 +9,7 @@
 import { Fragment, isValidElement, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
 
 /* ---------------- 域 → 落地路由(ctx.navigate 跨域跳转) ---------------- */
@@ -513,12 +514,23 @@ export function MessageThread({ messages, relWhen, resetKey, agentName, agentAva
 }
 
 /* 配置型调整的目标新值编辑规格(可选;不传则仅确认动作本身) */
-export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; min?: number; max?: number; step?: number; disallowCurrent?: boolean };
+export type EditSpec = { kind?: "number" | "text" | "select" | "toggle"; current?: string; unit?: string; options?: string[]; optionLabels?: Record<string, ReactNode>; min?: number; max?: number; step?: number; disallowCurrent?: boolean; amplifiesWhen?: "increase" | "decrease" };
 export type BusinessFormValue = Record<string, string>;
 type RoleOption = { key: string; label: string; scope?: string };
 type PermissionRole = { key: string; label: string; current: string };
 type NotifyTemplateOption = { value: string; label: string; campaignNo?: string; meta?: string; tier?: string; status?: string; audience?: string; searchText?: string };
-type SopActionOption = { value: string; label: string; domain: string; action: string; ref?: string | null; approve?: boolean; description?: string; searchText?: string };
+type SopActionOption = {
+  value: string;
+  label: string;
+  domain: string;
+  action: string;
+  ref?: string | null;
+  approve?: boolean;
+  description?: string;
+  searchText?: string;
+  parameterLabel?: string;
+  parameterPlaceholder?: string;
+};
 type SopRollbackOption = { value: string; label: string; scene?: string; riskLevel?: string; plan: string; searchText?: string };
 type CopyPositionOption = { value: string; label: string; surface: string; status?: string };
 type CopyVersionOption = { value: string; label: string; status?: string };
@@ -547,7 +559,9 @@ function isEditValueValid(spec: EditSpec | null, value: string): boolean {
   if (!value.trim()) return false;
   if (spec.disallowCurrent && value.trim() === (spec.current ?? "").trim()) return false;
   if ((spec.kind ?? "text") !== "number") return true;
-  const numeric = Number(value);
+  const normalized = value.trim();
+  if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(normalized)) return false;
+  const numeric = Number(normalized);
   if (!Number.isFinite(numeric)) return false;
   if (spec.min !== undefined && numeric < spec.min) return false;
   if (spec.max !== undefined && numeric > spec.max) return false;
@@ -620,7 +634,7 @@ export type BusinessFormSpec =
   | { kind: "multi-field"; title?: string; hint?: string; ascending?: boolean; requireAnyChange?: boolean; reasonMax?: number; fields: { key: string; label: string; current?: string; placeholder?: string; inputKind?: "number" | "text" | "select" | "multi-select" | "datetime-local"; options?: string[]; optionLabels?: Record<string, string>; searchable?: boolean; showDiff?: boolean; required?: boolean; requiredWhenAddedTo?: string; visibleWhen?: { key: string; equals: string }; min?: number; max?: number; step?: number; wide?: boolean; warnAbove?: number; warnText?: string }[] }
   | { kind: "weekly-task-edit"; subject?: string; currentCond?: string; currentReward?: string; currentStatus?: string; statusOptions?: string[]; currentCompletionType?: string; currentCompletionEvent?: string; completionTypeOptions?: string[] }
   | { kind: "monthly-task-edit"; subject?: string; currentTheme?: string; currentAge?: string; currentReward?: string; currentGoals?: string; currentStatus?: string; statusOptions?: string[] }
-  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
+  | { kind: "voucher-config"; subject?: string; applicableSkuOptions?: string[]; applicableSkuLabels?: Record<string, string>; currentName?: string; currentType?: string; currentAmountUSD?: string; currentPercent?: string; currentMinPurchaseUSD?: string; currentMaxDiscountUSD?: string; currentIssuanceLimit?: string; currentApplicableSkus?: string; currentAudience?: string; currentStartDate?: string; currentEndDate?: string; currentClaimSurfaces?: string; currentPopupEnabled?: string; currentStackWithTrial?: string; currentStackWithOthers?: string; currentSplittable?: string; currentStatus?: string }
   | { kind: "promo-banner-edit"; currentBaseReward?: string; currentMultiplier?: string; currentCountdownDays?: string; currentCountdownHours?: string; currentTargetDevice?: string; currentTargetDaily?: string; currentStatus?: string; statusOptions?: string[] }
   | { kind: "vrank-reward-edit"; subject?: string; voucherOptions?: string[]; voucherLabels?: Record<string, string>; skuOptions?: string[]; skuLabels?: Record<string, string>; currentType?: string; currentAmount?: string; currentVoucherId?: string; currentSkuId?: string; currentCustom?: string }
   | { kind: "mission-create"; subject?: string }
@@ -1115,6 +1129,7 @@ function initBusinessForm(spec?: BusinessFormSpec): BusinessFormValue {
       percent: spec.currentPercent ?? "",
       minPurchaseUSD: spec.currentMinPurchaseUSD ?? "",
       maxDiscountUSD: spec.currentMaxDiscountUSD ?? "",
+      issuanceLimit: spec.currentIssuanceLimit ?? "0",
       applicableSkus: spec.currentApplicableSkus ?? "",
       claimSurfaces: spec.currentClaimSurfaces ?? "",
       audience: spec.currentAudience ?? "all",
@@ -1465,6 +1480,10 @@ function missingBusinessFields(spec: BusinessFormSpec | undefined, state: Busine
     const surfs = (state.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     if (surfs.length === 0) missing.push("领取入口页面(至少一个)");
     else if (surfs.some((s) => !["home", "store", "me", "earn"].includes(s))) missing.push("领取入口仅限 home/store/me/earn");
+    const issuanceLimit = Number(state.issuanceLimit);
+    if (!Number.isSafeInteger(issuanceLimit) || issuanceLimit < 0 || issuanceLimit > 10_000_000) {
+      missing.push("发行上限须为 0-10000000 的整数");
+    }
   } else if (spec.kind === "vrank-reward-edit") {
     needs("rtype", "奖励类型");
     if (state.rtype === "usdt" || state.rtype === "nex") {
@@ -2219,8 +2238,8 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         <label>发布前合规核对</label>
         <div className="itint danger">
           <b>{spec.jurisdiction} · {spec.currentVersion || "无生效版"} → {spec.targetVersion}</b>
-          <div style={{ marginTop: 6 }}>受影响用户 {spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 {spec.pendingAck.toLocaleString("zh-CN")} 人 · 当前拦截 {spec.blocked.toLocaleString("zh-CN")} 次</div>
-          <div style={{ marginTop: 4 }}>受限动作影响：{spec.gatedActions.join("、") || "暂无"}</div>
+          <div style={{ marginTop: 6 }}>当前映射统计：用户 {spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 {spec.pendingAck.toLocaleString("zh-CN")} 人 · 当前拦截 {spec.blocked.toLocaleString("zh-CN")} 次</div>
+          <div style={{ marginTop: 4 }}>本次仅审批不可变版本，不改变 App 投放；后续切换映射时才触发重确认与受限动作：{spec.gatedActions.join("、") || "暂无"}</div>
         </div>
         <div className="itint" style={{ marginTop: 10 }}>
           <b>版本差异</b> · 共 {changed.length} / 7 章发生变化
@@ -2434,6 +2453,9 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {input("maxDiscountUSD", "折扣封顶 cap(USD)", "0=不封顶", "number")}
         </div>
         <div style={{ marginTop: 10 }}>
+          {input("issuanceLimit", "发行上限 inventory(张)", "0=不限量;正整数=总发行上限", "number")}
+        </div>
+        <div style={{ marginTop: 10 }}>
           {multiSelect("applicableSkus", "适用 SKU(点选;不选=全设备)", spec.applicableSkuOptions ?? [], "voucher-skus", spec.applicableSkuLabels)}
         </div>
         <div style={{ marginTop: 10 }}>
@@ -2456,7 +2478,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {select("stackWithOthers", "可叠加其它优惠 stackWithOthers", ["false", "true"], "voucher-stack-others", { false: "不可叠加 false", true: "可叠加 true" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          <b>满减</b> = 满「门槛」减「面值」;<b>折扣</b> = 百分比折扣,封顶可选。适用 SKU 不选 = 全设备(领券跳商城),单选 = 跳该 SKU 详情页。领取入口 = 关闭弹窗后展示领券 banner 的前端页面。<b>叠加策略</b>:默认不与试用收益 / 其它优惠叠加(二选一取最优)。<b>不可提现</b>(固有性质:折扣只在结算抵扣价格、永不入可提现余额)。代金券是促销折扣、非 NEX 负债,不挂 B1 红线。
+          <b>满减</b> = 满「门槛」减「面值」;<b>折扣</b> = 百分比折扣,封顶可选。发行上限 0 = 不限量,正整数 = 所有来源合计发券上限。适用 SKU 不选 = 全设备(领券跳商城),单选 = 跳该 SKU 详情页。领取入口 = 关闭弹窗后展示领券 banner 的前端页面。<b>叠加策略</b>:默认不与试用收益 / 其它优惠叠加(二选一取最优)。<b>不可提现</b>(固有性质:折扣只在结算抵扣价格、永不入可提现余额)。代金券是促销折扣、非 NEX 负债,不挂 B1 红线。
         </div>
       </div>
     );
@@ -2621,9 +2643,12 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {input("probabilityPct", "概率%", "如 5(0-100)", "number")}
           {select("realOutflow", "真实出金", ["0", "1"], "tier-real-outflow", { "0": "否(体验分/无流出)", "1": "是(真实出金)" })}
           {select("rewardKind", "奖励类型", ["nex", "points", "usdt", "coupon"], "tier-reward-kind", { nex: "NEX", points: "积分", usdt: "USDT", coupon: "代金券" })}
+          {input("rewardAmount", "实际派奖数量", "如 100", "number")}
+          {input("voucherId", "代金券 ID(仅 coupon)", "如 WHEEL-50")}
+          {input("dailyStock", "每日全局库存(0=不限)", "如 50", "number")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          所有档位概率之和应 = 100;真实出金档位放大资金流出,过 B1 红线。
+          所有档位概率之和应 = 100;实际派奖数量由服务端账本使用,不能只改展示名;USDT 必须标记真实出金并过 B1 红线。
         </div>
       </div>
     );
@@ -2634,13 +2659,13 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
       <div className="field" data-business-form="wheel-guard-config">
         <label>业务表单 · 新建轮盘护栏{spec.subject ? <> · {spec.subject}</> : null}</label>
         <div className="grid g-2" style={{ gap: 10 }}>
-          {input("guardKey", "护栏 key(小写英文)", "如 budget")}
+          {select("guardKey", "护栏 key", ["budget", "kill"], "wheel-guard-key", { budget: "每日真实派奖预算", kill: "真实奖总开关" })}
           {input("guardLabel", "护栏名", "如 奖池预算")}
           {input("guardValue", "默认值", "如 1000")}
           {input("note", "说明", "如 单次抽奖预算上限")}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          护栏目录项(运行时数值仍走配置项 growth.wheel.guard.*);key 需小写英文唯一。
+          budget 与 kill 直接进入服务端转盘裁决；每档每日库存由奖池档位的 dailyStock 直接控制，不再维护第二份 cap 文本。
         </div>
       </div>
     );
@@ -2653,15 +2678,20 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("id", "活动 id(英文唯一)", "如 evt-summer")}
           {input("name", "活动名", "如 夏日狂欢")}
-          {select("kind", "类型", ["discount", "referral", "wheel", "regional", "boost", "seasonal", "holding", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", wheel: "幸运转盘", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", holding: "持币活动", onboarding: "新手活动" })}
+          {select("kind", "类型", ["discount", "referral", "regional", "boost", "seasonal", "holding", "onboarding"], "event-kind", { discount: "限时折扣", referral: "邀请挑战", regional: "区域活动", boost: "加成活动", seasonal: "季节活动", holding: "持币活动", onboarding: "新手活动" })}
           {select("state", "状态", ["ongoing", "upcoming", "ended"], "event-state", { ongoing: "进行中", upcoming: "待开始", ended: "已结束" })}
           {input("reward", "奖励", "如 100 NEX")}
           {input("condition", "完成条件", "如 order.paid")}
+          {input("targetValue", "目标值", "如 5", "number")}
+          {input("geo", "地域范围", "如 VN / GLOBAL")}
+          {input("href", "App 跳转", "如 /pages/store/store")}
+          {input("startsAt", "开始时间(UTC)", "", "datetime-local")}
+          {input("endsAt", "结束时间(UTC)", "", "datetime-local")}
           {select("featured", "主推", ["false", "true"], "event-featured", { "false": "否", "true": "是(唯一)" })}
           {select("trackable", "可追踪", ["false", "true"], "event-trackable", { "false": "否", "true": "是" })}
         </div>
         <div className="tint tiny" style={{ marginTop: 10 }}>
-          活动 id 英文唯一;主推需进行中且全局唯一;奖励放大流出过 B1 红线。
+          活动 id 英文唯一;UTC 结束时间必须晚于开始时间;App 跳转仅允许 /pages/*;主推需进行中且全局唯一;奖励放大流出过 B1 红线。
         </div>
       </div>
     );
@@ -2802,10 +2832,26 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
       .filter((item) => !actionQuery || (item.searchText ?? `${item.label} ${item.description ?? ""}`).toLowerCase().includes(actionQuery))
       .slice(0, 8);
     const setActionLines = (lines: string[]) => onChange({ ...value, actionSeq: lines.join("\n") });
-    const actionLine = (item: SopActionOption) => `${item.domain}·${item.action}${item.ref ? `·${item.ref}` : ""}`;
+    const normalizedActionTarget = (item: SopActionOption) => {
+      const raw = (value.actionTarget ?? "").trim();
+      if (!item.ref?.includes("{target}")) return "";
+      if (item.domain === "J2") return /^[A-Za-z]{2}$/.test(raw) ? raw.toUpperCase() : "";
+      if (item.domain === "C2") return /^[1-9]\d{0,18}$/.test(raw) ? raw : "";
+      if (item.domain === "K1") return /^[A-Za-z0-9._-]{1,64}$/.test(raw) ? raw : "";
+      if (item.domain === "I5") return /^[A-Za-z0-9_-]{2,32}:[A-Za-z0-9._-]{1,32}$/.test(raw) ? raw : "";
+      return "";
+    };
+    const actionLine = (item: SopActionOption) => {
+      const target = normalizedActionTarget(item);
+      const ref = item.ref?.includes("{target}") ? item.ref.replace("{target}", target) : item.ref;
+      return `${item.domain}·${item.action}${ref ? `·${ref}` : ""}`;
+    };
     const addAction = (item: SopActionOption) => {
+      if (item.ref?.includes("{target}") && !normalizedActionTarget(item)) return;
       const nextLine = actionLine(item);
-      if (!actionLines.includes(nextLine)) setActionLines([...actionLines, nextLine]);
+      if (!actionLines.includes(nextLine)) {
+        onChange({ ...value, actionSeq: [...actionLines, nextLine].join("\n"), actionTarget: "" });
+      }
     };
     const removeAction = (idx: number) => setActionLines(actionLines.filter((_, i) => i !== idx));
     const splitAction = (line: string) => {
@@ -2912,17 +2958,28 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
             onChange={(e) => onChange({ ...value, actionSearch: e.target.value })}
             placeholder="搜索域 / 动作 / 参数 / 说明"
           />
+          {shownActionOptions.some((item) => item.ref?.includes("{target}")) && (
+            <input
+              className="fld"
+              aria-label="目标域动作参数"
+              value={value.actionTarget ?? ""}
+              onChange={(e) => onChange({ ...value, actionTarget: e.target.value })}
+              placeholder="选择带参数动作前填写目标，例如 US / 123 / cluster-001 / VN:v1.2"
+              style={{ marginTop: 8 }}
+            />
+          )}
           <div data-proof="sop-action-option-select" style={{ display: "grid", gap: 6, marginTop: 8 }}>
             {actionOptions.length === 0 ? (
               <div className="tint tiny" style={{ marginTop: 0 }}>当前没有可编排动作，请重新读取；如仍为空请联系值班人员。</div>
             ) : shownActionOptions.length === 0 ? (
               <div className="tint tiny" style={{ marginTop: 0 }}>没有匹配的原子动作,请换个关键词。</div>
             ) : shownActionOptions.map((item) => {
-              const selected = actionLines.includes(actionLine(item));
+              const parameterReady = !item.ref?.includes("{target}") || Boolean(normalizedActionTarget(item));
+              const selected = parameterReady && actionLines.includes(actionLine(item));
               return <button
                 key={item.value}
                 type="button"
-                disabled={selected}
+                disabled={selected || !parameterReady}
                 onClick={() => addAction(item)}
                 style={{
                   display: "grid",
@@ -2935,14 +2992,17 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
                   border: "1px solid var(--border)",
                   background: "var(--surface-2)",
                   color: "var(--ink)",
-                  cursor: selected ? "not-allowed" : "pointer",
-                  opacity: selected ? 0.55 : 1,
+                  cursor: selected || !parameterReady ? "not-allowed" : "pointer",
+                  opacity: selected || !parameterReady ? 0.55 : 1,
                 }}
               >
                 <span className="mono" style={{ fontSize: 11, color: "var(--brand)" }}>{item.domain}</span>
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 12.5, fontWeight: 650 }}>{item.action}</span>
                   {item.description && <span className="tiny" style={{ display: "block", color: "var(--ink-3)" }}>{item.description}</span>}
+                  {item.parameterLabel && <span className="tiny" style={{ display: "block", color: "var(--brand)" }}>
+                    参数：{item.parameterLabel}{item.parameterPlaceholder ? `（例 ${item.parameterPlaceholder}）` : ""}
+                  </span>}
                 </span>
                 <span className="tiny" style={{ color: item.approve === false ? "var(--ink-3)" : "var(--danger)" }}>
                   {item.approve === false ? "无需确认" : "需确认"}
@@ -3140,8 +3200,14 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
   const isJ4Command = businessForm?.kind === "sop-authoring" || /应急剧本|启动演练|回滚剧本/.test(actionText);
   const kind = spec?.kind ?? "text";
   const opts = spec?.options ?? (kind === "select" || kind === "toggle" ? ["开启", "关闭"] : []);
+  const currentNumber = Number(spec?.current);
+  const newNumber = Number(newVal);
+  const directionalAmplifies = spec?.amplifiesWhen && Number.isFinite(currentNumber) && Number.isFinite(newNumber)
+    ? spec.amplifiesWhen === "increase" ? newNumber > currentNumber : newNumber < currentNumber
+    : undefined;
+  const effectiveAmplifies = directionalAmplifies ?? Boolean(amplifies);
   // B1 红线禁放行:只有调用方传入真实后端覆盖率时才做前端镜像拦截;后端仍是最终裁决。
-  const covBlocked = Boolean(amplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
+  const covBlocked = Boolean(effectiveAmplifies && coverage && coverage.coverageRatio < coverage.redlinePct);
   const reasonMin = Number.isFinite(requestedReasonMin)
     ? Math.max(1, Math.min(200, Math.floor(requestedReasonMin!)))
     : 8;
@@ -3164,10 +3230,10 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
     setSubmitError(null);
     try {
       await onConfirm(reason.trim(), (derivedNewVal ?? newVal) || undefined, activeBusinessForm ? businessValue : undefined);
-    } catch {
+    } catch (error) {
       // The domain callback owns the detailed toast. Keep the form open and
       // consume the rejection so a rejected A2/K2 request never escapes as pageerror.
-      setSubmitError("提交未完成，当前输入已保留，请根据页面提示处理后重试。");
+      setSubmitError(operationConfirmErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -3201,9 +3267,9 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           <Icon name="check" size={15} /> {submitting ? "提交中…" : "确认提交"}
         </Btn>
       </>}>
-      <OperatorBriefBlock action={action} detail={detail} amplifies={amplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} />
+      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} />
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
-      {amplifies && (
+      {effectiveAmplifies && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
           <span className="ico"><Icon name="alert" size={16} /></span>
           <div className="tiny">

@@ -14,6 +14,7 @@ import {
   createH7Voucher,
   deleteH7Voucher,
   fetchH7Vouchers,
+  revokeH7VoucherAvailableGrants,
   updateH7Voucher,
   updateH7VoucherStatus,
 } from "@/lib/admin/h-client";
@@ -44,6 +45,13 @@ type OpsVoucher = {
   stackWithTrial: boolean;
   stackWithOthers: boolean;
   splittable: boolean;
+  issuanceLimit: number;
+  version: number;
+  issuedCount: number;
+  availableCount: number;
+  redeemedCount: number;
+  revokedCount: number;
+  batchCount: number;
   status: "active" | "paused";
 };
 
@@ -82,7 +90,7 @@ function surfacesText(v: OpsVoucher): string {
 }
 
 /** businessValue → OpsVoucher(逗号串拆 SKU/入口 · 日期转 ms · 数值清洗)。 */
-function parseVoucher(bv: Record<string, string>, id: string): OpsVoucher {
+function parseVoucher(bv: Record<string, string>, id: string, version = 1): OpsVoucher {
   const type: OpsVoucher["type"] = bv.type === "percent" ? "percent" : "fixed";
   const skus = (bv.applicableSkus ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const surfaces = (bv.claimSurfaces ?? "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -103,7 +111,53 @@ function parseVoucher(bv: Record<string, string>, id: string): OpsVoucher {
     stackWithTrial: bv.stackWithTrial === "true",
     stackWithOthers: bv.stackWithOthers === "true",
     splittable: bv.splittable === "true",
+    issuanceLimit: Number(bv.issuanceLimit) || 0,
+    version,
+    issuedCount: 0,
+    availableCount: 0,
+    redeemedCount: 0,
+    revokedCount: 0,
+    batchCount: 0,
     status: bv.status === "paused" ? "paused" : "active",
+  };
+}
+
+function parseServerVoucher(raw: unknown): OpsVoucher {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  const row = raw as Record<string, unknown>;
+  const number = (key: string) => {
+    const value = Number(row[key]);
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`H7_VOUCHER_RESPONSE_INVALID:${key}`);
+    return value;
+  };
+  const status = row.status === "active" || row.status === "paused" ? row.status : null;
+  if (typeof row.id !== "string" || !row.id.trim()
+      || typeof row.name !== "string" || !row.name.trim()
+      || (row.type !== "fixed" && row.type !== "percent")
+      || !Array.isArray(row.applicableSkus)
+      || !Array.isArray(row.claimSurfaces)
+      || (row.audience !== "new" && row.audience !== "all")
+      || !status) {
+    throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+  }
+  return {
+    ...(row as unknown as OpsVoucher),
+    id: row.id.trim(),
+    name: row.name.trim(),
+    type: row.type,
+    applicableSkus: row.applicableSkus.map(String),
+    claimSurfaces: row.claimSurfaces.map(String),
+    audience: row.audience,
+    status,
+    startAt: number("startAt"),
+    endAt: number("endAt"),
+    issuanceLimit: number("issuanceLimit"),
+    version: number("version"),
+    issuedCount: number("issuedCount"),
+    availableCount: number("availableCount"),
+    redeemedCount: number("redeemedCount"),
+    revokedCount: number("revokedCount"),
+    batchCount: number("batchCount"),
   };
 }
 
@@ -117,9 +171,12 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const [error, setError] = useState<string | null>(null);
 
   const applyResponse = (payload: Record<string, any>) => {
+    if (!Array.isArray(payload.vouchers) || !Array.isArray(payload.skus)) {
+      throw new Error("H7_VOUCHER_RESPONSE_INVALID");
+    }
     setData({
-      vouchers: Array.isArray(payload.vouchers) ? payload.vouchers : [],
-      skus: Array.isArray(payload.skus) ? payload.skus : [],
+      vouchers: payload.vouchers.map(parseServerVoucher),
+      skus: payload.skus,
       stats: payload.stats ?? undefined,
     });
   };
@@ -188,6 +245,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         currentStackWithTrial: "false",
         currentStackWithOthers: "false",
         currentSplittable: "false",
+        currentIssuanceLimit: "0",
       },
       run: async (reason, _v, bv) => {
         if (!bv) return;
@@ -219,6 +277,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         currentPercent: v.percent != null ? String(v.percent) : "",
         currentMinPurchaseUSD: v.minPurchaseUSD != null ? String(v.minPurchaseUSD) : "",
         currentMaxDiscountUSD: v.maxDiscountUSD != null ? String(v.maxDiscountUSD) : "",
+        currentIssuanceLimit: String(v.issuanceLimit),
         currentApplicableSkus: v.applicableSkus.join(","),
         currentClaimSurfaces: v.claimSurfaces.join(","),
         currentAudience: v.audience,
@@ -232,8 +291,8 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       },
       run: async (reason, _v, bv) => {
         if (!bv) return;
-        const next = parseVoucher(bv, v.id);
-        applyResponse(await updateH7Voucher(v.id, next, reason));
+        const next = parseVoucher(bv, v.id, v.version);
+        applyResponse(await updateH7Voucher(v.id, next, reason, v.version));
         toast(`· 代金券「${next.name}」已更新`);
       },
     });
@@ -252,7 +311,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         </>
       ),
       run: async (reason) => {
-        applyResponse(await updateH7VoucherStatus(v.id, next, reason));
+        applyResponse(await updateH7VoucherStatus(v.id, next, reason, v.version));
         toast(`· ${v.name} 已${label}`);
       },
     });
@@ -267,8 +326,24 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
         </>
       ),
       run: async (reason) => {
-        applyResponse(await deleteH7Voucher(v.id, reason));
+        applyResponse(await deleteH7Voucher(v.id, reason, v.version));
         toast(`· ${v.name} 已删除`);
+      },
+    });
+  };
+
+  const openRevoke = (v: OpsVoucher) => {
+    openActionConfirm({
+      action: `撤销未核销代金券 · ${v.name}`,
+      detail: (
+        <>
+          <b>{v.name}</b> · 将 {v.availableCount} 张已领取但未核销的券统一标记为已撤销。
+          已核销 {v.redeemedCount} 张保持历史事实不变;本操作使用版本校验并保留强审计。
+        </>
+      ),
+      run: async (reason) => {
+        applyResponse(await revokeH7VoucherAvailableGrants(v.id, reason, v.version));
+        toast(`· ${v.name} 未核销券已撤销`);
       },
     });
   };
@@ -305,6 +380,11 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           <div className="v">{pausedN}</div>
           <div className="sub">前端不展示</div>
         </div>
+        <div className="f-stat">
+          <div className="k">累计领取 / 核销</div>
+          <div className="v">{list.reduce((sum, voucher) => sum + voucher.issuedCount, 0)} / {list.reduce((sum, voucher) => sum + voucher.redeemedCount, 0)}</div>
+          <div className="sub">服务端持券与订单事实</div>
+        </div>
       </div>
 
       <section className="l-card" data-proof="h7-voucher-config">
@@ -316,7 +396,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
-          <table className="l-tbl" style={{ minWidth: 960 }}>
+          <table className="l-tbl" style={{ minWidth: 1320 }}>
             <thead>
               <tr>
                 <th>名称</th>
@@ -327,6 +407,9 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                 <th>有效期</th>
                 <th>领取入口</th>
                 <th>弹窗</th>
+                <th>发行 / 批次</th>
+                <th>领取 / 可用</th>
+                <th>核销 / 撤销</th>
                 <th>状态</th>
                 <th style={{ textAlign: "right" }}>动作</th>
               </tr>
@@ -344,11 +427,15 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                     <td className="mono" style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{v.endAt ? `至 ${fmtDate(v.endAt)}` : "长期"}</td>
                     <td style={{ fontSize: 11.5, color: "var(--ink-2)" }}>{surfacesText(v)}</td>
                     <td><span className={`bdg ${v.popupEnabled ? "ok" : "dim"}`}>{v.popupEnabled ? "弹窗" : "否"}</span></td>
+                    <td className="mono" style={{ fontSize: 11.5 }}>{v.issuanceLimit === 0 ? "不限量" : v.issuanceLimit} / {v.batchCount}</td>
+                    <td className="mono" style={{ fontSize: 11.5 }}>{v.issuedCount} / {v.availableCount}</td>
+                    <td className="mono" style={{ fontSize: 11.5 }}>{v.redeemedCount} / {v.revokedCount}</td>
                     <td><span className={`bdg ${isActive ? "ok" : "dim"}`}>{isActive ? "投放中" : "已暂停"}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
                         <button className="l-btn sm mc" onClick={() => openEdit(v)}>编辑</button>
                         <button className="l-btn sm mc" aria-label={`${isActive ? "暂停" : "投放"} ${v.name}`} onClick={() => openToggle(v)}>{isActive ? "暂停" : "投放"}</button>
+                        {v.availableCount > 0 ? <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`撤销未核销代金券 · ${v.name}`} onClick={() => openRevoke(v)}>撤销未核销</button> : null}
                         <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除代金券 · ${v.name}`} onClick={() => openDelete(v)}>删除</button>
                       </span>
                     </td>

@@ -144,6 +144,9 @@ test("K4 withdrawal escalation alerts are durable, A6-permission scoped and huma
 test("K4 band editor describes the backend's exclusive low boundary", () => {
   assert.match(component, /中风险起始分/);
   assert.match(component, /低风险低于此分数/);
+  assert.match(component, /edit\.autoEscalateScore >= edit\.bandHighMin/);
+  assert.match(component, /自动升级线不能低于高风险下限/);
+  assert.match(client, /if \(autoEscalateScore < bandHighMin\) invalidK4Response/);
   assert.doesNotMatch(component, /低风险上限/);
   assert.doesNotMatch(component, /低风险分档的最大分数/);
 });

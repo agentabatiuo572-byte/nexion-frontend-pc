@@ -102,6 +102,7 @@ export const B2_LIABILITY_KEYS = [
   "withdrawal_queue",
   "commission_cooling",
   "lock_other",
+  "unverified_deposit",
 ] as const;
 
 const B2_RESERVE_KEYS = ["usdt", "otherLiquid"] as const;
@@ -227,9 +228,9 @@ function normalizeLiabilities(value: unknown): B2Liabilities {
   const shareTotal = breakdown.reduce((sum, row) => sum + row.share, 0);
   if (
     totalUsdt < 0
-    || hardLiabilityCategoryCount !== 8
-    || breakdown.length !== 8
-    || new Set(categories).size !== 8
+    || hardLiabilityCategoryCount !== B2_LIABILITY_KEYS.length
+    || breakdown.length !== B2_LIABILITY_KEYS.length
+    || new Set(categories).size !== B2_LIABILITY_KEYS.length
     || B2_LIABILITY_KEYS.some((key) => !categories.includes(key))
     || !near(amountTotal, totalUsdt)
     || (totalUsdt > 0 && Math.abs(shareTotal - 1) > 0.001)

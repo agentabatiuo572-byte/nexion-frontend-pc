@@ -99,7 +99,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "A",
       op: "a1_account_status_update",
-      params: { accountId: String(ctx.accountId), status: ctx.status },
+      params: { accountId: String(ctx.accountId), status: ctx.status, expectedVersion: ctx.expectedVersion },
     }),
     buildTarget: (ctx) => ({ domain: "A", type: "account", id: String(ctx.accountId) }),
   },
@@ -114,7 +114,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "A",
       op: "a1_account_change_role",
-      params: { accountId: String(ctx.accountId), role: ctx.role },
+      params: { accountId: String(ctx.accountId), role: ctx.role, expectedVersion: ctx.expectedVersion },
     }),
     buildTarget: (ctx) => ({ domain: "A", type: "account", id: String(ctx.accountId) }),
   },
@@ -129,7 +129,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "A",
       op: "a1_account_reset_2fa",
-      params: { accountId: String(ctx.accountId) },
+      params: { accountId: String(ctx.accountId), expectedVersion: ctx.expectedVersion },
     }),
     buildTarget: (ctx) => ({ domain: "A", type: "account", id: String(ctx.accountId) }),
   },
@@ -164,6 +164,7 @@ export const HIGH_OPS: HighOpDef[] = [
         username: ctx.username,
         displayName: ctx.displayName,
         email: ctx.email ?? null,
+        expectedVersion: ctx.expectedVersion,
       },
     }),
     buildTarget: (ctx) => ({ domain: "A", type: "account", id: String(ctx.accountId) }),
@@ -179,7 +180,7 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "A",
       op: "a1_account_force_logout",
-      params: { accountId: String(ctx.accountId) },
+      params: { accountId: String(ctx.accountId), expectedVersion: ctx.expectedVersion },
     }),
     buildTarget: (ctx) => ({ domain: "A", type: "account", id: String(ctx.accountId) }),
   },
@@ -194,7 +195,11 @@ export const HIGH_OPS: HighOpDef[] = [
     buildCommand: (ctx) => ({
       domain: "A",
       op: "a1_security_baseline_update",
-      params: { baselineKey: String(ctx.baselineKey), value: String(ctx.value) },
+      params: {
+        baselineKey: String(ctx.baselineKey),
+        value: String(ctx.value),
+        expectedValue: String(ctx.expectedValue),
+      },
     }),
     buildTarget: (ctx) => ({ domain: "A", type: "baseline", id: String(ctx.baselineKey) }),
   },
@@ -1530,7 +1535,11 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "checkin_rule",
     buildCommand: (ctx) => ({ domain: "H", op: "h5_checkin_rule",
-      params: { ruleKey: String(ctx.ruleKey), value: String(ctx.value) } }),
+      params: {
+        ruleKey: String(ctx.ruleKey),
+        value: String(ctx.value),
+        expectedValue: String(ctx.expectedValue),
+      } }),
     buildTarget: (ctx) => ({ domain: "H", type: "checkin_rule", id: String(ctx.ruleKey) }),
   },
   {
@@ -1542,7 +1551,12 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "referral_settlement_batch",
     buildCommand: (ctx) => ({ domain: "H", op: "h8_referral_settlement",
-      params: { limit: Number(ctx.limit) } }),
+      params: {
+        limit: Number(ctx.limit),
+        expectedH8Version: Number(ctx.expectedH8Version),
+        expectedRhythmMonth: Number(ctx.expectedRhythmMonth),
+        rewardSnapshotHash: String(ctx.rewardSnapshotHash),
+      } }),
     buildTarget: () => ({ domain: "H", type: "referral_settlement_batch", id: "pending" }),
   },
   // —— I 域内容(批 8) ——
@@ -1557,7 +1571,11 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "notification_cap",
     buildCommand: (ctx) => ({ domain: "I", op: "i3_cap_adjust",
-      params: { tier: String(ctx.tier), cap: String(ctx.cap) } }),
+      params: {
+        tier: String(ctx.tier),
+        cap: String(ctx.cap),
+        expectedCap: String(ctx.expectedCap),
+      } }),
     buildTarget: (ctx) => ({ domain: "I", type: "notification_cap", id: String(ctx.tier) }),
   },
   // I4 信任版块 publish/rollback/archive 共享 trust_section:{sectionKey} 锁(1 op + action 分发,replay switch action)
@@ -1575,6 +1593,8 @@ export const HIGH_OPS: HighOpDef[] = [
         action: String(ctx.action),
         version: ctx.version != null ? String(ctx.version) : null, // publish 用
         expectedRevision: ctx.expectedRevision != null ? Number(ctx.expectedRevision) : null,
+        expectedVersion: ctx.expectedVersion != null ? String(ctx.expectedVersion) : null,
+        expectedStatus: ctx.expectedStatus != null ? String(ctx.expectedStatus) : null,
         targetVersion: ctx.targetVersion != null ? String(ctx.targetVersion) : null, // rollback 用
         dataSourceStatement: String(ctx.dataSourceStatement ?? ""),
         bilingualConfirmed: ctx.bilingualConfirmed === true,
@@ -1613,6 +1633,9 @@ export const HIGH_OPS: HighOpDef[] = [
       countryCodes: Array.isArray(ctx.countryCodes) ? ctx.countryCodes.map(String) : [],
       version: String(ctx.version),
       status: "DRAFT",
+      expectedVersion: String(ctx.expectedVersion ?? ""),
+      expectedStatus: String(ctx.expectedStatus ?? ""),
+      expectedCountryCodes: Array.isArray(ctx.expectedCountryCodes) ? ctx.expectedCountryCodes.map(String) : [],
     } }),
     buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdictionCode) }),
   },
@@ -1626,6 +1649,8 @@ export const HIGH_OPS: HighOpDef[] = [
     targetType: "disclosure_jurisdiction",
     buildCommand: (ctx) => ({ domain: "I", op: "i5_matrix_archive", params: {
       jurisdiction: String(ctx.jurisdiction),
+      expectedVersion: String(ctx.expectedVersion ?? ""),
+      expectedStatus: String(ctx.expectedStatus ?? ""),
     } }),
     buildTarget: (ctx) => ({ domain: "I", type: "disclosure_jurisdiction", id: String(ctx.jurisdiction) }),
   },
@@ -1668,7 +1693,10 @@ export const HIGH_OPS: HighOpDef[] = [
     gateLabel: "门槛者",
     targetType: "disclosure_gate",
     buildCommand: (ctx) => ({ domain: "I", op: "i5_gate_adjust",
-      params: { scope: String(ctx.scope) } }),
+      params: {
+        scope: String(ctx.scope),
+        expectedScope: String(ctx.expectedScope ?? ""),
+      } }),
     buildTarget: () => ({ domain: "I", type: "disclosure_gate", id: "restricted-actions" }),
   },
   // I7 课程奖励调整(updateCourseReward · courseId 锁 · amplifies 放大未来 NEX 流出,B1 红线前置)
@@ -1756,6 +1784,50 @@ export const HIGH_OPS: HighOpDef[] = [
       }
       return { domain: "F", type: "commission_event", id };
     },
+  },
+  {
+    op: "f_vrank_override",
+    domain: "F",
+    action: "V-Rank 手动晋升/降级",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "vrank_override",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_vrank_override", params: {
+      userId: Number(ctx.userId),
+      targetV: String(ctx.targetV),
+      direction: String(ctx.direction),
+    } }),
+    buildTarget: (ctx) => ({ domain: "F", type: "vrank_override", id: String(ctx.userId) }),
+  },
+  {
+    op: "f_reward_payout_action",
+    domain: "F",
+    action: "V-Rank 奖励派发处置",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "vrank_reward_payout",
+    buildCommand: (ctx) => ({ domain: "F", op: "f_reward_payout_action", params: {
+      payoutId: String(ctx.payoutId),
+      action: String(ctx.action),
+    } }),
+    buildTarget: (ctx) => ({ domain: "F", type: "vrank_reward_payout", id: String(ctx.payoutId) }),
+  },
+  {
+    op: "f4_pool_settle",
+    domain: "F",
+    action: "领导奖池提前结算",
+    amplifies: true,
+    type: "fund",
+    gateLabel: "门槛者",
+    targetType: "leadership_pool_settlement",
+    buildCommand: () => ({ domain: "F", op: "f4_pool_settle", params: {} }),
+    buildTarget: (ctx) => ({
+      domain: "F",
+      type: "leadership_pool_settlement",
+      id: String(ctx.weekKey || "current-week"),
+    }),
   },
   // —— L 域 BI(批 9) ——
   // l5_task_approve: OpsBiService.reportAction(reportId,"APPROVE")。锁 report/reportId。amplifies false(状态推进非资金)。

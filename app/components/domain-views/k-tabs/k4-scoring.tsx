@@ -429,7 +429,8 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     && K4_DIMENSION_KEYS.every((key) => Number.isInteger(edit.weights[key]) && edit.weights[key] >= 0 && edit.weights[key] <= 100)
     && Number.isInteger(edit.bandLowMax) && edit.bandLowMax >= 0 && edit.bandLowMax < edit.bandHighMin
     && Number.isInteger(edit.bandHighMin) && edit.bandHighMin <= 100
-    && Number.isInteger(edit.autoEscalateScore) && edit.autoEscalateScore >= 70 && edit.autoEscalateScore <= 100;
+    && Number.isInteger(edit.autoEscalateScore) && edit.autoEscalateScore >= 70
+    && edit.autoEscalateScore >= edit.bandHighMin && edit.autoEscalateScore <= 100;
   const orderedMappings = (...keys: K4ScoreMappingKey[]) => keys.every((key, index) => index === 0
     || edit.scoreMappings[keys[index - 1]] <= edit.scoreMappings[key]);
   const mappingsValid = K4_MAPPING_FIELDS.every((field) => {
@@ -452,7 +453,7 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
 
   const saveModel = () => {
     if (!modelValid || !mappingsValid) {
-      ctx.toast("模型参数无效：权重合计须为 100%，阈值须保序，风险越严重对应子分不得降低");
+      ctx.toast("模型参数无效：权重合计须为 100%，升级线不得低于高风险下限，阈值和风险子分须保序");
       return;
     }
     if (!modelDirty) {
@@ -596,9 +597,12 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
                 <input type="number" min={0} max={100} step={1} disabled={!canModelWrite} value={edit.bandHighMin} onChange={(event) => setModelDraft({ ...edit, bandHighMin: Number(event.target.value) })} style={{ width: 86 }} />
               </label>
               <label className="ktint warn">
-                <span className="tx"><b>自动升级线</b> · 达线后建议提现转人工</span>
+                <span className="tx"><b>自动升级线</b> · 达线后建议提现转人工，且不得低于高风险下限</span>
                 <input type="number" min={0} max={100} step={1} disabled={!canModelWrite} value={edit.autoEscalateScore} onChange={(event) => setModelDraft({ ...edit, autoEscalateScore: Number(event.target.value) })} style={{ width: 86 }} />
               </label>
+              {edit.autoEscalateScore < edit.bandHighMin && (
+                <div className="ktint bad">自动升级线不能低于高风险下限；请先调整这两个阈值。</div>
+              )}
             </div>
           </div>
           <details style={{ marginTop: 14 }}>

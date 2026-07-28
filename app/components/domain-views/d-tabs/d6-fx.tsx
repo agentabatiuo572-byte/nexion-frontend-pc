@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   loadD6FxQuote,
   updateD6FxQuote,
@@ -64,6 +65,9 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         if (!Number.isFinite(nextValue) || nextValue < param.min || nextValue > param.max) {
           throw new Error(`${param.label}超出合法范围`);
         }
+        if (nextValue === current) {
+          throw new Error("参数值未变化，本次未提交");
+        }
         setBusy(true);
         setError("");
         try {
@@ -101,6 +105,17 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
         <div className="f-stat cyan"><div className="k">买入点差</div><div className="v">{data?.buySpreadPct ?? 0}%</div><div className="sub">合法范围 0–3%</div></div>
         <div className="f-stat warn"><div className="k">锁价窗</div><div className="v">{data?.lockWindowMinutes ?? 0} 分钟</div><div className="sub">付款单下单即锁定</div></div>
       </div>
+
+      <section className="l-card" style={{ marginBottom: 12 }}>
+        <div className="l-h"><span className="ttl">联动核验入口</span><span className="sub">· 新单锁价、审计与事件回执可直接追踪</span></div>
+        <div className="l-b">
+          <div className="chips">
+            <Link className="chip" href="/finance/recon">D1 新付款单与回单</Link>
+            <Link className="chip" href="/platform/audit">A2 调价审计</Link>
+            <Link className="chip" href="/platform/events">A4 调价事件</Link>
+          </div>
+        </div>
+      </section>
 
       <div className="two-col r11">
         <section className="l-card">

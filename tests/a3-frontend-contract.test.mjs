@@ -27,6 +27,19 @@ test("A3 client fails closed and sends the observed value for optimistic concurr
   assert.match(client, /expectedValue/);
   assert.doesNotMatch(client, /status:\s*asText\(row\.status,\s*"off"\)/);
   assert.doesNotMatch(client, /normalized === "warn" \|\| normalized === "bad" \? normalized : "ok"/);
+  assert.match(client, /A3OutcomeUncertainError/);
+  assert.match(client, /A3ReadbackFailedError/);
+  assert.match(client, /X-Nexion-Upstream-Outcome/);
+});
+
+test("A3 renders bad health as a red severe state and distinguishes committed writes from failed readback", () => {
+  const page = read("app/components/domain-views/a-tabs/a3-config.tsx");
+  assert.match(page, /healthToneColor/);
+  assert.match(page, /healthToneLabel/);
+  assert.match(page, /严重异常/);
+  assert.match(page, /isA3ReadbackFailedError/);
+  assert.match(page, /写入已成功/);
+  assert.match(page, /结果未知/);
 });
 
 test("shared confirmation rejects selecting the current value", () => {

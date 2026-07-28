@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
@@ -79,6 +79,28 @@ function SkuMediaThumb({ sku }: { sku: OpsSku }) {
 export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
   const { skus, tasks } = ctx;
   const canWrite = ctx.canWriteE1;
+  const [skuQuery, setSkuQuery] = useState("");
+  const [skuStatus, setSkuStatus] = useState("all");
+  const [skuTier, setSkuTier] = useState("all");
+  const filteredSkus = useMemo(() => {
+    const keyword = skuQuery.trim().toLocaleLowerCase();
+    return skus.filter((sku) => {
+      const status = sku.status || "on";
+      const searchable = [
+        sku.id,
+        sku.name,
+        sku.tagline,
+        sku.badge,
+        sku.gpu,
+        sku.vram,
+        sku.datacenter,
+      ].filter(Boolean).join(" ").toLocaleLowerCase();
+      return (skuStatus === "all" || status === skuStatus)
+        && (skuTier === "all" || sku.tier === skuTier)
+        && (!keyword || searchable.includes(keyword));
+    });
+  }, [skuQuery, skuStatus, skuTier, skus]);
+  const skuTiers = Array.from(new Set(skus.map((sku) => sku.tier).filter(Boolean))).sort();
   const taskNameById = new Map(tasks.map((task) => [task.id, task.n]));
   const unlockPoolName = (value?: string) => value ? (taskNameById.get(value) ?? value) : "—";
   const phaseOrder = ctx.e1Gates?.phaseOrder ?? [];
@@ -454,9 +476,53 @@ export function E1Catalog({ ctx }: { ctx: EViewCtx }) {
         </div>
       </div>
 
-      {/* 3. SKU 4 卡 matrix */}
+      {/* 3. SKU 目录筛选 + 卡片矩阵 */}
+      <div className="tint" style={{ marginBottom: 12, padding: 12 }}>
+        <div className="row" style={{ alignItems: "end", flexWrap: "wrap", gap: 10 }}>
+          <label className="fld" style={{ flex: "1 1 260px", margin: 0 }}>
+            <span>搜索 SKU</span>
+            <input
+              aria-label="搜索 SKU"
+              value={skuQuery}
+              placeholder="名称 / SKU ID / GPU / 数据中心"
+              onChange={(event) => setSkuQuery(event.target.value)}
+            />
+          </label>
+          <label className="fld" style={{ flex: "0 1 170px", margin: 0 }}>
+            <span>状态</span>
+            <select aria-label="SKU 状态筛选" value={skuStatus} onChange={(event) => setSkuStatus(event.target.value)}>
+              <option value="all">全部状态</option>
+              <option value="on">在售</option>
+              <option value="off">已下架</option>
+              <option value="pending">待确认</option>
+            </select>
+          </label>
+          <label className="fld" style={{ flex: "0 1 170px", margin: 0 }}>
+            <span>档位</span>
+            <select aria-label="SKU 档位筛选" value={skuTier} onChange={(event) => setSkuTier(event.target.value)}>
+              <option value="all">全部档位</option>
+              {skuTiers.map((tier) => <option key={tier} value={tier}>{tier}</option>)}
+            </select>
+          </label>
+          <div className="tiny" aria-live="polite" style={{ marginBottom: 8 }}>
+            显示 {filteredSkus.length} / {skus.length} 个 SKU
+          </div>
+          {(skuQuery || skuStatus !== "all" || skuTier !== "all") ? (
+            <button type="button" style={{ marginBottom: 2 }} onClick={() => {
+              setSkuQuery("");
+              setSkuStatus("all");
+              setSkuTier("all");
+            }}>清除筛选</button>
+          ) : null}
+        </div>
+      </div>
       <div className="sku-grid">
-        {skus.map((s) => {
+        {filteredSkus.length === 0 ? (
+          <div className="tint tiny" role="status" style={{ gridColumn: "1 / -1", padding: 20, textAlign: "center" }}>
+            没有符合筛选条件的 SKU，请清除筛选或换一个关键词。
+          </div>
+        ) : null}
+        {filteredSkus.map((s) => {
           const st = s.status || "on";
           const hasUnlockPhase = !!s.unlock?.trim();
           const releaseGate = releases.find((gate) => gate.id === skuId(s));

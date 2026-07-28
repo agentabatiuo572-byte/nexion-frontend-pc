@@ -451,10 +451,16 @@ export function fetchG4AdminOperations() {
   return g4Request<G4AdminOperationsOverview>("/nex/genesis/operations");
 }
 
-export function updateG4AdminOperationConfig(key: string, value: string, reason: string, operator: string) {
+export function updateG4AdminOperationConfig(
+  key: string,
+  value: string,
+  reason: string,
+  operator: string,
+  expectedValue: string,
+) {
   return g4Request<Record<string, unknown>>(`/nex/genesis/operations/config/${encodeURIComponent(key)}`, {
     method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
+    body: JSON.stringify({ value, reason, operator, expectedValue }),
     idempotencyPrefix: `g4-ops-config-${key}`,
   });
 }

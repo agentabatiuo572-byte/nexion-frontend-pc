@@ -102,6 +102,7 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   const consoleErrors: string[] = [];
   const expectedAuthBoundaryErrors: string[] = [];
   const mutations: Array<{ method: string; path: string; status: number }> = [];
+  const serverErrors: Array<{ method: string; path: string; status: number }> = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
     if (message.type() !== "error") return;
@@ -112,6 +113,13 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     consoleErrors.push(message.text());
   });
   page.on("response", (response) => {
+    if (response.status() >= 500) {
+      serverErrors.push({
+        method: response.request().method(),
+        path: new URL(response.url()).pathname,
+        status: response.status(),
+      });
+    }
     if (response.url().includes("/api/admin/risk/scoring") && response.request().method() !== "GET") {
       mutations.push({ method: response.request().method(), path: new URL(response.url()).pathname, status: response.status() });
     }
@@ -131,6 +139,19 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   await expect(page.getByText(/中风险起始分/).first()).toBeVisible();
   await expect(page.getByText(/高风险下限/).first()).toBeVisible();
   await expect(page.getByText(/自动升级线/).first()).toBeVisible();
+
+  const highBandInput = modelSection.locator("label.ktint").filter({ hasText: "高风险下限" }).locator("input");
+  const escalationInput = modelSection.locator("label.ktint").filter({ hasText: "自动升级线" }).locator("input");
+  if (baseline.model.autoEscalateScore < 100) {
+    await highBandInput.fill(String(baseline.model.autoEscalateScore + 1));
+  } else {
+    await escalationInput.fill(String(Math.max(0, baseline.model.bandHighMin - 1)));
+  }
+  await expect(modelSection.getByText("自动升级线不能低于高风险下限；请先调整这两个阈值。")).toBeVisible();
+  await expect(modelSection.getByRole("button", { name: "保存模型草稿" })).toBeDisabled();
+  await highBandInput.fill(String(baseline.model.bandHighMin));
+  await escalationInput.fill(String(baseline.model.autoEscalateScore));
+  await expect(modelSection.getByText("自动升级线不能低于高风险下限；请先调整这两个阈值。")).toHaveCount(0);
 
   const weightInputs = modelSection.locator('.w-row input[type="number"]');
   const first = Number(await weightInputs.nth(0).inputValue());
@@ -281,8 +302,15 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   expect(tooLarge.status()).toBe(422);
 
   await page.goto("/finance/withdrawals");
-  await expect(page.getByText(/K4 风险分/).first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/K3/).first()).toBeVisible();
+  await expect(page.getByText("高优先队列", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("按当前生效 K4 模型动态路由", { exact: true })).toBeVisible();
+  const emptyWithdrawalQueue = page.getByText("暂无提现记录", { exact: true });
+  if (await emptyWithdrawalQueue.isVisible().catch(() => false)) {
+    await expect(emptyWithdrawalQueue).toBeVisible();
+  } else {
+    await expect(page.getByText(/K4 \d+|K4 风险评分不可用/).first()).toBeVisible();
+    await expect(page.getByText(/K3 /).first()).toBeVisible();
+  }
   await page.screenshot({ path: path.join(evidenceRoot, "04-d2-k3-k4-joint-read.png"), fullPage: true });
   await page.goto("/overview/risk-radar");
   await expect(page.getByText("风险雷达", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
@@ -306,7 +334,35 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   expect((await scoreUser(page, target!.userNo)).overridden).toBe(false);
   await page.screenshot({ path: path.join(evidenceRoot, "06-relogin-clean-state.png"), fullPage: true });
 
+  await page.route("**/api/admin/risk/scoring/overview?**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 0,
+        message: "OK",
+        data: {
+          ...afterRelogin,
+          model: {
+            ...afterRelogin.model,
+            bandHighMin: 90,
+            autoEscalateScore: 85,
+          },
+        },
+      }),
+    });
+  });
+  await page.reload();
+  await expect(page.getByText(/K4 读取失败/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "保存模型草稿" })).toHaveCount(0);
+  await page.screenshot({ path: path.join(evidenceRoot, "07-invalid-authoritative-model-fails-closed.png"), fullPage: true });
+  await page.unroute("**/api/admin/risk/scoring/overview?**");
+  await page.reload();
+  await expect(page.getByText("K4 评分模型", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/K4 数据加载中|K4 读取失败|K4 数据不可用/)).toHaveCount(0);
+
   expect(pageErrors).toEqual([]);
+  expect(serverErrors).toEqual([]);
   expect(consoleErrors.filter((message) => !/favicon|webpack-hmr/i.test(message))).toEqual([]);
   expect(mutations.every((row) => row.status < 400 || row.status === 409 || row.status === 422)).toBe(true);
   writeFileSync(path.join(evidenceRoot, "k4-live-summary.json"), JSON.stringify({
@@ -320,8 +376,17 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     draftClean: afterRelogin.draft === null,
     overrideClean: !(await scoreUser(page, target!.userNo)).overridden,
     recomputePending: afterRelogin.recomputePending,
-    failureModes: ["anonymous-401", "model-cas-409", "score-cas-409", "idempotency-mismatch-409", "batch-cap-422"],
+    failureModes: [
+      "anonymous-401",
+      "model-cas-409",
+      "score-cas-409",
+      "idempotency-mismatch-409",
+      "batch-cap-422",
+      "escalation-below-high-disabled",
+      "invalid-authoritative-model-fail-closed",
+    ],
     mutations,
+    serverErrors,
     pageErrors,
     consoleErrors,
     expectedAuthBoundary401s: expectedAuthBoundaryErrors.length,

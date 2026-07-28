@@ -26,6 +26,18 @@ test("E1 exposes retry paths for read and media failures", () => {
   assert.match(catalog, /重新加载媒体/);
 });
 
+test("E1 catalog supports keyword, status and tier filtering with an explicit empty result", () => {
+  assert.match(catalog, /const \[skuQuery, setSkuQuery\] = useState\(""\)/);
+  assert.match(catalog, /const \[skuStatus, setSkuStatus\] = useState\("all"\)/);
+  assert.match(catalog, /const \[skuTier, setSkuTier\] = useState\("all"\)/);
+  assert.match(catalog, /const filteredSkus = useMemo\(/);
+  assert.match(catalog, /aria-label="搜索 SKU"/);
+  assert.match(catalog, /aria-label="SKU 状态筛选"/);
+  assert.match(catalog, /aria-label="SKU 档位筛选"/);
+  assert.match(catalog, /没有符合筛选条件的 SKU/);
+  assert.match(catalog, /filteredSkus\.map\(/);
+});
+
 test("E1 release schedule keeps its seven visible cells on a seven-column grid", () => {
   assert.match(domainCss, /\.edom \.genrel-table\s*\{[^}]*grid-template-columns:\s*minmax\(180px,\s*1\.2fr\)\s+120px\s+120px\s+110px\s+100px\s+110px\s+minmax\(260px,\s*1\.1fr\)/s);
   assert.match(domainCss, /\.edom \.genrel-scroll\s*\{[^}]*overflow-x:\s*auto/s);

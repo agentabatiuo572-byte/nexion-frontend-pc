@@ -15,6 +15,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Card, CardH, CodeTag, Badge, Btn, Drawer, OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
 import "../a-domain.css";
 import { DomainHeader } from "../domain-header";
+import { PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
 
 type FormMode = { kind: "create"; parent?: A7MenuTreeNode } | { kind: "update"; node: A7MenuTreeNode } | null;
 type ConfirmReq = { action: React.ReactNode; detail: React.ReactNode; run: (reason: string) => Promise<void> };
@@ -85,11 +86,13 @@ export default function A7Menus() {
                     detail: <>删除菜单 <b>{n.menuNameZh || n.menuName}</b>（<span className="mono">{n.menuCode}</span>）。{n.children.length ? <b>该节点仍有子菜单，请先迁移或删除子菜单。</b> : "若仍有权限字典归属或角色菜单授权，服务器会拒绝删除；请先迁移权限归属，并在角色管理中解除菜单授权。"}操作会写入审计记录。</>,
                     run: async (reason) => {
                       try {
-                        const next = await deleteA7Menu(n.id, reason, operator, stableKey);
+                        const next = await deleteA7Menu(n.id, n.version, reason, operator, stableKey);
                         setOverview(next);
                         setToast("已删除 · 后端留痕");
                       } catch (error) {
-                        setToast(error instanceof Error ? error.message : String(error));
+                        setToast(error instanceof PlatformMutationReadbackError
+                          ? error.message
+                          : error instanceof Error ? error.message : String(error));
                         throw error;
                       }
                     },
@@ -122,7 +125,9 @@ export default function A7Menus() {
                   setMode(null);
                   setToast("已保存 · 后端留痕");
                 } catch (error) {
-                  setToast(error instanceof Error ? error.message : String(error));
+                  setToast(error instanceof PlatformMutationReadbackError
+                    ? error.message
+                    : error instanceof Error ? error.message : String(error));
                   throw error;
                 }
               },
@@ -198,28 +203,42 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
   const [icon, setIcon] = useState(existing?.icon ?? "");
   const [sortOrder, setSortOrder] = useState(existing?.sortOrder ?? 0);
   const [status, setStatus] = useState(existing?.status ?? 1);
+  const [validationError, setValidationError] = useState("");
 
   const submit = () => {
-    if (isCreate && !menuCode.trim()) return;
-    if (!menuName.trim()) return;
+    const normalizedCode = menuCode.trim().toUpperCase();
+    const normalizedName = menuName.trim();
+    const normalizedRoute = routePath.trim();
+    if (isCreate && !/^[A-Z][A-Z0-9_]{0,63}$/.test(normalizedCode)) {
+      setValidationError("菜单编码需以大写字母开头，只能包含大写字母、数字和下划线，最长 64 位。");
+      return;
+    }
+    if (!normalizedName || normalizedName.length > 64) {
+      setValidationError("菜单名称不能为空，且不能超过 64 个字符。");
+      return;
+    }
+    if (normalizedRoute && !/^\/[A-Za-z0-9/_-]*$/.test(normalizedRoute)) {
+      setValidationError("路由路径必须以 / 开头，且只能包含字母、数字、/、_ 或 -。");
+      return;
+    }
+    if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 100000) {
+      setValidationError("排序必须是 0 到 100000 之间的整数。");
+      return;
+    }
+    setValidationError("");
     if (isCreate) {
-      const payload: A7MenuCreateInput = { menuCode: menuCode.trim(), menuName: menuName.trim(), menuNameZh: menuName.trim(), parentCode: parentCode.trim() || undefined, routePath: routePath.trim() || undefined, icon: icon.trim() || undefined, sortOrder };
+      const payload: A7MenuCreateInput = { menuCode: normalizedCode, menuName: normalizedName, menuNameZh: normalizedName, parentCode: parentCode.trim() || undefined, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder };
       onSubmit(payload, `新建菜单 · ${menuName}`, <>新建菜单节点 <b>{menuName}</b>（<span className="mono">{menuCode}</span>）。菜单变更影响前端导航,审计留痕。</>);
     } else if (existing) {
-      const payload: A7MenuUpdateInput = { menuName: menuName.trim(), menuNameZh: menuName.trim(), routePath: routePath.trim() || undefined, icon: icon.trim() || undefined, sortOrder, status };
+      const payload: A7MenuUpdateInput = { menuName: normalizedName, menuNameZh: normalizedName, routePath: normalizedRoute || undefined, icon: icon.trim() || undefined, sortOrder, status, expectedVersion: existing.version };
       onSubmit(payload, `编辑菜单 · ${menuName}`, <>编辑菜单节点 <b>{menuName}</b>（<span className="mono">{existing.menuCode}</span>,menuCode 不可改）。元数据变更不影响权限码缓存。</>);
     }
   };
 
-  // 收集所有节点（含嵌套）作 parent 选项
-  const flatten = (nodes: A7MenuTreeNode[], acc: { code: string; label: string }[] = []) => {
-    for (const n of nodes) {
-      acc.push({ code: n.menuCode, label: `${n.menuNameZh || n.menuName} (${n.menuCode})` });
-      if (n.children.length) flatten(n.children, acc);
-    }
-    return acc;
-  };
-  const parentOptions = flatten(tree).filter((o) => o.code !== existing?.menuCode);
+  // 只允许挂在顶级业务域下，避免生成控制台无法展示的第三级菜单。
+  const parentOptions = tree
+    .filter((node) => node.parentId == null && node.menuCode !== existing?.menuCode)
+    .map((node) => ({ code: node.menuCode, label: `${node.menuNameZh || node.menuName} (${node.menuCode})` }));
 
   const fieldStyle = { flex: "1 1 200px", minWidth: 200, padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border-strong)", borderRadius: 8, color: "var(--ink)" } as const;
   const labelStyle = { color: "var(--ink-3)", fontSize: 12, marginBottom: 4 } as const;
@@ -271,6 +290,7 @@ function MenuFormDrawer({ mode, tree, onClose, onSubmit }: {
             </div>}
         </div>
         <div className="atint" style={{ fontSize: 12 }}>提交后需在确认弹窗填写原因（≥8 字）,确认即由服务器执行并留痕审计。</div>
+        {validationError && <div className="alertbar warn" role="alert">{validationError}</div>}
       </div>
     </Drawer>
   );

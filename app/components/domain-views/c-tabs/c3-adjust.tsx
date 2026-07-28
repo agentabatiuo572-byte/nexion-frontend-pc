@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -162,6 +162,8 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const [detail, setDetail] = useState<UserAssetAdjustmentDetail | null>(null);
   const [detailFallback, setDetailFallback] = useState<UserAssetAdjustment | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const reviewCommandKeys = useRef(new Map<string, string>());
+  const reverseCommandKeys = useRef(new Map<string, string>());
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -176,8 +178,13 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       setOverview(nextOverview);
       setHistory(nextHistory);
       setRequests(nextRequests);
+      return true;
     } catch (err) {
+      setOverview(null);
+      setHistory(emptyPage(historyPageSize));
+      setRequests(emptyPage(5));
       setError(errorMessage(err));
+      return false;
     } finally {
       if (!silent) setLoading(false);
     }
@@ -196,7 +203,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     return () => window.clearTimeout(timer);
   }, [toast, userQuery]);
 
-  const selectedAccount = context?.account ?? selectedUser;
+  const selectedAccount = context?.account ?? null;
   const currentBalance = asset === "USDT" ? number(selectedAccount?.walletUsdt) : number(selectedAccount?.walletNex);
   const normalizedAmountText = amountText.trim();
   const amountFormatValid = /^(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(normalizedAmountText);
@@ -232,8 +239,10 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     && projectedCoverage < redlinePct;
   const formError = !canCreate
     ? "当前角色只有查看权限，不能发起余额调整"
+    : loading || error
+    ? "余额调整权威数据不可用，请重新加载后再操作"
     : !selectedAccount
-    ? "请先从搜索结果中选择账户"
+    ? contextLoading ? "账户资金信息加载中" : "请先选择账户并等待资金信息校验完成"
     : contextLoading
       ? "账户资金信息加载中"
       : !amountFormatValid || !Number.isFinite(amount)
@@ -306,16 +315,18 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           const result = supportRequest
             ? await requestLargeUserAssetAdjustment(id, input)
             : await createUserAssetAdjustment(id, input);
+          const [loaded] = await Promise.all([loadData(true), fetchUserAssetAdjustmentContext(id).then(setContext)]);
+          if (!loaded) throw new Error("操作可能已成功，但结果回读失败；请保留当前表单并使用同一请求重试");
           setSubmission(null);
           setAmountText("");
           setReason("");
           setEvidenceRef("");
-          await Promise.all([loadData(true), fetchUserAssetAdjustmentContext(id).then(setContext)]);
           toast(supportRequest
             ? `大额调整请求已提交 · ${text(result.requestNo)}`
             : `调整已执行 · ${text(result.adjustmentNo)} · 账单 ${text(result.ledgerId)}`);
         } catch (err) {
           toast(errorMessage(err));
+          return false;
         } finally {
           setBusy(false);
         }
@@ -336,12 +347,20 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       run: async (reviewReason) => {
         setBusy(true);
         try {
-          if (approved) await approveUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR());
-          else await rejectUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR());
-          await loadData(true);
+          const fingerprint = `${approved ? "approve" : "reject"}|${adjustmentNo}|${reviewReason}`;
+          const commandKey = reviewCommandKeys.current.get(fingerprint)
+            ?? newIdempotencyKey(approved ? "c3-approve" : "c3-reject");
+          reviewCommandKeys.current.set(fingerprint, commandKey);
+          if (approved) await approveUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR(), commandKey);
+          else await rejectUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR(), commandKey);
+          if (!await loadData(true)) {
+            throw new Error("操作可能已成功，但结果回读失败；请保留当前确认框并使用同一请求重试");
+          }
+          reviewCommandKeys.current.delete(fingerprint);
           toast(`${adjustmentNo} 已${approved ? "执行" : "驳回"}`);
         } catch (err) {
           toast(errorMessage(err));
+          return false;
         } finally {
           setBusy(false);
         }
@@ -362,11 +381,18 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       run: async (reverseReason) => {
         setBusy(true);
         try {
-          const result = await reverseUserAssetAdjustment(adjustmentNo, reverseReason, OPERATOR(), newIdempotencyKey("c3-reverse"));
-          await loadData(true);
+          const fingerprint = `${adjustmentNo}|${reverseReason}`;
+          const commandKey = reverseCommandKeys.current.get(fingerprint) ?? newIdempotencyKey("c3-reverse");
+          reverseCommandKeys.current.set(fingerprint, commandKey);
+          const result = await reverseUserAssetAdjustment(adjustmentNo, reverseReason, OPERATOR(), commandKey);
+          if (!await loadData(true)) {
+            throw new Error("冲正可能已成功，但结果回读失败；请保留当前确认框并使用同一请求重试");
+          }
+          reverseCommandKeys.current.delete(fingerprint);
           toast(`冲正已执行 · ${text(result.adjustmentNo)}`);
         } catch (err) {
           toast(errorMessage(err));
+          return false;
         } finally {
           setBusy(false);
         }

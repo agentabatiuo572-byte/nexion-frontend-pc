@@ -170,7 +170,7 @@ const J1_AUTO_RULE_IDS = ["withdrawSurge", "maturityGap", "tamperCluster", "regu
 const J1_GATE_SEMANTICS: Record<string, { coveragePrecheckRequired: boolean; coverageImpactCategory: "immediate" | "delayed" | "none" }> = {
   withdraw: { coveragePrecheckRequired: true, coverageImpactCategory: "immediate" },
   staking: { coveragePrecheckRequired: true, coverageImpactCategory: "delayed" },
-  genesis: { coveragePrecheckRequired: true, coverageImpactCategory: "delayed" },
+  genesis: { coveragePrecheckRequired: true, coverageImpactCategory: "immediate" },
   exchange: { coveragePrecheckRequired: true, coverageImpactCategory: "immediate" },
   trial: { coveragePrecheckRequired: false, coverageImpactCategory: "none" },
 };
@@ -451,6 +451,8 @@ export type J4ActionOption = {
   ref: string | null;
   approve: boolean;
   description: string;
+  parameterLabel?: string;
+  parameterPlaceholder?: string;
   label: string;
   searchText: string;
 };
@@ -516,8 +518,8 @@ export type JEmergencyActions = {
   reloadJEmergency: () => Promise<void>;
   toggleJ1KillSwitch: (key: string, enabled: boolean, reason: string, context?: { triggerBasis?: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
   emergencyDisableJ1: (keys: string[], reason: string, operator?: string, context?: { triggerBasis: string; regulatoryContext: string; dispositionPlan?: string }, commandKey?: string) => Promise<void>;
-  updateJ1Sla: (paramKey: string, value: string, reason: string, commandKey?: string) => Promise<void>;
-  updateJ1AutoRule: (ruleId: string, value: string, reason: string, commandKey?: string) => Promise<void>;
+  updateJ1Sla: (paramKey: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<void>;
+  updateJ1AutoRule: (ruleId: string, value: string, expectedValue: string, reason: string, commandKey?: string) => Promise<void>;
   confirmJ1AutoTrigger: (key: string, incidentId: string, decision: "keep_disabled" | "recommend_restore", reason: string, commandKey?: string) => Promise<void>;
   updateJ2Country: (countryCode: string, status: "blocked" | "limited" | "allowed", expectedStatus: "blocked" | "limited" | "allowed", triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
   replaceJ2CountryList: (status: "blocked" | "limited", countries: string[], expectedCountries: string[], triggerBasis: string | undefined, reason: string, commandKey?: string) => Promise<void>;
@@ -537,6 +539,8 @@ export type JEmergencyActions = {
     confirmation: { triggerBasis: string; triggerContext: string; stepConfirmations: J4StepConfirmationInput[] },
     commandKey?: string,
   ) => Promise<void>;
+  cancelJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string) => Promise<void>;
+  resumeJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string) => Promise<void>;
   rollbackJ4Playbook: (code: string, executionId: string, reason: string, commandKey?: string) => Promise<void>;
 };
 
@@ -990,11 +994,17 @@ function normalizeSop(raw: unknown): SopOverview {
       ref,
       approve: bool(row.approve, domain !== "I3"),
       description,
+      parameterLabel: str(row.parameterLabel) || undefined,
+      parameterPlaceholder: str(row.parameterPlaceholder) || undefined,
       label,
-      searchText: [domain, action, ref, description, label].filter(Boolean).join(" ").toLowerCase(),
+      searchText: [domain, action, ref, description, label, row.parameterLabel].filter(Boolean).join(" ").toLowerCase(),
     };
   }).filter((item) => (item.domain === "J1" && ["withdraw", "genesis"].includes(item.ref ?? ""))
-    || (item.domain === "I3" && item.ref === "campaign-notify"));
+    || (item.domain === "J2" && item.ref === "geo-block:{target}")
+    || (item.domain === "C2" && item.ref === "user-freeze:{target}")
+    || (item.domain === "K1" && item.ref === "cluster-freeze:{target}")
+    || (item.domain === "I3" && item.ref === "campaign-notify")
+    || (item.domain === "I5" && item.ref === "disclosure-publish:{target}"));
   const rollbackOptions = rows<Record<string, unknown>>(data.rollbackOptions).map((row) => {
     const label = str(row.label, str(row.value));
     const scene = str(row.scene, "通用");
@@ -1147,8 +1157,8 @@ export async function fetchJEmergencyOverviews(tab: "J1" | "J2" | "J3" | "J4",
 export const jEmergencyActions: Omit<JEmergencyActions, "reloadJEmergency"> = {
   toggleJ1KillSwitch: (key, enabled, reason, context, commandKey) => apiRequest(`/kill-switches/${encodeURIComponent(key)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ enabled: enabled ? "enabled" : "disabled", ...context }, reason)) }).then(() => undefined),
   emergencyDisableJ1: (keys, reason, operator, context, commandKey) => apiRequest("/kill-switches/emergency-disable", { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ keys, ...context }, reason, operator)) }).then(() => undefined),
-  updateJ1Sla: (paramKey, value, reason, commandKey) => apiRequest(`/kill-switches/emergency-sla/${encodeURIComponent(paramKey)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
-  updateJ1AutoRule: (ruleId, value, reason, commandKey) => apiRequest(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
+  updateJ1Sla: (paramKey, value, expectedValue, reason, commandKey) => apiRequest(`/kill-switches/emergency-sla/${encodeURIComponent(paramKey)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value, expectedValue }, reason)) }).then(() => undefined),
+  updateJ1AutoRule: (ruleId, value, expectedValue, reason, commandKey) => apiRequest(`/kill-switches/auto-rules/${encodeURIComponent(ruleId)}`, { method: "PATCH", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ value, expectedValue }, reason)) }).then(() => undefined),
   confirmJ1AutoTrigger: (key, incidentId, decision, reason, commandKey) => apiRequest(`/kill-switches/auto-confirmations/${encodeURIComponent(key)}`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ incidentId, decision }, reason)) }).then(() => undefined),
   updateJ2Country: (countryCode, status, expectedStatus, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/countries/${encodeURIComponent(countryCode)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, expectedStatus, triggerBasis }, reason)) }).then(() => undefined),
   replaceJ2CountryList: (status, countries, expectedCountries, triggerBasis, reason, commandKey) => apiRequest(`/geo-block/country-lists/${encodeURIComponent(status)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ status, countries, expectedCountries, triggerBasis }, reason)) }).then(() => undefined),
@@ -1162,5 +1172,7 @@ export const jEmergencyActions: Omit<JEmergencyActions, "reloadJEmergency"> = {
   updateJ4Playbook: (code, body, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}`, { method: "PUT", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason(body, reason)) }).then(() => undefined),
   drillJ4Playbook: (code, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/drills`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({}, reason)) }).then(() => undefined),
   executeJ4Playbook: (code, emergency, reason, confirmation, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency, ...confirmation }, reason)) }).then(() => undefined),
+  cancelJ4Playbook: (code, executionId, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/cancel`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }).then(() => undefined),
+  resumeJ4Playbook: (code, executionId, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/resume`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }).then(() => undefined),
   rollbackJ4Playbook: (code, executionId, reason, commandKey) => apiRequest(`/sop/playbooks/${encodeURIComponent(code)}/executions/${encodeURIComponent(executionId)}/rollback`, { method: "POST", headers: commandKey ? { "Idempotency-Key": commandKey } : undefined, body: JSON.stringify(withReason({ emergency: false }, reason)) }).then(() => undefined),
 };

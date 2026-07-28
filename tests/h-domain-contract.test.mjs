@@ -102,7 +102,7 @@ test("H2 前端四道前置闸与 7 态状态机全部由服务器裁决", () =>
   assert.match(h2, /7 态会话状态机/);
   assert.match(h2, /状态只能服务器推进/);
   // 终态会话不再允许强制介入。
-  assert.match(h2, /\["cancelled", "redeemed"\]\.includes\(session\.state\)/);
+  assert.match(h2, /\["cancelled", "redeemed", "failed"\]\.includes\(session\.state\)/);
   // Model A 抵扣由服务端重算,失败概率等 server-only 不下发。
   assert.match(h2, /Model A/);
   assert.match(h2, /抵扣规则由后端返回/);
@@ -253,7 +253,7 @@ test("H5 client 端点对齐后端 check-in / earn-milestones 路径", () => {
   assert.ok(hClient.includes('"/check-in"'));
   assert.match(hClient, /`\/check-in\/rules\/\$\{encodeURIComponent\(key\)}`/);
   assert.match(hClient, /`\/check-in\/streak-milestones\/\$\{id\}`/);
-  assert.match(hClient, /`\/check-in\/power-ups\/\$\{id\}`/);
+  assert.match(hClient, /`\/check-in\/power-ups\/\$\{id\}\/config`/);
   assert.match(hClient, /`\/earn-milestones\/\$\{encodeURIComponent\(key\)}`/);
   assert.match(hClient, /\/earn-milestones\/tick-interval/);
 });
@@ -352,13 +352,14 @@ test("H8 参数写入使用服务端版本与 CAS,拒绝路径单独留痕", () 
   assert.match(referralService, /\.result\("REJECTED"\)/);
 });
 
-test("H8 client 端点对齐后端 referral-rewards 路径", () => {
+test("H8 client only exposes read/param endpoints; settlement is reachable exclusively through A2 replay", () => {
   assert.match(hClient, /\/api\/admin\/growth\$\{path\}/);
   assert.ok(hClient.includes('"/referral-rewards"'));
   assert.match(hClient, /`\/referral-rewards\/params\/\$\{encodeURIComponent\(key\)}`/);
-  assert.match(hClient, /\/referral-rewards\/settlements\/run/);
+  assert.doesNotMatch(hClient, /\/referral-rewards\/settlements\/run/);
   assert.match(hClient, /"h8-param"/);
-  assert.match(hClient, /"h8-settlement"/);
+  assert.doesNotMatch(hClient, /"h8-settlement"/);
+  assert.match(registry, /op: "h8_referral_settlement"/);
 });
 
 test("H8 后端端点与权限点对齐(canonical: growth_h8_read/write/settle)", () => {

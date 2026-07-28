@@ -1,6 +1,6 @@
 "use client";
 import "../a-domain.css";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchA8Permissions, fetchA8PermissionDetail, type A8Permission, type A8PermissionPage } from "@/lib/admin/a8-client";
 import { Card, CardH, CodeTag, Chip, Badge, Btn, Drawer, DataListPager, useToast } from "@/app/components/domain-views/design-kit";
 import { DomainHeader } from "../domain-header";
@@ -9,6 +9,7 @@ import { CONSOLE_NAV } from "@/lib/nav/console-nav";
 const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` })), { code: "UNMAPPED", label: "未归类" }];
 const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
 const TONE_BY_TYPE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ: "ok" };
+const LABEL_BY_TYPE: Record<string, string> = { HIGH: "高敏操作", WRITE: "写操作", READ: "只读" };
 
 /** A8 权限字典（只读）。服务端分页 + 搜索 debounce + 域 tab + 类型筛选 + 详情 drawer。 */
 export default function A8Permissions() {
@@ -25,6 +26,7 @@ export default function A8Permissions() {
   const [reloadKey, setReloadKey] = useState(0);
   const [detail, setDetail] = useState<A8Permission | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequestSeq = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,12 +53,19 @@ export default function A8Permissions() {
 
   const openDetail = (code: string) => {
     if (!code) return;
+    const requestId = ++detailRequestSeq.current;
     setDetailLoading(true);
     setDetail(null);
     fetchA8PermissionDetail(code)
-      .then((d) => setDetail(d))
-      .catch((err) => setToast(err.message || "详情加载失败"))
-      .finally(() => setDetailLoading(false));
+      .then((d) => { if (requestId === detailRequestSeq.current) setDetail(d); })
+      .catch((err) => {
+        if (requestId === detailRequestSeq.current) {
+          setToast(err instanceof Error ? err.message : "权限详情加载失败，请重试");
+        }
+      })
+      .finally(() => {
+        if (requestId === detailRequestSeq.current) setDetailLoading(false);
+      });
   };
 
   const records = result?.records ?? [];
@@ -67,8 +76,8 @@ export default function A8Permissions() {
       {toast}
       <DomainHeader domainCode="A" domainName="平台基础" accentVar="--admin-domain-a"
         l2Id="A8" l2Name="权限字典"
-        summary="全平台权限码只读浏览（READ/WRITE/HIGH）。权限码由 seed 维护,绑定 @PreAuthorize,本页不增删。"
-        right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>共 {total} 条</span>} />
+        summary="全平台权限码只读浏览。权限分为只读、写操作和高敏操作，由平台统一维护，本页不支持增删。"
+        right={<span className="mono" style={{ color: "var(--ink-3)", fontSize: 12 }}>{loading ? "正在统计…" : `共 ${total} 条`}</span>} />
       <Card>
         <CardH title="权限列表" />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--border)" }}>
@@ -88,7 +97,7 @@ export default function A8Permissions() {
           <div className="row" style={{ gap: 4, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ color: "var(--ink-3)", fontSize: 12 }}>类型:</span>
             {PERM_TYPES.map((t) => (
-              <Chip key={t} sel={permType === t} tab onClick={() => { setPermType(t); setPageNum(1); }}>{t === "ALL" ? "全部" : t}</Chip>
+              <Chip key={t} sel={permType === t} tab onClick={() => { setPermType(t); setPageNum(1); }}>{t === "ALL" ? "全部" : LABEL_BY_TYPE[t]}</Chip>
             ))}
           </div>
         </div>
@@ -118,7 +127,7 @@ export default function A8Permissions() {
               <tr key={p.permissionCode} onClick={() => openDetail(p.permissionCode)} style={{ cursor: "pointer", borderBottom: "1px solid var(--border)" }}>
                 <td style={{ padding: "10px 12px" }}><CodeTag>{p.permissionCode}</CodeTag></td>
                 <td style={{ padding: "10px 12px" }}>{p.permissionName || "—"}</td>
-                <td style={{ padding: "10px 12px" }}><Badge tone={TONE_BY_TYPE[p.permType] || "neutral"}>{p.permType}</Badge></td>
+                <td style={{ padding: "10px 12px" }}><Badge tone={TONE_BY_TYPE[p.permType] || "neutral"}>{LABEL_BY_TYPE[p.permType] || "未知类型"}</Badge></td>
                 <td style={{ padding: "10px 12px" }}><span className="mono" style={{ fontSize: 12, color: "var(--ink-3)" }}>{p.menuCodePath}</span></td>
                 <td style={{ padding: "10px 12px", textAlign: "center" }}>{p.amplifies ? <span title="放大资金流出·受 B1 红线约束">⚠️</span> : "—"}</td>
                 <td style={{ padding: "10px 12px" }}><span className="mono">{p.boundRoleCount}</span></td>
@@ -139,7 +148,11 @@ export default function A8Permissions() {
         <Drawer
           title={detail ? (detail.permissionName || detail.permissionCode) : "加载中…"}
           sub={detail?.permissionCode}
-          onClose={() => { setDetail(null); setDetailLoading(false); }}
+          onClose={() => {
+            detailRequestSeq.current += 1;
+            setDetail(null);
+            setDetailLoading(false);
+          }}
         >
           {detailLoading ? (
             <div style={{ padding: 24, color: "var(--ink-3)" }}>加载中…</div>
@@ -147,7 +160,7 @@ export default function A8Permissions() {
             <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
               <Row label="权限值"><span className="mono">{detail.permissionCode}</span></Row>
               <Row label="中文名">{detail.permissionName || "—"}</Row>
-              <Row label="类型"><Badge tone={TONE_BY_TYPE[detail.permType] || "neutral"}>{detail.permType}</Badge></Row>
+              <Row label="类型"><Badge tone={TONE_BY_TYPE[detail.permType] || "neutral"}>{LABEL_BY_TYPE[detail.permType] || "未知类型"}</Badge></Row>
               <Row label="所属菜单"><span className="mono" style={{ fontSize: 13 }}>{detail.menuCodePath}</span></Row>
               <Row label="资源路径"><span className="mono" style={{ fontSize: 13 }}>{detail.resourcePath || "—"}</span></Row>
               <Row label="放大资金流出">{detail.amplifies ? "是（受 B1 红线约束）" : "否"}</Row>

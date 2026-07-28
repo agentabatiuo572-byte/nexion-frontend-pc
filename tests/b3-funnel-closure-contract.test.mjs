@@ -31,9 +31,11 @@ test("B3 exposes every PRD interaction and cross-domain link", () => {
   for (const label of ["cohort", "phase", "ref", "Day0 接入率", "Day7 留存率", "保存为视图", "导出 cohort", "归因", "L2 完整下钻"]) {
     assert.match(page, new RegExp(label));
   }
-  for (const endpoint of ["/aux-metrics", "/cohort-trend", "/export", "/view"]) {
+  for (const endpoint of ["/export", "/view"]) {
     assert.match(client, new RegExp(endpoint.replace("/", "\\/")));
   }
+  assert.doesNotMatch(client, /\/aux-metrics|\/cohort-trend/);
+  assert.match(client, /stage/);
 });
 
 test("B3 server validates filters, authorizes each operation and records audit", () => {

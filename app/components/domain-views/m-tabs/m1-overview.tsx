@@ -36,6 +36,7 @@ const SUPPORT_SEAT_TYPES = [
   { position: "通用客服", label: "通用客服", hint: "接普通工单与即时会话" },
 ];
 const BOUND_ASSIGNMENT_PAGE_SIZE = 8;
+const ACTIVE_TICKET_STATUSES = new Set<SupportTicket["status"]>(["open", "in_progress", "pending_user"]);
 
 function parseParamArray<T>(raw: string | undefined, fallback: T[]): T[] {
   if (!raw) return fallback;
@@ -58,6 +59,7 @@ const numParam = (raw: string | undefined): number | null => {
 };
 
 function loadConfigFromBackendParams(pget: (key: string) => string | undefined): LoadConfig | null {
+  const version = numParam(pget(LOAD_KEY("version")));
   const autoBalance = boolParam(pget(LOAD_KEY("autoBalance")));
   const defaultCap = numParam(pget(LOAD_KEY("defaultCap")));
   const burstCap = numParam(pget(LOAD_KEY("burstCap")));
@@ -65,6 +67,8 @@ function loadConfigFromBackendParams(pget: (key: string) => string | undefined):
   const quietHourBalance = boolParam(pget(LOAD_KEY("quietHourBalance")));
   const overflowQueue = pget(LOAD_KEY("overflowQueue"));
   if (
+    version == null ||
+    version < 1 ||
     autoBalance == null ||
     defaultCap == null ||
     burstCap == null ||
@@ -75,7 +79,7 @@ function loadConfigFromBackendParams(pget: (key: string) => string | undefined):
   ) {
     return null;
   }
-  return { autoBalance, defaultCap, burstCap, warnPct, quietHourBalance, overflowQueue };
+  return { version, autoBalance, defaultCap, burstCap, warnPct, quietHourBalance, overflowQueue };
 }
 
 function isActiveTicket(ticket: SupportTicket): boolean {
@@ -172,10 +176,10 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   );
   const activeAdvisorAssignmentCount = advisorAssignments.filter((row) => row.status === "ACTIVE").length;
 
-  const openTickets = tickets.filter((t) => t.status === "open" || t.status === "in_progress").length;
+  const openTickets = tickets.filter((t) => ACTIVE_TICKET_STATUSES.has(t.status)).length;
   const pendingUser = tickets.filter((t) => t.status === "pending_user").length;
-  const liveSessions = convos.filter((c) => c.status === "open").length;
-  const pendingReplies = convos.filter((c) => c.status === "open" && c.messages[c.messages.length - 1]?.sender === "user").length;
+  const liveSessions = convos.filter((c) => c.status === "open" && !c.archived).length;
+  const pendingReplies = convos.filter((c) => c.status === "open" && !c.archived && c.unread > 0).length;
 
   const loadCfg = useMemo(() => loadConfigFromBackendParams(pget), [ctx.params, pget]);
 
@@ -196,7 +200,7 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const maxLoad = Math.max(1, ...loadRows.map((l) => Math.max(l.total, l.cap)));
 
   const kpis: Array<{ label: string; val: number; sub: string; icon: IconName; tone: boolean; to: string }> = [
-    { label: "进行中工单", val: openTickets, sub: "待处理 + 处理中", icon: "doc", tone: true, to: "/service/tickets?scope=active" },
+    { label: "活跃工单", val: openTickets, sub: "待处理 + 处理中 + 待补充", icon: "doc", tone: true, to: "/service/tickets?scope=active" },
     { label: "待用户补充", val: pendingUser, sub: "等待用户回传", icon: "clock", tone: false, to: "/service/tickets?scope=active&status=pending_user" },
     { label: "进行中会话", val: liveSessions, sub: "实时接待中", icon: "users", tone: true, to: "/service/sessions?seg=active" },
     { label: "待坐席回复", val: pendingReplies, sub: "用户已发待回", icon: "bell", tone: false, to: "/service/sessions?seg=unread" },
@@ -420,7 +424,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   const [noChangeMessage, setNoChangeMessage] = useState("");
   const [writeOutcomeUnknown, setWriteOutcomeUnknown] = useState(false);
   const [saving, setSaving] = useState<"config" | "rebalance" | null>(null);
-  const reasonOk = reason.trim().length >= 6;
+  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
 
   useEffect(() => {
     setNoChangeMessage("");
@@ -453,6 +457,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
     setWriteOutcomeUnknown(false);
     try {
       const ok = await ctx.setParam("I.support.load.__bulk", JSON.stringify({
+        expectedVersion: loadCfg.version,
         autoBalance,
         defaultCap: Number(clamp(defaultCap, 0, 40)),
         burstCap: Number(clamp(burstCap, 0, 40)),
@@ -475,7 +480,7 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
   async function rebalance() {
     if (saving) return;
     if (!reasonOk) {
-      ctx.toast("手动均衡需先填变更理由(≥6 字)");
+      ctx.toast("手动均衡需先填变更理由(8-200 字)");
       return;
     }
     setSaving("rebalance");
@@ -576,8 +581,8 @@ function LoadConfigModal({ ctx, loadCfg, rows, onClose }: { ctx: MCtx; loadCfg: 
       </div>
 
       <label className="col" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16 }}>
-        <span style={{ fontSize: 13 }}>变更理由 <span style={{ color: "var(--danger)" }}>*</span> <span className="sub">(必填 ≥6 字 · 留档至 A2 审计)</span></span>
-        <textarea className="fld" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:周一早高峰预期 Withdrawal 峰值,临时提升 Marina K. 上限并暂停 Aisha 接派单培训" style={{ resize: "vertical" }} />
+        <span style={{ fontSize: 13 }}>变更理由 <span style={{ color: "var(--danger)" }}>*</span> <span className="sub">(必填 8-200 字 · 留档至 A2 审计)</span></span>
+        <textarea className="fld" rows={2} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:周一早高峰预期 Withdrawal 峰值,临时提升 Marina K. 上限并暂停 Aisha 接派单培训" style={{ resize: "vertical" }} />
       </label>
     </Modal>
   );
@@ -655,7 +660,7 @@ function SupportSeatRoleModal({
     return userId > 0 && !boundUserIds.has(userId);
   });
   const assigningDedicated = targetPosition === "专属客服";
-  const reasonOk = reason.trim().length >= 6;
+  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   const canSave = Boolean(canAssignSupportStaff && operatorReady && selected && reasonOk && !saving && (!assigningDedicated || bindableSelectedUsers.length > 0));
 
   useEffect(() => {
@@ -871,7 +876,7 @@ function SupportSeatRoleModal({
           )}
           <label className="field" style={{ marginBottom: 0 }}>
             <span>分配理由 <b style={{ color: "var(--danger)" }}>*</b></span>
-            <textarea className="fld" rows={4} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管排班调整,将该管理员分配为通用客服承接实时会话。" style={{ resize: "vertical" }} />
+            <textarea className="fld" rows={4} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管排班调整,将该管理员分配为通用客服承接实时会话。" style={{ resize: "vertical" }} />
           </label>
         </div>
       </div>
@@ -949,7 +954,7 @@ function SeatAssignmentModal({
     const userId = userIdOf(user);
     return userId > 0 && !boundUserIds.has(userId);
   });
-  const reasonOk = reason.trim().length >= 6;
+  const reasonOk = reason.trim().length >= 8 && reason.trim().length <= 200;
   const canSave = Boolean(agent && agent.adminId > 0 && agentCanAssign && bindableSelectedUsers.length > 0 && reasonOk && !saving && unbindingId === null);
 
   useEffect(() => {
@@ -1018,7 +1023,7 @@ function SeatAssignmentModal({
   const unbind = async (assignment: MAdvisorAssignment) => {
     if (!agent || saving || unbindingId !== null) return;
     if (!reasonOk) {
-      ctx.toast("解绑需先填写变更理由(≥6 字)");
+      ctx.toast("解绑需先填写变更理由(8-200 字)");
       return;
     }
     setUnbindingId(assignment.id);
@@ -1101,7 +1106,7 @@ function SeatAssignmentModal({
                           data-proof="m1-seat-assignment-unbind"
                           className="btn btn-sec btn-sm"
                           disabled={saving || unbindingId !== null}
-                          title={reasonOk ? "解除此用户与当前专属客服的绑定" : "先填写变更理由(≥6 字)"}
+                          title={reasonOk ? "解除此用户与当前专属客服的绑定" : "先填写变更理由(8-200 字)"}
                           onClick={() => unbind(row)}
                         >
                           {unbindingId === row.id ? "解绑中..." : "解绑"}
@@ -1151,7 +1156,7 @@ function SeatAssignmentModal({
           </div>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>分配理由 <b style={{ color: "var(--danger)" }}>*</b></span>
-            <textarea className="fld" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管按用户等级与问题类型绑定专属客服跟进。" style={{ resize: "vertical" }} />
+            <textarea className="fld" rows={3} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:客服主管按用户等级与问题类型绑定专属客服跟进。" style={{ resize: "vertical" }} />
           </label>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
@@ -1197,7 +1202,7 @@ function SeatAssignmentModal({
                     type="button"
                     data-proof="m1-seat-user-unbind"
                     className="btn btn-sec btn-sm"
-                    title={reasonOk ? "解除此用户与当前专属客服的绑定" : "先填写变更理由(≥6 字)"}
+                    title={reasonOk ? "解除此用户与当前专属客服的绑定" : "先填写变更理由(8-200 字)"}
                     onClick={(event) => {
                       event.stopPropagation();
                       unbind(boundAssignment);

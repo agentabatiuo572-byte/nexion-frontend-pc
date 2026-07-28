@@ -266,6 +266,16 @@ test("A6 A7 and A8 reject malformed success payloads instead of showing false em
   assert.throws(() => normalizeA7Overview({ tree: [], domainCount: 1, pageCount: 0, activeCount: 0 }), /A7_OVERVIEW_CONTRACT_INVALID/);
   assert.throws(() => normalizeA8Page({ total: 1, pageNum: 1, pageSize: 20 }), /A8_PAGE_CONTRACT_INVALID/);
   assert.throws(() => normalizeA8Permission({ permissionCode: "", permType: "READ" }), /A8_PERMISSION_CONTRACT_INVALID/);
+  assert.throws(() => normalizeA8Page({
+    total: 0,
+    pageNum: 1,
+    pageSize: 20,
+    records: [{ permissionCode: "x_read", permissionName: "读", permType: "READ", menuId: null, menuCodePath: "A / A8", amplifies: 0, boundRoleCount: 0, resourcePath: "" }],
+  }), /A8_PAGE_CONTRACT_INVALID/);
+  assert.throws(() => normalizeA8Permission({
+    permissionCode: "x_unknown", permissionName: "未知", permType: "UNKNOWN", menuId: null,
+    menuCodePath: "A / A8", amplifies: 0, boundRoleCount: 0, resourcePath: "",
+  }), /A8_PERMISSION_CONTRACT_INVALID/);
 });
 
 test("RBAC screens keep read-only users non-mutating and preserve retry identity/input", () => {

@@ -304,29 +304,42 @@ export async function updateG3CurveFrame(
   reason: string,
   operator: string,
 ) {
-  const frames = serializeFrames(overview.frames);
+  const expectedFrames = serializeFrames(overview.frames);
+  const frames = expectedFrames.map((frame) => ({ ...frame }));
   const target = frames.find((frame) => frame.dayIndex === dayIndex);
   if (!target) throw new Error("G3 曲线日不存在,请刷新页面后重试。");
   target[field] = value;
   return normalizeOverview(await g3Request<BackendOverview>("/nex/curve", {
     method: "PUT",
-    body: JSON.stringify({ frames, reason, operator }),
+    body: JSON.stringify({ frames, expectedFrames, reason, operator }),
     idempotencyPrefix: `g3-curve-d${dayIndex + 1}-${field}`,
   }));
 }
 
-export async function updateG3Control(controlKey: string, value: string, reason: string, operator: string) {
+export async function updateG3Control(
+  controlKey: string,
+  value: string,
+  expectedValue: string,
+  reason: string,
+  operator: string,
+) {
   return normalizeOverview(await g3Request<BackendOverview>(`/nex/curve/controls/${encodeURIComponent(controlKey)}`, {
     method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
+    body: JSON.stringify({ value, expectedValue, reason, operator }),
     idempotencyPrefix: `g3-control-${controlKey}`,
   }));
 }
 
-export async function updateG3Override(overrideKey: G3OverrideKey, value: string, reason: string, operator: string) {
+export async function updateG3Override(
+  overrideKey: G3OverrideKey,
+  value: string,
+  expectedValue: string,
+  reason: string,
+  operator: string,
+) {
   return normalizeOverview(await g3Request<BackendOverview>(`/nex/overrides/${encodeURIComponent(overrideKey)}`, {
     method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
+    body: JSON.stringify({ value, expectedValue, reason, operator }),
     idempotencyPrefix: `g3-override-${overrideKey}`,
   }));
 }

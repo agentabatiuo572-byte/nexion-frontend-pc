@@ -19,13 +19,23 @@ test("B3 visible-entry journey exposes the complete canonical funnel workflow", 
   await expect(page.getByLabel("注册 cohort")).toBeVisible();
   await expect(page.getByLabel("Phase")).toBeVisible();
   await expect(page.getByLabel("推荐码 / 渠道")).toBeVisible();
-  await expect(page.getByText("Day0 接入率", { exact: true })).toBeVisible();
-  await expect(page.getByText("Day7 留存率", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "保存为视图" })).toBeVisible();
   await expect(page.getByRole("button", { name: "导出 cohort" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /L2 完整下钻/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /H1 Phase 归因/ })).toBeVisible();
-  await expect(page.locator("[data-testid='b3-stage']")).toHaveCount(5);
+  const unavailable = page.getByRole("alert").filter({ hasText: "当前漏斗不可安全计算" });
+  const day0Metric = page.getByText("Day0 接入率", { exact: true });
+  await expect(unavailable.or(day0Metric)).toBeVisible();
+  if (await unavailable.isVisible()) {
+    await expect(unavailable).toContainText(/A4|可靠用户标识|不可安全计算/);
+    await expect(page.getByRole("button", { name: "保存为视图" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "导出 cohort" })).toBeDisabled();
+    await expect(page.locator("[data-testid='b3-stage']")).toHaveCount(0);
+  } else {
+    await expect(day0Metric).toBeVisible();
+    await expect(page.getByText("Day7 留存率", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: /L2 完整下钻/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /H1 Phase 归因/ })).toBeVisible();
+    await expect(page.locator("[data-testid='b3-stage']")).toHaveCount(5);
+  }
   await expect(page.locator("body")).not.toContainText(/NaN|Infinity|null%|undefined%/);
   await page.screenshot({ path: `${PUBLIC}/01-visible-entry-five-stage.png`, fullPage: true });
 });

@@ -67,7 +67,12 @@ function findCategoryCrossLink(category: SupportTicketCategory): typeof CATEGORY
   return CATEGORY_CROSS_LINKS.find((link) => link.category === category) ?? null;
 }
 const PAGE_SIZE_OPTIONS = ["8", "15", "30"];
-const WHO_CN: Record<"user" | "agent" | "system", string> = { user: "用户", agent: "坐席", system: "系统" };
+const WHO_CN: Record<"user" | "agent" | "system" | "internal", string> = {
+  user: "用户",
+  agent: "坐席",
+  system: "系统",
+  internal: "内部",
+};
 type CreateTicketForm = {
   userId: string;
   category: SupportTicketCategory;
@@ -153,6 +158,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [replyBody, setReplyBody] = useState("");
+  const [internalNoteBody, setInternalNoteBody] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(8);
   const [writePending, setWritePending] = useState(false);
@@ -224,6 +230,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
 
   useEffect(() => {
     setReplyBody("");
+    setInternalNoteBody("");
   }, [selectedId]);
 
   // Esc 关抽屉
@@ -280,10 +287,16 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       toast("新建工单需要选择真实客服负责人");
       return;
     }
+    const selectedSla = slaRows.find((item) => item.category === form.category);
+    if (!selectedSla) {
+      toast("该分类 SLA 权威规则不可用,请刷新后重试");
+      return;
+    }
     const now = Date.now();
     const row: SupportTicket = {
       id: `TK-${now}`,
       userId,
+      userVerified: false,
       subject: title,
       category: form.category,
       status: "open",
@@ -294,6 +307,19 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       unread: 1,
       owner: form.owner,
       archived: false,
+      version: 0,
+      slaTarget: {
+        ruleVersion: selectedSla.version,
+        firstResponseMins: selectedSla.firstResponseMins,
+        resolutionHours: selectedSla.resolutionHours,
+        queue: selectedSla.queue,
+        escalation: selectedSla.escalation,
+        firstResponseDeadlineAt: now + selectedSla.firstResponseMins * 60_000,
+        resolutionDeadlineAt: now + selectedSla.resolutionHours * 3_600_000,
+        firstResponseOverdue: false,
+        resolutionOverdue: false,
+        evaluatedAt: now,
+      },
       messages: [{ ts: now, author: "user", body }],
     };
     setPendingCreatedTicket({ subject: title, userId, existingIds: tickets.map((ticket) => ticket.id) });
@@ -403,12 +429,35 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     );
   };
 
+  const addInternalNote = async (body: string) => {
+    if (!selected || !canWriteM2 || !ticketsAvailable || selected.archived) return;
+    const note = body.trim();
+    if (!note) {
+      toast("内部备注需要正文");
+      return;
+    }
+    const succeeded = await commitTicketWrite(
+      () => setParam("I.support.ticketInternalNote.__create", JSON.stringify({
+        ticketNo: selected.id,
+        body: note,
+        expectedStatus: selected.status,
+        expectedVersion: selected.version,
+      }), {
+        action: `工单内部备注 ${selected.id} · admin.support_ticket_internal_note`,
+        reason: "客服内部协作备注自动留档",
+        commandKey: `m2:ticket:${selected.id}:internal-note:${selected.version}:${note}`,
+      }),
+      `${selected.id} 内部备注已保存`,
+    );
+    if (succeeded) setInternalNoteBody("");
+  };
+
   // 处置:升级为即时会话(不传 edit;真写对方真写键 I.session.convos + 工单 thread 留系统标注)
   const escalateToConversation = () => {
     if (!selected || !canWriteM2 || !ticketsAvailable || selected.archived) return;
     const ticket = selected;
-    if (!ticket.userId || ticket.userId <= 0) {
-      toast("该工单未关联真实用户,请先核对用户后再升级会话");
+    if (!ticket.userId || ticket.userId <= 0 || !ticket.userVerified) {
+      toast("该工单没有后端确认的真实用户,请先核对用户后再升级会话");
       return;
     }
     const assignedAgent = supportAgents.find((agent) => isAssignableSupportAgent(agent) && agent.name === ticket.owner);
@@ -430,7 +479,13 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
             ticketNo: ticket.id,
             ownerAgentId: assignedAgent.id,
             ownerAgentName: assignedAgent.name,
-          }), { action: `工单升级为即时会话 ${ticket.id} · admin.conversation_from_ticket`, reason }),
+            expectedStatus: ticket.status,
+            expectedVersion: ticket.version,
+          }), {
+            action: `工单升级为即时会话 ${ticket.id} · admin.conversation_from_ticket`,
+            reason,
+            commandKey: `m2:ticket:${ticket.id}:escalate:${ticket.version}`,
+          }),
           `${ticket.id} 已升级为即时会话`,
         ).then((succeeded) => {
           if (succeeded) setDrawerOpen(false);
@@ -445,8 +500,14 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     ts: m.ts,
     fromAgent: m.author === "agent",
     agentName: m.agentName,
-    senderName: m.author === "system" ? "系统" : m.author === "agent" ? m.agentName ?? "客服台" : "用户",
-    system: m.author === "system",
+    senderName: m.author === "internal"
+      ? `内部备注 · ${m.agentName ?? "客服台"}`
+      : m.author === "system"
+        ? "系统"
+        : m.author === "agent"
+          ? m.agentName ?? "客服台"
+          : "用户",
+    system: m.author === "system" || m.author === "internal",
     role: m.author === "user" ? "user" : "support",
     body: m.body,
   }));
@@ -623,6 +684,9 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           ticket={selected}
           replyBody={replyBody}
           onReplyChange={setReplyBody}
+          internalNoteBody={internalNoteBody}
+          onInternalNoteChange={setInternalNoteBody}
+          onInternalNote={addInternalNote}
           onClose={() => setDrawerOpen(false)}
           onSend={sendReply}
           onStatus={(s) => setTicketStatusDirect(selected.id, s)}
@@ -655,6 +719,9 @@ function TicketDrawer({
   ticket,
   replyBody,
   onReplyChange,
+  internalNoteBody,
+  onInternalNoteChange,
+  onInternalNote,
   onClose,
   onSend,
   onStatus,
@@ -671,6 +738,9 @@ function TicketDrawer({
   ticket: SupportTicket;
   replyBody: string;
   onReplyChange: (v: string) => void;
+  internalNoteBody: string;
+  onInternalNoteChange: (v: string) => void;
+  onInternalNote: (body: string) => void;
   onClose: () => void;
   onSend: (body: string) => void;
   onStatus: (s: SupportTicketStatus) => void;
@@ -718,8 +788,8 @@ function TicketDrawer({
             {canWrite && !ticket.archived && <MiniMenu label="状态" items={statusItems} />}
             {canWrite && !ticket.archived && !isTerminal && <MiniMenu label="优先级" items={priorityItems} />}
             {canWrite && !ticket.archived && ticket.status !== "closed" && <MiniMenu label="转交" icon="users" items={ownerItems} />}
-            {ticket.userId && <Link className="btn btn-sec btn-sm" href={`/users/search/${ticket.userId}#hub-payment-methods`}><Icon name="wallet" size={16} />用户支付方式</Link>}
-            {ticket.userId && categoryCrossLink && (
+            {ticket.userId && ticket.userVerified && <Link className="btn btn-sec btn-sm" href={`/users/search/${ticket.userId}#hub-payment-methods`}><Icon name="wallet" size={16} />用户支付方式</Link>}
+            {ticket.userId && ticket.userVerified && categoryCrossLink && (
               <Link className="btn btn-cyan btn-sm" href={categoryCrossLink.href(ticket.userId)}>
                 <Icon name={categoryCrossLink.icon} size={16} />{categoryCrossLink.label}
               </Link>
@@ -737,8 +807,10 @@ function TicketDrawer({
                 data-proof="support-ticket-escalate"
                 className="btn btn-cyan btn-sm"
                 onClick={onEscalate}
-                disabled={!ticket.userId || ticket.userId <= 0}
-                title={ticket.userId && ticket.userId > 0 ? "升级为与该用户的即时会话" : "该工单未关联真实用户,无法升级会话"}
+                disabled={!ticket.userId || ticket.userId <= 0 || !ticket.userVerified}
+                title={ticket.userId && ticket.userId > 0 && ticket.userVerified
+                  ? "升级为与该用户的即时会话"
+                  : "该工单没有后端确认的真实用户,无法升级会话"}
               >
                 <Icon name="arrow" size={16} />
                 升级会话
@@ -761,11 +833,53 @@ function TicketDrawer({
               </button>
             )}
           </div>
+          {ticket.userId && !ticket.userVerified && (
+            <div className="callout warn" style={{ marginTop: 10, fontSize: 12 }}>
+              用户 ID {ticket.userId} 未通过后端用户表校验；支付方式、跨域处置和升级会话均已关闭。
+            </div>
+          )}
+          {ticket.slaTarget && (
+            <div className="dim2" data-proof="support-ticket-sla" style={{ marginTop: 10, fontSize: 12 }}>
+              SLA v{ticket.slaTarget.ruleVersion}：首响目标 {new Date(ticket.slaTarget.firstResponseDeadlineAt).toLocaleString()}
+              {ticket.slaTarget.firstResponseOverdue ? " · 已逾期" : " · 未逾期"}
+              {" · "}解决目标 {new Date(ticket.slaTarget.resolutionDeadlineAt).toLocaleString()}
+              {ticket.slaTarget.resolutionOverdue ? " · 已逾期" : " · 未逾期"}
+              {" · "}队列 {ticket.slaTarget.queue} · 升级 {ticket.slaTarget.escalation}
+            </div>
+          )}
         </div>
 
         <div className="ChatBody">
           <MessageThread messages={thread} relWhen={relWhen} />
         </div>
+
+        {canWrite && !ticket.archived && (
+          <div style={{ padding: "12px 18px", borderTop: "1px solid var(--border)", background: "var(--panel-2)" }}>
+            <div className="dim2" style={{ fontSize: 11.5, marginBottom: 7 }}>
+              内部备注仅客服可见，不会作为回复发送给用户
+            </div>
+            <textarea
+              className="ta"
+              data-proof="support-ticket-internal-note"
+              rows={2}
+              maxLength={2000}
+              placeholder="记录内部核查、交接或 SLA 处置"
+              value={internalNoteBody}
+              onChange={(e) => onInternalNoteChange(e.target.value)}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <button
+                type="button"
+                data-proof="support-ticket-internal-note-save"
+                className="btn btn-sec btn-sm"
+                disabled={!internalNoteBody.trim()}
+                onClick={() => onInternalNote(internalNoteBody)}
+              >
+                保存内部备注
+              </button>
+            </div>
+          </div>
+        )}
 
         {canWrite && ticket.status !== "closed" && !ticket.archived && (
           <div className="ChatComposer">

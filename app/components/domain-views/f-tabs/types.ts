@@ -2,6 +2,10 @@ import type { EditSpec, BusinessFormSpec, BusinessFormValue } from "../design-ki
 import type { OpsVRankRewardItem } from "@/lib/admin/platform-types";
 import type {
   F1Leadership,
+  F1PayoutFilters,
+  F1PromotionFilters,
+  F1PromotionRecord,
+  F1RewardPayout,
   F1VRankRow,
   F2Metric,
   F2PolicyParam,
@@ -11,9 +15,11 @@ import type {
   F3DailyCap,
   F3Formula,
   F3Metric,
+  F3SettlementExecution,
   F3Settlement,
   F4LeadershipPoolOverview,
   F5CommissionAuditOverview,
+  F5CommissionQuery,
 } from "@/lib/admin/f1-client";
 
 /**
@@ -34,6 +40,7 @@ export interface McSpec {
   businessForm?: BusinessFormSpec; // 复杂业务表单规格(渲染 BusinessFormBlock)
   run?: (reason: string, businessValue?: BusinessFormValue, newValue?: string) => void | Promise<void>; // 业务表单真写回调(传则优先于 param/dispose)
   detail?: string;
+  completionCopy?: string;       // 明确保存后的生效时点，避免统一“立即生效”文案误导周期性配置
 }
 export type Mc = McSpec | null;
 
@@ -60,6 +67,16 @@ export interface FViewCtx {
   skuLabels: Record<string, string>;
   // F1 展示文案类配置(头衔/奖品名)· 读后端 configValues map + 写经 updateF1Config(单 key PATCH)。
   f1ConfigValues: Record<string, string>;
+  promotionRecords: F1PromotionRecord[];
+  promotionTotal: number;
+  payoutRecords: F1RewardPayout[];
+  payoutTotal: number;
+  f1FlowLoading: boolean;
+  f1FlowError: string | null;
+  queryPromotions: (filters?: F1PromotionFilters) => Promise<void>;
+  queryPayouts: (filters?: F1PayoutFilters) => Promise<void>;
+  proposeVRankOverride: (userId: string, targetV: string, direction: "promote" | "rollback", reason: string) => Promise<void>;
+  proposePayoutAction: (payoutId: string, action: "reissue" | "reverse", reason: string) => Promise<void>;
   // -- 网络版税费率(F2)· 读 + 配置写入 --
   f2Metrics: F2Metric[];
   f2Unilevel: F2UnilevelRate[];
@@ -91,16 +108,35 @@ export interface FViewCtx {
   f3Error: string | null;
   refreshF3: () => Promise<void>;
   updateF3Config: (key: string, value: string, reason: string) => Promise<void>;
+  executeF3Settlement: (
+    ownerUserId: number,
+    settlementDate: string,
+    reason: string,
+  ) => Promise<F3SettlementExecution>;
   // -- 领导奖池/硬件配额/大使/榜单(F4)· 读 + 配置写入 --
   f4Overview: F4LeadershipPoolOverview | null;
   f4Loading: boolean;
   f4Error: string | null;
   refreshF4: () => Promise<void>;
   updateF4Config: (key: string, value: string, reason: string) => Promise<void>;
+  proposeF4Settlement: (reason: string) => Promise<void>;
   // -- 佣金事件审计(F5)· 读 + 处置状态写入 --
   f5Overview: F5CommissionAuditOverview | null;
   f5Loading: boolean;
   f5Error: string | null;
-  refreshF5: () => Promise<void>;
+  refreshF5: (query?: F5CommissionQuery) => Promise<void>;
   updateF5Config: (key: string, value: string, reason: string) => Promise<void>;
+  reverseF5Commission: (commissionId: string, refundRef: string, reason: string) => Promise<void>;
+  reissueF5Commissions: (commissionIds: string[], reason: string) => Promise<void>;
+  suspendF5UserCommissions: (
+    userId: number,
+    kinds: string[],
+    suspended: boolean,
+    reason: string,
+  ) => Promise<void>;
+  updateF5AnomalyConfig: (
+    commissionAnomalySigma: number,
+    layerRatioAnomalyPct: number,
+    reason: string,
+  ) => Promise<void>;
 }

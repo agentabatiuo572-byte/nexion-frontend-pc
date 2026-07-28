@@ -4,6 +4,7 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
+const readWorkspace = (path) => readFileSync(new URL(`../${path}`, root), "utf8");
 
 test("K6 is registered and rendered as a first-class K domain page", () => {
   const nav = read("lib/nav/console-nav.ts");
@@ -311,4 +312,47 @@ test("K6 CSV exports neutralize formulas hidden behind whitespace and control ch
     "app/components/domain-views/k-tabs/k6/audit-log.tsx",
   ].map(read).join("\n");
   assert.equal((files.match(/\^\[\\s\\u0000-\\u001f\]\*\[=\+\\-@\]/g) ?? []).length, 2);
+});
+
+test("K6 current App consumes report, pending command and ACK through one exact approved-target contract", () => {
+  const api = readWorkspace("NX1.0/src/api/janus-api.ts");
+  const coordinator = readWorkspace("NX1.0/src/services/janus-c2.ts");
+  const runtime = readWorkspace("NX1.0/src/services/janus-runtime.ts");
+  const app = readWorkspace("NX1.0/src/App.vue");
+  const combined = `${api}\n${coordinator}\n${runtime}`;
+
+  for (const endpoint of [
+    "/api/app/janus/reports",
+    "/api/app/janus/commands/pending",
+    "/api/app/janus/commands/ack",
+  ]) assert.match(api, new RegExp(endpoint.replaceAll("/", "\\/")));
+  for (const field of [
+    "remoteUrlKey",
+    "remoteTargetVersion",
+    "remoteTargetCatalogVersion",
+    "remoteTargetUrl",
+  ]) assert.match(combined, new RegExp(field));
+  assert.match(api, /REMOTE_STATUSES\.has\(desiredStatus\) \? bindingCount !== 4 : bindingCount !== 0/);
+  assert.match(runtime, /parsed\.protocol !== "https:"/);
+  assert.match(coordinator, /nexion-janus-pending-report-v2/);
+  assert.match(coordinator, /nexion-janus-pending-ack-v2/);
+  assert.match(coordinator, /scope:\s*\(\) => String\(sessionVault\.read\(\)\?\.user\.userId/);
+  assert.match(app, /startJanusC2Sync\(\)/);
+  assert.match(app, /stopJanusC2Sync\(\)/);
+  assert.doesNotMatch(combined, /remoteUrlKey\s*===\s*["'](?:default|backup|promo)["']/);
+});
+
+test("K6 App command consumption revalidates the immutable target and returns its canonical HTTPS URL", () => {
+  const service = readWorkspace(
+    "nexion-backend/src/main/java/ffdd/opsconsole/janus/application/OpsJanusService.java",
+  );
+  const tests = readWorkspace(
+    "nexion-backend/src/test/java/ffdd/opsconsole/janus/application/OpsJanusServiceTest.java",
+  );
+  assert.match(service, /pendingCommand[\s\S]*resolveRemoteTarget\(remoteKey,\s*remoteVersion,\s*remoteCatalogVersion\)/);
+  assert.match(service, /response\.put\("remoteTargetUrl",\s*target\.url\(\)\)/);
+  assert.match(service, /JANUS_REMOTE_TARGET_UNAVAILABLE/);
+  assert.match(service, /JANUS_REMOTE_TARGET_UNEXPECTED/);
+  assert.match(tests, /pendingRemoteCommandCarriesTheExactRevalidatedApprovedUrl/);
+  assert.match(tests, /pendingRemoteCommandFailsClosedWhenTheExactTargetCannotBeConsumed/);
 });

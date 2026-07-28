@@ -4,7 +4,7 @@ import path from "node:path";
 
 const EVIDENCE_DIR = "D:/workspace/bug-pic/l-domain-parallel-acceptance-20260723-000935/L6-behavior-heatmap";
 
-test.use({ trace: "off", video: "off", screenshot: "off" });
+test.use({ trace: "retain-on-failure", video: "off", screenshot: "only-on-failure" });
 
 test("L6 visible-sidebar first-user flow uses canonical filters, drilldown and aggregate export", async ({ page }) => {
   const username = process.env.NEXION_E2E_ADMIN_USER;
@@ -44,7 +44,13 @@ test("L6 visible-sidebar first-user flow uses canonical filters, drilldown and a
   await page.getByRole("button", { name: "近 24 小时" }).click();
 
   await page.getByRole("button", { name: "一级" }).click();
-  await expect(page.getByText("聚合行不提供单页坐标热力")).toBeVisible({ timeout: 10_000 });
+  const aggregateRows = page.locator("table.heat-tbl tbody tr");
+  if (await aggregateRows.count()) {
+    await aggregateRows.first().click();
+    await expect(page.getByText("聚合行不提供单页坐标热力")).toBeVisible({ timeout: 10_000 });
+  } else {
+    await expect(page.getByText("当前筛选暂无事件").first()).toBeVisible();
+  }
   await expect(page.getByRole("img", { name: "单页点击坐标热力" })).toHaveCount(0);
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "l1-aggregate-filter.png"), fullPage: true });
 
@@ -55,12 +61,18 @@ test("L6 visible-sidebar first-user flow uses canonical filters, drilldown and a
     await expect(page.getByRole("img", { name: "单页点击坐标热力" })).toBeVisible();
   }
 
-  const exportButton = page.getByRole("button", { name: "导出当前筛选" });
-  if (await exportButton.isEnabled()) {
+  const exportButton = page.getByRole("button", { name: /导出当前筛选|空结果不可导出|数据异常不可导出/ });
+  if (await firstDataRow.count()) {
+    await expect(exportButton).toBeEnabled();
     const download = page.waitForEvent("download");
     await exportButton.click();
     expect((await download).suggestedFilename()).toBe("l6-behavior.csv");
+  } else {
+    await expect(exportButton).toBeDisabled();
   }
   expect(failedResponses).toEqual([]);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/analytics\/behavior-heatmap$/);
+  await expect(page.getByText("用户行为热力图", { exact: true }).first()).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "l6-owner-pass.png"), fullPage: true });
 });

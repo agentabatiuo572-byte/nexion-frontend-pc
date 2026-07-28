@@ -287,6 +287,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
           zh: form?.zh || editableVersion?.zh || "",
           en: form?.en || editableVersion?.en || "",
           vi: form?.vi || editableVersion?.vi || "",
+          expectedRevision: c.revision,
         };
         if (form?.saveMode === "存草稿") {
           runBackend(actions.saveI1CopyDraft(c.key, payload, reason), `${c.key} 草稿已保存 · 尚未对用户生效`);
@@ -406,21 +407,29 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     run: (reason) => runBackend(actions.deleteI1CopyPosition(positionKey, reason), `文案位置 ${positionKey} 已删除`),
   });
 
-  const rollbackTo = (copyKey: string, v: string) => openActionConfirm({
-    action: <>回滚 · {copyKey} → 重新发布 {v}</>,
+  const rollbackTo = (copy: CopyRow, v: string) => openActionConfirm({
+    action: <>回滚 · {copy.key} → 重新发布 {v}</>,
     detail: <>回滚 = 把历史版 <b>{v}</b> 重新发布,效果和发新版完全一样(对全体用户生效),所以同样走操作确认。仅完整满足中英越、受众和位置契约的归档版允许恢复。</>,
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.rollbackI1CopyVersion(copyKey, v, reason), `${copyKey} 已回滚到 ${v}`);
+      if (copy.revision == null) {
+        toast("当前文案修订号缺失，请刷新后重试");
+        return;
+      }
+      runBackend(actions.rollbackI1CopyVersion(copy.key, v, copy.version, copy.revision, reason), `${copy.key} 已回滚到 ${v}`);
     },
   });
 
-  const archiveCurrentVersion = (copyKey: string, version: string) => openActionConfirm({
-    action: <>下架当前发布版 · {copyKey} {version}</>,
+  const archiveCurrentVersion = (copy: CopyRow, version: string) => openActionConfirm({
+    action: <>下架当前发布版 · {copy.key} {version}</>,
     detail: <>下架后该文案位<b>没有生效版本</b>,App 端会退回内置兜底文案——一般只在文案出合规问题时才这么做;常规换版直接发新版即可。下架立即生效。</>,
     amplifies: false,
     run: (reason) => {
-      runBackend(actions.archiveI1Copy(copyKey, version, reason), `${copyKey} ${version} 已下架`);
+      if (copy.revision == null) {
+        toast("当前文案修订号缺失，请刷新后重试");
+        return;
+      }
+      runBackend(actions.archiveI1Copy(copy.key, version, copy.revision, reason), `${copy.key} ${version} 已下架`);
     },
   });
 
@@ -453,7 +462,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     okLabel: "保存",
     run: (reason, v) => {
       if (!v) return;
-      runBackend(actions.updateI1Framework(key, v, reason), `${name} 默认值已更新为 ${v} · 留审计`);
+      runBackend(actions.updateI1Framework(key, v, cur, reason), `${name} 默认值已更新为 ${v} · 留审计`);
     },
   });
 
@@ -765,11 +774,11 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
                     <td><div className="tiny">{row.chain || "—"}</div>{row.versionNote && <div className="tiny" style={{ color: "var(--ink-4)" }}>{row.versionNote}</div>}</td>
                     <td className="mono" style={{ fontSize: 11.5 }}>{row.ts}</td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      {canWrite && status === "archived" && <button type="button" className="l-btn sm mc" onClick={() => rollbackTo(row.copyKey, row.v)}>回滚</button>}
+                      {canWrite && status === "archived" && copy && <button type="button" className="l-btn sm mc" onClick={() => rollbackTo(copy, row.v)}>回滚</button>}
                       {canWrite && status === "published" && copy && (existingDraft
                         ? <button type="button" className="l-btn sm" onClick={() => editCopy(copy, existingDraft)}>继续草稿 {existingDraft.v}</button>
                         : <button type="button" className="l-btn sm" disabled={!hasUnusedActiveVersion} title={!hasUnusedActiveVersion ? "请先新增或启用一个未被该文案使用的版本" : "新增内容版本"} onClick={() => editCopy(copy, row, true)}>新增版本</button>)}
-                      {canWrite && status === "published" && copy?.version === row.v && <button type="button" className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => archiveCurrentVersion(row.copyKey, row.v)}>下架</button>}
+                      {canWrite && status === "published" && copy?.version === row.v && <button type="button" className="l-btn sm" style={{ marginLeft: 6 }} onClick={() => archiveCurrentVersion(copy, row.v)}>下架</button>}
                       {canWrite && status === "draft" && copy?.draftVersion === row.v && <button type="button" className="l-btn sm mc" onClick={() => editCopy(copy, row)}>编辑 / 发布</button>}
                       {canWrite && status === "draft" && copy?.draftVersion === row.v && copy.revision != null && <button type="button" className="l-btn sm dgr" disabled={deletingDraftKey !== null} style={{ marginLeft: 6 }} onClick={() => deleteDraftVersion(row.copyKey, row.v, copy.revision!)}>{deletingDraftKey === `${row.copyKey}:${row.v}` ? "删除中…" : "删除草稿"}</button>}
                     </td>

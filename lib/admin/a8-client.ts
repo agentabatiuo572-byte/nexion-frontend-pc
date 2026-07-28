@@ -37,6 +37,14 @@ export type A8PermissionQuery = {
   permType?: string; // READ/WRITE/HIGH，省略或 ALL=不过滤
 };
 
+function readableContractError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === "A8_PERMISSION_CONTRACT_INVALID" || message === "A8_PAGE_CONTRACT_INVALID") {
+    return new Error("权限目录返回的数据不完整或格式异常，已停止展示；请刷新重试或联系平台管理员。");
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
 async function a8Request<T>(path: string): Promise<T> {
   const response = await fetch(`/api/admin/platform${path}`, {
     cache: "no-store", signal: AbortSignal.timeout(12_000),
@@ -57,9 +65,17 @@ export async function fetchA8Permissions(query: A8PermissionQuery): Promise<A8Pe
   if (query.keyword && query.keyword.trim()) params.set("keyword", query.keyword.trim());
   if (query.domain && query.domain !== "ALL") params.set("domain", query.domain);
   if (query.permType && query.permType !== "ALL") params.set("permType", query.permType);
-  return normalizeA8Page(await a8Request<unknown>(`/permissions?${params.toString()}`)) as A8PermissionPage;
+  try {
+    return normalizeA8Page(await a8Request<unknown>(`/permissions?${params.toString()}`)) as A8PermissionPage;
+  } catch (error) {
+    throw readableContractError(error);
+  }
 }
 
 export async function fetchA8PermissionDetail(code: string): Promise<A8PermissionDetail | null> {
-  return normalizeA8Permission(await a8Request<unknown>(`/permissions/${encodeURIComponent(code)}`)) as A8PermissionDetail;
+  try {
+    return normalizeA8Permission(await a8Request<unknown>(`/permissions/${encodeURIComponent(code)}`)) as A8PermissionDetail;
+  } catch (error) {
+    throw readableContractError(error);
+  }
 }

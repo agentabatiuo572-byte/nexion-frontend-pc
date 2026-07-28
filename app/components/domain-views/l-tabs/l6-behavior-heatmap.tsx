@@ -69,7 +69,13 @@ function bounceCell(rate: number): React.CSSProperties {
 }
 
 export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
-  const available = ctx.biData?.l6?.available === true;
+  let available = false;
+  try {
+    const normalized = normalizeL6BehaviorHeatmap(ctx.biData?.l6 ?? null);
+    available = normalized.available && activityForWindow(normalized, "7d").length > 0;
+  } catch {
+    available = false;
+  }
   const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
     if (!available || !ctx.canExport || exporting) return;
@@ -111,15 +117,13 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const [sel, setSel] = useState<string | null>(null);
   const [device, setDevice] = useState<"ALL" | "APP" | "H5" | "MP">("ALL");
   const [locale, setLocale] = useState("ALL");
-  const [liveRaw, setLiveRaw] = useState<Record<string, unknown> | null>(ctx.biData?.l6 ?? null);
+  const [liveRaw, setLiveRaw] = useState<Record<string, unknown> | null>(null);
   const [liveHeat, setLiveHeat] = useState<Record<string, unknown> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [liveError, setLiveError] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [reloadRevision, setReloadRevision] = useState(0);
   const gradId = "l6heat-" + useId().replace(/:/g, "");
-  useEffect(() => {
-    if (ctx.biData?.l6) setLiveRaw(ctx.biData.l6);
-  }, [ctx.biData?.l6]);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,11 +131,20 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     setLiveError("");
     setSel(null);
     void fetchL6Behavior({ window: win, device, locale, depth, sort })
-      .then((data) => { if (!cancelled) setLiveRaw(data); })
-      .catch((error) => { if (!cancelled) setLiveError(error instanceof Error ? error.message : "L6_DATA_LOAD_FAILED"); })
+      .then((data) => {
+        normalizeL6BehaviorHeatmap(data);
+        if (!cancelled) setLiveRaw(data);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setLiveRaw(null);
+          setLiveHeat(null);
+          setLiveError(error instanceof Error ? error.message : "L6_DATA_LOAD_FAILED");
+        }
+      })
       .finally(() => { if (!cancelled) setRefreshing(false); });
     return () => { cancelled = true; };
-  }, [depth, device, locale, sort, win]);
+  }, [depth, device, locale, reloadRevision, sort, win]);
 
   const heatmapData = useMemo(() => normalizeL6BehaviorHeatmap(liveRaw), [liveRaw]);
 
@@ -156,8 +169,16 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     setLiveHeat(null);
     if (!activeKey || !activeRow || activeRow.pageCount > 1 || depth === "L1" || depth === "L2") return;
     void fetchL6ClickHeat(activeKey, { window: win, device, locale, depth, sort })
-      .then((data) => { if (!cancelled) setLiveHeat(data); })
-      .catch((error) => { if (!cancelled) setLiveError(error instanceof Error ? error.message : "L6_CLICK_HEAT_FAILED"); });
+      .then((data) => {
+        normalizeL6BehaviorHeatmap({ ...liveRaw, clickHeatByRoute: { [activeKey]: data } });
+        if (!cancelled) setLiveHeat(data);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setLiveHeat(null);
+          setLiveError(error instanceof Error ? error.message : "L6_CLICK_HEAT_FAILED");
+        }
+      });
     return () => { cancelled = true; };
   }, [activeKey, activeRow, depth, device, locale, sort, win]);
   const heat = useMemo(() => {
@@ -169,9 +190,10 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
   const aggregateSelection = depth === "L1" || depth === "L2" || (activeRow?.pageCount ?? 0) > 1;
 
   const depthLb = DEPTHS.find((d) => d.v === depth)?.lb ?? "全部";
+  const canExportCurrent = ctx.canExport && heatmapData.available && stats.length > 0 && !liveError && !refreshing;
 
   const exportCurrent = async () => {
-    if (!ctx.canExport || exporting) return;
+    if (!canExportCurrent || exporting) return;
     setExporting(true);
     try {
       const file = await downloadL6Behavior({ window: win, device, locale, depth, sort });
@@ -189,8 +211,20 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
     }
   };
 
-  if (!ctx.biData?.l6) {
-    return <LDataState ctx={ctx} label="L6" />;
+  if (liveError && !liveRaw) {
+    return (
+      <section className="l-card">
+        <div className="l-h"><span className="ttl">用户行为热力图 · 加载失败</span></div>
+        <div className="l-b">
+          <div className="ltint warn" style={{ fontSize: 12.5 }}>
+            <b>本次响应未通过完整性校验，未展示旧数据或伪造 0 值。</b> · {liveError}
+          </div>
+          <button className="f-cta" style={{ marginTop: 12 }} onClick={() => setReloadRevision((value) => value + 1)}>
+            重新加载
+          </button>
+        </div>
+      </section>
+    );
   }
 
   if (!heatmapData.available && heatmapData.status === "BLOCKED_CROSS_MODULE") {
@@ -253,6 +287,11 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
           <div className="v">{n(summary.totalClicks)}</div>
           <div className="sub">界面内 tap / click 事件合计</div>
         </div>
+        <div className="f-stat cyan">
+          <div className="k">点击率 CTR</div>
+          <div className="v">{fmtPct(summary.totalPv ? summary.totalClicks / summary.totalPv : 0)}</div>
+          <div className="sub">点击事件 / 页面曝光 PV</div>
+        </div>
         <div className="f-stat">
           <div className="k">平均停留</div>
           <div className="v">{fmtDwell(summary.avgDwellMs)}</div>
@@ -293,8 +332,8 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
           <select aria-label="Locale 筛选" value={locale} onChange={(event) => setLocale(event.target.value)}>
             <option value="ALL">全部</option><option value="zh-CN">zh-CN</option><option value="en-US">en-US</option><option value="vi-VN">vi-VN</option>
           </select>
-          <button className="chip" disabled={!ctx.canExport || exporting} onClick={() => void exportCurrent()}>
-            {exporting ? "导出中…" : ctx.canExport ? "导出当前筛选" : "无导出权限"}
+          <button className="chip" disabled={!canExportCurrent || exporting} onClick={() => void exportCurrent()}>
+            {exporting ? "导出中…" : !ctx.canExport ? "无导出权限" : !stats.length ? "空结果不可导出" : liveError ? "数据异常不可导出" : "导出当前筛选"}
           </button>
         </div>
         <div className="sep" />
@@ -489,7 +528,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         <b>不纳入统计的系统页({heatmapData.excludedPages.length})</b>:
         <AutoGloss>{heatmapData.excludedPages.map((p) => p.titleZh).join(" · ")}（纯会话/工具页,无行为分析价值）。</AutoGloss>{" "}
         <b>L6 没有任何「写数据」动作</b>:
-        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。</AutoGloss>
+        <AutoGloss>粒度 / 时间窗 / 排序均为会话级视图参数,不改任何业务规则。业务时区 {heatmapData.businessTimeZone}；clientEventId 去重；迟到事件在下一次查询纳入。</AutoGloss>
       </p>
     </div>
   );

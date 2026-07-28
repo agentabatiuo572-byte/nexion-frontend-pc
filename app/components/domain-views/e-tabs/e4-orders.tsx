@@ -101,6 +101,14 @@ export function E4Orders({ ctx }: { ctx: EViewCtx }) {
           <span className="sub">当前筛选结果</span>
         </div>
         <div className="filter-bar">
+          <input
+            className="fld"
+            aria-label="搜索订单"
+            value={ctx.e4Keyword}
+            onChange={(event) => ctx.setE4Keyword(event.target.value)}
+            placeholder="订单号 / 用户编码 / SKU"
+            style={{ minWidth: 240, flex: "1 1 280px" }}
+          />
           {FILTERS.map((f) => (
             <span key={f.s} className={`fchip${curF === f.s ? " on" : ""}`} onClick={() => ctx.setE4Filter(f.s)}>
               {f.label}
