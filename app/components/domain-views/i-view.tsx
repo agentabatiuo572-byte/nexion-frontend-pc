@@ -43,6 +43,27 @@ function countText(value?: number) {
   return Number(value ?? 0).toLocaleString();
 }
 
+function contentErrorForTab(tab: string, content: IContentData) {
+  const key = tab === "I1"
+    ? "copyAb"
+    : tab === "I2"
+      ? "nova"
+      : tab === "I3"
+        ? "campaigns"
+        : tab === "I4" || tab === "I5"
+          ? "trustDisclosure"
+          : "i18nLearning";
+  const error = content.errors?.[key];
+  if (!error) return null;
+  if (tab === "I5" && error === "I4 返回数据格式异常，请刷新重试") {
+    return "I5 返回数据格式异常，请刷新重试";
+  }
+  if (tab === "I5" && error === "I4 数据加载失败，请刷新重试") {
+    return "I5 数据加载失败，请刷新重试";
+  }
+  return error;
+}
+
 function liveFromBackend(tab: string, content: IContentData, loading: boolean, error: string | null) {
   if (loading) return "数据加载中";
   if (error) return "接口异常";
@@ -88,14 +109,17 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
   const reloadIContent = useCallback(async () => {
     setContentLoading(true);
     setContentError(null);
+    setContent({});
     try {
-      setContent(await fetchIContentOverviews());
+      const nextContent = await fetchIContentOverviews();
+      setContent(nextContent);
+      setContentError(contentErrorForTab(tab, nextContent));
     } catch (error) {
-      setContentError(error instanceof Error ? error.message : "I_CONTENT_LOAD_FAILED");
+      setContentError(`${tab} 数据加载失败，请刷新重试`);
     } finally {
       setContentLoading(false);
     }
-  }, []);
+  }, [tab]);
 
   useEffect(() => {
     void reloadIContent();
@@ -139,20 +163,25 @@ export function IDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {contentError && (
         <section className="l-card">
-          <div className="l-b">
+          <div className="l-h">
             <div className="itint danger">
               <b>I 域数据加载失败</b> · {contentError}
+            </div>
+            <div className="r">
+              <button className="l-btn" type="button" onClick={() => void reloadIContent()}>
+                重新加载
+              </button>
             </div>
           </div>
         </section>
       )}
 
-      {tab === "I1" && <I1CopyAb ctx={ctx} />}
-      {tab === "I2" && <I2Nova ctx={ctx} />}
-      {tab === "I3" && <I3Campaign ctx={ctx} />}
-      {tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
-      {tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
-      {tab === "I6" && <I6I18n ctx={ctx} />}
+      {!contentError && tab === "I1" && <I1CopyAb ctx={ctx} />}
+      {!contentError && tab === "I2" && <I2Nova ctx={ctx} />}
+      {!contentError && tab === "I3" && <I3Campaign ctx={ctx} />}
+      {!contentError && tab === "I4" && <I4Trust ctx={ctx} view="trust" />}
+      {!contentError && tab === "I5" && <I4Trust ctx={ctx} view="disclosures" />}
+      {!contentError && tab === "I6" && <I6I18n ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal

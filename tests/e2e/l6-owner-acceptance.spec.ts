@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-const EVIDENCE_DIR = "D:/workspace/bug-pic/l-domain-parallel-acceptance-20260723-000935/L6-behavior-heatmap";
+const EVIDENCE_DIR =
+  process.env.L6_ACCEPTANCE_DIR ??
+  "D:/workspace/bug-pic/l-domain-parallel-acceptance-20260723-000935/L6-behavior-heatmap";
 
 test.use({ trace: "retain-on-failure", video: "off", screenshot: "only-on-failure" });
 
@@ -54,22 +56,20 @@ test("L6 visible-sidebar first-user flow uses canonical filters, drilldown and a
   await expect(page.getByRole("img", { name: "单页点击坐标热力" })).toHaveCount(0);
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "l1-aggregate-filter.png"), fullPage: true });
 
+  await page.getByLabel("设备筛选").selectOption("ALL");
+  await page.getByLabel("Locale 筛选").selectOption("ALL");
+  await page.getByRole("button", { name: "近 7 天", exact: true }).click();
   await page.getByRole("button", { name: "全部" }).click();
   const firstDataRow = page.locator("table.heat-tbl tbody tr").first();
-  if (await firstDataRow.count()) {
-    await firstDataRow.click();
-    await expect(page.getByRole("img", { name: "单页点击坐标热力" })).toBeVisible();
-  }
+  await expect(firstDataRow).toBeVisible({ timeout: 20_000 });
+  await firstDataRow.click();
+  await expect(page.getByRole("img", { name: "单页点击坐标热力" })).toBeVisible();
 
   const exportButton = page.getByRole("button", { name: /导出当前筛选|空结果不可导出|数据异常不可导出/ });
-  if (await firstDataRow.count()) {
-    await expect(exportButton).toBeEnabled();
-    const download = page.waitForEvent("download");
-    await exportButton.click();
-    expect((await download).suggestedFilename()).toBe("l6-behavior.csv");
-  } else {
-    await expect(exportButton).toBeDisabled();
-  }
+  await expect(exportButton).toBeEnabled();
+  const download = page.waitForEvent("download");
+  await exportButton.click();
+  expect((await download).suggestedFilename()).toBe("l6-behavior.csv");
   expect(failedResponses).toEqual([]);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/analytics\/behavior-heatmap$/);

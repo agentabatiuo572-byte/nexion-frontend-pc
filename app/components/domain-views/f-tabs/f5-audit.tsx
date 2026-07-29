@@ -31,6 +31,9 @@ function badge(status: string): { label: string; tone: "ok" | "warn" | "err" | "
 }
 
 export function F5Audit({ ctx }: { ctx: FViewCtx }) {
+  const canWrite = ctx.can("network_f5_write");
+  const canDispose = ctx.can("network_f5_commission_dispose");
+  const canReject = ctx.can("network_f5_commission_reject");
   const [kind, setKind] = useState("");
   const [currency, setCurrency] = useState("");
   const [userId, setUserId] = useState("");
@@ -171,7 +174,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option>
           </select>
           <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>服务端筛选</button>
-          <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>
+          {canDispose && <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>}
         </div>
       </section>
 
@@ -192,7 +195,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                 {!events.length && <tr className="empty-row"><td colSpan={9}>当前筛选无佣金事件；筛选器和处置入口仍可用</td></tr>}
                 {events.map((row) => {
                   const state = badge(row.status);
-                  const selectable = row.status === "reversed";
+                  const selectable = canDispose && row.status === "reversed";
                   return (
                     <tr key={row.id}>
                       <td><input aria-label={`选择 ${row.id}`} type="checkbox" disabled={!selectable} checked={selected.includes(row.id)} onChange={(e) => setSelected((old) => e.target.checked ? [...old, row.id] : old.filter((id) => id !== row.id))} /></td>
@@ -207,8 +210,8 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         <Link href={`/finance/ledger?bizNo=${encodeURIComponent(row.id)}`} style={LINK_STYLE}>D4</Link>
                         <Link href="/overview/dual-ledger" style={LINK_STYLE}>B1</Link>
                         <Link href="/analytics/operations" style={LINK_STYLE}>L4</Link>
-                        {row.status !== "reversed" && row.status !== "withdrawn" && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
-                        <button className="fbtn" onClick={() => suspend(row)}>暂停奖种</button>
+                        {canReject && row.status !== "reversed" && row.status !== "withdrawn" && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
+                        {canReject && <button className="fbtn" onClick={() => suspend(row)}>暂停奖种</button>}
                       </td>
                     </tr>
                   );
@@ -220,7 +223,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
 
           <div className="f5-main">
             <section className="pane">
-              <div className="pane-h"><span className="ph-ttl">异常预警列表</span><button className="fbtn" onClick={editThreshold}>调整阈值</button></div>
+              <div className="pane-h"><span className="ph-ttl">异常预警列表</span>{canWrite && <button className="fbtn" onClick={editThreshold}>调整阈值</button>}</div>
               <table className="ctbl">
                 <thead><tr><th>类型</th><th>佣金 / 用户</th><th>证据</th><th>K 簇</th></tr></thead>
                 <tbody>

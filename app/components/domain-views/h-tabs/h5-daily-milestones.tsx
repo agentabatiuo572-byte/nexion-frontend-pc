@@ -57,6 +57,8 @@ function numericText(value: unknown, fallback = "") {
 
 export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const canRuleWrite = ctx.can("growth_h5_rule_write");
+  const canWrite = ctx.can("growth_h5_write");
   const propose = usePropose();
   const [model, setModel] = useState<H5Model | null>(null);
   const [loading, setLoading] = useState(true);
@@ -268,7 +270,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                   {rule.sub && <small>{rule.sub}</small>}
                 </div>
                 <span className="v">{text(rule.cur)}</span>
-                <button className={`l-btn sm${rule.hot ? " mc" : ""}`} onClick={() => openRule(rule)}>
+                <button className={`l-btn sm${rule.hot ? " mc" : ""}`} onClick={() => openRule(rule)} disabled={!canRuleWrite}>
                   调整
                 </button>
               </div>
@@ -317,7 +319,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                   <td>{text(milestone.kind)}</td>
                   <td className="num mono">{milestone.reward}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button className="l-btn sm mc" onClick={() => openStreak(milestone)}>改奖励</button>
+                    <button className="l-btn sm mc" onClick={() => openStreak(milestone)} disabled={!canWrite}>改奖励</button>
                   </td>
                 </tr>
               ))}
@@ -340,7 +342,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                 <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(powerUp.sub)} · 前往{rewardDestination(powerUp.downstream)}</span>
               </span>
               <span className="bdg">{powerUp.day} 天</span>
-              <button className="l-btn sm mc" onClick={() => openPowerUp(powerUp)}>调整</button>
+              <button className="l-btn sm mc" onClick={() => openPowerUp(powerUp)} disabled={!canWrite}>调整</button>
             </div>
           ))}
         </div>
@@ -351,7 +353,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
           <span className="ttl">收益里程碑</span>
           <span className="sub">· 门槛顺序和奖励由后端校验</span>
           <div className="r">
-            <button className="l-btn sm mc" onClick={openTick}>检查间隔: {text(model.tickInterval?.value)}</button>
+            <button className="l-btn sm mc" onClick={openTick} disabled={!canWrite}>检查间隔: {text(model.tickInterval?.value)}</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -373,7 +375,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
                   <td className="num mono">{Number(milestone.nex).toLocaleString()}</td>
                   <td className="num mono">{Number(milestone.weekTrigger ?? 0).toLocaleString()}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button className="l-btn sm mc" onClick={() => openEarn(milestone)}>调整</button>
+                    <button className="l-btn sm mc" onClick={() => openEarn(milestone)} disabled={!canWrite}>调整</button>
                   </td>
                 </tr>
               ))}

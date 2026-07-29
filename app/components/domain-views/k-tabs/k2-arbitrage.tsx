@@ -5,7 +5,7 @@ import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import { K1OutcomeUncertainError, newK1CommandKey, type K2Row, type KRiskParam } from "@/lib/admin/k-client";
-import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
@@ -251,7 +251,7 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
       commandAttempt.current.delete(scope);
       return result;
     } catch (error) {
-      if (!(error instanceof A2OutcomeUncertainError)) commandAttempt.current.delete(scope);
+      if (!isA2OutcomeUncertainError(error)) commandAttempt.current.delete(scope);
       throw error;
     }
   };

@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse, type Page, type Request, type Response } from "@playwright/test";
+import { expect, test, type APIResponse, type Page, type Response } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -140,8 +140,8 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   await expect(page.getByText(/高风险下限/).first()).toBeVisible();
   await expect(page.getByText(/自动升级线/).first()).toBeVisible();
 
-  const highBandInput = modelSection.locator("label.ktint").filter({ hasText: "高风险下限" }).locator("input");
-  const escalationInput = modelSection.locator("label.ktint").filter({ hasText: "自动升级线" }).locator("input");
+  const highBandInput = modelSection.getByRole("spinbutton", { name: /^高风险下限 ·/ });
+  const escalationInput = modelSection.getByRole("spinbutton", { name: /^自动升级线 ·/ });
   if (baseline.model.autoEscalateScore < 100) {
     await highBandInput.fill(String(baseline.model.autoEscalateScore + 1));
   } else {
@@ -159,24 +159,22 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   const delta = first < 100 && second > 0 ? 1 : -1;
   await weightInputs.nth(0).fill(String(first + delta));
   await weightInputs.nth(1).fill(String(second - delta));
-  const largeAmount = modelSection.locator("label.ktint").filter({ hasText: "大额单笔阈值" }).locator("input");
+  const largeAmount = modelSection.getByRole("spinbutton", { name: "大额单笔阈值（USD）", exact: true });
   await largeAmount.fill(String(Number(await largeAmount.inputValue()) + 1));
   await modelSection.getByRole("button", { name: "保存模型草稿" }).click();
 
-  let draftRequest: Request | null = null;
-  page.once("request", (request) => {
-    if (request.method() === "PUT" && request.url().endsWith("/api/admin/risk/scoring/model/draft")) draftRequest = request;
-  });
+  const draftRequestPromise = page.waitForRequest((request) =>
+    request.method() === "PUT" && request.url().endsWith("/api/admin/risk/scoring/model/draft"));
   await confirm(page, `${reason}保存差异草稿`, (response) =>
     response.request().method() === "PUT" && response.url().endsWith("/api/admin/risk/scoring/model/draft"));
+  const draftRequest = await draftRequestPromise;
   const saved = await overview(page);
   expect(saved.draft).not.toBeNull();
   expect(saved.draft!.weights).not.toEqual(baseline.model.weights);
 
   // Same key/same payload replays; same key/different payload fails closed.
-  expect(draftRequest).not.toBeNull();
-  const savedHeaders = draftRequest!.headers();
-  const savedBody = draftRequest!.postDataJSON();
+  const savedHeaders = draftRequest.headers();
+  const savedBody = draftRequest.postDataJSON();
   const replay = await page.request.put("/api/admin/risk/scoring/model/draft", {
     headers: { "Idempotency-Key": savedHeaders["idempotency-key"] }, data: savedBody,
   });
@@ -198,12 +196,10 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     response.request().method() === "POST" && response.url().endsWith("/api/admin/risk/scoring/model/publish"));
   let published = await overview(page);
   expect(published.model.version).toBeGreaterThan(baseline.model.version);
-
-  for (let attempt = 0; attempt < 30 && published.recomputePending > 0; attempt += 1) {
-    await page.waitForTimeout(1_000);
+  await expect.poll(async () => {
     published = await overview(page);
-  }
-  expect(published.recomputePending).toBe(0);
+    return published.recomputePending;
+  }, { timeout: 30_000, intervals: [1_000] }).toBe(0);
   await page.screenshot({ path: path.join(evidenceRoot, "02-model-published-sharded-green.png"), fullPage: true });
 
   const historySection = page.locator("section.l-card").filter({ hasText: "模型版本历史" });
@@ -216,10 +212,10 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   await confirm(page, `${reason}发布基线清理模型`, (response) =>
     response.request().method() === "POST" && response.url().endsWith("/api/admin/risk/scoring/model/publish"));
   let restored = await overview(page);
-  for (let attempt = 0; attempt < 30 && restored.recomputePending > 0; attempt += 1) {
-    await page.waitForTimeout(1_000);
+  await expect.poll(async () => {
     restored = await overview(page);
-  }
+    return restored.recomputePending;
+  }, { timeout: 30_000, intervals: [1_000] }).toBe(0);
   sameModelConfig(restored.model, baseline.model);
   expect(restored.draft).toBeNull();
   expect(restored.recomputePending).toBe(0);
@@ -248,12 +244,12 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   await page.getByRole("button", { name: "人工覆盖评分" }).click();
   const overrideDialog = page.getByRole("dialog").last();
   await overrideDialog.locator('input[type="number"]').fill(String(overrideScore));
-  let overrideRequest: Request | null = null;
-  page.once("request", (request) => {
-    if (request.method() === "POST" && request.url().includes(`/api/admin/risk/scoring/users/${target!.userNo}/override`)) overrideRequest = request;
-  });
+  const overrideRequestPromise = page.waitForRequest((request) =>
+    request.method() === "POST"
+    && request.url().includes(`/api/admin/risk/scoring/users/${target!.userNo}/override`));
   await confirm(page, `${reason}人工覆盖后立即回归`, (response) =>
     response.request().method() === "POST" && response.url().includes(`/api/admin/risk/scoring/users/${target!.userNo}/override`));
+  const overrideRequest = await overrideRequestPromise;
   const overridden = await scoreUser(page, target!.userNo);
   expect(overridden.overridden).toBe(true);
   expect(overridden.effectiveScore).toBe(overrideScore);
@@ -263,8 +259,8 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     && row.reason === `${reason}人工覆盖后立即回归`)).toBe(true);
   await page.screenshot({ path: path.join(evidenceRoot, "03-user-override-explainability.png"), fullPage: true });
 
-  const overrideHeaders = overrideRequest!.headers();
-  const overrideBody = overrideRequest!.postDataJSON();
+  const overrideHeaders = overrideRequest.headers();
+  const overrideBody = overrideRequest.postDataJSON();
   const overrideReplay = await page.request.post(`/api/admin/risk/scoring/users/${target!.userNo}/override`, {
     headers: { "Idempotency-Key": overrideHeaders["idempotency-key"] }, data: overrideBody,
   });

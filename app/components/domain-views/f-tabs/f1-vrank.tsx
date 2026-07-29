@@ -51,6 +51,11 @@ function toneOf(k: string): string {
 
 export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
   const rows = ctx.vrankRows;
+  const canWrite = ctx.can("network_f1_write");
+  const canProtect = ctx.can("network_f1_permanent_protection");
+  const canPromote = ctx.can("network_f1_promote_user");
+  const canReissuePayout = ctx.can("network_f1_reward_reissue");
+  const canReversePayout = ctx.can("network_f1_reward_reverse");
   const [promotionFilters, setPromotionFilters] = useState({ userId: "", v: "", cohort: "", from: "", to: "" });
   const [payoutFilters, setPayoutFilters] = useState({ type: "", v: "", status: "", userId: "" });
   const logMax = Math.max(1, Math.log10(Math.max(...rows.map((r) => r.pop), 1)));
@@ -292,22 +297,24 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                   <div className="rwd-list">
                     {items.map((it) => (
                       <span key={it.id} className={`rwd-chip rw-${it.type}`}>
-                        <button type="button" className="rwd-edit" title={`编辑 ${r.v} 奖励`} onClick={() => openEditReward(r, it)}>{rewardLabel(it, ctx.voucherLabels, ctx.skuLabels)}</button>
-                        <button type="button" className="rwd-del" title="移除奖励" onClick={() => openRemoveReward(r, it)}>×</button>
+                        {canWrite
+                          ? <button type="button" className="rwd-edit" title={`编辑 ${r.v} 奖励`} onClick={() => openEditReward(r, it)}>{rewardLabel(it, ctx.voucherLabels, ctx.skuLabels)}</button>
+                          : <span>{rewardLabel(it, ctx.voucherLabels, ctx.skuLabels)}</span>}
+                        {canWrite && <button type="button" className="rwd-del" title="移除奖励" onClick={() => openRemoveReward(r, it)}>×</button>}
                       </span>
                     ))}
-                    <button type="button" className="rwd-add" title={`为 ${r.v} 新增奖励`} onClick={() => openAddReward(r)}>＋ 加奖励</button>
+                    {canWrite && <button type="button" className="rwd-add" title={`为 ${r.v} 新增奖励`} onClick={() => openAddReward(r)}>＋ 加奖励</button>}
                   </div>
                 </div>
                 <div className="pop">
                   <div className="bar"><div className="f" style={{ width: `${popPct(r.pop, logMax)}%`, background: popColor(i) }} /></div>
                   <div className="ct">{r.pop.toLocaleString()}</div>
                 </div>
-                <div className="lact">
+                {canWrite && <div className="lact">
                   {flds.map((f) => (
                     <button key={f.k} className={`fbtn ${toneOf(f.k)}`} title={`调整${r.v} ${f.label}`} onClick={() => editField(r, f)}>{f.label}</button>
                   ))}
-                </div>
+                </div>}
               </div>
             );
           })}
@@ -360,13 +367,13 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <div className="it">V-Rank 不降级保护 · 当前 <b>{permanentOn ? "已开启" : "已关闭"}</b></div>
               <div className="it" style={{ marginTop: 4 }}>{permanentOn ? "已晋升用户即使下轮未达当前阶门槛,也保持现有等级。" : "已按门槛严格评估 · 未达标的高阶用户将在下轮评估降级,影响其领导池票权。"}</div>
             </div>
-            <button type="button" className="f-cta" style={{ marginTop: 8, ...(permanentOn ? { borderColor: "var(--danger)", color: "var(--danger)" } : null) }} onClick={() => ctx.openActionConfirm({
+            {canProtect && <button type="button" className="f-cta" style={{ marginTop: 8, ...(permanentOn ? { borderColor: "var(--danger)", color: "var(--danger)" } : null) }} onClick={() => ctx.openActionConfirm({
               name: permanentOn ? "关闭 V-Rank 不降级保护" : "开启 V-Rank 不降级保护",
               op: "dispose", paramKey: "F.vrank.permanent", fixedVal: permanentOn ? "off" : "on",
               detail: permanentOn
                 ? "关闭不降级保护 · 下轮评估起,未达当前阶门槛的用户将被降级,影响其等级身份与领导池票权,属高风险动作,写 A2 审计。"
                 : "开启不降级保护 · 已晋升用户即使下轮未达门槛也保持当前阶 · 仅对新晋升按门槛判定,写 A2 审计。",
-            })}>{permanentOn ? "关闭不降级保护" : "开启不降级保护"}</button>
+            })}>{permanentOn ? "关闭不降级保护" : "开启不降级保护"}</button>}
           </div>
 
           <div className="rail-card">
@@ -375,13 +382,13 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <div className="it">V-Rank 体系全局奖品名 · 当前 <b>{prizeName || "未配置"}</b></div>
               <div className="it" style={{ marginTop: 4 }}>用于 PC 与客户端展示,不影响资金计算与晋升判定。</div>
             </div>
-            <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
+            {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
               name: prizeName ? "修改全局奖品名" : "配置全局奖品名",
               op: "param",
               paramKey: "F.prize.name",
               edit: { kind: "text", current: prizeName, unit: "V-Rank 全局奖品名" },
               detail: "V-Rank 晋升体系的全局唯一奖品名称,用于 PC 与客户端展示;不影响资金计算与晋升判定。",
-            })}>{prizeName ? "修改奖品名" : "配置奖品名"}</button>
+            })}>{prizeName ? "修改奖品名" : "配置奖品名"}</button>}
           </div>
 
           <div className="rail-card">
@@ -390,7 +397,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <div className="it">V0-V12 各阶展示头衔 · 已配 <b>{Object.keys(titlesByLevel).length}</b>/13 阶</div>
               <div className="it" style={{ marginTop: 4 }}>用于 PC 与客户端等级名称展示 · 不影响资金计算与晋升判定。</div>
             </div>
-            <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
+            {canWrite && <button type="button" className="f-cta" style={{ marginTop: 8 }} onClick={() => ctx.openActionConfirm({
               name: "V-Rank 13 阶头衔调整",
               businessForm: {
                 kind: "multi-field",
@@ -416,7 +423,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
                 await ctx.updateF1Config("F.vrank.titles", JSON.stringify(titles), reason);
                 ctx.toast("V-Rank 13 阶头衔已确认生效");
               },
-            })}>配置 13 阶头衔</button>
+            })}>配置 13 阶头衔</button>}
           </div>
         </aside>
       </div>
@@ -428,7 +435,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <div className="ph-ttl">晋升流水</div>
               <div className="ph-sub">引擎 / 人工 · 资格快照 · 触发事件 · A2 审计号</div>
             </div>
-            <button type="button" className="f-cta" onClick={openManualOverride}>人工晋升 / 回滚</button>
+            {canPromote && <button type="button" className="f-cta" onClick={openManualOverride}>人工晋升 / 回滚</button>}
           </div>
           <div className="f1-filter">
             <input aria-label="晋升用户ID" value={promotionFilters.userId} onChange={(event) => setPromotionFilter("userId", event.target.value)} placeholder="用户 ID" inputMode="numeric" />
@@ -491,8 +498,8 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
               <thead><tr><th>派发单 / 用户</th><th>等级 / 奖励</th><th>赞助人</th><th>状态</th><th>D4 / 触发事件</th><th>时间</th><th>动作</th></tr></thead>
               <tbody>
                 {ctx.payoutRecords.map((record) => {
-                  const canReissue = record.status === "REVERSED";
-                  const canReverse = ["GRANTED", "REISSUED", "PENDING_GRANT"].includes(record.status);
+                  const canReissue = canReissuePayout && record.status === "REVERSED";
+                  const canReverse = canReversePayout && ["GRANTED", "REISSUED", "PENDING_GRANT"].includes(record.status);
                   return (
                     <tr key={record.payoutId}>
                       <td><span className="cid">{record.payoutId}</span><br /><span className="uid">用户 {record.userId}</span></td>

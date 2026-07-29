@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { expect, test, type APIResponse, type Page } from "@playwright/test";
+import { expect, test, type APIResponse, type Page, type Response } from "@playwright/test";
 
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const ADMIN_USER = process.env.M4_ADMIN_USERNAME ?? "d5_V3_r_super";
@@ -11,11 +11,19 @@ const EVIDENCE_DIR = process.env.M4_EVIDENCE_DIR
 const PREFIX = process.env.M4_FIXTURE_PREFIX ?? "M4-20260723";
 const KNOWLEDGE_OVERVIEW_API = "**/api/admin/content/knowledge/overview";
 const FAQ_API = "**/api/admin/content/knowledge/faqs";
+const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"];
 const MFA_SECRETS = new Map<string, string>();
 
 type Envelope<T> = { code: number; message?: string; data: T };
-type FaqView = { id: string; question: string; status: string };
-type SlaView = { category: string; firstResponseMins: number; resolutionHours: number; queue: string; escalation: string };
+type FaqView = { id: string; question: string; status: string; version: number };
+type SlaView = {
+  category: string;
+  firstResponseMins: number;
+  resolutionHours: number;
+  queue: string;
+  escalation: string;
+  version: number;
+};
 type KnowledgeView = { faqs: FaqView[]; sla: SlaView[] };
 
 test.describe.configure({ mode: "serial", timeout: 300_000 });
@@ -25,6 +33,48 @@ test.beforeAll(async () => {
   await mkdir(EVIDENCE_DIR, { recursive: true });
 });
 
+test("M4 初始加载严格失败关闭且只在九类 SLA 协议通过后开放写入", async ({ page }) => {
+  let releaseOverview!: () => void;
+  let markIntercepted!: () => void;
+  let interceptedCount = 0;
+  const intercepted = new Promise<void>((resolve) => { markIntercepted = resolve; });
+  const released = new Promise<void>((resolve) => { releaseOverview = resolve; });
+  await page.route(KNOWLEDGE_OVERVIEW_API, async (route) => {
+    interceptedCount += 1;
+    if (interceptedCount === 1) markIntercepted();
+    await released;
+    // A route can be cancelled by the login-to-console navigation while held.
+    // That is expected; every still-live request must continue after release.
+    await route.continue().catch((error: Error) => {
+      if (!/already handled|target page, context or browser has been closed/i.test(error.message)) throw error;
+    });
+  });
+
+  try {
+    await login(page, ADMIN_USER);
+    const link = page.locator('a[href="/service/kb-sla"]').first();
+    const group = page.getByRole("button", { name: /客服中心.*M|M.*客服中心/ }).first();
+    if (!await link.isVisible().catch(() => false) && await group.isVisible({ timeout: 5_000 }).catch(() => false)) await group.click();
+    await expect(link).toBeVisible();
+    await link.click();
+    await intercepted;
+    await expect(page).toHaveURL(/\/service\/kb-sla/);
+    await expect(page.getByRole("button", { name: "新增文章", exact: true })).toHaveCount(0);
+    await page.screenshot({ path: path.join(EVIDENCE_DIR, "00-initial-loading-fails-closed.png"), fullPage: true });
+
+    const overviewResponse = page.waitForResponse((response) => response.url().includes("/api/admin/content/knowledge/overview") && response.request().method() === "GET");
+    releaseOverview();
+    const overview = await envelope<KnowledgeView>(await overviewResponse);
+    expect(overview.data.sla.map((row) => row.category).sort()).toEqual([...SLA_CATEGORIES].sort());
+    await expect(page.getByText("Help/FAQ 内容管理", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "新增文章", exact: true })).toBeVisible();
+  } finally {
+    releaseOverview?.();
+    await page.unroute(KNOWLEDGE_OVERVIEW_API).catch(() => undefined);
+    await logoutCurrent(page).catch(() => undefined);
+  }
+});
+
 test("M4 FAQ/SLA 真实闭环、并发唯一性与失败关闭", async ({ page }) => {
   await loginAndOpenM4(page);
   await expect(page.getByText("Help/FAQ 内容管理", { exact: true })).toBeVisible();
@@ -32,10 +82,23 @@ test("M4 FAQ/SLA 真实闭环、并发唯一性与失败关闭", async ({ page }
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "01-visible-entry-m4.png"), fullPage: true });
 
   const initial = await envelope<KnowledgeView>(await page.request.get("/api/admin/content/knowledge/overview"));
+  expect(initial.data.sla.map((row) => row.category).sort()).toEqual([...SLA_CATEGORIES].sort());
+  for (const staleFaq of initial.data.faqs.filter((faq) => faq.question.startsWith(PREFIX))) {
+    const cleanup = await page.request.delete(`/api/admin/content/knowledge/faqs/${encodeURIComponent(staleFaq.id)}`, {
+      headers: { "Idempotency-Key": `${PREFIX}-stale-cleanup-${staleFaq.id}-${Date.now()}` },
+      data: {
+        expectedStatus: staleFaq.status,
+        expectedVersion: staleFaq.version,
+        reason: `${PREFIX}-清理上次中断的验收 FAQ`,
+      },
+    });
+    expect(cleanup.ok(), `M4 stale FAQ cleanup ${staleFaq.id} ${cleanup.status()}: ${await cleanup.text()}`).toBeTruthy();
+  }
   const originalSla = initial.data.sla.find((row) => row.category === "withdrawal");
   expect(originalSla, "M4 withdrawal SLA baseline must exist").toBeTruthy();
 
   const fixtureIds = new Set<string>();
+  let writtenFirstResponseMins: number | null = null;
   const question = `${PREFIX}-FAQ-结果未知`;
   const answer = `${PREFIX}-FAQ 初始回答,用于真实用户闭环验收。`;
   const editedAnswer = `${PREFIX}-FAQ 已编辑回答,刷新后必须保留。`;
@@ -138,6 +201,7 @@ test("M4 FAQ/SLA 真实闭环、并发唯一性与失败关闭", async ({ page }
     const nextFirstResponse = originalSla!.firstResponseMins >= 120
       ? originalSla!.firstResponseMins - 1
       : originalSla!.firstResponseMins + 1;
+    writtenFirstResponseMins = nextFirstResponse;
     await slaDialog.getByLabel("首响(分钟)").fill(String(nextFirstResponse));
     await slaDialog.getByLabel(/审计理由/).fill(`${PREFIX}-SLA 与 M1 联动验证`);
     await slaDialog.getByRole("button", { name: "保存 SLA", exact: true }).click();
@@ -178,22 +242,55 @@ test("M4 FAQ/SLA 真实闭环、并发唯一性与失败关闭", async ({ page }
     await page.unroute(FAQ_API).catch(() => undefined);
     await page.unroute(KNOWLEDGE_OVERVIEW_API).catch(() => undefined);
     if (originalSla) {
-      const restore = await page.request.patch(`/api/admin/content/knowledge/sla/${originalSla.category}`, {
-        headers: { "Idempotency-Key": `${PREFIX}-sla-cleanup-${Date.now()}` },
-        data: {
-          firstResponseMins: originalSla.firstResponseMins,
+      const latestOverview = await envelope<KnowledgeView>(
+        await page.request.get("/api/admin/content/knowledge/overview"),
+      );
+      const latestSla = latestOverview.data.sla.find((row) => row.category === originalSla.category);
+      expect(latestSla, `M4 ${originalSla.category} SLA must still exist before cleanup`).toBeTruthy();
+      if (latestSla && latestSla.version !== originalSla.version) {
+        expect(
+          {
+            firstResponseMins: latestSla.firstResponseMins,
+            resolutionHours: latestSla.resolutionHours,
+            queue: latestSla.queue,
+            escalation: latestSla.escalation,
+            version: latestSla.version,
+          },
+          "M4 清理只能回滚本用例的 SLA 写入；发现其他运营员并发修改时必须拒绝覆盖",
+        ).toEqual({
+          firstResponseMins: writtenFirstResponseMins,
           resolutionHours: originalSla.resolutionHours,
           queue: originalSla.queue,
           escalation: originalSla.escalation,
-          reason: `${PREFIX}-恢复原 SLA 配置`,
-        },
-      });
-      expect(restore.ok(), `M4 SLA cleanup ${restore.status()}: ${await restore.text()}`).toBeTruthy();
+          version: originalSla.version + 1,
+        });
+        const restore = await page.request.patch(`/api/admin/content/knowledge/sla/${originalSla.category}`, {
+          headers: { "Idempotency-Key": `${PREFIX}-sla-cleanup-${Date.now()}` },
+          data: {
+            firstResponseMins: originalSla.firstResponseMins,
+            resolutionHours: originalSla.resolutionHours,
+            queue: originalSla.queue,
+            escalation: originalSla.escalation,
+            expectedVersion: latestSla.version,
+            reason: `${PREFIX}-恢复原 SLA 配置`,
+          },
+        });
+        expect(restore.ok(), `M4 SLA cleanup ${restore.status()}: ${await restore.text()}`).toBeTruthy();
+      }
     }
     for (const faqId of fixtureIds) {
+      const latestOverview = await envelope<KnowledgeView>(
+        await page.request.get("/api/admin/content/knowledge/overview"),
+      );
+      const latestFaq = latestOverview.data.faqs.find((faq) => faq.id === faqId);
+      if (!latestFaq) continue;
       const remove = await page.request.delete(`/api/admin/content/knowledge/faqs/${encodeURIComponent(faqId)}`, {
         headers: { "Idempotency-Key": `${PREFIX}-faq-cleanup-${faqId}-${Date.now()}` },
-        data: { reason: `${PREFIX}-清理验收 FAQ` },
+        data: {
+          expectedStatus: latestFaq.status,
+          expectedVersion: latestFaq.version,
+          reason: `${PREFIX}-清理验收 FAQ`,
+        },
       });
       expect(remove.ok(), `M4 FAQ cleanup ${faqId} ${remove.status()}: ${await remove.text()}`).toBeTruthy();
     }
@@ -211,7 +308,7 @@ test("M4 FAQ/SLA 真实闭环、并发唯一性与失败关闭", async ({ page }
   await logoutCurrent(page);
 });
 
-async function envelope<T>(response: APIResponse): Promise<Envelope<T>> {
+async function envelope<T>(response: APIResponse | Response): Promise<Envelope<T>> {
   const text = await response.text();
   expect(response.ok(), `${response.status()} ${response.url()} ${text.slice(0, 500)}`).toBeTruthy();
   const payload = JSON.parse(text) as Envelope<T>;

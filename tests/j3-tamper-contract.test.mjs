@@ -42,6 +42,10 @@ const jView = readFileSync(
   new URL("../app/components/domain-views/j-view.tsx", import.meta.url),
   "utf8",
 );
+const independentAcceptance = readFileSync(
+  new URL("./e2e/j3-independent-acceptance.spec.ts", import.meta.url),
+  "utf8",
+);
 const usersProxy = readFileSync(
   new URL("../app/api/admin/users/[...path]/route.ts", import.meta.url),
   "utf8",
@@ -296,4 +300,8 @@ test("J3 records H2 trial state and charge tamper at the live controller boundar
   assert.match(canonicalBoundaryService, /chargeTrialInternal\([\s\S]{0,400}"charge_fail_rate"/);
   assert.match(canonicalBoundaryService, /"\/api\/trial\/eligibility"/);
   assert.match(canonicalBoundaryService, /"\/api\/trial\/charge"/);
+});
+
+test("J3 acceptance artifacts can be routed into the restricted Run directory", () => {
+  assert.match(independentAcceptance, /J3_EVIDENCE_DIR/);
 });

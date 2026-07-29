@@ -83,6 +83,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       setNodePageNo(next.nodePage.page);
       setNodePageSize(next.nodePage.pageSize);
     } catch (err) {
+      setOverview(null);
       setError(messageOf(err));
     } finally {
       if (!silent) setLoading(false);
@@ -102,7 +103,10 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
           setNodePageSize(next.nodePage.pageSize);
         }
       } catch (err) {
-        if (!cancelled) setError(messageOf(err));
+        if (!cancelled) {
+          setOverview(null);
+          setError(messageOf(err));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

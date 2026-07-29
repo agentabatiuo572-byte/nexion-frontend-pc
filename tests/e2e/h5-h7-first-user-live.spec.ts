@@ -2,15 +2,14 @@ import { expect, test, type Page, type Response } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
-const evidenceDir = "D:/workspace/bug-pic/h-domain-acceptance-20260722/first-user-h5-h8/initial";
-const username = process.env.NEXION_E2E_USERNAME ?? "superadmin";
-const originalTickSeconds = 11;
-const temporaryTickSeconds = 12;
+const evidenceDir = process.env.H57_EVIDENCE_DIR
+  || "D:/workspace/bug-pic/h-domain-acceptance-20260722/first-user-h5-h8/initial";
+const username = process.env.NEXION_E2E_USERNAME ?? process.env.ADMIN_E2E_USERNAME ?? "superadmin";
 const voucherName = `H7首次用户验收券-${Date.now()}`;
 
 function password(): string {
-  const value = process.env.NEXION_E2E_PASSWORD;
-  if (!value) throw new Error("NEXION_E2E_PASSWORD is required");
+  const value = process.env.NEXION_E2E_PASSWORD ?? process.env.ADMIN_E2E_PASSWORD;
+  if (!value) throw new Error("NEXION_E2E_PASSWORD or ADMIN_E2E_PASSWORD is required");
   return value;
 }
 
@@ -85,19 +84,34 @@ test("H5 首次用户主链、刷新、异常恢复和 H6 并入判定", async (
   await expect(page.locator("body")).toContainText("收益里程碑");
   await page.screenshot({ path: path.join(evidenceDir, "H5-01-baseline-and-H6-merged.png"), fullPage: true });
 
-  await page.getByRole("button", { name: new RegExp(`检查间隔: ${originalTickSeconds} 秒`) }).click();
-  const writeResponse = await submitKConfirm(page, String(temporaryTickSeconds), "H5 首次用户验收临时调整检查间隔并在刷新后核对服务端真值");
-  expect(writeResponse.status()).toBe(200);
-  await expect(page.getByRole("button", { name: new RegExp(`检查间隔: ${temporaryTickSeconds} 秒`) })).toBeVisible();
-  await page.reload();
-  await expect(page.getByRole("button", { name: new RegExp(`检查间隔: ${temporaryTickSeconds} 秒`) })).toBeVisible();
-  await page.screenshot({ path: path.join(evidenceDir, "H5-02-persisted-after-refresh.png"), fullPage: true });
+  const baselineButton = page.getByRole("button", { name: /检查间隔: \d+ 秒/ }).first();
+  const baselineLabel = await baselineButton.innerText();
+  const originalTickSeconds = Number(baselineLabel.match(/检查间隔:\s*(\d+)\s*秒/)?.[1]);
+  expect(Number.isInteger(originalTickSeconds) && originalTickSeconds > 0).toBe(true);
+  const temporaryTickSeconds = originalTickSeconds >= 3600 ? originalTickSeconds - 1 : originalTickSeconds + 1;
+  let writeStatus: number | null = null;
+  let restoreStatus: number | null = null;
 
-  await page.getByRole("button", { name: new RegExp(`检查间隔: ${temporaryTickSeconds} 秒`) }).click();
-  const restoreResponse = await submitKConfirm(page, String(originalTickSeconds), "H5 首次用户验收完成后恢复检查间隔原始服务端配置值");
-  expect(restoreResponse.status()).toBe(200);
-  await page.reload();
-  await expect(page.getByRole("button", { name: new RegExp(`检查间隔: ${originalTickSeconds} 秒`) })).toBeVisible();
+  try {
+    await baselineButton.click();
+    const writeResponse = await submitKConfirm(page, String(temporaryTickSeconds), "H5 首次用户验收临时调整检查间隔并在刷新后核对服务端真值");
+    writeStatus = writeResponse.status();
+    expect(writeStatus).toBe(200);
+    await expect(page.getByRole("button", { name: new RegExp(`检查间隔: ${temporaryTickSeconds} 秒`) })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("button", { name: new RegExp(`检查间隔: ${temporaryTickSeconds} 秒`) })).toBeVisible();
+    await page.screenshot({ path: path.join(evidenceDir, "H5-02-persisted-after-refresh.png"), fullPage: true });
+  } finally {
+    const changedButton = page.getByRole("button", { name: new RegExp(`检查间隔: ${temporaryTickSeconds} 秒`) });
+    if (await changedButton.isVisible().catch(() => false)) {
+      await changedButton.click();
+      const restoreResponse = await submitKConfirm(page, String(originalTickSeconds), "H5 首次用户验收完成后恢复检查间隔原始服务端配置值");
+      restoreStatus = restoreResponse.status();
+      expect(restoreStatus).toBe(200);
+    }
+    await page.reload();
+    await expect(page.getByRole("button", { name: new RegExp(`检查间隔: ${originalTickSeconds} 秒`) })).toBeVisible();
+  }
 
   await page.route("**/api/admin/growth/check-in", async (route) => {
     await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ code: 500, message: "验收注入读取失败" }) });
@@ -115,8 +129,8 @@ test("H5 首次用户主链、刷新、异常恢复和 H6 并入判定", async (
     h6FunctionsVisibleInH5: ["连签里程碑", "收益里程碑"],
     originalTickSeconds,
     temporaryTickSeconds,
-    writeStatus: writeResponse.status(),
-    restoreStatus: restoreResponse.status(),
+    writeStatus,
+    restoreStatus,
     retryCountOnInjected500: retryCount,
     pageErrors,
     consoleErrors,

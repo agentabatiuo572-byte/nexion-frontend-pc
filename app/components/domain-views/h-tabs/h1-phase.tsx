@@ -73,6 +73,9 @@ function dialAmplifies(key: string, before: string, after: string) {
 
 export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const canWrite = ctx.can("growth_h1_write");
+  const canControlWrite = ctx.can("growth_h1_control_pin_write");
+  const canOverrideRevoke = ctx.can("growth_h1_override_revoke");
   const propose = usePropose();
   const [model, setModel] = useState<H1Model | null>(null);
   const [loading, setLoading] = useState(true);
@@ -368,7 +371,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
               <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>决定矩阵行数和阶段分布</span>
             </span>
             <span className="bdg">{rhythm.totalMonths} 个月</span>
-            <button className="l-btn sm mc" onClick={openTotalMonths}>改总时长</button>
+            <button className="l-btn sm mc" onClick={openTotalMonths} disabled={!canWrite}>改总时长</button>
           </div>
           <div className="p-row">
             <span style={{ flex: 1 }}>
@@ -377,7 +380,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
               <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>月度位置和阶段进度由后端裁决</span>
             </span>
             <span className="bdg">第 {rhythm.currentMonth}/{rhythm.totalMonths} 月 · {phaseName(rhythm.currentPhase)} · {rhythm.phaseProgressPct}%</span>
-            <button className="l-btn sm mc" onClick={openCurrentPosition}>设定位置</button>
+            <button className="l-btn sm mc" onClick={openCurrentPosition} disabled={!canWrite}>设定位置</button>
           </div>
         </div>
       </section>
@@ -412,8 +415,8 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                       <td
                         key={key}
                         className={String(current) !== String(previous) ? "chg" : undefined}
-                        onClick={() => openDial(row, key, label)}
-                        title="点击改值"
+                        onClick={canWrite ? () => openDial(row, key, label) : undefined}
+                        title={canWrite ? "点击改值" : "只读"}
                       >
                         {current}
                       </td>
@@ -441,7 +444,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                   <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{control.description}</span>
                 </span>
                 <span className="bdg">{text(control.value, "未设置")}</span>
-                <button className="l-btn sm mc" onClick={() => openControl(control)}>调整</button>
+                <button className="l-btn sm mc" onClick={() => openControl(control)} disabled={!canControlWrite}>调整</button>
               </div>
             ))}
 
@@ -453,7 +456,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
                   {override.description}
                   {override.disabled && <span className="bdg dim" style={{ marginLeft: 8 }}>已撤销</span>}
                 </span>
-                <button className="l-btn sm mc" disabled={!!override.disabled} onClick={() => openOverrideRemove(override)}>
+                <button className="l-btn sm mc" disabled={!!override.disabled || !canOverrideRevoke} onClick={() => openOverrideRemove(override)}>
                   {override.disabled ? "已撤销" : "撤销"}
                 </button>
               </div>

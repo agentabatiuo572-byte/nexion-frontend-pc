@@ -107,7 +107,17 @@ export const B2_LIABILITY_KEYS = [
 
 const B2_RESERVE_KEYS = ["usdt", "otherLiquid"] as const;
 const B2_WATER_TIERS = ["NORMAL", "WATCH", "WARNING", "DANGER"] as const;
-let requestSequence = 0;
+
+export class B2OutcomeUnknownError extends Error {
+  constructor(public readonly commandKey: string) {
+    super(`本次配置保存结果未知，可能已经生效。请先刷新核对；如需按原输入重试，将继续使用同一请求号：${commandKey}`);
+    this.name = "B2OutcomeUnknownError";
+  }
+}
+
+function idempotencyKey(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
 
 function invalid(field: string): never {
   throw new Error(formatAdminApiError("B2_RESPONSE_INVALID", `B2_RESPONSE_INVALID:${field}`));
@@ -369,6 +379,10 @@ async function request<T>(path: string, init?: RequestInit) {
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0 || result.data === undefined) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    const commandKey = headers.get("Idempotency-Key");
+    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+      throw new B2OutcomeUnknownError(commandKey);
+    }
     throw new Error(formatAdminApiError(result?.message, `B2_REQUEST_FAILED_${response.status}`));
   }
   return result.data;
@@ -394,12 +408,12 @@ export async function updateB2ForecastConfig(
   expectedVersion: number,
   reason: string,
   operator: string,
+  commandKey = idempotencyKey("b2-forecast-config"),
 ) {
-  requestSequence = (requestSequence + 1) % 1_000_000;
   return request<unknown>("/forecast-config", {
     method: "PUT",
     headers: {
-      "Idempotency-Key": `b2-forecast-config-${Date.now()}-${requestSequence}`,
+      "Idempotency-Key": commandKey,
     },
     body: JSON.stringify({ ...values, expectedVersion, reason, operator }),
   });

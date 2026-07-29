@@ -12,7 +12,10 @@ test("G3 PC sends curve/value CAS baselines and mirrors B1 direction gates", () 
   const client = read(pcRoot, "lib/admin/g3-client.ts");
   const view = read(pcRoot, "app/components/domain-views/g-tabs/g3-market.tsx");
   assert.match(client, /expectedFrames/);
-  assert.match(client, /JSON\.stringify\(\{ value, expectedValue, reason, operator \}\)/);
+  assert.match(client, /createStableMutationExecutor/);
+  assert.match(client, /g3OverviewMutation/);
+  assert.match(client, /\{ value, expectedValue, reason, operator \}/);
+  assert.doesNotMatch(client, /idempotencyPrefix/);
   assert.match(view, /coverage: amp \? coverageSnapshot : undefined/);
   assert.match(view, /amplifiesWhen: "increase"/);
   assert.match(view, /String\(paused\)/);

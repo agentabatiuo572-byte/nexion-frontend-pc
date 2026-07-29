@@ -132,7 +132,9 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
     });
   // editKind="select" 时传 options → 弹窗渲染勾选 chips(能枚举的值不让手输,最高设计铁律)
   const Adj = ({ label, k, unit, amplify = false, editKind = "number", detail, options }: { label: string; k: string; unit: string; amplify?: boolean; editKind?: "number" | "text" | "select"; detail?: string; options?: string[] }) =>
-    <button className={`adj${amplify ? " amp" : ""}`} onClick={() => adj(label, k, unit, amplify, editKind, detail, options)}>调整</button>;
+    ctx.canWriteE3
+      ? <button className={`adj${amplify ? " amp" : ""}`} onClick={() => adj(label, k, unit, amplify, editKind, detail, options)}>调整</button>
+      : null;
 
   // 多字段调参:一个「调整」按钮 → 操作确认弹窗里 N 个带标签输入,每字段写各自的 param key
   // (各值独立 backend-replaceable,不挤一个框)。current 实时从 pE(paramKey) 预填。
@@ -151,7 +153,9 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
       detail: opts.detail ?? `${title} · server-canonical,改后对全网生效,不回溯已生效报价`,
     });
   const AdjMulti = ({ title, fields, ascending, hint, amplify = false, detail }: { title: string; fields: MFField[]; ascending?: boolean; hint?: string; amplify?: boolean; detail?: string }) =>
-    <button className={`adj${amplify ? " amp" : ""}`} onClick={() => adjMulti(title, fields, { ascending, hint, amplify, detail })}>调整</button>;
+    ctx.canWriteE3
+      ? <button className={`adj${amplify ? " amp" : ""}`} onClick={() => adjMulti(title, fields, { ascending, hint, amplify, detail })}>调整</button>
+      : null;
 
   return (
     <>

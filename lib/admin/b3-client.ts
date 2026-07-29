@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { assertB3Dashboard } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
   code: number;
@@ -66,6 +67,17 @@ export interface B3Dashboard {
   sourceStatement: string;
 }
 
+export class B3OutcomeUnknownError extends Error {
+  constructor(public readonly commandKey: string) {
+    super(`本次视图保存结果未知，可能已经生效。请先刷新核对；如需按原输入重试，将继续使用同一请求号：${commandKey}`);
+    this.name = "B3OutcomeUnknownError";
+  }
+}
+
+function idempotencyKey(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
 function query(filters: B3Filters, extra?: Record<string, string>) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries({ ...filters, ...extra })) {
@@ -75,18 +87,23 @@ function query(filters: B3Filters, extra?: Record<string, string>) {
   return text ? `?${text}` : "";
 }
 
-async function json<T>(response: Response, fallback: string): Promise<T> {
+async function json<T>(response: Response, fallback: string, commandKey?: string): Promise<T> {
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0 || result.data == null) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
+    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+      throw new B3OutcomeUnknownError(commandKey);
+    }
     throw new Error(formatAdminApiError(result?.message, fallback));
   }
   return result.data;
 }
 
-export async function fetchB3Dashboard(filters: B3Filters, stage = "purchase") {
-  return fetch(`/api/admin/funnel${query(filters, { stage })}`, { cache: "no-store" }).then((response) =>
-    json<B3Dashboard>(response, "B3_FUNNEL_LOAD_FAILED"));
+export async function fetchB3Dashboard(filters: B3Filters, stage = "purchase"): Promise<B3Dashboard> {
+  const data = await fetch(`/api/admin/funnel${query(filters, { stage })}`, { cache: "no-store" })
+    .then((response) => json<unknown>(response, "B3_FUNNEL_LOAD_FAILED"));
+  assertB3Dashboard(data);
+  return data as unknown as B3Dashboard;
 }
 
 export async function saveB3View(
@@ -94,14 +111,19 @@ export async function saveB3View(
   filters: B3Filters,
   granularity = "WEEK",
   comparison = "PREVIOUS",
+  commandKey = idempotencyKey("b3-view"),
 ) {
   const response = await fetch("/api/admin/funnel/view", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": `b3-view-${Date.now()}` },
+    headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ name, ...filters, granularity, comparison }),
     cache: "no-store",
   });
-  return json<{ saved: Record<string, unknown>; replayed: boolean }>(response, "B3_VIEW_SAVE_FAILED");
+  return json<{ saved: Record<string, unknown>; replayed: boolean }>(
+    response,
+    "B3_VIEW_SAVE_FAILED",
+    commandKey,
+  );
 }
 
 export async function exportB3Cohort(filters: B3Filters) {

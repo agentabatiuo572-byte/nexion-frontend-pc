@@ -237,6 +237,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const operator = useAdminAuth((s) => s.operator || s.session?.operator || s.session?.username || "");
   const canWriteE1 = useAdminAuth((s) => s.session?.authorities.includes("device_e1_write") ?? false);
   const canWriteE2 = useAdminAuth((s) => s.session?.authorities.includes("device_e2_write") ?? false);
+  const canWriteE3 = useAdminAuth((s) => s.session?.authorities.includes("device_e3_write") ?? false);
   const canWriteE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_write") ?? false);
   const canRefundE4 = useAdminAuth((s) => s.session?.authorities.includes("device_e4_order_refund") ?? false);
   const canWriteE5 = useAdminAuth((s) => s.session?.authorities.includes("device_e5_write") ?? false);
@@ -283,6 +284,8 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE1Gates(snapshot.gates);
     } catch (error) {
       setE1Error(error instanceof Error ? error.message : "E1_SYNC_FAILED");
+      setE1Skus([]);
+      setE1Gates(null);
     } finally {
       setE1Loading(false);
     }
@@ -855,6 +858,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (e2Loading) return "E2 任务列表正在加载,请稍后再提交";
     return "解锁算力池请选择 E2 6 类任务中的一项";
   };
+  const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error && e1Gates !== null;
   const openSkuSaveConfirm = () => {
     if (skuMediaUploading) { setToast("媒体仍在上传,请稍后提交"); return; }
     if (skuMedia && !skuMedia.assetId) { setToast("媒体未上传成功,请重新选择文件"); return; }
@@ -890,9 +894,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const ctx: EViewCtx = {
     pE, openActionConfirm, toast: setToast,
-    canWriteE1, skus, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku,
+    canWriteE1: canUseE1Writes, skus, e1Loading, e1Error, e1Gates, phaseCur, refreshE1, openSku, delSku,
     canWriteE2, tasks, phoneTiers, e2Pricing, e2Loading, e2Error, refreshE2, openAddTask, openEditTask, delTask,
-    e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
+    canWriteE3, e3Ready, e3Loading, e3Error, e3Stats, e3Operations, refreshE3,
     canWriteE4, canRefundE4, orders, e4Loading, e4Error, e4Page, e4PageSize, e4Total, e4Filter, e4Keyword, setE4Page, setE4PageSize, setE4Filter, setE4Keyword, refreshE4, orderState, isCancelled, isRefunded, terminalOf, openOrder,
     canWriteE5, canForceActivateE5, canUnbindE5, canPauseDcE5,
     runE5DeviceAction, runE5UserBatch,
@@ -957,7 +961,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
 
   const headerRight =
-    tab === "E1" ? (canWriteE1 ? <button className="f-cta" onClick={() => openSku()}>+ 新增 SKU</button> : undefined)
+    tab === "E1" ? (canUseE1Writes ? <button className="f-cta" onClick={() => openSku()}>+ 新增 SKU</button> : undefined)
       : tab === "E2" ? (canWriteE2 ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
         : tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
           : undefined;
@@ -1462,7 +1466,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 isE6Batch ? (businessValue[key] ?? "").trim() : canonicalE3Value(paramKey, (businessValue[key] ?? "").trim()),
               ]));
               await propose(ctx.toast, {
-                action: mc.name, obj: mc.paramKeys.map(({ paramKey }) => paramKey).join(","), before: "批量配置变更前", after: "批量配置待审批", type: def.type,
+                action: mc.name, obj: mc.paramKeys.map(({ paramKey }) => paramKey).sort().join(","), before: "批量配置变更前", after: "批量配置待审批", type: def.type,
                 amplifies: !!mc.amplify, gate: { roles: [] }, gateLabel: def.gateLabel, reason, sourceDomain: isE6Batch ? "E6" : "E3",
                 command: def.buildCommand({ values }), targets: def.buildTargets?.({ values }),
               });

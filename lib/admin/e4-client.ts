@@ -1,4 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { parseE4OrderPage } from "@/lib/admin/e456-overview-contract";
 
 export interface E4Order {
   id: string;
@@ -164,7 +165,9 @@ function fromOrder(order: BackendOrder): E4Order {
 }
 
 export async function fetchE4OrderPage(query: E4OrderQuery = {}): Promise<E4OrderPage> {
-  const page = await e4Request<PageResult<BackendOrder>>(`/orders${queryString(query)}`);
+  const page = parseE4OrderPage<PageResult<BackendOrder>>(
+    await e4Request<unknown>(`/orders${queryString(query)}`),
+  );
   return {
     total: toNumber(page.total),
     pageNum: toNumber(page.pageNum, query.pageNum ?? 1),

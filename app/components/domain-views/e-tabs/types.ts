@@ -120,6 +120,7 @@ export interface EViewCtx {
   openEditTask: (t: OpsTask) => void;        // 编辑任务全字段(预填抽屉)
   delTask: (t: { id: string; n: string }) => void;
   // E3 生命周期 & Trade-in(配置/指标/tx 监控均走后端 API)
+  canWriteE3: boolean;
   e3Ready: boolean;
   e3Loading: boolean;
   e3Error: string | null;

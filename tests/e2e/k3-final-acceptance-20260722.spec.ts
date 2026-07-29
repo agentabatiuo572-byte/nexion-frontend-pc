@@ -20,6 +20,8 @@ const FINANCE_USERNAME = "k3_accept_fin_0722f";
 const APP_USER_ID = 990731;
 const APP_PHONE = "7000000323";
 const APP_ADDRESS = "TK3FinalAcceptanceAddress";
+const K3_D4_OPENING_BIZ_NO = `K3-OPENING-${APP_USER_ID}-FINAL`;
+const K3_D4_NEX_OPENING_BIZ_NO = `K3-OPENING-NEX-${APP_USER_ID}-FINAL`;
 const INVALID_RULE_ID = "WR-K3-FAILCLOSED-FINAL";
 const ADDRESS_RULE_ID = "WR-K3-ADDRESS-PROVIDER-FINAL";
 const REASON = "K3最终验收提现规则闭环和异常恢复验证";
@@ -44,7 +46,13 @@ const totpCounters = new Map<string, number>();
 const runSummary: Record<string, unknown> = {
   startedAt: new Date().toISOString(),
   runTag: RUN_TAG,
-  fixtures: { appUserId: APP_USER_ID, invalidRuleId: INVALID_RULE_ID, addressRuleId: ADDRESS_RULE_ID },
+  fixtures: {
+    appUserId: APP_USER_ID,
+    d4OpeningBizNo: K3_D4_OPENING_BIZ_NO,
+    d4NexOpeningBizNo: K3_D4_NEX_OPENING_BIZ_NO,
+    invalidRuleId: INVALID_RULE_ID,
+    addressRuleId: ADDRESS_RULE_ID,
+  },
   assertions: {},
 };
 
@@ -78,14 +86,28 @@ test.beforeAll(async () => {
     INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,kyc_status,status,created_at,updated_at,is_deleted)
     SELECT ${APP_USER_ID},'86','${APP_PHONE}',password_hash,'K3最终验收用户','K3FINAL0722','APPROVED','ACTIVE',DATE_SUB(NOW(),INTERVAL 90 DAY),NOW(),0
       FROM nx_admin WHERE username='superadmin' AND is_deleted=0 LIMIT 1;
-    UPDATE nx_kyc_profile
-       SET status='APPROVED',country='JP',applicant_name='K3 Final Fixture',document_type='PASSPORT',
-           document_last4='0722',submitted_at=DATE_SUB(NOW(),INTERVAL 91 DAY),reviewed_by='k3-acceptance',
-           reviewed_at=DATE_SUB(NOW(),INTERVAL 90 DAY),expires_at=DATE_ADD(NOW(),INTERVAL 1 YEAR),
-           paired_address='${APP_ADDRESS}',network='TRC20',paired_at=NOW(),trigger_source='K3_ACCEPTANCE'
-     WHERE user_id=${APP_USER_ID};
+    INSERT INTO nx_kyc_profile
+      (user_id,kyc_no,status,country,applicant_name,document_type,document_last4,submitted_at,
+       reviewed_by,reviewed_at,expires_at,paired_address,network,paired_at,trigger_source,version,is_deleted)
+    VALUES
+      (${APP_USER_ID},'K3-FINAL-${APP_USER_ID}','APPROVED','JP','K3 Final Fixture','PASSPORT','0722',
+       DATE_SUB(NOW(),INTERVAL 91 DAY),'k3-acceptance',DATE_SUB(NOW(),INTERVAL 90 DAY),
+       DATE_ADD(NOW(),INTERVAL 1 YEAR),'${APP_ADDRESS}','TRC20',NOW(),'K3_ACCEPTANCE',0,0)
+    ON DUPLICATE KEY UPDATE
+      status=VALUES(status),country=VALUES(country),applicant_name=VALUES(applicant_name),
+      document_type=VALUES(document_type),document_last4=VALUES(document_last4),
+      submitted_at=VALUES(submitted_at),reviewed_by=VALUES(reviewed_by),reviewed_at=VALUES(reviewed_at),
+      expires_at=VALUES(expires_at),paired_address=VALUES(paired_address),network=VALUES(network),
+      paired_at=VALUES(paired_at),trigger_source=VALUES(trigger_source),version=version+1,is_deleted=0;
     INSERT INTO nx_user_wallet(user_id,usdt_available,nex_available,pending_withdraw,lifetime_earned,version,is_deleted)
     VALUES(${APP_USER_ID},10000,100,0,0,0,0);
+    INSERT INTO nx_wallet_ledger
+      (user_id,biz_no,biz_type,asset,direction,amount,balance_after,status,remark,created_at,updated_at,is_deleted)
+    VALUES
+      (${APP_USER_ID},'${K3_D4_OPENING_BIZ_NO}','K3_ACCEPTANCE_OPENING','USDT','IN',10000,10000,'POSTED',
+       'K3 isolated acceptance D4 USDT opening balance',NOW(),NOW(),0),
+      (${APP_USER_ID},'${K3_D4_NEX_OPENING_BIZ_NO}','K3_ACCEPTANCE_OPENING','NEX','IN',100,100,'POSTED',
+       'K3 isolated acceptance D4 NEX opening balance',NOW(),NOW(),0);
     INSERT INTO nx_admin_risk_withdraw_rule
       (rule_id,dimension,condition_text,action,state,built_in,priority,version,created_by,is_deleted)
     VALUES('${INVALID_RULE_ID}','amount','legacy magic expression','freeze','active',0,99,0,'k3-acceptance',0);
@@ -144,7 +166,7 @@ test("K4 当前分可用、陈旧分和 K3 非法/地址信誉 provider 缺失�
   const token = await appLogin(page);
   const response = await appSubmit(page, token, 100, runKey("k3-final-invalid-active"));
   const payload = await response.json() as Envelope<unknown>;
-  expect(response.status()).toBe(503);
+  expect(response.status(), JSON.stringify(payload)).toBe(503);
   expect(payload.message).toBe("K3_WITHDRAWAL_DECISION_UNAVAILABLE");
   expect(walletAndOrderSnapshot()).toEqual(before);
 
@@ -182,7 +204,7 @@ test("K4 当前分可用、陈旧分和 K3 非法/地址信誉 provider 缺失�
   const addressBefore = walletAndOrderSnapshot();
   const addressResponse = await appSubmit(page, token, 100, runKey("k3-final-address-provider-unavailable"));
   const addressPayload = await addressResponse.json() as Envelope<unknown>;
-  expect(addressResponse.status()).toBe(503);
+  expect(addressResponse.status(), JSON.stringify(addressPayload)).toBe(503);
   expect(addressPayload.message).toBe("K3_WITHDRAWAL_DECISION_UNAVAILABLE");
   expect(walletAndOrderSnapshot()).toEqual(addressBefore);
   mysql(`UPDATE nx_admin_risk_withdraw_rule SET is_deleted=1 WHERE rule_id='${ADDRESS_RULE_ID}';`);
@@ -585,7 +607,7 @@ async function login(page: Page, username: string) {
     const secret = loginPayload.data?.mfa?.manualKey ?? totpSecrets.get(username);
     if (!secret) throw new Error(`K3_TOTP_SECRET_UNAVAILABLE_FOR_${username}`);
     totpSecrets.set(username, secret);
-    await otpInput.fill(nextTotp(username, secret));
+    await otpInput.fill(await nextTotp(username, secret));
     await page.getByRole("button", { name: "验证并进入", exact: true }).click();
   }
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
@@ -663,6 +685,18 @@ function cleanupFixtures() {
     DELETE FROM nx_admin_risk_withdraw_hit WHERE user_no='U00${APP_USER_ID}';
     DELETE FROM nx_risk_decision WHERE user_id=${APP_USER_ID} AND biz_type='WITHDRAW_RULE';
     DELETE FROM nx_wallet_ledger WHERE user_id=${APP_USER_ID} AND biz_no LIKE 'WD-%';
+    DELETE FROM nx_wallet_ledger
+     WHERE user_id=${APP_USER_ID}
+       AND biz_no='${K3_D4_OPENING_BIZ_NO}'
+       AND biz_type='K3_ACCEPTANCE_OPENING'
+       AND asset='USDT'
+       AND direction='IN';
+    DELETE FROM nx_wallet_ledger
+     WHERE user_id=${APP_USER_ID}
+       AND biz_no='${K3_D4_NEX_OPENING_BIZ_NO}'
+       AND biz_type='K3_ACCEPTANCE_OPENING'
+       AND asset='NEX'
+       AND direction='IN';
     DELETE FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID};
     DELETE FROM nx_admin_risk_withdraw_rule
      WHERE (rule_id IN ('${INVALID_RULE_ID}','${ADDRESS_RULE_ID}') ${ruleClause} OR created_by='${RISK_USERNAME}');
@@ -705,8 +739,13 @@ function runKey(base: string) {
 function collectRuntimeErrors(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(`pageerror:${error.message}`));
+  page.on("response", (response) => {
+    if (response.status() === 404) {
+      errors.push(`http404:${response.request().method()}:${new URL(response.url()).pathname}`);
+    }
+  });
   page.on("console", (message) => {
-    if (message.type() === "error" && !/favicon|Failed to load resource.*(?:401|403|409|422|500|502|503)/i.test(message.text())) {
+    if (message.type() === "error" && !/favicon|Failed to load resource.*(?:401|403|404|409|422|500|502|503)/i.test(message.text())) {
       errors.push(`console:${message.text()}`);
     }
   });
@@ -749,7 +788,7 @@ async function envelope<T>(response: { json(): Promise<unknown> }, requireSucces
   return payload;
 }
 
-function nextTotp(username: string, secret: string) {
+async function nextTotp(username: string, secret: string) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
   let bits = "";
@@ -762,8 +801,17 @@ function nextTotp(username: string, secret: string) {
   for (let index = 0; index < bytes.length; index += 1) {
     bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
   }
-  const currentCounter = Math.floor(Date.now() / 30_000);
+  let currentCounter = Math.floor(Date.now() / 30_000);
   const previousCounter = totpCounters.get(username);
+  if (previousCounter != null && previousCounter >= currentCounter + 1) {
+    const exhaustedWindow = currentCounter;
+    await expect.poll(() => Math.floor(Date.now() / 30_000), {
+      message: `等待 ${username} 的下一个真实 TOTP 时间窗`,
+      timeout: 35_000,
+      intervals: [200],
+    }).toBeGreaterThan(exhaustedWindow);
+    currentCounter = Math.floor(Date.now() / 30_000);
+  }
   const counter = previousCounter == null || previousCounter < currentCounter
     ? currentCounter
     : previousCounter + 1;

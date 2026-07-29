@@ -782,7 +782,9 @@ function conversationStatus(value: string | undefined): SessionConvo["status"] {
   return "open";
 }
 
-export function toBackendConversationStatus(value: SessionConvo["status"]) {
+type ConversationExpectedStatus = SessionConvo["status"] | "transferred";
+
+export function toBackendConversationStatus(value: ConversationExpectedStatus) {
   return value.toUpperCase();
 }
 
@@ -1722,28 +1724,28 @@ export const mContentActions = {
       body: JSON.stringify(withReason({ ...body, expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, transfer?.reason || reason)),
     });
   },
-  acceptTransfer(conversationNo: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
+  acceptTransfer(conversationNo: string, expectedStatus: ConversationExpectedStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/accept`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  returnTransfer(conversationNo: string, target: "from" | "standby", expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
+  returnTransfer(conversationNo: string, target: "from" | "standby", expectedStatus: ConversationExpectedStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/return`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ target, expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  waitTransfer(conversationNo: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
+  waitTransfer(conversationNo: string, expectedStatus: ConversationExpectedStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/wait`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
       body: JSON.stringify(withReason({ expectedStatus: toBackendConversationStatus(expectedStatus), expectedVersion }, reason)),
     });
   },
-  fallbackTransfer(conversationNo: string, expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
+  fallbackTransfer(conversationNo: string, expectedStatus: ConversationExpectedStatus, expectedVersion: number, reason: string, idempotencyKey?: string) {
     return apiRequest<ContentConversationView>(`/conversations/${encodeURIComponent(conversationNo)}/transfer/fallback`, {
       method: "POST",
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,

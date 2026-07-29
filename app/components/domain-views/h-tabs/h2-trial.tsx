@@ -80,6 +80,7 @@ function ParamRow({
   onChanged: (next: H2Model) => void;
 }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const canWrite = ctx.can("growth_h2_write");
   const current = text(param.cur);
   const isDay = isTrialDayParam(param.key);
   const displayCurrent = isDay ? `${current} 天` : current;
@@ -117,7 +118,7 @@ function ParamRow({
       <span className="v">{displayCurrent}</span>
       <button
         className={`l-btn sm${param.hot ? " mc" : ""}`}
-        disabled={readOnly}
+        disabled={readOnly || !canWrite}
         title={readOnly ? (param.key === "phaseOpen" ? "由 H1 当前阶段派发，只读" : "产品标识仅通过版本治理变更") : undefined}
         onClick={() => {
           if (param.hot || isDay) {
@@ -141,7 +142,7 @@ function ParamRow({
           });
         }}
       >
-        {readOnly ? "只读" : "调整"}
+        {readOnly ? "只读" : canWrite ? "调整" : "无写权限"}
       </button>
     </div>
   );
@@ -149,6 +150,9 @@ function ParamRow({
 
 export function H2Trial({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const canWrite = ctx.can("growth_h2_write");
+  const canCancel = ctx.can("growth_h2_session_cancel");
+  const canCharge = ctx.can("growth_h2_session_charge");
   const propose = usePropose();
   const [model, setModel] = useState<H2Model | null>(null);
   const [loading, setLoading] = useState(true);
@@ -303,7 +307,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
             <span className="ttl">试用参数 · 实时生效</span>
             <span className="sub">· 每次结算读最新后端配置</span>
             <div className="r">
-              <button className="l-btn sm mc" onClick={openPushKill} disabled={!!model.autoPushKilled}>
+              <button className="l-btn sm mc" onClick={openPushKill} disabled={!!model.autoPushKilled || !canWrite}>
                 {model.autoPushKilled ? "auto-push 已急停" : "auto-push 急停"}
               </button>
             </div>
@@ -381,10 +385,10 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
                         <span style={{ color: "var(--ink-4)" }}>-</span>
                       ) : (
                         <>
-                          <button className="l-btn sm mc" onClick={() => openSessionCancel(session)} style={{ marginRight: 6 }}>
+                          <button className="l-btn sm mc" onClick={() => openSessionCancel(session)} disabled={!canCancel} style={{ marginRight: 6 }}>
                             强制取消
                           </button>
-                          <button className="l-btn sm mc" onClick={() => openSessionCharge(session)}>
+                          <button className="l-btn sm mc" onClick={() => openSessionCharge(session)} disabled={!canCharge}>
                             强制扣款
                           </button>
                         </>

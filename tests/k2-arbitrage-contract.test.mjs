@@ -9,6 +9,16 @@ const highOps = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import
 const a2Client = readFileSync(new URL("../lib/admin/a2-client.ts", import.meta.url), "utf8");
 const designKit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
 const f4Ops = readFileSync(new URL("../app/components/domain-views/f-tabs/f4-ops.tsx", import.meta.url), "utf8");
+const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
+const liveAcceptance = readFileSync(new URL("./e2e/k2-live-acceptance-20260722.spec.ts", import.meta.url), "utf8");
+const f5TriggerRepair = readFileSync(
+  new URL("../../nexion-backend/scripts/migrations/20260728_f5_commission_trigger_collation.sql", import.meta.url),
+  "utf8",
+);
+const riskService = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/risk/application/OpsRiskService.java", import.meta.url),
+  "utf8",
+);
 
 test("K2 fails closed on stale data and only reloads its own overview", () => {
   const body = component.slice(component.indexOf("export function K2Arbitrage"));
@@ -16,6 +26,24 @@ test("K2 fails closed on stale data and only reloads its own overview", () => {
   assert.ok(body.indexOf("if (ctx.contentError)") < body.lastIndexOf("return ("));
   assert.match(client, /fetchK2ArbitrageOverview/);
   assert.match(kView, /tab === "K2"[\s\S]*fetchK2ArbitrageOverview/);
+});
+
+test("K2 rejects malformed successful overview payloads instead of normalizing them to an empty state", () => {
+  assert.match(client, /K2_RESPONSE_INVALID/);
+  assert.match(client, /requiredK2Record\(raw,\s*"arbitrage"\)/);
+  assert.match(client, /data\.serverCanonical !== true/);
+  assert.match(client, /data\.domain !== "K2"/);
+  assert.match(client, /K2_STAT_KEYS/);
+  assert.match(client, /K2_PARAM_KEYS/);
+  assert.match(client, /validateK2ParamValue/);
+  assert.match(client, /requiredK2Array\(data\.stats,\s*"arbitrage\.stats"\)/);
+  assert.match(client, /requiredK2Array\(data\.views,\s*"arbitrage\.views"\)/);
+  assert.match(client, /requiredK2StringArray\(data\.sources,\s*"arbitrage\.sources"\)/);
+  assert.match(errorMessages, /K2_RESPONSE_INVALID/);
+  assert.match(errorMessages, /旧数据与写操作已隐藏/);
+  assert.match(riskService, /canonicalK2Stats\(rows\)/);
+  assert.match(riskService, /response\.put\("serverCanonical", true\)/);
+  assert.match(riskService, /response\.put\("domain", "K2"\)/);
 });
 
 test("K2 exact permissions guard every visible write action", () => {
@@ -84,4 +112,29 @@ test("K2 renders canonical backend disposition codes as business labels", () => 
   assert.match(component, /cluster_frozen:\s*"已联动 K1 冻结"/);
   assert.match(component, /K2_DISPOSITION_LABELS\[disposed\]\s*\?\?\s*"已处置"/);
   assert.doesNotMatch(component, />\{disposed\}</);
+});
+
+test("K2 live acceptance always targets the explicitly selected isolated database", () => {
+  assert.match(liveAcceptance, /const DB_NAME = process\.env\.K2_DB_NAME \|\| "nexion";/);
+  assert.match(liveAcceptance, /\["-uroot", "-D", DB_NAME,/);
+  assert.doesNotMatch(liveAcceptance, /\["-uroot", "-D", "nexion",/);
+});
+
+test("K2 temporary accounts follow the server credential contract and leave no privilege residue", () => {
+  assert.match(liveAcceptance, /created\.data\?\.temporaryPassword/);
+  assert.match(liveAcceptance, /account\.data\?\.temporaryPassword/);
+  assert.match(liveAcceptance, /\/reset-2fa/);
+  assert.match(liveAcceptance, /\/sessions\/revoke/);
+  assert.match(liveAcceptance, /expectedVersion: String\(current\.version\)/);
+  assert.match(liveAcceptance, /role: "unassigned", status: "disabled", tfa: false, sessions: 0/);
+});
+
+test("K2 commission fixtures remain insertable across the F5 legacy collation boundary", () => {
+  assert.match(f5TriggerRepair, /ALTER TABLE nx_commission_operation[\s\S]*utf8mb4_0900_ai_ci/);
+  assert.match(f5TriggerRepair, /ALTER TABLE nx_commission_user_suspension[\s\S]*utf8mb4_0900_ai_ci/);
+  assert.match(f5TriggerRepair, /DROP TRIGGER IF EXISTS trg_nx_commission_event_suspension/);
+  assert.match(
+    f5TriggerRepair,
+    /s\.kind = LOWER\(NEW\.commission_type\) COLLATE utf8mb4_0900_ai_ci/,
+  );
 });

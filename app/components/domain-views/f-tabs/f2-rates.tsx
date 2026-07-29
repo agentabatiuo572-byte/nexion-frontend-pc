@@ -16,6 +16,8 @@ function percentLabel(value: number) {
 
 export function F2Rates({ ctx }: { ctx: FViewCtx }) {
   const hasUnilevelRows = ctx.f2Unilevel.length > 0;
+  const canRoyaltyRate = ctx.can("network_f2_royalty_rate");
+  const canPolicyAmplify = ctx.can("network_f2_policy_amplify");
   const totalUnilevelPct = ctx.f2Unilevel.reduce((sum, row) => sum + row.usdt, 0);
   // Partner Status 是权益档，不改变 L1-L7 费率。兼容读取旧 bronze/silver/gold，
   // 提交时只写当前 Standard/Verified/Premium/Diamond schema。
@@ -96,21 +98,21 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                 <div key={u.l} className="casc-row">
                   <span className={`lchip${u.direct ? "" : " ext"}`}>{u.l}</span>
                   <div className="rate-bar"><div className={`f${u.direct ? "" : " ext"}`} style={{ width: `${w}%` }}><span className="pct">{eff}</span></div></div>
-                  <button className="nex-val" title="点击调整 NEX 奖励/$1" style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
+                  {canRoyaltyRate ? <button className="nex-val" title="点击调整 NEX 奖励/$1" style={{ background: "none", border: 0, padding: 0, cursor: "pointer" }}
                     onClick={() => ctx.openActionConfirm({
                       name: `网络版税 ${u.l} NEX 奖励调整`, amplify: true, op: "param", paramKey: `F.unilevel.nex.${u.l}`,
                       edit: { kind: "text", current: nv }, detail: `${u.l} NEX 奖励/$1 当前 ${nv} · NEX 派发为资金流出,受 B1 覆盖率约束`,
-                    })}>{nv}<small>NEX/$1</small></button>
+                    })}>{nv}<small>NEX/$1</small></button> : <span className="nex-val">{nv}<small>NEX/$1</small></span>}
                   <div style={{ fontSize: 11.5, fontWeight: u.direct ? 600 : 400, color: u.direct ? "var(--brand)" : "var(--ink-4)" }}>{u.ui}</div>
                   {u.direct ? (
                     <span className="tag" style={{ justifySelf: "end" }}>固定 10%</span>
-                  ) : (
+                  ) : canRoyaltyRate ? (
                     <button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
                       name: `网络版税 ${u.l} 费率调整`, amplify: true, op: "param", paramKey: `F.unilevel.${u.l}`,
                       edit: { kind: "number", current: formatNumber(u.usdt), unit: "%" },
                       detail: `${u.l} 当前 USDT ${eff} · NEX ${nv}/$1 · 改后对下一笔结算生效,不回溯已计提`,
                     })}>调整</button>
-                  )}
+                  ) : <span />}
                 </div>
               );
             })}
@@ -122,7 +124,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
           </div>
           <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
             <span>单层暂停 · L1–L7 各层独立暂停网络版税派发</span>
-            <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
+            {canPolicyAmplify && <button className="fbtn" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
               name: "单层暂停管理(L1–L7)",
               businessForm: {
                 kind: "multi-field",
@@ -147,7 +149,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                 }
                 ctx.toast("单层暂停已更新 · 改后对下一笔结算生效");
               },
-            })}>单层暂停管理</button>
+            })}>单层暂停管理</button>}
           </div>
         </section>
 
@@ -170,7 +172,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
           <div style={{ padding: "0 18px 14px", fontSize: 11.5, color: "var(--ink-4)", lineHeight: 1.55 }}>按月度网络活跃度判定并解锁权益；L1 固定 10%，Partner Status 不叠加、不升档任何版税费率。</div>
           <div className="casc-foot" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", fontSize: 11.5, color: "var(--ink-4)", padding: "10px 18px 14px", borderTop: "1px solid var(--border)" }}>
             <span>门槛 · 当前 <b style={{ color: "var(--ink-2)" }}>${ptStandard}/${ptVerified}/${ptPremium}/${ptDiamond}</b>(Standard/Verified/Premium/Diamond)</span>
-            <button className="fbtn primary" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
+            {canPolicyAmplify && <button className="fbtn primary" style={{ marginLeft: "auto" }} onClick={() => ctx.openActionConfirm({
               name: "Partner Status 4 档权益门槛调整", amplify: false,
               businessForm: {
                 kind: "multi-field",
@@ -199,7 +201,7 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
                 await ctx.updateF2Config("F.partner.tiers", JSON.stringify({ standard, verified, premium, diamond }), reason);
                 ctx.toast(`已提交 A2 审批 · Partner Status 门槛 $${standard}/$${verified}/$${premium}/$${diamond}`);
               },
-            })}>调整权益门槛</button>
+            })}>调整权益门槛</button>}
           </div>
         </section>
       </div>
@@ -212,11 +214,11 @@ export function F2Rates({ ctx }: { ctx: FViewCtx }) {
               <div className="pk">{p.name}<span className="tag">{p.key}</span></div>
               <div className={`pv${p.vcls ? " " + p.vcls : ""}`}>{eff}</div>
               <div className="psub">{p.sub}</div>
-              <button className={`fbtn primary${p.vamp ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
+              {canPolicyAmplify && <button className={`fbtn primary${p.vamp ? " amp" : ""}`} onClick={() => ctx.openActionConfirm({
                 name: `${p.name}调整`, amplify: p.amp, op: "param", paramKey: p.key,
                 edit: { kind: "text", current: eff, unit: p.unit },
                 detail: `${p.name} 当前 ${eff}` + (p.amp ? " · 此项为放大资金流出动作,须核验 B1 覆盖率。" : " · 改后对下一笔结算生效。"),
-              })}>调整</button>
+              })}>调整</button>}
             </div>
           );
         })}

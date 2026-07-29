@@ -11,6 +11,7 @@ const PASSWORD = process.env.NEXION_ADMIN_PASSWORD;
 const RUN_ID = process.env.J4_RUN_ID || `J4-20260722-${Date.now()}`;
 const REQUESTED_CAMPAIGN_NO = process.env.J4_I3_CAMPAIGN_NO;
 const MYSQL_PASSWORD = process.env.NEXION_MYSQL_PASSWORD;
+const MYSQL_DATABASE = process.env.NEXION_MYSQL_DATABASE?.trim() || "nexion";
 const MYSQL_EXE = process.env.NEXION_MYSQL_EXE
   || "D:/software/MySQL/MySQL Server 8.0/bin/mysql.exe";
 const EVIDENCE_DIR = process.env.J4_EVIDENCE_DIR
@@ -752,14 +753,14 @@ async function apiPayload(response: APIResponse | Response) {
 }
 
 function mysqlExec(statement: string) {
-  execFileSync(MYSQL_EXE, ["-h127.0.0.1", "-uroot", "--default-character-set=utf8mb4", "-N", "-B", "nexion", "-e", statement], {
+  execFileSync(MYSQL_EXE, ["-h127.0.0.1", "-uroot", "--default-character-set=utf8mb4", "-N", "-B", MYSQL_DATABASE, "-e", statement], {
     env: { ...process.env, MYSQL_PWD: MYSQL_PASSWORD! },
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
 
 function mysqlScalar(statement: string) {
-  return execFileSync(MYSQL_EXE, ["-h127.0.0.1", "-uroot", "--default-character-set=utf8mb4", "-N", "-B", "nexion", "-e", statement], {
+  return execFileSync(MYSQL_EXE, ["-h127.0.0.1", "-uroot", "--default-character-set=utf8mb4", "-N", "-B", MYSQL_DATABASE, "-e", statement], {
     env: { ...process.env, MYSQL_PWD: MYSQL_PASSWORD! },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],

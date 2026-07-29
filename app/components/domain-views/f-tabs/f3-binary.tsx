@@ -15,6 +15,9 @@ function metricClass(tone: string) {
 }
 
 export function F3Binary({ ctx }: { ctx: FViewCtx }) {
+  const canSettle = ctx.can("network_f3_write");
+  const canConfigure = ctx.can("network_f3_match_rate");
+  const canPause = ctx.can("network_f3_engine_pause");
   const [lookupText, setLookupText] = useState("");
   const [selectedUser, setSelectedUser] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -142,7 +145,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <span className="ph-sub">A/B 轨 GV · Balance Match · 状态</span>
           <span className="ph-r" style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <Link className="fbtn" href="/network/commissions">前往 F5 补发 / 冲正</Link>
-            <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
+            {canSettle && <button className="fbtn primary" onClick={() => ctx.openActionConfirm({
               name: "执行双轨结算",
               businessForm: {
                 kind: "multi-field",
@@ -168,7 +171,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
                   ? `结算已存在 · 已安全重放 · 佣金事件 ${result.commissionEventId ?? "—"}`
                   : `结算已提交 · ${usd(result.amountUsdt)} 进入冷却 · D4/A2/A4 已联动`);
               },
-            })}>执行结算</button>
+            })}>执行结算</button>}
           </span>
         </div>
         <div className="bin-search">
@@ -269,7 +272,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">两轨结算门槛</span><span className="v">{text(thEff)}</span></div>
           <div className="ckv"><span className="k">沉淀池(未达门槛)</span><span className="v">{text(cfg?.residualPool)}</span></div>
           <div className="ckv"><span className="k">沉淀处置</span><span className="v" style={{ color: "var(--ink-3)" }}>{text(residualEff)}</span></div>
-          <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ name: "两轨结算门槛调整", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `两轨结算最低门槛 · 当前 ${text(thEff)} · 改后对下一周期结算生效,不影响本期已计提。` })}>调整门槛</button></div>
+          {canConfigure && <div className="cfg-foot"><button className="fbtn primary" onClick={() => ctx.openActionConfirm({ name: "两轨结算门槛调整", op: "param", paramKey: "F.binary.threshold", edit: { kind: "text", current: thEff }, detail: `两轨结算最低门槛 · 当前 ${text(thEff)} · 改后对下一周期结算生效,不影响本期已计提。` })}>调整门槛</button></div>}
         </div>
 
         <div className="cfg-card">
@@ -278,7 +281,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">当前比例</span><span className="v" style={{ color: "var(--brand)" }}>{text(rateEff)}</span></div>
           <div className="ckv"><span className="k">今日匹配总额</span><span className="v">{usd(ctx.f3DailyMatchUsd)}</span></div>
           <div className="ckv"><span className="k">月累计匹配</span><span className="v">{usd(ctx.f3MonthlyMatchedUsd)}</span></div>
-          <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
+          {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
             name: "平衡匹配比例调整",
             amplify: true,
             op: "param",
@@ -286,7 +289,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             edit: { kind: "text", current: rateEff, unit: "%" },
             detail: `min(A,B) × 该比例日结算 · 当前 ${text(rateEff)} · 放大佣金流出,受 B1 覆盖率约束。改后对下一周期结算生效,不回溯已计提。`,
             completionCopy: "保存后只影响下一周期结算，不回溯已计提。",
-          })}>调整比例</button></div>
+          })}>调整比例</button></div>}
         </div>
 
         <div className="cfg-card">
@@ -295,9 +298,9 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">自动安置</span><span className="v" style={{ color: spillOn ? "var(--success)" : "var(--ink-3)" }}>{spillOn ? "已启用" : "已关闭"}</span></div>
           <div className="ckv"><span className="k">近 7d 自动分配</span><span className="v">{ctx.f3AutoPlacement7dCount.toLocaleString()} 成员</span></div>
           <div className="ckv"><span className="k">归零时间</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
-          <div className="cfg-foot">
+          {canConfigure && <div className="cfg-foot">
             <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "自动安置策略调整", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "自动安置开关 · 关闭后新成员需手动安置(运营压力↑)。" })}>分配策略</button>
-          </div>
+          </div>}
         </div>
 
         <div className="cfg-card">
@@ -305,7 +308,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="cs">双轨对碰派发节奏 + 沉淀池处置策略 · 改后下一周期生效</div>
           <div className="ckv"><span className="k">结算周期</span><span className="v" style={{ color: "var(--brand)" }}>{text(periodEff)}</span></div>
           <div className="ckv"><span className="k">沉淀处置策略</span><span className="v">{text(residualEff)}</span></div>
-          <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
+          {canConfigure && <div className="cfg-foot"><button className="fbtn primary amp" onClick={() => ctx.openActionConfirm({
             name: "结算周期 & 沉淀处置调整",
             op: "param-multi",
             amplify: true,
@@ -324,7 +327,7 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
             ],
             detail: "结算周期(每日/每周/每月) + 沉淀处置(每月清零/每次对碰清零/转结) · server-canonical · 改后对下一周期结算生效,不回溯已计提;「转结」放大负债须 B1 覆盖率评估。",
             completionCopy: "保存后只影响下一周期结算，不回溯已计提。",
-          })}>调整周期 &amp; 策略</button></div>
+          })}>调整周期 &amp; 策略</button></div>}
         </div>
 
         <div className="cfg-card">
@@ -332,13 +335,13 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="cs">⚡ Kill-switch · 暂停整个双轨 Balance Match 派发</div>
           <div className="ckv"><span className="k">引擎状态</span><span className="v" style={{ color: binaryPaused ? "var(--danger)" : "var(--success)" }}>{binaryPaused ? "已暂停" : "运行中"}</span></div>
           <div className="ckv"><span className="k">影响范围</span><span className="v" style={{ color: "var(--ink-3)" }}>{binaryPaused ? "全平台双轨派发冻结" : "正常按周期派发"}</span></div>
-          <div className="cfg-foot"><button className={`fbtn${binaryPaused ? " primary" : " danger"}`} onClick={() => ctx.openActionConfirm({
+          {canPause && <div className="cfg-foot"><button className={`fbtn${binaryPaused ? " primary" : " danger"}`} onClick={() => ctx.openActionConfirm({
             name: binaryPaused ? "恢复双轨结算引擎" : "暂停双轨结算引擎",
             op: "dispose", paramKey: "F.binary.paused", fixedVal: binaryPaused ? "off" : "on",
             detail: binaryPaused
               ? "恢复双轨结算 · 下一周期起正常 Balance Match 派发,写 A2 审计。"
               : "暂停双轨结算引擎 · 全平台 Balance Match 派发冻结,影响所有双轨用户结算,属极高风险止血动作,写 A2 审计。",
-          })}>{binaryPaused ? "恢复引擎" : "暂停引擎"}</button></div>
+          })}>{binaryPaused ? "恢复引擎" : "暂停引擎"}</button></div>}
         </div>
       </div>
 

@@ -46,7 +46,7 @@ test("I3 权威读取失败时不展示伪业务数据，恢复接口后可重�
     }),
   );
   await openI3(page);
-  await expect(page.getByText("I3 暂无真实接口数据")).toBeVisible();
+  await expect(page.getByText("I3 数据加载失败，请刷新重试", { exact: false })).toBeVisible();
   await expect(page.getByText("本月 campaign", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `${EVIDENCE_DIR}/03-read-failure-closed.png`, fullPage: true });
 

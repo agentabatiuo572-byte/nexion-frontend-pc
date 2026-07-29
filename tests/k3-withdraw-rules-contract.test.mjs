@@ -7,6 +7,8 @@ const client = readFileSync(new URL("../lib/admin/k-client.ts", import.meta.url)
 const kView = readFileSync(new URL("../app/components/domain-views/k-view.tsx", import.meta.url), "utf8");
 const verify = readFileSync(new URL("../scripts/verify.mjs", import.meta.url), "utf8");
 const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
+const liveAcceptance = readFileSync(new URL("./e2e/k3-final-acceptance-20260722.spec.ts", import.meta.url), "utf8");
+const j1GateGuard = readFileSync(new URL("./e2e/k3-j1-gate-guard-20260728.spec.ts", import.meta.url), "utf8");
 
 test("K3 reads only its own overview and fails closed instead of exposing stale rules", () => {
   assert.match(client, /export async function fetchK3WithdrawRuleOverview/);
@@ -18,6 +20,7 @@ test("K3 reads only its own overview and fails closed instead of exposing stale 
   assert.match(kView, /tab === "K3"[\s\S]*fetchK3WithdrawRuleOverview/);
   assert.match(component, /if \(ctx\.contentLoading\)/);
   assert.match(component, /if \(ctx\.contentError\)/);
+  assert.match(component, /authorities\.includes\("risk_k3_write"\)\s*&&\s*!ctx\.contentLoading\s*&&\s*!ctx\.contentError/);
   assert.ok(component.indexOf("if (ctx.contentError)") < component.lastIndexOf("return <div>"));
   assert.match(component, /仅重试 K3/);
 });
@@ -93,6 +96,14 @@ test("K3 dry-run returns an operator-visible batch result", () => {
   assert.doesNotMatch(component, /· \{dryRunResult\.status\}/);
   assert.match(client, /normalizeK3DryRunForWrite/);
   assert.match(client, /new K1OutcomeUncertainError/);
+  assert.match(client, /const stableCommandKey = commandKey \?\? newK1CommandKey\(\)/);
+  assert.match(client, /return normalizeK3DryRunForWrite\(value, stableCommandKey\)/);
+  assert.match(component, /function isOutcomeUncertain/);
+  assert.match(component, /commandAttempt\.current = null/);
+  assert.match(component, /if \(!outcomeUncertain\) commandAttempt\.current = null/);
+  assert.match(component, /setDryRunError\(message\)/);
+  assert.match(component, /role="alert"/);
+  assert.match(component, /结果暂不确定，请使用原操作重试/);
 });
 
 test("K3 has truthful empty states, localized failures and a verify gate", () => {
@@ -109,4 +120,40 @@ test("K3 has truthful empty states, localized failures and a verify gate", () =>
 test("K3 dimension cards keep unique React identity when multiple rules share one dimension", () => {
   assert.match(component, /key=\{`\$\{dimension\.ruleKey\}-\$\{dimension\.ruleId\}`\}/);
   assert.doesNotMatch(component, /key=\{dimension\.ruleKey\}/);
+});
+
+test("K3 isolated withdrawal fixture creates its own paired KYC profile", () => {
+  assert.match(liveAcceptance, /INSERT INTO nx_kyc_profile/);
+  assert.match(liveAcceptance, /ON DUPLICATE KEY UPDATE/);
+  assert.doesNotMatch(liveAcceptance, /\n\s*UPDATE nx_kyc_profile\n/);
+});
+
+test("K3 isolated withdrawal fixture seeds and exactly cleans D4 authoritative opening balance", () => {
+  assert.match(liveAcceptance, /K3_D4_OPENING_BIZ_NO/);
+  assert.match(liveAcceptance, /K3_D4_NEX_OPENING_BIZ_NO/);
+  assert.match(liveAcceptance, /INSERT INTO nx_wallet_ledger/);
+  assert.match(liveAcceptance, /'K3_ACCEPTANCE_OPENING','USDT','IN',10000,10000,'POSTED'/);
+  assert.match(liveAcceptance, /'K3_ACCEPTANCE_OPENING','NEX','IN',100,100,'POSTED'/);
+  assert.match(liveAcceptance, /biz_no='\$\{K3_D4_OPENING_BIZ_NO\}'/);
+  assert.match(liveAcceptance, /biz_no='\$\{K3_D4_NEX_OPENING_BIZ_NO\}'/);
+});
+
+test("K3 repeated MFA logins wait for the next real TOTP window without a fixed sleep", () => {
+  assert.match(liveAcceptance, /await expect\.poll\(\(\) => Math\.floor\(Date\.now\(\) \/ 30_000\)/);
+  assert.match(liveAcceptance, /timeout: 35_000/);
+  assert.doesNotMatch(liveAcceptance, /waitForTimeout\(30_000\)/);
+});
+
+test("K3 high-risk run is guarded by a real J1 API toggle and exact snapshot restoration", () => {
+  assert.match(j1GateGuard, /K3_J1_ALLOW_PENDING_CAS/);
+  assert.match(j1GateGuard, /auto-confirm\.pending/);
+  assert.match(j1GateGuard, /\/api\/admin\/emergency\/kill-switches\/withdraw/);
+  assert.match(j1GateGuard, /triggerBasis: "安全事件"/);
+  assert.match(j1GateGuard, /restoreMutableRows\(before\)/);
+  assert.match(j1GateGuard, /auto-confirm\.lastReminderAt/);
+  assert.match(j1GateGuard, /nx_admin_idempotency_record/);
+  assert.match(j1GateGuard, /nx_treasury_reserve_ledger/);
+  assert.match(j1GateGuard, /COVERAGE_BELOW_REDLINE/);
+  assert.match(j1GateGuard, /assertCoverageRestored/);
+  assert.match(j1GateGuard, /k3-final-acceptance-20260722\.spec\.ts/);
 });

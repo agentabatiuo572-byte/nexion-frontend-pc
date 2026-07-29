@@ -34,6 +34,59 @@ function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unkn
   };
 }
 
+const E3_CONFIG_TARGET_IDS: Readonly<Record<string, string>> = {
+  "E.device.capacity.band1DeltaPct": "capacityBand1DeltaPct",
+  "E.device.capacity.band2DeltaPct": "capacityBand2DeltaPct",
+  "E.device.capacity.band3DeltaPct": "capacityBand3DeltaPct",
+  "E.device.stageEarlyEnd": "stageEarlyEnd",
+  "E.device.stageMidEnd": "stageMidEnd",
+  "E.device.cycleMonths": "cycleMonths",
+  "E.device.capacity.floorPct": "capacityFloorPct",
+  "E.device.capacity.subsidyDays": "capacitySubsidyDays",
+  "E.device.capacity.applyTo.phone": "capacityApplyToPhone",
+  "E.device.capacity.applyTo.cloud-share": "capacityApplyToCloudShare",
+  "E.device.capacity.applyTo.pc-gpu": "capacityApplyToPcGpu",
+  "E.device.capacity.applyTo.stellarbox-s1": "capacityApplyToS1",
+  "E.device.capacity.applyTo.stellarbox-pro": "capacityApplyToPro",
+  "E.device.capacity.applyTo.stellarbox-pro-v2": "capacityApplyToProV2",
+  "E.device.capacity.applyTo.stellarrack-p1": "capacityApplyToRackP1",
+  "E.device.capacity.applyTo.stellarrack-p2": "capacityApplyToRackP2",
+  "E.device.taskLock.s1": "taskLockS1",
+  "E.device.taskLock.pro": "taskLockPro",
+  "E.device.taskLock.rack": "taskLockRack",
+  "E.tradein.enabled": "tradeinEnabled",
+  "E.tradein.ladder.cut1": "tradeinLadderCut1",
+  "E.tradein.ladder.cut2": "tradeinLadderCut2",
+  "E.tradein.ladder.cut3": "tradeinLadderCut3",
+  "E.tradein.ladder.cut4": "tradeinLadderCut4",
+  "E.tradein.ladder.credit1": "tradeinLadderCredit1",
+  "E.tradein.ladder.credit2": "tradeinLadderCredit2",
+  "E.tradein.ladder.credit3": "tradeinLadderCredit3",
+  "E.tradein.ladder.credit4": "tradeinLadderCredit4",
+  "E.tradein.ladder.credit5": "tradeinLadderCredit5",
+  "E.tradein.requireHigherPrice": "tradeinRequireHigherPrice",
+  "E.tradein.maxDevicesPerOrder": "tradeinMaxDevicesPerOrder",
+  "E.tradein.eligibility": "eligibility",
+  "E.tradein.promoMult": "promoMult",
+  "E.tradein.promo.cooldownDays": "promoCooldownDays",
+  "E.tradein.promo.maxPerSession": "promoMaxPerSession",
+  "E.tradein.promo.delaySec": "promoDelaySeconds",
+  "E.tradein.promo.minAgeDays": "promoMinAgeDays",
+  "E.tradein.promo.routes": "promoRoutes",
+  "E.tradein.inventorySoftMax": "inventorySoftMax",
+  "E.release.earlyAccess.enabled": "earlyAccessEnabled",
+  "E.release.earlyAccess.leadDays": "earlyAccessLeadDays",
+};
+
+/**
+ * A2 对象锁必须与 OpsDeviceService.normalizeE3Key 后的查询键完全一致。
+ * command 仍保留页面键供回放归一化；只有 target.id 使用后端 canonical key。
+ */
+export function canonicalE3ConfigTargetId(rawKey: unknown): string {
+  const key = String(rawKey ?? "").trim();
+  return E3_CONFIG_TARGET_IDS[key] ?? key;
+}
+
 /** 批 0:D2 提现放行/解冻。其余域 HIGH 动作分批补登记。 */
 export const HIGH_OPS: HighOpDef[] = [
   {
@@ -1198,7 +1251,11 @@ export const HIGH_OPS: HighOpDef[] = [
     targetType: "device_e3_config",
     buildCommand: (ctx) => ({ domain: "E", op: "e3_config",
       params: { key: String(ctx.key), value: String(ctx.value) } }),
-    buildTarget: (ctx) => ({ domain: "E", type: "device_e3_config", id: String(ctx.key) }),
+    buildTarget: (ctx) => ({
+      domain: "E",
+      type: "device_e3_config",
+      id: canonicalE3ConfigTargetId(ctx.key),
+    }),
   },
   {
     op: "e3_config_batch",
@@ -1212,11 +1269,17 @@ export const HIGH_OPS: HighOpDef[] = [
     buildTargets: (ctx) =>
       Object.keys((ctx.values as Record<string, unknown>) ?? {})
         .sort()
-        .map((key) => ({ domain: "E", type: "device_e3_config", id: key })),
+        .map((key) => ({
+          domain: "E",
+          type: "device_e3_config",
+          id: canonicalE3ConfigTargetId(key),
+        })),
     buildTarget: (ctx) => ({
       domain: "E",
       type: "device_e3_config",
-      id: Object.keys((ctx.values as Record<string, unknown>) ?? {}).sort()[0] ?? "__E3_BATCH__",
+      id: canonicalE3ConfigTargetId(
+        Object.keys((ctx.values as Record<string, unknown>) ?? {}).sort()[0] ?? "__E3_BATCH__",
+      ),
     }),
   },
   {

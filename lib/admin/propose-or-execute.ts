@@ -5,7 +5,7 @@
  */
 import { roleLabel } from "@/lib/nav/console-nav";
 import type { AuthPrincipal, ExecGate } from "@/lib/admin/ops-authority";
-import { A2OutcomeUncertainError, type A2OperationType } from "@/lib/admin/a2-client";
+import { isA2OutcomeUncertainError, type A2OperationType } from "@/lib/admin/a2-client";
 import type { ReplayCommand, LockTarget } from "@/lib/admin/high-ops-registry";
 
 export type ProposalType = "fund" | "param" | "acct" | "sos";
@@ -75,8 +75,8 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
     toast(`已写入 A2 后端待确认队列,待 ${spec.gateLabel} 执行`);
     return "proposed";
   } catch (error) {
-    if (error instanceof A2OutcomeUncertainError) {
-      toast(`A2 提案结果未知；当前弹窗已保留，请使用同一请求重试，或到 A2 队列核对 · ${error.commandKey}`);
+    if (isA2OutcomeUncertainError(error)) {
+      toast(`A2 提案结果暂不确定；当前弹窗与输入已保留，请使用同一命令号重试并核对 A2 审计 · ${error.commandKey}`);
     } else {
       toast(`A2 提案提交失败:${error instanceof Error ? error.message : "A2_PROPOSAL_FAILED"}`);
     }

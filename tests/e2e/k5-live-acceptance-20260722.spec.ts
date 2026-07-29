@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 import { createHmac } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -12,6 +12,8 @@ const READONLY_USERNAME = process.env.K5_READONLY_USERNAME ?? "d5_V3_i_support";
 const ROOT_PASSWORD = process.env.K5_ROOT_PASSWORD ?? PASSWORD;
 const RISK_PASSWORD = process.env.K5_RISK_PASSWORD ?? PASSWORD;
 const READONLY_PASSWORD = process.env.K5_READONLY_PASSWORD ?? PASSWORD;
+const RISK_TOTP_SECRET = process.env.K5_RISK_TOTP_SECRET ?? "";
+const READONLY_TOTP_SECRET = process.env.K5_READONLY_TOTP_SECRET ?? "";
 const CREATE_TEMP_RISK = process.env.K5_CREATE_TEMP_RISK === "1";
 const TEMP_RISK_INITIAL_PASSWORD = process.env.K5_TEMP_RISK_INITIAL_PASSWORD ?? "";
 const CREATE_TEMP_READONLY = process.env.K5_CREATE_TEMP_READONLY === "1";
@@ -41,6 +43,8 @@ type K5Overview = {
 };
 
 const mfaSecrets = new Map<string, string>();
+if (RISK_TOTP_SECRET) mfaSecrets.set(RISK_USERNAME, RISK_TOTP_SECRET);
+if (READONLY_TOTP_SECRET) mfaSecrets.set(READONLY_USERNAME, READONLY_TOTP_SECRET);
 const usedTotpSteps = new Map<string, number>();
 const summary: Record<string, unknown> = {
   runId: RUN_ID,
@@ -90,7 +94,7 @@ test("K5 首次用户从根登录页、可见侧栏进入并识别权威队列",
   expect(runtimeErrors).toEqual([]);
 });
 
-test("K5 风险岗真实订阅、并发合并、未知结果同键重试、驳回后再通过恢复 C4", async ({ page }) => {
+test("K5 风险岗真实订阅、并发合并、未知结果同键重试、驳回后再通过恢复 C4", async ({ page, browser }) => {
   const runtimeErrors = collectRuntimeErrors(page);
   if (CREATE_TEMP_RISK) await createTemporaryRiskAndOpenK5(page);
   else await loginAndOpenK5(page, RISK_USERNAME);
@@ -202,7 +206,7 @@ test("K5 风险岗真实订阅、并发合并、未知结果同键重试、驳�
   expect(commandKeys[1]).toBe(commandKeys[0]);
   await page.unroute(`**/api/admin/risk/kyc-review/tickets/${reviewTicketId}/decision`);
 
-  expect(await c4Status(page)).toBe("rejected");
+  expect(await c4StatusAsRoot(browser)).toBe("rejected");
   const terminal = await decision(page, reviewTicketId, "passed", reviewTicket.version + 1, `${REASON} 终态禁止再次裁决`, `${RUN_ID}-TERMINAL`);
   expect(terminal.status()).toBe(409);
   expect((await envelope<unknown>(terminal, false)).message).toBe("K5_REVIEW_TICKET_NOT_REVIEWABLE");
@@ -218,7 +222,7 @@ test("K5 风险岗真实订阅、并发合并、未知结果同键重试、驳�
   expect(restoreTicket.st).toBe("in-review");
   const restored = await decision(page, restoredTicketId, "passed", restoreTicket.version, `${REASON} 通过并恢复C4权威状态`, `${RUN_ID}-RESTORE-PASS`);
   expect(restored.status()).toBe(200);
-  expect(await c4Status(page)).toBe("verified");
+  expect(await c4StatusAsRoot(browser)).toBe("verified");
 
   await page.reload();
   await showAllTickets(page);
@@ -227,7 +231,7 @@ test("K5 风险岗真实订阅、并发合并、未知结果同键重试、驳�
   await loginAndOpenK5(page, RISK_USERNAME);
   await showAllTickets(page);
   await expect(page.locator("tr").filter({ hasText: restoredTicketId }).first()).toContainText("已通过");
-  expect(await c4Status(page)).toBe("verified");
+  expect(await c4StatusAsRoot(browser)).toBe("verified");
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "02-risk-state-machine-refresh-relogin.png"), fullPage: true });
 
   record("risk role subscription, concurrency, idempotency, CAS and reversible state machine", {
@@ -334,34 +338,7 @@ test.afterAll(async ({ browser }) => {
     try {
       await login(page, ROOT_USERNAME);
       for (const account of temporaryAccounts) {
-        const overview = await envelope<{
-          operators: Array<{ id: string; version: string }>;
-        }>(await page.request.get("/api/admin/platform/accounts/overview"));
-        const current = overview.data.operators.find((operator) => operator.id === account.id);
-        if (!current) throw new Error(`K5 temporary ${account.label} account ${account.id} was not found for cleanup`);
-        const disabled = await page.request.patch(`/api/admin/platform/accounts/${account.id}/status`, {
-          headers: { "Idempotency-Key": `${RUN_ID}-TEMP-${account.id}-DISABLE` },
-          data: {
-            status: "disabled",
-            expectedVersion: current.version,
-            reason: `${REASON} 清理独立复审${account.label}账号`,
-            operator: "ignored",
-          },
-        });
-        const disabledRaw = await disabled.text();
-        expect(disabled.status(), disabledRaw).toBeLessThan(400);
-        const disabledPayload = JSON.parse(disabledRaw) as Envelope<{ version: string }>;
-        expect(disabledPayload.code).toBe(0);
-        const unassigned = await page.request.patch(`/api/admin/platform/accounts/${account.id}/role`, {
-          headers: { "Idempotency-Key": `${RUN_ID}-TEMP-${account.id}-UNASSIGN` },
-          data: {
-            role: "unassigned",
-            expectedVersion: disabledPayload.data.version,
-            reason: `${REASON} 移除独立复审${account.label}角色`,
-            operator: "ignored",
-          },
-        });
-        expect(unassigned.status(), await unassigned.text()).toBeLessThan(400);
+        await sanitizeTemporaryAccount(page, account.id, account.label);
       }
     } finally {
       await context.close();
@@ -518,11 +495,18 @@ async function showAllTickets(page: Page) {
   await pageSize.selectOption("50");
 }
 
-async function c4Status(page: Page) {
-  const response = await page.request.get(`/api/admin/users/kyc/users/${REVIEW_USER_ID}`);
-  expect(response.status()).toBe(200);
-  const payload = await envelope<{ status: string }>(response);
-  return payload.data.status;
+async function c4StatusAsRoot(browser: Browser) {
+  const context = await browser.newContext({ baseURL: "http://127.0.0.1:3002" });
+  const page = await context.newPage();
+  try {
+    await login(page, ROOT_USERNAME);
+    const response = await page.request.get(`/api/admin/users/kyc/users/${REVIEW_USER_ID}`);
+    expect(response.status()).toBe(200);
+    const payload = await envelope<{ status: string }>(response);
+    return payload.data.status;
+  } finally {
+    await context.close();
+  }
 }
 
 function findTicket(overview: K5Overview, ticketId: string) {
@@ -548,6 +532,72 @@ async function envelope<T>(response: { json(): Promise<unknown> }, requireSucces
   const payload = await response.json() as Envelope<T>;
   if (requireSuccess) expect(payload.code).toBe(0);
   return payload;
+}
+
+type TemporaryAccountState = {
+  id: string;
+  version: string;
+  tfa: boolean;
+  role: string;
+  status: string;
+  sessions: number;
+};
+
+async function temporaryAccountById(page: Page, accountId: string) {
+  const overview = await envelope<{ operators: TemporaryAccountState[] }>(
+    await page.request.get("/api/admin/platform/accounts/overview"),
+  );
+  const current = overview.data.operators.find((operator) => String(operator.id) === accountId);
+  if (!current) throw new Error(`K5 temporary account ${accountId} was not found for cleanup`);
+  return current;
+}
+
+async function sanitizeTemporaryAccount(page: Page, accountId: string, label: string) {
+  const mutate = async (method: "PATCH" | "POST", suffix: string, data: Record<string, unknown>) => {
+    const current = await temporaryAccountById(page, accountId);
+    const response = await page.request.fetch(`/api/admin/platform/accounts/${accountId}/${suffix}`, {
+      method,
+      headers: { "Idempotency-Key": `${RUN_ID}-TEMP-${accountId}-${suffix}` },
+      data: {
+        ...data,
+        expectedVersion: current.version,
+        operator: "ignored",
+      },
+    });
+    expect(response.status(), await response.text()).toBeLessThan(400);
+  };
+
+  let current = await temporaryAccountById(page, accountId);
+  if (current.tfa) {
+    await mutate("POST", "reset-2fa", { reason: `${REASON} 清除独立复审${label}账号 MFA` });
+  }
+  current = await temporaryAccountById(page, accountId);
+  if (current.role !== "unassigned") {
+    await mutate("PATCH", "role", {
+      role: "unassigned",
+      reason: `${REASON} 移除独立复审${label}角色`,
+    });
+  }
+  current = await temporaryAccountById(page, accountId);
+  if (current.status !== "disabled") {
+    await mutate("PATCH", "status", {
+      status: "disabled",
+      reason: `${REASON} 停用独立复审${label}账号`,
+    });
+  }
+  current = await temporaryAccountById(page, accountId);
+  if (Number(current.sessions) > 0) {
+    await mutate("POST", "sessions/revoke", {
+      reason: `${REASON} 撤销独立复审${label}账号会话`,
+    });
+  }
+  current = await temporaryAccountById(page, accountId);
+  expect({
+    role: current.role,
+    status: current.status,
+    tfa: current.tfa,
+    sessions: Number(current.sessions),
+  }).toEqual({ role: "unassigned", status: "disabled", tfa: false, sessions: 0 });
 }
 
 async function assertFailClosed(page: Page) {

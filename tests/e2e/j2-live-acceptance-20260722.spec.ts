@@ -171,6 +171,68 @@ async function apiSend(page: Page, method: string, url: string, body?: unknown) 
   return { status: response.status(), raw, data: json?.data ?? json };
 }
 
+async function accountById(page: Page, accountId: string) {
+  const overview = await apiSend(page, "GET", "/api/admin/platform/accounts/overview");
+  expect(overview.status, overview.raw).toBeLessThan(400);
+  const account = (overview.data?.operators ?? []).find(
+    (candidate: any) => String(candidate.id) === accountId,
+  );
+  expect(account, `J2 临时账号 ${accountId} 必须存在`).toBeTruthy();
+  expect(String(account.version ?? ""), `J2 临时账号 ${accountId} 必须返回 CAS version`).not.toBe("");
+  return account;
+}
+
+async function mutateAccountWithLatestVersion(
+  page: Page,
+  accountId: string,
+  method: "PATCH" | "POST",
+  suffix: "reset-2fa" | "role" | "status" | "sessions/revoke",
+  body: Record<string, unknown>,
+) {
+  const account = await accountById(page, accountId);
+  const response = await apiSend(
+    page,
+    method,
+    `/api/admin/platform/accounts/${accountId}/${suffix}`,
+    {
+      ...body,
+      operator: USERNAME,
+      expectedVersion: String(account.version),
+    },
+  );
+  expect(response.status, response.raw).toBeLessThan(400);
+  return response;
+}
+
+async function sanitizeTemporaryAccount(page: Page, accountId: string, label: string) {
+  let account = await accountById(page, accountId);
+  if (account.tfa === true) {
+    await mutateAccountWithLatestVersion(page, accountId, "POST", "reset-2fa", {
+      reason: `${RUN_ID} 清除 ${label} MFA`,
+    });
+  }
+  account = await accountById(page, accountId);
+  if (account.role !== "unassigned") {
+    await mutateAccountWithLatestVersion(page, accountId, "PATCH", "role", {
+      role: "unassigned",
+      reason: `${RUN_ID} 解除 ${label} 角色`,
+    });
+  }
+  account = await accountById(page, accountId);
+  if (account.status !== "disabled") {
+    await mutateAccountWithLatestVersion(page, accountId, "PATCH", "status", {
+      status: "disabled",
+      reason: `${RUN_ID} 停用 ${label}`,
+    });
+  }
+  account = await accountById(page, accountId);
+  if (Number(account.sessions) > 0) {
+    await mutateAccountWithLatestVersion(page, accountId, "POST", "sessions/revoke", {
+      reason: `${RUN_ID} 撤销 ${label} 会话`,
+    });
+  }
+}
+
 function auditTicketId(data: any) {
   const operationId = String(data?.operationId ?? data?.id ?? "");
   expect(operationId).toMatch(/^(?:WO|OP)-/);
@@ -418,10 +480,8 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
     const suffix = `${Date.now()}`.slice(-9);
     const roleCode = `J2_RO_${suffix}`;
     const username = `j2r${suffix}`;
-    const password = "J2Reader@12345678";
     const changedReaderPassword = "J2Reader@23456789";
     const checkerUsername = `j2c${suffix}`;
-    const checkerInitialPassword = "J2Checker@12345678";
     const checkerPassword = "J2Checker@23456789";
     let accountId = "";
     let checkerAccountId = "";
@@ -438,19 +498,20 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         email: `${checkerUsername}@nexion.invalid`,
         role: "super",
         deliver: "handoff",
-        initialPassword: checkerInitialPassword,
         reason: `${RUN_ID} 创建 J2 双人复核临时账号`,
         operator: USERNAME,
       });
       expect(checkerAccount.status, checkerAccount.raw).toBeLessThan(400);
       checkerAccountId = String(checkerAccount.data?.id ?? checkerAccount.data?.accountId ?? "");
       expect(checkerAccountId).not.toBe("");
+      const checkerTemporaryPassword = String(checkerAccount.data?.temporaryPassword ?? "");
+      expect(checkerTemporaryPassword).not.toBe("");
       checkerContext = await browser.newContext({ viewport: { width: 1680, height: 950 } });
       checkerPage = await checkerContext.newPage();
       await loginCredentialsFromVisibleEntry(
         checkerPage,
         checkerUsername,
-        checkerInitialPassword,
+        checkerTemporaryPassword,
         checkerPassword,
       );
 
@@ -509,18 +570,19 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         email: `${username}@nexion.invalid`,
         role: roleCode,
         deliver: "handoff",
-        initialPassword: password,
         reason: `${RUN_ID} 创建 J2 临时只读账号`,
         operator: USERNAME,
       });
       expect(account.status, account.raw).toBeLessThan(400);
       accountId = String(account.data?.id ?? account.data?.accountId ?? "");
       expect(accountId).not.toBe("");
+      const readerTemporaryPassword = String(account.data?.temporaryPassword ?? "");
+      expect(readerTemporaryPassword).not.toBe("");
 
       const readerContext = await browser.newContext({ viewport: { width: 1680, height: 950 } });
       const readerPage = await readerContext.newPage();
       try {
-        await loginCredentialsFromVisibleEntry(readerPage, username, password, changedReaderPassword);
+        await loginCredentialsFromVisibleEntry(readerPage, username, readerTemporaryPassword, changedReaderPassword);
         await openJ2FromVisibleMenu(readerPage);
         await expect(readerPage.getByRole("button", { name: /编辑黑名单|编辑受限名单|应急封锁|编辑封锁范围|切换/ })).toHaveCount(0);
 
@@ -552,23 +614,7 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         pendingGrantTicket = "";
       }
       if (accountId) {
-        const disabled = await apiSend(page, "PATCH", `/api/admin/platform/accounts/${accountId}/status`, {
-          status: "disabled",
-          reason: `${RUN_ID} 清理 J2 临时只读账号`,
-          operator: USERNAME,
-        });
-        expect(disabled.status, disabled.raw).toBeLessThan(400);
-        const revoked = await apiSend(page, "POST", `/api/admin/platform/accounts/${accountId}/sessions/revoke`, {
-          reason: `${RUN_ID} 撤销 J2 临时只读账号会话`,
-          operator: USERNAME,
-        });
-        expect(revoked.status, revoked.raw).toBeLessThan(400);
-        const unassigned = await apiSend(page, "PATCH", `/api/admin/platform/accounts/${accountId}/role`, {
-          role: "unassigned",
-          reason: `${RUN_ID} 解除 J2 临时账号角色关系`,
-          operator: USERNAME,
-        });
-        expect(unassigned.status, unassigned.raw).toBeLessThan(400);
+        await sanitizeTemporaryAccount(page, accountId, "J2 临时只读账号");
       }
       if (roleCreated) {
         const removed = await apiSend(page, "DELETE", `/api/admin/platform/roles/${roleId}`, {
@@ -589,19 +635,7 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         await checkerContext?.close();
         checkerContext = null;
         checkerPage = null;
-        const disabled = await apiSend(page, "PATCH", `/api/admin/platform/accounts/${checkerAccountId}/status`, {
-          status: "disabled",
-          reason: `${RUN_ID} 停用 J2 双人复核临时账号`,
-          operator: USERNAME,
-        });
-        expect(disabled.status, disabled.raw).toBeLessThan(400);
-        // 停用账号已在 A1 服务内原子撤销全部会话；单独“强制下线超管”按安全策略固定拒绝。
-        const unassigned = await apiSend(page, "PATCH", `/api/admin/platform/accounts/${checkerAccountId}/role`, {
-          role: "unassigned",
-          reason: `${RUN_ID} 解除 J2 双人复核临时账号角色`,
-          operator: USERNAME,
-        });
-        expect(unassigned.status, unassigned.raw).toBeLessThan(400);
+        await sanitizeTemporaryAccount(page, checkerAccountId, "J2 双人复核临时账号");
       }
       await checkerContext?.close();
     }
@@ -611,7 +645,6 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
     await loginFromVisibleEntry(page);
     const suffix = `${Date.now()}`.slice(-9);
     const checkerUsername = `j2c${suffix}`;
-    const checkerInitialPassword = "J2Cleanup@12345678";
     const checkerPassword = "J2Cleanup@23456789";
     let checkerAccountId = "";
     const checkerContext = await browser.newContext({ viewport: { width: 1680, height: 950 } });
@@ -623,17 +656,18 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         email: `${checkerUsername}@nexion.invalid`,
         role: "super",
         deliver: "handoff",
-        initialPassword: checkerInitialPassword,
         reason: `${RUN_ID} 创建 J2 遗留清理双人复核账号`,
         operator: USERNAME,
       });
       expect(checker.status, checker.raw).toBeLessThan(400);
       checkerAccountId = String(checker.data?.id ?? "");
       expect(checkerAccountId).not.toBe("");
+      const checkerTemporaryPassword = String(checker.data?.temporaryPassword ?? "");
+      expect(checkerTemporaryPassword).not.toBe("");
       await loginCredentialsFromVisibleEntry(
         checkerPage,
         checkerUsername,
-        checkerInitialPassword,
+        checkerTemporaryPassword,
         checkerPassword,
       );
 
@@ -652,6 +686,14 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         );
       }
 
+      const accounts = await apiSend(page, "GET", "/api/admin/platform/accounts/overview");
+      expect(accounts.status, accounts.raw).toBeLessThan(400);
+      const fixtures = (accounts.data?.operators ?? []).filter((account: any) =>
+        /^j2[cr]\d+$/.test(String(account.username ?? "")) && String(account.id) !== checkerAccountId);
+      for (const account of fixtures) {
+        await sanitizeTemporaryAccount(page, String(account.id), "J2 遗留验收账号");
+      }
+
       const roles = await apiSend(page, "GET", "/api/admin/platform/roles/overview");
       expect(roles.status, roles.raw).toBeLessThan(400);
       for (const role of (roles.data?.roles ?? []).filter((item: any) => String(item.roleCode).startsWith("J2_RO_"))) {
@@ -668,44 +710,10 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
           checkerUsername,
         );
       }
-
-      const accounts = await apiSend(page, "GET", "/api/admin/platform/accounts/overview");
-      expect(accounts.status, accounts.raw).toBeLessThan(400);
-      const fixtures = (accounts.data?.operators ?? []).filter((account: any) =>
-        /^j2[cr]\d+$/.test(String(account.username ?? "")) && String(account.id) !== checkerAccountId);
-      for (const account of fixtures) {
-        if (account.status !== "disabled") {
-          const disabled = await apiSend(page, "PATCH", `/api/admin/platform/accounts/${account.id}/status`, {
-            status: "disabled",
-            reason: `${RUN_ID} 停用 J2 遗留验收账号`,
-            operator: USERNAME,
-          });
-          expect(disabled.status, disabled.raw).toBeLessThan(400);
-        }
-        if (account.role !== "unassigned") {
-          const unassigned = await apiSend(page, "PATCH", `/api/admin/platform/accounts/${account.id}/role`, {
-            role: "unassigned",
-            reason: `${RUN_ID} 解除 J2 遗留验收账号角色`,
-            operator: USERNAME,
-          });
-          expect(unassigned.status, unassigned.raw).toBeLessThan(400);
-        }
-      }
     } finally {
       await checkerContext.close();
       if (checkerAccountId) {
-        const disabled = await apiSend(page, "PATCH", `/api/admin/platform/accounts/${checkerAccountId}/status`, {
-          status: "disabled",
-          reason: `${RUN_ID} 停用 J2 清理复核账号并撤销会话`,
-          operator: USERNAME,
-        });
-        expect(disabled.status, disabled.raw).toBeLessThan(400);
-        const unassigned = await apiSend(page, "PATCH", `/api/admin/platform/accounts/${checkerAccountId}/role`, {
-          role: "unassigned",
-          reason: `${RUN_ID} 解除 J2 清理复核账号超管角色`,
-          operator: USERNAME,
-        });
-        expect(unassigned.status, unassigned.raw).toBeLessThan(400);
+        await sanitizeTemporaryAccount(page, checkerAccountId, "J2 清理复核账号");
       }
     }
 

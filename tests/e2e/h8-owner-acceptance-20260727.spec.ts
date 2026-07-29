@@ -4,7 +4,8 @@ import { expect, request as playwrightRequest, test, type Page } from "@playwrig
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
-const evidenceDir = "D:/workspace/nexion-ops-console/docs/验收报告/PC全面测试-20260726/H8-evidence";
+const evidenceDir = process.env.H8_EVIDENCE_DIR
+  || "D:/workspace/nexion-ops-console/docs/验收报告/PC全面测试-20260726/H8-evidence";
 
 test.beforeAll(() => fs.mkdirSync(evidenceDir, { recursive: true }));
 

@@ -60,6 +60,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     try {
       setOverview(await fetchG1StakingOverview());
     } catch (err) {
+      setOverview(null);
       setError(messageOf(err));
     } finally {
       if (!silent) setLoading(false);
@@ -75,7 +76,10 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         const next = await fetchG1StakingOverview();
         if (!cancelled) setOverview(next);
       } catch (err) {
-        if (!cancelled) setError(messageOf(err));
+        if (!cancelled) {
+          setOverview(null);
+          setError(messageOf(err));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

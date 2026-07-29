@@ -9,6 +9,7 @@ const BACKEND_URL = process.env.K2_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_PASSWORD = process.env.NEXION_ADMIN_PASSWORD || "";
 const ADMIN_USERNAME = process.env.K2_ADMIN_USERNAME || "superadmin";
 const DB_PASSWORD = process.env.K2_DB_PASSWORD || "";
+const DB_NAME = process.env.K2_DB_NAME || "nexion";
 const USER_JWT_SECRET = process.env.K2_USER_JWT_SECRET || "nexion-development-secret-key-change-me-please";
 const MYSQL_EXE = process.env.MYSQL_EXE || "D:/software/MySQL/MySQL Server 8.0/bin/mysql.exe";
 const EVIDENCE_DIR = process.env.K2_ACCEPTANCE_EVIDENCE_DIR
@@ -43,7 +44,7 @@ if (!DB_PASSWORD) throw new Error("K2_DB_PASSWORD is required");
 mkdirSync(EVIDENCE_DIR, { recursive: true });
 
 function mysql(sql: string) {
-  const result = spawnSync(MYSQL_EXE, ["-uroot", "-D", "nexion", "--batch", "--raw", "--skip-column-names", "-e", sql], {
+  const result = spawnSync(MYSQL_EXE, ["-uroot", "-D", DB_NAME, "--batch", "--raw", "--skip-column-names", "-e", sql], {
     encoding: "utf8",
     env: { ...process.env, MYSQL_PWD: DB_PASSWORD },
   });
@@ -344,13 +345,15 @@ async function createChecker(page: Page, browserPage: Page, purpose: "grant" | "
   });
   expect(created.status, created.raw).toBeLessThan(400);
   const accountId = String(created.data?.id ?? created.data?.accountId ?? "");
+  const issuedPassword = String(created.data?.temporaryPassword ?? "");
+  expect(issuedPassword, "A1 必须返回服务端生成的一次性密码").not.toBe("");
   try {
-    await login(browserPage, username, initialPassword, password);
+    await login(browserPage, username, issuedPassword, password);
   } catch (error) {
     // Account creation precedes the independent browser login. If the browser
     // path fails, close the privilege immediately instead of leaking an active
     // checker that the caller never received an id for.
-    await cleanupAccount(page, accountId, `${RUN_ID} createChecker失败清理`).catch(() => undefined);
+    await cleanupAccount(page, accountId, `${RUN_ID} createChecker失败清理`);
     throw error;
   }
   return { username, password, accountId };
@@ -358,10 +361,49 @@ async function createChecker(page: Page, browserPage: Page, purpose: "grant" | "
 
 async function cleanupAccount(page: Page, accountId: string, reason: string) {
   if (!accountId) return;
-  const disabled = await api(page, "PATCH", `/api/admin/platform/accounts/${accountId}/status`, { status: "disabled", reason, operator: "superadmin" });
-  expect(disabled.status, disabled.raw).toBeLessThan(400);
-  const unassigned = await api(page, "PATCH", `/api/admin/platform/accounts/${accountId}/role`, { role: "unassigned", reason, operator: "superadmin" });
-  expect(unassigned.status, unassigned.raw).toBeLessThan(400);
+  let current = await accountById(page, accountId);
+  if (current.tfa === true) {
+    const reset = await api(page, "POST", `/api/admin/platform/accounts/${accountId}/reset-2fa`, {
+      expectedVersion: String(current.version), reason: `${reason} · 清除MFA`, operator: "superadmin",
+    });
+    expect(reset.status, reset.raw).toBeLessThan(400);
+  }
+  current = await accountById(page, accountId);
+  if (current.role !== "unassigned") {
+    const unassigned = await api(page, "PATCH", `/api/admin/platform/accounts/${accountId}/role`, {
+      role: "unassigned", expectedVersion: String(current.version), reason, operator: "superadmin",
+    });
+    expect(unassigned.status, unassigned.raw).toBeLessThan(400);
+  }
+  current = await accountById(page, accountId);
+  if (current.status !== "disabled") {
+    const disabled = await api(page, "PATCH", `/api/admin/platform/accounts/${accountId}/status`, {
+      status: "disabled", expectedVersion: String(current.version), reason, operator: "superadmin",
+    });
+    expect(disabled.status, disabled.raw).toBeLessThan(400);
+  }
+  current = await accountById(page, accountId);
+  if (Number(current.sessions) > 0) {
+    const revoked = await api(page, "POST", `/api/admin/platform/accounts/${accountId}/sessions/revoke`, {
+      expectedVersion: String(current.version), reason: `${reason} · 撤销会话`, operator: "superadmin",
+    });
+    expect(revoked.status, revoked.raw).toBeLessThan(400);
+  }
+  current = await accountById(page, accountId);
+  expect({
+    role: current.role,
+    status: current.status,
+    tfa: current.tfa,
+    sessions: Number(current.sessions),
+  }).toEqual({ role: "unassigned", status: "disabled", tfa: false, sessions: 0 });
+}
+
+async function accountById(page: Page, accountId: string) {
+  const overview = await api(page, "GET", "/api/admin/platform/accounts/overview");
+  expect(overview.status, overview.raw).toBe(200);
+  const current = overview.data?.operators?.find((candidate: any) => String(candidate.id) === accountId);
+  expect(current, `K2 temporary account ${accountId} must exist during cleanup`).toBeTruthy();
+  return current;
 }
 
 test.describe.serial("K2 套利与刷量检测独立验收", () => {
@@ -398,7 +440,9 @@ test.describe.serial("K2 套利与刷量检测独立验收", () => {
     const overview = await api(page, "GET", "/api/admin/risk/arbitrage/overview");
     expect(overview.status, overview.raw).toBe(200);
     const tradeinRows = overview.data.views.find((view: any) => view.key === "tradein").rows;
-    expect(tradeinRows.some((row: any) => row.rowId === ROWS.tradein && row.cells.some((cell: string) => cell.includes("1 笔返佣 / 1 笔礼金")))).toBe(true);
+    const e3Projection = tradeinRows.find((row: any) => row.rowId === ROWS.tradein);
+    expect(e3Projection?.cells.some((cell: string) => cell.includes("1 笔返佣 / 1 笔礼金"))).toBe(true);
+    expect(e3Projection?.level).toBe(3);
     expect(tradeinRows.some((row: any) => row.rowId === `K2-E3-U${NEGATIVE_USER_ID}`)).toBe(false);
     expect(tradeinRows.some((row: any) => row.rowId === `K2-E3-U${PENDING_USER_ID}`)).toBe(false);
     const blockedRestart = await page.request.post(`${BACKEND_URL}/api/trial/start`, {
@@ -450,10 +494,12 @@ test.describe.serial("K2 套利与刷量检测独立验收", () => {
       const account = await api(page, "POST", "/api/admin/platform/accounts", { username: readerUsername, displayName: `K2 Marker ${SUFFIX}`, email: `${readerUsername}@nexion.invalid`, role: roleCode, deliver: "handoff", initialPassword, reason: `${RUN_ID} 创建K2精确权限账号`, operator: "superadmin" });
       expect(account.status, account.raw).toBeLessThan(400);
       readerId = String(account.data.id);
+      const issuedReaderPassword = String(account.data?.temporaryPassword ?? "");
+      expect(issuedReaderPassword, "A1 必须返回服务端生成的一次性密码").not.toBe("");
       const readerContext = await browser.newContext();
       const readerPage = await readerContext.newPage();
       try {
-        await login(readerPage, readerUsername, initialPassword, readerPassword);
+        await login(readerPage, readerUsername, issuedReaderPassword, readerPassword);
         await openK2(readerPage);
         await expect(readerPage.locator("main table tbody tr").filter({ hasText: USER_NO }).first()).toBeVisible();
         await expect(readerPage.getByRole("button", { name: "调整", exact: true })).toHaveCount(0);
@@ -481,7 +527,19 @@ test.describe.serial("K2 套利与刷量检测独立验收", () => {
       expect(deleteApproved.status, deleteApproved.raw).toBeLessThan(400);
       roleId = "";
     } finally {
-      if (readerId) await cleanupAccount(page, readerId, `${RUN_ID} finally清理K2账号`).catch(() => undefined);
+      if (readerId) await cleanupAccount(page, readerId, `${RUN_ID} finally清理K2账号`);
+      if (roleId && checkerId) {
+        const removed = await api(page, "DELETE", `/api/admin/platform/roles/${roleId}`, {
+          reason: `${RUN_ID} finally删除K2精确权限角色`, operator: "superadmin",
+        });
+        expect(removed.status, removed.raw).toBeLessThan(400);
+        const deleteTicket = String(removed.data.operationId ?? removed.data.id);
+        const approved = await api(checkerPage, "POST", `/api/admin/platform/audit/operations/${deleteTicket}/approve`, {
+          reason: `${RUN_ID} 独立复核finally删除K2角色`, operator: "server-session",
+        });
+        expect(approved.status, approved.raw).toBeLessThan(400);
+        roleId = "";
+      }
       await checkerContext.close();
       if (checkerId) await cleanupAccount(page, checkerId, `${RUN_ID} 清理K2复核账号`);
     }

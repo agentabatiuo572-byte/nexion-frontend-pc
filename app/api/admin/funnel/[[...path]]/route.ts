@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
+const UNKNOWN_OUTCOME_HEADER = "X-Nexion-Upstream-Outcome";
 
 type RouteContext = {
   params: Promise<{ path?: string[] }>;
@@ -32,12 +33,14 @@ async function proxy(request: Request, context: RouteContext) {
   const idempotencyKey = request.headers.get("Idempotency-Key");
   if (contentType) headers.set("Content-Type", contentType);
   if (idempotencyKey) headers.set("Idempotency-Key", idempotencyKey);
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
 
   try {
     const upstream = await fetch(`${BACKEND_BASE_URL}${upstreamPath}${sourceUrl.search}`, {
       method: request.method,
       headers,
-      body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.text(),
+      body: hasBody ? await request.text() : undefined,
+      signal: AbortSignal.timeout(20_000),
       cache: "no-store",
     });
     const responseHeaders = new Headers({
@@ -48,7 +51,11 @@ async function proxy(request: Request, context: RouteContext) {
     if (disposition) responseHeaders.set("Content-Disposition", disposition);
     return new Response(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders });
   } catch {
-    return jsonError(503, "B3_BACKEND_UNAVAILABLE");
+    const response = jsonError(503, "B3_BACKEND_UNAVAILABLE");
+    if (hasBody && idempotencyKey) {
+      response.headers.set(UNKNOWN_OUTCOME_HEADER, "unknown");
+    }
+    return response;
   }
 }
 

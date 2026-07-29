@@ -9,6 +9,10 @@ const alertClient = readFileSync(new URL("../lib/admin/ops-dashboard-client.ts",
 const notificationBell = readFileSync(new URL("../app/components/shell/notification-bell.tsx", import.meta.url), "utf8");
 const jView = readFileSync(new URL("../app/components/domain-views/j-view.tsx", import.meta.url), "utf8");
 const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
+const liveAcceptance = readFileSync(
+  new URL("./e2e/j2-live-acceptance-20260722.spec.ts", import.meta.url),
+  "utf8",
+);
 const geoRouteRegistry = readFileSync(
   new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/application/GeoProtectedRouteRegistry.java", import.meta.url),
   "utf8",
@@ -216,4 +220,24 @@ test("J2 App surfaces translate policy failures without leaking GEO technical co
     appUserSurfaces.join("\n"),
     /toast\.(?:error|info)\([^;\n]*instanceof Error \? (?:error|cause)\.message/,
   );
+});
+
+test("J2 acceptance cleanup follows A1 latest-version CAS and clears MFA, role, status and sessions", () => {
+  assert.match(liveAcceptance, /async function mutateAccountWithLatestVersion/);
+  assert.match(liveAcceptance, /GET", "\/api\/admin\/platform\/accounts\/overview"/);
+  assert.match(liveAcceptance, /expectedVersion:\s*String\(account\.version/);
+  for (const suffix of ["reset-2fa", "role", "status", "sessions/revoke"]) {
+    assert.match(liveAcceptance, new RegExp(`mutateAccountWithLatestVersion[\\s\\S]{0,240}"${suffix.replace("/", "\\/")}"`));
+  }
+  assert.doesNotMatch(
+    liveAcceptance,
+    /apiSend\(page,\s*"PATCH",\s*`\/api\/admin\/platform\/accounts\/\$\{(?:accountId|checkerAccountId|account\.id)\}\/(?:status|role)`/,
+  );
+});
+
+test("J2 acceptance accounts log in with the server-issued one-time password", () => {
+  assert.match(liveAcceptance, /temporaryPassword/);
+  assert.match(liveAcceptance, /loginCredentialsFromVisibleEntry\(\s*checkerPage,\s*checkerUsername,\s*checkerTemporaryPassword,/);
+  assert.match(liveAcceptance, /loginCredentialsFromVisibleEntry\(\s*readerPage,\s*username,\s*readerTemporaryPassword,/);
+  assert.doesNotMatch(liveAcceptance, /loginCredentialsFromVisibleEntry\(\s*checkerPage,\s*checkerUsername,\s*checkerInitialPassword,/);
 });

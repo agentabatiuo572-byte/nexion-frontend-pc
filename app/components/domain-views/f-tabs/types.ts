@@ -49,6 +49,8 @@ export interface FViewCtx {
   openActionConfirm: (m: McSpec) => void;
   nav: (domain: string) => void;
   toast: (msg: string) => void;
+  /** UI convenience only; backend authorization remains the final boundary. */
+  can: (authority: string) => boolean;
   // ── V-Rank 等级奖励(F1)· 读 + CRUD(写经 run 回调,内部 logAudit)+ 代金券/SKU 下拉选项 ──
   vrankRows: F1VRankRow[];
   leadership: F1Leadership | null;

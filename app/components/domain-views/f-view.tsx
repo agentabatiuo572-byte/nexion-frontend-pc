@@ -46,6 +46,7 @@ import {
 } from "@/lib/admin/f1-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { Mc, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { F2Rates } from "./f-tabs/f2-rates";
@@ -90,6 +91,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const propose = usePropose();
   const nav = useDomainNav();
   const router = useRouter();
+  const session = useAdminAuth((state) => state.session);
+  const can = useCallback((authority: string) => {
+    const role = session?.role;
+    return role === "superadmin"
+      || role === "super"
+      || (session?.authorities ?? []).includes(authority);
+  }, [session]);
   const routeTab = FOLD[meta.l2Id] ?? "F2";
   const [tab, setTab] = useState(routeTab);
   const [mc, setActionConfirm] = useState<Mc>(null);
@@ -128,14 +136,22 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
         fetchF1RewardPayouts(),
       ]);
       if (overview.status === "fulfilled") setF1Overview(overview.value);
-      else setF1Error(errorMessage(overview.reason));
+      else {
+        setF1Overview(null);
+        setF1Error(errorMessage(overview.reason));
+      }
       if (promotions.status === "fulfilled") setF1Promotions(promotions.value);
+      else setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
       if (payouts.status === "fulfilled") setF1Payouts(payouts.value);
+      else setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
       const flowFailures = [promotions, payouts]
         .filter((result) => result.status === "rejected")
         .map((result) => errorMessage((result as PromiseRejectedResult).reason));
       if (flowFailures.length) setF1FlowError(flowFailures.join(" / "));
     } catch (error) {
+      setF1Overview(null);
+      setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
+      setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
       setF1Error(errorMessage(error));
       setF1FlowError(errorMessage(error));
     } finally {
@@ -150,6 +166,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setF1Promotions(await fetchF1PromotionLog(filters));
     } catch (error) {
+      setF1Promotions({ items: [], total: 0, limit: 100, nextCursor: "" });
       setF1FlowError(errorMessage(error));
     } finally {
       setF1FlowLoading(false);
@@ -162,6 +179,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setF1Payouts(await fetchF1RewardPayouts(filters));
     } catch (error) {
+      setF1Payouts({ items: [], total: 0, limit: 100, nextCursor: "" });
       setF1FlowError(errorMessage(error));
     } finally {
       setF1FlowLoading(false);
@@ -178,6 +196,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setF2Overview(await fetchF2RatesOverview());
     } catch (error) {
+      setF2Overview(null);
       setF2Error(errorMessage(error));
     } finally {
       setF2Loading(false);
@@ -194,6 +213,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setF3Overview(await fetchF3BinaryOverview());
     } catch (error) {
+      setF3Overview(null);
       setF3Error(errorMessage(error));
     } finally {
       setF3Loading(false);
@@ -210,6 +230,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setF4Overview(await fetchF4LeadershipPoolOverview());
     } catch (error) {
+      setF4Overview(null);
       setF4Error(errorMessage(error));
     } finally {
       setF4Loading(false);
@@ -226,6 +247,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setF5Overview(await fetchF5CommissionAuditOverview(query));
     } catch (error) {
+      setF5Overview(null);
       setF5Error(errorMessage(error));
     } finally {
       setF5Loading(false);
@@ -264,6 +286,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     openActionConfirm: (m) => setActionConfirm(m),
     nav,
     toast: (msg) => setToast(msg),
+    can,
     vrankRows: f1Overview?.rows ?? [],
     leadership: f1Overview?.leadership ?? null,
     f1Loading,

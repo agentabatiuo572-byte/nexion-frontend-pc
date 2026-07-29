@@ -1,5 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { assertG2OverviewContract } from "@/lib/admin/g-overview-contract";
+import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -82,6 +84,10 @@ interface BackendGeoBlocked {
 }
 
 interface BackendOverview {
+  domain?: string | null;
+  asset?: string | null;
+  currency?: string | null;
+  currentPrice?: number | string | null;
   stats?: BackendStats | null;
   caps?: BackendCap[] | null;
   queue?: BackendOrder[] | null;
@@ -182,12 +188,13 @@ export interface G2Overview {
 }
 
 let requestSeq = 0;
-const pendingMutationKeys = new Map<string, string>();
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
+
+const executeG2Mutation = createStableMutationExecutor(idempotencyKey);
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
@@ -280,6 +287,7 @@ function normalizeGate(key: string, detail: BackendGateDetail | null | undefined
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): G2Overview {
+  assertG2OverviewContract(data);
   const stats = data?.stats ?? {};
   const coverage = data?.coverage ?? {};
   const swap = data?.swap ?? {};
@@ -325,18 +333,11 @@ function normalizeOverview(data: BackendOverview | null | undefined): G2Overview
   };
 }
 
-async function g2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function g2Request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
-  const intent = init?.idempotencyPrefix ? `${init.idempotencyPrefix}:${String(init.body ?? "")}` : null;
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
-    const key = pendingMutationKeys.get(intent!) ?? idempotencyKey(init.idempotencyPrefix);
-    pendingMutationKeys.set(intent!, key);
-    headers.set("Idempotency-Key", key);
-  }
-
   const response = await fetch(`/api/admin/market${path}`, {
     ...init,
     headers,
@@ -348,12 +349,33 @@ async function g2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `G2_REQUEST_FAILED_${response.status}`));
+    throw stableMutationHttpFailure(
+      formatAdminApiError(result?.message, `G2_REQUEST_FAILED_${response.status}`),
+      response.status,
+      result?.code,
+    );
   }
 
-  if (intent) pendingMutationKeys.delete(intent);
-
   return result.data as T;
+}
+
+function g2OverviewMutation(
+  path: string,
+  method: "PATCH" | "POST",
+  body: Record<string, unknown>,
+  prefix: string,
+) {
+  const serialized = JSON.stringify(body);
+  return executeG2Mutation(
+    prefix,
+    serialized,
+    (commandKey) => g2Request<BackendOverview>(path, {
+      method,
+      headers: { "Idempotency-Key": commandKey },
+      body: serialized,
+    }),
+    normalizeOverview,
+  );
 }
 
 export async function fetchG2ExchangeOverview() {
@@ -361,11 +383,12 @@ export async function fetchG2ExchangeOverview() {
 }
 
 export async function updateG2ExchangeParam(paramKey: string, value: string, reason: string, operator: string) {
-  return normalizeOverview(await g2Request<BackendOverview>(`/exchange/params/${encodeURIComponent(paramKey)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `g2-param-${paramKey}`,
-  }));
+  return g2OverviewMutation(
+    `/exchange/params/${encodeURIComponent(paramKey)}`,
+    "PATCH",
+    { value, reason, operator },
+    `g2-param-${paramKey}`,
+  );
 }
 
 export async function updateG2ExchangeSwapStatus(
@@ -374,33 +397,32 @@ export async function updateG2ExchangeSwapStatus(
   operator: string,
   context: { geoBlock?: string[]; triggerBasis?: string } = {},
 ) {
-  return normalizeOverview(await g2Request<BackendOverview>("/exchange/swap", {
-    method: "PATCH",
-    body: JSON.stringify({ enabled, reason, operator, geoBlock: context.geoBlock ?? [], triggerBasis: context.triggerBasis ?? "OTHER" }),
-    idempotencyPrefix: "g2-swap",
-  }));
+  return g2OverviewMutation(
+    "/exchange/swap",
+    "PATCH",
+    { enabled, reason, operator, geoBlock: context.geoBlock ?? [], triggerBasis: context.triggerBasis ?? "OTHER" },
+    "g2-swap",
+  );
 }
 
 export async function processG2ExchangeQueue(limit: number, reason: string, operator: string) {
-  return normalizeOverview(await g2Request<BackendOverview>("/exchange/queue/process", {
-    method: "POST",
-    body: JSON.stringify({ limit, reason, operator }),
-    idempotencyPrefix: "g2-queue-batch",
-  }));
+  return g2OverviewMutation("/exchange/queue/process", "POST", { limit, reason, operator }, "g2-queue-batch");
 }
 
 export async function cancelG2ExchangeQueueOrder(exchangeNo: string, reason: string, operator: string) {
-  return normalizeOverview(await g2Request<BackendOverview>(`/exchange/queue/${encodeURIComponent(exchangeNo)}/cancel`, {
-    method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "g2-cancel-queue",
-  }));
+  return g2OverviewMutation(
+    `/exchange/queue/${encodeURIComponent(exchangeNo)}/cancel`,
+    "POST",
+    { reason, operator },
+    "g2-cancel-queue",
+  );
 }
 
 export async function triggerG2ExchangeKycReview(exchangeNo: string, reason: string, operator: string) {
-  return normalizeOverview(await g2Request<BackendOverview>(`/exchange/queue/${encodeURIComponent(exchangeNo)}/kyc-review`, {
-    method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "g2-kyc-review",
-  }));
+  return g2OverviewMutation(
+    `/exchange/queue/${encodeURIComponent(exchangeNo)}/kyc-review`,
+    "POST",
+    { reason, operator },
+    "g2-kyc-review",
+  );
 }

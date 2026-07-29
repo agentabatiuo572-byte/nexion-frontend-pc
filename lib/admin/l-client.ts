@@ -1,6 +1,7 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { assertL3FinanceContract } from "@/lib/admin/l3-finance-contract";
+import { assertL5OverviewContract } from "@/lib/admin/l5-overview-contract";
 
 type ApiResult<T> = {
   code?: number;
@@ -297,7 +298,7 @@ function reportToTask(report: LReportView): LExportTask {
 }
 
 function normalizeL5(raw: unknown) {
-  const data = rec(raw);
+  const data = assertL5OverviewContract(raw);
   const reports = normalizePage(data.reports, normalizeReport);
   return {
     ...data,

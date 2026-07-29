@@ -15,4 +15,7 @@ import type { DCtx } from "../d-tabs/types";
 
 export type { ActionConfirmReq, ConfirmReq, ConfirmChip } from "../k-tabs/types";
 
-export type HCtx = DCtx;
+export type HCtx = DCtx & {
+  /** UI convenience only; the backend remains the final authority boundary. */
+  can: (authority: string) => boolean;
+};

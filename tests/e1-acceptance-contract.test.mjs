@@ -90,7 +90,9 @@ test("E1 early-access promotional discount does not claim B1 cash-outflow gating
 
 test("E1 hides every mutation entry point from read-only identities", () => {
   assert.match(view, /authorities\.includes\("device_e1_write"\)/);
-  assert.match(view, /tab === "E1" \? \(canWriteE1 \?/);
+  assert.match(view, /const canUseE1Writes = canWriteE1 && !e1Loading && !e1Error && e1Gates !== null/);
+  assert.match(view, /canWriteE1: canUseE1Writes/);
+  assert.match(view, /tab === "E1" \? \(canUseE1Writes \?/);
   assert.match(catalog, /const canWrite = ctx\.canWriteE1/);
   assert.match(catalog, /canWrite \? <button[^\n]*>\+ 新增阶段<\/button>/);
   assert.match(catalog, /canWrite \? <button[^\n]*>\+ 新增上架门<\/button>/);

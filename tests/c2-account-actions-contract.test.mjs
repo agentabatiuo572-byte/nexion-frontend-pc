@@ -23,6 +23,13 @@ test("C2 renders exact permission gates and exact state transitions", () => {
   assert.doesNotMatch(actionSource, /const locked = status !== "ACTIVE"/);
 });
 
+test("C2 rejects malformed 200 overview payloads instead of rendering false zeroes", () => {
+  assert.match(clientSource, /function requireC2Overview\(/);
+  assert.match(clientSource, /C2_RESPONSE_INVALID/);
+  assert.match(clientSource, /return requireC2Overview\(await usersRequest<unknown>\("\/account-actions\/overview"\)\)/);
+  assert.match(actionSource, /if \(!overview\) \{[\s\S]{0,900}C2 数据暂不可用，账户处置已停止展示和写入/);
+});
+
 test("C2 distinguishes A2 proposal-only actors from direct executors", () => {
   assert.match(actionSource, /platform_a2_proposal_create/);
   assert.match(actionSource, /platform_a2_operation_approve/);

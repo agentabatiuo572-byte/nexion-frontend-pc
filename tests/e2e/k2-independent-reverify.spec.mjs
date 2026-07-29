@@ -1,1 +1,3 @@
-import "../../.codex-logs/k2-independent-reverify-20260716-153505/k2-independent-reverify.spec.mjs";
+// Keep the stable reverify entry point, but execute the maintained current
+// acceptance spec instead of the archived July 16 snapshot under .codex-logs.
+import "./k2-independent-acceptance.spec.mjs";

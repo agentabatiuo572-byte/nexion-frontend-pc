@@ -135,6 +135,8 @@ function casExpected(value: string) {
 
 export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?: HSection }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
+  const canModuleWrite = ctx.can(section === "events" ? "growth_h4_write" : "growth_h3_write");
+  const canWheelWrite = ctx.can("growth_h4_wheel_pool_write");
   const [model, setModel] = useState<H3Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -611,13 +613,13 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <span className="ttl">首日任务(Day-One)</span>
             <span className="sub">· 新人转化最核心的钩子 · 改动只影响新进窗用户</span>
             <div className="r">
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时窗", text(model.dayOneWindow), false)}>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时窗", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>
                 调整
               </button>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日三相奖励", text(model.dayOneTriReward), true)}>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日三相奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>
                 调整奖励
               </button>
-              <button className="l-btn sm mc" onClick={() => openCreateMission("DAY_ONE", "首日任务")}>+ 新建任务</button>
+              <button className="l-btn sm mc" onClick={() => openCreateMission("DAY_ONE", "首日任务")} disabled={!canModuleWrite}>+ 新建任务</button>
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -627,12 +629,12 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                 <small>改窗对在窗用户按各自进窗时间锁定,不追溯。</small>
               </span>
               <span className="v">{text(model.dayOneWindow)}</span>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时窗", text(model.dayOneWindow), false)}>调整</button>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.windowMs", "首日任务时窗", text(model.dayOneWindow), false)} disabled={!canModuleWrite}>调整</button>
             </div>
             <div className="p-row">
               <span className="k">完成奖励(三相)</span>
               <span className="v">{text(model.dayOneTriReward)}</span>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日三相奖励", text(model.dayOneTriReward), true)}>调整</button>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("dayOne.triReward", "首日三相奖励", text(model.dayOneTriReward), true)} disabled={!canModuleWrite}>调整</button>
             </div>
 
             <div className="l-h" style={{ marginTop: 12, border: 0, paddingBottom: 0 }}>
@@ -667,7 +669,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.task), text(task.reward))}>改奖励</button>
+                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.task), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
                         </td>
                       </tr>
                     );
@@ -695,8 +697,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <span className="ttl">每周任务(两档 + 周冠军)</span>
             <span className="sub">· 按周键确定性派发 · 同周锁定 · 改动下周生效</span>
             <div className="r">
-              <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T1", "每周一档")}>+ 新建一档</button>
-              <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T2", "每周二档")}>+ 新建二档</button>
+              <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T1", "每周一档")} disabled={!canModuleWrite}>+ 新建一档</button>
+              <button className="l-btn sm mc" onClick={() => openCreateMission("WEEKLY_T2", "每周二档")} disabled={!canModuleWrite}>+ 新建二档</button>
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -727,7 +729,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))}>改奖励</button>
+                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
                         </td>
                       </tr>
                     );
@@ -763,7 +765,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                           {task.completionEvent ? <span className="mono" style={{ color: "var(--ink-4)", marginLeft: 4 }}>{text(task.completionEvent)}</span> : null}
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))}>改奖励</button>
+                          <button className="l-btn sm mc" onClick={() => openTaskReward(`mission.${text(task.completionEvent)}.reward`, text(task.cond), text(task.reward))} disabled={!canModuleWrite}>改奖励</button>
                         </td>
                       </tr>
                     );
@@ -776,7 +778,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <span style={{ flex: 1 }}>
                 <b>周冠军加奖</b> · {text(model.weeklyChampionBonus)} · 累计 NEX 最高的当周用户额外加奖
               </span>
-              <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军加奖", text(model.weeklyChampionBonus), true)}>调整</button>
+              <button className="l-btn sm mc" onClick={() => openSimpleConfig("weekly.champBonus", "周冠军加奖", text(model.weeklyChampionBonus), true)} disabled={!canModuleWrite}>调整</button>
             </div>
 
             <div style={{ fontSize: 12, fontWeight: 600, margin: "12px 0 6px", color: "var(--ink-2)" }}>
@@ -790,9 +792,9 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <div
                     key={item.p}
                     className={`seg${isCurrent ? " cur" : ""}`}
-                    onClick={() => openSimpleConfig(`weekly.mult.${phase}`, `阶段倍率 ${phase}`, text(item.mult), true)}
-                    style={{ cursor: "pointer" }}
-                    title="点击改值"
+                    onClick={canModuleWrite ? () => openSimpleConfig(`weekly.mult.${phase}`, `阶段倍率 ${phase}`, text(item.mult), true) : undefined}
+                    style={{ cursor: canModuleWrite ? "pointer" : "default" }}
+                    title={canModuleWrite ? "点击改值" : "只读"}
                   >
                     <div className="m">{phase}{isCurrent ? " 当前" : ""}</div>
                     <div className="vv">{text(item.mult)}</div>
@@ -858,7 +860,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
           <span className="ttl">月度挑战(按账龄派发)</span>
           <span className="sub">· 每主题 3 个子目标全达成才可领 · 跨月清空重派</span>
           <div className="r">
-            <button className="l-btn sm mc" onClick={() => openCreateMonthlyMission()}>+ 新建月度挑战</button>
+            <button className="l-btn sm mc" onClick={() => openCreateMonthlyMission()} disabled={!canModuleWrite}>+ 新建月度挑战</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -891,7 +893,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                     <td style={{ fontSize: 11.5, color: "var(--ink-4)" }}>{text(mission.goals)}</td>
                     <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
                     <td style={{ textAlign: "right" }}>
-                      <button className="l-btn sm mc" onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward))}>改奖励</button>
+                      <button className="l-btn sm mc" onClick={() => openTaskReward(`monthly.${text(mission.id)}.reward`, text(mission.theme), text(mission.reward))} disabled={!canModuleWrite}>改奖励</button>
                     </td>
                   </tr>
                 );
@@ -951,20 +953,20 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
               <small>对应用户端首页促销卡展示。</small>
             </span>
             <span className="v">{text(promoBanner.baseReward)} × {text(promoBanner.multiplier)} = {promoFinalReward(promoBanner.baseReward, promoBanner.multiplier)} NEX</span>
-            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promoBanner.baseReward), 0, 100000, 1, "increase")}>改基础</button>
-            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.multiplier", "转化卡倍率", text(promoBanner.multiplier), 0.1, 5, 0.1, "increase")}>改倍率</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.baseReward", "转化卡基础奖励", text(promoBanner.baseReward), 0, 100000, 1, "increase")} disabled={!canModuleWrite}>改基础</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.multiplier", "转化卡倍率", text(promoBanner.multiplier), 0.1, 5, 0.1, "increase")} disabled={!canModuleWrite}>改倍率</button>
           </div>
           <div className="p-row">
             <span className="k">倒计时窗口</span>
             <span className="v">{text(promoBanner.countdownDays)}d {text(promoBanner.countdownHours)}h</span>
-            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promoBanner.countdownDays), 0, 365, 1)}>改天数</button>
-            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promoBanner.countdownHours), 0, 23, 1)}>改小时</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownDays", "转化卡倒计时天数", text(promoBanner.countdownDays), 0, 365, 1)} disabled={!canModuleWrite}>改天数</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.countdownHours", "转化卡倒计时小时", text(promoBanner.countdownHours), 0, 23, 1)} disabled={!canModuleWrite}>改小时</button>
           </div>
           <div className="p-row">
             <span className="k">目标设备 / 日产展示</span>
             <span className="v">{text(promoBanner.targetDevice)} · ${text(promoBanner.targetDaily)}/d</span>
-            <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promoBanner.targetDevice), false)}>改设备</button>
-            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡日产展示", text(promoBanner.targetDaily), 0, 1000000, 0.01)}>改日产</button>
+            <button className="l-btn sm mc" onClick={() => openSimpleConfig("promoBanner.targetDevice", "转化卡目标设备", text(promoBanner.targetDevice), false)} disabled={!canModuleWrite}>改设备</button>
+            <button className="l-btn sm mc" onClick={() => openNumericConfig("promoBanner.targetDaily", "转化卡日产展示", text(promoBanner.targetDaily), 0, 1000000, 0.01)} disabled={!canModuleWrite}>改日产</button>
           </div>
           <div className="p-row">
             <span className="k">首页上下架</span>
@@ -972,6 +974,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <button
               className="l-btn sm mc"
               onClick={openPromoStatus}
+              disabled={!canModuleWrite}
             >
               {text(promoBanner.status, "") === "active" ? "下架" : "上架"}
             </button>
@@ -992,7 +995,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <span className="ttl">活动列表(玩法闭集 8 种 · 当前 {model.events.length} 条)</span>
             <span className="sub">· 主推位同时只能有一个 · 陈旧页面提交会被拒绝</span>
             <div className="r">
-              <button className="l-btn sm mc" onClick={() => openCreateEvent()}>+ 新建活动</button>
+              <button className="l-btn sm mc" onClick={() => openCreateEvent()} disabled={!canModuleWrite}>+ 新建活动</button>
             </div>
           </div>
           <div style={{ overflowX: "auto" }}>
@@ -1025,15 +1028,15 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                             奖池管理
                           </span>
                         ) : (
-                          <button className="l-btn sm mc" onClick={() => openEventReward(event)} disabled={ended} style={{ marginRight: 6 }}>编辑</button>
+                          <button className="l-btn sm mc" onClick={() => openEventReward(event)} disabled={ended || !canModuleWrite} style={{ marginRight: 6 }}>编辑</button>
                         )}
                         {!ended && (
-                          <button className="l-btn sm mc" onClick={() => openEventStatus(event)} style={{ marginRight: 6 }}>
+                          <button className="l-btn sm mc" onClick={() => openEventStatus(event)} disabled={!canModuleWrite} style={{ marginRight: 6 }}>
                             {event.state === "ongoing" ? "下架" : "上架"}
                           </button>
                         )}
                         {event.state === "ongoing" && (
-                          <button className="l-btn sm mc" onClick={() => openEventFeatured(event)}>
+                          <button className="l-btn sm mc" onClick={() => openEventFeatured(event)} disabled={!canModuleWrite}>
                             {event.featured ? "取消主推" : "设主推"}
                           </button>
                         )}
@@ -1074,11 +1077,11 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
             <span className="ttl">抽奖转盘治理</span>
             <span className="sub">· 一个转盘一张奖池表(日免费 + 签到满 30 天加抽票共用)</span>
             <div className="r">
-              <button className="l-btn mc" onClick={openWheelProbabilities}>
+              <button className="l-btn mc" onClick={openWheelProbabilities} disabled={!canWheelWrite}>
                 改奖池 / 概率
               </button>
-              <button className="l-btn sm mc" onClick={() => openCreateWheelTier()}>+ 新建档位</button>
-              <button className="l-btn sm mc" onClick={() => openCreateWheelGuard()}>+ 新建护栏</button>
+              <button className="l-btn sm mc" onClick={() => openCreateWheelTier()} disabled={!canWheelWrite}>+ 新建档位</button>
+              <button className="l-btn sm mc" onClick={() => openCreateWheelGuard()} disabled={!canWheelWrite}>+ 新建护栏</button>
             </div>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -1098,8 +1101,8 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                   <span className="mono" style={{ fontWeight: 700 }}>{percentText(tier.prob)}%</span>
                   <span>{real ? <span className="bdg bad">真实流出</span> : <span className="bdg dim">{text(tier.kind)}</span>}</span>
                   <span style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                    <button className="l-btn sm mc" onClick={() => openEditWheelTier(tier)}>编辑</button>
-                    <button className="l-btn sm" onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
+                    <button className="l-btn sm mc" onClick={() => openEditWheelTier(tier)} disabled={!canWheelWrite}>编辑</button>
+                    <button className="l-btn sm" onClick={() => openDeleteWheelTier(tier)} disabled={numericValue(tier.prob) !== 0 || !canWheelWrite} title={numericValue(tier.prob) === 0 ? "删除档位" : "先将概率调为 0%"}>删除</button>
                   </span>
                 </div>
               );
@@ -1129,7 +1132,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
                       历史只读
                     </span>
                   ) : (
-                    <button className="l-btn sm mc" onClick={() => openWheelGuard(guard)}>
+                    <button className="l-btn sm mc" onClick={() => openWheelGuard(guard)} disabled={!canWheelWrite}>
                       {guard.key === "kill" ? "切" : "调"}
                     </button>
                   )}

@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const ROOT_USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
@@ -42,9 +42,14 @@ test.beforeAll(() => {
 test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery and M1/M3 linkage", async ({ page, browser }) => {
   let accountId = "";
   let adminId = 0;
+  let temporaryPassword = "";
   let supportAgentId = "";
   let scriptId = "";
   let templateId = "";
+  let scriptI18nKey = "";
+  let scriptI18nVersion = "";
+  let templateI18nKey = "";
+  let templateI18nVersion = "";
   let conversationNo = "";
   let originalAdvisorEnabled = false;
   let originalDelay = 0;
@@ -77,7 +82,7 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
   });
 
   await test.step("create one isolated SUPPORT supervisor and prove the M1/M5 seat source is shared", async () => {
-    const account = await okEnvelope<{ id: string }>(await page.request.post("/api/admin/platform/accounts", {
+    const account = await okEnvelope<{ id: string; temporaryPassword?: string }>(await page.request.post("/api/admin/platform/accounts", {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-ACCOUNT` },
       data: {
         username: TEMP_USERNAME,
@@ -90,6 +95,8 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
       },
     }));
     accountId = String(account.id);
+    temporaryPassword = String(account.temporaryPassword ?? "");
+    expect(temporaryPassword, "A1 create response must return the generated one-time password").toBeTruthy();
     adminId = Number(accountId.replace(/\D/g, ""));
     expect(adminId).toBeGreaterThan(0);
 
@@ -125,7 +132,7 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
 
   await test.step("support supervisor can write M5; category failure keeps the dialog and retries with the same key", async () => {
     await logout(page);
-    await login(page, TEMP_USERNAME, TEMP_INITIAL_PASSWORD, TEMP_FINAL_PASSWORD);
+    await login(page, TEMP_USERNAME, temporaryPassword, TEMP_FINAL_PASSWORD);
     const supportAuth = await okEnvelope<{ session?: { authorities?: string[] } }>(await page.request.get("/api/admin/auth/session"));
     expect(supportAuth.session?.authorities ?? []).toEqual(expect.arrayContaining(["service_m5_read", "service_m5_write"]));
     await openModule(page, "/service/scripts");
@@ -261,6 +268,7 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
       && new URL(response.url()).pathname.endsWith("/session-templates/scripts"));
     await dialog.getByRole("button", { name: "确认提交" }).click();
     const script = await okEnvelope<{ id: string; status: string }>(await responsePromise);
+    await expect(dialog).toBeHidden();
     await page.unroute(scriptRoute);
     expect(scriptKeys).toHaveLength(2);
     expect(scriptKeys[0]).toBeTruthy();
@@ -272,6 +280,9 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     await goToLastPage(cardByHeading(page, "顾问主动话术"));
     await expect(cardByHeading(page, "顾问主动话术").getByText(SCRIPT_TEXT, { exact: true })).toBeVisible();
 
+    const scriptMirror = await publishI18nMirrorAsRoot(browser, "script", scriptId, SCRIPT_TEXT);
+    scriptI18nKey = scriptMirror.messageKey;
+    scriptI18nVersion = scriptMirror.version;
     await page.locator(`[data-proof="session-script-publish-${scriptId}"] button`).click();
     await submitDialog(page, `${PREFIX}-发布话术供顾问使用`);
     expect((await findScript(page, scriptId)).status).toBe("published");
@@ -309,6 +320,7 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
       && new URL(response.url()).pathname.endsWith("/session-templates/reply-templates"));
     await dialog.getByRole("button", { name: "确认提交" }).click();
     const template = await okEnvelope<{ id: string; status: string }>(await responsePromise);
+    await expect(dialog).toBeHidden();
     await page.unroute(templateRoute);
     expect(templateKeys).toHaveLength(2);
     expect(templateKeys[0]).toBeTruthy();
@@ -320,6 +332,9 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     await goToLastPage(cardByHeading(page, "即时回复模板库"));
     await expect(cardByHeading(page, "即时回复模板库").getByText(TEMPLATE_TEXT, { exact: true })).toBeVisible();
 
+    const templateMirror = await publishI18nMirrorAsRoot(browser, "template", templateId, TEMPLATE_TEXT);
+    templateI18nKey = templateMirror.messageKey;
+    templateI18nVersion = templateMirror.version;
     await page.locator(`[data-proof="session-tpl-publish-${templateId}"] button`).click();
     await submitDialog(page, `${PREFIX}-发布模板供坐席使用`);
     expect((await findReplyTemplate(page, templateId)).status).toBe("published");
@@ -382,6 +397,13 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     await submitDialog(page, `${PREFIX}-归档模板验证终态`);
     expect((await findReplyTemplate(page, templateId)).status).toBe("archived");
 
+    if (scriptI18nKey && scriptI18nVersion) {
+      await archiveI18nMirror(page, scriptI18nKey, scriptI18nVersion, "SCRIPT");
+    }
+    if (templateI18nKey && templateI18nVersion) {
+      await archiveI18nMirror(page, templateI18nKey, templateI18nVersion, "TEMPLATE");
+    }
+
     const reviveScript = await page.request.patch(`/api/admin/content/session-templates/scripts/${scriptId}/status`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-REVIVE-SCRIPT` },
       data: { status: "published", expectedStatus: "archived", reason: `${PREFIX}-归档终态不可恢复`, operator: TEMP_USERNAME },
@@ -403,9 +425,10 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
   await test.step("role downgrade keeps read visibility but removes every M5 write path", async () => {
     await logout(page);
     await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+    const roleVersion = await accountVersion(page, accountId);
     await okEnvelope(await page.request.patch(`/api/admin/platform/accounts/${accountId}/role`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-ROLE-AUDITOR` },
-      data: { role: "auditor", reason: `${PREFIX}-验证只读角色权限边界`, operator: ROOT_USERNAME },
+      data: { role: "auditor", expectedVersion: roleVersion, reason: `${PREFIX}-验证只读角色权限边界`, operator: ROOT_USERNAME },
     }));
     await logout(page);
     await login(page, TEMP_USERNAME, TEMP_FINAL_PASSWORD);
@@ -421,9 +444,40 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
 
     await logout(page);
     await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+    if (conversationNo) {
+      const detail = await okEnvelope<{ conversation: { status: string; version: number } }>(
+        await page.request.get(`/api/admin/content/conversations/${encodeURIComponent(conversationNo)}`),
+      );
+      let conversation = detail.conversation;
+      if (conversation.status !== "RESOLVED" && conversation.status !== "CLOSED") {
+        conversation = await okEnvelope(await page.request.patch(`/api/admin/content/conversations/${encodeURIComponent(conversationNo)}/status`, {
+          headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-CONVERSATION-RESOLVE` },
+          data: {
+            status: "RESOLVED",
+            expectedStatus: conversation.status,
+            expectedVersion: conversation.version,
+            reason: `${PREFIX}-验收清理会话为已解决`,
+            operator: ROOT_USERNAME,
+          },
+        }));
+      }
+      if (conversation.status === "RESOLVED") {
+        await okEnvelope(await page.request.patch(`/api/admin/content/conversations/${encodeURIComponent(conversationNo)}/archive`, {
+          headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-CONVERSATION-ARCHIVE` },
+          data: {
+            archived: true,
+            expectedStatus: conversation.status,
+            expectedVersion: conversation.version,
+            reason: `${PREFIX}-验收清理会话归档`,
+            operator: ROOT_USERNAME,
+          },
+        }));
+      }
+    }
+    const statusVersion = await accountVersion(page, accountId);
     await okEnvelope(await page.request.patch(`/api/admin/platform/accounts/${accountId}/status`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-DISABLE` },
-      data: { status: "disabled", reason: `${PREFIX}-验收结束停用临时账号`, operator: ROOT_USERNAME },
+      data: { status: "disabled", expectedVersion: statusVersion, reason: `${PREFIX}-验收结束停用临时账号`, operator: ROOT_USERNAME },
     }));
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "04-rbac-and-terminal-state.png"), fullPage: true });
     checks.push("auditor-read-visible", "auditor-controls-disabled", "auditor-api-403", "temporary-account-disabled");
@@ -447,6 +501,67 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
   }, null, 2));
   expect(checks).toHaveLength(36);
 });
+
+async function publishI18nMirrorAsRoot(
+  browser: Browser,
+  kind: "script" | "template",
+  contentId: string,
+  canonicalZh: string,
+) {
+  const context = await browser.newContext({ baseURL: BASE_URL });
+  const page = await context.newPage();
+  try {
+    await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+    const messageKey = `conversation.${kind}.${contentId.toLowerCase()}`;
+    const body = {
+      zh: canonicalZh,
+      en: `Acceptance ${kind} ${contentId}`,
+      vi: `Nghiem thu ${kind} ${contentId}`,
+      reason: `${PREFIX}-创建M5发布所需中英越镜像`,
+      operator: ROOT_USERNAME,
+    };
+    const draft = await okEnvelope<{ version: string }>(await page.request.patch(
+      `/api/admin/content/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`,
+      {
+        headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-I18N-DRAFT-${kind}-${contentId}` },
+        data: body,
+      },
+    ));
+    const published = await okEnvelope<{ version: string }>(await page.request.post(
+      `/api/admin/content/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`,
+      {
+        headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-I18N-PUBLISH-${kind}-${contentId}` },
+        data: { ...body, expectedVersion: draft.version },
+      },
+    ));
+    return { messageKey, version: published.version };
+  } finally {
+    await context.close();
+  }
+}
+
+async function archiveI18nMirror(page: Page, messageKey: string, expectedVersion: string, suffix: string) {
+  await okEnvelope(await page.request.delete(
+    `/api/admin/content/i18n-learning/messages/${encodeURIComponent(messageKey)}`,
+    {
+      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-I18N-ARCHIVE-${suffix}` },
+      data: {
+        expectedVersion,
+        reason: `${PREFIX}-归档M5发布多语镜像`,
+        operator: ROOT_USERNAME,
+      },
+    },
+  ));
+}
+
+async function accountVersion(page: Page, accountId: string) {
+  const overview = await okEnvelope<{ operators?: Array<{ id: string; version?: string }> }>(
+    await page.request.get("/api/admin/platform/accounts/overview"),
+  );
+  const account = (overview.operators ?? []).find((operator) => String(operator.id) === String(accountId));
+  expect(account?.version, `A1 account ${accountId} must exist before CAS mutation`).toBeTruthy();
+  return account!.version!;
+}
 
 async function getOverview(page: Page) {
   return okEnvelope<Overview>(await page.request.get("/api/admin/content/session-templates/overview"));

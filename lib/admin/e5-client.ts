@@ -1,4 +1,9 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import {
+  parseE5DatacenterRows,
+  parseE5DevicePage,
+  parseE5Overview,
+} from "@/lib/admin/e456-overview-contract";
 
 export type E5DeviceState = "active" | "busy" | "offline" | "inventory" | "unbound" | "abnormal";
 export type E5DatacenterStatus = "active" | "maintenance" | "disabled";
@@ -338,7 +343,9 @@ function mapDevices(records: BackendDevice[]) {
 }
 
 export async function fetchE5Devices(query: E5DeviceQuery = {}): Promise<E5DevicePage> {
-  const page = await e5Request<PageResult<BackendDevice>>(queryString(query));
+  const page = parseE5DevicePage<PageResult<BackendDevice>>(
+    await e5Request<unknown>(queryString(query)),
+  );
   return {
     total: toNumber(page.total),
     pageNum: toNumber(page.pageNum, query.pageNum ?? 1),
@@ -348,7 +355,7 @@ export async function fetchE5Devices(query: E5DeviceQuery = {}): Promise<E5Devic
 }
 
 export async function fetchE5Overview(): Promise<E5Overview> {
-  const overview = await e5Request<BackendOverview>("/overview");
+  const overview = parseE5Overview<BackendOverview>(await e5Request<unknown>("/overview"));
   return {
     totalDevices: toNumber(overview.totalDevices),
     onlineDevices: toNumber(overview.onlineDevices),
@@ -362,7 +369,9 @@ export async function fetchE5Overview(): Promise<E5Overview> {
 }
 
 export async function fetchE5Datacenters(): Promise<E5Datacenter[]> {
-  const rows = await e5Request<BackendDatacenter[]>("/datacenters");
+  const rows = parseE5DatacenterRows<BackendDatacenter[]>(
+    await e5Request<unknown>("/datacenters"),
+  );
   return (rows ?? []).map(fromDatacenter);
 }
 

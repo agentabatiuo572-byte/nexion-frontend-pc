@@ -228,6 +228,8 @@ export type K1Cluster = {
 };
 export type K1WhitelistRow = { cidr: string; note: string; operator: string; expireText: string; active: boolean };
 export type MultiAccountOverview = {
+  serverCanonical: true;
+  domain: "K1";
   stats: Record<string, unknown>;
   params: KRiskParam[];
   clusters: AdminPage<K1Cluster>;
@@ -254,6 +256,8 @@ export type K2Row = {
 export type K2ViewGroup = { key: string; label: string; sub: string; head: string[]; note: string; rows: K2Row[] };
 export type K2Stat = { key: string; name: string; value: string; sub: string; tone: string };
 export type ArbitrageOverview = {
+  serverCanonical: true;
+  domain: "K2";
   stats: K2Stat[];
   params: KRiskParam[];
   views: K2ViewGroup[];
@@ -574,96 +578,413 @@ function normalizeRuleState(value: unknown): RuleState {
   return ["draft", "active", "paused", "archived"].includes(state) ? state : "draft";
 }
 
-function normalizeK1(raw: unknown): MultiAccountOverview {
-  const data = rec(raw);
+const K1_RESPONSE_INVALID = "K1_RESPONSE_INVALID";
+const K1_REQUIRED_PARAM_KEYS = [
+  "maxSignupPerIp24h",
+  "maxAccountsPerDevice",
+  "maxAccountsPerPaymentInstrument",
+  "linkWeight",
+  "clusterFreezeSuggestThreshold",
+] as const;
+const K1_REQUIRED_SOURCES = [
+  "nx_user_registration_otp:consumed_client_ip",
+  "nx_risk_decision:device_fingerprint",
+  "nx_wallet_bank_card:card_token",
+  "nx_admin_risk_multi_account_cluster",
+  "nx_admin_risk_ip_whitelist",
+] as const;
+
+function validateK1ParamValue(key: string, value: string): boolean {
+  if (key === "maxSignupPerIp24h") return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 10;
+  if (key === "maxAccountsPerDevice" || key === "maxAccountsPerPaymentInstrument") {
+    return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 5;
+  }
+  if (key === "clusterFreezeSuggestThreshold") {
+    const threshold = Number(value);
+    return Number.isFinite(threshold) && threshold >= 0 && threshold <= 1;
+  }
+  if (key === "linkWeight") {
+    const weights = value.match(/设备\s*([0-9.]+)\s*·\s*支付\s*([0-9.]+)\s*·\s*IP\s*([0-9.]+)/i);
+    if (!weights) return false;
+    const values = weights.slice(1).map(Number);
+    return values.every((weight) => Number.isFinite(weight) && weight >= 0 && weight <= 1)
+      && Math.abs(values.reduce((sum, weight) => sum + weight, 0) - 1) <= 0.001;
+  }
+  return false;
+}
+
+function invalidK1Response(path: string): never {
+  throw new Error(formatAdminApiError(K1_RESPONSE_INVALID, K1_RESPONSE_INVALID) + ` · ${path}`);
+}
+
+function requiredK1Record(value: unknown, path: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalidK1Response(path);
+  return value as Record<string, unknown>;
+}
+
+function requiredK1Array(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) invalidK1Response(path);
+  return value;
+}
+
+function requiredK1String(value: unknown, path: string, allowEmpty = false): string {
+  if (typeof value !== "string" || (!allowEmpty && !value.trim())) invalidK1Response(path);
+  return value;
+}
+
+function requiredK1Number(
+  value: unknown,
+  path: string,
+  min = Number.NEGATIVE_INFINITY,
+  max = Number.POSITIVE_INFINITY,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) invalidK1Response(path);
+  return value;
+}
+
+function requiredK1Integer(value: unknown, path: string, min = 0, max = Number.MAX_SAFE_INTEGER): number {
+  const result = requiredK1Number(value, path, min, max);
+  if (!Number.isInteger(result)) invalidK1Response(path);
+  return result;
+}
+
+function requiredK1Boolean(value: unknown, path: string): boolean {
+  if (typeof value !== "boolean") invalidK1Response(path);
+  return value;
+}
+
+function requiredK1StringArray(value: unknown, path: string): string[] {
+  return requiredK1Array(value, path).map((item, index) => requiredK1String(item, `${path}[${index}]`));
+}
+
+function requiredK1JsonRows(value: unknown, path: string): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") invalidK1Response(path);
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) invalidK1Response(path);
+    return parsed;
+  } catch {
+    return invalidK1Response(path);
+  }
+}
+
+function requiredK1Page<T>(
+  value: unknown,
+  path: string,
+  normalizeRow: (row: Record<string, unknown>, rowPath: string) => T,
+): AdminPage<T> {
+  const page = requiredK1Record(value, path);
+  const records = requiredK1Array(page.records, `${path}.records`).map((item, index) =>
+    normalizeRow(requiredK1Record(item, `${path}.records[${index}]`), `${path}.records[${index}]`));
+  const total = requiredK1Integer(page.total, `${path}.total`);
+  if (records.length > total) invalidK1Response(`${path}.records`);
   return {
-    stats: rec(data.stats),
-    params: rows<Record<string, unknown>>(data.params).map(normalizeParam),
-    clusters: normalizePage(data.clusters, (row) => ({
-      id: str(row.id),
-      key: str(row.key),
-      layer: str(row.layer, "ip"),
-      layerLabel: str(row.layerLabel, str(row.layer)),
-      n: num(row.n),
-      strength: num(row.strength),
-      span: str(row.span),
-      status: normalizeClusterStatus(row.status),
-      note: str(row.note),
-      gifts: parseJsonRows(row.giftsJson).map((item) => {
-        const tuple = rows<unknown>(item);
-        return [str(tuple[0]), str(tuple[1]), str(tuple[2])] as K1Gift;
-      }),
-      nodes: parseJsonRows(row.nodesJson).map((item) => {
-        const object = rec(item);
-        if (!Array.isArray(item) && Object.keys(object).length) {
-          const giftState = object.gotWelcomeGift == null ? "—" : bool(object.gotWelcomeGift) ? "是" : "否";
-          return [str(object.userNo), str(object.joinedAt), str(object.sponsorUserNo, "—"), giftState, str(object.depositCumulativeUsdt, "—"), str(object.accountStatus, "UNKNOWN")] as K1Node;
-        }
-        const tuple = rows<unknown>(item);
-        return [str(tuple[0]), str(tuple[1]), str(tuple[2], "—"), str(tuple[3], "—"), str(tuple[4], "—"), str(tuple[5], "UNKNOWN")] as K1Node;
-      }),
-      edges: parseJsonRows(row.edgesJson).map((item) => {
-        const object = rec(item);
-        if (!Array.isArray(item) && Object.keys(object).length) return [str(object.from), str(object.to), str(object.layer), num(object.weight)] as K1Edge;
-        const tuple = rows<unknown>(item);
-        return [str(tuple[0]), str(tuple[1]), str(tuple[2]), num(tuple[3])] as K1Edge;
-      }).filter((edge) => edge[0] && edge[1]),
-      reviewNote: str(row.reviewNote),
-      version: num(row.version),
-    })),
-    whitelist: normalizePage(data.whitelist, (row) => ({
-      cidr: str(row.cidr),
-      note: str(row.note),
-      operator: str(row.operator),
-      expireText: str(row.expireText),
-      active: bool(row.active, true),
-    })),
-    sources: strArray(data.sources),
+    total,
+    pageNum: requiredK1Integer(page.pageNum, `${path}.pageNum`, 1),
+    pageSize: requiredK1Integer(page.pageSize, `${path}.pageSize`, 1, 50),
+    records,
   };
 }
 
+function normalizeK1(raw: unknown): MultiAccountOverview {
+  const data = requiredK1Record(raw, "multiAccount");
+  if (data.serverCanonical !== true) invalidK1Response("multiAccount.serverCanonical");
+  if (data.domain !== "K1") invalidK1Response("multiAccount.domain");
+
+  const stats = requiredK1Record(data.stats, "multiAccount.stats");
+  for (const key of ["activeClusters", "highClusters", "frozenClusters", "frozenAccounts", "flaggedAccounts"]) {
+    requiredK1Integer(stats[key], `multiAccount.stats.${key}`);
+  }
+
+  const params = requiredK1Array(data.params, "multiAccount.params").map((item, index) => {
+    const path = `multiAccount.params[${index}]`;
+    const row = requiredK1Record(item, path);
+    const value = requiredK1String(row.value ?? row.val, `${path}.value`);
+    return {
+      key: requiredK1String(row.key, `${path}.key`),
+      name: requiredK1String(row.name, `${path}.name`),
+      value,
+      val: value,
+      version: requiredK1Integer(row.version, `${path}.version`),
+      adjustable: row.adjustable == null ? undefined : requiredK1Boolean(row.adjustable, `${path}.adjustable`),
+      unit: row.unit == null ? undefined : requiredK1String(row.unit, `${path}.unit`, true),
+      sub: requiredK1String(row.sub, `${path}.sub`, true),
+      note: requiredK1String(row.note, `${path}.note`, true),
+    };
+  });
+  const paramKeys = new Set(params.map((param) => param.key));
+  if (params.length !== paramKeys.size || K1_REQUIRED_PARAM_KEYS.some((key) => !paramKeys.has(key))) {
+    invalidK1Response("multiAccount.params");
+  }
+  params.forEach((param, index) => {
+    if (!validateK1ParamValue(param.key, param.value)) invalidK1Response(`multiAccount.params[${index}].value`);
+  });
+
+  const clusters = requiredK1Page(data.clusters, "multiAccount.clusters", (row, path): K1Cluster => {
+    const layer = requiredK1String(row.layer, `${path}.layer`);
+    if (!["ip", "device", "payment"].includes(layer)) invalidK1Response(`${path}.layer`);
+    const status = requiredK1String(row.status, `${path}.status`) as ClusterStatus;
+    if (!["detected", "flagged", "frozen", "released", "cleared"].includes(status)) invalidK1Response(`${path}.status`);
+    const gifts = requiredK1JsonRows(row.giftsJson, `${path}.giftsJson`).map((item, index) => {
+      const tuple = requiredK1Array(item, `${path}.giftsJson[${index}]`);
+      if (tuple.length < 3) invalidK1Response(`${path}.giftsJson[${index}]`);
+      return [
+        requiredK1String(tuple[0], `${path}.giftsJson[${index}][0]`),
+        requiredK1String(tuple[1], `${path}.giftsJson[${index}][1]`, true),
+        requiredK1String(tuple[2], `${path}.giftsJson[${index}][2]`, true),
+      ] as K1Gift;
+    });
+    const nodes = requiredK1JsonRows(row.nodesJson, `${path}.nodesJson`).map((item, index) => {
+      const nodePath = `${path}.nodesJson[${index}]`;
+      if (!Array.isArray(item)) {
+        const object = requiredK1Record(item, nodePath);
+        const gotWelcomeGift = object.gotWelcomeGift;
+        if (gotWelcomeGift != null) requiredK1Boolean(gotWelcomeGift, `${nodePath}.gotWelcomeGift`);
+        return [
+          requiredK1String(object.userNo, `${nodePath}.userNo`),
+          requiredK1String(object.joinedAt, `${nodePath}.joinedAt`),
+          object.sponsorUserNo == null ? "—" : requiredK1String(object.sponsorUserNo, `${nodePath}.sponsorUserNo`, true),
+          gotWelcomeGift == null ? "—" : gotWelcomeGift ? "是" : "否",
+          object.depositCumulativeUsdt == null
+            ? "—"
+            : typeof object.depositCumulativeUsdt === "number"
+              ? String(requiredK1Number(object.depositCumulativeUsdt, `${nodePath}.depositCumulativeUsdt`, 0))
+              : requiredK1String(object.depositCumulativeUsdt, `${nodePath}.depositCumulativeUsdt`, true),
+          requiredK1String(object.accountStatus, `${nodePath}.accountStatus`),
+        ] as K1Node;
+      }
+      if (item.length < 6) invalidK1Response(nodePath);
+      return item.slice(0, 6).map((value, tupleIndex) =>
+        requiredK1String(value, `${nodePath}[${tupleIndex}]`, tupleIndex >= 2)) as K1Node;
+    });
+    const edges = requiredK1JsonRows(row.edgesJson, `${path}.edgesJson`).map((item, index) => {
+      const edgePath = `${path}.edgesJson[${index}]`;
+      if (!Array.isArray(item)) {
+        const object = requiredK1Record(item, edgePath);
+        return [
+          requiredK1String(object.from, `${edgePath}.from`),
+          requiredK1String(object.to, `${edgePath}.to`),
+          requiredK1String(object.layer, `${edgePath}.layer`),
+          requiredK1Number(object.weight, `${edgePath}.weight`, 0, 1),
+        ] as K1Edge;
+      }
+      if (item.length < 4) invalidK1Response(edgePath);
+      return [
+        requiredK1String(item[0], `${edgePath}[0]`),
+        requiredK1String(item[1], `${edgePath}[1]`),
+        requiredK1String(item[2], `${edgePath}[2]`),
+        requiredK1Number(item[3], `${edgePath}[3]`, 0, 1),
+      ] as K1Edge;
+    });
+    return {
+      id: requiredK1String(row.id, `${path}.id`),
+      key: requiredK1String(row.key, `${path}.key`),
+      layer,
+      layerLabel: requiredK1String(row.layerLabel, `${path}.layerLabel`),
+      n: requiredK1Integer(row.n, `${path}.n`),
+      strength: requiredK1Number(row.strength, `${path}.strength`, 0, 1),
+      span: requiredK1String(row.span, `${path}.span`),
+      status,
+      note: requiredK1String(row.note, `${path}.note`, true),
+      gifts,
+      nodes,
+      edges,
+      reviewNote: row.reviewNote == null ? undefined : requiredK1String(row.reviewNote, `${path}.reviewNote`, true),
+      version: requiredK1Integer(row.version, `${path}.version`),
+    };
+  });
+
+  const whitelist = requiredK1Page(data.whitelist, "multiAccount.whitelist", (row, path): K1WhitelistRow => ({
+    cidr: requiredK1String(row.cidr, `${path}.cidr`),
+    note: requiredK1String(row.note, `${path}.note`, true),
+    operator: requiredK1String(row.operator, `${path}.operator`),
+    expireText: requiredK1String(row.expireText, `${path}.expireText`),
+    active: requiredK1Boolean(row.active, `${path}.active`),
+  }));
+  const sources = requiredK1StringArray(data.sources, "multiAccount.sources");
+  if (K1_REQUIRED_SOURCES.some((source) => !sources.includes(source))) invalidK1Response("multiAccount.sources");
+  return { serverCanonical: true, domain: "K1", stats, params, clusters, whitelist, sources };
+}
+
+const K2_RESPONSE_INVALID = "K2_RESPONSE_INVALID";
+const K2_STAT_KEYS = ["loopConfirmed", "loopWarn", "giftBlockedCnt", "boardSignals"] as const;
+const K2_VIEW_KEYS = ["trial", "tradein", "gift", "board"] as const;
+const K2_PARAM_KEYS = [
+  "trialCycleThreshold",
+  "welcomeGiftAnomalyThreshold",
+  "leaderboardVelocityMultiplier",
+  "otpGate.resendSeconds",
+  "otpGate.captchaAfterSends",
+  "otpGate.otpTtlSeconds",
+  "otpGate.maxVerifyAttempts",
+  "otpGate.captchaTicketTtlSeconds",
+] as const;
+const K2_REQUIRED_SOURCES = [
+  "nx_tradein_application:E3",
+  "nx_event_outbox:H2",
+  "nx_admin_risk_multi_account_cluster:K1",
+  "nx_commission_event:F4/F5",
+  "nx_risk_k2_leaderboard_snapshot:F4",
+  "nx_admin_risk_arbitrage_row",
+] as const;
+
+function validateK2ParamValue(key: string, value: string): boolean {
+  if (key === "trialCycleThreshold") {
+    const match = value.match(/^(>=|>)\s*(\d+)\s*次\s*\/\s*(7|14|30|60)\s*天$/);
+    return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 10;
+  }
+  if (key === "welcomeGiftAnomalyThreshold") {
+    const match = value.match(/^(>=|>)\s*(\d+)\s*笔\s*\/\s*(实体|账户簇|手机号|设备)$/);
+    return !!match && Number(match[2]) >= 1 && Number(match[2]) <= 5;
+  }
+  if (key === "leaderboardVelocityMultiplier") {
+    const match = value.match(/^(>=|>)\s*(\d+)\s*x\s*(基线|上周期|7日均值|同层级均值)$/i);
+    return !!match && Number(match[2]) >= 2 && Number(match[2]) <= 20;
+  }
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric)) return false;
+  if (key === "otpGate.resendSeconds") return numeric >= 30 && numeric <= 300;
+  if (key === "otpGate.captchaAfterSends" || key === "otpGate.maxVerifyAttempts") return numeric >= 1 && numeric <= 10;
+  if (key === "otpGate.otpTtlSeconds") return numeric >= 60 && numeric <= 900 && numeric % 60 === 0;
+  if (key === "otpGate.captchaTicketTtlSeconds") return numeric >= 30 && numeric <= 600;
+  return false;
+}
+
+function invalidK2Response(path: string): never {
+  throw new Error(formatAdminApiError(K2_RESPONSE_INVALID, K2_RESPONSE_INVALID) + ` · ${path}`);
+}
+
+function requiredK2Record(value: unknown, path: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalidK2Response(path);
+  return value as Record<string, unknown>;
+}
+
+function requiredK2Array(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) invalidK2Response(path);
+  return value;
+}
+
+function requiredK2String(value: unknown, path: string, allowEmpty = false): string {
+  if (typeof value !== "string" || (!allowEmpty && !value.trim())) invalidK2Response(path);
+  return value;
+}
+
+function requiredK2Integer(value: unknown, path: string, min = 0, max = Number.MAX_SAFE_INTEGER): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) invalidK2Response(path);
+  return value;
+}
+
+function requiredK2StringArray(value: unknown, path: string): string[] {
+  return requiredK2Array(value, path).map((item, index) => requiredK2String(item, `${path}[${index}]`));
+}
+
 function normalizeK2(raw: unknown): ArbitrageOverview {
-  const data = rec(raw);
-  return {
-    stats: rows<Record<string, unknown>>(data.stats).map((row) => ({
-      key: str(row.key),
-      name: str(row.name),
-      value: str(row.value),
-      sub: str(row.sub),
-      tone: str(row.tone),
-    })),
-    params: rows<Record<string, unknown>>(data.params).map(normalizeParam),
-    views: rows<Record<string, unknown>>(data.views).map((view) => ({
-      key: str(view.key),
-      label: str(view.label),
-      sub: str(view.sub),
-      head: strArray(view.head),
-      note: str(view.note),
-      rows: rows<Record<string, unknown>>(view.rows).map((row) => {
-        const rowId = str(row.rowId, str(row.rid));
-        const clusterId = str(row.clusterId, str(row.cluster));
-        const actions = strArray(row.actions ?? row.acts);
-        const level = num(row.level, num(row.lvl));
+  const data = requiredK2Record(raw, "arbitrage");
+  if (data.serverCanonical !== true) invalidK2Response("arbitrage.serverCanonical");
+  if (data.domain !== "K2") invalidK2Response("arbitrage.domain");
+
+  const stats = requiredK2Array(data.stats, "arbitrage.stats").map((item, index): K2Stat => {
+    const path = `arbitrage.stats[${index}]`;
+    const row = requiredK2Record(item, path);
+    return {
+      key: requiredK2String(row.key, `${path}.key`),
+      name: requiredK2String(row.name ?? row.label, `${path}.name`),
+      value: requiredK2String(row.value, `${path}.value`),
+      sub: requiredK2String(row.sub, `${path}.sub`, true),
+      tone: requiredK2String(row.tone, `${path}.tone`, true),
+    };
+  });
+  const statKeys = new Set(stats.map((stat) => stat.key));
+  if (stats.length !== K2_STAT_KEYS.length || K2_STAT_KEYS.some((key) => !statKeys.has(key))) {
+    invalidK2Response("arbitrage.stats");
+  }
+  stats.forEach((stat, index) => {
+    if (!/^\d+$/.test(stat.value)) invalidK2Response(`arbitrage.stats[${index}].value`);
+    if (!["", "warn", "ok", "danger"].includes(stat.tone)) invalidK2Response(`arbitrage.stats[${index}].tone`);
+  });
+
+  const params = requiredK2Array(data.params, "arbitrage.params").map((item, index): KRiskParam => {
+    const path = `arbitrage.params[${index}]`;
+    const row = requiredK2Record(item, path);
+    const value = requiredK2String(row.value, `${path}.value`);
+    return {
+      key: requiredK2String(row.key, `${path}.key`),
+      name: requiredK2String(row.name, `${path}.name`),
+      value,
+      val: value,
+      version: requiredK2Integer(row.version, `${path}.version`),
+      sub: requiredK2String(row.sub, `${path}.sub`, true),
+      note: requiredK2String(row.note, `${path}.note`, true),
+    };
+  });
+  const paramKeys = new Set(params.map((param) => param.key));
+  if (params.length !== paramKeys.size || K2_PARAM_KEYS.some((key) => !paramKeys.has(key))) invalidK2Response("arbitrage.params");
+  params.forEach((param, index) => {
+    if (!validateK2ParamValue(param.key, param.value)) invalidK2Response(`arbitrage.params[${index}].value`);
+  });
+
+  const views = requiredK2Array(data.views, "arbitrage.views").map((item, index): K2ViewGroup => {
+    const path = `arbitrage.views[${index}]`;
+    const view = requiredK2Record(item, path);
+    const key = requiredK2String(view.key, `${path}.key`);
+    if (!K2_VIEW_KEYS.includes(key as (typeof K2_VIEW_KEYS)[number])) invalidK2Response(`${path}.key`);
+    return {
+      key,
+      label: requiredK2String(view.label, `${path}.label`),
+      sub: requiredK2String(view.sub, `${path}.sub`),
+      head: requiredK2StringArray(view.head, `${path}.head`),
+      note: requiredK2String(view.note, `${path}.note`),
+      rows: requiredK2Array(view.rows, `${path}.rows`).map((rowValue, rowIndex): K2Row => {
+        const rowPath = `${path}.rows[${rowIndex}]`;
+        const row = requiredK2Record(rowValue, rowPath);
+        const rowId = requiredK2String(row.rowId, `${rowPath}.rowId`);
+        const rowViewKey = requiredK2String(row.viewKey, `${rowPath}.viewKey`);
+        if (rowViewKey !== key) invalidK2Response(`${rowPath}.viewKey`);
+        const actions = requiredK2StringArray(row.actions, `${rowPath}.actions`);
+        if (actions.some((action) => !["flag", "freeze", "blockgift", "boardflag"].includes(action))) {
+          invalidK2Response(`${rowPath}.actions`);
+        }
+        const disposition = row.disposition == null
+          ? null
+          : requiredK2String(row.disposition, `${rowPath}.disposition`);
+        if (disposition && !["account_flagged", "gift_blocked", "leaderboard_flagged", "cluster_frozen"].includes(disposition)) {
+          invalidK2Response(`${rowPath}.disposition`);
+        }
+        const clusterStatus = row.clusterStatus == null
+          ? undefined
+          : requiredK2String(row.clusterStatus, `${rowPath}.clusterStatus`);
+        if (clusterStatus && !["detected", "flagged", "frozen", "released", "cleared"].includes(clusterStatus)) {
+          invalidK2Response(`${rowPath}.clusterStatus`);
+        }
+        const clusterId = row.clusterId == null ? "" : requiredK2String(row.clusterId, `${rowPath}.clusterId`, true);
+        const level = requiredK2Integer(row.level, `${rowPath}.level`, 0, 3);
         return {
           rowId,
           rid: rowId,
-          viewKey: str(row.viewKey, str(view.key)),
+          viewKey: rowViewKey,
           clusterId,
           cluster: clusterId || undefined,
-          cells: strArray(row.cells),
+          cells: requiredK2StringArray(row.cells, `${rowPath}.cells`),
           level,
           lvl: level,
           actions,
           acts: actions,
-          disposition: row.disposition == null ? null : str(row.disposition),
-          version: num(row.version),
-          clusterStatus: str(row.clusterStatus) || undefined,
-          clusterVersion: row.clusterVersion == null ? undefined : num(row.clusterVersion),
+          disposition,
+          version: requiredK2Integer(row.version, `${rowPath}.version`),
+          clusterStatus,
+          clusterVersion: row.clusterVersion == null
+            ? undefined
+            : requiredK2Integer(row.clusterVersion, `${rowPath}.clusterVersion`),
         };
       }),
-    })),
-    sources: strArray(data.sources),
-  };
+    };
+  });
+  const viewKeys = new Set(views.map((view) => view.key));
+  if (views.length !== K2_VIEW_KEYS.length || K2_VIEW_KEYS.some((key) => !viewKeys.has(key))) invalidK2Response("arbitrage.views");
+  const sources = requiredK2StringArray(data.sources, "arbitrage.sources");
+  if (K2_REQUIRED_SOURCES.some((source) => !sources.includes(source))) invalidK2Response("arbitrage.sources");
+  return { serverCanonical: true, domain: "K2", stats, params, views, sources };
 }
 
 const K3_RESPONSE_INVALID = "K3_RESPONSE_INVALID";
@@ -1439,13 +1760,14 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
   updateK3RuleState: (ruleId, state, expectedVersion, reason, commandKey) => apiRequest(`/withdraw-rules/${encodeURIComponent(ruleId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ state, expectedVersion }, reason)) }).then(() => undefined),
   updateK3Rule: (ruleId, conditionText, action, priority, expectedVersion, reason, commandKey) => apiRequest(`/withdraw-rules/${encodeURIComponent(ruleId)}/condition`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ conditionText, action, priority, expectedVersion }, reason)) }).then(() => undefined),
   archiveK3Rule: (ruleId, expectedVersion, reason, commandKey) => apiRequest(`/withdraw-rules/${encodeURIComponent(ruleId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ state: "archived", expectedVersion }, reason)) }).then(() => undefined),
-  dryRunK3: (reason, commandKey) => {
+  dryRunK3: async (reason, commandKey) => {
     const stableCommandKey = commandKey ?? newK1CommandKey();
-    return apiRequest("/withdraw-rules/dry-runs", {
+    const value = await apiRequest("/withdraw-rules/dry-runs", {
       method: "POST",
       commandKey: stableCommandKey,
       body: JSON.stringify(withReason({}, reason)),
-    }).then((value) => normalizeK3DryRunForWrite(value, stableCommandKey));
+    });
+    return normalizeK3DryRunForWrite(value, stableCommandKey);
   },
   saveK4ModelDraft: (input, reason, commandKey) => apiRequest("/scoring/model/draft", {
     method: "PUT",

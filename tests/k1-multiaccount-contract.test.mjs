@@ -114,8 +114,8 @@ test("K1 preserves command keys for uncertain retries and proxy identifies unkno
   assert.match(a2Client, /A2OutcomeUncertainError/);
   assert.match(platformProxy, /X-Nexion-Upstream-Outcome/);
   assert.match(proposer, /throw error/);
-  assert.match(proposer, /A2 提案结果未知/);
-  assert.match(proposer, /使用同一请求重试/);
+  assert.match(proposer, /A2 提案结果暂不确定/);
+  assert.match(proposer, /使用同一命令号重试/);
 });
 
 test("K1 distinguishes confirmed write failures from unknown outcomes", () => {
@@ -129,6 +129,22 @@ test("K1 distinguishes confirmed write failures from unknown outcomes", () => {
 test("K1 hides stale business data and write controls when refresh fails", () => {
   assert.match(component, /if \(ctx\.contentError\)/);
   assert.ok(component.indexOf("if (ctx.contentError)") < component.indexOf("return ("));
+});
+
+test("K1 rejects malformed successful overview payloads instead of normalizing them to an empty state", () => {
+  assert.match(client, /K1_RESPONSE_INVALID/);
+  assert.match(client, /requiredK1Record\(raw,\s*"multiAccount"\)/);
+  assert.match(client, /data\.serverCanonical !== true/);
+  assert.match(client, /data\.domain !== "K1"/);
+  assert.match(client, /K1_REQUIRED_PARAM_KEYS/);
+  assert.match(client, /validateK1ParamValue/);
+  assert.match(client, /requiredK1Page\(data\.clusters,\s*"multiAccount\.clusters"/);
+  assert.match(client, /requiredK1Page\(data\.whitelist,\s*"multiAccount\.whitelist"/);
+  assert.match(client, /requiredK1StringArray\(data\.sources,\s*"multiAccount\.sources"\)/);
+  assert.match(errorMessages, /K1_RESPONSE_INVALID/);
+  assert.match(errorMessages, /旧数据与写操作已隐藏/);
+  assert.match(riskService, /response\.put\("serverCanonical", true\)/);
+  assert.match(riskService, /response\.put\("domain", "K1"\)/);
 });
 
 test("K1 separates confirmed writes from refresh failures", () => {

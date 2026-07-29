@@ -57,18 +57,28 @@ async function loginFromVisibleEntry(page: Page) {
   ]).catch(() => undefined);
   if (await shell.isVisible()) return;
   if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await fillUnlessShellRecovered(username, USERNAME, shell);
-    if (await shell.isVisible()) return;
-    await fillUnlessShellRecovered(
-      page.locator('input[autocomplete="current-password"]'),
-      PASSWORD,
-      shell,
-    );
-    if (await shell.isVisible()) return;
-    try {
-      await page.getByRole("button", { name: /继续|登录/ }).click();
-    } catch (error) {
-      if (!(await shell.isVisible())) throw error;
+    for (let attempt = 0; attempt < 2 && !(await shell.isVisible()); attempt += 1) {
+      await fillUnlessShellRecovered(username, USERNAME, shell);
+      if (await shell.isVisible()) return;
+      await fillUnlessShellRecovered(
+        page.locator('input[autocomplete="current-password"]'),
+        PASSWORD,
+        shell,
+      );
+      if (await shell.isVisible()) return;
+      const loginRequest = page.waitForRequest((request) =>
+        request.method() === "POST"
+        && new URL(request.url()).pathname === "/api/admin/auth/login", {
+        timeout: 5_000,
+      }).catch(() => null);
+      try {
+        await page.getByRole("button", { name: /继续|登录/ }).click();
+      } catch (error) {
+        if (!(await shell.isVisible())) throw error;
+      }
+      if (await shell.isVisible()) return;
+      const request = await loginRequest;
+      if (request) break;
     }
   }
   await expect(shell).toBeVisible({ timeout: 20_000 });

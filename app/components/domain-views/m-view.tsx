@@ -533,12 +533,12 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   if (before.transfer && !row.transfer) {
     if (action?.includes("退回") || action?.includes("return")) {
       const target: "from" | "standby" = row.owner === STANDBY_POOL_LABEL ? "standby" : "from";
-      await mContentActions.returnTransfer(row.id, target, before.status, before.version, reason, idempotencyKey);
-    } else await mContentActions.acceptTransfer(row.id, before.status, before.version, reason, idempotencyKey);
+      await mContentActions.returnTransfer(row.id, target, "transferred", before.version, reason, idempotencyKey);
+    } else await mContentActions.acceptTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
     return;
   }
   if (before.transfer && row.transfer && JSON.stringify(before.transfer) !== JSON.stringify(row.transfer)) {
-    if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, before.status, before.version, reason, idempotencyKey);
+    if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
     else {
       const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
       await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, targetId, idempotencyKey);
@@ -549,7 +549,7 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   const newMessage = row.messages.length > before.messages.length ? row.messages[row.messages.length - 1] : null;
   if (newMessage?.sender === "agent") {
     if (action?.includes("transfer_wait")) {
-      await mContentActions.waitTransfer(row.id, before.status, before.version, reason, idempotencyKey);
+      await mContentActions.waitTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
     } else {
       const body = newMessage.ctaHref ? `${newMessage.text} ${newMessage.ctaHref}` : newMessage.text;
       await mContentActions.replyConversation(row.id, body, before.status, before.version, reason, idempotencyKey);

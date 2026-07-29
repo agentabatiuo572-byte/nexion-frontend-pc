@@ -93,6 +93,8 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
       setOverview(nextOverview);
       setOrders(nextOrders.orders);
     } catch (err) {
+      setOverview(null);
+      setOrders([]);
       setError(messageOf(err));
     } finally {
       if (!silent) setLoading(false);
@@ -113,7 +115,11 @@ export function G7Repurchase({ ctx }: { ctx: GCtx }) {
           setOrders(nextOrders.orders);
         }
       } catch (err) {
-        if (!cancelled) setError(messageOf(err));
+        if (!cancelled) {
+          setOverview(null);
+          setOrders([]);
+          setError(messageOf(err));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

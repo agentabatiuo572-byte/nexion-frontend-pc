@@ -52,7 +52,9 @@ export function M4KbSla({ ctx }: { ctx: MCtx }) {
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM4 = isSuperAdmin || Boolean(authorities?.includes("service_m4_write"));
-  const knowledgeAvailable = pget("I.support.knowledgeAvailable") !== "0";
+  // Undefined is the initial loading state. Writes stay fail-closed until the
+  // strict M4 response validator explicitly publishes a successful "1".
+  const knowledgeAvailable = pget("I.support.knowledgeAvailable") === "1";
   const faqs = useMemo(() => parseParamArray<SupportFaq>(pget(FAQ_KEY), []), [ctx.params, pget]);
   const sla = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
 

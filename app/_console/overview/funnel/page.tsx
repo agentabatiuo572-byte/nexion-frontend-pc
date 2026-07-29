@@ -3,11 +3,17 @@
 import "../b-domain.css";
 import "./funnel.css";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, RefreshCw, Save, TrendingUp } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
-import { exportB3Cohort, saveB3View, useB3Funnel, type B3Filters } from "@/lib/admin/b3-client";
+import {
+  B3OutcomeUnknownError,
+  exportB3Cohort,
+  saveB3View,
+  useB3Funnel,
+  type B3Filters,
+} from "@/lib/admin/b3-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const ALL = "ALL";
@@ -22,6 +28,8 @@ export default function FunnelPage() {
   const [viewName, setViewName] = useState("B3 当前视图");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<"save" | "export" | "">("");
+  const viewCommandKey = useRef<string | null>(null);
+  const viewCommandFingerprint = useRef<string | null>(null);
   const auth = useAdminAuth((state) => state.session);
   const { data, loading, error, reload } = useB3Funnel(filters, stage);
   const authorities = auth?.authorities ?? [];
@@ -48,13 +56,26 @@ export default function FunnelPage() {
   }, [data]);
 
   async function saveView() {
+    const fingerprint = JSON.stringify({ viewName, filters, granularity: "WEEK", comparison: "PREVIOUS" });
+    if (viewCommandFingerprint.current !== fingerprint) {
+      viewCommandKey.current = null;
+      viewCommandFingerprint.current = fingerprint;
+    }
+    const commandKey = viewCommandKey.current ?? `b3-view-${crypto.randomUUID()}`;
+    viewCommandKey.current = commandKey;
     setBusy("save");
     setNotice("");
     try {
-      const result = await saveB3View(viewName, filters);
+      const result = await saveB3View(viewName, filters, "WEEK", "PREVIOUS", commandKey);
+      viewCommandKey.current = null;
+      viewCommandFingerprint.current = null;
       setNotice(result.replayed ? "相同视图已存在，未重复写入。" : "视图已保存到服务端，刷新或重登后仍可回读。");
       await reload();
     } catch (value) {
+      if (!(value instanceof B3OutcomeUnknownError)) {
+        viewCommandKey.current = null;
+        viewCommandFingerprint.current = null;
+      }
       setNotice(value instanceof Error ? value.message : "保存视图失败，请重试。");
     } finally {
       setBusy("");

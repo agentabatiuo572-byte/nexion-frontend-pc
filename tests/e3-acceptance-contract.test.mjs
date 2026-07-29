@@ -1,12 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { canonicalE3ConfigTargetId, findHighOp } from "../lib/admin/high-ops-registry.ts";
 
 const e3 = readFileSync(new URL("../app/components/domain-views/e-tabs/e3-lifecycle.tsx", import.meta.url), "utf8");
+const eView = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
+const eTypes = readFileSync(new URL("../app/components/domain-views/e-tabs/types.ts", import.meta.url), "utf8");
 const manual = readFileSync(new URL("../app/components/domain-views/e-tabs/e3-manual.tsx", import.meta.url), "utf8");
 const designKit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/e3-client.ts", import.meta.url), "utf8");
 const l4 = readFileSync(new URL("../app/components/domain-views/l-tabs/l4-live-data.ts", import.meta.url), "utf8");
+const backendE3 = readFileSync(
+  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java", import.meta.url),
+  "utf8",
+);
 
 test("E3 treats every FEAT-DEV02 trade-in control as required server-canonical data", () => {
   for (const key of [
@@ -41,6 +48,12 @@ test("E3 scalar and grouped editors reject no-op and invalid boundary input", ()
   assert.match(e3, /min\?: number; max\?: number; step\?: number/);
 });
 
+test("E3 write controls require the exact device_e3_write authority", () => {
+  assert.match(eView, /authorities\.includes\("device_e3_write"\)/);
+  assert.match(eTypes, /canWriteE3: boolean/);
+  assert.match(e3, /ctx\.canWriteE3[\s\S]*?<button className=\{`adj/);
+});
+
 test("E3 D4 failure trace is a real filtered navigation", () => {
   assert.match(e3, /href="\/finance\/ledger\?keyword=tradein&status=FAILED"/);
   assert.doesNotMatch(e3, /打开 D4 bill · 跳转失败 tx 详情/);
@@ -50,4 +63,40 @@ test("L4 exposes real E3 configuration and trade-in result facts", () => {
   assert.match(l4, /e3ConfigChanges/);
   assert.match(l4, /tradeinApplications/);
   assert.match(l4, /completedTradeins/);
+});
+
+test("E3 A2 object locks use the same canonical key as backend direct-write checks", () => {
+  const scalar = findHighOp("e3_config");
+  const batch = findHighOp("e3_config_batch");
+  assert.ok(scalar);
+  assert.ok(batch);
+
+  const frontendKey = "E.device.capacity.subsidyDays";
+  const canonicalKey = "capacitySubsidyDays";
+  assert.equal(canonicalE3ConfigTargetId(frontendKey), canonicalKey);
+  assert.equal(scalar.buildTarget({ key: frontendKey }).id, canonicalKey);
+  assert.deepEqual(
+    batch.buildTargets?.({
+      values: {
+        "E.tradein.ladder.cut1": "24",
+        [frontendKey]: "31",
+      },
+    }).map((target) => target.id),
+    [canonicalKey, "tradeinLadderCut1"],
+  );
+  assert.equal(
+    batch.buildTarget({ values: { [frontendKey]: "31" } }).id,
+    canonicalKey,
+  );
+
+  assert.match(
+    backendE3,
+    /key = normalizeE3Key\(request\.key\(\)\);[\s\S]*countActiveByTarget\("E", "device_e3_config", key\)[\s\S]*ApiResult\.fail\(409, "OBJECT_LOCKED_BY_A2"\)/,
+  );
+  for (const target of [
+    scalar.buildTarget({ key: frontendKey }),
+    ...(batch.buildTargets?.({ values: { [frontendKey]: "31" } }) ?? []),
+  ]) {
+    assert.doesNotMatch(target.id, /^E\.(?:device|tradein|release)\./);
+  }
 });

@@ -79,6 +79,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     try {
       setOverview(await fetchG2ExchangeOverview());
     } catch (err) {
+      setOverview(null);
       setError(messageOf(err));
     } finally {
       if (!silent) setLoading(false);
@@ -94,7 +95,10 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
         const next = await fetchG2ExchangeOverview();
         if (!cancelled) setOverview(next);
       } catch (err) {
-        if (!cancelled) setError(messageOf(err));
+        if (!cancelled) {
+          setOverview(null);
+          setError(messageOf(err));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

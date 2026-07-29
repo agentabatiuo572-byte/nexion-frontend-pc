@@ -56,3 +56,8 @@ test("C1 proxy fails closed when upstream phone masking violates the public cont
   assert.match(usersProxy, /sanitizePhoneMasked\(JSON\.parse/);
   assert.match(usersProxy, /USERS_RESPONSE_INVALID/);
 });
+
+test("C1 overview request is explicitly forwarded to the authoritative backend route", () => {
+  assert.match(usersProxy, /parts\.length === 1 && parts\[0\] === "overview"/);
+  assert.match(usersProxy, /return "\/api\/admin\/users\/overview"/);
+});

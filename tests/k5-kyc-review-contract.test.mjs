@@ -9,6 +9,7 @@ const kView = readFileSync(new URL("../app/components/domain-views/k-view.tsx", 
 const errors = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
 const verify = readFileSync(new URL("../scripts/verify.mjs", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/registry/k.ts", import.meta.url), "utf8");
+const liveAcceptance = readFileSync(new URL("./e2e/k5-live-acceptance-20260722.spec.ts", import.meta.url), "utf8");
 
 test("K5 reads only its own overview and fails closed on load or payload errors", () => {
   assert.match(client, /export async function fetchK5KycReviewOverview/);
@@ -199,4 +200,25 @@ test("K5 localized errors participate in the repository verify gate", () => {
     "K5_PARAM_CONCURRENT_UPDATE",
   ]) assert.match(errors, new RegExp(code));
   assert.match(verify, /K5 contract/);
+});
+
+test("K5 live acceptance can reuse scoped fixtures without creating privileged accounts", () => {
+  assert.match(liveAcceptance, /K5_RISK_TOTP_SECRET/);
+  assert.match(liveAcceptance, /K5_READONLY_TOTP_SECRET/);
+  assert.match(liveAcceptance, /mfaSecrets\.set\(RISK_USERNAME, RISK_TOTP_SECRET\)/);
+  assert.match(liveAcceptance, /mfaSecrets\.set\(READONLY_USERNAME, READONLY_TOTP_SECRET\)/);
+});
+
+test("K5 temporary-account fallback removes every authentication and authorization residue", () => {
+  assert.match(liveAcceptance, /sanitizeTemporaryAccount/);
+  assert.match(liveAcceptance, /"reset-2fa"/);
+  assert.match(liveAcceptance, /"sessions\/revoke"/);
+  assert.match(liveAcceptance, /expectedVersion: current\.version/);
+  assert.match(liveAcceptance, /role: "unassigned", status: "disabled", tfa: false, sessions: 0/);
+});
+
+test("K5 verifies the C4 cross-domain side effect with a separately authorized root session", () => {
+  assert.match(liveAcceptance, /c4StatusAsRoot\(browser\)/);
+  assert.match(liveAcceptance, /await login\(page, ROOT_USERNAME\)/);
+  assert.doesNotMatch(liveAcceptance, /c4Status\(page\)/);
 });

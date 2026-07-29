@@ -9,7 +9,7 @@
  * amplifies 仅放大流出方向(放松 dial / 升奖励 / 升概率 / 升 NEX 奖励 / 降门槛 / 真实奖)。
  * 单源:后端 /api/admin/growth/* 读模型。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./h-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
@@ -22,6 +22,7 @@ import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
 import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
 import { fetchH1Rhythm, type H1RhythmOverview } from "@/lib/admin/h-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** L2 映射:H3/H4 分别渲染高保真里的任务分段/活动分段;H5 承载签到与里程碑。 */
 const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H4", H5: "H5", H7: "H7", H8: "H8" };
@@ -38,15 +39,22 @@ const RO_COPY: Record<string, [ro: string, live: string]> = {
 
 export function HDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
+  const session = useAdminAuth((state) => state.session);
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "H1", [meta.l2Id]);
   const [rhythm, setRhythm] = useState<H1RhythmOverview | null>(null);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
+  const can = useCallback((authority: string) => {
+    const role = session?.role;
+    const authorities = session?.authorities ?? [];
+    return role === "superadmin" || role === "super" || authorities.includes(authority);
+  }, [session]);
 
   const ctx: HCtx = {
     toast: setToast,
     openActionConfirm: setActionConfirm,
     openConfirm: setCf,
+    can,
   };
 
   useEffect(() => {

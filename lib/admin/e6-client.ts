@@ -1,4 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { parseE6ComputeConfig } from "@/lib/admin/e456-overview-contract";
 
 /**
  * E6 算力与设备配置 —— 对接后端 OpsDeviceController。
@@ -122,7 +123,9 @@ async function e6Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
 // ── 读:GET 聚合视图 ─────────────────────────────────────────────────────
 export async function fetchE6ComputeConfig(): Promise<E6ComputeConfigView> {
-  return e6Request<E6ComputeConfigView>("/compute-config");
+  return parseE6ComputeConfig<E6ComputeConfigView>(
+    await e6Request<unknown>("/compute-config"),
+  );
 }
 
 // ── 写:PATCH 单参数 ─────────────────────────────────────────────────────

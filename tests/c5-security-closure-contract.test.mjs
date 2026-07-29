@@ -45,6 +45,11 @@ test("C5 rejects malformed success payloads and never preserves stale target dat
   assert.match(c5, /重新加载/);
 });
 
+test("C5 empty lookup cleanup never erases an overview load failure", () => {
+  assert.match(c5, /setError\(\(current\) => current\?\.startsWith\("C5 用户搜索失败"\) \? null : current\)/);
+  assert.doesNotMatch(c5, /if \(!keyword\) \{[\s\S]{0,360}setError\(null\)/);
+});
+
 test("C5 clears a stale user without erasing global statistics and credential parameters", () => {
   assert.match(c5, /function clearSelectedUserFromOverview/);
   assert.match(c5, /selectedUser: null/);

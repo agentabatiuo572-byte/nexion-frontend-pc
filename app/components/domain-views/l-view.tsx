@@ -15,11 +15,13 @@ import { L1HeaderActions, L1Kpi } from "./l-tabs/l1-kpi";
 import { L2HeaderActions, L2Funnel } from "./l-tabs/l2-funnel";
 import { L3HeaderActions, L3Finance } from "./l-tabs/l3-finance";
 import { L4HeaderActions, L4Ops } from "./l-tabs/l4-ops";
+import { readL4Operations } from "./l-tabs/l4-live-data";
 import { L5HeaderActions, L5Export } from "./l-tabs/l5-export";
 import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap";
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
 import { allowedAggregateExportOptions, canAccessBiReportType, canExportBiReports } from "./l-tabs/l1-l2-live-data";
 import { fetchLBiOverview, lBiActions, type L2FunnelQuery, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
+import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const FOLD: Record<string, string> = { L1: "L1", L2: "L2", L3: "L3", L4: "L4", L5: "L5", L6: "L6" };
@@ -42,15 +44,24 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
   );
 
   const reloadBi = useCallback(async () => {
+    if (tab === "L4" && l4Query.period === "custom" && (!l4Query.from || !l4Query.to)) {
+      setBiLoading(false);
+      setBiError(null);
+      return;
+    }
     setBiLoading(true);
     setBiError(null);
     setBiData(null);
     try {
-      setBiData(await fetchLBiOverview(
+      const nextData = await fetchLBiOverview(
         tab as LModuleCode,
         tab === "L3" ? l3Query : undefined,
         tab === "L4" ? l4Query : undefined,
-      ));
+      );
+      if (tab === "L4" && !readL4Operations(nextData.l4)) {
+        throw new Error(formatAdminApiError("L4_RESPONSE_INVALID", "L4_RESPONSE_INVALID"));
+      }
+      setBiData(nextData);
     } catch (error) {
       setBiError(error instanceof Error ? error.message : "BI_DATA_LOAD_FAILED");
     } finally {

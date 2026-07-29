@@ -1,5 +1,6 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { parseIOverview } from "@/lib/admin/i-overview-contract";
 
 type ApiResult<T> = {
   code?: number;
@@ -566,7 +567,10 @@ export type IContentData = {
   campaigns?: NotificationCampaignOverview;
   trustDisclosure?: TrustDisclosureOverview;
   i18nLearning?: I18nLearningOverview;
+  errors?: Partial<Record<IContentErrorKey, string>>;
 };
+
+export type IContentErrorKey = "copyAb" | "nova" | "campaigns" | "trustDisclosure" | "i18nLearning";
 
 export type IContentActions = {
   reloadIContent: () => Promise<void>;
@@ -654,22 +658,34 @@ export type IContentActions = {
 
 export async function fetchIContentOverviews(): Promise<IContentData> {
   const [copyAb, nova, campaigns, trustDisclosure, i18nLearning] = await Promise.allSettled([
-    apiRequest<CopyAbOverview>("/copy-ab/overview"),
-    apiRequest<NovaOverview>("/nova/overview"),
-    apiRequest<NotificationCampaignOverview>("/campaigns/overview"),
-    apiRequest<TrustDisclosureOverview>("/trust-disclosure/overview"),
-    apiRequest<I18nLearningOverview>("/i18n-learning/overview"),
+    apiRequest<unknown>("/copy-ab/overview").then((value) => parseIOverview("I1", value) as CopyAbOverview),
+    apiRequest<unknown>("/nova/overview").then((value) => parseIOverview("I2", value) as NovaOverview),
+    apiRequest<unknown>("/campaigns/overview").then((value) => parseIOverview("I3", value) as NotificationCampaignOverview),
+    apiRequest<unknown>("/trust-disclosure/overview").then((value) => parseIOverview("I4", value) as TrustDisclosureOverview),
+    apiRequest<unknown>("/i18n-learning/overview").then((value) => parseIOverview("I6", value) as I18nLearningOverview),
   ]);
-  const results = [copyAb, nova, campaigns, trustDisclosure, i18nLearning];
-  if (results.every((result) => result.status === "rejected")) {
-    throw (results[0] as PromiseRejectedResult).reason;
-  }
+
+  const safeError = (moduleId: string, result: PromiseSettledResult<unknown>) => {
+    if (result.status === "fulfilled") return undefined;
+    const message = result.reason instanceof Error ? result.reason.message : "";
+    return message === `${moduleId} 返回数据格式异常，请刷新重试`
+      ? message
+      : `${moduleId} 数据加载失败，请刷新重试`;
+  };
+
   return {
     copyAb: copyAb.status === "fulfilled" ? copyAb.value : undefined,
     nova: nova.status === "fulfilled" ? nova.value : undefined,
     campaigns: campaigns.status === "fulfilled" ? campaigns.value : undefined,
     trustDisclosure: trustDisclosure.status === "fulfilled" ? trustDisclosure.value : undefined,
     i18nLearning: i18nLearning.status === "fulfilled" ? i18nLearning.value : undefined,
+    errors: {
+      copyAb: safeError("I1", copyAb),
+      nova: safeError("I2", nova),
+      campaigns: safeError("I3", campaigns),
+      trustDisclosure: safeError("I4", trustDisclosure),
+      i18nLearning: safeError("I6", i18nLearning),
+    },
   };
 }
 

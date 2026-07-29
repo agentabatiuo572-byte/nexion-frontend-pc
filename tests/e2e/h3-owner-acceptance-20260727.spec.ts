@@ -1,8 +1,10 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
 import path from "node:path";
 
+const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
+const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
 const evidenceDir = path.resolve(
-  "docs/验收报告/PC全面测试-20260726/H3-evidence",
+  process.env.H3_EVIDENCE_DIR || "docs/验收报告/PC全面测试-20260726/H3-evidence",
 );
 
 test("H3 visible-entry task-engine walkthrough and H1 cross-domain link", async ({ page }) => {
@@ -60,8 +62,8 @@ test("H3 visible-entry task-engine walkthrough and H1 cross-domain link", async 
 async function login(page: Page) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   if (await page.locator("aside").isVisible().catch(() => false)) return;
-  await page.locator('input[autocomplete="username"]').fill("superadmin");
-  await page.locator('input[autocomplete="current-password"]').fill("Admin@123456");
+  await page.locator('input[autocomplete="username"]').fill(USERNAME);
+  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
   await page.getByRole("button", { name: /继续|登录/ }).click();
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
 }

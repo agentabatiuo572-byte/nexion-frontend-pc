@@ -1,6 +1,13 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
+import {
+  assertF1Overview,
+  assertF2Overview,
+  assertF3Overview,
+  assertF4Overview,
+  assertF5Overview,
+} from "@/lib/admin/f-overview-contract";
 
 interface ApiResult<T> {
   code: number;
@@ -1346,12 +1353,17 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
   };
 }
 
-async function f1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function f1Request<T>(
+  path: string,
+  init?: RequestInit & { idempotencyPrefix?: string; stableIdempotencyKey?: string },
+) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
+  if (init?.stableIdempotencyKey) {
+    headers.set("Idempotency-Key", init.stableIdempotencyKey);
+  } else if (init?.idempotencyPrefix) {
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
@@ -1373,7 +1385,9 @@ async function f1Request<T>(path: string, init?: RequestInit & { idempotencyPref
 }
 
 export async function fetchF1VRankOverview() {
-  return normalizeOverview(await f1Request<BackendOverview>("/ranks"));
+  const data = await f1Request<unknown>("/ranks");
+  assertF1Overview(data);
+  return normalizeOverview(data as BackendOverview);
 }
 
 export async function fetchF1PromotionLog(filters: F1PromotionFilters = {}) {
@@ -1389,15 +1403,21 @@ export async function fetchF1RewardPayouts(filters: F1PayoutFilters = {}) {
 }
 
 export async function fetchF2RatesOverview() {
-  return normalizeF2Overview(await f1Request<BackendF2Overview>("/rates"));
+  const data = await f1Request<unknown>("/rates");
+  assertF2Overview(data);
+  return normalizeF2Overview(data as BackendF2Overview);
 }
 
 export async function fetchF3BinaryOverview() {
-  return normalizeF3Overview(await f1Request<BackendF3Overview>("/binary"));
+  const data = await f1Request<unknown>("/binary");
+  assertF3Overview(data);
+  return normalizeF3Overview(data as BackendF3Overview);
 }
 
 export async function fetchF4LeadershipPoolOverview() {
-  return normalizeF4Overview(await f1Request<BackendF4LeadershipPoolOverview>("/leadership-pool"));
+  const data = await f1Request<unknown>("/leadership-pool");
+  assertF4Overview(data);
+  return normalizeF4Overview(data as BackendF4LeadershipPoolOverview);
 }
 
 export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = {}) {
@@ -1406,9 +1426,9 @@ export async function fetchF5CommissionAuditOverview(query: F5CommissionQuery = 
     if (value?.trim()) search.set(key, value.trim());
   }
   const suffix = search.size ? `?${search.toString()}` : "";
-  return normalizeF5Overview(
-    await f1Request<BackendF5CommissionAuditOverview>(`/commissions${suffix}`),
-  );
+  const data = await f1Request<unknown>(`/commissions${suffix}`);
+  assertF5Overview(data);
+  return normalizeF5Overview(data as BackendF5CommissionAuditOverview);
 }
 
 export async function reverseF5Commission(
@@ -1494,11 +1514,17 @@ export async function updateF3TeamConfig(key: string, value: string, reason: str
   return fetchF3BinaryOverview();
 }
 
-export async function executeF3Settlement(ownerUserId: number, settlementDate: string, reason: string) {
+export async function executeF3Settlement(
+  ownerUserId: number,
+  settlementDate: string,
+  reason: string,
+  stableIdempotencyKey?: string,
+) {
   const data = await f1Request<Record<string, unknown>>("/binary/settlements", {
     method: "POST",
     body: JSON.stringify({ ownerUserId, settlementDate, reason }),
     idempotencyPrefix: `f3-settlement-${ownerUserId}-${settlementDate}`,
+    stableIdempotencyKey,
   });
   return {
     ownerUserId: toNumber(data.ownerUserId),

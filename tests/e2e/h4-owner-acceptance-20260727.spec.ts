@@ -5,11 +5,8 @@ import { resolve } from "node:path";
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
 const evidenceDir = resolve(
-  process.cwd(),
-  "docs",
-  "验收报告",
-  "PC全面测试-20260726",
-  "H4-evidence",
+  process.env.H4_EVIDENCE_DIR
+    || resolve(process.cwd(), "docs", "验收报告", "PC全面测试-20260726", "H4-evidence"),
 );
 
 test("H4 活动中心从可见入口进入并完成只读业务走查", async ({ page }) => {

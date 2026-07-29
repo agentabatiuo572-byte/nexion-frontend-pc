@@ -17,3 +17,22 @@ test("OperationConfirmModal keeps the generic fallback for blank or unknown fail
   assert.equal(operationConfirmErrorMessage("network rejected"), fallback);
   assert.equal(operationConfirmErrorMessage(null), fallback);
 });
+
+test("A2 uncertain outcomes remain actionable in the persistent confirmation error", () => {
+  const error = Object.assign(new Error("UPSTREAM_OUTCOME_UNKNOWN"), {
+    name: "A2OutcomeUncertainError",
+    commandKey: "e3-command-1",
+  });
+  assert.match(operationConfirmErrorMessage(error), /结果暂不确定/);
+  assert.match(operationConfirmErrorMessage(error), /保留当前弹窗与输入/);
+  assert.match(operationConfirmErrorMessage(error), /同一命令号.*e3-command-1/);
+  assert.match(operationConfirmErrorMessage(error), /A2 审计/);
+});
+
+test("A2 uncertain outcomes survive a duplicated module or serialization boundary", () => {
+  const error = Object.assign(new Error("transport wrapper"), {
+    name: "A2OutcomeUncertainError",
+    commandKey: "shared-command-2",
+  });
+  assert.match(operationConfirmErrorMessage(error), /同一命令号.*shared-command-2/);
+});

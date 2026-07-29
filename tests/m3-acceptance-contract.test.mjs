@@ -12,6 +12,8 @@ test("M3 fails closed when the conversation backend is unavailable and respects 
 
   assert.match(client, /conversationsAvailable: boolean/);
   assert.match(client, /"I\.session\.conversationsAvailable": data\.conversationsAvailable \? "1" : "0"/);
+  assert.match(sessions, /pget\("I\.session\.conversationsAvailable"\) === "1"/);
+  assert.doesNotMatch(sessions, /pget\("I\.session\.conversationsAvailable"\) !== "0"/);
   assert.match(sessions, /service_m3_write/);
   assert.match(sessions, /会话数据暂时无法同步/);
   assert.match(sessions, /当前账号为只读模式/);
@@ -77,6 +79,18 @@ test("M3 retries an unknown-result write with the same payload and idempotency k
   assert.match(client, /expectedStatus: toBackendConversationStatus\(expectedStatus\)/);
   assert.match(view, /updateConversationStatus\(row\.id, row\.status, before\.status, before\.version, reason, idempotencyKey\)/);
   assert.match(view, /archiveConversation\(row\.id, Boolean\(row\.archived\), before\.status, before\.version, reason, idempotencyKey\)/);
+});
+
+test("M3 transfer decisions preserve the backend TRANSFERRED snapshot for CAS", () => {
+  const view = read("app/components/domain-views/m-view.tsx");
+  const client = read("lib/admin/m-client.ts");
+
+  assert.match(client, /type ConversationExpectedStatus = SessionConvo\["status"\] \| "transferred"/);
+  assert.match(view, /acceptTransfer\(row\.id, "transferred", before\.version/);
+  assert.match(view, /returnTransfer\(row\.id, target, "transferred", before\.version/);
+  assert.match(view, /waitTransfer\(row\.id, "transferred", before\.version/);
+  assert.match(view, /fallbackTransfer\(row\.id, "transferred", before\.version/);
+  assert.doesNotMatch(view, /(acceptTransfer|returnTransfer|waitTransfer|fallbackTransfer)\(row\.id,[^\n]*before\.status/);
 });
 
 test("M3 does not expose a fake audience broadcast or fake cross-domain success", () => {

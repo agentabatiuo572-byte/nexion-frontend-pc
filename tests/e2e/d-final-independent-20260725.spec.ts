@@ -29,6 +29,15 @@ type FxQuote = {
   version: number;
   history: Array<{ id: number; reason: string }>;
 };
+type D5Snapshot = {
+  version: number;
+  dailyLimitCount: number;
+  balanceMaxRatio: number;
+  networkFeeRatio: number;
+  networkFeeMin: number;
+  networkFeeMax: number;
+  nexFeeOffsetRate: number;
+};
 
 function writeEvidence(name: string, value: unknown) {
   fs.writeFileSync(path.join(evidenceDir, name), JSON.stringify(value, null, 2));
@@ -69,9 +78,33 @@ async function openD3(page: Page) {
   await expect(page.getByText("应付负债 · 9 类科目", { exact: true })).toBeVisible();
 }
 
+async function openD2(page: Page) {
+  await openFinanceEntry(page, "提现审核队列", /\/finance\/withdrawals$/);
+  await expect(page.getByRole("heading", { name: "提现审核队列", exact: true })).toBeVisible();
+  await expect(page.getByText(/D2 数据加载失败/)).toHaveCount(0);
+}
+
+async function openD4(page: Page) {
+  await openFinanceEntry(page, "账本/账单审计", /\/finance\/ledger$/);
+  await expect(page.getByText("全平台账单流水", { exact: true })).toBeVisible();
+  await expect(page.getByText(/资金账本已停止展示旧数据/)).toHaveCount(0);
+}
+
+async function openD5(page: Page) {
+  await openFinanceEntry(page, "提现参数配置", /\/finance\/params$/);
+  await expect(page.getByText("D5 自有四组参数", { exact: true })).toBeVisible();
+  await expect(page.getByText("H1 Phase 派发（只读）", { exact: true })).toBeVisible();
+}
+
 async function openD6(page: Page) {
   await openFinanceEntry(page, "汇率牌价", /\/finance\/fx-rate$/);
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toBeVisible();
+}
+
+async function getD5(page: Page) {
+  const response = await page.request.get("/api/admin/withdraw/limits");
+  expect(response.status()).toBe(200);
+  return (await response.json() as Envelope<D5Snapshot>).data;
 }
 
 async function getVietQr(page: Page, view = "inflight") {
@@ -181,7 +214,7 @@ test("D1 五视图与 D3 九类科目可从可见入口发现，且只展示运�
     ["matched", "已匹配"],
     ["orphan", "孤儿队列"],
     ["mismatch", "差额队列"],
-    ["late", "过期后到账"],
+    ["late", "迟到 / 补充回单"],
     ["inflight", "在途意向单"],
   ] as const;
   const viewResults: Array<{ view: string; status: number; empty: boolean }> = [];
@@ -226,6 +259,85 @@ test("D1 五视图与 D3 九类科目可从可见入口发现，且只展示运�
   });
 });
 
+test("D2、D4、D5 从可见侧栏读取权威事实，D5 放大方向在红线下失败关闭", async ({ page, request }) => {
+  expect((await request.get("/api/admin/finance/withdrawals")).status()).toBe(401);
+  expect((await request.get("/api/admin/bills")).status()).toBe(401);
+  expect((await request.get("/api/admin/withdraw/limits")).status()).toBe(401);
+
+  const responses: Array<{ method: string; status: number; path: string }> = [];
+  page.on("response", (response) => {
+    const url = new URL(response.url());
+    if (url.pathname.startsWith("/api/admin/")) {
+      responses.push({ method: response.request().method(), status: response.status(), path: url.pathname });
+    }
+  });
+
+  await login(page);
+  await openD2(page);
+  await expect(page.getByText("D5 日限", { exact: true })).toBeVisible();
+  await page.screenshot({ path: path.join(evidenceDir, "07-d2-authoritative-queue.png"), fullPage: true });
+
+  await openD4(page);
+  for (const label of ["充值", "提现", "收益", "佣金", "兑换", "退款", "奖励"]) {
+    const responsePromise = page.waitForResponse((response) =>
+      response.request().method() === "GET" && new URL(response.url()).pathname === "/api/admin/bills");
+    await page.getByRole("button", { name: label, exact: true }).click();
+    expect((await responsePromise).status()).toBe(200);
+  }
+  await expect(page.getByText("服务端分页 · 精确七类", { exact: false })).toBeVisible();
+  await page.screenshot({ path: path.join(evidenceDir, "08-d4-seven-ledgers.png"), fullPage: true });
+
+  await openD5(page);
+  const original = await getD5(page);
+  expect(original.balanceMaxRatio).toBeLessThan(1);
+  const targetRatio = Math.round((original.balanceMaxRatio + 0.01) * 100) / 100;
+  const targetPct = targetRatio * 100;
+  const balanceRow = page.locator(".p-row").filter({ hasText: "余额可提上限" }).first();
+  await balanceRow.getByLabel("余额可提上限目标值").fill(String(targetPct));
+  await balanceRow.getByRole("button", { name: "预览并提交", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator("textarea").fill(`${runId} D5 放大余额可提上限红线失败关闭验证`);
+  await expect(dialog).toContainText(/覆盖率低于红线|低于红线/);
+  await expect(dialog.getByRole("button", { name: "确认提交", exact: true })).toBeDisabled();
+  const writeResponse = await page.request.put("/api/admin/withdraw/limits", {
+    headers: { "Idempotency-Key": `${runId}-d5-redline-reject` },
+    data: {
+      balanceMaxRatio: targetRatio,
+      expectedVersion: original.version,
+      reason: `${runId} D5 服务端红线失败关闭验证`,
+      operator: username,
+    },
+  });
+  expect(writeResponse.status()).toBe(422);
+  const unchanged = await getD5(page);
+  expect(unchanged.version).toBe(original.version);
+  expect(unchanged.balanceMaxRatio).toBe(original.balanceMaxRatio);
+  await dialog.getByRole("button", { name: "取消", exact: true }).click();
+  await page.reload();
+  await expect(page.getByText("D5 自有四组参数", { exact: true })).toBeVisible();
+  await expect(balanceRow.getByLabel("余额可提上限目标值")).toHaveValue(String(original.balanceMaxRatio * 100));
+
+  await logout(page);
+  await login(page);
+  await openD5(page);
+  const final = await getD5(page);
+  expect(final.balanceMaxRatio).toBe(original.balanceMaxRatio);
+  await page.screenshot({ path: path.join(evidenceDir, "09-d5-relogin-restored.png"), fullPage: true });
+  writeEvidence("04-d2-d4-d5-result.json", {
+    runId,
+    anonymous: { d2: 401, d4: 401, d5: 401 },
+    d4Categories: 7,
+    d5: {
+      originalRatio: original.balanceMaxRatio,
+      attemptedRatio: targetRatio,
+      amplificationStatus: writeResponse.status(),
+      finalRatio: final.balanceMaxRatio,
+      unchanged: true,
+    },
+    responses,
+  });
+});
+
 test("D1 与 D6 的真实写入具备中文 CAS 指引、幂等防重、审计历史和重登持久化", async ({ page }) => {
   await login(page);
   await openD1(page);
@@ -252,7 +364,9 @@ test("D1 与 D6 的真实写入具备中文 CAS 指引、幂等防重、审计�
     response.request().method() === "PATCH" && response.url().includes("/api/admin/finance/vietqr/config"));
   await d1Dialog.getByRole("button", { name: "确认提交", exact: true }).click();
   expect((await staleResponse).status()).toBe(409);
-  await expect(page.getByText(/VietQR 参数已被其他操作员修改，本次未覆盖/)).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "VietQR 参数已被其他操作员修改，本次未覆盖" }),
+  ).toBeVisible();
   await expect(page.getByText(/银行轨操作结果未确认，已停止展示旧数据/)).toBeVisible();
   await page.screenshot({ path: path.join(evidenceDir, "03-d1-cas-chinese-guidance.png"), fullPage: true });
 
@@ -314,13 +428,16 @@ test("D1 与 D6 的真实写入具备中文 CAS 指引、幂等防重、审计�
   // must therefore fail closed instead of overwriting the restored server state.
   await baseRow.getByRole("button", { name: "调整", exact: true }).click();
   const staleD6Dialog = page.getByRole("dialog");
-  await staleD6Dialog.getByLabel("目标新值").fill(String(changedBase));
+  const staleD6Target = changedBase >= 34_990 ? changedBase - 10 : changedBase + 10;
+  await staleD6Dialog.getByLabel("目标新值").fill(String(staleD6Target));
   await staleD6Dialog.locator("textarea").fill(`${runId} 验证 D6 旧版本安全失败`);
   const d6Stale = page.waitForResponse((response) =>
     response.request().method() === "PATCH" && response.url().includes("/api/admin/finance/fx-quote"));
   await staleD6Dialog.getByRole("button", { name: "确认提交", exact: true }).click();
   expect((await d6Stale).status()).toBe(409);
-  await expect(page.getByText(/汇率牌价已被其他操作员修改，本次未覆盖/)).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "汇率牌价已被其他操作员修改，本次未覆盖" }),
+  ).toBeVisible();
   await expect(page.getByText(/写入结果未确认，已停止展示旧牌价/)).toBeVisible();
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: path.join(evidenceDir, "04-d6-idempotency-cas-fail-closed.png"), fullPage: true });

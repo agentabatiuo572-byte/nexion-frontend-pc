@@ -1,5 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { assertG7OrderPageContract, assertG7OverviewContract } from "@/lib/admin/g-overview-contract";
+import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -57,6 +59,9 @@ interface BackendCoverage {
 }
 
 interface BackendOverview {
+  domain?: string | null;
+  product?: string | null;
+  asset?: string | null;
   currentNexPrice?: RawNumber;
   stats?: BackendStats | null;
   params?: BackendParam[] | null;
@@ -176,7 +181,6 @@ export interface G7OrderPage {
 }
 
 let requestSeq = 0;
-const pendingMutationKeys = new Map<string, string>();
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -207,6 +211,7 @@ function asText(value: unknown, fallback = "-") {
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): G7Overview {
+  assertG7OverviewContract(data);
   const stats = data?.stats ?? {};
   const phaseGate = data?.phaseGate ?? {};
   const coverage = data?.coverage ?? {};
@@ -266,15 +271,11 @@ function normalizeOverview(data: BackendOverview | null | undefined): G7Overview
   };
 }
 
-async function g7Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function g7Request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
-  }
-
   const response = await fetch(`/api/admin/market${path}`, {
     ...init,
     headers,
@@ -286,7 +287,11 @@ async function g7Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `G7_REQUEST_FAILED_${response.status}`));
+    throw stableMutationHttpFailure(
+      formatAdminApiError(result?.message, `G7_REQUEST_FAILED_${response.status}`),
+      response.status,
+      result?.code,
+    );
   }
 
   return result.data as T;
@@ -296,9 +301,12 @@ export async function fetchG7RepurchaseOverview() {
   return normalizeOverview(await g7Request<BackendOverview>("/nex/repurchase"));
 }
 
+const executeG7Mutation = createStableMutationExecutor(idempotencyKey);
+
 export async function fetchG7RepurchaseOrders(status = "") {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
   const data = await g7Request<BackendOrderPage>(`/nex/repurchase/orders${query}`);
+  assertG7OrderPageContract(data);
   return {
     orders: (data?.orders ?? []).map((order) => ({
       orderNo: asText(order.orderNo),
@@ -321,14 +329,16 @@ export async function fetchG7RepurchaseOrders(status = "") {
 }
 
 export async function updateG7RepurchaseParam(paramKey: string, value: string, reason: string, operator: string, g4Ref = "") {
-  const scope = JSON.stringify([paramKey, value, reason, operator, g4Ref]);
-  const mutationKey = pendingMutationKeys.get(scope) ?? idempotencyKey(`g7-param-${paramKey}`);
-  pendingMutationKeys.set(scope, mutationKey);
-  await g7Request<Record<string, unknown>>(`/nex/repurchase/config/${encodeURIComponent(paramKey)}`, {
-    method: "PUT",
-    headers: { "Idempotency-Key": mutationKey },
-    body: JSON.stringify({ value, reason, operator, g4Ref }),
-  });
-  pendingMutationKeys.delete(scope);
-  return fetchG7RepurchaseOverview();
+  const body = { value, reason, operator, g4Ref };
+  const serialized = JSON.stringify(body);
+  return executeG7Mutation(
+    `g7-param-${paramKey}`,
+    serialized,
+    (commandKey) => g7Request<BackendOverview>(`/nex/repurchase/config/${encodeURIComponent(paramKey)}`, {
+      method: "PUT",
+      headers: { "Idempotency-Key": commandKey },
+      body: serialized,
+    }),
+    normalizeOverview,
+  );
 }

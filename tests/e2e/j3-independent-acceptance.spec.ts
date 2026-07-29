@@ -2,7 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const evidenceRoot = "D:/workspace/bug-pic/j-domain-acceptance-20260722/j3";
+const evidenceRoot = process.env.J3_EVIDENCE_DIR
+  ?? "D:/workspace/bug-pic/j-domain-acceptance-20260722/j3";
 const screenshotDir = path.join(evidenceRoot, "screenshots");
 const rawDir = path.join(evidenceRoot, "raw");
 const e2eUsername = process.env.NEXION_E2E_USERNAME ?? "superadmin";

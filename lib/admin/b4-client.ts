@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { assertB4PhaseOverview } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
   code: number;
@@ -81,9 +82,14 @@ async function json<T>(response: Response, fallback: string): Promise<T> {
   return result.data;
 }
 
-export async function fetchB4PhaseOverview(filters: B4Filters, signal?: AbortSignal) {
-  return fetch(`/api/admin/phase/overview${query(filters)}`, { cache: "no-store", signal })
-    .then((response) => json<B4PhaseOverview>(response, "B4_PHASE_LOAD_FAILED"));
+export async function fetchB4PhaseOverview(
+  filters: B4Filters,
+  signal?: AbortSignal,
+): Promise<B4PhaseOverview> {
+  const data = await fetch(`/api/admin/phase/overview${query(filters)}`, { cache: "no-store", signal })
+    .then((response) => json<unknown>(response, "B4_PHASE_LOAD_FAILED"));
+  assertB4PhaseOverview(data);
+  return data as unknown as B4PhaseOverview;
 }
 
 export async function recordB4H1Jump(dial: string, phase: string) {

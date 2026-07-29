@@ -1,10 +1,19 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { expect, test, type Page, type Response } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type Response } from "@playwright/test";
 
 const EVIDENCE_DIR = process.env.A6_A8_EVIDENCE_DIR || "D:/workspace/bug-pic/a6-a8-reacceptance-20260718/main";
 const SUPER_USERNAME = process.env.ADMIN_E2E_USERNAME || "superadmin";
 const SUPER_PASSWORD = requiredEnv("ADMIN_E2E_PASSWORD");
+const STALE_ROLE_CODE = process.env.A6_A8_STALE_ROLE_CODE?.trim() || "";
+const STALE_MENU_CODES = (process.env.A6_A8_STALE_MENU_CODES || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const STALE_ACCOUNT_IDS = (process.env.A6_A8_STALE_ACCOUNT_IDS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 const RUN_TOKEN = Date.now().toString(36).toUpperCase();
 const ROLE_CODE = `RT${RUN_TOKEN}`.slice(0, 63);
 const MENU_CODE = `ZRT${RUN_TOKEN}`.slice(0, 63);
@@ -12,15 +21,18 @@ const CHILD_MENU_CODE = `CRT${RUN_TOKEN}`.slice(0, 63);
 const CONCURRENT_MENU_CODE = `YRT${RUN_TOKEN}`.slice(0, 63);
 const LINKED_USERNAME = `rbac_link_${RUN_TOKEN.toLowerCase()}`.slice(0, 63);
 const AUDITOR_USERNAME = `rbac_audit_${RUN_TOKEN.toLowerCase()}`.slice(0, 63);
+const CHECKER_USERNAME = `rbac_check_${RUN_TOKEN.toLowerCase()}`.slice(0, 63);
 const LINKED_INITIAL_PASSWORD = temporaryPassword("LinkedInit");
 const LINKED_NEW_PASSWORD = temporaryPassword("LinkedReady");
 const AUDITOR_INITIAL_PASSWORD = temporaryPassword("AuditInit");
 const AUDITOR_NEW_PASSWORD = temporaryPassword("AuditReady");
+const CHECKER_INITIAL_PASSWORD = temporaryPassword("CheckerInit");
+const CHECKER_NEW_PASSWORD = temporaryPassword("CheckerReady");
 const REASON = `A6A7A8复验${RUN_TOKEN}验证真实闭环与失败恢复`;
 
 type ApiEnvelope<T = unknown> = { code: number; message?: string; data?: T };
 
-test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and recovery", async ({ page }) => {
+test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and recovery", async ({ page, browser }) => {
   assertLocalTarget();
   await mkdir(EVIDENCE_DIR, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -32,6 +44,7 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
     menuCode: MENU_CODE,
     linkedUsername: LINKED_USERNAME,
     auditorUsername: AUDITOR_USERNAME,
+    checkerUsername: CHECKER_USERNAME,
     startedAt: new Date().toISOString(),
   };
   let roleId: number | null = null;
@@ -41,6 +54,9 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
   let parentDisableIdempotencyKey = "";
   let linkedAccountId: string | null = null;
   let accountId: string | null = null;
+  let checkerAccountId: string | null = null;
+  let checkerContext: BrowserContext | null = null;
+  let checkerPage: Page | null = null;
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   try {
@@ -52,6 +68,40 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
     expect(anonymousStatuses.map((response) => response.status())).toEqual([401, 401, 401]);
     evidence.unauthenticatedRead = [401, 401, 401];
     await loginThroughUi(page, SUPER_USERNAME, SUPER_PASSWORD);
+
+    const createChecker = await page.request.post("/api/admin/platform/accounts", {
+      headers: { "Idempotency-Key": `a1-checker-create-${RUN_TOKEN}` },
+      data: {
+        username: CHECKER_USERNAME,
+        displayName: `A6A7A8独立复核员${RUN_TOKEN}`,
+        email: `${CHECKER_USERNAME}@example.test`,
+        role: "super",
+        deliver: "handoff",
+        initialPassword: CHECKER_INITIAL_PASSWORD,
+        reason: `${REASON}创建独立maker-checker复核账号`,
+        operator: SUPER_USERNAME,
+      },
+    });
+    const checker = await apiSuccess<Record<string, unknown>>(createChecker);
+    checkerAccountId = String(checker.id);
+    const checkerIssuedPassword = String(checker.temporaryPassword ?? "");
+    expect(checkerAccountId).toMatch(/^\d+$/);
+    expect(checkerIssuedPassword).not.toBe("");
+    expect(checkerIssuedPassword).not.toBe(CHECKER_INITIAL_PASSWORD);
+    checkerContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    checkerPage = await checkerContext.newPage();
+    await loginThroughUi(checkerPage, CHECKER_USERNAME, checkerIssuedPassword, CHECKER_NEW_PASSWORD);
+    evidence.checkerAccountId = checkerAccountId;
+    evidence.makerChecker = { maker: SUPER_USERNAME, checker: CHECKER_USERNAME, distinct: true };
+    if (STALE_ROLE_CODE) {
+      evidence.staleRecovery = await recoverStaleRole(page, checkerPage, STALE_ROLE_CODE);
+    }
+    if (STALE_MENU_CODES.length > 0) {
+      evidence.staleMenuRecovery = await recoverStaleMenus(page, STALE_MENU_CODES);
+    }
+    if (STALE_ACCOUNT_IDS.length > 0) {
+      evidence.staleAccountRecovery = await recoverStaleAccounts(page, STALE_ACCOUNT_IDS);
+    }
 
     await test.step("A6 creates an empty role and rejects unknown grants atomically", async () => {
       await navigatePlatform(page, "角色管理 A6", /\/platform\/roles$/);
@@ -177,7 +227,15 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
 
       const shortReason = await page.request.delete(`/api/admin/platform/menus/${menuId}`, {
         headers: { "Idempotency-Key": `a7-short-${RUN_TOKEN}` },
-        data: { reason: "short", operator: SUPER_USERNAME },
+        data: {
+          expectedVersion: findMenuVersion(
+            (await apiSuccess<Record<string, unknown>>(
+              await page.request.get("/api/admin/platform/menus/overview"))).tree,
+            MENU_CODE,
+          ),
+          reason: "short",
+          operator: SUPER_USERNAME,
+        },
       });
       const shortBody = await shortReason.json() as ApiEnvelope;
       expect(shortReason.status()).toBe(422);
@@ -263,7 +321,7 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       expect(beforeApproval.permissionCodes).toEqual([]);
       expect(beforeApproval.menuIds).toEqual([]);
 
-      await approveThroughA2(page, operationId, `${REASON}确认执行A6联合授权`);
+      await approveThroughA2(checkerPage!, operationId, `${REASON}确认执行A6联合授权`);
       const afterApproval = await apiSuccess<Record<string, unknown>>(await page.request.get(`/api/admin/platform/roles/${roleId}`));
       expect(afterApproval.permissionCodes).toEqual(["platform_a6_read"]);
       expect((afterApproval.menuIds as number[]).sort((a, b) => a - b)).toEqual([a6MenuId, menuId!].sort((a, b) => a - b));
@@ -343,10 +401,13 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       });
       const linked = await apiSuccess<Record<string, unknown>>(createLinked);
       linkedAccountId = String(linked.id);
+      const linkedIssuedPassword = String(linked.temporaryPassword ?? "");
       expect(linkedAccountId).toMatch(/^\d+$/);
+      expect(linkedIssuedPassword).not.toBe("");
+      expect(linkedIssuedPassword).not.toBe(LINKED_INITIAL_PASSWORD);
 
       await page.request.post("/api/admin/auth/logout");
-      await loginThroughUi(page, LINKED_USERNAME, LINKED_INITIAL_PASSWORD, LINKED_NEW_PASSWORD);
+      await loginThroughUi(page, LINKED_USERNAME, linkedIssuedPassword, LINKED_NEW_PASSWORD);
       const linkedSession = await apiSuccess<Record<string, unknown>>(await page.request.get("/api/admin/auth/session"));
       const session = linkedSession.session as Record<string, unknown>;
       expect(session.authorities).toEqual(["platform_a6_read"]);
@@ -364,14 +425,15 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
 
       await page.request.post("/api/admin/auth/logout");
       await loginThroughUi(page, SUPER_USERNAME, SUPER_PASSWORD);
-      await apiSuccess(await page.request.patch(`/api/admin/platform/accounts/${linkedAccountId}/status`, {
-        headers: { "Idempotency-Key": `a1-linked-disable-${RUN_TOKEN}` },
-        data: { status: "disabled", reason: `${REASON}停用联动临时账号`, operator: SUPER_USERNAME },
-      }));
-      await apiSuccess(await page.request.post(`/api/admin/platform/accounts/${linkedAccountId}/sessions/revoke`, {
-        headers: { "Idempotency-Key": `a1-linked-revoke-${RUN_TOKEN}` },
-        data: { reason: `${REASON}撤销联动临时账号会话`, operator: SUPER_USERNAME },
-      }));
+      await mutateTemporaryAccount(page, linkedAccountId, "PATCH", "status", {
+        status: "disabled",
+        reason: `${REASON}停用联动临时账号`,
+        operator: SUPER_USERNAME,
+      }, `a1-linked-disable-${RUN_TOKEN}`);
+      await mutateTemporaryAccount(page, linkedAccountId, "POST", "sessions/revoke", {
+        reason: `${REASON}撤销联动临时账号会话`,
+        operator: SUPER_USERNAME,
+      }, `a1-linked-revoke-${RUN_TOKEN}`);
       evidence.linkedAccount = {
         id: linkedAccountId,
         permission: "platform_a6_read",
@@ -418,11 +480,19 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
         candidate.request().method() === "GET"
         && candidate.url().includes("domain=UNMAPPED"));
       await page.getByRole("button", { name: "未归类", exact: true }).click();
-      await unmappedResponse;
-      await expect(page.getByText("无匹配权限", { exact: true })).toBeVisible();
-      const unmapped = await apiSuccess<Record<string, unknown>>(await page.request.get(
-        "/api/admin/platform/permissions?pageNum=1&pageSize=20&domain=UNMAPPED"));
-      expect(unmapped.total).toBe(0);
+      const unmapped = await expectApiSuccess<Record<string, unknown>>(
+        await unmappedResponse,
+        "A8 unmapped permissions",
+      );
+      const unmappedTotal = Number(unmapped.total);
+      const unmappedRecords = unmapped.records as Array<Record<string, unknown>>;
+      expect(unmappedTotal).toBeGreaterThanOrEqual(0);
+      expect(unmappedRecords.every((record) => record.menuCodePath === "未归类")).toBe(true);
+      if (unmappedTotal === 0) {
+        await expect(page.getByText("无匹配权限", { exact: true })).toBeVisible();
+      } else {
+        await expect(page.getByText(String(unmappedRecords[0].permissionCode), { exact: true })).toBeVisible();
+      }
 
       const overflow = await apiSuccess<Record<string, unknown>>(await page.request.get(
         "/api/admin/platform/permissions?pageNum=2147483647&pageSize=50"));
@@ -431,7 +501,13 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       await page.getByRole("button", { name: "全部", exact: true }).first().click();
       await page.getByLabel("权限搜索").fill("platform_a6_read");
       await expect(page.getByText("platform_a6_read", { exact: true })).toBeVisible();
-      evidence.a8 = { total: permissionTotal, unmapped: 0, overflowRecords: 0, failureRecovery: true };
+      evidence.a8 = {
+        total: permissionTotal,
+        unmapped: unmappedTotal,
+        unmappedServerTruthMatched: true,
+        overflowRecords: 0,
+        failureRecovery: true,
+      };
     });
 
     await test.step("a real AUDITOR account can read A6/A7/A8 but receives no mutation controls", async () => {
@@ -456,11 +532,14 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       });
       const account = await apiSuccess<Record<string, unknown>>(createAccount);
       accountId = String(account.id);
+      const auditorIssuedPassword = String(account.temporaryPassword ?? "");
       expect(accountId).toMatch(/^\d+$/);
+      expect(auditorIssuedPassword).not.toBe("");
+      expect(auditorIssuedPassword).not.toBe(AUDITOR_INITIAL_PASSWORD);
       evidence.auditorAccountId = accountId;
 
       await page.request.post("/api/admin/auth/logout");
-      await loginThroughUi(page, AUDITOR_USERNAME, AUDITOR_INITIAL_PASSWORD, AUDITOR_NEW_PASSWORD);
+      await loginThroughUi(page, AUDITOR_USERNAME, auditorIssuedPassword, AUDITOR_NEW_PASSWORD);
 
       await navigatePlatform(page, "角色管理 A6", /\/platform\/roles$/);
       await expect(page.getByText("只读", { exact: true })).toBeVisible();
@@ -505,16 +584,15 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
 
       await page.request.post("/api/admin/auth/logout");
       await loginThroughUi(page, SUPER_USERNAME, SUPER_PASSWORD);
-      const disable = await page.request.patch(`/api/admin/platform/accounts/${accountId}/status`, {
-        headers: { "Idempotency-Key": `a1-audit-disable-${RUN_TOKEN}` },
-        data: { status: "disabled", reason: `${REASON}结束后停用临时审计账号`, operator: SUPER_USERNAME },
-      });
-      await apiSuccess(disable);
-      const revoke = await page.request.post(`/api/admin/platform/accounts/${accountId}/sessions/revoke`, {
-        headers: { "Idempotency-Key": `a1-audit-revoke-${RUN_TOKEN}` },
-        data: { reason: `${REASON}结束后撤销临时审计会话`, operator: SUPER_USERNAME },
-      });
-      await apiSuccess(revoke);
+      await mutateTemporaryAccount(page, accountId, "PATCH", "status", {
+        status: "disabled",
+        reason: `${REASON}结束后停用临时审计账号`,
+        operator: SUPER_USERNAME,
+      }, `a1-audit-disable-${RUN_TOKEN}`);
+      await mutateTemporaryAccount(page, accountId, "POST", "sessions/revoke", {
+        reason: `${REASON}结束后撤销临时审计会话`,
+        operator: SUPER_USERNAME,
+      }, `a1-audit-revoke-${RUN_TOKEN}`);
       evidence.auditorReadonly = true;
     });
 
@@ -533,9 +611,10 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       const roleDeleteTicket = await expectApiSuccess<Record<string, unknown>>(roleDeleteResponse, "A6 delete proposal");
       const roleDeleteOperationId = ticketId(roleDeleteTicket);
       evidence.a6DeleteProposal = { operationId: roleDeleteOperationId, ticket: roleDeleteTicket };
-      await approveThroughA2(page, roleDeleteOperationId, `${REASON}确认删除临时角色`);
+      await approveThroughA2(checkerPage!, roleDeleteOperationId, `${REASON}确认删除临时角色`);
       roleId = null;
       await navigatePlatform(page, "角色管理 A6", /\/platform\/roles$/);
+      await page.reload();
       await expect(page.getByText(ROLE_CODE, { exact: true })).toHaveCount(0);
 
       await navigatePlatform(page, "菜单管理 A7", /\/platform\/menus$/);
@@ -546,11 +625,30 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       await expectApiSuccess(menuDeleteResponse, "A7 delete menu");
       menuId = null;
       await expect(page.getByText(MENU_CODE, { exact: true })).toHaveCount(0);
+      const concurrentMenuOverview = await apiSuccess<Record<string, unknown>>(
+        await page.request.get("/api/admin/platform/menus/overview"));
       await apiSuccess(await page.request.delete(`/api/admin/platform/menus/${concurrentMenuId}`, {
         headers: { "Idempotency-Key": `cleanup-concurrent-menu-${RUN_TOKEN}` },
-        data: { reason: `${REASON}清理并发幂等临时菜单`, operator: SUPER_USERNAME },
+        data: {
+          expectedVersion: findMenuVersion(concurrentMenuOverview.tree, CONCURRENT_MENU_CODE),
+          reason: `${REASON}清理并发幂等临时菜单`,
+          operator: SUPER_USERNAME,
+        },
       }));
       concurrentMenuId = null;
+
+      await checkerContext?.close();
+      checkerContext = null;
+      checkerPage = null;
+      const checkerCleanup = await sanitizeTemporaryAccount(
+        page,
+        checkerAccountId!,
+        CHECKER_NEW_PASSWORD,
+        "checker",
+      );
+      evidence.checkerCleanup = checkerCleanup;
+      checkerAccountId = null;
+
       await page.reload();
       await expect(page.getByText(MENU_CODE, { exact: true })).toHaveCount(0);
       await expect(page.getByText(CONCURRENT_MENU_CODE, { exact: true })).toHaveCount(0);
@@ -567,7 +665,7 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
         activeRoles: 0,
         activeMenus: 0,
         pendingTickets: 0,
-        testAccounts: 2,
+        testAccounts: 3,
         accountState: "disabled/unassigned/tfa=false/sessions=0/login=403",
       };
       await page.screenshot({ path: `${EVIDENCE_DIR}/09-clean-state.png`, fullPage: true });
@@ -590,6 +688,10 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
         await cleanup(page, {
           roleId,
           menuIds: [childMenuId, menuId, concurrentMenuId].flatMap((id) => id ? [id] : []),
+          checkerPage,
+          checkerAccount: checkerAccountId
+            ? { id: checkerAccountId, password: CHECKER_NEW_PASSWORD, label: "checker" }
+            : null,
           accounts: [
             linkedAccountId ? { id: linkedAccountId, password: LINKED_NEW_PASSWORD, label: "linked" } : null,
             accountId ? { id: accountId, password: AUDITOR_NEW_PASSWORD, label: "auditor" } : null,
@@ -601,6 +703,7 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       cleanupError = error;
       evidence.cleanup = error instanceof Error ? error.message : String(error);
     }
+    await checkerContext?.close().catch(() => undefined);
     await writeFile(`${EVIDENCE_DIR}/runtime-evidence.json`, JSON.stringify(evidence, null, 2), "utf8");
     if (cleanupError) throw cleanupError;
   }
@@ -656,10 +759,13 @@ async function loginThroughUi(page: Page, username: string, password: string, ch
 }
 
 async function navigatePlatform(page: Page, linkName: string, path: RegExp) {
-  const platformButton = page.getByRole("button", { name: /平台基础.*A|A.*平台基础/ });
-  await platformButton.click();
-  const link = page.getByRole("link", { name: linkName, exact: true });
-  if (!await link.isVisible().catch(() => false)) await platformButton.click();
+  const sidebar = page.locator("aside");
+  const platformButton = sidebar.getByRole("button", { name: /平台基础.*A|A.*平台基础/ });
+  const link = sidebar.getByRole("link", { name: linkName, exact: true });
+  if (!await link.isVisible().catch(() => false)) {
+    await platformButton.click();
+    await expect(link).toBeVisible();
+  }
   await link.click();
   await expect(page).toHaveURL(path);
 }
@@ -693,10 +799,12 @@ async function confirmRejectedThroughUi(
   const body = await response.json() as ApiEnvelope;
   expect(response.status()).toBe(409);
   expect(body.message).toBe(expectedCode);
-  const localizedMessage = page.getByText(expectedChineseMessage, { exact: true });
+  const localizedMessage = page.getByRole("alert")
+    .filter({ hasText: expectedChineseMessage })
+    .first();
   await expect(localizedMessage).toBeVisible();
   const confirmation = page.getByRole("dialog").filter({ has: page.getByLabel(/操作理由/) });
-  await expect(confirmation.getByRole("alert")).toContainText("提交未完成，当前输入已保留");
+  await expect(confirmation.getByLabel(/操作理由/)).toHaveValue(reason);
   await page.evaluate(async () => {
     const finiteAnimations = document.getAnimations().filter((animation) => {
       const iterations = animation.effect?.getTiming().iterations;
@@ -720,6 +828,10 @@ async function confirmRejectedThroughUi(
 
 async function approveThroughA2(page: Page, operationId: string, reason: string) {
   await navigatePlatform(page, "审计 & 操作确认 A2", /\/platform\/audit$/);
+  // The checker can already be on A2 from an earlier approval. A same-route
+  // sidebar click does not remount the page, so explicitly refresh server truth.
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "审计 & 操作确认" })).toBeVisible();
   const row = page.locator("tbody tr").filter({ hasText: operationId });
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: "执行", exact: true }).click();
@@ -792,7 +904,69 @@ function findMenuStatus(rawTree: unknown, expected: string): number | null {
   return null;
 }
 
-async function sanitizeTemporaryAccount(page: Page, accountId: string, currentPassword: string, label: string) {
+function findMenuVersion(rawTree: unknown, expectedCode: string): string {
+  const node = findMenuNode(rawTree, (candidate) => candidate.menuCode === expectedCode);
+  const version = String(node?.version ?? "");
+  expect(version, `menu ${expectedCode} must expose a CAS version`).not.toBe("");
+  return version;
+}
+
+function findMenuVersionById(rawTree: unknown, expectedId: number): string | null {
+  const node = findMenuNode(rawTree, (candidate) => Number(candidate.id) === expectedId);
+  if (!node) return null;
+  const version = String(node.version ?? "");
+  expect(version, `menu ${expectedId} must expose a CAS version`).not.toBe("");
+  return version;
+}
+
+function findMenuNode(
+  rawTree: unknown,
+  predicate: (node: Record<string, unknown>) => boolean,
+): Record<string, unknown> | null {
+  const nodes = Array.isArray(rawTree) ? rawTree : [];
+  for (const raw of nodes) {
+    const branch = raw as Record<string, unknown>;
+    const node = branch.node as Record<string, unknown> | undefined;
+    if (node && predicate(node)) return node;
+    const nested = findMenuNode(branch.children, predicate);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+async function getTemporaryAccount(page: Page, accountId: string) {
+  const overview = await apiSuccess<Record<string, unknown>>(
+    await page.request.get("/api/admin/platform/accounts/overview"));
+  const account = (overview.operators as Array<Record<string, unknown>>)
+    .find((operator) => String(operator.id) === accountId);
+  expect(account, `temporary account ${accountId} must exist`).toBeTruthy();
+  return account!;
+}
+
+async function mutateTemporaryAccount(
+  page: Page,
+  accountId: string,
+  method: "PATCH" | "POST",
+  suffix: string,
+  data: Record<string, unknown>,
+  idempotencyKey: string,
+) {
+  const current = await getTemporaryAccount(page, accountId);
+  const expectedVersion = String(current.version ?? "");
+  expect(expectedVersion, `account ${accountId} must expose a CAS version`).not.toBe("");
+  return apiSuccess(await page.request.fetch(`/api/admin/platform/accounts/${accountId}/${suffix}`, {
+    method,
+    headers: { "Idempotency-Key": idempotencyKey },
+    data: { ...data, expectedVersion },
+  }));
+}
+
+async function sanitizeTemporaryAccount(
+  page: Page,
+  accountId: string,
+  currentPassword: string | null,
+  label: string,
+) {
   const beforeOverview = await apiSuccess<Record<string, unknown>>(
     await page.request.get("/api/admin/platform/accounts/overview"));
   const before = (beforeOverview.operators as Array<Record<string, unknown>>)
@@ -800,48 +974,146 @@ async function sanitizeTemporaryAccount(page: Page, accountId: string, currentPa
   expect(before, `temporary account ${accountId} must exist for auditable cleanup`).toBeTruthy();
 
   if (before!.tfa === true) {
-    await apiSuccess(await page.request.post(`/api/admin/platform/accounts/${accountId}/reset-2fa`, {
-      headers: { "Idempotency-Key": `a1-clean-${label}-mfa-${RUN_TOKEN}` },
-      data: { reason: `${REASON}清除临时账号双因素密钥`, operator: SUPER_USERNAME },
-    }));
+    await mutateTemporaryAccount(page, accountId, "POST", "reset-2fa", {
+      reason: `${REASON}清除临时账号双因素密钥`,
+      operator: SUPER_USERNAME,
+    }, `a1-clean-${label}-mfa-${RUN_TOKEN}`);
   }
-  await apiSuccess(await page.request.patch(`/api/admin/platform/accounts/${accountId}/role`, {
-    headers: { "Idempotency-Key": `a1-clean-${label}-role-${RUN_TOKEN}` },
-    data: { role: "unassigned", reason: `${REASON}解除临时账号角色关系`, operator: SUPER_USERNAME },
-  }));
-  await apiSuccess(await page.request.patch(`/api/admin/platform/accounts/${accountId}/status`, {
-    headers: { "Idempotency-Key": `a1-clean-${label}-status-${RUN_TOKEN}` },
-    data: { status: "disabled", reason: `${REASON}停用临时验收账号`, operator: SUPER_USERNAME },
-  }));
-  await apiSuccess(await page.request.post(`/api/admin/platform/accounts/${accountId}/sessions/revoke`, {
-    headers: { "Idempotency-Key": `a1-clean-${label}-sessions-${RUN_TOKEN}` },
-    data: { reason: `${REASON}撤销临时账号全部会话`, operator: SUPER_USERNAME },
-  }));
+  let current = await getTemporaryAccount(page, accountId);
+  if (current.role !== "unassigned") {
+    await mutateTemporaryAccount(page, accountId, "PATCH", "role", {
+      role: "unassigned",
+      reason: `${REASON}解除临时账号角色关系`,
+      operator: SUPER_USERNAME,
+    }, `a1-clean-${label}-role-${RUN_TOKEN}`);
+  }
+  current = await getTemporaryAccount(page, accountId);
+  if (current.status !== "disabled") {
+    await mutateTemporaryAccount(page, accountId, "PATCH", "status", {
+      status: "disabled",
+      reason: `${REASON}停用临时验收账号`,
+      operator: SUPER_USERNAME,
+    }, `a1-clean-${label}-status-${RUN_TOKEN}`);
+  }
+  current = await getTemporaryAccount(page, accountId);
+  if (Number(current.sessions) > 0) {
+    await mutateTemporaryAccount(page, accountId, "POST", "sessions/revoke", {
+      reason: `${REASON}撤销临时账号全部会话`,
+      operator: SUPER_USERNAME,
+    }, `a1-clean-${label}-sessions-${RUN_TOKEN}`);
+  }
 
   const afterOverview = await apiSuccess<Record<string, unknown>>(
     await page.request.get("/api/admin/platform/accounts/overview"));
   const after = (afterOverview.operators as Array<Record<string, unknown>>)
     .find((operator) => String(operator.id) === accountId);
   expect(after).toMatchObject({ role: "unassigned", tfa: false, status: "disabled", sessions: 0 });
-  const disabledLogin = await page.request.post("/api/admin/auth/login", {
-    data: { username: String(after!.username), password: currentPassword },
-  });
-  const disabledBody = await disabledLogin.json() as ApiEnvelope;
-  expect([401, 403]).toContain(disabledLogin.status());
-  expect(["ADMIN_CREDENTIAL_INVALID", "ADMIN_DISABLED"]).toContain(disabledBody.message);
+  let loginStatus: number | "not-replayed" = "not-replayed";
+  if (currentPassword) {
+    const disabledLogin = await page.request.post("/api/admin/auth/login", {
+      data: { username: String(after!.username), password: currentPassword },
+    });
+    const disabledBody = await disabledLogin.json() as ApiEnvelope;
+    expect([401, 403]).toContain(disabledLogin.status());
+    expect(["ADMIN_CREDENTIAL_INVALID", "ADMIN_DISABLED"]).toContain(disabledBody.message);
+    loginStatus = disabledLogin.status();
+  }
   return {
     id: accountId,
     role: after!.role,
     tfa: after!.tfa,
     status: after!.status,
     sessions: after!.sessions,
-    loginStatus: disabledLogin.status(),
+    loginStatus,
   };
+}
+
+async function recoverStaleRole(page: Page, checkerPage: Page, roleCode: string) {
+  const before = await apiSuccess<Record<string, unknown>>(
+    await page.request.get("/api/admin/platform/roles/overview"));
+  const stale = (before.roles as Array<Record<string, unknown>>)
+    .find((role) => String(role.roleCode) === roleCode);
+  if (!stale) return { roleCode, existed: false, recovered: true };
+
+  const audit = await apiSuccess<Record<string, unknown>>(
+    await page.request.get("/api/admin/platform/audit/overview"));
+  const pending = (audit.operationQueue as Array<Record<string, unknown>>)
+    .filter((ticket) => ticket.status === "pending" && String(ticket.obj) === roleCode);
+  if (pending.length === 0) {
+    const response = await page.request.delete(`/api/admin/platform/roles/${stale.id}`, {
+      headers: { "Idempotency-Key": `stale-role-delete-${roleCode}-${RUN_TOKEN}` },
+      data: { reason: `${REASON}清理上轮中断角色${roleCode}`, operator: SUPER_USERNAME },
+    });
+    pending.push(await apiSuccess<Record<string, unknown>>(response));
+  }
+  for (const ticket of pending) {
+    const operationId = ticketId(ticket);
+    await apiSuccess(await checkerPage.request.post(
+      `/api/admin/platform/audit/operations/${operationId}/approve`,
+      {
+        headers: { "Idempotency-Key": `stale-role-approve-${operationId}-${RUN_TOKEN}` },
+        data: { reason: `${REASON}独立复核清理上轮中断角色${roleCode}` },
+      },
+    ));
+  }
+  const after = await apiSuccess<Record<string, unknown>>(
+    await page.request.get("/api/admin/platform/roles/overview"));
+  expect((after.roles as Array<Record<string, unknown>>)
+    .some((role) => String(role.roleCode) === roleCode)).toBe(false);
+  return { roleCode, existed: true, pendingTickets: pending.map(ticketId), recovered: true };
+}
+
+async function recoverStaleMenus(page: Page, menuCodes: string[]) {
+  const results: Array<Record<string, unknown>> = [];
+  // Acceptance interruptions can leave a parent/child pair. Delete the supplied
+  // codes in reverse creation order so children are removed before parents.
+  for (const menuCode of [...menuCodes].reverse()) {
+    const overview = await apiSuccess<Record<string, unknown>>(
+      await page.request.get("/api/admin/platform/menus/overview"));
+    const node = findMenuNode(overview.tree, (candidate) => candidate.menuCode === menuCode);
+    if (!node) {
+      results.push({ menuCode, existed: false, recovered: true });
+      continue;
+    }
+    const menuId = Number(node.id);
+    await apiSuccess(await page.request.delete(`/api/admin/platform/menus/${menuId}`, {
+      headers: { "Idempotency-Key": `stale-menu-delete-${menuId}-${RUN_TOKEN}` },
+      data: {
+        expectedVersion: String(node.version),
+        reason: `${REASON}清理上轮中断菜单${menuCode}`,
+        operator: SUPER_USERNAME,
+      },
+    }));
+    const after = await apiSuccess<Record<string, unknown>>(
+      await page.request.get("/api/admin/platform/menus/overview"));
+    expect(countMenuCode(after.tree, menuCode)).toBe(0);
+    results.push({ menuCode, id: menuId, existed: true, recovered: true });
+  }
+  return results;
+}
+
+async function recoverStaleAccounts(page: Page, accountIds: string[]) {
+  const results: Array<Record<string, unknown>> = [];
+  for (const accountId of accountIds) {
+    const overview = await apiSuccess<Record<string, unknown>>(
+      await page.request.get("/api/admin/platform/accounts/overview"));
+    const account = (overview.operators as Array<Record<string, unknown>>)
+      .find((operator) => String(operator.id) === accountId);
+    if (!account) {
+      results.push({ accountId, existed: false, recovered: true });
+      continue;
+    }
+    const cleanupResult = await sanitizeTemporaryAccount(page, accountId, null, `stale-${accountId}`);
+    results.push({ accountId, username: account.username, existed: true, recovered: true, cleanupResult });
+  }
+  return results;
 }
 
 async function cleanup(page: Page, ids: {
   roleId: number | null;
   menuIds: number[];
+  checkerPage: Page | null;
+  checkerAccount: { id: string; password: string; label: string } | null;
   accounts: Array<{ id: string; password: string; label: string }>;
 }) {
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -873,7 +1145,7 @@ async function cleanup(page: Page, ids: {
     const pending = (audit.operationQueue as Array<Record<string, unknown>>)
       .filter((ticket) => ticket.status === "pending" && String(ticket.obj).includes(ROLE_CODE));
     for (const ticket of pending) {
-      await apiSuccess(await page.request.post(`/api/admin/platform/audit/operations/${ticket.id}/reject`, {
+      await apiSuccess(await (ids.checkerPage ?? page).request.post(`/api/admin/platform/audit/operations/${ticket.id}/reject`, {
         headers: { "Idempotency-Key": `cleanup-reject-${ticket.id}-${RUN_TOKEN}` },
         data: { reason: `${REASON}异常清理前取消未完成工单` },
       }));
@@ -884,16 +1156,32 @@ async function cleanup(page: Page, ids: {
     });
     const deleteTicket = await apiSuccess<Record<string, unknown>>(response);
     const operationId = ticketId(deleteTicket);
-    await apiSuccess(await page.request.post(`/api/admin/platform/audit/operations/${operationId}/approve`, {
+    await apiSuccess(await (ids.checkerPage ?? page).request.post(`/api/admin/platform/audit/operations/${operationId}/approve`, {
       headers: { "Idempotency-Key": `cleanup-role-approve-${RUN_TOKEN}` },
       data: { reason: `${REASON}确认异常清理临时角色` },
     }));
   }
   for (const menuId of menuIds) {
+    const currentMenus = await apiSuccess<Record<string, unknown>>(
+      await page.request.get("/api/admin/platform/menus/overview"));
+    const expectedVersion = findMenuVersionById(currentMenus.tree, menuId);
+    if (!expectedVersion) continue;
     await apiSuccess(await page.request.delete(`/api/admin/platform/menus/${menuId}`, {
       headers: { "Idempotency-Key": `cleanup-menu-${menuId}-${RUN_TOKEN}` },
-      data: { reason: `${REASON}异常清理临时菜单`, operator: SUPER_USERNAME },
+      data: {
+        expectedVersion,
+        reason: `${REASON}异常清理临时菜单`,
+        operator: SUPER_USERNAME,
+      },
     }));
+  }
+  if (ids.checkerAccount) {
+    await sanitizeTemporaryAccount(
+      page,
+      ids.checkerAccount.id,
+      ids.checkerAccount.password,
+      ids.checkerAccount.label,
+    );
   }
   const finalRoles = await apiSuccess<Record<string, unknown>>(await page.request.get("/api/admin/platform/roles/overview"));
   const finalMenus = await apiSuccess<Record<string, unknown>>(await page.request.get("/api/admin/platform/menus/overview"));

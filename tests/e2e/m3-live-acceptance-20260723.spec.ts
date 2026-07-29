@@ -26,6 +26,7 @@ type ResponseLike = { status(): number; text(): Promise<string> };
 type ConversationView = {
   conversationNo: string;
   status: string;
+  version: number;
   ownerAgentId?: string;
   ownerAgentName?: string;
   transferToId?: string;
@@ -47,11 +48,14 @@ test.beforeAll(() => {
 test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and adversarial boundaries", async ({ page, browser }) => {
   let accountId = "";
   let adminId = 0;
+  let temporaryPassword = "";
   let conversationNo = "";
   let ticketNo = "";
   let selectedUserId = 0;
   let templateText = "";
   let linkedTemplateId = "";
+  let linkedTemplateI18nKey = "";
+  let linkedTemplateI18nVersion = "";
   const checks: string[] = [];
 
   await test.step("anonymous request is rejected and root enters M3 from the visible sidebar", async () => {
@@ -83,8 +87,10 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
         operator: ROOT_USERNAME,
       },
     });
-    const createdData = await okEnvelope<{ id: string }>(created);
+    const createdData = await okEnvelope<{ id: string; temporaryPassword?: string }>(created);
     accountId = String(createdData.id);
+    temporaryPassword = String(createdData.temporaryPassword ?? "");
+    expect(temporaryPassword, "A1 create response must return the generated one-time password").toBeTruthy();
     adminId = Number(accountId.replace(/\D/g, ""));
     expect(adminId).toBeGreaterThan(0);
 
@@ -118,6 +124,9 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
         data: { type: "support", text: `${PREFIX}-M5联动回复模板-${SUFFIX}`, status: "draft", reason: `${PREFIX}-创建M3联动模板`, operator: ROOT_USERNAME },
       }));
       linkedTemplateId = createdTemplate.id;
+      const mirror = await publishI18nMirror(page, "template", linkedTemplateId, createdTemplate.text);
+      linkedTemplateI18nKey = mirror.messageKey;
+      linkedTemplateI18nVersion = mirror.version;
       published = await okEnvelope<{ id: string; text: string; type: string; status: string }>(await page.request.patch(`/api/admin/content/session-templates/reply-templates/${linkedTemplateId}/status`, {
         headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-M5-TEMPLATE-PUBLISH` },
         data: { status: "published", expectedStatus: "draft", reason: `${PREFIX}-发布M3联动模板`, operator: ROOT_USERNAME },
@@ -153,6 +162,8 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
     expect(conversationNo).toMatch(/^CV-/);
     await expect(dialog).toBeHidden({ timeout: 20_000 });
 
+    await page.reload();
+    await expect(page.getByText("会话收件箱", { exact: true })).toBeVisible({ timeout: 20_000 });
     await searchConversation(page, conversationNo);
     await expect(page.locator('[data-proof="session-conversation-no"]')).toHaveText(conversationNo);
     await expect(page.getByText(OPENING, { exact: true })).toBeVisible();
@@ -207,12 +218,15 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
       { length: 201, expectedStatus: 422 },
     ];
     for (const boundary of reasonBoundaries) {
+      const current = await conversationDetail(page, conversationNo);
       const response = await page.request.post(`/api/admin/content/conversations/${conversationNo}/replies`, {
         headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-REASON-${boundary.length}` },
         data: {
           body: `${PREFIX}-reason-boundary-${boundary.length}`,
           reason: "理".repeat(boundary.length),
           operator: ROOT_USERNAME,
+          expectedStatus: current.conversation.status,
+          expectedVersion: current.conversation.version,
         },
       });
       expect(response.status(), `reason length ${boundary.length}`).toBe(boundary.expectedStatus);
@@ -226,6 +240,9 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
     const missing = await page.request.get(`/api/admin/content/conversations/CV-${PREFIX}-NOT-FOUND`);
     expect(missing.status()).toBe(404);
 
+    await page.reload();
+    await expect(page.getByText("会话收件箱", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await searchConversation(page, conversationNo);
     await replyBox.fill(RETRY_DRAFT);
     const failedUrl = `**/api/admin/content/conversations/${conversationNo}/replies`;
     const lostResponseKeys: string[] = [];
@@ -284,12 +301,40 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
 
     const accept = page.locator('[data-proof="session-transfer-accept"]');
     await expect(accept).toBeDisabled();
+    const transferDetail = await conversationDetail(page, conversationNo);
     const forbiddenAccept = await page.request.post(`/api/admin/content/conversations/${conversationNo}/transfer/accept`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-ROOT-ACCEPT` },
-      data: { reason: `${PREFIX}-非目标坐席尝试接收`, operator: ROOT_USERNAME },
+      data: {
+        reason: `${PREFIX}-非目标坐席尝试接收`,
+        operator: ROOT_USERNAME,
+        expectedStatus: transferDetail.conversation.status,
+        expectedVersion: transferDetail.conversation.version,
+      },
     });
     expect(forbiddenAccept.status()).toBe(403);
+    const authoritativeRefresh = page.waitForResponse((response) => response.request().method() === "GET"
+      && new URL(response.url()).pathname === `/api/admin/content/conversations/${conversationNo}`
+      && response.status() === 200);
+    await page.reload();
+    const refreshedDetail = await okEnvelope<ConversationDetail>(await authoritativeRefresh);
+    expect(refreshedDetail.conversation.status).toBe("TRANSFERRED");
+    expect(refreshedDetail.conversation.version).toBe(transferred.version);
+    await expect(page.getByText("会话收件箱", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await searchConversation(page, conversationNo);
+    const waitResponse = page.waitForResponse((response) => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/admin/content/conversations/${conversationNo}/transfer/wait`);
     await page.locator('[data-proof="session-transfer-wait"]').click();
+    const waitHttp = await waitResponse;
+    expect(
+      waitHttp.status(),
+      JSON.stringify({
+        request: waitHttp.request().postDataJSON(),
+        authoritativeStatus: refreshedDetail.conversation.status,
+        authoritativeVersion: refreshedDetail.conversation.version,
+      }),
+    ).toBeLessThan(400);
+    const waited = await okEnvelope<ConversationView>(waitHttp);
+    expect(waited.status).toBe("TRANSFERRED");
     await expect(page.getByText(/保持转入待处理|继续等待/).last()).toBeVisible();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "03-transfer-target-and-owner-guard.png"), fullPage: true });
     checks.push("real-target-transfer", "non-target-accept-403", "wait-state");
@@ -297,7 +342,7 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
 
   await test.step("target SUPPORT agent accepts, replies, refreshes and converts atomically to M2", async () => {
     await logout(page);
-    await login(page, TEMP_USERNAME, TEMP_INITIAL_PASSWORD, TEMP_FINAL_PASSWORD);
+    await login(page, TEMP_USERNAME, temporaryPassword, TEMP_FINAL_PASSWORD);
     const supportAuth = await okEnvelope<{ session?: { authorities?: string[] } }>(await page.request.get("/api/admin/auth/session"));
     expect(supportAuth.session?.authorities ?? []).toEqual(expect.arrayContaining(["service_m3_read", "service_m3_write"]));
     await openModule(page, "/service/sessions");
@@ -335,7 +380,15 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
 
     const secondConversion = await page.request.post(`/api/admin/content/conversations/${conversationNo}/ticket`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-SECOND-CONVERSION` },
-      data: { category: "account", priority: "NORMAL", title: `${PREFIX}-duplicate-ticket`, reason: `${PREFIX}-终态二次转单`, operator: TEMP_USERNAME },
+      data: {
+        category: "account",
+        priority: "NORMAL",
+        title: `${PREFIX}-duplicate-ticket`,
+        reason: `${PREFIX}-终态二次转单`,
+        operator: TEMP_USERNAME,
+        expectedStatus: converted.conversation.status,
+        expectedVersion: converted.conversation.version,
+      },
     });
     expect(secondConversion.status()).toBe(409);
     checks.push("target-agent-accept", "refresh-persistence", "atomic-ticket-conversion", "second-conversion-409");
@@ -370,9 +423,10 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
 
     await logout(page);
     await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+    const roleVersion = await accountVersion(page, accountId);
     const downgraded = await page.request.patch(`/api/admin/platform/accounts/${accountId}/role`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-ROLE-AUDITOR` },
-      data: { role: "auditor", reason: `${PREFIX}-验证 M3 权限边界`, operator: ROOT_USERNAME },
+      data: { role: "auditor", expectedVersion: roleVersion, reason: `${PREFIX}-验证 M3 权限边界`, operator: ROOT_USERNAME },
     });
     await okEnvelope(downgraded);
     await logout(page);
@@ -388,9 +442,16 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
     await expect(page.locator('[data-proof="session-initiate"]')).toHaveCount(0);
     const readable = await page.request.get("/api/admin/content/conversations?pageNum=1&pageSize=1");
     expect(readable.status()).toBe(200);
+    const auditorDetail = await conversationDetail(page, conversationNo);
     const forbidden = await page.request.post(`/api/admin/content/conversations/${conversationNo}/replies`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-AUDITOR-WRITE` },
-      data: { body: `${PREFIX}-auditor-must-not-write`, reason: `${PREFIX}-只读审计不得回复会话`, operator: TEMP_USERNAME },
+      data: {
+        body: `${PREFIX}-auditor-must-not-write`,
+        reason: `${PREFIX}-只读审计不得回复会话`,
+        operator: TEMP_USERNAME,
+        expectedStatus: auditorDetail.conversation.status,
+        expectedVersion: auditorDetail.conversation.version,
+      },
     });
     expect(forbidden.status()).toBe(403);
     checks.push("relogin-persistence", "auditor-read-only-visible", "auditor-write-api-403");
@@ -404,10 +465,50 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
         headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-M5-TEMPLATE-ARCHIVE` },
         data: { status: "archived", expectedStatus: "published", reason: `${PREFIX}-归档M3联动模板`, operator: ROOT_USERNAME },
       }));
+      if (linkedTemplateI18nKey && linkedTemplateI18nVersion) {
+        await okEnvelope(await page.request.delete(`/api/admin/content/i18n-learning/messages/${encodeURIComponent(linkedTemplateI18nKey)}`, {
+          headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-M5-I18N-ARCHIVE` },
+          data: {
+            expectedVersion: linkedTemplateI18nVersion,
+            reason: `${PREFIX}-归档M3联动模板多语镜像`,
+            operator: ROOT_USERNAME,
+          },
+        }));
+      }
     }
+    if (ticketNo) {
+      let detail = await okEnvelope<{ ticket: { status: string; version: number; archived?: boolean } }>(
+        await page.request.get(`/api/admin/content/tickets/${encodeURIComponent(ticketNo)}`),
+      );
+      if (!detail.ticket.archived && detail.ticket.status !== "CLOSED" && detail.ticket.status !== "RESOLVED") {
+        detail = await okEnvelope(await page.request.patch(`/api/admin/content/tickets/${encodeURIComponent(ticketNo)}/status`, {
+          headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-TICKET-RESOLVE` },
+          data: {
+            status: "RESOLVED",
+            expectedStatus: detail.ticket.status,
+            expectedVersion: detail.ticket.version,
+            reason: `${PREFIX}-验收清理工单为已解决`,
+            operator: ROOT_USERNAME,
+          },
+        }));
+      }
+      if (!detail.ticket.archived && detail.ticket.status === "RESOLVED") {
+        await okEnvelope(await page.request.patch(`/api/admin/content/tickets/${encodeURIComponent(ticketNo)}/archive`, {
+          headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-TICKET-ARCHIVE` },
+          data: {
+            archived: true,
+            expectedStatus: detail.ticket.status,
+            expectedVersion: detail.ticket.version,
+            reason: `${PREFIX}-验收清理工单归档`,
+            operator: ROOT_USERNAME,
+          },
+        }));
+      }
+    }
+    const statusVersion = await accountVersion(page, accountId);
     const disabled = await page.request.patch(`/api/admin/platform/accounts/${accountId}/status`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-DISABLE` },
-      data: { status: "disabled", reason: `${PREFIX}-验收结束停用临时账号`, operator: ROOT_USERNAME },
+      data: { status: "disabled", expectedVersion: statusVersion, reason: `${PREFIX}-验收结束停用临时账号`, operator: ROOT_USERNAME },
     });
     await okEnvelope(disabled);
     checks.push("temporary-account-disabled");
@@ -428,6 +529,41 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
   }, null, 2));
   expect(checks).toHaveLength(27);
 });
+
+async function publishI18nMirror(page: Page, kind: "script" | "template", contentId: string, canonicalZh: string) {
+  const messageKey = `conversation.${kind}.${contentId.toLowerCase()}`;
+  const body = {
+    zh: canonicalZh,
+    en: `Acceptance ${kind} ${contentId}`,
+    vi: `Nghiem thu ${kind} ${contentId}`,
+    reason: `${PREFIX}-创建M5发布所需中英越镜像`,
+    operator: ROOT_USERNAME,
+  };
+  const draft = await okEnvelope<{ version: string }>(await page.request.patch(
+    `/api/admin/content/i18n-learning/messages/${encodeURIComponent(messageKey)}/draft`,
+    {
+      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-I18N-DRAFT-${kind}-${contentId}` },
+      data: body,
+    },
+  ));
+  const published = await okEnvelope<{ version: string }>(await page.request.post(
+    `/api/admin/content/i18n-learning/messages/${encodeURIComponent(messageKey)}/publish`,
+    {
+      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-I18N-PUBLISH-${kind}-${contentId}` },
+      data: { ...body, expectedVersion: draft.version },
+    },
+  ));
+  return { messageKey, version: published.version };
+}
+
+async function accountVersion(page: Page, accountId: string) {
+  const overview = await okEnvelope<{ operators?: Array<{ id: string; version?: string }> }>(
+    await page.request.get("/api/admin/platform/accounts/overview"),
+  );
+  const account = (overview.operators ?? []).find((operator) => String(operator.id) === String(accountId));
+  expect(account?.version, `A1 account ${accountId} must exist before CAS mutation`).toBeTruthy();
+  return account!.version!;
+}
 
 async function login(page: Page, username: string, password: string, changedPassword?: string) {
   await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });

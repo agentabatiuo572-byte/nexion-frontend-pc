@@ -35,6 +35,9 @@ function sanitizePhoneMasked(value: unknown): unknown {
 }
 
 function backendPath(parts: string[]) {
+  if (parts.length === 1 && parts[0] === "overview") {
+    return "/api/admin/users/overview";
+  }
   if (parts.length === 2 && parts[0] === "account-actions" && parts[1] === "overview") {
     return "/api/admin/users/account-actions/overview";
   }

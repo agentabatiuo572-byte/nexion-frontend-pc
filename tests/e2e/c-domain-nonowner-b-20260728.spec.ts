@@ -1,0 +1,707 @@
+import { createHmac } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { expect, test, type Page } from "@playwright/test";
+import { CONSOLE_NAV } from "../../lib/nav/console-nav";
+
+type FixtureAccount = {
+  username: string;
+  password: string;
+  totpSecret: string;
+};
+
+type PermissionFixture = {
+  runId: string;
+  accounts: {
+    c_readonly: FixtureAccount;
+    c_no_write: FixtureAccount;
+    c_no_menu: FixtureAccount;
+  };
+};
+
+type ModuleProbe = {
+  id: string;
+  path: string;
+  title: string;
+  readPath: string;
+  writePath: string;
+  writeMethod: "POST" | "PATCH";
+  writeBody: Record<string, unknown>;
+  errorText: RegExp;
+};
+
+const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
+const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const USER_ID = process.env.C_NONOWNER_USER_ID || "990000151023";
+const USER_NO = process.env.C_NONOWNER_USER_NO || "U990000151023";
+const EVIDENCE_DIR = process.env.C_NONOWNER_EVIDENCE_DIR;
+const fixturePath = process.env.ADMIN_PERMISSION_FIXTURE;
+if (!fixturePath) throw new Error("ADMIN_PERMISSION_FIXTURE is required");
+const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as PermissionFixture;
+
+const MODULES: ModuleProbe[] = [
+  {
+    id: "C1",
+    path: "/users/search",
+    title: "检索 & 画像",
+    readPath: "/api/admin/users/overview",
+    writePath: "/api/admin/users/profiles/export",
+    writeMethod: "POST",
+    writeBody: { keyword: USER_NO, operator: "superadmin" },
+    errorText: /C1 统计加载失败/,
+  },
+  {
+    id: "C2",
+    path: "/users/actions",
+    title: "账户操作",
+    readPath: "/api/admin/users/account-actions/overview",
+    writePath: `/api/admin/users/profiles/${USER_ID}/status`,
+    writeMethod: "PATCH",
+    writeBody: {
+      status: "FROZEN",
+      reasonCode: "PERMISSION_PROBE",
+      reason: "C 域权限篡改探针不得执行",
+      operator: "superadmin",
+    },
+    errorText: /C2 数据加载失败/,
+  },
+  {
+    id: "C3",
+    path: "/users/assets",
+    title: "余额 & 资产调整",
+    readPath: "/api/admin/users/asset-adjustments/overview",
+    writePath: `/api/admin/users/profiles/${USER_ID}/asset-adjustments`,
+    writeMethod: "POST",
+    writeBody: {
+      asset: "USDT",
+      direction: "DEBIT",
+      amount: "0.01",
+      reasonCode: "PERMISSION_PROBE",
+      reason: "C 域权限篡改探针不得执行",
+      operator: "superadmin",
+    },
+    errorText: /余额调整数据加载失败/,
+  },
+  {
+    id: "C4",
+    path: "/users/kyc",
+    title: "KYC 合规台账",
+    readPath: "/api/admin/users/kyc/overview?pageNum=1&pageSize=10",
+    writePath: `/api/admin/users/kyc/users/${USER_ID}/trigger-review`,
+    writeMethod: "POST",
+    writeBody: {
+      reason: "C 域权限篡改探针不得执行",
+      operator: "superadmin",
+    },
+    errorText: /C4 数据加载失败/,
+  },
+  {
+    id: "C5",
+    path: "/users/security",
+    title: "安全 & 会话",
+    readPath: "/api/admin/users/security/overview?pageNum=1&pageSize=10",
+    writePath: `/api/admin/users/profiles/${USER_ID}/security/sessions/revoke-all`,
+    writeMethod: "POST",
+    writeBody: {
+      reason: "C 域权限篡改探针不得执行",
+      operator: "superadmin",
+    },
+    errorText: /C5 数据加载失败/,
+  },
+  {
+    id: "C6",
+    path: "/users/reg-risk",
+    title: "注册/登录风控",
+    readPath: "/api/admin/users/registration-risk/overview",
+    writePath: "/api/admin/users/registration-risk/params/lockShort",
+    writeMethod: "PATCH",
+    writeBody: {
+      value: "5 次 / 30 分钟",
+      reason: "C 域权限篡改探针不得执行",
+      operator: "superadmin",
+      expectedVersion: -1,
+    },
+    errorText: /C6 数据加载失败/,
+  },
+];
+
+const CROSS_DOMAIN_READS = {
+  D: "/api/admin/bills?pageNum=1&pageSize=10",
+  G: "/api/admin/market/exchange",
+  K: "/api/admin/risk/kyc-review/overview",
+  M: "/api/admin/content/tickets?pageNum=1&pageSize=1",
+};
+
+test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
+  test.beforeAll(() => {
+    if (EVIDENCE_DIR) mkdirSync(EVIDENCE_DIR, { recursive: true });
+  });
+
+  test("匿名 401、登录可见侧栏、六模块真实读取、刷新返回重登与跨域事实一致", async ({ page }) => {
+    const anonymous: number[] = [];
+    for (const module of MODULES) {
+      anonymous.push((await page.request.get(module.readPath)).status());
+    }
+    expect(anonymous).toEqual([401, 401, 401, 401, 401, 401]);
+
+    const runtime = monitorRuntime(page);
+    await loginSuperadmin(page);
+    await assertVisibleCMenus(page);
+
+    const moduleReads: Array<{ module: string; status: number; refresh: number }> = [];
+    let c6RestoredValue = "";
+    for (const module of MODULES) {
+      const first = await openVisibleModule(page, module);
+      expect(first.status()).toBe(200);
+      await expect(page.getByRole("heading", { name: module.title, exact: true })).toBeVisible();
+      await expect(page.locator(".cdom")).toBeVisible();
+      await expect(page.locator("body")).not.toContainText(module.errorText);
+
+      const refresh = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === new URL(module.readPath, "http://local").pathname
+        && response.request().method() === "GET");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      const refreshResponse = await refresh;
+      expect(refreshResponse.status()).toBe(200);
+      await expect(page.getByRole("heading", { name: module.title, exact: true })).toBeVisible();
+      if (module.id === "C6") {
+        const lockShortValue = page.locator(".p-row").filter({ hasText: "短锁" }).first().locator(".v");
+        await expect(lockShortValue).toContainText("5 次 / 30 分钟");
+        c6RestoredValue = (await lockShortValue.innerText()).trim();
+      }
+      moduleReads.push({ module: module.id, status: first.status(), refresh: refreshResponse.status() });
+    }
+
+    await openVisibleModule(page, MODULES[0]);
+    await openVisibleModule(page, MODULES[1]);
+    await page.goBack({ waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/users\/search$/);
+    await page.goForward({ waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(/\/users\/actions$/);
+
+    const c1 = await browserApi(page, "GET", `/api/admin/users/profiles/${USER_ID}/360`);
+    const c2 = await browserApi(page, "GET", `/api/admin/users/account-actions/accounts/${USER_NO}`);
+    const c3 = await browserApi(page, "GET", `/api/admin/users/asset-adjustments?keyword=${USER_NO}&pageNum=1&pageSize=50`);
+    const d4 = await browserApi(page, "GET", `/api/admin/bills?keyword=${USER_NO}&pageNum=1&pageSize=100`);
+    const c4 = await browserApi(page, "GET", `/api/admin/users/kyc/users/${USER_ID}`);
+    const k5 = await browserApi(page, "GET", `/api/admin/risk/kyc-review/overview?keyword=${encodeURIComponent(USER_NO)}`);
+    const l5 = await browserApi(page, "GET", "/api/admin/bi/export/overview");
+    const g2 = await browserApi(page, "GET", CROSS_DOMAIN_READS.G);
+    const m2 = await browserApi(page, "GET", `/api/admin/content/tickets?keyword=${encodeURIComponent(USER_NO)}&pageNum=1&pageSize=10`);
+    for (const result of [c1, c2, c3, d4, c4, k5, l5, g2, m2]) expect(result.status).toBe(200);
+    expect(JSON.stringify(c1.data)).toContain(USER_NO);
+    expect(JSON.stringify(c2.data)).toContain(USER_NO);
+    expect(String(findKey(c2.data, "status")).toUpperCase()).toBe("ACTIVE");
+    const c1KycStatus = String(findKey(c1.data, "kycStatus")).toUpperCase();
+    const c4KycStatus = String(
+      findKey(c4.data, "backendStatus")
+      ?? findKey(c4.data, "kycStatus")
+      ?? findKey(c4.data, "status"),
+    ).toUpperCase();
+    expect(["APPROVED", "VERIFIED"]).toContain(c1KycStatus);
+    expect(["APPROVED", "VERIFIED"]).toContain(c4KycStatus);
+    expect(JSON.stringify(c3.data)).toContain(USER_NO);
+    expect(JSON.stringify(d4.data)).toContain(USER_NO);
+    expect(JSON.stringify(k5.data)).toContain("KR-C4-D8D23DC8");
+    expect(JSON.stringify(l5.data)).toContain("KYC-EXP-046E25E6242D");
+    assertMaskedPhoneFields(c1.data);
+
+    expect((await page.request.get("/api/admin/users/not-a-real-route")).status()).toBe(404);
+    await logout(page);
+    await loginSuperadmin(page);
+    await assertVisibleCMenus(page);
+    expect((await openVisibleModule(page, MODULES[5])).status()).toBe(200);
+    expect(runtime.pageErrors).toEqual([]);
+    expect(runtime.admin5xx).toEqual([]);
+    expect(runtime.consoleErrors).toEqual([]);
+
+    writeEvidence("superadmin-read-cross-domain.json", {
+      anonymous,
+      moduleReads,
+      relogin: "PASS",
+      user: USER_NO,
+      c2Status: findKey(c2.data, "status"),
+      c4Status: c4KycStatus,
+      c6RestoredValue,
+      crossDomain: {
+        C3_D4: [c3.status, d4.status],
+        C4_K5_L5: [c4.status, k5.status, l5.status],
+        C_G_M: [g2.status, m2.status],
+      },
+      pageErrors: runtime.pageErrors,
+      admin5xx: runtime.admin5xx,
+      consoleErrors: runtime.consoleErrors,
+    });
+  });
+
+  for (const [profile, accountKey] of [
+    ["readonly", "c_readonly"],
+    ["menu-no-write", "c_no_write"],
+  ] as const) {
+    test(`${profile} 五层权限：C1–C6 只读、写篡改 403、跨域 403、刷新重登不漂移`, async ({ page }) => {
+      const runtime = monitorRuntime(page);
+      const account = fixture.accounts[accountKey];
+      await loginFixture(page, account, accountKey);
+      await assertSessionShape(page, true);
+      await assertVisibleCMenus(page);
+
+      const matrix: Array<{ module: string; read: number; write: number }> = [];
+      for (const module of MODULES) {
+        expect((await openVisibleModule(page, module)).status()).toBe(200);
+        await expect(page.getByRole("heading", { name: module.title, exact: true })).toBeVisible();
+        await assertNoEnabledDangerousButton(page, module.id);
+        const read = await browserApi(page, "GET", module.readPath);
+        const write = await browserApi(page, module.writeMethod, module.writePath, module.writeBody);
+        expect(read.status, `${profile} ${module.id} read`).toBe(200);
+        expect(write.status, `${profile} ${module.id} forged write`).toBe(403);
+        matrix.push({ module: module.id, read: read.status, write: write.status });
+      }
+
+      for (const [domain, endpoint] of Object.entries(CROSS_DOMAIN_READS)) {
+        expect((await browserApi(page, "GET", endpoint)).status, `${profile} cross ${domain}`).toBe(403);
+      }
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await assertNoEnabledDangerousButton(page, MODULES[5].id);
+      await logout(page);
+      await loginFixture(page, account, accountKey);
+      await assertSessionShape(page, true);
+      expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(200);
+      expect((await browserApi(page, "PATCH", MODULES[5].writePath, MODULES[5].writeBody)).status).toBe(403);
+      expect(runtime.pageErrors).toEqual([]);
+      expect(runtime.admin5xx).toEqual([]);
+      writeEvidence(`${profile}-permissions.json`, { matrix, crossDomain: "403x4", refresh: "PASS", relogin: "PASS" });
+    });
+  }
+
+  test("no-menu 五层权限：菜单/路由/接口均拒绝，刷新重登不被缓存放大", async ({ page }) => {
+    const account = fixture.accounts.c_no_menu;
+    await loginFixture(page, account, "c_no_menu");
+    await assertSessionShape(page, false);
+    await expect(page.locator('aside a[href^="/users/"]')).toHaveCount(0);
+
+    await page.goto(MODULES[0].path, { waitUntil: "domcontentloaded" });
+    await expect(page).not.toHaveURL(/\/users\/search(?:\?.*)?$/);
+    await expect(page.locator(".cdom")).toHaveCount(0);
+
+    const matrix: Array<{ module: string; read: number; write: number }> = [];
+    for (const module of MODULES) {
+      const read = await browserApi(page, "GET", module.readPath);
+      const write = await browserApi(page, module.writeMethod, module.writePath, module.writeBody);
+      expect(read.status).toBe(403);
+      expect(write.status).toBe(403);
+      matrix.push({ module: module.id, read: read.status, write: write.status });
+    }
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.locator('aside a[href^="/users/"]')).toHaveCount(0);
+    await logout(page);
+    await loginFixture(page, account, "c_no_menu");
+    await assertSessionShape(page, false);
+    expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
+    writeEvidence("no-menu-permissions.json", { matrix, directRoute: "DENIED", refresh: "DENIED", relogin: "DENIED" });
+  });
+
+  test("C1–C6 畸形 200 全部模块内失败关闭，503/超时可恢复", async ({ page }) => {
+    await loginSuperadmin(page);
+    const results: Array<{ module: string; malformed: string; recovered: number }> = [];
+    for (const module of MODULES) {
+      const pattern = exactApiPattern(module.readPath);
+      await page.route(pattern, (route) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ code: 0, message: "OK", data: { malformed: true } }),
+      }));
+      await openVisibleModule(page, module);
+      await expect(page.getByText(module.errorText).first()).toBeVisible();
+      if (module.id !== "C1") {
+        await assertNoEnabledDangerousButton(page, module.id);
+      }
+      await page.unroute(pattern);
+      const recovered = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === new URL(module.readPath, "http://local").pathname
+        && response.request().method() === "GET");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      const response = await recovered;
+      expect(response.status()).toBe(200);
+      await expect(page.getByText(module.errorText)).toHaveCount(0);
+      results.push({ module: module.id, malformed: "FAIL_CLOSED", recovered: response.status() });
+    }
+
+    await page.route(exactApiPattern(MODULES[2].readPath), (route) => route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ code: 503, message: "C3_ACCEPTANCE_INJECTED_FAILURE", data: null }),
+    }));
+    await openVisibleModule(page, MODULES[2]);
+    await expect(page.getByText(MODULES[2].errorText).first()).toBeVisible();
+    await page.unroute(exactApiPattern(MODULES[2].readPath));
+
+    await page.route(exactApiPattern(MODULES[4].readPath), (route) => route.abort("timedout"));
+    await openVisibleModuleWithRequestFailure(page, MODULES[4]);
+    await expect(page.getByText(MODULES[4].errorText).first()).toBeVisible();
+    await expect(page.getByText(MODULES[4].errorText).first()).toBeVisible();
+    await page.unroute(exactApiPattern(MODULES[4].readPath));
+    const recovery = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/admin/users/security/overview"
+      && response.request().method() === "GET");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    expect((await recovery).status()).toBe(200);
+    await expect(page.getByText(MODULES[4].errorText)).toHaveCount(0);
+
+    writeEvidence("malformed-timeout-recovery.json", { results, c3_503: "FAIL_CLOSED", c5_timeout: "FAIL_CLOSED_RECOVERED" });
+  });
+
+  test("C6 未知结果同载荷重试复用 key，修改理由生成新 key，且不触碰真实配置", async ({ page }) => {
+    await loginSuperadmin(page);
+    expect((await openVisibleModule(page, MODULES[5])).status()).toBe(200);
+    const keys: string[] = [];
+    await page.route("**/api/admin/users/registration-risk/params/*", async (route) => {
+      keys.push(route.request().headers()["idempotency-key"] ?? "");
+      await route.fulfill({
+        status: 503,
+        headers: { "X-Nexion-Upstream-Outcome": "unknown" },
+        contentType: "application/json",
+        body: JSON.stringify({ code: 503, message: "UPSTREAM_OUTCOME_UNKNOWN", data: null }),
+      });
+    });
+
+    await page.getByRole("button", { name: "调整", exact: true }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel(/操作理由/).fill("C6 非Owner未知结果同键重试验证");
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = page.waitForResponse((candidate) =>
+        new URL(candidate.url()).pathname.includes("/api/admin/users/registration-risk/params/")
+        && candidate.request().method() === "PATCH");
+      await dialog.getByRole("button", { name: "确认提交", exact: true }).click();
+      expect((await response).status()).toBe(503);
+      await expect(dialog).toBeVisible();
+      await expect(page.getByText(/结果未知|结果暂不确定/).first()).toBeVisible();
+    }
+    await dialog.getByLabel(/操作理由/).fill("C6 非Owner未知结果修改载荷生成新键");
+    const changed = page.waitForResponse((candidate) =>
+      new URL(candidate.url()).pathname.includes("/api/admin/users/registration-risk/params/")
+      && candidate.request().method() === "PATCH");
+    await dialog.getByRole("button", { name: "确认提交", exact: true }).click();
+    expect((await changed).status()).toBe(503);
+    expect(keys).toHaveLength(3);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
+    await page.unroute("**/api/admin/users/registration-risk/params/*");
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    const real = await browserApi(page, "GET", MODULES[5].readPath);
+    expect(real.status).toBe(200);
+    writeEvidence("c6-unknown-idempotency.json", { attempts: 3, samePayloadSameKey: true, changedPayloadNewKey: true, realWrite: false });
+  });
+});
+
+async function loginSuperadmin(page: Page) {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  if (await page.locator("aside").isVisible({ timeout: 3_000 }).catch(() => false)) return;
+  await page.locator('input[autocomplete="username"]').fill(USERNAME);
+  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
+  const response = page.waitForResponse((candidate) =>
+    new URL(candidate.url()).pathname === "/api/admin/auth/login"
+    && candidate.request().method() === "POST");
+  await page.getByRole("button", { name: /继续|登录/ }).click();
+  expect((await response).status()).toBe(200);
+  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+}
+
+async function loginFixture(page: Page, account: FixtureAccount, accountKey: string) {
+  let lastCode: number | undefined;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const shell = page.locator("aside");
+    const username = page.locator('input[autocomplete="username"]');
+    await expect.poll(
+      async () => (await shell.isVisible()) || (await username.isVisible()),
+      { timeout: 20_000, intervals: [250] },
+    ).toBe(true);
+    if (await shell.isVisible()) break;
+    try {
+      await username.fill(account.username, { timeout: 5_000 });
+    } catch (error) {
+      if (await shell.isVisible()) break;
+      throw error;
+    }
+    if (await shell.isVisible()) break;
+    try {
+      await page.locator('input[autocomplete="current-password"]').fill(account.password, { timeout: 5_000 });
+    } catch (error) {
+      if (await shell.isVisible()) break;
+      throw error;
+    }
+    if (await shell.isVisible()) break;
+    const loginButton = page.getByRole("button", { name: /继续|登录/ });
+    await expect.poll(
+      async () => (await shell.isVisible()) || (await loginButton.isVisible()),
+      { timeout: 20_000, intervals: [100, 250] },
+    ).toBe(true);
+    if (await shell.isVisible()) break;
+    const loginResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/admin/auth/login"
+      && response.request().method() === "POST");
+    try {
+      await loginButton.click({ timeout: 5_000 });
+    } catch (error) {
+      if (await shell.isVisible()) break;
+      throw error;
+    }
+    const loginOutcome = await Promise.race([
+      loginResponse.then((response) => ({ kind: "response" as const, response })),
+      shell.waitFor({ state: "visible", timeout: 20_000 }).then(() => ({ kind: "shell" as const })),
+    ]);
+    if (loginOutcome.kind === "shell") break;
+    const loginPayload = await loginOutcome.response.json().catch(() => null) as { code?: number; message?: string } | null;
+    if (loginPayload?.code !== 0) {
+      throw new Error(`${accountKey} credential failed code=${loginPayload?.code ?? "none"} message=${loginPayload?.message ?? "none"}`);
+    }
+    const otp = page.getByLabel("一次性验证码");
+    if (!(await otp.isVisible({ timeout: 5_000 }).catch(() => false))) break;
+    await otp.fill(await freshTotp(accountKey, account.totpSecret));
+    const verification = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/admin/auth/mfa/verify"
+      && response.request().method() === "POST");
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const verified = await verification;
+    const result = await verified.json().catch(() => null) as { code?: number } | null;
+    lastCode = result?.code;
+    if (verified.status() === 200 && result?.code === 0) {
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      break;
+    }
+    if (attempt === 2) throw new Error(`${accountKey} MFA failed code=${lastCode ?? "none"}`);
+  }
+  await expect(page.locator("aside"), `${accountKey} shell code=${lastCode ?? "none"}`).toBeVisible({ timeout: 20_000 });
+}
+
+async function logout(page: Page) {
+  const direct = page.getByRole("button", { name: /^(退出登录|登出)$/ }).first();
+  if (await direct.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await direct.click();
+  } else {
+    const account = page.locator('header button[aria-haspopup="menu"], [role="banner"] button[aria-haspopup="menu"]').first();
+    await expect(account).toBeVisible();
+    await account.click();
+    await page.getByText(/退出登录|登出/, { exact: true }).first().click();
+  }
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 20_000 });
+}
+
+async function assertVisibleCMenus(page: Page) {
+  const domain = CONSOLE_NAV.find((item) => item.code === "C");
+  if (!domain) throw new Error("C domain missing from nav source");
+  const group = page.locator("aside button").filter({ hasText: /用户与账户/ }).first();
+  if (!(await page.locator(`aside a[href="${domain.l2[0].path}"]`).first().isVisible({ timeout: 2_000 }).catch(() => false))) {
+    await group.click();
+  }
+  for (const module of domain.l2) {
+    await expect(page.locator(`aside a[href="${module.path}"]`).first()).toBeVisible();
+  }
+}
+
+async function openVisibleModule(page: Page, module: ModuleProbe) {
+  await assertVisibleCMenus(page);
+  const link = page.locator(`aside a[href="${module.path}"]`).first();
+  const expectedPath = new URL(module.readPath, "http://local").pathname;
+  const response = page.waitForResponse((candidate) =>
+    new URL(candidate.url()).pathname === expectedPath
+    && candidate.request().method() === "GET");
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`${escapeRegExp(module.path)}(?:\\?.*)?$`));
+  return response;
+}
+
+async function openVisibleModuleWithRequestFailure(page: Page, module: ModuleProbe) {
+  await assertVisibleCMenus(page);
+  const link = page.locator(`aside a[href="${module.path}"]`).first();
+  const expectedPath = new URL(module.readPath, "http://local").pathname;
+  const failed = page.waitForEvent("requestfailed", {
+    predicate: (request) =>
+      new URL(request.url()).pathname === expectedPath
+      && request.method() === "GET",
+  });
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`${escapeRegExp(module.path)}(?:\\?.*)?$`));
+  return failed;
+}
+
+async function assertSessionShape(page: Page, hasCRead: boolean) {
+  const session = await browserApi(page, "GET", "/api/admin/auth/session");
+  expect(session.status).toBe(200);
+  const authorities = collectStrings(findKey(session.data, "authorities"));
+  const menus = collectStrings(findKey(session.data, "menuCodes") ?? findKey(session.data, "effectiveMenus"));
+  if (hasCRead) {
+    for (const authority of ["user_c1_read", "user_c2_read", "user_c3_read", "user_c4_read", "user_c5_read", "user_c6_read"]) {
+      expect(authorities).toContain(authority);
+    }
+    expect(menus.length).toBeGreaterThan(0);
+  } else {
+    expect(authorities).toEqual([]);
+    expect(menus).toEqual([]);
+  }
+}
+
+async function assertNoEnabledDangerousButton(page: Page, moduleId: string) {
+  const pattern = {
+    C1: /导出/,
+    C2: /^(冻结|恢复|强制登出|发起模拟登录|\+ 加入信任名单|\+ 加入禁入名单)$/,
+    C3: /发起调整|冲正|批准|拒绝|重新放行/,
+    C4: /触发复审|生成脱敏导出|人工标记|撤销实名|调整/,
+    C5: /踢线|关闭 2FA|密码重置|解锁|调整/,
+    C6: /^(调整|立即恢复|紧急关闭)$/,
+  }[moduleId] ?? /$^/;
+  const dangerous = page.locator(".cdom button:not([disabled])").filter({
+    hasText: pattern,
+  });
+  await expect(dangerous).toHaveCount(0);
+}
+
+async function browserApi(
+  page: Page,
+  method: "GET" | "POST" | "PATCH",
+  requestPath: string,
+  body?: Record<string, unknown>,
+) {
+  return page.evaluate(async ({ requestMethod, apiPath, requestBody, runId }) => {
+    const response = await fetch(apiPath, {
+      method: requestMethod,
+      credentials: "same-origin",
+      headers: requestMethod === "GET"
+        ? undefined
+        : {
+            "Content-Type": "application/json",
+            "Idempotency-Key": `c-nonowner-b-${runId}-${crypto.randomUUID()}`,
+          },
+      body: requestMethod === "GET" ? undefined : JSON.stringify(requestBody ?? {}),
+    });
+    const payload = await response.json().catch(() => null) as { code?: number; data?: unknown } | null;
+    return { status: response.status, code: payload?.code, data: payload?.data };
+  }, { requestMethod: method, apiPath: requestPath, requestBody: body, runId: fixture.runId });
+}
+
+function exactApiPattern(endpoint: string) {
+  const pathname = new URL(endpoint, "http://local").pathname;
+  return `**${pathname}*`;
+}
+
+function monitorRuntime(page: Page) {
+  const pageErrors: string[] = [];
+  const admin5xx: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("response", (response) => {
+    const pathname = new URL(response.url()).pathname;
+    if (pathname.startsWith("/api/admin/") && response.status() >= 500) {
+      admin5xx.push(`${response.status()} ${pathname}`);
+    }
+  });
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (/Failed to load resource.*(?:401|403)/i.test(text)) return;
+    consoleErrors.push(text);
+  });
+  return { pageErrors, admin5xx, consoleErrors };
+}
+
+function assertMaskedPhoneFields(value: unknown) {
+  const phones: string[] = [];
+  collectKeyValues(value, "phoneMasked", phones);
+  for (const phone of phones) {
+    expect(phone).toMatch(/^(?:\+\d{1,3}[- ]?)?\d{0,3}\*{3,}\d{2,4}$/);
+  }
+}
+
+function collectKeyValues(value: unknown, key: string, target: string[]) {
+  if (!value || typeof value !== "object") return;
+  if (!Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (typeof record[key] === "string") target.push(record[key]);
+  }
+  const children = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>);
+  for (const child of children) collectKeyValues(child, key, target);
+}
+
+function findKey(value: unknown, key: string): unknown {
+  if (!value || typeof value !== "object") return undefined;
+  if (!Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, key)) {
+    return (value as Record<string, unknown>)[key];
+  }
+  const children = Array.isArray(value) ? value : Object.values(value as Record<string, unknown>);
+  for (const child of children) {
+    const found = findKey(child, key);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function collectStrings(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string") return [item];
+    if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      return [record.code, record.menuCode].filter((entry): entry is string => typeof entry === "string");
+    }
+    return [];
+  });
+}
+
+function writeEvidence(name: string, value: unknown) {
+  if (!EVIDENCE_DIR) return;
+  writeFileSync(path.join(EVIDENCE_DIR, name), JSON.stringify(value, null, 2));
+}
+
+const lastTotpStep = new Map<string, number>();
+
+async function freshTotp(accountKey: string, secret: string) {
+  let step = Math.floor(Date.now() / 30_000);
+  const previous = lastTotpStep.get(accountKey) ?? -1;
+  if (step <= previous) {
+    await expect.poll(() => Math.floor(Date.now() / 30_000), {
+      timeout: 35_000,
+      intervals: [500],
+      message: `${accountKey} waits for a fresh MFA counter`,
+    }).toBeGreaterThan(previous);
+  }
+  const remaining = 30 - (Math.floor(Date.now() / 1_000) % 30);
+  if (remaining <= 3) {
+    const current = Math.floor(Date.now() / 30_000);
+    await expect.poll(() => Math.floor(Date.now() / 30_000), {
+      timeout: 5_000,
+      intervals: [250],
+    }).toBeGreaterThan(current);
+  }
+  step = Math.floor(Date.now() / 30_000);
+  lastTotpStep.set(accountKey, step);
+  return currentTotp(secret);
+}
+
+function currentTotp(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) throw new Error("Invalid base32 TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = Buffer.alloc(Math.floor(bits.length / 8));
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
+  }
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", bytes).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

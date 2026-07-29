@@ -126,7 +126,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const currentRole = useAdminAuth((state) => state.session?.role ?? state.role);
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM2 = isSuperAdmin || Boolean(authorities?.includes("service_m2_write"));
-  const ticketsAvailable = pget("I.support.ticketsAvailable") !== "0";
+  const ticketsAvailable = pget("I.support.ticketsAvailable") === "1";
   const tickets = useMemo(() => cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), [])), [ctx.params, pget]);
   const replyTemplates = useMemo(
     () =>

@@ -282,7 +282,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
             setSelectedLookupUser(null);
             setSelectedUserKey(NO_USER_SELECTION);
             setOverview(clearSelectedUserFromOverview);
-            setError(null);
+            setError((current) => current?.startsWith("C5 用户搜索失败") ? null : current);
           }
           return;
         }

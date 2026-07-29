@@ -132,6 +132,10 @@ export function L4Ops({ ctx }: { ctx: LCtx }) {
       ctx.toast("请选择自定义周期的开始和结束日期；当前报表没有变化");
       return;
     }
+    if (from > to) {
+      ctx.toast("开始日期不能晚于结束日期；当前报表没有变化");
+      return;
+    }
     updateQuery({ period: "custom", from, to });
   };
   const saveView = () => {

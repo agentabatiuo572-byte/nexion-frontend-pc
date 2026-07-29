@@ -688,6 +688,26 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     },
   });
 
+  if (!overview) {
+    return (
+      <section className="l-card">
+        <div className="l-h"><span className="ttl">账户操作</span><span className="sub">· 安全失败关闭</span></div>
+        <div className="l-b">
+          <div className={`ctint ${error ? "bad" : ""}`} role={error ? "alert" : "status"}>
+            {loading
+              ? "C2 数据加载中，账户处置暂不可操作…"
+              : (error ? `C2 数据加载失败 · ${error}` : "C2 数据暂不可用，账户处置已停止展示和写入。")}
+          </div>
+          {!loading && (
+            <button className="l-btn" style={{ marginTop: 12 }} onClick={() => void loadOverview()}>
+              重新加载
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
+
   const frozenUsers = asNumber(overview?.frozenUsers);
   const activeImps = impersonations.filter(activeImpersonation);
   const liveLeftMin = activeImps.length > 0 ? Math.max(...activeImps.map((session) => asNumber(session.leftMinutes))) : 0;

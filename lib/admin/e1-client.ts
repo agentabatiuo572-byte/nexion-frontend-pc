@@ -1,6 +1,10 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
+import {
+  parseE1GenerationGateData,
+  parseE1SkuPage,
+} from "@/lib/admin/e1-overview-contract";
 
 interface ApiResult<T> {
   code: number;
@@ -299,10 +303,12 @@ async function withFreshSkuMediaPreview(sku: OpsSku): Promise<OpsSku> {
 }
 
 export async function fetchE1Catalog(): Promise<E1CatalogSnapshot> {
-  const [skuPage, gates] = await Promise.all([
-    e1Request<PageResult<BackendSku>>("/skus?pageNum=1&pageSize=100"),
-    e1Request<E1GenerationGateData>("/generation-gates"),
+  const [rawSkuPage, rawGates] = await Promise.all([
+    e1Request<unknown>("/skus?pageNum=1&pageSize=100"),
+    e1Request<unknown>("/generation-gates"),
   ]);
+  const skuPage = parseE1SkuPage<BackendSku>(rawSkuPage);
+  const gates = parseE1GenerationGateData<E1GenerationGateData>(rawGates);
   const skus = await Promise.all((skuPage.records ?? []).map(fromSku).map(withFreshSkuMediaPreview));
   return { skus, gates };
 }

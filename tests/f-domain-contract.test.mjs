@@ -54,6 +54,78 @@ test("F1-F5 admin clients hit canonical team endpoints with idempotency", () => 
   assert.match(client, /export async function fetchF5CommissionAuditOverview/);
 });
 
+test("F1/F2/F3 writers use durable payload-bound idempotency end to end", () => {
+  const client = read(OPS_ROOT, "lib/admin/f1-client.ts");
+  const teamService = read(
+    BACKEND_ROOT,
+    "src/main/java/ffdd/opsconsole/team/application/OpsTeamService.java",
+  );
+  const binaryController = read(
+    BACKEND_ROOT,
+    "src/main/java/ffdd/opsconsole/team/web/OpsBinarySettlementController.java",
+  );
+  const binaryService = read(
+    BACKEND_ROOT,
+    "src/main/java/ffdd/opsconsole/team/application/BinaryCommissionSettlementService.java",
+  );
+
+  assert.match(client, /stableIdempotencyKey/);
+  assert.match(client, /\/binary\/settlements/);
+  assert.match(binaryController,
+    /@RequestHeader\(OpsAdminApi\.IDEMPOTENCY_KEY_HEADER\)\s+String idempotencyKey/);
+  assert.match(binaryController, /actor\.username\(\),\s*idempotencyKey/);
+  assert.match(binaryService, /"F3_BINARY_SETTLEMENT"/);
+  assert.match(binaryService, /requestHash\(ownerUserId,\s*settlementDate,\s*normalizedReason\)/);
+  assert.match(binaryService, /idempotencyService\.execute\(/);
+
+  for (const scope of [
+    "F1_VRANK_THRESHOLD_UPDATE",
+    "F1_VRANK_REWARD_ADD",
+    "F1_VRANK_REWARD_UPDATE",
+    "F1_VRANK_REWARD_REMOVE",
+    "F_TEAM_CONFIG_UPDATE",
+  ]) {
+    assert.match(teamService, new RegExp(`"${scope}"`));
+  }
+  assert.match(teamService, /MessageDigest\.getInstance\("SHA-256"\)/);
+  assert.match(teamService, /idempotencyService\.execute\(/);
+});
+
+test("shared F config endpoint delegates F1 key authorization to exact service mappings", () => {
+  const controller = read(
+    BACKEND_ROOT,
+    "src/main/java/ffdd/opsconsole/team/web/OpsTeamController.java",
+  );
+  const teamService = read(
+    BACKEND_ROOT,
+    "src/main/java/ffdd/opsconsole/team/application/OpsTeamService.java",
+  );
+
+  assert.match(
+    controller,
+    /@PreAuthorize\("hasAnyAuthority\([^)]*'network_f1_write'[^)]*\)"\)\s*public ApiResult<Map<String, Object>> updateConfig/,
+  );
+  for (const key of [
+    "F.vrank.leadership.unlockRank",
+    "F.vrank.leadership.topN",
+    "F.vrank.titles",
+    "F.prize.name",
+  ]) {
+    assert.match(
+      teamService,
+      new RegExp(`Map\\.entry\\("${key.replaceAll(".", "\\.")}",\\s*"network_f1_write"\\)`),
+    );
+  }
+  assert.match(
+    teamService,
+    /\^F\\\\\.fulfillment\\\\\.V\(\?:\[1-9\]\|1\[0-2\]\)\\\\\.queue\\\\\.status\$/,
+  );
+  assert.match(
+    teamService,
+    /if\s*\(!UI_CONFIG_KEYS\.contains\(key\)\)\s*\{\s*throw new IllegalArgumentException\("Unsupported F team UI config key"\)/,
+  );
+});
+
 // ---------- ② polymorphic key→op 路由对齐后端 replay 4 case 分发 ----------
 
 test("F domain polymorphic key→op routing mirrors backend replay switch (4 op)", () => {

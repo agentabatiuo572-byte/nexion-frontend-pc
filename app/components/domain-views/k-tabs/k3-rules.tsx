@@ -188,11 +188,18 @@ function priorityFromBusinessValue(value?: BusinessFormValue) {
   return Number.isInteger(priority) && priority >= 1 && priority <= 100 ? priority : null;
 }
 function pct1(n: number, total: number) { return total ? (Math.round(n / total * 1000) / 10).toFixed(1) : "0.0"; }
+function isOutcomeUncertain(error: unknown): error is K1OutcomeUncertainError {
+  return error instanceof K1OutcomeUncertainError
+    || (error instanceof Error
+      && error.name === "K1OutcomeUncertainError"
+      && typeof (error as Error & { commandKey?: unknown }).commandKey === "string");
+}
 
 export function K3HeaderActions({ ctx, onResult }: { ctx: KCtx; onResult: (result: K3DryRunResult) => void }) {
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
   const commandAttempt = useRef<string | null>(null);
-  const canDryRun = authorities.includes("risk_k3_write");
+  const [dryRunError, setDryRunError] = useState<string | null>(null);
+  const canDryRun = authorities.includes("risk_k3_write") && !ctx.contentLoading && !ctx.contentError;
   const dryRun = () => ctx.openConfirm({
     action: "沙盒模拟（历史样本试跑）",
     detail: "用最近 30 天历史提现样本按当前规则试跑；只读模拟，不写生产命中记录。",
@@ -203,18 +210,30 @@ export function K3HeaderActions({ ctx, onResult }: { ctx: KCtx; onResult: (resul
       try {
         const result = await ctx.actions.dryRunK3(reason, commandKey);
         commandAttempt.current = null;
+        setDryRunError(null);
         onResult(result);
         ctx.toast(`模拟完成 · 批次 ${result.batchNo}`);
       } catch (error) {
-        if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.current = null;
-        ctx.toast(`K3 模拟失败 · ${errorText(error)}`);
+        const outcomeUncertain = isOutcomeUncertain(error);
+        if (!outcomeUncertain) commandAttempt.current = null;
+        const message = `${outcomeUncertain ? "结果暂不确定，请使用原操作重试" : "K3 模拟失败"} · ${errorText(error)}`;
+        setDryRunError(message);
+        ctx.toast(message);
         throw error;
       }
     },
   });
   return <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
     <span className="f-ro"><span className="d" />规则由服务器统一评估</span>
-    <button className="f-cta" disabled={!canDryRun} title={!canDryRun ? "缺少 risk_k3_write 权限" : undefined} onClick={dryRun}>沙盒模拟（不写生产）</button>
+    <button
+      className="f-cta"
+      disabled={!canDryRun}
+      title={ctx.contentError ? "K3 权威数据不可用，已禁用模拟" : !canDryRun ? "缺少 risk_k3_write 权限" : undefined}
+      onClick={dryRun}
+    >
+      沙盒模拟（不写生产）
+    </button>
+    {dryRunError && <span role="alert" style={{ color: "var(--danger)", fontSize: 12 }}>{dryRunError}</span>}
   </span>;
 }
 

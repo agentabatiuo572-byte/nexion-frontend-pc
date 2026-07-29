@@ -163,6 +163,7 @@ function parseServerVoucher(raw: unknown): OpsVoucher {
 
 export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
   const { toast, openActionConfirm } = ctx;
+  const canWrite = ctx.can("growth_h7_write");
   const [data, setData] = useState<{ vouchers: OpsVoucher[]; skus: OpsSku[]; stats?: Record<string, number> }>({
     vouchers: [],
     skus: [],
@@ -392,7 +393,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
           <span className="ttl">代金券列表</span>
           <span className="sub">· 满减 / 折扣 · 名称 / 参数 / 适用 SKU / 受众 / 有效期 / 领取入口全部可配 · 改值经操作确认(当前值预填 before→after)</span>
           <div className="r">
-            <button className="l-btn sm mc" onClick={openAdd}>+ 新增代金券</button>
+            <button className="l-btn sm mc" onClick={openAdd} disabled={!canWrite}>+ 新增代金券</button>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -433,10 +434,10 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
                     <td><span className={`bdg ${isActive ? "ok" : "dim"}`}>{isActive ? "投放中" : "已暂停"}</span></td>
                     <td style={{ textAlign: "right" }}>
                       <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}>
-                        <button className="l-btn sm mc" onClick={() => openEdit(v)}>编辑</button>
-                        <button className="l-btn sm mc" aria-label={`${isActive ? "暂停" : "投放"} ${v.name}`} onClick={() => openToggle(v)}>{isActive ? "暂停" : "投放"}</button>
-                        {v.availableCount > 0 ? <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`撤销未核销代金券 · ${v.name}`} onClick={() => openRevoke(v)}>撤销未核销</button> : null}
-                        <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除代金券 · ${v.name}`} onClick={() => openDelete(v)}>删除</button>
+                        <button className="l-btn sm mc" onClick={() => openEdit(v)} disabled={!canWrite}>编辑</button>
+                        <button className="l-btn sm mc" aria-label={`${isActive ? "暂停" : "投放"} ${v.name}`} onClick={() => openToggle(v)} disabled={!canWrite}>{isActive ? "暂停" : "投放"}</button>
+                        {v.availableCount > 0 ? <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`撤销未核销代金券 · ${v.name}`} onClick={() => openRevoke(v)} disabled={!canWrite}>撤销未核销</button> : null}
+                        <button className="l-btn sm mc" style={{ color: "var(--danger)" }} aria-label={`删除代金券 · ${v.name}`} onClick={() => openDelete(v)} disabled={!canWrite}>删除</button>
                       </span>
                     </td>
                   </tr>

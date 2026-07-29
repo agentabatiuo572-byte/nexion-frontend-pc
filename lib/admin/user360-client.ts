@@ -857,8 +857,59 @@ export async function resetUserNickname(
   });
 }
 
+function c2ResponseInvalid(): never {
+  throw new Error(formatAdminApiError("C2_RESPONSE_INVALID", "C2_RESPONSE_INVALID"));
+}
+
+function requireC2Overview(value: unknown): UserAccountActionOverview {
+  if (!isJsonRecord(value)
+    || !Array.isArray(value.accounts)
+    || !Array.isArray(value.accountLists)
+    || !Array.isArray(value.sessions)
+    || !Array.isArray(value.impersonations)
+    || !Array.isArray(value.controlFacts)
+    || !Array.isArray(value.sources)
+    || !Array.isArray(value.redlines)) return c2ResponseInvalid();
+
+  for (const key of [
+    "frozenUsers",
+    "activeSessions",
+    "trustListCount",
+    "blockedListCount",
+    "activeImpersonations",
+    "totalAccounts",
+    "totalAccountLists",
+    "totalSessions",
+    "totalImpersonations",
+  ]) {
+    if (!c3Numeric(value[key])) return c2ResponseInvalid();
+  }
+  if (value.sources.some((source) => typeof source !== "string" || !source.trim())
+    || value.redlines.some((redline) => typeof redline !== "string" || !redline.trim())
+    || value.accounts.some((account) => !isJsonRecord(account)
+      || (typeof account.id !== "number" && typeof account.id !== "string")
+      || typeof account.userNo !== "string"
+      || typeof account.status !== "string")
+    || value.accountLists.some((entry) => !isJsonRecord(entry)
+      || (typeof entry.userId !== "number" && typeof entry.userId !== "string")
+      || typeof entry.kind !== "string"
+      || typeof entry.status !== "string")
+    || value.sessions.some((session) => !isJsonRecord(session)
+      || (typeof session.userId !== "number" && typeof session.userId !== "string")
+      || typeof session.refreshTokenId !== "string"
+      || typeof session.status !== "string")
+    || value.impersonations.some((session) => !isJsonRecord(session)
+      || typeof session.sessionNo !== "string"
+      || typeof session.status !== "string")
+    || value.controlFacts.some((fact) => !isJsonRecord(fact)
+      || (typeof fact.userId !== "number" && typeof fact.userId !== "string"))) {
+    return c2ResponseInvalid();
+  }
+  return value as UserAccountActionOverview;
+}
+
 export async function fetchUserAccountActionOverview() {
-  return usersRequest<UserAccountActionOverview>("/account-actions/overview");
+  return requireC2Overview(await usersRequest<unknown>("/account-actions/overview"));
 }
 
 export async function fetchUserAccountActionAccount(userKey: string) {

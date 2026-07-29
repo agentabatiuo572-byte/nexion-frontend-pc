@@ -66,7 +66,18 @@ export function L5HeaderActions({ ctx }: { ctx: LCtx }) {
   return (
     <>
       <span className="f-ro"><span className="d" />数据出境统一管控面</span>
-      <button className="f-cta" onClick={newExport} disabled={!ctx.canExport || exportTypes.length === 0 || ctx.biLoading} title={!ctx.canExport ? "当前角色没有聚合报表来源域的导出权限" : undefined}>发起聚合快照</button>
+      <button
+        className="f-cta"
+        onClick={newExport}
+        disabled={!ctx.canExport || exportTypes.length === 0 || ctx.biLoading || Boolean(ctx.biError) || !ctx.biData?.l5}
+        title={!ctx.canExport
+          ? "当前角色没有聚合报表来源域的导出权限"
+          : ctx.biError || !ctx.biData?.l5
+            ? "L5 权威数据不可用，已关闭创建入口"
+            : undefined}
+      >
+        发起聚合快照
+      </button>
     </>
   );
 }

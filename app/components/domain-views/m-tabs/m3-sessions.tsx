@@ -197,7 +197,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM3 = isSuperAdmin || Boolean(authorities?.includes("service_m3_write"));
   const canManageTimeoutPolicy = isSuperAdmin || Boolean(authorities?.includes("service_m3_timeout_manage"));
-  const conversationsAvailable = pget("I.session.conversationsAvailable") !== "0";
+  const conversationsAvailable = pget("I.session.conversationsAvailable") === "1";
 
   const convos = useMemo(() => cloneConvos(parseParamArray<SessionConvo>(pget(CONVO_KEY), [])), [ctx.params, pget]);
   const advisorScripts = useMemo(() => parseParamArray<AdvisorScript>(pget(SCRIPT_LIST_KEY), []), [ctx.params, pget]);

@@ -1,5 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { assertG4OverviewContract } from "@/lib/admin/g-overview-contract";
+import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -105,6 +107,10 @@ interface BackendCoverage {
 }
 
 interface BackendOverview {
+  domain?: string | null;
+  product?: string | null;
+  asset?: string | null;
+  currentNexPrice?: RawNumber;
   stats?: BackendStats | null;
   params?: BackendParam[] | null;
   dividend?: BackendDividend | null;
@@ -236,6 +242,8 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
+const executeG4Mutation = createStableMutationExecutor(idempotencyKey);
+
 function toNumber(value: RawNumber, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
   if (typeof value === "string" && value.trim()) {
@@ -260,6 +268,7 @@ function asText(value: unknown, fallback = "-") {
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): G4Overview {
+  assertG4OverviewContract(data);
   const stats = data?.stats ?? {};
   const secondary = stats.secondary ?? {};
   const dividend = data?.dividend ?? {};
@@ -367,15 +376,11 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
   };
 }
 
-async function g4Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function g4Request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
-  }
-
   const response = await fetch(`/api/admin/market${path}`, {
     ...init,
     headers,
@@ -387,10 +392,66 @@ async function g4Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `G4_REQUEST_FAILED_${response.status}`));
+    throw stableMutationHttpFailure(
+      formatAdminApiError(result?.message, `G4_REQUEST_FAILED_${response.status}`),
+      response.status,
+      result?.code,
+    );
   }
 
   return result.data as T;
+}
+
+function g4OverviewMutation(
+  path: string,
+  method: "PATCH" | "POST",
+  body: Record<string, unknown>,
+  prefix: string,
+) {
+  const serialized = JSON.stringify(body);
+  return executeG4Mutation(
+    prefix,
+    serialized,
+    (commandKey) => g4Request<BackendOverview>(path, {
+      method,
+      headers: { "Idempotency-Key": commandKey },
+      body: serialized,
+    }),
+    normalizeOverview,
+  );
+}
+
+function requireG4Ack(
+  value: Record<string, unknown>,
+  expected: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("G4_COMMAND_RESPONSE_INVALID");
+  }
+  for (const [key, expectedValue] of Object.entries(expected)) {
+    if (value[key] !== expectedValue) throw new Error(`G4_COMMAND_RESPONSE_INVALID:${key}`);
+  }
+  return value;
+}
+
+function g4AckMutation(
+  path: string,
+  method: "PATCH" | "POST" | "DELETE",
+  body: Record<string, unknown>,
+  prefix: string,
+  expected: Record<string, unknown>,
+) {
+  const serialized = JSON.stringify(body);
+  return executeG4Mutation(
+    prefix,
+    serialized,
+    (commandKey) => g4Request<Record<string, unknown>>(path, {
+      method,
+      headers: { "Idempotency-Key": commandKey },
+      body: serialized,
+    }),
+    (value) => requireG4Ack(value, expected),
+  );
 }
 
 export async function fetchG4GenesisOverview(page = 1, pageSize = 10) {
@@ -402,27 +463,30 @@ export async function fetchG4GenesisOverview(page = 1, pageSize = 10) {
 }
 
 export async function updateG4GenesisParam(paramKey: string, value: string, reason: string, operator: string, decisionRef?: string) {
-  return normalizeOverview(await g4Request<BackendOverview>(`/nex/genesis/params/${encodeURIComponent(paramKey)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator, decisionRef }),
-    idempotencyPrefix: `g4-param-${paramKey}`,
-  }));
+  return g4OverviewMutation(
+    `/nex/genesis/params/${encodeURIComponent(paramKey)}`,
+    "PATCH",
+    { value, reason, operator, decisionRef },
+    `g4-param-${paramKey}`,
+  );
 }
 
 export async function updateG4GenesisMarketStatus(enabled: boolean, reason: string, operator: string, context?: { dispositionPlan?: string; triggerBasis?: string }) {
-  return normalizeOverview(await g4Request<BackendOverview>("/nex/genesis/market-status", {
-    method: "PATCH",
-    body: JSON.stringify({ value: String(enabled), reason, operator, dispositionPlan: context?.dispositionPlan, triggerBasis: context?.triggerBasis }),
-    idempotencyPrefix: "g4-market-status",
-  }));
+  return g4OverviewMutation(
+    "/nex/genesis/market-status",
+    "PATCH",
+    { value: String(enabled), reason, operator, dispositionPlan: context?.dispositionPlan, triggerBasis: context?.triggerBasis },
+    "g4-market-status",
+  );
 }
 
 export async function rerunG4GenesisDividendBatch(batchNo: string, reason: string, operator: string, decisionRef?: string) {
-  return normalizeOverview(await g4Request<BackendOverview>(`/nex/genesis/dividend-batches/${encodeURIComponent(batchNo)}/rerun`, {
-    method: "POST",
-    body: JSON.stringify({ value: "rerun", reason, operator, decisionRef }),
-    idempotencyPrefix: `g4-rerun-${batchNo}`,
-  }));
+  return g4OverviewMutation(
+    `/nex/genesis/dividend-batches/${encodeURIComponent(batchNo)}/rerun`,
+    "POST",
+    { value: "rerun", reason, operator, decisionRef },
+    `g4-rerun-${batchNo}`,
+  );
 }
 
 export interface G4AdminSimulation {
@@ -458,25 +522,31 @@ export function updateG4AdminOperationConfig(
   operator: string,
   expectedValue: string,
 ) {
-  return g4Request<Record<string, unknown>>(`/nex/genesis/operations/config/${encodeURIComponent(key)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator, expectedValue }),
-    idempotencyPrefix: `g4-ops-config-${key}`,
-  });
+  return g4AckMutation(
+    `/nex/genesis/operations/config/${encodeURIComponent(key)}`,
+    "PATCH",
+    { value, reason, operator, expectedValue },
+    `g4-ops-config-${key}`,
+    { key, value, status: "UPDATED" },
+  );
 }
 
 export function createG4AdminSimulation(side: "BUY" | "SELL", quantity: string, unitPrice: string, reason: string, operator: string) {
-  return g4Request<Record<string, unknown>>("/nex/genesis/operations/simulations", {
-    method: "POST",
-    body: JSON.stringify({ side, quantity, unitPrice, reason, operator }),
-    idempotencyPrefix: "g4-admin-simulation",
-  });
+  return g4AckMutation(
+    "/nex/genesis/operations/simulations",
+    "POST",
+    { side, quantity, unitPrice, reason, operator },
+    "g4-admin-simulation",
+    { recordType: "SIMULATED", scope: "ADMIN_ONLY", ledgerImpact: "NONE" },
+  );
 }
 
 export function archiveG4AdminSimulation(id: number, reason: string, operator: string) {
-  return g4Request<Record<string, unknown>>(`/nex/genesis/operations/simulations/${id}`, {
-    method: "DELETE",
-    body: JSON.stringify({ value: "ARCHIVED", reason, operator }),
-    idempotencyPrefix: `g4-admin-simulation-archive-${id}`,
-  });
+  return g4AckMutation(
+    `/nex/genesis/operations/simulations/${id}`,
+    "DELETE",
+    { value: "ARCHIVED", reason, operator },
+    `g4-admin-simulation-archive-${id}`,
+    { id, status: "ARCHIVED" },
+  );
 }

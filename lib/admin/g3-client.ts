@@ -1,5 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -133,7 +134,6 @@ export interface G3History {
 }
 
 let requestSeq = 0;
-const pendingMutationKeys = new Map<string, string>();
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -148,6 +148,8 @@ function parseNumber(value: RawNumber) {
   }
   return null;
 }
+
+const executeG3Mutation = createStableMutationExecutor(idempotencyKey);
 
 function requireNumber(value: RawNumber, field: string) {
   const parsed = parseNumber(value);
@@ -248,18 +250,11 @@ function normalizeHistory(data: BackendHistory | null | undefined): G3History {
   };
 }
 
-async function g3Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function g3Request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
-  const intent = init?.idempotencyPrefix ? `${init.idempotencyPrefix}:${String(init.body ?? "")}` : null;
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
-    const key = pendingMutationKeys.get(intent!) ?? idempotencyKey(init.idempotencyPrefix);
-    pendingMutationKeys.set(intent!, key);
-    headers.set("Idempotency-Key", key);
-  }
-
   const response = await fetch(`/api/admin/market${path}`, {
     ...init,
     headers,
@@ -271,12 +266,33 @@ async function g3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `G3_REQUEST_FAILED_${response.status}`));
+    throw stableMutationHttpFailure(
+      formatAdminApiError(result?.message, `G3_REQUEST_FAILED_${response.status}`),
+      response.status,
+      result?.code,
+    );
   }
 
-  if (intent) pendingMutationKeys.delete(intent);
-
   return result.data as T;
+}
+
+function g3OverviewMutation(
+  path: string,
+  method: "PATCH" | "POST" | "PUT",
+  body: Record<string, unknown>,
+  prefix: string,
+) {
+  const serialized = JSON.stringify(body);
+  return executeG3Mutation(
+    prefix,
+    serialized,
+    (commandKey) => g3Request<BackendOverview>(path, {
+      method,
+      headers: { "Idempotency-Key": commandKey },
+      body: serialized,
+    }),
+    normalizeOverview,
+  );
 }
 
 function serializeFrames(frames: G3CurveFrame[]) {
@@ -309,11 +325,12 @@ export async function updateG3CurveFrame(
   const target = frames.find((frame) => frame.dayIndex === dayIndex);
   if (!target) throw new Error("G3 曲线日不存在,请刷新页面后重试。");
   target[field] = value;
-  return normalizeOverview(await g3Request<BackendOverview>("/nex/curve", {
-    method: "PUT",
-    body: JSON.stringify({ frames, expectedFrames, reason, operator }),
-    idempotencyPrefix: `g3-curve-d${dayIndex + 1}-${field}`,
-  }));
+  return g3OverviewMutation(
+    "/nex/curve",
+    "PUT",
+    { frames, expectedFrames, reason, operator },
+    `g3-curve-d${dayIndex + 1}-${field}`,
+  );
 }
 
 export async function updateG3Control(
@@ -323,11 +340,12 @@ export async function updateG3Control(
   reason: string,
   operator: string,
 ) {
-  return normalizeOverview(await g3Request<BackendOverview>(`/nex/curve/controls/${encodeURIComponent(controlKey)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, expectedValue, reason, operator }),
-    idempotencyPrefix: `g3-control-${controlKey}`,
-  }));
+  return g3OverviewMutation(
+    `/nex/curve/controls/${encodeURIComponent(controlKey)}`,
+    "PATCH",
+    { value, expectedValue, reason, operator },
+    `g3-control-${controlKey}`,
+  );
 }
 
 export async function updateG3Override(
@@ -337,17 +355,14 @@ export async function updateG3Override(
   reason: string,
   operator: string,
 ) {
-  return normalizeOverview(await g3Request<BackendOverview>(`/nex/overrides/${encodeURIComponent(overrideKey)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, expectedValue, reason, operator }),
-    idempotencyPrefix: `g3-override-${overrideKey}`,
-  }));
+  return g3OverviewMutation(
+    `/nex/overrides/${encodeURIComponent(overrideKey)}`,
+    "PATCH",
+    { value, expectedValue, reason, operator },
+    `g3-override-${overrideKey}`,
+  );
 }
 
 export async function advanceG3CurrentFrame(reason: string, operator: string) {
-  return normalizeOverview(await g3Request<BackendOverview>("/nex/curve/advance", {
-    method: "POST",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: "g3-advance",
-  }));
+  return g3OverviewMutation("/nex/curve/advance", "POST", { reason, operator }, "g3-advance");
 }

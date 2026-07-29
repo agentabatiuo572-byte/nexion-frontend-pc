@@ -46,7 +46,7 @@ test("I4 权威读取失败时不展示伪版块，恢复接口后可重新读�
     }),
   );
   await openI4(page);
-  await expect(page.getByText("I4 暂无真实接口数据")).toBeVisible();
+  await expect(page.getByText("I4 数据加载失败，请刷新重试", { exact: false })).toBeVisible();
   await expect(page.getByRole("cell", { name: "financials", exact: true })).toHaveCount(0);
   await page.screenshot({ path: `${EVIDENCE_DIR}/03-read-failure-closed.png`, fullPage: true });
 

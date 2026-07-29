@@ -174,7 +174,7 @@ test("I5 refresh, relogin and authoritative-read failure stay fail closed and re
     }),
   );
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("I5 暂无真实接口数据")).toBeVisible();
+  await expect(page.getByText("I5 数据加载失败，请刷新重试", { exact: false })).toBeVisible();
   await expect(page.getByText("法域配置(I5)", { exact: true })).toHaveCount(0);
   await screenshot(page, "07-authoritative-read-failure-closed.png");
 

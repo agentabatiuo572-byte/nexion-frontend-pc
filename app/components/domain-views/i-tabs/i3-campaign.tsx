@@ -15,6 +15,7 @@ import type { NotificationAudienceTarget, NotificationCampaignRow } from "@/lib/
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type StFlt = "all" | "scheduled" | "sent" | "draft" | "failed" | "cancelled";
 const ST_FLT: [StFlt, string][] = [
@@ -102,6 +103,14 @@ function targetFromForm(form: NewForm): NotificationAudienceTarget {
 export function I3Campaign({ ctx }: { ctx: ICtx }) {
   const { toast, openActionConfirm, openConfirm, actions, content, contentLoading } = ctx;
   const propose = usePropose();
+  const session = useAdminAuth((state) => state.session);
+  const isSuperadmin = session?.role === "superadmin";
+  const authorities = session?.authorities ?? [];
+  const canWriteI3 = isSuperadmin || authorities.includes("content_i3_write");
+  const canAdjustI3Cap = isSuperadmin || authorities.includes("content_i3_cap_adjust");
+  const canSendCriticalI3 = isSuperadmin || authorities.includes("content_i3_critical_send");
+  const canSendCampaign = (campaign: CampaignRow) =>
+    canWriteI3 && (campaign.tier !== "critical" || canSendCriticalI3);
   const [stFlt, setStFlt] = useState<StFlt>("all");
   const [newOpen, setNewOpen] = useState(false);
   const [editing, setEditing] = useState<CampaignRow | null>(null);
@@ -342,11 +351,13 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
 
   const renderActions = (c: CampaignRow): ReactNode => {
     const st = liveSt(c);
+    if (!canWriteI3) return <span className="tiny">只读</span>;
     if (st === "draft") {
       return (
         <>
-          <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendCmp(c); }}>调度下发</button>
-          {" "}
+          {canSendCampaign(c)
+            ? <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendCmp(c); }}>调度下发</button>{" "}</>
+            : <><span className="tiny">无紧急下发权限</span>{" "}</>}
           <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); editDraft(c); }}>编辑</button>
           {" "}
           <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); deleteDraft(c); }}>删除</button>
@@ -356,8 +367,9 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     if (st === "scheduled") {
       return (
         <>
-          <button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendNow(c); }}>立即下发</button>
-          {" "}
+          {canSendCampaign(c)
+            ? <><button className="l-btn sm mc" onClick={(e) => { e.stopPropagation(); sendNow(c); }}>立即下发</button>{" "}</>
+            : <><span className="tiny">无紧急下发权限</span>{" "}</>}
           <button className="l-btn sm" onClick={(e) => { e.stopPropagation(); cancelScheduled(c); }}>取消</button>
         </>
       );
@@ -414,7 +426,8 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
             {ST_FLT.map(([k, l]) => (
               <button key={k} className={`chip${stFlt === k ? " sel" : ""}`} onClick={() => setStFlt(k)}>{l}</button>
             ))}
-            <button className="l-btn sm primary" onClick={() => { setEditing(null); setForm(FORM_INIT); setNewOpen(true); }}>+ 新建 Campaign</button>
+            {!canWriteI3 && <span className="bdg dim">只读</span>}
+            {canWriteI3 && <button className="l-btn sm primary" onClick={() => { setEditing(null); setForm(FORM_INIT); setNewOpen(true); }}>+ 新建 Campaign</button>}
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -493,8 +506,10 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
                 </span>
                 {row.locked ? (
                   <span className="icode lock" title="合规硬约束 · CAP_CRITICAL 固定 Infinity">🔒 锁定</span>
-                ) : (
+                ) : canAdjustI3Cap ? (
                   <button className="l-btn sm mc" onClick={() => adjustCap(tier, cap)}>调整</button>
+                ) : (
+                  <span className="tiny">只读</span>
                 )}
               </div>
             );
@@ -565,7 +580,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       />
 
       {/* ===== Drawer · 新建 / 编辑 Campaign ===== */}
-      {newOpen && (
+      {newOpen && canWriteI3 && (
         <Drawer
           title={editing ? `编辑 Campaign 草稿 · ${editing.id}` : "新建 Campaign（存为草稿）"}
           sub="中文、越南语必填，英文可选 · 受众条件按 AND 组合 · 下发另走操作确认"
@@ -768,7 +783,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
       )}
 
       {/* ===== Drawer · 调度下发 ===== */}
-      {scheduleRow && (
+      {scheduleRow && canSendCampaign(scheduleRow) && (
         <Drawer
           title={`调度下发 · ${scheduleRow.id}`}
           sub="选择明确的下发时间；服务端会再次校验必须晚于当前时间"

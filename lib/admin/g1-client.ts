@@ -1,5 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { assertG1OverviewContract } from "@/lib/admin/g-overview-contract";
+import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -81,6 +83,9 @@ interface BackendPositionGroup {
 }
 
 interface BackendOverview {
+  domain?: string | null;
+  product?: string | null;
+  currentNexPrice?: number | string | null;
   stats?: BackendStats | null;
   gate?: BackendGate | null;
   coverage?: BackendCoverage | null;
@@ -182,6 +187,8 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
+const executeG1Mutation = createStableMutationExecutor(idempotencyKey);
+
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
   if (typeof value === "string" && value.trim()) {
@@ -273,6 +280,7 @@ function normalizeGroup(row: BackendPositionGroup): G1PositionGroup {
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): G1Overview {
+  assertG1OverviewContract(data);
   const pools = (data?.pools ?? []).map(normalizePool);
   const positions = (data?.positions ?? []).map(normalizeGroup);
   const stats = data?.stats ?? {};
@@ -311,15 +319,11 @@ function normalizeOverview(data: BackendOverview | null | undefined): G1Overview
   };
 }
 
-async function g1Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
+async function g1Request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
-  }
-
   const response = await fetch(`/api/admin/market${path}`, {
     ...init,
     headers,
@@ -331,10 +335,33 @@ async function g1Request<T>(path: string, init?: RequestInit & { idempotencyPref
     if (isAdminAuthFailure(response.status, result?.message)) {
       resetAdminSession();
     }
-    throw new Error(formatAdminApiError(result?.message, `G1_REQUEST_FAILED_${response.status}`));
+    throw stableMutationHttpFailure(
+      formatAdminApiError(result?.message, `G1_REQUEST_FAILED_${response.status}`),
+      response.status,
+      result?.code,
+    );
   }
 
   return result.data as T;
+}
+
+function g1OverviewMutation(
+  path: string,
+  method: "PATCH" | "POST",
+  body: Record<string, unknown>,
+  prefix: string,
+) {
+  const serialized = JSON.stringify(body);
+  return executeG1Mutation(
+    prefix,
+    serialized,
+    (commandKey) => g1Request<BackendOverview>(path, {
+      method,
+      headers: { "Idempotency-Key": commandKey },
+      body: serialized,
+    }),
+    normalizeOverview,
+  );
 }
 
 export async function fetchG1StakingOverview() {
@@ -342,19 +369,21 @@ export async function fetchG1StakingOverview() {
 }
 
 export async function updateG1StakingPoolParam(tierKey: string, paramKey: "apy" | "penalty" | "min", value: string, reason: string, operator: string) {
-  return normalizeOverview(await g1Request<BackendOverview>(`/staking/pools/${encodeURIComponent(tierKey)}/params/${encodeURIComponent(paramKey)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `g1-${paramKey}`,
-  }));
+  return g1OverviewMutation(
+    `/staking/pools/${encodeURIComponent(tierKey)}/params/${encodeURIComponent(paramKey)}`,
+    "PATCH",
+    { value, reason, operator },
+    `g1-${paramKey}`,
+  );
 }
 
 export async function updateG1StakingPoolSaleStatus(tierKey: string, enabled: boolean, reason: string, operator: string) {
-  return normalizeOverview(await g1Request<BackendOverview>(`/staking/pools/${encodeURIComponent(tierKey)}/sale-status`, {
-    method: "PATCH",
-    body: JSON.stringify({ value: String(enabled), reason, operator }),
-    idempotencyPrefix: "g1-sale",
-  }));
+  return g1OverviewMutation(
+    `/staking/pools/${encodeURIComponent(tierKey)}/sale-status`,
+    "PATCH",
+    { value: String(enabled), reason, operator },
+    "g1-sale",
+  );
 }
 
 export async function updateG1StakingPoolKillStatus(
@@ -365,9 +394,10 @@ export async function updateG1StakingPoolKillStatus(
   triggerBasis: string,
   dispositionPlan: string,
 ) {
-  return normalizeOverview(await g1Request<BackendOverview>(`/staking/pools/${encodeURIComponent(tierKey)}/kill-status`, {
-    method: "PATCH",
-    body: JSON.stringify({ value: String(killed), reason, operator, triggerBasis, dispositionPlan }),
-    idempotencyPrefix: "g1-kill",
-  }));
+  return g1OverviewMutation(
+    `/staking/pools/${encodeURIComponent(tierKey)}/kill-status`,
+    "PATCH",
+    { value: String(killed), reason, operator, triggerBasis, dispositionPlan },
+    "g1-kill",
+  );
 }

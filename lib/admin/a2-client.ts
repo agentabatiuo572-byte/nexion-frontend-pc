@@ -19,9 +19,24 @@ interface ApiResult<T> {
 
 export class A2OutcomeUncertainError extends Error {
   constructor(message: string, public readonly commandKey: string) {
-    super(message);
+    const detail = message.trim();
+    super(
+      `A2 提案结果暂不确定，可能已经生效；请保留当前弹窗与输入，使用同一命令号重试并核对 A2 审计。`
+      + `同一命令号：${commandKey}${detail ? `（${detail}）` : ""}`,
+    );
     this.name = "A2OutcomeUncertainError";
   }
+}
+
+export function isA2OutcomeUncertainError(error: unknown): error is A2OutcomeUncertainError {
+  const candidate = error as (Error & { commandKey?: unknown }) | null;
+  return error instanceof A2OutcomeUncertainError
+    || (
+      candidate instanceof Error
+      && candidate.name === "A2OutcomeUncertainError"
+      && typeof candidate.commandKey === "string"
+      && !!candidate.commandKey.trim()
+    );
 }
 
 interface BackendStats {
@@ -329,13 +344,19 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     throw new A2OutcomeUncertainError("A2_RESPONSE_UNREADABLE", init.commandKey);
   }
 
-  if (init?.commandKey && response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+  const upstreamOutcomeUnknown =
+    response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
+    || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true;
+  if (init?.commandKey && upstreamOutcomeUnknown) {
     throw new A2OutcomeUncertainError(
       formatAdminApiError(result?.message, "A2_REQUEST_OUTCOME_UNKNOWN"), init.commandKey);
   }
 
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`));
+  }
+  if (init?.commandKey && response.ok && result.code === 0 && result.data == null) {
+    throw new A2OutcomeUncertainError("A2_SUCCESS_RESPONSE_DATA_MISSING", init.commandKey);
   }
 
   return result.data as T;

@@ -11,6 +11,14 @@ const jView = readFileSync(
   "utf8",
 );
 const client = readFileSync(new URL("../lib/admin/j-client.ts", import.meta.url), "utf8");
+const liveAcceptance = readFileSync(
+  new URL("./e2e/j4-live-acceptance-20260722.spec.ts", import.meta.url),
+  "utf8",
+);
+const v4Acceptance = readFileSync(
+  new URL("./e2e/j4-v4-post-deploy-acceptance.spec.ts", import.meta.url),
+  "utf8",
+);
 const styles = readFileSync(new URL("../app/components/domain-views/j-domain.css", import.meta.url), "utf8");
 const backend = readFileSync(
   new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/application/OpsEmergencyControlService.java", import.meta.url),
@@ -246,4 +254,24 @@ test("J4 serializes catalog mutations before allocating codes or validating uniq
   assert.equal((backend.match(/playbooksIndependent\(\)/g) ?? []).length, 2);
   assert.match(emergencyMapper, /emergency\.sop\.catalogMutationLock/);
   assert.match(emergencyMapper, /lockPlaybookCatalogMutations/);
+});
+
+test("J4 interruption fixture targets the explicitly selected acceptance database", () => {
+  assert.match(liveAcceptance, /NEXION_MYSQL_DATABASE/);
+  assert.match(liveAcceptance, /MYSQL_DATABASE/);
+  assert.doesNotMatch(liveAcceptance, /\["-h127\.0\.0\.1", "-uroot",[^]*"nexion", "-e", statement\]/);
+});
+
+test("J4 allocates custom codes above active and soft-deleted catalog rows", () => {
+  assert.match(emergencyMapper, /maxAllocatedPlaybookSequence/);
+  assert.match(emergencyMapper, /FROM nx_emergency_sop_playbook/);
+  assert.match(emergencyRepository, /maxAllocatedPlaybookSequence/);
+  assert.match(backend, /nextDraftCode\(emergencyRepository\.maxAllocatedPlaybookSequence\(\)\)/);
+});
+
+test("J4 maker-checker login helper accepts an authenticated shell that appears after navigation", () => {
+  assert.match(
+    v4Acceptance,
+    /const usernameVisible = await username\.waitFor\([^]*if \(!usernameVisible\)[^]*shell\.waitFor\(\{ state: "visible"/,
+  );
 });

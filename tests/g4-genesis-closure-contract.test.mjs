@@ -41,7 +41,32 @@ test("G4 operator config writes carry and enforce a locked expected value", () =
   assert.match(service, /G4_CONFIG_EXPECTED_VALUE_REQUIRED/);
   assert.match(service, /G4_CONFIG_STATE_CONFLICT/);
   assert.match(service, /G4_CONFIG_NO_CHANGES/);
-  assert.match(client, /JSON\.stringify\(\{ value, reason, operator, expectedValue \}\)/);
+  assert.match(client, /createStableMutationExecutor/);
+  assert.match(client, /g4OverviewMutation/);
+  assert.match(client, /g4AckMutation/);
+  assert.match(client, /\{ value, reason, operator, expectedValue \}/);
+  assert.doesNotMatch(client, /idempotencyPrefix/);
+});
+
+test("G4 parameter mutation writes one canonical required audit and one outbox event", () => {
+  const marketService = read(backend, "src/main/java/ffdd/opsconsole/market/application/OpsNexMarketService.java");
+  const commandService = read(backend, "src/main/java/ffdd/opsconsole/market/application/G4AdminCommandService.java");
+  const marketStart = marketService.indexOf("public ApiResult<Map<String, Object>> updateGenesisParam(");
+  const marketEnd = marketService.indexOf("public ApiResult<Map<String, Object>> updateGenesisMarketStatus(", marketStart);
+  const commandStart = commandService.indexOf("public ApiResult<Map<String,Object>> updateParam(");
+  const commandEnd = commandService.indexOf("public ApiResult<Map<String,Object>> pauseMarket(", commandStart);
+  assert.notEqual(marketStart, -1);
+  assert.notEqual(marketEnd, -1);
+  assert.notEqual(commandStart, -1);
+  assert.notEqual(commandEnd, -1);
+  const marketMethod = marketService.slice(marketStart, marketEnd);
+  const commandMethod = commandService.slice(commandStart, commandEnd);
+
+  assert.match(marketMethod, /auditRequired\("G4_GENESIS_PARAM_CHANGED"/);
+  assert.doesNotMatch(marketMethod, /audit\("G4_GENESIS_PARAM_CHANGED"/);
+  assert.doesNotMatch(commandMethod, /G4_GENESIS_PARAM_CHANGED/);
+  assert.match(commandMethod, /outbox\.publish\("GENESIS_PARAM",key,"admin\.genesis_param_changed"/);
+  assert.match(commandMethod, /return once\("PARAM:"\+key,idem,request,/);
 });
 
 test("G4 new emission ledger type remains visible to G4 and BI canonical totals", () => {

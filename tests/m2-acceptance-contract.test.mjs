@@ -33,6 +33,8 @@ test("M2 never turns a failed queue request into a writable empty state", () => 
 
   assert.match(client, /const ticketsAvailable = results\[0\]\.status === "fulfilled"/);
   assert.match(client, /"I\.support\.ticketsAvailable": data\.ticketsAvailable \? "1" : "0"/);
+  assert.match(tickets, /pget\("I\.support\.ticketsAvailable"\) === "1"/);
+  assert.doesNotMatch(tickets, /pget\("I\.support\.ticketsAvailable"\) !== "0"/);
   assert.match(tickets, /工单数据暂时无法同步/);
   assert.match(tickets, /!ticketsAvailable/);
 });
