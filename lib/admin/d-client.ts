@@ -428,6 +428,13 @@ export interface D5Params {
   networkFeeMin: number;
   networkFeeMax: number;
   nexFeeOffsetRate: number;
+  /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值的提现免掉「首提必审」与「新地址 hold」
+   *  两道闸;0 = 关闭快车道。**永不**免除风控路由裁决(冻结簇/共用地址/风险分)。
+   *  服务端未下发时按 D5_DEFAULT_SMALL_AMOUNT_THRESHOLD 兜底(向后兼容,见 normalizeD5Params)。 */
+  smallAmountThresholdUsd: number;
+  /** FEAT-WD01:正常到账时效(小时)。到账时间 = 提交 + 本值;命中大额合规审查时
+   *  改用 cooldownDays,取更晚者。 */
+  payoutSlaHours: number;
   cooldownDays: number;
   penaltyFeeRate: number;
   complianceHoldEnabled: boolean;
@@ -1546,7 +1553,16 @@ function normalizeD4Page(value: unknown): PageResult<D4Bill> {
   };
 }
 
-function normalizeD5Params(value: unknown): D5Params {
+/** FEAT-WD01 参数默认值(规格 §2)。服务端未下发时的兜底,亦是 D5 表单的初始值。 */
+export const D5_DEFAULT_SMALL_AMOUNT_THRESHOLD = 50;
+export const D5_DEFAULT_PAYOUT_SLA_HOURS = 24;
+/** 值域(规格 §2):小额线 0–500(0=关闭快车道);到账时效 1–168 小时(即 1 小时–7 天)。 */
+export const D5_SMALL_AMOUNT_THRESHOLD_MAX = 500;
+export const D5_PAYOUT_SLA_HOURS_MIN = 1;
+export const D5_PAYOUT_SLA_HOURS_MAX = 168;
+
+/** @internal 导出仅供契约测试做**行为**验证 —— 源码 regex 断言抓不到「判据写了但没被消费」。 */
+export function normalizeD5Params(value: unknown): D5Params {
   const raw = d5Object(value, "root");
   const source = d5Object(raw.sourceByField, "sourceByField");
   const sourceKeys = [
@@ -1569,6 +1585,17 @@ function normalizeD5Params(value: unknown): D5Params {
     networkFeeMin: d5Number(raw.networkFeeMin, "networkFeeMin"),
     networkFeeMax: d5Number(raw.networkFeeMax, "networkFeeMax"),
     nexFeeOffsetRate: d5Number(raw.nexFeeOffsetRate, "nexFeeOffsetRate"),
+    // FEAT-WD01 新增两项:服务端尚未下发时按默认兜底(向后兼容 —— 前端先行部署不能把
+    // 整页打挂)。一旦服务端开始下发,以服务端值为准;值域校验对两种来源一视同仁。
+    // 🔴 必须同时认 null:后端 DTO 加了字段但值未配置时,序列化出的是 null 而不是省略 key
+    //    (Spring 默认行为)。只认 undefined 的话 d5Number(null) → NaN → 抛 D5_RESPONSE_INVALID
+    //    → **整页六个参数全部冻结**,连每日提现次数都改不了。这正是这段兜底本来要防的事(审计实测)。
+    smallAmountThresholdUsd: raw.smallAmountThresholdUsd === undefined || raw.smallAmountThresholdUsd === null
+      ? D5_DEFAULT_SMALL_AMOUNT_THRESHOLD
+      : d5Number(raw.smallAmountThresholdUsd, "smallAmountThresholdUsd"),
+    payoutSlaHours: raw.payoutSlaHours === undefined || raw.payoutSlaHours === null
+      ? D5_DEFAULT_PAYOUT_SLA_HOURS
+      : d5Integer(raw.payoutSlaHours, "payoutSlaHours", 1),
     cooldownDays: d5Integer(raw.cooldownDays, "cooldownDays", 0),
     penaltyFeeRate: d5Number(raw.penaltyFeeRate, "penaltyFeeRate"),
     complianceHoldEnabled: d5Boolean(raw.complianceHoldEnabled, "complianceHoldEnabled"),
@@ -1589,7 +1616,9 @@ function normalizeD5Params(value: unknown): D5Params {
       || result.maxBalanceRatio < 0.5 || result.maxBalanceRatio > 1
       || result.networkFeeRatio < 0 || result.networkFeeRatio > 0.05
       || result.networkFeeMin < 0 || result.networkFeeMax < result.networkFeeMin
-      || result.nexFeeOffsetRate <= 0 || result.penaltyFeeRate < 0 || result.penaltyFeeRate > 1) {
+      || result.nexFeeOffsetRate <= 0 || result.penaltyFeeRate < 0 || result.penaltyFeeRate > 1
+      || result.smallAmountThresholdUsd < 0 || result.smallAmountThresholdUsd > D5_SMALL_AMOUNT_THRESHOLD_MAX
+      || result.payoutSlaHours < D5_PAYOUT_SLA_HOURS_MIN || result.payoutSlaHours > D5_PAYOUT_SLA_HOURS_MAX) {
     throw new Error(formatAdminApiError("D5_RESPONSE_INVALID", "D5_RESPONSE_INVALID:business-range"));
   }
   return result;
@@ -2058,7 +2087,8 @@ export async function fetchD5WithdrawalParams() {
 }
 
 export type D5OwnedChanges = Partial<Pick<D5Params,
-  "dailyLimitCount" | "maxBalanceRatio" | "networkFeeRatio" | "networkFeeMin" | "networkFeeMax" | "nexFeeOffsetRate">>;
+  "dailyLimitCount" | "maxBalanceRatio" | "networkFeeRatio" | "networkFeeMin" | "networkFeeMax" | "nexFeeOffsetRate"
+  | "smallAmountThresholdUsd" | "payoutSlaHours">>;
 
 export async function updateD5WithdrawalLimits(
   changes: D5OwnedChanges,

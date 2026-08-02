@@ -28,7 +28,8 @@ const DIAL_COLUMNS = [
   ["newUserBonusMultiplier", "新用户加成", "x"],
   ["inviteRewardMultiplier", "邀请加成", "x"],
   ["reinvestMultiplier", "复投加成", "x"],
-  ["withdrawCooldownDays", "提现冷却天数", "天"],
+  // FEAT-WD01 改名:实际语义是「大额提现的到账等待天数」,不是「两笔提现的间隔」。字段键不动。
+  ["withdrawCooldownDays", "到账审查窗口", "天"],
   ["withdrawPenaltyFeeRate", "提现惩罚费率", "%"],
   ["binaryDailyCap", "双轨日封顶", "USD"],
   ["questBonusMultiplier", "任务加成", "x"],
