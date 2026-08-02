@@ -3,14 +3,19 @@ import { readFileSync } from "node:fs";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 
-type FixtureAccount = { username: string; password: string; totpSecret: string };
+type FixtureAccount = {
+  username: string;
+  password: string;
+  totpSecret: string;
+  authorities?: string[];
+  effectiveMenus?: Array<string | { menuCode?: string }>;
+};
 type PermissionFixture = {
   runId: string;
-  accounts: {
-    g_readonly: FixtureAccount;
-    g_no_write: FixtureAccount;
-    g_no_menu: FixtureAccount;
-  };
+  accounts: Partial<Record<
+    "g_readonly" | "g_no_write" | "g_no_menu" | "readonly" | "nowrite" | "nomenu",
+    FixtureAccount
+  >>;
 };
 type ModuleProbe = {
   id: "G1" | "G2" | "G3" | "G4" | "G7";
@@ -23,12 +28,20 @@ type ModuleProbe = {
   mutationButtons: RegExp;
 };
 
-const RUN_ID = "pc-full-acceptance-20260728-151023";
+const RUN_ID = process.env.G_NONOWNER_RUN_ID ?? "pc-full-acceptance-20260729-114336";
 const fixturePath = process.env.G_PERMISSION_FIXTURE_PATH
-  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/G/permission-fixtures.json`;
-const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as PermissionFixture;
+  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/domain-permission-fixtures/G.json`;
+const sharedFixture = JSON.parse(readFileSync(fixturePath, "utf8")) as PermissionFixture;
+const fixture = {
+  runId: sharedFixture.runId,
+  accounts: {
+    g_readonly: requiredAccount(sharedFixture.accounts.g_readonly ?? sharedFixture.accounts.readonly, "readonly"),
+    g_no_write: requiredAccount(sharedFixture.accounts.g_no_write ?? sharedFixture.accounts.nowrite, "nowrite"),
+    g_no_menu: requiredAccount(sharedFixture.accounts.g_no_menu ?? sharedFixture.accounts.nomenu, "nomenu"),
+  },
+};
 const REASON = "G 域非 Owner 权限负向探针，不得执行";
-const MODULES: ModuleProbe[] = [
+const ALL_MODULES: ModuleProbe[] = [
   {
     id: "G1",
     path: "/finance-products/staking",
@@ -80,8 +93,23 @@ const MODULES: ModuleProbe[] = [
     mutationButtons: /编辑 年化 APY|编辑 锁仓期限|编辑 培育奖倍率|编辑 Genesis 抽奖券|编辑 早赎罚款|编辑 preset 金额档/,
   },
 ];
+const selectedModules = (process.env.G_PERMISSION_MODULES ?? "")
+  .split(",")
+  .map((value) => value.trim().toUpperCase())
+  .filter(Boolean);
+const MODULES = selectedModules.length === 0
+  ? ALL_MODULES
+  : ALL_MODULES.filter((module) => selectedModules.includes(module.id));
 
 test.describe.configure({ timeout: 240_000 });
+test.beforeAll(() => {
+  expect(process.env.G_NONOWNER_PROBE_TOKEN, "G_NONOWNER_PROBE_TOKEN is required").toBe("1");
+  expect(fixture.runId, "fixture Run ID").toBe(RUN_ID);
+  expect(MODULES.length, "G_PERMISSION_MODULES must select at least one known module").toBeGreaterThan(0);
+});
+test.afterEach(async ({ page }) => {
+  await page.request.post("/api/admin/auth/logout").catch(() => undefined);
+});
 
 for (const key of ["g_readonly", "g_no_write"] as const) {
   test(`${key}：G1/G2/G3/G4/G7 五层权限、刷新、退出重登均失败关闭`, async ({ page }) => {
@@ -105,30 +133,41 @@ for (const key of ["g_readonly", "g_no_write"] as const) {
       await expectEnabledMutationButtonCount(page, module.mutationButtons, 0, `${key} ${module.id}`);
     }
 
+    const lastModule = MODULES.at(-1)!;
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByText(MODULES.at(-1)!.marker).first()).toBeVisible();
-    expect((await browserApi(page, "GET", MODULES.at(-1)!.readPath)).identity).toBe(firstSnapshots.get("G7"));
+    await expect(page.getByText(lastModule.marker).first()).toBeVisible();
+    expect((await browserApi(page, "GET", lastModule.readPath)).identity).toBe(firstSnapshots.get(lastModule.id));
     await logout(page);
     await login(page, account);
     await assertVisibleGMenus(page);
-    expect((await browserApi(page, "GET", MODULES[0].readPath)).identity).toBe(firstSnapshots.get("G1"));
+    expect((await browserApi(page, "GET", MODULES[0].readPath)).identity).toBe(firstSnapshots.get(MODULES[0].id));
     expect((await browserApi(page, MODULES[0].writeMethod, MODULES[0].writePath, MODULES[0].writeBody)).status).toBe(403);
     expect(errors.pageErrors).toEqual([]);
     expect(errors.api5xx).toEqual([]);
   });
 }
 
-test("g_no_menu：菜单、直接路由、读写接口、刷新重登全部拒绝", async ({ page }) => {
+test("g_no_menu：菜单和直接路由拒绝，数据 API 严格按夹具 read authority 失败关闭", async ({ page }) => {
   const errors = monitorFailures(page);
   const account = fixture.accounts.g_no_menu;
   await login(page, account);
-  await assertSessionShape(page, false);
+  // A no-menu fixture may either retain data read authority (shared matrix) or
+  // carry none (dedicated matrix). The expected API boundary follows the
+  // fixture's explicit authority set, never a UI-only assumption.
+  const hasGRead = (account.authorities ?? []).some((authority) =>
+    ["g1", "g2", "g3", "g4", "g7"].some((module) => authority === `finprod_${module}_read`));
+  await assertSessionShape(page, hasGRead);
   await expect(page.locator('a[href^="/finance-products/"]')).toHaveCount(0);
 
   await page.goto("/finance-products/staking", { waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(/\/finance-products\/staking(?:\?.*)?$/);
   for (const module of MODULES) {
-    expect((await browserApi(page, "GET", module.readPath)).status, `${module.id} read`).toBe(403);
+    const read = await browserApi(page, "GET", module.readPath);
+    expect(read.status, `${module.id} read`).toBe(hasGRead ? 200 : 403);
+    if (hasGRead) {
+      expect(read.code, `${module.id} read code`).toBe(0);
+      expect(read.serverCanonical, `${module.id} read canonical`).toBe(true);
+    }
     expect((await browserApi(page, module.writeMethod, module.writePath, module.writeBody)).status, `${module.id} write`).toBe(403);
   }
 
@@ -137,7 +176,7 @@ test("g_no_menu：菜单、直接路由、读写接口、刷新重登全部拒�
   await logout(page);
   await login(page, account);
   await expect(page.locator('a[href^="/finance-products/"]')).toHaveCount(0);
-  expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
+  expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(hasGRead ? 200 : 403);
   expect(errors.pageErrors).toEqual([]);
   expect(errors.api5xx).toEqual([]);
 });
@@ -154,6 +193,9 @@ test("匿名管理面 401；App G1/G2/G3/G4/G7 公共投影可读、用户命令
 
 async function assertAppProjectionBoundaries(request: APIRequestContext) {
   const backend = "http://127.0.0.1:8110";
+  // This request context is the local trusted-edge carrier. The App itself must
+  // never manufacture these headers; production injection belongs to the gateway.
+  const trustedEdgeHeaders = { "X-Nexion-Edge-Country": "JP" };
   for (const path of [
     "/api/config/staking/pools",
     "/api/config/exchange/caps",
@@ -161,14 +203,19 @@ async function assertAppProjectionBoundaries(request: APIRequestContext) {
     "/api/genesis/state",
     "/api/config/repurchase",
   ]) {
-    const response = await request.get(`${backend}${path}`);
+    const unresolved = await request.get(`${backend}${path}`);
+    expect(unresolved.status(), `${path} missing trusted edge country`).toBe(503);
+    const unresolvedPayload = await unresolved.json() as { code?: number; message?: string };
+    expect(unresolvedPayload.code, `${path} unresolved code`).toBe(503);
+    expect(unresolvedPayload.message, `${path} unresolved message`).toBe("GEO_COUNTRY_UNRESOLVED");
+    const response = await request.get(`${backend}${path}`, { headers: trustedEdgeHeaders });
     expect(response.status(), `${path} public`).toBe(200);
     const payload = await response.json() as { code?: number; data?: { serverCanonical?: boolean } };
     expect(payload.code, `${path} code`).toBe(0);
     expect(payload.data?.serverCanonical, `${path} canonical`).toBe(true);
   }
   for (const path of ["/api/stakes", "/api/exchange", "/api/genesis/account", "/api/repurchase/orders"]) {
-    expect((await request.get(`${backend}${path}`)).status(), `${path} anonymous`).toBe(401);
+    expect((await request.get(`${backend}${path}`, { headers: trustedEdgeHeaders })).status(), `${path} anonymous`).toBe(401);
   }
 }
 
@@ -182,7 +229,7 @@ async function login(page: Page, account: FixtureAccount) {
   await expect(otp).toBeVisible({ timeout: 10_000 });
   await otp.fill(await freshTotp(account.totpSecret));
   await page.getByRole("button", { name: "验证并进入", exact: true }).click();
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("complementary")).toBeVisible({ timeout: 20_000 });
 }
 
 async function logout(page: Page) {
@@ -231,16 +278,23 @@ async function browserApi(
   body?: Record<string, unknown>,
 ) {
   return page.evaluate(async ({ requestMethod, apiPath, requestBody, runId }) => {
-    const response = await fetch(apiPath, {
-      method: requestMethod,
-      credentials: "same-origin",
-      headers: requestMethod === "GET" ? undefined : {
-        "Content-Type": "application/json",
-        "Idempotency-Key": `g-nonowner-permission-${runId}-${crypto.randomUUID()}`,
-      },
-      body: requestMethod === "GET" ? undefined : JSON.stringify(requestBody ?? {}),
+    // The console's authenticated fetch wrapper deliberately rejects an anonymous
+    // 401 as an auth-epoch change before exposing its HTTP status. This probe is
+    // specifically a browser-network authorization boundary check, so use XHR to
+    // observe the server response without weakening the real UI auth behavior.
+    const response = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(requestMethod, apiPath, true);
+      xhr.withCredentials = true;
+      if (requestMethod !== "GET") {
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.setRequestHeader("Idempotency-Key", `g-nonowner-permission-${runId}-${crypto.randomUUID()}`);
+      }
+      xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText });
+      xhr.onerror = () => reject(new Error(`XHR failed for ${requestMethod} ${apiPath}`));
+      xhr.send(requestMethod === "GET" ? null : JSON.stringify(requestBody ?? {}));
     });
-    const payload = await response.json().catch(() => null) as {
+    const payload = JSON.parse(response.text || "null") as {
       code?: number;
       data?: { domain?: string; serverCanonical?: boolean };
     } | null;
@@ -322,4 +376,9 @@ function currentTotp(secret: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function requiredAccount(account: FixtureAccount | undefined, key: string) {
+  if (!account) throw new Error(`G permission fixture lacks ${key} account`);
+  return account;
 }

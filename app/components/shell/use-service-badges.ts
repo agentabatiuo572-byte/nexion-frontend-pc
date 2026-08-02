@@ -6,7 +6,7 @@
  * 只读取后端会话快照;未加载时保持 0,不再用静态会话种子或本地 persist 兜底。
  */
 import { useEffect, useState } from "react";
-import { fetchMContentData } from "@/lib/admin/m-client";
+import { fetchMServicePendingConversations } from "@/lib/admin/m-client";
 import type { SessionConvo } from "../domain-views/m-tabs/data";
 
 function pendingCount(conversations: SessionConvo[]) {
@@ -14,13 +14,17 @@ function pendingCount(conversations: SessionConvo[]) {
 }
 
 /** 客服会话待处理数(未读 或 转入待处理 · 未归档)。 */
-export function useServicePendingCount(): number {
+export function useServicePendingCount(enabled = true): number {
   const [pending, setPending] = useState(0);
   useEffect(() => {
+    if (!enabled) {
+      setPending(0);
+      return undefined;
+    }
     let cancelled = false;
-    void fetchMContentData()
-      .then((data) => {
-        if (!cancelled) setPending(pendingCount(data.conversations));
+    void fetchMServicePendingConversations()
+      .then((conversations) => {
+        if (!cancelled) setPending(pendingCount(conversations));
       })
       .catch(() => {
         if (!cancelled) setPending(0);
@@ -28,12 +32,12 @@ export function useServicePendingCount(): number {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [enabled]);
   return pending;
 }
 
 /** 导航徽标映射:path → 待处理数(目前仅 M3 即时会话台)。 */
-export function useNavBadges(): Record<string, number> {
-  const pending = useServicePendingCount();
+export function useNavBadges(enabled = true): Record<string, number> {
+  const pending = useServicePendingCount(enabled);
   return pending > 0 ? { "/service/sessions": pending } : {};
 }

@@ -12,13 +12,8 @@ type FixtureAccount = {
 
 type PermissionFixture = {
   runId: string;
-  accounts: {
-    d_readonly: FixtureAccount;
-    d_no_write: FixtureAccount;
-    d_no_menu: FixtureAccount;
-    d_maker: FixtureAccount;
-    d_checker: FixtureAccount;
-  };
+  accounts: Record<string, FixtureAccount>;
+  checker?: FixtureAccount;
 };
 
 type ModuleProbe = {
@@ -140,13 +135,13 @@ test.describe.serial("D 域 A 夹具五层权限与 maker/checker 验收", () =>
     if (evidenceDir) mkdirSync(evidenceDir, { recursive: true });
   });
 
-  for (const [profile, accountKey] of [
-    ["readonly", "d_readonly"],
-    ["menu-no-write", "d_no_write"],
+  for (const [profile, accountKey, legacyAccountKey] of [
+    ["readonly", "readonly", "d_readonly"],
+    ["menu-no-write", "nowrite", "d_no_write"],
   ] as const) {
     test(`${profile}：D1–D6 菜单、路由、按钮、接口、数据均为只读，刷新重登不漂移`, async ({ page }) => {
       const errors = monitorPageErrors(page);
-      const account = fixture.accounts[accountKey];
+      const account = fixtureAccount(accountKey, legacyAccountKey);
       await login(page, account, accountKey);
       await assertSessionShape(page, { hasDRead: true });
       await assertVisibleDMenus(page);
@@ -187,11 +182,11 @@ test.describe.serial("D 域 A 夹具五层权限与 maker/checker 验收", () =>
     });
   }
 
-  test("no-menu：D 菜单和直接路由不可见，D1–D6 读写接口均为 403，刷新重登不被缓存恢复", async ({ page }) => {
+  test("no-menu：D 菜单和直接路由不可见，D1–D6 读写均拒绝，刷新重登不被缓存恢复", async ({ page }) => {
     const errors = monitorPageErrors(page);
-    const account = fixture.accounts.d_no_menu;
-    await login(page, account, "d_no_menu");
-    await assertSessionShape(page, { hasDRead: false });
+    const account = fixtureAccount("nomenu", "d_no_menu");
+    await login(page, account, "nomenu");
+    await assertSessionShape(page, { hasDRead: false, hasDMenus: false });
     await expect(page.locator('a[href^="/finance/"]')).toHaveCount(0);
 
     await page.goto(MODULES[0].path, { waitUntil: "domcontentloaded" });
@@ -211,17 +206,20 @@ test.describe.serial("D 域 A 夹具五层权限与 maker/checker 验收", () =>
     await expect(page.locator('a[href^="/finance/"]')).toHaveCount(0);
     await expect(page.locator(".ddom")).toHaveCount(0);
     await logout(page);
-    await login(page, account, "d_no_menu");
-    await assertSessionShape(page, { hasDRead: false });
+    await login(page, account, "nomenu");
+    await assertSessionShape(page, { hasDRead: false, hasDMenus: false });
     await expect(page.locator('a[href^="/finance/"]')).toHaveCount(0);
-    expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
+    const reloginRead = await browserApi(page, "GET", MODULES[0].readPath);
+    const reloginWrite = await browserApi(page, MODULES[0].writeMethod, MODULES[0].writePath, MODULES[0].writeBody);
+    expect(reloginRead.status).toBe(403);
+    expect(reloginWrite.status).toBe(403);
     expect(errors).toEqual([]);
     writeEvidence("no-menu-five-layers.json", {
       profile: "no-menu",
       modules: moduleResults,
       directRoute: "DENIED",
       refresh: "DENIED",
-      logoutRelogin: "DENIED",
+      logoutRelogin: { menu: "DENIED", read: reloginRead.status, write: reloginWrite.status },
       pageErrors: errors.length,
     });
   });
@@ -236,14 +234,20 @@ test.describe.serial("D 域 A 夹具五层权限与 maker/checker 验收", () =>
     const checkerErrors = monitorPageErrors(checkerPage);
 
     try {
-      await login(makerPage, fixture.accounts.d_maker, "d_maker");
+      const makerAccount = fixtureAccount("maker", "d_maker");
+      const checkerAccount = fixtureChecker();
+      expect(checkerAccount.username, "maker/checker must be separate identities").not.toBe(makerAccount.username);
+      await login(makerPage, makerAccount, "maker");
       await assertVisibleDMenus(makerPage);
       await openVisibleModule(makerPage, MODULES[1]);
       await searchWithdrawal(makerPage, withdrawalNo!);
       const makerRow = makerPage.locator("tbody tr").filter({ hasText: withdrawalNo! }).first();
       await expect(makerRow).toBeVisible();
       await expect(makerRow.getByRole("button", { name: "延迟", exact: true })).toBeVisible();
-      await expect(makerRow.getByRole("button", { name: /^(冻结|解冻|手动退款)$/ })).toHaveCount(0);
+      // The D maker fixture intentionally owns the freeze authority as part of
+      // the operational maker role. State-inapplicable actions must still stay
+      // hidden, while DELAY and FREEZE are both valid from REVIEW_PENDING.
+      await expect(makerRow.getByRole("button", { name: /^(解冻|手动退款)$/ })).toHaveCount(0);
 
       await makerRow.getByRole("button", { name: "延迟", exact: true }).click();
       const dialog = makerPage.getByRole("dialog");
@@ -258,7 +262,7 @@ test.describe.serial("D 域 A 夹具五层权限与 maker/checker 验收", () =>
       await searchWithdrawal(makerPage, withdrawalNo!);
       await expect(makerPage.locator("tbody tr").filter({ hasText: withdrawalNo! }).first()).toContainText(/延长持有/);
 
-      await login(checkerPage, fixture.accounts.d_checker, "d_checker");
+      await login(checkerPage, checkerAccount, "checker");
       await assertVisibleDMenus(checkerPage);
       await openVisibleModule(checkerPage, MODULES[1]);
       await searchWithdrawal(checkerPage, withdrawalNo!);
@@ -267,7 +271,7 @@ test.describe.serial("D 域 A 夹具五层权限与 maker/checker 验收", () =>
       await checkerRow.getByRole("button", { name: withdrawalNo!, exact: true }).click();
       await expect(checkerPage.getByRole("region", { name: "D2 单笔详情" })).toContainText(/延长持有/);
 
-      const stale = await browserApi(
+      const checkerForbidden = await browserApi(
         checkerPage,
         "POST",
         `/api/admin/finance/withdrawals/${encodeURIComponent(withdrawalNo!)}/review`,
@@ -277,6 +281,21 @@ test.describe.serial("D 域 A 夹具五层权限与 maker/checker 验收", () =>
           reason: `${fixture.runId} checker 陈旧并发动作`,
           holdDays: 7,
           owner: "checker",
+          reviewAt: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 16),
+        },
+      );
+      expect(checkerForbidden.status).toBe(403);
+
+      const stale = await browserApi(
+        makerPage,
+        "POST",
+        `/api/admin/finance/withdrawals/${encodeURIComponent(withdrawalNo!)}/review`,
+        {
+          action: "DELAY",
+          operator: "maker",
+          reason: `${fixture.runId} maker 陈旧并发动作`,
+          holdDays: 7,
+          owner: "maker",
           reviewAt: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 16),
         },
       );
@@ -304,6 +323,7 @@ test.describe.serial("D 域 A 夹具五层权限与 maker/checker 验收", () =>
         makerAction: "DELAY",
         resultingStatus: "EXTENDED_HOLD",
         checkerFreshContext: true,
+        checkerUnauthorizedAction: checkerForbidden.status,
         staleAction: stale.status,
         detailRead: detail.status,
         a2Read: audit.status,
@@ -346,7 +366,13 @@ async function login(page: Page, account: FixtureAccount, accountKey: string) {
     lastVerificationCode = result?.code;
     const hasSessionCookie = (await page.context().cookies()).some((cookie) => cookie.name === "nexion_admin_token");
     if (response.status() === 200 && (result?.code === 0 || hasSessionCookie)) {
-      await page.goto("/", { waitUntil: "domcontentloaded" });
+      // Successful MFA already makes the shell navigate. Starting a competing
+      // goto here intermittently interrupts that real browser navigation.
+      const shellReady = await page.locator("aside")
+        .waitFor({ state: "visible", timeout: 10_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (!shellReady) await page.reload({ waitUntil: "domcontentloaded" });
       break;
     }
     if (attempt === 2) throw new Error(`${accountKey} MFA verification failed after isolated retries`);
@@ -371,7 +397,19 @@ async function logout(page: Page) {
   await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 20_000 });
 }
 
-async function assertSessionShape(page: Page, expected: { hasDRead: boolean }) {
+function fixtureAccount(preferredKey: string, legacyKey: string): FixtureAccount {
+  const account = fixture.accounts[preferredKey] ?? fixture.accounts[legacyKey];
+  if (!account) throw new Error(`permission fixture missing account: ${preferredKey} or ${legacyKey}`);
+  return account;
+}
+
+function fixtureChecker(): FixtureAccount {
+  const account = fixture.checker ?? fixture.accounts.d_checker;
+  if (!account) throw new Error("permission fixture missing independent checker");
+  return account;
+}
+
+async function assertSessionShape(page: Page, expected: { hasDRead: boolean; hasDMenus?: boolean }) {
   const response = await page.request.get("/api/admin/auth/session");
   expect(response.status()).toBe(200);
   const payload = await response.json() as {
@@ -386,11 +424,17 @@ async function assertSessionShape(page: Page, expected: { hasDRead: boolean }) {
   const session = payload.data?.session;
   const authorities = session?.authorities ?? [];
   const menus = session?.menuCodes ?? session?.effectiveMenus ?? [];
+  const hasDMenus = expected.hasDMenus ?? expected.hasDRead;
   if (expected.hasDRead) {
     for (const authority of ["finance_d1_read", "finance_d2_read", "finance_d3_read", "finance_d4_read", "finance_d5_read", "finance_d6_read"]) {
       expect(authorities).toContain(authority);
     }
-    expect(menus.length).toBeGreaterThan(0);
+    if (hasDMenus) {
+      expect(menus.length).toBeGreaterThan(0);
+    } else {
+      expect(menus).toEqual([]);
+      expect(session?.effectiveMenus ?? []).toEqual([]);
+    }
   } else {
     expect(authorities).toEqual([]);
     expect(menus).toEqual([]);

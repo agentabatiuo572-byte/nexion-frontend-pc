@@ -1,9 +1,12 @@
+import { createHmac } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, request as playwrightRequest, test, type Page } from "@playwright/test";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim();
+const TOTP_COUNTER_OFFSET = Number(process.env.B_TOTP_COUNTER_OFFSET ?? "-1");
 const EVIDENCE_ROOT =
   process.env.B_OWNER_EVIDENCE_DIR
   || "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/B/owner";
@@ -20,6 +23,10 @@ const UNHEALTHY =
   /Cannot read properties|ReferenceError|TypeError|NaN|Infinity|mock 数据|localStorage|Handler dispatch failed|NoSuchMethodError|SQLSyntaxErrorException/i;
 
 test.describe.configure({ mode: "serial" });
+
+if (!Number.isInteger(TOTP_COUNTER_OFFSET) || TOTP_COUNTER_OFFSET < -2 || TOTP_COUNTER_OFFSET > 2) {
+  throw new Error("B_TOTP_COUNTER_OFFSET_MUST_BE_AN_INTEGER_BETWEEN_-2_AND_2");
+}
 
 test.beforeAll(() => {
   fs.mkdirSync(EVIDENCE_ROOT, { recursive: true });
@@ -73,7 +80,107 @@ test("B1-B5 从登录页和可见侧栏完成首轮、刷新、返回、退出�
   expect(serverErrors, "B1-B5 主流程不应返回 5xx").toEqual([]);
 });
 
+test("B5 SSE 首次进入、刷新、重登及断线降级均保留权威边界", async ({ page }) => {
+  test.setTimeout(240_000);
+  const streamPath = "/api/admin/risk/radar/stream";
+  const streamStatuses: Array<{ phase: string; status: number }> = [];
+  const waitForStream = (phase: string) => page.waitForResponse(
+    (candidate) => new URL(candidate.url()).pathname === streamPath
+      && candidate.request().method() === "GET",
+  ).then((response) => {
+    streamStatuses.push({ phase, status: response.status() });
+    return response;
+  });
+
+  await login(page);
+  let stream = waitForStream("visible-entry");
+  await openFromSidebar(page, MODULES[4]);
+  expect((await stream).status()).toBe(200);
+  await expect(page.getByText("挤兑预警", { exact: true })).toBeVisible();
+
+  stream = waitForStream("refresh");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  expect((await stream).status()).toBe(200);
+  await expect(page.getByText("挤兑预警", { exact: true })).toBeVisible();
+
+  await logout(page);
+  await login(page);
+  stream = waitForStream("relogin");
+  await openFromSidebar(page, MODULES[4]);
+  expect((await stream).status()).toBe(200);
+  await expect(page.getByText("挤兑预警", { exact: true })).toBeVisible();
+
+  const context = page.context();
+  await context.route("**/api/admin/risk/radar/stream", (route) => route.abort("connectionfailed"));
+  const failedStream = page.waitForEvent(
+    "requestfailed",
+    (request) => new URL(request.url()).pathname === streamPath,
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const failedRequest = await failedStream;
+  await expect(page.getByRole("status")).toContainText("实时通道正在重连");
+  await expect(page.getByText("挤兑预警", { exact: true })).toBeVisible();
+  await context.unroute("**/api/admin/risk/radar/stream");
+
+  fs.writeFileSync(
+    path.join(EVIDENCE_ROOT, "B5-sse-authority-boundary.json"),
+    `${JSON.stringify({
+      streamStatuses,
+      disconnect: {
+        url: failedRequest.url(),
+        failure: failedRequest.failure()?.errorText || "requestfailed",
+        fallback: "authoritative GET snapshot retained with visible reconnect warning",
+      },
+    }, null, 2)}\n`,
+  );
+});
+
+test("B5 SSE 无菜单角色的快照与流接口都严格 403", async ({ page }) => {
+  test.skip(
+    process.env.B_EXPECT_B5_STREAM_FORBIDDEN !== "1",
+    "This boundary carrier runs only with the isolated no-menu account.",
+  );
+  await login(page);
+  const snapshot = await page.request.get("/api/admin/risk/radar");
+  const stream = await page.request.get("/api/admin/risk/radar/stream");
+  expect(snapshot.status()).toBe(403);
+  expect(stream.status()).toBe(403);
+  fs.writeFileSync(
+    path.join(EVIDENCE_ROOT, "B5-sse-forbidden-boundary.json"),
+    `${JSON.stringify({
+      role: "isolated no-menu/no-authority acceptance account",
+      snapshotStatus: snapshot.status(),
+      streamStatus: stream.status(),
+    }, null, 2)}\n`,
+  );
+});
+
+test("B1 在真实 0% 覆盖率基线显示红线告警且仅给出失败关闭建议", async ({ page }) => {
+  await login(page);
+  await openFromSidebar(page, MODULES[0]);
+  const payload = await apiJson(page, "/api/admin/treasury/b-domain");
+  const snapshot = object(object(payload.data).dualLedger).snapshot as Record<string, unknown>;
+
+  expect(number(snapshot.reserveUsd)).toBe(0);
+  expect(number(snapshot.liabilitiesUsd)).toBeGreaterThan(0);
+  expect(number(snapshot.coverageRatio)).toBe(0);
+  await expect(page.getByText("已跌破红线", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("立即冻结放大流出", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("不自动执行", { exact: false }).first()).toBeVisible();
+
+  fs.writeFileSync(path.join(EVIDENCE_ROOT, "b1-zero-coverage-fail-closed.json"), JSON.stringify({
+    reserveUsd: number(snapshot.reserveUsd),
+    liabilitiesUsd: number(snapshot.liabilitiesUsd),
+    coverageRatio: number(snapshot.coverageRatio),
+    ui: "已跌破红线；仅显示建议，未触发任何共享闸或资金写入",
+  }, null, 2));
+});
+
 test("B1/B2/B5 资金事实及 B4/H1、B5/J1 跨域快照同源", async ({ page }) => {
+  test.skip(
+    process.env.B_EXPECT_CROSS_DOMAIN_CHECKER !== "1",
+    "This contract carrier runs only with the isolated B/H1/J1 cross-domain checker.",
+  );
   await login(page);
   const [b1, reserve, liabilities, b5, b4, h1, j1] = await Promise.all([
     apiJson(page, "/api/admin/treasury/b-domain"),
@@ -147,6 +254,7 @@ test("B1-B5 匿名读取拒绝，非法路由和非法参数安全失败", async
     "/api/admin/funnel",
     "/api/admin/phase/overview",
     "/api/admin/risk/radar",
+    "/api/admin/risk/radar/stream",
   ]) {
     expect((await anonymous.get(endpoint)).status(), endpoint).toBe(401);
   }
@@ -160,9 +268,19 @@ test("B1-B5 匿名读取拒绝，非法路由和非法参数安全失败", async
   expect((await page.request.get("/api/admin/funnel?phase=P99")).status()).toBe(422);
   expect((await page.request.get("/api/admin/funnel?stage=future")).status()).toBe(404);
   expect([400, 422]).toContain((await page.request.get("/api/admin/phase/overview?granularity=DAY")).status());
-  expect((await page.request.post("/api/admin/risk/bankrun-thresholds/preview", {
+  const session = await page.request.get("/api/admin/auth/session");
+  expect(session.status()).toBe(200);
+  const sessionBody = await session.json() as { data?: { session?: { authorities?: unknown } } };
+  const authorities = Array.isArray(sessionBody.data?.session?.authorities)
+    ? sessionBody.data.session.authorities.map(String)
+    : [];
+  const canWriteB5Threshold = authorities.includes("overview_b5_threshold_write");
+  const invalidThreshold = await page.request.post("/api/admin/risk/bankrun-thresholds/preview", {
     data: { yellowPct: 40, redPct: 20, expectedVersion: 0 },
-  })).status()).toBe(400);
+  });
+  // 无写权限身份必须先被 RBAC 拒绝；拥有 B5 阈值写权限的 maker 才进入载荷校验。
+  if (canWriteB5Threshold) expect([400, 422]).toContain(invalidThreshold.status());
+  else expect(invalidThreshold.status()).toBe(403);
 });
 
 test("B1-B5 对畸形 200、500 与网络超时全部失败关闭", async ({ page }) => {
@@ -172,7 +290,6 @@ test("B1-B5 对畸形 200、500 与网络超时全部失败关闭", async ({ pag
     { path: "/overview/liquidity", route: "**/api/admin/treasury/reserve", title: "服务端响应异常" },
     { path: "/overview/funnel", route: "**/api/admin/funnel?*", title: "B3 转化漏斗" },
     { path: "/overview/rhythm", route: "**/api/admin/phase/overview?*", title: "B4 节奏状态加载失败" },
-    { path: "/overview/risk-radar", route: "**/api/admin/risk/radar", title: "B5 风险雷达" },
   ] as const;
 
   for (const scenario of cases) {
@@ -193,7 +310,19 @@ test("B1-B5 对畸形 200、500 与网络超时全部失败关闭", async ({ pag
   await expect(page.getByText(/真实可动用储备/)).toHaveCount(0);
   await page.unroute("**/api/admin/treasury/reserve");
 
-  await page.route("**/api/admin/risk/radar", (route) => route.fulfill({
+  const context = page.context();
+  await context.route("**/api/admin/risk/radar/stream", (route) => route.abort("connectionfailed"));
+  await context.route("**/api/admin/risk/radar", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ code: 0, message: "success", data: { malformed: true } }),
+  }));
+  await page.goto("/overview/risk-radar", { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("B5 风险雷达加载失败", { exact: false })).toBeVisible();
+  await expect(page.getByText("挤兑预警", { exact: true })).toHaveCount(0);
+  await context.unroute("**/api/admin/risk/radar");
+
+  await context.route("**/api/admin/risk/radar", (route) => route.fulfill({
     status: 500,
     contentType: "application/json",
     body: JSON.stringify({ code: 500, message: "B5_INJECTED_FAILURE", data: null }),
@@ -201,10 +330,14 @@ test("B1-B5 对畸形 200、500 与网络超时全部失败关闭", async ({ pag
   await page.goto("/overview/risk-radar", { waitUntil: "domcontentloaded" });
   await expect(page.getByText("B5 风险雷达加载失败", { exact: false })).toBeVisible();
   await expect(page.getByText("挤兑预警", { exact: true })).toHaveCount(0);
+  await context.unroute("**/api/admin/risk/radar");
+  await context.unroute("**/api/admin/risk/radar/stream");
 });
 
 async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.goto("/", { waitUntil: "domcontentloaded" }).catch((error: unknown) => {
+    if (!(error instanceof Error) || !error.message.includes("is interrupted by another navigation")) throw error;
+  });
   const shell = page.locator("aside");
   const username = page.locator('input[autocomplete="username"]');
   await Promise.race([
@@ -219,7 +352,57 @@ async function login(page: Page) {
   );
   await page.getByRole("button", { name: /登录|继续/ }).click();
   expect((await response).status()).toBe(200);
+  if (!(await shell.isVisible({ timeout: 1_000 }).catch(() => false))) {
+    if (!TOTP_SECRET) throw new Error("ADMIN_E2E_TOTP_SECRET is required when the selected acceptance fixture requires MFA");
+    const otp = page.getByLabel("一次性验证码");
+    await expect(otp).toBeVisible({ timeout: 15_000 });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await otp.fill(await freshTotp(TOTP_SECRET));
+      const verification = page.waitForResponse(
+        (candidate) => candidate.url().endsWith("/api/admin/auth/mfa/verify") && candidate.request().method() === "POST",
+      );
+      await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+      if ((await verification).status() === 200) break;
+      if (attempt === 1) throw new Error("MFA verification did not enter the console");
+    }
+  }
   await expect(shell).toBeVisible({ timeout: 20_000 });
+}
+
+function currentTotp(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) throw new Error("Invalid base32 TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = Buffer.alloc(Math.floor(bits.length / 8));
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
+  }
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000) + TOTP_COUNTER_OFFSET));
+  const digest = createHmac("sha1", bytes).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+let lastTotpStep = -1;
+
+async function freshTotp(secret: string) {
+  const currentStep = Math.floor(Date.now() / 30_000);
+  const millisecondsRemaining = 30_000 - (Date.now() % 30_000);
+  if (lastTotpStep < 0 || currentStep <= lastTotpStep || millisecondsRemaining <= 5_000) {
+    await new Promise<void>((resolve) => setTimeout(resolve, millisecondsRemaining + 250));
+  }
+  lastTotpStep = Math.floor(Date.now() / 30_000);
+  return currentTotp(secret);
 }
 
 async function logout(page: Page) {

@@ -7,9 +7,12 @@ type FixtureAccount = { username: string; password: string; totpSecret: string }
 type PermissionFixture = {
   runId: string;
   accounts: {
-    h_readonly: FixtureAccount;
-    h_no_write: FixtureAccount;
-    h_no_menu: FixtureAccount;
+    h_readonly?: FixtureAccount;
+    h_no_write?: FixtureAccount;
+    h_no_menu?: FixtureAccount;
+    readonly?: FixtureAccount;
+    nowrite?: FixtureAccount;
+    nomenu?: FixtureAccount;
   };
 };
 type ModuleProbe = {
@@ -26,6 +29,14 @@ type ModuleProbe = {
 const fixturePath = process.env.H_PERMISSION_FIXTURE_PATH;
 if (!fixturePath) throw new Error("H_PERMISSION_FIXTURE_PATH is required");
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as PermissionFixture;
+const accounts = {
+  h_readonly: fixture.accounts.h_readonly ?? fixture.accounts.readonly,
+  h_no_write: fixture.accounts.h_no_write ?? fixture.accounts.nowrite,
+  h_no_menu: fixture.accounts.h_no_menu ?? fixture.accounts.nomenu,
+};
+if (!accounts.h_readonly || !accounts.h_no_write || !accounts.h_no_menu) {
+  throw new Error("H permission fixture must supply readonly, no-write and no-menu accounts");
+}
 
 const REASON = "H 域权限探针不得执行";
 const MODULES: ModuleProbe[] = [
@@ -105,7 +116,7 @@ test.describe.serial("H 域五层权限夹具验收", () => {
   for (const key of ["h_readonly", "h_no_write"] as const) {
     test(`${key}：H1/H2/H3/H4/H5/H7/H8 菜单、路由、数据可读，按钮和接口写入拒绝`, async ({ page }) => {
       const pageErrors = monitorPageErrors(page);
-      await login(page, fixture.accounts[key]);
+      await login(page, fixtureAccount(key));
       await assertVisibleHMenus(page);
       await assertSessionShape(page, true);
 
@@ -124,7 +135,7 @@ test.describe.serial("H 域五层权限夹具验收", () => {
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(MODULES.at(-1)!.visibleText).first()).toBeVisible();
       await logout(page);
-      await login(page, fixture.accounts[key]);
+      await login(page, fixtureAccount(key));
       await assertVisibleHMenus(page);
       expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(200);
       expect((await browserApi(page, MODULES[0].writeMethod, MODULES[0].writePath, MODULES[0].writeBody)).status).toBe(403);
@@ -134,12 +145,14 @@ test.describe.serial("H 域五层权限夹具验收", () => {
 
   test("h_no_menu：H 菜单、直接路由、读写接口均拒绝，刷新重登不能由缓存恢复", async ({ page }) => {
     const pageErrors = monitorPageErrors(page);
-    await login(page, fixture.accounts.h_no_menu);
+    await login(page, fixtureAccount("h_no_menu"));
     await assertSessionShape(page, false);
     await expect(page.locator('a[href^="/growth/"]')).toHaveCount(0);
 
     await page.goto("/growth/phase", { waitUntil: "domcontentloaded" });
-    await expect(page).not.toHaveURL(/\/growth\/phase(?:\?.*)?$/);
+    // Route protection is asynchronous after the session/menu guard resolves.
+    // Poll the observable URL instead of asserting the first render frame.
+    await expect.poll(() => page.url(), { timeout: 10_000 }).not.toMatch(/\/growth\/phase(?:\?.*)?$/);
     await expect(page.locator(".hdom")).toHaveCount(0);
     for (const module of MODULES) {
       expect((await browserApi(page, "GET", module.readPath)).status, `${module.id} read`).toBe(403);
@@ -148,7 +161,7 @@ test.describe.serial("H 域五层权限夹具验收", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator('a[href^="/growth/"]')).toHaveCount(0);
     await logout(page);
-    await login(page, fixture.accounts.h_no_menu);
+    await login(page, fixtureAccount("h_no_menu"));
     await expect(page.locator('a[href^="/growth/"]')).toHaveCount(0);
     expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
     expect(pageErrors).toEqual([]);
@@ -166,6 +179,12 @@ async function login(page: Page, account: FixtureAccount) {
   await otp.fill(await freshTotp(account.totpSecret));
   await page.getByRole("button", { name: "验证并进入", exact: true }).click();
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+}
+
+function fixtureAccount(key: keyof typeof accounts): FixtureAccount {
+  const account = accounts[key];
+  if (!account) throw new Error(`H permission fixture missing ${key}`);
+  return account;
 }
 
 async function logout(page: Page) {

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const view = readFileSync(new URL("../app/components/domain-views/i-tabs/i4-trust.tsx", import.meta.url), "utf8");
 const form = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
@@ -15,8 +17,9 @@ const backendGateMapper = readFileSync(
   "D:/workspace/nexion-backend/src/main/java/ffdd/opsconsole/content/mapper/DisclosureGateActionMapper.java",
   "utf8",
 );
-const appApi = readFileSync("D:/workspace/NX1.0/src/api/risk-disclosure-api.ts", "utf8");
-const appPage = readFileSync("D:/workspace/NX1.0/src/pages/me/risk-disclosure.vue", "utf8");
+const appRoot = resolveNexionAppRoot({ adminRoot: process.cwd() });
+const appApi = readFileSync(resolve(appRoot, "src/api/risk-disclosure-api.ts"), "utf8");
+const appPage = readFileSync(resolve(appRoot, "src/pages/me/risk-disclosure.vue"), "utf8");
 
 test("I5 summary follows the backend jurisdiction catalog instead of a stale fixed count", () => {
   assert.match(registry, /按法域 × 7 章节/);

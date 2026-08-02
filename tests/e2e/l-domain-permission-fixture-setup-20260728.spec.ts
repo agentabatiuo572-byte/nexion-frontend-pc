@@ -7,10 +7,14 @@ const RUN_ID = process.env.L_PERMISSION_RUN_ID ?? "pc-full-acceptance-20260728-1
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const ROOT_USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
 const ROOT_PASSWORD = process.env.ADMIN_E2E_PASSWORD ?? "";
+const ROOT_TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim() ?? "";
 const CHECKER_FIXTURE_PATH = process.env.L_PERMISSION_CHECKER_FIXTURE
   ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/permission-fixtures.json`;
 const FIXTURE_PATH = process.env.L_PERMISSION_FIXTURE_PATH
   ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/L/permission-fixtures.json`;
+const CARRIER_EVIDENCE_DIR = process.env.L_PERMISSION_CARRIER_EVIDENCE
+  ?? "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260729-114336/L/final11-owner/carrier-repair-2";
+const RESTRICTED_EVIDENCE_ROOT = path.resolve("D:/workspace/bug-pic/.restricted");
 const SUFFIX = process.env.L_PERMISSION_SUFFIX ?? randomBytes(3).toString("hex");
 const READ_ROLE_CODE = `ACC_L_RO_R151023_${SUFFIX}`.toUpperCase();
 const OWNER_ROLE_CODE = `ACC_L_OWNER_R151023_${SUFFIX}`.toUpperCase();
@@ -47,14 +51,58 @@ type CheckerFixture = {
 };
 type ApiEnvelope<T> = { code?: number; message?: string; data?: T };
 
+const MFA_CHALLENGE_TIMEOUT_MS = 15_000;
+const MFA_RESPONSE_TIMEOUT_MS = 20_000;
+const MAX_MFA_RECOVERY_ATTEMPTS = 2;
+const TOTP_STEP_MS = 30_000;
+const TOTP_BOUNDARY_BUFFER_MS = 3_000;
+const TOTP_FRESH_TIMEOUT_MS = 35_000;
+
 test.describe.configure({ mode: "serial", timeout: 300_000 });
+test.use({ trace: "off", video: "off", screenshot: "off" });
+test.beforeAll(() => {
+  assertRestrictedCarrierPath(CARRIER_EVIDENCE_DIR, "L carrier evidence");
+  mkdirSync(CARRIER_EVIDENCE_DIR, { recursive: true });
+});
+test.beforeEach(async ({}, testInfo) => {
+  assertRestrictedCarrierPath(testInfo.outputDir, "L Playwright output");
+});
+
+test("L fixture root performs visible MFA and proves fixture-admin authorities before writes", async ({ page }) => {
+  expect(ROOT_PASSWORD, "ADMIN_E2E_PASSWORD is required").not.toBe("");
+  expect(["127.0.0.1", "localhost", "::1"]).toContain(new URL(BASE_URL).hostname);
+  await loginRootWithMfa(page, ROOT_USERNAME, ROOT_PASSWORD, ROOT_TOTP_SECRET);
+  const session = await okEnvelope<{ session?: { authorities?: string[] } }>(
+    await page.request.get("/api/admin/auth/session"),
+  );
+  const authorities = session.session?.authorities ?? [];
+  for (const permission of ["platform_a1_write", "platform_a6_write", "platform_a6_role_grants_update"]) {
+    expect(authorities, `fixture admin must hold ${permission}`).toContain(permission);
+  }
+  await logout(page);
+});
+
+test("L Final11 carrier executes visible MFA with the controlled checker fixture without writes", async ({ page }) => {
+  const checker = (JSON.parse(readFileSync(CHECKER_FIXTURE_PATH, "utf8")) as CheckerFixture).accounts.d_checker;
+  expect(["127.0.0.1", "localhost", "::1"]).toContain(new URL(BASE_URL).hostname);
+  await loginRootWithMfa(page, checker.username, checker.password, checker.totpSecret);
+  const response = await page.request.get("/api/admin/auth/session");
+  const session = await okEnvelope<{ session?: { authorities?: string[] } }>(response);
+  expect(session.session?.authorities?.length ?? 0, "checker session must remain authenticated after visible MFA").toBeGreaterThan(0);
+  writeFileSync(path.join(CARRIER_EVIDENCE_DIR, "carrier-mfa-readonly.json"), JSON.stringify({
+    mfa: "verified",
+    sessionStatus: response.status(),
+    authenticated: true,
+    writes: [],
+  }, null, 2));
+});
 
 test("创建、独立批准并激活 L 域 owner/readonly/no-write/no-menu 权限夹具", async ({ page, browser }) => {
   expect(ROOT_PASSWORD, "ADMIN_E2E_PASSWORD is required").not.toBe("");
   expect(["127.0.0.1", "localhost", "::1"]).toContain(new URL(BASE_URL).hostname);
   const checker = (JSON.parse(readFileSync(CHECKER_FIXTURE_PATH, "utf8")) as CheckerFixture).accounts.d_checker;
 
-  await loginPasswordOnly(page, ROOT_USERNAME, ROOT_PASSWORD);
+  await loginRootWithMfa(page, ROOT_USERNAME, ROOT_PASSWORD, ROOT_TOTP_SECRET);
   const rolesOverview = await okEnvelope<{ roles: Array<{ id: number; roleCode: string }> }>(
     await page.request.get("/api/admin/platform/roles/overview"),
   );
@@ -99,7 +147,7 @@ test("创建、独立批准并激活 L 域 owner/readonly/no-write/no-menu 权�
     }
   }
 
-  await loginPasswordOnly(page, ROOT_USERNAME, ROOT_PASSWORD);
+  await loginRootWithMfa(page, ROOT_USERNAME, ROOT_PASSWORD, ROOT_TOTP_SECRET);
   const definitions: Array<{
     key: AccountKey;
     role: string;
@@ -235,14 +283,48 @@ async function grantRole(
   return ticketId;
 }
 
-async function loginPasswordOnly(page: Page, username: string, password: string) {
-  await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-  if (await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false)) return;
-  await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 15_000 });
-  await page.locator('input[autocomplete="username"]').fill(username);
-  await page.locator('input[autocomplete="current-password"]').fill(password);
-  await page.getByRole("button", { name: /登录|继续/ }).click();
-  await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
+/** Root may be MFA-bound; this carrier always completes the visible challenge. */
+async function loginRootWithMfa(page: Page, username: string, password: string, totpSecret: string) {
+  for (let attempt = 0; attempt <= MAX_MFA_RECOVERY_ATTEMPTS; attempt += 1) {
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+    if (await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false)) return;
+    await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 15_000 });
+    await page.locator('input[autocomplete="username"]').fill(username);
+    await page.locator('input[autocomplete="current-password"]').fill(password);
+    const credential = page.waitForResponse((candidate) =>
+      candidate.request().method() === "POST"
+      && new URL(candidate.url()).pathname === "/api/admin/auth/login",
+    { timeout: MFA_RESPONSE_TIMEOUT_MS });
+    await page.getByRole("button", { name: /登录|继续/ }).click();
+    expect((await credential).status(), "root credential").toBe(200);
+
+    const otp = page.getByLabel("一次性验证码");
+    const mfaRequired = await otp.waitFor({ state: "visible", timeout: MFA_CHALLENGE_TIMEOUT_MS })
+      .then(() => true)
+      .catch(() => false);
+    if (!mfaRequired) {
+      await expect(page.locator("aside")).toBeVisible({ timeout: MFA_RESPONSE_TIMEOUT_MS });
+      return;
+    }
+    expect(totpSecret, "ADMIN_E2E_TOTP_SECRET is required for an MFA-bound root fixture actor").not.toBe("");
+
+    const code = await freshTotp(totpSecret);
+    await otp.fill(code);
+    const response = page.waitForResponse((candidate) =>
+      candidate.request().method() === "POST"
+      && new URL(candidate.url()).pathname === "/api/admin/auth/mfa/verify",
+    { timeout: MFA_RESPONSE_TIMEOUT_MS });
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const result = await response;
+    const body = await result.json().catch(() => null) as { code?: unknown; message?: unknown } | null;
+    const mfaReason = `${body?.code ?? ""} ${body?.message ?? ""}`;
+    if (/(?:MFA_CODE_REPLAYED|MFA_CHALLENGE_EXPIRED)/i.test(mfaReason)
+      && attempt < MAX_MFA_RECOVERY_ATTEMPTS) continue;
+    expect(result.status(), "root MFA verification").toBe(200);
+    await expect(page.locator("aside")).toBeVisible({ timeout: MFA_RESPONSE_TIMEOUT_MS });
+    return;
+  }
+  throw new Error("L_FINAL11_MFA_RECOVERY_EXHAUSTED");
 }
 
 async function loginWithMfa(
@@ -279,15 +361,28 @@ async function activateFirstLogin(
   for (let transition = 0; transition < 6; transition += 1) {
     const state = await firstVisibleState(page);
     if (state === "ready") break;
+    // A visible password panel can be a stale remount while the authenticated
+    // console has already won the first-login transition.
+    if (await page.locator("aside").isVisible().catch(() => false)) break;
     if (state === "password") {
-      await page.getByLabel("新密码", { exact: true }).fill(finalPassword);
-      await page.getByLabel("确认新密码", { exact: true }).fill(finalPassword);
-      const changed = page.waitForResponse((response) =>
-        response.request().method() === "POST"
-        && new URL(response.url()).pathname === "/api/admin/auth/password/change");
-      await page.getByRole("button", { name: "确认修改并进入", exact: true }).click();
-      expect((await changed).status()).toBeLessThan(400);
-      passwordChanged = true;
+      const newPassword = page.getByLabel("新密码", { exact: true });
+      const confirmPassword = page.getByLabel("确认新密码", { exact: true });
+      try {
+        await expect(newPassword).toBeVisible();
+        await expect(confirmPassword).toBeVisible();
+        await newPassword.fill(finalPassword);
+        await confirmPassword.fill(finalPassword);
+        const changed = page.waitForResponse((response) =>
+          response.request().method() === "POST"
+          && new URL(response.url()).pathname === "/api/admin/auth/password/change");
+        await page.getByRole("button", { name: "确认修改并进入", exact: true }).click();
+        expect((await changed).status()).toBeLessThan(400);
+        passwordChanged = true;
+      } catch (error) {
+        if (!await page.locator("aside").isVisible().catch(() => false)) throw error;
+        passwordChanged = true;
+        break;
+      }
       continue;
     }
     const otp = page.getByLabel("一次性验证码");
@@ -308,7 +403,7 @@ async function activateFirstLogin(
 async function firstVisibleState(page: Page): Promise<"ready" | "password" | "otp"> {
   return Promise.race([
     page.locator("aside").waitFor({ state: "visible", timeout: 20_000 }).then(() => "ready" as const),
-    page.getByRole("heading", { name: "首次登录修改密码" })
+    page.getByLabel("新密码", { exact: true })
       .waitFor({ state: "visible", timeout: 20_000 }).then(() => "password" as const),
     page.getByLabel("一次性验证码")
       .waitFor({ state: "visible", timeout: 20_000 }).then(() => "otp" as const),
@@ -351,18 +446,31 @@ async function okEnvelope<T>(response: { status(): number; text(): Promise<strin
 let lastTotpStep = -1;
 
 async function freshTotp(secret: string) {
-  let step = Math.floor(Date.now() / 30_000);
-  if (step <= lastTotpStep) {
-    await new Promise((resolve) => setTimeout(resolve, ((lastTotpStep + 1) * 30_000) - Date.now() + 500));
+  const deadline = Date.now() + TOTP_FRESH_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const now = Date.now();
+    const step = Math.floor(now / TOTP_STEP_MS);
+    const remaining = TOTP_STEP_MS - (now % TOTP_STEP_MS);
+    if (step > lastTotpStep && remaining > TOTP_BOUNDARY_BUFFER_MS) {
+      lastTotpStep = step;
+      return currentTotp(secret, step);
+    }
+    const untilNextStep = TOTP_STEP_MS - (now % TOTP_STEP_MS) + 250;
+    const remainingBudget = deadline - now;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(1, Math.min(untilNextStep, remainingBudget))));
   }
-  const remaining = 30 - (Math.floor(Date.now() / 1_000) % 30);
-  if (remaining <= 3) await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1_000));
-  step = Math.floor(Date.now() / 30_000);
-  lastTotpStep = step;
-  return currentTotp(secret);
+  throw new Error("L_FINAL11_TOTP_FRESH_TIMEOUT");
 }
 
-function currentTotp(secret: string) {
+function assertRestrictedCarrierPath(rawPath: string, label: string) {
+  const resolved = path.resolve(rawPath);
+  const relative = path.relative(RESTRICTED_EVIDENCE_ROOT, resolved);
+  if (!path.isAbsolute(rawPath) || relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`L_FINAL11_RESTRICTED_PATH_REQUIRED: ${label}`);
+  }
+}
+
+function currentTotp(secret: string, step: number) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
   let bits = "";
@@ -376,7 +484,7 @@ function currentTotp(secret: string) {
     bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
   }
   const message = Buffer.alloc(8);
-  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  message.writeBigUInt64BE(BigInt(step));
   const digest = createHmac("sha1", bytes).update(message).digest();
   const offset = digest[digest.length - 1] & 0x0f;
   const binary = ((digest[offset] & 0x7f) << 24)

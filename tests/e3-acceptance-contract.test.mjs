@@ -100,3 +100,14 @@ test("E3 A2 object locks use the same canonical key as backend direct-write chec
     assert.doesNotMatch(target.id, /^E\.(?:device|tradein|release)\./);
   }
 });
+
+test("E3 operator copy stays in business language and does not expose implementation details", () => {
+  for (const source of [e3, manual]) {
+    assert.doesNotMatch(source, /server-canonical/i);
+    assert.doesNotMatch(source, /nx_user_device/);
+    assert.doesNotMatch(source, /\/api\/admin\//);
+  }
+  assert.match(e3, /当前在网设备平均使用时长/);
+  assert.match(e3, /升级置换运行记录/);
+  assert.match(e3, /所有步骤一起完成，失败时不会留下半成品/);
+});

@@ -422,11 +422,11 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   // 详情必须属于当前筛选结果。筛选为 0 条时清空详情和写入口，避免误操作旧会话。
   const selected = filtered.find((c) => c.id === selectedId) ?? filtered[0] ?? null;
   const ownerName = selected?.owner ?? "Unassigned";
-  const currentAgentNames = useMemo(() => supportAgents.filter((agent) => agent.adminId === currentAdminId).map((agent) => agent.name), [supportAgents, currentAdminId]);
+  const currentAgentIds = useMemo(() => supportAgents.filter((agent) => agent.adminId === currentAdminId).map((agent) => agent.id), [supportAgents, currentAdminId]);
   const canAcceptSelectedTransfer = Boolean(selected?.transfer) && (
     selected?.transfer?.to.kind === "agent"
-      ? currentAgentNames.includes(selected.transfer.to.name)
-      : currentAgentNames.length > 0
+      ? currentAgentIds.includes(selected.transfer.to.agentId)
+      : currentAgentIds.length > 0
   );
 
   const selectConvo = (id: string) => {
@@ -1020,7 +1020,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
           onSave={saveIdlePolicy}
         />
       )}
-      {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}
+      {showTransfer && selected && <TransferModal currentOwnerId={selected.ownerAgentId} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}
       {showReturn && selected?.transfer && <ReturnModal fromAgent={selected.transfer.from} onClose={() => setShowReturn(false)} onSubmit={runReturn} />}
       {quick && selected?.profile && (
         <QuickActionModal kind={quick} profile={selected.profile} onClose={() => setQuick(null)} onAddNote={addNote} onRemoveNote={removeNote} onAccount={runAccountAction} />

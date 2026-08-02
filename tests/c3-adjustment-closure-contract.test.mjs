@@ -22,7 +22,7 @@ test("C3 selects a stable user id and loads the complete impact context", () => 
   }
 });
 
-test("C3 executes immediately with structured evidence and retry-stable idempotency", () => {
+test("C3 creates a pending review request with structured evidence and retry-stable idempotency", () => {
   assert.match(c3, /reasonCode/);
   assert.match(c3, /evidenceRef/);
   assert.match(c3, /submission\?\.fingerprint === fingerprint/);
@@ -32,6 +32,9 @@ test("C3 executes immediately with structured evidence and retry-stable idempote
   assert.match(client, /idempotencyKey: input\.idempotencyKey/);
   assert.match(c3, /requestLargeUserAssetAdjustment/);
   assert.match(c3, /客服不能直接执行超过 500 USDT 等值/);
+  assert.match(c3, /调整申请已提交/);
+  assert.match(c3, /等待独立复核/);
+  assert.match(c3, /批准后才更新余额并生成关联账单/);
   assert.doesNotMatch(c3, /usePropose|挂起中的加钱申请/);
 });
 
@@ -62,7 +65,7 @@ test("C3 reversal is dedicated, append-only and D4-linked by adjustment number",
   assert.match(c3, /row\.ledgerId && canReadLedger/);
   assert.match(c3, /reasonCodeLabel\(detailRow\.reasonCode\)/);
   assert.match(c3, /finance\/ledger\?bizNo=/);
-  assert.match(d4, /searchParams\.get\("bizNo"\)/);
+  assert.match(d4, /searchParams\?\.get\("bizNo"\)/);
   assert.match(d4, /data-proof="d4-deep-link"/);
   assert.match(d4, /bizNo: deepBizNo && applied\.keyword === deepBizNo \? deepBizNo : undefined/);
   assert.match(d4, /keyword: deepBizNo && applied\.keyword === deepBizNo \? undefined : applied\.keyword/);

@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const OPS_ROOT = path.resolve(import.meta.dirname, "..");
-const APP_ROOT = path.resolve(OPS_ROOT, "..", "NX1.0");
+const APP_ROOT = resolveNexionAppRoot({ adminRoot: OPS_ROOT });
 const BACKEND_ROOT = path.resolve(OPS_ROOT, "..", "nexion-backend");
 
 function read(root, relative) {

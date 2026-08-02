@@ -496,7 +496,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
               <div className="c ts">{e.ts}</div>
               <div className="c pb"><span className="code">{e.code}</span><span className="nm"><AutoGloss>{e.name}</AutoGloss></span></div>
               <div className="c trig"><AutoGloss>{e.trig}</AutoGloss></div>
-               <div className="c"><span className={"mode " + e.mode}>{executionModeLabel(e.mode)}</span>{e.rollbackStatus === "ROLLED_BACK" && <span className="mode drill" title="仅已完成且仍由本次执行持有的 J1 动作被恢复；通知等不可逆动作不受影响">已回滚可逆动作</span>}</div>
+               <div className="c"><span className={"mode " + e.mode}>{executionModeLabel(e.mode)}</span>{e.rollbackStatus === "ROLLED_BACK" && <span className="mode drill" title="仅已完成且仍由本次执行持有的 J1 动作被恢复；通知等不可逆动作不受影响">已回滚可逆动作</span>}{e.rollbackStatus === "NOT_REQUIRED" && <span className="mode drill" title="演练仅校验，未执行生产动作，无需回滚">无需回滚</span>}</div>
                <div className="c"><div className="steps">{e.steps.map((s, i) => <span key={i} className={"sdot " + s} title={executionStepLabel(s)}>{i + 1}:{executionStepLabel(s)}</span>)}</div></div>
               <div className="c confirm-pair">
                 <span><span className="role">操作员</span> {e.operator}</span>
@@ -563,7 +563,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           </div>
           <div className="field">
             <label>回滚事实</label>
-            <div className="tiny">状态 {traceExecution.rollbackStatus || "未回滚"} · 时间 {traceExecution.rollbackAt || "—"} · 原因 {traceExecution.rollbackReason || "—"}</div>
+            <div className="tiny">状态 {traceExecution.rollbackStatus === "NOT_REQUIRED" ? "无需回滚（演练仅校验，未执行生产动作，无需回滚）" : (traceExecution.rollbackStatus || "未回滚")} · 时间 {traceExecution.rollbackAt || "—"} · 原因 {traceExecution.rollbackReason || "—"}</div>
             {traceExecution.rollbackActions.map((action, index) => <div className="tiny" key={index}>{index + 1}. {String(action.domain || "J1")} · {String(action.status || action.action || "已记录")}</div>)}
           </div>
         </Modal>

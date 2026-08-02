@@ -46,7 +46,7 @@ import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
-import type { DatacenterForm, Mc, EViewCtx, EOrder } from "./e-tabs/types";
+import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
 import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
@@ -91,6 +91,12 @@ const DC_STATUS_OPTIONS: { value: DatacenterForm["status"]; label: string }[] = 
   { value: "maintenance", label: "维护中" },
   { value: "disabled", label: "已禁用" },
 ];
+
+const E2_MUTATION_OPS = new Set<EOp>(["task-create", "task-down", "task-price", "task-save", "phone-tier"]);
+
+function isE2Mutation(op: EOp) {
+  return E2_MUTATION_OPS.has(op);
+}
 
 function fileExt(name: string) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -308,6 +314,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e2Pricing, setE2Pricing] = useState<E2TaskPricingSnapshot | null>(null);
   const [e2Loading, setE2Loading] = useState(false);
   const [e2Error, setE2Error] = useState<string | null>(null);
+  const canMutateE2 = canWriteE2 && !e2Loading && !e2Error && !!e2Pricing;
+  useEffect(() => {
+    if (!canMutateE2) setActionConfirm((current) => current && isE2Mutation(current.op) ? null : current);
+  }, [canMutateE2]);
   const refreshE2 = useCallback(async () => {
     setE2Loading(true);
     setE2Error(null);
@@ -684,9 +694,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!Number.isInteger(minVram) || minVram < 0) return "minVRAM 需为不小于 0 的整数 GB";
     return null;
   };
-  const openAddTask = () => { setEditTaskId(null); setTaskForm({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" }); setTaskDrawer(true); };
+  const rejectE2Mutation = () => {
+    setToast("E2 权威快照不可用，已取消本次配置提交");
+    return false;
+  };
+  const openAddTask = () => {
+    if (!canMutateE2) return rejectE2Mutation();
+    setEditTaskId(null); setTaskForm({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" }); setTaskDrawer(true);
+  };
   // 编辑任务:把任务字段回填到抽屉全字段。
   const openEditTask = (t: OpsTask) => {
+    if (!canMutateE2) return rejectE2Mutation();
     setTaskForm({
       n: t.n, price: String(t.price), req: t.req, unit: t.unit, sat: t.sat == null ? "" : String(Math.round(t.sat * 100)),
       taskClass: t.taskClass || "", model: t.model || "",
@@ -697,6 +715,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setTaskDrawer(true);
   };
   const submitTask = () => {
+    if (!canMutateE2) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
     openActionConfirm({ name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical · 进入 A2 待确认队列,批准后对新派单生效。` });
@@ -704,6 +723,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
   const submitTaskEdit = () => {
+    if (!canMutateE2) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
     openActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认。` });
@@ -717,8 +737,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     .map((sku) => {
       const id = sku.id || sku.name;
       return id && id !== sku.name ? `${sku.name}(${id})` : sku.name;
-    });
+  });
   const delTask = (t: { id: string; n: string }) => {
+    if (!canMutateE2) return rejectE2Mutation();
     const refSkus = skuLabelsUsingTask(t.id, t.n);
     if (refSkus.length > 0) {
       setToast(`任务无法下架:${t.n} 正在被 E1 SKU 使用:${refSkus.join("、")}。请先到 E1 修改这些 SKU 的解锁算力池。`);
@@ -962,7 +983,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const headerRight =
     tab === "E1" ? (canUseE1Writes ? <button className="f-cta" onClick={() => openSku()}>+ 新增 SKU</button> : undefined)
-      : tab === "E2" ? (canWriteE2 ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
+      : tab === "E2" ? (canMutateE2 ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
         : tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
           : undefined;
 
@@ -1264,7 +1285,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {/* 任务新增 抽屉 */}
       {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/taskClass 改后走操作确认 · 对新派单 server-canonical 生效" : "AI 算力任务类型 · 单价/门槛改后对新派单 server-canonical 生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!canMutateE2 || !taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 LLM 推理 405B" /></label>
           <div className="grid g-2" style={{ gap: 12 }}>
@@ -1343,6 +1364,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
+          if (isE2Mutation(mc.op) && !canMutateE2) {
+            setToast("E2 权威快照不可用，已取消本次配置提交");
+            setActionConfirm(null);
+            return;
+          }
           // 批6: E 域高敏动作统一 propose 入 A2 后端待确认队列(壳集中回调)。
           // propose 内部自管成功/失败 toast;此处仅做 mc.op → op 映射 + 构造 ctx + 本地 UI 状态收尾。
           try {

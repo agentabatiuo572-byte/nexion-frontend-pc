@@ -30,10 +30,12 @@ assertAbsent("app/components/domain-views/m-view.tsx", "转人工备勤队列", 
 assertAbsent("lib/admin/m-client.ts", "DEFAULT_LOAD_CONFIG", "M client must not synthesize load-config defaults");
 
 assertContains("lib/admin/m-client.ts", 'apiRequest<Record<string, unknown>>("/tickets/load-config")', "load config backend endpoint");
-assertContains("lib/admin/m-client.ts", 'apiRequest<SupportAgentOverview>("/support-agents")', "transfer targets backend endpoint");
+assertContains("lib/admin/m-client.ts", 'parseM1SupportAgentOverview(await apiRequest<unknown>("/support-agents"))', "strict shared M1 agent and transfer-target backend endpoint");
+assertContains("lib/admin/m-client.ts", 'apiRequest<unknown>("/tickets/assignee-candidates")', "M2 minimal assignee candidate backend endpoint");
 assertContains("lib/admin/m-client.ts", '"I.session.transferTargets": JSON.stringify(data.transferTargets)', "backend transfer targets materialized for M3");
 assertContains("lib/admin/m-client.ts", "M_LOAD_CONFIG_FIELD_MISSING", "missing backend load-config fields fail closed");
-assertContains("lib/admin/m-client.ts", 'const loadConfigAvailable = results[1].status === "fulfilled"', "fallback display values must never enable M1 load writes");
+assertContains("lib/admin/m-client.ts", "let loadConfigAvailable = false", "M1 load writes start fail-closed");
+assertContains("lib/admin/m-client.ts", 'if (loadResult.status === "fulfilled")', "only a fulfilled load-config response may enable M1 load writes");
 assertContains("lib/admin/m-client.ts", "if (data.loadConfigAvailable)", "load config params are materialized only from a successful backend response");
 assertContains("app/components/domain-views/m-tabs/m1-overview.tsx", "loadConfigFromBackendParams", "M1 derives load config from backend params");
 assertContains("app/components/domain-views/m-tabs/m1-overview.tsx", "负载策略暂不可用", "M1 blocks editing with an operator-readable recovery message when backend config is absent");

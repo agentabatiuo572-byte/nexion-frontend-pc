@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { createHmac } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -6,6 +7,7 @@ const EVIDENCE_DIR = process.env.J1_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/j-domain-acceptance-20260722/final/J1/evidence";
 const USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD ?? "Admin@123456";
+const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim() ?? "";
 const FAILURE_API = "**/api/admin/emergency/kill-switches/trial";
 
 type Gate = {
@@ -134,12 +136,40 @@ test.afterAll(async () => {
 });
 
 async function loginAndOpenFromVisibleMenu(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  const username = page.locator('input[autocomplete="username"]');
-  if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const shell = page.locator("aside").first();
+    if (await shell.isVisible({ timeout: 2_000 }).catch(() => false)) break;
+    const username = page.locator('input[autocomplete="username"]');
+    await expect(username).toBeVisible({ timeout: 30_000 });
     await username.fill(USERNAME);
     await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
     await page.getByRole("button", { name: /登录|继续/ }).click();
+    const otp = page.getByLabel("一次性验证码");
+    await shell.or(otp).first().waitFor({ state: "visible", timeout: 30_000 });
+    if (await shell.isVisible().catch(() => false)) break;
+    if (!TOTP_SECRET) throw new Error("ADMIN_E2E_TOTP_SECRET is required for an enrolled J1 account");
+    await fillFreshTotp(page, otp, TOTP_SECRET);
+    const verification = page.waitForResponse((response) =>
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/admin/auth/mfa/verify");
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const response = await verification;
+    const payload = await response.json().catch(() => null) as { code?: number; message?: string } | null;
+    const hasAuthCookie = (await page.context().cookies())
+      .some((cookie) => cookie.name === "nexion_admin_token");
+    if (response.status() === 200 && (payload?.code === 0 || hasAuthCookie)) {
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      expect((await page.request.get("/api/admin/auth/session")).status()).toBe(200);
+      await expect(shell).toBeVisible({ timeout: 30_000 });
+      break;
+    }
+    if (attempt === 0 && ["ADMIN_MFA_CODE_REPLAYED", "ADMIN_MFA_CODE_INVALID"].includes(payload?.message ?? "")) {
+      await page.context().clearCookies();
+      await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 500);
+      continue;
+    }
+    throw new Error(`J1 MFA failed: HTTP ${response.status()} ${payload?.message ?? "unknown"}`);
   }
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
   const group = page.getByRole("button", { name: /紧急与合规控制\s*J|J\s*紧急与合规控制/ }).first();
@@ -152,7 +182,7 @@ async function loginAndOpenFromVisibleMenu(page: Page) {
 }
 
 async function logout(page: Page) {
-  const accountMenu = page.getByRole("button", { name: /superadmin|Super Admin|总管理员/i }).last();
+  const accountMenu = page.locator('header button[aria-haspopup="menu"]').last();
   await expect(accountMenu, "logout must start from the visible account menu").toBeVisible();
   await accountMenu.click();
   await page.getByRole("button", { name: "退出登录", exact: true }).click();
@@ -206,4 +236,31 @@ function collectRuntimeErrors(page: Page) {
     if (message.type() === "error") errors.push(`console:${message.text()}`);
   });
   return errors;
+}
+
+async function fillFreshTotp(page: Page, input: Locator, secret: string) {
+  const remainingMs = 30_000 - (Date.now() % 30_000);
+  if (remainingMs <= 3_000) await page.waitForTimeout(remainingMs + 500);
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", decodeBase32(secret)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const code = String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+  await input.fill(code);
+}
+
+function decodeBase32(raw: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = raw.replace(/[^A-Z2-7]/gi, "").toUpperCase();
+  let bits = "";
+  for (const char of normalized) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new Error("INVALID_BASE32_SECRET");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes: number[] = [];
+  for (let index = 0; index + 8 <= bits.length; index += 8) {
+    bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+  }
+  return Buffer.from(bytes);
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { isK1LocalIsoDateTime } from "../lib/admin/k1-date-contract.ts";
 
 const component = readFileSync(new URL("../app/components/domain-views/k-tabs/k1-multiaccount.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/k-client.ts", import.meta.url), "utf8");
@@ -87,6 +88,49 @@ test("K1 shows unknown gift metrics truthfully and provides a dedicated duplicat
   assert.match(component, /数据尚未接入/);
   assert.match(component, /新人礼重复发放检测/);
   assert.doesNotMatch(component, /Number\(stats\[key\] \?\? 0\)/);
+});
+
+test("K1 requires joinedAt to be a backend ISO string and never accepts Jackson date arrays", () => {
+  assert.match(client, /requiredK1LocalIsoDateTime\(object\.joinedAt, `\$\{nodePath\}\.joinedAt`\)/);
+  assert.match(client, /isK1LocalIsoDateTime/);
+  assert.match(client, /tupleIndex === 1[\s\S]*requiredK1LocalIsoDateTime/);
+  assert.doesNotMatch(client, /Array\.isArray\(object\.joinedAt\)/);
+  assert.doesNotMatch(client, /object\.joinedAt\.join/);
+});
+
+test("K1 joinedAt validator accepts only real ISO local datetimes with nanosecond precision", () => {
+  for (const value of [
+    "2026-07-26T18:22:54",
+    "2026-07-26T18:22:54.1",
+    "2026-07-26T18:22:54.123456789",
+    "2024-02-29T23:59:59.999999999",
+  ]) {
+    assert.equal(isK1LocalIsoDateTime(value), true, value);
+  }
+
+  for (const value of [
+    null,
+    undefined,
+    [2026, 7, 26, 18, 22, 54],
+    "",
+    " 2026-07-26T18:22:54",
+    "2026-07-26T18:22:54 ",
+    "not-a-date",
+    "2026-07-26 18:22:54",
+    "2026-07-26T18:22",
+    "2026-13-26T18:22:54",
+    "2026-04-31T18:22:54",
+    "2026-02-29T18:22:54",
+    "2026-07-26T24:22:54",
+    "2026-07-26T18:60:54",
+    "2026-07-26T18:22:60",
+    "2026-07-26T18:22:54Z",
+    "2026-07-26T18:22:54+08:00",
+    "2026-07-26T18:22:54-05:00",
+    "2026-07-26T18:22:54.1234567890",
+  ]) {
+    assert.equal(isK1LocalIsoDateTime(value), false, String(value));
+  }
 });
 
 test("K1 uses real backend edges instead of synthesizing a center-entity star", () => {

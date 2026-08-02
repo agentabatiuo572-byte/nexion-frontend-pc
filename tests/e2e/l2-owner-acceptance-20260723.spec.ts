@@ -1,10 +1,16 @@
 import { expect, request as playwrightRequest, test, type Page } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
-const EVIDENCE = "D:/workspace/bug-pic/PCFULL-L2-20260727";
+const EVIDENCE = process.env.L2_ACCEPTANCE_DIR?.trim() || "";
 
 test.describe.configure({ mode: "serial" });
+
+test.beforeAll(async () => {
+  if (!EVIDENCE) throw new Error("L2_ACCEPTANCE_DIR is required to prevent historical-evidence overwrite");
+  await mkdir(EVIDENCE, { recursive: true });
+});
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });

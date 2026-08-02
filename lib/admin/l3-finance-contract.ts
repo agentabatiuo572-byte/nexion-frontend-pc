@@ -27,6 +27,11 @@ export type L3FinanceRawContract = {
   maturity30: Record<string, unknown>;
 };
 
+export type L3TreasurySnapshot = Pick<
+  L3FinanceRawContract,
+  "coverage" | "liabilities" | "maturity7" | "maturity30"
+>;
+
 function fail(field: string): never {
   throw new Error(`L3_FINANCE_PROTOCOL_INVALID:${field}`);
 }
@@ -34,6 +39,17 @@ function fail(field: string): never {
 function record(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail(field);
   return value as Record<string, unknown>;
+}
+
+export function assertL3TreasurySnapshot(value: unknown): L3TreasurySnapshot {
+  const snapshot = record(value, "treasurySnapshot");
+  if (snapshot.serverAuthoritative !== true) fail("treasurySnapshot.serverAuthoritative");
+  return {
+    coverage: record(snapshot.coverage, "treasurySnapshot.coverage"),
+    liabilities: record(snapshot.liabilities, "treasurySnapshot.liabilities"),
+    maturity7: record(snapshot.maturity7, "treasurySnapshot.maturity7"),
+    maturity30: record(snapshot.maturity30, "treasurySnapshot.maturity30"),
+  };
 }
 
 function list(value: unknown, field: string): unknown[] {
@@ -57,8 +73,8 @@ function integer(value: unknown, field: string) {
   return parsed;
 }
 
-function nullableNumber(value: unknown, field: string) {
-  return value === null ? null : number(value, field);
+function nullableNumber(value: unknown, field: string, minimum = 0) {
+  return value === null ? null : number(value, field, minimum);
 }
 
 function close(actual: number, expected: number, field: string, tolerance = 0.02) {
@@ -134,7 +150,7 @@ export function assertL3FinanceContract(input: L3FinanceRawContract): L3FinanceR
     const amount = number(item.amountUsdt, `revenue.streams[${index}].amountUsdt`);
     number(item.previousAmountUsdt, `revenue.streams[${index}].previousAmountUsdt`);
     nullableNumber(item.share, `revenue.streams[${index}].share`);
-    nullableNumber(item.momDelta, `revenue.streams[${index}].momDelta`);
+    nullableNumber(item.momDelta, `revenue.streams[${index}].momDelta`, -100);
     return sum + amount;
   }, 0);
   close(number(input.revenue.totalUsdt, "revenue.totalUsdt"), revenueSum, "revenue.totalUsdt");

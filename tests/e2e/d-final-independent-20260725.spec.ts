@@ -1,12 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  dAccount,
+  login as fixtureLogin,
+  logout as fixtureLogout,
+} from "./helpers/d-final6-review-harness";
 
 const evidenceDir = process.env.D_FINAL_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/20260725-d-final-independent";
-const username = process.env.NEXION_E2E_USERNAME ?? "superadmin";
-const password = process.env.NEXION_E2E_PASSWORD;
+const username = dAccount("maker").username;
 const runId = process.env.D_FINAL_RUN_ID ?? `d-final-${Date.now()}`;
+let loginSequence = 0;
 let cleanupVietQr: VietQrConfig | undefined;
 let cleanupFx: FxQuote | undefined;
 
@@ -44,15 +49,8 @@ function writeEvidence(name: string, value: unknown) {
 }
 
 async function login(page: Page) {
-  if (!password) throw new Error("NEXION_E2E_PASSWORD is required");
-  await page.goto("/");
-  const account = page.getByLabel(/用户名|账号/);
-  if (await account.isVisible().catch(() => false)) {
-    await account.fill(username);
-    await page.getByLabel(/密码/).fill(password);
-    await page.getByRole("button", { name: /继续|登录/ }).click();
-  }
-  await expect(page.getByRole("heading", { name: "运营总览" })).toBeVisible();
+  loginSequence += 1;
+  await fixtureLogin(page, dAccount("maker"), `d-final-independent-${loginSequence}`);
 }
 
 async function openFinanceEntry(page: Page, linkName: string, expectedPath: RegExp) {
@@ -146,11 +144,7 @@ function fxUpdateBody(config: FxQuote, patch: Partial<FxQuote>, reason: string) 
 }
 
 async function logout(page: Page) {
-  const accountMenu = page.getByRole("button", { name: /superadmin|Super Admin|总管理员/i }).last();
-  await expect(accountMenu).toBeVisible();
-  await accountMenu.click();
-  await page.getByRole("button", { name: "退出登录", exact: true }).click();
-  await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
+  await fixtureLogout(page);
 }
 
 test.beforeAll(() => fs.mkdirSync(evidenceDir, { recursive: true }));
@@ -498,7 +492,7 @@ test("D6 匿名访问被拒绝，读取异常时隐藏旧数据并给出恢复�
     });
   });
   await page.reload();
-  await expect(page.getByText(/汇率牌价尚未初始化或读取失败/)).toBeVisible();
+  await expect(page.getByText(/汇率牌价尚未初始化或读取失败|服务返回的数据不完整/)).toBeVisible();
   await expect(page.getByRole("button", { name: "重试读取", exact: true })).toBeVisible();
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: path.join(evidenceDir, "06-d6-read-failure-fail-closed.png"), fullPage: true });
@@ -506,11 +500,38 @@ test("D6 匿名访问被拒绝，读取异常时隐藏旧数据并给出恢复�
   await page.unroute("**/api/admin/finance/fx-quote");
   await page.getByRole("button", { name: "重试读取", exact: true }).click();
   await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toBeVisible();
+
+  await page.route("**/api/admin/finance/fx-quote", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 0,
+        message: "OK",
+        data: {
+          baseRateVndPerUsdt: "not-a-number",
+          buySpreadPct: null,
+          lockWindowMinutes: -1,
+          quoteRateVndPerUsdt: 0,
+          version: "stale",
+        },
+      }),
+    });
+  });
+  await page.reload();
+  await expect(page.getByText(/汇率牌价尚未初始化或读取失败|服务返回的数据不完整/)).toBeVisible();
+  await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toHaveCount(0);
+  await page.screenshot({ path: path.join(evidenceDir, "06b-d6-malformed-200-fail-closed.png"), fullPage: true });
+  await page.unroute("**/api/admin/finance/fx-quote");
+  await page.getByRole("button", { name: "重试读取", exact: true }).click();
+  await expect(page.getByText("当前牌价（现场派生）", { exact: true })).toBeVisible();
+
   writeEvidence("03-security-fail-closed-result.json", {
     runId,
     anonymousBffStatus: anonymousBff.status(),
     anonymousBackendStatus: anonymousBackend.status(),
     injectedFailure: "FX_QUOTE_CONFIG_UNAVAILABLE",
+    malformed200: "FAIL_CLOSED_AND_RECOVERED",
     recovered: true,
   });
 });

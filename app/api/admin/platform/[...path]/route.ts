@@ -161,11 +161,14 @@ async function proxy(request: Request, context: RouteContext) {
   }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
+  const rawBody = hasBody ? await request.text() : undefined;
   try {
     const upstream = await fetch(targetUrl, {
       method: request.method,
       headers,
-      body: hasBody ? await request.text() : undefined,
+      // Node fetch assigns text/plain to an empty string body.  Preserve an absent
+      // command as absent so Spring can apply its required=false/validation path.
+      body: rawBody ? rawBody : undefined,
       cache: "no-store",
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });

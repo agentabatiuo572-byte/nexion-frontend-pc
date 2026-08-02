@@ -1,6 +1,6 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { assertL3FinanceContract } from "@/lib/admin/l3-finance-contract";
+import { assertL3FinanceContract, assertL3TreasurySnapshot } from "@/lib/admin/l3-finance-contract";
 import { assertL5OverviewContract } from "@/lib/admin/l5-overview-contract";
 
 type ApiResult<T> = {
@@ -179,21 +179,6 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     throw new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`));
-  }
-  return payload.data as T;
-}
-
-async function treasuryRequest<T>(path: string): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`/api/admin/treasury${path}`, { cache: "no-store" });
-  } catch {
-    throw networkFailure(false);
-  }
-  const text = await res.text();
-  const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
-  if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `TREASURY_API_${res.status}`));
   }
   return payload.data as T;
 }
@@ -532,23 +517,21 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
   if (active.period === "custom" && active.to) params.set("to", active.to);
   const redemptionParams = new URLSearchParams(params);
   if (active.cohort?.trim()) redemptionParams.set("cohort", active.cohort.trim());
-  const [overviewRaw, revenueRaw, redemptionRaw, coverageRaw, liabilitiesRaw, maturity7Raw, maturity30Raw] = await Promise.all([
+  const [overviewRaw, revenueRaw, redemptionRaw, treasurySnapshotRaw] = await Promise.all([
     apiRequest<unknown>("/finance/overview"),
     apiRequest<unknown>(`/finance/revenue?${params.toString()}`),
     apiRequest<unknown>(`/finance/redemption?${redemptionParams.toString()}`),
-    treasuryRequest<unknown>("/coverage"),
-    treasuryRequest<unknown>("/liabilities?breakdown=true"),
-    treasuryRequest<unknown>("/maturity-forecast?window=7d"),
-    treasuryRequest<unknown>("/maturity-forecast?window=30d"),
+    apiRequest<unknown>("/finance/treasury-snapshot"),
   ]);
+  const treasuryFacts = assertL3TreasurySnapshot(treasurySnapshotRaw);
   const checked = assertL3FinanceContract({
     overview: rec(overviewRaw),
     revenue: rec(revenueRaw),
     redemption: rec(redemptionRaw),
-    coverage: rec(coverageRaw),
-    liabilities: rec(liabilitiesRaw),
-    maturity7: rec(maturity7Raw),
-    maturity30: rec(maturity30Raw),
+    coverage: treasuryFacts.coverage,
+    liabilities: treasuryFacts.liabilities,
+    maturity7: treasuryFacts.maturity7,
+    maturity30: treasuryFacts.maturity30,
   });
   const { overview, revenue, redemption, coverage, liabilities, maturity7, maturity30 } = checked;
   const period = rec(revenue.period);

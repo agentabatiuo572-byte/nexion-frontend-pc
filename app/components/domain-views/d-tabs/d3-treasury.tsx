@@ -76,6 +76,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const pendingKeys = useRef(new Map<string, string>());
+  const loadGeneration = useRef(0);
 
   const operationKey = (scope: string) => {
     const existing = pendingKeys.current.get(scope);
@@ -87,20 +88,23 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   };
 
   const load = async (nextMaturity?: "7d" | "30d", nextExposure?: "7d" | "30d" | "90d") => {
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError("");
     try {
       const next = await fetchD3Dashboard(nextMaturity, nextExposure);
+      if (generation !== loadGeneration.current) return;
       setData(next);
       setMaturityWindow(next.maturity.window);
       setExposureWindow(next.exposure.window);
       setDraft(next.config.pendingConfig ? { ...next.config, ...next.config.pendingConfig } : next.config);
     } catch (err) {
+      if (generation !== loadGeneration.current) return;
       setData(null);
       setDraft(null);
       setError(err instanceof Error ? err.message : "D3 数据加载失败");
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
   };
 

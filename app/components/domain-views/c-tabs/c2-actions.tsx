@@ -11,6 +11,7 @@ import {
   fetchUserAccountActionContext,
   fetchUserAccountActionOverview,
   isUsersRequestNotFound,
+  UsersRequestError,
   removeUserAccountList,
   revokeUserSessions,
   startUserImpersonation,
@@ -160,6 +161,13 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "C2_REQUEST_FAILED";
 }
 
+function accountListErrorMessage(error: unknown) {
+  if (error instanceof UsersRequestError && error.code === "A4_SCHEMA_NOT_REGISTERED") {
+    return "名单未生效，系统事件登记不完整，请联系平台管理员修复配置后重试。";
+  }
+  return errorMessage(error);
+}
+
 function activeSession(session: UserSession) {
   return text(session.status).toUpperCase() === "ACTIVE";
 }
@@ -259,7 +267,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "found" | "not-found" | "error">("idle");
   const searchParams = useSearchParams();
-  const focusUserCode = (searchParams.get("userCode") ?? "").trim().toUpperCase();
+  const focusUserCode = (searchParams?.get("userCode") ?? "").trim().toUpperCase();
 
   const loadOverview = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -402,7 +410,11 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
     });
   }, [refreshAccountContext]);
 
-  const perform = useCallback(async (work: () => Promise<string | void>, fallbackMessage: string) => {
+  const perform = useCallback(async (
+    work: () => Promise<string | void>,
+    fallbackMessage: string,
+    formatError: (error: unknown) => string = errorMessage,
+  ) => {
     setBusy(true);
     try {
       const message = await work();
@@ -411,7 +423,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       if (selectedKey) await refreshAccountContext(selectedKey);
       toast(message || fallbackMessage);
     } catch (err) {
-      toast(errorMessage(err));
+      toast(formatError(err));
     } finally {
       setBusy(false);
     }
@@ -663,9 +675,10 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
           await perform(
             () => upsertUserAccountList(id, kind, reason, OPERATOR(), expiresAt).then(() => `${displayAccount(target)} 名单已生效`),
             "名单已更新",
+            accountListErrorMessage,
           );
         } catch (err) {
-          toast(errorMessage(err));
+          toast(accountListErrorMessage(err));
         }
       })();
     },
@@ -684,6 +697,7 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
       void perform(
         () => removeUserAccountList(id, reason, OPERATOR()).then(() => `${displayAccount(entry)} 已移出名单`),
         "已移出名单",
+        accountListErrorMessage,
       );
     },
   });

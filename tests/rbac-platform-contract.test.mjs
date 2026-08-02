@@ -171,17 +171,20 @@ test("K6 visibility ignores a more complete alias with a stale route", () => {
   assert.equal(risk?.l2.find((item) => item.id === "K6")?.path, "/risk/janus-c2");
 });
 
-test("interactive login reloads the document after storing the new session", () => {
+test("interactive login confirms the server session before storing it", async () => {
   const calls = [];
   const auth = { tokenType: "Bearer", session: { adminId: 1, username: "superadmin" } };
 
-  completeInteractiveLogin(
+  await completeInteractiveLogin(
     (result) => calls.push(["signIn", result]),
     auth,
-    () => calls.push(["reload"]),
+    { readAuthoritativeSession: async () => {
+      calls.push(["session"]);
+      return auth;
+    } },
   );
 
-  assert.deepEqual(calls, [["signIn", auth], ["reload"]]);
+  assert.deepEqual(calls, [["session"], ["signIn", auth]]);
 });
 
 test("legacy I7 grants resolve to the merged I6 page", () => {

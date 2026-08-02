@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const pcClientPath = new URL("../lib/admin/h-client.ts", import.meta.url);
 const pcViewPath = new URL("../app/components/domain-views/h-tabs/h3-quest-events.tsx", import.meta.url);
@@ -17,9 +19,10 @@ const backendMapperPath = new URL(
   "../../nexion-backend/src/main/java/ffdd/opsconsole/growth/mapper/GrowthQuestEventMapper.java",
   import.meta.url,
 );
-const appEventStorePath = new URL("../../NX1.0/src/store/event-quest.ts", import.meta.url);
-const appSpinStorePath = new URL("../../NX1.0/src/store/lucky-spin.ts", import.meta.url);
-const appEventsApiPath = new URL("../../NX1.0/src/api/events-api.ts", import.meta.url);
+const appRoot = resolveNexionAppRoot({ adminRoot: path.resolve(import.meta.dirname, "..") });
+const appEventStorePath = path.join(appRoot, "src/store/event-quest.ts");
+const appSpinStorePath = path.join(appRoot, "src/store/lucky-spin.ts");
+const appEventsApiPath = path.join(appRoot, "src/api/events-api.ts");
 
 test("H4 PC commands carry stale-write evidence and use the H4 wheel guard contract", async () => {
   const [client, view, designKit] = await Promise.all([

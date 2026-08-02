@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const repo = path.resolve(import.meta.dirname, "..");
 const backend = path.resolve(repo, "..", "nexion-backend");
+const appRoot = resolveNexionAppRoot({ adminRoot: repo });
 const readPc = (relative) => readFileSync(path.join(repo, relative), "utf8");
 const readBackend = (relative) => readFileSync(path.join(backend, relative), "utf8");
 
@@ -77,10 +79,10 @@ test("F3 backend consumes locked controls and publishes the shared commission ev
 });
 
 test("App remote F3 consumes the authenticated server snapshot and clears stale account facts", () => {
-  const api = readFileSync(path.join(repo, "..", "NX1.0", "src/api/commission-config-api.ts"), "utf8");
-  const store = readFileSync(path.join(repo, "..", "NX1.0", "src/store/commission.ts"), "utf8");
-  const page = readFileSync(path.join(repo, "..", "NX1.0", "src/pages/team/binary.vue"), "utf8");
-  const team = readFileSync(path.join(repo, "..", "NX1.0", "src/pages/team/team.vue"), "utf8");
+  const api = readFileSync(path.join(appRoot, "src/api/commission-config-api.ts"), "utf8");
+  const store = readFileSync(path.join(appRoot, "src/store/commission.ts"), "utf8");
+  const page = readFileSync(path.join(appRoot, "src/pages/team/binary.vue"), "utf8");
+  const team = readFileSync(path.join(appRoot, "src/pages/team/team.vue"), "utf8");
 
   assert.match(api, /path: "\/api\/team\/binary"/);
   assert.match(api, /authenticated F3 snapshot|CanonicalBinaryState/);

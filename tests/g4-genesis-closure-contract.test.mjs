@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const backend = resolve(process.cwd(), "..", "nexion-backend");
-const app = resolve(process.cwd(), "..", "NX1.0");
+const app = resolveNexionAppRoot({ adminRoot: process.cwd() });
 const read = (root, path) => readFileSync(resolve(root, path), "utf8");
 
 test("G4 sale controls are read by the public/account boundary and enforced before wallet mutation", () => {

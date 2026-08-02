@@ -270,7 +270,7 @@ test("J3 config changes are readable from the persistent superadmin notification
   assert.match(dashboardClient, /fetchJ3TamperConfigAlerts/);
   assert.match(dashboardClient, /useJ3TamperConfigAlerts/);
   assert.match(dashboardClient, /alert\.domain === "J3"/);
-  assert.match(notificationBell, /authorities\?\.includes\("emergency_j3_alert_config"\)/);
+  assert.match(notificationBell, /authorities\.includes\("emergency_j3_alert_config"\)/);
   assert.match(notificationBell, /useJ3TamperConfigAlerts\(canReadJ3Alerts\)/);
   assert.match(notificationBell, /\.\.\.j3Alerts/);
   assert.match(notificationBell, /风险与应急告警/);

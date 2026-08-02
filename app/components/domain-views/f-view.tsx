@@ -44,10 +44,12 @@ import {
   type F1RewardPayout,
   type F1VRankOverview,
 } from "@/lib/admin/f1-client";
+import { createA2CommandKey } from "@/lib/admin/a2-client";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { Mc, FViewCtx } from "./f-tabs/types";
+import type { Mc, McSpec, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { F2Rates } from "./f-tabs/f2-rates";
 import { F3Binary } from "./f-tabs/f3-binary";
@@ -72,6 +74,10 @@ function resolveFOp(key: string): string {
   return "f_ui_config";
 }
 
+function fProposalCommandKey(modalCommandKey: string | undefined, sourceDomain: string, key: string) {
+  return modalCommandKey ? `${modalCommandKey}:${sourceDomain}:${key}` : undefined;
+}
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
 }
@@ -88,7 +94,7 @@ function currentMonthStart() {
 
 export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
-  const propose = usePropose();
+  const rawPropose = usePropose();
   const nav = useDomainNav();
   const router = useRouter();
   const session = useAdminAuth((state) => state.session);
@@ -101,6 +107,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const routeTab = FOLD[meta.l2Id] ?? "F2";
   const [tab, setTab] = useState(routeTab);
   const [mc, setActionConfirm] = useState<Mc>(null);
+  const propose = (toast: (message: string) => void, spec: ProposeSpec) =>
+    rawPropose(toast, { ...spec, commandKey: spec.commandKey ?? mc?.commandKey });
+  const openActionConfirm = (spec: McSpec) =>
+    setActionConfirm({
+      ...spec,
+      commandKey: spec.commandKey ?? createA2CommandKey("f-domain-action"),
+    });
   const [f1Overview, setF1Overview] = useState<F1VRankOverview | null>(null);
   const [f1Loading, setF1Loading] = useState(tab === "F1");
   const [f1Error, setF1Error] = useState<string | null>(null);
@@ -277,13 +290,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       gateLabel: def.gateLabel,
       reason,
       sourceDomain,
+      commandKey: fProposalCommandKey(mc?.commandKey, sourceDomain, key),
       command: def.buildCommand({ key, value }),
       target: def.buildTarget({ key, value }),
     });
   };
 
   const ctx: FViewCtx = {
-    openActionConfirm: (m) => setActionConfirm(m),
+    openActionConfirm: (m) => openActionConfirm(m),
     nav,
     toast: (msg) => setToast(msg),
     can,
@@ -550,6 +564,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
           setActionConfirm(null);
           } catch (error) {
             setToast("F 域数据提交失败 · " + errorMessage(error));
+            throw error;
           }
         }} />}
       {toastNode}

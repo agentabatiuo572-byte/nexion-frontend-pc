@@ -182,7 +182,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const focusPageLoad = useRef(false);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const focusClusterId = (searchParams.get("focusClusterId") ?? "").trim();
+  const focusClusterId = (searchParams?.get("focusClusterId") ?? "").trim();
   const overview = ctx.risk.multiAccount;
   const stats = overview?.stats ?? {};
   const params = overview?.params ?? [];
@@ -211,7 +211,7 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
 
   const exitFocusMode = () => {
     focusPageLoad.current = false;
-    const next = new URLSearchParams(searchParams.toString());
+    const next = new URLSearchParams(searchParams?.toString() ?? "");
     next.delete("focusClusterId");
     next.delete("source");
     setFocusLookupState("idle");

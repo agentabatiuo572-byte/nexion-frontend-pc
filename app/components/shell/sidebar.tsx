@@ -11,7 +11,6 @@ import { PanelLeftClose, PanelLeftOpen, LayoutDashboard } from "lucide-react";
 import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
 import { useAdminUi } from "@/lib/store/admin-ui";
 import { SidebarGroup } from "./sidebar-group";
-import { useNavBadges } from "./use-service-badges";
 
 function LogoMark() {
   return (
@@ -38,11 +37,13 @@ export function Sidebar({
   domains,
   collapsed,
   expanded,
+  servicePending,
 }: {
   role: AdminRole;
   domains: NavDomain[];
   collapsed: boolean;
   expanded: string[];
+  servicePending: number;
 }) {
   const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
@@ -94,7 +95,7 @@ export function Sidebar({
   const toggleSidebar = useAdminUi((s) => s.toggleSidebar);
   const visibleL2Count = domains.reduce((total, domain) => total + domain.l2.length, 0);
   const showHomeEntry = role !== "support";
-  const badges = useNavBadges();
+  const badges: Record<string, number> = servicePending > 0 ? { "/service/sessions": servicePending } : {};
 
   const onCollapsedOpen = (code: string) => {
     setSidebar(false);
