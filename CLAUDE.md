@@ -13,20 +13,21 @@ APIs/约定与训练数据不同。触 Next 内部（App Router params、async r
 ```bash
 npm run dev                  # dev → http://localhost:3002
 npm run build                # 生产构建
-npm run verify               # 全套 tripwire（dev 须在 3002）：tsc + 68 路由 HTTP200 + 旗舰 needle + 4 镜头回归
+npm run verify               # 20 齿轮静态 tripwire（无需 dev）：tsc / mock 越界 / 工作区路径 / canon 数字口径 / 死控件 / 渠道+存储键 parity / 契约×8（D1·B4·J1·J2·K2–K5）/ FE-BE 映射 / kill-switch / rhythm / A2 覆盖 / 生产构建
 # 亚门（可选收紧）：
-npm run verify:owner-review
-npm run remediation:preflight
-CGM_BATCH=B9 npm run verify  # 字段级覆盖（默认全 185 行）
-OPS_BATCH="" npm run verify  # 动作完整性门（默认计欠账）
+npm run verify:owner-review          # 验收包闭合检查；:live 变体才探 3002/uniapp 首屏
+npm run remediation:preflight        # 步步全绿后追跑 l5-final-sweep 12 检查（MC 弹窗契约 / 列表分页 / SKU 镜像 / uniapp port 覆盖 / canon / 账本联验）
+# 未接线单跑门（均 `node scripts/<name>.mjs`）：cgm-coverage（CGM 字段覆盖，默认 B9=全 185 行，CGM_BATCH 降批）/
+# ops-actions-audit（动作完整性，默认计欠账，OPS_BATCH=P0|P1|P2|ALL 收紧）/
+# no-double-sign-terms（旧确认残留）/ admin-support-surface-audit（M 客服面）
 ```
 
-`verify` 是 tripwire，不是 typecheck：tsc 过 ≠ verify 过。
+`verify` 是 tripwire，不是 typecheck：tsc 过 ≠ verify 过。channel-parity / FE-BE 映射 / J1 / J2 / K2 五齿轮硬读兄弟仓 `nexion-backend`，缺仓环境链在 [6/20] 断（memory: nexion-backend-not-in-workspace）。
 
 ## 完成门（宣布 done 前必走）
 
 1. `npx tsc --noEmit` → 0 错。
-2. `npm run verify` → 全绿。齿轮含：tsc / 68 路由 HTTP200（nav 漂移）/ 旗舰 needle / 4 镜头回归 / CGM 字段覆盖 / interaction audit（死控件）/ ops-actions（动作完整性）/ 旧确认残留 / MC 弹窗契约 / 列表分页 / M 客服面 / uniapp port 覆盖 / SKU 字段镜像 / canon 数字口径。
+2. `npm run verify` → 全绿（20 齿轮，清单见上）。改到对应面必单跑 verify 之外的门：MC 弹窗契约 / 列表分页 / SKU 字段镜像 / uniapp port 覆盖 → `npm run remediation:preflight`；CGM / 动作完整性 / 旧确认残留 / M 客服面 → 上方未接线单跑门。已退役：68 路由 HTTP200、旗舰 needle（旧 verify.sh 齿轮，live 探活仅剩 `verify:owner-review:live`）；「4 镜头回归」不是脚本齿轮 = 下条第 3 步。
 3. 多镜头 audit：4 并行 reviewer（技术 / 初次运营者 / PM 价值 / 交互打磨），rubric 见 `docs/REVIEW-RUBRIC.md`，修到 P0=0。
 4. Browser self-check（Playwright）：路由 navigate + console error=0 + 截图。**verify 绿 ≠ 渲染 OK**。
 5. 清理 `.playwright-mcp/` + `*.png`。
@@ -34,10 +35,10 @@ OPS_BATCH="" npm run verify  # 动作完整性门（默认计欠账）
 
 ## 架构 big-picture
 
-12 域（A–M）后台原型，mock 驱动，但**每个 store/action 必须 backend-replaceable**。
+13 域（A–M）后台原型，mock 驱动，但**每个 store/action 必须 backend-replaceable**。
 
 **三大单一真源（改前必认）**：
-- **IA 单源** = `lib/nav/console-nav.ts`（`CONSOLE_NAV`：13 域 / 68 个 L2 入口，每条带 id/name/path/prdAnchor/batch/status）。驱动侧边栏 + 路由解析 + 面包屑 + verify 路由清单。
+- **IA 单源** = `lib/nav/console-nav.ts`（`CONSOLE_NAV`：13 域 / 76 个 L2 入口，每条带 id/name/path/prdAnchor/batch/status）。驱动侧边栏 + 路由解析 + 面包屑 + `scripts/nav-routes.mjs` 路由清单提取。
 - **内容单源** = `lib/admin/registry/{a..m}.ts`（每模块 ListSpec/ConfigSpec/DashboardSpec），archetype 脚手架从此装配。⚠️ registry summary 是**真渲染面**（非死代码）；改枚举数必 grep 全仓「N 类」。
 - **财务单源** = `lib/mock/admin/ledger.ts`（B1 双账本 LedgerSnapshot）。**所有 B1/D 域金额、覆盖率、压力比从它派生，无二源**；改阈值必 import LEDGER，禁散落硬编码。庞氏度量优先用出金压力比 e(t)（<0.7 红线），与 phase 同向。
 
