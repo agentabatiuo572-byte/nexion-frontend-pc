@@ -24,28 +24,39 @@ const required = [
     ],
   },
   {
+    // 2026-08-03:a1 细粒度授权矩阵已由 A6 服务端权威流程接管(a1 文案「在 A6 明确授权后再分配」),
+    // a1 保留改角色 + 服务端权限差异预览;permission-matrix kind 仍由上方 design-kit 条目守护存量能力。
     file: "app/components/domain-views/a-tabs/a1-accounts.tsx",
-    snippets: ['kind: "role-select"', 'kind: "permission-matrix"'],
+    snippets: ['kind: "role-select"', "permissionDiff"],
+  },
+  {
+    // 2026-08-04 对抗验收增补:授权真面在 A6,守结构化授权链路(纯文本授权禁令随 a1 编辑面退役由此接棒)。
+    file: "app/components/domain-views/a-tabs/a6-roles.tsx",
+    snippets: ["proposeA6RoleGrants"],
   },
   {
     file: "app/components/domain-views/e-view.tsx",
     snippets: ['op: "sku-delete"', 'op: "task-down"', 'kind: "destructive-reason"'],
   },
   {
+    // 2026-08-03 追平 I 域重写:草稿字段 camelCase 化并补越南语(draft.zh → draftZh 等)。
     file: "app/components/domain-views/i-tabs/i1-copy-ab.tsx",
-    snippets: ['kind: "copy-edit"', "draft.zh", "draft.en", "draft.audience", "draft.trafficSplit", "draft.versionNote"],
+    snippets: ['kind: "copy-edit"', "draftZh", "draftEn", "draftVi", "draftAudience", "draftTrafficSplit", "draftNote"],
   },
   {
+    // 2026-08-03:campaign-edit 弹窗演化为 Drawer + usePropose(A2 pending 票)+ 后端 /content/campaigns,改锚新链路。
     file: "app/components/domain-views/i-tabs/i3-campaign.tsx",
-    snippets: ['kind: "campaign-edit"', "draft.title", "draft.schedule", "draft.budget", "liveCampaign"],
+    snippets: ["usePropose", "/content/campaigns", "scheduledAt", "budget", "liveCampaign"],
   },
   {
+    // 2026-08-03 追平披露中心重写:草稿对象改 draftDisclosure/draftEditor,字段名去 draft. 前缀。
     file: "app/components/domain-views/i-tabs/i4-trust.tsx",
-    snippets: ['kind: "version-authoring"', "I.disclosure.SFC.draft.zh", "draft.effectiveDate", "draft.requiresReack", "draft.languageScope"],
+    snippets: ['kind: "version-authoring"', "draftDisclosure", "effectiveDate", "requiresReack", "languageScope"],
   },
   {
+    // 2026-08-03 追平 I6 重写:多语字段 camelCase 化(.title.zh → titleZh),教程草稿归 tutorial 动作区,发布态字段保名。
     file: "app/components/domain-views/i-tabs/i6-i18n.tsx",
-    snippets: ['kind: "localized-copy"', 'kind: "course-authoring"', ".title.zh", ".body.en", "I.tutorial.drafts", ".duration", ".publishState"],
+    snippets: ['kind: "localized-copy"', 'kind: "course-authoring"', "titleZh", "bodyEn", "tutorial", ".duration", "publishState"],
   },
 ];
 

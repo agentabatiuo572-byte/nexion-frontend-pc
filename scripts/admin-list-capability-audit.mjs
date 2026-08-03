@@ -28,16 +28,20 @@ assertContains("app/components/domain-views/design-kit.tsx", [
   "data-pagination-max-rows",
 ], failures);
 
+// 2026-08-03 追平 D 域 server-canonical 迁移:d2/d4 分页升级为服务端分页(page/pageSize 状态 + 上一页/下一页 + 服务端总数),
+// 客户端 useDataListPager/DataListPager 形态在这两页退役,改锚服务端分页三件套。
 assertContains("app/components/domain-views/d-tabs/d2-withdrawals.tsx", [
-  "useDataListPager(rows",
-  "<DataListPager",
-  "rawTotal={WITHDRAWALS.length}",
+  "setPageSize",
+  "服务端分页总数",
+  "上一页",
+  "下一页",
 ], failures);
 
 assertContains("app/components/domain-views/d-tabs/d4-ledger.tsx", [
-  "useDataListPager(billRows",
-  "<DataListPager",
-  "rawTotal={BILLS.length}",
+  "setPageSize",
+  "服务端分页",
+  "上一页",
+  "下一页",
 ], failures);
 
 assertContains("app/components/domain-views/g-tabs/g1-staking.tsx", [
@@ -46,10 +50,10 @@ assertContains("app/components/domain-views/g-tabs/g1-staking.tsx", [
   "reason=",
 ], failures);
 
+// 2026-08-03:g4 节点列表升级为服务端分页(fetchG4GenesisOverview(page, pageSize)),豁免声明随之退役,改锚分页真身。
 assertContains("app/components/domain-views/g-tabs/g4-genesis.tsx", [
-  "<PaginationExemption",
-  "maxRows={5}",
-  "reason=",
+  "fetchG4GenesisOverview(page, pageSize)",
+  "setNodePageSize",
 ], failures);
 
 assertContains("app/components/archetypes/list-archetype.tsx", [

@@ -26,12 +26,20 @@ const walk = (d) => { try { for (const e of fs.readdirSync(d, { withFileTypes: t
 walk(appDir);
 let navBlob = '';
 try { navBlob = fs.readFileSync(path.join(ROOT, 'lib', 'nav', 'console-nav.ts'), 'utf8'); } catch {}
+let hub360Blob = '';
+try { hub360Blob = fs.readFileSync(path.join(ROOT, 'app', '_console', 'users', 'search', '[id]', 'page.tsx'), 'utf8'); } catch {}
 const adminTargetExists = (t) => {
   if (!t) return false;
   const v = String(t);
   if (v.startsWith('registry:')) { const r = v.slice(9); return registryBlob.includes(`"${r}"`) || registryBlob.includes(`'${r}'`) || navBlob.includes(`"${r}"`); }
   if (v.startsWith('page:')) { const r = v.slice(5).replace(/^\//, ''); return navBlob.includes(`"/${r}"`) || appBlob.includes(r.replace(/\//g, path.sep)) || appBlob.includes(r); }
-  if (v.startsWith('hub:')) return appBlob.toLowerCase().includes('hub'); // 360 HUB 区块,粗校验
+  if (v.startsWith('hub:')) {
+    // 360 HUB 区块:锚 app/_console/users/search/[id]/page.tsx 的 detail.<key> 分区键(2026-08-03 追平 C 域重构;
+    // engagement/notification 已合并为「参与与通知」区,同锚 detail.notifications)。分区被删 → 该域行响亮失败。
+    const HUB_KEY = { notification: 'notifications', engagement: 'notifications', deposit: 'deposits', withdrawal: 'withdrawals', commerce: 'commerce', devices: 'devices', earnings: 'earnings', financial: 'financial', referral: 'referral', vrank: 'vrank', account: 'account' };
+    const key = HUB_KEY[v.slice(4)];
+    return Boolean(key) && hub360Blob.includes(`detail.${key}`);
+  }
   return false;
 };
 

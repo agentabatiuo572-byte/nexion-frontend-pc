@@ -18,25 +18,36 @@ function run(label, command, args) {
   }
 }
 
-run("[1/20] typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]);
-run("[2/20] runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]);
-run("[3/20] workspace path resolver", "node", ["--test", "scripts/nexion-workspace-paths.test.mjs"]);
-run("[4/20] canon sentinel", "node", ["scripts/canon-sentinel.mjs"]);
-run("[5/20] interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]);
-run("[6/20] real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]);
-run("[7/20] App storage-key parity", "node", ["scripts/uni-storage-key-sentinel.mjs"]);
-run("[8/20] D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs"]);
-run("[9/20] B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs"]);
-run("[10/20] FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]);
-run("[11/20] kill-switch sentinel", "node", ["scripts/kill-switch-count-sentinel.mjs"]);
-run("[12/20] rhythm sentinel", "node", ["scripts/rhythm-single-source-sentinel.mjs"]);
-run("[13/20] J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]);
-run("[14/20] J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]);
-run("[15/20] K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]);
-run("[16/20] K3 contract", "node", ["--test", "tests/k3-withdraw-rules-contract.test.mjs"]);
-run("[17/20] K4 contract", "node", ["--test", "tests/k4-scoring-contract.test.mjs"]);
-run("[18/20] K5 contract", "node", ["--test", "tests/k5-kyc-review-contract.test.mjs"]);
-run("[19/20] A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]);
-run("[20/20] production build", npmCmd, ["run", "build"]);
+// 齿轮表:序号自动派生(新增/重排齿轮不再手工改 [x/N])。本机注意:channel-parity 起的后端依赖齿轮
+// 硬读兄弟仓 nexion-backend,缺仓环境链在该齿断(memory: nexion-backend-not-in-workspace)。
+const GEARS = [
+  ["typecheck", npxCmd, ["--no-install", "tsc", "--noEmit"]],
+  ["runtime mock import guard", "node", ["scripts/check-runtime-mock-imports.mjs"]],
+  ["workspace path resolver", "node", ["--test", "scripts/nexion-workspace-paths.test.mjs"]],
+  ["canon sentinel", "node", ["scripts/canon-sentinel.mjs"]],
+  ["interaction audit", "node", ["scripts/admin-interaction-audit.mjs"]],
+  ["M support surface audit", "node", ["scripts/admin-support-surface-audit.mjs"]],
+  ["CGM field coverage", "node", ["scripts/cgm-coverage.mjs"]],
+  ["no-double-sign residue", "node", ["scripts/no-double-sign-terms.mjs"]],
+  ["ops-actions integrity", "node", ["scripts/ops-actions-audit.mjs"]],
+  ["modal contract", "node", ["scripts/admin-modal-contract-audit.mjs"]],
+  ["list capability", "node", ["scripts/admin-list-capability-audit.mjs"]],
+  ["real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]],
+  ["App storage-key parity", "node", ["scripts/uni-storage-key-sentinel.mjs"]],
+  ["D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs"]],
+  ["B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs"]],
+  ["FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]],
+  ["kill-switch sentinel", "node", ["scripts/kill-switch-count-sentinel.mjs"]],
+  ["rhythm sentinel", "node", ["scripts/rhythm-single-source-sentinel.mjs"]],
+  ["J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]],
+  ["J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]],
+  ["K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]],
+  ["K3 contract", "node", ["--test", "tests/k3-withdraw-rules-contract.test.mjs"]],
+  ["K4 contract", "node", ["--test", "tests/k4-scoring-contract.test.mjs"]],
+  ["K5 contract", "node", ["--test", "tests/k5-kyc-review-contract.test.mjs"]],
+  ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
+  ["production build", npmCmd, ["run", "build"]],
+];
+GEARS.forEach(([label, cmd, args], index) => run(`[${index + 1}/${GEARS.length}] ${label}`, cmd, args));
 
 console.log("verify OK");

@@ -56,7 +56,6 @@ assertContains("lib/nav/console-nav.ts", [
   'path: "/service/tickets"',
   'id: "M3"',
   'path: "/service/sessions"',
-  "72 个 L2",
 ]);
 assertAbsent("lib/nav/console-nav.ts", 'path: "/content/support"', "I8 应已迁出至域 M");
 assertAbsent("lib/nav/console-nav.ts", 'path: "/content/conversation-center"', "I9 应已迁出至域 M");
@@ -76,17 +75,18 @@ assertContains("app/components/domain-views/m-view.tsx", [
 assertContains("app/components/domain-views/ported.ts", ['"M"']);
 assertContains("app/components/domain-views/registry.tsx", ["MDomainView", "M: MDomainView"]);
 
-// 数据模型(由 i-tabs/data.ts 迁至 m-tabs/data.ts)
+// 数据模型(类型契约仍在 m-tabs/data.ts;工单/转交种子数组 2026-08 起服务端化,经 lib/admin/m-client 取数)
 assertContains("app/components/domain-views/m-tabs/data.ts", [
   "export type SupportTicket",
   "lastReplyAt: number",
   "owner: string",
-  "SUPPORT_TICKETS",
+  "SUPPORT_STATUS_LABEL",             // 状态字典(server-canonical 后仍为前端展示契约)
   "SESSION_CONVOS",
   "export type SessionTransfer",      // 跨坐席转交模型
   "transfer?: SessionTransfer",       // 会话挂转交态(转入待处理)
-  "TRANSFER_QUEUES",                  // 技能队列(派生 SLA)
+  "STANDBY_POOL_LABEL",               // 备勤池(转交超时回落语义)
 ]);
+assertContains("lib/admin/m-client.ts", ["SupportTicket"]); // 服务端取数链路存活
 
 // M2 工单坐席台:控件存活 + 真写键 + 共享线程 + 互转 + 行为
 assertContains("app/components/domain-views/m-tabs/m2-tickets.tsx", [
@@ -100,7 +100,7 @@ assertContains("app/components/domain-views/m-tabs/m2-tickets.tsx", [
 ]);
 assertRegex(
   "app/components/domain-views/m-tabs/m2-tickets.tsx",
-  /selected\.status === "closed" \? "open" : "closed"/,
+  /closed:\s*\["open"\]/, // 2026-08-03 追平重写:翻转改为状态机转移表,closed 仅可重开为 open
   "M2 关闭/重开状态翻转",
 );
 
@@ -116,7 +116,7 @@ assertContains("app/components/domain-views/m-tabs/m3-sessions.tsx", [
   "I.session.convos",
   "I.session.ui.lastConvo",
   "I.session.workbench.timeoutFallback",     // 超时回落开关真写键(沿用 I.session.* 命名空间)
-  "I.support.tickets",
+  "I.support.agents",                        // 2026-08-03:m3 工单联动改走后端转单,坐席字典键为 M3 与 I.support.* 的现存关联
   "MessageThread",
   'sender: "agent"',
 ]);
@@ -143,18 +143,13 @@ assertContains("app/components/domain-views/m-tabs/m5-scripts.tsx", [
   "I.session.advisor.policy",
 ]);
 
-// 域 I 已干净摘除客服
-assertContains("app/components/domain-views/i-view.tsx", ["5 子页覆盖 7 PRD 子模块"]);
+// 域 I 已干净摘除客服(改锚现役子页组件导入,防「N 子页」计数注释漂移)
+assertContains("app/components/domain-views/i-view.tsx", ["I1CopyAb", "I4Trust", "I6I18n"]);
 assertAbsent("app/components/domain-views/i-view.tsx", "I8Support", "客服已迁出域 M");
 assertAbsent("app/components/domain-views/i-view.tsx", "I9Conversation", "客服已迁出域 M");
 
-// verify needle
-assertContains("scripts/verify.sh", [
-  "期望 72",
-  'check_html "/service/tickets" "工单详情与处理"',
-  'check_html "/service/sessions" "主动发起会话"',
-  "admin-support-surface-audit.mjs",
-]);
+// 自接线断言:本门须在现役管线 verify.mjs 中(2026-08-03 由退役的 verify.sh 迁入;live 探活归 verify:owner-review:live)
+assertContains("scripts/verify.mjs", ["admin-support-surface-audit.mjs"]);
 
 // UniApp 工单字段镜像(前端不变,迁移后仍须对齐)
 assertContains(path.join(PLAN, "Nexion-uniapp/src/mock/tickets.ts"), [
@@ -168,9 +163,7 @@ assertContains(path.join(PLAN, "Nexion-uniapp/src/store/tickets.ts"), [
   "lastReplyAt: now",
 ]);
 
-// 路由计数:console-nav 72 条;/service 客服路由 = 5
-const navPaths = read("lib/nav/console-nav.ts").match(/path:\s*"[^"]+"/g) || [];
-if (navPaths.length !== 72) failures.push(`console-nav path count ${navPaths.length}, expected 72`);
+// 路由计数:本门只辖 M 面 —— /service 客服路由 = 5;全站 L2 总数随 IA 演进,不在本门硬编码(2026-08-03 去除 72 断言)
 const serviceRouteCount = (read("lib/nav/console-nav.ts").match(/path:\s*"\/service\//g) || []).length;
 if (serviceRouteCount !== 5) failures.push(`/service routes ${serviceRouteCount}, expected 5`);
 
