@@ -143,7 +143,7 @@ export function F4Ops({ ctx }: { ctx: FViewCtx }) {
             {canFund && <button className="primary amp" onClick={() => ctx.openActionConfirm({
               name: "提前结算本周领导奖池",
               amplify: true,
-              detail: "按服务端当前周已支付 GMV、F.pool.ratio、月度 cap、解锁等级与 V_VOTES 生成 F5 佣金事件和 D4 台账。资金动作先提交 A2 双人审批；同周 CAS 防止重复派发。",
+              detail: "按服务端当前周已支付 GMV、F.pool.ratio、月度 cap、解锁等级与 V_VOTES 生成 F5 佣金事件和 D4 台账。资金动作先提交 A2 审批；同周 CAS 防止重复派发。",
               run: async (reason) => {
                 await ctx.proposeF4Settlement(reason);
               },

@@ -511,7 +511,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + " 已确认生效 · 新值 " + newVal);
+            setToast(mc.name + " 已生效 · 新值 " + newVal);
           } else if (mc.op === "param-multi" && mc.paramKeys && businessValue) {
             // 多字段调参:每字段写到自己的 param key;F3/F4 经后端持久化,其它 key 不允许本地兜底。
             if (tab === "F3") {
@@ -528,7 +528,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKeys.map((item) => item.paramKey).join(",")}`);
             }
             const summary = mc.paramKeys.map(({ key }) => String(businessValue[key] ?? "").trim()).join(" / ");
-            setToast(mc.name + " 已确认生效 · " + summary);
+            setToast(mc.name + " 已生效 · " + summary);
           } else if (mc.op === "dispose" && mc.paramKey && mc.fixedVal) {
             if (tab === "F1") {
               await ctx.updateF1Config(mc.paramKey, mc.fixedVal, reason);
@@ -543,9 +543,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + " 已确认生效");
+            setToast(mc.name + " 已生效");
           } else {
-            setToast("已确认生效");
+            throw new Error("F_CONFIRM_SHAPE_UNKNOWN:" + (mc.op || mc.name)); // 未知确认形状必须响亮失败,禁静默假成功
           }
           setActionConfirm(null);
           } catch (error) {

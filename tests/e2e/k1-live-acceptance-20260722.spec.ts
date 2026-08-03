@@ -129,13 +129,13 @@ test("K1 RISK 直调被拒，A2 maker-checker 回放 flagged-frozen-released 且
       expect(direct.status()).toBe(403);
       expect((await envelope<Record<string, unknown>>(direct, false)).message).toBe("A2_PROPOSAL_REQUIRED");
 
-      await proposeAndApprove(riskPage, checkerPage, "标可疑", "确认标记", "K1验收标记可疑经A2双人复核执行");
+      await proposeAndApprove(riskPage, checkerPage, "标可疑", "确认标记", "K1验收标记可疑经A2确认执行");
       await riskPage.reload();
       cluster = await currentCluster(riskPage);
     }
     if (cluster.status === "flagged") {
       await expect(clusterRow(riskPage).getByText("可疑", { exact: true })).toBeVisible();
-      await proposeAndApprove(riskPage, checkerPage, "批量冻结", "确认执行", "K1验收批量冻结经A2双人复核并联动C2");
+      await proposeAndApprove(riskPage, checkerPage, "批量冻结", "确认执行", "K1验收批量冻结经A2确认并联动C2");
       await riskPage.reload();
       cluster = await currentCluster(riskPage);
     }
@@ -147,7 +147,7 @@ test("K1 RISK 直调被拒，A2 maker-checker 回放 flagged-frozen-released 且
       }).toEqual(["FROZEN", "FROZEN", "FROZEN"]);
       cluster = await currentCluster(riskPage);
       await riskPage.screenshot({ path: path.join(EVIDENCE_DIR, "04-a2-approved-c2-accounts-frozen.png"), fullPage: true });
-      await proposeAndApprove(riskPage, checkerPage, "解除误判", "确认执行", "K1验收解除误判经A2双人复核仅恢复本簇来源");
+      await proposeAndApprove(riskPage, checkerPage, "解除误判", "确认执行", "K1验收解除误判经A2确认仅恢复本簇来源");
     }
     await expect.poll(async () => {
       cluster = await currentCluster(riskPage);

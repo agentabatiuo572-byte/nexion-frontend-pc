@@ -42,7 +42,7 @@ test.describe("J4 V4 统一部署后首次用户与跨域调用链验收", () =>
       "运行态必须返回 J1/J2/C2/K1/I3/I5 六个真实动作域",
     ).toEqual(new Set(["J1", "J2", "C2", "K1", "I3", "I5"]));
 
-    await expect(page.getByText(/实战先进入 A2 双人复核/)).toBeVisible();
+    await expect(page.getByText(/实战先进入 A2 确认队列/)).toBeVisible();
     await expect(page.getByText(/J1\/J2\/C2\/K1\/I3\/I5/)).toBeVisible();
     await expect(page.getByRole("button", { name: "+ 新增剧本" })).toBeEnabled();
 
@@ -108,7 +108,7 @@ test.describe("J4 V4 统一部署后首次用户与跨域调用链验收", () =>
       ?? "",
     );
     expect(operationId, "A2 提案响应必须返回操作单编号").not.toBe("");
-    await expect(page.getByText(/已提交 A2 双人复核/)).toBeVisible();
+    await expect(page.getByText(/已提交 A2 确认队列/)).toBeVisible();
 
     await logoutFromVisibleControl(page);
     await loginFromVisibleEntry(page, REVIEWER_USERNAME, REVIEWER_PASSWORD, REVIEWER_TOTP_SECRET);
@@ -408,7 +408,7 @@ async function assertJ4Healthy(page: Page) {
   await expect(page.locator("body")).not.toContainText(
     /数据加载失败|J4_API_FAILED|BACKEND_UNAVAILABLE|Cannot read properties|ReferenceError|TypeError/i,
   );
-  await expect(page.getByText(/实战先进入 A2 双人复核/)).toBeVisible();
+  await expect(page.getByText(/实战先进入 A2 确认队列/)).toBeVisible();
 }
 
 async function fillOperationReason(page: Page, reason: string) {
