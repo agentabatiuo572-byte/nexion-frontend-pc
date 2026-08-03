@@ -236,3 +236,72 @@ test("WD02 行为:新单旧字段发 null → 不再 100% 拒单(可空解析);�
     nexBurned: 0, feeWaived: 0, actualFee: 26, netReceive: 74,
   })), /D2_RESPONSE_INVALID/);
 });
+
+// ── D2 财务闭合补齐(2×P1+1×P2,2026-08-03):netReceive 等式 + 旧单 actualFee 等式 + 舍入容差 ──
+// 公式权威源 = PRD_v1 D5「提现手续费模型(本子模块权威定义)」:actualFee = grossFee − feeWaived、
+// netReceive = 提现额 − actualFee(双形态同式;uniapp nex-faucet.ts 同款)。
+// 每条反例按合取项隔离:除被测等式外其余不变量全自洽,删掉那一条等式 → 恰好对应断言红。
+
+/** confirm 形态底板:旧字段整组 null(真实新单 DTO 形态)。 */
+function d2ConfirmRow(overrides = {}) {
+  return d2Row({
+    networkConfirmUsd: 5, networkFeeRate: null, networkFeeMin: null, networkFeeMax: null,
+    networkFee: null, penaltyFeeRate: null, grossFee: null,
+    nexBurned: 0, feeWaived: 0, actualFee: 5, netReceive: 95,
+    ...overrides,
+  });
+}
+
+test("WD02 行为:🔴 P1-A netReceive 等式 —— confirm 审计反例(费 5 报到账 80,应 95)必须被拒", () => {
+  // 红测:把 confirm 分支 |netReceive − (amount − actualFee)| 等式删掉/容差改宽 → 本条 FAIL
+  // (actualFee 5 = max(0, 5−0) 自洽、80 < amount,旧界值全过 —— 只有新等式能拦)。
+  assert.throws(() => extracted.normalizeWithdrawal(d2ConfirmRow({ netReceive: 80 })),
+    /D2_RESPONSE_INVALID/);
+  // 自洽 confirm 单照常通过(等式不误杀)
+  const ok = extracted.normalizeWithdrawal(d2ConfirmRow());
+  assert.equal(ok.netReceive, 95);
+});
+
+test("WD02 行为:🔴 P1-A netReceive 等式 —— legacy 单到账脱钩(应 79 报 90)必须被拒", () => {
+  // 红测:把 legacy 分支 netReceive 等式删掉 → 本条 FAIL(90 < amount,actualFee 21 = 21−0 自洽)。
+  assert.throws(() => extracted.normalizeWithdrawal(d2Row({ netReceive: 90 })),
+    /D2_RESPONSE_INVALID/);
+});
+
+test("WD02 行为:🔴 P1-B legacy actualFee 等式 —— 审计反例 grossFee 21/feeWaived 0/actualFee 1 必须被拒", () => {
+  // 红测:把 legacy 分支 |actualFee − (grossFee − feeWaived)| 等式删掉 → 本条 FAIL
+  // (netReceive 给 99 = 100−1 让 netReceive 等式自洽 —— 隔离到只有 actualFee 等式能拦)。
+  assert.throws(() => extracted.normalizeWithdrawal(d2Row({ actualFee: 1, netReceive: 99 })),
+    /D2_RESPONSE_INVALID/);
+  // NEX 抵扣旧单(feeWaived > 0)必须过:actualFee 13 = 21−8、netReceive 87 = 100−13。
+  // 这是 netReceive 锚 actualFee 而非 grossFee 的判别靶(amount − grossFee = 79 ≠ 87,PRD 公式胜)。
+  const waived = extracted.normalizeWithdrawal(d2Row({
+    nexBurned: 20, feeWaived: 8, actualFee: 13, netReceive: 87,
+  }));
+  assert.equal(waived.netReceive, 87);
+});
+
+test("WD02 行为:P2 舍入容差 —— 等式差 0.00005 必须通过不冻整页;真越界仍拒", () => {
+  // 红测:把上界比较改回严格 netReceive > amount、或把等式容差删成 !== → 本条 FAIL。
+  // confirm 全免手续费单:netReceive 100.00005 与 amount 100 差 0.00005(合法舍入,含轻微超 amount)。
+  const c = extracted.normalizeWithdrawal(d2ConfirmRow({
+    nexBurned: 20, feeWaived: 5, actualFee: 0, netReceive: 100.00005,
+  }));
+  assert.equal(c.feeModel, "confirm");
+  // legacy 舍入:netReceive 79.00005 ≈ 100 − 21。
+  const l = extracted.normalizeWithdrawal(d2Row({ netReceive: 79.00005 }));
+  assert.equal(l.feeModel, "legacy");
+  // legacy 全免手续费单贴 amount 舍入(专测 legacy 上界容差,与 confirm 侧对称):
+  // grossFee 1 = networkFee 1 + 100×0、feeWaived 1 = 2.5×0.4、actualFee 0、netReceive 100.00005。
+  const lTop = extracted.normalizeWithdrawal(d2Row({
+    grossFee: 1, penaltyFeeRate: 0, nexBurned: 2.5, feeWaived: 1, actualFee: 0, netReceive: 100.00005,
+  }));
+  assert.equal(lTop.netReceive, 100.00005);
+  // 容差不是放水:超 amount 0.001(> 0.0001)仍拒(双形态)。
+  assert.throws(() => extracted.normalizeWithdrawal(d2ConfirmRow({
+    nexBurned: 20, feeWaived: 5, actualFee: 0, netReceive: 100.001,
+  })), /D2_RESPONSE_INVALID/);
+  assert.throws(() => extracted.normalizeWithdrawal(d2Row({
+    grossFee: 1, penaltyFeeRate: 0, actualFee: 1, netReceive: 100.001,
+  })), /D2_RESPONSE_INVALID/);
+});

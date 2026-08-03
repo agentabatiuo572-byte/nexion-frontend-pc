@@ -1215,13 +1215,17 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
   //   把它们纳入校验等于没验(独立证伪构造过这条洞)。
   // 旧单(networkConfirmUsd 为 null):六个旧字段必须齐(任一 null → invalid,保持旧单 fail-closed),
   //   按旧等式验。两头都缺 → invalid(不许静默放行)。
+  // netReceive 闭合(PRD D5 权威公式,双形态同式):|netReceive − (amount − actualFee)| ≤ 0.0001;
+  //   旧单另验 |actualFee − (grossFee − feeWaived)|(与新单 actualFee 等式对称,堵旧单 admin 盲区)。
+  //   上界比较带同容差 —— normalizeD2Page 是 .map,单条严格比较抛错会把合法舍入冻成整页崩。
   if (result.feeModel === "confirm") {
     const confirm = networkConfirmUsd as number;
     if (confirm < 0 || confirm > 25
         || result.nexBurned < 0 || result.nexFeeOffsetRate < 0
         || result.feeWaived < 0 || result.actualFee < 0
-        || result.netReceive < 0 || result.netReceive > result.amount
-        || Math.abs(result.actualFee - Math.max(0, confirm - result.nexBurned * result.nexFeeOffsetRate)) > 0.0001) {
+        || result.netReceive < 0 || result.netReceive > result.amount + 0.0001
+        || Math.abs(result.actualFee - Math.max(0, confirm - result.nexBurned * result.nexFeeOffsetRate)) > 0.0001
+        || Math.abs(result.netReceive - (result.amount - result.actualFee)) > 0.0001) {
       d2Invalid("withdrawal.financialInvariants");
     }
   } else {
@@ -1235,9 +1239,11 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
         || networkFee < networkFeeMin || networkFee > networkFeeMax
         || penaltyFeeRate < 0 || grossFee < 0 || result.nexBurned < 0
         || result.nexFeeOffsetRate < 0 || result.feeWaived < 0 || result.actualFee < 0
-        || result.netReceive < 0 || result.netReceive > result.amount
+        || result.netReceive < 0 || result.netReceive > result.amount + 0.0001
         || Math.abs(grossFee - networkFee
-          - result.amount * (penaltyFeeRate > 1 ? penaltyFeeRate / 100 : penaltyFeeRate)) > 0.0001) {
+          - result.amount * (penaltyFeeRate > 1 ? penaltyFeeRate / 100 : penaltyFeeRate)) > 0.0001
+        || Math.abs(result.actualFee - (grossFee - result.feeWaived)) > 0.0001
+        || Math.abs(result.netReceive - (result.amount - result.actualFee)) > 0.0001) {
       d2Invalid("withdrawal.financialInvariants");
     }
   }
