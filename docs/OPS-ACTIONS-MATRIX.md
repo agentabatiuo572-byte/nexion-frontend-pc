@@ -58,8 +58,8 @@
 ### P1 业务参数与发布(决定业务运转) — 次之
 | 域 | 对象 | 欠账动作 | 现状 |
 |---|---|---|---|
-| E | 商品SKU | 改价 / 上架 / 下架 / 编辑 / 删除 | ✅ 已落地 · 真 store `addSku/updateSku/setSkuStatus/removeSku` + logAudit(设计稿 port) |
-| E | 任务单价 / 上架阶段门(E1) / 任务产能·trade-in(E3) / 订单(E4) / 运维(E5) | 改单价 / 放行上架·配置置换侧抢先购(E.release.earlyAccess) / 调产能节奏·补贴天数·SKU 递减开关·折抵 / 退款·补建终态 / DC pause | ✅ 已落地 · `updateTask` + `setParam`(E.gen/E.device/E.tradein/E.order/E.ops)+ 操作确认 |
+| E | 商品SKU | 改价 / 上架 / 下架 / 编辑 / 删除 | ✅ 已落地 · registry op `e1_sku_create/update/status/delete` + usePropose A2(2026-08 server-canonical) |
+| E | 任务单价 / 上架阶段门(E1) / 任务产能·trade-in(E3) / 订单(E4) / 运维(E5) | 改单价 / 放行上架·配置抢先购 / 调产能节奏·补贴天数·折抵 / 退款·补建终态 / DC pause | ✅ 已落地 · registry op `e2_task_* / e1_gate_* / e3_config / e3_tradein / e4_order_* / e5_device_*` + 操作确认 |
 | F | 网络版税 / V级 / 奖池 / 配额 | 改费率 / 改阈值 / 改比例 | 🟠死控件(16项全死) |
 | G | staking / 兑换 / Genesis / 复投 | 调APY / 汇率费率限额 / 排放 / 紧急pause | 🟠死控件(17项全死) |
 | H | phase拨盘 / 试用引擎 / 活动 | 调dial / 改试用参数 / 上下线活动 | 🟠死控件(写useState不持久) |
@@ -76,7 +76,7 @@
 
 ## 4. 各域明细索引
 
-逐域「对象×动作×现状×证据」明细见各域 view + registry(已交叉核对,真写句柄数:F/G/H/J/K=0,E=4任务,A=2账号,C=1冻结+HUB 11):
+逐域「对象×动作×现状×证据」明细见各域 view + registry(下方括号内真写句柄数为**补齐前历史快照**,现状以 manifest built 行与 audit 输出为准;2026-08 起 13 个 view 走 findHighOp+usePropose,F/G/H/J/K 均有 built 行):
 - A `a-view.tsx` / `registry/a.ts` · B `app/(console)/overview/*` / `registry/b.ts` · C `c-view.tsx`+`users/search/[id]/page.tsx` / `registry/c.ts`
 - D `d-view.tsx` · E `e-view.tsx` · F `f-view.tsx` · G `g-view.tsx` · H `h-view.tsx` · I `i-view.tsx` · J `j-view.tsx` · K `k-view.tsx` · L `l-view.tsx`
 
@@ -94,17 +94,17 @@
 - ④ registry 声明↔渲染对齐门:声明的 rowAction 必须真渲染成带 handler 的按钮。
 
 **地基已落地(2026-06-04):**
-- `docs/ops-actions.manifest.json` — 机读清单(初始 97 行 built 6;**当前 102 行 · built 93 · pending 0 · missing 0 · readonly 9**,含 Nova I2 三条 CRUD)+ `deadControlBaseline`(各 view 死控件数,初始总 124,**补齐后当前总 11**)。
-- `scripts/ops-actions-audit.mjs` — 动作完整性门(防新增死控件 + 防 built 退化 + readonly 须有据 + `OPS_BATCH` 批次收紧),已接 `verify.sh`。默认放行 pending(增量补齐不爆红)。
-- `lib/store/admin/platform-config-store.ts` — 统一原语:`setParam(key,value,{action,reason})` 调参数真写 + `logAudit` + append-only `audit`(覆盖费率/APY/阈值/dial 类动作)。
+- `docs/ops-actions.manifest.json` — 机读清单(初始 97 行 built 6)+ `deadControlBaseline`(各 view 死控件数,只减不增)。**当前行数/built/pending/readonly/欠账一律以 `node scripts/ops-actions-audit.mjs` 运行输出为准,本文不再镜像数字**(镜像必漂,2026-08-04 决议)。
+- `scripts/ops-actions-audit.mjs` — 动作完整性门(死控件基线软哨兵提示 + 挡 built 退化 + readonly 须有据 + `OPS_BATCH` 批次收紧),已接 `verify.mjs`(2026-08-03 起)。默认放行 pending(增量补齐不爆红)。
+- **写路径(2026-08-03 server-canonical 重锚)**:旧 `platform-config-store.setParam` 统一原语已随迁移退役;built 行以 `restAction`(多动作行用 `restActions` 数组)锚现役写入口 —— 高敏动作走 `lib/admin/high-ops-registry.ts` 的 op 键(`findHighOp` + usePropose A2 pending 票),常规写走各域 `lib/admin/*-client.ts` 导出函数/动作对象方法(如 `updateUserRegistrationRiskParam`/`reviewD2Withdrawal`)。**止血类例外**:J1 kill 等即时动作直连 client 执行不入 A2 队列(`toggleJ1KillSwitch`),分界由 `a2-audit-coverage-sentinel.mjs` 机器强制。门校验(2026-08-04 起形态锚):锚须在 lib/admin 有定义形态 + app 有调用形态,逐锚独立校验。
 
 ## 6. 补齐一个动作的标准做法(SOP)
 
 每补一个欠账动作,5 步(以「E 改价」为例):
-1. **选行**:manifest 找 `status=pending/missing` 行(OPS-E-02 改价),定 storeAction 名(`updateSku`)。
-2. **store**:`platform-config-store`(平台级)/`user-ops-store`(per-user)加真写 action — 对象 CRUD 仿 `addTask/updateTask/removeTask`;**纯调参数直接用现成 `setParam(key,value,{action,reason})`**(已含审计)。
-3. **view**:死控件 `setActionConfirm(...)` 的 `OperationConfirmModal onConfirm={(reason,newVal)=>...}` 接到 store action(用 reason/newVal),状态即时反映;读侧加水合门 `useOpsHydrated()`。
-4. **manifest**:该 row `status→built` + 填 `storeAction`;`deadControlBaseline[view]` 减去消灭的 setActionConfirm 数(只减不增)。
-5. **回测**:`node scripts/ops-actions-audit.mjs`(PASS) + `npx tsc --noEmit` + `bash scripts/verify.sh all`;补完一批可 `OPS_BATCH=P0 …` 验该批清零。
+1. **选行**:manifest 找 `status=pending/missing` 行(如 OPS-E-02 改价),定现役锚:高敏= registry op 键(`e1_sku_update`),常规= `*-client` 函数/动作对象方法。
+2. **写路径**(2026-08-03 起):高敏动作在 `high-ops-registry.ts` 登记 op 键并在 view 走 `findHighOp + usePropose`;常规写在对应域 `lib/admin/*-client.ts` 加导出函数并在 view 调用。
+3. **view**:确认弹窗 `onConfirm={(reason,newVal)=>...}` 接到步 2 的现役写入口(用 reason/newVal),失败必须响亮(错误 toast/抛错),禁静默假成功;读侧走该域 `fetch*` 刷新回显。
+4. **manifest**:该 row `status→built` + 填 `restAction`(多动作行 `restActions` 数组,门逐锚校验);`deadControlBaseline[view]` 减去消灭的死控件数(只减不增)。
+5. **回测**:`node scripts/ops-actions-audit.mjs`(PASS) + `npm run verify`;补完一批可 `OPS_BATCH=P0 …` 验该批清零。
 
-门自动:挡新增 setActionConfirm 死控件(baseline 超标)、挡 built 退化(storeAction 消失)、量化剩余欠账。
+门自动:死控件基线软哨兵(超标提示不 FAIL)、挡 built 退化(锚形态校验:lib 定义 + app 调用)、量化剩余欠账。
