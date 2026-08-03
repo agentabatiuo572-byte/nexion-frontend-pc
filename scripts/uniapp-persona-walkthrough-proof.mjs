@@ -226,14 +226,15 @@ const seedState = evalJson(`
       pairedAt: now,
     },
   });
-  uni.setStorageSync('nexgrid-risk-disclosure-v1', { accepted: true, acceptedAt: now });
+  // 披露状态 2026-07 起按账号作用域(旧设备级单键 nexgrid-risk-disclosure-v1 已废弃,app 不再读)。
+  uni.setStorageSync('nexgrid-risk-disclosure-accounts-v1', { default: { accepted: true, acceptedAt: now } });
   uni.setStorageSync('nexgrid-locale-v1', { code: 'en', userSet: true });
   // NEX 抵扣手续费取代旧积分/硬燃烧门槛:提现页读 app.user.nexBalance(默认 1240,app store 不持久化、reload 回默认),
   // FEAT-WD02:1240 NEX 远超 $1 确认费全抵所需 3 NEX → 开抵扣后费 $0,无需 seed NEX。
   return {
     seeded: true,
     pairing: acctRow('nexgrid-wallet-pairing-accounts-v1'),
-    risk: store('nexgrid-risk-disclosure-v1'),
+    risk: acctRow('nexgrid-risk-disclosure-accounts-v1'),
   };
 `);
 expect(seedState.pairing?.walletPaired === true, `seed pairing not written: ${JSON.stringify(seedState.pairing)}`);
@@ -305,9 +306,10 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   `, 10000);
   expect(offsetOn.ok, `withdraw offset-on preview wrong: ${(offsetOn.body.match(/Will use[\s\S]{0,40}/) || ["<no consumption line>"])[0]}`);
   clickSelector(".nx-withdraw-submit-cta");
-  // SPEC-7 R2(首提必审):全新账户首笔提现无条件进人工审核。提交仍建单并跳追踪页,
-  // 但 route=manual → USDT 账单文案是「additional review」(非 pass 的 network 文案),
-  // 追踪页渲染 first-withdrawal-review 命中原因。此断言证的是「首提必审」新行为。
+  // WD01 小额免审快车道(2026-08-03 回源勘正):$50 ≤ smallAmt 阈值($50)→
+  // withdrawal-eligibility-core.decideWithdrawalRoute 明文把 first-withdrawal-review 与
+  // new-address-hold 放进 waivedGates → route=pass。「首提必审」并非无条件——快车道豁免它。
+  // 因此本 $50 流断言 pass 文案(含 WD02 fee 快照字面),并反向断言无审核文案。
   const proof = waitForEval("withdraw tracking route", `
     const bills = acctRow('nexgrid-bills-accounts-v1');
     const bill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'USDT' && row.amount === -50 && row.status === 'pending');
@@ -322,17 +324,22 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
       hasAddress: body.includes(${JSON.stringify(PAIRED_ADDRESS)}),
       hasAmount: body.includes('$50.00'),
       firstWithdrawalReviewShown: body.includes('First withdrawal requires manual confirmation'),
-      ok: location.href.includes('#/pages/me/wallet-withdraw-tracking') && /WD-\\d{8}-\\d{4}/.test(body),
+      // FEAT-WD02 追踪页新增配置加载骨架(纯图形无文字):等待条件必须含正文内容
+      // (地址+金额),否则骨架瞬间 route+id 先命中,断言在正文渲染前抢跑(2026-08-03 实测)。
+      ok: location.href.includes('#/pages/me/wallet-withdraw-tracking') && /WD-\\d{8}-\\d{4}/.test(body)
+        && body.includes(${JSON.stringify(PAIRED_ADDRESS)}) && body.includes('$50.00'),
     };
   `, 15000);
   expect(proof.href.includes("#/pages/me/wallet-withdraw-tracking"), "withdraw did not route to tracking");
   expect(proof.hasTrackingId, "withdraw tracking id missing");
-  expect(proof.hasAddress, "withdraw address missing on tracking page");
+  expect(proof.hasAddress, `withdraw address missing on tracking page; href=${proof.href}; body=${(proof.body || "").slice(0, 700)}`);
   expect(proof.hasAmount, "withdraw amount missing on tracking page");
   expect(proof.nexBill?.ref && /Fee offset|NEX used/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (3 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
-  // R2: 首提建单走审核路由 —— 账单文案是审核态,追踪页显式列出「首提必审」命中原因。
-  expect(proof.bill?.ref && proof.bill.memo.includes("additional review"), `withdraw bill missing or not routed to review (SPEC-7 R2 首提必审): ${JSON.stringify(proof.bill)}`);
-  expect(proof.firstWithdrawalReviewShown, "tracking page did not surface first-withdrawal-review hold reason (SPEC-7 R2)");
+  // 快车道 pass:账单 = pass 文案且携带 fee $0.00(开抵扣全免的 WD02 快照字面);
+  // 反向断言:$50 免审流**不得**出现审核文案/首提审核原因(出现 = 快车道豁免被回退)。
+  expect(proof.bill?.ref && /fee \$0\.00/.test(proof.bill.memo || ""), `withdraw bill missing or lacks WD02 fee snapshot literal: ${JSON.stringify(proof.bill)}`);
+  expect(!(proof.bill?.memo || "").includes("additional review"), `fast-lane $50 must NOT route to review (WD01 waivedGates): ${JSON.stringify(proof.bill)}`);
+  expect(!proof.firstWithdrawalReviewShown, "fast-lane $50 tracking page must not surface first-withdrawal-review hold reason (WD01 waiver)");
   return {
     href: proof.href,
     rebindHref: rebind.href,
@@ -406,37 +413,33 @@ await step("FT-014A", "exchange-nex-to-usdt-confirm-modal", () => {
 
 await step("FT-014B", "repurchase-writes-staking-bill", () => {
   open("/#/pages/me/wallet-repurchase");
+  // 2026-08-03 回源勘正:当前产品复购 = 一键直扣(debitBalance → staking.stake(90d) →
+  // bills.add → 成功 toast),**无确认弹窗、无订单行**——旧断言的 .nx-modal /
+  // .nx-repurchase-order-row 属已退役设计,按 wallet-repurchase.vue handleRepurchase 现实重写。
   const before = evalJson(`
+    const bills = acctRow('nexgrid-bills-accounts-v1');
     return {
       body: bodyText(),
-      orderCountBefore: document.querySelectorAll('.nx-repurchase-order-row').length,
+      stakeBillsBefore: (bills.bills || []).filter((row) => row.type === 'stake' && row.amount === -200).length,
     };
   `);
-  expect(before.body.includes("Re-invest $200.00"), "repurchase CTA missing");
+  expect(before.body.includes("Re-invest"), "repurchase page missing");
+  fill("input.uni-input-input", "200");
+  wait(200);
+  const armed = evalJson(`return { body: bodyText() };`);
+  expect(armed.body.includes("Re-invest $200.00"), "repurchase CTA did not arm at $200.00");
   clickSelector(".nx-repurchase-submit-cta");
-  wait(300);
-  const modal = evalJson(`
-    const root = document.querySelector('.nx-modal');
-    expect(!!root && visible(root), 'repurchase confirmation modal missing');
-    const primary = root.querySelector('.nx-btn--primary');
-    expect(!!primary && visible(primary), 'repurchase confirmation CTA missing');
-    primary.click();
-    return { text: text(root) };
-  `);
-  const proof = waitForEval("repurchase server order rendered", `
-    const rows = Array.from(document.querySelectorAll('.nx-repurchase-order-row')).map(text);
+  const proof = waitForEval("repurchase stake bill written", `
+    const bills = acctRow('nexgrid-bills-accounts-v1');
+    const stakeBills = (bills.bills || []).filter((row) => row.type === 'stake' && row.amount === -200 && /Re-invest/.test(row.memo || ''));
     return {
       href: location.href,
       body: bodyText(),
-      rows,
-      ok: rows.length > ${before.orderCountBefore} && rows.some((row) => /\\$200(\\.00)?/.test(row) && /ACTIVE/i.test(row)),
+      stakeBills: stakeBills.length,
+      ok: stakeBills.length > ${before.stakeBillsBefore},
     };
-  `, 15000);
-  return {
-    href: proof.href,
-    modal: modal.text,
-    order: proof.rows.find((row) => /\$200(\.00)?/.test(row)),
-  };
+  `, 10000);
+  return { href: proof.href, stakeBills: proof.stakeBills };
 });
 
 async function teamNav(target) {
