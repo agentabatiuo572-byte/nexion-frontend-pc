@@ -23,12 +23,14 @@ if (apply && applyCheck) {
 
 const adminRoot = process.cwd();
 const prdRoot = path.join(adminRoot, "docs", "PRD");
+// 2026-08-04:默认根修正为本工作区 ../PRD(旧 D:\WORKS\nexion\PRD文档 布局已不存在)。
 const productPrdRoot = process.env.NEXION_PRODUCT_PRD_ROOT
   ? path.resolve(process.env.NEXION_PRODUCT_PRD_ROOT)
-  : path.resolve(adminRoot, "..", "..", "nexion", "PRD文档");
+  : path.resolve(adminRoot, "..", "PRD");
 
 const targets = {
-  product: path.join(productPrdRoot, "Nexion_产品功能架构设计文档_v3.7.md"),
+  // 2026-08-04:工作区 ../PRD 已整体改名 NexGrid_*;本仓 docs/PRD 仍为 Nexion_* 原名。
+  product: path.join(productPrdRoot, "NexGrid_产品功能架构设计文档_v3.7.md"),
   opsDev: path.join(prdRoot, "Nexion_运营控制后台_开发落地规格.md"),
   opsV4: path.join(prdRoot, "Nexion_运营控制后台PRD_v4.md"),
   opsConfirm: path.join(prdRoot, "Nexion_运营后台_交互与确认机制改写SPEC.md"),
@@ -161,8 +163,8 @@ const ownerLinkSpec = `
 const prdGovernanceDevSpec = `
 ## 第 10 章 PRD canonical 治理
 
-- 产品 PRD canonical 路径固定为 \`D:\\WORKS\\PLAN\\PRD\\Nexion_产品功能架构设计文档_v3.7.md\`。
-- 运营后台 canonical 文档固定为 \`D:\\WORKS\\PLAN\\PRD\\Nexion_运营控制后台PRD_v4.md\` 与 \`D:\\WORKS\\PLAN\\PRD\\Nexion_运营控制后台_开发落地规格.md\`。
+- 产品 PRD canonical 路径固定为 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_产品功能架构设计文档_v3.7.md\`。
+- 运营后台 canonical 文档固定为 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_运营控制后台PRD_v4.md\` 与 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_运营控制后台_开发落地规格.md\`。
 - \`_bak/\`、\`_bakF/\`、remediation backups 不参与唯一性判断。
 - hook、verify gate 与同步流程只认 canonical 文件。
 `;
@@ -208,8 +210,8 @@ const supportV4 = `
 const prdGovernanceV4 = `
 ### 17.5a PRD canonical 治理
 
-- 产品 PRD canonical 路径固定为 \`D:\\WORKS\\PLAN\\PRD\\Nexion_产品功能架构设计文档_v3.7.md\`。
-- 运营后台 canonical 文档固定为 \`D:\\WORKS\\PLAN\\PRD\\Nexion_运营控制后台PRD_v4.md\` 与 \`D:\\WORKS\\PLAN\\PRD\\Nexion_运营控制后台_开发落地规格.md\`。
+- 产品 PRD canonical 路径固定为 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_产品功能架构设计文档_v3.7.md\`。
+- 运营后台 canonical 文档固定为 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_运营控制后台PRD_v4.md\` 与 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_运营控制后台_开发落地规格.md\`。
 - \`_bak/\`、\`_bakF/\`、remediation backups 不参与唯一性判断。
 - hook、verify gate 与同步流程只认 canonical 文件。
 `;

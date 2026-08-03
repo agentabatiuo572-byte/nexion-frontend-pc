@@ -32,10 +32,10 @@ if (OWNER_CONFIRMED && !APPLY_PRD) {
 }
 
 const prdTargets = [
-  path.join(PRD_ROOT, "Nexion_产品功能架构设计文档_v3.7.md"),
-  path.join(PRD_ROOT, "Nexion_运营控制后台PRD_v4.md"),
-  path.join(PRD_ROOT, "Nexion_运营控制后台_开发落地规格.md"),
-  path.join(PRD_ROOT, "Nexion_运营后台_交互与确认机制改写SPEC.md"),
+  path.join(PRD_ROOT, "NexGrid_产品功能架构设计文档_v3.7.md"),
+  path.join(PRD_ROOT, "NexGrid_运营控制后台PRD_v4.md"),
+  path.join(PRD_ROOT, "NexGrid_运营控制后台_开发落地规格.md"),
+  path.join(PRD_ROOT, "NexGrid_运营后台_交互与确认机制改写SPEC.md"),
 ];
 
 function rel(file) {
