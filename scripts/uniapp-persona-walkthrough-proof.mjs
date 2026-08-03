@@ -229,7 +229,7 @@ const seedState = evalJson(`
   uni.setStorageSync('nexgrid-risk-disclosure-v1', { accepted: true, acceptedAt: now });
   uni.setStorageSync('nexgrid-locale-v1', { code: 'en', userSet: true });
   // NEX 抵扣手续费取代旧积分/硬燃烧门槛:提现页读 app.user.nexBalance(默认 1240,app store 不持久化、reload 回默认),
-  // 1240 NEX 远超 $50 提现全抵所需 25 NEX → 手续费全免,无需 seed NEX。
+  // FEAT-WD02:1240 NEX 远超 $1 确认费全抵所需 3 NEX → 开抵扣后费 $0,无需 seed NEX。
   return {
     seeded: true,
     pairing: acctRow('nexgrid-wallet-pairing-accounts-v1'),
@@ -269,11 +269,13 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   );
   expect(seeded.hasRebindEntry, "withdraw rebind entry missing");
   expect(seeded.addressInputGone, "withdraw address is still a free-text input");
-  expect(seeded.body.includes("You receive\n$50.00"), "withdraw receive amount did not recalculate to $50.00 (NEX fully offsets fee)");
-  // NEX 抵扣手续费(取代旧硬燃烧闸):默认 nexBalance 1240,$50 提现 grossFee $10、requiredNex 25 → 1240 远超 → 全抵、fee $0、到账 $50。
-  expect(seeded.body.includes("Offset the fee with NEX"), "withdraw NEX fee-offset panel label missing");
-  expect(/\d[\d,]*\s*\/\s*25\b/.test(seeded.body), `withdraw NEX requirement not shown as <balance> / 25 · panel slice: ${(seeded.body.match(/Offset the fee with NEX[\s\S]{0,60}/) || ["<no offset panel slice>"])[0]}`);
-  expect(seeded.body.includes("fully waived"), "withdraw fully-waived message missing");
+  // FEAT-WD02:固定网络确认费 TRC20 $1;NEX 抵扣**默认关** —— 默认态到手 = $50 − $1 = $49.00。
+  // 🔴 默认关只做**展示级**断言:日限 1 笔/日 + claimWithdrawSlot 先占后建,单轮 persona
+  // 只能真提交一次(真提交留给下方「开抵扣」态,顺带证 NEX 账单行)。
+  expect(seeded.body.includes("You receive\n$49.00"), "withdraw receive did not show $49.00 (fixed $1 TRC20 confirm fee, offset default OFF)");
+  expect(seeded.body.includes("Network confirmation fee"), "withdraw single confirm-fee row missing");
+  expect(seeded.body.includes("Pay the fee with NEX"), "withdraw NEX offset toggle label missing");
+  expect(!seeded.body.includes("fully waived"), "old forced-offset copy leaked (fee model regression)");
 
   clickSelector(".nx-withdraw-rebind-entry");
   const rebind = waitForEval("withdraw address rebind route", `
@@ -291,6 +293,17 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   open("/#/pages/me/wallet-withdraw");
   fill("input.uni-input-input", "50");
   wait(300);
+  // FEAT-WD02 开抵扣态:点开关(persona nexBalance 1240 充足)→ 到手回到 $50.00 且
+  // 显示「Will use 3 NEX」(ceil($1 / $0.40) = 3,整数拍板)。
+  clickSelector(".nx-fee-offset-switch");
+  const offsetOn = waitForEval("withdraw offset toggle recalcs quote", `
+    const body = bodyText();
+    return {
+      body,
+      ok: body.includes('You receive\\n$50.00') && /Will use 3 NEX/.test(body),
+    };
+  `, 10000);
+  expect(offsetOn.ok, `withdraw offset-on preview wrong: ${(offsetOn.body.match(/Will use[\s\S]{0,40}/) || ["<no consumption line>"])[0]}`);
   clickSelector(".nx-withdraw-submit-cta");
   // SPEC-7 R2(首提必审):全新账户首笔提现无条件进人工审核。提交仍建单并跳追踪页,
   // 但 route=manual → USDT 账单文案是「additional review」(非 pass 的 network 文案),
@@ -298,7 +311,7 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   const proof = waitForEval("withdraw tracking route", `
     const bills = acctRow('nexgrid-bills-accounts-v1');
     const bill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'USDT' && row.amount === -50 && row.status === 'pending');
-    const nexBill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'NEX' && row.amount === -25);
+    const nexBill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'NEX' && row.amount === -3);
     const body = bodyText();
     return {
       href: location.href,
@@ -316,7 +329,7 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   expect(proof.hasTrackingId, "withdraw tracking id missing");
   expect(proof.hasAddress, "withdraw address missing on tracking page");
   expect(proof.hasAmount, "withdraw amount missing on tracking page");
-  expect(proof.nexBill?.ref && /Fee offset|NEX used/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (25 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
+  expect(proof.nexBill?.ref && /Fee offset|NEX used/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (3 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
   // R2: 首提建单走审核路由 —— 账单文案是审核态,追踪页显式列出「首提必审」命中原因。
   expect(proof.bill?.ref && proof.bill.memo.includes("additional review"), `withdraw bill missing or not routed to review (SPEC-7 R2 首提必审): ${JSON.stringify(proof.bill)}`);
   expect(proof.firstWithdrawalReviewShown, "tracking page did not surface first-withdrawal-review hold reason (SPEC-7 R2)");

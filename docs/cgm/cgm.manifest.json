@@ -385,10 +385,10 @@
         "fund_safety",
         "conversion"
       ],
-      "querySurface": "12 月平台收紧引擎:6 phase 各 10 个 dial — 邀请 bonus 倍率(2.0→1.0)、提现惩罚费率(penaltyFeeRate 20%→25%→30%,烧 NEX 可减免)、提现冷却(30→45 天)、binary 日上限($5K→$2K)、Premium/NEXv2/合规审查 feature gate、月数边界;运营看节奏收紧曲线",
+      "querySurface": "12 月平台收紧引擎:6 phase 各 10 个 dial — 邀请 bonus 倍率(2.0→1.0)、(提现惩罚费率 dial 已随 FEAT-WD02 删除,费用改为 D5 三网络固定确认费)、提现冷却(30→45 天)、binary 日上限($5K→$2K)、Premium/NEXv2/合规审查 feature gate、月数边界;运营看节奏收紧曲线",
       "crudActions": "运营调每 phase 各 dial 值、调 phase 月数边界、开关 feature gate(server-only enforcement)",
       "operationConfirm": true,
-      "serverCanonical": "PRODUCTION: GET /api/admin/platform/phase-config — server 是提现冷却/binary cap/提现惩罚费率(penaltyFeeRate)唯一真源(server-only enforcement);getMonthsSince 用 server 时间;override setPinned 生产 no-op",
+      "serverCanonical": "PRODUCTION: GET /api/admin/platform/phase-config — server 是提现冷却/binary cap 唯一真源(提现惩罚费率已随 FEAT-WD02 删除)(server-only enforcement);getMonthsSince 用 server 时间;override setPinned 生产 no-op",
       "endpoint": "读+写 GET /api/admin/platform/phase-config (+ admin PUT TBD)",
       "_slices": [
         "growth-config"
@@ -1711,7 +1711,7 @@
         "payout_pacing",
         "risk"
       ],
-      "querySurface": "查提现申请动作:原子扣余额 + 生成 id(WD-YYYYMMDD-seq)+ fee(grossFee=amount×penaltyFeeRate[P1-P4=0.20/P5=0.25/P6=0.30];烧 NEX 按 nexFeeOffsetRate=$0.40/NEX 抵扣,requiredNex=ceil(grossFee/0.40),烧够全免)+ ETA(+24h)+ status=submitted。余额不足返 null。运营审核提现、防无限增发(Round 7 P0:未扣款曾致重复提交增发)。",
+      "querySurface": "查提现申请动作:原子扣余额 + 生成 id(WD-YYYYMMDD-seq)+ fee(FEAT-WD02:固定网络确认费 networkConfirmFeeUsd[网络],TRC20/BEP20 $1、ERC20 $5;NEX 抵扣用户自选默认关,开着才烧 min(userNex, ceil(费/0.40)))+ ETA(+24h)+ status=submitted。余额不足返 null。运营审核提现、防无限增发(Round 7 P0:未扣款曾致重复提交增发)。",
       "crudActions": "运营审核/批准/驳回提现(reason-confirm 操作确认);目标态=放行→processing/sent 或驳回退款。服务端原子事务:扣余额+排队链上 tx+写账单+预留 fee。",
       "operationConfirm": true,
       "serverCanonical": "PRODUCTION: POST /api/withdrawals → server returns full withdrawal record (authoritative id/fee/ETA) in one atomic tx (debits balance + queues on-chain tx + writes bill + reserves fee). Fee from config, not hardcoded.",
@@ -1826,18 +1826,18 @@
       "domain": "D",
       "scope": "platform",
       "controlType": "param-config",
-      "frontendField": "提现 fee 模型 grossFee=amount×penaltyFeeRate(按phase) + NEX 抵扣 nexFeeOffsetRate($0.40/NEX) + MIN_WITHDRAWAL_USD + 日额度 80% balance",
-      "frontendSource": "uniapp product-phase.withdrawPenaltyFeeRate + nexFeeOffsetRate → computeWithdrawFee(grossFee=amount×penaltyFeeRate, NEX 抵扣 $0.40/NEX);MIN=20 + '80% balance max'",
+      "frontendField": "提现 fee 模型 = 固定网络确认费 networkConfirmFeeUsd(按网络,[0,25])+ 自选 NEX 抵扣 nexFeeOffsetRate($0.40/NEX,默认关)+ MIN_WITHDRAWAL_USD + 日额度 80% balance",
+      "frontendSource": "uniapp platform-config.withdrawRules.networkConfirmFeeUsd + product-phase.nexFeeOffsetRate → computeWithdrawFee(固定确认费,offsetWithNex 自选);MIN=20 + '80% balance max'",
       "frontendAnchor": "none·派生自代码",
       "opsPurpose": [
         "fund_safety",
         "payout_pacing",
         "risk"
       ],
-      "querySurface": "查提现惩罚费率(penaltyFeeRate,按phase 20/25/30%,烧 NEX 可减免至 0)+ NEX 抵扣率(nexFeeOffsetRate $0.40/NEX)+ 最低提现额($20)+ 日提现额度(余额 80%)。运营/风控/合规调阈值是日常操作。",
+      "querySurface": "查提现网络确认费(networkConfirmFeeUsd 三网络固定,值域 [0,25])+ NEX 抵扣率(nexFeeOffsetRate $0.40/NEX,用户自选)+ 最低提现额($20)+ 日提现额度(余额 80%)。运营/风控/合规调阈值是日常操作。",
       "crudActions": "运营调整费率/上下限/最低额/日额度(目标态=合规风控核定值);生产从配置端点读,非硬编码。",
       "operationConfirm": true,
-      "serverCanonical": "PRODUCTION: fee schedule comes from GET /api/config/wallet/withdraw-limits — server canonical penaltyFeeRate(按phase) + nexFeeOffsetRate($0.40/NEX),不再用旧固定费公式。监管/风控调阈值是日常操作.",
+      "serverCanonical": "PRODUCTION: fee schedule comes from GET /api/config/wallet/withdraw-limits — server canonical networkConfirmFeeUsd(三网络固定,FEAT-WD02) + nexFeeOffsetRate($0.40/NEX,自选),旧比例费/惩罚费公式已删。监管/风控调阈值是日常操作.",
       "endpoint": "读 GET /api/config/wallet/withdraw-limits;写 TBD·建议 PUT /api/admin/config/wallet/withdraw-limits",
       "_slices": [
         "money-core"
@@ -3369,7 +3369,7 @@
       "domain": "G",
       "scope": "per-user",
       "controlType": "function-action",
-      "frontendField": "WithdrawPage.handleSubmit (computeWithdrawFee + submit + addBill); grossFee = amount×penaltyFeeRate(按phase),烧 NEX 按 $0.40/NEX 抵扣减免",
+      "frontendField": "WithdrawPage.handleSubmit (computeWithdrawFee + submit + addBill); fee = 固定网络确认费(按网络,FEAT-WD02),NEX 抵扣自选默认关,开着按 $0.40/NEX 烧抵",
       "frontendSource": "app/(main)/me/wallet/withdraw/page.tsx:handleSubmit / fee",
       "frontendAnchor": "none·派生自代码 (PRD §5.4.3 提现)",
       "opsPurpose": [
@@ -3378,7 +3378,7 @@
         "risk",
         "platform_integrity"
       ],
-      "querySurface": "查提现申请:金额、网络(USDT-TRC20)、地址、手续费(grossFee=金额×penaltyFeeRate,烧 NEX 按 $0.40/NEX 抵扣减免)、到账 receive;需 KYC + 风险披露",
+      "querySurface": "查提现申请:金额、网络(USDT-TRC20)、地址、手续费(固定网络确认费按网络计,NEX 自选抵扣)、到账 receive;需 KYC + 风险披露",
       "crudActions": "运营确认/驳回提现;核对(可选)烧NEX抵扣+锁定USDT+建队列+写bill 一致性;争议回滚;调风控",
       "operationConfirm": true,
       "serverCanonical": "⚠️ MOCK-ONLY CROSS-STORE NON-ATOMIC + 无幂等(双击提交两次);PRODUCTION POST /api/withdrawals 单服务端事务原子((可选)烧NEX抵扣手续费/锁USDT/入队/写ledger)返 canonical,client mint UUIDv4 Idempotency-Key",
@@ -3444,7 +3444,7 @@
       "domain": "G",
       "scope": "platform",
       "controlType": "param-config",
-      "frontendField": "MIN_WITHDRAWAL_USD=20 / penaltyFeeRate(按phase 20/25/30%)+ nexFeeOffsetRate($0.40/NEX 抵扣) / '80% balance max' 日额度",
+      "frontendField": "MIN_WITHDRAWAL_USD=20 / networkConfirmFeeUsd(三网络固定 [0,25])+ nexFeeOffsetRate($0.40/NEX 自选抵扣) / '80% balance max' 日额度",
       "frontendSource": "app/(main)/me/wallet/withdraw/page.tsx:fee / canSubmit (amountNum>=20)",
       "frontendAnchor": "none·派生自代码 (_config README L39)",
       "opsPurpose": [
@@ -3453,7 +3453,7 @@
         "risk",
         "content_compliance"
       ],
-      "querySurface": "查提现最低额 $20、惩罚费率 penaltyFeeRate(按phase 20/25/30%,烧 NEX 可减免)+ NEX 抵扣率 $0.40/NEX、日额度上限(余额 80%)",
+      "querySurface": "查提现最低额 $20、三网络固定确认费 networkConfirmFeeUsd(FEAT-WD02,[0,25])+ NEX 抵扣率 $0.40/NEX(用户自选)、日额度上限(余额 80%)",
       "crudActions": "监管/风控调提现阈值(日常操作):最低额、费率公式、日额度上限",
       "operationConfirm": true,
       "serverCanonical": "⚠️ 监管/风控调阈值是日常操作;PRODUCTION GET /api/config/wallet/withdraw-limits server canonical",
@@ -3978,10 +3978,10 @@
         "conversion",
         "platform_integrity"
       ],
-      "querySurface": "单用户连签状态与 NEX 激励:当前 NEX 余额、50 条历史 ring buffer、上次签到时刻、当前/最长连签、复活卡余量、已领里程碑天数;运营看连签留存与 NEX 发放(提现门已改为 penaltyFeeRate + NEX 抵扣,不再由积分余额决定可提现额度)",
+      "querySurface": "单用户连签状态与 NEX 激励:当前 NEX 余额、50 条历史 ring buffer、上次签到时刻、当前/最长连签、复活卡余量、已领里程碑天数;运营看连签留存与 NEX 发放(提现费已改为固定网络确认费 + 自选 NEX 抵扣,不再由积分余额决定可提现额度)",
       "crudActions": "运营补/扣积分(申诉)、校正 streak、发/扣复活卡、撤销异常积分",
       "operationConfirm": true,
-      "serverCanonical": "一句话约束:连签/NEX 激励 server 单源持有;签到/赚取/消耗裁决 server,client localStorage 不可篡改(提现门已改为 penaltyFeeRate + NEX 抵扣,非积分门槛)",
+      "serverCanonical": "一句话约束:连签/NEX 激励 server 单源持有;签到/赚取/消耗裁决 server,client localStorage 不可篡改(提现费已改为固定网络确认费 + 自选 NEX 抵扣,非积分门槛)",
       "endpoint": "读 TBD·建议 GET /api/points/state · 写 POST /api/points/{sign-in|earn|spend|use-saver|claim-milestone}",
       "_slices": [
         "growth-config"

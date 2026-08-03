@@ -40,10 +40,11 @@ test("D5 first-user visible path, canonical read, pre-submit wording, refresh an
   expect(canonical.status()).toBe(200);
   const payload = await canonical.json() as { code: number; data: Record<string, unknown> };
   expect(payload.code).toBe(0);
+  // FEAT-WD02(2026-08-02):networkFeeRatio/Min/Max 与 penaltyFeeRate 已随旧费模型删除,
+  // 不再要求后端下发;networkConfirmFeeUsd 由前端默认种子兜底,后端跟进下发前不作必备断言。
   for (const key of [
-    "version", "dailyLimitCount", "balanceMaxRatio", "networkFeeRatio",
-    "networkFeeMin", "networkFeeMax", "nexFeeOffsetRate",
-    "cooldownDays", "penaltyFeeRate", "complianceHoldEnabled",
+    "version", "dailyLimitCount", "balanceMaxRatio", "nexFeeOffsetRate",
+    "cooldownDays", "complianceHoldEnabled",
   ]) expect(payload.data[key], `canonical D5 field ${key}`).not.toBeUndefined();
 
   const daily = page.getByLabel("每日提现次数目标值");

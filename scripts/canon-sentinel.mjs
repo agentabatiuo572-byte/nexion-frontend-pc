@@ -288,52 +288,51 @@ if (!uniProducts) {
 }
 
 // ---- Withdrawal fee model canon (仅活跃面 uniapp + admin;H5 冻结保留旧模型,故排除) ----
-// 新模型:无 NEX → grossFee = 金额 × penaltyFeeRate(按 phase);烧 NEX → nexFeeOffsetRate USD/NEX 抵扣。
-// 单源三方:canon.withdrawal ↔ uniapp product-phase.PHASES ↔ admin H1 DIAL_MATRIX(nexGate 列,月→phase)+ D5 OWN_PARAMS。
+// FEAT-WD02(2026-08-02):费用 = 按网络固定确认费 networkConfirmFeeUsd;旧 penaltyFeeRateByPhase
+// 已随惩罚费模型删除(uniapp PHASES 不再有 withdrawPenaltyFeeRate 字段,canon 同步删键)。
+// 🔴 offset 匹配从 penalty 上解耦:老正则以 withdrawPenaltyFeeRate 为锚,字段删除后 uniByPhase
+// 变空集 → offset 检查静默消失(哨兵假绿的经典形态),现改为直接锚 nexFeeOffsetRate。
+// 单源:canon.withdrawal ↔ uniapp product-phase.PHASES(offset)/ platform-config(confirm fee)
+// ↔ admin d-client D5_NETWORK_CONFIRM_FEE_DEFAULT + D5 OWN_PARAMS(offset,存在才对账)。
 const uniPhase = readIfExists(path.join(UNI_ROOT, "src", "store", "product-phase.ts"));
-const adminH = readIfExists(path.join(ROOT, "app", "components", "domain-views", "h-tabs", "data.ts")) ?? "";
-const adminCC = adminH; // PHASE_BUCKETS must come from the active admin H-domain source, not mock fixtures.
+const uniPlatformCfg = readIfExists(path.join(UNI_ROOT, "src", "mock", "platform-config.ts"));
 const adminDdata = readIfExists(path.join(ROOT, "app", "components", "domain-views", "d-tabs", "data.ts")) ?? "";
+const adminDClient = readIfExists(path.join(ROOT, "lib", "admin", "d-client.ts")) ?? "";
 const wd = canon.withdrawal || {};
 if (!uniPhase) {
   failures.push("uniapp product-phase.ts missing; cannot prove withdrawal canon");
-} else if (!wd.penaltyFeeRateByPhase || wd.nexFeeOffsetRateUSDPerNex == null) {
-  failures.push("canon.withdrawal missing penaltyFeeRateByPhase / nexFeeOffsetRateUSDPerNex");
+} else if (wd.nexFeeOffsetRateUSDPerNex == null || !wd.networkConfirmFeeUsd) {
+  failures.push("canon.withdrawal missing nexFeeOffsetRateUSDPerNex / networkConfirmFeeUsd");
 } else {
-  // uniapp PHASES: 每 phase 的 withdrawPenaltyFeeRate + nexFeeOffsetRate(对象内 id → penalty → offset 顺序)
-  const uniByPhase = {};
-  for (const m of uniPhase.matchAll(/id:\s*"(P\d)"[\s\S]*?withdrawPenaltyFeeRate:\s*([\d.]+)[\s\S]*?nexFeeOffsetRate:\s*([\d.]+)/g)) {
-    uniByPhase[m[1]] = { penalty: numberFrom(m[2]), offset: numberFrom(m[3]) };
+  // uniapp PHASES: 每 phase 的 nexFeeOffsetRate(直接锚字段本身,不再借道已删除的 penalty 字段)
+  const uniOffsetByPhase = {};
+  for (const m of uniPhase.matchAll(/id:\s*"(P\d)"[\s\S]*?nexFeeOffsetRate:\s*([\d.]+)/g)) {
+    uniOffsetByPhase[m[1]] = numberFrom(m[2]);
   }
-  // admin PHASE_BUCKETS(command-center 节奏单源): 月 → phase(2026-06-24 上收;勿硬编码映射)
-  const monthToPhase = {};
-  for (const m of adminCC.matchAll(/phase:\s*"(P\d)",\s*months:\s*\[([\d,\s]+)\]/g)) {
-    for (const mo of m[2].split(",").map((s) => parseInt(s.trim(), 10)).filter(Number.isFinite)) monthToPhase[mo] = m[1];
+  const phaseCount = Object.keys(uniOffsetByPhase).length;
+  if (phaseCount !== 6) {
+    failures.push(`withdraw.uni.offset coverage: expected 6 phases, got ${phaseCount}(正则或 PHASES 结构漂移 —— 空集全过是哨兵假绿,显式拦)`);
   }
-  // admin DIAL_MATRIX: 月行 → nexGate 列(DIAL_KEYS 第 4 列 idx 3 = 提现惩罚费率 %)
-  const adminPenaltyByPhase = {};
-  for (const m of adminH.matchAll(/\/\*\s*M(\d+)\s*\*\/\s*\[([^\]]+)\]/g)) {
-    const month = parseInt(m[1], 10);
-    const nexGatePct = numberFrom(m[2].split(",")[3].trim());
-    const phase = monthToPhase[month];
-    if (!phase) continue;
-    if (adminPenaltyByPhase[phase] === undefined) adminPenaltyByPhase[phase] = nexGatePct;
-    else if (adminPenaltyByPhase[phase] !== nexGatePct) adminPenaltyByPhase[phase] = NaN; // phase 内月值不一致 = 漂移
+  for (const [phase, offset] of Object.entries(uniOffsetByPhase)) {
+    expectNumber(`withdraw.uni.offset.${phase}`, offset, wd.nexFeeOffsetRateUSDPerNex, ["../Nexion-uniapp/src/store/product-phase.ts"]);
   }
-  // admin D5 OWN_PARAMS nexFeeOffsetRate 默认值("$0.40 / NEX")
+  // uniapp 网络确认费种子 ↔ canon 三键逐键(uniapp verify.sh 另有跨仓 parity 哨兵盯 admin 侧)
+  if (uniPlatformCfg) {
+    const seed = uniPlatformCfg.match(/networkConfirmFeeUsd:\s*\{\s*trc20:\s*([\d.]+),\s*bep20:\s*([\d.]+),\s*erc20:\s*([\d.]+)\s*\}/);
+    expectNumber("withdraw.uni.confirmFee.trc20", seed ? numberFrom(seed[1]) : null, wd.networkConfirmFeeUsd.trc20, ["../Nexion-uniapp/src/mock/platform-config.ts"]);
+    expectNumber("withdraw.uni.confirmFee.bep20", seed ? numberFrom(seed[2]) : null, wd.networkConfirmFeeUsd.bep20, ["../Nexion-uniapp/src/mock/platform-config.ts"]);
+    expectNumber("withdraw.uni.confirmFee.erc20", seed ? numberFrom(seed[3]) : null, wd.networkConfirmFeeUsd.erc20, ["../Nexion-uniapp/src/mock/platform-config.ts"]);
+  } else {
+    failures.push("uniapp platform-config.ts missing; cannot prove networkConfirmFeeUsd canon");
+  }
+  // admin D5 兜底种子(d-client D5_NETWORK_CONFIRM_FEE_DEFAULT)↔ canon 三键
+  const adminSeed = adminDClient.match(/D5_NETWORK_CONFIRM_FEE_DEFAULT = \{ trc20: ([\d.]+), bep20: ([\d.]+), erc20: ([\d.]+) \}/);
+  expectNumber("withdraw.admin.confirmFee.trc20", adminSeed ? numberFrom(adminSeed[1]) : null, wd.networkConfirmFeeUsd.trc20, ["lib/admin/d-client.ts"]);
+  expectNumber("withdraw.admin.confirmFee.bep20", adminSeed ? numberFrom(adminSeed[2]) : null, wd.networkConfirmFeeUsd.bep20, ["lib/admin/d-client.ts"]);
+  expectNumber("withdraw.admin.confirmFee.erc20", adminSeed ? numberFrom(adminSeed[3]) : null, wd.networkConfirmFeeUsd.erc20, ["lib/admin/d-client.ts"]);
+  // admin D5 OWN_PARAMS nexFeeOffsetRate 默认值("$0.40 / NEX";d-tabs/data.ts 存在才对账)
   const d5 = adminDdata.match(/key:\s*"nexFeeOffsetRate"[\s\S]{0,160}?cur:\s*"\$?([\d.]+)/);
   const adminOffset = d5 ? numberFrom(d5[1]) : null;
-
-  for (const [phase, expected] of Object.entries(wd.penaltyFeeRateByPhase)) {
-    expectNumber(`withdraw.uni.penalty.${phase}`, uniByPhase[phase]?.penalty ?? null, expected, ["../Nexion-uniapp/src/store/product-phase.ts"]);
-    if (adminH) {
-      const pct = adminPenaltyByPhase[phase];
-      expectNumber(`withdraw.admin.penalty.${phase}`, pct === undefined || Number.isNaN(pct) ? null : pct / 100, expected, ["app/components/domain-views/h-tabs/data.ts"]);
-    }
-  }
-  for (const [phase, info] of Object.entries(uniByPhase)) {
-    expectNumber(`withdraw.uni.offset.${phase}`, info.offset, wd.nexFeeOffsetRateUSDPerNex, ["../Nexion-uniapp/src/store/product-phase.ts"]);
-  }
   if (adminDdata) {
     expectNumber("withdraw.admin.offset", adminOffset, wd.nexFeeOffsetRateUSDPerNex, ["app/components/domain-views/d-tabs/data.ts"]);
   }

@@ -99,16 +99,13 @@
   "withdrawal": {
     "minWithdrawalUSD": 20,
     "dailyBalanceCapRate": 0.8,
-    "penaltyFeeRateByPhase": {
-      "P1": 0.2,
-      "P2": 0.2,
-      "P3": 0.2,
-      "P4": 0.2,
-      "P5": 0.25,
-      "P6": 0.3
-    },
     "nexFeeOffsetRateUSDPerNex": 0.4,
-    "_note": "NEX 优惠抵扣模型(2026-06-17 取代旧 2% 固定费 feeRate/feeMin/feeMax):无 NEX 按 penaltyFeeRateByPhase×金额收惩罚费,烧 NEX 按 nexFeeOffsetRate($0.40/NEX,远高于市价)抵扣、烧够全免、无硬拦截。penaltyFeeRateByPhase 同源 uniapp product-phase.withdrawPenaltyFeeRate + admin H1 DIAL_MATRIX(月→phase);nexFeeOffsetRate 同源 admin D5 OWN_PARAMS + uniapp product-phase.nexFeeOffsetRate。"
+    "_note": "FEAT-WD02 固定网络确认费模型(2026-08-02 取代「penaltyFeeRateByPhase×金额 + 比例网络费」双费模型):每笔按提现网络收固定确认费 networkConfirmFeeUsd(值域 [0,25]),NEX 抵扣为用户自选(offsetWithNex 默认关),烧 min(userNex, ceil(费/nexFeeOffsetRate))。networkConfirmFeeUsd 同源 uniapp platform-config.withdrawRules.networkConfirmFeeUsd + admin D5_NETWORK_CONFIRM_FEE_DEFAULT(verify 跨仓 parity 哨兵盯值);nexFeeOffsetRate 同源 uniapp product-phase.nexFeeOffsetRate(全 phase 0.4,权威 §13.4)。",
+    "networkConfirmFeeUsd": {
+      "trc20": 1,
+      "bep20": 1,
+      "erc20": 5
+    }
   },
   "tradeInEarlyAccess": {
     "enabled": false,

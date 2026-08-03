@@ -9,6 +9,8 @@ import {
   D5_SMALL_AMOUNT_THRESHOLD_MAX,
   D5_PAYOUT_SLA_HOURS_MIN,
   D5_PAYOUT_SLA_HOURS_MAX,
+  D5_NETWORK_CONFIRM_FEE_DEFAULT,
+  D5_NETWORK_CONFIRM_FEE_MAX,
   type D5OwnedChanges,
   type D5Params as D5ParamData,
 } from "@/lib/admin/d-client";
@@ -41,9 +43,10 @@ function errorText(err: unknown) {
 type Drafts = {
   daily: string;
   balancePct: string;
-  feePct: string;
-  feeMin: string;
-  feeMax: string;
+  /** FEAT-WD02 三网络确认费(USD,每笔固定) */
+  feeTrc: string;
+  feeBep: string;
+  feeErc: string;
   nex: string;
   /** FEAT-WD01 小额免审线(USD) */
   smallAmt: string;
@@ -51,19 +54,24 @@ type Drafts = {
   slaHours: string;
 };
 
-const EMPTY_DRAFTS: Drafts = { daily: "", balancePct: "", feePct: "", feeMin: "", feeMax: "", nex: "", smallAmt: "", slaHours: "" };
+const EMPTY_DRAFTS: Drafts = { daily: "", balancePct: "", feeTrc: "", feeBep: "", feeErc: "", nex: "", smallAmt: "", slaHours: "" };
 
 function draftsFrom(params: D5ParamData): Drafts {
   return {
     daily: String(params.dailyLimitCount),
     balancePct: String(params.maxBalanceRatio * 100),
-    feePct: String(params.networkFeeRatio * 100),
-    feeMin: String(params.networkFeeMin),
-    feeMax: String(params.networkFeeMax),
+    feeTrc: String(params.networkConfirmFeeUsd.trc20),
+    feeBep: String(params.networkConfirmFeeUsd.bep20),
+    feeErc: String(params.networkConfirmFeeUsd.erc20),
     nex: String(params.nexFeeOffsetRate),
     smallAmt: String(params.smallAmountThresholdUsd),
     slaHours: String(params.payoutSlaHours),
   };
+}
+
+/** 单网络费值域校验([0,25],有限数)。 */
+function confirmFeeValid(value: number) {
+  return Number.isFinite(value) && value >= 0 && value <= D5_NETWORK_CONFIRM_FEE_MAX;
 }
 
 export function D5Params({ ctx }: { ctx: DCtx }) {
@@ -144,15 +152,31 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
 
   const daily = asNumber(drafts.daily);
   const balancePct = asNumber(drafts.balancePct);
-  const feePct = asNumber(drafts.feePct);
-  const feeMin = asNumber(drafts.feeMin);
-  const feeMax = asNumber(drafts.feeMax);
+  const feeTrc = asNumber(drafts.feeTrc);
+  const feeBep = asNumber(drafts.feeBep);
+  const feeErc = asNumber(drafts.feeErc);
   const nex = asNumber(drafts.nex);
   const smallAmt = asNumber(drafts.smallAmt);
   const slaHours = asNumber(drafts.slaHours);
   const dailyValid = Number.isInteger(daily) && daily >= 1 && daily <= 10;
   const balanceValid = balancePct >= 50 && balancePct <= 100;
-  const feeValid = feePct >= 0 && feePct <= 5 && feeMin >= 0 && feeMax >= feeMin;
+  // FEAT-WD02:三网络确认费逐字段校验(字段级越界红字),整组同过才可提交(原子)。
+  const feeTrcValid = confirmFeeValid(feeTrc);
+  const feeBepValid = confirmFeeValid(feeBep);
+  const feeErcValid = confirmFeeValid(feeErc);
+  const feeValid = feeTrcValid && feeBepValid && feeErcValid;
+  const feeUnchanged = params !== null
+    && feeTrc === params.networkConfirmFeeUsd.trc20
+    && feeBep === params.networkConfirmFeeUsd.bep20
+    && feeErc === params.networkConfirmFeeUsd.erc20;
+  // 放大方向判定:任一网络调低 = 放大流出(费降 → 用户提现成本降,与旧 networkFee 调低同向)。
+  const feeAmplifies = params !== null
+    && (feeTrc < params.networkConfirmFeeUsd.trc20
+      || feeBep < params.networkConfirmFeeUsd.bep20
+      || feeErc < params.networkConfirmFeeUsd.erc20);
+  const feeIsDefault = feeTrc === D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20
+    && feeBep === D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20
+    && feeErc === D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20;
   const nexValid = nex > 0;
   // FEAT-WD01 值域(规格 §2):小额线 0–500(0=关闭快车道);到账时效 1–168 小时。
   const smallAmtValid = Number.isFinite(smallAmt) && smallAmt >= 0 && smallAmt <= D5_SMALL_AMOUNT_THRESHOLD_MAX;
@@ -180,7 +204,7 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
       <div className="f-stat"><div className="k">小额免审线</div><div className="v">${params.smallAmountThresholdUsd}</div><div className="sub">{params.smallAmountThresholdUsd > 0 ? "快车道启用" : "快车道已关闭"}</div></div>
       <div className="f-stat"><div className="k">到账时效</div><div className="v">{params.payoutSlaHours}h</div><div className="sub">正常提现到账等待</div></div>
       <div className="f-stat cyan"><div className="k">余额可提上限</div><div className="v">{pctRatio(params.maxBalanceRatio)}</div><div className="sub">D5 权威</div></div>
-      <div className="f-stat warn"><div className="k">网络费率</div><div className="v">{pctRatio(params.networkFeeRatio)}</div><div className="sub">{params.networkFeeMin}–{params.networkFeeMax} USDT</div></div>
+      <div className="f-stat warn"><div className="k">网络确认费</div><div className="v">${params.networkConfirmFeeUsd.trc20} / ${params.networkConfirmFeeUsd.bep20} / ${params.networkConfirmFeeUsd.erc20}</div><div className="sub">TRC20 / BEP20 / ERC20 · 每笔固定</div></div>
       <div className="f-stat cyan"><div className="k">NEX 抵扣率</div><div className="v">${params.nexFeeOffsetRate.toFixed(2)}/NEX</div><div className="sub">D5 权威</div></div>
       <div className={`f-stat ${params.coverageReliable && params.coverageRatio >= params.redlinePct ? "ok" : "danger"}`}><div className="k">B1 覆盖率</div><div className="v">{pct(params.coverageRatio)}</div><div className="sub">红线 {pct(params.redlinePct)} · {params.coverageReliable ? "可信" : "不可用"}</div></div>
     </div>
@@ -219,12 +243,22 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
             <span>%</span>
             {canBalanceWrite && <button className="l-btn sm mc" disabled={!balanceValid || balancePct / 100 === params.maxBalanceRatio} onClick={() => submit("余额可提上限", { maxBalanceRatio: balancePct / 100 }, balancePct / 100 > params.maxBalanceRatio, `${pctRatio(params.maxBalanceRatio)} → ${balancePct.toFixed(2)}%`)}>预览并提交</button>}
           </div>
+          {/* FEAT-WD02:三网络固定确认费(每笔 USD)。三值一次 PUT 原子提交,任一失败全回滚;
+              任一网络调低 = 放大流出。0 = 该网络免手续费(合法值,给显著警示防误配)。 */}
           <div className="p-row">
-            <div className="txt"><div className="k">网络费（原子更新）</div><div className="s">费率 0%–5% + min/max；任一失败全回滚</div></div>
-            <input aria-label="网络费率目标值" className="l-inp" type="number" min="0" max="5" step="0.01" value={drafts.feePct} disabled={!canFeeWrite} onChange={(event) => updateDraft("feePct", event.target.value)} />
-            <input aria-label="网络费最小值" className="l-inp" type="number" min="0" step="0.01" value={drafts.feeMin} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeMin", event.target.value)} />
-            <input aria-label="网络费最大值" className="l-inp" type="number" min="0" step="0.01" value={drafts.feeMax} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeMax", event.target.value)} />
-            {canFeeWrite && <button className="l-btn sm mc" disabled={!feeValid || (feePct / 100 === params.networkFeeRatio && feeMin === params.networkFeeMin && feeMax === params.networkFeeMax)} onClick={() => submit("网络费", { networkFeeRatio: feePct / 100, networkFeeMin: feeMin, networkFeeMax: feeMax }, feePct / 100 < params.networkFeeRatio || feeMin < params.networkFeeMin || feeMax < params.networkFeeMax, `${pctRatio(params.networkFeeRatio)} / ${params.networkFeeMin}–${params.networkFeeMax} → ${feePct.toFixed(2)}% / ${feeMin}–${feeMax}`)}>预览并提交</button>}
+            <div className="txt">
+              <div className="k">网络确认费（三网络 · 原子更新）</div>
+              <div className="s">每笔固定收取,按提现网络计,0–{D5_NETWORK_CONFIRM_FEE_MAX} USD、步进 0.5;三值一次提交,任一失败全回滚。任一网络<b>调低即放大流出</b>。默认 TRC20 $1 / BEP20 $1 / ERC20 $5</div>
+              {canFeeWrite && !feeTrcValid && drafts.feeTrc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>TRC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
+              {canFeeWrite && !feeBepValid && drafts.feeBep !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>BEP20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
+              {canFeeWrite && !feeErcValid && drafts.feeErc !== "" && <div className="s" style={{ color: "var(--admin-danger, #e5484d)" }}>ERC20 超出 0–{D5_NETWORK_CONFIRM_FEE_MAX} 值域</div>}
+              {feeValid && (feeTrc === 0 || feeBep === 0 || feeErc === 0) && <div className="s" style={{ color: "var(--admin-warning, #f5a623)" }}>配置为 0 的网络将免手续费,请确认这是有意为之</div>}
+            </div>
+            <input aria-label="TRC20 网络确认费目标值" className="l-inp" type="number" min="0" max={D5_NETWORK_CONFIRM_FEE_MAX} step="0.5" value={drafts.feeTrc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeTrc", event.target.value)} />
+            <input aria-label="BEP20 网络确认费目标值" className="l-inp" type="number" min="0" max={D5_NETWORK_CONFIRM_FEE_MAX} step="0.5" value={drafts.feeBep} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeBep", event.target.value)} />
+            <input aria-label="ERC20 网络确认费目标值" className="l-inp" type="number" min="0" max={D5_NETWORK_CONFIRM_FEE_MAX} step="0.5" value={drafts.feeErc} disabled={!canFeeWrite} onChange={(event) => updateDraft("feeErc", event.target.value)} />
+            {canFeeWrite && <button className="l-btn sm mc" disabled={!feeValid || feeUnchanged} onClick={() => submit("网络确认费", { networkConfirmFeeUsd: { trc20: feeTrc, bep20: feeBep, erc20: feeErc } }, feeAmplifies, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → $${feeTrc} / $${feeBep} / $${feeErc}`)}>预览并提交</button>}
+            {canFeeWrite && <button className="l-btn sm" disabled={feeIsDefault && feeUnchanged} onClick={() => submit("网络确认费恢复默认", { networkConfirmFeeUsd: { ...D5_NETWORK_CONFIRM_FEE_DEFAULT } }, D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20 < params.networkConfirmFeeUsd.trc20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20 < params.networkConfirmFeeUsd.bep20 || D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20 < params.networkConfirmFeeUsd.erc20, `TRC20 $${params.networkConfirmFeeUsd.trc20} / BEP20 $${params.networkConfirmFeeUsd.bep20} / ERC20 $${params.networkConfirmFeeUsd.erc20} → 默认 $${D5_NETWORK_CONFIRM_FEE_DEFAULT.trc20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.bep20} / $${D5_NETWORK_CONFIRM_FEE_DEFAULT.erc20}`)}>恢复默认</button>}
           </div>
           <div className="p-row">
             <div className="txt"><div className="k">NEX 抵扣率</div><div className="s">必须大于 0；上调放大、下调收紧</div></div>
@@ -241,7 +275,8 @@ export function D5Params({ ctx }: { ctx: DCtx }) {
           {/* FEAT-WD01 改名:「提现冷却」易被读成「两笔提现要隔 N 天」,实际是「大额提现要等 N 天才到账」,
               与上面的「每日提现次数」概念直接打架。只改显示名,字段键 cooldownDays 不动(改键会破坏后端契约与既有审计)。 */}
           <div className="p-row"><div className="txt"><div className="k">到账审查窗口</div><div className="s">source: phase-h1 · 大额提现(&gt; $1,000)在后期阶段的到账等待天数,非提现间隔</div></div><span className="v">{params.cooldownDays} 天</span></div>
-          <div className="p-row"><div className="txt"><div className="k">提现惩罚费率</div><div className="s">source: phase-h1</div></div><span className="v">{pctRatio(params.penaltyFeeRate)}</span></div>
+          {/* FEAT-WD02:「提现惩罚费率」行已删 —— 费用模型换为按网络固定确认费(上方 D5 自有可写),
+              H1 旋钮同步下线;历史审计记录不删账。 */}
           <div className="p-row"><div className="txt"><div className="k">增强合规审查</div><div className="s">source: phase-h1</div></div><span className={`bdg ${params.complianceHoldEnabled ? "warn" : "ok"}`}>{params.complianceHoldEnabled ? "开启" : "关闭"}</span></div>
           {authorities.includes("growth_h1_read") && <Link href="/growth/phase" className="l-btn">在 H1 调整 →</Link>}
         </div>

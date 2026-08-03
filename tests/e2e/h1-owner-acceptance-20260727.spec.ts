@@ -62,7 +62,11 @@ test("H1 权威读模型与 B4/D5/F3/G7 保持同一快照，App 匿名边界失
   const d5 = await okJson(page.request, "/api/admin/withdraw/limits");
   expect(Number(d5.currentMonth)).toBe(currentMonth);
   expect(Number(d5.cooldownDays)).toBe(Number(currentRow.dials.withdrawCooldownDays));
-  expect(Number(d5.penaltyFeeRate) * 100).toBeCloseTo(Number(currentRow.dials.withdrawPenaltyFeeRate), 8);
+  // FEAT-WD02(2026-08-02):提现惩罚费率已随固定网络确认费模型删除,H1 旋钮与 D5 展示均已下线。
+  // 后端迁移前仍可能下发旧字段 —— 存在时按旧一致性回归,缺失/null 视为已完成迁移,不再断言。
+  if (d5.penaltyFeeRate != null && currentRow.dials.withdrawPenaltyFeeRate != null) {
+    expect(Number(d5.penaltyFeeRate) * 100).toBeCloseTo(Number(currentRow.dials.withdrawPenaltyFeeRate), 8);
+  }
 
   const f3 = await okJson(page.request, "/api/admin/teams/binary");
   const f3CapLabel = String(f3.dailyCap?.currentLabel ?? "");
