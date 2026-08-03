@@ -306,6 +306,24 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   `, 10000);
   expect(offsetOn.ok, `withdraw offset-on preview wrong: ${(offsetOn.body.match(/Will use[\s\S]{0,40}/) || ["<no consumption line>"])[0]}`);
   clickSelector(".nx-withdraw-submit-cta");
+  // FEAT-WD02 ⑥:提交 CTA 先弹确认弹窗(uiConfirm,global-ui .nx-modal),点「Confirm」才建单。
+  // 断言弹窗四要素(金额 / 单行网络确认费 / NEX 消耗 / 到手)后点主按钮放行;
+  // 弹窗是居中 fixed 覆盖层,无需原生 scrollintoview,直接页面内 clickCss。
+  const submitConfirm = waitForEval("withdraw submit confirm modal", `
+    const modal = document.querySelector('.nx-modal');
+    const modalText = modal ? (modal.innerText || '') : '';
+    return {
+      modalText,
+      ok: !!modal && modalText.includes('Confirm withdrawal')
+        && modalText.includes('Network confirmation fee −$1.00')
+        && modalText.includes('Withdraw $50.00 USDT')
+        && modalText.includes('3 NEX')
+        && modalText.includes('You receive $50.00'),
+    };
+  `, 10000);
+  expect(submitConfirm.ok, `withdraw submit confirm modal missing or lacks fee line: ${(submitConfirm.modalText || "").slice(0, 300)}`);
+  evalJson(`return clickCss('.nx-modal .nx-btn--primary');`);
+  wait(400);
   // WD01 小额免审快车道(2026-08-03 回源勘正):$50 ≤ smallAmt 阈值($50)→
   // withdrawal-eligibility-core.decideWithdrawalRoute 明文把 first-withdrawal-review 与
   // new-address-hold 放进 waivedGates → route=pass。「首提必审」并非无条件——快车道豁免它。
@@ -358,7 +376,12 @@ await step("FT-014A", "exchange-nex-to-usdt-confirm-modal", () => {
     location.reload();
     return { resetExchange: true };
   `);
-  wait(1000);
+  // reload 后改盲等为条件等待:dev server 被多会话并发改动打满时首载可 >1s,
+  // 盲等 1000ms 会让下一行 fill 假红(2026-08-03 实测两连挂;Playwright 探针证明
+  // 页面本体正常渲染、console 0 错,纯时序)。
+  waitForEval("exchange amount input ready", `
+    return { ok: !!document.querySelector('input.uni-input-input') };
+  `, 15000);
   fill("input.uni-input-input", "10");
   wait(300);
   const beforeConfirm = evalJson(`
