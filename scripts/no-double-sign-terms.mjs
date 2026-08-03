@@ -8,7 +8,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // docs/ 为内部 PRD/SPEC/Checklist/审计文档(非用户可见文案/代码):其中合法记述「取消双签」改写决议、
 // 描述新单人确认机制(「原复核层级转为执行门槛」)、及域内正常词(区域大使审批 / 法务审批 / server 复核)——
 // 本门只扫用户面与代码口径(app/lib/scripts),故 docs 整树跳过(同 CLAUDE.md 历史说明豁免)。代码侧残留仍爆红。
-const SKIP = /(?:^|[\\/])(?:node_modules|\.next|\.git|\.trash|screenshots|videos|traces|docs)(?:[\\/]|$)/;
+const SKIP = /(?:^|[\\/])(?:node_modules|\.next|\.git|\.trash|\.claude|screenshots|videos|traces|docs)(?:[\\/]|$)/;
 const EXT = new Set([".ts", ".tsx", ".mjs", ".sh", ".md", ".json", ".html"]);
 const banned = [
   /MakerCheckerModal/,
@@ -32,7 +32,7 @@ const banned = [
   /双人留痕/,
   /双人授权/,
   /两人审核/,
-  /可确认/,
+  /(?<!不)可确认/, // 「不可确认」是数据加载失败的正当新文案,不是旧双签口径
   /确认人/,
   /发起\s*→.*确认/,
   /待确认工单/,
