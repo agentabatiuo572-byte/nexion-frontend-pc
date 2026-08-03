@@ -2295,19 +2295,19 @@
       "domain": "E",
       "scope": "platform",
       "controlType": "param-config",
-      "frontendField": "DEFAULT_TRIAL_CONFIG.{discountRate 0.15/discountCapUSD 20/trialOffsetCapUSD 50/trialPriceUSD 1299/autoChargeAtEnd/chargeFailRate 0.01} + computeDiscountedPrice/computeTrialOffset",
-      "frontendSource": "lib/store/trial-config.ts:DEFAULT_TRIAL_CONFIG + computeDiscountedPrice/computeTrialOffset",
+      "frontendField": "DEFAULT_TRIAL_CONFIG.{trialDays 3/graceDays 7/discountRate 0.15/discountCapUSD 20/trialOffsetCapUSD 50/trialProductId stellarbox-s1/trialPriceUSD 649/shadowDailyUSD 7/shadowDailyNEX 40/phaseOpen} + computeDiscountedPrice/computeTrialOffset",
+      "frontendSource": "Nexion-uniapp/src/store/trial-config.ts:DEFAULT_TRIAL_CONFIG + computeDiscountedPrice/computeTrialOffset(FEAT-TRIAL02 无卡化后,autoChargeAtEnd/chargeFailRate 字段已整体删除)",
       "frontendAnchor": "none·派生自代码 (前端 PRD §9.11.4 / §9.11a)",
       "opsPurpose": [
         "fund_safety",
         "conversion",
         "payout_pacing"
       ],
-      "querySurface": "试用资金参数:早购折扣 15%(上限 $20)、试用收益抵购机款上限 $50(超出部分购后入余额)、自动扣款全价 $1299、到期是否自动扣款、mock 扣款失败率 1%",
-      "crudActions": "调 discountRate/discountCapUSD/trialOffsetCapUSD/trialPriceUSD;开关 autoChargeAtEnd;接真后台后 chargeFailRate 移除(server-only,真 PSP 决定)",
+      "querySurface": "试用资金参数:试用 3 天 + 宽限 7 天、早购折扣 15%(上限 $20)、试用收益抵购机款上限 $50(超出部分购后入余额)、转化标的 stellarbox-s1 全价 $649、影子日产 $7 / 40 NEX、是否开放领取",
+      "crudActions": "调 trialDays/graceDays/discountRate/discountCapUSD/trialOffsetCapUSD/trialPriceUSD/shadowDaily*;开关 phaseOpen。⚠️ trialPriceUSD 与商品目录价跨源等值(uniapp verify 哨兵 trial02_price_parity 逐值比对);trialDays 改动不追溯存量用户(resolveTrialAt 按用户冻结窗口 expiresAt−startedAt 结算)",
       "operationConfirm": true,
-      "serverCanonical": "头注 ⚠️ PRD CONTRACT VIOLATION:§9.11a 已写明 server 为 chargeFailRate 唯一源,当前仍 client Math.random()(有意 mock);接真后台删 mockChargeAttempt,扣款走 POST /api/trial/charge,chargeFailRate 字段移除",
-      "endpoint": "读 GET /api/admin/trial/config(头注 §9.11a.1) · 扣款 POST /api/trial/charge(头注) · 写 PUT /api/admin/trial/config",
+      "serverCanonical": "PRODUCTION: GET/PUT /api/admin/trial/config —— server 为试用参数唯一源。FEAT-TRIAL02(2026-07-31 签字)无卡化重写后,自动扣款整条链路(autoChargeAtEnd / chargeFailRate / mockChargeAttempt / POST /api/trial/charge)已从代码与契约中整体删除,原 PRD CONTRACT VIOLATION 标注随之失效;到期改为停摆 + 抵扣金转化购买,零自动扣款。",
+      "endpoint": "读 GET /api/admin/trial/config · 写 PUT /api/admin/trial/config(领取 POST /api/trial/start 无 body · 转化并入 POST /api/orders · 取消 POST /api/trial/cancel)",
       "_slices": [
         "devices-catalog"
       ],
