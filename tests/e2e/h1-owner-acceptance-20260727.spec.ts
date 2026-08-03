@@ -21,7 +21,7 @@ test("H1 首次用户可从左侧入口发现并理解完整节奏操作台", as
   await expect(page.getByRole("button", { name: "改总时长" })).toBeVisible();
   await expect(page.getByRole("button", { name: "设定位置" })).toBeVisible();
   await expect(page.getByRole("button", { name: /沙盒预览/ })).toBeVisible();
-  await expect(page.locator(".l-h .ttl").filter({ hasText: /逐月旋钮矩阵\(\d+ 月 x 8 项\)/ })).toBeVisible();
+  await expect(page.locator(".l-h .ttl").filter({ hasText: /逐月旋钮矩阵\(\d+ 月 x 7 项\)/ })).toBeVisible();
   await expect(page.getByText("Phase 切换控制", { exact: true })).toBeVisible();
   await expect(page.getByText("Phase 效果归因", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /去 B4 节奏看板/ })).toBeVisible();
@@ -43,30 +43,29 @@ test("H1 权威读模型与 B4/D5/F3/G7 保持同一快照，App 匿名边界失
   const row = (h1.monthlyDials as Array<Record<string, any>>).find((item) => Number(item.month) === currentMonth);
   expect(row).toBeTruthy();
   const currentRow = row!;
+  // 键序与 h1-phase.tsx 的 DIAL_COLUMNS 一致(7 项)。
   expect(Object.keys(currentRow.dials)).toEqual(expect.arrayContaining([
     "newUserBonusMultiplier",
     "inviteRewardMultiplier",
     "reinvestMultiplier",
-    "withdrawPenaltyFeeRate",
     "withdrawCooldownDays",
     "binaryDailyCap",
     "questBonusMultiplier",
     "complianceHoldEnabled",
   ]));
+  // FEAT-WD02(2026-08-02):提现惩罚费率随固定网络确认费模型下线。反向钉死,防旋钮回退。
+  expect(Object.keys(currentRow.dials)).not.toContain("withdrawPenaltyFeeRate");
 
   const b4 = await okJson(page.request, "/api/admin/phase/overview");
   expect(Number(b4.rhythm.currentMonth)).toBe(currentMonth);
   expect(String(b4.rhythm.currentPhase)).toBe(String(h1.rhythm.currentPhase));
-  expect(b4.dials).toHaveLength(8);
+  expect(b4.dials).toHaveLength(7);
 
   const d5 = await okJson(page.request, "/api/admin/withdraw/limits");
   expect(Number(d5.currentMonth)).toBe(currentMonth);
   expect(Number(d5.cooldownDays)).toBe(Number(currentRow.dials.withdrawCooldownDays));
-  // FEAT-WD02(2026-08-02):提现惩罚费率已随固定网络确认费模型删除,H1 旋钮与 D5 展示均已下线。
-  // 后端迁移前仍可能下发旧字段 —— 存在时按旧一致性回归,缺失/null 视为已完成迁移,不再断言。
-  if (d5.penaltyFeeRate != null && currentRow.dials.withdrawPenaltyFeeRate != null) {
-    expect(Number(d5.penaltyFeeRate) * 100).toBeCloseTo(Number(currentRow.dials.withdrawPenaltyFeeRate), 8);
-  }
+  // FEAT-WD02(2026-08-02):原「D5 penaltyFeeRate ⟷ H1 withdrawPenaltyFeeRate 一致性」交叉校验已删 ——
+  // 上面已硬断言该旋钮不在 H1 矩阵里,该分支永不可达。费用模型改按网络固定确认费(D5 自有可写)。
 
   const f3 = await okJson(page.request, "/api/admin/teams/binary");
   const f3CapLabel = String(f3.dailyCap?.currentLabel ?? "");
