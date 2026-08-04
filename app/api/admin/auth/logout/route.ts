@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { ADMIN_PASSWORD_CHANGE_COOKIE, readAdminAccessToken } from "@/lib/admin/require-password-change-cleared";
 
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
@@ -13,7 +14,8 @@ function isSecureRequest(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
+  // 受限态(强制改密未完成)也要能干净登出并吊销服务端会话。
+  const token = readAdminAccessToken(await cookies());
   if (token) {
     try {
       const backendResponse = await fetch(`${BACKEND_BASE_URL}/api/admin/auth/logout`, {
@@ -39,10 +41,18 @@ export async function POST(request: Request) {
     }
   }
   const response = NextResponse.json({ code: 0, message: "OK", data: null });
+  const secure = isSecureRequest(request);
   response.cookies.set(ADMIN_TOKEN_COOKIE, "", {
     httpOnly: true,
     sameSite: "strict",
-    secure: isSecureRequest(request),
+    secure,
+    path: "/",
+    maxAge: 0,
+  });
+  response.cookies.set(ADMIN_PASSWORD_CHANGE_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "strict",
+    secure,
     path: "/",
     maxAge: 0,
   });

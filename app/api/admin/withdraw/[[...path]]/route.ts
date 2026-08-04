@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -15,6 +16,8 @@ async function proxy(request: Request, context: RouteContext) {
   const { path = [] } = await context.params;
   const target = targetPath(path);
   if (!target) return Response.json({ code: "WITHDRAW_ROUTE_NOT_FOUND", message: "WITHDRAW_ROUTE_NOT_FOUND" }, { status: 404 });
+  const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
+  if (passwordChangeBlocked) return passwordChangeBlocked;
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
   if (!token) return Response.json({ code: "ADMIN_AUTH_REQUIRED", message: "ADMIN_AUTH_REQUIRED" }, { status: 401 });
   const headers = new Headers({ Authorization: `Bearer ${token}` });

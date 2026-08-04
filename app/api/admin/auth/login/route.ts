@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ADMIN_PASSWORD_CHANGE_COOKIE, sessionRequiresPasswordChange } from "@/lib/admin/require-password-change-cleared";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -85,12 +86,22 @@ export async function POST(request: Request) {
           session: parsed.data.session,
         },
       });
-      response.cookies.set(ADMIN_TOKEN_COOKIE, accessToken, {
+      // 强制改密未完成:只种受限 cookie(仅够走改密/登出),不下发 8 小时全权 cookie。
+      const passwordChangeRequired = sessionRequiresPasswordChange(parsed.data.session);
+      const secure = isSecureRequest(request);
+      response.cookies.set(ADMIN_TOKEN_COOKIE, passwordChangeRequired ? "" : accessToken, {
         httpOnly: true,
         sameSite: "strict",
-        secure: isSecureRequest(request),
+        secure,
         path: "/",
-        maxAge: ADMIN_TOKEN_MAX_AGE_SECONDS,
+        maxAge: passwordChangeRequired ? 0 : ADMIN_TOKEN_MAX_AGE_SECONDS,
+      });
+      response.cookies.set(ADMIN_PASSWORD_CHANGE_COOKIE, passwordChangeRequired ? accessToken : "", {
+        httpOnly: true,
+        sameSite: "strict",
+        secure,
+        path: "/",
+        maxAge: passwordChangeRequired ? ADMIN_TOKEN_MAX_AGE_SECONDS : 0,
       });
       response.headers.set("Cache-Control", "no-store");
       return response;

@@ -385,6 +385,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_PASSWORD_CURRENT_INVALID: "当前密码不正确。",
   ADMIN_PASSWORD_WEAK: "新密码至少 8 位。",
   ADMIN_PASSWORD_REUSED: "新密码不能与当前密码相同。",
+  ADMIN_PASSWORD_CHANGE_REQUIRED: "请先完成密码修改：当前账号还没有完成强制改密，后台功能已全部暂停。请退出后重新登录，在登录页的「首次登录修改密码」步骤设置新密码，完成后即可继续操作。",
   ACCOUNT_PROFILE_UPDATE_FORBIDDEN: "只有超管可以编辑运营账号资料。",
   ACCOUNT_DELETE_FORBIDDEN: "只有超管可以删除运营账号。",
   ACCOUNT_DELETE_SELF_FORBIDDEN: "不能删除自己的当前账号。",

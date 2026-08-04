@@ -1,5 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import {
+  ADMIN_PASSWORD_CHANGE_COOKIE,
+  readAdminAccessToken,
+  sessionRequiresPasswordChange,
+} from "@/lib/admin/require-password-change-cleared";
 
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
 const ADMIN_TOKEN_COOKIE = "nexion_admin_token";
@@ -49,7 +54,8 @@ function sessionMetadataHeaders(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
+  // 改密是受限态唯一的出口:受限 cookie 优先,已登录态改密仍走全权 cookie。
+  const token = readAdminAccessToken(await cookies());
   if (!token) {
     return jsonError(401, "ADMIN_AUTH_REQUIRED");
   }
@@ -96,12 +102,22 @@ export async function POST(request: Request) {
       },
       { status: upstream.status },
     );
-    response.cookies.set(ADMIN_TOKEN_COOKIE, accessToken, {
+    // 后端仍标记需改密时不升级为全权 cookie(偏保守一侧);正常改密成功即换回全权 cookie 并清掉受限 cookie。
+    const passwordChangeRequired = sessionRequiresPasswordChange(parsed.data.session);
+    const secure = isSecureRequest(request);
+    response.cookies.set(ADMIN_TOKEN_COOKIE, passwordChangeRequired ? "" : accessToken, {
       httpOnly: true,
       sameSite: "strict",
-      secure: isSecureRequest(request),
+      secure,
       path: "/",
-      maxAge: ADMIN_TOKEN_MAX_AGE_SECONDS,
+      maxAge: passwordChangeRequired ? 0 : ADMIN_TOKEN_MAX_AGE_SECONDS,
+    });
+    response.cookies.set(ADMIN_PASSWORD_CHANGE_COOKIE, passwordChangeRequired ? accessToken : "", {
+      httpOnly: true,
+      sameSite: "strict",
+      secure,
+      path: "/",
+      maxAge: passwordChangeRequired ? ADMIN_TOKEN_MAX_AGE_SECONDS : 0,
     });
     response.headers.set("Cache-Control", "no-store");
     return response;
