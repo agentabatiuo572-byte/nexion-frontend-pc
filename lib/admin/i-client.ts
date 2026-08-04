@@ -1,6 +1,7 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { parseIOverview } from "@/lib/admin/i-overview-contract";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 
 type ApiResult<T> = {
   code?: number;
@@ -15,7 +16,11 @@ function idempotencyKey() {
 // A transport failure has an unknown outcome: the backend may already have
 // committed. Keep the key by exact command fingerprint so a manual retry
 // replays the same command instead of creating a second write.
-const uncertainCommandKeys = new Map<string, string>();
+// 落 sessionStorage 而非内存:刷新页面后重试必须仍是同一命令号,否则后端无法去重。
+// fingerprint = `${method}:${path}:${body}` —— path 带目标对象 id,method + path 区分动作类型。
+const uncertainCommandKeys = createPendingMutationStore({
+  storageKey: "nexion-admin-i-content-uncertain-commands-v1",
+});
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
@@ -26,7 +31,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (isWrite && !headers.has("Idempotency-Key")) {
     const stableKey = uncertainCommandKeys.get(commandFingerprint) ?? idempotencyKey();
-    uncertainCommandKeys.set(commandFingerprint, stableKey);
+    uncertainCommandKeys.remember(commandFingerprint, stableKey);
     headers.set("Idempotency-Key", stableKey);
   }
   let res: Response;
@@ -44,10 +49,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    if (res.status < 500 && isWrite) uncertainCommandKeys.delete(commandFingerprint);
+    if (res.status < 500 && isWrite) uncertainCommandKeys.forget(commandFingerprint);
     throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
   }
-  if (isWrite) uncertainCommandKeys.delete(commandFingerprint);
+  if (isWrite) uncertainCommandKeys.forget(commandFingerprint);
   return payload.data as T;
 }
 

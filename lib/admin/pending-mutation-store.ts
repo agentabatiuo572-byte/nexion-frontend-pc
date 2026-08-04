@@ -5,7 +5,7 @@
  * 命令号重试,后端才能去重。命令号只存在内存(模块级 Map / useState / useRef)时,刷新页面即
  * 丢失,重试会铸新命令号 → 重复入账 / 重复操作。sessionStorage 让命令号跨刷新存活。
  *
- * 单源:d-client / user360-client / c3-adjust 三处共用本模块,禁止再复制第四份内存态实现。
+ * 单源:全仓所有域的待定命令号都走本模块,禁止再复制一份内存态实现。
  * 机器门:`scripts/pending-idempotency-key-sentinel.mjs`(全仓扫内存态幂等键 + 台账)。
  *
  * 作用域说明:
@@ -61,6 +61,11 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   isValidRecord?: (value: T) => boolean;
 }): PendingMutationStore<T> {
   const { storageKey, ttlMs = PENDING_MUTATION_TTL_MS, isValidRecord } = options;
+  // 空 storageKey 会静默退化成「只有内存、刷新即丢」—— 正是本模块要根治的缺陷。
+  // 类型层挡不住 .mjs 调用方,所以在运行时也焊一道。
+  if (typeof storageKey !== "string" || !storageKey) {
+    throw new Error("PENDING_MUTATION_STORE_REQUIRES_STORAGE_KEY");
+  }
   // ponytail: 内存 Map 只是 sessionStorage 的读缓存,不是真源;刷新后从 sessionStorage 重建。
   const memory = new Map<string, string>();
 
@@ -123,5 +128,47 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
     list() {
       return Object.values(readAll());
     },
+  };
+}
+
+export interface SlotAttemptRecord extends PendingMutationRecord {
+  /** 本次尝试的输入指纹(值 / 版本 / 理由…)。与上次不同 = 新意图,换新命令号。 */
+  inputFingerprint: string;
+}
+
+export interface SlotAttemptStore {
+  /** 取该槽位可复用的命令号:输入指纹一致才复用,否则铸新号并丢弃旧号。 */
+  resolve(slot: string, inputFingerprint: string, mint: () => string): string;
+  /** 命令已收敛,丢弃该槽位。 */
+  forget(slot: string): void;
+}
+
+/**
+ * 「一个槽位同时只有一次在途尝试」的命令号存储。
+ *
+ * 适用形态:`Map<槽位, { fingerprint, commandKey }>` —— 槽位是目标对象(用户号 / 档位 / 版块…),
+ * 输入指纹是本次提交的值。i3 / i4 / j3 / k4 / k5 迁移前都是这个形态的组件 useRef。
+ *
+ * 为什么不直接把输入指纹拼进 fingerprint:那样旧尝试会留到 TTL 到期。运营改了值再改回来时会
+ * 复用那个可能已被后端消费掉的命令号,让一次真实的新操作被当成重复提交静默吞掉。
+ */
+export function createSlotAttemptStore(options: { storageKey: string; ttlMs?: number }): SlotAttemptStore {
+  const store = createPendingMutationStore<SlotAttemptRecord>({
+    ...options,
+    isValidRecord: (record) => typeof record.inputFingerprint === "string" && record.inputFingerprint.length > 0,
+  });
+  return {
+    resolve(slot, inputFingerprint, mint) {
+      const saved = store.list().find((record) => record.fingerprint === slot);
+      if (saved?.inputFingerprint === inputFingerprint) {
+        store.remember(slot, saved.commandKey, { inputFingerprint });
+        return saved.commandKey;
+      }
+      if (saved) store.forget(slot);
+      const commandKey = mint();
+      store.remember(slot, commandKey, { inputFingerprint });
+      return commandKey;
+    },
+    forget: store.forget,
   };
 }

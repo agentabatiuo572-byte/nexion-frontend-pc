@@ -11,6 +11,7 @@ import {
   normalizeK6Strategies,
   normalizeK6Strategy,
 } from "@/lib/admin/k6-contract";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import type {
   AuditLog,
   Device,
@@ -80,7 +81,11 @@ export type K6RemoteTargetDisable = {
 type Normalizer<T> = (value: unknown) => T;
 
 const BASE = "/api/admin/janus";
-export const pendingWriteKeys = new Map<string, string>();
+/** K6 远端写入命令号:落 sessionStorage,刷新后重试仍是同一号,后端才能去重。
+ *  fingerprint = writeFingerprint(method, path, body) —— path 带目标对象 id,method + path 区分动作类型。 */
+export const pendingWriteKeys = createPendingMutationStore({
+  storageKey: "nexion-admin-k6-janus-write-commands-v1",
+});
 
 function readInvalidResponseError() {
   return new Error(formatAdminApiError("K6_RESPONSE_INVALID", "K6_RESPONSE_INVALID"));
@@ -130,7 +135,7 @@ async function request<T>(path: string, init: RequestInit | undefined, normalize
   const isWrite = !["GET", "HEAD"].includes(method);
   const fingerprint = writeFingerprint(method, path, init?.body);
   const stableCommandKey = isWrite ? commandKey ?? pendingWriteKeys.get(fingerprint) ?? newK6CommandKey() : "";
-  if (isWrite) pendingWriteKeys.set(fingerprint, stableCommandKey);
+  if (isWrite) pendingWriteKeys.remember(fingerprint, stableCommandKey);
 
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set("Content-Type", "application/json");
@@ -171,7 +176,7 @@ async function request<T>(path: string, init: RequestInit | undefined, normalize
   }
 
   if (!response.ok || (typeof payload.code === "number" && payload.code !== 0)) {
-    if (isWrite) pendingWriteKeys.delete(fingerprint);
+    if (isWrite) pendingWriteKeys.forget(fingerprint);
     const message = typeof payload.message === "string" ? payload.message : undefined;
     throw new Error(formatAdminApiError(message, `JANUS_API_${response.status}`));
   }
@@ -190,7 +195,7 @@ async function request<T>(path: string, init: RequestInit | undefined, normalize
     if (isWrite) throw new K6OutcomeUncertainError(stableCommandKey, "响应字段不完整");
     throw readInvalidResponseError();
   }
-  if (isWrite) pendingWriteKeys.delete(fingerprint);
+  if (isWrite) pendingWriteKeys.forget(fingerprint);
   return result;
 }
 

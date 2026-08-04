@@ -8,10 +8,16 @@ import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+/** 账户簇处置与白名单移除共用一张表,调用点 scope 已带动作类型前缀 + 目标 id + 版本
+ *  (`cluster-freeze:簇号:版本`、`whitelist-disable:网段`),刷新后仍能用同一命令号重试。 */
+const commandAttempt = createPendingMutationStore({
+  storageKey: "nexion-admin-k1-multiaccount-commands-v1",
+});
 const CLUSTER_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const WHITELIST_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const MAX_FOCUS_RELOCATIONS = 3;
@@ -177,7 +183,6 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | null>(null);
   const draftSubmitLock = useRef(false);
   const formId = useId();
-  const commandAttempt = useRef(new Map<string, string>());
   const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "positioning" | "found" | "not-found" | "error">("idle");
   const focusPageLoad = useRef(false);
   const router = useRouter();
@@ -324,14 +329,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const proposeClusterAction = async (scope: string, spec: Parameters<typeof propose>[1]) => {
-    const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
-    commandAttempt.current.set(scope, commandKey);
+    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+    commandAttempt.remember(scope, commandKey);
     try {
       const result = await propose(ctx.toast, { ...spec, commandKey });
-      commandAttempt.current.delete(scope);
+      commandAttempt.forget(scope);
       return result;
     } catch (error) {
-      if (!(error instanceof A2OutcomeUncertainError)) commandAttempt.current.delete(scope);
+      if (!(error instanceof A2OutcomeUncertainError)) commandAttempt.forget(scope);
       throw error;
     }
   };
@@ -548,13 +553,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       okLabel: "确认移除",
       run: async (reason) => {
         const scope = `whitelist-disable:${cidr}`;
-        const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
-        commandAttempt.current.set(scope, commandKey);
+        const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+        commandAttempt.remember(scope, commandKey);
         try {
           await runAction(() => ctx.actions.disableK1Whitelist(cidr, reason, commandKey), "白名单已移除");
-          commandAttempt.current.delete(scope);
+          commandAttempt.forget(scope);
         } catch (error) {
-          if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.current.delete(scope);
+          if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.forget(scope);
           throw error;
         }
       },

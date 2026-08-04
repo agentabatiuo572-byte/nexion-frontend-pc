@@ -2,6 +2,7 @@
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchD2WithdrawalDetail,
@@ -182,6 +183,16 @@ function operationKey(scope: string) {
   return `d2-${compactScope}-${uuid.replaceAll("-", "").slice(0, 16)}`;
 }
 
+/** 逐笔审核与批量审核共用一张表,靠 fingerprint 前缀分命名空间;刷新后仍能用同一命令号重试,
+ *  避免运营在「结果未知」后重铸命令号导致重复放行 / 重复退款。 */
+const pendingKeys = createPendingMutationStore({
+  storageKey: "nexion-admin-d2-withdrawal-commands-v1",
+});
+/** 目标对象 id = 提现单号;动作类型 = APPROVE/REJECT/… —— 两者都进指纹,不同单不同动作不撞 key。 */
+const reviewScope = (withdrawalNo: string, action: D2ReviewAction) => `review|${withdrawalNo}|${action}`;
+/** 批量的目标对象 = 本次提交的提现单号集合(排序后),动作类型同上。 */
+const batchScope = (action: D2BatchAction, ids: string[]) => `batch|${action}|${[...ids].sort().join(",")}`;
+
 export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const { toast, openActionConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
@@ -208,7 +219,6 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   // 必须运营显式选择,选中前不可勾选、不可提交。
   const [batchAction, setBatchAction] = useState<D2BatchAction | "">("");
   const [detail, setDetail] = useState<D2Withdrawal | null>(null);
-  const pendingKeys = useRef(new Map<string, string>());
   /** 单调递增请求号:并发 load 时只有最后一发的响应可以落地,旧响应不许覆盖新筛选结果。 */
   const requestSeq = useRef(0);
 
@@ -263,13 +273,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
   const pages = Math.max(1, Math.ceil(rows.total / Math.max(1, rows.pageSize)));
 
   const runReview = async (row: D2Withdrawal, action: D2ReviewAction, reason: string, form?: BusinessFormValue) => {
-    const scope = `${row.withdrawalNo}-${action}`;
-    const key = pendingKeys.current.get(scope) ?? operationKey(scope);
-    pendingKeys.current.set(scope, key);
+    const scope = reviewScope(row.withdrawalNo, action);
+    const key = pendingKeys.get(scope) ?? operationKey(scope);
+    pendingKeys.remember(scope, key);
     setSubmitting(scope);
     try {
       const updated = await reviewD2Withdrawal(row.withdrawalNo, action, { ...businessInput(form), reason }, OPERATOR(), key);
-      pendingKeys.current.delete(scope);
+      pendingKeys.forget(scope);
       toast(`${row.withdrawalNo} 已${actionLabel(action)} · ${statusLabel(updated.status)} · 已记账/审计`);
       setDetail(updated);
       await load();
@@ -323,13 +333,13 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       reasonMin: 8,
       reasonMax: 200,
       run: async (reason, _newValue, businessValue) => {
-        const scope = `batch-${action}-${ids.join("-")}`;
-        const key = pendingKeys.current.get(scope) ?? operationKey(scope);
-        pendingKeys.current.set(scope, key);
+        const scope = batchScope(action, ids);
+        const key = pendingKeys.get(scope) ?? operationKey(scope);
+        pendingKeys.remember(scope, key);
         setSubmitting(scope);
         try {
           const result: D2BatchResult = await reviewD2WithdrawalsBatch(action, ids, { ...businessInput(businessValue), reason }, OPERATOR(), key);
-          pendingKeys.current.delete(scope);
+          pendingKeys.forget(scope);
           toast(`批次 ${result.batchId} 已执行：${result.accepted.length} 成功 / ${result.rejected.length} 笔大额转单笔 / ${result.conflicts.length} 冲突`);
           await load();
         } finally { setSubmitting(""); }

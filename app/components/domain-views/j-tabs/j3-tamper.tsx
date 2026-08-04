@@ -6,7 +6,7 @@
  * 到 C2(/users/actions 冻结)与 K1(/risk/multi-account 簇建档)。
  * 本页唯一写动作 = 告警阈值配置(操作确认 · J.tamper.alertConfig);导出报表为后端生成的脱敏 CSV。
  */
-import { useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import Link from "next/link";
 import { Btn, CodeTag, Modal } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
@@ -15,9 +15,17 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 
 const W = 720;
 const H = 200;
+/** 阈值配置与报表导出各占一个槽位:输入(阈值 / 窗口)没变就复用命令号,变了才铸新号。
+ *  落 sessionStorage,刷新后「结果未确认」的重试仍是同一命令号,后端才能去重。 */
+const commandAttempt = createSlotAttemptStore({
+  storageKey: "nexion-admin-j3-tamper-commands-v1",
+});
+const ALERT_CONFIG_SLOT = "alert-config";
+const REPORT_EXPORT_SLOT = "report-export";
 
 function j3ErrorText(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请重新读取页面状态后重试。";
@@ -35,7 +43,6 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
   const [configOpen, setConfigOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [pendingReport, setPendingReport] = useState<TamperReport | null>(null);
-  const exportAttempt = useRef<{ window: "24h" | "7d" | "30d"; key: string } | null>(null);
   const retryableReport = pendingReport?.window === window ? pendingReport : null;
   const abandonPendingReport = () => {
     setPendingReport(null);
@@ -56,26 +63,24 @@ export function J3HeaderActions({ ctx }: { ctx: JCtx }) {
       }
       return;
     }
-    if (!exportAttempt.current || exportAttempt.current.window !== window) {
-      exportAttempt.current = { window, key: `j3-report-${crypto.randomUUID()}` };
-    }
+    const exportKey = commandAttempt.resolve(REPORT_EXPORT_SLOT, window, () => `j3-report-${crypto.randomUUID()}`);
     let report: TamperReport;
     try {
       report = await actions.createJ3Report(
-        window, `导出 J3 ${window} 脱敏监控报表`, exportAttempt.current.key,
+        window, `导出 J3 ${window} 脱敏监控报表`, exportKey,
       );
     } catch (error) {
       if (isEmergencyOutcomeUncertain(error)) {
         toast("导出结果暂未确认。请再次点击导出以复用同一请求编号，或刷新后到审计记录核对。");
       } else {
-        exportAttempt.current = null;
+        commandAttempt.forget(REPORT_EXPORT_SLOT);
         toast(`导出失败 · ${j3ErrorText(error)}`);
       }
       setExporting(false);
       return;
     }
     // API 成功就是服务端提交边界；从这里开始只允许重试本地下载，不能再次生成报表或审计。
-    exportAttempt.current = null;
+    commandAttempt.forget(REPORT_EXPORT_SLOT);
     setPendingReport(report);
     try {
       downloadJ3ReportFile(report);
@@ -120,7 +125,6 @@ function J3ConfigModal({ ctx, onClose }: { ctx: JCtx; onClose: () => void }) {
   const [feedK4, setFeedK4] = useState(current.feedK4);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const commandAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const changed = threshold !== current.threshold || feedK4 !== current.feedK4;
   const reasonLength = reason.trim().length;
   const targetSevenDayAccounts = current.sevenDayPreviewByThreshold[String(threshold)];
@@ -131,25 +135,23 @@ function J3ConfigModal({ ctx, onClose }: { ctx: JCtx; onClose: () => void }) {
   const submit = async () => {
     if (!valid || submitting) return;
     const fingerprint = JSON.stringify({ threshold, feedK4, reason: reason.trim() });
-    if (!commandAttempt.current || commandAttempt.current.fingerprint !== fingerprint) {
-      commandAttempt.current = { fingerprint, key: `j3-config-${crypto.randomUUID()}` };
-    }
+    const commandKey = commandAttempt.resolve(ALERT_CONFIG_SLOT, fingerprint, () => `j3-config-${crypto.randomUUID()}`);
     setSubmitting(true);
     try {
       await ctx.actions.updateJ3AlertConfig(
-        threshold, feedK4, current.threshold, current.feedK4, reason.trim(), commandAttempt.current.key,
+        threshold, feedK4, current.threshold, current.feedK4, reason.trim(), commandKey,
       );
     } catch (error) {
       if (isEmergencyOutcomeUncertain(error)) {
         ctx.toast("配置结果暂未确认。请再次点击确认变更以复用同一请求编号，或取消后刷新核对当前值和审计记录。");
       } else {
-        commandAttempt.current = null;
+        commandAttempt.forget(ALERT_CONFIG_SLOT);
         ctx.toast(`配置失败 · ${j3ErrorText(error)}`);
       }
       setSubmitting(false);
       return;
     }
-    commandAttempt.current = null;
+    commandAttempt.forget(ALERT_CONFIG_SLOT);
     try {
       await ctx.actions.reloadJEmergency();
       ctx.toast("监控配置已生效 · 已记审计");

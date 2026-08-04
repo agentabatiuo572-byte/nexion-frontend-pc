@@ -69,9 +69,11 @@ test("M5 preserves one idempotency key across a failed command retry", () => {
   const client = read("lib/admin/m-client.ts");
   const view = read("app/components/domain-views/m-view.tsx");
 
-  assert.match(view, /pendingIdempotencyKeys = useRef/);
-  assert.match(view, /pendingIdempotencyKeys\.current\.get\(fingerprint\)/);
-  assert.match(view, /pendingIdempotencyKeys\.current\.delete\(fingerprint\)/);
+  // 命令号落共享持久化 store(sessionStorage):刷新后重试仍是同一号,后端才能去重。
+  assert.doesNotMatch(view, /pendingIdempotencyKeys/);
+  assert.match(view, /mCommands = createPendingMutationStore<MCommandRecord>\(\{/);
+  assert.match(view, /records\.find\(\(record\) => record\.paramFingerprint === fingerprint\)\?\.commandKey/);
+  assert.match(view, /mCommands\.forget\(commandSlot\(commandFingerprint\)\)/);
   assert.match(view, /pendingMCommandMetadata/);
   assert.match(view, /\{ \.\.\.meta, \.\.\.stableMetadata, idempotencyKey \}/);
   assert.match(client, /headers: idempotencyKey \? \{ "Idempotency-Key": idempotencyKey \}/);

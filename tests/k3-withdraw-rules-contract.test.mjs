@@ -99,8 +99,8 @@ test("K3 dry-run returns an operator-visible batch result", () => {
   assert.match(client, /const stableCommandKey = commandKey \?\? newK1CommandKey\(\)/);
   assert.match(client, /return normalizeK3DryRunForWrite\(value, stableCommandKey\)/);
   assert.match(component, /function isOutcomeUncertain/);
-  assert.match(component, /commandAttempt\.current = null/);
-  assert.match(component, /if \(!outcomeUncertain\) commandAttempt\.current = null/);
+  assert.match(component, /commandAttempt\.forget\(DRY_RUN_SCOPE\)/);
+  assert.match(component, /if \(!outcomeUncertain\) commandAttempt\.forget\(DRY_RUN_SCOPE\)/);
   assert.match(component, /setDryRunError\(message\)/);
   assert.match(component, /role="alert"/);
   assert.match(component, /结果暂不确定，请使用原操作重试/);

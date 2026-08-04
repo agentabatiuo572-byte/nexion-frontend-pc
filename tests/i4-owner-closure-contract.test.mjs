@@ -47,7 +47,7 @@ test("PC I4 commands bind the visible section snapshot and draft revision", () =
   assert.match(page, /section\.status\.toLowerCase\(\)\s*===\s*"archived"/);
   assert.match(page, /isArchived\s*\?\s*"恢复上线"\s*:\s*"回滚历史版"/);
   assert.match(page, /createA2CommandKey\("i4-trust-section"\)/);
-  assert.match(page, /trustCommandAttempts\.current\.set/);
+  assert.match(page, /commandAttempts\.resolve\(slot, fingerprint, \(\) => createA2CommandKey\("i4-trust-section"\)\)/);
   assert.match(page, /await propose\(toast,\s*\{\s*\.\.\.spec,\s*commandKey\s*\}\)/);
   assert.match(page, /error instanceof A2OutcomeUncertainError/);
   assert.match(page, /return proposeTrustSection\(`\$\{s\.key\}:publish`/);
