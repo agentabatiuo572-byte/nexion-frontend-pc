@@ -145,7 +145,7 @@ const listCapabilityBaseline = `
 `;
 
 const supportDevSpec = `
-### 9.9a /content/support 支持后台
+### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
 
 - FAQ 管理:创建、编辑、发布、下架、排序、分类。
 - Ticket 分类/SLA:category、priority、owner、SLA target。
@@ -173,7 +173,7 @@ const supportV4 = `
 #### [I6a] Support CMS / Ticket Ops
 
 **① 目的 & 对齐**
-管理 \`/content/support\` 的 FAQ 与工单运营面,覆盖 FAQ 内容、Ticket 分类/SLA、回复、关闭、重开、owner/priority 调整与审计理由。用户端对应 \`/me/help\`、\`/me/support\`、\`/me/support/tickets\`。
+管理客服中心(实现面已重组为独立域 M:\`/service/tickets\` 工单 · \`/service/sessions\` 会话;历史路径 \`/content/support\` 已随客服迁出域 I 退役)的 FAQ 与工单运营面,覆盖 FAQ 内容、Ticket 分类/SLA、回复、关闭、重开、owner/priority 调整与审计理由。用户端对应 \`/me/help\`、\`/me/support\`、\`/me/support/tickets\`。
 
 **② 后台界面**
 - FAQ 列表与详情:标题、分类、语言、状态、排序、版本。
@@ -188,14 +188,12 @@ const supportV4 = `
 - FAQ 创建/编辑/发布/下架/排序。
 - 工单回复、关闭、重开、改 owner、改 priority,均写 audit reason。
 
-**⑤ 接口**
-- \`GET /api/admin/support/faqs\`
-- \`PUT /api/admin/support/faqs/:id\`
-- \`GET /api/admin/support/tickets\`
-- \`POST /api/admin/support/tickets/:id/reply\`
-- \`PUT /api/admin/support/tickets/:id/status\`
-- \`PUT /api/admin/support/tickets/:id/owner\`
-- \`PUT /api/admin/support/tickets/:id/priority\`
+**⑤ 接口**(现役前缀 \`/api/admin/content\`,2026-08-04 对齐 m-client 实现)
+- \`GET /knowledge/faqs\`(FAQ 域;写动作走同资源子路径)
+- \`GET /tickets\`(工单列表/详情;回复、状态、owner、priority 走 \`/tickets/{id}/*\` 子路径)
+- \`GET /tickets/load-config\` · \`POST /tickets/load-config/rebalance\`(坐席负载与转派)
+- \`GET /support-agents\`(坐席字典)
+- \`GET /conversations\` · \`/conversations/timeout-policy\`(即时会话与超时策略,与 I9/M3 共用)
 
 **⑥ 权限 & 审计**
 内容/客服可处理 FAQ 与工单;内容 lead/客服 lead/超管可关闭、重开、改 owner/priority。所有写动作落 A2 审计。
@@ -226,7 +224,9 @@ const operations = [
   { id: "product.route.uniappCoverage", file: "product", type: "insertBefore", anchor: "\n## 4. 账户与身份", content: productRouteCoverage },
   { id: "product.kyc.topupLoop", file: "product", type: "insertBefore", anchor: "\n#### 4.4.3 验证后特权", content: kycTopupLoop },
   { id: "product.wallet.topupWriteRules", file: "product", type: "insertBefore", anchor: "\n### 9.3 提现 `/me/wallet/withdraw`", content: topupWriteRules },
-  { id: "product.wallet.withdrawClosure", file: "product", type: "insertBefore", anchor: "\n#### 9.3.2 贡献积分门槛", content: withdrawClosure },
+  // 2026-08-04 退役:9.3.1a 提现提交闭环草稿为 L5(6 月)口径,仍讲「contribution points 事件」;产品已在 FEAT-WD02
+  // 用 NEX 抵扣取代积分门槛(原锚「9.3.2 贡献积分门槛」随之改名)。硬插=污染,须按现行 WD01/02 口径重写后另立规则。
+  // { id: "product.wallet.withdrawClosure", file: "product", type: "insertBefore", anchor: "\n#### 9.3.2 贡献积分门槛", content: withdrawClosure },
   { id: "product.team.financeControls", file: "product", type: "insertBefore", anchor: "\n### 8.2 V 级头衔体系 `/team/rank`", content: teamFinanceControls },
   { id: "product.wallet.exchangeConfirmation", file: "product", type: "insertBefore", anchor: "\n#### 9.4.2 风控参数", content: exchangeConfirmation },
   { id: "product.wallet.repurchaseConfirmation", file: "product", type: "insertBefore", anchor: "\n#### 9.5.4 玩法说明页 `/me/wallet/repurchase/how-it-works`", content: repurchaseConfirmation },

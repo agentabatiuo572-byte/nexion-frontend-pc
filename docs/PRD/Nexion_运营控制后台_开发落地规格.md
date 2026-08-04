@@ -51,6 +51,14 @@
 - 纯展示弹窗必须显式标 readonly,不得出现可执行主按钮。
 - 高敏动作仍使用 confirm-with-reason 外壳,但业务表单体必须在确认外壳内可操作。
 
+### 0.3a 业务弹窗契约
+
+- 每个弹窗必须声明 trigger、business target、required input、validation、write action、audit reason、success feedback、persisted echo。
+- 弹窗内容必须匹配按钮语义:改角色必须有 role selector;改授权必须有 permission diff;编辑文案必须有 zh/en 字段;创建课程必须有 title/body/category/duration;提现处置必须有 approve/reject/delay/freeze 业务选项。
+- 只有 reason textarea 的 edit/create/repair/role/permission/action 弹窗视为 business-incomplete-modal。
+- 纯展示弹窗必须显式标 readonly,不得出现可执行主按钮。
+- 高敏动作仍使用 confirm-with-reason 外壳,但业务表单体必须在确认外壳内可操作。
+
 ### 0.4 Idempotency-Key
 所有资金/资产/状态写操作携 `Idempotency-Key` header,server 24h dedup(**固定 24h 后端不变量,运营不可调**),网络抖动 retry 返 200 + 原结果,**不重复生效**。
 
@@ -863,6 +871,10 @@
 
 A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` 中启用且未删除的配置，以及 J1/J2 实时权威状态；owner domain / module / route 由后端显式登记，前端不得按参数名正则猜测。`docs/cgm/cgm.manifest.json` 仅用于规划覆盖审计，其中 TBD、mock 或前端常量项不得伪装成已上线参数。A5 读取权限固定为 `platform_a5_read`，不得复用 A3 权限。401、403、服务不可用、数据一致性失败与真实空寄存器必须分别呈现；重复 canonical key、统计不一致或来源部分失败时失败关闭，不展示可疑值。
 
+### 4.15 平台参数寄存器 owner-link
+
+平台参数寄存器只做索引和导航,不复制 owner module 的权威配置表。每个参数必须有 owner domain、owner module、canonical field、read source、write route 与 owner-link。用户从参数寄存器点击 owner-link 后,必须能进入 owner 页面完成真实业务操作;例如 G1 staking APY/penalty/minStake 的写入口归 G1 owner module,寄存器只展示并跳转。
+
 ### 4.X 易混淆 / 校验铁律(开发实现必读)
 
 1. **同名不同域参数严格区分**(详见第 0 章 §0.9):提现冷却 `withdrawCooldownDays`(D5,权威 H1)≠ 试用冷却 H2 `cooldownDays` ≠ 佣金冷却 `commission/cooling-days`(F2);大额 $1,000 三处独立(D2 人工审核 / K3 `largeAmountUsdt` / K5 `largeWithdrawReviewUsdt`);兑换三阈值权威 G2(V3),K5 仅消费。
@@ -1065,6 +1077,13 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | 17 | `commission.paid` kind 值 + layer 属性注册 | 前端 §12.5 用 `unilevel`;layer(L1–L7)未登记为聚合维度 | A4 统一 kind 值 + 登记 layer 为可聚合维度(KPI #7 锚点) | F2/F5 / A4 | v2 §F5⑧(与未决项 #6 互指) |
 
 ---
+
+## 第 8A 章 全后台列表能力基线
+
+- 数据列表必须提供分页或显式小表豁免。
+- 默认五件套:pagination、search、filter、sort/status、empty state。
+- 小表豁免只允许用于固定短列表、配置摘要、KPI 摘要;豁免必须在页面或规格中声明理由。
+- 资金、提现、账单、工单、用户、审计、内容记录类列表不得豁免分页。
 
 ## 第 8A 章 全后台列表能力基线
 
@@ -1303,7 +1322,15 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 | I7-MD3 | 完成 NEX 奖励额调整确认 | 是 | v4 I7④a |
 | I7-MD4 | 课程下架 / 回滚确认 | 是 | v4 I7④a |
 
-### 9.9a /content/support 支持后台
+### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
+
+- FAQ 管理:创建、编辑、发布、下架、排序、分类。
+- Ticket 分类/SLA:category、priority、owner、SLA target。
+- 工单处理:回复、关闭、重开、改 owner、改 priority、写 audit reason。
+- 工单列表必须支持分页、搜索、状态筛选、owner/priority 筛选和空态。
+- 所有写动作必须刷新后仍可见,并写入 audit feed。
+
+### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
 
 - FAQ 管理:创建、编辑、发布、下架、排序、分类。
 - Ticket 分类/SLA:category、priority、owner、SLA target。
@@ -1361,6 +1388,13 @@ A5 的运行时权威源是后端只读寄存器：仅聚合 `nx_config_item` �
 
 - 产品 PRD canonical 路径固定为 `D:\WORKS\PLAN\PRD\Nexion_产品功能架构设计文档_v3.7.md`。
 - 运营后台 canonical 文档固定为 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台PRD_v4.md` 与 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台_开发落地规格.md`。
+- `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
+- hook、verify gate 与同步流程只认 canonical 文件。
+
+## 第 10 章 PRD canonical 治理
+
+- 产品 PRD canonical 路径固定为 `D:\WORKS\PLAN\PRD\NexGrid_产品功能架构设计文档_v3.7.md`。
+- 运营后台 canonical 文档固定为 `D:\WORKS\PLAN\PRD\NexGrid_运营控制后台PRD_v4.md` 与 `D:\WORKS\PLAN\PRD\NexGrid_运营控制后台_开发落地规格.md`。
 - `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
 - hook、verify gate 与同步流程只认 canonical 文件。
 

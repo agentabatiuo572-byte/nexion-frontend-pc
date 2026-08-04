@@ -775,7 +775,7 @@
 #### [I6a] Support CMS / Ticket Ops
 
 **① 目的 & 对齐**
-管理 `/content/support` 的 FAQ 与工单运营面,覆盖 FAQ 内容、Ticket 分类/SLA、回复、关闭、重开、owner/priority 调整与审计理由。用户端对应 `/me/help`、`/me/support`、`/me/support/tickets`。
+管理客服中心(实现面已重组为独立域 M:`/service/tickets` 工单 · `/service/sessions` 会话;历史路径 `/content/support` 已随客服迁出域 I 退役)的 FAQ 与工单运营面,覆盖 FAQ 内容、Ticket 分类/SLA、回复、关闭、重开、owner/priority 调整与审计理由。用户端对应 `/me/help`、`/me/support`、`/me/support/tickets`。
 
 **② 后台界面**
 - FAQ 列表与详情:标题、分类、语言、状态、排序、版本。
@@ -790,14 +790,12 @@
 - FAQ 创建/编辑/发布/下架/排序。
 - 工单回复、关闭、重开、改 owner、改 priority,均写 audit reason。
 
-**⑤ 接口**
-- `GET /api/admin/support/faqs`
-- `PUT /api/admin/support/faqs/:id`
-- `GET /api/admin/support/tickets`
-- `POST /api/admin/support/tickets/:id/reply`
-- `PUT /api/admin/support/tickets/:id/status`
-- `PUT /api/admin/support/tickets/:id/owner`
-- `PUT /api/admin/support/tickets/:id/priority`
+**⑤ 接口**(现役前缀 `/api/admin/content`,2026-08-04 对齐 m-client 实现)
+- `GET /knowledge/faqs`(FAQ 域;写动作走同资源子路径)
+- `GET /tickets`(工单列表/详情;回复、状态、owner、priority 走 `/tickets/{id}/*` 子路径)
+- `GET /tickets/load-config` · `POST /tickets/load-config/rebalance`(坐席负载与转派)
+- `GET /support-agents`(坐席字典)
+- `GET /conversations` · `/conversations/timeout-policy`(即时会话与超时策略,与 I9/M3 共用)
 
 **⑥ 权限 & 审计**
 内容/客服可处理 FAQ 与工单;内容 lead/客服 lead/超管可关闭、重开、改 owner/priority。所有写动作落 A2 审计。
@@ -2518,6 +2516,13 @@ flowchart LR
 
 - 产品 PRD canonical 路径固定为 `D:\WORKS\PLAN\PRD\Nexion_产品功能架构设计文档_v3.7.md`。
 - 运营后台 canonical 文档固定为 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台PRD_v4.md` 与 `D:\WORKS\PLAN\PRD\Nexion_运营控制后台_开发落地规格.md`。
+- `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
+- hook、verify gate 与同步流程只认 canonical 文件。
+
+### 17.5a PRD canonical 治理
+
+- 产品 PRD canonical 路径固定为 `D:\WORKS\PLAN\PRD\NexGrid_产品功能架构设计文档_v3.7.md`。
+- 运营后台 canonical 文档固定为 `D:\WORKS\PLAN\PRD\NexGrid_运营控制后台PRD_v4.md` 与 `D:\WORKS\PLAN\PRD\NexGrid_运营控制后台_开发落地规格.md`。
 - `_bak/`、`_bakF/`、remediation backups 不参与唯一性判断。
 - hook、verify gate 与同步流程只认 canonical 文件。
 
