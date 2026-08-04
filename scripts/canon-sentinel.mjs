@@ -401,5 +401,9 @@ const result = {
   checks,
 };
 
-console.log(JSON.stringify(result, null, 2));
-if (failures.length > 0) process.exit(1);
+// 通过时压成单行(verify/l5 按 exit code 判定,stdout 只进日志);失败保留完整 JSON 便于定位。
+if (failures.length > 0) {
+  console.log(JSON.stringify(result, null, 2));
+  process.exit(1);
+}
+console.log(`canon sentinel PASS — ${result.checkCount} checks · canon ${result.canonVersion}`);
