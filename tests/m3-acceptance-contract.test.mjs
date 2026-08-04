@@ -63,7 +63,10 @@ test("M3 retries an unknown-result write with the same payload and idempotency k
   const view = read("app/components/domain-views/m-view.tsx");
   const client = read("lib/admin/m-client.ts");
 
-  assert.match(view, /pendingMCommandAttempts = useRef\(new Map<string, \{ value: string; idempotencyKey: string \}>\(\)\)/);
+  // 命令号 + 稳定值落共享持久化 store(sessionStorage),刷新后重试仍是同一号与同一个值。
+  assert.match(view, /mCommands = createPendingMutationStore<MCommandRecord>\(\{/);
+  assert.doesNotMatch(view, /pendingMCommandAttempts/);
+  assert.match(view, /mCommands\.remember\(commandSlot\(commandFingerprint\), idempotencyKey, \{ value: stableValue/);
   assert.match(view, /const commandFingerprint = meta\?\.commandKey/);
   assert.match(view, /const stableValue = attempt\?\.value \?\? value/);
   assert.match(view, /pendingMCommandBaselines/);

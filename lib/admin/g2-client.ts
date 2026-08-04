@@ -1,7 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { assertG2OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -194,7 +194,7 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-const executeG2Mutation = createStableMutationExecutor(idempotencyKey);
+const executeG2Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g2-exchange-commands-v1");
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
@@ -366,9 +366,10 @@ function g2OverviewMutation(
   prefix: string,
 ) {
   const serialized = JSON.stringify(body);
+  // 指纹带 path:exchangeNo 只在 path 里,不带就会让「不同兑换单、同理由」的取消/复核共用命令号。
   return executeG2Mutation(
     prefix,
-    serialized,
+    stableMutationFingerprint(method, path, serialized),
     (commandKey) => g2Request<BackendOverview>(path, {
       method,
       headers: { "Idempotency-Key": commandKey },

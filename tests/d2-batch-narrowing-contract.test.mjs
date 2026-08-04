@@ -71,7 +71,16 @@ test("高敏批量纪律未被弱化:确认弹窗 + 必填理由 + 幂等 + 覆�
   assert.match(page, /reasonMin: 8,\s*reasonMax: 200,/);
   assert.match(page, /amplifies: batchAction === "APPROVE"/);
   assert.match(page, /coverage: d5 \? \{ coverageRatio: d5\.coverageRatio, redlinePct: d5\.redlinePct \} : undefined/);
-  assert.match(page, /const key = pendingKeys\.current\.get\(scope\) \?\? operationKey\(scope\)/);
+  // 命令号落共享持久化 store(sessionStorage):刷新后重试仍是同一号,后端才能去重,
+  // 不会把「结果未知后的重试」变成第二笔放行 / 第二笔退款。
+  assert.match(page, /const pendingKeys = createPendingMutationStore\(\{/);
+  assert.doesNotMatch(page, /pendingKeys = useRef/);
+  assert.match(page, /const key = pendingKeys\.get\(scope\) \?\? operationKey\(scope\)/);
+  assert.match(page, /pendingKeys\.remember\(scope, key\)/);
+  assert.match(page, /pendingKeys\.forget\(scope\)/);
+  // 指纹必须编码动作类型 + 目标单号,否则不同单 / 不同动作会撞 key。
+  assert.match(page, /const reviewScope = \(withdrawalNo: string, action: D2ReviewAction\) => `review\\|\$\{withdrawalNo\}\\|\$\{action\}`/);
+  assert.match(page, /const batchScope = \(action: D2BatchAction, ids: string\[\]\) => `batch\\|\$\{action\}\\|\$\{\[\.\.\.ids\]\.sort\(\)\.join\(","\)\}`/);
   assert.match(page, /finally \{ setSubmitting\(""\); \}/);
   // 运营可读中文:禁用原因 / 提交后果都用人话,不吐字段名与枚举值
   assert.match(page, /未选择批量动作时不能勾选、不能提交/);
@@ -80,12 +89,35 @@ test("高敏批量纪律未被弱化:确认弹窗 + 必填理由 + 幂等 + 覆�
 
 // ─────────────── 行为固定靶:抽 d2-withdrawals.tsx 真源码跑 ───────────────
 
-/** 抽 `function x(` 或 `const x = async (` / `const x = (` 到花括号配平处(仅用于无 JSX 的纯逻辑块)。 */
+/**
+ * 抽 `function x(` 或 `const x = async (` / `const x = (` 到花括号配平处(仅用于无 JSX 的纯逻辑块)。
+ * 表达式体箭头(`const x = (a) => \`...\`;`,没有花括号)按语句末尾的 `;` 收口 —— 否则会一路吞到
+ * 下一个函数的花括号里,抽出一坨语法错误的东西。
+ */
 function grabDecl(source, name) {
   const start = [`function ${name}(`, `const ${name} = async (`, `const ${name} = (`]
     .map((needle) => source.indexOf(needle))
     .find((index) => index >= 0);
   assert.ok(start !== undefined && start >= 0, `${PAGE_FILE} 里找不到 ${name}(被改名或删除?)`);
+  // 体是块还是表达式,必须从**本声明的参数表右括号**往后看,不能满文件找第一个 `=>`
+  // (函数声明后面随便哪个箭头函数都会被误认),也不能拿「第一个 { 」判断
+  // (模板串的 `${...}` 也是花括号,`const x = (a) => \`p|${a}\`;` 会被截在 ${a} 的 } 上)。
+  let parens = 0;
+  let paramsEnd = -1;
+  for (let p = source.indexOf("(", start); p < source.length; p++) {
+    if (source[p] === "(") parens++;
+    else if (source[p] === ")" && --parens === 0) { paramsEnd = p + 1; break; }
+  }
+  assert.ok(paramsEnd > 0, `${name} 参数表括号不配平`);
+  const afterParams = source.slice(paramsEnd).trimStart();
+  if (afterParams.startsWith("=>") && !afterParams.slice(2).trimStart().startsWith("{")) {
+    let template = 0;
+    for (let p = paramsEnd; p < source.length; p++) {
+      if (source[p] === "`") template = template ? 0 : 1;
+      else if (!template && source[p] === ";") return source.slice(start, p + 1);
+    }
+    assert.fail(`${name} 表达式体没有以 ; 收口`);
+  }
   let depth = 0;
   let started = false;
   for (let p = source.indexOf("{", start); p < source.length; p++) {
@@ -98,7 +130,7 @@ function grabDecl(source, name) {
 async function loadExtracted() {
   const fns = [
     "actionCandidates", "routingPriority", "routingUnavailable", "batchSelectable", "batchTargets",
-    "actionLabel", "reviewAtAfter", "actionBusinessForm", "businessInput", "operationKey",
+    "actionLabel", "reviewAtAfter", "actionBusinessForm", "businessInput", "operationKey", "batchScope",
     "load", "confirmBatch",
   ].map((name) => grabDecl(page, name)).join("\n");
   const bundle = `// auto-extracted from ${PAGE_FILE} by d2-batch contract test — DO NOT EDIT
@@ -122,7 +154,13 @@ const setError = (v: any) => calls.errors.push(v);
 const setWritesEnabled = (v: any) => calls.writes.push(v);
 // confirmBatch 的闭包桩(selected 供红测注入版本使用)
 let batchAction: any = "", submittableRows: any[] = [], selected = new Set<string>(), d5: any = null;
-const pendingKeys = { current: new Map<string, string>() };
+// 共享 store 的最小替身:只需 get/remember/forget 三个方法,不引 sessionStorage。
+const pendingKeyCells = new Map<string, string>();
+const pendingKeys = {
+  get: (scope: string) => pendingKeyCells.get(scope),
+  remember: (scope: string, key: string) => { pendingKeyCells.set(scope, key); },
+  forget: (scope: string) => { pendingKeyCells.delete(scope); },
+};
 const setSubmitting = (v: any) => calls.submitting.push(v);
 const toast = (s: any) => calls.toasts.push(s);
 const openActionConfirm = (req: any) => calls.opened.push(req);
@@ -138,7 +176,7 @@ export function setup(next: any = {}) {
   for (const key of ["rows", "d5", "loading", "writes", "errors", "toasts", "opened", "submitted", "submitting"]) calls[key].length = 0;
   calls.selectedCleared = 0;
   requestSeq.current = 0;
-  pendingKeys.current.clear();
+  pendingKeyCells.clear();
   stubs.fetchD2Withdrawals = async () => ({ total: 0, pageNum: 1, pageSize: 10, records: [] });
   stubs.fetchD5WithdrawalParams = async () => ({ coverageRatio: 120, redlinePct: 70 });
 }

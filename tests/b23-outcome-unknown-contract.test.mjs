@@ -15,9 +15,12 @@ test("B2 preserves one forecast-config command key while the upstream outcome is
   assert.match(b2Client, /export class B2OutcomeUnknownError extends Error/);
   assert.match(b2Client, /X-Nexion-Upstream-Outcome/);
   assert.match(b2Client, /commandKey = idempotencyKey\("b2-forecast-config"\)/);
-  assert.match(b2Page, /forecastConfigCommandKey = useRef<string \| null>\(null\)/);
+  // 命令号必须落共享持久化 store(sessionStorage):刷新后重试仍是同一号,后端才能去重。
+  assert.match(b2Page, /forecastConfigCommandKey = createSlotAttemptStore\(\{/);
+  assert.doesNotMatch(b2Page, /forecastConfigCommandKey = useRef/);
+  assert.match(b2Page, /forecastConfigCommandKey\.resolve\(\s*FORECAST_CONFIG_SLOT, fingerprint,/);
   assert.match(b2Page, /updateB2ForecastConfig\([\s\S]*commandKey/);
-  assert.match(b2Page, /if \(!\(caught instanceof B2OutcomeUnknownError\)\) \{[\s\S]*forecastConfigCommandKey\.current = null/);
+  assert.match(b2Page, /if \(!\(caught instanceof B2OutcomeUnknownError\)\) forecastConfigCommandKey\.forget\(FORECAST_CONFIG_SLOT\)/);
 });
 
 test("B3 proxy marks an interrupted keyed write as result unknown", () => {
@@ -31,7 +34,9 @@ test("B3 preserves one saved-view command key while the upstream outcome is unkn
   assert.match(b3Client, /export class B3OutcomeUnknownError extends Error/);
   assert.match(b3Client, /X-Nexion-Upstream-Outcome/);
   assert.match(b3Client, /commandKey = idempotencyKey\("b3-view"\)/);
-  assert.match(b3Page, /viewCommandKey = useRef<string \| null>\(null\)/);
+  assert.match(b3Page, /viewCommandKey = createSlotAttemptStore\(\{/);
+  assert.doesNotMatch(b3Page, /viewCommandKey = useRef/);
+  assert.match(b3Page, /viewCommandKey\.resolve\(VIEW_SAVE_SLOT, fingerprint,/);
   assert.match(b3Page, /saveB3View\(viewName, filters, "WEEK", "PREVIOUS", commandKey\)/);
-  assert.match(b3Page, /if \(!\(value instanceof B3OutcomeUnknownError\)\) \{[\s\S]*viewCommandKey\.current = null/);
+  assert.match(b3Page, /if \(!\(value instanceof B3OutcomeUnknownError\)\) viewCommandKey\.forget\(VIEW_SAVE_SLOT\)/);
 });

@@ -1,9 +1,10 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataListPager, Drawer, type BusinessFormValue } from "../design-kit";
 import {
   disableUserTwoFactor,
@@ -151,6 +152,12 @@ function newCommandKey(prefix: string) {
   return `${prefix}-${suffix}`;
 }
 
+/** C5 七类安全动作共用一张表,调用点的 fingerprint 已带动作类型前缀 + 目标 id
+ *  (`revoke-one|会话号`、`unlock|用户ID|锁类型`…),刷新后仍能用同一命令号重试。 */
+const pendingCommandKeys = createPendingMutationStore({
+  storageKey: "nexion-admin-c5-security-commands-v1",
+});
+
 function clearSelectedUserFromOverview(current: UserSecurityOverview | null): UserSecurityOverview | null {
   if (!current) return current;
   return {
@@ -224,7 +231,6 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const [error, setError] = useState<string | null>(null);
   const [ssId, setSsId] = useState<string | null>(null);
   const [lockId, setLockId] = useState<string | null>(null);
-  const pendingCommandKeys = useRef(new Map<string, string>());
 
   const replaceFocusUserCode = useCallback((userCode?: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -321,8 +327,8 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     fallback: string,
   ) => {
     setBusy(true);
-    const commandKey = pendingCommandKeys.current.get(fingerprint) ?? newCommandKey("c5-command");
-    pendingCommandKeys.current.set(fingerprint, commandKey);
+    const commandKey = pendingCommandKeys.get(fingerprint) ?? newCommandKey("c5-command");
+    pendingCommandKeys.remember(fingerprint, commandKey);
     let writeReturned = false;
     try {
       const message = await work(commandKey);
@@ -330,13 +336,13 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
       if (!await loadData(true)) {
         throw new Error("操作可能已生效，但结果回读失败；请刷新核对，重试将继续使用同一请求号");
       }
-      pendingCommandKeys.current.delete(fingerprint);
+      pendingCommandKeys.forget(fingerprint);
       toast(message || fallback);
       setError(null);
       return true;
     } catch (err) {
       if (!writeReturned && !(err instanceof UsersOutcomeUnknownError)) {
-        pendingCommandKeys.current.delete(fingerprint);
+        pendingCommandKeys.forget(fingerprint);
       }
       const message = errorMessage(err);
       setError(`C5 操作失败 · ${message}`);

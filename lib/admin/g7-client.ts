@@ -1,7 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { assertG7OrderPageContract, assertG7OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -301,7 +301,7 @@ export async function fetchG7RepurchaseOverview() {
   return normalizeOverview(await g7Request<BackendOverview>("/nex/repurchase"));
 }
 
-const executeG7Mutation = createStableMutationExecutor(idempotencyKey);
+const executeG7Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g7-repurchase-commands-v1");
 
 export async function fetchG7RepurchaseOrders(status = "") {
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
@@ -331,10 +331,11 @@ export async function fetchG7RepurchaseOrders(status = "") {
 export async function updateG7RepurchaseParam(paramKey: string, value: string, reason: string, operator: string, g4Ref = "") {
   const body = { value, reason, operator, g4Ref };
   const serialized = JSON.stringify(body);
+  const path = `/nex/repurchase/config/${encodeURIComponent(paramKey)}`;
   return executeG7Mutation(
     `g7-param-${paramKey}`,
-    serialized,
-    (commandKey) => g7Request<BackendOverview>(`/nex/repurchase/config/${encodeURIComponent(paramKey)}`, {
+    stableMutationFingerprint("PUT", path, serialized),
+    (commandKey) => g7Request<BackendOverview>(path, {
       method: "PUT",
       headers: { "Idempotency-Key": commandKey },
       body: serialized,

@@ -1,6 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
-import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -149,7 +149,7 @@ function parseNumber(value: RawNumber) {
   return null;
 }
 
-const executeG3Mutation = createStableMutationExecutor(idempotencyKey);
+const executeG3Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g3-market-commands-v1");
 
 function requireNumber(value: RawNumber, field: string) {
   const parsed = parseNumber(value);
@@ -285,7 +285,7 @@ function g3OverviewMutation(
   const serialized = JSON.stringify(body);
   return executeG3Mutation(
     prefix,
-    serialized,
+    stableMutationFingerprint(method, path, serialized),
     (commandKey) => g3Request<BackendOverview>(path, {
       method,
       headers: { "Idempotency-Key": commandKey },

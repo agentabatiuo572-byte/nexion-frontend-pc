@@ -3,7 +3,7 @@
 /**
  * C1 用户详情(L3 · 画像全景)。页面只消费后端聚合的 360 画像和操作接口。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft, Bell, CreditCard, RefreshCcw, ShieldAlert, Snowflake, UserCog } from "lucide-react";
@@ -27,8 +27,21 @@ import { toast } from "@/lib/store/ui";
 import { KpiStatCard } from "@/app/components/kit/kpi-stat-card";
 import { StatusPill, type PillTone } from "@/app/components/kit/status-pill";
 import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timeline";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+
+/**
+ * C1 用户详情三类写动作(昵称重置 / 支付方式解绑 / 换绑通知)共用一张表,槽位分命名空间。
+ * 槽位必须带用户 ID 与支付方式 ID —— 命令号一旦跨刷新存活,不带目标 id 就会在切到下一个用户 /
+ * 下一张卡时复用上一个目标的号,让后端把这次操作当成重复提交吞掉。
+ */
+const c1UserCommands = createSlotAttemptStore({
+  storageKey: "nexion-admin-c1-user-detail-commands-v1",
+});
+const nicknameSlot = (userId: string | number) => `nickname-reset|${userId}`;
+const paymentSlot = (action: "unbind" | "rebind", userId: string | number, methodId: number) =>
+  `payment-${action}|${userId}|${methodId}`;
 
 type Column = {
   key: string;
@@ -349,8 +362,6 @@ export default function UserDetailPage() {
     amplifies?: boolean;
     run: (reason: string) => Promise<boolean | void> | boolean | void;
   }>(null);
-  const nicknameCommandKey = useRef<string | null>(null);
-  const paymentCommandKeys = useRef<Record<string, string>>({});
   // c1hub 无 CCtx:就近挂载本地 OperationConfirmModal,简化签名(只取 action/detail/amplifies/run)
   const openActionConfirmReq = (req: {
     action: string;
@@ -584,17 +595,19 @@ export default function UserDetailPage() {
                   amplifies: false,
                   run: async (reason) => {
                     if (!userId) return;
-                    const commandKey = nicknameCommandKey.current
-                      ?? `c1-nickname-reset-${crypto.randomUUID()}`;
-                    nicknameCommandKey.current = commandKey;
+                    const commandKey = c1UserCommands.resolve(
+                      nicknameSlot(userId),
+                      JSON.stringify([nickname, reason]),
+                      () => `c1-nickname-reset-${crypto.randomUUID()}`,
+                    );
                     setActionPending("重置昵称");
                     try {
                       const result = await resetUserNickname(userId, nickname, reason, undefined, commandKey);
-                      nicknameCommandKey.current = null;
+                      c1UserCommands.forget(nicknameSlot(userId));
                       toast.success(`昵称已重置为 ${result.nickname}`);
                       await load();
                     } catch (err) {
-                      if (!(err instanceof UsersOutcomeUnknownError)) nicknameCommandKey.current = null;
+                      if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(nicknameSlot(userId));
                       toast.error("昵称重置失败", errorMessage(err));
                       return false;
                     } finally {
@@ -648,7 +661,7 @@ export default function UserDetailPage() {
                 <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2"><CreditCard size={17} /><div><p className="text-[13px]" style={{ color: "var(--v5-ink)" }}>{method.brand} ···· {method.last4}</p><p className="text-[11px]" style={{ color: "var(--v5-ink-4)" }}>{method.provider} · {method.expiryLabel || "无到期信息"}</p></div></div><StatusPill label={method.status === "BOUND" ? (method.isDefault ? "已绑定 · 默认" : "已绑定") : "已解绑"} tone={method.status === "BOUND" ? "success" : "neutral"} size="sm" dot={false} /></div>
                 {method.trialGuard && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-warning)" }}>试用扣款占用中 · {method.trialRefId || "关联试用"}，禁止直接解绑</p>}
                 {method.status !== "BOUND" && method.unboundAt && <p className="mt-2 text-[11px]" style={{ color: "var(--v5-ink-4)" }}>解绑时间：{formatDate(method.unboundAt)}</p>}
-                {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; const keyName = `rebind-${method.id}`; const commandKey = paymentCommandKeys.current[keyName] ?? `c1-payment-rebind-${crypto.randomUUID()}`; paymentCommandKeys.current[keyName] = commandKey; setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason, undefined, commandKey); delete paymentCommandKeys.current[keyName]; toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) delete paymentCommandKeys.current[keyName]; toast.error("换绑通知失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; const keyName = `unbind-${method.id}`; const commandKey = paymentCommandKeys.current[keyName] ?? `c1-payment-unbind-${crypto.randomUUID()}`; paymentCommandKeys.current[keyName] = commandKey; setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason, undefined, commandKey); delete paymentCommandKeys.current[keyName]; toast.success("支付方式已从 Nexion 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) delete paymentCommandKeys.current[keyName]; toast.error("支付方式解绑失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
+                {canWriteC1 && method.status === "BOUND" && <div className="mt-3 flex gap-2">{method.trialGuard ? <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `发送换绑通知 · 尾号 ${method.last4}`, detail: "向该用户发送真实站内通知与推送，引导先换绑试用扣款支付方式。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("rebind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-rebind-${crypto.randomUUID()}`); setActionPending(`换绑通知 ${method.id}`); try { await notifyUserPaymentMethodRebind(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("换绑通知已进入推送队列"); await loadPaymentMethods(); } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("换绑通知失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}><Bell size={13} /> 发送换绑通知</ActionButton> : <ActionButton disabled={!!actionPending} onClick={() => openActionConfirmReq({ action: `解绑支付方式 · 尾号 ${method.last4}`, detail: "解绑后立即停止作为默认支付方式；若它是默认卡，服务器会选取其他已绑定方式作为默认。", amplifies: false, run: async (reason) => { if (!userId) return; const slot = paymentSlot("unbind", userId, method.id); const commandKey = c1UserCommands.resolve(slot, String(method.version), () => `c1-payment-unbind-${crypto.randomUUID()}`); setActionPending(`解绑 ${method.id}`); try { await unbindUserPaymentMethod(userId, method.id, method.version, reason, undefined, commandKey); c1UserCommands.forget(slot); toast.success("支付方式已从 Nexion 账户解绑"); if (!includeUnbound) { setIncludeUnbound(true); setPaymentPage(1); } else { await loadPaymentMethods(); } } catch (err) { if (!(err instanceof UsersOutcomeUnknownError)) c1UserCommands.forget(slot); toast.error("支付方式解绑失败", errorMessage(err)); return false; } finally { setActionPending(null); } } })}>解绑</ActionButton>}</div>}
               </div>
             ))}
           </div>

@@ -3,7 +3,7 @@
 import "../b-domain.css";
 import "./funnel.css";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, RefreshCw, Save, TrendingUp } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
@@ -14,7 +14,15 @@ import {
   useB3Funnel,
   type B3Filters,
 } from "@/lib/admin/b3-client";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+
+/** B3 保存视图只有一个槽位:视图名 / 筛选条件没变就复用命令号,变了铸新号并丢弃旧号。
+ *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
+const viewCommandKey = createSlotAttemptStore({
+  storageKey: "nexion-admin-b3-funnel-commands-v1",
+});
+const VIEW_SAVE_SLOT = "view-save";
 
 const ALL = "ALL";
 
@@ -28,8 +36,6 @@ export default function FunnelPage() {
   const [viewName, setViewName] = useState("B3 当前视图");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<"save" | "export" | "">("");
-  const viewCommandKey = useRef<string | null>(null);
-  const viewCommandFingerprint = useRef<string | null>(null);
   const auth = useAdminAuth((state) => state.session);
   const { data, loading, error, reload } = useB3Funnel(filters, stage);
   const authorities = auth?.authorities ?? [];
@@ -57,25 +63,16 @@ export default function FunnelPage() {
 
   async function saveView() {
     const fingerprint = JSON.stringify({ viewName, filters, granularity: "WEEK", comparison: "PREVIOUS" });
-    if (viewCommandFingerprint.current !== fingerprint) {
-      viewCommandKey.current = null;
-      viewCommandFingerprint.current = fingerprint;
-    }
-    const commandKey = viewCommandKey.current ?? `b3-view-${crypto.randomUUID()}`;
-    viewCommandKey.current = commandKey;
+    const commandKey = viewCommandKey.resolve(VIEW_SAVE_SLOT, fingerprint, () => `b3-view-${crypto.randomUUID()}`);
     setBusy("save");
     setNotice("");
     try {
       const result = await saveB3View(viewName, filters, "WEEK", "PREVIOUS", commandKey);
-      viewCommandKey.current = null;
-      viewCommandFingerprint.current = null;
+      viewCommandKey.forget(VIEW_SAVE_SLOT);
       setNotice(result.replayed ? "相同视图已存在，未重复写入。" : "视图已保存到服务端，刷新或重登后仍可回读。");
       await reload();
     } catch (value) {
-      if (!(value instanceof B3OutcomeUnknownError)) {
-        viewCommandKey.current = null;
-        viewCommandFingerprint.current = null;
-      }
+      if (!(value instanceof B3OutcomeUnknownError)) viewCommandKey.forget(VIEW_SAVE_SLOT);
       setNotice(value instanceof Error ? value.message : "保存视图失败，请重试。");
     } finally {
       setBusy("");

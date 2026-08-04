@@ -5,9 +5,15 @@ import { DataListPager, type BusinessFormSpec, type BusinessFormValue } from "..
 import { K1OutcomeUncertainError, newK1CommandKey, type K5ManualResult, type K5Stats, type K5Ticket, type K5UserOption, type KRiskParam, type TicketSt } from "@/lib/admin/k-client";
 import type { K5KycStatus } from "@/lib/admin/k5-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+/** 一个操作槽位(`decision:工单号` / `param:参数键` / …)同时只有一次在途尝试:
+ *  输入指纹没变就复用命令号,变了铸新号并丢弃旧号。落 sessionStorage,刷新后重试仍去重。 */
+const commandAttempts = createSlotAttemptStore({
+  storageKey: "nexion-admin-k5-kyc-commands-v1",
+});
 
 const TICKET_ST: Record<TicketSt, [string, string]> = {
   triggered: ["已触发", "dim"],
@@ -259,7 +265,6 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
   const canManual = authorities.includes("risk_k5_ticket_manual");
   const canPass = authorities.includes("risk_k5_ticket_pass");
   const canReject = authorities.includes("risk_k5_ticket_reject");
-  const commandAttempts = useRef(new Map<string, { fingerprint: string; commandKey: string }>());
   const overview = ctx.risk.kycReview;
   const stats: Partial<K5Stats> = overview?.stats ?? {};
   const params = overview?.params ?? [];
@@ -332,14 +337,12 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
   }, [canManual, ctx.actions, manualUserSearch, overview]);
 
   const runAction = async (operation: string, fingerprint: string, work: (commandKey: string) => Promise<void>, ok: string) => {
-    const saved = commandAttempts.current.get(operation);
-    const commandKey = saved?.fingerprint === fingerprint ? saved.commandKey : newK1CommandKey();
-    commandAttempts.current.set(operation, { fingerprint, commandKey });
+    const commandKey = commandAttempts.resolve(operation, fingerprint, newK1CommandKey);
     let writeConfirmed = false;
     try {
       await work(commandKey);
       writeConfirmed = true;
-      commandAttempts.current.delete(operation);
+      commandAttempts.forget(operation);
       try {
         await ctx.reloadKRisk({ kycReview: pageQuery });
       } catch (error) {
@@ -352,7 +355,7 @@ export function K5Kyc({ ctx }: { ctx: KCtx }) {
       if (error instanceof K1OutcomeUncertainError) {
         ctx.toast(`K5 结果未知 · 请保留确认框并使用同一请求重试或先核对 · 请求号 ${commandKey}`);
       } else {
-        commandAttempts.current.delete(operation);
+        commandAttempts.forget(operation);
         ctx.toast(`K5 操作失败 · ${errorText(error)}`);
       }
       throw error;

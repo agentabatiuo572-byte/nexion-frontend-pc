@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   CalendarClock,
@@ -11,7 +11,15 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+
+/** B2 预测配置只有一个槽位:草稿 / 期望版本 / 理由没变就复用命令号,变了铸新号并丢弃旧号。
+ *  落 sessionStorage,刷新后「结果未知」的重试仍是同一命令号,后端才能去重。 */
+const forecastConfigCommandKey = createSlotAttemptStore({
+  storageKey: "nexion-admin-b2-liquidity-commands-v1",
+});
+const FORECAST_CONFIG_SLOT = "forecast-config";
 import {
   B2_LIABILITY_KEYS,
   B2OutcomeUnknownError,
@@ -78,8 +86,6 @@ export default function LiquidityPage() {
   const [dialogStep, setDialogStep] = useState<"closed" | "edit" | "confirm">("closed");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
-  const forecastConfigCommandKey = useRef<string | null>(null);
-  const forecastConfigFingerprint = useRef<string | null>(null);
 
   const load = useCallback(async (nextWindow: B2MaturityWindow) => {
     setLoading(true);
@@ -145,27 +151,20 @@ export default function LiquidityPage() {
       reason: reason.trim(),
       operator,
     });
-    if (forecastConfigFingerprint.current !== fingerprint) {
-      forecastConfigCommandKey.current = null;
-      forecastConfigFingerprint.current = fingerprint;
-    }
-    const commandKey = forecastConfigCommandKey.current ?? `b2-forecast-config-${crypto.randomUUID()}`;
-    forecastConfigCommandKey.current = commandKey;
+    const commandKey = forecastConfigCommandKey.resolve(
+      FORECAST_CONFIG_SLOT, fingerprint, () => `b2-forecast-config-${crypto.randomUUID()}`,
+    );
     setSaving(true);
     setError("");
     void updateB2ForecastConfig(draft, data.config.version, reason.trim(), operator, commandKey)
       .then(async () => {
-        forecastConfigCommandKey.current = null;
-        forecastConfigFingerprint.current = null;
+        forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
         setDialogStep("closed");
         setNotice("预测配置已保存，配置于下一 UTC 日 00:00 生效；刷新后可核对待生效版本");
         await load(window);
       })
       .catch((caught) => {
-        if (!(caught instanceof B2OutcomeUnknownError)) {
-          forecastConfigCommandKey.current = null;
-          forecastConfigFingerprint.current = null;
-        }
+        if (!(caught instanceof B2OutcomeUnknownError)) forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
         setDialogStep(caught instanceof B2OutcomeUnknownError ? "confirm" : "edit");
         setError(caught instanceof Error ? caught.message : "B2 配置保存失败");
       })

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
@@ -9,8 +9,15 @@ import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { fetchE3Snapshot } from "@/lib/admin/e3-client";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
+
+/** K2 标记 / 拦礼 / 看板 / 调参 / 联动冻结共用一张表,调用点 scope 已带动作类型前缀 + 目标行号 + 版本
+ *  (`k2-flag:行号:版本`、`k2-param:参数键:版本:当前值`),刷新后仍能用同一命令号重试。 */
+const commandAttempt = createPendingMutationStore({
+  storageKey: "nexion-admin-k2-arbitrage-commands-v1",
+});
 
 function errorText(error: unknown) {
   return error instanceof Error ? error.message : "UNKNOWN_ERROR";
@@ -190,7 +197,6 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   const current = views.find((item) => item.key === viewKey) ?? views[0];
   const allParams = overview?.params ?? [];
   const detectionParams = allParams.filter((param) => K2_PARAM_HELP[param.key]);
-  const commandAttempt = useRef(new Map<string, string>());
   const [ladderTopCredit, setLadderTopCredit] = useState<string>("");
   useEffect(() => {
     let active = true;
@@ -201,16 +207,16 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
   }, []);
 
   const runAction = async (scope: string, work: (commandKey: string) => Promise<void>, ok: string) => {
-    const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
-    commandAttempt.current.set(scope, commandKey);
+    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+    commandAttempt.remember(scope, commandKey);
     try {
       await work(commandKey);
-      commandAttempt.current.delete(scope);
+      commandAttempt.forget(scope);
     } catch (error) {
       if (error instanceof K1OutcomeUncertainError) {
         ctx.toast(`K2 结果未知 · 当前弹窗与命令键已保留，请用同一请求重试 · ${error.commandKey}`);
       } else {
-        commandAttempt.current.delete(scope);
+        commandAttempt.forget(scope);
         ctx.toast(`K2 操作失败 · 本次写入未生效，当前输入已保留 · ${errorText(error)}`);
       }
       throw error;
@@ -225,8 +231,8 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
 
   const proposeK2Freeze = async (r: K2Row, reason: string) => {
     const scope = `k2-freeze:${r.rowId}:${r.version}:${r.clusterVersion ?? -1}`;
-    const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
-    commandAttempt.current.set(scope, commandKey);
+    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+    commandAttempt.remember(scope, commandKey);
     const def = findHighOp("k2_row_freeze")!;
     try {
       const result = await propose(ctx.toast, {
@@ -248,10 +254,10 @@ export function K2Arbitrage({ ctx }: { ctx: KCtx }) {
         }),
         target: def.buildTarget({ rowId: r.rowId }),
       });
-      commandAttempt.current.delete(scope);
+      commandAttempt.forget(scope);
       return result;
     } catch (error) {
-      if (!isA2OutcomeUncertainError(error)) commandAttempt.current.delete(scope);
+      if (!isA2OutcomeUncertainError(error)) commandAttempt.forget(scope);
       throw error;
     }
   };
