@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   approveUserAssetAdjustment,
@@ -124,6 +125,16 @@ function newIdempotencyKey(prefix: string) {
   return `${prefix}-${suffix}`;
 }
 
+/** 三类命令(建单 / 审核 / 冲正)共用一张表,靠 fingerprint 前缀分命名空间;
+ *  刷新后仍能用同一命令号重试,避免重复入账。 */
+const c3Commands = createPendingMutationStore({
+  storageKey: "nexion-admin-c3-adjust-commands-v1",
+});
+const submitFingerprint = (payload: unknown) => `submit|${JSON.stringify(payload)}`;
+const reviewFingerprint = (approved: boolean, adjustmentNo: string, reason: string) =>
+  `review|${approved ? "approve" : "reject"}|${adjustmentNo}|${reason}`;
+const reverseFingerprint = (adjustmentNo: string, reason: string) => `reverse|${adjustmentNo}|${reason}`;
+
 export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
@@ -158,12 +169,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const [reasonCode, setReasonCode] = useState("SUPPORT_COMPENSATION");
   const [reason, setReason] = useState("");
   const [evidenceRef, setEvidenceRef] = useState("");
-  const [submission, setSubmission] = useState<{ fingerprint: string; key: string } | null>(null);
   const [detail, setDetail] = useState<UserAssetAdjustmentDetail | null>(null);
   const [detailFallback, setDetailFallback] = useState<UserAssetAdjustment | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const reviewCommandKeys = useRef(new Map<string, string>());
-  const reverseCommandKeys = useRef(new Map<string, string>());
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -291,9 +299,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     }
     const id = accountId(selectedAccount);
     if (!id) return toast("账户缺少有效的用户ID");
-    const fingerprint = JSON.stringify({ id, asset, direction, amount: amountText.trim(), reasonCode, reason: reason.trim(), evidenceRef: evidenceRef.trim() });
-    const key = submission?.fingerprint === fingerprint ? submission.key : newIdempotencyKey("c3-adjust");
-    setSubmission({ fingerprint, key });
+    const fingerprint = submitFingerprint({ id, asset, direction, amount: amountText.trim(), reasonCode, reason: reason.trim(), evidenceRef: evidenceRef.trim() });
+    const key = c3Commands.get(fingerprint) ?? newIdempotencyKey("c3-adjust");
+    c3Commands.remember(fingerprint, key);
     const supportRequest = supportLargeRequest;
     openConfirm({
       action: supportRequest
@@ -317,7 +325,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             : await createUserAssetAdjustment(id, input);
           const [loaded] = await Promise.all([loadData(true), fetchUserAssetAdjustmentContext(id).then(setContext)]);
           if (!loaded) throw new Error("操作可能已成功，但结果回读失败；请保留当前表单并使用同一请求重试");
-          setSubmission(null);
+          c3Commands.forget(fingerprint);
           setAmountText("");
           setReason("");
           setEvidenceRef("");
@@ -347,16 +355,16 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       run: async (reviewReason) => {
         setBusy(true);
         try {
-          const fingerprint = `${approved ? "approve" : "reject"}|${adjustmentNo}|${reviewReason}`;
-          const commandKey = reviewCommandKeys.current.get(fingerprint)
+          const fingerprint = reviewFingerprint(approved, adjustmentNo, reviewReason);
+          const commandKey = c3Commands.get(fingerprint)
             ?? newIdempotencyKey(approved ? "c3-approve" : "c3-reject");
-          reviewCommandKeys.current.set(fingerprint, commandKey);
+          c3Commands.remember(fingerprint, commandKey);
           if (approved) await approveUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR(), commandKey);
           else await rejectUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR(), commandKey);
           if (!await loadData(true)) {
             throw new Error("操作可能已成功，但结果回读失败；请保留当前确认框并使用同一请求重试");
           }
-          reviewCommandKeys.current.delete(fingerprint);
+          c3Commands.forget(fingerprint);
           toast(`${adjustmentNo} 已${approved ? "执行" : "驳回"}`);
         } catch (err) {
           toast(errorMessage(err));
@@ -381,14 +389,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       run: async (reverseReason) => {
         setBusy(true);
         try {
-          const fingerprint = `${adjustmentNo}|${reverseReason}`;
-          const commandKey = reverseCommandKeys.current.get(fingerprint) ?? newIdempotencyKey("c3-reverse");
-          reverseCommandKeys.current.set(fingerprint, commandKey);
+          const fingerprint = reverseFingerprint(adjustmentNo, reverseReason);
+          const commandKey = c3Commands.get(fingerprint) ?? newIdempotencyKey("c3-reverse");
+          c3Commands.remember(fingerprint, commandKey);
           const result = await reverseUserAssetAdjustment(adjustmentNo, reverseReason, OPERATOR(), commandKey);
           if (!await loadData(true)) {
             throw new Error("冲正可能已成功，但结果回读失败；请保留当前确认框并使用同一请求重试");
           }
-          reverseCommandKeys.current.delete(fingerprint);
+          c3Commands.forget(fingerprint);
           toast(`冲正已执行 · ${text(result.adjustmentNo)}`);
         } catch (err) {
           toast(errorMessage(err));

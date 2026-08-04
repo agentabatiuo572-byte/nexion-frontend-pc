@@ -1,6 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 interface ApiResult<T> {
   code: number;
@@ -455,103 +456,24 @@ export interface D5Params {
 }
 
 let requestSeq = 0;
-const pendingMutationKeys = new Map<string, string>();
-const PENDING_MUTATION_STORAGE_KEY = "nexgrid-admin-d1-uncertain-commands-v1";
-const PENDING_MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
 
-interface PersistedPendingMutation {
-  fingerprint: string;
-  commandKey: string;
+interface PersistedPendingMutation extends PendingMutationRecord {
   base: "finance" | "treasury" | "bills" | "withdraw";
   path: string;
   method: string;
   body: string;
-  createdAt: number;
-  expiresAt: number;
 }
 
-function readPersistedPendingMutations(): Record<string, PersistedPendingMutation> {
-  if (typeof window === "undefined") return {};
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(PENDING_MUTATION_STORAGE_KEY) ?? "{}") as Record<string, PersistedPendingMutation>;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const now = Date.now();
-    const current = Object.fromEntries(Object.entries(parsed).filter(([commandKey, value]) =>
-      value
-      && value.commandKey === commandKey
-      && typeof value.fingerprint === "string"
-      && value.fingerprint.length > 0
-      && typeof value.commandKey === "string"
-      && value.commandKey.length > 0
-      && ["finance", "treasury", "bills", "withdraw"].includes(value.base)
-      && typeof value.path === "string"
-      && value.path.startsWith("/")
-      && typeof value.method === "string"
-      && value.method !== "GET"
-      && typeof value.body === "string"
-      && Number.isFinite(value.createdAt)
-      && Number.isFinite(value.expiresAt)
-      && value.expiresAt > now));
-    if (Object.keys(current).length !== Object.keys(parsed).length) {
-      writePersistedPendingMutations(current);
-    }
-    return current;
-  } catch {
-    return {};
-  }
-}
-
-function writePersistedPendingMutations(value: Record<string, PersistedPendingMutation>) {
-  if (typeof window === "undefined") return;
-  try {
-    if (Object.keys(value).length === 0) window.sessionStorage.removeItem(PENDING_MUTATION_STORAGE_KEY);
-    else window.sessionStorage.setItem(PENDING_MUTATION_STORAGE_KEY, JSON.stringify(value));
-  } catch {
-    // Memory fallback remains available when storage is blocked or exhausted.
-  }
-}
-
-function pendingMutationKey(fingerprint: string): string | undefined {
-  const inMemory = pendingMutationKeys.get(fingerprint);
-  if (inMemory) return inMemory;
-  const persisted = Object.values(readPersistedPendingMutations())
-    .find((value) => value.fingerprint === fingerprint);
-  if (persisted) pendingMutationKeys.set(fingerprint, persisted.commandKey);
-  return persisted?.commandKey;
-}
-
-function rememberPendingMutation(
-  fingerprint: string,
-  commandKey: string,
-  base: "finance" | "treasury" | "bills" | "withdraw",
-  path: string,
-  method: string,
-  body: string,
-) {
-  pendingMutationKeys.set(fingerprint, commandKey);
-  const persisted = readPersistedPendingMutations();
-  const previous = persisted[commandKey];
-  persisted[commandKey] = {
-    fingerprint,
-    commandKey,
-    base,
-    path,
-    method,
-    body,
-    createdAt: previous?.createdAt ?? Date.now(),
-    expiresAt: Date.now() + PENDING_MUTATION_TTL_MS,
-  };
-  writePersistedPendingMutations(persisted);
-}
-
-function forgetPendingMutation(fingerprint: string) {
-  pendingMutationKeys.delete(fingerprint);
-  const persisted = readPersistedPendingMutations();
-  Object.entries(persisted).forEach(([commandKey, value]) => {
-    if (value.fingerprint === fingerprint) delete persisted[commandKey];
-  });
-  writePersistedPendingMutations(persisted);
-}
+const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
+  storageKey: "nexgrid-admin-d1-uncertain-commands-v1",
+  isValidRecord: (value) =>
+    ["finance", "treasury", "bills", "withdraw"].includes(value.base)
+    && typeof value.path === "string"
+    && value.path.startsWith("/")
+    && typeof value.method === "string"
+    && value.method !== "GET"
+    && typeof value.body === "string",
+});
 
 export interface D1PendingTopupCommand {
   commandKey: string;
@@ -561,7 +483,7 @@ export interface D1PendingTopupCommand {
 }
 
 export function listD1PendingTopupCommands(): D1PendingTopupCommand[] {
-  return Object.values(readPersistedPendingMutations())
+  return pendingMutations.list()
     .filter((value) => value.base === "finance" && value.path.startsWith("/topup/"))
     .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
@@ -621,7 +543,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     ? `${method}|${base}|${path}|${typeof init.body === "string" ? init.body : ""}`
     : null;
   const pendingKeyBeforeRequest = mutationFingerprint
-    ? pendingMutationKey(mutationFingerprint)
+    ? pendingMutations.get(mutationFingerprint)
     : undefined;
   if (init?.idempotencyKey || init?.idempotencyPrefix) {
     const commandKey = init.idempotencyKey
@@ -629,14 +551,12 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       || nextId(init.idempotencyPrefix!);
     headers.set("Idempotency-Key", commandKey);
     if (mutationFingerprint) {
-      rememberPendingMutation(
-        mutationFingerprint,
-        commandKey,
+      pendingMutations.remember(mutationFingerprint, commandKey, {
         base,
         path,
         method,
-        typeof init?.body === "string" ? init.body : "",
-      );
+        body: typeof init?.body === "string" ? init.body : "",
+      });
     }
   }
   let response: Response;
@@ -668,11 +588,11 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // command capsule so auth failures, in-progress replies, and other retry
     // errors never force the operator to create a second command key.
     if (mutationFingerprint && !pendingKeyBeforeRequest) {
-      forgetPendingMutation(mutationFingerprint);
+      pendingMutations.forget(mutationFingerprint);
     }
     throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));
   }
-  if (mutationFingerprint) forgetPendingMutation(mutationFingerprint);
+  if (mutationFingerprint) pendingMutations.forget(mutationFingerprint);
   return result.data as T;
 }
 
@@ -1700,7 +1620,7 @@ export async function fetchD1TopupOverview() {
 }
 
 export async function retryD1PendingTopupCommand(commandKey: string) {
-  const pending = readPersistedPendingMutations()[commandKey];
+  const pending = pendingMutations.list().find((value) => value.commandKey === commandKey);
   if (
     !pending
     || pending.base !== "finance"

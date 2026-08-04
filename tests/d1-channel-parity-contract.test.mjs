@@ -7,6 +7,7 @@ const component = readFileSync(
   "utf8",
 );
 const client = readFileSync(new URL("../lib/admin/d-client.ts", import.meta.url), "utf8");
+const pendingStore = readFileSync(new URL("../lib/admin/pending-mutation-store.ts", import.meta.url), "utf8");
 const proxy = readFileSync(
   new URL("../app/api/admin/finance/[...path]/route.ts", import.meta.url),
   "utf8",
@@ -36,10 +37,13 @@ test("D1 amount responses fail closed and uncertain command keys survive refresh
   assert.match(client, /minAmountValue <= 0/);
   assert.match(client, /maxAmountValue <= 0/);
   assert.match(client, /d1UsdDisplay/);
-  assert.match(client, /PENDING_MUTATION_STORAGE_KEY/);
-  assert.match(client, /window\.sessionStorage/);
-  assert.match(client, /rememberPendingMutation/);
-  assert.match(client, /forgetPendingMutation/);
+  // 持久化实现已抽到共享 store(lib/admin/pending-mutation-store.ts),存储键与语义不变。
+  assert.match(client, /storageKey: "nexgrid-admin-d1-uncertain-commands-v1"/);
+  assert.match(client, /createPendingMutationStore<PersistedPendingMutation>/);
+  assert.match(pendingStore, /window\.sessionStorage/);
+  assert.doesNotMatch(pendingStore, /window\.localStorage/);
+  assert.match(client, /pendingMutations\.remember\(/);
+  assert.match(client, /pendingMutations\.forget\(/);
   assert.match(client, /listD1PendingTopupCommands/);
   assert.match(client, /retryD1PendingTopupCommand/);
   assert.match(component, /核对后使用原请求号重试/);

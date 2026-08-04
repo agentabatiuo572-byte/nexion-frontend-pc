@@ -1,6 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 
 interface ApiResult<T> {
   code: number;
@@ -453,7 +454,11 @@ export interface User360Detail extends JsonRecord {
 }
 
 let requestSeq = 0;
-const pendingUserMutationKeys = new Map<string, string>();
+/** 命令号跨刷新存活:五类高敏动作(状态变更 / 两种 impersonate / 两种账户清单)共用本表,
+ *  靠 fingerprint = `${method}|${path}|${body}` 分命名空间 —— path 或 body 必带目标 id。 */
+const pendingUserMutations = createPendingMutationStore({
+  storageKey: "nexion-admin-users-uncertain-commands-v1",
+});
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
@@ -732,13 +737,15 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
   const mutationFingerprint = init?.idempotencyPrefix && method !== "GET"
     ? `${method}|${path}|${typeof init.body === "string" ? init.body : ""}`
     : null;
+  const pendingKeyBeforeRequest = mutationFingerprint
+    ? pendingUserMutations.get(mutationFingerprint)
+    : undefined;
   if (init?.idempotencyKey) {
     headers.set("Idempotency-Key", init.idempotencyKey);
   } else if (init?.idempotencyPrefix) {
-    const commandKey = (mutationFingerprint ? pendingUserMutationKeys.get(mutationFingerprint) : undefined)
-      ?? idempotencyKey(init.idempotencyPrefix);
+    const commandKey = pendingKeyBeforeRequest ?? idempotencyKey(init.idempotencyPrefix);
     headers.set("Idempotency-Key", commandKey);
-    if (mutationFingerprint) pendingUserMutationKeys.set(mutationFingerprint, commandKey);
+    if (mutationFingerprint) pendingUserMutations.remember(mutationFingerprint, commandKey);
   }
 
   let response: Response;
@@ -766,7 +773,10 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
       throw new UsersOutcomeUnknownError(commandKey);
     }
-    if (mutationFingerprint) pendingUserMutationKeys.delete(mutationFingerprint);
+    // A deterministic error can close a brand-new attempt, but it cannot prove that an earlier
+    // unknown attempt reached a terminal state. Keep the command capsule so auth failures and
+    // in-progress replies never force the operator to mint a second command key.(与 d-client 同口径)
+    if (mutationFingerprint && !pendingKeyBeforeRequest) pendingUserMutations.forget(mutationFingerprint);
     const serverMessage = response.status >= 500 ? "INTERNAL_SERVER_ERROR" : result?.message;
     throw new UsersRequestError(
       response.status,
@@ -775,7 +785,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     );
   }
 
-  if (mutationFingerprint) pendingUserMutationKeys.delete(mutationFingerprint);
+  if (mutationFingerprint) pendingUserMutations.forget(mutationFingerprint);
   return result.data as T;
 }
 
