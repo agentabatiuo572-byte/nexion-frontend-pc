@@ -29,6 +29,12 @@ const MIGRATED = [
   "lib/admin/user360-client.ts",
   "lib/admin/i-client.ts",
   "lib/admin/k6-client.ts",
+  "lib/admin/stable-mutation.ts",
+  "lib/admin/g1-client.ts",
+  "lib/admin/g2-client.ts",
+  "lib/admin/g3-client.ts",
+  "lib/admin/g4-client.ts",
+  "lib/admin/g7-client.ts",
   "app/components/domain-views/c-tabs/c3-adjust.tsx",
   "app/components/domain-views/c-tabs/c5-security.tsx",
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
@@ -56,9 +62,6 @@ const MIGRATED = [
  * key = `<相对路径>#<标识符>`(**不写行号**:并发改动会漂移)。
  */
 const KNOWN = {
-  // ---- debt:同族存量,本轮未迁 ----
-  "lib/admin/stable-mutation.ts#pendingKeys": { verdict: "debt", reason: "通用 stable-mutation 执行器的闭包内存表;迁移会改 g1/g2/g3/g4/g7 五个使用方的语义,单独评估、单独提交" },
-
   // ---- not-idempotency:不是命令号容器 ----
   "app/components/domain-views/k-tabs/k5-kyc.tsx#pendingManualTicket": { verdict: "not-idempotency", reason: "只暂存刚建的人工工单号用于弹窗回显,不进 Idempotency-Key,丢了不会重复入账" },
   "app/components/domain-views/m-view.tsx#pendingMCommandMetadata": { verdict: "not-idempotency", reason: "只缓存弹窗回显的动作名/理由文案,丢了不会重复入账" },
@@ -140,11 +143,22 @@ for (const key of Object.keys(KNOWN)) {
   if (!hits.has(key)) failures.push(`台账条目已在代码中消失:${key} → 若已迁移/删除,请同步删掉该台账行(并按需加入 MIGRATED)`);
 }
 
-// 判据 3:已迁移文件不得回退。
+// 判据 3:已迁移文件不得回退。两条合法路径:
+//   直接 —— import 共享 store 并 create{PendingMutation,SlotAttempt}Store;
+//   间接 —— 走 createStableMutationExecutor,但**必须传非空 storageKey**(不传就静默退回内存态)。
 for (const rel of MIGRATED) {
   const full = path.join(ROOT, rel);
   if (!fs.existsSync(full)) { failures.push(`MIGRATED 文件缺失:${rel}`); continue; }
   const src = fs.readFileSync(full, "utf8");
+  const direct = src.includes("pending-mutation-store")
+    && /create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(src);
+  const viaExecutor = /createStableMutationExecutor\s*\(/.test(src);
+  if (viaExecutor && !direct) {
+    if (!/createStableMutationExecutor\s*\([^,)]+,\s*"[^"]+"\s*\)/.test(src)) {
+      failures.push(`${rel} 调用 createStableMutationExecutor 时没传非空 storageKey → 命令号退回内存态,刷新即失效`);
+    }
+    continue;
+  }
   if (!src.includes("pending-mutation-store")) {
     failures.push(`${rel} 未引用共享 store(${SHARED_STORE}) → 幂等键回退成内存态,刷新即失效`);
   }

@@ -1,7 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { assertG4OverviewContract } from "@/lib/admin/g-overview-contract";
-import { createStableMutationExecutor, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
+import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
 interface ApiResult<T> {
   code: number;
@@ -242,7 +242,7 @@ function idempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-const executeG4Mutation = createStableMutationExecutor(idempotencyKey);
+const executeG4Mutation = createStableMutationExecutor(idempotencyKey, "nexion-admin-g4-genesis-commands-v1");
 
 function toNumber(value: RawNumber, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
@@ -411,7 +411,7 @@ function g4OverviewMutation(
   const serialized = JSON.stringify(body);
   return executeG4Mutation(
     prefix,
-    serialized,
+    stableMutationFingerprint(method, path, serialized),
     (commandKey) => g4Request<BackendOverview>(path, {
       method,
       headers: { "Idempotency-Key": commandKey },
@@ -444,7 +444,7 @@ function g4AckMutation(
   const serialized = JSON.stringify(body);
   return executeG4Mutation(
     prefix,
-    serialized,
+    stableMutationFingerprint(method, path, serialized),
     (commandKey) => g4Request<Record<string, unknown>>(path, {
       method,
       headers: { "Idempotency-Key": commandKey },

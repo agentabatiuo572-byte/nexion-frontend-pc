@@ -143,9 +143,11 @@ test("③ 每个域各用各的 storageKey:两个域共用一把键会互相覆�
     const source = read(rel);
     return [
       ...[...source.matchAll(/storageKey:\s*"([^"]+)"/g)].map((m) => m[1]),
+      // G 域走通用执行器,键是第二个位置参数,不是 storageKey: 字面量。
+      ...[...source.matchAll(/createStableMutationExecutor\s*\([^,)]+,\s*"([^"]+)"\s*\)/g)].map((m) => m[1]),
     ];
   });
-  assert.ok(keys.length >= 20, `迁移文件里只找到 ${keys.length} 个 storageKey,清单或断言已失真`);
+  assert.ok(keys.length >= 25, `迁移文件里只找到 ${keys.length} 个 storageKey,清单或断言已失真`);
   const duplicated = keys.filter((key, index) => keys.indexOf(key) !== index);
   assert.deepEqual(duplicated, [], `storageKey 重复:${duplicated.join(", ")}`);
 });
@@ -169,10 +171,13 @@ test("④ 同槽位换了输入就换新命令号,且旧命令号被丢弃(改�
 
 // ---------------------------------------------------------------- 迁移面:不许回退成内存态
 
-test("迁移清单里的文件都真的用了共享 store", () => {
-  assert.ok(MIGRATED.length >= 22, `哨兵 MIGRATED 清单只解析出 ${MIGRATED.length} 条,解析已失真`);
+test("迁移清单里的文件都真的用了共享 store(直接建表,或走带 storageKey 的通用执行器)", () => {
+  assert.ok(MIGRATED.length >= 28, `哨兵 MIGRATED 清单只解析出 ${MIGRATED.length} 条,解析已失真`);
   for (const rel of MIGRATED) {
-    assert.match(read(rel), /create(?:PendingMutation|SlotAttempt)Store/, `${rel} 没用共享 store`);
+    const source = read(rel);
+    const direct = /create(?:PendingMutation|SlotAttempt)Store/.test(source);
+    const viaExecutor = /createStableMutationExecutor\s*\([^,)]+,\s*"[^"]+"\s*\)/.test(source);
+    assert.ok(direct || viaExecutor, `${rel} 既没直接建表,也没给通用执行器传 storageKey`);
   }
 });
 
