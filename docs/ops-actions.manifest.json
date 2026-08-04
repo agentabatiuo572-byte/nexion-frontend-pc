@@ -244,7 +244,7 @@
       "status": "readonly",
       "view": "overview/*",
       "batch": "P1",
-      "reason": "驾驶舱为聚合入口(状态灯+钻取),kill 实际触发面在 J1(toggleJ1KillSwitch);入口不直接写"
+      "reason": "2026-08-04 决议:驾驶舱为只读聚合入口(状态灯+「前往 J 紧急合规」深链,risk-radar 已实装),kill 触发唯一面=J1 即时执行(toggleJ1KillSwitch,a2 哨兵强制);不复制第二触发面防漂移"
     },
     {
       "id": "OPS-B-04",
@@ -834,7 +834,7 @@
       "status": "pending",
       "view": "f-view.tsx",
       "batch": "P1",
-      "note": "全 f-tabs 无佣金冷却期写入口(F5 冷却口径纯展示),待补面或确认 readonly"
+      "note": "2026-08-04 定稿:F 域调参机制现成(mc param → updateF2Config),但 cooldown 后端参数键未确认(nexion-backend 不在本机),猜键=假旋钮;补建路径=后端确认键名 → F2 加一行调参(paramKey 入路由)→ 本行回 built"
     },
     {
       "id": "OPS-F-05",
@@ -1539,10 +1539,10 @@
       "domain": "L",
       "object": "监管报告(L5)",
       "action": "调报送排程/新增模板(操作确认)",
-      "status": "pending",
+      "status": "readonly",
       "view": "l-view.tsx",
       "batch": "P1",
-      "note": "报送排程/新增模板的写入口随 server-canonical 迁移消失(l5-export 模板 select 仅选用既有),待产品定夺补建或降 readonly"
+      "reason": "报送排程与模板管理属后端调度器/合规流程职责,后台只读展示既有模板并生成报告(createReport);原型侧补建排程写面=假功能"
     },
     {
       "id": "OPS-L-04",
