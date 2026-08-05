@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-05T02:35:02.747Z",
+  "generatedAt": "2026-08-05T02:41:25.200Z",
   "status": "pending-owner-gates",
   "gates": [
     {
@@ -19,7 +19,7 @@
     },
     {
       "id": "canonical-prd-sync",
-      "status": "not-ready",
+      "status": "waiting-owner-confirmation",
       "details": "planned=9; alreadyPresent=13; missingAnchors=0; applyCheck=passed"
     },
     {

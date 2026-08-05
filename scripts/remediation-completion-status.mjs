@@ -149,14 +149,29 @@ const prd = prdSync.parsed ?? {};
 const l5Passed = l5?.status === "passed" && l5?.checksPassed === 12 && l5?.checksFailed === 0;
 const ownerReadinessPassed = ownerReadiness?.status === "passed" && ownerReadiness?.checksFailed === 0;
 const liveReadinessPassed = liveReadiness?.status === "passed" && liveReadiness?.checksFailed === 0;
+/** PRD 同步操作的**基数台账** —— 唯一真源,`prd-sync-l5-draft.mjs` 的 `operations` 数组长度必须等于它。
+ *
+ *  🔴 为什么写成有台账的常量,而不是散在三处的字面量 `23`:
+ *  门都是在**遍历现存的操作**,一条操作被删掉 / 注释掉时,**没有任何遍历会走到它** ——
+ *  只有「总数对不对」这一条判据抓得住「少了一个」。所以这个数字必须准,而且改动必须留下理由。
+ *
+ *  变更台账(每次增删操作,在这里加一行,连同数字一起改):
+ *  - 23 → 22(2026-08-04,commit 59e0542):退役 `product.wallet.withdrawClosure`。
+ *    该草稿是 L5(6 月)口径,仍讲「contribution points 事件」,而产品已在 FEAT-WD02
+ *    改用 NEX 抵扣取代积分门槛,硬插进 PRD = 污染。须按现行 WD01/02 口径重写后另立规则。
+ *    🔴 那次只改了操作清单**没同步这个数**,导致本门此后一直误报 `not-ready`
+ *    (看着像「检查坏了」,其实是「基数没跟着改」)—— 增删操作与改这个数**必须同一次提交**。
+ */
+const PRD_SYNC_OPERATION_COUNT = 22;
+
 const prdSyncReady = prdSync.ok
-  && Number(prd.operations) === 23
-  && Number(prd.planned ?? 0) + Number(prd.alreadyPresent ?? 0) === 23
+  && Number(prd.operations) === PRD_SYNC_OPERATION_COUNT
+  && Number(prd.planned ?? 0) + Number(prd.alreadyPresent ?? 0) === PRD_SYNC_OPERATION_COUNT
   && Number(prd.missingAnchors ?? 0) === 0
   && (prd.applyCheck === "passed" || prd.applyCheck === "not-needed");
 const prdSyncApplied = prdSyncReady
   && Number(prd.planned ?? 0) === 0
-  && Number(prd.alreadyPresent ?? 0) === 23
+  && Number(prd.alreadyPresent ?? 0) === PRD_SYNC_OPERATION_COUNT
   && prd.applyCheck === "not-needed";
 let ownerAccepted = ownerAcceptance?.status === "accepted-by-owner";
 
@@ -208,8 +223,14 @@ const gates = [
   {
     id: "canonical-prd-sync",
     status: prdSyncApplied ? "applied-with-owner-confirmation" : (prdSyncReady ? "waiting-owner-confirmation" : "not-ready"),
+    // 🔴 基数失配要**单独说清**:它长得像「检查坏了」,其实是「操作被增删了但台账没跟着改」。
+    //   2026-08-05 实测:少了一条操作时本门只报 not-ready,排查的人(我)先怀疑脚本坏了,
+    //   查了三轮才发现是数字没同步。把差额直接印出来,下一个人一眼就知道该改哪。
     details: prdSync.ok
-      ? `planned=${prd.planned}; alreadyPresent=${prd.alreadyPresent}; missingAnchors=${prd.missingAnchors}; applyCheck=${prd.applyCheck}`
+      ? (Number(prd.operations) !== PRD_SYNC_OPERATION_COUNT
+          ? `操作基数失配:实际 ${prd.operations} 条,台账写的是 ${PRD_SYNC_OPERATION_COUNT} 条。`
+            + `增删过 prd-sync-l5-draft.mjs 的 operations 就要同步改 PRD_SYNC_OPERATION_COUNT 并补一行变更台账。`
+          : `planned=${prd.planned}; alreadyPresent=${prd.alreadyPresent}; missingAnchors=${prd.missingAnchors}; applyCheck=${prd.applyCheck}`)
       : `prd sync check failed: ${prdSync.error ?? prdSync.exitCode}`,
   },
   {
