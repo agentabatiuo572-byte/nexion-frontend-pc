@@ -72,7 +72,7 @@ const teamFinanceControls = `
 ### 8.1.3 Team finance controls
 
 - Commissions:展示 5 类佣金事件明细,入口必须可从 Team 主页到达。
-- V Rank:展示 V0-V12 进度、晋升条件、维持期与奖品/培育奖。
+- V Rank:展示 V0-V12 进度、晋升条件、维持期与等级奖励/培育奖。
 - Balance Match:展示双轨 balance、弱区/强区、日封顶与 spillover 逻辑。
 - Leadership Pool:展示全球领导奖池、参与资格、分配周期与说明页。
 
@@ -82,13 +82,13 @@ const teamFinanceControls = `
 const exchangeConfirmation = `
 #### 9.4.1a 兑换确认与写入
 
-NEX↔USDT 兑换确认必须展示 from/to amount、rate、fee、KYC/cap 状态与兑换后余额预估。确认后写入 swap record、wallet bill 与 points/cap 变化;失败时不得只 toast,必须保留原余额并展示失败原因。
+NEX↔USDT 兑换确认必须展示 from/to amount、rate、fee、KYC/cap 状态与兑换后余额预估。确认后写入 swap record、wallet bill 与 cap 变化;失败时不得只 toast,必须保留原余额并展示失败原因。
 `;
 
 const repurchaseConfirmation = `
 #### 9.5.3a 复投确认与写入
 
-复投确认必须展示复投金额、获得 points、进入 stake/cap 的影响与账单摘要。确认后写入 repurchase event、wallet bill、points delta 与 active stake/cap 变化。
+复投确认必须展示复投金额、进入 stake/cap 的影响与账单摘要。确认后写入 repurchase event、wallet bill 与 active stake/cap 变化。
 `;
 
 const stakingConfirmation = `
