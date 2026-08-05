@@ -235,7 +235,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
   // ── 创世市场状态开关(规格 FEAT-GEN10b)────────────────────────────────────
   // 🔴 与上面的熔断**不是**一件事,不合并:熔断是止血(恢复只走 J1),这个是运营节奏
   //   (双向可切)。前端优先级 市场关闭 > 熔断,所以两者并存时要明示谁在生效。
-  const marketClosed = overview.market.openState === "closed";
+  const marketClosed = overview.market.marketOpenState === "closed";
   const runMarketOpenState = () => {
     if (!allowed("finprod_g4_market_toggle")) return;
     const next: "open" | "closed" = marketClosed ? "open" : "closed";
@@ -327,6 +327,10 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               : !marketOn
                 ? "当前实际生效:市场熔断,恢复走 J1"
                 : "购买链路正常"}
+            {/* 🔴 规格 ②/⑤ 点名「当前状态 + 最近一次变更信息」两件都要;此前只有状态没有
+                变更信息(独立验收 confirmed P1:J1/J2/A3 等同类高敏闸都实现了这一格,
+                G4 是孤例缺失)。空 = 服务端尚无审计记录(如本地预览)。 */}
+            <br />最近变更:{overview.market.lastChange || "暂无记录"}
           </div>
         </div>
       </div>

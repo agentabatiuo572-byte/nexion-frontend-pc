@@ -56,6 +56,12 @@ interface BackendMarket {
   enabled?: boolean | string | null;
   configKey?: string | null;
   linkedDomain?: string | null;
+  /** 创世市场状态(FEAT-GEN10b)。字段名两端统一 `marketOpenState`(2026-08-05 主人拍板,
+   *  与熔断端点 market-status 不撞音);后端未实现时缺省,normalize 落 fail-open "open"。 */
+  marketOpenState?: string | null;
+  closedNoticeKey?: string | null;
+  /** 最近一次市场状态变更摘要(来自服务端审计,如「08-05 14:02 ops-lin 开放→暂未开放:节奏调控」)。 */
+  marketLastChange?: string | null;
 }
 
 interface BackendGeoBlocked {
@@ -167,15 +173,20 @@ export interface G4Dividend {
 }
 
 export interface G4Market {
-  /** 熔断闸:false = 已熔断。恢复只能走 J1。与下面的 openState **不是**一回事。 */
+  /** 熔断闸:false = 已熔断。恢复只能走 J1。与下面的 marketOpenState **不是**一回事。 */
   enabled: boolean;
   configKey: string;
   linkedDomain: string;
   /** 创世市场状态(规格 FEAT-GEN10b):`closed` = 前端可见但一律不可购买。
-   *  运营节奏开关,双向可切(都要确认 + 理由 + 审计),与熔断独立并存。 */
-  openState: "open" | "closed";
+   *  运营节奏开关,双向可切(都要确认 + 理由 + 审计),与熔断独立并存。
+   *  🔴 字段名两端统一 `marketOpenState`(2026-08-05 主人拍板;此前前端叫 marketStatus、
+   *  这里叫 openState,而 marketStatus 在本仓已被熔断端点占名 —— 同名异义必串档)。 */
+  marketOpenState: "open" | "closed";
   /** 关闭态文案变体键;取值限于前端白名单,后台不接受自由文本(规格 ③)。 */
   closedNoticeKey: string;
+  /** 最近一次市场状态变更摘要(规格 ②/⑤「当前状态 + 最近变更信息」;J1/J2/A3 同款成例)。
+   *  空串 = 服务端尚无记录。 */
+  lastChange: string;
 }
 
 export interface G4GeoBlocked {
@@ -356,8 +367,9 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       linkedDomain: asText(market.linkedDomain, ""),
       // 🔴 缺省 **open**:后端还没下发这个字段时不该把市场判成关闭 —— 那会让一个
       //   「字段没接」的环境问题表现成「全平台停售」。真关闭必须是显式的 "closed"。
-      openState: asText((market as { openState?: unknown }).openState, "open") === "closed" ? "closed" : "open",
-      closedNoticeKey: asText((market as { closedNoticeKey?: unknown }).closedNoticeKey, "default"),
+      marketOpenState: asText(market.marketOpenState, "open") === "closed" ? "closed" : "open",
+      closedNoticeKey: asText(market.closedNoticeKey, "default"),
+      lastChange: asText(market.marketLastChange, ""),
     },
     geoBlocked: (data?.geoBlocked ?? []).map((geo) => ({
       cc: asText(geo.cc),
