@@ -8,6 +8,8 @@ export type ActionConfirmReq = {
   coverage?: { coverageRatio: number; redlinePct: number };
   edit?: EditSpec;
   businessForm?: BusinessFormSpec;
+  /** 理由字数上限(与 k-tabs / l-tabs 同款透传)。不传时沿用弹窗默认(下限恒 8 字)。 */
+  reasonMax?: number;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void>;
 };
 

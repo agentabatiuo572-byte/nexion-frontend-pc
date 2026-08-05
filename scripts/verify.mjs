@@ -48,6 +48,7 @@ const GEARS = [
   ["K4 contract", "node", ["--test", "tests/k4-scoring-contract.test.mjs"]],
   ["K5 contract", "node", ["--test", "tests/k5-kyc-review-contract.test.mjs"]],
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
+  ["G4 invite-code registry contract", "node", ["--test", "tests/g4-invite-registry-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
