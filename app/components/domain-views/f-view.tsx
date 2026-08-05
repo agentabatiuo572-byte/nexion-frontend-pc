@@ -543,7 +543,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + " 已生效");
+            // dispose 一律走 A2 propose:此刻只是入了待执行队列,还没落库。原文案「已生效」
+            // 会把冻结这种抢时间的动作误报成完成(票在队列里等执行期间冷却可能到期解锁)。
+            setToast(mc.name + " 已提交 · A2 待执行队列");
           } else {
             throw new Error("F_CONFIRM_SHAPE_UNKNOWN:" + (mc.op || mc.name)); // 未知确认形状必须响亮失败,禁静默假成功
           }

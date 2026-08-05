@@ -112,6 +112,13 @@ interface BackendCoverage {
   precheck?: string | null;
 }
 
+interface BackendTier {
+  id?: string | null;
+  from?: RawNumber;
+  to?: RawNumber;
+  priceUSDT?: RawNumber;
+}
+
 interface BackendOverview {
   domain?: string | null;
   product?: string | null;
@@ -127,6 +134,10 @@ interface BackendOverview {
   nodePage?: BackendNodePage | null;
   stateMachine?: string[] | null;
   coverage?: BackendCoverage | null;
+  /** 阶梯档位定价(合并底账 §二#1 恢复)。后端未升级时缺席。 */
+  tiers?: BackendTier[] | null;
+  /** 档表整表版本(区间耦合结构,任一行增删改都递增):三个档位 mutation 以它做 CAS。 */
+  tiersVersion?: RawNumber;
   serverCanonical?: boolean | null;
   sources?: string[] | null;
 }
@@ -237,6 +248,14 @@ export interface G4Coverage {
   precheck: string;
 }
 
+/** 创世阶梯档位:累计售出落在 [from, to) 的购买按 priceUSDT 结算(合并底账 §二#1)。 */
+export interface G4Tier {
+  id: string;
+  from: number;
+  to: number;
+  priceUSDT: number;
+}
+
 export interface G4Overview {
   stats: G4Stats;
   params: G4Param[];
@@ -248,6 +267,12 @@ export interface G4Overview {
   nodePage: G4NodePage;
   stateMachine: string[];
   coverage: G4Coverage;
+  /** 阶梯档位。null = 后端未下发或数据坏形 —— 与 marketOpenState 的 fail-open 相反,
+   *  档位是编辑对象本身,坏数据上做增删改会写出错档,所以整组判 null、卡片 fail-closed 不给入口。 */
+  tiers: G4Tier[] | null;
+  /** 档表整表版本:提交增/编/删时作为 expectedTiersVersion 回传,服务端 CAS 拒绝过期提交
+   *  (幂等键只防重复,防不了两运营基于旧档表并发互踩 —— 区间耦合结构必须 CAS)。 */
+  tiersVersion: number;
   serverCanonical: boolean;
   sources: string[];
 }
@@ -282,6 +307,39 @@ function toBool(value: boolean | string | null | undefined, fallback = false) {
 
 function asText(value: unknown, fallback = "-") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/** 档位读侧守卫:镜像原型 tiersProblem 的全部区间不变量(整数 / 价>0 / to>from / 区间连续
+ *  从 0 起 / id 唯一 / 末档 ≥ 已售)。任一违反 → 整组 null(卡片 fail-closed)+ console.error
+ *  留样本 —— 只做字段级校验会让「显示取整、编辑拒存」三处契约互相矛盾,且对乱序/重叠档渲染
+ *  假的「顺移」声明。 */
+function normalizeTiers(value: BackendTier[] | null | undefined, sold: number): G4Tier[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const reject = (why: string): null => {
+    console.error(`[G4] tiers 契约坏形(${why}),整组 fail-closed`, value);
+    return null;
+  };
+  const tiers: G4Tier[] = [];
+  const seenIds = new Set<string>();
+  let previousTo = 0;
+  for (const item of value) {
+    if (!item || typeof item !== "object") return reject("行不是对象");
+    const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : null;
+    if (!id) return reject("id 缺失");
+    if (seenIds.has(id)) return reject(`id 重复 ${id}`);
+    seenIds.add(id);
+    const from = toNumber(item.from, Number.NaN);
+    const to = toNumber(item.to, Number.NaN);
+    const priceUSDT = toNumber(item.priceUSDT, Number.NaN);
+    if (![from, to, priceUSDT].every(Number.isInteger)) return reject("边界与单价须为整数");
+    if (priceUSDT <= 0) return reject("单价须大于 0");
+    if (from !== previousTo) return reject("区间不连续(本档起始 ≠ 上档截止)");
+    if (to <= from) return reject("截止须大于起始");
+    previousTo = to;
+    tiers.push({ id, from, to, priceUSDT });
+  }
+  if (previousTo < sold) return reject(`末档总量 ${previousTo} < 已售 ${sold}`);
+  return tiers;
 }
 
 function normalizeOverview(data: BackendOverview | null | undefined): G4Overview {
@@ -387,6 +445,8 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       hasNext: toBool(nodePage.hasNext, page < totalPages),
     },
     stateMachine: data?.stateMachine ?? ["minted", "held", "listed", "sold"],
+    tiers: normalizeTiers(data?.tiers, toNumber(stats.sold)),
+    tiersVersion: Math.max(0, Math.trunc(toNumber(data?.tiersVersion, 0))),
     coverage: {
       coverageRatio: toNumber(coverage.coverageRatio),
       redlinePct: toNumber(coverage.redlinePct),
@@ -426,7 +486,7 @@ async function g4Request<T>(path: string, init?: RequestInit) {
 
 function g4OverviewMutation(
   path: string,
-  method: "PATCH" | "POST",
+  method: "PATCH" | "POST" | "DELETE",
   body: Record<string, unknown>,
   prefix: string,
 ) {
@@ -524,6 +584,42 @@ export async function updateG4GenesisMarketOpenState(
     "PATCH",
     { value: status, reason, operator, noticeKey },
     "g4-market-open-state",
+  );
+}
+
+/**
+ * 阶梯档位定价三动作(合并底账 §二#1 恢复)。区间连续性(本档起始 = 上档截止)、
+ * 末档总量 ≥ 已售、至少保留一档、在锁购买按开锁档价结算 —— 全部由服务端权威校验与执行,
+ * 本端只提交命令 + 理由;三动作均走 g4OverviewMutation(稳定幂等键 + 回读全量 overview)。
+ * 契约要点:①新档 id 由服务端分配且须历史全局唯一(原型语义 t{历史最大号+1}——删中间档
+ * 再增档不得复用旧号,否则审计轨与在途引用会串档);②三动作都带 expectedTiersVersion 做
+ * 整表 CAS(区间耦合:删/改会顺移邻档,基于旧档表的提交必须被拒,幂等键防不了这个);
+ * ③增档扩大总供应 = 放大远期排放负债,服务端应做 B1 覆盖率预检并越线整单拒绝。
+ */
+export async function createG4GenesisTier(to: number, priceUSDT: number, expectedTiersVersion: number, reason: string, operator: string) {
+  return g4OverviewMutation(
+    "/nex/genesis/tiers",
+    "POST",
+    { to, priceUSDT, expectedTiersVersion, reason, operator },
+    "g4-tier-create",
+  );
+}
+
+export async function updateG4GenesisTier(tierId: string, to: number, priceUSDT: number, expectedTiersVersion: number, reason: string, operator: string) {
+  return g4OverviewMutation(
+    `/nex/genesis/tiers/${encodeURIComponent(tierId)}`,
+    "PATCH",
+    { to, priceUSDT, expectedTiersVersion, reason, operator },
+    `g4-tier-update-${tierId}`,
+  );
+}
+
+export async function deleteG4GenesisTier(tierId: string, expectedTiersVersion: number, reason: string, operator: string) {
+  return g4OverviewMutation(
+    `/nex/genesis/tiers/${encodeURIComponent(tierId)}`,
+    "DELETE",
+    { expectedTiersVersion, reason, operator },
+    `g4-tier-delete-${tierId}`,
   );
 }
 
