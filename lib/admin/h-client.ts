@@ -65,7 +65,7 @@ function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview
   };
 }
 
-async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string): Promise<T> {
+export async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");

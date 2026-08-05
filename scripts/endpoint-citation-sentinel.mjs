@@ -39,6 +39,9 @@ const LEDGER = {
     "route: app/api/admin/content/conversations/stream/route.ts",
   "/api/admin/content": "route: app/api/admin/content/[...path]/route.ts(域前缀)",
   "/api/admin/growth/*": "route: app/api/admin/growth/[...path]/route.ts(H 域族引用,非单一 endpoint)",
+  "/api/admin/growth": "route: app/api/admin/growth/[...path]/route.ts(错误字典注释指认 GROWTH_* 机器码的铸码处,域前缀)",
+  "/api/admin/growth/public-stats":
+    "route: app/api/admin/growth/[...path]/route.ts(public-stats 已在白名单;上游 nexion-backend 是否已实现该端点未核实 —— h9-client.ts 头注释的 A/B 待决即此事)",
   "/api/admin/risk/*": "route: app/api/admin/risk/[...path]/route.ts(K 域族引用,非单一 endpoint)",
   "/api/admin/janus": "route: app/api/admin/janus/[...path]/route.ts(域前缀)",
   "/api/admin/market/exchange": "route: app/api/admin/market/[...path]/route.ts:24",

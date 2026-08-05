@@ -204,6 +204,7 @@ export const CONSOLE_NAV: NavDomain[] = [
       { id: "H5", name: "签到 & NEX", path: "/growth/daily", prdAnchor: "H5", batch: "V3", status: "flagship" },
       { id: "H7", name: "代金券", path: "/growth/vouchers", prdAnchor: "H7", batch: "V3", status: "flagship" },
       { id: "H8", name: "新人礼与邀请奖励", path: "/growth/referral-rewards", prdAnchor: "H8", batch: "V3", status: "flagship" },
+      { id: "H9", name: "对外公布数据", path: "/growth/public-stats", prdAnchor: "H9", batch: "V3", status: "flagship" },
     ],
   },
   {

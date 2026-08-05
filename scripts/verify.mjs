@@ -105,6 +105,13 @@ const GEARS = [
   ["list capability", "node", ["scripts/admin-list-capability-audit.mjs"]],
   ["real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]],
   ["App storage-key parity", "node", ["scripts/uni-storage-key-sentinel.mjs"]],
+  // H9 对外公布数据:同一份配置散在「规格 ③ / 前端 PublicStatsConfig / 后台 H9_FIELDS」三处,
+  // 键少一个 = 运营改不到的死配置,值域抄错 = 前端收到自己判非法的值。tsc 一处都拦不住。
+  ["H9 public-stats cross-repo parity", "node", ["scripts/h9-public-stats-parity.mjs"]],
+  // H9 分位表值域**行为级**等价(真跑前端 network-rank + 后台 h9-validation,非子串):
+  // 删任何一条校验(cumPct≤100 / 单调不减 / 严格升序)即红,自造更严限制同样红;
+  // 附带钉 growth 代理错误文案与占位卡句号拼接。与上一齿同级硬读兄弟仓 Nexion-uniapp。
+  ["H9 percentile-table behavior contract", "node", ["--test", "tests/h9-public-stats-contract.test.mjs"]],
   ["D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs"]],
   ["B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs"]],
   ["FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]],

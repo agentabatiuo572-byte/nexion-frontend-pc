@@ -1122,6 +1122,18 @@
       "restAction": "h5_checkin_rule"
     },
     {
+      "id": "OPS-H-09",
+      "domain": "H",
+      "object": "对外公布数据(H9)",
+      "action": "改公布的平台规模与名次口径",
+      "status": "built",
+      "view": "h-tabs/h9-public-stats.tsx",
+      "restAction": "updateH9PublicStats",
+      "restFile": "lib/admin/h9-client.ts",
+      "batch": "done",
+      "note": "7 个参数 + 算力分位表整组原子写(h9-public-stats.tsx 的「保存变更」→ 操作确认弹窗给前后值对照 + 理由必填 → updateH9PublicStats 带 expectedVersion CAS 与 Idempotency-Key,服务端落审计);改设备总数时页面先给出对公布日产与派生金额的影响预览"
+    },
+    {
       "id": "OPS-I-01",
       "domain": "I",
       "object": "转化文案A/B(I1)",
