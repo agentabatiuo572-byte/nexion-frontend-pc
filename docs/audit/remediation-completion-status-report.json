@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-30T16:37:02.762Z",
+  "generatedAt": "2026-08-05T02:35:02.747Z",
   "status": "pending-owner-gates",
   "gates": [
     {
@@ -20,7 +20,7 @@
     {
       "id": "canonical-prd-sync",
       "status": "not-ready",
-      "details": "prd sync check failed: SyntaxError: Unexpected end of JSON input"
+      "details": "planned=9; alreadyPresent=13; missingAnchors=0; applyCheck=passed"
     },
     {
       "id": "owner-product-acceptance",
