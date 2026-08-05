@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-08-05T02:41:25.200Z",
-  "status": "pending-owner-gates",
+  "generatedAt": "2026-08-05T02:51:05.801Z",
+  "status": "complete-ready",
   "gates": [
     {
       "id": "l5-final-sweep",
@@ -19,8 +19,8 @@
     },
     {
       "id": "canonical-prd-sync",
-      "status": "waiting-owner-confirmation",
-      "details": "planned=9; alreadyPresent=13; missingAnchors=0; applyCheck=passed"
+      "status": "applied-with-owner-confirmation",
+      "details": "planned=0; alreadyPresent=22; missingAnchors=0; applyCheck=not-needed"
     },
     {
       "id": "owner-product-acceptance",
@@ -28,7 +28,5 @@
       "details": "docs/audit/owner-product-acceptance.json"
     }
   ],
-  "remainingGates": [
-    "Canonical PRD sync requires explicit owner confirmation."
-  ]
+  "remainingGates": []
 }

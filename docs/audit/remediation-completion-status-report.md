@@ -1,19 +1,19 @@
 # Remediation Completion Status
 
-Generated at: 2026-08-05T02:41:25.200Z
+Generated at: 2026-08-05T02:51:05.801Z
 
-Status: **pending-owner-gates**
+Status: **complete-ready**
 
 | Gate | Status | Details |
 |---|---|---|
 | l5-final-sweep | passed | checks=12/12 |
 | owner-review-readiness | passed | checks=8/8 |
 | owner-review-live-readiness | passed | checks=9/9 |
-| canonical-prd-sync | waiting-owner-confirmation | planned=9; alreadyPresent=13; missingAnchors=0; applyCheck=passed |
+| canonical-prd-sync | applied-with-owner-confirmation | planned=0; alreadyPresent=22; missingAnchors=0; applyCheck=not-needed |
 | owner-product-acceptance | accepted-by-owner | docs/audit/owner-product-acceptance.json |
 
 ## Remaining Gates
 
-- Canonical PRD sync requires explicit owner confirmation.
+- None.
 
 This report is non-mutating unless `--record-owner-acceptance --owner-confirmed` is provided.

@@ -252,19 +252,36 @@ function normalizeBlock(block) {
   return `\n${block.trim()}\n`;
 }
 
+/** 只用于「这段内容在不在文档里」的比对 —— 把 CRLF 抹平成 LF。
+ *
+ *  🔴 2026-08-05 修:本文件的内容模板是 LF,而目标 PRD 是 **CRLF**(Windows)。
+ *  原判据 `text.includes(content)` 拿 LF 的针去 CRLF 的草堆里找,**永远找不到** ——
+ *  于是每段都被判成 "planned",`--apply` 每跑一次就**重复插一次**。
+ *
+ *  实测(端到端,不是推断):同一份产品 PRD,
+ *    原样 CRLF → planned=9 / alreadyPresent=13
+ *    转成 LF   → planned=0 / alreadyPresent=22   ← 那 9 段一直都在
+ *  磁盘上已因此留下 7 个章节各 2 份重复(上一次 apply 造的),本次 apply 又加到 3 份,
+ *  已从备份还原。存量重复要单独清,本修复只保证**不再产生新的**。
+ *
+ *  只归一化**比对**,不改写入内容:插入仍走原文,与文档既有那几份保持同款。 */
+function eolInsensitive(s) {
+  return s.replace(/\r\n/g, "\n");
+}
+
 function applyOperation(text, op) {
   if (op.type === "replace") {
-    if (text.includes(op.replacement)) {
+    if (eolInsensitive(text).includes(eolInsensitive(op.replacement))) {
       return { text, status: "already-present" };
     }
-    if (!text.includes(op.search)) {
+    if (!eolInsensitive(text).includes(eolInsensitive(op.search))) {
       return { text, status: "missing-anchor" };
     }
     return { text: text.replace(op.search, op.replacement), status: "planned" };
   }
 
   const content = normalizeBlock(op.content);
-  if (text.includes(content.trim())) {
+  if (eolInsensitive(text).includes(eolInsensitive(content.trim()))) {
     return { text, status: "already-present" };
   }
   if (!text.includes(op.anchor)) {
