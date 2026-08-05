@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-06-13T09:17:24.747Z",
-  "status": "complete-ready",
+  "generatedAt": "2026-07-30T16:37:02.762Z",
+  "status": "pending-owner-gates",
   "gates": [
     {
       "id": "l5-final-sweep",
@@ -19,8 +19,8 @@
     },
     {
       "id": "canonical-prd-sync",
-      "status": "applied-with-owner-confirmation",
-      "details": "planned=0; alreadyPresent=23; missingAnchors=0; applyCheck=not-needed"
+      "status": "not-ready",
+      "details": "prd sync check failed: SyntaxError: Unexpected end of JSON input"
     },
     {
       "id": "owner-product-acceptance",
@@ -28,5 +28,7 @@
       "details": "docs/audit/owner-product-acceptance.json"
     }
   ],
-  "remainingGates": []
+  "remainingGates": [
+    "Canonical PRD sync requires explicit owner confirmation."
+  ]
 }
