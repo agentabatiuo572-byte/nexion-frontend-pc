@@ -167,9 +167,15 @@ export interface G4Dividend {
 }
 
 export interface G4Market {
+  /** 熔断闸:false = 已熔断。恢复只能走 J1。与下面的 openState **不是**一回事。 */
   enabled: boolean;
   configKey: string;
   linkedDomain: string;
+  /** 创世市场状态(规格 FEAT-GEN10b):`closed` = 前端可见但一律不可购买。
+   *  运营节奏开关,双向可切(都要确认 + 理由 + 审计),与熔断独立并存。 */
+  openState: "open" | "closed";
+  /** 关闭态文案变体键;取值限于前端白名单,后台不接受自由文本(规格 ③)。 */
+  closedNoticeKey: string;
 }
 
 export interface G4GeoBlocked {
@@ -348,6 +354,10 @@ function normalizeOverview(data: BackendOverview | null | undefined): G4Overview
       enabled: toBool(market.enabled, false),
       configKey: asText(market.configKey, ""),
       linkedDomain: asText(market.linkedDomain, ""),
+      // 🔴 缺省 **open**:后端还没下发这个字段时不该把市场判成关闭 —— 那会让一个
+      //   「字段没接」的环境问题表现成「全平台停售」。真关闭必须是显式的 "closed"。
+      openState: asText((market as { openState?: unknown }).openState, "open") === "closed" ? "closed" : "open",
+      closedNoticeKey: asText((market as { closedNoticeKey?: unknown }).closedNoticeKey, "default"),
     },
     geoBlocked: (data?.geoBlocked ?? []).map((geo) => ({
       cc: asText(geo.cc),
@@ -477,6 +487,31 @@ export async function updateG4GenesisMarketStatus(enabled: boolean, reason: stri
     "PATCH",
     { value: String(enabled), reason, operator, dispositionPlan: context?.dispositionPlan, triggerBasis: context?.triggerBasis },
     "g4-market-status",
+  );
+}
+
+/**
+ * 创世市场状态开关(规格 FEAT-GEN10b)。`open` ⇄ `closed`,两个方向都要确认 + 理由 + 审计。
+ *
+ * 🔴 **与熔断(`updateG4GenesisMarketStatus`)是两件事,不许合并**(规格 ④ 明写):
+ *   - 市场状态 = 运营节奏,可双向切,前端表现为「可见但不可购买」;
+ *   - 熔断     = 止血动作,恢复入口只在 J1,前端表现为整条链停。
+ *   两者可同时存在;哪一个在生效由前端按优先级链取最高(市场关闭 > 熔断),
+ *   后台页面须明示当前实际生效来源,免得运营切回开放却以为已恢复销售。
+ *
+ * `noticeKey` 只能取前端白名单内的文案变体键,不接受自由文本(规格 ③)。
+ */
+export async function updateG4GenesisMarketOpenState(
+  status: "open" | "closed",
+  reason: string,
+  operator: string,
+  noticeKey?: string,
+) {
+  return g4OverviewMutation(
+    "/nex/genesis/market-open-state",
+    "PATCH",
+    { value: status, reason, operator, noticeKey },
+    "g4-market-open-state",
   );
 }
 

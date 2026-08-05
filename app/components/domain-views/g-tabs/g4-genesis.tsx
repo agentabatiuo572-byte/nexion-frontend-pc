@@ -11,6 +11,7 @@ import {
   fetchG4GenesisOverview,
   rerunG4GenesisDividendBatch,
   updateG4GenesisMarketStatus,
+  updateG4GenesisMarketOpenState,
   updateG4GenesisParam,
   type G4Node,
   type G4Overview,
@@ -231,6 +232,51 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
     });
   };
 
+  // ── 创世市场状态开关(规格 FEAT-GEN10b)────────────────────────────────────
+  // 🔴 与上面的熔断**不是**一件事,不合并:熔断是止血(恢复只走 J1),这个是运营节奏
+  //   (双向可切)。前端优先级 市场关闭 > 熔断,所以两者并存时要明示谁在生效。
+  const marketClosed = overview.market.openState === "closed";
+  const runMarketOpenState = () => {
+    if (!allowed("finprod_g4_market_toggle")) return;
+    const next: "open" | "closed" = marketClosed ? "open" : "closed";
+    openActionConfirm({
+      action: next === "closed" ? "创世市场设为「暂未开放」" : "恢复创世市场开放",
+      detail: next === "closed"
+        // JSX 文本里的 ** 会原样渲染成星号(这是 React 不是 Markdown),要加粗用 <b>。
+        ? <>前端<b>照常展示</b>创世节点介绍、档位与权益,仅锁购买与二级承接;已持有的节点、分红与权益不受影响。<br />不下架商城入口(那是另一个开关),也不显示倒计时或剩余名额。</>
+        : <>恢复后用户下次进入或刷新即可正常认购,无需清缓存。<br />恢复销售会放大资金流出方向,故与关闭同样需要确认与理由。</>,
+      amplifies: next === "open", // 恢复销售 = 放大流出方向,不豁免
+      // 🔴 文案变体必须是**下拉**,不是自由输入(规格 ③/⑥ 明写「禁自由文本」)。
+      //   上一版用了 inputKind:"text" —— 打错一个字符前端会静默回退到默认文案,
+      //   运营以为切了「维护中」,用户看到的却是「暂未开放」(2026-08-05 独立验收 P1-9)。
+      //   选项集合与前端 GENESIS_CLOSED_NOTICE_KEYS 白名单一一对应;仓内 select 能力现成
+      //   (c2-actions.tsx 同款),不必新造。
+      businessForm: next === "closed" ? { kind: "multi-field", title: "关闭说明", fields: [
+        {
+          key: "noticeKey",
+          label: "用户端提示文案",
+          inputKind: "select",
+          required: true,
+          current: overview.market.closedNoticeKey || "default",
+          options: ["default", "maintenance", "restock"],
+          optionLabels: {
+            default: "当前市场暂未开放",
+            maintenance: "系统维护中,暂停认购",
+            restock: "本轮名额已发放完毕",
+          },
+        },
+      ] } : undefined,
+      reasonMax: 200,
+      run: async (reason, _value, businessValue) => {
+        await mutate(
+          "market:open-state",
+          () => updateG4GenesisMarketOpenState(next, reason, OPERATOR(), businessValue?.noticeKey),
+          next === "closed" ? "创世市场已设为暂未开放;前端仍可浏览,购买已锁" : "创世市场已恢复开放",
+        );
+      },
+    });
+  };
+
   const runRerunBatch = () => {
     if (!allowed("finprod_g4_write")) return;
     openActionConfirm({
@@ -264,6 +310,25 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
         <div className="f-stat"><div className="k">排放承诺预提</div><div className="v">{fmtUsdCompact(stats.genesisAccrualUsd)}</div><div className="sub">上所开阀后按真实策略计提</div></div>
         <div className="f-stat cyan"><div className="k">二级地板价</div><div className="v">{fmtUsdCompact(stats.secondary.floor)}</div><div className="sub">24h 量 {fmtUsdCompact(stats.secondary.vol24h)} · 在挂 {fmtNumber(stats.secondary.listed, 0)}</div></div>
         <div className="f-stat warn"><div className="k">市场熔断</div><div className="v">{marketOn ? "未启用" : "已熔断"}</div><div className="sub">联动 {overview.market.linkedDomain} · 恢复统一由 J1 执行</div></div>
+        {/* 🔴 与熔断分成两格,不合并(规格 FEAT-GEN10b ④)。sub 行明示**当前真正在生效的
+            是哪一道限制** —— 两者可并存,运营把市场切回开放却仍卖不动时,得一眼看出是熔断。 */}
+        <div className={`f-stat${marketClosed ? " warn" : ""}`}>
+          <div className="k">创世市场状态</div>
+          <div className="v">{marketClosed ? "暂未开放" : "开放中"}</div>
+          {/* 🔴 优先级必须与前端 `genesisPurchaseBlock` 的链**一致**:市场关闭 > 熔断。
+              上一版这里写反了(写成熔断优先),两者并存时用户实际看到的是「暂未开放」,
+              运营照着这行字会误判(2026-08-05 独立验收 P1-8)。同仓 g4-client.ts 的注释
+              当时是对的 —— 页面与自己的注释矛盾,更该改页面。 */}
+          <div className="sub">
+            {marketClosed
+              ? (marketOn
+                  ? "用户可浏览与查看持仓,购买与二级承接已锁"
+                  : "市场关闭与熔断同时生效;用户端显示的是「暂未开放」(它优先级更高),恢复销售需两者都解除")
+              : !marketOn
+                ? "当前实际生效:市场熔断,恢复走 J1"
+                : "购买链路正常"}
+          </div>
+        </div>
       </div>
 
       <G4AdminOperations ctx={ctx} />
@@ -297,6 +362,13 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
             <span className="ttl">一二级市场</span>
             <span className="sub">· 实时 stats · 排放跟随 NFT</span>
             <div className="r">
+              {/* 市场状态开关(FEAT-GEN10b):双向可切,两个方向都走确认 + 理由 + 审计。
+                  与右侧熔断按钮并列摆放,让运营看得出这是两个独立动作。 */}
+              {allowed("finprod_g4_market_toggle") && (
+                <button className="l-btn mc" disabled={busy} onClick={runMarketOpenState}>
+                  {marketClosed ? "恢复市场开放" : "设为暂未开放"}
+                </button>
+              )}
               {marketOn && allowed("finprod_g4_market_toggle")
                 ? <button className="l-btn mc" disabled={busy} onClick={runMarketSwitch}>市场熔断</button>
                 : !marketOn ? <Link href="/emergency/kill-switch" className="l-btn">前往 J1 申请恢复</Link> : null}

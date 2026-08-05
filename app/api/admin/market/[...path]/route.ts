@@ -87,6 +87,11 @@ function backendPath(parts: string[]) {
   if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "market-status") {
     return "/api/admin/market/nex/genesis/market-status";
   }
+  // 创世市场状态 open⇄closed(规格 FEAT-GEN10b)。与上面的 market-status(熔断)
+  // 是两个独立端点,故意不复用 —— 合并会让「运营节奏」和「止血」共用一条审计轨。
+  if (parts.length === 3 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "market-open-state") {
+    return "/api/admin/market/nex/genesis/market-open-state";
+  }
   if (
     parts.length === 5 &&
     parts[0] === "nex" &&

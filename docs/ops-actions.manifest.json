@@ -990,6 +990,19 @@
       "note": "trial 闸无 G 面写点;g5 已移除"
     },
     {
+      "id": "OPS-G-12",
+      "domain": "G",
+      "object": "创世市场状态(可见但锁购)",
+      "action": "创世市场 open⇄closed 双向切换(恢复开放 amplifies;确认+理由+审计)",
+      "status": "built",
+      "view": "g-tabs/g4-genesis",
+      "batch": "P0",
+      "restActions": [
+        "updateG4GenesisMarketOpenState"
+      ],
+      "note": "规格 FEAT-GEN10b。与 OPS-G-08 熔断**不可合并**:熔断是止血(恢复只走 J1),本动作是运营节奏(双向可切),两者独立并存且各有审计轨。前端优先级 市场关闭 > 熔断,页面须明示当前实际生效来源。文案变体走白名单下拉(default/maintenance/restock),禁自由文本。"
+    },
+    {
       "id": "OPS-G-09",
       "domain": "G",
       "object": "Premium订阅(已下线)",
