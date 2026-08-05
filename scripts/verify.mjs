@@ -88,6 +88,8 @@ const GEARS = [
   ["K5 contract", "node", ["--test", "tests/k5-kyc-review-contract.test.mjs"]],
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
   ["G4 invite-code registry contract", "node", ["--test", "tests/g4-invite-registry-contract.test.mjs"]],
+  // GEN10b 市场状态开关:此前后台侧一道专属门都没有,前一版的自由输入违规就是这么溜过去的。
+  ["G4 market-open-state contract", "node", ["--test", "tests/g4-market-open-state-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
