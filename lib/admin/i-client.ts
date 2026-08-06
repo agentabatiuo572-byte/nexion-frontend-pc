@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { parseIOverview } from "@/lib/admin/i-overview-contract";
@@ -49,7 +50,11 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text();
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    if (res.status < 500 && isWrite) uncertainCommandKeys.forget(commandFingerprint);
+    // 本域早就是目标口径(只在确定性拒绝时弃号),2026-08-06 改接共享谓词统一来源:
+    // 判据只此一处,别处再改口径时不会落下这一面。
+    if (isWrite && !outcomeStaysUnknown(res.status, payload.code)) {
+      uncertainCommandKeys.forget(commandFingerprint);
+    }
     throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
   }
   if (isWrite) uncertainCommandKeys.forget(commandFingerprint);

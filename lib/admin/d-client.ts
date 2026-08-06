@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -7,6 +8,28 @@ interface ApiResult<T> {
   code: number;
   message?: string;
   data?: T;
+}
+
+/**
+ * D 域「结果未知」错误(2026-08-06 收尾审计:两个独立镜头同时点名)。
+ *
+ * 为什么要有类型而不只是一句文案:组件层(D2 / D3)自己持有命令号,失败时必须判断
+ * **该不该丢号** —— 确定性拒绝要丢(否则运营改完输入重提会撞载荷不符,那笔单子 24h 无法处置),
+ * 结果未知不能丢(否则重试铸新号 = 重复出金)。只有一句文案时,组件唯一能做的就是不判断,
+ * 于是先前 D2 / D3 的 catch 里一个 forget 都没有,两种情形一视同仁地保号。
+ * 文案逐字不变,只把类型补上,不影响任何按文案渲染的地方。
+ */
+export class DOutcomeUnknownError extends Error {
+  constructor(public readonly commandKey: string) {
+    super(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+    this.name = "DOutcomeUnknownError";
+  }
+}
+
+/** 跨 bundle 安全的鸭型守卫(与 a2 / k2 同款,防两份类身份分裂)。 */
+export function isDOutcomeUnknownError(error: unknown): error is DOutcomeUnknownError {
+  return error instanceof DOutcomeUnknownError
+    || (error instanceof Error && error.name === "DOutcomeUnknownError");
 }
 
 export interface PageResult<T> {
@@ -570,7 +593,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   } catch {
     const commandKey = headers.get("Idempotency-Key");
     if (commandKey && method !== "GET") {
-      throw new Error(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+      throw new DOutcomeUnknownError(commandKey);
     }
     throw new Error("财务服务请求超时，请检查连接后重试");
   }
@@ -580,14 +603,22 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       resetAdminSession();
     }
     const commandKey = headers.get("Idempotency-Key");
-    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
-      throw new Error(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+    // 🔴 运营看到的话术必须与命令号去留同口径(2026-08-06 第三轮验收 P1-6)。
+    //   先前只认 unknown 头:5xx 时命令号已经保住了,提示却仍说「失败」——运营据此重勾一批重试,
+    //   而 D2 批量的指纹含 ids,换一批 ids 就是新指纹新号,已放行的那部分会**重复放行**。
+    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || outcomeStaysUnknown(response.status, result?.code))) {
+      throw new DOutcomeUnknownError(commandKey);
     }
     // A deterministic error can close a brand-new attempt, but it cannot prove
     // that an earlier unknown attempt reached a terminal state. Keep the exact
     // command capsule so auth failures, in-progress replies, and other retry
     // errors never force the operator to create a second command key.
-    if (mutationFingerprint && !pendingKeyBeforeRequest) {
+    // 🔴 2026-08-06 补:这道保护只覆盖「重试链」——**首次**提交撞上结构化 5xx 时
+    //   pendingKeyBeforeRequest 为空,照样弃号。5xx 后端可能已落库,必须保号(统一口径见
+    //   outcome-classification.ts)。
+    if (mutationFingerprint && !pendingKeyBeforeRequest
+      && !outcomeStaysUnknown(response.status, result?.code)) {
       pendingMutations.forget(mutationFingerprint);
     }
     throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));
@@ -1608,6 +1639,8 @@ export function normalizeD5Params(value: unknown): D5Params {
       || [confirmFees.trc20, confirmFees.bep20, confirmFees.erc20]
         .some((fee) => fee < 0 || fee > D5_NETWORK_CONFIRM_FEE_MAX)
       || result.nexFeeOffsetRate <= 0
+      // classification-ok:小额门槛是**业务金额**上限(美元),数值恰好落在 4xx/5xx 区间而已,
+      //   与 HTTP 状态码、与「命令号要不要丢」都无关。归类门按数值区间收网,故在此显式豁免。
       || result.smallAmountThresholdUsd < 0 || result.smallAmountThresholdUsd > D5_SMALL_AMOUNT_THRESHOLD_MAX
       || result.payoutSlaHours < D5_PAYOUT_SLA_HOURS_MIN || result.payoutSlaHours > D5_PAYOUT_SLA_HOURS_MAX) {
     throw new Error(formatAdminApiError("D5_RESPONSE_INVALID", "D5_RESPONSE_INVALID:business-range"));

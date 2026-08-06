@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveNexionAppRoot } from "./lib/nexion-workspace-paths.mjs";
+import { stripComments } from "./lib/strip-comments.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const UNI_SRC = path.join(resolveNexionAppRoot({ adminRoot: ROOT }), "src");
@@ -10,13 +11,6 @@ const KEY_RE = /(?:nexion|nexgrid)-[a-z0-9]+(?:-[a-z0-9]+)*/g;
 const STORAGE_CALL_PREFIX_RE = /(?:StorageSync|localStorage\.(?:getItem|setItem|removeItem)|\bstore|\bacctRow)\s*\(\s*["']$/;
 const STORAGE_KEY_PREFIX_RE = /\b[A-Z][A-Z0-9_]*(?:KEY|KEYS)\b[\s\S]{0,80}["']$/;
 const SELF = path.basename(fileURLToPath(import.meta.url));
-
-function stripComments(src, ext) {
-  let result = src.replace(/\/\*[\s\S]*?\*\//g, "");
-  result = result.replace(/(^|[^:])\/\/.*$/gm, "$1");
-  if (ext === ".vue") result = result.replace(/<!--[\s\S]*?-->/g, "");
-  return result;
-}
 
 function walkFiles(root) {
   const files = [];
@@ -43,7 +37,7 @@ function collectAppKeys() {
   for (const file of walkFiles(UNI_SRC)) {
     const ext = path.extname(file);
     if (![".ts", ".vue", ".js", ".mjs"].includes(ext)) continue;
-    const body = stripComments(fs.readFileSync(file, "utf8"), ext);
+    const body = stripComments(fs.readFileSync(file, "utf8"), { html: ext === ".vue" });
     for (const match of contextualKeyMatches(body)) keys.add(match[0]);
   }
   return keys;
@@ -53,7 +47,7 @@ function collectScriptRefs() {
   const refs = [];
   for (const file of walkFiles(SCRIPTS)) {
     if (!file.endsWith(".mjs") || path.basename(file) === SELF) continue;
-    const body = stripComments(fs.readFileSync(file, "utf8"), ".mjs");
+    const body = stripComments(fs.readFileSync(file, "utf8"));
     for (const match of contextualKeyMatches(body)) {
       if (match[0].startsWith("nexion-admin-")) continue;
       const line = body.slice(0, match.index).split(/\r?\n/).length;

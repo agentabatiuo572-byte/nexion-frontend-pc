@@ -1,5 +1,6 @@
 "use client";
 
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
@@ -209,12 +210,22 @@ function idempotencyKey(prefix: string) {
 }
 
 async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
-  const response = await guardedFetch(endpoint, { ...init, cache: "no-store" });
+  // 传输层失败归「结果未知」(原来无 try/catch,裸 TypeError 到页面就被当确定失败弃号)。
+  let response: Response;
+  try {
+    response = await guardedFetch(endpoint, { ...init, cache: "no-store" });
+  } catch (error) {
+    const commandKey = new Headers(init?.headers).get("Idempotency-Key");
+    if (commandKey) throw new B5OutcomeUnknownError(commandKey);
+    throw error;
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0 || result.data === undefined) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     const commandKey = new Headers(init?.headers).get("Idempotency-Key");
-    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+    // unknown 头只是增强信号,不再是唯一保险丝:5xx / 响应不可读同样归结果未知。
+    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || outcomeStaysUnknown(response.status, result?.code))) {
       throw new B5OutcomeUnknownError(commandKey);
     }
     throw new Error(formatAdminApiError(result?.message, `B5_REQUEST_FAILED_${response.status}`));

@@ -1,4 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 
 interface ApiResult<T> {
@@ -539,7 +540,7 @@ export async function updateH8ReferralRewardParam(
     //   ② 回执读不出(网关 HTML 错误页);③ 5xx(growth proxy 后端不可达就是带 JSON body 的 503)。
     // 4xx 与「200 但业务码非 0」= 后端明确拒绝,确定性失败弃号。口径与 f1-client 同款。
     const { status, bodyUnreadable } = error as Error & { status?: number; bodyUnreadable?: boolean };
-    if (typeof status !== "number" || bodyUnreadable || status >= 500) {
+    if (typeof status !== "number" || bodyUnreadable || outcomeStaysUnknown(status)) {
       throw new H8OutcomeUncertainError(
         (error instanceof Error && error.message) || "H8_REQUEST_OUTCOME_UNKNOWN",
         idempotencyKey,

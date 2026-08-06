@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../lib/admin/pending-mutation-store.ts";
+import {
+  createPendingMutationStore,
+  createSlotAttemptStore,
+  PENDING_MUTATION_TTL_MS,
+} from "../lib/admin/pending-mutation-store.ts";
 
 const dClient = readFileSync(new URL("../lib/admin/d-client.ts", import.meta.url), "utf8");
 const user360 = readFileSync(new URL("../lib/admin/user360-client.ts", import.meta.url), "utf8");
@@ -77,6 +81,98 @@ test("② TTL 过期后不再拦截,并把过期记录清出存储", () => {
   // 续期不改 createdAt(重试不会把窗口从头算,也不会丢首次时间)。
   fresh.remember("fp", "K");
   assert.equal(env.raw("t-ttl2").K.createdAt, record.createdAt);
+});
+
+test("② TTL 是从首次尝试起的硬上限,重复 remember 不得滑动续期", () => {
+  const env = installStorage();
+  const now = Date.now();
+  // 播一条「已经躺了 23 小时」的在途记录:再重试一次,过期时刻必须仍钉在首次 +24h,
+  // 而不是被推到「现在 +24h」。滑动续期会让客户端记录活过后端那个固定 24h 窗口,
+  // 窗外复用同一个号后端早已不认,却给了操作员「这次会被去重」的虚假信心。
+  const createdAt = now - 23 * 60 * 60 * 1000;
+  env.seed("t-ttl-cap", {
+    K: { fingerprint: "fp", commandKey: "K", createdAt, expiresAt: createdAt + PENDING_MUTATION_TTL_MS },
+  });
+
+  const store = createPendingMutationStore({ storageKey: "t-ttl-cap" });
+  store.remember("fp", "K");
+  const after = env.raw("t-ttl-cap").K;
+  assert.equal(after.createdAt, createdAt, "首次时间不得被重试覆盖");
+  assert.equal(after.expiresAt, createdAt + PENDING_MUTATION_TTL_MS,
+    "重试必须沿用首次起算的过期时刻;滑动续期会让记录活过后端固定 24h 幂等窗");
+  assert.ok(after.expiresAt < now + PENDING_MUTATION_TTL_MS,
+    "过期时刻必须仍早于「现在 +24h」—— 相等即说明窗口被从头重算了");
+});
+
+// ---------------------------------------------------------------- ②b 存储不可用时的降级兜底
+
+/** 隐私模式 / 配额满:sessionStorage 存在但读写都抛。 */
+function installBrokenStorage() {
+  const calls = { warn: 0 };
+  globalThis.window = {
+    sessionStorage: {
+      getItem() { throw new DOMException("SecurityError"); },
+      setItem() { throw new DOMException("QuotaExceededError"); },
+      removeItem() { throw new DOMException("SecurityError"); },
+    },
+  };
+  const original = console.warn;
+  console.warn = () => { calls.warn += 1; };
+  return { calls, restore: () => { console.warn = original; } };
+}
+
+test("②b 存储被禁时命令号仍在本页内存里活着:同槽同输入重试不得铸新号", () => {
+  const env = installBrokenStorage();
+  try {
+    let minted = 0;
+    const mint = () => `k-${++minted}`;
+    const store = createSlotAttemptStore({ storageKey: "t-broken" });
+
+    const first = store.resolve("override:U-1", "score=80", mint);
+    assert.equal(
+      store.resolve("override:U-1", "score=80", mint), first,
+      "隐私模式下同一会话连续重试仍必须复用同号 —— 每次铸新号 = 防重复整体失效(后端收到两条命令)",
+    );
+    // 语义不能因降级而走样:换输入照样换号、收敛后照样铸新。
+    assert.notEqual(store.resolve("override:U-1", "score=90", mint), first);
+    store.forget("override:U-1");
+    assert.notEqual(store.resolve("override:U-1", "score=80", mint), first);
+
+    assert.equal(env.calls.warn, 1, "降级必须告警,且只喊一次(每次读写都喊会把 console 淹掉)");
+  } finally {
+    env.restore();
+  }
+});
+
+test("②b 降级态下读多少次都不得延寿(硬上限不能只钉在写路径)", () => {
+  // 🔴 2026-08-06 独立验收 P1-1:硬上限原来只钉在 remember,把续期藏进 readAll 的内存分支
+  //   即可击穿,而契约门全绿。这条从**读路径**验:反复读之后过期时刻必须一动不动。
+  const env = installBrokenStorage();
+  try {
+    const store = createPendingMutationStore({ storageKey: "t-noextend", ttlMs: 40 });
+    store.remember("fp", "K");
+    // 读必须**穿插在等待里**:全部读完再等,续期发生在等待之前,照样会过期 ——
+    // 那样的探针证明不了任何事(本轮红测实测抓到,第一版就是这么写的)。
+    const expired = Date.now() + 120;
+    while (Date.now() < expired) store.get("fp");
+    assert.equal(store.get("fp"), undefined,
+      "读路径若偷偷续期,这条记录会永远不过期 —— 客户端记录活过后端幂等窗 = 虚假去重信心");
+  } finally {
+    env.restore();
+  }
+});
+
+test("②b 降级兜底不掩盖 TTL:内存里的过期记录同样不得复用", () => {
+  const env = installBrokenStorage();
+  try {
+    const store = createPendingMutationStore({ storageKey: "t-broken-ttl", ttlMs: 1 });
+    store.remember("fp", "K-old");
+    const expired = Date.now() + 5;
+    while (Date.now() < expired) { /* 等 1ms TTL 走完(不引入定时器依赖) */ }
+    assert.equal(store.get("fp"), undefined, "内存兜底不是免死金牌,过期照样失效");
+  } finally {
+    env.restore();
+  }
 });
 
 // ---------------------------------------------------------------- ③ 不撞 key
@@ -184,10 +280,24 @@ test("④ d-client 迁移后对外行为不变:存储键 / 记录结构 / 校验
     base: "finance", path: "/topup/confirm", method: "POST", body: "{}",
   });
   assert.deepEqual(
-    Object.keys(env.raw(storageKey)["d1-topup-1"]),
-    ["fingerprint", "commandKey", "base", "path", "method", "body", "createdAt", "expiresAt"],
-    "记录字段与迁移前逐字段同名同序",
+    Object.keys(env.raw(storageKey)["d1-topup-1"]).sort(),
+    ["base", "body", "commandKey", "createdAt", "expiresAt", "fingerprint", "method", "path"],
+    "记录字段与迁移前逐字段同名",
   );
+  // 🔴 四个公共字段必须排在**最后**:调用方元数据(extra)一旦撞名覆盖了 commandKey,
+  //   记录的 commandKey 与行键不符 → isBaseRecord 判非法丢弃 → 命令号静默丢失。
+  //   顺序本身就是这道防线,故钉死(2026-08-06 独立验收 P2-1)。
+  assert.deepEqual(
+    Object.keys(env.raw(storageKey)["d1-topup-1"]).slice(-4),
+    ["fingerprint", "commandKey", "createdAt", "expiresAt"],
+    "公共字段必须排在 extra 之后,否则调用方元数据能覆盖掉命令号",
+  );
+  store.remember("hostile", "d1-hostile", {
+    // @ts-expect-error 故意撞名:类型层挡 TS 调用方,运行时也必须免疫
+    commandKey: "HIJACKED", fingerprint: "HIJACKED", base: "finance", path: "/x", method: "POST", body: "{}",
+  });
+  assert.equal(env.raw(storageKey)["d1-hostile"].commandKey, "d1-hostile", "extra 不得覆盖 commandKey");
+  assert.equal(env.raw(storageKey)["d1-hostile"].fingerprint, "hostile", "extra 不得覆盖 fingerprint");
 
   const now = Date.now();
   env.seed(storageKey, {
@@ -214,7 +324,10 @@ test("④ d-client 迁移后对外行为不变:存储键 / 记录结构 / 校验
   assert.match(dClient, /createPendingMutationStore<PersistedPendingMutation>/);
   assert.match(dClient, /pendingMutations\.get\(mutationFingerprint\)/);
   assert.match(dClient, /pendingMutations\.remember\(mutationFingerprint, commandKey, \{/);
-  assert.match(dClient, /if \(mutationFingerprint && !pendingKeyBeforeRequest\) \{\s*pendingMutations\.forget\(mutationFingerprint\);/);
+  // 2026-08-06:弃号条件在原来「不是复用已有号」之上又加了「必须是确定性拒绝」——
+  // 原判据只护住重试链,**首次**提交撞结构化 5xx 照样弃号(见 outcome-classification.ts)。
+  // 这里钉的是加强后的完整表达式:三个合取项少任何一个都是回退。
+  assert.match(dClient, /if \(mutationFingerprint && !pendingKeyBeforeRequest\s*&& !outcomeStaysUnknown\(response\.status, result\?\.code\)\) \{\s*pendingMutations\.forget\(mutationFingerprint\);/);
   assert.match(dClient, /listD1PendingTopupCommands[\s\S]*pendingMutations\.list\(\)/);
   assert.match(dClient, /retryD1PendingTopupCommand[\s\S]*pendingMutations\.list\(\)\.find\(\(value\) => value\.commandKey === commandKey\)/);
 });
@@ -223,7 +336,8 @@ test("④ user360 / c3 不再持有内存态命令号,且三处存储键互不�
   assert.doesNotMatch(user360, /const pendingUserMutationKeys = new Map/);
   assert.doesNotMatch(user360, /pendingUserMutationKeys\./);
   assert.match(user360, /pendingUserMutations\.remember\(mutationFingerprint, commandKey\)/);
-  assert.match(user360, /if \(mutationFingerprint && !pendingKeyBeforeRequest\) pendingUserMutations\.forget\(mutationFingerprint\)/);
+  // 同 d-client:弃号必须同时满足「不是复用已有号」+「确定性拒绝」。
+  assert.match(user360, /if \(mutationFingerprint && !pendingKeyBeforeRequest\s*&& !outcomeStaysUnknown\(response\.status, result\?\.code\)\) \{\s*pendingUserMutations\.forget\(mutationFingerprint\);/);
   assert.match(user360, /if \(mutationFingerprint\) pendingUserMutations\.forget\(mutationFingerprint\)/);
 
   assert.doesNotMatch(c3, /useRef\(new Map/);

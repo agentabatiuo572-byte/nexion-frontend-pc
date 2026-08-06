@@ -1,4 +1,5 @@
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import {
   buildA2FilterQuery,
   resolveA2AuditObject,
@@ -367,12 +368,21 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   // platform proxy 只在**自己**超时时补 unknown 头,上游自己返 5xx 时原样透传不回抄 —— 少了这一路,
   // 消费方(E 全域 28 处提案 + H8 结算)会把它当确定性失败弃号,重试铸新号 → 同一笔资金动作两张票。
   // 口径与 f1-client / h-client / stable-mutation 一致:丢号的代价远重于多保一次号。
-  if (init?.commandKey && response.status >= 500) {
+  if (init?.commandKey && outcomeStaysUnknown(response.status)) {
     throw new A2OutcomeUncertainError(
       formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`), init.commandKey);
   }
 
   if (!response.ok || !result || result.code !== 0) {
+    // 🔴 带在途命令号时,只有**确定性拒绝**(4xx / 2xx 但业务码非 0)才算「这次没生效」。
+    //   5xx 归确定失败 = 调用方 forget 命令号 = 下次重试铸新号 = 后端去重失效 = 资金动作双发。
+    //   口径单源见 outcome-classification.ts(2026-08-06 全家族统一)。
+    if (init?.commandKey && outcomeStaysUnknown(response.status, result?.code)) {
+      throw new A2OutcomeUncertainError(
+        formatAdminApiError(result?.message, `A2_REQUEST_OUTCOME_UNKNOWN_${response.status}`),
+        init.commandKey,
+      );
+    }
     throw new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`));
   }
   if (init?.commandKey && response.ok && result.code === 0 && result.data == null) {

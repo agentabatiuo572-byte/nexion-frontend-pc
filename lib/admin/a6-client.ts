@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { buildRoleStatusPayload, normalizeProposalTicket, type A2ProposalTicket } from "@/lib/admin/platform-contracts";
@@ -57,14 +58,26 @@ async function a6Request<T>(path: string, init?: RequestInit & { idempotencyPref
   if (init?.idempotencyKey) headers.set("Idempotency-Key", init.idempotencyKey);
   else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
 
-  const response = await guardedFetch(`/api/admin/platform${path}`, {
-    ...init, headers, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(12_000),
-  });
+  const uncertain = () => new Error(
+    "请求结果尚未确认，当前输入已保留；请直接重试，系统会沿用同一幂等键核对结果。");
+  // 传输层失败(断网 / 超时)是「结果未知」的头号场景:原来抛裸错误,调用方与操作员都只看到「失败」。
+  let response: Response;
+  try {
+    response = await guardedFetch(`/api/admin/platform${path}`, {
+      ...init, headers, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(12_000),
+    });
+  } catch (error) {
+    if (headers.has("Idempotency-Key")) throw uncertain();
+    throw error;
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    if (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
-      throw new Error("请求结果尚未确认，当前输入已保留；请直接重试，系统会沿用同一幂等键核对结果。");
+    // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知(统一口径见 outcome-classification.ts)。
+    if (headers.has("Idempotency-Key")
+      && (response.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
+        || outcomeStaysUnknown(response.status, result?.code))) {
+      throw uncertain();
     }
     throw new Error(formatAdminApiError(result?.message, `A6_REQUEST_FAILED_${response.status}`));
   }
