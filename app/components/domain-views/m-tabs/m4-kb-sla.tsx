@@ -334,36 +334,36 @@ function FaqModal({
       }
     >
       <div className="grid g-2" style={{ gap: 12, marginBottom: 12 }}>
-        <label className="field"><label>分类</label>
+        <label className="field"><span className="bf-legend">分类</span>
           <select className="fld" value={category} onChange={(e) => setCategory(e.target.value as SupportFaq["category"])}>
             {FAQ_CATEGORY_OPTIONS.map((c) => <option key={c} value={c}>{catCN(c)}</option>)}
           </select>
         </label>
-        <label className="field"><label>可见位置</label>
+        <label className="field"><span className="bf-legend">可见位置</span>
           <select className="fld" value={surface} onChange={(e) => setSurface(e.target.value as SupportFaq["surface"])}>
             {SURFACES.map((s) => <option key={s} value={s}>{SURFACE_CN[s]}</option>)}
           </select>
         </label>
       </div>
       <div style={{ display: "grid", gap: 12 }}>
-        <label className="field"><label>问题</label><input className="fld" data-proof="support-faq-question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="如:提现审核要多久?" /></label>
-        <label className="field"><label>回答</label><textarea className="fld" data-proof="support-faq-answer" rows={4} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="写清用户可执行步骤、后台处理队列与 SLA" style={{ resize: "vertical" }} /></label>
+        <label className="field"><span className="bf-legend">问题</span><input className="fld" data-proof="support-faq-question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="如:提现审核要多久?" /></label>
+        <label className="field"><span className="bf-legend">回答</span><textarea className="fld" data-proof="support-faq-answer" rows={4} value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="写清用户可执行步骤、后台处理队列与 SLA" style={{ resize: "vertical" }} /></label>
         <div className="grid g-2" style={{ gap: 12 }}>
-          <label className="field"><label>语言</label>
+          <label className="field"><span className="bf-legend">语言</span>
             <select className="fld" value={language} onChange={(e) => setLanguage(e.target.value as SupportFaq["language"])}>
               {LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <label className="field"><label>排序(小值靠前)</label><input className="fld mono" type="number" min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} /></label>
+          <label className="field"><span className="bf-legend">排序(小值靠前)</span><input className="fld mono" type="number" min={0} max={999999} step={1} value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} /></label>
         </div>
         <div className="grid g-2" style={{ gap: 12 }}>
-          <label className="field"><label>发布状态</label>
+          <label className="field"><span className="bf-legend">发布状态</span>
             <select className="fld" value={status} onChange={(e) => setStatus(e.target.value as SupportFaq["status"])}>
               <option value="published">已发布</option>
               <option value="draft">草稿</option>
             </select>
           </label>
-          <label className="field"><label>审计理由(≥8 字)</label><input className="fld" data-proof="support-faq-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:帮助中心提现板块缺口补齐" /></label>
+          <label className="field"><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" data-proof="support-faq-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:帮助中心提现板块缺口补齐" /></label>
         </div>
       </div>
     </Modal>
@@ -402,16 +402,16 @@ function EditSlaModal({
       }
     >
       <div className="field" style={{ marginBottom: 12 }} data-proof="support-sla-category">
-        <label>分类</label>
+        <span className="bf-legend">分类</span>
         <div className="chip" style={{ width: "fit-content", border: "none" }}>{catCN(category)} · {category}</div>
       </div>
       <div className="grid g-2" style={{ gap: 12 }}>
-        <label className="field"><label>首响(分钟)</label><input className="fld mono" type="number" value={firstResponseMins} onChange={(e) => setFirst(e.target.value)} /></label>
-        <label className="field"><label>解决(小时)</label><input className="fld mono" type="number" value={resolutionHours} onChange={(e) => setResolve(e.target.value)} /></label>
-        <label className="field"><label>负责人队列</label><input className="fld" value={queue} onChange={(e) => setQueue(e.target.value)} placeholder="例:Payment desk" /></label>
-        <label className="field"><label>升级路径</label><input className="fld" value={escalation} onChange={(e) => setEscalation(e.target.value)} placeholder="例:D2 withdrawal review" /></label>
+        <label className="field"><span className="bf-legend">首响(分钟)</span><input className="fld mono" type="number" value={firstResponseMins} onChange={(e) => setFirst(e.target.value)} /></label>
+        <label className="field"><span className="bf-legend">解决(小时)</span><input className="fld mono" type="number" value={resolutionHours} onChange={(e) => setResolve(e.target.value)} /></label>
+        <label className="field"><span className="bf-legend">负责人队列</span><input className="fld" value={queue} onChange={(e) => setQueue(e.target.value)} placeholder="例:Payment desk" /></label>
+        <label className="field"><span className="bf-legend">升级路径</span><input className="fld" value={escalation} onChange={(e) => setEscalation(e.target.value)} placeholder="例:D2 withdrawal review" /></label>
       </div>
-      <label className="field" style={{ marginTop: 12 }}><label>审计理由(≥8 字)</label><input className="fld" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:SLA 与 D2/C4 队列口径同步" /></label>
+      <label className="field" style={{ marginTop: 12 }}><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:SLA 与 D2/C4 队列口径同步" /></label>
     </Modal>
   );
 }

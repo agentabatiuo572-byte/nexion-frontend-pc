@@ -59,7 +59,7 @@ export function ViewParamModal({ req, onClose }: { req: ViewParamReq; onClose: (
         <b>仅视图参数</b> · 实时生效 · 不走高敏操作确认,不改任何业务口径。
       </div>
       <div className="field">
-        <label>新值 *(当前 {req.current}{req.unit} · 范围 {req.min}–{req.max}{req.unit})</label>
+        <span className="bf-legend">新值 *(当前 {req.current}{req.unit} · 范围 {req.min}–{req.max}{req.unit})</span>
         <div className="row" style={{ gap: 8, alignItems: "center" }}>
           <input className="fld" type="number" min={req.min} max={req.max} value={val} placeholder={String(req.current)}
             onChange={(e) => setVal(e.target.value)} style={{ maxWidth: 200 }} />

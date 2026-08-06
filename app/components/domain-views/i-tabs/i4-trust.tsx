@@ -1266,21 +1266,21 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
           <div className="itint cyan" style={{ marginBottom: 12 }}>
             草稿保存是普通内容编辑，不走高敏确认；只有发布、回滚和下架进入操作确认。
           </div>
-          <div className="field"><label>版本号</label><input className="inp" disabled={draftEditor.mode === "edit"} value={draftEditor.version} placeholder="如 v6" onChange={(event) => setDraftEditor({ ...draftEditor, version: event.target.value })} /></div>
-          <div className="field"><label>版块说明</label><input className="inp" value={draftEditor.description} onChange={(event) => setDraftEditor({ ...draftEditor, description: event.target.value })} /></div>
-          <div className="field"><label>内容结构</label><input className="inp" value={draftEditor.structure} onChange={(event) => setDraftEditor({ ...draftEditor, structure: event.target.value })} /></div>
-          <div className="field"><label>保存说明</label><input className="inp" value={draftEditor.reason} onChange={(event) => setDraftEditor({ ...draftEditor, reason: event.target.value })} /></div>
+          <div className="field"><span className="bf-legend">版本号</span><input aria-label="版本号" className="inp" disabled={draftEditor.mode === "edit"} value={draftEditor.version} placeholder="如 v6" onChange={(event) => setDraftEditor({ ...draftEditor, version: event.target.value })} /></div>
+          <div className="field"><span className="bf-legend">版块说明</span><input aria-label="版块说明" className="inp" value={draftEditor.description} onChange={(event) => setDraftEditor({ ...draftEditor, description: event.target.value })} /></div>
+          <div className="field"><span className="bf-legend">内容结构</span><input aria-label="内容结构" className="inp" value={draftEditor.structure} onChange={(event) => setDraftEditor({ ...draftEditor, structure: event.target.value })} /></div>
+          <div className="field"><span className="bf-legend">保存说明</span><input aria-label="保存说明" className="inp" value={draftEditor.reason} onChange={(event) => setDraftEditor({ ...draftEditor, reason: event.target.value })} /></div>
           <div className="row" style={{ justifyContent: "space-between", margin: "14px 0 8px" }}><b>结构化字段</b><span className="tiny">共 {draftEditor.fields.length} 项</span></div>
           <div className="itint cyan" style={{ marginBottom: 10 }}>字段标识由当前发布版字段模板固定，不可新增、删除或改名；这里只编辑字段名称和内容。</div>
           {draftEditor.fields.map((field, index) => <div className="itint" key={index} style={{ marginBottom: 10 }}>
             <div className="grid g-2" style={{ gap: 8 }}>
               <div className="field">
-                <label>字段标识（系统固定）</label>
+                <span className="bf-legend">字段标识（系统固定）</span>
                 <div className="itint mono" data-trust-field-key="fixed">锁定 · {field.key}</div>
               </div>
-              <div className="field"><label>字段名称</label><input className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
+              <div className="field"><span className="bf-legend">字段名称</span><input aria-label="字段名称" className="inp" value={field.label} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item) })} /></div>
             </div>
-            <div className="field"><label>字段内容</label><textarea className="inp" rows={3} value={field.value} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
+            <div className="field"><span className="bf-legend">字段内容</span><textarea aria-label="字段内容" className="inp" rows={3} value={field.value} onChange={(event) => setDraftEditor({ ...draftEditor, fields: draftEditor.fields.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item) })} /></div>
           </div>)}
         </Drawer>
       )}
