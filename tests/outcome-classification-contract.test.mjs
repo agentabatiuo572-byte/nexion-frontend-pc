@@ -73,11 +73,66 @@ const CLIENTS = readdirSync(new URL("../lib/admin/", import.meta.url))
     // 却因为不读 response 差点整个漏出扫描面,2026-08-06 独立验收 P1-3)。
     const inspectsOutcome = /\b(?:response|res)\.(?:ok|status)\b/.test(code)
       || /\bstatus\s*:\s*number\b/.test(code);
+    // 🔴 「认了 unknown 头」本身就是「这个模块在做结果归类」的铁证(2026-08-06 收尾自检):
+    //   a6 / a7 带命令号、认这个头、给的是「结果尚未确认」话术,但既没有专门的错误类型
+    //   也不调 forget —— 前一版按「有没有错误类型 / 有没有 forget」筛范围,把这两个域
+    //   整个漏在覆盖面外,它们的 5xx 与断网因此一直还是老口径。
     const decidesRetention = /\.forget\s*\(/.test(code)
       || /Outcome(?:Uncertain|Unknown)\w*Error/.test(code)
-      || /StableMutationFailure/.test(code);
+      || /StableMutationFailure/.test(code)
+      || /X-Nexion-Upstream-Outcome/.test(code);
     return inspectsOutcome && decidesRetention;
   });
+
+/**
+ * 🔴 覆盖面本身必须钉住(2026-08-06 收尾自检)。
+ *
+ * 「把范围改窄」不会让任何门变红 —— 它只会让门悄悄变松,这是最难发现的退化方式:
+ * a6 / a7 就是这么在覆盖面外躺了一整轮的。ground truth = 凡是往请求里塞 Idempotency-Key
+ * 的模块,都在做「命令号去留」的决定,一个都不能漏出扫描面。
+ */
+/**
+ * 发命令号但**不在归类门覆盖面内**的模块台账。每条必须写清为什么不需要归类。
+ *
+ * 🔴 为什么要有这张表(2026-08-06 收尾自检):「把范围改窄」不会让任何门变红 ——
+ *   它只让门悄悄变松,是最难发现的退化方式。a6 / a7 就是这么在覆盖面外躺了一整轮:
+ *   它们带命令号、认 unknown 头、给「结果尚未确认」话术,却因为没有专门的错误类型
+ *   而被范围判据筛掉,5xx 与断网一直还是老口径。
+ *   新增一个发命令号的模块时,要么进覆盖面,要么在这里登记理由 —— 不许沉默。
+ */
+const CLASSIFICATION_EXEMPT = {
+  "g1-client.ts": "走通用执行器,归类在 stable-mutation 统一做",
+  "g2-client.ts": "同上",
+  "g3-client.ts": "同上",
+  "g4-client.ts": "同上",
+  "g7-client.ts": "同上",
+  "h9-client.ts": "只在成功后弃号,没有失败期的去留决定;换输入即换号由槽位指纹保证",
+  "a4-client.ts": "命令号每次现铸,没有可复用的号 → 谈不上保号/弃号(待迁,交接文档任务 A)",
+  "b-client.ts": "同上",
+  "f1-client.ts": "同上;stableIdempotencyKey 形参存在但全仓 0 调用方(任务 A 已记档)",
+  "l-client.ts": "同上",
+  "m-client.ts": "同上",
+  "e1-client.ts": "同上", "e2-client.ts": "同上", "e3-client.ts": "同上",
+  "e4-client.ts": "同上", "e5-client.ts": "同上", "e6-client.ts": "同上",
+  "h-client.ts": "同上", "media-client.ts": "同上",
+};
+
+test("扫描面必须盖住每一个发命令号的模块(要么覆盖,要么台账登记理由)", () => {
+  const carriers = readdirSync(new URL("../lib/admin/", import.meta.url))
+    .filter((name) => /\.ts$/.test(name) && !/\.test\./.test(name))
+    .filter((name) => /"Idempotency-Key"/.test(strip(read(`lib/admin/${name}`))));
+  assert.ok(carriers.length >= 30, `只找到 ${carriers.length} 个发命令号的模块,扫描已失真`);
+
+  const covered = new Set(CLIENTS.map(({ name }) => name));
+  const undecided = carriers.filter((name) => !covered.has(name) && !CLASSIFICATION_EXEMPT[name]);
+  assert.deepEqual(undecided, [],
+    `这些模块会发命令号,却既不在归类门覆盖面内、也没在豁免台账里登记理由:${undecided.join(", ")}`);
+
+  // 反向:台账登记了、但已经不发命令号(或已进覆盖面)的条目要删,防台账静默失真。
+  const stale = Object.keys(CLASSIFICATION_EXEMPT)
+    .filter((name) => !carriers.includes(name) || covered.has(name));
+  assert.deepEqual(stale, [], `豁免台账里的过期条目(已进覆盖面或已不发命令号):${stale.join(", ")}`);
+});
 
 test("每个带「结果未知」通道的 client 都由共享谓词判定,不许各写各的", () => {
   assert.ok(CLIENTS.length >= 10, `只找到 ${CLIENTS.length} 个带 outcome 通道的 client,扫描已失真`);
@@ -136,7 +191,10 @@ test("谓词必须真的管着「命令号去留」,不是摆设(调用完得有
       const after = code.slice(match.index, match.index + 260);
       return /throw new \w*Outcome(?:Uncertain|Unknown)\w*Error/.test(after)
         || /\.forget\s*\(/.test(after)
-        || /"deterministic"|"outcome-unknown"/.test(after);
+        || /"deterministic"|"outcome-unknown"/.test(after)
+        // a6 / a7 没有专门的错误类型,用本地工厂 `uncertain()` 造「结果尚未确认」的错误 ——
+        // 形态不同但语义相同,同样是「谓词真的管着命令号去留」。
+        || /throw uncertain\(\)/.test(after);
     });
     assert.ok(wired,
       `${name} 调了谓词却没接到任何「抛结果未知 / 丢命令号」的动作上 → 判了个寂寞`);

@@ -10,6 +10,28 @@ interface ApiResult<T> {
   data?: T;
 }
 
+/**
+ * D 域「结果未知」错误(2026-08-06 收尾审计:两个独立镜头同时点名)。
+ *
+ * 为什么要有类型而不只是一句文案:组件层(D2 / D3)自己持有命令号,失败时必须判断
+ * **该不该丢号** —— 确定性拒绝要丢(否则运营改完输入重提会撞载荷不符,那笔单子 24h 无法处置),
+ * 结果未知不能丢(否则重试铸新号 = 重复出金)。只有一句文案时,组件唯一能做的就是不判断,
+ * 于是先前 D2 / D3 的 catch 里一个 forget 都没有,两种情形一视同仁地保号。
+ * 文案逐字不变,只把类型补上,不影响任何按文案渲染的地方。
+ */
+export class DOutcomeUnknownError extends Error {
+  constructor(public readonly commandKey: string) {
+    super(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+    this.name = "DOutcomeUnknownError";
+  }
+}
+
+/** 跨 bundle 安全的鸭型守卫(与 a2 / k2 同款,防两份类身份分裂)。 */
+export function isDOutcomeUnknownError(error: unknown): error is DOutcomeUnknownError {
+  return error instanceof DOutcomeUnknownError
+    || (error instanceof Error && error.name === "DOutcomeUnknownError");
+}
+
 export interface PageResult<T> {
   total: number;
   pageNum: number;
@@ -571,7 +593,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   } catch {
     const commandKey = headers.get("Idempotency-Key");
     if (commandKey && method !== "GET") {
-      throw new Error(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+      throw new DOutcomeUnknownError(commandKey);
     }
     throw new Error("财务服务请求超时，请检查连接后重试");
   }
@@ -586,7 +608,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     //   而 D2 批量的指纹含 ids,换一批 ids 就是新指纹新号,已放行的那部分会**重复放行**。
     if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
       || outcomeStaysUnknown(response.status, result?.code))) {
-      throw new Error(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
+      throw new DOutcomeUnknownError(commandKey);
     }
     // A deterministic error can close a brand-new attempt, but it cannot prove
     // that an earlier unknown attempt reached a terminal state. Keep the exact

@@ -16,6 +16,7 @@ import {
   type D2Withdrawal,
   type D5Params,
   type PageResult,
+  isDOutcomeUnknownError,
 } from "@/lib/admin/d-client";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import type { DCtx } from "./types";
@@ -284,6 +285,11 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       setDetail(updated);
       await load();
     } catch (cause) {
+      // 🔴 确定性拒绝必须丢号(2026-08-06 收尾审计,运营镜头与红队镜头独立同时点名):
+      //   4xx 被驳回后运营会改输入重提,若还留着旧号 = 同号不同载荷 → 后端判载荷不符 →
+      //   这张单子的这个动作 24h 内做不了,界面还没有清除入口。
+      //   结果未知则必须保号 —— 丢了重试就是铸新号 = 重复出金。
+      if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
       const message = cause instanceof Error ? cause.message : "D2 审核失败";
       await load();
       setError(message);
@@ -342,6 +348,17 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
           pendingKeys.forget(scope);
           toast(`批次 ${result.batchId} 已执行：${result.accepted.length} 成功 / ${result.rejected.length} 笔大额转单笔 / ${result.conflicts.length} 冲突`);
           await load();
+        } catch (cause) {
+          // 批量原本只有 try/finally:失败时既不丢号也**不回读列表** —— 运营看不出哪几笔已出金,
+          //   而批量指纹含 ids 集合,改一下勾选就是新号,重叠的那部分会被重复放行。
+          //   回读让已生效的行先亮出来,再配合下面的提示劝阻「改选重来」。
+          if (!isDOutcomeUnknownError(cause)) pendingKeys.forget(scope);
+          await load();
+          const message = cause instanceof Error ? cause.message : "D2 批量审核失败";
+          setError(isDOutcomeUnknownError(cause)
+            ? `${message}｜请勿改动勾选范围后重来:换一批单号=换新请求号,已放行的那部分会被重复放行`
+            : message);
+          throw cause;
         } finally { setSubmitting(""); }
       },
     });

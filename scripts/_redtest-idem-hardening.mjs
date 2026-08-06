@@ -338,6 +338,24 @@ const CASES = [
       'const COMMAND_OWNER_KEY = `nexion-admin-command-owner-${Date.now()}`;', HARNESS),
     "键名必须是写死的字符串"],
 
+  // 收尾自检抓到的漏网:a6 / a7 带命令号、认 unknown 头,却既无专门错误类型也不调 forget,
+  // 前一版门按「有没有错误类型 / forget」筛范围,把这两个域整个漏在覆盖面外。
+  ["R5① a6 退回「只认 unknown 头」(5xx 仍报失败)→ 必红", "red",
+    () => inject(path.join(ROOT, "lib/admin/a6-client.ts"),
+      "        || outcomeStaysUnknown(response.status, result?.code))) {",
+      "        )) {", OUTCOME),
+    "谓词必须真的管着「命令号去留」"],
+  ["R5② a7 撤掉传输层 try/catch(断网抛裸错误)→ 必红", "red",
+    () => inject(path.join(ROOT, "lib/admin/a7-client.ts"),
+      "  let response: Response;\r\n  try {\r\n    response = await fetch(`/api/admin/platform${path}`",
+      "  let response: Response;\r\n  {\r\n    response = await fetch(`/api/admin/platform${path}`", OUTCOME)],
+  // 覆盖面收窄本身不会让任何门变红(它只让门变松)—— 所以先在门里钉死覆盖面,
+  // 再由这条变异证明那道钉子会咬人。
+  ["R5③ 门的范围判据退回「按错误类型筛」→ 覆盖面钉子必红", "red",
+    () => inject(path.join(ROOT, "tests/outcome-classification-contract.test.mjs"),
+      "      || /X-Nexion-Upstream-Outcome/.test(code);", "      ;", OUTCOME),
+    "扫描面必须盖住每一个发命令号的模块"],
+
   ["R2-P2-3 形状判据从 every 放宽成 some → 混合业务表被误删,必红", "red",
     () => inject(STORE, "    return rows.every(([commandKey, value]) => {", "    return rows.some(([commandKey, value]) => {", MIGRATION),
     "清扫按记录形状认表"],
