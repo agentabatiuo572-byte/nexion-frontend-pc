@@ -68,7 +68,7 @@
 .idom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); }
 .idom .l-btn.dgr { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
 .idom .l-btn.dgr:hover { filter: brightness(.96); }
-.idom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+.idom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
 
 .idom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .idom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
@@ -88,7 +88,7 @@
 .idom .bdg.ok { background: var(--success-soft); color: var(--success); }
 .idom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
 .idom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
-.idom .bdg.dim { background: var(--surface-3); color: var(--ink-3); }
+.idom .bdg.dim { background: var(--surface-3); color: var(--ink-2); }
 .idom .bdg.cyan { background: var(--i-ac-soft); color: var(--i-ac); }
 
 .idom .itint { padding: 11px 14px; border-radius: 9px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--ink-3); }

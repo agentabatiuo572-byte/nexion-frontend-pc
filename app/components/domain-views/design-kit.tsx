@@ -1670,7 +1670,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     });
     return (
       <div className="field" data-business-form="multi-field">
-        <label>{spec.title ?? "业务表单 · 多字段配置"}</label>
+        <span className="bf-legend">{spec.title ?? "业务表单 · 多字段配置"}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {visibleFields.map((f) => f.inputKind === "multi-select" ? (
             <div key={f.key} style={f.wide ? { gridColumn: "1 / -1" } : undefined}>
@@ -1702,7 +1702,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "role-select") {
     return (
       <div className="field" data-business-form="role-select">
-        <label>业务表单 · 改角色</label>
+        <span className="bf-legend">业务表单 · 改角色</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("role", "目标角色 role", spec.roles.map((r) => r.key), "role-select-target")}
         </div>
@@ -1751,7 +1751,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const diffs = spec.roles.filter((r) => (value[`grant.${r.key}`] ?? r.current) !== r.current);
     return (
       <div className="field" data-business-form="permission-matrix">
-        <label>业务表单 · 权限矩阵{spec.actionLabel ? <> · {spec.actionLabel}</> : null}</label>
+        <span className="bf-legend">业务表单 · 权限矩阵{spec.actionLabel ? <> · {spec.actionLabel}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.roles.map((r) => (
             <label key={r.key} className="field" style={{ marginBottom: 0 }}>
@@ -1790,7 +1790,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     };
     return (
       <div className="field" data-business-form={spec.kind}>
-        <label>业务表单 · 中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</label>
+        <span className="bf-legend">业务表单 · 中英越文案{"keyName" in spec && spec.keyName ? <> · <span className="mono">{spec.keyName}</span></> : null}</span>
         {spec.kind === "localized-copy" && spec.mode === "create" && (
           <div style={{ marginBottom: 10 }}>{input("messageKey", "词条 key", "如 home.hero.title")}</div>
         )}
@@ -1845,7 +1845,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const labels = Object.fromEntries(spec.modules.map((item) => [item.value, item.label]));
     return (
       <div className="field" data-business-form="copy-position-create">
-        <label>业务表单 · 新增文案位置</label>
+        <span className="bf-legend">业务表单 · 新增文案位置</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("positionKey", "位置标识", "home.hero.banner")}
           {input("positionName", "位置名称", "首页主横幅")}
@@ -1858,7 +1858,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "copy-version-option") {
     return (
       <div className="field" data-business-form={`copy-version-option-${spec.mode}`}>
-        <label>业务表单 · {spec.mode === "create" ? "新增文案版本" : "编辑文案版本"}</label>
+        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增文案版本" : "编辑文案版本"}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.mode === "create"
             ? input("versionKey", "版本标识", "v3")
@@ -1935,7 +1935,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     };
     return (
       <div className="field" data-business-form="copy-experiment-create">
-        <label>业务表单 · 创建 A/B 实验</label>
+        <span className="bf-legend">业务表单 · 创建 A/B 实验</span>
         <label className="field" style={{ marginBottom: 10 }}>
           <span>选择文案</span>
           <select className="fld" aria-label="选择文案" value={copy?.value ?? ""} onChange={(event) => changeCopy(event.target.value)}>
@@ -1989,7 +1989,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "copy-experiment-start") {
     return (
       <div className="field" data-business-form="copy-experiment-start">
-        <label>业务表单 · 启动实验 {spec.experimentId}</label>
+        <span className="bf-legend">业务表单 · 启动实验 {spec.experimentId}</span>
         <label className="row" style={{ alignItems: "flex-start", gap: 8, marginBottom: 0 }}>
           <input type="checkbox" checked={value.ack === "true"} onChange={(event) => set("ack", event.target.checked ? "true" : "false")} />
           <span>我已确认实验版本、分流比例和继承受众；启动后按当前快照分流并写入审计。</span>
@@ -2001,7 +2001,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "copy-experiment-discard") {
     return (
       <div className="field" data-business-form="copy-experiment-discard">
-        <label>业务表单 · 弃用实验 {spec.experimentId}</label>
+        <span className="bf-legend">业务表单 · 弃用实验 {spec.experimentId}</span>
         <div className="itint warn">弃用后实验不会再启动或被采纳；已产生的实验数据和审计记录继续保留。</div>
       </div>
     );
@@ -2029,7 +2029,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     };
     return (
       <div className="field" data-business-form="course-authoring">
-        <label>业务表单 · 课程新建 / 编辑</label>
+        <span className="bf-legend">业务表单 · 课程新建 / 编辑</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("slug", "课程 slug", "learn-earn-basics")}
           {(spec.mode === "version-create" || spec.mode === "version-edit") && input("version", "版本号", "v2")}
@@ -2105,7 +2105,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "campaign-edit") {
     return (
       <div className="field" data-business-form="campaign-edit">
-        <label>业务表单 · Campaign 编辑</label>
+        <span className="bf-legend">业务表单 · Campaign 编辑</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("title", "通知标题 title", "Campaign title")}
           {select("tier", "优先级 priority", spec.tiers ?? DEFAULT_CAMPAIGN_TIERS)}
@@ -2123,7 +2123,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "generation-gate") {
     return (
       <div className="field" data-business-form="generation-gate">
-        <label>业务表单 · E1 上架节奏门</label>
+        <span className="bf-legend">业务表单 · E1 上架节奏门</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {spec.mode === "create"
             ? select("skuId", "目标 SKU", spec.skuOptions)
@@ -2145,7 +2145,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "phase-config") {
     return (
       <div className="field" data-business-form="phase-config">
-        <label>业务表单 · E1 阶段配置</label>
+        <span className="bf-legend">业务表单 · E1 阶段配置</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("label", "阶段名称", "如 P3 Pro v2 首发")}
           {input("meta", "门槛说明", "如 L0+ / 完成 KYC")}
@@ -2164,7 +2164,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const jurisdictionLabels = Object.fromEntries((spec.jurisdictionOptions ?? []).map((item) => [item.value, item.label]));
     return (
       <div className="field" data-business-form="version-authoring">
-        <label>业务表单 · 新建 / 编辑披露草稿</label>
+        <span className="bf-legend">业务表单 · 新建 / 编辑披露草稿</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>披露版本（后端原子分配）</span>
@@ -2185,7 +2185,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {textArea("en", "英语版本正文（选择三语时必填）", "Fill English disclosure body", 4)}
         </div>
         <div style={{ marginTop: 12 }}>
-          <label>结构化章节（固定 7 章）</label>
+          <span className="bf-legend">结构化章节（固定 7 章）</span>
           {(spec.chapters ?? []).map((chapter, index) => <div className="card" key={`${chapter.no}-${index}`} style={{ padding: 10, marginTop: 8 }}>
             <b>第 {chapter.no} 章</b>
             <div className="grid g-3" style={{ gap: 8, marginTop: 8 }}>
@@ -2205,7 +2205,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "disclosure-jurisdiction") {
     return (
       <div className="field" data-business-form="disclosure-jurisdiction">
-        <label>业务表单 · {spec.mode === "create" ? "新增法域" : "编辑法域"}</label>
+        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增法域" : "编辑法域"}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           <label className="field" style={{ marginBottom: 0 }}>
             <span>法域代码</span>
@@ -2235,7 +2235,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     });
     return (
       <div className="field" data-business-form="disclosure-publish-review">
-        <label>发布前合规核对</label>
+        <span className="bf-legend">发布前合规核对</span>
         <div className="itint danger">
           <b>{spec.jurisdiction} · {spec.currentVersion || "无生效版"} → {spec.targetVersion}</b>
           <div style={{ marginTop: 6 }}>当前映射统计：用户 {spec.affected.toLocaleString("zh-CN")} 人 · 待重新确认 {spec.pendingAck.toLocaleString("zh-CN")} 人 · 当前拦截 {spec.blocked.toLocaleString("zh-CN")} 次</div>
@@ -2277,7 +2277,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     };
     return (
       <div className="field" data-business-form="disclosure-matrix">
-        <label>业务表单 · {spec.mode === "create" ? "新增法域版本映射" : "编辑法域版本映射"}</label>
+        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新增法域版本映射" : "编辑法域版本映射"}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("jurisdictionCode", "法域", (spec.jurisdictionOptions ?? []).map((item) => item.value), jurisdictionLabels, undefined, (next) => {
             const selected = spec.jurisdictionOptions?.find((item) => item.value === next);
@@ -2292,7 +2292,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {select("version", "已发布版本", spec.publishedVersionsByJurisdiction?.[value.jurisdictionCode ?? ""] ?? [])}
         </div>
         <div style={{ marginTop: 10 }}>
-          <label>适用国家/地区（可多选）</label>
+          <span className="bf-legend">适用国家/地区（可多选）</span>
           <div className="seg-chips" style={{ marginTop: 6 }}>
             {(spec.countryOptions ?? []).map((option) => <button
               type="button"
@@ -2312,7 +2312,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const fieldCount = Math.max(0, Number(value.fieldCount || 0));
     return (
       <div className="field" data-business-form="trust-section-authoring">
-        <label>业务表单 · {spec.mode === "create" ? "新建信任版块草稿" : "编辑信任版块草稿"}</label>
+        <span className="bf-legend">业务表单 · {spec.mode === "create" ? "新建信任版块草稿" : "编辑信任版块草稿"}</span>
         <div className="itint" style={{ marginBottom: 10 }}>
           版块 <span className="mono">{spec.sectionKey}</span> · 草稿保存后才能单独发布；已发布版本不可直接编辑或删除。
         </div>
@@ -2352,7 +2352,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const fieldKeys = Array.from(new Set([...currentByKey.keys(), ...targetByKey.keys()]));
     return (
       <div className="field" data-business-form="trust-section-publish">
-        <label>发布核对</label>
+        <span className="bf-legend">发布核对</span>
         <div className="itint" style={{ marginBottom: 10 }}>
           <b>版本差异</b> · <span className="mono">{spec.currentVersion}</span> → <span className="mono">{spec.targetVersion}</span>
           <div style={{ marginTop: 8 }}>
@@ -2381,7 +2381,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const verified = spec.serverVerification;
     return (
       <div className="field" data-business-form="identity-verify">
-        <label>业务表单 · 身份核验(高敏安全动作前置)</label>
+        <span className="bf-legend">业务表单 · 身份核验(高敏安全动作前置)</span>
         <div className="tint danger tiny" style={{ marginBottom: 10 }}>
           目标 <span className="mono">{spec.subject}</span> · 未完成全部核验项前,确认按钮保持禁用。
         </div>
@@ -2419,7 +2419,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "task-edit") {
     return (
       <div className="field" data-business-form="task-edit">
-        <label>业务表单 · 任务编辑{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 任务编辑{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "任务名称 name", "如 逛收益页")}
           {input("path", "跳转路径 path", "如 /earn")}
@@ -2439,7 +2439,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "voucher-config") {
     return (
       <div className="field" data-business-form="voucher-config">
-        <label>业务表单 · 代金券配置{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 代金券配置{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "名称 name", "如 新人专享券")}
           {select("type", "类型 type", ["fixed", "percent"], "voucher-type", { fixed: "满减 fixed", percent: "折扣 percent" })}
@@ -2490,7 +2490,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const skuOpts = spec.skuOptions ?? [];
     return (
       <div className="field" data-business-form="vrank-reward-edit">
-        <label>业务表单 · 等级奖励{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 等级奖励{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div style={{ marginBottom: 10 }}>
           {select("rtype", "奖励类型 type", ["usdt", "nex", "voucher", "sku", "custom"], "vrank-reward-type", { usdt: "USDT 现金", nex: "NEX 代币", voucher: "代金券", sku: "系统 SKU", custom: "自定义" })}
         </div>
@@ -2528,7 +2528,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "day-one-window") {
     return (
       <div className="field" data-business-form="day-one-window">
-        <label>业务表单 · 首日时窗</label>
+        <span className="bf-legend">业务表单 · 首日时窗</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("activeHours", "满额窗 active(小时)", "24", "number")}
           {input("graceHours", "宽限窗 grace(小时)", "72", "number")}
@@ -2543,7 +2543,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "day-one-tri-reward") {
     return (
       <div className="field" data-business-form="day-one-tri-reward">
-        <label>业务表单 · 首日三相奖励</label>
+        <span className="bf-legend">业务表单 · 首日三相奖励</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("active", "满额 active(NEX)", "500", "number")}
           {input("grace", "宽限 grace(NEX)", "200", "number")}
@@ -2559,7 +2559,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "weekly-task-edit") {
     return (
       <div className="field" data-business-form="weekly-task-edit">
-        <label>业务表单 · 每周任务编辑{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 每周任务编辑{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("cond", "条件 / 任务 cond", "如 USDT 长期质押")}
           {input("reward", "奖励 reward", "如 3,000(可双币:200 + $2)")}
@@ -2577,7 +2577,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "monthly-task-edit") {
     return (
       <div className="field" data-business-form="monthly-task-edit">
-        <label>业务表单 · 月度挑战编辑{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 月度挑战编辑{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("theme", "主题 theme", "如 地基建设者")}
           {input("age", "账龄段 age", "如 0–2 月")}
@@ -2597,7 +2597,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "mission-create") {
     return (
       <div className="field" data-business-form="mission-create">
-        <label>业务表单 · 新建任务{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 新建任务{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("missionCode", "任务编号 code(英文唯一)", "如 dayOne-visit-earn")}
           {input("missionName", "任务名称", "如 逛收益页")}
@@ -2613,7 +2613,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "monthly-mission-create") {
     return (
       <div className="field" data-business-form="monthly-mission-create">
-        <label>业务表单 · 新建月度挑战{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 新建月度挑战{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("challengeCode", "编号 code(英文唯一)", "如 mc-foundation")}
           {input("challengeName", "主题名", "如 地基建设者")}
@@ -2636,7 +2636,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "wheel-tier-config") {
     return (
       <div className="field" data-business-form="wheel-tier-config">
-        <label>业务表单 · 新建轮盘档位{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 新建轮盘档位{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("tierName", "档位名", "如 小额奖")}
           {input("rewardName", "奖励展示", "如 100 NEX")}
@@ -2657,7 +2657,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "wheel-guard-config") {
     return (
       <div className="field" data-business-form="wheel-guard-config">
-        <label>业务表单 · 新建轮盘护栏{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 新建轮盘护栏{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("guardKey", "护栏 key", ["budget", "kill"], "wheel-guard-key", { budget: "每日真实派奖预算", kill: "真实奖总开关" })}
           {input("guardLabel", "护栏名", "如 奖池预算")}
@@ -2674,7 +2674,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "quest-event-config") {
     return (
       <div className="field" data-business-form="quest-event-config">
-        <label>业务表单 · 新建活动{spec.subject ? <> · {spec.subject}</> : null}</label>
+        <span className="bf-legend">业务表单 · 新建活动{spec.subject ? <> · {spec.subject}</> : null}</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("id", "活动 id(英文唯一)", "如 evt-summer")}
           {input("name", "活动名", "如 夏日狂欢")}
@@ -2701,7 +2701,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const final = Number(value.baseReward) * Number(value.multiplier);
     return (
       <div className="field" data-business-form="promo-banner-edit">
-        <label>业务表单 · 本周转化卡</label>
+        <span className="bf-legend">业务表单 · 本周转化卡</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("baseReward", "基础奖励 base(NEX)", "800", "number")}
           {input("multiplier", "促销倍率 ×", "1.5", "number")}
@@ -2721,7 +2721,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "schema-authoring") {
     return (
       <div className="field" data-business-form="schema-authoring">
-        <label>业务表单 · 事件 Schema 注册</label>
+        <span className="bf-legend">业务表单 · 事件 Schema 注册</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("eventName", "事件名 eventName(域.对象_动作)", "device.order_paid")}
           {select("ownerDomain", "归属域 ownerDomain", spec.ownerDomains ?? ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"])}
@@ -2749,7 +2749,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
   if (spec.kind === "disposition-lifecycle") {
     return (
       <div className="field" data-business-form="disposition-lifecycle">
-        <label>业务表单 · 处置生命周期(期限 / 责任人 / 复查)</label>
+        <span className="bf-legend">业务表单 · 处置生命周期(期限 / 责任人 / 复查)</span>
         <div className="tint tiny" style={{ marginBottom: 10 }}>目标 <span className="mono">{spec.subject}</span> · 到期进入「待复查」队列,展示剩余复查时间与责任人。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("period", "期限 period", spec.periods ?? ["1 天", "7 天", "14 天", "30 天", "45 天"], "lifecycle-period")}
@@ -2766,7 +2766,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const contextLength = (value.triggerContext ?? "").trim().length;
     return (
       <div className="field" data-business-form="j4-execution-confirmation">
-        <label>业务表单 · J4 触发依据与逐步确认</label>
+        <span className="bf-legend">业务表单 · J4 触发依据与逐步确认</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("triggerBasis", "触发依据", spec.triggerBases, "j4-trigger-basis")}
           <label className="field" style={{ marginBottom: 0 }}>
@@ -2873,7 +2873,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const slaMinutes = parseSopSlaMinutes(value.sla)?.toString() ?? "";
     return (
       <div className="field" data-business-form="sop-authoring">
-        <label>应急 SOP 剧本编排</label>
+        <span className="bf-legend">应急 SOP 剧本编排</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("name", "剧本名称", spec.nameHint ?? "如 监管点名快速止血")}
           {select("scene", "触发场景", spec.scenes ?? ["监管点名", "资金异常", "数据泄露", "舆情挤兑", "技术故障"])}
@@ -3120,7 +3120,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         : "聚合级 · 数千行量级";
     return (
       <div className="field" data-business-form="export-wizard">
-        <label>业务表单 · 导出任务向导</label>
+        <span className="bf-legend">业务表单 · 导出任务向导</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("exportType", "导出类型", spec.exportTypes ?? ["账单 CSV", "漏斗序列", "财务报表", "运营报表", "监管报告"])}
           {input("timeRange", "时间范围", "如 2026-W17 ~ W22 / 2026-05")}
@@ -3147,7 +3147,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
     const signed = !Number.isFinite(amtN) || amtN <= 0 ? "—" : `${dir === "扣减" ? "−" : dir === "冲正" ? "∓" : "+"}${amtN} ${value.currency ?? "USDT"}`;
     return (
       <div className="field" data-business-form="balance-adjust">
-        <label>业务表单 · 结构化调账(方向 / 金额 / 凭证)</label>
+        <span className="bf-legend">业务表单 · 结构化调账(方向 / 金额 / 凭证)</span>
         <div className="tint tiny" style={{ marginBottom: 10 }}>目标 <span className="mono">{spec.subject}</span> · 金额输入的是「调整额」非「调整后余额」,方向由下拉显式表达,避免增减误填。</div>
         <div className="grid g-2" style={{ gap: 10 }}>
           {select("direction", "调整方向 direction", spec.directions ?? ["增加", "扣减", "冲正"], "adjust-direction")}
@@ -3164,7 +3164,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
 
   return (
     <div className="field" data-business-form="destructive-reason">
-      <label>业务表单 · 删除 / 下架影响确认</label>
+      <span className="bf-legend">业务表单 · 删除 / 下架影响确认</span>
       <div className="tint danger tiny" style={{ marginBottom: 10 }}>
         目标 <span className="mono">{spec.target}</span> · {spec.impact}
       </div>
@@ -3303,7 +3303,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
       {businessSelectionLoading && <div className="itint" style={{ marginTop: 8 }}>正在加载目标法域版本快照…</div>}
       {spec && (
         <div className="field">
-          <label>目标新值{spec.current ? <> · 当前 <span className="mono">{spec.current}</span></> : null}</label>
+          <span className="bf-legend">目标新值{spec.current ? <> · 当前 <span className="mono">{spec.current}</span></> : null}</span>
           {kind === "select" || kind === "toggle" ? (
             <div className="row wrap" style={{ gap: 8 }}>
               {opts.map((o) => <Chip key={o} tab sel={newVal === o} onClick={() => setNewVal(o)}>{spec.optionLabels?.[o] ?? o}</Chip>)}
