@@ -1,5 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import {
@@ -1421,7 +1422,8 @@ async function f1Request<T>(
     }
     // 5xx(网关超时 502/504、上游不可达 503)= 请求可能已被后端执行但结果没回来。
     // 口径对齐 stable-mutation.ts;丢号的代价(重复打款)远重于多保一次号。
-    if (response.status >= 500) {
+    // 归类走共享谓词(判据单源 outcome-classification,主人拍板统一口径)。
+    if (outcomeStaysUnknown(response.status, result?.code)) {
       throw new F1OutcomeUncertainError(
         formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`),
         stableKey,

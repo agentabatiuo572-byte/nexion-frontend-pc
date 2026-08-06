@@ -109,12 +109,11 @@ const CLASSIFICATION_EXEMPT = {
   "h9-client.ts": "只在成功后弃号,没有失败期的去留决定;换输入即换号由槽位指纹保证",
   "a4-client.ts": "命令号每次现铸,没有可复用的号 → 谈不上保号/弃号(待迁,交接文档任务 A)",
   "b-client.ts": "同上",
-  "f1-client.ts": "同上;stableIdempotencyKey 形参存在但全仓 0 调用方(任务 A 已记档)",
   "l-client.ts": "同上",
   "m-client.ts": "同上",
   "e1-client.ts": "同上", "e2-client.ts": "同上", "e3-client.ts": "同上",
   "e4-client.ts": "同上", "e5-client.ts": "同上", "e6-client.ts": "同上",
-  "h-client.ts": "同上", "media-client.ts": "同上",
+  "media-client.ts": "同上",
 };
 
 test("扫描面必须盖住每一个发命令号的模块(要么覆盖,要么台账登记理由)", () => {

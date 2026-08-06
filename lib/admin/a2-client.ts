@@ -368,7 +368,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   // platform proxy 只在**自己**超时时补 unknown 头,上游自己返 5xx 时原样透传不回抄 —— 少了这一路,
   // 消费方(E 全域 28 处提案 + H8 结算)会把它当确定性失败弃号,重试铸新号 → 同一笔资金动作两张票。
   // 口径与 f1-client / h-client / stable-mutation 一致:丢号的代价远重于多保一次号。
-  if (init?.commandKey && response.status >= 500) {
+  if (init?.commandKey && outcomeStaysUnknown(response.status)) {
     throw new A2OutcomeUncertainError(
       formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`), init.commandKey);
   }
