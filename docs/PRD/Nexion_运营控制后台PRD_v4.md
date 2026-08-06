@@ -458,7 +458,7 @@
 
 | 参数 | 默认值 | 范围 | 生效时机 | 影响的前端 |
 |---|---|---|---|---|
-| Q3 financials 数字组(MRR / Active / Devices / Payouts + delta + footnote) | **现状值**(§11.3:MRR $4.87M +22% / Active 184,206 +38% / Devices 28,432 +12% / Payouts $31.2M +27%) | 受管内容(结构化数字组) | 实时(发布生效,client 拉当前发布版) | `/trust` Q3 financials section(§11.3) |
+| Q3 financials 数字组(MRR / Active / Devices / Payouts + delta + footnote) | **现状值**(§11.3:Q2 2026 · MRR $4.87M +22% / Active 184,206 +38% / Devices 27,150 +12% / Payouts $47.0M +27%;取已收官季,与前端单源锚增长曲线自洽) | 受管内容(结构化数字组) | 实时(发布生效,client 拉当前发布版) | `/trust` Q3 financials section(§11.3) |
 | Leadership team(5 行 C-suite 字段) | **现状值**(§11.3:5 行 C-suite,名 + 角色 + ex-公司 + LinkedIn 占位链接) | 受管内容(人员卡组) | 实时(发布生效) | `/trust` Leadership section(§11.3) |
 | NEX 叙事(stats + top 客户 ranking + buyback/burn 文案) | **现状值**(§11.3:24h volume / FDV / Circulating + 3 行 top AI 客户 NEX 消费 + 30% 回购销毁叙事) | 受管内容(叙事文案 + stats) | 实时(发布生效) | `/trust` NEX section + `/trust/nex`(§11.3 / §11.3.1) |
 | 合规徽章 / 审计储备 / listings | **现状值**(§11.3:SOC2 / ISO27001 / CertiK / Etherscan reserve / PancakeSwap 等) | 受管内容(徽章组 + 外链占位) | 实时(发布生效) | `/trust` 对应 section |
