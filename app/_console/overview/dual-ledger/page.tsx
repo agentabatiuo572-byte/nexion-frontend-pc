@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { acknowledgeBDomainAlert, useBDomainDashboard } from "@/lib/admin/b-client";
 import { createD3Injection, downloadD3Csv, updateD3Thresholds } from "@/lib/admin/d-client";
+import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
 import { Sparkline as MiniSparkline } from "@/app/components/kit/kpi-stat-card";
 import {
@@ -72,7 +73,7 @@ export default function DualLedgerPage() {
     void (async () => {
       try {
         setExposureError("");
-        const response = await fetch(`/api/admin/treasury/net-exposure?window=${exposureWindow}`, {
+        const response = await guardedFetch(`/api/admin/treasury/net-exposure?window=${exposureWindow}`, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -88,7 +89,7 @@ export default function DualLedgerPage() {
       } catch (err) {
         if (controller.signal.aborted) return;
         setExposureSeries([]);
-        setExposureError(err instanceof Error ? err.message : "B1_NET_EXPOSURE_FAILED");
+        setExposureError(displayAdminError(err));
       }
     })();
     return () => controller.abort();
@@ -280,7 +281,7 @@ export default function DualLedgerPage() {
       }
       setActionConfirm(null);
     } catch (err) {
-      setToast(err instanceof Error ? err.message : "B_DOMAIN_OPERATION_FAILED");
+      setToast(displayAdminError(err));
       throw err;
     }
   };
@@ -571,7 +572,7 @@ export default function DualLedgerPage() {
                 onClick={() => {
                   void downloadD3Csv("reconciliation")
                     .then(() => setToast("对账 CSV 已生成并下载"))
-                    .catch((err) => setToast(err instanceof Error ? err.message : "D3_EXPORT_FAILED"));
+                    .catch((err) => setToast(displayAdminError(err)));
                 }}
               >
                 导出对账 CSV

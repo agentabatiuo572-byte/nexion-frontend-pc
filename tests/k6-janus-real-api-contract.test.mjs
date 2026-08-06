@@ -313,7 +313,7 @@ test("K6 retries writes with one stable idempotency key and exports both health 
   const client = read("lib/admin/k6-client.ts");
   const dashboard = read("app/components/domain-views/k-tabs/k6/dashboard.tsx");
   assert.match(client, /headers\.set\("Idempotency-Key", stableCommandKey\)/);
-  assert.match(client, /response = await fetch\(`\$\{BASE\}\$\{path\}`, options\);[\s\S]*catch[\s\S]*response = await fetch\(`\$\{BASE\}\$\{path\}`, options\)/);
+  assert.match(client, /response = await guardedFetch\(`\$\{BASE\}\$\{path\}`, options\);[\s\S]*catch[\s\S]*response = await guardedFetch\(`\$\{BASE\}\$\{path\}`, options\)/);
   assert.match(client, /"health" \| "audit" \| "funnel"/);
   assert.match(dashboard, /exportReport\("funnel", "csv"\)/);
 });

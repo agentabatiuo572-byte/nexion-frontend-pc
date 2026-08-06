@@ -1,6 +1,6 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -231,7 +231,7 @@ async function a3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers.set("Idempotency-Key", commandKey);
   }
 
-  const request = () => fetch(`/api/admin/platform${path}`, {
+  const request = () => guardedFetch(`/api/admin/platform${path}`, {
     ...init,
     headers,
     cache: "no-store",

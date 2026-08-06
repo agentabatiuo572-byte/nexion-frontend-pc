@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import {
   buildA2FilterQuery,
@@ -196,9 +196,20 @@ export interface A2Overview {
 
 let requestSeq = 0;
 
+/** crypto.randomUUID 只在 secure context 存在;局域网 http 演示下会是 undefined。仓内统一兜底写法。 */
+function randomSuffix() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+}
+
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
+  // 随机段是必需的:命令号如今被持久化 24h,而 sessionStorage 是 per-tab 的 —— 两个标签页
+  // 同毫秒对同一动作首次提交时,时间戳与各自从 0 起的序号都会相同,撞出同一个号,
+  // 后端按同号去重会静默吞掉第二个人的操作。
+  // randomUUID 是 secure-context-only:局域网 http://<IP>:3002 演示时它不存在,必须兜底(仓内 8 处同款写法)。
+  return `${prefix}-${Date.now()}-${requestSeq}-${randomSuffix()}`;
 }
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {
@@ -328,7 +339,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
   let response: Response;
   try {
-    response = await fetch(`/api/admin/platform/audit${path}`, {
+    response = await guardedFetch(`/api/admin/platform/audit${path}`, {
       ...init,
       headers,
       cache: "no-store",
@@ -351,6 +362,15 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   if (init?.commandKey && upstreamOutcomeUnknown) {
     throw new A2OutcomeUncertainError(
       formatAdminApiError(result?.message, "A2_REQUEST_OUTCOME_UNKNOWN"), init.commandKey);
+  }
+
+  // 5xx(网关超时 502/504、上游不可达 503、后端半途崩 500)= 请求可能已被后端执行但结果没回来。
+  // platform proxy 只在**自己**超时时补 unknown 头,上游自己返 5xx 时原样透传不回抄 —— 少了这一路,
+  // 消费方(E 全域 28 处提案 + H8 结算)会把它当确定性失败弃号,重试铸新号 → 同一笔资金动作两张票。
+  // 口径与 f1-client / h-client / stable-mutation 一致:丢号的代价远重于多保一次号。
+  if (init?.commandKey && response.status >= 500) {
+    throw new A2OutcomeUncertainError(
+      formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`), init.commandKey);
   }
 
   if (!response.ok || !result || result.code !== 0) {
@@ -446,7 +466,7 @@ export async function createA2OperationProposal(input: {
 }
 
 export async function exportA2Audit(reason: string, filter: Record<string, unknown>, commandKey?: string) {
-  const response = await fetch("/api/admin/platform/audit/exports", {
+  const response = await guardedFetch("/api/admin/platform/audit/exports", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

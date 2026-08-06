@@ -16,6 +16,7 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** 每个 CAP 档位一个槽位:同档位改了值就铸新命令号并丢弃旧号(旧号可能已被后端消费,
@@ -144,7 +145,7 @@ export function I3Campaign({ ctx }: { ctx: ICtx }) {
     task
       .then(() => actions.reloadIContent())
       .then(() => toast(ok))
-      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+      .catch((error) => toast(`操作失败:${displayAdminError(error)}`));
   };
 
   useEffect(() => {

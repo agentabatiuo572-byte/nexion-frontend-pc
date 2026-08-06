@@ -1,6 +1,6 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { buildRoleStatusPayload, normalizeProposalTicket, type A2ProposalTicket } from "@/lib/admin/platform-contracts";
 import { normalizeA6Detail as strictA6Detail, normalizeA6Overview as strictA6Overview } from "@/lib/admin/rbac-contracts";
 
@@ -63,7 +63,7 @@ async function a6Request<T>(path: string, init?: RequestInit & { idempotencyPref
   // 传输层失败(断网 / 超时)是「结果未知」的头号场景:原来抛裸错误,调用方与操作员都只看到「失败」。
   let response: Response;
   try {
-    response = await fetch(`/api/admin/platform${path}`, {
+    response = await guardedFetch(`/api/admin/platform${path}`, {
       ...init, headers, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(12_000),
     });
   } catch (error) {

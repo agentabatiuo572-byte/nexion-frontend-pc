@@ -5,6 +5,7 @@ import { fetchA8Permissions, fetchA8PermissionDetail, type A8Permission, type A8
 import { Card, CardH, CodeTag, Chip, Badge, Btn, Drawer, DataListPager, useToast } from "@/app/components/domain-views/design-kit";
 import { DomainHeader } from "../domain-header";
 import { CONSOLE_NAV } from "@/lib/nav/console-nav";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 const DOMAINS = [{ code: "ALL", label: "全部" }, ...CONSOLE_NAV.map((d) => ({ code: d.code, label: `${d.code} ${d.name}` })), { code: "UNMAPPED", label: "未归类" }];
 const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
@@ -37,7 +38,7 @@ export default function A8Permissions() {
       .then((data) => { if (!cancelled) setResult(data); })
       .catch((err) => {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "A8_REQUEST_FAILED");
+          setLoadError(displayAdminError(err));
           setToast("权限目录加载失败，当前数据不可确认，请重试");
         }
       })

@@ -1,5 +1,5 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -36,7 +36,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
   let res: Response;
   try {
-    res = await fetch(`/api/admin/emergency${path}`, {
+    res = await guardedFetch(`/api/admin/emergency${path}`, {
       ...init,
       headers,
       cache: "no-store",
@@ -83,7 +83,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function contentApiRequest<T>(path: string): Promise<T> {
-  const res = await fetch(`/api/admin/content${path}`, {
+  const res = await guardedFetch(`/api/admin/content${path}`, {
     cache: "no-store",
   });
   const text = await res.text();

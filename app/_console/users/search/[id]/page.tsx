@@ -30,6 +30,7 @@ import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timel
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 /**
  * C1 用户详情三类写动作(昵称重置 / 支付方式解绑 / 换绑通知)共用一张表,槽位分命名空间。
@@ -162,7 +163,7 @@ function displayValue(value: unknown) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "UNKNOWN_ERROR";
+  return displayAdminError(error);
 }
 
 function sectionStatus(section: User360Section | null | undefined) {

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -38,8 +39,9 @@ import {
 } from "@/lib/admin/e5-client";
 import { fetchE6ComputeConfig, isE6ParamKey, type E6ComputeConfigView } from "@/lib/admin/e6-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { createA2CommandKey } from "@/lib/admin/a2-client";
+import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
@@ -55,6 +57,11 @@ import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
 import "./e-domain.css";
+
+/** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
+ *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
+const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
+
 
 type SkuMediaKind = "image" | "video";
 type SkuMedia = {
@@ -262,10 +269,41 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       && s.session.authorities.includes("platform_a2_proposal_create"));
   const canToggleE6 = canWriteE6 || hasToggleE6 || canProposeE6;
   const rawPropose = usePropose(); // E 域高敏动作统一入 A2 后端待确认队列
-  const propose = (toast: (message: string) => void, spec: ProposeSpec) =>
-    rawPropose(toast, { ...spec, commandKey: spec.commandKey ?? mc?.commandKey });
-  const openActionConfirm = (spec: NonNullable<Mc>) =>
-    setActionConfirm({ ...spec, commandKey: spec.commandKey ?? createA2CommandKey("e-domain-action") });
+  // A2 提案咽喉:E 域每一次提案的命令号都由本函数派,调用点携号也一律以稳定号为准。
+  // 指纹**不含 reason**:理由是审计元数据不是意图 —— 运营在「结果未知」后补一句理由再点是极自然的
+  // 动作,理由进指纹就会换新号 → 同一笔退款进两次审批队列。改理由复用旧号最坏只是审计记原措辞。
+  // 目标锁一并进指纹,防某个动作的 command 不含目标 id 时指纹失去区分度。
+  const propose = async (toast: (message: string) => void, spec: ProposeSpec) => {
+    // 槽位用**结构化动作标识**(command.op)而不是 spec.action:后者是运营展示文案,常内嵌输入值
+    // (「上架节奏 · 延迟 1 个月 · Gen3」),值进槽位就退化成 store 文档明令避开的形态 ——
+    // 换个值提交成功只清了新槽,旧槽的号原样滞留,改回原值时会复用它被后端静默去重。
+    const slot = `${spec.command.op}|${spec.obj}`;
+    // 指纹必须覆盖**整个提案信封**,不只是 command:后端幂等 payload-bound,提案 body 里的
+    // before/after/type/amplifies 任何一项变了都是异载荷 → 409「内容已变化」。
+    // before 尤其关键 —— 它是「变更前」快照(如订单当前状态、参数当前值),刷新页面重开弹窗时
+    // 会随最新数据变化;漏掉它则指纹相同而 body 变了,重试撞 409 且因非全新尝试而不弃号 = 24h 死锁。
+    // 易变字段(媒体预签名 URL)在 command 构造源头 canonicalE1SkuParams 就已剔除,两侧天然对称。
+    const fingerprint = JSON.stringify([
+      spec.before, spec.after, spec.command, spec.type, !!spec.amplifies,
+      spec.target ?? spec.targets ?? null,
+    ]);
+    let mintedFresh = false;
+    const commandKey = commandAttempts.resolve(slot, fingerprint, () => {
+      mintedFresh = true;
+      return createA2CommandKey("e-domain-action");
+    });
+    try {
+      const result = await rawPropose(toast, { ...spec, commandKey });
+      commandAttempts.forget(slot);
+      return result;
+    } catch (error) {
+      // 鸭型判据(不用裸 instanceof:打包边界下会失真,失真方向恰好是「该保号却弃号」)。
+      // 只有全新尝试才在确定性失败时弃号:复用来的号说明上次结果未知,这次的 4xx 证明不了那次没落地。
+      if (mintedFresh && !isA2OutcomeUncertainError(error)) commandAttempts.forget(slot);
+      throw error;
+    }
+  };
+  const openActionConfirm = (spec: NonNullable<Mc>) => setActionConfirm(spec);
   const [e3Params, setE3Params] = useState<Record<string, string>>({});
   const [e3Stats, setE3Stats] = useState<E3Stats | null>(null);
   const [e3Operations, setE3Operations] = useState<E3OperationMetric[]>([]);
@@ -289,7 +327,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE1Skus(snapshot.skus);
       setE1Gates(snapshot.gates);
     } catch (error) {
-      setE1Error(error instanceof Error ? error.message : "E1_SYNC_FAILED");
+      setE1Error(displayAdminError(error));
       setE1Skus([]);
       setE1Gates(null);
     } finally {
@@ -329,7 +367,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setPhoneTiers(nextPhoneTiers);
       setE2Pricing(nextPricing);
     } catch (error) {
-      setE2Error(error instanceof Error ? error.message : "E2_SYNC_FAILED");
+      setE2Error(displayAdminError(error));
       setTasks([]);
       setPhoneTiers([]);
       setE2Pricing(null);
@@ -349,7 +387,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE3Stats(snapshot.stats);
       setE3Operations(snapshot.operations);
     } catch (error) {
-      setE3Error(error instanceof Error ? error.message : "E3_SYNC_FAILED");
+      setE3Error(displayAdminError(error));
       setE3Params({});
       setE3Stats(null);
       setE3Operations([]);
@@ -395,7 +433,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE4Page(nextPage.pageNum);
       setE4PageSizeState(nextPage.pageSize);
     } catch (error) {
-      setE4Error(error instanceof Error ? error.message : "E4_SYNC_FAILED");
+      setE4Error(displayAdminError(error));
       setOrders([]);
       setE4Total(0);
     } finally {
@@ -421,7 +459,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setE4Detail(await fetchE4OrderDetail(order.id));
     } catch (error) {
-      setE4DetailError(error instanceof Error ? error.message : "E4_DETAIL_FAILED");
+      setE4DetailError(displayAdminError(error));
     } finally {
       setE4DetailLoading(false);
     }
@@ -473,7 +511,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE5Overview(nextOverview);
       setE5Datacenters(nextDatacenters);
     } catch (error) {
-      setE5Error(error instanceof Error ? error.message : "E5_SYNC_FAILED");
+      setE5Error(displayAdminError(error));
       setE5Devices([]);
       setE5Total(0);
       setE5Overview(null);
@@ -519,7 +557,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setE6Config(await fetchE6ComputeConfig());
     } catch (error) {
-      setE6Error(error instanceof Error ? error.message : "E6_SYNC_FAILED");
+      setE6Error(displayAdminError(error));
       setE6Config(null);
     } finally {
       setE6Loading(false);
@@ -802,7 +840,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (seq === mediaSeq.current) {
         setSkuMedia(null);
-        setToast("媒体上传失败:" + (error instanceof Error ? error.message : "MEDIA_UPLOAD_FAILED"));
+        setToast("媒体上传失败:" + displayAdminError(error));
       } else {
         URL.revokeObjectURL(src);
       }
@@ -853,7 +891,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("已居中裁剪为 1:1 并重新上传");
     } catch (error) {
       if (seq == null || seq === mediaSeq.current) {
-        setToast("裁剪上传失败:" + (error instanceof Error ? error.message : "SKU_MEDIA_CROP_FAILED"));
+        setToast("裁剪上传失败:" + displayAdminError(error));
       }
     } finally {
       if (seq == null || seq === mediaSeq.current) {
@@ -1653,7 +1691,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               });
             } else { setToast("已确认生效"); }
           } catch (error) {
-            setToast((mc.name || "操作") + ":失败 " + (error instanceof Error ? error.message : "E1_ACTION_FAILED"));
+            // 不在这里再 toast 一次:本 try 块内每条会失败的路径都经 propose(含 proposeParam),
+            // 它在 rethrow 前已 toast 过;这里再弹就是同一个错误两条。
+            // 反馈不丢:rethrow 后确认弹窗的 alertbar 会经 displayAdminError 显示同一错误。
             throw error;
           }
           setActionConfirm(null);

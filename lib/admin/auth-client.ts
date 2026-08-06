@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "@/lib/admin/session-role";
@@ -51,7 +51,7 @@ export function normalizeAdminRole(role: string | undefined): AdminRole {
 }
 
 export async function loginAdmin(username: string, password: string): Promise<LoginStartResult> {
-  const response = await fetch("/api/admin/auth/login", {
+  const response = await guardedFetch("/api/admin/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username: username.trim(), password }),
@@ -73,7 +73,7 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
 }
 
 export async function verifyAdminMfa(challengeId: string, code: string): Promise<LoginResult> {
-  const response = await fetch("/api/admin/auth/mfa/verify", {
+  const response = await guardedFetch("/api/admin/auth/mfa/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ challengeId, code: code.trim() }),
@@ -86,9 +86,11 @@ export async function verifyAdminMfa(challengeId: string, code: string): Promise
   return normalizeLoginPayload(result.data);
 }
 
+// merge 2026-08-06:结构取 main(signal + lifecycle epoch 防过期响应),网络出口取错误文案
+// 专项的 guardedFetch 咽喉(英文网络异常在此转中文,全 client 单一出口)。
 export async function currentAdminSession(options: { signal?: AbortSignal } = {}): Promise<LoginResult | null> {
   const requestEpoch = adminAuthLifecycleEpoch();
-  const response = await fetch("/api/admin/auth/session", { cache: "no-store", signal: options.signal });
+  const response = await guardedFetch("/api/admin/auth/session", { cache: "no-store", signal: options.signal });
   const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
   if (requestEpoch !== adminAuthLifecycleEpoch()) throw new AdminAuthEpochChangedError();
   const payload = authoritativeAdminSessionPayload(response.status, response.ok, result);
@@ -96,7 +98,7 @@ export async function currentAdminSession(options: { signal?: AbortSignal } = {}
 }
 
 export async function changeAdminPassword(currentPassword: string, newPassword: string): Promise<LoginResult> {
-  const response = await fetch("/api/admin/auth/password/change", {
+  const response = await guardedFetch("/api/admin/auth/password/change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ currentPassword, newPassword }),

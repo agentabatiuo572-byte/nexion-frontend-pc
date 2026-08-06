@@ -27,6 +27,7 @@ import {
   type A1UpdateAccountInput,
 } from "@/lib/admin/a1-client";
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
 
 type SecurityBaselineMeta = {
@@ -54,7 +55,7 @@ const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
 };
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 function roleName(roles: A1RoleDefinition[], role: string) {
@@ -720,7 +721,7 @@ export function A1Accounts({ ctx }: { ctx: ACtx }) {
           <span className="sub">· 后端数据加载失败</span>
         </div>
         <div className="l-b">
-          <div className="atint danger">A1 真实接口不可用:{loadError || "UNKNOWN_ERROR"}</div>
+          <div className="atint danger">A1 真实接口不可用:{loadError || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn sm mc" onClick={() => void refreshOverview()}>重试</button>
         </div>
       </section>

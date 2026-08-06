@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseE4OrderPage } from "@/lib/admin/e456-overview-contract";
 
 export interface E4Order {
@@ -128,7 +128,7 @@ async function e4Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/devices${path}`, {
+  const response = await guardedFetch(`/api/admin/devices${path}`, {
     ...init,
     headers,
     cache: "no-store",

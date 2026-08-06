@@ -11,7 +11,10 @@ const registry = readFileSync(new URL("../lib/admin/high-ops-registry.ts", impor
 
 test("E-domain confirmations await A2 and preserve one command key across retries", () => {
   assert.doesNotMatch(view, /void propose\(/);
-  assert.match(view, /commandKey:\s*spec\.commandKey\s*\?\?\s*mc\?\.commandKey/);
+  // 2026-08-06:命令号从弹窗组件态(`spec.commandKey ?? mc?.commandKey`)迁到持久 SlotAttemptStore。
+  // 同一意图的重试复用同号这条不变量没变,而且现在跨刷新也成立。
+  assert.match(view, /const commandKey = commandAttempts\.resolve\(slot, fingerprint,/);
+  assert.match(view, /rawPropose\(toast, \{ \.\.\.spec, commandKey \}\)/);
   assert.match(view, /completionCopy="提交后进入 A2 待确认队列/);
   assert.doesNotMatch(view, /finally\s*\{\s*setActionConfirm\(null\)/);
 });

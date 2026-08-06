@@ -1,5 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeA5Overview, type A5RegistryOverview } from "@/lib/admin/a5-contract";
+import { guardedFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -23,7 +24,7 @@ export async function fetchA5Registry(): Promise<A5RegistryOverview> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), A5_REQUEST_TIMEOUT_MS);
   try {
-    response = await fetch("/api/admin/platform/params-registry", {
+    response = await guardedFetch("/api/admin/platform/params-registry", {
       cache: "no-store",
       signal: controller.signal,
     });

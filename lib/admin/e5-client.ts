@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import {
   parseE5DatacenterRows,
   parseE5DevicePage,
@@ -235,7 +235,7 @@ async function e5Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/devices${path}`, {
+  const response = await guardedFetch(`/api/admin/devices${path}`, {
     ...init,
     headers,
     cache: "no-store",

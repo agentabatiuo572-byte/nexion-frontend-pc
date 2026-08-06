@@ -1,5 +1,5 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 export type GrantCell = "-" | "R" | "M" | "C";
 
@@ -131,7 +131,7 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers.set("Idempotency-Key", commandKey);
   }
 
-  const request = () => fetch(`/api/admin/platform${path}`, {
+  const request = () => guardedFetch(`/api/admin/platform${path}`, {
       ...init,
       headers,
       cache: "no-store",

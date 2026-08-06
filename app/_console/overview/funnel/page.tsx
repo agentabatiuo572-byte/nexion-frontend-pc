@@ -4,6 +4,7 @@ import "../b-domain.css";
 import "./funnel.css";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Download, RefreshCw, Save, TrendingUp } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
@@ -73,7 +74,7 @@ export default function FunnelPage() {
       await reload();
     } catch (value) {
       if (!(value instanceof B3OutcomeUnknownError)) viewCommandKey.forget(VIEW_SAVE_SLOT);
-      setNotice(value instanceof Error ? value.message : "保存视图失败，请重试。");
+      setNotice(value instanceof Error ? displayAdminError(value) : "保存视图失败，请重试。");
     } finally {
       setBusy("");
     }
@@ -92,7 +93,7 @@ export default function FunnelPage() {
       URL.revokeObjectURL(url);
       setNotice("聚合 CSV 已生成并留痕；文件不含用户标识或原始 PII。");
     } catch (value) {
-      setNotice(value instanceof Error ? value.message : "导出失败，请重试。");
+      setNotice(value instanceof Error ? displayAdminError(value) : "导出失败，请重试。");
     } finally {
       setBusy("");
     }

@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataListPager, Modal } from "../design-kit";
 import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
@@ -73,9 +74,10 @@ function strengthColor(v: number, threshold: number) {
 
 function errorText(error: unknown) {
   const message = error instanceof Error ? error.message : String(error ?? "");
-  return /failed to fetch|networkerror|backend_unavailable/i.test(message)
+  // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍走自家短文案。
+  return message.includes("网络连接失败或后台服务不可达")
     ? "暂时无法连接风险服务，请稍后重试"
-    : message || "暂时无法读取风险数据";
+    : message ? displayAdminError(error) : "暂时无法读取风险数据";
 }
 
 function confirmedK1FailureText(error: unknown) {

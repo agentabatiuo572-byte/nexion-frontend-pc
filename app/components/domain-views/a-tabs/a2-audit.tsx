@@ -52,6 +52,7 @@ import {
 } from "@/lib/admin/a2-policy";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { canApprovePending, type AuthPrincipal } from "@/lib/admin/ops-authority";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
 
 /* ────────────────── helpers ────────────────── */
@@ -170,7 +171,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
       return next;
     } catch (error) {
       setOverview(null);
-      const message = error instanceof Error ? error.message : "A2_OVERVIEW_LOAD_FAILED";
+      const message = displayAdminError(error);
       setLoadError(message);
       throw error;
     } finally {
@@ -253,7 +254,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (!confirmed) throw new Error("A2_OPERATION_WRITE_NOT_CONFIRMED");
           toast(`${w.id} 已执行 · 已重新读取服务端状态与审计记录`);
         } catch (error) {
-          toast(`执行失败:${error instanceof Error ? error.message : "A2_OPERATION_APPROVE_FAILED"}`);
+          toast(`执行失败:${displayAdminError(error)}`);
           throw error;
         }
       },
@@ -281,7 +282,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (!confirmed) throw new Error("A2_OPERATION_WRITE_NOT_CONFIRMED");
           toast(`${w.id} 已取消 · 已重新读取服务端状态与审计记录`);
         } catch (error) {
-          toast(`取消失败:${error instanceof Error ? error.message : "A2_OPERATION_REJECT_FAILED"}`);
+          toast(`取消失败:${displayAdminError(error)}`);
           throw error;
         }
       },
@@ -309,7 +310,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           await refreshOverview();
           toast(`已下载 ${file.fileName} · 导出动作已留痕并重新读取服务端记录`);
         } catch (error) {
-          toast(`导出失败:${error instanceof Error ? error.message : "A2_AUDIT_EXPORT_FAILED"}`);
+          toast(`导出失败:${displayAdminError(error)}`);
           throw error;
         }
       },
@@ -345,7 +346,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
           toast(`理由最短长度已更新为 ${validation.value} 字，并完成服务端回读`);
         } catch (error) {
-          toast(`调整失败:${error instanceof Error ? error.message : "A2_MECHANISM_PARAM_UPDATE_FAILED"}`);
+          toast(`调整失败:${displayAdminError(error)}`);
           throw error;
         }
       },
@@ -380,7 +381,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
           toast(`日志保留期已更新为 ${validation.value} 个月，并完成服务端回读`);
         } catch (error) {
-          toast(`调整失败:${error instanceof Error ? error.message : "A2_MECHANISM_PARAM_UPDATE_FAILED"}`);
+          toast(`调整失败:${displayAdminError(error)}`);
           throw error;
         }
       },
@@ -415,7 +416,7 @@ export function A2Audit({ ctx }: { ctx: ACtx }) {
           if (readback !== validation.value) throw new Error("A2_MECHANISM_WRITE_NOT_CONFIRMED");
           toast(`字段结构版本已更新为 ${validation.value}，并完成服务端回读`);
         } catch (error) {
-          toast(`变更失败:${error instanceof Error ? error.message : "A2_MECHANISM_PARAM_UPDATE_FAILED"}`);
+          toast(`变更失败:${displayAdminError(error)}`);
           throw error;
         }
       },

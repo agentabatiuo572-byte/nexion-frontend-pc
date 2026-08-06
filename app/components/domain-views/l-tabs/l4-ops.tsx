@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { LDataState } from "./live-data";
 import { readL4Operations, type L4DistRow, type L4OperationsData } from "./l4-live-data";
 import type { LCtx } from "./types";
@@ -57,7 +58,7 @@ export function L4HeaderActions({ ctx }: { ctx: LCtx }) {
       lastSuccessAtRef.current = Date.now();
       ctx.toast("运营报表 CSV 已生成 · 已固化当前周期与阶段并记录审计");
     } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${error.message}` : "导出任务提交失败 · 请稍后重试");
+      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     } finally {
       exportingRef.current = false;
       setExporting(false);
@@ -328,7 +329,7 @@ function NetworkReport({ data, ctx, query }: { data: L4OperationsData; ctx: LCtx
           lastSuccessAtRef.current = Date.now();
           ctx.toast(`团队明细已安全下载 · ${result.rowCount} 行 · 用户编码部分隐藏 · 24 小时令牌`);
         } catch (error) {
-          ctx.toast(error instanceof Error ? `团队明细导出失败 · ${error.message}` : "团队明细导出失败 · 请稍后重试");
+          ctx.toast(error instanceof Error ? `团队明细导出失败 · ${displayAdminError(error)}` : "团队明细导出失败 · 请稍后重试");
         } finally {
           exportingRef.current = false;
           setExporting(false);

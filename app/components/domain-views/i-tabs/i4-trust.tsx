@@ -21,6 +21,7 @@ import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 /** I4 信任版块与 I5 披露共用一张表,靠槽位前缀分命名空间;槽位本身已带目标 id + 动作类型
  *  (`trust|版块键:publish`、`disclosure|辖区:matrix-configure`)。落 sessionStorage,刷新后重试仍去重。 */
@@ -149,7 +150,7 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
       toast(ok);
       return true;
     } catch (error) {
-      toast(`操作失败:${error instanceof Error ? error.message : String(error)}`);
+      toast(`操作失败:${displayAdminError(error)}`);
       return false;
     }
   };

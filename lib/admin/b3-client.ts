@@ -3,7 +3,7 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertB3Dashboard } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
@@ -106,14 +106,14 @@ async function json<T>(response: Response, fallback: string, commandKey?: string
 /** 带命令号的写请求:传输层失败必须归「结果未知」,不能让裸 TypeError 冒到页面被当确定失败。 */
 async function writeFetch(url: string, init: RequestInit, commandKey: string) {
   try {
-    return await fetch(url, init);
+    return await guardedFetch(url, init);
   } catch {
     throw new B3OutcomeUnknownError(commandKey);
   }
 }
 
 export async function fetchB3Dashboard(filters: B3Filters, stage = "purchase"): Promise<B3Dashboard> {
-  const data = await fetch(`/api/admin/funnel${query(filters, { stage })}`, { cache: "no-store" })
+  const data = await guardedFetch(`/api/admin/funnel${query(filters, { stage })}`, { cache: "no-store" })
     .then((response) => json<unknown>(response, "B3_FUNNEL_LOAD_FAILED"));
   assertB3Dashboard(data);
   return data as unknown as B3Dashboard;
@@ -140,7 +140,7 @@ export async function saveB3View(
 }
 
 export async function exportB3Cohort(filters: B3Filters) {
-  const response = await fetch(`/api/admin/funnel/export${query(filters)}`, { cache: "no-store" });
+  const response = await guardedFetch(`/api/admin/funnel/export${query(filters)}`, { cache: "no-store" });
   if (!response.ok) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
@@ -164,7 +164,7 @@ export function useB3Funnel(filters: B3Filters, stage: string) {
       setData(await fetchB3Dashboard(filters, stage));
     } catch (value) {
       setData(null);
-      setError(value instanceof Error ? value.message : "B3_FUNNEL_LOAD_FAILED");
+      setError(displayAdminError(value));
     } finally {
       setLoading(false);
     }

@@ -18,6 +18,7 @@ import {
 } from "../../../../lib/admin/nova-cadence";
 import type { ICtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 type NovaForm = {
   name: string;
@@ -94,7 +95,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
       .then(() => actions.reloadIContent())
       .then(() => { toast(ok); onSuccess?.(); })
       .catch((error) => {
-        toast(`操作失败:${error instanceof Error ? error.message : String(error)}`);
+        toast(`操作失败:${displayAdminError(error)}`);
         throw error;
       });
 
@@ -306,7 +307,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
         setSocialEvents(result.items);
         setEventTotal(result.total);
       })
-      .catch((error) => active && toast(`事件列表加载失败:${error instanceof Error ? error.message : String(error)}`))
+      .catch((error) => active && toast(`事件列表加载失败:${displayAdminError(error)}`))
       .finally(() => active && setEventLoading(false));
     return () => { active = false; };
   }, [actions.listI2SocialEvents, eventPage, eventRefreshKey, eventStatusFilter, eventTypeFilter, toast]);
@@ -335,7 +336,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
           toast(`同步完成：发现 ${result.discovered} 条，新增 ${result.inserted} 条，重复 ${result.duplicates} 条`);
         })
         .catch((error) => {
-          toast(`同步失败:${error instanceof Error ? error.message : String(error)}`);
+          toast(`同步失败:${displayAdminError(error)}`);
           throw error;
         })
         .finally(() => setEventBusy(null));
@@ -345,7 +346,7 @@ export function I2Nova({ ctx }: { ctx: ICtx }) {
     setEventBusy("preview");
     actions.previewI2SocialEvent(previewLanguage)
       .then((sample) => toast(sample ? `抽样预览：${sample.body}` : "当前没有可投放的真实事件，本轮不会推送"))
-      .catch((error) => toast(`抽样失败:${error instanceof Error ? error.message : String(error)}`))
+      .catch((error) => toast(`抽样失败:${displayAdminError(error)}`))
       .finally(() => setEventBusy(null));
   };
   const changeSocialEventStatus = (event: (typeof SOCIAL_EVENTS)[number], status: "ACTIVE" | "DISABLED" | "EXPIRED") => openConfirm({

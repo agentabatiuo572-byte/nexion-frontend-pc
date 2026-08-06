@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   createD1VietQrAccount,
@@ -197,7 +198,7 @@ export function D1Recon({ ctx }: { ctx: DCtx }) {
       setOverview(null);
       setFlows(EMPTY_D1_FLOWS);
       setVietQr(null);
-      setError(err instanceof Error ? err.message : "D1 数据加载失败");
+      setError(err instanceof Error ? displayAdminError(err) : "D1 数据加载失败");
     } finally {
       setLoading(false);
     }

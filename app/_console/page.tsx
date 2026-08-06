@@ -30,6 +30,7 @@ import { RiskRadar, type AlertItem, type KillGate } from "@/app/components/dashb
 import { SensitiveOperationFeed, type SensitiveOperationItem } from "@/app/components/dashboard/sensitive-operation-feed";
 import { FunnelBars } from "@/app/components/dashboard/funnel-bars";
 import { KpiWall, type DashboardKpi } from "@/app/components/dashboard/kpi-wall";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { B_DASHBOARD_READ_AUTHORITIES, L_BI_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -229,7 +230,7 @@ export default function CommandCenter() {
         .catch((error: unknown) => {
           if (!alive) return;
           setA2Overview(null);
-          setA2Error(error instanceof Error ? error.message : "A2_OVERVIEW_LOAD_FAILED");
+          setA2Error(displayAdminError(error));
         });
     } else {
       setA2Overview(null);
@@ -246,7 +247,7 @@ export default function CommandCenter() {
         .catch((error: unknown) => {
           if (!alive) return;
           setLBiData(null);
-          setLBiError(error instanceof Error ? error.message : "L_BI_OVERVIEW_LOAD_FAILED");
+          setLBiError(displayAdminError(error));
         })
         .finally(() => {
           if (alive) setLBiLoading(false);

@@ -9,6 +9,7 @@ import {
 } from "@/lib/admin/h-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { HCtx } from "./types";
 
 type TrialParam = {
@@ -165,7 +166,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       setModel((await fetchH2Trials()) as H2Model);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "UNKNOWN_ERROR");
+      setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }
@@ -253,7 +254,7 @@ export function H2Trial({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">H2 数据加载失败</span></div>
         <div className="l-b">
-          <div style={{ marginBottom: 12 }}>{error ?? "UNKNOWN_ERROR"}</div>
+          <div style={{ marginBottom: 12 }}>{error ?? "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn sm mc" onClick={() => void reload()}>重试</button>
         </div>
       </section>

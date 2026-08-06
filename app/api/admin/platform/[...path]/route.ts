@@ -179,6 +179,13 @@ async function proxy(request: Request, context: RouteContext) {
       "Content-Type": upstream.headers.get("Content-Type") || "application/json",
       "Cache-Control": "no-store",
     });
+    // 回抄上游的「结果未知」标记(finance / risk / users / janus 四个 proxy 同款)。
+    // 不回抄时,后端用「200 或 4xx + 该头」表达未知的场景在客户端恒判成确定性失败 → 弃命令号
+    // → 重试铸新号 → 同一笔资金动作两张待确认票。A2 全域(E 28 处 + H8 结算 + i3/i4/k1/k2)走这条 proxy。
+    const upstreamOutcome = upstream.headers.get("X-Nexion-Upstream-Outcome");
+    if (upstreamOutcome) {
+      responseHeaders.set("X-Nexion-Upstream-Outcome", upstreamOutcome);
+    }
     const contentDisposition = upstream.headers.get("Content-Disposition");
     const contentLength = upstream.headers.get("Content-Length");
     if (contentDisposition) {

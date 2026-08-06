@@ -58,7 +58,6 @@ export interface McSpec {
   amplify?: boolean;        // 放大资金流出 → OperationConfirmModal amplifies={true} → B1 覆盖率护栏
   edit?: EditSpec;          // 显式 edit 契约:仅自由值/select 调参传
   businessForm?: BusinessFormSpec;
-  commandKey?: string;        // 弹窗生命周期内稳定；失败重试复用同一幂等键
   paramKey?: string;
   paramKeys?: { key: string; paramKey: string }[];  // param-multi:businessForm 字段 key → param key 映射
   fixedVal?: string;        // param-fixed / 处置固定写入值

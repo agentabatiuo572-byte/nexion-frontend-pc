@@ -1,6 +1,6 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { mutateThenReloadOverview } from "@/lib/admin/platform-contracts";
 import { normalizeA7Overview as strictA7Overview } from "@/lib/admin/rbac-contracts";
 
@@ -79,7 +79,7 @@ async function a7Request<T>(path: string, init?: RequestInit & { idempotencyPref
   // 传输层失败(断网 / 超时)必须归结果未知,不能抛裸错误让调用方当成确定失败。
   let response: Response;
   try {
-    response = await fetch(`/api/admin/platform${path}`, {
+    response = await guardedFetch(`/api/admin/platform${path}`, {
       ...init, headers, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(12_000),
     });
   } catch (error) {

@@ -1,5 +1,5 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { parseIOverview } from "@/lib/admin/i-overview-contract";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
@@ -37,7 +37,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   let res: Response;
   try {
-    res = await fetch(`/api/admin/content${path}`, {
+    res = await guardedFetch(`/api/admin/content${path}`, {
       ...init,
       headers,
       cache: "no-store",

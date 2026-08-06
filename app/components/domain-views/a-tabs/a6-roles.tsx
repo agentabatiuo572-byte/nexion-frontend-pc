@@ -13,6 +13,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import { Card, CardH, CodeTag, Badge, Btn, Drawer, OperationConfirmModal, useToast } from "@/app/components/domain-views/design-kit";
 import { DomainHeader } from "../domain-header";
 import { buildRoleMetadataPayload } from "@/lib/admin/platform-contracts";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 type ConfirmReq = { action: React.ReactNode; detail: React.ReactNode; completionCopy?: string; run: (reason: string) => Promise<unknown> };
 
@@ -46,7 +47,7 @@ export default function A6Roles() {
     setLoadError(null);
     try { setOverview(await fetchA6RolesOverview()); }
     catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = displayAdminError(e);
       setOverview(null);
       setLoadError(message);
       setToast(message);
@@ -65,7 +66,7 @@ export default function A6Roles() {
     }
     void fetchA7MenusOverview()
       .then((o) => { setMenuTree(o.tree); setMenuCatalogReady(true); })
-      .catch((error) => setToast(`菜单目录加载失败，授权编辑已锁定：${error instanceof Error ? error.message : String(error)}`));
+      .catch((error) => setToast(`菜单目录加载失败，授权编辑已锁定：${displayAdminError(error)}`));
     // A8 分页有上限(pageSize 被后端收口),多页拉全权限全集供 GrantsEditor 分组(避免缺域/缺权限)
     void (async () => {
       try {
@@ -89,7 +90,7 @@ export default function A6Roles() {
         setAllPerms(all);
         setPermissionCatalogReady(true);
       } catch (error) {
-        setToast(`权限目录加载失败，授权编辑已锁定：${error instanceof Error ? error.message : String(error)}`);
+        setToast(`权限目录加载失败，授权编辑已锁定：${displayAdminError(error)}`);
       }
     })();
   }, [canGrant, refreshOverview, setToast]);
@@ -98,7 +99,7 @@ export default function A6Roles() {
     if (selectedId == null) { setDetail(null); return; }
     fetchA6RoleDetail(selectedId)
       .then(setDetail)
-      .catch((e) => setToast(e instanceof Error ? e.message : String(e)));
+      .catch((e) => setToast(displayAdminError(e)));
   }, [selectedId, setToast]);
 
   const roles = overview?.roles ?? [];
@@ -168,7 +169,7 @@ export default function A6Roles() {
                         setToast(`角色${actionLabel}已提交 A2 单人确认 · ${ticket.id}`);
                         return ticket;
                       } catch (error) {
-                        setToast(error instanceof Error ? error.message : String(error));
+                        setToast(displayAdminError(error));
                         throw error;
                       }
                     },
@@ -194,7 +195,7 @@ export default function A6Roles() {
                         setToast(`已提交 A2 单人确认 · ${ticket.id}`);
                         return ticket;
                       } catch (error) {
-                        setToast(error instanceof Error ? error.message : String(error));
+                        setToast(displayAdminError(error));
                         throw error;
                       }
                     },
@@ -230,7 +231,7 @@ export default function A6Roles() {
                   setToast("角色名称/备注已保存 · 后端留痕");
                   return updated;
                 } catch (error) {
-                  setToast(error instanceof Error ? error.message : String(error));
+                  setToast(displayAdminError(error));
                   throw error;
                 }
               },
@@ -253,7 +254,7 @@ export default function A6Roles() {
                    setToast(`授权变更已提交 A2 单人确认 · ${ticket.id}`);
                    return ticket;
                  } catch (error) {
-                   setToast(error instanceof Error ? error.message : String(error));
+                   setToast(displayAdminError(error));
                    throw error;
                  }
                },

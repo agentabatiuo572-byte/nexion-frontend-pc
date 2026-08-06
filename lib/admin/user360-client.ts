@@ -1,7 +1,7 @@
 import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 
 interface ApiResult<T> {
@@ -751,7 +751,7 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
 
   let response: Response;
   try {
-    response = await fetch(`/api/admin/users${path}`, {
+    response = await guardedFetch(`/api/admin/users${path}`, {
       ...init,
       headers,
       signal: init?.signal ?? AbortSignal.timeout(30_000),
@@ -975,7 +975,7 @@ export async function exportUserProfilesCsv(
   operator = currentAdminOperator(),
 ) {
   const { usdtMin, usdtMax, nexMin, nexMax, ...rest } = query;
-  const response = await fetch("/api/admin/users/profiles/export", {
+  const response = await guardedFetch("/api/admin/users/profiles/export", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1332,7 +1332,7 @@ export async function fetchUserKycExports(limit = 10) {
 }
 
 export async function downloadUserKycExport(jobNo: string) {
-  const response = await fetch(`/api/admin/users/kyc/exports/${encodeURIComponent(jobNo)}/download`, {
+  const response = await guardedFetch(`/api/admin/users/kyc/exports/${encodeURIComponent(jobNo)}/download`, {
     cache: "no-store",
   });
   const contentType = response.headers.get("Content-Type") || "";
@@ -1454,7 +1454,7 @@ export async function startUserImpersonation(userId: number | string, reasonCode
 }
 
 export async function fetchImpersonationReadonlyView(accessToken: string, page = "HOME") {
-  const response = await fetch(`/api/impersonation/view?page=${encodeURIComponent(page)}`, {
+  const response = await guardedFetch(`/api/impersonation/view?page=${encodeURIComponent(page)}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });

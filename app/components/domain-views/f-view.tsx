@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * F 分销与团队 — 设计稿 design_handoff_f_domain 内容视图(F1–F5)。
  * 标签:F1 V-Rank 晋升 / F2 网络版税费率 / F3 双轨结算引擎 / F4 池·配额·大使·榜 / F5 佣金事件审计。
@@ -56,6 +57,7 @@ import { F2Rates } from "./f-tabs/f2-rates";
 import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
+import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import "./f-domain.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
@@ -85,7 +87,13 @@ function fProposalCommandKey(modalCommandKey: string | undefined, sourceDomain: 
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
+  // 「结果未知」族(F 直写的 F1OutcomeUncertainError / A2 提案的 A2OutcomeUncertainError)必须
+  // 附命令号:它们意味着请求可能已被后端执行,运营要拿这个号去审计记录核对。文案本体仍走
+  // displayAdminError 咽喉(错误文案专项的单一出口),这里只补咽喉拿不到的命令号。
+  if (error instanceof Error && error.name.endsWith("OutcomeUncertainError")) {
+    return operationConfirmErrorMessage(error);
+  }
+  return displayAdminError(error);
 }
 
 function f1ThresholdTarget(paramKey?: string) {

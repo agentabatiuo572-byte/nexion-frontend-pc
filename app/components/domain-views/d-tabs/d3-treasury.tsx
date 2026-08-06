@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   createD3Injection,
   downloadD3Csv,
@@ -112,7 +113,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       if (generation !== loadGeneration.current) return;
       setData(null);
       setDraft(null);
-      setError(err instanceof Error ? err.message : "D3 数据加载失败");
+      setError(err instanceof Error ? displayAdminError(err) : "D3 数据加载失败");
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
@@ -170,7 +171,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           // 确定性拒绝必须丢号(同 D2:留着旧号会让运营改完输入重提时撞载荷不符,
           // 这笔注资 24h 内做不了);结果未知必须保号,丢了重试就是第二笔注资。
           if (!isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
-          setError(err instanceof Error ? err.message : "储备注入失败");
+          setError(err instanceof Error ? displayAdminError(err) : "储备注入失败");
           throw err;
         }
       },
@@ -201,7 +202,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           await load();
           return true;
         } catch (err) {
-          setError(err instanceof Error ? err.message : "预测配置保存失败");
+          setError(err instanceof Error ? displayAdminError(err) : "预测配置保存失败");
           throw err;
         }
       },
@@ -211,7 +212,7 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   const exportCsv = (kind: "reconciliation" | "liabilities") => {
     void downloadD3Csv(kind)
       .then(() => toast(kind === "reconciliation" ? "储备负债对账 CSV 已导出" : "负债明细 CSV 已导出"))
-      .catch((err) => setError(err instanceof Error ? err.message : "CSV 导出失败"));
+      .catch((err) => setError(err instanceof Error ? displayAdminError(err) : "CSV 导出失败"));
   };
 
   if (loading && !data) {

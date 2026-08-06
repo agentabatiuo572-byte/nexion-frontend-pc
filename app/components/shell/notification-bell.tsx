@@ -15,6 +15,7 @@ import { opsAlertHref, useC2HighRiskAlerts, useJ1DutyAlerts, useJ2GeoAlerts, use
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { fmtPct } from "@/lib/format";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
 type AlertLevel = "high" | "mid" | "low";
@@ -87,7 +88,7 @@ export function NotificationBell() {
       .catch((error: unknown) => {
         if (!alive) return;
         setPendingOperations([]);
-        setA2Error(error instanceof Error ? error.message : "A2_OVERVIEW_LOAD_FAILED");
+        setA2Error(displayAdminError(error));
       });
     return () => {
       alive = false;

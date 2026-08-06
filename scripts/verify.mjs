@@ -114,27 +114,24 @@ const GEARS = [
   ["ops-actions integrity", "node", ["scripts/ops-actions-audit.mjs"]],
   ["modal contract", "node", ["scripts/admin-modal-contract-audit.mjs"]],
   ["list capability", "node", ["scripts/admin-list-capability-audit.mjs"]],
-  ["real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]],
   ["App storage-key parity", "node", ["scripts/uni-storage-key-sentinel.mjs"]],
   // H9 对外公布数据:同一份配置散在「规格 ③ / 前端 PublicStatsConfig / 后台 H9_FIELDS」三处,
   // 键少一个 = 运营改不到的死配置,值域抄错 = 前端收到自己判非法的值。tsc 一处都拦不住。
+  // (硬读兄弟仓 Nexion-uniapp —— 该仓在本机存在,故留在前段;缺 nexion-backend 的齿见文件末尾。)
   ["H9 public-stats cross-repo parity", "node", ["scripts/h9-public-stats-parity.mjs"]],
   // H9 分位表值域**行为级**等价(真跑前端 network-rank + 后台 h9-validation,非子串):
   // 删任何一条校验(cumPct≤100 / 单调不减 / 严格升序)即红,自造更严限制同样红;
   // 附带钉 growth 代理错误文案与占位卡句号拼接。与上一齿同级硬读兄弟仓 Nexion-uniapp。
   ["H9 percentile-table behavior contract", "node", ["--test", "tests/h9-public-stats-contract.test.mjs"]],
-  ["D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs"]],
-  ["B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs"]],
-  ["FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]],
   ["kill-switch sentinel", "node", ["scripts/kill-switch-count-sentinel.mjs"]],
   ["rhythm sentinel", "node", ["scripts/rhythm-single-source-sentinel.mjs"]],
-  ["J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]],
-  ["J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]],
-  ["K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]],
   ["K3 contract", "node", ["--test", "tests/k3-withdraw-rules-contract.test.mjs"]],
   ["K4 contract", "node", ["--test", "tests/k4-scoring-contract.test.mjs"]],
   ["K5 contract", "node", ["--test", "tests/k5-kyc-review-contract.test.mjs"]],
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
+  ["A2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
+  ["E1 acceptance contract", "node", ["--test", "tests/e1-acceptance-contract.test.mjs"]],
+  ["operation-confirm error copy", "node", ["--test", "tests/operation-confirm-error-message.test.mjs"]],
   ["G4 invite-code registry contract", "node", ["--test", "tests/g4-invite-registry-contract.test.mjs"]],
   // GEN10b 市场状态开关:此前后台侧一道专属门都没有,前一版的自由输入违规就是这么溜过去的。
   ["G4 market-open-state contract", "node", ["--test", "tests/g4-market-open-state-contract.test.mjs"]],
@@ -164,8 +161,25 @@ const GEARS = [
   // verify 全绿。这里只做静态自检(不跑红测本体 —— 它会改写源文件,并行跑互相踩)。
   ["redtest harness self-check", "node", ["--test", "tests/redtest-harness-selfcheck.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
+  ["F1 direct-write pending-store contract", "node", ["--test", "tests/f1-direct-pending-store-contract.test.mjs"]],
+  ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
+  ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
+  ["error-copy throat sentinel", "node", ["--experimental-strip-types", "scripts/error-copy-throat-sentinel.mjs"]],
+  ["error-copy throat contract", "node", ["--experimental-strip-types", "--test", "tests/error-messages-backend-unavailable.test.mjs", "tests/fetch-guard.test.mjs"]],
+  // 生产构建必须排在依赖兄弟仓 nexion-backend 的齿**之前**:它是最贵也最有价值的本地齿,
+  // 排在后面等于在缺仓机器上永远跑不到,完成门要求的「verify 全绿(含 production build)」会结构性不可达。
   ["production build", npmCmd, ["run", "build"]],
+  // ↓↓↓ 以下齿轮硬读兄弟仓 nexion-backend。缺仓的机器(本机即是)会在第一条硬崩,
+  //     而 run() 是 fail-fast —— 所以它们必须集中排在**最后**,否则其后的本地齿全部执行不到。
+  //     2026-08-06 前它们散在中段,导致其后 21 道本可运行的门在本机从未跑过。
+  ["real recharge-channel parity", "node", ["scripts/channel-parity-sentinel.mjs"]],
+  ["D1 channel contract", "node", ["--test", "tests/d1-channel-parity-contract.test.mjs"]],
+  ["B4 cross-repository contract", "node", ["--test", "tests/b4-cross-repo-sentinel-contract.test.mjs"]],
+  ["FE/BE mapping closure ratchet", "node", ["scripts/fe-be-mapping-coverage.mjs"]],
+  ["J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]],
+  ["J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]],
+  ["K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]],
 ];
 GEARS.forEach(([label, cmd, args], index) => run(`[${index + 1}/${GEARS.length}] ${label}`, cmd, args, label));
 

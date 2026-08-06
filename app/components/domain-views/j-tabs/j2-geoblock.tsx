@@ -5,6 +5,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
 import { isEmergencyOutcomeUncertain, type GeoCountry, type GeoEndpoint, type GeoRecentChange } from "@/lib/admin/j-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 type Entry = GeoCountry;
 
@@ -105,7 +106,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
           toast("执行结果待确认 · 当前也无法重新读取权威状态，请勿连续提交；请恢复网络后刷新页面并核对审计记录。");
         }
       } else {
-        toast(`操作未完成 · ${error instanceof Error ? error.message : "请稍后重试"}`);
+        toast(`操作未完成 · ${error instanceof Error ? displayAdminError(error) : "请稍后重试"}`);
       }
       throw error;
     }
