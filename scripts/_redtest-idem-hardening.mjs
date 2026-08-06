@@ -32,6 +32,7 @@ const K = path.join(ROOT, "lib/admin/k-client.ts");
 const U360 = path.join(ROOT, "lib/admin/user360-client.ts");
 const AUTHSTORE = path.join(ROOT, "lib/store/admin-auth.ts");
 const SMUT = path.join(ROOT, "lib/admin/stable-mutation.ts");
+const LOGIN = path.join(ROOT, "lib/admin/login-completion.ts");
 
 const GATE = ["scripts/pending-idempotency-key-sentinel.mjs"];
 const MIGRATION = ["--test", "tests/pending-mutation-migration-contract.test.mjs"];
@@ -285,6 +286,13 @@ const CASES = [
     () => inject(STORE, "        ...(extra as object | undefined),\r\n        fingerprint,\r\n        commandKey,",
       "        fingerprint,\r\n        commandKey,\r\n        ...(extra as object | undefined),", STORE_CONTRACT),
     "公共字段必须排在 extra 之后"],
+  ["R3① 登录侧兜底闸被摘掉(A 没退出、B 在同 tab 登录)→ 必红", "red",
+    () => inject(LOGIN, "  clearPendingCommandRecords();\r\n  signIn(result);", "  signIn(result);", MIGRATION),
+    "函数体里必须真的调用清扫"],
+  ["R3② 兜底闸排到 reload 之后(永远执行不到)→ 必红", "red",
+    () => inject(LOGIN, "  clearPendingCommandRecords();\r\n  signIn(result);\r\n  reload();",
+      "  signIn(result);\r\n  reload();\r\n  clearPendingCommandRecords();", MIGRATION),
+    "必须排在 signIn 与 reload 之前"],
   ["R2-P2-3 形状判据从 every 放宽成 some → 混合业务表被误删,必红", "red",
     () => inject(STORE, "    return rows.every(([commandKey, value]) => {", "    return rows.some(([commandKey, value]) => {", MIGRATION),
     "清扫按记录形状认表"],
@@ -292,7 +300,7 @@ const CASES = [
 
 // 🔴 还原完整性升级为**内容指纹**(2026-08-06 独立验收 P2):原来只 filter 残留的 .redtest-bak,
 //   而被注入的文件本来就处在 ` M` 状态 —— 内容没还原完全看不出来,后续门验的就是被污染的树。
-const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL, AUTH, CLASSIFY, A2, B2, K, U360, AUTHSTORE, SMUT];
+const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL, AUTH, CLASSIFY, A2, B2, K, U360, AUTHSTORE, SMUT, LOGIN];
 const digest = () => TOUCHED.map((file) => createHash("sha1").update(readFileSync(file)).digest("hex")).join(" ");
 const before = digest();
 

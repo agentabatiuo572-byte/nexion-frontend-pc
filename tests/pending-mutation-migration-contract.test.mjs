@@ -298,6 +298,22 @@ test("⑤ 清扫接在**真正的登出路径**上:signOut(退出按钮 / 会话
   assert.match(topbar, /signOut\(\)/, "退出按钮必须经 signOut");
 });
 
+test("⑤ 登录侧兜底闸:交互式登录完成时也清(覆盖「前面没走过退出」的路径)", () => {
+  // 结构性反思自查项①「这条链的入口有几个」逐个 grep 时发现的第三条路径:
+  // A 没点退出(会话过期 / 直接走开),B 在同一个 tab 的登录页登录 —— 此时前端状态是空的,
+  // 「换人才清」判不出换了人。命令号在 sessionStorage(逐 tab),同 tab 换人正是唯一串号场景。
+  const login = read("lib/admin/login-completion.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  assert.match(login, /import \{ clearPendingCommandRecords \}/);
+  const body = login.slice(login.indexOf("export function completeInteractiveLogin"));
+  // 🔴 先断言「调用存在」再比位置:调用被整条删掉时 indexOf 返回 -1,而 -1 恒小于任何正数,
+  //   只比位置的写法反而会**判绿**(本轮红测 R3① 实测抓到)。
+  const clearAt = body.indexOf("clearPendingCommandRecords(");
+  const signInAt = body.indexOf("signIn(");
+  assert.ok(clearAt >= 0, "函数体里必须真的调用清扫,不能只留 import");
+  assert.ok(signInAt >= 0 && clearAt < signInAt, "清扫必须排在 signIn 与 reload 之前");
+});
+
 test("⑤ 清扫不得被存活实例的内存镜像复活(同步序列,不是竞态)", () => {
   const cells = new Map();
   const storage = {
