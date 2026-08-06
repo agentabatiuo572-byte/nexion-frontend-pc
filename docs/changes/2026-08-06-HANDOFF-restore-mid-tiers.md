@@ -1,0 +1,67 @@
+# 交接存档 · pkg/restore-mid-tiers(2026-08-06)
+
+> 上一会话额度耗尽换号交接。**本包主体已完成并提交**,本文件供新会话零上下文接手。
+> 读完本文件 + `2026-08-06-restore-mid-tiers.md`(提案与审计裁决全记录)即可无缝续做。
+
+## 一、当前状态:已完成,已提交,未合并未推送
+
+工作副本:`D:\WORKS\PLAN\.claude\worktrees\pkg-restore-midtiers`(分支 `pkg/restore-mid-tiers`)
+主副本 `D:\WORKS\PLAN\admin-ops` **全程未碰**(另有会话在用)。
+
+分支上 5 笔新提交(基线 `93ca532`):
+
+| commit | 内容 | 出自 |
+|---|---|---|
+| `c90712f` | 恢复三条中间挡位主体(G4 阶梯定价 / F5 单笔冻结·解锁·解冻 / K1 簇收益释放参数)+ 三道新契约门 + 红测 + 台账三行 | 本包 |
+| `12c1822` | 主人三项拍板落地(单价按阶梯派生只读 / 冻结线口径统一为「仅建议」/ PRD 同步延后) | 本包 |
+| `c7168c7` | 后端不可达类失败不再归因用户输入(错误文案) | 并行任务卡 |
+| `adc8793` | 错误文案咽喉旁路扫描结论存档 | 并行任务卡 |
+| `f049272` | F 域四个 A2 提交口接稳定命令号(pending store) | 并行任务卡 |
+
+工作树:仅 `package-lock.json` 一处预存环境噪声(devOptional→dev 元数据翻转),**刻意不入包**,勿提交。
+
+## 二、验收结论(全部已跑完,不必重跑)
+
+- `npx tsc --noEmit` = 0
+- `npm run verify` = 33/38 齿绿(含生产构建);5 齿因本机无兄弟仓 `nexion-backend` **如实跳过**,非缺陷。
+  ⚠️ 并行任务后来又加了 1 齿(`F pending-store contract`),现应为 39 齿,跳过集不变。
+- 三道新契约门 + 权限门:22/22 断言绿
+- 红测 `node scripts/_redtest-restore-mid-tiers.mjs` = 28/28(逐条注入必红、还原复绿)
+- 独立 tester 实景 14/14 PASS(报告 `-tA/-tB/-tC-test.md`,含 A2 票请求体与幂等头运行时捕获)
+- 两个独立 skeptic:P1×2 全修、P2×11 逐条裁决(记录在提案文档「审计裁决记录」两节)
+- 拍板落地后 main 亲自实景复证:单价仲裁两变体 + K1 页 10/10
+
+## 三、环境层遗留(新会话若要跑实景验证需知道)
+
+1. **dev server**:根 `.claude/launch.json` 已加 `pkg-restore-admin` 条目 → 端口 **3022**(`preview_start` 传 name 即可)。
+   会话结束进程会被回收,需要时重起。
+2. **junction(为让门真跑而建,勿删)**:`.claude/worktrees/` 下有 `Nexion-uniapp`、`PRD` 两个目录联接。
+   缺它们 → canon 哨兵被当"跨仓缺件"跳过(降级绿)、interaction-audit 直接 ENOENT 炸链。
+3. **实景验证套路**(后端 :8110 不在本机,登录与所有 `/api/admin/*` 都 503):
+   用 Playwright **页面级 route 拦截**伪造响应。拦 `/api/admin/auth/session` 回 superadmin 会话即可进控制台。
+   ⚠️ 两个已踩的坑:① 路由通配 `**/api/admin/**` 会把演练子端点也劫持成 overview 形状 → 用 `path.endsWith()` 精确匹配;
+   ② K1 读端点实际是 `/api/admin/risk/multi-account/**overview**`(带后缀),不是 `/multi-account`。
+4. **verify 退出码**:已焊哨兵文件 `.verify-exit.code`(管道会吞退出码,外部判定读该文件,不读管道)。
+
+## 四、待办/后续(按优先级)
+
+1. **PRD 同步(主人已拍板延后)**:留待本分支合并主线时,随合并批次走 `nexion-admin-prd`;后台产品更新日志是否恢复追条一并届时定。
+2. **合并主线**:主人未下令,勿自行合并/推送。合并时注意本分支混有三笔并行任务卡的提交(见上表)。
+3. **后端契约待实现**(本包只做 admin 侧,契约先行):
+   - G4 档位三端点 + `expectedTiersVersion` 整表 CAS + tiers 在场时拒 price 参数写入
+   - K1 `releaseParams` 七键**原子上线**(灰度期整字段缺席,禁发部分数组)+ 跨字段「待审起点 ≤ 冻结线」校验
+   - 冻结线语义 = **仅建议**(达线不自动锁收益,自动落锁定桶只由超槽熔断触发)
+   详见 `docs/ops-actions.manifest.json` 的 OPS-G-13 / OPS-F-10 / OPS-K-01d 三行 note。
+4. **记档未修项**(提案文档末节列全):F5 按钮级放大标记未搬、G4 用户端镜像口径两句待产品确认、
+   K1 释放参数无 amplifies 机器标记(与该页现行范式一致)等,均为 P2 有意取舍。
+
+## 五、本轮已焊进机制的进化(勿回退)
+
+- `scripts/verify.mjs`:退出码哨兵文件(EVOLUTION-LEDGER **WF-10**,「管道吞退出码」同型第 2 次 → 升机器门)
+- `nexion-workflow` SKILL.md P5 新增检查项:多审计 agent 并行时**报告收齐才开修**(**WF-11**,本轮实际违纪过一次,tester 以末态三连跑补救)
+- memory 两条更新:worktree junction 取材面三件套、红测 CRLF 单行锚 + 无边界子串断言会被改名哄绿
+
+## 六、给新会话的一句话定位
+
+本包**已收官**。若主人无新指令,不要重跑门、不要重新审计、不要自行合并——
+先读本文件确认状态,再问主人接下来做什么。
