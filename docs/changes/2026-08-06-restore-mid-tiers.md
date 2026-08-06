@@ -182,11 +182,8 @@ amplifies 挂 coverage.redlineBreached · 本文档措辞与勾选卫生修正�
 - 新契约门 `tests/k1-release-guard-contract.test.mjs` 7/7 绿,已挂 verify 齿轮
 - 红测 `scripts/_redtest-k1-release-guard.mjs` 10/10:每条判据被破坏后门都会咬人,还原字节一致、终态复绿
 - `npm run verify` = 37/42 齿绿,5 齿因本机无兄弟仓 `nexion-backend` **如实跳过**
-- 🔴 **实景渲染未验证**:告知块的条件渲染没能在真实浏览器里跑通 —— K1 页的走查 harness 卡在权限 mock:
-  `authorities: ["*"]` 时释放参数卡与 7 行参数正常渲染但「调整」按钮不渲染(通配不授 `risk_k1_write`);
-  改成显式权限码后卡片反而整个不渲染。这是 harness 问题不是被测代码问题,但**渲染层因此仍属未证**。
-  接手者若要补:dev server 走根 `.claude/launch.json` 的 `pkg-restore-admin`(:3022);
-  拦 `/api/admin/auth/session`(信封 `{code:0,data:{tokenType,session}}`)+ `/multi-account/overview`(精确后缀);
-  overview 必需字段见 `k-client.ts` 的 `normalizeK1`(`serverCanonical:true` / `domain:"K1"` / stats 五键 /
-  params 五键且 `linkWeight` 须为 `设备 X · 支付 Y · IP Z` 格式且三者和为 1 / sources 五项齐 / clusters+whitelist 分页体)。
-  **未解**:让「调整」按钮渲染出来的 authorities 正确形状。
+- ✅ **实景渲染已验证(9/9)**:`node scripts/k1-release-guard-walkthrough.mjs`(需先起 :3022 dev server)——
+  卡片渲染 / 7 个调整按钮 / 未改值不提示 / 收紧不提示 / 放宽提示 / 文案点明覆盖率 / 枚举键放宽也提示 / 无 console error。
+  **方向判定在真实运行时也对**:同一参数调大不提示、调小才提示(观察窗口属「调小才是放宽」族)。
+  走查 harness 的四个坑已写进脚本文件头,其中最坑一条:`effectiveMenuNodes` 传空数组 = 「后端明确授了零菜单」,
+  侧栏与深链会全判无权 —— 要走「按角色全开」回退路径必须**整个字段不传**。
