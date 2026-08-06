@@ -1628,7 +1628,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               });
             } else { setToast("已确认生效"); }
           } catch (error) {
-            setToast((mc.name || "操作") + ":失败 " + displayAdminError(error));
+            // 不在这里再 toast 一次:本 try 块内每条会失败的路径都经 propose(含 proposeParam),
+            // 它在 rethrow 前已 toast 过;这里再弹就是同一个错误两条。
+            // 反馈不丢:rethrow 后确认弹窗的 alertbar 会经 displayAdminError 显示同一错误。
             throw error;
           }
           setActionConfirm(null);
