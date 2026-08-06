@@ -38,8 +38,9 @@ import {
 } from "@/lib/admin/e5-client";
 import { fetchE6ComputeConfig, isE6ParamKey, type E6ComputeConfigView } from "@/lib/admin/e6-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { createA2CommandKey } from "@/lib/admin/a2-client";
+import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
@@ -55,6 +56,10 @@ import { E4Orders } from "./e-tabs/e4-orders";
 import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
 import "./e-domain.css";
+
+/** E 域 A2 提交稳定命令号:槽位=动作名|目标对象,指纹=终值+结构化命令+理由。
+ *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同输入重试仍复用同一命令号被后端去重。 */
+const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
 
 type SkuMediaKind = "image" | "video";
 type SkuMedia = {
@@ -256,10 +261,21 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       && s.session.authorities.includes("platform_a2_proposal_create"));
   const canToggleE6 = canWriteE6 || hasToggleE6 || canProposeE6;
   const rawPropose = usePropose(); // E 域高敏动作统一入 A2 后端待确认队列
-  const propose = (toast: (message: string) => void, spec: ProposeSpec) =>
-    rawPropose(toast, { ...spec, commandKey: spec.commandKey ?? mc?.commandKey });
-  const openActionConfirm = (spec: NonNullable<Mc>) =>
-    setActionConfirm({ ...spec, commandKey: spec.commandKey ?? createA2CommandKey("e-domain-action") });
+  const propose = async (toast: (message: string) => void, spec: ProposeSpec) => {
+    if (spec.commandKey) return rawPropose(toast, spec); // 显式携号的调用点尊重原号
+    const slot = `${spec.action}|${spec.obj}`;
+    const fingerprint = JSON.stringify([spec.after, spec.command, spec.reason]);
+    const commandKey = commandAttempts.resolve(slot, fingerprint, () => createA2CommandKey("e-domain-action"));
+    try {
+      const result = await rawPropose(toast, { ...spec, commandKey });
+      commandAttempts.forget(slot);
+      return result;
+    } catch (error) {
+      if (!(error instanceof A2OutcomeUncertainError)) commandAttempts.forget(slot);
+      throw error;
+    }
+  };
+  const openActionConfirm = (spec: NonNullable<Mc>) => setActionConfirm(spec);
   const [e3Params, setE3Params] = useState<Record<string, string>>({});
   const [e3Stats, setE3Stats] = useState<E3Stats | null>(null);
   const [e3Operations, setE3Operations] = useState<E3OperationMetric[]>([]);

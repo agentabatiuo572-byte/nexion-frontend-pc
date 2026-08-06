@@ -25,8 +25,23 @@ function nextIdempotencyKey(prefix: string) {
   return `${prefix}-${Date.now()}-${requestSeq}`;
 }
 
-export function createH8CommandKey(prefix: "h8-param") {
+export function createH8CommandKey(prefix: "h8-param" | "h8-settle") {
   return nextIdempotencyKey(prefix);
+}
+
+/** H8 提交「结果未知」:命令号已随请求出手,调用方必须保留原号供原样重试,后端按号去重。 */
+export class H8OutcomeUncertainError extends Error {
+  constructor(message: string, readonly commandKey: string) {
+    super(message);
+    this.name = "H8OutcomeUncertainError";
+  }
+}
+
+export function isH8OutcomeUncertainError(error: unknown): error is H8OutcomeUncertainError {
+  if (error instanceof H8OutcomeUncertainError) return true;
+  return error instanceof Error
+    && error.name === "H8OutcomeUncertainError"
+    && typeof (error as Error & { commandKey?: unknown }).commandKey === "string";
 }
 
 function numberValue(value: unknown) {
@@ -487,20 +502,29 @@ export async function updateH8ReferralRewardParam(
   expectedVersion: number,
   idempotencyKey: string,
 ) {
-  return growthRequest<Record<string, unknown>>(
-    `/referral-rewards/params/${encodeURIComponent(key)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        key,
-        value,
-        expectedVersion,
-        reason,
-        operator: currentAdminOperator(),
-      }),
-      headers: { "Idempotency-Key": idempotencyKey },
-    },
-  );
+  try {
+    return await growthRequest<Record<string, unknown>>(
+      `/referral-rewards/params/${encodeURIComponent(key)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          key,
+          value,
+          expectedVersion,
+          reason,
+          operator: currentAdminOperator(),
+        }),
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
+    );
+  } catch (error) {
+    // growthRequest 形态:网络断 = fetch 裸抛 TypeError;响应体不可读 = response.json() 裸抛 SyntaxError。
+    // 两者后端都可能已执行,归「结果未知」保留命令号;后端显式回包的失败(Error)是确定性拒绝。
+    if (error instanceof TypeError || error instanceof SyntaxError) {
+      throw new H8OutcomeUncertainError(error.message || "H8_REQUEST_OUTCOME_UNKNOWN", idempotencyKey);
+    }
+    throw error;
+  }
 }
 
 

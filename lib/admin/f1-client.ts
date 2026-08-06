@@ -1,5 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import {
   assertF1Overview,
@@ -813,13 +814,6 @@ export interface F5CommissionAuditOverview {
   sources: string[];
 }
 
-let requestSeq = 0;
-
-function idempotencyKey(prefix: string) {
-  requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
-}
-
 function toNumber(value: unknown, fallback = 0) {
   if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
   if (typeof value === "string" && value.trim()) {
@@ -1355,24 +1349,53 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
 
 async function f1Request<T>(
   path: string,
-  init?: RequestInit & { idempotencyPrefix?: string; stableIdempotencyKey?: string },
+  init?: RequestInit & { stableIdempotencyKey?: string },
 ) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (init?.stableIdempotencyKey) {
-    headers.set("Idempotency-Key", init.stableIdempotencyKey);
-  } else if (init?.idempotencyPrefix) {
-    headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
+  const stableKey = init?.stableIdempotencyKey;
+  if (stableKey) {
+    headers.set("Idempotency-Key", stableKey);
+  }
+  const isWrite = !!init?.method && init.method !== "GET";
+
+  let response: Response;
+  try {
+    response = await fetch(`/api/admin/teams${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
+  } catch (error) {
+    // 网络断时请求可能已到达后端:写路径归「结果未知」,保留命令号供原样重试(K 域同款分类)。
+    if (isWrite && stableKey) {
+      throw new F1OutcomeUncertainError(
+        error instanceof Error ? error.message : "F1_REQUEST_OUTCOME_UNKNOWN",
+        stableKey,
+      );
+    }
+    throw error;
   }
 
-  const response = await fetch(`/api/admin/teams${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
-  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  let result: ApiResult<T> | null;
+  try {
+    result = (await response.json()) as ApiResult<T>;
+  } catch {
+    // 响应体不可读 = 后端可能已执行但回包丢失:写路径同样归「结果未知」。
+    if (isWrite && stableKey) {
+      throw new F1OutcomeUncertainError("F1_RESPONSE_UNREADABLE", stableKey);
+    }
+    result = null;
+  }
+
+  if (isWrite && stableKey && response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+    throw new F1OutcomeUncertainError(
+      formatAdminApiError(result?.message, "F1_REQUEST_OUTCOME_UNKNOWN"),
+      stableKey,
+    );
+  }
 
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
@@ -1437,14 +1460,15 @@ export async function reverseF5Commission(
   reason: string,
   operator: string,
 ) {
-  return f1Request<Record<string, unknown>>(
-    `/commissions/${encodeURIComponent(commissionId)}/reverse`,
-    {
-      method: "POST",
-      body: JSON.stringify({ refundRef, reason, operator }),
-      idempotencyPrefix: `f5-reverse-${commissionId}`,
-    },
-  );
+  return f1StableWrite(`f5-reverse|${commissionId}`, JSON.stringify([refundRef, reason, operator]),
+    (commandKey) => f1Request<Record<string, unknown>>(
+      `/commissions/${encodeURIComponent(commissionId)}/reverse`,
+      {
+        method: "POST",
+        body: JSON.stringify({ refundRef, reason, operator }),
+        stableIdempotencyKey: commandKey,
+      },
+    ));
 }
 
 export async function reissueF5Commissions(
@@ -1452,11 +1476,13 @@ export async function reissueF5Commissions(
   reason: string,
   operator: string,
 ) {
-  return f1Request<Record<string, unknown>>("/commissions/reissue", {
-    method: "POST",
-    body: JSON.stringify({ commissionIds, reason, operator }),
-    idempotencyPrefix: `f5-reissue-${commissionIds.join("-")}`,
-  });
+  // 重发 = 真实打款,最高危:槽位钉住排序后的整批事件 id,勾选顺序不同不得当成两批。
+  return f1StableWrite(`f5-reissue|${[...commissionIds].sort().join(",")}`, JSON.stringify([reason, operator]),
+    (commandKey) => f1Request<Record<string, unknown>>("/commissions/reissue", {
+      method: "POST",
+      body: JSON.stringify({ commissionIds, reason, operator }),
+      stableIdempotencyKey: commandKey,
+    }));
 }
 
 export async function suspendF5UserCommissions(
@@ -1466,11 +1492,12 @@ export async function suspendF5UserCommissions(
   reason: string,
   operator: string,
 ) {
-  return f1Request<Record<string, unknown>>(`/commissions/users/${userId}/suspend`, {
-    method: "POST",
-    body: JSON.stringify({ kinds, suspended, reason, operator }),
-    idempotencyPrefix: `f5-suspend-${userId}-${suspended}`,
-  });
+  return f1StableWrite(`f5-suspend|${userId}|${suspended}`, JSON.stringify([[...kinds].sort(), reason, operator]),
+    (commandKey) => f1Request<Record<string, unknown>>(`/commissions/users/${userId}/suspend`, {
+      method: "POST",
+      body: JSON.stringify({ kinds, suspended, reason, operator }),
+      stableIdempotencyKey: commandKey,
+    }));
 }
 
 export async function updateF5AnomalyConfig(
@@ -1479,53 +1506,25 @@ export async function updateF5AnomalyConfig(
   reason: string,
   operator: string,
 ) {
-  return f1Request<Record<string, unknown>>("/commissions/anomaly-config", {
-    method: "PUT",
-    body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
-    idempotencyPrefix: "f5-anomaly-config",
-  });
-}
-
-export async function updateFTeamConfig(key: string, value: string, reason: string, operator: string) {
-  await f1Request<unknown>(`/commissions/config/${encodeURIComponent(key)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `f-config-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
-  });
-  return fetchF2RatesOverview();
-}
-
-// F1 V-Rank 展示文案类配置(头衔/奖品名等)统一走 /commissions/config/{key},写后刷新 F1 overview。
-export async function updateF1TeamConfig(key: string, value: string, reason: string, operator: string) {
-  await f1Request<unknown>(`/commissions/config/${encodeURIComponent(key)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `f1-config-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
-  });
-  return fetchF1VRankOverview();
-}
-
-export async function updateF3TeamConfig(key: string, value: string, reason: string, operator: string) {
-  await f1Request<unknown>(`/commissions/config/${encodeURIComponent(key)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `f3-config-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
-  });
-  return fetchF3BinaryOverview();
+  return f1StableWrite("f5-anomaly-config", JSON.stringify([commissionAnomalySigma, layerRatioAnomalyPct, reason, operator]),
+    (commandKey) => f1Request<Record<string, unknown>>("/commissions/anomaly-config", {
+      method: "PUT",
+      body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
+      stableIdempotencyKey: commandKey,
+    }));
 }
 
 export async function executeF3Settlement(
   ownerUserId: number,
   settlementDate: string,
   reason: string,
-  stableIdempotencyKey?: string,
 ) {
-  const data = await f1Request<Record<string, unknown>>("/binary/settlements", {
-    method: "POST",
-    body: JSON.stringify({ ownerUserId, settlementDate, reason }),
-    idempotencyPrefix: `f3-settlement-${ownerUserId}-${settlementDate}`,
-    stableIdempotencyKey,
-  });
+  const data = await f1StableWrite(`f3-settle|${ownerUserId}|${settlementDate}`, JSON.stringify([reason]),
+    (commandKey) => f1Request<Record<string, unknown>>("/binary/settlements", {
+      method: "POST",
+      body: JSON.stringify({ ownerUserId, settlementDate, reason }),
+      stableIdempotencyKey: commandKey,
+    }));
   return {
     ownerUserId: toNumber(data.ownerUserId),
     settlementDate: asText(data.settlementDate, settlementDate),
@@ -1541,52 +1540,38 @@ export async function executeF3Settlement(
   } satisfies F3SettlementExecution;
 }
 
-export async function updateF4TeamConfig(key: string, value: string, reason: string, operator: string) {
-  await f1Request<unknown>(`/commissions/config/${encodeURIComponent(key)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `f4-config-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
-  });
-  return fetchF4LeadershipPoolOverview();
-}
-
-export async function updateF5TeamConfig(key: string, value: string, reason: string, operator: string) {
-  await f1Request<unknown>(`/commissions/config/${encodeURIComponent(key)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `f5-config-${key.replace(/[^A-Za-z0-9]+/g, "-")}`,
-  });
-  return fetchF5CommissionAuditOverview();
-}
-
 export async function updateF1VRankThreshold(rank: string, field: string, value: string, reason: string, operator: string) {
-  return normalizeOverview(await f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/thresholds/${encodeURIComponent(field)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyPrefix: `f1-${rank}-${field}`,
-  }));
+  return normalizeOverview(await f1StableWrite(`f1-vrank|${rank}|${field}`, JSON.stringify([value, reason, operator]),
+    (commandKey) => f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/thresholds/${encodeURIComponent(field)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ value, reason, operator }),
+      stableIdempotencyKey: commandKey,
+    })));
 }
 
 export async function addF1VRankReward(rank: string, item: Omit<OpsVRankRewardItem, "id">, reason: string, operator: string) {
-  return normalizeOverview(await f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards`, {
-    method: "POST",
-    body: JSON.stringify({ ...item, reason, operator }),
-    idempotencyPrefix: `f1-${rank}-reward-add`,
-  }));
+  return normalizeOverview(await f1StableWrite(`f1-reward-add|${rank}`, JSON.stringify([item, reason, operator]),
+    (commandKey) => f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards`, {
+      method: "POST",
+      body: JSON.stringify({ ...item, reason, operator }),
+      stableIdempotencyKey: commandKey,
+    })));
 }
 
 export async function updateF1VRankReward(rank: string, rewardId: string, item: Omit<OpsVRankRewardItem, "id">, reason: string, operator: string) {
-  return normalizeOverview(await f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards/${encodeURIComponent(rewardId)}`, {
-    method: "PUT",
-    body: JSON.stringify({ ...item, reason, operator }),
-    idempotencyPrefix: `f1-${rank}-reward-update`,
-  }));
+  return normalizeOverview(await f1StableWrite(`f1-reward-update|${rank}|${rewardId}`, JSON.stringify([item, reason, operator]),
+    (commandKey) => f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards/${encodeURIComponent(rewardId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ ...item, reason, operator }),
+      stableIdempotencyKey: commandKey,
+    })));
 }
 
 export async function removeF1VRankReward(rank: string, rewardId: string, reason: string, operator: string) {
-  return normalizeOverview(await f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards/${encodeURIComponent(rewardId)}`, {
-    method: "DELETE",
-    body: JSON.stringify({ reason, operator }),
-    idempotencyPrefix: `f1-${rank}-reward-remove`,
-  }));
+  return normalizeOverview(await f1StableWrite(`f1-reward-remove|${rank}|${rewardId}`, JSON.stringify([reason, operator]),
+    (commandKey) => f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards/${encodeURIComponent(rewardId)}`, {
+      method: "DELETE",
+      body: JSON.stringify({ reason, operator }),
+      stableIdempotencyKey: commandKey,
+    })));
 }

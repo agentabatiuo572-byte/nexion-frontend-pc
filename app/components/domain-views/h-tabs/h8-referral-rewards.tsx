@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   createH8CommandKey,
   fetchH8ReferralRewards,
+  isH8OutcomeUncertainError,
   updateH8ReferralRewardParam,
   type H8ReferralRewardOverview,
 } from "@/lib/admin/h-client";
@@ -12,6 +13,12 @@ import type { HCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+
+/** H8 发奖参数与结算的稳定命令号:槽位=动作|参数键,指纹带 expectedVersion(旧快照重提自动换号)。
+ *  落 sessionStorage,结果未知后刷新页面原样重试仍复用同号被后端去重。 */
+const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-h8-commands-v1" });
 
 const PARAMS = [
   { key: "newcomer.usdt", label: "新人 USDT", unit: "USDT", kind: "number", max: 50, step: 0.000001 },
@@ -53,7 +60,6 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
 
   const editParam = (param: (typeof PARAMS)[number]) => {
     if (!data) return;
-    const commandKey = createH8CommandKey("h8-param");
     const rawCurrent = String(data?.params?.[param.key] ?? (param.kind === "select" ? "risk_bucket" : "0"));
     const current = param.kind === "select" ? LOCK_MODE_LABELS[rawCurrent] ?? LOCK_MODE_LABELS.risk_bucket : rawCurrent;
     ctx.openActionConfirm({
@@ -66,7 +72,19 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       run: async (reason, value) => {
         if (value == null || value === "") return;
         const storedValue = param.kind === "select" ? LOCK_MODE_VALUES[value] ?? value : value;
-        await updateH8ReferralRewardParam(param.key, storedValue, reason, data.version, commandKey);
+        const slot = `param|${param.key}`;
+        const commandKey = commandAttempts.resolve(
+          slot,
+          JSON.stringify([storedValue, data.version, reason]),
+          () => createH8CommandKey("h8-param"),
+        );
+        try {
+          await updateH8ReferralRewardParam(param.key, storedValue, reason, data.version, commandKey);
+          commandAttempts.forget(slot);
+        } catch (error) {
+          if (!isH8OutcomeUncertainError(error)) commandAttempts.forget(slot);
+          throw error;
+        }
         await load();
         ctx.toast(`${param.label} 已更新为 ${value} ${param.unit}`);
       },
@@ -81,25 +99,38 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
     run: async (reason, value) => {
       const limit = Math.max(1, Math.min(100, Number(value) || 20));
       const def = findHighOp("h8_referral_settlement")!;
-      await propose(ctx.toast, {
-        action: "执行邀请奖励真实结算",
-        obj: "待结算邀请批次",
-        before: `待结算 ${Number(data?.pending ?? 0)} 条 · H8 v${data?.version ?? "—"} · H1 第 ${data?.rhythmMonth ?? "—"} 月`,
-        after: `最多结算 ${limit} 条 · 新人 ${data?.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards["newcomer.nex"] ?? "—"} NEX · 邀请人 ${data?.effectiveRewards["inviter.nex"] ?? "—"} NEX · 快照 ${data?.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
-        type: "fund",
-        amplifies: true,
-        gate: { roles: [] },
-        gateLabel: def.gateLabel,
-        reason,
-        sourceDomain: "H8",
-        command: def.buildCommand({
-          limit,
-          expectedH8Version: data?.version,
-          expectedRhythmMonth: data?.rhythmMonth,
-          rewardSnapshotHash: data?.rewardSnapshotHash,
-        }),
-        target: def.buildTarget({ limit }),
-      });
+      const slot = "settle|batch";
+      const commandKey = commandAttempts.resolve(
+        slot,
+        JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, reason]),
+        () => createH8CommandKey("h8-settle"),
+      );
+      try {
+        await propose(ctx.toast, {
+          action: "执行邀请奖励真实结算",
+          obj: "待结算邀请批次",
+          before: `待结算 ${Number(data?.pending ?? 0)} 条 · H8 v${data?.version ?? "—"} · H1 第 ${data?.rhythmMonth ?? "—"} 月`,
+          after: `最多结算 ${limit} 条 · 新人 ${data?.effectiveRewards["newcomer.usdt"] ?? "—"} USDT + ${data?.effectiveRewards["newcomer.nex"] ?? "—"} NEX · 邀请人 ${data?.effectiveRewards["inviter.nex"] ?? "—"} NEX · 快照 ${data?.rewardSnapshotHash.slice(0, 12) ?? "—"}…`,
+          type: "fund",
+          amplifies: true,
+          gate: { roles: [] },
+          gateLabel: def.gateLabel,
+          reason,
+          sourceDomain: "H8",
+          commandKey,
+          command: def.buildCommand({
+            limit,
+            expectedH8Version: data?.version,
+            expectedRhythmMonth: data?.rhythmMonth,
+            rewardSnapshotHash: data?.rewardSnapshotHash,
+          }),
+          target: def.buildTarget({ limit }),
+        });
+        commandAttempts.forget(slot);
+      } catch (error) {
+        if (!(error instanceof A2OutcomeUncertainError)) commandAttempts.forget(slot);
+        throw error;
+      }
     },
   });
 
