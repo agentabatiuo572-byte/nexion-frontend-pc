@@ -31,12 +31,20 @@ test("E 域 propose 咽喉:槽位/指纹表达式级接线,弹窗态现铸不得
   assert.match(code, /from "@\/lib\/admin\/pending-mutation-store"/);
   assert.match(code, /createSlotAttemptStore\(\{ storageKey: "nexion-admin-e-domain-commands-v1" \}\)/);
 
-  // 咽喉本体:槽位=动作|目标,指纹=终值+结构化命令+目标锁,命令号真经 resolve。
-  assert.match(code, /const slot = `\$\{spec\.action\}\|\$\{spec\.obj\}`/);
-  assert.match(code, /const fingerprint = JSON\.stringify\(\[spec\.after, spec\.command, spec\.target \?\? spec\.targets \?\? null\]\)/);
+  // 咽喉本体:槽位=动作 op|目标,指纹=终值+去易变项的命令+目标锁,命令号真经 resolve。
+  assert.match(code, /const fingerprint = JSON\.stringify\(\[spec\.after, stableCommand\(spec\.command\), spec\.target \?\? spec\.targets \?\? null\]\)/);
   assert.match(code, /const commandKey = commandAttempts\.resolve\(slot, fingerprint, \(\) => \{/);
   assert.match(code, /mintedFresh = true;/);
   assert.match(code, /rawPropose\(toast, \{ \.\.\.spec, commandKey \}\)/);
+  // 成功路径必须清槽:不清则同一意图的下一次真实提交会复用已被后端消费的号,被静默去重。
+  assert.match(code, /const result = await rawPropose\(toast, \{ \.\.\.spec, commandKey \}\);\s*commandAttempts\.forget\(slot\);/);
+  // 槽位不得用展示文案(常内嵌输入值,如「上架节奏 · 延迟 1 个月 · Gen3」)。
+  assert.match(code, /const slot = `\$\{spec\.command\.op\}\|\$\{spec\.obj\}`/);
+  assert.doesNotMatch(code, /const slot = `\$\{spec\.action\}/,
+    "槽位用 spec.action(运营展示串,含输入值)会让改回原值时复用旧槽里可能已消费的号");
+  // 预签名媒体链接会自动续签,进指纹会让「业务输入一字未改的重试」被判成新意图。
+  assert.match(code, /VOLATILE_COMMAND_PARAMS/);
+  assert.match(code, /stableCommand\(spec\.command\)/);
   // 指纹不得含 reason:理由是审计元数据,进指纹会让「结果未知后补理由再点」换新号 → 双提案双退款。
   assert.doesNotMatch(code, /JSON\.stringify\(\[spec\.after[^\]]*spec\.reason/,
     "reason 进指纹 = 改一下理由就铸新号,同一笔退款进两次审批队列");

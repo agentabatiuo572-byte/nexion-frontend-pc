@@ -197,7 +197,10 @@ let requestSeq = 0;
 
 function idempotencyKey(prefix: string) {
   requestSeq = (requestSeq + 1) % 1_000_000;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
+  // 随机段是必需的:命令号如今被持久化 24h,而 sessionStorage 是 per-tab 的 —— 两个标签页
+  // 同毫秒对同一动作首次提交时,时间戳与各自从 0 起的序号都会相同,撞出同一个号,
+  // 后端按同号去重会静默吞掉第二个人的操作。
+  return `${prefix}-${Date.now()}-${requestSeq}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
 function toNumber(value: number | string | null | undefined, fallback = 0) {

@@ -22,9 +22,20 @@ test("shared proposer uses the boundary-safe uncertain predicate", () => {
   assert.match(proposer, /A2 审计/);
 });
 
-test("E3 and another A2 caller preserve one command key while the confirmation stays open", () => {
-  assert.match(eView, /spec\.commandKey \?\? mc\?\.commandKey/);
-  assert.match(eView, /setActionConfirm\(\{ \.\.\.spec, commandKey: spec\.commandKey \?\? createA2CommandKey/);
+/**
+ * 2026-08-06:E 域从「弹窗打开时铸号存组件态」(`spec.commandKey ?? mc?.commandKey`)迁到共享
+ * SlotAttemptStore。原断言钉的是那个被替换掉的半措施,意图不变但更强 —— 命令号现在落
+ * sessionStorage,一次确认里的重试复用同号,**刷新页面后仍然复用**。
+ * 逐点接线细节见 tests/e-pending-store-contract.test.mjs,这里只守「E 与另一个 A2 调用方都用
+ * 持久 store + 边界安全判据」这条跨域不变量。
+ */
+test("E3 and another A2 caller preserve one command key across retries and reloads", () => {
+  assert.match(eView, /createSlotAttemptStore\(\{ storageKey: "nexion-admin-e-domain-commands-v1" \}\)/);
+  assert.match(eView, /commandAttempts\.resolve\(slot, fingerprint,/);
+  assert.match(eView, /isA2OutcomeUncertainError\(error\)/);
+  assert.doesNotMatch(eView, /error instanceof A2OutcomeUncertainError/);
+  // 弹窗态命令号不得回潮:setActionConfirm 再挂 commandKey 就是刷新即丢的老形态。
+  assert.doesNotMatch(eView, /setActionConfirm\(\{ \.\.\.spec, commandKey/);
   assert.match(k2View, /commandAttempt/);
   assert.match(k2View, /isA2OutcomeUncertainError/);
 });

@@ -22,7 +22,9 @@ let requestSeq = 0;
 
 function nextIdempotencyKey(prefix: string) {
   requestSeq += 1;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
+  // 随机段:H8 命令号被持久化 24h,而 sessionStorage 是 per-tab 的 —— 两个标签页同毫秒首次提交时
+  // 时间戳与各自从 0 起的序号都相同,撞号会让后端静默吞掉第二个人的操作。
+  return `${prefix}-${Date.now()}-${requestSeq}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
 export function createH8CommandKey(prefix: "h8-param" | "h8-settle") {

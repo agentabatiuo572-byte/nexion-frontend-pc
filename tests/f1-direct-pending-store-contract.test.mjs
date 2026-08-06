@@ -40,9 +40,15 @@ test("f1-client 九个直写函数全部经 f1StableWrite,槽位带目标 id、�
 
   // 逐函数钉「槽位 + 指纹」完整表达式(只查字面量会放过改槽/改指纹的回退)。
   assert.match(code, /f1StableWrite\(`f5-reverse\|\$\{commissionId\}`, JSON\.stringify\(\[refundRef, operator\]\)/);
-  assert.match(code, /f1StableWrite\("f5-reissue", JSON\.stringify\(\[\[\.\.\.commissionIds\]\.sort\(\), operator\]\)/,
+  assert.match(code, /f1StableWrite\("f5-reissue", JSON\.stringify\(\[sortedIds, operator\]\)/,
     "重发 = 打款:整批 id 必须在**指纹**里(放槽位会让改回原勾选复用可能已消费的旧号,且撑爆头长度)");
-  assert.match(code, /f1StableWrite\(`f5-suspend\|\$\{userId\}\|\$\{suspended\}`, JSON\.stringify\(\[\[\.\.\.kinds\]\.sort\(\), operator\]\)/);
+  assert.match(code, /f1StableWrite\(`f5-suspend\|\$\{userId\}\|\$\{suspended\}`, JSON\.stringify\(\[sortedKinds, operator\]\)/);
+  // 🔴 body 必须送与指纹**同一个**排序数组:后端幂等 payload-bound(同键异载荷 → 409),
+  // 指纹排序而 body 送原序时,列表刷新导致顺序变化就会把重试硬拒掉。
+  assert.match(code, /const sortedIds = \[\.\.\.commissionIds\]\.sort\(\);/);
+  assert.match(code, /body: JSON\.stringify\(\{ commissionIds: sortedIds, reason, operator \}\)/);
+  assert.match(code, /const sortedKinds = \[\.\.\.kinds\]\.sort\(\);/);
+  assert.match(code, /body: JSON\.stringify\(\{ kinds: sortedKinds, suspended, reason, operator \}\)/);
   assert.match(code, /f1StableWrite\("f5-anomaly-config", JSON\.stringify\(\[commissionAnomalySigma, layerRatioAnomalyPct, operator\]\)/);
   assert.match(code, /f1StableWrite\(`f3-settle\|\$\{ownerUserId\}\|\$\{settlementDate\}`, "settlement"/,
     "F3 结算:烂尾的稳定号通道必须真接上,且同 owner+结算日恒定指纹");
@@ -64,7 +70,8 @@ test("f1Request:写路径无稳定号直接拒绝,四类结果未知保号,4xx/4
   const code = stripComments(read("lib/admin/f1-client.ts"));
 
   // 保底闸:删了 idempotencyPrefix 后,这是唯一挡住「新写函数忘了走咽喉」的东西。
-  assert.match(code, /if \(isWrite && !stableKey\) \{\s*throw new Error\("F1_WRITE_REQUIRES_STABLE_KEY"\)/);
+  // 走 formatAdminApiError:裸错误码会被确认弹窗原样上屏,违反「页面文案禁工程名词/错误码」。
+  assert.match(code, /if \(isWrite && !stableKey\) \{\s*throw new Error\(formatAdminApiError\(undefined, "F1_WRITE_REQUIRES_STABLE_KEY"\)\)/);
 
   // 会话失效判定必须在任何 throw 之前,否则 401 + 非标准错误页会卡在僵尸登录态。
   const authAt = code.indexOf("const authRejected = isAdminAuthFailure");

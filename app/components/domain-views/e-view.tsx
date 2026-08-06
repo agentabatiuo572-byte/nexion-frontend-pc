@@ -41,7 +41,7 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { findHighOp, type ReplayCommand } from "@/lib/admin/high-ops-registry";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
@@ -57,9 +57,18 @@ import { E5Ops } from "./e-tabs/e5-ops";
 import { E6ComputeConfig as E6ComputeConfigComp } from "./e-tabs/e6-compute-config";
 import "./e-domain.css";
 
-/** E 域 A2 提交稳定命令号:槽位=动作名|目标对象,指纹=终值+结构化命令+理由。
- *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同输入重试仍复用同一命令号被后端去重。 */
+/** E 域 A2 提交稳定命令号:槽位=动作 op|目标对象,指纹=终值+结构化命令+目标锁(**不含 reason**)。
+ *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
+
+/** 媒体预览链接是带时效的预签名 URL —— 抽屉重开 / 链接过期自动续签都会换值。
+ *  它进指纹会让「业务输入一字未改的重试」被判成新意图铸新号 → 两条 SKU 提案。 */
+const VOLATILE_COMMAND_PARAMS = ["imagePreviewUrl", "videoPreviewUrl", "previewUrl"];
+function stableCommand(command: ReplayCommand): ReplayCommand {
+  const params = { ...command.params };
+  VOLATILE_COMMAND_PARAMS.forEach((key) => { delete params[key]; });
+  return { ...command, params };
+}
 
 type SkuMediaKind = "image" | "video";
 type SkuMedia = {
@@ -266,8 +275,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   // 动作,理由进指纹就会换新号 → 同一笔退款进两次审批队列。改理由复用旧号最坏只是审计记原措辞。
   // 目标锁一并进指纹,防某个动作的 command 不含目标 id 时指纹失去区分度。
   const propose = async (toast: (message: string) => void, spec: ProposeSpec) => {
-    const slot = `${spec.action}|${spec.obj}`;
-    const fingerprint = JSON.stringify([spec.after, spec.command, spec.target ?? spec.targets ?? null]);
+    // 槽位用**结构化动作标识**(command.op)而不是 spec.action:后者是运营展示文案,常内嵌输入值
+    // (「上架节奏 · 延迟 1 个月 · Gen3」),值进槽位就退化成 store 文档明令避开的形态 ——
+    // 换个值提交成功只清了新槽,旧槽的号原样滞留,改回原值时会复用它被后端静默去重。
+    const slot = `${spec.command.op}|${spec.obj}`;
+    const fingerprint = JSON.stringify([spec.after, stableCommand(spec.command), spec.target ?? spec.targets ?? null]);
     let mintedFresh = false;
     const commandKey = commandAttempts.resolve(slot, fingerprint, () => {
       mintedFresh = true;

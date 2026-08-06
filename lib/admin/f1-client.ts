@@ -1363,7 +1363,8 @@ async function f1Request<T>(
   // 保底:删掉 idempotencyPrefix 现铸通道后,没有任何东西还强制写请求带幂等键。
   // 新增写函数忘了走 f1StableWrite 时,契约门的计数断言仍会全绿,只有这道运行时闸拦得住。
   if (isWrite && !stableKey) {
-    throw new Error("F1_WRITE_REQUIRES_STABLE_KEY");
+    // 走 formatAdminApiError:裸错误码会被确认弹窗原样上屏,违反「页面文案禁工程名词/错误码」。
+    throw new Error(formatAdminApiError(undefined, "F1_WRITE_REQUIRES_STABLE_KEY"));
   }
 
   let response: Response;
@@ -1508,11 +1509,14 @@ export async function reissueF5Commissions(
 ) {
   // 重发 = 真实打款,最高危。整批 id 放**指纹**不放槽位:放槽位时每换一次勾选就多留一个 24h 记录,
   // 改回原勾选会复用那个可能已被后端消费的旧号(SlotAttempt 的弃旧号只在同槽位内生效);
-  // 且槽位会被拼进命令号前缀,勾选量大时撑爆 HTTP 头。排序保证勾选顺序不同不算两批。
-  return f1StableWrite("f5-reissue", JSON.stringify([[...commissionIds].sort(), operator]),
+  // 且槽位会被拼进命令号前缀,勾选量大时撑爆 HTTP 头。
+  // 🔴 body 必须送**同样排序过**的数组:后端幂等是 payload-bound(同键异载荷 → 409 内容已变化),
+  // 指纹排序而 body 不排序时,列表刷新导致顺序变化就会同号异载荷,把重试硬拒掉。
+  const sortedIds = [...commissionIds].sort();
+  return f1StableWrite("f5-reissue", JSON.stringify([sortedIds, operator]),
     (commandKey) => f1Request<Record<string, unknown>>("/commissions/reissue", {
       method: "POST",
-      body: JSON.stringify({ commissionIds, reason, operator }),
+      body: JSON.stringify({ commissionIds: sortedIds, reason, operator }),
       stableIdempotencyKey: commandKey,
     }));
 }
@@ -1524,10 +1528,12 @@ export async function suspendF5UserCommissions(
   reason: string,
   operator: string,
 ) {
-  return f1StableWrite(`f5-suspend|${userId}|${suspended}`, JSON.stringify([[...kinds].sort(), operator]),
+  // body 与指纹用同一个排序过的数组,理由同 reissue(payload-bound 幂等,同键异载荷会 409)。
+  const sortedKinds = [...kinds].sort();
+  return f1StableWrite(`f5-suspend|${userId}|${suspended}`, JSON.stringify([sortedKinds, operator]),
     (commandKey) => f1Request<Record<string, unknown>>(`/commissions/users/${userId}/suspend`, {
       method: "POST",
-      body: JSON.stringify({ kinds, suspended, reason, operator }),
+      body: JSON.stringify({ kinds: sortedKinds, suspended, reason, operator }),
       stableIdempotencyKey: commandKey,
     }));
 }

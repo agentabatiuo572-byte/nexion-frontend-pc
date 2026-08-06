@@ -89,11 +89,24 @@ sessionStorage 不读内存 Map,隐私模式 / 配额满时静默退化成每次
 
 ## 实施拆解
 
-- [ ] T1 提案文件落盘(本文件)
-- [ ] T2 F 族:f1-stable-write.ts + f1Request 分类 + 10 函数接线 + 死代码清理
-- [ ] T3 E 族:propose 包装咽喉迁移
-- [ ] T4 H8:editParam + settle 迁移 + h-client 分类
-- [ ] T5 弹窗文案泛化 + 哨兵 MIGRATED
-- [ ] T6 契约门 ×3 + verify 齿轮
-- [ ] T7 红测 + tsc/verify 全绿
-- [ ] T8 独立审计(接线正确性 / 全仓 parity 双 skeptic)+ done-review + 收尾报告
+- [x] T1 提案文件落盘(本文件)
+- [x] T2 F 族:f1-stable-write.ts + f1Request 分类 + 9 函数接线 + 死代码清理
+- [x] T3 E 族:propose 包装咽喉迁移
+- [x] T4 H8:editParam + settle 迁移 + h-client 分类
+- [x] T5 弹窗文案泛化 + 哨兵 MIGRATED
+- [x] T6 契约门 ×3 + verify 齿轮
+- [x] T7 红测 + tsc/verify 全绿
+- [x] T8 独立审计三轮(接线正确性 / 全仓 parity / 修复复核)+ 裁决落地 + done-review
+
+## 审计裁决要点(三轮 skeptic,逐条回源后)
+
+**采纳并修复**:reason 移出指纹 · 全新尝试才弃号 · 鸭型判据 · 401 顺序与登出 · data==null 守卫 ·
+5xx 归未知(F 与 H8 两族)· 写路径无稳定号硬拒 · F5 批量 id 移入指纹**且 body 同步排序**(后端幂等
+payload-bound,指纹排序而 body 不排序会 409)· E 槽位改用结构化动作标识(展示文案含输入值)·
+SKU 预览链接踢出指纹(预签名 URL 会自动续签)· 铸号加随机段(命令号已持久化,跨标签页会撞)·
+弹窗文案不承诺自动去重 · PAYLOAD_MISMATCH 文案改为可执行指引 · 三个被本包改红的既有契约门更新并
+挂进 verify · 齿轮表按「是否依赖兄弟仓」重排(主人 2026-08-06 拍板)。
+
+**回源后驳回**:第三轮把「reason 移出指纹」判为 P0,理由是后端幂等 payload-bound、改理由重试会
+409。证据成立但结论反了 —— 409「内容已变化,本次未执行」正是后端在**阻止重复执行**;若 reason 留在
+指纹,改理由会铸新号并真的执行第二次。运营恢复原输入即可重试(文案已改为这样指引),不是死锁。
