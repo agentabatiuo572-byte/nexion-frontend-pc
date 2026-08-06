@@ -1,18 +1,31 @@
 import { expect, test, type APIResponse, type Page, type Response } from "@playwright/test";
+import { createHmac } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const evidenceRoot = process.env.K4_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/k-domain-parallel-acceptance-20260722-192757/K4-scoring/evidence";
-const username = process.env.NEXION_E2E_USERNAME ?? "superadmin";
+const MAKER_USERNAME = requiredEnv("K4_MAKER_USERNAME");
+const MAKER_PASSWORD = requiredEnv("K4_MAKER_PASSWORD");
+const MAKER_TOTP_SECRET = requiredEnv("K4_MAKER_TOTP_SECRET");
+const PUBLISHER_USERNAME = requiredEnv("K4_PUBLISHER_USERNAME");
+const PUBLISHER_PASSWORD = requiredEnv("K4_PUBLISHER_PASSWORD");
+const PUBLISHER_TOTP_SECRET = requiredEnv("K4_PUBLISHER_TOTP_SECRET");
+const CROSS_USERNAME = requiredEnv("K4_CROSS_USERNAME");
+const CROSS_PASSWORD = requiredEnv("K4_CROSS_PASSWORD");
+const CROSS_TOTP_SECRET = requiredEnv("K4_CROSS_TOTP_SECRET");
+const DB_PASSWORD = requiredEnv("K4_DB_PASSWORD");
+const DB_NAME = process.env.K4_DB_NAME ?? "nexion";
+const MYSQL = process.env.K4_MYSQL_EXE ?? "D:/software/MySQL/MySQL Server 8.0/bin/mysql.exe";
 const runId = Date.now().toString(36);
 const reason = `K4终验${runId}真实浏览器闭环与清理`;
-
-function password() {
-  const value = process.env.NEXION_E2E_PASSWORD;
-  if (!value) throw new Error("NEXION_E2E_PASSWORD is required");
-  return value;
-}
+const MFA_SECRETS = new Map([
+  [MAKER_USERNAME, MAKER_TOTP_SECRET],
+  [PUBLISHER_USERNAME, PUBLISHER_TOTP_SECRET],
+  [CROSS_USERNAME, CROSS_TOTP_SECRET],
+]);
+const MFA_COUNTERS = new Map<string, number>();
 
 type Envelope<T> = { code: number; message?: string; data: T };
 type Model = {
@@ -34,8 +47,29 @@ type ScoreUser = {
   }>;
 };
 
+let cleanupBaseline: Model | null = null;
+let cleanupUserNo = "";
+let idempotencyBaseline = 0;
+
 mkdirSync(evidenceRoot, { recursive: true });
-test.use({ trace: "off" });
+test.use({ trace: "on", video: "on" });
+
+function requiredEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+function mysql(sql: string) {
+  return execFileSync(MYSQL, ["-uroot", "-D", DB_NAME, "-N", "-B", "-e", sql], {
+    encoding: "utf8",
+    env: { ...process.env, MYSQL_PWD: DB_PASSWORD },
+  }).trim();
+}
+
+test.beforeAll(() => {
+  idempotencyBaseline = Number(mysql("SELECT COALESCE(MAX(id),0) FROM nx_admin_idempotency_record;"));
+});
 
 async function api<T>(response: APIResponse): Promise<T> {
   const body = await response.json() as Envelope<T>;
@@ -44,13 +78,61 @@ async function api<T>(response: APIResponse): Promise<T> {
   return body.data;
 }
 
-async function login(page: Page) {
-  await page.goto("/");
+async function login(page: Page, username: string, password: string) {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByLabel("账号")).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("账号").fill(username);
-  await page.getByLabel("密码").fill(password());
+  await page.getByLabel("密码").fill(password);
   await page.getByRole("button", { name: /登录|继续/ }).click();
+  const mfa = page.getByRole("heading", { name: "双因素身份验证" });
+  await Promise.race([
+    page.locator("aside").first().waitFor({ state: "visible", timeout: 30_000 }).catch(() => undefined),
+    mfa.waitFor({ state: "visible", timeout: 30_000 }).catch(() => undefined),
+  ]);
+  if (await mfa.isVisible().catch(() => false)) {
+    const displayed = (await page.locator("code").textContent({ timeout: 2_000 }).catch(() => null))?.trim();
+    if (displayed) MFA_SECRETS.set(username, displayed);
+    const secret = displayed || MFA_SECRETS.get(username);
+    if (!secret) throw new Error(`K4_TOTP_SECRET_UNAVAILABLE_${username}`);
+    let counter = Math.floor(Date.now() / 30_000);
+    const prior = MFA_COUNTERS.get(username);
+    if (prior != null && counter <= prior) {
+      const waitMs = 30_000 - (Date.now() % 30_000) + 500;
+      await page.waitForTimeout(waitMs);
+      counter = Math.floor(Date.now() / 30_000);
+    }
+    MFA_COUNTERS.set(username, counter);
+    await page.getByLabel("一次性验证码").fill(totp(secret));
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+  }
   await expect(page.locator("aside").first()).toBeVisible({ timeout: 30_000 });
+}
+
+async function logout(page: Page) {
+  const account = page.locator('header button[aria-haspopup="menu"]').last();
+  await expect(account).toBeVisible();
+  await account.click();
+  await page.getByRole("button", { name: "退出登录", exact: true }).click();
+  await expect(page.getByLabel("账号")).toBeVisible({ timeout: 20_000 });
+}
+
+function totp(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const char of secret.replace(/=+$/g, "").replace(/\s+/g, "").toUpperCase()) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new Error("K4_TOTP_SECRET_INVALID");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes: number[] = [];
+  for (let index = 0; index + 8 <= bits.length; index += 8) {
+    bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+  }
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
 }
 
 async function openK4(page: Page) {
@@ -65,6 +147,18 @@ async function openK4(page: Page) {
   await expect(page).toHaveURL(/\/risk\/scoring/);
   await expect(page.getByText("K4 评分模型", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/K4 数据加载中|K4 读取失败|K4 数据不可用/)).toHaveCount(0);
+}
+
+async function openSidebarPath(page: Page, href: string, groupPattern: RegExp) {
+  const link = page.locator(`aside a[href="${href}"]`).first();
+  if (!await link.isVisible().catch(() => false)) {
+    const group = page.getByRole("button", { name: groupPattern }).first();
+    await expect(group).toBeVisible();
+    await group.click();
+  }
+  await expect(link, `${href} 必须由当前角色的可见侧栏进入`).toBeVisible();
+  await link.click();
+  await expect(page).toHaveURL(new RegExp(`${href.replaceAll("/", "\\/")}(?:\\?.*)?$`));
 }
 
 async function overview(page: Page) {
@@ -96,6 +190,107 @@ function sameModelConfig(left: Model, right: Model) {
   expect(left.autoEscalateScore).toBe(right.autoEscalateScore);
 }
 
+function modelConfigSignature(model: Model) {
+  return canonicalJson({
+    weights: model.weights,
+    inputSources: model.inputSources,
+    scoreMappings: model.scoreMappings,
+    bandLowMax: model.bandLowMax,
+    bandHighMin: model.bandHighMin,
+    autoEscalateScore: model.autoEscalateScore,
+  });
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+test.afterAll(async ({ browser }) => {
+  const cleanupErrors: string[] = [];
+  if (cleanupBaseline) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await login(page, PUBLISHER_USERNAME, PUBLISHER_PASSWORD);
+      let current = await overview(page);
+      if (current.draft || modelConfigSignature(current.model) !== modelConfigSignature(cleanupBaseline)) {
+        const expectedVersion = current.draft?.rowVersion ?? current.model.rowVersion;
+        const restored = await page.request.post("/api/admin/risk/scoring/model/restore-draft", {
+          headers: { "Idempotency-Key": `k4-${runId}-cleanup-restore` },
+          data: {
+            modelVersion: cleanupBaseline.version,
+            expectedVersion,
+            reason: `${reason} RED/PASS清理恢复基线草稿`,
+          },
+        });
+        if (restored.status() >= 400) throw new Error(`restore baseline failed ${restored.status()}: ${await restored.text()}`);
+        current = await overview(page);
+        if (!current.draft) throw new Error("K4 cleanup baseline draft missing");
+        const published = await page.request.post("/api/admin/risk/scoring/model/publish", {
+          headers: { "Idempotency-Key": `k4-${runId}-cleanup-publish` },
+          data: {
+            expectedVersion: current.draft.rowVersion,
+            reason: `${reason} RED/PASS清理发布基线模型`,
+          },
+        });
+        if (published.status() >= 400) throw new Error(`publish baseline failed ${published.status()}: ${await published.text()}`);
+      }
+      if (cleanupUserNo) {
+        await logout(page);
+        await login(page, MAKER_USERNAME, MAKER_PASSWORD);
+        const user = await scoreUser(page, cleanupUserNo);
+        if (user.overridden) {
+          const recomputed = await page.request.post(`/api/admin/risk/scoring/users/${cleanupUserNo}/recompute`, {
+            headers: { "Idempotency-Key": `k4-${runId}-cleanup-user` },
+            data: {
+              expectedVersion: user.rowVersion,
+              reason: `${reason} RED/PASS清理人工覆盖`,
+            },
+          });
+          if (recomputed.status() >= 400) throw new Error(`recompute cleanup failed ${recomputed.status()}: ${await recomputed.text()}`);
+        }
+      }
+      const verified = await overview(page);
+      if (verified.draft || modelConfigSignature(verified.model) !== modelConfigSignature(cleanupBaseline)) {
+        throw new Error("K4 cleanup did not restore the active model and remove the draft");
+      }
+      if (cleanupUserNo && (await scoreUser(page, cleanupUserNo)).overridden) {
+        throw new Error("K4 cleanup did not remove the user override");
+      }
+    } catch (error) {
+      cleanupErrors.push(error instanceof Error ? error.message : String(error));
+    } finally {
+      await context.close();
+    }
+  }
+  try {
+    mysql(`
+      DELETE FROM nx_admin_idempotency_record
+       WHERE id>${idempotencyBaseline}
+         AND scope LIKE 'K4_%';
+    `);
+    if (cleanupBaseline) {
+      const residual = mysql(`
+        SELECT CONCAT(
+          (SELECT COUNT(*) FROM nx_admin_risk_score_model WHERE state='draft' AND is_deleted=0),',',
+          (SELECT COUNT(*) FROM nx_admin_idempotency_record WHERE id>${idempotencyBaseline} AND scope LIKE 'K4_%')
+        );
+      `);
+      if (residual !== "0,0") throw new Error(`K4 cleanup residuals ${residual}`);
+    }
+  } catch (error) {
+    cleanupErrors.push(error instanceof Error ? error.message : String(error));
+  }
+  if (cleanupErrors.length > 0) throw new Error(`K4 cleanup failed: ${cleanupErrors.join(" | ")}`);
+});
+
 test("K4 first-user model, explainability, resilience, downstream and cleanup", async ({ page, playwright }) => {
   test.setTimeout(300_000);
   const pageErrors: string[] = [];
@@ -103,6 +298,9 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   const expectedAuthBoundaryErrors: string[] = [];
   const mutations: Array<{ method: string; path: string; status: number }> = [];
   const serverErrors: Array<{ method: string; path: string; status: number }> = [];
+  const forbiddenResponses: Array<{ actor: string; method: string; path: string; status: number }> = [];
+  const accountAlertRequests: Array<{ actor: string; method: string; path: string }> = [];
+  let currentActor = "maker";
   page.on("pageerror", (error) => pageErrors.push(error.message));
   page.on("console", (message) => {
     if (message.type() !== "error") return;
@@ -112,7 +310,21 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     }
     consoleErrors.push(message.text());
   });
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/admin/users/account-actions/alerts") {
+      accountAlertRequests.push({ actor: currentActor, method: request.method(), path: url.pathname });
+    }
+  });
   page.on("response", (response) => {
+    if (response.status() === 403) {
+      forbiddenResponses.push({
+        actor: currentActor,
+        method: response.request().method(),
+        path: new URL(response.url()).pathname,
+        status: response.status(),
+      });
+    }
     if (response.status() >= 500) {
       serverErrors.push({
         method: response.request().method(),
@@ -125,11 +337,12 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     }
   });
 
-  await login(page);
+  await login(page, MAKER_USERNAME, MAKER_PASSWORD);
   await openK4(page);
   await page.screenshot({ path: path.join(evidenceRoot, "01-k4-visible-entry.png"), fullPage: true });
 
   const baseline = await overview(page);
+  cleanupBaseline = baseline.model;
   expect(baseline.draft, "预置草稿可能属于他人，终验不得覆盖").toBeNull();
   expect(baseline.dimensions).toHaveLength(6);
   const modelSection = page.locator("section.l-card").filter({ hasText: "K4 评分模型" }).first();
@@ -191,6 +404,15 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   });
   expect(stale.status()).toBe(409);
 
+  await expect(modelSection.getByRole("button", { name: "发布模型草稿" })).toHaveCount(0);
+  await logout(page);
+  currentActor = "publisher";
+  await login(page, PUBLISHER_USERNAME, PUBLISHER_PASSWORD);
+  const publisherSession = await api<{ session?: { roleCode?: string } }>(
+    await page.request.get("/api/admin/auth/session"),
+  );
+  expect(publisherSession.session?.roleCode).toBe("SUPER_ADMIN");
+  await openK4(page);
   await modelSection.getByRole("button", { name: "发布模型草稿" }).click();
   await confirm(page, `${reason}发布差异模型`, (response) =>
     response.request().method() === "POST" && response.url().endsWith("/api/admin/risk/scoring/model/publish"));
@@ -220,6 +442,10 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   expect(restored.draft).toBeNull();
   expect(restored.recomputePending).toBe(0);
 
+  await logout(page);
+  currentActor = "maker";
+  await login(page, MAKER_USERNAME, MAKER_PASSWORD);
+  await openK4(page);
   const options = await api<Array<{ userNo: string }>>(await page.request.get("/api/admin/risk/scoring/users?keyword=U&limit=8"));
   let target: ScoreUser | null = null;
   for (const option of options) {
@@ -227,6 +453,7 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     if (!candidate.overridden) { target = candidate; break; }
   }
   expect(target, "需找到未被覆盖的真实用户以保证可逆清理").not.toBeNull();
+  cleanupUserNo = target!.userNo;
   expect(target!.contributions).toHaveLength(6);
 
   const search = page.getByPlaceholder("搜索用户编号 / 用户名 / 手机号");
@@ -297,7 +524,10 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   });
   expect(tooLarge.status()).toBe(422);
 
-  await page.goto("/finance/withdrawals");
+  await logout(page);
+  currentActor = "cross";
+  await login(page, CROSS_USERNAME, CROSS_PASSWORD);
+  await openSidebarPath(page, "/finance/withdrawals", /资金.*D|D.*资金/);
   await expect(page.getByText("高优先队列", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("按当前生效 K4 模型动态路由", { exact: true })).toBeVisible();
   const emptyWithdrawalQueue = page.getByText("暂无提现记录", { exact: true });
@@ -308,7 +538,7 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     await expect(page.getByText(/K3 /).first()).toBeVisible();
   }
   await page.screenshot({ path: path.join(evidenceRoot, "04-d2-k3-k4-joint-read.png"), fullPage: true });
-  await page.goto("/overview/risk-radar");
+  await openSidebarPath(page, "/overview/risk-radar", /驾驶舱.*B|B.*驾驶舱|总览/);
   await expect(page.getByText("风险雷达", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
   const bDomain = await api<Record<string, any>>(await page.request.get("/api/admin/treasury/b-domain"));
   expect(bDomain.riskRadar.k4ScoringAvailable).toBe(true);
@@ -321,8 +551,9 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
   expect((await anonymous.get("/api/admin/risk/scoring/overview")).status()).toBe(401);
   await anonymous.dispose();
 
-  await page.context().clearCookies();
-  await login(page);
+  await logout(page);
+  currentActor = "maker";
+  await login(page, MAKER_USERNAME, MAKER_PASSWORD);
   await openK4(page);
   const afterRelogin = await overview(page);
   sameModelConfig(afterRelogin.model, baseline.model);
@@ -359,6 +590,8 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
 
   expect(pageErrors).toEqual([]);
   expect(serverErrors).toEqual([]);
+  expect(forbiddenResponses).toEqual([]);
+  expect(accountAlertRequests.filter((request) => request.actor === "cross")).toEqual([]);
   expect(consoleErrors.filter((message) => !/favicon|webpack-hmr/i.test(message))).toEqual([]);
   expect(mutations.every((row) => row.status < 400 || row.status === 409 || row.status === 422)).toBe(true);
   writeFileSync(path.join(evidenceRoot, "k4-live-summary.json"), JSON.stringify({
@@ -383,6 +616,8 @@ test("K4 first-user model, explainability, resilience, downstream and cleanup", 
     ],
     mutations,
     serverErrors,
+    forbiddenResponses,
+    accountAlertRequests,
     pageErrors,
     consoleErrors,
     expectedAuthBoundary401s: expectedAuthBoundaryErrors.length,

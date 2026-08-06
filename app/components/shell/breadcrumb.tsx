@@ -10,7 +10,7 @@ import { ChevronRight } from "lucide-react";
 import { findByPath } from "@/lib/nav/console-nav";
 
 export function Breadcrumb() {
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const crumbs: { label: string; accent?: string }[] = [{ label: "运营控制台" }];
 
   if (pathname === "/" || pathname === "") {

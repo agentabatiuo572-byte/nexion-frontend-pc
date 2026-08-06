@@ -6,11 +6,10 @@ import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 type FixtureAccount = { username: string; password: string; totpSecret: string };
 type PermissionFixture = {
   runId: string;
-  accounts: {
-    k_readonly: FixtureAccount;
-    k_no_write: FixtureAccount;
-    k_no_menu: FixtureAccount;
-  };
+  accounts: Partial<Record<
+    "maker" | "readonly" | "nowrite" | "nomenu" | "k_maker" | "k_readonly" | "k_no_write" | "k_no_menu",
+    FixtureAccount
+  >>;
 };
 type ModuleProbe = {
   id: string;
@@ -91,10 +90,10 @@ const MODULES: ModuleProbe[] = [
 ];
 
 test.describe.serial("K 域 readonly/no-write/no-menu 五层权限", () => {
-  for (const key of ["k_readonly", "k_no_write"] as const) {
+  for (const key of ["readonly", "nowrite"] as const) {
     test(`${key}：K1-K6 菜单/路由/数据可读，按钮和接口写入拒绝`, async ({ page }) => {
       const pageErrors = monitorPageErrors(page);
-      await login(page, fixture.accounts[key], key);
+      await login(page, fixtureAccount(key), key);
       await assertSession(page, true);
       await assertVisibleKMenus(page);
       for (const module of MODULES) {
@@ -110,7 +109,7 @@ test.describe.serial("K 域 readonly/no-write/no-menu 五层权限", () => {
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(MODULES.at(-1)!.marker).first()).toBeVisible();
       await logout(page);
-      await login(page, fixture.accounts[key], key);
+      await login(page, fixtureAccount(key), key);
       await assertVisibleKMenus(page);
       expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(200);
       expect((await browserApi(page, MODULES[0].writeMethod, MODULES[0].writePath, MODULES[0].writeBody)).status).toBe(403);
@@ -118,38 +117,114 @@ test.describe.serial("K 域 readonly/no-write/no-menu 五层权限", () => {
     });
   }
 
-  test("k_no_menu：K 菜单、直接路由、读写接口均拒绝，刷新重登不恢复", async ({ page }) => {
+  test("maker：K1-K6 菜单与只读数据可达，刷新重登不漂移且不执行业务写", async ({ page }) => {
     const pageErrors = monitorPageErrors(page);
-    await login(page, fixture.accounts.k_no_menu, "k_no_menu");
+    const account = fixtureAccount("maker");
+    await login(page, account, "maker");
+    await assertMakerSession(page);
+    await assertVisibleKMenus(page);
+    for (const module of MODULES) {
+      await openVisibleModule(page, module);
+      await expect(page.getByText(module.marker).first(), `maker ${module.id}`).toBeVisible({ timeout: 20_000 });
+      const read = await browserApi(page, "GET", module.readPath);
+      expect(read.status, `maker ${module.id} read`).toBe(200);
+      expect(read.hasData, `maker ${module.id} data`).toBe(true);
+    }
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByText(MODULES.at(-1)!.marker).first()).toBeVisible();
+    await logout(page);
+    await login(page, account, "maker");
+    await assertMakerSession(page);
+    await assertVisibleKMenus(page);
+    const reloginRead = await browserApi(page, "GET", MODULES[0].readPath);
+    expect(reloginRead.status).toBe(200);
+    expect(reloginRead.hasData).toBe(true);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test("nomenu：K 菜单、直接路由、读写接口均拒绝，刷新重登不恢复", async ({ page }) => {
+    const pageErrors = monitorPageErrors(page);
+    const account = fixtureAccount("nomenu");
+    await login(page, account, "nomenu");
     await assertSession(page, false);
     await expect(page.locator('a[href^="/risk/"]')).toHaveCount(0);
     await page.goto(MODULES[0].path, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/risk\/multi-account(?:\?.*)?$/);
     for (const module of MODULES) {
-      expect((await browserApi(page, "GET", module.readPath)).status, `${module.id} read`).toBe(403);
+      const read = await browserApi(page, "GET", module.readPath);
+      expect(read.status, `${module.id} read`).toBe(403);
       expect((await browserApi(page, module.writeMethod, module.writePath, module.writeBody)).status, `${module.id} write`).toBe(403);
     }
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator('a[href^="/risk/"]')).toHaveCount(0);
     await logout(page);
-    await login(page, fixture.accounts.k_no_menu, "k_no_menu");
+    await login(page, account, "nomenu");
+    await assertSession(page, false);
     await expect(page.locator('a[href^="/risk/"]')).toHaveCount(0);
-    expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
+    const reloginRead = await browserApi(page, "GET", MODULES[0].readPath);
+    expect(reloginRead.status).toBe(403);
     expect(pageErrors).toEqual([]);
   });
 });
 
 async function login(page: Page, account: FixtureAccount, key: string) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
+  if (await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false)) return;
   await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 15_000 });
-  await page.locator('input[autocomplete="username"]').fill(account.username);
-  await page.locator('input[autocomplete="current-password"]').fill(account.password);
+  const usernameInput = page.locator('input[autocomplete="username"]');
+  const passwordInput = page.locator('input[autocomplete="current-password"]');
+  await usernameInput.fill(account.username);
+  await passwordInput.fill(account.password);
+  // React's login form can remount while a shared candidate is under load; prove
+  // the visible form still owns the intended credentials before submitting.
+  await page.waitForTimeout(150);
+  if (await usernameInput.inputValue() !== account.username) await usernameInput.fill(account.username);
+  if (await passwordInput.inputValue() !== account.password) await passwordInput.fill(account.password);
+  await expect(usernameInput).toHaveValue(account.username);
+  await expect(passwordInput).toHaveValue(account.password);
+  const loginResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/admin/auth/login");
   await page.getByRole("button", { name: /登录|继续/ }).click();
+  const loginPayload = await (await loginResponse).json().catch(() => null) as { code?: number; message?: string } | null;
+  expect(loginPayload?.code, `${key} credentials: ${loginPayload?.message ?? "no body"}`).toBe(0);
   const otp = page.getByLabel("一次性验证码");
-  await expect(otp).toBeVisible({ timeout: 10_000 });
-  await otp.fill(await freshTotp(key, account.totpSecret));
-  await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+  if (!(await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false))) {
+    await expect(otp, `${key} must enter MFA or receive shell`).toBeVisible({ timeout: 10_000 });
+    const first = await submitMfa(page, otp, key, account.totpSecret);
+    const final = first.accepted
+      ? first
+      : first.retryable
+        ? await submitMfa(page, otp, key, account.totpSecret, first.step)
+        : first;
+    if (!final.accepted) {
+      throw new Error(`${key} MFA rejected: first=${first.status}/${first.message ?? "none"}, final=${final.status}/${final.message ?? "none"}`);
+    }
+  }
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+}
+
+async function submitMfa(
+  page: Page,
+  otp: ReturnType<Page["getByLabel"]>,
+  key: string,
+  secret: string,
+  afterStep = -1,
+) {
+  const totp = await freshTotp(key, secret, afterStep);
+  await otp.fill(totp.code);
+  const verification = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/admin/auth/mfa/verify");
+  await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+  const response = await verification;
+  const payload = await response.json().catch(() => null) as { code?: number; message?: string } | null;
+  const hasCookie = (await page.context().cookies()).some((cookie) => cookie.name === "nexion_admin_token");
+  return {
+    accepted: response.status() === 200 && (payload?.code === 0 || hasCookie),
+    retryable: response.status() === 401 && payload?.message === "ADMIN_MFA_CODE_INVALID",
+    status: response.status(),
+    message: payload?.message,
+    step: totp.step,
+  };
 }
 
 async function logout(page: Page) {
@@ -159,7 +234,7 @@ async function logout(page: Page) {
   await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 20_000 });
 }
 
-async function assertSession(page: Page, hasRead: boolean) {
+async function assertSession(page: Page, hasRead: boolean, hasMenus = hasRead) {
   const response = await page.request.get("/api/admin/auth/session");
   expect(response.status()).toBe(200);
   const payload = await response.json() as {
@@ -174,11 +249,36 @@ async function assertSession(page: Page, hasRead: boolean) {
   if (hasRead) {
     expect(authorities.some((permission) =>
       /^risk_k[1-6]_/.test(permission) && !permission.endsWith("_read"))).toBe(false);
-    expect(menus.length).toBeGreaterThan(0);
+    if (hasMenus) expect(menus.length).toBeGreaterThan(0);
+    else expect(menus).toEqual([]);
   } else {
     expect(authorities).toEqual([]);
     expect(menus).toEqual([]);
   }
+}
+
+async function assertMakerSession(page: Page) {
+  const response = await page.request.get("/api/admin/auth/session");
+  expect(response.status()).toBe(200);
+  const payload = await response.json() as {
+    data?: { session?: { authorities?: string[]; effectiveMenus?: unknown[] } };
+  };
+  const authorities = payload.data?.session?.authorities ?? [];
+  const menus = payload.data?.session?.effectiveMenus ?? [];
+  for (let module = 1; module <= 6; module += 1) {
+    expect(authorities).toContain(`risk_k${module}_read`);
+  }
+  expect(authorities).toContain("risk_k1_write");
+  expect(authorities).toContain("risk_k4_write");
+  expect(authorities).toContain("risk_k6_write");
+  expect(menus.length).toBeGreaterThan(0);
+}
+
+function fixtureAccount(key: "maker" | "readonly" | "nowrite" | "nomenu"): FixtureAccount {
+  const legacyKey = key === "maker" ? "k_maker" : key === "readonly" ? "k_readonly" : key === "nowrite" ? "k_no_write" : "k_no_menu";
+  const account = fixture.accounts[key] ?? fixture.accounts[legacyKey];
+  if (!account) throw new Error(`K permission fixture is missing ${key} or ${legacyKey}`);
+  return account;
 }
 
 async function assertVisibleKMenus(page: Page) {
@@ -236,9 +336,9 @@ function monitorPageErrors(page: Page) {
 
 const lastTotpStep = new Map<string, number>();
 
-async function freshTotp(key: string, secret: string) {
+async function freshTotp(key: string, secret: string, afterStep = -1) {
   let step = Math.floor(Date.now() / 30_000);
-  const previous = lastTotpStep.get(key) ?? -1;
+  const previous = Math.max(lastTotpStep.get(key) ?? -1, afterStep);
   if (step <= previous) {
     await new Promise((resolve) => setTimeout(resolve, ((previous + 1) * 30_000) - Date.now() + 500));
   }
@@ -246,7 +346,7 @@ async function freshTotp(key: string, secret: string) {
   if (remaining <= 3) await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1_000));
   step = Math.floor(Date.now() / 30_000);
   lastTotpStep.set(key, step);
-  return currentTotp(secret);
+  return { code: currentTotp(secret), step };
 }
 
 function currentTotp(secret: string) {

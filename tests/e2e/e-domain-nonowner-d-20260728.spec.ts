@@ -1,5 +1,5 @@
-import { createHmac, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type APIResponse, type Page, type Response } from "@playwright/test";
 
@@ -8,36 +8,102 @@ type Envelope<T = unknown> = { code?: number; message?: string; data?: T };
 type Ticket = { id?: string; operationId?: string; status?: string };
 type E3Overview = { config?: Record<string, string | number | null> };
 
-const RUN_ID = process.env.E_NONOWNER_RUN_ID ?? "pc-full-acceptance-20260728-151023";
+const RUN_ID = process.env.E_NONOWNER_RUN_ID ?? "pc-full-acceptance-20260729-114336";
+const BUILD_ID = process.env.E_NONOWNER_BUILD_ID ?? "xNJR-cEeID2fPRwrRvOrb";
+const FRONTEND_BUILD_ID_PATH = process.env.E_NONOWNER_BUILD_ID_PATH
+  ?? path.resolve(".next/BUILD_ID");
+const JAR_SHA256 =
+  process.env.E_NONOWNER_JAR_SHA256
+  ?? "B426C1ED9CFCE970F247D041A28DC7EDAFAC927C112AC0089755ACB70F954B3B";
+const BACKEND_JAR_PATH =
+  process.env.E_NONOWNER_BACKEND_JAR_PATH
+  ?? "D:/workspace/nexion-backend/target/nexion-backend-0.0.1-SNAPSHOT.jar";
 const EVIDENCE_DIR = process.env.E_NONOWNER_D_EVIDENCE_DIR
-  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/E/nonowner-D/final-adversarial`;
-const A_FIXTURE_PATH = process.env.A_PERMISSION_FIXTURE
-  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/permission-fixtures.json`;
-const fixture = JSON.parse(readFileSync(A_FIXTURE_PATH, "utf8")) as {
-  accounts: { d_checker: Account };
+  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/E/final2-${BUILD_ID}/e3-cas`;
+const CHECKER_MANIFEST_PATH =
+  process.env.FINAL_FIXTURE_MANIFEST_PATH
+  ?? process.env.E3_CHECKER_MANIFEST_PATH
+  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/final7-domain-permission-refresh/E-final7-permission-manifest.json`;
+const checkerManifest = (existsSync(CHECKER_MANIFEST_PATH)
+  ? JSON.parse(readFileSync(CHECKER_MANIFEST_PATH, "utf8"))
+  : {}) as {
+  runId?: string;
+  accounts?: {
+    maker?: Account & { roleCode?: string };
+    secondWriter?: Account & { roleCode?: string };
+  };
+  checker?: Account & { roleCode?: string };
+  checkerRole?: { roleCode?: string };
+  secondWriterRole?: { roleCode?: string };
 };
+const makerAccount = checkerManifest.accounts?.maker;
+const checkerAccount = checkerManifest.checker;
+const secondWriterAccount = checkerManifest.accounts?.secondWriter;
+const expectedCheckerRole =
+  process.env.E_FINAL_CHECKER_ROLE_CODE?.trim()
+  || checkerManifest.checkerRole?.roleCode
+  || "";
+const expectedSecondWriterRole =
+  process.env.E_FINAL_SECOND_WRITER_ROLE_CODE?.trim()
+  || checkerManifest.secondWriterRole?.roleCode
+  || "";
+const expectedCheckerAuthorities = [
+  "platform_a2_read",
+  "platform_a2_operation_approve",
+  "device_e3_read",
+  "device_e6_read",
+];
+const expectedCheckerMenus = ["A2", "E", "E3", "E6"];
+const expectedSecondWriterAuthorities = [
+  "device_e3_read",
+  "device_e3_write",
+  "device_e6_read",
+  "device_e6_write",
+];
+const expectedSecondWriterMenus = ["E", "E3", "E6"];
 const FRONTEND_KEY = "E.device.capacity.subsidyDays";
 const CANONICAL_KEY = "capacitySubsidyDays";
 
-test.describe.configure({ mode: "serial", timeout: 180_000 });
-test.beforeAll(() => mkdirSync(EVIDENCE_DIR, { recursive: true }));
+test.describe.configure({ mode: "serial", timeout: 240_000 });
+test.beforeAll(() => {
+  mkdirSync(EVIDENCE_DIR, { recursive: true });
+  expect(RUN_ID).toBe("pc-full-acceptance-20260729-114336");
+  expect(readFileSync(FRONTEND_BUILD_ID_PATH, "utf8").trim()).toBe(BUILD_ID);
+  expect(createHash("sha256").update(readFileSync(BACKEND_JAR_PATH)).digest("hex").toUpperCase())
+    .toBe(JAR_SHA256);
+  expect(checkerManifest.runId).toBe(RUN_ID);
+  expect(makerAccount, "dedicated E maker fixture is required").toBeTruthy();
+  expect(checkerAccount, "final E3/E6-only checker manifest is required").toBeTruthy();
+  expect(secondWriterAccount, "accounts.secondWriter is required in the E fixture").toBeTruthy();
+  expect(checkerAccount?.roleCode).toBe(expectedCheckerRole);
+  expect(secondWriterAccount?.roleCode).toBe(expectedSecondWriterRole);
+  expect(new Set([makerAccount!.username, checkerAccount!.username, secondWriterAccount!.username]).size).toBe(3);
+});
 
 test("E-006: E3 可见入口提案使用 canonical 对象锁，直写/第二运营员冲突，独立 checker 执行后精确恢复", async ({ browser }) => {
   const makerContext = await browser.newContext();
   const checkerContext = await browser.newContext();
+  const secondWriterContext = await browser.newContext();
   const maker = await makerContext.newPage();
   const checker = await checkerContext.newPage();
+  const secondWriter = await secondWriterContext.newPage();
   const result: Record<string, unknown> = { runId: RUN_ID, module: "E3", defect: "E-006" };
   let original = "";
   let changed = "";
   let changeOperationId = "";
   let restoreOperationId = "";
   let changeProposalBody: Record<string, unknown> | null = null;
-  let changedApplied = false;
+  let changeTerminal = false;
+  let restoreTerminal = false;
+  let cleanupError = "";
 
   try {
-    await loginSuperadmin(maker);
-    await login(checker, fixture.accounts.d_checker, "d_checker");
+    await login(maker, makerAccount!, "e-maker");
+    await login(checker, checkerAccount!, "e3e6-checker");
+    await login(secondWriter, secondWriterAccount!, "e3e6-second-writer");
+    await assertEOnlyCheckerSession(checker);
+    await assertEOnlyCheckerSidebar(checker);
+    await assertEOnlySecondWriterSession(secondWriter);
     original = await readSubsidyDays(maker);
     changed = String(Number(original) + 1);
     expect(Number.isSafeInteger(Number(original))).toBe(true);
@@ -68,16 +134,31 @@ test("E-006: E3 可见入口提案使用 canonical 对象锁，直写/第二运�
     const mismatchBody = await envelope(mismatch);
     expect(mismatch.status() === 409 || mismatchBody.code === 409).toBe(true);
 
-    const secondOperator = await checker.request.post("/api/admin/platform/audit/operations", {
+    const secondOperatorDirectWrite = await secondWriter.request.patch("/api/admin/devices/e3/config", {
       headers: { "Idempotency-Key": `${RUN_ID}-e3-second-operator-${randomUUID()}` },
       data: {
-        ...changeProposalBody,
-        reason: `${RUN_ID} 第二运营员同 canonical 对象并发必须拒绝`,
+        key: FRONTEND_KEY,
+        value: changed,
+        reason: `${RUN_ID} 独立第二运营员对 pending canonical 对象直写必须失败关闭`,
+        operator: "server-authenticated",
       },
     });
-    const secondOperatorBody = await envelope(secondOperator);
-    expect(secondOperator.status() === 409 || secondOperatorBody.code === 409).toBe(true);
-    expect(secondOperatorBody.message).toContain("OBJECT_ALREADY_PENDING");
+    const secondOperatorDirectWriteBody = await envelope(secondOperatorDirectWrite);
+    expect(
+      secondOperatorDirectWrite.status() === 409 || secondOperatorDirectWriteBody.code === 409,
+    ).toBe(true);
+    expect(secondOperatorDirectWriteBody.message).toContain("OBJECT_LOCKED_BY_A2");
+
+    const checkerDirectWrite = await checker.request.patch("/api/admin/devices/e3/config", {
+      headers: { "Idempotency-Key": `${RUN_ID}-e3-checker-direct-${randomUUID()}` },
+      data: {
+        key: FRONTEND_KEY,
+        value: changed,
+        reason: `${RUN_ID} A2 checker 无 E3 写权限必须失败关闭`,
+        operator: "server-authenticated",
+      },
+    });
+    expect(checkerDirectWrite.status()).toBe(403);
 
     const directWrite = await maker.request.patch("/api/admin/devices/e3/config", {
       headers: { "Idempotency-Key": `${RUN_ID}-e3-direct-while-pending-${randomUUID()}` },
@@ -108,8 +189,16 @@ test("E-006: E3 可见入口提案使用 canonical 对象锁，直写/第二运�
       changeOperationId,
       `${RUN_ID} checker 核对 E3 临时值、锁竞争与精确回滚后批准`,
     );
+    const terminalReplay = await decideByApi(
+      checker,
+      changeOperationId,
+      "approve",
+      `${RUN_ID} checker 对已执行 E3 工单终态重放必须拒绝`,
+    );
+    expect(terminalReplay.status).toBe(409);
+    expect(terminalReplay.body.message).toBe("A2_OPERATION_ALREADY_TERMINAL");
     expect(await readSubsidyDays(checker)).toBe(changed);
-    changedApplied = true;
+    changeTerminal = true;
     await openE3FromSidebar(maker);
     await maker.reload({ waitUntil: "domcontentloaded" });
     await expect(subsidyRow(maker)).toContainText(`${changed} 天`);
@@ -127,16 +216,16 @@ test("E-006: E3 可见入口提案使用 canonical 对象锁，直写/第二运�
       `${RUN_ID} checker 核对 E3 原始快照后批准精确恢复`,
     );
     expect(await readSubsidyDays(checker)).toBe(original);
-    changedApplied = false;
+    restoreTerminal = true;
 
     await maker.reload({ waitUntil: "domcontentloaded" });
     await expect(subsidyRow(maker)).toContainText(`${original} 天`);
     const audit = await checker.request.get(
       `/api/admin/platform/audit/logs?keyword=${encodeURIComponent(changeOperationId)}&limit=200`,
     );
-    const events = await checker.request.get("/api/admin/platform/events/overview");
+    const checkerA4Denied = await checker.request.get("/api/admin/platform/events/overview");
     expect(audit.status()).toBe(200);
-    expect(events.status()).toBe(200);
+    expect(checkerA4Denied.status()).toBe(403);
 
     Object.assign(result, {
       targetId: CANONICAL_KEY,
@@ -150,35 +239,69 @@ test("E-006: E3 可见入口提案使用 canonical 对象锁，直写/第二运�
         sameKeyDifferentPayload: mismatch.status(),
       },
       concurrency: {
-        secondOperator: secondOperator.status(),
+        secondOperatorDirectWrite: secondOperatorDirectWrite.status(),
+        checkerDirectWrite: checkerDirectWrite.status(),
         directWriteWhilePending: directWrite.status(),
         makerSelfApprove: selfApprove.status(),
+        terminalReplay: terminalReplay.status,
       },
       a2AuditStatus: audit.status(),
-      a4OverviewStatus: events.status(),
+      checkerA4DeniedStatus: checkerA4Denied.status(),
+      a4OutboxEvidenceChannel: "main-authorized-db-channel-required",
       restoredExact: true,
     });
     await maker.screenshot({ path: path.join(EVIDENCE_DIR, "03-restored-visible.png"), fullPage: true });
   } finally {
-    if (restoreOperationId && changedApplied) {
-      await rejectIfPending(checker, restoreOperationId);
+    if (original) {
+      try {
+        if (restoreOperationId && !restoreTerminal) {
+          const pendingRestore = await decideByApi(
+            checker,
+            restoreOperationId,
+            "approve",
+            `${RUN_ID} E3 finally 完成已提交的精确恢复`,
+          );
+          if (pendingRestore.status === 200 && pendingRestore.body.code === 0) restoreTerminal = true;
+        }
+        if (changeOperationId && !changeTerminal) {
+          await rejectIfPending(checker, changeOperationId);
+        }
+        let current = await readSubsidyDays(checker);
+        if (current !== original) {
+          expect(changeProposalBody, "E3 emergency restore requires the captured proposal body").toBeTruthy();
+          restoreOperationId = await emergencyRestore(
+            maker,
+            checker,
+            changeProposalBody!,
+            current,
+            original,
+          );
+          restoreTerminal = true;
+          current = await readSubsidyDays(checker);
+        }
+        expect(current, "E3 finally must restore the exact original subsidy days").toBe(original);
+      } catch (error) {
+        cleanupError = error instanceof Error ? error.message : String(error);
+      }
     }
-    if (changeOperationId && !changedApplied) {
-      await rejectIfPending(checker, changeOperationId);
-    }
-    if (changedApplied && original && changeProposalBody) {
-      await rejectIfPending(checker, changeOperationId);
-      await emergencyRestore(maker, checker, changeProposalBody, changed, original);
-      expect(await readSubsidyDays(checker)).toBe(original);
-    }
+    Object.assign(result, {
+      cleanup: {
+        restoreOperationId,
+        restoreTerminal,
+        exactOriginalVerified: cleanupError === "",
+        error: cleanupError || null,
+      },
+    });
     writeFileSync(path.join(EVIDENCE_DIR, "e006-result.json"), JSON.stringify(result, null, 2));
     await makerContext.close();
     await checkerContext.close();
+    await secondWriterContext.close();
+    expect(cleanupError, "E3 emergency cleanup must succeed").toBe("");
   }
 });
 
 test("E3 A2 结果未知保留弹窗，并对同载荷重试复用同一命令键且不触碰真实配置", async ({ page }) => {
-  await loginSuperadmin(page);
+  await login(page, makerAccount!, "e-maker-unknown");
   const original = await readSubsidyDays(page);
   const changed = String(Number(original) + 1);
   const keys: string[] = [];
@@ -294,13 +417,32 @@ async function approveThroughA2(page: Page, operationId: string, reason: string)
 
 async function rejectIfPending(page: Page, operationId: string) {
   if (!operationId) return;
-  await page.request.post(
-    `/api/admin/platform/audit/operations/${encodeURIComponent(operationId)}/reject`,
+  const response = await decideByApi(
+    page,
+    operationId,
+    "reject",
+    `${RUN_ID} finally 清理未决 E3 工单`,
+  );
+  if (response.status === 200 && response.body.code === 0) return;
+  if (response.status === 409 && response.body.message === "A2_OPERATION_ALREADY_TERMINAL") return;
+  throw new Error(`reject ${operationId} failed: ${JSON.stringify(response)}`);
+}
+
+async function decideByApi(
+  page: Page,
+  operationId: string,
+  decision: "approve" | "reject",
+  reason: string,
+) {
+  const response = await page.request.post(
+    `/api/admin/platform/audit/operations/${encodeURIComponent(operationId)}/${decision}`,
     {
-      headers: { "Idempotency-Key": `${RUN_ID}-e3-finally-reject-${randomUUID()}` },
-      data: { reason: `${RUN_ID} finally 清理未决 E3 工单` },
+      headers: { "Idempotency-Key": `${RUN_ID}-e3-${decision}-${randomUUID()}` },
+      data: { reason },
     },
-  ).catch(() => undefined);
+  );
+  const body = await envelope(response);
+  return { status: response.status(), body };
 }
 
 async function emergencyRestore(
@@ -309,7 +451,7 @@ async function emergencyRestore(
   originalProposal: Record<string, unknown>,
   before: string,
   after: string,
-) {
+): Promise<string> {
   const command = originalProposal.command as { domain?: string; op?: string; params?: Record<string, unknown> };
   const restoreBody = {
     ...originalProposal,
@@ -338,6 +480,7 @@ async function emergencyRestore(
   );
   const approvedBody = await envelope(approved);
   expect(approvedBody.code).toBe(0);
+  return operationId;
 }
 
 async function readSubsidyDays(page: Page) {
@@ -348,6 +491,85 @@ async function readSubsidyDays(page: Page) {
   const value = String(body.data?.config?.[CANONICAL_KEY] ?? "");
   expect(value).toMatch(/^\d+$/);
   return value;
+}
+
+async function assertEOnlyCheckerSession(page: Page) {
+  const response = await page.request.get("/api/admin/auth/session");
+  const body = await envelope<{
+    session?: {
+      roleCode?: string;
+      authorities?: string[];
+      effectiveMenus?: Array<string | { code?: string }>;
+    };
+  }>(response);
+  expect(response.status()).toBe(200);
+  expect(body.code).toBe(0);
+  const menuCodes = (body.data?.session?.effectiveMenus ?? [])
+    .map((item) => typeof item === "string" ? item : item.code ?? "");
+  expect(body.data?.session?.roleCode).toBe(expectedCheckerRole);
+  expect(new Set(body.data?.session?.authorities ?? [])).toEqual(new Set(expectedCheckerAuthorities));
+  expect(new Set(menuCodes)).toEqual(new Set(expectedCheckerMenus));
+}
+
+async function assertEOnlySecondWriterSession(page: Page) {
+  const response = await page.request.get("/api/admin/auth/session");
+  const body = await envelope<{
+    session?: {
+      roleCode?: string;
+      authorities?: string[];
+      effectiveMenus?: Array<string | { code?: string }>;
+    };
+  }>(response);
+  expect(response.status()).toBe(200);
+  expect(body.code).toBe(0);
+  const menuCodes = (body.data?.session?.effectiveMenus ?? [])
+    .map((item) => typeof item === "string" ? item : item.code ?? "");
+  expect(body.data?.session?.roleCode).toBe(expectedSecondWriterRole);
+  expect(new Set(body.data?.session?.authorities ?? [])).toEqual(new Set(expectedSecondWriterAuthorities));
+  expect(new Set(menuCodes)).toEqual(new Set(expectedSecondWriterMenus));
+  expect(body.data?.session?.authorities ?? []).not.toContain("platform_a2_operation_approve");
+}
+
+async function assertEOnlyCheckerSidebar(page: Page) {
+  const sidebar = page.locator("aside");
+  const expandSidebar = sidebar.getByRole("button", { name: "展开侧栏", exact: true });
+  if (await expandSidebar.isVisible().catch(() => false)) await expandSidebar.click();
+
+  await expect(sidebar.getByText("2 域 · 3 模块", { exact: true })).toBeVisible();
+  const domainButtons = sidebar.locator('button[aria-controls^="nav-group-"]');
+  await expect(domainButtons).toHaveCount(2);
+
+  const platformButton = sidebar.locator('button[aria-controls="nav-group-A"]');
+  const devicesButton = sidebar.locator('button[aria-controls="nav-group-E"]');
+  await expect(platformButton).toBeVisible();
+  await expect(devicesButton).toBeVisible();
+
+  if (await platformButton.getAttribute("aria-expanded") !== "true") await platformButton.click();
+  const platformMenu = sidebar.locator("#nav-group-A");
+  await expect(platformMenu.locator("a")).toHaveCount(1);
+  await expect(platformMenu.locator('a[href="/platform/audit"]')).toBeVisible();
+
+  if (await devicesButton.getAttribute("aria-expanded") !== "true") await devicesButton.click();
+  const devicesMenu = sidebar.locator("#nav-group-E");
+  await expect(devicesMenu.locator("a")).toHaveCount(2);
+  await expect(devicesMenu.locator('a[href="/devices/trade-in"]')).toBeVisible();
+  await expect(devicesMenu.locator('a[href="/devices/compute-config"]')).toBeVisible();
+
+  for (const forbiddenPath of [
+    "/platform/rbac",
+    "/platform/config",
+    "/platform/events",
+    "/platform/params-registry",
+    "/platform/roles",
+    "/platform/menus",
+    "/platform/permissions",
+    "/devices/pricing",
+    "/devices/tasks",
+    "/devices/orders",
+    "/devices/ops",
+  ]) {
+    await expect(sidebar.locator(`a[href="${forbiddenPath}"]`)).toHaveCount(0);
+  }
 }
 
 async function openE3FromSidebar(page: Page) {
@@ -362,20 +584,6 @@ async function openE3FromSidebar(page: Page) {
 
 function subsidyRow(page: Page) {
   return page.locator(".pkv").filter({ hasText: "新机任务补贴天数" }).first();
-}
-
-async function loginSuperadmin(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  if (await shellVisible(page, 2_000)) return;
-  await page.locator('input[autocomplete="username"]').fill(
-    process.env.ADMIN_E2E_USERNAME ?? "superadmin",
-  );
-  await page.locator('input[autocomplete="current-password"]').fill(
-    process.env.ADMIN_E2E_PASSWORD ?? "Admin@123456",
-  );
-  await page.getByRole("button", { name: /继续|登录/ }).click();
-  await expect(page.getByRole("button", { name: /设备与商城\s+E|E\s+设备与商城/ }).first())
-    .toBeVisible({ timeout: 30_000 });
 }
 
 async function login(page: Page, account: Account, accountKey: string) {

@@ -110,7 +110,7 @@ async function openFromVisibleSidebar(page: Page, moduleId: string) {
       ),
     })
     .first();
-  if (await group.isVisible({ timeout: 5_000 }).catch(() => false)) await group.click();
+  if (await group.getAttribute("aria-expanded") !== "true") await group.click();
 
   const link = page.locator(`a[href="${moduleCase.module.path}"]`).first();
   await expect(link, `${moduleId} 必须有当前角色可见的侧栏入口`).toBeVisible({ timeout: 10_000 });

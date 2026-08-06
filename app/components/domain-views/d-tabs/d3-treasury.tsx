@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import {
@@ -84,6 +84,9 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   const [voucherNo, setVoucherNo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // merge 2026-08-06:pendingKeys 用分支侧 store 化版本(稳定命令号,声明在下方);
+  // loadGeneration 是 main 侧独立功能(请求代际防过期响应),消费在 load() 内,保留。
+  const loadGeneration = useRef(0);
 
   const operationKey = (scope: string) => {
     const existing = pendingKeys.get(scope);
@@ -95,20 +98,23 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   };
 
   const load = async (nextMaturity?: "7d" | "30d", nextExposure?: "7d" | "30d" | "90d") => {
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError("");
     try {
       const next = await fetchD3Dashboard(nextMaturity, nextExposure);
+      if (generation !== loadGeneration.current) return;
       setData(next);
       setMaturityWindow(next.maturity.window);
       setExposureWindow(next.exposure.window);
       setDraft(next.config.pendingConfig ? { ...next.config, ...next.config.pendingConfig } : next.config);
     } catch (err) {
+      if (generation !== loadGeneration.current) return;
       setData(null);
       setDraft(null);
       setError(err instanceof Error ? displayAdminError(err) : "D3 数据加载失败");
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
   };
 

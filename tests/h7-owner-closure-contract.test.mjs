@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const pcRoot = process.cwd();
 const backendRoot = path.resolve(pcRoot, "..", "nexion-backend");
-const appRoot = path.resolve(pcRoot, "..", "NX1.0");
+const appRoot = resolveNexionAppRoot({ adminRoot: pcRoot });
 const read = (root, relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
 test("H7 PC writes carry CAS and expose inventory, grant metrics and revocation", () => {

@@ -19,13 +19,13 @@ import {
 } from "./data";
 import { catCN, Empty, HDSelect, MAvatar, MiniMenu, ownerLabel, PRIO_CN, Prio, relWhen, TicketStatus, TK_STATUS_CN, type HDOption, type MenuItem } from "./hd-ui";
 import type { MCtx } from "./types";
-import { type MSupportAgent } from "@/lib/admin/m-client";
+import { type MTicketAssigneeCandidate } from "@/lib/admin/m-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const TICKET_KEY = "I.support.tickets";
 const SLA_KEY = "I.support.sla";
 const REPLY_TEMPLATE_KEY = "I.session.replyTemplates";
-const AGENT_LIST_KEY = "I.support.agents";
+const TICKET_ASSIGNEE_CANDIDATES_KEY = "I.support.ticketAssigneeCandidates";
 
 type Scope = "active" | "resolved" | "archived" | "all";
 const SCOPES: Array<[Scope, string]> = [
@@ -77,10 +77,12 @@ type CreateTicketForm = {
   userId: string;
   category: SupportTicketCategory;
   priority: SupportTicketPriority;
-  owner: string;
+  ownerAdminId: number;
   title: string;
   body: string;
 };
+
+type TicketOwnerOption = MTicketAssigneeCandidate & { label: string };
 
 type PendingCreatedTicket = {
   subject: string;
@@ -116,10 +118,6 @@ function linkedConversation(ticket: SupportTicket): LinkedConversation | null {
   return null;
 }
 
-function isAssignableSupportAgent(agent: MSupportAgent): boolean {
-  return agent.enabled && agent.transferable && agent.serviceTypes.includes("support");
-}
-
 export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const { pget, setParam, toast, openActionConfirm } = ctx;
   const authorities = useAdminAuth((state) => state.session?.authorities);
@@ -127,6 +125,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   const isSuperAdmin = currentRole === "super" || currentRole === "superadmin";
   const canWriteM2 = isSuperAdmin || Boolean(authorities?.includes("service_m2_write"));
   const ticketsAvailable = pget("I.support.ticketsAvailable") === "1";
+  const ticketAssigneeCandidatesAvailable = pget("I.support.ticketAssigneeCandidatesAvailable") === "1";
   const tickets = useMemo(() => cloneTickets(parseParamArray<SupportTicket>(pget(TICKET_KEY), [])), [ctx.params, pget]);
   const replyTemplates = useMemo(
     () =>
@@ -136,14 +135,22 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     [ctx.params, pget],
   );
   const slaRows = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
-  const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
+  const ticketAssigneeCandidates = useMemo(
+    () => parseParamArray<MTicketAssigneeCandidate>(pget(TICKET_ASSIGNEE_CANDIDATES_KEY), []),
+    [ctx.params, pget],
+  );
   const ownerOptions = useMemo(() => {
-    const assignableAgentNames = supportAgents
-      .filter(isAssignableSupportAgent)
-      .map((agent) => agent.name.trim())
-      .filter(Boolean);
-    return Array.from(new Set(assignableAgentNames));
-  }, [supportAgents]);
+    const nameCounts = new Map<string, number>();
+    ticketAssigneeCandidates.forEach((candidate) => {
+      nameCounts.set(candidate.name, (nameCounts.get(candidate.name) ?? 0) + 1);
+    });
+    return ticketAssigneeCandidates.map<TicketOwnerOption>((candidate) => ({
+      ...candidate,
+      label: (nameCounts.get(candidate.name) ?? 0) > 1
+        ? `${candidate.name} · #${candidate.adminId}`
+        : candidate.name,
+    }));
+  }, [ticketAssigneeCandidates]);
   const ticketCategoryOptions = useMemo(() => {
     const cats = new Set<SupportTicketCategory>(CATEGORY_LIST);
     slaRows.forEach((row) => cats.add(row.category));
@@ -271,7 +278,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
   };
 
   const createTicket = async (form: CreateTicketForm) => {
-    if (!canWriteM2 || !ticketsAvailable) return;
+    if (!canWriteM2 || !ticketsAvailable || !ticketAssigneeCandidatesAvailable) return;
     const title = form.title.trim();
     const body = form.body.trim();
     const userId = form.userId.trim() ? Number(form.userId) : undefined;
@@ -283,7 +290,8 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       toast("用户 ID 必须是正整数,也可以留空");
       return;
     }
-    if (!form.owner || !ownerOptions.includes(form.owner)) {
+    const selectedOwner = ownerOptions.find((candidate) => candidate.adminId === form.ownerAdminId);
+    if (!selectedOwner) {
       toast("新建工单需要选择真实客服负责人");
       return;
     }
@@ -305,7 +313,8 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       updatedAt: now,
       lastReplyAt: now,
       unread: 1,
-      owner: form.owner,
+      ownerAdminId: selectedOwner.adminId,
+      owner: selectedOwner.name,
       archived: false,
       version: 0,
       slaTarget: {
@@ -325,7 +334,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
     setPendingCreatedTicket({ subject: title, userId, existingIds: tickets.map((ticket) => ticket.id) });
     const succeeded = await commitTicketWrite(
       () => setParam(TICKET_KEY, JSON.stringify([row, ...tickets]), { action: "新建客服工单 · admin.support_ticket_created", reason: "客服人工新建工单并自动留档" }),
-      `工单已创建并进入 ${ownerLabel(form.owner)} 队列`,
+      `工单已创建并进入 ${selectedOwner.label} 队列`,
     );
     if (succeeded) {
       setShowCreate(false);
@@ -396,16 +405,17 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       `${id} 优先级 → ${PRIO_CN[priority]}`,
     );
   };
-  const setOwnerDirect = async (id: string, owner: string) => {
-    if (!canWriteM2 || !ticketsAvailable) return;
-    if (!ownerOptions.includes(owner)) {
+  const setOwnerDirect = async (id: string, ownerAdminId: number) => {
+    if (!canWriteM2 || !ticketsAvailable || !ticketAssigneeCandidatesAvailable) return;
+    const selectedOwner = ownerOptions.find((candidate) => candidate.adminId === ownerAdminId);
+    if (!selectedOwner) {
       toast("只能转交给当前可接单的客服坐席");
       return;
     }
     const now = Date.now();
     await commitTicketWrite(
-      () => updateTicket(id, (t) => ({ ...t, owner, updatedAt: now }), `转交坐席「${owner}」(例行,自动留档)`, `工单转交 ${id} · admin.support_ticket_owner`),
-      `${id} 已转交 ${owner}`,
+      () => updateTicket(id, (t) => ({ ...t, ownerAdminId: selectedOwner.adminId, owner: selectedOwner.name, updatedAt: now }), `转交坐席「${selectedOwner.label}」(例行,自动留档)`, `工单转交 ${id} · admin.support_ticket_owner`),
+      `${id} 已转交 ${selectedOwner.label}`,
     );
   };
 
@@ -460,8 +470,8 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       toast("该工单没有后端确认的真实用户,请先核对用户后再升级会话");
       return;
     }
-    const assignedAgent = supportAgents.find((agent) => isAssignableSupportAgent(agent) && agent.name === ticket.owner);
-    if (!assignedAgent) {
+    const assignedCandidate = ticketAssigneeCandidates.find((candidate) => ticket.ownerAdminId === candidate.adminId);
+    if (!assignedCandidate) {
       toast("当前负责人不在可接单客服名册,请先转交后再升级会话");
       return;
     }
@@ -477,8 +487,8 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
         void commitTicketWrite(
           () => setParam("I.support.ticketEscalation.__create", JSON.stringify({
             ticketNo: ticket.id,
-            ownerAgentId: assignedAgent.id,
-            ownerAgentName: assignedAgent.name,
+            ownerAgentId: String(assignedCandidate.adminId),
+            ownerAgentName: assignedCandidate.name,
             expectedStatus: ticket.status,
             expectedVersion: ticket.version,
           }), {
@@ -529,7 +539,13 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>可以筛选和查看工单,回复、流转、归档及升级会话需要 M2 写权限。</div>
         </div>
       )}
-      {ticketsAvailable && canWriteM2 && ownerOptions.length === 0 && (
+      {ticketsAvailable && canWriteM2 && !ticketAssigneeCandidatesAvailable && (
+        <div className="itint" role="alert" style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13 }}>坐席候选数据暂时无法同步,当前不会开放新建或转交操作。</div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>这不是 M2 权限不足;请稍后刷新,持续失败时检查客服坐席目录服务。</div>
+        </div>
+      )}
+      {ticketsAvailable && canWriteM2 && ticketAssigneeCandidatesAvailable && ownerOptions.length === 0 && (
         <div className="itint" role="alert" style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 13 }}>当前没有可接单的客服坐席。</div>
           <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>请先在 M1 启用具备客服服务类型且允许转交的坐席。</div>
@@ -559,7 +575,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
           <Icon name="search" size={15} />
           <input data-proof="support-ticket-search" placeholder="搜索主题 / 单号 / 负责人 / 分类" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
-        {canWriteM2 && ticketsAvailable && ownerOptions.length > 0 && (
+        {canWriteM2 && ticketsAvailable && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 && (
           <button type="button" data-proof="support-ticket-create" className="btn btn-pri btn-sm" disabled={writePending} onClick={() => setShowCreate(true)}>
             <Icon name="plus" size={16} />
             新建工单
@@ -647,7 +663,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
             })}
           </tbody>
         </table>
-        {ticketsAvailable && !filtered.length && <Empty icon="search">没有匹配的工单;可以调整筛选条件{canWriteM2 ? "或新建工单" : ""}</Empty>}
+        {ticketsAvailable && !filtered.length && <Empty icon="search">没有匹配的工单;可以调整筛选条件{canWriteM2 && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 ? "或新建工单" : ""}</Empty>}
       </div>
 
       {filtered.length > 0 && (
@@ -702,7 +718,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
         />
       )}
 
-      {showCreate && (
+      {showCreate && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 && (
         <CreateTicketModal
           categoryOptions={ticketCategoryOptions}
           ownerOptions={ownerOptions}
@@ -745,13 +761,13 @@ function TicketDrawer({
   onSend: (body: string) => void;
   onStatus: (s: SupportTicketStatus) => void;
   onPriority: (p: SupportTicketPriority) => void;
-  onOwner: (o: string) => void;
+  onOwner: (adminId: number) => void;
   onCloseReopen: () => void;
   onArchive: (archived: boolean) => void;
   onEscalate: () => void;
   thread: ThreadMessage[];
   replyTemplates: string[];
-  ownerOptions: string[];
+  ownerOptions: TicketOwnerOption[];
   canWrite: boolean;
 }) {
   const isTerminal = ticket.status === "resolved" || ticket.status === "closed";
@@ -759,7 +775,11 @@ function TicketDrawer({
   const categoryCrossLink = findCategoryCrossLink(ticket.category);
   const statusItems: MenuItem[] = STATUS_TRANSITIONS[ticket.status].map((status) => ({ label: STATUS_ACTION_CN[status], onClick: () => onStatus(status) }));
   const priorityItems: MenuItem[] = PRIORITY_LIST.map((p) => ({ label: PRIO_CN[p], cur: ticket.priority === p, onClick: () => onPriority(p) }));
-  const ownerItems: MenuItem[] = ownerOptions.map((n) => ({ label: ownerLabel(n), cur: ticket.owner === n, onClick: () => onOwner(n) }));
+  const ownerItems: MenuItem[] = ownerOptions.map((candidate) => ({
+    label: candidate.label,
+    cur: ticket.ownerAdminId === candidate.adminId,
+    onClick: () => onOwner(candidate.adminId),
+  }));
 
   return (
     <>
@@ -787,7 +807,7 @@ function TicketDrawer({
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 13, flexWrap: "wrap" }}>
             {canWrite && !ticket.archived && <MiniMenu label="状态" items={statusItems} />}
             {canWrite && !ticket.archived && !isTerminal && <MiniMenu label="优先级" items={priorityItems} />}
-            {canWrite && !ticket.archived && ticket.status !== "closed" && <MiniMenu label="转交" icon="users" items={ownerItems} />}
+            {canWrite && !ticket.archived && ticket.status !== "closed" && ownerItems.length > 0 && <MiniMenu label="转交" icon="users" items={ownerItems} />}
             {ticket.userId && ticket.userVerified && <Link className="btn btn-sec btn-sm" href={`/users/search/${ticket.userId}#hub-payment-methods`}><Icon name="wallet" size={16} />用户支付方式</Link>}
             {ticket.userId && ticket.userVerified && categoryCrossLink && (
               <Link className="btn btn-cyan btn-sm" href={categoryCrossLink.href(ticket.userId)}>
@@ -807,10 +827,12 @@ function TicketDrawer({
                 data-proof="support-ticket-escalate"
                 className="btn btn-cyan btn-sm"
                 onClick={onEscalate}
-                disabled={!ticket.userId || ticket.userId <= 0 || !ticket.userVerified}
-                title={ticket.userId && ticket.userId > 0 && ticket.userVerified
-                  ? "升级为与该用户的即时会话"
-                  : "该工单没有后端确认的真实用户,无法升级会话"}
+                disabled={!ticket.userId || ticket.userId <= 0 || !ticket.userVerified || !ownerOptions.some((candidate) => candidate.adminId === ticket.ownerAdminId)}
+                title={!ownerOptions.some((candidate) => candidate.adminId === ticket.ownerAdminId)
+                  ? "坐席候选数据不可用或当前负责人已不可接单,暂不能升级会话"
+                  : ticket.userId && ticket.userId > 0 && ticket.userVerified
+                    ? "升级为与该用户的即时会话"
+                    : "该工单没有后端确认的真实用户,无法升级会话"}
               >
                 <Icon name="arrow" size={16} />
                 升级会话
@@ -928,16 +950,16 @@ function CreateTicketModal({
   onSave,
 }: {
   categoryOptions: Array<{ value: SupportTicketCategory; label: string }>;
-  ownerOptions: string[];
+  ownerOptions: TicketOwnerOption[];
   submitting: boolean;
   onClose: () => void;
   onSave: (form: CreateTicketForm) => void;
 }) {
-  const firstOwner = ownerOptions[0] ?? "";
+  const firstOwnerAdminId = ownerOptions[0]?.adminId ?? 0;
   const [userId, setUserId] = useState("");
   const [category, setCategory] = useState<SupportTicketCategory>(categoryOptions[0]?.value ?? "account");
   const [priority, setPriority] = useState<SupportTicketPriority>("normal");
-  const [owner, setOwner] = useState(firstOwner);
+  const [ownerAdminId, setOwnerAdminId] = useState(firstOwnerAdminId);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   return (
@@ -955,8 +977,8 @@ function CreateTicketModal({
             type="button"
             data-proof="support-ticket-create-save"
             className="btn btn-pri btn-sm"
-            disabled={submitting || !owner || !title.trim() || !body.trim()}
-            onClick={() => onSave({ userId, category, priority, owner, title, body })}
+            disabled={submitting || !ownerAdminId || !title.trim() || !body.trim()}
+            onClick={() => onSave({ userId, category, priority, ownerAdminId, title, body })}
           >
             {submitting ? "保存中…" : "保存工单"}
           </button>
@@ -978,8 +1000,8 @@ function CreateTicketModal({
         </label>
         <label className="field">
           <label>负责人</label>
-          <select className="fld" value={owner} onChange={(e) => setOwner(e.target.value)}>
-            {ownerOptions.map((item) => <option key={item} value={item}>{ownerLabel(item)}</option>)}
+          <select data-proof="support-ticket-create-owner" className="fld" value={String(ownerAdminId)} onChange={(e) => setOwnerAdminId(Number(e.target.value))}>
+            {ownerOptions.map((item) => <option key={item.adminId} value={String(item.adminId)}>{item.label}</option>)}
           </select>
         </label>
       </div>

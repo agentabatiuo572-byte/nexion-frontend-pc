@@ -112,7 +112,7 @@ async function visibleLogin(page: Page) {
 
 async function openI6(page: Page) {
   const group = page.getByRole("button", { name: /内容与合规/ }).first();
-  if (await group.isVisible({ timeout: 5_000 }).catch(() => false)) await group.click();
+  if (await group.getAttribute("aria-expanded") !== "true") await group.click();
   const entry = page.locator("a[href='/content/i18n']").first();
   await expect(entry).toBeVisible();
   await entry.click();

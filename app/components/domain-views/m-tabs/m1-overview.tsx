@@ -158,6 +158,8 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
   const sla = useMemo(() => parseParamArray<SupportSla>(pget(SLA_KEY), []), [ctx.params, pget]);
   const convos = useMemo(() => parseParamArray<SessionConvo>(pget(CONVO_KEY), []), [ctx.params, pget]);
   const supportAgents = useMemo(() => parseParamArray<MSupportAgent>(pget(AGENT_LIST_KEY), []), [ctx.params, pget]);
+  const supportAgentsAvailable = pget("I.support.agentsAvailable") === "1";
+  const supportAgentsError = pget("I.support.agentsError") ?? "unavailable";
   const advisorAssignments = useMemo(() => parseParamArray<MAdvisorAssignment>(pget(ASSIGNMENT_LIST_KEY), []), [ctx.params, pget]);
   const loadWarnings = useMemo(() => parseParamArray<string>(pget(LOAD_WARNINGS_KEY), []), [ctx.params, pget]);
   const currentSupportAgent = useMemo(
@@ -212,11 +214,16 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
       <div className="m-toolbar">
         <span className="dim" style={{ fontSize: 13 }}>工单和会话的实时概况 · 已分配服务用户 {activeAdvisorAssignmentCount}</span>
         <span className="sp" />
-        {canManageSupportSeats && (
+        {canWriteM1 && (
           <button
             type="button"
             className="btn btn-sec btn-sm"
-            title="从客服管理员里分配客服主管 / 专属客服 / 通用客服坐席"
+            disabled={!supportAgentsAvailable || !canManageSupportSeats}
+            title={!supportAgentsAvailable
+              ? "坐席数据暂不可用,请刷新后重试"
+              : canManageSupportSeats
+                ? "从客服管理员里分配客服主管 / 专属客服 / 通用客服坐席"
+                : "只有总管理员或客服主管可以分配坐席"}
             onClick={() => setShowSeatRoles(true)}
           >
             <Icon name="users" size={16} />
@@ -237,6 +244,17 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
         <div className="itint" role="status">
           <div style={{ fontSize: 13 }}>部分信息暂未同步:{loadWarnings.join("、")}</div>
           <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>其余可用信息仍会正常显示;请稍后刷新重试。</div>
+        </div>
+      )}
+
+      {!supportAgentsAvailable && (
+        <div className="itint" role="alert">
+          <div style={{ fontSize: 13 }}>
+            {supportAgentsError === "permission" ? "当前账号没有读取 M1 坐席名册的权限。" : "坐席数据暂不可用,当前不会开放坐席与负载调整。"}
+          </div>
+          <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>
+            {supportAgentsError === "permission" ? "请联系管理员核对 service_m1_read 权限。" : "这不是坐席管理权限不足;系统已停止使用空名册推断权限,请刷新后重试。"}
+          </div>
         </div>
       )}
 
@@ -309,9 +327,9 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
               <button
                 type="button"
                 className="btn btn-sec btn-sm"
-                onClick={() => (loadCfg && canManageSupportSeats ? setShowLoad(true) : ctx.toast(loadCfg ? "当前账号无权调整坐席负载" : "负载策略暂不可用,请刷新页面后重试"))}
-                disabled={!loadCfg || !canManageSupportSeats}
-                title={!loadCfg ? "负载策略暂不可用,请刷新页面后重试" : canManageSupportSeats ? "调整坐席容量与自动平衡策略" : "只有总管理员或客服主管可以调整"}
+                onClick={() => (loadCfg && supportAgentsAvailable && canManageSupportSeats ? setShowLoad(true) : ctx.toast(!supportAgentsAvailable ? "坐席数据暂不可用,请刷新页面后重试" : loadCfg ? "当前账号无权调整坐席负载" : "负载策略暂不可用,请刷新页面后重试"))}
+                disabled={!loadCfg || !supportAgentsAvailable || !canManageSupportSeats}
+                title={!supportAgentsAvailable ? "坐席数据暂不可用,请刷新页面后重试" : !loadCfg ? "负载策略暂不可用,请刷新页面后重试" : canManageSupportSeats ? "调整坐席容量与自动平衡策略" : "只有总管理员或客服主管可以调整"}
               >
                 <Icon name="gauge" size={16} />
                 调整负载
@@ -325,7 +343,12 @@ export function M1Overview({ ctx }: { ctx: MCtx }) {
                 <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>这些在途工单或会话不会计入具体坐席利用率;请到工单台或会话台分配负责人。</div>
               </div>
             )}
-            {loadRows.length === 0 ? (
+            {!supportAgentsAvailable ? (
+              <div className="itint" style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 13 }}>坐席负载数据暂不可用</div>
+                <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>已按失败关闭处理,不会把读取失败显示成“暂无客服坐席”。</div>
+              </div>
+            ) : loadRows.length === 0 ? (
               <div className="itint" style={{ marginTop: 10 }}>
                 <div style={{ fontSize: 13 }}>暂无客服坐席</div>
                 <div className="dim2" style={{ fontSize: 11.5, marginTop: 4 }}>坐席名单来自 A1 全局角色为「客服」的管理员,请先给管理员分配客服角色。</div>
@@ -729,10 +752,11 @@ function SupportSeatRoleModal({
       const ok = await ctx.setParam("I.support.seatAssignment.__update", JSON.stringify({
         adminId: selected.adminId,
         position: targetPosition,
-        serviceTypes: assigningDedicated ? ["advisor"] : ["support"],
-        maxConcurrent: assigningDedicated ? Math.max(selected.maxConcurrent || 0, 30) : selected.maxConcurrent || 12,
+        serviceTypes: selected.serviceTypes,
+        tags: selected.tags,
+        maxConcurrent: selected.maxConcurrent,
         enabled: selected.enabled,
-        transferable: true,
+        transferable: selected.transferable,
         busy: selected.busy,
         userIds,
       }), {

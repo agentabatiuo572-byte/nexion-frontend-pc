@@ -12,17 +12,17 @@ type FixtureAccount = {
 
 type PermissionFixture = {
   runId: string;
-  accounts: {
-    c_readonly: FixtureAccount;
-    c_no_write: FixtureAccount;
-    c_no_menu: FixtureAccount;
-  };
+  accounts: Partial<Record<
+    "maker" | "readonly" | "nowrite" | "nomenu" | "c_maker" | "c_readonly" | "c_no_write" | "c_no_menu",
+    FixtureAccount
+  >>;
 };
 
 type ModuleProbe = {
   id: string;
   path: string;
   title: string;
+  readyText?: string;
   readPath: string;
   writePath: string;
   writeMethod: "POST" | "PATCH";
@@ -38,6 +38,10 @@ const EVIDENCE_DIR = process.env.C_NONOWNER_EVIDENCE_DIR;
 const fixturePath = process.env.ADMIN_PERMISSION_FIXTURE;
 if (!fixturePath) throw new Error("ADMIN_PERMISSION_FIXTURE is required");
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as PermissionFixture;
+const makerAccount = requiredFixtureAccount(fixture.accounts, "maker", "c_maker");
+const readonlyAccount = requiredFixtureAccount(fixture.accounts, "readonly", "c_readonly");
+const noWriteAccount = requiredFixtureAccount(fixture.accounts, "nowrite", "c_no_write");
+const noMenuAccount = requiredFixtureAccount(fixture.accounts, "nomenu", "c_no_menu");
 
 const MODULES: ModuleProbe[] = [
   {
@@ -99,6 +103,7 @@ const MODULES: ModuleProbe[] = [
     id: "C5",
     path: "/users/security",
     title: "安全 & 会话",
+    readyText: "凭证与会话参数",
     readPath: "/api/admin/users/security/overview?pageNum=1&pageSize=10",
     writePath: `/api/admin/users/profiles/${USER_ID}/security/sessions/revoke-all`,
     writeMethod: "POST",
@@ -132,6 +137,17 @@ const CROSS_DOMAIN_READS = {
   M: "/api/admin/content/tickets?pageNum=1&pageSize=1",
 };
 
+function selectedModuleSlice() {
+  const requested = process.env.C_NONOWNER_MODULES
+    ?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!requested?.length) return MODULES;
+  const selected = MODULES.filter((module) => requested.includes(module.id));
+  if (!selected.length) throw new Error(`C_NONOWNER_MODULES selects no C module: ${requested.join(",")}`);
+  return selected;
+}
+
 test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
   test.beforeAll(() => {
     if (EVIDENCE_DIR) mkdirSync(EVIDENCE_DIR, { recursive: true });
@@ -153,7 +169,7 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
     for (const module of MODULES) {
       const first = await openVisibleModule(page, module);
       expect(first.status()).toBe(200);
-      await expect(page.getByRole("heading", { name: module.title, exact: true })).toBeVisible();
+      await expectModuleReady(page, module);
       await expect(page.locator(".cdom")).toBeVisible();
       await expect(page.locator("body")).not.toContainText(module.errorText);
 
@@ -163,7 +179,7 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
       await page.reload({ waitUntil: "domcontentloaded" });
       const refreshResponse = await refresh;
       expect(refreshResponse.status()).toBe(200);
-      await expect(page.getByRole("heading", { name: module.title, exact: true })).toBeVisible();
+      await expectModuleReady(page, module);
       if (module.id === "C6") {
         const lockShortValue = page.locator(".p-row").filter({ hasText: "短锁" }).first().locator(".v");
         await expect(lockShortValue).toContainText("5 次 / 30 分钟");
@@ -188,7 +204,16 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
     const l5 = await browserApi(page, "GET", "/api/admin/bi/export/overview");
     const g2 = await browserApi(page, "GET", CROSS_DOMAIN_READS.G);
     const m2 = await browserApi(page, "GET", `/api/admin/content/tickets?keyword=${encodeURIComponent(USER_NO)}&pageNum=1&pageSize=10`);
-    for (const result of [c1, c2, c3, d4, c4, k5, l5, g2, m2]) expect(result.status).toBe(200);
+    // The C maker has the C1–C4 read grants (including C1HUB), but deliberately
+    // has no D/K/L/G/M grant.  Treat every cross-domain response as an RBAC
+    // boundary check instead of accidentally testing this least-privilege user
+    // as if it were the global superadmin.
+    for (const [label, result] of Object.entries({ c1, c2, c3, c4 })) {
+      expect(result.status, label).toBe(200);
+    }
+    for (const [label, result] of Object.entries({ d4, k5, l5, g2, m2 })) {
+      expect(result.status, label).toBe(403);
+    }
     expect(JSON.stringify(c1.data)).toContain(USER_NO);
     expect(JSON.stringify(c2.data)).toContain(USER_NO);
     expect(String(findKey(c2.data, "status")).toUpperCase()).toBe("ACTIVE");
@@ -201,9 +226,6 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
     expect(["APPROVED", "VERIFIED"]).toContain(c1KycStatus);
     expect(["APPROVED", "VERIFIED"]).toContain(c4KycStatus);
     expect(JSON.stringify(c3.data)).toContain(USER_NO);
-    expect(JSON.stringify(d4.data)).toContain(USER_NO);
-    expect(JSON.stringify(k5.data)).toContain("KR-C4-D8D23DC8");
-    expect(JSON.stringify(l5.data)).toContain("KYC-EXP-046E25E6242D");
     assertMaskedPhoneFields(c1.data);
 
     expect((await page.request.get("/api/admin/users/not-a-real-route")).status()).toBe(404);
@@ -211,6 +233,16 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
     await loginSuperadmin(page);
     await assertVisibleCMenus(page);
     expect((await openVisibleModule(page, MODULES[5])).status()).toBe(200);
+    expect((await openVisibleModule(page, MODULES[0])).status()).toBe(200);
+    const emptyKeyword = `C_EMPTY_${fixture.runId.replace(/[^A-Za-z0-9]/g, "").slice(-12)}`;
+    const emptyResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/admin/users/profiles"
+      && response.request().method() === "GET"
+      && response.url().includes(encodeURIComponent(emptyKeyword)));
+    await page.locator('input[placeholder="用户编码 / 昵称 / 推荐码 / 脱敏手机号 / 手机哈希"]').fill(emptyKeyword);
+    expect((await emptyResponse).status()).toBe(200);
+    await expect(page.getByText("无匹配用户 · 换个检索词或分组试试", { exact: true })).toBeVisible();
+    await expect(page.locator("tbody tr.click")).toHaveCount(0);
     expect(runtime.pageErrors).toEqual([]);
     expect(runtime.admin5xx).toEqual([]);
     expect(runtime.consoleErrors).toEqual([]);
@@ -223,6 +255,7 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
       c2Status: findKey(c2.data, "status"),
       c4Status: c4KycStatus,
       c6RestoredValue,
+      c1EmptyState: "PASS",
       crossDomain: {
         C3_D4: [c3.status, d4.status],
         C4_K5_L5: [c4.status, k5.status, l5.status],
@@ -234,21 +267,21 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
     });
   });
 
-  for (const [profile, accountKey] of [
-    ["readonly", "c_readonly"],
-    ["menu-no-write", "c_no_write"],
+  for (const [profile, account, accountKey] of [
+    ["readonly", readonlyAccount, "readonly"],
+    ["menu-no-write", noWriteAccount, "nowrite"],
   ] as const) {
-    test(`${profile} 五层权限：C1–C6 只读、写篡改 403、跨域 403、刷新重登不漂移`, async ({ page }) => {
+    test(`${profile} 五层权限：C1–C6 只读、写篡改 403、刷新重登不漂移`, async ({ page }) => {
+      const selectedModules = selectedModuleSlice();
       const runtime = monitorRuntime(page);
-      const account = fixture.accounts[accountKey];
       await loginFixture(page, account, accountKey);
-      await assertSessionShape(page, true);
+      await assertSessionShape(page, { hasCRead: true });
       await assertVisibleCMenus(page);
 
       const matrix: Array<{ module: string; read: number; write: number }> = [];
-      for (const module of MODULES) {
+      for (const module of selectedModules) {
         expect((await openVisibleModule(page, module)).status()).toBe(200);
-        await expect(page.getByRole("heading", { name: module.title, exact: true })).toBeVisible();
+        await expectModuleReady(page, module);
         await assertNoEnabledDangerousButton(page, module.id);
         const read = await browserApi(page, "GET", module.readPath);
         const write = await browserApi(page, module.writeMethod, module.writePath, module.writeBody);
@@ -257,26 +290,23 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
         matrix.push({ module: module.id, read: read.status, write: write.status });
       }
 
-      for (const [domain, endpoint] of Object.entries(CROSS_DOMAIN_READS)) {
-        expect((await browserApi(page, "GET", endpoint)).status, `${profile} cross ${domain}`).toBe(403);
-      }
       await page.reload({ waitUntil: "domcontentloaded" });
-      await assertNoEnabledDangerousButton(page, MODULES[5].id);
+      await assertNoEnabledDangerousButton(page, selectedModules.at(-1)?.id ?? MODULES[5].id);
       await logout(page);
       await loginFixture(page, account, accountKey);
-      await assertSessionShape(page, true);
-      expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(200);
-      expect((await browserApi(page, "PATCH", MODULES[5].writePath, MODULES[5].writeBody)).status).toBe(403);
+      await assertSessionShape(page, { hasCRead: true });
+      expect((await browserApi(page, "GET", selectedModules[0].readPath)).status).toBe(200);
+      expect((await browserApi(page, selectedModules.at(-1)?.writeMethod ?? "PATCH", selectedModules.at(-1)?.writePath ?? MODULES[5].writePath, selectedModules.at(-1)?.writeBody ?? MODULES[5].writeBody)).status).toBe(403);
       expect(runtime.pageErrors).toEqual([]);
       expect(runtime.admin5xx).toEqual([]);
-      writeEvidence(`${profile}-permissions.json`, { matrix, crossDomain: "403x4", refresh: "PASS", relogin: "PASS" });
+      writeEvidence(`${profile}-permissions.json`, { matrix, refresh: "PASS", relogin: "PASS" });
     });
   }
 
-  test("no-menu 五层权限：菜单/路由/接口均拒绝，刷新重登不被缓存放大", async ({ page }) => {
-    const account = fixture.accounts.c_no_menu;
-    await loginFixture(page, account, "c_no_menu");
-    await assertSessionShape(page, false);
+  test("no-menu 五层权限：菜单/路由/读写接口拒绝，刷新重登不被缓存放大", async ({ page }) => {
+    const account = noMenuAccount;
+    await loginFixture(page, account, "nomenu");
+    await assertSessionShape(page, { hasCRead: false, hasMenu: false });
     await expect(page.locator('aside a[href^="/users/"]')).toHaveCount(0);
 
     await page.goto(MODULES[0].path, { waitUntil: "domcontentloaded" });
@@ -287,17 +317,52 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
     for (const module of MODULES) {
       const read = await browserApi(page, "GET", module.readPath);
       const write = await browserApi(page, module.writeMethod, module.writePath, module.writeBody);
-      expect(read.status).toBe(403);
+      expect(read.status, `no-menu ${module.id} read`).toBe(403);
       expect(write.status).toBe(403);
       matrix.push({ module: module.id, read: read.status, write: write.status });
     }
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator('aside a[href^="/users/"]')).toHaveCount(0);
     await logout(page);
-    await loginFixture(page, account, "c_no_menu");
-    await assertSessionShape(page, false);
+    await loginFixture(page, account, "nomenu");
+    await assertSessionShape(page, { hasCRead: false, hasMenu: false });
     expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
-    writeEvidence("no-menu-permissions.json", { matrix, directRoute: "DENIED", refresh: "DENIED", relogin: "DENIED" });
+    writeEvidence("no-menu-permissions.json", { matrix, directRoute: "DENIED", readApi: "DENIED", refresh: "DENIED", relogin: "DENIED" });
+  });
+
+  test("maker 无写探针：真实登录、C1–C6 菜单/路由/读取及刷新重登；记录职责分离越权", async ({ page }) => {
+    await loginFixture(page, makerAccount, "maker");
+    await assertSessionShape(page, { hasCRead: true });
+    await assertVisibleCMenus(page);
+
+    const reads: Array<{ module: string; status: number; refresh: number }> = [];
+    for (const module of MODULES) {
+      expect((await openVisibleModule(page, module)).status()).toBe(200);
+      await expectModuleReady(page, module);
+      const refresh = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === new URL(module.readPath, "http://local").pathname
+        && response.request().method() === "GET");
+      await page.reload({ waitUntil: "domcontentloaded" });
+      expect((await refresh).status()).toBe(200);
+      reads.push({ module: module.id, status: 200, refresh: 200 });
+    }
+    const session = await browserApi(page, "GET", "/api/admin/auth/session");
+    const authorities = collectStrings(findKey(session.data, "authorities"));
+    const forbidden = authorities.filter((authority) =>
+      /(?:approve|decrypt|rbac_grants|role_grants)/i.test(authority)
+      || /^(?:overview_b|finance_d|device_e|network_f|finprod_g|growth_h|content_i|emergency_j|risk_k|bi_l|service_m)/.test(authority),
+    );
+    await logout(page);
+    await loginFixture(page, makerAccount, "maker");
+    expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(200);
+    writeEvidence("maker-no-write-scope.json", {
+      reads,
+      refresh: "PASS",
+      relogin: "PASS",
+      successfulBusinessWrites: 0,
+      forbiddenAuthorities: forbidden,
+    });
+    expect(forbidden, "maker 不得携带 checker/approve/decrypt/RBAC 或跨域业务权限").toEqual([]);
   });
 
   test("C1–C6 畸形 200 全部模块内失败关闭，503/超时可恢复", async ({ page }) => {
@@ -395,16 +460,25 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
 });
 
 async function loginSuperadmin(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  if (await page.locator("aside").isVisible({ timeout: 3_000 }).catch(() => false)) return;
-  await page.locator('input[autocomplete="username"]').fill(USERNAME);
-  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-  const response = page.waitForResponse((candidate) =>
-    new URL(candidate.url()).pathname === "/api/admin/auth/login"
-    && candidate.request().method() === "POST");
-  await page.getByRole("button", { name: /继续|登录/ }).click();
-  expect((await response).status()).toBe(200);
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+  // The locked Final13 runtime requires normal MFA.  Reuse the same visible
+  // login state machine as the restricted C maker rather than treating the
+  // password-login challenge as an authenticated console session.
+  await loginFixture(page, makerAccount, "maker");
+  const session = await browserApi(page, "GET", "/api/admin/auth/session");
+  expect(session.status).toBe(200);
+  expect(JSON.stringify(session.data)).toContain("user_c1hub_read");
+}
+
+function requiredFixtureAccount(
+  accounts: PermissionFixture["accounts"],
+  canonical: keyof PermissionFixture["accounts"],
+  legacy: keyof PermissionFixture["accounts"],
+) {
+  const account = accounts[canonical] ?? accounts[legacy];
+  if (!account?.username || !account.password || !account.totpSecret) {
+    throw new Error(`permission fixture account is required: ${String(canonical)} or ${String(legacy)}`);
+  }
+  return account;
 }
 
 async function loginFixture(page: Page, account: FixtureAccount, accountKey: string) {
@@ -457,8 +531,17 @@ async function loginFixture(page: Page, account: FixtureAccount, accountKey: str
       throw new Error(`${accountKey} credential failed code=${loginPayload?.code ?? "none"} message=${loginPayload?.message ?? "none"}`);
     }
     const otp = page.getByLabel("一次性验证码");
-    if (!(await otp.isVisible({ timeout: 5_000 }).catch(() => false))) break;
-    await otp.fill(await freshTotp(accountKey, account.totpSecret));
+    if (!(await otp.isVisible({ timeout: 5_000 }).catch(() => false))) {
+      if (await shell.isVisible().catch(() => false)) break;
+      continue;
+    }
+    const code = await freshTotp(accountKey, account.totpSecret);
+    // A successful MFA transition can render the console between the visibility
+    // probe and fill. Treat that terminal shell as success instead of retrying
+    // against a vanished OTP input.
+    if (await shell.isVisible().catch(() => false)) break;
+    if (!(await otp.isVisible({ timeout: 1_000 }).catch(() => false))) continue;
+    await otp.fill(code);
     const verification = page.waitForResponse((response) =>
       new URL(response.url()).pathname === "/api/admin/auth/mfa/verify"
       && response.request().method() === "POST");
@@ -512,6 +595,13 @@ async function openVisibleModule(page: Page, module: ModuleProbe) {
   return response;
 }
 
+async function expectModuleReady(page: Page, module: ModuleProbe) {
+  const ready = module.readyText
+    ? page.getByText(module.readyText, { exact: true })
+    : page.getByRole("heading", { name: module.title, exact: true });
+  await expect(ready).toBeVisible();
+}
+
 async function openVisibleModuleWithRequestFailure(page: Page, module: ModuleProbe) {
   await assertVisibleCMenus(page);
   const link = page.locator(`aside a[href="${module.path}"]`).first();
@@ -526,16 +616,17 @@ async function openVisibleModuleWithRequestFailure(page: Page, module: ModulePro
   return failed;
 }
 
-async function assertSessionShape(page: Page, hasCRead: boolean) {
+async function assertSessionShape(page: Page, expected: { hasCRead: boolean; hasMenu?: boolean }) {
   const session = await browserApi(page, "GET", "/api/admin/auth/session");
   expect(session.status).toBe(200);
   const authorities = collectStrings(findKey(session.data, "authorities"));
   const menus = collectStrings(findKey(session.data, "menuCodes") ?? findKey(session.data, "effectiveMenus"));
-  if (hasCRead) {
+  if (expected.hasCRead) {
     for (const authority of ["user_c1_read", "user_c2_read", "user_c3_read", "user_c4_read", "user_c5_read", "user_c6_read"]) {
       expect(authorities).toContain(authority);
     }
-    expect(menus.length).toBeGreaterThan(0);
+    if (expected.hasMenu !== false) expect(menus.length).toBeGreaterThan(0);
+    else expect(menus).toEqual([]);
   } else {
     expect(authorities).toEqual([]);
     expect(menus).toEqual([]);

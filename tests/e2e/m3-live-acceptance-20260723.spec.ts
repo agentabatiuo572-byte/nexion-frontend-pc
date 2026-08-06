@@ -20,6 +20,9 @@ const EVIDENCE_DIR = path.resolve(process.env.M3_EVIDENCE_DIR ?? "D:/workspace/b
 const RESULT_PATH = path.join(EVIDENCE_DIR, "runtime-result.json");
 const usedTotpSteps = new Map<string, number>();
 const mfaSecrets = new Map<string, string>();
+if (process.env.ADMIN_E2E_TOTP_SECRET?.trim()) {
+  mfaSecrets.set(ROOT_USERNAME, process.env.ADMIN_E2E_TOTP_SECRET.trim());
+}
 
 type Envelope<T> = { code?: number; message?: string; data?: T };
 type ResponseLike = { status(): number; text(): Promise<string> };
@@ -201,7 +204,7 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
       headers: { "Idempotency-Key": capturedKey },
       data: capturedBody,
     });
-    expect(duplicate.status()).toBeLessThan(400);
+    await okEnvelope(duplicate);
     const detailAfterReplay = await conversationDetail(page, conversationNo);
     expect(detailAfterReplay.messages.filter((message) => message.content.includes(TEMPLATE_REPLY_PREFIX))).toHaveLength(1);
 
@@ -209,7 +212,7 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
       headers: { "Idempotency-Key": capturedKey },
       data: { ...capturedBody, body: `${PREFIX}-same-key-different-payload` },
     });
-    expect(conflict.status()).toBe(409);
+    await expectApiCode(conflict, 409);
 
     const reasonBoundaries = [
       { length: 7, expectedStatus: 422 },
@@ -229,7 +232,7 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
           expectedVersion: current.conversation.version,
         },
       });
-      expect(response.status(), `reason length ${boundary.length}`).toBe(boundary.expectedStatus);
+      await expectApiCode(response, boundary.expectedStatus);
     }
     const detailAfterReasonBoundaries = await conversationDetail(page, conversationNo);
     for (const length of [7, 8, 200, 201]) {
@@ -238,7 +241,7 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
     }
 
     const missing = await page.request.get(`/api/admin/content/conversations/CV-${PREFIX}-NOT-FOUND`);
-    expect(missing.status()).toBe(404);
+    await expectApiCode(missing, 404);
 
     await page.reload();
     await expect(page.getByText("会话收件箱", { exact: true })).toBeVisible({ timeout: 20_000 });
@@ -259,6 +262,8 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
       if (lostResponseAttempt === 1) {
         const upstream = await route.fetch();
         expect(upstream.status()).toBeLessThan(400);
+        const upstreamText = await upstream.text();
+        expect((JSON.parse(upstreamText) as Envelope<unknown>).code ?? 0, upstreamText).toBe(0);
         await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ code: 502, message: "M3_REPLY_RESPONSE_LOST" }) });
         return;
       }
@@ -311,7 +316,7 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
         expectedVersion: transferDetail.conversation.version,
       },
     });
-    expect(forbiddenAccept.status()).toBe(403);
+    await expectApiCode(forbiddenAccept, 403);
     const authoritativeRefresh = page.waitForResponse((response) => response.request().method() === "GET"
       && new URL(response.url()).pathname === `/api/admin/content/conversations/${conversationNo}`
       && response.status() === 200);
@@ -390,7 +395,7 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
         expectedVersion: converted.conversation.version,
       },
     });
-    expect(secondConversion.status()).toBe(409);
+    await expectApiCode(secondConversion, 409);
     checks.push("target-agent-accept", "refresh-persistence", "atomic-ticket-conversion", "second-conversion-409");
   });
 
@@ -453,7 +458,7 @@ test("M3 visible user flow, backend truth, cross-agent transfer, M1/M2/M5 and ad
         expectedVersion: auditorDetail.conversation.version,
       },
     });
-    expect(forbidden.status()).toBe(403);
+    await expectApiCode(forbidden, 403);
     checks.push("relogin-persistence", "auditor-read-only-visible", "auditor-write-api-403");
   });
 
@@ -665,6 +670,17 @@ async function okEnvelope<T = unknown>(response: ResponseLike): Promise<T> {
   const payload = JSON.parse(raw) as Envelope<T>;
   expect(payload.code ?? 0, raw).toBe(0);
   return payload.data as T;
+}
+
+async function expectApiCode(response: ResponseLike, expectedCode: number) {
+  const raw = await response.text();
+  let payload: { code?: number } | undefined;
+  try {
+    payload = JSON.parse(raw) as { code?: number };
+  } catch {
+    payload = undefined;
+  }
+  expect(payload?.code ?? response.status(), raw).toBe(expectedCode);
 }
 
 async function firstOptionContaining(select: ReturnType<Page["locator"]>, text: string) {

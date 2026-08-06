@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 
 interface ApiResult<T> {
   code: number;
@@ -513,16 +515,31 @@ export function normalizeBDomainDashboard(raw: Record<string, unknown> | null | 
   };
 }
 
-let cachedDashboard: BDomainDashboard | null = null;
-let inflightDashboard: Promise<BDomainDashboard> | null = null;
-const dashboardSubscribers = new Set<(dashboard: BDomainDashboard) => void>();
+const cachedDashboards = new Map<string, BDomainDashboard>();
+const inflightDashboards = new Map<string, Promise<BDomainDashboard>>();
+const dashboardSubscribers = new Map<string, Set<(dashboard: BDomainDashboard) => void>>();
 
-function publishDashboard(dashboard: BDomainDashboard) {
-  cachedDashboard = dashboard;
-  dashboardSubscribers.forEach((subscriber) => subscriber(dashboard));
+// Logout/relogin is a hard trust boundary. Session-key partitioning prevents reads
+// across identities; clearing retained data also ensures no prior account snapshot
+// survives in this browser process after the boundary is crossed.
+useAdminAuth.subscribe((state, previous) => {
+  if (state.authEpoch === previous.authEpoch) return;
+  cachedDashboards.clear();
+  inflightDashboards.clear();
+});
+
+function currentSessionKey() {
+  const state = useAdminAuth.getState();
+  return adminShellSessionKey(state.session, state.authEpoch);
 }
 
-export async function fetchBDomainDashboard() {
+function publishDashboard(sessionKey: string, dashboard: BDomainDashboard) {
+  if (sessionKey !== currentSessionKey()) return;
+  cachedDashboards.set(sessionKey, dashboard);
+  dashboardSubscribers.get(sessionKey)?.forEach((subscriber) => subscriber(dashboard));
+}
+
+export async function fetchBDomainDashboard(sessionKey = currentSessionKey()) {
   const response = await guardedFetch("/api/admin/treasury/b-domain", { cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !result || result.code !== 0) {
@@ -535,7 +552,7 @@ export async function fetchBDomainDashboard() {
     throw new Error("B_DOMAIN_EMPTY_RESPONSE");
   }
   const dashboard = normalizeBDomainDashboard(result.data);
-  publishDashboard(dashboard);
+  publishDashboard(sessionKey, dashboard);
   return dashboard;
 }
 
@@ -545,6 +562,7 @@ export async function acknowledgeBDomainAlert(
   operator: string,
   idempotencyKey?: string,
 ) {
+  const sessionKey = currentSessionKey();
   const response = await guardedFetch(`/api/admin/treasury/b-domain/alerts/${encodeURIComponent(alertId)}/ack`, {
     method: "POST",
     headers: {
@@ -565,7 +583,7 @@ export async function acknowledgeBDomainAlert(
     throw new Error("B_ALERT_ACK_EMPTY_RESPONSE");
   }
   const dashboard = normalizeBDomainDashboard(result.data);
-  publishDashboard(dashboard);
+  publishDashboard(sessionKey, dashboard);
   return dashboard;
 }
 
@@ -574,6 +592,7 @@ export async function updateB5BankRunThresholds(
   reason: string,
   operator: string,
 ) {
+  const sessionKey = currentSessionKey();
   const response = await guardedFetch("/api/admin/treasury/b-domain/bankrun-thresholds", {
     method: "PATCH",
     headers: {
@@ -590,51 +609,76 @@ export async function updateB5BankRunThresholds(
   }
   if (!result.data) throw new Error("B5_BANKRUN_EMPTY_RESPONSE");
   const dashboard = normalizeBDomainDashboard(result.data);
-  publishDashboard(dashboard);
+  publishDashboard(sessionKey, dashboard);
   return dashboard;
 }
 
-export function useBDomainDashboard() {
-  const [data, setData] = useState<BDomainDashboard | null>(cachedDashboard);
-  const [loading, setLoading] = useState(!cachedDashboard);
+export function useBDomainDashboard(enabled = true) {
+  const session = useAdminAuth((state) => state.session);
+  const authEpoch = useAdminAuth((state) => state.authEpoch);
+  const sessionKey = adminShellSessionKey(session, authEpoch);
+  const cachedDashboard = cachedDashboards.get(sessionKey) ?? null;
+  const [snapshot, setSnapshot] = useState<{ sessionKey: string; data: BDomainDashboard | null }>({
+    sessionKey,
+    data: enabled ? cachedDashboard : null,
+  });
+  const [loading, setLoading] = useState(enabled && !cachedDashboard);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    if (!enabled) {
+      setSnapshot({ sessionKey, data: null });
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      inflightDashboard = fetchBDomainDashboard().finally(() => {
-        inflightDashboard = null;
+      const task = fetchBDomainDashboard(sessionKey).finally(() => {
+        inflightDashboards.delete(sessionKey);
       });
-      const next = await inflightDashboard;
-      setData(next);
+      inflightDashboards.set(sessionKey, task);
+      const next = await task;
+      setSnapshot({ sessionKey, data: next });
     } catch (err) {
       setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled, sessionKey]);
 
   useEffect(() => {
+    if (!enabled) {
+      setSnapshot({ sessionKey, data: null });
+      setLoading(false);
+      setError(null);
+      return undefined;
+    }
     let alive = true;
     const subscriber = (next: BDomainDashboard) => {
       if (alive) {
-        setData(next);
+        setSnapshot({ sessionKey, data: next });
         setError(null);
         setLoading(false);
       }
     };
-    dashboardSubscribers.add(subscriber);
-    setLoading(!cachedDashboard);
+    const subscribers = dashboardSubscribers.get(sessionKey) ?? new Set();
+    subscribers.add(subscriber);
+    dashboardSubscribers.set(sessionKey, subscribers);
+    const currentCachedDashboard = cachedDashboards.get(sessionKey) ?? null;
+    setSnapshot({ sessionKey, data: currentCachedDashboard });
+    setLoading(!currentCachedDashboard);
     setError(null);
     const task =
-      inflightDashboard ??
-      (inflightDashboard = fetchBDomainDashboard().finally(() => {
-        inflightDashboard = null;
-      }));
+      inflightDashboards.get(sessionKey) ??
+      fetchBDomainDashboard(sessionKey).finally(() => {
+        inflightDashboards.delete(sessionKey);
+      });
+    inflightDashboards.set(sessionKey, task);
     task
       .then((next) => {
-        if (alive) setData(next);
+        if (alive) setSnapshot({ sessionKey, data: next });
       })
       .catch((err) => {
         if (alive) setError(displayAdminError(err));
@@ -644,9 +688,19 @@ export function useBDomainDashboard() {
       });
     return () => {
       alive = false;
-      dashboardSubscribers.delete(subscriber);
+      const currentSubscribers = dashboardSubscribers.get(sessionKey);
+      currentSubscribers?.delete(subscriber);
+      if (currentSubscribers?.size === 0) dashboardSubscribers.delete(sessionKey);
     };
-  }, []);
+  }, [enabled, sessionKey]);
 
-  return { ...(data ?? EMPTY_B_DOMAIN), data, hasData: !!data, loading, error, reload };
+  const visibleData = enabled && snapshot.sessionKey === sessionKey ? snapshot.data : null;
+  return {
+    ...(visibleData ?? EMPTY_B_DOMAIN),
+    data: visibleData,
+    hasData: !!visibleData,
+    loading: enabled && loading,
+    error: enabled ? error : null,
+    reload,
+  };
 }

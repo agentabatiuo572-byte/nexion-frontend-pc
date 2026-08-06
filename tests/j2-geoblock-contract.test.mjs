@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+
+import {
+  resolveNexionAppRoot,
+  resolveNexionBackendRoot,
+} from "../scripts/lib/nexion-workspace-paths.mjs";
+
+const adminRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appRoot = resolveNexionAppRoot({ adminRoot });
+const backendRoot = resolveNexionBackendRoot({ adminRoot });
+const readWorkspaceFile = (root, relative) => readFileSync(path.join(root, ...relative.split("/")), "utf8");
 
 const view = readFileSync(new URL("../app/components/domain-views/j-tabs/j2-geoblock.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/j-client.ts", import.meta.url), "utf8");
@@ -13,35 +25,29 @@ const liveAcceptance = readFileSync(
   new URL("./e2e/j2-live-acceptance-20260722.spec.ts", import.meta.url),
   "utf8",
 );
-const geoRouteRegistry = readFileSync(
-  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/application/GeoProtectedRouteRegistry.java", import.meta.url),
-  "utf8",
+const geoRouteRegistry = readWorkspaceFile(
+  backendRoot,
+  "src/main/java/ffdd/opsconsole/emergency/application/GeoProtectedRouteRegistry.java",
 );
-const geoPolicyTests = readFileSync(
-  new URL("../../nexion-backend/src/test/java/ffdd/opsconsole/emergency/application/GeoBlockPolicyServiceTest.java", import.meta.url),
-  "utf8",
+const geoPolicyTests = readWorkspaceFile(
+  backendRoot,
+  "src/test/java/ffdd/opsconsole/emergency/application/GeoBlockPolicyServiceTest.java",
 );
-const appGeoErrors = readFileSync(
-  new URL("../../NX1.0/src/api/geo-policy-error.ts", import.meta.url),
-  "utf8",
-);
-const appGeoErrorTests = readFileSync(
-  new URL("../../NX1.0/src/api/geo-policy-error.test.ts", import.meta.url),
-  "utf8",
-);
+const appGeoErrors = readWorkspaceFile(appRoot, "src/api/geo-policy-error.ts");
+const appGeoErrorTests = readWorkspaceFile(appRoot, "src/api/geo-policy-error.test.ts");
 const appUserSurfaces = [
-  "../../NX1.0/src/pages/login/login.vue",
-  "../../NX1.0/src/pages/register/register.vue",
-  "../../NX1.0/src/pages/me/wallet-withdraw.vue",
-  "../../NX1.0/src/pages/me/wallet-exchange.vue",
-  "../../NX1.0/src/pages/me/wallet-repurchase.vue",
-  "../../NX1.0/src/pages/me/trial.vue",
-  "../../NX1.0/src/pages/staking/staking.vue",
-  "../../NX1.0/src/pages/genesis/genesis.vue",
-  "../../NX1.0/src/pages/genesis/marketplace.vue",
-  "../../NX1.0/src/pages/daily/daily.vue",
-  "../../NX1.0/src/pages/events/events.vue",
-].map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
+  "src/pages/login/login.vue",
+  "src/pages/register/register.vue",
+  "src/pages/me/wallet-withdraw.vue",
+  "src/pages/me/wallet-exchange.vue",
+  "src/pages/me/wallet-repurchase.vue",
+  "src/pages/me/trial.vue",
+  "src/pages/staking/staking.vue",
+  "src/pages/genesis/genesis.vue",
+  "src/pages/genesis/marketplace.vue",
+  "src/pages/daily/daily.vue",
+  "src/pages/events/events.vue",
+].map((relative) => readWorkspaceFile(appRoot, relative));
 
 test("J2 writes execute the dedicated backend APIs instead of the A2 proposal queue", () => {
   assert.doesNotMatch(view, /usePropose|\bpropose\s*\(/);

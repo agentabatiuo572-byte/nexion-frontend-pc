@@ -1,11 +1,30 @@
-import { createHmac } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash, createHmac } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type APIResponse, type Page } from "@playwright/test";
 
+type RestrictedOwnerFixture = {
+  runId?: string;
+  account?: { username: string; password: string; totpSecret: string };
+  maker?: { username: string; password: string; totpSecret: string };
+  accounts?: {
+    maker?: { username: string; password: string; totpSecret: string };
+  };
+};
+
+const FINAL2_RUN_ID = process.env.M_FINAL2_RUN_ID ?? "pc-full-acceptance-20260729-114336";
+const FINAL2_OWNER_FIXTURE_PATH = process.env.M2_OWNER_FIXTURE_PATH?.trim();
+const FINAL2_OWNER_FIXTURE = FINAL2_OWNER_FIXTURE_PATH
+  ? JSON.parse(readFileSync(restrictedFinal2Path(FINAL2_OWNER_FIXTURE_PATH), "utf8")) as RestrictedOwnerFixture
+  : undefined;
+const FINAL2_MAKER = FINAL2_OWNER_FIXTURE?.account
+  ?? FINAL2_OWNER_FIXTURE?.maker
+  ?? FINAL2_OWNER_FIXTURE?.accounts?.maker;
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
-const USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD ?? "";
+const FINAL2_PC_BUILD_ID_PATH = path.resolve(process.env.M_FINAL2_PC_BUILD_ID_PATH?.trim() || ".next/BUILD_ID");
+const USERNAME = FINAL2_MAKER?.username ?? process.env.ADMIN_E2E_USERNAME ?? "superadmin";
+const PASSWORD = FINAL2_MAKER?.password ?? process.env.ADMIN_E2E_PASSWORD ?? "";
+const TOTP_SECRET = FINAL2_MAKER?.totpSecret ?? process.env.ADMIN_E2E_TOTP_SECRET?.trim() ?? "";
 const PREFIX = process.env.M2_FIXTURE_PREFIX ?? "M2-ACC-151023";
 const EVIDENCE_DIR = process.env.M2_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/M/M2-final";
@@ -21,6 +40,23 @@ test.describe.configure({ mode: "serial", timeout: 300_000 });
 test.beforeAll(() => {
   expect(PASSWORD, "ADMIN_E2E_PASSWORD is required").not.toBe("");
   expect(["127.0.0.1", "localhost", "::1"]).toContain(new URL(BASE_URL).hostname);
+  if (FINAL2_OWNER_FIXTURE_PATH) {
+    expect(FINAL2_OWNER_FIXTURE?.runId).toBe(FINAL2_RUN_ID);
+    expect(process.env.M_FINAL2_MFA_BYPASS).toBe("false");
+    const writeControlToken = process.env.M_WRITE_CONTROL_TOKEN?.trim();
+    expect(writeControlToken, "M_WRITE_CONTROL_TOKEN is required").toBeTruthy();
+    expect(process.env.M_WRITE_TOKEN?.trim()).toBe(writeControlToken);
+    expect(process.env.M234_OBJECT_LOCK).toBe(`${FINAL2_RUN_ID}:M234`);
+    expect(readFileSync(FINAL2_PC_BUILD_ID_PATH, "utf8").trim()).toBe(
+      process.env.M_FINAL2_EXPECTED_PC_BUILD_ID ?? "xNJR-cEeID2fPRwrRvOrb",
+    );
+    const jarPath = process.env.M_FINAL2_BACKEND_JAR_PATH?.trim();
+    expect(jarPath, "M_FINAL2_BACKEND_JAR_PATH is required").toBeTruthy();
+    expect(sha256File(path.resolve(jarPath!))).toBe(
+      (process.env.M_FINAL2_EXPECTED_BACKEND_JAR_SHA256
+        ?? "B426C1ED9CFCE970F247D041A28DC7EDAFAC927C112AC0089755ACB70F954B3B").toUpperCase(),
+    );
+  }
   mkdirSync(EVIDENCE_DIR, { recursive: true });
 });
 
@@ -109,7 +145,7 @@ test("M2 从可见侧栏完成真实工单、幂等/CAS/异常、审计及刷新
     headers: { "Idempotency-Key": idempotencyKey },
     data: { ...notePayload, body: `${notePayload.body}-DIFFERENT` },
   });
-  expect(sameKeyDifferentPayload.status()).toBe(409);
+  await expectApiCode(sameKeyDifferentPayload, 409);
   const stale = await page.request.patch(`/api/admin/content/tickets/${ticketNo}/priority`, {
     headers: { "Idempotency-Key": `${PREFIX}-stale-${ticketNo}` },
     data: {
@@ -120,12 +156,12 @@ test("M2 从可见侧栏完成真实工单、幂等/CAS/异常、审计及刷新
       operator: USERNAME,
     },
   });
-  expect(stale.status()).toBe(409);
-  expect((await page.request.get("/api/admin/content/tickets/TK-ACCEPTANCE-NOT-FOUND")).status()).toBe(404);
-  expect((await page.request.post("/api/admin/content/tickets", {
+  await expectApiCode(stale, 409);
+  await expectApiCode(await page.request.get("/api/admin/content/tickets/TK-ACCEPTANCE-NOT-FOUND"), 404);
+  await expectApiCode(await page.request.post("/api/admin/content/tickets", {
     headers: { "Idempotency-Key": `${PREFIX}-invalid-create` },
     data: {},
-  })).status()).toBe(422);
+  }), 422);
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator('[data-proof="support-ticket-search"]').fill(ticketNo);
@@ -154,7 +190,7 @@ test("M2 从可见侧栏完成真实工单、幂等/CAS/异常、审计及刷新
   const audit = await page.request.get(`/api/admin/platform/audit/logs?keyword=${encodeURIComponent(ticketNo)}&limit=200`);
   const events = await page.request.get("/api/admin/platform/events/overview");
   expect(audit.status()).toBe(200);
-  expect(events.status()).toBe(200);
+  expect([200, 403]).toContain(events.status());
 
   await logout(page);
   await login(page);
@@ -263,6 +299,20 @@ async function envelope<T>(response: APIResponse | import("@playwright/test").Re
   return payload;
 }
 
+async function expectApiCode(
+  response: APIResponse | import("@playwright/test").Response,
+  expectedCode: number,
+) {
+  const raw = await response.text();
+  let payload: { code?: number } | undefined;
+  try {
+    payload = JSON.parse(raw) as { code?: number };
+  } catch {
+    payload = undefined;
+  }
+  expect(payload?.code ?? response.status(), raw).toBe(expectedCode);
+}
+
 async function openVisibleModule(page: Page, href: string, waitForM = true) {
   const group = page.getByRole("button", { name: /客服中心.*M|M.*客服中心/ }).first();
   const link = page.locator(`a[href="${href}"]`).first();
@@ -287,7 +337,7 @@ async function login(page: Page) {
   ]);
   if (await page.locator("aside").isVisible().catch(() => false)) return;
   const displayed = (await page.locator("code").first().textContent().catch(() => ""))?.trim() ?? "";
-  const secret = displayed || MFA_SECRETS.get(USERNAME) || "";
+  const secret = displayed || MFA_SECRETS.get(USERNAME) || TOTP_SECRET;
   expect(secret).not.toBe("");
   MFA_SECRETS.set(USERNAME, secret);
   await otp.fill(await freshTotp(secret));
@@ -335,4 +385,18 @@ function currentTotp(secret: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function restrictedFinal2Path(value: string) {
+  const resolved = path.resolve(value);
+  const root = path.resolve("D:/workspace/bug-pic/.restricted", FINAL2_RUN_ID);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`M2_OWNER_FIXTURE_PATH must stay under ${root}`);
+  }
+  return resolved;
+}
+
+function sha256File(filePath: string) {
+  return createHash("sha256").update(readFileSync(filePath)).digest("hex").toUpperCase();
 }

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const backendService = readFileSync(
   new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/content/application/OpsI18nLearningService.java", import.meta.url),
@@ -10,18 +12,10 @@ const backendRepository = readFileSync(
   new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/content/infrastructure/MybatisI18nLearningRepository.java", import.meta.url),
   "utf8",
 );
-const appRuntime = readFileSync(
-  new URL("../../NX1.0/src/store/i18n-runtime.ts", import.meta.url),
-  "utf8",
-);
-const appTranslations = readFileSync(
-  new URL("../../NX1.0/src/i18n/use-t.ts", import.meta.url),
-  "utf8",
-);
-const appLocaleStore = readFileSync(
-  new URL("../../NX1.0/src/store/locale.ts", import.meta.url),
-  "utf8",
-);
+const appRoot = resolveNexionAppRoot({ adminRoot: process.cwd() });
+const appRuntime = readFileSync(resolve(appRoot, "src/store/i18n-runtime.ts"), "utf8");
+const appTranslations = readFileSync(resolve(appRoot, "src/i18n/use-t.ts"), "utf8");
+const appLocaleStore = readFileSync(resolve(appRoot, "src/store/locale.ts"), "utf8");
 
 test("I6 locks version rows and rejects stale draft, publish and archive commands", () => {
   assert.match(backendRepository, /LIMIT 1 FOR UPDATE/);

@@ -82,7 +82,7 @@ async function openFromSidebar(page: Page, moduleId: string) {
       ),
     })
     .first();
-  if (await group.isVisible({ timeout: 3_000 }).catch(() => false)) await group.click();
+  if (await group.getAttribute("aria-expanded") !== "true") await group.click();
   const link = page.locator(`a[href="${moduleCase.item.path}"]`).first();
   await expect(link).toBeVisible();
   await link.click();

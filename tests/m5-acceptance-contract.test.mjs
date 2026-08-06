@@ -36,7 +36,7 @@ test("M5 exposes only backend-provided audience choices and blocks an empty sele
 
   assert.match(page, /audienceOptions\.length > 0/);
   assert.match(page, /暂无可用受众/);
-  assert.match(page, /disabled=\{!canWriteM5 \|\| !sessionTemplatesAvailable \|\| writePending \|\| audienceOptions\.length === 0\}/);
+  assert.match(page, /disabled=\{!sessionTemplatesAvailable \|\| writePending \|\| audienceOptions\.length === 0\}/);
   assert.match(service, /DEFAULT_AUDIENCE_OPTIONS/);
   assert.match(service, /case "audience"/);
 });
@@ -104,7 +104,9 @@ test("M5 rejects malformed successful responses instead of enabling writes again
   assert.match(client, /requireSessionTemplateOverview/);
   assert.match(client, /M5_SESSION_TEMPLATE_PROTOCOL_INVALID/);
   assert.match(client, /new Set\(categories\.map\(\(row\) => row\.type\)\)/);
-  assert.match(client, /sessionTemplatesAvailable = sessionTemplates !== null/);
+  assert.match(client, /const templatesTask =/);
+  assert.match(client, /sessionTemplatesAvailable: true/);
+  assert.match(client, /sessionTemplatesAvailable: false/);
 });
 
 test("M5 publication is gated by published I6 locale mirrors and emits A4 governance facts", () => {
@@ -126,4 +128,18 @@ test("M5 publication is gated by published I6 locale mirrors and emits A4 govern
   assert.match(migration, /admin\.conversation_autopush_changed/);
   assert.match(migration, /admin\.conversation_script_published/);
   assert.match(migration, /admin\.conversation_template_published/);
+});
+
+test("M5 hides every mutation control without effective M5 management authority", () => {
+  const page = read("app/components/domain-views/m-tabs/m5-scripts.tsx");
+
+  assert.match(page, /\{canWriteM5 && \(\s*<button[^>]+data-proof="session-script-new"/s);
+  assert.match(page, /\{canWriteM5 && \(\s*<button[^>]+data-proof="session-tpl-new"/s);
+  assert.match(page, /canWriteM5 \? \(\s*<span data-proof=\{`session-cat-toggle-/s);
+  assert.match(page, /canWriteM5 \? \(\s*<button[^>]+data-proof="session-policy-enabled"/s);
+  assert.match(page, /canWriteM5 \? \(\s*<button[^>]+data-proof="session-policy-delay"/s);
+  assert.match(page, /canWriteM5 \? \(\s*<span data-proof=\{`session-script-publish-/s);
+  assert.match(page, /canWriteM5 \? \(\s*<span data-proof=\{`session-tpl-publish-/s);
+  assert.match(page, /const hasM5WriteAuthority = isSuperAdmin \|\| Boolean\(authorities\?\.includes\("service_m5_write"\)\)/);
+  assert.match(page, /const canWriteM5 = hasM5WriteAuthority && \(isSuperAdmin \|\| isSupportSupervisor\(currentSupportAgent\)\)/);
 });

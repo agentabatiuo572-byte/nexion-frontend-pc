@@ -42,6 +42,13 @@ const BARE_FETCH_ALLOW = [
     file: "lib/admin/auth-session.ts",
     why: "登出发完即忘:`.catch(() => undefined)` 吞掉 rejection 后无条件 reload,无任何展示路径",
   },
+  {
+    // 2026-08-06 main 合流带入:M 内容请求自管 AbortController + 超时语义,
+    // AbortError 必须保持原始形态供上游静默取消(guardedFetch 会把它翻成「网络失败」误报);
+    // 展示出口经 MContentReadError → formatAdminApiError / displayAdminError,仍全量咽喉化。
+    file: "lib/admin/m-client.ts",
+    why: "自管 timeout/abort 语义,取消不得被翻成网络失败;展示出口已过咽喉(MContentReadError → displayAdminError)",
+  },
 ];
 
 /**

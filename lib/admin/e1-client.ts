@@ -295,10 +295,12 @@ async function withFreshSkuMediaPreview(sku: OpsSku): Promise<OpsSku> {
       ...sku,
       imageAssetId: asset.assetId || sku.imageAssetId,
       imageObjectKey: asset.objectKey || sku.imageObjectKey,
-      imagePreviewUrl: asset.previewUrl || sku.imagePreviewUrl,
+      imagePreviewUrl: asset.previewUrl || undefined,
     };
   } catch {
-    return sku;
+    // A persisted presigned URL is only historical metadata. Never mount it after
+    // the authoritative refresh fails: the UI must stay closed and offer retry.
+    return { ...sku, imagePreviewUrl: undefined };
   }
 }
 

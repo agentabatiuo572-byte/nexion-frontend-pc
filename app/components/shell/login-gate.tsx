@@ -6,7 +6,7 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
-import { changeAdminPassword, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
+import { changeAdminPassword, currentAdminSession, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
 import { completeInteractiveLogin } from "@/lib/admin/login-completion";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -23,7 +23,7 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function LoginGate() {
+export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } = {}) {
   const signIn = useAdminAuth((s) => s.signIn);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -35,6 +35,14 @@ export function LoginGate() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  async function finishInteractiveLogin(result: LoginResult) {
+    await completeInteractiveLogin(signIn, result, {
+      readAuthoritativeSession: currentAdminSession,
+    });
+    setError("");
+    onAuthenticated?.();
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -60,7 +68,7 @@ export function LoginGate() {
         }
         setCurrentPasswordForChange("");
         setUsername("");
-        completeInteractiveLogin(signIn, result.loginResult);
+        await finishInteractiveLogin(result.loginResult);
         return;
       }
       if (!result.mfaChallenge) {
@@ -84,17 +92,19 @@ export function LoginGate() {
     setError("");
     try {
       const result = await verifyAdminMfa(mfaChallenge.challengeId, mfaCode);
-      setMfaChallenge(null);
-      setMfaCode("");
       if (result.session.passwordChangeRequired) {
+        setMfaChallenge(null);
+        setMfaCode("");
         setPendingLogin(result);
         setNewPassword("");
         setConfirmPassword("");
         return;
       }
+      await finishInteractiveLogin(result);
+      setMfaChallenge(null);
+      setMfaCode("");
       setCurrentPasswordForChange("");
       setUsername("");
-      completeInteractiveLogin(signIn, result);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -122,12 +132,12 @@ export function LoginGate() {
     setError("");
     try {
       const result = await changeAdminPassword(currentPasswordForChange, newPassword);
+      await finishInteractiveLogin(result);
       setPendingLogin(null);
       setCurrentPasswordForChange("");
       setNewPassword("");
       setConfirmPassword("");
       setUsername("");
-      completeInteractiveLogin(signIn, result);
     } catch (err) {
       setError(errorMessage(err));
     } finally {

@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
+const appRoot = resolveNexionAppRoot({ adminRoot: path.resolve(import.meta.dirname, "..") });
+const readApp = (relative) => readFileSync(path.join(appRoot, relative), "utf8");
 
 test("H3 PC uses stable business codes, CAS and directional reward controls", () => {
   const view = read("app/components/domain-views/h-tabs/h3-quest-events.tsx");
@@ -31,9 +35,9 @@ test("H3 backend mutation closes transaction, mutex, stale-write and promo contr
 });
 
 test("H3 App consumes authenticated server state and atomic claim; remote mode does not complete locally", () => {
-  const api = read("../NX1.0/src/api/quest-api.ts");
-  const store = read("../NX1.0/src/store/quest.ts");
-  const missions = read("../NX1.0/src/pages/missions/missions.vue");
+  const api = readApp("src/api/quest-api.ts");
+  const store = readApp("src/store/quest.ts");
+  const missions = readApp("src/pages/missions/missions.vue");
   assert.match(api, /path: "\/api\/quests\/state"/);
   assert.match(api, /\/api\/quests\/\$\{encodeURIComponent/);
   assert.match(store, /if \(remoteApiEnabled\) \{\s+return \{ firstTime: false, rewardNex: 0, rewardUsdt: 0 \}/);

@@ -105,6 +105,70 @@ function text(value: string | null | undefined) {
   return value == null ? "" : String(value).trim();
 }
 
+const E2_TASK_CLASSES = ["IG", "VG", "LL", "FT", "EM", "SP"] as const;
+const E2_TEASER_DEVICE_CLASSES = ["cloud-share", "phone", "S1", "Pro", "Rack"] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function pricingProtocol(condition: unknown, detail: string): asserts condition {
+  if (!condition) throw new Error(`E2_TASK_PRICING_PROTOCOL_INVALID:${detail}`);
+}
+
+function isFiniteValue(value: unknown): boolean {
+  return typeof value === "number" ? Number.isFinite(value)
+    : typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value));
+}
+
+function finiteValue(value: unknown): number | null {
+  return isFiniteValue(value) ? Number(value) : null;
+}
+
+function assertE2TaskPricingSnapshot(raw: unknown): asserts raw is E2TaskPricingSnapshot {
+  pricingProtocol(isRecord(raw), "taskPricing protocol requires a data object");
+  pricingProtocol(Array.isArray(raw.taskClasses), "taskClasses must be an array");
+  pricingProtocol(Array.isArray(raw.teaser), "teaser must be an array");
+  const queueSaturation = finiteValue(raw.queueSaturation);
+  pricingProtocol(queueSaturation != null && queueSaturation >= 0 && queueSaturation <= 1, "queueSaturation must be between 0 and 1");
+  pricingProtocol(raw.taskClasses.length === E2_TASK_CLASSES.length, "taskClasses must contain the exact six canonical classes");
+  pricingProtocol(raw.teaser.length === E2_TEASER_DEVICE_CLASSES.length, "teaser must contain the exact five device classes");
+
+  const taskClasses = new Set<string>();
+  for (const row of raw.taskClasses) {
+    pricingProtocol(isRecord(row), "taskClasses row must be an object");
+    pricingProtocol(typeof row.taskId === "string" && row.taskId.trim() !== "", "taskClasses row requires taskId");
+    pricingProtocol(typeof row.taskClass === "string" && E2_TASK_CLASSES.includes(row.taskClass as typeof E2_TASK_CLASSES[number]), "taskClasses row has an unknown taskClass");
+    pricingProtocol(typeof row.taskName === "string" && row.taskName.trim() !== "", "taskClasses row requires taskName");
+    pricingProtocol(Array.isArray(row.models) && row.models.every((model) => typeof model === "string"), "taskClasses row requires models");
+    pricingProtocol(typeof row.enabled === "boolean", "taskClasses row requires enabled");
+    for (const field of ["minReward", "maxReward", "minVRAM", "activeAssignments", "avgSec", "dailyPotential"]) {
+      pricingProtocol(isFiniteValue(row[field]), `taskClasses row requires finite ${field}`);
+    }
+    const minReward = finiteValue(row.minReward);
+    const maxReward = finiteValue(row.maxReward);
+    pricingProtocol(minReward != null && maxReward != null && minReward >= 0 && maxReward >= minReward, "taskClasses row minReward and maxReward must be non-negative and ordered");
+    for (const field of ["minVRAM", "activeAssignments", "avgSec", "dailyPotential"]) {
+      const value = finiteValue(row[field]);
+      pricingProtocol(value != null && value >= 0, "taskClasses row requires non-negative minVRAM, activeAssignments, avgSec, and dailyPotential");
+    }
+    taskClasses.add(row.taskClass);
+  }
+  pricingProtocol(taskClasses.size === E2_TASK_CLASSES.length && E2_TASK_CLASSES.every((taskClass) => taskClasses.has(taskClass)), "taskClasses must not omit or duplicate canonical classes");
+
+  const deviceClasses = new Set<string>();
+  for (const row of raw.teaser) {
+    pricingProtocol(isRecord(row), "teaser row must be an object");
+    pricingProtocol(typeof row.deviceClass === "string" && E2_TEASER_DEVICE_CLASSES.includes(row.deviceClass as typeof E2_TEASER_DEVICE_CLASSES[number]), "teaser row has an unknown deviceClass");
+    const vram = finiteValue(row.vram);
+    const dailyPotential = finiteValue(row.dailyPotential);
+    pricingProtocol(vram != null && vram >= 0 && dailyPotential != null && dailyPotential >= 0, "teaser row requires non-negative numeric values");
+    pricingProtocol(Array.isArray(row.lockedTasks) && row.lockedTasks.every((task) => typeof task === "string"), "teaser row requires lockedTasks");
+    deviceClasses.add(row.deviceClass);
+  }
+  pricingProtocol(deviceClasses.size === E2_TEASER_DEVICE_CLASSES.length && E2_TEASER_DEVICE_CLASSES.every((deviceClass) => deviceClasses.has(deviceClass)), "teaser must not omit or duplicate device classes");
+}
+
 async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPrefix?: string }) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -158,7 +222,8 @@ async function e2ConfigRequest<T>(path: "task-pricing" | "phone-tiers", init?: R
 }
 
 export async function fetchE2TaskPricing(): Promise<E2TaskPricingSnapshot> {
-  const raw = await e2ConfigRequest<E2TaskPricingSnapshot>("task-pricing");
+  const raw = await e2ConfigRequest<unknown>("task-pricing");
+  assertE2TaskPricingSnapshot(raw);
   return {
     ...raw,
     queueSaturation: toNumber(raw.queueSaturation, 0.35),

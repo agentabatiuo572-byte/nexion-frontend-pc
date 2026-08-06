@@ -344,8 +344,8 @@ export default function UserDetailPage() {
   const canReadA2 = session?.role === "superadmin" || !!session?.authorities.includes("platform_a2_read");
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
-  const userKey = params.id;
-  const requestedReturnTo = searchParams.get("returnTo") ?? "";
+  const userKey = params?.id?.trim() ?? "";
+  const requestedReturnTo = searchParams?.get("returnTo") ?? "";
   const returnTo = requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
     : "/users/search";
@@ -374,6 +374,12 @@ export default function UserDetailPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    if (!userKey) {
+      setDetail(null);
+      setError("用户标识缺失，已停止加载");
+      setLoading(false);
+      return;
+    }
     try {
       setDetail(await fetchUser360(userKey));
     } catch (err) {

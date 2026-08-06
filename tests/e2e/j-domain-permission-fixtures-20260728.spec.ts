@@ -7,11 +7,12 @@ import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 type FixtureAccount = { username: string; password: string; totpSecret: string };
 type PermissionFixture = {
   runId: string;
-  accounts: {
-    j_readonly: FixtureAccount;
-    j_no_write: FixtureAccount;
-    j_no_menu: FixtureAccount;
-  };
+  // New full-run fixtures use domain-neutral names; retain the J-local aliases
+  // so that historical J-only runs remain executable.
+  accounts: Partial<Record<
+    "readonly" | "nowrite" | "nomenu" | "j_readonly" | "j_no_write" | "j_no_menu",
+    FixtureAccount
+  >>;
 };
 type ModuleProbe = {
   id: string;
@@ -95,12 +96,12 @@ test.describe.serial("J 域 readonly/no-write/no-menu 五层权限", () => {
   });
 
   for (const [profile, key] of [
-    ["readonly", "j_readonly"],
-    ["menu-no-write", "j_no_write"],
+    ["readonly", "readonly"],
+    ["menu-no-write", "nowrite"],
   ] as const) {
     test(`${profile}：J1–J4 菜单、路由、按钮、接口、数据只读，刷新重登不漂移`, async ({ page }) => {
       const pageErrors = monitorPageErrors(page);
-      const account = fixture.accounts[key];
+      const account = fixtureAccount(key);
       await login(page, account, key);
       await assertSession(page, true);
       await assertVisibleJMenus(page);
@@ -138,10 +139,10 @@ test.describe.serial("J 域 readonly/no-write/no-menu 五层权限", () => {
     });
   }
 
-  test("no-menu：J 菜单与直接路由不可达，J1–J4 读写均 403，刷新重登不恢复", async ({ page }) => {
+  test("no-menu：J 菜单、直接路由、读写接口均拒绝，刷新重登不恢复", async ({ page }) => {
     const pageErrors = monitorPageErrors(page);
-    const account = fixture.accounts.j_no_menu;
-    await login(page, account, "j_no_menu");
+    const account = fixtureAccount("nomenu");
+    await login(page, account, "nomenu");
     await assertSession(page, false);
     await expect(page.locator('a[href^="/emergency/"]')).toHaveCount(0);
     await page.goto(MODULES[0].path, { waitUntil: "domcontentloaded" });
@@ -160,55 +161,80 @@ test.describe.serial("J 域 readonly/no-write/no-menu 五层权限", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator('a[href^="/emergency/"]')).toHaveCount(0);
     await logout(page);
-    await login(page, account, "j_no_menu");
+    await login(page, account, "nomenu");
     await assertSession(page, false);
     await expect(page.locator('a[href^="/emergency/"]')).toHaveCount(0);
-    expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
+    const reloginRead = await browserApi(page, "GET", MODULES[0].readPath);
+    expect(reloginRead.status).toBe(403);
     expect(pageErrors).toEqual([]);
     writeEvidence("no-menu-five-layers.json", {
       profile: "no-menu",
       modules,
       directRoute: "DENIED",
-      refresh: "DENIED",
-      logoutRelogin: "DENIED",
+      read: "403",
+      write: "403",
+      refresh: "NO_MENU",
+      logoutRelogin: { read: 403, write: 403, menus: "absent" },
       pageErrors,
     });
   });
 });
 
 async function login(page: Page, account: FixtureAccount, key: string) {
-  let lastCode: number | undefined;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
-    if (await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false)) break;
-    await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 15_000 });
-    await page.locator('input[autocomplete="username"]').fill(account.username);
-    await page.locator('input[autocomplete="current-password"]').fill(account.password);
-    const loginResponse = page.waitForResponse((response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/admin/auth/login");
-    await page.getByRole("button", { name: /继续|登录/ }).click();
-    const payload = await (await loginResponse).json().catch(() => null) as { code?: number; message?: string } | null;
-    expect(payload?.code, `${key} credential: ${payload?.message ?? "no body"}`).toBe(0);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  if (await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false)) return;
+  await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 15_000 });
+  await page.locator('input[autocomplete="username"]').fill(account.username);
+  await page.locator('input[autocomplete="current-password"]').fill(account.password);
+  const loginResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/admin/auth/login");
+  await page.getByRole("button", { name: /继续|登录/ }).click();
+  const loginPayload = await (await loginResponse).json().catch(() => null) as { code?: number; message?: string } | null;
+  expect(loginPayload?.code, `${key} credential: ${loginPayload?.message ?? "no body"}`).toBe(0);
 
-    const otp = page.getByLabel("一次性验证码");
-    await otp.waitFor({ state: "visible", timeout: 5_000 }).catch(() => undefined);
-    if (!(await otp.isVisible().catch(() => false))) break;
-    await otp.fill(await freshTotp(key, account.totpSecret));
-    const verification = page.waitForResponse((response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/admin/auth/mfa/verify");
-    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
-    const response = await verification;
-    const result = await response.json().catch(() => null) as { code?: number } | null;
-    lastCode = result?.code;
-    const hasCookie = (await page.context().cookies()).some((cookie) => cookie.name === "nexion_admin_token");
-    if (response.status() === 200 && (result?.code === 0 || hasCookie)) {
-      await page.goto("/", { waitUntil: "domcontentloaded" });
-      break;
+  const otp = page.getByLabel("一次性验证码");
+  if (!(await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false))) {
+    await expect(otp, `${key} must explicitly enter MFA or receive a shell`).toBeVisible({ timeout: 10_000 });
+    const first = await submitMfa(page, otp, key, account.totpSecret);
+    const final = first.accepted
+      ? first
+      : first.retryable
+        ? await submitMfa(page, otp, key, account.totpSecret, first.step)
+        : first;
+    if (!final.accepted) {
+      throw new Error(`${key} MFA rejected: first=${first.status}/${first.code ?? "none"}, retry=${final.status}/${final.code ?? "none"}`);
     }
   }
   if (!(await page.locator("aside").waitFor({ state: "visible", timeout: 20_000 }).then(() => true).catch(() => false))) {
-    throw new Error(`${key} shell unavailable after MFA code=${lastCode ?? "none"}`);
+    throw new Error(`${key} shell unavailable after successful authentication response`);
   }
+}
+
+async function submitMfa(
+  page: Page,
+  otp: ReturnType<Page["getByLabel"]>,
+  key: string,
+  secret: string,
+  afterStep = -1,
+) {
+  const totp = await freshTotp(key, secret, afterStep);
+  await otp.fill(totp.code);
+  const verification = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/admin/auth/mfa/verify");
+  await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+  const response = await verification;
+  const payload = await response.json().catch(() => null) as { code?: number; message?: string } | null;
+  const hasCookie = (await page.context().cookies()).some((cookie) => cookie.name === "nexion_admin_token");
+  return {
+    accepted: response.status() === 200 && (payload?.code === 0 || hasCookie),
+    // A valid challenge survives only this code-mismatch case. Challenge replay,
+    // expiry and service errors are surfaced immediately instead of blind retries.
+    retryable: response.status() === 401 && payload?.message === "ADMIN_MFA_CODE_INVALID",
+    status: response.status(),
+    code: payload?.code,
+    message: payload?.message,
+    step: totp.step,
+  };
 }
 
 async function logout(page: Page) {
@@ -226,7 +252,7 @@ async function logout(page: Page) {
   await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 20_000 });
 }
 
-async function assertSession(page: Page, hasJRead: boolean) {
+async function assertSession(page: Page, hasJRead: boolean, hasJMenus = hasJRead) {
   const response = await page.request.get("/api/admin/auth/session");
   expect(response.status()).toBe(200);
   const payload = await response.json() as {
@@ -241,11 +267,19 @@ async function assertSession(page: Page, hasJRead: boolean) {
     expect(authorities.some((permission) => permission.startsWith("emergency_j") && permission !== "emergency_j1_read"
       && permission !== "emergency_j2_read" && permission !== "emergency_j3_read"
       && permission !== "emergency_j4_read")).toBe(false);
-    expect(menus.length).toBeGreaterThan(0);
+    if (hasJMenus) expect(menus.length).toBeGreaterThan(0);
+    else expect(menus).toEqual([]);
   } else {
     expect(authorities).toEqual([]);
     expect(menus).toEqual([]);
   }
+}
+
+function fixtureAccount(key: "readonly" | "nowrite" | "nomenu"): FixtureAccount {
+  const legacyKey = key === "readonly" ? "j_readonly" : key === "nowrite" ? "j_no_write" : "j_no_menu";
+  const account = fixture.accounts[key] ?? fixture.accounts[legacyKey];
+  if (!account) throw new Error(`J permission fixture is missing ${key} or ${legacyKey}`);
+  return account;
 }
 
 async function assertVisibleJMenus(page: Page) {
@@ -301,9 +335,9 @@ function writeEvidence(name: string, value: unknown) {
 
 const lastTotpStep = new Map<string, number>();
 
-async function freshTotp(key: string, secret: string) {
+async function freshTotp(key: string, secret: string, afterStep = -1) {
   let step = Math.floor(Date.now() / 30_000);
-  const previous = lastTotpStep.get(key) ?? -1;
+  const previous = Math.max(lastTotpStep.get(key) ?? -1, afterStep);
   if (step <= previous) {
     await new Promise((resolve) => setTimeout(resolve, ((previous + 1) * 30_000) - Date.now() + 500));
   }
@@ -311,7 +345,7 @@ async function freshTotp(key: string, secret: string) {
   if (remaining <= 3) await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1_000));
   step = Math.floor(Date.now() / 30_000);
   lastTotpStep.set(key, step);
-  return currentTotp(secret);
+  return { code: currentTotp(secret), step };
 }
 
 function currentTotp(secret: string) {

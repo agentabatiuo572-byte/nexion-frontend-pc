@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CodeTag, Badge } from "../design-kit";
 import type { E1GenerationRelease, E1Phase } from "@/lib/admin/e1-client";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
@@ -35,32 +35,44 @@ function RackIcon() {
 }
 
 function SkuMediaThumb({ sku }: { sku: OpsSku }) {
-  const [src, setSrc] = useState(sku.imagePreviewUrl || "");
+  // The SKU payload may contain an already-expired MinIO presign. Do not mount
+  // that URL: every rendered asset obtains a new URL through the authenticated
+  // media endpoint, then (and only then) issues the browser media request.
+  const [src, setSrc] = useState("");
   const [failed, setFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const refreshGeneration = useRef(0);
 
-  useEffect(() => {
-    setSrc(sku.imagePreviewUrl || "");
-    setFailed(false);
-    setRefreshing(false);
-  }, [sku.imageAssetId, sku.imagePreviewUrl]);
-
-  const refreshPreview = async () => {
-    if (!sku.imageAssetId || refreshing) {
+  const refreshPreview = useCallback(async () => {
+    const assetId = sku.imageAssetId;
+    if (!assetId) {
       setFailed(true);
       return;
     }
+    const generation = ++refreshGeneration.current;
     setRefreshing(true);
     try {
-      const asset = await refreshAdminMediaPreviewUrl(sku.imageAssetId);
+      const asset = await refreshAdminMediaPreviewUrl(assetId);
+      if (generation !== refreshGeneration.current) return;
+      if (!asset.previewUrl) throw new Error("MEDIA_PREVIEW_URL_MISSING");
       setSrc(asset.previewUrl);
       setFailed(false);
     } catch {
-      setFailed(true);
+      if (generation === refreshGeneration.current) {
+        setSrc("");
+        setFailed(true);
+      }
     } finally {
-      setRefreshing(false);
+      if (generation === refreshGeneration.current) setRefreshing(false);
     }
-  };
+  }, [sku.imageAssetId]);
+
+  useEffect(() => {
+    setSrc("");
+    setFailed(false);
+    void refreshPreview();
+    return () => { refreshGeneration.current += 1; };
+  }, [sku.imageAssetId, refreshPreview]);
 
   if (!src || failed) {
     return (

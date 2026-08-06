@@ -639,6 +639,26 @@
       "restAction": "downloadD3Csv"
     },
     {
+      "id": "OPS-D-16",
+      "domain": "D",
+      "object": "法币提现参数(D7)",
+      "action": "双向牌价点差/出金报价有效期/偏差阈值/费率与限额调整(操作确认+理由+落历史;倒挂默认拒仅超管强制;FEAT-VND01b 方案B假数据面)",
+      "status": "built",
+      "view": "d-tabs/d7-payout-vnd.tsx",
+      "batch": "P0",
+      "restAction": "updatePayoutVndConfig"
+    },
+    {
+      "id": "OPS-D-17",
+      "domain": "D",
+      "object": "法币提现通道",
+      "action": "通道启停(资金流向动作;超管确认+理由+落历史;开启amplifies;在途单不受影响)",
+      "status": "built",
+      "view": "d-tabs/d7-payout-vnd.tsx",
+      "batch": "P0",
+      "restAction": "togglePayoutVndChannel"
+    },
+    {
       "id": "OPS-E-01",
       "domain": "E",
       "object": "商品SKU",
@@ -895,11 +915,12 @@
       "id": "OPS-F-10",
       "domain": "F",
       "object": "佣金事件",
-      "action": "冻结/解锁/驳回",
+      "action": "单笔冻结/提前解锁/解冻(dispose → f_commission_status A2 票)",
       "status": "built",
       "view": "f-view.tsx",
       "batch": "P1",
-      "restAction": "f_commission_status"
+      "restAction": "f_commission_status",
+      "note": "合并底账 ADMIN-MERGE-BASELINE-20260804 §二#4:行内入口曾被静默削减(锚在、按钮无 → 本行一度虚标),2026-08-06 主人拍板恢复 f5-audit.tsx 行内三动作(cooling→冻结/提前解锁,frozen→解冻)。可逆「先按住观察」与不可逆冲正分层;解锁/解冻放大流出方向弹窗 amplify,A2 票 amplifies 按注册表 op 级恒真。"
     },
     {
       "id": "OPS-G-01",
@@ -972,7 +993,8 @@
       "status": "built",
       "view": "g-tabs/g4-genesis.tsx",
       "batch": "P1",
-      "restAction": "updateG4GenesisParam"
+      "restAction": "updateG4GenesisParam",
+      "note": "与 OPS-G-13 阶梯档位的仲裁语义(主人拍板 2026-08-06):tiers 契约在场时「一级单价」只读并标「按阶梯派生」(前端已锁入口+函数双保险),调价唯一入口=OPS-G-13 档位卡;tiers 缺席时本参数照常可调。后端同款仲裁:tiers 在场时拒绝 price 参数写入。"
     },
     {
       "id": "OPS-G-08",
@@ -988,6 +1010,34 @@
         "updateG1StakingPoolKillStatus"
       ],
       "note": "trial 闸无 G 面写点;g5 已移除"
+    },
+    {
+      "id": "OPS-G-12",
+      "domain": "G",
+      "object": "创世市场状态(可见但锁购)",
+      "action": "创世市场 open⇄closed 双向切换(恢复开放 amplifies;确认+理由+审计)",
+      "status": "built",
+      "view": "g-tabs/g4-genesis",
+      "batch": "P0",
+      "restActions": [
+        "updateG4GenesisMarketOpenState"
+      ],
+      "note": "规格 FEAT-GEN10b。与 OPS-G-08 熔断**不可合并**:熔断是止血(恢复只走 J1),本动作是运营节奏(双向可切),两者独立并存且各有审计轨。前端优先级 市场关闭 > 熔断,页面须明示当前实际生效来源。文案变体走白名单下拉(default/maintenance/restock),禁自由文本。"
+    },
+    {
+      "id": "OPS-G-13",
+      "domain": "G",
+      "object": "创世阶梯档位定价",
+      "action": "档位增开/编辑/删除(确认+理由+幂等;区间连续性与末档≥已售由服务端权威校验)",
+      "status": "built",
+      "view": "g-tabs/g4-genesis.tsx",
+      "batch": "P0",
+      "restActions": [
+        "createG4GenesisTier",
+        "updateG4GenesisTier",
+        "deleteG4GenesisTier"
+      ],
+      "note": "合并底账 ADMIN-MERGE-BASELINE-20260804 §二#1 恢复(G4 拆分时丢失,主人 2026-08-06 拍板搬回)。与 OPS-G-07 的仲裁(主人拍板 2026-08-06):tiers 在场时档价按阶梯派生、一级单价参数只读,本卡是调价唯一入口;tiers 缺席/坏形 fail-closed,卡片不渲染任何增删改入口。唯一档不渲染删档入口。三 mutation 带 expectedTiersVersion 整表 CAS。"
     },
     {
       "id": "OPS-G-09",
@@ -1107,6 +1157,18 @@
       "view": "h-view.tsx",
       "batch": "P2",
       "restAction": "h5_checkin_rule"
+    },
+    {
+      "id": "OPS-H-09",
+      "domain": "H",
+      "object": "对外公布数据(H9)",
+      "action": "改公布的平台规模与名次口径",
+      "status": "built",
+      "view": "h-tabs/h9-public-stats.tsx",
+      "restAction": "updateH9PublicStats",
+      "restFile": "lib/admin/h9-client.ts",
+      "batch": "done",
+      "note": "7 个参数 + 算力分位表整组原子写(h9-public-stats.tsx 的「保存变更」→ 操作确认弹窗给前后值对照 + 理由必填 → updateH9PublicStats 带 expectedVersion CAS 与 Idempotency-Key,服务端落审计);改设备总数时页面先给出对公布日产与派生金额的影响预览"
     },
     {
       "id": "OPS-I-01",
@@ -1398,6 +1460,17 @@
       "batch": "done",
       "note": "PRD K1③ 默认值全对齐;K.k1.<param> text edit;改后下一次注册校验生效",
       "restAction": "updateK1Param"
+    },
+    {
+      "id": "OPS-K-01d",
+      "domain": "K",
+      "object": "K1 收益释放参数(SPEC-7)",
+      "action": "7 参数调整(理由必填 8-200 + 幂等命令号):正常释放槽/待审起点/冻结建议线(账号数)/观察窗口/在线证明时长/释放模式/首号绑定",
+      "status": "built",
+      "view": "k-view.tsx",
+      "batch": "P0",
+      "note": "合并底账 ADMIN-MERGE-BASELINE-20260804 §二#5 恢复(主人 2026-08-06 拍板):与整簇冻结分开的放行细调。enum/boolean 下拉禁自由输入;范围限值 k-client 单源(读校验与弹窗共用);releaseParams 契约缺席时卡片 fail-closed 不给编辑入口;命令号走共享 pending store(scope 含参数键)。后端契约约束:①releaseParams 七键必须原子上线——灰度期整字段缺席(前端落 []),禁发部分数组(非精确七键会被前端判 K1_RESPONSE_INVALID 整页拒);②跨字段不变量「待审起点 ≤ 重复账号冻结线」由服务端校验,前端只管单键范围;③冻结线语义=建议(主人拍板 2026-08-06):达线仅生成人工冻结建议,收益自动落锁定桶只由超槽熔断触发,人工冻结簇后新增收益才锁。",
+      "restAction": "updateK1ReleaseParam"
     },
     {
       "id": "OPS-K-01c",

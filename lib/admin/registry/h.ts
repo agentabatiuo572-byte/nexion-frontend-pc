@@ -1,5 +1,7 @@
 /**
  * 域 H 已 port 视图注册表。
+ * 模块:H1 Phase 调度器 · H2 免费试用引擎 · H3 任务引擎 · H4 活动中心 · H5 签到 & NEX ·
+ *       H7 代金券 · H8 新人礼与邀请奖励 · H9 对外公布数据。
  * 真渲染面在 h-view.tsx / h-tabs/*;本文件只保留路由 summary。
  * content 固定为空,避免 ModulePage 复活旧静态/样本业务数据。
  */
@@ -39,6 +41,14 @@ export const DOMAIN_H: ModuleEntry[] = [
   {
     path: "/growth/referral-rewards",
     summary: "新人礼与邀请人奖励(H8)—— 金额配置、待结算邀请和真实发奖统一入口。结算直接写新人 / 邀请人钱包和资金台账，同一新人由唯一约束防重复发奖。",
+    content: PORTED_EMPTY_CONTENT,
+  },
+  {
+    // ⚠️ H9 数据面走 growth 代理直连 nexion-backend 的 GET/PATCH /public-stats;该端点在后端
+    //    是否已实现**未核实**(开发机无该仓),A/B(后端补端点 vs 前端 mock 兜底)待定 ——
+    //    详见 lib/admin/h9-client.ts 头注释。端点缺席时页面走占位卡,不出假数字。
+    path: "/growth/public-stats",
+    summary: "对外公布数据(H9)—— 前端首页公布的平台规模与名次口径的唯一配置入口。可配设备总数、在线占比与展示浮动、注册用户基数与月增长率、名次分母里的虚拟人口,以及把用户算力换算成百分位的分位表。设备总数同时是介绍页 / 信任页 / 全球网格 / 分享海报的共同来源,改它会连带改掉对外公布的日支付额口径,页面在保存前给出影响预览。7 个参数与分位表整组原子保存:确认弹窗给前后值对照、理由必填、服务端落审计并带幂等键,任一项不合法整组不落库。",
     content: PORTED_EMPTY_CONTENT,
   },
 ];

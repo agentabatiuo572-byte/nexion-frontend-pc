@@ -1,7 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+import { loginHMaker } from "./h-owner-mfa";
 
 type Fault = "malformed-200" | "500" | "timeout";
 type ModuleProbe = {
@@ -27,8 +25,7 @@ test.describe.configure({ mode: "serial", timeout: 300_000 });
 
 for (const fault of ["malformed-200", "500", "timeout"] as const) {
   test(`H1/H2/H3/H4/H5/H7/H8 ${fault} 读取故障统一失败关闭并可恢复`, async ({ page }) => {
-    expect(PASSWORD, "ADMIN_E2E_PASSWORD is required").not.toBe("");
-    await login(page);
+    await loginHMaker(page);
     for (const module of MODULES) {
       await page.route(`**${module.apiPath}`, (route) => injectFault(route, fault));
       await openFromSidebar(page, module.path);
@@ -67,16 +64,6 @@ async function injectFault(route: Route, fault: Fault) {
   await route.abort("timedout");
 }
 
-async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  const username = page.locator('input[autocomplete="username"]');
-  if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await username.fill(USERNAME);
-    await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-    await page.getByRole("button", { name: /登录|继续/ }).click();
-  }
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
-}
 
 async function openFromSidebar(page: Page, href: string) {
   const group = page.getByRole("button", { name: /增长与运营节奏/ }).first();

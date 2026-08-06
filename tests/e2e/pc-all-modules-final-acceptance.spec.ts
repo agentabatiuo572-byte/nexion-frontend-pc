@@ -1,14 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { createHmac } from "node:crypto";
+import { expect, test, type Page, type Request } from "@playwright/test";
 import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
-const EXPECTED_BUILD_ID = process.env.PC_FINAL_BUILD_ID?.trim();
-const EVIDENCE_DIR =
-  process.env.PC_FINAL_ACCEPTANCE_EVIDENCE_DIR
-  ?? "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/final-75";
+const USERNAME = requiredEnv("ADMIN_E2E_USERNAME");
+const PASSWORD = requiredEnv("ADMIN_E2E_PASSWORD");
+const TOTP_SECRET = requiredEnv("ADMIN_E2E_TOTP_SECRET");
+const EXPECTED_BUILD_ID = requiredEnv("PC_FINAL_BUILD_ID");
+const EVIDENCE_DIR = requiredEnv("PC_FINAL_ACCEPTANCE_EVIDENCE_DIR");
 
 const MODULES = CONSOLE_NAV.flatMap((domain) =>
   domain.l2.map((module) => ({
@@ -44,7 +44,10 @@ type RuntimeEvidence = {
   admin5xx: string[];
   adminHttpErrors: string[];
   adminRequestFailures: string[];
+  requestFailures: string[];
   expectedNavigationAborts: string[];
+  successfulAdminResponses: string[];
+  successfulResponses: string[];
   expectedAnonymous401: string[];
   firstPass: string[];
   refreshed: string[];
@@ -70,13 +73,17 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后�
     admin5xx: [],
     adminHttpErrors: [],
     adminRequestFailures: [],
+    requestFailures: [],
     expectedNavigationAborts: [],
+    successfulAdminResponses: [],
+    successfulResponses: [],
     expectedAnonymous401: [],
     firstPass: [],
     refreshed: [],
     reloginPass: [],
   };
   let currentModule = "login";
+  const requestOrigins = new WeakMap<Request, string>();
   let pendingAdminRequests = 0;
   let lastAdminActivityAt = Date.now();
 
@@ -95,6 +102,7 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后�
     }
   });
   page.on("request", (request) => {
+    requestOrigins.set(request, currentModule);
     if (isIdleTrackedAdminRequest(request.url())) {
       pendingAdminRequests += 1;
       lastAdminActivityAt = Date.now();
@@ -108,31 +116,42 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后�
   };
   page.on("requestfinished", (request) => finishRequest(request.url()));
   page.on("requestfailed", (request) => {
-    if (isIdleTrackedAdminRequest(request.url())) {
-      const detail =
-        `${currentModule}: ${request.method()} ${pathOf(request.url())} ${request.failure()?.errorText ?? "REQUEST_FAILED"}`;
-      if (request.failure()?.errorText === "net::ERR_ABORTED") {
-        evidence.expectedNavigationAborts.push(detail);
-      } else {
-        evidence.adminRequestFailures.push(detail);
-      }
+    const originModule = requestOrigins.get(request) ?? "unattributed";
+    const detail =
+      `${originModule}: ${request.method()} ${pathOf(request.url())} ${request.failure()?.errorText ?? "REQUEST_FAILED"}`;
+    if (request.failure()?.errorText === "net::ERR_ABORTED") {
+      evidence.expectedNavigationAborts.push(detail);
+    } else {
+      evidence.requestFailures.push(detail);
+      if (isIdleTrackedAdminRequest(request.url())) evidence.adminRequestFailures.push(detail);
     }
     finishRequest(request.url());
   });
   page.on("response", async (response) => {
-    if (!response.url().includes("/api/admin/")) return;
+    const originModule = requestOrigins.get(response.request()) ?? "unattributed";
     const responsePath = pathOf(response.url());
-    const detail = `${currentModule}: ${response.request().method()} ${response.status()} ${responsePath}`;
+    const detail = `${originModule}: ${response.request().method()} ${response.status()} ${responsePath}`;
+    if (response.status() < 400) {
+      evidence.successfulResponses.push(
+        `${originModule}: ${response.request().method()} ${responsePath} ${response.status()}`,
+      );
+    }
+    if (!response.url().includes("/api/admin/")) return;
     if (
       response.status() === 401
       && responsePath === "/api/admin/auth/session"
-      && (currentModule === "login" || currentModule === "relogin")
+      && (originModule === "login" || originModule === "relogin")
     ) {
       evidence.expectedAnonymous401.push(detail);
       return;
     }
     if (response.status() >= 500) evidence.admin5xx.push(detail);
     else if (response.status() >= 400) evidence.adminHttpErrors.push(detail);
+    else {
+      evidence.successfulAdminResponses.push(
+        `${originModule}: ${response.request().method()} ${responsePath} ${response.status()}`,
+      );
+    }
   });
 
   try {
@@ -179,6 +198,15 @@ test("75 个模块统一锁定：侧栏首轮、逐页刷新、退出重登后�
     expect(evidence.admin5xx, "全候选期间 /api/admin/* 不允许 5xx").toEqual([]);
     expect(evidence.adminHttpErrors, "只读统一锁定期间 /api/admin/* 不允许非预期 4xx").toEqual([]);
     expect(evidence.adminRequestFailures, "全候选期间 /api/admin/* 不允许网络失败").toEqual([]);
+    expect(evidence.requestFailures, "全候选期间不允许真实网络失败").toEqual([]);
+    const unpairedNavigationAborts = evidence.expectedNavigationAborts.filter((abort) => {
+      const signature = abort.replace(/\s+net::ERR_ABORTED$/, "");
+      return !evidence.successfulResponses.some((success) => success.startsWith(`${signature} `));
+    });
+    expect(
+      unpairedNavigationAborts,
+      "导航取消仅在同模块、同方法、同路径出现替代成功响应时才允许豁免",
+    ).toEqual([]);
     expect(evidence.expectedAnonymous401.length, "首次从匿名登录页恢复会话时必须得到预期 401").toBeGreaterThanOrEqual(1);
   } finally {
     fs.writeFileSync(
@@ -222,6 +250,19 @@ async function loginFromVisibleEntry(page: Page) {
   await page.getByRole("button", { name: /^(登录|继续)$/ }).click();
   const loginResponse = await loginResponsePromise;
   expect(loginResponse.status(), "登录 POST 必须成功").toBeLessThan(400);
+  const otp = page.getByLabel("一次性验证码");
+  if (await otp.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await otp.fill(await freshTotp(TOTP_SECRET));
+    const verifyResponsePromise = page.waitForResponse(
+      (response) =>
+        pathOf(response.url()) === "/api/admin/auth/mfa/verify"
+        && response.request().method() === "POST",
+      { timeout: 20_000 },
+    );
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const verifyResponse = await verifyResponsePromise;
+    expect(verifyResponse.status(), "MFA 验证必须成功").toBeLessThan(400);
+  }
   await expect(page.locator("aside"), "登录后必须显示侧栏").toBeVisible({ timeout: 20_000 });
 }
 
@@ -281,9 +322,26 @@ async function expectHealthyModule(
   await expect(main.getByText(new RegExp(`\\b${escapeRegExp(module.id)}\\b`)).first(), `${module.id} 主内容页面标识必须可见`)
     .toBeVisible({ timeout: 20_000 });
   await waitForAdminQuiet(requestState, `${module.id} 的后台请求`);
+  await waitForModuleMediaQuiet(page, module);
   for (const pattern of fatalTextPatterns) {
     await expect(main.getByText(pattern), `${module.id} 主内容不应展示失败/mock/localStorage 兜底文案`).toHaveCount(0);
   }
+}
+
+async function waitForModuleMediaQuiet(
+  page: Page,
+  module: (typeof MODULES)[number],
+) {
+  if (module.id !== "M1") return;
+  await expect.poll(() => page.evaluate(() => {
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>("main img"));
+    return images.length > 0 && images.every((image) => image.complete);
+  }), {
+    message: "M1 客服头像应完成加载后再按真实用户节奏离开页面",
+    timeout: 20_000,
+    intervals: [100, 250, 500, 1_000],
+  }).toBe(true);
+  await page.waitForTimeout(250);
 }
 
 async function waitForAdminQuiet(
@@ -319,4 +377,50 @@ function pathOf(url: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+let lastTotpStep = -1;
+
+async function freshTotp(secret: string) {
+  const currentStep = Math.floor(Date.now() / 30_000);
+  const millisecondsRemaining = 30_000 - (Date.now() % 30_000);
+  if (currentStep <= lastTotpStep || millisecondsRemaining <= 5_000) {
+    await expect.poll(() => Math.floor(Date.now() / 30_000), {
+      timeout: 35_000,
+      intervals: [250],
+    }).toBeGreaterThan(currentStep <= lastTotpStep ? lastTotpStep : currentStep);
+  }
+  lastTotpStep = Math.floor(Date.now() / 30_000);
+  return totp(secret);
+}
+
+function totp(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) throw new Error("Invalid base32 TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = Buffer.alloc(Math.floor(bits.length / 8));
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
+  }
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", bytes).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const value =
+    ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff);
+  return String(value % 1_000_000).padStart(6, "0");
+}
+
+function requiredEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
 }

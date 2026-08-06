@@ -2,9 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const appRoot = resolveNexionAppRoot({ adminRoot: root });
+const readApp = (relative) => fs.readFileSync(path.join(appRoot, relative), "utf8");
 
 test("H5 PC mutations carry the visible server value as CAS evidence", () => {
   const client = read("lib/admin/h-client.ts");
@@ -33,9 +36,9 @@ test("H5 backend uses stable database identifiers and atomic compare-and-set SQL
 });
 
 test("H5 App remote mode has canonical endpoints and cannot mint local rewards", () => {
-  const api = read("../NX1.0/src/api/points-api.ts");
-  const store = read("../NX1.0/src/store/nex-faucet.ts");
-  const page = read("../NX1.0/src/pages/daily/daily.vue");
+  const api = readApp("src/api/points-api.ts");
+  const store = readApp("src/store/nex-faucet.ts");
+  const page = readApp("src/pages/daily/daily.vue");
   assert.match(api, /\/api\/points\/sign-in/);
   assert.match(api, /\/api\/points\/streak-saver\/use/);
   assert.match(store, /if \(remoteApiEnabled\) \{\s*return \{ ok: false/s);

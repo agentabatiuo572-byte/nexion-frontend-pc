@@ -5,7 +5,7 @@ import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 
 type FixtureAccount = { username: string; password: string; totpSecret: string };
 type PermissionFixture = {
-  accounts: { l_owner: FixtureAccount };
+  accounts: { maker: FixtureAccount };
 };
 
 const fixturePath = process.env.L_PERMISSION_FIXTURE_PATH;
@@ -37,7 +37,7 @@ test("L Owner 最终锁定：L1-L6 均从可见侧栏进入，刷新与退出重
     }
   });
 
-  await login(page, fixture.accounts.l_owner);
+  await login(page, fixture.accounts.maker);
   await assertOwnerSession(page);
   const domain = CONSOLE_NAV.find((item) => item.code === "L");
   if (!domain) throw new Error("L domain missing from navigation source");
@@ -50,7 +50,7 @@ test("L Owner 最终锁定：L1-L6 均从可见侧栏进入，刷新与退出重
   }
 
   await logout(page);
-  await login(page, fixture.accounts.l_owner);
+  await login(page, fixture.accounts.maker);
   await openVisibleModule(page, "/analytics/kpi");
   await expect(page.getByText(MODULE_MARKERS.L1).first()).toBeVisible();
   await openVisibleModule(page, "/analytics/behavior-heatmap");

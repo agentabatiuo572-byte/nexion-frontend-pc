@@ -31,6 +31,7 @@ import { SensitiveOperationFeed, type SensitiveOperationItem } from "@/app/compo
 import { FunnelBars } from "@/app/components/dashboard/funnel-bars";
 import { KpiWall, type DashboardKpi } from "@/app/components/dashboard/kpi-wall";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { B_DASHBOARD_READ_AUTHORITIES, L_BI_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -210,41 +211,59 @@ export default function CommandCenter() {
   const [a2Error, setA2Error] = useState<string | null>(null);
   const [lBiData, setLBiData] = useState<LBiData | null>(null);
   const [lBiError, setLBiError] = useState<string | null>(null);
-  const [lBiLoading, setLBiLoading] = useState(true);
-  const canReadJ1 = session?.authorities.includes("emergency_j1_read") ?? false;
+  const [lBiLoading, setLBiLoading] = useState(false);
+  const authorities = session?.authorities ?? [];
+  const canReadA2 = authorities.includes("platform_a2_read");
+  const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
+  const canReadLBi = L_BI_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
+  const canReadJ1 = authorities.includes("emergency_j1_read");
   const { alerts: opsAlerts, error: opsAlertError } = useJ1DutyAlerts(canReadJ1);
   useEffect(() => {
     let alive = true;
-    fetchA2Overview()
-      .then((overview) => {
-        if (!alive) return;
-        setA2Overview(overview);
-        setA2Error(null);
-      })
-      .catch((error: unknown) => {
-        if (!alive) return;
-        setA2Error(displayAdminError(error));
-      });
-    fetchLBiOverviews()
-      .then((data) => {
-        if (!alive) return;
-        setLBiData(data);
-        setLBiError(null);
-      })
-      .catch((error: unknown) => {
-        if (!alive) return;
-        setLBiError(displayAdminError(error));
-      })
-      .finally(() => {
-        if (alive) setLBiLoading(false);
-      });
+    if (canReadA2) {
+      fetchA2Overview()
+        .then((overview) => {
+          if (!alive) return;
+          setA2Overview(overview);
+          setA2Error(null);
+        })
+        .catch((error: unknown) => {
+          if (!alive) return;
+          setA2Overview(null);
+          setA2Error(displayAdminError(error));
+        });
+    } else {
+      setA2Overview(null);
+      setA2Error(null);
+    }
+    if (canReadLBi) {
+      setLBiLoading(true);
+      fetchLBiOverviews()
+        .then((data) => {
+          if (!alive) return;
+          setLBiData(data);
+          setLBiError(null);
+        })
+        .catch((error: unknown) => {
+          if (!alive) return;
+          setLBiData(null);
+          setLBiError(displayAdminError(error));
+        })
+        .finally(() => {
+          if (alive) setLBiLoading(false);
+        });
+    } else {
+      setLBiData(null);
+      setLBiError(null);
+      setLBiLoading(false);
+    }
     return () => {
       alive = false;
     };
-  }, []);
+  }, [canReadA2, canReadLBi]);
   const role = mounted ? sessionRole : null;
   const operator = mounted ? sessionOperator : "";
-  const bDomain = useBDomainDashboard();
+  const bDomain = useBDomainDashboard(canReadBDomain);
   const { ledger: LEDGER, funnel, rhythm, riskRadar } = bDomain;
   const renderBDomainState = (error: string | null, loading = false) => (
     <div className="w-full">
@@ -264,6 +283,9 @@ export default function CommandCenter() {
     </div>
   );
 
+  if (!canReadBDomain) {
+    return renderBDomainState("当前角色没有 B 域总览权限，请从侧栏进入已授权模块。");
+  }
   if ((bDomain.loading && !bDomain.hasData) || bDomain.error || !bDomain.hasData) {
     return renderBDomainState(bDomain.error, bDomain.loading && !bDomain.error);
   }

@@ -14,6 +14,12 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EMERGENCY_API_503: "应急控制后端当前不可用，控制项已隐藏；请稍后重新读取，持续失败时联系值班人员。",
   EMERGENCY_API_500: "应急控制服务暂时异常，控制项已隐藏，请稍后重新读取或联系值班人员。",
   RISK_BACKEND_UNAVAILABLE: "风险服务当前不可用，旧数据与写操作已隐藏；请稍后重新读取，持续失败时联系值班人员。",
+  // GROWTH_* 两条是本仓代理路由 app/api/admin/growth/[...path]/route.ts 自己铸的码(闭集)。
+  // 🔴 后端不可达是本机常态、也是 H 域页面最可能的读失败:漏掉这两条时它们会落进
+  //    MACHINE_CODE_RE 兜底「请检查输入内容」——对一次只读加载失败,这个指引是错的。
+  //    文案保持读写中性(growthRequest 同时服务 H1–H9 的读与写)。契约测试:tests/h9-public-stats-contract.test.mjs。
+  GROWTH_BACKEND_UNAVAILABLE: "增长与运营节奏服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
+  GROWTH_ROUTE_NOT_FOUND: "当前服务版本未提供该增长与运营能力，请刷新页面；若仍出现，请联系值班人员检查前后端版本。",
   K1_RESPONSE_INVALID: "K1 服务返回的数据不完整或不一致，旧数据与写操作已隐藏；请重新读取或联系风控值班人员。",
   K2_RESPONSE_INVALID: "K2 服务返回的数据不完整或不一致，旧数据与写操作已隐藏；请重新读取或联系风控值班人员。",
   K2_ROW_CONCURRENT_UPDATE: "该 K2 命中已被其他操作员处置，请刷新后查看最新状态。",
@@ -128,6 +134,9 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H8_CONFIG_VERSION_CONFLICT: "邀请奖励配置已被其他操作员修改，本次未覆盖；请刷新页面并核对最新值后重试。",
   H8_CONFIG_VERSION_INVALID: "邀请奖励配置版本异常，本次未写入；请联系值班人员检查后端配置。",
   H8_UPSTREAM_OUTCOME_UNKNOWN: "本次邀请奖励参数写入结果未知，可能已经生效；请先刷新并核对服务端当前值，确认仍需重试时使用当前表单再次提交。",
+  H9_RESPONSE_INVALID: "对外公布数据服务返回的内容不完整或类型不对，页面已停止展示任何数字并冻结写操作；请重新读取或联系值班人员。",
+  H9_DATA_LOAD_FAILED: "对外公布数据读取失败，页面没有展示任何数字；请点重试，持续失败时联系值班人员。",
+  H9_SAVE_FAILED: "对外公布数据保存失败，本次改动没有生效也没有落审计；请刷新核对当前生效值后重试。",
   QUEST_CONFIG_STALE: "H3 配置已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
   QUEST_CONFIG_NO_CHANGE: "目标值与 H3 当前配置相同，本次未写入。",
   EVENT_CONFIG_STALE: "活动已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
@@ -247,7 +256,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_DOMAIN_EXTENSION_INVALID: "domain 名无效、已注册或已下线，请重新填写。",
   A4_DOMAIN_EXTENSION_EVENT_INVALID: "扩展事件名必须与 domain 一致，并使用已发生动作。",
   A4_DOMAIN_EXTENSION_DUPLICATE: "该 domain 扩展工单已经登记，请刷新列表。",
-  A4_SCHEMA_NOT_REGISTERED: "该事件尚未通过 A4 Schema Registry 注册，服务端已阻止发送。",
+  A4_SCHEMA_NOT_REGISTERED: "系统事件登记不完整，操作未生效。请联系平台管理员修复配置后重试。",
   IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "同一请求标识对应的内容已变化，本次未执行；请刷新页面后重新发起。",
   PLATFORM_BACKEND_TIMEOUT: "平台服务响应超时，当前结果尚未确认；写操作请保留当前输入并直接重试。",
   PLATFORM_BACKEND_UNAVAILABLE: "平台服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
@@ -568,9 +577,35 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A1_CREATE_TEMPORARY_PASSWORD_MISSING: "请先填写新账号的初始密码后再提交。",
   NOVA_PUBLISHED_TEMPLATE_REQUIRED: "该渠道还没有已发布的模板，请先发布模板再恢复投放。",
   C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
+  // ---- 2026-08-06 main 合流补账:合流后哨兵扫出的 17 个无文案机器码,逐条补运营中文 ----
+  E2_TASK_PRICING_PROTOCOL_INVALID: "任务定价服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  G4_INVITE_STORAGE_UNAVAILABLE: "邀请码存储暂时不可用，本次操作未生效；请稍后重试，持续失败请联系值班人员。",
+  G4_INVITE_STORAGE_WRITE_FAILED: "邀请码写入失败，本次操作未生效；请重试，持续失败请联系值班人员。",
+  G4_INVITE_CODE_SPACE_EXHAUSTED: "可用邀请码额度已用尽，请减少生成数量或回收未使用的邀请码后再试。",
+  ADMIN_SESSION_NOT_ESTABLISHED: "登录未完成：服务端会话尚未建立，请重新登录。",
+  ADMIN_SESSION_IDENTITY_MISMATCH: "登录校验异常：会话身份与登录账号不一致，已中止本次登录；请重新登录。",
+  CONTENT_API_TIMEOUT: "客服内容服务响应超时，本次读取未完成；请稍后重试。",
+  M2_TICKET_DETAILS_UNAVAILABLE: "客服工单详情暂时读取不到，请刷新重试；持续失败请联系值班人员。",
+  M3_CONVERSATION_DETAILS_UNAVAILABLE: "客服会话详情暂时读取不到，请刷新重试；持续失败请联系值班人员。",
+  M_CONTENT_AUTH_EPOCH_CHANGED: "登录状态已更新，本次读取已中止；页面将按新的登录身份重新加载。",
+  M1_SUPPORT_AGENT_OVERVIEW_MALFORMED: "客服坐席总览返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  CONTENT_API_MALFORMED_RESPONSE: "客服内容服务返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M2_TICKET_ASSIGNEE_CANDIDATES_MALFORMED: "可指派坐席列表返回的数据不完整或格式异常，已停止展示；请重试读取或联系值班人员。",
+  M1_SUPPORT_AGENT_RETRY_BOUND_INVALID: "坐席重试参数配置异常，已停止本次操作；请联系值班人员核查配置。",
+  FORCE_PHRASE_MISMATCH: "二次确认短语不一致，已取消强制保存；请输入指定短语后重试。",
+  MEDIA_PREVIEW_URL_MISSING: "该素材缺少预览地址，无法打开预览；请先补充素材文件后再试。",
+  M2_TICKET_ASSIGNEE_ID_MISSING: "尚未选择要指派的坐席，请先选择坐席再提交。",
 };
 
-const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+$/;
+/**
+ * 机器码兜底判据:裸码,或**带 `:明细` 后缀**的码(`H9_CONFIG_VERSION_CONFLICT:v7`)。
+ *
+ * 🔴 后缀这一支不是补全性的洁癖:只认裸码时,字典里没有的带后缀码会从函数末尾 `return raw`
+ *    原样落到运营面上。H9 保存走 expectedVersion CAS,并发改动必回 409 —— 那正是这一页
+ *    最可能遇到的错误,却是唯一漏出英文码的路径(2026-08-05 运行时探针实测,静态读代码看不出来)。
+ *    41 个调用方共用本函数,所以补在这里而不是给每个域的字典各塞一批猜出来的后端码。
+ */
+const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
 export function formatAdminApiError(message: string | null | undefined, fallback: string) {
   const raw = (message || fallback || "").trim();

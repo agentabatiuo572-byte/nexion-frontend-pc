@@ -16,6 +16,7 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { fmtPct } from "@/lib/format";
 import { displayAdminError } from "@/lib/admin/error-messages";
+import { B_DASHBOARD_READ_AUTHORITIES, canReadC2HighRiskAlerts } from "@/lib/admin/shell-authorities";
 
 type AlertLevel = "high" | "mid" | "low";
 interface ShellAlert {
@@ -59,15 +60,24 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [pendingOperations, setPendingOperations] = useState<A2OperationRow[]>([]);
   const [a2Error, setA2Error] = useState<string | null>(null);
-  const hasAdminSession = useAdminAuth((state) => state.session != null);
-  const isSuperAdmin = useAdminAuth((state) => state.session?.role === "superadmin");
-  const canReadC2Alerts = useAdminAuth((state) => state.session?.role === "superadmin" || state.session?.role === "risk");
-  const canReadJ3Alerts = useAdminAuth((state) => state.session?.authorities?.includes("emergency_j3_alert_config") === true);
+  const session = useAdminAuth((state) => state.session);
+  const authorities = session?.authorities ?? [];
+  const hasAdminSession = session != null;
+  const isSuperAdmin = session?.role === "superadmin";
+  const canReadA2 = authorities.includes("platform_a2_read");
+  const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
+  const canReadC2Alerts = canReadC2HighRiskAlerts(session);
+  const canReadJ3Alerts = authorities.includes("emergency_j3_alert_config");
   const { alerts: opsAlerts, error: opsAlertError } = useJ1DutyAlerts(hasAdminSession);
   const { alerts: j2Alerts, error: j2AlertError } = useJ2GeoAlerts(isSuperAdmin);
   const { alerts: j3Alerts, error: j3AlertError } = useJ3TamperConfigAlerts(canReadJ3Alerts);
   const { alerts: c2Alerts, error: c2AlertError } = useC2HighRiskAlerts(canReadC2Alerts);
   useEffect(() => {
+    if (!canReadA2) {
+      setPendingOperations([]);
+      setA2Error(null);
+      return undefined;
+    }
     let alive = true;
     fetchA2Overview()
       .then((overview) => {
@@ -83,8 +93,8 @@ export function NotificationBell() {
     return () => {
       alive = false;
     };
-  }, []);
-  const bDomain = useBDomainDashboard();
+  }, [canReadA2]);
+  const bDomain = useBDomainDashboard(canReadBDomain);
   const bAlerts: ShellAlert[] = (() => {
     if (bDomain.error) {
       return [{ id: "b-sync", level: "high", text: `B 域风险雷达同步失败: ${bDomain.error}`, href: "/overview/risk-radar" }];
