@@ -23,6 +23,7 @@ import type { Strategy } from "@/lib/admin/janus-c2/types";
 import { StrategyEditor } from "./strategy-editor";
 import { VersionPanel } from "./version-panel";
 import { PublishConfirm } from "./publish-confirm";
+import { StatusChangeConfirm } from "./status-change-confirm";
 import { useK6Operator } from "./use-operator";
 
 function scopeText(s: Strategy): string {
@@ -57,6 +58,8 @@ export function K6StrategyCenter() {
   const [editing, setEditing] = useState<{ strategy: Strategy; isNew: boolean } | null>(null);
   const [versioning, setVersioning] = useState<Strategy | null>(null);
   const [publishing, setPublishing] = useState<Strategy | null>(null);
+  // 暂停/归档与发布同级(都是让判定生效或失效的高敏动作),走确认 + 必填原因 + 影响说明。
+  const [statusChanging, setStatusChanging] = useState<{ strategy: Strategy; mode: "paused" | "archived" } | null>(null);
   const [pendingDel, setPendingDel] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -119,8 +122,8 @@ export function K6StrategyCenter() {
                     <button className="k6-pgbtn" disabled={actionPending !== null} onClick={() => void runAction(`copy:${s.strategyId}`, () => dup(s.strategyId, operator.id)).catch(() => undefined)}>{actionPending === `copy:${s.strategyId}` ? "复制中…" : "复制"}</button>
                     <button className="k6-pgbtn" onClick={() => setVersioning(s)}>版本{s.versions.length ? ` (${s.versions.length})` : ""}</button>
                     {canPublish && (s.status === "draft" || s.status === "paused") && <button className="k6-pgbtn" onClick={() => setPublishing(s)}>发布</button>}
-                    {s.status === "active" && <button className="k6-pgbtn" disabled={actionPending !== null} onClick={() => void runAction(`pause:${s.strategyId}`, () => setStatus(s.strategyId, "paused", operator.id)).catch(() => undefined)}>{actionPending === `pause:${s.strategyId}` ? "暂停中…" : "暂停"}</button>}
-                    {s.status === "paused" && <button className="k6-pgbtn" disabled={actionPending !== null} onClick={() => void runAction(`archive:${s.strategyId}`, () => setStatus(s.strategyId, "archived", operator.id)).catch(() => undefined)}>{actionPending === `archive:${s.strategyId}` ? "归档中…" : "归档"}</button>}
+                    {s.status === "active" && <button className="k6-pgbtn" disabled={actionPending !== null} onClick={() => setStatusChanging({ strategy: s, mode: "paused" })}>暂停</button>}
+                    {s.status === "paused" && <button className="k6-pgbtn" disabled={actionPending !== null} onClick={() => setStatusChanging({ strategy: s, mode: "archived" })}>归档</button>}
                     {s.status === "draft"
                       ? <button className="k6-pgbtn" style={{ color: "var(--danger)" }} onClick={() => setPendingDel(s.strategyId)}>删除草稿</button>
                       : <span className="k6-bdg dim">已发布或归档记录保留，不可删除</span>}
@@ -135,6 +138,7 @@ export function K6StrategyCenter() {
       {editing && <StrategyEditor initial={editing.strategy} isNew={editing.isNew} operatorId={operator.id} onClose={() => setEditing(null)} />}
       {versioning && <VersionPanel strategy={versioning} operatorId={operator.id} canRollback={canPublish} onClose={() => setVersioning(null)} />}
       {publishing && <PublishConfirm strategy={publishing} operatorId={operator.id} onClose={() => setPublishing(null)} />}
+      {statusChanging && <StatusChangeConfirm strategy={statusChanging.strategy} mode={statusChanging.mode} operatorId={operator.id} onClose={() => setStatusChanging(null)} />}
     </div>
   );
 }
