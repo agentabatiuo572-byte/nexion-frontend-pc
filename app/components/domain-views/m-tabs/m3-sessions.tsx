@@ -415,7 +415,10 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       .filter((c) => {
         if (!q) return true;
         const typeLab = c.type === "advisor" ? "顾问 advisor" : "客服 support";
-        return [c.id, c.agentName, c.owner, c.customer ?? "", c.profile?.nickname ?? "", typeLab].some((t) => t.toLowerCase().includes(q));
+        // 用户编码可搜(2026-08-06 原型对比 M-2):会话详情把运营指引到「按用户昵称 / 用户编码搜」,
+        // 而此前只认昵称 —— 编码那条路是死的。
+        return [c.id, c.agentName, c.owner, c.customer ?? "", c.profile?.nickname ?? "", c.profile?.uid ?? "", typeLab]
+          .some((t) => t.toLowerCase().includes(q));
       })
       .sort((a, b) => b.lastTs - a.lastTs);
   }, [convos, query, seg, typeFilter]);
