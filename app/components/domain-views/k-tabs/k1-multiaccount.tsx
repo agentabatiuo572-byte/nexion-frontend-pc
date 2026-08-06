@@ -8,7 +8,7 @@ import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
+import { createPendingMutationStore, createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 
@@ -17,6 +17,12 @@ const fmt = (n: number) => n.toLocaleString("en-US");
  *  (`cluster-freeze:簇号:版本`、`whitelist-disable:网段`),刷新后仍能用同一命令号重试。 */
 const commandAttempt = createPendingMutationStore({
   storageKey: "nexion-admin-k1-multiaccount-commands-v1",
+});
+/** 释放参数调参带自由输入值,不能用按槽位无条件复用的朴素 store:运营在「结果未知」后改了值再提交,
+ *  朴素 store 会复用旧命令号,后端 24h 幂等窗把新值当重复提交静默吞掉(界面还报成功)。
+ *  按「槽位 + 输入指纹」解析 —— 同键同输入才复用,输入变了铸新号。F 域同类调参用的是同一个组件。 */
+const releaseAttempts = createSlotAttemptStore({
+  storageKey: "nexion-admin-k1-release-commands-v1",
 });
 const CLUSTER_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const WHITELIST_PAGE_SIZE_OPTIONS = [5, 10, 20];
@@ -76,6 +82,21 @@ function errorText(error: unknown) {
   return /failed to fetch|networkerror|backend_unavailable/i.test(message)
     ? "暂时无法连接风险服务，请稍后重试"
     : message || "暂时无法读取风险数据";
+}
+
+/** 释放参数的「放宽」方向判定(口径与 PRD v1 [K1] K1-MD4 逐条一致)。
+ *  放宽 = 让更多收益更快进入可提桶 = 放大资金流出方向,须在弹窗告知并由服务端前置 B1 覆盖率核验。
+ *  数值键分两族:调**大**是放宽(槽位 / 待审起点 / 重复账号建议线)· 调**小**是放宽(观察窗口 / 在线证明时长)。 */
+const RELEASE_LOOSEN_WHEN_LARGER = new Set(["freePhoneSlotsPerCluster", "duplicateAccountPendingFrom", "duplicateAccountFreezeFrom"]);
+const RELEASE_LOOSEN_WHEN_SMALLER = new Set(["pendingReleaseHours", "appAttestationReleaseHours"]);
+export function isLooseningRelease(key: string, current: string, next: string): boolean {
+  if (RELEASE_LOOSEN_WHEN_LARGER.has(key)) return Number(next) > Number(current);
+  if (RELEASE_LOOSEN_WHEN_SMALLER.has(key)) return Number(next) < Number(current);
+  // 释放模式:仅人工放行 → 允许在线证明放行 = 多开一条自动放行来源 = 放宽。
+  if (key === "releaseMode") return current === "manual_only" && next === "attest_or_manual";
+  // 首号绑定要求:开启 → 关闭 = 免费槽不再要求绑定 = 放宽。
+  if (key === "freeSlotRequiresBinding") return current === "true" && next === "false";
+  return false;
 }
 
 function confirmedK1FailureText(error: unknown) {
@@ -484,14 +505,12 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setParamDraft({ param: p, value: p.value, reason: "", commandKey: newK1CommandKey() });
   };
 
-  // 收益释放参数编辑:命令号走共享 commandAttempt(scope 含参数键),刷新后重开弹窗仍复用同号,
-  // 不继承 paramDraft 把命令号放裸 useState 的丢键形态。
+  // 收益释放参数编辑:命令号在**提交时**按「槽位 + 输入指纹」解析(见 releaseAttempts 注),
+  // 不在开弹窗时铸号 —— 开弹窗时还不知道运营要填什么,提前铸号就没法区分「原样重试」和「改了值再提交」。
   const releaseScope = (key: string) => `release-param:${key}`;
+  const releaseFingerprint = (value: string, reason: string) => JSON.stringify([value, reason.trim()]);
   const adjReleaseParam = (p: KRiskParam) => {
-    const scope = releaseScope(p.key);
-    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
-    commandAttempt.remember(scope, commandKey);
-    setReleaseDraft({ param: p, value: p.value, reason: "", commandKey });
+    setReleaseDraft({ param: p, value: p.value, reason: "", commandKey: "" });
   };
 
   const saveReleaseDraft = async () => {
@@ -499,20 +518,22 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     draftSubmitLock.current = true;
     setDraftSubmitting("release");
     const scope = releaseScope(releaseDraft.param.key);
+    // 同槽位 + 同输入 → 复用命令号(原样重试不重复下单);输入变了 → 自动铸新号(改值再提交不被幂等窗吞掉)。
+    const commandKey = releaseAttempts.resolve(
+      scope,
+      releaseFingerprint(releaseDraft.value, releaseDraft.reason),
+      () => newK1CommandKey(),
+    );
     try {
-      await ctx.actions.updateK1ReleaseParam(releaseDraft.param.key, releaseDraft.value, releaseDraft.reason.trim(), releaseDraft.commandKey);
-      commandAttempt.forget(scope);
+      await ctx.actions.updateK1ReleaseParam(releaseDraft.param.key, releaseDraft.value, releaseDraft.reason.trim(), commandKey);
+      releaseAttempts.forget(scope);
     } catch (error) {
       ctx.toast(error instanceof K1OutcomeUncertainError
-        ? `K1 结果未知 · 请保留当前弹窗并重试 · ${error.commandKey}`
+        ? `K1 结果未知 · 请保留当前弹窗并原样重试 · ${error.commandKey}`
         : confirmedK1FailureText(error));
-      if (!(error instanceof K1OutcomeUncertainError)) {
-        // 确定性失败 = 本次命令已终结:换新号再试,旧号不复用。
-        commandAttempt.forget(scope);
-        const freshKey = newK1CommandKey();
-        commandAttempt.remember(scope, freshKey);
-        setReleaseDraft((current) => current ? { ...current, commandKey: freshKey } : current);
-      }
+      // 确定性失败 = 本次命令已终结,丢弃该槽位;下次提交(无论输入变没变)都会铸新号。
+      // 结果未知则**不丢弃** —— 原样重试要复用同号,改了值则由指纹自动换号。
+      if (!(error instanceof K1OutcomeUncertainError)) releaseAttempts.forget(scope);
       return;
     } finally {
       draftSubmitLock.current = false;
@@ -972,6 +993,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <label htmlFor={`${formId}-release-reason`}>操作理由（必填 · 8-200 字）</label>
               <textarea id={`${formId}-release-reason`} rows={3} maxLength={200} value={releaseDraft.reason} onChange={(event) => update({ reason: event.target.value })} />
             </div>
+            {isLooseningRelease(key, releaseDraft.param.value, releaseDraft.value) && (
+              // 放大资金流出方向的告知(与其它放大类动作同款口径):真正的拦截在服务端,
+              // 本页没有覆盖率数据,不做客户端预检 —— 只如实告知会被核验,不假装拦得住。
+              <div className="ktint warn" data-proof="k1-release-loosen-warning" style={{ marginTop: 10 }}>
+                <b>该改动会放大资金流出</b> · 放宽后更多收益进入可提桶,服务端会先核验 B1 备付金覆盖率,低于红线将整单拒绝(本次写入不生效)。请在操作理由写明放宽依据。
+              </div>
+            )}
             <div className="ctint">{releaseDraft.param.note.trim() || "释放参数只改变后续注册、结算与提现分诊,历史审计不回写;放宽方向请在理由写明依据。"}</div>
           </Modal>
         );

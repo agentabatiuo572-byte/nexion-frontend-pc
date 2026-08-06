@@ -148,6 +148,9 @@ const GEARS = [
   // F 域稳定命令号:静态半钉咽喉表达式级接线 + 运行时半跑真 store 语义(只读本仓,任何机器真跑)。
   ["F pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/f-pending-store-contract.test.mjs"]],
   ["K1 release-params contract", "node", ["--test", "tests/k1-release-params-contract.test.mjs"]],
+  // 释放参数调参是钱路径(管收益放行):命令号必须带输入指纹(改值再提交不被幂等窗静默吞掉)+
+  // 放宽方向必须告知会核验 B1 覆盖率。两条都被独立审计抓到过,焊成门防复发。
+  ["K1 release-guard contract", "node", ["--test", "tests/k1-release-guard-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
