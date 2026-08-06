@@ -1,7 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  assertLocalFCandidate,
+  currentFRunId,
+  loadFMaker,
+  loginFActor,
+} from "./helpers/f-acceptance-harness";
 
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const RUN_ID = currentFRunId();
+const F_MAKER = loadFMaker(RUN_ID);
+
+test.beforeAll(() => {
+  assertLocalFCandidate();
+});
 
 const MODULES = [
   {
@@ -58,19 +68,24 @@ test.describe("F1-F5 malformed 200 fail closed", () => {
       await entry.click();
       await expect(page).toHaveURL(new RegExp(`${module.path.replaceAll("/", "\\/")}$`));
       await expect(page.getByText(module.error).first()).toBeVisible();
+      if (module.id === "F5") {
+        await expect(page.getByRole("button", { name: /批量补发/ })).toHaveCount(0);
+        await expect(page.getByText(/佣金权威快照不可用，批量补发已暂停。/)).toBeVisible();
+        await page.unroute(`**${module.api}**`);
+        const restored = page.waitForResponse((candidate) =>
+          candidate.request().method() === "GET"
+          && new URL(candidate.url()).pathname === module.api
+          && candidate.status() === 200,
+        );
+        await page.getByRole("button", { name: "重试", exact: true }).click();
+        await restored;
+        await expect(page.getByText(module.error)).toHaveCount(0);
+        await expect(page.getByRole("button", { name: /批量补发/ })).toHaveCount(1);
+      }
     });
   }
 });
 
 async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  if (await page.locator("aside").isVisible({ timeout: 3_000 }).catch(() => false)) return;
-  await page.locator('input[autocomplete="username"]').fill(USERNAME);
-  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-  const response = page.waitForResponse((candidate) =>
-    candidate.request().method() === "POST"
-    && new URL(candidate.url()).pathname === "/api/admin/auth/login");
-  await page.getByRole("button", { name: /登录|继续/ }).click();
-  expect((await response).status()).toBe(200);
-  await expect(page.locator("aside")).toBeVisible();
+  await loginFActor(page, F_MAKER, "f-malformed-maker");
 }

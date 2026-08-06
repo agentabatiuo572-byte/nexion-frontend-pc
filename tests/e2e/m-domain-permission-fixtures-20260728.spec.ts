@@ -4,13 +4,17 @@ import { expect, test, type Page } from "@playwright/test";
 import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 
 type FixtureAccount = { username: string; password: string; totpSecret: string };
+type FixtureAccounts = {
+  readonly?: FixtureAccount;
+  nowrite?: FixtureAccount;
+  nomenu?: FixtureAccount;
+  m_readonly?: FixtureAccount;
+  m_no_write?: FixtureAccount;
+  m_no_menu?: FixtureAccount;
+};
 type PermissionFixture = {
   runId: string;
-  accounts: {
-    m_readonly: FixtureAccount;
-    m_no_write: FixtureAccount;
-    m_no_menu: FixtureAccount;
-  };
+  accounts: FixtureAccounts;
 };
 type ModuleProbe = {
   id: string;
@@ -25,6 +29,11 @@ type ModuleProbe = {
 const fixturePath = process.env.M_PERMISSION_FIXTURE_PATH;
 if (!fixturePath) throw new Error("M_PERMISSION_FIXTURE_PATH is required");
 const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as PermissionFixture;
+const fixtureAccounts = {
+  readonly: requiredFixtureAccount(fixture.accounts, "readonly", "m_readonly"),
+  nowrite: requiredFixtureAccount(fixture.accounts, "nowrite", "m_no_write"),
+  nomenu: requiredFixtureAccount(fixture.accounts, "nomenu", "m_no_menu"),
+};
 
 const MODULES: ModuleProbe[] = [
   {
@@ -75,10 +84,10 @@ const MODULES: ModuleProbe[] = [
 ];
 
 test.describe.serial("M 域五层权限夹具验收", () => {
-  for (const key of ["m_readonly", "m_no_write"] as const) {
+  for (const key of ["readonly", "nowrite"] as const) {
     test(`${key}：M1-M5 菜单/路由/数据可读，按钮和接口写入均被拒绝，刷新重登不漂移`, async ({ page }) => {
       const pageErrors = monitorPageErrors(page);
-      await login(page, fixture.accounts[key]);
+      await login(page, fixtureAccounts[key]);
       await assertVisibleMMenus(page);
       await assertSessionShape(page, true);
 
@@ -108,7 +117,7 @@ test.describe.serial("M 域五层权限夹具验收", () => {
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(MODULES[4].visibleText).first()).toBeVisible();
       await logout(page);
-      await login(page, fixture.accounts[key]);
+      await login(page, fixtureAccounts[key]);
       await assertVisibleMMenus(page);
       expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(200);
       expect((await browserApi(page, MODULES[0].writeMethod, MODULES[0].writePath, MODULES[0].writeBody)).status).toBe(403);
@@ -116,9 +125,9 @@ test.describe.serial("M 域五层权限夹具验收", () => {
     });
   }
 
-  test("m_no_menu：M 菜单、直接路由、读写接口均拒绝，刷新重登不能由缓存恢复", async ({ page }) => {
+  test("nomenu：M 权限和菜单均为空，直链及读写接口均拒绝，刷新重登不漂移", async ({ page }) => {
     const pageErrors = monitorPageErrors(page);
-    await login(page, fixture.accounts.m_no_menu);
+    await login(page, fixtureAccounts.nomenu);
     await assertSessionShape(page, false);
     await expect(page.locator('a[href^="/service/"]')).toHaveCount(0);
 
@@ -126,18 +135,29 @@ test.describe.serial("M 域五层权限夹具验收", () => {
     await expect(page).not.toHaveURL(/\/service\/overview(?:\?.*)?$/);
     await expect(page.locator(".mdom")).toHaveCount(0);
     for (const module of MODULES) {
-      expect((await browserApi(page, "GET", module.readPath)).status, `${module.id} read`).toBe(403);
+      const read = await browserApi(page, "GET", module.readPath);
+      expect(read.status, `${module.id} read`).toBe(403);
       expect((await browserApi(page, module.writeMethod, module.writePath, module.writeBody)).status, `${module.id} write`).toBe(403);
     }
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator('a[href^="/service/"]')).toHaveCount(0);
     await logout(page);
-    await login(page, fixture.accounts.m_no_menu);
+    await login(page, fixtureAccounts.nomenu);
     await expect(page.locator('a[href^="/service/"]')).toHaveCount(0);
     expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
     expect(pageErrors).toEqual([]);
   });
 });
+
+function requiredFixtureAccount(
+  accounts: FixtureAccounts,
+  canonical: "readonly" | "nowrite" | "nomenu",
+  legacy: "m_readonly" | "m_no_write" | "m_no_menu",
+): FixtureAccount {
+  const account = accounts[canonical] ?? accounts[legacy];
+  if (!account) throw new Error(`M_PERMISSION_FIXTURE_ACCOUNT_REQUIRED_${canonical}`);
+  return account;
+}
 
 async function login(page: Page, account: FixtureAccount) {
   await page.goto("/", { waitUntil: "domcontentloaded" });

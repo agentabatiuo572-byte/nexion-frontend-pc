@@ -69,7 +69,9 @@ test("L6 visible-sidebar first-user flow uses canonical filters, drilldown and a
   await expect(exportButton).toBeEnabled();
   const download = page.waitForEvent("download");
   await exportButton.click();
-  expect((await download).suggestedFilename()).toBe("l6-behavior.csv");
+  const downloaded = await download;
+  expect(downloaded.suggestedFilename()).toBe("l6-behavior.csv");
+  await downloaded.saveAs(path.join(EVIDENCE_DIR, "l6-behavior.csv"));
   expect(failedResponses).toEqual([]);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/analytics\/behavior-heatmap$/);

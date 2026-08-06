@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import { createHmac } from "node:crypto";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim();
 const EVIDENCE_DIR =
   process.env.I3_EVIDENCE_DIR ||
   "D:/workspace/nexion-ops-console/docs/验收报告/PC全面测试-20260726/evidence/I3-owner";
@@ -68,12 +70,60 @@ async function login(page: Page) {
   await username.fill(USERNAME);
   await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
   await page.getByRole("button", { name: /继续|登录/ }).click();
+  const otp = page.getByLabel("一次性验证码");
+  await Promise.race([
+    shell.waitFor({ state: "visible", timeout: 10_000 }),
+    otp.waitFor({ state: "visible", timeout: 10_000 }),
+  ]).catch(() => undefined);
+  if (await otp.isVisible().catch(() => false)) {
+    if (!TOTP_SECRET) throw new Error("ADMIN_E2E_TOTP_SECRET is required when MFA is enabled");
+    await otp.fill(await freshTotp(TOTP_SECRET));
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+  }
   await expect(shell).toBeVisible({ timeout: 20_000 });
+}
+
+let lastTotpStep = -1;
+
+async function freshTotp(secret: string) {
+  let step = Math.floor(Date.now() / 30_000);
+  if (step <= lastTotpStep) {
+    await new Promise((resolve) => setTimeout(resolve, ((lastTotpStep + 1) * 30_000) - Date.now() + 500));
+  }
+  const remaining = 30 - (Math.floor(Date.now() / 1_000) % 30);
+  if (remaining <= 3) await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1_000));
+  step = Math.floor(Date.now() / 30_000);
+  lastTotpStep = step;
+  return currentTotp(secret);
+}
+
+function currentTotp(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) throw new Error("Invalid base32 TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = Buffer.alloc(Math.floor(bits.length / 8));
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
+  }
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", bytes).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
 }
 
 async function openI3(page: Page) {
   const group = page.getByRole("button", { name: /内容与合规 CMS\s+I|I\s+内容与合规 CMS/ }).first();
-  if (await group.isVisible({ timeout: 5_000 }).catch(() => false)) await group.click();
+  if (await group.getAttribute("aria-expanded") !== "true") await group.click();
   const link = page.locator('a[href="/content/notifications"]').first();
   await expect(link).toBeVisible({ timeout: 10_000 });
   await link.click();

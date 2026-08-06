@@ -31,7 +31,8 @@ test("M2 never turns a failed queue request into a writable empty state", () => 
   const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
   const client = read("lib/admin/m-client.ts");
 
-  assert.match(client, /const ticketsAvailable = results\[0\]\.status === "fulfilled"/);
+  assert.match(client, /const ticketsTask =/);
+  assert.match(client, /publish\(\{ tickets: \[\], ticketsAvailable: false \}, warning\)/);
   assert.match(client, /"I\.support\.ticketsAvailable": data\.ticketsAvailable \? "1" : "0"/);
   assert.match(tickets, /pget\("I\.support\.ticketsAvailable"\) === "1"/);
   assert.doesNotMatch(tickets, /pget\("I\.support\.ticketsAvailable"\) !== "0"/);
@@ -47,8 +48,9 @@ test("M2 fails closed when any authoritative ticket detail cannot be loaded", ()
   assert.match(client, /assertSupportTicketDetail/);
   assert.match(client, /M2_TICKET_DETAIL_MALFORMED/);
   assert.match(client, /M2_TICKET_PAGE_INCOMPLETE/);
-  assert.match(client, /ticketsAvailable = results\[0\]\.status === "fulfilled" && ticketDetails\.complete/);
-  assert.match(client, /tickets: ticketDetails\.rows/);
+  assert.match(client, /if \(!details\.complete\)/);
+  assert.match(client, /publish\(\{ tickets: \[\], ticketsAvailable: false \}, warning\)/);
+  assert.match(client, /publish\(\{ tickets: details\.rows, ticketsAvailable: true \}\)/);
   assert.doesNotMatch(client, /if \(!messages\.length && base\.lastMessage\)/);
 });
 
@@ -84,12 +86,40 @@ test("M2 exposes explicit lifecycle edges, a clear reopen action, and the escala
 
 test("M2 only offers real, enabled and transferable support agents as ticket owners", () => {
   const tickets = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
+  const client = read("lib/admin/m-client.ts");
+  const supportService = readBackend("src/main/java/ffdd/opsconsole/content/application/OpsSupportAgentService.java");
 
-  assert.match(tickets, /agent\.enabled && agent\.transferable && agent\.serviceTypes\.includes\("support"\)/);
-  assert.match(tickets, /ownerOptions\.includes\(form\.owner\)/);
+  assert.match(supportService, /ticketAssigneeCandidates\(\)/);
+  assert.match(supportService, /Boolean\.TRUE\.equals\(agent\.enabled\(\)\)/);
+  assert.match(supportService, /Boolean\.TRUE\.equals\(agent\.transferable\(\)\)/);
+  assert.match(supportService, /agent\.serviceTypes\(\)\.contains\("support"\)/);
+  assert.match(client, /\/tickets\/assignee-candidates/);
+  assert.match(tickets, /I\.support\.ticketAssigneeCandidates/);
+  assert.match(tickets, /ownerOptions\.find\(\(candidate\) => candidate\.adminId === form\.ownerAdminId\)/);
   assert.match(tickets, /当前负责人不在可接单客服名册/);
   assert.doesNotMatch(tickets, /const ticketOwners/);
   assert.doesNotMatch(tickets, /agentIdForName/);
+});
+
+test("M2 carries stable adminId through same-name create, transfer and escalation", () => {
+  const page = read("app/components/domain-views/m-tabs/m2-tickets.tsx");
+  const view = read("app/components/domain-views/m-view.tsx");
+  const data = read("app/components/domain-views/m-tabs/data.ts");
+  const client = read("lib/admin/m-client.ts");
+
+  assert.match(data, /ownerAdminId\?: number/);
+  assert.match(client, /ownerAdminId: base\.assignedAdminId/);
+  assert.match(page, /type TicketOwnerOption = MTicketAssigneeCandidate & \{ label: string \}/);
+  assert.match(page, /candidate\.adminId/);
+  assert.match(page, /`\$\{candidate\.name\} · #\$\{candidate\.adminId\}`/);
+  assert.match(page, /ownerAdminId: number/);
+  assert.match(page, /value=\{String\(item\.adminId\)\}/);
+  assert.match(page, /ticket\.ownerAdminId === candidate\.adminId/);
+  assert.doesNotMatch(page, /candidate\.name === ticket\.owner/);
+  assert.match(view, /assignedAdminId: addedOwnerAdminId/);
+  assert.match(view, /row\.ownerAdminId/);
+  assert.doesNotMatch(view, /adminIdForAgent\(added\.owner/);
+  assert.doesNotMatch(view, /adminIdForAgent\(row\.owner/);
 });
 
 test("M2 waits for the backend result before showing success or advancing local UI", () => {

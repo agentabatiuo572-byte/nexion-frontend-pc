@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 
 interface ApiResult<T> {
@@ -60,7 +60,7 @@ function numberValue(value: unknown) {
 
 function requiredNumber(value: unknown, field: string) {
   const n = numberValue(value);
-  if (n == null) throw new Error(`H1 后端数据缺少字段:${field}`);
+  if (n == null) throw new Error(`H1_RESPONSE_INVALID:${field}`);
   return n;
 }
 
@@ -69,7 +69,7 @@ function clampInt(value: number, min: number, max: number) {
 }
 
 function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview {
-  if (!raw) throw new Error("H1 后端未返回节奏数据");
+  if (!raw) throw new Error("H1_RESPONSE_INVALID:rhythm");
   const rawOptions = Array.isArray(raw?.options) ? raw.options : [];
   const options = rawOptions.map((item) => Number(item)).filter((item) => Number.isFinite(item));
   const totalMonths = Math.max(1, Math.round(requiredNumber(raw.totalMonths, "totalMonths")));
@@ -78,7 +78,7 @@ function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview
   const currentPhase = typeof raw.currentPhase === "string" && raw.currentPhase.trim()
     ? raw.currentPhase.trim()
     : null;
-  if (!currentPhase) throw new Error("H1 后端数据缺少字段:currentPhase");
+  if (!currentPhase) throw new Error("H1_RESPONSE_INVALID:currentPhase");
   return {
     totalMonths,
     currentMonth: clampInt(rawCurrentMonth, 1, totalMonths),
@@ -89,7 +89,7 @@ function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview
   };
 }
 
-async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string): Promise<T> {
+export async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPrefix?: string): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -98,17 +98,20 @@ async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPre
     headers.set("Idempotency-Key", nextIdempotencyKey(idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/growth${path}`, {
+  const response = await guardedFetch(`/api/admin/growth${path}`, {
     ...init,
     headers,
     cache: "no-store",
   });
-  const result = (await response.json()) as ApiResult<T>;
-  if (!response.ok || result.code !== 0) {
-    const error = new Error(formatAdminApiError(result.message, `GROWTH_REQUEST_FAILED_${response.status}`));
-    // 带上 HTTP 状态码:调用方要靠它区分「后端明确拒绝(4xx)」与「结果未知(5xx)」。
-    // growth proxy 后端不可达时返回的是**带 JSON body 的 503**,只认解析异常会把它误判成确定性失败。
-    (error as Error & { status?: number }).status = response.status;
+  // 与兄弟 client(e1/f1/a4…)同款:2xx 但响应体不是 JSON(网关 HTML 错误页)时
+  // 原写法会抛英文 SyntaxError,绕过下面这条已备中文的归因分支。
+  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  if (!response.ok || !result || result.code !== 0) {
+    const error = new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`));
+    // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
+    // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
+    // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。
+    Object.assign(error, { status: response.status, bodyUnreadable: result === null });
     throw error;
   }
   return result.data as T;
@@ -532,12 +535,11 @@ export async function updateH8ReferralRewardParam(
     );
   } catch (error) {
     // 三类「结果未知」,后端都可能已执行,必须保留命令号供原样重试:
-    //   网络断 = fetch 裸抛 TypeError;响应体不可读 = response.json() 裸抛 SyntaxError;
-    //   5xx = 网关超时 502/504、上游不可达 503(growth proxy 就是带 JSON body 的 503)。
+    //   ① 没有 HTTP 状态码 = 网络层异常(guardedFetch 已转中文抛出),请求可能已到达后端;
+    //   ② 回执读不出(网关 HTML 错误页);③ 5xx(growth proxy 后端不可达就是带 JSON body 的 503)。
     // 4xx 与「200 但业务码非 0」= 后端明确拒绝,确定性失败弃号。口径与 f1-client 同款。
-    const status = (error as Error & { status?: number }).status;
-    if (error instanceof TypeError || error instanceof SyntaxError
-      || (typeof status === "number" && status >= 500)) {
+    const { status, bodyUnreadable } = error as Error & { status?: number; bodyUnreadable?: boolean };
+    if (typeof status !== "number" || bodyUnreadable || status >= 500) {
       throw new H8OutcomeUncertainError(
         (error instanceof Error && error.message) || "H8_REQUEST_OUTCOME_UNKNOWN",
         idempotencyKey,

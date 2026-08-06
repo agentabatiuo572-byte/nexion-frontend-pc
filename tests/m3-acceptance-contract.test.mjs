@@ -96,6 +96,45 @@ test("M3 transfer decisions preserve the backend TRANSFERRED snapshot for CAS", 
   assert.doesNotMatch(view, /(acceptTransfer|returnTransfer|waitTransfer|fallbackTransfer)\(row\.id,[^\n]*before\.status/);
 });
 
+test("M3 transfer targets retain the selected agent ID when display names collide", () => {
+  const data = read("app/components/domain-views/m-tabs/data.ts");
+  const modals = read("app/components/domain-views/m-tabs/m3-modals.tsx");
+  const sessions = read("app/components/domain-views/m-tabs/m3-sessions.tsx");
+  const view = read("app/components/domain-views/m-view.tsx");
+  const client = read("lib/admin/m-client.ts");
+  const sameNameDifferentIds = [
+    { id: "agent-a", name: "同名客服" },
+    { id: "agent-b", name: "同名客服" },
+  ];
+
+  assert.notEqual(sameNameDifferentIds[0].id, sameNameDifferentIds[1].id);
+  assert.match(data, /\{ kind: "agent"; agentId: string; name: string \}/);
+  assert.match(modals, /const \[selectedAgentId, setSelectedAgentId\] = useState\(agentOptions\[0\]\?\.id \?\? ""\)/);
+  assert.match(modals, /a\.id !== currentOwnerId/);
+  assert.match(modals, /agentOptions\.find\(\(item\) => item\.id === selectedAgentId\)/);
+  assert.match(modals, /\{ kind: "agent", agentId: selectedAgent\.id, name: selectedAgent\.name \}/);
+  assert.match(modals, /onClick=\{\(\) => setSelectedAgentId\(a\.id\)\}/);
+  assert.match(modals, /坐席ID \{a\.id\}/);
+  assert.match(modals, /data-proof=\{`session-transfer-agent-\$\{a\.id\}`\}/);
+  assert.match(sessions, /currentAgentIds\.includes\(selected\.transfer\.to\.agentId\)/);
+  assert.match(sessions, /<TransferModal currentOwnerId=\{selected\.ownerAgentId\}/);
+  assert.match(view, /transferConversation\(row\.id, row\.transfer, before\.status, before\.version, row\.transfer\.reason \|\| reason, idempotencyKey\)/);
+  assert.doesNotMatch(view, /agentIdForName\(row\.transfer\.to\.name, data\)/);
+  assert.match(client, /targetId: target\.agentId, targetName: target\.name/);
+  assert.doesNotMatch(client, /targetIdOverride \|\| agentIdForName\(target\.name\)/);
+});
+
+test("M3 transfer chooser gives every same-name agent a stable visible identity and never relies on list index", () => {
+  const modals = read("app/components/domain-views/m-tabs/m3-modals.tsx");
+  const e2e = read("tests/e2e/m3-final3-cross-seat-transfer-20260729.spec.ts");
+
+  assert.match(modals, /坐席ID \{a\.id\}/);
+  assert.match(modals, /data-proof=\{`session-transfer-agent-\$\{a\.id\}`\}/);
+  assert.match(e2e, /getByRole\("button", \{ name: `坐席ID \$\{checkerAgent\.id\}` \}\)/);
+  assert.doesNotMatch(e2e, /targetButtons\.nth\(/);
+  assert.doesNotMatch(e2e, /findIndex\(\(agent\) => agent\.id === checkerAgent\.id\)/);
+});
+
 test("M3 does not expose a fake audience broadcast or fake cross-domain success", () => {
   const sessions = read("app/components/domain-views/m-tabs/m3-sessions.tsx");
   const modals = read("app/components/domain-views/m-tabs/m3-modals.tsx");
@@ -120,7 +159,9 @@ test("M3 starts outbound conversations with an intentional blank message and giv
   assert.match(modals, /const \[tplId, setTplId\] = useState\(""\)/);
   assert.match(modals, /自定义开场消息/);
   assert.match(view, /写入失败(?:,数据未改变;请检查网络后重试|或结果未知,请保留当前输入并重试)/);
-  assert.match(view, /failed to fetch\|networkerror\|load failed/i);
+  // 网络细节压制仍在,但判据换了输入:client 接 guardedFetch 后网络异常到这里已是咽喉中文,
+  // 原先钉的英文正则(failed to fetch|networkerror|load failed)成了死代码,守它等于守一段没人走的分支。
+  assert.match(view, /includes\("网络连接失败或后台服务不可达"\)/);
 });
 
 test("M3 keeps large inbox pagination inside the list column", () => {

@@ -3,6 +3,10 @@ import { expect, request as playwrightRequest, test, type Page } from "@playwrig
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
 const BACKEND = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
+// Acceptance-only carrier: the backend accepts this header only from a trusted
+// local edge peer. It models the production edge injection; it is not an App
+// client header and does not weaken the product's fail-closed policy.
+const TRUSTED_EDGE_HEADERS = { "X-Nexion-Edge-Country": "JP" };
 
 test("G2 首次用户真实入口、权威读模型、域外链接与失败关闭", async ({ page }, testInfo) => {
   const pageErrors: string[] = [];
@@ -80,7 +84,10 @@ test("G2 首次用户真实入口、权威读模型、域外链接与失败关�
   expect(anonymousBff.status()).toBe(401);
   await anonymous.dispose();
 
-  const backend = await playwrightRequest.newContext({ baseURL: BACKEND });
+  const backend = await playwrightRequest.newContext({
+    baseURL: BACKEND,
+    extraHTTPHeaders: TRUSTED_EDGE_HEADERS,
+  });
   const publicCaps = await (await backend.get("/api/config/exchange/caps")).json();
   expect(publicCaps.code).toBe(0);
   expect(publicCaps.data).toMatchObject({

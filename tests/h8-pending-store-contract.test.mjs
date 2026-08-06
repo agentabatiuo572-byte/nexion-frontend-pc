@@ -63,21 +63,22 @@ test("H8 调参与结算的命令号都在 run 回调内经 resolve,弹窗打开
     "裸 instanceof 在打包边界下会失真,仓内已有 isA2OutcomeUncertainError 鸭型判据");
 });
 
-test("h-client:H8「结果未知」三类齐(网络断 / 响应不可读 / 5xx),与 F 域口径一致", () => {
+test("h-client:H8「结果未知」三类齐(网络层 / 回执读不出 / 5xx),与 F 域口径一致", () => {
   const code = stripComments(read("lib/admin/h-client.ts"));
   assert.match(code, /class H8OutcomeUncertainError extends Error/);
-  assert.match(code, /error instanceof TypeError \|\| error instanceof SyntaxError/,
-    "growthRequest 形态:fetch 网络断抛 TypeError、response.json() 不可读抛 SyntaxError —— 两类都可能已生效");
-  // 关键:growth proxy 后端不可达时返回的是**带 JSON body 的 503**,解析得动、走的是普通 Error 分支。
-  // 只认解析异常 = 按错误页格式分类(返 HTML 算未知、返 JSON 算确定失败),那是巧合不是判据。
+  // 网络层异常由错误文案咽喉的 guardedFetch 接管(抛出的 Error 没有 status),所以判据按
+  // 「有没有 HTTP 状态码」分流:没有 = 网络层,请求可能已到达后端 → 未知。
+  assert.match(code, /const response = await guardedFetch\(`\/api\/admin\/growth\$\{path\}`/);
   // 写入端与读取端都要钉:只钉读取端时,删掉 growthRequest 里的赋值门照样绿,而 status 恒为
   // undefined → 503 全部落回确定性失败弃号(红测 RH3c 实测抓到过这个假绿)。
-  assert.match(code, /\(error as Error & \{ status\?: number \}\)\.status = response\.status;/,
-    "growthRequest 必须把 HTTP 状态码挂到抛出的错误上,否则调用方读到的永远是 undefined");
-  assert.match(code, /const status = \(error as Error & \{ status\?: number \}\)\.status;/,
-    "H8 必须真读这个状态码来分类");
-  assert.match(code, /typeof status === "number" && status >= 500/,
-    "5xx 必须归「结果未知」保号 —— 归确定性失败会让重试铸新号 → 重复发奖(F 域同一轮已焊此规则)");
+  assert.match(code, /Object\.assign\(error, \{ status: response\.status, bodyUnreadable: result === null \}\);/,
+    "growthRequest 必须把状态码与「回执可读性」挂到抛出的错误上,否则调用方分不出 503 与 400");
+  assert.match(code, /const \{ status, bodyUnreadable \} = error as Error & \{ status\?: number; bodyUnreadable\?: boolean \};/,
+    "H8 必须真读这两个标记来分类");
+  // 关键:growth proxy 后端不可达时返回的是**带 JSON body 的 503**,解析得动、走的是普通 Error 分支。
+  // 只认解析异常 = 按错误页格式分类(返 HTML 算未知、返 JSON 算确定失败),那是巧合不是判据。
+  assert.match(code, /if \(typeof status !== "number" \|\| bodyUnreadable \|\| status >= 500\)/,
+    "5xx 与网络层必须归「结果未知」保号 —— 归确定性失败会让重试铸新号 → 重复发奖");
   assert.match(code, /throw new H8OutcomeUncertainError\(/);
   // 命令号已持久化 24h,铸号必须带随机段且兜底 secure context(局域网 http 演示下 randomUUID 不存在)。
   assert.match(code, /typeof crypto\.randomUUID === "function"[\s\S]{0,120}Math\.random\(\)/);

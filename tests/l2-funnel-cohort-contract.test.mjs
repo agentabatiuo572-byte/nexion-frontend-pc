@@ -8,6 +8,7 @@ const mapper = readFileSync(`${backendRoot}/mapper/BiReportMapper.java`, "utf8")
 const controller = readFileSync(`${backendRoot}/web/OpsBiController.java`, "utf8");
 const service = readFileSync(`${backendRoot}/application/OpsBiService.java`, "utf8");
 const repository = readFileSync(`${backendRoot}/infrastructure/MybatisBiReportRepository.java`, "utf8");
+const artifactStore = readFileSync(`${backendRoot}/infrastructure/BiReportArtifactStore.java`, "utf8");
 const page = readFileSync("app/components/domain-views/l-tabs/l2-funnel.tsx", "utf8");
 const client = readFileSync("lib/admin/l-client.ts", "utf8");
 const bff = readFileSync("app/api/admin/bi/[...path]/route.ts", "utf8");
@@ -69,4 +70,16 @@ test("L2 filters and exports are computed server-side from the registration acto
   assert.match(service, /trimOrDefault\(request\.ref\(\), ""\)/);
   assert.match(page, /应用切片/);
   assert.doesNotMatch(page, /固定四个渠道样本/);
+});
+
+test("L2 export reuses the visible fallback, rejects empty snapshots, and binds artifact evidence", () => {
+  assert.match(service, /hasL2Filters\(request\)\s*\?\s*reportRepository\.l2Dashboard\(/);
+  assert.match(service, /:\s*reportRepository\.dashboard\("L2"\)/);
+  assert.match(service, /L2_EXPORT_EMPTY/);
+  assert.match(service, /"artifactSha256",\s*snapshot\.sha256\(\)/);
+  assert.match(service, /"artifactSizeBytes",\s*snapshot\.sizeBytes\(\)/);
+  assert.match(service, /"rowCount",\s*created\.rowCount\(\)/);
+  assert.match(artifactStore, /objectStorage\.put\(objectKey,\s*CONTENT_TYPE,\s*new ByteArrayInputStream\(bytes\),\s*bytes\.length\)/);
+  assert.match(artifactStore, /mapper\.upsertArtifact\([\s\S]*?bytes\.length,\s*sha256\(bytes\)\)/);
+  assert.match(page, /liveStages\.length > 0/);
 });

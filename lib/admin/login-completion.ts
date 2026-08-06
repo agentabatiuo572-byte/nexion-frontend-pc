@@ -1,16 +1,31 @@
 import type { LoginResult } from "./auth-client";
+import { renewAdminAuthLifecycle } from "./auth-lifecycle.ts";
 
-/**
- * Finish an interactive login with a document reload.
- *
- * The session cookie remains server-owned; reloading only replaces a possibly
- * stale SPA bundle so newly deployed navigation and permission rules take effect.
- */
-export function completeInteractiveLogin(
+interface InteractiveLoginOptions {
+  readAuthoritativeSession: () => Promise<LoginResult | null>;
+}
+
+/** Commit login state only after the HttpOnly cookie has produced a server session. */
+export async function completeInteractiveLogin(
   signIn: (result: LoginResult) => void,
-  result: LoginResult,
-  reload: () => void = () => window.location.reload(),
-) {
-  signIn(result);
-  reload();
+  hintedResult: LoginResult,
+  options: InteractiveLoginOptions,
+): Promise<LoginResult> {
+  // A previous 401 intentionally closes the old lifecycle. MFA/password login
+  // has now succeeded, so start a fresh epoch before confirming the new cookie.
+  renewAdminAuthLifecycle();
+  const authoritativeResult = await options.readAuthoritativeSession();
+  if (!authoritativeResult) throw new Error("ADMIN_SESSION_NOT_ESTABLISHED");
+
+  const hintedIdentity = hintedResult.session;
+  const authoritativeIdentity = authoritativeResult.session;
+  if (
+    authoritativeIdentity.adminId !== hintedIdentity.adminId
+    || authoritativeIdentity.username !== hintedIdentity.username
+  ) {
+    throw new Error("ADMIN_SESSION_IDENTITY_MISMATCH");
+  }
+
+  signIn(authoritativeResult);
+  return authoritativeResult;
 }

@@ -48,6 +48,7 @@ export type SupportTicket = {
   updatedAt: number;
   lastReplyAt: number;
   unread: number;
+  ownerAdminId?: number;
   owner: string;
   archived: boolean;
   archivedAt?: number;
@@ -181,7 +182,7 @@ export type CustomerProfile = {
  * 目标坐席 B 工作台从「转入待处理」筛选档看到,三选一处置:接收接入 / 等待处理 / 手动退回(注明原因)。
  * 超时回落备勤池为工作台可选策略(I.session.workbench.timeoutFallback):后端定时任务读取该策略并执行回落。 */
 export type TransferTarget =
-  | { kind: "agent"; name: string }   // 指定坐席 B
+  | { kind: "agent"; agentId: string; name: string }   // 指定坐席 B；ID 是唯一业务身份，名称仅展示
   | { kind: "queue"; queue: string }  // 技能队列(后端 transferTargets)
   | { kind: "standby" };              // 备勤池
 export type SessionTransfer = {
@@ -207,6 +208,7 @@ export type SessionConvo = {
   unread: number;      // 镜像前端 unread
   lastTs: number;      // 镜像前端 lastTs
   status: SessionStatus; // 后台坐席态
+  ownerAgentId?: string; // 后台分配坐席的唯一身份，用于排除自转交
   owner: string;       // 后台分配坐席
   messages: SessionMsg[]; // 镜像前端 messages{sender,text,ctaHref,ts}
   customer?: string;   // 接待的终端用户昵称(对话主角;agentName 为坐席)

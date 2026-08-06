@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 export interface E3Stats {
   averageAgeMonths: number;
@@ -200,7 +200,7 @@ async function e3Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/devices${path}`, {
+  const response = await guardedFetch(`/api/admin/devices${path}`, {
     ...init,
     headers,
     cache: "no-store",

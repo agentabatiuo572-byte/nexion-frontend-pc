@@ -1,6 +1,6 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
-import { assertL3FinanceContract } from "@/lib/admin/l3-finance-contract";
+import { assertL3FinanceContract, assertL3TreasurySnapshot } from "@/lib/admin/l3-finance-contract";
 import { assertL5OverviewContract } from "@/lib/admin/l5-overview-contract";
 
 type ApiResult<T> = {
@@ -156,7 +156,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
-  const execute = () => fetch(`/api/admin/bi${path}`, { ...init, headers, cache: "no-store" });
+  const execute = () => guardedFetch(`/api/admin/bi${path}`, { ...init, headers, cache: "no-store" });
   const isReportCreation = (path === "/reports" && init?.method === "POST")
     || (path.startsWith("/export/network?") && init?.method === "GET");
   let res: Response;
@@ -179,21 +179,6 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
     throw new Error(formatAdminApiError(payload.message, `BI_API_${res.status}`));
-  }
-  return payload.data as T;
-}
-
-async function treasuryRequest<T>(path: string): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`/api/admin/treasury${path}`, { cache: "no-store" });
-  } catch {
-    throw networkFailure(false);
-  }
-  const text = await res.text();
-  const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
-  if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `TREASURY_API_${res.status}`));
   }
   return payload.data as T;
 }
@@ -453,7 +438,7 @@ export async function fetchL6ClickHeat(route: string, input: L6BehaviorQuery = {
 }
 
 export async function downloadL6Behavior(input: L6BehaviorQuery = {}) {
-  const res = await fetch(`/api/admin/bi/export/behavior?${l6Query(input).toString()}`, { cache: "no-store" });
+  const res = await guardedFetch(`/api/admin/bi/export/behavior?${l6Query(input).toString()}`, { cache: "no-store" });
   const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok || contentType.includes("application/json")) {
     const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
@@ -532,23 +517,21 @@ async function fetchL3FinanceOverview(query?: L3FinanceQuery): Promise<LBiData> 
   if (active.period === "custom" && active.to) params.set("to", active.to);
   const redemptionParams = new URLSearchParams(params);
   if (active.cohort?.trim()) redemptionParams.set("cohort", active.cohort.trim());
-  const [overviewRaw, revenueRaw, redemptionRaw, coverageRaw, liabilitiesRaw, maturity7Raw, maturity30Raw] = await Promise.all([
+  const [overviewRaw, revenueRaw, redemptionRaw, treasurySnapshotRaw] = await Promise.all([
     apiRequest<unknown>("/finance/overview"),
     apiRequest<unknown>(`/finance/revenue?${params.toString()}`),
     apiRequest<unknown>(`/finance/redemption?${redemptionParams.toString()}`),
-    treasuryRequest<unknown>("/coverage"),
-    treasuryRequest<unknown>("/liabilities?breakdown=true"),
-    treasuryRequest<unknown>("/maturity-forecast?window=7d"),
-    treasuryRequest<unknown>("/maturity-forecast?window=30d"),
+    apiRequest<unknown>("/finance/treasury-snapshot"),
   ]);
+  const treasuryFacts = assertL3TreasurySnapshot(treasurySnapshotRaw);
   const checked = assertL3FinanceContract({
     overview: rec(overviewRaw),
     revenue: rec(revenueRaw),
     redemption: rec(redemptionRaw),
-    coverage: rec(coverageRaw),
-    liabilities: rec(liabilitiesRaw),
-    maturity7: rec(maturity7Raw),
-    maturity30: rec(maturity30Raw),
+    coverage: treasuryFacts.coverage,
+    liabilities: treasuryFacts.liabilities,
+    maturity7: treasuryFacts.maturity7,
+    maturity30: treasuryFacts.maturity30,
   });
   const { overview, revenue, redemption, coverage, liabilities, maturity7, maturity30 } = checked;
   const period = rec(revenue.period);
@@ -669,7 +652,7 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
-  const execute = () => fetch(`/api/admin/regulatory${path}`, { ...init, headers, cache: "no-store" });
+  const execute = () => guardedFetch(`/api/admin/regulatory${path}`, { ...init, headers, cache: "no-store" });
   let response: Response;
   try {
     response = await execute();
@@ -703,7 +686,7 @@ async function downloadReportFile(reportId: string) {
   const token = typeof issued.downloadToken === "string" ? issued.downloadToken : "";
   if (!token) throw new Error("下载链接签发失败 · 请重新尝试");
   const query = new URLSearchParams({ token });
-  const res = await fetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
+  const res = await guardedFetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
   const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok || contentType.includes("application/json")) {
     const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;

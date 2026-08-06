@@ -14,6 +14,12 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EMERGENCY_API_503: "应急控制后端当前不可用，控制项已隐藏；请稍后重新读取，持续失败时联系值班人员。",
   EMERGENCY_API_500: "应急控制服务暂时异常，控制项已隐藏，请稍后重新读取或联系值班人员。",
   RISK_BACKEND_UNAVAILABLE: "风险服务当前不可用，旧数据与写操作已隐藏；请稍后重新读取，持续失败时联系值班人员。",
+  // GROWTH_* 两条是本仓代理路由 app/api/admin/growth/[...path]/route.ts 自己铸的码(闭集)。
+  // 🔴 后端不可达是本机常态、也是 H 域页面最可能的读失败:漏掉这两条时它们会落进
+  //    MACHINE_CODE_RE 兜底「请检查输入内容」——对一次只读加载失败,这个指引是错的。
+  //    文案保持读写中性(growthRequest 同时服务 H1–H9 的读与写)。契约测试:tests/h9-public-stats-contract.test.mjs。
+  GROWTH_BACKEND_UNAVAILABLE: "增长与运营节奏服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
+  GROWTH_ROUTE_NOT_FOUND: "当前服务版本未提供该增长与运营能力，请刷新页面；若仍出现，请联系值班人员检查前后端版本。",
   K1_RESPONSE_INVALID: "K1 服务返回的数据不完整或不一致，旧数据与写操作已隐藏；请重新读取或联系风控值班人员。",
   K2_RESPONSE_INVALID: "K2 服务返回的数据不完整或不一致，旧数据与写操作已隐藏；请重新读取或联系风控值班人员。",
   K2_ROW_CONCURRENT_UPDATE: "该 K2 命中已被其他操作员处置，请刷新后查看最新状态。",
@@ -128,6 +134,9 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H8_CONFIG_VERSION_CONFLICT: "邀请奖励配置已被其他操作员修改，本次未覆盖；请刷新页面并核对最新值后重试。",
   H8_CONFIG_VERSION_INVALID: "邀请奖励配置版本异常，本次未写入；请联系值班人员检查后端配置。",
   H8_UPSTREAM_OUTCOME_UNKNOWN: "本次邀请奖励参数写入结果未知，可能已经生效；请先刷新并核对服务端当前值，确认仍需重试时使用当前表单再次提交。",
+  H9_RESPONSE_INVALID: "对外公布数据服务返回的内容不完整或类型不对，页面已停止展示任何数字并冻结写操作；请重新读取或联系值班人员。",
+  H9_DATA_LOAD_FAILED: "对外公布数据读取失败，页面没有展示任何数字；请点重试，持续失败时联系值班人员。",
+  H9_SAVE_FAILED: "对外公布数据保存失败，本次改动没有生效也没有落审计；请刷新核对当前生效值后重试。",
   QUEST_CONFIG_STALE: "H3 配置已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
   QUEST_CONFIG_NO_CHANGE: "目标值与 H3 当前配置相同，本次未写入。",
   EVENT_CONFIG_STALE: "活动已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
@@ -247,18 +256,19 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_DOMAIN_EXTENSION_INVALID: "domain 名无效、已注册或已下线，请重新填写。",
   A4_DOMAIN_EXTENSION_EVENT_INVALID: "扩展事件名必须与 domain 一致，并使用已发生动作。",
   A4_DOMAIN_EXTENSION_DUPLICATE: "该 domain 扩展工单已经登记，请刷新列表。",
-  A4_SCHEMA_NOT_REGISTERED: "该事件尚未通过 A4 Schema Registry 注册，服务端已阻止发送。",
+  A4_SCHEMA_NOT_REGISTERED: "系统事件登记不完整，操作未生效。请联系平台管理员修复配置后重试。",
   // 「刷新页面后重新发起」是错误指引:命令号存 sessionStorage,刷新后仍是同一个,照旧撞同样的拒绝。
   // 正解是把输入恢复成首次提交的内容(即可按同键去重重试),或先核对首次提交是否已经生效。
   IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "同一请求标识对应的内容已变化，本次未执行；请把输入恢复为首次提交时的内容再重试，或先到审计记录核对首次提交是否已生效。",
-  // F 直写通道(佣金冲正/重发/暂停、双轨结算、V-Rank 阈值与奖励)的「结果未知」三类。
-  // 这三类都意味着请求可能已被后端执行 —— 文案必须让运营先核对再决定,不能诱导他直接重做一次。
+  // F 直写通道(佣金冲正/重发/暂停、双轨结算、V-Rank 阈值与奖励)的「结果未知」四类。
+  // 这几类都意味着请求可能已被后端执行 —— 文案必须让运营先核对再决定,不能诱导他直接重做一次。
   F1_REQUEST_OUTCOME_UNKNOWN: "提交结果暂不确定，可能已经生效；请先到审计记录核对，再决定是否保留原输入重试。",
   F1_RESPONSE_UNREADABLE: "提交已发出但回执没能读取，结果暂不确定；请先到审计记录核对，再决定是否保留原输入重试。",
   F1_SUCCESS_RESPONSE_DATA_MISSING: "服务端回执不完整，本次结果暂不确定；请先到审计记录核对，再决定是否保留原输入重试。",
   F1_WRITE_REQUIRES_STABLE_KEY: "该操作缺少请求标识，已阻止提交以免重复执行；请刷新页面后重试，若仍出现请联系值班人员。",
   PLATFORM_BACKEND_TIMEOUT: "平台服务响应超时，当前结果尚未确认；写操作请保留当前输入并直接重试。",
   PLATFORM_BACKEND_UNAVAILABLE: "平台服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
+  NETWORK_FAILURE: "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。",
   ROLE_GRANTS_UNKNOWN_PERMISSION_OR_MENU: "授权清单中包含已停用或不存在的权限/菜单，本次未修改原授权；请刷新目录后重新选择。",
   ROLE_GRANTS_INVALID: "授权清单格式无效，本次未修改原授权；请刷新后重试。",
   ROLE_NO_LONGER_AVAILABLE: "目标角色已停用或删除，本次未分配；请刷新账号与角色目录。",
@@ -301,6 +311,32 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   K4_SCORE_CONCURRENT_UPDATE_DURING_PUBLISH: "模型发布期间用户评分发生并发变化，本次发布已回滚；请刷新后重试。",
   K5_RESPONSE_INVALID: "K5 服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
   K6_RESPONSE_INVALID: "K6 服务返回的数据格式异常，页面已停止展示旧数据或推测值；请刷新重试，持续出现时请联系技术支持。",
+  L6_RESPONSE_INVALID: "运营报表服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  L2_RESPONSE_PROTOCOL_ERROR: "转化漏斗服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  B_DOMAIN_EMPTY_RESPONSE: "资金总览服务返回的数据为空或不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M2_TICKET_PAGE_MALFORMED: "客服工单服务返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  L1_DATA_PROTOCOL_INVALID: "运营报表服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  H7_VOUCHER_RESPONSE_INVALID: "代金券服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  USER360_RESPONSE_INVALID: "用户档案服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  E1_SKU_PAGE_INVALID: "SKU 商品服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  RISK_RESPONSE_BODY_MISSING: "风控服务返回了空响应，页面已停止展示推测值；请重试读取，持续出现时请联系值班人员。",
+  M4_KNOWLEDGE_OVERVIEW_MALFORMED: "知识库服务返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M4_KNOWLEDGE_FAQ_ID_COLLISION: "知识库服务返回了重复的 FAQ 条目，页面已停止展示可疑数据；请重试读取或联系值班人员。",
+  M_LOAD_CONFIG_BACKEND_RESPONSE_MISSING: "客服工作台配置读取失败，后台未返回有效配置；页面已停止使用本地猜测值，请重试读取或联系值班人员。",
+  M_LOAD_CONFIG_FIELD_MISSING: "客服工作台配置缺少必需字段，页面已停止使用不完整配置；请重试读取或联系值班人员。",
+  M5_SESSION_TEMPLATE_PROTOCOL_INVALID: "会话话术模板服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M2_TICKET_DETAIL_MALFORMED: "客服工单详情返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M2_TICKET_PAGE_INCOMPLETE: "客服工单列表分页读取不完整，页面已停止展示部分数据；请重试读取或联系值班人员。",
+  M3_CONVERSATION_DETAIL_INVALID: "客服会话详情返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M3_CONVERSATION_PAGE_MALFORMED: "客服会话列表返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M3_CONVERSATION_PAGE_INCOMPLETE: "客服会话列表分页读取不完整或存在重复，页面已停止展示部分数据；请重试读取或联系值班人员。",
+  OPS_DASHBOARD_FIELD_REQUIRED: "运营看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  OPS_DASHBOARD_FIELD_INVALID: "运营看板服务返回的数据不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  J1_ALERTS_FIELD_REQUIRED: "告警看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  J1_ALERTS_CONTRACT_INVALID: "告警看板服务返回的数据不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  J2_ALERTS_FIELD_REQUIRED: "告警看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  C2_ALERTS_FIELD_REQUIRED: "告警看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  USER360_FIELD_REQUIRED: "用户档案服务返回的数据缺少必需字段，页面已停止展示推测值；请重试读取或联系值班人员。",
   JANUS_REMOTE_TARGET_HTTPS_INVALID: "批准目标必须使用部署白名单内的 HTTPS Origin，且不能携带账号、查询参数或片段。",
   JANUS_REMOTE_TARGET_KEY_INVALID: "目标键须以小写字母开头，只能包含小写字母、数字和连字符。",
   JANUS_REMOTE_TARGET_VERSION_CONFLICT: "批准目标已被其他管理员更新，本次未覆盖；请刷新目录后重试。",
@@ -539,9 +575,45 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   F_PARTNER_TIERS_SCHEMA_INVALID: "Partner 4 档门槛格式无效,须为含 bronze/silver/gold/diamond 四个非负数字的 JSON。",
   F_PARTNER_TIERS_NOT_ASCENDING: "Partner 4 档门槛须非递减(bronze ≤ silver ≤ gold ≤ diamond)。",
   F_VRANK_TITLES_SCHEMA_INVALID: "V-Rank 头衔格式无效,须为含 V0-V12 共 13 阶非空文本的 JSON。",
+  // 无域前缀的通用码,**必须挂在表尾**:includes 兜底循环按插入顺序命中,
+  // 排在带前缀的同族(VIETQR_/H8_/C6_CONFIG_VERSION_CONFLICT)之后才不会把它们的专属文案抢掉。
+  CONFIG_VERSION_CONFLICT: "该配置已被其他操作员更新，本次未覆盖；请刷新页面并核对最新值后重试。",
+  // 抛出侧写成 `H1_RESPONSE_INVALID:<字段名>`,字段名只留给日志排查:
+  // 兜底 includes 循环用基础码命中本条,冒号后缀不会上屏(与 H7_VOUCHER_RESPONSE_INVALID 同款)。
+  H1_RESPONSE_INVALID: "增长节奏服务返回的数据不完整或不一致，页面已停止展示推测值；请重新读取或联系值班人员。",
+  // 真属运营输入侧的两个码:给可操作提示,不落中性兜底(兜底只说「刷新重试」对它们没用)。
+  A1_CREATE_TEMPORARY_PASSWORD_MISSING: "请先填写新账号的初始密码后再提交。",
+  NOVA_PUBLISHED_TEMPLATE_REQUIRED: "该渠道还没有已发布的模板，请先发布模板再恢复投放。",
+  C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
+  // ---- 2026-08-06 main 合流补账:合流后哨兵扫出的 17 个无文案机器码,逐条补运营中文 ----
+  E2_TASK_PRICING_PROTOCOL_INVALID: "任务定价服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  G4_INVITE_STORAGE_UNAVAILABLE: "邀请码存储暂时不可用，本次操作未生效；请稍后重试，持续失败请联系值班人员。",
+  G4_INVITE_STORAGE_WRITE_FAILED: "邀请码写入失败，本次操作未生效；请重试，持续失败请联系值班人员。",
+  G4_INVITE_CODE_SPACE_EXHAUSTED: "可用邀请码额度已用尽，请减少生成数量或回收未使用的邀请码后再试。",
+  ADMIN_SESSION_NOT_ESTABLISHED: "登录未完成：服务端会话尚未建立，请重新登录。",
+  ADMIN_SESSION_IDENTITY_MISMATCH: "登录校验异常：会话身份与登录账号不一致，已中止本次登录；请重新登录。",
+  CONTENT_API_TIMEOUT: "客服内容服务响应超时，本次读取未完成；请稍后重试。",
+  M2_TICKET_DETAILS_UNAVAILABLE: "客服工单详情暂时读取不到，请刷新重试；持续失败请联系值班人员。",
+  M3_CONVERSATION_DETAILS_UNAVAILABLE: "客服会话详情暂时读取不到，请刷新重试；持续失败请联系值班人员。",
+  M_CONTENT_AUTH_EPOCH_CHANGED: "登录状态已更新，本次读取已中止；页面将按新的登录身份重新加载。",
+  M1_SUPPORT_AGENT_OVERVIEW_MALFORMED: "客服坐席总览返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  CONTENT_API_MALFORMED_RESPONSE: "客服内容服务返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M2_TICKET_ASSIGNEE_CANDIDATES_MALFORMED: "可指派坐席列表返回的数据不完整或格式异常，已停止展示；请重试读取或联系值班人员。",
+  M1_SUPPORT_AGENT_RETRY_BOUND_INVALID: "坐席重试参数配置异常，已停止本次操作；请联系值班人员核查配置。",
+  FORCE_PHRASE_MISMATCH: "二次确认短语不一致，已取消强制保存；请输入指定短语后重试。",
+  MEDIA_PREVIEW_URL_MISSING: "该素材缺少预览地址，无法打开预览；请先补充素材文件后再试。",
+  M2_TICKET_ASSIGNEE_ID_MISSING: "尚未选择要指派的坐席，请先选择坐席再提交。",
 };
 
-const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+$/;
+/**
+ * 机器码兜底判据:裸码,或**带 `:明细` 后缀**的码(`H9_CONFIG_VERSION_CONFLICT:v7`)。
+ *
+ * 🔴 后缀这一支不是补全性的洁癖:只认裸码时,字典里没有的带后缀码会从函数末尾 `return raw`
+ *    原样落到运营面上。H9 保存走 expectedVersion CAS,并发改动必回 409 —— 那正是这一页
+ *    最可能遇到的错误,却是唯一漏出英文码的路径(2026-08-05 运行时探针实测,静态读代码看不出来)。
+ *    41 个调用方共用本函数,所以补在这里而不是给每个域的字典各塞一批猜出来的后端码。
+ */
+const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
 export function formatAdminApiError(message: string | null | undefined, fallback: string) {
   const raw = (message || fallback || "").trim();
@@ -559,9 +631,66 @@ export function formatAdminApiError(message: string | null | undefined, fallback
     if (raw.includes(code)) return translated;
   }
 
+  // 环境故障不得归因到用户输入:表里没有专属条目的不可达/网络类失败,在通用兜底前先接住。
+  // 判据按「机器码以 _5xx 结尾」而非某个命名前缀——曾只认 _REQUEST_FAILED_5xx,换个命名
+  // (BI_API_503 / TREASURY_API_502)就绕过分层,5xx 落到「请检查输入内容」冤枉运营。
+  if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /^[A-Z][A-Z0-9_]*_503$/.test(raw)) {
+    return "后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。";
+  }
+  // 502/504 是网关侧失败,后端可能已处理完请求——只说「结果尚未确认」,不得断言未生效
+  if (/^[A-Z][A-Z0-9_]*_(502|504)$/.test(raw)) {
+    return "后台服务链路异常，本次结果尚未确认；请保留当前输入，刷新核对最新状态后再决定是否重试。";
+  }
+  if (/^[A-Z][A-Z0-9_]*_5\d\d$/.test(raw)) {
+    return ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR;
+  }
+  // fetch 网络异常目前多数 client 未接线进本函数(断网直接冒泡英文);此分支兜显式传入的场景,生效性未知不断言
+  if (/failed to fetch|network ?error|load failed|network request failed/i.test(raw)) {
+    return "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。";
+  }
+
   if (MACHINE_CODE_RE.test(raw)) {
-    return "操作失败,请检查输入内容或刷新页面后重试。";
+    // 兜底不得断言「是你输错了」:实测全仓 81 个抛出的机器码有 48 个没有表内条目,
+    // 而它们几乎全是协议/契约/数据形状类失败(*_INVALID / *_MISSING / *_PROTOCOL_ERROR /
+    // *_TRUNCATED / *_EMPTY_RESPONSE),L1 KPI 这类只读报表页运营根本没有输入可检查。
+    // 真属输入侧的码靠表内专属条目给可操作提示,不靠这句兜底。
+    return "操作未完成,请刷新页面核对最新状态后重试;若仍未恢复请联系值班人员。";
   }
 
   return raw;
 }
+
+const NEUTRAL_DISPLAY_FALLBACK = "操作失败,请稍后重试。";
+const HAS_CJK_RE = /[一-鿿]/;
+
+// 展示边界统一入口:页面层拿到 unknown 错误后,唯一允许的「→ 屏幕文案」通道。
+// 已格式化中文透传(formatAdminApiError 幂等),裸机器码/网络英文在此落兜底,垃圾输入不 crash。
+//
+// 🔴 最后一道是构造性的:**输出不含中文就不许上屏**。
+// why:咽喉上游全靠枚举特征拦截(failed to fetch 正则、要求全大写的 MACHINE_CODE_RE),枚举必漏——
+// 实测漏过三族:`H8_RESPONSE_INVALID:recentSettlements`(冒号+小写后缀破坏全大写匹配)、
+// response.json() 撞网关 HTML 错误页抛的英文 SyntaxError、AbortSignal 的英文 DOMException。
+// 逐族补正则是打地鼠;改判「没有中文就落中性兜底」后,没被想到的新形态也拦得住。
+// 兜底取中性文案(不说「检查输入」):到这里的多是环境/协议类失败,不该归因运营输入。
+export function displayAdminError(error: unknown): string {
+  if (!(error instanceof Error) && typeof error !== "string") return NEUTRAL_DISPLAY_FALLBACK;
+  const shown = formatAdminApiError(error instanceof Error ? error.message : error, "");
+  return HAS_CJK_RE.test(shown) ? shown : NEUTRAL_DISPLAY_FALLBACK;
+}
+
+// 网络层异常(断网/DNS/CORS/请求中断)统一转运营中文;HTTP 非 2xx 不归这管,由调用方 !response.ok 分支走咽喉。
+// 与咽喉同文件(而非独立 fetch-guard.ts):node 直跑 TS 测试无法解析无扩展名相对导入,零依赖单文件绕开该坑。
+export async function guardedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    const original = error instanceof Error ? error.message : String(error);
+    const translated = formatAdminApiError(original, "NETWORK_FAILURE");
+    // 咽喉认不出的怪异常(如 AbortError,message 非空故 fallback 不生效)会原样透传英文;
+    // 到达这里的异常必然是网络层的,翻译失败一律强制网络归因,不许英文上屏。
+    throw new Error(translated === original ? ADMIN_ERROR_MESSAGES.NETWORK_FAILURE : translated);
+  }
+}
+
+// OutcomeUncertain 写路径(自管异常语义、需要原始 TypeError 判断)显式用它——「不许包」的哨兵白名单锚点。
+export const rawFetch: typeof fetch = (...args) => fetch(...args);

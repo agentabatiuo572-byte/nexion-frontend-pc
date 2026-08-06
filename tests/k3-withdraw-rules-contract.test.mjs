@@ -9,6 +9,7 @@ const verify = readFileSync(new URL("../scripts/verify.mjs", import.meta.url), "
 const errorMessages = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
 const liveAcceptance = readFileSync(new URL("./e2e/k3-final-acceptance-20260722.spec.ts", import.meta.url), "utf8");
 const j1GateGuard = readFileSync(new URL("./e2e/k3-j1-gate-guard-20260728.spec.ts", import.meta.url), "utf8");
+const final7UiGuard = readFileSync(new URL("./e2e/k3-final7-ui-gate-acceptance.spec.ts", import.meta.url), "utf8");
 
 test("K3 reads only its own overview and fails closed instead of exposing stale rules", () => {
   assert.match(client, /export async function fetchK3WithdrawRuleOverview/);
@@ -156,4 +157,60 @@ test("K3 high-risk run is guarded by a real J1 API toggle and exact snapshot res
   assert.match(j1GateGuard, /COVERAGE_BELOW_REDLINE/);
   assert.match(j1GateGuard, /assertCoverageRestored/);
   assert.match(j1GateGuard, /k3-final-acceptance-20260722\.spec\.ts/);
+});
+
+test("K3 Final7 carrier binds the candidate and global lock while creating the B1/J1 precondition through visible UI", () => {
+  assert.match(final7UiGuard, /K3_FINAL7_EXPECTED_BUILD_ID/);
+  assert.match(final7UiGuard, /K3_FINAL7_EXPECTED_JAR_SHA256/);
+  assert.match(final7UiGuard, /K3_FINAL7_GLOBAL_LOCK_TOKEN/);
+  assert.match(final7UiGuard, /GLOBAL_J1\+B1/);
+  assert.match(final7UiGuard, /MFA_BYPASS_MUST_BE_FALSE/);
+  assert.match(final7UiGuard, /K3_FINAL7_MANIFEST_RUN_MISMATCH/);
+  assert.match(final7UiGuard, /K3_FINAL7_MANIFEST_CANDIDATE_MISMATCH/);
+  assert.match(final7UiGuard, /a\[href="\/overview\/dual-ledger"\]/);
+  assert.doesNotMatch(final7UiGuard, /getByText\("双账本总览", \{ exact: true \}\)/);
+  assert.match(final7UiGuard, /getByRole\("heading", \{ name: "双账本总览", exact: true \}\)/);
+  assert.match(final7UiGuard, /getByRole\("button", \{ name: "登记储备注入" \}\)/);
+  assert.match(final7UiGuard, /a\[href="\/emergency\/kill-switch"\]/);
+  assert.match(final7UiGuard, /getByRole\("button", \{ name: "恢复", exact: true \}\)/);
+  assert.match(final7UiGuard, /getByRole\("button", \{ name: "关停", exact: true \}\)/);
+  assert.match(final7UiGuard, /getByRole\("button", \{ name: "恢复受阻", exact: true \}\)/);
+  assert.match(final7UiGuard, /page\.request\.put\("\/api\/admin\/emergency\/kill-switches\/withdraw/);
+  assert.doesNotMatch(final7UiGuard, /INSERT INTO nx_treasury_reserve_ledger/);
+  assert.match(final7UiGuard, /COVERAGE_BELOW_REDLINE/);
+  assert.match(final7UiGuard, /X-Nexion-Upstream-Outcome/);
+  assert.match(final7UiGuard, /route\.fetch\(\)/);
+  assert.match(final7UiGuard, /upstreamCommitted/);
+  assert.match(final7UiGuard, /idempotency-key/i);
+  assert.match(final7UiGuard, /casRejected/);
+  assert.match(final7UiGuard, /nx_audit_log/);
+  assert.match(final7UiGuard, /nx_event_outbox/);
+  assert.match(final7UiGuard, /DELETE FROM nx_treasury_reserve_ledger/);
+  assert.match(final7UiGuard, /k3-final-acceptance-20260722\.spec\.ts/);
+  assert.match(final7UiGuard, /redactSensitive/);
+});
+
+test("K3 Final7 reserve fingerprint follows the deployed reserve ledger schema", () => {
+  assert.doesNotMatch(final7UiGuard, /amount_usd,currency,voucher_no/);
+  assert.doesNotMatch(final7UiGuard, /SEPARATOR\s+CHAR\s*\(/i);
+  assert.match(final7UiGuard, /SEPARATOR\s+0x1E/i);
+  for (const column of [
+    "reserve_no", "voucher_no", "direction", "amount_usd", "reason",
+    "operator", "idempotency_key", "status", "created_at", "updated_at", "is_deleted",
+  ]) {
+    assert.match(final7UiGuard, new RegExp(`\\b${column}\\b`));
+  }
+});
+
+test("K3 Final7 unknown-result carrier waits for the routed response and cleans its exact voucher even on early failure", () => {
+  const alertCheck = final7UiGuard.indexOf('await expect(injectionDialog.getByRole("alert"))');
+  const upstreamCheck = final7UiGuard.indexOf("expect(injectionUpstreamStatus).toBe(200)");
+  assert.ok(alertCheck >= 0 && upstreamCheck >= 0 && alertCheck < upstreamCheck);
+  const resumeAlertCheck = final7UiGuard.indexOf('await expect(resumeDialog.getByRole("alert"))');
+  const resumeUpstreamCheck = final7UiGuard.indexOf("expect(resumeUpstreamStatus).toBe(200)");
+  assert.ok(resumeAlertCheck >= 0 && resumeUpstreamCheck >= 0 && resumeAlertCheck < resumeUpstreamCheck);
+  assert.ok((final7UiGuard.match(/status:\s*503/g) ?? []).length >= 2);
+  assert.ok((final7UiGuard.match(/X-Nexion-Upstream-Outcome":\s*"unknown"/g) ?? []).length >= 2);
+  assert.match(final7UiGuard, /status of \(\?:401\|403\|409\|422\|502\|503\)/);
+  assert.match(final7UiGuard, /DELETE FROM nx_treasury_reserve_ledger[\s\S]*voucher_no=\$\{sqlValue\(VOUCHER\)\}/);
 });

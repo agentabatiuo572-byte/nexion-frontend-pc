@@ -12,6 +12,7 @@ import { useRef, useState } from "react";
 import { PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { ICtx } from "./types";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 const COPY_MODULES = ["home", "store", "earn", "me"] as const;
 type CopyModule = (typeof COPY_MODULES)[number];
@@ -215,7 +216,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
     task
       .then(() => actions.reloadIContent())
       .then(() => toast(ok))
-      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+      .catch((error) => toast(`操作失败:${displayAdminError(error)}`));
   };
 
   const liveCopyStatus = (c: CopyRow): string => c.status;
@@ -445,7 +446,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
       actions.deleteI1CopyDraft(copyKey, version, revision, reason)
         .then(() => actions.reloadIContent())
         .then(() => toast(`${copyKey} ${version} 草稿已删除`))
-        .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`))
+        .catch((error) => toast(`操作失败:${displayAdminError(error)}`))
         .finally(() => {
           deleteInFlightRef.current = false;
           setDeletingDraftKey(null);

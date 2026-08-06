@@ -129,6 +129,7 @@ test("L5 首次用户从可见侧栏完成四类聚合、D4 七账单与四模�
   await ledgerDialog.getByRole("button", { name: "确认提交" }).click();
   const ledgerDownload = await ledgerDownloadPromise;
   expect(ledgerDownload.suggestedFilename()).toMatch(/^d4-bills-.*\.csv$/i);
+  await ledgerDownload.saveAs(path.join(EVIDENCE_DIR, "l5-d4-bills-masked.csv"));
   const ledgerCsv = await downloadText(ledgerDownload);
   expect(ledgerCsv).toContain("bill_id,user_masked,bill_type,subtype,asset,direction,amount,balance_after,status,ref,created_at");
   expect(ledgerCsv).not.toContain("nickname");
@@ -284,6 +285,7 @@ async function downloadAndAssertCsv(page: Page, row: Locator, reportId: string) 
   expect((await tokenResponsePromise).status()).toBe(200);
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.csv$/i);
+  await download.saveAs(path.join(EVIDENCE_DIR, `${reportId.toLowerCase()}.csv`));
   const csv = await downloadText(download);
   expect(csv.length).toBeGreaterThan(20);
   return csv;

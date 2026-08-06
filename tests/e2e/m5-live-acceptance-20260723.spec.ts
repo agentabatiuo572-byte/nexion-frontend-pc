@@ -1,17 +1,72 @@
-import { createHmac } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { createHash, createHmac } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 
+type RestrictedAccount = {
+  accountId?: string;
+  id?: string;
+  username: string;
+  displayName?: string;
+  password: string;
+  totpSecret: string;
+  role?: string;
+  createdForRun?: boolean;
+};
+
+type RestrictedSupportManifest = {
+  runId?: string;
+  createdForRun?: boolean;
+  account?: RestrictedAccount;
+  supportSupervisor?: RestrictedAccount;
+  accounts?: {
+    supportSupervisor?: RestrictedAccount;
+    m_support_supervisor?: RestrictedAccount;
+  };
+  finalAccounts?: {
+    m_support_supervisor?: RestrictedAccount;
+  };
+};
+
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
+const RUN_ID = process.env.M_FINAL2_RUN_ID ?? "pc-full-acceptance-20260729-114336";
+const SUPPORT_MANIFEST_PATH = process.env.M5_SUPPORT_MANIFEST_PATH?.trim()
+  ? path.resolve(process.env.M5_SUPPORT_MANIFEST_PATH.trim())
+  : "";
+const SUPPORT_MANIFEST = SUPPORT_MANIFEST_PATH
+  ? JSON.parse(readFileSync(SUPPORT_MANIFEST_PATH, "utf8")) as RestrictedSupportManifest
+  : null;
+const SUPPORT_ACCOUNT = SUPPORT_MANIFEST?.supportSupervisor
+  ?? SUPPORT_MANIFEST?.account
+  ?? SUPPORT_MANIFEST?.accounts?.supportSupervisor
+  ?? SUPPORT_MANIFEST?.accounts?.m_support_supervisor
+  ?? SUPPORT_MANIFEST?.finalAccounts?.m_support_supervisor
+  ?? null;
+const USE_PRECREATED_SUPPORT = Boolean(SUPPORT_ACCOUNT);
+const M3_SUPPORT_MANIFEST_PATH = process.env.M5_M3_SUPPORT_MANIFEST_PATH?.trim()
+  ? path.resolve(process.env.M5_M3_SUPPORT_MANIFEST_PATH.trim())
+  : "";
+const M3_SUPPORT_MANIFEST = M3_SUPPORT_MANIFEST_PATH
+  ? JSON.parse(readFileSync(M3_SUPPORT_MANIFEST_PATH, "utf8")) as RestrictedSupportManifest
+  : null;
+const M3_SUPPORT_ACCOUNT = M3_SUPPORT_MANIFEST?.account
+  ?? M3_SUPPORT_MANIFEST?.supportSupervisor
+  ?? M3_SUPPORT_MANIFEST?.accounts?.supportSupervisor
+  ?? M3_SUPPORT_MANIFEST?.accounts?.m_support_supervisor
+  ?? M3_SUPPORT_MANIFEST?.finalAccounts?.m_support_supervisor
+  ?? null;
+const FINAL2_PC_BUILD_ID = process.env.M5_EXPECTED_PC_BUILD_ID ?? "xNJR-cEeID2fPRwrRvOrb";
+const PC_BUILD_ID_PATH = path.resolve(process.env.M5_PC_BUILD_ID_PATH?.trim() || ".next/BUILD_ID");
+const FINAL2_BACKEND_JAR_SHA256 = (process.env.M5_EXPECTED_BACKEND_JAR_SHA256
+  ?? "B426C1ED9CFCE970F247D041A28DC7EDAFAC927C112AC0089755ACB70F954B3B").toUpperCase();
 const ROOT_USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
 const ROOT_PASSWORD = requiredEnv("ADMIN_E2E_PASSWORD");
-const TEMP_INITIAL_PASSWORD = requiredEnv("M5_TEMP_INITIAL_PASSWORD");
-const TEMP_FINAL_PASSWORD = requiredEnv("M5_TEMP_FINAL_PASSWORD");
-const PREFIX = "M5-20260723";
+const TEMP_INITIAL_PASSWORD = USE_PRECREATED_SUPPORT ? "" : requiredEnv("M5_TEMP_INITIAL_PASSWORD");
+const TEMP_FINAL_PASSWORD = USE_PRECREATED_SUPPORT ? SUPPORT_ACCOUNT!.password : requiredEnv("M5_TEMP_FINAL_PASSWORD");
+const PREFIX = process.env.M5_FIXTURE_PREFIX ?? `${RUN_ID}-M5`;
 const SUFFIX = Date.now().toString(36).slice(-7);
-const TEMP_USERNAME = `m5-20260723-${SUFFIX}`.slice(0, 32);
-const TEMP_DISPLAY_NAME = `${PREFIX}-客服主管-${SUFFIX}`;
+const TEMP_USERNAME = SUPPORT_ACCOUNT?.username ?? `m5-20260723-${SUFFIX}`.slice(0, 32);
+const TEMP_DISPLAY_NAME = SUPPORT_ACCOUNT?.displayName ?? `${PREFIX}-客服主管-${SUFFIX}`;
 const SCRIPT_TEXT = `${PREFIX}-顾问主动话术-${SUFFIX}`;
 const TEMPLATE_TEXT = `${PREFIX}-即时回复模板-${SUFFIX}`;
 const OPENING_TEXT = `${PREFIX}-M3模板联动会话-${SUFFIX}`;
@@ -19,6 +74,15 @@ const EVIDENCE_DIR = path.resolve(process.env.M5_EVIDENCE_DIR ?? "D:/workspace/b
 const RESULT_PATH = path.join(EVIDENCE_DIR, "runtime-result.json");
 const mfaSecrets = new Map<string, string>();
 const usedTotpSteps = new Map<string, number>();
+if (process.env.ADMIN_E2E_TOTP_SECRET?.trim()) {
+  mfaSecrets.set(ROOT_USERNAME, process.env.ADMIN_E2E_TOTP_SECRET.trim());
+}
+if (SUPPORT_ACCOUNT?.totpSecret?.trim()) {
+  mfaSecrets.set(TEMP_USERNAME, SUPPORT_ACCOUNT.totpSecret.trim());
+}
+if (M3_SUPPORT_ACCOUNT?.totpSecret?.trim()) {
+  mfaSecrets.set(M3_SUPPORT_ACCOUNT.username, M3_SUPPORT_ACCOUNT.totpSecret.trim());
+}
 
 type ResponseLike = { status(): number; text(): Promise<string> };
 type Envelope<T> = { code?: number; message?: string; data?: T };
@@ -36,6 +100,41 @@ test.use({ trace: "off", video: "off", screenshot: "off" });
 
 test.beforeAll(() => {
   expect(["127.0.0.1", "localhost", "::1"]).toContain(new URL(BASE_URL).hostname);
+  if (SUPPORT_MANIFEST_PATH) {
+    expect(/bug-pic[\\/]\.restricted[\\/]/i.test(SUPPORT_MANIFEST_PATH)).toBe(true);
+    expect(SUPPORT_MANIFEST?.runId).toBe(RUN_ID);
+    expect(SUPPORT_ACCOUNT, "M5 pre-created SUPPORT supervisor is required").toBeTruthy();
+    expect(
+      SUPPORT_MANIFEST?.createdForRun === true || SUPPORT_ACCOUNT?.createdForRun === true,
+      "M5 SUPPORT account must be dedicated to this Run",
+    ).toBe(true);
+    expect(String(SUPPORT_ACCOUNT?.accountId ?? SUPPORT_ACCOUNT?.id ?? "")).toMatch(/^\d+$/);
+    expect(String(SUPPORT_ACCOUNT?.role ?? "support").toLowerCase()).toBe("support");
+    expect(/bug-pic[\\/]\.restricted[\\/]/i.test(M3_SUPPORT_MANIFEST_PATH)).toBe(true);
+    expect(M3_SUPPORT_MANIFEST?.runId).toBe(RUN_ID);
+    expect(M3_SUPPORT_ACCOUNT, "a second SUPPORT seat is required for the M3 linked-consumption step").toBeTruthy();
+    expect(
+      M3_SUPPORT_MANIFEST?.createdForRun === true || M3_SUPPORT_ACCOUNT?.createdForRun === true,
+      "M3 SUPPORT seat must be dedicated to this Run",
+    ).toBe(true);
+    expect(String(M3_SUPPORT_ACCOUNT?.accountId ?? M3_SUPPORT_ACCOUNT?.id ?? "")).toMatch(/^\d+$/);
+    expect(String(M3_SUPPORT_ACCOUNT?.role ?? "support").toLowerCase()).toBe("support");
+    expect(String(M3_SUPPORT_ACCOUNT?.accountId ?? M3_SUPPORT_ACCOUNT?.id)).not.toBe(
+      String(SUPPORT_ACCOUNT?.accountId ?? SUPPORT_ACCOUNT?.id),
+    );
+    expect(M3_SUPPORT_ACCOUNT?.username).not.toBe(SUPPORT_ACCOUNT?.username);
+    expect(process.env.M_FINAL2_MFA_BYPASS).toBe("false");
+    const writeControlToken = process.env.M_WRITE_CONTROL_TOKEN?.trim();
+    expect(writeControlToken, "M_WRITE_CONTROL_TOKEN is required").toBeTruthy();
+    expect(process.env.M_WRITE_TOKEN?.trim()).toBe(writeControlToken);
+    expect(process.env.M5_CATEGORY_LOCK?.trim()).toBe(`${RUN_ID}:M5C`);
+    expect(process.env.M5_POLICY_LOCK?.trim()).toBe(`${RUN_ID}:M5P`);
+    expect(process.env.I6_LOCK?.trim()).toBe(`${RUN_ID}:I6`);
+    expect(readFileSync(PC_BUILD_ID_PATH, "utf8").trim()).toBe(FINAL2_PC_BUILD_ID);
+    const backendJarPath = process.env.M5_BACKEND_JAR_PATH?.trim();
+    expect(backendJarPath, "M5_BACKEND_JAR_PATH is required").toBeTruthy();
+    expect(sha256File(path.resolve(backendJarPath!))).toBe(FINAL2_BACKEND_JAR_SHA256);
+  }
   mkdirSync(EVIDENCE_DIR, { recursive: true });
 });
 
@@ -54,6 +153,8 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
   let originalAdvisorEnabled = false;
   let originalDelay = 0;
   let originalAudience = "";
+  let supportDisplayName = TEMP_DISPLAY_NAME;
+  let supportAccountBefore: { version: string; role: string; status: string } | null = null;
   const checks: string[] = [];
 
   await test.step("anonymous is rejected and root reaches M5 from the visible sidebar", async () => {
@@ -82,52 +183,62 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
   });
 
   await test.step("create one isolated SUPPORT supervisor and prove the M1/M5 seat source is shared", async () => {
-    const account = await okEnvelope<{ id: string; temporaryPassword?: string }>(await page.request.post("/api/admin/platform/accounts", {
-      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-ACCOUNT` },
-      data: {
-        username: TEMP_USERNAME,
-        displayName: TEMP_DISPLAY_NAME,
-        email: `m5.${SUFFIX}@nexion.invalid`,
-        role: "support",
-        initialPassword: TEMP_INITIAL_PASSWORD,
-        reason: `${PREFIX}-创建客服主管验收账号`,
-        operator: ROOT_USERNAME,
-      },
-    }));
-    accountId = String(account.id);
-    temporaryPassword = String(account.temporaryPassword ?? "");
-    expect(temporaryPassword, "A1 create response must return the generated one-time password").toBeTruthy();
-    adminId = Number(accountId.replace(/\D/g, ""));
-    expect(adminId).toBeGreaterThan(0);
+    if (USE_PRECREATED_SUPPORT) {
+      accountId = String(SUPPORT_ACCOUNT!.accountId ?? SUPPORT_ACCOUNT!.id);
+      adminId = Number(accountId);
+      temporaryPassword = SUPPORT_ACCOUNT!.password;
+      supportAccountBefore = await accountSnapshot(page, accountId);
+      expect(supportAccountBefore.role.toLowerCase()).toBe("support");
+      expect(supportAccountBefore.status.toLowerCase()).toBe("enabled");
+    } else {
+      const account = await okEnvelope<{ id: string; temporaryPassword?: string }>(await page.request.post("/api/admin/platform/accounts", {
+        headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-ACCOUNT` },
+        data: {
+          username: TEMP_USERNAME,
+          displayName: TEMP_DISPLAY_NAME,
+          email: `m5.${SUFFIX}@nexion.invalid`,
+          role: "support",
+          initialPassword: TEMP_INITIAL_PASSWORD,
+          reason: `${PREFIX}-创建客服主管验收账号`,
+          operator: ROOT_USERNAME,
+        },
+      }));
+      accountId = String(account.id);
+      temporaryPassword = String(account.temporaryPassword ?? "");
+      expect(temporaryPassword, "A1 create response must return the generated one-time password").toBeTruthy();
+      adminId = Number(accountId.replace(/\D/g, ""));
+      expect(adminId).toBeGreaterThan(0);
 
-    await okEnvelope(await page.request.patch(`/api/admin/content/support-agents/${adminId}/seat-assignment`, {
-      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-SUPERVISOR-SEAT` },
-      data: {
-        position: "客服主管",
-        serviceTypes: ["support", "advisor"],
-        tags: [PREFIX, "验收主管"],
-        maxConcurrent: 5,
-        enabled: true,
-        transferable: true,
-        busy: false,
-        userIds: [],
-        reason: `${PREFIX}-配置客服主管坐席`,
-        operator: ROOT_USERNAME,
-      },
-    }));
+      await okEnvelope(await page.request.patch(`/api/admin/content/support-agents/${adminId}/seat-assignment`, {
+        headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-SUPERVISOR-SEAT` },
+        data: {
+          position: "客服主管",
+          serviceTypes: ["support", "advisor"],
+          tags: [PREFIX, "验收主管"],
+          maxConcurrent: 5,
+          enabled: true,
+          transferable: true,
+          busy: false,
+          userIds: [],
+          reason: `${PREFIX}-配置客服主管坐席`,
+          operator: ROOT_USERNAME,
+        },
+      }));
+    }
     const supportOverview = await okEnvelope<SupportOverview>(await page.request.get("/api/admin/content/support-agents"));
     const createdAgent = (supportOverview.agents ?? []).find((row) => Number(row.adminId) === adminId);
     expect(createdAgent?.position).toBe("客服主管");
     supportAgentId = String(createdAgent?.id ?? "");
     expect(supportAgentId).toBeTruthy();
+    supportDisplayName = String(createdAgent?.name ?? TEMP_DISPLAY_NAME);
 
     await openModule(page, "/service/overview");
-    await expect(page.getByText(TEMP_DISPLAY_NAME, { exact: true })).toBeVisible();
+    await expect(page.getByText(supportDisplayName, { exact: true })).toBeVisible();
     await openModule(page, "/service/scripts");
-    await goToLastPage(cardByHeading(page, "客服岗位与专属客服"));
-    await expect(cardByHeading(page, "客服岗位与专属客服").getByText(TEMP_DISPLAY_NAME, { exact: true })).toBeVisible();
+    await goToLastPage(cardByHeading(page, "客服岗位与专属客服"), supportOverview.agents?.length);
+    await expect(cardByHeading(page, "客服岗位与专属客服").getByText(supportDisplayName, { exact: true })).toBeVisible();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "01-m1-m5-shared-supervisor-seat.png"), fullPage: true });
-    checks.push("support-supervisor-fixture", "m1-m5-shared-seat-truth");
+    checks.push(USE_PRECREATED_SUPPORT ? "precreated-support-supervisor-fixture" : "support-supervisor-fixture", "m1-m5-shared-seat-truth");
   });
 
   await test.step("support supervisor can write M5; category failure keeps the dialog and retries with the same key", async () => {
@@ -201,19 +312,19 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-STALE-DELAY` },
       data: { value: String(newDelay + 1), expectedValue: String(originalDelay), reason: `${PREFIX}-旧页面并发覆盖拦截`, operator: TEMP_USERNAME },
     });
-    expect(stale.status()).toBe(409);
+    await expectApiCode(stale, 409);
 
     const shortReason = await page.request.patch("/api/admin/content/session-templates/advisor-policy/delayMs", {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-SHORT-REASON` },
       data: { value: String(newDelay + 2), expectedValue: String(newDelay), reason: "1234567", operator: TEMP_USERNAME },
     });
-    expect(shortReason.status()).toBe(422);
+    await expectApiCode(shortReason, 422);
 
     const unsupportedAudience = await page.request.patch("/api/admin/content/session-templates/advisor-policy/audience", {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-BAD-AUDIENCE` },
       data: { value: `${PREFIX}-前端自造受众`, expectedValue: originalAudience, reason: `${PREFIX}-拒绝非权威受众`, operator: TEMP_USERNAME },
     });
-    expect(unsupportedAudience.status()).toBe(422);
+    await expectApiCode(unsupportedAudience, 422);
 
     const overview = await getOverview(page);
     const nextAudience = (overview.audienceOptions ?? []).find((item) => item !== originalAudience);
@@ -254,6 +365,8 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
       if (scriptAttempt === 1) {
         const upstream = await route.fetch();
         expect(upstream.status()).toBeLessThan(400);
+        const upstreamPayload = await upstream.json() as Envelope<unknown>;
+        expect(upstreamPayload.code ?? 0).toBe(0);
         await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ code: 502, message: "M5_SCRIPT_RESPONSE_LOST" }) });
         return;
       }
@@ -306,6 +419,8 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
       if (templateAttempt === 1) {
         const upstream = await route.fetch();
         expect(upstream.status()).toBeLessThan(400);
+        const upstreamPayload = await upstream.json() as Envelope<unknown>;
+        expect(upstreamPayload.code ?? 0).toBe(0);
         await route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ code: 502, message: "M5_TEMPLATE_RESPONSE_LOST" }) });
         return;
       }
@@ -355,15 +470,19 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
 
   await test.step("M3 consumes the published M5 template and M1 still exposes the same supervisor", async () => {
     await logout(page);
-    await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+    await login(page, M3_SUPPORT_ACCOUNT!.username, M3_SUPPORT_ACCOUNT!.password);
+    const receiverAccountId = Number(M3_SUPPORT_ACCOUNT!.accountId ?? M3_SUPPORT_ACCOUNT!.id);
+    const receiverOverview = await okEnvelope<SupportOverview>(await page.request.get("/api/admin/content/support-agents"));
+    const receiverAgent = (receiverOverview.agents ?? []).find((row) => Number(row.adminId) === receiverAccountId);
+    expect(receiverAgent, "the second SUPPORT account must resolve to its own enabled support profile").toBeTruthy();
     await openModule(page, "/service/sessions");
     await page.locator('[data-proof="session-initiate"]').click();
     const initiateDialog = page.locator('[role="dialog"]:visible').last();
     await expect(initiateDialog.getByText("主动发起会话", { exact: true }).first()).toBeVisible();
     const identity = initiateDialog.locator("select").first();
-    const supervisorIdentity = await firstSelectOptionContaining(identity, TEMP_DISPLAY_NAME);
-    expect(supervisorIdentity).toBeTruthy();
-    await identity.selectOption(supervisorIdentity!);
+    const receiverIdentity = await firstSelectOptionContaining(identity, receiverAgent!.name);
+    expect(receiverIdentity).toBeTruthy();
+    await identity.selectOption(receiverIdentity!);
     await initiateDialog.getByPlaceholder("搜索客户 昵称 / 用户编码 / 地区").fill("");
     const customerButton = initiateDialog.locator("button").filter({ hasText: /U[-\s]?\d+/ }).first();
     await expect(customerButton, "the M3 initiation dialog must expose a real backend user").toBeVisible({ timeout: 20_000 });
@@ -381,11 +500,15 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "03-m3-consumes-published-m5-template.png"), fullPage: true });
 
     await openModule(page, "/service/overview");
-    await expect(page.getByText(TEMP_DISPLAY_NAME, { exact: true })).toBeVisible();
+    await expect(page.getByText(supportDisplayName, { exact: true })).toBeVisible();
     checks.push("m3-published-template-link", "m1-supervisor-link");
   });
 
   await test.step("archive is terminal and archived content disappears from the M3 picker", async () => {
+    if (USE_PRECREATED_SUPPORT) {
+      await logout(page);
+      await login(page, TEMP_USERNAME, TEMP_FINAL_PASSWORD);
+    }
     await openModule(page, "/service/scripts");
     await goToLastPage(cardByHeading(page, "顾问主动话术"));
     await page.locator(`[data-proof="session-script-publish-${scriptId}"] button`).click();
@@ -397,24 +520,24 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     await submitDialog(page, `${PREFIX}-归档模板验证终态`);
     expect((await findReplyTemplate(page, templateId)).status).toBe("archived");
 
-    if (scriptI18nKey && scriptI18nVersion) {
-      await archiveI18nMirror(page, scriptI18nKey, scriptI18nVersion, "SCRIPT");
-    }
-    if (templateI18nKey && templateI18nVersion) {
-      await archiveI18nMirror(page, templateI18nKey, templateI18nVersion, "TEMPLATE");
-    }
+    if (scriptI18nKey && scriptI18nVersion) await archiveI18nMirrorAsRoot(browser, scriptI18nKey, scriptI18nVersion, "SCRIPT");
+    if (templateI18nKey && templateI18nVersion) await archiveI18nMirrorAsRoot(browser, templateI18nKey, templateI18nVersion, "TEMPLATE");
 
     const reviveScript = await page.request.patch(`/api/admin/content/session-templates/scripts/${scriptId}/status`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-REVIVE-SCRIPT` },
       data: { status: "published", expectedStatus: "archived", reason: `${PREFIX}-归档终态不可恢复`, operator: TEMP_USERNAME },
     });
-    expect(reviveScript.status()).toBe(409);
+    await expectApiCode(reviveScript, 409);
     const reviveTemplate = await page.request.patch(`/api/admin/content/session-templates/reply-templates/${templateId}/status`, {
       headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-REVIVE-TEMPLATE` },
       data: { status: "published", expectedStatus: "archived", reason: `${PREFIX}-模板归档终态不可恢复`, operator: TEMP_USERNAME },
     });
-    expect(reviveTemplate.status()).toBe(409);
+    await expectApiCode(reviveTemplate, 409);
 
+    if (USE_PRECREATED_SUPPORT) {
+      await logout(page);
+      await login(page, M3_SUPPORT_ACCOUNT!.username, M3_SUPPORT_ACCOUNT!.password);
+    }
     await openModule(page, "/service/sessions");
     await searchConversation(page, conversationNo);
     await page.getByRole("button", { name: /回复模板/ }).click();
@@ -422,28 +545,33 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     checks.push("script-archived-terminal", "template-archived-terminal", "terminal-revive-409", "m3-archived-template-removed");
   });
 
-  await test.step("role downgrade keeps read visibility but removes every M5 write path", async () => {
+  await test.step(USE_PRECREATED_SUPPORT
+    ? "pre-created SUPPORT remains unchanged while its Run-owned conversation is retired"
+    : "role downgrade keeps read visibility but removes every M5 write path", async () => {
     await logout(page);
     await login(page, ROOT_USERNAME, ROOT_PASSWORD);
-    const roleVersion = await accountVersion(page, accountId);
-    await okEnvelope(await page.request.patch(`/api/admin/platform/accounts/${accountId}/role`, {
-      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-ROLE-AUDITOR` },
-      data: { role: "auditor", expectedVersion: roleVersion, reason: `${PREFIX}-验证只读角色权限边界`, operator: ROOT_USERNAME },
-    }));
-    await logout(page);
-    await login(page, TEMP_USERNAME, TEMP_FINAL_PASSWORD);
-    await openModule(page, "/service/scripts");
-    await expect(page.getByText(/当前账号只有查看权限/)).toBeVisible();
-    await expect(page.locator('[data-proof="session-policy-enabled"]')).toBeDisabled();
-    await expect(page.locator('[data-proof="session-script-new"]')).toBeDisabled();
-    const forbidden = await page.request.patch("/api/admin/content/session-templates/advisor-policy/delayMs", {
-      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-AUDITOR-WRITE` },
-      data: { value: String(originalDelay + 1), expectedValue: String(originalDelay), reason: `${PREFIX}-只读角色尝试写入`, operator: TEMP_USERNAME },
-    });
-    expect(forbidden.status()).toBe(403);
+    if (!USE_PRECREATED_SUPPORT) {
+      const roleVersion = await accountVersion(page, accountId);
+      await okEnvelope(await page.request.patch(`/api/admin/platform/accounts/${accountId}/role`, {
+        headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-ROLE-AUDITOR` },
+        data: { role: "auditor", expectedVersion: roleVersion, reason: `${PREFIX}-验证只读角色权限边界`, operator: ROOT_USERNAME },
+      }));
+      await logout(page);
+      await login(page, TEMP_USERNAME, TEMP_FINAL_PASSWORD);
+      await openModule(page, "/service/scripts");
+      await expect(page.getByText(/当前账号只有查看权限/)).toBeVisible();
+      await expect(page.locator('[data-proof="session-policy-enabled"]')).toBeDisabled();
+      await expect(page.locator('[data-proof="session-script-new"]')).toBeDisabled();
+      const forbidden = await page.request.patch("/api/admin/content/session-templates/advisor-policy/delayMs", {
+        headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-AUDITOR-WRITE` },
+        data: { value: String(originalDelay + 1), expectedValue: String(originalDelay), reason: `${PREFIX}-只读角色尝试写入`, operator: TEMP_USERNAME },
+      });
+      expect(forbidden.status()).toBe(403);
+      await logout(page);
+      await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+    }
 
-    await logout(page);
-    await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+    let conversationArchived = false;
     if (conversationNo) {
       const detail = await okEnvelope<{ conversation: { status: string; version: number } }>(
         await page.request.get(`/api/admin/content/conversations/${encodeURIComponent(conversationNo)}`),
@@ -472,15 +600,30 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
             operator: ROOT_USERNAME,
           },
         }));
+        conversationArchived = true;
       }
     }
-    const statusVersion = await accountVersion(page, accountId);
-    await okEnvelope(await page.request.patch(`/api/admin/platform/accounts/${accountId}/status`, {
-      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-DISABLE` },
-      data: { status: "disabled", expectedVersion: statusVersion, reason: `${PREFIX}-验收结束停用临时账号`, operator: ROOT_USERNAME },
-    }));
+
+    if (USE_PRECREATED_SUPPORT) {
+      expect(supportAccountBefore).toBeTruthy();
+      const supportAccountAfter = await accountSnapshot(page, accountId);
+      expect(supportAccountAfter).toEqual(supportAccountBefore);
+      expect(conversationArchived).toBe(true);
+      checks.push(
+        "precreated-support-role-unchanged",
+        "precreated-support-status-unchanged",
+        "precreated-support-version-unchanged",
+        "run-owned-conversation-archived",
+      );
+    } else {
+      const statusVersion = await accountVersion(page, accountId);
+      await okEnvelope(await page.request.patch(`/api/admin/platform/accounts/${accountId}/status`, {
+        headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-DISABLE` },
+        data: { status: "disabled", expectedVersion: statusVersion, reason: `${PREFIX}-验收结束停用临时账号`, operator: ROOT_USERNAME },
+      }));
+      checks.push("auditor-read-visible", "auditor-controls-disabled", "auditor-api-403", "temporary-account-disabled");
+    }
     await page.screenshot({ path: path.join(EVIDENCE_DIR, "04-rbac-and-terminal-state.png"), fullPage: true });
-    checks.push("auditor-read-visible", "auditor-controls-disabled", "auditor-api-403", "temporary-account-disabled");
   });
 
   writeFileSync(RESULT_PATH, JSON.stringify({
@@ -489,7 +632,8 @@ test("M5 visible lifecycle, backend truth, RBAC, concurrency, failure recovery a
     accountId,
     adminId,
     username: TEMP_USERNAME,
-    displayName: TEMP_DISPLAY_NAME,
+    displayName: supportDisplayName,
+    precreatedSupport: USE_PRECREATED_SUPPORT,
     supportAgentId,
     scriptId,
     templateId,
@@ -540,27 +684,49 @@ async function publishI18nMirrorAsRoot(
   }
 }
 
-async function archiveI18nMirror(page: Page, messageKey: string, expectedVersion: string, suffix: string) {
-  await okEnvelope(await page.request.delete(
-    `/api/admin/content/i18n-learning/messages/${encodeURIComponent(messageKey)}`,
-    {
-      headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-I18N-ARCHIVE-${suffix}` },
-      data: {
-        expectedVersion,
-        reason: `${PREFIX}-归档M5发布多语镜像`,
-        operator: ROOT_USERNAME,
+async function archiveI18nMirrorAsRoot(
+  browser: Browser,
+  messageKey: string,
+  expectedVersion: string,
+  suffix: string,
+) {
+  const context = await browser.newContext({ baseURL: BASE_URL });
+  const page = await context.newPage();
+  try {
+    await login(page, ROOT_USERNAME, ROOT_PASSWORD);
+    await okEnvelope(await page.request.delete(
+      `/api/admin/content/i18n-learning/messages/${encodeURIComponent(messageKey)}`,
+      {
+        headers: { "Idempotency-Key": `${PREFIX}-${SUFFIX}-I18N-ARCHIVE-${suffix}` },
+        data: {
+          expectedVersion,
+          reason: `${PREFIX}-归档M5发布多语镜像`,
+          operator: ROOT_USERNAME,
+        },
       },
-    },
-  ));
+    ));
+  } finally {
+    await context.close();
+  }
 }
 
 async function accountVersion(page: Page, accountId: string) {
-  const overview = await okEnvelope<{ operators?: Array<{ id: string; version?: string }> }>(
+  return (await accountSnapshot(page, accountId)).version;
+}
+
+async function accountSnapshot(page: Page, accountId: string) {
+  const overview = await okEnvelope<{ operators?: Array<{ id: string; version?: string; role?: string; status?: string }> }>(
     await page.request.get("/api/admin/platform/accounts/overview"),
   );
   const account = (overview.operators ?? []).find((operator) => String(operator.id) === String(accountId));
   expect(account?.version, `A1 account ${accountId} must exist before CAS mutation`).toBeTruthy();
-  return account!.version!;
+  expect(account?.role).toBeTruthy();
+  expect(account?.status).toBeTruthy();
+  return {
+    version: account!.version!,
+    role: account!.role!,
+    status: account!.status!,
+  };
 }
 
 async function getOverview(page: Page) {
@@ -606,27 +772,51 @@ async function submitDialog(page: Page, reason: string) {
 }
 
 function cardByHeading(page: Page, heading: string) {
-  return page.locator(".card").filter({ has: page.getByText(heading, { exact: true }) }).first();
+  return page
+    .locator(".sec-h .t")
+    .filter({ hasText: new RegExp(`^${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`) })
+    .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' card ')][1]");
 }
 
-async function goToLastPage(card: Locator) {
+async function goToLastPage(card: Locator, expectedTotal?: number) {
   const next = card.getByRole("button", { name: "下一页", exact: true });
+  const indicator = card.locator(".mono").filter({ hasText: /^\d+\s*\/\s*\d+$/ }).last();
+  if (Number.isSafeInteger(expectedTotal)) {
+    const summary = card.locator(".dim2").filter({ hasText: /^\d+\s*-\s*\d+\s*\/\s*\d+$/ }).last();
+    await expect(summary).toHaveText(new RegExp(`/\\s*${expectedTotal}$`), { timeout: 30_000 });
+  }
   for (let attempt = 0; attempt < 30; attempt += 1) {
     await expect(card).toBeVisible();
-    if (await next.isDisabled().catch(() => true)) return;
+    await expect(indicator).toHaveText(/^\d+\s*\/\s*\d+$/, { timeout: 30_000 });
+    const before = (await indicator.textContent())?.trim() ?? "";
+    const [current, total] = before.split("/").map((part) => Number(part.trim()));
+    if (Number.isSafeInteger(current) && Number.isSafeInteger(total) && current >= total) return;
+    await expect(next).toBeEnabled({ timeout: 30_000 });
     await next.click();
-    await expect(next).toBeEnabled().catch(() => undefined);
+    await expect.poll(async () => (await indicator.textContent())?.trim() ?? "", {
+      message: "M5 pager must settle on the next page before another click",
+    }).not.toBe(before);
   }
   throw new Error("M5 pager did not reach the last page");
 }
 
 async function firstSelectOptionContaining(select: Locator, text: string) {
-  const options = select.locator("option");
-  for (let index = 0; index < await options.count(); index += 1) {
-    const option = options.nth(index);
-    if ((await option.innerText()).includes(text)) return await option.getAttribute("value");
-  }
-  return null;
+  let value: string | null = null;
+  await expect.poll(async () => {
+    const options = select.locator("option");
+    for (let index = 0; index < await options.count(); index += 1) {
+      const option = options.nth(index);
+      if ((await option.innerText()).includes(text)) {
+        value = await option.getAttribute("value");
+        return Boolean(value);
+      }
+    }
+    return false;
+  }, {
+    message: `M3 identity options must eventually include ${text}`,
+    timeout: 30_000,
+  }).toBe(true);
+  return value;
 }
 
 async function searchConversation(page: Page, conversationNo: string) {
@@ -647,6 +837,7 @@ async function searchConversation(page: Page, conversationNo: string) {
 async function login(page: Page, username: string, password: string, changedPassword?: string) {
   await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
   if (await page.locator("aside").isVisible().catch(() => false)) await logout(page);
+  await waitForLoginHydration(page);
   const usernameInput = page.locator('input[autocomplete="username"]');
   const passwordInput = page.locator('input[autocomplete="current-password"]');
   await expect(usernameInput).toBeVisible({ timeout: 15_000 });
@@ -691,11 +882,28 @@ async function login(page: Page, username: string, password: string, changedPass
       if (!secret) throw new Error(`${username} requires an unavailable TOTP secret`);
       mfaSecrets.set(username, secret);
       await otp.fill(await freshTotp(username, secret));
+      const verifyResponsePromise = page.waitForResponse((response) => response.request().method() === "POST"
+        && new URL(response.url()).pathname === "/api/admin/auth/mfa/verify");
       await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+      const verifyResponse = await verifyResponsePromise;
+      const verifyStatus = verifyResponse.status();
+      const verifyBody = verifyStatus >= 400
+        ? await verifyResponse.text().catch(() => "<unavailable>")
+        : "";
+      expect(verifyStatus, `MFA verification failed for ${username}: ${verifyBody}`).toBeLessThan(400);
     }
     await page.waitForTimeout(250);
   }
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+}
+
+async function waitForLoginHydration(page: Page) {
+  await page.waitForFunction(() => {
+    const form = document.querySelector("form");
+    return form
+      ? Object.keys(form).some((key) => key.startsWith("__reactProps$"))
+      : false;
+  }, undefined, { timeout: 20_000 });
 }
 
 async function logout(page: Page) {
@@ -727,10 +935,25 @@ async function okEnvelope<T = unknown>(response: ResponseLike): Promise<T> {
   return payload.data as T;
 }
 
+async function expectApiCode(response: ResponseLike, expectedCode: number) {
+  const raw = await response.text();
+  let payload: { code?: number } | undefined;
+  try {
+    payload = JSON.parse(raw) as { code?: number };
+  } catch {
+    payload = undefined;
+  }
+  expect(payload?.code ?? response.status(), raw).toBe(expectedCode);
+}
+
 function requiredEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is required for M5 live acceptance`);
   return value;
+}
+
+function sha256File(file: string) {
+  return createHash("sha256").update(readFileSync(file)).digest("hex").toUpperCase();
 }
 
 function escapeRegExp(value: string) {
@@ -744,7 +967,7 @@ async function freshTotp(username: string, secret: string) {
     await new Promise((resolve) => setTimeout(resolve, ((previousStep + 1) * 30_000) - Date.now() + 1_000));
   }
   const remaining = 30 - (Math.floor(Date.now() / 1_000) % 30);
-  if (remaining <= 4) await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1_000));
+  if (remaining <= 10) await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1_000));
   currentStep = Math.floor(Date.now() / 30_000);
   usedTotpSteps.set(username, currentStep);
   return currentTotp(secret);

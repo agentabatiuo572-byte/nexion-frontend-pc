@@ -7,6 +7,7 @@
  */
 import { useRef, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
 import { LDataState, fmtM, num, rec, rows, strings } from "./live-data";
 import { readL3FinanceSnapshot, readL3LiveFacts } from "./l3-live-data";
@@ -69,7 +70,7 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
       await ctx.reloadBi?.();
       ctx.toast("财务当前汇总已生成 · 已记录导出范围与操作者");
     } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${error.message}` : "导出任务提交失败 · 请稍后重试");
+      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     } finally {
       exportingRef.current = false;
       setExporting(false);
@@ -146,7 +147,7 @@ export function L3HeaderActions({ ctx }: { ctx: LCtx }) {
           await ctx.reloadBi?.();
           ctx.toast("脱敏资金明细申请已提交 · 请在 L5 完成审批后下载");
         } catch (error) {
-          ctx.toast(error instanceof Error ? `脱敏资金明细申请失败 · ${error.message}` : "脱敏资金明细申请失败 · 请稍后重试");
+          ctx.toast(error instanceof Error ? `脱敏资金明细申请失败 · ${displayAdminError(error)}` : "脱敏资金明细申请失败 · 请稍后重试");
         } finally {
           detailExportingRef.current = false;
           setDetailExporting(false);

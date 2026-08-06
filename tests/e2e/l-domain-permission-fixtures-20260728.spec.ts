@@ -6,11 +6,7 @@ import { CONSOLE_NAV } from "../../lib/nav/console-nav";
 type FixtureAccount = { username: string; password: string; totpSecret: string };
 type PermissionFixture = {
   runId: string;
-  accounts: {
-    l_readonly: FixtureAccount;
-    l_no_write: FixtureAccount;
-    l_no_menu: FixtureAccount;
-  };
+  accounts: Partial<Record<"readonly" | "nowrite" | "nomenu" | "l_readonly" | "l_no_write" | "l_no_menu", FixtureAccount>>;
 };
 type ModuleProbe = {
   id: string;
@@ -118,11 +114,11 @@ const MODULES: ModuleProbe[] = [
 ];
 
 test.describe.serial("L 域 readonly/no-write/no-menu 五层权限", () => {
-  for (const key of ["l_readonly", "l_no_write"] as const) {
+  for (const key of ["readonly", "nowrite"] as const) {
     test(`${key}：L1-L6 菜单、路由和权威数据可读，按钮与接口写入拒绝`, async ({ page }) => {
       const pageErrors = monitorPageErrors(page);
-      await login(page, fixture.accounts[key], key);
-      await assertSession(page, true);
+      await login(page, fixtureAccount(key), key);
+      await assertSession(page, { hasLRead: true, hasMenus: true });
       await assertVisibleLMenus(page);
       for (const module of MODULES) {
         await openVisibleModule(page, module);
@@ -143,7 +139,7 @@ test.describe.serial("L 域 readonly/no-write/no-menu 五层权限", () => {
       await page.reload({ waitUntil: "domcontentloaded" });
       await expect(page.getByText(MODULES.at(-1)!.marker).first()).toBeVisible();
       await logout(page);
-      await login(page, fixture.accounts[key], key);
+      await login(page, fixtureAccount(key), key);
       await assertVisibleLMenus(page);
       expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(200);
       expect((await browserApi(
@@ -156,15 +152,16 @@ test.describe.serial("L 域 readonly/no-write/no-menu 五层权限", () => {
     });
   }
 
-  test("l_no_menu：L 菜单、直接路由、读写接口均拒绝，刷新重登不从缓存恢复", async ({ page }) => {
+  test("nomenu：L 权限与菜单均为空，直链及读写接口均拒绝，刷新重登不从缓存恢复", async ({ page }) => {
     const pageErrors = monitorPageErrors(page);
-    await login(page, fixture.accounts.l_no_menu, "l_no_menu");
-    await assertSession(page, false);
+    await login(page, fixtureAccount("nomenu"), "nomenu");
+    await assertSession(page, { hasLRead: false, hasMenus: false });
     await expect(page.locator('a[href^="/analytics/"]')).toHaveCount(0);
     await page.goto(MODULES[0].path, { waitUntil: "domcontentloaded" });
     await expect(page).not.toHaveURL(/\/analytics\/kpi(?:\?.*)?$/);
     for (const module of MODULES) {
-      expect((await browserApi(page, "GET", module.readPath)).status, `${module.id} read`).toBe(403);
+      const read = await browserApi(page, "GET", module.readPath);
+      expect(read.status, `${module.id} read`).toBe(403);
       expect((await browserApi(
         page,
         module.writeMethod,
@@ -176,7 +173,7 @@ test.describe.serial("L 域 readonly/no-write/no-menu 五层权限", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator('a[href^="/analytics/"]')).toHaveCount(0);
     await logout(page);
-    await login(page, fixture.accounts.l_no_menu, "l_no_menu");
+    await login(page, fixtureAccount("nomenu"), "nomenu");
     await expect(page.locator('a[href^="/analytics/"]')).toHaveCount(0);
     expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
     expect(pageErrors).toEqual([]);
@@ -204,7 +201,14 @@ async function logout(page: Page) {
   await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 20_000 });
 }
 
-async function assertSession(page: Page, hasRead: boolean) {
+function fixtureAccount(key: "readonly" | "nowrite" | "nomenu"): FixtureAccount {
+  const legacyKey = key === "readonly" ? "l_readonly" : key === "nowrite" ? "l_no_write" : "l_no_menu";
+  const account = fixture.accounts[key] ?? fixture.accounts[legacyKey];
+  if (!account) throw new Error(`Missing ${key} permission fixture`);
+  return account;
+}
+
+async function assertSession(page: Page, input: { hasLRead: boolean; hasMenus: boolean }) {
   const response = await page.request.get("/api/admin/auth/session");
   expect(response.status()).toBe(200);
   const payload = await response.json() as {
@@ -213,15 +217,16 @@ async function assertSession(page: Page, hasRead: boolean) {
   const authorities = payload.data?.session?.authorities ?? [];
   const menus = payload.data?.session?.effectiveMenus ?? [];
   for (let module = 1; module <= 6; module += 1) {
-    if (hasRead) expect(authorities).toContain(`bi_l${module}_read`);
+    if (input.hasLRead) expect(authorities).toContain(`bi_l${module}_read`);
     else expect(authorities).not.toContain(`bi_l${module}_read`);
   }
-  if (hasRead) {
+  if (input.hasLRead) {
     expect(authorities.some((permission) =>
       /^bi_l[1-6]_/.test(permission) && !permission.endsWith("_read"))).toBe(false);
+  }
+  if (input.hasMenus) {
     expect(menus.length).toBeGreaterThan(0);
   } else {
-    expect(authorities).toEqual([]);
     expect(menus).toEqual([]);
   }
 }

@@ -51,6 +51,12 @@ test("D3 load failures clear stale financial facts and config writes use optimis
   assert.match(page, /trialShadowStressUsdt/);
 });
 
+test("D3 discards a superseded read response instead of overwriting a newer authoritative snapshot", () => {
+  assert.match(page, /const loadGeneration = useRef\(0\)/);
+  assert.match(page, /const generation = \+\+loadGeneration\.current/);
+  assert.match(page, /if \(generation !== loadGeneration\.current\) return;/);
+});
+
 test("treasury proxy supports PUT and preserves CSV response headers", () => {
   assert.match(route, /export async function PUT/);
   assert.match(route, /Content-Disposition/);

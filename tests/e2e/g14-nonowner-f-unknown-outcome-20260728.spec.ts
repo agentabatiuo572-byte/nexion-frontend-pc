@@ -1,6 +1,18 @@
+import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
-const CASES = [
+type FixtureAccount = { username: string; password: string; totpSecret: string };
+type Fixture = { runId: string; accounts?: { maker?: FixtureAccount; g_maker?: FixtureAccount } };
+
+const RUN_ID = process.env.G_NONOWNER_RUN_ID ?? "pc-full-acceptance-20260729-114336";
+const FIXTURE_PATH = process.env.G_PERMISSION_FIXTURE_PATH
+  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/domain-permission-fixtures/G.json`;
+const fixture = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as Fixture;
+const maker = fixture.accounts?.maker ?? fixture.accounts?.g_maker;
+if (!maker) throw new Error("G fixture must provide accounts.maker or accounts.g_maker");
+
+const ALL_CASES = [
   {
     id: "G1",
     path: "/finance-products/staking",
@@ -44,12 +56,26 @@ const CASES = [
     },
   },
 ] as const;
+const selectedModules = (process.env.G_UNKNOWN_MODULES ?? "")
+  .split(",")
+  .map((value) => value.trim().toUpperCase())
+  .filter(Boolean);
+const CASES = selectedModules.length === 0
+  ? ALL_CASES
+  : ALL_CASES.filter((scenario) => selectedModules.includes(scenario.id));
 
 test.describe.configure({ timeout: 120_000 });
+test.beforeAll(() => {
+  expect(fixture.runId, "fixture Run ID").toBe(RUN_ID);
+  expect(CASES.length, "G_UNKNOWN_MODULES must select at least one known G module").toBeGreaterThan(0);
+});
+test.afterEach(async ({ page }) => {
+  await page.request.post("/api/admin/auth/logout").catch(() => undefined);
+});
 
 for (const scenario of CASES) {
   test(`${scenario.id} 结果未知必须保留表单并以同一幂等键重试`, async ({ page }) => {
-    await loginSuperadmin(page);
+    await login(page, maker);
     await openFromSidebar(page, scenario.path);
 
     const commandKeys: string[] = [];
@@ -84,7 +110,7 @@ for (const scenario of CASES) {
   });
 
   test(`${scenario.id} 确定性拒绝必须释放幂等键`, async ({ page }) => {
-    await loginSuperadmin(page);
+    await login(page, maker);
     await openFromSidebar(page, scenario.path);
 
     const commandKeys: string[] = [];
@@ -127,26 +153,68 @@ for (const scenario of CASES) {
   });
 }
 
-async function loginSuperadmin(page: Page) {
+async function login(page: Page, account: FixtureAccount) {
   await page.goto("/", { waitUntil: "load" });
   const shell = page.locator("aside");
   const username = page.locator('input[autocomplete="username"]');
-  for (let attempt = 0; attempt < 2 && !(await shell.isVisible().catch(() => false)); attempt += 1) {
-    await expect(username).toBeVisible({ timeout: 8_000 });
-    await username.fill("superadmin");
-    const password = page.locator('input[autocomplete="current-password"]');
-    await password.fill("Admin@123456");
-    await expect(username).toHaveValue("superadmin");
-    await expect(password).toHaveValue("Admin@123456");
-    const submit = page.getByRole("button", { name: /继续|登录/ });
-    await expect(submit).toBeEnabled();
-    await submit.click();
-    await Promise.race([
-      shell.waitFor({ state: "visible", timeout: 8_000 }),
-      page.getByRole("alert").waitFor({ state: "visible", timeout: 8_000 }),
-    ]).catch(() => undefined);
-  }
+  await expect(username).toBeVisible({ timeout: 8_000 });
+  await username.fill(account.username);
+  const password = page.locator('input[autocomplete="current-password"]');
+  await password.fill(account.password);
+  await expect(username).toHaveValue(account.username);
+  await expect(password).toHaveValue(account.password);
+  const submit = page.getByRole("button", { name: /继续|登录/ });
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  const otp = page.getByLabel("一次性验证码");
+  await expect(otp).toBeVisible({ timeout: 8_000 });
+  await otp.fill(await freshTotp(account.totpSecret));
+  await page.getByRole("button", { name: "验证并进入", exact: true }).click();
   await expect(shell).toBeVisible({ timeout: 20_000 });
+}
+
+const lastTotpStep = new Map<string, number>();
+
+async function freshTotp(secret: string) {
+  let step = Math.floor(Date.now() / 30_000);
+  const previous = lastTotpStep.get(secret) ?? -1;
+  if (step <= previous) {
+    await expect.poll(() => Math.floor(Date.now() / 30_000), { timeout: 35_000 })
+      .toBeGreaterThan(previous);
+  }
+  const remaining = 30 - (Math.floor(Date.now() / 1_000) % 30);
+  if (remaining <= 3) {
+    const boundary = Math.floor(Date.now() / 30_000);
+    await expect.poll(() => Math.floor(Date.now() / 30_000), { timeout: 5_000 })
+      .toBeGreaterThan(boundary);
+  }
+  step = Math.floor(Date.now() / 30_000);
+  lastTotpStep.set(secret, step);
+  return currentTotp(secret);
+}
+
+function currentTotp(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) throw new Error("Invalid base32 TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = Buffer.alloc(Math.floor(bits.length / 8));
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
+  }
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", bytes).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
 }
 
 async function openFromSidebar(page: Page, href: string) {

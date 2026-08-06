@@ -7,6 +7,7 @@
  * ai(Nova)类别推送/模板归 I2,本页只渲染只读「I2 管」。高敏配置:变更走确认 + 理由。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, Modal, Toggle, type IconName } from "../design-kit";
 import type { User360Profile } from "@/lib/admin/user360-client";
 import {
@@ -224,7 +225,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setAgentPageError(err instanceof Error ? err.message : "SUPPORT_AGENT_PAGE_FAILED");
+        setAgentPageError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setAgentPageLoading(false);
@@ -244,7 +245,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setScriptPageError(err instanceof Error ? err.message : "SESSION_SCRIPT_PAGE_FAILED");
+        setScriptPageError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setScriptPageLoading(false);
@@ -264,7 +265,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setReplyTemplatePageError(err instanceof Error ? err.message : "SESSION_REPLY_TEMPLATE_PAGE_FAILED");
+        setReplyTemplatePageError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setReplyTemplatePageLoading(false);
@@ -593,10 +594,12 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                   </div>
                   {managed ? (
                     <span className="chip" style={{ color: on ? "var(--m-ok)" : "var(--ink-3)", border: "none" }}>{on ? "已启用(只读)" : "已停用(只读)"}</span>
-                  ) : (
+                  ) : canWriteM5 ? (
                     <span data-proof={`session-cat-toggle-${c.type}`}>
-                      <Sw on={on} disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} onClick={() => toggleCat(c)} label={`${on ? "禁用" : "启用"} ${c.name}`} />
+                      <Sw on={on} disabled={!sessionTemplatesAvailable || writePending} onClick={() => toggleCat(c)} label={`${on ? "禁用" : "启用"} ${c.name}`} />
                     </span>
+                  ) : (
+                    <span className="chip" style={{ color: on ? "var(--m-ok)" : "var(--ink-3)", border: "none" }}>{on ? "已启用" : "已停用"}</span>
                   )}
                 </div>
               );
@@ -608,10 +611,12 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           <div className="sec-h">
             <span className="t">顾问主动推送策略</span>
             <span className="sp" />
-            <button type="button" data-proof="session-policy-enabled" className="btn btn-sec btn-sm" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} onClick={toggleAdvisorPush}>
-              <Icon name="gauge" size={16} />
-              {masterOn ? "停用" : "启用"}总开关
-            </button>
+            {canWriteM5 ? (
+              <button type="button" data-proof="session-policy-enabled" className="btn btn-sec btn-sm" disabled={!sessionTemplatesAvailable || writePending} onClick={toggleAdvisorPush}>
+                <Icon name="gauge" size={16} />
+                {masterOn ? "停用" : "启用"}总开关
+              </button>
+            ) : null}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: "var(--surface-2)", borderRadius: 10, marginBottom: 10 }}>
             <span className="dim" style={{ fontSize: 13 }}>主动推送总开关</span>
@@ -620,22 +625,26 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
             <span className={`stat ${masterOn ? "active" : "closed"}`}>{masterOn ? "ON" : "OFF"}</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <button type="button" data-proof="session-policy-delay" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("delayMs", "首推延迟", policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs), " ms")}>
-              {tileHead("首推延迟")}
-              {tileVal(`${policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs)} ms`)}
-            </button>
-            <button type="button" data-proof="session-policy-cooldown" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("cooldownHours", "冷却", policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours), " h")}>
-              {tileHead("冷却时间")}
-              {tileVal(`${policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours)} h`)}
-            </button>
-            <button type="button" data-proof="session-policy-max" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("maxPerSession", "单会话上限", policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession), " 条")}>
-              {tileHead("单会话上限")}
-              {tileVal(`${policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession)} 条`)}
-            </button>
-            <button type="button" data-proof="session-policy-audience" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || audienceOptions.length === 0} style={tileStyle} onClick={editAudience}>
-              {tileHead("受众圈定")}
-              {tileVal(audienceOptions.length > 0 ? currentAudience : "暂无可用受众")}
-            </button>
+            {canWriteM5 ? (
+              <button type="button" data-proof="session-policy-delay" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("delayMs", "首推延迟", policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs), " ms")}>
+                {tileHead("首推延迟")}{tileVal(`${policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs)} ms`)}
+              </button>
+            ) : <div style={tileStyle}>{tileHead("首推延迟")}{tileVal(`${policyVal("delayMs", DEFAULT_ADVISOR_POLICY.delayMs)} ms`)}</div>}
+            {canWriteM5 ? (
+              <button type="button" data-proof="session-policy-cooldown" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("cooldownHours", "冷却", policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours), " h")}>
+                {tileHead("冷却时间")}{tileVal(`${policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours)} h`)}
+              </button>
+            ) : <div style={tileStyle}>{tileHead("冷却时间")}{tileVal(`${policyVal("cooldownHours", DEFAULT_ADVISOR_POLICY.cooldownHours)} h`)}</div>}
+            {canWriteM5 ? (
+              <button type="button" data-proof="session-policy-max" disabled={!sessionTemplatesAvailable || writePending} style={tileStyle} onClick={() => editPolicy("maxPerSession", "单会话上限", policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession), " 条")}>
+                {tileHead("单会话上限")}{tileVal(`${policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession)} 条`)}
+              </button>
+            ) : <div style={tileStyle}>{tileHead("单会话上限")}{tileVal(`${policyVal("maxPerSession", DEFAULT_ADVISOR_POLICY.maxPerSession)} 条`)}</div>}
+            {canWriteM5 ? (
+              <button type="button" data-proof="session-policy-audience" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0} style={tileStyle} onClick={editAudience}>
+                {tileHead("受众圈定")}{tileVal(audienceOptions.length > 0 ? currentAudience : "暂无可用受众")}
+              </button>
+            ) : <div style={tileStyle}>{tileHead("受众圈定")}{tileVal(audienceOptions.length > 0 ? currentAudience : "暂无可用受众")}</div>}
           </div>
         </div>
       </div>
@@ -648,10 +657,12 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           </div>
           <SensTag />
           <span className="sp" style={{ flex: 1 }} />
-          <button type="button" data-proof="session-script-new" className="btn btn-pri btn-sm" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || audienceOptions.length === 0} onClick={newScript}>
-            <Icon name="plus" size={16} />
-            新增话术
-          </button>
+          {canWriteM5 && (
+            <button type="button" data-proof="session-script-new" className="btn btn-pri btn-sm" disabled={!sessionTemplatesAvailable || writePending || audienceOptions.length === 0} onClick={newScript}>
+              <Icon name="plus" size={16} />
+              新增话术
+            </button>
+          )}
         </div>
         <div style={{ padding: "0 8px 8px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "92px 1fr 120px 88px 96px", gap: 10, padding: "0 12px 8px", fontSize: 11.5, color: "var(--ink-4)" }}>
@@ -668,7 +679,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           {scriptTotal === 0 && (
             <div className="itint" style={{ margin: "8px 12px 12px" }}>
               <div style={{ fontSize: 13 }}>暂无顾问主动话术</div>
-              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>点击新增话术后会写入后端话术库。</div>
+              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>{canWriteM5 ? "点击新增话术后会写入后端话术库。" : "当前账号可查看话术，但不能新增。"}</div>
             </div>
           )}
           {visibleScripts.map((a) => {
@@ -693,9 +704,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                 <span style={{ fontSize: 12, color: a.ctaHref !== "—" ? "var(--m-hd-2)" : "var(--ink-4)" }}>{a.ctaHref}</span>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
                   <span className="dim2" style={{ fontSize: 11 }}>{archived ? "已归档" : published ? "已发布" : "草稿"}</span>
-                  <span data-proof={`session-script-publish-${a.id}`}>
-                    <Sw on={published} disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || archived} onClick={() => publishScript(a.id, currentStatus)} label={`${published ? "归档" : archived ? "已归档" : "发布"} ${a.id}`} />
-                  </span>
+                  {canWriteM5 ? (
+                    <span data-proof={`session-script-publish-${a.id}`}>
+                      <Sw on={published} disabled={!sessionTemplatesAvailable || writePending || archived} onClick={() => publishScript(a.id, currentStatus)} label={`${published ? "归档" : archived ? "已归档" : "发布"} ${a.id}`} />
+                    </span>
+                  ) : null}
                 </div>
               </div>
             );
@@ -712,10 +725,12 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           </div>
           <span className="dim2" style={{ fontSize: 11.5 }}>坐席快捷回复 · 例行维护</span>
           <span className="sp" style={{ flex: 1 }} />
-          <button type="button" data-proof="session-tpl-new" className="btn btn-pri btn-sm" disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending} onClick={newReplyTemplate}>
-            <Icon name="plus" size={16} />
-            新增模板
-          </button>
+          {canWriteM5 && (
+            <button type="button" data-proof="session-tpl-new" className="btn btn-pri btn-sm" disabled={!sessionTemplatesAvailable || writePending} onClick={newReplyTemplate}>
+              <Icon name="plus" size={16} />
+              新增模板
+            </button>
+          )}
         </div>
         <div style={{ padding: "0 8px 8px" }}>
           {replyTemplatePageLoading && <div className="itint" style={{ margin: "0 12px 8px" }}>正在加载模板分页...</div>}
@@ -725,7 +740,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
           {replyTemplateTotal === 0 && (
             <div className="itint" style={{ margin: "8px 12px 12px" }}>
               <div style={{ fontSize: 13 }}>暂无即时回复模板</div>
-              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>新增模板后会进入坐席快捷回复池。</div>
+              <div className="tiny" style={{ color: "var(--ink-4)", marginTop: 4 }}>{canWriteM5 ? "新增模板后会进入坐席快捷回复池。" : "当前账号可查看模板，但不能新增。"}</div>
             </div>
           )}
           {visibleReplyTemplates.map((t) => {
@@ -745,9 +760,11 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
                   </div>
                 </div>
                 <span className="dim2" style={{ fontSize: 11 }}>{archived ? "已归档" : published ? "已发布" : "草稿"}</span>
-                <span data-proof={`session-tpl-publish-${t.id}`}>
-                  <Sw on={published} disabled={!canWriteM5 || !sessionTemplatesAvailable || writePending || archived} onClick={() => toggleTpl(t.id, currentStatus)} label={`${published ? "归档" : archived ? "已归档" : "发布"} ${t.id}`} />
-                </span>
+                {canWriteM5 ? (
+                  <span data-proof={`session-tpl-publish-${t.id}`}>
+                    <Sw on={published} disabled={!sessionTemplatesAvailable || writePending || archived} onClick={() => toggleTpl(t.id, currentStatus)} label={`${published ? "归档" : archived ? "已归档" : "发布"} ${t.id}`} />
+                  </span>
+                ) : null}
               </div>
             );
           })}
@@ -967,7 +984,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
         .catch((err) => {
           if (!alive) return;
           setUsers([]);
-          setError(err instanceof Error ? err.message : "USERS_LOAD_FAILED");
+          setError(displayAdminError(err));
         })
         .finally(() => {
           if (alive) setLoading(false);

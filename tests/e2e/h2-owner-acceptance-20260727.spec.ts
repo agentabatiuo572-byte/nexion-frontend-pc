@@ -1,9 +1,8 @@
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { loginHMaker } from "./h-owner-mfa";
 
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
 const RUN_ID = `H2-OWNER-${Date.now()}`;
 const EVIDENCE_DIR = process.env.H2_EVIDENCE_DIR
   || "D:/workspace/bug-pic/pc-full-20260726/H2/initial";
@@ -200,18 +199,11 @@ test("H2 墨菲探针覆盖未认证、缺幂等、短理由、未知参数与�
 });
 
 async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  const username = page.getByLabel(/用户名|账号/).first();
-  if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await username.fill(USERNAME);
-    await page.getByLabel(/密码/).first().fill(PASSWORD);
-    await page.getByRole("button", { name: /登录|继续/ }).click();
-  }
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+  await loginHMaker(page);
 }
 
 async function logout(page: Page) {
-  const account = page.getByRole("button", { name: /Super Admin|superadmin/ }).first();
+  const account = page.locator('button[aria-haspopup="menu"]');
   await account.click();
   await page.getByRole("button", { name: "退出登录", exact: true }).click();
   await expect(page.getByLabel(/用户名|账号/).first()).toBeVisible();

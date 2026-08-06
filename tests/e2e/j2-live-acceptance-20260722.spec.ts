@@ -5,6 +5,7 @@ import path from "node:path";
 
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim() || "";
 const EVIDENCE_DIR = process.env.J2_ACCEPTANCE_EVIDENCE_DIR
   || "D:/workspace/bug-pic/j-domain-acceptance-20260722/j2/initial";
 const RUN_ID = process.env.J2_ACCEPTANCE_RUN_ID || `J2-${Date.now()}`;
@@ -50,9 +51,11 @@ async function loginCredentialsFromVisibleEntry(
   for (let step = 0; step < 30; step += 1) {
     if (await page.locator("aside").isVisible().catch(() => false)) return;
     if (await page.getByRole("heading", { name: "双因素身份验证" }).isVisible().catch(() => false)) {
-      const secret = (await page.locator("code").textContent())?.trim();
+      // Existing isolated-run accounts do not expose their enrolled seed in
+      // the UI. The seed is injected only in process memory by the carrier.
+      const secret = TOTP_SECRET || (await page.locator("code").textContent())?.trim();
       if (!secret) throw new Error(`MFA_SECRET_NOT_AVAILABLE_FOR_${username}`);
-      await verifyMfaWithSingleBoundaryRetry(page, secret, username);
+      await verifyMfaWithSingleBoundaryRetry(page, secret, username, password);
       continue;
     }
     if (await page.getByRole("heading", { name: "首次登录修改密码" }).isVisible().catch(() => false)) {
@@ -73,7 +76,12 @@ async function loginCredentialsFromVisibleEntry(
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
 }
 
-async function verifyMfaWithSingleBoundaryRetry(page: Page, secret: string, username: string) {
+async function verifyMfaWithSingleBoundaryRetry(
+  page: Page,
+  secret: string,
+  username: string,
+  password: string,
+) {
   const waitPastBoundaryWhenNearExpiry = async () => {
     const remainingMs = 30_000 - (Date.now() % 30_000);
     if (remainingMs <= 3_000) await page.waitForTimeout(remainingMs + 500);
@@ -93,12 +101,26 @@ async function verifyMfaWithSingleBoundaryRetry(page: Page, secret: string, user
       response.request().method() === "POST" && response.url().endsWith("/api/admin/auth/mfa/verify"));
     await page.getByRole("button", { name: "验证并进入", exact: true }).click();
     const response = await responsePromise;
-    const raw = await response.text();
+    const raw = await response.text().catch(() => "");
     let body: any = null;
     try { body = JSON.parse(raw); } catch { /* keep raw for the final diagnostic */ }
-    if (response.ok() && (body?.code === undefined || body.code === 0)) {
-      await expect(page.getByRole("heading", { name: "双因素身份验证" })).toBeHidden({ timeout: 10_000 });
+    const hasAuthCookie = (await page.context().cookies())
+      .some((cookie) => cookie.name === "nexion_admin_token");
+    if (response.ok() && (body?.code === undefined || body.code === 0 || hasAuthCookie)) {
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      expect((await page.request.get("/api/admin/auth/session")).status()).toBe(200);
+      await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
       return;
+    }
+    if (attempt === 0) {
+      await page.context().clearCookies();
+      await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 500);
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      await page.getByLabel(/用户名|账号/).first().fill(username);
+      await page.getByLabel(/密码/).first().fill(password);
+      await page.getByRole("button", { name: /登录|继续/ }).first().click();
+      await expect(page.getByRole("heading", { name: "双因素身份验证" })).toBeVisible({ timeout: 20_000 });
+      continue;
     }
     if (attempt === 1) {
       throw new Error(`MFA_VERIFY_FAILED_FOR_${username}: HTTP ${response.status()} ${raw}`);
@@ -144,7 +166,9 @@ async function openJ2FromVisibleMenu(page: Page) {
 }
 
 async function logoutFromVisibleAccountMenu(page: Page) {
-  await page.getByRole("button", { name: /Super Admin.*总管理员|总管理员.*Super Admin/ }).first().click();
+  const accountMenu = page.locator('header button[aria-haspopup="menu"]').last();
+  await expect(accountMenu).toBeVisible();
+  await accountMenu.click();
   await page.getByRole("button", { name: "退出登录", exact: true }).click();
   await expect(page.getByLabel(/用户名|账号/).first()).toBeVisible({ timeout: 20_000 });
 }

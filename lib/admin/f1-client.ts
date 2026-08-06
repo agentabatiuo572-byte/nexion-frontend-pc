@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
 import { F1OutcomeUncertainError, f1StableWrite } from "@/lib/admin/f1-stable-write";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import {
@@ -1367,9 +1367,13 @@ async function f1Request<T>(
     throw new Error(formatAdminApiError(undefined, "F1_WRITE_REQUIRES_STABLE_KEY"));
   }
 
+  // 读路径走 guardedFetch(网络异常统一转运营中文);带稳定命令号的写路径走 rawFetch —— 它是
+  // 错误文案咽喉的显式白名单锚点,留给「自管异常语义」的调用方:网络断对写路径不是单纯的失败,
+  // 而是「结果未知」,必须保留命令号供原样重试,不能被包成普通网络错误。
+  const doFetch = isWrite && stableKey ? rawFetch : guardedFetch;
   let response: Response;
   try {
-    response = await fetch(`/api/admin/teams${path}`, {
+    response = await doFetch(`/api/admin/teams${path}`, {
       ...init,
       headers,
       cache: "no-store",
@@ -1378,11 +1382,11 @@ async function f1Request<T>(
     // 网络断时请求可能已到达后端:写路径归「结果未知」,保留命令号供原样重试(K 域同款分类)。
     if (isWrite && stableKey) {
       throw new F1OutcomeUncertainError(
-        error instanceof Error ? error.message : "F1_REQUEST_OUTCOME_UNKNOWN",
+        formatAdminApiError(undefined, "F1_REQUEST_OUTCOME_UNKNOWN"),
         stableKey,
       );
     }
-    throw error;
+    throw error; // 读路径:guardedFetch 已把网络异常转成运营中文
   }
 
   let result: ApiResult<T> | null = null;

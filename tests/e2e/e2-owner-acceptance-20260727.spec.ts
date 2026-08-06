@@ -87,6 +87,27 @@ test("E2 读取失败安全呈现并可从可见重试按钮恢复", async ({ pa
   await page.screenshot({ path: `${EVIDENCE_DIR}/06-retry-recovered.png`, fullPage: true });
 });
 
+test("E2 畸形 200 失败关闭写入口，并可从可见重试恢复", async ({ page }) => {
+  await loginFromVisibleEntry(page);
+  await page.route("**/api/admin/config/task-pricing", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ code: 0, data: {} }),
+    }),
+  );
+  await openE2FromVisibleSidebar(page);
+  await expect(page.locator('section[role="alert"]')).toContainText("E2 数据读取失败");
+  await expect(page.locator("body")).toContainText("E2_TASK_PRICING_PROTOCOL_INVALID");
+  await expect(page.getByRole("button", { name: "调整全局饱和因子" })).toHaveCount(0);
+  await expect(page.locator(".task .acts")).toHaveCount(0);
+  await page.screenshot({ path: `${EVIDENCE_DIR}/07-malformed-200-fail-closed.png`, fullPage: true });
+
+  await page.unroute("**/api/admin/config/task-pricing");
+  await page.getByRole("button", { name: "重试" }).click();
+  await expectCanonicalSurface(page);
+});
+
 test("E2 接口权限、精确六类契约和零副作用错误分支", async ({ page, baseURL }) => {
   await loginFromVisibleEntry(page);
   const pricingResponse = await page.request.get("/api/admin/config/task-pricing");
@@ -167,7 +188,7 @@ async function openE2FromVisibleSidebar(page: Page) {
 }
 
 async function expectCanonicalSurface(page: Page) {
-  await expect(page.getByText("6 类 AI 任务定价 · Server Canonical")).toBeVisible();
+  await expect(page.getByText("6 类 AI 任务定价 · 当前运营配置")).toBeVisible();
   await expect(page.getByTestId("e2-task-pricing-canonical").getByText("6/6 类")).toBeVisible();
   await expect(page.getByTestId("e2-task-pricing-canonical").locator("tbody tr")).toHaveCount(6);
   await expect(page.getByText("手机算力档位收益 · 5 档")).toBeVisible();

@@ -14,6 +14,11 @@ export type ActionConfirmReq = {
   reasonMin?: number;
   reasonMax?: number;
   completionCopy?: string;
+  /**
+   * 审计落点口径(缺省 "a2" = 既有文案不变)。"local-history" 供本地假数据面(如 D7)使用:
+   * 弹窗上「写入 A2 审计」「后端实时校验覆盖率」类承诺会替换成如实的本地口径,不许假承诺。
+   */
+  auditSink?: "a2" | "local-history";
   onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>;
   run: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => unknown | Promise<unknown>;
 };

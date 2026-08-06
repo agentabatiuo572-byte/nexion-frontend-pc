@@ -1,7 +1,21 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
+import {
+  MContentReadError,
+  classifySupportAgentFailure,
+  loadWithBoundedAbortRetry,
+  parseMContentApiEnvelope,
+  parseM1SupportAgentOverview,
+  parseTicketAssigneeCandidates,
+  type M1SupportAgentOverviewPayload,
+  type MSupportAgentFailureKind,
+  type MTicketAssigneeCandidate,
+} from "@/lib/admin/m-support-read-contract";
+export type { MTicketAssigneeCandidate } from "@/lib/admin/m-support-read-contract";
 import type {
   AdvisorScript,
   CustomerProfile,
@@ -16,12 +30,6 @@ import type {
   SupportTicketPriority,
   SupportTicketStatus,
 } from "@/app/components/domain-views/m-tabs/data";
-
-type ApiResult<T> = {
-  code?: number;
-  message?: string;
-  data?: T;
-};
 
 export type AdminPage<T> = {
   total: number;
@@ -288,11 +296,7 @@ type SessionTemplateOverview = {
   replyTemplates?: SessionReplyTemplateView[];
 };
 
-type SupportAgentOverview = {
-  agents?: Record<string, unknown>[];
-  advisorAssignments?: Record<string, unknown>[];
-  transferTargets?: Record<string, unknown>[];
-};
+type SupportAgentOverview = M1SupportAgentOverviewPayload;
 
 type SupportAgentPageView = {
   total?: number;
@@ -410,6 +414,10 @@ export type MContentData = {
   loadConfig: MLoadConfig;
   agentState: MAgentState;
   supportAgents: MSupportAgent[];
+  supportAgentsAvailable: boolean;
+  supportAgentsError: MSupportAgentFailureKind;
+  ticketAssigneeCandidates: MTicketAssigneeCandidate[];
+  ticketAssigneeCandidatesAvailable: boolean;
   advisorAssignments: MAdvisorAssignment[];
   categories: SessionCategory[];
   advisorPolicy: {
@@ -467,21 +475,53 @@ function supportWorkbenchQueryString(query: Record<string, string | number | und
   return text ? `?${text}` : "";
 }
 
+const CONTENT_API_TIMEOUT_MS = 8_000;
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
-  const res = await fetch(`/api/admin/content${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
-  const text = await res.text();
-  const payload = text ? (JSON.parse(text) as ApiResult<T>) : {};
-  if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
-    throw new Error(formatAdminApiError(payload.message, `CONTENT_API_${res.status}`));
+  const controller = new AbortController();
+  const upstreamSignal = init?.signal;
+  let timedOut = false;
+  const forwardAbort = () => controller.abort(upstreamSignal?.reason);
+  if (upstreamSignal?.aborted) forwardAbort();
+  else upstreamSignal?.addEventListener("abort", forwardAbort, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, CONTENT_API_TIMEOUT_MS);
+  let res: Response;
+  let text: string;
+  try {
+    res = await fetch(`/api/admin/content${path}`, {
+      ...init,
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    text = await res.text();
+  } catch (error) {
+    if (timedOut) throw new Error("CONTENT_API_TIMEOUT");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    upstreamSignal?.removeEventListener("abort", forwardAbort);
   }
-  return payload.data as T;
+  const method = (init?.method ?? "GET").toUpperCase();
+  try {
+    return parseMContentApiEnvelope<T>(res.status, text, method === "GET");
+  } catch (error) {
+    if (error instanceof MContentReadError) {
+      throw new MContentReadError(
+        error.status,
+        error.apiCode,
+        error.backendMessage,
+        formatAdminApiError(error.backendMessage, `CONTENT_API_${error.status}`),
+      );
+    }
+    throw error;
+  }
 }
 
 export function fetchMConversationTimeoutPolicy() {
@@ -905,6 +945,7 @@ function adaptTicket(detail: SupportTicketDetail | SupportTicketView): SupportTi
     updatedAt: updated,
     lastReplyAt: asTs(base.lastMessageAt, updated),
     unread: num(base.opsUnreadCount, 0),
+    ownerAdminId: base.assignedAdminId,
     owner: str(base.assignedAdminName, "Unassigned"),
     archived: Boolean(base.archived),
     archivedAt: base.archivedAt ? asTs(base.archivedAt) : undefined,
@@ -1059,7 +1100,7 @@ async function fetchAllSupportTickets(): Promise<AdminPage<SupportTicketView>> {
     await apiRequest<unknown>(`/tickets?pageNum=1&pageSize=${pageSize}`),
   );
   const records = [...asArray<SupportTicketView>(first.records)];
-  const total = Math.max(num(first.total, records.length), records.length);
+  const total = first.total;
   let pageNum = 2;
   while (records.length < total) {
     const page = assertSupportTicketPage(
@@ -1069,6 +1110,13 @@ async function fetchAllSupportTickets(): Promise<AdminPage<SupportTicketView>> {
     if (next.length === 0) throw new Error("M2_TICKET_PAGE_INCOMPLETE");
     records.push(...next);
     pageNum += 1;
+  }
+  if (
+    records.length !== total
+    || records.some((row) => typeof row.ticketNo !== "string" || !row.ticketNo.trim())
+    || new Set(records.map((row) => row.ticketNo)).size !== records.length
+  ) {
+    throw new Error("M2_TICKET_PAGE_INCOMPLETE");
   }
   return { total, pageNum: 1, pageSize: Math.max(records.length, pageSize), records };
 }
@@ -1111,7 +1159,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
         from: str(base.transferFromAgentName, "客服台"),
         to:
           base.transferToType === "agent"
-            ? ({ kind: "agent" as const, name: str(base.transferToName, "Unassigned") })
+            ? ({ kind: "agent" as const, agentId: str(base.transferToId), name: str(base.transferToName, "Unassigned") })
             : base.transferToType === "queue"
               ? ({ kind: "queue" as const, queue: str(base.transferToName, "客服队列") })
               : ({ kind: "standby" as const }),
@@ -1129,6 +1177,7 @@ function adaptConversation(detail: ContentConversationDetail | ContentConversati
     unread: num(base.unreadCount, 0),
     lastTs: asTs(base.lastMessageAt, updated),
     status: conversationStatus(base.status),
+    ownerAgentId: str(base.ownerAgentId),
     owner: str(base.ownerAgentName, "Unassigned"),
     messages,
     customer: profile.nickname,
@@ -1306,107 +1355,281 @@ async function detailOrUnavailable<T extends { id?: string }>(
   };
 }
 
-export async function fetchMContentData(): Promise<MContentData> {
-  const results = await Promise.allSettled([
-    fetchAllSupportTickets(),
-    apiRequest<Record<string, unknown>>("/tickets/load-config"),
-    fetchAllSupportConversations(),
-    apiRequest<SupportAgentOverview>("/support-agents"),
-    apiRequest<unknown>("/knowledge/overview").then(assertSupportKnowledgeOverview),
-    apiRequest<SessionTemplateOverview>("/session-templates/overview"),
-  ]);
-  const loadWarnings: string[] = [];
-  const valueOr = <T,>(result: PromiseSettledResult<unknown>, fallback: T, label: string): T => {
-    if (result.status === "fulfilled") return result.value as T;
-    loadWarnings.push(label);
-    return fallback;
-  };
-  const ticketPage = valueOr<AdminPage<SupportTicketView>>(results[0], { records: [], total: 0, pageNum: 1, pageSize: 100 }, "工单数据");
-  const loadRaw = valueOr<Record<string, unknown>>(results[1], {
-    loadConfig: { version: 1, autoBalance: false, defaultCap: 8, burstCap: 12, warnPct: 80, quietHourBalance: false, overflowQueue: "转人工备勤队列" },
-    agentState: {},
-  }, "负载策略");
-  const convoPage = valueOr<AdminPage<ContentConversationView>>(results[2], { records: [], total: 0, pageNum: 1, pageSize: 100 }, "会话数据");
-  const supportAgentOverview = valueOr<SupportAgentOverview>(results[3], {}, "坐席名单");
-  const knowledge = valueOr<SupportKnowledgeOverview>(results[4], {}, "响应时限");
-  let sessionTemplates: SessionTemplateOverview | null = null;
-  if (results[5].status === "fulfilled") {
-    try {
-      sessionTemplates = requireSessionTemplateOverview(results[5].value);
-    } catch {
-      loadWarnings.push("客服话术协议");
-    }
-  } else {
-    loadWarnings.push("客服话术");
-  }
-  const safeSessionTemplates = sessionTemplates ?? {};
-  const loadConfigAvailable = results[1].status === "fulfilled";
-  const knowledgeAvailable = results[4].status === "fulfilled";
-  const sessionTemplatesAvailable = sessionTemplates !== null;
+const M1_SUPPORT_AGENT_MAX_ATTEMPTS = 2;
+let m1SupportAgentGeneration = 0;
+let m1SupportAgentTask: {
+  sessionKey: string;
+  generation: number;
+  promise: Promise<SupportAgentOverview>;
+} | null = null;
 
-  const ticketRows = asArray<SupportTicketView>(ticketPage.records).map((row) => adaptTicket(row));
-  const convoRows = asArray<ContentConversationView>(convoPage.records).map((row) => adaptConversation(row));
-  const ticketDetails = await detailOrUnavailable(
-    ticketRows,
-    (id) => apiRequest<unknown>(`/tickets/${encodeURIComponent(id)}`),
-    (value) => adaptTicket(assertSupportTicketDetail(value)),
+function fetchSharedM1SupportAgentOverview(): Promise<SupportAgentOverview> {
+  const authState = useAdminAuth.getState();
+  const sessionKey = adminShellSessionKey(authState.session, authState.authEpoch);
+  if (m1SupportAgentTask?.sessionKey === sessionKey) return m1SupportAgentTask.promise;
+  const generation = ++m1SupportAgentGeneration;
+  const promise = loadWithBoundedAbortRetry(
+    async () => parseM1SupportAgentOverview(await apiRequest<unknown>("/support-agents")),
+    M1_SUPPORT_AGENT_MAX_ATTEMPTS,
   );
-  const ticketsAvailable = results[0].status === "fulfilled" && ticketDetails.complete;
-  if (!ticketDetails.complete) loadWarnings.push("工单明细");
-  const conversationDetails = await detailOrUnavailable(
-    convoRows,
-    (id) => apiRequest<unknown>(`/conversations/${encodeURIComponent(id)}`),
-    (value) => adaptConversation(assertConversationDetail(value)),
+  const task = { sessionKey, generation, promise };
+  m1SupportAgentTask = task;
+  void promise.then(
+    () => {
+      if (m1SupportAgentGeneration === generation && m1SupportAgentTask === task) m1SupportAgentTask = null;
+    },
+    () => {
+      if (m1SupportAgentGeneration === generation && m1SupportAgentTask === task) m1SupportAgentTask = null;
+    },
   );
-  const conversationsAvailable = results[2].status === "fulfilled" && conversationDetails.complete;
-  if (!conversationDetails.complete) loadWarnings.push("会话明细");
-  const supportAgents = asArray<Record<string, unknown>>(supportAgentOverview.agents).map(adaptSupportAgent);
-  const advisorAssignments = asArray<Record<string, unknown>>(supportAgentOverview.advisorAssignments).map(adaptAdvisorAssignment);
-  const transferTargets = asArray<Record<string, unknown>>(supportAgentOverview.transferTargets);
-  const loadConfig = adaptLoadConfig(loadRaw, supportAgents);
-  const scriptAudience = Object.fromEntries(asArray<SessionScriptView>(safeSessionTemplates.scripts).map((row) => [str(row.id), str(row.audience)]));
+  return promise;
+}
 
+function initialMContentData(): MContentData {
   return {
-    tickets: ticketDetails.rows,
-    conversations: conversationDetails.rows,
-    faqs: asArray<SupportFaqView>(knowledge.faqs).map(adaptFaq),
-    sla: asArray<SupportSlaView>(knowledge.sla).map(adaptSla),
+    tickets: [],
+    conversations: [],
+    faqs: [],
+    sla: [],
     loadConfig: {
-      version: loadConfig.version,
-      autoBalance: loadConfig.autoBalance,
-      defaultCap: loadConfig.defaultCap,
-      burstCap: loadConfig.burstCap,
-      warnPct: loadConfig.warnPct,
-      quietHourBalance: loadConfig.quietHourBalance,
-      overflowQueue: loadConfig.overflowQueue,
+      version: 1,
+      autoBalance: false,
+      defaultCap: 8,
+      burstCap: 12,
+      warnPct: 80,
+      quietHourBalance: false,
+      overflowQueue: "转人工备勤队列",
     },
-    agentState: loadConfig.agentState,
-    supportAgents,
-    advisorAssignments,
-    categories: asArray<SessionCategoryView>(safeSessionTemplates.categories).map(adaptCategory),
-    advisorPolicy: {
-      enabled: bool(safeSessionTemplates.advisorPolicy?.enabled, true) ? "on" : "off",
-      delayMs: num(safeSessionTemplates.advisorPolicy?.delayMs, 1500),
-      cooldownHours: num(safeSessionTemplates.advisorPolicy?.cooldownHours, 24),
-      maxPerSession: num(safeSessionTemplates.advisorPolicy?.maxPerSession, 1),
-      audience: str(safeSessionTemplates.advisorPolicy?.audience),
-    },
-    workbenchPolicy: {
-      timeoutFallback: bool(safeSessionTemplates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
-    },
-    audienceOptions: asArray<string>(safeSessionTemplates.audienceOptions).map((item) => str(item)).filter(Boolean),
-    segmentFields: asArray<Record<string, unknown>>(safeSessionTemplates.segmentFields),
-    scripts: asArray<SessionScriptView>(safeSessionTemplates.scripts).map(adaptScript),
-    scriptAudience,
-    replyTemplates: asArray<SessionReplyTemplateView>(safeSessionTemplates.replyTemplates).map(adaptReplyTemplate),
-    transferTargets,
-    loadConfigAvailable,
-    ticketsAvailable,
-    conversationsAvailable,
-    knowledgeAvailable,
-    sessionTemplatesAvailable,
-    loadWarnings,
+    agentState: {},
+    supportAgents: [],
+    supportAgentsAvailable: false,
+    supportAgentsError: "none",
+    ticketAssigneeCandidates: [],
+    ticketAssigneeCandidatesAvailable: false,
+    advisorAssignments: [],
+    categories: [],
+    advisorPolicy: { enabled: "on", delayMs: 1500, cooldownHours: 24, maxPerSession: 1, audience: "" },
+    workbenchPolicy: { timeoutFallback: "off" },
+    audienceOptions: [],
+    segmentFields: [],
+    scripts: [],
+    scriptAudience: {},
+    replyTemplates: [],
+    transferTargets: [],
+    loadConfigAvailable: false,
+    ticketsAvailable: false,
+    conversationsAvailable: false,
+    knowledgeAvailable: false,
+    sessionTemplatesAvailable: false,
+    loadWarnings: [],
   };
+}
+
+function currentMContentSessionKey(): string {
+  const authState = useAdminAuth.getState();
+  return adminShellSessionKey(authState.session, authState.authEpoch);
+}
+
+function isMContentSessionCurrent(sessionKey: string): boolean {
+  return sessionKey === currentMContentSessionKey();
+}
+
+export async function fetchMContentData(onProgress?: (data: MContentData) => void): Promise<MContentData> {
+  const mContentSessionKey = currentMContentSessionKey();
+  let snapshot = initialMContentData();
+  const authorities = useAdminAuth.getState().session?.authorities ?? [];
+  const publish = (patch: Partial<MContentData>, warning?: string) => {
+    if (!isMContentSessionCurrent(mContentSessionKey)) return;
+    const loadWarnings = warning && !snapshot.loadWarnings.includes(warning)
+      ? [...snapshot.loadWarnings, warning]
+      : snapshot.loadWarnings;
+    snapshot = { ...snapshot, ...patch, loadWarnings };
+    onProgress?.(snapshot);
+  };
+
+  const ticketsTask = (async () => {
+    let warning = "工单数据";
+    try {
+      const page = await fetchAllSupportTickets();
+      const rows = page.records.map(adaptTicket);
+      const details = await detailOrUnavailable(
+        rows,
+        (id) => apiRequest<unknown>(`/tickets/${encodeURIComponent(id)}`),
+        (value) => adaptTicket(assertSupportTicketDetail(value)),
+      );
+      if (!details.complete) {
+        warning = "工单明细";
+        throw new Error("M2_TICKET_DETAILS_UNAVAILABLE");
+      }
+      publish({ tickets: details.rows, ticketsAvailable: true });
+    } catch {
+      publish({ tickets: [], ticketsAvailable: false }, warning);
+    }
+  })();
+
+  const conversationsTask = (async () => {
+    let warning = "会话数据";
+    try {
+      const page = await fetchAllSupportConversations();
+      const rows = page.records.map(adaptConversation);
+      const details = await detailOrUnavailable(
+        rows,
+        (id) => apiRequest<unknown>(`/conversations/${encodeURIComponent(id)}`),
+        (value) => adaptConversation(assertConversationDetail(value)),
+      );
+      if (!details.complete) {
+        warning = "会话明细";
+        throw new Error("M3_CONVERSATION_DETAILS_UNAVAILABLE");
+      }
+      publish({ conversations: details.rows, conversationsAvailable: true });
+    } catch {
+      publish({ conversations: [], conversationsAvailable: false }, warning);
+    }
+  })();
+
+  const m1Task = (async () => {
+    if (!authorities.includes("service_m1_read")) {
+      publish({
+        supportAgents: [],
+        supportAgentsAvailable: false,
+        supportAgentsError: "permission",
+        advisorAssignments: [],
+        transferTargets: [],
+        loadConfigAvailable: false,
+      });
+      return;
+    }
+    // The M3 transfer dialog depends only on the validated support-agent
+    // overview.  Start the unrelated load-config read concurrently, but never
+    // make a usable transfer target wait for it to settle.
+    const loadConfigTask: Promise<PromiseSettledResult<Record<string, unknown>>> = apiRequest<Record<string, unknown>>("/tickets/load-config")
+      .then((value) => ({ status: "fulfilled", value }) as const)
+      .catch((reason: unknown) => ({ status: "rejected", reason }) as const);
+    const agentResult: PromiseSettledResult<SupportAgentOverview> = await fetchSharedM1SupportAgentOverview()
+      .then((value) => ({ status: "fulfilled", value }) as const)
+      .catch((reason: unknown) => ({ status: "rejected", reason }) as const);
+    const overview = agentResult.status === "fulfilled" ? agentResult.value : null;
+    const supportAgents = overview ? overview.agents!.map(adaptSupportAgent) : [];
+    const advisorAssignments = overview ? overview.advisorAssignments!.map(adaptAdvisorAssignment) : [];
+    const transferTargets = overview ? [...overview.transferTargets!] : [];
+    const supportAgentsAvailable = overview !== null;
+    const supportAgentsError = agentResult.status === "rejected"
+      ? classifySupportAgentFailure(agentResult.reason)
+      : "none";
+    // M_FINAL13_TRANSFER_CANDIDATES_PROGRESS: publish validated seats immediately.
+    publish({
+      supportAgents,
+      supportAgentsAvailable,
+      supportAgentsError,
+      advisorAssignments,
+      transferTargets,
+    });
+    if (!overview) publish({}, supportAgentsError === "permission" ? "坐席名单权限" : "坐席名单数据不可用");
+
+    // M_FINAL13_TRANSFER_CANDIDATES_PROGRESS: load-config is independent.
+    let loadConfigAvailable = false;
+    const loadResult = await loadConfigTask;
+    if (loadResult.status === "fulfilled") {
+      try {
+        const adapted = adaptLoadConfig(loadResult.value, supportAgents);
+        loadConfigAvailable = true;
+        publish({
+          loadConfig: {
+            version: adapted.version,
+            autoBalance: adapted.autoBalance,
+            defaultCap: adapted.defaultCap,
+            burstCap: adapted.burstCap,
+            warnPct: adapted.warnPct,
+            quietHourBalance: adapted.quietHourBalance,
+            overflowQueue: adapted.overflowQueue,
+          },
+          agentState: adapted.agentState,
+          loadConfigAvailable,
+        });
+      } catch {
+        publish({ loadConfigAvailable }, "负载策略");
+      }
+    } else {
+      publish({ loadConfigAvailable }, "负载策略");
+    }
+  })();
+
+  const m2CandidatesTask = (async () => {
+    if (!authorities.includes("service_m2_read")) {
+      publish({ ticketAssigneeCandidates: [], ticketAssigneeCandidatesAvailable: false });
+      return;
+    }
+    try {
+      const candidates = parseTicketAssigneeCandidates(
+        await apiRequest<unknown>("/tickets/assignee-candidates"),
+      );
+      publish({ ticketAssigneeCandidates: candidates, ticketAssigneeCandidatesAvailable: true });
+    } catch {
+      publish({ ticketAssigneeCandidates: [], ticketAssigneeCandidatesAvailable: false }, "工单坐席候选数据");
+    }
+  })();
+
+  const knowledgeTask = (async () => {
+    try {
+      const knowledge = assertSupportKnowledgeOverview(await apiRequest<unknown>("/knowledge/overview"));
+      publish({
+        faqs: knowledge.faqs!.map(adaptFaq),
+        sla: knowledge.sla!.map(adaptSla),
+        knowledgeAvailable: true,
+      });
+    } catch {
+      publish({ faqs: [], sla: [], knowledgeAvailable: false }, "响应时限");
+    }
+  })();
+
+  const templatesTask = (async () => {
+    try {
+      const templates = requireSessionTemplateOverview(await apiRequest<unknown>("/session-templates/overview"));
+      const scripts = templates.scripts!.map(adaptScript);
+      publish({
+        categories: templates.categories!.map(adaptCategory),
+        advisorPolicy: {
+          enabled: bool(templates.advisorPolicy?.enabled, true) ? "on" : "off",
+          delayMs: num(templates.advisorPolicy?.delayMs, 1500),
+          cooldownHours: num(templates.advisorPolicy?.cooldownHours, 24),
+          maxPerSession: num(templates.advisorPolicy?.maxPerSession, 1),
+          audience: str(templates.advisorPolicy?.audience),
+        },
+        workbenchPolicy: {
+          timeoutFallback: bool(templates.workbenchPolicy?.timeoutFallback, false) ? "on" : "off",
+        },
+        audienceOptions: templates.audienceOptions!.map((item) => str(item)).filter(Boolean),
+        segmentFields: [...templates.segmentFields!],
+        scripts,
+        scriptAudience: Object.fromEntries(templates.scripts!.map((row) => [str(row.id), str(row.audience)])),
+        replyTemplates: templates.replyTemplates!.map(adaptReplyTemplate),
+        sessionTemplatesAvailable: true,
+      });
+    } catch {
+      publish({
+        categories: [],
+        audienceOptions: [],
+        segmentFields: [],
+        scripts: [],
+        scriptAudience: {},
+        replyTemplates: [],
+        sessionTemplatesAvailable: false,
+      }, "客服话术协议");
+    }
+  })();
+
+  const tasks = [ticketsTask, conversationsTask, m1Task, m2CandidatesTask, knowledgeTask, templatesTask];
+  await Promise.all(tasks);
+  if (!isMContentSessionCurrent(mContentSessionKey)) {
+    throw new Error("M_CONTENT_AUTH_EPOCH_CHANGED");
+  }
+  return snapshot;
+}
+
+/** Narrow shell-badge read: never loads the M1 seat-management bundle. */
+export async function fetchMServicePendingConversations(): Promise<SessionConvo[]> {
+  const page = await fetchAllSupportConversations();
+  return page.records.map(adaptConversation);
 }
 
 export async function fetchMSessionScriptsPage(pageNum = 1, pageSize = 5): Promise<AdminPage<AdvisorScript>> {
@@ -1467,6 +1690,10 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
     "I.support.sla": JSON.stringify(data.sla),
     "I.support.faqs": JSON.stringify(data.faqs),
     "I.support.agents": JSON.stringify(data.supportAgents),
+    "I.support.agentsAvailable": data.supportAgentsAvailable ? "1" : "0",
+    "I.support.agentsError": data.supportAgentsError,
+    "I.support.ticketAssigneeCandidates": JSON.stringify(data.ticketAssigneeCandidates),
+    "I.support.ticketAssigneeCandidatesAvailable": data.ticketAssigneeCandidatesAvailable ? "1" : "0",
     "I.support.advisorAssignments": JSON.stringify(data.advisorAssignments),
     "I.session.convos": JSON.stringify(data.conversations),
     "I.session.categories": JSON.stringify(data.categories),
@@ -1525,7 +1752,8 @@ export function buildMLegacyParams(data: MContentData): Record<string, string> {
 
 export function adminIdForAgent(name: string, data?: MContentData | null) {
   const agent = data?.supportAgents.find((item) => item.name === name || item.id === name);
-  return agent?.adminId ?? 0;
+  if (agent) return agent.adminId;
+  return data?.ticketAssigneeCandidates.find((item) => item.name === name)?.adminId ?? 0;
 }
 
 export function agentIdForName(name: string, data?: MContentData | null) {
@@ -1710,11 +1938,11 @@ export const mContentActions = {
       body: JSON.stringify(withReason({}, reason)),
     });
   },
-  transferConversation(conversationNo: string, transfer: SessionConvo["transfer"], expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, targetIdOverride?: string, idempotencyKey?: string) {
+  transferConversation(conversationNo: string, transfer: SessionConvo["transfer"], expectedStatus: SessionConvo["status"], expectedVersion: number, reason: string, idempotencyKey?: string) {
     const target = transfer?.to;
     const body =
       target?.kind === "agent"
-        ? { targetType: "agent", targetId: targetIdOverride || agentIdForName(target.name), targetName: target.name }
+        ? { targetType: "agent", targetId: target.agentId, targetName: target.name }
         : target?.kind === "queue"
           ? { targetType: "queue", targetId: target.queue, targetName: target.queue }
           : { targetType: "standby", targetId: "standby-pool", targetName: "备勤池" };

@@ -10,7 +10,11 @@
  * 判据(两个方向都焊,缺一即「删除方向盲区」):
  *   1. 扫 app/ lib/ 里所有「可变 Map 型命令状态容器」,**未登记在下方台账的一律红**。
  *   2. 台账里登记了、但扫描扫不到的条目也红(防止条目被删/改名后台账静默失真)。
- *   3. MIGRATED 三个文件必须仍然引用共享 store,且不得回退成裸内存态。
+ *   3. MIGRATED 文件必须仍然引用共享 store,且不得回退成裸内存态。**含调用点**:
+ *      「文件里有 create 调用」不等于「命令号真的从 store 走」——最可能的回退形态是
+ *      保留 `const x = createSlotAttemptStore(...)` 悬空(没人会去删一个 const),把真实
+ *      调用点换回内联铸号,或删掉成功路径上的 x.forget(槽位永不收敛,复用已被后端
+ *      消费的旧号)。本仓无 ESLint、tsc 未开 noUnusedLocals,悬空 const 别的门全看不见。
  *
  * 台账写在本脚本(不写在被查文件里),每条必须写理由。新增命中 = 要么迁到共享 store,
  * 要么在 KNOWN 里补一行并说清为什么不需要持久化。
@@ -36,11 +40,15 @@ const MIGRATED = [
   "lib/admin/g3-client.ts",
   "lib/admin/g4-client.ts",
   "lib/admin/g7-client.ts",
+  // H9:失败横幅向运营承诺「原样重试用的是同一个幂等键」,而旧实现每点一次保存都现铸一个新键
+  //(模块级 `let commandSeq` 计数器,连刷新都撑不过)。承诺与实现必须同真同假 —— 这一行焊住实现侧。
+  "lib/admin/h9-client.ts",
   "app/components/domain-views/c-tabs/c3-adjust.tsx",
   "app/components/domain-views/c-tabs/c5-security.tsx",
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
   "app/components/domain-views/d-tabs/d3-treasury.tsx",
+  "app/components/domain-views/f-view.tsx",
   "app/components/domain-views/i-tabs/i3-campaign.tsx",
   "app/components/domain-views/i-tabs/i4-trust.tsx",
   "app/components/domain-views/j-tabs/j3-tamper.tsx",
@@ -71,6 +79,10 @@ const KNOWN = {
   "app/components/domain-views/m-view.tsx#pendingMCommandBaselines": { verdict: "not-idempotency", reason: "只缓存调参前基线用于 diff 展示,丢了只是少一段回显" },
   "app/components/domain-views/m-tabs/m5-scripts.tsx#pendingReplyTemplateDraftIds": { verdict: "not-idempotency", reason: "话术草稿的本地临时 id,非 Idempotency-Key,不入后端去重" },
   "lib/admin/registry/index.ts#BY_PATH": { verdict: "not-idempotency", reason: "registry 路由→模块的派生只读索引,进程内重建即可" },
+  // ---- 2026-08-06 merge origin/main 带入(B 域看板读路径,与命令幂等无关)----
+  "lib/admin/b-client.ts#cachedDashboards": { verdict: "not-idempotency", reason: "看板响应读缓存(stale-while-revalidate),丢了只是多发一次 GET,不承载重试/入账语义" },
+  "lib/admin/b-client.ts#inflightDashboards": { verdict: "not-idempotency", reason: "在途 GET 去重(同 key 并发合流),不是写命令号容器" },
+  "lib/admin/b-client.ts#dashboardSubscribers": { verdict: "not-idempotency", reason: "订阅者回调注册表,纯进程内派发,无持久化意义" },
 };
 
 function walk(dir) {
@@ -149,12 +161,18 @@ for (const key of Object.keys(KNOWN)) {
 // 判据 3:已迁移文件不得回退。两条合法路径:
 //   直接 —— import 共享 store 并 create{PendingMutation,SlotAttempt}Store;
 //   间接 —— 走 createStableMutationExecutor,但**必须传非空 storageKey**(不传就静默退回内存态)。
+let storeIdents = 0; // 判据 3b 实际核过调用点的标识符数(0 = 判据失效,PASS 必打样本量)
 for (const rel of MIGRATED) {
   const full = path.join(ROOT, rel);
   if (!fs.existsSync(full)) { failures.push(`MIGRATED 文件缺失:${rel}`); continue; }
   const src = fs.readFileSync(full, "utf8");
+  // 🔴 判据 3b 打在**剥注释后**的正文(2026-08-06 独立证伪 T1b):
+  //   `inlineMint( // was: h9Attempts.resolve(` —— 真实调用已回退成内联铸号,
+  //   同行注释残留旧调用文本,不剥就假绿。「子串哨兵必剥注释」是本仓已固化纪律,
+  //   同轮的 parity 门剥了、这里漏了。剥法与 h9-public-stats-parity.mjs 同款(护 :// 协议)。
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const direct = src.includes("pending-mutation-store")
-    && /create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(src);
+    && /create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(code);
   const viaExecutor = /createStableMutationExecutor\s*\(/.test(src);
   if (viaExecutor && !direct) {
     if (!/createStableMutationExecutor\s*\([^,)]+,\s*"[^"]+"\s*\)/.test(src)) {
@@ -167,6 +185,30 @@ for (const rel of MIGRATED) {
   }
   if (!/create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(src)) {
     failures.push(`${rel} 未调用 createPendingMutationStore / createSlotAttemptStore → 只 import 不用等于没迁`);
+  }
+  // 判据 3b(2026-08-05 补,P1「回退形态假绿」):逐标识符核**调用点**。
+  //   槽位式(createSlotAttemptStore)契约 = resolve(取号/换号)+ forget(成功后收敛),二者缺一即红;
+  //   命令号式(createPendingMutationStore)至少要有一次方法调用(纯悬空 const 即红)。
+  // ponytail: resolve 出来的键是否真塞进了 Idempotency-Key 头,静态 regex 判不了 ——
+  //           那半步靠 tests/pending-mutation-*.test.mjs 守 store 行为 + 评审;这里守「接线没被拆」。
+  for (const match of code.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*createSlotAttemptStore\s*\(/g)) {
+    const ident = match[1];
+    const escaped = ident.replace(/\$/g, "\\$");
+    storeIdents += 1;
+    if (!new RegExp(`${escaped}\\.resolve\\s*\\(`).test(code)) {
+      failures.push(`${rel} 的槽位存储 ${ident} 创建后没有任何 .resolve( 调用 → 命令号已回退成调用点现铸,悬空 const 掩护着假绿`);
+    }
+    if (!new RegExp(`${escaped}\\.forget\\s*\\(`).test(code)) {
+      failures.push(`${rel} 的槽位存储 ${ident} 没有任何 .forget( 调用 → 命令成功后永不收敛,下次会复用已被后端消费的旧号`);
+    }
+  }
+  for (const match of code.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*createPendingMutationStore\s*(?:<[^>]*>)?\s*\(/g)) {
+    const ident = match[1];
+    const escaped = ident.replace(/\$/g, "\\$");
+    storeIdents += 1;
+    if (!new RegExp(`${escaped}\\.[A-Za-z_$][\\w$]*\\s*\\(`).test(code)) {
+      failures.push(`${rel} 的命令号存储 ${ident} 创建后没有任何方法调用 → 悬空 const,幂等键已从别的路子铸(只建不用等于没迁)`);
+    }
   }
 }
 
@@ -194,5 +236,11 @@ if (failures.length) {
   failures.forEach((line) => console.error(`  - ${line}`));
   process.exit(1);
 }
+if (storeIdents === 0) {
+  console.error("pending-idempotency-key sentinel FAIL");
+  console.error("  - 判据 3b 一个 store 标识符都没核到(MIGRATED 全走了别的形态?判据失效,不能当通过)");
+  process.exit(1);
+}
 console.log(`pending-idempotency-key sentinel PASS `
-  + `(扫描 ${files.length} 个文件 / 命中 ${hits.size} 处 / 台账 ${Object.keys(KNOWN).length} 条,其中待迁欠账 ${debt} 条 / 已迁 ${MIGRATED.length} 个文件)`);
+  + `(扫描 ${files.length} 个文件 / 命中 ${hits.size} 处 / 台账 ${Object.keys(KNOWN).length} 条,其中待迁欠账 ${debt} 条 / `
+  + `已迁 ${MIGRATED.length} 个文件,其中 ${storeIdents} 个 store 标识符逐个核过调用点)`);

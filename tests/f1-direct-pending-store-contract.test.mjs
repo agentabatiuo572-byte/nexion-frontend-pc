@@ -82,8 +82,12 @@ test("f1Request:写路径无稳定号直接拒绝,四类结果未知保号,4xx/4
   assert.match(code, /if \(isWrite && stableKey && !authRejected\)/,
     "401 是后端明确拒绝,必须排除在「结果未知」之外,否则会把没执行的操作标成可能已执行");
 
+  // 请求发起:读路径走错误文案咽喉的 guardedFetch(网络异常自动转运营中文);带稳定命令号的写路径
+  // 走 rawFetch(咽喉的显式白名单锚点)—— 网络断对写路径不是普通失败而是「结果未知」,
+  // 被包成普通网络错误就丢了命令号语义。
+  assert.match(code, /const doFetch = isWrite && stableKey \? rawFetch : guardedFetch;/);
   // 四类未知。
-  assert.match(code, /error instanceof Error \? error\.message : "F1_REQUEST_OUTCOME_UNKNOWN"/);
+  assert.match(code, /formatAdminApiError\(undefined, "F1_REQUEST_OUTCOME_UNKNOWN"\)/);
   assert.match(code, /F1OutcomeUncertainError\(formatAdminApiError\(undefined, "F1_RESPONSE_UNREADABLE"\), stableKey\)/);
   // 「结果未知」文案必须过 formatAdminApiError:F 域的错误在 f-view 走 toast 路径原样上屏,
   // 裸错误码会直接怼到运营脸上(违反「页面文案禁工程名词/错误码」)。

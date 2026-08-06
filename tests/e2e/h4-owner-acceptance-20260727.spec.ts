@@ -1,9 +1,8 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { loginHMaker } from "./h-owner-mfa";
 
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
 const evidenceDir = resolve(
   process.env.H4_EVIDENCE_DIR
     || resolve(process.cwd(), "docs", "验收报告", "PC全面测试-20260726", "H4-evidence"),
@@ -46,13 +45,7 @@ test("H4 活动中心从可见入口进入并完成只读业务走查", async ({
 });
 
 async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  const shell = page.locator("aside");
-  if (await shell.isVisible({ timeout: 5_000 }).catch(() => false)) return;
-  await page.locator('input[autocomplete="username"]').fill(USERNAME);
-  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-  await page.getByRole("button", { name: /继续|登录/ }).click();
-  await expect(shell).toBeVisible({ timeout: 20_000 });
+  await loginHMaker(page);
 }
 
 function collectServerFailure(response: Response, failures: string[]) {

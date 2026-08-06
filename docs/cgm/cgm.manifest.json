@@ -4165,6 +4165,31 @@
       "adminTarget": "page:/platform/params-registry"
     },
     {
+      "domain": "H",
+      "scope": "platform",
+      "controlType": "param-config",
+      "frontendField": "PlatformConfig.publicStats.{fleetDevices,onlineRatePct,onlineJitter,registeredUsersBase,registeredUsersMonthlyGrowthPct,registeredUsersAnchorAt,virtualUserCount,hashratePercentileTable}",
+      "frontendSource": "src/store/config-types.ts:PublicStatsConfig",
+      "frontendAnchor": "规格 FEAT-HOME02 ③ / FEAT-HOME02b ③",
+      "opsPurpose": [
+        "conversion",
+        "platform_integrity",
+        "network_growth"
+      ],
+      "querySurface": "首页网络脉搏三格对外公布的口径:注册用户展示基数与月增长率、设备总数与在线占比(含展示浮动)、名次分母里的虚拟人口与算力分位表;运营看当前公布值、生效版本与改动后的派生金额影响",
+      "crudActions": "运营按运营阶段调整对外公布的平台规模与名次口径;7 个参数与分位表整组原子保存,改设备总数会连带改对外公布的日支付额口径",
+      "operationConfirm": true,
+      "serverCanonical": "一句话约束:公布值与公布日产锚 server 单源,client 只读渲染;设备总数是介绍页/信任页/全球网格/分享海报共用的同一个数,禁各页另存;虚拟人口与分位表只进名次计算,永不出现在任何用户可见字段",
+      "endpoint": "读 GET growth/public-stats · 写 PATCH growth/public-stats(expectedVersion CAS + Idempotency-Key + 理由)",
+      "_slices": [
+        "growth-config"
+      ],
+      "id": "CGM-H-015",
+      "coverage": "built",
+      "batch": "B1",
+      "adminTarget": "page:/growth/public-stats"
+    },
+    {
       "domain": "I",
       "scope": "per-user",
       "controlType": "param-config",

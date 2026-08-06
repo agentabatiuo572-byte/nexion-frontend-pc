@@ -3,6 +3,7 @@
 import { Download, HeartPulse } from "lucide-react";
 import { useState } from "react";
 import { recordK6Export } from "@/lib/admin/k6-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { ACTION_TYPE_LABEL, HEALTH_LEVEL_LABEL, auditActionLabel, remoteTargetBindingLabel } from "@/lib/admin/janus-c2/labels";
 import { auditExportRows, auditTargetLabel, formatAuditTime } from "@/lib/admin/k6-audit-presenter";
 import type { AuditLog, HealthLevel, K6ExportFile } from "@/lib/admin/janus-c2/types";
@@ -84,7 +85,7 @@ export function K6Dashboard() {
       const file = await recordK6Export(reportType, format, { totalDevices: summary.totalDevices, healthLevel: health.level });
       downloadExport(file);
     } catch (cause) {
-      setExportError(cause instanceof Error ? cause.message : "导出失败");
+      setExportError(cause instanceof Error ? displayAdminError(cause) : "导出失败");
     } finally {
       setExporting(null);
     }

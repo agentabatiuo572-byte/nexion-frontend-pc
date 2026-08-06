@@ -16,6 +16,7 @@ import { isEmergencyOutcomeUncertain } from "@/lib/admin/j-client";
 import type { TamperReport } from "@/lib/admin/j-client";
 import { downloadJ3ReportFile } from "@/lib/admin/j3-report-download";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 const W = 720;
 const H = 200;
@@ -28,7 +29,7 @@ const ALERT_CONFIG_SLOT = "alert-config";
 const REPORT_EXPORT_SLOT = "report-export";
 
 function j3ErrorText(error: unknown) {
-  return error instanceof Error ? error.message : "操作失败，请重新读取页面状态后重试。";
+  return error instanceof Error ? displayAdminError(error) : "操作失败，请重新读取页面状态后重试。";
 }
 
 /** J3 页头 CTA(挂 DomainHeader 右槽):导出报表(无 操作确认)+ 告警阈值配置(操作确认)。 */

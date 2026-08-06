@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const root = new URL("../", import.meta.url);
-const appPage = readFileSync(new URL("../NX1.0/src/pages/me/wallet-exchange.vue", root), "utf8");
-const appApi = readFileSync(new URL("../NX1.0/src/api/exchange-api.ts", root), "utf8");
+const appRoot = resolveNexionAppRoot({ adminRoot: path.resolve(import.meta.dirname, "..") });
+const appPage = readFileSync(path.join(appRoot, "src/pages/me/wallet-exchange.vue"), "utf8");
+const appApi = readFileSync(path.join(appRoot, "src/api/exchange-api.ts"), "utf8");
 const backendSwap = readFileSync(new URL("../nexion-backend/src/main/java/ffdd/opsconsole/market/application/AppExchangeService.java", root), "utf8");
 const backendQueue = readFileSync(new URL("../nexion-backend/src/main/java/ffdd/opsconsole/market/application/G2ExchangeQueueBatchService.java", root), "utf8");
 const feeService = readFileSync(new URL("../nexion-backend/src/main/java/ffdd/opsconsole/market/application/G2ExchangeFeeAllocationService.java", root), "utf8");

@@ -15,6 +15,7 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 /** H8 发奖参数与结算的稳定命令号:槽位=动作|参数键,指纹带 expectedVersion(旧快照重提自动换号)。
  *  落 sessionStorage,结果未知后刷新页面原样重试仍复用同号被后端去重。 */
@@ -50,7 +51,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       setError(null);
     } catch (cause) {
       setData(null);
-      setError(cause instanceof Error ? cause.message : "H8_DATA_LOAD_FAILED");
+      setError(displayAdminError(cause));
     } finally {
       setLoading(false);
     }

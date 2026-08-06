@@ -1,9 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, request as playwrightRequest, test, type Page } from "@playwright/test";
-
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+import { expect, request as playwrightRequest, test } from "@playwright/test";
+import { loginHMaker } from "./h-owner-mfa";
 const evidenceDir = process.env.H8_EVIDENCE_DIR
   || "D:/workspace/nexion-ops-console/docs/验收报告/PC全面测试-20260726/H8-evidence";
 
@@ -17,7 +15,7 @@ test("H8 first-user visible entry, refresh/relogin and fail-closed boundary", as
     if (message.type() === "error") consoleErrors.push(message.text());
   });
 
-  await login(page);
+  await loginHMaker(page);
   const group = page.getByRole("button", { name: /增长与运营节奏/ });
   if ((await group.getAttribute("aria-expanded")) !== "true") await group.click();
   const entry = page.locator('aside a[href="/growth/referral-rewards"]');
@@ -42,7 +40,7 @@ test("H8 first-user visible entry, refresh/relogin and fail-closed boundary", as
   await expect(page.getByText("最近真实发奖", { exact: true })).toBeVisible();
   await page.evaluate(() => localStorage.clear());
   await page.context().clearCookies();
-  await login(page);
+  await loginHMaker(page);
   await page.goto("/growth/referral-rewards");
   await expect(page.getByText("待结算邀请", { exact: true })).toBeVisible();
   expect((await page.request.get("/api/admin/growth/referral-rewards/not-allowed")).status()).toBe(404);
@@ -65,14 +63,3 @@ test("H8 first-user visible entry, refresh/relogin and fail-closed boundary", as
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((message) => !message.includes("401 (Unauthorized)"))).toEqual([]);
 });
-
-async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  const username = page.locator('input[autocomplete="username"]');
-  if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await username.fill(USERNAME);
-    await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-    await page.getByRole("button", { name: /登录|继续/ }).click();
-  }
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
-}

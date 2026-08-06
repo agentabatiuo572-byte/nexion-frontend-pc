@@ -1,8 +1,20 @@
 import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { createHmac } from "node:crypto";
 
 const EVIDENCE_DIR = process.env.A5_EVIDENCE_DIR || "D:/workspace/bug-pic/a5-reacceptance-20260718/main";
 const API_PATH = "**/api/admin/platform/params-registry";
+type LockedActor = { username: string; password: string; totpSecret: string };
+const LOCKED_MANIFEST_PATH = process.env.A5_MANIFEST_PATH?.trim()
+  || "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260729-114336/A/final7-fixture-refresh/final7-a-fixture-manifest.json";
+const owner = loadLockedMaker();
+let lastTotpStep = -1;
+const TOTP_COUNTER_OFFSET = Number(process.env.A5_TOTP_COUNTER_OFFSET ?? "-1");
+
+if (!Number.isInteger(TOTP_COUNTER_OFFSET) || TOTP_COUNTER_OFFSET < -2 || TOTP_COUNTER_OFFSET > 2) {
+  throw new Error("A5_TOTP_COUNTER_OFFSET_MUST_BE_AN_INTEGER_BETWEEN_-2_AND_2");
+}
 
 test("A5 real user flow, owner navigation, filtering and fail-closed recovery states", async ({ page }) => {
   await mkdir(EVIDENCE_DIR, { recursive: true });
@@ -14,9 +26,18 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
   await page.goto("/platform/params-registry");
   const username = page.locator('input[autocomplete="username"]');
   if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await username.fill(process.env.ADMIN_E2E_USERNAME || "superadmin");
-    await page.locator('input[autocomplete="current-password"]').fill(process.env.ADMIN_E2E_PASSWORD || "Admin@123456");
+    await username.fill(owner.username);
+    await page.locator('input[autocomplete="current-password"]').fill(owner.password);
+    const login = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/admin/auth/login" && response.request().method() === "POST");
     await page.getByRole("button", { name: /登录|继续/ }).click();
+    expect((await login).status()).toBe(200);
+    const otp = page.getByLabel("一次性验证码");
+    if (await otp.isVisible({ timeout: 10_000 }).catch(() => false)) {
+      await otp.fill(await freshTotp(owner.totpSecret));
+      const verified = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/admin/auth/mfa/verify" && response.request().method() === "POST");
+      await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+      expect((await verified).status()).toBe(200);
+    }
   }
 
   await expect(page.getByRole("heading", { name: "平台参数寄存器" })).toBeVisible();
@@ -93,3 +114,33 @@ test("A5 real user flow, owner navigation, filtering and fail-closed recovery st
   await expect(page.getByText("当前服务端值").first()).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
+
+function loadLockedMaker(): LockedActor {
+  const expected = "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260729-114336/A/final7-fixture-refresh/final7-a-fixture-manifest.json";
+  if (LOCKED_MANIFEST_PATH.replace(/\\/g, "/").toLowerCase() !== expected.toLowerCase()) throw new Error("A5 requires the locked Final7 A manifest");
+  const value = JSON.parse(readFileSync(LOCKED_MANIFEST_PATH, "utf8")) as { actors?: { maker?: LockedActor } };
+  const maker = value.actors?.maker;
+  if (!maker?.username || !maker.password || !maker.totpSecret) throw new Error("A5 locked maker credentials are incomplete");
+  return maker;
+}
+
+async function freshTotp(secret: string) {
+  const step = Math.floor(Date.now() / 30_000);
+  const remaining = 30_000 - (Date.now() % 30_000);
+  if (step <= lastTotpStep || remaining <= 3_000) await new Promise<void>((resolve) => setTimeout(resolve, remaining + 500));
+  lastTotpStep = Math.floor(Date.now() / 30_000);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) throw new Error("A5 invalid TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = Buffer.from(Array.from({ length: Math.floor(bits.length / 8) }, (_, index) => Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(lastTotpStep + TOTP_COUNTER_OFFSET));
+  const digest = createHmac("sha1", bytes).update(counter).digest();
+  const offset = digest[digest.length - 1] & 15;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}

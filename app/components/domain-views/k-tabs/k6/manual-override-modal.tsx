@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useJanusC2Store, type OverrideForm } from "@/lib/store/admin/janus-c2-store";
 import { fetchK6RemoteTargets } from "@/lib/admin/k6-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { K6RemoteTarget } from "@/lib/admin/k6-remote-target-contract";
 import { EFFECTIVE_TIMING_LABEL, REASON_CATEGORIES, STATUS_LABEL, STATUS_TONE } from "@/lib/admin/janus-c2/labels";
 import type { Device, EffectiveTiming } from "@/lib/admin/janus-c2/types";
@@ -50,7 +51,7 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
       .catch((error) => {
         if (active) {
           setRemoteTargets([]);
-          setTargetLoadError(error instanceof Error ? error.message : "批准目标读取失败");
+          setTargetLoadError(error instanceof Error ? displayAdminError(error) : "批准目标读取失败");
         }
       });
     return () => { active = false; };
@@ -84,7 +85,7 @@ export function ManualOverrideModal({ device, transition: t, operatorId, onClose
       onApplied?.(updated);
       onClose();
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "修改失败，请重试");
+      setSubmitError(error instanceof Error ? displayAdminError(error) : "修改失败，请重试");
     } finally {
       setPending(false);
     }

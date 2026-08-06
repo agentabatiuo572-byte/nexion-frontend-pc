@@ -1,8 +1,10 @@
+import { createHmac } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "";
+const TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim() || "";
 
 type ModuleCase = {
   id: string;
@@ -150,16 +152,45 @@ function assertCanonicalIdentity(moduleId: string, value: unknown) {
 
 async function login(page: Page) {
   expect(PASSWORD, "ADMIN_E2E_PASSWORD is required").not.toBe("");
-  await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
-  await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 20_000 });
-  await page.locator('input[autocomplete="username"]').fill(USERNAME);
-  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-  const response = page.waitForResponse((candidate) =>
-    candidate.request().method() === "POST"
-    && new URL(candidate.url()).pathname === "/api/admin/auth/login");
-  await page.getByRole("button", { name: /登录|继续/ }).click();
-  expect((await response).status()).toBe(200);
-  await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+    if (await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false)) return;
+    await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 20_000 });
+    await page.locator('input[autocomplete="username"]').fill(USERNAME);
+    await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
+    const response = page.waitForResponse((candidate) =>
+      candidate.request().method() === "POST"
+      && new URL(candidate.url()).pathname === "/api/admin/auth/login");
+    await page.getByRole("button", { name: /登录|继续/ }).click();
+    expect((await response).status()).toBe(200);
+    const otp = page.getByLabel("一次性验证码");
+    if (!await otp.isVisible({ timeout: 10_000 }).catch(() => false)) {
+      await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
+      return;
+    }
+    expect(TOTP_SECRET, "ADMIN_E2E_TOTP_SECRET is required for an MFA-bound K reviewer").not.toBe("");
+    await waitForFreshTotp(page);
+    await otp.fill(currentTotp(TOTP_SECRET));
+    const verification = page.waitForResponse((candidate) =>
+      candidate.request().method() === "POST"
+      && new URL(candidate.url()).pathname === "/api/admin/auth/mfa/verify");
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const verified = await verification;
+    const payload = await verified.json().catch(() => null) as { code?: number; message?: string } | null;
+    const hasAuthenticatedCookie = (await page.context().cookies())
+      .some((cookie) => cookie.name === "nexion_admin_token");
+    if (verified.status() === 200 && (payload?.code === 0 || hasAuthenticatedCookie)) {
+      await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
+      return;
+    }
+    if (attempt === 0 && ["ADMIN_MFA_CODE_REPLAYED", "ADMIN_MFA_CODE_INVALID"].includes(payload?.message ?? "")) {
+      await page.context().clearCookies();
+      await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 500);
+      continue;
+    }
+    throw new Error(`K non-owner MFA failed: HTTP ${verified.status()} ${payload?.message ?? "unknown"}`);
+  }
+  throw new Error("K non-owner login did not reach the authenticated shell");
 }
 
 async function logout(page: Page) {
@@ -198,4 +229,33 @@ function monitorUnexpectedFailures(page: Page) {
     }
   });
   return failures;
+}
+
+async function waitForFreshTotp(page: Page) {
+  const remaining = 30_000 - (Date.now() % 30_000);
+  if (remaining < 5_000) await page.waitForTimeout(remaining + 500);
+}
+
+function currentTotp(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) throw new Error("Invalid base32 TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes: number[] = [];
+  for (let index = 0; index + 8 <= bits.length; index += 8) {
+    bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+  }
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
 }

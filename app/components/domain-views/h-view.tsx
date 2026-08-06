@@ -5,7 +5,8 @@
  * H3 任务引擎和 H4 活动中心来自高保真同页顶部分段,在控制台菜单层拆成两个独立入口。
  * PC 端只保留 H5 签到与里程碑页,不再暴露独立里程碑入口。
  * 三类弹窗:OperationConfirmModal(操作确认,显式 edit 契约)/ KConfirmModal(普通确认,复用 K 域原语)/ Drawer。
- * H1-H7 有效数据源统一走后端 /api/admin/growth/*,历史 platform-config 本地状态不再作为数据源。
+ * H1-H9 有效数据源统一走后端 /api/admin/growth/*,历史 platform-config 本地状态不再作为数据源。
+ * H9 对外公布数据(前端首页平台规模与名次口径)整组原子写,不拆成逐参数提交。
  * amplifies 仅放大流出方向(放松 dial / 升奖励 / 升概率 / 升 NEX 奖励 / 降门槛 / 真实奖)。
  * 单源:后端 /api/admin/growth/* 读模型。
  */
@@ -20,12 +21,14 @@ import H3QuestEvents, { H4ActivityCenter } from "./h-tabs/h3-quest-events";
 import H5DailyMilestones from "./h-tabs/h5-daily-milestones";
 import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
+import H9PublicStats from "./h-tabs/h9-public-stats";
 import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
 import { fetchH1Rhythm, type H1RhythmOverview } from "@/lib/admin/h-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** L2 映射:H3/H4 分别渲染高保真里的任务分段/活动分段;H5 承载签到与里程碑。 */
-const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H4", H5: "H5", H7: "H7", H8: "H8" };
+const FOLD: Record<string, string> = { H1: "H1", H2: "H2", H3: "H3", H4: "H4", H5: "H5", H7: "H7", H8: "H8", H9: "H9" };
 
 const RO_COPY: Record<string, [ro: string, live: string]> = {
   H1: ["阶段流转只能服务器推进 · 客户端不能改", ""],
@@ -35,6 +38,7 @@ const RO_COPY: Record<string, [ro: string, live: string]> = {
   H5: ["签到/转盘的结果由服务器定 · 客户端只显示", "幸运两档概率之和 ≤100% · 里程碑阈值严格从低到高"],
   H7: ["代金券领取/核销在服务器裁决 · 客户端只展示与跳转", "改参即时对前端领券弹窗 + banner 生效 · 促销折扣非负债不走 B1"],
   H8: ["邀请关系和是否已结算由服务器裁决", "真实钱包 + 资金台账 · 同一新人唯一结算"],
+  H9: ["对外公布的数由服务器下发 · 客户端只展示", "整组原子保存 · 改设备总数连带改公布金额口径"],
 };
 
 export function HDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -94,6 +98,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "H5" && <H5DailyMilestones ctx={ctx} />}
       {tab === "H7" && <H7VoucherConfig ctx={ctx} />}
       {tab === "H8" && <H8ReferralRewards ctx={ctx} />}
+      {tab === "H9" && <H9PublicStats ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal
@@ -108,7 +113,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
               await mc.run(reason, newValue, businessValue);
               setActionConfirm(null);
             } catch (error) {
-              setToast(error instanceof Error ? error.message : "操作失败");
+              setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
               throw error;
             }
           }}

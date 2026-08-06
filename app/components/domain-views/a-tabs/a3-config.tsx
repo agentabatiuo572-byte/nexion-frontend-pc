@@ -23,6 +23,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PaginationExemptionList } from "../design-kit";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   fetchA3Overview,
   isA3OutcomeUncertainError,
@@ -64,7 +65,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       setOverview(await fetchA3Overview());
     } catch (error) {
       if (!quiet) setOverview(null);
-      setLoadError(error instanceof Error ? error.message : String(error));
+      setLoadError(displayAdminError(error));
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -101,9 +102,9 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       run: (reason, v) => {
         const val = (v || "").trim();
         if (!f.allowedValues.includes(val)) {
-          const error = new Error("目标状态不在服务端允许范围内，请刷新页面后重试。");
-          toast(error.message);
-          throw error;
+          const copy = "目标状态不在服务端允许范围内，请刷新页面后重试。";
+          toast(copy);
+          throw new Error(copy);
         }
         setMutating(f.key);
         return updateA3FeatureFlag(f.key, val, cur, reason, operator)
@@ -122,7 +123,7 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
               toast(`提交结果未知（命令号 ${error.commandKey}）；请先刷新并核对 A2 审计，禁止重复提交。`);
               throw error;
             }
-            toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
+            toast(`提交失败:${displayAdminError(error)}`);
             throw error;
           })
           .finally(() => setMutating(null));

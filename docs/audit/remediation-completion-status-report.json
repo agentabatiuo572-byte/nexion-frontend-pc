@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-13T09:17:24.747Z",
+  "generatedAt": "2026-08-05T02:59:56.845Z",
   "status": "complete-ready",
   "gates": [
     {
@@ -20,7 +20,7 @@
     {
       "id": "canonical-prd-sync",
       "status": "applied-with-owner-confirmation",
-      "details": "planned=0; alreadyPresent=23; missingAnchors=0; applyCheck=not-needed"
+      "details": "planned=0; alreadyPresent=22; missingAnchors=0; applyCheck=not-needed"
     },
     {
       "id": "owner-product-acceptance",

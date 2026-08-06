@@ -5,6 +5,7 @@ import { releaseMonthPresentation } from "../app/components/domain-views/e-tabs/
 
 const view = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
 const catalog = readFileSync(new URL("../app/components/domain-views/e-tabs/e1-catalog.tsx", import.meta.url), "utf8");
+const e1Client = readFileSync(new URL("../lib/admin/e1-client.ts", import.meta.url), "utf8");
 const domainCss = readFileSync(new URL("../app/components/domain-views/e-domain.css", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../lib/admin/high-ops-registry.ts", import.meta.url), "utf8");
 
@@ -27,6 +28,16 @@ test("E1 SKU editor blocks no-op edits and constrains stock to a non-negative in
 test("E1 exposes retry paths for read and media failures", () => {
   assert.match(catalog, /重新加载 E1 数据/);
   assert.match(catalog, /重新加载媒体/);
+});
+
+test("E1 never mounts a persisted presigned URL before a per-asset refresh succeeds", () => {
+  assert.match(catalog, /const \[src, setSrc\] = useState\(""\)/);
+  assert.match(catalog, /const assetId = sku\.imageAssetId/);
+  assert.match(catalog, /if \(!assetId\)/);
+  assert.match(catalog, /useEffect\(\(\) => \{[\s\S]*void refreshPreview\(\);[\s\S]*\}, \[sku\.imageAssetId, refreshPreview\]\)/);
+  assert.doesNotMatch(catalog, /useState\(sku\.imagePreviewUrl \|\| ""\)/);
+  assert.match(e1Client, /imagePreviewUrl: asset\.previewUrl \|\| undefined/);
+  assert.doesNotMatch(e1Client, /imagePreviewUrl: asset\.previewUrl \|\| sku\.imagePreviewUrl/);
 });
 
 test("E1 catalog supports keyword, status and tier filtering with an explicit empty result", () => {

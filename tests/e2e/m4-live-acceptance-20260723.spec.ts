@@ -1,11 +1,34 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, type APIResponse, type Page, type Response } from "@playwright/test";
 
+type RestrictedOwnerFixture = {
+  runId?: string;
+  account?: { username: string; password: string; totpSecret: string };
+  maker?: { username: string; password: string; totpSecret: string };
+  accounts?: {
+    maker?: { username: string; password: string; totpSecret: string };
+  };
+};
+
+const FINAL2_RUN_ID = process.env.M_FINAL2_RUN_ID ?? "pc-full-acceptance-20260729-114336";
+const FINAL2_OWNER_FIXTURE_PATH = process.env.M4_OWNER_FIXTURE_PATH?.trim();
+const FINAL2_OWNER_FIXTURE = FINAL2_OWNER_FIXTURE_PATH
+  ? JSON.parse(readFileSync(restrictedFinal2Path(FINAL2_OWNER_FIXTURE_PATH), "utf8")) as RestrictedOwnerFixture
+  : undefined;
+const FINAL2_MAKER = FINAL2_OWNER_FIXTURE?.account
+  ?? FINAL2_OWNER_FIXTURE?.maker
+  ?? FINAL2_OWNER_FIXTURE?.accounts?.maker;
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
-const ADMIN_USER = process.env.M4_ADMIN_USERNAME ?? "d5_V3_r_super";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD ?? "";
+const ADMIN_USER = FINAL2_MAKER?.username ?? process.env.M4_ADMIN_USERNAME ?? "d5_V3_r_super";
+const PASSWORD = FINAL2_MAKER?.password ?? process.env.ADMIN_E2E_PASSWORD ?? "";
+const TOTP_SECRET = FINAL2_MAKER?.totpSecret ?? (
+  process.env.M4_ADMIN_TOTP_SECRET?.trim()
+  || process.env.ADMIN_E2E_TOTP_SECRET?.trim()
+  || ""
+);
 const EVIDENCE_DIR = process.env.M4_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/m-domain-acceptance-20260723/final/M4/evidence";
 const PREFIX = process.env.M4_FIXTURE_PREFIX ?? "M4-20260723";
@@ -30,6 +53,23 @@ test.describe.configure({ mode: "serial", timeout: 300_000 });
 
 test.beforeAll(async () => {
   if (!PASSWORD) throw new Error("ADMIN_E2E_PASSWORD is required for M4 live acceptance");
+  if (FINAL2_OWNER_FIXTURE_PATH) {
+    expect(FINAL2_OWNER_FIXTURE?.runId).toBe(FINAL2_RUN_ID);
+    expect(process.env.M_FINAL2_MFA_BYPASS).toBe("false");
+    const writeControlToken = process.env.M_WRITE_CONTROL_TOKEN?.trim();
+    expect(writeControlToken, "M_WRITE_CONTROL_TOKEN is required").toBeTruthy();
+    expect(process.env.M_WRITE_TOKEN?.trim()).toBe(writeControlToken);
+    expect(process.env.M4_SLA_LOCK).toBe(`${FINAL2_RUN_ID}:M4`);
+    expect(readFileSync(path.resolve(".next/BUILD_ID"), "utf8").trim()).toBe(
+      process.env.M_FINAL2_EXPECTED_PC_BUILD_ID ?? "xNJR-cEeID2fPRwrRvOrb",
+    );
+    const jarPath = process.env.M_FINAL2_BACKEND_JAR_PATH?.trim();
+    expect(jarPath, "M_FINAL2_BACKEND_JAR_PATH is required").toBeTruthy();
+    expect(sha256File(path.resolve(jarPath!))).toBe(
+      (process.env.M_FINAL2_EXPECTED_BACKEND_JAR_SHA256
+        ?? "B426C1ED9CFCE970F247D041A28DC7EDAFAC927C112AC0089755ACB70F954B3B").toUpperCase(),
+    );
+  }
   await mkdir(EVIDENCE_DIR, { recursive: true });
 });
 
@@ -351,7 +391,7 @@ async function login(page: Page, username: string) {
   const secretCode = page.locator("code");
   const displayedSecret = await secretCode.count() > 0 ? (await secretCode.first().textContent())?.trim() : undefined;
   if (displayedSecret) MFA_SECRETS.set(username, displayedSecret);
-  const secret = displayedSecret || MFA_SECRETS.get(username);
+  const secret = displayedSecret || MFA_SECRETS.get(username) || TOTP_SECRET;
   if (!secret) throw new Error(`MFA secret unavailable for ${username}`);
   const remainingMs = 30_000 - (Date.now() % 30_000);
   await page.waitForTimeout(remainingMs + 750);
@@ -390,4 +430,18 @@ function decodeBase32(value: string) {
   const bytes: number[] = [];
   for (let index = 0; index + 8 <= bits.length; index += 8) bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
   return Buffer.from(bytes);
+}
+
+function restrictedFinal2Path(value: string) {
+  const resolved = path.resolve(value);
+  const root = path.resolve("D:/workspace/bug-pic/.restricted", FINAL2_RUN_ID);
+  const relative = path.relative(root, resolved);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`M4_OWNER_FIXTURE_PATH must stay under ${root}`);
+  }
+  return resolved;
+}
+
+function sha256File(filePath: string) {
+  return createHash("sha256").update(readFileSync(filePath)).digest("hex").toUpperCase();
 }

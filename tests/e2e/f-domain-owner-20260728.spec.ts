@@ -1,11 +1,17 @@
 import { expect, request as playwrightRequest, test, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
+import {
+  assertLocalFCandidate,
+  currentFRunId,
+  loadFMaker,
+  loginFActor,
+} from "./helpers/f-acceptance-harness";
 
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
+const RUN_ID = currentFRunId();
+const F_MAKER = loadFMaker(RUN_ID);
 const EVIDENCE_DIR =
   process.env.F_ACCEPTANCE_EVIDENCE_DIR ||
-  "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/F/owner";
+  `D:/workspace/bug-pic/.restricted/${RUN_ID}/F/owner`;
 
 type ModuleCase = {
   id: "F1" | "F2" | "F3" | "F4" | "F5";
@@ -24,7 +30,10 @@ const MODULES: ModuleCase[] = [
 
 test.describe.configure({ mode: "serial" });
 
-test.beforeAll(() => mkdirSync(EVIDENCE_DIR, { recursive: true }));
+test.beforeAll(() => {
+  assertLocalFCandidate();
+  mkdirSync(EVIDENCE_DIR, { recursive: true });
+});
 
 test("F1-F5 从登录页和可见侧栏逐模块走查，读取服务端权威数据", async ({ page }) => {
   await login(page);
@@ -154,11 +163,15 @@ test("F1-F5 刷新、返回、退出重登后仍从同一服务端恢复", async
   await expect(page.locator('input[autocomplete="username"]')).toBeVisible();
   await login(page);
   await enterFromSidebar(page, MODULES[4]);
-  await expect(page.getByText("F5 佣金事件审计", { exact: true })).toBeVisible();
+  await expect(
+    page.locator("main").getByText("F5 佣金事件审计", { exact: true }).first(),
+  ).toBeVisible();
   await page.goBack({ waitUntil: "domcontentloaded" });
   await expect(page.locator("aside")).toBeVisible();
   await page.goForward({ waitUntil: "domcontentloaded" });
-  await expect(page.getByText("F5 佣金事件审计", { exact: true })).toBeVisible();
+  await expect(
+    page.locator("main").getByText("F5 佣金事件审计", { exact: true }).first(),
+  ).toBeVisible();
   await page.screenshot({ path: `${EVIDENCE_DIR}/03-refresh-relogin-history.png`, fullPage: true });
 });
 
@@ -194,18 +207,7 @@ test("F1-F5 匿名读写全部失败关闭", async () => {
 });
 
 async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  const username = page.locator('input[autocomplete="username"]');
-  if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await username.fill(USERNAME);
-    await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-    const responsePromise = page.waitForResponse(
-      (response) => response.url().includes("/api/admin/auth/login") && response.request().method() === "POST",
-    );
-    await page.getByRole("button", { name: /登录|继续/ }).click();
-    expect((await responsePromise).status()).toBe(200);
-  }
-  await expect(page.locator("aside")).toBeVisible();
+  await loginFActor(page, F_MAKER, "f-owner-maker");
 }
 
 async function expandNetworkGroup(page: Page) {

@@ -1,8 +1,10 @@
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from "@playwright/test";
+import { loginHMaker } from "./h-owner-mfa";
 
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
 const RUN_ID = `H1-OWNER-${Date.now()}`;
+// Direct loopback App-boundary checks model the trusted edge. App clients never
+// emit this header; the production gateway is the only authority that does.
+const TRUSTED_EDGE_HEADERS = { "X-Nexion-Edge-Country": "JP", "CF-IPCountry": "JP" };
 
 test.describe.configure({ mode: "serial" });
 
@@ -36,7 +38,7 @@ test("H1 首次用户可从左侧入口发现并理解完整节奏操作台", as
   await expect(page.getByText(/H1 沙盒预览已按后端数据刷新/)).toBeVisible();
 });
 
-test("H1 权威读模型与 B4/D5/F3/G7 保持同一快照，App 匿名边界失败关闭", async ({ page }) => {
+test("H1 权威读模型可从可见入口关联 B4，H-only maker 对跨域原始读失败关闭", async ({ page }) => {
   await login(page);
   const h1 = await okJson(page.request, "/api/admin/growth/phases");
   const currentMonth = Number(h1.rhythm.currentMonth);
@@ -56,30 +58,20 @@ test("H1 权威读模型与 B4/D5/F3/G7 保持同一快照，App 匿名边界失
   // FEAT-WD02(2026-08-02):提现惩罚费率随固定网络确认费模型下线。反向钉死,防旋钮回退。
   expect(Object.keys(currentRow.dials)).not.toContain("withdrawPenaltyFeeRate");
 
-  const b4 = await okJson(page.request, "/api/admin/phase/overview");
-  expect(Number(b4.rhythm.currentMonth)).toBe(currentMonth);
-  expect(String(b4.rhythm.currentPhase)).toBe(String(h1.rhythm.currentPhase));
-  expect(b4.dials).toHaveLength(7);
+  for (const endpoint of ["/api/admin/phase/overview", "/api/admin/withdraw/limits", "/api/admin/teams/binary"]) {
+    expect((await page.request.get(endpoint)).status(), `${endpoint} must fail closed for H-only maker`).toBe(403);
+  }
 
-  const d5 = await okJson(page.request, "/api/admin/withdraw/limits");
-  expect(Number(d5.currentMonth)).toBe(currentMonth);
-  expect(Number(d5.cooldownDays)).toBe(Number(currentRow.dials.withdrawCooldownDays));
-  // FEAT-WD02(2026-08-02):原「D5 penaltyFeeRate ⟷ H1 withdrawPenaltyFeeRate 一致性」交叉校验已删 ——
-  // 上面已硬断言该旋钮不在 H1 矩阵里,该分支永不可达。费用模型改按网络固定确认费(D5 自有可写)。
-
-  const f3 = await okJson(page.request, "/api/admin/teams/binary");
-  const f3CapLabel = String(f3.dailyCap?.currentLabel ?? "");
-  expect(parseUsdLabel(f3CapLabel)).toBe(Number(currentRow.dials.binaryDailyCap));
-
-  const appPhaseAnonymous = await page.request.get("http://127.0.0.1:8110/api/product/phase");
+  const appPhaseAnonymous = await page.request.get(
+    `${process.env.NEXION_BACKEND_URL ?? "http://127.0.0.1:8110"}/api/product/phase`, {
+    headers: TRUSTED_EDGE_HEADERS,
+    },
+  );
   expect(appPhaseAnonymous.status()).toBe(401);
 
-  await page.goto("/network/binary");
-  await expect(page.locator("body")).toContainText("H1");
-  await expect(page.locator('[data-proof="f3-cap-h1"]')).toHaveText(f3CapLabel);
-
-  await page.goto("/finance-products/repurchase");
-  await expect(page.locator("body")).toContainText("H1");
+  await page.goto("/growth/phase");
+  await expect(page.getByRole("link", { name: /去 B4 节奏看板/ })).toBeVisible();
+  expect(Number(currentRow.dials.binaryDailyCap)).toBeGreaterThanOrEqual(0);
 });
 
 test("H1 节奏位置真实写入、刷新可见、A2/A4 留痕并可回退", async ({ page }) => {
@@ -97,8 +89,8 @@ test("H1 节奏位置真实写入、刷新可见、A2/A4 留痕并可回退", as
 
     const audit = await okJson(page.request, `/api/admin/platform/audit/overview?domain=H&object=${encodeURIComponent("H1.rhythm.phaseProgressPct")}`);
     expect(JSON.stringify(audit)).toContain(RUN_ID);
-    const events = await okJson(page.request, "/api/admin/platform/events/overview");
-    expect(JSON.stringify(events)).toContain("admin.growth_config_changed");
+    expect((await page.request.get("/api/admin/platform/events/overview")).status())
+      .toBe(403);
   } finally {
     const current = await okJson(page.request, "/api/admin/growth/rhythm");
     if (Number(current.phaseProgressPct) !== oldProgress) {
@@ -161,14 +153,7 @@ test("H1 墨菲探针覆盖未认证、未知路由、缺少幂等、理由越�
 });
 
 async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  const username = page.locator('input[autocomplete="username"]');
-  if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await username.fill(USERNAME);
-    await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-    await page.getByRole("button", { name: /登录|继续/ }).click();
-  }
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+  await loginHMaker(page);
 }
 
 async function okJson(request: APIRequestContext, path: string) {

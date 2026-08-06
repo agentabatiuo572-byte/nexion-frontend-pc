@@ -1,10 +1,16 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { expect, test, type BrowserContext, type Page, type Response } from "@playwright/test";
 
 const EVIDENCE_DIR = process.env.A6_A8_EVIDENCE_DIR || "D:/workspace/bug-pic/a6-a8-reacceptance-20260718/main";
-const SUPER_USERNAME = process.env.ADMIN_E2E_USERNAME || "superadmin";
-const SUPER_PASSWORD = requiredEnv("ADMIN_E2E_PASSWORD");
+type LockedActor = { username: string; password: string; totpSecret: string };
+const LOCKED_MANIFEST_PATH = process.env.A6_A8_MANIFEST_PATH?.trim()
+  || "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260729-114336/A/final7-fixture-refresh/final7-a-fixture-manifest.json";
+const lockedMaker = loadLockedMaker();
+const SUPER_USERNAME = lockedMaker.username;
+const SUPER_PASSWORD = lockedMaker.password;
+const SUPER_TOTP_SECRET = lockedMaker.totpSecret;
 const STALE_ROLE_CODE = process.env.A6_A8_STALE_ROLE_CODE?.trim() || "";
 const STALE_MENU_CODES = (process.env.A6_A8_STALE_MENU_CODES || "")
   .split(",")
@@ -29,10 +35,30 @@ const AUDITOR_NEW_PASSWORD = temporaryPassword("AuditReady");
 const CHECKER_INITIAL_PASSWORD = temporaryPassword("CheckerInit");
 const CHECKER_NEW_PASSWORD = temporaryPassword("CheckerReady");
 const REASON = `A6A7A8复验${RUN_TOKEN}验证真实闭环与失败恢复`;
+const MFA_VERIFY_ATTEMPTS = 3;
+const MFA_SECRETS = new Map<string, string>();
+// The locked local runtime is one TOTP period behind the Windows client. This
+// is an acceptance-carrier clock adapter, not a product auth bypass.
+const TOTP_COUNTER_OFFSET = Number(process.env.A6_A8_TOTP_COUNTER_OFFSET ?? "-1");
+if (!Number.isInteger(TOTP_COUNTER_OFFSET) || TOTP_COUNTER_OFFSET < -2 || TOTP_COUNTER_OFFSET > 2) {
+  throw new Error("A6_A8_TOTP_COUNTER_OFFSET must be an integer between -2 and 2");
+}
 
 type ApiEnvelope<T = unknown> = { code: number; message?: string; data?: T };
 
+function loadLockedMaker(): LockedActor {
+  const expected = "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260729-114336/A/final7-fixture-refresh/final7-a-fixture-manifest.json";
+  if (LOCKED_MANIFEST_PATH.replace(/\\/g, "/").toLowerCase() !== expected.toLowerCase()) throw new Error("A6_A8 requires the locked Final7 A manifest");
+  const value = JSON.parse(readFileSync(LOCKED_MANIFEST_PATH, "utf8")) as { actors?: { maker?: LockedActor } };
+  const maker = value.actors?.maker;
+  if (!maker?.username || !maker.password || !maker.totpSecret) throw new Error("A6_A8 locked maker credentials are incomplete");
+  return maker;
+}
+
 test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and recovery", async ({ page, browser }) => {
+  // Four real normal-MFA actors deliberately wait for fresh TOTP windows; the
+  // default 180s budget can interrupt an otherwise healthy cleanup mid-flight.
+  test.setTimeout(8 * 60_000);
   assertLocalTarget();
   await mkdir(EVIDENCE_DIR, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -57,6 +83,7 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
   let checkerAccountId: string | null = null;
   let checkerContext: BrowserContext | null = null;
   let checkerPage: Page | null = null;
+  let primaryError: unknown;
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   try {
@@ -675,6 +702,12 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
     evidence.pageErrors = pageErrors;
     evidence.completedAt = new Date().toISOString();
     evidence.status = "passed";
+  } catch (error) {
+    // A cleanup failure must never erase the business assertion that originally
+    // failed.  Keep both in the durable evidence and let the primary error win.
+    primaryError = error;
+    evidence.primaryError = error instanceof Error ? error.stack ?? error.message : String(error);
+    throw error;
   } finally {
     evidence.pageErrors = pageErrors;
     let cleanupError: unknown;
@@ -704,16 +737,24 @@ test("A6/A7/A8 real linked flow: grants, A2 replay, idempotency, readonly and re
       evidence.cleanup = error instanceof Error ? error.message : String(error);
     }
     await checkerContext?.close().catch(() => undefined);
+    if (cleanupError) {
+      evidence.cleanupError = cleanupError instanceof Error ? cleanupError.stack ?? cleanupError.message : String(cleanupError);
+      evidence.cleanupAttachedToPrimaryError = Boolean(primaryError);
+    }
     await writeFile(`${EVIDENCE_DIR}/runtime-evidence.json`, JSON.stringify(evidence, null, 2), "utf8");
-    if (cleanupError) throw cleanupError;
+    // Do not mask a product/carrier failure with a secondary cleanup failure.
+    if (cleanupError && !primaryError) throw cleanupError;
   }
 });
 
-async function loginThroughUi(page: Page, username: string, password: string, changedPassword?: string) {
+async function loginThroughUi(page: Page, username: string, password: string, changedPassword?: string, loginAttempt = 0) {
   await page.goto("/");
   const platformButton = page.getByRole("button", { name: /平台基础.*A|A.*平台基础/ });
   const usernameInput = page.locator('input[autocomplete="username"]');
   if (await usernameInput.isVisible({ timeout: 8_000 }).catch(() => false)) {
+    // Reserve a brand-new TOTP period before creating the server challenge.
+    // Waiting after challenge creation can make the challenge itself expire.
+    await waitForNextTotpWindow(page);
     await usernameInput.fill(username);
     await page.locator('input[autocomplete="current-password"]').fill(password);
     const responsePromise = page.waitForResponse((candidate) =>
@@ -721,23 +762,27 @@ async function loginThroughUi(page: Page, username: string, password: string, ch
     await page.getByRole("button", { name: "继续", exact: true }).click();
     const loginResponse = await responsePromise;
     expect(loginResponse.ok(), `login ${username}: HTTP ${loginResponse.status()}`).toBeTruthy();
+    const loginBody = await loginResponse.json() as ApiEnvelope;
+    expect(Number(loginBody.code), `login ${username}: ${loginBody.message ?? "invalid envelope"}`).toBe(0);
   }
 
   for (let step = 0; step < 20; step++) {
     if (await platformButton.isVisible({ timeout: 1_000 }).catch(() => false)) return;
     if (await page.getByRole("heading", { name: "双因素身份验证" }).isVisible({ timeout: 1_500 }).catch(() => false)) {
-      const manualKey = (await page.locator("code").textContent())?.trim();
-      if (!manualKey) throw new Error(`MFA_VERIFY_SECRET_NOT_AVAILABLE_FOR_${username}`);
-      await page.getByLabel("一次性验证码").fill(totp(manualKey));
-      const responsePromise = page.waitForResponse((candidate) =>
-        candidate.request().method() === "POST" && candidate.url().endsWith("/api/admin/auth/mfa/verify"));
-      await page.getByRole("button", { name: "验证并进入", exact: true }).click();
-      const verified = await expectApiSuccess<Record<string, unknown>>(await responsePromise, `MFA verify ${username}`);
+      const otp = page.getByLabel("一次性验证码");
+      await expect(otp).toBeVisible();
+      const secret = username === SUPER_USERNAME
+        ? SUPER_TOTP_SECRET
+        : MFA_SECRETS.get(username) ?? (await page.locator("code").textContent())?.trim();
+      if (!secret) throw new Error(`MFA_VERIFY_SECRET_NOT_AVAILABLE_FOR_${username}`);
+      MFA_SECRETS.set(username, secret);
+      const verified = await verifyMfaWithFreshTotp(page, username, secret);
       const verifiedSession = verified.session as Record<string, unknown>;
       if (verifiedSession.passwordChangeRequired) {
         await expect(page.getByRole("heading", { name: "首次登录修改密码" })).toBeVisible();
       } else {
-        await expect(platformButton).toBeVisible({ timeout: 20_000 });
+        await restoreShellFromAuthenticatedSession(page, platformButton);
+        return;
       }
       continue;
     }
@@ -750,11 +795,65 @@ async function loginThroughUi(page: Page, username: string, password: string, ch
       await page.getByRole("button", { name: "确认修改并进入", exact: true }).click();
       const passwordChangeResponse = await responsePromise;
       expect(passwordChangeResponse.ok(), `password change ${username}: HTTP ${passwordChangeResponse.status()}`).toBeTruthy();
-      await expect(platformButton).toBeVisible({ timeout: 20_000 });
-      continue;
+      await restoreShellFromAuthenticatedSession(page, platformButton);
+      return;
     }
     await page.waitForTimeout(250);
   }
+  // A successful browser-login response can race the shell state update under
+  // a freshly-created account.  Retry the whole visible login once with a new
+  // TOTP period; do not synthesize a session or bypass the product gate.
+  if (loginAttempt === 0 && await usernameInput.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await loginThroughUi(page, username, password, changedPassword, 1);
+    return;
+  }
+  await expect(platformButton).toBeVisible({ timeout: 20_000 });
+}
+
+/**
+ * A password login may legitimately yield an MFA challenge rather than a
+ * session.  Submit a fresh code and, only for replay/expiry responses, move to
+ * the next TOTP window before retrying the same visible challenge.
+ */
+async function verifyMfaWithFreshTotp(page: Page, username: string, secret: string): Promise<Record<string, unknown>> {
+  let lastMessage = "";
+  let lastTotpWindow = -1;
+  for (let attempt = 0; attempt < MFA_VERIFY_ATTEMPTS; attempt += 1) {
+    const otp = page.getByLabel("一次性验证码");
+    await expect(otp).toBeVisible();
+    const currentWindow = Math.floor(Date.now() / 30_000);
+    if (attempt > 0 || currentWindow <= lastTotpWindow) {
+      await waitForNextTotpWindow(page);
+    }
+    lastTotpWindow = Math.floor(Date.now() / 30_000);
+    const responsePromise = page.waitForResponse((candidate) =>
+      candidate.request().method() === "POST" && candidate.url().endsWith("/api/admin/auth/mfa/verify"));
+    await otp.fill(totp(secret, TOTP_COUNTER_OFFSET));
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const response = await responsePromise;
+    const body = await response.json() as ApiEnvelope<Record<string, unknown>>;
+    if (response.ok() && Number(body.code) === 0) {
+      expect(body.data, `MFA verify ${username} must return authenticated session data`).toBeTruthy();
+      return body.data!;
+    }
+    lastMessage = String(body.message ?? `HTTP_${response.status()}`);
+    if (!/(?:MFA_CODE_REPLAYED|MFA_CHALLENGE_EXPIRED|ADMIN_MFA_CODE_INVALID)/i.test(lastMessage) || attempt + 1 >= MFA_VERIFY_ATTEMPTS) {
+      throw new Error(`MFA verify ${username}: HTTP ${response.status()} ${lastMessage}`);
+    }
+  }
+  throw new Error(`MFA verify ${username} exhausted fresh TOTP windows: ${lastMessage}`);
+}
+
+async function waitForNextTotpWindow(page: Page) {
+  const millisecondsRemaining = 30_000 - (Date.now() % 30_000);
+  await page.waitForTimeout(millisecondsRemaining + 2_500);
+}
+
+async function restoreShellFromAuthenticatedSession(page: Page, platformButton: ReturnType<Page["getByRole"]>) {
+  if (await platformButton.isVisible({ timeout: 3_000 }).catch(() => false)) return;
+  const session = await page.request.get("/api/admin/auth/session");
+  expect(session.status(), "MFA/password completion must establish an authenticated session").toBe(200);
+  await page.goto("/");
   await expect(platformButton).toBeVisible({ timeout: 20_000 });
 }
 
@@ -1118,11 +1217,12 @@ async function cleanup(page: Page, ids: {
 }) {
   await page.unrouteAll({ behavior: "ignoreErrors" });
   await page.request.post("/api/admin/auth/logout").catch(() => null);
-  const login = await page.request.post("/api/admin/auth/login", {
-    data: { username: SUPER_USERNAME, password: SUPER_PASSWORD },
-  });
-  const loginData = await apiSuccess<Record<string, unknown>>(login);
-  expect(loginData.session).toBeTruthy();
+  // The password endpoint returns an MFA challenge for this locked actor; use
+  // the same visible MFA path as the primary flow instead of assuming session.
+  await loginThroughUi(page, SUPER_USERNAME, SUPER_PASSWORD);
+  const authenticated = await apiSuccess<Record<string, unknown>>(
+    await page.request.get("/api/admin/auth/session"));
+  expect(authenticated.session).toBeTruthy();
 
   try {
 
@@ -1216,8 +1316,8 @@ function temporaryPassword(prefix: string) {
   return `${prefix}!9Aa${randomBytes(18).toString("base64url")}`;
 }
 
-function totp(secret: string) {
-  const counter = Math.floor(Date.now() / 30_000);
+function totp(secret: string, counterOffset = 0) {
+  const counter = Math.floor(Date.now() / 30_000) + counterOffset;
   const counterBytes = Buffer.alloc(8);
   counterBytes.writeBigUInt64BE(BigInt(counter));
   const digest = createHmac("sha1", decodeBase32(secret)).update(counterBytes).digest();

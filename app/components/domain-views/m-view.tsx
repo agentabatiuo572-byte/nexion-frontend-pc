@@ -8,10 +8,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./m-domain.css";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, MessageThread, OperationConfirmModal, useToast, type ThreadMessage } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
-  adminIdForAgent,
   agentIdForName,
   buildMLegacyParams,
   fetchMContentData,
@@ -20,6 +20,8 @@ import {
   type MLoadConfigWrite,
 } from "@/lib/admin/m-client";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
+import { preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
+import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { M1Overview } from "./m-tabs/m1-overview";
@@ -81,29 +83,46 @@ function templateStatus(value: string | undefined): AdvisorScript["status"] {
 export function MDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
   const tab = useMemo(() => FOLD[meta.l2Id] ?? "M1", [meta.l2Id]);
+  const authEpoch = useAdminAuth((state) => state.authEpoch);
   const [mc, setActionConfirm] = useState<ActionConfirmReq | null>(null);
   const [cf, setCf] = useState<ConfirmReq | null>(null);
   const [mData, setMData] = useState<MContentData | null>(null);
   const [mLoading, setMLoading] = useState(true);
   const [mError, setMError] = useState<string | null>(null);
   const [uiParams, setUiParams] = useState<Record<string, string>>({});
+  const mLoadGeneration = useRef(0);
+  const mDataAuthEpoch = useRef<number | null>(null);
 
   const reloadMContent = useCallback(async () => {
+    const generation = ++mLoadGeneration.current;
+    // A changed authenticated session must never inherit the previous
+    // operator's seat authority.  Same-session refreshes retain only a
+    // previously validated M1 roster while the next M1 read is still pending.
+    if (mDataAuthEpoch.current !== authEpoch) {
+      mDataAuthEpoch.current = authEpoch;
+      setMData(null);
+    }
+    setMError(null);
     setMLoading(true);
     try {
-      const next = await fetchMContentData();
-      setMData(next);
+      const next = await fetchMContentData((partial) => {
+        if (mLoadGeneration.current !== generation) return;
+        setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, partial));
+      });
+      if (mLoadGeneration.current !== generation) return;
+      setMData((previous) => preserveVerifiedSupportAgentsDuringReload(previous, next));
       setMError(null);
     } catch (error) {
-      setMError(error instanceof Error ? error.message : "M_CONTENT_LOAD_FAILED");
+      if (mLoadGeneration.current !== generation) return;
+      setMError(displayAdminError(error));
     } finally {
-      setMLoading(false);
+      if (mLoadGeneration.current === generation) setMLoading(false);
     }
-  }, []);
+  }, [authEpoch]);
 
   useEffect(() => {
     void reloadMContent();
-  }, [reloadMContent]);
+  }, [authEpoch, reloadMContent]);
 
   // M3 即时会话 SSE 订阅：后端 OpsConversationStreamController 推 ConversationMessageEvent。
   // 增量合并进 mData.conversations —— 直接 setMData，绕开 runMWrite 写链（避免被 writeConversationRows
@@ -205,8 +224,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         pendingMCommandBaselines.current.delete(commandFingerprint);
         return true;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "M_CONTENT_WRITE_FAILED";
-        const detail = /failed to fetch|networkerror|load failed/i.test(message) ? "" : ` · ${message}`;
+        const message = displayAdminError(error);
+        // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
+        const detail = message.includes("网络连接失败或后台服务不可达") ? "" : ` · ${message}`;
         setToast(`写入失败或结果未知,请保留当前输入并重试${detail}`);
         return false;
       }
@@ -229,7 +249,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       mCommands.forget(slot);
       return true;
     } catch (error) {
-      setToast(`${failureMessage}或结果未知,请重试 · ${error instanceof Error ? error.message : ""}`);
+      setToast(`${failureMessage}或结果未知,请重试 · ${displayAdminError(error)}`);
       return false;
     }
   }, [reloadMContent, setToast]);
@@ -317,7 +337,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {!mData ? (
         <div className="card card-pad">
-          <span className="dim" style={{ fontSize: 13 }}>{mLoading ? "正在加载 M 客服中心真实数据..." : "暂无可展示的 M 客服中心真实数据"}</span>
+          <span className="dim" style={{ fontSize: 13 }}>
+            {mError ? "客服中心暂时无法同步数据,请稍后重试。" : mLoading ? "正在加载 M 客服中心真实数据..." : "暂无可展示的 M 客服中心真实数据"}
+          </span>
         </div>
       ) : (
         <>
@@ -436,6 +458,10 @@ async function writeTicketRows(
 ) {
   const added = addedRow(prev, next);
   if (added) {
+    const addedOwnerAdminId = added.ownerAdminId;
+    if (typeof addedOwnerAdminId !== "number" || !Number.isSafeInteger(addedOwnerAdminId) || addedOwnerAdminId <= 0) {
+      throw new Error("M2_TICKET_ASSIGNEE_ID_MISSING");
+    }
     const fromConvo = added.subject.match(/由会话\s+([^\s]+)\s+转入/);
     if (fromConvo?.[1]) {
       const sourceConversation = data?.conversations.find((conversation) => conversation.id === fromConvo[1]);
@@ -446,7 +472,7 @@ async function writeTicketRows(
           category: added.category,
           priority: added.priority,
           title: added.subject,
-          assignedAdminId: adminIdForAgent(added.owner, data),
+          assignedAdminId: addedOwnerAdminId,
           assignedAdminName: added.owner || "Unassigned",
           expectedStatus: sourceConversation.status,
           expectedVersion: sourceConversation.version,
@@ -463,7 +489,7 @@ async function writeTicketRows(
         priority: added.priority,
         title: added.subject,
         body: ticketBody(added),
-        assignedAdminId: adminIdForAgent(added.owner, data),
+        assignedAdminId: addedOwnerAdminId,
         assignedAdminName: added.owner || "Unassigned",
       },
       reason,
@@ -489,11 +515,15 @@ async function writeTicketRows(
     await mContentActions.updateTicketPriority(row.id, row.priority, before.status, before.version, reason, idempotencyKey);
     return;
   }
-  if (row.owner !== before.owner) {
+  if (row.ownerAdminId !== before.ownerAdminId) {
+    const nextOwnerAdminId = row.ownerAdminId;
+    if (typeof nextOwnerAdminId !== "number" || !Number.isSafeInteger(nextOwnerAdminId) || nextOwnerAdminId <= 0) {
+      throw new Error("M2_TICKET_ASSIGNEE_ID_MISSING");
+    }
     await mContentActions.assignTicket(
       row.id,
       row.owner,
-      adminIdForAgent(row.owner, data),
+      nextOwnerAdminId,
       before.status,
       before.version,
       reason,
@@ -547,8 +577,7 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   if (!before) return;
 
   if (!before.transfer && row.transfer) {
-    const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
-    await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, targetId, idempotencyKey);
+    await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, idempotencyKey);
     return;
   }
   if (before.transfer && !row.transfer) {
@@ -561,8 +590,7 @@ async function writeConversationRows(prev: SessionConvo[], next: SessionConvo[],
   if (before.transfer && row.transfer && JSON.stringify(before.transfer) !== JSON.stringify(row.transfer)) {
     if (row.transfer.fellBack || row.transfer.to.kind === "standby") await mContentActions.fallbackTransfer(row.id, "transferred", before.version, reason, idempotencyKey);
     else {
-      const targetId = row.transfer.to.kind === "agent" ? agentIdForName(row.transfer.to.name, data) : undefined;
-      await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, targetId, idempotencyKey);
+      await mContentActions.transferConversation(row.id, row.transfer, before.status, before.version, row.transfer.reason || reason, idempotencyKey);
     }
     return;
   }

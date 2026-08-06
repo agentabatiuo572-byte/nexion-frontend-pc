@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { buildRoleStatusPayload, normalizeProposalTicket, type A2ProposalTicket } from "@/lib/admin/platform-contracts";
 import { normalizeA6Detail as strictA6Detail, normalizeA6Overview as strictA6Overview } from "@/lib/admin/rbac-contracts";
 
@@ -57,7 +57,7 @@ async function a6Request<T>(path: string, init?: RequestInit & { idempotencyPref
   if (init?.idempotencyKey) headers.set("Idempotency-Key", init.idempotencyKey);
   else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
 
-  const response = await fetch(`/api/admin/platform${path}`, {
+  const response = await guardedFetch(`/api/admin/platform${path}`, {
     ...init, headers, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(12_000),
   });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;

@@ -62,3 +62,5 @@ codex-*.log
 /after-login-ui.txt
 /entry-ui.txt
 /c5-acceptance.playwright.config.ts
+/.verify-run.log
+/.verify-exit.code

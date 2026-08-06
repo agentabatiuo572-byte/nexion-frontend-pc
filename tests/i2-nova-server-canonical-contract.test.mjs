@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const pcRoot = process.cwd();
 const backendRoot = path.resolve(pcRoot, "..", "nexion-backend");
-const appRoot = path.resolve(pcRoot, "..", "NX1.0");
+const appRoot = resolveNexionAppRoot({ adminRoot: pcRoot });
 const read = (root, file) => fs.readFileSync(path.join(root, file), "utf8");
 
 test("remote App consumes the canonical notification ledger and suppresses local simulations", () => {

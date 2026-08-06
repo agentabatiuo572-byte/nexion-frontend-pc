@@ -657,7 +657,7 @@ function compactText(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\s+([,，.。:：;；])/g, "$1").trim();
 }
 
-function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boolean, hasEdit: boolean): BriefRow[] {
+function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boolean, hasEdit: boolean, localHistory?: boolean): BriefRow[] {
   const actionText = compactText(plainText(action));
   const detailText = compactText(plainText(detail));
   const all = `${actionText} ${detailText}`;
@@ -724,15 +724,15 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
 
   return [
     { label: "要做什么", text: actionText || "执行这项后台操作。" },
-    { label: "影响", text: amplifies ? "确认后立即生效,并会放大资金流出;系统会先检查备付金覆盖率。" : "确认后立即生效,并写入 A2 审计记录。" },
+    { label: "影响", text: amplifies ? (localHistory ? "确认后立即生效,并会放大资金流出;本地配置面请人工确认资金方向影响。" : "确认后立即生效,并会放大资金流出;系统会先检查备付金覆盖率。") : (localHistory ? "确认后立即生效,并落本页变更历史。" : "确认后立即生效,并写入 A2 审计记录。") },
     { label: "提交前", text: defaultCheck },
   ];
 }
 
-export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string }) {
+export function OperatorBriefBlock({ action, detail, amplifies, hasEdit, completionCopy, auditSink }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; hasEdit?: boolean; completionCopy?: string; auditSink?: "a2" | "local-history" }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
-  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit)
+  const brief = buildOperatorBrief(action, detail, !!amplifies, !!hasEdit, auditSink === "local-history")
     .map((row) => row.label === "影响" && completionCopy ? { ...row, text: completionCopy } : row);
   const detailText = compactText(plainText(detail));
   return (
@@ -3183,7 +3183,7 @@ export type CoverageSnapshot = {
 };
 
 /* 操作确认弹窗 — 高敏动作确认 + 理由必填 + 可编辑「目标新值」(配置型调整);纯动作(放行/退款/封禁/pause)仅确认。 */
-export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
+export function OperationConfirmModal({ action, detail, amplifies, coverage, edit, businessForm, completionCopy, reasonMin: requestedReasonMin, reasonMax: requestedReasonMax, auditSink, onBusinessSelectionChange, onClose, onConfirm }: { action: ReactNode; detail: ReactNode; amplifies?: boolean; coverage?: CoverageSnapshot; edit?: EditSpec; businessForm?: BusinessFormSpec; completionCopy?: string; reasonMin?: number; reasonMax?: number; auditSink?: "a2" | "local-history"; onBusinessSelectionChange?: (next: BusinessFormValue) => Promise<BusinessFormSpec | undefined>; onClose: () => void; onConfirm: (reason: string, newValue?: string, businessValue?: BusinessFormValue) => void | Promise<void> }) {
   const [reason, setReason] = useState("");
   const [newVal, setNewVal] = useState(() => initEditValue(edit));
   const [activeBusinessForm, setActiveBusinessForm] = useState<BusinessFormSpec | undefined>(businessForm);
@@ -3267,7 +3267,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
           <Icon name="check" size={15} /> {submitting ? "提交中…" : "确认提交"}
         </Btn>
       </>}>
-      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} />
+      <OperatorBriefBlock action={action} detail={detail} amplifies={effectiveAmplifies} hasEdit={!!spec || !!businessForm} completionCopy={completionCopy} auditSink={auditSink} />
       {submitError && <div className="alertbar warn" role="alert" style={{ marginBottom: 16 }}>{submitError}</div>}
       {effectiveAmplifies && (
         <div className="alertbar danger" style={{ marginBottom: 16, border: 0 }}>
@@ -3284,7 +3284,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
                     : `，低于红线 ${coverage.redlinePct}%，系统会拒绝提交`}
               </>
             ) : (
-              <>提交时由后端实时校验覆盖率，当前弹窗不使用前端兜底值。</>
+              <>{auditSink === "local-history" ? "本页为本地配置面,覆盖率预检待接入后端后生效;请人工确认资金方向影响。" : "提交时由后端实时校验覆盖率，当前弹窗不使用前端兜底值。"}</>
             )}
           </div>
         </div>
@@ -3293,7 +3293,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         <span className="mc"><Icon name="check" size={12} /> 操作者确认</span>
         <Icon name="arrow" size={14} />
         <span className="mc" style={{ background: "var(--brand-soft)", color: "var(--brand)" }}>
-          操作理由必填 · {isJ4Command ? "写入审计记录" : "写入 A2 审计"}
+          操作理由必填 · {auditSink === "local-history" ? "落本页变更历史" : isJ4Command ? "写入审计记录" : "写入 A2 审计"}
         </span>
         <span className="mc" style={{ background: "var(--surface-3)", color: "var(--ink-3)" }}>{completionCopy ?? (isJ4Command ? "提交后等待服务端确认" : "确认后立即生效")}</span>
       </div>
@@ -3338,7 +3338,7 @@ export function OperationConfirmModal({ action, detail, amplifies, coverage, edi
         </div>
       )}
       <div className="field">
-        <label htmlFor={reasonFieldId}>操作理由(必填 · {reasonMax ? `${reasonMin}-${reasonMax} 字` : `${reasonMin} 字以上`} · {isJ4Command ? "写入不可修改的审计记录" : "写入 A2 不可改审计"})</label>
+        <label htmlFor={reasonFieldId}>操作理由(必填 · {reasonMax ? `${reasonMin}-${reasonMax} 字` : `${reasonMin} 字以上`} · {auditSink === "local-history" ? "落本页变更历史" : isJ4Command ? "写入不可修改的审计记录" : "写入 A2 不可改审计"})</label>
         <textarea id={reasonFieldId} rows={3} maxLength={reasonMax} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例: 工单号 / 业务依据 / 影响面 / 回滚预案" />
         {!reasonOk && (
           <div className="tiny" style={{ marginTop: 7, color: "var(--warning)" }}>

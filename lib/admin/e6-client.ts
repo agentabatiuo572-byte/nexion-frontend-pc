@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { parseE6ComputeConfig } from "@/lib/admin/e456-overview-contract";
 
 /**
@@ -113,7 +113,7 @@ async function e6Request<T>(path: string, init?: RequestInit & { idempotencyPref
   if (init?.idempotencyPrefix) {
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
-  const response = await fetch(`/api/admin/devices${path}`, { ...init, headers, cache: "no-store" });
+  const response = await guardedFetch(`/api/admin/devices${path}`, { ...init, headers, cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(formatAdminApiError(result?.message, `E6_REQUEST_FAILED_${response.status}`));

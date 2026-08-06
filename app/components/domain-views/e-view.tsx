@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -47,7 +48,7 @@ import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
   EMPTY_SKU_FORM, type SkuForm, skuToForm, formToSku, formToGate, gateRemaining, validateGateForm, skuNum, stateLabel, ostate,
 } from "./e-tabs/data";
-import type { DatacenterForm, Mc, EViewCtx, EOrder } from "./e-tabs/types";
+import type { DatacenterForm, Mc, EOp, EViewCtx, EOrder } from "./e-tabs/types";
 import { E1Catalog } from "./e-tabs/e1-catalog";
 import { E2Tasks } from "./e-tabs/e2-tasks";
 import { E3Lifecycle } from "./e-tabs/e3-lifecycle";
@@ -97,6 +98,12 @@ const DC_STATUS_OPTIONS: { value: DatacenterForm["status"]; label: string }[] = 
   { value: "maintenance", label: "维护中" },
   { value: "disabled", label: "已禁用" },
 ];
+
+const E2_MUTATION_OPS = new Set<EOp>(["task-create", "task-down", "task-price", "task-save", "phone-tier"]);
+
+function isE2Mutation(op: EOp) {
+  return E2_MUTATION_OPS.has(op);
+}
 
 function fileExt(name: string) {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -320,7 +327,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE1Skus(snapshot.skus);
       setE1Gates(snapshot.gates);
     } catch (error) {
-      setE1Error(error instanceof Error ? error.message : "E1_SYNC_FAILED");
+      setE1Error(displayAdminError(error));
       setE1Skus([]);
       setE1Gates(null);
     } finally {
@@ -345,6 +352,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   const [e2Pricing, setE2Pricing] = useState<E2TaskPricingSnapshot | null>(null);
   const [e2Loading, setE2Loading] = useState(false);
   const [e2Error, setE2Error] = useState<string | null>(null);
+  const canMutateE2 = canWriteE2 && !e2Loading && !e2Error && !!e2Pricing;
+  useEffect(() => {
+    if (!canMutateE2) setActionConfirm((current) => current && isE2Mutation(current.op) ? null : current);
+  }, [canMutateE2]);
   const refreshE2 = useCallback(async () => {
     setE2Loading(true);
     setE2Error(null);
@@ -356,7 +367,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setPhoneTiers(nextPhoneTiers);
       setE2Pricing(nextPricing);
     } catch (error) {
-      setE2Error(error instanceof Error ? error.message : "E2_SYNC_FAILED");
+      setE2Error(displayAdminError(error));
       setTasks([]);
       setPhoneTiers([]);
       setE2Pricing(null);
@@ -376,7 +387,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE3Stats(snapshot.stats);
       setE3Operations(snapshot.operations);
     } catch (error) {
-      setE3Error(error instanceof Error ? error.message : "E3_SYNC_FAILED");
+      setE3Error(displayAdminError(error));
       setE3Params({});
       setE3Stats(null);
       setE3Operations([]);
@@ -422,7 +433,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE4Page(nextPage.pageNum);
       setE4PageSizeState(nextPage.pageSize);
     } catch (error) {
-      setE4Error(error instanceof Error ? error.message : "E4_SYNC_FAILED");
+      setE4Error(displayAdminError(error));
       setOrders([]);
       setE4Total(0);
     } finally {
@@ -448,7 +459,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setE4Detail(await fetchE4OrderDetail(order.id));
     } catch (error) {
-      setE4DetailError(error instanceof Error ? error.message : "E4_DETAIL_FAILED");
+      setE4DetailError(displayAdminError(error));
     } finally {
       setE4DetailLoading(false);
     }
@@ -500,7 +511,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE5Overview(nextOverview);
       setE5Datacenters(nextDatacenters);
     } catch (error) {
-      setE5Error(error instanceof Error ? error.message : "E5_SYNC_FAILED");
+      setE5Error(displayAdminError(error));
       setE5Devices([]);
       setE5Total(0);
       setE5Overview(null);
@@ -546,7 +557,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setE6Config(await fetchE6ComputeConfig());
     } catch (error) {
-      setE6Error(error instanceof Error ? error.message : "E6_SYNC_FAILED");
+      setE6Error(displayAdminError(error));
       setE6Config(null);
     } finally {
       setE6Loading(false);
@@ -721,9 +732,17 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     if (!Number.isInteger(minVram) || minVram < 0) return "minVRAM 需为不小于 0 的整数 GB";
     return null;
   };
-  const openAddTask = () => { setEditTaskId(null); setTaskForm({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" }); setTaskDrawer(true); };
+  const rejectE2Mutation = () => {
+    setToast("E2 权威快照不可用，已取消本次配置提交");
+    return false;
+  };
+  const openAddTask = () => {
+    if (!canMutateE2) return rejectE2Mutation();
+    setEditTaskId(null); setTaskForm({ n: "", price: "", req: "", unit: "", sat: "", taskClass: "", model: "", minReward: "", maxReward: "", minVRAM: "", killInit: "" }); setTaskDrawer(true);
+  };
   // 编辑任务:把任务字段回填到抽屉全字段。
   const openEditTask = (t: OpsTask) => {
+    if (!canMutateE2) return rejectE2Mutation();
     setTaskForm({
       n: t.n, price: String(t.price), req: t.req, unit: t.unit, sat: t.sat == null ? "" : String(Math.round(t.sat * 100)),
       taskClass: t.taskClass || "", model: t.model || "",
@@ -734,6 +753,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     setTaskDrawer(true);
   };
   const submitTask = () => {
+    if (!canMutateE2) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
     openActionConfirm({ name: "新增任务 · " + taskForm.n.trim(), op: "task-create", detail: `新增任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical · 进入 A2 待确认队列,批准后对新派单生效。` });
@@ -741,6 +761,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
   };
   // 编辑提交:校验后走操作确认(高敏 · 改单价/门槛/taskClass server-canonical)→ onConfirm 真写 updateTask。
   const submitTaskEdit = () => {
+    if (!canMutateE2) return rejectE2Mutation();
     const err = validateTaskForm();
     if (err) { setToast(err); return; }
     openActionConfirm({ name: "编辑任务 · " + taskForm.n.trim(), op: "task-save", detail: `编辑任务「${taskForm.n.trim()}」全字段(单价 / 资格门槛 / taskClass / 代表模型 / 奖励区间 / minVRAM / kill 初始态)· server-canonical,改后对新派单生效,已派工单维持原配置完成 · 须操作确认。` });
@@ -754,8 +775,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     .map((sku) => {
       const id = sku.id || sku.name;
       return id && id !== sku.name ? `${sku.name}(${id})` : sku.name;
-    });
+  });
   const delTask = (t: { id: string; n: string }) => {
+    if (!canMutateE2) return rejectE2Mutation();
     const refSkus = skuLabelsUsingTask(t.id, t.n);
     if (refSkus.length > 0) {
       setToast(`任务无法下架:${t.n} 正在被 E1 SKU 使用:${refSkus.join("、")}。请先到 E1 修改这些 SKU 的解锁算力池。`);
@@ -818,7 +840,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (seq === mediaSeq.current) {
         setSkuMedia(null);
-        setToast("媒体上传失败:" + (error instanceof Error ? error.message : "MEDIA_UPLOAD_FAILED"));
+        setToast("媒体上传失败:" + displayAdminError(error));
       } else {
         URL.revokeObjectURL(src);
       }
@@ -869,7 +891,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("已居中裁剪为 1:1 并重新上传");
     } catch (error) {
       if (seq == null || seq === mediaSeq.current) {
-        setToast("裁剪上传失败:" + (error instanceof Error ? error.message : "SKU_MEDIA_CROP_FAILED"));
+        setToast("裁剪上传失败:" + displayAdminError(error));
       }
     } finally {
       if (seq == null || seq === mediaSeq.current) {
@@ -999,7 +1021,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
   const headerRight =
     tab === "E1" ? (canUseE1Writes ? <button className="f-cta" onClick={() => openSku()}>+ 新增 SKU</button> : undefined)
-      : tab === "E2" ? (canWriteE2 ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
+      : tab === "E2" ? (canMutateE2 ? <button className="f-cta" onClick={openAddTask}>+ 新增任务</button> : undefined)
         : tab === "E3" ? <button className="f-cta manual" onClick={() => setManualOpen(true)}><Icon name="doc" size={15} /> 操作说明手册</button>
           : undefined;
 
@@ -1301,7 +1323,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
 
       {/* 任务新增 抽屉 */}
       {taskDrawer && <Drawer title={editTaskId ? "编辑任务" : "新增任务"} sub={<AutoGloss>{editTaskId ? "编辑全字段 · 单价/门槛/taskClass 改后走操作确认 · 对新派单 server-canonical 生效" : "AI 算力任务类型 · 单价/门槛改后对新派单 server-canonical 生效"}</AutoGloss>} onClose={() => { setTaskDrawer(false); setEditTaskId(null); }}
-        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
+        footer={<><Btn style={{ flex: 1, justifyContent: "center" }} onClick={() => { setTaskDrawer(false); setEditTaskId(null); }}>取消</Btn><Btn variant="primary" style={{ flex: 1, justifyContent: "center" }} disabled={!canMutateE2 || !taskForm.n.trim() || !Number(taskForm.price)} onClick={editTaskId ? submitTaskEdit : submitTask}>{editTaskId ? "保存修改" : "提交新增"}</Btn></>}>
         <div className="col" style={{ gap: 12 }}>
           <label className="col" style={{ gap: 5 }}><span className="muted tiny">任务名称</span><input className="fld" value={taskForm.n} onChange={(e) => setTaskForm({ ...taskForm, n: e.target.value })} placeholder="如 LLM 推理 405B" /></label>
           <div className="grid g-2" style={{ gap: 12 }}>
@@ -1380,6 +1402,11 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
         onClose={() => setActionConfirm(null)}
         onConfirm={async (reason, newValue, businessValue) => {
           if (!mc) return;
+          if (isE2Mutation(mc.op) && !canMutateE2) {
+            setToast("E2 权威快照不可用，已取消本次配置提交");
+            setActionConfirm(null);
+            return;
+          }
           // 批6: E 域高敏动作统一 propose 入 A2 后端待确认队列(壳集中回调)。
           // propose 内部自管成功/失败 toast;此处仅做 mc.op → op 映射 + 构造 ctx + 本地 UI 状态收尾。
           try {
@@ -1664,7 +1691,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               });
             } else { setToast("已确认生效"); }
           } catch (error) {
-            setToast((mc.name || "操作") + ":失败 " + (error instanceof Error ? error.message : "E1_ACTION_FAILED"));
+            // 不在这里再 toast 一次:本 try 块内每条会失败的路径都经 propose(含 proposeParam),
+            // 它在 rethrow 前已 toast 过;这里再弹就是同一个错误两条。
+            // 反馈不丢:rethrow 后确认弹窗的 alertbar 会经 displayAdminError 显示同一错误。
             throw error;
           }
           setActionConfirm(null);

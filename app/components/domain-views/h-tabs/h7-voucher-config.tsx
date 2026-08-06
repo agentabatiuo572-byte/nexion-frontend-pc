@@ -19,6 +19,7 @@ import {
   updateH7VoucherStatus,
 } from "@/lib/admin/h-client";
 import type { HCtx } from "./types";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 const SURFACE_LABEL: Record<string, string> = { home: "首页", store: "商城", me: "我的", earn: "收益" };
 
@@ -193,7 +194,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setError(err instanceof Error ? err.message : "H7_VOUCHER_LOAD_FAILED");
+        setError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -207,7 +208,7 @@ export function H7VoucherConfig({ ctx }: { ctx: HCtx }) {
       applyResponse(await fetchH7Vouchers());
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "H7_VOUCHER_LOAD_FAILED");
+      setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }

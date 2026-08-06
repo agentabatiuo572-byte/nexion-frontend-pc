@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+
+import {
+  resolveNexionAppRoot,
+  resolveNexionBackendRoot,
+} from "../scripts/lib/nexion-workspace-paths.mjs";
+
+const adminRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appRoot = resolveNexionAppRoot({ adminRoot });
+const backendRoot = resolveNexionBackendRoot({ adminRoot });
+const readWorkspaceFile = (root, relative) => readFileSync(path.join(root, ...relative.split("/")), "utf8");
 
 const component = readFileSync(
   new URL("../app/components/domain-views/j-tabs/j1-killswitch.tsx", import.meta.url),
@@ -16,26 +28,20 @@ const commandCenter = readFileSync(new URL("../app/_console/page.tsx", import.me
 const bClient = readFileSync(new URL("../lib/admin/b-client.ts", import.meta.url), "utf8");
 const b5RiskRadar = readFileSync(new URL("../app/_console/overview/risk-radar/page.tsx", import.meta.url), "utf8");
 const syncChip = readFileSync(new URL("../app/components/shell/sync-chip.tsx", import.meta.url), "utf8");
-const backendKillSwitch = readFileSync(
-  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/emergency/application/OpsKillSwitchService.java", import.meta.url),
-  "utf8",
+const backendKillSwitch = readWorkspaceFile(
+  backendRoot,
+  "src/main/java/ffdd/opsconsole/emergency/application/OpsKillSwitchService.java",
 );
-const backendWithdrawal = readFileSync(
-  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/finance/application/AppWithdrawalService.java", import.meta.url),
-  "utf8",
+const backendWithdrawal = readWorkspaceFile(
+  backendRoot,
+  "src/main/java/ffdd/opsconsole/finance/application/AppWithdrawalService.java",
 );
-const backendTrial = readFileSync(
-  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/growth/application/AppTrialLifecycleService.java", import.meta.url),
-  "utf8",
+const backendTrial = readWorkspaceFile(
+  backendRoot,
+  "src/main/java/ffdd/opsconsole/growth/application/AppTrialLifecycleService.java",
 );
-const appWithdrawalApi = readFileSync(
-  new URL("../../NX1.0/src/api/withdrawal-api.ts", import.meta.url),
-  "utf8",
-);
-const appTrialApi = readFileSync(
-  new URL("../../NX1.0/src/api/trial-api.ts", import.meta.url),
-  "utf8",
-);
+const appWithdrawalApi = readWorkspaceFile(appRoot, "src/api/withdrawal-api.ts");
+const appTrialApi = readWorkspaceFile(appRoot, "src/api/trial-api.ts");
 
 test("J1 executes kill, resume and batch kill through the immediate business API", () => {
   assert.match(component, /actions\.toggleJ1KillSwitch/);
@@ -96,7 +102,8 @@ test("J1 duty alerts use the all-operator minimal snapshot and refresh while the
   assert.match(opsAlertsClient, /requestSequence !== j1DutyAlertRequestSequence/);
   assert.match(opsAlertsClient, /J1 值班告警暂时无法读取，请稍后重试/);
   assert.doesNotMatch(opsAlertsClient, /error:\s*error instanceof Error \? error\.message/);
-  assert.match(notificationBell, /state\.session != null/);
+  assert.match(notificationBell, /const session = useAdminAuth\(\(state\) => state\.session\)/);
+  assert.match(notificationBell, /const hasAdminSession = session != null/);
   assert.match(commandCenter, /authorities\.includes\("emergency_j1_read"\)/);
   assert.match(notificationBell, /useJ1DutyAlerts\(hasAdminSession\)/);
   assert.match(commandCenter, /useJ1DutyAlerts\(canReadJ1\)/);

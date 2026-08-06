@@ -72,7 +72,7 @@ const teamFinanceControls = `
 ### 8.1.3 Team finance controls
 
 - Commissions:展示 5 类佣金事件明细,入口必须可从 Team 主页到达。
-- V Rank:展示 V0-V12 进度、晋升条件、维持期与奖品/培育奖。
+- V Rank:展示 V0-V12 进度、晋升条件、维持期与等级奖励/培育奖。
 - Balance Match:展示双轨 balance、弱区/强区、日封顶与 spillover 逻辑。
 - Leadership Pool:展示全球领导奖池、参与资格、分配周期与说明页。
 
@@ -82,13 +82,13 @@ const teamFinanceControls = `
 const exchangeConfirmation = `
 #### 9.4.1a 兑换确认与写入
 
-NEX↔USDT 兑换确认必须展示 from/to amount、rate、fee、KYC/cap 状态与兑换后余额预估。确认后写入 swap record、wallet bill 与 points/cap 变化;失败时不得只 toast,必须保留原余额并展示失败原因。
+NEX↔USDT 兑换确认必须展示 from/to amount、rate、fee、KYC/cap 状态与兑换后余额预估。确认后写入 swap record、wallet bill 与 cap 变化;失败时不得只 toast,必须保留原余额并展示失败原因。
 `;
 
 const repurchaseConfirmation = `
 #### 9.5.3a 复投确认与写入
 
-复投确认必须展示复投金额、获得 points、进入 stake/cap 的影响与账单摘要。确认后写入 repurchase event、wallet bill、points delta 与 active stake/cap 变化。
+复投确认必须展示复投金额、进入 stake/cap 的影响与账单摘要。确认后写入 repurchase event、wallet bill 与 active stake/cap 变化。
 `;
 
 const stakingConfirmation = `
@@ -252,19 +252,36 @@ function normalizeBlock(block) {
   return `\n${block.trim()}\n`;
 }
 
+/** 只用于「这段内容在不在文档里」的比对 —— 把 CRLF 抹平成 LF。
+ *
+ *  🔴 2026-08-05 修:本文件的内容模板是 LF,而目标 PRD 是 **CRLF**(Windows)。
+ *  原判据 `text.includes(content)` 拿 LF 的针去 CRLF 的草堆里找,**永远找不到** ——
+ *  于是每段都被判成 "planned",`--apply` 每跑一次就**重复插一次**。
+ *
+ *  实测(端到端,不是推断):同一份产品 PRD,
+ *    原样 CRLF → planned=9 / alreadyPresent=13
+ *    转成 LF   → planned=0 / alreadyPresent=22   ← 那 9 段一直都在
+ *  磁盘上已因此留下 7 个章节各 2 份重复(上一次 apply 造的),本次 apply 又加到 3 份,
+ *  已从备份还原。存量重复要单独清,本修复只保证**不再产生新的**。
+ *
+ *  只归一化**比对**,不改写入内容:插入仍走原文,与文档既有那几份保持同款。 */
+function eolInsensitive(s) {
+  return s.replace(/\r\n/g, "\n");
+}
+
 function applyOperation(text, op) {
   if (op.type === "replace") {
-    if (text.includes(op.replacement)) {
+    if (eolInsensitive(text).includes(eolInsensitive(op.replacement))) {
       return { text, status: "already-present" };
     }
-    if (!text.includes(op.search)) {
+    if (!eolInsensitive(text).includes(eolInsensitive(op.search))) {
       return { text, status: "missing-anchor" };
     }
     return { text: text.replace(op.search, op.replacement), status: "planned" };
   }
 
   const content = normalizeBlock(op.content);
-  if (text.includes(content.trim())) {
+  if (eolInsensitive(text).includes(eolInsensitive(content.trim()))) {
     return { text, status: "already-present" };
   }
   if (!text.includes(op.anchor)) {

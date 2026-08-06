@@ -12,6 +12,7 @@ import {
 } from "@/lib/admin/h-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { HCtx } from "./types";
 
 type H1Model = {
@@ -91,7 +92,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       setModel(next as H1Model);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "UNKNOWN_ERROR");
+      setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }
@@ -314,7 +315,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">H1 数据加载失败</span></div>
         <div className="l-b">
-          {error ?? "UNKNOWN_ERROR"}
+          {error ?? "未收到本页数据，请重试；持续失败时请联系值班人员。"}
           <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button>
         </div>
       </section>

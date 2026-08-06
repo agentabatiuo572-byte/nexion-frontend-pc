@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -279,7 +280,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       return loaded;
     } catch (error) {
       setIdlePolicy(null);
-      setIdlePolicyError(error instanceof Error ? error.message : "M3_TIMEOUT_POLICY_LOAD_FAILED");
+      setIdlePolicyError(displayAdminError(error));
       return null;
     } finally {
       setIdlePolicyLoading(false);
@@ -315,7 +316,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       toast("会话超时策略已更新,服务端调度立即按新版本执行");
       return true;
     } catch (error) {
-      setIdlePolicyError(error instanceof Error ? error.message : "M3_TIMEOUT_POLICY_UPDATE_FAILED");
+      setIdlePolicyError(displayAdminError(error));
       return false;
     } finally {
       setIdlePolicySaving(false);
@@ -344,7 +345,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         .catch((error: unknown) => {
           if (!active) return;
           setDirectoryCustomers([]);
-          setInitiateCustomerError(error instanceof Error ? error.message : "USERS_LOAD_FAILED");
+          setInitiateCustomerError(displayAdminError(error));
         })
         .finally(() => {
           if (active) setInitiateCustomerLoading(false);
@@ -378,7 +379,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       .catch((error: unknown) => {
         if (!active) return;
         setPushSkus([]);
-        setPushSkuError(error instanceof Error ? error.message : "E1_SKU_LOAD_FAILED");
+        setPushSkuError(displayAdminError(error));
       })
       .finally(() => {
         if (active) setPushSkuLoading(false);
@@ -422,11 +423,11 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
   // 详情必须属于当前筛选结果。筛选为 0 条时清空详情和写入口，避免误操作旧会话。
   const selected = filtered.find((c) => c.id === selectedId) ?? filtered[0] ?? null;
   const ownerName = selected?.owner ?? "Unassigned";
-  const currentAgentNames = useMemo(() => supportAgents.filter((agent) => agent.adminId === currentAdminId).map((agent) => agent.name), [supportAgents, currentAdminId]);
+  const currentAgentIds = useMemo(() => supportAgents.filter((agent) => agent.adminId === currentAdminId).map((agent) => agent.id), [supportAgents, currentAdminId]);
   const canAcceptSelectedTransfer = Boolean(selected?.transfer) && (
     selected?.transfer?.to.kind === "agent"
-      ? currentAgentNames.includes(selected.transfer.to.name)
-      : currentAgentNames.length > 0
+      ? currentAgentIds.includes(selected.transfer.to.agentId)
+      : currentAgentIds.length > 0
   );
 
   const selectConvo = (id: string) => {
@@ -1020,7 +1021,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
           onSave={saveIdlePolicy}
         />
       )}
-      {showTransfer && selected && <TransferModal currentOwner={selected.owner} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}
+      {showTransfer && selected && <TransferModal currentOwnerId={selected.ownerAgentId} onClose={() => setShowTransfer(false)} onSubmit={runTransfer} agents={transferAgents} queues={transferQueues} />}
       {showReturn && selected?.transfer && <ReturnModal fromAgent={selected.transfer.from} onClose={() => setShowReturn(false)} onSubmit={runReturn} />}
       {quick && selected?.profile && (
         <QuickActionModal kind={quick} profile={selected.profile} onClose={() => setQuick(null)} onAddNote={addNote} onRemoveNote={removeNote} onAccount={runAccountAction} />

@@ -1,4 +1,16 @@
+import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { expect, test, type Page, type Route } from "@playwright/test";
+
+type FixtureAccount = { username: string; password: string; totpSecret: string };
+type Fixture = { runId: string; accounts?: { maker?: FixtureAccount; g_maker?: FixtureAccount } };
+
+const RUN_ID = process.env.G_NONOWNER_RUN_ID ?? "pc-full-acceptance-20260729-114336";
+const FIXTURE_PATH = process.env.G_PERMISSION_FIXTURE_PATH
+  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/domain-permission-fixtures/G.json`;
+const fixture = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as Fixture;
+const maker = fixture.accounts?.maker ?? fixture.accounts?.g_maker;
+if (!maker) throw new Error("G fixture must provide accounts.maker or accounts.g_maker");
 
 const MODULES = [
   {
@@ -34,10 +46,13 @@ const MODULES = [
 ] as const;
 
 test.describe.configure({ timeout: 180_000 });
+test.beforeAll(() => {
+  expect(fixture.runId, "fixture Run ID").toBe(RUN_ID);
+});
 
 for (const module of MODULES) {
   test(`${module.id} 畸形 HTTP 200 必须失败关闭并由真实上游恢复`, async ({ page }) => {
-    await loginSuperadmin(page);
+    await login(page, maker);
     await interceptExactGet(page, module.endpoint, async (route) => {
       await route.fulfill({
         status: 200,
@@ -66,7 +81,7 @@ for (const module of MODULES) {
 }
 
 test("G7 HTTP 500 与 G3 超时/结果未知均失败关闭且真实刷新恢复", async ({ page }) => {
-  await loginSuperadmin(page);
+  await login(page, maker);
 
   await interceptExactGet(page, "/api/admin/market/nex/repurchase", async (route) => {
     await route.fulfill({
@@ -120,13 +135,60 @@ async function openFromSidebar(page: Page, href: string) {
   await expect(page).toHaveURL(new RegExp(`${href.replaceAll("/", "\\/")}$`));
 }
 
-async function loginSuperadmin(page: Page) {
+async function login(page: Page, account: FixtureAccount) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const username = page.locator('input[autocomplete="username"]');
-  if (await username.isVisible({ timeout: 8_000 }).catch(() => false)) {
-    await username.fill("superadmin");
-    await page.locator('input[autocomplete="current-password"]').fill("Admin@123456");
-    await page.getByRole("button", { name: /继续|登录/ }).click();
-  }
+  await expect(username).toBeVisible({ timeout: 15_000 });
+  await username.fill(account.username);
+  await page.locator('input[autocomplete="current-password"]').fill(account.password);
+  await page.getByRole("button", { name: /继续|登录/ }).click();
+  const otp = page.getByLabel("一次性验证码");
+  await expect(otp).toBeVisible({ timeout: 10_000 });
+  await otp.fill(await freshTotp(account.totpSecret));
+  await page.getByRole("button", { name: "验证并进入", exact: true }).click();
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+}
+
+const lastTotpStep = new Map<string, number>();
+
+async function freshTotp(secret: string) {
+  let step = Math.floor(Date.now() / 30_000);
+  const previous = lastTotpStep.get(secret) ?? -1;
+  if (step <= previous) {
+    await expect.poll(() => Math.floor(Date.now() / 30_000), { timeout: 35_000 })
+      .toBeGreaterThan(previous);
+  }
+  const remaining = 30 - (Math.floor(Date.now() / 1_000) % 30);
+  if (remaining <= 3) {
+    const boundary = Math.floor(Date.now() / 30_000);
+    await expect.poll(() => Math.floor(Date.now() / 30_000), { timeout: 5_000 })
+      .toBeGreaterThan(boundary);
+  }
+  step = Math.floor(Date.now() / 30_000);
+  lastTotpStep.set(secret, step);
+  return currentTotp(secret);
+}
+
+function currentTotp(secret: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
+  let bits = "";
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) throw new Error("Invalid base32 TOTP secret");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes = Buffer.alloc(Math.floor(bits.length / 8));
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
+  }
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", bytes).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24)
+    | ((digest[offset + 1] & 0xff) << 16)
+    | ((digest[offset + 2] & 0xff) << 8)
+    | (digest[offset + 3] & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
 }

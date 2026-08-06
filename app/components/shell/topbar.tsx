@@ -3,7 +3,7 @@
 /**
  * 顶栏 — 面包屑 + 服务端权威状态徽标 + UTC 时钟 + 当前登录账号菜单。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Headset, LogOut, Search } from "lucide-react";
 import type { AdminRole, NavDomain } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -16,27 +16,48 @@ import { fmtPct } from "@/lib/format";
 import { NotificationBell } from "./notification-bell";
 import { CommandPalette } from "@/app/components/command-palette";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { useServicePendingCount } from "./use-service-badges";
+import { B_DASHBOARD_READ_AUTHORITIES, M_CONTENT_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
+import { requestAdminLogout } from "@/lib/admin/logout-request";
+import { currentAdminSession } from "@/lib/admin/auth-client";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const logoutAttemptRef = useRef(false);
+  const logoutError = useAdminAuth((s) => s.logoutError);
+  const beginLogout = useAdminAuth((s) => s.beginLogout);
+  const cancelLogout = useAdminAuth((s) => s.cancelLogout);
+  const beginLogoutVerification = useAdminAuth((s) => s.beginLogoutVerification);
+  const failLogoutUnknown = useAdminAuth((s) => s.failLogoutUnknown);
   const signOut = useAdminAuth((s) => s.signOut);
 
+  useEffect(() => {
+    if (logoutError) setOpen(true);
+  }, [logoutError]);
+
   async function handleSignOut() {
+    if (logoutAttemptRef.current) return;
+    logoutAttemptRef.current = true;
     setLoggingOut(true);
-    setLogoutError(null);
+    beginLogout();
     try {
-      const response = await fetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("服务端会话撤销失败，请重试");
-      }
+      await requestAdminLogout();
       signOut();
-    } catch (error) {
-      setOpen(true);
-      setLogoutError(error instanceof Error ? error.message : "退出失败，请重试");
+    } catch {
+      beginLogoutVerification();
+      try {
+        const auth = await currentAdminSession();
+        if (auth) cancelLogout("服务端会话仍有效，退出未完成，请重试");
+        else {
+          signOut();
+        }
+      } catch {
+        failLogoutUnknown("服务端会话状态无法确认，已停止进入后台");
+      }
     } finally {
+      logoutAttemptRef.current = false;
       setLoggingOut(false);
     }
   }
@@ -114,8 +135,8 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
 }
 
 // 常驻兑付覆盖率(设计稿 topbar coverage pill)— 任何页都可见的平台健康度,点击进双账本。
-function CoveragePill() {
-  const bDomain = useBDomainDashboard();
+function CoveragePill({ enabled }: { enabled: boolean }) {
+  const bDomain = useBDomainDashboard(enabled);
   const cov = bDomain.ledger.coverageRatio;
   const redline = bDomain.ledger.redlinePct;
   const healthy = bDomain.ledger.healthyPct;
@@ -186,8 +207,7 @@ function SearchBox({ domains }: { domains: NavDomain[] }) {
 
 // 客服中心快捷入口 — 坐席切到别的页面时仍能看到「有客户在等回复」并一键回即时会话台。
 // 待回复数直接来自 M 域后端会话快照;未加载时为 0,不使用静态会话或本地 persist 兜底。
-function SupportInboxPill() {
-  const pending = useServicePendingCount();
+function SupportInboxPill({ pending }: { pending: number }) {
   return (
     <Link
       href="/service/sessions"
@@ -213,8 +233,22 @@ function SupportInboxPill() {
   );
 }
 
-export function TopBar({ role, operator, domains }: { role: AdminRole; operator: string; domains: NavDomain[] }) {
+export function TopBar({
+  role,
+  operator,
+  domains,
+  authorities,
+  servicePending,
+}: {
+  role: AdminRole;
+  operator: string;
+  domains: NavDomain[];
+  authorities: string[];
+  servicePending: number;
+}) {
   const supportOnly = role === "support";
+  const canReadBDomain = B_DASHBOARD_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
+  const canReadMContent = M_CONTENT_READ_AUTHORITIES.every((authority) => authorities.includes(authority));
   return (
     <header
       className="flex items-center justify-between gap-4 px-5"
@@ -229,12 +263,12 @@ export function TopBar({ role, operator, domains }: { role: AdminRole; operator:
         <SearchBox domains={domains} />
       </div>
       <div className="flex items-center gap-3">
-        {!supportOnly && <CoveragePill />}
+        {!supportOnly && canReadBDomain && <CoveragePill enabled />}
         {!supportOnly && <span className="hidden h-4 w-px sm:block" style={{ background: "var(--v5-border)" }} />}
         {!supportOnly && <span className="hidden md:block"><SyncChip /></span>}
         <span className="hidden lg:block"><UtcClock /></span>
         <span className="h-4 w-px" style={{ background: "var(--v5-border)" }} />
-        {domains.some((domain) => domain.code === "M") && <SupportInboxPill />}
+        {canReadMContent && <SupportInboxPill pending={servicePending} />}
         {!supportOnly && <NotificationBell />}
         <RoleSwitcher role={role} operator={operator} />
       </div>

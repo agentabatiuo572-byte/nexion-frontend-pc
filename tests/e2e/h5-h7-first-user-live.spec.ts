@@ -1,23 +1,14 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { loginHMaker } from "./h-owner-mfa";
 
 const evidenceDir = process.env.H57_EVIDENCE_DIR
   || "D:/workspace/bug-pic/h-domain-acceptance-20260722/first-user-h5-h8/initial";
-const username = process.env.NEXION_E2E_USERNAME ?? process.env.ADMIN_E2E_USERNAME ?? "superadmin";
 const voucherName = `H7首次用户验收券-${Date.now()}`;
 
-function password(): string {
-  const value = process.env.NEXION_E2E_PASSWORD ?? process.env.ADMIN_E2E_PASSWORD;
-  if (!value) throw new Error("NEXION_E2E_PASSWORD or ADMIN_E2E_PASSWORD is required");
-  return value;
-}
-
 async function login(page: Page) {
-  await page.goto("/");
-  await page.getByLabel(/用户名|账号/).fill(username);
-  await page.getByLabel(/密码/).fill(password());
-  await page.getByRole("button", { name: /继续/ }).click();
+  await loginHMaker(page);
   await expect(page.getByRole("heading", { name: "运营总览" })).toBeVisible();
 }
 
@@ -188,7 +179,7 @@ test("H7 首次用户创建、刷新、编辑、暂停、重登与删除清理",
   await expect(page.getByRole("row").filter({ hasText: voucherName })).toContainText("已暂停");
   await page.screenshot({ path: path.join(evidenceDir, "H7-02-paused-after-refresh.png"), fullPage: true });
 
-  await page.getByRole("button", { name: /Super Admin/ }).click();
+  await page.locator('button[aria-haspopup="menu"]').click();
   const logoutResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/api/admin/auth/logout"));
   await page.getByRole("button", { name: "退出登录", exact: true }).click();
   expect((await logoutResponsePromise).status()).toBe(200);

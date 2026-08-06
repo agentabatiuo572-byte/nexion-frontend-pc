@@ -20,16 +20,15 @@ test("L1/L2 真实降级链：可理解、可刷新、导出落真实任务且�
   const biOverviewPaths: string[] = [];
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
-    if (path.includes("/api/admin/bi/") && path.endsWith("/overview")) biOverviewPaths.push(path);
+    if (path.includes("/api/admin/bi/") && (path.endsWith("/overview") || path === "/api/admin/bi/kpi")) biOverviewPaths.push(path);
   });
   await openFromSidebar(page, "/analytics/kpi");
   await expect(page.getByRole("heading", { name: "KPI 看板" })).toBeVisible();
-  await expect(page.getByText("实时业务事实 · 当前累计")).toBeVisible();
-  await expect(page.locator("table.l-tbl tbody tr")).toHaveCount(8);
-  await expect(page.getByText(/八项核心 KPI 深度序列尚未开放/)).toBeVisible();
-  await expect(page.getByText(/不展示推算值/)).toBeVisible();
+  await expect(page.locator("button.kpi-card")).toHaveCount(8);
+  await expect(page.getByText("KPI 口径锁定表", { exact: true })).toBeVisible();
+  await expect(page.getByText("单 KPI 下钻", { exact: false })).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/nx_user|nx_audit_log|§2\.4\.6|A4 事件/);
-  expect(biOverviewPaths).toContain("/api/admin/bi/kpi/overview");
+  expect(biOverviewPaths).toContain("/api/admin/bi/kpi");
 
   const l1AttemptKeys: string[] = [];
   let simulateLostResponse = true;
@@ -48,21 +47,21 @@ test("L1/L2 真实降级链：可理解、可刷新、导出落真实任务且�
     }
     await route.continue();
   });
-  const l1 = await submitExport(page, "导出 KPI 当前汇总 CSV");
+  const l1 = await submitExport(page, "导出 KPI 序列 CSV", false);
   await page.unroute("**/api/admin/bi/reports");
   expect(l1AttemptKeys).toHaveLength(2);
   expect(new Set(l1AttemptKeys).size).toBe(1);
   expect(l1.status()).toBeLessThan(400);
   const l1Payload = await l1.json();
   expect(l1Payload.data.created).toMatchObject({
-    name: "KPI 当前汇总",
+    name: "KPI 序列",
     type: "KPI_SERIES",
     rowCount: 8,
     containsPii: false,
     maskingPolicy: "NONE",
     status: "READY",
   });
-  await expect(page.getByText(/KPI 当前汇总任务已提交/)).toBeVisible();
+  await expect(page.getByText(/KPI 序列已导出/)).toBeVisible();
 
   await openFromSidebar(page, "/analytics/funnel-cohort");
   await expect(page.getByRole("heading", { name: "漏斗/cohort/留存" })).toBeVisible();
@@ -89,7 +88,6 @@ test("L1/L2 真实降级链：可理解、可刷新、导出落真实任务且�
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByText("生命周期事实计数", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Cohort、留存与逐级转化暂不可计算/)).toBeVisible();
 });
 
 async function openFromSidebar(page: Page, path: string) {
@@ -101,16 +99,18 @@ async function openFromSidebar(page: Page, path: string) {
   await expect(page).toHaveURL(new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
 }
 
-async function submitExport(page: Page, buttonName: string): Promise<Response> {
+async function submitExport(page: Page, buttonName: string, requiresConfirm = true): Promise<Response> {
   const responsePromise = page.waitForResponse((response) =>
     response.request().method() === "POST"
       && new URL(response.url()).pathname === "/api/admin/bi/reports"
       && response.status() < 500,
   );
   await page.getByRole("button", { name: buttonName, exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  const confirm = page.getByRole("button", { name: "导出", exact: true }).last();
-  await expect(confirm).toBeVisible();
-  await confirm.click();
+  if (requiresConfirm) {
+    await expect(page.getByRole("dialog")).toBeVisible();
+    const confirm = page.getByRole("button", { name: "导出", exact: true }).last();
+    await expect(confirm).toBeVisible();
+    await confirm.click();
+  }
   return responsePromise;
 }

@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const pcRoot = new URL("../", import.meta.url);
 const backendRoot = new URL("../../nexion-backend/", import.meta.url);
-const appRoot = new URL("../../NX1.0/", import.meta.url);
+const appRoot = resolveNexionAppRoot({ adminRoot: path.resolve(import.meta.dirname, "..") });
 
-async function source(root, path) {
-  return readFile(new URL(path, root), "utf8");
+async function source(root, relative) {
+  return readFile(typeof root === "string" ? path.join(root, relative) : new URL(relative, root), "utf8");
 }
 
 test("F1 PC exposes all read and action routes through the strict BFF", async () => {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { DataListPager, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   K1OutcomeUncertainError,
   newK1CommandKey,
@@ -61,7 +62,7 @@ const DIM_ICONS: Record<string, ReactNode> = {
   shield: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><path d="M9 12l2 2 4-4" /></svg>,
 };
 
-function errorText(error: unknown) { return error instanceof Error ? error.message : "未知错误"; }
+function errorText(error: unknown) { return error instanceof Error ? displayAdminError(error) : "未知错误"; }
 function conditionCore(text: string) { return (text.split(/->|→/)[0] ?? "").trim(); }
 function formatMoney(value: string | undefined) {
   const parsed = Number(String(value ?? "").replace(/[^\d]/g, ""));

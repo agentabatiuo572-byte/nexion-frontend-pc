@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Badge, DataListPager } from "../design-kit";
 import { fetchE5Devices, type E5Device, type E5DeviceState } from "@/lib/admin/e5-client";
 import type { EViewCtx } from "./types";
@@ -97,7 +98,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
     if (!reasonReady || actionBusy) return;
     setActionBusy(true);
     try { await work(); }
-    catch (error) { ctx.toast(error instanceof Error ? error.message : "E5 操作失败"); }
+    catch (error) { ctx.toast(error instanceof Error ? displayAdminError(error) : "E5 操作失败"); }
     finally { setActionBusy(false); }
   };
   const batchUser = (d: E5Device) => {
@@ -117,7 +118,7 @@ export function E5Ops({ ctx }: { ctx: EViewCtx }) {
       setHealthDevices(page.records);
       setHealthTotal(page.total);
     } catch (error) {
-      setHealthError(error instanceof Error ? error.message : "数据中心健康详情读取失败");
+      setHealthError(error instanceof Error ? displayAdminError(error) : "数据中心健康详情读取失败");
     } finally {
       setHealthLoading(false);
     }

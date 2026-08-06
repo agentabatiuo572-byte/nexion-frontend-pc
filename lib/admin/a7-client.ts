@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { mutateThenReloadOverview } from "@/lib/admin/platform-contracts";
 import { normalizeA7Overview as strictA7Overview } from "@/lib/admin/rbac-contracts";
 
@@ -73,7 +73,7 @@ async function a7Request<T>(path: string, init?: RequestInit & { idempotencyPref
   if (init?.idempotencyKey) headers.set("Idempotency-Key", init.idempotencyKey);
   else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
 
-  const response = await fetch(`/api/admin/platform${path}`, {
+  const response = await guardedFetch(`/api/admin/platform${path}`, {
     ...init, headers, cache: "no-store", signal: init?.signal ?? AbortSignal.timeout(12_000),
   });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;

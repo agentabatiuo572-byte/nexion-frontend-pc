@@ -41,6 +41,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const data = ctx.f5Overview;
+  const reissueAvailable = canDispose && !ctx.f5Error && !!data;
   const events = data?.commissionEvents ?? [];
   const selectedRows = useMemo(
     () => events.filter((row) => selected.includes(row.id)),
@@ -55,6 +56,19 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
     status: status || undefined,
     limit: "20",
   });
+
+  // 单笔冻结/提前解锁/解冻(合并底账 §二#4 恢复):可逆的「先按住观察」,与不可逆冲正分层。
+  // 走既有 dispose 管线:openActionConfirm(op:"dispose") → shell updateF5Config → proposeFConfig
+  // → f_commission_status A2 票(幂等 + 服务端 CAS + 审计),paramKey 用行上现成的 auditKey。
+  const dispose = (kind: "freeze" | "unlock" | "unfreeze", row: F5CommissionEvent) => {
+    const amount = `${row.amt.toLocaleString("en-US")} ${row.cur}`;
+    const map = {
+      freeze: { name: `冻结佣金 ${row.id}`, amplify: false, fixedVal: "frozen", detail: `冻结 ${row.id} · ${amount} · 先按住观察:暂停该笔的解锁与提现,可随时解冻,与不可逆冲正分层。确认后进入 A2 执行链,服务端按状态 CAS 变更并落审计。` },
+      unlock: { name: `佣金提前解锁 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `提前解锁 ${row.id} · ${amount} · 跳过剩余冷却直接进入可提余额,放大资金流出。确认后进入 A2 执行链,服务端按状态 CAS 变更并联动 D4 / B1 护栏。` },
+      unfreeze: { name: `解冻佣金 ${row.id}`, amplify: true, fixedVal: "unlocked", detail: `解冻 ${row.id} · ${amount} · 恢复该笔的可提链路(等效提前解锁,放大资金流出)。确认后进入 A2 执行链,服务端按状态 CAS 变更并落审计。` },
+    }[kind];
+    ctx.openActionConfirm({ name: map.name, amplify: map.amplify, op: "dispose", paramKey: row.auditKey, fixedVal: map.fixedVal, detail: map.detail });
+  };
 
   const reverse = (row: F5CommissionEvent) => {
     ctx.openActionConfirm({
@@ -157,7 +171,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <span className="ph-ttl">F5 佣金事件审计</span>
           <span className="ph-sub">服务端游标 · 六类佣金真实账本</span>
         </div>
-        {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error} <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
+        {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error}。佣金权威快照不可用，批量补发已暂停。 <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
         <div className="filter-bar" style={{ gap: 8, flexWrap: "wrap" }}>
           <select aria-label="佣金类型" value={kind} onChange={(e) => setKind(e.target.value)}>
             <option value="">全部类型</option>
@@ -174,7 +188,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option>
           </select>
           <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>服务端筛选</button>
-          {canDispose && <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>}
+          {reissueAvailable && <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>}
         </div>
       </section>
 
@@ -210,6 +224,9 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
                         <Link href={`/finance/ledger?bizNo=${encodeURIComponent(row.id)}`} style={LINK_STYLE}>D4</Link>
                         <Link href="/overview/dual-ledger" style={LINK_STYLE}>B1</Link>
                         <Link href="/analytics/operations" style={LINK_STYLE}>L4</Link>
+                        {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("freeze", row)}>冻结</button>}
+                        {canDispose && row.status === "cooling" && <button className="fbtn" onClick={() => dispose("unlock", row)}>提前解锁</button>}
+                        {canDispose && row.status === "frozen" && <button className="fbtn" onClick={() => dispose("unfreeze", row)}>解冻</button>}
                         {canReject && row.status !== "reversed" && row.status !== "withdrawn" && <button className="fbtn" onClick={() => reverse(row)}>冲正</button>}
                         {canReject && <button className="fbtn" onClick={() => suspend(row)}>暂停奖种</button>}
                       </td>

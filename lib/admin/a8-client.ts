@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { normalizeA8Page, normalizeA8Permission } from "@/lib/admin/rbac-contracts";
 
 interface ApiResult<T> {
@@ -46,7 +46,7 @@ function readableContractError(error: unknown): Error {
 }
 
 async function a8Request<T>(path: string): Promise<T> {
-  const response = await fetch(`/api/admin/platform${path}`, {
+  const response = await guardedFetch(`/api/admin/platform${path}`, {
     cache: "no-store", signal: AbortSignal.timeout(12_000),
   });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;

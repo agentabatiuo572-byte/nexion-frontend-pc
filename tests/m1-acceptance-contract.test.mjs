@@ -91,8 +91,10 @@ test("M1 KPI links match their target queues and conversation detail failures fa
 
   assert.match(overview, /ACTIVE_TICKET_STATUSES\.has\(t\.status\)/);
   assert.match(overview, /c\.unread > 0/);
-  assert.match(client, /const conversationDetails = await detailOrUnavailable/);
-  assert.match(client, /loadWarnings\.push\("会话明细"\)/);
-  assert.match(client, /conversations: conversationDetails\.rows/);
+  assert.match(client, /const conversationsTask =/);
+  assert.match(client, /const details = await detailOrUnavailable/);
+  assert.match(client, /warning = "会话明细"/);
+  assert.match(client, /publish\(\{ conversations: \[\], conversationsAvailable: false \}, warning\)/);
+  assert.match(client, /publish\(\{ conversations: details\.rows, conversationsAvailable: true \}\)/);
   assert.doesNotMatch(client, /async function detailOrRow/);
 });

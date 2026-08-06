@@ -6,6 +6,7 @@ const RUN_ID = process.env.L_PERMISSION_RUN_ID ?? "pc-full-acceptance-20260728-1
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const ROOT_USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
 const ROOT_PASSWORD = process.env.ADMIN_E2E_PASSWORD ?? "";
+const ROOT_TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim() ?? "";
 const FIXTURE_PATH = process.env.L_PERMISSION_FIXTURE_PATH
   ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/L/permission-fixtures.json`;
 const CHECKER_FIXTURE_PATH = process.env.L_PERMISSION_CHECKER_FIXTURE
@@ -100,6 +101,12 @@ async function loginRoot(page: Page) {
   await page.locator('input[autocomplete="username"]').fill(ROOT_USERNAME);
   await page.locator('input[autocomplete="current-password"]').fill(ROOT_PASSWORD);
   await page.getByRole("button", { name: /登录|继续/ }).click();
+  const otp = page.getByLabel("一次性验证码");
+  if (await otp.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    expect(ROOT_TOTP_SECRET, "ADMIN_E2E_TOTP_SECRET is required for an MFA-bound root cleanup actor").not.toBe("");
+    await otp.fill(await freshTotp(ROOT_TOTP_SECRET));
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+  }
   await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
 }
 

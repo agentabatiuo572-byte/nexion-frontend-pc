@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download } from "lucide-react";
 import { DataListPager, type BusinessFormValue } from "../design-kit";
@@ -84,7 +85,7 @@ function errorMessage(error: unknown) {
   if (message.includes("COVERAGE_BELOW_REDLINE")) {
     return "B1 兑付覆盖率低于红线,后端拒绝人工放开实名通过";
   }
-  return message;
+  return displayAdminError(error);
 }
 
 function exportStatusLabel(value: unknown) {

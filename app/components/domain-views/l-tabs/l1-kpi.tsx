@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
 import { readL1LiveTotals } from "./l1-l2-live-data";
@@ -16,6 +17,7 @@ import { ViewParamModal, type ViewParamReq } from "./view-param-modal";
 import type { LCtx } from "./types";
 import { fetchL1Kpi, fetchL1KpiDrilldown, fetchL1KpiTrend, type L1KpiQuery } from "@/lib/admin/l-client";
 import { validateL1Dashboard, validateL1Drilldown, validateL1Trend } from "./l1-kpi-contract";
+import { resolveL1ExportMode, submitL1Export } from "./l1-export-contract";
 
 type Kpi = KpiRow & {
   available?: boolean;
@@ -48,32 +50,32 @@ const tgtLabel = (k: Kpi) => {
 const tgtValue = (k: Kpi) => (k.dir === "band" ? (k.band?.[0] ?? k.target) : k.target);
 
 export function L1HeaderActions({ ctx }: { ctx: LCtx }) {
-  const fullSeries = rows<Kpi>(ctx.biData?.l1?.kpis);
-  const liveTotals = readL1LiveTotals(ctx.biData?.l1);
-  const exportable = fullSeries.length > 0 || liveTotals.length > 0;
-  const complete = fullSeries.length > 0;
+  const sourceUnavailable = Boolean(ctx.biError || ctx.biLoading);
+  const exportMode = resolveL1ExportMode(ctx.biData?.l1, sourceUnavailable);
+  const exportable = exportMode !== null;
+  const complete = exportMode === "series";
   const exportKpi = async () => {
     try {
-      await ctx.biActions?.createReport({
-        exportType: complete ? "KPI 序列" : "KPI 当前汇总",
-        timeRange: complete ? "当前时间窗" : "当前快照",
-        fields: complete ? "8 KPI 当前值/目标/环比序列" : "用户/订单/提现/兑换/质押/钱包流水/工单/审计聚合计数",
-        piiLevel: "NONE",
-        maskPolicy: "NONE",
-        recipient: "BI 管理员",
-        ticket: "L1-KPI",
-      }, complete ? "导出 KPI 聚合序列用于经营复盘" : "导出 L1 当前累计事实用于经营核对");
+      const submittedMode = await submitL1Export(
+        ctx.biData?.l1,
+        Boolean(ctx.biError || ctx.biLoading),
+        ctx.biActions?.createReport,
+      );
+      if (!submittedMode) {
+        ctx.toast("L1 权威数据当前不可导出 · 请重新读取后再试");
+        return;
+      }
       await ctx.reloadBi?.();
-      ctx.toast(complete ? "KPI 序列已导出 · 已记审计" : "KPI 当前汇总已导出 · 已记审计");
+      ctx.toast(submittedMode === "series" ? "KPI 序列已导出 · 已记审计" : "KPI 当前汇总已导出 · 已记审计");
     } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${error.message}` : "导出任务提交失败 · 请稍后重试");
+      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     }
   };
   return (
     <>
       <span className="f-ro"><span className="d" />只读报表域 · 不改任何业务规则</span>
       {!ctx.canExport && <span className="f-ro">当前角色仅可查看 · 导出需报表管理权限</span>}
-      <button className="f-cta" onClick={exportKpi} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "尚未返回可导出的 L1 数据" : undefined}>
+      <button className="f-cta" onClick={exportKpi} disabled={!ctx.canExport || !exportable || ctx.biLoading} title={!ctx.canExport ? "当前角色没有报表导出权限" : !exportable ? "L1 权威数据尚未通过协议校验" : undefined}>
         {complete ? "导出 KPI 序列 CSV" : "导出 KPI 当前汇总 CSV"}
       </button>
     </>
@@ -125,7 +127,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
     try {
       validateL1Dashboard(data);
     } catch (error) {
-      protocolError = error instanceof Error ? error.message : "L1_DATA_PROTOCOL_INVALID";
+      protocolError = displayAdminError(error);
     }
   }
   if (!rawKpis.length && liveTotals.length) return <L1LiveTotals metrics={liveTotals} />;
@@ -202,7 +204,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
       setCustomOpen(false);
       ctx.toast(`KPI 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "L1_REFRESH_FAILED";
+      const message = displayAdminError(error);
       setRefreshError(message);
       ctx.toast(`KPI 刷新失败 · ${message}`);
     } finally {
@@ -228,7 +230,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
       setDrillKpi(checkedDrilldown.selected as Kpi);
       setDrillTrend(checkedTrend.values as number[]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "L1_DRILLDOWN_FAILED";
+      const message = displayAdminError(error);
       setDrillError(message);
       ctx.toast(`KPI 下钻读取失败 · ${message}`);
     }
@@ -396,9 +398,13 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
                 <span className="tgt">{tgtLabel(kk)}</span>
                 <span className={"delta " + (dUp === goodUp ? "up" : "dn")}>{ex.delta === "—" ? "环比 —" : `${dUp ? "▲" : "▼"} ${ex.delta.replace("-", "")}`}</span>
               </div>
-              <svg className="spark" viewBox="0 0 150 30" preserveAspectRatio="none" aria-hidden>
-                {kk.spark.length >= 2 && <path d={sparkPath(kk.spark, 150, 30)} fill="none" stroke={st === "na" ? "var(--ink-4)" : LED_COLOR[st]} strokeWidth={1.8} />}
-              </svg>
+              {kk.spark.length === 0 ? (
+                <span className="spark-empty" data-proof="l1-kpi-trend-unavailable">趋势数据不足</span>
+              ) : (
+                <svg className="spark" viewBox="0 0 150 30" preserveAspectRatio="none" aria-hidden>
+                  <path d={sparkPath(kk.spark, 150, 30)} fill="none" stroke={st === "na" ? "var(--ink-4)" : LED_COLOR[st]} strokeWidth={1.8} />
+                </svg>
+              )}
               <div className="ft"><span className="ev" title={ex.fx}><AutoGloss>{KPI_PLAIN[kk.n]}</AutoGloss></span><span className="ph">{rs.currentPhase}</span><span className="lat">~2min</span></div>
             </button>
           );

@@ -2,7 +2,7 @@
  * E3 设备生命周期 & 以旧换新 — 运营操作说明手册(右上角「操作说明手册」按钮弹出)。
  * 面向初级运营者:本页是什么、怎么读任务产能曲线、每个参数调高/调低的业务影响、怎么调整一个参数
  * (单值输入原理 + 各段月份在哪改)、高敏参数与 B1 资金护栏、换机 术语中英对照、原子换机事务。
- * 当前值经 ctx.pE 实时读出(server-canonical 配置),手册随后台配置同步,不写死。
+ * 当前值经 ctx.pE 实时读出，手册随后台当前配置同步，不写死。
  */
 import type { ReactNode } from "react";
 import { Modal } from "../design-kit";
@@ -65,7 +65,7 @@ export function E3Manual({ ctx, onClose }: { ctx: EViewCtx; onClose: () => void 
         <p className="e3man-lead">
           本页(<b>E3</b>)管两套相互咬合的规则:<b>设备可接任务产能随月递减的节奏</b>(AI 任务池持续升级,低阶任务量逐月减少)+ <b>旧机折价抵扣换新机(Trade-in)的规则</b>。
           两者共同决定用户的「升级节奏」——段3 深降把用户推向置换决策点,折抵力度决定置换的吸引力。
-          所有参数 <AutoGloss>server-canonical</AutoGloss>,改动经<AutoGloss>操作确认</AutoGloss>后即对全网新报价 / 估值器生效(<b>不回溯已生效报价</b>)。
+          所有参数均以后台当前配置为准，改动经<AutoGloss>操作确认</AutoGloss>后即对全网新报价 / 估值器生效(<b>不回溯已生效报价</b>)。
         </p>
 
         <Sec n="1" title="怎么读任务产能曲线">

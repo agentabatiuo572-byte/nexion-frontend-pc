@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
 const readWorkspace = (path) => readFileSync(new URL(`../${path}`, root), "utf8");
+const appRoot = resolveNexionAppRoot({ adminRoot: path.resolve(import.meta.dirname, "..") });
+const readApp = (relative) => readFileSync(path.join(appRoot, relative), "utf8");
 
 test("K6 is registered and rendered as a first-class K domain page", () => {
   const nav = read("lib/nav/console-nav.ts");
@@ -12,6 +16,14 @@ test("K6 is registered and rendered as a first-class K domain page", () => {
   assert.match(nav, /id:\s*"K6"[\s\S]*path:\s*"\/risk\/janus-c2"/);
   assert.match(view, /K6JanusC2/);
   assert.match(view, /tab === "K6"/);
+});
+
+test("K6 login carrier waits for anonymous and MFA UI instead of using non-waiting isVisible timeouts", () => {
+  const carrier = read("tests/e2e/k6-live-acceptance-20260722.spec.ts");
+
+  assert.doesNotMatch(carrier, /(?:usernameInput|mfaHeading)\.isVisible\(\{\s*timeout:/);
+  assert.match(carrier, /await expect\(usernameInput\)\.toBeVisible\(\{\s*timeout:\s*8_000\s*\}\)/);
+  assert.match(carrier, /await expect\(mfaHeading\)\.toBeVisible\(\{\s*timeout:\s*5_000\s*\}\)/);
 });
 
 test("K6 reads and writes through the authenticated Janus proxy", () => {
@@ -301,7 +313,7 @@ test("K6 retries writes with one stable idempotency key and exports both health 
   const client = read("lib/admin/k6-client.ts");
   const dashboard = read("app/components/domain-views/k-tabs/k6/dashboard.tsx");
   assert.match(client, /headers\.set\("Idempotency-Key", stableCommandKey\)/);
-  assert.match(client, /response = await fetch\(`\$\{BASE\}\$\{path\}`, options\);[\s\S]*catch[\s\S]*response = await fetch\(`\$\{BASE\}\$\{path\}`, options\)/);
+  assert.match(client, /response = await guardedFetch\(`\$\{BASE\}\$\{path\}`, options\);[\s\S]*catch[\s\S]*response = await guardedFetch\(`\$\{BASE\}\$\{path\}`, options\)/);
   assert.match(client, /"health" \| "audit" \| "funnel"/);
   assert.match(dashboard, /exportReport\("funnel", "csv"\)/);
 });
@@ -315,10 +327,10 @@ test("K6 CSV exports neutralize formulas hidden behind whitespace and control ch
 });
 
 test("K6 current App consumes report, pending command and ACK through one exact approved-target contract", () => {
-  const api = readWorkspace("NX1.0/src/api/janus-api.ts");
-  const coordinator = readWorkspace("NX1.0/src/services/janus-c2.ts");
-  const runtime = readWorkspace("NX1.0/src/services/janus-runtime.ts");
-  const app = readWorkspace("NX1.0/src/App.vue");
+  const api = readApp("src/api/janus-api.ts");
+  const coordinator = readApp("src/services/janus-c2.ts");
+  const runtime = readApp("src/services/janus-runtime.ts");
+  const app = readApp("src/App.vue");
   const combined = `${api}\n${coordinator}\n${runtime}`;
 
   for (const endpoint of [

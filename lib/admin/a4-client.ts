@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -239,7 +239,7 @@ async function a4Request<T>(path: string, init?: RequestInit & { idempotencyPref
   if (init?.stableIdempotencyKey) headers.set("Idempotency-Key", init.stableIdempotencyKey);
   else if (init?.idempotencyPrefix) headers.set("Idempotency-Key", createA4IdempotencyKey(init.idempotencyPrefix));
 
-  const response = await fetch(`/api/admin/platform${path}`, {
+  const response = await guardedFetch(`/api/admin/platform${path}`, {
     ...init,
     headers,
     cache: "no-store",

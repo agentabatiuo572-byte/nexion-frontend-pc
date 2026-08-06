@@ -1,29 +1,36 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const ROOT = "D:/workspace";
+// The acceptance App checkout is deliberately isolated from the developer's
+// mutable NX1.0 worktree. NEXION_APP_ROOT selects that locked checkout.
+const APP_ROOT = resolveNexionAppRoot({ adminRoot: process.cwd() });
 
 async function text(path) {
   return readFile(`${ROOT}/${path}`, "utf8");
 }
 
+async function appText(path) {
+  return readFile(`${APP_ROOT}/${path}`, "utf8");
+}
+
 test("current App produces only privacy-minimized non-authoritative L6 behavior facts", async () => {
-  const [api, tracker, chassis, migration] = await Promise.all([
-    text("NX1.0/src/api/behavior-analytics-api.ts"),
-    text("NX1.0/src/services/behavior-analytics.ts"),
-    text("NX1.0/src/components/app-chassis.vue"),
+  const [tracker, app, migration] = await Promise.all([
+    appText("src/services/behavior-analytics.ts"),
+    appText("src/App.vue"),
     text("nexion-backend/scripts/migrations/20260723_l6_behavior_analytics.sql"),
   ]);
 
-  assert.match(api, /clientEventId/);
+  assert.match(tracker, /clientEventId/);
   assert.match(tracker, /app\.page_viewed/);
   assert.match(tracker, /app\.element_clicked/);
   assert.match(tracker, /split\(\/\[\?#\]\//);
   assert.doesNotMatch(tracker, /innerText|textContent|rawText/);
-  assert.match(chassis, /behaviorTracker\.show/);
-  assert.match(chassis, /behaviorTracker\.hide/);
-  assert.match(chassis, /behaviorTracker\.tap/);
+  assert.match(app, /import \{ pauseBehaviorAnalytics, startBehaviorAnalytics \} from "@\/services\/behavior-analytics"/);
+  assert.match(app, /onShow\(\(\) => \{[\s\S]*?startBehaviorAnalytics\(\)/);
+  assert.match(app, /onHide\(\(\) => \{[\s\S]*?pauseBehaviorAnalytics\(\)/);
   assert.match(migration, /'app\.page_viewed'.*?,0,'100%'/s);
   assert.match(migration, /'app\.element_clicked'.*?,0,'client-throttle-350ms'/s);
 });
@@ -63,7 +70,7 @@ test("behavior facts cannot contaminate finance, KPI/funnel main events or risk 
 
 test("the 2026-07-27 catalog delta covers every current pages.json route", async () => {
   const [pagesJson, base, delta] = await Promise.all([
-    text("NX1.0/src/pages.json"),
+    appText("src/pages.json"),
     text("nexion-backend/scripts/migrations/20260723_l6_behavior_analytics.sql"),
     text("nexion-backend/scripts/migrations/20260727_l6_behavior_acceptance_hardening.sql"),
   ]);

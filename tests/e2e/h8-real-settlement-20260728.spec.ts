@@ -4,7 +4,33 @@ import path from "node:path";
 import { expect, test, type Page, type Response } from "@playwright/test";
 
 type Account = { username: string; password: string; totpSecret: string };
+type Fixture = {
+  /** Current run fixture: checker is intentionally top-level. */
+  checker?: Account;
+  accounts?: {
+    maker?: Account;
+    /** Legacy 2026-07-28 fixture compatibility only. */
+    d_checker?: Account;
+  };
+};
 type ApiEnvelope<T = unknown> = { code?: number; message?: string; data?: T };
+type AppReferralManifest = {
+  runId?: string;
+  result?: string;
+  accounts?: {
+    inviter?: { userId?: number };
+    invitee?: { userId?: number };
+  };
+};
+type TargetOrderProof = {
+  runId?: string;
+  invitedUserId?: number;
+  inviterUserId?: number;
+  targetEligibleCount?: number;
+  targetIsFirstEligible?: boolean;
+  eligibleBeforeTarget?: number;
+  nonTargetFingerprintBefore?: string;
+};
 type H8Overview = {
   pending: number;
   settled: number;
@@ -19,20 +45,34 @@ type H8Overview = {
   }>;
 };
 
-const RUN_ID = "pc-full-acceptance-20260728-151023";
+const RUN_ID = process.env.H_ACCEPTANCE_RUN_ID ?? "pc-full-acceptance-20260728-151023";
 const FIXTURE_PATH = process.env.A_PERMISSION_FIXTURE
   || `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/permission-fixtures.json`;
 const EVIDENCE_DIR = process.env.H8_SETTLEMENT_EVIDENCE_DIR
   || `D:/workspace/bug-pic/.restricted/${RUN_ID}/H/h8-real-settlement`;
-const EXISTING_OPERATION_ID = process.env.H8_EXISTING_OPERATION_ID?.trim() || "";
-const invitedUserId = Number(process.env.H8_INVITED_USER_ID);
-const inviterUserId = Number(process.env.H8_INVITER_USER_ID);
-const fixture = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as {
-  accounts: { d_checker: Account };
-};
+const PROGRESS_PATH = path.join(EVIDENCE_DIR, "progress.json");
+const APP_MANIFEST_PATH = requiredFilePath("H8_APP_MANIFEST_PATH");
+const TARGET_ORDER_PROOF_PATH = requiredFilePath("H8_TARGET_ORDER_PROOF_PATH");
+const appManifest = JSON.parse(readFileSync(APP_MANIFEST_PATH, "utf8")) as AppReferralManifest;
+const orderProof = JSON.parse(readFileSync(TARGET_ORDER_PROOF_PATH, "utf8")) as TargetOrderProof;
+const invitedUserId = Number(appManifest.accounts?.invitee?.userId);
+const inviterUserId = Number(appManifest.accounts?.inviter?.userId);
+const fixture = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as Fixture;
+const maker = fixture.accounts?.maker;
+const checker = fixture.checker ?? fixture.accounts?.d_checker;
+
+if (!maker || !checker) {
+  throw new Error("H8 fixture requires accounts.maker and top-level checker (or legacy accounts.d_checker)");
+}
+if (maker.username === checker.username) {
+  throw new Error("H8 maker and checker must be different accounts");
+}
 
 if (!Number.isSafeInteger(invitedUserId) || !Number.isSafeInteger(inviterUserId)) {
-  throw new Error("H8_INVITED_USER_ID and H8_INVITER_USER_ID are required");
+  throw new Error("H8 App manifest requires safe inviter/invitee user IDs");
+}
+if (appManifest.result !== "PASS" || appManifest.runId !== RUN_ID) {
+  throw new Error("H8 App manifest must be the PASS manifest for this acceptance wave");
 }
 
 test.beforeAll(() => mkdirSync(EVIDENCE_DIR, { recursive: true }));
@@ -47,12 +87,22 @@ test("H8 隔离夹具经独立 maker/checker 真实结算并贯通钱包、D4、
   const checkerErrors = monitorErrors(checkerPage);
 
   try {
-    await loginSuperadmin(makerPage);
+    expect(orderProof.runId).toBe(RUN_ID);
+    expect(orderProof.invitedUserId).toBe(invitedUserId);
+    expect(orderProof.inviterUserId).toBe(inviterUserId);
+    expect(orderProof.targetEligibleCount).toBe(1);
+    expect(orderProof.targetIsFirstEligible).toBe(true);
+    expect(orderProof.eligibleBeforeTarget).toBe(0);
+    expect(orderProof.nonTargetFingerprintBefore).toMatch(/^[A-F0-9]{64}$/);
+
+    await loginMfa(makerPage, maker);
+    await expectSessionAuthorities(makerPage, ["growth_h8_read", "growth_h8_write", "growth_h8_settle"]);
     await openH8FromSidebar(makerPage);
     const before = await readH8(makerPage);
     const alreadySettled = before.recentSettlements.find((row) =>
       row.invitedUserId === invitedUserId && row.inviterUserId === inviterUserId);
-    if (!alreadySettled) expect(before.pending).toBeGreaterThanOrEqual(1);
+    expect(alreadySettled, "fresh App target must not already be settled").toBeUndefined();
+    expect(before.pending).toBeGreaterThanOrEqual(1);
 
     const denied = await makerPage.request.post("/api/admin/growth/referral-rewards/settlements/run", {
       headers: { "Idempotency-Key": `${RUN_ID}-H8-DIRECT-DENIED` },
@@ -66,36 +116,43 @@ test("H8 隔离夹具经独立 maker/checker 真实结算并贯通钱包、D4、
     expect(denied.status()).toBe(409);
     expect(deniedBody.message).toContain("A2_CONFIRMATION_REQUIRED");
 
-    let operationId = EXISTING_OPERATION_ID;
-    if (!operationId && !alreadySettled) {
-      await expect(makerPage.getByRole("button", { name: "执行真实结算", exact: true })).toBeEnabled();
-      await makerPage.getByRole("button", { name: "执行真实结算", exact: true }).click();
-      const proposalDialog = makerPage.getByRole("dialog").filter({ hasText: "执行邀请奖励真实结算" });
-      await proposalDialog.getByLabel("目标新值").fill("1");
-      await proposalDialog.getByLabel(/操作理由/).fill(
-        `${RUN_ID} H8 maker 核对真实邀请关系、K1K2、H1 倍率、B1 覆盖及精确清理预案`,
-      );
-      const proposalResponse = makerPage.waitForResponse((response) =>
-        response.request().method() === "POST"
-        && new URL(response.url()).pathname === "/api/admin/platform/audit/operations");
-      await proposalDialog.getByRole("button", { name: "确认提交", exact: true }).click();
-      const proposal = await apiSuccess<Record<string, unknown>>(await proposalResponse, "H8 proposal");
-      operationId = String(proposal.operationId ?? proposal.id ?? "");
-    }
+    await expect(makerPage.getByRole("button", { name: "执行真实结算", exact: true })).toBeEnabled();
+    await makerPage.getByRole("button", { name: "执行真实结算", exact: true }).click();
+    const proposalDialog = makerPage.getByRole("dialog").filter({ hasText: "执行邀请奖励真实结算" });
+    await proposalDialog.getByLabel("目标新值").fill("1");
+    await proposalDialog.getByLabel(/操作理由/).fill(
+      `${RUN_ID} H8 maker 核对真实邀请关系、K1K2、H1 倍率、B1 覆盖及精确清理预案`,
+    );
+    const proposalResponse = makerPage.waitForResponse((response) =>
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/admin/platform/audit/operations");
+    await proposalDialog.getByRole("button", { name: "确认提交", exact: true }).click();
+    const proposal = await apiSuccess<Record<string, unknown>>(await proposalResponse, "H8 proposal");
+    const operationId = String(proposal.operationId ?? proposal.id ?? "");
     expect(operationId).toMatch(/^(?:WO|OP)-/);
+    writeFileSync(PROGRESS_PATH, JSON.stringify({
+      runId: RUN_ID,
+      operationId,
+      invitedUserId,
+      inviterUserId,
+      status: "proposal-created",
+    }, null, 2));
     await makerPage.screenshot({ path: path.join(EVIDENCE_DIR, "01-maker-pending.png"), fullPage: true });
 
-    await loginMfa(checkerPage, fixture.accounts.d_checker);
-    if (!alreadySettled) {
-      await approveThroughA2(
-        checkerPage,
-        operationId,
-        `${RUN_ID} checker 独立核对 H8 夹具、资金覆盖、奖励快照与恢复清单后批准`,
-      );
-    }
+    await loginMfa(checkerPage, checker);
+    await expectSessionAuthorities(checkerPage, [
+      "growth_h8_read",
+      "growth_h8_settle",
+      "platform_a2_operation_approve",
+    ]);
+    await approveThroughA2(
+      checkerPage,
+      operationId,
+      `${RUN_ID} checker 独立核对 H8 夹具、资金覆盖、奖励快照与恢复清单后批准`,
+    );
 
     const after = await readH8(checkerPage);
-    expect(after.settled).toBe(alreadySettled ? before.settled : before.settled + 1);
+    expect(after.settled).toBe(before.settled + 1);
     const settlement = after.recentSettlements.find((row) =>
       row.invitedUserId === invitedUserId && row.inviterUserId === inviterUserId);
     expect(settlement).toBeTruthy();
@@ -138,6 +195,14 @@ test("H8 隔离夹具经独立 maker/checker 真实结算并贯通钱包、D4、
     expect(makerErrors).toEqual([]);
     expect(checkerErrors).toEqual([]);
 
+    writeFileSync(PROGRESS_PATH, JSON.stringify({
+      runId: RUN_ID,
+      operationId,
+      invitedUserId,
+      inviterUserId,
+      settlementNo: settlement!.settlementNo,
+      status: "settled",
+    }, null, 2));
     writeFileSync(path.join(EVIDENCE_DIR, "result.json"), JSON.stringify({
       runId: RUN_ID,
       operationId,
@@ -146,9 +211,11 @@ test("H8 隔离夹具经独立 maker/checker 真实结算并贯通钱包、D4、
       settlement,
       ledgerRows,
       directCallDenied: true,
+      targetOrderProved: true,
+      nonTargetFingerprintBefore: orderProof.nonTargetFingerprintBefore,
       independentBrowserContexts: true,
-      maker: "superadmin",
-      checker: fixture.accounts.d_checker.username,
+      maker: maker.username,
+      checker: checker.username,
       a2AuditStatus: audit.status(),
       a4OverviewStatus: events.status(),
       pageErrors: 0,
@@ -158,6 +225,12 @@ test("H8 隔离夹具经独立 maker/checker 真实结算并贯通钱包、D4、
     await checkerContext.close();
   }
 });
+
+function requiredFilePath(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value || !path.isAbsolute(value)) throw new Error(`${name} must be an absolute path`);
+  return value;
+}
 
 async function readH8(page: Page) {
   return apiSuccess<H8Overview>(
@@ -197,14 +270,6 @@ async function approveThroughA2(page: Page, operationId: string, reason: string)
   await expect(page.getByText(`${operationId} 已执行`, { exact: false })).toBeVisible();
 }
 
-async function loginSuperadmin(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.locator('input[autocomplete="username"]').fill("superadmin");
-  await page.locator('input[autocomplete="current-password"]').fill("Admin@123456");
-  await page.getByRole("button", { name: /继续|登录/ }).click();
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
-}
-
 async function loginMfa(page: Page, account: Account) {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.locator('input[autocomplete="username"]').fill(account.username);
@@ -215,6 +280,14 @@ async function loginMfa(page: Page, account: Account) {
   await otp.fill(await freshTotp(account.totpSecret));
   await page.getByRole("button", { name: "验证并进入", exact: true }).click();
   await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+}
+
+async function expectSessionAuthorities(page: Page, required: string[]) {
+  const session = await apiSuccess<{
+    session?: { authorities?: string[] };
+  }>(await page.request.get("/api/admin/auth/session"), "authenticated session");
+  const authorities = session.session?.authorities ?? [];
+  for (const authority of required) expect(authorities).toContain(authority);
 }
 
 async function apiSuccess<T>(

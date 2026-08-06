@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const pcRoot = "D:/workspace/nexion-ops-console";
 const backendRoot = "D:/workspace/nexion-backend";
-const appRoot = "D:/workspace/NX1.0";
+const appRoot = resolveNexionAppRoot({ adminRoot: pcRoot });
 const read = (root, path) => readFileSync(`${root}/${path}`, "utf8");
 
 test("App trust center renders only the public server snapshot and fails visibly", () => {

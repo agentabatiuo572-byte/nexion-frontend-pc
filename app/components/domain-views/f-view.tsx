@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * F 分销与团队 — 设计稿 design_handoff_f_domain 内容视图(F1–F5)。
  * 标签:F1 V-Rank 晋升 / F2 网络版税费率 / F3 双轨结算引擎 / F4 池·配额·大使·榜 / F5 佣金事件审计。
@@ -45,9 +46,12 @@ import {
   type F1VRankOverview,
 } from "@/lib/admin/f1-client";
 import { usePropose } from "@/lib/admin/use-propose";
+import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
-import type { Mc, FViewCtx } from "./f-tabs/types";
+import type { Mc, McSpec, FViewCtx } from "./f-tabs/types";
 import { F1Vrank } from "./f-tabs/f1-vrank";
 import { F2Rates } from "./f-tabs/f2-rates";
 import { F3Binary } from "./f-tabs/f3-binary";
@@ -58,6 +62,11 @@ import "./f-domain.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
 const ADMIN_OPERATOR = currentAdminOperator;
+
+/** F 域全部 A2 提交共用的在途命令号(sessionStorage + 24h TTL):同槽位同输入才复用,让
+ *  outcome-uncertain(网络断 / 503)后的重试带同一 Idempotency-Key 被后端去重;输入变了
+ *  (如同一佣金事件先冻结后解冻)铸新号并弃旧号,防真实新操作被当成重复提交静默吞掉。 */
+const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-commands-v1" });
 
 // F 域 polymorphic key→op 分发(对齐后端 OpsTeamService.updateConfig 分发逻辑,commit afe51f2)。
 // 4 replay op 全部 params {key,value},后端从 key 派生锁 target id(unilevel→L+layerNo,commission→eventId)。
@@ -73,14 +82,18 @@ function resolveFOp(key: string): string {
   return "f_ui_config";
 }
 
+function fProposalCommandKey(modalCommandKey: string | undefined, sourceDomain: string, key: string) {
+  return modalCommandKey ? `${modalCommandKey}:${sourceDomain}:${key}` : undefined;
+}
+
 function errorMessage(error: unknown) {
-  // 「结果未知」族(F 直写的 F1OutcomeUncertainError / A2 提案的 A2OutcomeUncertainError)必须走
-  // 共用文案:它们意味着请求可能已被后端执行,直接抛 error.message 会让运营看到裸机器码,
-  // 更糟的是通用兜底文案会诱导他「检查输入内容后重试」—— 改输入 = 换命令号 = 真的再打一次款。
+  // 「结果未知」族(F 直写的 F1OutcomeUncertainError / A2 提案的 A2OutcomeUncertainError)必须
+  // 附命令号:它们意味着请求可能已被后端执行,运营要拿这个号去审计记录核对。文案本体仍走
+  // displayAdminError 咽喉(错误文案专项的单一出口),这里只补咽喉拿不到的命令号。
   if (error instanceof Error && error.name.endsWith("OutcomeUncertainError")) {
     return operationConfirmErrorMessage(error);
   }
-  return error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
+  return displayAdminError(error);
 }
 
 function f1ThresholdTarget(paramKey?: string) {
@@ -95,7 +108,7 @@ function currentMonthStart() {
 
 export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const [toastNode, setToast] = useToast();
-  const propose = usePropose();
+  const rawPropose = usePropose();
   const nav = useDomainNav();
   const router = useRouter();
   const session = useAdminAuth((state) => state.session);
@@ -108,6 +121,13 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
   const routeTab = FOLD[meta.l2Id] ?? "F2";
   const [tab, setTab] = useState(routeTab);
   const [mc, setActionConfirm] = useState<Mc>(null);
+  const propose = (toast: (message: string) => void, spec: ProposeSpec) =>
+    rawPropose(toast, { ...spec, commandKey: spec.commandKey ?? mc?.commandKey });
+  const openActionConfirm = (spec: McSpec) =>
+    setActionConfirm({
+      ...spec,
+      commandKey: spec.commandKey ?? createA2CommandKey("f-domain-action"),
+    });
   const [f1Overview, setF1Overview] = useState<F1VRankOverview | null>(null);
   const [f1Loading, setF1Loading] = useState(tab === "F1");
   const [f1Error, setF1Error] = useState<string | null>(null);
@@ -265,12 +285,25 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab === "F5") void refreshF5();
   }, [refreshF5, tab]);
 
+  // F 域全部 A2 propose 必经此咽喉:命令号先查在途记录再铸新——outcome-uncertain 重试同号让
+  // 后端去重,成功 / 确定性失败即收敛丢弃。绕开咽喉直调会失去幂等复用(契约门钉直调恒为 1 处)。
+  const proposeStable = async (slot: string, inputFingerprint: string, spec: ProposeSpec) => {
+    const commandKey = commandAttempts.resolve(slot, inputFingerprint, () => createA2CommandKey(slot.split(":")[0]));
+    try {
+      await propose((s: string) => setToast(s), { ...spec, commandKey });
+      commandAttempts.forget(slot);
+    } catch (error) {
+      if (!isA2OutcomeUncertainError(error)) commandAttempts.forget(slot);
+      throw error;
+    }
+  };
+
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
   const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string) => {
     const op = resolveFOp(key);
     const def = findHighOp(op);
     if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
-    await propose((s: string) => setToast(s), {
+    await proposeStable(`f-config:${key}`, JSON.stringify([value, reason]), {
       action: `${def.action} · ${key}`,
       obj: key,
       before: "—",
@@ -284,13 +317,14 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
       gateLabel: def.gateLabel,
       reason,
       sourceDomain,
+      commandKey: fProposalCommandKey(mc?.commandKey, sourceDomain, key),
       command: def.buildCommand({ key, value }),
       target: def.buildTarget({ key, value }),
     });
   };
 
   const ctx: FViewCtx = {
-    openActionConfirm: (m) => setActionConfirm(m),
+    openActionConfirm: (m) => openActionConfirm(m),
     nav,
     toast: (msg) => setToast(msg),
     can,
@@ -343,7 +377,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     proposeVRankOverride: async (userId, targetV, direction, reason) => {
       const def = findHighOp("f_vrank_override");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_vrank_override");
-      await propose((s: string) => setToast(s), {
+      await proposeStable(`f-vrank-override:${userId}`, JSON.stringify([targetV, direction, reason]), {
         action: `${def.action} · ${direction === "promote" ? "晋升" : "降级"}至 ${targetV}`,
         obj: `用户 ${userId}`,
         before: "以服务端当前等级为准",
@@ -361,7 +395,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     proposePayoutAction: async (payoutId, action, reason) => {
       const def = findHighOp("f_reward_payout_action");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_reward_payout_action");
-      await propose((s: string) => setToast(s), {
+      await proposeStable(`f-payout-action:${payoutId}`, JSON.stringify([action, reason]), {
         action: `${def.action} · ${action === "reissue" ? "重发" : "冲正"}`,
         obj: `派发单 ${payoutId}`,
         before: "以服务端当前状态为准",
@@ -422,7 +456,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     proposeF4Settlement: async (reason) => {
       const def = findHighOp("f4_pool_settle");
       if (!def) throw new Error("F_OP_NOT_FOUND:f4_pool_settle");
-      await propose((s: string) => setToast(s), {
+      // 指纹带日键:结算是按周期重复的意图,上一周期已决议的票被 24h 幂等回放会把新结算静默吞掉;
+      // 日键把该窗口压到当日,跨日重试铸新号(在途票期间由后端 current-week 目标锁兜底)。
+      await proposeStable("f4-settle:current-week", JSON.stringify([reason, new Date().toISOString().slice(0, 10)]), {
         action: def.action,
         obj: "F4 当前周领导奖池",
         before: "待结算",
@@ -550,13 +586,18 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + " 已生效");
+            // dispose 一律走 A2 propose:此刻只是入了待执行队列,还没落库。原文案「已生效」
+            // 会把冻结这种抢时间的动作误报成完成(票在队列里等执行期间冷却可能到期解锁)。
+            setToast(mc.name + " 已提交 · A2 待执行队列");
           } else {
             throw new Error("F_CONFIRM_SHAPE_UNKNOWN:" + (mc.op || mc.name)); // 未知确认形状必须响亮失败,禁静默假成功
           }
           setActionConfirm(null);
           } catch (error) {
-            setToast("F 域数据提交失败 · " + errorMessage(error));
+            // outcome-uncertain 不算「失败」:提案可能已生效,冠以失败会诱导换渠道重做造成重复动作。
+            setToast(isA2OutcomeUncertainError(error)
+              ? errorMessage(error)
+              : "F 域数据提交失败 · " + errorMessage(error));
           }
         }} />}
       {toastNode}

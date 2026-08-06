@@ -4,14 +4,26 @@ import { expect, test, type Page } from "@playwright/test";
 
 const FIXTURE_PATH = process.env.B_PERMISSION_FIXTURE_PATH;
 if (!FIXTURE_PATH) throw new Error("B_PERMISSION_FIXTURE_PATH is required");
+const TOTP_COUNTER_OFFSET = Number(process.env.B_PERMISSION_TOTP_COUNTER_OFFSET ?? "-1");
 const fixture = JSON.parse(readFileSync(FIXTURE_PATH, "utf8")) as {
   runId: string;
-  accounts: Record<"b_readonly" | "b_no_write" | "b_no_menu", {
+  accounts: Record<string, {
     username: string;
     password: string;
     totpSecret: string;
   }>;
 };
+
+// The full-run fixture owns the shared readonly/nowrite/nomenu identities;
+// retain the B-local aliases so historical B-only fixtures still work.
+const accounts = {
+  b_readonly: fixture.accounts.b_readonly ?? fixture.accounts.readonly,
+  b_no_write: fixture.accounts.b_no_write ?? fixture.accounts.nowrite,
+  b_no_menu: fixture.accounts.b_no_menu ?? fixture.accounts.nomenu,
+};
+for (const [key, account] of Object.entries(accounts)) {
+  if (!account) throw new Error(`B permission fixture is missing ${key}`);
+}
 
 const MODULES = [
   {
@@ -72,10 +84,14 @@ const MODULES = [
 
 test.describe.configure({ mode: "serial", timeout: 300_000 });
 
+if (!Number.isInteger(TOTP_COUNTER_OFFSET) || TOTP_COUNTER_OFFSET < -2 || TOTP_COUNTER_OFFSET > 2) {
+  throw new Error("B_PERMISSION_TOTP_COUNTER_OFFSET_MUST_BE_AN_INTEGER_BETWEEN_-2_AND_2");
+}
+
 for (const key of ["b_readonly", "b_no_write"] as const) {
   test(`${key}：B1-B5 菜单/路由/数据可读，按钮与接口写入拒绝`, async ({ page }) => {
     const errors = monitorErrors(page);
-    await login(page, fixture.accounts[key]);
+    await login(page, accounts[key]);
     await assertSession(page, true);
     await assertVisibleMenus(page);
 
@@ -93,7 +109,7 @@ for (const key of ["b_readonly", "b_no_write"] as const) {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "风险雷达" })).toBeVisible();
     await logout(page);
-    await login(page, fixture.accounts[key]);
+    await login(page, accounts[key]);
     await assertVisibleMenus(page);
     expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(200);
     expect((await browserApi(
@@ -104,24 +120,24 @@ for (const key of ["b_readonly", "b_no_write"] as const) {
   });
 }
 
-test("b_no_menu：B 菜单、直接路由、读写接口均拒绝，刷新重登不恢复缓存", async ({ page }) => {
+test("b_no_menu：B 菜单和直接路由拒绝，接口严格按显式 read/write 权限裁决", async ({ page }) => {
   const errors = monitorErrors(page);
-  await login(page, fixture.accounts.b_no_menu);
-  await assertSession(page, false);
+  await login(page, accounts.b_no_menu);
+  await assertNoMenuSession(page);
   await expect(page.locator('aside a[href^="/overview/"]')).toHaveCount(0);
 
   await page.goto("/overview/dual-ledger", { waitUntil: "domcontentloaded" });
   await expect(page).not.toHaveURL(/\/overview\/dual-ledger(?:\?.*)?$/);
   await expect(page.getByRole("heading", { name: "双账本总览" })).toHaveCount(0);
   for (const module of MODULES) {
-    expect((await browserApi(page, "GET", module.readPath)).status, `${module.id} read`).toBe(403);
+    expect((await browserApi(page, "GET", module.readPath)).status, `${module.id} read without authority`).toBe(403);
     expect((await browserApi(page, module.writeMethod, module.writePath, module.writeBody)).status, `${module.id} write`).toBe(403);
   }
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator('aside a[href^="/overview/"]')).toHaveCount(0);
   await logout(page);
-  await login(page, fixture.accounts.b_no_menu);
+  await login(page, accounts.b_no_menu);
   await expect(page.locator('aside a[href^="/overview/"]')).toHaveCount(0);
   expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
   expect(errors).toEqual([]);
@@ -138,8 +154,28 @@ async function login(
   await page.getByRole("button", { name: /登录|继续/ }).click();
   const otp = page.getByLabel("一次性验证码");
   await expect(otp).toBeVisible({ timeout: 15_000 });
-  await otp.fill(await freshTotp(account.totpSecret));
-  await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const code = await freshTotp(account.totpSecret);
+    if (await page.locator("aside").isVisible({ timeout: 1_000 }).catch(() => false)) return;
+    if (!(await otp.isVisible({ timeout: 1_000 }).catch(() => false))) {
+      if (await page.locator("aside").isVisible({ timeout: 5_000 }).catch(() => false)) return;
+      throw new Error("MFA challenge disappeared before console became visible");
+    }
+    await otp.fill(code);
+    const verification = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/admin/auth/mfa/verify"
+      && response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const response = await verification;
+    if (response.status() === 200
+      && await page.locator("aside").isVisible({ timeout: 5_000 }).catch(() => false)) return;
+    if (attempt === 1) {
+      const payload = await response.json().catch(() => null) as { code?: number } | null;
+      throw new Error(`MFA verification did not enter console: status=${response.status()} code=${payload?.code ?? "none"}`);
+    }
+    if (await page.locator("aside").isVisible({ timeout: 1_000 }).catch(() => false)) return;
+  }
   await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -172,6 +208,19 @@ async function assertSession(page: Page, hasRead: boolean) {
     expect(authorities).toEqual([]);
     expect(menus).toEqual([]);
   }
+}
+
+async function assertNoMenuSession(page: Page) {
+  const response = await page.request.get("/api/admin/auth/session");
+  expect(response.status()).toBe(200);
+  const payload = await response.json() as {
+    data?: { session?: { authorities?: string[]; effectiveMenus?: Array<string | { menuCode?: string }> } };
+  };
+  const authorities = payload.data?.session?.authorities ?? [];
+  const menus = (payload.data?.session?.effectiveMenus ?? []).map((menu) =>
+    typeof menu === "string" ? menu : menu.menuCode ?? "");
+  expect(menus).toEqual([]);
+  expect(authorities).toEqual([]);
 }
 
 async function assertVisibleMenus(page: Page) {
@@ -242,7 +291,7 @@ function currentTotp(secret: string) {
     bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
   }
   const message = Buffer.alloc(8);
-  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000) + TOTP_COUNTER_OFFSET));
   const digest = createHmac("sha1", bytes).update(message).digest();
   const offset = digest[digest.length - 1] & 0x0f;
   const binary = ((digest[offset] & 0x7f) << 24)
@@ -255,14 +304,17 @@ function currentTotp(secret: string) {
 const lastTotpStep = new Map<string, number>();
 
 async function freshTotp(secret: string) {
-  let step = Math.floor(Date.now() / 30_000);
-  const lastStep = lastTotpStep.get(secret);
+  const currentStep = Math.floor(Date.now() / 30_000);
+  const lastStep = lastTotpStep.get(secret) ?? -1;
   const millisecondsRemaining = 30_000 - (Date.now() % 30_000);
-  if ((lastStep !== undefined && step <= lastStep) || millisecondsRemaining < 3_000) {
-    const waitMs = millisecondsRemaining + 250;
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
-    step = Math.floor(Date.now() / 30_000);
+  if (currentStep <= lastStep || millisecondsRemaining <= 5_000) {
+    await expect.poll(() => Math.floor(Date.now() / 30_000), {
+      timeout: 35_000,
+      intervals: [250],
+      message: "wait for a fresh TOTP window before MFA submission",
+    }).toBeGreaterThan(currentStep <= lastStep ? lastStep : currentStep);
   }
+  const step = Math.floor(Date.now() / 30_000);
   lastTotpStep.set(secret, step);
   return currentTotp(secret);
 }

@@ -29,6 +29,8 @@ function backendPath(parts: string[]) {
     "withdraw-gate",
     "vouchers",
     "referral-rewards",
+    // H9 对外公布数据(前端首页平台规模与排名口径的后台单源)。
+    "public-stats",
   ]);
   if (!allowedHeads.has(parts[0])) return null;
   if (parts.some((part) => !isNonEmpty(part) || part.includes("..") || part.includes("/") || part.includes("\\"))) {

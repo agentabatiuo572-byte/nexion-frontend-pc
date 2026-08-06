@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Btn, CodeTag, OperationConfirmModal } from "../design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
 import type { EViewCtx } from "./types";
@@ -56,6 +56,7 @@ const LIST_PAGE_SIZE = 6;   // 任务列表每页行数
 
 export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
   const { tasks } = ctx;
+  const canMutate = ctx.canWriteE2 && !ctx.e2Loading && !ctx.e2Error && !!ctx.e2Pricing;
   const [teaserDevice, setTeaserDevice] = useState("phone");
   const [pricingAction, setPricingAction] = useState<{
     row?: E2TaskPricingClass;
@@ -63,6 +64,9 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
     current: number | boolean;
     nextEnabled?: boolean;
   } | null>(null);
+  useEffect(() => {
+    if (!canMutate) setPricingAction(null);
+  }, [canMutate]);
 
   // ── 任务列表:分类筛选 + 翻页(纯视图态)──
   const [filterKind, setFilterKind] = useState<"all" | Kind>("all");
@@ -109,7 +113,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
 
       <section className="pane" data-testid="e2-task-pricing-canonical">
         <div className="pane-h">
-          <span className="ttl">6 类 AI 任务定价 · Server Canonical</span>
+          <span className="ttl">6 类 AI 任务定价 · 当前运营配置</span>
           <span className="sub">仅新派发任务生效</span>
           <span className="r"><CodeTag tone={pricingRows.length === 6 ? "electric" : "warn"}>{pricingRows.length}/6 类</CodeTag></span>
         </div>
@@ -121,7 +125,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
               <td>{row.models.join(" / ")}</td><td className="tnum">${amount(row.minReward)}</td><td className="tnum">${amount(row.maxReward)}</td>
               <td className="tnum">{row.minVRAM} GB</td><td><CodeTag tone={row.enabled ? "electric" : "warn"}>{row.enabled ? "派发中" : "已 Kill"}</CodeTag></td>
               <td><div className="row" style={{ gap: 5 }}>
-                {ctx.canWriteE2 && <>
+                {canMutate && <>
                   <Btn sm onClick={() => setPricingAction({ row, field: "minReward", current: row.minReward })}>调 min</Btn>
                   <Btn sm onClick={() => setPricingAction({ row, field: "maxReward", current: row.maxReward })}>调 max</Btn>
                   <Btn sm onClick={() => setPricingAction({ row, field: "minVRAM", current: row.minVRAM })}>调门槛</Btn>
@@ -140,7 +144,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           <div style={{ padding: 16 }}>
             <div className="tnum" style={{ fontSize: 30, fontWeight: 700 }}>{ctx.e2Pricing ? `${Math.round(ctx.e2Pricing.queueSaturation * 100)}%` : "—"}</div>
             <div className="tint tiny" style={{ margin: "10px 0" }}>locked teaser 的 dailyPotential 使用服务端公式：(86400 / avgSec) × 饱和因子 × 平均奖励。</div>
-            {ctx.canWriteE2 && ctx.e2Pricing && <Btn variant="primary" onClick={() => setPricingAction({ field: "queueSaturation", current: ctx.e2Pricing!.queueSaturation })}>调整全局饱和因子</Btn>}
+            {canMutate && <Btn variant="primary" onClick={() => setPricingAction({ field: "queueSaturation", current: ctx.e2Pricing!.queueSaturation })}>调整全局饱和因子</Btn>}
           </div>
         </section>
         <section className="pane" data-testid="e2-locked-teaser">
@@ -173,7 +177,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                   <div className="tnum" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>${u}<span style={{ fontSize: 11, color: "var(--ink-4)", fontWeight: 400 }}> /天</span></div>
                   <div className="tnum" style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{n} NEX/天</div>
                 </div>
-                {ctx.canWriteE2 && <div className="row" style={{ gap: 6 }}>
+                {canMutate && <div className="row" style={{ gap: 6 }}>
                   <Btn sm variant="primary" onClick={() => ctx.openActionConfirm({
                     name: `手机 T${t.tier} 日产 USDT 调整`, op: "phone-tier", phoneTier: t.tier, phoneField: "dailyUsdt", amplify: true,
                     edit: { kind: "number", current: u, unit: "USDT/天", min: 0.00001, step: 0.00001, disallowCurrent: true },
@@ -230,7 +234,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
                     <div className="bar">{pct == null ? null : <div className="f" style={{ width: `${pct}%`, background: satColor(pct) }} />}</div>
                     <span className="pct">{pct == null ? "—" : `${pct}%`}</span>
                   </div>
-                  {ctx.canWriteE2 && <div className="acts">
+                  {canMutate && <div className="acts">
                     <button className="primary" onClick={() => ctx.openEditTask(t)}>编辑</button>
                     <button onClick={() => ctx.delTask({ id: t.id, n: t.n })}>下架</button>
                   </div>}
@@ -278,7 +282,7 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         </aside>
       </div>
 
-      {/* 任务饱和度快照:只使用任务接口返回的当前 sat 字段,不在前端合成 24h 曲线。 */}
+      {/* 任务饱和度快照仅采用当前运营数据，不在前端合成 24h 曲线。 */}
       <div className="heat-card">
         <div className="heat-h">
           <span className="ttl">任务饱和度快照</span>
@@ -309,11 +313,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
           </div>
         </div>
         <div className="heat-legend">
-          <span>当前饱和度来自 /api/admin/devices/tasks 的 sat 字段</span>
+          <span>当前饱和度由任务运行情况汇总</span>
           <span style={{ marginLeft: "auto" }}><AutoGloss>需要小时级曲线时应由后端返回时间序列</AutoGloss></span>
         </div>
       </div>
-      <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${maxPriceTask.n}」` : "暂无"}、最高负载任务{peakTask ? `「${peakTask.n}」` : "暂无"}会驱动 /earn 任务池展示。任务单价改后<b>对新派单 server-canonical 生效</b>,已派工单维持原单价完成。</p>
+      <p className="f-foot">当前最高单价任务{maxPriceTask ? `「${maxPriceTask.n}」` : "暂无"}、最高负载任务{peakTask ? `「${peakTask.n}」` : "暂无"}会影响任务池展示。任务单价调整后<b>对新派发任务生效</b>，已派发任务仍按原单价完成。</p>
       {pricingAction && <OperationConfirmModal
         action={pricingAction.field === "enabled" ? `${pricingAction.nextEnabled ? "恢复派发" : "紧急 Kill"} · ${pricingAction.row?.taskClass}` : pricingAction.field === "queueSaturation" ? "调整 QUEUE_SATURATION" : `调整 ${pricingAction.row?.taskClass} · ${pricingAction.field}`}
         detail={pricingAction.field === "enabled" && !pricingAction.nextEnabled ? "立即停止该类新任务派发；已派任务继续按派发时价格结算。" : "确认后服务端立即热更，只影响新派发/新路由判定，并写入 A2/A4 审计链。"}
@@ -331,6 +335,11 @@ export function E2Tasks({ ctx }: { ctx: EViewCtx }) {
         reasonMax={200}
         onClose={() => setPricingAction(null)}
         onConfirm={async (reason, newValue) => {
+          if (!canMutate) {
+            ctx.toast("E2 权威快照不可用，已取消本次配置提交");
+            setPricingAction(null);
+            return;
+          }
           const action = pricingAction;
           const value = action.field === "enabled" ? action.nextEnabled : Number(newValue);
           if (action.field !== "enabled" && !Number.isFinite(value)) throw new Error("请输入有效数字");

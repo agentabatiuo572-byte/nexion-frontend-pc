@@ -30,6 +30,7 @@ import { AuditTimeline, type AuditEntry } from "@/app/components/kit/audit-timel
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 /**
  * C1 用户详情三类写动作(昵称重置 / 支付方式解绑 / 换绑通知)共用一张表,槽位分命名空间。
@@ -162,7 +163,7 @@ function displayValue(value: unknown) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "UNKNOWN_ERROR";
+  return displayAdminError(error);
 }
 
 function sectionStatus(section: User360Section | null | undefined) {
@@ -343,8 +344,8 @@ export default function UserDetailPage() {
   const canReadA2 = session?.role === "superadmin" || !!session?.authorities.includes("platform_a2_read");
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
-  const userKey = params.id;
-  const requestedReturnTo = searchParams.get("returnTo") ?? "";
+  const userKey = params?.id?.trim() ?? "";
+  const requestedReturnTo = searchParams?.get("returnTo") ?? "";
   const returnTo = requestedReturnTo.startsWith("/users/search") && !requestedReturnTo.startsWith("//")
     ? requestedReturnTo
     : "/users/search";
@@ -373,6 +374,12 @@ export default function UserDetailPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    if (!userKey) {
+      setDetail(null);
+      setError("用户标识缺失，已停止加载");
+      setLoading(false);
+      return;
+    }
     try {
       setDetail(await fetchUser360(userKey));
     } catch (err) {

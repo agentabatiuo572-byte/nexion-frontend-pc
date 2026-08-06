@@ -4,6 +4,7 @@ import test from "node:test";
 
 const actionSource = readFileSync(new URL("../app/components/domain-views/c-tabs/c2-actions.tsx", import.meta.url), "utf8");
 const clientSource = readFileSync(new URL("../lib/admin/user360-client.ts", import.meta.url), "utf8");
+const errorMessageSource = readFileSync(new URL("../lib/admin/error-messages.ts", import.meta.url), "utf8");
 const routeSource = readFileSync(new URL("../app/api/impersonation/view/route.ts", import.meta.url), "utf8");
 const usersRouteSource = readFileSync(new URL("../app/api/admin/users/[...path]/route.ts", import.meta.url), "utf8");
 const dashboardSource = readFileSync(new URL("../lib/admin/ops-dashboard-client.ts", import.meta.url), "utf8");
@@ -68,6 +69,19 @@ test("C2 canonical events reach a role-trimmed human-visible alert feed", () => 
   assert.match(dashboardSource, /fetchC2HighRiskAlerts/);
   assert.match(dashboardSource, /useC2HighRiskAlerts/);
   assert.match(dashboardSource, /alert\.domain === "C2"/);
-  assert.match(notificationSource, /session\?\.role === "superadmin" \|\| state\.session\?\.role === "risk"/);
+  assert.match(notificationSource, /const canReadC2Alerts = canReadC2HighRiskAlerts\(session\)/);
   assert.match(notificationSource, /\.\.\.c2Alerts/);
+});
+
+test("C2 account-list A4 registration rejection remains visible and actionable", () => {
+  assert.match(actionSource, /upsertUserAccountList\(id, kind, reason, OPERATOR\(\), expiresAt\)/);
+  assert.match(actionSource, /UsersRequestError/);
+  assert.match(actionSource, /error\.code === "A4_SCHEMA_NOT_REGISTERED"/);
+  assert.match(actionSource, /名单未生效，系统事件登记不完整，请联系平台管理员修复配置后重试。/);
+  assert.match(actionSource, /accountListErrorMessage/);
+  assert.match(
+    errorMessageSource,
+    /A4_SCHEMA_NOT_REGISTERED: "系统事件登记不完整，操作未生效。请联系平台管理员修复配置后重试。"/,
+  );
+  assert.doesNotMatch(errorMessageSource, /A4 Schema Registry/);
 });

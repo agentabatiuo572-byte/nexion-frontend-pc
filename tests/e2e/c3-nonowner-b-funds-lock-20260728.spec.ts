@@ -10,13 +10,32 @@ const USER_NO = process.env.C_NONOWNER_USER_NO || "U990000151023";
 const EVIDENCE_DIR = process.env.C_NONOWNER_EVIDENCE_DIR;
 const A_PERMISSION_FIXTURE = process.env.A_PERMISSION_FIXTURE_PATH;
 
+type FixtureAccount = {
+  username: string;
+  password: string;
+  totpSecret: string;
+};
+
+type CheckerFixture = {
+  checker?: FixtureAccount;
+  accounts?: { d_checker?: FixtureAccount; maker?: FixtureAccount };
+};
+
 test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 闭环", async ({ browser }) => {
   if (!A_PERMISSION_FIXTURE) throw new Error("A_PERMISSION_FIXTURE_PATH is required");
   if (EVIDENCE_DIR) mkdirSync(EVIDENCE_DIR, { recursive: true });
-  const fixture = JSON.parse(readFileSync(A_PERMISSION_FIXTURE, "utf8")) as {
-    accounts: { d_checker: { username: string; password: string; totpSecret: string } };
-  };
-  const checkerAccount = fixture.accounts.d_checker;
+  const fixture = JSON.parse(readFileSync(A_PERMISSION_FIXTURE, "utf8")) as CheckerFixture;
+  const checkerAccount = fixture.checker ?? fixture.accounts?.d_checker;
+  const makerAccount = fixture.accounts?.maker;
+  if (!checkerAccount?.username || !checkerAccount.password || !checkerAccount.totpSecret) {
+    throw new Error("checker fixture is required");
+  }
+  if (!makerAccount?.username || !makerAccount.password || !makerAccount.totpSecret) {
+    throw new Error("C maker fixture is required");
+  }
+  if (checkerAccount.username.trim().toLowerCase() === USERNAME.trim().toLowerCase()) {
+    throw new Error("checker account must differ from the maker account");
+  }
   const makerContext = await browser.newContext();
   const checkerContext = await browser.newContext();
   const maker = await makerContext.newPage();
@@ -38,18 +57,27 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
   let evidence: Record<string, unknown> = {};
 
   try {
-    await Promise.all([login(maker), loginAccount(checker, checkerAccount)]);
+    await loginAccount(maker, makerAccount);
+    await loginAccount(checker, checkerAccount);
     await Promise.all([
       openVisibleModule(maker, "/users/assets", "/api/admin/users/asset-adjustments/overview"),
       openVisibleModule(checker, "/users/assets", "/api/admin/users/asset-adjustments/overview"),
     ]);
+    const makerSession = await requestEvidence(await maker.request.get("/api/admin/auth/session"));
+    const checkerSession = await requestEvidence(await checker.request.get("/api/admin/auth/session"));
+    expect(findKey(makerSession.body?.data, "roleCode")).toBe("FINANCE");
+    expect(findKey(checkerSession.body?.data, "roleCode")).toBe("FINANCE_LEAD");
+    expect(JSON.stringify(makerSession.body)).toContain("user_c3_adjust_create");
+    expect(JSON.stringify(makerSession.body)).not.toContain("user_c3_adjust_reverse");
+    expect(JSON.stringify(checkerSession.body)).toContain("user_c3_adjust_reverse");
+    expect(makerAccount.username).not.toBe(checkerAccount.username);
 
     const before = await requestEvidence(
       await maker.request.get(`/api/admin/users/profiles/${USER_ID}/asset-adjustment-context`),
     );
     expect(before.status).toBe(200);
     const baselineUsdt = Number(findKey(before.body?.data, "walletUsdt"));
-    expect(baselineUsdt).toBe(100);
+    expect(baselineUsdt).toBe(0);
 
     const search = maker.getByPlaceholder("搜索用户编码 / 用户名 / 手机号");
     await search.fill(USER_NO);
@@ -62,7 +90,7 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
     expect((await contextResponse).status()).toBe(200);
     await expect(maker.locator('[data-proof="c3-target-card"]')).toContainText(USER_NO);
 
-    await maker.getByRole("button", { name: "扣减", exact: true }).click();
+    await maker.getByRole("button", { name: "增加", exact: true }).click();
     await maker.getByLabel("调整金额").fill("0.01");
     await maker.getByRole("button", { name: "系统纠错", exact: true }).click();
     await maker.getByLabel("详细原因").fill("C3 非Owner真实扣减并发冲正验收");
@@ -73,17 +101,17 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
       && response.request().method() === "POST");
     await maker.getByRole("button", { name: "确认并立即调整", exact: true }).click();
     const confirm = maker.getByRole("dialog");
-    await expect(confirm).toContainText("确认扣减");
+    await expect(confirm).toContainText("确认增加");
     await confirm.getByRole("button", { name: "确认并执行", exact: true }).click();
     const createResponse = await createResponsePromise;
-    expect(createResponse.status()).toBe(200);
+    expect(createResponse.status(), await createResponse.text()).toBe(200);
     createKey = createResponse.request().headers()["idempotency-key"] || "";
     createBody = createResponse.request().postDataJSON() as Record<string, unknown>;
     const created = await requestEvidence(createResponse);
     adjustmentNo = String(findKey(created.body?.data, "adjustmentNo") ?? "");
     expect(createKey).toMatch(/^c3-adjust-/);
     expect(adjustmentNo).not.toBe("");
-    expect(Number(findKey(created.body?.data, "balanceAfter"))).toBe(99.99);
+    expect(Number(findKey(created.body?.data, "balanceAfter"))).toBe(0.01);
 
     const replay = await requestEvidence(await maker.request.post(
       `/api/admin/users/profiles/${USER_ID}/asset-adjustments`,
@@ -107,30 +135,31 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
 
     const makerReverseBody = {
       reason: "C3 双运营员并发冲正 maker 验收",
-      operator: USERNAME,
+      operator: makerAccount.username,
     };
     const checkerReverseBody = {
       reason: "C3 双运营员并发冲正 checker 验收",
       operator: checkerAccount.username,
     };
-    const [makerReverse, checkerReverse] = await Promise.all([
-      requestEvidence(await maker.request.post(
-        `/api/admin/users/asset-adjustments/${adjustmentNo}/reverse`,
-        { headers: keyed(reverseKeys.maker), data: makerReverseBody },
-      )),
-      requestEvidence(await checker.request.post(
-        `/api/admin/users/asset-adjustments/${adjustmentNo}/reverse`,
-        { headers: keyed(reverseKeys.checker), data: checkerReverseBody },
-      )),
-    ]);
-    expect([makerReverse.status, checkerReverse.status].sort()).toEqual([200, 409]);
-    const winner = makerReverse.status === 200
-      ? { page: maker, key: reverseKeys.maker, body: makerReverseBody, result: makerReverse }
-      : { page: checker, key: reverseKeys.checker, body: checkerReverseBody, result: checkerReverse };
-    const loser = makerReverse.status === 409 ? makerReverse : checkerReverse;
-    expect(["C3_ALREADY_REVERSED", "C3_ONLY_ORIGINAL_APPROVED_ADJUSTMENT_REVERSIBLE"])
-      .toContain(loser.body?.message);
-    reversalNo = String(findKey(winner.result.body?.data, "adjustmentNo") ?? "");
+    const makerReverse = await requestEvidence(await maker.request.post(
+      `/api/admin/users/asset-adjustments/${adjustmentNo}/reverse`,
+      { headers: keyed(reverseKeys.maker), data: makerReverseBody },
+    ));
+    expect(makerReverse.status).toBe(403);
+    expect(String(makerReverse.body?.message ?? "")).toMatch(/FORBIDDEN|ACCESS_DENIED|无权限访问/i);
+
+    const checkerReverse = await requestEvidence(await checker.request.post(
+      `/api/admin/users/asset-adjustments/${adjustmentNo}/reverse`,
+      { headers: keyed(reverseKeys.checker), data: checkerReverseBody },
+    ));
+    expect(checkerReverse.status).toBe(200);
+    const winner = {
+      page: checker,
+      key: reverseKeys.checker,
+      body: checkerReverseBody,
+      result: checkerReverse,
+    };
+    reversalNo = String(findKey(checkerReverse.body?.data, "adjustmentNo") ?? "");
     expect(reversalNo).not.toBe("");
     restored = true;
 
@@ -151,11 +180,11 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
     expect(reverseMismatch.status).toBe(409);
     expect(reverseMismatch.body?.message).toBe("IDEMPOTENCY_KEY_PAYLOAD_MISMATCH");
 
-    const distinctReplay = await requestEvidence(await maker.request.post(
+    const distinctReplay = await requestEvidence(await checker.request.post(
       `/api/admin/users/asset-adjustments/${adjustmentNo}/reverse`,
       {
         headers: keyed(reverseKeys.distinct),
-        data: { reason: "C3 已冲正后新命令键必须拒绝", operator: USERNAME },
+        data: { reason: "C3 已冲正后新命令键必须拒绝", operator: checkerAccount.username },
       },
     ));
     expect(distinctReplay.status).toBe(409);
@@ -183,12 +212,12 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
     expect((await d4Response).status()).toBe(200);
     await expect(maker.getByText(adjustmentNo, { exact: false }).first()).toBeVisible();
 
-    const audit = await requestEvidence(
-      await maker.request.get(`/api/admin/platform/audit/logs?keyword=${encodeURIComponent(adjustmentNo)}&limit=200`),
+    const makerAudit = await requestEvidence(
+      await maker.request.get(`/api/admin/platform/audit/logs?bizNo=${encodeURIComponent(adjustmentNo)}&limit=200`),
     );
     const events = await requestEvidence(await maker.request.get("/api/admin/platform/events/overview"));
-    expect(audit.status).toBe(200);
-    expect(JSON.stringify(audit.body)).toContain(adjustmentNo);
+    expect(makerAudit.status).toBe(200);
+    expect(makerAudit.body?.data).toEqual([]);
     expect(events.status).toBe(200);
 
     expect(makerRuntime.pageErrors).toEqual([]);
@@ -199,13 +228,17 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
     evidence = {
       execution,
       target: USER_NO,
+      roleSeparation: {
+        maker: { username: makerAccount.username, roleCode: findKey(makerSession.body?.data, "roleCode") },
+        checker: { username: checkerAccount.username, roleCode: findKey(checkerSession.body?.data, "roleCode") },
+      },
       baselineUsdt,
       createKey,
       createBody,
       created,
       replay,
       mismatch,
-      concurrentReverse: { maker: makerReverse, checker: checkerReverse },
+      segregatedReverse: { makerDenied: makerReverse, checkerSucceeded: checkerReverse },
       reverseReplay,
       reverseMismatch,
       distinctReplay,
@@ -213,7 +246,11 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
       reversalNo,
       finalUsdt: Number(findKey(after.body?.data, "walletUsdt")),
       d4: 200,
-      a2: audit.status,
+      a2MakerRowScope: {
+        status: makerAudit.status,
+        rows: makerAudit.body?.data,
+        expected: "FINANCE is D-only in A2; C-domain audit is verified after exact role restore",
+      },
       a4: events.status,
       runtime: { maker: makerRuntime, checker: checkerRuntime },
       reverseKeys,
@@ -224,11 +261,11 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
     }
   } finally {
     if (adjustmentNo && !restored) {
-      const emergency = await requestEvidence(await maker.request.post(
+      const emergency = await requestEvidence(await checker.request.post(
         `/api/admin/users/asset-adjustments/${adjustmentNo}/reverse`,
         {
           headers: keyed(reverseKeys.emergency),
-          data: { reason: "C3 非Owner验收 finally 精确恢复余额", operator: USERNAME },
+          data: { reason: "C3 非Owner验收 finally 精确恢复余额", operator: checkerAccount?.username ?? USERNAME },
         },
       )).catch(() => ({ status: 0, body: null }));
       expect([200, 409]).toContain(emergency.status);
@@ -236,7 +273,7 @@ test("C3 真实扣减/冲正、同键异载荷、双运营员并发及 D4/A2/A4 
     const finalRead = await requestEvidence(
       await maker.request.get(`/api/admin/users/profiles/${USER_ID}/asset-adjustment-context`),
     ).catch(() => ({ status: 0, body: null }));
-    expect(Number(findKey(finalRead.body?.data, "walletUsdt")), "C3 验收必须恢复隔离账户 USDT 余额").toBe(100);
+    expect(Number(findKey(finalRead.body?.data, "walletUsdt")), "C3 验收必须恢复隔离账户 USDT 余额").toBe(0);
     await Promise.all([makerContext.close(), checkerContext.close()]);
   }
 });
@@ -258,17 +295,31 @@ async function loginAccount(
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.locator('input[autocomplete="username"]').fill(account.username);
   await page.locator('input[autocomplete="current-password"]').fill(account.password);
+  const loginResponse = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === "/api/admin/auth/login"
+    && response.request().method() === "POST");
   await page.getByRole("button", { name: /继续|登录/ }).click();
+  expect((await loginResponse).status()).toBe(200);
   const shell = page.locator("aside");
   const otp = page.getByLabel("一次性验证码");
   await Promise.race([
-    shell.waitFor({ state: "visible", timeout: 20_000 }),
-    otp.waitFor({ state: "visible", timeout: 20_000 }),
+    shell.waitFor({ state: "visible", timeout: 30_000 }),
+    otp.waitFor({ state: "visible", timeout: 30_000 }),
   ]);
-  if (await shell.isVisible()) return;
-  await otp.fill(await freshTotp(account.totpSecret));
-  await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+  if (!(await shell.isVisible({ timeout: 1_000 }).catch(() => false))) {
+    await expect(otp).toBeVisible({ timeout: 1_000 });
+    await otp.fill(await freshTotp(account.totpSecret));
+    const verification = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/api/admin/auth/mfa/verify"
+      && response.request().method() === "POST");
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    expect((await verification).status()).toBe(200);
+  }
   await expect(shell).toBeVisible({ timeout: 30_000 });
+  const session = await requestEvidence(await page.request.get("/api/admin/auth/session"));
+  expect(session.status).toBe(200);
+  expect(session.body?.code).toBe(0);
+  expect(session.body?.data?.session).toBeTruthy();
 }
 
 async function openVisibleModule(page: Page, modulePath: string, responsePath: string) {
