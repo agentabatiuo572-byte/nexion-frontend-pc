@@ -33,6 +33,7 @@ const U360 = path.join(ROOT, "lib/admin/user360-client.ts");
 const AUTHSTORE = path.join(ROOT, "lib/store/admin-auth.ts");
 const SMUT = path.join(ROOT, "lib/admin/stable-mutation.ts");
 const LOGIN = path.join(ROOT, "lib/admin/login-completion.ts");
+const SHELL = path.join(ROOT, "app/components/shell/console-shell.tsx");
 
 const GATE = ["scripts/pending-idempotency-key-sentinel.mjs"];
 const MIGRATION = ["--test", "tests/pending-mutation-migration-contract.test.mjs"];
@@ -203,16 +204,12 @@ const CASES = [
     () => inject(STORE, "        expiresAt: createdAt + ttlMs,", "        expiresAt: createdAt + ttlMs, // ponytail: 窗口口径见 §0.4", STORE_CONTRACT)],
 
   // ══ T2 登出 / 换操作员清扫 ═════════════════════════════════════
-  ["T2① 复现原缺陷:resetAdminSession 不再清命令号(B 复用 A 的号)", "red",
-    () => inject(AUTH, "  clearPendingCommandRecords(window.sessionStorage);", "  void clearPendingCommandRecords;", MIGRATION),
-    "resetAdminSession 里必须调用清扫"],
-  ["T2② 清扫排到 reload 之后(等于永远执行不到)", "red",
-    () => inject(AUTH, "  clearPendingCommandRecords(window.sessionStorage);", "",
-      MIGRATION),
-    "resetAdminSession 里必须调用清扫"],
-  ["T2③ 接线只留在注释里(走私)→ 必红", "red",
-    () => inject(AUTH, "  clearPendingCommandRecords(window.sessionStorage);", "  // clearPendingCommandRecords(window.sessionStorage);", MIGRATION),
-    "resetAdminSession 里必须调用清扫"],
+  // T2①②③ 原本钉「resetAdminSession 必须清扫」,已被第三轮验收推翻(401 ≠ 换人,
+  // 在那里清会误伤同一个人)。现在改钉反向不变量:401 路径**不得**自行清扫。
+  ["T2① 401 路径又自行清扫(误伤同一个人的在途命令号)→ 必红", "red",
+    () => inject(AUTH, "  void fetch(\"/api/admin/auth/logout\"",
+      "  clearPendingCommandRecords(window.sessionStorage);\r\n  void fetch(\"/api/admin/auth/logout\"", MIGRATION),
+    "不得自行清扫"],
   // ④ 把清扫改回**派单原本设想的按键名判**,复现它会漏掉 h9 那把命名不合群的键
   //   (nexion-admin-h9-public-stats-attempt:既不含 commands 也没有版本后缀)。
   ["T2④ 退回「按键名判」→ 漏掉 h9 那把不合群的键,必红", "red",
@@ -257,13 +254,23 @@ const CASES = [
     "自搓的 5xx 门槛"],
 
   // ══ R2 第二轮独立验收(2×P0 + 4×P1)的回归钉 ══════════════════
-  ["R2-P0-1 清扫从 signOut 上摘掉(退出按钮那条真路径)→ 必红", "red",
-    () => inject(AUTHSTORE, "  signOut: () => {\r\n    clearPendingCommandRecords();", "  signOut: () => {", MIGRATION),
-    "signOut 必须先清命令号"],
-  ["R2-P0-1b signIn 改成无条件清(会毁掉命令号跨刷新存活)→ 必红", "red",
-    () => inject(AUTHSTORE, "      if (state.operator && state.operator !== session.operator) clearPendingCommandRecords();",
-      "      clearPendingCommandRecords();", MIGRATION),
-    "只在操作员真的换人时清"],
+  // R2 原来的两条钉的是「清扫挂 signOut」那版设计,已被第三轮验收推翻(挂 signOut 会误伤
+  // 同一个人)。换成钉现行的身份判据 —— 两个方向各钉一条,漏一个泄漏、错一个重复打款。
+  ["R2-P0-1 身份认领从 signIn 上摘掉(换人不再清)→ 必红", "red",
+    () => inject(AUTHSTORE, "    claimPendingCommandOwner(String(session.adminId));", "", MIGRATION),
+    "必须按持久化的 adminId 认领"],
+  ["R2-P0-1b 认领改用内存里的显示名(刷新后为空,永远判不出换人)→ 必红", "red",
+    () => inject(AUTHSTORE, "claimPendingCommandOwner(String(session.adminId));", "claimPendingCommandOwner(session.operator);", MIGRATION),
+    "必须按持久化的 adminId 认领"],
+  ["R2-P0-1c 认领改成无条件清(误伤同一个人 = 重复打款)→ 必红", "red",
+    () => inject(STORE, "  if (previous === ownerId) return 0;", "  if (false) return 0;", MIGRATION),
+    "不得清掉同一个人的在途命令号"],
+  ["R2-P0-1d marker 缺失时改成放行(归属不明的号给了下一个人)→ 必红", "red",
+    () => inject(STORE, "  if (previous === ownerId) return 0;", "  if (previous === ownerId || !previous) return 0;", MIGRATION),
+    "归属不明必须清"],
+  ["R2-P0-1e 登出路径又自作主张清(散落清扫复发)→ 必红", "red",
+    () => inject(AUTHSTORE, "  signOut: () =>\r\n    set({", "  signOut: () => {\r\n    clearPendingCommandRecords();\r\n    return set({", MIGRATION),
+    "signOut 不得清"],
   ["R2-P0-2 清扫代次被摘掉 → 存活实例的内存镜像把命令号复活,必红", "red",
     () => inject(STORE, "  clearGeneration += 1;", "  void 0;", MIGRATION),
     "不得把命令号写回来"],
@@ -286,13 +293,15 @@ const CASES = [
     () => inject(STORE, "        ...(extra as object | undefined),\r\n        fingerprint,\r\n        commandKey,",
       "        fingerprint,\r\n        commandKey,\r\n        ...(extra as object | undefined),", STORE_CONTRACT),
     "公共字段必须排在 extra 之后"],
-  ["R3① 登录侧兜底闸被摘掉(A 没退出、B 在同 tab 登录)→ 必红", "red",
-    () => inject(LOGIN, "  clearPendingCommandRecords();\r\n  signIn(result);", "  signIn(result);", MIGRATION),
-    "函数体里必须真的调用清扫"],
-  ["R3② 兜底闸排到 reload 之后(永远执行不到)→ 必红", "red",
-    () => inject(LOGIN, "  clearPendingCommandRecords();\r\n  signIn(result);\r\n  reload();",
-      "  signIn(result);\r\n  reload();\r\n  clearPendingCommandRecords();", MIGRATION),
-    "必须排在 signIn 与 reload 之前"],
+  // R3 原来两条钉的是「登录侧无条件清」那版兜底闸,同样被推翻(会误伤同一个人重新登录)。
+  // 换成钉「登录/401 路径不得再自行清扫」与「会话恢复必须经 signIn(否则绕过认领)」。
+  ["R3① 登录页自行清扫复发(误伤同一个人会话过期后重登)→ 必红", "red",
+    () => inject(LOGIN, "  signIn(result);\r\n  reload();",
+      "  clearPendingCommandRecords();\r\n  signIn(result);\r\n  reload();", MIGRATION),
+    "不得自行清扫"],
+  ["R3② 会话恢复绕过 signIn(直接塞状态)→ 认领不会发生,必红", "red",
+    () => inject(SHELL, "          signIn(auth);", "          void auth;", MIGRATION),
+    "都必须经 signIn"],
   ["R2-P2-3 形状判据从 every 放宽成 some → 混合业务表被误删,必红", "red",
     () => inject(STORE, "    return rows.every(([commandKey, value]) => {", "    return rows.some(([commandKey, value]) => {", MIGRATION),
     "清扫按记录形状认表"],
@@ -300,7 +309,7 @@ const CASES = [
 
 // 🔴 还原完整性升级为**内容指纹**(2026-08-06 独立验收 P2):原来只 filter 残留的 .redtest-bak,
 //   而被注入的文件本来就处在 ` M` 状态 —— 内容没还原完全看不出来,后续门验的就是被污染的树。
-const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL, AUTH, CLASSIFY, A2, B2, K, U360, AUTHSTORE, SMUT, LOGIN];
+const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL, AUTH, CLASSIFY, A2, B2, K, U360, AUTHSTORE, SMUT, LOGIN, SHELL];
 const digest = () => TOUCHED.map((file) => createHash("sha1").update(readFileSync(file)).digest("hex")).join(" ");
 const before = digest();
 

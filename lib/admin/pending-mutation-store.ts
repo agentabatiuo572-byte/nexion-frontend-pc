@@ -99,6 +99,43 @@ function isPendingCommandTable(raw: string | null): boolean {
  *           (JS 上下文重建);单靠本函数清不掉别人的闭包,也不该为此建一份全局注册表。
  */
 /**
+ * 命令号的归属人标记(与命令号表同放 sessionStorage,逐 tab)。
+ * 存的是稳定唯一身份(adminId),不是显示名 —— 显示名会重名、会改。
+ */
+const COMMAND_OWNER_KEY = "nexion-admin-command-owner";
+
+/**
+ * 认领本 tab 的在途命令号:换人才清,会话断开不清。返回清掉的表数。
+ *
+ * 🔴 触发条件是**身份变了**,不是「会话结束了」(2026-08-06 第三轮独立验收 2×P0)。
+ *   先前挂在 signOut / resetAdminSession 上,两头都错:
+ *   ① 漏:A 没点退出直接按 F5,而 cookie 已换成 B —— 刷新后前端状态为空,
+ *      「换人才清」的守卫短路,B 复用 A 的全部命令号;
+ *   ② **误伤(本包自己引入的新缺陷)**:会话端点抖一下,console-shell 的 catch 里
+ *      signOut() 把**同一个人**的在途命令号全清了 —— 他重新登录再重试必然铸新号 = 重复打款。
+ *      而「会话过期后重新登录再重试」正是最典型的重试场景。
+ *   身份判据一处到位,顺带解决「显示名重名判不出换人」。
+ *
+ *   marker 缺失时**保守清扫**:归属不明的命令号不能给下一个人用。
+ *   (升级后首次加载会命中一次,属一次性过渡。)
+ */
+export function claimPendingCommandOwner(ownerId: string): number {
+  if (typeof window === "undefined" || !ownerId) return 0;
+  let previous: string | null = null;
+  try {
+    previous = window.sessionStorage.getItem(COMMAND_OWNER_KEY);
+  } catch {
+    return 0; // 存储不可用 = 本来也没有跨会话残留可清
+  }
+  if (previous === ownerId) return 0;
+  const cleared = clearPendingCommandRecords();
+  try {
+    window.sessionStorage.setItem(COMMAND_OWNER_KEY, ownerId);
+  } catch { /* 降级:清扫已完成,只是下次还会再清一遍,不影响正确性 */ }
+  return cleared;
+}
+
+/**
  * 清扫代次。每清一次 +1;各 store 实例读到代次变了就作废自己的内存镜像。
  *
  * 🔴 没有它,清扫会被**同步复活**(2026-08-06 独立验收 P0-2,非竞态而是必然序列):

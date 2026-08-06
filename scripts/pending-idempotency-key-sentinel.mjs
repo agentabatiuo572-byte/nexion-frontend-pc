@@ -364,7 +364,12 @@ const storeSrc = fs.existsSync(path.join(ROOT, SHARED_STORE))
   : "";
 if (!storeSrc) failures.push(`共享 store 不存在:${SHARED_STORE}`);
 else {
-  if (!/sessionStorage\.setItem/.test(storeSrc)) failures.push(`${SHARED_STORE} 没有写 sessionStorage:持久化是空壳`);
+  // 🔴 必须钉**记录表**那次写入(带 storageKey),不能只看有没有 sessionStorage.setItem:
+  //   模块里还有别的写入(身份归属标记),泛判据会被它顺带满足 —— 把记录写入整条删掉门也不红。
+  //   2026-08-06 红测实测抓到:新增归属标记后 T5⑥ 当场从红变绿。
+  if (!/sessionStorage\.setItem\(storageKey/.test(storeSrc)) {
+    failures.push(`${SHARED_STORE} 没有按 storageKey 写 sessionStorage:命令号持久化是空壳`);
+  }
   if (!/expiresAt\s*>\s*now/.test(storeSrc)) failures.push(`${SHARED_STORE} 缺少 TTL 过期判定:过期命令号会被无限复用`);
   // 槽位式尝试:输入指纹变了必须丢弃旧命令号。少了这步,运营改回原输入时会复用可能已被后端
   // 消费的号,把一次真实的新操作当成重复提交静默吞掉。

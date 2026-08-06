@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  claimPendingCommandOwner,
   clearPendingCommandRecords,
   createPendingMutationStore,
   createSlotAttemptStore,
@@ -279,39 +280,76 @@ test("⑤ 清扫按记录形状认表,不按键名 —— 换个没人见过的�
     "混合表不是本模块的表(判据必须是 every 不是 some),整张删掉会毁掉别人的业务缓存");
 });
 
-test("⑤ 清扫接在**真正的登出路径**上:signOut(退出按钮 / 会话失活 / 401 全走它)", () => {
-  // 🔴 2026-08-06 独立验收 P0-1:先前只接了 resetAdminSession —— 那是撞 401 的自动重置,
-  //   真正的退出按钮(topbar)走 useAdminAuth.signOut(),纯状态重置、不清存储也不 reload。
-  //   净结果:A 退出 → B 登录 → 全部命令号原样留给 B。
-  const auth = read("lib/store/admin-auth.ts")
-    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
-  assert.match(auth, /import \{ clearPendingCommandRecords \} from "@\/lib\/admin\/pending-mutation-store"/);
-  assert.match(auth, /signOut: \(\) => \{\s*clearPendingCommandRecords\(\);/,
-    "signOut 必须先清命令号 —— 所有登出路径都汇到它");
-  // 换人才清;同一人刷新 / 定时续期不清 —— signIn 每次页面加载都会调用,
-  // 无条件清会毁掉「命令号跨刷新存活」这个根本机制。
-  assert.match(auth, /if \(state\.operator && state\.operator !== session\.operator\) clearPendingCommandRecords\(\)/,
-    "signIn 只在操作员真的换人时清;无条件清会毁掉跨刷新存活");
+/** 装一副能被身份认领读写的 sessionStorage,并返回操作句柄。 */
+function installOwnerStorage() {
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  globalThis.window = { sessionStorage: storage };
+  return storage;
+}
 
-  // 退出按钮不得绕开 signOut 自己清一套(绕开 = 又多一条不受门保护的路径)。
-  const topbar = read("app/components/shell/topbar.tsx");
-  assert.match(topbar, /signOut\(\)/, "退出按钮必须经 signOut");
+/**
+ * 🔴 身份认领用**行为断言**验,不用正则钉字面(2026-08-06 第三轮验收 P1-4)。
+ *   正则只能证明「代码长这样」,证明不了「换人真的会清、同一人真的不清」——
+ *   而这两条恰好一个漏就泄漏、一个错就重复打款,方向相反,必须各验一次。
+ */
+test("⑤ 身份认领:换人必清、同一人必不清(跨刷新存活的根本)", () => {
+  const storage = installOwnerStorage();
+  const seed = (key) => {
+    const now = Date.now();
+    storage.setItem(key, JSON.stringify({
+      k: { fingerprint: "f", commandKey: "k", createdAt: now, expiresAt: now + 60_000 },
+    }));
+  };
+
+  // A 登录并留下在途命令号
+  claimPendingCommandOwner("101");
+  seed("nexion-admin-d2-withdrawal-commands-v1");
+
+  // 同一个人:刷新 / 定时续期 / 会话过期后重新登录 —— 一律不得清
+  for (const round of ["刷新", "续期", "重新登录"]) {
+    assert.equal(claimPendingCommandOwner("101"), 0, `${round}不得清掉同一个人的在途命令号`);
+    assert.ok(storage.getItem("nexion-admin-d2-withdrawal-commands-v1"),
+      `${round}后命令号必须还在 —— 清了他重试就会铸新号,后端去重失效 = 重复打款`);
+  }
+
+  // 换人:必须清
+  assert.equal(claimPendingCommandOwner("202"), 1, "换人必须清掉前一个人的在途命令号");
+  assert.equal(storage.getItem("nexion-admin-d2-withdrawal-commands-v1"), null);
+
+  // 重名不影响:判据是 adminId 不是显示名(同名不同号 = 两个人)
+  seed("nexion-admin-c3-adjust-commands-v1");
+  assert.equal(claimPendingCommandOwner("303"), 1, "同名不同号必须当成换人");
 });
 
-test("⑤ 登录侧兜底闸:交互式登录完成时也清(覆盖「前面没走过退出」的路径)", () => {
-  // 结构性反思自查项①「这条链的入口有几个」逐个 grep 时发现的第三条路径:
-  // A 没点退出(会话过期 / 直接走开),B 在同一个 tab 的登录页登录 —— 此时前端状态是空的,
-  // 「换人才清」判不出换了人。命令号在 sessionStorage(逐 tab),同 tab 换人正是唯一串号场景。
-  const login = read("lib/admin/login-completion.ts")
-    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
-  assert.match(login, /import \{ clearPendingCommandRecords \}/);
-  const body = login.slice(login.indexOf("export function completeInteractiveLogin"));
-  // 🔴 先断言「调用存在」再比位置:调用被整条删掉时 indexOf 返回 -1,而 -1 恒小于任何正数,
-  //   只比位置的写法反而会**判绿**(本轮红测 R3① 实测抓到)。
-  const clearAt = body.indexOf("clearPendingCommandRecords(");
-  const signInAt = body.indexOf("signIn(");
-  assert.ok(clearAt >= 0, "函数体里必须真的调用清扫,不能只留 import");
-  assert.ok(signInAt >= 0 && clearAt < signInAt, "清扫必须排在 signIn 与 reload 之前");
+test("⑤ 身份认领:归属不明时保守清扫(marker 缺失不能默认放行)", () => {
+  const storage = installOwnerStorage();
+  const now = Date.now();
+  storage.setItem("nexion-admin-k1-multiaccount-commands-v1", JSON.stringify({
+    k: { fingerprint: "f", commandKey: "k", createdAt: now, expiresAt: now + 60_000 },
+  }));
+  // 没有 owner marker(升级前遗留 / 被清过):归属不明的命令号不能给下一个人用。
+  assert.equal(claimPendingCommandOwner("101"), 1, "归属不明必须清,不能默认放行");
+  assert.equal(storage.getItem("nexion-admin-k1-multiaccount-commands-v1"), null);
+});
+
+test("⑤ 清扫由 signIn 的身份认领负责,登出路径不得自作主张清", () => {
+  const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const auth = strip(read("lib/store/admin-auth.ts"));
+  assert.match(auth, /claimPendingCommandOwner\(String\(session\.adminId\)\)/,
+    "signIn 必须按持久化的 adminId 认领 —— 内存里的显示名刷新后为空,永远判不出换人");
+  assert.doesNotMatch(auth, /signOut[\s\S]{0,120}clearPendingCommandRecords/,
+    "signOut 不得清:会话断开 ≠ 换人,清了会误伤同一个人的在途命令号(第三轮验收 P0-2)");
+  for (const rel of ["lib/admin/auth-session.ts", "lib/admin/login-completion.ts"]) {
+    assert.doesNotMatch(strip(read(rel)), /clearPendingCommandRecords\s*\(/,
+      `${rel} 不得自行清扫 —— 清扫只能由身份认领触发,散落的无条件清扫正是 P0-2 的病根`);
+  }
 });
 
 test("⑤ 清扫不得被存活实例的内存镜像复活(同步序列,不是竞态)", () => {
@@ -340,16 +378,17 @@ test("⑤ 清扫不得被存活实例的内存镜像复活(同步序列,不是�
   assert.equal(store.get("fp-B"), undefined, "存活实例的内存镜像必须随清扫一起作废");
 });
 
-test("⑤ resetAdminSession 也保留清扫(401 自动重置路径)", () => {
-  const code = read("lib/admin/auth-session.ts")
+test("⑤ 认领必须早于任何一次写请求(reload 后 signIn 先跑,命令号才有主)", () => {
+  // 认领点在 signIn,而 401 重置会 reload → 重新走 console-shell 的会话恢复 → signIn。
+  // 这里钉住那条链没有被绕开:恢复会话的地方必须调 signIn(而不是自己塞状态)。
+  const shell = read("app/components/shell/console-shell.tsx")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
-  assert.match(code, /import \{ clearPendingCommandRecords \} from "@\/lib\/admin\/pending-mutation-store"/);
-  assert.match(code, /export function resetAdminSession\(\)[\s\S]*clearPendingCommandRecords\(/,
-    "resetAdminSession 里必须调用清扫 —— 登出/换人不清,B 会复用 A 的命令号");
-  // 必须在 reload 之前清:reload 之后这段代码根本不会再执行。
-  const body = code.slice(code.indexOf("export function resetAdminSession"));
-  assert.ok(body.indexOf("clearPendingCommandRecords(") < body.indexOf("window.location.reload"),
-    "清扫必须排在整页 reload 之前,否则永远执行不到");
+  // 🔴 钉**数量**不钉存在:会话恢复有两处(首次恢复 + 定时续期),只用 /signIn\(auth\)/
+  //   的写法在改坏其中一处时仍然匹配得上 → 门放行(本轮红测 R3② 实测抓到)。
+  const calls = shell.match(/signIn\(auth\)/g) ?? [];
+  assert.equal(calls.length, 2,
+    `会话恢复的两处(首次恢复 / 定时续期)都必须经 signIn,实测 ${calls.length} 处`
+    + " —— 绕过它就绕过了身份认领,换人后命令号没人清");
 });
 
 /**
