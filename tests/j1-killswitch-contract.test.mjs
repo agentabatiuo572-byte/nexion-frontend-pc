@@ -6,12 +6,16 @@ import test from "node:test";
 
 import {
   resolveNexionAppRoot,
-  resolveNexionBackendRoot,
+  optionalNexionBackendRoot,
+  optionalWorkspaceFile,
 } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const adminRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const appRoot = resolveNexionAppRoot({ adminRoot });
-const backendRoot = resolveNexionBackendRoot({ adminRoot });
+// 跨仓读取一律惰性,两种缺失区别对待(2026-08-07,同 j2):
+//   · 仓不在(nexion-backend)→ 该条 skip;· 仓在但文件没了(Nexion-uniapp)→ 该条报红。
+// 之前全写模块顶层,缺后端仓时整文件加载即崩 → 15 条断言里 12 条纯本仓的一并陪葬。
+const backendRoot = optionalNexionBackendRoot({ adminRoot });
 const readWorkspaceFile = (root, relative) => readFileSync(path.join(root, ...relative.split("/")), "utf8");
 
 const component = readFileSync(
@@ -28,20 +32,20 @@ const commandCenter = readFileSync(new URL("../app/_console/page.tsx", import.me
 const bClient = readFileSync(new URL("../lib/admin/b-client.ts", import.meta.url), "utf8");
 const b5RiskRadar = readFileSync(new URL("../app/_console/overview/risk-radar/page.tsx", import.meta.url), "utf8");
 const syncChip = readFileSync(new URL("../app/components/shell/sync-chip.tsx", import.meta.url), "utf8");
-const backendKillSwitch = readWorkspaceFile(
+const backendKillSwitch = optionalWorkspaceFile(
   backendRoot,
   "src/main/java/ffdd/opsconsole/emergency/application/OpsKillSwitchService.java",
 );
-const backendWithdrawal = readWorkspaceFile(
+const backendWithdrawal = optionalWorkspaceFile(
   backendRoot,
   "src/main/java/ffdd/opsconsole/finance/application/AppWithdrawalService.java",
 );
-const backendTrial = readWorkspaceFile(
+const backendTrial = optionalWorkspaceFile(
   backendRoot,
   "src/main/java/ffdd/opsconsole/growth/application/AppTrialLifecycleService.java",
 );
-const appWithdrawalApi = readWorkspaceFile(appRoot, "src/api/withdrawal-api.ts");
-const appTrialApi = readWorkspaceFile(appRoot, "src/api/trial-api.ts");
+const readAppWithdrawalApi = () => readWorkspaceFile(appRoot, "src/api/withdrawal-api.ts");
+const readAppTrialApi = () => readWorkspaceFile(appRoot, "src/api/trial-api.ts");
 
 test("J1 executes kill, resume and batch kill through the immediate business API", () => {
   assert.match(component, /actions\.toggleJ1KillSwitch/);
@@ -86,7 +90,7 @@ test("J1 exposes the auto-trigger confirmation loop without restoring a gate", (
 });
 
 test("J1 duty alerts use the all-operator minimal snapshot and refresh while the console stays open", () => {
-  assert.match(opsAlertsClient, /fetch\("\/api\/admin\/emergency\/kill-switches\/alerts"/);
+  assert.match(opsAlertsClient, /guardedFetch\("\/api\/admin\/emergency\/kill-switches\/alerts"/);
   assert.match(opsAlertsClient, /payload\.data\.autoConfirmations/);
   assert.match(opsAlertsClient, /payload\.data\.activeGates/);
   assert.match(opsAlertsClient, /J1_ALERT_GATE_KEYS\s*=\s*\["withdraw",\s*"staking",\s*"genesis",\s*"exchange",\s*"trial"\]/);
@@ -138,7 +142,10 @@ test("J1 retries an uncertain command with the same idempotency key", () => {
   assert.match(view, /catch \(error\)[\s\S]*?throw error/);
 });
 
-test("J1 configuration writes carry the visible baseline and reject no-op edits", () => {
+test("J1 configuration writes carry the visible baseline and reject no-op edits", (t) => {
+  if (backendKillSwitch === null) {
+    return t.skip("本机无 nexion-backend:仅跨仓断言跳过");
+  }
   assert.match(client, /updateJ1Sla:\s*\(paramKey,\s*value,\s*expectedValue,\s*reason,\s*commandKey\)/);
   assert.match(client, /updateJ1AutoRule:\s*\(ruleId,\s*value,\s*expectedValue,\s*reason,\s*commandKey\)/);
   assert.match(client, /withReason\(\{ value, expectedValue \}, reason\)/);
@@ -151,12 +158,20 @@ test("J1 configuration writes carry the visible baseline and reject no-op edits"
   assert.match(backendKillSwitch, /J1_CONFIG_NO_CHANGES/);
 });
 
-test("J1 classifies Genesis restore as an immediate B1 cashflow impact", () => {
+test("J1 classifies Genesis restore as an immediate B1 cashflow impact", (t) => {
+  if (backendKillSwitch === null) {
+    return t.skip("本机无 nexion-backend:仅跨仓断言跳过");
+  }
   assert.match(client, /genesis:\s*\{\s*coveragePrecheckRequired:\s*true,\s*coverageImpactCategory:\s*"immediate"\s*\}/);
   assert.match(backendKillSwitch, /new GateSeed\("genesis"[\s\S]*?"immediate"/);
 });
 
-test("J1 withdraw and trial gates are enforced at real App command boundaries and propagated", () => {
+test("J1 withdraw and trial gates are enforced at real App command boundaries and propagated", (t) => {
+  if (backendWithdrawal === null || backendTrial === null) {
+    return t.skip("本机无 nexion-backend:仅跨仓断言跳过");
+  }
+  const appWithdrawalApi = readAppWithdrawalApi();
+  const appTrialApi = readAppTrialApi();
   assert.match(backendWithdrawal, /WITHDRAWAL_KILL_SWITCH_DISABLED/);
   assert.match(backendWithdrawal, /submitOnce[\s\S]*?withdrawGateEnabled\(\)/);
   assert.match(backendWithdrawal, /"withdrawalEnabled", withdrawalEnabled/);

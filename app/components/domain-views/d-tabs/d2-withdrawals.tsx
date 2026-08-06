@@ -92,11 +92,14 @@ function actionCandidates(row: D2Withdrawal): D2ReviewAction[] {
 /** 状态流转图。节点名取 STATUS_TABS,分支与 actionCandidates 同一套判断。 */
 const STATUS_CN: Record<string, string> = Object.fromEntries(STATUS_TABS.filter(([code]) => code).map(([code, label]) => [code, label]));
 const D2_HAPPY_PATH = ["SUBMITTED", "REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING", "SENT", "CONFIRMED"];
+/** 终态:走到这里就结束,没有出边是对的,不该被下面的死结自检报出来。 */
+const D2_TERMINAL = new Set(["CONFIRMED", "REFUNDED"]);
 const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string }[] = [
-  { from: ["REVIEW_PENDING"], trigger: "延迟", to: ["EXTENDED_HOLD"], note: "本页没有手动动作,等填写的复查时间到" },
-  { from: ["REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING"], trigger: "冻结", to: ["FROZEN"], note: "广播上链之前都还拦得住" },
-  { from: ["FROZEN"], trigger: "解冻", to: ["REVIEW_PENDING"], note: "回到待审核重新决定" },
-  { from: ["REVIEW_PENDING"], trigger: "拒绝并退款", to: ["REVIEW_REJECTED"], note: "要填拒绝原因码" },
+  { from: ["REVIEW_PENDING"], trigger: "点「延迟」", to: ["EXTENDED_HOLD"], note: "操作时要填复查时间" },
+  { from: ["EXTENDED_HOLD"], trigger: "等到复查时间", to: ["REVIEW_PENDING"], note: "这一步本页没有按钮,到点由系统送回待审核" },
+  { from: ["REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING"], trigger: "点「冻结」", to: ["FROZEN"], note: "广播上链之前都还拦得住" },
+  { from: ["FROZEN"], trigger: "点「解冻」", to: ["REVIEW_PENDING"], note: "回到待审核重新决定" },
+  { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REVIEW_REJECTED"], note: "要填拒绝原因码" },
   { from: ["SENT"], trigger: "链上回执", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "由链上结果决定,不是人工动作" },
   { from: ["REVIEW_REJECTED", "ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前要先核实资金没离开平台" },
 ];
@@ -108,6 +111,13 @@ function StatusFlowChip({ code }: { code: string }) {
 function D2StatusFlow() {
   const drawn = new Set([...D2_HAPPY_PATH, ...D2_BRANCHES.flatMap((b) => [...b.from, ...b.to])]);
   const undrawn = Object.keys(STATUS_CN).filter((code) => !drawn.has(code));
+  // 「画上了」不等于「说清楚了」:只查节点在不在,查不出「有入边没出边」的死结 ——
+  // 而死结恰恰是最误导的形态(图看着完整,读的人却找不到这个状态之后会怎样)。
+  const hasOutEdge = new Set([
+    ...D2_HAPPY_PATH.slice(0, -1),
+    ...D2_BRANCHES.flatMap((b) => b.from),
+  ]);
+  const deadEnds = [...drawn].filter((code) => !D2_TERMINAL.has(code) && !hasOutEdge.has(code));
   return (
     <section className="l-card">
       <div className="l-h"><span className="ttl">提现状态怎么流转</span><span className="sub">· 共 {Object.keys(STATUS_CN).length} 个状态 · 与队列里的筛选项同一套</span></div>
@@ -137,6 +147,12 @@ function D2StatusFlow() {
         {undrawn.length > 0 && (
           <div className="dtint warn" style={{ marginTop: 10 }}>
             这张图还没画到的状态:{undrawn.map((code) => STATUS_CN[code]).join("、")}。请补进流转图后再对外讲。
+          </div>
+        )}
+        {deadEnds.length > 0 && (
+          <div className="dtint warn" style={{ marginTop: 10 }}>
+            这些状态画上了、却没写它之后会怎样:{deadEnds.map((code) => STATUS_CN[code] ?? code).join("、")}。
+            补一条出边,或把它登记成终态。
           </div>
         )}
       </div>

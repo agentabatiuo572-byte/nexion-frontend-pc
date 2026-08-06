@@ -237,7 +237,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
         title: "熔断解除复核",
         hint: "复核结论会写入审计;操作理由需独立说明本次判断。",
         fields: [
-          { key: "dispositionPlan", label: "复核结论", inputKind: "text", placeholder: "说明当初的熔断依据已消除的证据", required: true, wide: true },
+          { key: "dispositionPlan", label: "解除依据与复核结论", inputKind: "text", placeholder: "说明当初的熔断依据已消除的证据", required: true, wide: true },
         ],
       },
       run: async (reason, _value, businessValue) => {

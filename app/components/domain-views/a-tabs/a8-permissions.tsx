@@ -35,6 +35,10 @@ export default function A8Permissions() {
   const [grants, setGrants] = useState<RoleGrants[] | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [matrixError, setMatrixError] = useState<string | null>(null);
+  // 重试必须用自增计数器,不能靠「把 grants 设回 null」——失败时它本来就是 null,
+  // 依赖数组按 Object.is 比不出变化,effect 根本不会重跑,界面却从报错切成
+  // 「没有可展示的角色」,比不重试更误导。同页主列表(reloadKey)早就是这个写法。
+  const [matrixReloadKey, setMatrixReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +59,7 @@ export default function A8Permissions() {
 
   // 矩阵按需拉:每个角色的授权明细要单独一次请求,不开矩阵就不发。
   useEffect(() => {
-    if (!matrixOpen || grants) return;
+    if (!matrixOpen) return;
     let cancelled = false;
     setMatrixLoading(true);
     setMatrixError(null);
@@ -74,7 +78,7 @@ export default function A8Permissions() {
       .catch((err) => { if (!cancelled) setMatrixError(displayAdminError(err)); })
       .finally(() => { if (!cancelled) setMatrixLoading(false); });
     return () => { cancelled = true; };
-  }, [matrixOpen, grants]);
+  }, [matrixOpen, matrixReloadKey]);
 
   // keyword debounce 350ms
   useEffect(() => {
@@ -177,7 +181,7 @@ export default function A8Permissions() {
       </Card>
       <Card>
         <CardH title="权限矩阵" right={
-          <Btn sm onClick={() => setMatrixOpen((open) => !open)}>{matrixOpen ? "收起矩阵" : "一屏看哪些角色有权"}</Btn>
+          <Btn sm onClick={() => setMatrixOpen((open) => !open)}>{matrixOpen ? "收起矩阵" : "展开权限矩阵"}</Btn>
         } />
         {matrixOpen && (
           <div style={{ padding: "12px 16px" }}>
@@ -190,7 +194,7 @@ export default function A8Permissions() {
             ) : matrixError ? (
               <div className="alertbar warn" role="alert" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
                 角色授权读取失败,矩阵不可信。{matrixError}
-                <Btn sm onClick={() => { setGrants(null); setMatrixError(null); }}>重试</Btn>
+                <Btn sm onClick={() => setMatrixReloadKey((value) => value + 1)}>重试</Btn>
               </div>
             ) : !grants || grants.length === 0 ? (
               <div style={{ padding: 20, color: "var(--ink-3)" }}>没有可展示的角色</div>
@@ -206,7 +210,7 @@ export default function A8Permissions() {
                         {grants.map(({ role, readable }) => (
                           <th key={role.id} style={{ padding: "10px 12px", fontWeight: 600, textAlign: "center", minWidth: 92 }}>
                             <div style={{ color: "var(--ink-2)" }}>{role.roleName}</div>
-                            <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{role.roleCode}</div>
+                            <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{role.roleCode}</div>
                             {!readable && <div style={{ marginTop: 2, color: "var(--warning)", fontSize: 11.5 }}>读不到</div>}
                           </th>
                         ))}
@@ -217,7 +221,7 @@ export default function A8Permissions() {
                         <tr key={p.permissionCode} style={{ borderBottom: "1px solid var(--border)" }}>
                           <td style={{ padding: "10px 12px", position: "sticky", left: 0, background: "var(--surface)" }}>
                             <div>{p.permissionName || p.permissionCode}</div>
-                            <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{p.permissionCode}</div>
+                            <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{p.permissionCode}</div>
                           </td>
                           {grants.map(({ role, codes, readable }) => (
                             <td key={role.id} style={{ padding: "10px 12px", textAlign: "center" }}

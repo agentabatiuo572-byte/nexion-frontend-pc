@@ -771,8 +771,13 @@ export default function UserDetailPage() {
           <Row label="团队业绩">{money(detail.referral?.teamVolumeUsd)}</Row>
         </HubSection>
 
-        {/* 互动/参与:后端一直在返回这一段,前端 14 个渲染点里独缺它(2026-08-06 原型对比 C-6)。
-            数据已经到前端,只差一张卡 —— 运营看不到用户的签到、任务、抽奖、里程碑进度。 */}
+        {/* 互动/参与明细表(2026-08-06 原型对比 C-6)。只渲染 User360Section 声明过的
+            records / sourceStatus —— 2026-08-07 复核撤掉了此处原先那四行标量
+            (连续签到 / 进行中任务 / 抽奖剩余 / 里程碑进度):那四个字段名全仓只在这里
+            出现过,没有契约、没有 fixture,而 JsonRecord 的索引签名让 tsc 抓不出错名 ——
+            名字一旦对不上就是四个永远的「—」,且没有任何东西会报错。
+            要加回标量,先让后端把字段写进 User360Section 的显式声明。
+            汇总口径归「参与与通知」区(cgm-coverage 的 hub 锚 engagement→notifications)。 */}
         {detail.engagement && (
           <HubSection
             id="hub-engagement"
@@ -784,12 +789,7 @@ export default function UserDetailPage() {
               { key: "progress", label: "进度" },
               { key: "updatedAt", label: "更新时间", render: formatDate },
             ]}
-          >
-            <Row label="连续签到">{numberLabel(detail.engagement.checkinStreakDays)} 天</Row>
-            <Row label="进行中任务">{numberLabel(detail.engagement.activeQuestCount)} 个</Row>
-            <Row label="抽奖剩余次数">{numberLabel(detail.engagement.luckyDrawRemaining)} 次</Row>
-            <Row label="里程碑进度">{asText(detail.engagement.milestoneProgressLabel)}</Row>
-          </HubSection>
+          />
         )}
 
         <div className="grid gap-4 lg:grid-cols-2">

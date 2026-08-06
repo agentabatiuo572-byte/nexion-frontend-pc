@@ -137,11 +137,37 @@ export function K1HeaderActions() {
   return <span className="f-ro"><span className="d" />服务端分页 · 判定全部后端落库</span>;
 }
 
+// 账户状态三态口径,图与表共用一套 —— 两边各写一份必然漂开(表里三种处置全坍缩成
+// 「受限」、正常态还把 ACTIVE 裸英文甩给运营;图里空状态被 ?? 漏过去当成了「正常」绿)。
+// 状态字段允许为空(k-client 对该位 allowEmpty),所以「未知」必须是独立一态,
+// 不能和「正常」同色 —— 这是反多账户域,把「不知道」画成「没问题」是最危险的一种错。
+const RESTRICTED_STATUS = /FROZEN|BANNED|RESTRICTED/i;
+const ACCOUNT_STATUS_LABEL: Record<string, string> = {
+  ACTIVE: "正常", NORMAL: "正常", FROZEN: "已冻结", BANNED: "已封禁", RESTRICTED: "已受限",
+};
+
+export function isRestrictedStatus(status?: string) {
+  return RESTRICTED_STATUS.test(status ?? "");
+}
+
+export function isUnknownStatus(status?: string) {
+  const value = (status ?? "").trim();
+  return !value || /UNKNOWN|未知/i.test(value);
+}
+
+/** 页面不许出现枚举值:认识的映射成中文,不认识的说「其它(原值)」而不是裸抛英文码。 */
+export function accountStatusLabel(status?: string) {
+  const value = (status ?? "").trim();
+  if (isUnknownStatus(value)) return "未知";
+  return ACCOUNT_STATUS_LABEL[value.toUpperCase()] ?? `其它(${value})`;
+}
+
 function ClusterGraph({ c }: { c: K1Cluster }) {
   const gid = useId();
   const W = 320, H = 272, cx = W / 2, cy = H / 2, R = 94;
   const edgeColor = (layer: string) => layer === "device" ? "var(--warning)" : layer === "payment" ? "var(--cyan)" : "var(--ink-4)";
-  const nodeColor = (status: string) => /FROZEN|BANNED|RESTRICTED/i.test(status) ? "var(--danger)" : "var(--success)";
+  // 三态与右侧账户表同源:空状态走 --ink-4,绝不能落进「正常」绿。
+  const nodeColor = (status: string) => isRestrictedStatus(status) ? "var(--danger)" : isUnknownStatus(status) ? "var(--ink-4)" : "var(--success)";
   const k = Math.min(c.nodes.length, 8);
   const over = Math.max(c.n - k, 0);
   const total = Math.max(k + (over > 0 ? 1 : 0), 1);
@@ -194,6 +220,7 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
       <LegendItem swatch={<EdgeSwatch color="var(--ink-3)" thick />}>线越粗、关联越强</LegendItem>
       <LegendItem swatch={<NodeSwatch color="var(--success)" />}>账户正常</LegendItem>
       <LegendItem swatch={<NodeSwatch color="var(--danger)" />}>已冻结 / 封禁 / 受限</LegendItem>
+      <LegendItem swatch={<NodeSwatch color="var(--ink-4)" />}>状态未知</LegendItem>
       <LegendItem swatch={<DotSwatch />}>领过新人礼</LegendItem>
       <LegendItem swatch={<OverflowSwatch />}>本图未画出的账户</LegendItem>
     </div>
@@ -895,9 +922,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
                 <thead><tr><th>账户</th><th>注册时间</th><th>上级</th><th>领过新人礼</th><th className="num">累计入金</th><th>状态</th></tr></thead>
                 <tbody>
                   {cur.nodes.map((n) => {
-                    const restricted = /FROZEN|BANNED|RESTRICTED/i.test(n[5]);
-                    const unknown = !n[5] || /UNKNOWN|未知/i.test(n[5]);
-                    const lb = restricted ? "受限" : unknown ? "未知" : n[5];
+                    const restricted = isRestrictedStatus(n[5]);
+                    const unknown = isUnknownStatus(n[5]);
+                    const lb = accountStatusLabel(n[5]);
                     const tone = restricted ? "bad" : unknown ? "dim" : "ok";
                     return (
                       <tr key={n[0]}>

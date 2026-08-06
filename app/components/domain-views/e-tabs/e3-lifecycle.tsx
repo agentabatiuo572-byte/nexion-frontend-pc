@@ -244,17 +244,6 @@ export function E3Lifecycle({ ctx }: { ctx: EViewCtx }) {
           <div className="param-h"><span className="ic trade"><TradeIcon /></span><div className="t"><div className="nm">升级置换阶梯</div><div className="s">产出阶梯折抵 · 随时置换</div></div><span className="tag">E.tradein.*</span></div>
           <div className="pkv"><Lbl zh="置换总开关" code="enabled" desc="关闭后前端全部置换入口隐藏(设备列表/结算拦截同步失效)" hot /><span className="v" style={{ fontSize: 13, fontWeight: 600 }}>{pE("E.tradein.enabled")}</span><Adj label="置换总开关" k="E.tradein.enabled" unit="" editKind="select" options={["开", "关"]} detail="置换总开关 · 关闭=前端全部置换入口隐藏 · 改后对新渲染生效" /></div>
           <div className="pkv"><Lbl zh="当前阶梯一览" desc="抵扣率 = 实付价 × 档位比例;档位按「累计产出 ÷ 实付价」落档,产出越多抵扣越小" /><span className="v" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{ladderCredits.join(" / ")}%(界点 {ladderCuts.join("/")}%)</span><span /></div>
-          {/* 置换促销三组(2026-08-06 原型对比 E-1):后端键映射与审计对象一直都在、只有 UI 缺席,
-              运营既看不到当前值也改不了。倍率放大让利 → 走 amplify;弹窗节奏是骚扰面,归一组编辑。 */}
-          <div className="pkv"><Lbl zh="置换活动倍率" code="promoMult" desc="活动期抵扣倍率 · 1.0 = 无加成;上调=加大让利(放大资金流出)" hot /><span className="v danger">{pE("E.tradein.promoMult")}×</span><Adj label="置换活动倍率" k="E.tradein.promoMult" unit="×" amplify detail="置换活动倍率 · 直接放大抵扣让利,放大资金流出须操作确认 + B1 覆盖率 · 改后对新报价生效" /></div>
-          <div className="pkv"><Lbl zh="置换弹窗节奏(5)" code="promo.*" desc="前端置换促销弹窗的骚扰控制:冷却天数 / 每会话上限 / 延迟秒 / 设备最低龄 / 入口路由" /><span className="v" style={{ fontSize: 12.5 }}>冷却 {pE("E.tradein.promo.cooldownDays")}d · 每会话 {pE("E.tradein.promo.maxPerSession")} 次 · 延迟 {pE("E.tradein.promo.delaySec")}s</span><AdjMulti title="置换弹窗节奏" hint="冷却天数=关闭后多少天不再弹;每会话上限防单次会话反复骚扰;延迟秒避免抢首屏;设备最低龄=太新的设备不劝置换;入口路由=允许弹出的页面路径(逗号分隔)。" detail="置换促销弹窗节奏(5 值)· 只影响前端弹出时机与频次,不改抵扣金额" fields={[
-            { key: "cooldownDays", paramKey: "E.tradein.promo.cooldownDays", label: "冷却天数", inputKind: "number", placeholder: "7" },
-            { key: "maxPerSession", paramKey: "E.tradein.promo.maxPerSession", label: "每会话上限(次)", inputKind: "number", placeholder: "1" },
-            { key: "delaySec", paramKey: "E.tradein.promo.delaySec", label: "进页延迟(秒)", inputKind: "number", placeholder: "3" },
-            { key: "minAgeDays", paramKey: "E.tradein.promo.minAgeDays", label: "设备最低龄(天)", inputKind: "number", placeholder: "90" },
-            { key: "routes", paramKey: "E.tradein.promo.routes", label: "允许入口路由", inputKind: "text", placeholder: "/me,/devices" },
-          ]} /></div>
-          <div className="pkv"><Lbl zh="库存软上限告警" code="inventorySoftMax" desc="回收库存达到该数量即告警(软上限,不阻断置换)" /><span className="v warn">{pE("E.tradein.inventorySoftMax")}</span><Adj label="库存软上限告警" k="E.tradein.inventorySoftMax" unit="台" detail="回收库存软上限 · 达到即告警提示运营处置积压,不阻断用户置换" /></div>
           <div className="pkv"><Lbl zh="阶梯分档界点(4)" code="ladder.cut1–4" desc="产出比的 4 个分档界点(%)· 区间左闭右开、由构造连续无重叠" /><span className="v" style={{ fontSize: 13 }}>{ladderCuts.map((c) => `${c}%`).join(" · ")}</span><AdjMulti title="阶梯分档界点" ascending hint="按「该设备累计产出 ÷ 实付价」的百分比分 5 档:第1档 [0,界点1),第2档 [界点1,界点2)……第5档 [界点4,∞)。须严格递增。改后对新报价生效。" detail="阶梯分档界点(4 值)· 以当前运营配置为准 · 改后对新报价生效" fields={[
             { key: "cut1", paramKey: "E.tradein.ladder.cut1", label: "界点1(%)", inputKind: "number", placeholder: "25" },
             { key: "cut2", paramKey: "E.tradein.ladder.cut2", label: "界点2(%)", inputKind: "number", placeholder: "50" },
