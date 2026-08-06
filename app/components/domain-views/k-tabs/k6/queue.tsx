@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { effectiveDevices, useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { timeAgo } from "@/lib/admin/janus-c2/scoring";
 import { STATUS_LABEL, STATUS_SOURCE_LABEL, STATUS_TONE, SUGGESTED_ACTION, channelLabel, platformLabel } from "@/lib/admin/janus-c2/labels";
+import { takeoverTargetMismatch, takeoverReconciliationOverdue, takeoverVersionDrift } from "@/lib/admin/janus-c2/takeover";
 import type { Device, DeviceStatus } from "@/lib/admin/janus-c2/types";
 import { K6DeviceDetail } from "./device-detail";
 
@@ -51,6 +52,9 @@ function ScoreBar({ value, kind }: { value: number; kind: "good" | "risk" }) {
 
 export function K6Queue() {
   const [status, setStatus] = useState<DeviceStatus | "ALL">("ALL");
+  // 接管对账异常筛选(审计 P2-1):失配标记只是状态格里的一行字,默认按优先级分排序、
+  // 每页 25 行——第 3 页之后靠肉眼翻不到。异常必须能一键筛出来,否则等于没标。
+  const [anomalyOnly, setAnomalyOnly] = useState(false);
   const [risk, setRisk] = useState<RiskFilter>("all");
   const [time, setTime] = useState<TimeFilter>("all");
   const [op, setOp] = useState<OpFilter>("all");
@@ -86,6 +90,13 @@ export function K6Queue() {
       }
       if (channel !== "all" && d.channel !== channel) return false;
       if (strategy !== "all" && d.hitStrategy !== strategy) return false;
+      if (anomalyOnly) {
+        const anomalous = takeoverTargetMismatch(d.takeover, d.remoteUrlKey)
+          || takeoverReconciliationOverdue(d.takeover, d.remoteUrlKey)
+          || takeoverVersionDrift(d.takeover) !== "none"
+          || d.takeover?.phase === "REVOKE_FAILED";
+        if (!anomalous) return false;
+      }
       if (q) {
         const hay = [d.sid, d.inviteCode, d.channel, d.model, d.ua, d.hitStrategy].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
@@ -101,7 +112,7 @@ export function K6Queue() {
       open: (a, b) => b.maturity.appOpenCount - a.maturity.appOpenCount,
     };
     return [...rows].sort(sorters[sort] ?? sorters.priority);
-  }, [devices, status, risk, time, op, channel, strategy, sort, search]);
+  }, [devices, status, risk, time, op, channel, strategy, sort, search, anomalyOnly]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const curPage = Math.min(page, totalPages);
@@ -129,6 +140,13 @@ export function K6Queue() {
                 {s === "ALL" ? "全部" : STATUS_LABEL[s]}
               </button>
             ))}
+            <button
+              className={`k6-filter${anomalyOnly ? " active" : ""}`}
+              data-proof="k6-queue-anomaly-filter"
+              style={anomalyOnly ? { color: "var(--danger)", borderColor: "var(--danger)" } : undefined}
+              onClick={() => { setAnomalyOnly((v) => !v); reset(); }}
+              title="只看接管对账异常:目标不一致 / 版本超前 / 对账未完成 / 撤销失败"
+            >接管异常</button>
           </div>
           <div className="k6-toolbar-row">
             <input className="k6-field k6-search" placeholder="搜索 会话 / 邀请码 / 渠道 / 型号 / UA" value={search} onChange={(ev) => { setSearch(ev.target.value); reset(); }} />
@@ -190,6 +208,17 @@ export function K6Queue() {
                     <span className={`k6-bdg ${STATUS_TONE[d.status]}`}>{STATUS_LABEL[d.status]}</span>
                     {d.desiredStatus && d.desiredStatus !== d.status && (
                       <div className="mono dim">待确认 → {STATUS_LABEL[d.desiredStatus]}</div>
+                    )}
+                    {/* 对账异常必须在列表就看得见:只在详情里才暴露 = 运营不点开就永远发现不了(裁决① T3)。
+                        期望侧取后台批准绑定,不取响应内 expectedTargetId(同源不可自证,审计 P1-1)。 */}
+                    {takeoverTargetMismatch(d.takeover, d.remoteUrlKey) && (
+                      <div data-proof="k6-queue-target-mismatch" style={{ color: "var(--danger)", fontWeight: 600 }}>目标不一致</div>
+                    )}
+                    {takeoverVersionDrift(d.takeover) === "ahead" && (
+                      <div style={{ color: "var(--danger)", fontWeight: 600 }}>版本超前 · 疑似注入</div>
+                    )}
+                    {takeoverReconciliationOverdue(d.takeover, d.remoteUrlKey) && (
+                      <div data-proof="k6-queue-reconcile-overdue" style={{ color: "var(--warning)", fontWeight: 600 }}>对账未完成</div>
                     )}
                   </td>
                   <td><span className="k6-srctag">{STATUS_SOURCE_LABEL[d.statusSource]}</span></td>
