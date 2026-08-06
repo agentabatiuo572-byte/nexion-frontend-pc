@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  clearPendingCommandRecords,
   createPendingMutationStore,
   createSlotAttemptStore,
   PENDING_MUTATION_TTL_MS,
@@ -188,6 +189,98 @@ test("迁移清单里的文件都真的用了共享 store(直接建表,或走带
     const viaExecutor = /createStableMutationExecutor\s*\([^,)]+,\s*"[^"]+"\s*\)/.test(source);
     assert.ok(direct || viaExecutor, `${rel} 既没直接建表,也没给通用执行器传 storageKey`);
   }
+});
+
+// ---------------------------------------------------------------- ⑤ 登出 / 换操作员必须清在途命令号
+
+/**
+ * 换人不清命令号 = 同一 tab 里 B 复用 A 的号 → 后端幂等回放 A 的提案:
+ * B 的操作被静默吞掉,审计轨记在 A 头上。两个都是高敏事故。
+ *
+ * ground truth 取**源码里的全部真实存储键**,不手抄清单 —— 手抄的必然和现实脱节,
+ * 而漏掉哪一把,那个域的命令号就照样留给下一个登录者。
+ */
+const STORAGE_KEYS = [...new Set(MIGRATED.flatMap((rel) => {
+  const source = read(rel);
+  return [
+    ...[...source.matchAll(/storageKey:\s*"([^"]+)"/g)].map((m) => m[1]),
+    ...[...source.matchAll(/createStableMutationExecutor\s*\(([\s\S]*?)\)/g)]
+      .flatMap((m) => [...m[1].matchAll(/"([^"]+)"/g)].map((k) => k[1])),
+  ];
+}))];
+
+test("⑤ 清扫覆盖全仓每一把在途命令号存储键(含 nexgrid- 前缀与不含 commands 的那些)", () => {
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  globalThis.window = { sessionStorage: storage };
+
+  assert.ok(STORAGE_KEYS.length >= 25, `只解析出 ${STORAGE_KEYS.length} 把存储键,解析已失真`);
+  // 每一把键都播一条 A 操作员留下的在途命令号。
+  const now = Date.now();
+  STORAGE_KEYS.forEach((key, index) => {
+    storage.setItem(key, JSON.stringify({
+      [`cmd-A-${index}`]: {
+        fingerprint: `slot-${index}`, commandKey: `cmd-A-${index}`,
+        createdAt: now, expiresAt: now + 60_000,
+      },
+    }));
+  });
+  // 无关数据:侧边栏滚动位置(同域同 storage,形状完全不同)必须原样留下。
+  storage.setItem("nexion-sidebar-scroll", "420");
+  storage.setItem("some-other-app-state", JSON.stringify({ a: 1 }));
+
+  const cleared = clearPendingCommandRecords(storage);
+
+  assert.equal(cleared, STORAGE_KEYS.length,
+    `清扫数与键数不符:漏掉的那些域,B 登录后会复用 A 的命令号`);
+  for (const key of STORAGE_KEYS) {
+    assert.equal(storage.getItem(key), null, `${key} 未被清掉 → 换人后命令号泄漏给下一个操作员`);
+  }
+  assert.equal(storage.getItem("nexion-sidebar-scroll"), "420", "无关数据被误删");
+  assert.deepEqual(JSON.parse(storage.getItem("some-other-app-state")), { a: 1 }, "无关数据被误删");
+});
+
+test("⑤ 清扫按记录形状认表,不按键名 —— 换个没人见过的键名照样清得掉", () => {
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  const now = Date.now();
+  // 将来新增的域可能起任何名字(现实里已有 nexion-admin-h9-public-stats-attempt 这种
+  // 既不含 commands 也没有版本后缀的);按名字判的谓词会整张漏掉,按形状判不会。
+  storage.setItem("totally-unexpected-key-name", JSON.stringify({
+    k1: { fingerprint: "f", commandKey: "k1", createdAt: now, expiresAt: now + 1000 },
+  }));
+  // 形状只差一点(commandKey 与行键不一致)就不是本模块的表,不许误删别人的数据。
+  storage.setItem("look-alike-but-not-ours", JSON.stringify({
+    k1: { fingerprint: "f", commandKey: "SOMETHING-ELSE", createdAt: now, expiresAt: now + 1000 },
+  }));
+
+  assert.equal(clearPendingCommandRecords(storage), 1);
+  assert.equal(storage.getItem("totally-unexpected-key-name"), null);
+  assert.ok(storage.getItem("look-alike-but-not-ours"), "形状不符的表不得被误删");
+});
+
+test("⑤ resetAdminSession 真的接了清扫(剥注释后判定接线,不认注释里的声明)", () => {
+  const code = read("lib/admin/auth-session.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  assert.match(code, /import \{ clearPendingCommandRecords \} from "@\/lib\/admin\/pending-mutation-store"/);
+  assert.match(code, /export function resetAdminSession\(\)[\s\S]*clearPendingCommandRecords\(/,
+    "resetAdminSession 里必须调用清扫 —— 登出/换人不清,B 会复用 A 的命令号");
+  // 必须在 reload 之前清:reload 之后这段代码根本不会再执行。
+  const body = code.slice(code.indexOf("export function resetAdminSession"));
+  assert.ok(body.indexOf("clearPendingCommandRecords(") < body.indexOf("window.location.reload"),
+    "清扫必须排在整页 reload 之前,否则永远执行不到");
 });
 
 /**

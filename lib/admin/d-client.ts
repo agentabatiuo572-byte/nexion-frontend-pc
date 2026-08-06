@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
@@ -587,7 +588,11 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // that an earlier unknown attempt reached a terminal state. Keep the exact
     // command capsule so auth failures, in-progress replies, and other retry
     // errors never force the operator to create a second command key.
-    if (mutationFingerprint && !pendingKeyBeforeRequest) {
+    // 🔴 2026-08-06 补:这道保护只覆盖「重试链」——**首次**提交撞上结构化 5xx 时
+    //   pendingKeyBeforeRequest 为空,照样弃号。5xx 后端可能已落库,必须保号(统一口径见
+    //   outcome-classification.ts)。
+    if (mutationFingerprint && !pendingKeyBeforeRequest
+      && !outcomeStaysUnknown(response.status, result?.code)) {
       pendingMutations.forget(mutationFingerprint);
     }
     throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));

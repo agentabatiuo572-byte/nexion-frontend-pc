@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 
 export type GrantCell = "-" | "R" | "M" | "C";
@@ -155,6 +156,10 @@ async function a1Request<T>(path: string, init?: RequestInit & { idempotencyPref
   if (!response.ok || !result || result.code !== 0) {
     if (init?.idempotencyPrefix && response.ok && !result) {
       throw new A1OutcomeUncertainError("A1_MUTATION_RESPONSE_UNREADABLE", commandKey);
+    }
+    // 5xx 不是确定失败:后端可能已经落库,弃号重试 = 第二条命令(统一口径见 outcome-classification.ts)。
+    if (init?.idempotencyPrefix && outcomeStaysUnknown(response.status, result?.code)) {
+      throw new A1OutcomeUncertainError(`A1_MUTATION_OUTCOME_UNCERTAIN_${response.status}`, commandKey);
     }
     throw new Error(formatAdminApiError(result?.message, `A1_REQUEST_FAILED_${response.status}`));
   }

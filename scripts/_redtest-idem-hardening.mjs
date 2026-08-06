@@ -24,10 +24,17 @@ const SENTINEL = path.join(ROOT, "scripts/pending-idempotency-key-sentinel.mjs")
 const STORE = path.join(ROOT, "lib/admin/pending-mutation-store.ts");
 const K1 = path.join(ROOT, "app/components/domain-views/k-tabs/k1-multiaccount.tsx");
 const G1 = path.join(ROOT, "lib/admin/g1-client.ts");
+const AUTH = path.join(ROOT, "lib/admin/auth-session.ts");
+const CLASSIFY = path.join(ROOT, "lib/admin/outcome-classification.ts");
+const A2 = path.join(ROOT, "lib/admin/a2-client.ts");
+const B2 = path.join(ROOT, "lib/admin/b2-client.ts");
+const K = path.join(ROOT, "lib/admin/k-client.ts");
+const U360 = path.join(ROOT, "lib/admin/user360-client.ts");
 
 const GATE = ["scripts/pending-idempotency-key-sentinel.mjs"];
 const MIGRATION = ["--test", "tests/pending-mutation-migration-contract.test.mjs"];
 const STORE_CONTRACT = ["--test", "tests/pending-mutation-store-contract.test.mjs"];
+const OUTCOME = ["--experimental-strip-types", "--test", "tests/outcome-classification-contract.test.mjs"];
 
 /**
  * 跑门,返回 { red, output }。
@@ -191,11 +198,65 @@ const CASES = [
     () => inject(STORE, "      const createdAt = previous?.createdAt ?? Date.now();", "      const createdAt = Date.now();", STORE_CONTRACT)],
   ["T4③ 反误红:ttlMs 仍可由调用方覆盖(降级 TTL 用例依赖它)", "green",
     () => inject(STORE, "        expiresAt: createdAt + ttlMs,", "        expiresAt: createdAt + ttlMs, // ponytail: 窗口口径见 §0.4", STORE_CONTRACT)],
+
+  // ══ T2 登出 / 换操作员清扫 ═════════════════════════════════════
+  ["T2① 复现原缺陷:resetAdminSession 不再清命令号(B 复用 A 的号)", "red",
+    () => inject(AUTH, "  clearPendingCommandRecords(window.sessionStorage);", "  void clearPendingCommandRecords;", MIGRATION),
+    "resetAdminSession 里必须调用清扫"],
+  ["T2② 清扫排到 reload 之后(等于永远执行不到)", "red",
+    () => inject(AUTH, "  clearPendingCommandRecords(window.sessionStorage);", "",
+      MIGRATION),
+    "resetAdminSession 里必须调用清扫"],
+  ["T2③ 接线只留在注释里(走私)→ 必红", "red",
+    () => inject(AUTH, "  clearPendingCommandRecords(window.sessionStorage);", "  // clearPendingCommandRecords(window.sessionStorage);", MIGRATION),
+    "resetAdminSession 里必须调用清扫"],
+  // ④ 把清扫改回**派单原本设想的按键名判**,复现它会漏掉 h9 那把命名不合群的键
+  //   (nexion-admin-h9-public-stats-attempt:既不含 commands 也没有版本后缀)。
+  ["T2④ 退回「按键名判」→ 漏掉 h9 那把不合群的键,必红", "red",
+    () => inject(STORE,
+      "      if (key && isPendingCommandTable(target.getItem(key))) doomed.push(key);",
+      '      if (key && /^nexion-admin-.+-commands-v\\d+$/.test(key) && isPendingCommandTable(target.getItem(key))) doomed.push(key);',
+      MIGRATION),
+    "清扫覆盖全仓每一把在途命令号存储键"],
+  ["T2⑤ 形状判据被放宽成「是个对象就清」→ 误删无关数据必红", "red",
+    () => inject(STORE, "      return !!record && typeof record === \"object\"", "      return !!record || typeof record === \"object\"", MIGRATION),
+    "清扫按记录形状认表"],
+  ["T2⑥ 遍历时边删边走(key 索引塌陷,漏掉一半)→ 必红", "red",
+    () => inject(STORE,
+      "      if (key && isPendingCommandTable(target.getItem(key))) doomed.push(key);",
+      "      if (key && isPendingCommandTable(target.getItem(key))) target.removeItem(key);",
+      MIGRATION),
+    "清扫数与键数不符"],
+
+  // ══ T1 全家族失败归类统一 ═══════════════════════════════════════
+  ["T1① 谓词把 5xx 判成确定失败(复现原缺陷:弃号 → 资金动作双发)", "red",
+    () => inject(CLASSIFY, "  if (status >= 400 && status < 500) return true;", "  if (status >= 400) return true;", OUTCOME),
+    "不得判确定失败"],
+  ["T1② 两个谓词不再互补(只改一个,另一个留旧口径)", "red",
+    () => inject(CLASSIFY, "  return !isDeterministicRejection(status, apiCode);", "  return status >= 500;", OUTCOME),
+    "两个谓词恒为互补"],
+  ["T1③ a2 退回原口径(结构化 5xx 归确定失败)→ 舰队门必红", "red",
+    () => inject(A2, "    if (init?.commandKey && outcomeStaysUnknown(response.status, result?.code)) {",
+      "    if (false) {", OUTCOME),
+    "判了个寂寞"],
+  ["T1④ b2 撤掉传输层 try/catch(断网抛裸错误被当确定失败)→ 必红", "red",
+    () => inject(B2, "  let response: Response;\r\n  try {\r\n    response = await fetch(`/api/admin/treasury${path}`",
+      "  let response: Response;\r\n  {\r\n    response = await fetch(`/api/admin/treasury${path}`", OUTCOME)],
+  ["T1⑤ 某个域偷偷自搓 5xx 门槛(口径分叉复发)→ 必红", "red",
+    () => inject(K, "    if (isWrite && outcomeStaysUnknown(res.status, payload.code)) {",
+      "    if (isWrite && res.status >= 500) {", OUTCOME),
+    "自搓的 5xx 门槛"],
+  ["T1⑥ 反误红:非归类用途的 5xx 判定带显式豁免标记时不得报红", "green",
+    () => inject(U360, "    // classification-ok:这里的 5xx 判定只挑**错误文案**",
+      "    // classification-ok: 文案选择,不参与命令号去留\r\n    // (原注释)这里的 5xx 判定只挑**错误文案**", OUTCOME)],
+  ["T1⑦ 豁免标记被摘掉 → 必红(豁免必须显式,不许靠沉默)", "red",
+    () => inject(U360, "    // classification-ok:这里的 5xx 判定只挑**错误文案**", "    // 这里的 5xx 判定只挑**错误文案**", OUTCOME),
+    "自搓的 5xx 门槛"],
 ];
 
 // 🔴 还原完整性升级为**内容指纹**(2026-08-06 独立验收 P2):原来只 filter 残留的 .redtest-bak,
 //   而被注入的文件本来就处在 ` M` 状态 —— 内容没还原完全看不出来,后续门验的就是被污染的树。
-const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL];
+const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL, AUTH, CLASSIFY, A2, B2, K, U360];
 const digest = () => TOUCHED.map((file) => createHash("sha1").update(readFileSync(file)).digest("hex")).join(" ");
 const before = digest();
 

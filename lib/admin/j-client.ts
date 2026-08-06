@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -64,7 +65,10 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
       useAdminAuth.getState().signOut();
     }
-    if (isWrite && res.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
+    // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知 —— 应急止血动作
+    // (kill-switch / 地域封锁)重复执行的代价极高,宁可保号重试也不能弃号重铸。
+    if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
+      || outcomeStaysUnknown(res.status, payload.code))) {
       throw new EmergencyOutcomeUncertainError(
         "应急控制服务连接在提交后中断，执行结果暂未确认",
       );

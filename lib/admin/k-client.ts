@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import {
@@ -112,6 +113,12 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
     throw new K1OutcomeUncertainError(formatAdminApiError(payload.message, "RISK_REQUEST_OUTCOME_UNKNOWN"), commandKey);
   }
   if (!res.ok || (payload.code !== undefined && payload.code >= 400)) {
+    // 5xx 不是「确定失败」:后端可能已经落库,弃号重试会变成第二条命令(统一口径见
+    // outcome-classification.ts)。只有 4xx / 2xx 业务码非 0 才确定这次没生效。
+    if (isWrite && outcomeStaysUnknown(res.status, payload.code)) {
+      throw new K1OutcomeUncertainError(
+        formatAdminApiError(payload.message, `RISK_REQUEST_OUTCOME_UNKNOWN_${res.status}`), commandKey);
+    }
     throw new Error(formatAdminApiError(payload.message, `RISK_API_${res.status}`));
   }
   return payload.data as T;

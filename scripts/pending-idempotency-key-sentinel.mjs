@@ -345,7 +345,10 @@ for (const rel of MIGRATED) {
     .filter((rel) => rel !== SHARED_STORE && !ledger.has(rel))
     .filter((rel) => {
       const code = stripComments(fs.readFileSync(path.join(ROOT, rel), "utf8"));
-      return runtimeBindings(code, path.join(ROOT, rel), SHARED_STORE).size > 0
+      const storeSide = runtimeBindings(code, path.join(ROOT, rel), SHARED_STORE);
+      // 只认**建店**函数:模块还导出 clearPendingCommandRecords 之类的工具(auth-session 就只用它),
+      // 那些文件自己不持有命令号,不该被要求进台账 —— 本轮红测实测抓到的误伤。
+      return storeSide.has("createPendingMutationStore") || storeSide.has("createSlotAttemptStore")
         || runtimeBindings(code, path.join(ROOT, rel), EXECUTOR_MODULE).has("createStableMutationExecutor");
     });
   for (const rel of users) {

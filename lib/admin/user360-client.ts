@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
@@ -776,7 +777,13 @@ async function usersRequest<T>(path: string, init?: RequestInit & { idempotencyP
     // A deterministic error can close a brand-new attempt, but it cannot prove that an earlier
     // unknown attempt reached a terminal state. Keep the command capsule so auth failures and
     // in-progress replies never force the operator to mint a second command key.(与 d-client 同口径)
-    if (mutationFingerprint && !pendingKeyBeforeRequest) pendingUserMutations.forget(mutationFingerprint);
+    // 🔴 2026-08-06 补:同 d-client —— 这道保护只覆盖重试链,**首次**撞 5xx 仍会弃号。
+    if (mutationFingerprint && !pendingKeyBeforeRequest
+      && !outcomeStaysUnknown(response.status, result?.code)) {
+      pendingUserMutations.forget(mutationFingerprint);
+    }
+    // classification-ok:这里的 5xx 判定只挑**错误文案**(不把后端原始消息透给运营),
+    // 不参与「命令号要不要丢」的归类 —— 归类在上面一条,走共享谓词。
     const serverMessage = response.status >= 500 ? "INTERNAL_SERVER_ERROR" : result?.message;
     throw new UsersRequestError(
       response.status,

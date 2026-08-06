@@ -292,7 +292,10 @@ test("④ d-client 迁移后对外行为不变:存储键 / 记录结构 / 校验
   assert.match(dClient, /createPendingMutationStore<PersistedPendingMutation>/);
   assert.match(dClient, /pendingMutations\.get\(mutationFingerprint\)/);
   assert.match(dClient, /pendingMutations\.remember\(mutationFingerprint, commandKey, \{/);
-  assert.match(dClient, /if \(mutationFingerprint && !pendingKeyBeforeRequest\) \{\s*pendingMutations\.forget\(mutationFingerprint\);/);
+  // 2026-08-06:弃号条件在原来「不是复用已有号」之上又加了「必须是确定性拒绝」——
+  // 原判据只护住重试链,**首次**提交撞结构化 5xx 照样弃号(见 outcome-classification.ts)。
+  // 这里钉的是加强后的完整表达式:三个合取项少任何一个都是回退。
+  assert.match(dClient, /if \(mutationFingerprint && !pendingKeyBeforeRequest\s*&& !outcomeStaysUnknown\(response\.status, result\?\.code\)\) \{\s*pendingMutations\.forget\(mutationFingerprint\);/);
   assert.match(dClient, /listD1PendingTopupCommands[\s\S]*pendingMutations\.list\(\)/);
   assert.match(dClient, /retryD1PendingTopupCommand[\s\S]*pendingMutations\.list\(\)\.find\(\(value\) => value\.commandKey === commandKey\)/);
 });
@@ -301,7 +304,8 @@ test("④ user360 / c3 不再持有内存态命令号,且三处存储键互不�
   assert.doesNotMatch(user360, /const pendingUserMutationKeys = new Map/);
   assert.doesNotMatch(user360, /pendingUserMutationKeys\./);
   assert.match(user360, /pendingUserMutations\.remember\(mutationFingerprint, commandKey\)/);
-  assert.match(user360, /if \(mutationFingerprint && !pendingKeyBeforeRequest\) pendingUserMutations\.forget\(mutationFingerprint\)/);
+  // 同 d-client:弃号必须同时满足「不是复用已有号」+「确定性拒绝」。
+  assert.match(user360, /if \(mutationFingerprint && !pendingKeyBeforeRequest\s*&& !outcomeStaysUnknown\(response\.status, result\?\.code\)\) \{\s*pendingUserMutations\.forget\(mutationFingerprint\);/);
   assert.match(user360, /if \(mutationFingerprint\) pendingUserMutations\.forget\(mutationFingerprint\)/);
 
   assert.doesNotMatch(c3, /useRef\(new Map/);

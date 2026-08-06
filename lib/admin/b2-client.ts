@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 
@@ -371,16 +372,23 @@ function normalizeConfig(value: unknown): B2ForecastConfig {
 async function request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set("Content-Type", "application/json");
-  const response = await fetch(`/api/admin/treasury${path}`, {
-    ...init,
-    headers,
-    cache: "no-store",
-  });
+  // 🔴 传输层失败必须归「结果未知」:断网 / 超时正是后端可能已落库的头号场景。
+  //   原来 fetch 没有 try/catch,裸 TypeError 冒到页面 catch 里被判成「不是 OutcomeUnknown」→ 弃号。
+  let response: Response;
+  try {
+    response = await fetch(`/api/admin/treasury${path}`, { ...init, headers, cache: "no-store" });
+  } catch (error) {
+    const commandKey = headers.get("Idempotency-Key");
+    if (commandKey) throw new B2OutcomeUnknownError(commandKey);
+    throw error;
+  }
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0 || result.data === undefined) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
     const commandKey = headers.get("Idempotency-Key");
-    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+    // unknown 头只是**增强信号**,不再是唯一保险丝:5xx / 响应不可读同样归结果未知。
+    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || outcomeStaysUnknown(response.status, result?.code))) {
       throw new B2OutcomeUnknownError(commandKey);
     }
     throw new Error(formatAdminApiError(result?.message, `B2_REQUEST_FAILED_${response.status}`));

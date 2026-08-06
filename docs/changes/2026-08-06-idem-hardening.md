@@ -98,10 +98,27 @@ PRD 开发落地规格已写死后端契约:「写入失败则目标域无副作
 - [ ] T5 哨兵剥注释硬化 + 红测 —— commit `fix(sentinel): …`
 - [ ] T3 store 内存兜底 + 告警 + 红测 —— commit `fix(admin): …`
 - [ ] T4 TTL 硬上限 + 红测 —— commit `fix(admin): …`
-- [ ] T2 登出清扫 + 命名射程门 + 红测 —— commit `fix(auth): …`
-- [ ] T1 统一 5xx 归类 + 舰队门 + 重钉既有门 + 红测 —— commit `fix(admin): …`
-- [ ] T6 F 域 version/CAS 规格文档 —— commit `docs(f): …`(待主人签字标记)
+- [x] T2 登出清扫 + 形状判据门 + 红测(6 变异)—— 待独立验收
+- [x] T1 统一失败归类 + 舰队门 + 重钉既有门 + 红测(7 变异)—— 待独立验收
+- [ ] T6 F 域 version/CAS 规格文档 —— 已落盘过 spec-lint,待主人签字
 - [ ] 收尾:全量门 + 多镜头 audit(nexion-audit)+ done-review + 大白话汇报
+
+### T1 实施记录(舰队 12 个模块)
+
+统一口径落在 `lib/admin/outcome-classification.ts` 单源,12 个 client 全部接线
+(a1 / a2 / a3 / b2 / b3 / b5 / d / i / j / k / k6 / user360)。新增 verify 齿轮
+「outcome classification contract」7 条断言:谓词真值表 + 互补性 + 全舰队接线 +
+不许自搓 5xx 门槛(带 `classification-ok:` 显式豁免)+ 谓词必须真管着命令号去留 +
+认 unknown 头的必须另有谓词路径 + 传输层失败必须有兜底。
+
+**施工中被门抓到的三处**(都是我自己的疏漏,记档防复发):
+1. **j-client 整域漏改** —— 摸底地图漏列它,舰队门第一次跑就抓出来。
+2. **批量补 import 的脚本被自己写的注释骗过** —— 用「文件里是否提到模块名」判断该不该补,
+   而那 6 个文件的**注释里**正好提到了模块名。与本轮修的哨兵漏洞同一个病:子串判定不看语境。
+3. 🔴 **改 d-client / user360 打破了既有 store 契约断言** —— 它俩的弃号条件加了第三个合取项,
+   而 `pending-mutation-store-contract` 里钉的是旧表达式。**干净树上契约就是红的**,
+   是红测跑 T4③ 时顺带暴露的(那条本身与此无关)。已按加强后的完整表达式重钉,不是放宽判据。
+   教训:改被契约门钉住的表达式,必须同步复跑**所有**引用它的门,不能只跑新写的那个。
 
 ## Out of scope
 

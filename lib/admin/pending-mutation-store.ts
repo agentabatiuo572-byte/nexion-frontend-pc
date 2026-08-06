@@ -59,6 +59,63 @@ function isBaseRecord(value: unknown, commandKey: string, now: number): value is
     && record.expiresAt > now;
 }
 
+/**
+ * 这张 sessionStorage 表是不是本模块写的命令号表?
+ *
+ * 🔴 **按记录形状判,不按键名判**(2026-08-06)。键名会漂:全仓 30 个面里
+ * `nexgrid-admin-d1-uncertain-commands-v1` 是另一种前缀,`nexion-admin-h9-public-stats-attempt`
+ * 干脆既没有 `commands` 也没有版本后缀 —— 任何「按名字匹配」的谓词都会整张漏掉它们,
+ * 而且将来新增一把键就又漏一张,没人会记得回来改谓词。四字段签名不会漂。
+ */
+function isPendingCommandTable(raw: string | null): boolean {
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    const rows = Object.entries(parsed);
+    if (!rows.length) return false;
+    // 空表不算(没什么可泄漏的);非空表要求**每一行**都是命令号记录 —— 只要有一行不是,
+    // 就说明这不是本模块的表,宁可不清也不能误删别人的数据。
+    return rows.every(([commandKey, value]) => {
+      const record = value as Partial<PendingMutationRecord> | null;
+      return !!record && typeof record === "object"
+        && record.commandKey === commandKey
+        && typeof record.fingerprint === "string" && record.fingerprint.length > 0
+        && Number.isFinite(record.createdAt) && Number.isFinite(record.expiresAt);
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 清掉本次会话残留的**全部**在途命令号,返回清掉的表数(供调用方记日志 / 测试断言)。
+ *
+ * 何时必须调用:**登出 / 换操作员**。命令号是「谁在什么时候提交了哪条命令」的凭据,
+ * 换人不清 = 同一个 tab 里 B 登录后复用 A 的命令号 → 后端按幂等回放 A 的提案:
+ * B 的操作被静默吞掉,而审计轨记在 A 头上(操作被吞 + 归属错位,两个都是高敏事故)。
+ *
+ * ponytail: 各 store 实例的内存镜像由 resetAdminSession 之后的整页 reload 一并清掉
+ *           (JS 上下文重建);单靠本函数清不掉别人的闭包,也不该为此建一份全局注册表。
+ */
+export function clearPendingCommandRecords(storage?: Storage): number {
+  const target = storage ?? (typeof window === "undefined" ? undefined : window.sessionStorage);
+  if (!target) return 0;
+  try {
+    // 先收集再删:边遍历边 removeItem 会让 key(i) 的索引塌陷,漏掉一半。
+    const doomed: string[] = [];
+    for (let index = 0; index < target.length; index += 1) {
+      const key = target.key(index);
+      if (key && isPendingCommandTable(target.getItem(key))) doomed.push(key);
+    }
+    doomed.forEach((key) => target.removeItem(key));
+    return doomed.length;
+  } catch {
+    // 存储不可读 = 本来就没持久化任何命令号,没有残留可清。
+    return 0;
+  }
+}
+
 export function createPendingMutationStore<T extends PendingMutationRecord = PendingMutationRecord>(options: {
   /** sessionStorage 键名。同一动作族共用一个键,靠 fingerprint 前缀分命名空间。 */
   storageKey: string;

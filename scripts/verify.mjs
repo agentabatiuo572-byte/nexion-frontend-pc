@@ -150,6 +150,9 @@ const GEARS = [
   ["K1 release-params contract", "node", ["--test", "tests/k1-release-params-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
+  // 全家族失败归类口径:5xx / 传输层失败必须归「结果未知」保住命令号,只有 4xx 与
+  // 2xx 业务码非 0 才算确定性拒绝。散一处口径 = 那个域重复入账 / 重复打款。
+  ["outcome classification contract", "node", ["--experimental-strip-types", "--test", "tests/outcome-classification-contract.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
   ["production build", npmCmd, ["run", "build"]],

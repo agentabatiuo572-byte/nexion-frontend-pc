@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import {
   normalizeK6Audit,
@@ -176,8 +177,13 @@ async function request<T>(path: string, init: RequestInit | undefined, normalize
   }
 
   if (!response.ok || (typeof payload.code === "number" && payload.code !== 0)) {
-    if (isWrite) pendingWriteKeys.forget(fingerprint);
     const message = typeof payload.message === "string" ? payload.message : undefined;
+    // 原来无条件 forget:5xx 也把在途命令号丢掉,下次重试铸新号 → 后端去重失效 → 重复写入。
+    // 只有确定性拒绝(4xx / 2xx 业务码非 0)才收敛命令号,统一口径见 outcome-classification.ts。
+    if (isWrite && outcomeStaysUnknown(response.status, typeof payload.code === "number" ? payload.code : undefined)) {
+      throw new K6OutcomeUncertainError(stableCommandKey, `上游返回 ${response.status},结果未知`);
+    }
+    if (isWrite) pendingWriteKeys.forget(fingerprint);
     throw new Error(formatAdminApiError(message, `JANUS_API_${response.status}`));
   }
 
