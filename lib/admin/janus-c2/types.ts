@@ -4,6 +4,7 @@
  * 真后台对接时这些接口即 API 响应 schema,前端零重写。
  * 文案不在这里 —— 所有 code→运营可读中文映射在 labels.ts(单源)。
  */
+import type { TakeoverExecution } from "./takeover";
 
 // ===== 设备状态机(PRD §8.1)=====
 export type DeviceStatus =
@@ -288,6 +289,12 @@ export interface Device {
   /** 设备上报态与待下发命令分离,避免把数据库写成功误显示成设备已执行。 */
   desiredStatus?: DeviceStatus;
   commandState?: "PENDING" | "PUBLISHED" | "ACKED" | "FAILED" | "EXPIRED" | "CANCELLED";
+  /**
+   * 接管执行账本(2026-08-07 裁决①):commandState 是它的摘要,不是替代。
+   * 后端未下发本段时页面显式说明「等待后端下发执行明细」,不用摘要伪装成明细。
+   * 类型与判定见 lib/admin/janus-c2/takeover.ts。
+   */
+  takeover?: TakeoverExecution;
   version?: number;
 }
 

@@ -26,6 +26,13 @@ import {
   remoteTargetBindingLabel,
 } from "@/lib/admin/janus-c2/labels";
 import { allowedTransitions, gatedTransitions, type Transition } from "@/lib/admin/janus-c2/transitions";
+import {
+  TAKEOVER_PHASE_LABEL,
+  TAKEOVER_FAILURE_CLASS_LABEL,
+  takeoverRetryable,
+  takeoverTargetMismatch,
+  takeoverVersionStale,
+} from "@/lib/admin/janus-c2/takeover";
 import type { Device } from "@/lib/admin/janus-c2/types";
 import { ManualOverrideModal } from "./manual-override-modal";
 import { useK6Operator } from "./use-operator";
@@ -122,6 +129,55 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
               )],
               ["最近操作人", d.lastOperatorId ? `${d.lastOperatorId} · ${d.lastOperationReason ?? ""}` : "—"],
             ]} />
+          </div>
+
+          {/* 接管执行账本(2026-08-07 裁决①):命令下发成功 ≠ 设备执行成功。
+              摘要徽章(头部 commandState)只说「发没发出去」,这一段说「设备到底怎么了」。 */}
+          <div className="k6-dsec">
+            <h4>接管执行</h4>
+            {!d.takeover ? (
+              <div className="k6-hint">后端尚未下发本设备的执行明细。上方命令状态只反映下发结果,不代表设备已执行;需要确证时用「查询设备应用态」主动对账。</div>
+            ) : (
+              <>
+                {takeoverTargetMismatch(d.takeover) && (
+                  <div
+                    className="k6-hint"
+                    role="alert"
+                    data-proof="k6-takeover-target-mismatch"
+                    style={{ marginTop: 0, marginBottom: 10, color: "var(--danger)", borderLeft: "3px solid var(--danger)", paddingLeft: 10 }}
+                  >
+                    <b>目标不一致</b>：批准目标 <span className="mono">{d.takeover.expectedTargetId}</span> ≠ 设备实际打开
+                    <span className="mono"> {d.takeover.actualTargetId}</span>。设备可能在执行未经批准的目标,请立即撤销接管并核查下行链路。
+                  </div>
+                )}
+                {takeoverVersionStale(d.takeover) && (
+                  <div className="k6-hint" role="alert" style={{ marginTop: 0, marginBottom: 10, color: "var(--warning)" }}>
+                    <b>命令版本落后</b>：已下发 v{d.takeover.commandVersion}，设备仍在执行 v{d.takeover.deviceAppliedVersion}。
+                  </div>
+                )}
+                <KV rows={[
+                  ["执行相位", <span className="k6-bdg warning" key="ph">{TAKEOVER_PHASE_LABEL[d.takeover.phase]}</span>],
+                  ["命令 ID", <span className="mono" key="cid">{d.takeover.commandId ?? "—"}</span>],
+                  ["命令版本 / 设备已应用", `${d.takeover.commandVersion ?? "—"} / ${d.takeover.deviceAppliedVersion ?? "未回报"}`],
+                  ["批准目标 / 实际目标", <span className="mono" key="tg">{d.takeover.expectedTargetId ?? "—"} / {d.takeover.actualTargetId ?? "未回报"}</span>],
+                  ["下发原因", d.takeover.causeRequestId
+                    ? `人工请求 ${d.takeover.causeRequestId}${d.takeover.causeAuditId ? ` · 审计 ${d.takeover.causeAuditId}` : ""}`
+                    : d.takeover.causeDecisionId ? `自动判定 ${d.takeover.causeDecisionId}` : "—"],
+                  ["请求 / 确认时间", `${d.takeover.requestedAt ? timeAgo(d.takeover.requestedAt) : "—"} / ${d.takeover.acknowledgedAt ? timeAgo(d.takeover.acknowledgedAt) : "未确认"}`],
+                ]} />
+                {d.takeover.phase === "FAILED" && (
+                  <div className="k6-hint" style={{ marginTop: 10, color: "var(--danger)" }}>
+                    <b>失败于「{d.takeover.failurePhase ? TAKEOVER_PHASE_LABEL[d.takeover.failurePhase] : "未知阶段"}」</b>
+                    {d.takeover.failureClass ? ` · ${TAKEOVER_FAILURE_CLASS_LABEL[d.takeover.failureClass]}` : ""}
+                    {d.takeover.failureMessage ? ` · ${d.takeover.failureMessage}` : ""}
+                    {" · "}
+                    {takeoverRetryable(d.takeover.failureClass)
+                      ? "属环境瞬时问题,可原地重试。"
+                      : "原地重试会再次失败,请按建议改换目标或先撤销接管。"}
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <div className="k6-dsec">

@@ -11,6 +11,7 @@ import { useMemo, useState } from "react";
 import { effectiveDevices, useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { timeAgo } from "@/lib/admin/janus-c2/scoring";
 import { STATUS_LABEL, STATUS_SOURCE_LABEL, STATUS_TONE, SUGGESTED_ACTION, channelLabel, platformLabel } from "@/lib/admin/janus-c2/labels";
+import { takeoverTargetMismatch } from "@/lib/admin/janus-c2/takeover";
 import type { Device, DeviceStatus } from "@/lib/admin/janus-c2/types";
 import { K6DeviceDetail } from "./device-detail";
 
@@ -190,6 +191,10 @@ export function K6Queue() {
                     <span className={`k6-bdg ${STATUS_TONE[d.status]}`}>{STATUS_LABEL[d.status]}</span>
                     {d.desiredStatus && d.desiredStatus !== d.status && (
                       <div className="mono dim">待确认 → {STATUS_LABEL[d.desiredStatus]}</div>
+                    )}
+                    {/* 目标失配必须在列表就看得见:只在详情里才暴露 = 运营不点开就永远发现不了(裁决① T3)。 */}
+                    {takeoverTargetMismatch(d.takeover) && (
+                      <div data-proof="k6-queue-target-mismatch" style={{ color: "var(--danger)", fontWeight: 600 }}>目标不一致</div>
                     )}
                   </td>
                   <td><span className="k6-srctag">{STATUS_SOURCE_LABEL[d.statusSource]}</span></td>
