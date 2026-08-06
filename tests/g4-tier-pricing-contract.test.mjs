@@ -78,6 +78,13 @@ test("③ 组件:卡片存在 + fail-closed 不给入口 + 三动作接线 + 唯
   assert.match(component, /businessForm:\s*\{\s*kind:\s*"multi-field"/, "档位编辑必须走 multi-field 业务表单(截止/单价分字段,禁单框多值)");
 });
 
+test("③b 单价仲裁:tiers 在场时一级单价只读(主人拍板 2026-08-06)", () => {
+  // 同页两扇写门改同一个钱数曾语义未定义(skeptic P2-3);拍板后:tiers 在场 → 档位卡是唯一调价入口。
+  assert.match(component, /\{!tiers && allowed\(paramAuthority\(priceParam\.key\)\)/, "一级单价的调整入口必须收在 tiers 缺席分支(在场时只读)");
+  assert.match(component, /param\.key === "price" && overview\.tiers/, "adjustParam 缺一级单价的函数级双保险");
+  assert.match(component, /按阶梯派生/, "只读态必须向运营标明「按阶梯派生」,不能只是按钮消失");
+});
+
 test("④ 组件源码顺序:档位 handler 不落入 GEN10b grabBetween 锚窗", () => {
   // g4-market-open-state-contract 用 [const runMarketOpenState, const runRerunBatch) 切片;
   // 新 handler 插进这个窗口会让那道门的否定断言产生假红/假绿,这里把顺序钉死。

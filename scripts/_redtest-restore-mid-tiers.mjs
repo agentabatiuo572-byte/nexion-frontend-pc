@@ -75,6 +75,8 @@ const CASES = [
     () => inject(G4CLIENT, "from !== previousTo", "from < previousTo", TIER)],
   ["G4⑨ 档位 mutation 丢 CAS 版本参数(幂等键防不了并发)",
     () => inject(G4CLIENT, "{ to, priceUSDT, expectedTiersVersion, reason, operator },", "{ to, priceUSDT, reason, operator },", TIER)],
+  ["G4⑪ 单价仲裁失守:tiers 在场时调整按钮回渗",
+    () => inject(G4VIEW, "{!tiers && allowed(paramAuthority(priceParam.key))", "{allowed(paramAuthority(priceParam.key))", TIER)],
   ["G4⑩ 代理单档端点(len-4)被移除",
     () => inject(MKTPROXY, 'parts.length === 4 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "tiers" &&', 'parts.length === 4 && parts[0] === "nex" && parts[1] === "genesis" && parts[2] === "tiersx" &&', TIER)],
 

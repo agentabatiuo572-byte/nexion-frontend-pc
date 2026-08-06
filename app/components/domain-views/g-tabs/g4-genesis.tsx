@@ -193,6 +193,9 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
 
   const adjustParam = (param: G4Param) => {
     if (!allowed(paramAuthority(param.key))) return;
+    // 主人拍板(2026-08-06):阶梯档位在场时一级单价由档位派生、本参数只读,调价走档位卡
+    // (OPS-G-07/G-13 仲裁)。入口已不渲染,这里是钱路径双保险。
+    if (param.key === "price" && overview.tiers) return;
     const numeric = !["divBase", "emissionCurve"].includes(param.key);
     const bounds = param.key === "supply" ? { min: stats.sold, max: 100000, step: 1 }
       : param.key === "price" ? { min: 0.01, max: 1000000, step: 0.01 }
@@ -418,7 +421,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
               <div className="sold"><i style={{ width: `${soldPct}%` }} /></div>
             </div>
             {supplyParam && <div className="p-row"><div className="txt"><div className="k">节点总量</div><div className="s">{supplyParam.sub}</div></div><span className="v">{supplyParam.displayValue}</span>{allowed(paramAuthority(supplyParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(supplyParam)}>调整</button>}</div>}
-            {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价</div><div className="s">{priceParam.sub}</div></div><span className="v">{priceParam.displayValue}</span>{allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
+            {priceParam && <div className="p-row"><div className="txt"><div className="k">一级单价{tiers && <span className="bdg ok" style={{ fontSize: 9, marginLeft: 6 }}>按阶梯派生</span>}</div><div className="s">{tiers ? "阶梯档位在场:单价由累计售出所落档位派生,本参数不生效;调价走下方「阶梯档位定价」卡" : priceParam.sub}</div></div><span className="v">{priceParam.displayValue}</span>{!tiers && allowed(paramAuthority(priceParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(priceParam)}>调整</button>}</div>}
             {dividendParam && <div className="p-row"><div className="txt"><div className="k">每日排放率 <span className="bdg ok" style={{ fontSize: 9 }}>基准 0.1%/日</span></div><div className="s">{dividendParam.sub}</div></div><span className="v">{dividendParam.displayValue}</span>{allowed(paramAuthority(dividendParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(dividendParam)}>调整</button>}</div>}
             {royaltyParam && <div className="p-row"><div className="txt"><div className="k">二级版税</div><div className="s">{royaltyParam.sub}</div></div><span className="v">{royaltyParam.displayValue}</span>{allowed(paramAuthority(royaltyParam.key)) && <button className="l-btn sm mc" disabled={busy} onClick={() => adjustParam(royaltyParam)}>调整</button>}</div>}
             <div className="p-row"><div className="txt"><div className="k">排放开阀 <span className="bdg ok" style={{ fontSize: 9 }}>H1 权威</span></div><div className="s">上所前关闭；由 H1 逐月节奏旋钮控制，本页只读</div></div><span className="v">{overview.emissionGate.open ? "已开放" : "未开放"}</span></div>

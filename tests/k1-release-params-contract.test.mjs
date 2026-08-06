@@ -70,6 +70,7 @@ test("③ 组件:卡片 + fail-closed + 运营可读标签 + 可枚举值下拉�
   assert.match(component, /在线证明或人工放行/, "释放模式丢了运营可读中文标签(页面禁裸工程串)");
   assert.match(component, /仅人工放行/, "manual_only 丢了中文标签");
   assert.match(component, /不随时间自动放行/, "落地规则丢了「审核中不随时间自动放行」关键口径(SPEC-7 的灵魂句,削文案不许静默)");
+  assert.match(component, /仅生成冻结建议/, "冻结线语义已拍板为「建议」(2026-08-06):达线不自动锁收益,削掉这句会退回语义分叉");
   const modal = grabBetween(component, "releaseDraft && (() => {", "whitelistDraft && (() => {");
   assert.match(modal, /<select/, "枚举/开关参数必须下拉可选");
   assert.doesNotMatch(modal, /type="text"/, "释放参数弹窗禁自由文本输入(打错一个工程串就是静默配置事故)");
