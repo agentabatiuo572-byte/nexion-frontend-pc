@@ -1,9 +1,20 @@
 import { spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { resolveNexionAppRoot, resolveNexionBackendRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
 const npxCmd = isWindows ? "npx.cmd" : "npx";
+
+// 🔴 退出码哨兵文件:进程无论从哪条路径退出,都把真实退出码原子落盘到 .verify-exit.code。
+//   why:调用侧 `npm run verify | tail` 这类管道会吞掉退出码(拿到的是 tail 的 0),
+//   「verify 绿」由此被误报过两次(EVOLUTION-LEDGER WF-7/WF-10)——外部判定一律读本文件,
+//   不读管道退出码。'exit' 回调里只允许同步写。
+process.on("exit", (code) => {
+  try { writeFileSync(".verify-exit.code", String(code)); } catch { /* 落盘失败不改变退出语义 */ }
+});
+// 启动即写占位:防「进程没跑起来/中途被杀,调用侧读到上一轮的 0」——读到 "running" 一律按未完成处理。
+try { writeFileSync(".verify-exit.code", "running"); } catch { /* 同上 */ }
 
 /**
  * 🔴 「环境缺件」与「真发现缺陷」必须分开处理(2026-08-05)。
@@ -130,6 +141,13 @@ const GEARS = [
   // 跨仓 parity 单独成齿 —— 缺 Nexion-uniapp 的机器上它整齿跳过并进台账,
   // 而上面那道后台侧契约照跑(拆分理由见该测试文件抬头)。
   ["G4 market-open-state cross-repo parity", "node", ["--test", "tests/g4-market-open-state-parity.test.mjs"]],
+  // 恢复三条中间挡位(合并底账 §二 1/4/5,主人 2026-08-06 拍板):三道门全部只读本仓、任何机器真跑。
+  // 底账 §四教训 =「tab 在、行级动作被静默削减」逐文件核对测不出,故逐动作钉死成机器判据。
+  ["G4 tier-pricing contract", "node", ["--test", "tests/g4-tier-pricing-contract.test.mjs"]],
+  ["F5 commission-hold contract", "node", ["--test", "tests/f5-commission-hold-contract.test.mjs"]],
+  // F 域稳定命令号:静态半钉咽喉表达式级接线 + 运行时半跑真 store 语义(只读本仓,任何机器真跑)。
+  ["F pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/f-pending-store-contract.test.mjs"]],
+  ["K1 release-params contract", "node", ["--test", "tests/k1-release-params-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],

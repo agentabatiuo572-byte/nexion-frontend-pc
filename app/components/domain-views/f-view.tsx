@@ -45,6 +45,9 @@ import {
   type F1VRankOverview,
 } from "@/lib/admin/f1-client";
 import { usePropose } from "@/lib/admin/use-propose";
+import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { findHighOp, isFFundAmplifyingKey } from "@/lib/admin/high-ops-registry";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { Mc, FViewCtx } from "./f-tabs/types";
@@ -57,6 +60,11 @@ import "./f-domain.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
 const ADMIN_OPERATOR = currentAdminOperator;
+
+/** F 域全部 A2 提交共用的在途命令号(sessionStorage + 24h TTL):同槽位同输入才复用,让
+ *  outcome-uncertain(网络断 / 503)后的重试带同一 Idempotency-Key 被后端去重;输入变了
+ *  (如同一佣金事件先冻结后解冻)铸新号并弃旧号,防真实新操作被当成重复提交静默吞掉。 */
+const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-commands-v1" });
 
 // F 域 polymorphic key→op 分发(对齐后端 OpsTeamService.updateConfig 分发逻辑,commit afe51f2)。
 // 4 replay op 全部 params {key,value},后端从 key 派生锁 target id(unilevel→L+layerNo,commission→eventId)。
@@ -258,12 +266,25 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     if (tab === "F5") void refreshF5();
   }, [refreshF5, tab]);
 
+  // F 域全部 A2 propose 必经此咽喉:命令号先查在途记录再铸新——outcome-uncertain 重试同号让
+  // 后端去重,成功 / 确定性失败即收敛丢弃。绕开咽喉直调会失去幂等复用(契约门钉直调恒为 1 处)。
+  const proposeStable = async (slot: string, inputFingerprint: string, spec: ProposeSpec) => {
+    const commandKey = commandAttempts.resolve(slot, inputFingerprint, () => createA2CommandKey(slot.split(":")[0]));
+    try {
+      await propose((s: string) => setToast(s), { ...spec, commandKey });
+      commandAttempts.forget(slot);
+    } catch (error) {
+      if (!isA2OutcomeUncertainError(error)) commandAttempts.forget(slot);
+      throw error;
+    }
+  };
+
   // F 域 5 写函数统一改 A2 propose:按 key 分发到 4 polymorphic op(commit afe51f2)。
   const proposeFConfig = async (sourceDomain: string, key: string, value: string, reason: string) => {
     const op = resolveFOp(key);
     const def = findHighOp(op);
     if (!def) throw new Error(`F_OP_NOT_FOUND:${op}`);
-    await propose((s: string) => setToast(s), {
+    await proposeStable(`f-config:${key}`, JSON.stringify([value, reason]), {
       action: `${def.action} · ${key}`,
       obj: key,
       before: "—",
@@ -336,7 +357,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     proposeVRankOverride: async (userId, targetV, direction, reason) => {
       const def = findHighOp("f_vrank_override");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_vrank_override");
-      await propose((s: string) => setToast(s), {
+      await proposeStable(`f-vrank-override:${userId}`, JSON.stringify([targetV, direction, reason]), {
         action: `${def.action} · ${direction === "promote" ? "晋升" : "降级"}至 ${targetV}`,
         obj: `用户 ${userId}`,
         before: "以服务端当前等级为准",
@@ -354,7 +375,7 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     proposePayoutAction: async (payoutId, action, reason) => {
       const def = findHighOp("f_reward_payout_action");
       if (!def) throw new Error("F_OP_NOT_FOUND:f_reward_payout_action");
-      await propose((s: string) => setToast(s), {
+      await proposeStable(`f-payout-action:${payoutId}`, JSON.stringify([action, reason]), {
         action: `${def.action} · ${action === "reissue" ? "重发" : "冲正"}`,
         obj: `派发单 ${payoutId}`,
         before: "以服务端当前状态为准",
@@ -415,7 +436,9 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
     proposeF4Settlement: async (reason) => {
       const def = findHighOp("f4_pool_settle");
       if (!def) throw new Error("F_OP_NOT_FOUND:f4_pool_settle");
-      await propose((s: string) => setToast(s), {
+      // 指纹带日键:结算是按周期重复的意图,上一周期已决议的票被 24h 幂等回放会把新结算静默吞掉;
+      // 日键把该窗口压到当日,跨日重试铸新号(在途票期间由后端 current-week 目标锁兜底)。
+      await proposeStable("f4-settle:current-week", JSON.stringify([reason, new Date().toISOString().slice(0, 10)]), {
         action: def.action,
         obj: "F4 当前周领导奖池",
         before: "待结算",
@@ -543,13 +566,18 @@ export function FDomainView({ meta }: { meta: DomainViewMeta }) {
             } else {
               throw new Error(`F_BACKEND_ROUTE_MISSING:${mc.paramKey}`);
             }
-            setToast(mc.name + " 已生效");
+            // dispose 一律走 A2 propose:此刻只是入了待执行队列,还没落库。原文案「已生效」
+            // 会把冻结这种抢时间的动作误报成完成(票在队列里等执行期间冷却可能到期解锁)。
+            setToast(mc.name + " 已提交 · A2 待执行队列");
           } else {
             throw new Error("F_CONFIRM_SHAPE_UNKNOWN:" + (mc.op || mc.name)); // 未知确认形状必须响亮失败,禁静默假成功
           }
           setActionConfirm(null);
           } catch (error) {
-            setToast("F 域数据提交失败 · " + errorMessage(error));
+            // outcome-uncertain 不算「失败」:提案可能已生效,冠以失败会诱导换渠道重做造成重复动作。
+            setToast(isA2OutcomeUncertainError(error)
+              ? errorMessage(error)
+              : "F 域数据提交失败 · " + errorMessage(error));
           }
         }} />}
       {toastNode}
