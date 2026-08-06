@@ -187,3 +187,15 @@ amplifies 挂 coverage.redlineBreached · 本文档措辞与勾选卫生修正�
   **方向判定在真实运行时也对**:同一参数调大不提示、调小才提示(观察窗口属「调小才是放宽」族)。
   走查 harness 的四个坑已写进脚本文件头,其中最坑一条:`effectiveMenuNodes` 传空数组 = 「后端明确授了零菜单」,
   侧栏与深链会全判无权 —— 要走「按角色全开」回退路径必须**整个字段不传**。
+
+### 收尾移交(2026-08-06,主人拍板)
+
+**合并由 D7/合流协调线统一收尾**(主人确认):该线基线新、且持有当天五个 PR 的冲突解决先例,由其经 PR 合入 main;本线不再操作分支、**不推送**(主人维持不推)。
+
+**已转达给该线的三条**(均不在分支提交里体现):
+
+1. 本线的门全绿是**旧基线**结论(42 齿,对方现 55 齿),合流后须重跑。尤其 `scripts/k1-release-guard-walkthrough.mjs` 强依赖 mock 数据形状(overview 须满足 `normalizeK1` 的 fail-closed 校验、`linkWeight` 须为「设备 X · 支付 Y · IP Z」且三数和为 1、`effectiveMenuNodes` 传空数组会被判成「后端明确授了零菜单」)。判据写在脚本文件头;合流后若红,先判是 harness 要跟着改还是被测代码坏了。
+2. **PRD 侧成果不在任何 git 仓**(`D:\WORKS\PLAN\PRD\` 不受版本控制):本轮同步的三卷 PRD、`NexGrid_运营控制后台_实现差异与待接线台账.md`、`specs/SPEC-K1-earning-release-semantics.md`(K1 六项分桶语义已裁定)只在磁盘上,合并带不走 —— **「分支合完」≠「本轮成果全入库」**。
+3. 台账 T-03(释放参数 payload 缺 `expectedVersion`)/ T-04(F5 两把权限钥匙各跨两个角色,发钱与止血共用一把)/ T-05(K1 一把写钥匙同时门控 lead 与 member 级动作)是**有意留的未接线项**,须后端拆键或补字段,主人明确本轮不动,不阻断合并。
+
+**本线终态**:分支 `pkg/k1-release-guard`,相对基线 5 笔提交;本地已合进 `feat/batch12-invite-codes`(含一个 done-review 墨菲前置抓到的补丁:输入框清空时会误报「放大资金流出」),仅本地、未推送。
