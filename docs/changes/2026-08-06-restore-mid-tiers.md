@@ -161,3 +161,32 @@ amplifies 挂 coverage.redlineBreached · 本文档措辞与勾选卫生修正�
 - F5 按钮级 ⚡ 放大标记未保留(admin-ops F 域现行按钮无此视觉语言,放大护栏在弹窗层);F5 rail「处置口径」汇总卡未搬(现版页面无 rail 结构,口径在各弹窗 detail)。
 - G4 原型 gtint 两句「前端 tierForSold 单源/前端 fail-closed 回退」用户端镜像口径未搬——uniapp 侧当前语义待产品确认后再定去留。
 - per-param 中文说明/前端影响说明移交服务端 name/sub/note 字段(契约钉字段在场,不钉内容)——契约先行架构的固有取舍。
+
+---
+
+## 后续:2026-08-06 三路独立审查后的四项裁定与落地
+
+三路独立审查(原型对齐 / 开发可实现 / 内部一致)共 85 条,逐条回源裁决后:1 条驳回(报「熔断规则全空」,实测阈值=正常槽位数、作用域=同簇均已定义,仅缺解除路径),其余全部落盘。
+
+**主人四项拍板(2026-08-06)**:
+1. **供应上界**:`tiers` 在场时以末档截止为唯一供应上界,`TOTAL_SLOTS` 转只读派生(与单价仲裁同构)。一并消除「末档截止 = 已售时下一张无价」的无价区间。已落 PRD v3 ③/④a/⑤/⑦/G4-MD1。
+2. **K1 六项分桶语义**:打包独立规格另轮解决 → `PRD/specs/SPEC-K1-earning-release-semantics.md`(逐项列选项与代价,不预设答案)。PRD 正文留指针。
+3. **F5 两项状态机语义**:两条都补 —— `unlocked → frozen`(可提态也能先按住)、`frozen → cooling`(冻结期冷却倒计时暂停,解冻按冻结时状态分流,堵掉「解冻绕过剩余冷却」的通路)。已落 PRD v2 ②(5)/④a/F5-MD5。
+4. **实现层修前两条**:本分支之外新开 `pkg/k1-release-guard`,修 T-01(放宽方向未告知覆盖率核验)+ T-02(命令号缺输入指纹,改值再提交被幂等窗静默吞掉)。权限键拆分(T-04/T-05)按裁定不动,须后端配合。
+
+**实现差异台账**:`PRD/NexGrid_运营控制后台_实现差异与待接线台账.md`(6 条,PRD 正文各留指针;PRD 正文自此只写规格目标形态,不写实现现状与验收豁免)。
+
+### pkg/k1-release-guard 的验证状态(如实记录,勿当已全绿)
+
+- `npx tsc --noEmit` = 0
+- 新契约门 `tests/k1-release-guard-contract.test.mjs` 7/7 绿,已挂 verify 齿轮
+- 红测 `scripts/_redtest-k1-release-guard.mjs` 10/10:每条判据被破坏后门都会咬人,还原字节一致、终态复绿
+- `npm run verify` = 37/42 齿绿,5 齿因本机无兄弟仓 `nexion-backend` **如实跳过**
+- 🔴 **实景渲染未验证**:告知块的条件渲染没能在真实浏览器里跑通 —— K1 页的走查 harness 卡在权限 mock:
+  `authorities: ["*"]` 时释放参数卡与 7 行参数正常渲染但「调整」按钮不渲染(通配不授 `risk_k1_write`);
+  改成显式权限码后卡片反而整个不渲染。这是 harness 问题不是被测代码问题,但**渲染层因此仍属未证**。
+  接手者若要补:dev server 走根 `.claude/launch.json` 的 `pkg-restore-admin`(:3022);
+  拦 `/api/admin/auth/session`(信封 `{code:0,data:{tokenType,session}}`)+ `/multi-account/overview`(精确后缀);
+  overview 必需字段见 `k-client.ts` 的 `normalizeK1`(`serverCanonical:true` / `domain:"K1"` / stats 五键 /
+  params 五键且 `linkWeight` 须为 `设备 X · 支付 Y · IP Z` 格式且三者和为 1 / sources 五项齐 / clusters+whitelist 分页体)。
+  **未解**:让「调整」按钮渲染出来的 authorities 正确形状。
