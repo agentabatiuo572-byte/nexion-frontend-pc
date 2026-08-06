@@ -99,6 +99,16 @@
       逐条 exit=1 且命中的正是该判据编号,还原用内容恢复(禁 git checkout),还原后复跑 PASS。
       PASS 行打印样本量(291 个客户端文件),防空集假绿。已挂 verify 齿轮表(哨兵 + 咽喉契约测试两齿)。
 - [ ] **T8 全量实景 + audit**:独立 tester 断网矩阵(Done-when 1-3)+ nexion-audit 循环至 P0=P1=0。报告:
+      **部分完成(环境受限,如实交底)**。已做:dev 3032 起真实运行时,浏览器内注入
+      `TypeError("Failed to fetch")` 拦 `/api/admin/*`(等效 Playwright route abort),走登录提交路径实测——
+      屏幕落中文「网络连接失败或后台服务不可达;请检查网络后重试,提交类操作请先刷新核对是否已生效。」,
+      正则扫屏 English 泄漏=0、机器码=0(注入的原始异常文本是英文,屏幕零残留 → 转换发生在运行时,非测试态假绿)。
+      **未做**:多域读/写路径矩阵与表外码实景(Done-when 1 的「≥3 域」、2、3)。阻塞原因已实测证伪非代码问题——
+      `app/api/admin/auth/login/route.ts` 反代 `http://127.0.0.1:8110` 的 nexion-backend,该仓在本 worktree 缺席,
+      登录拿不到会话,后台各域页面进不去;与卡住 5 个 verify 齿轮的是同一环境缺件。
+      顺带证伪一条过期记忆:`NEXT_PUBLIC_ADMIN_AUTH_BYPASS` 本地预览开关在本分支已不存在
+      (全仓 `NEXT_PUBLIC` 零命中),不能再按它绕登录。
+      **audit 未跑**。补齐路径:接上 nexion-backend(或 junction 到已有 checkout)后跑多域矩阵 + nexion-audit。
 
 依赖:T1 → T2/T3/T4(可并行,不同文件)→ T5/T6(可并行)→ T7 → T8。
 完成门:tsc 0 · npm run verify(跨仓 5 齿本机缺件如实列)· 契约全绿 · T8 实景+audit · done-review。

@@ -10,6 +10,13 @@
 机器门:tsc 0 · 咽喉契约 15/15(13→15,新增两条先红后绿)· 哨兵 PASS(291 文件取材)。
 
 **剩 T8**:实景断网矩阵(Done-when 1–3)+ nexion-audit 至 P0=P1=0。
+T8 已做掉登录面的真断网实测(dev 3032 + 浏览器内注入 `TypeError("Failed to fetch")`):
+屏幕落中文咽喉文案,English 泄漏=0、机器码=0。**多域矩阵与 audit 未做**——
+登录接口反代 `127.0.0.1:8110` 的 nexion-backend,该仓在本环境缺席,进不去后台各域页面
+(与卡住 5 个 verify 齿轮同一环境缺件)。⚠️ 记忆里的 `NEXT_PUBLIC_ADMIN_AUTH_BYPASS`
+本地预览开关**在本分支已不存在**(全仓 `NEXT_PUBLIC` 零命中),别再按它绕登录。
+补齐路径:接上 nexion-backend 后跑多域矩阵 + nexion-audit。
+本 worktree 的 dev 配置已加进根 `.claude/launch.json`(名 `pkg-error-copy`,端口 3032)。
 
 **接手第一步**:跑 `node scripts/error-copy-throat-sentinel.mjs`(应 PASS/291)+
 `npm run test:error-messages-contract`(应 15/15);不一致说明有人动过。
