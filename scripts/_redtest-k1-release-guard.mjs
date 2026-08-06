@@ -32,13 +32,16 @@ const MUTATIONS = [
     (s) => {
       const eol = s.includes("\r\n") ? "\r\n" : "\n";
       const lines = s.split(eol);
-      const start = lines.findIndex((l) => l.includes("{isLooseningRelease(key,"));
+      // 定位不要带前缀花括号:渲染条件前面可能还有别的前置判断(如 valueOk &&),带 `{` 会失配。
+      const start = lines.findIndex((l) => l.includes("isLooseningRelease(key,"));
       if (start < 0) return s;
       const end = lines.findIndex((l, i) => i > start && l.trim() === ")}");
       if (end < 0) return s;
       lines.splice(start, end - start + 1);
       return lines.join(eol);
     }],
+  ["M11", "去掉告知块的输入有效性前置(无效值会误报放大方向)",
+    (s) => s.replace("{valueOk && isLooseningRelease(key,", "{isLooseningRelease(key,")],
   ["M9", "告知块留着但把证据锚删了(走查脚本抓不到)",
     (s) => s.replace('data-proof="k1-release-loosen-warning" ', "")],
   ["M10", "把判据字面量挪进注释走私(验证剥注释有效)",
