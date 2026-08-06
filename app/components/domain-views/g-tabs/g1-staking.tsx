@@ -223,11 +223,41 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
     });
   };
 
+  // J1 只有 5 个粗粒度业务闸(withdraw/staking/genesis/exchange/trial),没有单档粒度,
+  // 所以单档熔断的解除只能在本页做;缺了它熔断就是一扇单向门。
+  const resumeTier = (pool: G1Pool) => {
+    if (!pool.killed) return;
+    openActionConfirm({
+      action: `解除单档熔断 · ${pool.product} · ${displayTerm(pool)}`,
+      detail: <>解除后该档立即恢复接收新锁单。恢复属放大流出,提交时由后端重新校验 B1 兑付覆盖率红线(当前 {cov}%,红线 {redline}%),不达标会被拒绝。</>,
+      amplifies: true,
+      coverage: { coverageRatio: coverage.coverageRatio, redlinePct: coverage.redlinePct },
+      businessForm: {
+        kind: "multi-field",
+        title: "熔断解除复核",
+        hint: "复核结论会写入审计;操作理由需独立说明本次判断。",
+        fields: [
+          { key: "dispositionPlan", label: "复核结论", inputKind: "text", placeholder: "说明当初的熔断依据已消除的证据", required: true, wide: true },
+        ],
+      },
+      run: async (reason, _value, businessValue) => {
+        await mutate(`resume:${pool.tierKey}`, () => updateG1StakingPoolKillStatus(
+          pool.tierKey,
+          false,
+          reason,
+          currentAdminOperator(),
+          "MANUAL_RISK_REVIEW",
+          businessValue?.dispositionPlan ?? "",
+        ), `已解除熔断 · ${pool.product} · ${displayTerm(pool)}`);
+      },
+    });
+  };
+
   const killTier = (pool: G1Pool) => {
     if (pool.killed) return;
     openActionConfirm({
       action: `单档熔断 · ${pool.product} · ${displayTerm(pool)}`,
-      detail: <>熔断该档会立即停止新锁,并由后端原子执行在锁单处置、A2 审计与事件发件箱。恢复只能从 J1 Kill-Switch 矩阵执行。</>,
+      detail: <>熔断该档会立即停止新锁,并由后端原子执行在锁单处置、A2 审计与事件发件箱。解除熔断在本页操作,需重新过 B1 兑付覆盖率红线。</>,
       businessForm: {
         kind: "multi-field",
         title: "熔断依据与持仓处置",
@@ -294,7 +324,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
                   </button>
                   {" "}
                   {pool.killed
-                    ? <a className="l-btn sm" href="/emergency/kill-switch" title="G1 不允许解除;请前往 J1">前往 J1 恢复</a>
+                    ? <button className="l-btn sm mc" disabled={busy || !canKill} title={canKill ? "解除该档熔断,需过备付金覆盖率红线" : "缺少 finprod_g1_kill_toggle 权限"} onClick={() => resumeTier(pool)}>解除熔断</button>
                     : <button className="l-btn sm mc" disabled={busy || !canKill} title={canKill ? "熔断该档" : "缺少 finprod_g1_kill_toggle 权限"} onClick={() => killTier(pool)}>熔断</button>}
                 </td>
               </tr>

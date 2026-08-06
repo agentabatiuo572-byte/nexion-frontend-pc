@@ -150,6 +150,7 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
     return [node[0], { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle), angle }] as const;
   }));
   return (
+    <>
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: 272, display: "block" }} aria-label={`簇 ${c.id} 关联图谱`}>
       <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--border)" strokeDasharray="3 6" />
       {c.edges.map((edge, index) => {
@@ -186,7 +187,38 @@ function ClusterGraph({ c }: { c: K1Cluster }) {
       })}
       {!c.edges.length && <text x={cx} y={cy + 4} fontSize={11} fill="var(--ink-4)" textAnchor="middle">暂无可展示关联边</text>}
     </svg>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", padding: "10px 4px 2px", fontSize: 11.5, color: "var(--ink-3)", textWrap: "pretty" }}>
+      <LegendItem swatch={<EdgeSwatch color="var(--warning)" />}>共享设备</LegendItem>
+      <LegendItem swatch={<EdgeSwatch color="var(--cyan)" />}>共享支付方式</LegendItem>
+      <LegendItem swatch={<EdgeSwatch color="var(--ink-4)" />}>同 IP 或网段</LegendItem>
+      <LegendItem swatch={<EdgeSwatch color="var(--ink-3)" thick />}>线越粗、关联越强</LegendItem>
+      <LegendItem swatch={<NodeSwatch color="var(--success)" />}>账户正常</LegendItem>
+      <LegendItem swatch={<NodeSwatch color="var(--danger)" />}>已冻结 / 封禁 / 受限</LegendItem>
+      <LegendItem swatch={<DotSwatch />}>领过新人礼</LegendItem>
+      <LegendItem swatch={<OverflowSwatch />}>本图未画出的账户</LegendItem>
+    </div>
+    </>
   );
+}
+
+function LegendItem({ swatch, children }: { swatch: React.ReactNode; children: React.ReactNode }) {
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>{swatch}{children}</span>;
+}
+
+function EdgeSwatch({ color, thick }: { color: string; thick?: boolean }) {
+  return <span style={{ width: 16, height: thick ? 3.5 : 1.5, borderRadius: 2, background: color, opacity: 0.8 }} />;
+}
+
+function NodeSwatch({ color }: { color: string }) {
+  return <span style={{ width: 11, height: 11, borderRadius: "50%", background: color, opacity: 0.85 }} />;
+}
+
+function DotSwatch() {
+  return <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--warning)" }} />;
+}
+
+function OverflowSwatch() {
+  return <span className="mono" style={{ color: "var(--ink-4)", fontWeight: 600 }}>+N</span>;
 }
 
 function isValidCidr(value: string) {

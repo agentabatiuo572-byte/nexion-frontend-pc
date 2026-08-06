@@ -318,8 +318,14 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
           {geoEndpoints.length === 0 && <div className="rw"><div className="c muted" style={{ gridColumn: "1 / -1" }}>当前没有已登记的功能入口</div></div>}
           {geoEndpoints.map((entry) => (
             <div className="rw" key={entry.key}>
-              <div className="c"><span style={{ fontWeight: 600, color: "var(--ink)" }}>{entry.label}</span></div>
-              <div className="c"><span style={{ fontSize: 12, color: "var(--ink-2)" }}>{entry.biz}</span></div>
+              <div className="c">
+                <span style={{ fontWeight: 600, color: "var(--ink)" }}>{entry.label}</span>
+                <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{entry.endpoint}</div>
+              </div>
+              <div className="c">
+                <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{entry.biz}</span>
+                {entry.domain && <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{entry.domain}</div>}
+              </div>
               <div className="c"><div className="geo-set">{entry.countries.length === 0 ? <span className="inherit">{entry.source === "derived" ? "跟随全局" : "尚未设置"}</span> : <>{entry.countries.slice(0, 4).map((code) => <span key={code} className="cc">{countryNames[code] ?? "未知地区"}（{code}）</span>)}{entry.countries.length > 4 && <span className="more">+{entry.countries.length - 4}</span>}</>}</div></div>
               <div className="c"><span className={`src ${entry.source}`}>{entry.sourceLabel}</span></div>
               <div className="c">{entry.hits === 0 ? <span className="hits zero">—</span> : <span className="hits">{entry.hits}</span>}</div>

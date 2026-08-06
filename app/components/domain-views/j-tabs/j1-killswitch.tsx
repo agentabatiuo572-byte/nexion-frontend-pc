@@ -296,7 +296,10 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
           </div>
           {gates.map((g) => { const on = effOn(g); return (
             <div className="rw" key={g.key}>
-              <div className="c"><div style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</div></div>
+              <div className="c">
+                <div style={{ fontWeight: 600, color: "var(--ink)" }}>{g.name}</div>
+                <div className="mono" style={{ marginTop: 2, color: "var(--ink-4)", fontSize: 11.5 }}>{g.key}</div>
+              </div>
               <div className="c cap"><span className="nm">{g.cap}</span><span className="desc"><AutoGloss>{g.desc}</AutoGloss></span></div>
               <div className="c">{on ? <span className="badge-st live">在线</span> : <span className="badge-st killed">已关停</span>}</div>
               <div className="c"><span className={"badge-impact " + g.coverageImpactCategory}>{IMPACT_LABEL[g.coverageImpactCategory]}</span></div>

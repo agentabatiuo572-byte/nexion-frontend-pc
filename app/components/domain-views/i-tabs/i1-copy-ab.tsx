@@ -49,6 +49,18 @@ const VERSION_PAGE_SIZE = 20;
 
 const VAR_COLORS = ["var(--i-ac)", "var(--admin-cat-5)", "var(--admin-cat-3)"];
 
+// 占位符是数据槽,任一语言漏掉就会渲染出半截句子。取三语并集作为必含集:
+// 现存文案里出现过的槽,改完必须还在,漏一个提交前就拦下。
+const COPY_PLACEHOLDER_PATTERN = /\{[A-Za-z0-9_.]+\}/g;
+
+function requiredPlaceholders(...texts: (string | undefined)[]): string[] {
+  const found = new Set<string>();
+  for (const text of texts) {
+    for (const token of text?.match(COPY_PLACEHOLDER_PATTERN) ?? []) found.add(token);
+  }
+  return [...found].sort();
+}
+
 function normalizeCopyModule(value?: string): string {
   const raw = value?.trim() ?? "";
   return LEGACY_MODULES[raw] ?? raw.toLowerCase();
@@ -270,6 +282,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         en: editableVersion?.en || "",
         vi: editableVersion?.vi || "",
         versionNote: editableVersion?.versionNote || "后台编辑文案",
+        placeholders: requiredPlaceholders(editableVersion?.zh, editableVersion?.en, editableVersion?.vi),
         saveModeChoice: true,
       },
       run: (reason, _value, form) => {
