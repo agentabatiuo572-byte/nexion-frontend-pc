@@ -77,7 +77,7 @@ test("h-client:H8「结果未知」三类齐(网络层 / 回执读不出 / 5xx),
     "H8 必须真读这两个标记来分类");
   // 关键:growth proxy 后端不可达时返回的是**带 JSON body 的 503**,解析得动、走的是普通 Error 分支。
   // 只认解析异常 = 按错误页格式分类(返 HTML 算未知、返 JSON 算确定失败),那是巧合不是判据。
-  assert.match(code, /if \(typeof status !== "number" \|\| bodyUnreadable \|\| status >= 500\)/,
+  assert.match(code, /if \(typeof status !== "number" \|\| bodyUnreadable \|\| outcomeStaysUnknown\(status\)\)/,
     "5xx 与网络层必须归「结果未知」保号 —— 归确定性失败会让重试铸新号 → 重复发奖");
   assert.match(code, /throw new H8OutcomeUncertainError\(/);
   // 命令号已持久化 24h,铸号必须带随机段且兜底 secure context(局域网 http 演示下 randomUUID 不存在)。
@@ -129,7 +129,9 @@ test("结果未知后刷新原样重试:同值同 version 复用同号;收敛后
     "命令号必须落 sessionStorage:弹窗打开时现铸存组件态的旧半措施,刷新即丢");
 
   reloaded.forget("param|newcomer.usdt");
-  assert.notEqual(store.resolve("param|newcomer.usdt", fp, mint), first);
+  // merge 2026-08-06:幂等包给 store 加内存镜像(防写失败)后,「双实例同键」是运行时
+  // 不存在的场景(模块级单实例);收敛换新号断言回归单实例语义。
+  assert.notEqual(reloaded.resolve("param|newcomer.usdt", fp, mint), first);
 });
 
 test("指纹织入 expectedVersion:同值不同 version 是新意图必换号(CAS 不是幂等重试)", () => {

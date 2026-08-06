@@ -95,7 +95,7 @@ test("f1Request:写路径无稳定号直接拒绝,四类结果未知保号,4xx/4
   assert.match(code, /X-Nexion-Upstream-Outcome"\)\?\.trim\(\)\.toLowerCase\(\) === "unknown"/);
   assert.match(code, /includes\("UPSTREAM_OUTCOME_UNKNOWN"\)/,
     "除响应头外还要认 message 里的上游未知标记(teams proxy 目前不透传该头)");
-  assert.match(code, /if \(response\.status >= 500\) \{\s*throw new F1OutcomeUncertainError\(/,
+  assert.match(code, /if \(outcomeStaysUnknown\(response\.status, result\?\.code\)\) \{\s*throw new F1OutcomeUncertainError\(/,
     "5xx 必须归「结果未知」保号 —— 归确定性失败会让重试铸新号 → 重复打款");
   // 「200 + 业务码 0 但 data 缺失」= 回包被截断,后端可能已执行 → 保号。
   // 但只对**要读返回值**的调用开:F5 四个 void 写若后端本就返 data:null,无条件启用会每次抛未知
@@ -267,11 +267,14 @@ test("F5 批量重发:改勾选换新号并弃旧号,改回原勾选不复活;�
 });
 
 test("刷新后仍认得在途命令号:换 store 读面(模拟刷新)原样重试复用同号", async () => {
+  // merge 2026-08-06:幂等包 store 带内存镜像后,「换 storage 替身」不再等价刷新
+  // (真刷新=模块重载内存全清)。改用 import 分身 = 全新模块内存,才是刷新的忠实模拟。
   const env = installStorage();
+  const fresh1 = await import("../lib/admin/f1-stable-write.ts?refresh-a=" + Date.now());
   let first;
-  await f1StableWrite("f3-settle|7001|2026-08-06", "settlement", async (key) => {
+  await fresh1.f1StableWrite("f3-settle|7001|2026-08-06", "settlement", async (key) => {
     first = key;
-    throw new F1OutcomeUncertainError("响应丢失", key);
+    throw new fresh1.F1OutcomeUncertainError("响应丢失", key);
   }).catch(() => {});
 
   const persisted = env.raw();
@@ -279,8 +282,9 @@ test("刷新后仍认得在途命令号:换 store 读面(模拟刷新)原样重�
   const survived = installStorage();
   globalThis.window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
 
+  const fresh2 = await import("../lib/admin/f1-stable-write.ts?refresh-b=" + Date.now());
   let second;
-  await f1StableWrite("f3-settle|7001|2026-08-06", "settlement", async (key) => {
+  await fresh2.f1StableWrite("f3-settle|7001|2026-08-06", "settlement", async (key) => {
     second = key;
     return "ok";
   });
