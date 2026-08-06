@@ -302,6 +302,24 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H7_VOUCHER_RESPONSE_INVALID: "代金券服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
   USER360_RESPONSE_INVALID: "用户档案服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
   E1_SKU_PAGE_INVALID: "SKU 商品服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  RISK_RESPONSE_BODY_MISSING: "风控服务返回了空响应，页面已停止展示推测值；请重试读取，持续出现时请联系值班人员。",
+  M4_KNOWLEDGE_OVERVIEW_MALFORMED: "知识库服务返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M4_KNOWLEDGE_FAQ_ID_COLLISION: "知识库服务返回了重复的 FAQ 条目，页面已停止展示可疑数据；请重试读取或联系值班人员。",
+  M_LOAD_CONFIG_BACKEND_RESPONSE_MISSING: "客服工作台配置读取失败，后台未返回有效配置；页面已停止使用本地猜测值，请重试读取或联系值班人员。",
+  M_LOAD_CONFIG_FIELD_MISSING: "客服工作台配置缺少必需字段，页面已停止使用不完整配置；请重试读取或联系值班人员。",
+  M5_SESSION_TEMPLATE_PROTOCOL_INVALID: "会话话术模板服务返回的数据不完整或不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M2_TICKET_DETAIL_MALFORMED: "客服工单详情返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M2_TICKET_PAGE_INCOMPLETE: "客服工单列表分页读取不完整，页面已停止展示部分数据；请重试读取或联系值班人员。",
+  M3_CONVERSATION_DETAIL_INVALID: "客服会话详情返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M3_CONVERSATION_PAGE_MALFORMED: "客服会话列表返回的数据不完整或格式异常，页面已停止展示推测值；请重试读取或联系值班人员。",
+  M3_CONVERSATION_PAGE_INCOMPLETE: "客服会话列表分页读取不完整或存在重复，页面已停止展示部分数据；请重试读取或联系值班人员。",
+  OPS_DASHBOARD_FIELD_REQUIRED: "运营看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  OPS_DASHBOARD_FIELD_INVALID: "运营看板服务返回的数据不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  J1_ALERTS_FIELD_REQUIRED: "告警看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  J1_ALERTS_CONTRACT_INVALID: "告警看板服务返回的数据不一致，页面已停止展示推测值；请重试读取或联系值班人员。",
+  J2_ALERTS_FIELD_REQUIRED: "告警看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  C2_ALERTS_FIELD_REQUIRED: "告警看板服务返回的数据不完整，页面已停止展示推测值；请重试读取或联系值班人员。",
+  USER360_FIELD_REQUIRED: "用户档案服务返回的数据缺少必需字段，页面已停止展示推测值；请重试读取或联系值班人员。",
   JANUS_REMOTE_TARGET_HTTPS_INVALID: "批准目标必须使用部署白名单内的 HTTPS Origin，且不能携带账号、查询参数或片段。",
   JANUS_REMOTE_TARGET_KEY_INVALID: "目标键须以小写字母开头，只能包含小写字母、数字和连字符。",
   JANUS_REMOTE_TARGET_VERSION_CONFLICT: "批准目标已被其他管理员更新，本次未覆盖；请刷新目录后重试。",
@@ -560,15 +578,17 @@ export function formatAdminApiError(message: string | null | undefined, fallback
     if (raw.includes(code)) return translated;
   }
 
-  // 环境故障不得归因到用户输入:表里没有专属条目的不可达/网络类失败,在通用兜底前先接住
-  if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /_REQUEST_FAILED_503$/.test(raw)) {
+  // 环境故障不得归因到用户输入:表里没有专属条目的不可达/网络类失败,在通用兜底前先接住。
+  // 判据按「机器码以 _5xx 结尾」而非某个命名前缀——曾只认 _REQUEST_FAILED_5xx,换个命名
+  // (BI_API_503 / TREASURY_API_502)就绕过分层,5xx 落到「请检查输入内容」冤枉运营。
+  if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /^[A-Z][A-Z0-9_]*_503$/.test(raw)) {
     return "后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。";
   }
   // 502/504 是网关侧失败,后端可能已处理完请求——只说「结果尚未确认」,不得断言未生效
-  if (/_REQUEST_FAILED_(502|504)$/.test(raw)) {
+  if (/^[A-Z][A-Z0-9_]*_(502|504)$/.test(raw)) {
     return "后台服务链路异常，本次结果尚未确认；请保留当前输入，刷新核对最新状态后再决定是否重试。";
   }
-  if (/_REQUEST_FAILED_5\d\d$/.test(raw)) {
+  if (/^[A-Z][A-Z0-9_]*_5\d\d$/.test(raw)) {
     return ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR;
   }
   // fetch 网络异常目前多数 client 未接线进本函数(断网直接冒泡英文);此分支兜显式传入的场景,生效性未知不断言
@@ -583,12 +603,22 @@ export function formatAdminApiError(message: string | null | undefined, fallback
   return raw;
 }
 
+const NEUTRAL_DISPLAY_FALLBACK = "操作失败,请稍后重试。";
+const HAS_CJK_RE = /[一-鿿]/;
+
 // 展示边界统一入口:页面层拿到 unknown 错误后,唯一允许的「→ 屏幕文案」通道。
 // 已格式化中文透传(formatAdminApiError 幂等),裸机器码/网络英文在此落兜底,垃圾输入不 crash。
+//
+// 🔴 最后一道是构造性的:**输出不含中文就不许上屏**。
+// why:咽喉上游全靠枚举特征拦截(failed to fetch 正则、要求全大写的 MACHINE_CODE_RE),枚举必漏——
+// 实测漏过三族:`H8_RESPONSE_INVALID:recentSettlements`(冒号+小写后缀破坏全大写匹配)、
+// response.json() 撞网关 HTML 错误页抛的英文 SyntaxError、AbortSignal 的英文 DOMException。
+// 逐族补正则是打地鼠;改判「没有中文就落中性兜底」后,没被想到的新形态也拦得住。
+// 兜底取中性文案(不说「检查输入」):到这里的多是环境/协议类失败,不该归因运营输入。
 export function displayAdminError(error: unknown): string {
-  if (error instanceof Error) return formatAdminApiError(error.message, "");
-  if (typeof error === "string") return formatAdminApiError(error, "");
-  return "操作失败,请稍后重试。";
+  if (!(error instanceof Error) && typeof error !== "string") return NEUTRAL_DISPLAY_FALLBACK;
+  const shown = formatAdminApiError(error instanceof Error ? error.message : error, "");
+  return HAS_CJK_RE.test(shown) ? shown : NEUTRAL_DISPLAY_FALLBACK;
 }
 
 // 网络层异常(断网/DNS/CORS/请求中断)统一转运营中文;HTTP 非 2xx 不归这管,由调用方 !response.ok 分支走咽喉。

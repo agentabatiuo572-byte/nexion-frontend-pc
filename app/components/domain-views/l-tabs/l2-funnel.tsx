@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   fetchL2Cross,
   fetchL2FunnelDrilldown,
@@ -174,7 +175,7 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
       await ctx.reloadBi?.();
       ctx.toast(complete ? "漏斗 cohort 导出任务已提交" : "生命周期计数任务已提交 · 仅包含页面已展示的累计事实");
     } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${error.message}` : "导出任务提交失败 · 请稍后重试");
+      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     }
   };
   return (
@@ -285,7 +286,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       ctx.setL2SliceExportable?.(true);
       ctx.toast(stage ? "已按当前切片完成真实漏斗下钻" : "切片已从服务端重新计算");
     } catch (error) {
-      setQueryError(error instanceof Error ? error.message : "L2 查询失败");
+      setQueryError(error instanceof Error ? displayAdminError(error) : "L2 查询失败");
     } finally {
       setQueryLoading(false);
     }
@@ -359,7 +360,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       ctx.setL2SliceExportable?.(true);
     } catch (error) {
       ctx.setL2SliceExportable?.(false);
-      setQueryError(error instanceof Error ? error.message : "留存矩阵查询失败");
+      setQueryError(error instanceof Error ? displayAdminError(error) : "留存矩阵查询失败");
     } finally {
       setQueryLoading(false);
     }
@@ -378,7 +379,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       ctx.setL2SliceExportable?.(true);
     } catch (error) {
       ctx.setL2SliceExportable?.(false);
-      setQueryError(error instanceof Error ? error.message : "交叉分析查询失败");
+      setQueryError(error instanceof Error ? displayAdminError(error) : "交叉分析查询失败");
     } finally {
       setQueryLoading(false);
     }
@@ -403,7 +404,7 @@ export function L2Funnel({ ctx }: { ctx: LCtx }) {
       ctx.setL2SliceExportable?.(true);
     } catch (error) {
       ctx.setL2SliceExportable?.(false);
-      setQueryError(error instanceof Error ? error.message : "留存曲线查询失败");
+      setQueryError(error instanceof Error ? displayAdminError(error) : "留存曲线查询失败");
     } finally {
       setQueryLoading(false);
     }

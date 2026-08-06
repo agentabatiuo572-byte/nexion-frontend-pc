@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { fetchK6Device } from "@/lib/admin/k6-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { isFresh, timeAgo } from "@/lib/admin/janus-c2/scoring";
 import {
   ACTION_TYPE_LABEL,
@@ -60,7 +61,7 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
       setDetailStatus("ready");
     } catch (error) {
       setDetailStatus("error");
-      setDetailError(error instanceof Error ? error.message : "详情读取失败");
+      setDetailError(error instanceof Error ? displayAdminError(error) : "详情读取失败");
     }
   };
   useEffect(() => { void loadDetail(); }, [device.sid]); // eslint-disable-line react-hooks/exhaustive-deps

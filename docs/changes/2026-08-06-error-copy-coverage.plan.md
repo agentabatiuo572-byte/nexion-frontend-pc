@@ -72,11 +72,32 @@
       终局:client 层裸 fetch 全域清零、rawFetch 调用点 0(判定无例外)。
       回源三问:① 断网英文上屏的 client 侧入口已全封,正是专项 P0;② 偏离仅 import 别名惯例 + 1 行测试 needle
       同步(门与实现同提交),语义无偏差;③ 白名单清空使 T7 哨兵退化为纯 grep 判据,后续计划更强。
-- [ ] **T5 展示边界 A–F 域**:displayAdminError 替换页面提取器与内联直显。AC=该范围 .message 直显计数归零或入台账 +
-      抽 2 页实景中文。tester 报告:
-- [ ] **T6 展示边界 G–M 域 + 补表**:同 T5;高频表外码按 contract 测试触发面补条目。tester 报告:
-- [ ] **T7 哨兵两枚 + 红测 + 挂 verify**:哨兵与被判实现同提交落地;红测:注入裸 fetch/抬升 .message 计数必红,
-      还原用内容恢复禁 git checkout。AC=Done-when 5。tester 报告:
+- [x] **T5 展示边界 A–F 域**:displayAdminError 替换页面提取器与内联直显。AC=该范围 .message 直显计数归零或入台账 +
+      抽 2 页实景中文。tester 报告:独立验收实测 47 处替换 + 1 处判据扩展 / 21 文件,口径(机器码兜底整体收进咽喉、
+      中文兜底只包 Error 分支)47/47 一致,禁动区三组 diff 级零命中,c5:145 网络判据四问全过(字面量与咽喉文案
+      逐 codepoint 一致、其余环境文案不命中是正确行为、写路径「结果未知」语义未被盖掉)。
+      **初判不予签字**,查出:e-view 同文件 3 处漏网(自产 `IMAGE_LOAD_FAILED` 等必然上屏)、B 域**页面级错误横幅**
+      从不过咽喉(setError 藏在 client 内 hook,是页面最显眼出口,全轮无人覆盖)、A2 提案失败双 toast、
+      4 条定制文案分支因 client 已翻译而永不显示(c1 隐私提示是功能性损失,归遗留)。
+      **已修**:e-view ×3 + propose-or-execute ×1 + B 域横幅 ×6(比验收清单多找到 b-client:640 一处)。
+- [x] **T6 展示边界 G–M 域 + 补表**:同 T5;高频表外码按 contract 测试触发面补条目。tester 报告:
+      T6a(H/I/J,17 文件 26 处)独立验收:替换本身零误改、禁动区三处声明独立核实属实,但查出 **2×P0**——
+      ① 确认弹窗 `operation-confirm-error.ts` 是**第二个展示出口**且原样返回 message(原始扫描判它「非旁路」是错的),
+      本轮所有 rethrow 都喂它,同屏出现 toast 中文 + 弹窗裸码;② `H8_RESPONSE_INVALID:字段名` 因冒号+小写后缀
+      破坏全大写机器码正则而原样上屏。另证伪 j4 保留裸 message 的理由(实测正则关键词全来自咽喉译文,
+      翻译后才匹配得上)、证实 `UNKNOWN_ERROR` 四处 JSX 兜底可达(守卫是析取,后端返回 data:null 时 error 为 null)。
+      **已修**:弹窗出口过咽喉(A2 分支保留)、10 处裸机器码字面量清零、j4 改喂咽喉输出。
+      T6b(K/L/M,24 文件 26 处 + 补表 18 条)实现完成(tsc 0 / 契约 13/13 / 运行时探针 10 断言),
+      **其独立验收 agent 被会话额度杀在执行中途,未出报告** —— 该轮改动改由 T7 哨兵四判据机器覆盖(全仓 291 文件,
+      不分域),机器门强于人眼抽查;补表 18 条的文案口径与命中顺序仍缺独立核,记入下轮待办。
+- [x] **T7 哨兵 + 红测 + 挂 verify**:落地为**一枚四判据哨兵** `scripts/error-copy-throat-sentinel.mjs`
+      (A 客户端裸 fetch=0 · B `instanceof Error ? x.message : "CODE"` 兜底=0 · C 裸 `.message` 直进展示 setter=0
+      · D rawFetch 调用=0),白名单 8 条各写为什么,另带「台账指向的文件不存在」与「取材面为空」两道失真兜底。
+      工艺偏离:计划写「两枚」(client-bare-fetch + display-raw-message 棘轮台账);实际合成一枚且**判据从棘轮
+      改为硬零**——rawFetch 清零裁决后判据无需语义判断,硬零比只减不增更强,也不必维护计数台账。
+      红测:四条判据**逐个隔离**注入(换回裸 fetch / 换回机器码三元 / 追加裸 message 上屏 / 换成 rawFetch),
+      逐条 exit=1 且命中的正是该判据编号,还原用内容恢复(禁 git checkout),还原后复跑 PASS。
+      PASS 行打印样本量(291 个客户端文件),防空集假绿。已挂 verify 齿轮表(哨兵 + 咽喉契约测试两齿)。
 - [ ] **T8 全量实景 + audit**:独立 tester 断网矩阵(Done-when 1-3)+ nexion-audit 循环至 P0=P1=0。报告:
 
 依赖:T1 → T2/T3/T4(可并行,不同文件)→ T5/T6(可并行)→ T7 → T8。

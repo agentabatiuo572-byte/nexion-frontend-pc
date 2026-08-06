@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -609,7 +609,7 @@ export function useBDomainDashboard() {
       const next = await inflightDashboard;
       setData(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "B_DOMAIN_LOAD_FAILED");
+      setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }
@@ -637,7 +637,7 @@ export function useBDomainDashboard() {
         if (alive) setData(next);
       })
       .catch((err) => {
-        if (alive) setError(err instanceof Error ? err.message : "B_DOMAIN_LOAD_FAILED");
+        if (alive) setError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setLoading(false);

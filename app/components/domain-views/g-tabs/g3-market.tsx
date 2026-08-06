@@ -182,7 +182,7 @@ export function G3Market({ ctx }: { ctx: GCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">G3 NEX 行情引擎</span><span className="sub">· 真实接口数据</span></div>
         <div className="l-b">
-          <div className="gtint">G3 数据加载失败 · {error || "UNKNOWN_ERROR"}</div>
+          <div className="gtint">G3 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>

@@ -21,7 +21,7 @@ import { L6HeaderActions, L6BehaviorHeatmap } from "./l-tabs/l6-behavior-heatmap
 import type { LCtx, ActionConfirmReq } from "./l-tabs/types";
 import { allowedAggregateExportOptions, canAccessBiReportType, canExportBiReports } from "./l-tabs/l1-l2-live-data";
 import { fetchLBiOverview, lBiActions, type L2FunnelQuery, type L3FinanceQuery, type L4OperationsQuery, type LBiData, type LModuleCode } from "@/lib/admin/l-client";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const FOLD: Record<string, string> = { L1: "L1", L2: "L2", L3: "L3", L4: "L4", L5: "L5", L6: "L6" };
@@ -63,7 +63,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
       }
       setBiData(nextData);
     } catch (error) {
-      setBiError(error instanceof Error ? error.message : "BI_DATA_LOAD_FAILED");
+      setBiError(displayAdminError(error));
     } finally {
       setBiLoading(false);
     }
@@ -136,7 +136,7 @@ export function LDomainView({ meta }: { meta: DomainViewMeta }) {
             const req = mc;
             setActionConfirm(null);
             void Promise.resolve(req.run(reason, newValue, businessValue)).catch((error) => {
-              setToast(error instanceof Error ? error.message : "操作失败");
+              setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
             });
           }}
         />

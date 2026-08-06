@@ -17,6 +17,7 @@ import {
   type UserPage,
   type UserProfileQuery,
 } from "@/lib/admin/user360-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
 
@@ -133,7 +134,7 @@ function errorMessage(error: unknown) {
   if (message === "C1_RAW_PHONE_SEARCH_FORBIDDEN") {
     return "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希";
   }
-  return message;
+  return displayAdminError(error);
 }
 
 function optionalNumber(value: string) {

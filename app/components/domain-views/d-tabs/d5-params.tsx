@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -37,7 +38,7 @@ function errorText(err: unknown) {
   if (message.includes("CONFIG_VERSION_CONFLICT")) return "参数已被其他运营员更新，请刷新后重试";
   if (message.includes("COVERAGE_BELOW_REDLINE") || message.includes("覆盖率低于红线")) return "覆盖率低于红线，放大资金流出的调整已被服务器拒绝";
   if (message.includes("REASON_REQUIRED")) return "请输入 8-200 字变更理由";
-  return message;
+  return displayAdminError(err);
 }
 
 type Drafts = {

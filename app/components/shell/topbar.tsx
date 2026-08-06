@@ -16,7 +16,7 @@ import { fmtPct } from "@/lib/format";
 import { NotificationBell } from "./notification-bell";
 import { CommandPalette } from "@/app/components/command-palette";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
-import { guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
 import { useServicePendingCount } from "./use-service-badges";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
@@ -36,7 +36,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
       signOut();
     } catch (error) {
       setOpen(true);
-      setLogoutError(error instanceof Error ? error.message : "退出失败，请重试");
+      setLogoutError(error instanceof Error ? displayAdminError(error) : "退出失败，请重试");
     } finally {
       setLoggingOut(false);
     }

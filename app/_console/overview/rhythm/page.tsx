@@ -4,6 +4,7 @@ import "../b-domain.css";
 import "./rhythm.css";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Download, RefreshCw } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import {
@@ -57,7 +58,7 @@ export default function RhythmPage() {
       URL.revokeObjectURL(url);
       setNotice("Phase 聚合 CSV 已生成并写入 A2 审计；文件不含用户标识或 PII。");
     } catch (value) {
-      setNotice(value instanceof Error ? value.message : "B4 导出失败，请重新读取后再试。");
+      setNotice(value instanceof Error ? displayAdminError(value) : "B4 导出失败，请重新读取后再试。");
     } finally {
       setBusy("");
     }
@@ -70,7 +71,7 @@ export default function RhythmPage() {
       const target = await recordB4H1Jump(dial, filters.phase);
       window.location.assign(target.href);
     } catch (value) {
-      setNotice(value instanceof Error ? value.message : "H1 跳转留痕失败，本次未跳转。");
+      setNotice(value instanceof Error ? displayAdminError(value) : "H1 跳转留痕失败，本次未跳转。");
       setBusy("");
     }
   }

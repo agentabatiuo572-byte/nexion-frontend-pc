@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertB4PhaseOverview } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
@@ -133,7 +133,7 @@ export function useB4PhaseOverview(filters: B4Filters) {
     } catch (value) {
       if (controller.signal.aborted || requestId !== requestSeq.current) return;
       setData(null);
-      setError(value instanceof Error ? value.message : "B4_BACKEND_UNAVAILABLE");
+      setError(displayAdminError(value));
     } finally {
       if (requestId === requestSeq.current) setLoading(false);
     }

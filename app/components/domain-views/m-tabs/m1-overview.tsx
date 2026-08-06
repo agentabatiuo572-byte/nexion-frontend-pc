@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   type LoadConfig,
   type SessionConvo,
@@ -693,7 +694,7 @@ function SupportSeatRoleModal({
         .catch((err) => {
           if (!alive) return;
           setUsers([]);
-          setUserError(err instanceof Error ? err.message : "USERS_LOAD_FAILED");
+          setUserError(displayAdminError(err));
         })
         .finally(() => {
           if (alive) setLoadingUsers(false);
@@ -742,7 +743,7 @@ function SupportSeatRoleModal({
       ctx.toast(`${selected.name} 已提交分配为 ${seatLabel(targetPosition)}${userIds.length ? `,绑定 ${userIds.length} 个用户` : ""}`);
       onClose();
     } catch (err) {
-      ctx.toast(`分配失败:${err instanceof Error ? err.message : String(err)}`);
+      ctx.toast(`分配失败:${displayAdminError(err)}`);
     } finally {
       setSaving(false);
     }
@@ -970,7 +971,7 @@ function SeatAssignmentModal({
         .catch((err) => {
           if (!alive) return;
           setUsers([]);
-          setError(err instanceof Error ? err.message : "USERS_LOAD_FAILED");
+          setError(displayAdminError(err));
         })
         .finally(() => {
           if (alive) setLoading(false);

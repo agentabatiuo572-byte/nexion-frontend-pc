@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertB3Dashboard } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
@@ -151,7 +151,7 @@ export function useB3Funnel(filters: B3Filters, stage: string) {
       setData(await fetchB3Dashboard(filters, stage));
     } catch (value) {
       setData(null);
-      setError(value instanceof Error ? value.message : "B3_FUNNEL_LOAD_FAILED");
+      setError(displayAdminError(value));
     } finally {
       setLoading(false);
     }

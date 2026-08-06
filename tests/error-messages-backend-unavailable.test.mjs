@@ -79,3 +79,41 @@ test("displayAdminError funnels any unknown into operator-readable copy", async 
   assert.match(displayAdminError(undefined), /失败|重试/);
   assert.match(displayAdminError({ weird: true }), /失败|重试/);
 });
+
+// 构造性不变量:展示边界的输出必须含中文。
+// why:此前咽喉靠「枚举特征」拦截(failed to fetch 正则、全大写机器码正则),枚举必漏——
+// 实测漏过三族:① 带 `:小写后缀` 的码(MACHINE_CODE_RE 要求全大写,冒号破坏匹配)、
+// ② 响应体读取阶段的英文 SyntaxError、③ 浏览器英文 DOMException。改判「没有中文就不许上屏」,
+// 未知形态一律落中性兜底,新的泄漏形态不必先被人想到才拦得住。
+test("display boundary never emits a CJK-free string (constructive invariant)", async () => {
+  const { displayAdminError } = await import("../lib/admin/error-messages.ts");
+  const leaks = [
+    "H8_RESPONSE_INVALID:recentSettlements", // 大写码 + 冒号 + 小写字段名
+    "B5_RESPONSE_INVALID:stream",
+    "Unexpected token < in JSON at position 0", // response.json() 撞网关 HTML 错误页
+    "The operation was aborted", // AbortSignal 超时/取消
+    "NetworkError when attempting to fetch resource.",
+    "ZZ_UNSEEN_FORM 42",
+  ];
+  for (const raw of leaks) {
+    const shown = displayAdminError(new Error(raw));
+    assert.match(shown, /[一-龥]/, `无中文即泄漏:${raw} -> ${shown}`);
+    assert.notEqual(shown, raw, `原样透传即泄漏:${raw}`);
+  }
+  // 真中文文案不受影响(守住幂等透传,别把门焊成一律兜底)
+  assert.equal(displayAdminError(new Error("操作理由至少填写 8 个字符。")), "操作理由至少填写 8 个字符。");
+});
+
+// 环境故障不得归因到用户输入——此前只认 `_REQUEST_FAILED_5xx` 一种命名,
+// 换个命名(BI_API_503 / TREASURY_API_502)就绕过分层,落到「请检查输入内容」冤枉运营。
+// 改判据为「机器码以 _5xx 结尾」,与命名前缀无关。
+test("any machine code ending in _5xx is attributed to the environment, not user input", () => {
+  assert.notEqual(formatAdminApiError("BI_API_503", "X"), GENERIC_INPUT_FALLBACK);
+  assert.match(formatAdminApiError("BI_API_503", "X"), /不可达|稍后重试/);
+  // 502/504 是网关侧:后端可能已处理完,只说「结果尚未确认」,不得断言未生效
+  assert.match(formatAdminApiError("TREASURY_API_502", "X"), /尚未确认/);
+  assert.match(formatAdminApiError("TREASURY_API_504", "X"), /尚未确认/);
+  assert.match(formatAdminApiError("MEDIA_REQUEST_FAILED_500", "X"), /服务|重试/);
+  // 4xx 仍属用户输入侧,不许被新判据误收
+  assert.equal(formatAdminApiError("F5_REQUEST_FAILED_404", "X"), GENERIC_INPUT_FALLBACK);
+});

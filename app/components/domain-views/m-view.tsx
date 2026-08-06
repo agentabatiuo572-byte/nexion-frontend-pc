@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./m-domain.css";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, MessageThread, OperationConfirmModal, useToast, type ThreadMessage } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import {
@@ -95,7 +96,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       setMData(next);
       setMError(null);
     } catch (error) {
-      setMError(error instanceof Error ? error.message : "M_CONTENT_LOAD_FAILED");
+      setMError(displayAdminError(error));
     } finally {
       setMLoading(false);
     }
@@ -205,8 +206,9 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
         pendingMCommandBaselines.current.delete(commandFingerprint);
         return true;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "M_CONTENT_WRITE_FAILED";
-        const detail = /failed to fetch|networkerror|load failed/i.test(message) ? "" : ` · ${message}`;
+        const message = displayAdminError(error);
+        // client 已接咽喉,英文网络错误不再到达;按原压制意图改判「咽喉网络中文」,命中仍不附加 detail。
+        const detail = message.includes("网络连接失败或后台服务不可达") ? "" : ` · ${message}`;
         setToast(`写入失败或结果未知,请保留当前输入并重试${detail}`);
         return false;
       }
@@ -229,7 +231,7 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       mCommands.forget(slot);
       return true;
     } catch (error) {
-      setToast(`${failureMessage}或结果未知,请重试 · ${error instanceof Error ? error.message : ""}`);
+      setToast(`${failureMessage}或结果未知,请重试 · ${displayAdminError(error)}`);
       return false;
     }
   }, [reloadMContent, setToast]);

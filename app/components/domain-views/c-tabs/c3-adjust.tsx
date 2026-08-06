@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
@@ -115,7 +116,7 @@ function reasonCodeLabel(value: unknown) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "余额调整请求失败，请刷新后重试";
+  return error instanceof Error ? displayAdminError(error) : "余额调整请求失败，请刷新后重试";
 }
 
 function newIdempotencyKey(prefix: string) {

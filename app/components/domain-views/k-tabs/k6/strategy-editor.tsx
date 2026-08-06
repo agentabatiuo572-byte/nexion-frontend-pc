@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { fetchK6RemoteTargets } from "@/lib/admin/k6-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { K6RemoteTarget } from "@/lib/admin/k6-remote-target-contract";
 import { STRATEGY_TEMPLATES, strategyFromTemplate } from "@/lib/admin/janus-c2/strategies";
 import { strategyDraftIssues } from "@/lib/admin/k6-contract";
@@ -63,7 +64,7 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
       .catch((error) => {
         if (active) {
           setRemoteTargets([]);
-          setTargetLoadError(error instanceof Error ? error.message : "批准目标读取失败");
+          setTargetLoadError(error instanceof Error ? displayAdminError(error) : "批准目标读取失败");
         }
       });
     return () => { active = false; };
@@ -132,7 +133,7 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
       await save(strategyForSubmit(), operatorId, isNew);
       onClose();
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "保存失败，请重试");
+      setSaveError(error instanceof Error ? displayAdminError(error) : "保存失败，请重试");
     } finally {
       setSaving(false);
     }

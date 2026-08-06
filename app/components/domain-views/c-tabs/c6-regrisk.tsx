@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * C6 注册/登录风控配置。
  * 数据源为后端 /registration-risk/overview；调参写 /registration-risk/params/{paramKey}。
@@ -42,7 +43,7 @@ function toNumber(value: unknown, fallback = 0) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error || "C6_DATA_LOAD_FAILED");
+  return displayAdminError(error);
 }
 
 function stripTimesUnit(value: unknown) {

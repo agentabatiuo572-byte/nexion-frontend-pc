@@ -102,9 +102,9 @@ export function A3Config({ ctx }: { ctx: ACtx }) {
       run: (reason, v) => {
         const val = (v || "").trim();
         if (!f.allowedValues.includes(val)) {
-          const error = new Error("目标状态不在服务端允许范围内，请刷新页面后重试。");
-          toast(error.message);
-          throw error;
+          const copy = "目标状态不在服务端允许范围内，请刷新页面后重试。";
+          toast(copy);
+          throw new Error(copy);
         }
         setMutating(f.key);
         return updateA3FeatureFlag(f.key, val, cur, reason, operator)

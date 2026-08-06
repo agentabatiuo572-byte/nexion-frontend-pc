@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
@@ -247,7 +248,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       if (seq !== requestSeq.current) return;
       setRows({ total: 0, pageNum: 1, pageSize, records: [] });
       setD5(null);
-      setError(cause instanceof Error ? cause.message : "D2 数据加载失败");
+      setError(cause instanceof Error ? displayAdminError(cause) : "D2 数据加载失败");
     } finally {
       // 过期响应连 loading 都不许收:新请求仍在飞,收了会假装「加载完成」。
       if (seq === requestSeq.current) setLoading(false);
@@ -284,7 +285,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       setDetail(updated);
       await load();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "D2 审核失败";
+      const message = cause instanceof Error ? displayAdminError(cause) : "D2 审核失败";
       await load();
       setError(message);
       toast(message);
@@ -315,7 +316,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
 
   const openDetail = async (row: D2Withdrawal) => {
     try { setDetail(await fetchD2WithdrawalDetail(row.withdrawalNo)); }
-    catch (cause) { toast(cause instanceof Error ? cause.message : "单笔详情加载失败"); }
+    catch (cause) { toast(cause instanceof Error ? displayAdminError(cause) : "单笔详情加载失败"); }
   };
 
   const confirmBatch = () => {

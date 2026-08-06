@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 export const PRESSURE_RED_LINE = 0.7;
 const B5_RADAR_ENDPOINT = "/api/admin/risk/radar";
@@ -292,7 +292,7 @@ export function useB5Radar() {
       setData(await fetchB5Radar());
     } catch (cause) {
       setData(null);
-      setError(cause instanceof Error ? cause.message : "B5_REQUEST_FAILED");
+      setError(displayAdminError(cause));
     } finally {
       setLoading(false);
     }
@@ -310,7 +310,7 @@ export function useB5Radar() {
         setLoading(false);
       } catch (cause) {
         setData(null);
-        setError(cause instanceof Error ? cause.message : "B5_RESPONSE_INVALID:stream");
+        setError(displayAdminError(cause));
       }
     };
     stream.addEventListener("radar", onRadar);

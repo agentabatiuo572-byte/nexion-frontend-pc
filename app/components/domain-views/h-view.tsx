@@ -22,6 +22,7 @@ import H7VoucherConfig from "./h-tabs/h7-voucher-config";
 import H8ReferralRewards from "./h-tabs/h8-referral-rewards";
 import type { ConfirmReq, HCtx, ActionConfirmReq } from "./h-tabs/types";
 import { fetchH1Rhythm, type H1RhythmOverview } from "@/lib/admin/h-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /** L2 映射:H3/H4 分别渲染高保真里的任务分段/活动分段;H5 承载签到与里程碑。 */
@@ -108,7 +109,7 @@ export function HDomainView({ meta }: { meta: DomainViewMeta }) {
               await mc.run(reason, newValue, businessValue);
               setActionConfirm(null);
             } catch (error) {
-              setToast(error instanceof Error ? error.message : "操作失败");
+              setToast(error instanceof Error ? displayAdminError(error) : "操作失败");
               throw error;
             }
           }}

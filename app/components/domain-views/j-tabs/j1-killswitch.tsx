@@ -12,6 +12,7 @@ import type { JCtx } from "./types";
 import { createJEmergencyCommandKey } from "@/lib/admin/j-client";
 import type { AutoConfirmationRow, AutoRuleRow, EmergencySlaRow, JGate } from "@/lib/admin/j-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 type Gate = JGate;
 const IMPACT_LABEL: Record<string, string> = { immediate: "即时资金流出", delayed: "未来负债增加", none: "不直接影响兑付" };
@@ -63,7 +64,7 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     try {
       await task;
     } catch (error) {
-      toast(`操作未完成 · ${error instanceof Error ? error.message : "请稍后重试"}`);
+      toast(`操作未完成 · ${error instanceof Error ? displayAdminError(error) : "请稍后重试"}`);
       throw error;
     }
     try {
