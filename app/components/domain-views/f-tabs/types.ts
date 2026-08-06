@@ -30,6 +30,7 @@ import type {
  */
 export interface McSpec {
   name: string;
+  commandKey?: string;
   amplify?: boolean;             // 放大资金流出 → OperationConfirmModal amplifies={true} → B1 覆盖率护栏
   op?: "param" | "dispose" | "param-multi";
   paramKey?: string;

@@ -1,12 +1,12 @@
 import { createHmac } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
 const RUN_ID = process.env.H_PERMISSION_RUN_ID ?? "pc-full-acceptance-20260728-151023";
 const CHECKER_FIXTURE_PATH = process.env.H_CHECKER_FIXTURE_PATH
-  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/permission-fixtures.json`;
+  ?? `D:/workspace/bug-pic/.restricted/${RUN_ID}/A/domain-permission-fixtures/H.json`;
+const EVIDENCE_DIR = process.env.H3_CAS_EVIDENCE_DIR?.trim();
 const CONFIG_KEY = "promoBanner.countdownDays";
 
 type Account = { username: string; password: string; totpSecret: string };
@@ -15,8 +15,8 @@ type AuditOverview = { events?: Array<Record<string, unknown>>; records?: Array<
 test.describe.configure({ mode: "serial", timeout: 300_000 });
 
 test("H3 两名运营员基于同一旧值并发提交时只允许一个成功，随后精确恢复", async ({ browser, page }) => {
-  const checker = loadChecker();
-  await loginRoot(page);
+  const { maker, secondWriter: checker } = loadActors();
+  await loginMfa(page, maker);
   const checkerContext = await browser.newContext();
   const checkerPage = await checkerContext.newPage();
   await loginMfa(checkerPage, checker);
@@ -34,16 +34,33 @@ test("H3 两名运营员基于同一旧值并发提交时只允许一个成功�
     operator,
   });
   const attemptId = Date.now();
+  const casKeyA = `${RUN_ID}-H3-CAS-A-${attemptId}`;
+  const casKeyB = `${RUN_ID}-H3-CAS-B-${attemptId}`;
+  const evidence: Record<string, unknown> = {
+    runId: RUN_ID,
+    attemptId,
+    casKeyA,
+    casKeyB,
+  };
 
   try {
     const [first, second] = await Promise.all([
-      browserApi(page, "PATCH", `/api/admin/growth/quest-events/config/${CONFIG_KEY}`, body(valueA, USERNAME), `${RUN_ID}-H3-CAS-A-${attemptId}`),
-      browserApi(checkerPage, "PATCH", `/api/admin/growth/quest-events/config/${CONFIG_KEY}`, body(valueB, checker.username), `${RUN_ID}-H3-CAS-B-${attemptId}`),
+      browserApi(page, "PATCH", `/api/admin/growth/quest-events/config/${CONFIG_KEY}`, body(valueA, maker.username), casKeyA),
+      browserApi(checkerPage, "PATCH", `/api/admin/growth/quest-events/config/${CONFIG_KEY}`, body(valueB, checker.username), casKeyB),
     ]);
     expect([first.status, second.status].sort()).toEqual([200, 422]);
     const rejected = first.status === 422 ? first : second;
     expect(rejected.raw).toContain("QUEST_CONFIG_STALE");
     const winner = first.status === 200 ? valueA : valueB;
+    evidence.cas = {
+      firstStatus: first.status,
+      secondStatus: second.status,
+      winnerKey: first.status === 200 ? casKeyA : casKeyB,
+      loserKey: first.status === 422 ? casKeyA : casKeyB,
+      winnerValue: winner,
+      loserResponseContainsStale: true,
+    };
+    persistEvidence(evidence);
     await expect.poll(async () => Number((await getH3(page)).promoBanner?.countdownDays)).toBe(winner);
 
     const audit = await getEnvelope<AuditOverview>(
@@ -51,8 +68,36 @@ test("H3 两名运营员基于同一旧值并发提交时只允许一个成功�
       `/api/admin/platform/audit/overview?domain=H&object=${encodeURIComponent("countdownDays")}`,
     );
     expect(JSON.stringify(audit)).toContain(RUN_ID);
-    const events = await getEnvelope<Record<string, unknown>>(page, "/api/admin/platform/events/overview");
-    expect(JSON.stringify(events)).toContain("admin.growth_config_changed");
+    const events = await page.request.get("/api/admin/platform/events/overview");
+    expect(events.status(), "H-only maker must fail closed on cross-domain A4 raw endpoint").toBe(403);
+
+    const unknownValue = winner >= 363 ? winner - 3 : winner + 3;
+    const unknownKey = `${RUN_ID}-H3-UNKNOWN-${attemptId}`;
+    const unknownBody = {
+      key: CONFIG_KEY,
+      value: String(unknownValue),
+      expectedValue: String(winner),
+      reason: `${RUN_ID} H3 结果未知后按服务端事实恢复`,
+      operator: maker.username,
+    };
+    const carrierOutcome = await browserUnknown(
+      page,
+      `/api/admin/growth/quest-events/config/${CONFIG_KEY}`,
+      unknownBody,
+      unknownKey,
+    );
+    expect(["unknown", "200"]).toContain(carrierOutcome);
+    await expect.poll(async () => Number((await getH3(page)).promoBanner?.countdownDays)).toBe(unknownValue);
+    const replay = await browserApi(page, "PATCH", `/api/admin/growth/quest-events/config/${CONFIG_KEY}`, unknownBody, unknownKey);
+    expect(replay.status, replay.raw).toBe(200);
+    expect(Number((await getH3(page)).promoBanner?.countdownDays)).toBe(unknownValue);
+    evidence.resultUnknown = {
+      key: unknownKey,
+      carrierOutcome,
+      replayStatus: replay.status,
+      finalValue: unknownValue,
+    };
+    persistEvidence(evidence);
   } finally {
     const current = Number((await getH3(page)).promoBanner?.countdownDays);
     if (current !== oldValue) {
@@ -61,30 +106,32 @@ test("H3 两名运营员基于同一旧值并发提交时只允许一个成功�
         value: String(oldValue),
         expectedValue: String(current),
         reason: `${RUN_ID} H3 CAS 验收结束恢复原值`,
-        operator: USERNAME,
+        operator: maker.username,
       }, `${RUN_ID}-H3-CAS-RESTORE-${Date.now()}`);
       expect(restored.status, restored.raw).toBe(200);
     }
     await expect.poll(async () => Number((await getH3(page)).promoBanner?.countdownDays)).toBe(oldValue);
+    evidence.restoredValue = oldValue;
+    evidence.restored = true;
+    persistEvidence(evidence);
     await checkerContext.close();
   }
 });
 
-function loadChecker(): Account {
-  const fixture = JSON.parse(readFileSync(CHECKER_FIXTURE_PATH, "utf8")) as {
-    accounts?: { d_checker?: Account };
-  };
-  const checker = fixture.accounts?.d_checker;
-  if (!checker) throw new Error("A permission fixture d_checker is required");
-  return checker;
+function persistEvidence(evidence: Record<string, unknown>) {
+  if (!EVIDENCE_DIR) return;
+  mkdirSync(EVIDENCE_DIR, { recursive: true });
+  writeFileSync(join(EVIDENCE_DIR, "cas-runtime.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
 }
 
-async function loginRoot(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.locator('input[autocomplete="username"]').fill(USERNAME);
-  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-  await page.getByRole("button", { name: /登录|继续/ }).click();
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+function loadActors(): { maker: Account; secondWriter: Account } {
+  const fixture = JSON.parse(readFileSync(CHECKER_FIXTURE_PATH, "utf8")) as {
+    accounts?: { maker?: Account; secondWriter?: Account };
+  };
+  const maker = fixture.accounts?.maker;
+  const secondWriter = fixture.accounts?.secondWriter;
+  if (!maker || !secondWriter) throw new Error("H maker and independent H3 secondWriter fixtures are required");
+  return { maker, secondWriter };
 }
 
 async function loginMfa(page: Page, account: Account) {
@@ -131,6 +178,21 @@ async function browserApi(
     });
     return { status: response.status, raw: await response.text() };
   }, { requestMethod: method, path: apiPath, payload: body, key: idempotencyKey });
+}
+
+async function browserUnknown(page: Page, apiPath: string, body: Record<string, unknown>, idempotencyKey: string) {
+  return page.evaluate(async ({ path, payload, key }) => {
+    const request = fetch(path, {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key },
+      body: JSON.stringify(payload),
+    }).then((response) => String(response.status));
+    return Promise.race([
+      request,
+      new Promise<string>((resolve) => setTimeout(() => resolve("unknown"), 1)),
+    ]);
+  }, { path: apiPath, payload: body, key: idempotencyKey });
 }
 
 let lastTotpStep = -1;

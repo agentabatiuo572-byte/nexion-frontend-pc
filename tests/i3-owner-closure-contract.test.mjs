@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const pcRoot = "D:/workspace/nexion-ops-console";
 const backendRoot = "D:/workspace/nexion-backend";
-const appRoot = "D:/workspace/NX1.0";
+const appRoot = resolveNexionAppRoot({ adminRoot: pcRoot });
 const read = (root, path) => readFileSync(`${root}/${path}`, "utf8");
 
 test("I3 CAP command carries the visible expected value and parses decorated low-tier labels", () => {
@@ -28,6 +29,10 @@ test("backend I3 CAP update is stale-safe and draft edits share create length li
   const service = read(backendRoot, "src/main/java/ffdd/opsconsole/content/application/OpsNotificationCampaignService.java");
   const mapper = read(backendRoot, "src/main/java/ffdd/opsconsole/content/mapper/NotificationCapRuleMapper.java");
   const replay = read(backendRoot, "src/main/java/ffdd/opsconsole/content/application/OpsTrustDisclosureService.java");
+  const a2PermissionGuard = read(
+    backendRoot,
+    "src/main/java/ffdd/opsconsole/platform/application/AuditReplayBusinessPermissionGuard.java",
+  );
 
   assert.match(dto, /String expectedCap/);
   assert.match(service, /NOTIFICATION_CAP_EXPECTED_REQUIRED/);
@@ -36,6 +41,7 @@ test("backend I3 CAP update is stale-safe and draft edits share create length li
   assert.match(service, /requireDraft[\s\S]*NOTIFICATION_CAMPAIGN_TEXT_TOO_LONG/);
   assert.match(mapper, /WHERE tier = #\{tier\}[\s\S]*cap_label = #\{expectedCap\}[\s\S]*locked = 0/);
   assert.match(replay, /str\(p,\s*"expectedCap"\)/);
+  assert.match(a2PermissionGuard, /case "i3_cap_adjust" -> "content_i3_cap_adjust";/);
 });
 
 test("App notification feed paginates, fails visibly, and navigates only to the canonical server route", () => {

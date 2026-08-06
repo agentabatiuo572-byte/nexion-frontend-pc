@@ -1,5 +1,6 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { isK1LocalIsoDateTime } from "@/lib/admin/k1-date-contract";
 import {
   K5_ALERT_CHANNELS,
   K5_ALERT_TONES,
@@ -675,6 +676,11 @@ function requiredK1String(value: unknown, path: string, allowEmpty = false): str
   return value;
 }
 
+function requiredK1LocalIsoDateTime(value: unknown, path: string): string {
+  if (!isK1LocalIsoDateTime(value)) invalidK1Response(path);
+  return value;
+}
+
 function requiredK1Number(
   value: unknown,
   path: string,
@@ -814,7 +820,7 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
         if (gotWelcomeGift != null) requiredK1Boolean(gotWelcomeGift, `${nodePath}.gotWelcomeGift`);
         return [
           requiredK1String(object.userNo, `${nodePath}.userNo`),
-          requiredK1String(object.joinedAt, `${nodePath}.joinedAt`),
+          requiredK1LocalIsoDateTime(object.joinedAt, `${nodePath}.joinedAt`),
           object.sponsorUserNo == null ? "—" : requiredK1String(object.sponsorUserNo, `${nodePath}.sponsorUserNo`, true),
           gotWelcomeGift == null ? "—" : gotWelcomeGift ? "是" : "否",
           object.depositCumulativeUsdt == null
@@ -827,7 +833,9 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
       }
       if (item.length < 6) invalidK1Response(nodePath);
       return item.slice(0, 6).map((value, tupleIndex) =>
-        requiredK1String(value, `${nodePath}[${tupleIndex}]`, tupleIndex >= 2)) as K1Node;
+        tupleIndex === 1
+          ? requiredK1LocalIsoDateTime(value, `${nodePath}[${tupleIndex}]`)
+          : requiredK1String(value, `${nodePath}[${tupleIndex}]`, tupleIndex >= 2)) as K1Node;
     });
     const edges = requiredK1JsonRows(row.edgesJson, `${path}.edgesJson`).map((item, index) => {
       const edgePath = `${path}.edgesJson[${index}]`;

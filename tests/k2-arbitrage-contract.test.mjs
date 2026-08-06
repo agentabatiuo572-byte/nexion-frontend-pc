@@ -122,7 +122,7 @@ test("K2 live acceptance always targets the explicitly selected isolated databas
 
 test("K2 temporary accounts follow the server credential contract and leave no privilege residue", () => {
   assert.match(liveAcceptance, /created\.data\?\.temporaryPassword/);
-  assert.match(liveAcceptance, /account\.data\?\.temporaryPassword/);
+  assert.match(liveAcceptance, /await login\(browserPage, username, issuedPassword, password\)/);
   assert.match(liveAcceptance, /\/reset-2fa/);
   assert.match(liveAcceptance, /\/sessions\/revoke/);
   assert.match(liveAcceptance, /expectedVersion: String\(current\.version\)/);

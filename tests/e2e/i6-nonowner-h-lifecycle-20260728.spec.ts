@@ -36,13 +36,15 @@ const DB_PASSWORD = process.env.NEXION_ACCEPTANCE_DB_PASSWORD;
 if (!DB_PASSWORD) throw new Error("NEXION_ACCEPTANCE_DB_PASSWORD is required");
 const MYSQL = process.env.NEXION_MYSQL_EXE || "D:/software/MySQL/MySQL Server 8.0/bin/mysql.exe";
 const BACKEND_BASE_URL = process.env.NEXION_BACKEND_BASE_URL || "http://127.0.0.1:8110";
+const LOCAL_EDGE_COUNTRY_HEADER = "X-Nexion-Edge-Country";
+const LOCAL_EDGE_COUNTRY = "JP";
 const EVIDENCE_ROOT = process.env.I6_REVIEW_H_EVIDENCE_ROOT
   || "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/I/review-H/I6-lifecycle";
 
 test("I6 可见入口贯通草稿、幂等、CAS、发布、App、归档与回滚", async ({ page }) => {
   const suffix = Date.now().toString(36);
-  const messageKey = `acceptance.i6.review_h_r151023_${suffix}`;
-  const idempotencyPrefix = `i6-review-h-life-${suffix}`;
+  const messageKey = `acceptance.i6.owner_r114336_${suffix}`;
+  const idempotencyPrefix = `i6-owner-life-${suffix}`;
   const operator = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
   const v1 = {
     zh: "I6 非 Owner 生命周期初始中文",
@@ -60,9 +62,9 @@ test("I6 可见入口贯通草稿、幂等、CAS、发布、App、归档与回�
     vi: "Bản dịch vòng đời thứ ba từ I6 non-owner",
   };
   const evidence: Record<string, unknown> = {
-    runId: "pc-full-acceptance-20260728-151023",
+    runId: "pc-full-acceptance-20260729-114336",
     module: "I6",
-    reviewer: "H",
+    reviewer: "I-owner",
     messageKey,
   };
 
@@ -265,7 +267,9 @@ async function command<T>(
 }
 
 async function expectAppValue(page: Page, messageKey: string, expected: string | undefined) {
-  const response = await page.request.get(`${BACKEND_BASE_URL}/api/content/i18n?locale=zh-CN`);
+  const response = await page.request.get(`${BACKEND_BASE_URL}/api/content/i18n?locale=zh-CN`, {
+    headers: localTrustedEdgeHeaders(),
+  });
   const payload = await response.json() as ApiEnvelope<AppBundle>;
   expect(response.status(), JSON.stringify(payload)).toBe(200);
   expect(payload.code).toBe(0);
@@ -277,25 +281,48 @@ async function expectAppValue(page: Page, messageKey: string, expected: string |
   }
 }
 
-async function login(page: Page, account: FixtureAccount) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  const shell = page.locator("aside");
-  const username = page.locator('input[autocomplete="username"]');
-  await expect(username).toBeVisible({ timeout: 15_000 });
-  await username.fill(account.username);
-  await page.locator('input[autocomplete="current-password"]').fill(account.password);
-  await page.getByRole("button", { name: /继续|登录/ }).click();
-  const otp = page.getByLabel("一次性验证码");
-  await Promise.race([
-    otp.waitFor({ state: "visible", timeout: 10_000 }),
-    shell.waitFor({ state: "visible", timeout: 10_000 }),
-  ]);
-  if (await otp.isVisible()) {
-    if (!account.totpSecret) throw new Error(`TOTP secret is required for ${account.username}`);
-    await otp.fill(currentTotp(account.totpSecret));
-    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+function localTrustedEdgeHeaders(): Record<string, string> {
+  const backend = new URL(BACKEND_BASE_URL);
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(backend.hostname)) {
+    throw new Error("I6 acceptance geo carrier may only inject trusted edge metadata on loopback");
   }
-  await expect(shell).toBeVisible({ timeout: 20_000 });
+  return { [LOCAL_EDGE_COUNTRY_HEADER]: LOCAL_EDGE_COUNTRY };
+}
+
+async function login(page: Page, account: FixtureAccount) {
+  const failures: string[] = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.context().clearCookies();
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const shell = page.locator("aside");
+    const username = page.locator('input[autocomplete="username"]');
+    await expect(username).toBeVisible({ timeout: 15_000 });
+    await username.fill(account.username);
+    await page.locator('input[autocomplete="current-password"]').fill(account.password);
+    await page.getByRole("button", { name: /继续|登录/ }).click();
+    const otp = page.getByLabel("一次性验证码");
+    await Promise.race([
+      otp.waitFor({ state: "visible", timeout: 10_000 }),
+      shell.waitFor({ state: "visible", timeout: 10_000 }),
+    ]);
+    if (await shell.isVisible().catch(() => false)) return;
+    if (!account.totpSecret) throw new Error(`TOTP secret is required for ${account.username}`);
+    const code = await freshTotp(account.totpSecret);
+    const verified = page.waitForResponse((response) =>
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/admin/auth/mfa/verify");
+    await otp.fill(code);
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const response = await verified;
+    const payload = await response.json().catch(() => null) as { message?: string } | null;
+    if (response.status() === 200) {
+      await expect(shell).toBeVisible({ timeout: 20_000 });
+      return;
+    }
+    failures.push(`${response.status()}:${payload?.message ?? "UNKNOWN"}`);
+    if (payload?.message !== "ADMIN_MFA_CODE_REPLAYED") break;
+  }
+  throw new Error(`MFA login failed: ${failures.join(",")}`);
 }
 
 async function openI6(page: Page) {
@@ -388,8 +415,14 @@ function cleanupMutableFixture(messageKey: string, idempotencyPrefix: string) {
   const escapedKey = sql(messageKey);
   const escapedPrefix = sql(idempotencyPrefix);
   const result = mysql(`
-    DELETE FROM nx_i18n_message WHERE message_key='${escapedKey}';
     DELETE FROM nx_i18n_message_version WHERE message_key='${escapedKey}';
+    DELETE FROM nx_i18n_message WHERE message_key='${escapedKey}';
+    DELETE FROM nx_admin_idempotency_record
+      WHERE scope LIKE 'I6\\\\_I18N\\\\_%:${escapedKey}%'
+         OR idempotency_key LIKE '${escapedPrefix}%';
+    DO SLEEP(2);
+    DELETE FROM nx_i18n_message_version WHERE message_key='${escapedKey}';
+    DELETE FROM nx_i18n_message WHERE message_key='${escapedKey}';
     DELETE FROM nx_admin_idempotency_record
       WHERE scope LIKE 'I6\\\\_I18N\\\\_%:${escapedKey}%'
          OR idempotency_key LIKE '${escapedPrefix}%';
@@ -414,11 +447,13 @@ function mysql(statement: string) {
   return execFileSync(MYSQL, [
     "-h", "127.0.0.1",
     "-uroot",
-    `--password=${DB_PASSWORD}`,
     "-N", "-B",
     "-D", DB_NAME,
     "-e", statement,
-  ], { encoding: "utf8" }).trim().split(/\r?\n/).at(-1) || "";
+  ], {
+    encoding: "utf8",
+    env: { ...process.env, MYSQL_PWD: DB_PASSWORD },
+  }).trim().split(/\r?\n/).at(-1) || "";
 }
 
 function evidencePath(fileName: string) {
@@ -430,7 +465,24 @@ function sql(value: string) {
   return value.replaceAll("\\", "\\\\").replaceAll("'", "''");
 }
 
-function currentTotp(secret: string) {
+let lastTotpStep = -1;
+
+async function freshTotp(secret: string) {
+  let step = Math.floor(Date.now() / 30_000);
+  if (step <= lastTotpStep) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, ((lastTotpStep + 1) * 30_000) - Date.now() + 500));
+  }
+  const remaining = 30 - (Math.floor(Date.now() / 1_000) % 30);
+  if (remaining <= 3) {
+    await new Promise((resolve) => setTimeout(resolve, (remaining + 1) * 1_000));
+  }
+  step = Math.floor(Date.now() / 30_000);
+  lastTotpStep = step;
+  return currentTotp(secret, step);
+}
+
+function currentTotp(secret: string, step: number) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
   const normalized = secret.replace(/\s+/g, "").replace(/=+$/g, "").toUpperCase();
   let bits = "";
@@ -444,7 +496,7 @@ function currentTotp(secret: string) {
     bytes[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
   }
   const message = Buffer.alloc(8);
-  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  message.writeBigUInt64BE(BigInt(step));
   const digest = createHmac("sha1", bytes).update(message).digest();
   const offset = digest[digest.length - 1] & 0x0f;
   const binary = ((digest[offset] & 0x7f) << 24)

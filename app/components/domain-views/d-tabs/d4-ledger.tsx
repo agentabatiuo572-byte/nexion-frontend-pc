@@ -70,10 +70,10 @@ function positiveUserId(value: string) {
 
 export function D4Ledger({ ctx }: { ctx: DCtx }) {
   const searchParams = useSearchParams();
-  const deepBizNo = searchParams.get("bizNo")?.trim() ?? "";
-  const deepKeyword = searchParams.get("keyword")?.trim() ?? "";
-  const deepStatus = searchParams.get("status")?.trim().toUpperCase() ?? "";
-  const deepUserId = positiveUserId(searchParams.get("userId") ?? "");
+  const deepBizNo = searchParams?.get("bizNo")?.trim() ?? "";
+  const deepKeyword = searchParams?.get("keyword")?.trim() ?? "";
+  const deepStatus = searchParams?.get("status")?.trim().toUpperCase() ?? "";
+  const deepUserId = positiveUserId(searchParams?.get("userId") ?? "");
   const session = useAdminAuth((state) => state.session);
   const authorities = session?.authorities ?? [];
   const isSuperAdmin = session?.role === "superadmin";
@@ -312,7 +312,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
 
       <section className="l-card">
         <div className="l-h"><span className="ttl">脱敏对账导出</span><span className="sub">· 沿用当前七类 / 用户 / 时间 / 状态筛选</span><div className="r"><button className="l-btn primary" disabled={!canExport || loading || Boolean(error)} title={error ? "账单事实加载失败，恢复前禁止导出" : undefined} onClick={requestExport}>{canExport ? "导出脱敏 CSV" : "当前角色不可导出"}</button></div></div>
-        <div className="l-b"><div className="dtint">固定隐藏昵称等个人信息，用户编码仅保留首尾；导出动作写审计。需要纠正余额时唯一入口为 C3。</div><div className="chips" style={{ marginTop: 10 }}><Link className="chip" href="/users/assets">C3 余额调整</Link><Link className="chip" href="/finance/recon">D1 充值对账</Link><Link className="chip" href="/finance/withdrawals">D2 提现审核</Link><Link className="chip" href="/finance/pool">D3 资金池</Link><Link className="chip" href="/platform/audit">A2 操作审计</Link><Link className="chip" href="/platform/events">A4 资金事件</Link><Link className="chip" href="/analytics/export">L5 监管导出</Link></div></div>
+        <div className="l-b"><div className="dtint">固定隐藏昵称等个人信息，用户编码仅保留首尾；导出动作写审计。需要纠正余额时唯一入口为 C3。</div><div className="chips" style={{ marginTop: 10 }}><Link className="chip" href="/users/assets" prefetch={false}>C3 余额调整</Link><Link className="chip" href="/finance/recon" prefetch={false}>D1 充值对账</Link><Link className="chip" href="/finance/withdrawals" prefetch={false}>D2 提现审核</Link><Link className="chip" href="/finance/pool" prefetch={false}>D3 资金池</Link><Link className="chip" href="/platform/audit" prefetch={false}>A2 操作审计</Link><Link className="chip" href="/platform/events" prefetch={false}>A4 资金事件</Link><Link className="chip" href="/analytics/export" prefetch={false}>L5 监管导出</Link></div></div>
       </section>
     </>
   );

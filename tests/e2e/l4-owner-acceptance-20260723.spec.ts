@@ -1,10 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 
 const username = process.env.ADMIN_E2E_USERNAME;
 const password = process.env.ADMIN_E2E_PASSWORD;
+const evidenceDir = process.env.L4_ACCEPTANCE_DIR ?? "";
 
 test.beforeEach(async ({ page }) => {
   if (!username || !password) throw new Error("L4 acceptance credentials must be supplied through environment variables");
+  if (!evidenceDir) throw new Error("L4_ACCEPTANCE_DIR must be supplied through environment variables");
+  await mkdir(evidenceDir, { recursive: true });
   await page.goto("/", { waitUntil: "domcontentloaded" });
   const usernameInput = page.locator('input[autocomplete="username"]');
   if (await usernameInput.isVisible({ timeout: 8_000 }).catch(() => false)) {
@@ -100,6 +105,7 @@ test("L4 network tree export enforces reason, masks identifiers, downloads, and 
   expect(outcome.response?.status()).toBeLessThan(400);
   const downloaded = await download;
   expect(downloaded.suggestedFilename()).toMatch(/\.csv$/i);
+  await downloaded.saveAs(path.join(evidenceDir, "l4-network-tree.csv"));
   await expect(page.getByText(/团队明细已安全下载/)).toBeVisible();
 
   const stableKey = `99104-l4-duplicate-${Date.now()}`;

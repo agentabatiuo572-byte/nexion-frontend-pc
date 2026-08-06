@@ -11,17 +11,16 @@ const FIXTURE_PATH = process.env.A_PERMISSION_FIXTURE_PATH;
 const EVIDENCE_DIR = process.env.B_EVIDENCE_DIR;
 const RUN_TOKEN = "pc-full-acceptance-20260728-151023";
 
+type FixtureAccount = { username: string; password: string; totpSecret: string };
+type PermissionFixture = {
+  checker?: FixtureAccount;
+  accounts?: { d_checker?: FixtureAccount };
+};
+
 test("B2 双运营员 CAS、幂等回放、异载荷拒绝并恢复原配置", async ({ browser }) => {
   if (!FIXTURE_PATH) throw new Error("A_PERMISSION_FIXTURE_PATH is required");
-  const fixture = JSON.parse(await readFile(FIXTURE_PATH, "utf8")) as {
-    accounts: {
-      d_checker: {
-        username: string;
-        password: string;
-        totpSecret: string;
-      };
-    };
-  };
+  const fixture = JSON.parse(await readFile(FIXTURE_PATH, "utf8")) as PermissionFixture;
+  const checkerAccount = resolveChecker(fixture);
 
   const makerContext = await browser.newContext();
   const checkerContext = await browser.newContext();
@@ -30,8 +29,9 @@ test("B2 双运营员 CAS、幂等回放、异载荷拒绝并恢复原配置", a
   try {
     await Promise.all([
       login(maker, SUPERADMIN),
-      login(checker, fixture.accounts.d_checker),
+      login(checker, checkerAccount),
     ]);
+    await assertForecastWriteAuthority(checker, checkerAccount.username);
 
     const baselineResponse = await maker.request.get("/api/admin/treasury/forecast-config");
     const baseline = await apiEvidence(baselineResponse);
@@ -53,7 +53,7 @@ test("B2 双运营员 CAS、幂等回放、异载荷拒绝并恢复原配置", a
       ...changed,
       expectedVersion: initialVersion,
       reason: "B2 CAS checker acceptance competing change",
-      operator: fixture.accounts.d_checker.username,
+      operator: checkerAccount.username,
     };
 
     const [makerResponse, checkerResponse] = await Promise.all([
@@ -72,7 +72,7 @@ test("B2 双运营员 CAS、幂等回放、异载荷拒绝并恢复原配置", a
 
     const winner = makerResult.status === 200
       ? { page: maker, key: makerKey, body: makerBody, result: makerResult, actor: SUPERADMIN.username }
-      : { page: checker, key: checkerKey, body: checkerBody, result: checkerResult, actor: fixture.accounts.d_checker.username };
+      : { page: checker, key: checkerKey, body: checkerBody, result: checkerResult, actor: checkerAccount.username };
     const loser = makerResult.status === 409 ? makerResult : checkerResult;
     expect(loser.body?.message).toBe("D3_FORECAST_CONFIG_VERSION_CONFLICT");
 
@@ -147,6 +147,30 @@ test("B2 双运营员 CAS、幂等回放、异载荷拒绝并恢复原配置", a
     await Promise.all([makerContext.close(), checkerContext.close()]);
   }
 });
+
+function resolveChecker(fixture: PermissionFixture): FixtureAccount {
+  const checker = fixture.checker ?? fixture.accounts?.d_checker;
+  if (!checker?.username || !checker.password || !checker.totpSecret) {
+    throw new Error("permission fixture is missing a complete top-level checker or legacy accounts.d_checker");
+  }
+  if (checker.username === SUPERADMIN.username) {
+    throw new Error("checker must be a distinct operator; refusing same-superadmin CAS coverage");
+  }
+  return checker;
+}
+
+async function assertForecastWriteAuthority(page: Page, username: string) {
+  const response = await page.request.get("/api/admin/auth/session");
+  expect(response.status(), `${username} session`).toBe(200);
+  const body = await response.json() as {
+    data?: { session?: { authorities?: string[] } };
+  };
+  const authorities = body.data?.session?.authorities ?? [];
+  expect(
+    authorities.some((authority) => authority === "finance_d3_write" || authority === "overview_b2_write"),
+    `${username} forecast-config write authority`,
+  ).toBe(true);
+}
 
 function candidateConfig(data: Record<string, any>) {
   const candidate = data?.pendingConfig ?? data;

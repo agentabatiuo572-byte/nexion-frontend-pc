@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const pc = (path) => readFileSync(resolve(process.cwd(), path), "utf8");
 const backend = (path) => readFileSync(resolve(process.cwd(), "..", "nexion-backend", path), "utf8");
-const app = (path) => readFileSync(resolve(process.cwd(), "..", "NX1.0", path), "utf8");
+const appRoot = resolveNexionAppRoot({ adminRoot: process.cwd() });
+const app = (path) => readFileSync(resolve(appRoot, path), "utf8");
 
 test("I1 后台投放位置由 App 可见组件真实消费，而不是只停留在管理页", () => {
   const controller = backend("src/main/java/ffdd/opsconsole/content/web/AppCopyExperimentController.java");

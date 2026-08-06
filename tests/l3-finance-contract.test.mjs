@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertL3FinanceContract } from "../lib/admin/l3-finance-contract.ts";
+import { assertL3FinanceContract, assertL3TreasurySnapshot } from "../lib/admin/l3-finance-contract.ts";
 
 function maturity(days) {
   return Array.from({ length: days }, (_, index) => {
@@ -105,6 +105,47 @@ function validPayload() {
 test("accepts the complete seven-source L3 contract", () => {
   const payload = validPayload();
   assert.equal(assertL3FinanceContract(payload), payload);
+});
+
+test("accepts only a server-authoritative L3 treasury aggregation envelope", () => {
+  const payload = validPayload();
+  const treasury = {
+    serverAuthoritative: true,
+    coverage: payload.coverage,
+    liabilities: payload.liabilities,
+    maturity7: payload.maturity7,
+    maturity30: payload.maturity30,
+  };
+
+  assert.deepEqual(assertL3TreasurySnapshot(treasury), {
+    coverage: payload.coverage,
+    liabilities: payload.liabilities,
+    maturity7: payload.maturity7,
+    maturity30: payload.maturity30,
+  });
+  assert.throws(
+    () => assertL3TreasurySnapshot({ ...treasury, serverAuthoritative: false }),
+    /L3_FINANCE_PROTOCOL_INVALID:treasurySnapshot\.serverAuthoritative/,
+  );
+});
+
+test("accepts the canonical minus one hundred percent month-over-month revenue delta", () => {
+  const payload = validPayload();
+  payload.revenue.streams[0].amountUsdt = 0;
+  payload.revenue.streams[0].previousAmountUsdt = 40;
+  payload.revenue.streams[0].share = 0;
+  payload.revenue.streams[0].momDelta = -100;
+  payload.revenue.totalUsdt = 60;
+  assert.equal(assertL3FinanceContract(payload), payload);
+});
+
+test("rejects an impossible revenue decrease below minus one hundred percent", () => {
+  const payload = validPayload();
+  payload.revenue.streams[0].momDelta = -100.1;
+  assert.throws(
+    () => assertL3FinanceContract(payload),
+    /L3_FINANCE_PROTOCOL_INVALID:revenue\.streams\[0\]\.momDelta/,
+  );
 });
 
 test("rejects an HTTP 200 payload with a missing ninth liability", () => {

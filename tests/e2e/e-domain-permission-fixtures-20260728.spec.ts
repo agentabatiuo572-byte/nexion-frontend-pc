@@ -8,9 +8,12 @@ type FixtureAccount = { username: string; password: string; totpSecret: string }
 type PermissionFixture = {
   runId: string;
   accounts: {
-    e_readonly: FixtureAccount;
-    e_no_write: FixtureAccount;
-    e_no_menu: FixtureAccount;
+    readonly?: FixtureAccount;
+    nowrite?: FixtureAccount;
+    nomenu?: FixtureAccount;
+    e_readonly?: FixtureAccount;
+    e_no_write?: FixtureAccount;
+    e_no_menu?: FixtureAccount;
   };
 };
 type ModuleProbe = {
@@ -107,13 +110,13 @@ test.describe.serial("E 域 readonly/no-write/no-menu 五层权限", () => {
     if (evidenceDir) mkdirSync(evidenceDir, { recursive: true });
   });
 
-  for (const [profile, key] of [
-    ["readonly", "e_readonly"],
-    ["menu-no-write", "e_no_write"],
+  for (const [profile, key, legacyKey] of [
+    ["readonly", "readonly", "e_readonly"],
+    ["menu-no-write", "nowrite", "e_no_write"],
   ] as const) {
     test(`${profile}：E1–E6 菜单、路由、按钮、接口、数据只读，刷新重登不漂移`, async ({ page }) => {
       const pageErrors = monitorPageErrors(page);
-      const account = fixture.accounts[key];
+      const account = fixtureAccount(key, legacyKey);
       await login(page, account, key);
       await assertSession(page, true);
       await assertVisibleEMenus(page);
@@ -151,10 +154,10 @@ test.describe.serial("E 域 readonly/no-write/no-menu 五层权限", () => {
     });
   }
 
-  test("no-menu：E 菜单与直接路由不可达，E1–E6 读写均 403，刷新重登不恢复", async ({ page }) => {
+  test("no-menu：E 菜单、直接路由、读写均拒绝，刷新重登不恢复", async ({ page }) => {
     const pageErrors = monitorPageErrors(page);
-    const account = fixture.accounts.e_no_menu;
-    await login(page, account, "e_no_menu");
+    const account = fixtureAccount("nomenu", "e_no_menu");
+    await login(page, account, "nomenu");
     await assertSession(page, false);
     await expect(page.locator('a[href^="/devices/"]')).toHaveCount(0);
     await page.goto(MODULES[0].path, { waitUntil: "domcontentloaded" });
@@ -173,21 +176,31 @@ test.describe.serial("E 域 readonly/no-write/no-menu 五层权限", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator('a[href^="/devices/"]')).toHaveCount(0);
     await logout(page);
-    await login(page, account, "e_no_menu");
+    await login(page, account, "nomenu");
     await assertSession(page, false);
     await expect(page.locator('a[href^="/devices/"]')).toHaveCount(0);
-    expect((await browserApi(page, "GET", MODULES[0].readPath)).status).toBe(403);
+    const reloginRead = await browserApi(page, "GET", MODULES[0].readPath);
+    const reloginWrite = await browserApi(page, MODULES[0].writeMethod, MODULES[0].writePath, MODULES[0].writeBody);
+    expect(reloginRead.status).toBe(403);
+    expect(reloginWrite.status).toBe(403);
     expect(pageErrors).toEqual([]);
     writeEvidence("no-menu-five-layers.json", {
       profile: "no-menu",
       modules,
       directRoute: "DENIED",
       refresh: "DENIED",
-      logoutRelogin: "DENIED",
+      logoutRelogin: { menu: "DENIED", read: 403, write: 403 },
       pageErrors,
     });
   });
 });
+
+function fixtureAccount(preferredKey: string, legacyKey: string): FixtureAccount {
+  const account = fixture.accounts[preferredKey as keyof PermissionFixture["accounts"]]
+    ?? fixture.accounts[legacyKey as keyof PermissionFixture["accounts"]];
+  if (!account) throw new Error(`permission fixture missing account: ${preferredKey} or ${legacyKey}`);
+  return account;
+}
 
 async function login(page: Page, account: FixtureAccount, key: string) {
   let lastCode: number | undefined;
@@ -239,7 +252,7 @@ async function logout(page: Page) {
   await expect(page.locator('input[autocomplete="username"]')).toBeVisible({ timeout: 20_000 });
 }
 
-async function assertSession(page: Page, hasERead: boolean) {
+async function assertSession(page: Page, hasERead: boolean, hasEMenus = hasERead) {
   const response = await page.request.get("/api/admin/auth/session");
   expect(response.status()).toBe(200);
   const payload = await response.json() as {
@@ -254,7 +267,8 @@ async function assertSession(page: Page, hasERead: boolean) {
     expect(authorities.some((permission) => permission.startsWith("device_e") && permission !== "device_e1_read"
       && permission !== "device_e2_read" && permission !== "device_e3_read" && permission !== "device_e4_read"
       && permission !== "device_e5_read" && permission !== "device_e6_read")).toBe(false);
-    expect(menus.length).toBeGreaterThan(0);
+    if (hasEMenus) expect(menus.length).toBeGreaterThan(0);
+    else expect(menus).toEqual([]);
   } else {
     expect(authorities).toEqual([]);
     expect(menus).toEqual([]);

@@ -256,7 +256,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_DOMAIN_EXTENSION_INVALID: "domain 名无效、已注册或已下线，请重新填写。",
   A4_DOMAIN_EXTENSION_EVENT_INVALID: "扩展事件名必须与 domain 一致，并使用已发生动作。",
   A4_DOMAIN_EXTENSION_DUPLICATE: "该 domain 扩展工单已经登记，请刷新列表。",
-  A4_SCHEMA_NOT_REGISTERED: "该事件尚未通过 A4 Schema Registry 注册，服务端已阻止发送。",
+  A4_SCHEMA_NOT_REGISTERED: "系统事件登记不完整，操作未生效。请联系平台管理员修复配置后重试。",
   IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "同一请求标识对应的内容已变化，本次未执行；请刷新页面后重新发起。",
   PLATFORM_BACKEND_TIMEOUT: "平台服务响应超时，当前结果尚未确认；写操作请保留当前输入并直接重试。",
   PLATFORM_BACKEND_UNAVAILABLE: "平台服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",

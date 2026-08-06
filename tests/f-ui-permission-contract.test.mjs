@@ -63,7 +63,8 @@ test("F5 异常阈值、补发、冲正与暂停使用对应后端 authority", (
   assert.match(f5, /network_f5_write/);
   assert.match(f5, /network_f5_commission_dispose/);
   assert.match(f5, /network_f5_commission_reject/);
-  assert.match(f5, /\{canDispose && <button[^>]+onClick=\{reissue\}/);
+  assert.match(f5, /const reissueAvailable = canDispose && !ctx\.f5Error && !!data;/);
+  assert.match(f5, /\{reissueAvailable && <button[^>]+onClick=\{reissue\}/);
   assert.match(f5, /canReject && row\.status/);
   assert.match(f5, /\{canReject && <button[^>]+onClick=\{\(\) => suspend\(row\)\}/);
   assert.match(f5, /\{canWrite && <button[^>]+onClick=\{editThreshold\}/);

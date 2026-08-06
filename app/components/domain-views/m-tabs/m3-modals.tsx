@@ -559,27 +559,28 @@ export function InitiateModal({
 type TransferAgentOption = { id: string; name: string; position?: string };
 export type TransferPayload = { to: TransferTarget; reason: string };
 export function TransferModal({
-  currentOwner,
+  currentOwnerId,
   onClose,
   onSubmit,
   agents = [],
   queues = [],
 }: {
-  currentOwner: string;
+  currentOwnerId?: string;
   onClose: () => void;
   onSubmit: (p: TransferPayload) => void;
   agents?: TransferAgentOption[];
   queues?: string[];
 }) {
-  const agentOptions = agents.filter((a) => a.name !== "Unassigned" && a.name !== currentOwner);
+  const agentOptions = agents.filter((a) => a.name !== "Unassigned" && a.id !== currentOwnerId);
   const [kind, setKind] = useState<"agent" | "queue" | "standby">(agentOptions.length ? "agent" : queues.length ? "queue" : "standby");
-  const [agent, setAgent] = useState(agentOptions[0]?.name ?? "");
+  const [selectedAgentId, setSelectedAgentId] = useState(agentOptions[0]?.id ?? "");
   const [queue, setQueue] = useState(queues[0] ?? "");
   const [reason, setReason] = useState("");
   const reasonLength = reason.trim().length;
   const reasonOk = reasonLength >= 8 && reasonLength <= 200;
-  const targetOk = kind === "agent" ? !!agent : kind === "queue" ? !!queue : true;
-  const to: TransferTarget = kind === "agent" ? { kind: "agent", name: agent } : kind === "queue" ? { kind: "queue", queue } : { kind: "standby" };
+  const selectedAgent = agentOptions.find((item) => item.id === selectedAgentId);
+  const targetOk = kind === "agent" ? Boolean(selectedAgent) : kind === "queue" ? !!queue : true;
+  const to: TransferTarget = kind === "agent" && selectedAgent ? { kind: "agent", agentId: selectedAgent.id, name: selectedAgent.name } : kind === "queue" ? { kind: "queue", queue } : { kind: "standby" };
   const ok = reasonOk && targetOk;
   return (
     <Modal
@@ -619,15 +620,17 @@ export function TransferModal({
                 <button
                   key={a.id}
                   type="button"
-                  onClick={() => setAgent(a.name)}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: `1px solid ${agent === a.name ? "var(--m-hd-border)" : "var(--border)"}`, background: agent === a.name ? "var(--m-hd-soft)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
+                  data-proof={`session-transfer-agent-${a.id}`}
+                  onClick={() => setSelectedAgentId(a.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, border: `1px solid ${selectedAgentId === a.id ? "var(--m-hd-border)" : "var(--border)"}`, background: selectedAgentId === a.id ? "var(--m-hd-soft)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
                 >
                   <MAvatar name={a.name} size="sm" />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: "block", fontSize: 13, color: "var(--ink)" }}>{a.name}</span>
                     {a.position && <span className="dim2" style={{ fontSize: 11.5 }}>{a.position}</span>}
+                    <span className="dim2 mono" style={{ display: "block", fontSize: 11.5 }}>坐席ID {a.id}</span>
                   </span>
-                  {agent === a.name && <Icon name="check" size={15} />}
+                  {selectedAgentId === a.id && <Icon name="check" size={15} />}
                 </button>
               ))}
             </div>

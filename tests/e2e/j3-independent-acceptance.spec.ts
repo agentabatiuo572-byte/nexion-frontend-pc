@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createHmac } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -7,6 +8,7 @@ const evidenceRoot = process.env.J3_EVIDENCE_DIR
 const screenshotDir = path.join(evidenceRoot, "screenshots");
 const rawDir = path.join(evidenceRoot, "raw");
 const e2eUsername = process.env.NEXION_E2E_USERNAME ?? "superadmin";
+const e2eTotpSecret = process.env.NEXION_E2E_TOTP_SECRET?.trim() || "";
 
 function e2ePassword() {
   const password = process.env.NEXION_E2E_PASSWORD;
@@ -28,12 +30,46 @@ async function shot(page: Page, name: string) {
 }
 
 async function loginFromVisibleEntry(page: Page) {
-  await page.goto("/");
-  await expect(page.getByLabel("账号")).toBeVisible({ timeout: 30_000 });
-  await page.getByLabel("账号").fill(e2eUsername);
-  await page.getByLabel("密码").fill(e2ePassword());
-  await page.getByRole("button", { name: /登录|继续/ }).click();
-  await expect(page.locator("aside").first()).toBeVisible({ timeout: 30_000 });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.goto("/");
+    if (await page.locator("aside").first().isVisible({ timeout: 2_000 }).catch(() => false)) return;
+    await expect(page.getByLabel("账号")).toBeVisible({ timeout: 30_000 });
+    await page.getByLabel("账号").fill(e2eUsername);
+    await page.getByLabel("密码").fill(e2ePassword());
+    await page.getByRole("button", { name: /登录|继续/ }).click();
+    const otp = page.getByLabel("一次性验证码");
+    const shell = page.locator("aside").first();
+    await shell.or(otp).first().waitFor({ state: "visible", timeout: 30_000 });
+    if (await shell.isVisible().catch(() => false)) {
+      return;
+    }
+    await expect(otp).toBeVisible();
+    if (!e2eTotpSecret) throw new Error("NEXION_E2E_TOTP_SECRET is required for an enrolled J3 account");
+    await fillFreshTotp(page, otp, e2eTotpSecret);
+    const verification = page.waitForResponse((response) =>
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/admin/auth/mfa/verify");
+    await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const response = await verification;
+    const payload = await response.json().catch(() => null) as { code?: number; message?: string } | null;
+    const hasAuthCookie = (await page.context().cookies())
+      .some((cookie) => cookie.name === "nexion_admin_token");
+    if (response.status() === 200 && (payload?.code === 0 || hasAuthCookie)) {
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      expect((await page.request.get("/api/admin/auth/session")).status()).toBe(200);
+      await expect(page.locator("aside").first()).toBeVisible({ timeout: 30_000 });
+      return;
+    }
+    if (attempt === 0 && ["ADMIN_MFA_CODE_REPLAYED", "ADMIN_MFA_CODE_INVALID"].includes(payload?.message ?? "")) {
+      // A concurrent serial wave may have consumed this 30-second counter.
+      // Start a new password challenge only after the next standard TOTP step.
+      await page.context().clearCookies();
+      await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 500);
+      continue;
+    }
+    throw new Error(`J3 MFA failed: HTTP ${response.status()} ${payload?.message ?? "unknown"}`);
+  }
+  throw new Error("J3 login did not reach the authenticated shell");
 }
 
 async function openJ3FromSidebar(page: Page) {
@@ -50,7 +86,7 @@ async function openJ3FromSidebar(page: Page) {
   await expect(page.getByText("账户处置只读，告警配置单独授权", { exact: false })).toBeVisible();
 }
 
-test("J3 independent first-user + Murphy acceptance", async ({ page, context, playwright }) => {
+test("J3 independent first-user + Murphy acceptance", async ({ page, context, playwright, baseURL }) => {
   test.setTimeout(240_000);
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
@@ -164,10 +200,10 @@ test("J3 independent first-user + Murphy acceptance", async ({ page, context, pl
   await page.locator('button[aria-haspopup="menu"]').last().click();
   await page.getByRole("button", { name: "退出登录" }).click();
   await expect(page.getByLabel("账号")).toBeVisible({ timeout: 20_000 });
-  await page.getByLabel("账号").fill(e2eUsername);
-  await page.getByLabel("密码").fill(e2ePassword());
-  await page.getByRole("button", { name: /登录|继续/ }).click();
-  await expect(page.locator("aside").first()).toBeVisible({ timeout: 30_000 });
+  await loginFromVisibleEntry(page);
+  await openJ3FromSidebar(page);
+  await page.getByRole("button", { name: "30d", exact: true }).click();
+  await expect(page).toHaveURL(/window=30d/);
   await expect(page.getByRole("button", { name: "30d", exact: true })).toHaveClass(/on/);
   await page.getByRole("button", { name: "告警阈值配置" }).click();
   dialog = page.getByRole("dialog", { name: "篡改告警配置确认" });
@@ -177,7 +213,7 @@ test("J3 independent first-user + Murphy acceptance", async ({ page, context, pl
   await dialog.getByRole("button", { name: "取消" }).click();
   await shot(page, "08-relogin-and-cleanup-restored");
 
-  const unauthContext = await playwright.request.newContext({ baseURL: "http://127.0.0.1:3002" });
+  const unauthContext = await playwright.request.newContext({ baseURL });
   const unauthWrite = await unauthContext.put("/api/admin/emergency/tamper/alert-config", {
     data: {
       threshold: originalThreshold,
@@ -208,3 +244,34 @@ test("J3 independent first-user + Murphy acceptance", async ({ page, context, pl
   expect(pageErrors).toEqual([]);
   expect(apiLog.some((row) => row.method === "PUT" && row.status < 400)).toBeTruthy();
 });
+
+async function fillFreshTotp(
+  page: Page,
+  input: ReturnType<Page["getByLabel"]>,
+  secret: string,
+) {
+  const remainingMs = 30_000 - (Date.now() % 30_000);
+  if (remainingMs <= 3_000) await page.waitForTimeout(remainingMs + 500);
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30_000)));
+  const digest = createHmac("sha1", decodeBase32(secret)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const code = String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+  await input.fill(code);
+}
+
+function decodeBase32(raw: string) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const normalized = raw.replace(/[^A-Z2-7]/gi, "").toUpperCase();
+  let bits = "";
+  for (const char of normalized) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new Error("INVALID_BASE32_SECRET");
+    bits += index.toString(2).padStart(5, "0");
+  }
+  const bytes: number[] = [];
+  for (let index = 0; index + 8 <= bits.length; index += 8) {
+    bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+  }
+  return Buffer.from(bytes);
+}

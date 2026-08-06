@@ -1,14 +1,58 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, test, type APIResponse, type Page } from "@playwright/test";
 
+type RestrictedAccount = {
+  accountId?: string;
+  username: string;
+  password: string;
+  totpSecret: string;
+  role?: string;
+  createdForRun?: boolean;
+};
+
+type RestrictedSupportManifest = {
+  runId?: string;
+  createdForRun?: boolean;
+  account?: RestrictedAccount;
+  supportSupervisor?: RestrictedAccount;
+  accounts?: {
+    supportSupervisor?: RestrictedAccount;
+    m_support_supervisor?: RestrictedAccount;
+  };
+  finalAccounts?: {
+    m_support_supervisor?: RestrictedAccount;
+  };
+};
+
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
-const ADMIN_USER = process.env.M1_ADMIN_USERNAME ?? "d5_V3_r_super";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD ?? "";
+const RUN_ID = process.env.M_FINAL2_RUN_ID ?? "pc-full-acceptance-20260729-114336";
+const SUPPORT_MANIFEST_PATH = process.env.M1_SUPPORT_MANIFEST_PATH?.trim()
+  ? path.resolve(process.env.M1_SUPPORT_MANIFEST_PATH.trim())
+  : "";
+const SUPPORT_MANIFEST = SUPPORT_MANIFEST_PATH
+  ? JSON.parse(readFileSync(SUPPORT_MANIFEST_PATH, "utf8")) as RestrictedSupportManifest
+  : null;
+const SUPPORT_ACCOUNT = SUPPORT_MANIFEST?.supportSupervisor
+  ?? SUPPORT_MANIFEST?.account
+  ?? SUPPORT_MANIFEST?.accounts?.supportSupervisor
+  ?? SUPPORT_MANIFEST?.accounts?.m_support_supervisor
+  ?? SUPPORT_MANIFEST?.finalAccounts?.m_support_supervisor
+  ?? null;
+const ADMIN_USER = SUPPORT_ACCOUNT?.username ?? process.env.M1_ADMIN_USERNAME ?? "d5_V3_r_super";
+const PASSWORD = SUPPORT_ACCOUNT?.password ?? process.env.ADMIN_E2E_PASSWORD ?? "";
+const TOTP_SECRET = SUPPORT_ACCOUNT?.totpSecret?.trim()
+  || process.env.M1_ADMIN_TOTP_SECRET?.trim()
+  || process.env.ADMIN_E2E_TOTP_SECRET?.trim()
+  || "";
 const EVIDENCE_DIR = process.env.M1_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/m-domain-acceptance-20260723/restricted/m1/initial-red";
-const PREFIX = process.env.M1_FIXTURE_PREFIX ?? "M1-20260723";
+const PREFIX = process.env.M1_FIXTURE_PREFIX ?? `${RUN_ID}-M1`;
+const FINAL2_PC_BUILD_ID = process.env.M1_EXPECTED_PC_BUILD_ID ?? "xNJR-cEeID2fPRwrRvOrb";
+const FINAL2_BACKEND_JAR_SHA256 = (process.env.M1_EXPECTED_BACKEND_JAR_SHA256
+  ?? "B426C1ED9CFCE970F247D041A28DC7EDAFAC927C112AC0089755ACB70F954B3B").toUpperCase();
 const LOAD_API = "**/api/admin/content/tickets/load-config";
 const MFA_SECRETS = new Map<string, string>();
 
@@ -30,11 +74,38 @@ test.describe.configure({ mode: "serial", timeout: 240_000 });
 
 test.beforeAll(async () => {
   if (!PASSWORD) throw new Error("ADMIN_E2E_PASSWORD is required for M1 live acceptance");
+  if (SUPPORT_MANIFEST_PATH) {
+    expect(/bug-pic[\\/]\.restricted[\\/]/i.test(SUPPORT_MANIFEST_PATH)).toBe(true);
+    expect(SUPPORT_MANIFEST?.runId).toBe(RUN_ID);
+    expect(SUPPORT_ACCOUNT, "M1 pre-created SUPPORT supervisor is required").toBeTruthy();
+    expect(
+      SUPPORT_MANIFEST?.createdForRun === true || SUPPORT_ACCOUNT?.createdForRun === true,
+      "M1 SUPPORT account must be dedicated to this Run",
+    ).toBe(true);
+    expect(String(SUPPORT_ACCOUNT?.role ?? "support").toLowerCase()).toBe("support");
+    expect(process.env.M_FINAL2_MFA_BYPASS).toBe("false");
+    const writeControlToken = process.env.M_WRITE_CONTROL_TOKEN?.trim();
+    expect(writeControlToken, "M_WRITE_CONTROL_TOKEN is required").toBeTruthy();
+    expect(process.env.M_WRITE_TOKEN?.trim()).toBe(writeControlToken);
+    expect(process.env.M1_LOAD_CONFIG_LOCK?.trim()).toBe(`${RUN_ID}:M1`);
+    expect(readFileSync(path.resolve(".next/BUILD_ID"), "utf8").trim()).toBe(FINAL2_PC_BUILD_ID);
+    const backendJarPath = process.env.M1_BACKEND_JAR_PATH?.trim();
+    expect(backendJarPath, "M1_BACKEND_JAR_PATH is required").toBeTruthy();
+    expect(sha256File(path.resolve(backendJarPath!))).toBe(FINAL2_BACKEND_JAR_SHA256);
+  }
   await mkdir(EVIDENCE_DIR, { recursive: true });
 });
 
 test("M1 结果未知保留表单并以同一幂等键安全重试", async ({ page }) => {
   await loginAndOpenM1(page);
+  if (SUPPORT_MANIFEST_PATH) {
+    const auth = await envelope<{ session?: { role?: string; authorities?: string[] } }>(
+      await page.request.get("/api/admin/auth/session"),
+    );
+    expect(String(auth.data.session?.role ?? SUPPORT_ACCOUNT?.role ?? "").toLowerCase()).toBe("support");
+    expect(auth.data.session?.authorities ?? []).toEqual(expect.arrayContaining(["service_m1_read", "service_m1_write"]));
+    await expect(page.getByRole("button", { name: "调整负载", exact: true })).toBeEnabled();
+  }
   await expect(page.getByText("SLA 监控", { exact: true })).toBeVisible();
   await expect(page.getByText("坐席负载", { exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "01-visible-entry-m1-overview.png"), fullPage: true });
@@ -73,6 +144,8 @@ test("M1 结果未知保留表单并以同一幂等键安全重试", async ({ pa
       const upstream = await route.fetch();
       const upstreamText = await upstream.text();
       expect(upstream.ok(), `M1 load upstream ${upstream.status()}: ${upstreamText.slice(0, 500)}`).toBeTruthy();
+      const upstreamPayload = JSON.parse(upstreamText) as Envelope<unknown>;
+      expect(upstreamPayload.code, upstreamText).toBe(0);
       await route.abort("connectionfailed");
       return;
     }
@@ -99,7 +172,9 @@ test("M1 结果未知保留表单并以同一幂等键安全重试", async ({ pa
       && new URL(response.url()).pathname === "/api/admin/content/tickets/load-config");
     await dialog.getByRole("button", { name: /使用同一命令重试/ }).click();
     const replayResponse = await replay;
-    expect(replayResponse.ok(), await replayResponse.text()).toBeTruthy();
+    const replayText = await replayResponse.text();
+    expect(replayResponse.ok(), replayText).toBeTruthy();
+    expect((JSON.parse(replayText) as Envelope<unknown>).code, replayText).toBe(0);
     await expect(dialog).toBeHidden();
     expect(keys).toHaveLength(2);
     expect(keys[0]).toBeTruthy();
@@ -135,7 +210,9 @@ test("M1 结果未知保留表单并以同一幂等键安全重试", async ({ pa
           reason: `${PREFIX}-恢复原负载配置`,
         },
       });
-      expect(restore.ok(), `M1 cleanup ${restore.status()}: ${await restore.text()}`).toBeTruthy();
+      const restoreText = await restore.text();
+      expect(restore.ok(), `M1 cleanup ${restore.status()}: ${restoreText}`).toBeTruthy();
+      expect((JSON.parse(restoreText) as Envelope<unknown>).code, restoreText).toBe(0);
     }
   }
 
@@ -213,7 +290,7 @@ async function login(page: Page, username: string) {
   const secretCode = page.locator("code");
   const displayedSecret = await secretCode.count() > 0 ? (await secretCode.first().textContent())?.trim() : undefined;
   if (displayedSecret) MFA_SECRETS.set(username, displayedSecret);
-  const secret = displayedSecret || MFA_SECRETS.get(username);
+  const secret = displayedSecret || MFA_SECRETS.get(username) || TOTP_SECRET;
   if (!secret) throw new Error(`MFA secret unavailable for ${username}`);
   const remainingMs = 30_000 - (Date.now() % 30_000);
   await page.waitForTimeout(remainingMs + 750);
@@ -252,4 +329,8 @@ function decodeBase32(value: string) {
   const bytes: number[] = [];
   for (let index = 0; index + 8 <= bits.length; index += 8) bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
   return Buffer.from(bytes);
+}
+
+function sha256File(file: string) {
+  return createHash("sha256").update(readFileSync(file)).digest("hex").toUpperCase();
 }

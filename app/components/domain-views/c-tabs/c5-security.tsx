@@ -216,7 +216,7 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const focusUserCode = (searchParams.get("userCode") ?? "").trim().toUpperCase();
+  const focusUserCode = (searchParams?.get("userCode") ?? "").trim().toUpperCase();
   const [overview, setOverview] = useState<UserSecurityOverview | null>(null);
   const [selectedUserKey, setSelectedUserKey] = useState(NO_USER_SELECTION);
   const [userLookup, setUserLookup] = useState("");
@@ -233,14 +233,14 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const [lockId, setLockId] = useState<string | null>(null);
 
   const replaceFocusUserCode = useCallback((userCode?: string) => {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
     if (userCode) {
       params.set("userCode", userCode);
     } else {
       params.delete("userCode");
     }
     const query = params.toString();
-    const destination = query ? `${pathname}?${query}` : pathname;
+    const destination = query ? `${pathname ?? "/"}?${query}` : (pathname ?? "/");
     router.replace(destination, { scroll: false });
   }, [pathname, router, searchParams]);
 

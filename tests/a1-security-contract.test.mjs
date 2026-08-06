@@ -38,11 +38,21 @@ test("logout revokes the server session and cookies never outlive eight hours", 
 test("logout fails closed and preserves the retry token when server revocation is unavailable", () => {
   const logout = read("app/api/admin/auth/logout/route.ts");
   const topbar = read("app/components/shell/topbar.tsx");
+  const logoutRequest = read("lib/admin/logout-request.ts");
 
   assert.doesNotMatch(logout, /catch\(\(\) => null\)/);
   assert.match(logout, /status:\s*503/);
   assert.match(logout, /ADMIN_LOGOUT_UNAVAILABLE/);
-  assert.match(topbar, /if \(!response\.ok\)/);
+  assert.ok(
+    logout.indexOf("ADMIN_LOGOUT_UNAVAILABLE") < logout.indexOf("response.cookies.set"),
+    "a failed server revocation must return before the retry credential cookie is cleared",
+  );
+  assert.match(logoutRequest, /if \(!response\.ok \|\| !isConfirmedLogoutEnvelope\(envelope\)\)/);
+  assert.match(logoutRequest, /ADMIN_LOGOUT_CONFIRMATION_FAILED/);
+  assert.match(topbar, /await requestAdminLogout\(\)/);
+  assert.match(topbar, /beginLogoutVerification\(\)/);
+  assert.match(topbar, /if \(auth\) cancelLogout\("服务端会话仍有效，退出未完成，请重试"\)/);
+  assert.match(topbar, /failLogoutUnknown\("服务端会话状态无法确认，已停止进入后台"\)/);
   assert.doesNotMatch(topbar, /finally\s*\{\s*signOut\(\)/);
 });
 
@@ -114,6 +124,13 @@ test("A1 single-session revocation is mapped through the platform BFF", () => {
   assert.match(platformRoute, /parts\[4\]\s*===\s*"revoke"/);
   assert.match(platformRoute, /accounts\/\$\{encodeURIComponent\(parts\[1\]\)\}\/sessions\/revoke/);
   assert.match(platformRoute, /accounts\/\$\{encodeURIComponent\(parts\[1\]\)\}\/sessions\/\$\{encodeURIComponent\(parts\[3\]\)\}\/revoke/);
+});
+
+test("A1 empty mutation bodies are not forwarded as text/plain commands", () => {
+  const platformRoute = read("app/api/admin/platform/[...path]/route.ts");
+
+  assert.match(platformRoute, /const rawBody = hasBody \? await request\.text\(\) : undefined/);
+  assert.match(platformRoute, /body: rawBody \? rawBody : undefined/);
 });
 
 test("MFA verification and first password change preserve browser session metadata", () => {

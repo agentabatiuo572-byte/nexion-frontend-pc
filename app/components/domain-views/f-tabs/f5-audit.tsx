@@ -41,6 +41,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
   const [status, setStatus] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const data = ctx.f5Overview;
+  const reissueAvailable = canDispose && !ctx.f5Error && !!data;
   const events = data?.commissionEvents ?? [];
   const selectedRows = useMemo(
     () => events.filter((row) => selected.includes(row.id)),
@@ -170,7 +171,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
           <span className="ph-ttl">F5 佣金事件审计</span>
           <span className="ph-sub">服务端游标 · 六类佣金真实账本</span>
         </div>
-        {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error} <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
+        {ctx.f5Error && <div style={{ padding: 12, color: "var(--danger)" }}>加载失败：{ctx.f5Error}。佣金权威快照不可用，批量补发已暂停。 <button className="fbtn" onClick={() => void ctx.refreshF5(query())}>重试</button></div>}
         <div className="filter-bar" style={{ gap: 8, flexWrap: "wrap" }}>
           <select aria-label="佣金类型" value={kind} onChange={(e) => setKind(e.target.value)}>
             <option value="">全部类型</option>
@@ -187,7 +188,7 @@ export function F5Audit({ ctx }: { ctx: FViewCtx }) {
             <option value="withdrawn">已提现</option><option value="reversed">已撤销</option><option value="frozen">已冻结</option>
           </select>
           <button className="fbtn primary" onClick={() => void ctx.refreshF5(query())}>服务端筛选</button>
-          {canDispose && <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>}
+          {reissueAvailable && <button className="fbtn" onClick={reissue}>批量补发 ({selected.length})</button>}
         </div>
       </section>
 

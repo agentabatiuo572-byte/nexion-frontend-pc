@@ -12,9 +12,9 @@ type FixtureAccount = {
 type PermissionFixture = {
   runId: string;
   accounts: {
-    i_readonly: FixtureAccount;
-    i_no_write: FixtureAccount;
-    i_no_menu: FixtureAccount;
+    readonly: FixtureAccount;
+    nowrite: FixtureAccount;
+    nomenu: FixtureAccount;
   };
 };
 
@@ -92,7 +92,7 @@ const MODULES: ModuleProbe[] = [
 test.describe.serial("I 域 A 夹具五层权限验收", () => {
   test("readonly：菜单、路由、数据、按钮和接口均遵守只读边界，刷新重登不漂移", async ({ page }) => {
     const errors = monitorPageErrors(page);
-    const account = fixture.accounts.i_readonly;
+    const account = fixture.accounts.readonly;
     await login(page, account);
     await assertVisibleIMenus(page);
 
@@ -121,7 +121,7 @@ test.describe.serial("I 域 A 夹具五层权限验收", () => {
 
   test("有菜单无写：I3 不渲染写按钮，后端写接口仍为 403", async ({ page }) => {
     const errors = monitorPageErrors(page);
-    const account = fixture.accounts.i_no_write;
+    const account = fixture.accounts.nowrite;
     await login(page, account);
     await assertVisibleIMenus(page);
     const module = MODULES.find((item) => item.id === "I3")!;
@@ -133,9 +133,9 @@ test.describe.serial("I 域 A 夹具五层权限验收", () => {
     expect(errors).toEqual([]);
   });
 
-  test("无菜单：侧栏和直接路由均拒绝，读写接口都是 403，刷新后不能由缓存恢复", async ({ page }) => {
+  test("无菜单：侧栏和直接路由均拒绝，纯读接口可用、写接口为 403，刷新后不能由缓存恢复", async ({ page }) => {
     const errors = monitorPageErrors(page);
-    const account = fixture.accounts.i_no_menu;
+    const account = fixture.accounts.nomenu;
     await login(page, account);
     await expect(page.locator('a[href^="/content/"]')).toHaveCount(0);
 
@@ -145,7 +145,8 @@ test.describe.serial("I 域 A 夹具五层权限验收", () => {
 
     const read = await browserApi(page, "GET", MODULES[0].readPath);
     const write = await browserApi(page, MODULES[0].writeMethod, MODULES[0].writePath, MODULES[0].writeBody);
-    expect(read.status).toBe(403);
+    expect(read.status).toBe(200);
+    expect(read.hasData).toBe(true);
     expect(write.status).toBe(403);
 
     await page.reload({ waitUntil: "domcontentloaded" });

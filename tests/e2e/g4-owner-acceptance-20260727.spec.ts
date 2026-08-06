@@ -5,6 +5,8 @@ import path from "node:path";
 const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
 const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
 const BACKEND = process.env.NEXION_BACKEND_URL || "http://127.0.0.1:8110";
+// Direct loopback public-route checks model the trusted edge, not an App client.
+const TRUSTED_EDGE_HEADERS = { "X-Nexion-Edge-Country": "JP", "CF-IPCountry": "JP" };
 const EVIDENCE_DIR = path.resolve(
   "D:/workspace/nexion-ops-console/docs/验收报告/PC管理端全面测试-20260726/G4-evidence",
 );
@@ -281,7 +283,7 @@ test("G4 墨菲探针覆盖认证、幂等冲突、非法输入、H1 关阀与 A
   expect(archiveFirst.status).toBe(200);
   expect(archiveReplay.status).toBe(200);
 
-  const backend = await playwrightRequest.newContext({ baseURL: BACKEND });
+  const backend = await playwrightRequest.newContext({ baseURL: BACKEND, extraHTTPHeaders: TRUSTED_EDGE_HEADERS });
   const appStateResponse = await backend.get("/api/genesis/state");
   const appState = await appStateResponse.json() as Envelope<Record<string, any>>;
   const anonymousAccount = await backend.get("/api/genesis/account");

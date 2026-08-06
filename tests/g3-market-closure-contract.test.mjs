@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { resolveNexionAppRoot } from "../scripts/lib/nexion-workspace-paths.mjs";
 
 const pcRoot = process.cwd();
 const backendRoot = "D:/workspace/nexion-backend";
-const appRoot = "D:/workspace/NX1.0";
+const appRoot = resolveNexionAppRoot({ adminRoot: pcRoot });
 const read = (root, file) => fs.readFileSync(path.join(root, file), "utf8");
 
 test("G3 PC sends curve/value CAS baselines and mirrors B1 direction gates", () => {

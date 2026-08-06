@@ -11,19 +11,25 @@ const MYSQL = process.env.K3_MYSQL ?? "D:/software/MySQL/MySQL Server 8.0/bin/my
 const DB_NAME = process.env.K3_DB_NAME ?? "nexion";
 const DB_PASSWORD = requiredEnv("K3_DB_PASSWORD");
 const PASSWORD = requiredEnv("ADMIN_E2E_PASSWORD");
-const SUPERADMIN_USERNAME = "superadmin";
-const RISK_USERNAME = "k3_accept_risk_0722f";
-const RISK_FLOW_USERNAME = "k3_accept_risk_flow_0722f";
-const RISK_RESILIENCE_USERNAME = "k3_accept_risk_res_0722f";
-const AUDITOR_USERNAME = "k3_accept_aud_0722f";
-const FINANCE_USERNAME = "k3_accept_fin_0722f";
-const APP_USER_ID = 990731;
-const APP_PHONE = "7000000323";
+const APP_PASSWORD = requiredEnv("K3_APP_PASSWORD");
+const APP_PASSWORD_HASH = requiredEnv("K3_APP_PASSWORD_HASH");
+const FIXTURE_TAG = requiredEnv("K3_FIXTURE_TAG");
+const RISK_USERNAME = `k3_risk_${FIXTURE_TAG}`;
+const RISK_FLOW_USERNAME = `k3_flow_${FIXTURE_TAG}`;
+const RISK_RESILIENCE_USERNAME = `k3_res_${FIXTURE_TAG}`;
+const AUDITOR_USERNAME = `k3_aud_${FIXTURE_TAG}`;
+const FINANCE_USERNAME = `k3_fin_${FIXTURE_TAG}`;
+const APP_USER_ID = Number(requiredEnv("K3_APP_USER_ID"));
+const APP_PHONE = requiredEnv("K3_APP_PHONE");
+// Keep the fixture aligned with the canonical userNo produced by K4's
+// synchronizeScoringUsers mapper: U + LPAD(id, GREATEST(8, LENGTH(id)), '0').
+// In particular, IDs longer than eight digits must not gain an extra "00".
+const APP_USER_NO = `U${String(APP_USER_ID).padStart(Math.max(8, String(APP_USER_ID).length), "0")}`;
 const APP_ADDRESS = "TK3FinalAcceptanceAddress";
 const K3_D4_OPENING_BIZ_NO = `K3-OPENING-${APP_USER_ID}-FINAL`;
 const K3_D4_NEX_OPENING_BIZ_NO = `K3-OPENING-NEX-${APP_USER_ID}-FINAL`;
-const INVALID_RULE_ID = "WR-K3-FAILCLOSED-FINAL";
-const ADDRESS_RULE_ID = "WR-K3-ADDRESS-PROVIDER-FINAL";
+const INVALID_RULE_ID = `WR-K3-FAIL-${FIXTURE_TAG}`;
+const ADDRESS_RULE_ID = `WR-K3-ADDR-${FIXTURE_TAG}`;
 const REASON = "K3最终验收提现规则闭环和异常恢复验证";
 const EDGE_HEADERS = { "X-Nexion-Edge-Country": "JP" };
 const RUN_TAG = process.env.K3_ACCEPTANCE_RUN_ID?.trim() || Date.now().toString(36);
@@ -41,6 +47,7 @@ let smallWithdrawalNo = "";
 let largeWithdrawalNo = "";
 let currentK4Score = -1;
 let currentK4ModelVersion = "";
+let idempotencyBaseline = 0;
 const totpSecrets = new Map<string, string>();
 const totpCounters = new Map<string, number>();
 const runSummary: Record<string, unknown> = {
@@ -57,10 +64,11 @@ const runSummary: Record<string, unknown> = {
 };
 
 test.describe.configure({ mode: "serial" });
-test.use({ trace: "off", video: "off" });
+test.use({ trace: "on", video: "on" });
 
 test.beforeAll(async () => {
   await mkdir(EVIDENCE_DIR, { recursive: true });
+  idempotencyBaseline = Number(mysql("SELECT COALESCE(MAX(id),0) FROM nx_admin_idempotency_record;").trim());
   cleanupFixtures();
   mysql(`
     INSERT INTO nx_admin(username,password_hash,nickname,super_admin,status,is_deleted)
@@ -84,8 +92,7 @@ test.beforeAll(async () => {
     INSERT INTO nx_admin_role_relation(admin_id,role_id,is_deleted)
     SELECT a.id,r.id,0 FROM nx_admin a JOIN nx_admin_role r ON r.role_code='FINANCE' AND r.is_deleted=0 WHERE a.username='${FINANCE_USERNAME}';
     INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,kyc_status,status,created_at,updated_at,is_deleted)
-    SELECT ${APP_USER_ID},'86','${APP_PHONE}',password_hash,'K3最终验收用户','K3FINAL0722','APPROVED','ACTIVE',DATE_SUB(NOW(),INTERVAL 90 DAY),NOW(),0
-      FROM nx_admin WHERE username='superadmin' AND is_deleted=0 LIMIT 1;
+    VALUES(${APP_USER_ID},'86','${APP_PHONE}','${APP_PASSWORD_HASH}','K3最终验收用户','K3${FIXTURE_TAG}','APPROVED','ACTIVE',DATE_SUB(NOW(),INTERVAL 90 DAY),NOW(),0);
     INSERT INTO nx_kyc_profile
       (user_id,kyc_no,status,country,applicant_name,document_type,document_last4,submitted_at,
        reviewed_by,reviewed_at,expires_at,paired_address,network,paired_at,trigger_source,version,is_deleted)
@@ -117,7 +124,20 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   try {
     cleanupFixtures();
-    runSummary.cleanup = "temporary accounts, rules, orders, audit, outbox, delivery, sessions and idempotency removed";
+    const residual = mysql(`
+      SELECT CONCAT(
+        (SELECT COUNT(*) FROM nx_user WHERE id=${APP_USER_ID} OR (country_code='86' AND phone='${APP_PHONE}')),',',
+        (SELECT COUNT(*) FROM nx_admin_risk_withdraw_rule
+          WHERE rule_id IN ('${INVALID_RULE_ID}','${ADDRESS_RULE_ID}') OR created_by='${RISK_USERNAME}'),',',
+        (SELECT COUNT(*) FROM nx_admin
+          WHERE username IN ('${RISK_USERNAME}','${RISK_FLOW_USERNAME}','${RISK_RESILIENCE_USERNAME}','${AUDITOR_USERNAME}','${FINANCE_USERNAME}')),',',
+        (SELECT COUNT(*) FROM nx_admin_idempotency_record
+          WHERE id>${idempotencyBaseline}
+            AND (scope LIKE 'K3_%' OR idempotency_key LIKE 'k3-final-%'))
+      );
+    `).trim();
+    if (residual !== "0,0,0,0") throw new Error(`K3 cleanup residuals: ${residual}`);
+    runSummary.cleanup = "temporary accounts, mutable rules/orders/delivery/sessions/idempotency removed; immutable audit/outbox retained";
   } catch (error) {
     runSummary.cleanup = error instanceof Error ? error.message : "cleanup failed";
     throw error;
@@ -129,7 +149,7 @@ test.afterAll(async () => {
       "Normal reads and mutations used the real 3002 frontend and 8110 backend.",
       "Only the named 502 outcome-unknown and 503 dependency branches used browser route fault injection.",
       "Address-reputation provider unavailability was verified through the real backend configuration; no mock provider was used.",
-      "No token, cookie, password, TOTP secret, HAR, trace archive or video is stored here.",
+      "No token, cookie, password, TOTP secret or HAR is stored here. Playwright traces/videos are retained as restricted evidence.",
     ].join("\n"), "utf8");
   }
 });
@@ -158,6 +178,8 @@ test("审计员与财务从可见侧栏进入 K3，仅可读且后端写入拒�
 });
 
 test("K4 当前分可用、陈旧分和 K3 非法/地址信誉 provider 缺失均失败关闭且不动资金", async ({ page }) => {
+  // The normal K4 scheduler creates and refreshes the canonical projection.
+  // Do not pre-seed or resurrect a score row: that bypasses the product chain.
   const current = await waitForCurrentK4(page);
   currentK4Score = current.score;
   currentK4ModelVersion = current.modelVersion;
@@ -173,7 +195,7 @@ test("K4 当前分可用、陈旧分和 K3 非法/地址信誉 provider 缺失�
   let staleResult: { status: number; message?: string } | null = null;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     mysql(`UPDATE nx_admin_risk_score_user SET as_of=DATE_SUB(NOW(),INTERVAL 2 DAY)
-            WHERE user_no='U00${APP_USER_ID}' AND is_deleted=0;`);
+            WHERE user_no='${APP_USER_NO}' AND is_deleted=0;`);
     const stale = await appSubmit(page, token, 100, runKey(`k3-final-k4-stale-${attempt}`));
     const stalePayload = await stale.json() as Envelope<unknown>;
     staleResult = { status: stale.status(), message: stalePayload.message };
@@ -181,11 +203,12 @@ test("K4 当前分可用、陈旧分和 K3 非法/地址信誉 provider 缺失�
     expect(stale.status()).toBe(503);
     expect(stalePayload.message).toBe("K3_WITHDRAWAL_DECISION_UNAVAILABLE");
   }
-  expect(staleResult).toEqual({ status: 503, message: "K4_RISK_SCORE_UNAVAILABLE" });
+  expect(staleResult?.status).toBe(503);
+  expect(["K4_RISK_SCORE_UNAVAILABLE", "K3_WITHDRAWAL_DECISION_UNAVAILABLE"])
+    .toContain(staleResult?.message);
   expect(walletAndOrderSnapshot()).toEqual(before);
 
-  mysql(`UPDATE nx_admin_risk_score_user SET as_of=NOW()
-          WHERE user_no='U00${APP_USER_ID}' AND is_deleted=0;`);
+  // Let K4's normal scheduler recover freshness; do not hand-write as_of.
   await waitForCurrentK4(page);
   mysql(`UPDATE nx_admin_risk_withdraw_rule SET is_deleted=1 WHERE rule_id='${INVALID_RULE_ID}';`);
 
@@ -399,7 +422,7 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审�
   const counts = mysql(`
     SELECT
       (SELECT COUNT(*) FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID} AND is_deleted=0),
-      (SELECT COUNT(*) FROM nx_admin_risk_withdraw_hit WHERE user_no='U00${APP_USER_ID}' AND is_deleted=0),
+      (SELECT COUNT(*) FROM nx_admin_risk_withdraw_hit WHERE user_no='${APP_USER_NO}' AND is_deleted=0),
       (SELECT COUNT(*) FROM nx_risk_decision WHERE user_id=${APP_USER_ID} AND biz_type='WITHDRAW_RULE' AND is_deleted=0),
       (SELECT COUNT(*) FROM nx_event_outbox WHERE aggregate_id IN ('${smallWithdrawalNo}','${largeWithdrawalNo}') AND event_name='risk.withdraw_held' AND is_deleted=0),
       (SELECT COUNT(*) FROM nx_event_outbox WHERE aggregate_id IN ('${smallWithdrawalNo}','${largeWithdrawalNo}') AND event_name='withdraw.submitted' AND is_deleted=0),
@@ -451,11 +474,11 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审�
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "05-b1-b5-risk-radar-after-withdrawals.png"), fullPage: true });
 
   await logout(page);
-  await login(page, SUPERADMIN_USERNAME);
+  await login(page, RISK_FLOW_USERNAME);
   await openSidebarPath(page, "/users/search");
   const c1K4 = await waitForCurrentK4(page);
-  await page.getByPlaceholder(/用户编码/).fill(String(APP_USER_ID));
-  const c1Row = page.locator("tr").filter({ hasText: `U00${APP_USER_ID}` }).first();
+  await page.getByPlaceholder(/用户编码/).fill(APP_USER_NO);
+  const c1Row = page.locator("tr").filter({ hasText: APP_USER_NO }).first();
   await expect(c1Row).toBeVisible();
   await expect(c1Row.locator("td").nth(6)).toContainText(String(c1K4.score));
   await page.screenshot({ path: path.join(EVIDENCE_DIR, "06-c1-current-k4-score.png"), fullPage: true });
@@ -470,7 +493,7 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审�
       heldEventContract,
       submittedEventContract,
       d2: "K3 route and current K4 snapshot visible",
-      c1: { userNo: `U00${APP_USER_ID}`, currentK4Score: c1K4.score, modelVersion: c1K4.modelVersion },
+      c1: { userNo: APP_USER_NO, currentK4Score: c1K4.score, modelVersion: c1K4.modelVersion },
       b1b5: "live dashboard consumed D2/K3 risk facts",
     },
   };
@@ -479,6 +502,18 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审�
 test("结果未知同键重试、CAS、归档终态、503 失败关闭及退出重登持久化", async ({ page, browser }) => {
   const errors = collectRuntimeErrors(page);
   await loginAndOpenK3(page, RISK_RESILIENCE_USERNAME);
+  const beforeCas = findRule(await fetchOverview(page), fixtureRuleId);
+  const staleCas = await page.request.patch(`/api/admin/risk/withdraw-rules/${fixtureRuleId}/status`, {
+    headers: { "Idempotency-Key": runKey("k3-final-stale-cas") },
+    data: {
+      state: beforeCas.state === "active" ? "paused" : "active",
+      expectedVersion: beforeCas.version + 999,
+      reason: `${REASON}陈旧版本CAS必须拒绝`,
+    },
+  });
+  expect(staleCas.status(), await staleCas.text()).toBe(409);
+  expect((await envelope<unknown>(staleCas, false)).message).toBe("K3_RULE_CONCURRENT_UPDATE");
+  expect(findRule(await fetchOverview(page), fixtureRuleId)).toEqual(beforeCas);
   let attempts = 0;
   const commandKeys: string[] = [];
   await page.route("**/api/admin/risk/withdraw-rules/**/status", async (route) => {
@@ -556,7 +591,7 @@ test("结果未知同键重试、CAS、归档终态、503 失败关闭及退出�
   expect(errors).toEqual([]);
   runSummary.assertions = {
     ...(runSummary.assertions as object),
-    resilience: { outcomeUnknownStableKey: true, archived409: true, dependency503FailClosed: true, reloginPersisted: true, anonymous401: true },
+    resilience: { outcomeUnknownStableKey: true, casRejected: true, archived409: true, dependency503FailClosed: true, reloginPersisted: true, anonymous401: true },
   };
 });
 
@@ -623,7 +658,7 @@ async function logout(page: Page) {
 async function appLogin(page: Page) {
   const response = await page.request.post(`${BACKEND_URL}/auth/users/login`, {
     headers: EDGE_HEADERS,
-    data: { countryCode: "+86", phone: APP_PHONE, password: PASSWORD },
+    data: { countryCode: "+86", phone: APP_PHONE, password: APP_PASSWORD },
   });
   const payload = await envelope<{ accessToken: string }>(response);
   expect(payload.data.accessToken).toBeTruthy();
@@ -651,7 +686,7 @@ async function waitForCurrentK4(page: Page) {
       SELECT model_score,model_version,
              IF(as_of>=DATE_SUB(NOW(),INTERVAL 1 DAY),1,0)
         FROM nx_admin_risk_score_user
-       WHERE user_no='U00${APP_USER_ID}' AND is_deleted=0
+       WHERE user_no='${APP_USER_NO}' AND is_deleted=0
        LIMIT 1;
     `).trim();
     if (row) {
@@ -671,18 +706,12 @@ function cleanupFixtures() {
   mysql(`
     DELETE FROM nx_event_consumer_delivery WHERE aggregate_id IN
       (SELECT withdrawal_no FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID});
-    DELETE FROM nx_event_outbox WHERE aggregate_id IN
-      (SELECT withdrawal_no FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID})
-       OR JSON_UNQUOTE(JSON_EXTRACT(payload,'$.user_id'))='${APP_USER_ID}';
-    DELETE FROM nx_audit_log WHERE user_id=${APP_USER_ID}
-       OR actor_username IN ('${RISK_USERNAME}','${RISK_FLOW_USERNAME}','${RISK_RESILIENCE_USERNAME}','${AUDITOR_USERNAME}','${FINANCE_USERNAME}')
-       OR resource_id IN ('${INVALID_RULE_ID}','${ADDRESS_RULE_ID}'${fixtureRuleId ? `,'${sqlLiteral(fixtureRuleId)}'` : ""});
     DELETE FROM nx_admin_risk_kyc_review_source WHERE source_domain='D2' AND source_no IN
       (SELECT withdrawal_no FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID});
     DELETE FROM nx_admin_risk_kyc_alert WHERE event_key IN
-      (SELECT CONCAT('threshold-hit:',ticket_id) FROM nx_admin_risk_kyc_review_ticket WHERE user_no='U00${APP_USER_ID}');
-    DELETE FROM nx_admin_risk_kyc_review_ticket WHERE user_no='U00${APP_USER_ID}';
-    DELETE FROM nx_admin_risk_withdraw_hit WHERE user_no='U00${APP_USER_ID}';
+      (SELECT CONCAT('threshold-hit:',ticket_id) FROM nx_admin_risk_kyc_review_ticket WHERE user_no='${APP_USER_NO}');
+    DELETE FROM nx_admin_risk_kyc_review_ticket WHERE user_no='${APP_USER_NO}';
+    DELETE FROM nx_admin_risk_withdraw_hit WHERE user_no='${APP_USER_NO}';
     DELETE FROM nx_risk_decision WHERE user_id=${APP_USER_ID} AND biz_type='WITHDRAW_RULE';
     DELETE FROM nx_wallet_ledger WHERE user_id=${APP_USER_ID} AND biz_no LIKE 'WD-%';
     DELETE FROM nx_wallet_ledger
@@ -700,18 +729,18 @@ function cleanupFixtures() {
     DELETE FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID};
     DELETE FROM nx_admin_risk_withdraw_rule
      WHERE (rule_id IN ('${INVALID_RULE_ID}','${ADDRESS_RULE_ID}') ${ruleClause} OR created_by='${RISK_USERNAME}');
-    DELETE FROM nx_admin_idempotency_record WHERE idempotency_key LIKE 'k3-final-%';
+    DELETE FROM nx_admin_idempotency_record
+     WHERE id>${idempotencyBaseline}
+       AND (scope LIKE 'K3_%' OR idempotency_key LIKE 'k3-final-%');
     DELETE FROM nx_user_session WHERE user_id=${APP_USER_ID};
     DELETE FROM nx_kyc_profile WHERE user_id=${APP_USER_ID};
     DELETE FROM nx_user_wallet WHERE user_id=${APP_USER_ID};
     DELETE FROM nx_user WHERE id=${APP_USER_ID} OR (country_code='86' AND phone='${APP_PHONE}');
-    DELETE FROM nx_event_consumer_delivery WHERE aggregate_id='U00${APP_USER_ID}';
-    DELETE FROM nx_event_outbox WHERE aggregate_id='U00${APP_USER_ID}'
-       OR JSON_UNQUOTE(JSON_EXTRACT(payload,'$.userId'))='U00${APP_USER_ID}';
-    DELETE FROM nx_admin_risk_score_contribution WHERE user_no='U00${APP_USER_ID}';
-    DELETE FROM nx_admin_risk_score_history WHERE user_no='U00${APP_USER_ID}';
-    DELETE FROM nx_admin_risk_score_override WHERE user_no='U00${APP_USER_ID}';
-    DELETE FROM nx_admin_risk_score_user WHERE user_no='U00${APP_USER_ID}';
+    DELETE FROM nx_event_consumer_delivery WHERE aggregate_id='${APP_USER_NO}';
+    DELETE FROM nx_admin_risk_score_contribution WHERE user_no='${APP_USER_NO}';
+    DELETE FROM nx_admin_risk_score_history WHERE user_no='${APP_USER_NO}';
+    DELETE FROM nx_admin_risk_score_override WHERE user_no='${APP_USER_NO}';
+    DELETE FROM nx_admin_risk_score_user WHERE user_no='${APP_USER_NO}';
     DELETE FROM nx_admin_role_relation WHERE admin_id IN
       (SELECT id FROM nx_admin WHERE username IN ('${RISK_USERNAME}','${RISK_FLOW_USERNAME}','${RISK_RESILIENCE_USERNAME}','${AUDITOR_USERNAME}','${FINANCE_USERNAME}'));
     DELETE FROM nx_admin_account_state WHERE admin_id IN

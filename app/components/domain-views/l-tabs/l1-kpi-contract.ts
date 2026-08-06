@@ -25,7 +25,9 @@ function validateKpi(value: unknown, expectedId: number) {
       || typeof row.available !== "boolean"
       || typeof row.numerator !== "number" || !Number.isInteger(row.numerator) || row.numerator < 0
       || typeof row.denominator !== "number" || !Number.isInteger(row.denominator) || row.denominator < 0
-      || !Array.isArray(row.spark) || !row.spark.every(finite)) {
+      || !Array.isArray(row.spark)
+      || (row.spark.length !== 0 && row.spark.length !== 6)
+      || !row.spark.every(finite)) {
     throw new Error("L1_KPI_ROW_INVALID");
   }
   if (row.available) {

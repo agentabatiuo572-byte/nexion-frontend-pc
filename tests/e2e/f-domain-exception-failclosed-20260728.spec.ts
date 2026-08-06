@@ -1,10 +1,26 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  assertLocalFCandidate,
+  currentFRunId,
+  loadFMaker,
+  loginFActor,
+} from "./helpers/f-acceptance-harness";
 
-const USERNAME = process.env.ADMIN_E2E_USERNAME?.trim() || "superadmin";
-const PASSWORD = process.env.ADMIN_E2E_PASSWORD || "Admin@123456";
-const RUN_ID = "pc-full-acceptance-20260728-151023";
+const RUN_ID = currentFRunId();
+const F_MAKER = loadFMaker(RUN_ID);
 
 test.describe.configure({ mode: "serial" });
+test.beforeAll(() => {
+  assertLocalFCandidate();
+  expect(
+    process.env.F_NEGATIVE_WRITE_PROBE_TOKEN,
+    "F_NEGATIVE_WRITE_PROBE_TOKEN=1 is required because the suite sends a deterministic 422 write probe",
+  ).toBe("1");
+  expect(
+    process.env.F_WRITE_BYPASS,
+    "F_WRITE_BYPASS=false must be explicitly confirmed by the main controller",
+  ).toBe("false");
+});
 
 test("F2 HTTP 500 失败关闭并在真实上游恢复后重新加载", async ({ page }) => {
   await login(page);
@@ -60,7 +76,7 @@ test("F API 404 与 422 明确失败且无副作用", async ({ page }) => {
       data: {
         value: "-1",
         reason: `${RUN_ID} F2 负数冷却期 422 负向验收`,
-        operator: USERNAME,
+        operator: F_MAKER.username,
       },
     },
   );
@@ -86,10 +102,5 @@ async function openFromSidebar(page: Page, route: string) {
 }
 
 async function login(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  if (await page.locator("aside").isVisible({ timeout: 2_000 }).catch(() => false)) return;
-  await page.locator('input[autocomplete="username"]').fill(USERNAME);
-  await page.locator('input[autocomplete="current-password"]').fill(PASSWORD);
-  await page.getByRole("button", { name: /登录|继续/ }).click();
-  await expect(page.locator("aside")).toBeVisible({ timeout: 20_000 });
+  await loginFActor(page, F_MAKER, "f-exception-maker");
 }

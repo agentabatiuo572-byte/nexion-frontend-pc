@@ -6,9 +6,11 @@ import { expect, test, type APIResponse, type Page } from "@playwright/test";
 const BASE_URL = process.env.ADMIN_BASE_URL ?? "http://127.0.0.1:3002";
 const ROOT_USERNAME = process.env.ADMIN_E2E_USERNAME ?? "superadmin";
 const ROOT_PASSWORD = process.env.ADMIN_E2E_PASSWORD ?? "";
+const ROOT_TOTP_SECRET = process.env.ADMIN_E2E_TOTP_SECRET?.trim() || "";
+const REVIEW_USER_NO = process.env.K4_REVIEW_USER_NO?.trim() || "";
 const CHECKER_FIXTURE = process.env.K4_CHECKER_FIXTURE
   ?? "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/A/permission-fixtures.json";
-const SECOND_ACCOUNT_KEY = process.env.K4_SECOND_ACCOUNT_KEY ?? "d_checker";
+const SECOND_ACCOUNT_KEY = process.env.K4_SECOND_ACCOUNT_KEY ?? "checker";
 const EVIDENCE_DIR = process.env.K4_TWO_OPERATOR_EVIDENCE_DIR
   ?? "D:/workspace/bug-pic/.restricted/pc-full-acceptance-20260728-151023/K/review-J/k4-two-operator";
 const RUN = `K4-J-2OP-${Date.now()}`;
@@ -23,15 +25,20 @@ type ScoreUser = {
   history: Array<{ operator: string; reason: string; scoreState: string }>;
 };
 type CheckerFixture = {
-  accounts: Record<string, { username: string; password: string; totpSecret: string }>;
+  checker?: { username: string; password: string; totpSecret: string };
+  accounts?: Record<string, { username: string; password: string; totpSecret: string }>;
 };
 
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 
 test("K4 两名真实运营员同版本竞争仅一人成功，事件落地后精确恢复", async ({ browser }) => {
   expect(ROOT_PASSWORD, "ADMIN_E2E_PASSWORD is required").not.toBe("");
-  const checker = (JSON.parse(readFileSync(CHECKER_FIXTURE, "utf8")) as CheckerFixture).accounts[SECOND_ACCOUNT_KEY];
+  expect(REVIEW_USER_NO, "K4_REVIEW_USER_NO must name the dedicated non-owner fixture").not.toBe("");
+  const checkerFixture = JSON.parse(readFileSync(CHECKER_FIXTURE, "utf8")) as CheckerFixture;
+  const checker = checkerFixture.accounts?.[SECOND_ACCOUNT_KEY]
+    ?? (SECOND_ACCOUNT_KEY === "checker" ? checkerFixture.checker : undefined);
   expect(checker, `second operator ${SECOND_ACCOUNT_KEY}`).toBeTruthy();
+  expect(checker!.username).not.toBe(ROOT_USERNAME);
   const rootContext = await browser.newContext({ baseURL: BASE_URL });
   const checkerContext = await browser.newContext({ baseURL: BASE_URL });
   const rootPage = await rootContext.newPage();
@@ -41,46 +48,40 @@ test("K4 两名真实运营员同版本竞争仅一人成功，事件落地后�
   let cleanupComplete = false;
 
   try {
-    await login(rootPage, { username: ROOT_USERNAME, password: ROOT_PASSWORD });
-    await login(checkerPage, checker);
+    await login(rootPage, {
+      username: ROOT_USERNAME,
+      password: ROOT_PASSWORD,
+      totpSecret: ROOT_TOTP_SECRET || undefined,
+    });
+    await login(checkerPage, checker!);
     const rootOperator = await assertAuthority(rootPage, "risk_k4_user_override");
     await assertAuthority(rootPage, "risk_k4_user_recompute");
     const checkerOperator = await assertAuthority(checkerPage, "risk_k4_user_override");
 
-    const options = await ok<Array<{ userNo: string }>>(
-      await rootPage.request.get("/api/admin/risk/scoring/users?keyword=U&limit=8"),
+    const before = await ok<ScoreUser>(
+      await rootPage.request.get(`/api/admin/risk/scoring/users/${encodeURIComponent(REVIEW_USER_NO)}`),
     );
-    let before: ScoreUser | null = null;
-    for (const option of options) {
-      const candidate = await ok<ScoreUser>(
-        await rootPage.request.get(`/api/admin/risk/scoring/users/${encodeURIComponent(option.userNo)}`),
-      );
-      if (!candidate.overridden) {
-        before = candidate;
-        break;
-      }
-    }
-    expect(before, "需要一名未人工覆盖的权威 K4 用户").not.toBeNull();
-    selectedUserNo = before!.userNo;
+    expect(before.overridden, "专属 K4 reviewer fixture 启动前不得有人工覆盖").toBe(false);
+    selectedUserNo = before.userNo;
 
-    const scoreA = before!.modelScore === 100 ? 99 : before!.modelScore + 1;
+    const scoreA = before.modelScore === 100 ? 99 : before.modelScore + 1;
     const scoreB = scoreA === 100 ? 98 : scoreA + 1;
     const rootReason = `${RUN} root CAS`;
     const checkerReason = `${RUN} checker CAS`;
     const [rootResponse, checkerResponse] = await Promise.all([
-      rootPage.request.post(`/api/admin/risk/scoring/users/${encodeURIComponent(before!.userNo)}/override`, {
+      rootPage.request.post(`/api/admin/risk/scoring/users/${encodeURIComponent(before.userNo)}/override`, {
         headers: { "Idempotency-Key": `${RUN}-ROOT` },
-        data: { score: scoreA, expectedVersion: before!.rowVersion, reason: rootReason },
+        data: { score: scoreA, expectedVersion: before.rowVersion, reason: rootReason },
       }),
-      checkerPage.request.post(`/api/admin/risk/scoring/users/${encodeURIComponent(before!.userNo)}/override`, {
+      checkerPage.request.post(`/api/admin/risk/scoring/users/${encodeURIComponent(before.userNo)}/override`, {
         headers: { "Idempotency-Key": `${RUN}-CHECKER` },
-        data: { score: scoreB, expectedVersion: before!.rowVersion, reason: checkerReason },
+        data: { score: scoreB, expectedVersion: before.rowVersion, reason: checkerReason },
       }),
     ]);
     expect([rootResponse.status(), checkerResponse.status()].sort()).toEqual([200, 409]);
 
     let afterCompetition = await ok<ScoreUser>(
-      await rootPage.request.get(`/api/admin/risk/scoring/users/${encodeURIComponent(before!.userNo)}`),
+      await rootPage.request.get(`/api/admin/risk/scoring/users/${encodeURIComponent(before.userNo)}`),
     );
     expect(afterCompetition.overridden).toBe(true);
     expect(afterCompetition.rowVersion).toBeGreaterThan(before!.rowVersion);
@@ -88,7 +89,7 @@ test("K4 两名真实运营员同版本竞争仅一人成功，事件落地后�
     const winningOperator = rootResponse.status() === 200 ? rootOperator : checkerOperator;
     await expect.poll(async () => {
       afterCompetition = await ok<ScoreUser>(
-        await rootPage.request.get(`/api/admin/risk/scoring/users/${encodeURIComponent(before!.userNo)}`),
+        await rootPage.request.get(`/api/admin/risk/scoring/users/${encodeURIComponent(before.userNo)}`),
       );
       const winnerVisible = afterCompetition.history.some((row) =>
         row.reason === winningReason
@@ -116,7 +117,7 @@ test("K4 两名真实运营员同版本竞争仅一人成功，事件落地后�
     }).toBe(true);
 
     const cleanup = await rootPage.request.post(
-      `/api/admin/risk/scoring/users/${encodeURIComponent(before!.userNo)}/recompute`,
+      `/api/admin/risk/scoring/users/${encodeURIComponent(before.userNo)}/recompute`,
       {
         headers: { "Idempotency-Key": `${RUN}-RECOMPUTE` },
         data: {
@@ -127,7 +128,7 @@ test("K4 两名真实运营员同版本竞争仅一人成功，事件落地后�
     );
     expect(cleanup.status(), await cleanup.text()).toBe(200);
     const restored = await ok<ScoreUser>(
-      await rootPage.request.get(`/api/admin/risk/scoring/users/${encodeURIComponent(before!.userNo)}`),
+      await rootPage.request.get(`/api/admin/risk/scoring/users/${encodeURIComponent(before.userNo)}`),
     );
     expect(restored.overridden).toBe(false);
     expect(restored.effectiveScore).toBe(restored.modelScore);
@@ -135,8 +136,8 @@ test("K4 两名真实运营员同版本竞争仅一人成功，事件落地后�
 
     writeFileSync(path.join(EVIDENCE_DIR, "k4-two-operator-result.json"), JSON.stringify({
       run: RUN,
-      userNo: before!.userNo,
-      startingVersion: before!.rowVersion,
+      userNo: before.userNo,
+      startingVersion: before.rowVersion,
       statuses: {
         root: rootResponse.status(),
         checker: checkerResponse.status(),
@@ -190,11 +191,18 @@ async function login(
   await page.locator('input[autocomplete="username"]').fill(account.username);
   await page.locator('input[autocomplete="current-password"]').fill(account.password);
   await page.getByRole("button", { name: /登录|继续/ }).click();
-  if (account.totpSecret) {
-    const otp = page.getByLabel("一次性验证码");
-    await expect(otp).toBeVisible({ timeout: 15_000 });
-    await otp.fill(currentTotp(account.totpSecret));
+  const otp = page.getByLabel("一次性验证码");
+  if (await otp.isVisible({ timeout: 10_000 }).catch(() => false)) {
+    expect(account.totpSecret, `TOTP secret is required for ${account.username}`).toBeTruthy();
+    const remaining = 30_000 - (Date.now() % 30_000);
+    if (remaining < 5_000) await page.waitForTimeout(remaining + 500);
+    await otp.fill(currentTotp(account.totpSecret!));
+    const verification = page.waitForResponse((response) =>
+      response.request().method() === "POST"
+      && new URL(response.url()).pathname === "/api/admin/auth/mfa/verify");
     await page.getByRole("button", { name: "验证并进入", exact: true }).click();
+    const verified = await verification;
+    expect(verified.status(), await verified.text()).toBe(200);
   }
   await expect(page.locator("aside")).toBeVisible({ timeout: 30_000 });
 }

@@ -223,6 +223,19 @@ test("J4 distinguishes a completed rollback from the original step outcomes", ()
   assert.match(backend, /J4_TARGET_AUTHORITY_REQUIRED:J1:emergency_j1_gate_resume/);
 });
 
+test("J4 persists and presents a validation-only drill terminal state instead of an ambiguous rollback null", () => {
+  assert.match(backend, /J4_DRILL_ROLLBACK_NOT_REQUIRED = "NOT_REQUIRED"/);
+  assert.match(backend, /J4_DRILL_VALIDATION_ONLY_REASON = "VALIDATION_ONLY_NO_PRODUCTION_ACTIONS"/);
+  assert.match(backend, /"rollbackStatus", J4_DRILL_ROLLBACK_NOT_REQUIRED/);
+  assert.match(backend, /"rollbackReason", J4_DRILL_VALIDATION_ONLY_REASON/);
+  assert.match(backend, /"productionActionsExecuted", false/);
+  assert.match(backend, /J4_DRILL_ROLLBACK_NOT_APPLICABLE/);
+  assert.match(emergencyMapper, /rollback_status, rollback_reason/);
+  assert.match(component, /e\.rollbackStatus === "NOT_REQUIRED"/);
+  assert.match(component, /演练仅校验，未执行生产动作，无需回滚/);
+  assert.match(component, /traceExecution\.rollbackStatus === "NOT_REQUIRED"/);
+});
+
 test("J4 recovery uses a fresh execution snapshot and rollback claims only audited terminal work", () => {
   const executeOnce = backend.indexOf("executePlaybookOnce(", backend.indexOf("private ApiResult"));
   const existingStart = backend.indexOf("executionByIdempotencyKeyIndependent", executeOnce);

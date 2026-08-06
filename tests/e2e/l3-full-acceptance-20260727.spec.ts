@@ -9,8 +9,13 @@ test.beforeEach(async ({ page }) => {
   await loginFromVisibleEntry(page);
 });
 
-test("L3 visible entry renders the seven authoritative sources and all four reports", async ({ page }) => {
+test("L3 visible entry renders the server-controlled BI sources and all four reports", async ({ page }) => {
   const seen = new Map<string, Response>();
+  const genericTreasuryRequests: string[] = [];
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.startsWith("/api/admin/treasury/")) genericTreasuryRequests.push(pathname);
+  });
   page.on("response", (response) => {
     const pathname = new URL(response.url()).pathname;
     if (L3_PATHS.has(pathname)) seen.set(`${pathname}${new URL(response.url()).search}`, response);
@@ -25,16 +30,16 @@ test("L3 visible entry renders the seven authoritative sources and all four repo
   await expect(page.getByRole("button", { name: "申请导出脱敏资金明细", exact: true })).toBeEnabled();
   await expect(page.locator("body")).not.toContainText(/NaN|Infinity|undefined|null%|用户级资金明细暂不可导出/);
 
-  await expect.poll(() => [...seen.values()].filter((response) => response.status() === 200).length).toBeGreaterThanOrEqual(7);
-  const liabilities = await page.request.get("/api/admin/treasury/liabilities?breakdown=true");
-  expect(liabilities.status()).toBe(200);
-  const liabilityPayload = await liabilities.json();
-  expect(liabilityPayload.data.hardLiabilityCategoryCount).toBe(9);
-  expect(liabilityPayload.data.breakdown).toHaveLength(9);
-  const maturity7 = await page.request.get("/api/admin/treasury/maturity-forecast?window=7d");
-  const maturity30 = await page.request.get("/api/admin/treasury/maturity-forecast?window=30d");
-  expect((await maturity7.json()).data.daily).toHaveLength(7);
-  expect((await maturity30.json()).data.daily).toHaveLength(30);
+  await expect.poll(() => [...seen.values()].filter((response) => response.status() === 200).length).toBeGreaterThanOrEqual(4);
+  expect(genericTreasuryRequests).toEqual([]);
+  const treasurySnapshot = await page.request.get("/api/admin/bi/finance/treasury-snapshot");
+  expect(treasurySnapshot.status()).toBe(200);
+  const treasuryPayload = await treasurySnapshot.json();
+  expect(treasuryPayload.data.serverAuthoritative).toBe(true);
+  expect(treasuryPayload.data.liabilities.hardLiabilityCategoryCount).toBe(9);
+  expect(treasuryPayload.data.liabilities.breakdown).toHaveLength(9);
+  expect(treasuryPayload.data.maturity7.daily).toHaveLength(7);
+  expect(treasuryPayload.data.maturity30.daily).toHaveLength(30);
 
   await page.getByRole("button", { name: "季", exact: true }).click();
   await expect(page.getByRole("button", { name: "季", exact: true })).toHaveClass(/sel/);
@@ -175,9 +180,7 @@ const L3_PATHS = new Set([
   "/api/admin/bi/finance/overview",
   "/api/admin/bi/finance/revenue",
   "/api/admin/bi/finance/redemption",
-  "/api/admin/treasury/coverage",
-  "/api/admin/treasury/liabilities",
-  "/api/admin/treasury/maturity-forecast",
+  "/api/admin/bi/finance/treasury-snapshot",
 ]);
 
 async function loginFromVisibleEntry(page: Page) {

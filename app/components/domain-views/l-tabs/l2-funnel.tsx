@@ -19,6 +19,12 @@ import { PaginationExemptionList } from "../design-kit";
 import { LDataState, num, rec, rows, str, strings, type KpiRow } from "./live-data";
 import { readL2LiveStages } from "./l1-l2-live-data";
 import { L2LiveStages } from "./l1-l2-live-fallback";
+import {
+  isCanonicalL2StageEvents,
+  L2_STAGE_QUERY_EVENTS,
+  validateL2FunnelEventBindings,
+  validateL2LifecycleContract,
+} from "./l2-stage-events-contract";
 import type { LCtx } from "./types";
 
 type FunnelRow = { stage: string; ev?: string; users: number; cvr?: number | null; lc: string; color: string; target?: string | null };
@@ -36,13 +42,7 @@ type TrialStep = { e: string; n: number; arr?: string; arrLb?: string };
 type CohortRow = { w: string; size: number; d1?: number | null; d7?: number | null; d14?: number | null; d30?: number | null; d60?: number | null };
 type XdMetric = { columns: string[]; rows: (string | number | null)[][]; alert: number[]; unit: string; msg: { pre: string; bold: string; post: string } };
 
-const L2_STAGE_EVENTS = [
-  "auth.register_completed",
-  "kyc.express_verified",
-  "checkout.completed",
-  "wallet.reinvest",
-  "withdraw.submitted",
-] as const;
+const L2_STAGE_EVENTS = L2_STAGE_QUERY_EVENTS;
 const L2_WINDOWS = ["Day1", "Day7", "Day14", "Day30", "Day60"] as const;
 
 function finitePercent(value: unknown, allowNull = true) {
@@ -78,9 +78,11 @@ export function isStrictL2Dashboard(raw: unknown): boolean {
   const extensions = rows<Record<string, unknown>>(data.funnelExt);
   const cohorts = rows<Record<string, unknown>>(data.cohorts);
   const monthly = rows<Record<string, unknown>>(data.monthlyCohorts);
-  const stageEvents = strings(data.stageEvents);
+  const lifecycleStagesPresent = Object.prototype.hasOwnProperty.call(data, "stages");
   if (funnel.length !== 5 || extensions.length !== 5 || cohorts.length === 0
-    || stageEvents.length !== 5 || stageEvents.some((event, index) => event !== L2_STAGE_EVENTS[index])) return false;
+    || !isCanonicalL2StageEvents(data.stageEvents)
+    || !validateL2FunnelEventBindings(data.funnel, data.stageEvents)
+    || (lifecycleStagesPresent && !validateL2LifecycleContract(data))) return false;
   let previousUsers = Number.MAX_SAFE_INTEGER;
   for (let index = 0; index < funnel.length; index += 1) {
     const item = funnel[index];
