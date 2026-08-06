@@ -35,6 +35,7 @@ import { stripComments } from "./lib/strip-comments.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN_DIRS = ["app", "lib"];
 const SHARED_STORE = "lib/admin/pending-mutation-store.ts";
+const EXECUTOR_MODULE = "lib/admin/stable-mutation.ts";
 
 /** 已迁到共享 store 的文件:必须仍 import 它,且不得再出现裸内存态幂等键。 */
 const MIGRATED = [
@@ -86,6 +87,65 @@ const KNOWN = {
   "app/components/domain-views/m-tabs/m5-scripts.tsx#pendingReplyTemplateDraftIds": { verdict: "not-idempotency", reason: "话术草稿的本地临时 id,非 Idempotency-Key,不入后端去重" },
   "lib/admin/registry/index.ts#BY_PATH": { verdict: "not-idempotency", reason: "registry 路由→模块的派生只读索引,进程内重建即可" },
 };
+
+/**
+ * 解析出文件里**运行期真正可用**的 import 绑定名(来自指定模块)。
+ *
+ * 三条都必须成立才算数,少一条就是 2026-08-06 独立验收抓到的 P0 走私路径:
+ *   1. **不是 `import type`** —— 类型导入运行时被擦除,调用点用的必然是别的东西。
+ *   2. **没有被 `as` 改名** —— `{ createSlotAttemptStore as _unused }` 之后,调用点写的
+ *      `createSlotAttemptStore` 完全可以是同文件里另一个本地桩。「导入过这个名字」与
+ *      「调用点用的是这个绑定」之间必须有连线。
+ *   3. **模块路径精确解析到目标文件** —— 子串判据会放行自造的
+ *      `probe-pending-mutation-store.ts` / `fake/pending-mutation-store.ts`。
+ */
+function runtimeBindings(code, fromFile, targetRel) {
+  const target = path.join(ROOT, targetRel).replace(/\.tsx?$/, "");
+  const bindings = new Set();
+  for (const match of code.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+    const [, typeOnly, clause, specifier] = match;
+    if (typeOnly) continue;
+    let resolved;
+    if (specifier.startsWith("@/")) resolved = path.join(ROOT, specifier.slice(2));
+    else if (specifier.startsWith(".")) resolved = path.resolve(path.dirname(fromFile), specifier);
+    else continue; // 裸包名不可能是本仓模块
+    if (resolved.replace(/\.tsx?$/, "") !== target) continue;
+    for (const raw of clause.split(",")) {
+      const part = raw.trim();
+      if (!part || /^type\b/.test(part) || /\bas\b/.test(part)) continue;
+      if (/^[A-Za-z_$][\w$]*$/.test(part)) bindings.add(part);
+    }
+  }
+  return bindings;
+}
+
+/** 顶层逗号拆实参(括号 / 方括号 / 花括号内的逗号不算)。容尾逗号与折行 —— 二者都是合法排版。 */
+function splitArgs(raw) {
+  const args = [];
+  let depth = 0;
+  let current = "";
+  for (const char of raw) {
+    if ("([{".includes(char)) depth += 1;
+    else if (")]}".includes(char)) depth -= 1;
+    if (char === "," && depth === 0) { args.push(current.trim()); current = ""; continue; }
+    current += char;
+  }
+  if (current.trim()) args.push(current.trim());
+  return args;
+}
+
+/**
+ * 这个实参是不是非空字符串?字面量直接看;具名常量回本文件查它的定义。
+ * (把 storageKey 抽成常量是日常重构,上一版的单条正则会把它误判成「没传 storageKey」。)
+ */
+function nonEmptyStringLiteral(arg, code) {
+  if (!arg) return false;
+  const literal = arg.match(/^["'`]([^"'`]*)["'`]$/);
+  if (literal) return literal[1].length > 0;
+  if (!/^[A-Za-z_$][\w$]*$/.test(arg)) return false;
+  const declared = code.match(new RegExp(`(?:const|let)\\s+${arg.replace(/\$/g, "\\$")}\\s*(?::[^=]+)?=\\s*["'\`]([^"'\`]*)["'\`]`));
+  return !!declared && declared[1].length > 0;
+}
 
 function walk(dir) {
   const out = [];
@@ -153,16 +213,34 @@ if (hits.size === 0) failures.push("候选命中为 0:判据已失效(存量台�
 //   而门照样打印 PASS。探针刻意用 **CRLF**:按行 `split("\n").map(l => l.replace(/\/\/.*$/, ""))`
 //   这种写法在 CRLF 文件上从来剥不掉行注释(`.` 不匹配 \r),本仓文件正是 CRLF,踩过。
 {
-  const probe = 'const a = 1;\r\n// const smuggled = createSlotAttemptStore({ storageKey: "x" });\r\n'
+  // 🔴 每种注释放**两处**(2026-08-06 独立验收 P1):只放一处时,「全局替换」和「只替换第一处」
+  //   的行为完全一样 —— 两条正则各自丢掉 `g` 标志,自检照样绿,而真实文件里除第一处外的
+  //   成百上千条注释原样留在 code 里 = 全线走私放行。第二处(带 2 后缀)就是为此存在的。
+  // 探针名刻意**互不为子串**(headLine / tailLine,不是 x / x2)—— 用 includes 判定时
+  // `x2` 里含着 `x`,两条分支会串味,红是红了却报错原因(本轮红测实测抓到)。
+  const probe = 'const a = 1;\r\n// const headLineSmuggle = createSlotAttemptStore({ storageKey: "x" });\r\n'
+    + 'const b = 2;\r\n// const tailLineSmuggle = createSlotAttemptStore({ storageKey: "x2" });\r\n'
     + 'const url = "https://nexion.example/pending-mutation-store";\r\n'
-    + '/* const blockSmuggled = createPendingMutationStore({ storageKey: "y" }); */\r\n';
+    + '/* const headBlockSmuggle = createPendingMutationStore({ storageKey: "y" }); */\r\n'
+    + 'const c = 3;\r\n/* const tailBlockSmuggle = createPendingMutationStore({ storageKey: "y2" }); */\r\n';
   const stripped = stripComments(probe);
-  if (stripped.includes("smuggled")) {
-    failures.push("剥注释器对 CRLF 行注释失效 → 所有结构判据都可被「声明挪进注释」走私(改回 /gm 形式)");
+  if (stripped.includes("headLineSmuggle")) {
+    failures.push("剥注释器对 CRLF 行注释失效 → 所有结构判据都可被「声明挪进注释」走私(须为 /gm 形式)");
+  } else if (stripped.includes("tailLineSmuggle")) {
+    failures.push("剥注释器只剥掉第一条行注释(行注释正则丢了 g 标志)→ 其余注释全部原样留在判定文本里");
   }
-  if (stripped.includes("blockSmuggled")) failures.push("剥注释器没剥块注释 → 结构判据可被 /* */ 走私");
+  if (stripped.includes("headBlockSmuggle")) {
+    failures.push("剥注释器没剥块注释 → 结构判据可被 /* */ 走私");
+  } else if (stripped.includes("tailBlockSmuggle")) {
+    failures.push("剥注释器只剥掉第一段块注释(块注释正则丢了 g 标志)→ 其余块注释全部漏网");
+  }
   if (!stripped.includes("https://nexion.example/pending-mutation-store")) {
     failures.push("剥注释器误伤 :// 协议串(丢了 (^|[^:]) 守卫)→ 正常代码被当注释吃掉,判据会误红");
+  }
+  // html 分支只有 uni-storage-key-sentinel 的 .vue 面用,那边没有自检 —— 摘掉它三门全绿,
+  // 所以由本门代管(共享 lib 的每一半都得有人钉,2026-08-06 独立验收 P2)。
+  if (stripComments("<!-- <template>x</template> -->keep", { html: true }).includes("<template>")) {
+    failures.push("剥注释器的 html 分支失效 → uni-storage-key-sentinel 的 .vue 面判定可被 <!-- --> 走私");
   }
 }
 
@@ -190,26 +268,45 @@ for (const rel of MIGRATED) {
   //   `inlineMint( // was: h9Attempts.resolve(` —— 真实调用已回退成内联铸号、同行注释残留旧
   //   调用文本,不剥就假绿。同族走私还有「把 import / executor 调用整行挪进注释」。
   const code = stripComments(fs.readFileSync(full, "utf8"));
-  // import 必须是**真绑定**:只在字符串/注释里提模块名、或本地写个同名桩函数,都不算迁移。
-  const importsStore = new RegExp(
-    `import\\s*(?:type\\s*)?\\{[^}]*\\bcreate(?:PendingMutation|SlotAttempt)Store\\b[^}]*\\}`
-    + `\\s*from\\s*["'][^"']*pending-mutation-store(?:\\.ts)?["']`,
-  ).test(code);
-  const direct = importsStore && /create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(code);
-  const importsExecutor = /import\s*\{[^}]*\bcreateStableMutationExecutor\b[^}]*\}\s*from\s*["'][^"']*stable-mutation(?:\.ts)?["']/.test(code);
-  const viaExecutor = importsExecutor && /createStableMutationExecutor\s*\(/.test(code);
-  if (viaExecutor && !direct) {
-    if (!/createStableMutationExecutor\s*\([^,)]+,\s*"[^"]+"\s*\)/.test(code)) {
-      failures.push(`${rel} 调用 createStableMutationExecutor 时没传非空 storageKey → 命令号退回内存态,刷新即失效`);
+  // 🔴 判「绑定去向」,不判「名字出现过」(2026-08-06 独立验收 3×P0)。
+  //   上一版只要求「花括号里出现过这个符号 + 路径含这段子串」,三条路全通,且 tsc 与迁移契约
+  //   测试一并骗过:① `{ X as _unused }` + 同文件另写一个同名本地桩接管全部调用点;
+  //   ② 路径指向自造的 `probe-pending-mutation-store.ts`(子串照样命中);③ `import type`
+  //   运行时根本不存在绑定却被当真。下面改成解析出**真正可用的运行期绑定名**再判。
+  const storeBindings = runtimeBindings(code, full, SHARED_STORE);
+  const importsStore = ["createPendingMutationStore", "createSlotAttemptStore"].some((name) => storeBindings.has(name));
+  const callsStore = [...storeBindings].some((name) =>
+    new RegExp(`\\b${name}\\s*(?:<[^>]*>)?\\s*\\(`).test(code));
+  const direct = importsStore && callsStore;
+
+  // executor 间接路径:同样按真绑定判,且**不再发免检金牌**(原来命中即 continue,
+  // 于是一个从不被调用的悬空 executor 常量就能让整个文件跳过后续全部判据 —— 与判据 3b
+  // 「悬空 const 没人会去删」的立意直接矛盾)。现在逐个 executor 常量核储存键与调用点。
+  const executorBindings = runtimeBindings(code, full, EXECUTOR_MODULE);
+  const executorSites = executorBindings.has("createStableMutationExecutor")
+    ? [...code.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*createStableMutationExecutor\s*\(([^)]*)\)/g)]
+    : [];
+  for (const [, ident, argsRaw] of executorSites) {
+    storeIdents += 1;
+    const storageArg = splitArgs(argsRaw)[1];
+    if (!nonEmptyStringLiteral(storageArg, code)) {
+      failures.push(`${rel} 的 ${ident} 调用 createStableMutationExecutor 时 storageKey 不是非空字符串`
+        + `(实参:${storageArg ?? "缺失"})→ 命令号退回内存态,刷新即失效`);
     }
-    continue;
+    if (!new RegExp(`\\b${ident.replace(/\$/g, "\\$")}\\s*\\(`).test(code)) {
+      failures.push(`${rel} 的通用执行器 ${ident} 建了却从不调用 → 悬空 const 顶包,真实写路径已绕开幂等键`);
+    }
   }
-  if (!importsStore) {
-    failures.push(`${rel} 没有从共享 store(${SHARED_STORE})import create{PendingMutation,SlotAttempt}Store`
-      + `(剥注释后判定)→ 幂等键回退成内存态或改用了本地同名桩,刷新即失效`);
-  }
-  if (!/create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(code)) {
-    failures.push(`${rel} 未调用 createPendingMutationStore / createSlotAttemptStore → 只 import 不用等于没迁`);
+  const viaExecutor = executorSites.length > 0;
+
+  if (!direct && !viaExecutor) {
+    if (!importsStore) {
+      failures.push(`${rel} 没有从共享 store(${SHARED_STORE})import create{PendingMutation,SlotAttempt}Store`
+        + `(剥注释 + 解析真绑定后判定;别名 import / 同名本地桩 / import type / 同名文件都不算)`
+        + ` → 幂等键回退成内存态,刷新即失效`);
+    } else {
+      failures.push(`${rel} 只 import 不调用 create{PendingMutation,SlotAttempt}Store → 等于没迁`);
+    }
   }
   // 判据 3b(2026-08-05 补,P1「回退形态假绿」):逐标识符核**调用点**。
   //   槽位式(createSlotAttemptStore)契约 = resolve(取号/换号)+ forget(成功后收敛),二者缺一即红;
@@ -234,6 +331,26 @@ for (const rel of MIGRATED) {
     if (!new RegExp(`${escaped}\\.[A-Za-z_$][\\w$]*\\s*\\(`).test(code)) {
       failures.push(`${rel} 的命令号存储 ${ident} 创建后没有任何方法调用 → 悬空 const,幂等键已从别的路子铸(只建不用等于没迁)`);
     }
+  }
+}
+
+// 判据 5:台账必须**盖住全部真实用店面**(2026-08-06 补,独立验收 P2「台账静默缩短」同族)。
+//   判据 3 只保护「已登记的面」;一个文件迁了却没进 MIGRATED,就完全不受回归保护 ——
+//   而少登记一条恰恰是最不起眼的退化方式(改名 / 新增面时忘了同步台账,没有任何门会响)。
+//   ground truth 由扫描现场得出,不手抄第二份清单。
+{
+  const ledger = new Set(MIGRATED);
+  const users = files
+    .map((file) => path.relative(ROOT, file).split(path.sep).join("/"))
+    .filter((rel) => rel !== SHARED_STORE && !ledger.has(rel))
+    .filter((rel) => {
+      const code = stripComments(fs.readFileSync(path.join(ROOT, rel), "utf8"));
+      return runtimeBindings(code, path.join(ROOT, rel), SHARED_STORE).size > 0
+        || runtimeBindings(code, path.join(ROOT, rel), EXECUTOR_MODULE).has("createStableMutationExecutor");
+    });
+  for (const rel of users) {
+    failures.push(`${rel} 用了共享 store / 通用执行器却不在 MIGRATED 台账里 → 该面不受回归保护`
+      + `,请在 scripts/pending-idempotency-key-sentinel.mjs 的 MIGRATED 里补一行`);
   }
 }
 

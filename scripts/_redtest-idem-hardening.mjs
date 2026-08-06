@@ -13,12 +13,14 @@
  *     node scripts/_redtest-idem-hardening.mjs
  */
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const STRIPPER = path.join(ROOT, "scripts/lib/strip-comments.mjs");
+const SENTINEL = path.join(ROOT, "scripts/pending-idempotency-key-sentinel.mjs");
 const STORE = path.join(ROOT, "lib/admin/pending-mutation-store.ts");
 const K1 = path.join(ROOT, "app/components/domain-views/k-tabs/k1-multiaccount.tsx");
 const G1 = path.join(ROOT, "lib/admin/g1-client.ts");
@@ -27,14 +29,21 @@ const GATE = ["scripts/pending-idempotency-key-sentinel.mjs"];
 const MIGRATION = ["--test", "tests/pending-mutation-migration-contract.test.mjs"];
 const STORE_CONTRACT = ["--test", "tests/pending-mutation-store-contract.test.mjs"];
 
-function gateRed(args) {
+/**
+ * 跑门,返回 { red, output }。
+ * 🔴 必须把输出带回来(2026-08-06 独立验收 P2):只断言退出码时,「红对了但红错了理由」
+ *   ——甚至门自己因语法错误崩掉 —— 都会显示 ✓。用例声明 expectText 后才算真的钉住判据。
+ */
+function gate(args) {
   try {
-    execFileSync("node", args, { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"] });
-    return false; // 退出码 0 = 绿
-  } catch { return true; }
+    const stdout = execFileSync("node", args, { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"], encoding: "utf8" });
+    return { red: false, output: stdout ?? "" };
+  } catch (error) {
+    return { red: true, output: `${error.stdout ?? ""}${error.stderr ?? ""}` };
+  }
 }
 
-/** 注入 → 跑门 → 无论如何还原。锚点不存在时 throw:红测本身失效必须暴露。 */
+/** 注入 → 跑门 → 无论如何还原。锚点不存在、或注入没改变内容时 throw:红测本身失效必须暴露。 */
 function inject(file, from, to, args) {
   const bak = `${file}.redtest-bak`;
   copyFileSync(file, bak);
@@ -42,12 +51,23 @@ function inject(file, from, to, args) {
     const src = readFileSync(file, "utf8");
     if (!src.includes(from)) throw new Error(`注入锚点不存在,红测本身失效:${path.basename(file)} ← ${from.slice(0, 60)}`);
     // 替换串用函数形式 —— 字符串形式里的 $& 会被当成整个匹配回填(踩过)。
-    writeFileSync(file, src.replace(from, () => to));
-    return gateRed(args);
+    const mutated = src.replace(from, () => to);
+    // 🔴 空注入守卫(独立验收 P2):from === to 时这一条只是「在原样的树上跑一遍门」,
+    //   零判别力却照样打 ✓。宁可红测自己炸,也不留一条自我安慰的用例。
+    if (mutated === src) throw new Error(`空注入(from === to),该用例没有判别力:${path.basename(file)}`);
+    writeFileSync(file, mutated);
+    return gate(args);
   } finally {
     copyFileSync(bak, file);
     unlinkSync(bak);
   }
+}
+
+/** 先造一个临时模块,再在它存在期间跑注入(路径走私变异需要那个同名文件真的在)。 */
+function withExtraFile(relPath, content, run) {
+  const full = path.join(ROOT, relPath);
+  writeFileSync(full, content);
+  try { return run(); } finally { unlinkSync(full); }
 }
 
 /** expect: "red"(注入必须打红)或 "green"(合法重构不得误红)。 */
@@ -94,10 +114,61 @@ const CASES = [
     () => inject(K1,
       'import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";',
       "import {\n  createPendingMutationStore,\n} from \"@/lib/admin/pending-mutation-store\";", GATE)],
-  ["T5⑫ 台账反解析不被破坏:migration-contract 仍能从哨兵源码解析出 MIGRATED 清单", "green",
-    () => inject(K1, "const commandAttempt = createPendingMutationStore(", "const commandAttempt = createPendingMutationStore(", MIGRATION)],
-  ["T5⑬ store 行为契约不被硬化波及(负控)", "green",
-    () => inject(K1, "const commandAttempt = createPendingMutationStore(", "const commandAttempt = createPendingMutationStore(", STORE_CONTRACT)],
+  // ⑫⑬ 原为空注入(from === to),零判别力 —— 独立验收 P2 点破,改成真变异。
+  ["T5⑫ 台账反解析抗排版漂移:MIGRATED 条目改缩进后清单不得静默缩短", "green",
+    () => inject(SENTINEL, '  "lib/admin/i-client.ts",', '    "lib/admin/i-client.ts",', MIGRATION)],
+  ["T5⑬ 台账反解析抗行尾注释:条目后加注释清单不得静默缩短", "green",
+    () => inject(SENTINEL, '  "lib/admin/k6-client.ts",', '  "lib/admin/k6-client.ts", // K6 远端写入', MIGRATION)],
+  // ⑭ 打的是哨兵而非迁移契约:契约那边只有 `>= 28` 的下限兜底(实际 30),少一条照样绿 ——
+  //    本轮红测实测抓到,遂在哨兵补判据 5「用了共享 store 就必须在台账里」,由它来咬。
+  ["T5⑭ 台账真少一条时必红(证明上面两条不是靠判据松垮才绿)", "red",
+    () => inject(SENTINEL, '  "lib/admin/i-client.ts",\r\n', "", GATE),
+    "却不在 MIGRATED 台账里"],
+
+  // ══ T5-R 独立验收 3×P0 + 2×P1 的回归钉 ══════════════════════════
+  ["T5-R1 别名 import + 同名本地桩(P0:判名字出现过而非判绑定去向)", "red",
+    () => inject(K1,
+      'import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";',
+      'import { createPendingMutationStore as _real } from "@/lib/admin/pending-mutation-store";\r\n'
+      + "const createPendingMutationStore = (_o) => ({ get: () => undefined, remember: () => {}, forget: () => {}, list: () => [] });",
+      GATE),
+    "没有从共享 store"],
+  ["T5-R2 import 路径指向自造同名文件(P0:路径子串判据)", "red",
+    () => withExtraFile("lib/admin/probe-pending-mutation-store.ts",
+      "export const createPendingMutationStore = () => ({ get: () => undefined, remember: () => {}, forget: () => {}, list: () => [] });\n",
+      () => inject(K1, "@/lib/admin/pending-mutation-store", "@/lib/admin/probe-pending-mutation-store", GATE)),
+    "没有从共享 store"],
+  ["T5-R3 import type(P0 同族:运行时无绑定却被当真)", "red",
+    () => inject(K1, "import { createPendingMutationStore }", "import type { createPendingMutationStore }", GATE),
+    "没有从共享 store"],
+  ["T5-R4 悬空 executor 常量换整文件免检(P0:viaExecutor 分支的 continue 金牌)", "red",
+    () => inject(K1,
+      'import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";',
+      'import { createStableMutationExecutor } from "@/lib/admin/stable-mutation";\r\n'
+      + 'const _dangling = createStableMutationExecutor(() => "x", "nexion-admin-k1-probe-v1");\r\n'
+      + "const createPendingMutationStore = (_o) => ({ get: () => undefined, remember: () => {}, forget: () => {}, list: () => [] });",
+      GATE),
+    "建了却从不调用"],
+  ["T5-R5 反误红:executor 调用折行 + 尾逗号(P1 误红,prettier 日常排版)", "green",
+    () => inject(G1, 'createStableMutationExecutor(idempotencyKey, "nexion-admin-g1-staking-commands-v1");',
+      'createStableMutationExecutor(\r\n  idempotencyKey,\r\n  "nexion-admin-g1-staking-commands-v1",\r\n);', GATE)],
+  ["T5-R6 反误红:storageKey 抽成具名常量(P1 误红,合法重构)", "green",
+    () => inject(G1, 'createStableMutationExecutor(idempotencyKey, "nexion-admin-g1-staking-commands-v1");',
+      'createStableMutationExecutor(idempotencyKey, G1_KEY);\r\n'
+      + 'const G1_KEY = "nexion-admin-g1-staking-commands-v1";', GATE)],
+  ["T5-R7 具名常量为空串仍必须红(上一条放宽后不得漏掉真缺陷)", "red",
+    () => inject(G1, 'createStableMutationExecutor(idempotencyKey, "nexion-admin-g1-staking-commands-v1");',
+      'createStableMutationExecutor(idempotencyKey, G1_KEY);\r\nconst G1_KEY = "";', GATE),
+    "storageKey 不是非空字符串"],
+  ["T5-R8 自检咬人:行注释正则丢 g(只剥第一处)→ 判据 0b 必红", "red",
+    () => inject(STRIPPER, 'out = out.replace(/(^|[^:])\\/\\/.*$/gm, "$1");', 'out = out.replace(/(^|[^:])\\/\\/.*$/m, "$1");', GATE),
+    "只剥掉第一条行注释"],
+  ["T5-R9 自检咬人:块注释正则丢 g(只剥第一段)→ 判据 0b 必红", "red",
+    () => inject(STRIPPER, 'let out = source.replace(/\\/\\*[\\s\\S]*?\\*\\//g, "");', 'let out = source.replace(/\\/\\*[\\s\\S]*?\\*\\//, "");', GATE),
+    "只剥掉第一段块注释"],
+  ["T5-R10 自检咬人:html 分支被摘 → 判据 0b 必红(共享 lib 那一半原本零自检)", "red",
+    () => inject(STRIPPER, '  if (html) out = out.replace(/<!--[\\s\\S]*?-->/g, "");', "  void html;", GATE),
+    "html 分支失效"],
 
   // ══ T3 存储不可用时的内存兜底 ═══════════════════════════════════
   ["T3① 复现原缺陷:readAll 不再以内存打底(隐私模式下每次重试铸新号)", "red",
@@ -122,18 +193,31 @@ const CASES = [
     () => inject(STORE, "        expiresAt: createdAt + ttlMs,", "        expiresAt: createdAt + ttlMs, // ponytail: 窗口口径见 §0.4", STORE_CONTRACT)],
 ];
 
+// 🔴 还原完整性升级为**内容指纹**(2026-08-06 独立验收 P2):原来只 filter 残留的 .redtest-bak,
+//   而被注入的文件本来就处在 ` M` 状态 —— 内容没还原完全看不出来,后续门验的就是被污染的树。
+const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL];
+const digest = () => TOUCHED.map((file) => createHash("sha1").update(readFileSync(file)).digest("hex")).join(" ");
+const before = digest();
+
 let failed = 0;
-for (const [name, expect, run] of CASES) {
-  const red = run();
-  const ok = expect === "red" ? red : !red;
+for (const [name, expect, run, expectText] of CASES) {
+  const { red, output } = run();
+  let ok = expect === "red" ? red : !red;
+  let note = "";
+  // 红对了还得**红在正确的判据上**:门因语法错误自己崩掉、或红在无关条目上,都不算验到。
+  if (ok && expect === "red" && expectText && !output.includes(expectText)) {
+    ok = false;
+    note = `  ← 红了,但不是因为「${expectText}」(实际:${output.trim().split("\n").slice(-1)[0]?.slice(0, 90)})`;
+  }
   if (!ok) failed += 1;
-  console.log(`${ok ? "✓" : "✗"} [期望${expect === "red" ? "红" : "绿"}] ${name}${ok ? "" : "  ← 与期望不符"}`);
+  console.log(`${ok ? "✓" : "✗"} [期望${expect === "red" ? "红" : "绿"}] ${name}${ok ? "" : (note || "  ← 与期望不符")}`);
 }
 
-// 还原完整性:红测跑完源文件必须逐字节回到原样(否则后续门验的是被污染的树)。
-const dirty = execFileSync("git", ["status", "--porcelain", "--", "scripts", "lib", "app"], { cwd: ROOT, encoding: "utf8" })
-  .split("\n").filter((line) => line.includes(".redtest-bak"));
-if (dirty.length) { console.error(`✗ 残留备份文件:${dirty.join(" ")}`); failed += 1; }
+const after = digest();
+if (after !== before) { console.error("✗ 被注入的源文件内容没有逐字节还原 —— 后续门会验到被污染的树"); failed += 1; }
+const strays = execFileSync("git", ["status", "--porcelain", "--", "scripts", "lib", "app"], { cwd: ROOT, encoding: "utf8" })
+  .split("\n").filter((line) => line.includes(".redtest-bak") || line.includes("probe-"));
+if (strays.length) { console.error(`✗ 残留探针 / 备份文件:${strays.join(" ")}`); failed += 1; }
 
 console.log(failed ? `\n红测未通过:${failed} 项与期望不符` : `\n红测全部按预期(${CASES.length} 项)`);
 process.exit(failed ? 1 : 0);

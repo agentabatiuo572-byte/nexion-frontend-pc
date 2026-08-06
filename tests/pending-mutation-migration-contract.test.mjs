@@ -35,9 +35,18 @@ function installStorage() {
 
 const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
 
-/** 本轮迁移的全部文件。ground truth 取哨兵台账,不在这里手抄第二份清单。 */
+/**
+ * 本轮迁移的全部文件。ground truth 取哨兵台账,不在这里手抄第二份清单。
+ *
+ * 🔴 只解析 `const MIGRATED = [...]` 那一段,段内不挑排版(2026-08-06 独立验收 P2)。
+ *   上一版是 `/^\s{2}"([^"]+\.tsx?)",$/gm` —— 硬性要求「恰好 2 个前导空格 + 行尾紧跟 `",`」。
+ *   给某条目改缩进 / 加行尾注释,清单会**静默缩短**而不是报错,只有下面的 `>= 28` 兜底;
+ *   而清单一短,后面「每个迁移面都真用了共享 store」的循环就少验几个面,门自己变松还没人知道。
+ */
 const SENTINEL = read("scripts/pending-idempotency-key-sentinel.mjs");
-const MIGRATED = [...SENTINEL.matchAll(/^\s{2}"([^"]+\.tsx?)",$/gm)].map((match) => match[1]);
+const MIGRATED_BLOCK = SENTINEL.match(/const MIGRATED = \[([\s\S]*?)\n\];/);
+assert.ok(MIGRATED_BLOCK, "哨兵里找不到 const MIGRATED = [...] 台账段:反解析已失真");
+const MIGRATED = [...MIGRATED_BLOCK[1].matchAll(/"([^"]+\.tsx?)"/g)].map((match) => match[1]);
 
 // ---------------------------------------------------------------- ① 刷新后仍认得同一次提交
 
