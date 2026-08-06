@@ -227,8 +227,35 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
     });
   };
 
+  // 🔴 补录逾期升级(2026-08-06 主人裁决方案 C):自动关停即时止血,但「为什么关」必须有人签字。
+  //   原型那套「响应时限 / 升级总时限 / 最大轮数」是为「先确认才执行」模型设计的 —— main 改成
+  //   「先斩后补录」后闸早已关上,那三个参数没有对应的现实事件可计时,搬回来只会造出运营看不懂的旋钮。
+  //   真正没被消灭的风险是另一半:**关停无人解释**,补录可以无限期拖着,事后审计查不到责任人。
+  //   故只给补录加升级:逾期项置顶 + 页顶常驻红条(不可忽略),红条不随滚动消失、补完即自动消失。
+  const overdueBackfills = AUTO_CONFIRMATIONS.filter((row) => row.overdue);
+  const pendingBackfills = AUTO_CONFIRMATIONS.filter((row) => !row.overdue);
+  const orderedBackfills = [...overdueBackfills, ...pendingBackfills];
+
   return (
     <div>
+      {overdueBackfills.length > 0 && (
+        <div
+          className="dtint warn"
+          role="alert"
+          style={{ marginBottom: 12, borderLeft: "3px solid var(--danger)" }}
+          data-proof="j1-backfill-overdue-banner"
+        >
+          <b>{overdueBackfills.length} 项自动关停结论已逾期未补录</b> ——
+          闸已止血,但处置理由仍空缺;逾期事项不会自行消失,请值班人员立即补录,或上报值班主管接手。
+          {overdueBackfills.slice(0, 3).map((row) => (
+            <span key={row.incidentId} style={{ marginLeft: 8 }}>
+              · {row.name}(截止 {row.dueAt.replace("T", " ").slice(0, 16)})
+            </span>
+          ))}
+          {overdueBackfills.length > 3 && <span style={{ marginLeft: 8 }}>· 另有 {overdueBackfills.length - 3} 项</span>}
+        </div>
+      )}
+
       {/* stat strip */}
       <div className="f-stats">
         <div className="f-stat ok"><div className="k">在线功能闸</div><div className="v">{live} / {gates.length}</div><div className="sub">{killed === 0 ? "全闸正常营业" : "部分业务已关停"}</div></div>
@@ -357,11 +384,13 @@ export function J1KillSwitch({ ctx }: { ctx: JCtx }) {
       <section className="side-card" style={{ marginBottom: 14 }}>
           <div className="h">
             <div><div className="t">自动关停待补录</div><div className="s">复核触发信号并补全处置结论；补录不会自行恢复业务</div></div>
-            <span className="tag">{AUTO_CONFIRMATIONS.length} 项待处理</span>
+            <span className={overdueBackfills.length > 0 ? "badge-emergency" : "tag"}>
+              {overdueBackfills.length > 0 ? `${overdueBackfills.length} 项逾期 / 共 ${AUTO_CONFIRMATIONS.length} 项` : `${AUTO_CONFIRMATIONS.length} 项待处理`}
+            </span>
           </div>
           {AUTO_CONFIRMATIONS.length === 0
             ? <div className="emer-row"><div className="l"><div className="k">当前没有待补录事项</div><div className="d">自动关停事件完成补录后会从这里移除。</div></div><span className="gate-ref">无需处理</span></div>
-            : AUTO_CONFIRMATIONS.map((row) => (
+            : orderedBackfills.map((row) => (
             <div className="emer-row" key={row.incidentId}>
               <div className="l">
                 <div className="k">{row.name} · {autoRuleDisplayName(row.ruleId)}</div>

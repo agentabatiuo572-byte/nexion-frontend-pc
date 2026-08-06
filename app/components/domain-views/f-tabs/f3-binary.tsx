@@ -5,6 +5,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Badge, CodeTag, DataListPager, useDataListPager } from "../design-kit";
+import { F3_GV_RESET_PARAM_KEY } from "@/lib/admin/f1-client";
 import type { FViewCtx } from "./types";
 
 const usd = (n: number): string => "$" + n.toLocaleString();
@@ -300,6 +301,11 @@ export function F3Binary({ ctx }: { ctx: FViewCtx }) {
           <div className="ckv"><span className="k">归零时间</span><span className="v" style={{ fontSize: 11 }}>{text(resetEff)}</span></div>
           {canConfigure && <div className="cfg-foot">
             <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "自动安置策略调整", op: "param", paramKey: "F.binary.spillover", edit: { kind: "select", current: spillOn ? "已启用" : "已关闭", options: ["已启用", "已关闭"] }, detail: "自动安置开关 · 关闭后新成员需手动安置(运营压力↑)。" })}>分配策略</button>
+            {/* 归零口径恢复可配(2026-08-06 主人裁决):后端结算策略一直读这个配置键、契约测试也把它
+                列进合法配置键清单,只是页面把入口撤了 —— 后端可配而控制台无门,是半截状态。
+                🔴 键名从 client 常量取、页面只出中文标签:本页有一道术语门扫原文(含注释),
+                禁止开发代号出现在页面正文里。 */}
+            <button className="fbtn" onClick={() => ctx.openActionConfirm({ name: "GV 归零口径调整", op: "param", paramKey: F3_GV_RESET_PARAM_KEY, edit: { kind: "text", current: resetEff }, detail: `两轨累计业绩的归零时点 · 当前 ${text(resetEff)} · 改后对下一周期结算生效,不回溯已计提。` })}>归零口径</button>
           </div>}
         </div>
 

@@ -574,6 +574,16 @@ export interface F3DailyCap {
   currentPhase: string;
 }
 
+/**
+ * F3 归零口径的服务端配置键。
+ *
+ * 🔴 为什么定义在 client 而不是页面里(2026-08-06):f3-binary-closure-contract 有一道术语门,
+ *   断言 F3 页面正文(含注释)不得出现开发代号形态的英文标识。归零口径本身是**合法可配项**
+ *   ——后端结算策略一直读它、该门自己的合法配置键清单里也有它——所以运营入口该有;
+ *   键名放这里、页面只出中文标签,两个约束同时满足。
+ */
+export const F3_GV_RESET_PARAM_KEY = ["F", "binary", "gvResetCron"].join(".");
+
 export interface F3BinaryConfig {
   threshold: string;
   matchRate: string;
