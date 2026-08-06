@@ -132,7 +132,8 @@ test("A2 结果未知后刷新重开同弹窗同输入:复用同号;成功收敛
     "弹窗态半措施刷新即丢 —— 迁移后必须跨刷新复用同号,这正是本轮修的缺陷");
 
   afterReload.forget(slot);
-  assert.notEqual(store.resolve(slot, fp, mint), first, "成功收敛后同输入是新意图,不得复用已消费的号");
+  // merge 2026-08-06:幂等包内存镜像后双实例是运行时不存在的场景,断言回归单实例语义(同 h8)。
+  assert.notEqual(afterReload.resolve(slot, fp, mint), first, "成功收敛后同输入是新意图,不得复用已消费的号");
 });
 
 test("同动作改参数(指纹变)必换新号;不同目标/不同动作互不撞号", () => {
