@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * F 分销与团队 — 设计稿 design_handoff_f_domain 内容视图(F1–F5)。
  * 标签:F1 V-Rank 晋升 / F2 网络版税费率 / F3 双轨结算引擎 / F4 池·配额·大使·榜 / F5 佣金事件审计。
@@ -85,7 +86,7 @@ function fProposalCommandKey(modalCommandKey: string | undefined, sourceDomain: 
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
+  return displayAdminError(error);
 }
 
 function f1ThresholdTarget(paramKey?: string) {

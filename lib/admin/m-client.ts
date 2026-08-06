@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";

@@ -3,6 +3,7 @@
 import "./risk-radar.css";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { AlertTriangle, BellRing, Gauge, Landmark, Radar, ShieldAlert, ShieldCheck } from "lucide-react";
 import { BPageHeader } from "../b-page-header";
 import { BDomainDataState } from "@/app/components/dashboard/b-domain-state";
@@ -88,7 +89,7 @@ export default function RiskRadarPage() {
         setSubscriptionVersion(next.version);
       })
       .catch((cause) => {
-        if (alive) setToast(cause instanceof Error ? cause.message : "B5_SUBSCRIPTION_FAILED");
+        if (alive) setToast(displayAdminError(cause));
       });
     return () => {
       alive = false;
@@ -115,7 +116,7 @@ export default function RiskRadarPage() {
           if (alive) setPreview({ light: value.light });
         })
         .catch((cause) => {
-          if (alive) setPreviewError(cause instanceof Error ? cause.message : "B5_PREVIEW_FAILED");
+          if (alive) setPreviewError(displayAdminError(cause));
         });
     }, 250);
     return () => {
@@ -168,7 +169,7 @@ export default function RiskRadarPage() {
       router.push(target);
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(triageSlot);
-      setToast(cause instanceof Error ? cause.message : "分诊失败");
+      setToast(cause instanceof Error ? displayAdminError(cause) : "分诊失败");
     }
   };
   const openThreshold = () => {
@@ -198,7 +199,7 @@ export default function RiskRadarPage() {
       setToast("挤兑阈值已更新 · 已记 A2 审计");
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(THRESHOLD_SLOT);
-      setPreviewError(cause instanceof Error ? cause.message : "B5_THRESHOLD_FAILED");
+      setPreviewError(displayAdminError(cause));
     } finally {
       setSavingThreshold(false);
     }
@@ -221,7 +222,7 @@ export default function RiskRadarPage() {
       setToast("告警订阅已保存 · 已记 A2 审计");
     } catch (cause) {
       if (!(cause instanceof B5OutcomeUnknownError)) b5Commands.forget(SUBSCRIPTION_SLOT);
-      setToast(cause instanceof Error ? cause.message : "B5_SUBSCRIPTION_FAILED");
+      setToast(displayAdminError(cause));
     } finally {
       setSavingSubscription(false);
     }

@@ -16,6 +16,8 @@ import { fmtPct } from "@/lib/format";
 import { NotificationBell } from "./notification-bell";
 import { CommandPalette } from "@/app/components/command-palette";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { displayAdminError, guardedFetch } from "@/lib/admin/error-messages";
+import { useServicePendingCount } from "./use-service-badges";
 import { B_DASHBOARD_READ_AUTHORITIES, M_CONTENT_READ_AUTHORITIES } from "@/lib/admin/shell-authorities";
 import { requestAdminLogout } from "@/lib/admin/logout-request";
 import { currentAdminSession } from "@/lib/admin/auth-client";

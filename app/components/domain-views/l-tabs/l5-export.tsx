@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { LDataState, num, rec, rows, str } from "./live-data";
 import {
   fetchL5ExportAudits,
@@ -117,7 +118,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         if (alive) setTaskPage(page);
       })
       .catch((error) => {
-        if (alive) setTaskError(error instanceof Error ? error.message : "导出任务加载失败");
+        if (alive) setTaskError(error instanceof Error ? displayAdminError(error) : "导出任务加载失败");
       })
       .finally(() => {
         if (alive) setTaskLoading(false);
@@ -137,13 +138,13 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     setRegulatoryError(null);
     void fetchL5RegulatoryOptions()
       .then((value) => { if (alive) setRegulatoryOptions(value); })
-      .catch((error) => { if (alive) setRegulatoryError(error instanceof Error ? error.message : "监管报告选项加载失败"); })
+      .catch((error) => { if (alive) setRegulatoryError(error instanceof Error ? displayAdminError(error) : "监管报告选项加载失败"); })
       .finally(() => { if (alive) setRegulatoryLoading(false); });
     setAuditLoading(true);
     setAuditError(null);
     void fetchL5ExportAudits()
       .then((value) => { if (alive) setAuditRows(value); })
-      .catch((error) => { if (alive) setAuditError(error instanceof Error ? error.message : "统一导出审计加载失败"); })
+      .catch((error) => { if (alive) setAuditError(error instanceof Error ? displayAdminError(error) : "统一导出审计加载失败"); })
       .finally(() => { if (alive) setAuditLoading(false); });
     return () => { alive = false; };
   }, [data]);
@@ -343,8 +344,8 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
                       {acts.includes("approve") && !ctx.canApproveExportTasks && <span className="bdg dim">无 L5 敏感任务审批权限</span>}
                       {acts.includes("approve") && ctx.canApproveExportTasks && <button className="l-btn sm" onClick={() => requestApproveTask(t)}>审批脱敏明细</button>}
                       {(acts.includes("download") || acts.includes("retry")) && !canAccessTask && <span className="bdg dim">无此报表导出权限</span>}
-                      {acts.includes("download") && canAccessTask && <button className="l-btn sm" onClick={() => { void downloadTask(t).catch((error) => toast(error instanceof Error ? error.message : "下载失败")); }}>下载</button>}
-                      {acts.includes("retry") && canAccessTask && <button className="l-btn sm" onClick={() => { void retryTask(t).catch((error) => toast(error instanceof Error ? error.message : "重新发起失败")); }}>重新发起</button>}
+                      {acts.includes("download") && canAccessTask && <button className="l-btn sm" onClick={() => { void downloadTask(t).catch((error) => toast(error instanceof Error ? displayAdminError(error) : "下载失败")); }}>下载</button>}
+                      {acts.includes("retry") && canAccessTask && <button className="l-btn sm" onClick={() => { void retryTask(t).catch((error) => toast(error instanceof Error ? displayAdminError(error) : "重新发起失败")); }}>重新发起</button>}
                     </td>
                   </tr>
                 );

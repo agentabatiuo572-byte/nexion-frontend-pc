@@ -10,6 +10,7 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { blankStrategy } from "@/lib/admin/janus-c2/strategies";
 import {
   ACTION_TYPE_LABEL,
@@ -67,7 +68,7 @@ export function K6StrategyCenter() {
     try {
       await action();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "操作失败，请重试");
+      setActionError(error instanceof Error ? displayAdminError(error) : "操作失败，请重试");
       throw error;
     } finally {
       setActionPending(null);

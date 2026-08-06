@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { timeAgo } from "@/lib/admin/janus-c2/scoring";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { ACTION_TYPE_LABEL } from "@/lib/admin/janus-c2/labels";
 import { isRuleGroup, type RuleGroup, type Strategy, type StrategyVersion } from "@/lib/admin/janus-c2/types";
 
@@ -42,7 +43,7 @@ export function VersionPanel({ strategy: s, operatorId, canRollback, onClose }: 
       await rollback(s.strategyId, pending.version, operatorId, reason.trim());
       onClose();
     } catch (error) {
-      setRollbackError(error instanceof Error ? error.message : "回滚失败，请重试");
+      setRollbackError(error instanceof Error ? displayAdminError(error) : "回滚失败，请重试");
     } finally {
       setRollingBack(false);
     }

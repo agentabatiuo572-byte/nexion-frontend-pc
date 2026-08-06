@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -31,7 +31,7 @@ async function mediaRequest<T>(path: string, init?: RequestInit & { idempotencyP
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/media${path}`, {
+  const response = await guardedFetch(`/api/admin/media${path}`, {
     ...init,
     headers,
     cache: "no-store",

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { Icon, Btn, Chip, Drawer, KV, Badge, OperationConfirmModal, useToast } from "./design-kit";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { OpsSku, OpsTask } from "@/lib/admin/platform-types";
@@ -289,7 +290,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE1Skus(snapshot.skus);
       setE1Gates(snapshot.gates);
     } catch (error) {
-      setE1Error(error instanceof Error ? error.message : "E1_SYNC_FAILED");
+      setE1Error(displayAdminError(error));
       setE1Skus([]);
       setE1Gates(null);
     } finally {
@@ -329,7 +330,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setPhoneTiers(nextPhoneTiers);
       setE2Pricing(nextPricing);
     } catch (error) {
-      setE2Error(error instanceof Error ? error.message : "E2_SYNC_FAILED");
+      setE2Error(displayAdminError(error));
       setTasks([]);
       setPhoneTiers([]);
       setE2Pricing(null);
@@ -349,7 +350,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE3Stats(snapshot.stats);
       setE3Operations(snapshot.operations);
     } catch (error) {
-      setE3Error(error instanceof Error ? error.message : "E3_SYNC_FAILED");
+      setE3Error(displayAdminError(error));
       setE3Params({});
       setE3Stats(null);
       setE3Operations([]);
@@ -395,7 +396,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE4Page(nextPage.pageNum);
       setE4PageSizeState(nextPage.pageSize);
     } catch (error) {
-      setE4Error(error instanceof Error ? error.message : "E4_SYNC_FAILED");
+      setE4Error(displayAdminError(error));
       setOrders([]);
       setE4Total(0);
     } finally {
@@ -421,7 +422,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setE4Detail(await fetchE4OrderDetail(order.id));
     } catch (error) {
-      setE4DetailError(error instanceof Error ? error.message : "E4_DETAIL_FAILED");
+      setE4DetailError(displayAdminError(error));
     } finally {
       setE4DetailLoading(false);
     }
@@ -473,7 +474,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setE5Overview(nextOverview);
       setE5Datacenters(nextDatacenters);
     } catch (error) {
-      setE5Error(error instanceof Error ? error.message : "E5_SYNC_FAILED");
+      setE5Error(displayAdminError(error));
       setE5Devices([]);
       setE5Total(0);
       setE5Overview(null);
@@ -519,7 +520,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     try {
       setE6Config(await fetchE6ComputeConfig());
     } catch (error) {
-      setE6Error(error instanceof Error ? error.message : "E6_SYNC_FAILED");
+      setE6Error(displayAdminError(error));
       setE6Config(null);
     } finally {
       setE6Loading(false);
@@ -802,7 +803,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     } catch (error) {
       if (seq === mediaSeq.current) {
         setSkuMedia(null);
-        setToast("媒体上传失败:" + (error instanceof Error ? error.message : "MEDIA_UPLOAD_FAILED"));
+        setToast("媒体上传失败:" + displayAdminError(error));
       } else {
         URL.revokeObjectURL(src);
       }
@@ -853,7 +854,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       setToast("已居中裁剪为 1:1 并重新上传");
     } catch (error) {
       if (seq == null || seq === mediaSeq.current) {
-        setToast("裁剪上传失败:" + (error instanceof Error ? error.message : "SKU_MEDIA_CROP_FAILED"));
+        setToast("裁剪上传失败:" + displayAdminError(error));
       }
     } finally {
       if (seq == null || seq === mediaSeq.current) {
@@ -1653,7 +1654,9 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
               });
             } else { setToast("已确认生效"); }
           } catch (error) {
-            setToast((mc.name || "操作") + ":失败 " + (error instanceof Error ? error.message : "E1_ACTION_FAILED"));
+            // 不在这里再 toast 一次:本 try 块内每条会失败的路径都经 propose(含 proposeParam),
+            // 它在 rethrow 前已 toast 过;这里再弹就是同一个错误两条。
+            // 反馈不丢:rethrow 后确认弹窗的 alertbar 会经 displayAdminError 显示同一错误。
             throw error;
           }
           setActionConfirm(null);

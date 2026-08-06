@@ -159,7 +159,9 @@ test("M3 starts outbound conversations with an intentional blank message and giv
   assert.match(modals, /const \[tplId, setTplId\] = useState\(""\)/);
   assert.match(modals, /自定义开场消息/);
   assert.match(view, /写入失败(?:,数据未改变;请检查网络后重试|或结果未知,请保留当前输入并重试)/);
-  assert.match(view, /failed to fetch\|networkerror\|load failed/i);
+  // 网络细节压制仍在,但判据换了输入:client 接 guardedFetch 后网络异常到这里已是咽喉中文,
+  // 原先钉的英文正则(failed to fetch|networkerror|load failed)成了死代码,守它等于守一段没人走的分支。
+  assert.match(view, /includes\("网络连接失败或后台服务不可达"\)/);
 });
 
 test("M3 keeps large inbox pagination inside the list column", () => {

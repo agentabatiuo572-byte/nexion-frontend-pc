@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { DataListPager } from "../design-kit";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   K1OutcomeUncertainError,
   K4_DIMENSION_KEYS,
@@ -32,7 +33,7 @@ const commandAttempts = createSlotAttemptStore({
 });
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "操作失败，请稍后重试";
+  return error instanceof Error ? displayAdminError(error) : "操作失败，请稍后重试";
 }
 
 function scoreColor(score: number, lowMax: number, highMin: number) {

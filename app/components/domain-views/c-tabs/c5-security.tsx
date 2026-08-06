@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -139,10 +140,12 @@ function sessionStatusLabel(status?: string | null) {
 
 function errorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "C5_DATA_LOAD_FAILED");
-  if (/failed to fetch|networkerror|network request failed/i.test(message)) {
+  // client 层已接 guardedFetch 咽喉,网络异常到这里通常已是咽喉中文文案;按原压制意图把判据扩到
+  // 咽喉网络文案前缀(error-messages.ts 未导出该文案常量,就地字面量),命中仍走 C5 自家短文案。
+  if (/failed to fetch|networkerror|network request failed/i.test(message) || message.includes("网络连接失败或后台服务不可达")) {
     return "网络请求失败，页面数据未改变，请检查连接后重试";
   }
-  return message;
+  return displayAdminError(error);
 }
 
 function newCommandKey(prefix: string) {

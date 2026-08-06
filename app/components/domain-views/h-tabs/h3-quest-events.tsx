@@ -19,6 +19,7 @@ import {
   updateH4WheelGuard,
 } from "@/lib/admin/h-client";
 import type { HCtx } from "./types";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 type EventState = "upcoming" | "ongoing" | "ended";
 type HSection = "tasks" | "events";
@@ -148,7 +149,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       setModel((await fetchH3QuestEvents(section)) as H3Model);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "UNKNOWN_ERROR");
+      setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }
@@ -533,7 +534,7 @@ export function H3QuestEvents({ ctx, section = "tasks" }: { ctx: HCtx; section?:
       <section className="l-card">
         <div className="l-h"><span className="ttl">{moduleLabel} 数据加载失败</span></div>
         <div className="l-b">
-          <div>{error ?? "UNKNOWN_ERROR"}</div>
+          <div>{error ?? "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn sm mc" style={{ marginTop: 12 }} onClick={() => void reload()}>
             重试加载
           </button>

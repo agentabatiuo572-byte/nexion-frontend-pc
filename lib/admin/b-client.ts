@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { displayAdminError, formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { adminShellSessionKey } from "@/lib/admin/shell-authorities";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -540,7 +540,7 @@ function publishDashboard(sessionKey: string, dashboard: BDomainDashboard) {
 }
 
 export async function fetchBDomainDashboard(sessionKey = currentSessionKey()) {
-  const response = await fetch("/api/admin/treasury/b-domain", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/treasury/b-domain", { cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
@@ -563,7 +563,7 @@ export async function acknowledgeBDomainAlert(
   idempotencyKey?: string,
 ) {
   const sessionKey = currentSessionKey();
-  const response = await fetch(`/api/admin/treasury/b-domain/alerts/${encodeURIComponent(alertId)}/ack`, {
+  const response = await guardedFetch(`/api/admin/treasury/b-domain/alerts/${encodeURIComponent(alertId)}/ack`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -593,7 +593,7 @@ export async function updateB5BankRunThresholds(
   operator: string,
 ) {
   const sessionKey = currentSessionKey();
-  const response = await fetch("/api/admin/treasury/b-domain/bankrun-thresholds", {
+  const response = await guardedFetch("/api/admin/treasury/b-domain/bankrun-thresholds", {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -642,7 +642,7 @@ export function useBDomainDashboard(enabled = true) {
       const next = await task;
       setSnapshot({ sessionKey, data: next });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "B_DOMAIN_LOAD_FAILED");
+      setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }
@@ -681,7 +681,7 @@ export function useBDomainDashboard(enabled = true) {
         if (alive) setSnapshot({ sessionKey, data: next });
       })
       .catch((err) => {
-        if (alive) setError(err instanceof Error ? err.message : "B_DOMAIN_LOAD_FAILED");
+        if (alive) setError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setLoading(false);

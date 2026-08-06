@@ -9,6 +9,7 @@ import "./k-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
 import { fetchK1MultiAccountOverview, fetchK2ArbitrageOverview, fetchK3WithdrawRuleOverview, fetchK4ScoringOverview, fetchK5KycReviewOverview, fetchKRiskOverviews, kRiskActions, type K3DryRunResult, type KRiskActions, type KRiskData, type KRiskOverviewQuery } from "@/lib/admin/k-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { K1HeaderActions, K1MultiAccount } from "./k-tabs/k1-multiaccount";
 import { K2HeaderActions, K2Arbitrage } from "./k-tabs/k2-arbitrage";
@@ -21,7 +22,7 @@ import type { ConfirmReq, KCtx, ActionConfirmReq } from "./k-tabs/types";
 const FOLD: Record<string, string> = { K1: "K1", K2: "K2", K3: "K3", K4: "K4", K5: "K5", K6: "K6" };
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "UNKNOWN_ERROR";
+  return displayAdminError(error);
 }
 
 export function KDomainView({ meta }: { meta: DomainViewMeta }) {

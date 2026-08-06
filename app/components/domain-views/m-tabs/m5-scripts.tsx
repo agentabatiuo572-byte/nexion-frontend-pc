@@ -7,6 +7,7 @@
  * ai(Nova)类别推送/模板归 I2,本页只渲染只读「I2 管」。高敏配置:变更走确认 + 理由。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, Modal, Toggle, type IconName } from "../design-kit";
 import type { User360Profile } from "@/lib/admin/user360-client";
 import {
@@ -224,7 +225,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setAgentPageError(err instanceof Error ? err.message : "SUPPORT_AGENT_PAGE_FAILED");
+        setAgentPageError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setAgentPageLoading(false);
@@ -244,7 +245,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setScriptPageError(err instanceof Error ? err.message : "SESSION_SCRIPT_PAGE_FAILED");
+        setScriptPageError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setScriptPageLoading(false);
@@ -264,7 +265,7 @@ export function M5Scripts({ ctx }: { ctx: MCtx }) {
       })
       .catch((err) => {
         if (!alive) return;
-        setReplyTemplatePageError(err instanceof Error ? err.message : "SESSION_REPLY_TEMPLATE_PAGE_FAILED");
+        setReplyTemplatePageError(displayAdminError(err));
       })
       .finally(() => {
         if (alive) setReplyTemplatePageLoading(false);
@@ -983,7 +984,7 @@ function AdvisorAssignModal({ agent, ctx, onClose }: { agent: MSupportAgent; ctx
         .catch((err) => {
           if (!alive) return;
           setUsers([]);
-          setError(err instanceof Error ? err.message : "USERS_LOAD_FAILED");
+          setError(displayAdminError(err));
         })
         .finally(() => {
           if (alive) setLoading(false);

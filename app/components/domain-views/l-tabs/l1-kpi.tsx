@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { PaginationExemptionList } from "../design-kit";
 import { LDataState, kpiState, num, rec, rows, strings, type KpiRow } from "./live-data";
 import { readL1LiveTotals } from "./l1-l2-live-data";
@@ -67,7 +68,7 @@ export function L1HeaderActions({ ctx }: { ctx: LCtx }) {
       await ctx.reloadBi?.();
       ctx.toast(submittedMode === "series" ? "KPI 序列已导出 · 已记审计" : "KPI 当前汇总已导出 · 已记审计");
     } catch (error) {
-      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${error.message}` : "导出任务提交失败 · 请稍后重试");
+      ctx.toast(error instanceof Error ? `导出任务提交失败 · ${displayAdminError(error)}` : "导出任务提交失败 · 请稍后重试");
     }
   };
   return (
@@ -126,7 +127,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
     try {
       validateL1Dashboard(data);
     } catch (error) {
-      protocolError = error instanceof Error ? error.message : "L1_DATA_PROTOCOL_INVALID";
+      protocolError = displayAdminError(error);
     }
   }
   if (!rawKpis.length && liveTotals.length) return <L1LiveTotals metrics={liveTotals} />;
@@ -203,7 +204,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
       setCustomOpen(false);
       ctx.toast(`KPI 已按${nextWindow === "custom" ? `${customFrom} 至 ${customTo}` : nextWindow === "30d" ? "滚动 30 天" : nextWindow === "1d" ? "当日" : "滚动 7 天"}重新读取`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "L1_REFRESH_FAILED";
+      const message = displayAdminError(error);
       setRefreshError(message);
       ctx.toast(`KPI 刷新失败 · ${message}`);
     } finally {
@@ -229,7 +230,7 @@ export function L1Kpi({ ctx }: { ctx: LCtx }) {
       setDrillKpi(checkedDrilldown.selected as Kpi);
       setDrillTrend(checkedTrend.values as number[]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "L1_DRILLDOWN_FAILED";
+      const message = displayAdminError(error);
       setDrillError(message);
       ctx.toast(`KPI 下钻读取失败 · ${message}`);
     }
