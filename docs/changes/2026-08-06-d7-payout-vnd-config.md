@@ -60,8 +60,8 @@
 
 ## 实施拆解
 
-- [ ] T1 假数据层 + 契约测试挂 GEARS(报告位:)
-- [ ] T2 页面组件 + 四处接线(nav / registry / d-view / manifest)(报告位:)
-- [ ] T3 机器门:tsc 0 + verify 全量(跳过齿如实台账)(报告位:)
-- [ ] T4 实景走查(Playwright mock session 真点真输)+ 独立对抗 audit(报告位:)
-- [ ] T5 commit + 推 nexion-ops-console 新分支 + 收尾汇报
+- [x] T1 假数据层 + 契约测试挂 GEARS(报告:契约 12 用例全绿 + 2 轮红测证明门真;后随修复轮扩至 18 用例 + 第 3 轮红测)
+- [x] T2 页面组件 + 四处接线(报告:tsc 0;nav/registry/d-view/manifest 四处接线,verify 42 齿链亲证 D7 齿在跑)
+- [x] T3 机器门(报告:tsc 0 · verify 42 齿 37 跑 5 缺仓跳过 exit 0,两轮全量;跳过齿=channel-parity/FE-BE/J1/J2/K2,全因本机无 nexion-backend)
+- [x] T4 实景走查 + 独立 audit(报告:R1 独立 tester 11/11 AC PASS;3 skeptic 对抗审计 → 修复轮 16 项落码;R2 回归 23 项断言实质全过,见 `2026-08-06-d7-payout-vnd-config-t4-test.md`)
+- [ ] T5 commit 87674ab 已落;追加提交与推送 nexion-ops-console 新分支执行中(完成与否以收尾汇报为准,本文件不回改)
