@@ -33,11 +33,12 @@ function asNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
+// 这三个码都只来自服务端,到这里之前 client 已过咽喉翻成中文,按机器码 includes 判的两条
+// (CONFIG_VERSION_CONFLICT / REASON_REQUIRED)从来没命中过——已挂表由咽喉出文案。
+// 覆盖率红线那条留着:它判的是**中文**译文,是活的,且 D5 要在通用文案上再点明「放大资金流出」。
 function errorText(err: unknown) {
-  const message = err instanceof Error ? err.message : "D5_REQUEST_FAILED";
-  if (message.includes("CONFIG_VERSION_CONFLICT")) return "参数已被其他运营员更新，请刷新后重试";
-  if (message.includes("COVERAGE_BELOW_REDLINE") || message.includes("覆盖率低于红线")) return "覆盖率低于红线，放大资金流出的调整已被服务器拒绝";
-  if (message.includes("REASON_REQUIRED")) return "请输入 8-200 字变更理由";
+  const message = err instanceof Error ? err.message : "";
+  if (message.includes("覆盖率低于红线")) return "覆盖率低于红线，放大资金流出的调整已被服务器拒绝";
   return displayAdminError(err);
 }
 

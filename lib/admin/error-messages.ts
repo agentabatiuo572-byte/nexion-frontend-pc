@@ -558,6 +558,13 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   F_PARTNER_TIERS_SCHEMA_INVALID: "Partner 4 档门槛格式无效,须为含 bronze/silver/gold/diamond 四个非负数字的 JSON。",
   F_PARTNER_TIERS_NOT_ASCENDING: "Partner 4 档门槛须非递减(bronze ≤ silver ≤ gold ≤ diamond)。",
   F_VRANK_TITLES_SCHEMA_INVALID: "V-Rank 头衔格式无效,须为含 V0-V12 共 13 阶非空文本的 JSON。",
+  // 无域前缀的通用码,**必须挂在表尾**:includes 兜底循环按插入顺序命中,
+  // 排在带前缀的同族(VIETQR_/H8_/C6_CONFIG_VERSION_CONFLICT)之后才不会把它们的专属文案抢掉。
+  CONFIG_VERSION_CONFLICT: "该配置已被其他操作员更新，本次未覆盖；请刷新页面并核对最新值后重试。",
+  // 抛出侧写成 `H1_RESPONSE_INVALID:<字段名>`,字段名只留给日志排查:
+  // 兜底 includes 循环用基础码命中本条,冒号后缀不会上屏(与 H7_VOUCHER_RESPONSE_INVALID 同款)。
+  H1_RESPONSE_INVALID: "增长节奏服务返回的数据不完整或不一致，页面已停止展示推测值；请重新读取或联系值班人员。",
+  C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
 };
 
 const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+$/;

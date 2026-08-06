@@ -129,11 +129,10 @@ function profileKey(profile: User360Profile) {
   return text(profile.userNo, text(profile.id, ""));
 }
 
+// 隐私提示文案已挪进 error-messages 映射表:原先靠 `message === "C1_RAW_PHONE_SEARCH_FORBIDDEN"`
+// 字符串比对,只有组件本地抛出那条路走得通;同一个码若来自服务端,client 侧已把它翻成通用兜底,
+// 等号不成立、隐私提示丢失。挂表后两条路径同文案。
 function errorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : "C1_REQUEST_FAILED";
-  if (message === "C1_RAW_PHONE_SEARCH_FORBIDDEN") {
-    return "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希";
-  }
   return displayAdminError(error);
 }
 
