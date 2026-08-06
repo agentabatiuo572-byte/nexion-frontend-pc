@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 type ApiResult<T> = {
   code?: number;
@@ -46,7 +46,7 @@ function normalizeAlert(value: unknown, index: number): OpsDashboardAlert {
 
 export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
   // 所有已登录运营账号读取最小化告警快照；不暴露 J1 配置与控制权限。
-  const response = await fetch("/api/admin/emergency/kill-switches/alerts", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/emergency/kill-switches/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
     throw new Error(formatAdminApiError(payload?.message, `J1_ALERTS_${response.status}`));
@@ -128,7 +128,7 @@ export async function fetchOpsDashboardAlerts(): Promise<OpsDashboardAlert[]> {
 }
 
 export async function fetchJ2GeoAlerts(): Promise<OpsDashboardAlert[]> {
-  const response = await fetch("/api/admin/emergency/geo-block/alerts", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/emergency/geo-block/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
     throw new Error(formatAdminApiError(payload?.message, `J2_ALERTS_${response.status}`));
@@ -140,7 +140,7 @@ export async function fetchJ2GeoAlerts(): Promise<OpsDashboardAlert[]> {
 }
 
 export async function fetchJ3TamperConfigAlerts(): Promise<OpsDashboardAlert[]> {
-  const response = await fetch("/api/admin/emergency/tamper/config-alerts", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/emergency/tamper/config-alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
     throw new Error(formatAdminApiError(payload?.message, `J3_ALERTS_${response.status}`));
@@ -152,7 +152,7 @@ export async function fetchJ3TamperConfigAlerts(): Promise<OpsDashboardAlert[]> 
 }
 
 export async function fetchC2HighRiskAlerts(): Promise<OpsDashboardAlert[]> {
-  const response = await fetch("/api/admin/users/account-actions/alerts", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/users/account-actions/alerts", { cache: "no-store" });
   const payload = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !payload || (payload.code !== undefined && payload.code !== 0) || !payload.data) {
     throw new Error(formatAdminApiError(payload?.message, `C2_ALERTS_${response.status}`));

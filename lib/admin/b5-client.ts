@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 export const PRESSURE_RED_LINE = 0.7;
 const B5_RADAR_ENDPOINT = "/api/admin/risk/radar";
@@ -209,7 +209,7 @@ function idempotencyKey(prefix: string) {
 }
 
 async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(endpoint, { ...init, cache: "no-store" });
+  const response = await guardedFetch(endpoint, { ...init, cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0 || result.data === undefined) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();

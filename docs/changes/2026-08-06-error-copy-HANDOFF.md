@@ -69,12 +69,45 @@ name / message 判断」收紧。
 🔴 禁动:`!response.ok` 分支、formatAdminApiError 调用、OutcomeUncertain 类及其文案、业务逻辑。
 并发多 agent 时一律内容匹配 Edit,禁整文件 Write。
 
-## 4. 遗留上报项(T3 提出,尚未处理)
+### 🔴 3.1 终局裁决(2026-08-06,四路独立验收后):rawFetch 白名单清空
 
-`lib/admin/h-client.ts:82` 的 `(await response.json()) as ApiResult<T>` 是范围内唯一没有
-`.catch(() => null)` 兜底的 JSON 解析:2xx 但响应体非 JSON(网关 HTML 错误页)会抛英文
-SyntaxError 上屏。补 catch 会改动 `!response.ok || result.code!==0` 的判定输入,属禁动区边缘,
-故未动。建议归入后续批次统一对齐兄弟文件写法。
+**规则 2 收紧为唯一硬判据**:只有「catch 内真有 `instanceof TypeError` / `error.name` / 英文 message 字符串判断」才配 rawFetch。
+经全仓核查,**当前无任何此类点**,故全部调用点判 guardedFetch,rawFetch 调用数 = 0
+(导出与契约用例保留,作哨兵锚点与未来出口)。
+
+推翻的中间立场:曾有两轮 agent 主张「bare catch 全量吞异常并自转中文 = 自管语义 → rawFetch」(援引 a5/d-client 先例)。
+**证伪它的实锤**:`l-client.ts:177` 与 `:680` 的 503 幂等重放是第三次 `execute()`,**裸奔在所有 try/catch 之外**——
+bare catch 看着全包,实际漏了重放路径,断网重放时英文原样上屏。人肉判「全量自管」在两轮 agent 手里都没看出这条缝。
+
+裁决依据(三条,后续批次沿用):
+1. **失败模式不对称**:guardedFetch 错用 = 翻译被吞的无害死功;rawFetch 错用 = 英文上屏(真缺陷)。不对称时取安全侧。
+2. **哨兵可机器化**:白名单为空 → T7 哨兵判据退化成纯 grep 的「裸 fetch=0 且 rawFetch=0」,无语义判断、无例外腐化。有例外的白名单必然随时间被塞进新条目。
+3. 一条规则通吃 g 系(标记类 catch)与 bare catch 系,消除「自管判得越彻底越该 raw」的倒挂。
+
+## 4. 遗留上报项
+
+**4.1 body 读取阶段仍在咽喉之外(一族,四路验收独立发现同一根因)**
+guardedFetch 按定义只包 fetch promise 的 reject。**响应体读取**若中途断连,照样抛英文 TypeError:
+`await res.text()`(l-client:178/193/681、m-client:479、i-client:49、j-client:82)、
+`await res.blob()`(l-client:463/713、user360-client:995/1335)、
+`await response.json()`(dual-ledger/page.tsx:80)。
+改前改后行为相同,非本轮引入。**现有缓解**:凡走 displayAdminError 的展示面,英文网络短语被
+error-messages.ts:575 正则兜转中文——故 T5/T6 展示面收口后大部分路径已闭合;未走展示边界的
+(如 client 内部再包装)仍留缝。是否把 body 读取一并纳入咽喉,归后续批次。
+
+**4.2 `lib/admin/h-client.ts:82`**(T3 提出)
+`(await response.json()) as ApiResult<T>` 是范围内唯一没有 `.catch(() => null)` 兜底的 JSON 解析:
+2xx 但响应体非 JSON(网关 HTML 错误页)会抛英文 SyntaxError 上屏。补 catch 会改动
+`!response.ok || result.code!==0` 的判定输入,属禁动区边缘,故未动。建议归后续批次统一对齐兄弟文件写法。
+
+**4.3 b2/b3/b5 写路径网络失败不保幂等键槽位**(T2 验收提出,改前既有设计)
+网络层 reject 时 catch 因异常非 OutcomeUnknown 标记类而遗忘幂等键——而网络失败的 POST 实际可能已达服务端。
+咽喉网络文案含「提交类操作请先刷新核对是否已生效」对冲。是否把网络 reject 纳入保键重放属产品决策。
+
+**4.4 英文网络正则死分支一族(本轮 T5/T6 已派修)**
+`c5-security.tsx:142`、`m-view.tsx:209`、`k1-multiaccount.tsx:58` 三处页面级格式化器用
+`/failed to fetch|networkerror/i` 压制网络细节。client 层接咽喉后英文永不再到达,正则成死分支
+(fallthrough 输出中文,不破不漏,但原压制意图失效)。修法:判据改为咽喉中文文案,输出文案不动。
 
 ## 5. 完成门(未变)
 

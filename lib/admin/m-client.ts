@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import type { User360Profile, UserProfileQuery } from "@/lib/admin/user360-client";
@@ -471,7 +471,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
-  const res = await fetch(`/api/admin/content${path}`, {
+  const res = await guardedFetch(`/api/admin/content${path}`, {
     ...init,
     headers,
     cache: "no-store",

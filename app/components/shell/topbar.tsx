@@ -16,6 +16,7 @@ import { fmtPct } from "@/lib/format";
 import { NotificationBell } from "./notification-bell";
 import { CommandPalette } from "@/app/components/command-palette";
 import { useBDomainDashboard } from "@/lib/admin/b-client";
+import { guardedFetch } from "@/lib/admin/error-messages";
 import { useServicePendingCount } from "./use-service-badges";
 
 function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string }) {
@@ -28,7 +29,7 @@ function RoleSwitcher({ role, operator }: { role: AdminRole; operator: string })
     setLoggingOut(true);
     setLogoutError(null);
     try {
-      const response = await fetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" });
+      const response = await guardedFetch("/api/admin/auth/logout", { method: "POST", cache: "no-store" });
       if (!response.ok) {
         throw new Error("服务端会话撤销失败，请重试");
       }

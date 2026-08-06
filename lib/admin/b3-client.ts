@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertB3Dashboard } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
@@ -100,7 +100,7 @@ async function json<T>(response: Response, fallback: string, commandKey?: string
 }
 
 export async function fetchB3Dashboard(filters: B3Filters, stage = "purchase"): Promise<B3Dashboard> {
-  const data = await fetch(`/api/admin/funnel${query(filters, { stage })}`, { cache: "no-store" })
+  const data = await guardedFetch(`/api/admin/funnel${query(filters, { stage })}`, { cache: "no-store" })
     .then((response) => json<unknown>(response, "B3_FUNNEL_LOAD_FAILED"));
   assertB3Dashboard(data);
   return data as unknown as B3Dashboard;
@@ -113,7 +113,7 @@ export async function saveB3View(
   comparison = "PREVIOUS",
   commandKey = idempotencyKey("b3-view"),
 ) {
-  const response = await fetch("/api/admin/funnel/view", {
+  const response = await guardedFetch("/api/admin/funnel/view", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ name, ...filters, granularity, comparison }),
@@ -127,7 +127,7 @@ export async function saveB3View(
 }
 
 export async function exportB3Cohort(filters: B3Filters) {
-  const response = await fetch(`/api/admin/funnel/export${query(filters)}`, { cache: "no-store" });
+  const response = await guardedFetch(`/api/admin/funnel/export${query(filters)}`, { cache: "no-store" });
   if (!response.ok) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { acknowledgeBDomainAlert, useBDomainDashboard } from "@/lib/admin/b-client";
 import { createD3Injection, downloadD3Csv, updateD3Thresholds } from "@/lib/admin/d-client";
+import { guardedFetch } from "@/lib/admin/error-messages";
 import { fmtUsd, fmtUsdCompact, fmtPct, fmtNum } from "@/lib/format";
 import { Sparkline as MiniSparkline } from "@/app/components/kit/kpi-stat-card";
 import {
@@ -72,7 +73,7 @@ export default function DualLedgerPage() {
     void (async () => {
       try {
         setExposureError("");
-        const response = await fetch(`/api/admin/treasury/net-exposure?window=${exposureWindow}`, {
+        const response = await guardedFetch(`/api/admin/treasury/net-exposure?window=${exposureWindow}`, {
           cache: "no-store",
           signal: controller.signal,
         });

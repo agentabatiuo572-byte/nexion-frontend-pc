@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertB4PhaseOverview } from "@/lib/admin/b34-overview-contract";
 
 interface ApiResult<T> {
@@ -86,7 +86,7 @@ export async function fetchB4PhaseOverview(
   filters: B4Filters,
   signal?: AbortSignal,
 ): Promise<B4PhaseOverview> {
-  const data = await fetch(`/api/admin/phase/overview${query(filters)}`, { cache: "no-store", signal })
+  const data = await guardedFetch(`/api/admin/phase/overview${query(filters)}`, { cache: "no-store", signal })
     .then((response) => json<unknown>(response, "B4_PHASE_LOAD_FAILED"));
   assertB4PhaseOverview(data);
   return data as unknown as B4PhaseOverview;
@@ -96,12 +96,12 @@ export async function recordB4H1Jump(dial: string, phase: string) {
   const params = new URLSearchParams();
   if (dial) params.set("dial", dial);
   if (phase && phase !== "ALL") params.set("phase", phase);
-  return fetch(`/api/admin/phase/jump?${params.toString()}`, { cache: "no-store" })
+  return guardedFetch(`/api/admin/phase/jump?${params.toString()}`, { cache: "no-store" })
     .then((response) => json<{ href: string }>(response, "B4_JUMP_AUDIT_FAILED"));
 }
 
 export async function exportB4Distribution(filters: B4Filters) {
-  const response = await fetch(`/api/admin/phase/distribution/export${query(filters)}`, { cache: "no-store" });
+  const response = await guardedFetch(`/api/admin/phase/distribution/export${query(filters)}`, { cache: "no-store" });
   if (!response.ok) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();

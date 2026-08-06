@@ -1,6 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
-import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 interface ApiResult<T> {
@@ -561,7 +561,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   }
   let response: Response;
   try {
-    response = await rawFetch(`/api/admin/${base}${path}`, {
+    response = await guardedFetch(`/api/admin/${base}${path}`, {
       ...init,
       headers,
       signal: init?.signal ?? AbortSignal.timeout(30_000),

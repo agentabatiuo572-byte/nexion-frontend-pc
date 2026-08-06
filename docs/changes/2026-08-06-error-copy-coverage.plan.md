@@ -42,11 +42,36 @@
       message 非空致 fallback 失效英文透传,已改为翻译失败强制网络归因)。
       回源三问:① 三出口正是 P0/P1 地基,仍服务目标;② 唯一偏差为文件归并,语义无偏差;③ T2-T4 判定
       规则依赖的两个出口已就位,计划成立。
-- [ ] **T2 client 接线 A–D 域**(a1-a8/auth/b-b5/c 系/d-client 等,逐 fetch 判 guardedFetch/rawFetch,
+- [x] **T2 client 接线 A–D 域**(a1-a8/auth/b-b5/c 系/d-client 等,逐 fetch 判 guardedFetch/rawFetch,
       OutcomeUncertain 判断逻辑不动)。AC=该范围 grep 直用 fetch=0 + tsc 0 + 既有域契约测试不红。tester 报告:
-- [ ] **T3 client 接线 E–H 域**(e1-e6/f1/g1-g7/h)。AC 同 T2。tester 报告:
-- [ ] **T4 client 接线 I–M 域 + 组件内裸 fetch**(i/j/k/k6/l/m/media/ops-dashboard/user360 + topbar.tsx +
-      dual-ledger/page.tsx)。AC 同 T2。tester 报告:
+      独立验收 PASS(2026-08-06):b2-b5 尾段 9 处逐处重判 9/9 一致(含 b4 AbortSignal 高危点:abort 判据是
+      controller.signal.aborted 状态非异常形态,包装不破坏);P0=P1=P2=0;禁动区 diff 级零触碰;裸 fetch 双扫 0;
+      tsc 0 + 契约 13/13 验收方实跑。前段 a1-a8/auth/b/c/d 系随 T3 验收轮覆盖。备注(非缺陷,产品决策类):
+      b2/b3/b5 写路径网络 reject 不保幂等键槽位为改前既有设计,咽喉文案「先刷新核对」已对冲,归遗留上报项。
+      回源三问:① b 域断网英文上屏路径已封,服务专项目标;② 唯一偏离=import 走全仓 @/ 别名惯例,无语义偏差;
+      ③ b 域 0 rawFetch,T7 白名单前提成立。
+- [x] **T3 client 接线 E–H 域**(e1-e6/f1/g1-g7/h)。AC 同 T2。tester 报告:
+      独立验收(2026-08-06,范围扩至全部已接线 24 文件 33 处):31 处 guardedFetch 全对(含 g 系第四形态
+      零扰动复核、a8 契约码精确匹配不受影响);无半成品、禁动区零触碰、tsc 0 + 契约 13/13 验收方实跑;
+      测试非糊弄(rawFetch 透明用对象同一性断言)。**P1×2 待修**:a5-client:28 / d-client:564 的 rawFetch
+      属空绑定 bare catch(零形态依赖),按修正判据应为 guardedFetch——行为等价但污染 T7 白名单锚点;
+      与 T4a(j/k6 三处)T4b(l 三处)同型判定合并裁决后统一修。P2 交底:c5/k1/m-view 三处英文正则消费
+      k/user360/m client,归并发验收轮核;h-client:82 裸 JSON 解析为既有欠账(HANDOFF §4 已记)。
+      P1 已修(rawFetch 清零轮):a5/d 两处改 guardedFetch,tsc 0 + 契约 13/13 + L 域四组基线持平。打勾。
+- [x] **T4 client 接线 I–M 域 + 组件内裸 fetch**(i/j/k/k6/l/m/media/ops-dashboard/user360 + topbar.tsx +
+      dual-ledger/page.tsx)。AC 同 T2。tester 报告:三路独立验收(2026-08-06,实现方≠验收方,各自实跑):
+      · T4a(i/j/k/k6,6 处):6/6 一致,含 k-client 第四形态陷阱样本判对(有幂等键但读路径原样 rethrow→guardedFetch);
+        k6 测试 needle 改动裁决 PASS(骨架与幂等键不变量零丢失,别名维度收紧、无放松);19 个 i/j/k 契约套件
+        123 测试扩面证实剩余 19 红全 ENOENT 缺兄弟仓、AssertionError=0;审前审后 5 文件 hash 一致无并发漂移。
+      · T4b(l/m/media/ops-dashboard,11 处):**查出真 P1 一枚**——l-client:177/:680 的 503 幂等重放是第三次
+        execute() 裸奔在所有 try/catch 外,bare catch 的「自管」不成立,断网重放时英文上屏。触发 rawFetch 判据
+        终局裁决(HANDOFF §3.1),已随 rawFetch 清零轮修复。m2/m4/m5 共 7 红逐个核堆栈=ENOENT 缺兄弟仓,零断言失败。
+      · T4c(user360/topbar/dual-ledger,6 处):6/6 一致、0 返工;两个待核断言独立证实(c5 英文正则确为死分支且
+        fallthrough 输出中文;全仓零处判 AbortError/DOMException,唯一 TimeoutError 命中是服务端代理判自家 fetch,
+        非本轮消费方)。验收方自曝并纠正了一次 glob 静默失效(用已知答案探针揭穿后重跑)。
+      终局:client 层裸 fetch 全域清零、rawFetch 调用点 0(判定无例外)。
+      回源三问:① 断网英文上屏的 client 侧入口已全封,正是专项 P0;② 偏离仅 import 别名惯例 + 1 行测试 needle
+      同步(门与实现同提交),语义无偏差;③ 白名单清空使 T7 哨兵退化为纯 grep 判据,后续计划更强。
 - [ ] **T5 展示边界 A–F 域**:displayAdminError 替换页面提取器与内联直显。AC=该范围 .message 直显计数归零或入台账 +
       抽 2 页实景中文。tester 报告:
 - [ ] **T6 展示边界 G–M 域 + 补表**:同 T5;高频表外码按 contract 测试触发面补条目。tester 报告:
