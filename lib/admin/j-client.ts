@@ -65,8 +65,12 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
     if (res.status === 401 || payload.code === 401 || payload.message === "ADMIN_AUTH_REQUIRED") {
       useAdminAuth.getState().signOut();
     }
-    // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知 —— 应急止血动作
-    // (kill-switch / 地域封锁)重复执行的代价极高,宁可保号重试也不能弃号重铸。
+    // unknown 头只是增强信号,不再是唯一保险丝:5xx 同样归结果未知,让调用方看到「结果未确认」
+    // 而不是「失败」——冠失败会诱导运营换渠道重做,而应急止血动作(kill-switch / 地域封锁)
+    // 重复执行的代价极高。
+    // ⚠️ 注意范围:j 域**目前还没有 pending store**,命令号在弹窗打开时现铸、刷新即丢
+    //   (属交接文档「任务 A」的迁移范围)。所以这里给的是**正确的失败分类与话术**,
+    //   不是「同号重试」的保证 —— 别照着这段注释以为 j 域已经保号了。
     if (isWrite && (res.headers.get("X-Nexion-Upstream-Outcome") === "unknown"
       || outcomeStaysUnknown(res.status, payload.code))) {
       throw new EmergencyOutcomeUncertainError(

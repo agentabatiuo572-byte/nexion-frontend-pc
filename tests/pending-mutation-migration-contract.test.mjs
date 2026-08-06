@@ -265,13 +265,66 @@ test("⑤ 清扫按记录形状认表,不按键名 —— 换个没人见过的�
   storage.setItem("look-alike-but-not-ours", JSON.stringify({
     k1: { fingerprint: "f", commandKey: "SOMETHING-ELSE", createdAt: now, expiresAt: now + 1000 },
   }));
+  // 🔴 混合表诱饵(2026-08-06 独立验收 P2-3):只放单行诱饵时,把判据从 every 放宽成 some
+  //   门也抓不到 —— 而 some 会让「恰好有一行像命令号」的业务表整张被删。
+  storage.setItem("mixed-table-not-ours", JSON.stringify({
+    k1: { fingerprint: "f", commandKey: "k1", createdAt: now, expiresAt: now + 1000 },
+    other: { someBusinessField: 42 },
+  }));
 
   assert.equal(clearPendingCommandRecords(storage), 1);
   assert.equal(storage.getItem("totally-unexpected-key-name"), null);
   assert.ok(storage.getItem("look-alike-but-not-ours"), "形状不符的表不得被误删");
+  assert.ok(storage.getItem("mixed-table-not-ours"),
+    "混合表不是本模块的表(判据必须是 every 不是 some),整张删掉会毁掉别人的业务缓存");
 });
 
-test("⑤ resetAdminSession 真的接了清扫(剥注释后判定接线,不认注释里的声明)", () => {
+test("⑤ 清扫接在**真正的登出路径**上:signOut(退出按钮 / 会话失活 / 401 全走它)", () => {
+  // 🔴 2026-08-06 独立验收 P0-1:先前只接了 resetAdminSession —— 那是撞 401 的自动重置,
+  //   真正的退出按钮(topbar)走 useAdminAuth.signOut(),纯状态重置、不清存储也不 reload。
+  //   净结果:A 退出 → B 登录 → 全部命令号原样留给 B。
+  const auth = read("lib/store/admin-auth.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  assert.match(auth, /import \{ clearPendingCommandRecords \} from "@\/lib\/admin\/pending-mutation-store"/);
+  assert.match(auth, /signOut: \(\) => \{\s*clearPendingCommandRecords\(\);/,
+    "signOut 必须先清命令号 —— 所有登出路径都汇到它");
+  // 换人才清;同一人刷新 / 定时续期不清 —— signIn 每次页面加载都会调用,
+  // 无条件清会毁掉「命令号跨刷新存活」这个根本机制。
+  assert.match(auth, /if \(state\.operator && state\.operator !== session\.operator\) clearPendingCommandRecords\(\)/,
+    "signIn 只在操作员真的换人时清;无条件清会毁掉跨刷新存活");
+
+  // 退出按钮不得绕开 signOut 自己清一套(绕开 = 又多一条不受门保护的路径)。
+  const topbar = read("app/components/shell/topbar.tsx");
+  assert.match(topbar, /signOut\(\)/, "退出按钮必须经 signOut");
+});
+
+test("⑤ 清扫不得被存活实例的内存镜像复活(同步序列,不是竞态)", () => {
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  globalThis.window = { sessionStorage: storage };
+
+  // 真实调用形态:d-client / user360-client 在同一个同步块里先 resetAdminSession()(清存储)、
+  // 后 forget() —— forget 走 readAll(内存有货)再整表写回,把刚清掉的记录原样复活。
+  const store = createPendingMutationStore({ storageKey: "nexion-admin-resurrect-probe-v1" });
+  store.remember("fp-A", "cmd-A");
+  store.remember("fp-B", "cmd-B");
+  assert.ok(storage.getItem("nexion-admin-resurrect-probe-v1"), "前置:记录已落盘");
+
+  clearPendingCommandRecords(storage);
+  store.forget("fp-A"); // ← 复活点
+
+  assert.equal(storage.getItem("nexion-admin-resurrect-probe-v1"), null,
+    "清扫后任何 store 操作都不得把命令号写回来 —— 复活等于换人清扫整体失效");
+  assert.equal(store.get("fp-B"), undefined, "存活实例的内存镜像必须随清扫一起作废");
+});
+
+test("⑤ resetAdminSession 也保留清扫(401 自动重置路径)", () => {
   const code = read("lib/admin/auth-session.ts")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   assert.match(code, /import \{ clearPendingCommandRecords \} from "@\/lib\/admin\/pending-mutation-store"/);

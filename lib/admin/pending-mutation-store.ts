@@ -98,7 +98,21 @@ function isPendingCommandTable(raw: string | null): boolean {
  * ponytail: 各 store 实例的内存镜像由 resetAdminSession 之后的整页 reload 一并清掉
  *           (JS 上下文重建);单靠本函数清不掉别人的闭包,也不该为此建一份全局注册表。
  */
+/**
+ * 清扫代次。每清一次 +1;各 store 实例读到代次变了就作废自己的内存镜像。
+ *
+ * 🔴 没有它,清扫会被**同步复活**(2026-08-06 独立验收 P0-2,非竞态而是必然序列):
+ * `d-client` / `user360-client` 在同一个同步块里先 resetAdminSession() 清空存储、
+ * 后 pendingMutations.forget() —— forget 走 readAll(内存还有货、存储已空)再整表 writeAll
+ * 写回,刚清掉的命令号原样复活。原设计假设「内存镜像由随后的整页 reload 一并清掉」,
+ * 而这条假设被本仓自己的调用点推翻了(reload 发生在这段同步代码之后,退出按钮更是压根不 reload)。
+ */
+let clearGeneration = 0;
+
 export function clearPendingCommandRecords(storage?: Storage): number {
+  // 代次先推进:哪怕下面读存储失败(隐私模式),各实例的内存镜像也必须作废 ——
+  // 降级态下内存就是唯一真源,不作废等于换人后照样复用前一个人的号。
+  clearGeneration += 1;
   const target = storage ?? (typeof window === "undefined" ? undefined : window.sessionStorage);
   if (!target) return 0;
   try {
@@ -139,6 +153,14 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
    */
   const memory = new Map<string, T>();
   let degradedNotified = false;
+  let seenGeneration = clearGeneration;
+
+  /** 清扫发生过 → 本实例的内存镜像连同它兜的那份记录一起作废(见 clearGeneration 注释)。 */
+  function dropMemoryIfCleared() {
+    if (seenGeneration === clearGeneration) return;
+    seenGeneration = clearGeneration;
+    memory.clear();
+  }
 
   function noteDegraded(action: string) {
     // 只喊一次:提交路径上每次读写都喊会把 console 淹掉,反而盖住问题。
@@ -162,6 +184,7 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   }
 
   function readAll(): Record<string, T> {
+    dropMemoryIfCleared();
     const now = Date.now();
     // 内存打底、存储覆盖:存储可用时两者本就一致;存储不可用时内存是唯一真源。
     const current: Record<string, T> = {};
@@ -215,10 +238,14 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
       //    上一版每次 remember 都 `Date.now() + ttl`,连续重试能让客户端记录活过后端窗口 ——
       //    窗外再复用同一个号,后端早已不认,却给了操作员「这次会被去重」的虚假信心。
       const createdAt = previous?.createdAt ?? Date.now();
+      // 🔴 四个公共字段全部排在 extra 之后(2026-08-06 独立验收 P2-1):
+      //   原顺序里 extra 展开在 fingerprint / commandKey 之后,调用方元数据一旦撞名就能覆盖它们;
+      //   commandKey 与行键一旦不符,isBaseRecord 判非法直接丢弃 = 命令号静默丢失。
+      //   类型层今天挡得住 TS 调用方,但探针实测确实能覆盖 —— 顺序本身就该免疫。
       persisted[commandKey] = {
+        ...(extra as object | undefined),
         fingerprint,
         commandKey,
-        ...(extra as object | undefined),
         createdAt,
         expiresAt: createdAt + ttlMs,
       } as T;

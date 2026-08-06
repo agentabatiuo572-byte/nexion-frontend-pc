@@ -144,6 +144,24 @@ test("②b 存储被禁时命令号仍在本页内存里活着:同槽同输入�
   }
 });
 
+test("②b 降级态下读多少次都不得延寿(硬上限不能只钉在写路径)", () => {
+  // 🔴 2026-08-06 独立验收 P1-1:硬上限原来只钉在 remember,把续期藏进 readAll 的内存分支
+  //   即可击穿,而契约门全绿。这条从**读路径**验:反复读之后过期时刻必须一动不动。
+  const env = installBrokenStorage();
+  try {
+    const store = createPendingMutationStore({ storageKey: "t-noextend", ttlMs: 40 });
+    store.remember("fp", "K");
+    // 读必须**穿插在等待里**:全部读完再等,续期发生在等待之前,照样会过期 ——
+    // 那样的探针证明不了任何事(本轮红测实测抓到,第一版就是这么写的)。
+    const expired = Date.now() + 120;
+    while (Date.now() < expired) store.get("fp");
+    assert.equal(store.get("fp"), undefined,
+      "读路径若偷偷续期,这条记录会永远不过期 —— 客户端记录活过后端幂等窗 = 虚假去重信心");
+  } finally {
+    env.restore();
+  }
+});
+
 test("②b 降级兜底不掩盖 TTL:内存里的过期记录同样不得复用", () => {
   const env = installBrokenStorage();
   try {
@@ -262,10 +280,24 @@ test("④ d-client 迁移后对外行为不变:存储键 / 记录结构 / 校验
     base: "finance", path: "/topup/confirm", method: "POST", body: "{}",
   });
   assert.deepEqual(
-    Object.keys(env.raw(storageKey)["d1-topup-1"]),
-    ["fingerprint", "commandKey", "base", "path", "method", "body", "createdAt", "expiresAt"],
-    "记录字段与迁移前逐字段同名同序",
+    Object.keys(env.raw(storageKey)["d1-topup-1"]).sort(),
+    ["base", "body", "commandKey", "createdAt", "expiresAt", "fingerprint", "method", "path"],
+    "记录字段与迁移前逐字段同名",
   );
+  // 🔴 四个公共字段必须排在**最后**:调用方元数据(extra)一旦撞名覆盖了 commandKey,
+  //   记录的 commandKey 与行键不符 → isBaseRecord 判非法丢弃 → 命令号静默丢失。
+  //   顺序本身就是这道防线,故钉死(2026-08-06 独立验收 P2-1)。
+  assert.deepEqual(
+    Object.keys(env.raw(storageKey)["d1-topup-1"]).slice(-4),
+    ["fingerprint", "commandKey", "createdAt", "expiresAt"],
+    "公共字段必须排在 extra 之后,否则调用方元数据能覆盖掉命令号",
+  );
+  store.remember("hostile", "d1-hostile", {
+    // @ts-expect-error 故意撞名:类型层挡 TS 调用方,运行时也必须免疫
+    commandKey: "HIJACKED", fingerprint: "HIJACKED", base: "finance", path: "/x", method: "POST", body: "{}",
+  });
+  assert.equal(env.raw(storageKey)["d1-hostile"].commandKey, "d1-hostile", "extra 不得覆盖 commandKey");
+  assert.equal(env.raw(storageKey)["d1-hostile"].fingerprint, "hostile", "extra 不得覆盖 fingerprint");
 
   const now = Date.now();
   env.seed(storageKey, {

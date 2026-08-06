@@ -30,6 +30,8 @@ const A2 = path.join(ROOT, "lib/admin/a2-client.ts");
 const B2 = path.join(ROOT, "lib/admin/b2-client.ts");
 const K = path.join(ROOT, "lib/admin/k-client.ts");
 const U360 = path.join(ROOT, "lib/admin/user360-client.ts");
+const AUTHSTORE = path.join(ROOT, "lib/store/admin-auth.ts");
+const SMUT = path.join(ROOT, "lib/admin/stable-mutation.ts");
 
 const GATE = ["scripts/pending-idempotency-key-sentinel.mjs"];
 const MIGRATION = ["--test", "tests/pending-mutation-migration-contract.test.mjs"];
@@ -252,11 +254,45 @@ const CASES = [
   ["T1⑦ 豁免标记被摘掉 → 必红(豁免必须显式,不许靠沉默)", "red",
     () => inject(U360, "    // classification-ok:这里的 5xx 判定只挑**错误文案**", "    // 这里的 5xx 判定只挑**错误文案**", OUTCOME),
     "自搓的 5xx 门槛"],
+
+  // ══ R2 第二轮独立验收(2×P0 + 4×P1)的回归钉 ══════════════════
+  ["R2-P0-1 清扫从 signOut 上摘掉(退出按钮那条真路径)→ 必红", "red",
+    () => inject(AUTHSTORE, "  signOut: () => {\r\n    clearPendingCommandRecords();", "  signOut: () => {", MIGRATION),
+    "signOut 必须先清命令号"],
+  ["R2-P0-1b signIn 改成无条件清(会毁掉命令号跨刷新存活)→ 必红", "red",
+    () => inject(AUTHSTORE, "      if (state.operator && state.operator !== session.operator) clearPendingCommandRecords();",
+      "      clearPendingCommandRecords();", MIGRATION),
+    "只在操作员真的换人时清"],
+  ["R2-P0-2 清扫代次被摘掉 → 存活实例的内存镜像把命令号复活,必红", "red",
+    () => inject(STORE, "  clearGeneration += 1;", "  void 0;", MIGRATION),
+    "不得把命令号写回来"],
+  ["R2-P0-2b 代次作废只清代次不清内存 → 必红", "red",
+    () => inject(STORE, "    seenGeneration = clearGeneration;\r\n    memory.clear();", "    seenGeneration = clearGeneration;", MIGRATION),
+    "清扫不得被存活实例的内存镜像复活"],
+  ["R2-P1-1 硬上限被读路径击穿(把续期藏进 readAll)→ 必红", "red",
+    () => inject(STORE, "      if (usable(record, commandKey, now)) current[commandKey] = record;",
+      "      if (usable(record, commandKey, now)) current[commandKey] = { ...record, expiresAt: now + ttlMs };", STORE_CONTRACT),
+    "读路径若偷偷续期"],
+  ["R2-P1-2 口径退化藏进「参数不叫 status 的 helper」→ 必红(门不再认变量名)", "red",
+    () => inject(K, "    if (isWrite && outcomeStaysUnknown(res.status, payload.code)) {",
+      "    const hardFail = (c: number) => c >= 500;\r\n    if (isWrite && !hardFail(res.status) && outcomeStaysUnknown(999, 1)) {", OUTCOME),
+    "自搓的 5xx 门槛"],
+  ["R2-P1-3 stable-mutation 退回自带副本(五个 G 域的两源问题)→ 必红", "red",
+    () => inject(SMUT, "    isDeterministicRejection(status, apiCode) ? \"deterministic\" : \"outcome-unknown\",",
+      "    ((status >= 400 && status < 500) ? true : false) ? \"deterministic\" : \"outcome-unknown\",", OUTCOME),
+    "自搓的 5xx 门槛"],
+  ["R2-P2-1 公共字段挪回 extra 之前(调用方元数据能覆盖命令号)→ 必红", "red",
+    () => inject(STORE, "        ...(extra as object | undefined),\r\n        fingerprint,\r\n        commandKey,",
+      "        fingerprint,\r\n        commandKey,\r\n        ...(extra as object | undefined),", STORE_CONTRACT),
+    "公共字段必须排在 extra 之后"],
+  ["R2-P2-3 形状判据从 every 放宽成 some → 混合业务表被误删,必红", "red",
+    () => inject(STORE, "    return rows.every(([commandKey, value]) => {", "    return rows.some(([commandKey, value]) => {", MIGRATION),
+    "清扫按记录形状认表"],
 ];
 
 // 🔴 还原完整性升级为**内容指纹**(2026-08-06 独立验收 P2):原来只 filter 残留的 .redtest-bak,
 //   而被注入的文件本来就处在 ` M` 状态 —— 内容没还原完全看不出来,后续门验的就是被污染的树。
-const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL, AUTH, CLASSIFY, A2, B2, K, U360];
+const TOUCHED = [STRIPPER, STORE, K1, G1, SENTINEL, AUTH, CLASSIFY, A2, B2, K, U360, AUTHSTORE, SMUT];
 const digest = () => TOUCHED.map((file) => createHash("sha1").update(readFileSync(file)).digest("hex")).join(" ");
 const before = digest();
 

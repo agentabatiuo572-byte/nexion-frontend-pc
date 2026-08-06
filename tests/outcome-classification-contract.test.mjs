@@ -53,18 +53,40 @@ test("两个谓词恒为互补(避免将来有人只改一个)", () => {
 
 // ---------------------------------------------------------------- 静态半:全舰队接线
 
-/** ground truth 取磁盘:凡是自带「结果未知」错误类型的 client,都必须接共享谓词。 */
+/**
+ * ground truth 取磁盘。扫描面 = 「自带结果未知通道」**或**「自己维护命令号去留」的模块。
+ *
+ * 🔴 不再只筛 `-client.ts` + `Outcome*Error`(2026-08-06 独立验收 P1-3 / P2-4):
+ *   `stable-mutation.ts` 不是 -client 却握着 g1/g2/g3/g4/g7 五个域的判据;
+ *   `d-client` / `i-client` 没有自带错误类型却自己决定 forget,先前整个不在覆盖内。
+ */
 const CLIENTS = readdirSync(new URL("../lib/admin/", import.meta.url))
-  .filter((name) => /-client\.ts$/.test(name))
+  .filter((name) => /\.ts$/.test(name) && !/\.test\./.test(name))
   .map((name) => ({ name, code: strip(read(`lib/admin/${name}`)) }))
-  .filter(({ code }) => /Outcome(Uncertain|Unknown)Error/.test(code));
+  .filter(({ name, code }) => {
+    if (name === "outcome-classification.ts") return false;
+    // 必须**真的检查了 HTTP 结果**才谈得上归类:h9-client 只在成功后丢号、没有失败分支,
+    // propose-or-execute / operation-confirm-error / pending-mutation-store 是编排与存储层,
+    // 都不做归类 —— 把它们拖进来只会逼出无意义的接线。
+    // 「检查了 HTTP 结果」有两种形态:自己读 response.ok/status,或**收一个 status 形参**
+    // 替别人判(stable-mutation 就是后者 —— 它握着 g1/g2/g3/g4/g7 五个域的判据,
+    // 却因为不读 response 差点整个漏出扫描面,2026-08-06 独立验收 P1-3)。
+    const inspectsOutcome = /\b(?:response|res)\.(?:ok|status)\b/.test(code)
+      || /\bstatus\s*:\s*number\b/.test(code);
+    const decidesRetention = /\.forget\s*\(/.test(code)
+      || /Outcome(?:Uncertain|Unknown)\w*Error/.test(code)
+      || /StableMutationFailure/.test(code);
+    return inspectsOutcome && decidesRetention;
+  });
 
 test("每个带「结果未知」通道的 client 都由共享谓词判定,不许各写各的", () => {
   assert.ok(CLIENTS.length >= 10, `只找到 ${CLIENTS.length} 个带 outcome 通道的 client,扫描已失真`);
   for (const { name, code } of CLIENTS) {
-    assert.match(code, /import \{ outcomeStaysUnknown \} from "@\/lib\/admin\/outcome-classification"/,
+    // 两个谓词都算数(互补的一对):判「要不要丢号」用 outcomeStaysUnknown,
+    // 判「是不是确定性拒绝」用 isDeterministicRejection —— stable-mutation 用的是后者。
+    assert.match(code, /import \{ (?:outcomeStaysUnknown|isDeterministicRejection)[^}]*\} from "[^"]*outcome-classification(?:\.ts)?"/,
       `${name} 没接共享归类谓词 → 它自己那套口径迟早和别人分叉(正是本轮要根治的)`);
-    assert.match(code, /outcomeStaysUnknown\s*\(/, `${name} 只 import 不用等于没接`);
+    assert.match(code, /(?:outcomeStaysUnknown|isDeterministicRejection)\s*\(/, `${name} 只 import 不用等于没接`);
   }
 });
 
@@ -74,13 +96,19 @@ test("不许再出现自搓的 5xx 门槛(status < 500 / >= 500 这类散落判�
     // 豁免必须显式(`classification-ok:` + 理由),不许靠沉默 —— 合法例外确实存在
     // (如按 5xx 挑错误文案),但要让评审看得见,而不是让门去猜。
     const raw = read(`lib/admin/${name}`);
-    const homemade = raw.split("\n")
-      .filter((line) => /\bstatus\s*[<>]=?\s*500\b/.test(line))
-      .filter((line, index, all) => {
-        const lineNo = raw.split("\n").indexOf(line);
-        const context = raw.split("\n").slice(Math.max(0, lineNo - 3), lineNo + 1).join("\n");
-        return !context.includes("classification-ok:");
-      });
+    const lines = raw.split("\n");
+    // 🔴 判的是**裸状态码阈值常量**,不是变量名(2026-08-06 独立验收 P1-2):
+    //   原判据认 `status <> 500`,于是「参数不叫 status 的 helper」「`!(500 > res.status)`
+    //   反转操作数」都能绕过,配一条永假的谓词死分支充数,门还是绿的。
+    //   现在只要出现 4xx/5xx 段的三位数字面量与比较运算符同行就红,想绕只能显式豁免。
+    const homemade = lines.filter((line, index) => {
+      if (!/[<>]=?\s*[45]\d{2}\b|\b[45]\d{2}\s*[<>]=?/.test(line)) return false;
+      // 放行**业务码**门槛(`payload.code >= 400` 是本仓判「请求有没有失败」的既有惯例,
+      // 与「命令号要不要丢」无关);5xx 阈值一律不放行 —— 被证明可绕过的正是那一类。
+      if (/\bcode\b\s*[<>]=?\s*4\d{2}/.test(line) && !/5\d{2}/.test(line)) return false;
+      const context = lines.slice(Math.max(0, index - 3), index + 1).join("\n");
+      return !context.includes("classification-ok:");
+    });
     assert.deepEqual(homemade.map((line) => line.trim()), [],
       `${name} 里还有自搓的 5xx 门槛 → 归类口径必须只有 outcome-classification 一处;`
       + `确属非归类用途请在紧邻上方写 // classification-ok: <理由>`);
@@ -91,9 +119,11 @@ test("谓词必须真的管着「命令号去留」,不是摆设(调用完得有
   // 判的是不变量本身,不是排版:a1 的头判定在前、5xx 判定在后隔了十几行,那完全正确 ——
   // 早期版本要求「两者必须挨在一起」,把合法写法判红了(本轮实测抓到,遂改成下面这条)。
   for (const { name, code } of CLIENTS) {
-    const wired = [...code.matchAll(/outcomeStaysUnknown\s*\([^)]*\)/g)].some((match) => {
+    const wired = [...code.matchAll(/(?:outcomeStaysUnknown|isDeterministicRejection)\s*\([^)]*\)/g)].some((match) => {
       const after = code.slice(match.index, match.index + 260);
-      return /throw new \w*Outcome(?:Uncertain|Unknown)\w*Error/.test(after) || /\.forget\s*\(/.test(after);
+      return /throw new \w*Outcome(?:Uncertain|Unknown)\w*Error/.test(after)
+        || /\.forget\s*\(/.test(after)
+        || /"deterministic"|"outcome-unknown"/.test(after);
     });
     assert.ok(wired,
       `${name} 调了谓词却没接到任何「抛结果未知 / 丢命令号」的动作上 → 判了个寂寞`);
