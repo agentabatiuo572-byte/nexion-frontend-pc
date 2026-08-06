@@ -13,7 +13,7 @@ import type { HCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
-import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
+import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 
 /** H8 发奖参数与结算的稳定命令号:槽位=动作|参数键,指纹带 expectedVersion(旧快照重提自动换号)。
@@ -72,17 +72,22 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       run: async (reason, value) => {
         if (value == null || value === "") return;
         const storedValue = param.kind === "select" ? LOCK_MODE_VALUES[value] ?? value : value;
+        // 指纹 = 新值 + 版本号(CAS),**不含 reason**:理由是审计元数据不是意图,进指纹会让
+        // 「结果未知后补一句理由再点」换新号 → 重复发奖。版本号进指纹是必须的:基于旧快照的
+        // 同值重提是新意图,不是重试。
         const slot = `param|${param.key}`;
+        let mintedFresh = false;
         const commandKey = commandAttempts.resolve(
           slot,
-          JSON.stringify([storedValue, data.version, reason]),
-          () => createH8CommandKey("h8-param"),
+          JSON.stringify([storedValue, data.version]),
+          () => { mintedFresh = true; return createH8CommandKey("h8-param"); },
         );
         try {
           await updateH8ReferralRewardParam(param.key, storedValue, reason, data.version, commandKey);
           commandAttempts.forget(slot);
         } catch (error) {
-          if (!isH8OutcomeUncertainError(error)) commandAttempts.forget(slot);
+          // 只有全新尝试才在确定性失败时弃号:复用来的号说明上次结果未知,这次的 4xx 证明不了那次没落地。
+          if (mintedFresh && !isH8OutcomeUncertainError(error)) commandAttempts.forget(slot);
           throw error;
         }
         await load();
@@ -100,10 +105,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const limit = Math.max(1, Math.min(100, Number(value) || 20));
       const def = findHighOp("h8_referral_settlement")!;
       const slot = "settle|batch";
+      let mintedFresh = false;
       const commandKey = commandAttempts.resolve(
         slot,
-        JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, reason]),
-        () => createH8CommandKey("h8-settle"),
+        JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash]),
+        () => { mintedFresh = true; return createH8CommandKey("h8-settle"); },
       );
       try {
         await propose(ctx.toast, {
@@ -128,7 +134,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
         });
         commandAttempts.forget(slot);
       } catch (error) {
-        if (!(error instanceof A2OutcomeUncertainError)) commandAttempts.forget(slot);
+        if (mintedFresh && !isA2OutcomeUncertainError(error)) commandAttempts.forget(slot);
         throw error;
       }
     },

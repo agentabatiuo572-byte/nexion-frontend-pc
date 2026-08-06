@@ -16,8 +16,11 @@ export function operationConfirmErrorMessage(error: unknown): string {
       + `使用同一命令号重试并核对 A2 审计。同一命令号：${uncertain.commandKey}`;
   }
   if (uncertain) {
-    return "提交结果暂不确定，可能已经生效；请保留当前弹窗与输入原样重试，"
-      + `系统会复用同一命令号由后端自动去重，不会重复执行。同一命令号：${uncertain.commandKey}`;
+    // 刻意不承诺「系统会复用同一命令号自动去重」:携带命令号的错误族里,只有走持久 store 的面
+    // (F1 直写 / H8 / K1 / K6 …)真会复用,A3 等仍是每次现铸 —— 对它们做这个承诺就是骗运营去重试。
+    // 「保留输入原样重试」对所有域都成立;是否去重交由运营核对审计后决定。
+    return "提交结果暂不确定，可能已经生效；请先核对审计记录再决定是否重试，"
+      + `重试时保留当前弹窗与输入不要改动。命令号：${uncertain.commandKey}`;
   }
   if (error instanceof Error) {
     const detail = error.message.trim();

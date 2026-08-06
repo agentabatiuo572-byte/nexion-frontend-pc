@@ -22,31 +22,40 @@ export function isF1OutcomeUncertainError(error: unknown): error is F1OutcomeUnc
     && typeof (error as Error & { commandKey?: unknown }).commandKey === "string";
 }
 
-const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f1-direct-commands-v1" });
+const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-f-direct-commands-v1" });
 
-let mintSeq = 0;
 function mintCommandKey(slot: string) {
-  mintSeq = (mintSeq + 1) % 1_000_000;
-  // 槽位含 `|` 与业务 id,清洗成 header-safe 前缀;唯一性靠时间戳 + 序号,前缀只为审计排查可读。
-  return `${slot.replace(/[^A-Za-z0-9]+/g, "-")}-${Date.now()}-${mintSeq}`;
+  // 前缀只为审计排查可读,截断防批量槽位(F5 重发含整批事件 id)撑爆 HTTP 头长度;
+  // 唯一性靠随机段 —— 只用 时间戳+模块级序号 时,两个标签页同毫秒首次提交会撞出同一个号
+  // (sessionStorage 各自独立、序号各自从 0 起),后端按同号去重会静默吞掉第二个人的操作。
+  const prefix = slot.replace(/[^A-Za-z0-9]+/g, "-").slice(0, 48);
+  return `${prefix}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
 /**
  * F 直写族稳定命令号咽喉:同槽位同输入复用命令号(结果未知后的原样重试被后端幂等去重),
- * 成功 / 确定性失败即收敛弃号;换输入 = 新意图,铸新号并丢弃旧号(SlotAttempt 语义)。
+ * 成功即收敛弃号;换输入 = 新意图,铸新号并丢弃旧号(SlotAttempt 语义)。
+ *
+ * 确定性失败只在「本次是全新尝试」时弃号:复用来的号说明上一次尝试结果未知,这一次的
+ * 400/409 证明不了那一次没落地,弃号会让下一次重试铸新号 → 重复执行
+ * (范式同 d-client / user360-client 的 `!pendingKeyBeforeRequest` 守卫)。
  */
 export async function f1StableWrite<T>(
   slot: string,
   inputFingerprint: string,
   request: (commandKey: string) => Promise<T>,
 ): Promise<T> {
-  const commandKey = commandAttempts.resolve(slot, inputFingerprint, () => mintCommandKey(slot));
+  let mintedFresh = false;
+  const commandKey = commandAttempts.resolve(slot, inputFingerprint, () => {
+    mintedFresh = true;
+    return mintCommandKey(slot);
+  });
   try {
     const result = await request(commandKey);
     commandAttempts.forget(slot);
     return result;
   } catch (error) {
-    if (!isF1OutcomeUncertainError(error)) commandAttempts.forget(slot);
+    if (mintedFresh && !isF1OutcomeUncertainError(error)) commandAttempts.forget(slot);
     throw error;
   }
 }

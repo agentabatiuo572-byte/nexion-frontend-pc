@@ -96,7 +96,11 @@ async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPre
   });
   const result = (await response.json()) as ApiResult<T>;
   if (!response.ok || result.code !== 0) {
-    throw new Error(formatAdminApiError(result.message, `GROWTH_REQUEST_FAILED_${response.status}`));
+    const error = new Error(formatAdminApiError(result.message, `GROWTH_REQUEST_FAILED_${response.status}`));
+    // 带上 HTTP 状态码:调用方要靠它区分「后端明确拒绝(4xx)」与「结果未知(5xx)」。
+    // growth proxy 后端不可达时返回的是**带 JSON body 的 503**,只认解析异常会把它误判成确定性失败。
+    (error as Error & { status?: number }).status = response.status;
+    throw error;
   }
   return result.data as T;
 }
@@ -518,10 +522,17 @@ export async function updateH8ReferralRewardParam(
       },
     );
   } catch (error) {
-    // growthRequest 形态:网络断 = fetch 裸抛 TypeError;响应体不可读 = response.json() 裸抛 SyntaxError。
-    // 两者后端都可能已执行,归「结果未知」保留命令号;后端显式回包的失败(Error)是确定性拒绝。
-    if (error instanceof TypeError || error instanceof SyntaxError) {
-      throw new H8OutcomeUncertainError(error.message || "H8_REQUEST_OUTCOME_UNKNOWN", idempotencyKey);
+    // 三类「结果未知」,后端都可能已执行,必须保留命令号供原样重试:
+    //   网络断 = fetch 裸抛 TypeError;响应体不可读 = response.json() 裸抛 SyntaxError;
+    //   5xx = 网关超时 502/504、上游不可达 503(growth proxy 就是带 JSON body 的 503)。
+    // 4xx 与「200 但业务码非 0」= 后端明确拒绝,确定性失败弃号。口径与 f1-client 同款。
+    const status = (error as Error & { status?: number }).status;
+    if (error instanceof TypeError || error instanceof SyntaxError
+      || (typeof status === "number" && status >= 500)) {
+      throw new H8OutcomeUncertainError(
+        (error instanceof Error && error.message) || "H8_REQUEST_OUTCOME_UNKNOWN",
+        idempotencyKey,
+      );
     }
     throw error;
   }

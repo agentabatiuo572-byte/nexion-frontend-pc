@@ -38,7 +38,7 @@ import {
 } from "@/lib/admin/e5-client";
 import { fetchE6ComputeConfig, isE6ParamKey, type E6ComputeConfigView } from "@/lib/admin/e6-client";
 import { usePropose } from "@/lib/admin/use-propose";
-import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-client";
+import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -261,17 +261,26 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
       && s.session.authorities.includes("platform_a2_proposal_create"));
   const canToggleE6 = canWriteE6 || hasToggleE6 || canProposeE6;
   const rawPropose = usePropose(); // E 域高敏动作统一入 A2 后端待确认队列
+  // A2 提案咽喉:E 域每一次提案的命令号都由本函数派,调用点携号也一律以稳定号为准。
+  // 指纹**不含 reason**:理由是审计元数据不是意图 —— 运营在「结果未知」后补一句理由再点是极自然的
+  // 动作,理由进指纹就会换新号 → 同一笔退款进两次审批队列。改理由复用旧号最坏只是审计记原措辞。
+  // 目标锁一并进指纹,防某个动作的 command 不含目标 id 时指纹失去区分度。
   const propose = async (toast: (message: string) => void, spec: ProposeSpec) => {
-    if (spec.commandKey) return rawPropose(toast, spec); // 显式携号的调用点尊重原号
     const slot = `${spec.action}|${spec.obj}`;
-    const fingerprint = JSON.stringify([spec.after, spec.command, spec.reason]);
-    const commandKey = commandAttempts.resolve(slot, fingerprint, () => createA2CommandKey("e-domain-action"));
+    const fingerprint = JSON.stringify([spec.after, spec.command, spec.target ?? spec.targets ?? null]);
+    let mintedFresh = false;
+    const commandKey = commandAttempts.resolve(slot, fingerprint, () => {
+      mintedFresh = true;
+      return createA2CommandKey("e-domain-action");
+    });
     try {
       const result = await rawPropose(toast, { ...spec, commandKey });
       commandAttempts.forget(slot);
       return result;
     } catch (error) {
-      if (!(error instanceof A2OutcomeUncertainError)) commandAttempts.forget(slot);
+      // 鸭型判据(不用裸 instanceof:打包边界下会失真,失真方向恰好是「该保号却弃号」)。
+      // 只有全新尝试才在确定性失败时弃号:复用来的号说明上次结果未知,这次的 4xx 证明不了那次没落地。
+      if (mintedFresh && !isA2OutcomeUncertainError(error)) commandAttempts.forget(slot);
       throw error;
     }
   };

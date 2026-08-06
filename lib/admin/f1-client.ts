@@ -1360,6 +1360,11 @@ async function f1Request<T>(
     headers.set("Idempotency-Key", stableKey);
   }
   const isWrite = !!init?.method && init.method !== "GET";
+  // 保底:删掉 idempotencyPrefix 现铸通道后,没有任何东西还强制写请求带幂等键。
+  // 新增写函数忘了走 f1StableWrite 时,契约门的计数断言仍会全绿,只有这道运行时闸拦得住。
+  if (isWrite && !stableKey) {
+    throw new Error("F1_WRITE_REQUIRES_STABLE_KEY");
+  }
 
   let response: Response;
   try {
@@ -1379,28 +1384,51 @@ async function f1Request<T>(
     throw error;
   }
 
-  let result: ApiResult<T> | null;
+  let result: ApiResult<T> | null = null;
+  let bodyUnreadable = false;
   try {
     result = (await response.json()) as ApiResult<T>;
   } catch {
-    // 响应体不可读 = 后端可能已执行但回包丢失:写路径同样归「结果未知」。
-    if (isWrite && stableKey) {
-      throw new F1OutcomeUncertainError("F1_RESPONSE_UNREADABLE", stableKey);
-    }
-    result = null;
+    bodyUnreadable = true;
   }
 
-  if (isWrite && stableKey && response.headers.get("X-Nexion-Upstream-Outcome") === "unknown") {
-    throw new F1OutcomeUncertainError(
-      formatAdminApiError(result?.message, "F1_REQUEST_OUTCOME_UNKNOWN"),
-      stableKey,
-    );
+  // 会话失效判定必须排在任何 throw 之前:401 且错误页不是标准 JSON(代理 HTML 错误页)时,
+  // 若先抛「响应不可读」就再也走不到这里,前端会卡在僵尸登录态(改动前的行为是会登出的)。
+  const authRejected = isAdminAuthFailure(response.status, result?.message);
+  if (authRejected) {
+    resetAdminSession();
+  }
+
+  if (isWrite && stableKey && !authRejected) {
+    // 三类「结果未知」:响应体不可读 / 上游显式声明 unknown / 5xx。都保号供原样重试。
+    // 401 例外:后端明确拒绝且什么都没执行,归确定性失败弃号。
+    if (bodyUnreadable) {
+      throw new F1OutcomeUncertainError("F1_RESPONSE_UNREADABLE", stableKey);
+    }
+    // 头 + message 两路都认(与 a2-client 同款):teams proxy 目前不透传该头,靠下面的 5xx 兜底,
+    // 但后端若改用「200 + 业务码非 0 + UPSTREAM_OUTCOME_UNKNOWN」表达未知,这一路能接住。
+    if (response.headers.get("X-Nexion-Upstream-Outcome")?.trim().toLowerCase() === "unknown"
+      || result?.message?.trim().toUpperCase().includes("UPSTREAM_OUTCOME_UNKNOWN") === true) {
+      throw new F1OutcomeUncertainError(
+        formatAdminApiError(result?.message, "F1_REQUEST_OUTCOME_UNKNOWN"),
+        stableKey,
+      );
+    }
+    // 5xx(网关超时 502/504、上游不可达 503)= 请求可能已被后端执行但结果没回来。
+    // 口径对齐 stable-mutation.ts;丢号的代价(重复打款)远重于多保一次号。
+    if (response.status >= 500) {
+      throw new F1OutcomeUncertainError(
+        formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`),
+        stableKey,
+      );
+    }
+    // 200 + 业务码 0 但 data 缺失:后端可能已执行,回包被截断。范式同 a2-client 的同名守卫。
+    if (response.ok && result?.code === 0 && result.data == null) {
+      throw new F1OutcomeUncertainError("F1_SUCCESS_RESPONSE_DATA_MISSING", stableKey);
+    }
   }
 
   if (!response.ok || !result || result.code !== 0) {
-    if (isAdminAuthFailure(response.status, result?.message)) {
-      resetAdminSession();
-    }
     throw new Error(formatAdminApiError(result?.message, `F1_REQUEST_FAILED_${response.status}`));
   }
 
@@ -1460,7 +1488,9 @@ export async function reverseF5Commission(
   reason: string,
   operator: string,
 ) {
-  return f1StableWrite(`f5-reverse|${commissionId}`, JSON.stringify([refundRef, reason, operator]),
+  // 指纹一律不含 reason:理由是审计元数据,不是意图。运营在「结果未知」后补一句理由再点是极自然的
+  // 动作,若理由进指纹就会换新号 → 同一笔动作被执行两次。改理由复用旧号最坏只是审计记的是原措辞。
+  return f1StableWrite(`f5-reverse|${commissionId}`, JSON.stringify([refundRef, operator]),
     (commandKey) => f1Request<Record<string, unknown>>(
       `/commissions/${encodeURIComponent(commissionId)}/reverse`,
       {
@@ -1476,8 +1506,10 @@ export async function reissueF5Commissions(
   reason: string,
   operator: string,
 ) {
-  // 重发 = 真实打款,最高危:槽位钉住排序后的整批事件 id,勾选顺序不同不得当成两批。
-  return f1StableWrite(`f5-reissue|${[...commissionIds].sort().join(",")}`, JSON.stringify([reason, operator]),
+  // 重发 = 真实打款,最高危。整批 id 放**指纹**不放槽位:放槽位时每换一次勾选就多留一个 24h 记录,
+  // 改回原勾选会复用那个可能已被后端消费的旧号(SlotAttempt 的弃旧号只在同槽位内生效);
+  // 且槽位会被拼进命令号前缀,勾选量大时撑爆 HTTP 头。排序保证勾选顺序不同不算两批。
+  return f1StableWrite("f5-reissue", JSON.stringify([[...commissionIds].sort(), operator]),
     (commandKey) => f1Request<Record<string, unknown>>("/commissions/reissue", {
       method: "POST",
       body: JSON.stringify({ commissionIds, reason, operator }),
@@ -1492,7 +1524,7 @@ export async function suspendF5UserCommissions(
   reason: string,
   operator: string,
 ) {
-  return f1StableWrite(`f5-suspend|${userId}|${suspended}`, JSON.stringify([[...kinds].sort(), reason, operator]),
+  return f1StableWrite(`f5-suspend|${userId}|${suspended}`, JSON.stringify([[...kinds].sort(), operator]),
     (commandKey) => f1Request<Record<string, unknown>>(`/commissions/users/${userId}/suspend`, {
       method: "POST",
       body: JSON.stringify({ kinds, suspended, reason, operator }),
@@ -1506,7 +1538,7 @@ export async function updateF5AnomalyConfig(
   reason: string,
   operator: string,
 ) {
-  return f1StableWrite("f5-anomaly-config", JSON.stringify([commissionAnomalySigma, layerRatioAnomalyPct, reason, operator]),
+  return f1StableWrite("f5-anomaly-config", JSON.stringify([commissionAnomalySigma, layerRatioAnomalyPct, operator]),
     (commandKey) => f1Request<Record<string, unknown>>("/commissions/anomaly-config", {
       method: "PUT",
       body: JSON.stringify({ commissionAnomalySigma, layerRatioAnomalyPct, reason, operator }),
@@ -1519,7 +1551,8 @@ export async function executeF3Settlement(
   settlementDate: string,
   reason: string,
 ) {
-  const data = await f1StableWrite(`f3-settle|${ownerUserId}|${settlementDate}`, JSON.stringify([reason]),
+  // 指纹恒定:同一 owner + 结算日就是同一次意图,理由措辞不改变要执行的动作。
+  const data = await f1StableWrite(`f3-settle|${ownerUserId}|${settlementDate}`, "settlement",
     (commandKey) => f1Request<Record<string, unknown>>("/binary/settlements", {
       method: "POST",
       body: JSON.stringify({ ownerUserId, settlementDate, reason }),
@@ -1541,7 +1574,7 @@ export async function executeF3Settlement(
 }
 
 export async function updateF1VRankThreshold(rank: string, field: string, value: string, reason: string, operator: string) {
-  return normalizeOverview(await f1StableWrite(`f1-vrank|${rank}|${field}`, JSON.stringify([value, reason, operator]),
+  return normalizeOverview(await f1StableWrite(`f1-vrank|${rank}|${field}`, JSON.stringify([value, operator]),
     (commandKey) => f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/thresholds/${encodeURIComponent(field)}`, {
       method: "PATCH",
       body: JSON.stringify({ value, reason, operator }),
@@ -1550,7 +1583,7 @@ export async function updateF1VRankThreshold(rank: string, field: string, value:
 }
 
 export async function addF1VRankReward(rank: string, item: Omit<OpsVRankRewardItem, "id">, reason: string, operator: string) {
-  return normalizeOverview(await f1StableWrite(`f1-reward-add|${rank}`, JSON.stringify([item, reason, operator]),
+  return normalizeOverview(await f1StableWrite(`f1-reward-add|${rank}`, JSON.stringify([item, operator]),
     (commandKey) => f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards`, {
       method: "POST",
       body: JSON.stringify({ ...item, reason, operator }),
@@ -1559,7 +1592,7 @@ export async function addF1VRankReward(rank: string, item: Omit<OpsVRankRewardIt
 }
 
 export async function updateF1VRankReward(rank: string, rewardId: string, item: Omit<OpsVRankRewardItem, "id">, reason: string, operator: string) {
-  return normalizeOverview(await f1StableWrite(`f1-reward-update|${rank}|${rewardId}`, JSON.stringify([item, reason, operator]),
+  return normalizeOverview(await f1StableWrite(`f1-reward-update|${rank}|${rewardId}`, JSON.stringify([item, operator]),
     (commandKey) => f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards/${encodeURIComponent(rewardId)}`, {
       method: "PUT",
       body: JSON.stringify({ ...item, reason, operator }),
@@ -1568,7 +1601,7 @@ export async function updateF1VRankReward(rank: string, rewardId: string, item: 
 }
 
 export async function removeF1VRankReward(rank: string, rewardId: string, reason: string, operator: string) {
-  return normalizeOverview(await f1StableWrite(`f1-reward-remove|${rank}|${rewardId}`, JSON.stringify([reason, operator]),
+  return normalizeOverview(await f1StableWrite(`f1-reward-remove|${rank}|${rewardId}`, JSON.stringify([operator]),
     (commandKey) => f1Request<BackendOverview>(`/ranks/${encodeURIComponent(rank)}/rewards/${encodeURIComponent(rewardId)}`, {
       method: "DELETE",
       body: JSON.stringify({ reason, operator }),

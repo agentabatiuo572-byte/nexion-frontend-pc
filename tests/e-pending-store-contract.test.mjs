@@ -31,18 +31,35 @@ test("E 域 propose 咽喉:槽位/指纹表达式级接线,弹窗态现铸不得
   assert.match(code, /from "@\/lib\/admin\/pending-mutation-store"/);
   assert.match(code, /createSlotAttemptStore\(\{ storageKey: "nexion-admin-e-domain-commands-v1" \}\)/);
 
-  // 咽喉本体:槽位=动作|目标,指纹=终值+结构化命令+理由,命令号真经 resolve。
+  // 咽喉本体:槽位=动作|目标,指纹=终值+结构化命令+目标锁,命令号真经 resolve。
   assert.match(code, /const slot = `\$\{spec\.action\}\|\$\{spec\.obj\}`/);
-  assert.match(code, /const fingerprint = JSON\.stringify\(\[spec\.after, spec\.command, spec\.reason\]\)/);
-  assert.match(code, /const commandKey = commandAttempts\.resolve\(slot, fingerprint, \(\) => createA2CommandKey\("e-domain-action"\)\)/);
+  assert.match(code, /const fingerprint = JSON\.stringify\(\[spec\.after, spec\.command, spec\.target \?\? spec\.targets \?\? null\]\)/);
+  assert.match(code, /const commandKey = commandAttempts\.resolve\(slot, fingerprint, \(\) => \{/);
+  assert.match(code, /mintedFresh = true;/);
   assert.match(code, /rawPropose\(toast, \{ \.\.\.spec, commandKey \}\)/);
-  // 成功 / 确定性失败收敛;A2 结果未知留号待原样重试。
-  assert.match(code, /if \(!\(error instanceof A2OutcomeUncertainError\)\)\s*\{?\s*commandAttempts\.forget\(slot\)/);
+  // 指纹不得含 reason:理由是审计元数据,进指纹会让「结果未知后补理由再点」换新号 → 双提案双退款。
+  assert.doesNotMatch(code, /JSON\.stringify\(\[spec\.after[^\]]*spec\.reason/,
+    "reason 进指纹 = 改一下理由就铸新号,同一笔退款进两次审批队列");
+  // 鸭型判据(不用裸 instanceof:打包边界下失真方向恰好是「该保号却弃号」);
+  // 且只有全新尝试才在确定性失败时弃号。
+  assert.match(code, /if \(mintedFresh && !isA2OutcomeUncertainError\(error\)\)\s*\{?\s*commandAttempts\.forget\(slot\)/);
+  assert.doesNotMatch(code, /instanceof A2OutcomeUncertainError/,
+    "裸 instanceof 在打包边界下会失真,仓内已有 isA2OutcomeUncertainError 鸭型判据");
 
-  // rawPropose 直调恒 2 处:显式携号短路 + 咽喉本体。多一处 = 有提交绕过稳定命令号。
+  // rawPropose 直调恒 1 处(咽喉本体)。多一处 = 有提交绕过稳定命令号。
   const direct = code.match(/rawPropose\(toast/g) ?? [];
-  assert.equal(direct.length, 2,
-    `e-view.tsx 的 rawPropose(toast 应恒为 2 处(短路 + 咽喉),实际 ${direct.length} —— 新增 A2 提交必须走 propose 包装`);
+  assert.equal(direct.length, 1,
+    `e-view.tsx 的 rawPropose(toast 应恒为 1 处(仅咽喉),实际 ${direct.length} —— 新增 A2 提交必须走 propose 包装`);
+  // 绕法 B 防御:换掉 rawPropose 的来源(usePropose → 任意每次现铸的 hook)源文本一字不改也能全绿。
+  assert.match(code, /const rawPropose = usePropose\(\);/,
+    "rawPropose 必须来自 usePropose —— 换个来源就能让上面所有断言变成摆设");
+  // 绕法 A 防御:块作用域内重新声明同名 const 遮蔽 resolve 的结果,所有正则照样匹配。
+  assert.equal((code.match(/const commandKey =/g) ?? []).length, 1,
+    "e-view.tsx 的 const commandKey 应恒为 1 处 —— 多一处意味着 resolve 的结果被块级遮蔽掉了");
+
+  // 咽喉无旁路:调用点携号短路会让那条路径退回「谁传谁负责」,又是刷新即丢的老形态。
+  assert.doesNotMatch(code, /if \(spec\.commandKey\)/,
+    "咽喉不得有 spec.commandKey 短路旁路 —— E 域每次提交的命令号都必须由咽喉派");
 
   // 现铸只允许出现在 resolve 的 mint 回调里(1 处);弹窗打开时铸号的旧半措施不得回潮。
   const minted = code.match(/createA2CommandKey\(/g) ?? [];
@@ -79,12 +96,12 @@ function freshStore() {
   };
 }
 
-const eFingerprint = (after, command, reason) => JSON.stringify([after, command, reason]);
+const eFingerprint = (after, command, target = null) => JSON.stringify([after, command, target]);
 
 test("A2 结果未知后刷新重开同弹窗同输入:复用同号;成功收敛后同输入换新号", () => {
   const { store, mint } = freshStore();
   const slot = "下架 SKU|SKU-RTX4090";
-  const fp = eFingerprint("已移除", { op: "sku-delete", skuId: "SKU-RTX4090" }, "长期缺货清理");
+  const fp = eFingerprint("已移除", { op: "sku-delete", skuId: "SKU-RTX4090" });
 
   const first = store.resolve(slot, fp, mint);
   // 刷新 = 新 store 实例,内存清零只剩 sessionStorage。
@@ -100,16 +117,26 @@ test("同动作改参数(指纹变)必换新号;不同目标/不同动作互不�
   const { store, mint } = freshStore();
   const cmd = (value) => ({ op: "param-save", key: "E.device.dailyCap", value });
 
-  const v1 = store.resolve("调整参数|E.device.dailyCap", eFingerprint("120", cmd("120"), "扩容"), mint);
-  const v2 = store.resolve("调整参数|E.device.dailyCap", eFingerprint("150", cmd("150"), "扩容"), mint);
+  const v1 = store.resolve("调整参数|E.device.dailyCap", eFingerprint("120", cmd("120")), mint);
+  const v2 = store.resolve("调整参数|E.device.dailyCap", eFingerprint("150", cmd("150")), mint);
   assert.notEqual(v2, v1, "运营改了值:按旧号去重会把新值静默吞掉");
 
   assert.notEqual(
-    store.resolve("下架 SKU|SKU-A", eFingerprint("已移除", { skuId: "SKU-A" }, "同理由"), mint),
-    store.resolve("下架 SKU|SKU-B", eFingerprint("已移除", { skuId: "SKU-B" }, "同理由"), mint),
+    store.resolve("下架 SKU|SKU-A", eFingerprint("已移除", { skuId: "SKU-A" }), mint),
+    store.resolve("下架 SKU|SKU-B", eFingerprint("已移除", { skuId: "SKU-B" }), mint),
     "目标对象在槽位里,SKU-A 与 SKU-B 绝不共号");
   assert.notEqual(
-    store.resolve("暂停数据中心|DC-HCM|", eFingerprint("暂停", { dc: "DC-HCM" }, "机房检修"), mint),
-    store.resolve("恢复数据中心|DC-HCM|", eFingerprint("恢复", { dc: "DC-HCM" }, "检修完成"), mint),
+    store.resolve("暂停数据中心|DC-HCM", eFingerprint("暂停", { dc: "DC-HCM" }), mint),
+    store.resolve("恢复数据中心|DC-HCM", eFingerprint("恢复", { dc: "DC-HCM" }), mint),
     "动作名在槽位里,同目标的两个动作互不顶号");
+});
+
+test("改理由不换号:结果未知后补一句理由再提交,仍是同一次意图", () => {
+  const { store, mint } = freshStore();
+  const slot = "订单退款|ORD-77";
+  // 指纹只取 [after, command, target] —— 理由不在其中,所以改理由 resolve 出的是同一个号。
+  const fp = eFingerprint("已退款", { op: "order-refund", orderId: "ORD-77", channel: "bank" });
+  const first = store.resolve(slot, fp, mint);
+  assert.equal(store.resolve(slot, fp, mint), first,
+    "运营在「结果未知」后把理由补成「…(第二次重试)」再点 —— 换号会让同一笔退款进两次审批队列");
 });
