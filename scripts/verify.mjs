@@ -151,6 +151,9 @@ const GEARS = [
   // 释放参数调参是钱路径(管收益放行):命令号必须带输入指纹(改值再提交不被幂等窗静默吞掉)+
   // 放宽方向必须告知会核验 B1 覆盖率。两条都被独立审计抓到过,焊成门防复发。
   ["K1 release-guard contract", "node", ["--test", "tests/k1-release-guard-contract.test.mjs"]],
+  // K6 接管执行可观测性:相位完整性 / 目标与版本对账 / 可重试性按分类 / 动作相位约束 + 禁用原因。
+  // 只读本仓、任何机器真跑;红队口径——「下发成功 ≠ 执行成功」与「期望目标 ≠ 实际目标」两条不许再塌回黑盒。
+  ["K6 takeover observability contract", "node", ["--experimental-strip-types", "--test", "tests/k6-takeover-observability-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
   // 全家族失败归类口径:5xx / 传输层失败必须归「结果未知」保住命令号,只有 4xx 与
