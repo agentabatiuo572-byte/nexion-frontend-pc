@@ -11,9 +11,10 @@ import { D3Treasury } from "./d-tabs/d3-treasury";
 import { D4Ledger } from "./d-tabs/d4-ledger";
 import { D5Params } from "./d-tabs/d5-params";
 import { D6Fx } from "./d-tabs/d6-fx";
+import { D7PayoutVnd } from "./d-tabs/d7-payout-vnd";
 import type { ConfirmReq, DCtx, ActionConfirmReq } from "./d-tabs/types";
 
-const FOLD: Record<string, string> = { D1: "D1", D2: "D2", D3: "D3", D4: "D4", D5: "D5", D6: "D6" };
+const FOLD: Record<string, string> = { D1: "D1", D2: "D2", D3: "D3", D4: "D4", D5: "D5", D6: "D6", D7: "D7" };
 
 // 每页两枚签名 chip(设计稿 f-bar):f-ro = server-canonical 不变量,f-live = 节奏/SLA(K 域同款先例)。
 const RO_LIVE: Record<string, [ro: string, live: string]> = {
@@ -23,6 +24,7 @@ const RO_LIVE: Record<string, [ro: string, live: string]> = {
   D4: ["账单与余额以系统记录为准", "每笔资金变动均可追溯"],
   D5: ["节奏类参数由 H1 统一派发 · 这页只是生效的地方", "D5 参数写 finance 接口 · H1 节奏只读"],
   D6: ["锁价快照以服务器记录为准 · 只影响新付款单", "越南盾牌价实时读取 · 调整全量审计"],
+  D7: ["倒挂默认拒绝 · 通道停用不影响在途单", "调整只影响新提现单 · 全量落变更历史"],
 };
 
 export function DDomainView({ meta }: { meta: DomainViewMeta }) {
@@ -55,6 +57,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "D4" && <D4Ledger ctx={ctx} />}
       {tab === "D5" && <D5Params ctx={ctx} />}
       {tab === "D6" && <D6Fx ctx={ctx} />}
+      {tab === "D7" && <D7PayoutVnd ctx={ctx} />}
 
       {mc && (
         <OperationConfirmModal
@@ -67,6 +70,7 @@ export function DDomainView({ meta }: { meta: DomainViewMeta }) {
           completionCopy={mc.completionCopy}
           reasonMin={mc.reasonMin}
           reasonMax={mc.reasonMax}
+          auditSink={mc.auditSink}
           onBusinessSelectionChange={mc.onBusinessSelectionChange}
           onClose={() => setActionConfirm(null)}
           onConfirm={async (reason, newValue, businessValue) => {

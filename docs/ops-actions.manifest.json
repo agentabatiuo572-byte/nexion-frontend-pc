@@ -639,6 +639,26 @@
       "restAction": "downloadD3Csv"
     },
     {
+      "id": "OPS-D-16",
+      "domain": "D",
+      "object": "法币提现参数(D7)",
+      "action": "双向牌价点差/出金报价有效期/偏差阈值/费率与限额调整(操作确认+理由+落历史;倒挂默认拒仅超管强制;FEAT-VND01b 方案B假数据面)",
+      "status": "built",
+      "view": "d-tabs/d7-payout-vnd.tsx",
+      "batch": "P0",
+      "restAction": "updatePayoutVndConfig"
+    },
+    {
+      "id": "OPS-D-17",
+      "domain": "D",
+      "object": "法币提现通道",
+      "action": "通道启停(资金流向动作;超管确认+理由+落历史;开启amplifies;在途单不受影响)",
+      "status": "built",
+      "view": "d-tabs/d7-payout-vnd.tsx",
+      "batch": "P0",
+      "restAction": "togglePayoutVndChannel"
+    },
+    {
       "id": "OPS-E-01",
       "domain": "E",
       "object": "商品SKU",

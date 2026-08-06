@@ -148,6 +148,9 @@ const GEARS = [
   // F 域稳定命令号:静态半钉咽喉表达式级接线 + 运行时半跑真 store 语义(只读本仓,任何机器真跑)。
   ["F pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/f-pending-store-contract.test.mjs"]],
   ["K1 release-params contract", "node", ["--test", "tests/k1-release-params-contract.test.mjs"]],
+  // D7 法币提现参数(FEAT-VND01b 方案 B 假数据面):行为级校验(倒挂/冲突/CAS)+ 真假边界形态锚。
+  // strip-types flag 照 F pending-store 先例:node 24 默认剥离,node 22 LTS 需显式 flag 才能 import .ts。
+  ["D7 payout-vnd local contract", "node", ["--experimental-strip-types", "--test", "tests/d7-payout-vnd-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],

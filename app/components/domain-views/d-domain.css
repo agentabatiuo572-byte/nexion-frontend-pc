@@ -190,3 +190,12 @@
 .ddom .ph-track .seg.cur { background: var(--success-soft); }
 .ddom .ph-track .seg .m { font-family: var(--mono); font-size: 11px; color: var(--ink-4); }
 .ddom .ph-track .seg .vv { font-family: var(--mono); font-size: 13px; font-weight: 700; margin-top: 3px; color: var(--ink); }
+
+/* D7 法币提现参数:l-inp 此前仅 .hdom 有定义,D 域(D5/D7)一直靠浏览器原生兜底;
+   本块从 h-domain.css:158 复制换前缀(模块位置清单第 4 条),focus 色用全局 brand。
+   注:13px 沿用 H 域现值保持横向一致;9 档对齐(13→13.5)留全局硬化单统一处理。 */
+.ddom .l-inp { width: 128px; flex-shrink: 0; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--ink);
+  font-family: var(--mono); font-size: 13px; outline: none; }
+.ddom .l-inp:focus { border-color: var(--brand); }
+.ddom .l-inp:disabled { color: var(--ink-4); cursor: not-allowed; }
