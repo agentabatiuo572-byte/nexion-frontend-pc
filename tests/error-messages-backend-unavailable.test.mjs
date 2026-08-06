@@ -46,3 +46,32 @@ test("ordinary unknown machine codes still get the generic input fallback", () =
   assert.equal(formatAdminApiError("SOME_UNKNOWN_VALIDATION_CODE", "X"), GENERIC_INPUT_FALLBACK);
   assert.equal(formatAdminApiError("F5_REQUEST_FAILED_404", "X"), GENERIC_INPUT_FALLBACK);
 });
+
+test("already-formatted Chinese copy passes through unchanged (idempotent throat)", () => {
+  // displayAdminError 会把 client 已格式化的 Error.message 再喂回咽喉,必须幂等
+  for (const copy of [
+    "后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。",
+    "操作理由需填写 8-200 个字符。",
+    "F 域数据提交失败 · 后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。",
+  ]) {
+    assert.equal(formatAdminApiError(copy, "X"), copy);
+  }
+});
+
+test("NETWORK_FAILURE fallback code maps to the network copy, never the input fallback", () => {
+  assert.match(formatAdminApiError(null, "NETWORK_FAILURE"), /网络连接失败或后台服务不可达/);
+});
+
+test("displayAdminError funnels any unknown into operator-readable copy", async () => {
+  const { displayAdminError } = await import("../lib/admin/error-messages.ts");
+  // 裸机器码 Error → 通用兜底,不裸奔上屏
+  assert.equal(displayAdminError(new Error("L6_RESPONSE_INVALID")), GENERIC_INPUT_FALLBACK);
+  // 已格式化中文 → 透传
+  assert.equal(displayAdminError(new Error("操作理由需填写 8-200 个字符。")), "操作理由需填写 8-200 个字符。");
+  // 网络英文 → 网络中文
+  assert.match(displayAdminError(new TypeError("Failed to fetch")), /网络连接失败/);
+  // 非 Error 垃圾输入 → 稳定兜底,不 crash 不显 undefined
+  assert.match(displayAdminError(null), /失败|重试/);
+  assert.match(displayAdminError(undefined), /失败|重试/);
+  assert.match(displayAdminError({ weird: true }), /失败|重试/);
+});

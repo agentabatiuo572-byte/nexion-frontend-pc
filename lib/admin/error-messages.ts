@@ -251,6 +251,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "同一请求标识对应的内容已变化，本次未执行；请刷新页面后重新发起。",
   PLATFORM_BACKEND_TIMEOUT: "平台服务响应超时，当前结果尚未确认；写操作请保留当前输入并直接重试。",
   PLATFORM_BACKEND_UNAVAILABLE: "平台服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
+  NETWORK_FAILURE: "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。",
   ROLE_GRANTS_UNKNOWN_PERMISSION_OR_MENU: "授权清单中包含已停用或不存在的权限/菜单，本次未修改原授权；请刷新目录后重新选择。",
   ROLE_GRANTS_INVALID: "授权清单格式无效，本次未修改原授权；请刷新后重试。",
   ROLE_NO_LONGER_AVAILABLE: "目标角色已停用或删除，本次未分配；请刷新账号与角色目录。",
@@ -573,3 +574,28 @@ export function formatAdminApiError(message: string | null | undefined, fallback
 
   return raw;
 }
+
+// 展示边界统一入口:页面层拿到 unknown 错误后,唯一允许的「→ 屏幕文案」通道。
+// 已格式化中文透传(formatAdminApiError 幂等),裸机器码/网络英文在此落兜底,垃圾输入不 crash。
+export function displayAdminError(error: unknown): string {
+  if (error instanceof Error) return formatAdminApiError(error.message, "");
+  if (typeof error === "string") return formatAdminApiError(error, "");
+  return "操作失败,请稍后重试。";
+}
+
+// 网络层异常(断网/DNS/CORS/请求中断)统一转运营中文;HTTP 非 2xx 不归这管,由调用方 !response.ok 分支走咽喉。
+// 与咽喉同文件(而非独立 fetch-guard.ts):node 直跑 TS 测试无法解析无扩展名相对导入,零依赖单文件绕开该坑。
+export async function guardedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    const original = error instanceof Error ? error.message : String(error);
+    const translated = formatAdminApiError(original, "NETWORK_FAILURE");
+    // 咽喉认不出的怪异常(如 AbortError,message 非空故 fallback 不生效)会原样透传英文;
+    // 到达这里的异常必然是网络层的,翻译失败一律强制网络归因,不许英文上屏。
+    throw new Error(translated === original ? ADMIN_ERROR_MESSAGES.NETWORK_FAILURE : translated);
+  }
+}
+
+// OutcomeUncertain 写路径(自管异常语义、需要原始 TypeError 判断)显式用它——「不许包」的哨兵白名单锚点。
+export const rawFetch: typeof fetch = (...args) => fetch(...args);

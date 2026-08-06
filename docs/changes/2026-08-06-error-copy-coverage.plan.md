@@ -1,0 +1,58 @@
+# 错误文案咽喉覆盖专项 — 提案 + 实施拆解(pkg/n-error-copy)
+
+状态:Draft → 待主人签字 → 实现
+基线:main(05960c4)+ cherry-pick 咽喉修复 99f2f2f + 扫描报告 0147e60(2026-08-06 主人拍板)
+输入材料:`docs/changes/2026-08-06-error-copy-bypass-scan.md`(行号为快照,各子任务开工先重扫自己范围)
+
+## Why
+
+独立扫描证实 formatAdminApiError 咽喉存在两类旁路:断网时 31 个 client 的 fetch 异常直接冒泡,
+运营看英文 "Failed to fetch";131 处契约机器码 throw 不经咽喉,表外码(如 L6_RESPONSE_INVALID)
+原样上屏,违反「页面文案禁错误码」不变量。
+
+## What changes
+
+- **P0 网络接线**:新增 `lib/admin/fetch-guard.ts` 导出两个函数:
+  - `guardedFetch(input, init)`:包网络异常,TypeError → `throw new Error(formatAdminApiError(原文, "NETWORK_FAILURE"))`(咽喉网络分支已备中文,生效性不断言);
+  - `rawFetch(input, init)`:纯别名(`= fetch`),供**自己接异常**的写路径保护 client 显式使用(b2/b3/b5/k6/user360/a2/j 等 OutcomeUncertain 域),表明「此处异常语义自管」。
+  - 31 个 client 逐 fetch 判定:异常现在没人接 → 换 guardedFetch;client 自己 catch 判 TypeError/包 OutcomeUncertain → 换 rawFetch(**判断逻辑一字不动**)。
+- **P1 展示边界收口**:新增 `displayAdminError(error: unknown): string`(提取 message → 过咽喉;咽喉对已格式化中文透传幂等,对裸机器码落通用兜底)。全仓 24 个页面级文案提取器 + 内联 `error.message` 直显处替换为它。高频真实可达的表外码(以各 contract 测试触发面为准)补映射表条目。
+- **哨兵两枚**(先红测再上岗):
+  - `client-bare-fetch`:lib/admin/**-client.ts + domain-views 组件内 `fetch(` 直用 = 红(guardedFetch/rawFetch 白名单);
+  - `display-raw-message`:domain-views 内 `error.message`/`.message` 直进 toast/setToast/setError 的出现次数**棘轮台账**(只减不增)。
+- **Out of scope**(扫描已评估不动):34 处 client 写死中文(归因正确)、14 处写后回读裸 catch、
+  operation-confirm-error.ts、既有 OutcomeUncertain 文案本身。
+
+## Done-when(P6 逐条回测)
+
+1. Playwright route abort 断网:≥3 个域读路径屏幕全中文,全仓实景零 "Failed to fetch";
+2. 断网写路径:有幂等保护的域仍显「结果未知+同幂等键重试」语义;无保护写路径显中性「先刷新核对」;
+3. 模拟触发 ≥2 个表外机器码,屏幕落通用兜底中文,不显裸码;
+4. 契约测试新增:中文透传幂等 / NETWORK_FAILURE / fetch-guard 单测 / 裸码兜底,全绿;
+5. 两哨兵红测通过(注入裸 fetch 必红;.message 计数上升必红)后挂进 verify。
+
+## 实施拆解(子任务 ≤1 上下文;实现方≠验收方,每条独立 tester)
+
+- [x] **T1 基建+红测先行**:fetch-guard.ts + displayAdminError + 契约测试扩展(先写红测:断网 TypeError→中文、
+      中文透传幂等、裸码→通用兜底)。范围:lib/admin/{fetch-guard.ts,error-messages.ts},tests/。
+      敏感度:低。AC=Done-when 4 的测试面全绿。tester 报告:独立 verifier 4/4 PASS(13/13 绿·tsc 0·
+      两轮破坏→红→还原→绿红测序列,fail 集与破坏点语义精确对应,离场基线一致;结果存会话记录)。
+      工艺偏离说明:guardedFetch/rawFetch 并入 error-messages.ts 而非独立 fetch-guard.ts(node 直跑 TS
+      测试无法解析无扩展名相对导入,零依赖单文件绕开)。红测先行抓住真 bug 一枚(AbortError 类怪异常
+      message 非空致 fallback 失效英文透传,已改为翻译失败强制网络归因)。
+      回源三问:① 三出口正是 P0/P1 地基,仍服务目标;② 唯一偏差为文件归并,语义无偏差;③ T2-T4 判定
+      规则依赖的两个出口已就位,计划成立。
+- [ ] **T2 client 接线 A–D 域**(a1-a8/auth/b-b5/c 系/d-client 等,逐 fetch 判 guardedFetch/rawFetch,
+      OutcomeUncertain 判断逻辑不动)。AC=该范围 grep 直用 fetch=0 + tsc 0 + 既有域契约测试不红。tester 报告:
+- [ ] **T3 client 接线 E–H 域**(e1-e6/f1/g1-g7/h)。AC 同 T2。tester 报告:
+- [ ] **T4 client 接线 I–M 域 + 组件内裸 fetch**(i/j/k/k6/l/m/media/ops-dashboard/user360 + topbar.tsx +
+      dual-ledger/page.tsx)。AC 同 T2。tester 报告:
+- [ ] **T5 展示边界 A–F 域**:displayAdminError 替换页面提取器与内联直显。AC=该范围 .message 直显计数归零或入台账 +
+      抽 2 页实景中文。tester 报告:
+- [ ] **T6 展示边界 G–M 域 + 补表**:同 T5;高频表外码按 contract 测试触发面补条目。tester 报告:
+- [ ] **T7 哨兵两枚 + 红测 + 挂 verify**:哨兵与被判实现同提交落地;红测:注入裸 fetch/抬升 .message 计数必红,
+      还原用内容恢复禁 git checkout。AC=Done-when 5。tester 报告:
+- [ ] **T8 全量实景 + audit**:独立 tester 断网矩阵(Done-when 1-3)+ nexion-audit 循环至 P0=P1=0。报告:
+
+依赖:T1 → T2/T3/T4(可并行,不同文件)→ T5/T6(可并行)→ T7 → T8。
+完成门:tsc 0 · npm run verify(跨仓 5 齿本机缺件如实列)· 契约全绿 · T8 实景+audit · done-review。
