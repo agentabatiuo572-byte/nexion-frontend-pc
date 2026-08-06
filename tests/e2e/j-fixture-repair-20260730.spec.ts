@@ -361,7 +361,7 @@ async function openJ4FromVisibleSidebar(page: Page) {
   await expect(link).toBeVisible();
   await link.click();
   await expect(page).toHaveURL(/\/emergency\/sop$/);
-  await expect(page.getByText(/实战先进入 A2 双人复核/)).toBeVisible();
+  await expect(page.getByText(/实战先进入 A2 复核/)).toBeVisible();
 }
 
 async function success<T>(response: APIResponse | Response, label: string) {

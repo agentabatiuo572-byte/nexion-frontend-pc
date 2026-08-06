@@ -199,7 +199,7 @@ test("K1 RISK 直调被拒，A2 maker-checker 回放 flagged-frozen-released 且
       expect((await envelope<Record<string, unknown>>(direct, false)).message).toBe("A2_PROPOSAL_REQUIRED");
     }
     if (cluster.status === "detected") {
-      await proposeAndApprove(riskPage, checkerPage, "标可疑", "确认标记", "K1验收标记可疑经A2双人复核执行");
+      await proposeAndApprove(riskPage, checkerPage, "标可疑", "确认标记", "K1验收标记可疑经A2复核执行");
       await riskPage.reload();
       cluster = await currentCluster(riskPage);
     }
@@ -230,7 +230,7 @@ test("K1 RISK 直调被拒，A2 maker-checker 回放 flagged-frozen-released 且
       (crossDomainEvidence.c2Statuses as Record<string, unknown>).frozen = ["FROZEN", "FROZEN", "FROZEN"];
       await c2Page.screenshot({ path: path.join(EVIDENCE_DIR, "04-a2-approved-c2-accounts-frozen.png"), fullPage: true });
       const beforeRelease = { status: cluster.status, version: cluster.version };
-      await proposeAndApprove(riskPage, checkerPage, "解除误判", "确认执行", "K1验收解除误判经A2双人复核仅恢复本簇来源");
+      await proposeAndApprove(riskPage, checkerPage, "解除误判", "确认执行", "K1验收解除误判经A2复核仅恢复本簇来源");
       await riskPage.reload();
       cluster = await currentCluster(riskPage);
       expect(cluster.status).toBe("released");

@@ -309,7 +309,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         : `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${formatNumber(amount)} ${asset}`,
       detail: supportRequest
         ? `${displayUser(selectedAccount)}；客服不能直接执行超过 500 USDT 等值的调整，本次只生成待独立复核请求，不改变余额。`
-        : `${displayUser(selectedAccount)}；本次只生成待复核调整，不改变余额。独立复核员批准后才更新余额并生成关联账单。网络重试或重复提交不会重复入账。`,
+        : `${displayUser(selectedAccount)}；本次只生成待放行调整，不改变余额。独立复核员批准后才更新余额并生成关联账单。网络重试或重复提交不会重复入账。`,
       chips: supportRequest ? [["只建请求", "ready"], ["余额不变", "ready"]] : [["待独立复核", "ready"], ["余额不变", "ready"]],
       reason: false,
       okLabel: supportRequest ? "确认提交请求" : "确认提交调整申请",
@@ -346,7 +346,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const adjustmentNo = text(row.adjustmentNo, "");
     if (!adjustmentNo) return toast("请求编号缺失");
     openActionConfirm({
-      action: `${approved ? "批准" : "驳回"}待复核调整 · ${adjustmentNo}`,
+      action: `${approved ? "批准" : "驳回"}待放行调整 · ${adjustmentNo}`,
       detail: `${displayRowUser(row)} · ${text(row.direction) === "CREDIT" ? "+" : "−"}${formatNumber(row.amount)} ${text(row.asset)} · ${text(row.reason)}`,
       amplifies: approved && text(row.direction).toUpperCase() === "CREDIT",
       reasonMin: 8,
@@ -427,7 +427,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     <>
       <div className="f-stats">
         <div className="f-stat"><div className="k">已执行</div><div className="v">{number(overview?.approved).toLocaleString("en-US")} 笔</div><div className="sub">余额与账单均已落地</div></div>
-        <div className="f-stat warn"><div className="k">待复核调整</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">提交后由独立复核员处理</div></div>
+        <div className="f-stat warn"><div className="k">待放行调整</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">提交后由独立复核员处理</div></div>
         <div className="f-stat cyan"><div className="k">NEX 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用于 500 USDT 等值权限判断</div></div>
         <div className="f-stat ok"><div className="k">资金覆盖率</div><div className="v">{formatPercent(coverageRatio)}</div><div className="sub">红线 {formatPercent(redlinePct)}</div></div>
       </div>
@@ -501,14 +501,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             <div className="kv"><span className="k">当前覆盖率</span><span className="v">{formatPercent(coverageRatio)}</span></div>
             <div className="kv"><span className="k">批准后覆盖率预估</span><span className="v" style={{ color: creditCoverageUnavailable || creditBelowRedline ? "var(--danger)" : "var(--success)" }}>{formatPercent(projectedCoverage)}</span></div>
             <div className="kv"><span className="k">红线</span><span className="v">{formatPercent(redlinePct)}</span></div>
-            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核闭环</b> · 提交仅落待复核申请与必达审计；独立复核员批准后，才原子完成余额更新、财务账单与两类业务事件。</div>
+            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核闭环</b> · 提交仅落待放行申请与必达审计；独立复核员批准后，才原子完成余额更新、财务账单与两类业务事件。</div>
           </div>
         </section>
       </div>
 
       {requests.total > 0 && (
         <section className="l-card">
-          <div className="l-h"><span className="ttl">待复核调整</span><span className="sub">· 提交阶段不改变余额</span></div>
+          <div className="l-h"><span className="ttl">待放行调整</span><span className="sub">· 提交阶段不改变余额</span></div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 920 }}>
               <thead><tr><th>请求编号</th><th>账户</th><th>金额</th><th>原因</th><th>证据</th><th>发起人</th><th style={{ textAlign: "right" }}>处理</th></tr></thead>
