@@ -564,6 +564,9 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   // 抛出侧写成 `H1_RESPONSE_INVALID:<字段名>`,字段名只留给日志排查:
   // 兜底 includes 循环用基础码命中本条,冒号后缀不会上屏(与 H7_VOUCHER_RESPONSE_INVALID 同款)。
   H1_RESPONSE_INVALID: "增长节奏服务返回的数据不完整或不一致，页面已停止展示推测值；请重新读取或联系值班人员。",
+  // 真属运营输入侧的两个码:给可操作提示,不落中性兜底(兜底只说「刷新重试」对它们没用)。
+  A1_CREATE_TEMPORARY_PASSWORD_MISSING: "请先填写新账号的初始密码后再提交。",
+  NOVA_PUBLISHED_TEMPLATE_REQUIRED: "该渠道还没有已发布的模板，请先发布模板再恢复投放。",
   C1_RAW_PHONE_SEARCH_FORBIDDEN: "为保护用户隐私，不支持按原始手机号检索；请使用脱敏手机号或手机号哈希",
 };
 
@@ -604,7 +607,11 @@ export function formatAdminApiError(message: string | null | undefined, fallback
   }
 
   if (MACHINE_CODE_RE.test(raw)) {
-    return "操作失败,请检查输入内容或刷新页面后重试。";
+    // 兜底不得断言「是你输错了」:实测全仓 81 个抛出的机器码有 48 个没有表内条目,
+    // 而它们几乎全是协议/契约/数据形状类失败(*_INVALID / *_MISSING / *_PROTOCOL_ERROR /
+    // *_TRUNCATED / *_EMPTY_RESPONSE),L1 KPI 这类只读报表页运营根本没有输入可检查。
+    // 真属输入侧的码靠表内专属条目给可操作提示,不靠这句兜底。
+    return "操作未完成,请刷新页面核对最新状态后重试;若仍未恢复请联系值班人员。";
   }
 
   return raw;

@@ -44,6 +44,37 @@ const BARE_FETCH_ALLOW = [
   },
 ];
 
+/**
+ * 判据 E 台账:抛出后**没有表内中文条目**的机器码,只减不增。
+ *
+ * 这些码经 displayAdminError 会落中性兜底(不裸露、不冤枉运营输入,已安全),但运营看不到具体原因。
+ * 本台账是**棘轮**:新增一个没写文案的码 = 红;台账里的码补了文案 = 也红(提示把它从台账划掉),
+ * 两个方向都焊,否则台账会随代码演进静默失真。
+ *
+ * why 存在:2026-08-06 独立验收查出 L1/L2 报表页的协议码没条目、被旧兜底说成「请检查输入内容」——
+ * 而 L1 是只读报表页,运营根本没有输入可检查。兜底文案已改中性,但「有码没文案」这件事
+ * 原来两条判据都不看(B 只看三元兜底形态、C 只看展示 setter),属共同盲区,故补此判据。
+ */
+const UNMAPPED_THROWN_CODES = [
+  "A2_MECHANISM_WRITE_NOT_CONFIRMED", "A2_OPERATION_WRITE_NOT_CONFIRMED", "A5_DATA_INTEGRITY_ERROR",
+  "A6_DELETE_PROPOSAL_CONTRACT_INVALID", "A6_GRANTS_PROPOSAL_CONTRACT_INVALID",
+  "A6_ROLE_PERMISSION_DIFF_INCOMPLETE", "A6_STATUS_PROPOSAL_CONTRACT_INVALID",
+  "A8_CATALOG_DUPLICATE_PAGE", "A8_CATALOG_INCOMPLETE", "A8_CATALOG_TOO_LARGE", "A8_CATALOG_TRUNCATED",
+  "ADMIN_SESSION_INVALID", "B5_BANKRUN_EMPTY_RESPONSE", "B5_RESPONSE_INVALID",
+  "B_ALERT_ACK_EMPTY_RESPONSE", "B_DOMAIN_FIELD_INVALID", "B_DOMAIN_FIELD_REQUIRED",
+  "E1_GENERATION_GATE_INVALID", "F_BACKEND_ROUTE_MISSING", "F_CONFIRM_SHAPE_UNKNOWN", "F_OP_NOT_FOUND",
+  "G4_COMMAND_RESPONSE_INVALID", "H8_RESPONSE_INVALID", "J_DOMAIN_FIELD_REQUIRED",
+  "L1_DASHBOARD_SHAPE_INVALID", "L1_DRILLDOWN_ID_INVALID", "L1_KPI_DEFINITION_SET_INVALID",
+  "L1_KPI_ID_SEQUENCE_INVALID", "L1_KPI_ROW_INVALID", "L1_KPI_UNAVAILABLE_VALUE_INVALID",
+  "L1_KPI_VALUE_INVALID", "L1_TREND_LABELS_INVALID", "L1_TREND_PROTOCOL_INVALID",
+  "L2_CROSS_PROTOCOL_ERROR", "L2_RETENTION_CURVE_PROTOCOL_ERROR", "L2_RETENTION_PROTOCOL_ERROR",
+  "L3_FINANCE_PROTOCOL_INVALID", "M2_TICKET_ESCALATION_PAYLOAD_INVALID",
+  "M2_TICKET_INTERNAL_NOTE_PAYLOAD_INVALID", "M3_ARCHIVE_BATCH_PAYLOAD_INVALID",
+  "M3_TICKET_CONVERSION_PAYLOAD_INVALID", "M3_TICKET_CONVERSION_SNAPSHOT_MISSING",
+  "M4_FAQ_DELETE_PAYLOAD_INVALID", "M_BACKEND_ROUTE_MISSING",
+  "M_LOAD_CONFIG_BACKEND_SNAPSHOT_MISSING", "PENDING_MUTATION_STORE_REQUIRES_STORAGE_KEY",
+];
+
 /** 判据 B 白名单:机器码字符串喂给自家标记类/数据结构,不是展示出口(最终仍过 displayAdminError)。 */
 const MARKER_CLASS_ALLOW = [
   { file: "lib/admin/a2-client.ts", why: "A2OutcomeUncertainError 构造参数,展示时过咽喉" },
@@ -56,9 +87,14 @@ const MARKER_CLASS_ALLOW = [
 
 const BARE_FETCH_RE = /(^|[^a-zA-Z.$_])fetch\s*\(/;
 const MACHINE_CODE_TERNARY_RE = /instanceof\s+Error\s*\?[^:\n]*\.message\s*:\s*"[A-Z][A-Z0-9_]*"/;
+// 判据 C 按「形状」匹配,不枚举 setter 名单。
+// why:初版硬编码了 7 个名字(setToast/setError/…),独立验收实测全仓有 59 个错误类 setter,
+// 覆盖率仅 12% —— setQueryError / setDrillError / setPublishError 这类全漏,
+// 用别的写法回归会静默通过。判据要构造性,不要枚举(同一个教训在咽喉的英文正则上已经栽过一次)。
 const RAW_MESSAGE_DISPLAY_RE =
-  /\b(setToast|setError|setSubmitError|setContentError|setLoadError|setA2Error|toast)\(\s*[a-zA-Z_$][\w$]*\.message\b/;
+  /\b(set[A-Za-z0-9_]*(?:Error|Toast|Msg|Message)|toast|showToast|notify)\s*\(\s*[a-zA-Z_$][\w$]*\.message\b/;
 const RAW_FETCH_CALL_RE = /\brawFetch\s*\(/;
+const THROWN_CODE_RE = /throw new Error\(\s*[`"]([A-Z][A-Z0-9_]{4,})(?::|[`"])/g;
 
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
@@ -96,6 +132,36 @@ for (const rel of files) {
   });
 }
 
+// 判据 E:抛出的机器码是否有表内中文条目(棘轮,两个方向都焊)。
+{
+  const { displayAdminError } = await import("../lib/admin/error-messages.ts");
+  const NEUTRAL = displayAdminError(new Error("ZZ_SENTINEL_PROBE_NOT_IN_TABLE"));
+  const thrown = new Map();
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(ROOT, rel), "utf8");
+    for (const hit of text.matchAll(THROWN_CODE_RE)) if (!thrown.has(hit[1])) thrown.set(hit[1], rel);
+  }
+  const ledger = new Set(UNMAPPED_THROWN_CODES);
+  const unmappedNow = [...thrown].filter(([code]) => displayAdminError(new Error(code)) === NEUTRAL);
+  for (const [code, rel] of unmappedNow) {
+    if (!ledger.has(code)) {
+      violations.push(
+        `[E 机器码没文案] ${rel} 抛的 ${code} 没有表内条目,运营只会看到中性兜底、不知道出了什么事\n` +
+          `    修法:在 lib/admin/error-messages.ts 的 ADMIN_ERROR_MESSAGES 里补一条运营中文`,
+      );
+    }
+  }
+  const nowSet = new Set(unmappedNow.map(([code]) => code));
+  for (const code of ledger) {
+    if (!nowSet.has(code)) {
+      violations.push(
+        `[E 台账失真] ${code} 已经有表内条目(或已不再被抛出),请把它从本脚本的 UNMAPPED_THROWN_CODES 里删掉\n` +
+          `    (棘轮只减不增:不清理的话台账会慢慢变成一张过期名单,失去拦截力)`,
+      );
+    }
+  }
+}
+
 // 台账失真兜底:白名单条目指向的文件若被删/改名,判据会静默缩小取材面。
 for (const entry of [...BARE_FETCH_ALLOW, ...MARKER_CLASS_ALLOW]) {
   if (!fs.existsSync(path.join(ROOT, entry.file))) {
@@ -119,5 +185,6 @@ if (violations.length) {
 
 console.log(
   `error-copy-throat-sentinel PASS —— 扫描 ${scanned} 个客户端文件,` +
-    `裸 fetch/机器码兜底/裸 message 上屏/rawFetch 调用 均为 0(白名单 ${BARE_FETCH_ALLOW.length + MARKER_CLASS_ALLOW.length} 条)`,
+    `裸 fetch/机器码兜底/裸 message 上屏/rawFetch 调用 均为 0(白名单 ${BARE_FETCH_ALLOW.length + MARKER_CLASS_ALLOW.length} 条);` +
+    `无文案机器码台账 ${UNMAPPED_THROWN_CODES.length} 条(棘轮,只减不增)`,
 );
