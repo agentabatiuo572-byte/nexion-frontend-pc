@@ -1617,6 +1617,8 @@ export function normalizeD5Params(value: unknown): D5Params {
       || [confirmFees.trc20, confirmFees.bep20, confirmFees.erc20]
         .some((fee) => fee < 0 || fee > D5_NETWORK_CONFIRM_FEE_MAX)
       || result.nexFeeOffsetRate <= 0
+      // classification-ok:小额门槛是**业务金额**上限(美元),数值恰好落在 4xx/5xx 区间而已,
+      //   与 HTTP 状态码、与「命令号要不要丢」都无关。归类门按数值区间收网,故在此显式豁免。
       || result.smallAmountThresholdUsd < 0 || result.smallAmountThresholdUsd > D5_SMALL_AMOUNT_THRESHOLD_MAX
       || result.payoutSlaHours < D5_PAYOUT_SLA_HOURS_MIN || result.payoutSlaHours > D5_PAYOUT_SLA_HOURS_MAX) {
     throw new Error(formatAdminApiError("D5_RESPONSE_INVALID", "D5_RESPONSE_INVALID:business-range"));

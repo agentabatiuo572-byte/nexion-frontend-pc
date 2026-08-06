@@ -101,8 +101,21 @@ test("不许再出现自搓的 5xx 门槛(status < 500 / >= 500 这类散落判�
     //   原判据认 `status <> 500`,于是「参数不叫 status 的 helper」「`!(500 > res.status)`
     //   反转操作数」都能绕过,配一条永假的谓词死分支充数,门还是绿的。
     //   现在只要出现 4xx/5xx 段的三位数字面量与比较运算符同行就红,想绕只能显式豁免。
+    // 🔴 具名常量也要解开(2026-08-06 第四轮验收 P1-F):把 500 提成 `const HARD = 500`
+    //   再写 `status >= HARD`,字面量判据就整个绕过去了。先把本文件里指向 4xx/5xx 的
+    //   数字常量名收集起来,再把用到它们的比较行一并纳入判定。
+    const thresholdNames = [...raw.matchAll(/(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::\s*number)?\s*=\s*([45]\d{2})\b/g)]
+      .map((match) => match[1]);
+    const namedThreshold = thresholdNames.length
+      ? new RegExp(`[<>]=?\\s*(?:${thresholdNames.join("|")})\\b|\\b(?:${thresholdNames.join("|")})\\s*[<>]=?`)
+      : null;
     const homemade = lines.filter((line, index) => {
-      if (!/[<>]=?\s*[45]\d{2}\b|\b[45]\d{2}\s*[<>]=?/.test(line)) return false;
+      const bare = /[<>]=?\s*[45]\d{2}\b|\b[45]\d{2}\s*[<>]=?/.test(line);
+      if (!bare && !(namedThreshold && namedThreshold.test(line))) return false;
+      if (!bare) {
+        const context = lines.slice(Math.max(0, index - 3), index + 1).join("\n");
+        return !context.includes("classification-ok:");
+      }
       // 放行**业务码**门槛(`payload.code >= 400` 是本仓判「请求有没有失败」的既有惯例,
       // 与「命令号要不要丢」无关);5xx 阈值一律不放行 —— 被证明可绕过的正是那一类。
       if (/\bcode\b\s*[<>]=?\s*4\d{2}/.test(line) && !/5\d{2}/.test(line)) return false;

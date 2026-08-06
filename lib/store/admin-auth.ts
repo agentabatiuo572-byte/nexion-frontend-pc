@@ -44,7 +44,11 @@ export const useAdminAuth = create<AdminAuthState>()((set) => ({
   tokenType: null,
   session: null,
   signIn: ({ tokenType, session }) => {
-    claimPendingCommandOwner(String(session.adminId));
+    // 🔴 只把**可用的**身份交出去(2026-08-06 第四轮验收 P1-A):
+    //   直接 String(session.adminId) 会把 undefined / null 变成 "undefined" / "null" ——
+    //   两个不同的人于是共用一个归属,换人判不出来。畸形值一律当「没有身份」,
+    //   由 claimPendingCommandOwner 走它的放行分支(不清也不写标记,留待下次正常会话比对)。
+    claimPendingCommandOwner(Number.isFinite(session.adminId) ? String(session.adminId) : "");
     set({
       isAuthenticated: !session.passwordChangeRequired,
       operator: session.operator,

@@ -105,6 +105,17 @@ function isPendingCommandTable(raw: string | null): boolean {
 const COMMAND_OWNER_KEY = "nexion-admin-command-owner";
 
 /**
+ * 归属标记的内存兜底。
+ *
+ * 🔴 没有它,本模块的两处改动会**互相抵消**(2026-08-06 第四轮验收 P1-B,实测复现):
+ * 存储可读不可写(隐私模式 / 配额满)时,标记永远写不进去 → 每次会话续期都读到「无标记」
+ * → 判成换人 → 保守清扫 → 代次推进 → 内存镜像作废 →
+ * **同一个人自己的定时续期把自己的在途命令号清掉了** = 重试铸新号 = 重复打款。
+ * 「写不下标记」是环境问题,不是换人,不能让它被误判成换人。
+ */
+let memoryOwner: string | null = null;
+
+/**
  * 认领本 tab 的在途命令号:换人才清,会话断开不清。返回清掉的表数。
  *
  * 🔴 触发条件是**身份变了**,不是「会话结束了」(2026-08-06 第三轮独立验收 2×P0)。
@@ -120,18 +131,30 @@ const COMMAND_OWNER_KEY = "nexion-admin-command-owner";
  *   (升级后首次加载会命中一次,属一次性过渡。)
  */
 export function claimPendingCommandOwner(ownerId: string): number {
-  if (typeof window === "undefined" || !ownerId) return 0;
-  let previous: string | null = null;
+  // ownerId 取不到(后端回包畸形)时:**既不清也不改标记**,直接放行。
+  // 看起来与下面「归属不明就清」相反,其实同向 —— 这里不写标记,前一个人的标记原样留着,
+  // 等下一次拿到正常 adminId 时照样比得出换人。反过来若在这里清,一旦某次回包畸形,
+  // 每次刷新都会清空,「命令号跨刷新存活」对所有人当场失效(静默的灾难)。
+  // 判据:失败模式的代价不对称 —— 这里放行只在「回包畸形 + 同 tab 换人」同时发生时才漏,
+  // 而清扫会在单一条件下毁掉整个机制。
+  // "undefined" / "null" / "NaN" 是**字符串化事故**,不是身份:当成没有身份处理,
+  // 否则两个不同的畸形会话会共用同一个归属(第四轮验收 P1-A)。
+  if (typeof window === "undefined" || !ownerId
+    || ["undefined", "null", "NaN"].includes(ownerId)) return 0;
+  let persisted: string | null = null;
   try {
-    previous = window.sessionStorage.getItem(COMMAND_OWNER_KEY);
+    persisted = window.sessionStorage.getItem(COMMAND_OWNER_KEY);
   } catch {
-    return 0; // 存储不可用 = 本来也没有跨会话残留可清
+    return 0; // 存储整个不可读 = 本来也没有跨会话残留可清
   }
+  // 存储里没有就看内存兜底:标记写不进去(配额满)不等于换了人。
+  const previous = persisted ?? memoryOwner;
   if (previous === ownerId) return 0;
   const cleared = clearPendingCommandRecords();
+  memoryOwner = ownerId;
   try {
     window.sessionStorage.setItem(COMMAND_OWNER_KEY, ownerId);
-  } catch { /* 降级:清扫已完成,只是下次还会再清一遍,不影响正确性 */ }
+  } catch { /* 写不下就靠上面的内存兜底,本页内不会再被误判成换人 */ }
   return cleared;
 }
 
