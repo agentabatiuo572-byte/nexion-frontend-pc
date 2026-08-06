@@ -1,3 +1,4 @@
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
@@ -580,14 +581,22 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       resetAdminSession();
     }
     const commandKey = headers.get("Idempotency-Key");
-    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+    // 🔴 运营看到的话术必须与命令号去留同口径(2026-08-06 第三轮验收 P1-6)。
+    //   先前只认 unknown 头:5xx 时命令号已经保住了,提示却仍说「失败」——运营据此重勾一批重试,
+    //   而 D2 批量的指纹含 ids,换一批 ids 就是新指纹新号,已放行的那部分会**重复放行**。
+    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || outcomeStaysUnknown(response.status, result?.code))) {
       throw new Error(`操作结果未知，可能已经生效。请先刷新核对，并使用同一请求号重试：${commandKey}`);
     }
     // A deterministic error can close a brand-new attempt, but it cannot prove
     // that an earlier unknown attempt reached a terminal state. Keep the exact
     // command capsule so auth failures, in-progress replies, and other retry
     // errors never force the operator to create a second command key.
-    if (mutationFingerprint && !pendingKeyBeforeRequest) {
+    // 🔴 2026-08-06 补:这道保护只覆盖「重试链」——**首次**提交撞上结构化 5xx 时
+    //   pendingKeyBeforeRequest 为空,照样弃号。5xx 后端可能已落库,必须保号(统一口径见
+    //   outcome-classification.ts)。
+    if (mutationFingerprint && !pendingKeyBeforeRequest
+      && !outcomeStaysUnknown(response.status, result?.code)) {
       pendingMutations.forget(mutationFingerprint);
     }
     throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));

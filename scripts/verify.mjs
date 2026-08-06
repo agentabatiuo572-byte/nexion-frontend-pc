@@ -153,6 +153,13 @@ const GEARS = [
   ["D7 payout-vnd local contract", "node", ["--experimental-strip-types", "--test", "tests/d7-payout-vnd-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
+  // 全家族失败归类口径:5xx / 传输层失败必须归「结果未知」保住命令号,只有 4xx 与
+  // 2xx 业务码非 0 才算确定性拒绝。散一处口径 = 那个域重复入账 / 重复打款。
+  ["outcome classification contract", "node", ["--experimental-strip-types", "--test", "tests/outcome-classification-contract.test.mjs"]],
+  // 同族「结果未知」契约:先前手跑绿但没有门守(2026-08-06 独立验收 P2-6)。
+  ["a2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
+  ["b2/b3 outcome-unknown contract", "node", ["--test", "tests/b23-outcome-unknown-contract.test.mjs"]],
+  ["i4 A2 pending visibility contract", "node", ["--test", "tests/i4-a2-pending-visibility-contract.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
   ["production build", npmCmd, ["run", "build"]],

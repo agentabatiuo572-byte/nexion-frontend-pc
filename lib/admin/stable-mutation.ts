@@ -1,6 +1,7 @@
 // 相对路径 + 显式 .ts 后缀,而非 `@/` 别名:本模块被 tests/g-overview-runtime-contract.test.mjs 用
 // node --test 直接 import,node 既不认 tsconfig 的路径别名,也不做无后缀补全
 // (tsconfig 已开 allowImportingTsExtensions,tsc 与 next build 都吃这种写法)。
+import { isDeterministicRejection } from "./outcome-classification.ts";
 import { createPendingMutationStore } from "./pending-mutation-store.ts";
 
 export type StableMutationCommand<T> = (commandKey: string) => Promise<T>;
@@ -31,10 +32,11 @@ export function stableMutationHttpFailure(
   status: number,
   apiCode?: number,
 ) {
-  const isDeterministicRejection = (status >= 400 && status < 500)
-    || (status >= 200 && status < 300 && typeof apiCode === "number" && apiCode !== 0);
+  // 🔴 判据只此一处(2026-08-06 独立验收 P1-3):这里原本有一份与共享谓词**逐字等价的副本**,
+  //   局部常量还叫 isDeterministicRejection,读起来像引用了共享的那个。g1/g2/g3/g4/g7 五个域
+  //   走的正是这份副本 —— 两源并存,改一处另一处不动,口径迟早分叉。
   return new StableMutationFailure(
-    isDeterministicRejection ? "deterministic" : "outcome-unknown",
+    isDeterministicRejection(status, apiCode) ? "deterministic" : "outcome-unknown",
     message,
   );
 }

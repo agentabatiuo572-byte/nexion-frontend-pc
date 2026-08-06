@@ -1,4 +1,5 @@
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import {
   buildA2FilterQuery,
   resolveA2AuditObject,
@@ -353,6 +354,15 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
   }
 
   if (!response.ok || !result || result.code !== 0) {
+    // 🔴 带在途命令号时,只有**确定性拒绝**(4xx / 2xx 但业务码非 0)才算「这次没生效」。
+    //   5xx 归确定失败 = 调用方 forget 命令号 = 下次重试铸新号 = 后端去重失效 = 资金动作双发。
+    //   口径单源见 outcome-classification.ts(2026-08-06 全家族统一)。
+    if (init?.commandKey && outcomeStaysUnknown(response.status, result?.code)) {
+      throw new A2OutcomeUncertainError(
+        formatAdminApiError(result?.message, `A2_REQUEST_OUTCOME_UNKNOWN_${response.status}`),
+        init.commandKey,
+      );
+    }
     throw new Error(formatAdminApiError(result?.message, `A2_REQUEST_FAILED_${response.status}`));
   }
   if (init?.commandKey && response.ok && result.code === 0 && result.data == null) {

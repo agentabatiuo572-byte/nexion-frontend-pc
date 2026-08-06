@@ -1,5 +1,6 @@
 "use client";
 
+import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
@@ -91,12 +92,24 @@ async function json<T>(response: Response, fallback: string, commandKey?: string
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0 || result.data == null) {
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    if (commandKey && response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown") {
+    // unknown 头只是增强信号,不再是唯一保险丝:5xx / 响应不可读同样归结果未知
+    // (统一口径见 outcome-classification.ts)。
+    if (commandKey && (response.headers.get("X-Nexion-Upstream-Outcome")?.toLowerCase() === "unknown"
+      || outcomeStaysUnknown(response.status, result?.code))) {
       throw new B3OutcomeUnknownError(commandKey);
     }
     throw new Error(formatAdminApiError(result?.message, fallback));
   }
   return result.data;
+}
+
+/** 带命令号的写请求:传输层失败必须归「结果未知」,不能让裸 TypeError 冒到页面被当确定失败。 */
+async function writeFetch(url: string, init: RequestInit, commandKey: string) {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new B3OutcomeUnknownError(commandKey);
+  }
 }
 
 export async function fetchB3Dashboard(filters: B3Filters, stage = "purchase"): Promise<B3Dashboard> {
@@ -113,12 +126,12 @@ export async function saveB3View(
   comparison = "PREVIOUS",
   commandKey = idempotencyKey("b3-view"),
 ) {
-  const response = await fetch("/api/admin/funnel/view", {
+  const response = await writeFetch("/api/admin/funnel/view", {
     method: "POST",
     headers: { "Content-Type": "application/json", "Idempotency-Key": commandKey },
     body: JSON.stringify({ name, ...filters, granularity, comparison }),
     cache: "no-store",
-  });
+  }, commandKey);
   return json<{ saved: Record<string, unknown>; replayed: boolean }>(
     response,
     "B3_VIEW_SAVE_FAILED",

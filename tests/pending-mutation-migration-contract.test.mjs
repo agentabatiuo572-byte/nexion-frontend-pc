@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  claimPendingCommandOwner,
+  clearPendingCommandRecords,
   createPendingMutationStore,
   createSlotAttemptStore,
   PENDING_MUTATION_TTL_MS,
@@ -35,9 +37,18 @@ function installStorage() {
 
 const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
 
-/** 本轮迁移的全部文件。ground truth 取哨兵台账,不在这里手抄第二份清单。 */
+/**
+ * 本轮迁移的全部文件。ground truth 取哨兵台账,不在这里手抄第二份清单。
+ *
+ * 🔴 只解析 `const MIGRATED = [...]` 那一段,段内不挑排版(2026-08-06 独立验收 P2)。
+ *   上一版是 `/^\s{2}"([^"]+\.tsx?)",$/gm` —— 硬性要求「恰好 2 个前导空格 + 行尾紧跟 `",`」。
+ *   给某条目改缩进 / 加行尾注释,清单会**静默缩短**而不是报错,只有下面的 `>= 28` 兜底;
+ *   而清单一短,后面「每个迁移面都真用了共享 store」的循环就少验几个面,门自己变松还没人知道。
+ */
 const SENTINEL = read("scripts/pending-idempotency-key-sentinel.mjs");
-const MIGRATED = [...SENTINEL.matchAll(/^\s{2}"([^"]+\.tsx?)",$/gm)].map((match) => match[1]);
+const MIGRATED_BLOCK = SENTINEL.match(/const MIGRATED = \[([\s\S]*?)\n\];/);
+assert.ok(MIGRATED_BLOCK, "哨兵里找不到 const MIGRATED = [...] 台账段:反解析已失真");
+const MIGRATED = [...MIGRATED_BLOCK[1].matchAll(/"([^"]+\.tsx?)"/g)].map((match) => match[1]);
 
 // ---------------------------------------------------------------- ① 刷新后仍认得同一次提交
 
@@ -179,6 +190,205 @@ test("迁移清单里的文件都真的用了共享 store(直接建表,或走带
     const viaExecutor = /createStableMutationExecutor\s*\([^,)]+,\s*"[^"]+"\s*\)/.test(source);
     assert.ok(direct || viaExecutor, `${rel} 既没直接建表,也没给通用执行器传 storageKey`);
   }
+});
+
+// ---------------------------------------------------------------- ⑤ 登出 / 换操作员必须清在途命令号
+
+/**
+ * 换人不清命令号 = 同一 tab 里 B 复用 A 的号 → 后端幂等回放 A 的提案:
+ * B 的操作被静默吞掉,审计轨记在 A 头上。两个都是高敏事故。
+ *
+ * ground truth 取**源码里的全部真实存储键**,不手抄清单 —— 手抄的必然和现实脱节,
+ * 而漏掉哪一把,那个域的命令号就照样留给下一个登录者。
+ */
+const STORAGE_KEYS = [...new Set(MIGRATED.flatMap((rel) => {
+  const source = read(rel);
+  return [
+    ...[...source.matchAll(/storageKey:\s*"([^"]+)"/g)].map((m) => m[1]),
+    ...[...source.matchAll(/createStableMutationExecutor\s*\(([\s\S]*?)\)/g)]
+      .flatMap((m) => [...m[1].matchAll(/"([^"]+)"/g)].map((k) => k[1])),
+  ];
+}))];
+
+test("⑤ 清扫覆盖全仓每一把在途命令号存储键(含 nexgrid- 前缀与不含 commands 的那些)", () => {
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  globalThis.window = { sessionStorage: storage };
+
+  assert.ok(STORAGE_KEYS.length >= 25, `只解析出 ${STORAGE_KEYS.length} 把存储键,解析已失真`);
+  // 每一把键都播一条 A 操作员留下的在途命令号。
+  const now = Date.now();
+  STORAGE_KEYS.forEach((key, index) => {
+    storage.setItem(key, JSON.stringify({
+      [`cmd-A-${index}`]: {
+        fingerprint: `slot-${index}`, commandKey: `cmd-A-${index}`,
+        createdAt: now, expiresAt: now + 60_000,
+      },
+    }));
+  });
+  // 无关数据:侧边栏滚动位置(同域同 storage,形状完全不同)必须原样留下。
+  storage.setItem("nexion-sidebar-scroll", "420");
+  storage.setItem("some-other-app-state", JSON.stringify({ a: 1 }));
+
+  const cleared = clearPendingCommandRecords(storage);
+
+  assert.equal(cleared, STORAGE_KEYS.length,
+    `清扫数与键数不符:漏掉的那些域,B 登录后会复用 A 的命令号`);
+  for (const key of STORAGE_KEYS) {
+    assert.equal(storage.getItem(key), null, `${key} 未被清掉 → 换人后命令号泄漏给下一个操作员`);
+  }
+  assert.equal(storage.getItem("nexion-sidebar-scroll"), "420", "无关数据被误删");
+  assert.deepEqual(JSON.parse(storage.getItem("some-other-app-state")), { a: 1 }, "无关数据被误删");
+});
+
+test("⑤ 清扫按记录形状认表,不按键名 —— 换个没人见过的键名照样清得掉", () => {
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  const now = Date.now();
+  // 将来新增的域可能起任何名字(现实里已有 nexion-admin-h9-public-stats-attempt 这种
+  // 既不含 commands 也没有版本后缀的);按名字判的谓词会整张漏掉,按形状判不会。
+  storage.setItem("totally-unexpected-key-name", JSON.stringify({
+    k1: { fingerprint: "f", commandKey: "k1", createdAt: now, expiresAt: now + 1000 },
+  }));
+  // 形状只差一点(commandKey 与行键不一致)就不是本模块的表,不许误删别人的数据。
+  storage.setItem("look-alike-but-not-ours", JSON.stringify({
+    k1: { fingerprint: "f", commandKey: "SOMETHING-ELSE", createdAt: now, expiresAt: now + 1000 },
+  }));
+  // 🔴 混合表诱饵(2026-08-06 独立验收 P2-3):只放单行诱饵时,把判据从 every 放宽成 some
+  //   门也抓不到 —— 而 some 会让「恰好有一行像命令号」的业务表整张被删。
+  storage.setItem("mixed-table-not-ours", JSON.stringify({
+    k1: { fingerprint: "f", commandKey: "k1", createdAt: now, expiresAt: now + 1000 },
+    other: { someBusinessField: 42 },
+  }));
+
+  assert.equal(clearPendingCommandRecords(storage), 1);
+  assert.equal(storage.getItem("totally-unexpected-key-name"), null);
+  assert.ok(storage.getItem("look-alike-but-not-ours"), "形状不符的表不得被误删");
+  assert.ok(storage.getItem("mixed-table-not-ours"),
+    "混合表不是本模块的表(判据必须是 every 不是 some),整张删掉会毁掉别人的业务缓存");
+});
+
+/** 装一副能被身份认领读写的 sessionStorage,并返回操作句柄。 */
+function installOwnerStorage() {
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  globalThis.window = { sessionStorage: storage };
+  return storage;
+}
+
+/**
+ * 🔴 身份认领用**行为断言**验,不用正则钉字面(2026-08-06 第三轮验收 P1-4)。
+ *   正则只能证明「代码长这样」,证明不了「换人真的会清、同一人真的不清」——
+ *   而这两条恰好一个漏就泄漏、一个错就重复打款,方向相反,必须各验一次。
+ */
+test("⑤ 身份认领:换人必清、同一人必不清(跨刷新存活的根本)", () => {
+  const storage = installOwnerStorage();
+  const seed = (key) => {
+    const now = Date.now();
+    storage.setItem(key, JSON.stringify({
+      k: { fingerprint: "f", commandKey: "k", createdAt: now, expiresAt: now + 60_000 },
+    }));
+  };
+
+  // A 登录并留下在途命令号
+  claimPendingCommandOwner("101");
+  seed("nexion-admin-d2-withdrawal-commands-v1");
+
+  // 同一个人:刷新 / 定时续期 / 会话过期后重新登录 —— 一律不得清
+  for (const round of ["刷新", "续期", "重新登录"]) {
+    assert.equal(claimPendingCommandOwner("101"), 0, `${round}不得清掉同一个人的在途命令号`);
+    assert.ok(storage.getItem("nexion-admin-d2-withdrawal-commands-v1"),
+      `${round}后命令号必须还在 —— 清了他重试就会铸新号,后端去重失效 = 重复打款`);
+  }
+
+  // 换人:必须清
+  assert.equal(claimPendingCommandOwner("202"), 1, "换人必须清掉前一个人的在途命令号");
+  assert.equal(storage.getItem("nexion-admin-d2-withdrawal-commands-v1"), null);
+
+  // 重名不影响:判据是 adminId 不是显示名(同名不同号 = 两个人)
+  seed("nexion-admin-c3-adjust-commands-v1");
+  assert.equal(claimPendingCommandOwner("303"), 1, "同名不同号必须当成换人");
+});
+
+test("⑤ 身份认领:归属不明时保守清扫(marker 缺失不能默认放行)", () => {
+  const storage = installOwnerStorage();
+  const now = Date.now();
+  storage.setItem("nexion-admin-k1-multiaccount-commands-v1", JSON.stringify({
+    k: { fingerprint: "f", commandKey: "k", createdAt: now, expiresAt: now + 60_000 },
+  }));
+  // 没有 owner marker(升级前遗留 / 被清过):归属不明的命令号不能给下一个人用。
+  assert.equal(claimPendingCommandOwner("101"), 1, "归属不明必须清,不能默认放行");
+  assert.equal(storage.getItem("nexion-admin-k1-multiaccount-commands-v1"), null);
+});
+
+test("⑤ 清扫由 signIn 的身份认领负责,登出路径不得自作主张清", () => {
+  const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const auth = strip(read("lib/store/admin-auth.ts"));
+  assert.match(auth, /claimPendingCommandOwner\(String\(session\.adminId\)\)/,
+    "signIn 必须按持久化的 adminId 认领 —— 内存里的显示名刷新后为空,永远判不出换人");
+  assert.doesNotMatch(auth, /signOut[\s\S]{0,120}clearPendingCommandRecords/,
+    "signOut 不得清:会话断开 ≠ 换人,清了会误伤同一个人的在途命令号(第三轮验收 P0-2)");
+  for (const rel of ["lib/admin/auth-session.ts", "lib/admin/login-completion.ts"]) {
+    assert.doesNotMatch(strip(read(rel)), /clearPendingCommandRecords\s*\(/,
+      `${rel} 不得自行清扫 —— 清扫只能由身份认领触发,散落的无条件清扫正是 P0-2 的病根`);
+  }
+});
+
+test("⑤ 清扫不得被存活实例的内存镜像复活(同步序列,不是竞态)", () => {
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  globalThis.window = { sessionStorage: storage };
+
+  // 真实调用形态:d-client / user360-client 在同一个同步块里先 resetAdminSession()(清存储)、
+  // 后 forget() —— forget 走 readAll(内存有货)再整表写回,把刚清掉的记录原样复活。
+  const store = createPendingMutationStore({ storageKey: "nexion-admin-resurrect-probe-v1" });
+  store.remember("fp-A", "cmd-A");
+  store.remember("fp-B", "cmd-B");
+  assert.ok(storage.getItem("nexion-admin-resurrect-probe-v1"), "前置:记录已落盘");
+
+  clearPendingCommandRecords(storage);
+  store.forget("fp-A"); // ← 复活点
+
+  assert.equal(storage.getItem("nexion-admin-resurrect-probe-v1"), null,
+    "清扫后任何 store 操作都不得把命令号写回来 —— 复活等于换人清扫整体失效");
+  assert.equal(store.get("fp-B"), undefined, "存活实例的内存镜像必须随清扫一起作废");
+});
+
+test("⑤ 认领必须早于任何一次写请求(reload 后 signIn 先跑,命令号才有主)", () => {
+  // 认领点在 signIn,而 401 重置会 reload → 重新走 console-shell 的会话恢复 → signIn。
+  // 这里钉住那条链没有被绕开:恢复会话的地方必须调 signIn(而不是自己塞状态)。
+  const shell = read("app/components/shell/console-shell.tsx")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  // 🔴 钉**数量**不钉存在:会话恢复有两处(首次恢复 + 定时续期),只用 /signIn\(auth\)/
+  //   的写法在改坏其中一处时仍然匹配得上 → 门放行(本轮红测 R3② 实测抓到)。
+  const calls = shell.match(/signIn\(auth\)/g) ?? [];
+  assert.equal(calls.length, 2,
+    `会话恢复的两处(首次恢复 / 定时续期)都必须经 signIn,实测 ${calls.length} 处`
+    + " —— 绕过它就绕过了身份认领,换人后命令号没人清");
 });
 
 /**
