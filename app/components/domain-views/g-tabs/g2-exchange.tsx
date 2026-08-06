@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G2 兑换风控 — 数据来自后端 /api/admin/market/exchange;空库返回空态。
  */
@@ -25,7 +26,7 @@ const OPERATOR = currentAdminOperator;
 type GateKey = "kyc" | "user" | "platform" | "geo";
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 function fmtUsdK(value: number) {

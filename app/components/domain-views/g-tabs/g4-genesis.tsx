@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G4 Genesis 经济 — 数据来自后端 /api/admin/market/nex/genesis 及 Genesis 业务表。
  */
@@ -23,7 +24,7 @@ import G4AdminOperations from "./g4-admin-operations";
 const OPERATOR = currentAdminOperator;
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 function fmtNumber(value: number, max = 2) {

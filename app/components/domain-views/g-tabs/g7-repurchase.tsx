@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G7 复投激励 — 数据来自后端 /api/admin/market/nex/repurchase;空库返回空态。
  */
@@ -27,7 +28,7 @@ const PARAM_COPY: Record<string, { name: string; sub: string }> = {
 };
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 function fmtNumber(value: number, max = 0) {

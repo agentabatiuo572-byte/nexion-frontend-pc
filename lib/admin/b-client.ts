@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -523,7 +523,7 @@ function publishDashboard(dashboard: BDomainDashboard) {
 }
 
 export async function fetchBDomainDashboard() {
-  const response = await fetch("/api/admin/treasury/b-domain", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/treasury/b-domain", { cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<Record<string, unknown>> | null;
   if (!response.ok || !result || result.code !== 0) {
     if (isAdminAuthFailure(response.status, result?.message)) {
@@ -545,7 +545,7 @@ export async function acknowledgeBDomainAlert(
   operator: string,
   idempotencyKey?: string,
 ) {
-  const response = await fetch(`/api/admin/treasury/b-domain/alerts/${encodeURIComponent(alertId)}/ack`, {
+  const response = await guardedFetch(`/api/admin/treasury/b-domain/alerts/${encodeURIComponent(alertId)}/ack`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -574,7 +574,7 @@ export async function updateB5BankRunThresholds(
   reason: string,
   operator: string,
 ) {
-  const response = await fetch("/api/admin/treasury/b-domain/bankrun-thresholds", {
+  const response = await guardedFetch("/api/admin/treasury/b-domain/bankrun-thresholds", {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",

@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 
 interface ApiResult<T> {
@@ -74,7 +74,7 @@ async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPre
     headers.set("Idempotency-Key", nextIdempotencyKey(idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/growth${path}`, {
+  const response = await guardedFetch(`/api/admin/growth${path}`, {
     ...init,
     headers,
     cache: "no-store",

@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G1 Staking 池配置 — 资金池、持仓状态、B1 覆盖率和 J1 闸状态都来自后端业务表。
  */
@@ -35,7 +36,7 @@ function displayTerm(pool: G1Pool) {
 }
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 export function G1Staking({ ctx }: { ctx: GCtx }) {

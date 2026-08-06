@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   archiveG4AdminSimulation,
   createG4AdminSimulation,
@@ -36,7 +37,7 @@ export default function G4AdminOperations({ ctx }: { ctx: GCtx }) {
 
   const load = useCallback(async () => {
     try { setData(await fetchG4AdminOperations()); setError(""); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "G4_OPERATIONS_LOAD_FAILED"); }
+    catch (cause) { setError(displayAdminError(cause)); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 

@@ -1,6 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch, rawFetch } from "@/lib/admin/error-messages";
 import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 interface ApiResult<T> {
@@ -561,7 +561,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
   }
   let response: Response;
   try {
-    response = await fetch(`/api/admin/${base}${path}`, {
+    response = await rawFetch(`/api/admin/${base}${path}`, {
       ...init,
       headers,
       signal: init?.signal ?? AbortSignal.timeout(30_000),
@@ -1935,7 +1935,7 @@ export async function updateD3Thresholds(
 
 export async function downloadD3Csv(kind: "reconciliation" | "liabilities") {
   const exportPath = kind === "reconciliation" ? "/reconciliation/export" : "/liabilities/export";
-  const response = await fetch(`/api/admin/treasury${exportPath}`, { cache: "no-store" });
+  const response = await guardedFetch(`/api/admin/treasury${exportPath}`, { cache: "no-store" });
   if (!response.ok) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
@@ -2055,7 +2055,7 @@ export async function downloadD4BillsCsv(
   params: Omit<D4BillQuery, "pageNum" | "pageSize">,
   reason: string,
 ) {
-  const response = await fetch(`/api/admin/bills/export${buildQuery({ ...params, reason })}`, { cache: "no-store" });
+  const response = await guardedFetch(`/api/admin/bills/export${buildQuery({ ...params, reason })}`, { cache: "no-store" });
   const contentType = response.headers.get("Content-Type") || "";
   if (!response.ok || !contentType.toLowerCase().includes("text/csv")) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;

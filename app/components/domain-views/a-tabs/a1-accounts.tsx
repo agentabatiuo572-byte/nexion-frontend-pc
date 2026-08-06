@@ -27,6 +27,7 @@ import {
   type A1UpdateAccountInput,
 } from "@/lib/admin/a1-client";
 import { fetchA6RoleDetail, fetchA6RolesOverview } from "@/lib/admin/a6-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
 
 type SecurityBaselineMeta = {
@@ -54,7 +55,7 @@ const SECURITY_BASELINE_META: Record<string, SecurityBaselineMeta> = {
 };
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 function roleName(roles: A1RoleDefinition[], role: string) {

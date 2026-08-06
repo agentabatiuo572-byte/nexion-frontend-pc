@@ -64,8 +64,12 @@ test("NETWORK_FAILURE fallback code maps to the network copy, never the input fa
 
 test("displayAdminError funnels any unknown into operator-readable copy", async () => {
   const { displayAdminError } = await import("../lib/admin/error-messages.ts");
-  // 裸机器码 Error → 通用兜底,不裸奔上屏
-  assert.equal(displayAdminError(new Error("L6_RESPONSE_INVALID")), GENERIC_INPUT_FALLBACK);
+  // 裸机器码 Error → 通用兜底,不裸奔上屏(样本必须是表里没有的码,否则测的是映射不是兜底)
+  assert.equal(displayAdminError(new Error("ZZ_NOT_IN_TABLE_RESPONSE_BROKEN")), GENERIC_INPUT_FALLBACK);
+  // 补表码走专属文案,且绝不裸露英文码
+  const l6 = displayAdminError(new Error("L6_RESPONSE_INVALID"));
+  assert.match(l6, /运营报表服务/);
+  assert.doesNotMatch(l6, /L6_/);
   // 已格式化中文 → 透传
   assert.equal(displayAdminError(new Error("操作理由需填写 8-200 个字符。")), "操作理由需填写 8-200 个字符。");
   // 网络英文 → 网络中文

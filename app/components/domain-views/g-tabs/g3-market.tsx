@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G3 NEX 行情引擎 — 数据来自后端 /api/admin/market/nex/curve 与 /curve/history。
  * 页面只展示后端返回的 NEX 行情与控制状态。
@@ -33,7 +34,7 @@ const CURVE_LOOSEN_DIR: Partial<Record<G3CurveField, "increase">> = {
 };
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 function fmtCompact(value: number, max = 6) {

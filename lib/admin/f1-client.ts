@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsVRankRewardItem, VRankRewardType } from "@/lib/admin/platform-types";
 import {
   assertF1Overview,
@@ -1367,7 +1367,7 @@ async function f1Request<T>(
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/teams${path}`, {
+  const response = await guardedFetch(`/api/admin/teams${path}`, {
     ...init,
     headers,
     cache: "no-store",

@@ -1,5 +1,6 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeA5Overview, type A5RegistryOverview } from "@/lib/admin/a5-contract";
+import { rawFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -23,7 +24,8 @@ export async function fetchA5Registry(): Promise<A5RegistryOverview> {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), A5_REQUEST_TIMEOUT_MS);
   try {
-    response = await fetch("/api/admin/platform/params-registry", {
+    // rawFetch:本函数 catch 自管网络/超时异常语义(统一转 A5LoadError("unavailable") 中文),不走 guardedFetch 包装
+    response = await rawFetch("/api/admin/platform/params-registry", {
       cache: "no-store",
       signal: controller.signal,
     });

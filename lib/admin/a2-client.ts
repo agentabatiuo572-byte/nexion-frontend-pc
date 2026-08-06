@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import {
   buildA2FilterQuery,
   resolveA2AuditObject,
@@ -327,7 +327,7 @@ async function a2Request<T>(path: string, init?: RequestInit & { idempotencyPref
 
   let response: Response;
   try {
-    response = await fetch(`/api/admin/platform/audit${path}`, {
+    response = await guardedFetch(`/api/admin/platform/audit${path}`, {
       ...init,
       headers,
       cache: "no-store",
@@ -436,7 +436,7 @@ export async function createA2OperationProposal(input: {
 }
 
 export async function exportA2Audit(reason: string, filter: Record<string, unknown>, commandKey?: string) {
-  const response = await fetch("/api/admin/platform/audit/exports", {
+  const response = await guardedFetch("/api/admin/platform/audit/exports", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
