@@ -148,6 +148,9 @@ const GEARS = [
   // D7 法币提现参数(FEAT-VND01b 方案 B 假数据面):行为级校验(倒挂/冲突/CAS)+ 真假边界形态锚。
   // strip-types flag 照 F pending-store 先例:node 24 默认剥离,node 22 LTS 需显式 flag 才能 import .ts。
   ["D7 payout-vnd local contract", "node", ["--experimental-strip-types", "--test", "tests/d7-payout-vnd-contract.test.mjs"]],
+  // 释放参数调参是钱路径(管收益放行):命令号必须带输入指纹(改值再提交不被幂等窗静默吞掉)+
+  // 放宽方向必须告知会核验 B1 覆盖率。两条都被独立审计抓到过,焊成门防复发。
+  ["K1 release-guard contract", "node", ["--test", "tests/k1-release-guard-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],
   // 全家族失败归类口径:5xx / 传输层失败必须归「结果未知」保住命令号,只有 4xx 与
