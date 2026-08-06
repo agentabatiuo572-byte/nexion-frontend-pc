@@ -9,6 +9,7 @@
  */
 import { useMemo, useState } from "react";
 import { Download, Search } from "lucide-react";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { useK6Operator } from "./use-operator";
 import { auditActionLabel } from "@/lib/admin/janus-c2/labels";
@@ -77,7 +78,7 @@ export function K6AuditLog() {
       const content = format === "csv" ? toCsv(rows) : JSON.stringify(auditExportRows(rows), null, 2);
       download(file.fileName, content, format === "csv" ? "text/csv;charset=utf-8" : "application/json");
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : "导出失败");
+      setExportError(error instanceof Error ? displayAdminError(error) : "导出失败");
     } finally {
       setExporting(null);
     }

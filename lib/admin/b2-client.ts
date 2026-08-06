@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 
 interface ApiResult<T> {
   code: number;
@@ -371,7 +371,7 @@ function normalizeConfig(value: unknown): B2ForecastConfig {
 async function request<T>(path: string, init?: RequestInit) {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set("Content-Type", "application/json");
-  const response = await fetch(`/api/admin/treasury${path}`, {
+  const response = await guardedFetch(`/api/admin/treasury${path}`, {
     ...init,
     headers,
     cache: "no-store",
@@ -420,7 +420,7 @@ export async function updateB2ForecastConfig(
 }
 
 export async function downloadB2LiabilitiesCsv() {
-  const response = await fetch("/api/admin/treasury/liabilities/export", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/treasury/liabilities/export", { cache: "no-store" });
   if (!response.ok) {
     const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
     if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();

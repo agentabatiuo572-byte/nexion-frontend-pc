@@ -40,6 +40,7 @@ import {
   type A4Overview,
 } from "@/lib/admin/a4-client";
 import { useAdminAuth } from "@/lib/store/admin-auth";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { ACtx } from "./types";
 
 /* ────────────────── helpers ────────────────── */
@@ -71,7 +72,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
     try {
       setOverview(await fetchA4Overview());
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
+      setLoadError(displayAdminError(error));
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -126,7 +127,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
         toast(success);
       })
       .catch((error: unknown) => {
-        toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
+        toast(`提交失败:${displayAdminError(error)}`);
         throw error;
       })
       .finally(() => setMutating(null));
@@ -260,7 +261,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
             toast(`事件 ${ev} schema 已提交注册(${ver} · ${bv?.producer})· 后端留痕`);
           })
           .catch((error: unknown) => {
-            toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
+            toast(`提交失败:${displayAdminError(error)}`);
             throw error;
           })
           .finally(() => setMutating(null));
@@ -721,7 +722,7 @@ export function A4Events({ ctx }: { ctx: ACtx }) {
                         .then(() => refreshOverview(true))
                         .then(() => toast(`扩展工单 ${domain} / ${event} 已提交注册确认`))
                         .catch((error: unknown) => {
-                          toast(`提交失败:${error instanceof Error ? error.message : String(error)}`);
+                          toast(`提交失败:${displayAdminError(error)}`);
                           throw error;
                         })
                         .finally(() => setMutating(null));

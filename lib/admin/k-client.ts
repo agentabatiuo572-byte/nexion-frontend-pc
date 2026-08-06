@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import {
   K5_ALERT_CHANNELS,
@@ -89,7 +89,7 @@ async function apiRequest<T>(path: string, init?: RiskRequestInit): Promise<T> {
   if (isWrite && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", commandKey);
   let res: Response;
   try {
-    res = await fetch(`/api/admin/risk${path}`, { ...init, headers, cache: "no-store" });
+    res = await guardedFetch(`/api/admin/risk${path}`, { ...init, headers, cache: "no-store" });
   } catch (error) {
     if (isWrite) throw new K1OutcomeUncertainError(error instanceof Error ? error.message : "RISK_REQUEST_OUTCOME_UNKNOWN", commandKey);
     throw error;

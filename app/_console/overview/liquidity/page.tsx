@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   CalendarClock,
   Download,
@@ -98,7 +99,7 @@ export default function LiquidityPage() {
     } catch (caught) {
       setData(null);
       setDraft(null);
-      setError(caught instanceof Error ? caught.message : "B2 服务端响应异常");
+      setError(caught instanceof Error ? displayAdminError(caught) : "B2 服务端响应异常");
     } finally {
       setLoading(false);
     }
@@ -122,7 +123,7 @@ export default function LiquidityPage() {
     setError("");
     void downloadB2LiabilitiesCsv()
       .then(() => setNotice("负债明细 CSV 已导出"))
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "B2 导出失败"));
+      .catch((caught) => setError(caught instanceof Error ? displayAdminError(caught) : "B2 导出失败"));
   };
 
   const openConfig = () => {
@@ -166,7 +167,7 @@ export default function LiquidityPage() {
       .catch((caught) => {
         if (!(caught instanceof B2OutcomeUnknownError)) forecastConfigCommandKey.forget(FORECAST_CONFIG_SLOT);
         setDialogStep(caught instanceof B2OutcomeUnknownError ? "confirm" : "edit");
-        setError(caught instanceof Error ? caught.message : "B2 配置保存失败");
+        setError(caught instanceof Error ? displayAdminError(caught) : "B2 配置保存失败");
       })
       .finally(() => setSaving(false));
   };

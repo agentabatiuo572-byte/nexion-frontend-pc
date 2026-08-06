@@ -8,6 +8,7 @@ import {
   fetchK6RemoteTargets,
   K6OutcomeUncertainError,
 } from "@/lib/admin/k6-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { K6RemoteTarget } from "@/lib/admin/k6-remote-target-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
@@ -16,7 +17,7 @@ type PendingDisable = Pick<K6RemoteTarget,
   "catalogVersion" | "remoteTargetKey" | "remoteTargetVersion" | "label" | "lockVersion">;
 
 function errorText(error: unknown) {
-  return error instanceof Error && error.message ? error.message : "批准目标操作失败";
+  return error instanceof Error && error.message ? displayAdminError(error) : "批准目标操作失败";
 }
 
 function validHttps(value: string) {

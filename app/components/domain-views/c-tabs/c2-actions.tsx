@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -157,7 +158,7 @@ function formatCountdown(totalSeconds: number) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "C2_REQUEST_FAILED";
+  return displayAdminError(error);
 }
 
 function activeSession(session: UserSession) {

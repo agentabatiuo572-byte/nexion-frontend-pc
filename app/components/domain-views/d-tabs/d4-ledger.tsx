@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   downloadD4BillsCsv,
   fetchD4Bills,
@@ -126,7 +127,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
     }).catch((reason) => {
       if (requestId !== billsRequest.current) return;
       setBills(EMPTY_PAGE);
-      setError(reason instanceof Error ? reason.message : "资金账单加载失败");
+      setError(reason instanceof Error ? displayAdminError(reason) : "资金账单加载失败");
     }).finally(() => {
       if (requestId === billsRequest.current) setLoading(false);
     });
@@ -153,7 +154,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       if (requestId !== userRequest.current) return;
       setUserLedger(null);
       setRunningBalance(null);
-      setUserError(reason instanceof Error ? reason.message : "单用户对账加载失败");
+      setUserError(reason instanceof Error ? displayAdminError(reason) : "单用户对账加载失败");
     }).finally(() => {
       if (requestId === userRequest.current) setUserLoading(false);
     });
@@ -201,7 +202,7 @@ export function D4Ledger({ ctx }: { ctx: DCtx }) {
       );
       ctx.toast("脱敏账单 CSV 已下载并留痕");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "账单导出失败");
+      setError(reason instanceof Error ? displayAdminError(reason) : "账单导出失败");
     }
   };
   const requestExport = () => ctx.openActionConfirm({

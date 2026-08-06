@@ -12,6 +12,7 @@ import type { HCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 const PARAMS = [
   { key: "newcomer.usdt", label: "新人 USDT", unit: "USDT", kind: "number", max: 50, step: 0.000001 },
@@ -43,7 +44,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       setError(null);
     } catch (cause) {
       setData(null);
-      setError(cause instanceof Error ? cause.message : "H8_DATA_LOAD_FAILED");
+      setError(displayAdminError(cause));
     } finally {
       setLoading(false);
     }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import {
   loadD6FxQuote,
   updateD6FxQuote,
@@ -43,7 +44,7 @@ export function D6Fx({ ctx }: { ctx: DCtx }) {
       setData(await loadD6FxQuote());
     } catch (err) {
       setData(null);
-      setError(err instanceof Error ? err.message : "D6 汇率牌价读取失败");
+      setError(err instanceof Error ? displayAdminError(err) : "D6 汇率牌价读取失败");
     } finally {
       setLoading(false);
     }

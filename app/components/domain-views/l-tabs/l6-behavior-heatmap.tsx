@@ -9,6 +9,7 @@
  */
 import { useEffect, useId, useMemo, useState } from "react";
 import { AutoGloss } from "@/app/components/kit/gloss";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { downloadL6Behavior, fetchL6Behavior, fetchL6ClickHeat } from "@/lib/admin/l-client";
 import {
   aggregateByDepth,
@@ -90,7 +91,7 @@ export function L6HeaderActions({ ctx }: { ctx: LCtx }) {
       URL.revokeObjectURL(href);
       ctx.toast("行为热力聚合 CSV 已导出 · 不含 PII");
     } catch (error) {
-      ctx.toast(error instanceof Error ? error.message : "行为热力导出失败");
+      ctx.toast(error instanceof Error ? displayAdminError(error) : "行为热力导出失败");
     } finally {
       setExporting(false);
     }
@@ -139,7 +140,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
         if (!cancelled) {
           setLiveRaw(null);
           setLiveHeat(null);
-          setLiveError(error instanceof Error ? error.message : "L6_DATA_LOAD_FAILED");
+          setLiveError(displayAdminError(error));
         }
       })
       .finally(() => { if (!cancelled) setRefreshing(false); });
@@ -176,7 +177,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       .catch((error) => {
         if (!cancelled) {
           setLiveHeat(null);
-          setLiveError(error instanceof Error ? error.message : "L6_CLICK_HEAT_FAILED");
+          setLiveError(displayAdminError(error));
         }
       });
     return () => { cancelled = true; };
@@ -205,7 +206,7 @@ export function L6BehaviorHeatmap({ ctx }: { ctx: LCtx }) {
       URL.revokeObjectURL(href);
       ctx.toast("当前筛选的聚合 CSV 已导出 · 不含 PII");
     } catch (error) {
-      ctx.toast(error instanceof Error ? error.message : "行为热力导出失败");
+      ctx.toast(error instanceof Error ? displayAdminError(error) : "行为热力导出失败");
     } finally {
       setExporting(false);
     }

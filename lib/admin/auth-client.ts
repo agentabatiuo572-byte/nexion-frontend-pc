@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { AdminRole } from "@/lib/nav/console-nav";
 import type { AdminSession } from "@/lib/store/admin-auth";
 import { normalizeEffectiveMenuNodes, normalizeEffectiveMenus, normalizeSessionRole } from "@/lib/admin/session-role";
@@ -49,7 +49,7 @@ export function normalizeAdminRole(role: string | undefined): AdminRole {
 }
 
 export async function loginAdmin(username: string, password: string): Promise<LoginStartResult> {
-  const response = await fetch("/api/admin/auth/login", {
+  const response = await guardedFetch("/api/admin/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username: username.trim(), password }),
@@ -71,7 +71,7 @@ export async function loginAdmin(username: string, password: string): Promise<Lo
 }
 
 export async function verifyAdminMfa(challengeId: string, code: string): Promise<LoginResult> {
-  const response = await fetch("/api/admin/auth/mfa/verify", {
+  const response = await guardedFetch("/api/admin/auth/mfa/verify", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ challengeId, code: code.trim() }),
@@ -85,7 +85,7 @@ export async function verifyAdminMfa(challengeId: string, code: string): Promise
 }
 
 export async function currentAdminSession(): Promise<LoginResult | null> {
-  const response = await fetch("/api/admin/auth/session", { cache: "no-store" });
+  const response = await guardedFetch("/api/admin/auth/session", { cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<LoginPayload> | null;
 
   if (response.status === 401 || !result?.data?.session) {
@@ -99,7 +99,7 @@ export async function currentAdminSession(): Promise<LoginResult | null> {
 }
 
 export async function changeAdminPassword(currentPassword: string, newPassword: string): Promise<LoginResult> {
-  const response = await fetch("/api/admin/auth/password/change", {
+  const response = await guardedFetch("/api/admin/auth/password/change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ currentPassword, newPassword }),

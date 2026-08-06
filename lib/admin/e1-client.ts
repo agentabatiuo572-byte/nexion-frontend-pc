@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsSku, PurchaseGate } from "@/lib/admin/platform-types";
 import { refreshAdminMediaPreviewUrl } from "@/lib/admin/media-client";
 import {
@@ -157,7 +157,7 @@ async function e1Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/e1${path}`, {
+  const response = await guardedFetch(`/api/admin/e1${path}`, {
     ...init,
     headers,
     cache: "no-store",

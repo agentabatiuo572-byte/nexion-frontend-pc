@@ -11,6 +11,7 @@ import { AutoGloss } from "@/app/components/kit/gloss";
 import type { JCtx } from "./types";
 import { createJEmergencyCommandKey, type J4PlaybookCreateInput, type Playbook, type SopExecution } from "@/lib/admin/j-client";
 import { createA2OperationProposal } from "@/lib/admin/a2-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 /* 域 badge → 色族(danger=J 域 / warning=D2 / brand=I5 / cyan=I3,I2 / brand-2=C2,K1 / success=B1) */
@@ -67,7 +68,8 @@ export function J4HeaderActions({ ctx }: { ctx: JCtx }) {
     try {
       await task;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "J4_API_FAILED";
+      // 判定与展示同源:裸机器码(J4_EXECUTION_PARTIAL 等)只有过咽喉译成中文后才命中下面的关键词。
+      const message = displayAdminError(error);
       if (/中途失败|未收到执行结果|结果暂未确认/.test(message)) {
         await actions.reloadJEmergency().catch(() => undefined);
       }
@@ -160,7 +162,8 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
     try {
       await task;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "J4_API_FAILED";
+      // 判定与展示同源:裸机器码(J4_EXECUTION_PARTIAL 等)只有过咽喉译成中文后才命中下面的关键词。
+      const message = displayAdminError(error);
       if (/中途失败|未收到执行结果|结果暂未确认/.test(message)) {
         await actions.reloadJEmergency().catch(() => undefined);
       }

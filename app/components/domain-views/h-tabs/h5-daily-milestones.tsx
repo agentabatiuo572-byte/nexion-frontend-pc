@@ -11,6 +11,7 @@ import {
 } from "@/lib/admin/h-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { HCtx } from "./types";
 
 type CheckInRule = { key: string; name: string; sub?: string; cur: string; hot?: boolean };
@@ -70,7 +71,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       setModel((await fetchH5CheckIn()) as H5Model);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "UNKNOWN_ERROR");
+      setError(displayAdminError(err));
     } finally {
       setLoading(false);
     }
@@ -222,7 +223,7 @@ export function H5DailyMilestones({ ctx }: { ctx: HCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">H5 数据加载失败</span></div>
         <div className="l-b">
-          {error ?? "UNKNOWN_ERROR"}
+          {error ?? "未收到本页数据，请重试；持续失败时请联系值班人员。"}
           <button className="l-btn sm" style={{ marginLeft: 8 }} onClick={() => void reload()}>重试</button>
         </div>
       </section>

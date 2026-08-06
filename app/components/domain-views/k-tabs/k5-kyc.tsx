@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { DataListPager, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import { K1OutcomeUncertainError, newK1CommandKey, type K5ManualResult, type K5Stats, type K5Ticket, type K5UserOption, type KRiskParam, type TicketSt } from "@/lib/admin/k-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { K5KycStatus } from "@/lib/admin/k5-contract";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
@@ -28,7 +29,7 @@ function slaColor(pct: number) {
 }
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "UNKNOWN_ERROR";
+  return displayAdminError(error);
 }
 
 export function K5HeaderActions() {

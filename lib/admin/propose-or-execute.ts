@@ -4,6 +4,7 @@
  * 由 A2 审批接口在服务端执行目标域动作与审计落库。
  */
 import { roleLabel } from "@/lib/nav/console-nav";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import type { AuthPrincipal, ExecGate } from "@/lib/admin/ops-authority";
 import { isA2OutcomeUncertainError, type A2OperationType } from "@/lib/admin/a2-client";
 import type { ReplayCommand, LockTarget } from "@/lib/admin/high-ops-registry";
@@ -78,7 +79,7 @@ export async function proposeOrExecute(deps: ProposeDeps, spec: ProposeSpec): Pr
     if (isA2OutcomeUncertainError(error)) {
       toast(`A2 提案结果暂不确定；当前弹窗与输入已保留，请使用同一命令号重试并核对 A2 审计 · ${error.commandKey}`);
     } else {
-      toast(`A2 提案提交失败:${error instanceof Error ? error.message : "A2_PROPOSAL_FAILED"}`);
+      toast(`A2 提案提交失败:${displayAdminError(error)}`);
     }
     throw error;
   }

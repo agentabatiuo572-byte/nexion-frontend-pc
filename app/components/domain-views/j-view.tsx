@@ -17,6 +17,7 @@ import { J2GeoBlock } from "./j-tabs/j2-geoblock";
 import { J3HeaderActions, J3Tamper } from "./j-tabs/j3-tamper";
 import { J4HeaderActions, J4Sop } from "./j-tabs/j4-sop";
 import type { JCtx, ActionConfirmReq } from "./j-tabs/types";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 /** J4 单独成页(对齐 PRD §15.4 应急 SOP 独立;原 J4→J3 折叠取消)。 */
 type JTab = "J1" | "J2" | "J3" | "J4";
@@ -65,7 +66,7 @@ export function JDomainView({ meta }: { meta: DomainViewMeta }) {
       setEmergency(await nextEmergency);
     } catch (error) {
       setEmergency({});
-      setContentError(error instanceof Error ? error.message : "应急控制数据读取失败，请稍后重试。");
+      setContentError(error instanceof Error ? displayAdminError(error) : "应急控制数据读取失败，请稍后重试。");
       throw error;
     } finally {
       setContentLoading(false);

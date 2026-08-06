@@ -15,6 +15,7 @@ import type { ICtx } from "./types";
 import { Drawer, PaginationExemptionList } from "../design-kit";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 type NsFlt = "all" | "issues";
@@ -83,7 +84,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     setVersionsLoading(true);
     actions.fetchI7CourseVersions(versionCourseId)
       .then(setCourseVersions)
-      .catch((error) => toast(`版本加载失败:${error instanceof Error ? error.message : String(error)}`))
+      .catch((error) => toast(`版本加载失败:${displayAdminError(error)}`))
       .finally(() => setVersionsLoading(false));
   }, [actions, toast, versionCourseId, content.i18nLearning]);
   const I6_STATS = data?.stats ?? { managedKeys: 0, totalKeys: 0, integrityIssues: 0, coursesOnline: 0, weeklyNexPayout: "—" };
@@ -125,7 +126,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       .then(() => actions.reloadIContent())
       .then(() => toast(ok))
       .catch((error) => {
-        toast(`操作失败:${error instanceof Error ? error.message : String(error)}`);
+        toast(`操作失败:${displayAdminError(error)}`);
         throw error;
       });
   };
@@ -160,7 +161,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
       .catch((error) => {
         if (active) {
           setMessageVersions([]);
-          toast(`词条版本加载失败:${error instanceof Error ? error.message : String(error)}`);
+          toast(`词条版本加载失败:${displayAdminError(error)}`);
         }
       })
       .finally(() => { if (active) setMessageVersionsLoading(false); });
@@ -468,7 +469,7 @@ function I18nLearningPage({ ctx, view }: { ctx: ICtx; view: "i18n" | "learn" }) 
     task.then(() => actions.reloadIContent())
       .then(() => actions.fetchI7CourseVersions(courseId))
       .then((versions) => { setCourseVersions(versions); toast(ok); })
-      .catch((error) => toast(`操作失败:${error instanceof Error ? error.message : String(error)}`));
+      .catch((error) => toast(`操作失败:${displayAdminError(error)}`));
   };
 
   const courseCurrent = (c: Course, version: string, payload?: Record<string, unknown>) => ({

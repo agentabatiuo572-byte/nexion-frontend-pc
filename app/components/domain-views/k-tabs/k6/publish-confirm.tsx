@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useJanusC2Store } from "@/lib/store/admin/janus-c2-store";
 import { runK6DryRun, type DryRun } from "@/lib/admin/k6-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { ACTION_TYPE_LABEL } from "@/lib/admin/janus-c2/labels";
 import type { Strategy } from "@/lib/admin/janus-c2/types";
 
@@ -26,7 +27,7 @@ export function PublishConfirm({ strategy: s, operatorId, onClose }: { strategy:
     setDryError("");
     runK6DryRun(s.strategyId, s.lockVersion ?? 0, `发布前真实预演 ${s.name}`)
       .then((result) => { if (!cancelled) setDry(result); })
-      .catch((error: unknown) => { if (!cancelled) setDryError(error instanceof Error ? error.message : "预演失败"); });
+      .catch((error: unknown) => { if (!cancelled) setDryError(error instanceof Error ? displayAdminError(error) : "预演失败"); });
     return () => { cancelled = true; };
   }, [s.lockVersion, s.name, s.strategyId]);
   useEffect(() => {
@@ -43,7 +44,7 @@ export function PublishConfirm({ strategy: s, operatorId, onClose }: { strategy:
       await setStatus(s.strategyId, "active", operatorId, note.trim(), dry);
       onClose();
     } catch (error) {
-      setPublishError(error instanceof Error ? error.message : "发布失败，请重试");
+      setPublishError(error instanceof Error ? displayAdminError(error) : "发布失败，请重试");
     } finally {
       setPublishing(false);
     }

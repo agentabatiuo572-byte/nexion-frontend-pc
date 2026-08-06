@@ -16,6 +16,7 @@ import { Card, CardH, CodeTag, Badge, Btn, Drawer, OperationConfirmModal, useToa
 import "../a-domain.css";
 import { DomainHeader } from "../domain-header";
 import { PlatformMutationReadbackError } from "@/lib/admin/platform-contracts";
+import { displayAdminError } from "@/lib/admin/error-messages";
 
 type FormMode = { kind: "create"; parent?: A7MenuTreeNode } | { kind: "update"; node: A7MenuTreeNode } | null;
 type ConfirmReq = { action: React.ReactNode; detail: React.ReactNode; run: (reason: string) => Promise<void> };

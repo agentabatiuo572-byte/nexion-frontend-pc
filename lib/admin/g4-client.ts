@@ -1,5 +1,5 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { assertG4OverviewContract } from "@/lib/admin/g-overview-contract";
 import { createStableMutationExecutor, stableMutationFingerprint, stableMutationHttpFailure } from "@/lib/admin/stable-mutation";
 
@@ -381,7 +381,7 @@ async function g4Request<T>(path: string, init?: RequestInit) {
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const response = await fetch(`/api/admin/market${path}`, {
+  const response = await guardedFetch(`/api/admin/market${path}`, {
     ...init,
     headers,
     cache: "no-store",

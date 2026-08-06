@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G1 Staking 池配置 — 资金池、持仓状态、B1 覆盖率和 J1 闸状态都来自后端业务表。
  */
@@ -35,7 +36,7 @@ function displayTerm(pool: G1Pool) {
 }
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 export function G1Staking({ ctx }: { ctx: GCtx }) {
@@ -134,7 +135,7 @@ export function G1Staking({ ctx }: { ctx: GCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">G1 Staking</span><span className="sub">· 真实接口数据</span></div>
         <div className="l-b">
-          <div className="gtint">G1 数据加载失败 · {error || "UNKNOWN_ERROR"}</div>
+          <div className="gtint">G1 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>

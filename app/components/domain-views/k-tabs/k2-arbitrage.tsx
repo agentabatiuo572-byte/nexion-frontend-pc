@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PaginationExemptionList } from "../design-kit";
 import type { BusinessFormSpec, BusinessFormValue } from "../design-kit";
 import { K1OutcomeUncertainError, newK1CommandKey, type K2Row, type KRiskParam } from "@/lib/admin/k-client";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
@@ -20,7 +21,7 @@ const commandAttempt = createPendingMutationStore({
 });
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : "UNKNOWN_ERROR";
+  return displayAdminError(error);
 }
 
 export function K2HeaderActions() {

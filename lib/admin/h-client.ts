@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 
 interface ApiResult<T> {
@@ -36,7 +36,7 @@ function numberValue(value: unknown) {
 
 function requiredNumber(value: unknown, field: string) {
   const n = numberValue(value);
-  if (n == null) throw new Error(`H1 后端数据缺少字段:${field}`);
+  if (n == null) throw new Error(`H1_RESPONSE_INVALID:${field}`);
   return n;
 }
 
@@ -45,7 +45,7 @@ function clampInt(value: number, min: number, max: number) {
 }
 
 function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview {
-  if (!raw) throw new Error("H1 后端未返回节奏数据");
+  if (!raw) throw new Error("H1_RESPONSE_INVALID:rhythm");
   const rawOptions = Array.isArray(raw?.options) ? raw.options : [];
   const options = rawOptions.map((item) => Number(item)).filter((item) => Number.isFinite(item));
   const totalMonths = Math.max(1, Math.round(requiredNumber(raw.totalMonths, "totalMonths")));
@@ -54,7 +54,7 @@ function normalizeRhythm(raw?: Record<string, unknown> | null): H1RhythmOverview
   const currentPhase = typeof raw.currentPhase === "string" && raw.currentPhase.trim()
     ? raw.currentPhase.trim()
     : null;
-  if (!currentPhase) throw new Error("H1 后端数据缺少字段:currentPhase");
+  if (!currentPhase) throw new Error("H1_RESPONSE_INVALID:currentPhase");
   return {
     totalMonths,
     currentMonth: clampInt(rawCurrentMonth, 1, totalMonths),
@@ -74,14 +74,16 @@ async function growthRequest<T>(path: string, init?: RequestInit, idempotencyPre
     headers.set("Idempotency-Key", nextIdempotencyKey(idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/growth${path}`, {
+  const response = await guardedFetch(`/api/admin/growth${path}`, {
     ...init,
     headers,
     cache: "no-store",
   });
-  const result = (await response.json()) as ApiResult<T>;
-  if (!response.ok || result.code !== 0) {
-    throw new Error(formatAdminApiError(result.message, `GROWTH_REQUEST_FAILED_${response.status}`));
+  // 与兄弟 client(e1/f1/a4…)同款:2xx 但响应体不是 JSON(网关 HTML 错误页)时
+  // 原写法会抛英文 SyntaxError,绕过下面这条已备中文的归因分支。
+  const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
+  if (!response.ok || !result || result.code !== 0) {
+    throw new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`));
   }
   return result.data as T;
 }

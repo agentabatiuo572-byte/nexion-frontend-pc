@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { assertL3FinanceContract } from "@/lib/admin/l3-finance-contract";
 import { assertL5OverviewContract } from "@/lib/admin/l5-overview-contract";
@@ -156,7 +156,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
-  const execute = () => fetch(`/api/admin/bi${path}`, { ...init, headers, cache: "no-store" });
+  const execute = () => guardedFetch(`/api/admin/bi${path}`, { ...init, headers, cache: "no-store" });
   const isReportCreation = (path === "/reports" && init?.method === "POST")
     || (path.startsWith("/export/network?") && init?.method === "GET");
   let res: Response;
@@ -186,7 +186,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 async function treasuryRequest<T>(path: string): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`/api/admin/treasury${path}`, { cache: "no-store" });
+    res = await guardedFetch(`/api/admin/treasury${path}`, { cache: "no-store" });
   } catch {
     throw networkFailure(false);
   }
@@ -453,7 +453,7 @@ export async function fetchL6ClickHeat(route: string, input: L6BehaviorQuery = {
 }
 
 export async function downloadL6Behavior(input: L6BehaviorQuery = {}) {
-  const res = await fetch(`/api/admin/bi/export/behavior?${l6Query(input).toString()}`, { cache: "no-store" });
+  const res = await guardedFetch(`/api/admin/bi/export/behavior?${l6Query(input).toString()}`, { cache: "no-store" });
   const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok || contentType.includes("application/json")) {
     const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;
@@ -669,7 +669,7 @@ async function regulatoryRequest<T>(path: string, init?: RequestInit): Promise<T
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (init?.method && init.method !== "GET" && !headers.has("Idempotency-Key")) headers.set("Idempotency-Key", idempotencyKey());
-  const execute = () => fetch(`/api/admin/regulatory${path}`, { ...init, headers, cache: "no-store" });
+  const execute = () => guardedFetch(`/api/admin/regulatory${path}`, { ...init, headers, cache: "no-store" });
   let response: Response;
   try {
     response = await execute();
@@ -703,7 +703,7 @@ async function downloadReportFile(reportId: string) {
   const token = typeof issued.downloadToken === "string" ? issued.downloadToken : "";
   if (!token) throw new Error("下载链接签发失败 · 请重新尝试");
   const query = new URLSearchParams({ token });
-  const res = await fetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
+  const res = await guardedFetch(`/api/admin/bi/exports/${encodeURIComponent(reportId)}/download?${query.toString()}`, { cache: "no-store" });
   const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok || contentType.includes("application/json")) {
     const payload = (await res.json().catch(() => null)) as ApiResult<unknown> | null;

@@ -1,6 +1,7 @@
 "use client";
 
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { displayAdminError } from "@/lib/admin/error-messages";
 /**
  * G4 Genesis 经济 — 数据来自后端 /api/admin/market/nex/genesis 及 Genesis 业务表。
  */
@@ -23,7 +24,7 @@ import G4AdminOperations from "./g4-admin-operations";
 const OPERATOR = currentAdminOperator;
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  return displayAdminError(error);
 }
 
 function fmtNumber(value: number, max = 2) {
@@ -156,7 +157,7 @@ export function G4Genesis({ ctx }: { ctx: GCtx }) {
       <section className="l-card">
         <div className="l-h"><span className="ttl">G4 Genesis 经济</span><span className="sub">· 真实接口数据</span></div>
         <div className="l-b">
-          <div className="gtint">G4 数据加载失败 · {error || "UNKNOWN_ERROR"}</div>
+          <div className="gtint">G4 数据加载失败 · {error || "未收到本页数据，请重试；持续失败时请联系值班人员。"}</div>
           <button className="l-btn mc" style={{ marginTop: 12 }} onClick={() => void reload()}>重新加载</button>
         </div>
       </section>

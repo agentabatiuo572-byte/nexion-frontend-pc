@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { displayAdminError } from "@/lib/admin/error-messages";
 import { Icon, MessageThread, type ThreadMessage } from "../design-kit";
 import {
   STANDBY_POOL_LABEL,
@@ -279,7 +280,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       return loaded;
     } catch (error) {
       setIdlePolicy(null);
-      setIdlePolicyError(error instanceof Error ? error.message : "M3_TIMEOUT_POLICY_LOAD_FAILED");
+      setIdlePolicyError(displayAdminError(error));
       return null;
     } finally {
       setIdlePolicyLoading(false);
@@ -315,7 +316,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       toast("会话超时策略已更新,服务端调度立即按新版本执行");
       return true;
     } catch (error) {
-      setIdlePolicyError(error instanceof Error ? error.message : "M3_TIMEOUT_POLICY_UPDATE_FAILED");
+      setIdlePolicyError(displayAdminError(error));
       return false;
     } finally {
       setIdlePolicySaving(false);
@@ -344,7 +345,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
         .catch((error: unknown) => {
           if (!active) return;
           setDirectoryCustomers([]);
-          setInitiateCustomerError(error instanceof Error ? error.message : "USERS_LOAD_FAILED");
+          setInitiateCustomerError(displayAdminError(error));
         })
         .finally(() => {
           if (active) setInitiateCustomerLoading(false);
@@ -378,7 +379,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
       .catch((error: unknown) => {
         if (!active) return;
         setPushSkus([]);
-        setPushSkuError(error instanceof Error ? error.message : "E1_SKU_LOAD_FAILED");
+        setPushSkuError(displayAdminError(error));
       })
       .finally(() => {
         if (active) setPushSkuLoading(false);

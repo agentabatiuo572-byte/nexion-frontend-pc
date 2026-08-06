@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import type { OpsTask } from "@/lib/admin/platform-types";
 
 interface ApiResult<T> {
@@ -114,7 +114,7 @@ async function e2Request<T>(path: string, init?: RequestInit & { idempotencyPref
     headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
   }
 
-  const response = await fetch(`/api/admin/devices${path}`, {
+  const response = await guardedFetch(`/api/admin/devices${path}`, {
     ...init,
     headers,
     cache: "no-store",
@@ -149,7 +149,7 @@ async function e2ConfigRequest<T>(path: "task-pricing" | "phone-tiers", init?: R
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set("Content-Type", "application/json");
   if (init?.idempotencyPrefix) headers.set("Idempotency-Key", idempotencyKey(init.idempotencyPrefix));
-  const response = await fetch(`/api/admin/config/${path}`, { ...init, headers, cache: "no-store" });
+  const response = await guardedFetch(`/api/admin/config/${path}`, { ...init, headers, cache: "no-store" });
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
     throw new Error(formatAdminApiError(result?.message, `E2_CONFIG_REQUEST_FAILED_${response.status}`));

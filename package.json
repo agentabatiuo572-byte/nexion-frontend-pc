@@ -40,6 +40,7 @@
     "test:m3-contract": "node --test tests/m3-acceptance-contract.test.mjs",
     "test:m4-contract": "node --test tests/m4-acceptance-contract.test.mjs",
     "test:m5-contract": "node --test tests/m5-acceptance-contract.test.mjs",
+    "test:error-messages-contract": "node --experimental-strip-types --test tests/error-messages-backend-unavailable.test.mjs tests/fetch-guard.test.mjs",
     "verify:owner-review": "node scripts/owner-review-readiness.mjs",
     "verify:owner-review:live": "node scripts/owner-review-readiness.mjs --check-live",
     "remediation:preflight": "node scripts/remediation-finalize-after-owner-confirmed.mjs",

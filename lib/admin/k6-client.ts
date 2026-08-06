@@ -1,4 +1,4 @@
-import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import {
   normalizeK6Audit,
   normalizeK6Audits,
@@ -145,11 +145,11 @@ async function request<T>(path: string, init: RequestInit | undefined, normalize
   let response: Response;
   try {
     try {
-      response = await fetch(`${BASE}${path}`, options);
+      response = await guardedFetch(`${BASE}${path}`, options);
     } catch {
       // A timed-out request may already have committed. The single transport
       // retry deliberately reuses the exact same idempotency key.
-      response = await fetch(`${BASE}${path}`, options);
+      response = await guardedFetch(`${BASE}${path}`, options);
     }
   } catch {
     if (isWrite) throw new K6OutcomeUncertainError(stableCommandKey, "网络中断");
