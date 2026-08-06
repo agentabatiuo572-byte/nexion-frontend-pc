@@ -186,6 +186,10 @@ const GEARS = [
   ["J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]],
   ["J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]],
   ["K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]],
+  // 2026-08-07 补挂:这个文件写于 2026-07-28(退役 PCFULL-035「已退役控制项仍被 PC 宣称影响真实报价」
+  // 那一轮),但既不在 GEARS 也不在任何 npm script —— 一道从没跑过的门。结果 08-06 的原型对齐批
+  // 原样把那三个控件加了回来,机器门一声没吭。孤儿门 = 没有门。
+  ["E3 acceptance contract", "node", ["--test", "tests/e3-acceptance-contract.test.mjs"]],
 ];
 GEARS.forEach(([label, cmd, args], index) => run(`[${index + 1}/${GEARS.length}] ${label}`, cmd, args, label));
 

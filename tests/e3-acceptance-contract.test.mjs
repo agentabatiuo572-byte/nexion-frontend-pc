@@ -10,10 +10,15 @@ const manual = readFileSync(new URL("../app/components/domain-views/e-tabs/e3-ma
 const designKit = readFileSync(new URL("../app/components/domain-views/design-kit.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/admin/e3-client.ts", import.meta.url), "utf8");
 const l4 = readFileSync(new URL("../app/components/domain-views/l-tabs/l4-live-data.ts", import.meta.url), "utf8");
-const backendE3 = readFileSync(
-  new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java", import.meta.url),
-  "utf8",
-);
+// 🔴 跨仓读取必须惰性:写成模块顶层常量时,本机没有 nexion-backend 会让**整个文件**
+// 加载即抛 ENOENT —— 于是这里那些只读本仓文件、跟后端毫无关系的断言(尤其
+// 「不得露出已退役的促销控件」)在开发机上一条都跑不了。2026-08-06 那批原型对齐
+// 正是这样把退役控件原样加了回来而全程没有一道门吭声。
+// 规则:一个文件里既有本地断言又有跨仓断言时,跨仓那条自己 skip,不许拖垮本地的。
+const BACKEND_E3_PATH = new URL("../../nexion-backend/src/main/java/ffdd/opsconsole/device/application/OpsDeviceService.java", import.meta.url);
+function readBackendE3() {
+  try { return readFileSync(BACKEND_E3_PATH, "utf8"); } catch { return null; }
+}
 
 test("E3 treats every FEAT-DEV02 trade-in control as required server-canonical data", () => {
   for (const key of [
@@ -89,10 +94,15 @@ test("E3 A2 object locks use the same canonical key as backend direct-write chec
     canonicalKey,
   );
 
-  assert.match(
-    backendE3,
-    /key = normalizeE3Key\(request\.key\(\)\);[\s\S]*countActiveByTarget\("E", "device_e3_config", key\)[\s\S]*ApiResult\.fail\(409, "OBJECT_LOCKED_BY_A2"\)/,
-  );
+  const backendE3 = readBackendE3();
+  if (backendE3 === null) {
+    console.log("  ⏭  跨仓断言跳过:本机无 nexion-backend(本文件其余本仓断言照常执行)");
+  } else {
+    assert.match(
+      backendE3,
+      /key = normalizeE3Key\(request\.key\(\)\);[\s\S]*countActiveByTarget\("E", "device_e3_config", key\)[\s\S]*ApiResult\.fail\(409, "OBJECT_LOCKED_BY_A2"\)/,
+    );
+  }
   for (const target of [
     scalar.buildTarget({ key: frontendKey }),
     ...(batch.buildTargets?.({ values: { [frontendKey]: "31" } }) ?? []),

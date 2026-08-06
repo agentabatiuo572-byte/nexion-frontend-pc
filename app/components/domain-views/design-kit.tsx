@@ -1835,7 +1835,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           </div>
         )}
         {(spec.placeholders ?? []).length > 0 && (
-          <div className="tint tiny" style={{ marginTop: 10 }}>必含占位符: {(spec.placeholders ?? []).map((ph) => <span key={ph} className="mono" style={{ marginRight: 6 }}>{ph}</span>)}</div>
+          <div className="tint tiny" style={{ marginTop: 10 }}>必含占位符: {(spec.placeholders ?? []).map((ph, i) => <span key={ph}><span className="mono">{ph}</span>{i < (spec.placeholders ?? []).length - 1 ? "、" : ""}</span>)}</div>
         )}
       </div>
     );

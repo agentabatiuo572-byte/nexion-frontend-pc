@@ -53,3 +53,22 @@ export function resolveNexionBackendRoot({
     candidates: ["../nexion-backend", "../../nexion-backend"],
   });
 }
+
+/**
+ * 缺仓时返回 null 而不是抛错。
+ *
+ * why(2026-08-07):契约测试在**模块顶层**解析后端仓并读文件,缺仓即整文件加载失败 ——
+ * 于是那些只读本仓文件、跟后端毫无关系的断言也一条都跑不了。实测 J2 有 20 条断言,
+ * 只有 1 条真用到后端文件,另外 19 条纯属连坐;J1 是 3 连坐 12。而这恰好是**开发机的常态**,
+ * 等于日常唯一会跑门的那台机器上,这些门长期是黑的。
+ * 用法:根拿不到时,跨仓那几条断言自己 skip,本地断言照跑。
+ */
+export function optionalNexionBackendRoot(options = {}) {
+  try { return resolveNexionBackendRoot(options); } catch { return null; }
+}
+
+/** 跨仓文件:根为 null 或文件不存在时返回 null,交由调用方 skip 对应断言。 */
+export function optionalWorkspaceFile(root, relative) {
+  if (!root) return null;
+  try { return fs.readFileSync(path.join(root, ...relative.split("/")), "utf8"); } catch { return null; }
+}

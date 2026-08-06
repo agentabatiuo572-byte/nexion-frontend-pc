@@ -89,6 +89,77 @@ function actionCandidates(row: D2Withdrawal): D2ReviewAction[] {
   return [];
 }
 
+/** 状态流转图。节点名取 STATUS_TABS,分支与 actionCandidates 同一套判断。 */
+const STATUS_CN: Record<string, string> = Object.fromEntries(STATUS_TABS.filter(([code]) => code).map(([code, label]) => [code, label]));
+const D2_HAPPY_PATH = ["SUBMITTED", "REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING", "SENT", "CONFIRMED"];
+/** 终态:走到这里就结束,没有出边是对的,不该被下面的死结自检报出来。 */
+const D2_TERMINAL = new Set(["CONFIRMED", "REFUNDED"]);
+const D2_BRANCHES: { from: string[]; trigger: string; to: string[]; note: string }[] = [
+  { from: ["REVIEW_PENDING"], trigger: "点「延迟」", to: ["EXTENDED_HOLD"], note: "操作时要填复查时间" },
+  { from: ["EXTENDED_HOLD"], trigger: "等到复查时间", to: ["REVIEW_PENDING"], note: "这一步本页没有按钮,到点由系统送回待审核" },
+  { from: ["REVIEW_PENDING", "REVIEW_PASSED", "PROCESSING"], trigger: "点「冻结」", to: ["FROZEN"], note: "广播上链之前都还拦得住" },
+  { from: ["FROZEN"], trigger: "点「解冻」", to: ["REVIEW_PENDING"], note: "回到待审核重新决定" },
+  { from: ["REVIEW_PENDING"], trigger: "点「拒绝并退款」", to: ["REVIEW_REJECTED"], note: "要填拒绝原因码" },
+  { from: ["SENT"], trigger: "链上回执", to: ["ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], note: "由链上结果决定,不是人工动作" },
+  { from: ["REVIEW_REJECTED", "ADDRESS_INVALID", "TX_FAILED", "TX_ORPHANED"], trigger: "手动退款", to: ["REFUNDED"], note: "提交前要先核实资金没离开平台" },
+];
+
+function StatusFlowChip({ code }: { code: string }) {
+  return <span className={`bdg ${statusTone(code)}`} style={{ whiteSpace: "nowrap" }}>{STATUS_CN[code] ?? code}</span>;
+}
+
+function D2StatusFlow() {
+  const drawn = new Set([...D2_HAPPY_PATH, ...D2_BRANCHES.flatMap((b) => [...b.from, ...b.to])]);
+  const undrawn = Object.keys(STATUS_CN).filter((code) => !drawn.has(code));
+  // 「画上了」不等于「说清楚了」:只查节点在不在,查不出「有入边没出边」的死结 ——
+  // 而死结恰恰是最误导的形态(图看着完整,读的人却找不到这个状态之后会怎样)。
+  const hasOutEdge = new Set([
+    ...D2_HAPPY_PATH.slice(0, -1),
+    ...D2_BRANCHES.flatMap((b) => b.from),
+  ]);
+  const deadEnds = [...drawn].filter((code) => !D2_TERMINAL.has(code) && !hasOutEdge.has(code));
+  return (
+    <section className="l-card">
+      <div className="l-h"><span className="ttl">提现状态怎么流转</span><span className="sub">· 共 {Object.keys(STATUS_CN).length} 个状态 · 与队列里的筛选项同一套</span></div>
+      <div className="l-b" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, textWrap: "pretty" }}>
+        <span style={{ color: "var(--ink-3)", fontSize: 12, marginRight: 4 }}>正常走完:</span>
+        {D2_HAPPY_PATH.map((code, index) => (
+          <span key={code} style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {index > 0 && <span style={{ color: "var(--ink-4)" }}>→</span>}
+            <StatusFlowChip code={code} />
+          </span>
+        ))}
+      </div>
+      <div className="l-b">
+        <table className="l-tbl" style={{ width: "100%" }}>
+          <thead><tr><th>从哪个状态</th><th>发生什么</th><th>去哪个状态</th><th>说明</th></tr></thead>
+          <tbody>
+            {D2_BRANCHES.map((branch) => (
+              <tr key={`${branch.from.join("+")}-${branch.trigger}`}>
+                <td><span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4 }}>{branch.from.map((code) => <StatusFlowChip key={code} code={code} />)}</span></td>
+                <td style={{ whiteSpace: "nowrap" }}>{branch.trigger}</td>
+                <td><span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4 }}>{branch.to.map((code) => <StatusFlowChip key={code} code={code} />)}</span></td>
+                <td style={{ color: "var(--ink-3)", fontSize: 12, textWrap: "pretty" }}>{branch.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {undrawn.length > 0 && (
+          <div className="dtint warn" style={{ marginTop: 10 }}>
+            这张图还没画到的状态:{undrawn.map((code) => STATUS_CN[code]).join("、")}。请补进流转图后再对外讲。
+          </div>
+        )}
+        {deadEnds.length > 0 && (
+          <div className="dtint warn" style={{ marginTop: 10 }}>
+            这些状态画上了、却没写它之后会怎样:{deadEnds.map((code) => STATUS_CN[code] ?? code).join("、")}。
+            补一条出边,或把它登记成终态。
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function k4RiskText(row: D2Withdrawal) {
   return row.riskScore === null ? "K4 风险评分不可用" : `K4 ${row.riskScore}`;
 }
@@ -375,6 +446,8 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <div className="f-stat warn"><div className="k">高优先队列</div><div className="v">{visibleRows.filter((row) => ["HIGH", "ESCALATED"].includes(routingPriority(row))).length}</div><div className="sub">按当前生效 K4 模型动态路由</div></div>
       <div className="f-stat danger"><div className="k">D5 日限</div><div className="v">{dailyLimit || "—"}</div><div className="sub">依赖事实读取失败时关闭写操作</div></div>
     </div>
+
+    <D2StatusFlow />
 
     <section className="l-card">
       <div className="l-h"><span className="ttl">提现审核队列</span><span className="sub">· 服务端权威状态 · 逐笔 / 批量</span></div>

@@ -49,6 +49,24 @@ const VERSION_PAGE_SIZE = 20;
 
 const VAR_COLORS = ["var(--i-ac)", "var(--admin-cat-5)", "var(--admin-cat-3)"];
 
+// 占位符是数据槽,任一语言漏掉就会渲染出半截句子。
+// 取三语**交集**而不是并集:并集会把「历史数据本来就少一种语言」变成一道死锁 ——
+// 运营只想改个错别字,却被逼先把一个占位符硬塞进那条本来就没有它的译文里才能保存,
+// 而且没有豁免出口。交集只锁「三语现在都有、你不许改没」的槽,是纯增量的保护,
+// 不会因为存量不一致挡住无关编辑。存量不一致本身归 I6 词条治理,不在这条路径上解决。
+const COPY_PLACEHOLDER_PATTERN = /\{[A-Za-z0-9_.]+\}/g;
+
+function placeholdersIn(text?: string): Set<string> {
+  return new Set(text?.match(COPY_PLACEHOLDER_PATTERN) ?? []);
+}
+
+function requiredPlaceholders(...texts: (string | undefined)[]): string[] {
+  const sets = texts.map(placeholdersIn);
+  if (sets.length === 0) return [];
+  const [first, ...rest] = sets;
+  return [...first].filter((token) => rest.every((set) => set.has(token))).sort();
+}
+
 function normalizeCopyModule(value?: string): string {
   const raw = value?.trim() ?? "";
   return LEGACY_MODULES[raw] ?? raw.toLowerCase();
@@ -270,6 +288,7 @@ export function I1CopyAb({ ctx }: { ctx: ICtx }) {
         en: editableVersion?.en || "",
         vi: editableVersion?.vi || "",
         versionNote: editableVersion?.versionNote || "后台编辑文案",
+        placeholders: requiredPlaceholders(editableVersion?.zh, editableVersion?.en, editableVersion?.vi),
         saveModeChoice: true,
       },
       run: (reason, _value, form) => {

@@ -2,6 +2,7 @@
 import "../a-domain.css";
 import { useEffect, useRef, useState } from "react";
 import { fetchA8Permissions, fetchA8PermissionDetail, type A8Permission, type A8PermissionPage } from "@/lib/admin/a8-client";
+import { fetchA6RolesOverview, fetchA6RoleDetail, type A6RoleSummary } from "@/lib/admin/a6-client";
 import { Card, CardH, CodeTag, Chip, Badge, Btn, Drawer, DataListPager, useToast } from "@/app/components/domain-views/design-kit";
 import { DomainHeader } from "../domain-header";
 import { CONSOLE_NAV } from "@/lib/nav/console-nav";
@@ -12,7 +13,9 @@ const PERM_TYPES = ["ALL", "READ", "WRITE", "HIGH"];
 const TONE_BY_TYPE: Record<string, string> = { HIGH: "danger", WRITE: "warn", READ: "ok" };
 const LABEL_BY_TYPE: Record<string, string> = { HIGH: "高敏操作", WRITE: "写操作", READ: "只读" };
 
-/** A8 权限字典（只读）。服务端分页 + 搜索 debounce + 域 tab + 类型筛选 + 详情 drawer。 */
+type RoleGrants = { role: A6RoleSummary; codes: Set<string>; readable: boolean };
+
+/** A8 权限字典（只读）。服务端分页 + 搜索 debounce + 域 tab + 类型筛选 + 详情 drawer + 角色矩阵。 */
 export default function A8Permissions() {
   const [toast, setToast] = useToast();
   const [pageNum, setPageNum] = useState(1);
@@ -28,6 +31,14 @@ export default function A8Permissions() {
   const [detail, setDetail] = useState<A8Permission | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const detailRequestSeq = useRef(0);
+  const [matrixOpen, setMatrixOpen] = useState(false);
+  const [grants, setGrants] = useState<RoleGrants[] | null>(null);
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixError, setMatrixError] = useState<string | null>(null);
+  // 重试必须用自增计数器,不能靠「把 grants 设回 null」——失败时它本来就是 null,
+  // 依赖数组按 Object.is 比不出变化,effect 根本不会重跑,界面却从报错切成
+  // 「没有可展示的角色」,比不重试更误导。同页主列表(reloadKey)早就是这个写法。
+  const [matrixReloadKey, setMatrixReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +56,29 @@ export default function A8Permissions() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [pageNum, pageSize, keyword, domain, permType, reloadKey, setToast]);
+
+  // 矩阵按需拉:每个角色的授权明细要单独一次请求,不开矩阵就不发。
+  useEffect(() => {
+    if (!matrixOpen) return;
+    let cancelled = false;
+    setMatrixLoading(true);
+    setMatrixError(null);
+    fetchA6RolesOverview()
+      .then(async (overview) => {
+        // 某个角色读不到时只让那一列变「读不到」,不能让它显示成「没这个权限」。
+        const details = await Promise.allSettled(overview.roles.map((role) => fetchA6RoleDetail(role.id)));
+        return overview.roles.map((role, index) => {
+          const settled = details[index];
+          return settled?.status === "fulfilled"
+            ? { role, codes: new Set(settled.value.permissionCodes), readable: true }
+            : { role, codes: new Set<string>(), readable: false };
+        });
+      })
+      .then((rows) => { if (!cancelled) setGrants(rows); })
+      .catch((err) => { if (!cancelled) setMatrixError(displayAdminError(err)); })
+      .finally(() => { if (!cancelled) setMatrixLoading(false); });
+    return () => { cancelled = true; };
+  }, [matrixOpen, matrixReloadKey]);
 
   // keyword debounce 350ms
   useEffect(() => {
@@ -144,6 +178,75 @@ export default function A8Permissions() {
           onPageChange={setPageNum}
           onPageSizeChange={(s) => { setPageSize(s); setPageNum(1); }}
         />}
+      </Card>
+      <Card>
+        <CardH title="权限矩阵" right={
+          <Btn sm onClick={() => setMatrixOpen((open) => !open)}>{matrixOpen ? "收起矩阵" : "展开权限矩阵"}</Btn>
+        } />
+        {matrixOpen && (
+          <div style={{ padding: "12px 16px" }}>
+            <div className="tint tiny" style={{ marginBottom: 10 }}>
+              横排是角色,竖排是当前这一页的权限(共 {records.length} 条,跟着上面的搜索和筛选走)。
+              打勾 = 该角色有这个权限。要看别的权限就先在上面筛。
+            </div>
+            {matrixLoading ? (
+              <div style={{ padding: 20, color: "var(--ink-3)" }}>正在读取各角色的授权明细…</div>
+            ) : matrixError ? (
+              <div className="alertbar warn" role="alert" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                角色授权读取失败,矩阵不可信。{matrixError}
+                <Btn sm onClick={() => setMatrixReloadKey((value) => value + 1)}>重试</Btn>
+              </div>
+            ) : !grants || grants.length === 0 ? (
+              <div style={{ padding: 20, color: "var(--ink-3)" }}>没有可展示的角色</div>
+            ) : records.length === 0 ? (
+              <div style={{ padding: 20, color: "var(--ink-3)" }}>当前筛选下没有权限可比对</div>
+            ) : (
+              <>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ borderCollapse: "collapse", fontSize: 12.5 }}>
+                    <thead>
+                      <tr style={{ background: "var(--surface-2)", color: "var(--ink-3)" }}>
+                        <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "left", position: "sticky", left: 0, background: "var(--surface-2)", minWidth: 220 }}>权限</th>
+                        {grants.map(({ role, readable }) => (
+                          <th key={role.id} style={{ padding: "10px 12px", fontWeight: 600, textAlign: "center", minWidth: 92 }}>
+                            <div style={{ color: "var(--ink-2)" }}>{role.roleName}</div>
+                            <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{role.roleCode}</div>
+                            {!readable && <div style={{ marginTop: 2, color: "var(--warning)", fontSize: 11.5 }}>读不到</div>}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {records.map((p) => (
+                        <tr key={p.permissionCode} style={{ borderBottom: "1px solid var(--border)" }}>
+                          <td style={{ padding: "10px 12px", position: "sticky", left: 0, background: "var(--surface)" }}>
+                            <div>{p.permissionName || p.permissionCode}</div>
+                            <div className="mono" style={{ marginTop: 2, color: "var(--ink-3)", fontSize: 11.5 }}>{p.permissionCode}</div>
+                          </td>
+                          {grants.map(({ role, codes, readable }) => (
+                            <td key={role.id} style={{ padding: "10px 12px", textAlign: "center" }}
+                              title={!readable ? `${role.roleName} 的授权读不到,这一格不代表没有权限` : codes.has(p.permissionCode) ? `${role.roleName} 有此权限` : `${role.roleName} 没有此权限`}>
+                              {!readable
+                                ? <span style={{ color: "var(--warning)" }}>?</span>
+                                : codes.has(p.permissionCode)
+                                  ? <span style={{ color: "var(--success)", fontWeight: 600 }}>✓</span>
+                                  : <span style={{ color: "var(--ink-4)" }}>—</span>}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {grants.some(({ readable }) => !readable) && (
+                  <div className="alertbar warn" role="alert" style={{ marginTop: 10 }}>
+                    有角色的授权明细没读到,那几列标的是「?」,不是「没权限」。别拿这张图下结论,先解决读取问题。
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </Card>
       {(detail || detailLoading) && (
         <Drawer
