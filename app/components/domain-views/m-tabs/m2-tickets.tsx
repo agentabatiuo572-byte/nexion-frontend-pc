@@ -215,7 +215,10 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
       .filter((t) => categoryFilter === "all" || t.category === categoryFilter)
       .filter((t) => {
         if (!q) return true;
-        return [t.id, t.subject, t.owner, catCN(t.category)].some((text) => text.toLowerCase().includes(q));
+        // 用户编码必须可搜(2026-08-06 原型对比 M-2):会话页把运营指引到「用工单台按用户搜」,
+        // 而这里原本不认 userId —— 指引的路走不通,等于死路标。
+        return [t.id, t.subject, t.owner, catCN(t.category), t.userId ? String(t.userId) : ""]
+          .some((text) => text.toLowerCase().includes(q));
       })
       .sort((a, b) => b.lastReplyAt - a.lastReplyAt);
   }, [tickets, scope, statusFilter, categoryFilter, query]);
@@ -573,7 +576,7 @@ export function M2Tickets({ ctx }: { ctx: MCtx }) {
         </div>
         <div className="inp" style={{ flex: 1, maxWidth: 320 }}>
           <Icon name="search" size={15} />
-          <input data-proof="support-ticket-search" placeholder="搜索主题 / 单号 / 负责人 / 分类" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input data-proof="support-ticket-search" placeholder="搜索主题 / 单号 / 负责人 / 分类 / 用户编码" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         {canWriteM2 && ticketsAvailable && ticketAssigneeCandidatesAvailable && ownerOptions.length > 0 && (
           <button type="button" data-proof="support-ticket-create" className="btn btn-pri btn-sm" disabled={writePending} onClick={() => setShowCreate(true)}>

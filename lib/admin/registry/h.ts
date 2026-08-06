@@ -34,6 +34,11 @@ export const DOMAIN_H: ModuleEntry[] = [
     content: PORTED_EMPTY_CONTENT,
   },
   {
+    path: "/growth/milestones",
+    summary: "收益累计里程碑。5 档阈值与对应 NEX 奖励可调,跨档由系统自动触发:用户端弹出庆祝并自动发放 NEX。触发口径是累计入账(含当日,不算在途);标记已发、发 NEX、记账单在同一事务里完成,失败则下个周期重发,不会出现半截状态;一次跨多档按提交时的配置快照串行补发,中途改配置不影响在途的连发。与签到同页配置,调高阈值奖励属放大流出、要过 B1。",
+    content: PORTED_EMPTY_CONTENT,
+  },
+  {
     path: "/growth/vouchers",
     summary: "代金券(领券促销)配置 · 满减 / 折扣两类。运营可配名称、面值、满减门槛 / 折扣封顶、适用 SKU(留空 = 全设备)、受众(新人 / 全部)、有效期、领取入口页面(首页 / 商城 / 我的 / 收益)、是否参与首页弹窗。前端进站自动弹窗领取 → 关闭后对应页面保留领券 banner;领取后「马上去使用」按适用范围跳 SKU 详情页或商城,结算自动套用满减 / 折扣。代金券是促销折扣、非 NEX 负债,不走 B1 兑付红线;上下架 / 改参即时对前端生效。",
     content: PORTED_EMPTY_CONTENT,

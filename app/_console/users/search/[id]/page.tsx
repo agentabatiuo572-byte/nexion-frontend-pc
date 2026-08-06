@@ -771,6 +771,27 @@ export default function UserDetailPage() {
           <Row label="团队业绩">{money(detail.referral?.teamVolumeUsd)}</Row>
         </HubSection>
 
+        {/* 互动/参与:后端一直在返回这一段,前端 14 个渲染点里独缺它(2026-08-06 原型对比 C-6)。
+            数据已经到前端,只差一张卡 —— 运营看不到用户的签到、任务、抽奖、里程碑进度。 */}
+        {detail.engagement && (
+          <HubSection
+            id="hub-engagement"
+            title="互动与参与"
+            section={{ records: asArray(detail.engagement.records), sourceStatus: asText(detail.engagement.sourceStatus, "READY") }}
+            columns={[
+              { key: "name", label: "项目" },
+              { key: "status", label: "状态" },
+              { key: "progress", label: "进度" },
+              { key: "updatedAt", label: "更新时间", render: formatDate },
+            ]}
+          >
+            <Row label="连续签到">{numberLabel(detail.engagement.checkinStreakDays)} 天</Row>
+            <Row label="进行中任务">{numberLabel(detail.engagement.activeQuestCount)} 个</Row>
+            <Row label="抽奖剩余次数">{numberLabel(detail.engagement.luckyDrawRemaining)} 次</Row>
+            <Row label="里程碑进度">{asText(detail.engagement.milestoneProgressLabel)}</Row>
+          </HubSection>
+        )}
+
         <div className="grid gap-4 lg:grid-cols-2">
           {detail.vrank && <Section title="V-Rank" tag={`数据源 · ${sectionStatus(detail.vrank)}`}>
             <Row label="当前等级">{asText(detail.vrank?.currentRank)}</Row>
