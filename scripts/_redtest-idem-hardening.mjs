@@ -98,6 +98,28 @@ const CASES = [
     () => inject(K1, "const commandAttempt = createPendingMutationStore(", "const commandAttempt = createPendingMutationStore(", MIGRATION)],
   ["T5⑬ store 行为契约不被硬化波及(负控)", "green",
     () => inject(K1, "const commandAttempt = createPendingMutationStore(", "const commandAttempt = createPendingMutationStore(", STORE_CONTRACT)],
+
+  // ══ T3 存储不可用时的内存兜底 ═══════════════════════════════════
+  ["T3① 复现原缺陷:readAll 不再以内存打底(隐私模式下每次重试铸新号)", "red",
+    () => inject(STORE, "    for (const [commandKey, record] of memory) {", "    for (const [commandKey, record] of []) {", STORE_CONTRACT)],
+  ["T3② 复现原缺陷:writeAll 不同步内存镜像(写失败后记录凭空消失)", "red",
+    () => inject(STORE, "  function writeAll(value: Record<string, T>) {\r\n    syncMemory(value);",
+      "  function writeAll(value: Record<string, T>) {", STORE_CONTRACT)],
+  ["T3③ 降级告警被摘掉 → 契约门必红(缺陷可以静默发生正是原问题的一半)", "red",
+    () => inject(STORE, "    console.warn(", "    void 0 && console.warn(", STORE_CONTRACT)],
+  ["T3④ 告警改成每次都喊(刷屏)→ 契约门必红", "red",
+    () => inject(STORE, "    if (degradedNotified) return;", "    if (false) return;", STORE_CONTRACT)],
+  ["T3⑤ 内存兜底不得凌驾 TTL:过期判定被摘掉即红", "red",
+    () => inject(STORE, "      if (usable(record, commandKey, now)) current[commandKey] = record;\r\n    }\r\n    let persistedCount",
+      "      current[commandKey] = record;\r\n    }\r\n    let persistedCount", STORE_CONTRACT)],
+
+  // ══ T4 TTL 硬上限 ═════════════════════════════════════════════
+  ["T4① 复现原缺陷:expiresAt 改回滑动续期 → 契约门必红", "red",
+    () => inject(STORE, "        expiresAt: createdAt + ttlMs,", "        expiresAt: Date.now() + ttlMs,", STORE_CONTRACT)],
+  ["T4② createdAt 被重试覆盖(首次时间丢失)→ 契约门必红", "red",
+    () => inject(STORE, "      const createdAt = previous?.createdAt ?? Date.now();", "      const createdAt = Date.now();", STORE_CONTRACT)],
+  ["T4③ 反误红:ttlMs 仍可由调用方覆盖(降级 TTL 用例依赖它)", "green",
+    () => inject(STORE, "        expiresAt: createdAt + ttlMs,", "        expiresAt: createdAt + ttlMs, // ponytail: 窗口口径见 §0.4", STORE_CONTRACT)],
 ];
 
 let failed = 0;

@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { createPendingMutationStore, PENDING_MUTATION_TTL_MS } from "../lib/admin/pending-mutation-store.ts";
+import {
+  createPendingMutationStore,
+  createSlotAttemptStore,
+  PENDING_MUTATION_TTL_MS,
+} from "../lib/admin/pending-mutation-store.ts";
 
 const dClient = readFileSync(new URL("../lib/admin/d-client.ts", import.meta.url), "utf8");
 const user360 = readFileSync(new URL("../lib/admin/user360-client.ts", import.meta.url), "utf8");
@@ -77,6 +81,80 @@ test("② TTL 过期后不再拦截,并把过期记录清出存储", () => {
   // 续期不改 createdAt(重试不会把窗口从头算,也不会丢首次时间)。
   fresh.remember("fp", "K");
   assert.equal(env.raw("t-ttl2").K.createdAt, record.createdAt);
+});
+
+test("② TTL 是从首次尝试起的硬上限,重复 remember 不得滑动续期", () => {
+  const env = installStorage();
+  const now = Date.now();
+  // 播一条「已经躺了 23 小时」的在途记录:再重试一次,过期时刻必须仍钉在首次 +24h,
+  // 而不是被推到「现在 +24h」。滑动续期会让客户端记录活过后端那个固定 24h 窗口,
+  // 窗外复用同一个号后端早已不认,却给了操作员「这次会被去重」的虚假信心。
+  const createdAt = now - 23 * 60 * 60 * 1000;
+  env.seed("t-ttl-cap", {
+    K: { fingerprint: "fp", commandKey: "K", createdAt, expiresAt: createdAt + PENDING_MUTATION_TTL_MS },
+  });
+
+  const store = createPendingMutationStore({ storageKey: "t-ttl-cap" });
+  store.remember("fp", "K");
+  const after = env.raw("t-ttl-cap").K;
+  assert.equal(after.createdAt, createdAt, "首次时间不得被重试覆盖");
+  assert.equal(after.expiresAt, createdAt + PENDING_MUTATION_TTL_MS,
+    "重试必须沿用首次起算的过期时刻;滑动续期会让记录活过后端固定 24h 幂等窗");
+  assert.ok(after.expiresAt < now + PENDING_MUTATION_TTL_MS,
+    "过期时刻必须仍早于「现在 +24h」—— 相等即说明窗口被从头重算了");
+});
+
+// ---------------------------------------------------------------- ②b 存储不可用时的降级兜底
+
+/** 隐私模式 / 配额满:sessionStorage 存在但读写都抛。 */
+function installBrokenStorage() {
+  const calls = { warn: 0 };
+  globalThis.window = {
+    sessionStorage: {
+      getItem() { throw new DOMException("SecurityError"); },
+      setItem() { throw new DOMException("QuotaExceededError"); },
+      removeItem() { throw new DOMException("SecurityError"); },
+    },
+  };
+  const original = console.warn;
+  console.warn = () => { calls.warn += 1; };
+  return { calls, restore: () => { console.warn = original; } };
+}
+
+test("②b 存储被禁时命令号仍在本页内存里活着:同槽同输入重试不得铸新号", () => {
+  const env = installBrokenStorage();
+  try {
+    let minted = 0;
+    const mint = () => `k-${++minted}`;
+    const store = createSlotAttemptStore({ storageKey: "t-broken" });
+
+    const first = store.resolve("override:U-1", "score=80", mint);
+    assert.equal(
+      store.resolve("override:U-1", "score=80", mint), first,
+      "隐私模式下同一会话连续重试仍必须复用同号 —— 每次铸新号 = 防重复整体失效(后端收到两条命令)",
+    );
+    // 语义不能因降级而走样:换输入照样换号、收敛后照样铸新。
+    assert.notEqual(store.resolve("override:U-1", "score=90", mint), first);
+    store.forget("override:U-1");
+    assert.notEqual(store.resolve("override:U-1", "score=80", mint), first);
+
+    assert.equal(env.calls.warn, 1, "降级必须告警,且只喊一次(每次读写都喊会把 console 淹掉)");
+  } finally {
+    env.restore();
+  }
+});
+
+test("②b 降级兜底不掩盖 TTL:内存里的过期记录同样不得复用", () => {
+  const env = installBrokenStorage();
+  try {
+    const store = createPendingMutationStore({ storageKey: "t-broken-ttl", ttlMs: 1 });
+    store.remember("fp", "K-old");
+    const expired = Date.now() + 5;
+    while (Date.now() < expired) { /* 等 1ms TTL 走完(不引入定时器依赖) */ }
+    assert.equal(store.get("fp"), undefined, "内存兜底不是免死金牌,过期照样失效");
+  } finally {
+    env.restore();
+  }
 });
 
 // ---------------------------------------------------------------- ③ 不撞 key

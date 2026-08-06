@@ -10,7 +10,10 @@
  *
  * 作用域说明:
  * - sessionStorage 而非 localStorage —— 命令号是「本次会话本次操作」的凭据,跨标签页 / 跨天
- *   复用只会让过期命令号打到后端;24h TTL 是第二道保险。
+ *   复用只会让过期命令号打到后端;24h TTL 是第二道保险(**从首次尝试起算的硬上限,重试不续期**,
+ *   否则客户端记录会活过后端那个固定 24h 窗,窗外复用给的是虚假的去重信心)。
+ * - sessionStorage 不可用时(隐私模式 / 配额满)自动降级为本页内存,并 console.warn 一次;
+ *   降级期间同会话重试仍复用同号,只是刷新即丢。
  * - 一个 storageKey 可承载多个动作族,由调用方给 fingerprint 加命名空间前缀区分
  *   (见 c3-adjust:submit| / review| / reverse|),不要为每个动作族各建一个 storageKey。
  * - fingerprint 必须把「动作类型 + 目标对象 id」编码进去,否则不同目标会撞 key,把别人的
@@ -32,7 +35,10 @@ export type PendingMutationExtra<T extends PendingMutationRecord> = Omit<T, keyo
 export interface PendingMutationStore<T extends PendingMutationRecord> {
   /** 取该 fingerprint 上一次未收敛的命令号;没有则 undefined(调用方铸新号)。 */
   get(fingerprint: string): string | undefined;
-  /** 记住一次尝试。重复 remember 同一 commandKey 会保留原 createdAt、续期 expiresAt。 */
+  /**
+   * 记住一次尝试。重复 remember 同一 commandKey 会保留原 createdAt,**且不延长 expiresAt**
+   * —— 过期时刻恒为「首次尝试 + TTL」,对齐后端从首次请求起算的固定 24h 幂等窗。
+   */
   remember(fingerprint: string, commandKey: string, extra?: PendingMutationExtra<T>): void;
   /** 命令已收敛(成功 / 确定性失败),丢弃该 fingerprint 的全部记录。 */
   forget(fingerprint: string): void;
@@ -66,59 +72,102 @@ export function createPendingMutationStore<T extends PendingMutationRecord = Pen
   if (typeof storageKey !== "string" || !storageKey) {
     throw new Error("PENDING_MUTATION_STORE_REQUIRES_STORAGE_KEY");
   }
-  // ponytail: 内存 Map 只是 sessionStorage 的读缓存,不是真源;刷新后从 sessionStorage 重建。
-  const memory = new Map<string, string>();
+  /**
+   * 内存镜像**不是读缓存,是降级兜底**(2026-08-06 修正)。
+   *
+   * 上一版把它当缓存(只存 fingerprint→commandKey),而 `list()` 直接读 sessionStorage 绕过它。
+   * 于是隐私模式 / 配额满 —— `writeAll` 静默吞异常、`readAll` 恒返回 {} —— 槽位式调用方
+   * (`SlotAttemptStore.resolve` 走的正是 `list()`)**同一会话连续重试也每次铸新号**,
+   * 防重复整体失效,而且一声不吭。现在存整条记录,并让 readAll 以它打底。
+   */
+  const memory = new Map<string, T>();
+  let degradedNotified = false;
+
+  function noteDegraded(action: string) {
+    // 只喊一次:提交路径上每次读写都喊会把 console 淹掉,反而盖住问题。
+    // ponytail: 只到 console —— 把降级态透到每个调用方的 UI 要改 30 个消费面,越出本包;
+    //           真正的止血是下面的内存兜底,告警只是让排查时有迹可循。
+    if (degradedNotified) return;
+    degradedNotified = true;
+    console.warn(
+      `[pending-mutation-store] sessionStorage ${action}失败(${storageKey}):命令号降级为「仅本页内存」`
+      + " —— 刷新页面即丢失,刷新后重试会铸新命令号,后端无法去重。常见于隐私模式 / 存储配额已满。",
+    );
+  }
+
+  function usable(value: unknown, commandKey: string, now: number): value is T {
+    return isBaseRecord(value, commandKey, now) && (!isValidRecord || isValidRecord(value as T));
+  }
+
+  function syncMemory(value: Record<string, T>) {
+    memory.clear();
+    for (const [commandKey, record] of Object.entries(value)) memory.set(commandKey, record);
+  }
 
   function readAll(): Record<string, T> {
-    if (typeof window === "undefined") return {};
-    try {
-      const parsed = JSON.parse(window.sessionStorage.getItem(storageKey) ?? "{}") as Record<string, T>;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-      const now = Date.now();
-      const current = Object.fromEntries(Object.entries(parsed).filter(([commandKey, value]) =>
-        isBaseRecord(value, commandKey, now) && (!isValidRecord || isValidRecord(value))));
-      if (Object.keys(current).length !== Object.keys(parsed).length) {
-        writeAll(current as Record<string, T>);
-      }
-      return current as Record<string, T>;
-    } catch {
-      return {};
+    const now = Date.now();
+    // 内存打底、存储覆盖:存储可用时两者本就一致;存储不可用时内存是唯一真源。
+    const current: Record<string, T> = {};
+    for (const [commandKey, record] of memory) {
+      if (usable(record, commandKey, now)) current[commandKey] = record;
     }
+    let persistedCount: number | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        const parsed = JSON.parse(window.sessionStorage.getItem(storageKey) ?? "{}") as Record<string, T>;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          persistedCount = Object.keys(parsed).length;
+          for (const [commandKey, record] of Object.entries(parsed)) {
+            if (usable(record, commandKey, now)) current[commandKey] = record;
+          }
+        } else {
+          persistedCount = 0;
+        }
+      } catch {
+        noteDegraded("读取");
+      }
+    }
+    syncMemory(current);
+    // 存储里有过期 / 坏形记录被剪掉,或降级期间攒下的记录终于能落盘 → 回写对齐。
+    if (persistedCount !== null && persistedCount !== Object.keys(current).length) {
+      writeAll(current);
+    }
+    return current;
   }
 
   function writeAll(value: Record<string, T>) {
+    syncMemory(value);
     if (typeof window === "undefined") return;
     try {
       if (Object.keys(value).length === 0) window.sessionStorage.removeItem(storageKey);
       else window.sessionStorage.setItem(storageKey, JSON.stringify(value));
     } catch {
-      // Memory fallback remains available when storage is blocked or exhausted.
+      noteDegraded("写入");
     }
   }
 
   return {
     get(fingerprint) {
-      const inMemory = memory.get(fingerprint);
-      if (inMemory) return inMemory;
-      const persisted = Object.values(readAll()).find((value) => value.fingerprint === fingerprint);
-      if (persisted) memory.set(fingerprint, persisted.commandKey);
-      return persisted?.commandKey;
+      return Object.values(readAll()).find((value) => value.fingerprint === fingerprint)?.commandKey;
     },
     remember(fingerprint, commandKey, extra) {
-      memory.set(fingerprint, commandKey);
       const persisted = readAll();
       const previous = persisted[commandKey];
+      // 🔴 TTL 是**从首次尝试起的硬上限,不滑动续期**(2026-08-06 修正)。
+      //    后端幂等窗固定 24h 且从第一次请求起算(开发落地规格 §0.4,运营不可调)。
+      //    上一版每次 remember 都 `Date.now() + ttl`,连续重试能让客户端记录活过后端窗口 ——
+      //    窗外再复用同一个号,后端早已不认,却给了操作员「这次会被去重」的虚假信心。
+      const createdAt = previous?.createdAt ?? Date.now();
       persisted[commandKey] = {
         fingerprint,
         commandKey,
         ...(extra as object | undefined),
-        createdAt: previous?.createdAt ?? Date.now(),
-        expiresAt: Date.now() + ttlMs,
+        createdAt,
+        expiresAt: createdAt + ttlMs,
       } as T;
       writeAll(persisted);
     },
     forget(fingerprint) {
-      memory.delete(fingerprint);
       const persisted = readAll();
       Object.entries(persisted).forEach(([commandKey, value]) => {
         if (value.fingerprint === fingerprint) delete persisted[commandKey];
