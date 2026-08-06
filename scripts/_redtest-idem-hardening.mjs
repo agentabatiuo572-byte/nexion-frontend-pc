@@ -39,6 +39,9 @@ const GATE = ["scripts/pending-idempotency-key-sentinel.mjs"];
 const MIGRATION = ["--test", "tests/pending-mutation-migration-contract.test.mjs"];
 const STORE_CONTRACT = ["--test", "tests/pending-mutation-store-contract.test.mjs"];
 const OUTCOME = ["--experimental-strip-types", "--test", "tests/outcome-classification-contract.test.mjs"];
+const HARNESS = ["--test", "tests/redtest-harness-selfcheck.test.mjs"];
+const REDTEST_M2 = ["scripts/pending-idempotency-key-sentinel.mjs"];
+const REDTEST_SELF = path.join(ROOT, "scripts/_redtest-idem-hardening.mjs");
 
 /**
  * 跑门,返回 { red, output }。
@@ -257,10 +260,11 @@ const CASES = [
   // R2 原来的两条钉的是「清扫挂 signOut」那版设计,已被第三轮验收推翻(挂 signOut 会误伤
   // 同一个人)。换成钉现行的身份判据 —— 两个方向各钉一条,漏一个泄漏、错一个重复打款。
   ["R2-P0-1 身份认领从 signIn 上摘掉(换人不再清)→ 必红", "red",
-    () => inject(AUTHSTORE, "    claimPendingCommandOwner(String(session.adminId));", "", MIGRATION),
+    () => inject(AUTHSTORE, '    claimPendingCommandOwner(Number.isFinite(session.adminId) ? String(session.adminId) : "");', "", MIGRATION),
     "必须按持久化的 adminId 认领"],
   ["R2-P0-1b 认领改用内存里的显示名(刷新后为空,永远判不出换人)→ 必红", "red",
-    () => inject(AUTHSTORE, "claimPendingCommandOwner(String(session.adminId));", "claimPendingCommandOwner(session.operator);", MIGRATION),
+    () => inject(AUTHSTORE, 'claimPendingCommandOwner(Number.isFinite(session.adminId) ? String(session.adminId) : "");',
+      "claimPendingCommandOwner(session.operator);", MIGRATION),
     "必须按持久化的 adminId 认领"],
   ["R2-P0-1c 认领改成无条件清(误伤同一个人 = 重复打款)→ 必红", "red",
     () => inject(STORE, "  if (previous === ownerId) return 0;", "  if (false) return 0;", MIGRATION),
@@ -302,6 +306,56 @@ const CASES = [
   ["R3② 会话恢复绕过 signIn(直接塞状态)→ 认领不会发生,必红", "red",
     () => inject(SHELL, "          signIn(auth);", "          void auth;", MIGRATION),
     "都必须经 signIn"],
+  // ══ R4 第四轮独立验收(6×P1)的回归钉 ═════════════════════════
+  ["R4-P1-B 归属标记的内存兜底被摘掉 → 存储可读不可写时同一个人被自己的续期清号,必红", "red",
+    () => inject(STORE, "  const previous = persisted ?? memoryOwner;", "  const previous = persisted;", MIGRATION),
+    "把同一个人的命令号清掉了"],
+  ["R4-P1-B2 内存兜底不更新 → 同上,必红", "red",
+    () => inject(STORE, "  memoryOwner = ownerId;", "  void ownerId;", MIGRATION),
+    "把同一个人的命令号清掉了"],
+  ["R4-P1-A 畸形 adminId 被字符串化成身份(两个不同的人共用一个归属)→ 必红", "red",
+    () => inject(AUTHSTORE, 'claimPendingCommandOwner(Number.isFinite(session.adminId) ? String(session.adminId) : "")',
+      "claimPendingCommandOwner(String(session.adminId))", MIGRATION),
+    "畸形值不得被字符串化"],
+  ["R4-P1-A2 store 侧不再拦 \"undefined\"/\"null\" 字面身份 → 必红", "red",
+    () => inject(STORE, '    || ["undefined", "null", "NaN"].includes(ownerId)) return 0;', "    ) return 0;", MIGRATION),
+    "畸形 adminId 不得被字符串化"],
+  // P1-E 要验的是「删光取号调用会不会被抓」,所以变异必须打在**被查代码**上,
+  // 只把判据改松而不动代码当然不会红(第一版就这么写的,红测当场识破)。
+  ["R4-P1-E 删光取号调用(每次提交现铸新号,持久化形同虚设)→ 必红", "red",
+    () => inject(path.join(ROOT, "lib/admin/i-client.ts"),
+      "const stableKey = uncertainCommandKeys.get(commandFingerprint) ?? idempotencyKey();",
+      "const stableKey = idempotencyKey();", GATE),
+    "没有任何 .get( / .list( 取号调用"],
+  ["R4-P1-F 具名阈值常量绕过归类门 → 必红", "red",
+    () => inject(K, "    if (isWrite && outcomeStaysUnknown(res.status, payload.code)) {",
+      "    const HARD_FAIL = 500;\r\n    if (isWrite && res.status < HARD_FAIL && outcomeStaysUnknown(999, 1)) {", OUTCOME),
+    "自搓的 5xx 门槛"],
+  ["R4-P1-C 红测脚本被改坏(语法错误)→ 自检门必红", "red",
+    () => inject(REDTEST_SELF, "const CASES = [", "const CASES = [ ((", HARNESS)],
+  ["R4-P1-D 归属标记键名随机化 → 每次页面加载都清扫,自检门必红", "red",
+    () => inject(STORE, 'const COMMAND_OWNER_KEY = "nexion-admin-command-owner";',
+      'const COMMAND_OWNER_KEY = `nexion-admin-command-owner-${Date.now()}`;', HARNESS),
+    "键名必须是写死的字符串"],
+
+  // 收尾自检抓到的漏网:a6 / a7 带命令号、认 unknown 头,却既无专门错误类型也不调 forget,
+  // 前一版门按「有没有错误类型 / forget」筛范围,把这两个域整个漏在覆盖面外。
+  ["R5① a6 退回「只认 unknown 头」(5xx 仍报失败)→ 必红", "red",
+    () => inject(path.join(ROOT, "lib/admin/a6-client.ts"),
+      "        || outcomeStaysUnknown(response.status, result?.code))) {",
+      "        )) {", OUTCOME),
+    "谓词必须真的管着「命令号去留」"],
+  ["R5② a7 撤掉传输层 try/catch(断网抛裸错误)→ 必红", "red",
+    () => inject(path.join(ROOT, "lib/admin/a7-client.ts"),
+      "  let response: Response;\r\n  try {\r\n    response = await fetch(`/api/admin/platform${path}`",
+      "  let response: Response;\r\n  {\r\n    response = await fetch(`/api/admin/platform${path}`", OUTCOME)],
+  // 覆盖面收窄本身不会让任何门变红(它只让门变松)—— 所以先在门里钉死覆盖面,
+  // 再由这条变异证明那道钉子会咬人。
+  ["R5③ 门的范围判据退回「按错误类型筛」→ 覆盖面钉子必红", "red",
+    () => inject(path.join(ROOT, "tests/outcome-classification-contract.test.mjs"),
+      "      || /X-Nexion-Upstream-Outcome/.test(code);", "      ;", OUTCOME),
+    "扫描面必须盖住每一个发命令号的模块"],
+
   ["R2-P2-3 形状判据从 every 放宽成 some → 混合业务表被误删,必红", "red",
     () => inject(STORE, "    return rows.every(([commandKey, value]) => {", "    return rows.some(([commandKey, value]) => {", MIGRATION),
     "清扫按记录形状认表"],

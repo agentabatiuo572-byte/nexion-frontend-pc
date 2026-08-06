@@ -332,8 +332,15 @@ for (const rel of MIGRATED) {
     const ident = match[1];
     const escaped = ident.replace(/\$/g, "\\$");
     storeIdents += 1;
-    if (!new RegExp(`${escaped}\\.[A-Za-z_$][\\w$]*\\s*\\(`).test(code)) {
-      failures.push(`${rel} 的命令号存储 ${ident} 创建后没有任何方法调用 → 悬空 const,幂等键已从别的路子铸(只建不用等于没迁)`);
+    // 🔴 必须**取号**(get / list),不是「调过任意一个方法」(2026-08-06 第四轮验收 P1-E)。
+    //   只要求「有方法调用」时,把所有 .get( 删光、只留 remember/forget,门照样绿 ——
+    //   而没有取号就等于每次提交现铸新号,整套持久化被一行改动废掉,零红灯。
+    if (!new RegExp(`${escaped}\\.(?:get|list)\\s*\\(`).test(code)) {
+      failures.push(`${rel} 的命令号存储 ${ident} 没有任何 .get( / .list( 取号调用`
+        + ` → 每次提交都现铸新号,持久化形同虚设(只写不读等于没迁)`);
+    }
+    if (!new RegExp(`${escaped}\\.(?:remember|forget)\\s*\\(`).test(code)) {
+      failures.push(`${rel} 的命令号存储 ${ident} 既不 remember 也不 forget → 号永远不落库或永不收敛`);
     }
   }
 }

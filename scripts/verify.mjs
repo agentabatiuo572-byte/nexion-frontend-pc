@@ -160,6 +160,9 @@ const GEARS = [
   ["a2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
   ["b2/b3 outcome-unknown contract", "node", ["--test", "tests/b23-outcome-unknown-contract.test.mjs"]],
   ["i4 A2 pending visibility contract", "node", ["--test", "tests/i4-a2-pending-visibility-contract.test.mjs"]],
+  // 红测脚本自身的守门人:它是唯一验证「这些门有判别力」的东西,却一度语法错误跑不起来而
+  // verify 全绿。这里只做静态自检(不跑红测本体 —— 它会改写源文件,并行跑互相踩)。
+  ["redtest harness self-check", "node", ["--test", "tests/redtest-harness-selfcheck.test.mjs"]],
   ["pending mutation migration contract", "node", ["--test", "tests/pending-mutation-migration-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
   ["production build", npmCmd, ["run", "build"]],

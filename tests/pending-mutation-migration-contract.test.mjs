@@ -328,6 +328,57 @@ test("⑤ 身份认领:换人必清、同一人必不清(跨刷新存活的根�
   assert.equal(claimPendingCommandOwner("303"), 1, "同名不同号必须当成换人");
 });
 
+test("⑤ 身份认领:存储可读不可写时,同一个人的续期不得把自己的命令号清掉", () => {
+  // 🔴 第四轮验收 P1-B(实测复现):隐私模式 / 配额满时归属标记永远写不进去,
+  //   每次会话续期都读到「无标记」→ 判成换人 → 清扫 → 同一个人重试铸新号 = 重复打款。
+  //   「写不下标记」是环境问题,不是换人。
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => {
+      if (key === "nexion-admin-command-owner") throw new Error("QuotaExceededError");
+      cells.set(key, String(value));
+    },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  globalThis.window = { sessionStorage: storage };
+
+  const store = createPendingMutationStore({ storageKey: "nexion-admin-p1b-probe-v1" });
+  claimPendingCommandOwner("501");
+  store.remember("fp-payout", "cmd-A");
+  assert.equal(store.get("fp-payout"), "cmd-A", "前置:命令号已记住");
+
+  for (const round of [1, 2, 3]) {
+    claimPendingCommandOwner("501"); // 同一个人的定时续期
+    assert.equal(store.get("fp-payout"), "cmd-A",
+      `第 ${round} 次续期把同一个人的命令号清掉了 → 重试铸新号 = 重复打款`);
+  }
+  // 换人在降级态下仍然必须清
+  claimPendingCommandOwner("502");
+  assert.equal(store.get("fp-payout"), undefined, "降级态下换人仍必须清");
+});
+
+test("⑤ 身份认领:畸形 adminId 不得被字符串化成同一个归属", () => {
+  // 第四轮验收 P1-A:String(undefined) === "undefined",两个不同的畸形会话共用一个归属。
+  const cells = new Map();
+  const storage = {
+    get length() { return cells.size; },
+    key: (index) => [...cells.keys()][index] ?? null,
+    getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+    setItem: (key, value) => { cells.set(key, String(value)); },
+    removeItem: (key) => { cells.delete(key); },
+  };
+  globalThis.window = { sessionStorage: storage };
+  claimPendingCommandOwner("601");
+  for (const junk of ["undefined", "null", "NaN", ""]) {
+    assert.equal(claimPendingCommandOwner(junk), 0, `${junk || "空串"} 不是身份,不得据此认领`);
+    assert.equal(storage.getItem("nexion-admin-command-owner"), "601",
+      "畸形值不得覆盖归属标记 —— 覆盖后真正换人时就比不出来了");
+  }
+});
+
 test("⑤ 身份认领:归属不明时保守清扫(marker 缺失不能默认放行)", () => {
   const storage = installOwnerStorage();
   const now = Date.now();
@@ -342,8 +393,9 @@ test("⑤ 身份认领:归属不明时保守清扫(marker 缺失不能默认放�
 test("⑤ 清扫由 signIn 的身份认领负责,登出路径不得自作主张清", () => {
   const strip = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const auth = strip(read("lib/store/admin-auth.ts"));
-  assert.match(auth, /claimPendingCommandOwner\(String\(session\.adminId\)\)/,
-    "signIn 必须按持久化的 adminId 认领 —— 内存里的显示名刷新后为空,永远判不出换人");
+  assert.match(auth, /claimPendingCommandOwner\(Number\.isFinite\(session\.adminId\) \? String\(session\.adminId\) : ""\)/,
+    "signIn 必须按持久化的 adminId 认领,且畸形值不得被字符串化成 \"undefined\" 当身份用"
+    + "(内存里的显示名刷新后为空,永远判不出换人)");
   assert.doesNotMatch(auth, /signOut[\s\S]{0,120}clearPendingCommandRecords/,
     "signOut 不得清:会话断开 ≠ 换人,清了会误伤同一个人的在途命令号(第三轮验收 P0-2)");
   for (const rel of ["lib/admin/auth-session.ts", "lib/admin/login-completion.ts"]) {

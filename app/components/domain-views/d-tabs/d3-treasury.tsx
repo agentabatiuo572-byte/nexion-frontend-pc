@@ -10,6 +10,7 @@ import {
   type D3Dashboard,
   type D3ForecastConfig,
   type D3WaterLevel,
+  isDOutcomeUnknownError,
 } from "@/lib/admin/d-client";
 import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
@@ -166,6 +167,9 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
           await load();
           return true;
         } catch (err) {
+          // 确定性拒绝必须丢号(同 D2:留着旧号会让运营改完输入重提时撞载荷不符,
+          // 这笔注资 24h 内做不了);结果未知必须保号,丢了重试就是第二笔注资。
+          if (!isDOutcomeUnknownError(err)) pendingKeys.forget(scope);
           setError(err instanceof Error ? err.message : "储备注入失败");
           throw err;
         }

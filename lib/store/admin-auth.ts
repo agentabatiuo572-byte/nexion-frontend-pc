@@ -76,7 +76,9 @@ export const useAdminAuth = create<AdminAuthState>()((set) => ({
       if (identityChanged) renewAdminAuthLifecycle();
       // merge 2026-08-06(幂等包):在途命令号按身份认领 —— 换人才清、同一人续用
       // (claim 内部按 owner 比对,同人重登不清,保住「会话过期重登后原样重试」的命令号)。
-      claimPendingCommandOwner(String(session.adminId));
+      // 🔴 只把可用的身份交出去(幂等包第四轮验收 P1-A):String(undefined) 会让两个人
+      //   共用 "undefined" 归属,换人判不出来;畸形值当「没有身份」走 claim 的放行分支。
+      claimPendingCommandOwner(Number.isFinite(session.adminId) ? String(session.adminId) : "");
       return {
         isAuthenticated: !session.passwordChangeRequired,
         operator: session.operator,
