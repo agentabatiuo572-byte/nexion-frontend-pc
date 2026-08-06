@@ -42,10 +42,15 @@ test("F1-F5 admin clients hit canonical team endpoints with idempotency", () => 
   assert.match(client, /\/binary/);
   assert.match(client, /\/leadership-pool/);
   assert.match(client, /\/commissions/);
-  // 写路徍统一 /commissions/config/{key}(后端 polymorphic dispatch,commit afe51f2)
-  assert.match(client, /\/commissions\/config\//);
-  // 幂等
+  // 写路径 /commissions/config/{key}(后端 polymorphic dispatch,commit afe51f2)由 **A2 提案通道**
+  // 执行 —— 2026-08-06 清掉了 f1-client 里五个零调用的 updateF*TeamConfig 死函数,前端不再直调该端点。
+  // 真源在 f-view.tsx 的 proposeFConfig(下面「proposeFConfig honors per-key fund-amplifies」那条守它)。
+  assert.doesNotMatch(client, /updateF\w*TeamConfig/,
+    "TeamConfig 死代码复活:全仓零调用,配置写统一走 A2 提案通道");
+  // 幂等:每个写函数都必须带稳定命令号(stableIdempotencyKey → Idempotency-Key 头)。
   assert.match(client, /Idempotency-Key/);
+  assert.match(client, /F1_WRITE_REQUIRES_STABLE_KEY/,
+    "写路径必须硬拒无幂等键的请求 —— 这是删掉现铸后门后唯一的保底闸");
   // 5 fetcher 名(F1-F5 各一条)
   assert.match(client, /export async function fetchF1VRankOverview/);
   assert.match(client, /export async function fetchF2RatesOverview/);

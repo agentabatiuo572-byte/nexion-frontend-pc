@@ -20,13 +20,37 @@ export interface H1RhythmOverview {
 
 let requestSeq = 0;
 
-function nextIdempotencyKey(prefix: string) {
-  requestSeq += 1;
-  return `${prefix}-${Date.now()}-${requestSeq}`;
+/** crypto.randomUUID 只在 secure context 存在;局域网 http 演示下会是 undefined。仓内统一兜底写法。 */
+function randomSuffix() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
 }
 
-export function createH8CommandKey(prefix: "h8-param") {
+function nextIdempotencyKey(prefix: string) {
+  requestSeq += 1;
+  // 随机段:H8 命令号被持久化 24h,而 sessionStorage 是 per-tab 的 —— 两个标签页同毫秒首次提交时
+  // 时间戳与各自从 0 起的序号都相同,撞号会让后端静默吞掉第二个人的操作。
+  return `${prefix}-${Date.now()}-${requestSeq}-${randomSuffix()}`;
+}
+
+export function createH8CommandKey(prefix: "h8-param" | "h8-settle") {
   return nextIdempotencyKey(prefix);
+}
+
+/** H8 提交「结果未知」:命令号已随请求出手,调用方必须保留原号供原样重试,后端按号去重。 */
+export class H8OutcomeUncertainError extends Error {
+  constructor(message: string, readonly commandKey: string) {
+    super(message);
+    this.name = "H8OutcomeUncertainError";
+  }
+}
+
+export function isH8OutcomeUncertainError(error: unknown): error is H8OutcomeUncertainError {
+  if (error instanceof H8OutcomeUncertainError) return true;
+  return error instanceof Error
+    && error.name === "H8OutcomeUncertainError"
+    && typeof (error as Error & { commandKey?: unknown }).commandKey === "string";
 }
 
 function numberValue(value: unknown) {
@@ -83,7 +107,12 @@ export async function growthRequest<T>(path: string, init?: RequestInit, idempot
   // 原写法会抛英文 SyntaxError,绕过下面这条已备中文的归因分支。
   const result = (await response.json().catch(() => null)) as ApiResult<T> | null;
   if (!response.ok || !result || result.code !== 0) {
-    throw new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`));
+    const error = new Error(formatAdminApiError(result?.message, `GROWTH_REQUEST_FAILED_${response.status}`));
+    // 带上 HTTP 状态码 + 回执是否读得出:H8 的稳定命令号靠它们区分「后端明确拒绝(4xx)」与
+    // 「结果未知(5xx / 回执读不出)」。growth proxy 后端不可达时返回的是**带 JSON body 的 503**,
+    // 只认解析异常会把它误判成确定性失败。网络层异常已由 guardedFetch 接管(抛出的 Error 没有 status)。
+    Object.assign(error, { status: response.status, bodyUnreadable: result === null });
+    throw error;
   }
   return result.data as T;
 }
@@ -489,20 +518,35 @@ export async function updateH8ReferralRewardParam(
   expectedVersion: number,
   idempotencyKey: string,
 ) {
-  return growthRequest<Record<string, unknown>>(
-    `/referral-rewards/params/${encodeURIComponent(key)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({
-        key,
-        value,
-        expectedVersion,
-        reason,
-        operator: currentAdminOperator(),
-      }),
-      headers: { "Idempotency-Key": idempotencyKey },
-    },
-  );
+  try {
+    return await growthRequest<Record<string, unknown>>(
+      `/referral-rewards/params/${encodeURIComponent(key)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          key,
+          value,
+          expectedVersion,
+          reason,
+          operator: currentAdminOperator(),
+        }),
+        headers: { "Idempotency-Key": idempotencyKey },
+      },
+    );
+  } catch (error) {
+    // 三类「结果未知」,后端都可能已执行,必须保留命令号供原样重试:
+    //   ① 没有 HTTP 状态码 = 网络层异常(guardedFetch 已转中文抛出),请求可能已到达后端;
+    //   ② 回执读不出(网关 HTML 错误页);③ 5xx(growth proxy 后端不可达就是带 JSON body 的 503)。
+    // 4xx 与「200 但业务码非 0」= 后端明确拒绝,确定性失败弃号。口径与 f1-client 同款。
+    const { status, bodyUnreadable } = error as Error & { status?: number; bodyUnreadable?: boolean };
+    if (typeof status !== "number" || bodyUnreadable || status >= 500) {
+      throw new H8OutcomeUncertainError(
+        (error instanceof Error && error.message) || "H8_REQUEST_OUTCOME_UNKNOWN",
+        idempotencyKey,
+      );
+    }
+    throw error;
+  }
 }
 
 

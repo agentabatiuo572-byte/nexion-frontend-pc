@@ -24,7 +24,16 @@ export interface HighOpDef {
 }
 
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
-  const { dailyEarnNEX, unlock, generation: _generation, supersededBy: _supersededBy, tradeinDiscount: _tradeinDiscount, ...rest } = ctx;
+  const {
+    dailyEarnNEX, unlock, generation: _generation, supersededBy: _supersededBy, tradeinDiscount: _tradeinDiscount,
+    // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
+    // (后端认 assetId / objectKey,展示时按 assetId 重新签发),又会让「业务输入一字未改的重试」
+    // 变成另一个 payload:后端幂等是 payload-bound,同命令号 + 变了的 URL = 409「内容已变化」。
+    // ⚠ 待后端仓到位后确认:A2 replay 的 SKU upsert 对「缺该列」是跳过还是置 null —— 若是后者
+    //   且前台直读该列,需改为由后端按 assetId 回填(见 docs/changes 记档)。
+    imagePreviewUrl: _imagePreviewUrl,
+    ...rest
+  } = ctx;
   return {
     ...rest,
     dailyEarnNex: dailyEarnNEX,

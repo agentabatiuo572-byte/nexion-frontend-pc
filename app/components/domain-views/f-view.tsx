@@ -57,6 +57,7 @@ import { F2Rates } from "./f-tabs/f2-rates";
 import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
+import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import "./f-domain.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
@@ -86,6 +87,12 @@ function fProposalCommandKey(modalCommandKey: string | undefined, sourceDomain: 
 }
 
 function errorMessage(error: unknown) {
+  // 「结果未知」族(F 直写的 F1OutcomeUncertainError / A2 提案的 A2OutcomeUncertainError)必须
+  // 附命令号:它们意味着请求可能已被后端执行,运营要拿这个号去审计记录核对。文案本体仍走
+  // displayAdminError 咽喉(错误文案专项的单一出口),这里只补咽喉拿不到的命令号。
+  if (error instanceof Error && error.name.endsWith("OutcomeUncertainError")) {
+    return operationConfirmErrorMessage(error);
+  }
   return displayAdminError(error);
 }
 

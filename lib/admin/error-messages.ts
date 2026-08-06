@@ -257,7 +257,15 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   A4_DOMAIN_EXTENSION_EVENT_INVALID: "扩展事件名必须与 domain 一致，并使用已发生动作。",
   A4_DOMAIN_EXTENSION_DUPLICATE: "该 domain 扩展工单已经登记，请刷新列表。",
   A4_SCHEMA_NOT_REGISTERED: "系统事件登记不完整，操作未生效。请联系平台管理员修复配置后重试。",
-  IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "同一请求标识对应的内容已变化，本次未执行；请刷新页面后重新发起。",
+  // 「刷新页面后重新发起」是错误指引:命令号存 sessionStorage,刷新后仍是同一个,照旧撞同样的拒绝。
+  // 正解是把输入恢复成首次提交的内容(即可按同键去重重试),或先核对首次提交是否已经生效。
+  IDEMPOTENCY_KEY_PAYLOAD_MISMATCH: "同一请求标识对应的内容已变化，本次未执行；请把输入恢复为首次提交时的内容再重试，或先到审计记录核对首次提交是否已生效。",
+  // F 直写通道(佣金冲正/重发/暂停、双轨结算、V-Rank 阈值与奖励)的「结果未知」四类。
+  // 这几类都意味着请求可能已被后端执行 —— 文案必须让运营先核对再决定,不能诱导他直接重做一次。
+  F1_REQUEST_OUTCOME_UNKNOWN: "提交结果暂不确定，可能已经生效；请先到审计记录核对，再决定是否保留原输入重试。",
+  F1_RESPONSE_UNREADABLE: "提交已发出但回执没能读取，结果暂不确定；请先到审计记录核对，再决定是否保留原输入重试。",
+  F1_SUCCESS_RESPONSE_DATA_MISSING: "服务端回执不完整，本次结果暂不确定；请先到审计记录核对，再决定是否保留原输入重试。",
+  F1_WRITE_REQUIRES_STABLE_KEY: "该操作缺少请求标识，已阻止提交以免重复执行；请刷新页面后重试，若仍出现请联系值班人员。",
   PLATFORM_BACKEND_TIMEOUT: "平台服务响应超时，当前结果尚未确认；写操作请保留当前输入并直接重试。",
   PLATFORM_BACKEND_UNAVAILABLE: "平台服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
   NETWORK_FAILURE: "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。",
