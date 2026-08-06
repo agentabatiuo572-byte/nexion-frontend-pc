@@ -32,7 +32,10 @@ test("E 域 propose 咽喉:槽位/指纹表达式级接线,弹窗态现铸不得
   assert.match(code, /createSlotAttemptStore\(\{ storageKey: "nexion-admin-e-domain-commands-v1" \}\)/);
 
   // 咽喉本体:槽位=动作 op|目标,指纹=终值+去易变项的命令+目标锁,命令号真经 resolve。
-  assert.match(code, /const fingerprint = JSON\.stringify\(\[spec\.after, spec\.command, spec\.target \?\? spec\.targets \?\? null\]\)/);
+  // 指纹必须覆盖整个提案信封:before/after/command/type/amplifies 全在 body 里,漏一项就会
+  // 「指纹相同而 body 变了」→ 后端 payload-bound 幂等回 409,且因非全新尝试不弃号 = 24h 死锁。
+  // before 尤其关键:它是变更前快照,刷新页面重开弹窗时会随最新数据变化。
+  assert.match(code, /const fingerprint = JSON\.stringify\(\[\s*spec\.before, spec\.after, spec\.command, spec\.type, !!spec\.amplifies,\s*spec\.target \?\? spec\.targets \?\? null,\s*\]\)/);
   // 绕法防御:e-view 已 import a2-client,再顺手 import 提案创建函数直调,上面所有计数断言仍全绿。
   assert.doesNotMatch(code, /createA2OperationProposal/,
     "e-view 不得直调 A2 提案创建函数 —— 那是绕开咽喉的第二条入口,所有计数断言都看不见");
@@ -49,10 +52,13 @@ test("E 域 propose 咽喉:槽位/指纹表达式级接线,弹窗态现铸不得
   // → 后端 payload-bound 幂等回 409「内容已变化」,重试被硬拒。
   // 易变字段(媒体预签名 URL,每次拉目录都续签)在 command 构造源头就剔了,两侧天然对称。
   const registry = stripComments(read("lib/admin/high-ops-registry.ts"));
-  assert.match(registry, /imagePreviewUrl: _imagePreviewUrl, videoPreviewUrl: _videoPreviewUrl, previewUrl: _previewUrl,/,
+  assert.match(registry, /imagePreviewUrl: _imagePreviewUrl,/,
     "预签名 URL 必须在 canonicalE1SkuParams 源头剔除 —— 只剔指纹不剔 body 会制造 409");
   assert.doesNotMatch(code, /stableCommand\(/,
     "不得回到「只给指纹剔、body 照送」的不对称写法");
+  // 绕法防御:再声明一个 usePropose() 就能整条绕开咽喉,而 rawPropose 计数断言看不见。
+  assert.equal((code.match(/usePropose\(\)/g) ?? []).length, 1,
+    "e-view 的 usePropose() 应恒为 1 处 —— 第二个提案 hook 实例就是第二条绕过咽喉的入口");
   // 指纹不得含 reason:理由是审计元数据,进指纹会让「结果未知后补理由再点」换新号 → 双提案双退款。
   assert.doesNotMatch(code, /JSON\.stringify\(\[spec\.after[^\]]*spec\.reason/,
     "reason 进指纹 = 改一下理由就铸新号,同一笔退款进两次审批队列");

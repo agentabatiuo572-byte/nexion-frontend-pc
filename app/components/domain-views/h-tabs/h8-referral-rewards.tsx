@@ -106,9 +106,11 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
       const def = findHighOp("h8_referral_settlement")!;
       const slot = "settle|batch";
       let mintedFresh = false;
+      // 指纹必须覆盖整个提案信封:pending 计数进了 body 的 before,刷新页面后它会随新邀请关系变化。
+      // 漏掉它则指纹相同而 body 变了 → 后端 payload-bound 幂等回 409,且因非全新尝试不弃号 = 24h 死锁。
       const commandKey = commandAttempts.resolve(
         slot,
-        JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash]),
+        JSON.stringify([limit, data?.version, data?.rhythmMonth, data?.rewardSnapshotHash, data?.pending]),
         () => { mintedFresh = true; return createH8CommandKey("h8-settle"); },
       );
       try {

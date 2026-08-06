@@ -53,6 +53,7 @@ import { F2Rates } from "./f-tabs/f2-rates";
 import { F3Binary } from "./f-tabs/f3-binary";
 import { F4Ops } from "./f-tabs/f4-ops";
 import { F5Audit } from "./f-tabs/f5-audit";
+import { operationConfirmErrorMessage } from "@/lib/admin/operation-confirm-error";
 import "./f-domain.css";
 
 const FOLD: Record<string, string> = { F1: "F1", F2: "F2", F3: "F3", F4: "F4", F5: "F5" };
@@ -73,6 +74,12 @@ function resolveFOp(key: string): string {
 }
 
 function errorMessage(error: unknown) {
+  // 「结果未知」族(F 直写的 F1OutcomeUncertainError / A2 提案的 A2OutcomeUncertainError)必须走
+  // 共用文案:它们意味着请求可能已被后端执行,直接抛 error.message 会让运营看到裸机器码,
+  // 更糟的是通用兜底文案会诱导他「检查输入内容后重试」—— 改输入 = 换命令号 = 真的再打一次款。
+  if (error instanceof Error && error.name.endsWith("OutcomeUncertainError")) {
+    return operationConfirmErrorMessage(error);
+  }
   return error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
 }
 

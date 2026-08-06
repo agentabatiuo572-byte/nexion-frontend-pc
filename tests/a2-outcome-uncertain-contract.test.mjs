@@ -20,6 +20,23 @@ test("A2 classifies transport, upstream-unknown, 5xx and malformed success as un
   assert.match(a2Client, /typeof crypto\.randomUUID === "function"[\s\S]{0,120}Math\.random\(\)/);
 });
 
+test("platform proxy 回抄上游的结果未知标记(A2 全域走这条路)", () => {
+  const route = readFileSync(
+    new URL("../app/api/admin/platform/[...path]/route.ts", import.meta.url), "utf8");
+  // finance / risk / users / janus 四个 proxy 都回抄;platform 此前只 copy Content-Type/Disposition/Length,
+  // 于是后端用「200 或 4xx + 该头」表达未知时,客户端恒判确定性失败 → 弃号 → 重试铸新号 → 双票。
+  assert.match(route, /const upstreamOutcome = upstream\.headers\.get\("X-Nexion-Upstream-Outcome"\);/);
+  assert.match(route, /responseHeaders\.set\("X-Nexion-Upstream-Outcome", upstreamOutcome\)/);
+});
+
+test("F 域 toast 路径认「结果未知」族,不把它降级成通用失败文案", () => {
+  const fView = readFileSync(
+    new URL("../app/components/domain-views/f-view.tsx", import.meta.url), "utf8");
+  // F 直写的错误走 toast(不是弹窗),裸 error.message 会上机器码,通用兜底文案更会诱导
+  // 运营「检查输入内容后重试」—— 改输入 = 换命令号 = 真的再打一次款。
+  assert.match(fView, /error\.name\.endsWith\("OutcomeUncertainError"\)[\s\S]{0,80}operationConfirmErrorMessage\(error\)/);
+});
+
 test("shared proposer uses the boundary-safe uncertain predicate", () => {
   assert.match(proposer, /isA2OutcomeUncertainError\(error\)/);
   assert.doesNotMatch(proposer, /error instanceof A2OutcomeUncertainError/);

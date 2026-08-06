@@ -271,10 +271,15 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     // (「上架节奏 · 延迟 1 个月 · Gen3」),值进槽位就退化成 store 文档明令避开的形态 ——
     // 换个值提交成功只清了新槽,旧槽的号原样滞留,改回原值时会复用它被后端静默去重。
     const slot = `${spec.command.op}|${spec.obj}`;
-    // 指纹取 command 全量:它就是发给后端的 payload,两者必须逐字一致 —— 后端幂等 payload-bound,
-    // 指纹与 body 不对称(剔了这边没剔那边)会让同号配上变了的 body,撞 409「内容已变化」。
+    // 指纹必须覆盖**整个提案信封**,不只是 command:后端幂等 payload-bound,提案 body 里的
+    // before/after/type/amplifies 任何一项变了都是异载荷 → 409「内容已变化」。
+    // before 尤其关键 —— 它是「变更前」快照(如订单当前状态、参数当前值),刷新页面重开弹窗时
+    // 会随最新数据变化;漏掉它则指纹相同而 body 变了,重试撞 409 且因非全新尝试而不弃号 = 24h 死锁。
     // 易变字段(媒体预签名 URL)在 command 构造源头 canonicalE1SkuParams 就已剔除,两侧天然对称。
-    const fingerprint = JSON.stringify([spec.after, spec.command, spec.target ?? spec.targets ?? null]);
+    const fingerprint = JSON.stringify([
+      spec.before, spec.after, spec.command, spec.type, !!spec.amplifies,
+      spec.target ?? spec.targets ?? null,
+    ]);
     let mintedFresh = false;
     const commandKey = commandAttempts.resolve(slot, fingerprint, () => {
       mintedFresh = true;

@@ -64,7 +64,6 @@ const GEARS = [
   ["J1 contract", "node", ["--test", "tests/j1-killswitch-contract.test.mjs"]],
   ["J2 contract", "node", ["--test", "tests/j2-geoblock-contract.test.mjs"]],
   ["K2 contract", "node", ["--test", "tests/k2-arbitrage-contract.test.mjs"]],
-  ["production build", npmCmd, ["run", "build"]],
 ];
 GEARS.forEach(([label, cmd, args], index) => run(`[${index + 1}/${GEARS.length}] ${label}`, cmd, args));
 

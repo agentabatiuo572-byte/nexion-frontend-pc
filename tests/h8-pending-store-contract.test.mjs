@@ -32,7 +32,8 @@ test("H8 调参与结算的命令号都在 run 回调内经 resolve,弹窗打开
   assert.match(code, /const slot = `param\|\$\{param\.key\}`/);
   assert.match(code, /JSON\.stringify\(\[storedValue, data\.version\]\)/);
   // 结算:指纹带 limit + version + 倍率月 + 快照哈希 —— 任一变即新意图。
-  assert.match(code, /JSON\.stringify\(\[limit, data\?\.version, data\?\.rhythmMonth, data\?\.rewardSnapshotHash\]\)/);
+  // pending 计数进了提案 body 的 before,刷新后会随新邀请关系变化;漏进指纹 = 同号异载荷 409 死锁。
+  assert.match(code, /JSON\.stringify\(\[limit, data\?\.version, data\?\.rhythmMonth, data\?\.rewardSnapshotHash, data\?\.pending\]\)/);
   // reason 不得进指纹:理由是审计元数据,进指纹会让「结果未知后补理由再点」换新号 → 重复发奖。
   assert.doesNotMatch(code, /JSON\.stringify\(\[storedValue[^\]]*reason/);
   assert.doesNotMatch(code, /rewardSnapshotHash, reason\]/);
@@ -82,10 +83,13 @@ test("h-client:H8「结果未知」三类齐(网络断 / 响应不可读 / 5xx),
   assert.match(code, /typeof crypto\.randomUUID === "function"[\s\S]{0,120}Math\.random\(\)/);
 });
 
-test("verify 齿轮表:生产构建排在依赖兄弟仓的齿之前(否则缺仓机器永远跑不到它)", () => {
+test("verify 齿轮表:生产构建恰好一条,且排在依赖兄弟仓的齿之前", () => {
   const verify = read("scripts/verify.mjs");
-  const buildAt = verify.indexOf('"production build"');
-  const backendAt = verify.indexOf('"real recharge-channel parity"');
+  const builds = verify.match(/\["production build"/g) ?? [];
+  assert.equal(builds.length, 1,
+    `production build 齿轮应恰好 1 条,实际 ${builds.length} —— 重复会让有兄弟仓的机器跑两遍最贵的齿`);
+  const buildAt = verify.indexOf('["production build"');
+  const backendAt = verify.indexOf('["real recharge-channel parity"');
   assert.ok(buildAt > 0 && backendAt > 0);
   assert.ok(buildAt < backendAt,
     "齿轮表是 fail-fast:production build 排在缺仓必崩的齿之后 = 完成门要求的「含生产构建的全绿」结构性不可达");
