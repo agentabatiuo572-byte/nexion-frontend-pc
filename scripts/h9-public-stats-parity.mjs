@@ -43,6 +43,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "./lib/strip-comments.mjs";
 import { resolveNexionAppRoot } from "./lib/nexion-workspace-paths.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -68,10 +69,6 @@ function read(file, label) {
     return "";
   }
   return fs.readFileSync(file, "utf8");
-}
-
-function stripComments(source) {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
 /** 取 head 之后的花括号块(计数配对,防被内嵌对象字面量截断)。 */

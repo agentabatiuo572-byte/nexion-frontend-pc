@@ -10,11 +10,19 @@
  * 判据(两个方向都焊,缺一即「删除方向盲区」):
  *   1. 扫 app/ lib/ 里所有「可变 Map 型命令状态容器」,**未登记在下方台账的一律红**。
  *   2. 台账里登记了、但扫描扫不到的条目也红(防止条目被删/改名后台账静默失真)。
- *   3. MIGRATED 文件必须仍然引用共享 store,且不得回退成裸内存态。**含调用点**:
+ *   3. MIGRATED 文件必须仍然**真 import 并调用**共享 store,且不得回退成裸内存态。**含调用点**:
  *      「文件里有 create 调用」不等于「命令号真的从 store 走」——最可能的回退形态是
  *      保留 `const x = createSlotAttemptStore(...)` 悬空(没人会去删一个 const),把真实
  *      调用点换回内联铸号,或删掉成功路径上的 x.forget(槽位永不收敛,复用已被后端
  *      消费的旧号)。本仓无 ESLint、tsc 未开 noUnusedLocals,悬空 const 别的门全看不见。
+ *
+ * 🔴 结构判定**一律跑在剥注释正文**上(2026-08-06 硬化)。上一版只有判据 3b 剥了,
+ *   同一函数里的 direct / viaExecutor / storageKey / 判据 4 仍读原文,实测走私路径:
+ *   删掉真 store、把 `createStableMutationExecutor(idempotencyKey, "k")` 挪进注释 →
+ *   viaExecutor 命中 → 整个文件被 `continue` 放行,持久化已经没了而门是绿的。
+ *   同理由把 direct 从「文中提到模块名」收紧成「真 import 了 create* 符号」——
+ *   字符串里提一嘴、或本地同名桩 + 残留 import 都不再算数。
+ *   剥除器自身由**判据 0b 自检**钉住:它一死,整张门就是摆设。
  *
  * 台账写在本脚本(不写在被查文件里),每条必须写理由。新增命中 = 要么迁到共享 store,
  * 要么在 KNOWN 里补一行并说清为什么不需要持久化。
@@ -22,6 +30,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "./lib/strip-comments.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCAN_DIRS = ["app", "lib"];
@@ -119,7 +128,9 @@ const files = SCAN_DIRS
 const hits = new Map(); // key -> { file, ident, kinds:Set }
 for (const file of files) {
   const rel = path.relative(ROOT, file).split(path.sep).join("/");
-  const src = fs.readFileSync(file, "utf8");
+  // 扫描面同样剥注释:注释掉的 `const pendingFoo = new Map()` 不是运行时容器,
+  // 却会逼台账为一段死代码常驻一行(判据 2 的反向噪声)。真容器不可能活在注释里。
+  const src = stripComments(fs.readFileSync(file, "utf8"));
   for (const { kind, re, identMustMatch } of PATTERNS) {
     re.lastIndex = 0;
     let match;
@@ -137,6 +148,23 @@ const failures = [];
 // 判据 0:扫描器自身没瞎(空集全过是哨兵最常见的假绿形态)。
 if (files.length < 50) failures.push(`扫描文件数异常偏低(${files.length}),扫描器或目录结构可能已失效`);
 if (hits.size === 0) failures.push("候选命中为 0:判据已失效(存量台账非空,不可能一个都扫不到)");
+
+// 判据 0b:剥注释器自检。下面每一条结构判据都建立在它之上 —— 它一失效,注释走私就全线放行,
+//   而门照样打印 PASS。探针刻意用 **CRLF**:按行 `split("\n").map(l => l.replace(/\/\/.*$/, ""))`
+//   这种写法在 CRLF 文件上从来剥不掉行注释(`.` 不匹配 \r),本仓文件正是 CRLF,踩过。
+{
+  const probe = 'const a = 1;\r\n// const smuggled = createSlotAttemptStore({ storageKey: "x" });\r\n'
+    + 'const url = "https://nexion.example/pending-mutation-store";\r\n'
+    + '/* const blockSmuggled = createPendingMutationStore({ storageKey: "y" }); */\r\n';
+  const stripped = stripComments(probe);
+  if (stripped.includes("smuggled")) {
+    failures.push("剥注释器对 CRLF 行注释失效 → 所有结构判据都可被「声明挪进注释」走私(改回 /gm 形式)");
+  }
+  if (stripped.includes("blockSmuggled")) failures.push("剥注释器没剥块注释 → 结构判据可被 /* */ 走私");
+  if (!stripped.includes("https://nexion.example/pending-mutation-store")) {
+    failures.push("剥注释器误伤 :// 协议串(丢了 (^|[^:]) 守卫)→ 正常代码被当注释吃掉,判据会误红");
+  }
+}
 
 // 判据 1:未登记的命中一律红。
 for (const [key, hit] of hits) {
@@ -158,25 +186,29 @@ let storeIdents = 0; // 判据 3b 实际核过调用点的标识符数(0 = 判�
 for (const rel of MIGRATED) {
   const full = path.join(ROOT, rel);
   if (!fs.existsSync(full)) { failures.push(`MIGRATED 文件缺失:${rel}`); continue; }
-  const src = fs.readFileSync(full, "utf8");
-  // 🔴 判据 3b 打在**剥注释后**的正文(2026-08-06 独立证伪 T1b):
-  //   `inlineMint( // was: h9Attempts.resolve(` —— 真实调用已回退成内联铸号,
-  //   同行注释残留旧调用文本,不剥就假绿。「子串哨兵必剥注释」是本仓已固化纪律,
-  //   同轮的 parity 门剥了、这里漏了。剥法与 h9-public-stats-parity.mjs 同款(护 :// 协议)。
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
-  const direct = src.includes("pending-mutation-store")
-    && /create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(code);
-  const viaExecutor = /createStableMutationExecutor\s*\(/.test(src);
+  // 🔴 本块**全部**判据打在剥注释正文 `code` 上(2026-08-06 硬化;上一版只有 3b 剥了):
+  //   `inlineMint( // was: h9Attempts.resolve(` —— 真实调用已回退成内联铸号、同行注释残留旧
+  //   调用文本,不剥就假绿。同族走私还有「把 import / executor 调用整行挪进注释」。
+  const code = stripComments(fs.readFileSync(full, "utf8"));
+  // import 必须是**真绑定**:只在字符串/注释里提模块名、或本地写个同名桩函数,都不算迁移。
+  const importsStore = new RegExp(
+    `import\\s*(?:type\\s*)?\\{[^}]*\\bcreate(?:PendingMutation|SlotAttempt)Store\\b[^}]*\\}`
+    + `\\s*from\\s*["'][^"']*pending-mutation-store(?:\\.ts)?["']`,
+  ).test(code);
+  const direct = importsStore && /create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(code);
+  const importsExecutor = /import\s*\{[^}]*\bcreateStableMutationExecutor\b[^}]*\}\s*from\s*["'][^"']*stable-mutation(?:\.ts)?["']/.test(code);
+  const viaExecutor = importsExecutor && /createStableMutationExecutor\s*\(/.test(code);
   if (viaExecutor && !direct) {
-    if (!/createStableMutationExecutor\s*\([^,)]+,\s*"[^"]+"\s*\)/.test(src)) {
+    if (!/createStableMutationExecutor\s*\([^,)]+,\s*"[^"]+"\s*\)/.test(code)) {
       failures.push(`${rel} 调用 createStableMutationExecutor 时没传非空 storageKey → 命令号退回内存态,刷新即失效`);
     }
     continue;
   }
-  if (!src.includes("pending-mutation-store")) {
-    failures.push(`${rel} 未引用共享 store(${SHARED_STORE}) → 幂等键回退成内存态,刷新即失效`);
+  if (!importsStore) {
+    failures.push(`${rel} 没有从共享 store(${SHARED_STORE})import create{PendingMutation,SlotAttempt}Store`
+      + `(剥注释后判定)→ 幂等键回退成内存态或改用了本地同名桩,刷新即失效`);
   }
-  if (!/create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(src)) {
+  if (!/create(?:PendingMutation|SlotAttempt)Store\s*(?:<[^>]*>)?\s*\(/.test(code)) {
     failures.push(`${rel} 未调用 createPendingMutationStore / createSlotAttemptStore → 只 import 不用等于没迁`);
   }
   // 判据 3b(2026-08-05 补,P1「回退形态假绿」):逐标识符核**调用点**。
@@ -206,8 +238,9 @@ for (const rel of MIGRATED) {
 }
 
 // 判据 4:共享 store 必须真的落 sessionStorage 且带 TTL(防「迁了个空壳」)。
+// 同样剥注释:store 头部注释里就写着 sessionStorage / TTL / 24h,读原文等于永远命中自己的文档。
 const storeSrc = fs.existsSync(path.join(ROOT, SHARED_STORE))
-  ? fs.readFileSync(path.join(ROOT, SHARED_STORE), "utf8")
+  ? stripComments(fs.readFileSync(path.join(ROOT, SHARED_STORE), "utf8"))
   : "";
 if (!storeSrc) failures.push(`共享 store 不存在:${SHARED_STORE}`);
 else {
