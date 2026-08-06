@@ -40,6 +40,7 @@ const MIGRATED = [
   "app/components/domain-views/c-tabs/c6-regrisk.tsx",
   "app/components/domain-views/d-tabs/d2-withdrawals.tsx",
   "app/components/domain-views/d-tabs/d3-treasury.tsx",
+  "app/components/domain-views/f-view.tsx",
   "app/components/domain-views/i-tabs/i3-campaign.tsx",
   "app/components/domain-views/i-tabs/i4-trust.tsx",
   "app/components/domain-views/j-tabs/j3-tamper.tsx",

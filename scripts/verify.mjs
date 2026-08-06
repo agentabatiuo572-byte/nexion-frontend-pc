@@ -138,6 +138,8 @@ const GEARS = [
   // 底账 §四教训 =「tab 在、行级动作被静默削减」逐文件核对测不出,故逐动作钉死成机器判据。
   ["G4 tier-pricing contract", "node", ["--test", "tests/g4-tier-pricing-contract.test.mjs"]],
   ["F5 commission-hold contract", "node", ["--test", "tests/f5-commission-hold-contract.test.mjs"]],
+  // F 域稳定命令号:静态半钉咽喉表达式级接线 + 运行时半跑真 store 语义(只读本仓,任何机器真跑)。
+  ["F pending-store contract", "node", ["--experimental-strip-types", "--test", "tests/f-pending-store-contract.test.mjs"]],
   ["K1 release-params contract", "node", ["--test", "tests/k1-release-params-contract.test.mjs"]],
   ["in-memory idempotency-key sentinel", "node", ["scripts/pending-idempotency-key-sentinel.mjs"]],
   ["pending mutation store contract", "node", ["--test", "tests/pending-mutation-store-contract.test.mjs"]],

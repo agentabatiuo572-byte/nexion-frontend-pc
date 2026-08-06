@@ -137,7 +137,7 @@ dispose 规格,`paramKey` 用行上现成的 `auditKey`(`F.commission.{id}.statu
 amplifies 挂 coverage.redlineBreached · 本文档措辞与勾选卫生修正。
 
 **记档不修(既有面/后续包)**:F 域 propose 无稳定命令号(不确定失败重试=换新号,F1-F4 同病,
-需整域接 pending store,另开任务)· dispose 后行不即时刷新(票在队列,页面状态靠重读,与 F 域
+需整域接 pending store,另开任务;已由同分支后续提交落地,见 `2026-08-06-f-pending-store.md`)· dispose 后行不即时刷新(票在队列,页面状态靠重读,与 F 域
 现行为一致)· 红测未覆盖全部合取项(已覆盖 27 项含全部新增判据,余为采样覆盖)。
 
 **拍板结果(主人 2026-08-06「按建议做」)**:
