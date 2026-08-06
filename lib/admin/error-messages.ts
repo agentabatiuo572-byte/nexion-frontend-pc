@@ -551,6 +551,22 @@ export function formatAdminApiError(message: string | null | undefined, fallback
     if (raw.includes(code)) return translated;
   }
 
+  // 环境故障不得归因到用户输入:表里没有专属条目的不可达/网络类失败,在通用兜底前先接住
+  if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /_REQUEST_FAILED_503$/.test(raw)) {
+    return "后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。";
+  }
+  // 502/504 是网关侧失败,后端可能已处理完请求——只说「结果尚未确认」,不得断言未生效
+  if (/_REQUEST_FAILED_(502|504)$/.test(raw)) {
+    return "后台服务链路异常，本次结果尚未确认；请保留当前输入，刷新核对最新状态后再决定是否重试。";
+  }
+  if (/_REQUEST_FAILED_5\d\d$/.test(raw)) {
+    return ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR;
+  }
+  // fetch 网络异常目前多数 client 未接线进本函数(断网直接冒泡英文);此分支兜显式传入的场景,生效性未知不断言
+  if (/failed to fetch|network ?error|load failed|network request failed/i.test(raw)) {
+    return "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。";
+  }
+
   if (MACHINE_CODE_RE.test(raw)) {
     return "操作失败,请检查输入内容或刷新页面后重试。";
   }
