@@ -535,7 +535,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             {traceExecution.ts} · {executionModeLabel(traceExecution.mode)} · 操作员 {traceExecution.operator} · 门槛 {traceExecution.roleGate}
           </div>
           <div className="field">
-            <label>触发与确认依据</label>
+            <span className="bf-legend">触发与确认依据</span>
             <div className="tiny">业务原因: {traceExecution.trig || "未记录"}</div>
             <div className="tiny">触发依据: {String(traceExecution.notificationDispatch.triggerBasis || "未记录")}</div>
             <div className="tiny">触发上下文: {String(traceExecution.notificationDispatch.triggerContext || "未记录")}</div>
@@ -548,7 +548,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
               : <div className="tiny" data-proof="j4-trace-confirmation-legacy" style={{ marginTop: 6 }}>历史记录未保存逐步确认。</div>}
           </div>
           <div className="field">
-            <label>逐步执行结果</label>
+            <span className="bf-legend">逐步执行结果</span>
             {traceExecution.domainActions.length === 0 ? <div className="tiny">没有可核对的原子动作记录。</div> : traceExecution.domainActions.map((action, index) => (
               <div className="tint tiny" key={`${String(action.domain)}-${String(action.stepIndex || index)}`} style={{ marginBottom: 7 }}>
                 <b>{index + 1}. {String(action.domain || "未知域")} · {String(action.action || "未记录动作")}</b><br />
@@ -560,12 +560,12 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
             ))}
           </div>
           <div className="field">
-            <label>通知与审计</label>
+            <span className="bf-legend">通知与审计</span>
             <div className="tiny">通知状态 {String(traceExecution.notificationDispatch.status || "未记录")} · 审计状态 {String(traceExecution.notificationDispatch.auditStatus || "未记录")} · 下发数 {String(traceExecution.notificationDispatch.notificationCount ?? "未返回")}</div>
             {traceExecution.notificationDispatch.failure ? <div className="tiny" style={{ color: "var(--danger)" }}>失败原因 {String(traceExecution.notificationDispatch.failure)}</div> : null}
           </div>
           <div className="field">
-            <label>回滚事实</label>
+            <span className="bf-legend">回滚事实</span>
             <div className="tiny">状态 {traceExecution.rollbackStatus === "NOT_REQUIRED" ? "无需回滚（演练仅校验，未执行生产动作，无需回滚）" : (traceExecution.rollbackStatus || "未回滚")} · 时间 {traceExecution.rollbackAt || "—"} · 原因 {traceExecution.rollbackReason || "—"}</div>
             {traceExecution.rollbackActions.map((action, index) => <div className="tiny" key={index}>{index + 1}. {String(action.domain || "J1")} · {String(action.status || action.action || "已记录")}</div>)}
           </div>

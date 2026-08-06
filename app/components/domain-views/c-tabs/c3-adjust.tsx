@@ -442,7 +442,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
           <div className="l-b">
             <div className="adj-form">
               <div className="row" style={{ alignItems: "flex-start" }}>
-                <label>账户</label>
+                <span className="bf-legend">账户</span>
                 <div style={{ flex: 1, minWidth: 260, position: "relative" }}>
                   <input
                     value={userQuery}
@@ -479,12 +479,12 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
                 </div>
               )}
 
-              <div className="row"><label>资产</label><div className="chips">{ASSETS.map((item) => <button type="button" key={item} className={`chip${asset === item ? " sel" : ""}`} onClick={() => setAsset(item)}>{item}</button>)}</div></div>
-              <div className="row"><label>方向</label><div className="chips"><button type="button" className={`chip${direction === "CREDIT" ? " sel" : ""}`} onClick={() => setDirection("CREDIT")}>增加</button><button type="button" className={`chip${direction === "DEBIT" ? " sel" : ""}`} onClick={() => setDirection("DEBIT")}>扣减</button></div></div>
-              <div className="row"><label>金额</label><input aria-label="调整金额" value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" style={{ width: 140 }} /><span style={{ fontSize: 12, color: "var(--ink-4)" }}>{asset === "NEX" ? `≈ $${formatUsdEquivalent(amountUsd)}` : "USDT"}</span></div>
-              <div className="row"><label>原因分类</label><div className="chips">{REASON_CODES.map(([code, label]) => <button type="button" key={code} className={`chip${reasonCode === code ? " sel" : ""}`} onClick={() => setReasonCode(code)}>{label}</button>)}</div></div>
-              <div className="row" style={{ alignItems: "flex-start" }}><label>详细原因</label><textarea aria-label="详细原因" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="8–200 字，说明事实、判断和处理依据" rows={3} style={{ flex: 1 }} /><span style={{ fontSize: 12, color: reasonLength >= 8 && reasonLength <= 200 ? "var(--success)" : "var(--ink-4)" }}>{reasonLength}/200</span></div>
-              <div className="row"><label>证据引用</label><input aria-label="证据引用" value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="例如：工单 20260718-001" style={{ flex: 1 }} /></div>
+              <div className="row"><span className="bf-legend">资产</span><div className="chips">{ASSETS.map((item) => <button type="button" key={item} className={`chip${asset === item ? " sel" : ""}`} onClick={() => setAsset(item)}>{item}</button>)}</div></div>
+              <div className="row"><span className="bf-legend">方向</span><div className="chips"><button type="button" className={`chip${direction === "CREDIT" ? " sel" : ""}`} onClick={() => setDirection("CREDIT")}>增加</button><button type="button" className={`chip${direction === "DEBIT" ? " sel" : ""}`} onClick={() => setDirection("DEBIT")}>扣减</button></div></div>
+              <div className="row"><span className="bf-legend">金额</span><input aria-label="调整金额" value={amountText} onChange={(event) => setAmountText(event.target.value)} inputMode="decimal" style={{ width: 140 }} /><span style={{ fontSize: 12, color: "var(--ink-4)" }}>{asset === "NEX" ? `≈ $${formatUsdEquivalent(amountUsd)}` : "USDT"}</span></div>
+              <div className="row"><span className="bf-legend">原因分类</span><div className="chips">{REASON_CODES.map(([code, label]) => <button type="button" key={code} className={`chip${reasonCode === code ? " sel" : ""}`} onClick={() => setReasonCode(code)}>{label}</button>)}</div></div>
+              <div className="row" style={{ alignItems: "flex-start" }}><span className="bf-legend">详细原因</span><textarea aria-label="详细原因" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="8–200 字，说明事实、判断和处理依据" rows={3} style={{ flex: 1 }} /><span style={{ fontSize: 12, color: reasonLength >= 8 && reasonLength <= 200 ? "var(--success)" : "var(--ink-4)" }}>{reasonLength}/200</span></div>
+              <div className="row"><span className="bf-legend">证据引用</span><input aria-label="证据引用" value={evidenceRef} onChange={(event) => setEvidenceRef(event.target.value)} placeholder="例如：工单 20260718-001" style={{ flex: 1 }} /></div>
               <div className="row" style={{ justifyContent: "flex-end" }}><button className="l-btn mc" disabled={busy || !!formError} onClick={submitAdjustment}>{isSupport && largeAdjustment ? "提交大额调整请求" : "提交调整申请"}</button></div>
               {formError && <div className="ctint warn">{formError}</div>}
             </div>

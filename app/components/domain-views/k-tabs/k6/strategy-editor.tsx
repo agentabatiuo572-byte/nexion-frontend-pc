@@ -234,7 +234,7 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
           </div>
 
           <div className="k6-ovr-field">
-            <label>适用渠道</label>
+            <span className="bf-legend">适用渠道</span>
             <div className="k6-chips">
               {CHANNEL_OPTIONS.map((c) => (
                 <button key={c} type="button" className={`k6-filter${(s.scope.channels ?? []).includes(c) ? " active" : ""}`} onClick={() => toggleChannel(c)}>{CHANNEL_LABEL[c] ?? c}</button>
@@ -243,7 +243,7 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
             <div className="k6-hint">不选 = 全部渠道{(s.scope.channels ?? []).length ? ` · 已选 ${(s.scope.channels ?? []).map((c) => channelLabel(c)).join(" / ")}` : ""}</div>
           </div>
           <div className="k6-ovr-field">
-            <label>定向邀请码</label>
+            <span className="bf-legend">定向邀请码</span>
             <div className="k6-list-editor" aria-label="定向邀请码列表">
               {inviteRows.map((code, idx) => (
                 <div className="k6-list-row" key={idx}>
@@ -257,7 +257,7 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
           </div>
 
           <div className="k6-ovr-field">
-            <label>适用人群队列</label>
+            <span className="bf-legend">适用人群队列</span>
             <div className="k6-list-editor" aria-label="适用人群队列列表">
               {scopeCohortRows.map((cohortId, index) => <div className="k6-list-row" key={index}>
                 <input className="k6-field" value={cohortId} onChange={(event) => setScopeCohortAt(index, event.target.value)} placeholder={`人群队列 ${index + 1}`} />
@@ -269,7 +269,7 @@ export function StrategyEditor({ initial, isNew, operatorId, onClose }: { initia
           </div>
 
           <div className="k6-ovr-field">
-            <label>保护条件(留空 = 不限)</label>
+            <span className="bf-legend">保护条件(留空 = 不限)</span>
             <div className="k6-form-row">
               <input className="k6-field" type="number" placeholder="每日最大建议数" value={s.safeguards.maxDailyRecommendations ?? ""} onChange={(e) => setGuard("maxDailyRecommendations", e.target.value)} aria-label="每日最大建议数" />
               <input className="k6-field" type="number" placeholder="每日最大命中数" value={s.safeguards.maxDailyHits ?? ""} onChange={(e) => setGuard("maxDailyHits", e.target.value)} aria-label="每日最大命中数" />

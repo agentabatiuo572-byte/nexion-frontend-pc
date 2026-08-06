@@ -987,19 +987,19 @@ function CreateTicketModal({
     >
       <div className="grid g-3" style={{ gap: 12, marginBottom: 12 }}>
         <label className="field">
-          <label>分类</label>
+          <span className="bf-legend">分类</span>
           <select className="fld" value={category} onChange={(e) => setCategory(e.target.value as SupportTicketCategory)}>
             {categoryOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </select>
         </label>
         <label className="field">
-          <label>优先级</label>
+          <span className="bf-legend">优先级</span>
           <select className="fld" value={priority} onChange={(e) => setPriority(e.target.value as SupportTicketPriority)}>
             {PRIORITY_LIST.map((item) => <option key={item} value={item}>{PRIO_CN[item]}</option>)}
           </select>
         </label>
         <label className="field">
-          <label>负责人</label>
+          <span className="bf-legend">负责人</span>
           <select data-proof="support-ticket-create-owner" className="fld" value={String(ownerAdminId)} onChange={(e) => setOwnerAdminId(Number(e.target.value))}>
             {ownerOptions.map((item) => <option key={item.adminId} value={String(item.adminId)}>{item.label}</option>)}
           </select>
@@ -1007,15 +1007,15 @@ function CreateTicketModal({
       </div>
       <div style={{ display: "grid", gap: 12 }}>
         <label className="field">
-          <label>用户 ID(可选)</label>
+          <span className="bf-legend">用户 ID(可选)</span>
           <input className="fld" inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="关联真实用户后才可升级即时会话" />
         </label>
         <label className="field">
-          <label>标题</label>
+          <span className="bf-legend">标题</span>
           <input className="fld" data-proof="support-ticket-create-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例:提现审核进度咨询" />
         </label>
         <label className="field">
-          <label>问题描述</label>
+          <span className="bf-legend">问题描述</span>
           <textarea className="fld" data-proof="support-ticket-create-body" rows={4} value={body} onChange={(e) => setBody(e.target.value)} placeholder="写清用户诉求、截图/订单号/交易号等关键信息" style={{ resize: "vertical" }} />
         </label>
       </div>

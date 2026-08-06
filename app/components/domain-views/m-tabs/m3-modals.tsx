@@ -490,7 +490,7 @@ export function InitiateModal({
           </Field>
 
           <div className="field">
-            <label>发起对象</label>
+            <span className="bf-legend">发起对象</span>
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
               <div className="inp">
                 <Icon name="search" size={15} />
@@ -602,7 +602,7 @@ export function TransferModal({
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div className="field">
-          <label>转交目标</label>
+          <span className="bf-legend">转交目标</span>
           <div className="row" style={{ gap: 6 }}>
             <button type="button" className={`chip${kind === "agent" ? " sel" : ""}`} disabled={agentOptions.length === 0} onClick={() => setKind("agent")}>指定坐席</button>
             <button type="button" className={`chip${kind === "queue" ? " sel" : ""}`} disabled={queues.length === 0} onClick={() => setKind("queue")}>技能队列</button>
@@ -682,7 +682,7 @@ export function ReturnModal({ fromAgent, onClose, onSubmit }: { fromAgent: strin
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div className="field">
-          <label>退回去向</label>
+          <span className="bf-legend">退回去向</span>
           <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
             <button type="button" className={`chip${target === "from" ? " sel" : ""}`} onClick={() => setTarget("from")}>退回来源坐席 {ownerLabel(fromAgent)}</button>
             <button type="button" className={`chip${target === "standby" ? " sel" : ""}`} onClick={() => setTarget("standby")}>退回{STANDBY_POOL_LABEL}</button>
