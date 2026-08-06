@@ -24,6 +24,7 @@ import {
   channelLabel,
   platformLabel,
   remoteTargetBindingLabel,
+  remoteUrlLabel,
 } from "@/lib/admin/janus-c2/labels";
 import { allowedTransitions, gatedTransitions, type Transition } from "@/lib/admin/janus-c2/transitions";
 import {
@@ -31,7 +32,8 @@ import {
   TAKEOVER_FAILURE_CLASS_LABEL,
   takeoverRetryable,
   takeoverTargetMismatch,
-  takeoverVersionStale,
+  takeoverReconciliationOverdue,
+  takeoverVersionDrift,
 } from "@/lib/admin/janus-c2/takeover";
 import type { Device } from "@/lib/admin/janus-c2/types";
 import { ManualOverrideModal } from "./manual-override-modal";
@@ -136,30 +138,56 @@ export function K6DeviceDetail({ device, onClose }: { device: Device; onClose: (
           <div className="k6-dsec">
             <h4>接管执行</h4>
             {!d.takeover ? (
-              <div className="k6-hint">后端尚未下发本设备的执行明细。上方命令状态只反映下发结果,不代表设备已执行;需要确证时用「查询设备应用态」主动对账。</div>
+              <div className="k6-hint">后端尚未下发本设备的执行明细。上方命令状态只反映下发结果,<b>不代表设备已执行</b>;在后端补齐执行账本接口前,该设备是否真的执行、执行的是不是批准目标,后台无法确证。</div>
             ) : (
               <>
-                {takeoverTargetMismatch(d.takeover) && (
+                {/* 期望侧用后台自己的批准绑定(remoteUrlKey),不用响应里的 expectedTargetId ——
+                    后者与实际目标同源,链路被控时可被一起伪造成相等(审计 P1-1)。 */}
+                {takeoverTargetMismatch(d.takeover, d.remoteUrlKey) && (
                   <div
-                    className="k6-hint"
                     role="alert"
                     data-proof="k6-takeover-target-mismatch"
-                    style={{ marginTop: 0, marginBottom: 10, color: "var(--danger)", borderLeft: "3px solid var(--danger)", paddingLeft: 10 }}
+                    style={{ marginTop: 0, marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: "var(--danger)", background: "color-mix(in srgb, var(--danger) 12%, transparent)", borderLeft: "3px solid var(--danger)", padding: "8px 10px", borderRadius: 6 }}
                   >
-                    <b>目标不一致</b>：批准目标 <span className="mono">{d.takeover.expectedTargetId}</span> ≠ 设备实际打开
+                    <b>目标不一致</b>：批准目标 <span className="mono">{d.remoteUrlKey ?? d.takeover.expectedTargetId}</span> ≠ 设备实际打开
                     <span className="mono"> {d.takeover.actualTargetId}</span>。设备可能在执行未经批准的目标,请立即撤销接管并核查下行链路。
                   </div>
                 )}
-                {takeoverVersionStale(d.takeover) && (
-                  <div className="k6-hint" role="alert" style={{ marginTop: 0, marginBottom: 10, color: "var(--warning)" }}>
-                    <b>命令版本落后</b>：已下发 v{d.takeover.commandVersion}，设备仍在执行 v{d.takeover.deviceAppliedVersion}。
+                {takeoverReconciliationOverdue(d.takeover, d.remoteUrlKey) && (
+                  <div
+                    role="alert"
+                    data-proof="k6-takeover-reconcile-overdue"
+                    style={{ marginTop: 0, marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: "var(--warning)", background: "color-mix(in srgb, var(--warning) 12%, transparent)", borderLeft: "3px solid var(--warning)", padding: "8px 10px", borderRadius: 6 }}
+                  >
+                    <b>对账未完成</b>：设备已进入执行阶段但迟迟未回报实际目标,无法确认它打开的是不是批准目标。
+                    设备静默不等于安全,请主动核查该设备的下行链路。
+                  </div>
+                )}
+                {takeoverVersionDrift(d.takeover) !== "none" && (
+                  <div
+                    role="alert"
+                    style={{ marginTop: 0, marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: takeoverVersionDrift(d.takeover) === "ahead" ? "var(--danger)" : "var(--warning)" }}
+                  >
+                    {takeoverVersionDrift(d.takeover) === "ahead" ? (
+                      <><b>命令版本超前</b>：设备执行的 v{d.takeover.deviceAppliedVersion} 后台从未下发(已下发 v{d.takeover.commandVersion})——疑似命令注入或重放,请立即撤销并核查下行链路。</>
+                    ) : (
+                      <><b>命令版本落后</b>：已下发 v{d.takeover.commandVersion}，设备仍在执行 v{d.takeover.deviceAppliedVersion}。</>
+                    )}
+                  </div>
+                )}
+                {d.takeover.phase === "REVOKE_FAILED" && (
+                  <div role="alert" style={{ marginTop: 0, marginBottom: 10, fontSize: 13, lineHeight: 1.6, color: "var(--danger)" }}>
+                    <b>撤销失败,接管仍然生效</b>：设备仍处于被接管状态,不是「接管没成功」。请重发撤销;若持续失败,改换批准目标把设备导向安全页面。
                   </div>
                 )}
                 <KV rows={[
                   ["执行相位", <span className="k6-bdg warning" key="ph">{TAKEOVER_PHASE_LABEL[d.takeover.phase]}</span>],
                   ["命令 ID", <span className="mono" key="cid">{d.takeover.commandId ?? "—"}</span>],
                   ["命令版本 / 设备已应用", `${d.takeover.commandVersion ?? "—"} / ${d.takeover.deviceAppliedVersion ?? "未回报"}`],
-                  ["批准目标 / 实际目标", <span className="mono" key="tg">{d.takeover.expectedTargetId ?? "—"} / {d.takeover.actualTargetId ?? "未回报"}</span>],
+                  ["批准目标(后台绑定)", remoteTargetBindingLabel(d.remoteUrlKey, d.remoteTargetVersion, d.remoteTargetCatalogVersion)],
+                  ["设备实际打开", d.takeover.actualTargetId
+                    ? <span className="mono" key="at">{remoteUrlLabel(d.takeover.actualTargetId)}</span>
+                    : <span key="at" style={{ color: "var(--warning)" }}>未回报 —— 无法确证</span>],
                   ["下发原因", d.takeover.causeRequestId
                     ? `人工请求 ${d.takeover.causeRequestId}${d.takeover.causeAuditId ? ` · 审计 ${d.takeover.causeAuditId}` : ""}`
                     : d.takeover.causeDecisionId ? `自动判定 ${d.takeover.causeDecisionId}` : "—"],

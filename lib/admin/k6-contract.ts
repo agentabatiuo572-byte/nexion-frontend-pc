@@ -23,6 +23,12 @@ import type {
   StrategyStatus,
   StrategyVersion,
 } from "./janus-c2/types";
+import {
+  TAKEOVER_PHASES,
+  TAKEOVER_COMMAND_TYPES,
+  TAKEOVER_FAILURE_CLASSES,
+  type TakeoverExecution,
+} from "./janus-c2/takeover.ts";
 
 export const K6_DEVICE_STATUSES = [
   "NEW", "OBSERVING", "RECOMMENDED", "HIT", "ACTIVATED", "ENV_FILTERED",
@@ -230,6 +236,37 @@ function normalizeOverride(value: unknown, path: string): ManualOverride | undef
   };
 }
 
+/**
+ * 接管执行账本归一(2026-08-07 审计 P0-1)。
+ *
+ * 🔴 为什么这道归一器是咽喉:`normalizeK6Device` 是**逐字段重建**的白名单归一器,
+ *   两条数据路径(设备详情 / 队列全量)都过它。字段没在这里显式接住 = 到不了页面,
+ *   而 `Device.takeover` 是可选字段,tsc 不会报、纯函数契约测试也测不到 ——
+ *   于是「三道门全绿、失配告警一次都不会亮」。归一器必须与消费面同批落地。
+ */
+function optionalTakeover(value: unknown, path: string): TakeoverExecution | undefined {
+  if (value === undefined || value === null) return undefined;
+  const row = record(value, path);
+  return {
+    phase: oneOf(row.phase, TAKEOVER_PHASES, `${path}.phase`),
+    commandId: optionalText(row.commandId, `${path}.commandId`),
+    commandType: optionalOneOf(row.commandType, TAKEOVER_COMMAND_TYPES, `${path}.commandType`),
+    commandVersion: optionalInteger(row.commandVersion, `${path}.commandVersion`, 0),
+    deviceAppliedVersion: optionalInteger(row.deviceAppliedVersion, `${path}.deviceAppliedVersion`, 0),
+    causeRequestId: optionalText(row.causeRequestId, `${path}.causeRequestId`),
+    causeAuditId: optionalText(row.causeAuditId, `${path}.causeAuditId`),
+    causeDecisionId: optionalText(row.causeDecisionId, `${path}.causeDecisionId`),
+    expectedTargetId: optionalText(row.expectedTargetId, `${path}.expectedTargetId`),
+    actualTargetId: optionalText(row.actualTargetId, `${path}.actualTargetId`),
+    requestedAt: optionalInteger(row.requestedAt, `${path}.requestedAt`, 1),
+    acknowledgedAt: optionalInteger(row.acknowledgedAt, `${path}.acknowledgedAt`, 1),
+    failureCode: optionalText(row.failureCode, `${path}.failureCode`),
+    failureClass: optionalOneOf(row.failureClass, TAKEOVER_FAILURE_CLASSES, `${path}.failureClass`),
+    failurePhase: optionalOneOf(row.failurePhase, TAKEOVER_PHASES, `${path}.failurePhase`),
+    failureMessage: optionalText(row.failureMessage, `${path}.failureMessage`),
+  };
+}
+
 export function normalizeK6Device(value: unknown, path = "janus.device"): Device {
   const row = record(value, path);
   const environmentRiskScore = integer(row.environmentRiskScore, `${path}.environmentRiskScore`, 0, 100);
@@ -249,6 +286,7 @@ export function normalizeK6Device(value: unknown, path = "janus.device"): Device
     status: oneOf(row.status, K6_DEVICE_STATUSES, `${path}.status`) as DeviceStatus,
     desiredStatus: optionalOneOf(row.desiredStatus, K6_DEVICE_STATUSES, `${path}.desiredStatus`) as DeviceStatus | undefined,
     commandState: optionalOneOf(row.commandState, K6_COMMAND_STATES, `${path}.commandState`),
+    takeover: optionalTakeover(row.takeover, `${path}.takeover`),
     statusSource: oneOf(row.statusSource, K6_STATUS_SOURCES, `${path}.statusSource`),
     activated: flag(row.activated, `${path}.activated`),
     remoteUrlKey: optionalRemoteTargetKey(row.remoteUrlKey, `${path}.remoteUrlKey`),

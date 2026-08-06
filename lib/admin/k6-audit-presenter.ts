@@ -11,6 +11,7 @@ import {
   remoteUrlLabel,
   platformLabel,
 } from "./janus-c2/labels.ts";
+import { TAKEOVER_PHASE_LABEL } from "./janus-c2/takeover.ts";
 import type { AuditLog } from "./janus-c2/types";
 
 type JsonRecord = Record<string, unknown>;
@@ -226,6 +227,13 @@ function snapshotEntries(snapshot: unknown): Array<[string, string]> {
     ["目标状态", knownLabel(STATUS_LABEL, data.desiredStatus)],
     ["状态来源", knownLabel(STATUS_SOURCE_LABEL, data.statusSource)],
     ["下发状态", knownLabel(COMMAND_STATE_LABEL, data.commandState)],
+    // 🔴 审计只留「下发状态」= 一次落在错误目标上的接管,档案里写的是「已下发/已确认」,零痕迹
+    //    (2026-08-07 审计 P1-7)。摘要供既有面用,处置真相必须靠这三行明细。
+    ["接管相位", knownLabel(TAKEOVER_PHASE_LABEL, data.takeoverPhase)],
+    ["接管目标(批准 → 实际)", nonEmptyText(data.takeoverExpectedTarget) || nonEmptyText(data.takeoverActualTarget)
+      ? `${nonEmptyText(data.takeoverExpectedTarget) ?? "—"} → ${nonEmptyText(data.takeoverActualTarget) ?? "未回报"}`
+      : null],
+    ["接管失败原因", nonEmptyText(data.takeoverFailureMessage) ?? nonEmptyText(data.takeoverFailureCode)],
     ["版本", finiteNumber(data.version) === null ? null : String(data.version)],
     ["优先级", finiteNumber(data.priority) === null ? null : String(data.priority)],
     ["负责人", nonEmptyText(data.owner)],
