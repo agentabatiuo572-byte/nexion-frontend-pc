@@ -20,11 +20,18 @@ export interface H1RhythmOverview {
 
 let requestSeq = 0;
 
+/** crypto.randomUUID 只在 secure context 存在;局域网 http 演示下会是 undefined。仓内统一兜底写法。 */
+function randomSuffix() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+}
+
 function nextIdempotencyKey(prefix: string) {
   requestSeq += 1;
   // 随机段:H8 命令号被持久化 24h,而 sessionStorage 是 per-tab 的 —— 两个标签页同毫秒首次提交时
   // 时间戳与各自从 0 起的序号都相同,撞号会让后端静默吞掉第二个人的操作。
-  return `${prefix}-${Date.now()}-${requestSeq}-${crypto.randomUUID().slice(0, 8)}`;
+  return `${prefix}-${Date.now()}-${requestSeq}-${randomSuffix()}`;
 }
 
 export function createH8CommandKey(prefix: "h8-param" | "h8-settle") {

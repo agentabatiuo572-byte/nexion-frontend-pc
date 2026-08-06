@@ -7,11 +7,17 @@ const proposer = readFileSync(new URL("../lib/admin/propose-or-execute.ts", impo
 const eView = readFileSync(new URL("../app/components/domain-views/e-view.tsx", import.meta.url), "utf8");
 const k2View = readFileSync(new URL("../app/components/domain-views/k-tabs/k2-arbitrage.tsx", import.meta.url), "utf8");
 
-test("A2 classifies transport, explicit upstream-unknown and malformed success as uncertain", () => {
+test("A2 classifies transport, upstream-unknown, 5xx and malformed success as uncertain", () => {
   assert.match(a2Client, /catch \(error\)[\s\S]*new A2OutcomeUncertainError/);
   assert.match(a2Client, /X-Nexion-Upstream-Outcome/);
   assert.match(a2Client, /UPSTREAM_OUTCOME_UNKNOWN/);
   assert.match(a2Client, /response\.ok[\s\S]*result\.code === 0[\s\S]*result\.data == null[\s\S]*A2OutcomeUncertainError/);
+  // 2026-08-06 补:platform proxy 只在**自己**超时时补 unknown 头,上游返 5xx 时原样透传不回抄。
+  // 少这一路,消费方会把 502/504 当确定性失败弃号 → 重试铸新号 → 同一笔资金动作两张待确认票。
+  assert.match(a2Client, /if \(init\?\.commandKey && response\.status >= 500\) \{\s*throw new A2OutcomeUncertainError\(/,
+    "A2 缺 5xx 分类会让 E 全域与 H8 结算的「结果未知保号」承诺落空");
+  // 命令号已持久化 24h 且 sessionStorage 是 per-tab 的,铸号必须带随机段且兜底 secure context。
+  assert.match(a2Client, /typeof crypto\.randomUUID === "function"[\s\S]{0,120}Math\.random\(\)/);
 });
 
 test("shared proposer uses the boundary-safe uncertain predicate", () => {

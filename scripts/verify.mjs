@@ -51,6 +51,9 @@ const GEARS = [
   ["E domain pending-store contract", "node", ["--test", "tests/e-pending-store-contract.test.mjs"]],
   ["H8 pending-store contract", "node", ["--test", "tests/h8-pending-store-contract.test.mjs"]],
   ["endpoint citation ledger", "node", ["scripts/endpoint-citation-sentinel.mjs"]],
+  // 生产构建必须排在依赖兄弟仓的齿**之前**:它是最贵也最有价值的本地齿,排在后面等于在缺仓
+  // 机器上永远跑不到,CLAUDE.md 完成门要求的「verify 全绿(含 production build)」会结构性不可达。
+  ["production build", npmCmd, ["run", "build"]],
   // ↓↓↓ 以下齿轮硬读兄弟仓 nexion-backend。缺仓的机器(本机即是)会在第一条硬崩,
   //     而 run() 是 fail-fast —— 所以它们必须集中排在**最后**,否则其后的本地齿全部执行不到。
   //     2026-08-06 前它们散在中段,导致其后 21 道本可运行的门在本机从未跑过。

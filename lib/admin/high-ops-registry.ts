@@ -24,7 +24,14 @@ export interface HighOpDef {
 }
 
 function canonicalE1SkuParams(ctx: Record<string, unknown>): Record<string, unknown> {
-  const { dailyEarnNEX, unlock, generation: _generation, supersededBy: _supersededBy, tradeinDiscount: _tradeinDiscount, ...rest } = ctx;
+  const {
+    dailyEarnNEX, unlock, generation: _generation, supersededBy: _supersededBy, tradeinDiscount: _tradeinDiscount,
+    // 媒体预览链接是带时效的预签名 URL,每次拉目录都会重新续签 —— 它既不是运营编辑的商品属性
+    // (后端认 assetId / objectKey),又会让「业务输入一字未改的重试」变成另一个 payload:
+    // 后端幂等是 payload-bound,同命令号 + 变了的 URL = 409「内容已变化」,重试被硬拒。
+    imagePreviewUrl: _imagePreviewUrl, videoPreviewUrl: _videoPreviewUrl, previewUrl: _previewUrl,
+    ...rest
+  } = ctx;
   return {
     ...rest,
     dailyEarnNex: dailyEarnNEX,

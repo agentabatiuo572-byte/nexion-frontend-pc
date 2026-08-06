@@ -78,6 +78,17 @@ test("h-client:H8「结果未知」三类齐(网络断 / 响应不可读 / 5xx),
   assert.match(code, /typeof status === "number" && status >= 500/,
     "5xx 必须归「结果未知」保号 —— 归确定性失败会让重试铸新号 → 重复发奖(F 域同一轮已焊此规则)");
   assert.match(code, /throw new H8OutcomeUncertainError\(/);
+  // 命令号已持久化 24h,铸号必须带随机段且兜底 secure context(局域网 http 演示下 randomUUID 不存在)。
+  assert.match(code, /typeof crypto\.randomUUID === "function"[\s\S]{0,120}Math\.random\(\)/);
+});
+
+test("verify 齿轮表:生产构建排在依赖兄弟仓的齿之前(否则缺仓机器永远跑不到它)", () => {
+  const verify = read("scripts/verify.mjs");
+  const buildAt = verify.indexOf('"production build"');
+  const backendAt = verify.indexOf('"real recharge-channel parity"');
+  assert.ok(buildAt > 0 && backendAt > 0);
+  assert.ok(buildAt < backendAt,
+    "齿轮表是 fail-fast:production build 排在缺仓必崩的齿之后 = 完成门要求的「含生产构建的全绿」结构性不可达");
 });
 
 test("本契约仍挂在 verify 齿轮上;h8 组件仍登记在哨兵 MIGRATED", () => {

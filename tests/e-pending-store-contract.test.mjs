@@ -32,7 +32,10 @@ test("E 域 propose 咽喉:槽位/指纹表达式级接线,弹窗态现铸不得
   assert.match(code, /createSlotAttemptStore\(\{ storageKey: "nexion-admin-e-domain-commands-v1" \}\)/);
 
   // 咽喉本体:槽位=动作 op|目标,指纹=终值+去易变项的命令+目标锁,命令号真经 resolve。
-  assert.match(code, /const fingerprint = JSON\.stringify\(\[spec\.after, stableCommand\(spec\.command\), spec\.target \?\? spec\.targets \?\? null\]\)/);
+  assert.match(code, /const fingerprint = JSON\.stringify\(\[spec\.after, spec\.command, spec\.target \?\? spec\.targets \?\? null\]\)/);
+  // 绕法防御:e-view 已 import a2-client,再顺手 import 提案创建函数直调,上面所有计数断言仍全绿。
+  assert.doesNotMatch(code, /createA2OperationProposal/,
+    "e-view 不得直调 A2 提案创建函数 —— 那是绕开咽喉的第二条入口,所有计数断言都看不见");
   assert.match(code, /const commandKey = commandAttempts\.resolve\(slot, fingerprint, \(\) => \{/);
   assert.match(code, /mintedFresh = true;/);
   assert.match(code, /rawPropose\(toast, \{ \.\.\.spec, commandKey \}\)/);
@@ -42,9 +45,14 @@ test("E 域 propose 咽喉:槽位/指纹表达式级接线,弹窗态现铸不得
   assert.match(code, /const slot = `\$\{spec\.command\.op\}\|\$\{spec\.obj\}`/);
   assert.doesNotMatch(code, /const slot = `\$\{spec\.action\}/,
     "槽位用 spec.action(运营展示串,含输入值)会让改回原值时复用旧槽里可能已消费的号");
-  // 预签名媒体链接会自动续签,进指纹会让「业务输入一字未改的重试」被判成新意图。
-  assert.match(code, /VOLATILE_COMMAND_PARAMS/);
-  assert.match(code, /stableCommand\(spec\.command\)/);
+  // 指纹取 command 全量:它就是发给后端的 payload,两者必须逐字一致。剔一边不剔另一边 = 同号异载荷
+  // → 后端 payload-bound 幂等回 409「内容已变化」,重试被硬拒。
+  // 易变字段(媒体预签名 URL,每次拉目录都续签)在 command 构造源头就剔了,两侧天然对称。
+  const registry = stripComments(read("lib/admin/high-ops-registry.ts"));
+  assert.match(registry, /imagePreviewUrl: _imagePreviewUrl, videoPreviewUrl: _videoPreviewUrl, previewUrl: _previewUrl,/,
+    "预签名 URL 必须在 canonicalE1SkuParams 源头剔除 —— 只剔指纹不剔 body 会制造 409");
+  assert.doesNotMatch(code, /stableCommand\(/,
+    "不得回到「只给指纹剔、body 照送」的不对称写法");
   // 指纹不得含 reason:理由是审计元数据,进指纹会让「结果未知后补理由再点」换新号 → 双提案双退款。
   assert.doesNotMatch(code, /JSON\.stringify\(\[spec\.after[^\]]*spec\.reason/,
     "reason 进指纹 = 改一下理由就铸新号,同一笔退款进两次审批队列");

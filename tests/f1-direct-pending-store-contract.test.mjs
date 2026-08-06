@@ -75,7 +75,7 @@ test("f1Request:写路径无稳定号直接拒绝,四类结果未知保号,4xx/4
 
   // 会话失效判定必须在任何 throw 之前,否则 401 + 非标准错误页会卡在僵尸登录态。
   const authAt = code.indexOf("const authRejected = isAdminAuthFailure");
-  const firstUncertainAt = code.indexOf("throw new F1OutcomeUncertainError(\"F1_RESPONSE_UNREADABLE\"");
+  const firstUncertainAt = code.indexOf("F1_RESPONSE_UNREADABLE");
   assert.ok(authAt > 0 && firstUncertainAt > authAt,
     "isAdminAuthFailure 必须排在「响应不可读」抛出之前 —— 否则 401 + HTML 错误页时不再登出");
   assert.match(code, /if \(authRejected\) \{\s*resetAdminSession\(\)/);
@@ -84,14 +84,21 @@ test("f1Request:写路径无稳定号直接拒绝,四类结果未知保号,4xx/4
 
   // 四类未知。
   assert.match(code, /error instanceof Error \? error\.message : "F1_REQUEST_OUTCOME_UNKNOWN"/);
-  assert.match(code, /F1OutcomeUncertainError\("F1_RESPONSE_UNREADABLE", stableKey\)/);
+  assert.match(code, /F1OutcomeUncertainError\(formatAdminApiError\(undefined, "F1_RESPONSE_UNREADABLE"\), stableKey\)/);
+  // 「结果未知」文案必须过 formatAdminApiError:F 域的错误在 f-view 走 toast 路径原样上屏,
+  // 裸错误码会直接怼到运营脸上(违反「页面文案禁工程名词/错误码」)。
+  assert.doesNotMatch(code, /F1OutcomeUncertainError\("F1_[A-Z_]+", stableKey\)/);
   assert.match(code, /X-Nexion-Upstream-Outcome"\)\?\.trim\(\)\.toLowerCase\(\) === "unknown"/);
   assert.match(code, /includes\("UPSTREAM_OUTCOME_UNKNOWN"\)/,
     "除响应头外还要认 message 里的上游未知标记(teams proxy 目前不透传该头)");
   assert.match(code, /if \(response\.status >= 500\) \{\s*throw new F1OutcomeUncertainError\(/,
     "5xx 必须归「结果未知」保号 —— 归确定性失败会让重试铸新号 → 重复打款");
-  assert.match(code, /response\.ok && result\?\.code === 0 && result\.data == null/,
-    "「200 + 业务码 0 但 data 缺失」= 回包被截断,后端可能已执行:保号,别让调用方崩栈后弃号重试");
+  // 「200 + 业务码 0 但 data 缺失」= 回包被截断,后端可能已执行 → 保号。
+  // 但只对**要读返回值**的调用开:F5 四个 void 写若后端本就返 data:null,无条件启用会每次抛未知
+  // 且不弃号 → 重试原样重放、再抛,操作面永久卡死而钱其实已经打了。
+  assert.match(code, /if \(init\?\.expectsData && response\.ok && result\?\.code === 0 && result\.data == null\)/);
+  assert.equal((code.match(/expectsData: true/g) ?? []).length, 5,
+    "expectsData 应恰好 5 处(F3 结算 + 4 个 F1 读回 overview 的写);给 void 写开会把它们钉死");
 
   // 反向:不许把判据放宽成一切非 2xx(4xx 是后端明确拒绝,保号会把下一次真实提交误标成重试)。
   assert.doesNotMatch(code, /if \(response\.status >= 400\) \{\s*throw new F1OutcomeUncertainError/);
@@ -107,7 +114,9 @@ test("f1-stable-write 咽喉:resolve 接线 + 只在结果未知/非全新尝试
   // 命令号必须原样交给 request,不得加工(加尾缀会让后端去重失效,而只钉赋值语句的门看不见)。
   assert.match(code, /const result = await request\(commandKey\);/);
   // 唯一性必须有随机源:只用时间戳+模块序号时,两个标签页同毫秒会撞出同一个号。
-  assert.match(code, /crypto\.randomUUID\(\)/);
+  // 且必须兜底 —— randomUUID 是 secure-context-only,局域网 http 演示下不存在,裸调会让铸号即崩。
+  assert.match(code, /typeof crypto\.randomUUID === "function"[\s\S]{0,120}Math\.random\(\)/,
+    "randomUUID 必须带 typeof 兜底(仓内 8 处同款写法),否则 http 演示环境下 F 域全部写入发不出去");
 });
 
 test("确认弹窗错误文案:认全族,但不承诺「自动复用命令号」(A3 等仍是每次现铸)", () => {

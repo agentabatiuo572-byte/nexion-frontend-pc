@@ -41,7 +41,7 @@ import { usePropose } from "@/lib/admin/use-propose";
 import { createA2CommandKey, isA2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
-import { findHighOp, type ReplayCommand } from "@/lib/admin/high-ops-registry";
+import { findHighOp } from "@/lib/admin/high-ops-registry";
 import { refreshAdminMediaPreviewUrl, uploadAdminMedia } from "@/lib/admin/media-client";
 import {
   FOLD, ORDER_FLOW, TERMINAL_STATES,
@@ -61,14 +61,6 @@ import "./e-domain.css";
  *  落 sessionStorage,结果未知后哪怕刷新页面,同弹窗同业务输入重试仍复用同一命令号被后端去重。 */
 const commandAttempts = createSlotAttemptStore({ storageKey: "nexion-admin-e-domain-commands-v1" });
 
-/** 媒体预览链接是带时效的预签名 URL —— 抽屉重开 / 链接过期自动续签都会换值。
- *  它进指纹会让「业务输入一字未改的重试」被判成新意图铸新号 → 两条 SKU 提案。 */
-const VOLATILE_COMMAND_PARAMS = ["imagePreviewUrl", "videoPreviewUrl", "previewUrl"];
-function stableCommand(command: ReplayCommand): ReplayCommand {
-  const params = { ...command.params };
-  VOLATILE_COMMAND_PARAMS.forEach((key) => { delete params[key]; });
-  return { ...command, params };
-}
 
 type SkuMediaKind = "image" | "video";
 type SkuMedia = {
@@ -279,7 +271,10 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
     // (「上架节奏 · 延迟 1 个月 · Gen3」),值进槽位就退化成 store 文档明令避开的形态 ——
     // 换个值提交成功只清了新槽,旧槽的号原样滞留,改回原值时会复用它被后端静默去重。
     const slot = `${spec.command.op}|${spec.obj}`;
-    const fingerprint = JSON.stringify([spec.after, stableCommand(spec.command), spec.target ?? spec.targets ?? null]);
+    // 指纹取 command 全量:它就是发给后端的 payload,两者必须逐字一致 —— 后端幂等 payload-bound,
+    // 指纹与 body 不对称(剔了这边没剔那边)会让同号配上变了的 body,撞 409「内容已变化」。
+    // 易变字段(媒体预签名 URL)在 command 构造源头 canonicalE1SkuParams 就已剔除,两侧天然对称。
+    const fingerprint = JSON.stringify([spec.after, spec.command, spec.target ?? spec.targets ?? null]);
     let mintedFresh = false;
     const commandKey = commandAttempts.resolve(slot, fingerprint, () => {
       mintedFresh = true;

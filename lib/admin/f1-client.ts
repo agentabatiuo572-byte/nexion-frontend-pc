@@ -1349,7 +1349,7 @@ function normalizeF5Overview(data: BackendF5CommissionAuditOverview | null | und
 
 async function f1Request<T>(
   path: string,
-  init?: RequestInit & { stableIdempotencyKey?: string },
+  init?: RequestInit & { stableIdempotencyKey?: string; expectsData?: boolean },
 ) {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) {
@@ -1404,7 +1404,7 @@ async function f1Request<T>(
     // 三类「结果未知」:响应体不可读 / 上游显式声明 unknown / 5xx。都保号供原样重试。
     // 401 例外:后端明确拒绝且什么都没执行,归确定性失败弃号。
     if (bodyUnreadable) {
-      throw new F1OutcomeUncertainError("F1_RESPONSE_UNREADABLE", stableKey);
+      throw new F1OutcomeUncertainError(formatAdminApiError(undefined, "F1_RESPONSE_UNREADABLE"), stableKey);
     }
     // 头 + message 两路都认(与 a2-client 同款):teams proxy 目前不透传该头,靠下面的 5xx 兜底,
     // 但后端若改用「200 + 业务码非 0 + UPSTREAM_OUTCOME_UNKNOWN」表达未知,这一路能接住。
@@ -1424,8 +1424,11 @@ async function f1Request<T>(
       );
     }
     // 200 + 业务码 0 但 data 缺失:后端可能已执行,回包被截断。范式同 a2-client 的同名守卫。
-    if (response.ok && result?.code === 0 && result.data == null) {
-      throw new F1OutcomeUncertainError("F1_SUCCESS_RESPONSE_DATA_MISSING", stableKey);
+    // 🔴 只对**要读返回值**的调用开(expectsData):F5 四个 void 写若后端本就返 data:null,
+    // 无条件启用会每次抛未知且不弃号 → 重试原样重放、再抛,操作面永久卡死而钱其实已经打了。
+    if (init?.expectsData && response.ok && result?.code === 0 && result.data == null) {
+      throw new F1OutcomeUncertainError(
+        formatAdminApiError(undefined, "F1_SUCCESS_RESPONSE_DATA_MISSING"), stableKey);
     }
   }
 
@@ -1563,6 +1566,7 @@ export async function executeF3Settlement(
       method: "POST",
       body: JSON.stringify({ ownerUserId, settlementDate, reason }),
       stableIdempotencyKey: commandKey,
+      expectsData: true,
     }));
   return {
     ownerUserId: toNumber(data.ownerUserId),
@@ -1585,6 +1589,7 @@ export async function updateF1VRankThreshold(rank: string, field: string, value:
       method: "PATCH",
       body: JSON.stringify({ value, reason, operator }),
       stableIdempotencyKey: commandKey,
+      expectsData: true,
     })));
 }
 
@@ -1594,6 +1599,7 @@ export async function addF1VRankReward(rank: string, item: Omit<OpsVRankRewardIt
       method: "POST",
       body: JSON.stringify({ ...item, reason, operator }),
       stableIdempotencyKey: commandKey,
+      expectsData: true,
     })));
 }
 
@@ -1603,6 +1609,7 @@ export async function updateF1VRankReward(rank: string, rewardId: string, item: 
       method: "PUT",
       body: JSON.stringify({ ...item, reason, operator }),
       stableIdempotencyKey: commandKey,
+      expectsData: true,
     })));
 }
 
@@ -1612,5 +1619,6 @@ export async function removeF1VRankReward(rank: string, rewardId: string, reason
       method: "DELETE",
       body: JSON.stringify({ reason, operator }),
       stableIdempotencyKey: commandKey,
+      expectsData: true,
     })));
 }
