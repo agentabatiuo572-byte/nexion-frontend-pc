@@ -88,6 +88,12 @@ step("观察窗口调小(放宽)显示告知", (await warn.count()) === 1);
 step("告知文案点明会核验覆盖率", text.includes("覆盖率"), text.slice(0, 50));
 await page.screenshot({ path: OUT + "k1-loosen-warning.png" });
 
+// 无效输入不得报「放大资金流出」:清空输入框时 Number("") = 0,对「调小才是放宽」族会被误判成放宽,
+// 而该状态根本提交不了(按钮置灰),报风险等于谎报。2026-08-06 墨菲前置抓到并已修,焊成断言防回退。
+await numInput.fill("");
+await page.waitForTimeout(300);
+step("输入框清空(无效值)不报放大资金流出", (await warn.count()) === 0);
+
 // ── 枚举键:释放模式 仅人工放行 → 允许在线证明 = 放宽 ──
 await page.keyboard.press("Escape");
 await page.waitForTimeout(400);

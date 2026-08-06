@@ -993,7 +993,9 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <label htmlFor={`${formId}-release-reason`}>操作理由（必填 · 8-200 字）</label>
               <textarea id={`${formId}-release-reason`} rows={3} maxLength={200} value={releaseDraft.reason} onChange={(event) => update({ reason: event.target.value })} />
             </div>
-            {isLooseningRelease(key, releaseDraft.param.value, releaseDraft.value) && (
+            {/* 必须先过 valueOk:输入框清空时 Number("") = 0,对「调小才是放宽」族会被误判成放宽,
+                对一个根本提交不了的无效值报「放大资金流出」是谎报风险。 */}
+            {valueOk && isLooseningRelease(key, releaseDraft.param.value, releaseDraft.value) && (
               // 放大资金流出方向的告知(与其它放大类动作同款口径):真正的拦截在服务端,
               // 本页没有覆盖率数据,不做客户端预检 —— 只如实告知会被核验,不假装拦得住。
               <div className="ktint warn" data-proof="k1-release-loosen-warning" style={{ marginTop: 10 }}>

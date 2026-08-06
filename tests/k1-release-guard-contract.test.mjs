@@ -73,6 +73,13 @@ test("T-01 · 放宽时弹窗必须渲染告知块", () => {
   assert.match(warn.slice(0, 400), /覆盖率/, "告知文案须点明会核验备付金覆盖率");
 });
 
+test("T-01 · 告知块必须先过输入有效性,无效值不得报放大资金流出", () => {
+  // 输入框清空时 Number("") = 0,对「调小才是放宽」族会被误判成放宽;
+  // 该状态按钮已置灰、根本提交不了,此时报「放大资金流出」是谎报风险。
+  assert.match(code, /valueOk\s*&&\s*isLooseningRelease\(/,
+    "渲染条件须以 valueOk 前置,否则无效输入会误报放大方向");
+});
+
 test("门自身有效性 · 判据锚点在源文件里真实存在(防空集假绿)", () => {
   assert.ok(raw.length > 1000, "源文件须非空");
   assert.ok(raw.includes("releaseAttempts"), "样本量自检:releaseAttempts 必须在源文件出现");
