@@ -226,14 +226,15 @@ const seedState = evalJson(`
       pairedAt: now,
     },
   });
-  uni.setStorageSync('nexgrid-risk-disclosure-v1', { accepted: true, acceptedAt: now });
+  // 披露状态 2026-07 起按账号作用域(旧设备级单键 nexgrid-risk-disclosure-v1 已废弃,app 不再读)。
+  uni.setStorageSync('nexgrid-risk-disclosure-accounts-v1', { default: { accepted: true, acceptedAt: now } });
   uni.setStorageSync('nexgrid-locale-v1', { code: 'en', userSet: true });
   // NEX 抵扣手续费取代旧积分/硬燃烧门槛:提现页读 app.user.nexBalance(默认 1240,app store 不持久化、reload 回默认),
-  // 1240 NEX 远超 $50 提现全抵所需 25 NEX → 手续费全免,无需 seed NEX。
+  // FEAT-WD02:1240 NEX 远超 $1 确认费全抵所需 3 NEX → 开抵扣后费 $0,无需 seed NEX。
   return {
     seeded: true,
     pairing: acctRow('nexgrid-wallet-pairing-accounts-v1'),
-    risk: store('nexgrid-risk-disclosure-v1'),
+    risk: acctRow('nexgrid-risk-disclosure-accounts-v1'),
   };
 `);
 expect(seedState.pairing?.walletPaired === true, `seed pairing not written: ${JSON.stringify(seedState.pairing)}`);
@@ -269,11 +270,13 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   );
   expect(seeded.hasRebindEntry, "withdraw rebind entry missing");
   expect(seeded.addressInputGone, "withdraw address is still a free-text input");
-  expect(seeded.body.includes("You receive\n$50.00"), "withdraw receive amount did not recalculate to $50.00 (NEX fully offsets fee)");
-  // NEX 抵扣手续费(取代旧硬燃烧闸):默认 nexBalance 1240,$50 提现 grossFee $10、requiredNex 25 → 1240 远超 → 全抵、fee $0、到账 $50。
-  expect(seeded.body.includes("Offset the fee with NEX"), "withdraw NEX fee-offset panel label missing");
-  expect(/\d[\d,]*\s*\/\s*25\b/.test(seeded.body), `withdraw NEX requirement not shown as <balance> / 25 · panel slice: ${(seeded.body.match(/Offset the fee with NEX[\s\S]{0,60}/) || ["<no offset panel slice>"])[0]}`);
-  expect(seeded.body.includes("fully waived"), "withdraw fully-waived message missing");
+  // FEAT-WD02:固定网络确认费 TRC20 $1;NEX 抵扣**默认关** —— 默认态到手 = $50 − $1 = $49.00。
+  // 🔴 默认关只做**展示级**断言:日限 1 笔/日 + claimWithdrawSlot 先占后建,单轮 persona
+  // 只能真提交一次(真提交留给下方「开抵扣」态,顺带证 NEX 账单行)。
+  expect(seeded.body.includes("You receive\n$49.00"), "withdraw receive did not show $49.00 (fixed $1 TRC20 confirm fee, offset default OFF)");
+  expect(seeded.body.includes("Network confirmation fee"), "withdraw single confirm-fee row missing");
+  expect(seeded.body.includes("Pay the fee with NEX"), "withdraw NEX offset toggle label missing");
+  expect(!seeded.body.includes("fully waived"), "old forced-offset copy leaked (fee model regression)");
 
   clickSelector(".nx-withdraw-rebind-entry");
   const rebind = waitForEval("withdraw address rebind route", `
@@ -291,14 +294,44 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
   open("/#/pages/me/wallet-withdraw");
   fill("input.uni-input-input", "50");
   wait(300);
+  // FEAT-WD02 开抵扣态:点开关(persona nexBalance 1240 充足)→ 到手回到 $50.00 且
+  // 显示「Will use 3 NEX」(ceil($1 / $0.40) = 3,整数拍板)。
+  clickSelector(".nx-fee-offset-switch");
+  const offsetOn = waitForEval("withdraw offset toggle recalcs quote", `
+    const body = bodyText();
+    return {
+      body,
+      ok: body.includes('You receive\\n$50.00') && /Will use 3 NEX/.test(body),
+    };
+  `, 10000);
+  expect(offsetOn.ok, `withdraw offset-on preview wrong: ${(offsetOn.body.match(/Will use[\s\S]{0,40}/) || ["<no consumption line>"])[0]}`);
   clickSelector(".nx-withdraw-submit-cta");
-  // SPEC-7 R2(首提必审):全新账户首笔提现无条件进人工审核。提交仍建单并跳追踪页,
-  // 但 route=manual → USDT 账单文案是「additional review」(非 pass 的 network 文案),
-  // 追踪页渲染 first-withdrawal-review 命中原因。此断言证的是「首提必审」新行为。
+  // FEAT-WD02 ⑥:提交 CTA 先弹确认弹窗(uiConfirm,global-ui .nx-modal),点「Confirm」才建单。
+  // 断言弹窗四要素(金额 / 单行网络确认费 / NEX 消耗 / 到手)后点主按钮放行;
+  // 弹窗是居中 fixed 覆盖层,无需原生 scrollintoview,直接页面内 clickCss。
+  const submitConfirm = waitForEval("withdraw submit confirm modal", `
+    const modal = document.querySelector('.nx-modal');
+    const modalText = modal ? (modal.innerText || '') : '';
+    return {
+      modalText,
+      ok: !!modal && modalText.includes('Confirm withdrawal')
+        && modalText.includes('Network confirmation fee −$1.00')
+        && modalText.includes('Withdraw $50.00 USDT')
+        && modalText.includes('3 NEX')
+        && modalText.includes('You receive $50.00'),
+    };
+  `, 10000);
+  expect(submitConfirm.ok, `withdraw submit confirm modal missing or lacks fee line: ${(submitConfirm.modalText || "").slice(0, 300)}`);
+  evalJson(`return clickCss('.nx-modal .nx-btn--primary');`);
+  wait(400);
+  // WD01 小额免审快车道(2026-08-03 回源勘正):$50 ≤ smallAmt 阈值($50)→
+  // withdrawal-eligibility-core.decideWithdrawalRoute 明文把 first-withdrawal-review 与
+  // new-address-hold 放进 waivedGates → route=pass。「首提必审」并非无条件——快车道豁免它。
+  // 因此本 $50 流断言 pass 文案(含 WD02 fee 快照字面),并反向断言无审核文案。
   const proof = waitForEval("withdraw tracking route", `
     const bills = acctRow('nexgrid-bills-accounts-v1');
     const bill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'USDT' && row.amount === -50 && row.status === 'pending');
-    const nexBill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'NEX' && row.amount === -25);
+    const nexBill = (bills.bills || []).find((row) => row.type === 'withdraw' && row.symbol === 'NEX' && row.amount === -3);
     const body = bodyText();
     return {
       href: location.href,
@@ -309,17 +342,22 @@ await step("FT-013", "withdraw-form-after-kyc", () => {
       hasAddress: body.includes(${JSON.stringify(PAIRED_ADDRESS)}),
       hasAmount: body.includes('$50.00'),
       firstWithdrawalReviewShown: body.includes('First withdrawal requires manual confirmation'),
-      ok: location.href.includes('#/pages/me/wallet-withdraw-tracking') && /WD-\\d{8}-\\d{4}/.test(body),
+      // FEAT-WD02 追踪页新增配置加载骨架(纯图形无文字):等待条件必须含正文内容
+      // (地址+金额),否则骨架瞬间 route+id 先命中,断言在正文渲染前抢跑(2026-08-03 实测)。
+      ok: location.href.includes('#/pages/me/wallet-withdraw-tracking') && /WD-\\d{8}-\\d{4}/.test(body)
+        && body.includes(${JSON.stringify(PAIRED_ADDRESS)}) && body.includes('$50.00'),
     };
   `, 15000);
   expect(proof.href.includes("#/pages/me/wallet-withdraw-tracking"), "withdraw did not route to tracking");
   expect(proof.hasTrackingId, "withdraw tracking id missing");
-  expect(proof.hasAddress, "withdraw address missing on tracking page");
+  expect(proof.hasAddress, `withdraw address missing on tracking page; href=${proof.href}; body=${(proof.body || "").slice(0, 700)}`);
   expect(proof.hasAmount, "withdraw amount missing on tracking page");
-  expect(proof.nexBill?.ref && /Fee offset|NEX used/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (25 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
-  // R2: 首提建单走审核路由 —— 账单文案是审核态,追踪页显式列出「首提必审」命中原因。
-  expect(proof.bill?.ref && proof.bill.memo.includes("additional review"), `withdraw bill missing or not routed to review (SPEC-7 R2 首提必审): ${JSON.stringify(proof.bill)}`);
-  expect(proof.firstWithdrawalReviewShown, "tracking page did not surface first-withdrawal-review hold reason (SPEC-7 R2)");
+  expect(proof.nexBill?.ref && /Fee offset|NEX used/.test(proof.nexBill.memo || ""), `withdraw NEX fee-offset bill (3 NEX) missing: ${JSON.stringify(proof.nexBill)}`);
+  // 快车道 pass:账单 = pass 文案且携带 fee $0.00(开抵扣全免的 WD02 快照字面);
+  // 反向断言:$50 免审流**不得**出现审核文案/首提审核原因(出现 = 快车道豁免被回退)。
+  expect(proof.bill?.ref && /fee \$0\.00/.test(proof.bill.memo || ""), `withdraw bill missing or lacks WD02 fee snapshot literal: ${JSON.stringify(proof.bill)}`);
+  expect(!(proof.bill?.memo || "").includes("additional review"), `fast-lane $50 must NOT route to review (WD01 waivedGates): ${JSON.stringify(proof.bill)}`);
+  expect(!proof.firstWithdrawalReviewShown, "fast-lane $50 tracking page must not surface first-withdrawal-review hold reason (WD01 waiver)");
   return {
     href: proof.href,
     rebindHref: rebind.href,
@@ -338,7 +376,12 @@ await step("FT-014A", "exchange-nex-to-usdt-confirm-modal", () => {
     location.reload();
     return { resetExchange: true };
   `);
-  wait(1000);
+  // reload 后改盲等为条件等待:dev server 被多会话并发改动打满时首载可 >1s,
+  // 盲等 1000ms 会让下一行 fill 假红(2026-08-03 实测两连挂;Playwright 探针证明
+  // 页面本体正常渲染、console 0 错,纯时序)。
+  waitForEval("exchange amount input ready", `
+    return { ok: !!document.querySelector('input.uni-input-input') };
+  `, 15000);
   fill("input.uni-input-input", "10");
   wait(300);
   const beforeConfirm = evalJson(`
@@ -393,37 +436,33 @@ await step("FT-014A", "exchange-nex-to-usdt-confirm-modal", () => {
 
 await step("FT-014B", "repurchase-writes-staking-bill", () => {
   open("/#/pages/me/wallet-repurchase");
+  // 2026-08-03 回源勘正:当前产品复购 = 一键直扣(debitBalance → staking.stake(90d) →
+  // bills.add → 成功 toast),**无确认弹窗、无订单行**——旧断言的 .nx-modal /
+  // .nx-repurchase-order-row 属已退役设计,按 wallet-repurchase.vue handleRepurchase 现实重写。
   const before = evalJson(`
+    const bills = acctRow('nexgrid-bills-accounts-v1');
     return {
       body: bodyText(),
-      orderCountBefore: document.querySelectorAll('.nx-repurchase-order-row').length,
+      stakeBillsBefore: (bills.bills || []).filter((row) => row.type === 'stake' && row.amount === -200).length,
     };
   `);
-  expect(before.body.includes("Re-invest $200.00"), "repurchase CTA missing");
+  expect(before.body.includes("Re-invest"), "repurchase page missing");
+  fill("input.uni-input-input", "200");
+  wait(200);
+  const armed = evalJson(`return { body: bodyText() };`);
+  expect(armed.body.includes("Re-invest $200.00"), "repurchase CTA did not arm at $200.00");
   clickSelector(".nx-repurchase-submit-cta");
-  wait(300);
-  const modal = evalJson(`
-    const root = document.querySelector('.nx-modal');
-    expect(!!root && visible(root), 'repurchase confirmation modal missing');
-    const primary = root.querySelector('.nx-btn--primary');
-    expect(!!primary && visible(primary), 'repurchase confirmation CTA missing');
-    primary.click();
-    return { text: text(root) };
-  `);
-  const proof = waitForEval("repurchase server order rendered", `
-    const rows = Array.from(document.querySelectorAll('.nx-repurchase-order-row')).map(text);
+  const proof = waitForEval("repurchase stake bill written", `
+    const bills = acctRow('nexgrid-bills-accounts-v1');
+    const stakeBills = (bills.bills || []).filter((row) => row.type === 'stake' && row.amount === -200 && /Re-invest/.test(row.memo || ''));
     return {
       href: location.href,
       body: bodyText(),
-      rows,
-      ok: rows.length > ${before.orderCountBefore} && rows.some((row) => /\\$200(\\.00)?/.test(row) && /ACTIVE/i.test(row)),
+      stakeBills: stakeBills.length,
+      ok: stakeBills.length > ${before.stakeBillsBefore},
     };
-  `, 15000);
-  return {
-    href: proof.href,
-    modal: modal.text,
-    order: proof.rows.find((row) => /\$200(\.00)?/.test(row)),
-  };
+  `, 10000);
+  return { href: proof.href, stakeBills: proof.stakeBills };
 });
 
 async function teamNav(target) {

@@ -233,6 +233,9 @@ export type MultiAccountOverview = {
   domain: "K1";
   stats: Record<string, unknown>;
   params: KRiskParam[];
+  /** 收益释放参数(SPEC-7 搬回,合并底账 §二#5):与整簇冻结分开的放行细调,全局风控参数。
+   *  形态复用 KRiskParam;缺席(老后端)→ [] 向后兼容,卡片 fail-closed;在场坏形 → 严格抛(K1 契约纪律)。 */
+  releaseParams: KRiskParam[];
   clusters: AdminPage<K1Cluster>;
   whitelist: AdminPage<K1WhitelistRow>;
   sources: string[];
@@ -519,6 +522,7 @@ export type KRiskData = {
 export type KRiskActions = {
   reloadKRisk: (query?: KRiskOverviewQuery) => Promise<MultiAccountOverview | void>;
   updateK1Param: (key: string, value: string, reason: string, commandKey?: string) => Promise<void>;
+  updateK1ReleaseParam: (key: string, value: string, reason: string, commandKey?: string) => Promise<void>;
   updateK1ClusterStatus: (clusterId: string, status: ClusterStatus, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   updateK1ClusterReviewNote: (clusterId: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   upsertK1Whitelist: (cidr: string, note: string, reason: string, expireText: string, commandKey?: string) => Promise<void>;
@@ -594,6 +598,45 @@ const K1_REQUIRED_SOURCES = [
   "nx_admin_risk_multi_account_cluster",
   "nx_admin_risk_ip_whitelist",
 ] as const;
+
+/** 收益释放参数键集(SPEC-7,合并底账 §二#5)。releaseParams 组在场时七键齐备、不许未知键,
+ *  与拦截参数 K1_REQUIRED_PARAM_KEYS 同款精确集合纪律。 */
+export const K1_RELEASE_PARAM_KEYS = [
+  "freePhoneSlotsPerCluster",
+  "duplicateAccountPendingFrom",
+  "duplicateAccountFreezeFrom",
+  "pendingReleaseHours",
+  "appAttestationReleaseHours",
+  "releaseMode",
+  "freeSlotRequiresBinding",
+] as const;
+export type K1ReleaseParamKey = (typeof K1_RELEASE_PARAM_KEYS)[number];
+
+/** 数值型释放参数的范围(读校验与编辑弹窗共用同一份,避免两处漂移)。
+ *  下界对齐原型可编辑域(min 1:「第 1 个账号即待审」是合法的严格模式,读校验收紧会误拒
+ *  合法服务端值);上界是防御性护栏,权威裁决在服务端。跨字段关系(冻结建议线 ≥ 待审起点等)
+ *  由服务端权威校验,此处只管单键形态。 */
+export const K1_RELEASE_PARAM_LIMITS: Record<string, { min: number; max: number; step: number; integer: boolean }> = {
+  freePhoneSlotsPerCluster: { min: 1, max: 10, step: 1, integer: true },
+  duplicateAccountPendingFrom: { min: 1, max: 50, step: 1, integer: true },
+  duplicateAccountFreezeFrom: { min: 1, max: 50, step: 1, integer: true },
+  pendingReleaseHours: { min: 1, max: 720, step: 1, integer: true },
+  appAttestationReleaseHours: { min: 1, max: 168, step: 1, integer: true },
+};
+
+/** 释放模式取值全集(工程串)。运营可读中文标签由 UI 层映射,页面禁裸工程串。 */
+export const K1_RELEASE_MODE_VALUES = ["attest_or_manual", "manual_only"] as const;
+
+export function validateK1ReleaseParamValue(key: string, value: string): boolean {
+  const limits = K1_RELEASE_PARAM_LIMITS[key];
+  if (limits) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= limits.min && parsed <= limits.max;
+  }
+  if (key === "releaseMode") return (K1_RELEASE_MODE_VALUES as readonly string[]).includes(value);
+  if (key === "freeSlotRequiresBinding") return value === "true" || value === "false";
+  return false;
+}
 
 function validateK1ParamValue(key: string, value: string): boolean {
   if (key === "maxSignupPerIp24h") return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 10;
@@ -727,6 +770,34 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
     if (!validateK1ParamValue(param.key, param.value)) invalidK1Response(`multiAccount.params[${index}].value`);
   });
 
+  // 收益释放参数:缺席(老后端未升级)→ [] 向后兼容;在场则七键精确集合 + 逐键值校验,坏形严格抛。
+  const releaseParams = data.releaseParams == null ? [] : requiredK1Array(data.releaseParams, "multiAccount.releaseParams").map((item, index) => {
+    const path = `multiAccount.releaseParams[${index}]`;
+    const row = requiredK1Record(item, path);
+    const value = requiredK1String(row.value ?? row.val, `${path}.value`);
+    return {
+      key: requiredK1String(row.key, `${path}.key`),
+      name: requiredK1String(row.name, `${path}.name`),
+      value,
+      val: value,
+      version: requiredK1Integer(row.version, `${path}.version`),
+      adjustable: row.adjustable == null ? undefined : requiredK1Boolean(row.adjustable, `${path}.adjustable`),
+      unit: row.unit == null ? undefined : requiredK1String(row.unit, `${path}.unit`, true),
+      sub: requiredK1String(row.sub, `${path}.sub`, true),
+      note: requiredK1String(row.note, `${path}.note`, true),
+    };
+  });
+  if (releaseParams.length > 0) {
+    const releaseKeys = new Set(releaseParams.map((param) => param.key));
+    if (releaseParams.length !== releaseKeys.size || releaseParams.length !== K1_RELEASE_PARAM_KEYS.length
+      || K1_RELEASE_PARAM_KEYS.some((key) => !releaseKeys.has(key))) {
+      invalidK1Response("multiAccount.releaseParams");
+    }
+    releaseParams.forEach((param, index) => {
+      if (!validateK1ReleaseParamValue(param.key, param.value)) invalidK1Response(`multiAccount.releaseParams[${index}].value`);
+    });
+  }
+
   const clusters = requiredK1Page(data.clusters, "multiAccount.clusters", (row, path): K1Cluster => {
     const layer = requiredK1String(row.layer, `${path}.layer`);
     if (!["ip", "device", "payment"].includes(layer)) invalidK1Response(`${path}.layer`);
@@ -812,7 +883,7 @@ function normalizeK1(raw: unknown): MultiAccountOverview {
   }));
   const sources = requiredK1StringArray(data.sources, "multiAccount.sources");
   if (K1_REQUIRED_SOURCES.some((source) => !sources.includes(source))) invalidK1Response("multiAccount.sources");
-  return { serverCanonical: true, domain: "K1", stats, params, clusters, whitelist, sources };
+  return { serverCanonical: true, domain: "K1", stats, params, releaseParams, clusters, whitelist, sources };
 }
 
 const K2_RESPONSE_INVALID = "K2_RESPONSE_INVALID";
@@ -1751,6 +1822,7 @@ const k2ActionMap: Record<string, string> = {
 
 export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
   updateK1Param: (key, value, reason, commandKey) => apiRequest(`/multi-account/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
+  updateK1ReleaseParam: (key, value, reason, commandKey) => apiRequest(`/multi-account/release-params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value }, reason)) }).then(() => undefined),
   updateK1ClusterStatus: (clusterId, status, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/status`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ status, expectedVersion }, reason)) }).then(() => undefined),
   updateK1ClusterReviewNote: (clusterId, expectedVersion, reason, commandKey) => apiRequest(`/multi-account/clusters/${encodeURIComponent(clusterId)}/review-note`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ expectedVersion }, reason)) }).then(() => undefined),
   upsertK1Whitelist: (cidr, note, reason, expireText, commandKey) => apiRequest("/multi-account/whitelist", { method: "POST", commandKey, body: JSON.stringify(withReason({ cidr, note, expireText }, reason)) }).then(() => undefined),

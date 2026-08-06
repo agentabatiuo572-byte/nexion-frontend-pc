@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-27T12:52:12.929Z",
+  "generatedAt": "2026-08-04T02:56:27.534Z",
   "status": "passed",
   "checksPassed": 8,
   "checksFailed": 0,
@@ -67,7 +67,7 @@
       "id": "OR-05",
       "title": "PRD sync dry-run and apply-check pass",
       "status": "passed",
-      "details": "status=passed; operations=23; planned=8; alreadyPresent=15; missingAnchors=0; applyCheck=passed; patchBytes=10139",
+      "details": "status=passed; operations=22; planned=0; alreadyPresent=22; missingAnchors=0; applyCheck=not-needed; patchBytes=0",
       "evidence": [
         "scripts/prd-sync-l5-draft.mjs",
         "docs/remediation/PRD-SYNC-PREVIEW-2026-06-13.patch",
@@ -114,12 +114,12 @@
     "status": "passed",
     "exitCode": 0,
     "summary": {
-      "operations": 23,
-      "planned": 8,
-      "alreadyPresent": 15,
+      "operations": 22,
+      "planned": 0,
+      "alreadyPresent": 22,
       "missingAnchors": 0,
-      "applyCheck": "passed",
-      "patchBytes": 10139
+      "applyCheck": "not-needed",
+      "patchBytes": 0
     }
   },
   "liveTargets": []

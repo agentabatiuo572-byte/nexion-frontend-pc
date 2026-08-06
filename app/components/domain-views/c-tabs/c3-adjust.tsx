@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   approveUserAssetAdjustment,
@@ -124,6 +125,16 @@ function newIdempotencyKey(prefix: string) {
   return `${prefix}-${suffix}`;
 }
 
+/** 三类命令(建单 / 审核 / 冲正)共用一张表,靠 fingerprint 前缀分命名空间;
+ *  刷新后仍能用同一命令号重试,避免重复入账。 */
+const c3Commands = createPendingMutationStore({
+  storageKey: "nexion-admin-c3-adjust-commands-v1",
+});
+const submitFingerprint = (payload: unknown) => `submit|${JSON.stringify(payload)}`;
+const reviewFingerprint = (approved: boolean, adjustmentNo: string, reason: string) =>
+  `review|${approved ? "approve" : "reject"}|${adjustmentNo}|${reason}`;
+const reverseFingerprint = (adjustmentNo: string, reason: string) => `reverse|${adjustmentNo}|${reason}`;
+
 export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const { toast, openActionConfirm, openConfirm } = ctx;
   const session = useAdminAuth((state) => state.session);
@@ -158,12 +169,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
   const [reasonCode, setReasonCode] = useState("SUPPORT_COMPENSATION");
   const [reason, setReason] = useState("");
   const [evidenceRef, setEvidenceRef] = useState("");
-  const [submission, setSubmission] = useState<{ fingerprint: string; key: string } | null>(null);
   const [detail, setDetail] = useState<UserAssetAdjustmentDetail | null>(null);
   const [detailFallback, setDetailFallback] = useState<UserAssetAdjustment | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const reviewCommandKeys = useRef(new Map<string, string>());
-  const reverseCommandKeys = useRef(new Map<string, string>());
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -291,9 +299,9 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     }
     const id = accountId(selectedAccount);
     if (!id) return toast("账户缺少有效的用户ID");
-    const fingerprint = JSON.stringify({ id, asset, direction, amount: amountText.trim(), reasonCode, reason: reason.trim(), evidenceRef: evidenceRef.trim() });
-    const key = submission?.fingerprint === fingerprint ? submission.key : newIdempotencyKey("c3-adjust");
-    setSubmission({ fingerprint, key });
+    const fingerprint = submitFingerprint({ id, asset, direction, amount: amountText.trim(), reasonCode, reason: reason.trim(), evidenceRef: evidenceRef.trim() });
+    const key = c3Commands.get(fingerprint) ?? newIdempotencyKey("c3-adjust");
+    c3Commands.remember(fingerprint, key);
     const supportRequest = supportLargeRequest;
     openConfirm({
       action: supportRequest
@@ -301,7 +309,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
         : `提交${direction === "CREDIT" ? "增加" : "扣减"}调整申请 · ${formatNumber(amount)} ${asset}`,
       detail: supportRequest
         ? `${displayUser(selectedAccount)}；客服不能直接执行超过 500 USDT 等值的调整，本次只生成待独立复核请求，不改变余额。`
-        : `${displayUser(selectedAccount)}；本次只生成待复核调整，不改变余额。独立复核员批准后才更新余额并生成关联账单。网络重试或重复提交不会重复入账。`,
+        : `${displayUser(selectedAccount)}；本次只生成待放行调整，不改变余额。独立复核员批准后才更新余额并生成关联账单。网络重试或重复提交不会重复入账。`,
       chips: supportRequest ? [["只建请求", "ready"], ["余额不变", "ready"]] : [["待独立复核", "ready"], ["余额不变", "ready"]],
       reason: false,
       okLabel: supportRequest ? "确认提交请求" : "确认提交调整申请",
@@ -317,7 +325,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             : await createUserAssetAdjustment(id, input);
           const [loaded] = await Promise.all([loadData(true), fetchUserAssetAdjustmentContext(id).then(setContext)]);
           if (!loaded) throw new Error("操作可能已成功，但结果回读失败；请保留当前表单并使用同一请求重试");
-          setSubmission(null);
+          c3Commands.forget(fingerprint);
           setAmountText("");
           setReason("");
           setEvidenceRef("");
@@ -338,7 +346,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     const adjustmentNo = text(row.adjustmentNo, "");
     if (!adjustmentNo) return toast("请求编号缺失");
     openActionConfirm({
-      action: `${approved ? "批准" : "驳回"}待复核调整 · ${adjustmentNo}`,
+      action: `${approved ? "批准" : "驳回"}待放行调整 · ${adjustmentNo}`,
       detail: `${displayRowUser(row)} · ${text(row.direction) === "CREDIT" ? "+" : "−"}${formatNumber(row.amount)} ${text(row.asset)} · ${text(row.reason)}`,
       amplifies: approved && text(row.direction).toUpperCase() === "CREDIT",
       reasonMin: 8,
@@ -347,17 +355,17 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       run: async (reviewReason) => {
         setBusy(true);
         try {
-          const fingerprint = `${approved ? "approve" : "reject"}|${adjustmentNo}|${reviewReason}`;
-          const commandKey = reviewCommandKeys.current.get(fingerprint)
+          const fingerprint = reviewFingerprint(approved, adjustmentNo, reviewReason);
+          const commandKey = c3Commands.get(fingerprint)
             ?? newIdempotencyKey(approved ? "c3-approve" : "c3-reject");
-          reviewCommandKeys.current.set(fingerprint, commandKey);
+          c3Commands.remember(fingerprint, commandKey);
           if (approved) await approveUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR(), commandKey);
           else await rejectUserAssetAdjustment(adjustmentNo, reviewReason, OPERATOR(), commandKey);
           if (!await loadData(true)) {
             throw new Error("操作可能已成功，但结果回读失败；请保留当前确认框并使用同一请求重试");
           }
-          reviewCommandKeys.current.delete(fingerprint);
-          toast(`${adjustmentNo} 已${approved ? "批准" : "驳回"}`);
+          c3Commands.forget(fingerprint);
+          toast(`${adjustmentNo} 已${approved ? "执行" : "驳回"}`);
         } catch (err) {
           toast(errorMessage(err));
           return false;
@@ -381,14 +389,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
       run: async (reverseReason) => {
         setBusy(true);
         try {
-          const fingerprint = `${adjustmentNo}|${reverseReason}`;
-          const commandKey = reverseCommandKeys.current.get(fingerprint) ?? newIdempotencyKey("c3-reverse");
-          reverseCommandKeys.current.set(fingerprint, commandKey);
+          const fingerprint = reverseFingerprint(adjustmentNo, reverseReason);
+          const commandKey = c3Commands.get(fingerprint) ?? newIdempotencyKey("c3-reverse");
+          c3Commands.remember(fingerprint, commandKey);
           const result = await reverseUserAssetAdjustment(adjustmentNo, reverseReason, OPERATOR(), commandKey);
           if (!await loadData(true)) {
             throw new Error("冲正可能已成功，但结果回读失败；请保留当前确认框并使用同一请求重试");
           }
-          reverseCommandKeys.current.delete(fingerprint);
+          c3Commands.forget(fingerprint);
           toast(`冲正已执行 · ${text(result.adjustmentNo)}`);
         } catch (err) {
           toast(errorMessage(err));
@@ -419,7 +427,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
     <>
       <div className="f-stats">
         <div className="f-stat"><div className="k">已执行</div><div className="v">{number(overview?.approved).toLocaleString("en-US")} 笔</div><div className="sub">余额与账单均已落地</div></div>
-        <div className="f-stat warn"><div className="k">待复核调整</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">提交后由独立复核员处理</div></div>
+        <div className="f-stat warn"><div className="k">待放行调整</div><div className="v">{number(overview?.pending).toLocaleString("en-US")} 笔</div><div className="sub">提交后由独立复核员处理</div></div>
         <div className="f-stat cyan"><div className="k">NEX 价格</div><div className="v">${formatNumber(nexUsdRate || overview?.nexUsdRate)}</div><div className="sub">用于 500 USDT 等值权限判断</div></div>
         <div className="f-stat ok"><div className="k">资金覆盖率</div><div className="v">{formatPercent(coverageRatio)}</div><div className="sub">红线 {formatPercent(redlinePct)}</div></div>
       </div>
@@ -493,14 +501,14 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
             <div className="kv"><span className="k">当前覆盖率</span><span className="v">{formatPercent(coverageRatio)}</span></div>
             <div className="kv"><span className="k">批准后覆盖率预估</span><span className="v" style={{ color: creditCoverageUnavailable || creditBelowRedline ? "var(--danger)" : "var(--success)" }}>{formatPercent(projectedCoverage)}</span></div>
             <div className="kv"><span className="k">红线</span><span className="v">{formatPercent(redlinePct)}</span></div>
-            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核闭环</b> · 提交仅落待复核申请与必达审计；独立复核员批准后，才原子完成余额更新、财务账单与两类业务事件。</div>
+            <div className="ctint cyan" style={{ marginTop: 14 }}><b>复核闭环</b> · 提交仅落待放行申请与必达审计；独立复核员批准后，才原子完成余额更新、财务账单与两类业务事件。</div>
           </div>
         </section>
       </div>
 
       {requests.total > 0 && (
         <section className="l-card">
-          <div className="l-h"><span className="ttl">待复核调整</span><span className="sub">· 提交阶段不改变余额</span></div>
+          <div className="l-h"><span className="ttl">待放行调整</span><span className="sub">· 提交阶段不改变余额</span></div>
           <div style={{ overflowX: "auto" }}>
             <table className="l-tbl" style={{ minWidth: 920 }}>
               <thead><tr><th>请求编号</th><th>账户</th><th>金额</th><th>原因</th><th>证据</th><th>发起人</th><th style={{ textAlign: "right" }}>处理</th></tr></thead>

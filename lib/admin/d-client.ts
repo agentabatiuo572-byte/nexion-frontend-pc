@@ -1,6 +1,7 @@
 import { isAdminAuthFailure, resetAdminSession } from "@/lib/admin/auth-session";
 import { normalizeD1NullableString } from "@/lib/admin/d1-nullable-string";
 import { formatAdminApiError } from "@/lib/admin/error-messages";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 
 interface ApiResult<T> {
   code: number;
@@ -229,12 +230,20 @@ export interface D2Withdrawal {
   referralPosition: string;
   riskScoreBreakdown: string;
   withdrawalHistory: string;
-  networkFeeRate: number;
-  networkFeeMin: number;
-  networkFeeMax: number;
-  networkFee: number;
-  penaltyFeeRate: number;
-  grossFee: number;
+  /** 费用双形态(FEAT-WD02):旧单 = 比例网络费 + 按金额平台费快照(下面 6 个旧字段非 null);
+   *  新单 = 固定网络确认费快照(networkConfirmUsd 非 null,旧字段可为 null/被忽略)。
+   *  🔴 判型只看 networkConfirmUsd 是否非 null —— 后端契约:该字段必须建模为可空 Double,
+   *  禁用原始 double(原始型会把「未配置」序列化成 0,而 0 是合法费值,三态就塌了)。 */
+  networkFeeRate: number | null;
+  networkFeeMin: number | null;
+  networkFeeMax: number | null;
+  networkFee: number | null;
+  penaltyFeeRate: number | null;
+  grossFee: number | null;
+  /** FEAT-WD02 新单:下单时刻的固定网络确认费(USD);旧单为 null。 */
+  networkConfirmUsd: number | null;
+  /** 费用形态判定结果(normalize 落定,渲染层直接分支,不再各自猜)。 */
+  feeModel: "confirm" | "legacy";
   nexBurned: number;
   nexFeeOffsetRate: number;
   feeWaived: number;
@@ -424,12 +433,18 @@ export interface D5Params {
   version: number;
   dailyLimitCount: number;
   maxBalanceRatio: number;
-  networkFeeRatio: number;
-  networkFeeMin: number;
-  networkFeeMax: number;
+  /** FEAT-WD02 三网络固定确认费(USD,值域 [0,25];取代旧 networkFeeRatio/Min/Max 三件套)。
+   *  与 uniapp withdrawRules.networkConfirmFeeUsd 同键同种子(1/1/5),跨仓 parity 哨兵盯值。 */
+  networkConfirmFeeUsd: { trc20: number; bep20: number; erc20: number };
   nexFeeOffsetRate: number;
+  /** FEAT-WD01:小额免审线(USD)。金额 ≤ 此值的提现免掉「首提必审」与「新地址 hold」
+   *  两道闸;0 = 关闭快车道。**永不**免除风控路由裁决(冻结簇/共用地址/风险分)。
+   *  服务端未下发时按 D5_DEFAULT_SMALL_AMOUNT_THRESHOLD 兜底(向后兼容,见 normalizeD5Params)。 */
+  smallAmountThresholdUsd: number;
+  /** FEAT-WD01:正常到账时效(小时)。到账时间 = 提交 + 本值;命中大额合规审查时
+   *  改用 cooldownDays,取更晚者。 */
+  payoutSlaHours: number;
   cooldownDays: number;
-  penaltyFeeRate: number;
   complianceHoldEnabled: boolean;
   currentPhase: string;
   currentMonth: number;
@@ -441,103 +456,24 @@ export interface D5Params {
 }
 
 let requestSeq = 0;
-const pendingMutationKeys = new Map<string, string>();
-const PENDING_MUTATION_STORAGE_KEY = "nexgrid-admin-d1-uncertain-commands-v1";
-const PENDING_MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
 
-interface PersistedPendingMutation {
-  fingerprint: string;
-  commandKey: string;
+interface PersistedPendingMutation extends PendingMutationRecord {
   base: "finance" | "treasury" | "bills" | "withdraw";
   path: string;
   method: string;
   body: string;
-  createdAt: number;
-  expiresAt: number;
 }
 
-function readPersistedPendingMutations(): Record<string, PersistedPendingMutation> {
-  if (typeof window === "undefined") return {};
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(PENDING_MUTATION_STORAGE_KEY) ?? "{}") as Record<string, PersistedPendingMutation>;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const now = Date.now();
-    const current = Object.fromEntries(Object.entries(parsed).filter(([commandKey, value]) =>
-      value
-      && value.commandKey === commandKey
-      && typeof value.fingerprint === "string"
-      && value.fingerprint.length > 0
-      && typeof value.commandKey === "string"
-      && value.commandKey.length > 0
-      && ["finance", "treasury", "bills", "withdraw"].includes(value.base)
-      && typeof value.path === "string"
-      && value.path.startsWith("/")
-      && typeof value.method === "string"
-      && value.method !== "GET"
-      && typeof value.body === "string"
-      && Number.isFinite(value.createdAt)
-      && Number.isFinite(value.expiresAt)
-      && value.expiresAt > now));
-    if (Object.keys(current).length !== Object.keys(parsed).length) {
-      writePersistedPendingMutations(current);
-    }
-    return current;
-  } catch {
-    return {};
-  }
-}
-
-function writePersistedPendingMutations(value: Record<string, PersistedPendingMutation>) {
-  if (typeof window === "undefined") return;
-  try {
-    if (Object.keys(value).length === 0) window.sessionStorage.removeItem(PENDING_MUTATION_STORAGE_KEY);
-    else window.sessionStorage.setItem(PENDING_MUTATION_STORAGE_KEY, JSON.stringify(value));
-  } catch {
-    // Memory fallback remains available when storage is blocked or exhausted.
-  }
-}
-
-function pendingMutationKey(fingerprint: string): string | undefined {
-  const inMemory = pendingMutationKeys.get(fingerprint);
-  if (inMemory) return inMemory;
-  const persisted = Object.values(readPersistedPendingMutations())
-    .find((value) => value.fingerprint === fingerprint);
-  if (persisted) pendingMutationKeys.set(fingerprint, persisted.commandKey);
-  return persisted?.commandKey;
-}
-
-function rememberPendingMutation(
-  fingerprint: string,
-  commandKey: string,
-  base: "finance" | "treasury" | "bills" | "withdraw",
-  path: string,
-  method: string,
-  body: string,
-) {
-  pendingMutationKeys.set(fingerprint, commandKey);
-  const persisted = readPersistedPendingMutations();
-  const previous = persisted[commandKey];
-  persisted[commandKey] = {
-    fingerprint,
-    commandKey,
-    base,
-    path,
-    method,
-    body,
-    createdAt: previous?.createdAt ?? Date.now(),
-    expiresAt: Date.now() + PENDING_MUTATION_TTL_MS,
-  };
-  writePersistedPendingMutations(persisted);
-}
-
-function forgetPendingMutation(fingerprint: string) {
-  pendingMutationKeys.delete(fingerprint);
-  const persisted = readPersistedPendingMutations();
-  Object.entries(persisted).forEach(([commandKey, value]) => {
-    if (value.fingerprint === fingerprint) delete persisted[commandKey];
-  });
-  writePersistedPendingMutations(persisted);
-}
+const pendingMutations = createPendingMutationStore<PersistedPendingMutation>({
+  storageKey: "nexgrid-admin-d1-uncertain-commands-v1",
+  isValidRecord: (value) =>
+    ["finance", "treasury", "bills", "withdraw"].includes(value.base)
+    && typeof value.path === "string"
+    && value.path.startsWith("/")
+    && typeof value.method === "string"
+    && value.method !== "GET"
+    && typeof value.body === "string",
+});
 
 export interface D1PendingTopupCommand {
   commandKey: string;
@@ -547,7 +483,7 @@ export interface D1PendingTopupCommand {
 }
 
 export function listD1PendingTopupCommands(): D1PendingTopupCommand[] {
-  return Object.values(readPersistedPendingMutations())
+  return pendingMutations.list()
     .filter((value) => value.base === "finance" && value.path.startsWith("/topup/"))
     .map(({ commandKey, path, createdAt, expiresAt }) => ({ commandKey, path, createdAt, expiresAt }))
     .sort((left, right) => left.createdAt - right.createdAt);
@@ -607,7 +543,7 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     ? `${method}|${base}|${path}|${typeof init.body === "string" ? init.body : ""}`
     : null;
   const pendingKeyBeforeRequest = mutationFingerprint
-    ? pendingMutationKey(mutationFingerprint)
+    ? pendingMutations.get(mutationFingerprint)
     : undefined;
   if (init?.idempotencyKey || init?.idempotencyPrefix) {
     const commandKey = init.idempotencyKey
@@ -615,14 +551,12 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
       || nextId(init.idempotencyPrefix!);
     headers.set("Idempotency-Key", commandKey);
     if (mutationFingerprint) {
-      rememberPendingMutation(
-        mutationFingerprint,
-        commandKey,
+      pendingMutations.remember(mutationFingerprint, commandKey, {
         base,
         path,
         method,
-        typeof init?.body === "string" ? init.body : "",
-      );
+        body: typeof init?.body === "string" ? init.body : "",
+      });
     }
   }
   let response: Response;
@@ -654,11 +588,11 @@ async function apiRequest<T>(base: "finance" | "treasury" | "bills" | "withdraw"
     // command capsule so auth failures, in-progress replies, and other retry
     // errors never force the operator to create a second command key.
     if (mutationFingerprint && !pendingKeyBeforeRequest) {
-      forgetPendingMutation(mutationFingerprint);
+      pendingMutations.forget(mutationFingerprint);
     }
     throw new Error(formatAdminApiError(result?.message, `D_REQUEST_FAILED_${response.status}`));
   }
-  if (mutationFingerprint) forgetPendingMutation(mutationFingerprint);
+  if (mutationFingerprint) pendingMutations.forget(mutationFingerprint);
   return result.data as T;
 }
 
@@ -1131,6 +1065,8 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
     "TX_FAILED", "FAILED", "TX_ORPHANED", "DEAD", "REFUNDED",
   ]);
   if (amount <= 0 || fee < 0 || !allowedStatuses.has(status)) d2Invalid("withdrawal.businessRange");
+  // FEAT-WD02 判型键先解析(absent/null → null;有值必须是数,否则 invalid)。
+  const networkConfirmUsd = d2NullableNumber(row.networkConfirmUsd, "withdrawal.networkConfirmUsd");
   const result: D2Withdrawal = {
     id,
     userId,
@@ -1163,12 +1099,17 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
     referralPosition: d2OptionalString(row.referralPosition, "withdrawal.referralPosition"),
     riskScoreBreakdown: d2OptionalString(row.riskScoreBreakdown, "withdrawal.riskScoreBreakdown"),
     withdrawalHistory: d2OptionalString(row.withdrawalHistory, "withdrawal.withdrawalHistory"),
-    networkFeeRate: d2Number(row.networkFeeRate, "withdrawal.networkFeeRate"),
-    networkFeeMin: d2Number(row.networkFeeMin, "withdrawal.networkFeeMin"),
-    networkFeeMax: d2Number(row.networkFeeMax, "withdrawal.networkFeeMax"),
-    networkFee: d2Number(row.networkFee, "withdrawal.networkFee"),
-    penaltyFeeRate: d2Number(row.penaltyFeeRate, "withdrawal.penaltyFeeRate"),
-    grossFee: d2Number(row.grossFee, "withdrawal.grossFee"),
+    // FEAT-WD02 双形态:旧费字段一律先按可空解析(新单后端对未配置字段序列化 null,
+    // 必填解析会把 100% 新单打成 D2_RESPONSE_INVALID);各形态缺自家字段仍 fail-closed,
+    // 判定在下方 financialInvariants 段做(absent/null/0 三态显式)。
+    networkFeeRate: d2NullableNumber(row.networkFeeRate, "withdrawal.networkFeeRate"),
+    networkFeeMin: d2NullableNumber(row.networkFeeMin, "withdrawal.networkFeeMin"),
+    networkFeeMax: d2NullableNumber(row.networkFeeMax, "withdrawal.networkFeeMax"),
+    networkFee: d2NullableNumber(row.networkFee, "withdrawal.networkFee"),
+    penaltyFeeRate: d2NullableNumber(row.penaltyFeeRate, "withdrawal.penaltyFeeRate"),
+    grossFee: d2NullableNumber(row.grossFee, "withdrawal.grossFee"),
+    networkConfirmUsd,
+    feeModel: networkConfirmUsd !== null ? "confirm" : "legacy",
     nexBurned: d2Number(row.nexBurned, "withdrawal.nexBurned"),
     nexFeeOffsetRate: d2Number(row.nexFeeOffsetRate, "withdrawal.nexFeeOffsetRate"),
     feeWaived: d2Number(row.feeWaived, "withdrawal.feeWaived"),
@@ -1185,18 +1126,54 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
     k4AutoEscalateScore: d2NullableNumber(row.k4AutoEscalateScore, "k4AutoEscalateScore"),
     k3RiskRoute: d2OptionalString(row.k3RiskRoute, "withdrawal.k3RiskRoute"),
   };
-  if (result.riskScore !== null && (result.riskScore < 0 || result.riskScore > 100)
-      || result.networkFeeRate < 0 || result.networkFeeMin < 0
-      || result.networkFeeMax < result.networkFeeMin
-      || result.networkFee < result.networkFeeMin || result.networkFee > result.networkFeeMax
-      || result.penaltyFeeRate < 0 || result.grossFee < 0 || result.nexBurned < 0
-      || result.nexFeeOffsetRate < 0 || result.feeWaived < 0 || result.actualFee < 0
-      || result.netReceive < 0 || result.netReceive > result.amount
-      || Math.abs(result.grossFee - result.networkFee
-        - result.amount * (result.penaltyFeeRate > 1 ? result.penaltyFeeRate / 100 : result.penaltyFeeRate)) > 0.0001) {
+  if (result.riskScore !== null && (result.riskScore < 0 || result.riskScore > 100)) {
     d2Invalid("withdrawal.financialInvariants");
   }
+  // ── FEAT-WD02 费用双形态财务不变量(三态显式,fail-closed) ──
+  // 新单(networkConfirmUsd 非 null):只验新等式,旧字段整组忽略 —— 原始 double 型 DTO
+  //   会把未配置的旧字段零填(penaltyFeeRate:0/networkFee:0/grossFee:0),旧等式对零值空真恒过,
+  //   把它们纳入校验等于没验(独立证伪构造过这条洞)。
+  // 旧单(networkConfirmUsd 为 null):六个旧字段必须齐(任一 null → invalid,保持旧单 fail-closed),
+  //   按旧等式验。两头都缺 → invalid(不许静默放行)。
+  // netReceive 闭合(PRD D5 权威公式,双形态同式):|netReceive − (amount − actualFee)| ≤ 0.0001;
+  //   旧单另验 |actualFee − (grossFee − feeWaived)|(与新单 actualFee 等式对称,堵旧单 admin 盲区)。
+  //   上界比较带同容差 —— normalizeD2Page 是 .map,单条严格比较抛错会把合法舍入冻成整页崩。
+  if (result.feeModel === "confirm") {
+    const confirm = networkConfirmUsd as number;
+    if (confirm < 0 || confirm > 25
+        || result.nexBurned < 0 || result.nexFeeOffsetRate < 0
+        || result.feeWaived < 0 || result.actualFee < 0
+        || result.netReceive < 0 || result.netReceive > result.amount + 0.0001
+        || Math.abs(result.actualFee - Math.max(0, confirm - result.nexBurned * result.nexFeeOffsetRate)) > 0.0001
+        || Math.abs(result.netReceive - (result.amount - result.actualFee)) > 0.0001) {
+      d2Invalid("withdrawal.financialInvariants");
+    }
+  } else {
+    const { networkFeeRate, networkFeeMin, networkFeeMax, networkFee, penaltyFeeRate, grossFee } = result;
+    if (networkFeeRate === null || networkFeeMin === null || networkFeeMax === null
+        || networkFee === null || penaltyFeeRate === null || grossFee === null) {
+      d2Invalid("withdrawal.feeModel");
+    }
+    if (networkFeeRate < 0 || networkFeeMin < 0
+        || networkFeeMax < networkFeeMin
+        || networkFee < networkFeeMin || networkFee > networkFeeMax
+        || penaltyFeeRate < 0 || grossFee < 0 || result.nexBurned < 0
+        || result.nexFeeOffsetRate < 0 || result.feeWaived < 0 || result.actualFee < 0
+        || result.netReceive < 0 || result.netReceive > result.amount + 0.0001
+        || Math.abs(grossFee - networkFee
+          - result.amount * (penaltyFeeRate > 1 ? penaltyFeeRate / 100 : penaltyFeeRate)) > 0.0001
+        || Math.abs(result.actualFee - (grossFee - result.feeWaived)) > 0.0001
+        || Math.abs(result.netReceive - (result.amount - result.actualFee)) > 0.0001) {
+      d2Invalid("withdrawal.financialInvariants");
+    }
+  }
   return result;
+}
+
+/** @internal 导出仅供契约测试做**行为**验证(双形态三态固定靶)—— 源码 regex 断言
+ *  抓不到「判据写了但没被消费」;先例同 normalizeD5Params。 */
+export function normalizeD2WithdrawalForTest(row: unknown): D2Withdrawal {
+  return normalizeWithdrawal(row);
 }
 
 function normalizeD2Page(value: unknown): PageResult<D2Withdrawal> {
@@ -1546,12 +1523,31 @@ function normalizeD4Page(value: unknown): PageResult<D4Bill> {
   };
 }
 
-function normalizeD5Params(value: unknown): D5Params {
+/** FEAT-WD01 参数默认值(规格 §2)。服务端未下发时的兜底,亦是 D5 表单的初始值。 */
+export const D5_DEFAULT_SMALL_AMOUNT_THRESHOLD = 50;
+export const D5_DEFAULT_PAYOUT_SLA_HOURS = 24;
+/** 值域(规格 §2):小额线 0–500(0=关闭快车道);到账时效 1–168 小时(即 1 小时–7 天)。 */
+export const D5_SMALL_AMOUNT_THRESHOLD_MAX = 500;
+export const D5_PAYOUT_SLA_HOURS_MIN = 1;
+export const D5_PAYOUT_SLA_HOURS_MAX = 168;
+/** 🔴 FEAT-WD02 三网络确认费种子(USD)。跨仓单源锚点:uniapp mock/platform-config.ts
+ *  networkConfirmFeeUsd 同键同值,uniapp verify.sh「WD02 network-confirm-fee parity」哨兵逐键比值。
+ *  服务端未下发该组字段时按此兜底(前端先行部署不能把整页打挂,WD01 先例);
+ *  「恢复默认」按钮也回填这组值(仍走确认链)。 */
+export const D5_NETWORK_CONFIRM_FEE_DEFAULT = { trc20: 1, bep20: 1, erc20: 5 } as const;
+/** FEAT-WD02 网络确认费值域上限(USD)。uniapp isNetworkFeeConfigUsable pin 同数字系(26→false / 30→invalid 两侧固定靶)。 */
+export const D5_NETWORK_CONFIRM_FEE_MAX = 25;
+
+/** @internal 导出仅供契约测试做**行为**验证 —— 源码 regex 断言抓不到「判据写了但没被消费」。 */
+export function normalizeD5Params(value: unknown): D5Params {
   const raw = d5Object(value, "root");
   const source = d5Object(raw.sourceByField, "sourceByField");
+  // FEAT-WD02:networkFeeRatio/Min/Max 与 penaltyFeeRate 已随旧费模型删除,不再要求其
+  // sourceByField 条目(旧后端多发的条目被无害忽略);networkConfirmFeeUsd 的来源条目
+  // 在后端跟进下发前不强制(缺省视为 d5 自有,与兜底种子同席)。
   const sourceKeys = [
-    "dailyLimitCount", "balanceMaxRatio", "networkFeeRatio", "networkFeeMin", "networkFeeMax",
-    "nexFeeOffsetRate", "cooldownDays", "penaltyFeeRate", "complianceHoldEnabled",
+    "dailyLimitCount", "balanceMaxRatio",
+    "nexFeeOffsetRate", "cooldownDays", "complianceHoldEnabled",
   ];
   const sourceByField: Record<string, "d5" | "phase-h1"> = {};
   sourceKeys.forEach((key) => {
@@ -1565,12 +1561,32 @@ function normalizeD5Params(value: unknown): D5Params {
     version: d5Integer(raw.version, "version", 0),
     dailyLimitCount: d5Integer(raw.dailyLimitCount, "dailyLimitCount", 1),
     maxBalanceRatio: d5Number(raw.balanceMaxRatio, "balanceMaxRatio"),
-    networkFeeRatio: d5Number(raw.networkFeeRatio, "networkFeeRatio"),
-    networkFeeMin: d5Number(raw.networkFeeMin, "networkFeeMin"),
-    networkFeeMax: d5Number(raw.networkFeeMax, "networkFeeMax"),
+    // FEAT-WD02:三网络确认费。整组 absent/null → 默认种子兜底(前端先行部署,WD01 先例);
+    // 组一旦下发,三键必须齐且各为数值(缺键/null/非数 → D5_RESPONSE_INVALID fail-closed),
+    // 值域 [0,25] 在下方 business-range 统一验(对服务端值与兜底值一视同仁)。
+    networkConfirmFeeUsd: raw.networkConfirmFeeUsd === undefined || raw.networkConfirmFeeUsd === null
+      ? { ...D5_NETWORK_CONFIRM_FEE_DEFAULT }
+      : (() => {
+          const group = d5Object(raw.networkConfirmFeeUsd, "networkConfirmFeeUsd");
+          return {
+            trc20: d5Number(group.trc20, "networkConfirmFeeUsd.trc20"),
+            bep20: d5Number(group.bep20, "networkConfirmFeeUsd.bep20"),
+            erc20: d5Number(group.erc20, "networkConfirmFeeUsd.erc20"),
+          };
+        })(),
     nexFeeOffsetRate: d5Number(raw.nexFeeOffsetRate, "nexFeeOffsetRate"),
+    // FEAT-WD01 新增两项:服务端尚未下发时按默认兜底(向后兼容 —— 前端先行部署不能把
+    // 整页打挂)。一旦服务端开始下发,以服务端值为准;值域校验对两种来源一视同仁。
+    // 🔴 必须同时认 null:后端 DTO 加了字段但值未配置时,序列化出的是 null 而不是省略 key
+    //    (Spring 默认行为)。只认 undefined 的话 d5Number(null) → NaN → 抛 D5_RESPONSE_INVALID
+    //    → **整页六个参数全部冻结**,连每日提现次数都改不了。这正是这段兜底本来要防的事(审计实测)。
+    smallAmountThresholdUsd: raw.smallAmountThresholdUsd === undefined || raw.smallAmountThresholdUsd === null
+      ? D5_DEFAULT_SMALL_AMOUNT_THRESHOLD
+      : d5Number(raw.smallAmountThresholdUsd, "smallAmountThresholdUsd"),
+    payoutSlaHours: raw.payoutSlaHours === undefined || raw.payoutSlaHours === null
+      ? D5_DEFAULT_PAYOUT_SLA_HOURS
+      : d5Integer(raw.payoutSlaHours, "payoutSlaHours", 1),
     cooldownDays: d5Integer(raw.cooldownDays, "cooldownDays", 0),
-    penaltyFeeRate: d5Number(raw.penaltyFeeRate, "penaltyFeeRate"),
     complianceHoldEnabled: d5Boolean(raw.complianceHoldEnabled, "complianceHoldEnabled"),
     currentPhase: d5String(raw.currentPhase, "currentPhase"),
     currentMonth: d5Integer(raw.currentMonth, "currentMonth", 1),
@@ -1585,11 +1601,15 @@ function normalizeD5Params(value: unknown): D5Params {
       return raw.updatedFields as string[];
     })(),
   };
+  const confirmFees = result.networkConfirmFeeUsd;
   if (result.dailyLimitCount > 10
       || result.maxBalanceRatio < 0.5 || result.maxBalanceRatio > 1
-      || result.networkFeeRatio < 0 || result.networkFeeRatio > 0.05
-      || result.networkFeeMin < 0 || result.networkFeeMax < result.networkFeeMin
-      || result.nexFeeOffsetRate <= 0 || result.penaltyFeeRate < 0 || result.penaltyFeeRate > 1) {
+      // FEAT-WD02:三网络确认费值域 [0, 25](与 uniapp isNetworkFeeConfigUsable 同数字系)。
+      || [confirmFees.trc20, confirmFees.bep20, confirmFees.erc20]
+        .some((fee) => fee < 0 || fee > D5_NETWORK_CONFIRM_FEE_MAX)
+      || result.nexFeeOffsetRate <= 0
+      || result.smallAmountThresholdUsd < 0 || result.smallAmountThresholdUsd > D5_SMALL_AMOUNT_THRESHOLD_MAX
+      || result.payoutSlaHours < D5_PAYOUT_SLA_HOURS_MIN || result.payoutSlaHours > D5_PAYOUT_SLA_HOURS_MAX) {
     throw new Error(formatAdminApiError("D5_RESPONSE_INVALID", "D5_RESPONSE_INVALID:business-range"));
   }
   return result;
@@ -1600,7 +1620,7 @@ export async function fetchD1TopupOverview() {
 }
 
 export async function retryD1PendingTopupCommand(commandKey: string) {
-  const pending = readPersistedPendingMutations()[commandKey];
+  const pending = pendingMutations.list().find((value) => value.commandKey === commandKey);
   if (
     !pending
     || pending.base !== "finance"
@@ -2057,8 +2077,11 @@ export async function fetchD5WithdrawalParams() {
   return normalizeD5Params(await apiRequest<Record<string, unknown>>("withdraw", "/limits"));
 }
 
+// FEAT-WD02:networkConfirmFeeUsd 以**整组对象**为变更单位(三值一次 PUT,任一失败全回滚 ——
+// 沿用旧三件套的原子提交先例);不提供单键补丁,防止三网络费半更新。
 export type D5OwnedChanges = Partial<Pick<D5Params,
-  "dailyLimitCount" | "maxBalanceRatio" | "networkFeeRatio" | "networkFeeMin" | "networkFeeMax" | "nexFeeOffsetRate">>;
+  "dailyLimitCount" | "maxBalanceRatio" | "networkConfirmFeeUsd" | "nexFeeOffsetRate"
+  | "smallAmountThresholdUsd" | "payoutSlaHours">>;
 
 export async function updateD5WithdrawalLimits(
   changes: D5OwnedChanges,

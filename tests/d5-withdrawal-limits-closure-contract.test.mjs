@@ -22,14 +22,16 @@ test("D5 page fails closed and calculates direction from target values", () => {
   assert.match(page, /setParams\(null\)/);
   assert.match(page, /旧值已清空，全部写操作保持冻结/);
   assert.match(page, /daily > params\.dailyLimitCount/);
-  assert.match(page, /feePct \/ 100 < params\.networkFeeRatio/);
+  // FEAT-WD02:放大方向 = 任一网络确认费调低(费降 → 用户成本降,放大流出)。
+  assert.match(page, /feeTrc < params\.networkConfirmFeeUsd\.trc20/);
   assert.match(page, /nex > params\.nexFeeOffsetRate/);
   assert.doesNotMatch(page, /amplifies:\s*true/);
 });
 
 test("D5 displays all H1-owned read-only fields and cross-domain evidence links", () => {
   const page = read("app/components/domain-views/d-tabs/d5-params.tsx");
-  for (const term of ["cooldownDays", "penaltyFeeRate", "complianceHoldEnabled", "source: phase-h1"]) {
+  // FEAT-WD02:penaltyFeeRate 行已删(费用改为 D5 自有三网络确认费),不再要求展示。
+  for (const term of ["cooldownDays", "complianceHoldEnabled", "source: phase-h1"]) {
     assert.match(page, new RegExp(term));
   }
   for (const route of ["/growth/phase", "/overview/dual-ledger", "/finance/withdrawals", "/platform/audit", "/platform/events"]) {
@@ -37,9 +39,10 @@ test("D5 displays all H1-owned read-only fields and cross-domain evidence links"
   }
 });
 
-test("D5 network fee ratio, min and max are submitted atomically", () => {
+test("D5 three network confirm fees are submitted atomically (FEAT-WD02)", () => {
   const page = read("app/components/domain-views/d-tabs/d5-params.tsx");
-  assert.match(page, /networkFeeRatio: feePct \/ 100, networkFeeMin: feeMin, networkFeeMax: feeMax/);
+  // 红测:把三键拆成三次 submit → FAIL(半更新会让三网络费用不一致)
+  assert.match(page, /networkConfirmFeeUsd: \{ trc20: feeTrc, bep20: feeBep, erc20: feeErc \}/);
   assert.match(page, /任一失败全回滚/);
 });
 

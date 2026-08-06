@@ -11,6 +11,7 @@ import {
   type D3ForecastConfig,
   type D3WaterLevel,
 } from "@/lib/admin/d-client";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { formatReserveCoverDays } from "@/lib/admin/treasury-cover-days";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { DCtx } from "./types";
@@ -52,6 +53,13 @@ function money(value: number) {
   return `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 }
 
+/** 储备注入命令号跨刷新存活:注资是真金白银入账,重铸命令号 = 后端无法去重 = 重复入账。
+ *  fingerprint 已编码动作类型(injection)与目标对象(凭证号,后端唯一去重位)+ 金额。 */
+const pendingKeys = createPendingMutationStore({
+  storageKey: "nexion-admin-d3-treasury-commands-v1",
+});
+const injectionScope = (voucherNo: string, amount: string) => `injection|${voucherNo}|${amount}`;
+
 function reasonValid(reason: string, toast: (message: string) => void) {
   const length = reason.trim().length;
   if (length < 8 || length > 200) {
@@ -75,15 +83,16 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
   const [voucherNo, setVoucherNo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const pendingKeys = useRef(new Map<string, string>());
+  // merge 2026-08-06:pendingKeys 用分支侧 store 化版本(稳定命令号,声明在下方);
+  // loadGeneration 是 main 侧独立功能(请求代际防过期响应),消费在 load() 内,保留。
   const loadGeneration = useRef(0);
 
   const operationKey = (scope: string) => {
-    const existing = pendingKeys.current.get(scope);
+    const existing = pendingKeys.get(scope);
     if (existing) return existing;
     const uuid = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-    const key = `d3-${scope}-${uuid.replaceAll("-", "").replace(".", "").slice(0, 18)}`;
-    pendingKeys.current.set(scope, key);
+    const key = `d3-${scope.replace(/[^A-Za-z0-9_-]/g, "-")}-${uuid.replaceAll("-", "").replace(".", "").slice(0, 18)}`;
+    pendingKeys.remember(scope, key);
     return key;
   };
 
@@ -147,10 +156,10 @@ export function D3Treasury({ ctx }: { ctx: DCtx }) {
       okLabel: "确认登记",
       run: async (reason) => {
         if (!reasonValid(reason, toast)) return false;
-        const scope = `injection-${nextVoucher}-${nextAmount}`;
+        const scope = injectionScope(nextVoucher, nextAmount);
         try {
           await createD3Injection(nextAmount, nextVoucher, reason.trim(), OPERATOR(), operationKey(scope));
-          pendingKeys.current.delete(scope);
+          pendingKeys.forget(scope);
           setAmount("");
           setVoucherNo("");
           toast("储备注入已登记");

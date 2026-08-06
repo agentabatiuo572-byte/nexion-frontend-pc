@@ -85,7 +85,8 @@ function ParamRow({
   const isDay = isTrialDayParam(param.key);
   const displayCurrent = isDay ? `${current} 天` : current;
   const readOnly = ["phaseOpen", "trialProductId"].includes(param.key);
-  const options = ["autoChargeAtEnd", "autoPushEnabled"].includes(param.key)
+  // FEAT-TRIAL02 无卡化后自动扣款整链下线,后端不再下发 autoChargeAtEnd,该键的渲染分支随之移除。
+  const options = ["autoPushEnabled"].includes(param.key)
     ? ["开", "关"]
     : param.key === "phaseOpen" ? ["开放", "关闭"] : undefined;
   const detail = (

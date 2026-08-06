@@ -214,8 +214,10 @@ test("B1/B2/B5 资金事实及 B4/H1、B5/J1 跨域快照同源", async ({ page 
     )
     ?? {};
   const h1Dials = Object.entries(object(h1Current.dials)).map(([key, value]) => ({ key, value }));
-  expect(b4Dials).toHaveLength(8);
-  expect(h1Dials.length).toBeGreaterThanOrEqual(8);
+  // FEAT-WD02:withdrawPenaltyFeeRate 旋钮已随惩罚费模型下线 → 矩阵 8 → 7 项。
+  expect(b4Dials).toHaveLength(7);
+  expect(h1Dials.length).toBeGreaterThanOrEqual(7);
+  expect(b4Dials.map((dial) => String(object(dial).key))).not.toContain("withdrawPenaltyFeeRate");
   for (const dial of b4Dials) {
     const row = object(dial);
     const canonical = h1Dials.map(object).find((candidate) => String(candidate.key) === String(row.key));

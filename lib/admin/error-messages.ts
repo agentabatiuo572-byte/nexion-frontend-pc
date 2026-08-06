@@ -14,6 +14,12 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   EMERGENCY_API_503: "应急控制后端当前不可用，控制项已隐藏；请稍后重新读取，持续失败时联系值班人员。",
   EMERGENCY_API_500: "应急控制服务暂时异常，控制项已隐藏，请稍后重新读取或联系值班人员。",
   RISK_BACKEND_UNAVAILABLE: "风险服务当前不可用，旧数据与写操作已隐藏；请稍后重新读取，持续失败时联系值班人员。",
+  // GROWTH_* 两条是本仓代理路由 app/api/admin/growth/[...path]/route.ts 自己铸的码(闭集)。
+  // 🔴 后端不可达是本机常态、也是 H 域页面最可能的读失败:漏掉这两条时它们会落进
+  //    MACHINE_CODE_RE 兜底「请检查输入内容」——对一次只读加载失败,这个指引是错的。
+  //    文案保持读写中性(growthRequest 同时服务 H1–H9 的读与写)。契约测试:tests/h9-public-stats-contract.test.mjs。
+  GROWTH_BACKEND_UNAVAILABLE: "增长与运营节奏服务暂时不可用，请稍后重试；持续失败时请联系值班人员。",
+  GROWTH_ROUTE_NOT_FOUND: "当前服务版本未提供该增长与运营能力，请刷新页面；若仍出现，请联系值班人员检查前后端版本。",
   K1_RESPONSE_INVALID: "K1 服务返回的数据不完整或不一致，旧数据与写操作已隐藏；请重新读取或联系风控值班人员。",
   K2_RESPONSE_INVALID: "K2 服务返回的数据不完整或不一致，旧数据与写操作已隐藏；请重新读取或联系风控值班人员。",
   K2_ROW_CONCURRENT_UPDATE: "该 K2 命中已被其他操作员处置，请刷新后查看最新状态。",
@@ -128,6 +134,9 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   H8_CONFIG_VERSION_CONFLICT: "邀请奖励配置已被其他操作员修改，本次未覆盖；请刷新页面并核对最新值后重试。",
   H8_CONFIG_VERSION_INVALID: "邀请奖励配置版本异常，本次未写入；请联系值班人员检查后端配置。",
   H8_UPSTREAM_OUTCOME_UNKNOWN: "本次邀请奖励参数写入结果未知，可能已经生效；请先刷新并核对服务端当前值，确认仍需重试时使用当前表单再次提交。",
+  H9_RESPONSE_INVALID: "对外公布数据服务返回的内容不完整或类型不对，页面已停止展示任何数字并冻结写操作；请重新读取或联系值班人员。",
+  H9_DATA_LOAD_FAILED: "对外公布数据读取失败，页面没有展示任何数字；请点重试，持续失败时联系值班人员。",
+  H9_SAVE_FAILED: "对外公布数据保存失败，本次改动没有生效也没有落审计；请刷新核对当前生效值后重试。",
   QUEST_CONFIG_STALE: "H3 配置已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
   QUEST_CONFIG_NO_CHANGE: "目标值与 H3 当前配置相同，本次未写入。",
   EVENT_CONFIG_STALE: "活动已被其他操作员修改，本次未覆盖；请刷新页面后基于最新值重试。",
@@ -385,6 +394,7 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   ADMIN_PASSWORD_CURRENT_INVALID: "当前密码不正确。",
   ADMIN_PASSWORD_WEAK: "新密码至少 8 位。",
   ADMIN_PASSWORD_REUSED: "新密码不能与当前密码相同。",
+  ADMIN_PASSWORD_CHANGE_REQUIRED: "请先完成密码修改：当前账号还没有完成强制改密，后台功能已全部暂停。请退出后重新登录，在登录页的「首次登录修改密码」步骤设置新密码，完成后即可继续操作。",
   ACCOUNT_PROFILE_UPDATE_FORBIDDEN: "只有超管可以编辑运营账号资料。",
   ACCOUNT_DELETE_FORBIDDEN: "只有超管可以删除运营账号。",
   ACCOUNT_DELETE_SELF_FORBIDDEN: "不能删除自己的当前账号。",
@@ -532,7 +542,15 @@ const ADMIN_ERROR_MESSAGES: Record<string, string> = {
   F_VRANK_TITLES_SCHEMA_INVALID: "V-Rank 头衔格式无效,须为含 V0-V12 共 13 阶非空文本的 JSON。",
 };
 
-const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+$/;
+/**
+ * 机器码兜底判据:裸码,或**带 `:明细` 后缀**的码(`H9_CONFIG_VERSION_CONFLICT:v7`)。
+ *
+ * 🔴 后缀这一支不是补全性的洁癖:只认裸码时,字典里没有的带后缀码会从函数末尾 `return raw`
+ *    原样落到运营面上。H9 保存走 expectedVersion CAS,并发改动必回 409 —— 那正是这一页
+ *    最可能遇到的错误,却是唯一漏出英文码的路径(2026-08-05 运行时探针实测,静态读代码看不出来)。
+ *    41 个调用方共用本函数,所以补在这里而不是给每个域的字典各塞一批猜出来的后端码。
+ */
+const MACHINE_CODE_RE = /^[A-Z][A-Z0-9_]+(?::[\s\S]*)?$/;
 
 export function formatAdminApiError(message: string | null | undefined, fallback: string) {
   const raw = (message || fallback || "").trim();
@@ -548,6 +566,22 @@ export function formatAdminApiError(message: string | null | undefined, fallback
 
   for (const [code, translated] of Object.entries(ADMIN_ERROR_MESSAGES)) {
     if (raw.includes(code)) return translated;
+  }
+
+  // 环境故障不得归因到用户输入:表里没有专属条目的不可达/网络类失败,在通用兜底前先接住
+  if (/(BACKEND|SERVICE)_UNAVAILABLE|service unavailable/i.test(raw) || /_REQUEST_FAILED_503$/.test(raw)) {
+    return "后台服务暂时不可达，本次提交未生效；请稍后重试，持续失败时请联系值班人员。";
+  }
+  // 502/504 是网关侧失败,后端可能已处理完请求——只说「结果尚未确认」,不得断言未生效
+  if (/_REQUEST_FAILED_(502|504)$/.test(raw)) {
+    return "后台服务链路异常，本次结果尚未确认；请保留当前输入，刷新核对最新状态后再决定是否重试。";
+  }
+  if (/_REQUEST_FAILED_5\d\d$/.test(raw)) {
+    return ADMIN_ERROR_MESSAGES.INTERNAL_SERVER_ERROR;
+  }
+  // fetch 网络异常目前多数 client 未接线进本函数(断网直接冒泡英文);此分支兜显式传入的场景,生效性未知不断言
+  if (/failed to fetch|network ?error|load failed|network request failed/i.test(raw)) {
+    return "网络连接失败或后台服务不可达；请检查网络后重试，提交类操作请先刷新核对是否已生效。";
   }
 
   if (MACHINE_CODE_RE.test(raw)) {

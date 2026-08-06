@@ -189,10 +189,14 @@ test("J3 client and backend use PUT, optimistic snapshots and fixed-window valid
 test("J3 retains idempotency keys when a write outcome is uncertain", () => {
   assert.match(component, /isEmergencyOutcomeUncertain/);
   assert.match(component, /复用同一请求编号/);
-  assert.match(component, /exportAttempt\.current = null/);
-  assert.match(component, /commandAttempt\.current = null/);
-  assert.match(component, /if \(isEmergencyOutcomeUncertain\(error\)\)[\s\S]{0,260}else \{\s*exportAttempt\.current = null/);
-  assert.match(component, /if \(isEmergencyOutcomeUncertain\(error\)\)[\s\S]{0,300}else \{\s*commandAttempt\.current = null/);
+  // 命令号落共享持久化 store(sessionStorage):刷新后重试仍是同一号,后端才能去重。
+  assert.match(component, /commandAttempt = createSlotAttemptStore\(\{/);
+  assert.doesNotMatch(component, /useRef<\{ fingerprint/);
+  assert.doesNotMatch(component, /exportAttempt\.current/);
+  assert.match(component, /commandAttempt\.forget\(REPORT_EXPORT_SLOT\)/);
+  assert.match(component, /commandAttempt\.forget\(ALERT_CONFIG_SLOT\)/);
+  assert.match(component, /if \(isEmergencyOutcomeUncertain\(error\)\)[\s\S]{0,260}else \{\s*commandAttempt\.forget\(REPORT_EXPORT_SLOT\)/);
+  assert.match(component, /if \(isEmergencyOutcomeUncertain\(error\)\)[\s\S]{0,300}else \{\s*commandAttempt\.forget\(ALERT_CONFIG_SLOT\)/);
   assert.match(emergencyProxy, /X-Nexion-Upstream-Outcome["']?:?\s*["']unknown/);
   assert.match(client, /isWrite && res\.headers\.get\("X-Nexion-Upstream-Outcome"\) === "unknown"/);
   assert.match(client, /throw new EmergencyOutcomeUncertainError/);
@@ -246,7 +250,7 @@ test("J3 contextual actions carry the selected account or cluster into C2 and K1
 });
 
 test("J3 distinguishes a committed config write from a failed follow-up refresh", () => {
-  assert.match(component, /commandAttempt\.current = null;\s*try \{\s*await ctx\.actions\.reloadJEmergency\(\)/);
+  assert.match(component, /commandAttempt\.forget\(ALERT_CONFIG_SLOT\);\s*try \{\s*await ctx\.actions\.reloadJEmergency\(\)/);
   assert.match(component, /监控配置已生效并已记审计，但页面刷新失败/);
   assert.doesNotMatch(component, /updateJ3AlertConfig\([\s\S]{0,300}reloadJEmergency\(\)[\s\S]{0,200}catch \(error\) \{\s*if \(isEmergencyOutcomeUncertain/);
 });

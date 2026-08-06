@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { requirePasswordChangeCleared } from "@/lib/admin/require-password-change-cleared";
 
 // SSE 流式透传路由:GET /api/admin/content/conversations/stream
 // 静态路径优先于 content/[...path] catch-all,仅服务这一条流。
@@ -15,6 +16,8 @@ function jsonError(status: number, message: string) {
 }
 
 export async function GET(request: Request) {
+  const passwordChangeBlocked = requirePasswordChangeCleared(await cookies());
+  if (passwordChangeBlocked) return passwordChangeBlocked;
   const token = (await cookies()).get(ADMIN_TOKEN_COOKIE)?.value;
   if (!token) return jsonError(401, "ADMIN_AUTH_REQUIRED");
 

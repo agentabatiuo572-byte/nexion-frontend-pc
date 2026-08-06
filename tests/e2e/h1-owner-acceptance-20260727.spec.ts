@@ -23,7 +23,7 @@ test("H1 首次用户可从左侧入口发现并理解完整节奏操作台", as
   await expect(page.getByRole("button", { name: "改总时长" })).toBeVisible();
   await expect(page.getByRole("button", { name: "设定位置" })).toBeVisible();
   await expect(page.getByRole("button", { name: /沙盒预览/ })).toBeVisible();
-  await expect(page.locator(".l-h .ttl").filter({ hasText: /逐月旋钮矩阵\(\d+ 月 x 8 项\)/ })).toBeVisible();
+  await expect(page.locator(".l-h .ttl").filter({ hasText: /逐月旋钮矩阵\(\d+ 月 x 7 项\)/ })).toBeVisible();
   await expect(page.getByText("Phase 切换控制", { exact: true })).toBeVisible();
   await expect(page.getByText("Phase 效果归因", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /去 B4 节奏看板/ })).toBeVisible();
@@ -45,16 +45,18 @@ test("H1 权威读模型可从可见入口关联 B4，H-only maker 对跨域原�
   const row = (h1.monthlyDials as Array<Record<string, any>>).find((item) => Number(item.month) === currentMonth);
   expect(row).toBeTruthy();
   const currentRow = row!;
+  // 键序与 h1-phase.tsx 的 DIAL_COLUMNS 一致(7 项)。
   expect(Object.keys(currentRow.dials)).toEqual(expect.arrayContaining([
     "newUserBonusMultiplier",
     "inviteRewardMultiplier",
     "reinvestMultiplier",
-    "withdrawPenaltyFeeRate",
     "withdrawCooldownDays",
     "binaryDailyCap",
     "questBonusMultiplier",
     "complianceHoldEnabled",
   ]));
+  // FEAT-WD02(2026-08-02):提现惩罚费率随固定网络确认费模型下线。反向钉死,防旋钮回退。
+  expect(Object.keys(currentRow.dials)).not.toContain("withdrawPenaltyFeeRate");
 
   for (const endpoint of ["/api/admin/phase/overview", "/api/admin/withdraw/limits", "/api/admin/teams/binary"]) {
     expect((await page.request.get(endpoint)).status(), `${endpoint} must fail closed for H-only maker`).toBe(403);

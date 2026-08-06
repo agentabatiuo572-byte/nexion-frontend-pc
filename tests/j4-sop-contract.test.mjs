@@ -58,7 +58,7 @@ test("J4 execution creates a real A2 replay proposal before cross-domain side ef
   assert.match(component, /createA2OperationProposal/);
   assert.match(component, /op: "j4_playbook_execute"/);
   assert.match(component, /target: \{ domain: "J", type: "playbook", id: p\.code \}/);
-  assert.match(component, /A2 双人复核/);
+  assert.match(component, /A2 确认队列/);
   assert.match(a2Guard, /case "j4_playbook_execute" -> "emergency_j4_playbook_execute"/);
   assert.match(backend, /if \(!A2ReplayContext\.isReplaying\(\)\) \{[\s\S]*J4_A2_CONFIRMATION_REQUIRED/);
   assert.doesNotMatch(component, /后续 server|占位|立即生效 · 记入草稿位/);

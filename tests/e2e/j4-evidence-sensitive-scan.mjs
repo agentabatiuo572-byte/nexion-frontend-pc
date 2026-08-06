@@ -67,7 +67,7 @@ function scanBuffer(buffer, displayPath, passwordBytes) {
   const text = buffer.toString("utf8");
   hits.push(...collectRegexHits(text, /\b(eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b/g, "jwt", displayPath));
   hits.push(...collectRegexHits(text, /authorization(?:\\?["']|\s)*[:=](?:\\?["']|\s)*(?:bearer\s+)?([A-Za-z0-9._~-]{16,})/gi, "authorization-value", displayPath));
-  hits.push(...collectRegexHits(text, /nexion_admin_token(?:%3d|=|\\u003d)([^;,\s"'\\]{12,})/gi, "token-cookie-value", displayPath));
+  hits.push(...collectRegexHits(text, /nexion_admin(?:_pwd_change)?_token(?:%3d|=|\\u003d)([^;,\s"'\\]{12,})/gi, "token-cookie-value", displayPath));
   return hits;
 }
 
@@ -80,7 +80,7 @@ function redactCredentials(text, passwordValue) {
     .replaceAll(passwordValue, "[REDACTED_PASSWORD]")
     .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, "[REDACTED_JWT]")
     .replace(/(authorization(?:\\?["']|\s)*[:=](?:\\?["']|\s)*(?:bearer\s+)?)([A-Za-z0-9._~-]{16,})/gi, "$1[REDACTED_AUTH]")
-    .replace(/(nexion_admin_token(?:%3d|=|\\u003d))([^;,\s"'\\]{12,})/gi, "$1[REDACTED_COOKIE]");
+    .replace(/(nexion_admin(?:_pwd_change)?_token(?:%3d|=|\\u003d))([^;,\s"'\\]{12,})/gi, "$1[REDACTED_COOKIE]");
 }
 
 try {

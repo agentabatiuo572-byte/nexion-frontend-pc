@@ -10,7 +10,7 @@
  * 凭据 / 合规铁律:披露全链 操作员 = 风控,执行门槛 = 风控 / 超管;详情文案体现这一点。
  */
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Drawer, PaginationExemptionList, type BusinessFormSpec } from "../design-kit";
 import type { ICtx } from "./types";
 import type { DisclosureJurisdictionOption, DisclosureVersionItemView } from "@/lib/admin/i-client";
@@ -20,6 +20,15 @@ import { A2OutcomeUncertainError, createA2CommandKey } from "@/lib/admin/a2-clie
 import type { ProposeSpec } from "@/lib/admin/propose-or-execute";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { isOptionalTrustLinkField, validateTrustSectionBilingualFields } from "@/lib/admin/trust-section-validation";
+import { createSlotAttemptStore } from "@/lib/admin/pending-mutation-store";
+
+/** I4 信任版块与 I5 披露共用一张表,靠槽位前缀分命名空间;槽位本身已带目标 id + 动作类型
+ *  (`trust|版块键:publish`、`disclosure|辖区:matrix-configure`)。落 sessionStorage,刷新后重试仍去重。 */
+const commandAttempts = createSlotAttemptStore({
+  storageKey: "nexion-admin-i4-trust-commands-v1",
+});
+const trustSlot = (attemptKey: string) => `trust|${attemptKey}`;
+const disclosureSlot = (attemptKey: string) => `disclosure|${attemptKey}`;
 
 type TrustSection = {
   key: string; desc: string; struct: string; v: string; status: string; lastChange: string; roleGate: string; highSensitivity: boolean;
@@ -64,8 +73,6 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
   const canDraftDisclosure = isSuperadmin || !!session?.authorities.includes("content_i5_write");
   const canPublishDisclosure = isSuperadmin || !!session?.authorities.includes("content_i5_disclosure_publish");
   const canAdjustGate = isSuperadmin || !!session?.authorities.includes("content_i5_gate_adjust");
-  const trustCommandAttempts = useRef(new Map<string, { fingerprint: string; commandKey: string }>());
-  const disclosureCommandAttempts = useRef(new Map<string, { fingerprint: string; commandKey: string }>());
   const [secKey, setSecKey] = useState<TrustDetailKey | null>(null);
   const [jurCode, setJurCode] = useState<string | null>(null);
   const [chapNo, setChapNo] = useState<string | null>(null);
@@ -147,37 +154,31 @@ export function I4Trust({ ctx, view }: { ctx: ICtx; view: "trust" | "disclosures
     }
   };
   const proposeTrustSection = async (attemptKey: string, fingerprint: string, spec: ProposeSpec) => {
-    const saved = trustCommandAttempts.current.get(attemptKey);
-    const commandKey = saved?.fingerprint === fingerprint
-      ? saved.commandKey
-      : createA2CommandKey("i4-trust-section");
-    trustCommandAttempts.current.set(attemptKey, { fingerprint, commandKey });
+    const slot = trustSlot(attemptKey);
+    const commandKey = commandAttempts.resolve(slot, fingerprint, () => createA2CommandKey("i4-trust-section"));
     try {
       const result = await propose(toast, { ...spec, commandKey });
-      trustCommandAttempts.current.delete(attemptKey);
+      commandAttempts.forget(slot);
       if (result === "proposed") await actions.reloadIContent();
       return result;
     } catch (error) {
       if (!(error instanceof A2OutcomeUncertainError)) {
-        trustCommandAttempts.current.delete(attemptKey);
+        commandAttempts.forget(slot);
       }
       throw error;
     }
   };
   const proposeDisclosure = async (attemptKey: string, fingerprint: string, spec: ProposeSpec) => {
-    const saved = disclosureCommandAttempts.current.get(attemptKey);
-    const commandKey = saved?.fingerprint === fingerprint
-      ? saved.commandKey
-      : createA2CommandKey("i5-disclosure");
-    disclosureCommandAttempts.current.set(attemptKey, { fingerprint, commandKey });
+    const slot = disclosureSlot(attemptKey);
+    const commandKey = commandAttempts.resolve(slot, fingerprint, () => createA2CommandKey("i5-disclosure"));
     try {
       const result = await propose(toast, { ...spec, commandKey });
-      disclosureCommandAttempts.current.delete(attemptKey);
+      commandAttempts.forget(slot);
       if (result === "proposed") await actions.reloadIContent();
       return result;
     } catch (error) {
       if (!(error instanceof A2OutcomeUncertainError)) {
-        disclosureCommandAttempts.current.delete(attemptKey);
+        commandAttempts.forget(slot);
       }
       throw error;
     }

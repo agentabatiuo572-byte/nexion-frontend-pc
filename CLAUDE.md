@@ -13,20 +13,18 @@ APIs/约定与训练数据不同。触 Next 内部（App Router params、async r
 ```bash
 npm run dev                  # dev → http://localhost:3002
 npm run build                # 生产构建
-npm run verify               # 全套 tripwire（dev 须在 3002）：tsc + 68 路由 HTTP200 + 旗舰 needle + 4 镜头回归
+npm run verify               # 静态 tripwire（无需 dev；齿轮清单=verify.mjs 顶部 GEARS 表，序号自动派生）：tsc / mock 越界 / 工作区路径 / canon 数字口径 / 死控件 / M 客服面 / CGM 字段覆盖（默认 B9=全量，CGM_BATCH 降批）/ 旧确认残留 / 动作完整性（OPS_BATCH 收紧）/ MC 弹窗契约 / 列表分页 / 渠道+存储键 parity / 契约×8（D1·B4·J1·J2·K2–K5）/ FE-BE 映射 / kill-switch / rhythm / A2 覆盖 / 生产构建
 # 亚门（可选收紧）：
-npm run verify:owner-review
-npm run remediation:preflight
-CGM_BATCH=B9 npm run verify  # 字段级覆盖（默认全 185 行）
-OPS_BATCH="" npm run verify  # 动作完整性门（默认计欠账）
+npm run verify:owner-review          # 验收包闭合检查；:live 变体才探 3002/uniapp 首屏
+npm run remediation:preflight        # 步步全绿后追跑 l5-final-sweep 12 检查（SKU 镜像 / uniapp port 覆盖 / 账本联验 / 走查证据聚合）
 ```
 
-`verify` 是 tripwire，不是 typecheck：tsc 过 ≠ verify 过。
+`verify` 是 tripwire，不是 typecheck：tsc 过 ≠ verify 过。channel-parity / FE-BE 映射 / J1 / J2 / K2 五齿轮硬读兄弟仓 `nexion-backend`，缺仓环境链在 channel-parity 齿断（memory: nexion-backend-not-in-workspace）。
 
 ## 完成门（宣布 done 前必走）
 
 1. `npx tsc --noEmit` → 0 错。
-2. `npm run verify` → 全绿。齿轮含：tsc / 68 路由 HTTP200（nav 漂移）/ 旗舰 needle / 4 镜头回归 / CGM 字段覆盖 / interaction audit（死控件）/ ops-actions（动作完整性）/ 旧确认残留 / MC 弹窗契约 / 列表分页 / M 客服面 / uniapp port 覆盖 / SKU 字段镜像 / canon 数字口径。
+2. `npm run verify` → 全绿(GEARS 全表,清单见上)。verify 之外、改到对应面必单跑的门:SKU 字段镜像 / uniapp port 覆盖 → `npm run remediation:preflight`。已退役：68 路由 HTTP200、旗舰 needle（旧 verify.sh 齿轮，live 探活仅剩 `verify:owner-review:live`）；「4 镜头回归」不是脚本齿轮 = 下条第 3 步。
 3. 多镜头 audit：4 并行 reviewer（技术 / 初次运营者 / PM 价值 / 交互打磨），rubric 见 `docs/REVIEW-RUBRIC.md`，修到 P0=0。
 4. Browser self-check（Playwright）：路由 navigate + console error=0 + 截图。**verify 绿 ≠ 渲染 OK**。
 5. 清理 `.playwright-mcp/` + `*.png`。
@@ -34,19 +32,19 @@ OPS_BATCH="" npm run verify  # 动作完整性门（默认计欠账）
 
 ## 架构 big-picture
 
-12 域（A–M）后台原型，mock 驱动，但**每个 store/action 必须 backend-replaceable**。
+13 域（A–M）后台原型，mock 驱动，但**每个 store/action 必须 backend-replaceable**。
 
 **三大单一真源（改前必认）**：
-- **IA 单源** = `lib/nav/console-nav.ts`（`CONSOLE_NAV`：13 域 / 68 个 L2 入口，每条带 id/name/path/prdAnchor/batch/status）。驱动侧边栏 + 路由解析 + 面包屑 + verify 路由清单。
+- **IA 单源** = `lib/nav/console-nav.ts`（`CONSOLE_NAV`：13 域(A–M)，L2 入口数以文件为准，每条带 id/name/path/prdAnchor/batch/status）。驱动侧边栏 + 路由解析 + 面包屑 + `scripts/nav-routes.mjs` 路由清单提取。
 - **内容单源** = `lib/admin/registry/{a..m}.ts`（每模块 ListSpec/ConfigSpec/DashboardSpec），archetype 脚手架从此装配。⚠️ registry summary 是**真渲染面**（非死代码）；改枚举数必 grep 全仓「N 类」。
 - **财务单源** = `lib/mock/admin/ledger.ts`（B1 双账本 LedgerSnapshot）。**所有 B1/D 域金额、覆盖率、压力比从它派生，无二源**；改阈值必 import LEDGER，禁散落硬编码。庞氏度量优先用出金压力比 e(t)（<0.7 红线），与 phase 同向。
 
 **关键铁律**：
-- **MC 显式 edit 契约**：MakerCheckerModal「目标新值」框只看是否传 `edit`（`spec = edit ?? null`），不靠动作名正则。调参传 `edit{kind,current}`，处置不传。
+- **确认弹窗显式 edit 契约**：`design-kit.tsx` 操作确认弹窗「目标新值」框只看是否传 `edit`（`spec = edit ?? null`），不靠动作名正则。调参传 `edit{kind,current}`，处置不传。（旧名 MakerCheckerModal 已随双签取消退役）
 - **操作确认**：高敏动作（资金/风控/合规/止血）必走确认弹窗 + 理由（≥8 字）+ A2 append-only 审计 + 24h 幂等（Idempotency-Key）。**双签已全量取消**（单人确认，2026-06 决议；B1 红线保留）。
 - **字段级镜像门**：后台可编辑字段 ⊇ 前端展示字段（`sku-field-mirror.mjs` 哨兵）。
 - **canon 数字口径**：staking/genesis/device/product 三端同源（`canon-sentinel.mjs`）。
-- **设计系统**：V5 暗色（`html[data-theme="dark"]` 主推）+ 12 域色板 `--admin-domain-{a..m}` + 8 数据色 + 状态机色。颜色用 token 不写 hex；admin `--brand-2` 是**橙**非紫。
+- **设计系统**：V5 暗色（`html[data-theme="dark"]` 主推）+ 13 域色板 `--admin-domain-{a..m}` + 8 数据色 + 状态机色。颜色用 token 不写 hex；admin `--brand-2` 是**橙**非紫。
 - 运营面串必**运营可读中文**（开发代号 / 英文标识 `ab.xxx` 降小号 mono 副标）。
 
 **渲染结构**：`app/(console)/` shell + 旗舰页 bespoke（B1/C1/D2/D5…）；其余走 `components/archetypes/`（list/config/dashboard 3 种）+ `components/domain-views/{x}-view.tsx`（设计稿 port 整页 tab）。持久化 localStorage `nexion-admin-*` 命名空间；hydration 安全靠 `theme-provider.tsx`。改 persist 的 seed 不刷新已 persist 的浏览器（验证须清 localStorage）。
@@ -63,5 +61,5 @@ OPS_BATCH="" npm run verify  # 动作完整性门（默认计欠账）
 ## 工作约定
 
 - 代码任务走 `nexion-sprint`（单点 vs 横向组件两路径）；设计/UI/文案前加载 `nexion-design`；功能后走 `nexion-audit`；完成走 `done-review`。
-- 运营后台 PRD 走 `nexion-admin-prd` skill（权威 `PRD/Nexion_运营控制后台PRD_v4.md`；配套 admin-prd-lint hook，按 skill 约定操作）。
+- 运营后台 PRD 走 `nexion-admin-prd` skill（权威 `PRD/NexGrid_运营控制后台PRD_v4.md`；配套 admin-prd-lint hook，按 skill 约定操作）。
 - 删除文件先 Move 到 `<root>\.trash\<时间戳>`，禁 `Remove-Item -Force`（用户级 PreToolUse 守卫 hook 兜底，缓存目录放行）。

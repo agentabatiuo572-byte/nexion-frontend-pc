@@ -45,8 +45,11 @@ test("I2 writes preserve server CTR, reject illegal template transitions and reu
   assert.match(service, /NOVA_TEMPLATE_CONCURRENT_MODIFICATION/);
   assert.match(service, /NOVA_SOCIAL_DISTRIBUTION_CONCURRENT_MODIFICATION/);
   assert.match(service, /NOVA_SOCIAL_EVENT_CONCURRENT_MODIFICATION/);
-  assert.match(client, /const uncertainCommandKeys = new Map<string, string>\(\)/);
+  // 命令号落共享持久化 store(sessionStorage):刷新后重试仍是同一号,后端才能去重。
+  assert.match(client, /const uncertainCommandKeys = createPendingMutationStore\(\{/);
+  assert.doesNotMatch(client, /const uncertainCommandKeys = new Map/);
   assert.match(client, /uncertainCommandKeys\.get\(commandFingerprint\) \?\? idempotencyKey\(\)/);
+  assert.match(client, /uncertainCommandKeys\.remember\(commandFingerprint, stableKey\)/);
 });
 
 test("all nine non-social channels share one replay-safe server fact gate", () => {

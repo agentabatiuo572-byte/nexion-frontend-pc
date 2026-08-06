@@ -50,9 +50,19 @@ test("D2 blocks SENT freeze and keeps idempotency keys below the server limit", 
 
 test("D2 fails closed when persisted fee snapshot facts are absent", () => {
   assert.match(client, /function d2Number\(/);
-  for (const field of ["networkFeeRate", "networkFeeMin", "networkFeeMax", "networkFee", "penaltyFeeRate", "grossFee", "nexBurned", "nexFeeOffsetRate", "feeWaived", "actualFee", "netReceive"]) {
+  // FEAT-WD02 双形态:共享费字段仍必填解析;旧模型六字段改为可空解析(新单后端序列化 null,
+  // 必填会把 100% 新单打成 invalid),各形态缺自家字段的 fail-closed 在 financialInvariants 分支验
+  // (行为固定靶见 tests/wd02-network-confirm-fee-contract.test.mjs 三态测试)。
+  for (const field of ["nexBurned", "nexFeeOffsetRate", "feeWaived", "actualFee", "netReceive"]) {
     assert.match(client, new RegExp(`${field}: d2Number\\(row\\.${field}`));
   }
+  for (const field of ["networkFeeRate", "networkFeeMin", "networkFeeMax", "networkFee", "penaltyFeeRate", "grossFee"]) {
+    assert.match(client, new RegExp(`${field}: d2NullableNumber\\(row\\.${field}`));
+  }
+  // 判型键 + 双形态分支存在
+  assert.match(client, /networkConfirmUsd = d2NullableNumber\(row\.networkConfirmUsd/);
+  assert.match(client, /feeModel: networkConfirmUsd !== null \? "confirm" : "legacy"/);
+  assert.match(client, /d2Invalid\("withdrawal\.feeModel"\)/);
 });
 
 test("D2 fails closed on dependent facts and reuses a stable command key", () => {

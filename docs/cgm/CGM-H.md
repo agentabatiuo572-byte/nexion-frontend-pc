@@ -2,7 +2,7 @@
 
 > 自动生成于 Batch 0 全运营面 inventory。完整 serverCanonical/source/querySurface 见 `cgm.manifest.json`。coverage 默认 gap,per-batch 回源后升级 built/spec_only。
 
-本域 14 行。
+本域 15 行。
 
 | id | scope | type | frontendField | opsPurpose | crudActions | 操作确认 | endpoint | cov |
 |---|---|---|---|---|---|---|---|---|
@@ -20,3 +20,4 @@
 | CGM-H-012 | per-user | data-CRUD | useStella.{messages,unread,mode,agentName,coold… | conversion,content_compliance,platform_… | 运营无需直接改;监管投诉时导出会话审计、按 channel 静默 | Y | 读 SSE /api/stella/push TBD · 写 N/A(本地会话态) | gap |
 | CGM-H-013 | per-user | data-CRUD | useWeeklyQuest.{weekKey,tier1Completed,tier1Cla… | conversion,platform_integrity | 运营处理跨周 rollover 异常、重复领奖申诉、校正 weekKey;冻结刷量账户 | Y | 读 TBD·建议 GET /api/quests/weekly/state · 写 POST /a… | gap |
 | CGM-H-014 | platform | function-action | useStella.enterLiveAgent() / pushAgentReply() +… | content_compliance,conversion,platform_… | 运营改客服身份池/回复模板、调 idle 超时;监管审查时下线模板 | Y | 读+写 GET /api/admin/stella/agent-templates TBD (内容… | gap |
+| CGM-H-015 | platform | param-config | PlatformConfig.publicStats.{fleetDevices,online… | conversion,platform_integrity,network_g… | 运营按阶段调整对外公布的平台规模与名次口径;整组原子保存,改设备总数连带改公布日支付额口径 | Y | 读 GET growth/public-stats · 写 PATCH growth/public-… | built |

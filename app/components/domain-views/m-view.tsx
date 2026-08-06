@@ -18,6 +18,7 @@ import {
   type MContentData,
   type MLoadConfigWrite,
 } from "@/lib/admin/m-client";
+import { createPendingMutationStore, type PendingMutationRecord } from "@/lib/admin/pending-mutation-store";
 import { preserveVerifiedSupportAgentsDuringReload } from "@/lib/admin/m-progressive-support-state";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import { useConversationStream, type ConversationStreamEvent } from "@/lib/admin/use-conversation-stream";
@@ -30,6 +31,27 @@ import { M5Scripts } from "./m-tabs/m5-scripts";
 import { STANDBY_POOL_LABEL, type AdvisorScript, type SessionConvo, type SessionMsg, type SessionReplyTpl, type SessionType, type SupportFaq, type SupportSla, type SupportTicket, type SupportTicketCategory, type SupportTicketPriority } from "./m-tabs/data";
 import { MAvatar, ownerLabel } from "./m-tabs/hd-ui";
 import type { ConfirmReq, MCtx, ActionConfirmReq } from "./m-tabs/types";
+
+/**
+ * M 域两类写入的命令号共用一张表,靠 fingerprint 前缀分命名空间:
+ *   cmd|      逻辑命令 id(`m2:ticket:工单号:escalate:版本` 等,已带动作类型 + 目标 id);
+ *             调用点不给 commandKey 时退化为 `参数键\0值\0理由`,参数键即目标对象。
+ *   m3direct| M3 标签 / 备注直写(`m3:add-tag:会话号:标签`)
+ * 落 sessionStorage:刷新后「写入失败或结果未知」的重试必须仍是同一命令号,后端才能去重。
+ */
+interface MCommandRecord extends PendingMutationRecord {
+  /** 本次提交的值:带 commandKey 的调用点靠它保证重试提交的仍是同一个值。 */
+  value?: string;
+  /** 参数指纹(`参数键\0值\0理由`)。同一参数换了逻辑命令 id 时,靠它回收上一次的命令号。 */
+  paramFingerprint?: string;
+}
+const mCommands = createPendingMutationStore<MCommandRecord>({
+  storageKey: "nexion-admin-m-content-commands-v1",
+  isValidRecord: (record) => (record.value === undefined || typeof record.value === "string")
+    && (record.paramFingerprint === undefined || typeof record.paramFingerprint === "string"),
+});
+const commandSlot = (commandFingerprint: string) => `cmd|${commandFingerprint}`;
+const directWriteSlot = (fingerprint: string) => `m3direct|${fingerprint}`;
 
 // 持续接待 dock 跨 M 子页 UI 态(只保留组件内存,切页不挂断)。
 const DOCK_CONVO_KEY = "I.session.convos";
@@ -166,11 +188,10 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     [uiParams, legacyParams],
   );
   // Preserve the key for the same logical command until the backend confirms success.
-  const pendingIdempotencyKeys = useRef(new Map<string, string>());
-  const pendingMCommandAttempts = useRef(new Map<string, { value: string; idempotencyKey: string }>());
+  // 命令号本身走 mCommands(sessionStorage);下面两张只缓存回显文案与 diff 基线,
+  // 丢了不会重复入账,且 baselines 装的是整份 MContentData —— 刻意不持久化。
   const pendingMCommandMetadata = useRef(new Map<string, { action?: string; reason?: string }>());
   const pendingMCommandBaselines = useRef(new Map<string, { legacyParams: Record<string, string>; data: MContentData | null }>());
-  const pendingMDirectWriteKeys = useRef(new Map<string, string>());
 
   const runMWrite = useCallback(
     async (key: string, value: string, meta?: { action?: string; reason?: string; idempotencyKey?: string; commandKey?: string }): Promise<boolean> => {
@@ -180,25 +201,24 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
       }
       const fingerprint = `${key}\u0000${value}\u0000${meta?.reason?.trim() ?? ""}`;
       const commandFingerprint = meta?.commandKey ?? fingerprint;
-      const attempt = pendingMCommandAttempts.current.get(commandFingerprint);
+      const records = mCommands.list();
+      const attempt = records.find((record) => record.fingerprint === commandSlot(commandFingerprint));
       const idempotencyKey = meta?.idempotencyKey
-        ?? attempt?.idempotencyKey
-        ?? pendingIdempotencyKeys.current.get(fingerprint)
+        ?? attempt?.commandKey
+        ?? records.find((record) => record.paramFingerprint === fingerprint)?.commandKey
         ?? `m-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
       const stableValue = attempt?.value ?? value;
       const stableMetadata = pendingMCommandMetadata.current.get(commandFingerprint)
         ?? { action: meta?.action, reason: meta?.reason };
       const stableBaseline = pendingMCommandBaselines.current.get(commandFingerprint)
         ?? { legacyParams, data: mData };
-      pendingIdempotencyKeys.current.set(fingerprint, idempotencyKey);
-      pendingMCommandAttempts.current.set(commandFingerprint, { value: stableValue, idempotencyKey });
+      mCommands.remember(commandSlot(commandFingerprint), idempotencyKey, { value: stableValue, paramFingerprint: fingerprint });
       pendingMCommandMetadata.current.set(commandFingerprint, stableMetadata);
       pendingMCommandBaselines.current.set(commandFingerprint, stableBaseline);
       try {
         await applyMBackendWrite(key, stableValue, stableBaseline.legacyParams, stableBaseline.data, { ...meta, ...stableMetadata, idempotencyKey });
         await reloadMContent();
-        pendingIdempotencyKeys.current.delete(fingerprint);
-        pendingMCommandAttempts.current.delete(commandFingerprint);
+        mCommands.forget(commandSlot(commandFingerprint));
         pendingMCommandMetadata.current.delete(commandFingerprint);
         pendingMCommandBaselines.current.delete(commandFingerprint);
         return true;
@@ -217,13 +237,14 @@ export function MDomainView({ meta }: { meta: DomainViewMeta }) {
     write: (idempotencyKey: string) => Promise<unknown>,
     failureMessage: string,
   ): Promise<boolean> => {
-    const idempotencyKey = pendingMDirectWriteKeys.current.get(fingerprint)
+    const slot = directWriteSlot(fingerprint);
+    const idempotencyKey = mCommands.get(slot)
       ?? `m3-${Date.now()}-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
-    pendingMDirectWriteKeys.current.set(fingerprint, idempotencyKey);
+    mCommands.remember(slot, idempotencyKey);
     try {
       await write(idempotencyKey);
       await reloadMContent();
-      pendingMDirectWriteKeys.current.delete(fingerprint);
+      mCommands.forget(slot);
       return true;
     } catch (error) {
       setToast(`${failureMessage}或结果未知,请重试 · ${error instanceof Error ? error.message : ""}`);

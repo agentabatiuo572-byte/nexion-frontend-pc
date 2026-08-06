@@ -3,15 +3,21 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { DataListPager, Modal } from "../design-kit";
-import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, newK1CommandKey } from "@/lib/admin/k-client";
+import { fetchK1MultiAccountOverview, K1OutcomeUncertainError, K1_RELEASE_MODE_VALUES, K1_RELEASE_PARAM_LIMITS, newK1CommandKey } from "@/lib/admin/k-client";
 import { A2OutcomeUncertainError } from "@/lib/admin/a2-client";
 import type { AdminPage, ClusterStatus, K1Cluster, K1ClusterLayer, K1ClusterSort, K1ClusterStatusFilter, K1WhitelistRow, KRiskParam } from "@/lib/admin/k-client";
 import { usePropose } from "@/lib/admin/use-propose";
 import { findHighOp } from "@/lib/admin/high-ops-registry";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+/** 账户簇处置与白名单移除共用一张表,调用点 scope 已带动作类型前缀 + 目标 id + 版本
+ *  (`cluster-freeze:簇号:版本`、`whitelist-disable:网段`),刷新后仍能用同一命令号重试。 */
+const commandAttempt = createPendingMutationStore({
+  storageKey: "nexion-admin-k1-multiaccount-commands-v1",
+});
 const CLUSTER_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const WHITELIST_PAGE_SIZE_OPTIONS = [5, 10, 20];
 const MAX_FOCUS_RELOCATIONS = 3;
@@ -34,6 +40,24 @@ const CLUSTER_ST: Record<ClusterStatus, [string, string]> = {
   frozen: ["已冻结", "bad"],
   released: ["解除误判", "ok"],
   cleared: ["正常", "ok"],
+};
+
+// ── 收益释放参数(SPEC-7 搬回,合并底账 §二#5)──────────────────────────
+// enum/boolean 的运营可读中文标签(页面禁裸工程串);数值范围与键集单源在 k-client,
+// 读校验与编辑弹窗共用,避免两处漂移。
+const RELEASE_MODE_LABELS: Record<string, string> = {
+  attest_or_manual: "在线证明或人工放行",
+  manual_only: "仅人工放行",
+};
+const RELEASE_BOOL_LABELS: Record<string, string> = { true: "开启", false: "关闭" };
+
+// 簇状态 → 收益桶结论(展示派生,不动状态机;权威结算在服务端)。
+const CLUSTER_EARNING_IMPACT: Record<ClusterStatus, { label: string; tone: string; desc: string }> = {
+  detected: { label: "正常槽内可提", tone: "dim", desc: "仅命中待判,正常手机槽内收益继续可提;超出槽位进入审核中。" },
+  flagged: { label: "审核中", tone: "warn", desc: "已标可疑后,同簇超出正常槽位的托管收益进入审核中,等待人工结论。" },
+  frozen: { label: "锁定奖励", tone: "bad", desc: "已冻结簇的新增托管收益进入锁定奖励,提现侧同步更严处理。" },
+  released: { label: "恢复正常", tone: "ok", desc: "误判解除后,后续收益按正常账户释放;历史待审仍按审计结果处理。" },
+  cleared: { label: "正常释放", tone: "ok", desc: "判定正常后退出多账户监控队列,后续收益按普通账户释放。" },
 };
 
 function formatThreshold(value: number) {
@@ -173,11 +197,11 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   const [sel, setSel] = useState(0);
   const [weightDraft, setWeightDraft] = useState<WeightDraft | null>(null);
   const [paramDraft, setParamDraft] = useState<ParamDraft | null>(null);
+  const [releaseDraft, setReleaseDraft] = useState<ParamDraft | null>(null);
   const [whitelistDraft, setWhitelistDraft] = useState<WhitelistDraft | null>(null);
-  const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | null>(null);
+  const [draftSubmitting, setDraftSubmitting] = useState<"param" | "weight" | "whitelist" | "release" | null>(null);
   const draftSubmitLock = useRef(false);
   const formId = useId();
-  const commandAttempt = useRef(new Map<string, string>());
   const [focusLookupState, setFocusLookupState] = useState<"idle" | "loading" | "positioning" | "found" | "not-found" | "error">("idle");
   const focusPageLoad = useRef(false);
   const router = useRouter();
@@ -324,14 +348,14 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
   };
 
   const proposeClusterAction = async (scope: string, spec: Parameters<typeof propose>[1]) => {
-    const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
-    commandAttempt.current.set(scope, commandKey);
+    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+    commandAttempt.remember(scope, commandKey);
     try {
       const result = await propose(ctx.toast, { ...spec, commandKey });
-      commandAttempt.current.delete(scope);
+      commandAttempt.forget(scope);
       return result;
     } catch (error) {
-      if (!(error instanceof A2OutcomeUncertainError)) commandAttempt.current.delete(scope);
+      if (!(error instanceof A2OutcomeUncertainError)) commandAttempt.forget(scope);
       throw error;
     }
   };
@@ -460,6 +484,55 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
     setParamDraft({ param: p, value: p.value, reason: "", commandKey: newK1CommandKey() });
   };
 
+  // 收益释放参数编辑:命令号走共享 commandAttempt(scope 含参数键),刷新后重开弹窗仍复用同号,
+  // 不继承 paramDraft 把命令号放裸 useState 的丢键形态。
+  const releaseScope = (key: string) => `release-param:${key}`;
+  const adjReleaseParam = (p: KRiskParam) => {
+    const scope = releaseScope(p.key);
+    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+    commandAttempt.remember(scope, commandKey);
+    setReleaseDraft({ param: p, value: p.value, reason: "", commandKey });
+  };
+
+  const saveReleaseDraft = async () => {
+    if (!releaseDraft || draftSubmitLock.current) return;
+    draftSubmitLock.current = true;
+    setDraftSubmitting("release");
+    const scope = releaseScope(releaseDraft.param.key);
+    try {
+      await ctx.actions.updateK1ReleaseParam(releaseDraft.param.key, releaseDraft.value, releaseDraft.reason.trim(), releaseDraft.commandKey);
+      commandAttempt.forget(scope);
+    } catch (error) {
+      ctx.toast(error instanceof K1OutcomeUncertainError
+        ? `K1 结果未知 · 请保留当前弹窗并重试 · ${error.commandKey}`
+        : confirmedK1FailureText(error));
+      if (!(error instanceof K1OutcomeUncertainError)) {
+        // 确定性失败 = 本次命令已终结:换新号再试,旧号不复用。
+        commandAttempt.forget(scope);
+        const freshKey = newK1CommandKey();
+        commandAttempt.remember(scope, freshKey);
+        setReleaseDraft((current) => current ? { ...current, commandKey: freshKey } : current);
+      }
+      return;
+    } finally {
+      draftSubmitLock.current = false;
+      setDraftSubmitting(null);
+    }
+    setReleaseDraft(null);
+    try {
+      await ctx.reloadKRisk({ multiAccount: pageQuery });
+      ctx.toast(`${releaseDraft.param.name} 已更新 · 后续结算与提现分诊按新值执行`);
+    } catch {
+      ctx.toast(`${releaseDraft.param.name} 已写入，但最新数据回读失败；请重试 K1 后核对`);
+    }
+  };
+
+  const releaseParamDisplay = (p: KRiskParam): string => {
+    if (p.key === "releaseMode") return RELEASE_MODE_LABELS[p.value] ?? p.value;
+    if (p.key === "freeSlotRequiresBinding") return RELEASE_BOOL_LABELS[p.value] ?? p.value;
+    return p.value;
+  };
+
   const saveWeightDraft = async () => {
     if (!weightDraft || draftSubmitLock.current) return;
     draftSubmitLock.current = true;
@@ -548,13 +621,13 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
       okLabel: "确认移除",
       run: async (reason) => {
         const scope = `whitelist-disable:${cidr}`;
-        const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
-        commandAttempt.current.set(scope, commandKey);
+        const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+        commandAttempt.remember(scope, commandKey);
         try {
           await runAction(() => ctx.actions.disableK1Whitelist(cidr, reason, commandKey), "白名单已移除");
-          commandAttempt.current.delete(scope);
+          commandAttempt.forget(scope);
         } catch (error) {
-          if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.current.delete(scope);
+          if (!(error instanceof K1OutcomeUncertainError)) commandAttempt.forget(scope);
           throw error;
         }
       },
@@ -616,6 +689,35 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* 收益释放参数(SPEC-7 搬回,合并底账 §二#5):与整簇冻结分开的放行细调。 */}
+      <section className="l-card">
+        <div className="l-h">
+          <span className="ttl">收益释放参数</span>
+          <span className="sub">· 托管收益按账户结算,同簇多号超过阈值进入审核中或锁定奖励 · 账号上限与簇冻结建议强度(0-1)在上方「拦截阈值」区调整</span>
+          <div className="r"><span className="kcode electric">影响注册后收益分桶 + 提现分诊</span></div>
+        </div>
+        <div className="l-b">
+          {overview && overview.releaseParams.length > 0 ? (
+            <>
+              <div className="param-list" data-proof="k1-risk-release-params">
+                {overview.releaseParams.map((p) => (
+                  <div className="p" key={p.key}>
+                    <div className="txt"><div className="k">{p.name}</div><div className="s">{p.sub}</div></div>
+                    <span className="v">{releaseParamDisplay(p)}{p.unit && K1_RELEASE_PARAM_LIMITS[p.key] ? ` ${p.unit}` : ""}</span>
+                    {canWrite && <button className="l-btn sm mc" onClick={() => adjReleaseParam(p)}>调整</button>}
+                  </div>
+                ))}
+              </div>
+              <div className="ktint warn" style={{ marginTop: 12 }}>
+                <b>落地规则</b> · 正常槽位内收益可提;超过待审起点进入审核中;达到重复账号冻结线(第 N 个账号)仅生成冻结建议,收益落入锁定奖励只在人工冻结簇或触发超槽熔断后发生。审核中的收益<b>不随时间自动放行</b>:释放只认 App 在线证明达标或人工放行两个来源;观察窗口内同簇批量释放有熔断——超出正常槽位数的待审收益自动升为锁定奖励。放宽任一参数 = 放大资金流出方向,请在操作理由写明依据。
+              </div>
+            </>
+          ) : (
+            <div className="ktint">服务端尚未下发收益释放参数(后端未升级)· 为避免在错误口径上调参,本卡不提供编辑入口。</div>
+          )}
         </div>
       </section>
 
@@ -715,6 +817,23 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
             <div className="graph">
               <ClusterGraph c={cur} />
               <div className="ktint" style={{ fontSize: 12 }}><b>判读</b> · {cur.note}</div>
+              {(() => {
+                // 收益影响(SPEC-7 搬回):簇状态 → 收益桶结论 + 当前释放参数,展示派生不动状态机。
+                const impact = CLUSTER_EARNING_IMPACT[cur.status];
+                const releaseValue = (key: string) => overview?.releaseParams.find((p) => p.key === key)?.value;
+                const slots = releaseValue("freePhoneSlotsPerCluster");
+                const pendingFrom = releaseValue("duplicateAccountPendingFrom");
+                const freezeFrom = releaseValue("duplicateAccountFreezeFrom");
+                return (
+                  <div className={`ktint${impact.tone === "bad" ? " bad" : impact.tone === "warn" ? " warn" : ""}`} data-proof="k1-cluster-earning-impact" style={{ fontSize: 12, marginTop: 10 }}>
+                    <b>收益影响</b> · 当前结论:<span className={`bdg ${impact.tone}`} style={{ marginLeft: 6 }}>{impact.label}</span>
+                    <div style={{ marginTop: 6 }}>{impact.desc}</div>
+                    <div style={{ marginTop: 6 }}>{slots && pendingFrom && freezeFrom
+                      ? `当前参数:正常释放 ${slots} 个手机槽;第 ${pendingFrom} 个账号起进入审核中;第 ${freezeFrom} 个账号起建议锁定奖励。`
+                      : "当前参数:服务端尚未下发收益释放参数,以服务端结算口径为准。"}</div>
+                  </div>
+                );
+              })()}
             </div>
             <div className="tbl-pane">
               <table className="l-tbl">
@@ -810,6 +929,50 @@ export function K1MultiAccount({ ctx }: { ctx: KCtx }) {
               <textarea id={`${formId}-param-reason`} rows={3} maxLength={200} value={paramDraft.reason} onChange={(event) => update({ reason: event.target.value })} />
             </div>
             <div className="ctint">该参数只改变风险建议与聚类阈值，不会自动冻结账户。</div>
+          </Modal>
+        );
+      })()}
+
+      {releaseDraft && (() => {
+        const key = releaseDraft.param.key;
+        const limits = K1_RELEASE_PARAM_LIMITS[key];
+        const isMode = key === "releaseMode";
+        const isBool = key === "freeSlotRequiresBinding";
+        const numeric = Number(releaseDraft.value);
+        const valueOk = limits
+          ? Number.isInteger(numeric) && numeric >= limits.min && numeric <= limits.max
+          : isMode ? (K1_RELEASE_MODE_VALUES as readonly string[]).includes(releaseDraft.value)
+            : isBool ? releaseDraft.value === "true" || releaseDraft.value === "false"
+              : false;
+        const reasonOk = releaseDraft.reason.trim().length >= 8 && releaseDraft.reason.trim().length <= 200;
+        const update = (patch: Partial<ParamDraft>) => setReleaseDraft((current) => current ? { ...current, ...patch } : current);
+        return (
+          <Modal title={`收益释放参数调整 · ${releaseDraft.param.name}`} icon="shield" busy={draftSubmitting === "release"} onClose={() => setReleaseDraft(null)} footer={<>
+            <button className="l-btn" disabled={draftSubmitting === "release"} onClick={() => setReleaseDraft(null)}>取消</button>
+            <button className="l-btn mc" disabled={!valueOk || !reasonOk || draftSubmitting === "release"} onClick={() => void saveReleaseDraft()}>{draftSubmitting === "release" ? "保存中…" : "确认保存"}</button>
+          </>}>
+            {limits ? (
+              <div className="field">
+                <label htmlFor={`${formId}-release-value`}>目标值({limits.min} - {limits.max}{releaseDraft.param.unit ? ` · ${releaseDraft.param.unit}` : ""})</label>
+                <input id={`${formId}-release-value`} className="fld" type="number" min={limits.min} max={limits.max} step={limits.step} value={releaseDraft.value} onChange={(event) => update({ value: event.target.value })} />
+                {!valueOk && <div className="tiny" style={{ color: "var(--danger)", marginTop: 6 }}>必须填写范围内的整数</div>}
+              </div>
+            ) : (
+              // 可枚举值走下拉不手输(释放模式 / 开关);选项集合与 k-client 校验白名单同源。
+              <div className="field">
+                <label htmlFor={`${formId}-release-value`}>目标值(下拉可选,不接受自由输入)</label>
+                <select id={`${formId}-release-value`} className="fld" value={releaseDraft.value} onChange={(event) => update({ value: event.target.value })}>
+                  {(isMode ? [...K1_RELEASE_MODE_VALUES] : ["true", "false"]).map((option) => (
+                    <option key={option} value={option}>{isMode ? RELEASE_MODE_LABELS[option] : RELEASE_BOOL_LABELS[option]}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="field">
+              <label htmlFor={`${formId}-release-reason`}>操作理由（必填 · 8-200 字）</label>
+              <textarea id={`${formId}-release-reason`} rows={3} maxLength={200} value={releaseDraft.reason} onChange={(event) => update({ reason: event.target.value })} />
+            </div>
+            <div className="ctint">{releaseDraft.param.note.trim() || "释放参数只改变后续注册、结算与提现分诊,历史审计不回写;放宽方向请在理由写明依据。"}</div>
           </Modal>
         );
       })()}

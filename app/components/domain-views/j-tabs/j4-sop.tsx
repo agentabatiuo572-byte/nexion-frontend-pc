@@ -240,7 +240,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         {isEmer
           ? <><b style={{ color: "var(--danger)" }}>应急轨</b> — 仅允许关停/暂停等止血方向，仍需填写原因并保留完整执行记录。</>
           : <><b>常规轨</b> — 按动作序列调用每个已接通的处置入口。</>}
-        <br />本次原因将作为触发上下文；提交后先进入 A2 双人复核，批准时调用以下已接通动作
+        <br />本次原因将作为触发上下文；提交后先进入 A2 确认队列，批准时调用以下已接通动作
         <span style={{ display: "block", marginTop: 4 }}>
           <b>动作序列({p.seq.length} 步)</b>:
           {p.seq.map((s, i) => (
@@ -287,7 +287,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         type: "sos",
         amplifies: false,
         sos: true,
-        roleGate: "双人复核",
+        roleGate: "A2 确认",
         reason,
         sourceDomain: "J4",
         command: {
@@ -302,7 +302,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           },
         },
         target: { domain: "J", type: "playbook", id: p.code },
-      }, commandKey).then(() => undefined), `${p.code} 已提交 A2 双人复核；批准后才会逐步执行`);
+      }, commandKey).then(() => undefined), `${p.code} 已提交 A2 确认队列；批准后才会逐步执行`);
     },
   });
   };
@@ -382,7 +382,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
           <div className="sla-kv"><span className="k">J1 / D2</span><span className="v">提现 / Genesis 关停</span></div>
           <div className="sla-kv"><span className="k">J2 / C2 / K1</span><span className="v">地域、用户与账户簇止血</span></div>
           <div className="sla-kv"><span className="k">I3 / I5</span><span className="v">通知下发 / 披露发布</span></div>
-          <div className="sla-kv"><span className="k">执行审批</span><span className="v warn">A2 双人复核后执行</span></div>
+          <div className="sla-kv"><span className="k">执行审批</span><span className="v warn">A2 批准后执行</span></div>
           <div className="sla-kv"><span className="k">演练失败</span><span className="v">保持待演练，不可执行</span></div>
           <div className="sla-kv"><span className="k">步骤失败</span><span className="v danger">明确失败，不伪报成功</span></div>
         </section>
@@ -569,7 +569,7 @@ export function J4Sop({ ctx }: { ctx: JCtx }) {
         </Modal>
       )}
 
-      <p className="f-foot"><b>页面只允许编排已经接通的动作</b>。演练只校验动作和通知活动，不改变生产状态；实战先进入 A2 双人复核，批准后再按顺序调用 J1/J2/C2/K1/I3/I5 真实入口并保存每步结果。J1 提现关停会直接阻断 D2 新提现，C2/K1 还会联动冻结相关 D2 待处理提现。任何未接通、未演练、并发失效或恢复方向的动作都会被服务端拒绝，不会以“已完成”掩盖失败。</p>
+      <p className="f-foot"><b>页面只允许编排已经接通的动作</b>。演练只校验动作和通知活动，不改变生产状态；实战先进入 A2 确认队列，批准后再按顺序调用 J1/J2/C2/K1/I3/I5 真实入口并保存每步结果。J1 提现关停会直接阻断 D2 新提现，C2/K1 还会联动冻结相关 D2 待处理提现。任何未接通、未演练、并发失效或恢复方向的动作都会被服务端拒绝，不会以“已完成”掩盖失败。</p>
     </div>
   );
 }

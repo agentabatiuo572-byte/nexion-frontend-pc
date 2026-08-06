@@ -23,12 +23,14 @@ if (apply && applyCheck) {
 
 const adminRoot = process.cwd();
 const prdRoot = path.join(adminRoot, "docs", "PRD");
+// 2026-08-04:默认根修正为本工作区 ../PRD(旧 D:\WORKS\nexion\PRD文档 布局已不存在)。
 const productPrdRoot = process.env.NEXION_PRODUCT_PRD_ROOT
   ? path.resolve(process.env.NEXION_PRODUCT_PRD_ROOT)
-  : path.resolve(adminRoot, "..", "..", "nexion", "PRD文档");
+  : path.resolve(adminRoot, "..", "PRD");
 
 const targets = {
-  product: path.join(productPrdRoot, "Nexion_产品功能架构设计文档_v3.7.md"),
+  // 2026-08-04:工作区 ../PRD 已整体改名 NexGrid_*;本仓 docs/PRD 仍为 Nexion_* 原名。
+  product: path.join(productPrdRoot, "NexGrid_产品功能架构设计文档_v3.7.md"),
   opsDev: path.join(prdRoot, "Nexion_运营控制后台_开发落地规格.md"),
   opsV4: path.join(prdRoot, "Nexion_运营控制后台PRD_v4.md"),
   opsConfirm: path.join(prdRoot, "Nexion_运营后台_交互与确认机制改写SPEC.md"),
@@ -70,7 +72,7 @@ const teamFinanceControls = `
 ### 8.1.3 Team finance controls
 
 - Commissions:展示 5 类佣金事件明细,入口必须可从 Team 主页到达。
-- V Rank:展示 V0-V12 进度、晋升条件、维持期与奖品/培育奖。
+- V Rank:展示 V0-V12 进度、晋升条件、维持期与等级奖励/培育奖。
 - Balance Match:展示双轨 balance、弱区/强区、日封顶与 spillover 逻辑。
 - Leadership Pool:展示全球领导奖池、参与资格、分配周期与说明页。
 
@@ -80,13 +82,13 @@ const teamFinanceControls = `
 const exchangeConfirmation = `
 #### 9.4.1a 兑换确认与写入
 
-NEX↔USDT 兑换确认必须展示 from/to amount、rate、fee、KYC/cap 状态与兑换后余额预估。确认后写入 swap record、wallet bill 与 points/cap 变化;失败时不得只 toast,必须保留原余额并展示失败原因。
+NEX↔USDT 兑换确认必须展示 from/to amount、rate、fee、KYC/cap 状态与兑换后余额预估。确认后写入 swap record、wallet bill 与 cap 变化;失败时不得只 toast,必须保留原余额并展示失败原因。
 `;
 
 const repurchaseConfirmation = `
 #### 9.5.3a 复投确认与写入
 
-复投确认必须展示复投金额、获得 points、进入 stake/cap 的影响与账单摘要。确认后写入 repurchase event、wallet bill、points delta 与 active stake/cap 变化。
+复投确认必须展示复投金额、进入 stake/cap 的影响与账单摘要。确认后写入 repurchase event、wallet bill 与 active stake/cap 变化。
 `;
 
 const stakingConfirmation = `
@@ -143,7 +145,7 @@ const listCapabilityBaseline = `
 `;
 
 const supportDevSpec = `
-### 9.9a /content/support 支持后台
+### 9.9a 客服后台(/service/* · 域 M;原 /content/support 已退役)
 
 - FAQ 管理:创建、编辑、发布、下架、排序、分类。
 - Ticket 分类/SLA:category、priority、owner、SLA target。
@@ -161,8 +163,8 @@ const ownerLinkSpec = `
 const prdGovernanceDevSpec = `
 ## 第 10 章 PRD canonical 治理
 
-- 产品 PRD canonical 路径固定为 \`D:\\WORKS\\PLAN\\PRD\\Nexion_产品功能架构设计文档_v3.7.md\`。
-- 运营后台 canonical 文档固定为 \`D:\\WORKS\\PLAN\\PRD\\Nexion_运营控制后台PRD_v4.md\` 与 \`D:\\WORKS\\PLAN\\PRD\\Nexion_运营控制后台_开发落地规格.md\`。
+- 产品 PRD canonical 路径固定为 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_产品功能架构设计文档_v3.7.md\`。
+- 运营后台 canonical 文档固定为 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_运营控制后台PRD_v4.md\` 与 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_运营控制后台_开发落地规格.md\`。
 - \`_bak/\`、\`_bakF/\`、remediation backups 不参与唯一性判断。
 - hook、verify gate 与同步流程只认 canonical 文件。
 `;
@@ -171,7 +173,7 @@ const supportV4 = `
 #### [I6a] Support CMS / Ticket Ops
 
 **① 目的 & 对齐**
-管理 \`/content/support\` 的 FAQ 与工单运营面,覆盖 FAQ 内容、Ticket 分类/SLA、回复、关闭、重开、owner/priority 调整与审计理由。用户端对应 \`/me/help\`、\`/me/support\`、\`/me/support/tickets\`。
+管理客服中心(实现面已重组为独立域 M:\`/service/tickets\` 工单 · \`/service/sessions\` 会话;历史路径 \`/content/support\` 已随客服迁出域 I 退役)的 FAQ 与工单运营面,覆盖 FAQ 内容、Ticket 分类/SLA、回复、关闭、重开、owner/priority 调整与审计理由。用户端对应 \`/me/help\`、\`/me/support\`、\`/me/support/tickets\`。
 
 **② 后台界面**
 - FAQ 列表与详情:标题、分类、语言、状态、排序、版本。
@@ -186,14 +188,12 @@ const supportV4 = `
 - FAQ 创建/编辑/发布/下架/排序。
 - 工单回复、关闭、重开、改 owner、改 priority,均写 audit reason。
 
-**⑤ 接口**
-- \`GET /api/admin/support/faqs\`
-- \`PUT /api/admin/support/faqs/:id\`
-- \`GET /api/admin/support/tickets\`
-- \`POST /api/admin/support/tickets/:id/reply\`
-- \`PUT /api/admin/support/tickets/:id/status\`
-- \`PUT /api/admin/support/tickets/:id/owner\`
-- \`PUT /api/admin/support/tickets/:id/priority\`
+**⑤ 接口**(现役前缀 \`/api/admin/content\`,2026-08-04 对齐 m-client 实现)
+- \`GET /knowledge/faqs\`(FAQ 域;写动作走同资源子路径)
+- \`GET /tickets\`(工单列表/详情;回复、状态、owner、priority 走 \`/tickets/{id}/*\` 子路径)
+- \`GET /tickets/load-config\` · \`POST /tickets/load-config/rebalance\`(坐席负载与转派)
+- \`GET /support-agents\`(坐席字典)
+- \`GET /conversations\` · \`/conversations/timeout-policy\`(即时会话与超时策略,与 I9/M3 共用)
 
 **⑥ 权限 & 审计**
 内容/客服可处理 FAQ 与工单;内容 lead/客服 lead/超管可关闭、重开、改 owner/priority。所有写动作落 A2 审计。
@@ -208,8 +208,8 @@ const supportV4 = `
 const prdGovernanceV4 = `
 ### 17.5a PRD canonical 治理
 
-- 产品 PRD canonical 路径固定为 \`D:\\WORKS\\PLAN\\PRD\\Nexion_产品功能架构设计文档_v3.7.md\`。
-- 运营后台 canonical 文档固定为 \`D:\\WORKS\\PLAN\\PRD\\Nexion_运营控制后台PRD_v4.md\` 与 \`D:\\WORKS\\PLAN\\PRD\\Nexion_运营控制后台_开发落地规格.md\`。
+- 产品 PRD canonical 路径固定为 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_产品功能架构设计文档_v3.7.md\`。
+- 运营后台 canonical 文档固定为 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_运营控制后台PRD_v4.md\` 与 \`D:\\WORKS\\PLAN\\PRD\\NexGrid_运营控制后台_开发落地规格.md\`。
 - \`_bak/\`、\`_bakF/\`、remediation backups 不参与唯一性判断。
 - hook、verify gate 与同步流程只认 canonical 文件。
 `;
@@ -224,7 +224,9 @@ const operations = [
   { id: "product.route.uniappCoverage", file: "product", type: "insertBefore", anchor: "\n## 4. 账户与身份", content: productRouteCoverage },
   { id: "product.kyc.topupLoop", file: "product", type: "insertBefore", anchor: "\n#### 4.4.3 验证后特权", content: kycTopupLoop },
   { id: "product.wallet.topupWriteRules", file: "product", type: "insertBefore", anchor: "\n### 9.3 提现 `/me/wallet/withdraw`", content: topupWriteRules },
-  { id: "product.wallet.withdrawClosure", file: "product", type: "insertBefore", anchor: "\n#### 9.3.2 贡献积分门槛", content: withdrawClosure },
+  // 2026-08-04 退役:9.3.1a 提现提交闭环草稿为 L5(6 月)口径,仍讲「contribution points 事件」;产品已在 FEAT-WD02
+  // 用 NEX 抵扣取代积分门槛(原锚「9.3.2 贡献积分门槛」随之改名)。硬插=污染,须按现行 WD01/02 口径重写后另立规则。
+  // { id: "product.wallet.withdrawClosure", file: "product", type: "insertBefore", anchor: "\n#### 9.3.2 贡献积分门槛", content: withdrawClosure },
   { id: "product.team.financeControls", file: "product", type: "insertBefore", anchor: "\n### 8.2 V 级头衔体系 `/team/rank`", content: teamFinanceControls },
   { id: "product.wallet.exchangeConfirmation", file: "product", type: "insertBefore", anchor: "\n#### 9.4.2 风控参数", content: exchangeConfirmation },
   { id: "product.wallet.repurchaseConfirmation", file: "product", type: "insertBefore", anchor: "\n#### 9.5.4 玩法说明页 `/me/wallet/repurchase/how-it-works`", content: repurchaseConfirmation },
@@ -250,19 +252,36 @@ function normalizeBlock(block) {
   return `\n${block.trim()}\n`;
 }
 
+/** 只用于「这段内容在不在文档里」的比对 —— 把 CRLF 抹平成 LF。
+ *
+ *  🔴 2026-08-05 修:本文件的内容模板是 LF,而目标 PRD 是 **CRLF**(Windows)。
+ *  原判据 `text.includes(content)` 拿 LF 的针去 CRLF 的草堆里找,**永远找不到** ——
+ *  于是每段都被判成 "planned",`--apply` 每跑一次就**重复插一次**。
+ *
+ *  实测(端到端,不是推断):同一份产品 PRD,
+ *    原样 CRLF → planned=9 / alreadyPresent=13
+ *    转成 LF   → planned=0 / alreadyPresent=22   ← 那 9 段一直都在
+ *  磁盘上已因此留下 7 个章节各 2 份重复(上一次 apply 造的),本次 apply 又加到 3 份,
+ *  已从备份还原。存量重复要单独清,本修复只保证**不再产生新的**。
+ *
+ *  只归一化**比对**,不改写入内容:插入仍走原文,与文档既有那几份保持同款。 */
+function eolInsensitive(s) {
+  return s.replace(/\r\n/g, "\n");
+}
+
 function applyOperation(text, op) {
   if (op.type === "replace") {
-    if (text.includes(op.replacement)) {
+    if (eolInsensitive(text).includes(eolInsensitive(op.replacement))) {
       return { text, status: "already-present" };
     }
-    if (!text.includes(op.search)) {
+    if (!eolInsensitive(text).includes(eolInsensitive(op.search))) {
       return { text, status: "missing-anchor" };
     }
     return { text: text.replace(op.search, op.replacement), status: "planned" };
   }
 
   const content = normalizeBlock(op.content);
-  if (text.includes(content.trim())) {
+  if (eolInsensitive(text).includes(eolInsensitive(content.trim()))) {
     return { text, status: "already-present" };
   }
   if (!text.includes(op.anchor)) {

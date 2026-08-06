@@ -2,18 +2,17 @@ $ C:\Program Files\nodejs\node.exe scripts/uniapp-port-coverage-audit.mjs
 
 {
   "status": "passed",
-  "nextRoutes": 80,
-  "uniPages": 81,
-  "mappedRoutes": 80,
-  "extraUniRoutes": [
-    "/#/pages/onboarding/terms"
-  ],
+  "uniPages": 90,
   "expectedExtraUniRoutes": [
-    "/#/pages/onboarding/terms"
+    "/#/pages/me/rewards",
+    "/#/pages/onboarding/terms",
+    "/#/pages/session/kicked",
+    "/#/pages/support/chat",
+    "/#/pages/support/messages"
   ],
   "missingUniVueFiles": 0,
-  "runtimeRows": 82,
-  "runtimeCaptured": 82,
+  "runtimeRows": 92,
+  "runtimeCaptured": 92,
   "actionRows": 86,
   "blockingActionSamples": 0,
   "findings": []

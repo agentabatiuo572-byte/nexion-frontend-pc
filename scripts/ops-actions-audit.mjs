@@ -3,11 +3,11 @@
 // 既有的门只查「已存在代码对不对」,无人查「该有的动作在不在 + 声明的有没有真落地」。本门补这个正交维度。
 //
 // 清单驱动(docs/ops-actions.manifest.json)+ 三条硬规则:
-//   1. 防新增死控件:每 view 实际死控件信号数 ≤ deadControlBaseline[view](只减不增)。新增 → FAIL。
+//   1. 死控件基线软哨兵:每 view 实际死控件信号数 ≤ deadControlBaseline[view](只减不增);超标出 warning 提示(不 FAIL,措辞会影响计数)。
 //   2. 防 built 退化:status=built 行的 storeAction 必须在 lib/store/admin/* 真定义 + 在其 view 真被调用。否则 FAIL(虚标/被改回死控件)。
 //   3. readonly 须带 reason(防滥用 readonly 逃避补齐)。
 // 批次收紧:OPS_BATCH=P0|P1|P2|ALL — 设定后,该批次(含)的 pending/missing 行必须已 built,否则 FAIL。默认只跑规则 1-3 + 计欠账。
-// 用法:node scripts/ops-actions-audit.mjs   (verify.sh 末段调用)
+// 用法:node scripts/ops-actions-audit.mjs   (verify.mjs GEARS 常驻齿轮,2026-08-03 起)
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -65,14 +65,38 @@ const libBlob = (() => {
   try { for (const f of fs.readdirSync(dir)) if (f.endsWith(".ts")) b += read(path.join(dir, f)); } catch {}
   return b;
 })();
+// 2026-08-04 强化:锚校验裸子串 → 形态锚(防注释假过/超串改名不响/权限字面量 user_x 空转);
+// restActions 数组支持多动作行全锚(每个锚独立校验,缺一即红)。
+const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const definedInLib = (a) => {
+  const x = esc(a);
+  return (
+    new RegExp(`op:\\s*"${x}"`).test(libBlob) ||
+    new RegExp(`export (?:async )?function ${x}\\b`).test(libBlob) ||
+    new RegExp(`\\b${x}\\s*:\\s*(?:async )?\\(`).test(libBlob) ||
+    new RegExp(`\\b${x}\\s*\\(`).test(libBlob)
+  );
+};
+const calledInApp = (a) => {
+  const x = esc(a);
+  return (
+    new RegExp(`findHighOp\\(\\s*"${x}"`).test(appBlob) ||
+    new RegExp(`\\.${x}\\(`).test(appBlob) ||
+    new RegExp(`\\b${x}\\s*\\(`).test(appBlob) ||
+    new RegExp(`"${x}"`).test(appBlob) // 动态 op 映射表里的精确引号字面量(引号定界,user_x 前缀串不匹配)
+  );
+};
 for (const r of rows) {
   if (r.status !== "built") continue;
-  if (r.restAction) {
-    if (!libBlob.includes(r.restAction)) problems.push(`[built 退化] ${r.id}: restAction "${r.restAction}" 不在 lib/admin/*(被删/虚标)`);
-    else if (!appBlob.includes(r.restAction)) problems.push(`[built 未接线] ${r.id}: restAction "${r.restAction}" 定义于 client 但 app/ 无 view 调用(UI 没接)`);
+  const anchors = Array.isArray(r.restActions) ? r.restActions : r.restAction ? [r.restAction] : null;
+  if (anchors) {
+    for (const a of anchors) {
+      if (!definedInLib(a)) problems.push(`[built 退化] ${r.id}: 锚 "${a}" 无 lib/admin 定义形态(被删/改名/虚标)`);
+      else if (!calledInApp(a)) problems.push(`[built 未接线] ${r.id}: 锚 "${a}" 定义存在但 app/ 无调用形态(UI 没接)`);
+    }
     continue;
   }
-  if (!r.storeAction) { problems.push(`[built 缺 storeAction] ${r.id} ${r.object}·${r.action}`); continue; }
+  if (!r.storeAction) { problems.push(`[built 缺锚] ${r.id} ${r.object}·${r.action}`); continue; }
   if (!storeBlob.includes(r.storeAction)) problems.push(`[built 退化] ${r.id}: storeAction "${r.storeAction}" 不在 lib/store/admin/*(被删/虚标)`);
   else if (!appBlob.includes(r.storeAction)) problems.push(`[built 未接线] ${r.id}: "${r.storeAction}" 在 store 定义但 app/ 无 view 调用(UI 没接)`);
 }

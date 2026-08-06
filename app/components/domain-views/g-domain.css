@@ -152,3 +152,14 @@
 
 /* ============================ G5 / G6 / G7 ============================ */
 .gdom .gate { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 5px; background: var(--surface-3); color: var(--ink-3); }
+
+/* ============================ G4 参数卡栅格 ============================
+   同 H8:.param-grid 只定义在 .kdom / .ldom,G4 抄了类名过来但选择器不命中,
+   「资格门与预售」的参数卡一直是无栅格的堆叠。 */
+.gdom .param-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+@container gdom (max-width: 900px) { .gdom .param-grid { grid-template-columns: 1fr; } }
+.gdom .param-grid .p { background: var(--surface-2); border-radius: 9px; padding: 12px 14px; }
+.gdom .param-grid .p .k { font-size: 12px; color: var(--ink-3); }
+.gdom .param-grid .p .v { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--ink); display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.gdom .param-grid .p .v .l-btn { margin-left: auto; }
+.gdom .param-grid .p .s { font-size: 11px; color: var(--ink-4); margin-top: 4px; line-height: 1.45; }

@@ -312,7 +312,7 @@ test("J4 permission matrix enforces menu, page, button, API and refreshed role g
       role: "super",
       deliver: "handoff",
       initialPassword: checkerInitialPassword,
-      reason: `${RUN_ID} 创建J4权限矩阵双人复核账号`,
+      reason: `${RUN_ID} 创建J4权限矩阵A2确认账号`,
       operator: USERNAME,
     });
     expect(checkerAccount.status, checkerAccount.raw).toBeLessThan(400);
@@ -518,10 +518,10 @@ test("J4 permission matrix enforces menu, page, button, API and refreshed role g
     checkerPage = null;
     if (checkerAccountId) {
       await apiSend(page, "PATCH", `/api/admin/platform/accounts/${checkerAccountId}/status`, {
-        status: "disabled", reason: `${RUN_ID} 停用J4双人复核临时账号`, operator: USERNAME,
+        status: "disabled", reason: `${RUN_ID} 停用J4A2确认临时账号`, operator: USERNAME,
       }).catch(() => undefined);
       await apiSend(page, "PATCH", `/api/admin/platform/accounts/${checkerAccountId}/role`, {
-        role: "unassigned", reason: `${RUN_ID} 解除J4双人复核临时账号角色`, operator: USERNAME,
+        role: "unassigned", reason: `${RUN_ID} 解除J4A2确认临时账号角色`, operator: USERNAME,
       }).catch(() => undefined);
     }
   }

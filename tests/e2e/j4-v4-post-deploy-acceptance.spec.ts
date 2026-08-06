@@ -38,7 +38,7 @@ test.describe("J4 V4 统一部署后首次用户与跨域调用链验收", () =>
     // The production console may hydrate this route from a legitimate RSC
     // cache, so the visible contract is the stable browser-level assertion.
     // The route is still entered only through the authenticated sidebar.
-    await expect(page.getByText(/实战先进入 A2 双人复核/)).toBeVisible();
+    await expect(page.getByText(/实战先进入 A2 复核/)).toBeVisible();
     await expect(page.getByText(/J1\/J2\/C2\/K1\/I3\/I5/)).toBeVisible();
     await expect(page.getByRole("button", { name: "+ 新增剧本" })).toBeEnabled();
 
@@ -106,7 +106,7 @@ test.describe("J4 V4 统一部署后首次用户与跨域调用链验收", () =>
     );
     expect(operationId, "A2 提案响应必须返回操作单编号").not.toBe("");
     writeRecoveryState({ stage: "A2_PENDING", playbookCode, operationId });
-    await expect(page.getByText(/已提交 A2 双人复核/)).toBeVisible();
+    await expect(page.getByText(/已提交 A2 复核/)).toBeVisible();
 
     await logoutFromVisibleControl(page);
     await loginFromVisibleEntry(page, REVIEWER_USERNAME, REVIEWER_PASSWORD, REVIEWER_TOTP_SECRET);
@@ -455,7 +455,7 @@ async function assertJ4Healthy(page: Page) {
   await expect(page.locator("body")).not.toContainText(
     /数据加载失败|J4_API_FAILED|BACKEND_UNAVAILABLE|Cannot read properties|ReferenceError|TypeError/i,
   );
-  await expect(page.getByText(/实战先进入 A2 双人复核/)).toBeVisible();
+  await expect(page.getByText(/实战先进入 A2 确认队列/)).toBeVisible();
 }
 
 async function fillOperationReason(page: Page, reason: string) {

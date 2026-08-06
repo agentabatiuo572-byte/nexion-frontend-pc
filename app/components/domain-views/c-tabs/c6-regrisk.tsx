@@ -5,9 +5,10 @@ import { currentAdminOperator } from "@/lib/admin/current-operator";
  * C6 注册/登录风控配置。
  * 数据源为后端 /registration-risk/overview；调参写 /registration-risk/params/{paramKey}。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import {
   fetchUserRegistrationRiskOverview,
@@ -54,6 +55,12 @@ function newCommandKey(prefix: string) {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${suffix}`;
 }
+
+/** C6 三类调参共用一张表,调用点 fingerprint 已带动作类型前缀 + 目标参数键 / 配置版本
+ *  (`lock|参数键|新值|版本`、`captcha-disable|…`),刷新后仍能用同一命令号重试。 */
+const pendingCommandKeys = createPendingMutationStore({
+  storageKey: "nexion-admin-c6-regrisk-commands-v1",
+});
 
 function numericParts(value: unknown) {
   return String(value ?? "").match(/\d+/g)?.map(Number) ?? [];
@@ -106,7 +113,6 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pendingCommandKeys = useRef(new Map<string, string>());
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -134,8 +140,8 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
     fallback: string,
   ) => {
     setBusy(true);
-    const commandKey = pendingCommandKeys.current.get(fingerprint) ?? newCommandKey("c6-command");
-    pendingCommandKeys.current.set(fingerprint, commandKey);
+    const commandKey = pendingCommandKeys.get(fingerprint) ?? newCommandKey("c6-command");
+    pendingCommandKeys.remember(fingerprint, commandKey);
     let writeReturned = false;
     try {
       const message = await work(commandKey);
@@ -144,12 +150,12 @@ export function C6Regrisk({ ctx }: { ctx: CCtx }) {
       if (!refreshed) {
         throw new Error("操作可能已生效，但结果回读失败；请刷新核对，重试将继续使用同一请求号");
       }
-      pendingCommandKeys.current.delete(fingerprint);
+      pendingCommandKeys.forget(fingerprint);
       toast(message || fallback);
       return true;
     } catch (err) {
       if (!writeReturned && !(err instanceof UsersOutcomeUnknownError)) {
-        pendingCommandKeys.current.delete(fingerprint);
+        pendingCommandKeys.forget(fingerprint);
       }
       const message = errorMessage(err);
       setOverview(null);

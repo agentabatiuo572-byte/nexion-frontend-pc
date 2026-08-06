@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { DataListPager, type BusinessFormSpec, type BusinessFormValue } from "../design-kit";
 import {
   K1OutcomeUncertainError,
@@ -11,10 +11,18 @@ import {
   type RuleAction,
   type RuleState,
 } from "@/lib/admin/k-client";
+import { createPendingMutationStore } from "@/lib/admin/pending-mutation-store";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { KCtx } from "./types";
 
 const fmt = (n: number) => n.toLocaleString("zh-CN");
+/** K3 沙盒模拟与规则增删改共用一张表,调用点 scope 已带动作类型前缀 + 目标规则号 + 版本;
+ *  刷新后仍能用同一命令号重试。 */
+const commandAttempt = createPendingMutationStore({
+  storageKey: "nexion-admin-k3-rules-commands-v1",
+});
+/** 沙盒模拟只有一个全局槽位(无目标对象):同一次未确认的模拟必须复用同一命令号。 */
+const DRY_RUN_SCOPE = "dryrun|sandbox";
 
 const RULE_ACT: Record<RuleAction, [string, string]> = {
   pass: ["放行", "ok"], delay: ["延迟", "warn"], freeze: ["冻结", "bad"], manual: ["转人工", "cyan"],
@@ -197,7 +205,6 @@ function isOutcomeUncertain(error: unknown): error is K1OutcomeUncertainError {
 
 export function K3HeaderActions({ ctx, onResult }: { ctx: KCtx; onResult: (result: K3DryRunResult) => void }) {
   const authorities = useAdminAuth((state) => state.session?.authorities ?? []);
-  const commandAttempt = useRef<string | null>(null);
   const [dryRunError, setDryRunError] = useState<string | null>(null);
   const canDryRun = authorities.includes("risk_k3_write") && !ctx.contentLoading && !ctx.contentError;
   const dryRun = () => ctx.openConfirm({
@@ -205,17 +212,17 @@ export function K3HeaderActions({ ctx, onResult }: { ctx: KCtx; onResult: (resul
     detail: "用最近 30 天历史提现样本按当前规则试跑；只读模拟，不写生产命中记录。",
     chips: [["只读 · 不写生产", "done"], ["返回本次模拟结果", "ready"]], reason: true, okLabel: "开始模拟",
     run: async (reason) => {
-      const commandKey = commandAttempt.current ?? newK1CommandKey();
-      commandAttempt.current = commandKey;
+      const commandKey = commandAttempt.get(DRY_RUN_SCOPE) ?? newK1CommandKey();
+      commandAttempt.remember(DRY_RUN_SCOPE, commandKey);
       try {
         const result = await ctx.actions.dryRunK3(reason, commandKey);
-        commandAttempt.current = null;
+        commandAttempt.forget(DRY_RUN_SCOPE);
         setDryRunError(null);
         onResult(result);
         ctx.toast(`模拟完成 · 批次 ${result.batchNo}`);
       } catch (error) {
         const outcomeUncertain = isOutcomeUncertain(error);
-        if (!outcomeUncertain) commandAttempt.current = null;
+        if (!outcomeUncertain) commandAttempt.forget(DRY_RUN_SCOPE);
         const message = `${outcomeUncertain ? "结果暂不确定，请使用原操作重试" : "K3 模拟失败"} · ${errorText(error)}`;
         setDryRunError(message);
         ctx.toast(message);
@@ -244,7 +251,6 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
   const canCreate = authorities.includes("risk_k3_rule_create");
   const canToggle = authorities.includes("risk_k3_rule_toggle");
   const canArchive = authorities.includes("risk_k3_rule_archive");
-  const commandAttempt = useRef(new Map<string, string>());
   const [filter, setFilter] = useState<"all" | RuleAction>("all");
   const [rulePage, setRulePage] = useState(1);
   const [rulePageSize, setRulePageSize] = useState(5);
@@ -264,17 +270,17 @@ export function K3Rules({ ctx, dryRunResult }: { ctx: KCtx; dryRunResult: K3DryR
   const hits = hitsPage?.records ?? [];
 
   const runAction = async (scope: string, work: (commandKey: string) => Promise<void>, ok: string) => {
-    const commandKey = commandAttempt.current.get(scope) ?? newK1CommandKey();
-    commandAttempt.current.set(scope, commandKey);
+    const commandKey = commandAttempt.get(scope) ?? newK1CommandKey();
+    commandAttempt.remember(scope, commandKey);
     let writeConfirmed = false;
     try {
       await work(commandKey);
       writeConfirmed = true;
       await ctx.reloadKRisk(query);
-      commandAttempt.current.delete(scope);
+      commandAttempt.forget(scope);
       ctx.toast(ok);
     } catch (error) {
-      if (!writeConfirmed && !(error instanceof K1OutcomeUncertainError)) commandAttempt.current.delete(scope);
+      if (!writeConfirmed && !(error instanceof K1OutcomeUncertainError)) commandAttempt.forget(scope);
       ctx.toast(`${error instanceof K1OutcomeUncertainError ? "结果暂不确定，请使用原操作重试" : "K3 操作失败"} · ${errorText(error)}`);
       throw error;
     }

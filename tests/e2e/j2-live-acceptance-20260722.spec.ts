@@ -522,7 +522,7 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         email: `${checkerUsername}@nexion.invalid`,
         role: "super",
         deliver: "handoff",
-        reason: `${RUN_ID} 创建 J2 双人复核临时账号`,
+        reason: `${RUN_ID} 创建 J2 A2确认临时账号`,
         operator: USERNAME,
       });
       expect(checkerAccount.status, checkerAccount.raw).toBeLessThan(400);
@@ -659,7 +659,7 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         await checkerContext?.close();
         checkerContext = null;
         checkerPage = null;
-        await sanitizeTemporaryAccount(page, checkerAccountId, "J2 双人复核临时账号");
+        await sanitizeTemporaryAccount(page, checkerAccountId, "J2 A2确认临时账号");
       }
       await checkerContext?.close();
     }
@@ -680,7 +680,7 @@ test.describe.serial("J2 Geo-block 独立真实验收", () => {
         email: `${checkerUsername}@nexion.invalid`,
         role: "super",
         deliver: "handoff",
-        reason: `${RUN_ID} 创建 J2 遗留清理双人复核账号`,
+        reason: `${RUN_ID} 创建 J2 遗留清理A2确认账号`,
         operator: USERNAME,
       });
       expect(checker.status, checker.raw).toBeLessThan(400);

@@ -134,7 +134,7 @@ test("J-M 未登录权限、认证后未知资源与 J4 只读安全门禁失败
     page,
     MODULES.find(({ module }) => module.id === "J4")!,
   );
-  await expect(page.getByText(/实战先进入 A2 双人复核/)).toBeVisible();
+  await expect(page.getByText(/实战先进入 A2 确认队列/)).toBeVisible();
   await expect(page.getByText(/J1\/J2\/C2\/K1\/I3\/I5/)).toBeVisible();
   expect(mutations, "J4 安全复审不得触发任何正式写入或执行请求").toEqual([]);
   await page.screenshot({

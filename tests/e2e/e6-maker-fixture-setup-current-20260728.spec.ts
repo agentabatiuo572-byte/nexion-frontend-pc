@@ -61,7 +61,7 @@ test("创建 E6 专用最小权限 maker，授权由独立 A checker 批准", as
       data: {
         roleCode: ROLE_CODE,
         roleName: `${RUN_ID} E6 最小 maker`,
-        remark: "E6 终局双人复核专用；无审批权",
+        remark: "E6 终局A2确认专用；无审批权",
         status: 1,
         reason: `${RUN_ID} 创建 E6 专用最小权限 maker 角色`,
         operator: ROOT_USERNAME,

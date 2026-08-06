@@ -141,7 +141,7 @@ export default function H8ReferralRewards({ ctx }: { ctx: HCtx }) {
           <Link href="/finance/ledger" className="l-btn sm">D4 钱包台账</Link>
         </div>
       </section>
-      <p className="f-foot"><b>真实发奖链</b>：App/H5 服务端奖励投影 → {data?.source ?? "服务端邀请关系"} → A2 双人审批 → 唯一结算记录 → 新人 / 邀请人钱包入账 → USDT / NEX 资金台账 → A4 事件。结算结果以服务端邀请关系、唯一结算记录、钱包与资金台账为准。</p>
+      <p className="f-foot"><b>真实发奖链</b>：App/H5 服务端奖励投影 → {data?.source ?? "服务端邀请关系"} → A2 审批 → 唯一结算记录 → 新人 / 邀请人钱包入账 → USDT / NEX 资金台账 → A4 事件。结算结果以服务端邀请关系、唯一结算记录、钱包与资金台账为准。</p>
     </>
   );
 }

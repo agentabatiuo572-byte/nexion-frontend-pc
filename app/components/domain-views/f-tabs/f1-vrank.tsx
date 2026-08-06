@@ -238,7 +238,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
       businessForm: {
         kind: "multi-field",
         title: "人工调整等级",
-        hint: "动作先进入 A2 双人复核队列；服务端再次校验用户、当前等级、目标等级和幂等状态。",
+        hint: "动作先进入 A2 确认队列；服务端再次校验用户、当前等级、目标等级和幂等状态。",
         requireAnyChange: false,
         fields: [
           { key: "userId", label: "用户 ID", inputKind: "number", min: 1, required: true, placeholder: "请输入用户 ID" },
@@ -261,7 +261,7 @@ export function F1Vrank({ ctx }: { ctx: FViewCtx }) {
     ctx.openActionConfirm({
       name: `奖励派发${action === "reissue" ? "重发" : "冲正"}`,
       amplify: action === "reissue",
-      detail: `${action === "reissue" ? "重发仅允许 REVERSED 派发单；可能放大资金流出。" : "冲正仅允许 GRANTED / REISSUED / PENDING_GRANT 派发单。"} 动作进入 A2 双人复核并由服务端状态机、对象锁和幂等键兜底。`,
+      detail: `${action === "reissue" ? "重发仅允许 REVERSED 派发单；可能放大资金流出。" : "冲正仅允许 GRANTED / REISSUED / PENDING_GRANT 派发单。"} 动作进入 A2 确认队列并由服务端状态机、对象锁和幂等键兜底。`,
       run: async (reason) => ctx.proposePayoutAction(payoutId, action, reason),
     });
   };

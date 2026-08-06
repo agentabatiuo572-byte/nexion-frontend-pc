@@ -38,9 +38,8 @@ type D5Snapshot = {
   version: number;
   dailyLimitCount: number;
   balanceMaxRatio: number;
-  networkFeeRatio: number;
-  networkFeeMin: number;
-  networkFeeMax: number;
+  // FEAT-WD02(2026-08-02):旧 networkFeeRatio/Min/Max 已删;后端迁移前可能仍下发,忽略即可。
+  networkConfirmFeeUsd?: { trc20: number; bep20: number; erc20: number } | null;
   nexFeeOffsetRate: number;
 };
 

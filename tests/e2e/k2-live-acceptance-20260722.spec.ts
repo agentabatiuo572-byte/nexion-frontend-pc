@@ -444,7 +444,7 @@ async function createChecker(page: Page, browserPage: Page, purpose: "grant" | "
   const password = `K2Checker@${SUFFIX}${purpose}bB!`;
   const created = await api(page, "POST", "/api/admin/platform/accounts", {
     username, displayName: `K2 Checker ${SUFFIX}`, email: `${username}@nexion.invalid`, role: "super", deliver: "handoff",
-    initialPassword, reason: `${RUN_ID} 创建K2双人复核账号`, operator: "superadmin",
+    initialPassword, reason: `${RUN_ID} 创建K2A2确认账号`, operator: "superadmin",
   });
   expect(created.status, created.raw).toBeLessThan(400);
   const accountId = String(created.data?.id ?? created.data?.accountId ?? "");
@@ -671,7 +671,7 @@ test.describe.serial("K2 套利与刷量检测独立验收", () => {
       const trialRow = page.locator("tbody tr").filter({ hasText: CLUSTER_ID }).first();
       await trialRow.getByRole("button", { name: "联动 K1 冻结" }).click();
       dialog = page.locator('[role="dialog"]:visible').last();
-      await dialog.getByLabel(/操作理由/).fill(`${RUN_ID} K1关联冻结双人复核`);
+      await dialog.getByLabel(/操作理由/).fill(`${RUN_ID} K1关联冻结A2确认`);
       const proposalPromise = page.waitForResponse((response) => response.url().endsWith("/api/admin/platform/audit/operations") && response.request().method() === "POST");
       await dialog.getByRole("button", { name: /确认提交/ }).click();
       const proposal = await proposalPromise;

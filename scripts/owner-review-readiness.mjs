@@ -219,8 +219,9 @@ const prdAlreadyPresent = Number(prd.alreadyPresent ?? 0);
 const prdMissingAnchors = Number(prd.missingAnchors ?? 0);
 const prdPatchBytes = Number(prd.patchBytes ?? 0);
 const prdApplyCheckOk = prd.applyCheck === "passed" || prd.applyCheck === "not-needed";
-const prdCoverageOk = prdOperations === 23
-  && prdPlanned + prdAlreadyPresent === 23
+// 2026-08-04:规则总数不再写死(23 为快照,规则可退役/新增);守结构不变量 —— 全部规则被 planned/already 完整核算 + 零缺锚。
+const prdCoverageOk = prdOperations > 0
+  && prdPlanned + prdAlreadyPresent === prdOperations
   && prdMissingAnchors === 0;
 const prdPatchStateOk = prdPlanned > 0 ? prdPatchBytes > 0 : prdPatchBytes === 0;
 addCheck(

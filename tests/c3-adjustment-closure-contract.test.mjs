@@ -25,7 +25,9 @@ test("C3 selects a stable user id and loads the complete impact context", () => 
 test("C3 creates a pending review request with structured evidence and retry-stable idempotency", () => {
   assert.match(c3, /reasonCode/);
   assert.match(c3, /evidenceRef/);
-  assert.match(c3, /submission\?\.fingerprint === fingerprint/);
+  // 命令号跨刷新存活(sessionStorage 共享 store),不再是刷新即清零的 useState/useRef。
+  assert.match(c3, /const key = c3Commands\.get\(fingerprint\) \?\? newIdempotencyKey\("c3-adjust"\)/);
+  assert.match(c3, /c3Commands\.remember\(fingerprint, key\)/);
   assert.match(c3, /setAmountText\(""\)/);
   assert.match(c3, /setReason\(""\)/);
   assert.match(c3, /setEvidenceRef\(""\)/);

@@ -28,8 +28,10 @@ const DIAL_COLUMNS = [
   ["newUserBonusMultiplier", "新用户加成", "x"],
   ["inviteRewardMultiplier", "邀请加成", "x"],
   ["reinvestMultiplier", "复投加成", "x"],
-  ["withdrawCooldownDays", "提现冷却天数", "天"],
-  ["withdrawPenaltyFeeRate", "提现惩罚费率", "%"],
+  // FEAT-WD01 改名:实际语义是「大额提现的到账等待天数」,不是「两笔提现的间隔」。字段键不动。
+  ["withdrawCooldownDays", "到账审查窗口", "天"],
+  // FEAT-WD02:「提现惩罚费率」旋钮已下线 —— 费用模型换为按网络固定确认费(D5 自有可写),
+  // 逐月费率旋钮无对应语义;历史审计记录不删账。
   ["binaryDailyCap", "双轨日封顶", "USD"],
   ["questBonusMultiplier", "任务加成", "x"],
   ["complianceHoldEnabled", "增强合规审查", ""],
@@ -67,7 +69,7 @@ function dialAmplifies(key: string, before: string, after: string) {
   const current = Number(before.replace(/[^\d.-]/g, ""));
   const next = Number(after.replace(/[^\d.-]/g, ""));
   if (!Number.isFinite(current) || !Number.isFinite(next)) return true;
-  if (["withdrawCooldownDays", "withdrawPenaltyFeeRate"].includes(key)) return next < current;
+  if (key === "withdrawCooldownDays") return next < current;
   return next > current;
 }
 
@@ -123,7 +125,8 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
     return {
       invite: current ? rowValue(current, "inviteRewardMultiplier") : "-",
       quest: current ? rowValue(current, "questBonusMultiplier") : "-",
-      withdraw: current ? rowValue(current, "withdrawPenaltyFeeRate") : "-",
+      // FEAT-WD02:惩罚费率旋钮下线,当月统计卡改展示到账审查窗口(仍是 H1 派发值)。
+      cooldown: current ? rowValue(current, "withdrawCooldownDays") : "-",
     };
   }, [currentMonth, monthlyRows]);
 
@@ -198,7 +201,7 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
   const openDial = (row: H1Model["monthlyDials"][number], key: string, label: string) => {
     const current = rowValue(row, key);
     const isComplianceToggle = key === "complianceHoldEnabled";
-    const amplifiesWhen: "decrease" | "increase" = ["withdrawCooldownDays", "withdrawPenaltyFeeRate"].includes(key)
+    const amplifiesWhen: "decrease" | "increase" = key === "withdrawCooldownDays"
       ? "decrease"
       : "increase";
     openActionConfirm({
@@ -348,8 +351,8 @@ export default function H1Phase({ ctx }: { ctx: HCtx }) {
           <div className="sub">来源: 服务端阶段节奏数据</div>
         </div>
         <div className="f-stat warn">
-          <div className="k">当月提现惩罚费率</div>
-          <div className="v">{stats.withdraw}{stats.withdraw === "-" || String(stats.withdraw).includes("%") ? "" : "%"}</div>
+          <div className="k">当月到账审查窗口</div>
+          <div className="v">{stats.cooldown}{stats.cooldown === "-" || String(stats.cooldown).includes("天") ? "" : " 天"}</div>
           <div className="sub">来源: 服务端当月阶段派发值</div>
         </div>
       </div>

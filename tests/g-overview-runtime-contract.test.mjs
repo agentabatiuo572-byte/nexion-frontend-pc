@@ -10,8 +10,21 @@ import {
 } from "../lib/admin/g-overview-contract.ts";
 import {
   createStableMutationExecutor,
+  stableMutationFingerprint,
   stableMutationHttpFailure,
 } from "../lib/admin/stable-mutation.ts";
+
+/** 极简 sessionStorage 替身:刷新 = 换 executor 实例(内存清零)但保留本对象。 */
+function installStorage() {
+  const cells = new Map();
+  globalThis.window = {
+    sessionStorage: {
+      getItem: (key) => (cells.has(key) ? cells.get(key) : null),
+      setItem: (key, value) => { cells.set(key, String(value)); },
+      removeItem: (key) => { cells.delete(key); },
+    },
+  };
+}
 
 const coverage = {
   coverageRatio: 120,
@@ -183,8 +196,9 @@ test("G7 order page rejects malformed success instead of turning it into an empt
 });
 
 test("outcome-unknown retains the command key for the same payload", async () => {
+  installStorage();
   let sequence = 0;
-  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`);
+  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`, "t-g-unknown");
   const observed = [];
   const run = (value) => execute(
     "g-module-write",
@@ -205,8 +219,9 @@ test("outcome-unknown retains the command key for the same payload", async () =>
 });
 
 test("deterministic rejection releases the command key", async () => {
+  installStorage();
   let sequence = 0;
-  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`);
+  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`, "t-g-deterministic");
   const observed = [];
   const run = (fail) => execute(
     "g-module-write",
@@ -225,8 +240,9 @@ test("deterministic rejection releases the command key", async () => {
 });
 
 test("changed payload gets a new key while the unknown original intent keeps its key", async () => {
+  installStorage();
   let sequence = 0;
-  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`);
+  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`, "t-g-changed");
   const observed = [];
   const run = (fingerprint, fail) => execute(
     "g-module-write",
@@ -250,8 +266,9 @@ test("changed payload gets a new key while the unknown original intent keeps its
 });
 
 test("accepted success releases the command key", async () => {
+  installStorage();
   let sequence = 0;
-  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`);
+  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`, "t-g-success");
   const observed = [];
   const run = () => execute(
     "g-module-write",
@@ -268,6 +285,59 @@ test("accepted success releases the command key", async () => {
   assert.deepEqual(observed, ["g-module-write-1", "g-module-write-2"]);
 });
 
+test("命令号跨刷新存活:刷新后重试同一意图仍复用同一 Idempotency-Key", async () => {
+  installStorage();
+  let sequence = 0;
+  const observed = [];
+  const runWith = (execute) => execute(
+    "g1-apy",
+    stableMutationFingerprint("PATCH", "/staking/pools/T1/params/apy", '{"value":"12"}'),
+    async (commandKey) => { observed.push(commandKey); throw new TypeError("network disconnected"); },
+    (payload) => payload,
+  );
+
+  const before = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`, "t-g-refresh");
+  await assert.rejects(runWith(before), /network disconnected/);
+  // 刷新:新 executor 实例 = 闭包内存清零,只剩 sessionStorage。
+  const after = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`, "t-g-refresh");
+  await assert.rejects(runWith(after), /network disconnected/);
+  assert.deepEqual(observed, ["g1-apy-1", "g1-apy-1"], "刷新后重铸命令号 = 后端去不了重 = 重复写入");
+
+  // 负控:换一把存储键(等于没持久化)必须铸新号,证明上面那条不是内存蒙的。
+  await assert.rejects(
+    runWith(createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`, "t-g-refresh-other")),
+    /network disconnected/,
+  );
+  assert.equal(observed[2], "g1-apy-2");
+});
+
+test("同一动作打到不同目标必须拿到不同命令号(指纹带 path 才做得到)", async () => {
+  installStorage();
+  let sequence = 0;
+  const execute = createStableMutationExecutor((prefix) => `${prefix}-${++sequence}`, "t-g-targets");
+  const observed = [];
+  // 两个质押档、同样的新值与理由:迁移前指纹只有 body,这两条会共用命令号,
+  // 后端按幂等去重 → 第二档静默没改。
+  const body = '{"value":"12","reason":"统一年化","operator":"ops"}';
+  for (const tier of ["T1", "T2"]) {
+    await execute(
+      "g1-apy",
+      stableMutationFingerprint("PATCH", `/staking/pools/${tier}/params/apy`, body),
+      async (commandKey) => { observed.push([tier, commandKey]); throw new TypeError("network disconnected"); },
+      (payload) => payload,
+    ).catch(() => undefined);
+  }
+  assert.deepEqual(observed, [["T1", "g1-apy-1"], ["T2", "g1-apy-2"]]);
+});
+
+test("storageKey 缺失直接抛错,不允许静默退化成刷新即丢的内存态", () => {
+  installStorage();
+  assert.throws(
+    () => createStableMutationExecutor((prefix) => prefix, ""),
+    /PENDING_MUTATION_STORE_REQUIRES_STORAGE_KEY/,
+  );
+});
+
 test("HTTP classification is explicit and does not infer from message text", () => {
   assert.equal(stableMutationHttpFailure("anything", 422, 422).kind, "deterministic");
   assert.equal(stableMutationHttpFailure("anything", 200, 1001).kind, "deterministic");
@@ -276,12 +346,25 @@ test("HTTP classification is explicit and does not infer from message text", () 
 });
 
 test("G1/G2/G3/G4/G7 clients complete command keys only through the shared acceptance ratchet", () => {
+  const storageKeys = [];
   for (const module of ["g1", "g2", "g3", "g4", "g7"]) {
     const source = readFileSync(new URL(`../lib/admin/${module}-client.ts`, import.meta.url), "utf8");
     assert.match(source, /createStableMutationExecutor/);
     assert.match(source, new RegExp(`execute${module.toUpperCase()}Mutation`));
     assert.doesNotMatch(source, /idempotencyPrefix/);
+    // 命令号必须落各自的 sessionStorage 键:少了它就退回「刷新即丢」,重试会铸新号 → 后端去不了重。
+    const storageKey = source.match(/createStableMutationExecutor\(idempotencyKey, "([^"]+)"\)/);
+    assert.ok(storageKey, `${module}-client 没给 createStableMutationExecutor 传 storageKey`);
+    storageKeys.push(storageKey[1]);
+    // 指纹必须带 path —— 目标对象 id(质押档 / 兑换单 / 批次号)只在 path 里。
+    assert.match(source, /stableMutationFingerprint\(/, `${module}-client 指纹没带 path,不同目标会撞命令号`);
+    assert.doesNotMatch(
+      source,
+      /Mutation\(\s*(?:`[^`]*`|prefix|"[^"]*"),\s*serialized,/,
+      `${module}-client 仍在拿裸 body 当指纹`,
+    );
   }
+  assert.equal(new Set(storageKeys).size, 5, "五个 G 域必须各用各的存储键,共用会互相覆盖在途命令号");
   const g4 = readFileSync(new URL("../lib/admin/g4-client.ts", import.meta.url), "utf8");
   assert.match(g4, /g4AckMutation/);
   assert.match(g4, /G4_COMMAND_RESPONSE_INVALID/);
