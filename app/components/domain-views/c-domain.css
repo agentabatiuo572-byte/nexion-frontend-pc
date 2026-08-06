@@ -66,7 +66,7 @@
 .cdom .l-btn.primary:hover { filter: brightness(1.07); }
 .cdom .l-btn.mc { color: var(--warning); border-color: var(--warning-border); background: color-mix(in srgb, var(--warning) 8%, transparent); font-weight: 600; }
 .cdom .l-btn.mc:hover { background: color-mix(in srgb, var(--warning) 18%, transparent); }
-.cdom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+.cdom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
 
 .cdom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .cdom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
@@ -84,7 +84,7 @@
 .cdom .bdg.ok { background: var(--success-soft); color: var(--success); }
 .cdom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
 .cdom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
-.cdom .bdg.dim { background: var(--surface-3); color: var(--ink-3); }
+.cdom .bdg.dim { background: var(--surface-3); color: var(--ink-2); }
 .cdom .bdg.cyan { background: var(--c-ac-soft); color: var(--c-ac); }
 
 .cdom .ctint { padding: 11px 14px; border-radius: 9px; background: var(--surface-2); font-size: 12px; line-height: 1.55; color: var(--ink-3); }

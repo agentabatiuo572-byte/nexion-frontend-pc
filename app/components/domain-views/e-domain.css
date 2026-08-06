@@ -33,7 +33,7 @@
 .edom .l-btn.dgr:hover { background: var(--danger-soft); color: var(--danger); }
 .edom .l-btn.okk { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); background: transparent; }
 .edom .l-btn.okk:hover { background: var(--success-soft); color: var(--success); }
-.edom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+.edom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
 
 /* ##################### E1 商品目录 & 代际门 ##################### */
 /* ===== Phase timeline(代际门 · E2)— 动态列 track + 渐变连接线 + 当前节点光晕 ===== */

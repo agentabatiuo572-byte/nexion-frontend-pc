@@ -60,7 +60,7 @@
 .ddom .l-btn.primary:hover { filter: brightness(1.07); }
 .ddom .l-btn.mc { color: var(--success); border-color: var(--success-border); background: color-mix(in srgb, var(--success) 8%, transparent); font-weight: 600; }
 .ddom .l-btn.mc:hover { background: color-mix(in srgb, var(--success) 18%, transparent); }
-.ddom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; }
+.ddom .l-btn.sm { padding: 4px 9px; font-size: 11.5px; border-radius: 6px; min-height: 24px; }
 
 .ddom .l-tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .ddom .l-tbl th { font-family: var(--mono); font-size: 11.5px; font-weight: 700; color: var(--ink-4);
@@ -78,7 +78,7 @@
 .ddom .bdg.ok { background: var(--success-soft); color: var(--success); }
 .ddom .bdg.warn { background: var(--warning-soft); color: var(--warning); }
 .ddom .bdg.bad { background: var(--danger-soft); color: var(--danger); }
-.ddom .bdg.dim { background: var(--surface-3); color: var(--ink-3); }
+.ddom .bdg.dim { background: var(--surface-3); color: var(--ink-2); }
 .ddom .bdg.cyan { background: var(--cyan-soft); color: var(--cyan); }
 .ddom .bdg.electric { background: var(--success-soft); color: var(--success); }
 .ddom .bdg.brand { background: var(--brand-soft, color-mix(in srgb, var(--brand) 14%, transparent)); color: var(--brand); }
