@@ -237,14 +237,10 @@ test("J2 App surfaces translate policy failures without leaking GEO technical co
     // assert.match(appGeoErrorTests, new RegExp(code));
   }
   for (const surface of appUserSurfaces) {
-    // 🔴 隔离中(2026-08-07)· 这一条不是断言过期,是它抓到了真缺陷,而缺陷在**另一个仓**:
-    //   Nexion-uniapp 的 src/api/geo-policy-error.ts 导出了 geoPolicyUserMessage,
-    //   但全仓**零调用**(逐文件核过 6 个页面 + 全 src 反查)—— 被封锁地区的用户在
-    //   登录/注册/提现/兑换/复购/试用页看到的是原始报错,不是这套友好文案。
-    //   这道门以前在开发机上整个不跑(顶层跨仓读取一崩全崩),所以一直没人看见。
-    //   本仓改不了它;解封条件 = uniapp 侧把 geoPolicyUserMessage 接进这 6 个界面。
-    //   台账:docs/changes/2026-08-06-prototype-vs-main-gap-ledger.md「跨仓欠账」段。
-    // assert.match(surface, /geoPolicyUserMessage/);
+    // 2026-08-07 已解封:uniapp 侧 pkg/x1-geo-copy 把 geoPolicyUserMessage 接进了这 6 个界面
+    // (逐文件核过命中数 ≥1)。此前隔离是因为它抓到了真缺陷 —— 该 helper 曾全仓零调用,
+    // 被封锁地区的用户拿不到友好文案。缺陷已修,断言归位。
+    assert.match(surface, /geoPolicyUserMessage/);
   }
   assert.doesNotMatch(
     appUserSurfaces.join("\n"),
