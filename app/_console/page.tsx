@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 运营指挥台(首页 /)。按 Claude Design「Nexion 运营控制后台」稿优点重构:
+ * 运营指挥台(首页 /)。按 Claude Design「NexGrid 运营控制后台」稿优点重构:
  * ① 页头(口径副标 + 对账导出)→ 破线条件 alertbar(仅建议)
  * ② 资金兑付安全 B1·B2·B5:CoverageHero(横向分区条 + 三账本)+ RiskRadar;FundPool 堆叠条 + 覆盖率趋势
  * ③ 实时运营脉搏 → ④ 待处理(操作确认)→ ⑤ 转化漏斗 → ⑥ 八项 KPI → ⑦ 域速览
@@ -270,7 +270,7 @@ export default function CommandCenter() {
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            Nexion Ops Console · 指挥台
+            NexGrid Ops Console · 指挥台
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>
@@ -424,7 +424,7 @@ export default function CommandCenter() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `nexion-reconciliation-${snap.generatedAt.slice(0, 10)}.json`;
+    a.download = `nexgrid-reconciliation-${snap.generatedAt.slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -437,7 +437,7 @@ export default function CommandCenter() {
       <header className="mb-5 flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-mono-tabular text-[11px] uppercase tracking-[0.16em]" style={{ color: "var(--v5-ink-3)" }}>
-            Nexion Ops Console · 指挥台
+            NexGrid Ops Console · 指挥台
           </p>
           <h1 className="font-display mt-1.5 text-[26px]" style={{ color: "var(--v5-ink)" }}>运营总览</h1>
           <p className="mt-1.5 text-[13.5px]" style={{ color: "var(--v5-ink-2)" }}>

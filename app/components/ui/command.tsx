@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * shadcn/ui Command — cmdk 之上的封装(命令面板 / ⌘K),已重皮到 Nexion V5 设计 token。
+ * shadcn/ui Command — cmdk 之上的封装(命令面板 / ⌘K),已重皮到 NexGrid V5 设计 token。
  * 来源:shadcn new-york `command`,色彩/圆角全部映射为 --v5-* / --admin-*。
  * CommandDialog 复用本工程 V5 皮肤的 ./dialog(Radix Dialog),自带 sr-only 标题保 a11y。
  * 一致性门(scripts/check-shadcn-tokens.mjs):本文件禁出现 shadcn 默认 token。
