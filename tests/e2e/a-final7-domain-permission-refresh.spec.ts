@@ -53,7 +53,7 @@ const reason = token === expectedGToken
     : token === expectedESecondWriterToken
       ? `${runId} Final7 E3/E6 independent CAS second writer fixture refresh`
       : token === expectedCSpecializedToken
-        ? `${runId} Final7 C3/C5-K5/C6 specialized actor fixture refresh`
+        ? `${runId} Final7 C3/C6 specialized actor fixture refresh`
         : token === expectedGSecondWriterToken
           ? `${runId} Final7 G independent second writer fixture refresh`
           : token === expectedIA2ApproverToken
@@ -100,18 +100,15 @@ const C_MAKER_PERMISSIONS = [
   "user_c2_read", "user_c2_write", "user_c2_account_freeze", "user_c2_account_unfreeze",
   "user_c2_session_revoke_all", "user_c2_impersonate_terminate", "user_c2_blocklist_add",
   "user_c3_read", "user_c3_write", "user_c3_adjust_create", "user_c3_adjust_reverse",
-  "user_c4_read", "user_c5_read", "user_c5_write", "user_c5_session_revoke_one",
+  "user_c5_read", "user_c5_write", "user_c5_session_revoke_one",
   "user_c5_session_revoke_all", "user_c5_2fa_disable", "user_c5_password_reset", "user_c6_read",
-  "user_c6_write", "platform_a2_proposal_create", "user_c2_impersonate_start", "user_c4_verify",
-  "user_c4_revoke", "user_c4_trigger_review", "user_c4_export", "user_c4_network_write",
+  "user_c6_write", "platform_a2_proposal_create", "user_c2_impersonate_start",
   "user_c5_unlock_short", "user_c5_unlock_long",
 ] as const;
-const C_READ_PERMISSIONS = ["user_c1_read", "user_c2_read", "user_c3_read", "user_c4_read", "user_c5_read", "user_c6_read"] as const;
-const C_MENUS = ["C", "C1", "C2", "C3", "C4", "C5", "C6"] as const;
+const C_READ_PERMISSIONS = ["user_c1_read", "user_c2_read", "user_c3_read", "user_c5_read", "user_c6_read"] as const;
+const C_MENUS = ["C", "C1", "C2", "C3", "C5", "C6"] as const;
 const C3_CHECKER_PERMISSIONS = ["user_c3_read", "user_c3_adjust_approve", "user_c3_adjust_reverse"] as const;
 const C3_CHECKER_MENUS = ["C", "C3"] as const;
-const C5_K5_CHECKER_PERMISSIONS = ["risk_k5_read", "risk_k5_write", "risk_k5_ticket_pass", "risk_k5_ticket_reject"] as const;
-const C5_K5_CHECKER_MENUS = ["K", "K5"] as const;
 const C6_SECOND_WRITER_PERMISSIONS = ["user_c6_read", "user_c6_write"] as const;
 const C6_SECOND_WRITER_MENUS = ["C", "C6"] as const;
 
@@ -261,7 +258,6 @@ const G_DOMAIN: DomainSpec = {
 const E_CHECKER_ROLE = role("E36_CK", "Final7 E3 E6 checker", E_CHECKER_PERMISSIONS, E_CHECKER_MENUS);
 const E_SECOND_WRITER_ROLE = role("E36_W2", "Final7 E3 E6 second writer", E_SECOND_WRITER_PERMISSIONS, E_SECOND_WRITER_MENUS);
 const C3_CHECKER_ROLE = role("C3_CK", "Final7 C3 checker", C3_CHECKER_PERMISSIONS, C3_CHECKER_MENUS);
-const C5_K5_CHECKER_ROLE = role("C5K5_CK", "Final7 C5 K5 checker", C5_K5_CHECKER_PERMISSIONS, C5_K5_CHECKER_MENUS);
 const C6_SECOND_WRITER_ROLE = role("C6_W2", "Final7 C6 second writer", C6_SECOND_WRITER_PERMISSIONS, C6_SECOND_WRITER_MENUS);
 const G_SECOND_WRITER_ROLE = role("G_W2", "Final7 G second writer", G_SECOND_WRITER_PERMISSIONS, G_SECOND_WRITER_MENUS);
 const I_A2_APPROVER_ROLE = role("I_A2_AP", "Final7 I A2 approver", I_A2_APPROVER_PERMISSIONS, I_A2_APPROVER_MENUS);
@@ -756,7 +752,7 @@ test("Final7 adds independent E3/E6 CAS second writer through visible A1/A6/A2",
   }
 });
 
-test("Final7 adds C3 checker, C5-K5 checker and C6 second writer through visible A1/A6/A2", async ({ page, browser }) => {
+test("Final7 adds C3 checker and C6 second writer through visible A1/A6/A2", async ({ page, browser }) => {
   expect(token, "controller-issued C specialized critical-section token is required").toBe(expectedCSpecializedToken);
   validateStaticScope();
   verifyCandidateAndListeners();
@@ -768,7 +764,7 @@ test("Final7 adds C3 checker, C5-K5 checker and C6 second writer through visible
   const existingSafe = JSON.parse(originalSafeText) as Record<string, unknown>;
   expect(existingC.runId).toBe(runId);
   const existingAccounts = objectRecord(existingC.accounts, "C_ACCOUNTS");
-  for (const field of ["c3Checker", "c5K5Checker", "secondWriter"]) {
+  for (const field of ["c3Checker", "secondWriter"]) {
     expect(existingAccounts[field], `C ${field} must not already exist`).toBeUndefined();
   }
 
@@ -787,7 +783,7 @@ test("Final7 adds C3 checker, C5-K5 checker and C6 second writer through visible
     await assertSourceAdmin(reviewerPage, reviewer.username);
 
     const roles: RoleRuntime[] = [];
-    for (const spec of [C3_CHECKER_ROLE, C5_K5_CHECKER_ROLE, C6_SECOND_WRITER_ROLE]) {
+    for (const spec of [C3_CHECKER_ROLE, C6_SECOND_WRITER_ROLE]) {
       const created = await createRoleVisible(page, spec);
       const runtime: RoleRuntime = { ...spec, id: created.id, grantOperationId: "" };
       createdRoles.push(runtime);
@@ -796,34 +792,30 @@ test("Final7 adds C3 checker, C5-K5 checker and C6 second writer through visible
       await assertRoleGrantExact(page, runtime);
       roles.push(runtime);
     }
-    const [c3Role, c5K5Role, c6Role] = roles;
+    const [c3Role, c6Role] = roles;
     const c3Checker = await provisionVisibleAccount(page, browser, "c3c", c3Role, C3_CHECKER_PERMISSIONS, C3_CHECKER_MENUS);
-    const c5K5Checker = await provisionVisibleAccount(page, browser, "c5k5c", c5K5Role, C5_K5_CHECKER_PERMISSIONS, C5_K5_CHECKER_MENUS);
     const c6SecondWriter = await provisionVisibleAccount(page, browser, "c6w", c6Role, C6_SECOND_WRITER_PERMISSIONS, C6_SECOND_WRITER_MENUS);
     await verifyNormalActor(browser, c3Checker, "/api/admin/users/asset-adjustments/overview", C_DOMAIN.crossPath, "C3 checker");
-    await verifyNormalActor(browser, c5K5Checker, "/api/admin/risk/kyc-review/overview", C_DOMAIN.crossPath, "C5-K5 checker");
     await verifyNormalActor(browser, c6SecondWriter, "/api/admin/users/registration-risk/overview", C_DOMAIN.crossPath, "C6 second writer");
     const actorIds = new Set([
       ...Object.values(existingAccounts).map((entry) => String(objectRecord(entry, "C_EXISTING_ACTOR").accountId)),
-      c3Checker.accountId, c5K5Checker.accountId, c6SecondWriter.accountId,
+      c3Checker.accountId, c6SecondWriter.accountId,
     ]);
-    expect(actorIds.size).toBe(7);
+    expect(actorIds.size).toBe(6);
 
     const previousCleanup = objectRecord(existingC.cleanup, "C_CLEANUP");
-    const incrementalCleanup = cleanupPlan([c3Checker, c5K5Checker, c6SecondWriter], roles);
+    const incrementalCleanup = cleanupPlan([c3Checker, c6SecondWriter], roles);
     const generatedAt = new Date().toISOString();
     writeRestrictedJson(C_MANIFEST, {
       ...existingC,
       generatedAt,
-      accounts: { ...existingAccounts, c3Checker, c5K5Checker, secondWriter: c6SecondWriter },
+      accounts: { ...existingAccounts, c3Checker, secondWriter: c6SecondWriter },
       checker: c3Checker,
       c3Checker,
-      c5K5Checker,
       c6SecondWriter,
       specializedRoles: roles.map(publicRole),
       workflowActors: {
         C3: { checkerAccountId: c3Checker.accountId, exclusiveApproveAuthority: true },
-        C5K5: { checkerAccountId: c5K5Checker.accountId, exclusiveK5Scope: true },
         C6: { secondWriterAccountId: c6SecondWriter.accountId, distinct: true },
       },
       cleanup: {
@@ -845,11 +837,10 @@ test("Final7 adds C3 checker, C5-K5 checker and C6 second writer through visible
       actors: [
         ...objectArray(existingSafe.actors),
         { accountId: c3Checker.accountId, username: c3Checker.username },
-        { accountId: c5K5Checker.accountId, username: c5K5Checker.username },
         { accountId: c6SecondWriter.accountId, username: c6SecondWriter.username },
       ],
       roles: [...objectArray(existingSafe.roles), ...roles.map((roleRow) => ({ roleId: roleRow.id, roleCode: roleRow.code }))],
-      specializedActors: { C3Checker: true, C5K5Checker: true, C6SecondWriter: true, allDistinct: true },
+      specializedActors: { C3Checker: true, C6SecondWriter: true, allDistinct: true },
       status: "READY",
     });
     completed = true;

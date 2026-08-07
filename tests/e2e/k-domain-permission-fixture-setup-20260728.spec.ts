@@ -23,11 +23,10 @@ const MAKER_PERMISSIONS = [
   "risk_k2_row_blockgift", "risk_k2_row_boardflag",
   "risk_k3_write", "risk_k3_rule_create", "risk_k3_rule_toggle", "risk_k3_rule_archive",
   "risk_k4_write", "risk_k4_user_override", "risk_k4_user_recompute",
-  "risk_k5_write", "risk_k5_ticket_pass", "risk_k5_ticket_reject", "risk_k5_ticket_manual",
   "risk_k6_write", "risk_k6_senior", "risk_k6_target_manage",
   "platform_a2_read", "platform_a2_proposal_create",
 ];
-const MENU_CODES = ["K", "K1", "K2", "K3", "K4", "K5", "K6"];
+const MENU_CODES = ["K", "K1", "K2", "K3", "K4", "K6"];
 
 type AccountKey = "k_readonly" | "k_no_write" | "k_no_menu" | "k_maker";
 type FixtureAccount = {

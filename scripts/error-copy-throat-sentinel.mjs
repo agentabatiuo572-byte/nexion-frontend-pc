@@ -88,7 +88,6 @@ const MARKER_CLASS_ALLOW = [
   { file: "lib/admin/k-client.ts", why: "K1OutcomeUncertainError 构造参数与协议校验中间值,展示时过咽喉" },
   { file: "lib/admin/j-client.ts", why: "allSettled 结果结构里的 error 字段,渲染前过咽喉" },
   { file: "app/components/domain-views/c-tabs/c1-search.tsx", why: "只喂 includes 判据,不上屏(出口已过咽喉)" },
-  { file: "app/components/domain-views/c-tabs/c4-kyc.tsx", why: "同上" },
   { file: "app/components/domain-views/d-tabs/d5-params.tsx", why: "同上" },
 ];
 

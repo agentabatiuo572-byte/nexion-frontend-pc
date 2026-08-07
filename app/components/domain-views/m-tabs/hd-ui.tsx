@@ -96,7 +96,6 @@ const CAT_CN: Record<string, string> = {
   account: "账户",
   withdrawal: "提现",
   deposit: "充值",
-  kyc: "实名",
   hardware: "硬件",
   earnings: "收益",
   genesis: "节点",

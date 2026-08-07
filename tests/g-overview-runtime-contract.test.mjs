@@ -72,7 +72,6 @@ const g2 = {
     todayUsd: 0,
     poolPct: 0,
     queueDepth: 0,
-    gateKyc: 0,
     gateUser: 0,
     gatePlatform: 0,
     gateGeo: 0,
@@ -82,7 +81,6 @@ const g2 = {
     ["platformDailyCap", 20_000],
     ["fee", 0],
     ["feeMin", 0.5],
-    ["kycThreshold", 100],
     ["queueMode", "QUEUE"],
   ].map(([key, value]) => ({
     key,
@@ -95,7 +93,6 @@ const g2 = {
   })),
   queue: [],
   gateDetails: {
-    kyc: { key: "kyc", title: "KYC", note: "-", count: 0, rows: [] },
     user: { key: "user", title: "User", note: "-", count: 0, rows: [] },
     platform: { key: "platform", title: "Platform", note: "-", count: 0, rows: [] },
     geo: { key: "geo", title: "Geo", note: "-", count: 0, rows: [] },

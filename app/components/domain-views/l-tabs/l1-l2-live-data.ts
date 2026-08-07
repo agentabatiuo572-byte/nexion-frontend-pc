@@ -32,8 +32,6 @@ const L1_TOTALS = [
 const L2_STAGE_META: Record<string, { label: string; description: string }> = {
   registered: { label: "已注册", description: "当前注册账户数" },
   profileCompleted: { label: "已完善资料", description: "已生成用户资料的账户数" },
-  kycSubmitted: { label: "已提交 KYC", description: "已提交 KYC 资料的账户数" },
-  kycApproved: { label: "KYC 已通过", description: "KYC 状态为通过的账户数" },
   ordered: { label: "订单记录", description: "商城订单与后台设备订单累计数" },
   walletActivity: { label: "钱包活动", description: "钱包账本与账单累计记录数" },
 };
@@ -41,7 +39,6 @@ const L2_STAGE_META: Record<string, { label: string; description: string }> = {
 const SOURCE_LABELS: Record<string, string> = {
   nx_user: "用户主数据",
   nx_user_profile: "用户资料",
-  nx_kyc_profile: "身份认证记录",
   "nx_order/nx_admin_device_order": "订单主数据",
   "nx_wallet_ledger/nx_wallet_bill": "钱包活动记录",
 };
@@ -73,9 +70,6 @@ export function canAccessBiReportType(
   reportType: string,
 ): boolean {
   const normalized = reportType.trim().toUpperCase();
-  if (normalized === "KYC_REGULATORY") {
-    return role?.toLowerCase() === "superadmin" || authorities.includes("user_c4_export");
-  }
   if (normalized === "REGULATORY") {
     return role?.toLowerCase() === "superadmin" || authorities.includes("bi_l5_regulatory_generate");
   }

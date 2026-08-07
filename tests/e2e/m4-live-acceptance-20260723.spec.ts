@@ -34,7 +34,7 @@ const EVIDENCE_DIR = process.env.M4_EVIDENCE_DIR
 const PREFIX = process.env.M4_FIXTURE_PREFIX ?? "M4-20260723";
 const KNOWLEDGE_OVERVIEW_API = "**/api/admin/content/knowledge/overview";
 const FAQ_API = "**/api/admin/content/knowledge/faqs";
-const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"];
+const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "hardware", "earnings", "genesis", "technical", "other"];
 const MFA_SECRETS = new Map<string, string>();
 
 type Envelope<T> = { code: number; message?: string; data: T };

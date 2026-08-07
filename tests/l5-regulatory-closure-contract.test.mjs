@@ -37,7 +37,7 @@ test("backend validates current disclosure truth, persists snapshot, audits, and
   assert.match(service, /dashboard\("L2"\)/);
   assert.match(service, /dashboard\.get\("stages"\)/);
   assert.doesNotMatch(service, /dashboard\("L2"\)\.get\("funnel"\)/);
-  for (const source of ["C4", "L3", "L4", "D4", "A2", "J4"]) assert.match(service, new RegExp(`"${source}"`));
+  for (const source of ["L3", "L4", "D4", "A2", "J4"]) assert.match(service, new RegExp(`"${source}"`));
   assert.match(service, /admin\.emergency_playbook_executed/);
   assert.match(service, /currentFinanceSnapshot/);
   assert.match(service, /operationsDashboard/);

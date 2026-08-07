@@ -410,8 +410,6 @@
 .mdom .cvp-id .uid { font-family: var(--m-mono); font-size: 11.5px; color: var(--ink-3); margin-top: 3px; }
 .mdom .cvp-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 13px; }
 .mdom .cvp-vchip { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font-weight: 500; background: var(--m-wait-soft); color: var(--m-wait); }
-.mdom .cvp-kyc { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font-weight: 500; background: var(--m-ok-soft); color: var(--m-ok); }
-.mdom .cvp-kyc .ic, .mdom .cvp-kyc svg { width: 12px; height: 12px; }
 .mdom .cvp-cta { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; height: 36px; margin-top: 15px; border-radius: var(--m-r-ctl); border: 1px solid var(--m-hd-border); background: var(--m-hd-soft); color: var(--m-hd-2); font-size: 12.5px; font-weight: 500; cursor: pointer; font-family: inherit; transition: background .12s; }
 .mdom .cvp-cta:hover { background: color-mix(in srgb, var(--m-hd) 22%, transparent); }
 .mdom .cvp-cta .ic, .mdom .cvp-cta svg { width: 15px; height: 15px; }

@@ -331,26 +331,6 @@
       ]
     },
     {
-      "id": "OPS-C-07",
-      "domain": "C",
-      "object": "KYC复审",
-      "action": "人工标记已验证(amplifies)",
-      "status": "built",
-      "view": "c-tabs/c4-kyc.tsx",
-      "batch": "P0",
-      "restAction": "verifyUserKyc"
-    },
-    {
-      "id": "OPS-C-08",
-      "domain": "C",
-      "object": "KYC复审",
-      "action": "撤销实名",
-      "status": "built",
-      "view": "c-tabs/c4-kyc.tsx",
-      "batch": "P0",
-      "restAction": "revokeUserKyc"
-    },
-    {
       "id": "OPS-C-09",
       "domain": "C",
       "object": "资产调整确认(列表)",
@@ -416,26 +396,6 @@
       "restAction": "approveUserAssetAdjustment"
     },
     {
-      "id": "OPS-C-15",
-      "domain": "C",
-      "object": "KYC 复审触发",
-      "action": "触发增强复审(只发 K5 工单 · 仍需操作确认 带原因)",
-      "status": "built",
-      "view": "c-tabs/c4-kyc.tsx",
-      "batch": "done",
-      "restAction": "triggerUserKycReview"
-    },
-    {
-      "id": "OPS-C-16",
-      "domain": "C",
-      "object": "配对网络白名单",
-      "action": "调整(操作确认 + edit)",
-      "status": "built",
-      "view": "c-tabs/c4-kyc.tsx",
-      "batch": "done",
-      "restAction": "updateUserKycNetworkWhitelist"
-    },
-    {
       "id": "OPS-C-17",
       "domain": "C",
       "object": "凭证与会话参数(3 项;step-up V1 只读)",
@@ -480,20 +440,10 @@
       "restAction": "updateUserRegistrationRiskParam"
     },
     {
-      "id": "OPS-C-21",
-      "domain": "C",
-      "object": "脱敏导出(C1 名单 / C4 监管)",
-      "action": "普通确认 + 落审计(归口 L5)",
-      "status": "built",
-      "view": "c-tabs/c1-search.tsx + c4-kyc.tsx",
-      "batch": "done",
-      "restAction": "createUserKycExport"
-    },
-    {
       "id": "OPS-D-01",
       "domain": "D",
       "object": "提现申请",
-      "action": "放行(小额快速普通确认/大额操作确认+B1预检;K5复审hold禁放)",
+      "action": "放行(小额快速普通确认/大额操作确认+B1预检;K3冻结或人工路由结论禁放)",
       "status": "built",
       "view": "d-tabs/d2-withdrawals.tsx",
       "batch": "P0",
@@ -1547,47 +1497,6 @@
       ]
     },
     {
-      "id": "OPS-K-05",
-      "domain": "K",
-      "object": "大额KYC复审(K5)",
-      "action": "通过(操作确认 · 解冻回写C4 · 放行方向挂B1)",
-      "status": "built",
-      "view": "k-view.tsx",
-      "batch": "done",
-      "restAction": "decideK5Ticket"
-    },
-    {
-      "id": "OPS-K-06",
-      "domain": "K",
-      "object": "大额KYC复审(K5)",
-      "action": "驳回(操作确认 · 维持冻结回写C4)",
-      "status": "built",
-      "view": "k-view.tsx",
-      "batch": "done",
-      "restAction": "decideK5Ticket"
-    },
-    {
-      "id": "OPS-K-07",
-      "domain": "K",
-      "object": "大额KYC复审(K5)",
-      "action": "手动补触发复审(仍需操作确认+必填原因+userId 输入)",
-      "status": "built",
-      "view": "k-view.tsx",
-      "batch": "done",
-      "restAction": "createK5ManualTicket"
-    },
-    {
-      "id": "OPS-K-08",
-      "domain": "K",
-      "object": "K5 触发线 + K3 沙盒 + K5 订阅",
-      "action": "触发线 4 参数调整(操作确认)/dry-run(只读占位)/订阅(个人设置)",
-      "status": "built",
-      "view": "k-view.tsx",
-      "batch": "done",
-      "note": "K5 触发线 K.k5.<param> 含 PRD 第 4 参数 reviewTriggerScore=85(设计稿漏,按 PRD K5③ 补);dry-run=PRD K3④「本批不实现,接口预留」只读仍需操作确认 toast;订阅只影响个人通知不落业务台账",
-      "restAction": "updateK5Param"
-    },
-    {
       "id": "OPS-L-01",
       "domain": "L",
       "object": "KPI/漏斗/财务/运营看板(L1-L4)",
@@ -1600,7 +1509,7 @@
       "id": "OPS-L-02",
       "domain": "L",
       "object": "监管报告(L5)",
-      "action": "生成 4 模板(KYC/资金兑付/AML/辖区专项 · 操作确认)",
+      "action": "生成 3 模板(资金兑付/AML/辖区专项 · 操作确认)",
       "status": "built",
       "view": "l-view.tsx",
       "batch": "done",

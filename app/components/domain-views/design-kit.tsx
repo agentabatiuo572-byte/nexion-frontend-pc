@@ -686,7 +686,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     return [
       { label: "要做什么", text: actionText || "处理一笔资金或提现状态。" },
       { label: "影响", text: "会改变用户资金、提现单或平台账本状态。放行、解冻、提高额度会消耗备付金。" },
-      { label: "提交前", text: `确认用户、金额、KYC/风控命中、覆盖率和凭证。${amplifies ? "当前操作还要通过 B1 备付金覆盖率检查。" : "操作理由要说明处理依据。"}` },
+      { label: "提交前", text: `确认用户、金额、风控命中、覆盖率和凭证。${amplifies ? "当前操作还要通过 B1 备付金覆盖率检查。" : "操作理由要说明处理依据。"}` },
     ];
   }
 
@@ -694,7 +694,7 @@ function buildOperatorBrief(action: ReactNode, detail: ReactNode, amplifies: boo
     return [
       { label: "要做什么", text: actionText || "处理账号、安全或权限状态。" },
       { label: "影响", text: "会影响后台账号、用户登录、会话、权限或风控名单。部分动作会立即踢线或降低安全门槛。" },
-      { label: "提交前", text: "确认对象账号、授权来源、是否已做实名/主管校验。操作理由写清工单号和处理依据。" },
+      { label: "提交前", text: "确认对象账号、授权来源、是否已做双人/主管校验。操作理由写清工单号和处理依据。" },
     ];
   }
 
@@ -2148,7 +2148,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
         <span className="bf-legend">业务表单 · E1 阶段配置</span>
         <div className="grid g-2" style={{ gap: 10 }}>
           {input("label", "阶段名称", "如 P3 Pro v2 首发")}
-          {input("meta", "门槛说明", "如 L0+ / 完成 KYC")}
+          {input("meta", "门槛说明", "如 L0+ / 账户正常")}
           {input("skus", "SKU 标签", "如 入门档 / Pro v2")}
           {input("sortOrder", "排序", "10", "number")}
           {select("status", "状态", ["active", "archived"], { active: "启用", archived: "已归档" })}
@@ -2386,8 +2386,8 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           目标 <span className="mono">{spec.subject}</span> · 未完成全部核验项前,确认按钮保持禁用。
         </div>
         {verified ? (
-          <div className="tint ok tiny" style={{ marginBottom: 10 }} data-proof="server-kyc-verification">
-            <b>服务端 K5 复审已通过</b> · 工单 <span className="mono">{verified.ticket}</span><br />
+          <div className="tint ok tiny" style={{ marginBottom: 10 }} data-proof="server-sensitive-action-verification">
+            <b>服务端高敏操作校验已通过</b> · 工单 <span className="mono">{verified.ticket}</span><br />
             复审人 {verified.verifiedBy || "—"} · 通过时间 {verified.verifiedAt} · 有效至 {verified.expiresAt || "—"}
           </div>
         ) : null}

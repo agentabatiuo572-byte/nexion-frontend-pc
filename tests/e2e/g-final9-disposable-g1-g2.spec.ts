@@ -132,7 +132,7 @@ test("G1/G2 在 Final9 隔离环境完成真实 UI、双运营员、幂等、红
       firstDelta: 0.01,
       secondDelta: 0.02,
       beforeUi: async (target) => {
-        await expect(target.getByRole("button", { name: "调整 累计实名触发线", exact: true })).toBeDisabled();
+        await expect(target.getByRole("button", { name: /累计.*触发线/ })).toHaveCount(0);
       },
       openDialog: (target) => target.getByRole("button", { name: "调整 兑换手续费率", exact: true }).click(),
     });

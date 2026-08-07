@@ -7,7 +7,6 @@ const REPORT_TYPES = new Set([
   "OPERATIONS_AGG",
   "NETWORK_TREE",
   "BILL_CSV",
-  "KYC_REGULATORY",
   "REGULATORY",
   "ON_DEMAND",
 ]);

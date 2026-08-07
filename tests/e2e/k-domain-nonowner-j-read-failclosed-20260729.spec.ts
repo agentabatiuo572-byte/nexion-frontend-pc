@@ -54,15 +54,6 @@ const MODULES: ModuleCase[] = [
     mutation: /保存模型草稿|发布模型草稿|恢复为草稿|人工覆盖评分|重算回模型分|全部重算/,
   },
   {
-    id: "K5",
-    path: "/risk/kyc-review",
-    endpoint: "/api/admin/risk/kyc-review/overview",
-    marker: /复审触发队列/,
-    error: /K5 数据加载失败/,
-    retry: /仅重试 K5/,
-    mutation: /调整|保存订阅|手动补触发|通过|驳回/,
-  },
-  {
     id: "K6",
     path: "/risk/janus-c2",
     endpoint: "/api/admin/janus/dashboard",

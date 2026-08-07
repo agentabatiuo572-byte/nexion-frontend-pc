@@ -11,7 +11,6 @@ const READ_ENDPOINTS = [
   "/api/admin/risk/arbitrage/overview",
   "/api/admin/risk/withdraw-rules/overview",
   "/api/admin/risk/scoring/overview",
-  "/api/admin/risk/kyc-review/overview",
   "/api/admin/janus/dashboard",
 ];
 

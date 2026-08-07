@@ -66,7 +66,6 @@ const MIGRATED = [
   "app/components/domain-views/k-tabs/k2-arbitrage.tsx",
   "app/components/domain-views/k-tabs/k3-rules.tsx",
   "app/components/domain-views/k-tabs/k4-scoring.tsx",
-  "app/components/domain-views/k-tabs/k5-kyc.tsx",
   "app/components/domain-views/e-view.tsx",
   "app/components/domain-views/h-tabs/h8-referral-rewards.tsx",
   "app/components/domain-views/m-view.tsx",
@@ -84,7 +83,6 @@ const MIGRATED = [
  */
 const KNOWN = {
   // ---- not-idempotency:不是命令号容器 ----
-  "app/components/domain-views/k-tabs/k5-kyc.tsx#pendingManualTicket": { verdict: "not-idempotency", reason: "只暂存刚建的人工工单号用于弹窗回显,不进 Idempotency-Key,丢了不会重复入账" },
   "app/components/domain-views/m-view.tsx#pendingMCommandMetadata": { verdict: "not-idempotency", reason: "只缓存弹窗回显的动作名/理由文案,丢了不会重复入账" },
   "app/components/domain-views/m-view.tsx#pendingMCommandBaselines": { verdict: "not-idempotency", reason: "只缓存调参前基线用于 diff 展示,丢了只是少一段回显" },
   "app/components/domain-views/m-tabs/m5-scripts.tsx#pendingReplyTemplateDraftIds": { verdict: "not-idempotency", reason: "话术草稿的本地临时 id,非 Idempotency-Key,不入后端去重" },

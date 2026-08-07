@@ -354,14 +354,14 @@ function setupK1Fixture() {
   }))).replace(/'/g, "''");
   mysql(`
     START TRANSACTION;
-    INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,kyc_status,status,is_deleted)
-    SELECT ${FIXTURE_USER_IDS[0]},'86','${FIXTURE_PHONES[0]}',password_hash,'K1独立账户1','${FIXTURE_REFERRALS[0]}','APPROVED','ACTIVE',0
+    INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,status,is_deleted)
+    SELECT ${FIXTURE_USER_IDS[0]},'86','${FIXTURE_PHONES[0]}',password_hash,'K1独立账户1','${FIXTURE_REFERRALS[0]}','ACTIVE',0
       FROM nx_user WHERE is_deleted=0 LIMIT 1;
-    INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,kyc_status,status,is_deleted)
-    SELECT ${FIXTURE_USER_IDS[1]},'86','${FIXTURE_PHONES[1]}',password_hash,'K1独立账户2','${FIXTURE_REFERRALS[1]}','APPROVED','ACTIVE',0
+    INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,status,is_deleted)
+    SELECT ${FIXTURE_USER_IDS[1]},'86','${FIXTURE_PHONES[1]}',password_hash,'K1独立账户2','${FIXTURE_REFERRALS[1]}','ACTIVE',0
       FROM nx_user WHERE is_deleted=0 LIMIT 1;
-    INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,kyc_status,status,is_deleted)
-    SELECT ${FIXTURE_USER_IDS[2]},'86','${FIXTURE_PHONES[2]}',password_hash,'K1独立账户3','${FIXTURE_REFERRALS[2]}','APPROVED','ACTIVE',0
+    INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,status,is_deleted)
+    SELECT ${FIXTURE_USER_IDS[2]},'86','${FIXTURE_PHONES[2]}',password_hash,'K1独立账户3','${FIXTURE_REFERRALS[2]}','ACTIVE',0
       FROM nx_user WHERE is_deleted=0 LIMIT 1;
     INSERT INTO nx_admin_risk_multi_account_cluster(
       cluster_id,dedupe_key,layer_key,layer_label,account_count,strength,span_text,status,note_text,
@@ -409,7 +409,7 @@ function cleanupK1Fixture() {
      WHERE cluster_id='${CLUSTER_ID}' AND dedupe_key='${CLUSTER_KEY}'
        AND note_text='K1 final3 isolated fixture';
     DELETE FROM nx_user_session WHERE user_id IN (${FIXTURE_USER_IDS.join(",")});
-    DELETE FROM nx_kyc_profile WHERE user_id IN (${FIXTURE_USER_IDS.join(",")});
+    DELETE FROM nx_user_payout_address WHERE user_id IN (${FIXTURE_USER_IDS.join(",")});
     DELETE FROM nx_user
      WHERE (id=${FIXTURE_USER_IDS[0]} AND phone='${FIXTURE_PHONES[0]}' AND referral_code='${FIXTURE_REFERRALS[0]}')
         OR (id=${FIXTURE_USER_IDS[1]} AND phone='${FIXTURE_PHONES[1]}' AND referral_code='${FIXTURE_REFERRALS[1]}')

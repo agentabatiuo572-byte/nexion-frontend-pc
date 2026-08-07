@@ -10,9 +10,9 @@ type Actor = {
 type SessionMode = "anonymous" | "healthy" | "slow" | "malformed" | "unavailable";
 
 const actors: Actor[] = [
-  { username: "c-maker", role: "acc_c_maker", roleCode: "ACC_C_MAKER", authorities: ["user_c1_read", "user_c2_read", "user_c3_read", "user_c4_read", "user_c5_read", "user_c6_read"] },
-  { username: "superadmin", role: "superadmin", roleCode: "SUPER_ADMIN", authorities: ["user_c1_read", "user_c2_read", "user_c3_read", "user_c4_read", "user_c5_read", "user_c6_read"] },
-  { username: "c-readonly", role: "acc_c_readonly", roleCode: "ACC_C_READONLY", authorities: ["user_c1_read", "user_c2_read", "user_c3_read", "user_c4_read", "user_c5_read", "user_c6_read"] },
+  { username: "c-maker", role: "acc_c_maker", roleCode: "ACC_C_MAKER", authorities: ["user_c1_read", "user_c2_read", "user_c3_read", "user_c5_read", "user_c6_read"] },
+  { username: "superadmin", role: "superadmin", roleCode: "SUPER_ADMIN", authorities: ["user_c1_read", "user_c2_read", "user_c3_read", "user_c5_read", "user_c6_read"] },
+  { username: "c-readonly", role: "acc_c_readonly", roleCode: "ACC_C_READONLY", authorities: ["user_c1_read", "user_c2_read", "user_c3_read", "user_c5_read", "user_c6_read"] },
 ];
 
 test.describe.configure({ mode: "serial", timeout: 120_000 });
@@ -110,13 +110,12 @@ async function installAuthCarrier(page: Page, actor: Actor) {
     role: actor.role,
     roleCode: actor.roleCode,
     authorities: actor.authorities,
-    effectiveMenus: ["C", "C1", "C2", "C3", "C4", "C5", "C6"],
+    effectiveMenus: ["C", "C1", "C2", "C3", "C5", "C6"],
     effectiveMenuNodes: [
       { menuCode: "C", menuName: "用户与账户", routePath: "", parentCode: null, sortOrder: 3 },
       { menuCode: "C1", menuName: "检索 & 画像", routePath: "/users/search", parentCode: "C", sortOrder: 1 },
       { menuCode: "C2", menuName: "账户操作", routePath: "/users/actions", parentCode: "C", sortOrder: 2 },
       { menuCode: "C3", menuName: "余额 & 资产调整", routePath: "/users/assets", parentCode: "C", sortOrder: 3 },
-      { menuCode: "C4", menuName: "KYC 合规台账", routePath: "/users/kyc", parentCode: "C", sortOrder: 4 },
       { menuCode: "C5", menuName: "安全 & 会话", routePath: "/users/security", parentCode: "C", sortOrder: 5 },
       { menuCode: "C6", menuName: "注册/登录风控", routePath: "/users/reg-risk", parentCode: "C", sortOrder: 6 },
     ],

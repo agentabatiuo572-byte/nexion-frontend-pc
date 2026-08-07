@@ -29,7 +29,6 @@
     "test:k2-contract": "node --test tests/k2-arbitrage-contract.test.mjs",
     "test:k3-contract": "node --test tests/k3-withdraw-rules-contract.test.mjs",
     "test:k4-contract": "node --test tests/k4-scoring-contract.test.mjs",
-    "test:k5-contract": "node --test tests/k5-kyc-review-contract.test.mjs",
     "test:k6-contract": "node --test tests/k6-janus-real-api-contract.test.mjs",
     "test:l1-l2-contract": "node --experimental-strip-types --test tests/l1-l2-live-data-contract.test.mjs",
     "test:l3-contract": "node --experimental-strip-types --test tests/l3-live-data-contract.test.mjs",

@@ -68,7 +68,7 @@ test("L1/L2 真实降级链：可理解、可刷新、导出落真实任务且�
   await expect(page.getByText("生命周期事实计数", { exact: true })).toBeVisible();
   await expect(page.getByText(/各行是独立累计量，不直接相除为转化率/)).toBeVisible();
   await expect(page.getByText(/Cohort、留存与逐级转化暂不可计算/)).toBeVisible();
-  await expect(page.getByText("已提交 KYC").first()).toBeVisible();
+  await expect(page.getByText("已注册").first()).toBeVisible();
   await expect(page.getByText("0", { exact: true }).first()).toBeVisible();
   await expect(page.locator("body")).not.toContainText(/nx_user|nx_wallet_ledger|A4 事件/);
   expect(biOverviewPaths).toContain("/api/admin/bi/funnel/overview");

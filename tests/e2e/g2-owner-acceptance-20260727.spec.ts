@@ -38,7 +38,6 @@ test("G2 首次用户真实入口、权威读模型、域外链接与失败关�
     "platformDailyCap",
     "fee",
     "feeMin",
-    "kycThreshold",
     "queueMode",
   ]);
   expect(overview.data.sources).toEqual(expect.arrayContaining([
@@ -49,7 +48,6 @@ test("G2 首次用户真实入口、权威读模型、域外链接与失败关�
   ]));
 
   for (const [index, label] of [
-    "需实名(kyc-required)",
     "单用户超限(user-cap)",
     "平台超限(platform-cap)",
     "地域封锁(geo-blocked)",

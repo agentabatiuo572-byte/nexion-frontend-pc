@@ -109,7 +109,7 @@ function cleanupCrossDomainSmoke(sid = "") {
     DELETE FROM nx_user_session WHERE user_id IN (
       SELECT id FROM nx_user WHERE phone='${SMOKE_PHONE}' OR referral_code='${SMOKE_REFERRAL}'
     );
-    DELETE FROM nx_kyc_profile WHERE user_id IN (
+    DELETE FROM nx_user_payout_address WHERE user_id IN (
       SELECT id FROM nx_user WHERE phone='${SMOKE_PHONE}' OR referral_code='${SMOKE_REFERRAL}'
     ) OR user_id=${SMOKE_USER_ID};
     DELETE FROM nx_user WHERE phone='${SMOKE_PHONE}' OR referral_code='${SMOKE_REFERRAL}';
@@ -419,19 +419,17 @@ test("M9/M10 通过真实 App API、后端与 PC 可见入口完成跨域 smoke"
     expect(securityPayload.code, securityPayload.message).toBe(0);
     expect(Array.isArray(securityPayload.data?.sessions)).toBe(true);
 
-    const kycResponse = await page.request.get(`${BACKEND_URL}/api/kyc/status`, {
+    const payoutAddressResponse = await page.request.get(`${BACKEND_URL}/api/payout-addresses`, {
       headers: appHeaders,
     });
-    const kycPayload = await kycResponse.json() as {
+    const payoutAddressPayload = await payoutAddressResponse.json() as {
       code?: number;
       message?: string;
-      data?: { status?: string; walletPaired?: boolean; source?: string };
+      data?: unknown;
     };
-    expect(kycResponse.status(), kycPayload.message).toBe(200);
-    expect(kycPayload.code, kycPayload.message).toBe(0);
-    expect(typeof kycPayload.data?.status).toBe("string");
-    expect(typeof kycPayload.data?.walletPaired).toBe("boolean");
-    expect(kycPayload.data?.source).toBeTruthy();
+    expect(payoutAddressResponse.status(), payoutAddressPayload.message).toBe(200);
+    expect(payoutAddressPayload.code, payoutAddressPayload.message).toBe(0);
+    expect(payoutAddressPayload.data).toBeDefined();
 
     const usersGroup = page.getByRole("button", { name: /用户与账户/ });
     if ((await usersGroup.getAttribute("aria-expanded")) !== "true") await usersGroup.click();
@@ -464,7 +462,7 @@ test("M9/M10 通过真实 App API、后端与 PC 可见入口完成跨域 smoke"
         },
         m10: {
           appSecurityStatus: securityResponse.status(),
-          appKycStatus: kycResponse.status(),
+          appPayoutAddressStatus: payoutAddressResponse.status(),
           pcVisibleEntry: "/users/security",
           adminSecurityStatus: adminSecurityHttp.status(),
         },

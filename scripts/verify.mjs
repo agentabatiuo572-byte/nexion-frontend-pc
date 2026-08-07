@@ -127,7 +127,7 @@ const GEARS = [
   ["rhythm sentinel", "node", ["scripts/rhythm-single-source-sentinel.mjs"]],
   ["K3 contract", "node", ["--test", "tests/k3-withdraw-rules-contract.test.mjs"]],
   ["K4 contract", "node", ["--test", "tests/k4-scoring-contract.test.mjs"]],
-  ["K5 contract", "node", ["--test", "tests/k5-kyc-review-contract.test.mjs"]],
+  ["KYC removal contract", "node", ["--test", "tests/kyc-removal-contract.test.mjs"]],
   ["A2 coverage sentinel", "node", ["scripts/a2-audit-coverage-sentinel.mjs"]],
   ["A2 outcome-uncertain contract", "node", ["--test", "tests/a2-outcome-uncertain-contract.test.mjs"]],
   ["E1 acceptance contract", "node", ["--test", "tests/e1-acceptance-contract.test.mjs"]],

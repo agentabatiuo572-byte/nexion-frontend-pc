@@ -4,6 +4,7 @@
 > 撰写/续写遵循 `nexion-admin-prd` skill 的「编写 → 审查 → 仲裁 → 修订 → 验收」多-agent 流水线。术语、边界与三条贯穿设计原则(双账本 / server-canonical / 埋点优先)见第 1 章。
 > §锚点(如 §9.11d、§13.4.1)均指向前端 PRD v3.7;**参数默认值以 `NEXION_12月节奏表.md` 12 月运营周期为权威,前端值仅作现状参考**(详见 §1.3「参数默认值锚定」)。
 > **E3/K2 后发裁定（2026-07-21）**：`specs/FEAT-DEV01-task-capacity-schedule.md` 与 `specs/FEAT-DEV02-tradein-ladder.md` 优先于本卷所有 `minHoldingMonths/salvage/degrade*` 旧口径。旧文字仅是历史方案，不再构成实现、验收或 K2 判定依据；K2 当前以 30 天内已完成置换次数叠加正数佣金/IN 向正数赠送事实识别置换套利簇。
+> **KYC 全量取消后发裁定（2026-08-07，优先于本卷全部旧文字）**：以 `specs-snapshot-20260807/FEAT-KYC-RM01-remove-kyc-and-pairing.md` 为准。KYC、C4、K5、钱包配对及一切身份认证门槛/复审/权限/接口/事件/报表已退出当前产品；本卷下文相关章节仅为历史设计记录，不得作为实现、测试、验收或恢复功能的依据。提现只读取用户按网络直接维护的当前提现地址。
 
 ## 目录(V1 核心批次)
 

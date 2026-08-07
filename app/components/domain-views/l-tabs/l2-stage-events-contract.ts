@@ -10,7 +10,6 @@ type L2StageEventContract = {
 
 export const L2_STAGE_EVENT_CONTRACT = [
   { primary: "auth.register_completed" },
-  { primary: "kyc.express_verified" },
   { primary: "checkout.completed" },
   {
     primary: "wallet.reinvest",

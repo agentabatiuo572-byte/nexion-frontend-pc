@@ -3,7 +3,7 @@
 /**
  * C1 检索 & 画像。
  * 用户列表、分组筛选与搜索均走 /api/admin/users/profiles;接口在种子用户缺失时由后端先写入真实表再分页返回。
- * 本页只读:行点击深链 /users/search/<userNo> 进 360 画像;处置去 C2/C3/C4/C5。
+ * 本页只读:行点击深链 /users/search/<userNo> 进 360 画像;处置去 C2/C3/C5。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -21,18 +21,17 @@ import { displayAdminError } from "@/lib/admin/error-messages";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 import type { CCtx } from "./types";
 
-type Seg = "all" | "frozen" | "highrisk" | "kyc";
+type Seg = "all" | "frozen" | "highrisk";
 type C1Stats = {
   totalUsers: number;
   highRisk: number | null;
   highRiskThreshold: number | null;
   riskAuthorityAvailable: boolean;
   frozen: number;
-  kycPending: number;
 };
 export type C1ExportQuery = Omit<UserProfileQuery, "pageNum" | "pageSize">;
 
-const SEGS: [Seg, string][] = [["all", "全部"], ["frozen", "冻结"], ["highrisk", "高风险"], ["kyc", "KYC 待确认"]];
+const SEGS: [Seg, string][] = [["all", "全部"], ["frozen", "冻结"], ["highrisk", "高风险"]];
 const EMPTY_PAGE: UserPage<User360Profile> = { total: 0, pageNum: 1, pageSize: 50, records: [] };
 
 type AdvancedFilters = {
@@ -72,15 +71,6 @@ const STATUS_META: Record<string, [label: string, tone: string]> = {
   BANNED: ["禁用", "bad"],
 };
 
-const KYC_META: Record<string, [label: string, tone: string]> = {
-  APPROVED: ["已验证", "ok"],
-  VERIFIED: ["已验证", "ok"],
-  PENDING: ["复审中", "warn"],
-  REVIEW: ["复审中", "warn"],
-  NONE: ["未验证", "dim"],
-  REJECTED: ["已拒绝", "bad"],
-};
-
 function text(value: unknown, fallback = "—") {
   return value === null || value === undefined || value === "" ? fallback : String(value);
 }
@@ -108,20 +98,14 @@ function statusMeta(value: unknown) {
   return STATUS_META[status] ?? [status || "未知", "dim"];
 }
 
-function kycMeta(value: unknown) {
-  const status = text(value, "").toUpperCase();
-  return KYC_META[status] ?? [status || "未知", "dim"];
-}
-
 function countText(value: unknown) {
   const count = asNumber(value);
   return count == null ? "—" : count.toLocaleString("en-US");
 }
 
-function queryForSeg(seg: Seg): Pick<UserProfileQuery, "status" | "kycStatus" | "riskMin" | "riskBand"> {
+function queryForSeg(seg: Seg): Pick<UserProfileQuery, "status" | "riskMin" | "riskBand"> {
   if (seg === "frozen") return { status: "FROZEN,BANNED,RESTRICTED" };
   if (seg === "highrisk") return { riskBand: "HIGH" };
-  if (seg === "kyc") return { kycStatus: "PENDING" };
   return {};
 }
 
@@ -339,7 +323,6 @@ export function C1Search({
     <>
       <div className="f-stats">
         <div className="f-stat"><div className="k">注册用户</div><div className="v">{countText(stats?.totalUsers ?? pageData.total)}</div><div className="sub">真实账户表分页查询</div></div>
-        <div className="f-stat ok"><div className="k">KYC 待确认</div><div className="v">{countText(stats?.kycPending)}</div><div className="sub">状态来自用户实名字段</div></div>
         {canReadRisk && <div className="f-stat warn"><div className="k">高风险档(K4)</div><div className="v">{stats?.riskAuthorityAvailable ? countText(stats.highRisk) : "不可用"}</div><div className="sub">{stats?.highRiskThreshold == null ? "K4 权威阈值不可用" : `K4 动态阈值 ≥ ${stats.highRiskThreshold}`}</div></div>}
         <div className="f-stat cyan"><div className="k">冻结/受限账户</div><div className="v">{countText(stats?.frozen)}</div><div className="sub">冻结、禁用、受限合计</div></div>
       </div>
@@ -382,11 +365,10 @@ export function C1Search({
         {error && <div className="ctint warn" style={{ margin: 12 }}>{error}</div>}
         <div style={{ overflowX: "auto" }}>
           <table className="l-tbl" style={{ minWidth: 1000 }}>
-            <thead><tr><th>用户编码</th><th>昵称</th><th>生命周期</th><th>V-Rank</th><th className="num">设备</th><th>KYC</th><th>风险分</th><th className="num">USDT余额</th><th>状态</th></tr></thead>
+            <thead><tr><th>用户编码</th><th>昵称</th><th>生命周期</th><th>V-Rank</th><th className="num">设备</th><th>风险分</th><th className="num">USDT余额</th><th>状态</th></tr></thead>
             <tbody>
               {rows.map((u) => {
                 const [statusLabel, statusTone] = statusMeta(u.status);
-                const [kycLabel, kycTone] = kycMeta(u.kycStatus);
                 return (
                   <tr
                     key={profileKey(u)}
@@ -400,7 +382,6 @@ export function C1Search({
                     <td><span className="bdg dim">{text(u.userLevel)}</span></td>
                     <td><span className="bdg dim">{text(u.vRank)}</span></td>
                     <td className="num mono">{text(u.deviceCount)} / {text(u.activeDeviceCount)}</td>
-                    <td><span className={`bdg ${kycTone}`}>{kycLabel}</span></td>
                     <td><span className={`bdg ${riskTone(u.riskBand)}`}>{canReadRisk ? text(u.riskScore, "不可用") : "无权限"}</span></td>
                     <td className="num mono" style={{ fontWeight: 600 }}>{formatUsd(u.walletUsdt)}</td>
                     <td><span className={`bdg ${statusTone}`}>{statusLabel}</span></td>
@@ -430,7 +411,7 @@ export function C1Search({
           pageSizeOptions={[20, 50, 100, 200]}
         />
         <div className="l-b" style={{ paddingTop: 12 }}>
-          <div className="ctint"><b>检索结果只读</b> · 本页只定位与展示;冻结/解冻去 C2,资产调整去 C3,实名裁决去 C4,安全处置去 C5,各自走操作确认。</div>
+          <div className="ctint"><b>检索结果只读</b> · 本页只定位与展示;冻结/解冻去 C2,资产调整去 C3,安全处置去 C5,各自走操作确认。</div>
         </div>
       </section>
       <p className="f-foot">手机号、地址等敏感字段在检索、展示、导出时只显示脱敏值;名单导出按当前筛选条件生成文件并保留操作记录。生命周期 L0-L5 / V-Rank V0-V12 是内部分诊口径,用户端永不可见。</p>

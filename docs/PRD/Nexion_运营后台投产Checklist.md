@@ -1,5 +1,7 @@
 # Nexion 运营控制后台 — 投产就绪 Checklist
 
+> **现行裁决(2026-08-07)**:KYC、钱包配对、C4 与 K5 已退出产品；任何历史检查项不得恢复为投产门禁。
+
 > 本清单是运营控制后台(Ops Console,12 域 / 68 个 8 段功能子模块 / V1–V4 四卷 PRD)从**规格定稿 → 工程实装 → 正式上线**的就绪总账。逐项核对、签核后方可投产。来源:PRD V1–V4 + Ch17 全局总收口 + 附录 A + nexion-audit 实战经验。
 >
 > **状态图例**:`✅ 已就绪` / `🔧 待开发`(规格已定,代码未实装)/ `🔴 Blocking`(投产前 must-finish,不做则降级或事故)/ `🟡 待确认`(需 PM / 法务 / 运营拍板)/ `—` 不适用。
@@ -118,7 +120,7 @@
 ## F. 合规
 
 - [ ] 风险披露 version × jurisdiction 双维 re-ack;ack 态 server-canonical,改版触发受影响法域用户 re-ack(I5)
-- [ ] disclosure ack 与 KYC 为两道独立 gate(C4 仅供 jurisdiction 输入)
+- [ ] disclosure ack 仅按服务端 IP 法域与披露版本判定，不依赖任何身份认证台账
 - [ ] geo-block 国家级屏蔽 + per-endpoint 派生(genesis/exchange/trade-in)+ 边缘 IP 判定(J2)
 - [ ] 信任中心财报数字 / NEX 叙事 / Stella 宣传语经 CMS + 确认弹窗(I4-MD1,执行=内容/风控 lead,合规审查前置)管理,无未授权虚假宣传(I2/I4)
 - [ ] 用户侧全程中性真平台语言,0 meta(无 phase id / MLM 词 / mock 暴露)
@@ -174,7 +176,7 @@
 - [ ] H 增长与节奏(H1 Phase 调度 10-dial / H2 Trial / H3–H6 增长活动)
 - [ ] I 内容与合规 CMS(I1–I7)
 - [ ] J 紧急与合规控制(J1–J4)
-- [ ] K 风控与反作弊(K1–K5)
+- [ ] K 风控与反作弊(K1–K4、K6；C4/K5 已退出产品)
 - [ ] L 数据与分析 BI(L1–L5)
 
 ---

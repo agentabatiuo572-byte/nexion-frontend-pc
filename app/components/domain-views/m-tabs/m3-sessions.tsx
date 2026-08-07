@@ -124,13 +124,12 @@ function toPushSku(sku: PushSkuSource): PushSku {
 }
 
 /* ============ 跨域直达路由映射(C/D/E 域处置页)============
- * 客服在 M3/M2 发起的账户/资金/设备/实名类动作,真实处置回 C/D/E 域;
+ * 客服在 M3/M2 发起的账户/资金/设备类动作,真实处置回 C/D/E 域;
  * 这里提供直达路由,避免只靠 toast + 手工导航。uid 为用户编码,留空跳域首页队列。
  */
 const ACCOUNT_ACTION_ROUTES: Array<{ label: string; domain: string; path: (uid: string) => string }> = [
   { label: "临时冻结账户", domain: "C2 账户操作", path: () => "/users/actions" },
   { label: "提现限额下调", domain: "D 域提现", path: (uid) => `/users/search/${encodeURIComponent(uid)}#hub-withdrawal` },
-  { label: "补资料指令", domain: "C4 实名台账", path: () => "/users/kyc" },
   { label: "解绑并重装设备", domain: "E 域设备", path: (uid) => `/users/search/${encodeURIComponent(uid)}#hub-devices` },
 ];
 function accountActionPath(label: string, uid: string): string | null {
@@ -158,7 +157,7 @@ function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
     : riskBand === "LOW" || riskBand === "低"
       ? "低"
       : "中";
-  const systemTags = [textOf(user.status).trim(), textOf(user.vRank || user.userLevel).trim(), textOf(user.kycStatus).trim()]
+  const systemTags = [textOf(user.status).trim(), textOf(user.vRank || user.userLevel).trim()]
     .filter(Boolean);
   const balances = [
     user.walletUsdt == null ? "" : `${textOf(user.walletUsdt)} USDT`,
@@ -171,7 +170,6 @@ function workbenchUserToCustomerProfile(user: User360Profile): CustomerProfile {
     nickname: textOf(user.nickname).trim() || uid,
     phone: textOf(user.phoneMasked, "—"),
     vlevel: textOf(user.vRank || user.userLevel, "—"),
-    kyc: textOf(user.kycStatus, "待核对"),
     systemTags,
     customTags: [],
     risk,
@@ -650,7 +648,7 @@ export function M3Sessions({ ctx }: { ctx: MCtx }) {
     const convo = selected;
     openActionConfirm({
       action: <>转工单 · {convo.id}</>,
-      detail: <>把会话 <b>{convo.agentName}</b>(<span className="mono">{convo.id}</span>)转为可追踪工单并进入 SLA 队列。适用于需要跨班次跟进的提现、KYC 或设备问题。</>,
+      detail: <>把会话 <b>{convo.agentName}</b>(<span className="mono">{convo.id}</span>)转为可追踪工单并进入 SLA 队列。适用于需要跨班次跟进的提现或设备问题。</>,
       amplifies: false,
       reasonMin: 8,
       reasonMax: 200,
@@ -1418,10 +1416,6 @@ function UserPanel({
           <span className="cvp-vchip">
             <Icon name="flame" size={12} />
             {p.vlevel}
-          </span>
-          <span className="cvp-kyc">
-            <Icon name="check" size={12} />
-            KYC {p.kyc}
           </span>
         </div>
 

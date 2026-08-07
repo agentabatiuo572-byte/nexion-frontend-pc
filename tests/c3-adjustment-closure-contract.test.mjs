@@ -17,7 +17,7 @@ test("C3 selects a stable user id and loads the complete impact context", () => 
   assert.match(c3, /fetchUserAssetAdjustmentContext/);
   assert.match(c3, /fetchUserAssetAdjustmentAccounts/);
   assert.match(c3, /data-proof="c3-target-card"/);
-  for (const field of ["walletUsdt", "walletNex", "pendingWithdraw", "kycStatus", "riskBand", "registeredAt"]) {
+  for (const field of ["walletUsdt", "walletNex", "pendingWithdraw", "riskBand", "registeredAt"]) {
     assert.match(c3, new RegExp(field));
   }
 });

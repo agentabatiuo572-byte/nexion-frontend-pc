@@ -7,10 +7,10 @@
  * Nexion 用户前端(Nexion-prototype)是独立工程 + 单人 persona + `X-Frame-Options: DENY`(不能被 iframe),
  * 所以这里在 admin 内造一个**同源、按该用户数据填充、天然只读**的手机镜像:
  *   顶部代入横幅(用户 / 倒计时 / 退出)+ 手机框内仿 NexGrid 消费端首页/设备/我的三屏 + 写操作一律禁用。
- * 数据来自被代入用户(c-view 的 USERS 行:余额 / NEX / 设备数 / V 级 / KYC / 冻结态…)。
+ * 数据来自被代入用户(c-view 的 USERS 行:余额 / NEX / 设备数 / V 级 / 冻结态…)。
  */
 import { useEffect, useMemo, useState } from "react";
-import { Wallet, Cpu, User as UserIcon, Users, Home, Eye, X, Lock, Snowflake, ShieldAlert, ChevronRight } from "lucide-react";
+import { Wallet, Cpu, User as UserIcon, Users, Home, Eye, X, Lock, Snowflake, ChevronRight } from "lucide-react";
 
 export interface ImpersonateUser {
   id: string;
@@ -18,7 +18,6 @@ export interface ImpersonateUser {
   lc: string;       // 生命周期 L0–L5
   vrank: string;    // V0–V12
   devices: number;  // 设备数
-  kyc: string;      // verified / pending / review
   risk: number;
   balance: number;  // USDT
   nex: number;      // NEX
@@ -93,9 +92,6 @@ export function ImpersonateMirror({ user, onExit }: { user: ImpersonateUser; onE
             {user.frozen && (
               <div style={S.alert("var(--v5-danger, #e5484d)")}><Snowflake size={14} /> 账户冻结中 · 提现与交易已暂停,请联系客服</div>
             )}
-            {!user.frozen && user.kyc !== "verified" && (
-              <div style={S.alert("var(--v5-warning, #f5a623)")}><ShieldAlert size={14} /> 实名待完成 · 完成后解锁提现与高额度</div>
-            )}
 
             {tab === "home" && <>
               <div style={S.hi}>
@@ -161,7 +157,6 @@ export function ImpersonateMirror({ user, onExit }: { user: ImpersonateUser; onE
               {[
                 ["邀请码", user.ref],
                 ["V 等级", user.vrank],
-                ["实名状态", user.kyc === "verified" ? "已认证" : user.kyc === "review" ? "审核中" : "待完成"],
                 ["账户状态", user.frozen ? "已冻结" : "正常"],
               ].map(([k, v]) => (
                 <div key={k} style={S.kvRow}><span style={{ color: "var(--v5-ink-3,#a8a8a8)", fontSize: 13 }}>{k}</span><span style={{ color: "var(--v5-ink,#f5f5f5)", fontSize: 13, fontWeight: 600 }}>{v}</span></div>

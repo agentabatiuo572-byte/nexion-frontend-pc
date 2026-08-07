@@ -12,7 +12,7 @@ const b3 = {
   filters: { cohort: "ALL", phase: "ALL", ref: "ALL" },
   filterOptions: { cohorts: [], phases: [], refs: [] },
   stages: [
-    "register", "kyc", "purchase", "repurchase", "withdraw",
+    "register", "purchase", "repurchase", "withdraw",
   ].map((key) => ({
     key,
     stage: key,

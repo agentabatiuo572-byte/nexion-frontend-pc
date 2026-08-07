@@ -76,13 +76,11 @@ test("E3/E6 CAS second writer is independent and cannot approve A2", () => {
   assert.doesNotMatch(source, /E_SECOND_WRITER_PERMISSIONS\s*=\s*\[[^\]]*platform_a2_operation_approve/);
 });
 
-test("C specialized actors are three independent least-privilege normal-MFA identities", () => {
+test("C specialized actors remain independent least-privilege normal-MFA identities", () => {
   assert.match(source, /C3_CHECKER_PERMISSIONS\s*=\s*\["user_c3_read",\s*"user_c3_adjust_approve",\s*"user_c3_adjust_reverse"\]/);
-  assert.match(source, /C5_K5_CHECKER_PERMISSIONS\s*=\s*\["risk_k5_read",\s*"risk_k5_write",\s*"risk_k5_ticket_pass",\s*"risk_k5_ticket_reject"\]/);
   assert.match(source, /C6_SECOND_WRITER_PERMISSIONS\s*=\s*\["user_c6_read",\s*"user_c6_write"\]/);
-  assert.match(source, /Final7 adds C3 checker, C5-K5 checker and C6 second writer through visible A1\/A6\/A2/);
-  assert.match(source, /expect\(actorIds\.size\)\.toBe\(7\)/);
-  assert.match(source, /accounts:\s*\{ \.\.\.existingAccounts, c3Checker, c5K5Checker, secondWriter: c6SecondWriter \}/);
+  assert.match(source, /expect\(actorIds\.size\)\.toBe\(6\)/);
+  assert.match(source, /accounts:\s*\{ \.\.\.existingAccounts, c3Checker, secondWriter: c6SecondWriter \}/);
 });
 
 test("G second writer is independent, royalty-scoped and maker MFA is stable twice", () => {

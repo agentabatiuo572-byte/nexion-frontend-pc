@@ -164,7 +164,7 @@ export function L2HeaderActions({ ctx }: { ctx: LCtx }) {
       await ctx.biActions?.createReport({
         exportType: complete ? "漏斗序列" : "漏斗生命周期事实",
         timeRange: complete ? "当前 cohort 窗口" : "当前快照",
-        fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/KYC/订单/钱包活动聚合计数",
+        fields: complete ? "漏斗去重人数/CVR/cohort 留存率" : "注册/资料/订单/钱包活动聚合计数",
         piiLevel: "NONE",
         maskPolicy: "NONE",
         recipient: "BI 管理员",

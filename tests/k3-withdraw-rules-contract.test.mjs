@@ -123,12 +123,6 @@ test("K3 dimension cards keep unique React identity when multiple rules share on
   assert.doesNotMatch(component, /key=\{dimension\.ruleKey\}/);
 });
 
-test("K3 isolated withdrawal fixture creates its own paired KYC profile", () => {
-  assert.match(liveAcceptance, /INSERT INTO nx_kyc_profile/);
-  assert.match(liveAcceptance, /ON DUPLICATE KEY UPDATE/);
-  assert.doesNotMatch(liveAcceptance, /\n\s*UPDATE nx_kyc_profile\n/);
-});
-
 test("K3 isolated withdrawal fixture seeds and exactly cleans D4 authoritative opening balance", () => {
   assert.match(liveAcceptance, /K3_D4_OPENING_BIZ_NO/);
   assert.match(liveAcceptance, /K3_D4_NEX_OPENING_BIZ_NO/);

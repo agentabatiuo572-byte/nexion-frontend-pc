@@ -380,7 +380,7 @@ function uniqueBusinessActions(routeRow) {
     const text = (button.text || button.aria || "").trim();
     if (button.tag !== "button" || !text || button.disabled) continue;
     if (/^已/.test(text)) continue;
-    if (route === "/users/search" && /^(全部|冻结|高风险|KYC 待确认|正常|未验证|复审中)$/.test(text)) continue;
+    if (route === "/users/search" && /^(全部|冻结|高风险|正常)$/.test(text)) continue;
     if (route === "/finance/ledger" && /^(全部|充值|提现|收益|佣金|兑换|退款|bonus|人工调整)$/.test(text)) continue;
     if (route === "/finance/recon" && /^(待确认|已确认|异常|对平)$/.test(text)) continue;
     if (route === "/risk/withdrawal-rules" && /^(全部|延迟|冻结|转人工)$/.test(text)) continue;

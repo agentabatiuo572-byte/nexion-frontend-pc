@@ -48,7 +48,6 @@ test("B3 未知结果按原载荷复用 key，载荷变化生成新 key", async 
   const keys: string[] = [];
   const injectedStages = [
     ["register", "注册", "auth.register_completed"],
-    ["kyc", "KYC", "kyc.approved"],
     ["purchase", "首购", "device.order_paid"],
     ["repurchase", "复购", "device.repurchase_paid"],
     ["withdraw", "提现", "withdraw.submitted"],

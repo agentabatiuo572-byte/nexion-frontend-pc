@@ -26,9 +26,6 @@ test("L5 aggregate export choices and downloads share the same domain-write perm
   assert.equal(canAccessBiReportType("finance", ["bi_l3_write"], "FINANCE_AGG"), true);
   assert.equal(canAccessBiReportType("finance", ["bi_l3_write"], "KPI_SERIES"), false);
   assert.equal(canAccessBiReportType("risk", ["bi_l5_read"], "FINANCE_AGG"), false);
-  assert.equal(canAccessBiReportType("risk", ["user_c4_export"], "KYC_REGULATORY"), true);
-  assert.equal(canAccessBiReportType("support", ["user_c4_read"], "KYC_REGULATORY"), false);
-  assert.equal(canAccessBiReportType("superadmin", [], "KYC_REGULATORY"), true);
   assert.equal(canAccessBiReportType("superadmin", [], "NETWORK_TREE"), true);
   assert.equal(canAccessBiReportType("risk", ["bi_l5_regulatory_generate"], "REGULATORY"), true);
   assert.equal(canAccessBiReportType("risk", ["bi_l5_read"], "REGULATORY"), false);
@@ -121,7 +118,6 @@ test("L5 exposes only implemented actions and L6 uses canonical filtered endpoin
   assert.match(l5Client, /FUNNEL_COHORT:\s*"漏斗聚合"/);
   assert.match(l5Client, /FINANCE_AGG:\s*"财务聚合"/);
   assert.match(l5Client, /OPERATIONS_AGG:\s*"运营聚合"/);
-  assert.match(l5Client, /KYC_REGULATORY:\s*"C4 KYC 监管脱敏台账"/);
   assert.match(l5Client, /REGULATORY:\s*"监管报告"/);
 
   assert.match(l6, /fetchL6Behavior/);

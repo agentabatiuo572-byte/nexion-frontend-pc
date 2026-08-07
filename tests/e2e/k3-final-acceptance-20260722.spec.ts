@@ -91,21 +91,15 @@ test.beforeAll(async () => {
     SELECT a.id,r.id,0 FROM nx_admin a JOIN nx_admin_role r ON r.role_code='AUDITOR' AND r.is_deleted=0 WHERE a.username='${AUDITOR_USERNAME}';
     INSERT INTO nx_admin_role_relation(admin_id,role_id,is_deleted)
     SELECT a.id,r.id,0 FROM nx_admin a JOIN nx_admin_role r ON r.role_code='FINANCE' AND r.is_deleted=0 WHERE a.username='${FINANCE_USERNAME}';
-    INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,kyc_status,status,created_at,updated_at,is_deleted)
-    VALUES(${APP_USER_ID},'86','${APP_PHONE}','${APP_PASSWORD_HASH}','K3最终验收用户','K3${FIXTURE_TAG}','APPROVED','ACTIVE',DATE_SUB(NOW(),INTERVAL 90 DAY),NOW(),0);
-    INSERT INTO nx_kyc_profile
-      (user_id,kyc_no,status,country,applicant_name,document_type,document_last4,submitted_at,
-       reviewed_by,reviewed_at,expires_at,paired_address,network,paired_at,trigger_source,version,is_deleted)
+    INSERT INTO nx_user(id,country_code,phone,password_hash,nickname,referral_code,status,created_at,updated_at,is_deleted)
+    VALUES(${APP_USER_ID},'86','${APP_PHONE}','${APP_PASSWORD_HASH}','K3最终验收用户','K3${FIXTURE_TAG}','ACTIVE',DATE_SUB(NOW(),INTERVAL 90 DAY),NOW(),0);
+    INSERT INTO nx_user_payout_address
+      (user_id,network,address,status,effective_at,next_change_allowed_at,version,is_deleted)
     VALUES
-      (${APP_USER_ID},'K3-FINAL-${APP_USER_ID}','APPROVED','JP','K3 Final Fixture','PASSPORT','0722',
-       DATE_SUB(NOW(),INTERVAL 91 DAY),'k3-acceptance',DATE_SUB(NOW(),INTERVAL 90 DAY),
-       DATE_ADD(NOW(),INTERVAL 1 YEAR),'${APP_ADDRESS}','TRC20',NOW(),'K3_ACCEPTANCE',0,0)
+      (${APP_USER_ID},'TRC20','${APP_ADDRESS}','ACTIVE',NOW(),NOW(),0,0)
     ON DUPLICATE KEY UPDATE
-      status=VALUES(status),country=VALUES(country),applicant_name=VALUES(applicant_name),
-      document_type=VALUES(document_type),document_last4=VALUES(document_last4),
-      submitted_at=VALUES(submitted_at),reviewed_by=VALUES(reviewed_by),reviewed_at=VALUES(reviewed_at),
-      expires_at=VALUES(expires_at),paired_address=VALUES(paired_address),network=VALUES(network),
-      paired_at=VALUES(paired_at),trigger_source=VALUES(trigger_source),version=version+1,is_deleted=0;
+      address=VALUES(address),status=VALUES(status),effective_at=VALUES(effective_at),
+      next_change_allowed_at=VALUES(next_change_allowed_at),version=version+1,is_deleted=0;
     INSERT INTO nx_user_wallet(user_id,usdt_available,nex_available,pending_withdraw,lifetime_earned,version,is_deleted)
     VALUES(${APP_USER_ID},10000,100,0,0,0,0);
     INSERT INTO nx_wallet_ledger
@@ -380,7 +374,7 @@ test("K3 对 HTTP 200 畸形读写响应失败关闭，并以同一命令键恢�
   expect(errors).toEqual([]);
 });
 
-test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审并发叠加", async ({ page }) => {
+test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5", async ({ page }) => {
   const errors = collectRuntimeErrors(page);
   await loginAndOpenK3(page, RISK_FLOW_USERNAME);
   const token = await appLogin(page);
@@ -394,11 +388,10 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审�
     riskRoute: "manual",
     riskRuleId: fixtureRuleId,
   });
-  expect(small.data.k5TicketId).toBeNull();
   const replay = await envelope<Record<string, unknown>>(await appSubmit(page, token, 100, smallKey));
   expect(replay.data.withdrawalNo).toBe(smallWithdrawalNo);
 
-  const largeResponse = await appSubmit(page, token, 1000, runKey("k3-final-large-k5"));
+  const largeResponse = await appSubmit(page, token, 1000, runKey("k3-final-large"));
   const large = await envelope<Record<string, unknown>>(largeResponse);
   largeWithdrawalNo = String(large.data.withdrawalNo);
   expect(large.data).toMatchObject({
@@ -407,7 +400,6 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审�
     k3RiskRoute: "manual",
     riskRuleId: fixtureRuleId,
   });
-  expect(String(large.data.k5TicketId)).toMatch(/^KR-D2-/);
 
   const d2 = await envelope<Record<string, unknown>>(await page.request.get(`/api/admin/finance/withdrawals/${smallWithdrawalNo}`));
   expect(String(d2.data.withdrawalNo)).toBe(smallWithdrawalNo);
@@ -425,10 +417,9 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审�
       (SELECT COUNT(*) FROM nx_admin_risk_withdraw_hit WHERE user_no='${APP_USER_NO}' AND is_deleted=0),
       (SELECT COUNT(*) FROM nx_risk_decision WHERE user_id=${APP_USER_ID} AND biz_type='WITHDRAW_RULE' AND is_deleted=0),
       (SELECT COUNT(*) FROM nx_event_outbox WHERE aggregate_id IN ('${smallWithdrawalNo}','${largeWithdrawalNo}') AND event_name='risk.withdraw_held' AND is_deleted=0),
-      (SELECT COUNT(*) FROM nx_event_outbox WHERE aggregate_id IN ('${smallWithdrawalNo}','${largeWithdrawalNo}') AND event_name='withdraw.submitted' AND is_deleted=0),
-      (SELECT COUNT(*) FROM nx_admin_risk_kyc_review_source WHERE source_domain='D2' AND source_no='${largeWithdrawalNo}' AND is_deleted=0);
+      (SELECT COUNT(*) FROM nx_event_outbox WHERE aggregate_id IN ('${smallWithdrawalNo}','${largeWithdrawalNo}') AND event_name='withdraw.submitted' AND is_deleted=0);
   `).trim().split("\t").map(Number);
-  expect(counts).toEqual([2, 2, 2, 2, 2, 1]);
+  expect(counts).toEqual([2, 2, 2, 2, 2]);
 
   const heldEventContract = mysql(`
     SELECT JSON_UNQUOTE(JSON_EXTRACT(payload,'$.rule_id')),
@@ -448,7 +439,6 @@ test("真实 D2 提现消费 K3 路由，并同步 A4、B1/B5；K5 大额复审�
     SELECT JSON_UNQUOTE(JSON_EXTRACT(payload,'$.risk_route')),
            JSON_UNQUOTE(JSON_EXTRACT(payload,'$.risk_rule_id')),
            JSON_UNQUOTE(JSON_EXTRACT(payload,'$.withdrawal_id')),
-           COALESCE(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.k5_ticket_id')),''),
            JSON_UNQUOTE(JSON_EXTRACT(payload,'$.k4_risk_score')),
            JSON_UNQUOTE(JSON_EXTRACT(payload,'$.k4_model_version')),
            JSON_UNQUOTE(JSON_EXTRACT(payload,'$.k4_as_of'))
@@ -706,11 +696,6 @@ function cleanupFixtures() {
   mysql(`
     DELETE FROM nx_event_consumer_delivery WHERE aggregate_id IN
       (SELECT withdrawal_no FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID});
-    DELETE FROM nx_admin_risk_kyc_review_source WHERE source_domain='D2' AND source_no IN
-      (SELECT withdrawal_no FROM nx_withdrawal_order WHERE user_id=${APP_USER_ID});
-    DELETE FROM nx_admin_risk_kyc_alert WHERE event_key IN
-      (SELECT CONCAT('threshold-hit:',ticket_id) FROM nx_admin_risk_kyc_review_ticket WHERE user_no='${APP_USER_NO}');
-    DELETE FROM nx_admin_risk_kyc_review_ticket WHERE user_no='${APP_USER_NO}';
     DELETE FROM nx_admin_risk_withdraw_hit WHERE user_no='${APP_USER_NO}';
     DELETE FROM nx_risk_decision WHERE user_id=${APP_USER_ID} AND biz_type='WITHDRAW_RULE';
     DELETE FROM nx_wallet_ledger WHERE user_id=${APP_USER_ID} AND biz_no LIKE 'WD-%';
@@ -733,7 +718,7 @@ function cleanupFixtures() {
      WHERE id>${idempotencyBaseline}
        AND (scope LIKE 'K3_%' OR idempotency_key LIKE 'k3-final-%');
     DELETE FROM nx_user_session WHERE user_id=${APP_USER_ID};
-    DELETE FROM nx_kyc_profile WHERE user_id=${APP_USER_ID};
+    DELETE FROM nx_user_payout_address WHERE user_id=${APP_USER_ID};
     DELETE FROM nx_user_wallet WHERE user_id=${APP_USER_ID};
     DELETE FROM nx_user WHERE id=${APP_USER_ID} OR (country_code='86' AND phone='${APP_PHONE}');
     DELETE FROM nx_event_consumer_delivery WHERE aggregate_id='${APP_USER_NO}';

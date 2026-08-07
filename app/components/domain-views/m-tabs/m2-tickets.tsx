@@ -49,7 +49,7 @@ const STATUS_ACTION_CN: Record<SupportTicketStatus, string> = {
   resolved: "标记已解决",
   closed: "关闭工单",
 };
-const CATEGORY_LIST: SupportTicketCategory[] = ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"];
+const CATEGORY_LIST: SupportTicketCategory[] = ["account", "withdrawal", "deposit", "hardware", "earnings", "genesis", "technical", "other"];
 const PRIORITY_LIST: SupportTicketPriority[] = ["urgent", "high", "normal", "low"];
 
 /* 工单分类 → 跨域处置直达链接(C/D/E 域)。按工单分类匹配一条直达路由,
@@ -58,7 +58,6 @@ const PRIORITY_LIST: SupportTicketPriority[] = ["urgent", "high", "normal", "low
 const CATEGORY_CROSS_LINKS: Array<{ category: SupportTicketCategory; href: (userId: number) => string; label: string; icon: "wallet" | "users" | "shield" | "box" | "coin" }> = [
   { category: "withdrawal", href: (uid) => `/users/search/${uid}#hub-withdrawal`, label: "去提现记录", icon: "wallet" },
   { category: "deposit", href: (uid) => `/users/search/${uid}#hub-deposit`, label: "去充值记录", icon: "wallet" },
-  { category: "kyc", href: () => `/users/kyc`, label: "去实名台账", icon: "shield" },
   { category: "account", href: () => `/users/actions`, label: "去账户处置", icon: "users" },
   { category: "hardware", href: (uid) => `/users/search/${uid}#hub-devices`, label: "去设备明细", icon: "box" },
   { category: "earnings", href: (uid) => `/users/search/${uid}#hub-deposit`, label: "去收益明细", icon: "coin" },

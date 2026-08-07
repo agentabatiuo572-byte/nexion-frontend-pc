@@ -38,15 +38,12 @@ function validL1Dashboard() {
 const lifecycleStages = [
   { key: "registered", count: 10, source: "nx_event_outbox:auth.register_completed" },
   { key: "profileCompleted", count: 9, source: "nx_event_outbox:onboarding.profile_completed" },
-  { key: "kycSubmitted", count: 8, source: "nx_event_outbox:kyc.express_started" },
-  { key: "kycApproved", count: 7, source: "nx_event_outbox:kyc.express_verified" },
   { key: "ordered", count: 6, source: "nx_event_outbox:checkout.started" },
   { key: "walletActivity", count: 5, source: "nx_event_outbox:wallet.topup_confirmed" },
 ];
 
 const legalStageEvents = [
   "auth.register_completed",
-  "kyc.express_verified",
   "checkout.completed",
   "wallet.reinvest / 二次 checkout.completed",
   "withdraw.submitted",

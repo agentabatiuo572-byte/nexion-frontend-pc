@@ -54,15 +54,12 @@ test("L2 preserves independent lifecycle facts, including real zero counts", () 
     stages: [
       { key: "registered", count: 1, source: "nx_user" },
       { key: "profileCompleted", count: 1, source: "nx_user_profile" },
-      { key: "kycSubmitted", count: 0, source: "nx_kyc_profile" },
-      { key: "kycApproved", count: 0, source: "nx_kyc_profile" },
       { key: "ordered", count: 2, source: "nx_order/nx_admin_device_order" },
       { key: "walletActivity", count: 1, source: "nx_wallet_ledger/nx_wallet_bill" },
     ],
   });
 
-  assert.equal(result.length, 6);
-  assert.equal(result.find((row) => row.key === "kycSubmitted")?.count, 0);
+  assert.equal(result.length, 4);
   assert.equal(result.find((row) => row.key === "ordered")?.count, 2);
   assert.ok(result.every((row) => row.label.length > 0 && row.source.length > 0));
   assert.ok(result.every((row) => row.sourceLabel.length > 0 && !row.sourceLabel.includes("nx_")));

@@ -12,7 +12,6 @@ import {
   cancelG2ExchangeQueueOrder,
   fetchG2ExchangeOverview,
   processG2ExchangeQueue,
-  triggerG2ExchangeKycReview,
   updateG2ExchangeParam,
   updateG2ExchangeSwapStatus,
   type G2Cap,
@@ -23,7 +22,7 @@ import type { GCtx } from "./types";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const OPERATOR = currentAdminOperator;
-type GateKey = "kyc" | "user" | "platform" | "geo";
+type GateKey = "user" | "platform" | "geo";
 
 function messageOf(error: unknown) {
   return displayAdminError(error);
@@ -151,10 +150,9 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
   const busy = !!busyKey;
   const cov = coverage.coverageRatio.toFixed(1);
   const redline = coverage.redlinePct.toFixed(1);
-  const totalGate = stats.gateKyc + stats.gateUser + stats.gatePlatform + stats.gateGeo;
+  const totalGate = stats.gateUser + stats.gatePlatform + stats.gateGeo;
   const selectedQueue = queueDrawer ? queue.find((row) => row.exchangeNo === queueDrawer) : null;
   const gateTiles: { key: GateKey; label: string; count: number; tone?: "warn" | "danger" }[] = [
-    { key: "kyc", label: "需实名(kyc-required)", count: stats.gateKyc, tone: "warn" },
     { key: "user", label: "单用户超限(user-cap)", count: stats.gateUser },
     { key: "platform", label: "平台超限(platform-cap)", count: stats.gatePlatform, tone: "danger" },
     { key: "geo", label: "地域封锁(geo-blocked)", count: stats.gateGeo, tone: "danger" },
@@ -182,7 +180,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       amplifies: cap.loosen,
       edit: isQueueMode
         ? { kind: "select", current: cap.displayValue, options: ["排队", "拒绝"] }
-        : { kind: "number", current: capEditValue(cap), min: cap.key === "kycThreshold" ? 1 : 0,
+        : { kind: "number", current: capEditValue(cap), min: 0,
             max: cap.key === "userDailyCap" ? 10000 : cap.key === "platformDailyCap" ? 10000000 : cap.key === "fee" ? 10 : cap.key === "feeMin" ? 5 : 1000000,
             step: cap.key === "fee" ? 0.01 : 0.1 },
       run: async (reason, value) => {
@@ -223,31 +221,20 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
     });
   };
 
-  const triggerKycReview = (order: G2ExchangeOrder) => {
-    setQueueDrawer(null);
-    openActionConfirm({
-      action: `提交 KYC 复审 · ${order.exchangeNo}`,
-      detail: <>将该兑换单送入 K5 大额/KYC 复审,服务端会更新兑换状态并写入复审票据。适用于实名状态、累计兑换或人工风控需要复核的排队单;确认后立即执行。</>,
-      run: async (reason) => {
-        await mutate(`kyc:${order.exchangeNo}`, () => triggerG2ExchangeKycReview(order.exchangeNo, reason, OPERATOR()), "KYC 复审已立即提交");
-      },
-    });
-  };
-
   return (
     <>
       {error && <div className="gtint" style={{ marginBottom: 12 }}>G2 操作提示 · {error}</div>}
       <div className="f-stats">
         <div className="f-stat"><div className="k">今日兑换成交</div><div className="v">{fmtUsdK(stats.todayUsd)}</div><div className="sub">占平台日池 {stats.poolPct}%</div></div>
         <div className="f-stat warn"><div className="k">次日队列深度</div><div className="v">{fmtCount(stats.queueDepth)} 单</div><div className="sub">超 cap 排队 · 可取消</div></div>
-        <div className="f-stat"><div className="k">今日拦截</div><div className="v">{fmtCount(totalGate)} 次</div><div className="sub">实名 {stats.gateKyc} · 单用户 {stats.gateUser} · 平台 {stats.gatePlatform} · 地域 {stats.gateGeo}</div></div>
+        <div className="f-stat"><div className="k">今日拦截</div><div className="v">{fmtCount(totalGate)} 次</div><div className="sub">单用户 {stats.gateUser} · 平台 {stats.gatePlatform} · 地域 {stats.gateGeo}</div></div>
         <div className="f-stat danger"><div className="k">swap 全局熔断</div><div className="v">{swap.enabled ? "未启用" : "已熔断"}</div><div className="sub">监管点名时一键停 · 联动 {swap.linkedDomain}</div></div>
       </div>
 
       <div className="two-col r11" style={{ marginBottom: 16 }}>
         <section className="l-card">
           <div className="l-h">
-            <span className="ttl">三道额度线 + 费率</span>
+            <span className="ttl">两道额度线 + 费率</span>
             <span className="sub">· 放宽要操作确认 + 过红线</span>
           </div>
           <div className="l-b" style={{ paddingTop: 4 }}>
@@ -265,7 +252,6 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
               </div>
             ))}
             <div className="gtint" style={{ marginTop: 10 }}><b>手续费去向</b> · 当前推广期取后端配置;开费后兑换抽成里 30% 进 NEX 回购销毁池(G3),70% 进 fee_buffer 备付金(D1)。降费 = 放大流出,改动操作确认并留痕。</div>
-            <div className="gtint" style={{ marginTop: 10 }}><b>实名触发线的归属</b> · 命中后联动实名台账(C4)升级复审;拦截单进「需实名」清单,过实名后自动放行。</div>
           </div>
         </section>
 
@@ -287,7 +273,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
               <span>次日队列(超 cap 排队)</span>
               {allowed("finprod_g2_write") && <button className="l-btn sm mc" disabled={busy || queue.length === 0} onClick={() => openActionConfirm({
                 action: "处理今日兑换队列批次",
-                detail: <>按服务器实时 G3 价格、G2 caps、C4 KYC、J2 地域和钱包余额逐单重新校验;同一事务写订单、钱包、D4 账本及 exchange.swapped 事件。</>,
+                detail: <>按服务器实时 G3 价格、G2 caps、J2 地域和钱包余额逐单重新校验;同一事务写订单、钱包、D4 账本及 exchange.swapped 事件。</>,
                 edit: { kind: "number", current: String(Math.min(queue.length, 50)), min: 1, max: 100, step: 1 },
                 run: async (reason, value) => mutate("queue:batch", () => processG2ExchangeQueue(Number(value || 50), reason, OPERATOR()), "今日队列批次处理完成"),
               })}>处理今日批次</button>}
@@ -322,7 +308,7 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
         </div>
       </section>
 
-      <p className="f-foot"><b>拦截判定 100% 在服务器</b>:三类拦截、实名校验都服务端执行,客户端改本地状态无效。<b>放宽额度受备付金红线强约束</b>:升单用户/平台日额度提交即验覆盖率,低于红线拒绝(422);收紧不受限。成交 exchange.swapped → 账本(D4)+ 资金池(D3,NEX→USDT 减 USDT 储备)。数据源: {overview.sources.join(" / ")}。</p>
+      <p className="f-foot"><b>拦截判定 100% 在服务器</b>:额度、地域与风险拦截都由服务端执行,客户端改本地状态无效。<b>放宽额度受备付金红线强约束</b>:升单用户/平台日额度提交即验覆盖率,低于红线拒绝(422);收紧不受限。成交 exchange.swapped → 账本(D4)+ 资金池(D3,NEX→USDT 减 USDT 储备)。数据源: {overview.sources.join(" / ")}。</p>
 
       {gateDrawer && (() => {
         const detail = gateDetails[gateDrawer];
@@ -351,7 +337,6 @@ export function G2Exchange({ ctx }: { ctx: GCtx }) {
       {selectedQueue && (
         <Drawer title={`次日队列单 · ${selectedQueue.exchangeNo}`} sub={`${selectedQueue.userNo} · ${selectedQueue.exchangeAmountDisplay} · ${selectedQueue.etaLabel} 自动出队成交`} onClose={() => setQueueDrawer(null)}
           footer={<>
-            {allowed("finprod_g2_write") && <button className="l-btn" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => triggerKycReview(selectedQueue)}>提交 KYC 复审</button>}
             {allowed("finprod_g2_queue_cancel") && <button className="l-btn mc" style={{ flex: 1, justifyContent: "center" }} disabled={busy} onClick={() => cancelQueue(selectedQueue)}>强制取消此单 →</button>}
           </>}>
           <div className="kv2"><span className="k">用户编码</span><span className="v mono">{selectedQueue.userNo}</span></div>

@@ -14,8 +14,7 @@ const client = readFileSync("lib/admin/l-client.ts", "utf8");
 const bff = readFileSync("app/api/admin/bi/[...path]/route.ts", "utf8");
 
 test("L2 canonical stages are joined by the same actor and ordered timestamps", () => {
-  assert.match(analytics, /nextStage\(byActor, registered, "kyc\.express_verified"\)/);
-  assert.match(analytics, /nextStage\(byActor, verified, "checkout\.completed"\)/);
+  assert.match(analytics, /nextStage\(byActor, registered, "checkout\.completed"\)/);
   assert.match(analytics, /event\.at\(\)\.isAfter\(first\.at\(\)\)/);
   assert.match(analytics, /nextStage\(byActor, repurchased, "withdraw\.submitted"\)/);
   assert.match(analytics, /denominator == 0 \? null/);

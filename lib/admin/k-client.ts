@@ -2,20 +2,6 @@ import { outcomeStaysUnknown } from "@/lib/admin/outcome-classification";
 import { formatAdminApiError, guardedFetch } from "@/lib/admin/error-messages";
 import { currentAdminOperator } from "@/lib/admin/current-operator";
 import { isK1LocalIsoDateTime } from "@/lib/admin/k1-date-contract";
-import {
-  K5_ALERT_CHANNELS,
-  K5_ALERT_TONES,
-  K5_ALERT_TYPES,
-  K5_KYC_STATUSES,
-  K5_PARAM_KEYS,
-  K5_TICKET_TYPES,
-  type K5KycStatus,
-  type K5TicketType,
-  hasAllowedK5AlertEventKey,
-  hasExactAllowedValues,
-  validateK5ParamValue,
-  validateK5Stats,
-} from "@/lib/admin/k5-contract";
 
 type ApiResult<T> = {
   code?: number;
@@ -57,17 +43,10 @@ export type K4PaginationQuery = {
   overridePageSize?: number;
 };
 
-export type K5PaginationQuery = {
-  ticketPageNum?: number;
-  ticketPageSize?: number;
-  ticketFilter?: string;
-};
-
 export type KRiskOverviewQuery = {
   multiAccount?: K1PaginationQuery;
   withdrawRules?: K3PaginationQuery;
   scoring?: K4PaginationQuery;
-  kycReview?: K5PaginationQuery;
 };
 
 export function newK1CommandKey() {
@@ -336,7 +315,6 @@ export type WithdrawRuleOverview = {
 export const K4_DIMENSION_KEYS = [
   "multiAccount",
   "arbitrage",
-  "kycStatus",
   "withdrawVelocity",
   "accountAge",
   "anomalyBehavior",
@@ -345,7 +323,6 @@ export type K4DimensionKey = (typeof K4_DIMENSION_KEYS)[number];
 export const K4_SCORE_MAPPING_KEYS = [
   "multiAccount.mediumMin", "multiAccount.highMin", "multiAccount.mediumScore", "multiAccount.highScore", "multiAccount.fraudScore",
   "arbitrage.singleScore", "arbitrage.repeatMin", "arbitrage.repeatScore", "arbitrage.severeScore",
-  "kyc.reviewScore", "kyc.pendingScore", "kyc.rejectedScore", "kyc.sanctionedScore",
   "withdraw.baselineMultiplierPct", "withdraw.baselineScore", "withdraw.highFrequency24h", "withdraw.largeAmountUsd", "withdraw.highScore",
   "account.matureDays", "account.newDays", "account.middleScore", "account.newLargeScore",
   "anomaly.lowScore", "anomaly.tamperScore",
@@ -357,7 +334,6 @@ export const K4_SCORE_MAPPING_BOUNDS: Record<K4ScoreMappingKey, readonly [number
   "multiAccount.mediumScore": [0, 100], "multiAccount.highScore": [0, 100], "multiAccount.fraudScore": [0, 100],
   "arbitrage.singleScore": [0, 100], "arbitrage.repeatMin": [2, 100],
   "arbitrage.repeatScore": [0, 100], "arbitrage.severeScore": [0, 100],
-  "kyc.reviewScore": [0, 100], "kyc.pendingScore": [0, 100], "kyc.rejectedScore": [0, 100], "kyc.sanctionedScore": [0, 100],
   "withdraw.baselineMultiplierPct": [100, 1000], "withdraw.baselineScore": [0, 100],
   "withdraw.highFrequency24h": [1, 100], "withdraw.largeAmountUsd": [1, 1_000_000], "withdraw.highScore": [0, 100],
   "account.matureDays": [1, 10_000], "account.newDays": [1, 10_000],
@@ -471,59 +447,11 @@ export type K4WithdrawalAlertOverview = {
   source: string;
 };
 
-export type K5Ticket = {
-  id: string;
-  type: K5TicketType;
-  user: string;
-  amt: string;
-  cum: string;
-  kyc: K5KycStatus;
-  st: TicketSt;
-  version: number;
-  slaPct: number;
-  slaTxt: string;
-  info: [string, string][];
-  hist: [string, string, "" | "warn" | "bad"][];
-};
-export type K5Alert = { eventKey: string; tone: "warn" | "bad"; title: string; body: string; timeText: string };
-export type K5AlertSubscription = {
-  alertTypes: string[];
-  channels: string[];
-  version: number;
-};
-export type K5UserOption = {
-  userNo: string;
-  label: string;
-  sub: string;
-  kycStatus: K5KycStatus;
-};
-export type K5ManualResult = {
-  ticketId: string;
-  userNo: string;
-  merged: boolean;
-};
-export type K5Stats = {
-  openTickets: number;
-  reviewOverdue: number;
-  reviewDecidedMonth: number;
-  reviewDecidedPass: number;
-  reviewFrozenUsd: number;
-};
-export type KycReviewOverview = {
-  stats: K5Stats;
-  params: KRiskParam[];
-  tickets: AdminPage<K5Ticket>;
-  alerts: K5Alert[];
-  subscription: K5AlertSubscription;
-  sources: string[];
-};
-
 export type KRiskData = {
   multiAccount?: MultiAccountOverview;
   arbitrage?: ArbitrageOverview;
   withdrawRules?: WithdrawRuleOverview;
   scoring?: ScoringOverview;
-  kycReview?: KycReviewOverview;
 };
 
 export type KRiskActions = {
@@ -549,11 +477,6 @@ export type KRiskActions = {
   overrideK4Score: (userNo: string, score: number, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   recomputeK4Score: (userNo: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
   recomputeK4Scores: (userNos: string[], expectedModelVersion: number, reason: string, commandKey?: string) => Promise<void>;
-  updateK5Param: (key: string, value: string, expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
-  decideK5Ticket: (ticketId: string, decision: "passed" | "rejected", expectedVersion: number, reasonCode: string | undefined, reason: string, commandKey?: string) => Promise<void>;
-  createK5ManualTicket: (userNo: string, reason: string, commandKey?: string) => Promise<K5ManualResult>;
-  updateK5AlertSubscription: (alertTypes: string[], channels: string[], expectedVersion: number, reason: string, commandKey?: string) => Promise<void>;
-  searchK5Users: (keyword: string) => Promise<K5UserOption[]>;
 };
 
 function normalizeParam(row: Record<string, unknown>): KRiskParam {
@@ -1299,7 +1222,6 @@ function normalizeK4ScoreMappings(value: unknown, path: string): K4ScoreMappings
       || !(result["account.newDays"] < result["account.matureDays"])
       || !ordered("multiAccount.mediumScore", "multiAccount.highScore", "multiAccount.fraudScore")
       || !ordered("arbitrage.singleScore", "arbitrage.repeatScore", "arbitrage.severeScore")
-      || !ordered("kyc.reviewScore", "kyc.pendingScore", "kyc.rejectedScore", "kyc.sanctionedScore")
       || !ordered("withdraw.baselineScore", "withdraw.highScore")
       || !ordered("account.middleScore", "account.newLargeScore")
       || !ordered("anomaly.lowScore", "anomaly.tamperScore")) {
@@ -1496,209 +1418,6 @@ function normalizeK4UserOption(raw: Record<string, unknown>): K4UserOption {
   };
 }
 
-const K5_RESPONSE_INVALID = "K5_RESPONSE_INVALID";
-
-function invalidK5Response(path: string): never {
-  console.error("K5 response validation failed", path);
-  throw new Error(formatAdminApiError(K5_RESPONSE_INVALID, K5_RESPONSE_INVALID));
-}
-
-function requiredK5Record(value: unknown, path: string): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) invalidK5Response(path);
-  return value as Record<string, unknown>;
-}
-
-function requiredK5Array(value: unknown, path: string): unknown[] {
-  if (!Array.isArray(value)) invalidK5Response(path);
-  return value;
-}
-
-function requiredK5String(value: unknown, path: string, allowEmpty = false): string {
-  if (typeof value !== "string" || (!allowEmpty && !value.trim())) invalidK5Response(path);
-  return value.trim();
-}
-
-function requiredK5Number(value: unknown, path: string, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) invalidK5Response(path);
-  return value;
-}
-
-function requiredK5Integer(value: unknown, path: string, min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER): number {
-  const result = requiredK5Number(value, path, min, max);
-  if (!Number.isInteger(result)) invalidK5Response(path);
-  return result;
-}
-
-function requiredK5Boolean(value: unknown, path: string): boolean {
-  if (typeof value !== "boolean") invalidK5Response(path);
-  return value;
-}
-
-function requiredK5JsonRows(value: unknown, path: string): unknown[] {
-  if (Array.isArray(value)) return value;
-  if (typeof value !== "string") invalidK5Response(path);
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) invalidK5Response(path);
-    return parsed;
-  } catch {
-    return invalidK5Response(path);
-  }
-}
-
-function requiredK5StringArray(value: unknown, path: string): string[] {
-  return requiredK5Array(value, path).map((item, index) => requiredK5String(item, `${path}[${index}]`));
-}
-
-function normalizeK5Ticket(value: unknown, path: string): K5Ticket {
-  const row = requiredK5Record(value, path);
-  const ticketType = requiredK5String(row.type, `${path}.type`) as K5TicketType;
-  if (!K5_TICKET_TYPES.includes(ticketType)) invalidK5Response(`${path}.type`);
-  const status = requiredK5String(row.st, `${path}.st`) as TicketSt;
-  if (!["triggered", "in-review", "overdue", "passed", "rejected"].includes(status)) invalidK5Response(`${path}.st`);
-  const kyc = requiredK5String(row.kyc, `${path}.kyc`) as K5KycStatus;
-  if (!K5_KYC_STATUSES.includes(kyc)) invalidK5Response(`${path}.kyc`);
-  const info = requiredK5JsonRows(row.infoJson, `${path}.infoJson`).map((item, index) => {
-    const tuple = requiredK5Array(item, `${path}.infoJson[${index}]`);
-    if (tuple.length < 2) invalidK5Response(`${path}.infoJson[${index}]`);
-    return [requiredK5String(tuple[0], `${path}.infoJson[${index}][0]`), requiredK5String(tuple[1], `${path}.infoJson[${index}][1]`)] as [string, string];
-  });
-  const hist = requiredK5JsonRows(row.histJson, `${path}.histJson`).map((item, index) => {
-    const tuple = requiredK5Array(item, `${path}.histJson[${index}]`);
-    if (tuple.length < 3) invalidK5Response(`${path}.histJson[${index}]`);
-    const tone = requiredK5String(tuple[2], `${path}.histJson[${index}][2]`, true);
-    if (!["", "warn", "bad"].includes(tone)) invalidK5Response(`${path}.histJson[${index}][2]`);
-    return [
-      requiredK5String(tuple[0], `${path}.histJson[${index}][0]`),
-      requiredK5String(tuple[1], `${path}.histJson[${index}][1]`),
-      tone as "" | "warn" | "bad",
-    ] as [string, string, "" | "warn" | "bad"];
-  });
-  return {
-    id: requiredK5String(row.id, `${path}.id`),
-    type: ticketType,
-    user: requiredK5String(row.user, `${path}.user`),
-    amt: requiredK5String(row.amt, `${path}.amt`),
-    cum: requiredK5String(row.cum, `${path}.cum`),
-    kyc,
-    st: status,
-    version: requiredK5Integer(row.version, `${path}.version`, 0),
-    slaPct: requiredK5Number(row.slaPct, `${path}.slaPct`, 0, 1),
-    slaTxt: requiredK5String(row.slaTxt, `${path}.slaTxt`),
-    info,
-    hist,
-  };
-}
-
-function normalizeK5(raw: unknown): KycReviewOverview {
-  const data = requiredK5Record(raw, "kycReview");
-  const statsRow = requiredK5Record(data.stats, "kycReview.stats");
-  const stats: KycReviewOverview["stats"] = {
-    openTickets: requiredK5Number(statsRow.openTickets, "kycReview.stats.openTickets", 0),
-    reviewOverdue: requiredK5Number(statsRow.reviewOverdue, "kycReview.stats.reviewOverdue", 0),
-    reviewDecidedMonth: requiredK5Number(statsRow.reviewDecidedMonth, "kycReview.stats.reviewDecidedMonth", 0),
-    reviewDecidedPass: requiredK5Number(statsRow.reviewDecidedPass, "kycReview.stats.reviewDecidedPass", 0),
-    reviewFrozenUsd: requiredK5Number(statsRow.reviewFrozenUsd, "kycReview.stats.reviewFrozenUsd", 0),
-  };
-  if (!validateK5Stats(stats)) {
-    invalidK5Response("kycReview.stats");
-  }
-
-  const params = requiredK5Array(data.params, "kycReview.params").map((item, index) => {
-    const row = requiredK5Record(item, `kycReview.params[${index}]`);
-    const key = requiredK5String(row.key, `kycReview.params[${index}].key`);
-    if (!K5_PARAM_KEYS.includes(key as (typeof K5_PARAM_KEYS)[number])) invalidK5Response(`kycReview.params[${index}].key`);
-    const value = requiredK5String(row.value, `kycReview.params[${index}].value`);
-    if (!validateK5ParamValue(key, value)) invalidK5Response(`kycReview.params[${index}].value`);
-    return {
-      key,
-      name: requiredK5String(row.name, `kycReview.params[${index}].name`),
-      value,
-      val: value,
-      version: requiredK5Integer(row.version, `kycReview.params[${index}].version`, 0),
-      adjustable: requiredK5Boolean(row.adjustable, `kycReview.params[${index}].adjustable`),
-      unit: typeof row.unit === "string" ? row.unit.trim() : undefined,
-      sub: requiredK5String(row.sub, `kycReview.params[${index}].sub`),
-      note: requiredK5String(row.note, `kycReview.params[${index}].note`),
-    };
-  });
-  if (params.length !== K5_PARAM_KEYS.length || new Set(params.map((row) => row.key)).size !== K5_PARAM_KEYS.length) {
-    invalidK5Response("kycReview.params");
-  }
-
-  const ticketPage = requiredK5Record(data.tickets, "kycReview.tickets");
-  const ticketRecords = requiredK5Array(ticketPage.records, "kycReview.tickets.records")
-    .map((item, index) => normalizeK5Ticket(item, `kycReview.tickets.records[${index}]`));
-  const tickets: AdminPage<K5Ticket> = {
-    total: requiredK5Integer(ticketPage.total, "kycReview.tickets.total", 0),
-    pageNum: requiredK5Integer(ticketPage.pageNum, "kycReview.tickets.pageNum", 1),
-    pageSize: requiredK5Integer(ticketPage.pageSize, "kycReview.tickets.pageSize", 1, 50),
-    records: ticketRecords,
-  };
-  if (tickets.records.length > tickets.total) invalidK5Response("kycReview.tickets.records");
-
-  const alerts = requiredK5Array(data.alerts, "kycReview.alerts").map((item, index) => {
-    const row = requiredK5Record(item, `kycReview.alerts[${index}]`);
-    const eventKey = requiredK5String(row.eventKey, `kycReview.alerts[${index}].eventKey`);
-    if (!hasAllowedK5AlertEventKey(eventKey)) invalidK5Response(`kycReview.alerts[${index}].eventKey`);
-    const tone = requiredK5String(row.tone, `kycReview.alerts[${index}].tone`);
-    if (!K5_ALERT_TONES.includes(tone as (typeof K5_ALERT_TONES)[number])) invalidK5Response(`kycReview.alerts[${index}].tone`);
-    return {
-      eventKey,
-      tone: tone as K5Alert["tone"],
-      title: requiredK5String(row.title, `kycReview.alerts[${index}].title`),
-      body: requiredK5String(row.body, `kycReview.alerts[${index}].body`),
-      timeText: requiredK5String(row.timeText, `kycReview.alerts[${index}].timeText`),
-    };
-  });
-  const subscriptionRow = requiredK5Record(data.subscription, "kycReview.subscription");
-  const subscription: K5AlertSubscription = {
-    alertTypes: requiredK5StringArray(subscriptionRow.alertTypes, "kycReview.subscription.alertTypes"),
-    channels: requiredK5StringArray(subscriptionRow.channels, "kycReview.subscription.channels"),
-    version: requiredK5Integer(subscriptionRow.version, "kycReview.subscription.version", 0),
-  };
-  if (!hasExactAllowedValues(subscription.alertTypes, K5_ALERT_TYPES)) {
-    invalidK5Response("kycReview.subscription.alertTypes");
-  }
-  if (!hasExactAllowedValues(subscription.channels, K5_ALERT_CHANNELS)) {
-    invalidK5Response("kycReview.subscription.channels");
-  }
-  return { stats, params, tickets, alerts, subscription, sources: requiredK5StringArray(data.sources, "kycReview.sources") };
-}
-
-function normalizeK5UserOption(value: unknown, path: string): K5UserOption {
-  const row = requiredK5Record(value, path);
-  const kycStatus = requiredK5String(row.kycStatus, `${path}.kycStatus`) as K5KycStatus;
-  if (!K5_KYC_STATUSES.includes(kycStatus)) invalidK5Response(`${path}.kycStatus`);
-  return {
-    userNo: requiredK5String(row.userNo, `${path}.userNo`),
-    label: requiredK5String(row.label, `${path}.label`),
-    sub: requiredK5String(row.sub, `${path}.sub`),
-    kycStatus,
-  };
-}
-
-function normalizeK5ManualResult(value: unknown): K5ManualResult {
-  const data = requiredK5Record(value, "kycReview");
-  const result = requiredK5Record(data.manualResult, "kycReview.manualResult");
-  return {
-    ticketId: requiredK5String(result.ticketId, "kycReview.manualResult.ticketId"),
-    userNo: requiredK5String(result.userNo, "kycReview.manualResult.userNo"),
-    merged: requiredK5Boolean(result.merged, "kycReview.manualResult.merged"),
-  };
-}
-
-function normalizeK5ManualResultForWrite(value: unknown, commandKey: string): K5ManualResult {
-  try {
-    return normalizeK5ManualResult(value);
-  } catch (error) {
-    throw new K1OutcomeUncertainError(
-      error instanceof Error ? error.message : "K5_MANUAL_RESULT_INVALID",
-      commandKey,
-    );
-  }
-}
-
 export async function fetchK1MultiAccountOverview(query: K1PaginationQuery = {}): Promise<MultiAccountOverview> {
   const clusterLayer = query.clusterLayer && query.clusterLayer !== "all" ? query.clusterLayer : undefined;
   const clusterStatus = query.clusterStatus && query.clusterStatus !== "all" ? query.clusterStatus : undefined;
@@ -1716,8 +1435,7 @@ export async function fetchK1MultiAccountOverview(query: K1PaginationQuery = {})
 export async function fetchKRiskOverviews(query: KRiskOverviewQuery = {}): Promise<KRiskData> {
   const withdrawRulesQuery = query.withdrawRules ?? {};
   const scoringQuery = query.scoring ?? {};
-  const kycReviewQuery = query.kycReview ?? {};
-  const [multiAccount, arbitrage, withdrawRules, scoring, kycReview] = await Promise.all([
+  const [multiAccount, arbitrage, withdrawRules, scoring] = await Promise.all([
     fetchK1MultiAccountOverview(query.multiAccount),
     apiRequest("/arbitrage/overview").then(normalizeK2),
     apiRequest(`/withdraw-rules/overview${queryString({
@@ -1728,13 +1446,8 @@ export async function fetchKRiskOverviews(query: KRiskOverviewQuery = {}): Promi
       hitAction: withdrawRulesQuery.hitAction ?? "all",
     })}`).then(normalizeK3),
     fetchK4ScoringOverview(scoringQuery),
-    apiRequest(`/kyc-review/overview${queryString({
-      ticketPageNum: kycReviewQuery.ticketPageNum ?? 1,
-      ticketPageSize: kycReviewQuery.ticketPageSize ?? 5,
-      ticketFilter: kycReviewQuery.ticketFilter,
-    })}`).then(normalizeK5),
   ]);
-  return { multiAccount, arbitrage, withdrawRules, scoring, kycReview };
+  return { multiAccount, arbitrage, withdrawRules, scoring };
 }
 
 function normalizeK3DryRun(raw: unknown): K3DryRunResult {
@@ -1806,14 +1519,6 @@ export async function fetchK4WithdrawalAlerts(): Promise<K4WithdrawalAlertOvervi
 
 export async function markK4WithdrawalAlertRead(eventId: string): Promise<void> {
   await apiRequest(`/scoring/withdrawal-alerts/${encodeURIComponent(eventId)}/read`, { method: "POST" });
-}
-
-export async function fetchK5KycReviewOverview(query: K5PaginationQuery = {}): Promise<KycReviewOverview> {
-  return apiRequest(`/kyc-review/overview${queryString({
-    ticketPageNum: query.ticketPageNum ?? 1,
-    ticketPageSize: query.ticketPageSize ?? 5,
-    ticketFilter: query.ticketFilter,
-  })}`).then(normalizeK5);
 }
 
 const k2ActionMap: Record<string, string> = {
@@ -1891,16 +1596,4 @@ export const kRiskActions: Omit<KRiskActions, "reloadKRisk"> = {
     commandKey,
     body: JSON.stringify(withReason({ userNos, expectedModelVersion }, reason)),
   }).then(() => undefined),
-  updateK5Param: (key, value, expectedVersion, reason, commandKey) => apiRequest(`/kyc-review/params/${encodeURIComponent(key)}`, { method: "PATCH", commandKey, body: JSON.stringify(withReason({ value, expectedVersion }, reason)) }).then(() => undefined),
-  decideK5Ticket: (ticketId, decision, expectedVersion, reasonCode, reason, commandKey) => apiRequest(`/kyc-review/tickets/${encodeURIComponent(ticketId)}/decision`, { method: "POST", commandKey, body: JSON.stringify(withReason({ decision, expectedVersion, reasonCode }, reason)) }).then(() => undefined),
-  createK5ManualTicket: (userNo, reason, commandKey) => {
-    const stableCommandKey = commandKey ?? newK1CommandKey();
-    return apiRequest<unknown>("/kyc-review/tickets/manual", {
-      method: "POST",
-      commandKey: stableCommandKey,
-      body: JSON.stringify(withReason({ userNo }, reason)),
-    }).then((value) => normalizeK5ManualResultForWrite(value, stableCommandKey));
-  },
-  updateK5AlertSubscription: (alertTypes, channels, expectedVersion, reason, commandKey) => apiRequest("/kyc-review/subscription", { method: "PATCH", commandKey, body: JSON.stringify(withReason({ alertTypes, channels, expectedVersion }, reason)) }).then(() => undefined),
-  searchK5Users: (keyword) => apiRequest(`/kyc-review/users${queryString({ keyword: keyword.trim(), limit: 8 })}`).then((raw) => requiredK5Array(raw, "kycReview.userOptions").map((item, index) => normalizeK5UserOption(item, `kycReview.userOptions[${index}]`))),
 };

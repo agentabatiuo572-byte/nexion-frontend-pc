@@ -142,7 +142,7 @@ function dashboard({
         ],
         feed: [{ sev: "p2", t: "K3 命中提现规则 · 待运营确认", m: "2m", href: "/overview/risk-radar" }],
         pressureSeries: [12, 15, 18, 21, 24, 20, 19, 17],
-        rules: [{ nm: "K5 大额 KYC hold", ct: 3, sev: "p2", dom: "K5" }],
+        rules: [{ nm: "大额提现人工复核", ct: 3, sev: "p2", dom: "D2" }],
         severity: [{ nm: "P2", count: 3, c: "--admin-cat-2" }],
         volume: [{ label: "今日", count: 6 }],
       };

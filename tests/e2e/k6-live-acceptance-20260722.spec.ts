@@ -879,7 +879,7 @@ function cleanupAccounts() {
     DELETE FROM nx_user_session WHERE user_id IN (
       SELECT id FROM nx_user
        WHERE id=${appUserId} AND phone='${APP_PHONE}' AND referral_code='${APP_REFERRAL}');
-    DELETE FROM nx_kyc_profile WHERE user_id IN (
+    DELETE FROM nx_user_payout_address WHERE user_id IN (
       SELECT id FROM nx_user
        WHERE id=${appUserId} AND phone='${APP_PHONE}' AND referral_code='${APP_REFERRAL}');
     DELETE FROM nx_user
@@ -934,7 +934,7 @@ function verifyCleanup() {
       (SELECT COUNT(*) FROM nx_janus_device WHERE sid='${sid || "__none__"}'),
       (SELECT COUNT(*) FROM nx_janus_strategy WHERE strategy_id ${strategyIdFilter} OR name LIKE 'K6闭环策略-${RUN}%'),
       (SELECT COUNT(*) FROM nx_user_session WHERE user_id IN (SELECT id FROM nx_user WHERE phone='${APP_PHONE}')),
-      (SELECT COUNT(*) FROM nx_kyc_profile WHERE user_id=${appUserId || 0}),
+      (SELECT COUNT(*) FROM nx_user_payout_address WHERE user_id=${appUserId || 0}),
       (SELECT COUNT(*) FROM nx_user WHERE phone='${APP_PHONE}' OR referral_code='${APP_REFERRAL}'),
       (SELECT COUNT(*) FROM nx_admin_role_relation WHERE admin_id ${adminIdFilter}),
       (SELECT COUNT(*) FROM nx_admin_account_state WHERE admin_id ${adminIdFilter}),
@@ -947,7 +947,7 @@ function verifyCleanup() {
   const labels = [
     "commands", "idempotency", "mutexes", "objectLocks",
     "quotas", "dryRuns", "versions", "evaluations", "devices", "strategies",
-    "userSessions", "kycProfiles", "users", "adminRelations", "adminStates", "admins",
+    "userSessions", "payoutAddresses", "users", "adminRelations", "adminStates", "admins",
     "roleMenus", "rolePermissions", "roles",
   ];
   const values = raw.split(",").map(Number);

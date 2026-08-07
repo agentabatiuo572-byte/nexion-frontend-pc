@@ -382,7 +382,7 @@ test("G2 swap 熔断态下仅允许手续费收紧，保留子库并交由主控
     evidence.candidate = { fee: candidate };
 
     await openFromSidebar(page, "/finance-products/exchange");
-    await expect(page.getByRole("button", { name: "调整 累计实名触发线", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: /累计.*触发线/ })).toHaveCount(0);
     await page.getByRole("button", { name: "调整 兑换手续费率", exact: true }).click();
     const dialog = page.locator('[role="dialog"]:visible').last();
     await dialog.getByLabel("目标新值").fill(candidate);

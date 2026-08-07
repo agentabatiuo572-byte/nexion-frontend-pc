@@ -70,10 +70,6 @@ const K4_MAPPING_FIELDS: Array<{ key: K4ScoreMappingKey; label: string; min: num
   { key: "arbitrage.repeatMin", label: "重复套利最小次数", min: 2, max: 100 },
   { key: "arbitrage.repeatScore", label: "重复套利子分", min: 0, max: 100 },
   { key: "arbitrage.severeScore", label: "高危套利子分", min: 0, max: 100 },
-  { key: "kyc.reviewScore", label: "KYC 复核中子分", min: 0, max: 100 },
-  { key: "kyc.pendingScore", label: "KYC 待审核子分", min: 0, max: 100 },
-  { key: "kyc.rejectedScore", label: "KYC 拒绝子分", min: 0, max: 100 },
-  { key: "kyc.sanctionedScore", label: "制裁命中子分", min: 0, max: 100 },
   { key: "withdraw.baselineMultiplierPct", label: "提现基线倍数（%）", min: 100, max: 1000 },
   { key: "withdraw.baselineScore", label: "超基线子分", min: 0, max: 100 },
   { key: "withdraw.highFrequency24h", label: "24h 高频最小笔数", min: 1, max: 100 },
@@ -444,7 +440,6 @@ export function K4Scoring({ ctx }: { ctx: KCtx }) {
     && edit.scoreMappings["account.newDays"] < edit.scoreMappings["account.matureDays"]
     && orderedMappings("multiAccount.mediumScore", "multiAccount.highScore", "multiAccount.fraudScore")
     && orderedMappings("arbitrage.singleScore", "arbitrage.repeatScore", "arbitrage.severeScore")
-    && orderedMappings("kyc.reviewScore", "kyc.pendingScore", "kyc.rejectedScore", "kyc.sanctionedScore")
     && orderedMappings("withdraw.baselineScore", "withdraw.highScore")
     && orderedMappings("account.middleScore", "account.newLargeScore")
     && orderedMappings("anomaly.lowScore", "anomaly.tamperScore");

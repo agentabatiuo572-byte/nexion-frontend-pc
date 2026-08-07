@@ -343,7 +343,6 @@ export default function CommandCenter() {
   ].filter((it) => role && canAccessResolvedPath(domains, it.href));
 
   // ── 实时告警(喂给 RiskRadar)──
-  const k5HoldCnt = riskRadar.rules.find((rule) => rule.dom === "K5" || rule.nm.includes("KYC"))?.ct ?? 0;
   const sevLevel = (sev: string): AlertItem["level"] => (sev === "p0" || sev === "p1" ? "high" : sev === "p2" ? "mid" : "low");
   const covLevel: AlertItem["level"] = cov < LEDGER.redlinePct ? "high" : cov < LEDGER.healthyPct ? "mid" : "low";
   const covText =
@@ -377,7 +376,6 @@ export default function CommandCenter() {
     }] : []),
     { id: "al-cov", level: covLevel, text: covText, href: "/overview/dual-ledger" },
     ...riskRadar.feed.slice(0, 4).map((item, index) => ({ id: `al-feed-${index}-${item.sev}`, level: sevLevel(item.sev), text: item.t, href: item.href })),
-    ...(k5HoldCnt > 0 ? [{ id: "al-k5hold", level: "mid" as AlertItem["level"], text: `K5 复审 hold 提现单 ×${k5HoldCnt} · 复审未过不可放行`, href: "/finance/withdrawals" }] : []),
     { id: "al-kill", level: killTripped === 0 ? "low" : "mid", text: killText, href: "/emergency/kill-switch" },
   ];
 

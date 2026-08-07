@@ -27,7 +27,6 @@ function backendPath(parts: string[]) {
     "withdraw-rules",
     "arbitrage",
     "scoring",
-    "kyc-review",
     "radar",
     "bankrun-thresholds",
     "alert-subscription",

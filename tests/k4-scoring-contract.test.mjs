@@ -106,7 +106,7 @@ test("K4 score mappings fail closed on field bounds and severity order", () => {
   assert.match(client, /K4_SCORE_MAPPING_BOUNDS/);
   assert.match(client, /"arbitrage\.repeatMin": \[2, 100\]/);
   assert.match(client, /multiAccount\.mediumScore", "multiAccount\.highScore", "multiAccount\.fraudScore/);
-  assert.match(client, /kyc\.reviewScore", "kyc\.pendingScore", "kyc\.rejectedScore", "kyc\.sanctionedScore/);
+  assert.match(client, /withdraw\.baselineScore", "withdraw\.highFrequency24h", "withdraw\.largeAmountUsd", "withdraw\.highScore/);
   assert.match(component, /orderedMappings/);
   assert.match(component, /JSON\.stringify\(sourceModel\.scoreMappings\)/);
   assert.match(errors, /K4_MODEL_MAPPINGS_INVALID/);

@@ -94,7 +94,7 @@
 .kdom .two-col.r14 { grid-template-columns: 1.4fr 1fr; }
 @container kdom (max-width: 1100px) { .kdom .two-col.r135, .kdom .two-col.r12, .kdom .two-col.r14 { grid-template-columns: 1fr; } }
 
-/* 状态机条(K1 簇 / K3 规则 / K5 复审 共用) */
+/* 状态机条(K1 簇 / K3 规则共用) */
 .kdom .sm-strip { display: flex; align-items: center; flex-wrap: wrap; padding: 4px 0 0; }
 .kdom .sm-strip .st { font-family: var(--mono); font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 6px; background: var(--surface-3); color: var(--ink-3); white-space: nowrap; }
 .kdom .sm-strip .st.warn { background: var(--warning-soft); color: var(--warning); }
@@ -144,7 +144,7 @@
 .kdom .grade-row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .kdom .grade-row .ktint { flex: 1; min-width: 240px; }
 
-/* 参数卡(K2 检测阈值 / K5 触发线 共用) */
+/* 参数卡(K2 检测阈值 / K4 模型共用) */
 .kdom .param-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 @container kdom (max-width: 900px) { .kdom .param-grid { grid-template-columns: 1fr; } }
 .kdom .param-grid .p { background: var(--surface-2); border-radius: 9px; padding: 12px 14px; }
@@ -237,7 +237,6 @@
   padding: 8px 12px; color: var(--ink); font-family: var(--mono); font-size: 13px; outline: none; min-width: 0; }
 .kdom .lookup input:focus { border-color: var(--warning); }
 
-/* ============================ K5 ============================ */
 .kdom .sla { display: inline-flex; align-items: center; gap: 7px; }
 .kdom .sla .track { width: 72px; height: 7px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
 .kdom .sla .track i { display: block; height: 100%; border-radius: 999px; }

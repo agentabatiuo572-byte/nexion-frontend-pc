@@ -154,8 +154,8 @@ async function platformAuditShift(page: Page, account: ShiftAccount, report: Shi
 
 async function fundsRiskShift(page: Page, account: ShiftAccount, report: ShiftReport) {
   const marker = `${account.key}-${RUN_ID}`;
-  await recordStep(report, "C/D/K/J 主链页面状态与后端聚合读取", ["B1", "C3", "D2", "D4", "D5", "K3", "K4", "K5", "J1"], async (evidence) => {
-    for (const id of ["B1", "C3", "D2", "D4", "D5", "K3", "K4", "K5", "J1"]) {
+  await recordStep(report, "C/D/K/J 主链页面状态与后端聚合读取", ["B1", "C3", "D2", "D4", "D5", "K3", "K4", "J1"], async (evidence) => {
+    for (const id of ["B1", "C3", "D2", "D4", "D5", "K3", "K4", "J1"]) {
       await openAndAssertModule(page, id, evidence);
     }
     await assertBackendReadable(page, [
@@ -181,7 +181,7 @@ async function fundsRiskShift(page: Page, account: ShiftAccount, report: ShiftRe
     report.assertions.downstreamVisible = true;
   });
 
-  await recordOptionalStep(report, "D2/D5/K3/K4/K5 风控汇聚操作验证", ["D2", "D5", "K3", "K4", "K5", "A2"], async (evidence) => {
+  await recordOptionalStep(report, "D2/D5/K3/K4 风控汇聚操作验证", ["D2", "D5", "K3", "K4", "A2"], async (evidence) => {
     await openAndAssertModule(page, "D5", evidence);
     const d5 = await tryPerformDialogAction(page, [/^调整$/], evidence);
     await openAndAssertModule(page, "K3", evidence);
@@ -189,10 +189,8 @@ async function fundsRiskShift(page: Page, account: ShiftAccount, report: ShiftRe
     await openAndAssertModule(page, "K4", evidence);
     await tryPickSearchOption(page, /搜索用户编号 \/ 用户名 \/ 手机号/, "U");
     const k4 = await tryPerformDialogAction(page, [/人工覆盖评分/, /提交权重变更/], evidence, { inputValue: "35" });
-    await openAndAssertModule(page, "K5", evidence);
-    const k5 = await tryPerformDialogAction(page, [/手动补触发/, /调整/, /^通过$|^驳回$/], evidence, { inputValue: "U00000001" });
     await openAndAssertModule(page, "D2", evidence);
-    return d5 || k3 || k4 || k5;
+    return d5 || k3 || k4;
   });
 }
 

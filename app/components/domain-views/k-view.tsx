@@ -8,18 +8,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./k-domain.css";
 import { OperationConfirmModal, useToast } from "./design-kit";
 import { DomainHeader, type DomainViewMeta } from "./domain-header";
-import { fetchK1MultiAccountOverview, fetchK2ArbitrageOverview, fetchK3WithdrawRuleOverview, fetchK4ScoringOverview, fetchK5KycReviewOverview, fetchKRiskOverviews, kRiskActions, type K3DryRunResult, type KRiskActions, type KRiskData, type KRiskOverviewQuery } from "@/lib/admin/k-client";
+import { fetchK1MultiAccountOverview, fetchK2ArbitrageOverview, fetchK3WithdrawRuleOverview, fetchK4ScoringOverview, fetchKRiskOverviews, kRiskActions, type K3DryRunResult, type KRiskActions, type KRiskData, type KRiskOverviewQuery } from "@/lib/admin/k-client";
 import { displayAdminError } from "@/lib/admin/error-messages";
 import { KConfirmModal } from "./k-tabs/confirm-modal";
 import { K1HeaderActions, K1MultiAccount } from "./k-tabs/k1-multiaccount";
 import { K2HeaderActions, K2Arbitrage } from "./k-tabs/k2-arbitrage";
 import { K3HeaderActions, K3Rules } from "./k-tabs/k3-rules";
 import { K4HeaderActions, K4Scoring } from "./k-tabs/k4-scoring";
-import { K5HeaderActions, K5Kyc } from "./k-tabs/k5-kyc";
 import { K6JanusC2 } from "./k-tabs/k6-janus-c2";
 import type { ConfirmReq, KCtx, ActionConfirmReq } from "./k-tabs/types";
 
-const FOLD: Record<string, string> = { K1: "K1", K2: "K2", K3: "K3", K4: "K4", K5: "K5", K6: "K6" };
+const FOLD: Record<string, string> = { K1: "K1", K2: "K2", K3: "K3", K4: "K4", K6: "K6" };
 
 function errorText(error: unknown) {
   return displayAdminError(error);
@@ -46,9 +45,6 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     if (query?.scoring || tab === "K4") {
       setRisk((current) => ({ ...current, scoring: undefined }));
     }
-    if (query?.kycReview || tab === "K5") {
-      setRisk((current) => ({ ...current, kycReview: undefined }));
-    }
     try {
       if (query?.multiAccount) {
         const multiAccount = await fetchK1MultiAccountOverview(query.multiAccount);
@@ -72,11 +68,6 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
         if (sequence === requestSequence.current) {
           setRisk((current) => ({ ...current, scoring }));
         }
-      } else if (query?.kycReview || tab === "K5") {
-        const kycReview = await fetchK5KycReviewOverview(query?.kycReview);
-        if (sequence === requestSequence.current) {
-          setRisk((current) => ({ ...current, kycReview }));
-        }
       } else {
         const next = await fetchKRiskOverviews(query);
         if (sequence === requestSequence.current) setRisk(next);
@@ -99,7 +90,7 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
   }, []);
 
   useEffect(() => {
-    if (tab !== "K6" && tab !== "K1" && tab !== "K3" && tab !== "K5") void reloadKRisk().catch(() => undefined);
+    if (tab !== "K6" && tab !== "K1" && tab !== "K3") void reloadKRisk().catch(() => undefined);
     else if (tab === "K6") setContentLoading(false);
   }, [reloadKRisk, tab]);
 
@@ -125,14 +116,13 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
     : tab === "K2" ? <K2HeaderActions />
     : tab === "K3" ? <K3HeaderActions ctx={ctx} onResult={setK3DryRunResult} />
     : tab === "K4" ? <K4HeaderActions />
-    : tab === "K5" ? <K5HeaderActions />
     : <span className="f-ro"><span className="d" />设备上报态与后台期望态分离 · 所有操作可追溯</span>;
 
   return (
     <div className="dkpage kdom">
       <DomainHeader {...meta} right={right} />
 
-      {tab !== "K6" && tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && tab !== "K5" && contentError && (
+      {tab !== "K6" && tab !== "K1" && tab !== "K2" && tab !== "K3" && tab !== "K4" && contentError && (
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">K 域数据加载失败</span>
@@ -146,7 +136,6 @@ export function KDomainView({ meta }: { meta: DomainViewMeta }) {
       {tab === "K2" && <K2Arbitrage ctx={ctx} />}
       {tab === "K3" && <K3Rules ctx={ctx} dryRunResult={k3DryRunResult} />}
       {tab === "K4" && <K4Scoring ctx={ctx} />}
-      {tab === "K5" && <K5Kyc ctx={ctx} />}
       {tab === "K6" && <K6JanusC2 />}
 
       {mc && (

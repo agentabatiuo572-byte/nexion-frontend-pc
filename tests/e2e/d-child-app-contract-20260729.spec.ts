@@ -86,13 +86,13 @@ test("App 消费 D1/D5/D6 且 C/K/J 失败关闭：闸关闭时不建单、不�
   const j1 = mysql("SELECT setting_value FROM nx_emergency_control_setting WHERE setting_key='killswitch.withdraw' LIMIT 1;").trim();
   expect(j1).toBe("disabled");
   const cFacts = mysql(`
-    SELECT CONCAT(status,'|',kyc_status)
+    SELECT status
       FROM nx_user WHERE id=${APP_USER_ID} AND is_deleted=0;
-    SELECT CONCAT(status,'|',network,'|',paired_address)
-      FROM nx_kyc_profile WHERE user_id=${APP_USER_ID} AND is_deleted=0;
+    SELECT CONCAT(status,'|',network,'|',address)
+      FROM nx_user_payout_address WHERE user_id=${APP_USER_ID} AND is_deleted=0;
   `).trim().split(/\r?\n/);
-  expect(cFacts[0]).toBe("ACTIVE|APPROVED");
-  expect(cFacts[1]).toBe(`APPROVED|TRC20|${APP_ADDRESS}`);
+  expect(cFacts[0]).toBe("ACTIVE");
+  expect(cFacts[1]).toBe(`ACTIVE|TRC20|${APP_ADDRESS}`);
 
   writeFileSync(path.join(EVIDENCE_DIR, "app-d-c-k-j-contract.json"), `${JSON.stringify({
     runId: RUN_ID,

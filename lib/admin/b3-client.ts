@@ -15,7 +15,7 @@ interface ApiResult<T> {
 export type B3Filters = { cohort: string; phase: string; ref: string };
 
 export interface B3Stage {
-  key: "register" | "kyc" | "purchase" | "repurchase" | "withdraw";
+  key: "register" | "purchase" | "repurchase" | "withdraw";
   stage: string;
   event: string;
   distinctUsers: number;

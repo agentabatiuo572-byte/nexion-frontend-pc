@@ -19,7 +19,7 @@ import type { MCtx } from "./types";
 const FAQ_KEY = "I.support.faqs";
 const SLA_KEY = "I.support.sla";
 
-const CATEGORY_OPTIONS: SupportTicketCategory[] = ["withdrawal", "deposit", "kyc", "hardware", "account", "earnings", "genesis", "technical", "other"];
+const CATEGORY_OPTIONS: SupportTicketCategory[] = ["withdrawal", "deposit", "hardware", "account", "earnings", "genesis", "technical", "other"];
 const FAQ_CATEGORY_OPTIONS: SupportFaq["category"][] = ["general", ...CATEGORY_OPTIONS];
 const SURFACES: SupportFaq["surface"][] = ["Help Center", "Ticket Create", "Nova"];
 const SURFACE_CN: Record<SupportFaq["surface"], string> = { "Help Center": "帮助中心", "Ticket Create": "创建工单页", Nova: "Nova AI" };
@@ -411,7 +411,7 @@ function EditSlaModal({
         <label className="field"><span className="bf-legend">负责人队列</span><input className="fld" value={queue} onChange={(e) => setQueue(e.target.value)} placeholder="例:Payment desk" /></label>
         <label className="field"><span className="bf-legend">升级路径</span><input className="fld" value={escalation} onChange={(e) => setEscalation(e.target.value)} placeholder="例:D2 withdrawal review" /></label>
       </div>
-      <label className="field" style={{ marginTop: 12 }}><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:SLA 与 D2/C4 队列口径同步" /></label>
+      <label className="field" style={{ marginTop: 12 }}><span className="bf-legend">审计理由(≥8 字)</span><input className="fld" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="例:SLA 与 D2/C5 队列口径同步" /></label>
     </Modal>
   );
 }

@@ -346,7 +346,7 @@ export function J2GeoBlock({ ctx }: { ctx: JCtx }) {
             <div className="edge-kv"><span className="k">判定源</span><span className={`v ${edgeSourceKnown ? "" : "danger"}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>{currentEdgeSourceLabel}{canEdge && edgeSwitchCandidates.length > 0 && <button onClick={switchJudge}>切换</button>}</span></div>
             {canEdge && edgeSwitchCandidates.length === 0 && <div className="tiny muted">暂无满足最近 5 分钟 20 个可信样本门槛的备用判定源</div>}
             {geoEdge.map((row) => <div className="edge-kv" key={row.k}><span className="k"><AutoGloss>{row.k}</AutoGloss></span><span className={`v ${row.tone}`}><AutoGloss>{row.v}</AutoGloss></span></div>)}
-            <div className="edge-note"><span className="ic" aria-hidden="true">ⓘ</span><div><b>地区封锁只按访问 IP；风险提示书按 IP 与实名国籍。</b>两套机制相互独立。</div></div>
+            <div className="edge-note"><span className="ic" aria-hidden="true">ⓘ</span><div><b>地区封锁只按访问 IP；风险提示书按 IP 与账户注册地区。</b>两套机制相互独立。</div></div>
           </div>
         </section>
       </div>

@@ -15,7 +15,6 @@ import { useAdminAuth } from "@/lib/store/admin-auth";
 
 const CONFIGS = [
   { key: "eligibility.enabled", label: "资格门启用", kind: "select", options: ["true", "false"] },
-  { key: "eligibility.kycRequired", label: "必须 KYC", kind: "select", options: ["true", "false"] },
   { key: "eligibility.maxPerUser", label: "资格门每人上限", kind: "number" },
   { key: "eligibility.minAccountAgeDays", label: "最低账户龄(天)", kind: "number" },
   { key: "presale.enabled", label: "预售启用", kind: "select", options: ["true", "false"] },

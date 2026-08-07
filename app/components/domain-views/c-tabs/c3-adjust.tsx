@@ -474,7 +474,7 @@ export function C3Adjust({ ctx }: { ctx: CCtx }) {
               {selectedAccount && (
                 <div className="ctint cyan" data-proof="c3-target-card">
                   <b>{displayUser(selectedAccount)}</b> · 用户ID <span className="mono">{accountId(selectedAccount)}</span><br />
-                  状态 {text(selectedAccount.status)} · KYC {text(selectedAccount.kycStatus)} · 风险 {text(selectedAccount.riskBand)} / {text(selectedAccount.riskScore)} · 注册 {formatDate(selectedAccount.registeredAt)}<br />
+                  状态 {text(selectedAccount.status)} · 风险 {text(selectedAccount.riskBand)} / {text(selectedAccount.riskScore)} · 注册 {formatDate(selectedAccount.registeredAt)}<br />
                   USDT {formatNumber(selectedAccount.walletUsdt)} · NEX {formatNumber(selectedAccount.walletNex)} · 提现处理中 {formatNumber(context?.pendingWithdraw)} USDT
                 </div>
               )}

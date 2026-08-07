@@ -271,7 +271,7 @@ evalJson(`
 `);
 wait(900);
 
-await step("FM-004", "top-up-channel-and-kyc-express-status", () => {
+await step("FM-004", "top-up-channel-status", () => {
   openUni("/#/pages/me/wallet-topup");
   clickSelector(".nx-dep-net-trc20");
   const channel = evalJson(`
@@ -283,45 +283,7 @@ await step("FM-004", "top-up-channel-and-kyc-express-status", () => {
     return { href: location.href, hasAwaiting: body.includes('Awaiting confirmation'), addressVisible: /T[A-Za-z0-9]{8,}/.test(body) };
   `);
 
-  openUni("/#/pages/me/wallet-topup?kyc=1");
-  const select = evalJson(`
-    const body = bodyText();
-    expect(body.includes('KYC-Express'), 'KYC-Express entry missing');
-    expect(body.includes('Compliance check'), 'compliance banner missing');
-    return current();
-  `);
-  clickSelector(".nx-kyc-generate-address-cta");
-  const awaiting = evalJson(`
-    const body = bodyText();
-    expect(body.includes('Send $1.00 via USDT-TRC20'), 'KYC awaiting status missing');
-    expect(body.includes('1.00 USDT'), 'KYC exact amount missing');
-    expect(body.includes('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t'), 'KYC deposit address missing');
-    clickCss('.nx-kyc-copy-address-cta');
-    return { href: location.href, hasExactAmount: body.includes('1.00 USDT') };
-  `);
-  clickSelector(".nx-kyc-payment-sent-cta");
-  const complete = waitForEval("KYC Express complete", `
-    const pairing = acctRow('nexgrid-wallet-pairing-accounts-v1');
-    const bills = acctRow('nexgrid-bills-accounts-v1');
-    const bill = (bills.bills || []).find((row) => row.type === 'kyc' && row.amount === 1 && row.status === 'posted');
-    const body = bodyText();
-    return {
-      href: location.href,
-      body,
-      pairing,
-      bill,
-      ok: pairing.walletPaired === true && !!bill && body.includes('Wallet paired') && body.includes('Continue to withdrawal'),
-    };
-  `, 10000);
-  expect(complete.pairing.pairedNetwork === "USDT-TRC20", "KYC paired network mismatch");
-  expect(/^KYC-\d{4}-A\d+/.test(complete.pairing.complianceCheckId || ""), "KYC compliance id missing");
-  return {
-    regularChannel: channel,
-    kycSelectHasBanner: select.body.includes("Compliance check"),
-    awaiting,
-    complianceCheckId: complete.pairing.complianceCheckId,
-    kycBillRef: complete.bill.ref,
-  };
+  return { regularChannel: channel };
 });
 
 await step("FM-005-FRONT", "staking-user-opens-position", () => {

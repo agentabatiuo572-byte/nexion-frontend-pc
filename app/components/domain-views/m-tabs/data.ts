@@ -6,7 +6,6 @@ export type SupportTicketCategory =
   | "account"
   | "withdrawal"
   | "deposit"
-  | "kyc"
   | "hardware"
   | "earnings"
   | "genesis"
@@ -92,7 +91,6 @@ export const SUPPORT_CATEGORY_LABEL: Record<SupportTicketCategory | "general", s
   account: "Account",
   withdrawal: "Withdrawal",
   deposit: "Deposit",
-  kyc: "KYC",
   hardware: "Hardware",
   earnings: "Earnings",
   genesis: "Genesis",
@@ -157,8 +155,7 @@ export type CustomerProfile = {
   nickname: string;
   phone: string;
   vlevel: string;        // V 等级
-  kyc: string;           // KYC 状态
-  systemTags: string[];   // 系统派生只读(会话类型 / V等级 / KYC / 风控),刷新随状态重算
+  systemTags: string[];   // 系统派生只读(会话类型 / V等级 / 风控),刷新随状态重算
   customTags: string[];   // 坐席自定义标签(持久化于后端,可编辑,跨会话共享)
   risk: "低" | "中" | "高";
   riskNote: string;

@@ -37,7 +37,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
     "只读看板 · 事件源自 A4 埋点流",
   ],
   C: [
-    "检索 / 处置 / 资产 / KYC / 安全 / 注册风控",
+    "检索 / 处置 / 资产 / 安全 / 注册风控",
     "用户表 · 画像卡 · 处置面板 · 会话列表",
     "OTP TTL · 锁定阈值 · 冻结原因码",
     "冻结/解冻 · 强制登出 · impersonate · 调资产",
@@ -53,7 +53,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
     "批准/延迟/冻结提现 · 操作确认 · 补单",
     "/admin/withdrawals · /admin/recon · /admin/pool",
     "大额放行操作确认",
-    "B1 覆盖率红线前置 · 联动 K3 / C4",
+    "B1 覆盖率红线前置 · 联动 K3 / D2",
     "admin.withdrawal_reviewed · payout.*",
   ],
   E: [
@@ -117,7 +117,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
     "admin.killswitch_toggled · risk.tamper_detected",
   ],
   K: [
-    "反多账户 / 套利刷量 / 提现风控 / 评分 / KYC 复审",
+    "反多账户 / 套利刷量 / 提现风控 / 评分",
     "关联图 · 规则引擎 · 评分分布 · 复审队列",
     "去重阈值 · 规则权重 · 评分模型参数",
     "标记/拉黑/触发复审 · 操作确认",
@@ -142,7 +142,7 @@ export const DOMAIN_HINTS: Record<string, string[]> = {
 export const DOMAIN_GHOST_COLUMNS: Record<string, string[]> = {
   A: ["账号", "角色", "最近操作", "时间"],
   B: ["指标", "当前值", "环比", "状态"],
-  C: ["用户ID", "注册时间", "KYC", "风险分"],
+  C: ["用户ID", "注册时间", "账户状态", "风险分"],
   D: ["单号", "金额", "状态", "处理人"],
   E: ["商品", "价格", "库存", "状态"],
   F: ["层级", "费率", "结算", "状态"],

@@ -123,7 +123,7 @@ for (const dir of ["app/components/domain-views", "app/components/hub", "app/(co
 // ───────────── H 高敏动作绕过 操作确认 ─────────────
 // 正确模式:高敏处置 onClick={() => setActionConfirm({ …, onApply/write:(reason)=>setParam(…) })} → OperationConfirmModal 操作确认 → 回调真写。
 // 绕过模式(FAIL):onClick 块内直接 setParam( 或仅做高敏 setToast(,而不经 setActionConfirm( → 单人即时生效 / 假装完成
-//   (C-10 强制登出直接 setParam + 本轮 a-view 放行驳回 / c-view 终止 impersonate / k-view 升级 KYC 仅 setToast 教训)。
+//   (C-10 强制登出直接 setParam + 本轮 a-view 放行驳回 / c-view 终止 impersonate)。
 const HISENS_VERB = /(放行|驳回|批准|核准|封禁|解封|冻结|解冻|终止|升级|降级|关停|关闭|kill|强制|没收|清退|红冲|核销|罚没|改派|调整余额)/;
 // 配平括号提取某 JSX 属性的完整 {…} 块(容忍内部嵌套 / 模板字符串的平衡 {})。
 function extractAttrBlocks(src, attr) {

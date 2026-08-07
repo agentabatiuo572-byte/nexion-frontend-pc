@@ -216,7 +216,7 @@ await step("c5-query-target-user", () => {
 });
 
 await step("disable-2fa-modal-has-business-controls", () => {
-  evalJson(`clickExact('关闭 2FA(操作确认 + 实名二验)'); return { opened: true };`);
+  evalJson(`clickExact('关闭 2FA（高风险确认）'); return { opened: true };`);
   wait();
   const modal = evalJson(`
     const root = dialog();
@@ -234,7 +234,7 @@ await step("disable-2fa-modal-has-business-controls", () => {
     assertConfirmDisabled();
     return {
       titleOk: dialogText.includes('人工关闭 2FA'),
-      hasRealNameStepText: dialogText.includes('实名二验'),
+      hasHighRiskStepText: dialogText.includes('高敏操作校验'),
       hasSecuritySummary: dialogText.includes('用户登录') && dialogText.includes('降低安全门槛'),
       wrongEmergencySummary: dialogText.includes('地区访问') || dialogText.includes('影响国家/业务'),
       hasReasonTextarea: visibleControls.some((control) => control.tag === 'textarea' && /操作理由|理由|工单|依据|reason/i.test(control.label)),

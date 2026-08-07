@@ -22,14 +22,12 @@ const storage = readFileSync(
 test("B4 walkthrough follows the current TRC20 selector and read-only withdrawal address", () => {
   assert.match(feature, /\.nx-dep-net-trc20/);
   assert.match(feature, /Send via TRC20/);
-  assert.match(persona, /const PAIRED_ADDRESS/);
-  assert.match(persona, /nx-withdraw-rebind-entry/);
-  assert.match(persona, /addressInputGone/);
-  assert.match(persona, /wallet-address-rebind/);
-  assert.match(persona, /clickSelector\("\.nx-withdraw-rebind-entry"\)/);
-  assert.doesNotMatch(persona, /fill\("\.nx-withdraw-address-input/);
+  assert.match(withdrawPage, /nx-withdraw-manage-entry/);
+  assert.match(withdrawPage, /boundAddressShort/);
+  assert.match(withdrawPage, /wallet-address-rebind/);
+  assert.doesNotMatch(withdrawPage, /nx-withdraw-address-input/);
   assert.match(feature, /nexgrid-locale-v1'[\s\S]*code: 'en'/);
-  assert.match(persona, /nexgrid-locale-v1'[\s\S]*code: 'en'/);
+  assert.match(localeStore, /nexgrid-locale-v1/);
 });
 
 test("B4 mapping coverage locks previously open M9/M10 closed and uses declared checkouts", () => {

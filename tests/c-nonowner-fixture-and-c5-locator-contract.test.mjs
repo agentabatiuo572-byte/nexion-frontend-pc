@@ -12,7 +12,7 @@ test("C3 accepts the current top-level checker fixture, falls back to the legacy
   assert.match(c3, /checker account must differ from the maker account/);
 });
 
-test("C4-C6 combined review uses C5's current business-semantic ready marker instead of its page heading", () => {
+test("C5-C6 combined review uses C5's current business-semantic ready marker instead of its page heading", () => {
   assert.match(cDomain, /readyText: "凭证与会话参数"/);
   assert.match(cDomain, /await expectModuleReady\(page, module\)/);
   assert.match(cDomain, /module\.readyText\s*\? page\.getByText\(module\.readyText, \{ exact: true \}\)/);

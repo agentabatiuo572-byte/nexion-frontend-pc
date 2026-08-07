@@ -278,7 +278,7 @@ test.describe.serial("C 域非 Owner B：用户资产锁轨", () => {
       });
       await openVisibleModule(page, "/users/security");
       await expect(page.getByText(/C5 数据加载失败/).first()).toBeVisible();
-      for (const name of ["全部踢线", "关闭 2FA（实名二验）", "密码重置（实名二验）"]) {
+      for (const name of ["全部踢线", "关闭 2FA（高风险确认）", "密码重置（高风险确认）"]) {
         await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
       }
       await page.unroute("**/api/admin/users/security/overview*");

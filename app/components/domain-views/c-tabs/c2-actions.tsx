@@ -49,13 +49,6 @@ const STATUS_WEIGHT: Record<string, number> = {
   ACTIVE: 3,
 };
 
-const KYC_STATUS_LABELS: Record<string, string> = {
-  APPROVED: "已通过",
-  PENDING: "待审核",
-  REJECTED: "已驳回",
-  NONE: "未认证",
-};
-
 const IMPERSONATION_STATUS_LABELS: Record<string, string> = {
   ACTIVE: "进行中",
   TERMINATED: "已终止",
@@ -76,10 +69,6 @@ const SESSION_STATUS_LABELS: Record<string, string> = {
 
 function accountStatusLabel(value: unknown) {
   return STATUS_META[text(value).toUpperCase()]?.[0] ?? text(value);
-}
-
-function kycStatusLabel(value: unknown) {
-  return KYC_STATUS_LABELS[text(value).toUpperCase()] ?? text(value);
 }
 
 function impersonationStatusLabel(value: unknown) {
@@ -232,7 +221,7 @@ function ImpersonationUserScreen({ screen }: { screen: JsonRecord }) {
     <h3 style={{ margin: "14px 0 8px" }}>用户视角我的</h3>
     <div className="kv"><span className="k">用户编码</span><span className="v">{text(screen.userNo)}</span></div>
     <div className="kv"><span className="k">昵称</span><span className="v">{text(screen.nickname)}</span></div>
-    <div className="kv"><span className="k">账户 / KYC</span><span className="v">{accountStatusLabel(screen.accountStatus)} · {kycStatusLabel(screen.kycStatus)}</span></div>
+    <div className="kv"><span className="k">账户状态</span><span className="v">{accountStatusLabel(screen.accountStatus)}</span></div>
     <div className="kv"><span className="k">等级</span><span className="v">{text(screen.userLevel)} / {text(screen.vRank)}</span></div>
     <div className="kv"><span className="k">安全</span><span className="v">2FA {screen.twoFactorEnabled ? "已开启" : "未开启"} · 活跃会话 {text(screen.activeSessions, "0")}</span></div>
   </div>;
@@ -916,7 +905,6 @@ export function C2Actions({ ctx }: { ctx: CCtx }) {
             <div style={{ fontSize: 13, fontWeight: 600, margin: "14px 0 4px" }}>账户概览</div>
             <div className="kv"><span className="k">用户编码</span><span className="v">{text(selectedAccount.userNo)}</span></div>
             <div className="kv"><span className="k">手机号</span><span className="v">{text(selectedAccount.phoneMasked)}</span></div>
-            <div className="kv"><span className="k">KYC</span><span className="v">{kycStatusLabel(selectedAccount.kycStatus)}</span></div>
             <div className="kv"><span className="k">等级</span><span className="v">{text(selectedAccount.userLevel)} / {text(selectedAccount.vRank)}</span></div>
             <div className="kv"><span className="k">余额</span><span className="v">{formatAmount(selectedAccount.walletUsdt)} USDT · {formatAmount(selectedAccount.walletNex)} NEX</span></div>
             <div className="kv"><span className="k">风险分</span><span className="v">{text(selectedAccount.riskScore, "0")} · {text(selectedAccount.riskBand, "未分档")}</span></div>

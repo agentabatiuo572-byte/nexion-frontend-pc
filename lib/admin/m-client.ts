@@ -138,7 +138,6 @@ type ConversationCustomerProfile = {
   nickname?: string;
   phone?: string;
   vlevel?: string;
-  kyc?: string;
   systemTags?: string[];
   customTags?: string[];
   risk?: string;
@@ -197,7 +196,7 @@ type SupportKnowledgeOverview = {
   sources?: string[];
 };
 
-const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"] as const;
+const SLA_CATEGORIES = ["account", "withdrawal", "deposit", "hardware", "earnings", "genesis", "technical", "other"] as const;
 
 function assertSupportKnowledgeOverview(value: unknown): SupportKnowledgeOverview {
   const malformed = () => {
@@ -790,7 +789,7 @@ export function toBackendTicketPriority(value: SupportTicketPriority) {
 
 function ticketCategory(value: string | undefined): SupportTicketCategory {
   const v = (value || "other").toLowerCase();
-  return ["account", "withdrawal", "deposit", "kyc", "hardware", "earnings", "genesis", "technical", "other"].includes(v)
+  return ["account", "withdrawal", "deposit", "hardware", "earnings", "genesis", "technical", "other"].includes(v)
     ? (v as SupportTicketCategory)
     : "other";
 }
@@ -852,11 +851,10 @@ function adaptCustomerProfile(
       nickname: fallbackUid === "—" ? "未关联用户" : `用户 ${fallbackUid}`,
       phone: "—",
       vlevel: "—",
-      kyc: "待核对",
       systemTags: [type === "advisor" ? "顾问会话" : "客服会话"],
       customTags: [],
       risk: "中",
-      riskNote: "打开会话后由后端聚合客户资金 / 实名 / 设备档案。",
+      riskNote: "打开会话后由后端聚合客户资金 / 风险 / 设备档案。",
       recharge: "—",
       withdraw: "—",
       balance: "—",
@@ -880,7 +878,6 @@ function adaptCustomerProfile(
     nickname: str(backend.nickname, fallbackUid === "—" ? "未关联用户" : `用户 ${fallbackUid}`),
     phone: str(backend.phone, "—"),
     vlevel: str(backend.vlevel, "—"),
-    kyc: str(backend.kyc, "待核对"),
     systemTags: systemTags.length ? systemTags : [type === "advisor" ? "顾问会话" : "客服会话"],
     customTags,
     risk,
@@ -990,7 +987,7 @@ function assertSupportTicketDetail(value: unknown): SupportTicketDetail {
   const slaTarget = detail.slaTarget;
   const allowedStatuses = new Set(["OPEN", "IN_PROGRESS", "PENDING_USER", "RESOLVED", "CLOSED"]);
   const allowedPriorities = new Set(["LOW", "NORMAL", "HIGH", "URGENT"]);
-  const allowedCategories = new Set(["ACCOUNT", "WITHDRAWAL", "DEPOSIT", "KYC", "HARDWARE", "EARNINGS", "GENESIS", "TECHNICAL", "OTHER"]);
+  const allowedCategories = new Set(["ACCOUNT", "WITHDRAWAL", "DEPOSIT", "HARDWARE", "EARNINGS", "GENESIS", "TECHNICAL", "OTHER"]);
   if (
     !ticket
     || typeof ticket.ticketNo !== "string"

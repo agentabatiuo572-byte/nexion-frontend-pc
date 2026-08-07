@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ListArchetype — 表格型模块通用页(审计/对账/订单/KYC/佣金/风控命中/CMS 列表…)。
+ * ListArchetype — 表格型模块通用页(审计/对账/订单/佣金/风控命中/CMS 列表…)。
  * KPI 带 + FilterBar(搜索+chip)+ DataTable(状态 pill 着色)+ 可选行详情抽屉 + 操作确认 脚注。
  */
 import { useEffect, useMemo, useRef, useState } from "react";

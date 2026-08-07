@@ -73,7 +73,7 @@ type Envelope<T> = { code?: number; message?: string; data?: T };
 
 const A_READ = modules("platform_", ["A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"]);
 const B_READ = modules("overview_", ["B1", "B2", "B3", "B4", "B5"]);
-const C_READ = modules("user_", ["C1", "C2", "C3", "C4", "C5", "C6"]);
+const C_READ = modules("user_", ["C1", "C2", "C3", "C5", "C6"]);
 const D_READ = modules("finance_", ["D1", "D2", "D3", "D4", "D5", "D6"]);
 const E_READ = modules("device_", ["E1", "E2", "E3", "E4", "E5", "E6"]);
 const F_READ = modules("network_", ["F1", "F2", "F3", "F4", "F5"]);
@@ -81,7 +81,7 @@ const G_READ = modules("finprod_", ["G1", "G2", "G3", "G4", "G7"]);
 const H_READ = modules("growth_", ["H1", "H2", "H3", "H4", "H5", "H7", "H8"]);
 const I_READ = modules("content_", ["I1", "I2", "I3", "I4", "I5", "I6"]);
 const J_READ = modules("emergency_", ["J1", "J2", "J3", "J4"]);
-const K_READ = modules("risk_", ["K1", "K2", "K3", "K4", "K5", "K6"]);
+const K_READ = modules("risk_", ["K1", "K2", "K3", "K4", "K6"]);
 const L_READ = modules("bi_", ["L1", "L2", "L3", "L4", "L5", "L6"]);
 const M_READ = modules("service_", ["M1", "M2", "M3", "M4", "M5"]);
 const A2_MAKER = ["platform_a2_read", "platform_a2_proposal_create"];
@@ -113,7 +113,7 @@ const DOMAIN_DEFINITIONS: Record<Domain, DomainDefinition> = {
     ],
   },
   C: {
-    modules: ["C1", "C2", "C3", "C4", "C5", "C6"],
+    modules: ["C1", "C2", "C3", "C5", "C6"],
     read: C_READ,
     maker: [
       ...C_READ, ...A2_MAKER,
@@ -128,8 +128,7 @@ const DOMAIN_DEFINITIONS: Record<Domain, DomainDefinition> = {
       "user_c2_blocklist_add", "user_c2_impersonate_start",
       "user_c2_impersonate_terminate", "user_c2_session_revoke_all",
       "user_c2_write", "user_c3_adjust_create", "user_c3_adjust_reverse",
-      "user_c3_write", "user_c4_export", "user_c4_network_write",
-      "user_c4_revoke", "user_c4_trigger_review", "user_c4_verify",
+      "user_c3_write",
       "user_c5_2fa_disable", "user_c5_password_reset",
       "user_c5_session_revoke_all", "user_c5_session_revoke_one",
       "user_c5_unlock_long", "user_c5_unlock_short", "user_c5_write",
@@ -242,7 +241,7 @@ const DOMAIN_DEFINITIONS: Record<Domain, DomainDefinition> = {
     ],
   },
   K: {
-    modules: ["K1", "K2", "K3", "K4", "K5", "K6"],
+    modules: ["K1", "K2", "K3", "K4", "K6"],
     read: K_READ,
     maker: [
       ...K_READ, ...A2_MAKER,
@@ -252,8 +251,7 @@ const DOMAIN_DEFINITIONS: Record<Domain, DomainDefinition> = {
       "risk_k2_row_blockgift", "risk_k2_row_boardflag",
       "risk_k3_write", "risk_k3_rule_create", "risk_k3_rule_toggle",
       "risk_k3_rule_archive", "risk_k4_write", "risk_k4_user_override",
-      "risk_k4_user_recompute", "risk_k5_write", "risk_k5_ticket_pass",
-      "risk_k5_ticket_reject", "risk_k5_ticket_manual", "risk_k6_write",
+      "risk_k4_user_recompute", "risk_k6_write",
       "risk_k6_senior", "risk_k6_target_manage",
     ],
   },

@@ -58,17 +58,6 @@ const STATUS_LABEL: Record<string, string> = {
   RESTRICTED: "受限",
 };
 
-const KYC_LABEL: Record<string, string> = {
-  VERIFIED: "已认证",
-  APPROVED: "已认证",
-  PASSED: "已认证",
-  PENDING: "待认证",
-  REVIEW: "复审中",
-  REVIEWING: "复审中",
-  REJECTED: "未通过",
-  FAILED: "未通过",
-};
-
 function asText(value: unknown, fallback = "-") {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -112,24 +101,11 @@ function statusLabel(value: unknown) {
   return STATUS_LABEL[key] ?? key;
 }
 
-function kycLabel(value: unknown) {
-  const key = asText(value).toUpperCase();
-  return KYC_LABEL[key] ?? key;
-}
-
 function statusTone(value: unknown): PillTone {
   const key = asText(value).toUpperCase();
   if (key === "ACTIVE") return "success";
   if (key === "FROZEN" || key === "RESTRICTED") return "warning";
   if (key === "BANNED") return "danger";
-  return "neutral";
-}
-
-function kycTone(value: unknown): PillTone {
-  const key = asText(value).toUpperCase();
-  if (key === "VERIFIED" || key === "APPROVED" || key === "PASSED") return "success";
-  if (key === "REVIEW" || key === "REVIEWING" || key === "PENDING") return "warning";
-  if (key === "REJECTED" || key === "FAILED") return "danger";
   return "neutral";
 }
 
@@ -335,7 +311,6 @@ export default function UserDetailPage() {
   const canWriteC1 = session?.role === "superadmin" || !!session?.authorities.includes("user_c1hub_write");
   const canReadC2 = session?.role === "superadmin" || !!session?.authorities.includes("user_c2_read");
   const canReadC3 = session?.role === "superadmin" || !!session?.authorities.includes("user_c3_read");
-  const canReadC4 = session?.role === "superadmin" || !!session?.authorities.includes("user_c4_read");
   const canReadC5 = session?.role === "superadmin" || !!session?.authorities.includes("user_c5_read");
   const canReadC6 = session?.role === "superadmin" || !!session?.authorities.includes("user_c6_read");
   const canReadD2 = session?.role === "superadmin" || !!session?.authorities.includes("finance_d2_read");
@@ -500,7 +475,6 @@ export default function UserDetailPage() {
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" />
-            <StatusPill label={`KYC ${kycLabel(summary.kycStatus ?? profile.kycStatus)}`} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} />
             {(detail.risk || profile.riskBand) && <StatusPill label={`${riskBand}${hasRiskScore ? ` ${riskScore}` : ""}`} tone={hasRiskScore ? riskTone(riskScore) : "neutral"} size="sm" />}
             <span className="font-mono-tabular rounded-full px-2 py-0.5 text-[10.5px]" style={{ background: "var(--v5-surface-2)", color: "var(--v5-ink-3)" }}>
               分层 {asText(profile.userLevel)} · {asText(profile.vRank)}
@@ -533,14 +507,13 @@ export default function UserDetailPage() {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="flex flex-col gap-4">
-          {detail.risk && <Section title="风险画像" tag="K4 风险评分 · C4 KYC">
+          {detail.risk && <Section title="风险画像" tag="K4 风险评分">
             <div className="flex items-center gap-4">
               <div>
                 <p className="font-mono-tabular text-[32px] leading-none" style={{ color: hasRiskScore ? riskColor(riskScore) : "var(--v5-ink-3)" }}>{hasRiskScore ? riskScore : "不可用"}</p>
                 <p className="text-[10.5px]" style={{ color: "var(--v5-ink-4)" }}>{riskBand}</p>
               </div>
               <div className="flex-1">
-                <Row label="KYC 状态"><StatusPill label={kycLabel(summary.kycStatus ?? profile.kycStatus)} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} /></Row>
                 {detail.risk?.flags !== undefined && <Row label="风险标记">{asList(detail.risk.flags).map(displayValue).join(" · ") || "无"}</Row>}
                 {detail.risk?.cases !== undefined && <Row label="风险案件">{numberLabel(detail.risk?.openCaseCount)} 个未关闭</Row>}
               </div>
@@ -579,7 +552,6 @@ export default function UserDetailPage() {
               )}
               {[
                 canReadC3 && ["C3 余额与资产", "/users/assets"],
-                canReadC4 && ["C4 KYC 台账", "/users/kyc"],
                 canReadC6 && ["C6 注册登录风控", "/users/reg-risk"],
                 canReadD2 && ["D2 提现队列", "/finance/withdrawals"],
                 canReadD4 && ["D4 全账本", "/finance/ledger"],
@@ -804,7 +776,6 @@ export default function UserDetailPage() {
           {detail.account && <Section title="账户合规" tag={`数据源 · ${sectionStatus(detail.account)}`}>
             <Row label="用户编码">{userNo}</Row>
             <Row label="账户状态"><StatusPill label={statusLabel(status)} tone={statusTone(status)} size="sm" /></Row>
-            <Row label="KYC"><StatusPill label={kycLabel(summary.kycStatus ?? profile.kycStatus)} tone={kycTone(summary.kycStatus ?? profile.kycStatus)} size="sm" dot={false} /></Row>
             <Row label="2FA">{summary.twoFactorEnabled ? "已开启" : "未开启"}</Row>
             <Row label="需重置密码">{summary.passwordResetRequired ? "是" : "否"}</Row>
           </Section>}

@@ -1,6 +1,6 @@
 type JsonRecord = Record<string, unknown>;
 
-const B3_STAGE_KEYS = ["register", "kyc", "purchase", "repurchase", "withdraw"] as const;
+const B3_STAGE_KEYS = ["register", "purchase", "repurchase", "withdraw"] as const;
 const B4_LINK_KEYS = ["H1", "B3", "B1", "B2"] as const;
 
 function invalid(moduleId: "B3" | "B4", field: string): never {

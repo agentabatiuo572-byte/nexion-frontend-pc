@@ -14,7 +14,7 @@ test("C5 executes stop-loss actions immediately and sends structured identity ev
   for (const call of ["revokeUserSession", "revokeUserSessions", "disableUserTwoFactor", "requestUserPasswordReset", "unlockUserSecurity"]) {
     assert.match(c5, new RegExp(`await ${call}`));
   }
-  for (const field of ["kycVerificationChannel", "kycVerificationTicket", "kycVerifiedAt", "identityConfirmed", "lockKind"]) {
+  for (const field of ["operatorConfirmed", "lockKind"]) {
     assert.match(client, new RegExp(field));
   }
 });
@@ -108,7 +108,6 @@ test("C5 explains the empty session table before a user is selected", () => {
 test("C5 translates high-risk rejection and internal failure codes", () => {
   for (const code of [
     "C5_RESPONSE_INVALID",
-    "KYC_REVERIFY_REQUIRED",
     "C5_ACTION_STATE_CHANGED",
     "C5_UNLOCK_ROLE_FORBIDDEN",
     "INTERNAL_SERVER_ERROR",
@@ -126,16 +125,10 @@ test("C5 keeps structured confirmation input open after a rejected server action
   assert.match(kConfirm, /succeeded !== false/);
 });
 
-test("C5 uses action-bound server K5 evidence and exact server session totals", () => {
-  assert.match(client, /requestUserKycReverification/);
-  assert.match(client, /security\/kyc-reverification/);
-  assert.match(usersProxy, /kyc-reverification/);
+test("C5 uses action-bound operator confirmation and exact server session totals", () => {
   assert.match(usersProxy, /security\/sessions\/revoke-all/);
-  assert.match(client, /Array\.isArray\(overview\.kycReverifications\)/);
-  assert.match(c5, /await requestUserKycReverification/);
   assert.match(c5, /serverVerification:/);
-  assert.match(c5, /verificationFor\("DISABLE_2FA"\)/);
-  assert.match(c5, /verificationFor\("PASSWORD_RESET"\)/);
+  assert.match(c5, /operatorConfirmed:/);
   assert.match(c5, /overview\?\.selectedActiveSessionCount/);
   assert.doesNotMatch(c5, /activeSessionCount\s*=\s*sessions\.filter/);
   assert.match(c5, /前 5 个紧急账户/);

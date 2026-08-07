@@ -64,7 +64,7 @@ test.beforeEach(async ({ page }) => {
   await loginFromUi(page);
 });
 
-test("K1-K5 风控域人工路径全流程真实提交", async ({ page }) => {
+test("K1-K4 风控域人工路径全流程真实提交", async ({ page }) => {
   let pickedUserNo = "U00000001";
 
   await test.step("K1 多账户: 调阈值、改簇状态、加白再移除、分页", async () => {
@@ -177,24 +177,6 @@ test("K1-K5 风控域人工路径全流程真实提交", async ({ page }) => {
     await expectPageHealthy(page, "K4");
   });
 
-  await test.step("K5 大额 KYC: 调触发线、手动工单、裁决、分页", async () => {
-    await openModuleFromSidebar(page, moduleById("K5"));
-    await expectPageHealthy(page, "K5");
-    await assertPagerAndMaybeClick(page, "复审触发队列");
-
-    await clickScopedButton(sectionByTitle(page, /触发线/), /调整/);
-    await completeDialog(page, { confirmName: /确认执行/ });
-    await expectTransientSuccess(page);
-
-    await clickVisibleButton(page, /手动补触发/);
-    await completeDialog(page, { inputValue: pickedUserNo, confirmName: /确认触发|确认/ });
-    await expectTransientSuccess(page);
-
-    await clickFirstAvailableButton(page, [/^通过$/, /^驳回$/]);
-    await completeDialog(page, { confirmName: /确认执行/ });
-    await expectTransientSuccess(page);
-    await expectPageHealthy(page, "K5");
-  });
 });
 
 function moduleById(id: string): ModuleCase {

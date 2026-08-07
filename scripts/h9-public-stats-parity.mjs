@@ -314,7 +314,7 @@ for (const dirent of fs.readdirSync(TABS_ROOT, { withFileTypes: true })) {
   }
 }
 if (paramGridDomains.size === 0) {
-  failures.push("E2 全部 {x}-tabs 里扫不到任何 param-grid 消费者(K2/K5/L5/G4/H8 存量在此,0 命中 = 判据失效)");
+  failures.push("E2 全部 {x}-tabs 里扫不到任何 param-grid 消费者(K2/L5/G4/H8 存量在此,0 命中 = 判据失效)");
 }
 for (const domain of [...paramGridDomains].sort()) {
   const cssFile = path.join(TABS_ROOT, `${domain}-domain.css`);

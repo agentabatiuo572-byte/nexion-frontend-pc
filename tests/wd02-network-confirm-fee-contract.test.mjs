@@ -178,7 +178,7 @@ function d2Row(overrides = {}) {
     id: 7, userId: 11, withdrawalNo: "WD-20260802-1001", asset: "USDT", chain: "TRC20",
     amount: 100, fee: 1, targetAddress: "TX9y…", riskDecisionId: null, chainTxHash: null,
     status: "REVIEW_PENDING", createdAt: "2026-08-02 10:00:00", updatedAt: "2026-08-02 10:00:00",
-    userNo: "U-11", nickname: "n", phoneMasked: "84*", kycStatus: "VERIFIED", userStatus: "ACTIVE",
+    userNo: "U-11", nickname: "n", phoneMasked: "84*", userStatus: "ACTIVE",
     riskScore: 12, hitRules: "", riskReason: "", withdrawalCount24h: 1,
     statusHistory: "", auditTrail: "", failureReason: "", userLevel: "", deviceSummary: "",
     referralPosition: "", riskScoreBreakdown: "", withdrawalHistory: "",

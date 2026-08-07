@@ -21,7 +21,7 @@ const EVIDENCE_DIR = path.resolve(
 const RUN_ID = Date.now();
 
 const AGGREGATE_TYPES = ["KPI 序列", "漏斗序列", "财务聚合", "运营聚合"] as const;
-const REGULATORY_TEMPLATES = ["AML_REPORT", "JURISDICTION_SPECIAL", "KYC_COMPLIANCE", "PAYOUT_REPORT"] as const;
+const REGULATORY_TEMPLATES = ["AML_REPORT", "JURISDICTION_SPECIAL", "PAYOUT_REPORT"] as const;
 
 type ApiEnvelope<T> = { code?: number; message?: string; data?: T };
 type RegulatoryOptions = {
@@ -175,7 +175,6 @@ test("L5 首次用户从可见侧栏完成四类聚合、D4 七账单与四模�
     expect(csv).toContain("A2");
     expect(csv).toContain("J4");
     expect(csv).not.toMatch(/user_id|phone|passport/i);
-    if (templateCode === "KYC_COMPLIANCE") expect(csv).toContain("C4");
     if (templateCode === "PAYOUT_REPORT") expect(csv).toContain("D4");
     if (templateCode === "AML_REPORT") expect(csv).toContain("L3");
     if (templateCode === "JURISDICTION_SPECIAL") expect(csv).toContain("L4");

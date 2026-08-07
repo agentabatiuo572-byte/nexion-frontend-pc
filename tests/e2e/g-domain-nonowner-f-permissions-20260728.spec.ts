@@ -60,7 +60,7 @@ const ALL_MODULES: ModuleProbe[] = [
     writePath: "/api/admin/market/exchange/params/userDailyCap",
     writeMethod: "PATCH",
     writeBody: { value: "50", reason: REASON, operator: "g-permission-probe" },
-    mutationButtons: /调整|处理今日批次|swap 全局熔断|提交 KYC 复审|强制取消/,
+    mutationButtons: /调整|处理今日批次|swap 全局熔断|强制取消/,
   },
   {
     id: "G3",

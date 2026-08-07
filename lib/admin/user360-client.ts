@@ -29,7 +29,6 @@ export interface UserPage<T> {
 export interface UserProfileQuery {
   keyword?: string;
   status?: string;
-  kycStatus?: string;
   riskMin?: number;
   userId?: number | string;
   phoneHash?: string;
@@ -58,7 +57,6 @@ export interface User360Profile extends JsonRecord {
   phoneMasked?: string | null;
   countryCode?: string | null;
   status?: string | null;
-  kycStatus?: string | null;
   userLevel?: string | null;
   vRank?: string | null;
   twoFactorEnabled?: boolean | null;
@@ -137,7 +135,6 @@ export interface UserSecurityOverview extends JsonRecord {
   selectedUser?: UserSecurityUserRow | null;
   sessions?: UserPage<UserSession> | null;
   selectedActiveSessionCount?: number | string | null;
-  kycReverifications?: UserKycReverification[] | null;
   lockedUsers?: UserSecurityUserRow[] | null;
   sources?: string[] | null;
   redlines?: string[] | null;
@@ -198,20 +195,8 @@ export interface UserSecurityQuery {
   pageSize?: number;
 }
 
-export interface UserKycReverification extends JsonRecord {
-  action?: "DISABLE_2FA" | "PASSWORD_RESET" | "UNLOCK_SHORT" | "UNLOCK_LONG" | string | null;
-  ticketId?: string | null;
-  status?: string | null;
-  verifiedBy?: string | null;
-  verifiedAt?: string | null;
-  expiresAt?: string | null;
-}
-
 export interface UserSecurityActionEvidence {
-  kycVerificationChannel: string;
-  kycVerificationTicket: string;
-  kycVerifiedAt: string;
-  identityConfirmed: boolean;
+  operatorConfirmed: boolean;
   lockKind?: "SHORT" | "LONG" | null;
 }
 
@@ -344,53 +329,6 @@ export interface UserAssetAdjustmentDetail extends JsonRecord {
   sources?: string[] | null;
 }
 
-export interface UserKycKeyValue extends JsonRecord {
-  key?: string | null;
-  value?: string | null;
-}
-
-export interface UserKycLedgerRow extends JsonRecord {
-  userId?: number | string | null;
-  displayId?: string | null;
-  nickname?: string | null;
-  phoneMasked?: string | null;
-  countryCode?: string | null;
-  status?: string | null;
-  backendStatus?: string | null;
-  statusLabel?: string | null;
-  statusTone?: string | null;
-  pairedAddressMasked?: string | null;
-  network?: string | null;
-  pairedAt?: string | null;
-  triggerSource?: string | null;
-  info?: UserKycKeyValue[] | null;
-  history?: string[] | null;
-}
-
-export interface UserKycStats extends JsonRecord {
-  total?: number | string | null;
-  verified?: number | string | null;
-  unverified?: number | string | null;
-  inReview?: number | string | null;
-  rejected?: number | string | null;
-  verifiedPct?: number | string | null;
-  feeUsd?: number | string | null;
-}
-
-export interface UserKycOverview extends JsonRecord {
-  stats?: UserKycStats | null;
-  networkWhitelist?: string | null;
-  rows?: UserKycLedgerRow[] | null;
-  sources?: string[] | null;
-  redlines?: string[] | null;
-}
-
-export interface UserKycQuery {
-  status?: string;
-  pageNum?: number;
-  pageSize?: number;
-}
-
 export interface UserAssetAdjustmentQuery {
   status?: string;
   asset?: string;
@@ -405,7 +343,6 @@ export interface User360Summary extends JsonRecord {
   userId?: number | string | null;
   userNo?: string | null;
   status?: string | null;
-  kycStatus?: string | null;
   walletUsdt?: number | string | null;
   walletNex?: number | string | null;
   twoFactorEnabled?: boolean | null;
@@ -522,33 +459,6 @@ function toNumber(value: number | string | null | undefined, fallback = 0) {
   return fallback;
 }
 
-export interface UserKycExportJob extends JsonRecord {
-  jobNo?: string | null;
-  status?: string | null;
-  scope?: string | null;
-  rowCount?: number | string | null;
-  masked?: boolean | null;
-  downloadPath?: string | null;
-  createdAt?: string | null;
-}
-
-export interface UserKycStatusActionInput {
-  expectedState: string;
-  reasonCode: string;
-  reason: string;
-  evidenceRef: string;
-  operator: string;
-  idempotencyKey: string;
-}
-
-export interface UserKycReviewTriggerInput {
-  reasonCode: string;
-  reason: string;
-  evidenceRef: string;
-  operator: string;
-  idempotencyKey: string;
-}
-
 export interface UserAssetAdjustmentContext extends JsonRecord {
   account?: User360Profile | null;
   pendingWithdraw?: number | string | null;
@@ -602,67 +512,6 @@ function requireNumber(value: number | string | null | undefined, field: string)
 
 function isJsonRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function c4ResponseInvalid(): never {
-  throw new Error(formatAdminApiError("C4_RESPONSE_INVALID", "C4_RESPONSE_INVALID"));
-}
-
-function requireC4LedgerRow(value: unknown): UserKycLedgerRow {
-  if (!isJsonRecord(value)
-    || (typeof value.userId !== "number" && typeof value.userId !== "string")
-    || typeof value.displayId !== "string"
-    || typeof value.backendStatus !== "string"
-    || typeof value.statusLabel !== "string"
-    || !Array.isArray(value.info)
-    || !Array.isArray(value.history)) {
-    return c4ResponseInvalid();
-  }
-  return value as UserKycLedgerRow;
-}
-
-function requireC4Overview(value: unknown): UserKycOverview {
-  if (!isJsonRecord(value)
-    || !isJsonRecord(value.stats)
-    || typeof value.networkWhitelist !== "string"
-    || !Array.isArray(value.rows)
-    || !Array.isArray(value.sources)
-    || !Array.isArray(value.redlines)) {
-    return c4ResponseInvalid();
-  }
-  for (const field of ["total", "verified", "unverified", "inReview", "rejected", "verifiedPct", "feeUsd"] as const) {
-    if (!Number.isFinite(toNumber(value.stats[field] as number | string | null | undefined, Number.NaN))) {
-      return c4ResponseInvalid();
-    }
-  }
-  value.rows.forEach(requireC4LedgerRow);
-  return value as UserKycOverview;
-}
-
-function requireC4ReviewResult(value: unknown): JsonRecord {
-  if (!isJsonRecord(value)
-    || typeof value.ticketId !== "string"
-    || !/^KR-/.test(value.ticketId)
-    || (value.status !== "CREATED" && value.status !== "MERGED")
-    || typeof value.kycStatus !== "string") {
-    return c4ResponseInvalid();
-  }
-  return value;
-}
-
-function requireC4ExportJob(value: unknown): UserKycExportJob {
-  if (!isJsonRecord(value)
-    || typeof value.jobNo !== "string"
-    || !/^KYC-EXP-/.test(value.jobNo)
-    || typeof value.status !== "string"
-    || typeof value.scope !== "string"
-    || !Number.isFinite(toNumber(value.rowCount as number | string | null | undefined, Number.NaN))
-    || typeof value.masked !== "boolean"
-    || typeof value.downloadPath !== "string"
-    || typeof value.createdAt !== "string") {
-    return c4ResponseInvalid();
-  }
-  return value as UserKycExportJob;
 }
 
 function queryString(query: Record<string, string | number | boolean | null | undefined>) {
@@ -853,7 +702,6 @@ export async function fetchC1Overview() {
   if (!isJsonRecord(value)) throw new Error("USER360_RESPONSE_INVALID:c1Overview");
   return {
     totalUsers: requireNumber(value.totalUsers as number | string | null | undefined, "c1Overview.totalUsers"),
-    kycPending: requireNumber(value.kycPending as number | string | null | undefined, "c1Overview.kycPending"),
     frozen: requireNumber(value.frozenUsers as number | string | null | undefined, "c1Overview.frozenUsers"),
     riskAuthorityAvailable: value.riskAuthorityAvailable === true,
     highRisk: value.highRiskUsers == null
@@ -1085,13 +933,6 @@ export async function fetchUserAssetAdjustmentContext(userId: number | string) {
   ));
 }
 
-export async function fetchUserKycOverview(query: UserKycQuery = {}) {
-  const pageNum = query.pageNum ?? 1;
-  const pageSize = query.pageSize ?? 10;
-  const result = await usersRequest<unknown>(`/kyc/overview${queryString({ ...query, pageNum, pageSize })}`);
-  return requireC4Overview(result);
-}
-
 export async function fetchUserSecurityOverview(query: UserSecurityQuery = {}) {
   const pageNum = query.pageNum ?? 1;
   const pageSize = query.pageSize ?? 10;
@@ -1108,7 +949,6 @@ function requireC5Overview(value: unknown): UserSecurityOverview {
   const overview = value as UserSecurityOverview;
   if (!overview.stats || typeof overview.stats !== "object"
     || !Array.isArray(overview.credentialParams)
-    || !Array.isArray(overview.kycReverifications)
     || !Array.isArray(overview.lockedUsers)
     || !overview.sessions || typeof overview.sessions !== "object"
     || !Array.isArray(overview.sessions.records)) {
@@ -1283,115 +1123,6 @@ export async function unlockUserSecurity(
   });
 }
 
-export async function verifyUserKyc(userId: number | string, input: UserKycStatusActionInput) {
-  const result = await usersRequest<unknown>(`/kyc/users/${encodeURIComponent(String(userId))}/verify`, {
-    method: "POST",
-    body: JSON.stringify({
-      status: "APPROVED",
-      expectedState: input.expectedState,
-      reasonCode: input.reasonCode,
-      reason: input.reason,
-      evidenceRef: input.evidenceRef,
-      operator: input.operator,
-    }),
-    idempotencyKey: input.idempotencyKey,
-  });
-  return requireC4LedgerRow(result);
-}
-
-export async function requestUserKycReverification(
-  userId: number | string,
-  action: "DISABLE_2FA" | "PASSWORD_RESET" | "UNLOCK_SHORT" | "UNLOCK_LONG",
-  reason: string,
-  operator: string,
-  commandKey?: string,
-) {
-  return usersRequest<JsonRecord>(`/profiles/${encodeURIComponent(String(userId))}/security/kyc-reverification`, {
-    method: "POST",
-    body: JSON.stringify({ action, reason, operator }),
-    idempotencyKey: commandKey ?? idempotencyKey("c5-user-kyc-reverification"),
-  });
-}
-
-export async function revokeUserKyc(userId: number | string, input: UserKycStatusActionInput) {
-  const result = await usersRequest<unknown>(`/kyc/users/${encodeURIComponent(String(userId))}/revoke`, {
-    method: "POST",
-    body: JSON.stringify({
-      status: "NONE",
-      expectedState: input.expectedState,
-      reasonCode: input.reasonCode,
-      reason: input.reason,
-      evidenceRef: input.evidenceRef,
-      operator: input.operator,
-    }),
-    idempotencyKey: input.idempotencyKey,
-  });
-  return requireC4LedgerRow(result);
-}
-
-export async function triggerUserKycReview(userId: number | string, input: UserKycReviewTriggerInput) {
-  const result = await usersRequest<unknown>(`/kyc/users/${encodeURIComponent(String(userId))}/trigger-review`, {
-    method: "POST",
-    body: JSON.stringify({
-      reasonCode: input.reasonCode,
-      reason: input.reason,
-      evidenceRef: input.evidenceRef,
-      operator: input.operator,
-    }),
-    idempotencyKey: input.idempotencyKey,
-  });
-  return requireC4ReviewResult(result);
-}
-
-export async function updateUserKycNetworkWhitelist(
-  value: string,
-  reason: string,
-  operator: string,
-  commandKey = idempotencyKey("c4-kyc-network"),
-) {
-  return usersRequest<JsonRecord>("/kyc/network-whitelist", {
-    method: "PATCH",
-    body: JSON.stringify({ value, reason, operator }),
-    idempotencyKey: commandKey,
-  });
-}
-
-export async function createUserKycExport(
-  scope: string,
-  reason: string,
-  operator: string,
-  exportKey = idempotencyKey("c4-kyc-export"),
-) {
-  const result = await usersRequest<unknown>("/kyc/exports", {
-    method: "POST",
-    body: JSON.stringify({ scope, reason, operator }),
-    idempotencyKey: exportKey,
-  });
-  return requireC4ExportJob(result);
-}
-
-export async function fetchUserKycExports(limit = 10) {
-  const result = await usersRequest<unknown>(`/kyc/exports${queryString({ limit })}`);
-  if (!Array.isArray(result)) return c4ResponseInvalid();
-  return result.map(requireC4ExportJob);
-}
-
-export async function downloadUserKycExport(jobNo: string) {
-  const response = await guardedFetch(`/api/admin/users/kyc/exports/${encodeURIComponent(jobNo)}/download`, {
-    cache: "no-store",
-  });
-  const contentType = response.headers.get("Content-Type") || "";
-  if (!response.ok || contentType.includes("application/json")) {
-    const result = (await response.json().catch(() => null)) as ApiResult<unknown> | null;
-    if (isAdminAuthFailure(response.status, result?.message)) resetAdminSession();
-    throw new Error(formatAdminApiError(result?.message, `C4_EXPORT_DOWNLOAD_FAILED_${response.status}`));
-  }
-  return {
-    blob: await response.blob(),
-    fileName: filenameFromDisposition(response.headers.get("Content-Disposition"), `${jobNo}.csv`),
-  };
-}
-
 export async function createUserAssetAdjustment(
   userId: number | string,
   input: CreateUserAssetAdjustmentInput,
@@ -1409,11 +1140,6 @@ export async function createUserAssetAdjustment(
     }),
     idempotencyKey: input.idempotencyKey,
   });
-}
-
-export async function fetchUserKycDetail(userId: number | string) {
-  const result = await usersRequest<unknown>(`/kyc/users/${encodeURIComponent(String(userId))}`);
-  return requireC4LedgerRow(result);
 }
 
 export async function requestLargeUserAssetAdjustment(

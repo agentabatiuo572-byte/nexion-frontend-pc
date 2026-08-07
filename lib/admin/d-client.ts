@@ -239,7 +239,6 @@ export interface D2Withdrawal {
   userNo: string;
   nickname: string;
   phoneMasked: string;
-  kycStatus: string;
   userStatus: string;
   riskScore: number | null;
   hitRules: string;
@@ -1116,7 +1115,6 @@ function normalizeWithdrawal(value: unknown): D2Withdrawal {
     userNo: d2String(row.userNo, "withdrawal.userNo"),
     nickname: d2OptionalString(row.nickname, "withdrawal.nickname"),
     phoneMasked: d2OptionalString(row.phoneMasked, "withdrawal.phoneMasked"),
-    kycStatus: d2String(row.kycStatus, "withdrawal.kycStatus"),
     userStatus: d2String(row.userStatus, "withdrawal.userStatus"),
     riskScore: d2NullableNumber(row.riskScore),
     hitRules: d2OptionalString(row.hitRules, "withdrawal.hitRules"),

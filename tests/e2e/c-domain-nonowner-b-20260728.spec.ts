@@ -87,19 +87,6 @@ const MODULES: ModuleProbe[] = [
     errorText: /余额调整数据加载失败/,
   },
   {
-    id: "C4",
-    path: "/users/kyc",
-    title: "KYC 合规台账",
-    readPath: "/api/admin/users/kyc/overview?pageNum=1&pageSize=10",
-    writePath: `/api/admin/users/kyc/users/${USER_ID}/trigger-review`,
-    writeMethod: "POST",
-    writeBody: {
-      reason: "C 域权限篡改探针不得执行",
-      operator: "superadmin",
-    },
-    errorText: /C4 数据加载失败/,
-  },
-  {
     id: "C5",
     path: "/users/security",
     title: "安全 & 会话",
@@ -133,7 +120,7 @@ const MODULES: ModuleProbe[] = [
 const CROSS_DOMAIN_READS = {
   D: "/api/admin/bills?pageNum=1&pageSize=10",
   G: "/api/admin/market/exchange",
-  K: "/api/admin/risk/kyc-review/overview",
+  K: "/api/admin/risk/scoring/overview",
   M: "/api/admin/content/tickets?pageNum=1&pageSize=1",
 };
 
@@ -199,32 +186,23 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
     const c2 = await browserApi(page, "GET", `/api/admin/users/account-actions/accounts/${USER_NO}`);
     const c3 = await browserApi(page, "GET", `/api/admin/users/asset-adjustments?keyword=${USER_NO}&pageNum=1&pageSize=50`);
     const d4 = await browserApi(page, "GET", `/api/admin/bills?keyword=${USER_NO}&pageNum=1&pageSize=100`);
-    const c4 = await browserApi(page, "GET", `/api/admin/users/kyc/users/${USER_ID}`);
-    const k5 = await browserApi(page, "GET", `/api/admin/risk/kyc-review/overview?keyword=${encodeURIComponent(USER_NO)}`);
+    const k4 = await browserApi(page, "GET", "/api/admin/risk/scoring/overview");
     const l5 = await browserApi(page, "GET", "/api/admin/bi/export/overview");
     const g2 = await browserApi(page, "GET", CROSS_DOMAIN_READS.G);
     const m2 = await browserApi(page, "GET", `/api/admin/content/tickets?keyword=${encodeURIComponent(USER_NO)}&pageNum=1&pageSize=10`);
-    // The C maker has the C1–C4 read grants (including C1HUB), but deliberately
+    // The C maker has the C1–C3/C5/C6 read grants (including C1HUB), but deliberately
     // has no D/K/L/G/M grant.  Treat every cross-domain response as an RBAC
     // boundary check instead of accidentally testing this least-privilege user
     // as if it were the global superadmin.
-    for (const [label, result] of Object.entries({ c1, c2, c3, c4 })) {
+    for (const [label, result] of Object.entries({ c1, c2, c3 })) {
       expect(result.status, label).toBe(200);
     }
-    for (const [label, result] of Object.entries({ d4, k5, l5, g2, m2 })) {
+    for (const [label, result] of Object.entries({ d4, k4, l5, g2, m2 })) {
       expect(result.status, label).toBe(403);
     }
     expect(JSON.stringify(c1.data)).toContain(USER_NO);
     expect(JSON.stringify(c2.data)).toContain(USER_NO);
     expect(String(findKey(c2.data, "status")).toUpperCase()).toBe("ACTIVE");
-    const c1KycStatus = String(findKey(c1.data, "kycStatus")).toUpperCase();
-    const c4KycStatus = String(
-      findKey(c4.data, "backendStatus")
-      ?? findKey(c4.data, "kycStatus")
-      ?? findKey(c4.data, "status"),
-    ).toUpperCase();
-    expect(["APPROVED", "VERIFIED"]).toContain(c1KycStatus);
-    expect(["APPROVED", "VERIFIED"]).toContain(c4KycStatus);
     expect(JSON.stringify(c3.data)).toContain(USER_NO);
     assertMaskedPhoneFields(c1.data);
 
@@ -253,12 +231,11 @@ test.describe.serial("C 域非 Owner B：C1–C6 完整复审", () => {
       relogin: "PASS",
       user: USER_NO,
       c2Status: findKey(c2.data, "status"),
-      c4Status: c4KycStatus,
       c6RestoredValue,
       c1EmptyState: "PASS",
       crossDomain: {
         C3_D4: [c3.status, d4.status],
-        C4_K5_L5: [c4.status, k5.status, l5.status],
+        K4_L5: [k4.status, l5.status],
         C_G_M: [g2.status, m2.status],
       },
       pageErrors: runtime.pageErrors,
@@ -622,7 +599,7 @@ async function assertSessionShape(page: Page, expected: { hasCRead: boolean; has
   const authorities = collectStrings(findKey(session.data, "authorities"));
   const menus = collectStrings(findKey(session.data, "menuCodes") ?? findKey(session.data, "effectiveMenus"));
   if (expected.hasCRead) {
-    for (const authority of ["user_c1_read", "user_c2_read", "user_c3_read", "user_c4_read", "user_c5_read", "user_c6_read"]) {
+    for (const authority of ["user_c1_read", "user_c2_read", "user_c3_read", "user_c5_read", "user_c6_read"]) {
       expect(authorities).toContain(authority);
     }
     if (expected.hasMenu !== false) expect(menus.length).toBeGreaterThan(0);
@@ -638,7 +615,6 @@ async function assertNoEnabledDangerousButton(page: Page, moduleId: string) {
     C1: /导出/,
     C2: /^(冻结|恢复|强制登出|发起模拟登录|\+ 加入信任名单|\+ 加入禁入名单)$/,
     C3: /发起调整|冲正|批准|拒绝|重新放行/,
-    C4: /触发复审|生成脱敏导出|人工标记|撤销实名|调整/,
     C5: /踢线|关闭 2FA|密码重置|解锁|调整/,
     C6: /^(调整|立即恢复|紧急关闭)$/,
   }[moduleId] ?? /$^/;

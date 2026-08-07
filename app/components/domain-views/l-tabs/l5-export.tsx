@@ -233,7 +233,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
     const disclosureValues = disclosures.map((item) => `${item.jurisdictionCode}|${item.disclosureVersion}`);
     ctx.openActionConfirm({
       action: "生成监管报告",
-      detail: <>服务端将再次校验所选法域当前生效的披露版本与七章完整性，并按模板读取 C4、L3、L4、D4、A2、J4 的聚合事实。报告不含逐用户行或明文敏感字段。</>,
+      detail: <>服务端将再次校验所选法域当前生效的披露版本与七章完整性，并按模板读取 L3、L4、D4、A2、J4 的聚合事实。报告不含逐用户行或明文敏感字段。</>,
       reasonMin: 8,
       reasonMax: 200,
       businessForm: {
@@ -300,7 +300,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">导出任务管理</span>
-          <span className="sub">· <AutoGloss>四类聚合、KYC 脱敏台账与 I5 监管报告统一跟踪</AutoGloss></span>
+          <span className="sub">· <AutoGloss>四类聚合与 I5 监管报告统一跟踪</AutoGloss></span>
           <div className="r"><div className="chips">
             {["全部", "待确认", "生成中", "已就绪（含历史）"].map((c, i) => (
               <button key={c} className={"chip" + (i === filter ? " sel" : "")} onClick={() => { setFilter(i); setTaskPageNum(1); toast(`任务列表筛选:${c}`); }}>{c}</button>
@@ -376,7 +376,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
       <section className="l-card">
         <div className="l-h">
           <span className="ttl">监管报告生成</span>
-          <span className="sub">· <AutoGloss>I5 当前法域 × 披露版本 · C4/L3/L4/D4 聚合事实 · A2/J4 可追溯</AutoGloss></span>
+          <span className="sub">· <AutoGloss>I5 当前法域 × 披露版本 · L3/L4/D4 聚合事实 · A2/J4 可追溯</AutoGloss></span>
           <div className="r">
             <button
               className="l-btn primary"
@@ -388,7 +388,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         </div>
         <div className="l-b">
           <div className="rev-row" style={{ gridTemplateColumns: "minmax(220px, 1fr) minmax(300px, 1.8fr) auto" }}>
-            <span className="nm">KYC 合规 / 提现发放 / 反洗钱 / 法域专项</span>
+            <span className="nm">提现发放 / 反洗钱 / 法域专项</span>
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>服务端校验当前生效映射、披露版本与七章完整性；只固化聚合事实，缺失源字段明确标为不可用，不推测数值。</span>
             <span className="bdg ok">I5 → L5 已闭环</span>
           </div>
@@ -446,7 +446,7 @@ export function L5Export({ ctx }: { ctx: LCtx }) {
         <section className="l-card">
           <div className="l-h">
             <span className="ttl">统一导出审计台</span>
-            <span className="sub">· <AutoGloss>聚合、账单、KYC 与监管报告的服务端强制审计</AutoGloss></span>
+            <span className="sub">· <AutoGloss>聚合、账单与监管报告的服务端强制审计</AutoGloss></span>
             <div className="r"><span className="lcode">只读 · 当前页不写核查结果</span></div>
           </div>
           <div style={{ overflowX: "auto" }}>

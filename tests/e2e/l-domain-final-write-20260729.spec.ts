@@ -225,8 +225,6 @@ test("L Owner 最终写入闭环：L1/L2 同源、L4/L5/L6 真实出口与空切
     const expectedLabels: Record<string, string> = {
       registered: "已注册",
       profileCompleted: "已完善资料",
-      kycSubmitted: "已提交 KYC",
-      kycApproved: "KYC 已通过",
       ordered: "订单记录",
       walletActivity: "钱包活动",
     };
@@ -430,7 +428,7 @@ async function verifyL2EmptySliceFailsClosed(page: Page) {
     data: {
       exportType: "漏斗生命周期事实",
       timeRange: "2099-W52",
-      fields: "注册/资料/KYC/订单/钱包活动聚合计数",
+      fields: "注册/资料/订单/钱包活动聚合计数",
       piiLevel: "NONE",
       maskPolicy: "NONE",
       recipient: "L2 空切片失败关闭验收",

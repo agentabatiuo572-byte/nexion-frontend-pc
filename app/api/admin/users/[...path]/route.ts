@@ -51,9 +51,6 @@ function backendPath(parts: string[]) {
   if (parts.length === 4 && parts[0] === "account-actions" && parts[1] === "accounts" && isNonEmpty(parts[2]) && parts[3] === "context") {
     return `/api/admin/users/account-actions/accounts/${encodeURIComponent(parts[2])}/context`;
   }
-  if (parts.length === 2 && parts[0] === "kyc" && parts[1] === "overview") {
-    return "/api/admin/users/kyc/overview";
-  }
   if (parts.length === 2 && parts[0] === "security" && parts[1] === "overview") {
     return "/api/admin/users/security/overview";
   }
@@ -68,24 +65,6 @@ function backendPath(parts: string[]) {
   }
   if (parts.length === 3 && parts[0] === "registration-risk" && parts[1] === "params" && isNonEmpty(parts[2])) {
     return `/api/admin/users/registration-risk/params/${encodeURIComponent(parts[2])}`;
-  }
-  if (parts.length === 2 && parts[0] === "kyc" && parts[1] === "network-whitelist") {
-    return "/api/admin/users/kyc/network-whitelist";
-  }
-  if (parts.length === 2 && parts[0] === "kyc" && parts[1] === "exports") {
-    return "/api/admin/users/kyc/exports";
-  }
-  if (parts.length === 4 && parts[0] === "kyc" && parts[1] === "exports" && isNonEmpty(parts[2]) && parts[3] === "download") {
-    return `/api/admin/users/kyc/exports/${encodeURIComponent(parts[2])}/download`;
-  }
-  if (parts.length === 3 && parts[0] === "kyc" && parts[1] === "users" && isNonEmpty(parts[2])) {
-    return `/api/admin/users/kyc/users/${encodeURIComponent(parts[2])}`;
-  }
-  if (
-    parts.length === 4 && parts[0] === "kyc" && parts[1] === "users" && isNonEmpty(parts[2]) &&
-    (parts[3] === "verify" || parts[3] === "revoke" || parts[3] === "trigger-review")
-  ) {
-    return `/api/admin/users/kyc/users/${encodeURIComponent(parts[2])}/${parts[3]}`;
   }
   if (parts.length === 1 && parts[0] === "account-lists") {
     return "/api/admin/users/account-lists";
@@ -164,7 +143,7 @@ function backendPath(parts: string[]) {
   }
   if (
     parts.length === 4 && parts[0] === "profiles" && isNonEmpty(parts[1]) && parts[2] === "security" &&
-    (parts[3] === "disable-2fa" || parts[3] === "unlock" || parts[3] === "kyc-reverification")
+    (parts[3] === "disable-2fa" || parts[3] === "unlock")
   ) {
     return `/api/admin/users/profiles/${encodeURIComponent(parts[1])}/security/${parts[3]}`;
   }

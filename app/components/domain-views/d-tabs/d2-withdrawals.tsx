@@ -380,7 +380,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
     const label = actionLabel(action);
     openActionConfirm({
       action: `${label}提现 · ${row.withdrawalNo}`,
-      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；K3 命中 ${row.hitRules || "无"}；C4 KYC ${row.kycStatus}；C2 账户 ${row.userStatus}。${action === "APPROVE" ? `B1 当前覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后即时执行并核减 D3 储备。` : "确认后即时执行，结果写入审计与 A4 事件。"}`,
+      detail: `${row.userNo} / ${money(row.amount)} ${row.asset}；当前 ${statusLabel(row.status)}；${k4RiskText(row)}；K3 命中 ${row.hitRules || "无"}；C2 账户 ${row.userStatus}。${action === "APPROVE" ? `B1 当前覆盖率 ${d5?.coverageRatio ?? "—"}%，红线 ${d5?.redlinePct ?? "—"}%。确认后即时执行并核减 D3 储备。` : "确认后即时执行，结果写入审计与 A4 事件。"}`,
       amplifies: action === "APPROVE",
       coverage: d5 ? { coverageRatio: d5.coverageRatio, redlinePct: d5.redlinePct } : undefined,
       businessForm: actionBusinessForm(action, row),
@@ -494,7 +494,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
               <div className="sub">NEX抵扣 {row.nexBurned} × ${row.nexFeeOffsetRate}/NEX · 费用减免 {money(row.feeWaived)}</div>
               <div className="sub">实际手续费 {money(row.actualFee)} · 实际到账 {money(row.netReceive)}</div>
             </>}</td>
-            <td><span className={`bdg ${routingPriorityTone(row)}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">当前模型阈值 {row.k4BandLowMax ?? "—"} / {row.k4BandHighMin ?? "—"} / 升级 {row.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 {row.k3RiskRoute || "—"} · {row.hitRules || "无"}</div><div className="sub">C4 {row.kycStatus} · C2 {row.userStatus}</div></td>
+            <td><span className={`bdg ${routingPriorityTone(row)}`}>{routingPriorityLabel(row)} · {k4RiskText(row)}</span><div className="sub">当前模型阈值 {row.k4BandLowMax ?? "—"} / {row.k4BandHighMin ?? "—"} / 升级 {row.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 {row.k3RiskRoute || "—"} · {row.hitRules || "无"}</div><div className="sub">C2 {row.userStatus}</div></td>
             <td>{row.withdrawalCount24h}/{dailyLimit || "—"}</td>
             <td><span className={`bdg ${statusTone(row.status)}`}>{statusLabel(row.status)}</span></td>
             <td className="sub">{row.failureReason || "—"}</td>
@@ -514,7 +514,7 @@ export function D2Withdrawals({ ctx }: { ctx: DCtx }) {
       <div className="l-b"><div className="f-stats">
         <div className="f-stat"><div className="k">C1 用户画像</div><div className="v">{detail.userNo} · {detail.userLevel}</div><div className="sub">{detail.nickname} · {detail.phoneMasked || "未展示手机号"} · IP 段 {detail.ipSegment}</div></div>
         <div className="f-stat warn"><div className="k">K4 / K3</div><div className="v">{routingPriorityLabel(detail)} · {k4RiskText(detail)}</div><div className="sub">当前模型阈值 {detail.k4BandLowMax ?? "—"} / {detail.k4BandHighMin ?? "—"} / 升级 {detail.k4AutoEscalateScore ?? "—"}</div><div className="sub">K3 路由 {detail.k3RiskRoute || "—"} · {detail.hitRules || "无命中"} · {detail.riskReason || "无补充原因"}</div><div className="sub">K4 评分明细：{detail.riskScoreBreakdown}</div></div>
-        <div className="f-stat cyan"><div className="k">C4 / C2</div><div className="v">{detail.kycStatus}</div><div className="sub">账户 {detail.userStatus} · 24h 第 {detail.withdrawalCount24h} 笔</div></div>
+        <div className="f-stat cyan"><div className="k">账户状态</div><div className="v">{detail.userStatus}</div><div className="sub">24h 第 {detail.withdrawalCount24h} 笔</div></div>
         <div className="f-stat"><div className="k">当前状态</div><div className="v">{statusLabel(detail.status)}</div><div className="sub">{detail.failureReason || "无异常/生命周期备注"}</div><div className="sub">复查 {timeText(detail.holdUntil)} · 责任人 {detail.lifecycleOwner || "—"} · 期限 {detail.freezePeriod || "—"}</div></div>
       </div><p><strong>设备事实：</strong>{detail.deviceSummary}</p><p><strong>推荐位置：</strong>{detail.referralPosition}</p>{detail.feeModel === "confirm"
         ? <p><strong>费用明细：</strong>网络确认费 {money(detail.networkConfirmUsd ?? 0)}（每笔固定 · 新费用模型）；NEX抵扣 {detail.nexBurned}；NEX抵扣率 ${detail.nexFeeOffsetRate}/NEX；费用减免 {money(detail.feeWaived)}；实际手续费 {money(detail.actualFee)}；实际到账 {money(detail.netReceive)}</p>

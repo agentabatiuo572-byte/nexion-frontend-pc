@@ -12,7 +12,6 @@ import {
   fetchUserProfilesPage,
   fetchUserSecurityOverview,
   requestUserPasswordReset,
-  requestUserKycReverification,
   revokeUserSession,
   revokeUserSessions,
   unlockUserSecurity,
@@ -21,7 +20,6 @@ import {
   type UserCredentialParam,
   type UserSecurityOverview,
   type UserSecurityActionEvidence,
-  type UserKycReverification,
   type UserSecurityUserRow,
   type UserSession,
   UsersOutcomeUnknownError,
@@ -100,7 +98,7 @@ function profileLabel(account?: User360Profile | null) {
 
 function profileMeta(account?: User360Profile | null) {
   if (!account) return "—";
-  return [account.phoneMasked, account.status, account.kycStatus].map((item) => text(item, "")).filter(Boolean).join(" · ") || "—";
+  return [account.phoneMasked, account.status].map((item) => text(item, "")).filter(Boolean).join(" · ") || "—";
 }
 
 function sessionId(session?: UserSession | null) {
@@ -167,7 +165,6 @@ function clearSelectedUserFromOverview(current: UserSecurityOverview | null): Us
     ...current,
     selectedUser: null,
     selectedActiveSessionCount: 0,
-    kycReverifications: [],
     sessions: {
       ...(current.sessions ?? {}),
       total: 0,
@@ -178,16 +175,12 @@ function clearSelectedUserFromOverview(current: UserSecurityOverview | null): Us
   };
 }
 
-function identityEvidence(
+function operatorEvidence(
   businessValue: BusinessFormValue | undefined,
-  verification: UserKycReverification,
   lockKind?: "SHORT" | "LONG" | null,
 ): UserSecurityActionEvidence {
   return {
-    kycVerificationChannel: "K5_INDEPENDENT_REVIEW",
-    kycVerificationTicket: text(verification.ticketId, ""),
-    kycVerifiedAt: text(verification.verifiedAt, ""),
-    identityConfirmed: businessValue?.ack === "true",
+    operatorConfirmed: businessValue?.ack === "true",
     lockKind: lockKind ?? null,
   };
 }
@@ -364,29 +357,12 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
   const total = toNumber(sessionPage?.total, sessions.length);
   const credentialParams = overview?.credentialParams ?? [];
   const lockedUsers = overview?.lockedUsers ?? [];
-  const kycReverifications = overview?.kycReverifications ?? [];
   const activeSessions = toNumber(overview?.stats?.activeSessions);
   const lockedShort = toNumber(overview?.stats?.lockedShort);
   const lockedLong = toNumber(overview?.stats?.lockedLong);
   const tokenReuseToday = toNumber(overview?.stats?.tokenReuseToday);
   const selectedSession = ssId ? sessions.find((session) => session.refreshTokenId === ssId) : undefined;
   const selectedLock = lockId ? lockedUsers.find((row) => rowKey(row) === lockId) : undefined;
-  const verificationFor = (action: string) => kycReverifications.find((item) => item.action === action);
-
-  const requestVerification = (action: "DISABLE_2FA" | "PASSWORD_RESET" | "UNLOCK_SHORT" | "UNLOCK_LONG") => {
-    if (!selectedUserId) return;
-    openConfirm({
-      action: `申请实名二验 · ${userLabel(selectedUser)}`,
-      detail: "该高敏动作必须先由 K5 独立复审通过。当前操作只创建复审任务，不会改变用户安全状态。",
-      chips: [["提交 K5 独立复审", "ready"], ["通过后仅可执行一次", "done"]],
-      reason: true,
-      okLabel: "提交复审申请",
-      run: (reason) => perform(`kyc-review|${selectedUserId}|${action}|${reason}`, async (commandKey) => {
-        const result = await requestUserKycReverification(selectedUserId, action, reason, OPERATOR(), commandKey);
-        return `实名二验已提交 · ${text(result.ticketId, "等待 K5 处理")}`;
-      }, "实名二验已提交"),
-    });
-  };
 
   const selectLookupUser = (account: User360Profile) => {
     const key = profileKey(account);
@@ -448,27 +424,25 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   const disable2fa = () => {
     if (!selectedUserId) return;
-    const verification = verificationFor("DISABLE_2FA");
-    if (!verification) return requestVerification("DISABLE_2FA");
     openActionConfirm({
       action: `人工关闭 2FA · ${userLabel(selectedUser)}`,
-      detail: <>用户丢失验证器设备时的恢复通道。实名二验通过后，服务器立即关闭 2FA 并记录操作人、角色、核验工单和理由。</>,
+      detail: <>用户丢失验证器设备时的恢复通道。服务器校验专门权限、幂等键和当前状态，并记录操作人、角色和理由。</>,
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
         subject: `${userLabel(selectedUser)} · 关闭 2FA`,
         serverVerification: {
-          channel: "K5 独立复审",
-          ticket: text(verification.ticketId, ""),
-          verifiedAt: text(verification.verifiedAt, ""),
-          verifiedBy: text(verification.verifiedBy, ""),
-          expiresAt: text(verification.expiresAt, ""),
+          channel: "RBAC + 双确认",
+          ticket: "当前管理员会话",
+          verifiedAt: "提交时服务端校验",
+          verifiedBy: OPERATOR(),
+          expiresAt: "单次命令",
         },
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
         if (!selectedUserId) return;
-        return perform(`disable-2fa|${selectedUserId}|${text(verification.ticketId)}|${reason}`, async (commandKey) => {
-          await disableUserTwoFactor(selectedUserId, reason, OPERATOR(), identityEvidence(businessValue, verification), commandKey);
+        return perform(`disable-2fa|${selectedUserId}|${reason}`, async (commandKey) => {
+          await disableUserTwoFactor(selectedUserId, reason, OPERATOR(), operatorEvidence(businessValue), commandKey);
           return "2FA 已立即关闭";
         }, "2FA 已立即关闭");
       },
@@ -477,27 +451,25 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
 
   const passwordReset = () => {
     if (!selectedUserId) return;
-    const verification = verificationFor("PASSWORD_RESET");
-    if (!verification) return requestVerification("PASSWORD_RESET");
     openActionConfirm({
       action: `密码重置 · ${userLabel(selectedUser)}`,
-      detail: <>后台始终看不到密码明文。实名二验通过后，服务器立即标记“下次登录必须改密”并吊销全部旧会话；当前密码只用于再次验证本人身份，不能继续作为新密码。</>,
+      detail: <>后台始终看不到密码明文。双确认后，服务器标记“下次登录必须改密”并吊销全部旧会话。</>,
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
         subject: `${userLabel(selectedUser)} · 密码重置`,
         serverVerification: {
-          channel: "K5 独立复审",
-          ticket: text(verification.ticketId, ""),
-          verifiedAt: text(verification.verifiedAt, ""),
-          verifiedBy: text(verification.verifiedBy, ""),
-          expiresAt: text(verification.expiresAt, ""),
+          channel: "RBAC + 双确认",
+          ticket: "当前管理员会话",
+          verifiedAt: "提交时服务端校验",
+          verifiedBy: OPERATOR(),
+          expiresAt: "单次命令",
         },
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
         if (!selectedUserId) return;
-        return perform(`password-reset|${selectedUserId}|${text(verification.ticketId)}|${reason}`, async (commandKey) => {
-          await requestUserPasswordReset(selectedUserId, reason, OPERATOR(), identityEvidence(businessValue, verification), commandKey);
+        return perform(`password-reset|${selectedUserId}|${reason}`, async (commandKey) => {
+          await requestUserPasswordReset(selectedUserId, reason, OPERATOR(), operatorEvidence(businessValue), commandKey);
           return "已要求用户下次登录完成密码重设";
         }, "密码重设要求已生效");
       },
@@ -509,29 +481,26 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
     if (!userId) return;
     const longLock = row.lockKind === "LONG";
     const lockKind = longLock ? "LONG" : "SHORT";
-    const action = longLock ? "UNLOCK_LONG" : "UNLOCK_SHORT";
-    const verification = verificationFor(action);
-    if (!verification) return requestVerification(action);
     openActionConfirm({
       action: `解除${longLock ? "长" : "短"}锁 · ${userLabel(row)}`,
       detail: longLock
-        ? "长锁仅限超管或风控角色解除。实名二验通过后，服务器校验锁类型未变化并立即清除登录锁。"
-        : "短锁仅限超管、风控或客服角色解除。实名二验通过后，服务器立即清除登录失败计数与登录锁。",
+        ? "长锁仅限超管或风控角色解除。服务器校验锁类型未变化、权限和幂等键后立即清除登录锁。"
+        : "短锁仅限超管、风控或客服角色解除。服务器校验权限和幂等键后立即清除登录失败计数与登录锁。",
       amplifies: false,
       businessForm: {
         kind: "identity-verify",
         subject: `${userLabel(row)} · 解除${longLock ? "长" : "短"}锁`,
         serverVerification: {
-          channel: "K5 独立复审",
-          ticket: text(verification.ticketId, ""),
-          verifiedAt: text(verification.verifiedAt, ""),
-          verifiedBy: text(verification.verifiedBy, ""),
-          expiresAt: text(verification.expiresAt, ""),
+          channel: "RBAC + 双确认",
+          ticket: "当前管理员会话",
+          verifiedAt: "提交时服务端校验",
+          verifiedBy: OPERATOR(),
+          expiresAt: "单次命令",
         },
       },
       run: (reason, _value, businessValue?: BusinessFormValue) => {
-        return perform(`unlock|${userId}|${lockKind}|${text(verification.ticketId)}|${reason}`, async (commandKey) => {
-          await unlockUserSecurity(userId, reason, OPERATOR(), identityEvidence(businessValue, verification, lockKind), commandKey);
+        return perform(`unlock|${userId}|${lockKind}|${reason}`, async (commandKey) => {
+          await unlockUserSecurity(userId, reason, OPERATOR(), operatorEvidence(businessValue, lockKind), commandKey);
           return `${longLock ? "长" : "短"}锁已立即解除`;
         }, "账户锁定已解除");
       },
@@ -766,10 +735,10 @@ export function C5Security({ ctx }: { ctx: CCtx }) {
                 {canRevokeAll ? "全部踢线" : "全部踢线（无权限）"}
               </button>
               <button className="l-btn mc" disabled={!selectedUserId || busy || !canDisable2fa || !selectedUser?.twoFactorEnabled} onClick={disable2fa}>
-                关闭 2FA（实名二验）
+                关闭 2FA（高风险确认）
               </button>
               <button className="l-btn mc" disabled={!selectedUserId || busy || !canResetPassword || !!selectedUser?.passwordResetRequired} onClick={passwordReset}>
-                密码重置（实名二验）
+                密码重置（高风险确认）
               </button>
             </div>
             {selectedUser && (

@@ -215,7 +215,6 @@ export function CustomerProfileModal({
           </div>
           <div className="row wrap" style={{ gap: 6 }}>
             <span className="bdg cyan">{profile.vlevel}</span>
-            <span className="bdg ok">KYC {profile.kyc}</span>
             {[...profile.systemTags, ...profile.customTags].map((t) => <span key={t} className="bdg dim">{t}</span>)}
           </div>
           <div className="sub" style={{ fontWeight: 600, marginTop: 4 }}>风险研判</div>
@@ -329,7 +328,7 @@ export function QuickActionModal({
     const acts: Array<[string, string, string]> = [
       ["临时冻结账户", "限制登录与交易 24h", "C2 账户操作"],
       ["提现限额下调", "单日上限调至默认 50%", "D 域提现记录"],
-      ["补资料指令", "推送实名重传提醒", "C4 实名台账"],
+      ["补充信息指令", "推送工单资料补充提醒", "M2 工单台账"],
       ["解绑并重装设备", "重新生成设备令牌", "E 域设备明细"],
     ];
     return (

@@ -115,11 +115,11 @@ function setupFixtures() {
   ticketBaseline = Number(mysql("SELECT COALESCE(MAX(id),0) FROM nx_audit_operation_ticket;"));
   cleanupFixtures();
   mysql(`
-    INSERT INTO nx_user (id,country_code,phone,password_hash,nickname,referral_code,sponsor_user_id,kyc_status,user_level,v_rank,status,language,created_at,updated_at,is_deleted)
+    INSERT INTO nx_user (id,country_code,phone,password_hash,nickname,referral_code,sponsor_user_id,user_level,v_rank,status,language,created_at,updated_at,is_deleted)
     VALUES
-      (${USER_ID},'+84','90${SUFFIX}','K2_ACCEPTANCE_ONLY','K2验收邀请人','K2${SUFFIX}A',NULL,'VERIFIED','L1','V0','ACTIVE','zh-CN',NOW(),NOW(),0),
-      (${NEGATIVE_USER_ID},'+84','91${SUFFIX}','K2_ACCEPTANCE_ONLY','K2验收待奖励新人','K2${SUFFIX}B',${USER_ID},'VERIFIED','L1','V0','ACTIVE','zh-CN',NOW(),NOW(),0),
-      (${PENDING_USER_ID},'+84','92${SUFFIX}','K2_ACCEPTANCE_ONLY','K2验收反事实用户','K2${SUFFIX}C',${NEGATIVE_USER_ID},'VERIFIED','L1','V0','ACTIVE','zh-CN',NOW(),NOW(),0);
+      (${USER_ID},'+84','90${SUFFIX}','K2_ACCEPTANCE_ONLY','K2验收邀请人','K2${SUFFIX}A',NULL,'L1','V0','ACTIVE','zh-CN',NOW(),NOW(),0),
+      (${NEGATIVE_USER_ID},'+84','91${SUFFIX}','K2_ACCEPTANCE_ONLY','K2验收待奖励新人','K2${SUFFIX}B',${USER_ID},'L1','V0','ACTIVE','zh-CN',NOW(),NOW(),0),
+      (${PENDING_USER_ID},'+84','92${SUFFIX}','K2_ACCEPTANCE_ONLY','K2验收反事实用户','K2${SUFFIX}C',${NEGATIVE_USER_ID},'L1','V0','ACTIVE','zh-CN',NOW(),NOW(),0);
     INSERT INTO nx_admin_risk_multi_account_cluster
       (cluster_id,dedupe_key,layer_key,layer_label,account_count,strength,span_text,status,note_text,gifts_json,nodes_json,edges_json,projection_fingerprint,threshold_hit,version,created_at,updated_at,is_deleted)
     VALUES
@@ -164,7 +164,7 @@ function cleanupFixtures() {
     DELETE FROM nx_trial_claim WHERE user_id=${USER_ID};
     DELETE FROM nx_user_session WHERE refresh_token_id='${USER_SESSION_ID}';
     DELETE FROM nx_risk_signal WHERE user_id IN (${USER_ID},${NEGATIVE_USER_ID},${PENDING_USER_ID});
-    DELETE FROM nx_kyc_profile WHERE user_id IN (${USER_ID},${NEGATIVE_USER_ID},${PENDING_USER_ID});
+    DELETE FROM nx_user_payout_address WHERE user_id IN (${USER_ID},${NEGATIVE_USER_ID},${PENDING_USER_ID});
     DELETE FROM nx_admin_risk_multi_account_cluster WHERE cluster_id IN ('${CLUSTER_ID}','${H8_CLUSTER_ID}');
     DELETE FROM nx_user WHERE id IN (${USER_ID},${NEGATIVE_USER_ID},${PENDING_USER_ID});
     DELETE FROM nx_admin_idempotency_record

@@ -13,7 +13,6 @@ interface BackendStats {
   todayUsd?: number | string | null;
   poolPct?: number | string | null;
   queueDepth?: number | string | null;
-  gateKyc?: number | string | null;
   gateUser?: number | string | null;
   gatePlatform?: number | string | null;
   gateGeo?: number | string | null;
@@ -103,7 +102,6 @@ export interface G2Stats {
   todayUsd: number;
   poolPct: number;
   queueDepth: number;
-  gateKyc: number;
   gateUser: number;
   gatePlatform: number;
   gateGeo: number;
@@ -297,7 +295,6 @@ function normalizeOverview(data: BackendOverview | null | undefined): G2Overview
       todayUsd: toNumber(stats.todayUsd),
       poolPct: toNumber(stats.poolPct),
       queueDepth: toNumber(stats.queueDepth),
-      gateKyc: toNumber(stats.gateKyc),
       gateUser: toNumber(stats.gateUser),
       gatePlatform: toNumber(stats.gatePlatform),
       gateGeo: toNumber(stats.gateGeo),
@@ -305,7 +302,6 @@ function normalizeOverview(data: BackendOverview | null | undefined): G2Overview
     caps: (data?.caps ?? []).map(normalizeCap),
     queue: (data?.queue ?? []).map(normalizeOrder),
     gateDetails: {
-      kyc: normalizeGate("kyc", gateDetails.kyc),
       user: normalizeGate("user", gateDetails.user),
       platform: normalizeGate("platform", gateDetails.platform),
       geo: normalizeGate("geo", gateDetails.geo),
@@ -416,14 +412,5 @@ export async function cancelG2ExchangeQueueOrder(exchangeNo: string, reason: str
     "POST",
     { reason, operator },
     "g2-cancel-queue",
-  );
-}
-
-export async function triggerG2ExchangeKycReview(exchangeNo: string, reason: string, operator: string) {
-  return g2OverviewMutation(
-    `/exchange/queue/${encodeURIComponent(exchangeNo)}/kyc-review`,
-    "POST",
-    { reason, operator },
-    "g2-kyc-review",
   );
 }

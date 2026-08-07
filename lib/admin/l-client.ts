@@ -250,7 +250,6 @@ const REPORT_TYPE_LABELS: Record<string, string> = {
   FINANCE_AGG: "财务聚合",
   OPERATIONS_AGG: "运营聚合",
   NETWORK_TREE: "团队树明细",
-  KYC_REGULATORY: "C4 KYC 监管脱敏台账",
   REGULATORY: "监管报告",
 };
 
@@ -258,7 +257,7 @@ function reportToTask(report: LReportView): LExportTask {
   const status = report.status.toUpperCase();
   const mask = report.maskingPolicy.toUpperCase();
   const normalizedType = report.type.trim().toUpperCase();
-  const supported = ["KPI_SERIES", "FUNNEL_COHORT", "FINANCE_AGG", "OPERATIONS_AGG", "NETWORK_TREE", "KYC_REGULATORY", "REGULATORY"]
+  const supported = ["KPI_SERIES", "FUNNEL_COHORT", "FINANCE_AGG", "OPERATIONS_AGG", "NETWORK_TREE", "REGULATORY"]
     .includes(normalizedType);
   const acts: LExportTask["acts"] = !supported ? []
     : status === "PENDING_CONFIRM" || status === "PENDING_SPLIT_CONFIRM" ? ["approve"]
@@ -271,8 +270,8 @@ function reportToTask(report: LReportView): LExportTask {
     reportType: report.type,
     supported,
     snapshotAvailable: report.snapshotAvailable,
-    scope: normalizedType === "KYC_REGULATORY" ? "全量脱敏台账" : report.scope || report.cycle,
-    fields: normalizedType === "KYC_REGULATORY" ? "用户编码、实名状态、网络、配对时间、触发来源" : report.fields,
+    scope: report.scope || report.cycle,
+    fields: report.fields,
     pii: report.containsPii,
     mask: mask === "MASKED" ? "masked" : mask === "PARTIAL" ? "partial" : mask === "DECRYPTED" ? "decrypted" : "—",
     rows: formatRows(report.rowCount),
@@ -327,7 +326,7 @@ export type L4OperationsQuery = {
 };
 
 export type L2FunnelQuery = {
-  stage?: "auth.register_completed" | "kyc.express_verified" | "checkout.completed" | "wallet.reinvest" | "withdraw.submitted";
+  stage?: "auth.register_completed" | "checkout.completed" | "wallet.reinvest" | "withdraw.submitted";
   cohort?: string;
   phase?: "" | "P1" | "P2" | "P3" | "P4" | "P5" | "P6";
   locale?: string;
