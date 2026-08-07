@@ -6,7 +6,7 @@
  * 真实平台里,客服确认代入后会载入「用户真实 App 的只读副本」,看到用户屏幕上一模一样的画面用于排障。
  * Nexion 用户前端(Nexion-prototype)是独立工程 + 单人 persona + `X-Frame-Options: DENY`(不能被 iframe),
  * 所以这里在 admin 内造一个**同源、按该用户数据填充、天然只读**的手机镜像:
- *   顶部代入横幅(用户 / 倒计时 / 退出)+ 手机框内仿 Nexion 消费端首页/设备/我的三屏 + 写操作一律禁用。
+ *   顶部代入横幅(用户 / 倒计时 / 退出)+ 手机框内仿 NexGrid 消费端首页/设备/我的三屏 + 写操作一律禁用。
  * 数据来自被代入用户(c-view 的 USERS 行:余额 / NEX / 设备数 / V 级 / KYC / 冻结态…)。
  */
 import { useEffect, useMemo, useState } from "react";
@@ -29,7 +29,7 @@ export interface ImpersonateUser {
 
 const SESSION_SECONDS = 30 * 60; // 只读代入会话 ≤ 30min
 // canon SKU(对齐 canon-numbers.json / E1 目录):型号与日产率按 index 一一对应。
-const DEVICE_MODELS = ["NexionBox S1", "NexionBox Pro", "NexionBox Pro v2", "NexionRack P1", "NexionRack P2", "Cloud Share"];
+const DEVICE_MODELS = ["NexGridBox S1", "NexGridBox Pro", "NexGridBox Pro v2", "NexGridRack P1", "NexGridRack P2", "Cloud Share"];
 const DEVICE_RATE = [7, 13, 14, 45, 75, 0.19];
 
 const fmtUsd = (n: number) => "$" + Math.round(n).toLocaleString("en-US");
@@ -85,7 +85,7 @@ export function ImpersonateMirror({ user, onExit }: { user: ImpersonateUser; onE
           <button onClick={onExit} style={S.exitBtn}><X size={13} /> 退出代入</button>
         </div>
 
-        {/* 手机框:仿 Nexion 消费端(暗色),只读 */}
+        {/* 手机框:仿 NexGrid 消费端(暗色),只读 */}
         <div style={S.phone}>
           <div style={S.statusbar}><span>9:41</span><span style={{ display: "flex", gap: 4, opacity: 0.7 }}>● ▲ ▮</span></div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * shadcn/ui Dialog — Radix Dialog 之上的封装,已重皮到 Nexion V5 设计 token。
+ * shadcn/ui Dialog — Radix Dialog 之上的封装,已重皮到 NexGrid V5 设计 token。
  * 来源:shadcn new-york `dialog`,色彩/圆角/层级全部映射为 --v5-* / --admin-*。
  * 引入方式:手工落地 shadcn 源码(源码归本工程所有,可改),非默认主题。
  * 一致性门见 scripts/check-shadcn-tokens.mjs:本文件禁出现 shadcn 默认语义 token,

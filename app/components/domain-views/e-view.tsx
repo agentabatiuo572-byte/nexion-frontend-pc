@@ -1162,7 +1162,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             </div>}
           </div>
           <SkuFieldGroup n="①" title="基本信息">
-            <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 NexionBox Pro v3" />
+            <SkuFld label="型号名称" value={form.name} onChange={(v) => setForm({ ...form, name: v })} placeholder="如 NexGridBox Pro v3" />
             <div className="grid g-2" style={{ gap: 12 }}>
               <label className="col" style={{ gap: 5 }}><span className="muted tiny">档位 tier</span><select className="fld" value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })}><option value="">请选择档位</option>{["Entry", "Pro", "Flagship", "Share"].map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
               <SkuFld label="营销角标 badge" value={form.badge} onChange={(v) => setForm({ ...form, badge: v })} placeholder="输入活动角标" hint="可自定义" list="sku-badge-presets" />
@@ -1251,7 +1251,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
                 <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>解锁阶段（上架节奏门）</AutoGloss></span><select className="fld" value={form.unlock} onChange={(e) => setForm({ ...form, unlock: e.target.value })} disabled={skuPhaseIds.length === 0}>{skuPhaseIds.length === 0 ? <option value="">请先配置阶段</option> : skuPhaseIds.map((p) => <option key={p} value={p}>{e1PhaseLabel(p)}</option>)}</select></label>
               </div>
             </>}
-            <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"Nexion 全托管\n99.9% 在线率 SLA\n免运费与安装"} /></label>
+            <label className="col" style={{ gap: 5 }}><span className="muted tiny">特性清单 · 每行一条</span><textarea className="fld" style={{ minHeight: 72, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} placeholder={"NexGrid 全托管\n99.9% 在线率 SLA\n免运费与安装"} /></label>
           </SkuFieldGroup>
 
           <SkuFieldGroup n="⑦" title="购买限制">
@@ -1330,7 +1330,7 @@ export function EDomainView({ meta }: { meta: DomainViewMeta }) {
             <label className="col" style={{ gap: 5 }}><span className="muted tiny"><AutoGloss>单价(USDT)</AutoGloss></span><input className="fld" type="number" value={taskForm.price} onChange={(e) => setTaskForm({ ...taskForm, price: e.target.value })} placeholder="1.20" /></label>
             <label className="col" style={{ gap: 5 }}><span className="muted tiny">计价单位</span><div className="row wrap" style={{ gap: 6 }}>{["/job", "/1k", "/min"].map((u) => <Chip key={u} tab sel={taskForm.unit === u} onClick={() => setTaskForm({ ...taskForm, unit: u })}>{u}</Chip>)}</div></label>
           </div>
-          <label className="col" style={{ gap: 5 }}><span className="muted tiny">资格门槛(设备要求)<span style={{ color: "var(--ink-4)" }}> · 手机+ = 含手机的最低门槛(手机可接)</span></span><div className="row wrap" style={{ gap: 6 }}>{["手机+", "S1+", "需 NexionBox Pro", "需 NexionRack"].map((r) => <Chip key={r} tab sel={taskForm.req === r} onClick={() => setTaskForm({ ...taskForm, req: r })}>{r}</Chip>)}</div></label>
+          <label className="col" style={{ gap: 5 }}><span className="muted tiny">资格门槛(设备要求)<span style={{ color: "var(--ink-4)" }}> · 手机+ = 含手机的最低门槛(手机可接)</span></span><div className="row wrap" style={{ gap: 6 }}>{["手机+", "S1+", "需 NexGridBox Pro", "需 NexGridRack"].map((r) => <Chip key={r} tab sel={taskForm.req === r} onClick={() => setTaskForm({ ...taskForm, req: r })}>{r}</Chip>)}</div></label>
           <SkuFld label="初始饱和度 %(预估)" type="number" value={taskForm.sat} onChange={(v) => setTaskForm({ ...taskForm, sat: v })} placeholder="50" hint="0-100" />
           {/* #36 任务核心配置:taskClass / 代表模型 / 奖励区间 / 最低显存 / kill 初始态 */}
           <div className="grid g-2" style={{ gap: 12 }}>

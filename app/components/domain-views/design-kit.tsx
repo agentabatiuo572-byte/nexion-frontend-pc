@@ -2756,7 +2756,7 @@ function BusinessFormBlock({ spec, value, onChange, onSelectionChange }: { spec:
           {input("reviewAt", "复查时间 review at", "2026-06-25", "date")}
         </div>
         <div style={{ marginTop: 10 }}>
-          {input("owner", "责任人 owner", spec.ownerHint ?? "如 risk@nexion / 风控-张三")}
+          {input("owner", "责任人 owner", spec.ownerHint ?? "如 risk@nexgrid / 风控-张三")}
         </div>
       </div>
     );

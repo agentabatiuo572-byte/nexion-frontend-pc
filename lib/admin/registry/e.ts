@@ -8,7 +8,7 @@ import { PORTED_EMPTY_CONTENT } from "./ported-content";
 export const DOMAIN_E: ModuleEntry[] = [
   {
     path: "/devices/pricing",
-    summary: "NexionBox 商品目录和定价中枢(E1)—— 管商品清单(售价、日产、库存、上下架、促销)+ 新增机型。价格和日产基准以服务器为准;新增机型、改价、上下架都走操作确认并记入 A2 审计,会联动 E4 订单和 E2 收益引擎。",
+    summary: "NexGridBox 商品目录和定价中枢(E1)—— 管商品清单(售价、日产、库存、上下架、促销)+ 新增机型。价格和日产基准以服务器为准;新增机型、改价、上下架都走操作确认并记入 A2 审计,会联动 E4 订单和 E2 收益引擎。",
     content: PORTED_EMPTY_CONTENT,
   },
   {
