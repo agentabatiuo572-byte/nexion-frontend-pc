@@ -424,10 +424,55 @@ export interface User360Summary extends JsonRecord {
   riskBand?: string | null;
 }
 
-export interface User360Section extends JsonRecord {
+/**
+ * 360 页各分区的统一形状。
+ *
+ * 🔴 **不要给它加回 `extends JsonRecord`**(2026-08-07 事故教训):
+ * 索引签名会让**任意字段名**都通过类型检查 —— 实测因此凭空造出 4 个后端根本不返回的
+ * 字段名(`checkinStreakDays` 等),全仓只在那一处渲染点出现、无契约无 fixture,
+ * 而 tsc 一声不吭。名字对不上的后果是页面永远显示「—」,且**没有任何东西会报错**。
+ * 现在字段逐个显式声明:写错名字 = 编译期就红。
+ *
+ * 新增字段的正确姿势:先确认后端真的返回它(客户端类型 / contract / fixture 三者取证),
+ * 再加到这里 —— 而不是在页面里直接点出来。
+ */
+export interface User360Section {
+  // —— 通用分区骨架 ——
   total?: number | string | null;
   records?: JsonRecord[] | null;
   sourceStatus?: string | null;
+  // —— 各分区自带的汇总标量(逐个来自实际渲染点,新增前先取证)——
+  activeCount?: number | string | null;
+  activeOrderCount?: number | string | null;
+  cases?: JsonRecord[] | null;
+  completedUsd?: number | string | null;
+  confirmedUsd?: number | string | null;
+  currentRank?: number | string | null;
+  dailyNex?: number | string | null;
+  dailyUsdt?: number | string | null;
+  deviceDailyNex?: number | string | null;
+  deviceDailyUsdt?: number | string | null;
+  directCount?: number | string | null;
+  // risk 分区携带 K 域评分(k-client.ts:410/422 有显式声明,非本页臆造)
+  effectiveScore?: number | string | null;
+  bandLabel?: string | null;
+  exchangeRows?: JsonRecord[] | null;
+  failedPushCount?: number | string | null;
+  flags?: JsonRecord[] | null;
+  members?: JsonRecord[] | null;
+  onlineCount?: number | string | null;
+  openCaseCount?: number | string | null;
+  orders?: JsonRecord[] | null;
+  pendingPushCount?: number | string | null;
+  requestedUsd?: number | string | null;
+  stakingLedgerRows?: JsonRecord[] | null;
+  teamSize?: number | string | null;
+  teamVolumeUsd?: number | string | null;
+  totalNex?: number | string | null;
+  totalUsdt?: number | string | null;
+  unreadCount?: number | string | null;
+  userLevel?: number | string | null;
+  wallet?: JsonRecord | null;
 }
 
 export interface User360Detail extends JsonRecord {
