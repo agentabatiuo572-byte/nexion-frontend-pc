@@ -4,10 +4,11 @@
  * LoginGate — 后台账号密码登录。
  */
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Loader2, LockKeyhole, LogIn, ShieldCheck, UserRound } from "lucide-react";
 import { changeAdminPassword, currentAdminSession, loginAdmin, verifyAdminMfa, type AdminMfaChallenge, type LoginResult } from "@/lib/admin/auth-client";
 import { completeInteractiveLogin } from "@/lib/admin/login-completion";
+import { createTotpEnrollmentQrDataUrl, validatedManualTotpKey } from "@/lib/admin/mfa-enrollment-qr";
 import { useAdminAuth } from "@/lib/store/admin-auth";
 
 function strongPassword(value: string) {
@@ -35,6 +36,18 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const enrollmentQrDataUrl = useMemo(
+    () => mfaChallenge?.mode === "ENROLL"
+      ? createTotpEnrollmentQrDataUrl(mfaChallenge.provisioningUri)
+      : null,
+    [mfaChallenge],
+  );
+  const enrollmentManualKey = useMemo(
+    () => mfaChallenge?.mode === "ENROLL"
+      ? validatedManualTotpKey(mfaChallenge.provisioningUri, mfaChallenge.manualKey)
+      : null,
+    [mfaChallenge],
+  );
 
   async function finishInteractiveLogin(result: LoginResult) {
     await completeInteractiveLogin(signIn, result, {
@@ -112,6 +125,13 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
     }
   }
 
+  function restartEnrollment() {
+    setMfaChallenge(null);
+    setMfaCode("");
+    setCurrentPasswordForChange("");
+    setError("");
+  }
+
   async function handlePasswordChange(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!pendingLogin || !currentPasswordForChange) {
@@ -147,6 +167,9 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
 
   const changingPassword = !!pendingLogin;
   const verifyingMfa = !!mfaChallenge;
+  const enrollmentUnavailable = mfaChallenge?.mode === "ENROLL"
+    && !enrollmentQrDataUrl
+    && !enrollmentManualKey;
 
   return (
     <div
@@ -228,29 +251,54 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
           </>
         ) : verifyingMfa ? (
           <>
-            {mfaChallenge?.mode === "ENROLL" && mfaChallenge.manualKey && (
+            {mfaChallenge?.mode === "ENROLL" && enrollmentQrDataUrl && (
+              <div
+                className="mt-5 rounded-[9px] p-3 text-center text-[12px]"
+                style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-2)" }}
+              >
+                <p>打开 Google Authenticator，点击“+”并扫描二维码：</p>
+                <img
+                  src={enrollmentQrDataUrl}
+                  alt="Google Authenticator 绑定二维码"
+                  className="mx-auto mt-3 block max-w-full rounded-[6px] bg-white"
+                  style={{ imageRendering: "pixelated" }}
+                />
+              </div>
+            )}
+            {mfaChallenge?.mode === "ENROLL" && enrollmentManualKey && (
               <div className="mt-5 rounded-[9px] p-3 text-[12px]" style={{ background: "var(--v5-surface-3)", color: "var(--v5-ink-2)" }}>
-                <p>在身份验证器中新增账号，并输入以下密钥：</p>
-                <code className="mt-2 block break-all select-all font-mono" style={{ color: "var(--v5-ink)" }}>{mfaChallenge.manualKey}</code>
+                <p>无法扫码时，可手动输入以下密钥：</p>
+                <code className="mt-2 block break-all select-all font-mono" style={{ color: "var(--v5-ink)" }}>{enrollmentManualKey}</code>
                 <p className="mt-2" style={{ color: "var(--v5-ink-3)" }}>密钥只在本次绑定时显示，请勿发送给他人。</p>
               </div>
             )}
-            <label className="mt-5 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
-              一次性验证码
-            </label>
-            <div className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3" style={{ background: "var(--v5-surface-3)", border: "1px solid var(--v5-border)", color: "var(--v5-ink)" }}>
-              <ShieldCheck size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
-              <input
-                inputMode="numeric"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                value={mfaCode}
-                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                autoComplete="one-time-code"
-                aria-label="一次性验证码"
-                className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[15px] tracking-[0.25em] outline-none"
-              />
-            </div>
+            {enrollmentUnavailable ? (
+              <div className="mt-5 rounded-[9px] p-3 text-[12px]" role="alert" style={{ background: "color-mix(in srgb, var(--v5-danger) 10%, transparent)", color: "var(--v5-danger)" }}>
+                <p>无法生成绑定信息，请返回登录页重新获取。</p>
+                <button type="button" onClick={restartEnrollment} className="mt-3 underline underline-offset-2">
+                  返回登录重新获取
+                </button>
+              </div>
+            ) : (
+              <>
+                <label className="mt-5 block text-[12px]" style={{ color: "var(--v5-ink-3)" }}>
+                  一次性验证码
+                </label>
+                <div className="mt-1.5 flex items-center gap-2 rounded-[9px] px-3" style={{ background: "var(--v5-surface-3)", border: "1px solid var(--v5-border)", color: "var(--v5-ink)" }}>
+                  <ShieldCheck size={15} style={{ color: "var(--v5-ink-4)" }} aria-hidden />
+                  <input
+                    inputMode="numeric"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    autoComplete="one-time-code"
+                    aria-label="一次性验证码"
+                    className="min-w-0 flex-1 bg-transparent py-2 font-mono text-[15px] tracking-[0.25em] outline-none"
+                  />
+                </div>
+              </>
+            )}
           </>
         ) : (
           <>
@@ -309,7 +357,7 @@ export function LoginGate({ onAuthenticated }: { onAuthenticated?: () => void } 
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || enrollmentUnavailable}
           className="mt-6 flex w-full items-center justify-center gap-2 rounded-[10px] py-2.5 text-[13.5px] font-medium transition-opacity hover:opacity-90 active:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
           style={{ background: "var(--v5-brand)", color: "var(--v5-on-brand)" }}
         >
