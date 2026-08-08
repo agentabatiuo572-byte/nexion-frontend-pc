@@ -4,7 +4,10 @@ import path from "node:path";
 import test from "node:test";
 
 const read = (path) => fs.readFileSync(path, "utf8").toLowerCase();
-const forbidden = /\bkyc\b|kyc[A-Z_]|KYC-|\/users\/kyc|\/risk\/kyc-review/;
+
+function containsForbiddenKyc(source) {
+  return /kyc/i.test(String(source).replace(/stickycta/ig, ""));
+}
 
 function sourceFiles(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -30,10 +33,26 @@ test("operations console exposes no KYC navigation, BFF route, client, or screen
 
 test("operations console runtime contains no KYC capability or gate", () => {
   const violations = ["app", "lib"].flatMap(sourceFiles)
-    .filter((file) => /\.(?:ts|tsx|js|mjs|json|css)$/.test(file))
-    .filter((file) => forbidden.test(fs.readFileSync(file, "utf8")));
+    .filter((file) => containsForbiddenKyc(file)
+      || (/\.(?:ts|tsx|js|mjs|json|css)$/.test(file)
+        && containsForbiddenKyc(fs.readFileSync(file, "utf8"))));
 
   assert.deepEqual(violations, []);
+});
+
+test("runtime KYC guard catches case and identifier variants", () => {
+  for (const sentinel of [
+    "KYC", "Kyc", "kYc", "KYC_GATE", "KycStatus", "KYC-address",
+    "showKycGate", "useKYCStore", "legacy_kyc", "hasKyc",
+    "showkyCGate", "usekyCStore", "haskyC", "legacy_kyC",
+  ]) {
+    assert.equal(containsForbiddenKyc(sentinel), true, `must reject ${sentinel}`);
+  }
+  assert.equal(containsForbiddenKyc("stickyCTA"), false);
+  assert.equal(containsForbiddenKyc("useStickyCTA"), false);
+  assert.equal(containsForbiddenKyc("StickyCTAPayload"), false);
+  assert.equal(containsForbiddenKyc("stickyCTAKyc"), true);
+  assert.equal(containsForbiddenKyc("app/risk/kyc-review/page.tsx"), true);
 });
 
 test("current operations product docs retire historical KYC requirements", () => {
